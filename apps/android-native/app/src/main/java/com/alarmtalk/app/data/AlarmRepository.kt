@@ -67,6 +67,9 @@ class AlarmRepository(
     // 사용 기록. **없어도 돌아야 한다** — 기록은 곁다리라, 테스트나 옛 호출부가 안 넘겨도
     // 알람 동작은 그대로다(기본값 no-op).
     private val usageEvents: UsageEventRecorder? = null,
+    // 무료 잠금이 행을 기본 목소리 알람으로 고쳐 쓸 때 기기 안의 클립을 찾는다(네트워크 없음).
+    // 테스트는 매니페스트·캐시를 갈아 끼우려고 넘긴다.
+    private val defaultVoiceClipSource: DefaultVoiceClipSource = DefaultVoiceClipSource(context, alarmAudioStore),
 ) {
     /**
      * 예약 복원과 예약 해제를 **서로 겹치지 않게** 한다.
@@ -400,6 +403,9 @@ class AlarmRepository(
             // 무료 상태로 남아 편집 결과가 여전히 유료 목소리면, 다음 앱 시작의 재잠금이 실제
             // playMode 기준으로 올바른 새 스냅샷을 다시 만든다.
             preLockPlayMode = null,
+            // 잠금 보관본도 같은 이유로 비운다 — 남으면 재결제 때 복원이 편집 결과를 옛 유료
+            // 목소리로 덮는다(billing-lifecycle.md 「목소리를 못 쓰게 되면」).
+            preLockVoiceJson = null,
             syncState = current.nextLocalSyncState(),
             alarmVolumePercent = draft.alarmVolumePercent,
             alarmSoundUri = draft.alarmSoundUri,
@@ -991,6 +997,26 @@ class AlarmRepository(
             Log.i(TAG, "Skipped voice degradation: no signed-in account")
             return 0
         }
+        // 무료 잠금으로 기본 목소리가 된 행은 지금 목소리가 기본 목소리라 아래 대조에 안 걸린다.
+        // 대신 **보관본의 원래 목소리**가 대상이면(보관 기간이 지나 지워짐·공유 해제 등) 잠금을
+        // **확정**한다 — 보관본과 표시를 버리고 기본 목소리 알람으로 남긴다. 알람음으로 내리지
+        // 않고, 소리가 바뀌지 않았으니 강등 개수에도 넣지 않는다. 안 그러면 재결제 때 복원이
+        // 지워진 목소리를 되살려, 다음 강등이 그 알람을 알람음으로 내린다.
+        // (`docs/spec/billing-lifecycle.md` 「목소리를 못 쓰게 되면」)
+        val lockCheckedAt = System.currentTimeMillis()
+        alarmDao.getAllAlarms().filter { alarm ->
+            alarm.origin == AlarmOrigins.LOCAL_OWNED &&
+                alarm.hasLockedPaidVoice() &&
+                ownedByCurrentSession(alarm, currentUser, ownershipSettled) &&
+                alarm.restoredFromLock(lockCheckedAt).let { original ->
+                    original.voiceSource == VoiceSources.TTS_PROFILE && match(original)
+                }
+        }.forEach { locked ->
+            val releasedKey = locked.lockedPaidVoice()?.audioCacheKey
+            alarmDao.upsertPreservingServerSyncFields(locked.finalizedLock(lockCheckedAt))
+            alarmAudioStore.deleteCachedAudioIfUnreferenced(alarmDao, releasedKey)
+            Log.i(TAG, "Finalized a default-voice lock id=${locked.id}: the original voice is no longer accessible")
+        }
         val candidates = alarmDao.getAllAlarms().filter { alarm ->
             alarm.origin == AlarmOrigins.LOCAL_OWNED &&
                 alarm.voiceSource == VoiceSources.TTS_PROFILE &&
@@ -1048,10 +1074,15 @@ class AlarmRepository(
     }
 
     /**
-     * 무료 전환 시 유료 목소리 알람을 삭제하지 않고 사운드온리로 '잠근다'. 원래 재생모드를
-     * preLockPlayMode 에 보관하고 playMode 를 ALARM_ONLY 로 내려, RingingService 가 목소리 대신
-     * 기본 알람음을 재생하게 한다. 캐시 오디오·목소리 참조는 그대로 보존해 재유료 시 복원한다.
+     * 무료 전환 시 유료 목소리 알람을 삭제하지 않고 **기본 목소리 알람으로 '잠근다'**.
+     *
+     * ⚠ **'알람' 모드로 내리지 말 것**(2026-09-29 dev 리허설). 예전에는 playMode 를 ALARM_ONLY 로
+     * 내렸는데, 목록·편집기에서 그 알람이 **그냥 기본 알람**이 됐고, 울릴 때는 목소리 알람 시절에
+     * 쓰이지 않던 알람음 스위치(꺼짐)를 봐 **아무 소리 없이** 울렸다. 이제 재생 방식은 그대로
+     * 두고 목소리만 기본 목소리로 바꾼다(`lockedToDefaultVoice`). 원래 재생 방식은
+     * preLockPlayMode 에, 원래 목소리 필드는 preLockVoiceJson 에 보관해 재유료 시 복원한다.
      * 로컬만 갱신(upsertPreservingServerSyncFields)해 서버의 원본 목소리 알람은 백스톱으로 남긴다.
+     * 규칙: `docs/spec/billing-lifecycle.md` 「목소리를 못 쓰게 되면」.
      */
     /**
      * @param expectedOwnerUserId 이 강등을 **확정한 계정**. 소유자를 고르는 시점에 계정이 그대로인지
@@ -1078,16 +1109,22 @@ class AlarmRepository(
         val now = System.currentTimeMillis()
         var lockedCount = 0
         alarmDao.getAllAlarms().forEach { alarm ->
+            // 이미 새 모양(기본 목소리 + 보관본)으로 잠긴 행 — 기본 목소리로 잘 울리고 있다.
+            // ⚠ 아래 '되돌리기' 갈래로 떨어뜨리지 말 것: 이 행은 이제 기본 목소리 알람이라
+            // `usesFreeSystemVoiceAlarm` 이 참이고, 그대로 두면 보관본을 버린 채 풀려 버린다.
+            if (alarm.hasLockedPaidVoice()) return@forEach
     // ⚠ **재생 방식만으로 '유료 목소리' 라고 하지 말 것**(2026-08-18, 실계정 확인).
     // `playMode != ALARM_ONLY` 를 단독 조건으로 두면 **말할 자원이 하나도 없는 알람**
     // (profileId·ttsMessageId·오디오 전부 없음)이 유료로 잡혀, **한 번도 유료였던 적 없는
     // 계정**의 알람이 잠기고 "무료 이용권으로 바뀌었어요" 가 뜬다. iOS 짝은
     // `LocalAlarmRecord.usesPaidVoiceFeatures` · `PaidVoiceGate.usesPaidVoice` — 같이 고친다.
-            val usesVoice = !alarm.localAudioUri.isNullOrBlank() ||
-                !alarm.rawAudioUri.isNullOrBlank() ||
-                !alarm.voiceProfileId.isNullOrBlank() ||
-                !alarm.ttsMessageId.isNullOrBlank()
-            if (!usesVoice || alarm.usesFreeSystemVoiceAlarm()) {
+            val usesVoice = alarm.hasVoiceResources()
+            // 옛 모양(alarm_only + preLockPlayMode)은 재생 방식을 원래 값으로 보고 판정한다 —
+            // 지금 값(alarm_only)으로 보면 `usesFreeSystemVoiceAlarm` 이 늘 거짓이라 판정이 틀린다.
+            val judged = alarm.preLockPlayMode?.takeIf { it.isNotBlank() }
+                ?.let { alarm.copy(playMode = AlarmPlayModes.normalize(it)) }
+                ?: alarm
+            if (!usesVoice || judged.usesFreeSystemVoiceAlarm()) {
                 // 옛 규칙(직접 녹음 = 유료)으로 이미 잠긴 행은 여기서 **되돌린다.**
                 // 그냥 건너뛰면 잠긴 채 남는데, 이제 잠글 축이 사라졌으니 풀어 줄 다른
                 // 경로가 없다. 아래 '옛 버그로 잠긴 받은 알람' 과 같은 모양이다.
@@ -1133,19 +1170,28 @@ class AlarmRepository(
             // (2) 같은 기기의 다른 계정이 남의 잠긴 알람을 복원·스케줄하지 못하게 한다. 이미 잠긴
             // 레거시 행(구버전에서 소유자 없이 잠김)도 여기서 소유권만 backfill 해 복원 가능하게 만든다.
             if (!ownedByCurrentSession(alarm, currentUser, ownershipSettled)) return@forEach
-            val needsLock = alarm.preLockPlayMode == null
-            val needsClaim = alarm.ownerUserId == null
-            if (!needsLock && !needsClaim) return@forEach
-            val updated = alarm.copy(
-                preLockPlayMode = if (needsLock) alarm.playMode else alarm.preLockPlayMode,
-                playMode = if (needsLock) AlarmPlayModes.ALARM_ONLY else alarm.playMode,
-                ownerUserId = currentUser,
-                updatedAtMillis = now,
-            )
-            // 새로 잠근 경우에만 재스케줄(사운드온리로). 소유권만 backfill 한 경우는 재생모드 불변이라 불필요.
-            if (updated.enabled && needsLock) alarmScheduler.schedule(updated)
+            // 처음 잠그는 행만 센다 — 옛 모양(preLockPlayMode 만 있는 행)을 새 모양으로 옮기는 것은
+            // 이미 알린 알람이라 강등 안내 개수에 다시 넣지 않는다(안내가 매번 뜨지 않게).
+            val newlyLocked = alarm.preLockPlayMode == null
+            val voiceId = defaultVoiceClipSource.voiceIdFor(alarm, currentUser)
+            val binding = runCatching { defaultVoiceClipSource.lockBinding(alarm, voiceId, currentUser) }
+                .onFailure { AlarmTalkLog.reportError("Failed to bind default voice clips while locking", it) }
+                .getOrNull()
+            val updated = alarm.lockedToDefaultVoice(
+                systemVoiceId = voiceId,
+                bucket = binding?.bucket,
+                language = binding?.language,
+                clips = binding?.clips,
+                nowMillis = now,
+            ).copy(ownerUserId = currentUser)
+            if (updated.enabled) alarmScheduler.schedule(updated)
             alarmDao.upsertPreservingServerSyncFields(updated)
-            if (needsLock) lockedCount++
+            Log.i(
+                TAG,
+                "Locked paid voice alarm to a default voice id=${alarm.id} voice=$voiceId " +
+                    "bucket=${binding?.bucket} converted=${!newlyLocked}",
+            )
+            if (newlyLocked) lockedCount++
         }
         if (lockedCount > 0) {
             Log.i(TAG, "Locked paid voice alarms on free plan count=$lockedCount")
@@ -1174,11 +1220,9 @@ class AlarmRepository(
             !it.preLockPlayMode.isNullOrBlank() && it.ownerUserId == currentUser
         }
         targets.forEach { alarm ->
-            val restored = alarm.copy(
-                playMode = alarm.preLockPlayMode ?: alarm.playMode,
-                preLockPlayMode = null,
-                updatedAtMillis = System.currentTimeMillis(),
-            )
+            // 보관본이 있으면 원래 유료 목소리 필드까지 되돌리고 동기화 대상으로 올린다
+            // (`restoredFromLock`). 없는 옛 모양·강등 표시는 예전처럼 재생 방식만 되돌린다.
+            val restored = alarm.restoredFromLock(System.currentTimeMillis())
             if (restored.enabled) alarmScheduler.schedule(restored)
             alarmDao.upsertPreservingServerSyncFields(restored)
         }
@@ -1807,6 +1851,15 @@ class AlarmRepository(
                 // 버킷 회전 알람이 미리 캐시해 둔 N개 클립이 sweep 으로 지워지지 않도록 보존한다.
                 alarm.bucketClipKeys().forEach { key ->
                     add(AlarmAudioStore.safeCacheKey(key))
+                }
+                // 무료 잠금 보관본의 원래 목소리 오디오도 보존한다 — 지우면 재결제 때 복원한
+                // 알람이 들을 소리가 없다.
+                alarm.lockedPaidVoice()?.let { snapshot ->
+                    snapshot.referencedCacheKeys().forEach { key -> add(AlarmAudioStore.safeCacheKey(key)) }
+                    snapshot.localAudioUri?.takeIf { it.isNotBlank() }?.let { uriString ->
+                        val path = runCatching { android.net.Uri.parse(uriString).path }.getOrNull()
+                        if (!path.isNullOrBlank()) add(java.io.File(path).nameWithoutExtension)
+                    }
                 }
             }
         }

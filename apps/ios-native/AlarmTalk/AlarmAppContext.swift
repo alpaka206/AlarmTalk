@@ -131,7 +131,7 @@ final class AlarmAppContext {
                   PaidVoiceGate.dependsOnPromoCutover(record: record, snapshot: accessSnapshot(), now: nowProvider()) {
             // ⚠ **기간 한정 개인 플랜만으로 열린 목소리의 주간 반복 알람도 정지마다 다시 맞춘다**(Codex #803).
             // AlarmKit 은 주간 반복에 한 번 받은 소리를 끝 뒤 회차까지 다시 쓴다 — 끝 전 마지막 회차를 끄는
-            // 순간 다음 회차(끝 뒤)를 기본 알람음으로 다시 건다(`PaidVoiceGate.dependsOnPromoCutover`).
+            // 순간 다음 회차(끝 뒤)를 기본 목소리로 다시 건다(`PaidVoiceGate.dependsOnPromoCutover`).
             // 리컨사일러는 예약 판정이 바뀌었을 때만 다시 예약하므로 끝 전의 정지는 아무것도 바꾸지 않는다.
             await reconcileAfterStop(record.id)
         }

@@ -432,7 +432,7 @@ final class AlarmKitViewModel: ObservableObject {
                     let snapshot = KeychainStore.readSession()
                         .map { accessSnapshotStore.read(userID: $0.user.id) } ?? .empty
                     let effective = PaidVoiceGate.shouldDowngrade(record: record, snapshot: snapshot)
-                        ? PaidVoiceGate.downgraded(record)
+                        ? defaultVoiceSubstitute(for: record)
                         : record
                     let resolution = AlarmSoundResolver.resolve(for: effective, audioCache: audioCache)
                     if resolution.requiresInAppFallback {
@@ -997,11 +997,11 @@ final class AlarmKitViewModel: ObservableObject {
             // 안드로이드는 RingingService 가 울릴 때 이 판단을 한다. iOS 는 발사 시점에
             // 우리 코드가 돌지 않으므로(AlarmKit 은 해제 시점의 stopIntent 뿐) 예약해 둔
             // 사운드가 그대로 울린다 — 그래서 같은 게이트를 여기로 옮겼다.
-            // 강등되어도 **알람 자체는 그대로 울린다**(기본 톤으로). 자세한 근거는 PaidVoiceGate.
+            // 강등되어도 **알람 자체는 그대로 울린다**(기본 목소리로 — `defaultVoiceSubstitute`). 자세한 근거는 PaidVoiceGate.
             let effectiveRecord = effectiveRecordForScheduling(record)
-            if effectiveRecord.playMode != record.playMode {
+            if effectiveRecord.voiceProfileId != record.voiceProfileId || effectiveRecord.playMode != record.playMode {
                 Self.paidGateLogger.info(
-                    "Free plan at schedule time — downgrading paid voice to alarm tone (id: \(record.id, privacy: .public))"
+                    "Free plan at schedule time — scheduling a default voice instead of the paid voice (id: \(record.id, privacy: .public))"
                 )
             }
             let resolution = AlarmSoundResolver.resolve(for: effectiveRecord, audioCache: audioCache)
@@ -1122,11 +1122,37 @@ final class AlarmKitViewModel: ObservableObject {
     /// 어긋난 것으로 읽혀 `AlarmScheduleReconciler` 가 무한히 다시 예약한다.
     func effectiveRecordForScheduling(_ record: LocalAlarmRecord) -> LocalAlarmRecord {
         let snapshot = KeychainStore.readSession().map { accessSnapshotStore.read(userID: $0.user.id) } ?? .empty
-        // 울릴 시각을 넘긴다 — 기간 한정 개인 플랜만으로 열린 목소리는 끝 뒤에 울릴 예약이면 기본 알람음으로
+        // 울릴 시각을 넘긴다 — 기간 한정 개인 플랜만으로 열린 목소리는 끝 뒤에 울릴 예약이면 기본 목소리로
         // 건다(`PaidVoiceGate.shouldDowngrade` 의 `fireAt`). 지난 시각이면 지금으로 본다.
         return PaidVoiceGate.shouldDowngrade(record: record, snapshot: snapshot, fireAt: record.nextFireDate)
-            ? PaidVoiceGate.downgraded(record)
+            ? defaultVoiceSubstitute(for: record)
             : record
+    }
+
+    /// 유료 목소리를 못 쓰는 알람의 **기본 목소리 대체 행** — 저장하지 않는다. 예약과 전경 폴백이 같이 쓴다.
+    ///
+    /// ⚠ **알람음으로 내리지 말 것**(2026-09-29 dev 리허설). 예전에는 `alarm_only` 로 내렸다 — 안드로이드는
+    /// 그 모양이 목소리 알람 시절의 꺼진 알람음 스위치를 봐 **아무 소리 없이** 울렸다. iOS 는 AlarmKit 이
+    /// 시스템 기본음을 울려 조용하지는 않았지만, 규칙은 같다: 기본 목소리로 운다
+    /// (`docs/spec/billing-lifecycle.md` 「목소리를 못 쓰게 되면」, 안드로이드 `RingingService` 의 `decideRingSound`).
+    /// 받아 둔 클립만 쓴다 — 없으면 `AlarmSoundResolver.plan` 이 그 목소리의 내장 인사말을 싣는다.
+    func defaultVoiceSubstitute(for record: LocalAlarmRecord) -> LocalAlarmRecord {
+        let userID = KeychainStore.readSession()?.user.id
+        let voiceID = DefaultVoiceSubstitute.pickVoiceID(
+            alarmVoiceID: record.voiceProfileId,
+            lastUsedVoiceID: DefaultVoicePreferenceStore().lastUsedVoiceId(userID: record.ownerUserId ?? userID)
+        )
+        let binding = DefaultVoiceSubstitute.binding(
+            for: record,
+            voiceID: voiceID,
+            manifest: StockClipManifestStore.load()?.clips,
+            languages: DefaultVoiceSubstitute.languages(
+                for: record,
+                deviceLanguage: VoiceStudioViewModel.appVoiceLanguage()
+            ),
+            cachedURL: { [audioCache] key in audioCache.cachedURL(for: key) }
+        )
+        return DefaultVoiceSubstitute.substitutedForScheduling(record, voiceID: voiceID, binding: binding)
     }
 
     @discardableResult

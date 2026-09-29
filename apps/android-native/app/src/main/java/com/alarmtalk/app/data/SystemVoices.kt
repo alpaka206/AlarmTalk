@@ -95,7 +95,7 @@ private fun usesFreeSystemVoiceAlarm(
     //
     // ⚠ 예전에는 여기서 `voiceSource == LOCAL_AUDIO` 를 곧바로 false 로 떨어뜨렸고, 이
     // 함수를 보는 **세 게이트가 전부** 막혔다: 저장(`voiceAlarmAllowed`), 무료 강등
-    // 잠금(`lockPaidAlarmTalks`), 울림 강등(`RingingService.downgradePaidVoice`).
+    // 잠금(`lockPaidAlarmTalks`), 울림 강등(`ringTimePaidVoiceUnusable`).
     // 그래서 무료 사용자는 녹음을 다 해 놓고 저장 단계에서 거절당했다.
     //
     // `localAudioUri` 를 함께 보는 이유: `degradeMatchingLocalOwnedVoiceAlarms` 가 강등

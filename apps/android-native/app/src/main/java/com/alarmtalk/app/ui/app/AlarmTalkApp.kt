@@ -493,7 +493,7 @@ internal fun AlarmTalkApp(
         viewModel.evaluatePersonalPromoEndNotice(gates, appEntry)
     }
 
-    // 강등 안내 모달 — "목소리 알람이 기본 알람음으로 바뀌었어요" 를 **한 번만** 말한다.
+    // 강등 안내 모달 — "목소리 알람이 기본 목소리로(무료 전환) / 기본 알람음으로(공유 해제·교체) 바뀌었어요" 를 **한 번만** 말한다.
     //
     // ⚠ 준비 신호를 첫 권한 안내와 **똑같이** 지킨다. 차단 화면(동의·업데이트·탈퇴 유예) 위에
     // 겹쳐 뜨면 읽을 수 없다 — `docs/spec/gates-and-overlays.md`.

@@ -862,7 +862,7 @@ Please update to the latest version.</string>
     <string name="misc2_theme_mode_light_short">Light</string>
     <string name="misc2_theme_mode_dark_short">Dark</string>
     <string name="downgrade_notice_free_title">You\'re on the free pass now</string>
-    <string name="downgrade_notice_free_message">%1$d voice alarm(s) now use the default sound. Subscribe again within 3 days to get the voices back; after that they are deleted permanently.</string>
+    <string name="downgrade_notice_free_message">%1$d voice alarm(s) now use a default voice. Subscribe again within 3 days to get your voices back; after that they are deleted permanently.</string>
     <string name="downgrade_notice_shared_title">You\'ve left the shared pass</string>
     <string name="downgrade_notice_replaced_title">Your voice was replaced</string>
     <string name="downgrade_notice_replaced_message">Registering a new voice turned %1$d alarm(s) with custom text back into the default alarm sound. Create those messages again with the new voice.</string>

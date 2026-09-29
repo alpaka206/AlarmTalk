@@ -1433,7 +1433,7 @@ final class VoiceStudioViewModel: ObservableObject {
         // `degradeAlarms(usingVoiceProfileIDs:)` 에 넘겼는데, 그 경로는 id 로 다시 훑어
         // **모든 origin·모든 소유자**를 잡는다 — 같은 공유 목소리를 쓰는 **받은 알람까지**
         // 벗겨 냈다. 여기서 좁힌 조건이 거기서 도로 넓어지는 셈이었다.
-        let targets = alarmStore.alarms.filter { record in
+        func lost(_ record: LocalAlarmRecord) -> Bool {
             // 받은 알람은 보낸 사람의 접근권으로 성립한다 — 내 목록으로 판단하지 않는다.
             guard record.originEnum == .localOwned else { return false }
             // 소유자 미기록(옛 행)은 이 계정 것으로 본다(안드로이드·잠금 경로와 같은 관용).
@@ -1442,6 +1442,12 @@ final class VoiceStudioViewModel: ObservableObject {
             // 시스템(기본) 목소리는 목록에 없어도 언제나 쓸 수 있다.
             return !isSystemVoiceId(voiceID) && !accessible.contains(voiceID)
         }
+        // 무료 잠금으로 기본 목소리가 된 행은 **보관본의 원래 목소리**로 본다 — 그 목소리가 지워졌으면
+        // 잠금을 확정한다(보관본을 버리고 기본 목소리로 남긴다. 알람음으로 내리지 않는다).
+        finalizeDefaultVoiceLocks(alarmStore: alarmStore, audioCache: audioCache) { record in
+            lost(DefaultVoiceSubstitute.restored(record, nowMillis: record.updatedAtMillis))
+        }
+        let targets = alarmStore.alarms.filter(lost)
         guard !targets.isEmpty else { return 0 }
         degrade(records: targets, alarmStore: alarmStore, audioCache: audioCache)
         return targets.count
@@ -1492,7 +1498,7 @@ final class VoiceStudioViewModel: ObservableObject {
     ) -> [String] {
         guard let owner = ownerUserId?.nilIfBlank else { return [] }
         guard allowSystemVoice || !isSystemVoiceId(profileID) else { return [] }
-        let targets = alarmStore.alarms.filter { record in
+        func stale(_ record: LocalAlarmRecord) -> Bool {
             // 받은 알람은 보낸 사람의 목소리로 성립한다 — 내 교체로 판단하지 않는다.
             guard record.originEnum == .localOwned else { return false }
             // 소유자 미기록(옛 행)은 이 계정 것으로 본다(안드로이드·잠금 경로와 같은 관용).
@@ -1512,6 +1518,11 @@ final class VoiceStudioViewModel: ObservableObject {
             }
             return record.usesCustomMessageVoice
         }
+        // 무료 잠금 보관본의 직접 입력 오디오도 옛 목소리다 — 되살리지 않게 잠금을 확정한다.
+        finalizeDefaultVoiceLocks(alarmStore: alarmStore, audioCache: audioCache) { record in
+            stale(DefaultVoiceSubstitute.restored(record, nowMillis: record.updatedAtMillis))
+        }
+        let targets = alarmStore.alarms.filter(stale)
         guard !targets.isEmpty else { return [] }
         degrade(records: targets, alarmStore: alarmStore, audioCache: audioCache)
         return targets.map(\.id)
@@ -1529,9 +1540,44 @@ final class VoiceStudioViewModel: ObservableObject {
         alarmStore: LocalAlarmStore,
         audioCache: AudioCacheStore?
     ) {
+        finalizeDefaultVoiceLocks(alarmStore: alarmStore, audioCache: audioCache) {
+            $0.preLockVoice?.voiceProfileId == profileID
+        }
         let affected = alarmStore.alarms.filter { $0.voiceProfileId == profileID }
         guard !affected.isEmpty else { return }
         degrade(records: affected, alarmStore: alarmStore, audioCache: audioCache)
+    }
+
+    /// 무료 잠금을 **확정**한다 — 보관본의 원래 목소리를 더는 쓸 수 없다(지워짐·공유 해제·제자리 교체).
+    ///
+    /// 행은 이미 기본 목소리로 울고 있으므로 소리는 그대로다 — 보관본과 표시만 버린다(알람음으로
+    /// 내리지 않는다, 강등 개수에도 넣지 않는다). 안 그러면 재결제 때 복원이 못 쓰는 목소리를
+    /// 되살려, 다음 강등이 그 알람을 알람음으로 내린다. 안드로이드는 `AlarmRepository` 의
+    /// `degradeMatchingLocalOwnedVoiceAlarms` 가 같은 일을 한다(`finalizedLock`).
+    /// 규칙: `docs/spec/billing-lifecycle.md` 「목소리를 못 쓰게 되면」.
+    private func finalizeDefaultVoiceLocks(
+        alarmStore: LocalAlarmStore,
+        audioCache: AudioCacheStore?,
+        where originalVoiceIsGone: (LocalAlarmRecord) -> Bool
+    ) {
+        let locked = alarmStore.alarms.filter { $0.preLockVoice != nil && originalVoiceIsGone($0) }
+        guard !locked.isEmpty else { return }
+        let now = Int64(Date().timeIntervalSince1970 * 1000)
+        var releasedKeys: Set<String> = []
+        for record in locked {
+            if let key = record.preLockVoice?.audioCacheKey?.nilIfBlank { releasedKeys.insert(key) }
+            _ = alarmStore.upsert(DefaultVoiceSubstitute.finalized(record, nowMillis: now))
+        }
+        if let audioCache, !releasedKeys.isEmpty {
+            let stillReferenced = Set(
+                alarmStore.alarms.compactMap(\.audioCacheKey)
+                    + alarmStore.alarms.flatMap { $0.preLockVoice?.referencedCacheKeys ?? [] }
+            )
+            for key in releasedKeys.subtracting(stillReferenced) {
+                try? audioCache.deleteCachedAudio(cacheKey: key)
+                AlarmSoundStaging.clearStagedSound(forKey: key)
+            }
+        }
     }
 
     /// 주어진 **행들**을 알람음으로 내리고, 더 이상 참조되지 않는 캐시를 정리한다.
@@ -1566,7 +1612,11 @@ final class VoiceStudioViewModel: ObservableObject {
         }
 
         if let audioCache, !releasedKeys.isEmpty {
-            let stillReferenced = Set(alarmStore.alarms.compactMap { $0.audioCacheKey })
+            // 무료 잠금 보관본이 붙든 원래 오디오도 참조로 센다 — 지우면 재결제 때 복원할 소리가 없다.
+            let stillReferenced = Set(
+                alarmStore.alarms.compactMap { $0.audioCacheKey }
+                    + alarmStore.alarms.flatMap { $0.preLockVoice?.referencedCacheKeys ?? [] }
+            )
             let toRemove = releasedKeys.subtracting(stillReferenced)
             for key in toRemove {
                 try? audioCache.deleteCachedAudio(cacheKey: key)

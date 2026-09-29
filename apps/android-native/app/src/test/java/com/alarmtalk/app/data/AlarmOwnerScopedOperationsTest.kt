@@ -402,7 +402,10 @@ class AlarmOwnerScopedOperationsTest {
 
         assertEquals(1, repository.lockPaidAlarmTalks())
         assertEquals("user-b", dao.getById("legacy-1")?.ownerUserId)
-        assertEquals(AlarmPlayModes.ALARM_ONLY, dao.getById("legacy-1")?.playMode)
+        // 2026-09-29 부터 잠금은 '알람' 모드로 내리지 않고 기본 목소리 알람으로 고쳐 쓴다
+        // (billing-lifecycle.md 「목소리를 못 쓰게 되면」).
+        assertEquals(AlarmPlayModes.VOICE_ONLY, dao.getById("legacy-1")?.playMode)
+        assertTrue(isSystemVoiceId(dao.getById("legacy-1")?.voiceProfileId))
     }
 
     @Test

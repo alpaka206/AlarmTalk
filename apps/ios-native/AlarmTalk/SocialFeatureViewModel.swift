@@ -695,13 +695,18 @@ final class SocialFeatureViewModel: ObservableObject {
         }
     }
 
-    /// 무료 전환 시 목소리 알람을 **잠근다**(안드로이드 `AlarmRepository.lockPaidAlarmTalks` 미러).
+    /// 무료 전환 시 목소리 알람을 **기본 목소리 알람으로 잠근다**(안드로이드
+    /// `AlarmRepository.lockPaidAlarmTalks` 미러).
     ///
     /// ⚠ **지우지 않는다.** 예전 iOS 는 `alarmKit.cancel` 로 행과 음원을 함께 **영구
     /// 삭제**했다 — 시각·반복·문구·목소리 선택이 전부 사라지고 재결제해도 돌아오지
     /// 않았다. 알람 앱에서 "내일 아침 알람이 없어졌다" 는 가장 무거운 실패다.
-    /// 안드로이드는 원래 `playMode` 를 `preLockPlayMode` 에 보관하고 `alarm_only` 로
-    /// 내려 **사운드온리로 계속 울린다**. 다시 유료가 되면 그대로 되살아난다.
+    ///
+    /// ⚠ **'알람' 모드로 내리지도 않는다**(2026-09-29 dev 리허설). 예전에는 `alarm_only` 로 내렸고,
+    /// 목록·편집기에서 그 알람이 **그냥 기본 알람**이 됐다(안드로이드는 그 모양이 무음으로 울렸다).
+    /// 이제 재생 방식은 그대로 두고 목소리만 기본 목소리로 바꾼다(`DefaultVoiceSubstitute.locked`).
+    /// 원래 재생 방식은 `preLockPlayMode`, 원래 목소리는 `preLockVoice` 에 보관해 다시 유료가 되면
+    /// 되살린다. 규칙: `docs/spec/billing-lifecycle.md` 「목소리를 못 쓰게 되면」.
     ///
     /// - Parameter expectedOwnerUserId: 이 계정 알람만 건드린다. 같은 기기에서 계정을
     ///   바꿨을 때 앞 계정 알람까지 잠그지 않기 위한 가드(안드로이드와 동일).
@@ -730,6 +735,9 @@ final class SocialFeatureViewModel: ObservableObject {
         // 사용자의 목소리 알람이 영영 알람음으로 남는다(2026-08-18 판정 수정과 한 쌍).
         let staleLocks = alarmStore.alarms.filter { record in
             record.preLockPlayMode != nil
+                // ⚠ 새 모양(기본 목소리 + 보관본)으로 잠긴 행은 이제 무료 기본 목소리 알람이라
+                // `isPaidVoiceForDowngrade` 가 거짓이다 — 여기 걸리면 보관본을 버린 채 풀려 버린다.
+                && record.preLockVoice == nil
                 && record.originEnum == .localOwned
                 && !record.isPaidVoiceForDowngrade
                 && (expectedOwnerUserId == nil || record.ownerUserId == nil
@@ -749,6 +757,10 @@ final class SocialFeatureViewModel: ObservableObject {
         }
 
         var locked = 0
+        let voicePreferences = DefaultVoicePreferenceStore()
+        let manifest = StockClipManifestStore.load()?.clips
+        let deviceLanguage = VoiceStudioViewModel.appVoiceLanguage()
+        let nowMillis = Int64(Date().timeIntervalSince1970 * 1000)
         for record in targets {
             // ⚠ **밀려난 잠금은 여기서 멈춘다**(2026-09-01 리뷰). 이 함수는 `.task(id:)` 에서
             // 도는데, 도는 도중 StoreKit 이 유료를 알려 오면 그 태스크가 **취소되고 복원
@@ -756,36 +768,41 @@ final class SocialFeatureViewModel: ObservableObject {
             // 남은 알람들을 계속 잠근다 — 돈 내는 사용자의 알람이 알람음으로 남는다.
             // `AlarmKitViewModel.schedule` 은 행을 이미 고친 **뒤에야** 취소를 알아챈다.
             if Task.isCancelled { return locked }
-            var updated = record
-            // 이미 잠긴 알람을 다시 잠그면 원래 값을 잃는다 — 처음 한 번만 적는다.
-            let needsLock = updated.preLockPlayMode == nil
-            if needsLock {
-                updated.preLockPlayMode = updated.playMode
-            }
-            updated.playMode = AlarmPlayMode.alarmOnly.rawValue
+            // 처음 잠그는 행만 센다 — 옛 모양(`alarm_only` + `preLockPlayMode`)을 새 모양으로 옮기는 것은
+            // 이미 알린 알람이라 강등 안내 개수에 다시 넣지 않는다. 보관본은 처음 한 번만 적는다
+            // (`DefaultVoiceSubstitute.locked` 가 이미 있는 값을 덮지 않는다).
+            let needsLock = record.preLockPlayMode == nil
+            let voiceID = DefaultVoiceSubstitute.pickVoiceID(
+                alarmVoiceID: record.voiceProfileId,
+                lastUsedVoiceID: voicePreferences.lastUsedVoiceId(userID: record.ownerUserId ?? expectedOwnerUserId)
+            )
+            let binding = DefaultVoiceSubstitute.binding(
+                for: record,
+                voiceID: voiceID,
+                manifest: manifest,
+                languages: DefaultVoiceSubstitute.languages(for: record, deviceLanguage: deviceLanguage),
+                cachedURL: { alarmKit.audioCache.cachedURL(for: $0) }
+            )
+            let updated = DefaultVoiceSubstitute.locked(record, voiceID: voiceID, binding: binding, nowMillis: nowMillis)
             // ⚠ **쓰기 직전에 한 번 더 본다**(2026-09-01 리뷰). 위 검사와 이 쓰기 사이에
             // StoreKit 이 유료를 알려 오면 반대 태스크가 시작돼 대상 목록을 잡는데, 그
             // 뒤에 이 행을 고치면 `schedule` 이 취소를 알아채고 물러나도 **행은 이미 바뀐
             // 채로 남는다** — 방금 결제한 사용자의 알람이 alarm_only 로 굳는다.
             if Task.isCancelled { return locked }
             _ = alarmStore.upsert(updated)
-            // ⚠ **새로 잠근 것만 다시 예약한다.** 이미 잠긴 알람은 재생 방식이 그대로라
-            // 예약을 건드릴 이유가 없다(안드로이드 `lockPaidAlarmTalks` 도 `needsLock` 일 때만 한다).
-            if needsLock {
-                // 사운드온리로 **다시 예약한다.** 재예약을 빠뜨리면 잠근 게 아니라
-                // 조용히 안 울리는 알람이 된다.
-                //
-                // ⚠ **옛 핸들을 반드시 취소한다.** 예전에는 schedule 만 불러서, 유료
-                // 목소리로 걸어 둔 예약이 OS 에 그대로 남았다 — 무료로 떨어진 사용자가
-                // 계속 클론 목소리를 듣고 같은 시각에 알람이 둘 울렸다. 게이트가 막았다고
-                // 믿는 바로 그 자리에서 샌 것이다.
-                let previous = record
-                if await alarmKit.schedule(record: updated, store: alarmStore),
-                   previous.alarmKitID != nil {
-                    await alarmKit.cancelScheduledAlarm(record: previous)
-                }
-                locked += 1
+            // 기본 목소리로 **다시 예약한다**(옛 모양을 옮긴 행도 소리가 바뀌므로 다시 건다).
+            // 재예약을 빠뜨리면 행과 실제 소리가 갈라진다.
+            //
+            // ⚠ **옛 핸들을 반드시 취소한다.** 예전에는 schedule 만 불러서, 유료
+            // 목소리로 걸어 둔 예약이 OS 에 그대로 남았다 — 무료로 떨어진 사용자가
+            // 계속 클론 목소리를 듣고 같은 시각에 알람이 둘 울렸다. 게이트가 막았다고
+            // 믿는 바로 그 자리에서 샌 것이다.
+            let previous = record
+            if await alarmKit.schedule(record: updated, store: alarmStore),
+               previous.alarmKitID != nil {
+                await alarmKit.cancelScheduledAlarm(record: previous)
             }
+            if needsLock { locked += 1 }
         }
 
         voiceStudio.clearPaidVoiceState()
@@ -819,9 +836,12 @@ final class SocialFeatureViewModel: ObservableObject {
             // 잠금이 시작되는데, 취소를 안 보면 옛 복원 루프가 잠금이 대상 목록을 잡은
             // **뒤에** 남은 알람을 되살려 **무료 계정에 클론 오디오가 예약된 채로 남는다.**
             if Task.isCancelled { return restored }
-            var updated = record
-            updated.playMode = updated.preLockPlayMode ?? updated.playMode
-            updated.preLockPlayMode = nil
+            // 보관본이 있으면 원래 유료 목소리 필드까지 되돌린다(`DefaultVoiceSubstitute.restored`).
+            var updated = DefaultVoiceSubstitute.restored(record, nowMillis: Int64(Date().timeIntervalSince1970 * 1000))
+            if record.preLockVoice != nil {
+                // 잠긴 동안 켜기·끄기가 기본 목소리를 서버에 올렸을 수 있다 — 되돌린 것을 다시 올린다.
+                updated.syncState = alarmStore.nextLocalSyncState(for: updated).rawValue
+            }
             // 위 잠금 루프와 같은 이유 — 쓰기 직전에 한 번 더 본다.
             if Task.isCancelled { return restored }
             _ = alarmStore.upsert(updated)

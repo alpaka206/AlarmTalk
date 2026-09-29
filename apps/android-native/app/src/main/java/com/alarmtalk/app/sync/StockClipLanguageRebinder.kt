@@ -10,6 +10,7 @@ import com.alarmtalk.app.data.AlarmEntity
 import com.alarmtalk.app.data.AlarmPlayModes
 import com.alarmtalk.app.data.VoiceSources
 import com.alarmtalk.app.data.decodeBucketClipKeys
+import com.alarmtalk.app.data.lockedPaidVoice
 import com.alarmtalk.app.data.encodeBucketClipKeys
 import com.alarmtalk.app.data.nextLocalSyncState
 import com.alarmtalk.app.network.AlarmTalkApi
@@ -551,6 +552,9 @@ object StockClipLanguageRebinder {
         alarms.forEach { alarm ->
             referenced += decodeBucketClipKeys(alarm.bucketClipKeysJson)
             alarm.audioCacheKey?.takeIf { it.isNotBlank() }?.let { referenced += it }
+            // 무료 잠금 보관본이 붙든 원래 목소리 클립도 남긴다 — 재결제 때 복원할 소리다
+            // (billing-lifecycle.md 「목소리를 못 쓰게 되면」).
+            alarm.lockedPaidVoice()?.let { referenced += it.referencedCacheKeys() }
         }
         AlarmAudioStore(context).pruneReplacedStockAudio(referenced, liveKeys)
     }

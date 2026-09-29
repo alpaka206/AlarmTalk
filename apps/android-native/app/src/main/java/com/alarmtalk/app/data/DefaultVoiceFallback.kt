@@ -1,0 +1,326 @@
+package com.alarmtalk.app.data
+
+import com.alarmtalk.app.FreeBucketOrder
+import com.alarmtalk.app.clonePrerenderBucketCategoryFor
+import com.alarmtalk.app.network.StockClip
+import com.alarmtalk.app.randomPromptContextForBucket
+import com.google.gson.Gson
+
+/*
+ * 유료 목소리를 못 쓰게 된 알람의 **기본 목소리 대체** — 판정만 모은 순수 함수들이다.
+ *
+ * 규칙의 유일 출처는 `docs/spec/billing-lifecycle.md` 「목소리를 못 쓰게 되면 — 기본 목소리로
+ * 울고, 절대 조용하지 않다」다. 울림 쪽 약속은 `docs/spec/alarm-ringing.md` §4.
+ *
+ * 2026-09-29 dev 리허설(SM-A325N): 기간 한정 개인 플랜이 끝난 뒤 클론 목소리 알람이 **아무 소리
+ * 없이** 울렸다. 잠금이 그 알람을 '알람' 모드로 내렸고, '알람' 모드는 목소리 알람이라 한 번도
+ * 쓰이지 않던 알람음 스위치(꺼짐)를 봤다. 그래서 이제 잠금·울림 강등은 '알람' 모드가 아니라
+ * **기본 목소리**로 간다.
+ *
+ * iOS 짝은 `DefaultVoiceSubstitute.swift` — 한쪽만 고치지 말 것.
+ */
+
+/**
+ * 대체할 **기본(시스템) 목소리**를 고른다.
+ *
+ *  1. 알람이 이미 기본 목소리면 그 목소리(목소리를 바꿀 이유가 없다).
+ *  2. 그 계정이 마지막에 쓴 목소리가 기본 목소리면 그것(`DefaultVoicePreferenceStore` —
+ *     클론이면 건너뛴다. 그 목소리를 못 쓰게 돼서 여기 왔다).
+ *  3. 둘 다 아니면 기본 목소리 목록의 첫 값.
+ */
+fun pickDefaultSystemVoiceId(alarmVoiceId: String?, lastUsedVoiceId: String?): String =
+    alarmVoiceId?.takeIf { isSystemVoiceId(it) }
+        ?: lastUsedVoiceId?.takeIf { isSystemVoiceId(it) }
+        ?: bundledSystemVoiceProfiles().first().id
+
+/**
+ * 기본 목소리로 틀 **무료 테마(버킷)** — 알람이 고른 문구 종류에서 유도한다.
+ *
+ * 테마가 붙어 있으면 그 테마가 답이다(울릴 때 무엇이 나올지 정하는 것은 `bucketId` 다 —
+ * 옛 이름 `love` 는 `cheer` 로 접는다). 없으면 문구 종류를 테마로 옮긴다
+ * ([clonePrerenderBucketCategoryFor]). 기본 목소리에 그 종류의 클립이 **없으면** null —
+ * 기본 인사말(`greeting`)·직접 입력이 그렇다. 그때 울림은 내장 인사말로 간다.
+ */
+fun defaultVoiceBucketFor(bucketId: String?, voiceRandomContext: String?): String? {
+    val fromBucket = bucketId?.trim()?.takeIf { it.isNotEmpty() }?.let { if (it == "love") "cheer" else it }
+    val candidate = fromBucket ?: clonePrerenderBucketCategoryFor(voiceRandomContext)
+    return candidate?.takeIf { it in FreeBucketOrder }
+}
+
+/** 기본 목소리 클립 한 개 — 캐시에 **있는** 것만 만든다. */
+data class DefaultVoiceClip(
+    val messageId: String,
+    val cacheKey: String,
+    val text: String,
+    val localAudioUri: String,
+    val rawAudioUri: String?,
+)
+
+/**
+ * (목소리 · 테마 · 언어)의 클립을 **variant 순으로, 전부 캐시에 있을 때만** 모은다.
+ *
+ * ⚠ **하나라도 빠지면 null 이다 — 있는 것만 모으지 말 것.** 날씨·운세는 자리 번호가 곧
+ * 조건이라(`keys[i]` = variant i), 빠진 클립을 건너뛰어 묶으면 뒤 자리가 통째로 밀려 **맑은
+ * 날에 우산 얘기**를 한다. 편집기(`bindStockBucketClips`)가 빠진 것을 받아서라도 전부 묶는
+ * 것과 같은 계약이다 — 여기서는 네트워크를 부르지 않으므로 못 받은 것이 있으면 묶지 않는다.
+ *
+ * 정렬·중복 제거는 편집기와 같다(`sortedBy { variant }.distinctBy { variant }`).
+ */
+fun defaultVoiceClipSet(
+    clips: List<StockClip>,
+    voiceProfileId: String,
+    bucket: String,
+    language: String,
+    cached: (cacheKey: String, audioUrl: String?) -> CachedAlarmAudio?,
+): List<DefaultVoiceClip>? {
+    val matching = clips
+        .filter { it.voiceProfileId == voiceProfileId && it.category == bucket && (it.language ?: "ko") == language }
+        .sortedBy { it.variant }
+        .distinctBy { it.variant }
+    if (matching.isEmpty()) return null
+    return matching.map { clip ->
+        val key = AlarmAudioStore.STOCK_CACHE_KEY_PREFIX + clip.messageId
+        val audio = cached(key, clip.audioUrl) ?: return null
+        DefaultVoiceClip(
+            messageId = clip.messageId,
+            cacheKey = audio.cacheKey ?: key,
+            text = clip.text,
+            localAudioUri = audio.localAudioUri,
+            rawAudioUri = audio.rawAudioUri,
+        )
+    }
+}
+
+/**
+ * **울릴 때 쓸 기본 목소리 클립 자리** — 알람에 이미 적힌 값으로 고른다(네트워크 없음).
+ *
+ * 클론과 기본 목소리는 테마마다 variant 축이 같다(백엔드 `STOCK_CLIP_PRESETS` ↔
+ * `CLONE_CLIP_SEEDS` — 날씨 9·운세 5). 그래서 알람의 날씨 조건 인덱스·사주·회전 자리를
+ * 그대로 기본 목소리 클립 목록에 대면 된다 — [bucketVariantIndex] 를 그대로 쓴다.
+ */
+fun AlarmEntity.defaultVoiceVariantIndex(bucket: String, clipKeys: List<String>): Int? =
+    copy(bucketId = bucket, bucketClipKeysJson = encodeBucketClipKeys(clipKeys)).bucketVariantIndex()
+
+/**
+ * 잠그기 전의 **유료 목소리 필드** — 잠금 보관본([AlarmEntity.preLockVoiceJson])의 모양.
+ *
+ * 재생 방식은 여기 없다 — 예전처럼 [AlarmEntity.preLockPlayMode] 에 둔다.
+ * Gson 이 코틀린 기본값을 적용하지 않으므로(리플렉션 생성) 전부 nullable 로 둔다.
+ */
+data class LockedPaidVoice(
+    val voiceSource: String? = null,
+    val voiceProfileId: String? = null,
+    val voiceListenerTitle: String? = null,
+    val voiceText: String? = null,
+    val voiceCategory: String? = null,
+    val voiceLanguage: String? = null,
+    val voiceRandomPrompt: Boolean? = null,
+    val voiceRandomContext: String? = null,
+    val localAudioUri: String? = null,
+    val audioCacheKey: String? = null,
+    val rawAudioUri: String? = null,
+    val ttsMessageId: String? = null,
+    val bucketId: String? = null,
+    val bucketRotationIndex: Int? = null,
+    val bucketClipKeysJson: String? = null,
+    val bucketClipTextsJson: String? = null,
+    val contextVariantIndex: Int? = null,
+    val contextResolvedAtMillis: Long? = null,
+    val dynamicVoicePreparedForFireAtMillis: Long? = null,
+) {
+    /** 이 보관본이 붙들고 있는 캐시 키 — 캐시 정리가 지우지 않게 참조로 센다. */
+    fun referencedCacheKeys(): List<String> =
+        listOfNotNull(audioCacheKey?.takeIf { it.isNotBlank() }) + decodeBucketClipKeys(bucketClipKeysJson)
+
+    companion object {
+        private val gson = Gson()
+
+        fun of(alarm: AlarmEntity) = LockedPaidVoice(
+            voiceSource = alarm.voiceSource,
+            voiceProfileId = alarm.voiceProfileId,
+            voiceListenerTitle = alarm.voiceListenerTitle,
+            voiceText = alarm.voiceText,
+            voiceCategory = alarm.voiceCategory,
+            voiceLanguage = alarm.voiceLanguage,
+            voiceRandomPrompt = alarm.voiceRandomPrompt,
+            voiceRandomContext = alarm.voiceRandomContext,
+            localAudioUri = alarm.localAudioUri,
+            audioCacheKey = alarm.audioCacheKey,
+            rawAudioUri = alarm.rawAudioUri,
+            ttsMessageId = alarm.ttsMessageId,
+            bucketId = alarm.bucketId,
+            bucketRotationIndex = alarm.bucketRotationIndex,
+            bucketClipKeysJson = alarm.bucketClipKeysJson,
+            bucketClipTextsJson = alarm.bucketClipTextsJson,
+            contextVariantIndex = alarm.contextVariantIndex,
+            contextResolvedAtMillis = alarm.contextResolvedAtMillis,
+            dynamicVoicePreparedForFireAtMillis = alarm.dynamicVoicePreparedForFireAtMillis,
+        )
+
+        fun encode(value: LockedPaidVoice): String = gson.toJson(value)
+
+        /** 깨진 값은 null — 보관본 하나 때문에 알람을 못 읽으면 안 된다. */
+        fun decode(json: String?): LockedPaidVoice? =
+            json?.takeIf { it.isNotBlank() }?.let {
+                runCatching { gson.fromJson(it, LockedPaidVoice::class.java) }.getOrNull()
+            }
+    }
+}
+
+/** 새 모양(기본 목소리로 고쳐 쓰고 원래 목소리를 보관)으로 잠긴 행인가. */
+fun AlarmEntity.hasLockedPaidVoice(): Boolean = !preLockVoiceJson.isNullOrBlank()
+
+fun AlarmEntity.lockedPaidVoice(): LockedPaidVoice? = LockedPaidVoice.decode(preLockVoiceJson)
+
+/**
+ * **이 행을 말하게 할 유료 목소리 자원이 있는가** — 재생 방식은 보지 않는다.
+ *
+ * `AlarmRepository.lockPaidAlarmTalks` 의 `usesVoice` 와 `RingingService` 의 판정이 쓰는
+ * 같은 식이다(재생 방식만으로 '유료 목소리' 라고 하지 말 것 — 2026-08-18).
+ */
+fun AlarmEntity.hasVoiceResources(): Boolean =
+    !localAudioUri.isNullOrBlank() ||
+        !rawAudioUri.isNullOrBlank() ||
+        !voiceProfileId.isNullOrBlank() ||
+        !ttsMessageId.isNullOrBlank()
+
+/**
+ * **이 버전 전에 잠긴 옛 모양**인가 — `alarm_only` 로 내리고 원래 모드를 `preLockPlayMode` 에
+ * 담았지만 보관본은 없고, 클론 참조가 행에 그대로 남아 있다.
+ *
+ * 목소리 삭제 강등(`degradeMatchingLocalOwnedVoiceAlarms`)도 같은 표시를 남기지만 그쪽은
+ * 목소리 참조를 **비운다** — 그래서 [hasVoiceResources] 로 갈린다. 다음 잠금 실행이 이 모양을
+ * 새 모양으로 옮기고, 그 전에 울리면 울림 경로가 기본 목소리로 대신한다.
+ */
+fun AlarmEntity.isLegacyPlanLock(): Boolean =
+    origin == AlarmOrigins.LOCAL_OWNED &&
+        !hasLockedPaidVoice() &&
+        wasVoiceAlarmConvertedBySystem() &&
+        hasVoiceResources() &&
+        // 옛 규칙(직접 녹음 = 유료)으로 잠긴 녹음·기본 목소리 알람은 유료가 아니다 — 잠금
+        // 실행이 그 행을 풀어 준다(`lockPaidAlarmTalks` 의 되돌리기 갈래).
+        !copy(playMode = AlarmPlayModes.normalize(preLockPlayMode)).usesFreeSystemVoiceAlarm()
+
+/**
+ * **시스템이 목소리 알람을 '알람' 모드로 바꿔 둔 행**인가 — 목소리 삭제·공유 해제 강등이
+ * 남긴 표시(`preLockPlayMode` 가 목소리 모드)나 옛 모양 잠금.
+ *
+ * 이런 행의 알람음 스위치는 목소리 알람 시절에 한 번도 쓰이지 않던 값이라, 꺼져 있어도
+ * **사용자가 고른 무음이 아니다** — 울릴 때 알람음을 강제한다(alarm-ringing.md §4).
+ */
+fun AlarmEntity.wasVoiceAlarmConvertedBySystem(): Boolean =
+    !preLockPlayMode.isNullOrBlank() &&
+        AlarmPlayModes.normalize(preLockPlayMode) != AlarmPlayModes.ALARM_ONLY &&
+        AlarmPlayModes.normalize(playMode) == AlarmPlayModes.ALARM_ONLY
+
+/**
+ * 유료 목소리 알람을 **기본 목소리 알람으로 잠근다**(순수 — 행을 쓰는 것은 호출부).
+ *
+ * - 재생 방식은 원래 값 그대로다(옛 모양이면 `preLockPlayMode` 의 값). 목록·편집기에서
+ *   '그냥 기본 알람' 이 되지 않는다 — 2026-09-29 리허설의 지적.
+ * - [clips] 가 있으면 편집기가 테마를 붙일 때(`AlarmEditorState.setBucketAudio`)와 같은
+ *   모양으로 묶는다. null 이면 오디오 없는 기본 목소리 알람으로 둔다 — 울릴 때
+ *   `RingingService` 가 그 목소리의 클립·내장 인사말을 찾는다.
+ * - 문구 종류(`voiceRandomContext`)는 그대로 둔다 — 편집기 요약이 고른 종류를 말한다.
+ * - 원래 목소리 필드는 [LockedPaidVoice] 로 보관한다. 이미 보관본이 있으면 **덮지 않는다**
+ *   (다시 잠그면 원래 값을 잃는다).
+ * - 동기 상태는 건드리지 않는다 — 잠금은 예전처럼 로컬만 고친다.
+ */
+fun AlarmEntity.lockedToDefaultVoice(
+    systemVoiceId: String,
+    bucket: String?,
+    language: String?,
+    clips: List<DefaultVoiceClip>?,
+    nowMillis: Long,
+): AlarmEntity {
+    val originalMode = preLockPlayMode?.takeIf { it.isNotBlank() } ?: playMode
+    val snapshot = preLockVoiceJson?.takeIf { it.isNotBlank() } ?: LockedPaidVoice.encode(LockedPaidVoice.of(this))
+    val bound = clips?.takeIf { bucket != null && it.isNotEmpty() }
+    val base = copy(
+        playMode = AlarmPlayModes.normalize(originalMode),
+        preLockPlayMode = originalMode,
+        preLockVoiceJson = snapshot,
+        voiceSource = VoiceSources.TTS_PROFILE,
+        voiceProfileId = systemVoiceId,
+        // 호칭은 클론 문구에 녹아 있던 것이라 기본 목소리 클립과 무관하다.
+        voiceListenerTitle = null,
+        voiceRandomPrompt = false,
+        voiceRandomContext = voiceRandomContext ?: randomPromptContextForBucket(bucket ?: bucketId),
+        updatedAtMillis = nowMillis,
+    )
+    if (bound == null) {
+        return base.copy(
+            // 직접 입력은 친 문구를 남긴다(편집기 상세 카드가 보여 준다). 그 밖에는 클론이
+            // 읽던 문장이라, 기본 목소리가 다른 말을 하는 동안 잠금화면에 남기지 않는다.
+            voiceText = voiceText.takeIf { usesCustomMessageVoice() },
+            localAudioUri = null,
+            audioCacheKey = null,
+            rawAudioUri = null,
+            ttsMessageId = null,
+            bucketId = null,
+            bucketClipKeysJson = null,
+            bucketClipTextsJson = null,
+            bucketRotationIndex = 0,
+        )
+    }
+    val first = bound.first()
+    return base.copy(
+        voiceText = first.text,
+        voiceLanguage = language ?: voiceLanguage,
+        localAudioUri = first.localAudioUri,
+        audioCacheKey = first.cacheKey,
+        rawAudioUri = first.rawAudioUri,
+        ttsMessageId = first.messageId,
+        bucketId = bucket,
+        bucketClipKeysJson = encodeBucketClipKeys(bound.map { it.cacheKey }),
+        bucketClipTextsJson = encodeBucketClipKeys(bound.map { it.text }),
+        // 같은 테마면 회전 자리를 이어 간다(날씨 조건 인덱스는 variant 축이 같아 그대로 쓴다).
+        bucketRotationIndex = if (bucket == bucketId) bucketRotationIndex else 0,
+    )
+}
+
+/**
+ * 잠금을 풀어 **원래 유료 목소리로 되돌린다**(순수).
+ *
+ * 보관본이 없는 옛 모양·강등 표시는 예전처럼 재생 방식만 되돌린다. 보관본이 있으면 목소리
+ * 필드까지 되돌리고 **동기화 대상으로 올린다** — 잠긴 동안 켜기·끄기가 기본 목소리를 서버에
+ * 올렸을 수 있다(`nextLocalSyncState`).
+ */
+fun AlarmEntity.restoredFromLock(nowMillis: Long): AlarmEntity {
+    val mode = preLockPlayMode?.takeIf { it.isNotBlank() } ?: playMode
+    val snapshot = lockedPaidVoice()
+        ?: return copy(playMode = mode, preLockPlayMode = null, preLockVoiceJson = null, updatedAtMillis = nowMillis)
+    return copy(
+        playMode = mode,
+        preLockPlayMode = null,
+        preLockVoiceJson = null,
+        voiceSource = snapshot.voiceSource ?: voiceSource,
+        voiceProfileId = snapshot.voiceProfileId,
+        voiceListenerTitle = snapshot.voiceListenerTitle,
+        voiceText = snapshot.voiceText,
+        voiceCategory = snapshot.voiceCategory,
+        voiceLanguage = snapshot.voiceLanguage,
+        voiceRandomPrompt = snapshot.voiceRandomPrompt ?: false,
+        voiceRandomContext = snapshot.voiceRandomContext,
+        localAudioUri = snapshot.localAudioUri,
+        audioCacheKey = snapshot.audioCacheKey,
+        rawAudioUri = snapshot.rawAudioUri,
+        ttsMessageId = snapshot.ttsMessageId,
+        bucketId = snapshot.bucketId,
+        bucketRotationIndex = snapshot.bucketRotationIndex ?: 0,
+        bucketClipKeysJson = snapshot.bucketClipKeysJson,
+        bucketClipTextsJson = snapshot.bucketClipTextsJson,
+        contextVariantIndex = snapshot.contextVariantIndex,
+        contextResolvedAtMillis = snapshot.contextResolvedAtMillis,
+        dynamicVoicePreparedForFireAtMillis = snapshot.dynamicVoicePreparedForFireAtMillis,
+        syncState = nextLocalSyncState(),
+        updatedAtMillis = nowMillis,
+    )
+}
+
+/**
+ * 잠금을 **확정**한다 — 보관 기간이 지나 원래 목소리가 지워졌다. 보관본과 표시를 버리고
+ * 지금의 기본 목소리 알람으로 남긴다. 알람음으로 내리지 않는다.
+ */
+fun AlarmEntity.finalizedLock(nowMillis: Long): AlarmEntity =
+    copy(preLockPlayMode = null, preLockVoiceJson = null, updatedAtMillis = nowMillis)

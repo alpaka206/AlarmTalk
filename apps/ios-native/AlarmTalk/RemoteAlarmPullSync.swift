@@ -611,6 +611,9 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
         //    알람이 안 돌아온다.
         //  - `ownerUserId` — 잠금이 다른 계정 알람을 건드리지 않게 막는 가드.
         merged.preLockPlayMode = existing.preLockPlayMode
+        //  - `preLockVoice` — 무료 잠금 보관본(원래 유료 목소리). 서버에 사본이 없다 — 잃으면
+        //    재결제해도 원래 목소리가 안 돌아온다(billing-lifecycle.md 「목소리를 못 쓰게 되면」).
+        merged.preLockVoice = existing.preLockVoice
         merged.ownerUserId = existing.ownerUserId
         // ⚠ `bucketId` 는 위 둘과 **다르다** — 서버에 사본이 있다(`alarms.bucket_id`).
         // 예전 주석은 "서버에 사본이 없다" 고 적고 무조건 로컬 값으로 덮었는데, 그러면

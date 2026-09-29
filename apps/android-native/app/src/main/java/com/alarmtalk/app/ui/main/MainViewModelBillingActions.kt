@@ -836,7 +836,9 @@ internal fun MainViewModel.cancelSubscription(atPeriodEnd: Boolean) {
 }
 
 // 정책 변경: 무료 전환 시 유료 목소리/알람 데이터를 삭제하지 않고, 기존 유료 목소리 알람을
-// 사운드온리로 '잠근다'(preLockPlayMode 에 원래 모드 보관). 다시 유료가 되면 그대로 복원한다.
+// **기본 목소리 알람으로** '잠근다'(원래 모드는 preLockPlayMode, 원래 목소리는 preLockVoiceJson 에
+// 보관 — 2026-09-29 부터. 그전에는 '알람' 모드로 내렸고 리허설에서 무음으로 울렸다). 다시 유료가
+// 되면 그대로 복원한다. 규칙: docs/spec/billing-lifecycle.md 「목소리를 못 쓰게 되면」.
 // 새 목소리 알람 생성·TTS 합성은 유료 게이트가 이미 막는다.
 internal fun MainViewModel.applyFreePlanVoiceLock() {
     // 이 강등을 확정한 계정을 코루틴 **밖에서** 잡아 함께 넘긴다 — 그 사이 계정이 바뀌면

@@ -208,6 +208,27 @@ HOME 을 가로챌 수 없다 — 유일한 수단인 화면 고정(`startLockTa
 
 ## 4. 소리 규약
 
+- ⚠ **조용한 알람은 사용자가 고른 것뿐이다**(2026-09-29 dev 리허설, SM-A325N · dev 1.2.10).
+  알람이 아무 소리도 내지 않는 경우는 둘뿐이다 — **'알람' 모드 + 알람음 끔**(진동·화면만)과
+  **목소리 크기 0 인 옛 행**. 그 밖에 목소리를 틀 수 없으면 **기본 목소리**로, 그것도 없으면
+  **알람음을 강제**로 튼다(스위치 무시, 크기 = 그 알람의 목소리·알람음 크기 중 큰 값, 하한 10%).
+  - 목소리를 틀 수 없는 경우: 울리는 지금 유료 목소리 권한이 없다(본인 알람만 — 받은 알람은
+    보낸 사람의 구독으로 성립한다) · 이 버전 전에 '알람' 모드로 잠긴 옛 모양 → **기본 목소리**.
+    오디오 없는 기본 목소리 알람 → 그 목소리의 클립·내장 인사말. 그 밖의 오디오 없음·플레이어
+    실패 → 알람음 강제.
+  - 시스템이 목소리 알람을 '알람' 모드로 바꿔 둔 행(잠금·강등 표시 `preLockPlayMode` 가 목소리
+    모드)은 알람음 스위치가 꺼져 있어도 **강제한다** — 그 스위치는 목소리 알람 시절에 한 번도
+    쓰이지 않던 값이라 사용자가 고른 무음이 아니다.
+  - 리허설에서 이 규칙이 없어 클론 목소리 알람이 **아무 소리 없이** 울렸다. logcat 원문:
+    `Free plan at ring time — downgrading paid voice to alarm tone` → `Alarm tone off
+    (soundEnabled=false, volume=10)` → `Vibration disabled for ringing alarm`. 울릴 때 강등이
+    '알람' 모드로 내려가 목소리 알람의 꺼진 알람음 스위치를 봤다(진동은 그 알람의 설정대로 '없음').
+  - **진동은 이 판정과 무관하다** — 언제나 알람의 진동 설정 그대로다. 대체 경로가 진동을
+    켜지도 끄지도 않는다.
+  - 유료 목소리를 못 쓰게 된 경우의 규칙 전문(어느 기본 목소리·어느 문구·잠금 모양·복원)은
+    [billing-lifecycle.md](billing-lifecycle.md) 「목소리를 못 쓰게 되면」.
+  - iOS 는 AlarmKit 이 넘긴 소리가 없으면 시스템 기본음을 울리므로 무음 갈래가 애초에 없다.
+    같은 대체를 **예약할 때** 한다(울릴 때 앱 코드가 돌지 않는다).
 - **첫 샘플부터 제 크기.** 페이드인을 넣지 않는다 — TTS 한 문장이 램프 구간보다 짧아
   문장 전체가 작게 들린다.
 - **반복도 커지지 않는다**(2026-08-27 실기기 로그로 확인). 목소리는 900ms 간격으로 계속
@@ -344,6 +365,7 @@ iOS 에서 그 문구를 지우면 안 울릴 알람을 울릴 것처럼 보여 
 | 예약 | `alarm/AlarmScheduler.kt` | `AlarmManager.shared.schedule` (`AlarmKitViewModel.swift`) | — |
 | 소리 끄기(소유권 확인) | `RingingService.ringingTeardownBelongsToCurrentAlarm` → `stopRingingOutputs` | `AlarmAppContext.stopVoiceIfOwnedStatic` (끄기·다시울림·사라짐 셋 다 여기로) | — |
 | 기기 볼륨 원복 | `alarm/AlarmStreamVolume.kt` | 해당 없음 | — |
+| 조용한 알람은 사용자가 고른 것뿐 · 유료 목소리를 못 쓰면 기본 목소리(§4) | `alarm/RingSoundDecision.kt` `decideRingSound`·`ringSoundFactsFor`·`ringTimePaidVoiceUnusable`·`forcedTonePercent` → `RingingService.startRingingAudio`(`startAlarmToneLoop(forced)`) · 기본 목소리 소리 `data/DefaultVoiceClipSource.kt` `ringUri` — 테스트 `RingSoundDecisionTest` | 예약 때 `AlarmKitViewModel.effectiveRecordForScheduling` → `defaultVoiceSubstitute` · 오디오 없는 기본 목소리 알람은 `AlarmSoundResolver.plan`(1b) → `DefaultVoiceSubstitute.fallbackClip` — 테스트 `DefaultVoiceSubstituteTests` | — |
 | 재부팅/시간대 변경 재무장 | `alarm/BootCompletedReceiver.kt` | `observeTimeAndTimezoneChanges` (`AlarmTalkApp.swift`) | — |
 
 ## 검증 방법

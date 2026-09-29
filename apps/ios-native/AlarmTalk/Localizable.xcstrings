@@ -4446,19 +4446,19 @@
         }
       }
     },
-    "목소리 알람 %lld개가 기본 알람음으로 바뀌었어요. 3일 안에 이용권을 다시 등록하면 목소리가 돌아오고, 지나면 영구 삭제돼요." : {
+    "목소리 알람 %lld개가 기본 목소리로 바뀌었어요. 3일 안에 이용권을 다시 등록하면 내 목소리가 돌아오고, 지나면 영구 삭제돼요." : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%lld voice alarm(s) switched to the default alarm sound. Re-register a pass within 3 days to get the voices back; after that they're deleted for good."
+            "value" : "%lld voice alarm(s) switched to a default voice. Re-register a pass within 3 days to get your voices back; after that they're deleted for good."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "音声アラーム%lld件が標準のアラーム音に変わりました。3日以内に利用券を再登録すれば声が戻り、過ぎると完全に削除されます。"
+            "value" : "音声アラーム%lld件が基本の声に変わりました。3日以内に利用券を再登録すれば自分の声が戻り、過ぎると完全に削除されます。"
           }
         }
       }

@@ -365,14 +365,17 @@
     <string name="msg_gb_code_registered">코드를 등록했어요</string>
     <string name="msg_gb_promo_redeemed">프로모 코드를 적용했어요</string>
     <string name="msg_gb_free_plan_voice_alarms_locked">무료 이용권으로 전환되어 목소리 알람이 잠겼어요. 3일 안에 다시 등록하면 복구되고, 지나면 목소리가 영구 삭제돼요.</string>
-    <!-- 강등 안내 모달. 알람 행 배지를 대신한다 — 알람은 **정상 작동 중**(기본 알람음으로
-         울린다)이라 행마다 경고를 붙이면 고장난 앱처럼 읽힌다. 한 번만 말하고 끝낸다. -->
+    <!-- 강등 안내 모달. 알람 행 배지를 대신한다 — 알람은 **정상 작동 중**이라 행마다 경고를
+         붙이면 고장난 앱처럼 읽힌다. 한 번만 말하고 끝낸다.
+         ⚠ 무료 잠금은 2026-09-29 부터 **기본 목소리**로 바꾼다(알람음이 아니다 —
+         docs/spec/billing-lifecycle.md 「목소리를 못 쓰게 되면」). free 문구만 그렇고, 공유 해제·
+         제자리 교체는 목소리가 없어져 여전히 알람음으로 바뀐다. -->
     <!-- ⚠ **"돌아와요" 만 말하지 말 것.** 보관은 3일뿐이고 지나면 서버가 목소리 프로필·
          원본·생성 음성을 **영구 삭제**한다(`sweepPaidVoiceRetention` →
          `deleteSensitiveVoiceDataForUser`). 기한을 빼면 기다리면 되는 줄 알고 잃는다.
          숫자 3은 백엔드 `PAID_VOICE_RETENTION_DAYS` 와 짝이다 — 거기를 바꾸면 여기도. -->
     <string name="downgrade_notice_free_title">무료 이용권으로 바뀌었어요</string>
-    <string name="downgrade_notice_free_message">목소리 알람 %1$d개가 기본 알람음으로 바뀌었어요. 3일 안에 이용권을 다시 등록하면 목소리가 돌아오고, 지나면 영구 삭제돼요.</string>
+    <string name="downgrade_notice_free_message">목소리 알람 %1$d개가 기본 목소리로 바뀌었어요. 3일 안에 이용권을 다시 등록하면 내 목소리가 돌아오고, 지나면 영구 삭제돼요.</string>
     <string name="downgrade_notice_shared_title">공유 이용권에서 나가게 됐어요</string>
     <string name="downgrade_notice_replaced_title">새 목소리로 바뀌었어요</string>
     <string name="downgrade_notice_replaced_message">목소리를 새로 등록하면서 직접 입력한 문구로 만든 알람 %1$d개가 기본 알람음으로 바뀌었어요. 새 목소리로 문구를 다시 만들어 주세요.</string>
