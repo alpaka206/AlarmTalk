@@ -8,6 +8,8 @@
 export const WORKER_SECRET_KEYS = [
   'ELEVENLABS_API_KEY',
   // 합성 모델 id — 비워 둔다(= eleven_v3). 바꾸려면 재렌더 계획이 먼저다(`lib/voice-provider.ts` 의 `ttsModelId`).
+  // ⚠ 한 번 올린 값은 파일에서 비워도 안 지워진다(아래 `selectWorkerSecrets` 가 빈 값을 건너뛴다) — 되돌릴 때는
+  //   `wrangler secret delete ELEVENLABS_TTS_MODEL_ID --env <dev|production>`(`docs/ops/environments.md`).
   'ELEVENLABS_TTS_MODEL_ID',
   'TURSO_DATABASE_URL',
   'TURSO_AUTH_TOKEN',

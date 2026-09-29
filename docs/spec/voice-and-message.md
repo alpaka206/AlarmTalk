@@ -1104,7 +1104,8 @@ TTS 는 웃음 글자를 **글자로 읽는다**(2026-09-29 v3·v4·v4 Turbo 비
 
 ## 10. 합성 모델 — 지금은 **`eleven_v3`**, `eleven_v4_turbo` 전환을 검토 중이다
 
-- **지금 운영 모델은 `eleven_v3` 다.** 워커 변수 `ELEVENLABS_TTS_MODEL_ID` 는 **설정하지 않는다**(비우면 v3).
+- **지금 운영 모델은 `eleven_v3` 다.** 워커 변수 `ELEVENLABS_TTS_MODEL_ID` 는 **설정하지 않는다**(값이 없으면 v3 — 한 번
+  올린 값을 되돌릴 때는 파일에서 비우지 말고 `wrangler secret delete`, `docs/ops/environments.md` 「ElevenLabs 합성 모델」).
 - **`eleven_v4_turbo` 로 바꾸는 것을 검토 중이다.** 아래 비교를 들어 본 결과 v4 Turbo 가 낫게 들렸고, v4 와는
   차이를 듣지 못했다. 결정은 **클론 비교**(되살린 dev 클론으로 v3 와 Turbo 를 나란히)와 **실기기 음량 확인**
   (아래 도현 −4.3dB·애니 −5.9dB 가 폰 스피커에서 어떻게 들리는가) 뒤에 한다. 그 전에는 코드·설정 어디에서도 모델을 바꾸지 않는다.
