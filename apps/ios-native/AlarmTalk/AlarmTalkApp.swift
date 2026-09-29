@@ -299,6 +299,13 @@ struct AlarmTalkApp: App {
                         // 여기서 꽂으면 알림 권한 팝업을 기다리는 동안 '끊긴 로그아웃
                         // 이어서 끝내기' 가 기본값(아무것도 안 함)을 부를 수 있다.
                         push.start()
+                        // ⚠ **알람 저장소가 다 읽힐 때까지 기다린 뒤 돈다**(코덱스 #823 6차). 이
+                        //   태스크는 콜드 스타트 첫 화면에서 곧바로 돌아 디스크 로드보다 앞설 수 있다 —
+                        //   pull 의 준비 대기(3초, `RemoteAlarmPullSync.requireLoadedStore`)를 넘기면
+                        //   `storeNotReady` 로 빈손이 되고, 앱 시작의 사이클은 이것 하나라 놓친 가족
+                        //   알람 푸시를 다음 전경 복귀·탭 진입까지 못 받는다. 기다려도 막히는 것은 이
+                        //   태스크뿐이다(계정이 바뀌어 접히면 대기도 곧바로 물러선다).
+                        await alarmStore.waitUntilLoadedFromDisk(timeout: 30)
                         await remoteSync.runFullSync()
                         await refreshWeatherVariantsAndReconcile()
                         await storeRecovery

@@ -215,6 +215,25 @@ final class EntryRefreshFreshnessTests: XCTestCase {
         }
     }
 
+    /// 회귀(코덱스 #823 6차): 목록을 받은 뒤 강등 정합화(`onAuthoritativeRefresh`) 도중 태스크가
+    /// 취소되면(탭을 옮김) 창을 열지 않는다 — 열면 회수된 목소리의 예약이 남았는데 1분 안의 진입이
+    /// 그 재시도를 건너뛴다.
+    func test_강등_정합화_도중_취소되면_목소리_창을_열지_않는다() async throws {
+        try await withVoiceViewModel(clock: TestClock(now: t0)) { vm, current, listCalls in
+            // 정합화가 도는 사이 사용자가 탭을 옮겨 `.task(id: selectedTab)` 가 취소된다.
+            vm.onAuthoritativeRefresh = { withUnsafeCurrentTask { $0?.cancel() } }
+            await Task { await vm.refreshOnEntry(session: current) }.value
+            XCTAssertEqual(listCalls(), 1)
+
+            vm.onAuthoritativeRefresh = nil
+            await vm.refreshOnEntry(session: current)
+            XCTAssertEqual(listCalls(), 2, "정합화를 끝내지 못한 회차는 창을 열지 않는다 — 다음 진입이 다시 받는다")
+
+            await vm.refreshOnEntry(session: current)
+            XCTAssertEqual(listCalls(), 2, "끝까지 간 회차는 창을 연다")
+        }
+    }
+
     // MARK: - 픽스처
 
     nonisolated private static let quotaBody = Data(

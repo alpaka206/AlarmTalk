@@ -560,10 +560,8 @@ final class VoiceStudioViewModel: ObservableObject {
             // 다시 켜진다(한도 표시도 사라진다). 실패는 "모른다" 이지 "0 이다" 가 아니다.
             if let quotaResult { draftQuota = quotaResult }
             // 목록·공유 목소리·한도를 **다** 받았을 때만 창을 연다(반쪽이면 다음 진입이 다시 받는다).
-            // 뒤에 받아들인 갱신이 있으면 그쪽이 창을 정한다(`entryFreshnessGeneration`).
-            if familyAuthoritative, quotaResult != nil, freshnessGeneration == entryFreshnessGeneration {
-                entryFreshness.record(.init(userID: userID, entry: admitted.entry, at: admitted.now))
-            }
+            // 여는 것은 아래 강등 정합화가 끝난 **뒤**다.
+            let freshnessRecordable = familyAuthoritative && quotaResult != nil
             if let selectedProfileID,
                !profiles.contains(where: { $0.id == selectedProfileID }),
                !familyVoices.contains(where: { $0.id == selectedProfileID }) {
@@ -596,6 +594,14 @@ final class VoiceStudioViewModel: ObservableObject {
             // 목록이 확정됐으니 접근권을 잃은 알람을 내린다(훅 주석 참조).
             // 권위가 없는 회차에는 훅 안의 판정이 스스로 물러서므로 여기서 또 가르지 않는다.
             await onAuthoritativeRefresh?()
+            // ⚠ **창은 정합화가 끝난 뒤에, 취소되지 않았을 때만 연다**(코덱스 #823 6차). 목록을 받은
+            //   직후 열면, 탭을 옮겨 이 태스크가 취소돼 위 정합화가 중간에 물러선 경우에도 창이 열려
+            //   있다 — 회수된 목소리의 예약이 남았는데 1분 안의 진입이 그 재시도를 건너뛴다.
+            //   뒤에 받아들인 갱신이 있으면 그쪽이 창을 정한다(`entryFreshnessGeneration`).
+            if freshnessRecordable, !Task.isCancelled, activeUserID == userID,
+               freshnessGeneration == entryFreshnessGeneration {
+                entryFreshness.record(.init(userID: userID, entry: admitted.entry, at: admitted.now))
+            }
         } catch {
             // ⚠ **취소를 실패로 그리지 않는다**(2026-08-18 Codex #697 P2). 워치독이 회차를
             // 접은 것뿐인데 "목소리를 불러오지 못했어요" 를 남기면 거짓말이고, 그 뒤로도
