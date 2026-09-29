@@ -19,7 +19,7 @@ import java.time.Instant
  * - 다른 창에 밀려 걷힌 안내는 **같은 진입 안에서** 다시 뜬다(이펙트의 갈래 `evaluateEndNotice`).
  * - 전경 무료 잠금의 오프라인 차단 갈래는 이 진입의 plan 반영을 기다린다(이펙트의 갈래
  *   `foregroundPlanLockAction`·`deferredPromoLapseLockDue`).
- * - 이용권 화면 한 줄은 **나중에 받은 답**을 따른다.
+ * - 이용권 화면의 프로모 문구는 **나중에 받은 답**을 따른다.
  *
  * 날짜는 전부 테스트 픽스처다 — 앱 코드에는 없다.
  */
@@ -437,7 +437,7 @@ class PersonalPromoLedgerTest {
         assertFalse(due(signedIn = false))
     }
 
-    // ── 이용권 화면 한 줄 — 나중에 받은 답이 이긴다 ───────────────────────────────────────
+    // ── 이용권 화면 프로모 문구 — 나중에 받은 답이 이긴다 ──────────────────────────────────────
 
     @Test
     fun aFreshAccountAnswerWithoutPromoHidesAStaleBillingPromo() {

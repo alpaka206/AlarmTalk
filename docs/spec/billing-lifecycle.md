@@ -1233,17 +1233,51 @@ entitlement 가 기기에 남은 채 지금은 Play 구독을 쓰는 사용자�
   등급만 막고 그룹이 열었다).
 - 기간 밖(`personal_promo` 없음)이나 **낡은 프로모**(끝이 지난 캐시)에서는 예전 그대로다 — 행·그룹이
   등급을 올린다(iOS 도 낡은 프로모에서는 행이 이긴다).
-- ⚠ **이용권·멤버십 화면은 이 규칙 밖이다** — 무엇을 **샀는가**(현재 이용권 카드·공유 코드 관리)를
-  보여 주는 자리라, 안드로이드 `FamilyConnectionPanel` 도 iOS `BillingPanel`(`purchasedPlan`)도 규칙을
-  걸지 않는다.
+- ⚠ **이용권·멤버십 화면은 이 규칙 밖이다** — 무엇을 **샀는가**(산 이용권·결제 버튼 라벨·전환 문구·
+  공유 코드 관리)를 보여 주는 자리라, 안드로이드 `FamilyConnectionPanel` 도 iOS `BillingPanel`
+  (`purchasedPlan`)도 규칙을 걸지 않는다. 다만 **프로모만 쓰는 계정**(산 이용권·공유 멤버·보류 행이
+  없다)은 '현재 이용권' 뱃지를 **개인 카드**에 단다 — 표시만 그렇고 산 이용권으로 치지는 않는다
+  (D4 「이용권 화면의 프로모 문구」).
 
 **D3 — 종료 안내 시점.** [gates-and-overlays.md](gates-and-overlays.md) 「개인 플랜 종료 안내」가
 유일 출처다(진입 정의·준비 신호·다른 모달과의 순서).
 
 **D4 — 문구**(안드로이드 리소스가 원본, iOS 카탈로그가 ko·en·ja 모두 **글자까지** 같게, 아이콘 없음):
-- **이용권 화면 한 줄**(`personal_promo` 가 있을 때만, 가짜 구독·해지 버튼 없음):
+- **이용권 화면의 프로모 문구**(`personal_promo` 가 있을 때만 — 가짜 구독·해지·나가기·관리 버튼 없음):
   ko "개인 플랜 무료 이용 중 · {lastDay}까지" / en "Personal plan free until {lastDay}" /
   ja "パーソナルプラン無料利用中 · {lastDay}まで".
+  - **어디에 앉나 — 프로모가 이 계정의 유일한 이용권이면 개인 카드에**(2026-09-29). 그 전에는 카드
+    목록 **위의 한 줄**로만 말하고 '현재 이용권' 뱃지는 무료 카드에 달았다 — 개인 기능을 다 쓰는
+    중인데 화면은 무료를 쓰고 있다고 말했다. 판정은 순수 함수 하나다(안드로이드 `planScreenCurrentOf` /
+    iOS `PlanScreenCurrent.resolve` — 같은 입력에 같은 답):
+
+    | 계정 | '현재 이용권' 카드 | 프로모 문구 | 개인 카드의 결제 버튼 |
+    | --- | --- | --- | --- |
+    | **프로모만** — 산 이용권 없음 · 공유 멤버 아님 · 보류 행 없음 | **개인** (무료 카드는 현재가 아니다) | 개인 카드의 상태 문구 — 카드 위 한 줄은 **없다**(두 번 말하지 않는다) | **남는다**('결제하기') |
+    | 산 이용권이 있다 | 산 이용권(예전 그대로) | 카드 위 한 줄(예전 그대로) | 예전 그대로 |
+    | 공유 멤버(`familyGroup.role = member`, 그룹 있음) | 예전 그대로 | 카드 위 한 줄(예전 그대로) | 예전 그대로 |
+    | 보류 행 — `deletes_voices_at_end = false`(원시 free 인데 `active` 구독 행이 남았다: 결제 보류 등) | 예전 그대로 | 카드 위 한 줄(예전 그대로) | 예전 그대로 |
+    | 프로모 없음·끝남(기기 시계로 끝을 넘긴 캐시 포함) | 예전 그대로 | 없다 | 예전 그대로 |
+
+    - '산 이용권' 은 각 앱이 **현재 카드를 고르던 값 그대로**다 — 안드로이드는 구독 응답의 `plan.key`
+      (없으면 free), iOS 는 `BillingPanel.currentTier`(`purchasedPlan` + 서버 구독 + StoreKit 등급).
+      프로모만 쓰는 계정은 둘 다 free 다. 보류 행은 표시용 유료 근거가 아니라(`strongestPaidSubscription`)
+      구독 응답만으로는 프로모 계정과 구별되지 않는다 — 그래서 `deletes_voices_at_end` 로 가른다.
+    - **카드가 없는 동안은 카드 위 한 줄이다(iOS).** iOS 는 스토어 상품을 기다리는 동안(스켈레톤)과
+      가져오기에 실패한 동안('다시 시도' — 오프라인 등) 플랜 카드를 한 장도 그리지 않는다. 그때 표의
+      첫 줄(프로모만) 계정도 문구를 **카드 위 한 줄로** 그리고, 카드가 그려지면 개인 카드로 옮긴다 —
+      문구가 어디에도 없는 순간을 만들지 않고, 두 자리에 동시에 두지도 않는다
+      (`PlanScreenCurrent.drawsPromoLineAboveList(cardsVisible:)`). 안드로이드는 카드를 언제나 그려서
+      (`SubscriptionPanel` 의 고정 목록) 이 갈래가 없다.
+    - ⚠ **'현재' 와 '결제 버튼 숨김' 을 한 값으로 묶지 말 것.** 산 이용권의 현재 카드에는 버튼이 없지만
+      (다시 살 것이 없다), 프로모로 현재가 된 개인 카드에는 남는다 — 개인 결제는 기간 중에도 열려
+      있고(끝난 뒤 이어 쓰려면 사야 한다), 버튼을 숨기면 살 길이 사라진다.
+    - **결제·전환 판정은 산 이용권으로만 한다** — 버튼 라벨은 '결제하기'('이용권 변경' 이 아니다), 확인
+      알럿은 신규 구매 문구("…시작할까요?" + 가격)이고 '이용권 변경'·'남은 기간 환산' 을 말하지 않는다.
+      결제 차단 판정(iOS `purchaseBlockReason`)·코드 공유(안드로이드 — 산 현재 카드에서만)·해지·나가기
+      버튼도 예전 그대로다(프로모만 쓰는 계정에는 해지할 구독이 없다).
+    - 서버 응답은 바뀌지 않는다(`subscription: null` 그대로) — 앱만의 표시 규칙이라 앱 릴리스와 함께
+      나간다. 구버전 앱은 예전처럼 카드 위 한 줄 + 무료 카드가 현재다.
   - 근거는 **가장 나중에 받은 답**이다. 방금 결제·쿠폰으로 계정 응답에 프로모가 사라졌는데 결제 전에
     받아 둔 구독 응답의 프로모를 보이면 결제자에게 "무료 이용 중" 이 남는다(리뷰). 안드로이드는 계정
     응답과 구독 응답 중 이번 실행에서 **나중에 받은 쪽**(순번 — 시계가 아니다)을 쓰고
@@ -1341,9 +1375,10 @@ entitlement 가 기기에 남은 채 지금은 Play 구독을 쓰는 사용자�
 | 종료 전환·스윕(D6·D10·D14~D16) | `lib/personal-promo-end.ts` `runPersonalPromoEnd`(스윕이 아무도 못 지우면 같은 실행에서 전환 · 첫날 뒤에는 전환 대상의 행만, 고정 꼬리 없음) · `transitionPersonalPromoEnd` · `promoEndDeleteAfter`(`max(약속 시각, 전환 + 24시간)` 정시 — `PROMO_END_MIN_NOTICE_MS`) · `promoEndRetentionDeadline` · `sweepDueRetentionInBulk`(`dueFrom` · `BulkSweepResult.failed`·`oldestDueUserPk`) · 묶음·예산 `PROMO_END_SWEEP_BATCH`·`PROMO_END_SWEEP_NOTIFY_MESSAGES`·`PROMO_END_RUN_BUDGET` · 경보 `isPromoEndAlertSlot`·`alertSlotOpenFor`·`PROMO_END_HOURLY_ALERT_STAGES`(셋 다 시간당 한 번, 맡은 크론만) · `notifyPromoEndTransitioned`; `index.ts` 의 `PERSONAL_PROMO_END_CRON` 분기 + 5분 틱 폴백; `wrangler.toml` 두 환경; 문장 공유 `billing-cancel.ts` `freeDowngradeWrites`·`paidVoiceRetentionUpsertStatement`·`paidEntitlementStatement`, `paid-voice-cleanup.ts` `deleteSensitiveVoiceDataForOwners` | 기존 `plan_changed` 처리 | 기존 `plan_changed` 처리 |
 | 삭제 예고 문구 | `lib/fcm.ts` `personalPromoEndWarningBody` · `formatKstHour` → `sendBillingStateSignals(warningBodyFor)` | 기존 `voice_deletion_warning` 표시 | 기존 APNs alert |
 | 전역 클론 상한 500 | `lib/voice-slots.ts` `MAX_PROVIDER_CLONE_VOICES` | — | — |
-| 이용권 화면 한 줄(D4 — 나중에 받은 답) | — | `ui/billing/BillingPanels.kt`(`personal_promo_plan_line`) · `planScreenPersonalPromoOf`·`PersonalPromoLedger.planScreenPromo`(`recordBillingAnswer(result)` — 문을 지난 `EntitlementWrite.Applied` 만, `MainViewModel.saveSubscriptionSnapshot` 이 부른다) → `MainViewModel.planScreenPersonalPromo` → `AlarmListScreen` 의 `planScreenPersonalPromo` · `activePersonalPromoOf` | `BillingPanel.personalPromoLine`·`personalPromoLastDay`(세션 하나 — `applyFreshPlan` 의 순번 가드) |
+| 이용권 화면 — 프로모만 쓰는 계정은 개인 카드가 현재(D4) | — | `ui/billing/BillingPanels.kt` `planScreenCurrentOf`(`PlanScreenCurrent` — `isCurrent`·`showsPurchase`·`sharesVouchers`·`promoOnPersonalCard`·`promoLineAboveList`) → `SubscriptionPanel`·`SubscriptionPlanCard`(`showsPurchase`·`sharesVouchers`); 결제 알럿은 산 이용권(`PlayPurchaseDialog` 의 `currentPlanKey`) | `Views/Common/PlanTier.swift` `PlanScreenCurrent.resolve`·`drawsPromoLineAboveList(cardsVisible:)`(카드가 없는 스켈레톤·가져오기 실패 동안은 카드 위 한 줄) → `BillingPanel.planScreen` · `PlanCard`(`showsPurchase`·`statusText`·접근성 컨테이너 `planCard.<key>`); 결제·전환 판정은 산 이용권(`BillingPanel.currentTier`) |
+| 이용권 화면의 프로모 문구(D4 — 나중에 받은 답) | — | `ui/billing/BillingPanels.kt`(`personal_promo_plan_line`) · `planScreenPersonalPromoOf`·`PersonalPromoLedger.planScreenPromo`(`recordBillingAnswer(result)` — 문을 지난 `EntitlementWrite.Applied` 만, `MainViewModel.saveSubscriptionSnapshot` 이 부른다) → `MainViewModel.planScreenPersonalPromo` → `AlarmListScreen` 의 `planScreenPersonalPromo` · `activePersonalPromoOf` | `BillingPanel.personalPromoLine`·`personalPromoLastDay`(세션 하나 — `applyFreshPlan` 의 순번 가드) |
 | 종료 안내(D3·D4) | — | [gates-and-overlays.md](gates-and-overlays.md) 구현 지도 | 같은 곳 |
-| 회귀 테스트 | `test/personal-promo.test.ts`(경계·게이트·보류 그룹 공유 목소리·**보류 주인 목소리·클립 PATCH(D8·D13 — 안드로이드 실제 페이로드)**·대조군·한도·쿠폰·전환) · `test/personal-promo-end.test.ts`(**2,500명 크론 시뮬레이션 두 가지(기기 평균 1.06대·2대) — 약속 시각 전 삭제 0**·실행당 subrequest·기한 = max(약속 시각, 전환 + 24시간)(D16)·고정 꼬리 없는 삭제(D15)·굶김(스윕 실패 뒤 전환·전환 실패 포함 시간당 경보 — D14)·자정 문구·배선) · `test/personal-promo-auth.test.ts`(계정 응답 5종·`deletes_voices_at_end`·`computed_at`) · `test/group-disband-batch.test.ts`(보관 판정 JS↔SQL 대조) · `test/promo-welcome-group.test.ts`(#121) · `packages/shared/test/personal-promo.test.ts` | `PaidVoiceAccessTest`(D9 보류 규칙) · `PersonalPromoNoticeTest`(`computed_at` 파싱·첫 결과 실패) · `PersonalPromoPersistenceTest`(D7) · `BillingPreflightSnapshotTest`(D7) · `PersonalPromoLedgerTest`(잠금 대기·잠금 갈래 `foregroundPlanLockAction`·미룬 잠금 `deferredPromoLapseLockDue`·plan 순번 `claimPlanAnswer`·이용권 한 줄) · `EntryRefreshKeepsTokenTest` | `PersonalPromoTests`(D7·D9·종료 안내 판정·D12 `isFreeOnlyByPromoLapse`·`freePlanLockMayApply`) · `AuthViewModelTests`(계정 요청 표·순번·진입 결과·`planAnsweredEntry`·토큰만 구른 답) · `BillingPreflightTests`(세션 밖 요청 실패의 표) · `VoiceShareAccessTests` · `PersonalPromoNoticeUITests` |
+| 회귀 테스트 | `test/personal-promo.test.ts`(경계·게이트·보류 그룹 공유 목소리·**보류 주인 목소리·클립 PATCH(D8·D13 — 안드로이드 실제 페이로드)**·대조군·한도·쿠폰·전환) · `test/personal-promo-end.test.ts`(**2,500명 크론 시뮬레이션 두 가지(기기 평균 1.06대·2대) — 약속 시각 전 삭제 0**·실행당 subrequest·기한 = max(약속 시각, 전환 + 24시간)(D16)·고정 꼬리 없는 삭제(D15)·굶김(스윕 실패 뒤 전환·전환 실패 포함 시간당 경보 — D14)·자정 문구·배선) · `test/personal-promo-auth.test.ts`(계정 응답 5종·`deletes_voices_at_end`·`computed_at`) · `test/group-disband-batch.test.ts`(보관 판정 JS↔SQL 대조) · `test/promo-welcome-group.test.ts`(#121) · `packages/shared/test/personal-promo.test.ts` | `PaidVoiceAccessTest`(D9 보류 규칙) · `PersonalPromoNoticeTest`(`computed_at` 파싱·첫 결과 실패) · `PersonalPromoPersistenceTest`(D7) · `BillingPreflightSnapshotTest`(D7) · `PersonalPromoLedgerTest`(잠금 대기·잠금 갈래 `foregroundPlanLockAction`·미룬 잠금 `deferredPromoLapseLockDue`·plan 순번 `claimPlanAnswer`·이용권 화면 프로모 문구의 답) · `PlanScreenCurrentTest`(D4 — 개인 카드가 현재·결제 버튼 유지·예전 그대로인 네 갈래) · `EntryRefreshKeepsTokenTest` | `PersonalPromoTests`(D7·D9·종료 안내 판정·D12 `isFreeOnlyByPromoLapse`·`freePlanLockMayApply`·D4 `PlanScreenCurrent` — 안드로이드와 같은 표 + 카드가 없을 때의 폴백) · `AuthViewModelTests`(계정 요청 표·순번·진입 결과·`planAnsweredEntry`·토큰만 구른 답) · `BillingPreflightTests`(세션 밖 요청 실패의 표) · `VoiceShareAccessTests` · `PersonalPromoNoticeUITests`(이용권 화면 D4 — 뱃지·결제 버튼·문구가 개인 카드에 한 번 / 보류 행은 무료 카드·카드 위 한 줄 — 로컬 전용) |
 
 ## 구현 지도
 

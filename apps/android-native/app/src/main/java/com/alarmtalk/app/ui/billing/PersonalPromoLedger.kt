@@ -13,7 +13,7 @@ internal data class AccountRequest(val seq: Long, val entry: Long)
 /**
  * 기간 한정 개인 플랜의 **진입별 장부** — 계정 응답(`/auth/me`)이 어느 진입의 몫인가(그 진입의
  * 첫 결과가 성공인가 실패인가), 어느 응답이 plan 을 써도 되는가, 이 진입에 종료 안내를
- * 판정했는가·띄웠는가, 이용권 화면 한 줄이 어느 답을 따르는가.
+ * 판정했는가·띄웠는가, 이용권 화면의 프로모 문구가 어느 답을 따르는가.
  *
  * `MainViewModel` 이 하나 들고 같은 이름의 멤버로 위임한다(`recordAccountAnswer`·
  * `recordAccountFailure`·`evaluatePersonalPromoEndNotice` …). 규칙을 여기 모은 이유는
@@ -82,7 +82,7 @@ internal class PersonalPromoLedger(private val currentEntry: () -> Long) {
     private var planAnswerSeq: Long = 0L
 
     /**
-     * 이 프로세스에서 계정 응답·구독 응답을 **받은 순서**(이용권 화면 한 줄 — [planScreenPromo]).
+     * 이 프로세스에서 계정 응답·구독 응답을 **받은 순서**(이용권 화면의 프로모 문구 — [planScreenPromo]).
      * 0 = 이번 실행에서 아직 받지 않았다(저장본뿐이다). 시계가 아니라 순번이라 기기 시계와 서버
      * 시계를 섞지 않는다.
      */
@@ -168,7 +168,7 @@ internal class PersonalPromoLedger(private val currentEntry: () -> Long) {
     }
 
     /**
-     * 구독 응답(`/billing/subscription`)을 스냅샷에 쓴 결과 — 이용권 화면 한 줄의 순서.
+     * 구독 응답(`/billing/subscription`)을 스냅샷에 쓴 결과 — 이용권 화면 프로모 문구의 순서.
      *
      * **문을 지났을 때만**([EntitlementWrite.Applied]) 센다. 부르는 쪽은 그때만 화면 사본
      * (`subscriptionResponse`)을 이 응답으로 바꾸므로, 문이 거절한 응답(그 사이 로그아웃·계정 전환)을
@@ -180,7 +180,7 @@ internal class PersonalPromoLedger(private val currentEntry: () -> Long) {
     }
 
     /**
-     * 이용권 화면 한 줄의 프로모 — **나중에 받은 답이 이긴다**([planScreenPersonalPromoOf]).
+     * 이용권 화면에 보일 프로모 — **나중에 받은 답이 이긴다**([planScreenPersonalPromoOf]).
      *
      * @param sessionPromo 저장된 세션의 promo. 이번 실행에서 계정 응답을 아직 못 받았을 때만 쓴다.
      * @param billingPromo 화면이 들고 있는 구독 응답의 promo.
@@ -277,8 +277,8 @@ internal class PersonalPromoLedger(private val currentEntry: () -> Long) {
 }
 
 /**
- * 이용권 화면 한 줄(`personal_promo_plan_line`)의 프로모 — 계정 응답과 구독 응답 중 **나중에 받은
- * 답**의 것. 둘 다 서버가 같은 규칙으로 계산한 값이라, 더 새 답이 곧 지금의 사실이다.
+ * 이용권 화면의 프로모 문구(`personal_promo_plan_line` — 개인 카드에 앉을지 카드 위 한 줄일지는
+ * `planScreenCurrentOf` 가 가른다)의 프로모 — 계정 응답과 구독 응답 중 **나중에 받은 답**의 것. 둘 다 서버가 같은 규칙으로 계산한 값이라, 더 새 답이 곧 지금의 사실이다.
  *
  * 예전에는 둘을 OR 로 봤다(세션에 없으면 구독 응답). 그러면 방금 결제·쿠폰을 등록해 새 계정 응답에
  * promo 가 **없는** 사람에게, 결제 전에 캐시된 구독 응답의 promo 가 대신 보여 "개인 플랜 무료
