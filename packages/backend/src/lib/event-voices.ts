@@ -19,19 +19,26 @@ export function isEventLocale(v: unknown): v is EventLocale {
   return typeof v === 'string' && (EVENT_LOCALES as readonly string[]).includes(v);
 }
 
-/** 화면(랜딩 `MESSAGE_KINDS`)이 고를 수 있는 종류. */
-export const EVENT_MESSAGE_KINDS = ['birthday', 'chuseok'] as const;
+/**
+ * 화면(랜딩 `MESSAGE_KINDS`)이 고를 수 있는 종류.
+ *
+ * ⚠ 서버가 **먼저** prod 에 나간다 — `love` 를 보내는 랜딩 번들이 옛 서버에 닿으면 400 이라서, 이 변경과
+ * 랜딩 교체(#815)를 두 PR·두 번의 릴리스로 나눴다(`docs/qa/dev-test-handoff.md` 의 「prod 게재 순서」).
+ * 그 사이에는 prod 랜딩이 아직 `chuseok` 을 보내고, 아래 `LEGACY_EVENT_MESSAGE_KINDS` 가 옛 문안으로 받는다.
+ */
+export const EVENT_MESSAGE_KINDS = ['birthday', 'love'] as const;
 export type EventMessageKind = (typeof EVENT_MESSAGE_KINDS)[number];
 
 /**
  * 화면에서 뺐지만 **아직 받는** 종류 — 배포 창 호환용이다(코덱스 #788 2차·4차, 2026-09-22).
- * 서버가 먼저 배포된 뒤에도 브라우저에 열려 있거나 캐시된 옛 랜딩 번들은 `kind: "comfort"` 를
- * '위로 한마디' 라벨 아래에서 보낸다. 400 으로 거절하면 두 클립 중 하나가 실패하고 새로고침 전에는
- * 재시도로도 못 살리며, 다른 문구(추석 인사)로 바꿔 읽어 주면 사용자가 고른 것과 다른 것이 나온다.
- * 그래서 옛 종류는 **옛 문안 그대로** 읽어 준다(`EVENT_MESSAGES`). 새 번들이 다 퍼진 뒤(며칠)
+ * 서버가 먼저 배포된 뒤에도 브라우저에 열려 있거나 캐시된 옛 랜딩 번들은 옛 종류를 옛 라벨 아래에서
+ * 보낸다 — `comfort`('위로 한마디', 2026-09-22 에 뺐다)와 `chuseok`('추석 인사', 2026-09-29 에
+ * '사랑 한마디' 로 갈아 끼웠다). 400 으로 거절하면 두 클립 중 하나가 실패하고 새로고침 전에는
+ * 재시도로도 못 살리며, 다른 문구(지금의 사랑 한마디)로 바꿔 읽어 주면 사용자가 고른 것과 다른 것이
+ * 나온다. 그래서 옛 종류는 **옛 문안 그대로** 읽어 준다(`EVENT_MESSAGES`). 새 번들이 다 퍼진 뒤(며칠)
  * 이 목록과 그 문안을 함께 지운다 — `docs/qa/dev-test-handoff.md` 의 follow-up.
  */
-export const LEGACY_EVENT_MESSAGE_KINDS = ['comfort'] as const;
+export const LEGACY_EVENT_MESSAGE_KINDS = ['comfort', 'chuseok'] as const;
 export type LegacyEventMessageKind = (typeof LEGACY_EVENT_MESSAGE_KINDS)[number];
 /** 서버가 읽어 줄 수 있는 종류 전부 = 화면의 것 + 옛 번들의 것. */
 export type RenderableEventMessageKind = EventMessageKind | LegacyEventMessageKind;
@@ -39,7 +46,8 @@ export type RenderableEventMessageKind = EventMessageKind | LegacyEventMessageKi
 /**
  * 요청의 `kind` 를 읽어 줄 종류로 — 화면의 종류든 옛 번들의 종류든 그대로, 모르는 값이면 null.
  * `routes/event.ts` 의 `POST /api/event/:eventId/clips` 는 **이것으로만** 검증한다 — 옛 번들의
- * `comfort` 가 400 이 아니라 200 + 옛 문안으로 읽히는 회귀 테스트가 `test/event-clips.test.ts` 에 있다.
+ * `comfort`·`chuseok` 이 400 이 아니라 200 + 옛 문안으로 읽히는 회귀 테스트가
+ * `test/event-clips.test.ts` 에 있다.
  */
 export function resolveEventMessageKind(v: unknown): RenderableEventMessageKind | null {
   if (typeof v !== 'string') return null;
@@ -76,8 +84,18 @@ export function voiceProjectFor(
  * 읽힐 문장. `{name}` 자리에 부르는 꼴(`vocative`)이 들어간다. 대괄호는 감정 태그라 소리에는
  * 없고 화면에는 벗겨서 보여 준다(`renderMessage`). 줄바꿈은 화면의 문단이다.
  * 2026-09-22 사용자 지시로 생일 문구를 새 문안으로 바꾸고, '위로 한마디' 를 '추석 인사' 로
- * 갈아 끼웠다(한국어는 사용자 원문 그대로, 영어·일본어는 같은 결로 옮긴 것). 바꾸려면 여기만
- * 고친다 — 랜딩은 종류 id(`MESSAGE_KINDS`)와 라벨(`messages/*.json` 의 `event.studio.kinds`)만 안다.
+ * 갈아 끼웠다(한국어는 사용자 원문 그대로, 영어·일본어는 같은 결로 옮긴 것). 2026-09-29 에는
+ * 추석이 지나 '추석 인사' 를 '사랑 한마디'(`love`)로 갈아 끼웠다(지시: "추석 없애고 사랑으로").
+ * 바꾸려면 여기만 고친다 — 랜딩은 종류 id(`MESSAGE_KINDS`)와 라벨(`messages/*.json` 의
+ * `event.studio.kinds`)만 안다.
+ *
+ * `love` 는 **누구에게 보내도 맞는 말**로 썼다 — 이 페이지는 가상 인물의 목소리가 내 이름을 불러
+ * 주는 것이라 받는 사이가 정해져 있지 않다(가족·친구·연인·팬). 그래서 '보고 싶어'·'내 사람' 같은
+ * 연인에게만 맞는 말을 넣지 않고, 일본어는 연인 말투가 강한 「愛してる」 대신 「大好き」 를 쓴다.
+ * 태그는 운영에서 이미 쓰던 것만 쓴다 — 생일 문안의 것들과, 셋째 줄의 `[warm, sincere]`(옛 위로
+ * 문안 `comfort` 에서 온 것이다. 생일 문안에는 없다). 그래서 `comfort` 를 지운 뒤에는 `love` 가 그
+ * 태그를 쓰는 유일한 곳이 된다 — 옛 문안과 함께 지울 태그가 아니다. `{name}` 은 **한 번만** 둔다
+ * (두 번이면 `renderMessage` 의 길이 상한 검사에 걸린다).
  */
 export const EVENT_MESSAGES: Record<RenderableEventMessageKind, Record<EventLocale, string>> = {
   birthday: {
@@ -94,6 +112,22 @@ export const EVENT_MESSAGES: Record<RenderableEventMessageKind, Record<EventLoca
 [warm, conversational] 今日は誰よりも幸せな一日を過ごしてね。
 [lightly playful, smiling] これからも一緒に、いい思い出をたくさん作ろうね！`,
   },
+  love: {
+    ko: `[warm, relaxed] {name}, [gentle, sincere] 정말 많이 사랑해.
+[warm, conversational] 네가 있어서 하루하루가 더 따뜻하고 든든해.
+[warm, sincere] 늘 곁에 있어 줘서 고마워. 난 언제나 네 편이야.
+[lightly playful, smiling] 오늘도 많이 웃는 하루 보내!`,
+    en: `[warm, relaxed] Hey, {name}. [gentle, sincere] I love you so much.
+[warm, conversational] Having you in my life makes every day warmer and brighter.
+[warm, sincere] Thank you for always being there. I'm always on your side.
+[lightly playful, smiling] I hope today is full of smiles!`,
+    ja: `[warm, relaxed] {name}、[gentle, sincere] 本当に大好きだよ。
+[warm, conversational] いてくれるだけで、毎日があったかくて、心強いんだ。
+[warm, sincere] いつもそばにいてくれて、ありがとう。わたしはずっと味方だからね。
+[lightly playful, smiling] 今日もたくさん笑って、すてきな一日にしてね！`,
+  },
+  // ⚠ 옛 번들 호환용 — 화면에는 없다(`LEGACY_EVENT_MESSAGE_KINDS`, 2026-09-29 에 뺐다).
+  // 새 번들이 다 퍼지면 함께 지운다. 옛 '추석 인사' 라벨로 온 요청이라 사랑 한마디로 바꿔 읽지 않는다.
   chuseok: {
     ko: `[warm, relaxed] {name}, [gently cheerful] 즐거운 추석 보내!
 [warm, conversational] 맛있는 것도 많이 먹고, 이번 연휴엔 푹 쉬면서 편안하게 보내.
@@ -125,7 +159,7 @@ export const EVENT_MESSAGES: Record<RenderableEventMessageKind, Record<EventLoca
 /**
  * 랜딩 카드의 **미리 듣기** 문안 — 생성 전에 목소리만 들려주는 한마디(2026-09-22 지시).
  *
- * 세 가지가 생일·추석 문안과 다르다:
+ * 세 가지가 생일·사랑 문안과 다르다:
  *  - **이름이 없다.** 미리 듣기는 아직 이름을 적기 전에 누르는 것이라 부를 이름이 없다.
  *  - **한 문장이다.** 줄을 여러 개로 끊었더니 "툭툭 끊겨 자연스럽지 않다" 는 지적을 받았다
  *    (2026-09-22). Perso 는 줄바꿈·말줄임표를 **쉼**으로 읽어서, 짧은 인사를 여러 줄로 쪼개면
