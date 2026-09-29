@@ -100,15 +100,21 @@ freeVoiceTier = 로그인함 && !유료
 게이트는 받아 둔 값으로 판정한다 — 값이 낡으면 게이트가 틀린다. 그렇다고 화면이 뜰 때마다
 다시 받으면 같은 응답을 몇 번씩 기다린다. 다시 받는 때는 넷이다.
 
-- **진입 갱신** — 탭·화면에 들어갈 때. 같은 계정의 **완결된** 갱신이 **60초** 안에 있었으면
-  다시 받지 않는다. 탭은 탭별 스로틀, 화면(편집기·구성원·이용권)은 뷰모델의 신선도 창이다.
+- **진입 갱신** — 탭·화면에 들어갈 때. 같은 계정의 **완결된** 갱신이 같은 앱 진입 안에서
+  **60초** 안에 있었으면 다시 받지 않는다. 목소리·더보기 탭과 화면(편집기·구성원·이용권)이
+  모두 같은 창을 본다.
   - ⚠ **목소리 탭의 진입 갱신은 빼지 말 것**(2026-08-24 실기기). 예전에는 목소리 탭이 앱
     시작의 캐시 스냅샷에만 기대, 다른 기기에서 플랜이 바뀌면 가족 이용권 사용자가 '추가' 를
     눌렀는데 이용권 안내 모달이 떴다. 창은 그 낡음을 60초 이하로 묶을 뿐 없애지 않는다.
   - ⚠ **키에 토큰을 넣지 말 것.** `/auth/me` 는 부를 때마다 토큰을 굴린다 — 토큰을 키로
-    쓰면 이용권 갱신 한 번에 **모든 탭의 창이 무효**가 된다. 키는 계정이다(같은 계정의
-    재로그인은 새 세션이라 창이 비워진다).
-  - 실패했거나 반쪽인 갱신은 창을 열지 않는다 — 다음 진입이 다시 받는다.
+    쓰면 이용권 갱신 한 번에 **표가 통째로 무효**가 된다. 키는 **계정 + 로그인 한 번**이다
+    (같은 계정으로 로그아웃→재로그인하면 창이 비워져야 한다 — 계정 id 만으로는 못 가르는
+    쪽은 세션 세대를 함께 넣는다).
+  - **실패했거나 반쪽인 갱신은 창을 열지 않는다** — 다음 진입이 곧바로 다시 받는다. 그래서
+    '건너뛰기 표' 를 갱신 **전에** 적지 않는다. 먼저 적으면 실패한 뒤 60초 동안 재시도가 막힌다.
+  - 창에 적는 진입·시각은 **요청을 보낼 때의 것**이다. 응답이 백그라운드를 건너 다음 진입에
+    도착했을 때의 값을 적으면, 떠나 있는 동안 받은 옛 답이 돌아온 진입의 창을 연다.
+  - 앱에 다시 들어오면(백그라운드를 거쳐) 창은 닫힌다.
 - **쓰기 뒤 갱신** — 쿠폰 등록·나가기·해지·구매·복원·목소리 삭제. 창을 무시한다.
 - **푸시** — `plan_changed`·목소리 변경. 창을 무시한다.
 - **앱 전경 복귀** — `/auth/me`(plan·프로모·토큰). 창과 무관하게 진입마다 한 번이다
@@ -116,8 +122,10 @@ freeVoiceTier = 로그인함 && !유료
 
 ⚠ **`/auth/me` 를 한 흐름에서 두 번 부르지 말 것.** 이용권 새로고침(`refreshAll`)이 이미
 `/auth/me` 로 plan·프로모·토큰을 받아 세션에 넣는다 — 그 옆에서 사용자 새로고침을 또 부르면
-같은 답을 한 번 더 기다린다. 반대로 **프로필을 고친 뒤에는** 사용자 새로고침이 맞고
-(프로필은 그쪽만 싣는다), 이용권 새로고침은 필요 없다.
+같은 답을 한 번 더 기다린다. 예외는 이용권 새로고침이 **끝까지 못 갔을 때**다(구독 조회
+실패로 `/auth/me` 전에 멈췄거나, 그 사이 토큰이 굴러 plan 을 버렸다) — 그때는 plan 이 옛
+값이라 사용자 새로고침으로 받는다(iOS `plan_changed` 의 `onPlanChanged`). 반대로 **프로필을
+고친 뒤에는** 사용자 새로고침이 맞고(프로필은 그쪽만 싣는다), 이용권 새로고침은 필요 없다.
 
 ## 구현 지도
 
@@ -131,8 +139,8 @@ freeVoiceTier = 로그인함 && !유료
 | 기간 한정 개인 플랜 — 낡은 캐시만 무료로(D1·D7: 받은 시각 = `computed_at`, 없으면 끝 전의 답) | `personalPromoLapsed`·`planAnswerStampMillis`(`ui/billing/PersonalPromo.kt`) | `PersonalPromo.isStale`·`PersonalPromo.fetchedAt` | `personalPromoField` 의 `computed_at` |
 | 쿠폰 등록 | `CodeRedeemField` → `POST /api/code/register` | 같은 라우트 | `routes/code.ts` → `voucher-redemption.ts` / `promo-redemption.ts` |
 | 구독 조회 | `subscriptionResponse` | `socialFeatures.subscription` | `routes/billing-query.ts` |
-| 진입 갱신 — 탭별 60초(키 = 계정) | `ui/app/AlarmTalkApp.kt` 의 `lastTabRefreshAt`(⚠ 아직 키가 `tab to token` 이다 — 이 규칙과 다르다) | `MainTabsView.refreshForSelectedTab` · `MainTabsView.tabRefreshThrottleKey` | — |
-| 진입 갱신 — 화면별 신선도 창(완결된 갱신만) | — | `EntryRefreshFreshness` · `SocialFeatureViewModel.refreshOnEntry` · `VoiceStudioViewModel.refreshOnEntry` | — |
+| 진입 갱신 — 목소리·이용권(완결된 갱신만 · 60초 · 같은 계정·같은 앱 진입 · 보낼 때 적는다) | `ui/app/AlarmTalkApp.kt` 의 `lastTabRefreshAt`(⚠ 키가 아직 `tab to token` 이고 표를 갱신 **전에** 적는다 — 이 규칙과 다르다. 고칠 때 키는 계정 id + `AuthSessionStore.sessionGeneration`) | `EntryRefreshFreshness` · `SocialFeatureViewModel.refreshOnEntry` · `VoiceStudioViewModel.refreshOnEntry` — 부르는 자리 `MainTabsView.refreshForSelectedTab`(목소리·더보기)·`MainTabsView.refreshAll`·`AlarmEditorSheet`·`MemberManagementView`·`BillingPanel` | — |
+| 알람 탭 동기화 스로틀(키 = 탭 + 계정 — 토큰 아님) | 같은 `lastTabRefreshAt` | `MainTabsView.tabRefreshThrottleKey`(재로그인은 `MainTabsView` 가 새로 만들어져 표가 비워진다) | — |
 
 ## 관련 규약 (다른 문서)
 

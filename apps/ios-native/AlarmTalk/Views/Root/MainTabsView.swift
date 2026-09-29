@@ -340,11 +340,11 @@ struct MainTabsView: View {
         alarmKit.refreshAuthorizationState()
     }
 
-    /// 탭 새로고침 스로틀의 키 — **탭 + 계정**이다.
+    /// 알람 탭 동기화 스로틀의 키 — **탭 + 계정**이다.
     ///
     /// ⚠ **토큰을 넣지 말 것**(2026-09-29). `/auth/me` 는 부를 때마다 토큰을 굴리는데, 이용권
     ///   새로고침(`SocialFeatureViewModel.refreshAll`)이 그걸 부른다 — 메뉴·목소리 탭에 한 번
-    ///   들르면 토큰이 바뀌어 **모든 탭의 60초 창이 무효**가 됐다. 같은 계정의 재로그인은
+    ///   들르면 토큰이 바뀌어 **스로틀 표가 통째로 무효**가 됐다. 같은 계정의 재로그인은
     ///   이 화면이 새로 만들어져(`RootView`) 표가 비워지므로 계정 id 로 충분하다.
     static func tabRefreshThrottleKey(tab: NativeTab, userID: String) -> String {
         "\(tab).\(userID)"
@@ -360,35 +360,12 @@ struct MainTabsView: View {
             return
         }
 
-        // 알람 탭 진입 시 받은-알람 seen 기준선은 네트워크 새로고침과 무관하게 항상
-        // 갱신해야 한다. 60초 스로틀에 막혀 아래에서 일찍 return 되면 markReceivedAlarmsSeen
-        // 가 지연돼 배지가 늦게 사라지므로, 스로틀 판정 전에 먼저 갱신한다. 권한 상태
-        // 새로고침도 로컬-only 라 저렴해 함께 둔다.
-        if tab == .alarms {
-            alarmKit.refreshAuthorizationState()
-            markReceivedAlarmsSeen()
-        }
-
-        // 탭+계정 키로 60초 스로틀(`tabRefreshThrottleKey` — 토큰이 아니다). 탭에 필요한
-        // 데이터가 비어 있으면(예: 무료 플랜 정리로 목소리 목록이 비워진 직후) 스로틀을
-        // 무시하고 즉시 다시 불러와 빈 화면이 남지 않게 한다.
-        // (Android lastTabRefreshAt + tabDataEmpty parity)
-        let throttleKey = Self.tabRefreshThrottleKey(tab: tab, userID: userID)
-        let now = Date()
-        let tabDataEmpty: Bool = {
-            switch tab {
-            case .voices: return voiceStudio.profiles.isEmpty
-            default: return false
-            }
-        }()
-        if !tabDataEmpty,
-           let last = lastRefreshAt[throttleKey],
-           now.timeIntervalSince(last) < tabRefreshThrottle {
-            return
-        }
-        lastRefreshAt[throttleKey] = now
-
         switch tab {
+        // ⚠ **목소리·더보기 탭은 탭 스로틀 표를 쓰지 않는다**(2026-09-29, 스펙 plan-gates §4).
+        //   건너뛸지는 뷰모델의 신선도 창(`refreshOnEntry`)이 가른다 — 그 창은 **끝까지 성공한**
+        //   갱신만 연다. 탭 표는 갱신 **전에** 적혀서, 여기 쓰면 실패한 뒤 60초 동안 이 탭에
+        //   다시 들어와도 재시도가 막힌다(목소리 패널의 중복 `.task` 가 있을 때는 그게 대신
+        //   다시 받았지만 이제 없다).
         case .menu:
             await socialFeatures.refreshOnEntry(session: auth.session)
         case .voices:
@@ -399,10 +376,24 @@ struct MainTabsView: View {
             await voiceStudio.refreshOnEntry(session: auth.session)
             await socialFeatures.refreshOnEntry(session: auth.session)
         case .alarms:
+            // 받은-알람 seen 기준선은 네트워크 새로고침과 무관하게 항상 갱신해야 한다. 60초
+            // 스로틀에 막혀 아래에서 일찍 return 되면 markReceivedAlarmsSeen 가 지연돼 배지가
+            // 늦게 사라지므로, 스로틀 판정 전에 먼저 갱신한다. 권한 상태 새로고침도 로컬-only 라
+            // 저렴해 함께 둔다.
+            alarmKit.refreshAuthorizationState()
+            markReceivedAlarmsSeen()
+            // 탭+계정 키로 60초 스로틀(`tabRefreshThrottleKey` — 토큰이 아니다).
+            // (Android lastTabRefreshAt parity)
+            let throttleKey = Self.tabRefreshThrottleKey(tab: tab, userID: userID)
+            let now = Date()
+            if let last = lastRefreshAt[throttleKey],
+               now.timeIntervalSince(last) < tabRefreshThrottle {
+                return
+            }
+            lastRefreshAt[throttleKey] = now
             // Android: NativeTab.Alarms -> viewModel.syncNow() (push → pull).
             // 기존 pull-only refresh 대신 전체 동기화로 로컬 변경을 먼저 밀어 올린다.
-            // 권한 상태는 스로틀 전에 이미 새로고침했다. seen 기준선은 풀로 새 받은-알람이
-            // 들어왔을 수 있으니 동기화 후 한 번 더 갱신한다.
+            // seen 기준선은 풀로 새 받은-알람이 들어왔을 수 있으니 동기화 후 한 번 더 갱신한다.
             await remoteSync.runFullSync()
             markReceivedAlarmsSeen()
         }

@@ -470,6 +470,8 @@ final class VoiceStudioViewModel: ObservableObject {
         guard force || !isRefreshing else { return }
         // 신선도 창은 이 갱신이 끝까지 성공해야 다시 열린다 — 실패하면 다음 진입이 받는다.
         entryFreshness.reset()
+        // 창에 적을 진입·시각은 보내기 전에 잡는다(코덱스 #823 — `SocialFeatureViewModel.refreshAll` 과 같다).
+        let admitted = entryRefreshClock()
         let shouldManageBusy = !isRefreshing
         if shouldManageBusy {
             isRefreshing = true
@@ -544,8 +546,7 @@ final class VoiceStudioViewModel: ObservableObject {
             if let quotaResult { draftQuota = quotaResult }
             // 목록·공유 목소리·한도를 **다** 받았을 때만 창을 연다(반쪽이면 다음 진입이 다시 받는다).
             if familyAuthoritative, quotaResult != nil {
-                let clock = entryRefreshClock()
-                entryFreshness.record(.init(userID: userID, entry: clock.entry, at: clock.now))
+                entryFreshness.record(.init(userID: userID, entry: admitted.entry, at: admitted.now))
             }
             if let selectedProfileID,
                !profiles.contains(where: { $0.id == selectedProfileID }),

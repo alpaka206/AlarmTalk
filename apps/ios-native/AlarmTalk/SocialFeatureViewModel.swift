@@ -187,6 +187,10 @@ final class SocialFeatureViewModel: ObservableObject {
         entitlementSnapshotComplete = false
         // 신선도 창도 같은 이유로 비운다 — 이 갱신이 끝까지 성공해야 다시 열린다.
         entryFreshness.reset()
+        // ⚠ **창에 적을 진입·시각은 지금(보내기 전) 잡는다**(코덱스 #823). 응답이 백그라운드를
+        //   건너 다음 진입에 도착했을 때 완료 시점의 진입 번호를 적으면, 떠나 있는 동안 다른
+        //   기기에서 바뀐 것을 돌아와서 1분 동안 못 받는다.
+        let admitted = entryRefreshClock()
         if !isRefreshing { isRefreshing = true }
         // ⚠ **내린는 것은 '지금 세대' 뿐이다**(2026-09-01 리뷰 3차 정정). 세운 사람이
         // 내리게 하면, 밀려난 갱신이 세대 가드에서 돌아가면서 **진행 중인 `force` 갱신의
@@ -345,8 +349,7 @@ final class SocialFeatureViewModel: ObservableObject {
         guard activeUserID == userID, generation == refreshGeneration else { return }
         entitlementSnapshotComplete = familyGroupOK && entitlementOK
         if entitlementSnapshotComplete {
-            let clock = entryRefreshClock()
-            entryFreshness.record(.init(userID: userID, entry: clock.entry, at: clock.now))
+            entryFreshness.record(.init(userID: userID, entry: admitted.entry, at: admitted.now))
         }
         // Android 의 social refresh 는 실패 시에만 메시지를 노출한다(스낵바). 성공 토스트는 없음.
         statusMessage = messages.isEmpty ? nil : messages.joined(separator: "\n")

@@ -273,11 +273,16 @@ struct AlarmTalkApp: App {
                             }
                         }
                         push.onPlanChanged = {
-                            // 사용자 새로고침(`auth.refreshUser()`)을 따로 부르지 않는다 — `refreshAll`
-                            // 이 `/auth/me` 로 plan·프로모·토큰을 받아 세션에 넣는다(`onFreshPlan`·
-                            // `onRolledToken`). 배경 경로(`PushNotificationCoordinator`)도 이것 하나다
-                            // (스펙 plan-gates §4 「`/auth/me` 를 두 번 부르지 말 것」).
+                            // 사용자 새로고침(`auth.refreshUser()`)은 **이용권 새로고침이 끝까지 못 갔을
+                            // 때만** 부른다 — 끝까지 갔으면 `refreshAll` 이 `/auth/me` 로 plan·프로모·
+                            // 토큰을 이미 세션에 넣었다(`onFreshPlan`·`onRolledToken`, 스펙 plan-gates
+                            // §4 「`/auth/me` 를 두 번 부르지 말 것」). 못 갔으면(구독·공유 코드 조회
+                            // 실패로 `/auth/me` 전에 멈췄거나, 그 사이 토큰이 굴러 plan 을 버렸거나)
+                            // plan 이 옛 값이다 — 그때는 토큰이 굴러도 plan 을 반영하는 이쪽으로 받는다.
                             await socialFeatures.refreshAll(session: auth.session, force: true)
+                            if !socialFeatures.entitlementSnapshotComplete {
+                                await auth.refreshUser()
+                            }
                             // StoreKit 도 다시 읽는다 — 환불·회수는 캐시된 만료 시각을
                             // 무효로 만드는데 그 신호가 판정 1단이다(배경 경로와 같은 이유).
                             await subscriptions.refreshPurchasedProducts()
