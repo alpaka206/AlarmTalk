@@ -21,12 +21,11 @@ struct MainTabsView: View {
     @State private var selectedTab: NativeTab = UIPreviewSeed.initialTab ?? .alarms
     @State private var receivedAlarmSeenAtMillis: Int64 = 0
 
-    /// 탭 전환 시 매번 네트워크 요청이 나가면 살짝 버벅인다. 탭+토큰별 마지막
-    /// 새로고침 시각을 기억해, 60초 안에 다시 들른 경우엔 재요청을 건너뛴다.
-    /// (토큰이 바뀌면 키가 달라져 자연히 새로 받는다.) Android `lastTabRefreshAt`
-    /// (`AlarmTalkApp.kt`) parity — 키는 "탭.token" 문자열.
-    @State private var lastRefreshAt: [String: Date] = [:]
-    private let tabRefreshThrottle: TimeInterval = 60
+    /// 알람 탭 동기화의 60초 스로틀 표 — 키는 탭 + 계정(`tabRefreshThrottleKey`, 토큰이 아니다).
+    /// 완결되지 않은 회차는 칸을 지워 다음 진입이 곧바로 다시 돈다(`AlarmTabSyncThrottle`).
+    /// Android `lastTabRefreshAt`(`ui/app/AlarmTalkApp.kt`) 대응. 목소리·더보기 탭은 이 표가 아니라
+    /// 뷰모델의 신선도 창(`refreshOnEntry`)으로 가른다.
+    @State private var alarmTabSyncThrottle = AlarmTabSyncThrottle()
 
     /// `editorTarget` 이 nil 이 아니면 알람 편집 시트가 뜬다.
     @State private var editorTarget: AlarmEditorTarget?
@@ -385,16 +384,16 @@ struct MainTabsView: View {
             // 탭+계정 키로 60초 스로틀(`tabRefreshThrottleKey` — 토큰이 아니다).
             // (Android lastTabRefreshAt parity)
             let throttleKey = Self.tabRefreshThrottleKey(tab: tab, userID: userID)
-            let now = Date()
-            if let last = lastRefreshAt[throttleKey],
-               now.timeIntervalSince(last) < tabRefreshThrottle {
-                return
-            }
-            lastRefreshAt[throttleKey] = now
+            let admittedAt = Date()
+            guard alarmTabSyncThrottle.admit(key: throttleKey, now: admittedAt) else { return }
             // Android: NativeTab.Alarms -> viewModel.syncNow() (push → pull).
             // 기존 pull-only refresh 대신 전체 동기화로 로컬 변경을 먼저 밀어 올린다.
             // seen 기준선은 풀로 새 받은-알람이 들어왔을 수 있으니 동기화 후 한 번 더 갱신한다.
-            await remoteSync.runFullSync()
+            let completed = await remoteSync.runFullSync()
+            // ⚠ **완결되지 않은 회차(오프라인·저장소 로드 전·탭을 떠나 취소)는 칸을 지운다**
+            //   (코덱스 #823 7차) — 남기면 60초 동안 알람 탭에 다시 들어와도 재시도하지 않아,
+            //   놓친 가족 알람 푸시를 따라잡는 자리가 늦어진다.
+            alarmTabSyncThrottle.settle(key: throttleKey, admittedAt: admittedAt, completed: completed)
             markReceivedAlarmsSeen()
         }
     }

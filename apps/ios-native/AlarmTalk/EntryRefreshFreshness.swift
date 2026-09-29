@@ -44,3 +44,35 @@ struct EntryRefreshFreshness {
 
 /// 신선도 창이 보는 **지금** — 진입 번호와 시각. 테스트가 바꿔 끼운다.
 typealias EntryRefreshClock = @MainActor () -> (entry: Int, now: Date)
+
+/// **알람 탭 동기화의 60초 스로틀 표** — 키는 `MainTabsView.tabRefreshThrottleKey`(탭 + 계정).
+///
+/// 들여보내는 순간 적는다 — 동기화가 도는 동안 탭을 오가며 다시 들어온 진입이 두 벌을 내지
+/// 않게. 대신 ⚠ **완결되지 않은 회차는 자기가 적은 칸을 지운다**(코덱스 #823 7차). 오프라인·
+/// 저장소 로드 전·탭을 떠나 취소된 회차가 칸을 남기면, 60초 동안 알람 탭에 다시 들어와도
+/// 재시도하지 않는다 — 놓친 가족 알람 푸시를 따라잡는 자리가 그만큼 늦어진다. 예전에는 키에
+/// 토큰이 있어 다른 탭에서 토큰이 구르면 우연히 풀렸지만, 계정 키에서는 그 우연이 없다.
+/// 규칙은 `docs/spec/plan-gates.md` §4 「실패했거나 반쪽인 갱신은 창을 열지 않는다」.
+struct AlarmTabSyncThrottle {
+    static let window: TimeInterval = 60
+
+    private(set) var admittedAt: [String: Date] = [:]
+
+    /// 창 안이면 false. 들여보내면 곧바로 칸을 적는다.
+    mutating func admit(key: String, now: Date) -> Bool {
+        if let last = admittedAt[key] {
+            let age = now.timeIntervalSince(last)
+            // 시계가 뒤로 가면(사용자가 시각을 바꿈) 모른다 — 다시 돈다.
+            if age >= 0 && age < Self.window { return false }
+        }
+        admittedAt[key] = now
+        return true
+    }
+
+    /// 회차가 끝났을 때. 완결되지 않았으면 **자기가 적은 칸만** 지운다 — 그 사이 다른 회차가
+    /// 적은 칸은 그 회차의 것이다.
+    mutating func settle(key: String, admittedAt stamp: Date, completed: Bool) {
+        guard !completed, admittedAt[key] == stamp else { return }
+        admittedAt[key] = nil
+    }
+}
