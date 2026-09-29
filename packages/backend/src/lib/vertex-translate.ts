@@ -298,7 +298,8 @@ const CALM_INCOMPATIBLE_WORDS = [
 
 export function isCalmIncompatibleTag(tag: string): boolean {
   const normalized = normalizeTag(tag);
-  return !!normalized && CALM_INCOMPATIBLE_WORDS.some((word) => normalized.includes(word));
+  // 글자 웃음을 대괄호에 넣은 것(`[haha]`)도 웃음이다 — 낱말 목록으로는 안 걸린다(`isLaughterTag`).
+  return !!normalized && (CALM_INCOMPATIBLE_WORDS.some((word) => normalized.includes(word)) || isLaughterTag(normalized));
 }
 
 /**
@@ -311,10 +312,22 @@ export function isCalmIncompatibleTag(tag: string): boolean {
  *   웃음만 남았으면 톤은 다 버려진 것이다.
  * - 직접 입력의 글자 웃음(ㅋㅋ)을 바꾼 `[laughs]` 는 사용자가 쓴 것이라 '모델이 태그를 몇 개 배치했는가' 에서도
  *   뺀다(`normalizeSameLanguageTaggedText`).
+ *
+ * 글자 웃음을 대괄호에 넣은 것(`[haha]`·`[lol]`·`[www]`)도 웃음이다(Codex #830). 소리 태그가 아니라 글자라, 웃음으로
+ * 안 보면 톤으로 골라져 문장마다 붙고 등록 미리듣기(`allowLaughter: false`)의 웃음 제거도 비켜 간다. 모델이 낸 것은
+ * `[laughs]` 로 맞추고(`canonicalizeLaughterTags`), 사용자가 친 것은 친 수만큼 그대로다.
  */
 export function isLaughterTag(tag: string): boolean {
   const normalized = normalizeTag(tag);
-  return !!normalized && ['laugh', 'giggl', 'chuckl'].some((word) => normalized.includes(word));
+  if (!normalized) return false;
+  if (['laugh', 'giggl', 'chuckl'].some((word) => normalized.includes(word))) return true;
+  const spoken = typedLaughterToTags(normalized);
+  return spoken !== normalized && !hasSpokenWords(spoken);
+}
+
+/// 태그를 벗기고도 낭독할 말(글자·숫자)이 남는가. 문장부호만 남으면 말이 없는 것이다.
+function hasSpokenWords(text: string): boolean {
+  return /[\p{L}\p{N}]/u.test(normalizeAlarmTextWithoutTags(text));
 }
 
 /// 톤 태그만 벗기고 웃음 태그는 **제자리에** 남긴다. 사전렌더는 이걸 합성 글자의 바탕으로 쓰고
@@ -378,6 +391,9 @@ function canonicalizeLaughterTags(
     return left > 0;
   });
   const modelBudget = Math.max(0, maxLaughs - userOwned.filter(Boolean).length);
+  // 사용자가 친 웃음 태그를 모델이 다른 철자로 바꿨으면(`[chuckles]` → `[laughs]`) 남는 모델 웃음을 **그 철자로**
+  // 되돌린다 — 수만 맞추면 사용자가 친 태그가 조용히 바뀐다(Codex #830).
+  const unmatchedUserTags = [...userLeft].flatMap(([name, left]) => Array<string>(left).fill(`[${name}]`));
   let index = 0;
   let modelLaughs = 0;
   let lastLaughEnd = -1;
@@ -388,7 +404,7 @@ function canonicalizeLaughterTags(
     lastLaughEnd = offset + piece.length;
     if (owned) return piece;
     if (!adjacent && ++modelLaughs <= modelBudget) {
-      return piece.replace(TAG_RE, LAUGH_TAG);
+      return piece.replace(TAG_RE, unmatchedUserTags.shift() ?? LAUGH_TAG);
     }
     return tagGapFill(piece, offset, whole);
   });
@@ -413,9 +429,7 @@ function withLeadingLaugh(text: string, laugh: string = LAUGH_TAG): string {
 export function speakTypedLaughter(text: string): string {
   const converted = typedLaughterToTags(text);
   // 문장부호만 남아도('ㅋㅋㅋ!'·'haha…') 낭독할 말이 없는 것이다 — 글자·숫자가 남아야 한다(Codex #830).
-  return converted !== text && /[\p{L}\p{N}]/u.test(normalizeAlarmTextWithoutTags(converted))
-    ? converted
-    : text;
+  return converted !== text && hasSpokenWords(converted) ? converted : text;
 }
 
 /// 차분한 목소리의 **대체 기본 태그**. 카테고리 기본값(`cheerfully`·`playfully`)은 들뜬 결이라,
@@ -636,10 +650,13 @@ export async function prepareAlarmTextWithVertex(
       // 모델이 스스로 넣는 웃음은 한 번까지 — 차분한 목소리는 0번이다. 사용자가 친 웃음 수는 언제나 남긴다.
       countLaughterTags(source) > 0 || options.calmVoice ? countLaughterTags(source) : 1,
     );
+    // 톤이 하나도 안 남아 로컬 톤으로 돌아갈 때는 모델이 스스로 넣은 웃음을 버린다 — 같은 언어는 원문
+    // (`fallbackText`)으로 돌아가 저절로 빠지고, 번역은 번역문에 톤을 입히므로 사용자의 웃음 수만큼만 남긴다
+    // (Codex #830 — '톤 없는 웃음 하나' 를 모델이 배치한 것으로 두지 않는다).
     preparedText = extractTags(safe).some((tag) => !isLaughterTag(tag))
       ? safe
       : shouldTranslate
-        ? tagAlarmTextLocally(safe)
+        ? tagAlarmTextLocally(canonicalizeLaughterTags(safe, countLaughterTags(source)))
         : fallbackText;
   }
   if (shouldTranslate && !shouldTag) {
@@ -666,7 +683,14 @@ export async function prepareAlarmTextWithVertex(
   //   `{"text":"[softly]"}` 를 통과시키고, 태그를 지우면 `[cheerfully] ` 만 남아 말 없는 클립이
   //   '번역 성공' 으로 합성·저장된다. 같은 언어면 `normalizeSameLanguageTaggedText` 가 이미 원문과
   //   맞춰 보므로 여기 걸릴 일이 없다.
-  if (shouldTranslate && !normalizeAlarmTextWithoutTags(preparedText)) {
+  // ⚠ 웃음만 남은 번역(`[cheerfully] haha!`)도 말이 없는 것이다(Codex #830). `speak` 는 웃음뿐인 글을 일부러
+  //   글자로 두므로(사용자가 'ㅋㅋㅋ' 만 친 경우) 그대로 두면 'haha' 를 읽는 클립이 '번역 성공' 이 된다. 원문에
+  //   말이 있었는데 번역문의 글자 웃음을 소리로 바꾸면 말이 안 남는다면 거절한다 — 원문도 웃음뿐이면 그대로 둔다.
+  if (
+    shouldTranslate &&
+    (!normalizeAlarmTextWithoutTags(preparedText) ||
+      (hasSpokenWords(typedLaughterToTags(trimmed)) && !hasSpokenWords(typedLaughterToTags(preparedText))))
+  ) {
     throw new AlarmTextPreparationInvalidError('empty_spoken');
   }
 
@@ -3313,11 +3337,32 @@ export function normalizeAlarmTextWithoutTags(text: string): string {
 // - 없으면: 합성 텍스트 안의 대괄호는 전부 자동/모델이 붙인 delivery 태그이므로 위치·개수와
 //   무관하게 모두 제거하고 내부 공백을 한 칸으로 정리한다. 모델이 지시를 어기고 태그를 2개
 //   붙이거나 문장 중간·이중 공백을 내도 화면에 새지 않는다(normalizeAlarmTextWithoutTags 재사용).
+//
+// ⚠ 사용자가 대괄호를 친 **번역**은 번역문에 서버가 넣은 웃음(`[laughs]` — 사용자가 친 ㅋㅋ 를 바꾼 것)이 섞여
+//   있다. 그건 소리로만 남기고 화면에는 싣지 않는다(스펙 §9, Codex #830) — 사용자가 대괄호로 친 웃음 태그만 친
+//   수만큼 남긴다(`withoutServerLaughter`). 같은 언어는 친 글 그대로라 바뀌는 것이 없다.
 export function deriveAlarmDisplayText(synthesisText: string, originalText: string): string {
   if (TAG_RE.test(originalText.trim())) {
-    return synthesisText.trim();
+    return withoutServerLaughter(synthesisText.trim(), laughterTagCounts(originalText));
   }
   return normalizeAlarmTextWithoutTags(synthesisText);
+}
+
+/// 화면 문구용 — 사용자가 대괄호로 친 웃음 태그(`userTags`, 친 수만큼)만 남기고 나머지 웃음 태그는 벗긴다.
+/// 벗길 것이 없으면 **공백까지 그대로** 돌려준다(캐시 키가 화면 문구를 그대로 싣는다 — `routes/tts.ts` `cacheKeyText`).
+function withoutServerLaughter(text: string, userTags: ReadonlyMap<string, number>): string {
+  const userLeft = new Map(userTags);
+  const stripped = text.replace(TAG_WITH_GAP_RE_GLOBAL, (piece: string, offset: number, whole: string) => {
+    if (!isLaughterTag(piece.trim())) return piece;
+    const name = normalizeTag(piece.trim());
+    const left = userLeft.get(name) ?? 0;
+    if (left > 0) {
+      userLeft.set(name, left - 1);
+      return piece;
+    }
+    return tagGapFill(piece, offset, whole);
+  });
+  return stripped === text ? text : stripped.replace(/[ \t]{2,}/g, ' ').trim();
 }
 
 /// 문장마다 앞세울 **톤 태그** 하나를 고른다. 웃음 태그는 고르지 않는다 — 한 번 웃을 자리에서 매 문장

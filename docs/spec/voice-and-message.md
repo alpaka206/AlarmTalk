@@ -1026,14 +1026,15 @@ TTS 는 웃음 글자를 **글자로 읽는다**(2026-09-29 v3·v4·v4 Turbo 비
 
 - **화면 문구는 사용자가 친 그대로다.** 잠금화면·요약·기억되는 직접 입력 문구(§4)는 `ㅋㅋ` 를 그대로
   보여 준다 — 같은 언어일 때 서버의 `text` 는 합성 문구가 아니라 **사용자가 친 글**에서 만든다. 그래서
-  앱의 입력 캐시(`linkTtsInput`)도 예전처럼 맞는다. 번역하면 번역문이 화면 문구다(웃음은 소리로만 남는다).
+  앱의 입력 캐시(`linkTtsInput`)도 예전처럼 맞는다. 번역하면 번역문이 화면 문구다(웃음은 소리로만 남는다) — 사용자가
+  대괄호를 친 번역도 서버가 넣은 `[laughs]` 는 화면에서 벗기고, 사용자가 친 웃음 태그만 친 수만큼 남긴다.
 - **태그는 `[laughs]` 하나다.** 같은 비교에서 한국어 `[laughs]` 는 두 목소리·세 모델 모두 웃음소리가 났고,
   안 날 때도 글자로 읽지는 않았다(생략). `[soft laugh]` 는 깨우는 경로의 졸린 태그 가드(`soft`)에 걸려
   모델 출력에서 지워지고 v3 에서 웃음이 안 난 적이 있다. `[chuckles]` 는 v3 남자 목소리에서 한 번 다른
   언어로 합성됐다.
 - **건드리지 않는 것**: 이미 소리 나는 낱말(`하하하`·`호호`·`크크` — 하하하는 세 모델 모두 웃음으로 났다),
   다른 자모와 붙은 ㅋ·ㅎ(`ㅇㅋ`·`ㅎㅇ`·`ㅎㄷㄷ`·`ㅋㅋㅠㅠ`), 낱말 속 글자(`Lolita`·`work`·`笑顔`·`微笑`),
-  주소·메일 주소는 **통째로**(`https://example.com/lol`·`example.com/lol`·`www.예시.한국`·`lol@example.com` — 스킴
+  주소·메일 주소는 **통째로**(`https://example.com/lol`·`example.com/lol`·`www.예시.한국`·`192.168.0.1/lol`·`[::1]/lol`·`lol@example.com` — 스킴
   없는 도메인은 라틴 글자로만 본다. 넓히면 띄어 쓰지 않은 `일어나.ㅋㅋ` 가 도메인으로 읽힌다), **대괄호 안**
   (사용자가 친 `[haha]`·`[after lunch]` — 그 안을 바꾸면 `[ [laughs] ]` 같은 깨진 지시가 된다). 웃음이 없으면 합성 글자를 **한 글자도 바꾸지 않는다**(캐시 키가 그대로다).
 - **웃음만 있는 문구(`ㅋㅋㅋ`·`ㅋㅋㅋ!`·`haha…` — 문장부호만 남는 것도)는 바꾸지 않는다.** 바꾸면 합성 글자에 낭독할 말이 없다 — 태그뿐인 요청은
@@ -1049,7 +1050,10 @@ TTS 는 웃음 글자를 **글자로 읽는다**(2026-09-29 v3·v4·v4 Turbo 비
     철자로, 글자 웃음이면 `[laughs]` 로). 번역문에 모델이 옮겨 쓴 글자
     웃음(haha·www)도 소리로 바꾸고, 사용자가 대괄호를 쳐서 톤 태깅을 안 하는 번역에서도 모델이 바꾼 웃음 태그
     (`[laughs]` → `[chuckles]`)는 `[laughs]` 로 맞춘다 — 사용자가 직접 친 태그는 **친 수만큼** 그대로다(모델이 같은
-    이름으로 하나 더 쓰면 그건 모델 웃음이라 맞추고 센다 — 이름으로 통째로 빼 주면 두 번 웃는다).
+    이름으로 하나 더 쓰면 그건 모델 웃음이라 맞추고 센다 — 이름으로 통째로 빼 주면 두 번 웃는다). 모델이 사용자의
+    태그를 다른 철자로 바꾸면(`[chuckles]` → `[laughs]`) 그 철자로 되돌린다.
+  - 원문에 말이 있는데 번역문이 웃음뿐이면(`[cheerfully] haha!`) `empty_spoken` 으로 거절한다 — 글자 웃음을 소리로
+    바꾸면 낭독할 말이 안 남는다. 원문도 웃음뿐이면(`ㅋㅋㅋ`) 같은 언어처럼 그대로 둔다.
 - **캐시 키는 화면 문구까지 가린다 — 화면 문구가 합성 문구에서 나오지 않을 때만.** `ㅋㅋ`·`ㅋㅋㅋ`·`haha` 는 같은
   `[laughs]` 로 합성되므로, 합성 글자만으로 키를 만들면 캐시 히트가 다른 철자로 만든 옛 행(`message_id`·
   `messages.text`)을 돌려준다. 화면 문구는 **공백까지 그대로** 싣는다(키 계산이 공백을 접는다) — 사용자가
@@ -1057,7 +1061,8 @@ TTS 는 웃음 글자를 **글자로 읽는다**(2026-09-29 v3·v4·v4 Turbo 비
   벗긴 것과 **똑같으면**(대괄호도 웃음도 없는 문구·번역·등록 미리듣기) 예전 키 그대로다. 대괄호를 친 직접 입력의
   서버 캐시는 이 변경으로 한 번 빗나간다(한도는 §8 대로 같다).
 - **웃음은 톤이 아니다.** 문장마다 다시 앞세우는 톤 태그로 웃음 태그를 고르지 않는다 — 고르면 한 번 웃을
-  자리에서 **매 문장 웃는다.** 졸린 태그를 지운 뒤 웃음만 남았으면 톤이 없는 것으로 보고 로컬 톤을 입힌다.
+  자리에서 **매 문장 웃는다.** 졸린 태그를 지운 뒤 웃음만 남았으면 톤이 없는 것으로 보고 로컬 톤을 입힌다 — 이때
+  모델이 스스로 넣은 웃음은 버린다(같은 언어는 원문으로 돌아가고, 번역은 사용자의 웃음 수만큼만 남긴다).
   사용자의 웃음(서버가 바꾼 `[laughs]`)은 '모델이 태그를 몇 개 배치했는가' 에서도 뺀다 — 세면 모델이 톤을
   안 붙였는데 '여러 개 배치했다' 로 읽혀 톤 없이 합성된다. 모델이 **스스로** 넣은 웃음은 예전처럼 센다.
 - **차분한 목소리여도 지우지 않는다.** 글자 웃음은 사용자가 쓴 것이다 — 사용자가 직접 친 태그를 거르지
@@ -1073,6 +1078,8 @@ TTS 는 웃음 글자를 **글자로 읽는다**(2026-09-29 v3·v4·v4 Turbo 비
 ### 모델이 스스로 넣는 웃음 (직접 입력 태깅·클론 사전렌더)
 
 - 넣을 때는 `[laughs]` 하나 — `[chuckles]`·`[soft laugh]` 도, 글자 웃음(ㅋㅋ·haha·www)도 쓰지 않는다(위 근거).
+  글자 웃음을 대괄호에 넣은 것(`[haha]`·`[lol]`·`[www]`)도 웃음 태그로 본다(`isLaughterTag`) — `[laughs]` 로 맞추고,
+  톤으로 고르지 않으며, 차분한 목소리·등록 미리듣기에서는 지운다. 사용자가 친 것은 친 수만큼 그대로다.
   모델이 어기면 서버가 맞춘다: 웃음 태그(`[chuckles]`·`[giggles]`·`[laughs nervously]` …)는 `[laughs]` 로 바꾸고,
   졸린 태그 거르기 **뒤**라 `[soft laugh]` 는 예전처럼 지워진다. **한 번**도 서버가 지킨다 — 앞에서부터 한 번만
   남긴다. 직접 입력에 사용자가 웃었으면 그 수만큼 남긴다(그 웃음은 원문 자리로 맞춘 뒤다). 사용자가 대괄호로
@@ -1220,8 +1227,8 @@ v4·v4 Turbo 로 만들어 비교했다(표의 값은 자동 측정·받아쓰�
 | 직접 입력 한도 차감 | `ui/editor/AlarmEditorScreen.kt` 의 저장 경로(로컬 확인 → 횟수 확인) | `Views/Editor/AlarmEditorSheet.swift` 의 `manualQuotaBlockIfExhausted` | `routes/tts.ts` 의 `reserveManualTtsQuota`(캐시 히트·미스 양쪽) |
 | 오프라인이면 **요청 없이** 막는다 | `SaveBlockReason.OFFLINE_NEW_MESSAGE` — 저장 버튼이 `saveEditor()` **전에** 판정 | `AlarmEditorSheet.saveFlow` 의 오프라인 갈래는 `manualQuotaBlockIfExhausted` **앞** | — |
 | 직접 입력 글자 웃음 → `[laughs]`(합성 글자만) | — 서버가 한다. 화면은 서버의 `text`(친 글 그대로) | — 같음 | `lib/typed-laughter.ts` `typedLaughterToTags` · `lib/vertex-translate.ts` `speakTypedLaughter`(웃음만 있으면 그대로) · `prepareAlarmTextWithVertex` 의 `speakTypedLaughter` 옵션(톤 여부는 원문 대괄호로) ← `routes/tts.ts`(프리셋 제외). 회귀 `typed-laughter.test.ts`·`vertex-translate.test.ts`·`tts.test.ts` |
-| 같은 언어 직접 입력의 화면 문구 = 친 글 · 캐시 키가 화면 문구까지 가린다 | — | — | `routes/tts.ts` 의 `messageText`(`typedSameLanguage` → `deriveAlarmDisplayText(requestText, …)`)·`cacheKeyText` |
-| 웃음은 톤이 아니다(문장마다 앞세우지 않는다) · 사용자 웃음은 친 자리 그대로 | — | — | `isLaughterTag` ← `pickApprovedTag`·`normalizeSameLanguageTaggedText`(`withoutToneTags` 로 자리 대조)·`tagAlarmTextLocally`·`generatePrerenderClipText`(톤 태그로만 센다 — `toneTags`·`onlyLeadingTone`) |
+| 같은 언어 직접 입력의 화면 문구 = 친 글 · 캐시 키가 화면 문구까지 가린다 · 대괄호 친 번역의 화면 문구에서 서버 웃음 벗기기 | — | — | `routes/tts.ts` 의 `messageText`(`typedSameLanguage` → `deriveAlarmDisplayText(requestText, …)`)·`cacheKeyText` · `deriveAlarmDisplayText` 의 `withoutServerLaughter`(`lib/vertex-translate.ts`) |
+| 웃음은 톤이 아니다(문장마다 앞세우지 않는다) · 사용자 웃음은 친 자리 그대로 | — | — | `isLaughterTag`(대괄호 글자 웃음 `[haha]` 포함 — `isCalmIncompatibleTag` 도 본다) ← `pickApprovedTag`·`normalizeSameLanguageTaggedText`(`withoutToneTags` 로 자리 대조)·`tagAlarmTextLocally`·`generatePrerenderClipText`(톤 태그로만 센다 — `toneTags`·`onlyLeadingTone`) |
 | 모델이 넣는 웃음 = `[laughs]` 하나·한 번(차분은 없음) | — | — | `OWN_LAUGH_INSTRUCTION` ← `alarmTextPrompt`·`prerenderClipPrompt`(차분이면 빼고 서버도 지운다 — 사전렌더는 `isCalmIncompatibleTag`, 직접 입력은 `prepareAlarmTextWithVertex` 의 `calmVoice` ← `routes/tts.ts` `withVoiceEnergy`) · 모델이 낸 웃음 태그는 `canonicalizeLaughterTags`(`dropWakeUnsafeTags` 뒤, 번역은 태깅 여부와 무관 — 사용자 태그는 친 수만큼 제외, `laughterTagCounts`) · 지운 태그 자리 `tagGapFill`(`dropWakeUnsafeTags`·`canonicalizeLaughterTags`·`withoutToneTags`) · 사전렌더의 글자 웃음은 `generatePrerenderClipText` 가 `typedLaughterToTags` 로 바꾼 뒤 거르고, 말이 없으면 `prerenderRejectionReason` 의 `empty_spoken` · 등록 미리듣기는 `allowLaughter: false`(`routes/tts.ts`) |
 | 합성 모델(기본 `eleven_v3` · `eleven_v4_turbo` 전환 검토 중 — 결정 전까지 설정하지 않는다) | — | — | `lib/voice-provider.ts` 의 `ttsModelId` ← `ELEVENLABS_TTS_MODEL_ID`(`types.ts` `Env`, `scripts/worker-secret-keys.ts`) |
 

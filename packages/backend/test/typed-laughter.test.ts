@@ -89,6 +89,17 @@ describe('typedLaughterToTags — 글자 웃음을 소리 태그로', () => {
     expect(typedLaughterToTags('[excited]ㅋㅋ 일어나')).toBe('[excited] [laughs] 일어나');
   });
 
+  // Codex #830: 스킴 없는 IP 주소도 통째로 주소다 — 경로의 lol·haha 를 웃음으로 바꾸지 않는다.
+  it('스킴 없는 IP 주소(IPv4·IPv6)와 그 경로는 건드리지 않는다 — 주소 밖의 웃음은 바꾼다', () => {
+    for (const text of ['192.168.0.1/lol', '127.0.0.1:8080/haha', '[::1]/lol', '[::1]:8080/haha?x=lol']) {
+      expect(typedLaughterToTags(text)).toBe(text);
+    }
+    expect(typedLaughterToTags('192.168.0.1/lol 들어가 봐 ㅋㅋ')).toBe('192.168.0.1/lol 들어가 봐 [laughs]');
+    expect(typedLaughterToTags('버전 1.2.3.4 나왔어 lol')).toBe('버전 1.2.3.4 나왔어 [laughs]');
+    // 콜론이 없는 대괄호는 IPv6 가 아니다 — 사용자가 친 태그로 그대로 두고 뒤의 웃음은 바꾼다.
+    expect(typedLaughterToTags('[face] lol')).toBe('[face] [laughs]');
+  });
+
   it('스킴 없는 도메인은 라틴 글자로만 본다 — 띄어 쓰지 않은 문장의 웃음은 바꾼다', () => {
     expect(typedLaughterToTags('일어나.ㅋㅋ')).toBe('일어나. [laughs]');
   });
