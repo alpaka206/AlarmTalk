@@ -1017,6 +1017,8 @@ class AlarmRepository(
         // 클립 세트 전체(`bucketClipKeysJson`)를 가리키는데, 대표 키만 지우면 나머지 — 지워진 목소리의
         // 생성 음성 — 가 30일 캐시 정리 때까지 남는다. 보관본을 버리기 전에 모은다.
         val releasedKeys = LinkedHashSet<String>()
+        // 캐시 키 없이 파일 경로만 든 옛 행(마이그레이션 5→6 이전)의 보관본은 키로 셀 수 없다 — 경로로 놓는다.
+        val releasedKeylessUris = LinkedHashSet<String>()
         lockedAtStart.filter { alarm ->
             alarm.origin == AlarmOrigins.LOCAL_OWNED &&
                 ownedByCurrentSession(alarm, currentUser, ownershipSettled) &&
@@ -1024,11 +1026,16 @@ class AlarmRepository(
                     original.voiceSource == VoiceSources.TTS_PROFILE && match(original)
                 }
         }.forEach { locked ->
-            locked.lockedPaidVoice()?.referencedCacheKeys()?.let(releasedKeys::addAll)
+            locked.lockedPaidVoice()?.let { snapshot ->
+                releasedKeys.addAll(snapshot.referencedCacheKeys())
+                if (snapshot.audioCacheKey.isNullOrBlank()) {
+                    snapshot.localAudioUri?.takeIf { it.isNotBlank() }?.let(releasedKeylessUris::add)
+                }
+            }
             alarmDao.upsertPreservingServerSyncFields(locked.finalizedLock(lockCheckedAt))
             Log.i(TAG, "Finalized a default-voice lock id=${locked.id}: the original voice is no longer accessible")
         }
-        deleteAudioNoAlarmUses(releasedKeys)
+        deleteAudioNoAlarmUses(releasedKeys, releasedKeylessUris)
         val lockedIds = lockedAtStart.mapTo(HashSet()) { it.id }
         val candidates = alarmDao.getAllAlarms().filter { alarm ->
             alarm.origin == AlarmOrigins.LOCAL_OWNED &&
@@ -1080,24 +1087,40 @@ class AlarmRepository(
      * 놓아준 캐시 키 중 **어떤 알람도 더 쓰지 않는 것만** 지운다.
      *
      * 참조로 세는 것: 모든 알람의 대표 클립(`audioCacheKey`), **목소리로 우는** 알람의 클립 세트
-     * (`bucketClipKeys` — 알람 모드 행은 틀지 않는다), 무료 잠금 보관본이 붙든 키. `countByAudioCacheKey`
+     * (`bucketClipKeys` — 알람 모드 행은 틀지 않는다), 무료 잠금 보관본이 붙든 키. [keylessUris] 는 캐시
+     * 키 없이 경로만 든 옛 행의 파일이라(마이그레이션 5→6 이전) 알람·보관본의 `localAudioUri` 파일 이름으로 센다. `countByAudioCacheKey`
      * 는 클립 세트를 세지 않아, 세트 중간의 키를 지우면 다른 알람의 회전이 빈 자리를 튼다 — 여러 키를
      * 한꺼번에 놓는 자리에서는 이걸 쓴다. iOS `VoiceStudioViewModel.finalizeDefaultVoiceLocks` 와 같은 규칙.
      */
-    private suspend fun deleteAudioNoAlarmUses(keys: Set<String>) {
-        if (keys.isEmpty()) return
+    private suspend fun deleteAudioNoAlarmUses(keys: Set<String>, keylessUris: Set<String> = emptySet()) {
+        if (keys.isEmpty() && keylessUris.isEmpty()) return
         val stillReferenced = HashSet<String>()
+        // 키 없는 파일은 파일 이름(확장자 제외)으로 센다 — `sweepStaleAudioCache` 와 같은 단위.
+        val stillReferencedFiles = HashSet<String>()
         alarmDao.getAllAlarms().forEach { alarm ->
             alarm.audioCacheKey?.takeIf { it.isNotBlank() }?.let(stillReferenced::add)
             if (AlarmPlayModes.normalize(alarm.playMode) != AlarmPlayModes.ALARM_ONLY) {
                 stillReferenced.addAll(alarm.bucketClipKeys())
             }
-            alarm.lockedPaidVoice()?.referencedCacheKeys()?.let(stillReferenced::addAll)
+            alarmAudioFileName(alarm.localAudioUri)?.let(stillReferencedFiles::add)
+            alarm.lockedPaidVoice()?.let { snapshot ->
+                stillReferenced.addAll(snapshot.referencedCacheKeys())
+                alarmAudioFileName(snapshot.localAudioUri)?.let(stillReferencedFiles::add)
+            }
         }
         keys.filter { it.isNotBlank() && it !in stillReferenced }.forEach { key ->
             alarmAudioStore.deleteCachedAudio(key)
         }
+        // 캐시 폴더 밖의 경로는 `deleteCachedFileAt` 이 건드리지 않는다.
+        keylessUris.filter { alarmAudioFileName(it)?.let { name -> name !in stillReferencedFiles } == true }
+            .forEach { uri -> alarmAudioStore.deleteCachedFileAt(uri) }
     }
+
+    private fun alarmAudioFileName(uri: String?): String? =
+        uri?.takeIf { it.isNotBlank() }
+            ?.let { runCatching { android.net.Uri.parse(it).path }.getOrNull() }
+            ?.takeIf { it.isNotBlank() }
+            ?.let { java.io.File(it).nameWithoutExtension }
 
     /**
      * 보이스 클론 업로드에 성공한 직후, 더 이상 필요 없는 로컬 녹음 샘플(음성 생체정보)을 즉시 지운다.

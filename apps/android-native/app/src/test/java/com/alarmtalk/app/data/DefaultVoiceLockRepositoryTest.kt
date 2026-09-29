@@ -271,6 +271,37 @@ class DefaultVoiceLockRepositoryTest {
     }
 
     /**
+     * 캐시 키 없이 파일 경로만 든 옛 행(마이그레이션 5→6 이전)의 보관본도 확정 때 놓는다(Codex #820) —
+     * 키로는 셀 수 없어 경로(파일 이름)로 센다. 다른 알람이 같은 파일을 쓰면 남긴다.
+     */
+    @Test
+    fun finalizingReleasesAKeylessSnapshotFileToo() = runBlocking {
+        manifest = null
+        val store = AlarmAudioStore(context)
+        val exclusive = store.cacheGeneratedAudio(byteArrayOf(1, 2, 3), "mp3", rawAudioUri = null, cacheKey = "legacy-exclusive")
+        val shared = store.cacheGeneratedAudio(byteArrayOf(4, 5, 6), "mp3", rawAudioUri = null, cacheKey = "legacy-shared")
+        dao.upsert(rehearsalCloneAlarm(id = "keyless-1", audioCacheKey = null, localAudioUri = exclusive.localAudioUri))
+        dao.upsert(rehearsalCloneAlarm(id = "keyless-2", audioCacheKey = null, localAudioUri = shared.localAudioUri))
+        repository.lockPaidAlarmTalks()
+        assertTrue("전제 — 키 없는 보관본", dao.getById("keyless-1")!!.lockedPaidVoice()?.audioCacheKey == null)
+        // 잠금 뒤에 생긴, 다른(접근 가능한) 목소리의 알람이 같은 파일을 쓴다.
+        dao.upsert(
+            rehearsalCloneAlarm(
+                id = "other",
+                voiceProfileId = "clone-other",
+                audioCacheKey = null,
+                localAudioUri = shared.localAudioUri,
+            ),
+        )
+
+        repository.degradeAlarmsWithInaccessibleVoice(setOf("clone-other"), expectedOwnerUserId = "user-a")
+
+        assertFalse(dao.getById("keyless-1")!!.hasLockedPaidVoice())
+        assertNull("키 없는 보관본 파일도 지운다", store.getCachedAudio("legacy-exclusive"))
+        assertNotNull("다른 알람이 쓰는 파일은 남긴다", store.getCachedAudio("legacy-shared"))
+    }
+
+    /**
      * 테마 없이 잠근 행은 직접 입력 판정에 걸리고 오디오 시각이 0 이다. 그 **대체 기본 목소리**가
      * 제자리 교체되면 낡은 직접 입력 알람으로 잡혀 알람음으로 내려가고 "직접 입력 알람이 기본
      * 알람음으로 바뀌었어요" 가 떴다 — 이 행에는 낡은 오디오가 하나도 없는데.
