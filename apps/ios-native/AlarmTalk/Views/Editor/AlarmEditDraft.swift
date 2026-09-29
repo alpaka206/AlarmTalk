@@ -470,10 +470,7 @@ struct AlarmEditDraft: Equatable {
         // 사용자의 편집을 옛 유료 목소리로 덮는다(안드로이드는 어떤 편집이든 잠금을 비운다 —
         // `docs/spec/billing-lifecycle.md` 「목소리를 못 쓰게 되면」).
         if existing.preLockVoice != nil {
-            let voiceUnchanged = record.voiceProfileId == existing.voiceProfileId
-                && record.audioCacheKey == existing.audioCacheKey
-                && record.playMode == existing.playMode
-            if voiceUnchanged {
+            if DefaultVoiceSubstitute.saveKeepsLock(saved: record, editing: existing) {
                 record.preLockVoice = existing.preLockVoice
             } else {
                 record.preLockPlayMode = nil

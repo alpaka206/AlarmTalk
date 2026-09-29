@@ -78,6 +78,65 @@ final class FreePlanVoiceLockTests: XCTestCase {
         XCTAssertNil(restored.preLockVoice)
     }
 
+    // MARK: - 잠긴 행의 오디오 참조 · 저장이 잠금을 잇는가 (Codex #820)
+
+    /// 잠금은 원래 오디오를 `audioCacheKey` 에서 보관본으로 옮긴다 — 참조 개수가 그걸 안 세면 같은 클립을
+    /// 쓰던 다른 알람을 지울 때 파일이 지워지고, 재결제로 복원한 알람은 들을 소리가 없다.
+    /// 안드로이드 `AlarmDao.countByAudioCacheKey`(`preLockVoiceJson`) 짝.
+    @MainActor
+    func test_참조_개수는_잠금_보관본이_붙든_키도_센다() {
+        let store = LocalAlarmStore(
+            storageURL: FileManager.default.temporaryDirectory
+                .appendingPathComponent("lock-refcount-\(UUID().uuidString).json"),
+            loadFromDisk: false
+        )
+        var original = cloneAlarm()
+        original.bucketClipKeys = ["stock_clone-greeting-0", "stock_clone-greeting-1"]
+        store.upsert(DefaultVoiceSubstitute.locked(original, voiceID: systemVoice, binding: nil, nowMillis: 1))
+
+        XCTAssertEqual(store.countByAudioCacheKey("stock_clone-greeting-0"), 1, "보관본의 대표 클립")
+        XCTAssertEqual(store.countByAudioCacheKey("stock_clone-greeting-1"), 1, "보관본의 클립 세트")
+        XCTAssertEqual(store.countByAudioCacheKey("stock_unrelated"), 0)
+    }
+
+    /// 테마를 남긴 채 오디오 없이 잠긴 행을 시각만 고쳐 저장하면, 편집기가 그 테마의 기본 목소리 클립을
+    /// 받아 묶어 `audioCacheKey` 가 nil → 클립 키로 바뀐다. 그건 편집이 아니다 — 잠금을 잇는다.
+    func test_같은_테마의_클립을_채운_저장은_잠금을_잇는다() {
+        var weather = cloneAlarm()
+        weather.bucketId = "weather"
+        weather.voiceRandomContext = RandomPromptContext.wakeWeather.rawValue
+        let locked = DefaultVoiceSubstitute.locked(weather, voiceID: systemVoice, binding: nil, nowMillis: 1)
+        XCTAssertNil(locked.audioCacheKey, "전제 — 오디오 없이 잠겼다")
+        XCTAssertEqual(locked.bucketId, "weather", "전제 — 테마는 남았다")
+
+        var hydrated = locked
+        hydrated.hour = 8
+        hydrated.audioCacheKey = "stock_\(systemVoice)-weather-0"
+        hydrated.bucketClipKeys = (0..<9).map { "stock_\(systemVoice)-weather-\($0)" }
+        XCTAssertTrue(DefaultVoiceSubstitute.saveKeepsLock(saved: hydrated, editing: locked))
+
+        var timeOnly = locked
+        timeOnly.minute = 30
+        XCTAssertTrue(DefaultVoiceSubstitute.saveKeepsLock(saved: timeOnly, editing: locked))
+
+        var otherTheme = hydrated
+        otherTheme.bucketId = "cheer"
+        XCTAssertFalse(DefaultVoiceSubstitute.saveKeepsLock(saved: otherTheme, editing: locked), "테마를 바꾼 것은 편집이다")
+
+        var otherVoice = hydrated
+        otherVoice.voiceProfileId = bundledSystemVoiceProfiles()[1].id
+        XCTAssertFalse(DefaultVoiceSubstitute.saveKeepsLock(saved: otherVoice, editing: locked))
+
+        var alarmMode = timeOnly
+        alarmMode.playMode = AlarmPlayMode.alarmOnly.rawValue
+        XCTAssertFalse(DefaultVoiceSubstitute.saveKeepsLock(saved: alarmMode, editing: locked))
+
+        // 이미 클립이 묶인 잠금에서 오디오가 바뀌면 편집이다(예전 규칙 그대로).
+        var reAudio = hydrated
+        reAudio.audioCacheKey = "stock_\(systemVoice)-weather-3"
+        XCTAssertFalse(DefaultVoiceSubstitute.saveKeepsLock(saved: reAudio, editing: hydrated))
+    }
+
     // MARK: - 한 번의 잠금 실행이 건드리는 행 (`FreePlanLockSelection` — `applyFreePlanVoiceLock` 의 선별)
 
     private func record(

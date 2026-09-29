@@ -238,6 +238,26 @@ enum DefaultVoiceSubstitute {
         return next
     }
 
+    /// **이 저장이 무료 잠금을 이어받는가** — iOS 규칙: 목소리를 그대로 둔 저장(시각·이름만 고침)은
+    /// 잠금을 잇고, 목소리·오디오·재생 방식을 바꾼 저장은 비운다(`docs/spec/billing-lifecycle.md`
+    /// 「목소리를 못 쓰게 되면」). 편집기의 두 자리(`AlarmEditDraft.carryOverNonEditableFields` ·
+    /// `AlarmEditorSheet` 저장 직전)가 이것 하나를 본다.
+    ///
+    /// ⚠ **오디오 없이 잠긴 행에 같은 테마의 클립을 채운 것은 편집이 아니다**(Codex #820). 테마를 남긴
+    /// 잠금 행은 저장할 때 편집기가 그 테마의 기본 목소리 클립을 받아 묶으므로 `audioCacheKey` 가
+    /// nil → 클립 키로 바뀐다. 그걸 '오디오를 바꿨다' 로 읽으면 시각만 고친 저장이 보관본을 버려
+    /// 재결제해도 원래 목소리로 돌아가지 않는다. 테마가 바뀌었으면 사용자가 고친 것이다.
+    static func saveKeepsLock(saved: LocalAlarmRecord, editing: LocalAlarmRecord) -> Bool {
+        guard saved.voiceProfileId == editing.voiceProfileId, saved.playMode == editing.playMode else {
+            return false
+        }
+        if saved.audioCacheKey == editing.audioCacheKey { return true }
+        guard editing.audioCacheKey?.nilIfBlank == nil, let theme = editing.bucketId?.nilIfBlank else {
+            return false
+        }
+        return saved.bucketId == theme
+    }
+
     /// 잠금을 풀어 **원래 유료 목소리로 되돌린다**(순수). 보관본이 없는 옛 모양은 재생 방식만
     /// 되돌린다. 동기 상태는 호출부가 정한다(보관본을 되돌렸으면 올려야 한다 — 잠긴 동안의
     /// 켜기·끄기가 기본 목소리를 서버에 올렸을 수 있다). 안드로이드 `restoredFromLock` 미러.

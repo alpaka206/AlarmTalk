@@ -434,9 +434,10 @@ final class AlarmKitViewModel: ObservableObject {
                     let effective = PaidVoiceGate.shouldDowngrade(record: record, snapshot: snapshot)
                         ? defaultVoiceSubstitute(for: record)
                         : record
-                    let resolution = AlarmSoundResolver.resolve(for: effective, audioCache: audioCache)
-                    if resolution.requiresInAppFallback {
-                        AlarmVoicePlayer.shared.playIfNeeded(for: effective, audioCache: audioCache)
+                    // 틀 소리는 판정이 고른 URL 이다 — 오디오 없는 기본 목소리 대체 행은 `audioCacheKey`
+                    // 가 nil 이라 키로 다시 찾으면 아무것도 안 튼다(`AlarmVoicePlayer.playIfNeeded(for:url:)`).
+                    if case .cachedAudio(let url, _) = AlarmSoundResolver.resolve(for: effective, audioCache: audioCache) {
+                        AlarmVoicePlayer.shared.playIfNeeded(for: effective, url: url)
                     }
                 }
             }
