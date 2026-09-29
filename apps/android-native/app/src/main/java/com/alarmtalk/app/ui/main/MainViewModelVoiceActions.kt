@@ -1094,12 +1094,9 @@ private suspend fun MainViewModel.fetchAndPublishStockClips(
             // ⚠ 단 **이긴 것이 실제로 공개됐을 때만**이다(Codex #825). 더 새 표의 쓰기가 실패했거나
             // 표가 무효화됐으면 디스크는 비었거나 옛 목록이라, 싣지도 '받았다' 로 세지도 않는다 —
             // 실패로 돌려 준비도는 앞 값을 지키고, 클론 다운로드는 목소리 탭 폴링에 넘긴다.
+            // 확인과 읽기는 저장소가 한 잠금 안에서 한다(`loadPublishedWinner`).
             val winner = withContext(Dispatchers.IO) {
-                if (!com.alarmtalk.app.data.StockClipManifestStore.latestSeenResponseWasPublished()) {
-                    null
-                } else {
-                    com.alarmtalk.app.data.StockClipManifestStore.load(app, owner.userId, requireOwner = true)
-                }
+                com.alarmtalk.app.data.StockClipManifestStore.loadPublishedWinner(app, owner.userId)
             }
             if (winner == null || !responseStillBelongsToRequester(owner.userId, owner.generation)) {
                 return ManifestFlightOutcome.FAILED
@@ -1119,49 +1116,60 @@ private suspend fun MainViewModel.fetchAndPublishStockClips(
  *
  * 매니페스트를 기다리는 쪽을 붙잡지 않게 따로 돈다. 더 새 매니페스트가 공개되면 앞 회차를 끊는다 —
  * 새 목록이 권위이고, 이미 받은 것은 다음 회차가 낡지 않은 것으로 본다.
+ *
+ * ⚠ **목소리마다 받기 자리(`voiceClipDownloads`)를 거친다**(Codex #825). 제자리 교체 직후에는
+ * 이 수리와 구동(`downloadAllPresetClips`)·목소리 탭이 **같은 `stock_` 클립**을 낡은 것으로 보고
+ * 동시에 받았다 — 목소리마다 한 벌이라던 받기가 두 벌(요청 8개)이 되고 같은 파일을 두 번 썼다.
+ * 이제 한쪽이 끝난 뒤 다른 쪽은 **그때 다시 세어** 빠진 것만 받는다. 목소리는 차례로 돈다(동시 4개).
  */
 private fun MainViewModel.repairReplacedStockClips(clips: List<com.alarmtalk.app.network.StockClip>) {
     replacedClipRepairJob?.cancel()
     replacedClipRepairJob = viewModelScope.launch(Dispatchers.IO) {
         val audioStore = com.alarmtalk.app.data.AlarmAudioStore(getApplication<Application>())
-        val stale = clips.mapNotNull { clip ->
-            val keys = com.alarmtalk.app.data.AlarmAudioStore.messageCacheKeys(clip.messageId)
-                .filter { key ->
-                    audioStore.isCachedAudioStale(key, clip.audioUrl) ||
-                        // 세대 표식이 없는 옛 캐시도 **한 번은** 다시 받는다 —
-                        // 비교할 값이 없어 낡음 판정을 영영 통과하지 못한다.
-                        audioStore.cachedAudioNeedsRevisionRefresh(key, clip.audioUrl)
-                }
-            keys.takeIf { it.isNotEmpty() }?.let { clip to it }
-        }
-        stale.chunked(PREFETCH_PARALLELISM).forEach { batch ->
-            kotlinx.coroutines.coroutineScope {
-                batch.map { (clip, cacheKeys) ->
-                    async {
-                        try {
-                            val audio = downloadTtsMessageAudio(clip.messageId)
-                            val bytes = android.util.Base64.decode(
-                                audio.audioBase64,
-                                android.util.Base64.DEFAULT,
-                            )
-                            cacheKeys.forEach { key ->
-                                audioStore.cacheGeneratedAudio(
-                                    bytes = bytes,
-                                    format = audio.audioFormat,
-                                    rawAudioUri = audio.audioUrl,
-                                    displayName = key,
-                                    cacheKey = key,
-                                    messageId = clip.messageId,
-                                )
+        clips.groupBy { it.voiceProfileId }.forEach { (voiceId, voiceClips) ->
+            // 받을 키는 **자리를 잡은 뒤에** 센다(`missing` — 한 번만 불린다). 그 전에 세면 앞 벌이
+            // 이미 고친 키까지 다시 받는다.
+            var staleKeys: Map<String, List<String>> = emptyMap()
+            voiceClipDownloads.cache(
+                voiceId = voiceId,
+                clips = voiceClips,
+                missing = { list ->
+                    val found = list.associate { clip ->
+                        clip.messageId to com.alarmtalk.app.data.AlarmAudioStore.messageCacheKeys(clip.messageId)
+                            .filter { key ->
+                                audioStore.isCachedAudioStale(key, clip.audioUrl) ||
+                                    // 세대 표식이 없는 옛 캐시도 **한 번은** 다시 받는다 —
+                                    // 비교할 값이 없어 낡음 판정을 영영 통과하지 못한다.
+                                    audioStore.cachedAudioNeedsRevisionRefresh(key, clip.audioUrl)
                             }
-                        } catch (error: kotlin.coroutines.cancellation.CancellationException) {
-                            throw error
-                        } catch (error: Exception) {
-                            AlarmTalkLog.reportError("Failed to refresh replaced voice clip", error)
+                    }.filterValues { it.isNotEmpty() }
+                    staleKeys = found
+                    list.filter { it.messageId in found }
+                },
+                download = { clip ->
+                    try {
+                        val audio = downloadTtsMessageAudio(clip.messageId)
+                        val bytes = android.util.Base64.decode(
+                            audio.audioBase64,
+                            android.util.Base64.DEFAULT,
+                        )
+                        staleKeys[clip.messageId].orEmpty().forEach { key ->
+                            audioStore.cacheGeneratedAudio(
+                                bytes = bytes,
+                                format = audio.audioFormat,
+                                rawAudioUri = audio.audioUrl,
+                                displayName = key,
+                                cacheKey = key,
+                                messageId = clip.messageId,
+                            )
                         }
+                    } catch (error: kotlin.coroutines.cancellation.CancellationException) {
+                        throw error
+                    } catch (error: Exception) {
+                        AlarmTalkLog.reportError("Failed to refresh replaced voice clip", error)
                     }
-                }.awaitAll()
-            }
+                },
+            )
         }
     }
 }

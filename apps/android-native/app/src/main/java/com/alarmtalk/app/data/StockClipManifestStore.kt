@@ -61,16 +61,25 @@ object StockClipManifestStore {
     private var publishedTicket: Long = 0
 
     /**
-     * **가장 최근에 본 표의 응답이 실제로 공개됐는가** — 물러난(SUPERSEDED) 회차가 디스크의 이긴
-     * 매니페스트를 믿어도 되는지 가른다(스펙 「공개 경합의 규칙」, iOS `publishedNewerResponse`).
+     * 물러난(SUPERSEDED) 회차가 이어받을 **이긴 매니페스트** — 가장 최근에 본 표의 응답이 **실제로
+     * 공개됐을 때만** 읽어 준다(임자 대조 포함). 아니면 null(스펙 「공개 경합의 규칙」의 '새로
+     * 받았는가', iOS `publishedNewerResponse`).
      *
      * ⚠ 물러났다는 것만으로는 **더 새 매니페스트가 디스크에 있다는 보장이 없다**(Codex #825).
      * 더 새 표의 쓰기가 실패해도 수위선은 오르고(위 [seenTicket] 주석), 로그아웃·계정 전환의
      * 무효화도 수위선을 올린다. 그 둘이면 디스크는 비었거나 **옛 목록**이다 — 이긴 것으로 싣거나
      * '받았다' 로 세면 준비도·클론 다운로드가 낡은 목록으로 돈다.
+     *
+     * ⚠ **확인과 읽기를 한 임계구역에서** 한다(Codex #825). 둘을 나누면 그 틈에 더 새 표의 쓰기가
+     * 실패해 수위선만 오르고, 이미 '공개됨' 으로 확인한 뒤라 옛 목록을 이긴 것으로 읽는다.
+     *
+     * 메인 스레드에서 부르지 말 것 — [load] 와 같다.
      */
-    fun latestSeenResponseWasPublished(): Boolean =
-        synchronized(revisionLock) { seenTicket > 0 && publishedTicket == seenTicket }
+    fun loadPublishedWinner(context: Context, userId: String): StockClipListResponse? =
+        synchronized(revisionLock) {
+            if (seenTicket <= 0 || publishedTicket != seenTicket) return null
+            load(context, userId, requireOwner = true)
+        }
 
     /** 조회를 시작하며 표를 뽑는다. 그 응답을 저장할 때 [save] 에 그대로 낸다. */
     fun beginFetch(): Long = synchronized(revisionLock) { ++nextFetchTicket }

@@ -88,18 +88,33 @@ class StockClipManifestWiringTest {
     fun aSupersededFetchTrustsTheWinnerOnlyWhenItWasPublished() {
         val body = functionBody(voiceActions, "private suspend fun MainViewModel.fetchAndPublishStockClips(")
         val superseded = body.substring(body.indexOf("PublishResult.SUPERSEDED ->"))
-        val check = superseded.indexOf("latestSeenResponseWasPublished()")
-        val load = superseded.indexOf("StockClipManifestStore.load(")
         assertTrue(
             "물러난 회차가 이긴 것이 공개됐는지 보지 않고 디스크를 싣는다(Codex #825) — 더 새 표의 " +
-                "쓰기가 실패했으면 디스크는 옛 목록이다.",
-            check in 0 until load,
+                "쓰기가 실패했으면 디스크는 옛 목록이다. 확인과 읽기를 한 잠금에서 하는 " +
+                "`loadPublishedWinner` 를 쓸 것.",
+            superseded.contains("StockClipManifestStore.loadPublishedWinner("),
+        )
+        assertFalse(
+            "물러난 회차가 확인 없이 `load` 로 디스크를 읽는다.",
+            superseded.substring(0, superseded.indexOf("ManifestFlightOutcome.SUPERSEDED"))
+                .contains("StockClipManifestStore.load("),
         )
         assertTrue(
             "이긴 것을 확인하지 못한 superseded 가 실패로 돌아가지 않는다.",
             superseded.substring(0, superseded.indexOf("ManifestFlightOutcome.SUPERSEDED"))
                 .contains("return ManifestFlightOutcome.FAILED"),
         )
+    }
+
+    @Test
+    fun theReplacementRepairTakesTheSamePerVoiceSlotAsCloneDownloads() {
+        val repair = functionBody(voiceActions, "private fun MainViewModel.repairReplacedStockClips(")
+        assertTrue(
+            "제자리 교체 수리가 목소리별 받기 자리(`voiceClipDownloads`)를 거치지 않는다 — 구동과 같은 " +
+                "`stock_` 클립을 동시에 받는다(Codex #825).",
+            repair.contains("voiceClipDownloads.cache("),
+        )
+        assertTrue(repair.contains(".groupBy { it.voiceProfileId }"))
     }
 
     @Test
@@ -200,7 +215,8 @@ class StockClipManifestWiringTest {
         val newer = StockClipManifestStore.beginFetch()
         assertEquals(published, StockClipManifestStore.save(context, manifest("new"), newer, "u1"))
         assertEquals(superseded, StockClipManifestStore.save(context, manifest("old"), older, "u1"))
-        assertTrue(StockClipManifestStore.latestSeenResponseWasPublished())
+        assertEquals("new", StockClipManifestStore.loadPublishedWinner(context, "u1")?.clips?.single()?.messageId)
+        assertNull("남의 계정은 이긴 것을 이어받지 못한다(임자 대조).", StockClipManifestStore.loadPublishedWinner(context, "u2"))
 
         // 2) 뒤에 출발한 쪽의 **쓰기가 실패** → 수위선은 올랐지만 디스크는 앞 목록이다.
         val older2 = StockClipManifestStore.beginFetch()
@@ -215,18 +231,18 @@ class StockClipManifestWiringTest {
             tmp.deleteRecursively()
         }
         assertEquals(superseded, StockClipManifestStore.save(context, manifest("old2"), older2, "u1"))
-        assertFalse(
-            "더 새 표의 쓰기가 실패했는데 '이긴 것이 공개됐다' 고 답했다 — 옛 목록을 새것으로 싣는다.",
-            StockClipManifestStore.latestSeenResponseWasPublished(),
+        assertNull(
+            "더 새 표의 쓰기가 실패했는데 옛 목록을 이긴 것으로 돌려줬다.",
+            StockClipManifestStore.loadPublishedWinner(context, "u1"),
         )
 
         // 3) 로그아웃·계정 전환의 무효화도 '공개된 이긴 것' 이 아니다.
         val beforeSignOut = StockClipManifestStore.beginFetch()
         assertEquals(published, StockClipManifestStore.save(context, manifest("fresh"), StockClipManifestStore.beginFetch(), "u1"))
-        assertTrue(StockClipManifestStore.latestSeenResponseWasPublished())
+        assertEquals("fresh", StockClipManifestStore.loadPublishedWinner(context, "u1")?.clips?.single()?.messageId)
         StockClipManifestStore.invalidateOutstandingTickets()
         assertEquals(superseded, StockClipManifestStore.save(context, manifest("late"), beforeSignOut, "u1"))
-        assertFalse(StockClipManifestStore.latestSeenResponseWasPublished())
+        assertNull(StockClipManifestStore.loadPublishedWinner(context, "u1"))
     }
 
     @Test
