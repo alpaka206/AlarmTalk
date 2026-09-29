@@ -165,6 +165,12 @@ internal fun AlarmTalkApp(
         stockReplacementCheckedUserId == authSession?.user?.id
 
     val sessionRouteKey = authSession?.user?.id
+    // 세션 효과·탭 스로틀의 키 — **계정 + 세션 세대**, 토큰은 넣지 않는다(`SessionEffectKey`).
+    // 세대는 세션이 바뀔 때만 다시 읽는다(굴러간 토큰으로 세션 객체가 바뀌어도 같은 값이 나와
+    // 키가 그대로다).
+    val sessionEffectKey = remember(authSession) {
+        com.alarmtalk.app.network.sessionEffectKey(authSession, viewModel.authSessionStore.sessionGeneration())
+    }
     val hasSharedPass = familyGroup?.group != null
     val unreadAlarmCount = remember(alarms, viewModel.receivedAlarmSeenAtMillis) {
         alarms.count { alarm ->
@@ -534,7 +540,11 @@ internal fun AlarmTalkApp(
         }
     }
 
-    LaunchedEffect(authSession?.token) {
+    // ⚠ **세션 효과의 키는 `sessionEffectKey`(계정 + 세션 세대)다 — 토큰이 아니다**(효율 감사 H3).
+    //   토큰은 같은 세션 안에서도 굴러간다(콜드 스타트의 진입 갱신·워커·결제 뒤 갱신). 토큰을
+    //   키로 두면 굴러갈 때마다 아래 효과가 전부 다시 돌아 콜드 스타트 한 번에 요청이 57건까지
+    //   불었다. 계정 전환·로그아웃 뒤 재로그인(같은 계정 포함)에서는 키가 바뀌어 다시 돈다.
+    LaunchedEffect(sessionEffectKey) {
         if (authSession != null) {
             // ⚠ **다른 계정의 매니페스트가 남아 있으면 여기서 지운다**(Codex #703 P1).
             // 자동 401 은 파일을 일부러 남기는데(같은 사람 재로그인 시 오프라인 사용),
@@ -555,7 +565,7 @@ internal fun AlarmTalkApp(
     // 화면에 도착한 사용자에게 '목소리를 받지 못했어요' 만 남는다 — 네트워크는 멀쩡한데도.
     // 여기는 **소진되는 플래그가 아니다** — 데이터를 좀 일찍 부르는 것뿐이라 캐시 통과의
     // 이득(재로그인 시 즉시 로드)을 그대로 둔다. consentStatusChecked 를 기다릴 이유가 없다.
-    LaunchedEffect(authSession?.token, viewModel.consentChecked, viewModel.showConsentScreen) {
+    LaunchedEffect(sessionEffectKey, viewModel.consentChecked, viewModel.showConsentScreen) {
         if (authSession == null) return@LaunchedEffect
         if (!viewModel.consentChecked || viewModel.showConsentScreen) return@LaunchedEffect
         viewModel.preloadVoiceProfiles()
@@ -570,7 +580,7 @@ internal fun AlarmTalkApp(
     }
     // 상대가 목소리 공유를 켜면(voice_share_changed push) 공유 목록·클립 매니페스트를
     // 즉시 새로고침한다 — 가족 알람 push→pull 과 같은 즉시성.
-    LaunchedEffect(authSession?.token) {
+    LaunchedEffect(sessionEffectKey) {
         if (authSession == null) return@LaunchedEffect
         com.alarmtalk.app.core.AppSignals.voiceShareChanged.collect {
             viewModel.refreshSocial()
@@ -580,7 +590,7 @@ internal fun AlarmTalkApp(
     // 플랜 변경(plan_changed push) — 앱이 살아 있는 채로 구독이 만료·강등되면 워커는 SharedPreferences
     // 만 갱신하므로 live state(구독/플랜/가족)는 그대로다. 즉시 재조회해, 아래 강등 이펙트가 새 state
     // 로 재평가되어 UI 가 만료된 유료 플랜/유료 컨트롤을 계속 보여주지 않게 한다(서버 거부 액션 유도 방지).
-    LaunchedEffect(authSession?.token) {
+    LaunchedEffect(sessionEffectKey) {
         if (authSession == null) return@LaunchedEffect
         com.alarmtalk.app.core.AppSignals.planChanged.collect {
             viewModel.preloadBilling()   // 구독 state
@@ -697,13 +707,18 @@ internal fun AlarmTalkApp(
 
     // 탭을 왔다갔다 할 때마다 네트워크 새로고침이 다시 나가면 응답이 올 때 화면이 갱신되며
     // 살짝 버벅인다. 탭별로 마지막 새로고침 시각을 기억해, 일정 시간 안에 다시 들른
-    // 경우엔 재요청을 건너뛴다. (로그인 토큰이 바뀌면 키가 달라져 자연히 새로 받는다.)
+    // 경우엔 재요청을 건너뛴다. (계정이 바뀌거나 다시 로그인하면 키가 달라져 자연히 새로 받는다.)
+    // ⚠ **토큰을 키에 넣지 말 것**(효율 감사 H3·H4) — 굴러갈 때마다 스로틀이 풀려 탭 새로고침이
+    //   통째로 다시 나간다. Play 구독자는 자동 정합화(`refreshBilling`)가 토큰을 굴려 이 효과를
+    //   다시 부르는 고리까지 생겼다. 키는 위 세션 효과와 같은 `sessionEffectKey` 다.
     val tabRefreshThrottleMs = 60_000L
-    val lastTabRefreshAt = remember { mutableMapOf<Pair<NativeTab, String?>, Long>() }
-    LaunchedEffect(currentTab, authSession?.token) {
+    val lastTabRefreshAt = remember {
+        mutableMapOf<Pair<NativeTab, com.alarmtalk.app.network.SessionEffectKey?>, Long>()
+    }
+    LaunchedEffect(currentTab, sessionEffectKey) {
         if (authSession == null) return@LaunchedEffect
         val tab = currentTab ?: return@LaunchedEffect
-        val throttleKey = tab to authSession?.token
+        val throttleKey = tab to sessionEffectKey
         val now = System.currentTimeMillis()
         val last = lastTabRefreshAt[throttleKey]
         // 탭에 필요한 데이터가 비어 있으면(예: 무료 플랜 정리로 목소리 목록이 비워진 직후)
