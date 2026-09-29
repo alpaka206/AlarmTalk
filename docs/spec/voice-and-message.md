@@ -746,7 +746,9 @@ AlarmKit 예약을 다시 만들 수 있다.
   보충이 재바인딩이 방금 받은 목록을 쓴다(재바인딩은 묶을 클립을 스스로 받고, 교체 판정도 보충을
   기다리지 않는다).
 - **재바인딩은 같은 계정·언어로 한 번에 하나다.** 콜드 스타트에는 언어 키 작업과 전경 복귀가 거의
-  동시에 부른다 — 도는 회차가 있으면 뒤 호출은 물러난다(그 회차가 같은 일을 한다). 안드로이드는
+  동시에 부른다 — 도는 회차가 있으면 뒤 호출은 **그 회차가 끝날 때까지 기다렸다가** 물러난다(그 회차가
+  같은 일을 한다. 곧바로 돌아오면 전경 복귀의 보충이 그 강제 조회가 공개되기 전에 시작돼 매니페스트를
+  또 받는다 — 코덱스 #827). 안드로이드는
   재바인딩이 선다운로드 워커 안에서 돌고 그 워커가 `enqueueUniqueWork(…, KEEP)` 라 결과가 같다.
   교체 차단 화면의 '다시 시도' 는 **모든** 회차가 끝나야 풀린다.
 - **준비 페이지의 3초 폴링은 준비가 끝나면 멈춘다** — 다 받았고, 소유자를 기다리는 중이 아니고,
@@ -997,7 +999,7 @@ CAF 를 직접 쓰고 `AVChannelLayoutKey` 를 반드시 넣는다(없으면 파
 | 빈 직접 입력은 요청 전에 막는다 | `SaveBlockReason.MANUAL_TEXT_MISSING` ← `emptyMessageBlockReason`(판정 `hasNoMessageChoice`, 저장 버튼이 `saveEditor()` **전에** 판정) | `AlarmEditDraft.manualTextMissing` ← `AlarmEditorSheet.manualTextMissing` — `saveFlow` 첫머리(권한·한도 조회·생성 앞), 버튼은 살려 둔다 | — |
 | 버킷 클립 선다운로드 | `sync/StockClipPrefetchWorker.kt` | `StockClipPrefetcher.swift` | `GET /tts/stock-clips`, `GET /tts/messages/:id/audio` |
 | 매니페스트 신선도 창(출발 기준 45초 · 공개본만 · '신호 뒤' 는 창 무시) | — | `StockClipPrefetcher.manifestFreshnessWindow`·`manifestForRun` ← `StockClipManifestStorage.recentlyPublished`; '신호 뒤' 는 `ClonePrerenderDrive`·`ClipPreparationView.refresh` 의 `manifestDepartedAfter`, 등록 진행률은 `StockClipPrefetcher.progressOffMain(manifestDepartedAfter:)` ← `StockClipManifestStorage.publishedManifest`. 회귀 `StockClipManifestStoreTests`·`StockClipPrefetcherSupersededTests`·`StockClipPrefetcherRestartTests` | `GET /tts/stock-clips` |
-| 재바인딩은 계정·언어당 한 번에 하나 · 전경 복귀는 재바인딩 뒤 보충 | 재바인딩이 `StockClipPrefetchWorker` 안에서 돈다(`enqueueUniqueWork(…, KEEP)`) | `StockReplacementStatus.beginRebind`·`endRebind` ← `AlarmTalkApp.rebindStockClipsIfNeeded`; 전경 복귀 순서는 `AlarmTalkApp` 의 `.active`. 회귀 `StockClipRefetchGuardTests` | — |
+| 재바인딩은 계정·언어당 한 번에 하나 · 전경 복귀는 재바인딩 뒤 보충 | 재바인딩이 `StockClipPrefetchWorker` 안에서 돈다(`enqueueUniqueWork(…, KEEP)`) | `StockReplacementStatus.beginRebind`·`endRebind`·`waitForRebind`(물러난 쪽은 합류) ← `AlarmTalkApp.rebindStockClipsIfNeeded`; 전경 복귀 순서는 `AlarmTalkApp` 의 `.active`. 회귀 `StockClipRefetchGuardTests` | — |
 | 준비 페이지 폴링은 준비가 끝나면 멈춘다(실패·소유자 대기는 계속) | — | `ClipPreparationView.pollingCanStop`; 회귀 `StockClipRefetchGuardTests` | `GET /voice/:id/prerender-status` |
 | 대사 교체 = 은퇴 | — | — | `messages.retired_at` (마이그레이션 #110) |
 | 은퇴 행을 빼는 곳 **전부** | — | — | `findMissingStockTargets` · `GET /tts/stock-clips`(`retiredIsNullClause`) · `generateStockClip` 의 INSERT 가드와 게시본 조회 · `deleteStockClips` · `voice-profile.ts` 의 `GET /:id/prerender-status`(진행률)와 `POST /:id/prerender/advance`(게시 개수) (**일곱 곳** = `retired_at IS NULL` 가드 전부) |

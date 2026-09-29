@@ -40,6 +40,28 @@ final class StockClipRefetchGuardTests: XCTestCase {
         XCTAssertFalse(status.working)
     }
 
+    /// 물러난 쪽은 **도는 회차가 끝날 때까지 기다린다**(합류, 코덱스 #827) — 전경 복귀는 재바인딩 뒤에
+    /// 보충을 시작하므로, 곧바로 돌아오면 도는 회차의 강제 조회가 공개되기 전에 매니페스트를 또 받는다.
+    func test_물러난_호출은_도는_회차가_끝날_때까지_기다린다() async {
+        let status = StockReplacementStatus.shared
+        let key = "guard-\(UUID().uuidString)|ko"
+        await status.waitForRebind(key: key) // 도는 회차가 없으면 곧바로 돌아온다
+
+        XCTAssertTrue(status.beginRebind(key: key))
+        XCTAssertFalse(status.beginRebind(key: key))
+        let joined = JoinedFlag()
+        let waiter = Task { @MainActor in
+            await status.waitForRebind(key: key)
+            joined.value = true
+        }
+        for _ in 0..<20 { await Task.yield() }
+        XCTAssertFalse(joined.value, "도는 회차가 끝나기 전에는 돌아오지 않는다")
+        status.endRebind(key: key)
+        await waiter.value
+        XCTAssertTrue(joined.value, "회차가 끝나면 깨어난다")
+        XCTAssertFalse(status.working)
+    }
+
     // MARK: - 준비 화면 폴링 종료
 
     func test_준비_화면_폴링은_다_받고_관문_목록에도_실린_뒤에만_멈춘다() {
@@ -57,4 +79,10 @@ final class StockClipRefetchGuardTests: XCTestCase {
             "관문이 보는 매니페스트에 그 목소리가 아직 없으면 다음 회차가 다시 맞춘다"
         )
     }
+}
+
+/// 기다리던 쪽이 깨어났는가 — 메인 액터에서만 읽고 쓴다.
+@MainActor
+private final class JoinedFlag {
+    var value = false
 }

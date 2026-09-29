@@ -596,8 +596,14 @@ struct AlarmTalkApp: App {
         //   부르는 두 곳(언어 키 `.task`·전경 복귀)이 콜드 스타트에 거의 동시에 부른다 — 가드가
         //   없으면 매니페스트 강제 조회가 두 번 나가고 같은 행을 두 회차가 나란히 고친다.
         //   규칙은 `StockReplacementStatus.beginRebind`. 도는 회차 **안의** 강제 조회는 그대로다.
+        //   물러날 때는 **그 회차가 끝날 때까지 기다린다**(합류, 코덱스 #827) — 전경 복귀는 이 함수 뒤에
+        //   보충을 시작하는데, 곧바로 돌아오면 도는 회차의 강제 조회가 공개되기 전에 보충이 같은
+        //   매니페스트를 한 번 더 받는다.
         let rebindKey = "\(startAccount)|\(VoiceStudioViewModel.appVoiceLanguage())"
-        guard StockReplacementStatus.shared.beginRebind(key: rebindKey) else { return }
+        guard StockReplacementStatus.shared.beginRebind(key: rebindKey) else {
+            await StockReplacementStatus.shared.waitForRebind(key: rebindKey)
+            return
+        }
         defer { StockReplacementStatus.shared.endRebind(key: rebindKey) }
         // ⚠ **알람이 다 올라온 뒤에 시작한다**(2026-09-03 리뷰 10차). 저장소는 콜드 스타트에
         //   빈 배열로 시작해 비동기로 채우는데, 이 경로는 세션 복원만 끝나면 곧바로 들어올
