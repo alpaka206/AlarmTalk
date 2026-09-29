@@ -2135,6 +2135,25 @@ describe('직접 입력의 글자 웃음 → [laughs] (§9)', () => {
     expect(prepared.text).toBe('[cheerfully] [laughs] Wake up, it is already 8.');
   });
 
+  // Codex #830: 사용자가 대괄호를 쳐서 톤 태깅을 안 하는 번역도 모델이 웃음 태그를 바꿀 수 있다.
+  it('태깅 없는 번역(사용자 대괄호)도 모델이 바꾼 웃음 태그를 [laughs] 로 맞춘다 — 사용자의 태그는 그대로', async () => {
+    queueContent(geminiText('{"text":"[excited] Wake up [chuckles], it is already 8."}'));
+    const prepared = await prepareAlarmTextWithVertex(ENV, '[excited] 일어나 ㅋㅋ 벌써 8시야', {
+      ...LAUGH_OPTIONS,
+      targetLanguage: 'en',
+      translate: true,
+    });
+    expect(prepared.text).toBe('[excited] Wake up [laughs], it is already 8.');
+
+    queueContent(geminiText('{"text":"[chuckles] Wake up, it is already 8."}'));
+    const own = await prepareAlarmTextWithVertex(ENV, '[chuckles] 일어나 벌써 8시야', {
+      ...LAUGH_OPTIONS,
+      targetLanguage: 'en',
+      translate: true,
+    });
+    expect(own.text).toBe('[chuckles] Wake up, it is already 8.');
+  });
+
   it('번역할 때도 원문의 [laughs] 를 번역문의 같은 자리에 두라고 한다', async () => {
     queueContent(geminiText(`{"text":"[cheerfully] Wake up [laughs], it's already 8."}`));
     await prepareAlarmTextWithVertex(ENV, '일어나 ㅋㅋ 벌써 8시야', {
@@ -2181,6 +2200,30 @@ describe('사전렌더의 웃음 — 톤이 아니라 한 번 나는 소리 (§9
       speechStyle: { ...style, energy: 'lively' },
     });
     expect(out.text).toBe('[playfully] 자기야! [laughs] 오늘 운세 좋대. [cheerfully] 얼른 일어나 보자.');
+  });
+
+  // Codex #830: 웃음만 남는 줄은 글자로 두지 않고 바꾼 뒤, 낭독할 말이 없으니 다시 묻는다.
+  it('웃음만 있는 줄([playfully] haha!)은 낭독할 말이 없어 거절한다 — 글자 웃음을 읽는 클립을 저장하지 않는다', async () => {
+    for (let i = 0; i < 3; i += 1) {
+      queueContent(geminiText('{"text":"[playfully] haha!"}'));
+    }
+    await expect(
+      generatePrerenderClipText(ENV, { seed: '가볍게 웃으며 깨운다.', targetLanguage: 'en' }),
+    ).rejects.toMatchObject({ reason: 'empty_spoken' });
+  });
+
+  it('등록 미리듣기(allowLaughter: false)는 웃음 규칙을 싣지 않고, 모델이 넣은 웃음을 지운다', async () => {
+    queueContent(geminiText('{"text":"[playfully] 자기야, [laughs] 좋은 아침이야."}'));
+    const out = await generatePrerenderClipText(ENV, {
+      seed: '다정하게 아침 인사를 한다.',
+      relationshipLabel: '남자친구',
+      listenerTitle: '자기',
+      targetLanguage: 'ko',
+      speechStyle: { ...style, energy: 'lively' },
+      allowLaughter: false,
+    });
+    expect(sentPromptText()).not.toContain('LAUGHTER: a laugh is a sound');
+    expect(out.text).toBe('[playfully] 자기야, 좋은 아침이야.');
   });
 
   it('모델이 여러 번 웃으면(글자 웃음 포함) 한 번만 남긴다', async () => {

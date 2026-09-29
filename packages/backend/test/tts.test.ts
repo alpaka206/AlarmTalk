@@ -410,6 +410,12 @@ describe('POST /tts/generate — TTS 생성', () => {
       // 확정/활성 claim 중에는 저장 금지(늦은 영속이 실제 합성 문구와 어긋나는 것 방지).
       expect(persist!.sql).toContain('previewed_at IS NULL');
       expect(persist!.sql).toContain('preview_claimed_at IS NULL');
+      // 미리듣기는 인라인 태그를 벗겨 저장·재생하므로 웃음을 넣으라고 하지 않는다(Codex #830).
+      const vertexBodies = mockFetch.mock.calls
+        .filter((call) => String(call[0]) !== TOKEN_URI)
+        .map((call) => String(((call as unknown[])[1] as RequestInit | undefined)?.body ?? ''));
+      expect(vertexBodies.length).toBeGreaterThan(0);
+      expect(vertexBodies.every((b) => !b.includes('LAUGHTER: a laugh is a sound'))).toBe(true);
     } finally {
       vi.unstubAllGlobals();
     }
@@ -1419,6 +1425,12 @@ describe('POST /tts/generate — edge cases', () => {
     expect(twice.synthesis_text).toBe(thrice.synthesis_text);
     expect(twice.cache_key).not.toBe(thrice.cache_key);
     expect(thrice.text).toBe('일어나 ㅋㅋㅋ 벌써 8시야');
+
+    // 사용자가 대괄호를 친 문구는 화면 문구가 그 글 그대로라, 공백만 달라도 키가 다르다(Codex #830).
+    const spaced = await generate('[excited] 일어나  벌써 8시야');
+    const single = await generate('[excited] 일어나 벌써 8시야');
+    expect(spaced.text).toBe('[excited] 일어나  벌써 8시야');
+    expect(spaced.cache_key).not.toBe(single.cache_key);
 
     const plain = await generate('일어나 벌써 8시야');
     const { computeTtsCacheKey } = await import('../src/lib/audio-cache');

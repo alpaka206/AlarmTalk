@@ -318,9 +318,16 @@ function countLaughterTags(text: string): number {
  *
  * ⚠ **사용자가 친 태그에는 쓰지 않는다** — 모델이 태그를 붙인 문구(`shouldTag`·사전렌더)에만 부른다.
  */
-function canonicalizeLaughterTags(text: string, maxLaughs: number): string {
+function canonicalizeLaughterTags(
+  text: string,
+  maxLaughs: number,
+  /** 사용자가 대괄호로 직접 친 태그(정규화한 이름) — 맞추지도 세지도 않는다. */
+  userTags: ReadonlySet<string> = new Set(),
+): string {
   const canonical = text
-    .replace(TAG_RE_GLOBAL, (match) => (isLaughterTag(match) ? LAUGH_TAG : match))
+    .replace(TAG_RE_GLOBAL, (match) =>
+      isLaughterTag(match) && !userTags.has(normalizeTag(match)) ? LAUGH_TAG : match,
+    )
     .replace(/\[laughs\](?:\s*\[laughs\])+/g, LAUGH_TAG);
   let seen = 0;
   const limited = canonical.replace(/\[laughs\]/g, (match) => {
@@ -578,6 +585,17 @@ export async function prepareAlarmTextWithVertex(
       : shouldTranslate
         ? tagAlarmTextLocally(safe)
         : fallbackText;
+  }
+  if (shouldTranslate && !shouldTag) {
+    // 사용자가 대괄호를 쳐서 톤 태깅을 안 하는 번역도 모델이 웃음 태그를 바꿀 수 있다(`[laughs]` → `[chuckles]`,
+    // Codex #830). 사용자가 직접 친 태그는 그대로 두고, 나머지 웃음만 `[laughs]` 로 맞춘다.
+    const userTags = new Set(extractTags(trimmed));
+    preparedText = canonicalizeLaughterTags(
+      preparedText,
+      // 원문에 있던 `[laughs]`(사용자가 친 ㅋㅋ 를 바꾼 것 + 사용자가 직접 친 것) 수만큼 — 모델이 더한 웃음은 지운다.
+      (source.match(/\[laughs\]/gi) ?? []).length,
+      userTags,
+    );
   }
   if (shouldTranslate && countLaughterTags(source) > 0 && countLaughterTags(preparedText) === 0) {
     // ⚠ 번역이 사용자의 웃음을 빠뜨렸으면 선두 톤 뒤에 한 번 되살린다(Codex #830). 번역은 어순이 바뀌어 원문
@@ -1413,6 +1431,8 @@ function prerenderClipPrompt(params: {
   speechStyle?: SpeechStyle | null;
   /** 같은 의도를 사람이 직접 쓴 기본 목소리 대사(`STOCK_CLIP_PRESETS`). 리듬·쉼·태그 거는 법의 본보기. */
   humanReference?: string | null;
+  /** false 면 웃음 규칙을 싣지 않는다(등록 미리듣기 — `generatePrerenderClipText`). */
+  allowLaughter?: boolean;
 }): string {
   const targetName = LANGUAGE_NAMES[params.targetLanguage] || params.targetLanguage;
   const listenerTitle = params.listenerTitle?.trim();
@@ -1441,7 +1461,7 @@ NEVER use sleepy or hushed directions — every one of these is rejected: ${LOW_
 MATCH EACH TAG TO ITS SENTENCE: apologies, cautions and bad news (rain, snow, fine dust, fog, cold, a failed weather check) take caring, apologetic or concerned tones — never playful, excited or bright ones. A tone written in the intent ('미안한 듯', '가볍게', '다정하게') wins over the voice's usual mood. Start the first sentence with a tag. Avoid energy-dropping sounds such as [sighs] in a wake-up line.${
     // 차분한 목소리는 웃음을 아예 쓰지 않는다(아래 VOICE ENERGY 가 금지하고, 서버도 지운다) — '가벼운
     // 문장에는 웃어도 된다' 를 같이 주면 두 지시가 부딪힌다.
-    params.speechStyle?.energy === 'calm' ? '' : `\n${OWN_LAUGH_INSTRUCTION}`
+    params.speechStyle?.energy === 'calm' || params.allowLaughter === false ? '' : `\n${OWN_LAUGH_INSTRUCTION}`
   }`;
   const styleReference = params.styleReference?.trim();
   const styleReferenceInstruction = styleReference
@@ -1559,6 +1579,12 @@ export async function generatePrerenderClipText(
     speechStyle?: SpeechStyle | null;
     /** 같은 의도를 사람이 쓴 기본 목소리 대사 — 리듬·태그의 본보기(`stockReferenceLine`). */
     humanReference?: string | null;
+    /**
+     * false 면 모델이 웃음을 넣지 않는다(지시를 싣지 않고, 넣었으면 지운다) — **등록 미리듣기**가 쓴다. 미리듣기는
+     * 인라인 태그를 벗겨 저장하고 톤 하나(`preview_tag`)로 다시 입혀 재생하므로, 넣은 웃음을 되살릴 자리가 없다
+     * — 들려주지도 않을 웃음을 만들지 않는다(Codex #830).
+     */
+    allowLaughter?: boolean;
   },
 ): Promise<{ text: string; tag: string }> {
   const targetLanguage = params.targetLanguage || 'ko';
@@ -1654,8 +1680,10 @@ export async function generatePrerenderClipText(
     // 모델이 낸 웃음 태그는 졸린·차분 거르기 뒤에 `[laughs]` 로 맞춘다(`canonicalizeLaughterTags`).
     const tidied = tidyEllipsis(
       canonicalizeLaughterTags(
-        dropWakeUnsafeTags(speakTypedLaughter(parsed.text.trim()), { calmVoice }),
-        1,
+        // 웃음만 남는 줄('[playfully] haha')도 바꾼다 — 그대로 두면 글자를 읽는 클립이 영구 저장된다. 낭독할
+        // 말이 안 남으면 아래 `prerenderRejectionReason` 이 `empty_spoken` 으로 다시 묻는다(Codex #830).
+        dropWakeUnsafeTags(typedLaughterToTags(parsed.text.trim()), { calmVoice }),
+        params.allowLaughter === false ? 0 : 1,
       ),
     );
     const text = targetLanguage === 'ko' ? modernizeKoreanHonorific(tidied) : tidied;
@@ -1734,7 +1762,8 @@ export function prerenderRejectionReason(
   // ⚠ `!text` 가 아니라 `!spoken` 이다(Codex #701 P2) — `{"text":"[happy] [excited]"}`
   // 처럼 **태그만** 온 응답은 text 가 비지 않아 통과하고, 낭독할 말이 하나도 없는
   // 클립이 영구 저장된다.
-  if (!spoken) return 'empty_spoken';
+  // 문장부호만 남아도(`[laughs]!`) 낭독할 말이 없는 것이다 — 글자·숫자가 있어야 한다.
+  if (!/[\p{L}\p{N}]/u.test(spoken)) return 'empty_spoken';
   if (isMetaJsonResponse(text)) return 'meta_json';
   if (spoken.length > 200) return 'too_long';
   if (hasLanguageMismatch(spoken, targetLanguage, params.listenerTitle)) return 'language_mismatch';

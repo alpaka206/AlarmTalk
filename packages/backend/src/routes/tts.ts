@@ -1170,6 +1170,8 @@ tts.post('/generate', async (c) => {
               // 등록 녹음에서 분석한 화자 말투(사투리 등) — 미리듣기 문구를 그 말투로. 사용자가 고른
               // 목소리의 결(voice_energy)이 있으면 그게 앞선다(`SELECT *` 라 컬럼이 없던 창에도 안전).
               speechStyle: withVoiceEnergy(parseSpeechStyle(analyzedSpeechStyle), vp.voice_energy),
+              // 미리듣기는 인라인 태그를 벗겨 저장·재생한다 — 웃음을 넣어도 들리지 않으니 넣지 않는다.
+              allowLaughter: false,
             });
             // ⚠ **여기 들어오는 문구는 태그를 벗겨서 쓴다**(2026-08-20).
             // `generatePrerenderClipText` 는 이제 딜리버리 태그가 인라인으로 박힌 문구를
@@ -1447,10 +1449,12 @@ tts.post('/generate', async (c) => {
     //   히트가 **다른 철자로 만든 옛 행**(`message_id`·`messages.text`)을 돌려준다 — 알람은 그 id 를 저장하고,
     //   서버가 내려 주는 알람 문구가 사용자가 방금 친 글이 아니게 된다. 화면 문구가 합성 문구에서 태그만
     //   벗긴 것과 같으면(웃음이 없으면) 예전 키 그대로다 — 쌓아 둔 캐시를 버리지 않는다.
+    //   ⚠ 화면 문구는 **공백까지 그대로** 싣는다(`encodeURIComponent`) — 키 계산이 공백을 접으므로, 그대로 실으면
+    //   공백·줄바꿈만 다른 두 문구가 한 행을 나눠 쓴다.
     const cacheKeyText =
-      normalizeAlarmTextWithoutTags(messageText) === normalizeAlarmTextWithoutTags(synthesisText)
+      messageText === normalizeAlarmTextWithoutTags(synthesisText)
         ? synthesisText
-        : `${synthesisText}\n[display] ${messageText}`;
+        : `${synthesisText}\n[display] ${encodeURIComponent(messageText)}`;
     const buildPreparedAttempts = async (voiceIdForSynthesis: string | null | undefined) => {
       const attempts = createSynthesisAttempts({
         env: c.env,
