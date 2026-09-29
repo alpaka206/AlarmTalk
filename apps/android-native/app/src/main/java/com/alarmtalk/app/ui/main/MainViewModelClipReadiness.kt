@@ -82,6 +82,9 @@ internal suspend fun MainViewModel.refreshClipReadiness(selectedVoiceProfileId: 
     clipReadinessAwaitingOwner = awaitingOwner
 
     clipReadiness = withContext(Dispatchers.IO) {
+        // 디렉터리는 한 번만 읽는다 — 클립마다 `getCachedAudio` 로 물으면 디렉터리를 다시 읽고
+        // 길이까지 잰다(답은 같다, `AlarmAudioStore.snapshot`).
+        val cache = audioStore.snapshot()
         ClipReadiness.evaluate(
             voiceProfileIds = systemVoiceIds + owned.sorted() + extraTargets,
             clips = clips,
@@ -94,10 +97,10 @@ internal suspend fun MainViewModel.refreshClipReadiness(selectedVoiceProfileId: 
             },
             renderState = { renderStates[it] ?: (false to false) },
             isCached = { clip ->
-                audioStore.getCachedAudio(
+                !cache.isMissingOrStale(
                     "${AlarmAudioStore.STOCK_CACHE_KEY_PREFIX}${clip.messageId}",
                     clip.audioUrl,
-                ) != null
+                )
             },
         )
     }

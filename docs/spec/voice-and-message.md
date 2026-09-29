@@ -669,6 +669,15 @@ AlarmKit 예약을 다시 만들 수 있다.
   **전부 캐시에 있는가.** 기대 개수표(`expected_variants`)로 세지 않는다 — 서버가 아직 못 만든
   몫까지 세면 받을 수 없는 몫 때문에 관문이 영영 안 열린다. 매니페스트가 비어 있으면(줄 것이
   없다) 막지 않는다.
+- ⚠ **세는 값은 싸야 한다 — 한 번 세는 데 캐시 디렉터리를 한 번만 읽고, 길이는 재지 않는다**(양 앱).
+  클립마다 캐시를 따로 물으면(디렉터리 전량 읽기 + 오디오 길이 측정) 76개에 1초를 넘긴다 —
+  2026-09-29 A32 에서 ＋ 한 번에 관문이 **메인 스레드에서 두 번** 돌아 3.5초, 연타하면 판정이
+  쌓여 15.8초 멎었다. 안드로이드는 관문을 **IO 에서, 탭 하나에 한 번** 돌리고(막히면 센 값
+  그대로 알럿 퍼센트를 쓴다), **도는 동안 들어온 탭은 버린다**(쌓지 않는다). 세는 사이 다른
+  화면이나 다른 계정으로 옮겼으면 **결과도 버린다** — 편집기를 열지도, 알럿을 띄우지도 않는다
+  (옛 탭의 결과가 새 화면 위에 뜨면 안 된다). iOS 는 메인에서 곧바로 세므로 그 틈이 없다.
+  답은 클립마다 물은 것과 같아야 하고, 방금 받은 클립이 다음 질문에서 곧바로 보여야 한다
+  (목록을 들고 있지 않는다).
 - **매니페스트를 한 번도 못 받았으면(모른다) 막는다.** 받기 화면이 그 상태로 메인을 열어 두지
   않으므로, 이 갈래는 새로 깔고 곧바로 오프라인이 된 경우다. 대신 받은 매니페스트는 디스크에
   남긴다 — 다 받아 둔 기기는 오프라인 콜드스타트에서도 열린다.
@@ -934,7 +943,8 @@ CAF 를 직접 쓰고 `AVChannelLayoutKey` 를 반드시 넣는다(없으면 파
 | 매니페스트 조회 세대·소유자 | `StockClipManifestStore`의 저장소 전역 티켓·소유자 | `StockClipManifestStorage`·`StockClipManifestStore` 의 표(revision)·파일 임자 | `GET /tts/stock-clips` |
 | 공개 경합 — superseded 는 실패가 아니고 이긴 매니페스트를 싣는다 | `StockClipPrefetchWorker`(SUPERSEDED = 물러남) · `MainViewModelVoiceActions.loadStockClips`(재바인딩은 워커가 디스크를 읽으므로 메모리 갱신 불필요) | `StockClipPrefetcher.run`(디스크 권위로 이어 받음, `StockClipPrefetcherSupersededTests`) · `VoiceStudioViewModel.loadStockClips`(이긴 매니페스트 적재, `VoiceStudioLoadStockClipsSupersededTests`) | — |
 | '새로 받았는가' 는 가장 최근 표의 응답이 공개됐을 때만 | — (뷰모델은 PUBLISHED 만 true) | `StockClipManifestStorage.publishedNewerResponse(than:)` · `StockClipManifestStoreTests.testPublishedNewerResponseDistinguishesPublishFromClear` | — |
-| 진행률 파일 확인의 실행 위치 | `StockClipPrefetchWorker`의 IO 작업 | `StockClipPrefetcher.progressOffMain`·`missingClipsOffMain` | — |
+| 진행률 파일 확인의 실행 위치 | `StockClipPrefetchWorker`의 IO 작업 · 알람 관문 `DefaultVoiceGate`(IO) | `StockClipPrefetcher.progressOffMain`·`missingClipsOffMain` | — |
+| 한 번 세는 데 디렉터리 1회·길이 측정 없음 | `AlarmAudioStore.missingOrStaleCacheKeys`·`snapshot`(단건은 이름으로 찾는 `findCachedFile`, 있는지만은 `hasCachedAudio`); 회귀 `AlarmAudioStoreProbeCountTest` | `AudioCacheStore.missingOrStaleCacheKeys`; 회귀 `StockClipProgressScanTests` | — |
 | 등록 진행률(생성 0~50 + 다운로드 50~100) · 완료 안내 없음 | `ui/voices/VoiceProfileManagementPanel.kt` `VoiceRegistrationStep.Prerendering`·`CloneVoiceReadiness` | `ClonePrerenderDrive`·`ClipPreparationView.registrationPreparation`·`VoicePrerenderStatusRow`; `AlarmTalkTests/ClonePrerenderProgressTests` | `routes/voice-profile.ts` 의 `prerender/advance`·`prerender-status` |
 | 클론 문구의 결·사람이 쓴 본보기 | 결을 고르지도 보내지도 않는다 — `ui/voices/VoiceProfileManagementPanel.kt` `VoiceRegistrationStep.Details` 에 칸이 없고, `network/VoiceCloneRequest.kt` `createVoiceCloneDraft` 가 `voiceEnergy` 파트를 싣지 않는다(2026-09-29 '목소리 느낌' 제거). 초안 페르소나 PATCH 는 없다(관계·호칭을 초안 생성에만 싣는다). 회귀 `VoiceCloneRequestTest`(결 파트 없음) | 결을 고르지도 보내지도 않는다 — `Views/Voices/VoiceCloneUploadFlow.swift` `detailsSection` 에 칸이 없고, `AlarmTalkAPI.voiceCloneMultipartFields` 가 `voiceEnergy` 를 싣지 않는다. 초안 페르소나 PATCH 는 없다(공유 목소리 뷰어의 관계 PATCH `voiceRelationshipUpdateBody` 도 결을 싣지 않는다). 회귀 `VoiceStudioViewModelTests`(결 필드 없음) | 전사 추정 `analyzeSpeechStyleWithVertex`(`speech_style.energy`, `runSpeechStyleAnalysis`) · **1.2.10 호환**: `POST voice/clone` 의 `voiceEnergy`/`voice_energy`(초안 생성) · `PATCH voice/:id/relationship` 의 `voice_energy`(초안만) → `voice_profiles.voice_energy`(#122) · `withVoiceEnergy`(고른 값 > 추정값 — `minSupported` 가 선택지 없는 릴리스를 넘기면 받는 처리를 지운다) · `stockReferenceLine` → `generatePrerenderClipText(humanReference)` · 차분 태그 거르기 `isCalmIncompatibleTag`·`fallbackTagForEnergy`(`lib/vertex-translate.ts`, 미리듣기 `routes/tts.ts` `draftPreviewDefaultTag`) · 교체 `replaceVoiceInPlace` · 분석 대기 `SPEECH_STYLE_ANALYSIS_WAIT_SQL`(`claimPendingPrerenderVoices`, `POST voice/:id/prerender/advance`, 첫 미리듣기 `waitForSpeechStyleAnalysis`) · 결과 기록 대상 `SPEECH_STYLE_RESULT_TARGET_SQL`(`runSpeechStyleAnalysis`). 회귀 `voice-prerender-style-wait.test.ts` |
 | 재생 방식 2택 | `PlayModeCard` (`ui/editor/AlarmEditorControls.kt`) | `VoicePlayModePicker` | `wake_mode` (`voice_only` / `sound_then_voice`) |
@@ -959,7 +969,7 @@ CAF 를 직접 쓰고 `AVChannelLayoutKey` 를 반드시 넣는다(없으면 파
 | 스톡 게시 | — | — | `scripts/prerender-stock-preview.ts` → `scripts/publish-stock-clips.ts`. cron(`index.ts` 의 `scheduled`)의 **시스템 드레인은 꺼져 있다** — 클론 드레인만 산다 |
 | 재바인딩이 편집을 안 덮는다 | `applyClipFields` (`sync/StockClipLanguageRebinder.kt`) | `applyClipFields` (`StockClipLanguageRebinder.swift`) | — |
 | 재바인딩 뒤 서버 반영 | `nextLocalSyncState` (`data/AlarmEntity.kt`) | `nextLocalSyncState(for:)` (`LocalAlarmStore.swift`) | — |
-| 기본 목소리 다 받아야 알람 설정 | `StockClipPrefetchWorker.defaultVoicesReady` → `AlarmTalkApp.defaultVoicesReadyOrExplain`(`requestCreateAlarm`·`startCreateAlarm`·`onEditAlarm`) | `StockClipPrefetcher.defaultVoicesReady` → `MainTabsView.openEditorIfVoicesReady` | `GET /tts/stock-clips` |
+| 기본 목소리 다 받아야 알람 설정 | `StockClipPrefetchWorker.defaultVoicesReady` → `AlarmTalkApp.whenDefaultVoicesReady`(`requestCreateAlarm`·`startCreateAlarm`·`onEditAlarm`) ← `DefaultVoiceGate`(IO·탭당 1회·도는 중 탭은 버림·화면/계정이 바뀌면 결과 버림, 회귀 `DefaultVoiceGateTest`) | `StockClipPrefetcher.defaultVoicesReady` → `MainTabsView.openEditorIfVoicesReady` | `GET /tts/stock-clips` |
 | 교체 화면 퍼센트 | `StockReplacementScreen(progress)` ← 워커 진행 또는 `defaultVoiceProgress` | `StockReplacementView` 의 `defaultVoiceProgress` 폴링 | — |
 | 받기 진행 = 헤더 옆 | `VoiceProfileManagementPanel` 기본 목소리 `VoiceCatalogSectionHeader(trailing)` ← 워커 진행 | `VoiceProfileManagementPanel.defaultVoiceDownloadBadge` ← `StockClipPrefetcher.state` | — |
 | 받기 화면 완료 = 빠진 것 0 | 워커가 실패 0일 때만 `success` | `StockClipPrefetcher.run` 이 캐시를 다시 세어 판정 | — |

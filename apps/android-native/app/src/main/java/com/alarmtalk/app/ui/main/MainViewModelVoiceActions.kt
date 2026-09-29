@@ -759,7 +759,7 @@ internal fun MainViewModel.prefetchFreeBucketClips(voiceProfileId: String? = nul
                     batch.map { clip ->
                         async {
                             val cacheKey = "${com.alarmtalk.app.data.AlarmAudioStore.STOCK_CACHE_KEY_PREFIX}${clip.messageId}"
-                            if (audioStore.getCachedAudio(cacheKey, clip.audioUrl) == null) {
+                            if (!audioStore.hasCachedAudio(cacheKey, clip.audioUrl)) {
                                 val response = downloadTtsMessageAudio(clip.messageId)
                                 audioStore.cacheGeneratedAudio(
                                     bytes = android.util.Base64.decode(response.audioBase64, android.util.Base64.DEFAULT),
@@ -883,7 +883,7 @@ internal suspend fun MainViewModel.downloadAllPresetClips(
         onProgress(0, clips.size)
         clips.forEach { clip ->
             val cacheKey = "stock_${clip.messageId}"
-            if (audioStore.getCachedAudio(cacheKey, clip.audioUrl) == null) {
+            if (!audioStore.hasCachedAudio(cacheKey, clip.audioUrl)) {
                 val response = downloadTtsMessageAudio(clip.messageId)
                 audioStore.cacheGeneratedAudio(
                     bytes = android.util.Base64.decode(response.audioBase64, android.util.Base64.DEFAULT),
