@@ -254,6 +254,49 @@ struct AlarmEditDraft: Equatable {
             expectedText == (record.voiceText).nilIfBlank
     }
 
+    // MARK: - 문구가 없던 알람을 목소리 문구로 옮길 때
+
+    /// 문구가 **하나도 정해지지 않았는가** — 생성형 종류도, 테마도, 친 문구도 없다.
+    ///
+    /// 판정식이 '직접 입력'(`currentMessageContext` 의 `!randomPrompt && !isActiveStockClipAlarm`)
+    /// 과 같은 모양이라 화면은 이 상태를 **빈 직접 입력**으로 그린다. 두 가지로 읽힌다:
+    ///  - 알람 전용·직접 녹음 알람에는 문구 개념이 없다(`toRecord` 가 문구 필드를 비워
+    ///    저장한다). 그 알람을 목소리 문구로 옮긴 직후가 이 상태다 → `lastMessageChoice` 를 잇는다.
+    ///  - 등록(클론) 목소리에서 이 상태로 저장을 누르면 **직접 입력인데 문구가 비었다** →
+    ///    서버를 부르기 전에 막는다(`AlarmEditorSheet.manualTextMissing`).
+    ///
+    /// 안드로이드 `AlarmEditorState.hasNoMessageChoice` 짝이다.
+    static func hasNoMessageChoice(randomPrompt: Bool, selectedBucket: FreeBucket?, ttsText: String) -> Bool {
+        !randomPrompt
+            && selectedBucket == nil
+            && ttsText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    /// 계정의 **직전 문구 선택** 하나. 새 알람을 열 때와, 문구가 없던 알람을 목소리 문구로
+    /// 옮길 때 같은 규칙으로 잇는다(`CLAUDE.md` 「알람 편집기 기본값 = 직전 선택 유지」).
+    enum LastMessageChoice: Equatable {
+        /// 마지막이 직접 입력이었다 — **문구까지** 잇는다. 글자가 같아 기기에 있는 음성을
+        /// 재사용하므로 서버 호출도 월 한도 차감도 없다.
+        case manual(String)
+        /// 생성형 종류(`RandomPromptContext` rawValue). 기록이 없으면 '기본 인사말'.
+        case generated(String)
+    }
+
+    /// 저장소 두 값(`DynamicPromptPreferenceStore`)에서 직전 선택을 고른다.
+    ///
+    /// **마지막 선택은 하나다** — 직접 입력 기록이 차 있으면 그게 마지막이었다(생성형을
+    /// 저장하면 저장소가 그 기록을 지운다). 둘 다 없으면 **기본 인사말**(preset)이다 —
+    /// ⚠ 빈 직접 입력으로 떨어뜨리지 말 것(2026-09-29 실기기 보고: 알람 전용 알람을 목소리로
+    /// 바꾸면 빈 직접 입력으로 보였고, 그대로는 저장도 못 했다).
+    ///
+    /// 안드로이드 `AlarmEditorState.adoptLastMessageChoiceIfUnset` 의 갈래와 같다.
+    static func lastMessageChoice(lastMessageContext: String?, lastManualText: String?) -> LastMessageChoice {
+        if let manual = lastManualText.nilIfBlank {
+            return .manual(manual)
+        }
+        return .generated(RandomPromptContext.normalized(lastMessageContext.nilIfBlank).rawValue)
+    }
+
     // MARK: - Convert to record
 
     /// Draft → record 변환. 기존 record 가 있다면 *시트 외부* 에서만 의미 있는

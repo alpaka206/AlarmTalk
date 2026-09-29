@@ -419,6 +419,200 @@ class AlarmEditorStateTest {
         assertTrue(editor.hasFreshTtsAudio("profile-1", "wake up"))
     }
 
+    /**
+     * **알람 전용 알람을 목소리로 바꾸면 직전 선택을 잇는다 — 빈 '직접 입력' 이 아니다.**
+     *
+     * 2026-09-29 실기기 보고: "알람 소리였던 거 목소리로 바꾸면 직접 입력으로 되어 있는데 …
+     * 직접 입력 등록 안 돼 있으면 생성도 안 되고". 알람 전용 행은 저장 때 문구 필드를 전부
+     * 비우므로(`toDraft` 의 alarmOnly 갈래) 열면 `voiceRandomPrompt=false`·문구 없음·테마 없음이다.
+     * 그 모양이 곧 '직접 입력' 판정식이라, 목소리로 옮기는 순간 빈 직접 입력이 됐다.
+     */
+    @Test
+    fun alarmOnlyAlarmSwitchedToVoiceTakesTheLastMessageKind() {
+        val editor = AlarmEditorState.from(alarm = alarmOnlyEntity())
+        // 출발점 — 문구가 하나도 없고, 그대로 두면 화면은 '직접 입력' 으로 읽는다.
+        assertTrue(editor.hasNoMessageChoice())
+        assertTrue(editor.isManualForDisplay())
+        assertFalse(editor.followsLastMessageChoice)
+
+        editor.playMode = AlarmPlayModes.VOICE_ONLY
+        editor.enterVoiceModeFromAlarmOnly(lastMessageContext = "medication", lastManualText = null)
+
+        assertEquals(VoiceSources.TTS_PROFILE, editor.voiceSource)
+        assertFalse(editor.isManualForDisplay())
+        assertTrue(editor.voiceRandomPrompt)
+        assertEquals("medication", editor.voiceRandomContext)
+        // 저장해도 그 종류가 남는다(직접 입력으로 떨어지지 않는다).
+        assertEquals("medication", editor.toDraft().voiceRandomContext)
+        // 기본 목소리 테마 이어받기도 이 세션에서는 켜진다(`AlarmEditorScreen` 의 `remembered`).
+        assertTrue(editor.followsLastMessageChoice)
+    }
+
+    /** 한 번도 고른 적 없으면 **기본 인사말**(preset) — 빈 직접 입력이 아니다. */
+    @Test
+    fun alarmOnlyAlarmWithoutHistoryFallsBackToPresetGreeting() {
+        val editor = AlarmEditorState.from(alarm = alarmOnlyEntity())
+
+        editor.playMode = AlarmPlayModes.VOICE_ONLY
+        editor.enterVoiceModeFromAlarmOnly(lastMessageContext = null, lastManualText = null)
+
+        assertFalse(editor.isManualForDisplay())
+        assertTrue(editor.voiceRandomPrompt)
+        assertEquals(DefaultRandomPromptContext, editor.voiceRandomContext)
+        assertEquals(DefaultRandomPromptContext, editor.toDraft().voiceRandomContext)
+    }
+
+    /**
+     * 마지막이 직접 입력이었으면 **문구까지** 잇는다 — 새 알람과 같은 규칙이다.
+     * 글자가 같아 폰에 있는 음성을 재사용하므로 서버 호출도 한도 차감도 없다.
+     * 빈 칸으로 두는 것만 안 된다.
+     */
+    @Test
+    fun alarmOnlyAlarmTakesTheLastManualTextWhenThatWasTheLastChoice() {
+        val editor = AlarmEditorState.from(alarm = alarmOnlyEntity())
+
+        editor.playMode = AlarmPlayModes.VOICE_ONLY
+        editor.enterVoiceModeFromAlarmOnly(lastMessageContext = null, lastManualText = "회의 자료 챙겨")
+
+        assertTrue(editor.isManualForDisplay())
+        assertTrue(editor.hasTypedManualText())
+        assertEquals("회의 자료 챙겨", editor.voiceText)
+        assertEquals("회의 자료 챙겨", editor.toDraft().voiceText)
+    }
+
+    /** 빈 직접 입력 기록(공백)은 없는 것으로 본다 — 그걸 이으면 다시 빈 직접 입력이다. */
+    @Test
+    fun blankLastManualTextIsNotAdopted() {
+        val editor = AlarmEditorState.from(alarm = alarmOnlyEntity())
+
+        editor.playMode = AlarmPlayModes.VOICE_ONLY
+        editor.enterVoiceModeFromAlarmOnly(lastMessageContext = "cheer", lastManualText = "   ")
+
+        assertTrue(editor.voiceRandomPrompt)
+        assertEquals("cheer", editor.voiceRandomContext)
+    }
+
+    /**
+     * 새 알람을 '알람' 으로 열었다가(로그인 전 등) 목소리로 옮겨도 **처음 이어받은 값**
+     * 그대로다 — 이어받기는 문구가 비어 있을 때만 돈다.
+     */
+    @Test
+    fun newAlarmStartedInAlarmModeKeepsItsInheritedKindWhenSwitchedToVoice() {
+        val editor = AlarmEditorState.from(
+            alarm = null,
+            defaultPlayMode = AlarmPlayModes.ALARM_ONLY,
+            defaultRandomContext = "cheer",
+        )
+        assertTrue(editor.followsLastMessageChoice)
+
+        editor.playMode = AlarmPlayModes.VOICE_ONLY
+        assertFalse(editor.adoptLastMessageChoiceIfUnset(lastMessageContext = "cheer", lastManualText = null))
+        editor.enterVoiceModeFromAlarmOnly(lastMessageContext = "cheer", lastManualText = null)
+
+        assertFalse(editor.isManualForDisplay())
+        assertEquals("cheer", editor.voiceRandomContext)
+    }
+
+    /**
+     * **이미 고른 문구는 절대 덮지 않는다.** 목소리 알람을 '알람' 으로 바꿨다가 되돌리면
+     * 그 알람의 테마·직접 입력이 그대로여야 한다(열기만 해도 문구가 바뀌면 안 된다는 규칙).
+     */
+    @Test
+    fun switchingBackToVoiceNeverOverridesAnExistingChoice() {
+        val bucketEditor = AlarmEditorState.from(
+            alarm = bucketAlarmEntity(voiceRandomContext = "cheer", bucketId = "cheer"),
+        )
+        bucketEditor.playMode = AlarmPlayModes.ALARM_ONLY
+        bucketEditor.playMode = AlarmPlayModes.VOICE_ONLY
+        bucketEditor.enterVoiceModeFromAlarmOnly(lastMessageContext = "medication", lastManualText = "딴 문구")
+        assertEquals("cheer", bucketEditor.selectedBucket)
+        assertEquals("cheer", bucketEditor.voiceRandomContext)
+        assertEquals("클립 문구", bucketEditor.voiceText)
+        assertFalse(bucketEditor.followsLastMessageChoice)
+
+        val manualEditor = AlarmEditorState.from(alarm = null, defaultPlayMode = AlarmPlayModes.VOICE_ONLY)
+        manualEditor.voiceRandomPrompt = false
+        manualEditor.voiceText = "내가 친 문구"
+        manualEditor.playMode = AlarmPlayModes.ALARM_ONLY
+        manualEditor.playMode = AlarmPlayModes.VOICE_ONLY
+        manualEditor.enterVoiceModeFromAlarmOnly(lastMessageContext = "medication", lastManualText = null)
+        assertFalse(manualEditor.voiceRandomPrompt)
+        assertEquals("내가 친 문구", manualEditor.voiceText)
+    }
+
+    /**
+     * **직접 녹음 알람도 문구가 없다** — 목소리로 옮길 때 같은 이어받기를 탄다
+     * (`VoiceAudioCard` 의 `onAdoptLastMessageChoice`).
+     */
+    @Test
+    fun recordingAlarmMovedToTtsVoiceTakesTheLastMessageKind() {
+        val editor = AlarmEditorState.from(
+            alarm = alarmOnlyEntity().copy(
+                playMode = AlarmPlayModes.VOICE_ONLY,
+                localAudioUri = "file://recording.m4a",
+                audioCacheKey = "recording",
+            ),
+        )
+        assertEquals(VoiceSources.LOCAL_AUDIO, editor.voiceSource)
+
+        // 목소리 선택 시트가 하는 순서 그대로(`VoiceAudioCard.applyVoiceSelection`).
+        editor.voiceSource = VoiceSources.TTS_PROFILE
+        editor.clearAudio()
+        editor.clearTtsMeta()
+        editor.selectVoiceProfile("clone-profile")
+        assertTrue(editor.adoptLastMessageChoiceIfUnset(lastMessageContext = "wake_fortune", lastManualText = null))
+
+        assertFalse(editor.isManualForDisplay())
+        assertEquals("wake_fortune", editor.voiceRandomContext)
+    }
+
+    /**
+     * **빈 직접 입력은 서버를 부르기 전에 막고, 그 이유를 제대로 말한다.**
+     *
+     * 이 판정은 저장 버튼이 `saveEditor()`(한도 조회·`/tts/generate`) **전에** 본다.
+     * 예전에는 같은 상태를 `MESSAGE_PREPARING`("목소리 파일을 아직 받는 중이에요") 으로
+     * 말해서, 기다려도 안 풀리는 상태를 기다리게 했다.
+     */
+    @Test
+    fun emptyManualMessageIsBlockedWithItsOwnReason() {
+        val editor = AlarmEditorState.from(alarm = alarmOnlyEntity())
+        editor.playMode = AlarmPlayModes.VOICE_ONLY
+        editor.voiceSource = VoiceSources.TTS_PROFILE
+        editor.voiceProfileId = "clone-profile"
+
+        // 등록(클론) 목소리 + 빈 직접 입력 → 전용 사유.
+        assertEquals(SaveBlockReason.MANUAL_TEXT_MISSING, emptyMessageBlockReason(editor, usesStockClips = false))
+        // 스톡 클립 목소리의 빈 문구는 클립이 붙기 전 과도기다 — 그대로 '준비 중'.
+        assertEquals(SaveBlockReason.MESSAGE_PREPARING, emptyMessageBlockReason(editor, usesStockClips = true))
+
+        // 문구가 있으면 막지 않는다.
+        editor.voiceText = "일어나"
+        assertNull(emptyMessageBlockReason(editor, usesStockClips = false))
+
+        // 생성형 종류를 골랐으면 막지 않는다(음원은 저장이 테마로 묶는다).
+        editor.voiceText = ""
+        editor.adoptLastMessageChoiceIfUnset(lastMessageContext = null, lastManualText = null)
+        assertNull(emptyMessageBlockReason(editor, usesStockClips = false))
+    }
+
+    /** `toDraft` 가 알람 전용일 때 남기는 모양 그대로의 행 — 문구 필드가 전부 비어 있다. */
+    private fun alarmOnlyEntity() = bucketAlarmEntity(voiceRandomContext = null, bucketId = "unused").copy(
+        playMode = AlarmPlayModes.ALARM_ONLY,
+        localAudioUri = null,
+        audioCacheKey = null,
+        rawAudioUri = null,
+        voiceSource = VoiceSources.LOCAL_AUDIO,
+        voiceProfileId = null,
+        voiceText = null,
+        voiceCategory = null,
+        voiceLanguage = null,
+        voiceRandomPrompt = false,
+        voiceRandomContext = null,
+        ttsMessageId = null,
+        bucketId = null,
+        bucketClipKeysJson = null,
+    )
+
     /** 버킷 회전으로 저장된 알람 행. [voiceRandomContext] 만 바꿔 옛 행/새 행을 만든다. */
     private fun bucketAlarmEntity(voiceRandomContext: String?, bucketId: String) = AlarmEntity(
         id = "a",

@@ -74,6 +74,7 @@ internal class AlarmEditorState(
     bucketClipKeysJson: String? = null,
     bucketClipTextsJson: String? = null,
     contextVariantIndex: Int? = null,
+    followsLastMessageChoice: Boolean = false,
 ) {
     var label by mutableStateOf(label)
     var hour by mutableIntStateOf(hour)
@@ -127,6 +128,15 @@ internal class AlarmEditorState(
     // 알람 편집 시 값을 보존해야 재저장으로 인덱스가 null 로 날아가지 않는다. 운세는 발사 시점 기기
     // 계산이라 안 담고, 회전형(사랑/약)도 null.
     var contextVariantIndex by mutableStateOf(contextVariantIndex)
+    /**
+     * 이 편집 세션이 **계정의 직전 선택을 이어받는가.** 새 알람은 처음부터 true 이고, 기존
+     * 알람은 문구가 하나도 없던 상태(알람 전용·직접 녹음)에서 목소리 문구로 들어와
+     * [adoptLastMessageChoiceIfUnset] 이 실제로 이어받았을 때만 true 가 된다.
+     *
+     * 편집기의 테마 이어받기(`AlarmEditorScreen` 의 `remembered`)가 이 값을 본다 —
+     * `alarm == null` 로 가르면 알람 전용 알람을 목소리로 바꿨을 때 직전 테마를 못 잇는다.
+     */
+    var followsLastMessageChoice by mutableStateOf(followsLastMessageChoice)
     private var generatedTtsKey by mutableStateOf(
         ttsMessageId?.let {
             buildTtsKey(
@@ -304,6 +314,60 @@ internal class AlarmEditorState(
     /** **직접 입력을 실제로 쳐 넣었는가.** 잔재 정리가 그 문구를 지우지 않도록 가른다. */
     fun hasTypedManualText(): Boolean =
         !voiceRandomPrompt && !hasChosenBucketKind() && voiceText.isNotBlank()
+
+    /**
+     * **문구가 하나도 정해지지 않았는가** — 종류(생성형)도, 테마도, 친 문구도 없다.
+     *
+     * 판정식이 '직접 입력' 과 같은 모양이라 화면은 이 상태를 **빈 직접 입력**으로 그린다
+     * ([isManualForDisplay] 가 true). 그래서 두 가지로 읽힌다:
+     *  - 알람 전용·직접 녹음 알람에는 문구 개념이 없다(`toDraft` 가 문구 필드를 전부 비워
+     *    저장한다). 그 알람을 목소리 문구로 옮긴 직후가 이 상태다 → [adoptLastMessageChoiceIfUnset].
+     *  - 등록(클론) 목소리에서 이 상태로 저장을 누르면 **직접 입력인데 문구가 비었다** →
+     *    서버를 부르기 전에 막는다(`emptyMessageBlockReason`).
+     */
+    fun hasNoMessageChoice(): Boolean =
+        !voiceRandomPrompt && !hasChosenBucketKind() && voiceText.isBlank()
+
+    /**
+     * 문구가 **하나도 정해지지 않았으면** 계정의 직전 선택을 잇는다. 이어받았으면 true.
+     *
+     * ⚠ **빈 '직접 입력' 으로 두지 말 것**(2026-09-29 실기기 보고). 알람 전용 알람을 목소리로
+     * 바꾸면 문구가 비어 있어 요약 행이 '직접 입력' 이 됐고, 그 상태는 저장도 못 하고 고치려면
+     * 한도가 걸린 직접 입력을 새로 쳐야 했다. 규칙은 새 알람과 같다 —
+     * `CLAUDE.md` 「알람 편집기 기본값 = 직전 선택 유지」:
+     *  - 마지막이 직접 입력이었으면 **그 문구까지** 잇는다(글자가 같아 폰에 있는 음성을
+     *    재사용하므로 서버 호출도 한도 차감도 없다).
+     *  - 아니면 마지막 문구 종류, 그것도 없으면 '기본 인사말'(preset).
+     *
+     * 문구가 이미 있으면 **아무것도 바꾸지 않는다** — 기존 알람의 자기 값, 이 세션에서 고른
+     * 값이 언제나 이긴다(열기만 해도 문구가 바뀌면 안 된다는 규칙은 그대로다).
+     */
+    fun adoptLastMessageChoiceIfUnset(lastMessageContext: String?, lastManualText: String?): Boolean {
+        if (!hasNoMessageChoice()) return false
+        val manualText = lastManualText?.takeIf { it.isNotBlank() }
+        if (manualText != null) {
+            voiceRandomPrompt = false
+            voiceText = manualText
+        } else {
+            voiceRandomPrompt = true
+            voiceRandomContext = normalizedRandomPromptContext(
+                lastMessageContext?.takeIf { it.isNotBlank() } ?: DefaultRandomPromptContext,
+            )
+        }
+        clearTtsMeta()
+        followsLastMessageChoice = true
+        return true
+    }
+
+    /**
+     * 재생 방식을 **'알람' → '목소리'** 로 바꾼 순간. 목소리 소스를 TTS 로 되돌리고
+     * (알람 전용 행은 소스가 `LOCAL_AUDIO` 로 저장된다), 문구가 비어 있으면 직전 선택을 잇는다.
+     */
+    fun enterVoiceModeFromAlarmOnly(lastMessageContext: String?, lastManualText: String?) {
+        voiceSource = VoiceSources.TTS_PROFILE
+        clearTtsMeta()
+        adoptLastMessageChoiceIfUnset(lastMessageContext, lastManualText)
+    }
 
     /**
      * **사용자가 고른 문구가 테마(버킷)인가 — 재생 방식과 무관하다.**
@@ -581,6 +645,9 @@ internal class AlarmEditorState(
                 bucketClipKeysJson = alarm?.bucketClipKeysJson,
                 bucketClipTextsJson = alarm?.bucketClipTextsJson,
                 contextVariantIndex = alarm?.contextVariantIndex,
+                // 새 알람만 처음부터 이어받는다. 기존 알람은 문구가 없던 상태에서 목소리
+                // 문구로 들어올 때만 켜진다(adoptLastMessageChoiceIfUnset).
+                followsLastMessageChoice = alarm == null,
             )
         }
     }

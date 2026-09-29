@@ -55,7 +55,8 @@ struct AlarmEditorSheet: View {
 
     /// 무료 테마(버킷) 선택 화면.
     /// 직전에 고른 무료 테마를 이어받으려는 의도. 스톡 매니페스트가 도착하면 집는다.
-    /// ⚠ 새 알람에서만 세운다 — 기존 알람은 자기 값을 써야 한다.
+    /// ⚠ 새 알람에서만 세운다 — 기존 알람은 자기 값을 써야 한다. 예외는 문구가 없던
+    /// 알람(알람 전용·직접 녹음)을 목소리 문구로 옮기는 순간이다(`adoptLastMessageChoiceIfUnset`).
     @State var pendingFreeBucket: FreeBucket?
 
     /// 목소리 고르기 시트.
@@ -920,8 +921,10 @@ struct AlarmEditorSheet: View {
     ///  - 목소리 미선택 → 목소리 행이 "고르기" 로 비어 있음을 말하고, 목록이 없으면
     ///    '목소리 탭에서 만들기' 버튼이 해결 액션까지 갖고 있다.
     ///  - 녹음 미완료 → `RecordingCard` 자체가 CTA 다.
-    ///  - 날씨 테마 지역 없음 / 문구 정보 미완 / 빈 직접 입력 → 문구 행과 문구 화면의
+    ///  - 날씨 테마 지역 없음 / 문구 정보 미완 → 문구 행과 문구 화면의
     ///    상세 카드(`PromptDetailCard`)가 "아직 정하지 않았어요" 로 말한다.
+    ///  - 빈 직접 입력 → **버튼을 죽이지 않는다**(2026-09-29). 누르면 `saveFlow` 가 서버를
+    ///    부르기 전에 알럿으로 말한다(`manualTextMissing`).
     ///
     /// 한 줄로 또 쓰면 같은 순간 **두 문장이 서로 다른 얘기를 한다.** 실제로 그랬다 —
     /// 배너는 "저장된 목소리는 그대로 울리지만" 인데 아래 줄은 "쓸 수 없어요" 였다.
@@ -993,8 +996,29 @@ struct AlarmEditorSheet: View {
         if !profileReady, !preparedForProfile, !reuseExistingTtsForCurrentSelection { return true }
         // 말하는 자리: 문구 화면의 `PromptDetailCard`("아직 정하지 않았어요").
         if voiceStudio.randomPrompt { return !randomPromptSettingsComplete }
-        // 말하는 자리: 문구 화면의 '문구' 상세 카드("아직 입력하지 않았어요").
+        // ⚠ **빈 직접 입력으로는 버튼을 죽이지 않는다**(2026-09-29, CLAUDE.md 「잠그는 것은
+        // '저장 중' 일 때뿐이다」). 누르면 `saveFlow` 첫머리가 **서버를 부르기 전에** 알럿으로
+        // 이유를 말한다(`manualTextMissing` — 안드로이드 `SaveBlockReason.MANUAL_TEXT_MISSING`).
+        if manualTextMissing { return false }
+        // 스톡 클립 목소리의 빈 문구는 테마가 붙기 전 과도기다.
         return voiceStudio.ttsText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    /// **직접 입력인데 문구가 비었는가** — 저장하면 만들 문장이 없다.
+    ///
+    /// `saveFlow` 가 **권한 확인·한도 조회·생성 요청보다 먼저** 이걸 보고 알럿으로 막는다 —
+    /// 서버를 부르지 않으니 월 한도도 깎이지 않는다. 스톡 클립 목소리는 제외한다: 그쪽의 빈
+    /// 문구는 테마가 붙기 전 과도기라 '직접 입력' 이 아니다(`coerceFreeVoiceTierConstraints`).
+    /// 안드로이드 `emptyMessageBlockReason` 과 같은 판정이다.
+    var manualTextMissing: Bool {
+        draft.playMode != .alarmOnly
+            && voiceSourceMode == .ttsProfile
+            && !usesStockClips
+            && AlarmEditDraft.hasNoMessageChoice(
+                randomPrompt: voiceStudio.randomPrompt,
+                selectedBucket: selectedFreeBucket,
+                ttsText: voiceStudio.ttsText
+            )
     }
 
     /// 랜덤 문구가 켜졌을 때 컨텍스트별 필수 정보가 채워졌는지. 가족 알람은 상대의 준비
@@ -1177,8 +1201,16 @@ struct AlarmEditorSheet: View {
             switchVoiceSource(to: .localAudio)
             return
         }
+        // ⚠ **잇기 전에** 구한다 — 아래에서 이어받은 문구를 '잃을 문구' 로 읽어 확인 알럿을
+        // 띄우면 안 된다. (둘은 겹치지 않는다: 잇기는 문구가 비었을 때만, 경고는 문구가
+        // 있을 때만 돈다.)
+        let losesText = losesManualText(switchingTo: option)
         if voiceSourceMode != .ttsProfile {
             switchVoiceSource(to: .ttsProfile)
+            // 직접 녹음 → 목소리. 녹음 알람에는 문구가 없어 그대로 두면 **빈 직접 입력**으로
+            // 보인다. 비어 있을 때만 직전 선택을 잇는다 — 알람 전용 → 목소리와 같은 규칙
+            // (안드로이드 `VoiceAudioCard` 의 `onAdoptLastMessageChoice`).
+            adoptLastMessageChoiceIfUnset()
         }
         // 공유받은 목소리는 '나를 부를 호칭' 이 없으면 먼저 받는다 — 없이 저장하면
         // 서버가 호칭 자리를 비운 문장을 만든다.
@@ -1187,7 +1219,7 @@ struct AlarmEditorSheet: View {
             return
         }
         // 기본 목소리는 준비된 문구로만 말할 수 있다 — 직접 입력한 문구가 있으면 묻는다.
-        if losesManualText(switchingTo: option) {
+        if losesText {
             pendingVoiceSwitch = option
             return
         }
@@ -1896,27 +1928,12 @@ struct AlarmEditorSheet: View {
                 ?? .defaultContext
         ).rawValue
 
-        // **직전 선택 유지 — 새 알람에만 적용한다.**
+        // **직전 선택 유지 — 새 알람을 열 때 적용한다.**
         // 기존 알람을 열 때는 저장된 자기 값만 쓴다(열기만 해도 문구가 바뀌면 안 된다).
-        // 규약 전문은 CLAUDE.md 「알람 편집기 기본값 = 직전 선택 유지」.
+        // 예외는 문구가 없던 알람(알람 전용·직접 녹음)을 목소리 문구로 **옮기는 순간**이다 —
+        // `adoptLastMessageChoiceIfUnset`. 규약 전문은 CLAUDE.md 「알람 편집기 기본값 = 직전 선택 유지」.
         if alarm == nil {
-            let store = DynamicPromptPreferenceStore()
-            let userID = auth.session?.user.id
-            if let manual = store.lastManualText(userID: userID) {
-                // `last_manual_text` 가 차 있다 = 마지막 선택이 직접 입력이었다.
-                // 문구까지 함께 이어받는다 — 종류만 이어받으면 빈 직접입력으로 열려
-                // 저장이 막힌다(2026-08-06 규칙 변경의 근거).
-                voiceStudio.randomPrompt = false
-                voiceStudio.ttsText = manual
-            } else if let context = store.lastMessageContext(userID: userID) {
-                voiceStudio.randomPrompt = true
-                voiceStudio.randomContext = RandomPromptContext.normalized(context).rawValue
-            }
-            // 무료 테마는 **문구 종류·직접입력과 다른 축**이라 따로 이어받는다.
-            // 실제 클립 바인딩은 목소리·스톡 매니페스트가 준비된 뒤라야 하므로 여기서는
-            // 의도만 남기고, `applyPendingFreeBucketIfNeeded` 가 준비되면 집는다.
-            pendingFreeBucket = FreeBucket.stored(store.lastFreeBucket(userID: userID))
-            // 한 번도 고른 적 없으면 위에서 정한 폴백(랜덤 ON + preset)을 그대로 쓴다.
+            applyLastMessageChoice()
         }
 
         // ⚠ 여기서 번역 플래그를 세우던 자리다 — **번역을 없앴다**(2026-08-12).
@@ -1936,6 +1953,55 @@ struct AlarmEditorSheet: View {
         DispatchQueue.main.async {
             suppressProfileChangeInvalidation = false
         }
+    }
+
+    /// 계정의 **직전 문구 선택**을 편집기 상태에 심는다. 새 알람을 열 때와, 문구가 없던
+    /// 알람을 목소리 문구로 옮길 때(`adoptLastMessageChoiceIfUnset`)가 **같은 규칙 하나**를 쓴다
+    /// — 갈래는 `AlarmEditDraft.lastMessageChoice` 한 곳에 있다.
+    private func applyLastMessageChoice() {
+        let store = DynamicPromptPreferenceStore()
+        let userID = auth.session?.user.id
+        switch AlarmEditDraft.lastMessageChoice(
+            lastMessageContext: store.lastMessageContext(userID: userID),
+            lastManualText: store.lastManualText(userID: userID)
+        ) {
+        case .manual(let text):
+            // `last_manual_text` 가 차 있다 = 마지막 선택이 직접 입력이었다.
+            // 문구까지 함께 이어받는다 — 종류만 이어받으면 빈 직접입력으로 열려
+            // 저장이 막힌다(2026-08-06 규칙 변경의 근거).
+            voiceStudio.randomPrompt = false
+            voiceStudio.ttsText = text
+        case .generated(let context):
+            // 한 번도 고른 적 없으면 '기본 인사말'(preset)이다.
+            voiceStudio.randomPrompt = true
+            voiceStudio.randomContext = context
+        }
+        // 무료 테마는 **문구 종류·직접입력과 다른 축**이라 따로 이어받는다.
+        // 실제 클립 바인딩은 목소리·스톡 매니페스트가 준비된 뒤라야 하므로 여기서는
+        // 의도만 남기고, `applyPendingFreeBucketIfNeeded` 가 준비되면 집는다.
+        pendingFreeBucket = FreeBucket.stored(store.lastFreeBucket(userID: userID))
+    }
+
+    /// 문구가 **하나도 없으면** 직전 선택을 잇는다. 이어받았으면 true.
+    ///
+    /// ⚠ **빈 '직접 입력' 으로 두지 말 것**(2026-09-29 실기기 보고). 알람 전용·직접 녹음
+    /// 알람은 저장할 때 문구 필드를 비우므로(`AlarmEditDraft.toRecord`), 그 알람을 목소리
+    /// 문구로 옮기면 판정식(`currentMessageContext`)이 **빈 직접 입력**으로 읽는다 — 저장도
+    /// 못 하고, 고치려면 한도가 걸린 직접 입력을 새로 쳐야 했다. 새 알람과 같은 규칙으로 잇는다.
+    ///
+    /// 문구가 이미 있으면 **아무것도 바꾸지 않는다** — 그 알람의 자기 값, 이 세션에서 고른
+    /// 값이 언제나 이긴다. 안드로이드 `AlarmEditorState.adoptLastMessageChoiceIfUnset` 짝.
+    @discardableResult
+    func adoptLastMessageChoiceIfUnset() -> Bool {
+        guard AlarmEditDraft.hasNoMessageChoice(
+            randomPrompt: voiceStudio.randomPrompt,
+            selectedBucket: selectedFreeBucket,
+            ttsText: voiceStudio.ttsText
+        ) else { return false }
+        applyLastMessageChoice()
+        voiceStudio.preparedAlarm = nil
+        stockSelectedMessageID = nil
+        return true
     }
 
     /// 기존에 저장된 스톡 클립 알람을 다시 "선택/준비" 상태로 복원한다(P2).
@@ -2259,6 +2325,16 @@ struct AlarmEditorSheet: View {
                 title: "아직 준비 중이에요",
                 message: "바꾼 목소리를 정리하고 있어요. 잠시 후 다시 저장해 주세요.",
                 offersPlanActions: false
+            )
+            return
+        }
+        // ⚠ **빈 직접 입력은 여기서 막는다 — 권한 확인·한도 조회·생성 요청보다 먼저다.**
+        // 만들 문장이 없으니 서버를 부를 이유가 없고, 불러서 실패를 기다리면 사용자는 한도가
+        // 깎였는지부터 걱정한다. 버튼은 살려 두고 이유를 말한다(`editorSaveBlocked` 주석).
+        if manualTextMissing {
+            validationAlert = ValidationAlertContent(
+                title: String(localized: "직접 입력 문구가 비어 있어요"),
+                message: String(localized: "알람이 읽어 줄 문구를 입력하거나, 문구 화면에서 다른 종류를 골라 주세요.")
             )
             return
         }

@@ -72,6 +72,74 @@ final class MessageContextMemoryTests: XCTestCase {
         XCTAssertEqual(restoreContext(storedContext: nil, bucketId: nil), .defaultContext)
     }
 
+    // MARK: 문구가 없던 알람을 목소리로 — 빈 '직접 입력' 이 아니다
+
+    /// **알람 전용으로 저장된 행에는 문구가 하나도 없다** — 그 모양이 곧 '직접 입력' 판정식이다.
+    ///
+    /// 2026-09-29 실기기 보고: "알람 소리였던 거 목소리로 바꾸면 직접 입력으로 되어 있는데 …
+    /// 직접 입력 등록 안 돼 있으면 생성도 안 되고". `toRecord` 가 알람 전용일 때 문구 필드를
+    /// 비우므로, 그 행을 편집기로 열면(`loadVoicePromptState`) 랜덤 꺼짐·테마 없음·문구 없음이다.
+    /// 그래서 목소리로 옮기는 순간 `adoptLastMessageChoiceIfUnset` 이 직전 선택을 잇는다.
+    func testAlarmOnlyRecordHasNoMessageChoice() {
+        var draft = AlarmEditDraft.newDefault(defaultPlayMode: .alarmOnly)
+        draft.voiceRandomPrompt = true
+        let record = draft.toRecord(existing: nil, fireAtMillis: 0, nowMillis: 0)
+
+        XCTAssertEqual(record.voiceSourceEnum, .localAudio)
+        XCTAssertFalse(record.voiceRandomPrompt)
+        XCTAssertNil(record.voiceRandomContext)
+        XCTAssertNil(record.voiceText)
+        // 편집기가 여는 식 그대로(`loadVoicePromptState`).
+        XCTAssertTrue(AlarmEditDraft.hasNoMessageChoice(
+            randomPrompt: record.voiceRandomPrompt,
+            selectedBucket: FreeBucket.stored(record.bucketId),
+            ttsText: record.voiceText ?? ""
+        ))
+    }
+
+    /// 무엇이든 골라져 있으면 **문구가 있는 것**이다 — 그때는 절대 덮지 않는다.
+    func testAnyExistingChoiceCountsAsAMessage() {
+        XCTAssertFalse(AlarmEditDraft.hasNoMessageChoice(randomPrompt: true, selectedBucket: nil, ttsText: ""))
+        XCTAssertFalse(AlarmEditDraft.hasNoMessageChoice(randomPrompt: false, selectedBucket: .medication, ttsText: ""))
+        XCTAssertFalse(AlarmEditDraft.hasNoMessageChoice(randomPrompt: false, selectedBucket: nil, ttsText: "내가 친 문구"))
+        // 공백만 있는 문구는 없는 것이다 — 그대로 두면 다시 빈 직접 입력이다.
+        XCTAssertTrue(AlarmEditDraft.hasNoMessageChoice(randomPrompt: false, selectedBucket: nil, ttsText: "   "))
+    }
+
+    /// 마지막 문구 종류가 있으면 그걸 잇는다.
+    func testLastMessageKindIsAdopted() {
+        XCTAssertEqual(
+            AlarmEditDraft.lastMessageChoice(lastMessageContext: "medication", lastManualText: nil),
+            .generated(RandomPromptContext.medication.rawValue)
+        )
+        // 옛 이름도 접어서 잇는다(`love` → 응원).
+        XCTAssertEqual(
+            AlarmEditDraft.lastMessageChoice(lastMessageContext: "love", lastManualText: nil),
+            .generated(RandomPromptContext.cheer.rawValue)
+        )
+    }
+
+    /// 한 번도 고른 적 없으면 **기본 인사말**(preset) — 빈 직접 입력이 아니다.
+    func testNoHistoryFallsBackToPresetGreeting() {
+        XCTAssertEqual(
+            AlarmEditDraft.lastMessageChoice(lastMessageContext: nil, lastManualText: nil),
+            .generated(RandomPromptContext.preset.rawValue)
+        )
+        XCTAssertEqual(
+            AlarmEditDraft.lastMessageChoice(lastMessageContext: "  ", lastManualText: "  "),
+            .generated(RandomPromptContext.preset.rawValue)
+        )
+    }
+
+    /// 마지막이 직접 입력이었으면 **문구까지** 잇는다(새 알람과 같은 규칙) — 글자가 같아
+    /// 기기에 있는 음성을 재사용하므로 서버 호출도 한도 차감도 없다. 마지막 선택은 하나다.
+    func testLastManualTextWinsWhenThatWasTheLastChoice() {
+        XCTAssertEqual(
+            AlarmEditDraft.lastMessageChoice(lastMessageContext: "cheer", lastManualText: "회의 자료 챙겨"),
+            .manual("회의 자료 챙겨")
+        )
+    }
+
     /// `AlarmEditorSheet.loadVoicePromptState` 의 복원식과 같은 순서.
     private func restoreContext(storedContext: String?, bucketId: String?) -> RandomPromptContext {
         storedContext.nilIfBlank.map(RandomPromptContext.normalized)
