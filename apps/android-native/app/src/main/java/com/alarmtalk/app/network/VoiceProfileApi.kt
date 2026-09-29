@@ -187,9 +187,8 @@ interface VoiceProfileApi {
         // 관계·호칭은 선택 입력 — 비우면 파트 자체를 보내지 않는다(백엔드 옵셔널).
         @Part("relationshipLabel") relationshipLabel: RequestBody?,
         @Part("listenerTitle") listenerTitle: RequestBody?,
-        // 목소리의 결(`data/VoiceEnergy.kt`) — '' = 자동 / lively / calm. 자동도 **빈 값으로 보낸다**.
-        // 모르는 값은 400 INVALID_VOICE_ENERGY. 조립은 `createVoiceCloneDraft` 한 곳에서 한다.
-        @Part("voiceEnergy") voiceEnergy: RequestBody,
+        // 목소리의 결(`voiceEnergy`)은 보내지 않는다 — 서버가 전사로 추정한 말투를 쓴다
+        // (`createVoiceCloneDraft` 주석). 조립은 그 함수 한 곳에서 한다.
         @Part("durationMs") durationMs: RequestBody,
         @Part("isDraft") isDraft: RequestBody,
         // 사전렌더할 앱 언어(미전송 시 서버가 'ko' 폴백 → 비-ko 유저가 클론 버킷을 못 받음).

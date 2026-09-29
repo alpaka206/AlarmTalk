@@ -508,47 +508,16 @@ struct VoiceProfileUpdateRequest: Encodable {
     }
 }
 
-/// 목소리의 결 — 등록 '세부 정보' 단계에서 사용자가 고른다(`voice_profiles.voice_energy`).
-/// 유료 클론의 사전렌더·미리듣기 문구가 이 결을 따라 문장 에너지와 딜리버리 태그를 고른다
-/// (`docs/spec/voice-and-message.md` §4-2). 서버 계약은 `@alarmtalk/shared` 의 `VoiceEnergySchema`.
-///
-/// - `rawValue` 가 곧 전송 값이다: 자동 = `""`, 경쾌 = `"lively"`, 차분 = `"calm"`.
-///   다른 값은 서버가 400 `INVALID_VOICE_ENERGY` 로 거절한다.
-/// - 관계·호칭처럼 **초안에서만** 바뀐다(정식 등록 뒤에는 `VOICE_PERSONA_LOCKED`).
-/// - ⚠ 음향은 보지 않는다 — 음성 파일을 분석에 보내려면 처리방침·동의부터 바꿔야 해서
-///   사용자가 고르게 했다. '자동' 이면 서버가 등록 녹음 전사로 추정한 값을 쓴다.
-enum VoiceEnergy: String, CaseIterable, Identifiable {
-    case auto = ""
-    case lively
-    case calm
-
-    var id: String { rawValue }
-
-    /// 기본값은 자동이다 — 고르지 않아도 다음으로 넘어갈 수 있는 선택 입력이다.
-    static let defaultValue: VoiceEnergy = .auto
-
-    /// 세그먼트 라벨. 좌→우 순서는 `allCases`(자동 · 경쾌 · 차분)이고 안드로이드와 같다.
-    var label: String {
-        switch self {
-        case .auto: return String(localized: "자동")
-        case .lively: return String(localized: "경쾌")
-        case .calm: return String(localized: "차분")
-        }
-    }
-}
-
 /// `PATCH /voice/:id/relationship` 의 body. 관계/호칭 두 값은 필수.
 ///
 /// 지금 iOS 에서 이 라우트를 부르는 곳은 **공유받은 음성 viewer** 의 관계/호칭 등록뿐이다
-/// (내 초안의 관계·호칭·결은 클론 요청 `POST voice/clone` 에 실어 보낸다).
-/// Android `VoiceProfileApi.kt:61-64`.
+/// (내 초안의 관계·호칭은 클론 요청 `POST voice/clone` 에 실어 보낸다).
+///
+/// ⚠ 목소리의 결(`voice_energy`)은 **어느 요청에도 싣지 않는다**(2026-09-29 '목소리 느낌' 선택
+/// 제거). 결은 서버가 등록 녹음 전사로 추정한다(`docs/spec/voice-and-message.md` §4-2).
 struct VoiceProfileRelationshipUpdateRequest: Encodable {
     var relationshipLabel: String
     var listenerTitle: String
-    /// 목소리의 결(`voice_energy`). **내 초안**의 페르소나를 고칠 때만 싣는다.
-    /// nil 이면 키가 아예 안 나가서 서버는 그 컬럼을 건드리지 않는다 — viewer 경로는
-    /// 늘 nil 이다(결은 목소리 주인이 정하는 것이지 받은 사람의 것이 아니다).
-    var voiceEnergy: String? = nil
 }
 
 /// 이번 달(KST) 목소리 쿼터. Android `VoiceDraftQuotaResponse` 미러.

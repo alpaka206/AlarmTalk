@@ -1230,23 +1230,6 @@
     "결제하기" : {
 
     },
-    "경쾌" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Lively"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "明るい"
-          }
-        }
-      }
-    },
     "계속 만들기" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4327,40 +4310,6 @@
         }
       }
     },
-    "목소리 느낌" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Voice feel"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "声の雰囲気"
-          }
-        }
-      }
-    },
-    "목소리 느낌을 확인하지 못했어요. 다시 골라 주세요." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "We couldn't apply that voice feel. Please choose it again."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "声の雰囲気を確認できませんでした。もう一度選んでください。"
-          }
-        }
-      }
-    },
     "목소리 등록에는 별도 동의가 필요해요" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -7417,23 +7366,6 @@
         }
       }
     },
-    "알람 문구의 말투와 톤을 이 느낌에 맞춰요." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Alarm lines match this feel in wording and tone."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "アラーム文言の話し方とトーンをこの雰囲気に合わせます。"
-          }
-        }
-      }
-    },
     "알람 받지 않을 시간" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -10165,23 +10097,6 @@
         }
       }
     },
-    "자동" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Auto"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "自動"
-          }
-        }
-      }
-    },
     "작성" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -11156,23 +11071,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "バイブレーションパターン"
-          }
-        }
-      }
-    },
-    "차분" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Calm"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "落ち着いた"
           }
         }
       }

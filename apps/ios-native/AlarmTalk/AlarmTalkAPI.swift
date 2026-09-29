@@ -21,7 +21,7 @@ final class AlarmTalkAPI: @unchecked Sendable {
         encoder = AlarmTalkAPI.makeJSONEncoder()
     }
 
-    /// 요청 바디 인코더. 키를 snake_case 로 바꾼다(`voiceEnergy` → `voice_energy`).
+    /// 요청 바디 인코더. 키를 snake_case 로 바꾼다(`relationshipLabel` → `relationship_label`).
     /// 테스트가 실제로 나가는 바디 모양을 같은 변환으로 검사할 수 있게 한 곳에서 만든다.
     static func makeJSONEncoder() -> JSONEncoder {
         let encoder = JSONEncoder()
@@ -245,7 +245,6 @@ final class AlarmTalkAPI: @unchecked Sendable {
         noiseRemoval: Bool = false,
         relationshipLabel: String? = nil,
         listenerTitle: String? = nil,
-        voiceEnergy: VoiceEnergy = .defaultValue,
         isDraft: Bool = true,
         language: String = "ko"
     ) -> [String: String] {
@@ -256,9 +255,9 @@ final class AlarmTalkAPI: @unchecked Sendable {
             "durationMs": String(durationMs),
             "relationshipLabel": relationshipLabel?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "",
             "listenerTitle": listenerTitle?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "",
-            // 목소리의 결 — 관계·호칭과 같이 초안을 만들 때 싣는다. **자동도 보낸다**(`""`):
-            // 서버는 빈 값을 '자동'(NULL)으로 저장하고, 고른 결은 사전렌더 문구의 말투를 정한다.
-            "voiceEnergy": voiceEnergy.rawValue,
+            // ⚠ 목소리의 결(`voiceEnergy`)은 **보내지 않는다**(2026-09-29 '목소리 느낌' 선택 제거).
+            //   서버는 필드가 없으면 등록 녹음 전사로 추정한 말투를 쓴다 — 예전의 '자동' 과 같다
+            //   (`docs/spec/voice-and-message.md` §4-2). 안드로이드 `createVoiceCloneDraft` 와 같다.
             // ⚠ **초안(draft)으로 만든다.** 서버는 draft → 미리듣기 확인 → 승격 흐름을
             // 전제한다(`voice-profile.ts:1080`). 이걸 안 보내면 등록이 곧바로 정식
             // 프로필이 되어, 사용자가 결과를 들어보기도 전에 페르소나가 잠기고
@@ -280,7 +279,6 @@ final class AlarmTalkAPI: @unchecked Sendable {
         uploadFileName: String? = nil,
         relationshipLabel: String? = nil,
         listenerTitle: String? = nil,
-        voiceEnergy: VoiceEnergy = .defaultValue,
         isDraft: Bool = true,
         language: String = "ko"
     ) async throws -> VoiceProfile {
@@ -291,7 +289,6 @@ final class AlarmTalkAPI: @unchecked Sendable {
             noiseRemoval: noiseRemoval,
             relationshipLabel: relationshipLabel,
             listenerTitle: listenerTitle,
-            voiceEnergy: voiceEnergy,
             isDraft: isDraft,
             language: language
         )
@@ -516,16 +513,11 @@ final class AlarmTalkAPI: @unchecked Sendable {
 
     /// 관계/호칭 갱신 — `PATCH /voice/:id/relationship`. body 의 두 필드는 모두 필수.
     /// 공유받은 음성이면 viewer 자신의 관계/호칭을, 내 **초안**이면 그 초안의 페르소나를 고친다.
-    /// Android `VoiceProfileApi.kt:132-137`.
-    ///
-    /// - Parameter voiceEnergy: 내 초안의 목소리 결. nil 이면 보내지 않아 서버가 그 값을
-    ///   그대로 둔다 — viewer 경로는 nil 로 부른다(결은 목소리 주인이 정한다).
-    ///   초안에서 결이 바뀌면 서버가 관계·호칭처럼 미리듣기를 비워 새 결로 다시 만든다.
+    /// 목소리의 결(`voice_energy`)은 싣지 않는다 — 서버가 그 값을 건드리지 않는다.
     func updateVoiceProfileRelationship(
         profileId: String,
         relationshipLabel: String,
         listenerTitle: String,
-        voiceEnergy: VoiceEnergy? = nil,
         token: String
     ) async throws -> VoiceProfile {
         let response: VoiceProfileResponse = try await request(
@@ -534,8 +526,7 @@ final class AlarmTalkAPI: @unchecked Sendable {
             token: token,
             body: Self.voiceRelationshipUpdateBody(
                 relationshipLabel: relationshipLabel,
-                listenerTitle: listenerTitle,
-                voiceEnergy: voiceEnergy
+                listenerTitle: listenerTitle
             )
         )
         return response.profile
@@ -545,13 +536,11 @@ final class AlarmTalkAPI: @unchecked Sendable {
     /// 순수 함수로 뺐다(`voiceCloneMultipartFields` 와 같은 이유).
     static func voiceRelationshipUpdateBody(
         relationshipLabel: String,
-        listenerTitle: String,
-        voiceEnergy: VoiceEnergy? = nil
+        listenerTitle: String
     ) -> VoiceProfileRelationshipUpdateRequest {
         VoiceProfileRelationshipUpdateRequest(
             relationshipLabel: relationshipLabel.trimmingCharacters(in: .whitespacesAndNewlines),
-            listenerTitle: listenerTitle.trimmingCharacters(in: .whitespacesAndNewlines),
-            voiceEnergy: voiceEnergy?.rawValue
+            listenerTitle: listenerTitle.trimmingCharacters(in: .whitespacesAndNewlines)
         )
     }
 

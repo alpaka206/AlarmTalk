@@ -88,7 +88,6 @@ import com.alarmtalk.app.data.AlarmAudioStore
 import com.alarmtalk.app.data.AlarmVoiceRecorder
 import com.alarmtalk.app.data.CachedAlarmAudio
 import com.alarmtalk.app.data.VoiceProfileAudioLimits
-import com.alarmtalk.app.data.VoiceEnergy
 import com.alarmtalk.app.data.VoiceProfileCreationDraft
 import com.alarmtalk.app.network.AuthSession
 import com.alarmtalk.app.network.BillingSubscriptionResponse
@@ -295,9 +294,6 @@ internal fun VoiceProfileManagementPanel(
     var profileName by remember { mutableStateOf("") }
     var relationshipSelection by remember { mutableStateOf(RelationshipSelection()) }
     var profileListenerTitle by remember { mutableStateOf("") }
-    // 목소리의 결('목소리 느낌') — 기본은 자동. 이름·관계처럼 패널 상태라 '음원 준비' 로 돌아갔다
-    // 와도, 생성 실패로 '세부 정보' 에 되돌아와도 고른 값이 남는다. 창을 닫을 때만 비운다.
-    var profileVoiceEnergy by remember { mutableStateOf(VoiceEnergy.AUTO) }
     var shareVoice by remember { mutableStateOf(false) }
     // 인라인 동의 체크. 등록 요청이 나가기 전 단계에서만 의미가 있으므로 다이얼로그를 닫을 때
     // 함께 초기화한다(closeCreateDialog).
@@ -789,7 +785,6 @@ internal fun VoiceProfileManagementPanel(
         profileVoiceLanguage = defaultVoiceLanguage
         relationshipSelection = RelationshipSelection()
         profileListenerTitle = ""
-        profileVoiceEnergy = VoiceEnergy.AUTO
         shareVoice = false
         voiceBiometricAgreed = false
         currentStep = VoiceRegistrationStep.Source
@@ -1301,7 +1296,7 @@ internal fun VoiceProfileManagementPanel(
         val trimmedRelationship = relationshipSelection.resolved
         val trimmedListener = profileListenerTitle.trim()
         // 등록 한 건을 이름 붙인 필드로 만든다 — 자리 순서로 문자열을 넘기면 필드가 늘 때 두 값이
-        // 뒤바뀌어도 컴파일이 통과한다. 언어·결·공유는 부르는 순간의 선택을 읽는다(파일 경로는
+        // 뒤바뀌어도 컴파일이 통과한다. 언어·공유는 부르는 순간의 선택을 읽는다(파일 경로는
         // 비동기 자르기를 거친 뒤 부른다).
         fun creationDraft(audio: CachedAlarmAudio) = VoiceProfileCreationDraft(
             name = trimmedName,
@@ -1310,7 +1305,6 @@ internal fun VoiceProfileManagementPanel(
             relationshipLabel = trimmedRelationship,
             listenerTitle = trimmedListener,
             language = profileVoiceLanguage,
-            voiceEnergy = profileVoiceEnergy,
         )
         if (trimmedName.isBlank()) {
             localMessage = null
@@ -1835,29 +1829,9 @@ internal fun VoiceProfileManagementPanel(
                                     colors = wakerOutlinedTextFieldColors(),
                                     modifier = Modifier.textInputTapTarget().then(Modifier.fillMaxWidth()),
                                 )
-                                // 목소리 느낌(목소리의 결) — 클론 문구의 말투·태그를 이 결에 맞춘다.
-                                // 선택 입력이라 기본 '자동' 그대로 등록할 수 있다. 음향은 보지 않는다 —
-                                // 그래서 사용자가 고른다(`docs/spec/voice-and-message.md` 4-2).
-                                Text(
-                                    text = stringResource(R.string.voices_energy_label),
-                                    style = MaterialTheme.typography.titleSmall,
-                                    fontWeight = FontWeight.SemiBold,
-                                    modifier = Modifier.padding(top = 4.dp),
-                                )
-                                // 안내 한 줄은 세그먼트에 붙인다 — 부모 간격(14dp)으로 떨어뜨리면 아래
-                                // '언어' 제목과 거리가 비슷해져 어느 쪽 설명인지 읽히지 않는다.
-                                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                    EditorSegmentedSelector(
-                                        options = listOf(
-                                            VoiceEnergy.AUTO to stringResource(R.string.voices_energy_auto),
-                                            VoiceEnergy.LIVELY to stringResource(R.string.voices_energy_lively),
-                                            VoiceEnergy.CALM to stringResource(R.string.voices_energy_calm),
-                                        ),
-                                        selected = profileVoiceEnergy,
-                                        onSelect = { profileVoiceEnergy = it },
-                                    )
-                                    MutedText(stringResource(R.string.voices_energy_hint))
-                                }
+                                // ⚠ '목소리 느낌'(자동·경쾌·차분) 선택을 되살리지 말 것(2026-09-29 사용자
+                                // 결정으로 뺐다). 클론 문구의 결은 서버가 등록 녹음 전사로 추정한 말투를
+                                // 따른다(`docs/spec/voice-and-message.md` 4-2).
                                 // 문구 언어 — 미리듣기와 매일 사전렌더 문구가 이 언어로 만들어진다.
                                 Text(
                                     text = stringResource(R.string.voices_language_label),

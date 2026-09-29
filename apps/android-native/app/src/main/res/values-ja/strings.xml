@@ -528,11 +528,6 @@
     <string name="voices_prerender_ready_title">この声でアラーム文言を作っています</string>
     <string name="voices_prerender_ready_body">閉じても作成は続きます。
 でき次第アラームで使えます。</string>
-    <string name="voices_energy_label">声の雰囲気</string>
-    <string name="voices_energy_auto">自動</string>
-    <string name="voices_energy_lively">明るい</string>
-    <string name="voices_energy_calm">落ち着いた</string>
-    <string name="voices_energy_hint">アラーム文言の話し方とトーンをこの雰囲気に合わせます。</string>
     <string name="voices_language_label">アラームを読み上げる言語</string>
     <string name="voices_name_placeholder">例:お母さんの声</string>
     <string name="voices_next">次へ</string>
@@ -900,7 +895,6 @@
     <string name="api_error_voice_limit_reached">登録できる声をすべて使いました。使わない声を削除してください。</string>
     <string name="api_error_voice_not_ready">声をまだ作成しています。しばらくしてからもう一度お試しください。</string>
     <string name="api_error_voice_cloning_failed">声を作成できませんでした。静かな場所でもう一度録音してください。</string>
-    <string name="api_error_invalid_voice_energy">声の雰囲気を確認できませんでした。もう一度選んでください。</string>
     <string name="api_error_alarm_not_found">このアラームはすでに削除されています。</string>
     <string name="api_error_tts_generation_failed">音声を作成できませんでした。しばらくしてからもう一度お試しください。</string>
     <string name="voices_not_ready_title">声をダウンロード中です</string>

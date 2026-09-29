@@ -520,11 +520,6 @@
     <string name="voices_prerender_ready_title">Creating alarm lines in this voice</string>
     <string name="voices_prerender_ready_body">You can close this. It keeps going.
 They become available as they finish.</string>
-    <string name="voices_energy_label">Voice feel</string>
-    <string name="voices_energy_auto">Auto</string>
-    <string name="voices_energy_lively">Lively</string>
-    <string name="voices_energy_calm">Calm</string>
-    <string name="voices_energy_hint">Alarm lines match this feel in wording and tone.</string>
     <string name="voices_language_label">Language for alarm lines</string>
     <string name="voices_name_placeholder">e.g. Mom\'s voice</string>
     <string name="voices_next">Next</string>
@@ -892,7 +887,6 @@ Please update to the latest version.</string>
     <string name="api_error_voice_limit_reached">You\'ve used all your voice slots. Delete a voice you no longer need.</string>
     <string name="api_error_voice_not_ready">This voice is still being created. Please try again in a moment.</string>
     <string name="api_error_voice_cloning_failed">We could not create that voice. Please record again somewhere quiet.</string>
-    <string name="api_error_invalid_voice_energy">We couldn\'t apply that voice feel. Please choose it again.</string>
     <string name="api_error_alarm_not_found">This alarm no longer exists.</string>
     <string name="api_error_tts_generation_failed">We could not create the audio. Please try again in a moment.</string>
     <string name="voices_not_ready_title">Still downloading voices</string>

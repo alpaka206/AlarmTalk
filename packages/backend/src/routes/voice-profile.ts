@@ -1708,6 +1708,9 @@ voiceProfile.patch('/:id/relationship', async (c) => {
 
   // 목소리의 결(경쾌/차분) — 관계·호칭과 같은 '페르소나' 라 초안에서만 받는다. 보내지 않으면 그대로 둔다
   // (구버전 앱은 이 필드를 모른다). 모르는 값은 거절한다 — 조용히 '자동' 으로 바꾸면 고른 결이 사라진다.
+  // ⚠ 1.2.10 다음 앱은 결을 보내지 않는다('목소리 느낌' 선택 제거, 2026-09-29). 이 처리는 아직 선택지를
+  //   보여 주는 1.2.10 앱 때문에 남긴 것이다 — 두 스토어의 `minSupported`(`lib/app-version.ts`)가 선택지를
+  //   뺀 릴리스를 넘긴 뒤에 지운다(`docs/spec/voice-and-message.md` 4-2).
   const rawEnergy = body.voice_energy ?? body.voiceEnergy;
   const hasVoiceEnergy = rawEnergy !== undefined && rawEnergy !== null;
   const energyParsed = hasVoiceEnergy ? VoiceEnergySchema.safeParse(rawEnergy) : null;
@@ -1902,6 +1905,9 @@ voiceProfile.post('/clone', async (c) => {
       ) ?? '';
     // 목소리의 결 — 관계·호칭과 같이 초안을 만들 때 받는다(PATCH /:id/relationship 과 같은 규칙).
     // 보내지 않은 구버전 앱 요청은 새 컬럼(#122)을 건드리지 않는다.
+    // ⚠ 1.2.10 다음 앱도 보내지 않는다('목소리 느낌' 선택 제거, 2026-09-29) — 그러면 전사 추정 말투를 쓴다.
+    //   이 처리는 선택지를 보여 주는 1.2.10 앱 때문에 남긴 것이다. 두 스토어의 `minSupported`
+    //   (`lib/app-version.ts`)가 선택지를 뺀 릴리스를 넘긴 뒤에 지운다(`docs/spec/voice-and-message.md` 4-2).
     const rawVoiceEnergy = formData.get('voiceEnergy') ?? formData.get('voice_energy');
     const hasVoiceEnergy = rawVoiceEnergy !== null && rawVoiceEnergy !== undefined;
     const voiceEnergyParsed = hasVoiceEnergy ? VoiceEnergySchema.safeParse(String(rawVoiceEnergy)) : null;
