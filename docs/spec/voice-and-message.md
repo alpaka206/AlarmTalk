@@ -220,6 +220,13 @@
     `claim_stuck` 은 **'진행 없음' 이 아니다**(리스가 끝날 때까지 같은 개수가 온다). 무진전으로
     세면 구동을 3회 만에 접어 생성이 크론으로 넘어간다.
   - **막대를 스피너와 번갈아 그리지 않는다.** 폭이 달라 화면이 깜박이고, 좁아졌다 넓어진다.
+  - **한 목소리의 클립은 한 벌만 받는다**(2026-09-29 효율 감사 M4 — 안드로이드). 등록 직후
+    구동이 도는 동안 목소리 탭은 그 목소리를 **따로 폴링하지도 받지도 않고**, 행에 구동의
+    진행률을 그대로 그린다(마지막 단계와 **같은 값**). 예전에는 둘이 같은 클립을 동시에, 둘 다
+    차례로 받아 4분에 status 를 43번 물었다. 구동이 끝나면 목소리 탭이 다시 센다 — 구동이
+    접혀 크론이 이어받은 경우엔 **목소리 탭 폴링이 유일한 신호**라 없애지 않는다.
+    받기는 목소리마다 **한 번에 한 벌**(뒤에 온 쪽은 기다렸다가 빠진 것만 본다)이고, 빠진 것은
+    캐시 디렉터리를 **한 번** 읽어 고르며(클립마다 두 번 묻지 않는다), **동시에 4개**씩 받는다.
   - **화면은 좌우를 꽉 채운다**(배경도). 등록 마지막 화면만 그러지 않아 좌우가 비어 보였다.
 - **끝났다고 또 말하지 않는다**(2026-09-21 지시). 준비가 끝나면 **아무 말 없이** 목록으로
   돌아간다 — "다 됐어요" 팝업도, 등록 직후의 '등록했어요' 안내도 두지 않는다. 그 문구는
@@ -350,8 +357,9 @@
     목소리로 계속 운다. 그래서 등록 기기도 **푸시 경로와 같은 매니페스트·캐시 게이트**를
     통과한 뒤에 확정한다. 사용자는 그동안 준비 화면(진행률)에 있으므로 '정리 중' 과 겹쳐
     어색하지 않다 — 이때는 **실패 문구를 쓰지 않는다.**
-    ⚠ **안드로이드는 이 게이트가 필요 없다** — 거기서는 프리셋 수리(`loadStockClips` 의 낡은
-    클립 재다운로드)가 **표식과 무관하게** 매번 돌기 때문이다. 확정이 일러도 수리는 계속된다.
+    ⚠ **안드로이드는 이 게이트가 필요 없다** — 거기서는 프리셋 수리(뷰모델이 매니페스트를
+    공개할 때마다 도는 낡은 클립 재다운로드, `repairReplacedStockClips`)가 **표식과 무관하게**
+    돌기 때문이다. 확정이 일러도 수리는 계속된다.
     한쪽만 보고 "빠졌다" 며 맞추지 말 것 — 같은 규칙을 서로 다른 자리에서 지키고 있다.
   - **교체 진행률은 '지금 목소리로 만든 클립' 만 센다.** 교체 회차는 옛 클립이 전부 음원을
     들고 있어, 개수만 세면 첫 호출부터 완료로 보이고 앱의 구동 루프가 곧바로 멈춘다 —
@@ -613,6 +621,66 @@
   **가장 최근에 본 표의 응답이 실제로 공개된 경우**만 true 다. 무효화(`clear`)로 밀렸거나 가장
   최근 응답의 공개가 실패했으면 false — 디스크 값이 지난 세션 것이거나 최신이 아닐 수 있어
   교체 세대를 확정하면 안 된다(Codex #703 P1). 그때는 다음 호출이 다시 받는다.
+
+**조회는 한 번에 하나 — 신선도 창**(2026-09-29 효율 감사 M1·M2, 안드로이드 전경). 콜드 스타트
+한 번에 매니페스트(약 168KB)가 15번 나갔다 — 앱 시작·탭 새로고침·준비도·클론 다운로드가 저마다
+받았고, 준비도·클론 다운로드는 **표 없이** 받아 메모리를 덮어 위 가드를 우회했다. 이제:
+- 뷰모델에서 매니페스트를 받는 곳은 **하나**(`ensureStockClipManifest`)이고, 그곳만 표를 뽑고
+  공개한다. 준비도·클론 다운로드도 이걸 거친다.
+- **떠 있는 요청은 나눠 쓴다**(같은 계정 + 같은 세션 세대만). 부르는 자리가 얼마나 새것이어야
+  하는지를 고른다:
+
+  | 필요 | 자리 | 규칙 |
+  | --- | --- | --- |
+  | 이번 세션 | 앱 시작 | 이번 세션에 공개한 적이 있으면 받지 않는다 |
+  | 최근(45초) | 탭 새로고침(알람·목소리), 준비도, 세션 첫 공유 목록 | 45초 안에 출발해 **공개된** 응답이 있으면 받지 않는다. 떠 있는 요청도 45초 안에 출발한 것만 나눠 쓰고, 더 오래 떠 있으면(약한 망) 그 뒤에 한 번만 줄을 세운다 |
+  | 신호 뒤 | 공유 변경 푸시, 공유 목록 변화(앞 목록도 서버에서 받은 것일 때), 목소리 탭의 '서버는 다 만들었는데 목록에 없다', 클론 구동의 다운로드 | **부른 뒤에 출발한** 요청만 쓴다. 떠 있는 요청 뒤에 한 번만 줄을 세우고, 그사이 온 신호는 그 줄을 나눠 쓴다 |
+
+  45초는 탭 새로고침 스로틀(60초)보다 짧게 잡았다 — 알람·목소리 탭을 오가는 사이 같은 목록을
+  두 번 받지 않을 만큼이면 된다. 서버가 바뀐 것을 **아는** 자리는 창을 쓰지 않는다.
+- 신선도는 **공개가 확인된** 응답만 센다. 물러난(superseded) 회차는 **가장 최근에 본 표의 응답이
+  실제로 공개됐을 때만**(위 '새로 받았는가' 와 같은 판정) 디스크의 이긴 매니페스트를 **임자 대조로**
+  메모리에 싣고 받은 것으로 센다 — 이긴 것은 이 요청보다 뒤에 출발했다. 확인하지 못하면(더 새
+  표의 쓰기 실패·로그아웃 무효화) 이긴 것이 이 요청보다 앞선 목록일 수 있어 **실패로 본다** —
+  세지 않고, 준비도는 앞 값을 지키며, 다음 호출이 다시 받는다(Codex #825). 읽은 것은 **확인한 그
+  공개본이어야** 한다 — 확인 → 잠금 밖에서 읽기 → 잠금 안에서 다시 확인하고, 그 사이 공개 상태가
+  바뀌었으면 다시 읽는다(잠근 채 168KB 를 읽으면 같은 잠금을 잡는 쪽이 멎는다).
+  자기 응답이 공개됐어도 **그 뒤에 본 더 새 표의 쓰기가 실패했으면** 실어서 쓰되 '받았다' 로 세지
+  않는다(다음 호출이 다시 받는다). 이때 부른 자리(준비도·클론 다운로드)는 **실패로 보지 않는다** —
+  메모리에는 이 요청 자신의 응답(또는 그 뒤의 공개본)이 실려 있어 부른 자리가 원한 새로움을 이미
+  채웠고, 더 새 표의 쓰기 실패는 그 요청이 아직 안 돌아온 것과 다를 바 없다. 물러난 회차가 확인을
+  못 한 경우(실패)와 가르는 기준은 **실린 것이 이 요청보다 앞서 출발했을 수 있는가** 하나다.
+  신선도를 센 **뒤에** 더 새 표(워커 포함)의 쓰기가 실패해도 같다 — 창을 쓰기 전에 디스크에서
+  가장 최근에 본 표가 공개됐는지 다시 보고, 아니면 창 안이라도 다시 받는다(Codex #825).
+- **싣는 것과 세는 것은 다르다.** 확인하지 못한 경우에도 디스크의 **마지막 공개본**(임자 대조)은
+  메모리보다 뒤의 표면 싣는다 — 실패한 쓰기는 공개하지 않았으므로 디스크에는 그 앞의 공개본이
+  그대로 있고(쓰다 깨졌으면 읽기가 버린다 — 단 읽는 사이 더 새 것이 공개됐으면 그 후속본은 지우지 않는다), 그게 가장 새 목록이다. 실패한 쓰기는 알림을 내지 않아서,
+  워커가 공개한 직후 그런 실패가 끼면 버리는 순간 메모리는 그 공개본을 영영 못 따라가고 교체
+  수리도 건너뛴다(Codex #825). 로그아웃·계정 전환은 파일까지 지우므로 이어받을 것이 없다.
+- 떠 있는 요청·줄은 **주인(계정 + 세션 세대)마다** 따로 둔다 — 계정이 바뀐 뒤 앞 계정의 줄이 풀리며
+  새 계정의 요청 자리를 비우면 새 계정이 같은 요청을 또 낸다. 표는 메인 밖에서 뽑는다(워커가 쓰는
+  동안 같은 잠금을 잡고 있다).
+- **메모리는 디스크의 공개본을 표 순서로 따라간다 — 누가 공개했든.** 워커는 매니페스트를 따로 받아
+  공개하지만(아래, 의도) 뷰모델 메모리를 모른다. 그래서 뷰모델은 공개가 일어날 때마다(저장소가 표를
+  흘린다) 디스크의 마지막 공개본을 읽어 싣고(위 '싣는 것과 세는 것'), 싣기는 **이미 실린 것보다 뒤의
+  표만** 받는다 — 늦게 돌아온 앞선 응답이 메모리를 교체 이전 목록으로 되돌리지 못한다. 어느 갈래로
+  실었든(전경 응답·이긴 것·따라가기) 실은 뒤에는 제자리 교체 수리와 대기 중 프리페치 재시도를
+  돌린다 — 워커는 공유받은 목소리를 받지 않고 접근권 워커는 낡음을 판정만 하므로, 여기서 안 고치면
+  교체된 사람의 목소리가 다음 전경 공개까지 남는다(Codex #825).
+- 제자리 교체의 프리셋 수리(`repairReplacedStockClips`)도 **목소리마다 한 벌** 자리를 거친다 —
+  교체 직후 수리와 클론 구동이 같은 `stock_` 클립을 낡은 것으로 보고 동시에 받지 않게, 한쪽이
+  끝난 뒤 다른 쪽은 다시 세어 빠진 것만 받는다. 기본 목소리 선다운로드(`prefetchFreeBucketClips`)도
+  같은 자리를 거친다 — 누가 먼저 시작했든 겹치지 않는다(Codex #825).
+- 공유 목록 변화가 '신호 뒤' 인지는 **비교한 앞 목록이 이 세션에 서버에서 받은 것인가**로 가른다.
+  중간 조회가 실패해도 앞 목록은 서버 목록 그대로 남으므로 '이번 조회가 신선한가' 로 가르지 않는다.
+  공유 목록을 서버 목록으로 바꾸는 곳(공유 새로고침·목소리 공유 토글)은 **전부** 그 출처를 세운다.
+- 디스크 공개(직렬화·파일 교체·prefs `commit()`)와 읽기(파싱)는 **메인 밖**에서 한다 — 워커와 같은
+  잠금을 잡으므로 메인에서 부르면 워커가 쓰는 동안 화면이 멎는다. 순서는 그대로다: **공개가
+  확인된 뒤에** 메모리에 싣는다. 디스크 시드는 그사이 서버 응답이 실렸으면 버린다.
+- ⚠ **워커의 조회는 묶지 않는다(의도).** `StockClipPrefetchWorker`·`VoiceAccessSyncWorker` 는
+  뷰모델이 없는 프로세스에서도 돌고, 교체 확정 판단에는 **그 회차가 직접 받아 공개한** 매니페스트가
+  필요하다. 워커의 재바인딩용 강제 조회도 그대로 둔다.
+- iOS 에는 아직 이 묶음이 없다 — 별도 항목(효율 감사 M1 의 iOS 쪽)이다.
 
 제자리 교체는 message ID를 보존하므로 파일 존재만으로는 충분하지 않다. 매니페스트의
 `audio_url`을 캐시 메타데이터의 원격 주소와 비교하고, 다르면 같은 `stock_<messageId>` 파일을
@@ -948,8 +1016,12 @@ CAF 를 직접 쓰고 `AVChannelLayoutKey` 를 반드시 넣는다(없으면 파
 | 규칙 | Android | iOS | 백엔드 |
 | --- | --- | --- | --- |
 | 매니페스트 조회 세대·소유자 | `StockClipManifestStore`의 저장소 전역 티켓·소유자 | `StockClipManifestStorage`·`StockClipManifestStore` 의 표(revision)·파일 임자 | `GET /tts/stock-clips` |
-| 공개 경합 — superseded 는 실패가 아니고 이긴 매니페스트를 싣는다 | `StockClipPrefetchWorker`(SUPERSEDED = 물러남) · `MainViewModelVoiceActions.loadStockClips`(재바인딩은 워커가 디스크를 읽으므로 메모리 갱신 불필요) | `StockClipPrefetcher.run`(디스크 권위로 이어 받음, `StockClipPrefetcherSupersededTests`) · `VoiceStudioViewModel.loadStockClips`(이긴 매니페스트 적재, `VoiceStudioLoadStockClipsSupersededTests`) | — |
-| '새로 받았는가' 는 가장 최근 표의 응답이 공개됐을 때만 | — (뷰모델은 PUBLISHED 만 true) | `StockClipManifestStorage.publishedNewerResponse(than:)` · `StockClipManifestStoreTests.testPublishedNewerResponseDistinguishesPublishFromClear` | — |
+| 공개 경합 — superseded 는 실패가 아니고 이긴 매니페스트를 싣는다 | `StockClipPrefetchWorker`(SUPERSEDED = 물러남) · `MainViewModelVoiceActions.fetchAndPublishStockClips` → `syncStockClipsToPublished`(이긴 매니페스트를 임자 대조로 적재 — `StockClipManifestStore.loadPublishedWinner`, 회귀 `StockClipManifestWiringTest`) | `StockClipPrefetcher.run`(디스크 권위로 이어 받음, `StockClipPrefetcherSupersededTests`) · `VoiceStudioViewModel.loadStockClips`(이긴 매니페스트 적재, `VoiceStudioLoadStockClipsSupersededTests`) | — |
+| 매니페스트 조회 한 번에 하나·신선도 창(45초)·신호 뒤 조회 | `StockClipManifestFlights`(`ManifestNeed`) ← `MainViewModelVoiceActions.ensureStockClipManifest`(앱 시작·탭·준비도 `refreshClipReadiness`·클론 `downloadAllPresetClips`·공유 변경); 회귀 `StockClipManifestFlightsTest`·`StockClipManifestWiringTest` | — (별도 항목) | `GET /tts/stock-clips` |
+| 메모리가 디스크 공개본을 표 순서로 따라감(워커 공개 포함) · 실은 뒤 교체 수리 | `StockClipManifestStore.publishedTickets` → `MainViewModel` init 의 구독 → `followPublishedStockClips`·`syncStockClipsToPublished`; `applyStockClipManifest`(표 순서)·`afterStockClipManifestApplied`; 회귀 `StockClipManifestWiringTest` | `VoiceStudioViewModel.loadStockClips`(이긴 매니페스트 적재) | — |
+| 매니페스트 디스크 읽기·쓰기 = 메인 밖 · Gson 하나 | `fetchAndPublishStockClips`·`seedStockClipsFromDisk`(`withContext(Dispatchers.IO)`), `StockClipManifestStore` 의 `gson` | — | — |
+| 클론 클립 받기 — 목소리마다 한 벌 · 병렬 4 · 클립마다 한 번 묻기 · 구동 중 탭 폴링 제외 | `VoiceClipDownloads` ← `MainViewModel.cacheVoiceClips`(구동 `downloadAllPresetClips`·목소리 탭 `downloadCloneBuckets`·기본 목소리 선다운로드 `prefetchFreeBucketClips`)·교체 수리 `repairReplacedStockClips`, 행 진행률 `PrerenderDriveState.overallFraction`; 회귀 `VoiceClipDownloadsTest` | — | `GET /tts/messages/:id/audio` |
+| '새로 받았는가' 는 가장 최근 표의 응답이 공개됐을 때만 — 확인 못 한 마지막 공개본도 싣되 세지 않는다 | `StockClipManifestStore.loadPublishedWinner`(확인 → 읽기 → 재확인, `PublishedManifest.confirmed`)·`latestPublishedTicket`·`lastPublishedTicket` ← `syncStockClipsToPublished`(확인 못 한 superseded 는 실패, 싣기는 표 순서로); 회귀 `StockClipManifestWiringTest` | `StockClipManifestStorage.publishedNewerResponse(than:)` · `StockClipManifestStoreTests.testPublishedNewerResponseDistinguishesPublishFromClear` | — |
 | 진행률 파일 확인의 실행 위치 | `StockClipPrefetchWorker`의 IO 작업 · 알람 관문 `DefaultVoiceGate`(IO) | `StockClipPrefetcher.progressOffMain`·`missingClipsOffMain` | — |
 | 한 번 세는 데 디렉터리 1회·길이 측정 없음 | `AlarmAudioStore.missingOrStaleCacheKeys`·`snapshot`(단건은 이름으로 찾는 `findCachedFile`, 있는지만은 `hasCachedAudio`); 회귀 `AlarmAudioStoreProbeCountTest` | `AudioCacheStore.missingOrStaleCacheKeys`; 회귀 `StockClipProgressScanTests` | — |
 | 등록 진행률(생성 0~50 + 다운로드 50~100) · 완료 안내 없음 | `ui/voices/VoiceProfileManagementPanel.kt` `VoiceRegistrationStep.Prerendering`·`CloneVoiceReadiness` | `ClonePrerenderDrive`·`ClipPreparationView.registrationPreparation`·`VoicePrerenderStatusRow`; `AlarmTalkTests/ClonePrerenderProgressTests` | `routes/voice-profile.ts` 의 `prerender/advance`·`prerender-status` |
@@ -993,7 +1065,7 @@ CAF 를 직접 쓰고 `AVChannelLayoutKey` 를 반드시 넣는다(없으면 파
 | 교체 시 **본인** custom 철회 | `AlarmRepository.degradeCustomMessageAlarmsUsingVoiceProfile` + `VoiceAccessSyncWorker` | `VoiceStudioViewModel.degradeCustomMessageAlarms` + `PushNotificationCoordinator.onVoiceReplaced` | `voice_access_revoked` payload(`voiceProfileId`·`scope`) |
 | 확정 못 한 회차는 풀지 않는다 | — | `PendingApply.confirm()` — `commit` 이 없으면 **항상 false**(세대를 못 올렸다) | — |
 | 정리 중 표시 올리기·내리기 | 새로고침이 `Result.persisted` 로 **넣고 뺀다**(승격만으로는 프로세스 수명과 어긋난다) | 같음 — 권위 새로고침이 `unsettledProfileIDs` 로 **다시 만들고**(합치지 않는다), 아직 못 적은 표시는 `unpersistedSuppressedProfileIDs` 로 함께 싣는다. 올리는 자리는 `confirmIfReservationsSettled` 의 **실패하는 한 곳** | — |
-| 교체 확정 시점 | 워커가 `prerenderReady`(매니페스트 + 로컬 캐시)로 가른다. 등록 경로는 곧바로 확정해도 되는데, 프리셋 수리가 `loadStockClips` 에서 **표식과 무관하게** 돌기 때문 | 등록 경로(`VoicePreviewConfirmView`)도 푸시와 **같은** `loadStockClips(force:) + refreshChangedCachedStockClips().settled(forProfileID:)` 게이트를 통과한 뒤 확정 — iOS 는 수리가 표식에 매여 있다 | `replaceVoiceInPlace` 는 세대만 커밋하고 재렌더는 큐에 넣는다 |
+| 교체 확정 시점 | 워커가 `prerenderReady`(매니페스트 + 로컬 캐시)로 가른다. 등록 경로는 곧바로 확정해도 되는데, 프리셋 수리(`repairReplacedStockClips`)가 뷰모델이 매니페스트를 공개할 때마다 **표식과 무관하게** 돌기 때문 | 등록 경로(`VoicePreviewConfirmView`)도 푸시와 **같은** `loadStockClips(force:) + refreshChangedCachedStockClips().settled(forProfileID:)` 게이트를 통과한 뒤 확정 — iOS 는 수리가 표식에 매여 있다 | `replaceVoiceInPlace` 는 세대만 커밋하고 재렌더는 큐에 넣는다 |
 | 실패한 세대의 재시도 | — | `retry` 키 — 기준선과 같은 세대라도 **시도했다 실패한 것**이면 다시 집는다 | — |
 | '봤다' 와 '반영했다' | — | `seen`=처음 본 기준선(**한 번만 씀**) / `applied`=확정한 세대. 재시도 판정은 **applied 기준** | `custom_audio_invalidated_at` |
 | 남은 세대 판정 | — | **세대 값**으로 가른다(`applied` 초과만 남김) — 겹치는 알람 id 로 가르면 뒤 세대 칸을 지운다 | — |

@@ -162,13 +162,8 @@ private fun VoiceClipPreparationStep(
     bottomPadding: Dp,
     onContinueInBackground: () -> Unit,
 ) {
-    // 생성 0~50%, 다운로드 50~100% 로 이어붙여 매끄러운 하나의 진행률.
-    val target = if (drive != null && drive.total > 0) {
-        val frac = (drive.generated.toFloat() / drive.total.toFloat()).coerceIn(0f, 1f)
-        if (drive.downloading) 0.5f + frac * 0.5f else frac * 0.5f
-    } else {
-        null
-    }
+    // 생성 0~50%, 다운로드 50~100% 로 이어붙여 매끄러운 하나의 진행률(목록의 행과 같은 값).
+    val target = drive?.overallFraction()
     val animatedProgress by animateFloatAsState(
         targetValue = target ?: 0f,
         animationSpec = tween(durationMillis = 550, easing = FastOutSlowInEasing),
@@ -376,6 +371,10 @@ internal fun VoiceProfileManagementPanel(
     onRetryVoiceSpeechStyle: suspend (String) -> Boolean = { false },
     // 서버 사전렌더 완료를 감지했을 때 stockClips 매니페스트를 강제 재조회.
     onReloadStockClips: () -> Unit = {},
+    // 목소리 하나의 클립 캐시(`MainViewModel.cacheVoiceClips`) — 목소리마다 한 벌만 돌아
+    // 드라이브와 같은 클립을 동시에 받지 않는다. (캐시에 있는 수, 전체)로 진행을 알린다.
+    onCacheVoiceClips: suspend (String, List<com.alarmtalk.app.network.StockClip>, (Int, Int) -> Unit) -> Boolean =
+        { _, _, _ -> false },
     // promote 직후 사전렌더 드라이브(즉시 생성→기기 다운로드). 드라이브는 ViewModel 스코프라
     // '생성 중' 화면을 닫아도 계속되고, 앱이 죽으면 서버 cron 이 이어받는다.
     prerenderDrive: PrerenderDriveState? = null,
@@ -1105,9 +1104,9 @@ internal fun VoiceProfileManagementPanel(
 
     // 매니페스트의 알람 버킷 클립을 전부 로컬 캐시(있으면 재사용, 편집기와 같은 stock_ 키).
     // true = 로컬 완전 다운로드 완료.
-    suspend fun downloadCloneBuckets(profileId: String): Boolean = withContext(Dispatchers.IO) {
-        var allCached = true
-        // 전체 개수를 먼저 세어 두고, 받을 때마다 캐시된 수를 올린다.
+    // ⚠ 받는 일은 뷰모델(`cacheVoiceClips`)이 한다 — 목소리마다 한 벌만 돌고, 빠진 것은
+    // 디렉터리를 **한 번** 읽어 고르며(클립마다 두 번 묻지 않는다), 동시에 4개씩 받는다(효율 감사 M4).
+    suspend fun downloadCloneBuckets(profileId: String): Boolean {
         val allClips = CloneAlarmBucketCategories.flatMap { category ->
             val clipLanguage = cloneClipLanguageFor(profileId, category)
             stockClips.filter {
@@ -1115,47 +1114,12 @@ internal fun VoiceProfileManagementPanel(
                     (it.language ?: "ko") == clipLanguage
             }
         }
-        val total = allClips.size
-        var done = allClips.count {
-            audioStore.hasCachedAudio("stock_${it.messageId}", it.audioUrl)
+        // 한 개 받을 때마다 알린다 — 21개를 1분 넘게 받는 동안 진행이 안 보이면 사용자는
+        // 멈춘 것으로 읽는다.
+        val allCached = onCacheVoiceClips(profileId, allClips) { done, total ->
+            cloneDownloadProgress = cloneDownloadProgress + (profileId to (done to total))
         }
-        if (total > 0) cloneDownloadProgress = cloneDownloadProgress + (profileId to (done to total))
-        CloneAlarmBucketCategories.forEach { category ->
-            val clipLanguage = cloneClipLanguageFor(profileId, category)
-            stockClips
-                .filter {
-                    it.voiceProfileId == profileId && it.category == category &&
-                        (it.language ?: "ko") == clipLanguage
-                }
-                .forEach { clip ->
-                    val cacheKey = "stock_${clip.messageId}"
-                    if (!audioStore.hasCachedAudio(cacheKey, clip.audioUrl)) {
-                        runCatching {
-                            val response = onDownloadStockAudio(clip.messageId)
-                            audioStore.cacheGeneratedAudio(
-                                bytes = Base64.decode(response.audioBase64, Base64.DEFAULT),
-                                format = response.audioFormat,
-                                rawAudioUri = response.audioUrl,
-                                displayName = cacheKey,
-                                cacheKey = cacheKey,
-                                messageId = clip.messageId,
-                            )
-                        }.onSuccess {
-                            // 한 개 받을 때마다 알린다 — 21개를 1분 넘게 받는 동안 진행이
-                            // 안 보이면 사용자는 멈춘 것으로 읽는다.
-                            done += 1
-                            if (total > 0) {
-                                cloneDownloadProgress =
-                                    cloneDownloadProgress + (profileId to (done to total))
-                            }
-                        }.onFailure { error ->
-                            if (error is kotlin.coroutines.cancellation.CancellationException) throw error
-                            allCached = false
-                        }
-                    }
-                }
-        }
-        allCached && cloneManifestComplete(profileId)
+        return allCached && cloneManifestComplete(profileId)
     }
 
     // 매니페스트의 알람 버킷 클립이 전부 로컬 캐시에 있는지 — 다운로드 없이 캐시만 본다.
@@ -1174,7 +1138,15 @@ internal fun VoiceProfileManagementPanel(
     }
 
     // 준비 상태 폴링 — 목소리 탭이 보이는 동안만 짧은 주기로(화면 이탈 시 이펙트가 취소된다).
-    val cloneReadinessIds = ownVoices.filter { it.status == null || it.status == "ready" }.map { it.id }
+    // ⚠ **드라이브가 도는 목소리는 여기서 보지 않는다**(효율 감사 M4). 드라이브가 생성을 밀고
+    // 다 받기까지 하므로, 여기서 또 status 를 묻고 같은 클립을 받으면 두 벌이 된다(4분에 status
+    // 43회였다). 그동안 행은 드라이브 진행을 그대로 보여 준다. 드라이브가 끝나면(키가 바뀌어)
+    // 다시 센다 — 드라이브가 중간에 접혀 cron 이 이어받은 경우엔 이 폴링이 **유일한 신호**다.
+    val driveVoiceId = prerenderDrive?.voiceId
+    val cloneReadinessIds = ownVoices
+        .filter { it.status == null || it.status == "ready" }
+        .map { it.id }
+        .filter { it != driveVoiceId }
     LaunchedEffect(cloneReadinessIds, stockClips, prerenderPollTick) {
         if (cloneReadinessIds.isEmpty()) return@LaunchedEffect
         // 이미 전부 캐시된 목소리는 서버 상태 조회 전에 곧장 ready 처리 — 탭에 들어올 때마다
@@ -1505,7 +1477,14 @@ internal fun VoiceProfileManagementPanel(
                         // 준비 상태 표시: 서버 사전렌더 중 "준비 중 n/21" → 서버 완료 후 로컬
                         // 다운로드 중 "다운로드 중" → 둘 다 완료면 표시 없음.
                         val prerenderStatus = prerenderStatuses[profile.id]
+                        val drive = prerenderDrive?.takeIf { it.voiceId == profile.id }
                         val readiness = when {
+                            // 드라이브가 도는 동안은 그 진행이 곧 이 행의 값이다 — 등록 마지막
+                            // 단계와 **같은 값**(`PrerenderDriveState.overallFraction`). 전체
+                            // 개수를 아직 모르면 표시하지 않는다(아래 pending·total 0 과 같다).
+                            drive != null -> drive.overallFraction()?.let {
+                                CloneVoiceReadiness.Progress((it * 100).toInt().coerceIn(0, 100))
+                            }
                             profile.id in cloneLocalReadyIds -> null
                             prerenderStatus == null -> null
                             prerenderStatus.status == "failed" -> CloneVoiceReadiness.Failed

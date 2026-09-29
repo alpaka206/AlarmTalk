@@ -5,6 +5,8 @@ import com.alarmtalk.app.core.AlarmTalkLog
 import com.alarmtalk.app.network.StockClipListResponse
 import com.google.gson.Gson
 import java.io.File
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 
 /**
  * 스톡 클립 매니페스트(클립 목록 + 카테고리별 기대 개수)를 **디스크에 남긴다.**
@@ -28,6 +30,12 @@ object StockClipManifestStore {
     private fun file(context: Context) = File(context.filesDir, FILE_NAME)
 
     /**
+     * 직렬화·파싱에 쓰는 Gson **하나**(효율 감사 M2). 호출마다 새로 만들면 약 168KB 파일을 다룰
+     * 때마다 어댑터를 다시 짓는다. Gson 은 스레드 안전하다.
+     */
+    private val gson = Gson()
+
+    /**
      * 이 파일의 **권위 세대**. 조회를 시작할 때 표를 뽑고([beginFetch]), 저장할 때 그 표를
      * 낸다([save]) — 뒤처진 표는 거절된다.
      *
@@ -49,7 +57,87 @@ object StockClipManifestStore {
      * 그래서 **더 새 응답을 본 순간** 올린다. 실패한 B 는 자기 retry 로 고치면 되고, 그
      * 사이 디스크는 옛 상태로 남을 뿐 **더 나빠지지는 않는다.**
      */
+    @Volatile
     private var seenTicket: Long = 0
+
+    /**
+     * 마지막으로 **실제로 공개된** 응답의 표. 쓰기에 실패한 응답은 여기 오르지 않는다.
+     * 쓰기는 [revisionLock] 안에서만 하고, [latestPublishedTicket] 는 잠그지 않고 읽는다(메인에서 불린다).
+     */
+    @Volatile
+    private var publishedTicket: Long = 0
+
+    /**
+     * 공개가 일어날 때마다 그 표를 흘린다 — **누가 공개했든**(전경·프리페치 워커·접근권 워커).
+     *
+     * 뷰모델 메모리(`stockClips`)가 이걸 보고 **디스크의 공개본을 표 순서로 따라간다**(Codex #825).
+     * 워커는 메모리를 모르므로, 따라가지 않으면 전경이 자기 응답을 실은 **직후** 워커가 더 새 것을
+     * 공개해도 메모리는 옛 목록(교체 이전 주소)에 머문다 — 준비도·클론 다운로드가 그걸 읽는다.
+     */
+    private val publications = MutableStateFlow(0L)
+    val publishedTickets: StateFlow<Long> get() = publications
+
+    /**
+     * 가장 최근에 본 표의 응답이 **실제로 공개됐으면** 그 표, 아니면 null. 잠그지 않는다 — 메인에서
+     * 불리고, 값은 오르기만 한다. 확정 판단(싣기)은 [loadPublishedWinner] 가 한 잠금 안에서 한다.
+     */
+    fun latestPublishedTicket(): Long? {
+        val published = publishedTicket
+        return published.takeIf { it > 0 && it == seenTicket }
+    }
+
+    /**
+     * 마지막으로 **실제로 공개된** 응답의 표(없으면 0) — 그 뒤에 본 표의 쓰기가 실패했어도 그대로다.
+     * 잠그지 않는다(메인에서 불린다). '마지막인지 확인됐는가' 는 [latestPublishedTicket] 가 답한다.
+     */
+    fun lastPublishedTicket(): Long = publishedTicket
+
+    /**
+     * 디스크의 공개본과 그 표.
+     *
+     * @param confirmed 이게 **가장 최근에 본 표의 응답**인가. false 면 그 뒤에 본 더 새 표의 쓰기가
+     *   실패했다(또는 무효화됐다) — 디스크의 가장 새 목록이긴 하지만 '새로 받았다' 로 세면 안 된다.
+     */
+    data class PublishedManifest(val ticket: Long, val response: StockClipListResponse, val confirmed: Boolean)
+
+    /**
+     * **디스크의 마지막 공개본**(임자 대조 포함)과, 그게 확인된 마지막인지([PublishedManifest.confirmed]).
+     * 없거나 임자가 다르면 null. 물러난(SUPERSEDED) 회차가 이긴 것을 이어받을 때, 그리고 메모리가 다른
+     * 쪽의 공개를 따라갈 때 쓴다(스펙 「공개 경합의 규칙」, iOS `publishedNewerResponse`).
+     *
+     * ⚠ 물러났다는 것만으로는 **더 새 매니페스트가 디스크에 있다는 보장이 없다**(Codex #825).
+     * 더 새 표의 쓰기가 실패해도 수위선은 오르고(위 [seenTicket] 주석), 로그아웃·계정 전환의
+     * 무효화도 수위선을 올린다. 그래서 '받았다' 로 셀지는 [PublishedManifest.confirmed] 로 가른다 —
+     * 확인 못 한 것을 이긴 것으로 세면 준비도·클론 다운로드가 신호 전의 목록으로 돈다.
+     *
+     * ⚠ 그렇다고 확인 못 한 것을 **버리지는 않는다**(Codex #825). 실패한 쓰기는 공개하지 않았으므로
+     * 디스크에는 여전히 마지막 공개본이 있고(쓰다 깨졌으면 [load] 가 버린다), 그게 가장 새 목록이다.
+     * 워커가 공개한 직후 더 새 표의 쓰기가 실패하면 알림이 더 오지 않으므로, 여기서 null 을 주면
+     * 메모리는 그 공개본을 영영 못 따라간 채 교체 수리도 건너뛴다.
+     *
+     * ⚠ **읽은 것이 확인한 그 공개본이어야 한다**(Codex #825). 확인만 하고 읽으면 그 틈에 더 새 표의
+     * 쓰기가 실패하거나 파일이 갈려, 다른 목록을 그 표로 싣는다. 그렇다고 잠근 채 읽으면(약 168KB
+     * 읽기·파싱) 같은 잠금을 잡는 쪽이 그동안 멎는다. 그래서 **확인 → 잠금 밖에서 읽기 → 잠금 안에서
+     * 다시 확인**하고, 그 사이 공개 상태(본 표·공개한 표)가 바뀌었으면 다시 읽는다(파일 교체는 잠금
+     * 안에서만 일어나므로, 앞뒤 확인이 같으면 읽은 것이 그 공개본이다). 읽은 뒤에 더 새 공개가 오면
+     * [publishedTickets] 가 다시 알린다 — 표가 함께 오므로 싣는 쪽이 순서를 지킨다.
+     *
+     * 메인 스레드에서 부르지 말 것 — [load] 와 같다.
+     */
+    fun loadPublishedWinner(context: Context, userId: String): PublishedManifest? {
+        repeat(MAX_WINNER_READS) {
+            val (seen, published) = synchronized(revisionLock) { seenTicket to publishedTicket }
+            if (published <= 0) return null
+            val response = load(context, userId, requireOwner = true)
+            val unchanged = synchronized(revisionLock) { seenTicket == seen && publishedTicket == published }
+            if (unchanged) return response?.let { PublishedManifest(published, it, confirmed = seen == published) }
+        }
+        // 계속 바뀐다 — 이번에는 포기한다. 다음 공개 알림이 다시 부른다.
+        return null
+    }
+
+    /** [loadPublishedWinner] 가 읽는 사이 공개가 계속 바뀔 때 다시 읽는 한도. */
+    private const val MAX_WINNER_READS = 3
 
     /** 조회를 시작하며 표를 뽑는다. 그 응답을 저장할 때 [save] 에 그대로 낸다. */
     fun beginFetch(): Long = synchronized(revisionLock) { ++nextFetchTicket }
@@ -165,6 +253,9 @@ object StockClipManifestStore {
     enum class PublishResult { PUBLISHED, SUPERSEDED, FAILED }
 
     /**
+     * ⚠ **메인 스레드에서 부르지 말 것**(효율 감사 M2). 약 168KB 를 직렬화해 파일을 갈아 끼우고
+     * prefs 를 `commit()` 한다 — 그것도 워커와 같은 잠금 안에서라, 워커가 쓰는 동안 메인이 멎는다.
+     *
      * @param ownerUserId 이 매니페스트를 받은 계정. **공개하는 쪽이 반드시 준다** —
      *   따로 찍게 두면 한 경로만 빠져도(실제로 프리페치 워커가 그랬다) 임자가 null 로 남아
      *   다른 계정이 그 파일을 시드한다(Codex #703 P1).
@@ -184,6 +275,7 @@ object StockClipManifestStore {
             seenTicket = fetchTicket
             // 쓰기가 실패하면 **공개되지 않았다**고 답한다. 호출자가 다시 시도한다.
             if (!writeManifest(context, response)) return PublishResult.FAILED
+            publishedTicket = fetchTicket
             // 파일과 임자는 **같은 임계구역에서** 함께 남긴다. 방금 이 계정의 내용으로
             // 갈아 끼웠으므로 격리 표시도 함께 내린다 — 지우지 못했던 파일이 **덮여** 없어진
             // 것이라, 계속 세워 두면 멀쩡한 파일을 영영 못 읽는다.
@@ -193,6 +285,8 @@ object StockClipManifestStore {
                     .remove(QUARANTINE_KEY)
                     .commit()
             }
+            // 파일·임자까지 남긴 **뒤에** 알린다 — 따라가는 쪽이 읽을 때 임자 대조가 통과하게.
+            publications.value = fetchTicket
             return PublishResult.PUBLISHED
         }
 
@@ -203,7 +297,7 @@ object StockClipManifestStore {
             // 매니페스트를 못 읽고, 그러면 이 파일을 둔 이유가 그대로 사라진다.
             val target = file(context)
             val tmp = File(context.filesDir, "$FILE_NAME.tmp")
-            tmp.writeText(Gson().toJson(response))
+            tmp.writeText(gson.toJson(response))
             if (!tmp.renameTo(target)) {
                 target.writeText(tmp.readText())
                 tmp.delete()
@@ -216,10 +310,18 @@ object StockClipManifestStore {
     /**
      * 디스크에 남은 매니페스트. 없거나 깨졌으면 null.
      *
+     * ⚠ **메인 스레드에서 부르지 말 것**(효율 감사 M2) — 약 168KB 를 읽어 파싱한다.
+     *
      * @param currentUserId 지금 로그인한 계정. **격리된 파일을 읽을 수 있는지**를 이걸로 가른다
      *   (아래). 모르면 null 을 넘긴다 — 그때는 격리 중 읽지 않는다(fail-closed).
+     * @param requireOwner true 면 **임자가 [currentUserId] 인 파일만** 읽는다. 공개 경합에서 물러난
+     *   회차가 이긴 매니페스트를 이어받을 때 쓴다(스펙 「공개 경합의 규칙」 — 임자 대조).
      */
-    fun load(context: Context, currentUserId: String? = null): StockClipListResponse? {
+    fun load(
+        context: Context,
+        currentUserId: String? = null,
+        requireOwner: Boolean = false,
+    ): StockClipListResponse? {
         // ⚠ **지우지 못한 파일은 남에게 읽히지 않는다**(Codex #703 P1 — 위 `QUARANTINE_KEY`).
         // 그 표시가 서 있는 동안 파일은 **지우기로 한 계정의 것**이라, 다른 계정이 읽으면
         // 그 계정의 클론 이름·문구가 남의 화면에 시드된다.
@@ -229,6 +331,10 @@ object StockClipManifestStore {
         // — 관문은 '막지 않음', 저장은 '불완전' 으로 정반대로 답한다)로 오프라인 사용자가
         // 그대로 돌아간다. 임자는 `save` 가 조회한 계정으로만 찍히므로 믿을 수 있다.
         val prefs = ownerPrefs(context)
+        if (requireOwner) {
+            val me = currentUserId?.takeIf { it.isNotBlank() } ?: return null
+            if (prefs.getString(OWNER_KEY, null) != me) return null
+        }
         if (prefs.getBoolean(QUARANTINE_KEY, false)) {
             val owner = prefs.getString(OWNER_KEY, null)
             val me = currentUserId?.takeIf { it.isNotBlank() }
@@ -236,12 +342,20 @@ object StockClipManifestStore {
         }
         val target = file(context)
         if (!target.exists()) return null
+        // 읽기는 잠그지 않는다 — 그사이 [save] 가 더 새 파일로 갈아 끼울 수 있다(아래 삭제 조건).
+        val publishedBeforeRead = publishedTicket
         return runCatching {
-            Gson().fromJson(target.readText(), StockClipListResponse::class.java)
+            gson.fromJson(target.readText(), StockClipListResponse::class.java)
         }.getOrElse {
             // 깨진 파일은 지운다 — 남겨 두면 매번 파싱에 실패하며 같은 로그만 쌓인다.
             AlarmTalkLog.reportError("Discarding an unreadable stock clip manifest", it)
-            target.delete()
+            // ⚠ **읽은 뒤에 공개된 새 파일은 지우지 않는다**(Codex #825). 파일 교체는 잠금 안에서만
+            // 일어나고 공개마다 [publishedTicket] 이 오르므로, 잠근 채 그 값이 읽기 전과 같을 때만
+            // 지운다 — 아니면 깨진 것은 이미 갈려 나갔다. 그냥 지우면 방금 공개된 후속본을 지워
+            // [publishedTicket] 이 없는 파일을 가리키고, 이긴 것 이어받기·교체 수리가 다음 조회까지 멎는다.
+            synchronized(revisionLock) {
+                if (publishedTicket == publishedBeforeRead) target.delete()
+            }
             null
         }
     }
