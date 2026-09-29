@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -268,7 +269,8 @@ internal fun VoiceAudioCard(
                                 !editor.hasBucketMessageChoice(),
                             onClick = onOpenRandomPromptSettings,
                         )
-                        AlarmSettingDivider(modifier = Modifier.padding(horizontal = 14.dp))
+                        // 행이 자체 패딩(14)을 가지므로 같은 값으로 들여 행 텍스트 시작선에 맞춘다.
+                        HorizontalDivider(Modifier.padding(horizontal = 14.dp))
                         VoiceVolumeSummaryRow(
                             volumePercent = editor.voiceVolumePercent,
                             onClick = onOpenVoiceOutputSettings,
@@ -483,46 +485,19 @@ private fun VoiceProfileSelector(
 ) {
     var sheetOpen by remember { mutableStateOf(false) }
     val selectedOption = options.firstOrNull { it.id == selectedId } ?: options.firstOrNull()
-    // 상위 목소리 카드 안에 놓이므로 자체 박스를 그리지 않는다(투명).
-    Surface(
+    // 알람음 행과 대칭: 제목 '목소리' + 값(선택된 목소리 / 꺼짐).
+    // ⚠ **`editor_voice_output_title` 을 쓰지 말 것**(2026-08-16). 그건 '목소리 크기'
+    // 상세 화면의 제목이고, 하나로 묶어 뒀더니 그 화면 이름을 고치는 순간 이 행이
+    // "목소리 크기 · 미나" 가 됐다 — 두 자리는 서로 다른 것을 가리킨다.
+    // ⚠ **스위치를 다시 넣지 말 것.** 목소리를 쓸지는 위 '재생 방식' 세그먼트가
+    // 소유한다. 여기 스위치를 두면 같은 상태를 조종하는 컨트롤이 둘이 되고,
+    // 이 카드는 목소리 모드에서만 그려지므로 스위치를 끄는 순간 **자기 자신이
+    // 사라진다**.
+    EditorChevronRow(
+        title = stringResource(R.string.editor_voice_row_title),
+        value = selectedOption?.name ?: stringResource(R.string.editor_voice_select),
         onClick = { sheetOpen = true },
-        modifier = Modifier.fillMaxWidth(),
-        shape = WakerChipShape,
-        color = Color.Transparent,
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(3.dp),
-            ) {
-                // 알람음 행과 대칭: 제목 '목소리' + 값(선택된 목소리 / 꺼짐).
-                // ⚠ **`editor_voice_output_title` 을 쓰지 말 것**(2026-08-16). 그건 '목소리 크기'
-                // 상세 화면의 제목이고, 하나로 묶어 뒀더니 그 화면 이름을 고치는 순간 이 행이
-                // "목소리 크기 · 미나" 가 됐다 — 두 자리는 서로 다른 것을 가리킨다.
-                Text(
-                    text = stringResource(R.string.editor_voice_row_title),
-                    style = MaterialTheme.typography.bodyLarge,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                // ⚠ **스위치를 다시 넣지 말 것.** 목소리를 쓸지는 위 '재생 방식' 세그먼트가
-                // 소유한다. 여기 스위치를 두면 같은 상태를 조종하는 컨트롤이 둘이 되고,
-                // 이 카드는 목소리 모드에서만 그려지므로 스위치를 끄는 순간 **자기 자신이
-                // 사라진다**.
-                MutedText(selectedOption?.name ?: stringResource(R.string.editor_voice_select))
-            }
-            Spacer(Modifier.width(12.dp))
-            Icon(
-                imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(20.dp),
-            )
-        }
-    }
+    )
     if (sheetOpen) {
         WakerSelectionSheet(
             // 시트 제목은 iOS `VoiceSelectionSheet` 와 같은 "목소리 고르기" 다.
@@ -627,45 +602,37 @@ internal fun MessageModeSummaryRow(
         else -> voiceOptionLabelRes(RandomPromptContexts, normalized)
             ?.let { stringResource(it) }.orEmpty()
     }
-    // 상위 목소리 카드 안에 놓이므로 자체 박스를 그리지 않는다(투명).
-    Surface(
+    EditorChevronRow(
+        title = stringResource(R.string.editor_msg_section),
+        value = valueLabel,
         onClick = onClick,
-        modifier = Modifier.fillMaxWidth(),
-        shape = WakerChipShape,
-        color = Color.Transparent,
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(3.dp),
-            ) {
-                Text(stringResource(R.string.editor_msg_section), fontWeight = FontWeight.SemiBold)
-                // 문구가 길어도 행을 늘리지 않는다 — 두 줄로 접히면 아래 행들이 밀려
-                // 카드 전체가 들썩인다. 한 줄로 자르고 전문은 문구 화면에서 본다.
-                Text(
-                    text = valueLabel,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-            Spacer(Modifier.width(12.dp))
-            Icon(
-                imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(20.dp),
-            )
-        }
-    }
+        // 문구가 길어도 행을 늘리지 않는다 — 두 줄로 접히면 아래 행들이 밀려
+        // 카드 전체가 들썩인다. 한 줄로 자르고 전문은 문구 화면에서 본다.
+        singleLineValue = true,
+    )
 }
+
 @Composable
 private fun VoiceVolumeSummaryRow(volumePercent: Int, onClick: () -> Unit) {
+    EditorChevronRow(
+        title = stringResource(R.string.editor_voice_volume),
+        value = "$volumePercent%",
+        onClick = onClick,
+    )
+}
+
+/**
+ * 목소리 카드의 '제목 / 값 + 셰브론' 요약 행 — 누르면 시트·상세 화면을 연다(목소리·문구·목소리 크기).
+ * 상위 목소리 카드 안에 놓이므로 자체 박스를 그리지 않는다(투명).
+ */
+@Composable
+private fun EditorChevronRow(
+    title: String,
+    value: String,
+    onClick: () -> Unit,
+    /** 값이 길어도 행을 늘리지 않고 한 줄에서 자른다. */
+    singleLineValue: Boolean = false,
+) {
     Surface(
         onClick = onClick,
         modifier = Modifier.fillMaxWidth(),
@@ -681,8 +648,18 @@ private fun VoiceVolumeSummaryRow(volumePercent: Int, onClick: () -> Unit) {
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(3.dp),
             ) {
-                Text(stringResource(R.string.editor_voice_volume), fontWeight = FontWeight.SemiBold)
-                MutedText("$volumePercent%")
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    text = value,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = if (singleLineValue) 1 else Int.MAX_VALUE,
+                    overflow = if (singleLineValue) TextOverflow.Ellipsis else TextOverflow.Clip,
+                )
             }
             Spacer(Modifier.width(12.dp))
             Icon(

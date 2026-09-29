@@ -1,7 +1,6 @@
 package com.alarmtalk.app
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -18,7 +17,6 @@ import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -107,7 +105,7 @@ internal fun ConsentHistoryScreen(
         }
 
         item {
-            ConsentSectionCard(title = stringResource(R.string.consent_section_required)) {
+            SettingsCard(title = stringResource(R.string.consent_section_required)) {
                 ConsentRow(
                     label = stringResource(R.string.hs_settings_terms_of_service),
                     record = records["terms"],
@@ -147,7 +145,7 @@ internal fun ConsentHistoryScreen(
         }
 
         item {
-            ConsentSectionCard(title = stringResource(R.string.consent_section_optional)) {
+            SettingsCard(title = stringResource(R.string.consent_section_optional)) {
                 // 음성 생체정보는 백엔드에서도 '선택'(FEATURE_CONSENT_TYPES)이다. 필수 섹션에 두면
                 // 가입 화면의 '[선택]' 표기와 어긋나고, 이 동의를 이용 조건처럼 보이게 한다.
                 ConsentRow(
@@ -248,29 +246,6 @@ private fun ConsentToggleRow(
                 onCheckedChange = onChange,
                 enabled = agreed != null,
             )
-        }
-    }
-}
-
-@Composable
-private fun ConsentSectionCard(
-    title: String,
-    content: @Composable () -> Unit,
-) {
-    Surface(
-        shape = WakerPanelShape,
-        color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-    ) {
-        Column(modifier = Modifier.padding(8.dp)) {
-            Text(
-                text = title,
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-            content()
         }
     }
 }

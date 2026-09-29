@@ -546,8 +546,8 @@ internal fun VoiceProfileManagementPanel(
     }
 
     // greeting 은 3개 언어가 있으므로 앱 언어로 골라야 한다(무필터 firstOrNull 이면 항상 en).
-    fun greetingClipFor(profile: VoiceProfile) =
-        com.alarmtalk.app.data.greetingStockClipFor(stockClips, profile.id, previewLanguage)
+    fun greetingClipFor(voiceId: String) =
+        com.alarmtalk.app.data.greetingStockClipFor(stockClips, voiceId, previewLanguage)
 
     // greeting 클립을 캐시에서 찾고, 없으면 내려받아 캐시한다(탭 재생·시트 프리페치 공용).
     suspend fun ensureGreetingCached(clip: com.alarmtalk.app.network.StockClip): CachedAlarmAudio {
@@ -581,7 +581,7 @@ internal fun VoiceProfileManagementPanel(
                 if (com.alarmtalk.app.data.bundledSystemGreetingRes(profile.id, previewLanguage) != null) {
                     return@forEach
                 }
-                val clip = greetingClipFor(profile) ?: return@forEach
+                val clip = greetingClipFor(profile.id) ?: return@forEach
                 runCatching { ensureGreetingCached(clip) }
             }
         }
@@ -590,6 +590,45 @@ internal fun VoiceProfileManagementPanel(
     // stockClips 가 채워지면(세션 첫 로드·재조회) 미리듣기 클립을 받아 둔다.
     LaunchedEffect(stockClips.size, previewLanguage) {
         if (stockClips.isNotEmpty()) prefetchGreetingPreviews()
+    }
+
+    // 인사말 스톡 클립을 받아(캐시 우선) 들려준다 — 내장 인사말이 없는 기본 목소리와 공유받은
+    // 목소리 행의 ▶ 가 함께 쓴다. [failureLog] 는 Sentry 에서 두 갈래를 가르려고 따로 받는다.
+    fun playGreetingClip(voiceId: String, failureLog: String) {
+        val clip = greetingClipFor(voiceId)
+        if (clip == null) {
+            localMessage = context.getString(R.string.voices_greeting_preview_preparing)
+            return
+        }
+        val requestId = greetingPreviewRequestId + 1
+        greetingPreviewRequestId = requestId
+        scope.launch {
+            stopMediaPreview(invalidateGreetingPreview = false)
+            playingGreetingVoiceId = voiceId
+            runCatching {
+                val cached = ensureGreetingCached(clip)
+                val player = MediaPlayer.create(context, Uri.parse(cached.localAudioUri))
+                    ?: error("Failed to create greeting preview player.")
+                if (greetingPreviewRequestId != requestId) {
+                    player.release()
+                    return@runCatching
+                }
+                mediaPlayer = player.apply {
+                    setOnCompletionListener {
+                        it.release()
+                        if (mediaPlayer === it) mediaPlayer = null
+                        if (playingGreetingVoiceId == voiceId) playingGreetingVoiceId = null
+                    }
+                    start()
+                }
+            }.onFailure { error ->
+                AlarmTalkLog.reportError(failureLog, error)
+                if (greetingPreviewRequestId == requestId) {
+                    if (playingGreetingVoiceId == voiceId) playingGreetingVoiceId = null
+                    localMessage = userFacingError(error, context.getString(R.string.voices_preview_play_failed))
+                }
+            }
+        }
     }
 
     // 기본 목소리 행을 누르면 그 목소리의 인사말 샘플을 들려준다 — 내장(res/raw) 우선,
@@ -619,40 +658,7 @@ internal fun VoiceProfileManagementPanel(
             }
             return
         }
-        val clip = greetingClipFor(profile)
-        if (clip == null) {
-            localMessage = context.getString(R.string.voices_greeting_preview_preparing)
-            return
-        }
-        val requestId = greetingPreviewRequestId + 1
-        greetingPreviewRequestId = requestId
-        scope.launch {
-            stopMediaPreview(invalidateGreetingPreview = false)
-            playingGreetingVoiceId = profile.id
-            runCatching {
-                val cached = ensureGreetingCached(clip)
-                val player = MediaPlayer.create(context, Uri.parse(cached.localAudioUri))
-                    ?: error("Failed to create greeting preview player.")
-                if (greetingPreviewRequestId != requestId) {
-                    player.release()
-                    return@runCatching
-                }
-                mediaPlayer = player.apply {
-                    setOnCompletionListener {
-                        it.release()
-                        if (mediaPlayer === it) mediaPlayer = null
-                        if (playingGreetingVoiceId == profile.id) playingGreetingVoiceId = null
-                    }
-                    start()
-                }
-            }.onFailure { error ->
-                AlarmTalkLog.reportError("Failed to play greeting preview", error)
-                if (greetingPreviewRequestId == requestId) {
-                    if (playingGreetingVoiceId == profile.id) playingGreetingVoiceId = null
-                    localMessage = userFacingError(error, context.getString(R.string.voices_preview_play_failed))
-                }
-            }
-        }
+        playGreetingClip(profile.id, failureLog = "Failed to play greeting preview")
     }
 
     // 방금 등록한 목소리로 기본 모닝콜(고정 프리셋)을 즉석 생성해 들려준다. 다시 누르면 정지.
@@ -1065,33 +1071,23 @@ internal fun VoiceProfileManagementPanel(
     // 실패 후 [다시 시도] 수락 시 증가 — 멈춘 폴링 루프를 재시작한다.
     var prerenderPollTick by remember { mutableIntStateOf(0) }
 
-    // 클론 클립 언어 선택: 앱 언어 클립이 있으면 앱 언어, 없으면 그 보이스가 가진 언어
-    // (=등록 때 고른 언어). 편집기 bucketClipLanguageFor 와 동일 규칙 — 일본어로 만든
-    // 클론이 한국어 기기에서 '다운로드 중'에 영원히 갇히지 않게 한다.
-    fun cloneClipLanguageFor(profileId: String, category: String): String {
-        val langs = stockClips.asSequence()
-            .filter { it.voiceProfileId == profileId && it.category == category }
-            .map { it.language ?: "ko" }
-            .toSet()
-        return if (previewLanguage in langs) previewLanguage else langs.firstOrNull() ?: previewLanguage
-    }
+    // 클론 클립 판정은 편집기 관문([ClipGate])을 그대로 쓴다 — 판정식은 거기 한 벌뿐이다.
+    // 클립 언어는 앱 언어 클립이 있으면 앱 언어, 없으면 그 보이스가 가진 언어(=등록 때 고른
+    // 언어)라, 일본어로 만든 클론이 한국어 기기에서 '다운로드 중'에 영원히 갇히지 않는다.
+    val clipGate = ClipGate(stockClips, expectedVariants, previewLanguage)
 
-    // 알람 버킷 4종이 매니페스트에 풀셋으로 존재하는지 — AlarmEditorScreen.hasCompleteCloneBucket
-    // 과 동일한 variant 절대 인덱스 판정. greeting 은 미리듣기 전용이라 게이트에서 제외한다.
-    fun cloneManifestComplete(profileId: String): Boolean = CloneAlarmBucketCategories.all { category ->
-        // 서버가 내려준 값을 쓴다(앱 상수 금지). 클론 프로필이므로 clone 쪽을 본다.
-        val fullCount = expectedVariants?.countFor(category = category, isSystemVoice = false)
-            ?: return@all false
-        if (fullCount <= 0) return@all false
-        val clipLanguage = cloneClipLanguageFor(profileId, category)
-        val variants = stockClips
-            .filter {
-                it.voiceProfileId == profileId && it.category == category &&
-                    (it.language ?: "ko") == clipLanguage
-            }
-            .map { it.variant }
-            .toSet()
-        variants == (0 until fullCount).toSet()
+    // 알람 버킷 4종이 매니페스트에 풀셋으로 존재하는지(variant 절대 인덱스 판정).
+    // greeting 은 미리듣기 전용이라 게이트에서 제외한다.
+    fun cloneManifestComplete(profileId: String): Boolean =
+        CloneAlarmBucketCategories.all { clipGate.hasCompleteCloneBucket(it, profileId) }
+
+    // 매니페스트의 알람 버킷 클립 — 버킷마다 위에서 고른 언어 한 벌.
+    fun cloneBucketClips(profileId: String) = CloneAlarmBucketCategories.flatMap { category ->
+        val clipLanguage = clipGate.bucketClipLanguageFor(category, profileId)
+        stockClips.filter {
+            it.voiceProfileId == profileId && it.category == category &&
+                (it.language ?: "ko") == clipLanguage
+        }
     }
 
     // 매니페스트의 알람 버킷 클립을 전부 로컬 캐시(있으면 재사용, 편집기와 같은 stock_ 키).
@@ -1099,16 +1095,9 @@ internal fun VoiceProfileManagementPanel(
     // ⚠ 받는 일은 뷰모델(`cacheVoiceClips`)이 한다 — 목소리마다 한 벌만 돌고, 빠진 것은
     // 디렉터리를 **한 번** 읽어 고르며(클립마다 두 번 묻지 않는다), 동시에 4개씩 받는다(효율 감사 M4).
     suspend fun downloadCloneBuckets(profileId: String): Boolean {
-        val allClips = CloneAlarmBucketCategories.flatMap { category ->
-            val clipLanguage = cloneClipLanguageFor(profileId, category)
-            stockClips.filter {
-                it.voiceProfileId == profileId && it.category == category &&
-                    (it.language ?: "ko") == clipLanguage
-            }
-        }
         // 한 개 받을 때마다 알린다 — 21개를 1분 넘게 받는 동안 진행이 안 보이면 사용자는
         // 멈춘 것으로 읽는다.
-        val allCached = onCacheVoiceClips(profileId, allClips) { done, total ->
+        val allCached = onCacheVoiceClips(profileId, cloneBucketClips(profileId)) { done, total ->
             cloneDownloadProgress = cloneDownloadProgress + (profileId to (done to total))
         }
         return allCached && cloneManifestComplete(profileId)
@@ -1116,16 +1105,8 @@ internal fun VoiceProfileManagementPanel(
 
     // 매니페스트의 알람 버킷 클립이 전부 로컬 캐시에 있는지 — 다운로드 없이 캐시만 본다.
     suspend fun cloneBucketsFullyCached(profileId: String): Boolean = withContext(Dispatchers.IO) {
-        cloneManifestComplete(profileId) && CloneAlarmBucketCategories.all { category ->
-            val clipLanguage = cloneClipLanguageFor(profileId, category)
-            stockClips
-                .filter {
-                    it.voiceProfileId == profileId && it.category == category &&
-                        (it.language ?: "ko") == clipLanguage
-                }
-                .all {
-                    audioStore.hasCachedAudio("stock_${it.messageId}", it.audioUrl)
-                }
+        cloneManifestComplete(profileId) && cloneBucketClips(profileId).all {
+            audioStore.hasCachedAudio("stock_${it.messageId}", it.audioUrl)
         }
     }
 
@@ -1249,40 +1230,7 @@ internal fun VoiceProfileManagementPanel(
             stopMediaPreview()
             return
         }
-        val clip = com.alarmtalk.app.data.greetingStockClipFor(stockClips, profile.id, previewLanguage)
-        if (clip == null) {
-            localMessage = context.getString(R.string.voices_greeting_preview_preparing)
-            return
-        }
-        val requestId = greetingPreviewRequestId + 1
-        greetingPreviewRequestId = requestId
-        scope.launch {
-            stopMediaPreview(invalidateGreetingPreview = false)
-            playingGreetingVoiceId = profile.id
-            runCatching {
-                val cached = ensureGreetingCached(clip)
-                val player = MediaPlayer.create(context, Uri.parse(cached.localAudioUri))
-                    ?: error("Failed to create greeting preview player.")
-                if (greetingPreviewRequestId != requestId) {
-                    player.release()
-                    return@runCatching
-                }
-                mediaPlayer = player.apply {
-                    setOnCompletionListener {
-                        it.release()
-                        if (mediaPlayer === it) mediaPlayer = null
-                        if (playingGreetingVoiceId == profile.id) playingGreetingVoiceId = null
-                    }
-                    start()
-                }
-            }.onFailure { error ->
-                AlarmTalkLog.reportError("Failed to play shared greeting preview", error)
-                if (greetingPreviewRequestId == requestId) {
-                    if (playingGreetingVoiceId == profile.id) playingGreetingVoiceId = null
-                    localMessage = userFacingError(error, context.getString(R.string.voices_preview_play_failed))
-                }
-            }
-        }
+        playGreetingClip(profile.id, failureLog = "Failed to play shared greeting preview")
     }
 
     fun playFileCropPreview() {

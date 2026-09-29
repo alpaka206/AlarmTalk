@@ -138,11 +138,7 @@ internal fun MainViewModel.createAlarm(
  * 내용을 바꾸려면 같은 (수신자, 시각) 으로 **다시 보낸다**(서버가 옛 행을 교체한다).
  */
 private suspend fun MainViewModel.createFamilyTargetAlarm(draft: AlarmDraft, onDone: () -> Unit) {
-    val session = authSession
-    if (session == null) {
-        message = getApplication<Application>().getString(R.string.msg_family_alarm_login_required)
-        return
-    }
+    val session = sessionOrMessage(R.string.msg_family_alarm_login_required) ?: return
     if (!hasCoupleOrFamilyAccess(subscriptionResponse, familyGroup, personalPromoTierHold())) {
         message = getApplication<Application>().getString(R.string.msg_family_alarm_couple_family_only)
         return

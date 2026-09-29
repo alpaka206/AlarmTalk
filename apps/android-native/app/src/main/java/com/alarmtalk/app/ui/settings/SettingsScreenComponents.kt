@@ -41,6 +41,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
+import java.time.LocalTime
 import java.util.Locale
 import com.alarmtalk.app.network.FamilyAlarmQuietWindow
 
@@ -228,11 +229,10 @@ internal fun FamilyAlarmQuietTimeDialog(
 
     timePickerTarget?.let { target ->
         val draft = drafts.getOrNull(target.index) ?: return@let
-        val initialHour = (if (target.isStart) draft.startHour else draft.endHour).toIntOrNull()?.coerceIn(0, 23) ?: 9
-        val initialMinute = (if (target.isStart) draft.startMinute else draft.endMinute).toIntOrNull()?.coerceIn(0, 59) ?: 0
+        val initial = if (target.isStart) draft.start else draft.end
         val state = rememberTimePickerState(
-            initialHour = initialHour,
-            initialMinute = initialMinute,
+            initialHour = initial.hour,
+            initialMinute = initial.minute,
             is24Hour = true,
         )
         // 자기 창을 여는 모달 — 진입 안내가 이 위에 겹치지 않게 적어 둔다(`OpenModalRegistry`).
@@ -260,11 +260,9 @@ internal fun FamilyAlarmQuietTimeDialog(
                     ) {
                         TextButton(
                             onClick = {
-                                val hh = String.format(Locale.US, "%02d", state.hour)
-                                val mm = String.format(Locale.US, "%02d", state.minute)
+                                val picked = LocalTime.of(state.hour, state.minute)
                                 updateDraft(target.index) {
-                                    if (target.isStart) it.copy(startHour = hh, startMinute = mm)
-                                    else it.copy(endHour = hh, endMinute = mm)
+                                    if (target.isStart) it.copy(start = picked) else it.copy(end = picked)
                                 }
                                 timePickerTarget = null
                             },
@@ -345,7 +343,7 @@ internal fun QuietWindowCard(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 QuietTimeChip(
-                    label = quietTimeLabel(draft.startHour, draft.startMinute),
+                    label = formatQuietTime(draft.start.toString()),
                     onClick = onPickStart,
                     modifier = Modifier.weight(1f),
                 )
@@ -356,7 +354,7 @@ internal fun QuietWindowCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 QuietTimeChip(
-                    label = quietTimeLabel(draft.endHour, draft.endMinute),
+                    label = formatQuietTime(draft.end.toString()),
                     onClick = onPickEnd,
                     modifier = Modifier.weight(1f),
                 )
@@ -394,54 +392,36 @@ internal fun QuietTimeChip(
     }
 }
 
-internal fun quietTimeLabel(hour: String, minute: String): String {
-    val h = hour.toIntOrNull() ?: 0
-    val m = minute.toIntOrNull() ?: 0
-    return String.format(Locale.US, "%d:%02d", h, m)
-}
-
+/**
+ * 방해금지 구간 편집 초안. 시각은 TimePicker 로만 바뀌므로 언제나 유효한 [LocalTime] 이다 —
+ * 글자 입력 시절의 시·분 문자열 검증은 필요 없다.
+ */
 internal data class QuietWindowDraft(
     val days: Set<Int>,
-    val startHour: String,
-    val startMinute: String,
-    val endHour: String,
-    val endMinute: String,
+    val start: LocalTime,
+    val end: LocalTime,
 )
 
-internal fun FamilyAlarmQuietWindow.toDraft(): QuietWindowDraft {
-    val startParts = splitTime(start)
-    val endParts = splitTime(end)
-    return QuietWindowDraft(
+internal fun FamilyAlarmQuietWindow.toDraft(): QuietWindowDraft =
+    QuietWindowDraft(
         days = days.filter { it in 0..6 }.toSet().ifEmpty { setOf(1, 2, 3, 4, 5) },
-        startHour = startParts.first,
-        startMinute = startParts.second,
-        endHour = endParts.first,
-        endMinute = endParts.second,
+        start = quietTimeOrDefault(start),
+        end = quietTimeOrDefault(end),
     )
-}
 
+// LocalTime 은 초가 0 이면 "HH:mm" 으로 적힌다 — 서버 TIME_RE 형식 그대로다.
 internal fun QuietWindowDraft.toWindow(): FamilyAlarmQuietWindow =
-    FamilyAlarmQuietWindow(
-        days = days.sorted(),
-        start = "${twoDigit(startHour)}:${twoDigit(startMinute)}",
-        end = "${twoDigit(endHour)}:${twoDigit(endMinute)}",
-    )
+    FamilyAlarmQuietWindow(days = days.sorted(), start = start.toString(), end = end.toString())
 
-internal fun QuietWindowDraft.isValid(): Boolean =
-    days.isNotEmpty() &&
-        isHourText(startHour) &&
-        isMinuteText(startMinute) &&
-        isHourText(endHour) &&
-        isMinuteText(endMinute)
+internal fun QuietWindowDraft.isValid(): Boolean = days.isNotEmpty()
 
-internal fun splitTime(value: String): Pair<String, String> {
+/** "HH:mm" 을 읽는다. 시·분이 범위를 벗어나거나 숫자가 아니면 **각각** 9시·0분으로 채운다. */
+internal fun quietTimeOrDefault(value: String): LocalTime {
     val parts = value.split(":")
-    return (parts.getOrNull(0)?.takeIf { isHourText(it) } ?: "09") to
-        (parts.getOrNull(1)?.takeIf { isMinuteText(it) } ?: "00")
+    val hour = parts.getOrNull(0)?.toIntOrNull()?.takeIf { it in 0..23 } ?: 9
+    val minute = parts.getOrNull(1)?.toIntOrNull()?.takeIf { it in 0..59 } ?: 0
+    return LocalTime.of(hour, minute)
 }
-
-internal fun twoDigit(value: String): String =
-    value.toIntOrNull()?.coerceIn(0, 99)?.toString()?.padStart(2, '0') ?: "00"
 
 internal fun quietScheduleLabel(context: Context, windows: List<FamilyAlarmQuietWindow>): String {
     if (windows.isEmpty()) return context.getString(R.string.misc2_quiet_none)
@@ -514,9 +494,3 @@ internal fun dayLabels(context: Context): List<String> = listOf(
     context.getString(R.string.misc2_day_fri),
     context.getString(R.string.misc2_day_sat),
 )
-
-internal fun isHourText(value: String): Boolean =
-    value.toIntOrNull()?.let { it in 0..23 } == true
-
-internal fun isMinuteText(value: String): Boolean =
-    value.toIntOrNull()?.let { it in 0..59 } == true
