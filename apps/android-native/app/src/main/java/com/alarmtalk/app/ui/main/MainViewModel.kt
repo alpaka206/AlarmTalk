@@ -608,11 +608,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     /** 디스크 시드(메인 밖에서 읽는다). 비어 있을 때 연달아 불려도 한 번만 읽는다. */
     internal var stockClipSeedJob: kotlinx.coroutines.Job? = null
 
-    /**
-     * 제자리 교체로 낡은 클립 다시 받기. 새 매니페스트가 공개되면 앞 회차를 끊고 새로 돈다.
-     * 기본 목소리 선다운로드(`prefetchFreeBucketClips`, IO)가 이 값을 보고 기다리므로 volatile 이다.
-     */
-    @Volatile
+    /** 제자리 교체로 낡은 클립 다시 받기. 새 매니페스트가 공개되면 앞 회차를 끊고 새로 돈다. */
     internal var replacedClipRepairJob: kotlinx.coroutines.Job? = null
 
     /** 목소리별 클립 받기 — 드라이브와 목소리 탭이 나눠 쓴다(`cacheVoiceClips`). */
@@ -648,7 +644,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      * 와 다르다 — 그쪽은 조회를 시작할 때마다 내려가고 실패하면 내려간 채지만, 목록 자체는 앞서
      * 받은 서버 목록 그대로 남는다(`refreshSocialData`). 공유 목록이 바뀌었을 때 매니페스트를
      * **신호 뒤** 로 받을지(서버에서 바뀌었다) **창** 으로 받을지(세션 첫 목록 — 이제 안 것)를 이걸로
-     * 가른다(Codex #825). 세션이 끝날 때만 내린다.
+     * 가른다(Codex #825). 세션이 끝날 때만 내린다. ⚠ [familyVoices] 를 서버 목록으로 바꾸는 곳은
+     * **전부** 이걸 세운다(`refreshSocialData`, 목소리 공유 토글의 목록 갱신).
      */
     internal var familyVoicesFromServer: Boolean = false
 

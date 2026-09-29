@@ -131,14 +131,15 @@ class StockClipManifestWiringTest {
     }
 
     @Test
-    fun theDefaultVoicePrefetchWaitsForTheReplacementRepair() {
+    fun theDefaultVoicePrefetchTakesThePerVoiceSlot() {
         val prefetch = functionBody(voiceActions, "internal fun MainViewModel.prefetchFreeBucketClips(")
-        val wait = prefetch.indexOf("awaitReplacedClipRepair()")
-        val download = prefetch.indexOf("downloadTtsMessageAudio(")
         assertTrue(
-            "기본 목소리 선다운로드가 교체 수리를 기다리지 않는다 — 같은 `stock_` 클립을 동시에 받는다(Codex #825).",
-            wait in 0 until download,
+            "기본 목소리 선다운로드가 목소리별 받기 자리를 거치지 않는다 — 교체 수리와 같은 `stock_` 클립을 " +
+                "동시에 받는다(Codex #825). 이미 도는 선다운로드 뒤에 수리가 시작돼도 겹치지 않으려면 " +
+                "양쪽이 같은 자리를 써야 한다.",
+            prefetch.contains("cacheVoiceClips(voiceId, voiceClips)"),
         )
+        assertFalse("선다운로드가 다시 클립을 직접 받는다.", prefetch.contains("downloadTtsMessageAudio("))
     }
 
     @Test
@@ -162,6 +163,12 @@ class StockClipManifestWiringTest {
         )
         assertTrue(social.contains("val comparedAgainstServerList = familyVoicesFromServer"))
         assertFalse(social.contains("hadFreshSharedList"))
+        // 공유 목록을 서버 목록으로 바꾸는 **다른** 곳(목소리 공유 토글)도 출처를 세운다.
+        val toggle = voiceActions.substring(voiceActions.indexOf("familyVoices = api.listFamilyVoiceProfiles("))
+        assertTrue(
+            "목소리 공유 토글이 서버 공유 목록을 싣고도 출처를 세우지 않는다(Codex #825).",
+            toggle.substring(0, 400).contains("familyVoicesFromServer = true"),
+        )
     }
 
     @Test

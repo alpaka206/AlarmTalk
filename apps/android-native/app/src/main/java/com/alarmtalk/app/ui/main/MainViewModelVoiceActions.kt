@@ -576,6 +576,9 @@ internal fun MainViewModel.setVoiceProfileShared(profileId: String, shared: Bool
                 // CancellationException 은 삼키지 말고 그대로 던진다.
                 try {
                     familyVoices = api.listFamilyVoiceProfiles(AlarmTalkApiClient.bearer(session.token)).profiles
+                    // 서버에서 받은 공유 목록이다 — 다음 공유 목록 변화는 '서버에서 바뀐 것' 으로 본다
+                    // (`familyVoicesFromServer`, Codex #825). 목록을 바꾸는 곳은 모두 이걸 함께 세운다.
+                    familyVoicesFromServer = true
                 } catch (e: kotlin.coroutines.cancellation.CancellationException) {
                     throw e
                 } catch (_: Exception) {
@@ -719,7 +722,6 @@ private fun MainViewModel.deviceAppVoiceLanguage(): String {
  *    유료 클론 전용이라 받아도 쓰지 못한 채 저장 공간만 먹는다(Codex #607).
  * best-effort: 실패해도 알람 저장 시점의 기존 다운로드 경로가 다시 시도한다.
  */
-/** 스톡 클립 동시 다운로드 수. 순차는 약전파에서 1분을 넘기고, 과하면 서버·기기가 힘들다. */
 /**
  * 목소리 등록 화면의 **인라인 동의 항목이 실제로 묻는** 유형.
  *
@@ -729,19 +731,13 @@ private fun MainViewModel.deviceAppVoiceLanguage(): String {
  */
 private val INLINE_COVERED_CONSENTS = setOf("voice_biometric")
 
-private const val PREFETCH_PARALLELISM = VoiceClipDownloads.DEFAULT_PARALLELISM
-
 internal fun MainViewModel.prefetchFreeBucketClips(voiceProfileId: String? = null) {
     // 목소리를 연달아 바꾸면 이전 프리페치는 취소하고 마지막 선택만 받는다.
     voicePrefetchJob?.cancel()
     var job: kotlinx.coroutines.Job? = null
     job = viewModelScope.launch(Dispatchers.IO) {
         try {
-            // 제자리 교체 수리가 돌고 있으면 끝나기를 기다린다(Codex #825) — 둘 다 같은 `stock_`
-            // 클립을 낡은 것으로 보고 동시에 받는다. 수리가 끝나면 아래 캐시 확인이 고쳐진 것을 건너뛴다.
-            awaitReplacedClipRepair()
             val language = deviceAppVoiceLanguage()
-            val audioStore = com.alarmtalk.app.data.AlarmAudioStore(getApplication<Application>())
             // 무료 버킷에서 실제로 쓰이는 카테고리(날씨·약)만 받는다 — greeting 제외 전부를 받으면
             // 무료 사용자의 클론처럼 운세/사랑 사전렌더가 섞인 보이스에서 제한 편집기가 노출하지
             // 않는 유료 전용 클립까지 내려받아 저장 공간만 차지한다(Codex #607).
@@ -754,28 +750,15 @@ internal fun MainViewModel.prefetchFreeBucketClips(voiceProfileId: String? = nul
             if (clips.isEmpty()) return@launch
             // 이미 캐시된 클립도 진행 수에 포함해 n/전체가 실제 준비율을 보여주게 한다.
             voicePrefetchProgress = 0 to clips.size
-            val done = java.util.concurrent.atomic.AtomicInteger(0)
-            // 클립당 HTTP 왕복 1회다. 44개를 순차로 받으면 약전파에서 1분을 넘기므로 소량 병렬로
-            // 겹친다(서버·기기 부담을 감안해 4로 제한).
-            kotlinx.coroutines.coroutineScope {
-                clips.chunked(PREFETCH_PARALLELISM).forEach { batch ->
-                    batch.map { clip ->
-                        async {
-                            val cacheKey = "${com.alarmtalk.app.data.AlarmAudioStore.STOCK_CACHE_KEY_PREFIX}${clip.messageId}"
-                            if (!audioStore.hasCachedAudio(cacheKey, clip.audioUrl)) {
-                                val response = downloadTtsMessageAudio(clip.messageId)
-                                audioStore.cacheGeneratedAudio(
-                                    bytes = android.util.Base64.decode(response.audioBase64, android.util.Base64.DEFAULT),
-                                    format = response.audioFormat,
-                                    rawAudioUri = response.audioUrl,
-                                    displayName = cacheKey,
-                                    cacheKey = cacheKey,
-                                    messageId = clip.messageId,
-                                )
-                            }
-                            voicePrefetchProgress = done.incrementAndGet() to clips.size
-                        }
-                    }.awaitAll()
+            // ⚠ **목소리마다 받기 자리(`voiceClipDownloads`)를 거친다**(Codex #825). 제자리 교체 수리·
+            // 클론 구동도 같은 자리를 쓰므로, 누가 먼저 시작했든 같은 `stock_` 클립을 동시에 받지 않는다 —
+            // 뒤에 온 쪽은 앞 벌이 끝난 뒤 **그때 다시 세어** 빠진 것만 받는다. 목소리는 차례로, 한
+            // 목소리 안에서 동시에 4개(약전파에서 순차는 1분을 넘긴다). 한 클립이 실패해도 나머지는 받는다.
+            val doneByVoice = HashMap<String, Int>()
+            clips.groupBy { it.voiceProfileId }.forEach { (voiceId, voiceClips) ->
+                cacheVoiceClips(voiceId, voiceClips) { done, _ ->
+                    doneByVoice[voiceId] = done
+                    voicePrefetchProgress = doneByVoice.values.sum() to clips.size
                 }
             }
         } catch (error: kotlin.coroutines.cancellation.CancellationException) {
@@ -1175,17 +1158,6 @@ private suspend fun MainViewModel.fetchAndPublishStockClips(
 }
 
 /**
- * 도는 제자리 교체 수리(`repairReplacedStockClips`)가 끝나기를 기다린다. 기다리는 사이 새 수리로
- * 갈렸으면 그것도 기다린다.
- */
-internal suspend fun MainViewModel.awaitReplacedClipRepair() {
-    while (true) {
-        val repair = replacedClipRepairJob?.takeIf { it.isActive } ?: return
-        repair.join()
-    }
-}
-
-/**
  * 제자리 목소리 교체는 message ID를 보존한다. 파일 존재만 보면 옛 목소리를 계속 쓰므로,
  * 새 매니페스트의 audio_url과 다른 캐시만 다시 받는다. **표식과 무관하게** 공개마다 돈다
  * (스펙 「교체 확정 시점」 — 안드로이드는 여기서 프리셋을 고친다).
@@ -1197,7 +1169,7 @@ internal suspend fun MainViewModel.awaitReplacedClipRepair() {
  * 이 수리와 구동(`downloadAllPresetClips`)·목소리 탭이 **같은 `stock_` 클립**을 낡은 것으로 보고
  * 동시에 받았다 — 목소리마다 한 벌이라던 받기가 두 벌(요청 8개)이 되고 같은 파일을 두 번 썼다.
  * 이제 한쪽이 끝난 뒤 다른 쪽은 **그때 다시 세어** 빠진 것만 받는다. 목소리는 차례로 돈다(동시 4개).
- * 기본 목소리 선다운로드(`prefetchFreeBucketClips`)는 이 수리가 끝나기를 기다린다(`awaitReplacedClipRepair`).
+ * 기본 목소리 선다운로드(`prefetchFreeBucketClips`)도 같은 자리를 거친다.
  */
 private fun MainViewModel.repairReplacedStockClips(clips: List<com.alarmtalk.app.network.StockClip>) {
     replacedClipRepairJob?.cancel()

@@ -18,6 +18,10 @@ import kotlinx.coroutines.sync.withPermit
  * 순차로** 받았다 — 4분 동안 status 43회, 같은 클립을 두 번 받았다. 게다가 탭 쪽은 클립마다
  * 캐시를 두 번 물었다(세려고 한 번, 받기 전에 또 한 번).
  *
+ * 쓰는 곳: 클론 구동(`downloadAllPresetClips`)·목소리 탭(`downloadCloneBuckets`)·기본 목소리
+ * 선다운로드(`prefetchFreeBucketClips`)·제자리 교체 수리(`repairReplacedStockClips`) — 전부 이 자리를
+ * 거쳐야 서로 같은 `stock_` 클립을 동시에 받지 않는다(Codex #825).
+ *
  * 지키는 것:
  *  - **목소리마다 한 벌.** 뒤에 온 쪽은 앞 벌이 끝나기를 기다렸다가 **빠진 것만** 본다 —
  *    앞 벌이 받은 클립은 다시 받지 않는다.
@@ -76,7 +80,10 @@ internal class VoiceClipDownloads(private val parallelism: Int = DEFAULT_PARALLE
     }
 
     companion object {
-        /** 동시에 받는 클립 수. 기본 목소리 선다운로드(`prefetchFreeBucketClips`)와 같은 값이다. */
+        /**
+         * 한 목소리 안에서 동시에 받는 클립 수. 클립당 HTTP 왕복 1회라 순차는 약전파에서 1분을 넘기고,
+         * 과하면 서버·기기가 힘들다. 목소리는 차례로 돌므로 전체도 이 수를 넘지 않는다.
+         */
         const val DEFAULT_PARALLELISM = 4
     }
 }
