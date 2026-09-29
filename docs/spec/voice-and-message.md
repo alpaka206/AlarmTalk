@@ -634,22 +634,27 @@
 - 신선도는 **공개가 확인된** 응답만 센다. 물러난(superseded) 회차는 **가장 최근에 본 표의 응답이
   실제로 공개됐을 때만**(위 '새로 받았는가' 와 같은 판정) 디스크의 이긴 매니페스트를 **임자 대조로**
   메모리에 싣고 받은 것으로 센다 — 이긴 것은 이 요청보다 뒤에 출발했다. 확인하지 못하면(더 새
-  표의 쓰기 실패·로그아웃 무효화) 디스크는 비었거나 옛 목록이라 **실패로 본다** — 싣지도 세지도
-  않고, 준비도는 앞 값을 지키며, 다음 호출이 다시 받는다(Codex #825). 읽은 것은 **확인한 그
+  표의 쓰기 실패·로그아웃 무효화) 이긴 것이 이 요청보다 앞선 목록일 수 있어 **실패로 본다** —
+  세지 않고, 준비도는 앞 값을 지키며, 다음 호출이 다시 받는다(Codex #825). 읽은 것은 **확인한 그
   공개본이어야** 한다 — 확인 → 잠금 밖에서 읽기 → 잠금 안에서 다시 확인하고, 그 사이 공개 상태가
   바뀌었으면 다시 읽는다(잠근 채 168KB 를 읽으면 같은 잠금을 잡는 쪽이 멎는다).
   자기 응답이 공개됐어도 **그 뒤에 본 더 새 표의 쓰기가 실패했으면** 실어서 쓰되 '받았다' 로 세지
   않는다(다음 호출이 다시 받는다).
+- **싣는 것과 세는 것은 다르다.** 확인하지 못한 경우에도 디스크의 **마지막 공개본**(임자 대조)은
+  메모리보다 뒤의 표면 싣는다 — 실패한 쓰기는 공개하지 않았으므로 디스크에는 그 앞의 공개본이
+  그대로 있고(쓰다 깨졌으면 읽기가 버린다), 그게 가장 새 목록이다. 실패한 쓰기는 알림을 내지 않아서,
+  워커가 공개한 직후 그런 실패가 끼면 버리는 순간 메모리는 그 공개본을 영영 못 따라가고 교체
+  수리도 건너뛴다(Codex #825). 로그아웃·계정 전환은 파일까지 지우므로 이어받을 것이 없다.
 - 떠 있는 요청·줄은 **주인(계정 + 세션 세대)마다** 따로 둔다 — 계정이 바뀐 뒤 앞 계정의 줄이 풀리며
   새 계정의 요청 자리를 비우면 새 계정이 같은 요청을 또 낸다. 표는 메인 밖에서 뽑는다(워커가 쓰는
   동안 같은 잠금을 잡고 있다).
 - **메모리는 디스크의 공개본을 표 순서로 따라간다 — 누가 공개했든.** 워커는 매니페스트를 따로 받아
   공개하지만(아래, 의도) 뷰모델 메모리를 모른다. 그래서 뷰모델은 공개가 일어날 때마다(저장소가 표를
-  흘린다) 확인된 마지막 공개본을 읽어 싣고, 싣기는 **이미 실린 것보다 뒤의 표만** 받는다 — 늦게
-  돌아온 앞선 응답이 메모리를 교체 이전 목록으로 되돌리지 못한다. 어느 갈래로 실었든(전경 응답·이긴
-  것·따라가기) 실은 뒤에는 제자리 교체 수리와 대기 중 프리페치 재시도를 돌린다 — 워커는 공유받은
-  목소리를 받지 않고 접근권 워커는 낡음을 판정만 하므로, 여기서 안 고치면 교체된 사람의 목소리가
-  다음 전경 공개까지 남는다(Codex #825).
+  흘린다) 디스크의 마지막 공개본을 읽어 싣고(위 '싣는 것과 세는 것'), 싣기는 **이미 실린 것보다 뒤의
+  표만** 받는다 — 늦게 돌아온 앞선 응답이 메모리를 교체 이전 목록으로 되돌리지 못한다. 어느 갈래로
+  실었든(전경 응답·이긴 것·따라가기) 실은 뒤에는 제자리 교체 수리와 대기 중 프리페치 재시도를
+  돌린다 — 워커는 공유받은 목소리를 받지 않고 접근권 워커는 낡음을 판정만 하므로, 여기서 안 고치면
+  교체된 사람의 목소리가 다음 전경 공개까지 남는다(Codex #825).
 - 제자리 교체의 프리셋 수리(`repairReplacedStockClips`)도 **목소리마다 한 벌** 자리를 거친다 —
   교체 직후 수리와 클론 구동이 같은 `stock_` 클립을 낡은 것으로 보고 동시에 받지 않게, 한쪽이
   끝난 뒤 다른 쪽은 다시 세어 빠진 것만 받는다. 기본 목소리 선다운로드(`prefetchFreeBucketClips`)도
@@ -1004,7 +1009,7 @@ CAF 를 직접 쓰고 `AVChannelLayoutKey` 를 반드시 넣는다(없으면 파
 | 메모리가 디스크 공개본을 표 순서로 따라감(워커 공개 포함) · 실은 뒤 교체 수리 | `StockClipManifestStore.publishedTickets` → `MainViewModel` init 의 구독 → `followPublishedStockClips`·`syncStockClipsToPublished`; `applyStockClipManifest`(표 순서)·`afterStockClipManifestApplied`; 회귀 `StockClipManifestWiringTest` | `VoiceStudioViewModel.loadStockClips`(이긴 매니페스트 적재) | — |
 | 매니페스트 디스크 읽기·쓰기 = 메인 밖 · Gson 하나 | `fetchAndPublishStockClips`·`seedStockClipsFromDisk`(`withContext(Dispatchers.IO)`), `StockClipManifestStore` 의 `gson` | — | — |
 | 클론 클립 받기 — 목소리마다 한 벌 · 병렬 4 · 클립마다 한 번 묻기 · 구동 중 탭 폴링 제외 | `VoiceClipDownloads` ← `MainViewModel.cacheVoiceClips`(구동 `downloadAllPresetClips`·목소리 탭 `downloadCloneBuckets`·기본 목소리 선다운로드 `prefetchFreeBucketClips`)·교체 수리 `repairReplacedStockClips`, 행 진행률 `PrerenderDriveState.overallFraction`; 회귀 `VoiceClipDownloadsTest` | — | `GET /tts/messages/:id/audio` |
-| '새로 받았는가' 는 가장 최근 표의 응답이 공개됐을 때만 | `StockClipManifestStore.loadPublishedWinner`(확인과 읽기를 한 잠금에서)·`latestPublishedTicket` ← `syncStockClipsToPublished`(확인 못 한 superseded 는 실패); 회귀 `StockClipManifestWiringTest` | `StockClipManifestStorage.publishedNewerResponse(than:)` · `StockClipManifestStoreTests.testPublishedNewerResponseDistinguishesPublishFromClear` | — |
+| '새로 받았는가' 는 가장 최근 표의 응답이 공개됐을 때만 — 확인 못 한 마지막 공개본도 싣되 세지 않는다 | `StockClipManifestStore.loadPublishedWinner`(확인 → 읽기 → 재확인, `PublishedManifest.confirmed`)·`latestPublishedTicket`·`lastPublishedTicket` ← `syncStockClipsToPublished`(확인 못 한 superseded 는 실패, 싣기는 표 순서로); 회귀 `StockClipManifestWiringTest` | `StockClipManifestStorage.publishedNewerResponse(than:)` · `StockClipManifestStoreTests.testPublishedNewerResponseDistinguishesPublishFromClear` | — |
 | 진행률 파일 확인의 실행 위치 | `StockClipPrefetchWorker`의 IO 작업 · 알람 관문 `DefaultVoiceGate`(IO) | `StockClipPrefetcher.progressOffMain`·`missingClipsOffMain` | — |
 | 한 번 세는 데 디렉터리 1회·길이 측정 없음 | `AlarmAudioStore.missingOrStaleCacheKeys`·`snapshot`(단건은 이름으로 찾는 `findCachedFile`, 있는지만은 `hasCachedAudio`); 회귀 `AlarmAudioStoreProbeCountTest` | `AudioCacheStore.missingOrStaleCacheKeys`; 회귀 `StockClipProgressScanTests` | — |
 | 등록 진행률(생성 0~50 + 다운로드 50~100) · 완료 안내 없음 | `ui/voices/VoiceProfileManagementPanel.kt` `VoiceRegistrationStep.Prerendering`·`CloneVoiceReadiness` | `ClonePrerenderDrive`·`ClipPreparationView.registrationPreparation`·`VoicePrerenderStatusRow`; `AlarmTalkTests/ClonePrerenderProgressTests` | `routes/voice-profile.ts` 의 `prerender/advance`·`prerender-status` |

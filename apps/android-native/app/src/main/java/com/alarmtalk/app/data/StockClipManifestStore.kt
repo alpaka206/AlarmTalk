@@ -86,34 +86,51 @@ object StockClipManifestStore {
         return published.takeIf { it > 0 && it == seenTicket }
     }
 
-    /** 디스크의 공개본과 그 표. */
-    data class PublishedManifest(val ticket: Long, val response: StockClipListResponse)
+    /**
+     * 마지막으로 **실제로 공개된** 응답의 표(없으면 0) — 그 뒤에 본 표의 쓰기가 실패했어도 그대로다.
+     * 잠그지 않는다(메인에서 불린다). '마지막인지 확인됐는가' 는 [latestPublishedTicket] 가 답한다.
+     */
+    fun lastPublishedTicket(): Long = publishedTicket
 
     /**
-     * **디스크의 마지막 공개본** — 가장 최근에 본 표의 응답이 **실제로 공개됐을 때만** 읽어 준다(임자
-     * 대조 포함). 아니면 null(스펙 「공개 경합의 규칙」의 '새로 받았는가', iOS `publishedNewerResponse`).
-     * 물러난(SUPERSEDED) 회차가 이긴 것을 이어받을 때, 그리고 메모리가 다른 쪽의 공개를 따라갈 때 쓴다.
+     * 디스크의 공개본과 그 표.
+     *
+     * @param confirmed 이게 **가장 최근에 본 표의 응답**인가. false 면 그 뒤에 본 더 새 표의 쓰기가
+     *   실패했다(또는 무효화됐다) — 디스크의 가장 새 목록이긴 하지만 '새로 받았다' 로 세면 안 된다.
+     */
+    data class PublishedManifest(val ticket: Long, val response: StockClipListResponse, val confirmed: Boolean)
+
+    /**
+     * **디스크의 마지막 공개본**(임자 대조 포함)과, 그게 확인된 마지막인지([PublishedManifest.confirmed]).
+     * 없거나 임자가 다르면 null. 물러난(SUPERSEDED) 회차가 이긴 것을 이어받을 때, 그리고 메모리가 다른
+     * 쪽의 공개를 따라갈 때 쓴다(스펙 「공개 경합의 규칙」, iOS `publishedNewerResponse`).
      *
      * ⚠ 물러났다는 것만으로는 **더 새 매니페스트가 디스크에 있다는 보장이 없다**(Codex #825).
      * 더 새 표의 쓰기가 실패해도 수위선은 오르고(위 [seenTicket] 주석), 로그아웃·계정 전환의
-     * 무효화도 수위선을 올린다. 그 둘이면 디스크는 비었거나 **옛 목록**이다 — 이긴 것으로 싣거나
-     * '받았다' 로 세면 준비도·클론 다운로드가 낡은 목록으로 돈다.
+     * 무효화도 수위선을 올린다. 그래서 '받았다' 로 셀지는 [PublishedManifest.confirmed] 로 가른다 —
+     * 확인 못 한 것을 이긴 것으로 세면 준비도·클론 다운로드가 신호 전의 목록으로 돈다.
+     *
+     * ⚠ 그렇다고 확인 못 한 것을 **버리지는 않는다**(Codex #825). 실패한 쓰기는 공개하지 않았으므로
+     * 디스크에는 여전히 마지막 공개본이 있고(쓰다 깨졌으면 [load] 가 버린다), 그게 가장 새 목록이다.
+     * 워커가 공개한 직후 더 새 표의 쓰기가 실패하면 알림이 더 오지 않으므로, 여기서 null 을 주면
+     * 메모리는 그 공개본을 영영 못 따라간 채 교체 수리도 건너뛴다.
      *
      * ⚠ **읽은 것이 확인한 그 공개본이어야 한다**(Codex #825). 확인만 하고 읽으면 그 틈에 더 새 표의
-     * 쓰기가 실패해 수위선만 오르거나 파일이 갈려, 옛 목록을 이긴 것으로 싣는다. 그렇다고 잠근 채
-     * 읽으면(약 168KB 읽기·파싱) 같은 잠금을 잡는 쪽이 그동안 멎는다. 그래서 **확인 → 잠금 밖에서
-     * 읽기 → 잠금 안에서 다시 확인**하고, 그 사이 공개 상태가 바뀌었으면 다시 읽는다(파일 교체는
-     * 잠금 안에서만 일어나므로, 앞뒤 확인이 같으면 읽은 것이 그 공개본이다). 읽은 뒤에 더 새 공개가
-     * 오면 [publishedTickets] 가 다시 알린다 — 표가 함께 오므로 싣는 쪽이 순서를 지킨다.
+     * 쓰기가 실패하거나 파일이 갈려, 다른 목록을 그 표로 싣는다. 그렇다고 잠근 채 읽으면(약 168KB
+     * 읽기·파싱) 같은 잠금을 잡는 쪽이 그동안 멎는다. 그래서 **확인 → 잠금 밖에서 읽기 → 잠금 안에서
+     * 다시 확인**하고, 그 사이 공개 상태(본 표·공개한 표)가 바뀌었으면 다시 읽는다(파일 교체는 잠금
+     * 안에서만 일어나므로, 앞뒤 확인이 같으면 읽은 것이 그 공개본이다). 읽은 뒤에 더 새 공개가 오면
+     * [publishedTickets] 가 다시 알린다 — 표가 함께 오므로 싣는 쪽이 순서를 지킨다.
      *
      * 메인 스레드에서 부르지 말 것 — [load] 와 같다.
      */
     fun loadPublishedWinner(context: Context, userId: String): PublishedManifest? {
         repeat(MAX_WINNER_READS) {
-            val ticket = latestPublishedTicket() ?: return null
+            val (seen, published) = synchronized(revisionLock) { seenTicket to publishedTicket }
+            if (published <= 0) return null
             val response = load(context, userId, requireOwner = true)
-            val unchanged = synchronized(revisionLock) { seenTicket == ticket && publishedTicket == ticket }
-            if (unchanged) return response?.let { PublishedManifest(ticket, it) }
+            val unchanged = synchronized(revisionLock) { seenTicket == seen && publishedTicket == published }
+            if (unchanged) return response?.let { PublishedManifest(published, it, confirmed = seen == published) }
         }
         // 계속 바뀐다 — 이번에는 포기한다. 다음 공개 알림이 다시 부른다.
         return null

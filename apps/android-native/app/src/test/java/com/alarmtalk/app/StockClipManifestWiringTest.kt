@@ -103,6 +103,20 @@ class StockClipManifestWiringTest {
             "이긴 것을 실은 뒤 교체 수리·대기 프리페치를 돌리지 않는다(Codex #825 P1).",
             sync.contains("afterStockClipManifestApplied(winner.response)"),
         )
+        // 확인 못 한 마지막 공개본도 싣되(뒤의 쓰기 실패는 알림이 없다 — 버리면 영영 못 따라간다),
+        // '새로 받았다' 로는 확인된 것만 센다(Codex #825).
+        assertTrue(
+            "확인된 마지막 공개본만 볼 뿐, 뒤의 쓰기가 실패한 경우의 마지막 공개본을 따라가지 않는다(Codex #825).",
+            sync.contains("StockClipManifestStore.lastPublishedTicket()"),
+        )
+        assertFalse(
+            "확인된 마지막 공개본이 없다고 곧바로 물러난다 — 뒤의 쓰기 실패 때 워커의 공개본을 못 따라간다.",
+            sync.contains("latestPublishedTicket() ?: return false"),
+        )
+        assertTrue(
+            "확인 못 한 공개본을 '새로 받았다' 로 센다.",
+            sync.contains("return winner.confirmed"),
+        )
     }
 
     @Test
@@ -262,6 +276,7 @@ class StockClipManifestWiringTest {
         val winner = StockClipManifestStore.loadPublishedWinner(context, "u1")
         assertEquals(newer, winner?.ticket)
         assertEquals("new", winner?.response?.clips?.single()?.messageId)
+        assertEquals("가장 최근에 본 표의 응답이면 확인된 마지막이다.", true, winner?.confirmed)
         assertNull("남의 계정은 이긴 것을 이어받지 못한다(임자 대조).", StockClipManifestStore.loadPublishedWinner(context, "u2"))
 
         // 2) 뒤에 출발한 쪽의 **쓰기가 실패** → 수위선은 올랐지만 디스크는 앞 목록이다.
@@ -280,10 +295,18 @@ class StockClipManifestWiringTest {
         // 가장 최근에 본 표(실패한 쓰기)의 응답은 공개되지 않았다 — '확인된 마지막 공개본' 은 없다.
         assertNull(StockClipManifestStore.latestPublishedTicket())
         assertEquals("실패한 쓰기는 알리지 않는다.", newer, StockClipManifestStore.publishedTickets.value)
-        assertNull(
-            "더 새 표의 쓰기가 실패했는데 옛 목록을 이긴 것으로 돌려줬다.",
-            StockClipManifestStore.loadPublishedWinner(context, "u1"),
+        // 그래도 디스크의 마지막 공개본은 버리지 않는다(Codex #825) — 실패한 쓰기는 알림을 내지 않으므로,
+        // 버리면 메모리는 그 공개본을 영영 못 따라간다. 싣되 '확인됨' 으로는 내주지 않는다.
+        val unconfirmed = StockClipManifestStore.loadPublishedWinner(context, "u1")
+        assertEquals(newer, StockClipManifestStore.lastPublishedTicket())
+        assertEquals(newer, unconfirmed?.ticket)
+        assertEquals("new", unconfirmed?.response?.clips?.single()?.messageId)
+        assertEquals(
+            "더 새 표의 쓰기가 실패했는데 앞 공개본을 확인된 마지막으로 돌려줬다.",
+            false,
+            unconfirmed?.confirmed,
         )
+        assertNull("남의 계정은 확인 못 한 공개본도 이어받지 못한다.", StockClipManifestStore.loadPublishedWinner(context, "u2"))
 
         // 3) 로그아웃·계정 전환의 무효화도 '공개된 이긴 것' 이 아니다.
         val beforeSignOut = StockClipManifestStore.beginFetch()
@@ -294,6 +317,13 @@ class StockClipManifestWiringTest {
         StockClipManifestStore.invalidateOutstandingTickets()
         assertEquals(superseded, StockClipManifestStore.save(context, manifest("late"), beforeSignOut, "u1"))
         assertNull(StockClipManifestStore.latestPublishedTicket())
+        assertEquals(
+            "무효화 뒤의 디스크 값은 '새로 받았다' 가 아니다.",
+            false,
+            StockClipManifestStore.loadPublishedWinner(context, "u1")?.confirmed,
+        )
+        // 로그아웃·계정 전환은 파일까지 지운다 — 이어받을 것이 없다.
+        StockClipManifestStore.clearAndInvalidate(context)
         assertNull(StockClipManifestStore.loadPublishedWinner(context, "u1"))
     }
 
