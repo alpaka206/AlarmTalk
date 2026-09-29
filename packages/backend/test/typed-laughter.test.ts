@@ -75,6 +75,15 @@ describe('typedLaughterToTags — 글자 웃음을 소리 태그로', () => {
     }
   });
 
+  it('대괄호 안(사용자가 친 태그·대괄호 글)은 건드리지 않는다 — [ [laughs] ] 같은 깨진 지시를 만들지 않는다', () => {
+    expect(typedLaughterToTags('[haha] Wake up')).toBe('[haha] Wake up');
+    expect(typedLaughterToTags('[lol] Wake up lol')).toBe('[lol] Wake up [laughs]');
+    expect(typedLaughterToTags('[after lunch ㅋㅋ] 일어나 ㅋㅋ')).toBe(
+      '[after lunch ㅋㅋ] 일어나 [laughs]',
+    );
+    expect(typedLaughterToTags('[excited]ㅋㅋ 일어나')).toBe('[excited] [laughs] 일어나');
+  });
+
   it('웃음만 있어도 여기서는 바꾼다 — 낭독할 말이 남는지는 호출부(speakTypedLaughter)가 본다', () => {
     expect(typedLaughterToTags('ㅋㅋㅋ')).toBe(LAUGH_TAG);
   });

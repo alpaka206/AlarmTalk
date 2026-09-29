@@ -1392,6 +1392,50 @@ describe('POST /tts/generate — edge cases', () => {
     );
   });
 
+  // Codex #830: ㅋㅋ·ㅋㅋㅋ·haha 는 같은 `[laughs]` 로 합성된다. 캐시 키가 합성 글자만 보면 캐시 히트가
+  // 다른 철자로 만든 옛 행(message_id·messages.text)을 돌려준다 — 화면 문구가 합성 문구에서 나오지 않을 때만
+  // 키가 화면 문구까지 가린다. 웃음이 없으면 예전 키 그대로다(쌓인 캐시를 버리지 않는다).
+  it('웃음 철자가 다르면 합성 글자가 같아도 캐시 키가 다르고, 웃음이 없으면 예전 키 그대로다', async () => {
+    const generate = async (text: string) => {
+      mockDB.reset();
+      mockTextToSpeech.mockReset();
+      mockDB.pushResult([{ plan: 'plus' }]);
+      mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]);
+      mockDB.pushResult([]);
+      pushManualQuotaFlow();
+      mockTextToSpeech.mockResolvedValue(new Uint8Array([5]).buffer);
+      pushPublicationVoice();
+      mockDB.pushResult([], 1);
+      const res = await reqWithEnv(
+        buildApp(),
+        jsonReq('POST', '/tts/generate', { voice_profile_id: V1, text, category: 'custom' }),
+      );
+      expect(res.status).toBe(201);
+      return (await res.json()) as { cache_key: string; synthesis_text: string; text: string };
+    };
+
+    const twice = await generate('일어나 ㅋㅋ 벌써 8시야');
+    const thrice = await generate('일어나 ㅋㅋㅋ 벌써 8시야');
+    expect(twice.synthesis_text).toBe(thrice.synthesis_text);
+    expect(twice.cache_key).not.toBe(thrice.cache_key);
+    expect(thrice.text).toBe('일어나 ㅋㅋㅋ 벌써 8시야');
+
+    const plain = await generate('일어나 벌써 8시야');
+    const { computeTtsCacheKey } = await import('../src/lib/audio-cache');
+    expect(plain.cache_key).toBe(
+      await computeTtsCacheKey({
+        provider: 'elevenlabs',
+        providerVoiceId: 'el-voice-1',
+        voiceProfileId: V1,
+        modelId: 'eleven_v3',
+        language: 'ko',
+        languageCode: 'ko',
+        text: plain.synthesis_text,
+        outputFormat: 'mp3',
+      }),
+    );
+  });
+
   it('영어 직접 입력은 번역 없이 language_code=en 으로 합성한다', async () => {
     const text = 'Good morning! Wake up! I hope you have a great day!';
     // 신 allowlist 로컬 기본 태그(구 [warmly] 폐기).

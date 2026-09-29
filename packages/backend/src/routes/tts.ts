@@ -1438,6 +1438,15 @@ tts.post('/generate', async (c) => {
       );
     }
 
+    // ⚠ **캐시 키는 화면 문구까지 가린다 — 화면 문구가 합성 문구에서 나오지 않을 때만**(Codex #830).
+    //   글자 웃음은 `ㅋㅋ`·`ㅋㅋㅋ`·`haha` 가 모두 같은 `[laughs]` 가 되므로, 합성 글자만으로 키를 만들면 캐시
+    //   히트가 **다른 철자로 만든 옛 행**(`message_id`·`messages.text`)을 돌려준다 — 알람은 그 id 를 저장하고,
+    //   서버가 내려 주는 알람 문구가 사용자가 방금 친 글이 아니게 된다. 화면 문구가 합성 문구에서 태그만
+    //   벗긴 것과 같으면(웃음이 없으면) 예전 키 그대로다 — 쌓아 둔 캐시를 버리지 않는다.
+    const cacheKeyText =
+      normalizeAlarmTextWithoutTags(messageText) === normalizeAlarmTextWithoutTags(synthesisText)
+        ? synthesisText
+        : `${synthesisText}\n[display] ${messageText}`;
     const buildPreparedAttempts = async (voiceIdForSynthesis: string | null | undefined) => {
       const attempts = createSynthesisAttempts({
         env: c.env,
@@ -1456,7 +1465,7 @@ tts.post('/generate', async (c) => {
             modelId: attempt.modelId,
             language: synthesisLanguage,
             languageCode: synthesisLanguage,
-            text: synthesisText,
+            text: cacheKeyText,
             outputFormat: attempt.outputFormat,
           });
           return { attempt, cacheKey };

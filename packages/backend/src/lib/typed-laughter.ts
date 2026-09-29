@@ -16,7 +16,8 @@
  * 건드리지 않는 것:
  * - 이미 소리 나는 낱말(하하하·호호·크크·히히) — 하하하는 세 모델 모두 웃음으로 났다.
  * - 다른 자모와 붙은 ㅋ·ㅎ(ㅇㅋ·ㅎㅇ·ㅎㄷㄷ·ㅋㅋㅠㅠ) — 웃음이 아니거나 웃음만이 아니다.
- * - 낱말 속 글자(Lolita·work·笑顔·微笑)와 주소(www.example.com).
+ * - 낱말 속 글자(Lolita·work·笑顔·微笑)와 주소(www.example.com·lol.com).
+ * - 대괄호 안(사용자가 친 `[haha]`·`[after lunch]`).
  */
 
 /** 이 모듈이 만드는 유일한 태그. */
@@ -71,14 +72,24 @@ const LAUGH_PATTERNS = [
  *   (`vertex-translate.ts` 의 `speakTypedLaughter`) — 태그를 벗기는 규칙이 거기 있다.
  */
 export function typedLaughterToTags(text: string): string {
-  let converted = text;
   let changed = false;
-  for (const pattern of LAUGH_PATTERNS) {
-    converted = converted.replace(pattern, () => {
-      changed = true;
-      return ` ${LAUGH_TAG} `;
-    });
-  }
+  // ⚠ **대괄호 안은 건드리지 않는다.** 사용자가 친 태그(`[haha]`·`[lol]`)나 대괄호 글(`[after lunch]`)은 그대로
+  //   두는 규칙이다 — 그 안을 바꾸면 `[ [laughs] ]` 같은 깨진 지시가 제공자로 간다(Codex #830).
+  //   `split` 의 캡처 그룹이라 대괄호 구간은 홀수 자리에 온다.
+  const converted = text
+    .split(/(\[[^\]]*\])/)
+    .map((part, index) => {
+      if (index % 2 === 1) return part;
+      let out = part;
+      for (const pattern of LAUGH_PATTERNS) {
+        out = out.replace(pattern, () => {
+          changed = true;
+          return ` ${LAUGH_TAG} `;
+        });
+      }
+      return out;
+    })
+    .join('');
   if (!changed) return text;
   return (
     converted

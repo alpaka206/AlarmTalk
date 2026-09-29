@@ -1,6 +1,6 @@
 import type { Env } from '../types';
 import { logStructured } from './logger';
-import { typedLaughterToTags } from './typed-laughter';
+import { LAUGH_TAG, typedLaughterToTags } from './typed-laughter';
 
 type VertexServiceAccount = {
   client_email?: string;
@@ -190,8 +190,9 @@ const TAG_EXAMPLES = [
   // 감정·태도
   'happy', 'cheerfully', 'excited', 'playfully', 'curious', 'lighthearted',
   'proud', 'defiant', 'flustered', 'fierce', 'embarrassed',
-  // 비언어 소리
-  'laughs', 'giggles', 'sighs', 'laughs nervously', 'giggling',
+  // 비언어 소리 — 웃음은 `[laughs]` 하나만 보여 준다. 다른 웃음 태그는 서버가 `[laughs]` 로 맞춘다
+  // (`canonicalizeLaughterTags`, 근거는 아래 `OWN_LAUGH_INSTRUCTION`).
+  'laughs', 'sighs',
   // 발성 방식
   'shouting', 'low, controlled', 'through gritted teeth', 'measured, deliberate',
 ];
@@ -302,6 +303,22 @@ function withoutToneTags(text: string): string {
 
 function countLaughterTags(text: string): number {
   return (text.match(TAG_RE_GLOBAL) ?? []).filter(isLaughterTag).length;
+}
+
+/**
+ * **모델이 낸** 웃음 태그를 `[laughs]` 로 맞춘다(`[chuckles]`·`[giggles]`·`[laughs nervously]` → `[laughs]`).
+ *
+ * 프롬프트가 `[laughs]` 만 쓰라고 해도 모델이 어기면 그대로 합성된다 — `[chuckles]` 는 v3 남자 목소리에서
+ * 다른 언어로 합성된 적이 있다(`OWN_LAUGH_INSTRUCTION`). 졸린 태그 거르기(`dropWakeUnsafeTags`) **뒤에**
+ * 부른다 — `[soft laugh]` 는 예전처럼 지워지고, 차분한 목소리는 웃음이 이미 다 지워진 뒤다.
+ *
+ * ⚠ **사용자가 친 태그에는 쓰지 않는다** — 모델이 태그를 붙인 문구(`shouldTag`·사전렌더)에만 부른다.
+ */
+function canonicalizeLaughterTags(text: string): string {
+  const canonical = text.replace(TAG_RE_GLOBAL, (match) => (isLaughterTag(match) ? LAUGH_TAG : match));
+  return canonical === text
+    ? text
+    : canonical.replace(/\[laughs\](?:\s*\[laughs\])+/g, LAUGH_TAG);
 }
 
 /**
@@ -522,7 +539,9 @@ export async function prepareAlarmTextWithVertex(
     // ⚠ 번역 중이면 `fallbackText`(원문 언어)로 돌아가지 말고 **번역문에** 태그를 붙인다
     //   (Codex #801 P1). 원문으로 돌아가면 `translated: true` 인 채 원문이 합성·저장된다.
     // ⚠ '태그가 남았는가' 는 **톤 태그**로 센다 — 사용자의 웃음(`[laughs]`)만 남았으면 톤은 다 버려진 것이다.
-    const safe = dropWakeUnsafeTags(preparedText, { allowLowArousal: isWindDownText(trimmed) });
+    const safe = canonicalizeLaughterTags(
+      dropWakeUnsafeTags(preparedText, { allowLowArousal: isWindDownText(trimmed) }),
+    );
     preparedText = extractTags(safe).some((tag) => !isLaughterTag(tag))
       ? safe
       : shouldTranslate
@@ -1438,10 +1457,10 @@ MATCH EACH TAG TO ITS SENTENCE: apologies, cautions and bad news (rain, snow, fi
         'REQUIRED — spell one or two words the way a small child actually says them, instead of textbook-correct spelling: stretch an ending ("주라아", "가자아"), soften a consonant ("힘드러어", "이러나아"), or repeat a word ("빨리빨리"). Exactly one or two such words per line — the rest stays normally spelled so the message is still clear enough to wake someone.',
         'Never write the whole line in broken spelling, and never break the word that carries the actual point (medicine, umbrella, waking up).',
         params.targetLanguage === 'ko'
-          ? 'Child examples: "[excited] 아빠아, 일어나아! [giggles] 오늘 비 온대. 우산 꼭 챙겨!" / "[playfully] 엄마, 약 먹을 시간이야. 빨리빨리 먹어어!"'
+          ? 'Child examples: "[excited] 아빠아, [laughs] 일어나아! 오늘 비 온대. 우산 꼭 챙겨!" / "[playfully] 엄마, 약 먹을 시간이야. 빨리빨리 먹어어!"'
           : params.targetLanguage === 'ja'
-            ? 'Child examples: "[excited] パパ、おきてー！[giggles] きょうはあめなんだって。かさもってってね！" / "[playfully] ママ、おくすりのじかんだよ。はやくのんでー！"'
-            : 'Child examples: "[excited] Daddy, wake uuup! [giggles] It\'s gonna rain, take your umbrella, okay?" / "[playfully] Mommy, medicine time! Take it now-now-now!"',
+            ? 'Child examples: "[excited] パパ、[laughs] おきてー！きょうはあめなんだって。かさもってってね！" / "[playfully] ママ、おくすりのじかんだよ。はやくのんでー！"'
+            : 'Child examples: "[excited] Daddy, [laughs] wake uuup! It\'s gonna rain, take your umbrella, okay?" / "[playfully] Mommy, medicine time! Take it now-now-now!"',
       ].join(' ')
     : '';
   return [
@@ -1598,8 +1617,11 @@ export async function generatePrerenderClipText(
     //   **낭독돼 버리는** 것은 아래 검사가 그대로 거절한다.
     // 모델이 웃음을 글자로 썼으면(말투 본보기의 ㅋㅋ 를 따라 쓰는 등) 소리 태그로 먼저 바꾼다 — TTS 는 글자를
     // 읽는다(스펙 §9). 차분 거르기보다 **앞**이어야 차분한 목소리에서 그 웃음도 지워진다.
+    // 모델이 낸 웃음 태그는 졸린·차분 거르기 뒤에 `[laughs]` 로 맞춘다(`canonicalizeLaughterTags`).
     const tidied = tidyEllipsis(
-      dropWakeUnsafeTags(speakTypedLaughter(parsed.text.trim()), { calmVoice }),
+      canonicalizeLaughterTags(
+        dropWakeUnsafeTags(speakTypedLaughter(parsed.text.trim()), { calmVoice }),
+      ),
     );
     const text = targetLanguage === 'ko' ? modernizeKoreanHonorific(tidied) : tidied;
     // ⚠ 길이는 **태그를 뺀 본문**으로 잰다. 태그가 인라인으로 들어오면서 `[warmly] ` 같은
@@ -3089,17 +3111,21 @@ function normalizeSameLanguageTaggedText(
   if (normalizeAlarmTextWithoutTags(preparedText) !== normalizeAlarmTextWithoutTags(originalText)) {
     return null;
   }
-  // ⚠ **원문에 이미 있던 웃음은 모델이 붙인 태그로 세지 않는다.** 직접 입력의 ㅋㅋ 를 바꾼 `[laughs]`
-  //   (`speakTypedLaughter`)는 사용자가 쓴 것이라, 세면 모델이 톤을 하나도 안 붙였는데 '여러 개 배치했다'
-  //   로 읽혀 톤 없이 합성된다. 원문 웃음 수만큼만 빼고 센다 — 모델이 **스스로** 넣은 웃음은 예전처럼 센다.
-  let typedLaughter = countLaughterTags(originalText);
-  const tagsInText = (preparedText.match(TAG_RE_GLOBAL) ?? []).filter((tag) => {
-    if (typedLaughter > 0 && isLaughterTag(tag)) {
-      typedLaughter -= 1;
-      return false;
-    }
-    return true;
-  });
+  // ⚠ **사용자가 친 웃음(ㅋㅋ 를 바꾼 `[laughs]` — `speakTypedLaughter`)은 원문 자리 그대로여야 한다.**
+  //   톤 태그만 벗긴 두 글이 같은지로 본다 — 개수만 세면 모델이 웃음을 문장 앞으로 옮겨도 '지켰다' 로
+  //   읽혀 사용자가 웃은 자리와 다른 곳에서 웃는다(Codex #830). 빠뜨렸거나·옮겼거나·자기 웃음을 더했으면
+  //   모델 배치를 버리고 **원문 위에** 모델의 톤만 다시 입힌다.
+  const typedLaughter = countLaughterTags(originalText) > 0;
+  if (typedLaughter && withoutToneTags(preparedText) !== withoutToneTags(originalText)) {
+    const tag = pickApprovedTag([...extractTags(preparedText), ...candidateTags]);
+    return tag ? applyDeliveryTagPerSentence(tag, originalText, 200) : null;
+  }
+  // 그러고 나면 남은 웃음은 전부 사용자 것이라 '모델이 태그를 몇 개 배치했는가' 에서 뺀다 — 세면 모델이 톤을
+  // 하나도 안 붙였는데 '여러 개 배치했다' 로 읽혀 톤 없이 합성된다. 원문에 웃음이 없으면 모델이 **스스로**
+  // 넣은 웃음은 예전처럼 센다.
+  const tagsInText = (preparedText.match(TAG_RE_GLOBAL) ?? []).filter(
+    (tag) => !typedLaughter || !isLaughterTag(tag),
+  );
 
   // ⚠ **선두 태그 하나뿐이면 문장마다 다시 앞세운다 — 이 장치를 없애지 말 것.**
   // v3 태그는 뒤로 갈수록 효력이 약해져, 여러 문장을 선두 태그 하나로 합성하면 **끝
@@ -3107,9 +3133,7 @@ function normalizeSameLanguageTaggedText(
   // 모델이 스스로 여러 개·중간에 배치했다면 그건 의도이므로 건드리지 않는다.
   const onlyLeadingTag =
     tagsInText.length === 1 && preparedText.trimStart().startsWith(tagsInText[0]!);
-  // 원문의 웃음(사용자가 친 것)을 모델이 빼먹었으면 모델 배치를 버리고 원문 위에 톤을 다시 입힌다.
-  const droppedTypedLaughter = typedLaughter > 0;
-  if (tagsInText.length === 0 || onlyLeadingTag || droppedTypedLaughter) {
+  if (tagsInText.length === 0 || onlyLeadingTag) {
     const tag = pickApprovedTag([...extractTags(preparedText), ...candidateTags]);
     if (!tag) return null;
     return applyDeliveryTagPerSentence(tag, originalText, 200);

@@ -1033,13 +1033,19 @@ TTS 는 웃음 글자를 **글자로 읽는다**(2026-09-29 v3·v4·v4 Turbo 비
   언어로 합성됐다.
 - **건드리지 않는 것**: 이미 소리 나는 낱말(`하하하`·`호호`·`크크` — 하하하는 세 모델 모두 웃음으로 났다),
   다른 자모와 붙은 ㅋ·ㅎ(`ㅇㅋ`·`ㅎㅇ`·`ㅎㄷㄷ`·`ㅋㅋㅠㅠ`), 낱말 속 글자(`Lolita`·`work`·`笑顔`·`微笑`),
-  주소(`www.example.com`). 웃음이 없으면 합성 글자를 **한 글자도 바꾸지 않는다**(캐시 키가 그대로다).
+  주소(`www.example.com`·`lol.com`), **대괄호 안**(사용자가 친 `[haha]`·`[after lunch]` — 그 안을 바꾸면
+  `[ [laughs] ]` 같은 깨진 지시가 된다). 웃음이 없으면 합성 글자를 **한 글자도 바꾸지 않는다**(캐시 키가 그대로다).
 - **웃음만 있는 문구(`ㅋㅋㅋ`)는 바꾸지 않는다.** 바꾸면 합성 글자에 낭독할 말이 없다 — 태그뿐인 요청은
   시험하지 않았고, 번역 경로는 그걸 `empty_spoken` 으로 거절한다.
 - **톤 태깅은 그대로 돈다.** 톤을 붙일지는 **사용자가 친 대괄호**로만 정한다 — 서버가 바꾼 `[laughs]` 를
   보고 톤 태깅을 끄지 않는다. 모델은 `[laughs]` 가 박힌 글을 받고, 그걸 지우거나 옮기거나 낱말로 풀지 말라는
-  지시를 함께 받는다. Vertex 가 없거나 실패해도(로컬 태깅) 같은 변환이 돈다. 모델이 사용자의 웃음을
-  빼먹으면 모델 배치를 버리고 원문 배치 위에 톤만 다시 입힌다.
+  지시를 함께 받는다. Vertex 가 없거나 실패해도(로컬 태깅) 같은 변환이 돈다.
+- **사용자의 웃음은 친 자리 그대로다.** 모델이 빠뜨리거나·옮기거나·옆에 자기 웃음을 더하면(톤 태그만 벗긴
+  글이 원문과 다르면) 모델 배치를 버리고 원문 위에 모델의 톤만 다시 입힌다. 개수만 세면 문장 앞으로 옮긴
+  웃음이 '지켰다' 로 읽힌다.
+- **캐시 키는 화면 문구까지 가린다 — 화면 문구가 합성 문구에서 나오지 않을 때만.** `ㅋㅋ`·`ㅋㅋㅋ`·`haha` 는 같은
+  `[laughs]` 로 합성되므로, 합성 글자만으로 키를 만들면 캐시 히트가 다른 철자로 만든 옛 행(`message_id`·
+  `messages.text`)을 돌려준다. 웃음이 없으면(화면 문구 = 합성 문구에서 태그만 벗긴 것) 예전 키 그대로다.
 - **웃음은 톤이 아니다.** 문장마다 다시 앞세우는 톤 태그로 웃음 태그를 고르지 않는다 — 고르면 한 번 웃을
   자리에서 **매 문장 웃는다.** 졸린 태그를 지운 뒤 웃음만 남았으면 톤이 없는 것으로 보고 로컬 톤을 입힌다.
   사용자의 웃음(서버가 바꾼 `[laughs]`)은 '모델이 태그를 몇 개 배치했는가' 에서도 뺀다 — 세면 모델이 톤을
@@ -1057,6 +1063,8 @@ TTS 는 웃음 글자를 **글자로 읽는다**(2026-09-29 v3·v4·v4 Turbo 비
 ### 모델이 스스로 넣는 웃음 (직접 입력 태깅·클론 사전렌더)
 
 - 넣을 때는 `[laughs]` 하나 — `[chuckles]`·`[soft laugh]` 도, 글자 웃음(ㅋㅋ·haha·www)도 쓰지 않는다(위 근거).
+  모델이 어기면 서버가 맞춘다: 웃음 태그(`[chuckles]`·`[giggles]`·`[laughs nervously]` …)는 `[laughs]` 로 바꾸고,
+  졸린 태그 거르기 **뒤**라 `[soft laugh]` 는 예전처럼 지워진다. 사용자가 대괄호로 친 태그는 맞추지 않는다.
   **한 줄에 한 번, 가볍고 장난스러운 문장에만**, 대부분의 줄에는 넣지 않는다. 주의·사과·나쁜 소식·약
   알림에는 넣지 않는다.
 - 클론 사전렌더는 모델이 그래도 글자 웃음을 쓰면(말투 본보기의 ㅋㅋ 를 따라 쓰는 등) 서버가 `[laughs]` 로
@@ -1183,9 +1191,9 @@ v4·v4 Turbo 로 만들어 비교했다(자동 측정·받아쓰기 기준 — *
 | 직접 입력 한도 차감 | `ui/editor/AlarmEditorScreen.kt` 의 저장 경로(로컬 확인 → 횟수 확인) | `Views/Editor/AlarmEditorSheet.swift` 의 `manualQuotaBlockIfExhausted` | `routes/tts.ts` 의 `reserveManualTtsQuota`(캐시 히트·미스 양쪽) |
 | 오프라인이면 **요청 없이** 막는다 | `SaveBlockReason.OFFLINE_NEW_MESSAGE` — 저장 버튼이 `saveEditor()` **전에** 판정 | `AlarmEditorSheet.saveFlow` 의 오프라인 갈래는 `manualQuotaBlockIfExhausted` **앞** | — |
 | 직접 입력 글자 웃음 → `[laughs]`(합성 글자만) | — 서버가 한다. 화면은 서버의 `text`(친 글 그대로) | — 같음 | `lib/typed-laughter.ts` `typedLaughterToTags` · `lib/vertex-translate.ts` `speakTypedLaughter`(웃음만 있으면 그대로) · `prepareAlarmTextWithVertex` 의 `speakTypedLaughter` 옵션(톤 여부는 원문 대괄호로) ← `routes/tts.ts`(프리셋 제외). 회귀 `typed-laughter.test.ts`·`vertex-translate.test.ts`·`tts.test.ts` |
-| 같은 언어 직접 입력의 화면 문구 = 친 글 | — | — | `routes/tts.ts` 의 `messageText`(`typedSameLanguage` → `deriveAlarmDisplayText(requestText, …)`) |
-| 웃음은 톤이 아니다(문장마다 앞세우지 않는다) | — | — | `isLaughterTag` ← `pickApprovedTag`·`normalizeSameLanguageTaggedText`·`tagAlarmTextLocally`·`generatePrerenderClipText`(`withoutToneTags`) |
-| 모델이 넣는 웃음 = `[laughs]` 하나·한 번(차분은 없음) | — | — | `OWN_LAUGH_INSTRUCTION` ← `alarmTextPrompt`·`prerenderClipPrompt`(차분이면 빼고, 서버도 `isCalmIncompatibleTag` 로 지운다) · 사전렌더의 글자 웃음은 `generatePrerenderClipText` 가 `speakTypedLaughter` 로 바꾼 뒤 `dropWakeUnsafeTags` |
+| 같은 언어 직접 입력의 화면 문구 = 친 글 · 캐시 키가 화면 문구까지 가린다 | — | — | `routes/tts.ts` 의 `messageText`(`typedSameLanguage` → `deriveAlarmDisplayText(requestText, …)`)·`cacheKeyText` |
+| 웃음은 톤이 아니다(문장마다 앞세우지 않는다) · 사용자 웃음은 친 자리 그대로 | — | — | `isLaughterTag` ← `pickApprovedTag`·`normalizeSameLanguageTaggedText`(`withoutToneTags` 로 자리 대조)·`tagAlarmTextLocally`·`generatePrerenderClipText` |
+| 모델이 넣는 웃음 = `[laughs]` 하나·한 번(차분은 없음) | — | — | `OWN_LAUGH_INSTRUCTION` ← `alarmTextPrompt`·`prerenderClipPrompt`(차분이면 빼고, 서버도 `isCalmIncompatibleTag` 로 지운다) · 모델이 낸 웃음 태그는 `canonicalizeLaughterTags`(`dropWakeUnsafeTags` 뒤) · 사전렌더의 글자 웃음은 `generatePrerenderClipText` 가 `speakTypedLaughter` 로 바꾼 뒤 거른다 |
 | 합성 모델(기본 `eleven_v3`, 설정하지 않는다) | — | — | `lib/voice-provider.ts` 의 `ttsModelId` ← `ELEVENLABS_TTS_MODEL_ID`(`types.ts` `Env`, `scripts/worker-secret-keys.ts`) |
 
 ## 검증 방법

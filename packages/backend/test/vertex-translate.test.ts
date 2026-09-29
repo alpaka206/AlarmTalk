@@ -1987,6 +1987,35 @@ describe('직접 입력의 글자 웃음 → [laughs] (§9)', () => {
     expect(prepared.text).toBe('[shouting] 일어나! [laughs] 오늘도 힘내자.');
   });
 
+  // Codex #830: 개수만 세면 옮긴 웃음이 '지켰다' 로 읽혀, 사용자가 웃은 자리와 다른 곳에서 웃는다.
+  it('모델이 사용자의 웃음을 옮기면(개수는 같아도) 원문 자리로 되돌리고 톤만 입힌다', async () => {
+    queueContent(geminiText('{"text":"[laughs] [cheerfully] 일어나 벌써 8시야. [excited] 늦었어."}'));
+    const prepared = await prepareAlarmTextWithVertex(ENV, '일어나 ㅋㅋ 벌써 8시야. 늦었어.', LAUGH_OPTIONS);
+    expect(prepared.text).toBe('[cheerfully] 일어나 [laughs] 벌써 8시야. [cheerfully] 늦었어.');
+  });
+
+  it('모델이 사용자의 웃음 옆에 자기 웃음을 더해도 원문 자리 그대로다', async () => {
+    queueContent(geminiText('{"text":"[cheerfully] 일어나 [laughs] 벌써 8시야. [excited] [laughs] 늦었어."}'));
+    const prepared = await prepareAlarmTextWithVertex(ENV, '일어나 ㅋㅋ 벌써 8시야. 늦었어.', LAUGH_OPTIONS);
+    expect(prepared.text).toBe('[cheerfully] 일어나 [laughs] 벌써 8시야. [cheerfully] 늦었어.');
+  });
+
+  // Codex #830: 프롬프트가 `[laughs]` 만 쓰라고 해도 모델이 어기면 그대로 합성된다.
+  it('모델이 낸 웃음 태그([chuckles]·[giggles])는 [laughs] 로 맞춘다 — [soft laugh] 는 예전처럼 지운다', async () => {
+    queueContent(geminiText('{"text":"[cheerfully] 일어나! [chuckles] 오늘도 [giggles] 힘내자."}'));
+    const prepared = await prepareAlarmTextWithVertex(ENV, '일어나! 오늘도 힘내자.', LAUGH_OPTIONS);
+    expect(prepared.text).toBe('[cheerfully] 일어나! [laughs] 오늘도 [laughs] 힘내자.');
+
+    queueContent(geminiText('{"text":"[cheerfully] 일어나! [soft laugh] 오늘도 힘내자."}'));
+    const soft = await prepareAlarmTextWithVertex(ENV, '일어나! 오늘도 힘내자.', LAUGH_OPTIONS);
+    expect(soft.text).toBe('[cheerfully] 일어나! 오늘도 힘내자.');
+  });
+
+  it('사용자가 대괄호로 친 웃음 태그는 맞추지 않는다 — 사용자의 태그는 그대로', async () => {
+    const prepared = await prepareAlarmTextWithVertex(ENV, '[chuckles] 일어나 ㅋㅋ', LAUGH_OPTIONS);
+    expect(prepared.text).toBe('[chuckles] 일어나 [laughs]');
+  });
+
   it('선두 톤 하나뿐이면 문장마다 톤을 다시 앞세우되 웃음은 제자리에 한 번만', async () => {
     queueContent(geminiText('{"text":"[cheerfully] 일어나 [laughs]. 벌써 8시야."}'));
     const prepared = await prepareAlarmTextWithVertex(ENV, '일어나 ㅋㅋ. 벌써 8시야.', LAUGH_OPTIONS);
@@ -2097,6 +2126,18 @@ describe('사전렌더의 웃음 — 톤이 아니라 한 번 나는 소리 (§9
     });
     expect(out.tag).toBe('playfully');
     expect(out.text).toBe('[playfully] [laughs] 자기야, 오늘 운세 좋대. [playfully] 얼른 일어나 보자.');
+  });
+
+  it('모델이 낸 [giggles]·[chuckles] 는 [laughs] 로 맞춘다', async () => {
+    queueContent(geminiText('{"text":"[playfully] 자기야! [giggles] 오늘 운세 좋대. [cheerfully] 얼른 일어나 보자."}'));
+    const out = await generatePrerenderClipText(ENV, {
+      seed: '오늘 운세가 좋다고 가볍게 알리고 일어나자고 한다.',
+      relationshipLabel: '남자친구',
+      listenerTitle: '자기',
+      targetLanguage: 'ko',
+      speechStyle: { ...style, energy: 'lively' },
+    });
+    expect(out.text).toBe('[playfully] 자기야! [laughs] 오늘 운세 좋대. [cheerfully] 얼른 일어나 보자.');
   });
 
   it('모델이 웃음을 글자로 쓰면 [laughs] 로 바꾸고, 차분한 목소리면 그 웃음도 지운다', async () => {
