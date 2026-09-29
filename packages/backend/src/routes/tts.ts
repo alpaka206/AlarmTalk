@@ -1170,6 +1170,8 @@ tts.post('/generate', async (c) => {
               // 등록 녹음에서 분석한 화자 말투(사투리 등) — 미리듣기 문구를 그 말투로. 사용자가 고른
               // 목소리의 결(voice_energy)이 있으면 그게 앞선다(`SELECT *` 라 컬럼이 없던 창에도 안전).
               speechStyle: withVoiceEnergy(parseSpeechStyle(analyzedSpeechStyle), vp.voice_energy),
+              // 미리듣기는 인라인 태그를 벗겨 저장·재생한다 — 웃음을 넣어도 들리지 않으니 넣지 않는다.
+              allowLaughter: false,
             });
             // ⚠ **여기 들어오는 문구는 태그를 벗겨서 쓴다**(2026-08-20).
             // `generatePrerenderClipText` 는 이제 딜리버리 태그가 인라인으로 박힌 문구를
@@ -1377,6 +1379,12 @@ tts.post('/generate', async (c) => {
         sourceLanguage,
         translate: shouldTranslate,
         autoTag: true,
+        // 사용자가 친 ㅋㅋ·haha·www 를 글자로 읽지 않고 웃음소리(`[laughs]`)로 — 프리셋은 우리 대사라 켜지 않는다.
+        speakTypedLaughter: !presetTextUsed,
+        // 차분한 목소리면 모델이 웃음을 넣지 않는다(사용자가 친 웃음은 그대로). 결은 사전렌더와 같은 값이다 —
+        // 고른 값 > 녹음 전사 추정값(`withVoiceEnergy`). `vp` 는 `SELECT *` 라 컬럼이 없는 배포 창에도 안전하다.
+        calmVoice:
+          withVoiceEnergy(parseSpeechStyle(vp.speech_style), vp.voice_energy)?.energy === 'calm',
       });
     }
     const synthesisText = prepared.text;
@@ -1389,9 +1397,19 @@ tts.post('/generate', async (c) => {
     // 프리셋 경로는 사용자가 친 문구가 없다(우리 스톡 문구 + 그 안의 delivery 태그). 원문을
     // 그대로 넘기면 태그를 '사용자 대괄호'로 보고 보존해 화면에 '[brightly] …' 가 샌다.
     // 빈 원문을 넘겨 태그를 벗긴다 — 사전렌더 경로(stock-clips.ts stripDeliveryTags)와 같은 결과.
+    //
+    // ⚠ **같은 언어의 직접 입력은 사용자가 친 글에서 만든다**(합성 문구가 아니라). 합성 문구의 `[laughs]` 는
+    //   사용자가 친 ㅋㅋ·haha 를 소리로 바꾼 것이라, 합성 문구에서 태그를 벗기면 그 웃음이 화면에서 사라진다.
+    //   같은 언어면 합성 문구의 글자는 원문과 같다(`normalizeSameLanguageTaggedText` 가 맞춰 본다) — 다른 건
+    //   태그와 웃음뿐이다. 번역은 합성 문구(번역문)에서 만든다.
+    const typedSameLanguage =
+      !draftPreviewRequested && !dynamicGenerated && !presetTextUsed && !prepared.translated;
     const messageText = dynamicGenerated
       ? dynamicGenerated.text
-      : deriveAlarmDisplayText(synthesisText, presetTextUsed ? '' : requestText);
+      : deriveAlarmDisplayText(
+          typedSameLanguage ? requestText : synthesisText,
+          presetTextUsed ? '' : requestText,
+        );
     const deliveryTagsJson = JSON.stringify(prepared.tags);
     // synthesisLanguage 결정 시 요청 언어 의도를 보존한다.
     // - 번역 경로(translated): requestedLanguage 로 번역했으므로 그대로 사용.
@@ -1426,6 +1444,17 @@ tts.post('/generate', async (c) => {
       );
     }
 
+    // ⚠ **캐시 키는 화면 문구까지 가린다 — 화면 문구가 합성 문구에서 나오지 않을 때만**(Codex #830).
+    //   글자 웃음은 `ㅋㅋ`·`ㅋㅋㅋ`·`haha` 가 모두 같은 `[laughs]` 가 되므로, 합성 글자만으로 키를 만들면 캐시
+    //   히트가 **다른 철자로 만든 옛 행**(`message_id`·`messages.text`)을 돌려준다 — 알람은 그 id 를 저장하고,
+    //   서버가 내려 주는 알람 문구가 사용자가 방금 친 글이 아니게 된다. 화면 문구가 합성 문구에서 태그만
+    //   벗긴 것과 같으면(웃음이 없으면) 예전 키 그대로다 — 쌓아 둔 캐시를 버리지 않는다.
+    //   ⚠ 화면 문구는 **공백까지 그대로** 싣는다(`encodeURIComponent`) — 키 계산이 공백을 접으므로, 그대로 실으면
+    //   공백·줄바꿈만 다른 두 문구가 한 행을 나눠 쓴다.
+    const cacheKeyText =
+      messageText === normalizeAlarmTextWithoutTags(synthesisText)
+        ? synthesisText
+        : `${synthesisText}\n[display] ${encodeURIComponent(messageText)}`;
     const buildPreparedAttempts = async (voiceIdForSynthesis: string | null | undefined) => {
       const attempts = createSynthesisAttempts({
         env: c.env,
@@ -1444,7 +1473,7 @@ tts.post('/generate', async (c) => {
             modelId: attempt.modelId,
             language: synthesisLanguage,
             languageCode: synthesisLanguage,
-            text: synthesisText,
+            text: cacheKeyText,
             outputFormat: attempt.outputFormat,
           });
           return { attempt, cacheKey };

@@ -410,6 +410,12 @@ describe('POST /tts/generate — TTS 생성', () => {
       // 확정/활성 claim 중에는 저장 금지(늦은 영속이 실제 합성 문구와 어긋나는 것 방지).
       expect(persist!.sql).toContain('previewed_at IS NULL');
       expect(persist!.sql).toContain('preview_claimed_at IS NULL');
+      // 미리듣기는 인라인 태그를 벗겨 저장·재생하므로 웃음을 넣으라고 하지 않는다(Codex #830).
+      const vertexBodies = mockFetch.mock.calls
+        .filter((call) => String(call[0]) !== TOKEN_URI)
+        .map((call) => String(((call as unknown[])[1] as RequestInit | undefined)?.body ?? ''));
+      expect(vertexBodies.length).toBeGreaterThan(0);
+      expect(vertexBodies.every((b) => !b.includes('LAUGHTER: a laugh is a sound'))).toBe(true);
     } finally {
       vi.unstubAllGlobals();
     }
@@ -1356,6 +1362,134 @@ describe('POST /tts/generate — edge cases', () => {
     expect(ttsOptions).not.toHaveProperty('similarity_boost');
     expect(ttsOptions).not.toHaveProperty('style');
     expect(ttsOptions).not.toHaveProperty('speed');
+  });
+
+  // 스펙 §9: 글자 웃음(ㅋㅋ)은 합성 글자에서만 `[laughs]` 로 바뀐다 — 화면·저장 문구는 사용자가 친 그대로다.
+  // 화면 문구를 합성 문구에서 태그를 벗겨 만들면 사용자가 친 ㅋㅋ 가 사라진다.
+  it('직접 입력의 ㅋㅋ 는 [laughs] 로 합성하고, 화면 문구는 친 글 그대로 둔다', async () => {
+    const text = '일어나 ㅋㅋㅋ 벌써 8시야';
+    const synthesis = '[cheerfully] 일어나 [laughs] 벌써 8시야';
+    mockDB.pushResult([{ plan: 'plus' }]);
+    mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]);
+    mockDB.pushResult([]);
+    pushManualQuotaFlow();
+    mockTextToSpeech.mockResolvedValue(new Uint8Array([4]).buffer);
+    pushPublicationVoice();
+    mockDB.pushResult([], 1);
+    const app = buildApp();
+    const res = await reqWithEnv(
+      app,
+      jsonReq('POST', '/tts/generate', { voice_profile_id: V1, text, category: 'custom' }),
+    );
+
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.text).toBe(text);
+    expect(body.original_text).toBe(text);
+    expect(body.synthesis_text).toBe(synthesis);
+    expect(body.tags).toEqual(['cheerfully', 'laughs']);
+    const inserted = mockDB.calls.find((c) => c.sql.includes('INSERT INTO messages'));
+    expect(inserted!.args[3]).toBe(text);
+    expect(inserted!.args[4]).toBe(synthesis);
+    expect(mockTextToSpeech).toHaveBeenCalledWith(
+      'el-voice-1',
+      synthesis,
+      expect.objectContaining({ language_code: 'ko' }),
+    );
+  });
+
+  // Codex #830: ㅋㅋ·ㅋㅋㅋ·haha 는 같은 `[laughs]` 로 합성된다. 캐시 키가 합성 글자만 보면 캐시 히트가
+  // 다른 철자로 만든 옛 행(message_id·messages.text)을 돌려준다 — 화면 문구가 합성 문구에서 나오지 않을 때만
+  // 키가 화면 문구까지 가린다. 웃음이 없으면 예전 키 그대로다(쌓인 캐시를 버리지 않는다).
+  it('웃음 철자가 다르면 합성 글자가 같아도 캐시 키가 다르고, 웃음이 없으면 예전 키 그대로다', async () => {
+    const generate = async (text: string) => {
+      mockDB.reset();
+      mockTextToSpeech.mockReset();
+      mockDB.pushResult([{ plan: 'plus' }]);
+      mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]);
+      mockDB.pushResult([]);
+      pushManualQuotaFlow();
+      mockTextToSpeech.mockResolvedValue(new Uint8Array([5]).buffer);
+      pushPublicationVoice();
+      mockDB.pushResult([], 1);
+      const res = await reqWithEnv(
+        buildApp(),
+        jsonReq('POST', '/tts/generate', { voice_profile_id: V1, text, category: 'custom' }),
+      );
+      expect(res.status).toBe(201);
+      return (await res.json()) as { cache_key: string; synthesis_text: string; text: string };
+    };
+
+    const twice = await generate('일어나 ㅋㅋ 벌써 8시야');
+    const thrice = await generate('일어나 ㅋㅋㅋ 벌써 8시야');
+    expect(twice.synthesis_text).toBe(thrice.synthesis_text);
+    expect(twice.cache_key).not.toBe(thrice.cache_key);
+    expect(thrice.text).toBe('일어나 ㅋㅋㅋ 벌써 8시야');
+
+    // 사용자가 대괄호를 친 문구는 화면 문구가 그 글 그대로라, 공백만 달라도 키가 다르다(Codex #830).
+    const spaced = await generate('[excited] 일어나  벌써 8시야');
+    const single = await generate('[excited] 일어나 벌써 8시야');
+    expect(spaced.text).toBe('[excited] 일어나  벌써 8시야');
+    expect(spaced.cache_key).not.toBe(single.cache_key);
+
+    const plain = await generate('일어나 벌써 8시야');
+    const { computeTtsCacheKey } = await import('../src/lib/audio-cache');
+    expect(plain.cache_key).toBe(
+      await computeTtsCacheKey({
+        provider: 'elevenlabs',
+        providerVoiceId: 'el-voice-1',
+        voiceProfileId: V1,
+        modelId: 'eleven_v3',
+        language: 'ko',
+        languageCode: 'ko',
+        text: plain.synthesis_text,
+        outputFormat: 'mp3',
+      }),
+    );
+  });
+
+  // Codex #830: 차분한 목소리는 직접 입력에서도 모델이 웃음을 넣지 않는다 — 결은 사전렌더와 같은 값(고른 값 >
+  // 전사 추정값)이다. 사용자가 친 웃음은 그대로다(vertex-translate.test.ts 가 잠근다).
+  it('차분한 목소리의 직접 입력은 웃어도 된다는 지시를 싣지 않고, 모델이 넣은 웃음을 지운다', async () => {
+    const prompts: string[] = [];
+    const mockFetch = vi.fn(async (url: unknown, init?: RequestInit) => {
+      if (String(url) === TOKEN_URI) {
+        return new Response(JSON.stringify({ access_token: 'test-access-token' }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      prompts.push(String(init?.body ?? ''));
+      return geminiText('{"text":"[warmly] 일어나! [laughs] 오늘도 가 보자."}');
+    });
+    vi.stubGlobal('fetch', mockFetch);
+    try {
+      mockDB.pushResult([{ plan: 'plus' }]);
+      mockDB.pushResult([
+        { id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1', voice_energy: 'calm' },
+      ]);
+      mockDB.pushResult([]);
+      pushManualQuotaFlow();
+      mockTextToSpeech.mockResolvedValue(new Uint8Array([6]).buffer);
+      pushPublicationVoice();
+      mockDB.pushResult([], 1);
+      const res = await buildApp().request(
+        jsonReq('POST', '/tts/generate', {
+          voice_profile_id: V1,
+          text: '일어나! 오늘도 가 보자.',
+          category: 'custom',
+        }),
+        undefined,
+        { ...ENV, GOOGLE_VERTEX_CREDENTIALS_JSON: VERTEX_CREDENTIALS_JSON },
+      );
+      expect(res.status).toBe(201);
+      const body = await res.json();
+      expect(body.synthesis_text).toBe('[warmly] 일어나! 오늘도 가 보자.');
+      expect(prompts).toHaveLength(1);
+      expect(prompts[0]).not.toContain('LAUGHTER: a laugh is a sound');
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it('영어 직접 입력은 번역 없이 language_code=en 으로 합성한다', async () => {

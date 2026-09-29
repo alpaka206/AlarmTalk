@@ -15,6 +15,11 @@ PASSWORD_PEPPER=
 
 # === AI provider ===
 ELEVENLABS_API_KEY=
+# TTS model id. Leave empty (= eleven_v3). Every published clip was rendered with v3 and changing the
+# model does NOT re-render them — plan the re-render first (src/lib/voice-provider.ts ttsModelId).
+# Emptying this line does NOT remove a value already synced to the worker (secrets:sync skips blanks) —
+# revert with `npx wrangler secret delete ELEVENLABS_TTS_MODEL_ID --env <dev|production>`.
+ELEVENLABS_TTS_MODEL_ID=
 
 # Vertex Gemini (text tagging, clone prerender lines, speech-style analysis). Service-account JSON.
 # gemini-2.5-flash retires 2026-10-20 — use gemini-3.5-flash (NOT flash-lite: it lost blind quality

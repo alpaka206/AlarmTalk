@@ -47,7 +47,23 @@ export class UnsupportedVoiceProviderError extends Error {
   }
 }
 
-const ELEVENLABS_V3_MODEL_ID = 'eleven_v3';
+const DEFAULT_TTS_MODEL_ID = 'eleven_v3';
+
+/**
+ * 합성 모델 id. 워커 변수 `ELEVENLABS_TTS_MODEL_ID` 가 비어 있으면 `eleven_v3` 다 — **어디에도 설정하지 않는다.**
+ *
+ * ⚠ **바꾸려면 재렌더 계획이 먼저다.** 이미 게시된 클립(시스템 스톡·클론 사전렌더)은 전부 v3 로 구웠고,
+ *   무엇을 구울지는 `messages` 행으로 고르므로(`findMissingStockTargets`) 모델만 바꾸면 **다시 굽지 않는다** —
+ *   새로 만드는 것(직접 입력·새 클론)만 새 모델이 되어 한 사람의 알람에 두 모델 소리가 섞인다. 직접 입력은
+ *   모델 id 가 캐시 키에 들어가(`computeTtsCacheKey`) 같은 문구도 새로 합성된다. 스톡 게시 스크립트
+ *   (`scripts/publish-stock-clips.ts`·`scripts/prerender-stock-preview.ts`)는 `eleven_v3` 를 박아 두었고, 말끝
+ *   처리(`withClosingBreath`·`appendMp3TrailingSilence`)는 v3 의 급마감 때문에 있다. 2026-09-29 비교에서
+ *   v4 는 speed·style 을 **조용히 무시**했고(운영의 speed 0.9 가 안 먹는다) 남자 목소리의 음높이가 크게
+ *   올랐다 — 비교 기록은 `docs/spec/voice-and-message.md` 「합성 모델」.
+ */
+function ttsModelId(env: Env): string {
+  return env.ELEVENLABS_TTS_MODEL_ID?.trim() || DEFAULT_TTS_MODEL_ID;
+}
 const SUPPORTED_SYNTHESIS_LANGUAGES = new Set(['ko', 'en', 'ja', 'fr', 'it']);
 
 export function createEnrollmentAttempts(params: {
@@ -90,10 +106,11 @@ export function createSynthesisAttempts(params: {
   const attempts: VoiceProviderAttempt[] = [];
 
   if (params.profile.elevenlabs_voice_id && params.env.ELEVENLABS_API_KEY) {
+    const modelId = ttsModelId(params.env);
     attempts.push({
       provider: 'elevenlabs',
       providerVoiceId: params.profile.elevenlabs_voice_id,
-      modelId: ELEVENLABS_V3_MODEL_ID,
+      modelId,
       // 파일 확장자/캐시키용 coarse 라벨. 실제 제공자 출력은 elevenlabs.ts 의
       // ELEVENLABS_TTS_OUTPUT_FORMAT(mp3_44100_128) 로 고정되며 그 형식은 mp3(audio/mpeg)라 일치한다.
       outputFormat: 'mp3',
@@ -103,14 +120,14 @@ export function createSynthesisAttempts(params: {
           params.profile.elevenlabs_voice_id!,
           params.text,
           {
-            model_id: ELEVENLABS_V3_MODEL_ID,
+            model_id: modelId,
             language_code: normalizeSynthesisLanguage(params.language),
           },
         );
         return {
           provider: 'elevenlabs',
           providerVoiceId: params.profile.elevenlabs_voice_id!,
-          modelId: ELEVENLABS_V3_MODEL_ID,
+          modelId,
           outputFormat: 'mp3',
           mimeType: 'audio/mpeg',
           bytes: new Uint8Array(audioBuffer),
