@@ -517,7 +517,6 @@ struct VoicePrerenderStatus: Decodable, Equatable {
     var status: String?
     var total: Int
     var generated: Int
-    var attempts: Int
 }
 
 /// `POST voice/{id}/prerender/advance` — 호출당 최대 **2**클립 전진
@@ -567,17 +566,13 @@ struct VoiceProfileRelationshipUpdateRequest: Encodable {
 
 /// 이번 달(KST) 목소리 쿼터. Android `VoiceDraftQuotaResponse` 미러.
 ///
-/// ⚠ **두 쿼터가 한 응답에 들어 있고 뜻이 다르다.**
-///  - `limit`/`used`/`remaining` : 초안(draft) 재시도 여유. iOS 는 draft 플로우가 없어 쓰지 않는다.
-///    제한 해제 후 호환용으로 `remaining` 이 0 고정이라, 이걸로 판정하면 **이번 달 등록이
-///    남아 있어도** 소진으로 읽힌다.
-///  - `registration*` : **정식 등록** 쿼터(한 달에 1개). 화면 표시와 삭제 경고는 이쪽이다.
+/// ⚠ **두 쿼터가 한 응답에 들어 있고 뜻이 다르다.** 여기 두는 것은 `registration*` —
+/// **정식 등록** 쿼터(한 달에 1개)뿐이다. 화면 표시와 삭제 경고는 이쪽이다.
+/// 같은 응답의 `limit`/`used`/`remaining` 은 초안(draft) 재시도 여유라 디코드하지 않는다 —
+/// iOS 는 draft 플로우가 없고, 제한 해제 후 호환용으로 `remaining` 이 0 고정이라 그걸로
+/// 판정하면 **이번 달 등록이 남아 있어도** 소진으로 읽힌다.
 struct VoiceDraftQuotaResponse: Decodable, Equatable {
-    var limit: Int = 0
-    var used: Int = 0
-    var remaining: Int = 0
     var registrationLimit: Int = 0
-    var registrationUsed: Int = 0
     var registrationRemaining: Int = 0
 }
 
@@ -875,7 +870,6 @@ struct CodeRegisterResponse: Decodable, Equatable {
 struct BillingSubscriptionResponse: Codable, Equatable {
     var subscription: BillingSubscription?
     var plan: BillingPlan?
-    var nextPlan: BillingPlanSummary?
     /**
      지금 이 계정의 **갱신을 쥔 스토어 전부** — `["apple"]`, `["google"]`, 둘 다, 또는 빈 배열.
 
@@ -902,13 +896,8 @@ struct BillingSubscriptionResponse: Codable, Equatable {
 struct BillingSubscription: Codable, Identifiable, Equatable {
     var id: String
     var planId: String
-    var planGroupId: String?
     var status: String
-    var startsAt: String
     var expiresAt: String
-    var cancelAtPeriodEnd: Bool?
-    var canceledAt: String?
-    var nextPlanId: String?
     /// **해지가 어느 스토어를 거쳐야 하는가** — `"apple"` / `"google"` / `nil`.
     ///
     /// ⚠ **이 판정을 로컬 StoreKit 상태로 흉내 내지 말 것**(코덱스 #732 P1).
@@ -930,16 +919,7 @@ struct BillingPlan: Codable, Identifiable, Equatable {
     var key: String
     var name: String
     var planType: String
-    var periodDays: Int
     var maxMembers: Int
-    var priceKrw: Int
-}
-
-struct BillingPlanSummary: Codable, Identifiable, Equatable {
-    var id: String
-    var key: String
-    var name: String
-    var planType: String
 }
 
 struct VoucherListResponse: Decodable {
@@ -978,7 +958,6 @@ struct CancelSubscriptionRequest: Encodable {
 struct CancelSubscriptionResponse: Decodable, Equatable {
     var success: Bool
     var mode: String
-    var subscriptionId: String?
 }
 
 struct UpdateProfileRequest: Encodable {
@@ -1112,10 +1091,6 @@ struct RequestEmailVerificationRequest: Encodable {
 
 struct RequestEmailVerificationResponse: Decodable, Equatable {
     var success: Bool
-    /// 디버그(dev) 환경에서 서버가 바로 코드를 돌려보내는 경우가 있어 옵셔널로 둔다.
-    /// 백엔드는 `debug_code` 키로 보낸다(auth.ts:190/301). convertFromSnakeCase 로
-    /// `debugCode` 에 매핑된다. Android `AuthApi.kt:84`.
-    var debugCode: String?
 }
 
 struct VerifyEmailCodeRequest: Encodable {

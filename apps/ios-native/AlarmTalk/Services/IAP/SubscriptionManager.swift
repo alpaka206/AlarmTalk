@@ -27,7 +27,6 @@ import StoreKit
 @MainActor
 final class SubscriptionManager: ObservableObject {
     @Published private(set) var products: [Product] = []
-    @Published private(set) var purchasedProductIDs: Set<String> = []
     @Published private(set) var currentTier: PlanTier = .free
 
     /// StoreKit 조회 세대. **나중에 시작한 조회가 이긴다**(2026-09-01 리뷰).
@@ -386,8 +385,7 @@ final class SubscriptionManager: ObservableObject {
         return count
     }
 
-    /// `Transaction.currentEntitlements` 를 다시 읽어 `purchasedProductIDs` 와
-    /// `currentTier` 를 atomic 하게 갱신.
+    /// `Transaction.currentEntitlements` 를 다시 읽어 `currentTier` 를 atomic 하게 갱신.
     ///
     /// Apple 의 보장:
     ///   - 만료된 자동갱신 구독은 `currentEntitlements` 에서 제외된다.
@@ -407,7 +405,6 @@ final class SubscriptionManager: ObservableObject {
         // 모르는 것은 '무료' 도 '유료' 도 아니다 — 그냥 세지 않고, 로그인할 때 다시 읽는다.
         guard let currentAccount = authProvider()?.user.id.nilIfBlank.flatMap(UUID.init(uuidString:))
         else {
-            purchasedProductIDs = []
             currentTier = .free
             hasLoadedEntitlements = false
             entitlementOwner = nil
@@ -416,7 +413,6 @@ final class SubscriptionManager: ObservableObject {
         // ⚠ **주인이 바뀌었으면 순회 전에 비운다**(위 `entitlementOwner` 주석).
         // 비우는 방향은 안전하다 — 이 계정이 실제로 유료면 아래 순회가 곧 다시 채운다.
         if entitlementOwner != currentAccount {
-            purchasedProductIDs = []
             currentTier = .free
             hasLoadedEntitlements = false
             entitlementOwner = currentAccount
@@ -440,8 +436,8 @@ final class SubscriptionManager: ObservableObject {
         // ⚠ **같은 계정 안에서도 밀려난 조회는 버린다**(2026-09-01 리뷰 — 위 세대 주석).
         // ⚠ **공유 티켓으로 화면 상태까지 버리지 말 것**(2026-09-01 리뷰 2차 정정).
         // 배경 정적 경로는 **캐시만** 쓴다 — 그 티켓으로 여기까지 막으면, 콜드런치 폴백이
-        // 끼어든 것만으로 전경 순회가 `currentTier`·`purchasedProductIDs`·
-        // `hasLoadedEntitlements` 를 통째로 버려 화면이 옛 등급에 묶인다.
+        // 끼어든 것만으로 전경 순회가 `currentTier`·`hasLoadedEntitlements` 를 통째로 버려
+        // 화면이 옛 등급에 묶인다.
         // 인스턴스 세대는 화면 상태를, 공유 티켓은 캐시 쓰기만 가른다.
         guard generation == refreshGeneration else { return }
         // ⚠ **임자를 알 수 없는 활성 구매가 있고 내 것이 하나도 없으면 아무것도 확정하지
@@ -454,7 +450,6 @@ final class SubscriptionManager: ObservableObject {
             return
         }
         self.entitlementOwner = currentAccount
-        self.purchasedProductIDs = newSet
         self.currentTier = maxTier
         self.hasLoadedEntitlements = true
         // 캐시는 두 경로가 함께 쓰므로 여기만 공유 티켓으로 가른다(위 주석).

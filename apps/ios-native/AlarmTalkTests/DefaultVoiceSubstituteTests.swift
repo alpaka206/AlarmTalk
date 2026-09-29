@@ -159,7 +159,7 @@ final class DefaultVoiceSubstituteTests: XCTestCase {
     func test_rehearsalAlarm_isScheduledWithADefaultVoiceNotTheAlarmTone() {
         let record = rehearsalAlarm()
         let freeSnapshot = AccessSnapshot(
-            subscriptionResponse: BillingSubscriptionResponse(subscription: nil, plan: nil, nextPlan: nil),
+            subscriptionResponse: BillingSubscriptionResponse(subscription: nil, plan: nil),
             familyGroup: nil,
             storePlanKey: nil,
             storeEntitlementUntilMillis: nil,
@@ -187,12 +187,9 @@ final class DefaultVoiceSubstituteTests: XCTestCase {
         let paidSnapshot = AccessSnapshot(
             subscriptionResponse: BillingSubscriptionResponse(
                 subscription: BillingSubscription(
-                    id: "sub-1", planId: "plan-1", planGroupId: nil, status: "active",
-                    startsAt: "2026-01-01T00:00:00Z", expiresAt: "2099-01-01T00:00:00Z",
-                    cancelAtPeriodEnd: nil, canceledAt: nil, nextPlanId: nil
+                    id: "sub-1", planId: "plan-1", status: "active", expiresAt: "2099-01-01T00:00:00Z"
                 ),
-                plan: nil,
-                nextPlan: nil
+                plan: nil
             ),
             familyGroup: nil,
             storePlanKey: nil,
@@ -207,7 +204,7 @@ final class DefaultVoiceSubstituteTests: XCTestCase {
         received.origin = AlarmOrigin.receivedRemote.rawValue
         XCTAssertFalse(PaidVoiceGate.shouldDowngrade(record: received, snapshot: .empty))
         let freeSnapshot = AccessSnapshot(
-            subscriptionResponse: BillingSubscriptionResponse(subscription: nil, plan: nil, nextPlan: nil),
+            subscriptionResponse: BillingSubscriptionResponse(subscription: nil, plan: nil),
             familyGroup: nil,
             storePlanKey: nil,
             storeEntitlementUntilMillis: nil,

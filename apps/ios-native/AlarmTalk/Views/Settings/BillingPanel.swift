@@ -380,14 +380,8 @@ struct BillingPanel: View {
 
     // MARK: - App Store 구독 관리
 
-    /// 시스템 구독 관리 시트를 띄운다. 실패하면 App Store 링크로 폴백한다.
+    /// 이 이용권이 **App Store 결제인가.**
     ///
-    /// ⚠ **조용히 실패하게 두지 말 것.** 둘 다 실패하면 사용자는 해지 버튼을 눌렀는데
-    /// 아무 일도 일어나지 않는 걸 보게 된다 — 그때는 어디로 가야 하는지 글로 알려 준다.
-    @MainActor
-    /// 이 이용권이 **App Store 결제인가.** 서버가 provider 를 내려 주지 않으므로 StoreKit
-    /// 이 들고 있는 활성 권한으로 판정한다 — 이 기기에서 애플로 산 구독이면 여기 잡힌다.
-    /// (Play 로 산 구독은 iOS StoreKit 에 없으므로 false 가 되어 예전 흐름 그대로다.)
     /// ⚠ **서버의 활성 구독이 권위다 — 로컬 StoreKit entitlement 를 보지 말 것**
     /// (코덱스 #732 P1). 예전에는 `purchasedProductIDs` 에 구독이 하나라도 있으면
     /// 애플로 봤는데, 아이폰에서 산 옛 구독의 entitlement 가 기기에 남은 채 지금은
@@ -492,6 +486,10 @@ struct BillingPanel: View {
         await purchase(product)
     }
 
+    /// 시스템 구독 관리 시트를 띄운다. 실패하면 App Store 링크로 폴백한다.
+    ///
+    /// ⚠ **조용히 실패하게 두지 말 것.** 둘 다 실패하면 사용자는 해지 버튼을 눌렀는데
+    /// 아무 일도 일어나지 않는 걸 보게 된다 — 그때는 어디로 가야 하는지 글로 알려 준다.
     private func openAppStoreSubscriptionManagement() async {
         let scene = UIApplication.shared.connectedScenes
             .compactMap { $0 as? UIWindowScene }

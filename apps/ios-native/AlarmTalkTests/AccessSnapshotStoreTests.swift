@@ -83,24 +83,16 @@ final class AccessSnapshotStoreTests: XCTestCase {
             subscription: BillingSubscription(
                 id: "subscription-\(planKey)",
                 planId: "plan-\(planKey)",
-                planGroupId: nil,
                 status: "active",
-                startsAt: "2026-01-01T00:00:00Z",
-                expiresAt: "2026-02-01T00:00:00Z",
-                cancelAtPeriodEnd: false,
-                canceledAt: nil,
-                nextPlanId: nil
+                expiresAt: "2026-02-01T00:00:00Z"
             ),
             plan: BillingPlan(
                 id: "plan-\(planKey)",
                 key: planKey,
                 name: planKey,
                 planType: planKey,
-                periodDays: 30,
-                maxMembers: planKey == "family" ? 4 : 2,
-                priceKrw: 9_900
-            ),
-            nextPlan: nil
+                maxMembers: planKey == "family" ? 4 : 2
+            )
         )
     }
 }

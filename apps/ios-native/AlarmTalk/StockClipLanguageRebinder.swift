@@ -94,7 +94,6 @@ struct StockClipLanguageRebinder {
 
         var rebound = 0
         var changedIds: Set<String> = []
-        var conditionBucketRebound = false
         for record in stale {
             // ⚠ **묶을 때도 접은 이름을 쓴다**(2026-09-03 리뷰 5차). 지난 회차에
             //   `normalizedBucketId` 를 **완전성 검사에만** 넣었더니, 검사는 통과하는데
@@ -114,7 +113,6 @@ struct StockClipLanguageRebinder {
             //   그게 읽는 것이 이 필드들이고, 받은 알람은 전부 비어 있다.
             bound = Self.withRecipientConditions(bound, bucket: bucket, prefs: conditionInputs)
             _ = store.upsertPreservingServerSyncFields(bound)
-            if MatchingBucketIds.contains(bucket) { conditionBucketRebound = true }
             changedIds.insert(bound.id)
             rebound += 1
         }
@@ -123,7 +121,6 @@ struct StockClipLanguageRebinder {
         //   조건이 바뀌면 AlarmKit 예약도 다시 잡아야 하는데 그 핸들은 호출부에 있다
         //   (`AlarmTalkApp.rebindStockClipsIfNeeded`). 안드로이드는 워커가 스케줄러를
         //   직접 부른다 — 플랫폼 사정이라 모양이 다르다.
-        _ = conditionBucketRebound
 
         // ⚠⚠ **디스크에 앉히고 나서 돌아간다**(2026-09-03 리뷰 17차).
         //   `upsert` 는 저장을 **비동기로 걸어 둘 뿐**이라, 그대로 돌려주면 호출부가

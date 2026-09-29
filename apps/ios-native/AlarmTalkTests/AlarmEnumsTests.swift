@@ -13,19 +13,6 @@ final class AlarmEnumsTests: XCTestCase {
         XCTAssertEqual(RepeatDay.saturday.mask, 1 << 6)
     }
 
-    func test_repeatDayCalendarWeekdayMapping() {
-        // Calendar.weekday: 1=Sun..7=Sat
-        XCTAssertEqual(RepeatDay.fromCalendarWeekday(1), .sunday)
-        XCTAssertEqual(RepeatDay.fromCalendarWeekday(2), .monday)
-        XCTAssertEqual(RepeatDay.fromCalendarWeekday(7), .saturday)
-        XCTAssertNil(RepeatDay.fromCalendarWeekday(0))
-        XCTAssertNil(RepeatDay.fromCalendarWeekday(8))
-
-        // Locale.Weekday 와의 1..7 동등.
-        XCTAssertEqual(RepeatDay.sunday.localeWeekdayInt, 1)
-        XCTAssertEqual(RepeatDay.saturday.localeWeekdayInt, 7)
-    }
-
     func test_repeatDaysExtension() {
         let mask = RepeatDay.monday.mask | RepeatDay.wednesday.mask | RepeatDay.friday.mask
         XCTAssertEqual(mask.repeatDays, [.monday, .wednesday, .friday])

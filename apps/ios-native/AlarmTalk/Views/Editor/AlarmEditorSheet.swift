@@ -79,16 +79,8 @@ struct AlarmEditorSheet: View {
     @State var pendingVoiceSwitch: VoiceSelectionSheet.Option?
     @State var selectedFamilyRecipientID: String?
     @State var voiceSourceMode: VoiceSource = .ttsProfile
-    @State var localAudioMode: AlarmLocalAudioInputMode = .record
     @State var localAudioMessage: String?
-    @State var selectedLocalAudioURL: URL?
-    @State var selectedLocalAudioName: String?
-    @State var selectedLocalAudioDurationMs: Int?
-    @State var localAudioCropStartMs = 0
-    @State var localAudioCropEndMs = Int(AlarmAudioLimits.maxDurationMillis)
     @State var clearExistingLocalAudio = false
-    /// 선택/미리듣기 중인 스톡 클립의 messageId. StockClipPicker 의 선택 표시에 사용.
-    @State var stockSelectedMessageID: String?
 
     /// 준비 페이지를 띄울 목소리. 아직 클립을 다 못 받은 목소리를 고르면 여기 담긴다.
     @State var preparationVoiceID: String?
@@ -331,10 +323,7 @@ struct AlarmEditorSheet: View {
                 // Android `ScheduleDetailsCard` 와 동일: 반복 요일이 하나라도 선택됐을 때만
                 // 공휴일off 토글을 노출한다(미선택 시 dimmed 가 아니라 통째로 숨김).
                 if draft.repeatDaysMask != 0 {
-                    HolidayOffToggle(
-                        isOn: $draft.holidayOff,
-                        enabled: true
-                    )
+                    HolidayOffToggle(isOn: $draft.holidayOff)
                     // ⚠ **아래 여백을 빼지 말 것**(2026-08-15 지적 "여백이 너무 작아 어렵다").
                     // `EditorCard` 의 세로 패딩은 4 뿐이라, 이 행이 카드 바닥에 4pt 로 붙어
                     // 스위치를 누르기가 불편했다. 위쪽(4 + 요약줄 10 = 14)과 맞추고, 요일을
@@ -571,8 +560,8 @@ struct AlarmEditorSheet: View {
                     selectDefaultFamilyRecipientIfNeeded()
                 }
             }
-            // 스톡 클립 카탈로그는 refresh 와 독립적으로 1회 로드한다(무료 등급 +
-            // 시스템 보이스 선택 시 StockClipPicker 가 사용). 실패는 비차단.
+            // 스톡 클립 카탈로그는 refresh 와 독립적으로 1회 로드한다(테마 클립 선택에
+            // 쓴다). 실패는 비차단.
             Task { await voiceStudio.loadStockClips(session: auth.session) }
         }
         .alert(
@@ -697,12 +686,11 @@ struct AlarmEditorSheet: View {
                 ttsProfileChangedDuringEdit = true
             }
             stopAllEditorPreviews()
-            // `wasThemeAlarm` 은 관문보다 위에서 구했다 — 이 두 줄이 스톡 선택을 지우기
+            // `wasThemeAlarm` 은 관문보다 위에서 구했다 — 아래 줄이 스톡 선택을 지우기
             // **전**의 값이어야 하고, 관문도 그 값으로 판정해야 하기 때문이다(위 주석).
-            stockSelectedMessageID = nil
             voiceStudio.preparedAlarm = nil
             // ⚠ **테마 알람이 목소리 변경으로 '직접 입력' 으로 뒤집히지 않게 한다.**
-            // 위 두 줄로 스톡 선택을 잃으면 `isActiveStockClipAlarm` 이 false 가 되는데,
+            // 위 줄로 스톡 선택을 잃으면 `isActiveStockClipAlarm` 이 false 가 되는데,
             // 테마 알람은 `randomPrompt` 도 false 로 저장돼 있어 판정식
             // (`!randomPrompt && !isActiveStockClipAlarm`)이 **직접 입력**으로 읽는다.
             // 그러면 서버가 준 스톡 문장이 사용자가 친 문구인 양 남고, 저장 시
@@ -729,9 +717,9 @@ struct AlarmEditorSheet: View {
         // 않도록 randomPrompt && 스톡 미스테이징 일 때만 비운다(RISK C).
         .onChange(of: draft.hour) { _, _ in invalidatePreparedRandomClipOnTimeChange() }
         .onChange(of: draft.minute) { _, _ in invalidatePreparedRandomClipOnTimeChange() }
-        // 반복 요일이 모두 꺼지면 공휴일 OFF 는 무의미해진다. 토글은 disable 만 되어
-        // (HolidayOffToggle.enabled=false) 켜진 값이 그대로 레코드에 남을 수 있으므로,
-        // mask 가 0 이 되는 순간 holidayOff 를 false 로 되돌려 stale true 를 막는다(PR6).
+        // 반복 요일이 모두 꺼지면 공휴일 OFF 는 무의미해진다. 토글은 숨겨질 뿐이라
+        // 켜진 값이 그대로 레코드에 남을 수 있으므로, mask 가 0 이 되는 순간 holidayOff 를
+        // false 로 되돌려 stale true 를 막는다(PR6).
         .onChange(of: draft.repeatDaysMask) { _, newMask in
             if newMask == 0, draft.holidayOff {
                 draft.holidayOff = false
@@ -962,7 +950,7 @@ struct AlarmEditorSheet: View {
 
         if voiceSourceMode == .localAudio {
             // 말하는 자리: `RecordingCard` 자체가 CTA 다.
-            let hasNewSource = selectedLocalAudioURL != nil || localRecorder.latestRecordingURL != nil
+            let hasNewSource = localRecorder.latestRecordingURL != nil
             return !(hasNewSource || existingLocalAudioLabel != nil)
         }
 
@@ -1451,7 +1439,6 @@ struct AlarmEditorSheet: View {
         }
         // 테마를 바꾸면 앞 테마로 준비해 둔 음원은 더 이상 맞지 않는다.
         voiceStudio.preparedAlarm = nil
-        stockSelectedMessageID = nil
     }
 
     /// **저장 시점에** 고른 테마의 음원을 준비한다. 성공하면 true.
@@ -1614,7 +1601,6 @@ struct AlarmEditorSheet: View {
         guard await voiceStudio.prepareStockClip(boundClip, session: auth.session) != nil else {
             return false
         }
-        stockSelectedMessageID = boundClip.id
         return true
     }
 
@@ -1756,7 +1742,6 @@ struct AlarmEditorSheet: View {
         // ⚠ **테마를 비운다.** 문구 갈래와 테마는 동시에 켜질 수 없다. 안 비우면
         // `isActiveStockClipAlarm` 이 계속 참이라 '직접 입력' 을 골라도 입력창이 안 뜬다.
         selectedBucketDraft = nil
-        stockSelectedMessageID = nil
         if result.isManual {
             voiceStudio.randomPrompt = false
             voiceStudio.ttsText = result.manualText
@@ -1944,8 +1929,7 @@ struct AlarmEditorSheet: View {
     }
 
     var existingLocalAudioLabel: String? {
-        guard selectedLocalAudioURL == nil,
-              localRecorder.latestRecordingURL == nil,
+        guard localRecorder.latestRecordingURL == nil,
               !clearExistingLocalAudio,
               let alarm = editingAlarm,
               alarm.voiceSourceEnum == .localAudio,
@@ -2003,7 +1987,6 @@ struct AlarmEditorSheet: View {
         suppressProfileChangeInvalidation = true
         voiceStudio.selectedProfileID = alarm?.voiceProfileId
         voiceStudio.preparedAlarm = nil
-        stockSelectedMessageID = nil
         // 저장된 테마를 편집기 상태로 **한 번** 옮긴다. 이 뒤로는 편집기가 소유한다 —
         // 저장값을 계속 읽으면 사용자가 문구 갈래를 바꿔도 테마가 안 풀린다.
         selectedBucketDraft = FreeBucket.stored(alarm?.bucketId)
@@ -2040,8 +2023,8 @@ struct AlarmEditorSheet: View {
         voiceStudio.fortuneBirthTime = alarm?.voiceFortuneBirthTime ?? saved.fortuneBirthTime
         // 기존 스톡 클립 알람은 선택/준비 상태로 복원해 저장 시 같은 캐시 음원을 재사용한다
         // (P2). selectedProfileID 가 위에서 먼저 설정되고 그 onChange 훅이
-        // stockSelectedMessageID 를 비우므로, 복원은 반드시 그 이후 — 즉 coerce 직전 —
-        // 에 수행한다. coerce 가 보기 전에 preparedAlarm/stockSelectedMessageID 가 채워져
+        // preparedAlarm 을 비우므로, 복원은 반드시 그 이후 — 즉 coerce 직전 —
+        // 에 수행한다. coerce 가 보기 전에 preparedAlarm 이 채워져
         // 있어야 803 라인 가드가 4-값 강제를 건너뛴다.
         restoreStockClipSelectionIfNeeded(from: alarm)
         coerceFreeVoiceTierConstraints()
@@ -2095,14 +2078,13 @@ struct AlarmEditorSheet: View {
         ) else { return false }
         applyLastMessageChoice()
         voiceStudio.preparedAlarm = nil
-        stockSelectedMessageID = nil
         return true
     }
 
     /// 기존에 저장된 스톡 클립 알람을 다시 "선택/준비" 상태로 복원한다(P2).
     /// P1 과 동일한 신호(`audioCacheKey` 의 `stock_` prefix + 시스템 voiceProfileId)로
     /// 스톡 알람을 식별하고, 스테이징됐던 캐시 파일이 디스크에 그대로 있을 때만
-    /// `preparedAlarm` + `stockSelectedMessageID` 를 재구성한다. 이렇게 하면 saveFlow 의
+    /// `preparedAlarm` 을 재구성한다. 이렇게 하면 saveFlow 의
     /// 스톡 분기(`prepared.audioCacheKey` 의 `stock_` prefix 판정)가 동일 audioCacheKey 를
     /// 재사용한다. 캐시가 sweep 됐으면 복원하지 않아 saveFlow 가 정상 재생성 경로를
     /// 타게 둔다(dangling 파일 재사용 방지, risk 1).
@@ -2126,7 +2108,6 @@ struct AlarmEditorSheet: View {
             language: alarm.voiceLanguage ?? "ko",
             listenerTitle: alarm.voiceListenerTitle
         )
-        stockSelectedMessageID = messageID
         // 스톡 클립은 고정 음원이므로 랜덤 문구가 아니다(저장값 voiceRandomPrompt=false 미러).
         voiceStudio.randomPrompt = false
     }
@@ -2653,7 +2634,8 @@ struct AlarmEditorSheet: View {
                 familyLocalVoiceSource = FamilyLocalVoiceUploadSource(
                     url: prepared.url,
                     durationMs: prepared.durationMs,
-                    displayName: localAudioUploadDisplayName(for: prepared.url)
+                    // 알람 오디오는 녹음뿐이다 — 이름도 하나다.
+                    displayName: "alarm-recording.m4a"
                 )
             } catch {
                 localAudioMessage = AudioUserFacingError.message(for: error, fallback: "선택한 알람 음성을 준비하지 못했어요.")
@@ -3173,22 +3155,6 @@ struct AlarmEditorSheet: View {
         }
     }
 
-    func handleLocalAudioModeChange(_ mode: AlarmLocalAudioInputMode) {
-        stopAllEditorPreviews()
-        // 알람 편집기에는 녹음뿐이다 — 파일 갈래는 없앴다(2026-08-11).
-        // 옛 행이 남긴 파일 선택 상태만 비운다.
-        do {
-            selectedLocalAudioURL = nil
-            selectedLocalAudioName = nil
-            selectedLocalAudioDurationMs = nil
-            localAudioCropStartMs = 0
-            localAudioCropEndMs = Int(AlarmAudioLimits.maxDurationMillis)
-        }
-        localAudioMode = mode
-        clearExistingLocalAudio = true
-        localAudioMessage = nil
-    }
-
     func toggleLocalRecording() {
         stopAllEditorPreviews()
         if localRecorder.isRecording {
@@ -3197,13 +3163,8 @@ struct AlarmEditorSheet: View {
             clearExistingLocalAudio = false
             return
         }
-        selectedLocalAudioURL = nil
-        selectedLocalAudioName = nil
-        selectedLocalAudioDurationMs = nil
         localRecorder.clearLatest()
         clearExistingLocalAudio = false
-        localAudioCropStartMs = 0
-        localAudioCropEndMs = Int(AlarmAudioLimits.maxDurationMillis)
         Task {
             do {
                 try await localRecorder.start()
@@ -3220,33 +3181,22 @@ struct AlarmEditorSheet: View {
             stopAllEditorPreviews()
             return
         }
-        // 항상 크롭 윈도우로 재생해 알람 구간만 들려준다(change 1). 녹음 클립은 start=0
-        // 이라 윈도우가 무해하다. file 모드는 preparedLocalAlarmAudioSource 가 이미
-        // 크롭 파일을 만들어 주므로 start=0, 전체 길이를 그대로 윈도우로 쓴다.
-        let startMs = localAudioCropStartMs
         Task {
             stopAllEditorPreviews()
             do {
-                if selectedLocalAudioURL == nil,
-                   localRecorder.latestRecordingURL == nil,
+                if localRecorder.latestRecordingURL == nil,
                    let url = existingLocalAudioURL() {
-                    // 기존 캐시 경로도 저장된 크롭 윈도우(start..start+limit)를 적용해
-                    // 알람과 동일 구간만 audition 한다.
+                    // 저장된 녹음은 알람과 같은 구간(처음부터 최대 길이까지)만 들려준다.
                     previewTarget = .cachedLocalAudio
-                    let stopAfter = max(0, localAudioCropEndMs - startMs)
-                    // 캐시 파일은 저장 시 이미 크롭 시작점부터 잘려 있으므로 파일 자체가
-                    // start 에서 시작한다. startMs 로 다시 seek 하면 이중 오프셋이 되어
-                    // (start 가 0 이 아닐 때) 구간이 밀리므로 startMs 를 0 으로 고정한다.
                     try editorPreviewPlayer.play(
                         url: url,
                         startMs: 0,
-                        stopAfterMs: stopAfter > 0 ? stopAfter : nil
+                        stopAfterMs: Int(AlarmAudioLimits.maxDurationMillis)
                     )
                 } else {
                     let prepared = try await preparedLocalAlarmAudioSource()
                     previewTarget = .selectedCrop
-                    // preparedLocalAlarmAudioSource 가 크롭을 끝낸 파일을 주므로(또는 녹음
-                    // 전체) 0 부터 그 길이만큼만 재생한다.
+                    // 방금 녹음한 것은 0 부터 알람에 쓸 길이만큼만 재생한다.
                     try editorPreviewPlayer.play(
                         url: prepared.url,
                         startMs: 0,
@@ -3263,18 +3213,12 @@ struct AlarmEditorSheet: View {
     func clearLocalAlarmAudio() {
         stopAllEditorPreviews()
         localRecorder.clearLatest()
-        selectedLocalAudioURL = nil
-        selectedLocalAudioName = nil
-        selectedLocalAudioDurationMs = nil
         clearExistingLocalAudio = true
-        localAudioCropStartMs = 0
-        localAudioCropEndMs = Int(AlarmAudioLimits.maxDurationMillis)
         localAudioMessage = "음성 오디오를 지웠어요."
     }
 
     func cachedLocalAudioForSave(existing: LocalAlarmRecord?) async throws -> CachedLocalAlarmAudio {
-        let hasNewSource = selectedLocalAudioURL != nil || localRecorder.latestRecordingURL != nil
-        if hasNewSource {
+        if localRecorder.latestRecordingURL != nil {
             let prepared = try await preparedLocalAlarmAudioSource()
             let data = try Data(contentsOf: prepared.url)
             let cacheKey = AudioCacheStore.computeCacheKey(data)
@@ -3311,24 +3255,15 @@ struct AlarmEditorSheet: View {
     }
 
     func preparedLocalAlarmAudioSource() async throws -> (url: URL, durationMs: Int) {
-        switch localAudioMode {
-        case .record:
-            guard let url = localRecorder.latestRecordingURL else {
-                throw LocalAlarmAudioError.missingSource
-            }
-            let durationMs = localRecorder.latestDurationMs ?? Int(localRecorder.elapsedSeconds * 1000)
-            guard durationMs >= 1_000 else { throw LocalAlarmAudioError.tooShort }
-            guard durationMs <= Int(AlarmAudioLimits.maxDurationMillis + AlarmAudioLimits.durationToleranceMillis) else {
-                throw LocalAlarmAudioError.tooLong
-            }
-            return (url, min(durationMs, Int(AlarmAudioLimits.maxDurationMillis)))
+        guard let url = localRecorder.latestRecordingURL else {
+            throw LocalAlarmAudioError.missingSource
         }
-    }
-
-    func localAudioUploadDisplayName(for url: URL) -> String {
-        // 알람 오디오는 녹음뿐이다 — 이름도 하나다.
-        _ = url
-        return "alarm-recording.m4a"
+        let durationMs = localRecorder.latestDurationMs ?? Int(localRecorder.elapsedSeconds * 1000)
+        guard durationMs >= 1_000 else { throw LocalAlarmAudioError.tooShort }
+        guard durationMs <= Int(AlarmAudioLimits.maxDurationMillis + AlarmAudioLimits.durationToleranceMillis) else {
+            throw LocalAlarmAudioError.tooLong
+        }
+        return (url, min(durationMs, Int(AlarmAudioLimits.maxDurationMillis)))
     }
 
     // MARK: - Error formatting

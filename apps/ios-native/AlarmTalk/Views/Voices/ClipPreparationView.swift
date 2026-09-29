@@ -66,7 +66,7 @@ struct ClipPreparationView: View {
             guard registrationStyle, phase == .done else { return }
             Task {
                 await voiceStudio.loadStockClips(session: auth.session, force: true)
-                await voiceStudio.refresh(session: auth.session, force: true, successMessage: nil)
+                await voiceStudio.refresh(session: auth.session, force: true)
                 onDismiss?()
             }
         }

@@ -65,7 +65,7 @@ final class TestIsolationTests: XCTestCase {
     }
 
     func test_옛_음원_디렉터리도_갈린다() throws {
-        // `cache(tts:)` 가 쓰는 경로다 — 안 가르면 테스트가 사용자의 실제 음원을 덮어쓴다.
+        // `cache(tts:cacheKey:)` 가 쓰는 경로다 — 안 가르면 테스트가 사용자의 실제 음원을 덮어쓴다.
         let legacy = try AudioCacheStore.legacyAudioDirectory()
         XCTAssertTrue(
             legacy.lastPathComponent.hasSuffix(TestIsolation.storageSuffix),

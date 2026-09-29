@@ -13,7 +13,7 @@ import SwiftUI
 ///
 /// ⚠ **버킷 안 개별 문구를 노출하지 말 것.** 예전 iOS 는 스톡 클립 본문을 행으로
 /// 나열해서, 매일 도는 회전 클립 중 하나를 '내가 고른 문구' 로 오해하게 만들었다.
-enum FreeBucket: String, CaseIterable, Identifiable {
+enum FreeBucket: String {
     /// `preset`(기본 인사말)의 버킷 이름. 목소리 미리듣기와 같은 클립을 쓴다 —
     /// 클론도 `RandomPromptContext.preset.bucketCategory` 가 이것이다.
     case greeting
@@ -22,8 +22,6 @@ enum FreeBucket: String, CaseIterable, Identifiable {
     case fortune
     /// 응원(옛 이름 `love`). 저장된 행의 옛 값은 `RandomPromptContext.forBucket` 이 접는다.
     case cheer
-
-    var id: String { rawValue }
 
     /// ⚠ **손으로 적지 않는다.** 문구 종류 목록을 그대로 옮긴 것이다 — 안드로이드
     /// `FreeBucketOrder` 도 `EditorMessageContexts` 에서 유도한다. 2026-09-02 전에는

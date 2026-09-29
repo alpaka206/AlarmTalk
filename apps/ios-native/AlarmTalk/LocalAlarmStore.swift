@@ -329,55 +329,6 @@ final class LocalAlarmStore: ObservableObject {
     }
 
     @discardableResult
-    func copyAlarm(
-        id: String,
-        ownerUserId: String?,
-        nowMillis: Int64 = Int64(Date().timeIntervalSince1970 * 1000),
-        isHoliday: (Date) -> Bool = { LocalHolidayCalendar.isHoliday($0) },
-        idFactory: () -> String = { UUID().uuidString }
-    ) throws -> LocalAlarmRecord {
-        guard let current = record(id: id) else {
-            throw LocalAlarmValidationError.alarmNotFound
-        }
-        let copiedTime = Self.copyTargetTime(hour: current.hour, minute: current.minute)
-        try requireUniqueTime(
-            hour: copiedTime.hour,
-            minute: copiedTime.minute,
-            repeatDaysMask: current.repeatDaysMask,
-            ownerUserId: ownerUserId
-        )
-
-        var copied = current
-        copied.id = idFactory()
-        copied.label = Self.copyLabel(current.label)
-        copied.hour = copiedTime.hour
-        copied.minute = copiedTime.minute
-        copied.fireAtMillis = try AlarmTimeCalculator.nextFireAtMillis(
-            hour: copiedTime.hour,
-            minute: copiedTime.minute,
-            repeatDaysMask: current.repeatDaysMask,
-            holidayOff: current.holidayOff,
-            nowMillis: nowMillis,
-            isHoliday: isHoliday
-        )
-        copied.remoteAlarmId = nil
-        copied.lastSyncedAtMillis = nil
-        copied.remoteDeliveryVersion = nil
-        // 복사본은 받은 알람이 아니다 — 전달 이력을 물려주지 않는다.
-        copied.observedDeliveryVersion = nil
-        copied.syncState = AlarmSyncState.localOnly.rawValue
-        copied.origin = AlarmOrigin.localOwned.rawValue
-        copied.enabled = true
-        copied.state = AlarmRuntimeState.armed.rawValue
-        copied.createdAtMillis = nowMillis
-        copied.updatedAtMillis = nowMillis
-        copied.alarmKitID = nil
-        alarms.append(copied)
-        persist()
-        return copied
-    }
-
-    @discardableResult
     func delete(_ alarm: LocalAlarmRecord) -> String? {
         guard let index = alarms.firstIndex(where: { $0.id == alarm.id }) else {
             return nil
@@ -403,16 +354,6 @@ final class LocalAlarmStore: ObservableObject {
     private static func nonEmptyAudioCacheKey(_ value: String?) -> String? {
         let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return trimmed.isEmpty ? nil : trimmed
-    }
-
-    private static func copyTargetTime(hour: Int, minute: Int) -> (hour: Int, minute: Int) {
-        let totalMinutes = (hour * 60 + minute + 10) % (24 * 60)
-        return (totalMinutes / 60, totalMinutes % 60)
-    }
-
-    private static func copyLabel(_ label: String) -> String {
-        let trimmed = label.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? "복사한 알람" : "\(trimmed) 복사본"
     }
 
     // MARK: State transitions

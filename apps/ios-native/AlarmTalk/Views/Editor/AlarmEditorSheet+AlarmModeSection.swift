@@ -125,19 +125,13 @@ extension AlarmEditorSheet {
                         // 은 무료 단독), 문구 목록도 이제 같다 — 그 안내는 사실이 아니었다.
                     } else {
                         LocalAlarmAudioEditor(
-                            mode: $localAudioMode,
                             isRecording: localRecorder.isRecording,
                             elapsedMs: Int(localRecorder.elapsedSeconds * 1000),
                             hasRecording: localRecorder.latestRecordingURL != nil,
                             existingAudioLabel: existingLocalAudioLabel,
-                            fileName: selectedLocalAudioName,
-                            fileDurationMs: selectedLocalAudioDurationMs,
-                            cropStartMs: $localAudioCropStartMs,
-                            cropEndMs: $localAudioCropEndMs,
                             isPreviewing: editorPreviewPlayer.isPlaying &&
                                 (previewTarget == .selectedCrop || previewTarget == .cachedLocalAudio),
                             message: localAudioMessage,
-                            onModeChange: handleLocalAudioModeChange,
                             onRecord: toggleLocalRecording,
                             onPreview: previewLocalAlarmAudio,
                             onClear: clearLocalAlarmAudio

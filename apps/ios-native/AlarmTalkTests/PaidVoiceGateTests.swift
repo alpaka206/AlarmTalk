@@ -44,13 +44,8 @@ final class PaidVoiceGateTests: XCTestCase {
         BillingSubscription(
             id: "sub-1",
             planId: "plan-1",
-            planGroupId: nil,
             status: status,
-            startsAt: "2026-01-01T00:00:00Z",
-            expiresAt: expiresAt,
-            cancelAtPeriodEnd: nil,
-            canceledAt: nil,
-            nextPlanId: nil
+            expiresAt: expiresAt
         )
     }
 
@@ -60,7 +55,7 @@ final class PaidVoiceGateTests: XCTestCase {
         userPlan: String? = nil
     ) -> AccessSnapshot {
         AccessSnapshot(
-            subscriptionResponse: BillingSubscriptionResponse(subscription: sub, plan: plan, nextPlan: nil),
+            subscriptionResponse: BillingSubscriptionResponse(subscription: sub, plan: plan),
             familyGroup: nil,
             storePlanKey: nil,
             storeEntitlementUntilMillis: nil,
@@ -157,13 +152,11 @@ final class PaidVoiceGateTests: XCTestCase {
     /// 액션을 유도한다. 단 스토어는 여전히 위다.
     func test_bestKnown_ignoresRetainedRowWhenPlanSuspended() {
         let plan = BillingPlan(
-            id: "p", key: "family", name: "가족", planType: "family",
-            periodDays: 30, maxMembers: 4, priceKrw: 5900
+            id: "p", key: "family", name: "가족", planType: "family", maxMembers: 4
         )
         let response = BillingSubscriptionResponse(
             subscription: subscription(status: "active", expiresAt: "2099-01-01T00:00:00Z"),
-            plan: plan,
-            nextPlan: nil
+            plan: plan
         )
         XCTAssertEqual(
             PlanTier.bestKnown(serverSubscription: response, storeTier: .free, userPlan: "free"),
@@ -183,8 +176,7 @@ final class PaidVoiceGateTests: XCTestCase {
     /// 본인 구독이 없어도 커플/가족 그룹 멤버면 유료 목소리를 쓴다.
     func test_groupMemberWithoutOwnSubscription_doesNotDowngrade() {
         let plan = BillingPlan(
-            id: "p", key: "family", name: "가족", planType: "family",
-            periodDays: 30, maxMembers: 4, priceKrw: 5900
+            id: "p", key: "family", name: "가족", planType: "family", maxMembers: 4
         )
         let snap = snapshot(nil, plan: plan)
         XCTAssertFalse(PaidVoiceGate.shouldDowngrade(record: paidVoiceAlarm(), snapshot: snap))
