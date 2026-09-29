@@ -63,6 +63,8 @@ internal suspend fun MainViewModel.refreshClipReadiness(selectedVoiceProfileId: 
         // `stockClips` 를 덮어 **Codex #703 가드를 우회**했다 — 교체 전에 출발한 응답이 공개된
         // 새 목록을 되돌리고, 그 스냅샷으로 준비도를 셌다. 공유 조회를 쓰고, 신선도 창 안이면
         // 받지 않는다(준비 화면을 여는 순간과 관문이 본 목록이 같다).
+        // 막는 것은 FAILED 하나다 — UNCONFIRMED 는 이 요청의 응답이 공개돼 실린 것이라 센다
+        // (`ManifestFlightOutcome.UNCONFIRMED` 주석, Codex #825).
         if (ensureStockClipManifest(ManifestNeed.RECENT) == ManifestFlightOutcome.FAILED) {
             // 못 물어봤다고 '준비 안 됨' 으로 뒤집지 않는다 — 이미 계산해 둔 값을 유지한다.
             // (조회 실패는 조회가 이미 기록했다.)

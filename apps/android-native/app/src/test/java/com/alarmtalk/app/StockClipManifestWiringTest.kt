@@ -82,6 +82,16 @@ class StockClipManifestWiringTest {
             download.contains("ensureStockClipManifest(ManifestNeed.LATEST)"),
         )
         assertFalse(Regex("""\bstockClips\s*=""").containsMatchIn(download))
+
+        // UNCONFIRMED 는 이 요청의 응답이 공개돼 실린 것이다 — 부른 자리는 FAILED 만 막는다(Codex #825).
+        // UNCONFIRMED 까지 막으면 무관한 워커 쓰기 실패 하나로 준비도가 멈추고 클론 구동이 '못 받음' 으로 끝난다.
+        listOf(readiness, withoutLineComments(download)).forEach { consumer ->
+            assertFalse(
+                "UNCONFIRMED 를 실패로 본다 — 메모리에는 이 요청의 응답이 실려 있다(`ManifestFlightOutcome.UNCONFIRMED` 주석).",
+                consumer.contains("ManifestFlightOutcome.UNCONFIRMED"),
+            )
+            assertTrue(consumer.contains("== ManifestFlightOutcome.FAILED"))
+        }
     }
 
     @Test

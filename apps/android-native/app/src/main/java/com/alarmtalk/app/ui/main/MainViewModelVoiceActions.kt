@@ -864,6 +864,8 @@ internal suspend fun MainViewModel.downloadAllPresetClips(
 ): Boolean {
     if (authSession == null) return false
     // 실패 갈래는 조회가 이미 기록했다("Failed to load stock clips"). 목소리 탭 폴링이 이어받는다.
+    // 막는 것은 FAILED 하나다 — UNCONFIRMED 는 생성 **뒤에** 출발한 이 요청의 응답이 실린 것이다
+    // (`ManifestFlightOutcome.UNCONFIRMED` 주석, Codex #825).
     if (ensureStockClipManifest(ManifestNeed.LATEST) == ManifestFlightOutcome.FAILED) return false
     // 클론 사전렌더는 '등록 때 고른 언어' 단일 세트 — 기기 언어로 거르지 않고 전부 받는다
     // (일본어로 만든 목소리를 한국어 기기에서 쓰는 경우에도 클립이 캐시되게).
