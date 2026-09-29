@@ -272,6 +272,28 @@ struct AlarmEditDraft: Equatable {
             && ttsText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
+    /// **직접 입력인데 문구가 비었는가** — 저장하면 만들 문장이 없다.
+    ///
+    /// `AlarmEditorSheet.saveFlow` 가 **권한 확인·한도 조회·생성 요청보다 먼저** 이걸 보고
+    /// 알럿으로 막는다 — 서버를 부르지 않으니 월 한도도 깎이지 않는다. 알람 전용·직접 녹음은
+    /// 문구가 필요 없고, 스톡 클립 목소리의 빈 문구는 테마가 붙기 전 과도기라 '직접 입력' 이
+    /// 아니다. 안드로이드 `emptyMessageBlockReason` 과 같은 판정이다.
+    ///
+    /// 뷰 밖에 두는 것은 테스트에서 입력별로 부르기 위해서다(`MessageContextMemoryTests`).
+    static func manualTextMissing(
+        playMode: AlarmPlayMode,
+        voiceSource: VoiceSource,
+        usesStockClips: Bool,
+        randomPrompt: Bool,
+        selectedBucket: FreeBucket?,
+        ttsText: String
+    ) -> Bool {
+        playMode != .alarmOnly
+            && voiceSource == .ttsProfile
+            && !usesStockClips
+            && hasNoMessageChoice(randomPrompt: randomPrompt, selectedBucket: selectedBucket, ttsText: ttsText)
+    }
+
     /// 계정의 **직전 문구 선택** 하나. 새 알람을 열 때와, 문구가 없던 알람을 목소리 문구로
     /// 옮길 때 같은 규칙으로 잇는다(`CLAUDE.md` 「알람 편집기 기본값 = 직전 선택 유지」).
     enum LastMessageChoice: Equatable {

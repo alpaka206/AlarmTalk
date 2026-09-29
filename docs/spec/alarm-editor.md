@@ -80,7 +80,7 @@
   칸과도 안 맞아 선택 표시가 사라진다.
 - ⚠ **'알람' → '목소리' 로 바꾸면 목소리(TTS) 갈래로 들어가고, 문구가 비어 있으면 직전
   선택을 잇는다**(2026-09-29). 알람 전용 알람은 소스를 '직접 녹음' 으로, 문구 필드를 비워
-  저장하므로 그대로 두면 녹음 카드(iOS)나 **빈 직접 입력**(안드로이드)이 떴다. 잇는 규칙과
+  (iOS 는 테마만 남겨) 저장하므로 그대로 두면 녹음 카드(iOS)나 **빈 직접 입력**(안드로이드)이 떴다. 잇는 규칙과
   예외는 [voice-and-message.md](voice-and-message.md) §4 「적용 대상은 새 알람뿐」.
   빈 직접 입력으로 저장을 누르면 **요청 전에** 알럿으로 막는다(`MANUAL_TEXT_MISSING`).
 
@@ -184,7 +184,7 @@ iOS 26 의 `UIAlertController` 를 시뮬레이터에서 재서 얻은 값이다
 | 한 칸마다 햅틱 | `ui/editor/DraggableTimeWheelColumn.kt` 의 `performWheelTick` | `Views/Editor/TimeWheelPicker.swift` 의 `selectionGenerator` |
 | 오전/오후 | `ui/editor/AmPmWheelColumn.kt` | `Views/Editor/TimeWheelPicker.swift` 의 `AmPmWheelColumn` |
 | 재생 방식 세그먼트 | `ui/editor/AlarmEditorControls.kt` 의 `EditorSegmentedSelector` | `Views/Editor/VoicePlayModePicker.swift` |
-| '알람' → '목소리' 전환(TTS 갈래 + 직전 선택 잇기) | `AlarmEditorScreen` 의 `applyAlarmOutput` → `AlarmEditorState.enterVoiceModeFromAlarmOnly` | `Views/Editor/AlarmEditorSheet+AlarmModeSection.swift` 의 재생 방식 `.onChange` → `AlarmEditorSheet.adoptLastMessageChoiceIfUnset` |
+| '알람' → '목소리' 전환(TTS 갈래 + 직전 선택 잇기) | `AlarmEditorScreen` 의 `applyAlarmOutput` → `AlarmEditorState.applyAlarmOutput` → `enterVoiceModeFromAlarmOnly` | `Views/Editor/AlarmEditorSheet+AlarmModeSection.swift` 의 재생 방식 `.onChange` → `AlarmEditorSheet.adoptLastMessageChoiceIfUnset` |
 | 음성 출력(크기·반복) | `ui/editor/VoiceAudioCard.kt` 의 `VoiceVolumeSelector` | `Views/Editor/AlarmSettingsPanes.swift` 의 `VoiceOutputSettingsPane` |
 | 목록 바텀시트 | `ui/components/WakerModal.kt` 의 `WakerSelectionSheet` | `Views/Common/BottomSheetHost.swift` + `Views/Common/SelectionSheet.swift` |
 | 폼 시트 | `ui/components/WakerModal.kt` 의 `WakerFormSheet` | `Views/Common/FormSheet.swift` |

@@ -129,11 +129,12 @@ internal fun VoiceAudioCard(
     onOpenRandomPromptSettings: () -> Unit,
     onOpenVoiceOutputSettings: () -> Unit,
     /**
-     * 직접 녹음에서 목소리(TTS)로 옮긴 직후 부른다. 녹음 알람에는 문구가 없어 그대로 두면
-     * **빈 직접 입력**으로 보이므로, 편집기가 직전 선택을 잇는다
-     * (`AlarmEditorState.adoptLastMessageChoiceIfUnset` — 문구가 있으면 아무것도 안 한다).
+     * 계정의 직전 문구 선택. 직접 녹음에서 목소리(TTS)로 옮길 때 문구가 비어 있으면 잇는다 —
+     * 녹음 알람에는 문구가 없어 그대로 두면 **빈 직접 입력**으로 보인다
+     * (`AlarmEditorState.selectTtsVoice` — 문구가 있으면 아무것도 안 한다).
      */
-    onAdoptLastMessageChoice: () -> Unit = {},
+    lastMessageContext: String? = null,
+    lastManualText: String? = null,
 ) {
     val context = LocalContext.current
     val visibleVoiceSource = if (editor.voiceSource == VoiceSources.SERVER_TTS) {
@@ -168,15 +169,9 @@ internal fun VoiceAudioCard(
             editor.voiceSource = VoiceSources.LOCAL_AUDIO
             editor.clearTtsMeta()
         } else {
-            val fromRecording = editor.voiceSource == VoiceSources.LOCAL_AUDIO
-            editor.voiceSource = VoiceSources.TTS_PROFILE
-            editor.clearAudio()
-            editor.clearTtsMeta()
-            editor.selectVoiceProfile(option.id)
-            // ⚠ **목소리를 고른 뒤에** 잇는다 — 기본 목소리로 바꾸면 `selectVoiceProfile` 이
-            // 랜덤 여부와 문구를 비우므로, 먼저 이으면 방금 이은 직접 입력 문구가 지워진다.
-            // (이은 종류 `voiceRandomContext` 는 거기서 살아남아 테마로 옮겨 붙는다.)
-            if (fromRecording) onAdoptLastMessageChoice()
+            // 직접 녹음에서 왔고 문구가 비었으면 직전 선택을 잇는다. 판정과 잇기의 **순서**가
+            // 걸려 있어 상태 쪽 한 함수에 둔다(`AlarmEditorState.selectTtsVoice` 주석).
+            editor.selectTtsVoice(option.id, lastMessageContext, lastManualText)
         }
         }
     }

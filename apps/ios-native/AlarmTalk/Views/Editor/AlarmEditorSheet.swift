@@ -1007,18 +1007,17 @@ struct AlarmEditorSheet: View {
     /// **직접 입력인데 문구가 비었는가** — 저장하면 만들 문장이 없다.
     ///
     /// `saveFlow` 가 **권한 확인·한도 조회·생성 요청보다 먼저** 이걸 보고 알럿으로 막는다 —
-    /// 서버를 부르지 않으니 월 한도도 깎이지 않는다. 스톡 클립 목소리는 제외한다: 그쪽의 빈
-    /// 문구는 테마가 붙기 전 과도기라 '직접 입력' 이 아니다(`coerceFreeVoiceTierConstraints`).
-    /// 안드로이드 `emptyMessageBlockReason` 과 같은 판정이다.
+    /// 서버를 부르지 않으니 월 한도도 깎이지 않는다. 판정은 `AlarmEditDraft.manualTextMissing`
+    /// 한 곳에 있다(테스트가 거기서 입력별로 본다). 안드로이드 `emptyMessageBlockReason` 짝.
     var manualTextMissing: Bool {
-        draft.playMode != .alarmOnly
-            && voiceSourceMode == .ttsProfile
-            && !usesStockClips
-            && AlarmEditDraft.hasNoMessageChoice(
-                randomPrompt: voiceStudio.randomPrompt,
-                selectedBucket: selectedFreeBucket,
-                ttsText: voiceStudio.ttsText
-            )
+        AlarmEditDraft.manualTextMissing(
+            playMode: draft.playMode,
+            voiceSource: voiceSourceMode,
+            usesStockClips: usesStockClips,
+            randomPrompt: voiceStudio.randomPrompt,
+            selectedBucket: selectedFreeBucket,
+            ttsText: voiceStudio.ttsText
+        )
     }
 
     /// 랜덤 문구가 켜졌을 때 컨텍스트별 필수 정보가 채워졌는지. 가족 알람은 상대의 준비

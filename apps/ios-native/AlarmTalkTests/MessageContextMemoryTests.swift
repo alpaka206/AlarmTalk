@@ -140,6 +140,41 @@ final class MessageContextMemoryTests: XCTestCase {
         )
     }
 
+    /// **빈 직접 입력은 서버를 부르기 전에 막는다** — `saveFlow` 첫머리가 보는 판정 그대로
+    /// (`AlarmEditorSheet.manualTextMissing` → `AlarmEditDraft.manualTextMissing`).
+    /// 안드로이드 `emptyMessageBlockReason` 짝.
+    func testEmptyManualTextIsCaughtBeforeTheServer() {
+        func missing(
+            playMode: AlarmPlayMode = .voiceOnly,
+            source: VoiceSource = .ttsProfile,
+            stock: Bool = false,
+            random: Bool = false,
+            bucket: FreeBucket? = nil,
+            text: String = ""
+        ) -> Bool {
+            AlarmEditDraft.manualTextMissing(
+                playMode: playMode,
+                voiceSource: source,
+                usesStockClips: stock,
+                randomPrompt: random,
+                selectedBucket: bucket,
+                ttsText: text
+            )
+        }
+        // 등록(클론) 목소리 + 빈 직접 입력 → 막는다(공백만 있어도 빈 것이다).
+        XCTAssertTrue(missing())
+        XCTAssertTrue(missing(text: "   "))
+        // 문구가 하나라도 있으면 막지 않는다.
+        XCTAssertFalse(missing(text: "일어나"))
+        XCTAssertFalse(missing(random: true))
+        XCTAssertFalse(missing(bucket: .medication))
+        // 알람 전용·직접 녹음은 문구가 필요 없다.
+        XCTAssertFalse(missing(playMode: .alarmOnly))
+        XCTAssertFalse(missing(source: .localAudio))
+        // 스톡 클립 목소리의 빈 문구는 테마가 붙기 전 과도기다 — '직접 입력' 이 아니다.
+        XCTAssertFalse(missing(stock: true))
+    }
+
     /// `AlarmEditorSheet.loadVoicePromptState` 의 복원식과 같은 순서.
     private func restoreContext(storedContext: String?, bucketId: String?) -> RandomPromptContext {
         storedContext.nilIfBlank.map(RandomPromptContext.normalized)

@@ -350,9 +350,7 @@ internal class AlarmEditorState(
             voiceText = manualText
         } else {
             voiceRandomPrompt = true
-            voiceRandomContext = normalizedRandomPromptContext(
-                lastMessageContext?.takeIf { it.isNotBlank() } ?: DefaultRandomPromptContext,
-            )
+            voiceRandomContext = adoptedRandomContext(lastMessageContext)
         }
         clearTtsMeta()
         followsLastMessageChoice = true
@@ -368,6 +366,78 @@ internal class AlarmEditorState(
         clearTtsMeta()
         adoptLastMessageChoiceIfUnset(lastMessageContext, lastManualText)
     }
+
+    /**
+     * 편집기의 두 스위치(목소리·알람음)를 재생 방식에 반영한다 — `AlarmEditorScreen.applyAlarmOutput`
+     * 이 그대로 넘긴다. 상태만 바꾸는 부분이라 여기 두고, '알람' → '목소리' 연결을 테스트가 본다.
+     */
+    fun applyAlarmOutput(
+        voice: Boolean,
+        sound: Boolean,
+        signedIn: Boolean,
+        lastMessageContext: String?,
+        lastManualText: String?,
+    ) {
+        val wasAlarmOnly = playMode == AlarmPlayModes.ALARM_ONLY
+        playMode = if (voice) AlarmPlayModes.VOICE_ONLY else AlarmPlayModes.ALARM_ONLY
+        // ⚠ **'목소리만' 에서는 alarmSoundEnabled 를 끄지 않는다.**
+        // 톤을 안 트는 것은 playMode 가 이미 표현한다(표시도 파생값이라 화면은 그대로다).
+        // 여기서 0 으로 박으면, 나중에 유료 만료·목소리 삭제로 그 알람이 강등됐을 때
+        // 톤 폴백까지 함께 막혀 **소리가 하나도 안 나는 알람**이 된다 — 폴백이 가장 필요한
+        // 바로 그 상황에서만 꺼진다. 그 값은 '알람음을 쓸 때의 설정' 으로만 둔다.
+        if (sound) {
+            alarmSoundEnabled = true
+        } else if (!voice) {
+            alarmSoundEnabled = false
+        }
+        if (voice && !signedIn) {
+            voiceSource = VoiceSources.LOCAL_AUDIO
+            clearTtsMeta()
+        } else if (voice && wasAlarmOnly) {
+            // ⚠ **알람 전용 알람에는 문구가 없다** — 저장할 때 문구 필드를 전부 비운다
+            // ([toDraft]). 그대로 목소리로 옮기면 '빈 직접 입력' 으로 보이고 저장도 못 한다
+            // (2026-09-29 실기기 보고). 비어 있으면 **새 알람과 같은 규칙으로** 직전 선택을
+            // 잇는다 — 이미 고른 문구가 있으면 건드리지 않는다.
+            enterVoiceModeFromAlarmOnly(lastMessageContext, lastManualText)
+        }
+    }
+
+    /**
+     * 목소리 선택 시트에서 **목소리(TTS)** 를 골랐다 — `VoiceAudioCard` 가 부른다.
+     * 직접 녹음에서 왔고 문구가 하나도 없으면 직전 선택을 잇는다(알람 전용 → 목소리와 같은 규칙).
+     *
+     * ⚠ **순서가 둘이다**(2026-09-29 리뷰):
+     *  - **잇기 판정은 목소리를 바꾸기 전에.** 기본 목소리로 바꾸면 [selectVoiceProfile] 이 랜덤·
+     *    문구·테마를 비운다 — 그 뒤에 보면 테마가 있던 알람도 '비었다' 로 읽혀 계정의 직전
+     *    선택으로 덮인다. 원래는 거기서 살아남은 `voiceRandomContext` 로 편집기가 **같은 테마**를
+     *    다시 붙인다.
+     *  - **잇기는 바꾼 뒤에.** 먼저 이으면 방금 이은 직접 입력 문구를 [selectVoiceProfile] 이 지운다.
+     */
+    fun selectTtsVoice(profileId: String, lastMessageContext: String?, lastManualText: String?) {
+        val adopts = adoptsLastMessageChoiceOnTtsPick()
+        voiceSource = VoiceSources.TTS_PROFILE
+        clearAudio()
+        clearTtsMeta()
+        selectVoiceProfile(profileId)
+        if (adopts) adoptLastMessageChoiceIfUnset(lastMessageContext, lastManualText)
+    }
+
+    /**
+     * [selectTtsVoice] 가 켤 **랜덤 종류** — 잇지 않거나 직접 입력 문구를 이으면 null.
+     *
+     * 목소리 선택 관문(`needsClipPreparationForVoicePick`)은 목소리를 바꾸기 **전에** 돈다. 그때
+     * 지금 값(녹음 알람이라 랜덤 꺼짐)으로 물으면 "클립이 필요 없다" 며 통과시킨 직후 잇기가
+     * 랜덤을 켜 클립이 필요한 상태로 바뀐다 — 그래서 **바뀔 값**을 따로 내준다.
+     */
+    fun randomContextAdoptedByTtsPick(lastMessageContext: String?, lastManualText: String?): String? =
+        if (adoptsLastMessageChoiceOnTtsPick() && lastManualText.isNullOrBlank()) {
+            adoptedRandomContext(lastMessageContext)
+        } else {
+            null
+        }
+
+    private fun adoptsLastMessageChoiceOnTtsPick(): Boolean =
+        voiceSource == VoiceSources.LOCAL_AUDIO && hasNoMessageChoice()
 
     /**
      * **사용자가 고른 문구가 테마(버킷)인가 — 재생 방식과 무관하다.**
@@ -676,6 +746,10 @@ internal fun normalizedRandomPromptContext(context: String): String =
         "love" -> "cheer"
         else -> if (RandomPromptContexts.any { (key, _) -> key == context }) context else DefaultRandomPromptContext
     }
+
+/** 직전 선택을 이을 때 켤 문구 종류 — 기록이 없으면 '기본 인사말'(preset). */
+private fun adoptedRandomContext(lastMessageContext: String?): String =
+    normalizedRandomPromptContext(lastMessageContext?.takeIf { it.isNotBlank() } ?: DefaultRandomPromptContext)
 
 internal fun ttsCategoryForRandomContext(context: String?): String =
     when (normalizedRandomPromptContext(context ?: DefaultRandomPromptContext)) {

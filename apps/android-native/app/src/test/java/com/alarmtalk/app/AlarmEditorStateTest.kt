@@ -7,6 +7,7 @@ import com.alarmtalk.app.data.AlarmStates
 import com.alarmtalk.app.data.AlarmSyncStates
 import com.alarmtalk.app.data.CachedAlarmAudio
 import com.alarmtalk.app.data.DefaultAlarmSounds
+import com.alarmtalk.app.data.SYSTEM_VOICE_ID_PREFIX
 import com.alarmtalk.app.data.SnoozeRepeatLimits
 import com.alarmtalk.app.data.VibrationPatterns
 import com.alarmtalk.app.data.VoiceSources
@@ -541,8 +542,46 @@ class AlarmEditorStateTest {
     }
 
     /**
+     * **'알람' → '목소리' 스위치가 실제로 잇기까지 닿는가** — 편집기 스위치가 부르는 함수 그대로
+     * (`AlarmEditorScreen.applyAlarmOutput` → `AlarmEditorState.applyAlarmOutput`).
+     * 목소리 → 목소리(알람음 스위치만 만짐)는 잇지 않는다 — 알람에서 올 때만이다.
+     */
+    @Test
+    fun voiceSwitchFromAlarmOnlyAdoptsThroughTheEditorSwitch() {
+        val editor = AlarmEditorState.from(alarm = alarmOnlyEntity())
+
+        editor.applyAlarmOutput(
+            voice = true,
+            sound = false,
+            signedIn = true,
+            lastMessageContext = "medication",
+            lastManualText = null,
+        )
+
+        assertEquals(AlarmPlayModes.VOICE_ONLY, editor.playMode)
+        assertEquals(VoiceSources.TTS_PROFILE, editor.voiceSource)
+        assertTrue(editor.voiceRandomPrompt)
+        assertEquals("medication", editor.voiceRandomContext)
+        assertTrue(editor.followsLastMessageChoice)
+
+        // 이미 목소리인 알람에서 알람음 스위치만 만지면 잇기를 타지 않는다.
+        val voiceEditor = AlarmEditorState.from(
+            alarm = alarmOnlyEntity().copy(playMode = AlarmPlayModes.VOICE_ONLY, voiceSource = VoiceSources.TTS_PROFILE),
+        )
+        voiceEditor.applyAlarmOutput(
+            voice = true,
+            sound = true,
+            signedIn = true,
+            lastMessageContext = "medication",
+            lastManualText = null,
+        )
+        assertFalse(voiceEditor.followsLastMessageChoice)
+        assertFalse(voiceEditor.voiceRandomPrompt)
+    }
+
+    /**
      * **직접 녹음 알람도 문구가 없다** — 목소리로 옮길 때 같은 이어받기를 탄다
-     * (`VoiceAudioCard` 의 `onAdoptLastMessageChoice`).
+     * (`VoiceAudioCard` 가 부르는 `AlarmEditorState.selectTtsVoice`).
      */
     @Test
     fun recordingAlarmMovedToTtsVoiceTakesTheLastMessageKind() {
@@ -555,15 +594,83 @@ class AlarmEditorStateTest {
         )
         assertEquals(VoiceSources.LOCAL_AUDIO, editor.voiceSource)
 
-        // 목소리 선택 시트가 하는 순서 그대로(`VoiceAudioCard.applyVoiceSelection`).
-        editor.voiceSource = VoiceSources.TTS_PROFILE
-        editor.clearAudio()
-        editor.clearTtsMeta()
-        editor.selectVoiceProfile("clone-profile")
-        assertTrue(editor.adoptLastMessageChoiceIfUnset(lastMessageContext = "wake_fortune", lastManualText = null))
+        editor.selectTtsVoice("clone-profile", lastMessageContext = "wake_fortune", lastManualText = null)
 
+        assertEquals(VoiceSources.TTS_PROFILE, editor.voiceSource)
         assertFalse(editor.isManualForDisplay())
         assertEquals("wake_fortune", editor.voiceRandomContext)
+        assertTrue(editor.followsLastMessageChoice)
+    }
+
+    /**
+     * 녹음 알람 → **기본 목소리**로 옮겨도 직전 **직접 입력 문구**가 살아남는다 — 잇기가
+     * `selectVoiceProfile`(기본 목소리면 문구를 비운다) **뒤**에 돌기 때문이다.
+     */
+    @Test
+    fun recordingAlarmMovedToSystemVoiceKeepsTheAdoptedManualText() {
+        val editor = AlarmEditorState.from(
+            alarm = alarmOnlyEntity().copy(playMode = AlarmPlayModes.VOICE_ONLY),
+        )
+
+        editor.selectTtsVoice(systemVoiceB, lastMessageContext = "cheer", lastManualText = "회의 자료 챙겨")
+
+        assertEquals("회의 자료 챙겨", editor.voiceText)
+        assertFalse(editor.voiceRandomPrompt)
+    }
+
+    /**
+     * **테마가 있던 알람은 직접 녹음을 거쳐 다른 기본 목소리로 가도 자기 테마를 지킨다**
+     * (2026-09-29 리뷰). 잇기 판정을 `selectVoiceProfile` **뒤**에 하면, 기본 목소리 교체가
+     * 테마·랜덤·문구를 비운 상태를 '문구 없음' 으로 읽어 계정의 직전 선택으로 덮었다 —
+     * 유료 사용자의 직전 선택이 직접 입력이면 날씨 테마 알람이 **직접 입력 + 새 목소리**가
+     * 돼, 폰에 없는 음성이라 저장 때 서버를 부르고 한도가 깎였다.
+     */
+    @Test
+    fun themeAlarmPassingThroughRecordingKeepsItsThemeOnAnotherSystemVoice() {
+        val editor = AlarmEditorState.from(
+            alarm = bucketAlarmEntity(voiceRandomContext = "wake_weather", bucketId = "weather")
+                .copy(voiceProfileId = systemVoiceA),
+        )
+        // 목소리 행에서 '직접 녹음' 을 골랐다(`VoiceAudioCard` 의 LOCAL_AUDIO 갈래) — 테마는 남는다.
+        editor.clearAudio()
+        editor.voiceSource = VoiceSources.LOCAL_AUDIO
+        editor.clearTtsMeta()
+
+        editor.selectTtsVoice(systemVoiceB, lastMessageContext = "medication", lastManualText = "딴 문구")
+
+        // 기본 목소리 교체가 비운 뒤 편집기가 이 종류로 **같은 테마**를 다시 붙인다.
+        assertEquals("wake_weather", editor.voiceRandomContext)
+        assertFalse(editor.followsLastMessageChoice)
+        assertEquals("", editor.voiceText)
+        assertFalse(editor.voiceRandomPrompt)
+    }
+
+    /**
+     * 관문 1/3 은 **바뀔 값**으로 판정한다 — 녹음 알람을 아직 클립이 없는 등록 목소리로
+     * 옮기면, 잇기가 켤 종류(운세)로 막고 준비 화면으로 보낸다. 지금 값(랜덤 꺼짐)으로
+     * 물으면 통과시킨 직후 클립이 필요한 상태가 됐다.
+     */
+    @Test
+    fun voicePickGateSeesTheKindThatWillBeAdopted() {
+        val gate = ClipGate(
+            stockClips = emptyList(),
+            expectedVariants = com.alarmtalk.app.network.ExpectedVariantCounts(clone = mapOf("fortune" to 3)),
+            appVoiceLanguage = "ko",
+        )
+        val recording = AlarmEditorState.from(alarm = alarmOnlyEntity().copy(playMode = AlarmPlayModes.VOICE_ONLY))
+
+        assertTrue(
+            needsClipPreparationForVoicePick(gate, recording, cloneVoice, "wake_fortune", null),
+        )
+        // 직접 입력 문구를 잇게 되면 클립이 필요 없다.
+        assertFalse(
+            needsClipPreparationForVoicePick(gate, recording, cloneVoice, "wake_fortune", "회의 자료 챙겨"),
+        )
+        // 이미 목소리 갈래면 잇기가 없다 — 지금 값(직접 입력)대로다.
+        recording.voiceSource = VoiceSources.TTS_PROFILE
+        assertFalse(
+            needsClipPreparationForVoicePick(gate, recording, cloneVoice, "wake_fortune", null),
+        )
     }
 
     /**
@@ -594,6 +701,10 @@ class AlarmEditorStateTest {
         editor.adoptLastMessageChoiceIfUnset(lastMessageContext = null, lastManualText = null)
         assertNull(emptyMessageBlockReason(editor, usesStockClips = false))
     }
+
+    private val systemVoiceA = SYSTEM_VOICE_ID_PREFIX + "000000000101"
+    private val systemVoiceB = SYSTEM_VOICE_ID_PREFIX + "000000000102"
+    private val cloneVoice = "clone-profile"
 
     /** `toDraft` 가 알람 전용일 때 남기는 모양 그대로의 행 — 문구 필드가 전부 비어 있다. */
     private fun alarmOnlyEntity() = bucketAlarmEntity(voiceRandomContext = null, bucketId = "unused").copy(
