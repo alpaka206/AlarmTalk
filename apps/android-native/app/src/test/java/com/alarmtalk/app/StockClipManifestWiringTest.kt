@@ -59,7 +59,7 @@ class StockClipManifestWiringTest {
         val ticket = body.indexOf("StockClipManifestStore.beginFetch()")
         val fetch = body.indexOf("api.getStockClips(")
         val save = body.indexOf("StockClipManifestStore.save(")
-        val apply = body.indexOf("applyStockClipManifest(response)")
+        val apply = body.indexOf("applyStockClipManifest(response, ticket)")
         assertTrue("표를 요청 **전에** 뽑지 않는다.", ticket in 0 until fetch)
         assertTrue("응답을 공개(`save`)하지 않는다.", save > fetch)
         assertTrue("공개가 확인되기 **전에** 메모리에 싣는다(Codex #703 — 순서).", apply > save)
@@ -88,35 +88,42 @@ class StockClipManifestWiringTest {
     fun aSupersededFetchTrustsTheWinnerOnlyWhenItWasPublished() {
         val body = functionBody(voiceActions, "private suspend fun MainViewModel.fetchAndPublishStockClips(")
         assertTrue(
-            "물러난 회차가 이긴 것을 이어받는 길(`adoptPublishedWinner`)을 거치지 않는다.",
-            body.contains("PublishResult.SUPERSEDED -> adoptPublishedWinner(owner)"),
+            "물러난 회차가 디스크의 이긴 것을 따라가지 않거나, 확인하지 못했을 때 실패로 돌리지 않는다.",
+            Regex("""PublishResult\.SUPERSEDED ->\s*if \(syncStockClipsToPublished\(owner\)\) ManifestFlightOutcome\.SUPERSEDED else ManifestFlightOutcome\.FAILED""")
+                .containsMatchIn(body),
         )
-        val adopt = functionBody(voiceActions, "private suspend fun MainViewModel.adoptPublishedWinner(")
+        val sync = functionBody(voiceActions, "internal suspend fun MainViewModel.syncStockClipsToPublished(")
         assertTrue(
-            "물러난 회차가 이긴 것이 공개됐는지 보지 않고 디스크를 싣는다(Codex #825) — 더 새 표의 " +
-                "쓰기가 실패했으면 디스크는 옛 목록이다. 확인과 읽기를 한 잠금에서 하는 " +
-                "`loadPublishedWinner` 를 쓸 것.",
-            adopt.contains("StockClipManifestStore.loadPublishedWinner("),
+            "이긴 것이 공개됐는지 보지 않고 디스크를 싣는다(Codex #825) — 더 새 표의 쓰기가 실패했으면 " +
+                "디스크는 옛 목록이다. 확인과 읽기를 한 잠금에서 하는 `loadPublishedWinner` 를 쓸 것.",
+            sync.contains("StockClipManifestStore.loadPublishedWinner("),
         )
-        assertFalse("물러난 회차가 확인 없이 `load` 로 디스크를 읽는다.", adopt.contains("StockClipManifestStore.load("))
+        assertFalse("확인 없이 `load` 로 디스크를 읽는다.", sync.contains("StockClipManifestStore.load("))
         assertTrue(
-            "이긴 것을 확인하지 못한 superseded 가 실패로 돌아가지 않는다.",
-            adopt.contains("return ManifestFlightOutcome.FAILED"),
+            "이긴 것을 실은 뒤 교체 수리·대기 프리페치를 돌리지 않는다(Codex #825 P1).",
+            sync.contains("afterStockClipManifestApplied(winner.response)"),
         )
     }
 
     @Test
-    fun aPublishedResponseIsRecheckedRightBeforeItIsApplied() {
+    fun memoryFollowsEveryPublicationInTicketOrder() {
+        val apply = functionBody(voiceActions, "private fun MainViewModel.applyStockClipManifest(")
+        assertTrue(
+            "메모리 싣기가 표 순서를 지키지 않는다 — 늦게 돌아온 앞선 응답이 더 새 공개본을 덮는다(Codex #825).",
+            apply.contains("if (ticket != 0L && ticket <= stockClipManifestAppliedTicket) return false"),
+        )
         val body = functionBody(voiceActions, "private suspend fun MainViewModel.fetchAndPublishStockClips(")
         val published = body.substring(body.indexOf("PublishResult.PUBLISHED ->"))
-        val recheck = published.indexOf("StockClipManifestStore.isStillPublished(ticket)")
-        val apply = published.indexOf("applyStockClipManifest(response)")
+        assertTrue(published.contains("if (applyStockClipManifest(response, ticket)) afterStockClipManifestApplied(response)"))
         assertTrue(
-            "공개하고 메인으로 돌아온 뒤 **싣기 직전에** 아직 마지막 공개본인지 다시 보지 않는다(Codex #825) — " +
-                "그 사이 워커가 더 새 것을 공개했으면 지나간 응답을 싣고 신선도로 센다.",
-            recheck in 0 until apply,
+            "공개하고 돌아오는 사이 워커가 더 새 것을 공개했으면 곧바로 따라가지 않는다(Codex #825).",
+            published.contains("latestPublishedTicket()") && published.contains("syncStockClipsToPublished(owner)"),
         )
-        assertTrue(published.substring(recheck, apply).contains("return adoptPublishedWinner(owner)"))
+        val viewModel = withoutLineComments(readSource("ui/main/MainViewModel.kt"))
+        assertTrue(
+            "뷰모델이 다른 쪽(워커)의 공개를 따라가지 않는다 — 워커는 메모리를 모른다(Codex #825).",
+            viewModel.contains("StockClipManifestStore.publishedTickets.collect"),
+        )
     }
 
     @Test
@@ -239,9 +246,11 @@ class StockClipManifestWiringTest {
         val newer = StockClipManifestStore.beginFetch()
         assertEquals(published, StockClipManifestStore.save(context, manifest("new"), newer, "u1"))
         assertEquals(superseded, StockClipManifestStore.save(context, manifest("old"), older, "u1"))
-        assertTrue(StockClipManifestStore.isStillPublished(newer))
-        assertFalse(StockClipManifestStore.isStillPublished(older))
-        assertEquals("new", StockClipManifestStore.loadPublishedWinner(context, "u1")?.clips?.single()?.messageId)
+        assertEquals(newer, StockClipManifestStore.latestPublishedTicket())
+        assertEquals("공개는 따라가는 쪽에 표로 알린다.", newer, StockClipManifestStore.publishedTickets.value)
+        val winner = StockClipManifestStore.loadPublishedWinner(context, "u1")
+        assertEquals(newer, winner?.ticket)
+        assertEquals("new", winner?.response?.clips?.single()?.messageId)
         assertNull("남의 계정은 이긴 것을 이어받지 못한다(임자 대조).", StockClipManifestStore.loadPublishedWinner(context, "u2"))
 
         // 2) 뒤에 출발한 쪽의 **쓰기가 실패** → 수위선은 올랐지만 디스크는 앞 목록이다.
@@ -257,8 +266,9 @@ class StockClipManifestWiringTest {
             tmp.deleteRecursively()
         }
         assertEquals(superseded, StockClipManifestStore.save(context, manifest("old2"), older2, "u1"))
-        // 디스크의 마지막 공개본은 여전히 1) 의 것이다.
-        assertTrue(StockClipManifestStore.isStillPublished(newer))
+        // 가장 최근에 본 표(실패한 쓰기)의 응답은 공개되지 않았다 — '확인된 마지막 공개본' 은 없다.
+        assertNull(StockClipManifestStore.latestPublishedTicket())
+        assertEquals("실패한 쓰기는 알리지 않는다.", newer, StockClipManifestStore.publishedTickets.value)
         assertNull(
             "더 새 표의 쓰기가 실패했는데 옛 목록을 이긴 것으로 돌려줬다.",
             StockClipManifestStore.loadPublishedWinner(context, "u1"),
@@ -268,11 +278,11 @@ class StockClipManifestWiringTest {
         val beforeSignOut = StockClipManifestStore.beginFetch()
         val freshTicket = StockClipManifestStore.beginFetch()
         assertEquals(published, StockClipManifestStore.save(context, manifest("fresh"), freshTicket, "u1"))
-        assertTrue(StockClipManifestStore.isStillPublished(freshTicket))
-        assertFalse("다음 공개가 오면 앞 공개본은 더 이상 마지막이 아니다.", StockClipManifestStore.isStillPublished(newer))
-        assertEquals("fresh", StockClipManifestStore.loadPublishedWinner(context, "u1")?.clips?.single()?.messageId)
+        assertEquals(freshTicket, StockClipManifestStore.latestPublishedTicket())
+        assertEquals("fresh", StockClipManifestStore.loadPublishedWinner(context, "u1")?.response?.clips?.single()?.messageId)
         StockClipManifestStore.invalidateOutstandingTickets()
         assertEquals(superseded, StockClipManifestStore.save(context, manifest("late"), beforeSignOut, "u1"))
+        assertNull(StockClipManifestStore.latestPublishedTicket())
         assertNull(StockClipManifestStore.loadPublishedWinner(context, "u1"))
     }
 

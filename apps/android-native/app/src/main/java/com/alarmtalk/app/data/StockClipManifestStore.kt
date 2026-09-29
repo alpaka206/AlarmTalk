@@ -5,6 +5,8 @@ import com.alarmtalk.app.core.AlarmTalkLog
 import com.alarmtalk.app.network.StockClipListResponse
 import com.google.gson.Gson
 import java.io.File
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 
 /**
  * 스톡 클립 매니페스트(클립 목록 + 카테고리별 기대 개수)를 **디스크에 남긴다.**
@@ -60,24 +62,37 @@ object StockClipManifestStore {
 
     /**
      * 마지막으로 **실제로 공개된** 응답의 표. 쓰기에 실패한 응답은 여기 오르지 않는다.
-     * 쓰기는 [revisionLock] 안에서만 하고, [isStillPublished] 는 잠그지 않고 읽는다(메인에서 불린다).
+     * 쓰기는 [revisionLock] 안에서만 하고, [latestPublishedTicket] 는 잠그지 않고 읽는다(메인에서 불린다).
      */
     @Volatile
     private var publishedTicket: Long = 0
 
     /**
-     * [fetchTicket] 의 응답이 **아직 디스크의 마지막 공개본인가.** 공개(`save` = PUBLISHED)를 받은 뒤
-     * 메모리에 싣기 **직전에** 다시 본다(Codex #825) — `save` 가 끝나고 메인으로 돌아오는 사이
-     * 워커가 더 새 응답을 공개하면, 그걸 모르는 채 이 응답을 실어 신선도로까지 세게 된다.
+     * 공개가 일어날 때마다 그 표를 흘린다 — **누가 공개했든**(전경·프리페치 워커·접근권 워커).
      *
-     * 잠그지 않는다 — 메인 스레드에서 부르므로 워커가 쓰는 동안 기다리지 않게. 값은 오르기만 한다.
+     * 뷰모델 메모리(`stockClips`)가 이걸 보고 **디스크의 공개본을 표 순서로 따라간다**(Codex #825).
+     * 워커는 메모리를 모르므로, 따라가지 않으면 전경이 자기 응답을 실은 **직후** 워커가 더 새 것을
+     * 공개해도 메모리는 옛 목록(교체 이전 주소)에 머문다 — 준비도·클론 다운로드가 그걸 읽는다.
      */
-    fun isStillPublished(fetchTicket: Long): Boolean = publishedTicket == fetchTicket
+    private val publications = MutableStateFlow(0L)
+    val publishedTickets: StateFlow<Long> get() = publications
 
     /**
-     * 물러난(SUPERSEDED) 회차가 이어받을 **이긴 매니페스트** — 가장 최근에 본 표의 응답이 **실제로
-     * 공개됐을 때만** 읽어 준다(임자 대조 포함). 아니면 null(스펙 「공개 경합의 규칙」의 '새로
-     * 받았는가', iOS `publishedNewerResponse`).
+     * 가장 최근에 본 표의 응답이 **실제로 공개됐으면** 그 표, 아니면 null. 잠그지 않는다 — 메인에서
+     * 불리고, 값은 오르기만 한다. 확정 판단(싣기)은 [loadPublishedWinner] 가 한 잠금 안에서 한다.
+     */
+    fun latestPublishedTicket(): Long? {
+        val published = publishedTicket
+        return published.takeIf { it > 0 && it == seenTicket }
+    }
+
+    /** 디스크의 공개본과 그 표. */
+    data class PublishedManifest(val ticket: Long, val response: StockClipListResponse)
+
+    /**
+     * **디스크의 마지막 공개본** — 가장 최근에 본 표의 응답이 **실제로 공개됐을 때만** 읽어 준다(임자
+     * 대조 포함). 아니면 null(스펙 「공개 경합의 규칙」의 '새로 받았는가', iOS `publishedNewerResponse`).
+     * 물러난(SUPERSEDED) 회차가 이긴 것을 이어받을 때, 그리고 메모리가 다른 쪽의 공개를 따라갈 때 쓴다.
      *
      * ⚠ 물러났다는 것만으로는 **더 새 매니페스트가 디스크에 있다는 보장이 없다**(Codex #825).
      * 더 새 표의 쓰기가 실패해도 수위선은 오르고(위 [seenTicket] 주석), 로그아웃·계정 전환의
@@ -85,14 +100,16 @@ object StockClipManifestStore {
      * '받았다' 로 세면 준비도·클론 다운로드가 낡은 목록으로 돈다.
      *
      * ⚠ **확인과 읽기를 한 임계구역에서** 한다(Codex #825). 둘을 나누면 그 틈에 더 새 표의 쓰기가
-     * 실패해 수위선만 오르고, 이미 '공개됨' 으로 확인한 뒤라 옛 목록을 이긴 것으로 읽는다.
+     * 실패해 수위선만 오르고, 이미 '공개됨' 으로 확인한 뒤라 옛 목록을 이긴 것으로 읽는다. 읽은 뒤에
+     * 더 새 공개가 오면 [publishedTickets] 가 다시 알린다 — 표가 함께 오므로 싣는 쪽이 순서를 지킨다.
      *
      * 메인 스레드에서 부르지 말 것 — [load] 와 같다.
      */
-    fun loadPublishedWinner(context: Context, userId: String): StockClipListResponse? =
+    fun loadPublishedWinner(context: Context, userId: String): PublishedManifest? =
         synchronized(revisionLock) {
             if (seenTicket <= 0 || publishedTicket != seenTicket) return null
-            load(context, userId, requireOwner = true)
+            val response = load(context, userId, requireOwner = true) ?: return null
+            PublishedManifest(publishedTicket, response)
         }
 
     /** 조회를 시작하며 표를 뽑는다. 그 응답을 저장할 때 [save] 에 그대로 낸다. */
@@ -241,6 +258,8 @@ object StockClipManifestStore {
                     .remove(QUARANTINE_KEY)
                     .commit()
             }
+            // 파일·임자까지 남긴 **뒤에** 알린다 — 따라가는 쪽이 읽을 때 임자 대조가 통과하게.
+            publications.value = fetchTicket
             return PublishResult.PUBLISHED
         }
 

@@ -599,6 +599,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     /** 메모리에 매니페스트를 실은 횟수. 디스크 시드가 그사이 실린 서버 응답을 덮지 않게 본다. */
     internal var stockClipManifestApplyCount: Int = 0
 
+    /**
+     * 메모리에 실린 공개본의 표(0 = 디스크 시드이거나 아직 없음). 메모리는 이 표보다 **앞선 것으로
+     * 되돌아가지 않는다**(`applyStockClipManifest`, Codex #825).
+     */
+    internal var stockClipManifestAppliedTicket: Long = 0L
+
     /** 디스크 시드(메인 밖에서 읽는다). 비어 있을 때 연달아 불려도 한 번만 읽는다. */
     internal var stockClipSeedJob: kotlinx.coroutines.Job? = null
 
@@ -611,6 +617,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     /** 목소리별 클립 받기 — 드라이브와 목소리 탭이 나눠 쓴다(`cacheVoiceClips`). */
     internal val voiceClipDownloads = VoiceClipDownloads()
+
+    init {
+        // ⚠ **메모리는 디스크의 공개본을 따라간다 — 누가 공개했든**(Codex #825). 프리페치·접근권 워커는
+        // 매니페스트를 따로 받아 공개하지만(의도) 뷰모델 메모리는 모른다. 따라가지 않으면 전경이 자기
+        // 응답을 실은 직후 워커가 더 새 것을 공개해도 준비도·클론 다운로드가 교체 이전 목록을 읽는다.
+        // `Dispatchers.Main`(즉시 아님)이라 생성이 끝난 뒤에 돈다 — 아래에 선언된 상태를 건드리므로.
+        viewModelScope.launch(Dispatchers.Main) {
+            com.alarmtalk.app.data.StockClipManifestStore.publishedTickets.collect { ticket ->
+                if (ticket > stockClipManifestAppliedTicket) followPublishedStockClips()
+            }
+        }
+    }
 
     var socialBusy by mutableStateOf(false)
         internal set

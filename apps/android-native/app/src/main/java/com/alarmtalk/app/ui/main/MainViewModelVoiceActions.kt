@@ -1020,15 +1020,80 @@ private fun MainViewModel.seedStockClipsFromDisk(userId: String) {
         } ?: return@launch
         if (stockClipManifestApplyCount != appliedBefore) return@launch
         if (authSession?.user?.id != userId || stockClips.isNotEmpty()) return@launch
-        applyStockClipManifest(cached)
+        // 시드는 표가 없다(0) — 뒤에 오는 공개본은 무엇이든 이걸 덮는다.
+        applyStockClipManifest(cached, ticket = 0L)
     }
 }
 
-/** 메모리(화면·판정의 권위)에 싣는다. 디스크 권위가 받아 준 것만 여기로 온다. */
-private fun MainViewModel.applyStockClipManifest(manifest: com.alarmtalk.app.network.StockClipListResponse) {
+/**
+ * 메모리(화면·판정의 권위)에 싣는다. 디스크 권위가 받아 준 것만 여기로 온다.
+ *
+ * ⚠ **표 순서로만 앞으로 간다**(Codex #825). 전경의 응답·다른 쪽 공개 따라가기가 섞여 도착하므로,
+ * 이미 실린 것보다 앞선(작은) 표는 버린다 — 메모리가 교체 이전 목록으로 되돌아가지 않게.
+ * @return 실었는가.
+ */
+private fun MainViewModel.applyStockClipManifest(
+    manifest: com.alarmtalk.app.network.StockClipListResponse,
+    ticket: Long,
+): Boolean {
+    if (ticket != 0L && ticket <= stockClipManifestAppliedTicket) return false
     stockClips = manifest.clips
     manifest.expectedVariants?.let { expectedVariants = it }
     stockClipManifestApplyCount += 1
+    if (ticket != 0L) stockClipManifestAppliedTicket = ticket
+    return true
+}
+
+/**
+ * 공개본을 메모리에 **실은 뒤에** 하는 일 — 누가 공개했든 같다(전경 응답·물러난 회차의 이긴 것·
+ * 다른 쪽 공개 따라가기). 제자리 교체 수리와, 매니페스트를 기다리던 프리페치 재시도.
+ *
+ * ⚠ 이긴 것을 실을 때도 돌린다(Codex #825 P1). 워커는 공유받은 목소리를 받지 않고
+ * (`StockClipPrefetchWorker`) 접근권 워커는 낡음을 **판정만** 한다 — 여기서 안 고치면 알람이 쓰는
+ * 캐시 별칭이 교체된 사람의 목소리를 문 채 다음 전경 공개까지 남는다.
+ */
+private fun MainViewModel.afterStockClipManifestApplied(manifest: com.alarmtalk.app.network.StockClipListResponse) {
+    repairReplacedStockClips(manifest.clips)
+    // 매니페스트 도착 전 setDefaultVoice 로 프리페치가 빈손이었으면 여기서 1회 재시도한다.
+    // 재시도 여부와 무관하게 pending 은 비워 무한 재시도를 막는다(비움 결과도 정상 종료).
+    pendingPrefetchVoiceId?.let { voiceId ->
+        pendingPrefetchVoiceId = null
+        prefetchFreeBucketClips(voiceId)
+    }
+}
+
+/**
+ * 메모리를 **디스크의 마지막 공개본**까지 따라가게 한다 — 누가 공개했든(워커 포함).
+ * `StockClipManifestStore.publishedTickets` 를 보는 구독(`MainViewModel` 의 init)과, 물러난 회차가 부른다.
+ *
+ * @return 메모리가 지금 확인된 마지막 공개본을 담고 있는가. 가장 최근에 본 표의 응답이 공개되지
+ *   않았으면(쓰기 실패·로그아웃 무효화) 디스크는 비었거나 옛 목록이라 false — 싣지 않는다(Codex #825).
+ */
+internal suspend fun MainViewModel.syncStockClipsToPublished(
+    owner: com.alarmtalk.app.network.SessionEffectKey,
+): Boolean {
+    val latest = com.alarmtalk.app.data.StockClipManifestStore.latestPublishedTicket() ?: return false
+    // 이미 실렸다 — 디스크를 다시 읽지 않는다(실린 것은 전부 임자 대조를 거쳤다).
+    if (latest <= stockClipManifestAppliedTicket) return responseStillBelongsToRequester(owner.userId, owner.generation)
+    val app = getApplication<Application>()
+    // 확인과 읽기는 저장소가 한 잠금 안에서 한다(`loadPublishedWinner`). 그 뒤의 공개는 구독이 다시 따라간다.
+    val winner = withContext(Dispatchers.IO) {
+        com.alarmtalk.app.data.StockClipManifestStore.loadPublishedWinner(app, owner.userId)
+    } ?: return false
+    if (!responseStillBelongsToRequester(owner.userId, owner.generation)) return false
+    if (applyStockClipManifest(winner.response, winner.ticket)) afterStockClipManifestApplied(winner.response)
+    return true
+}
+
+/** 지금 세션으로 [syncStockClipsToPublished] 를 부른다 — 구독이 쓴다. 세션이 없으면 아무 일도 없다. */
+internal suspend fun MainViewModel.followPublishedStockClips() {
+    val session = authSession ?: return
+    val owner = com.alarmtalk.app.network.sessionEffectKey(session, authSessionStore.sessionGeneration()) ?: return
+    runCatching { syncStockClipsToPublished(owner) }
+        .onFailure { error ->
+            if (error is kotlin.coroutines.cancellation.CancellationException) throw error
+            AlarmTalkLog.reportError("Failed to follow the published stock clip manifest", error)
+        }
 }
 
 /**
@@ -1079,53 +1144,25 @@ private suspend fun MainViewModel.fetchAndPublishStockClips(
         com.alarmtalk.app.data.StockClipManifestStore.PublishResult.PUBLISHED -> {
             // ⚠ **디스크 권위가 받아 준 응답만 화면·판정의 권위가 된다**(Codex #703 P1).
             // 순서: 공개가 확인된 **뒤에** 싣는다.
-            // ⚠ 싣기 **직전에** 아직 마지막 공개본인지 다시 본다(Codex #825). 공개하고 메인으로 돌아오는
-            // 사이 워커가 더 새 응답을 공개했으면(워커는 메모리를 고치지 않는다) 이 응답은 이미 지나갔다 —
-            // 물러난 것과 같이 이긴 것을 싣는다. 이 확인과 싣기 사이에는 멈춤이 없다.
-            if (!com.alarmtalk.app.data.StockClipManifestStore.isStillPublished(ticket)) {
-                return adoptPublishedWinner(owner)
-            }
-            applyStockClipManifest(response)
-            repairReplacedStockClips(response.clips)
-            // 매니페스트 도착 전 setDefaultVoice 로 프리페치가 빈손이었으면 여기서 1회 재시도한다.
-            // 재시도 여부와 무관하게 pending 은 비워 무한 재시도를 막는다(비움 결과도 정상 종료).
-            pendingPrefetchVoiceId?.let { voiceId ->
-                pendingPrefetchVoiceId = null
-                prefetchFreeBucketClips(voiceId)
-            }
+            // 싣기는 표 순서로만(`applyStockClipManifest`) — 공개하고 메인으로 돌아오는 사이 구독이
+            // 더 새 공개본을 먼저 실었으면 이 응답은 버린다.
+            if (applyStockClipManifest(response, ticket)) afterStockClipManifestApplied(response)
+            // ⚠ 그 사이 워커가 더 새 것을 공개했으면(워커는 메모리를 고치지 않는다) 지금 따라간다(Codex #825)
+            // — 기다리던 준비도·클론 다운로드가 곧바로 메모리를 읽는다. 이 뒤의 공개는 구독이 따라간다.
+            val newer = com.alarmtalk.app.data.StockClipManifestStore.latestPublishedTicket()
+            if (newer != null && newer > ticket) syncStockClipsToPublished(owner)
             ManifestFlightOutcome.PUBLISHED
         }
         // 더 새 표가 이미 나왔다(콜드 스타트엔 프리페치 워커와 거의 동시에 받는다).
-        com.alarmtalk.app.data.StockClipManifestStore.PublishResult.SUPERSEDED -> adoptPublishedWinner(owner)
+        // 이 응답으로 덮으면 준비 판정이 **교체 이전 스냅샷**을 보고 세대를 확정해 버린다 — 대신 디스크의
+        // 이긴 것을 싣는다. 이긴 것이 **실제로 공개됐을 때만**이다(Codex #825): 더 새 표의 쓰기가
+        // 실패했거나 표가 무효화됐으면 실패로 돌려 준비도는 앞 값을 지키고, 클론 다운로드는 목소리 탭
+        // 폴링에 넘긴다(스펙 「공개 경합의 규칙」).
+        com.alarmtalk.app.data.StockClipManifestStore.PublishResult.SUPERSEDED ->
+            if (syncStockClipsToPublished(owner)) ManifestFlightOutcome.SUPERSEDED else ManifestFlightOutcome.FAILED
         // 디스크에 못 남겼다 — 아무도 공개하지 못했으니 판정의 권위도 아니다. 다음 호출이 다시 받는다.
         com.alarmtalk.app.data.StockClipManifestStore.PublishResult.FAILED -> ManifestFlightOutcome.FAILED
     }
-}
-
-/**
- * 이 요청의 응답이 권위가 되지 못했다 — **디스크의 이긴 매니페스트**(임자 대조)를 대신 싣는다.
- *
- * 이 응답으로 덮으면 준비 판정이 **교체 이전 스냅샷**을 보고 세대를 확정해 버린다. 그렇다고 아무것도
- * 안 실으면 준비도·클론 다운로드가 메모리를 읽으므로 물러난 회차 뒤에 낡은 목록으로 돈다(스펙
- * 「공개 경합의 규칙」).
- *
- * ⚠ 단 **이긴 것이 실제로 공개됐을 때만**이다(Codex #825). 더 새 표의 쓰기가 실패했거나 표가
- * 무효화됐으면 디스크는 비었거나 옛 목록이라, 싣지도 '받았다' 로 세지도 않는다 — 실패로 돌려
- * 준비도는 앞 값을 지키고, 클론 다운로드는 목소리 탭 폴링에 넘긴다. 확인과 읽기는 저장소가 한
- * 잠금 안에서 한다(`loadPublishedWinner`).
- */
-private suspend fun MainViewModel.adoptPublishedWinner(
-    owner: com.alarmtalk.app.network.SessionEffectKey,
-): ManifestFlightOutcome {
-    val app = getApplication<Application>()
-    val winner = withContext(Dispatchers.IO) {
-        com.alarmtalk.app.data.StockClipManifestStore.loadPublishedWinner(app, owner.userId)
-    }
-    if (winner == null || !responseStillBelongsToRequester(owner.userId, owner.generation)) {
-        return ManifestFlightOutcome.FAILED
-    }
-    applyStockClipManifest(winner)
-    return ManifestFlightOutcome.SUPERSEDED
 }
 
 /**
