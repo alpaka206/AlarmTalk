@@ -136,6 +136,11 @@ final class LocalAlarmStore: ObservableObject {
     /// 강등이 아니라 **삭제**라 더 나쁘다. 게다가 이 삭제는 decline 을 보내지 않아
     /// 다음 pull 이 새 UUID 로 되살린다).
     func paidAlarmTalks() -> [LocalAlarmRecord] {
+        Self.paidAlarmTalks(in: alarms)
+    }
+
+    /// `paidAlarmTalks()` 의 순수판 — 무료 잠금 선별(`FreePlanLockSelection`)이 같은 술어를 쓴다.
+    nonisolated static func paidAlarmTalks(in alarms: [LocalAlarmRecord]) -> [LocalAlarmRecord] {
         alarms.filter { $0.originEnum == .localOwned && $0.isPaidVoiceForDowngrade }
     }
 
@@ -180,9 +185,17 @@ final class LocalAlarmStore: ObservableObject {
         return claimed
     }
 
+    /// 이 캐시 키를 쓰는 알람 수 — 지워도 되는지 볼 때 쓴다.
+    ///
+    /// ⚠ **무료 잠금 보관본이 붙든 키도 센다**(Codex #820, 안드로이드 `AlarmDao.countByAudioCacheKey`
+    /// 의 `preLockVoiceJson` 조건과 짝). 잠금은 원래 오디오를 `audioCacheKey` 에서 보관본으로 옮기므로,
+    /// 그걸 안 세면 같은 클립을 쓰던 다른 알람을 지우거나 바꿀 때 파일이 지워지고, 재결제로 복원한
+    /// 알람은 들을 소리가 없다.
     func countByAudioCacheKey(_ key: String) -> Int {
         alarms.reduce(0) { acc, record in
-            (record.audioCacheKey == key) ? acc + 1 : acc
+            let referenced = record.audioCacheKey == key
+                || (record.preLockVoice?.referencedCacheKeys.contains(key) ?? false)
+            return referenced ? acc + 1 : acc
         }
     }
 

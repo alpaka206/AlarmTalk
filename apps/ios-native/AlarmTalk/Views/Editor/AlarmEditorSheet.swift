@@ -2760,6 +2760,18 @@ struct AlarmEditorSheet: View {
         // 안드로이드 `withResolvedWeatherVariant` 와 같은 자리다.
         await applyWeatherVariant(to: &merged, previous: editingAlarm)
 
+        // 무료 잠금 보관본(원래 유료 목소리)은 **목소리를 그대로 둔 저장**에서만 남긴다. 목소리·문구·
+        // 재생 방식을 바꿨으면 그 편집이 이긴다 — 남기면 재결제 때 복원이 사용자의 편집을 옛 유료
+        // 목소리로 덮는다(`AlarmEditDraft.carryOverNonEditableFields` 는 오디오를 준비하기 **전** 값으로
+        // 판정하므로 여기서 한 번 더 본다. billing-lifecycle.md 「목소리를 못 쓰게 되면」).
+        // 판정은 `DefaultVoiceSubstitute.saveKeepsLock` 하나 — 오디오 없이 잠긴 행에 같은 테마의 클립을
+        // 채운 것(방금 `prepareSelectedBucketClipIfNeeded` 가 한 일)은 편집으로 치지 않는다.
+        if let editingAlarm, editingAlarm.preLockVoice != nil,
+           !DefaultVoiceSubstitute.saveKeepsLock(saved: merged, editing: editingAlarm) {
+            merged.preLockVoice = nil
+            merged.preLockPlayMode = nil
+        }
+
         do {
             try LocalAlarmStore.validateDraft(merged)
         } catch {

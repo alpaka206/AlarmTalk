@@ -2,6 +2,9 @@ package com.alarmtalk.app.data
 
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
+import com.alarmtalk.app.alarm.RingSound
+import com.alarmtalk.app.alarm.decideRingSound
+import com.alarmtalk.app.alarm.ringSoundFactsFor
 import com.alarmtalk.app.network.RemoteAlarm
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -467,11 +470,13 @@ class RemoteAlarmPullSyncServiceTest {
         assertEquals("시각은 그대로", received.hour, stripped.hour)
         assertEquals(received.repeatDaysMask, stripped.repeatDaysMask)
         assertTrue("알람은 계속 울린다", stripped.enabled)
-        assertEquals(AlarmPlayModes.ALARM_ONLY, stripped.playMode)
+        // 알람음이 아니라 **기본 목소리(미나)** 로 운다 — 2026-09-29 사용자 결정.
+        assertEquals(AlarmPlayModes.VOICE_ONLY, stripped.playMode)
+        assertEquals(SUBSTITUTE_SYSTEM_VOICE_ID, stripped.voiceProfileId)
+        assertEquals(VoiceSources.TTS_PROFILE, stripped.voiceSource)
         assertNull("잠금 복원 스냅샷도 비운다", stripped.preLockPlayMode)
         assertNull(stripped.localAudioUri)
         assertNull(stripped.audioCacheKey)
-        assertNull(stripped.voiceProfileId)
         assertNull(stripped.voiceText)
         assertNull(stripped.ttsMessageId)
         assertFalse("보낸 사람 이름도 지운다", stripped.label.contains("김규원"))
@@ -530,6 +535,99 @@ class RemoteAlarmPullSyncServiceTest {
         )
         assertTrue(hasSenderVoice(locked))
         assertNull(withVoiceRevoked(locked, context).audioCacheKey)
+    }
+
+    // ── 시스템이 받은 목소리 알람을 '알람' 모드로 바꿔도 조용하지 않다 (alarm-ringing.md §4) ──
+    // 목소리 알람의 알람음 스위치는 화면에 없는 값이라 꺼져 있을 수 있다(편집기에서 '알람' 으로
+    // 알람음을 끈 뒤 '목소리' 로 돌아오면 꺼진 채 남는다). 그대로 '알람' 모드로 내리면 울릴 때
+    // 그 스위치를 보고 **무음**이 된다 — 리허설에서 본인 알람이 그렇게 울렸다.
+
+    private fun ringSoundOf(row: AlarmEntity): RingSound =
+        decideRingSound(ringSoundFactsFor(row, row.localAudioUri) { false }) { null }
+
+    private fun receivedVoiceAlarmWithHiddenSwitchOff() =
+        alarm(enabled = true, origin = AlarmOrigins.RECEIVED_REMOTE).copy(
+            playMode = AlarmPlayModes.VOICE_ONLY,
+            localAudioUri = "file:///cache/remote-message-m1.m4a",
+            audioCacheKey = "remote-message-m1",
+            voiceSource = VoiceSources.SERVER_TTS,
+            voiceProfileId = "vp-A",
+            ttsMessageId = "m1",
+            alarmSoundEnabled = false,
+            alarmVolumePercent = 10,
+            voiceVolumePercent = 80,
+        )
+
+    @Test
+    fun revokedVoiceAlarmRingsTheDefaultVoiceNotSilence() {
+        val stripped = withVoiceRevoked(receivedVoiceAlarmWithHiddenSwitchOff(), context)
+
+        assertEquals(AlarmPlayModes.VOICE_ONLY, stripped.playMode)
+        // 목소리 알람으로 남으니 숨은 알람음 스위치(꺼짐)는 울림에 쓰이지 않는다 — 미나가 운다.
+        val sound = decideRingSound(ringSoundFactsFor(stripped, stripped.localAudioUri) { false }) { "greeting://mina" }
+        assertEquals(RingSound.DefaultVoice("greeting://mina"), sound)
+    }
+
+    @Test
+    fun revocationKeepsTheRecipientsOwnSilentAlarmChoice() {
+        // 수신자가 직접 '알람' 모드 + 알람음 끔(진동만)으로 둔 행 — 그건 사용자가 고른 무음이다.
+        val chosen = receivedVoiceAlarmWithHiddenSwitchOff().copy(playMode = AlarmPlayModes.ALARM_ONLY)
+
+        val stripped = withVoiceRevoked(chosen, context)
+
+        assertEquals("재생 방식은 수신자가 둔 값 그대로", AlarmPlayModes.ALARM_ONLY, stripped.playMode)
+        assertFalse(stripped.alarmSoundEnabled)
+        assertEquals(RingSound.Silent, ringSoundOf(stripped))
+    }
+
+    @Test
+    fun revocationRestoresTheVoiceModeOfAnOldBugLock() {
+        // 옛 버그로 '알람' 모드에 잠금 표시만 남은 받은 알람 — 원래 목소리 알람이었다.
+        val oldBugLock = receivedVoiceAlarmWithHiddenSwitchOff().copy(
+            playMode = AlarmPlayModes.ALARM_ONLY,
+            preLockPlayMode = AlarmPlayModes.VOICE_ONLY,
+        )
+
+        val stripped = withVoiceRevoked(oldBugLock, context)
+
+        assertEquals(AlarmPlayModes.VOICE_ONLY, stripped.playMode)
+        assertNull(stripped.preLockPlayMode)
+        assertEquals(SUBSTITUTE_SYSTEM_VOICE_ID, stripped.voiceProfileId)
+    }
+
+    @Test
+    fun voiceDeliveryWhoseAudioFailedIsNeverSilent() {
+        // 목소리 전달인데 음성을 못 받아 '알람' 모드로 선다(다음 pull 이 다시 받는다).
+        val rebuilt = requireNotNull(
+            buildReceivedAlarmRow(
+                context = context,
+                remote = remote().copy(messageId = "m1", messageAudioUrl = "r2://m1"),
+                existing = receivedVoiceAlarmWithHiddenSwitchOff(),
+                cachedAudio = null,
+                currentUserId = "user-1",
+            ),
+        )
+
+        assertEquals(AlarmPlayModes.ALARM_ONLY, rebuilt.playMode)
+        assertTrue(rebuilt.alarmSoundEnabled)
+        assertTrue(ringSoundOf(rebuilt) is RingSound.Tone)
+    }
+
+    @Test
+    fun serverStrippedVoiceAlarmIsNeverSilent() {
+        // 서버가 목소리를 걷어냈다(`paid-voice-cleanup.ts` — message_id 를 끊는다). 목소리 알람이던 행이다.
+        val rebuilt = requireNotNull(
+            buildReceivedAlarmRow(
+                context = context,
+                remote = remote(),
+                existing = receivedVoiceAlarmWithHiddenSwitchOff(),
+                cachedAudio = null,
+                currentUserId = "user-1",
+            ),
+        )
+
+        assertTrue(rebuilt.alarmSoundEnabled)
+        assertTrue(ringSoundOf(rebuilt) is RingSound.Tone)
     }
 
     // ── 받은 뒤에는 받은 사람이 관리한다 (docs/spec/family-alarm.md 1절) ──────────────

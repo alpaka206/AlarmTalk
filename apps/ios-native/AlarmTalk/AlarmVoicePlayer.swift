@@ -92,16 +92,19 @@ final class AlarmVoicePlayer: NSObject, AVAudioPlayerDelegate {
     /// 인데 실제로는 목소리를 껐다 — 알람음만 끄고 목소리로 깨려던 사용자가 정확히 반대
     /// 결과(톤은 그대로, 목소리만 사라짐)를 얻었다.
     func playIfNeeded(for record: LocalAlarmRecord, audioCache: AudioCacheStore) {
-        guard record.playModeEnum != .alarmOnly,
-              let key = record.audioCacheKey,
-              record.voiceVolumePercent > 0 else {
-            return
-        }
+        guard let key = record.audioCacheKey, let url = audioCache.cachedURL(for: key) else { return }
+        playIfNeeded(for: record, url: url)
+    }
 
-        if let url = audioCache.cachedURL(for: key) {
-            beginPlayback(for: record, url: url)
-            return
-        }
+    /// 이미 고른 소리(`AlarmSoundResolution.cachedAudio` 의 URL)를 튼다 — 울림 관찰자가 쓴다.
+    ///
+    /// ⚠ **행의 `audioCacheKey` 로 다시 찾지 말 것**(Codex #820). 오디오 없이 기본 목소리로 대체된
+    /// 행(`DefaultVoiceSubstitute`)은 그 키가 nil 이고, 틀 소리(그 목소리의 클립·내장 인사말)는
+    /// `AlarmSoundResolver.plan` 이 고른 URL 에만 있다 — 키로 찾으면 in-app 폴백이 아무것도 안
+    /// 틀어 OS 기본음만 난다. 테마 알람도 회전·조건으로 고른 클립이 대표 키와 다를 수 있다.
+    func playIfNeeded(for record: LocalAlarmRecord, url: URL) {
+        guard record.playModeEnum != .alarmOnly, record.voiceVolumePercent > 0 else { return }
+        beginPlayback(for: record, url: url)
     }
 
     private func beginPlayback(for record: LocalAlarmRecord, url: URL) {

@@ -452,9 +452,12 @@ struct AlarmTalkApp: App {
                         // 모으면 테마 알람이 물고 있는 클립들이 '미참조' 로 보여 지워진다 —
                         // 안드로이드 `AlarmRepository.sweepStaleAudioCache` 는 `bucketClipKeys()`
                         // 를 in-use 에 넣는다. iOS 만 빠져 있었다(2026-08-11).
+                        // 무료 잠금 보관본이 붙든 원래 목소리 오디오도 보존한다 — 지우면 재결제 때
+                        // 복원한 알람이 들을 소리가 없다(billing-lifecycle.md 「목소리를 못 쓰게 되면」).
                         let activeKeys = Set(
                             alarmStore.alarms.compactMap(\.audioCacheKey)
                                 + alarmStore.alarms.flatMap { $0.bucketClipKeys ?? [] }
+                                + alarmStore.alarms.flatMap { $0.preLockVoice?.referencedCacheKeys ?? [] }
                         )
                         let audioCache = AudioCacheStore.shared
                         Task.detached(priority: .utility) {

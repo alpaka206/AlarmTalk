@@ -1088,6 +1088,163 @@ entitlement 가 기기에 남은 채 지금은 Play 구독을 쓰는 사용자�
   큐가 수만 건이다 — DB 행은 약속 시각 뒤 몇 시간 안에 지워지지만 파일 삭제는 그보다 오래 걸린다.
   운영 절차의 모니터링 항목이다.
 
+### 목소리를 못 쓰게 되면 — **기본 목소리로 울고, 절대 조용하지 않다** (2026-09-29)
+
+**발견**(2026-09-29 dev 리허설, 안드로이드 SM-A325N · dev 1.2.10): 기간 한정 개인 플랜이 끝난 뒤
+**클론 목소리 + 재생 방식 '목소리'** 알람이 **아무 소리 없이** 울렸다(10:35). 울림 시점 logcat:
+
+```
+Free plan at ring time — downgrading paid voice to alarm tone id=…
+Alarm tone off (soundEnabled=false, volume=10) id=…
+Vibration disabled for ringing alarm
+```
+
+그 전에 앱을 연 순간(10:33:55) `Locked paid voice alarms on free plan count=1` — 전경 무료 잠금이 그
+알람을 **'알람' 모드**(`playMode = alarm_only`)로 바꿔 목록·편집기에서 **그냥 기본 알람**이 됐다.
+울릴 때 강등도 같은 '알람' 모드로 내렸고, 그 모드는 **알람음 스위치**를 본다. 그 스위치는 목소리
+알람이라 한 번도 쓰이지 않던 값(꺼짐)이었다 — 사용자가 고른 무음이 아닌데 무음이 됐다. 진동은
+그 알람의 설정대로 '없음' 이었다.
+
+**규칙**(제품 결정): 알람의 유료 목소리를 못 쓰게 되면(기간 한정 개인 플랜 종료 · 무료 전환 · 권한
+없음) 그 알람은 **기본(시스템) 목소리로 운다** — 알람음이 아니다. 그리고 **어떤 경우에도
+조용하지 않다.** 목소리를 아예 **잃은** 알람(삭제 · 공유 해제 · 보낸 사람 탈퇴 · 제자리 교체된 직접
+입력 — 아래 「목소리를 잃은 알람」)도 같은 날 같은 규칙이 됐다("삭제했거나 공유가 해제된 알람은
+기본 목소리로, 미나로 해 그냥").
+
+| 무엇 | 규칙 |
+| --- | --- |
+| 어느 기본 목소리 | 알람이 이미 기본 목소리면 **그 목소리**. 아니면 **미나** — 대체 목소리는 어느 경로든(잠금 · 울릴 때 대체 · 목소리를 잃은 알람) **미나 하나**다(안드로이드 `SUBSTITUTE_SYSTEM_VOICE_ID` ← `pickDefaultSystemVoiceId`, iOS `substituteSystemVoiceID` ← `DefaultVoiceSubstitute.pickVoiceID`). ⚠ **마지막에 쓴 목소리를 보지 않는다**(2026-09-29 "미나로 통일도 해"). 그전에는 잠금만 그 계정의 마지막 기본 목소리(`DefaultVoicePreferenceStore`/`lastUsedVoiceId`)를 따라, 같은 계정의 알람이 잠금이면 시우·삭제면 미나처럼 경로마다 달랐다. 내장 인사말이 없는 새 기본 목소리의 인사말 폴백도 미나다 |
+| 어느 문구 | 알람이 고른 **문구 종류의 기본 목소리 클립**(날씨·운세·응원·약 — 무료 테마). **기기에 이미 받아 둔 것만** 쓴다 — 울림 경로에서 네트워크를 부르지 않는다(CLAUDE.md). 날씨 조건·운세 테마·회전 자리는 알람에 이미 적힌 값으로 고른다(`bucketVariantIndex` — 클론과 기본 목소리는 variant 축이 같다: 백엔드 `STOCK_CLIP_PRESETS` ↔ `CLONE_CLIP_SEEDS`). ⚠ 날씨·운세는 자리가 곧 조건이라 **매니페스트의 세트가 완전할 때만**(서버 `expected_variants` 로 variant 0..N-1 이 빠짐없이 — 편집기·재바인더와 같은 규칙, 모르면 0 부터 빈틈없이) 자리를 믿는다. 가운데가 빠진 목록을 순서대로 세면 뒤 자리가 밀려 **다른 조건의 문구**를 튼다(Codex #820). 기본 목소리 클립이 없는 종류(**기본 인사말 · 직접 입력**)이거나 그 클립을 못 받아 뒀으면 그 목소리의 **내장 인사말**(APK/IPA 에 실린 `voice_greeting_*` — 네트워크 없이 언제나 있다). 인사말은 기상 문구가 아니지만(voice-and-message.md §2) 조용한 것보다 낫다 — 마지막 수단이다 |
+| 기본 목소리 소리도 없으면 | 알람음을 **강제로 들리게** 튼다 — 알람음 스위치를 무시하고, 크기는 그 알람의 목소리 크기와 알람음 크기 중 **큰 값** |
+| 진동 | 그 알람의 진동 설정 **그대로**(강제하지 않는다). 대체 경로는 진동을 건드리지 않는다 |
+| 사용자가 고른 무음 | '알람' 모드 + 알람음 끔(진동만)은 **사용자의 선택**이라 그대로 둔다. 강제는 **시스템이 목소리 알람을 바꾼 경우**에만 건다 — 울릴 때 강등, 또는 잠금·강등 표시(`preLockPlayMode`)가 **목소리 모드**일 때 |
+
+**잠금의 모양 — 행을 기본 목소리 알람으로 고쳐 쓰고, 원래 목소리는 따로 보관한다**
+
+전경·백그라운드 무료 잠금(안드로이드 `AlarmRepository.lockPaidAlarmTalks`, iOS
+`SocialFeatureViewModel.applyFreePlanVoiceLock`)은 더 이상 재생 방식을 '알람' 으로 내리지 않는다.
+행을 **평범한 기본 목소리 알람**으로 고쳐 쓴다 — 목록·편집기·울림·동기화가 그 행을 그대로 읽으면
+되고, 읽는 쪽마다 "잠겼으면…" 을 다시 조립하지 않는다.
+
+- 재생 방식은 **원래 값 그대로**(목소리). `voiceProfileId` = 위 규칙의 기본 목소리. 문구
+  종류(`voiceRandomContext`)는 그대로 둔다 — 편집기 요약이 고른 종류를 말한다.
+- 무료 테마가 있는 종류이고 그 (목소리 · 언어)의 세트가 **완전하고**(위 `expected_variants`) 클립이
+  **전부** 기기에 있으면, 편집기가 테마를 붙일 때와 **같은 모양**으로 묶는다(`bucketId` · 클립 키 · 문구
+  · 대표 클립 · `ttsMessageId` = 시스템 스톡 프리셋). 세트가 모자라거나 하나라도 없으면 묶지 않는다 —
+  날씨·운세는 **자리 번호가 곧 조건**이라 빠진 클립을 건너뛰어 묶으면 엉뚱한 조건이 운다. 그때는 오디오
+  없는 기본 목소리 알람으로 두고, 울릴 때 위 규칙으로 그 목소리의 클립·인사말을 찾는다.
+- ⚠ **묶지 못해도 테마(`bucketId`)는 남긴다**(Codex #820). 비우면 편집기가 그 알람의 종류를 잃어(iOS 는
+  첫 테마로 바꿔 붙인다) 시각만 고쳐 저장해도 문구가 바뀌고, 날씨 조건 갱신(안드로이드
+  `ensureDynamicVoiceRefreshScheduled` 는 `bucketId == weather` 만 본다)이 멈춰 울릴 때 대체 클립이
+  낡은 조건을 고른다. 테마가 남아 있으면 편집기는 저장할 때 그 테마의 클립을 받아 묶는다(두 앱 모두
+  기본 목소리 알람을 열면 테마를 붙이고 저장 때 클립을 받는다 — 유료 생성 경로로 가지 않는다).
+  기본 목소리 테마가 없는 종류(**기본 인사말 · 직접 입력**)는 비운다 — 서버가 기본 목소리 +
+  `greeting` 테마를 거절한다. 그 종류는 편집기가 기본 목소리에 줄 수 있는 첫 테마로 바꿔 붙인다
+  (voice-and-message.md §2 — 기본 목소리에는 그 두 종류가 없다).
+- 원래 유료 목소리의 필드(목소리 · 문구 · 오디오 · 테마 · 회전 · 조건 인덱스)는 **잠금 보관본**
+  (안드로이드 `AlarmEntity.preLockVoiceJson`, iOS `LocalAlarmRecord.preLockVoice`)에 담고, 재생 방식은
+  예전처럼 `preLockPlayMode` 에 담는다. 보관본이 있는 것이 '새 모양으로 잠겼다' 는 표시다.
+  보관본이 가리키는 오디오 파일은 캐시 정리가 지우지 않는다(참조로 센다 — 안드로이드
+  `AlarmDao.countByAudioCacheKey`, iOS `LocalAlarmStore.countByAudioCacheKey` 둘 다 보관본의 키를 센다.
+  안 세면 같은 클립을 쓰던 다른 알람을 지울 때 파일이 지워져 복원한 알람이 들을 소리가 없다).
+  ⚠ 안드로이드 보관본은 Gson JSON 이 **앱 업데이트를 건너서** 읽히므로 필드 키를 `@SerializedName`
+  으로 못 박는다(release 는 R8 이 필드 이름을 줄인다 — 매핑이 바뀐 빌드가 보관본을 잃거나 엉뚱한
+  필드로 읽으면 복원이 목소리 없는 행을 서버에 올린다). 키는 바꾸지 않고 더하기만 한다.
+- **복원**(다시 유료 — 안드로이드 `unlockPaidAlarmTalks`, iOS `restorePaidVoiceAlarms`)은 보관본을
+  되돌리고 **동기화 대상으로 올린다** — 잠긴 동안 켜기·끄기가 기본 목소리를 서버에 올렸을 수 있다.
+- 잠금·옛 모양 이전·복원이 소리를 바꾼 행은 **켜진 알람만** 다시 예약한다(안드로이드
+  `if (updated.enabled) alarmScheduler.schedule(…)`, iOS `SocialFeatureViewModel.rescheduleIfEnabled`).
+  ⚠ iOS 의 예약(`AlarmKitViewModel.schedule`)은 끝에서 `enabled = true` 를 박으므로, 꺼진 알람을
+  예약하면 사용자가 끈 알람이 **조용히 다시 켜진다**(Codex #820). 꺼진 알람은 행만 고쳐 두면 켤 때 새
+  소리로 예약된다.
+- 보관 기간이 지나 원래 목소리가 **지워지면**(접근 가능한 목소리 목록에서 빠짐) 잠금을
+  **확정**한다 — 보관본과 표시를 버리고 기본 목소리 알람으로 남는다. 알람음으로 내리지 않는다.
+  원래 목소리가 **제자리 교체**돼(voice-and-message.md §4-1) 보관본의 직접 입력 오디오가 낡은
+  경우도 같다. 확정은 보관본이 붙든 오디오를 **전부**(대표 클립과 클립 세트, 안드로이드는 캐시 키 없이
+  경로만 든 옛 행 — 마이그레이션 5→6 이전 — 의 파일까지 경로로) 놓는다 — 목소리로 우는 다른 알람이 쓰지
+  않는 것은 곧바로 지운다(iOS 는 구운 사본까지. iOS 캐시는 키로만 파일을 찾으므로 키 없는 행이 없다). 대표 키만 지우면 지워진 목소리의
+  나머지 생성 음성이 캐시 정리(30일)까지 남는다(Codex #820).
+- ⚠ **잠긴 행은 강등 대상이 아니다 — 확정만 한다.** 잠긴 행의 지금 목소리는 잠금이 넣은 **대체
+  기본 목소리**이고 자기 오디오가 없다. 그런데 테마 없이 잠근 행(기본 인사말·직접 입력)은 직접 입력 판정(`usesCustomMessageVoice`)에 걸리고 오디오 시각이 0 이라, 그 **기본
+  목소리의 제자리 교체 표식**이 오면 낡은 직접 입력 알람으로 잡혀 알람음으로 내려가고 "직접 입력
+  알람이 기본 알람음으로 바뀌었어요" 가 떴다 — 낡은 오디오가 하나도 없는데. 그래서 강등 한 회차를
+  **시작할 때 잠겨 있던 행**은(그 회차의 확정으로 막 풀린 행 포함) 강등 후보에서 뺀다(안드로이드
+  `degradeMatchingLocalOwnedVoiceAlarms`, iOS `degradeCustomMessageAlarms`). 다른 강등(삭제·접근권
+  상실)은 시스템 목소리를 보지 않으므로 애초에 이 행에 닿지 않는다.
+- 사용자가 잠긴 알람을 편집·저장하면 보관본도 비운다(`preLockPlayMode` 와 같은 이유 — 명시적 편집이
+  이긴다. 안 그러면 재결제 때 복원이 사용자의 편집을 덮는다). 안드로이드는 **어떤 편집이든** 비운다
+  (옛 `preLockPlayMode` 규칙 그대로 — `AlarmRepository` 의 수정 경로). iOS 는 옛 iOS 규칙대로 **목소리를
+  그대로 둔 저장**(시각·이름만 고침)에서는 잠금을 이어받고, 목소리·오디오·재생 방식이 바뀌면 비운다
+  (`AlarmEditDraft.carryOverNonEditableFields` · `AlarmEditorSheet` 의 저장 직전 판정 — 둘 다
+  `DefaultVoiceSubstitute.saveKeepsLock`) — 이 차이는 이번 변경 전부터 `preLockPlayMode` 에 있던 것이다.
+  ⚠ **오디오 없이 잠긴 행에 같은 테마의 클립을 채운 것은 오디오를 바꾼 것이 아니다**(Codex #820) —
+  테마를 남긴 잠금 행은 저장할 때 편집기가 그 테마의 클립을 받아 묶으므로 `audioCacheKey` 가 nil →
+  클립 키로 바뀐다. 이걸 편집으로 읽으면 시각만 고친 저장이 보관본을 버린다. 테마가 바뀌었으면 편집이다.
+- 이 버전 **전에** 잠긴 옛 모양(`alarm_only` + `preLockPlayMode`, 보관본 없음, 클론 참조 그대로)은
+  다음 잠금 실행이 새 모양으로 옮긴다. 이미 알린 알람이라 강등 안내 개수에 **다시 세지 않는다.**
+  옮기기 전에 울리면 울림 경로가 기본 목소리로 대신한다.
+- **서버 동기화**: 잠금은 예전처럼 **로컬만** 고친다(동기 상태 그대로). 그 뒤 켜기·끄기가 행을
+  올리면 기본 목소리 + 시스템 스톡 프리셋이라 무료 게이트(`usesOnlySystemStockVoice`)와
+  소유권(`voiceProfileBelongsToCaller` · `messageBelongsToCaller` 의 시스템 갈래)을 통과한다 — 예전
+  모양(클론 참조 그대로)은 토글마다 403 `VOICE_FEATURE_REQUIRES_PAID_PLAN` 이었다.
+  ⚠ **오디오 없이 잠긴 행은 빈 문구·테마를 명시적 `null` 로 보낸다**(Codex #820). 서버 `PATCH /alarm`
+  은 **빠진 필드를 그대로 두는데** 두 앱의 기본 직렬화는 null 을 뺀다(안드로이드 Gson, iOS
+  `encodeIfPresent`). 그러면 새 기본 목소리 id 만 올라가고 클론의 `message_id`·`bucket_id` 가 그 옆에
+  남는다 — 기본 인사말 알람(클론의 `greeting` 테마)은 기본 목소리 + greeting 정책으로 토글마다 400
+  `INVALID_BUCKET_ID`, 나머지는 반쯤 바뀐 서버 행이 된다. 그래서 잠긴 행(보관본이 있는 행)은 비어 있는
+  `message_id`·`bucket_id` 를 `null` 로 실어 지운다(안드로이드 `RemoteAlarmWriteRequest.clearsMissingVoiceReferences`
+  → `RemoteAlarmWriteRequestAdapterFactory`, iOS 같은 이름 → `RemoteAlarmWriteRequest.encode(to:)`).
+  **잠긴 행과 기본 목소리 알람에서만** 켠다 — 잠금이 **확정**됐거나 목소리를 잃어 미나로 바꾼 행은
+  보관본이 없어 보관본만으로는 못 가린다(같은 400 이 난다). 기본 목소리 알람의 빈 문구·테마는 로컬의
+  사실 그대로라 서버도 비우는 것이 맞다(판정: 녹음(`local_audio`)이 아니고 목소리가 기본 목소리).
+  그 밖의 알람(클론·녹음)은 예전처럼 빠진 필드를 서버가 지킨다.
+- **안내 문구**: 무료 강등 안내(`downgrade_notice_free_message`)는 "기본 알람음으로" 가 아니라
+  **"기본 목소리로 바뀌었어요"** 다(두 앱, ko·en·ja). 목소리를 잃은 알람의 안내(공유 해제
+  `downgrade_notice_shared_message` · 제자리 교체 `downgrade_notice_replaced_message`)와 그 일을 예고하는
+  확인 문구(목소리 삭제 `voicesr_delete_dialog_warning`·`voices_delete_quota_message` · 교체
+  `voices_replace_existing_desc` · 음성 동의 철회 `consent_withdraw_voice_body`)도 **"기본 목소리로"** 다
+  (두 앱, ko·en·ja — iOS 는 소스 문자열과 `Localizable.xcstrings`).
+- **iOS** 는 울릴 때 앱 코드가 돌지 않으므로 같은 대체를 **예약할 때** 한다
+  (`PaidVoiceGate.shouldDowngrade` → `DefaultVoiceSubstitute.substituted` ←
+  `AlarmKitViewModel.effectiveRecordForScheduling`). AlarmKit 은 넘긴 소리가 없으면 시스템 기본음을
+  울리므로 iOS 에는 무음 갈래가 애초에 없다. 그 소리를 AlarmKit 용으로 굽지 못해 앱이 열려 있을 때
+  직접 트는 폴백(`.cachedAudio`)은 **판정이 고른 URL** 을 튼다(`AlarmVoicePlayer.playIfNeeded(for:url:)`) —
+  오디오 없는 대체 행은 `audioCacheKey` 가 nil 이라 키로 다시 찾으면 아무것도 안 튼다(Codex #820).
+
+**목소리를 잃은 알람 — 미나로 영구히 바꾼다**(2026-09-29 사용자 결정)
+
+목소리가 **없어진** 알람은 예전에 '알람' 모드로 내렸다(`alarm_only` + 강등 표시 `preLockPlayMode`,
+목소리 참조를 비움) — 목록·편집기에서 **그냥 기본 알람**이 됐다. 이제 잠금과 같은 모양의 **기본
+목소리 알람**으로 바꾼다. 대상은 넷이다:
+
+| 경로 | 안드로이드 | iOS |
+| --- | --- | --- |
+| 목소리 삭제 · 음성 동의 철회 · 접근권 상실(공유 해제·제공자 취소) | `AlarmRepository.degradeMatchingLocalOwnedVoiceAlarms`(← `degradeAlarmsUsingVoiceProfile`·`degradeAlarmsWithInaccessibleVoice`) | `VoiceStudioViewModel.degrade(records:)`(← `cascadeAlarmsAfterVoiceDeletion`·`reconcileInaccessibleVoiceAlarms`) |
+| 제자리 교체된 목소리의 직접 입력 알람 | 같은 함수(← `degradeCustomMessageAlarmsUsingVoiceProfile`) | 같은 함수(← `degradeCustomMessageAlarms`) |
+| 보낸 사람 탈퇴로 목소리를 걷어낸 **받은** 알람 | `withVoiceRevoked` | `RemoteAlarmPullSync.withVoiceRevoked` |
+
+- **목소리**: 알람이 이미 기본 목소리면 그 목소리(제자리 교체로 낡은 것은 오디오뿐이다), 아니면 미나 —
+  위 표의 규칙 그대로다.
+- **모양**: 잠금(`lockedToDefaultVoice`/`DefaultVoiceSubstitute.locked`)과 같다 — 재생 방식 그대로, 테마
+  그대로, 그 목소리의 클립 세트가 완전하고 전부 기기에 있으면 묶고 아니면 오디오 없이 둔다. 다만
+  **되돌릴 목소리가 없으니 보관본·표시(`preLockVoice`·`preLockPlayMode`)를 남기지 않는다**
+  (`lostVoiceReplacedByDefault` / `DefaultVoiceSubstitute.replacedLostVoice` = 잠금 + 확정).
+- **받은 알람**은 테마·클립도 비운다(보낸 사람이 고른 것이라 받은 쪽이 다시 묶을 근거가 없다) — 오디오
+  없는 미나 알람이 되어 울릴 때(iOS 는 예약할 때) 미나의 내장 인사말이 운다. 재생 방식은 **수신자가 둔
+  값 그대로**다('알람' 모드로 둔 행은 목소리만 바뀌고 계속 알람음으로 운다). 옛 버그로 '알람' 모드에
+  잠금 표시만 남은 행은 원래 목소리 모드로 돌리고 표시를 비운다.
+- 잃은 목소리가 붙든 오디오는 **전부**(대표 클립과 클립 세트) 놓는다 — 목소리로 우는 다른 알람이 쓰지
+  않으면 곧바로 지운다(확정과 같은 규칙. iOS 는 구운 사본까지).
+- ⚠ **오디오가 하나도 없는 행은 제자리 교체 강등이 다시 세지 않는다**(`hasOwnVoiceAudio` — 두 앱).
+  미나로 바꾼 직접 입력 알람은 테마가 없어 직접 입력 판정에 걸리고 오디오 시각이 0 이라, 안 보면 **미나의
+  교체 표식**이 올 때마다 같은 행을 다시 '강등' 으로 세어 없는 변화를 안내한다.
+- 동기 상태는 예전 그대로다 — 안드로이드는 로컬만 고치고(서버 행은 삭제·공유 해제 경로가 이미
+  `sound-only` 로 내린다), iOS 는 동기화 대상(DIRTY)으로 올린다. 올라갈 때는 위 「서버 동기화」 대로 빈
+  문구·테마를 `null` 로 지운다.
+- **이 버전 전에 '알람' 모드로 내려 둔 옛 행**(강등 표시가 목소리 모드, 목소리 참조 없음)은 옮기지
+  않는다 — 이미 "기본 알람음으로 바뀌었어요" 로 알린 행이다. 울릴 때 **알람음을 강제**한다(스위치를
+  믿지 않는다). 단 목소리 크기 0 이면 사용자가 고른 무음이다(alarm-ringing.md §4).
+
 ### 앱 — 날짜는 서버 값으로, 기기 시계는 **낡은 캐시에만**
 
 두 앱이 **똑같이** 구현한다(iOS 는 안드로이드를 원본으로 삼는다). 아래 D1~D5(와 그 안의 D7·D9·D12·
@@ -1104,13 +1261,14 @@ entitlement 가 기기에 남은 채 지금은 Play 구독을 쓰는 사용자�
 - ⚠ **iOS 는 울릴 때 이 판정을 다시 할 수 없다**(AlarmKit 이 예약 때 받은 소리를 그대로 튼다 — 의도된
   플랫폼 차이). 안드로이드는 울릴 때 판정한다. 그래서 iOS 는 **예약할 때 울릴 시각으로** 프로모를 본다
   (`PaidVoiceGate.shouldDowngrade(…fireAt:)` ← `AlarmKitViewModel.effectiveRecordForScheduling`) —
-  프로모만으로 열린 목소리가 끝 뒤에 울릴 예약이면 끝 전이라도 기본 알람음으로 건다. **프로모만**이다:
+  프로모만으로 열린 목소리가 끝 뒤에 울릴 예약이면 끝 전이라도 **기본 목소리로** 건다(위 「목소리를
+  못 쓰게 되면」 — 2026-09-29 전에는 기본 알람음이었다). **프로모만**이다:
   구독 행·스토어 신호의 만료는 울릴 시각으로 당기지 않는다(자동 갱신 구독을 미리 끊으면 결제자가
   잠긴다).
   - ⚠ **주간 반복 알람은 AlarmKit 이 한 번 받은 설정을 모든 회차에 다시 쓴다**(Codex #803). 그래서
     프로모에만 기댄 목소리의 주간 반복 알람은 **정지할 때마다 다시 맞춘다**
     (`AlarmAppContext.reconcileAfterStop` ← `PaidVoiceGate.dependsOnPromoCutover` — 무료 테마 회전과
-    같은 경로). 끝 전 마지막 회차를 끄는 순간 다음 회차(끝 뒤)가 기본 알람음으로 걸린다 — 끝 직전에 울린
+    같은 경로). 끝 전 마지막 회차를 끄는 순간 다음 회차(끝 뒤)가 기본 목소리로 걸린다 — 끝 직전에 울린
     회차를 끝 **뒤에** 꺼도 같다(판정은 '끝에 못 듣는가' 하나 — 지금 들을 수 있는지는 보지 않는다). 정지 인텐트에서
     도는 앱 코드라 네트워크·화면이 필요 없다. 그 밖에 리컨사일(앱 열기·백그라운드 새로고침·전환 크론의
     `plan_changed` 푸시)도 같은 판정을 한다.
@@ -1118,7 +1276,7 @@ entitlement 가 기기에 남은 채 지금은 Play 구독을 쓰는 사용자�
     AlarmKit 이 진행 중인 설정을 그대로 다시 세는 것(`countdown`)이라, 소리를 바꾸려면 진행 중인 알람을
     취소하고 별도 한 번 알람으로 옮겨야 한다 — 그게 실패하면 사용자의 다시 울림이 **사라진다**(목소리가
     몇 분 더 나는 것보다 나쁘다). 끝 시각(한국 자정)을 가로지르는 다시 울림만 해당하고, 그 알람을 끄는
-    순간 위 규칙으로 다음 회차부터 기본 알람음이다.
+    순간 위 규칙으로 다음 회차부터 기본 목소리다.
 - **D7 — '받은 시각' 은 서버 시계로.** 응답의 `personal_promo.computed_at`(서버가 계산한 시각)이
   **있으면 그것을** 받은 시각으로 저장한다. 없으면(이 키가 없는 서버·읽을 수 없는 값) 응답을 받은
   순간의 기기 시계를 쓴다. 기기 시계만 쓰면, 서버보다 Δ 만큼 빠른 기기가 끝 직전에 계산된 답을 끝
@@ -1378,6 +1536,8 @@ entitlement 가 기기에 남은 채 지금은 Play 구독을 쓰는 사용자�
 | 이용권 화면 — 프로모만 쓰는 계정은 개인 카드가 현재(D4) | — | `ui/billing/BillingPanels.kt` `planScreenCurrentOf`(`PlanScreenCurrent` — `isCurrent`·`showsPurchase`·`sharesVouchers`·`promoOnPersonalCard`·`promoLineAboveList`) → `SubscriptionPanel`·`SubscriptionPlanCard`(`showsPurchase`·`sharesVouchers`); 결제 알럿은 산 이용권(`PlayPurchaseDialog` 의 `currentPlanKey`) | `Views/Common/PlanTier.swift` `PlanScreenCurrent.resolve`·`drawsPromoLineAboveList(cardsVisible:)`(카드가 없는 스켈레톤·가져오기 실패 동안은 카드 위 한 줄) → `BillingPanel.planScreen` · `PlanCard`(`showsPurchase`·`statusText`·접근성 컨테이너 `planCard.<key>`); 결제·전환 판정은 산 이용권(`BillingPanel.currentTier`) |
 | 이용권 화면의 프로모 문구(D4 — 나중에 받은 답) | — | `ui/billing/BillingPanels.kt`(`personal_promo_plan_line`) · `planScreenPersonalPromoOf`·`PersonalPromoLedger.planScreenPromo`(`recordBillingAnswer(result)` — 문을 지난 `EntitlementWrite.Applied` 만, `MainViewModel.saveSubscriptionSnapshot` 이 부른다) → `MainViewModel.planScreenPersonalPromo` → `AlarmListScreen` 의 `planScreenPersonalPromo` · `activePersonalPromoOf` | `BillingPanel.personalPromoLine`·`personalPromoLastDay`(세션 하나 — `applyFreshPlan` 의 순번 가드) |
 | 종료 안내(D3·D4) | — | [gates-and-overlays.md](gates-and-overlays.md) 구현 지도 | 같은 곳 |
+| 목소리를 못 쓰게 되면 기본 목소리 — 잠금·울림·복원·확정(2026-09-29) | 바꾸지 않는다 — 잠긴 행의 시스템 목소리·스톡 프리셋은 `usesOnlySystemStockVoice`·`voiceProfileBelongsToCaller`·`messageBelongsToCaller` 의 시스템 갈래가 받는다(빈 문구·테마는 앱이 `null` 로 지운다 — PATCH 는 빠진 필드를 그대로 둔다) | `data/SystemVoices.kt`(`SUBSTITUTE_SYSTEM_VOICE_ID` — 미나) · `data/DefaultVoiceFallback.kt`(`pickDefaultSystemVoiceId`(이미 기본 목소리면 그대로, 아니면 미나)·`lostVoiceReplacedByDefault`·`hasOwnVoiceAudio`·`defaultVoiceBucketFor`·`completeDefaultVoiceClips`(세트 완전성 — `expected_variants`)·`defaultVoiceClipSet`·`LockedPaidVoice`·`lockedToDefaultVoice`·`restoredFromLock`·`finalizedLock`·`isLegacyPlanLock`·`wasVoiceAlarmConvertedBySystem`) · `data/DefaultVoiceClipSource.kt`(`lockBinding`·`ringUri`) · `AlarmRepository.lockPaidAlarmTalks`·`unlockPaidAlarmTalks`·`degradeMatchingLocalOwnedVoiceAlarms`(확정 · 잠긴 행 제외)·`deleteAudioNoAlarmUses`(확정이 놓은 보관본 오디오 전부 — 키 없는 옛 파일은 경로로)·`sweepStaleAudioCache` · `AlarmDao.countByAudioCacheKey`(보관본도 참조) · `AlarmEntity.preLockVoiceJson`(Room 26→27) · 울림 `alarm/RingSoundDecision.kt` → `RingingService` · 동기화 `network/RemoteAlarmMapper.toWriteRequest`(`clearsMissingVoiceReferences`) → `RemoteAlarmWriteRequestAdapterFactory`(빈 `message_id`·`bucket_id` 를 `null` 로) · 목록 `AlarmListScreen`(이름) · 문구 `downgrade_notice_free_message` | `SystemVoices.swift`(`substituteSystemVoiceID` — 미나) · `DefaultVoiceSubstitute.swift`(`pickVoiceID`·`replacedLostVoice`·`LocalAlarmRecord.hasOwnVoiceAudio`·`LockedPaidVoice`·`completeClips`·`binding`·`locked`·`restored`·`finalized`·`substitutedForScheduling`·`fallbackClip`) · 동기화 `RemoteAlarmMapper.toRemoteRequest`(`clearsMissingVoiceReferences`) → `RemoteAlarmWriteRequest.encode(to:)` · `LocalAlarmRecord.preLockVoice` · `LocalAlarmStore.countByAudioCacheKey`(보관본도 참조) · `DefaultVoiceSubstitute.saveKeepsLock`(같은 테마 클립 채우기는 편집 아님) · `AlarmVoicePlayer.playIfNeeded(for:url:)`(in-app 폴백은 판정 URL) · `SocialFeatureViewModel.applyFreePlanVoiceLock`(선별 `FreePlanLockSelection`)·`restorePaidVoiceAlarms`·`rescheduleIfEnabled`(켜진 알람만 다시 예약) · `VoiceStudioViewModel.finalizeDefaultVoiceLocks`(보관본 오디오 전부 + 구운 사본)·`degradeCustomMessageAlarms`(잠긴 행 제외) · `AlarmKitViewModel.defaultVoiceSubstitute` · `AlarmSoundResolver.plan`(1b) · `RemoteAlarmPullSync`(보관본 보존) · `AlarmEditDraft`·`AlarmEditorSheet`(이어받기) · `AlarmsListView`(이름) · `RootView.downgradeNoticeMessage` + 카탈로그 |
+| 회귀 테스트 — 기본 목소리 대체 | — | `RingSoundDecisionTest`(리허설 재현·강제 알람음·받은 알람·사용자 무음·옛 강등 행의 목소리 크기 0 은 무음) · `DefaultVoiceFallbackTest`(대체 목소리는 미나·보관본 JSON 키 고정 포함·빈틈·세트 크기·묶지 못해도 테마 유지) · `DefaultVoiceLockRepositoryTest`(잠금·잠금은 마지막 목소리를 안 보고 미나·목소리 삭제는 같은 테마의 미나 알람·오디오 없는 미나 알람·옛 모양 이전·복원·확정·확정이 보관본 클립을 전부 놓음·키 없는 보관본 파일도 놓음·교체 표식에 잠긴 행 제외·모자란 세트는 자리로 묶지도 울리지도 않음) · `RemoteAlarmMapperTest`(잠긴 행·보관본 없는 기본 목소리 알람의 빈 문구·테마는 `null`) · `RemoteAlarmPullSyncServiceTest`(받은 알람 무음 없음·걷어낸 받은 알람은 미나·옛 버그 잠금 표시 되돌림) · `VoiceReplacementCascadeTest`(직접 입력은 미나·기본 목소리는 그대로·오디오 없는 행 다시 안 셈) · `AlarmOwnerScopedOperationsTest` | `DefaultVoiceSubstituteTests`(대체 목소리는 미나·예약 대체·내장 인사말·조건 클립·모자란 세트·테마 유지) · `RemoteAlarmMapperTests`(잠긴 행·보관본 없는 기본 목소리 알람의 빈 문구·테마는 `null`) · `FreePlanVoiceLockTests`(선별·두 번째 실행 0·보관본 참조 개수·같은 테마 클립 채우기는 잠금 유지·꺼진 알람은 다시 예약 안 함) · `VoiceReplacementCascadeTests`(직접 입력은 미나·기본 목소리는 그대로·오디오 없는 행 다시 안 셈·잠긴 행 제외·확정이 보관본 클립을 전부 놓음) · `InaccessibleVoiceReconcileTests`(접근권을 잃으면 미나) · `RemoteAlarmPullSyncTests`(걷어낸 받은 알람은 미나·수신자의 재생 방식 유지) · `PaidVoiceGateTests` · `AlarmEditDraftTests` |
 | 회귀 테스트 | `test/personal-promo.test.ts`(경계·게이트·보류 그룹 공유 목소리·**보류 주인 목소리·클립 PATCH(D8·D13 — 안드로이드 실제 페이로드)**·대조군·한도·쿠폰·전환) · `test/personal-promo-end.test.ts`(**2,500명 크론 시뮬레이션 두 가지(기기 평균 1.06대·2대) — 약속 시각 전 삭제 0**·실행당 subrequest·기한 = max(약속 시각, 전환 + 24시간)(D16)·고정 꼬리 없는 삭제(D15)·굶김(스윕 실패 뒤 전환·전환 실패 포함 시간당 경보 — D14)·자정 문구·배선) · `test/personal-promo-auth.test.ts`(계정 응답 5종·`deletes_voices_at_end`·`computed_at`) · `test/group-disband-batch.test.ts`(보관 판정 JS↔SQL 대조) · `test/promo-welcome-group.test.ts`(#121) · `packages/shared/test/personal-promo.test.ts` | `PaidVoiceAccessTest`(D9 보류 규칙) · `PersonalPromoNoticeTest`(`computed_at` 파싱·첫 결과 실패) · `PersonalPromoPersistenceTest`(D7) · `BillingPreflightSnapshotTest`(D7) · `PersonalPromoLedgerTest`(잠금 대기·잠금 갈래 `foregroundPlanLockAction`·미룬 잠금 `deferredPromoLapseLockDue`·plan 순번 `claimPlanAnswer`·이용권 화면 프로모 문구의 답) · `PlanScreenCurrentTest`(D4 — 개인 카드가 현재·결제 버튼 유지·예전 그대로인 네 갈래) · `EntryRefreshKeepsTokenTest` | `PersonalPromoTests`(D7·D9·종료 안내 판정·D12 `isFreeOnlyByPromoLapse`·`freePlanLockMayApply`·D4 `PlanScreenCurrent` — 안드로이드와 같은 표 + 카드가 없을 때의 폴백) · `AuthViewModelTests`(계정 요청 표·순번·진입 결과·`planAnsweredEntry`·토큰만 구른 답) · `BillingPreflightTests`(세션 밖 요청 실패의 표) · `VoiceShareAccessTests` · `PersonalPromoNoticeUITests`(이용권 화면 D4 — 뱃지·결제 버튼·문구가 개인 카드에 한 번 / 보류 행은 무료 카드·카드 위 한 줄 — 로컬 전용) |
 
 ## 구현 지도
@@ -1421,7 +1581,7 @@ entitlement 가 기기에 남은 채 지금은 Play 구독을 쓰는 사용자�
 | 갱신 신호 | `routes/billing-google-rtdn.ts` (RTDN) | `MainViewModelBillingActions.refreshStoreEntitlement` (시작·전경 진입) | `SubscriptionManager.resyncEntitlements` (전경 진입) |
 | **유료 판정 — 유일 출처** | `isPaidVoicePlan`(원시 users.plan) · `hasPersonalVoiceAccess`(기간 한정 개인 플랜 반영 — 위 절) · `hasActivePaidEntitlement`(삭제 직전) | `resolvePaidVoiceAccess` (`ui/util/PlatformAndLabelUtils.kt`) | `PaidVoiceGate.resolve` |
 | 판정 소비 — 잠금(파괴적) | — | `AlarmTalkApp` 잠금 이펙트(갈래 `foregroundPlanLockAction` — `isDefinitelyFreePlan` · 기간 한정 개인 플랜의 낡은 프로모 갈래는 `freePlanLockMayApply` → `WaitForEntryPlan`, 재확인 `deferredPromoLapseLockDue`) · `sync/PlanChangeSyncWorker` | `AlarmTalkApp.applyFreePlanVoiceLockIfNeeded`(낡은 프로모 갈래는 `PaidVoiceGate.freePlanLockMayApply` 로 기다린다 — D12) |
-| 판정 소비 — 울림·프리페치 | — | `alarm/RingingService` · `sync/StockClipPrefetchWorker` | `PaidVoiceGate.shouldDowngrade`(예약 시점) |
+| 판정 소비 — 울림·프리페치 | — | `alarm/RingingService`(→ `alarm/RingSoundDecision.kt` — 못 쓰면 기본 목소리, 절대 조용하지 않다) · `sync/StockClipPrefetchWorker` | `PaidVoiceGate.shouldDowngrade`(예약 시점) → `AlarmKitViewModel.defaultVoiceSubstitute` |
 | 판정 소비 — 표시·게이트 | — | `MainViewModel.isPaidVoiceEntitledOptimistic` · 커플·가족은 `hasCoupleOrFamilyAccess`(기간 한정 개인 플랜 중에는 `MainViewModel.personalPromoTierHold` — D9) | `PlanTier.bestKnown`(보류면 남은 행으로 등급을 올리지 않는다 — 기간 한정 개인 플랜 중에는 `personal_promo` 가 있는 것이 원시 free 의 신호 · 그룹으로 여는 자리는 `PlanTier.personalPromoHoldActive`) |
 | 판정 스냅샷 — `users.plan` 쓰기 | `/auth/me`의 `user.plan` · 결제 전 응답의 `user_plan` | `MainViewModelAuthActions`(`refreshAppSessionNow` — 순번 가드 `PersonalPromoLedger.claimPlanAnswer`) · `sync/PlanChangeSyncWorker` · `saveSubscriptionSnapshot` — 방금 받은 값만 | `SocialFeatureViewModel.refreshAll` · `refreshSubscriptionSilently`(세션 쪽은 `AuthViewModel.applyFreshPlan` 의 순번 가드) |
 | 무료 preflight의 Play TTL 캐시 무효화 | `refresh_store=1` 성공 응답의 `user_plan` | `AccessSnapshot.withBillingResponse` · `saveSubscriptionSnapshot` · `crossStoreRenewalBlocked`(Play 조회 잠금 공유); 회귀 `BillingPreflightSnapshotTest` | 해당 40일 TTL 없음(StoreKit 실제 만료 사용) |

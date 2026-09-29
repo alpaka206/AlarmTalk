@@ -34,6 +34,18 @@ fun bundledSystemVoiceProfiles(): List<VoiceProfile> = listOf(
 fun isSystemVoiceId(id: String?): Boolean = id?.startsWith(SYSTEM_VOICE_ID_PREFIX) == true
 
 /**
+ * 유료 목소리를 못 쓰게 된 알람이 넘어갈 **대체 기본 목소리 — 미나**. 대체는 전부 이 하나다:
+ * 무료 잠금 · 울릴 때 대체 · 목소리를 **잃은** 알람(삭제 · 공유 해제 · 발신자 철회 · 제자리 교체된
+ * 직접 입력). 알람이 이미 기본 목소리면 그 목소리를 그대로 둔다([pickDefaultSystemVoiceId]).
+ *
+ * 2026-09-29 사용자 결정 — "삭제했거나 공유가 해제된 알람은 기본 목소리로, 미나로 해 그냥", 이어서
+ * "미나로 통일도 해". 그전 무료 잠금은 **마지막에 쓴 기본 목소리**를 골라, 같은 계정의 알람이 경로마다
+ * 다른 목소리로 바뀌었다. 기억값을 보지 말 것 — 한 목소리로 정해 둔다.
+ * 규칙: `docs/spec/billing-lifecycle.md` 「목소리를 못 쓰게 되면」. iOS 짝은 `substituteSystemVoiceID`.
+ */
+const val SUBSTITUTE_SYSTEM_VOICE_ID = SYSTEM_VOICE_ID_PREFIX + "000000000102"
+
+/**
  * **직접 입력 문구로 합성한 음성 알람인가** — 서버 `messages.category = 'custom'` 의 로컬 짝.
  *
  * 제자리 목소리 교체는 프리셋(버킷) 알람을 **같은 message id 로 재렌더해 살리고**, 다시 만들 수
@@ -95,7 +107,7 @@ private fun usesFreeSystemVoiceAlarm(
     //
     // ⚠ 예전에는 여기서 `voiceSource == LOCAL_AUDIO` 를 곧바로 false 로 떨어뜨렸고, 이
     // 함수를 보는 **세 게이트가 전부** 막혔다: 저장(`voiceAlarmAllowed`), 무료 강등
-    // 잠금(`lockPaidAlarmTalks`), 울림 강등(`RingingService.downgradePaidVoice`).
+    // 잠금(`lockPaidAlarmTalks`), 울림 강등(`ringTimePaidVoiceUnusable`).
     // 그래서 무료 사용자는 녹음을 다 해 놓고 저장 단계에서 거절당했다.
     //
     // `localAudioUri` 를 함께 보는 이유: `degradeMatchingLocalOwnedVoiceAlarms` 가 강등

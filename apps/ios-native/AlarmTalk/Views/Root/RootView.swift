@@ -490,11 +490,11 @@ struct RootView: View {
     private func downgradeNoticeMessage(_ notice: DowngradeNoticeStore.Notice) -> LocalizedStringKey {
         switch notice.cause {
         case .freePlan:
-            return "목소리 알람 \(notice.count)개가 기본 알람음으로 바뀌었어요. 3일 안에 이용권을 다시 등록하면 목소리가 돌아오고, 지나면 영구 삭제돼요."
+            return "목소리 알람 \(notice.count)개가 기본 목소리로 바뀌었어요. 3일 안에 이용권을 다시 등록하면 내 목소리가 돌아오고, 지나면 영구 삭제돼요."
         case .voiceReplaced:
-            return "목소리를 새로 등록하면서 직접 입력한 문구로 만든 알람 \(notice.count)개가 기본 알람음으로 바뀌었어요. 새 목소리로 문구를 다시 만들어 주세요."
+            return "목소리를 새로 등록하면서 직접 입력한 문구로 만든 알람 \(notice.count)개가 기본 목소리로 바뀌었어요. 새 목소리로 문구를 다시 만들어 주세요."
         case .sharedReleased:
-            return "공유받던 목소리가 끊겨서 알람 \(notice.count)개가 기본 알람음으로 바뀌었어요. 다시 쓰려면 이용권을 등록하거나 새 초대 코드를 받아야 해요."
+            return "공유받던 목소리가 끊겨서 알람 \(notice.count)개가 기본 목소리로 바뀌었어요. 다시 쓰려면 이용권을 등록하거나 새 초대 코드를 받아야 해요."
         }
     }
 

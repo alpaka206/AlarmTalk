@@ -299,7 +299,7 @@ struct VoicePreviewConfirmView: View {
                             .font(theme.typography.bodyMedium)
                             .fontWeight(.semibold)
                             .foregroundStyle(theme.palette.onSurface)
-                        Text("이전에 저장한 목소리는 삭제돼요. 직접 입력 문구로 만든 알람도 기본 알람음으로 바뀌어요.")
+                        Text("이전에 저장한 목소리는 삭제돼요. 직접 입력 문구로 만든 알람도 기본 목소리로 바뀌어요.")
                             .font(theme.typography.bodySmall)
                             .foregroundStyle(theme.palette.onSurfaceVariant)
                     }

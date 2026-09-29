@@ -32,6 +32,7 @@ import androidx.compose.ui.unit.dp
 import com.alarmtalk.app.R
 import com.alarmtalk.app.data.AlarmEntity
 import com.alarmtalk.app.data.VoiceSources
+import com.alarmtalk.app.data.wasVoiceAlarmConvertedBySystem
 import com.alarmtalk.app.data.VoiceProfileCreationDraft
 import com.alarmtalk.app.network.AuthSession
 import com.alarmtalk.app.network.BillingSubscriptionResponse
@@ -349,10 +350,11 @@ internal fun AlarmListScreen(
                 }
                 items(sortedAlarms, key = { it.id }) { alarm ->
                     // TTS 알람만 프로필 이름을 찾는다(녹음·파일 알람은 이름 없이 날짜만).
-                    // 무료 전환으로 사운드온리 잠금된 알람(preLockPlayMode≠null)은 더는 그 목소리로
-                    // 울리지 않으므로 목소리 이름을 숨긴다(대신 '기본 알람으로 변환' 배지가 뜬다).
+                    // 시스템이 '알람' 모드로 바꿔 둔 옛 잠금·강등 행은 더는 그 목소리로 울리지 않으므로
+                    // 목소리 이름을 숨긴다. 2026-09-29 부터의 잠금은 행을 **기본 목소리 알람**으로
+                    // 고쳐 쓰므로(billing-lifecycle.md 「목소리를 못 쓰게 되면」) 그 기본 목소리 이름이 보인다.
                     val voiceName = alarm.voiceProfileId
-                        ?.takeIf { alarm.voiceSource != VoiceSources.LOCAL_AUDIO && alarm.preLockPlayMode == null }
+                        ?.takeIf { alarm.voiceSource != VoiceSources.LOCAL_AUDIO && !alarm.wasVoiceAlarmConvertedBySystem() }
                         ?.let { profileId ->
                             voiceProfiles.firstOrNull { it.id == profileId }?.name
                                 ?: familyVoices.firstOrNull { it.id == profileId }?.name

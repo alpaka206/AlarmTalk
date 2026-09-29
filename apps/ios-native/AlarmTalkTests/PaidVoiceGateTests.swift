@@ -220,21 +220,31 @@ final class PaidVoiceGateTests: XCTestCase {
 
     // MARK: - 강등 결과
 
-    /// **알람 자체는 그대로 울린다.** 목소리만 빼고 기본 톤으로 떨어뜨린다 —
-    /// 시각·요일·켜짐을 건드리면 그날 못 일어난다.
-    func test_downgraded_keepsScheduleAndOnlyDropsVoice() {
+    /// **알람 자체는 그대로 울린다 — 기본 목소리로.** 목소리만 기본 목소리로 바꾸고 재생 방식은
+    /// 그대로다(2026-09-29 dev 리허설 — 알람음으로 내린 모양이 안드로이드에서 무음으로 울렸다).
+    /// 시각·요일·켜짐을 건드리면 그날 못 일어난다. 원래 행은 값 타입이라 그대로다(예약에만 쓴다).
+    func test_substitute_keepsScheduleAndVoiceModeWithADefaultVoice() {
         let record = paidVoiceAlarm()
-        let downgraded = PaidVoiceGate.downgraded(record)
+        let snap = snapshot(nil)
+        XCTAssertTrue(PaidVoiceGate.shouldDowngrade(record: record, snapshot: snap))
 
-        XCTAssertEqual(downgraded.playMode, AlarmPlayMode.alarmOnly.rawValue)
-        XCTAssertEqual(downgraded.hour, record.hour)
-        XCTAssertEqual(downgraded.minute, record.minute)
-        XCTAssertEqual(downgraded.repeatDaysMask, record.repeatDaysMask)
-        XCTAssertEqual(downgraded.enabled, record.enabled)
-        XCTAssertEqual(downgraded.id, record.id)
-        // 원본 값은 남겨 둔다 — 구독을 되살리면 그대로 돌아와야 한다.
-        XCTAssertEqual(downgraded.voiceProfileId, record.voiceProfileId)
-        XCTAssertEqual(downgraded.audioCacheKey, record.audioCacheKey)
+        let substitute = DefaultVoiceSubstitute.substitutedForScheduling(
+            record,
+            voiceID: DefaultVoiceSubstitute.pickVoiceID(alarmVoiceID: record.voiceProfileId),
+            binding: nil
+        )
+
+        XCTAssertEqual(substitute.playMode, AlarmPlayMode.voiceOnly.rawValue, "알람음으로 내리지 않는다")
+        XCTAssertTrue(isSystemVoiceId(substitute.voiceProfileId))
+        XCTAssertEqual(substitute.hour, record.hour)
+        XCTAssertEqual(substitute.minute, record.minute)
+        XCTAssertEqual(substitute.repeatDaysMask, record.repeatDaysMask)
+        XCTAssertEqual(substitute.enabled, record.enabled)
+        XCTAssertEqual(substitute.id, record.id)
+        XCTAssertEqual(substitute.updatedAtMillis, record.updatedAtMillis, "예약 지문의 입력을 흔들지 않는다")
+        XCTAssertNil(substitute.preLockVoice, "예약용 대체는 잠금이 아니다 — 보관본을 만들지 않는다")
+        // 대체 행은 무료 기본 목소리 알람이라 다시 강등 대상이 아니다.
+        XCTAssertFalse(PaidVoiceGate.shouldDowngrade(record: substitute, snapshot: snap))
     }
 
     // MARK: - 타임스탬프 파싱
