@@ -39,7 +39,8 @@ final class StockClipPrefetcher: ObservableObject {
     /// 예전에는 `start` 마다 약 168KB 를 새로 받았다 — 콜드 스타트에 계정 키·언어 키·전경 복귀가
     /// 거의 동시에 부르고, 내 목소리 목록이 도착하면 대상을 넓혀 또 불러 3~5번, 전경 복귀마다 재바인딩의
     /// 강제 조회(의도)와 겹쳐 2번이었다. 45초는 한 번의 콜드 스타트·전경 복귀 안에서 겹치는 호출을 덮고,
-    /// 다음 복귀에는 다시 받을 만큼 짧다 — 규칙은 `docs/spec/voice-and-message.md` 「언제 받는가」.
+    /// 다음 복귀에는 다시 받을 만큼 짧다 — 안드로이드 `StockClipManifestFlights.FRESH_WINDOW_MS` 와 같은 값이다.
+    /// 규칙은 `docs/spec/voice-and-message.md` 「언제 받는가」.
     ///
     /// ⚠ **서버가 바뀐 것을 아는 자리는 창을 쓰지 않는다** — `start(manifestDepartedAfter:)` 로 그
     ///   시각 **뒤에 출발한** 응답만 받게 한다(클론 생성이 끝난 뒤의 다운로드, 준비 화면의 부족분).
