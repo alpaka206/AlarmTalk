@@ -78,23 +78,90 @@ final class FreePlanVoiceLockTests: XCTestCase {
         XCTAssertNil(restored.preLockVoice)
     }
 
-    /// 소유자가 다르면 잠금 대상이 아니다(같은 기기에서 계정을 바꾼 경우).
-    func test_다른_계정_알람은_대상이_아니다() {
-        var mine = LocalAlarmRecord(label: "t", hour: 7, minute: 0, fireAtMillis: 0, playMode: AlarmPlayMode.voiceOnly.rawValue)
-        mine.ownerUserId = "user-A"
-        var theirs = LocalAlarmRecord(label: "t", hour: 7, minute: 0, fireAtMillis: 0, playMode: AlarmPlayMode.voiceOnly.rawValue)
-        theirs.ownerUserId = "user-B"
-        var legacy = LocalAlarmRecord(label: "t", hour: 7, minute: 0, fireAtMillis: 0, playMode: AlarmPlayMode.voiceOnly.rawValue)
-        legacy.ownerUserId = nil
+    // MARK: - 한 번의 잠금 실행이 건드리는 행 (`FreePlanLockSelection` — `applyFreePlanVoiceLock` 의 선별)
 
-        let expected = "user-A"
-        func isTarget(_ r: LocalAlarmRecord) -> Bool {
-            guard let owner = r.ownerUserId else { return true }
-            return owner == expected
+    private func record(
+        _ id: String,
+        owner: String? = "user-A",
+        playMode: AlarmPlayMode = .voiceOnly
+    ) -> LocalAlarmRecord {
+        var record = cloneAlarm()
+        record.id = id
+        record.ownerUserId = owner
+        record.playMode = playMode.rawValue
+        return record
+    }
+
+    /// 선별대로 한 번 실행한다 — 예약(AlarmKit)만 빼고 `applyFreePlanVoiceLock` 과 같은 변환이다.
+    private func runLock(_ alarms: [LocalAlarmRecord], owner: String?) -> (newLocks: Int, alarms: [LocalAlarmRecord]) {
+        let selection = FreePlanLockSelection(alarms: alarms, expectedOwnerUserId: owner)
+        var byID = Dictionary(uniqueKeysWithValues: alarms.map { ($0.id, $0) })
+        for record in selection.toUnlock { byID[record.id] = FreePlanLockSelection.unlocked(record) }
+        for record in selection.toLock {
+            byID[record.id] = DefaultVoiceSubstitute.locked(record, voiceID: systemVoice, binding: nil, nowMillis: 1)
         }
+        return (selection.newLockCount, alarms.map { byID[$0.id]! })
+    }
 
-        XCTAssertTrue(isTarget(mine))
-        XCTAssertFalse(isTarget(theirs), "앞 계정 알람까지 잠그면 안 된다")
-        XCTAssertTrue(isTarget(legacy), "소유자가 안 적힌 옛 행은 이 계정 것으로 본다")
+    /// 소유자가 다르면 잠금 대상이 아니다(같은 기기에서 계정을 바꾼 경우). 소유자가 안 적힌 옛 행은
+    /// 이 계정 것으로 본다.
+    func test_다른_계정_알람은_대상이_아니다() {
+        let alarms = [record("mine"), record("theirs", owner: "user-B"), record("legacy", owner: nil)]
+
+        let selection = FreePlanLockSelection(alarms: alarms, expectedOwnerUserId: "user-A")
+
+        XCTAssertEqual(Set(selection.toLock.map(\.id)), ["mine", "legacy"], "앞 계정 알람까지 잠그면 안 된다")
+    }
+
+    /// ⚠ 새 모양으로 잠긴 행(보관본 있음)은 **되돌리기 대상도 잠금 대상도 아니다.** 그 행은 이제 무료
+    /// 기본 목소리 알람이라 `isPaidVoiceForDowngrade` 가 거짓인데, 되돌리기 갈래에서 빼지 않으면
+    /// 보관본을 버린 채 잠금이 풀린다 — 재결제해도 내 목소리가 돌아오지 않는다.
+    func test_새_모양으로_잠긴_행은_건드리지_않는다() {
+        let locked = DefaultVoiceSubstitute.locked(record("locked"), voiceID: systemVoice, binding: nil, nowMillis: 1)
+        XCTAssertFalse(locked.isPaidVoiceForDowngrade, "전제 — 되돌리기 갈래의 조건에 걸리는 모양이다")
+
+        let selection = FreePlanLockSelection(alarms: [locked], expectedOwnerUserId: "user-A")
+
+        XCTAssertTrue(selection.toUnlock.isEmpty, "되돌리면 보관본을 버린 채 풀린다")
+        XCTAssertTrue(selection.toLock.isEmpty)
+    }
+
+    /// 옛 모양(`alarm_only` + `preLockPlayMode`)은 옮기되 **세지 않는다** — 이미 알린 알람이다.
+    /// 자격을 잃은 옛 잠금(무료 기본 목소리 알람인데 잠긴 행)은 재생 방식만 되돌린다.
+    func test_옛_모양은_옮기되_세지_않고_자격_잃은_잠금은_푼다() {
+        var legacy = record("legacy-lock", playMode: .alarmOnly)
+        legacy.preLockPlayMode = AlarmPlayMode.voiceOnly.rawValue
+        var stale = LocalAlarmRecord(id: "stale", label: "t", hour: 7, minute: 0, fireAtMillis: 0, playMode: AlarmPlayMode.alarmOnly.rawValue)
+        stale.voiceProfileId = systemVoice
+        stale.preLockPlayMode = AlarmPlayMode.voiceOnly.rawValue
+        stale.ownerUserId = "user-A"
+
+        let result = runLock([legacy, stale], owner: "user-A")
+
+        XCTAssertEqual(result.newLocks, 0, "옛 모양을 옮긴 것으로 강등 모달을 다시 띄우지 않는다")
+        let moved = result.alarms[0]
+        XCTAssertEqual(moved.playMode, AlarmPlayMode.voiceOnly.rawValue)
+        XCTAssertEqual(moved.voiceProfileId, systemVoice)
+        XCTAssertEqual(moved.preLockVoice?.voiceProfileId, "clone-a")
+        let unlocked = result.alarms[1]
+        XCTAssertEqual(unlocked.playMode, AlarmPlayMode.voiceOnly.rawValue)
+        XCTAssertNil(unlocked.preLockPlayMode)
+    }
+
+    /// ⚠ 두 번째 실행은 **아무것도 바꾸지 않고 0 을 돌려준다** — 안 그러면 앱을 열 때마다 강등 모달이
+    /// 다시 뜬다(2026-08-11 "모달 계속 뜨네"). 안드로이드 `aSecondLockRunChangesNothingAndCountsNothing` 짝.
+    func test_두번째_실행은_아무것도_바꾸지_않는다() {
+        var legacy = record("legacy-lock", playMode: .alarmOnly)
+        legacy.preLockPlayMode = AlarmPlayMode.voiceOnly.rawValue
+        let first = runLock([record("fresh"), legacy], owner: "user-A")
+        XCTAssertEqual(first.newLocks, 1, "처음 잠그는 행만 센다")
+
+        let selection = FreePlanLockSelection(alarms: first.alarms, expectedOwnerUserId: "user-A")
+        let second = runLock(first.alarms, owner: "user-A")
+
+        XCTAssertTrue(selection.toLock.isEmpty)
+        XCTAssertTrue(selection.toUnlock.isEmpty)
+        XCTAssertEqual(second.newLocks, 0)
+        XCTAssertEqual(second.alarms, first.alarms)
     }
 }

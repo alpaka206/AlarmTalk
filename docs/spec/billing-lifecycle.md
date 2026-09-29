@@ -1135,10 +1135,23 @@ Vibration disabled for ringing alarm
   (안드로이드 `AlarmEntity.preLockVoiceJson`, iOS `LocalAlarmRecord.preLockVoice`)에 담고, 재생 방식은
   예전처럼 `preLockPlayMode` 에 담는다. 보관본이 있는 것이 '새 모양으로 잠겼다' 는 표시다.
   보관본이 가리키는 오디오 파일은 캐시 정리가 지우지 않는다(참조로 센다).
+  ⚠ 안드로이드 보관본은 Gson JSON 이 **앱 업데이트를 건너서** 읽히므로 필드 키를 `@SerializedName`
+  으로 못 박는다(release 는 R8 이 필드 이름을 줄인다 — 매핑이 바뀐 빌드가 보관본을 잃거나 엉뚱한
+  필드로 읽으면 복원이 목소리 없는 행을 서버에 올린다). 키는 바꾸지 않고 더하기만 한다.
 - **복원**(다시 유료 — 안드로이드 `unlockPaidAlarmTalks`, iOS `restorePaidVoiceAlarms`)은 보관본을
   되돌리고 **동기화 대상으로 올린다** — 잠긴 동안 켜기·끄기가 기본 목소리를 서버에 올렸을 수 있다.
 - 보관 기간이 지나 원래 목소리가 **지워지면**(접근 가능한 목소리 목록에서 빠짐) 잠금을
   **확정**한다 — 보관본과 표시를 버리고 기본 목소리 알람으로 남는다. 알람음으로 내리지 않는다.
+  원래 목소리가 **제자리 교체**돼(voice-and-message.md §4-1) 보관본의 직접 입력 오디오가 낡은
+  경우도 같다.
+- ⚠ **잠긴 행은 강등 대상이 아니다 — 확정만 한다.** 잠긴 행의 지금 목소리는 잠금이 넣은 **대체
+  기본 목소리**이고 자기 오디오가 없다. 그런데 테마 없이 잠근 행(기본 인사말·직접 입력, 클립을 못
+  받아 둔 경우)은 직접 입력 판정(`usesCustomMessageVoice`)에 걸리고 오디오 시각이 0 이라, 그 **기본
+  목소리의 제자리 교체 표식**이 오면 낡은 직접 입력 알람으로 잡혀 알람음으로 내려가고 "직접 입력
+  알람이 기본 알람음으로 바뀌었어요" 가 떴다 — 낡은 오디오가 하나도 없는데. 그래서 강등 한 회차를
+  **시작할 때 잠겨 있던 행**은(그 회차의 확정으로 막 풀린 행 포함) 강등 후보에서 뺀다(안드로이드
+  `degradeMatchingLocalOwnedVoiceAlarms`, iOS `degradeCustomMessageAlarms`). 다른 강등(삭제·접근권
+  상실)은 시스템 목소리를 보지 않으므로 애초에 이 행에 닿지 않는다.
 - 사용자가 잠긴 알람을 편집·저장하면 보관본도 비운다(`preLockPlayMode` 와 같은 이유 — 명시적 편집이
   이긴다. 안 그러면 재결제 때 복원이 사용자의 편집을 덮는다). 안드로이드는 **어떤 편집이든** 비운다
   (옛 `preLockPlayMode` 규칙 그대로 — `AlarmRepository` 의 수정 경로). iOS 는 옛 iOS 규칙대로 **목소리를
@@ -1422,8 +1435,8 @@ Vibration disabled for ringing alarm
 | 전역 클론 상한 500 | `lib/voice-slots.ts` `MAX_PROVIDER_CLONE_VOICES` | — | — |
 | 이용권 화면 한 줄(D4 — 나중에 받은 답) | — | `ui/billing/BillingPanels.kt`(`personal_promo_plan_line`) · `planScreenPersonalPromoOf`·`PersonalPromoLedger.planScreenPromo`(`recordBillingAnswer(result)` — 문을 지난 `EntitlementWrite.Applied` 만, `MainViewModel.saveSubscriptionSnapshot` 이 부른다) → `MainViewModel.planScreenPersonalPromo` → `AlarmListScreen` 의 `planScreenPersonalPromo` · `activePersonalPromoOf` | `BillingPanel.personalPromoLine`·`personalPromoLastDay`(세션 하나 — `applyFreshPlan` 의 순번 가드) |
 | 종료 안내(D3·D4) | — | [gates-and-overlays.md](gates-and-overlays.md) 구현 지도 | 같은 곳 |
-| 목소리를 못 쓰게 되면 기본 목소리 — 잠금·울림·복원·확정(2026-09-29) | 바꾸지 않는다 — 잠긴 행의 시스템 목소리·스톡 프리셋은 `usesOnlySystemStockVoice`·`voiceProfileBelongsToCaller`·`messageBelongsToCaller` 의 시스템 갈래가 받는다 | `data/DefaultVoiceFallback.kt`(`pickDefaultSystemVoiceId`·`defaultVoiceBucketFor`·`defaultVoiceClipSet`·`LockedPaidVoice`·`lockedToDefaultVoice`·`restoredFromLock`·`finalizedLock`·`isLegacyPlanLock`·`wasVoiceAlarmConvertedBySystem`) · `data/DefaultVoiceClipSource.kt`(`lockBinding`·`ringUri`) · `AlarmRepository.lockPaidAlarmTalks`·`unlockPaidAlarmTalks`·`degradeMatchingLocalOwnedVoiceAlarms`(확정)·`sweepStaleAudioCache` · `AlarmDao.countByAudioCacheKey`(보관본도 참조) · `AlarmEntity.preLockVoiceJson`(Room 26→27) · 울림 `alarm/RingSoundDecision.kt` → `RingingService` · 목록 `AlarmListScreen`(이름) · 문구 `downgrade_notice_free_message` | `DefaultVoiceSubstitute.swift`(`LockedPaidVoice`·`locked`·`restored`·`finalized`·`substitutedForScheduling`·`fallbackClip`) · `LocalAlarmRecord.preLockVoice` · `SocialFeatureViewModel.applyFreePlanVoiceLock`·`restorePaidVoiceAlarms` · `VoiceStudioViewModel.finalizeDefaultVoiceLocks` · `AlarmKitViewModel.defaultVoiceSubstitute` · `AlarmSoundResolver.plan`(1b) · `RemoteAlarmPullSync`(보관본 보존) · `AlarmEditDraft`·`AlarmEditorSheet`(이어받기) · `AlarmsListView`(이름) · `RootView.downgradeNoticeMessage` + 카탈로그 |
-| 회귀 테스트 — 기본 목소리 대체 | — | `RingSoundDecisionTest`(리허설 재현·강제 알람음·받은 알람·사용자 무음) · `DefaultVoiceFallbackTest` · `DefaultVoiceLockRepositoryTest`(잠금·옛 모양 이전·복원·확정) · `AlarmOwnerScopedOperationsTest` | `DefaultVoiceSubstituteTests`(예약 대체·내장 인사말·조건 클립) · `FreePlanVoiceLockTests` · `PaidVoiceGateTests` · `AlarmEditDraftTests` |
+| 목소리를 못 쓰게 되면 기본 목소리 — 잠금·울림·복원·확정(2026-09-29) | 바꾸지 않는다 — 잠긴 행의 시스템 목소리·스톡 프리셋은 `usesOnlySystemStockVoice`·`voiceProfileBelongsToCaller`·`messageBelongsToCaller` 의 시스템 갈래가 받는다 | `data/DefaultVoiceFallback.kt`(`pickDefaultSystemVoiceId`·`defaultVoiceBucketFor`·`defaultVoiceClipSet`·`LockedPaidVoice`·`lockedToDefaultVoice`·`restoredFromLock`·`finalizedLock`·`isLegacyPlanLock`·`wasVoiceAlarmConvertedBySystem`) · `data/DefaultVoiceClipSource.kt`(`lockBinding`·`ringUri`) · `AlarmRepository.lockPaidAlarmTalks`·`unlockPaidAlarmTalks`·`degradeMatchingLocalOwnedVoiceAlarms`(확정 · 잠긴 행 제외)·`sweepStaleAudioCache` · `AlarmDao.countByAudioCacheKey`(보관본도 참조) · `AlarmEntity.preLockVoiceJson`(Room 26→27) · 울림 `alarm/RingSoundDecision.kt` → `RingingService` · 목록 `AlarmListScreen`(이름) · 문구 `downgrade_notice_free_message` | `DefaultVoiceSubstitute.swift`(`LockedPaidVoice`·`locked`·`restored`·`finalized`·`substitutedForScheduling`·`fallbackClip`) · `LocalAlarmRecord.preLockVoice` · `SocialFeatureViewModel.applyFreePlanVoiceLock`(선별 `FreePlanLockSelection`)·`restorePaidVoiceAlarms` · `VoiceStudioViewModel.finalizeDefaultVoiceLocks`·`degradeCustomMessageAlarms`(잠긴 행 제외) · `AlarmKitViewModel.defaultVoiceSubstitute` · `AlarmSoundResolver.plan`(1b) · `RemoteAlarmPullSync`(보관본 보존) · `AlarmEditDraft`·`AlarmEditorSheet`(이어받기) · `AlarmsListView`(이름) · `RootView.downgradeNoticeMessage` + 카탈로그 |
+| 회귀 테스트 — 기본 목소리 대체 | — | `RingSoundDecisionTest`(리허설 재현·강제 알람음·받은 알람·사용자 무음) · `DefaultVoiceFallbackTest`(보관본 JSON 키 고정 포함) · `DefaultVoiceLockRepositoryTest`(잠금·옛 모양 이전·복원·확정·교체 표식에 잠긴 행 제외) · `RemoteAlarmPullSyncServiceTest`(받은 알람 무음 없음) · `AlarmOwnerScopedOperationsTest` | `DefaultVoiceSubstituteTests`(예약 대체·내장 인사말·조건 클립) · `FreePlanVoiceLockTests`(선별·두 번째 실행 0) · `VoiceReplacementCascadeTests`(잠긴 행 제외) · `PaidVoiceGateTests` · `AlarmEditDraftTests` |
 | 회귀 테스트 | `test/personal-promo.test.ts`(경계·게이트·보류 그룹 공유 목소리·**보류 주인 목소리·클립 PATCH(D8·D13 — 안드로이드 실제 페이로드)**·대조군·한도·쿠폰·전환) · `test/personal-promo-end.test.ts`(**2,500명 크론 시뮬레이션 두 가지(기기 평균 1.06대·2대) — 약속 시각 전 삭제 0**·실행당 subrequest·기한 = max(약속 시각, 전환 + 24시간)(D16)·고정 꼬리 없는 삭제(D15)·굶김(스윕 실패 뒤 전환·전환 실패 포함 시간당 경보 — D14)·자정 문구·배선) · `test/personal-promo-auth.test.ts`(계정 응답 5종·`deletes_voices_at_end`·`computed_at`) · `test/group-disband-batch.test.ts`(보관 판정 JS↔SQL 대조) · `test/promo-welcome-group.test.ts`(#121) · `packages/shared/test/personal-promo.test.ts` | `PaidVoiceAccessTest`(D9 보류 규칙) · `PersonalPromoNoticeTest`(`computed_at` 파싱·첫 결과 실패) · `PersonalPromoPersistenceTest`(D7) · `BillingPreflightSnapshotTest`(D7) · `PersonalPromoLedgerTest`(잠금 대기·잠금 갈래 `foregroundPlanLockAction`·미룬 잠금 `deferredPromoLapseLockDue`·plan 순번 `claimPlanAnswer`·이용권 한 줄) · `EntryRefreshKeepsTokenTest` | `PersonalPromoTests`(D7·D9·종료 안내 판정·D12 `isFreeOnlyByPromoLapse`·`freePlanLockMayApply`) · `AuthViewModelTests`(계정 요청 표·순번·진입 결과·`planAnsweredEntry`·토큰만 구른 답) · `BillingPreflightTests`(세션 밖 요청 실패의 표) · `VoiceShareAccessTests` · `PersonalPromoNoticeUITests` |
 
 ## 구현 지도

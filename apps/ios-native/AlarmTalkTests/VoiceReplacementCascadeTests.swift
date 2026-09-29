@@ -142,6 +142,58 @@ final class VoiceReplacementCascadeTests: XCTestCase {
         XCTAssertEqual(store.record(id: "theirs")?.voiceProfileId, "clone-1")
     }
 
+    /// 무료 잠금이 테마 없이 기본 목소리로 바꾼 행은 그 목소리가 **대체 목소리**라 자기 오디오가 없다.
+    /// 직접 입력 판정에 걸리고 오디오 시각이 0 이라, 그 기본 목소리의 교체 표식에 잡혀 알람음으로
+    /// 내려가고 "직접 입력 알람이 바뀌었어요" 가 떴다 — 낡은 오디오가 하나도 없는데.
+    /// (`docs/spec/billing-lifecycle.md` 「목소리를 못 쓰게 되면」, 안드로이드
+    /// `DefaultVoiceLockRepositoryTest.theSubstituteVoicesInPlaceReplacementLeavesAnUnboundLockAlone` 짝)
+    func test_잠금이_넣은_기본_목소리가_교체돼도_잠긴_알람은_그대로다() {
+        let store = makeStore()
+        let systemID = systemVoiceIDPrefix + "000000000101"
+        let locked = DefaultVoiceSubstitute.locked(
+            alarm(id: "locked", voiceProfileId: "clone-1", cacheKey: "tts-custom-1"),
+            voiceID: systemID, binding: nil, nowMillis: 1
+        )
+        XCTAssertTrue(locked.usesCustomMessageVoice, "전제 — 직접 입력 판정에 걸리는 모양이다")
+        store.upsert(locked)
+        let voice = VoiceStudioViewModel()
+
+        let degraded = voice.degradeCustomMessageAlarms(
+            forProfileID: systemID, alarmStore: store, audioCache: nil, ownerUserId: "owner-1",
+            allowSystemVoice: true, invalidatedBefore: Date().addingTimeInterval(60)
+        )
+
+        XCTAssertTrue(degraded.isEmpty, "강등 안내에 세지 않는다")
+        XCTAssertEqual(store.record(id: "locked")?.playMode, AlarmPlayMode.voiceOnly.rawValue)
+        XCTAssertEqual(store.record(id: "locked")?.voiceProfileId, systemID, "그대로 기본 목소리로 운다")
+        XCTAssertEqual(store.record(id: "locked")?.preLockVoice?.voiceProfileId, "clone-1", "복원할 원래 목소리도 그대로")
+    }
+
+    /// 기본 목소리로 친 직접 입력(생성 오디오 — 유료)을 잠근 뒤 그 목소리가 교체되면 보관본의 오디오가
+    /// 낡았다 — 잠금을 **확정**한다. 같은 회차에 방금 풀린 그 행을 강등 후보로 다시 읽으면 알람음으로
+    /// 내려가 버린다(확정은 "기본 목소리로 남긴다" 가 규칙이다).
+    func test_교체된_기본_목소리로_친_직접_입력의_잠금은_확정만_한다() {
+        let store = makeStore()
+        let systemID = systemVoiceIDPrefix + "000000000101"
+        store.upsert(DefaultVoiceSubstitute.locked(
+            alarm(id: "manual", voiceProfileId: systemID, cacheKey: "tts-manual-1"),
+            voiceID: systemID, binding: nil, nowMillis: 1
+        ))
+        let voice = VoiceStudioViewModel()
+
+        let degraded = voice.degradeCustomMessageAlarms(
+            forProfileID: systemID, alarmStore: store, audioCache: nil, ownerUserId: "owner-1",
+            allowSystemVoice: true, invalidatedBefore: Date().addingTimeInterval(60)
+        )
+
+        XCTAssertTrue(degraded.isEmpty)
+        let after = store.record(id: "manual")
+        XCTAssertEqual(after?.playMode, AlarmPlayMode.voiceOnly.rawValue)
+        XCTAssertEqual(after?.voiceProfileId, systemID)
+        XCTAssertNil(after?.preLockVoice, "낡은 원래 오디오는 되살리지 않는다")
+        XCTAssertNil(after?.preLockPlayMode)
+    }
+
     func test_기본_목소리는_대상이_아니다() {
         let store = makeStore()
         let systemID = systemVoiceIDPrefix + "000000000101"

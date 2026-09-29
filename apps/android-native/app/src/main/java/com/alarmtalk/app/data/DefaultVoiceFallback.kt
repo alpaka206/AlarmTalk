@@ -5,6 +5,7 @@ import com.alarmtalk.app.clonePrerenderBucketCategoryFor
 import com.alarmtalk.app.network.StockClip
 import com.alarmtalk.app.randomPromptContextForBucket
 import com.google.gson.Gson
+import com.google.gson.annotations.SerializedName
 
 /*
  * 유료 목소리를 못 쓰게 된 알람의 **기본 목소리 대체** — 판정만 모은 순수 함수들이다.
@@ -106,27 +107,34 @@ fun AlarmEntity.defaultVoiceVariantIndex(bucket: String, clipKeys: List<String>)
  *
  * 재생 방식은 여기 없다 — 예전처럼 [AlarmEntity.preLockPlayMode] 에 둔다.
  * Gson 이 코틀린 기본값을 적용하지 않으므로(리플렉션 생성) 전부 nullable 로 둔다.
+ *
+ * ⚠ **필드마다 `@SerializedName` 으로 키를 못 박는다 — 빼지 말 것.** 이 JSON 은 Room 컬럼에
+ * 남아 **앱 업데이트를 건너서** 읽힌다. release 는 R8 이 필드 이름을 줄이므로(`{"a":…}`),
+ * 키가 없으면 매핑이 바뀐 다음 빌드가 보관본을 null 이나 **엉뚱한 필드**로 읽는다 — 재결제한
+ * 사용자의 알람이 목소리 없이 되돌아가 서버에까지 올라간다. `proguard-rules.pro` 가
+ * `@SerializedName` 필드를 지킨다(로보렉트릭은 R8 을 거치지 않아 이 사고를 못 잡는다).
+ * 키 이름을 바꾸면 이미 잠긴 행을 못 읽는다 — 바꾸지 말고 새 키를 더한다.
  */
 data class LockedPaidVoice(
-    val voiceSource: String? = null,
-    val voiceProfileId: String? = null,
-    val voiceListenerTitle: String? = null,
-    val voiceText: String? = null,
-    val voiceCategory: String? = null,
-    val voiceLanguage: String? = null,
-    val voiceRandomPrompt: Boolean? = null,
-    val voiceRandomContext: String? = null,
-    val localAudioUri: String? = null,
-    val audioCacheKey: String? = null,
-    val rawAudioUri: String? = null,
-    val ttsMessageId: String? = null,
-    val bucketId: String? = null,
-    val bucketRotationIndex: Int? = null,
-    val bucketClipKeysJson: String? = null,
-    val bucketClipTextsJson: String? = null,
-    val contextVariantIndex: Int? = null,
-    val contextResolvedAtMillis: Long? = null,
-    val dynamicVoicePreparedForFireAtMillis: Long? = null,
+    @SerializedName("voiceSource") val voiceSource: String? = null,
+    @SerializedName("voiceProfileId") val voiceProfileId: String? = null,
+    @SerializedName("voiceListenerTitle") val voiceListenerTitle: String? = null,
+    @SerializedName("voiceText") val voiceText: String? = null,
+    @SerializedName("voiceCategory") val voiceCategory: String? = null,
+    @SerializedName("voiceLanguage") val voiceLanguage: String? = null,
+    @SerializedName("voiceRandomPrompt") val voiceRandomPrompt: Boolean? = null,
+    @SerializedName("voiceRandomContext") val voiceRandomContext: String? = null,
+    @SerializedName("localAudioUri") val localAudioUri: String? = null,
+    @SerializedName("audioCacheKey") val audioCacheKey: String? = null,
+    @SerializedName("rawAudioUri") val rawAudioUri: String? = null,
+    @SerializedName("ttsMessageId") val ttsMessageId: String? = null,
+    @SerializedName("bucketId") val bucketId: String? = null,
+    @SerializedName("bucketRotationIndex") val bucketRotationIndex: Int? = null,
+    @SerializedName("bucketClipKeysJson") val bucketClipKeysJson: String? = null,
+    @SerializedName("bucketClipTextsJson") val bucketClipTextsJson: String? = null,
+    @SerializedName("contextVariantIndex") val contextVariantIndex: Int? = null,
+    @SerializedName("contextResolvedAtMillis") val contextResolvedAtMillis: Long? = null,
+    @SerializedName("dynamicVoicePreparedForFireAtMillis") val dynamicVoicePreparedForFireAtMillis: Long? = null,
 ) {
     /** 이 보관본이 붙들고 있는 캐시 키 — 캐시 정리가 지우지 않게 참조로 센다. */
     fun referencedCacheKeys(): List<String> =

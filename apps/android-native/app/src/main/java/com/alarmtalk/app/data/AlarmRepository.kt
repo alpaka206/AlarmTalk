@@ -1004,9 +1004,17 @@ class AlarmRepository(
         // 지워진 목소리를 되살려, 다음 강등이 그 알람을 알람음으로 내린다.
         // (`docs/spec/billing-lifecycle.md` 「목소리를 못 쓰게 되면」)
         val lockCheckedAt = System.currentTimeMillis()
-        alarmDao.getAllAlarms().filter { alarm ->
+        // 이 회차를 시작할 때 잠겨 있던 행 — 아래 강등 후보에서 **뺀다**(위 확정으로 방금 풀린 행 포함).
+        // 그 행의 지금 목소리는 잠금이 넣은 **대체 기본 목소리**이고, 자기 오디오가 없다(클립을
+        // 묶었으면 `stock_` 클립이라 직접 입력 판정에 안 걸린다). 그런데 테마 없이 잠근 행은
+        // `usesCustomMessageVoice` 가 참이고 오디오 시각이 0 이라, 그 기본 목소리의 **제자리 교체
+        // 표식**(`allowSystemVoice = true`)에 낡은 직접 입력 알람으로 잡혀 알람음으로 내려가고
+        // "직접 입력 알람이 기본 알람음으로 바뀌었어요" 가 떴다 — 낡은 오디오가 하나도 없는데.
+        // 다른 강등(삭제·접근권 상실)은 시스템 목소리를 보지 않으므로 이 행에 닿지 않는다.
+        // (`docs/spec/billing-lifecycle.md` 「목소리를 못 쓰게 되면」)
+        val lockedAtStart = alarmDao.getAllAlarms().filter { it.hasLockedPaidVoice() }
+        lockedAtStart.filter { alarm ->
             alarm.origin == AlarmOrigins.LOCAL_OWNED &&
-                alarm.hasLockedPaidVoice() &&
                 ownedByCurrentSession(alarm, currentUser, ownershipSettled) &&
                 alarm.restoredFromLock(lockCheckedAt).let { original ->
                     original.voiceSource == VoiceSources.TTS_PROFILE && match(original)
@@ -1017,8 +1025,10 @@ class AlarmRepository(
             alarmAudioStore.deleteCachedAudioIfUnreferenced(alarmDao, releasedKey)
             Log.i(TAG, "Finalized a default-voice lock id=${locked.id}: the original voice is no longer accessible")
         }
+        val lockedIds = lockedAtStart.mapTo(HashSet()) { it.id }
         val candidates = alarmDao.getAllAlarms().filter { alarm ->
             alarm.origin == AlarmOrigins.LOCAL_OWNED &&
+                alarm.id !in lockedIds &&
                 alarm.voiceSource == VoiceSources.TTS_PROFILE &&
                 ownedByCurrentSession(alarm, currentUser, ownershipSettled) &&
                 match(alarm)

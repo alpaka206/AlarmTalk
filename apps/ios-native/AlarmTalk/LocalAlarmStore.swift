@@ -136,6 +136,11 @@ final class LocalAlarmStore: ObservableObject {
     /// 강등이 아니라 **삭제**라 더 나쁘다. 게다가 이 삭제는 decline 을 보내지 않아
     /// 다음 pull 이 새 UUID 로 되살린다).
     func paidAlarmTalks() -> [LocalAlarmRecord] {
+        Self.paidAlarmTalks(in: alarms)
+    }
+
+    /// `paidAlarmTalks()` 의 순수판 — 무료 잠금 선별(`FreePlanLockSelection`)이 같은 술어를 쓴다.
+    nonisolated static func paidAlarmTalks(in alarms: [LocalAlarmRecord]) -> [LocalAlarmRecord] {
         alarms.filter { $0.originEnum == .localOwned && $0.isPaidVoiceForDowngrade }
     }
 

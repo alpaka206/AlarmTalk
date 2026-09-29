@@ -1518,11 +1518,19 @@ final class VoiceStudioViewModel: ObservableObject {
             }
             return record.usesCustomMessageVoice
         }
+        // ⚠ **이 회차를 시작할 때 잠겨 있던 행은 강등하지 않는다**(아래 확정으로 막 풀린 행 포함).
+        // 그 행의 지금 목소리는 잠금이 넣은 **대체 기본 목소리**이고 자기 오디오가 없다. 그런데
+        // 테마 없이 잠근 행은 `usesCustomMessageVoice` 가 참이고 오디오 시각이 0 이라, 그 기본
+        // 목소리의 교체 표식(`allowSystemVoice`)에 낡은 직접 입력 알람으로 잡혀 알람음으로 내려가고
+        // "직접 입력 알람이 기본 알람음으로 바뀌었어요" 가 떴다 — 낡은 오디오가 하나도 없는데.
+        // 안드로이드 `degradeMatchingLocalOwnedVoiceAlarms` 의 `lockedAtStart` 와 짝이다.
+        // (`docs/spec/billing-lifecycle.md` 「목소리를 못 쓰게 되면」)
+        let lockedAtStart = Set(alarmStore.alarms.filter(\.hasLockedPaidVoice).map(\.id))
         // 무료 잠금 보관본의 직접 입력 오디오도 옛 목소리다 — 되살리지 않게 잠금을 확정한다.
         finalizeDefaultVoiceLocks(alarmStore: alarmStore, audioCache: audioCache) { record in
             stale(DefaultVoiceSubstitute.restored(record, nowMillis: record.updatedAtMillis))
         }
-        let targets = alarmStore.alarms.filter(stale)
+        let targets = alarmStore.alarms.filter { !lockedAtStart.contains($0.id) && stale($0) }
         guard !targets.isEmpty else { return [] }
         degrade(records: targets, alarmStore: alarmStore, audioCache: audioCache)
         return targets.map(\.id)

@@ -260,6 +260,32 @@ class DefaultVoiceFallbackTest {
         )
     }
 
+    /**
+     * 보관본은 Room 에 남아 **앱 업데이트를 건너서** 읽힌다. release 는 R8 이 필드 이름을 줄이므로
+     * 키를 `@SerializedName` 으로 못 박지 않으면 매핑이 바뀐 빌드가 보관본을 잃거나 엉뚱한 필드로
+     * 읽는다. 로보렉트릭은 R8 을 거치지 않으니 **애너테이션이 있는지**를 직접 본다 — 새 필드를
+     * 더하면서 빠뜨리면 여기서 걸린다.
+     */
+    @Test
+    fun snapshotKeysArePinnedAgainstObfuscation() {
+        val fields = LockedPaidVoice::class.java.declaredFields
+            .filter { !java.lang.reflect.Modifier.isStatic(it.modifiers) && !it.isSynthetic }
+        assertTrue(fields.isNotEmpty())
+        fields.forEach { field ->
+            assertEquals(
+                "${field.name} 의 JSON 키가 고정돼 있지 않다",
+                field.name,
+                field.getAnnotation(com.google.gson.annotations.SerializedName::class.java)?.value,
+            )
+        }
+        // 이미 잠긴 행이 들고 있는 모양 그대로 읽혀야 한다.
+        val stored = """{"voiceProfileId":"clone-a","audioCacheKey":"stock_clone-weather-0","bucketId":"weather"}"""
+        val decoded = rehearsalCloneAlarm().copy(preLockVoiceJson = stored).lockedPaidVoice()
+        assertEquals("clone-a", decoded?.voiceProfileId)
+        assertEquals("stock_clone-weather-0", decoded?.audioCacheKey)
+        assertEquals("weather", decoded?.bucketId)
+    }
+
     @Test
     fun ringTimeVariantFollowsTheAlarmsWeatherCondition() {
         val keys = (0..8).map { "stock_$TEST_SYSTEM_VOICE_ID-weather-ko-$it" }

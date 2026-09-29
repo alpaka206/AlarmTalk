@@ -195,6 +195,67 @@ class DefaultVoiceLockRepositoryTest {
         assertNotNull(finalized.bucketId)
     }
 
+    /**
+     * 테마 없이 잠근 행은 직접 입력 판정에 걸리고 오디오 시각이 0 이다. 그 **대체 기본 목소리**가
+     * 제자리 교체되면 낡은 직접 입력 알람으로 잡혀 알람음으로 내려가고 "직접 입력 알람이 기본
+     * 알람음으로 바뀌었어요" 가 떴다 — 이 행에는 낡은 오디오가 하나도 없는데.
+     */
+    @Test
+    fun theSubstituteVoicesInPlaceReplacementLeavesAnUnboundLockAlone() = runBlocking {
+        manifest = null
+        dao.upsert(rehearsalCloneAlarm())
+        repository.lockPaidAlarmTalks()
+        assertTrue("전제 — 이 행은 직접 입력 판정에 걸린다", dao.getById("rehearsal-1")!!.usesCustomMessageVoice())
+
+        val degraded = repository.degradeCustomMessageAlarmsUsingVoiceProfile(
+            voiceProfileId = TEST_SECOND_SYSTEM_VOICE_ID,
+            expectedOwnerUserId = "user-a",
+            allowSystemVoice = true,
+            invalidatedBeforeMillis = System.currentTimeMillis() + 60_000L,
+        )
+
+        assertEquals("강등 안내에 세지 않는다", 0, degraded)
+        val after = dao.getById("rehearsal-1")!!
+        assertEquals(AlarmPlayModes.VOICE_ONLY, after.playMode)
+        assertEquals("그대로 기본 목소리로 운다", TEST_SECOND_SYSTEM_VOICE_ID, after.voiceProfileId)
+        assertEquals("복원할 원래 목소리도 그대로", TEST_CLONE_VOICE_ID, after.lockedPaidVoice()?.voiceProfileId)
+    }
+
+    /**
+     * 기본 목소리로 친 직접 입력(유료 — 생성 오디오)을 잠근 뒤 그 기본 목소리가 제자리 교체되면
+     * 보관본의 오디오가 낡았다 — 잠금을 **확정**한다. 같은 회차에 방금 풀린 그 행을 다시 강등
+     * 후보로 읽으면 알람음으로 내려가 버린다(확정은 "기본 목소리로 남긴다" 가 규칙이다).
+     */
+    @Test
+    fun aLockedManualAlarmOfTheReplacedVoiceIsFinalizedNotToned() = runBlocking {
+        manifest = null
+        dao.upsert(
+            rehearsalCloneAlarm(
+                voiceProfileId = TEST_SYSTEM_VOICE_ID,
+                bucketId = null,
+                voiceRandomContext = null,
+                localAudioUri = "file:///tts/manual-1.mp3",
+                audioCacheKey = "tts-manual-1",
+                ttsMessageId = "manual-1",
+            ),
+        )
+        assertEquals(1, repository.lockPaidAlarmTalks())
+
+        val degraded = repository.degradeCustomMessageAlarmsUsingVoiceProfile(
+            voiceProfileId = TEST_SYSTEM_VOICE_ID,
+            expectedOwnerUserId = "user-a",
+            allowSystemVoice = true,
+            invalidatedBeforeMillis = System.currentTimeMillis() + 60_000L,
+        )
+
+        assertEquals(0, degraded)
+        val after = dao.getById("rehearsal-1")!!
+        assertEquals(AlarmPlayModes.VOICE_ONLY, after.playMode)
+        assertEquals(TEST_SYSTEM_VOICE_ID, after.voiceProfileId)
+        assertFalse("낡은 원래 오디오는 되살리지 않는다", after.hasLockedPaidVoice())
+        assertNull(after.preLockPlayMode)
+    }
+
     @Test
     fun aStillAccessibleOriginalVoiceKeepsTheLock() = runBlocking {
         dao.upsert(rehearsalCloneAlarm())

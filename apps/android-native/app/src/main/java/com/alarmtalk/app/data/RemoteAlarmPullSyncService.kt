@@ -5,6 +5,7 @@ import android.util.Base64
 import android.util.Log
 import com.alarmtalk.app.alarm.AlarmScheduler
 import com.alarmtalk.app.alarm.SocialNotificationFactory
+import com.alarmtalk.app.alarm.forcedTonePercent
 import com.alarmtalk.app.core.AlarmTalkLog
 import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import com.alarmtalk.app.network.RemoteAlarm
@@ -947,23 +948,49 @@ internal fun hasSenderVoice(alarm: AlarmEntity): Boolean =
  * 음성 **파일**은 이 함수가 지우지 않는다 — 같은 캐시를 다른 알람이 쓸 수 있어, 호출한 쪽이
  * 참조 카운트를 보고 지운다(`deleteCachedAudioIfUnreferenced`).
  */
-internal fun withVoiceRevoked(alarm: AlarmEntity, context: Context): AlarmEntity = alarm.copy(
-    label = context.getString(com.alarmtalk.app.R.string.rd_default_alarm_label),
-    playMode = AlarmPlayModes.ALARM_ONLY,
-    // 무료 잠금 복원용 스냅샷도 비운다 — 남겨 두면 재구독 때 없어진 목소리로 되돌리려 한다.
-    preLockPlayMode = null,
-    localAudioUri = null,
-    audioCacheKey = null,
-    rawAudioUri = null,
-    voiceSource = VoiceSources.LOCAL_AUDIO,
-    voiceProfileId = null,
-    voiceListenerTitle = null,
-    voiceText = null,
-    voiceCategory = null,
-    ttsMessageId = null,
-    bucketId = null,
-    updatedAtMillis = System.currentTimeMillis(),
-)
+internal fun withVoiceRevoked(alarm: AlarmEntity, context: Context): AlarmEntity {
+    val stripped = alarm.copy(
+        label = context.getString(com.alarmtalk.app.R.string.rd_default_alarm_label),
+        playMode = AlarmPlayModes.ALARM_ONLY,
+        // 무료 잠금 복원용 스냅샷도 비운다 — 남겨 두면 재구독 때 없어진 목소리로 되돌리려 한다.
+        preLockPlayMode = null,
+        localAudioUri = null,
+        audioCacheKey = null,
+        rawAudioUri = null,
+        voiceSource = VoiceSources.LOCAL_AUDIO,
+        voiceProfileId = null,
+        voiceListenerTitle = null,
+        voiceText = null,
+        voiceCategory = null,
+        ttsMessageId = null,
+        bucketId = null,
+        updatedAtMillis = System.currentTimeMillis(),
+    )
+    return if (alarm.wasReceivedVoiceAlarm()) stripped.withToneForcedOn() else stripped
+}
+
+/**
+ * 목소리 알람이던 받은 행인가 — 옛 버그로 '알람' 모드에 잠금 표시만 남은 행도 목소리로 본다.
+ * 수신자가 직접 '알람' 모드로 바꿔 둔 행은 아니다(그 행의 알람음 스위치는 사용자가 본 값이다).
+ */
+private fun AlarmEntity.wasReceivedVoiceAlarm(): Boolean =
+    AlarmPlayModes.normalize(preLockPlayMode?.takeIf { it.isNotBlank() } ?: playMode) != AlarmPlayModes.ALARM_ONLY
+
+/**
+ * **시스템이 받은 목소리 알람을 '알람' 모드로 바꿀 때** 알람음을 켠다 — 크기는 울림 경로의
+ * 강제 알람음과 같은 값([forcedTonePercent]).
+ *
+ * 규칙은 `docs/spec/alarm-ringing.md` §4 「조용한 알람은 사용자가 고른 것뿐이다」. 목소리
+ * 알람의 알람음 스위치는 화면에 없는 값이라 꺼져 있을 수 있다(편집기에서 '알람' 모드로 알람음을
+ * 끈 뒤 '목소리' 로 돌아오면 꺼진 채 남는다). 그 행을 '알람' 모드로 내리면 울릴 때
+ * `decideRingSound` 가 그 스위치를 보고 **무음**을 고른다 — 리허설에서 본인 알람이 그랬다.
+ *
+ * ⚠ 본인 알람처럼 `preLockPlayMode` 표시로 풀지 말 것. 받은 알람에서 그 값은 **옛 버그의 잠금
+ * 표시**라, `lockPaidAlarmTalks` 가 목소리 모드로 되돌리고(`resolveReceivedLockState` 는 반대로
+ * '알람' 모드를 붙든다) 목소리가 없는 행이 두 모드 사이를 오간다. 그래서 행 자체를 고친다.
+ */
+internal fun AlarmEntity.withToneForcedOn(): AlarmEntity =
+    copy(alarmSoundEnabled = true, alarmVolumePercent = forcedTonePercent(this))
 
 /**
  * 서버가 보낸 알람 + **지금 로컬에 있는 행**으로 저장할 행을 만든다.
@@ -1036,8 +1063,13 @@ internal fun buildReceivedAlarmRow(
     }
     val lockState = resolveReceivedLockState(computedPlayMode, existing)
     val label = receivedRemoteAlarmLabel(context, remote.senderName, remote.senderEmail)
+    // 목소리 알람이어야 할 행이 '알람' 모드로 선다 — 목소리 전달인데 음성을 못 받았거나, 목소리
+    // 알람이던 행에서 서버가 목소리를 걷어냈다(`paid-voice-cleanup.ts`). 둘 다 시스템 사정이라
+    // 알람음을 켠다([withToneForcedOn]). 원래 '알람' 전달이면 수신자의 스위치를 그대로 둔다.
+    val voiceRemovedBySystem = lockState.playMode == AlarmPlayModes.ALARM_ONLY &&
+        (!remote.messageId.isNullOrBlank() || existing?.wasReceivedVoiceAlarm() == true)
 
-    return AlarmEntity(
+    val row = AlarmEntity(
         id = existing?.id ?: UUID.randomUUID().toString(),
         label = label,
         hour = schedule.hour,
@@ -1105,6 +1137,7 @@ internal fun buildReceivedAlarmRow(
         preLockPlayMode = lockState.preLockPlayMode,
         ownerUserId = resolveReceivedOwner(existing, currentUserId),
     )
+    return if (voiceRemovedBySystem) row.withToneForcedOn() else row
 }
 
 private fun parseTime(value: String?): Pair<Int, Int>? {

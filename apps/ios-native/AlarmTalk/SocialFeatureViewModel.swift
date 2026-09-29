@@ -722,33 +722,12 @@ final class SocialFeatureViewModel: ObservableObject {
         // 같은 수를 돌려줬다. 그 값이 `DowngradeNoticeStore` 대기표에 다시 찍혀
         // **강등 모달이 매번 떴다**(2026-08-11 실기기 지적 "모달 계속 뜨네").
         // 안드로이드 `lockPaidAlarmTalks` 는 `needsLock` 일 때만 센다.
-        let targets = alarmStore.paidAlarmTalks().filter { record in
-            // 소유자가 안 적힌 옛 행은 이 계정 것으로 본다(안드로이드와 같은 관용).
-            guard let expectedOwnerUserId, let owner = record.ownerUserId else { return true }
-            return owner == expectedOwnerUserId
-        }
-
-        // ⚠ **자격을 잃은 잠금은 여기서 되돌린다**(안드로이드 `lockPaidAlarmTalks` 에는
-        // 처음부터 있던 갈래인데 iOS 에만 없었다). 판정이 고쳐지면 예전 기준으로 잠긴 행이
-        // 남는데, 그 행은 더 이상 잠글 축이 없어 **풀어 줄 다른 경로가 없다** — 복원
-        // (`restorePaidVoiceAlarms`)은 유료가 됐을 때만 돌기 때문이다. 그대로 두면 무료
-        // 사용자의 목소리 알람이 영영 알람음으로 남는다(2026-08-18 판정 수정과 한 쌍).
-        let staleLocks = alarmStore.alarms.filter { record in
-            record.preLockPlayMode != nil
-                // ⚠ 새 모양(기본 목소리 + 보관본)으로 잠긴 행은 이제 무료 기본 목소리 알람이라
-                // `isPaidVoiceForDowngrade` 가 거짓이다 — 여기 걸리면 보관본을 버린 채 풀려 버린다.
-                && record.preLockVoice == nil
-                && record.originEnum == .localOwned
-                && !record.isPaidVoiceForDowngrade
-                && (expectedOwnerUserId == nil || record.ownerUserId == nil
-                    || record.ownerUserId == expectedOwnerUserId)
-        }
-        for record in staleLocks {
+        let selection = FreePlanLockSelection(alarms: alarmStore.alarms, expectedOwnerUserId: expectedOwnerUserId)
+        let targets = selection.toLock
+        for record in selection.toUnlock {
             // ⚠ **밀려났으면 즉시 멈춘다**(2026-09-01 리뷰 — 아래 잠금 루프의 주석과 같은 이유).
             if Task.isCancelled { return 0 }
-            var restored = record
-            restored.playMode = record.preLockPlayMode ?? record.playMode
-            restored.preLockPlayMode = nil
+            let restored = FreePlanLockSelection.unlocked(record)
             _ = alarmStore.upsert(restored)
             if await alarmKit.schedule(record: restored, store: alarmStore),
                record.alarmKitID != nil {
@@ -771,7 +750,7 @@ final class SocialFeatureViewModel: ObservableObject {
             // 처음 잠그는 행만 센다 — 옛 모양(`alarm_only` + `preLockPlayMode`)을 새 모양으로 옮기는 것은
             // 이미 알린 알람이라 강등 안내 개수에 다시 넣지 않는다. 보관본은 처음 한 번만 적는다
             // (`DefaultVoiceSubstitute.locked` 가 이미 있는 값을 덮지 않는다).
-            let needsLock = record.preLockPlayMode == nil
+            let needsLock = FreePlanLockSelection.isNewLock(record)
             let voiceID = DefaultVoiceSubstitute.pickVoiceID(
                 alarmVoiceID: record.voiceProfileId,
                 lastUsedVoiceID: voicePreferences.lastUsedVoiceId(userID: record.ownerUserId ?? expectedOwnerUserId)
@@ -862,8 +841,62 @@ final class SocialFeatureViewModel: ObservableObject {
 
     func clearPaidVoiceState(lockedAlarmCount: Int = 0) {
         if lockedAlarmCount > 0 {
-            // '삭제했어요' 라고 하지 않는다 — 지우지 않았고, 알람은 알람음으로 계속 울린다.
-            statusMessage = "무료 이용권으로 전환되어 목소리 알람을 알람음으로 바꿨어요. 3일 안에 다시 등록하면 목소리가 돌아오고, 지나면 영구 삭제돼요."
+            // '삭제했어요' 라고 하지 않는다 — 지우지 않았고, 알람은 **기본 목소리로** 계속 울린다.
+            // 강등 모달(`RootView.downgradeNoticeMessage` 의 `.freePlan`)과 같은 뜻이어야 한다 —
+            // 코드 등록 실패 문구로도 꺼내 보인다(`CodeRegisterRow`).
+            statusMessage = "무료 이용권으로 전환되어 목소리 알람이 기본 목소리로 바뀌었어요. 3일 안에 다시 등록하면 내 목소리가 돌아오고, 지나면 영구 삭제돼요."
         }
     }
+}
+
+/// 무료 잠금 한 번이 **건드릴 행**(순수) — `SocialFeatureViewModel.applyFreePlanVoiceLock` 이 이 결과대로만
+/// 움직인다. 안드로이드는 `AlarmRepository.lockPaidAlarmTalks` 의 한 루프 안에서 같은 갈래를 가른다.
+/// 규칙: `docs/spec/billing-lifecycle.md` 「목소리를 못 쓰게 되면」. 회귀 테스트 `FreePlanVoiceLockTests`.
+struct FreePlanLockSelection {
+    /// 기본 목소리로 잠글 행 — 본인 유료 목소리 알람(`LocalAlarmStore.paidAlarmTalks` 와 같은 술어)과
+    /// 옛 모양 잠금(`alarm_only` + `preLockPlayMode`, 클론 참조 그대로).
+    let toLock: [LocalAlarmRecord]
+    /// 자격을 잃은 옛 잠금 — 재생 방식만 되돌린다.
+    let toUnlock: [LocalAlarmRecord]
+
+    init(alarms: [LocalAlarmRecord], expectedOwnerUserId: String?) {
+        toLock = LocalAlarmStore.paidAlarmTalks(in: alarms).filter { record in
+            // 이미 새 모양(기본 목소리 + 보관본)으로 잠긴 행은 기본 목소리로 잘 울리고 있다.
+            // 판정상 무료라 보통 여기 오지 않지만, 안드로이드처럼 명시적으로 뺀다.
+            guard !record.hasLockedPaidVoice else { return false }
+            // 소유자가 안 적힌 옛 행은 이 계정 것으로 본다(안드로이드와 같은 관용).
+            guard let expectedOwnerUserId, let owner = record.ownerUserId else { return true }
+            return owner == expectedOwnerUserId
+        }
+        // ⚠ **자격을 잃은 잠금은 여기서 되돌린다**(안드로이드 `lockPaidAlarmTalks` 에는
+        // 처음부터 있던 갈래인데 iOS 에만 없었다). 판정이 고쳐지면 예전 기준으로 잠긴 행이
+        // 남는데, 그 행은 더 이상 잠글 축이 없어 **풀어 줄 다른 경로가 없다** — 복원
+        // (`restorePaidVoiceAlarms`)은 유료가 됐을 때만 돌기 때문이다. 그대로 두면 무료
+        // 사용자의 목소리 알람이 영영 알람음으로 남는다(2026-08-18 판정 수정과 한 쌍).
+        toUnlock = alarms.filter { record in
+            record.preLockPlayMode != nil
+                // ⚠ 새 모양(기본 목소리 + 보관본)으로 잠긴 행은 이제 무료 기본 목소리 알람이라
+                // `isPaidVoiceForDowngrade` 가 거짓이다 — 여기 걸리면 보관본을 버린 채 풀려 버린다.
+                && !record.hasLockedPaidVoice
+                && record.originEnum == .localOwned
+                && !record.isPaidVoiceForDowngrade
+                && (expectedOwnerUserId == nil || record.ownerUserId == nil
+                    || record.ownerUserId == expectedOwnerUserId)
+        }
+    }
+
+    /// 자격을 잃은 옛 잠금을 푼 행 — 재생 방식만 되돌린다(옛 모양에는 보관본이 없다).
+    static func unlocked(_ record: LocalAlarmRecord) -> LocalAlarmRecord {
+        var restored = record
+        restored.playMode = record.preLockPlayMode ?? record.playMode
+        restored.preLockPlayMode = nil
+        return restored
+    }
+
+    /// **처음** 잠그는 행인가 — 강등 안내 개수는 이것만 센다. 옛 모양을 새 모양으로 옮기는 것은
+    /// 이미 알린 알람이라 다시 세지 않는다(세면 앱을 열 때마다 강등 모달이 뜬다 — 2026-08-11).
+    static func isNewLock(_ record: LocalAlarmRecord) -> Bool { record.preLockPlayMode == nil }
+
+    /// 이번 실행이 **새로** 잠글 개수 — `applyFreePlanVoiceLock` 의 반환값(취소되지 않았을 때).
+    var newLockCount: Int { toLock.filter(Self.isNewLock).count }
 }
