@@ -861,13 +861,20 @@ internal fun AlarmTalkApp(
      *
      * ⚠ **탭 하나에 한 번, 메인 밖에서 센다**([DefaultVoiceGate] — 2026-09-29 A32 에서 메인에서
      * 두 번 세다 3.5초, 연타로 15.8초 멎었다). [onReady] 는 판정이 끝난 뒤 메인에서 불린다.
-     * 판정이 도는 동안 들어온 탭은 버린다.
+     * 판정이 도는 동안 들어온 탭은 버린다. 세는 사이 다른 화면(백스택 항목)이나 다른 계정으로
+     * 옮겼으면 결과를 버린다 — 새 화면 위에 편집기·알럿이 뜨면 안 된다.
      */
     fun whenDefaultVoicesReady(onReady: () -> Unit) {
         val userId = authSession?.user?.id
+        val requestedEntryId = navController.currentBackStackEntry?.id
         defaultVoiceGate.request(
             progress = {
                 com.alarmtalk.app.sync.StockClipPrefetchWorker.defaultVoiceProgress(context, userId)
+            },
+            // 캡처한 `authSession` 은 탭한 순간 값이라, 지금 값은 뷰모델 상태에서 다시 읽는다.
+            isStillCurrent = {
+                navController.currentBackStackEntry?.id == requestedEntryId &&
+                    viewModel.authSession?.user?.id == userId
             },
             onReady = onReady,
             onBlocked = { progress ->

@@ -24,6 +24,11 @@ import kotlinx.coroutines.withContext
  *  - **탭 하나에 한 번.** 막히면 센 값 그대로 알럿 퍼센트를 쓴다(다시 세지 않는다).
  *  - **도는 동안 들어온 탭은 버린다.** 쌓아 두면 판정이 끝날 때마다 화면이 또 열린다.
  *
+ * ⚠ 세는 동안 **자리가 바뀌었으면 결과를 버린다**(Codex #821). 메인 밖에서 세는 순간 탭과
+ * 결과 사이에 틈이 생긴다 — 그 사이 다른 탭으로 옮겼거나 계정이 바뀌었으면, 옛 탭의 결과로
+ * 편집기를 열거나 알럿을 띄우면 **새 화면 위에** 뜬다. 판정은 호출자가 넘기는 `isStillCurrent`
+ * 하나이고, 메인에서 결과를 적용하기 **직전에** 본다.
+ *
  * iOS 는 한 번 세는 데 디렉터리를 한 번만 읽어(`AudioCacheStore.missingOrStaleCacheKeys`)
  * 이만큼 멎지 않는다.
  */
@@ -39,12 +44,15 @@ internal class DefaultVoiceGate(
      * @param progress 기본 목소리 진행률(done to total, 모르면 null). [ioDispatcher] 에서 부른다.
      * @param onReady 다 받았다 — 화면을 연다. [scope] 의 디스패처에서 부른다.
      * @param onBlocked 아직이다(또는 셀 수 없었다) — 이유를 말한다. 센 값을 그대로 받는다.
+     * @param isStillCurrent 탭한 화면·계정이 아직 그대로인가. 다 센 뒤 [scope] 의 디스패처에서
+     *   부르고, false 면 [onReady]·[onBlocked] 둘 다 부르지 않는다(결과를 버린다).
      * @return 이번 요청을 받았는가. false 면 앞 판정이 아직 돌고 있어 **버렸다.**
      */
     fun request(
         progress: () -> Pair<Int, Int>?,
         onReady: () -> Unit,
         onBlocked: (Pair<Int, Int>?) -> Unit,
+        isStillCurrent: () -> Boolean = { true },
     ): Boolean {
         if (inFlight) return false
         inFlight = true
@@ -60,6 +68,8 @@ internal class DefaultVoiceGate(
                     AlarmTalkLog.reportError("Default voice readiness check failed", error)
                     null
                 }
+                // 탭한 뒤 다른 화면·계정으로 옮겼으면 옛 탭의 결과다 — 열지도, 알럿을 띄우지도 않는다.
+                if (!isStillCurrent()) return@launch
                 if (StockClipPrefetchWorker.defaultVoicesReady(counted)) onReady() else onBlocked(counted)
             } finally {
                 inFlight = false

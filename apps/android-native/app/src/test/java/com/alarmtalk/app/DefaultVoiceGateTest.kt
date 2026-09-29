@@ -115,6 +115,48 @@ class DefaultVoiceGateTest {
         assertTrue(recorder.blocked.isEmpty())
     }
 
+    /**
+     * 세는 사이 다른 화면·계정으로 옮겼으면 **결과를 버린다**(Codex #821) — 옛 탭의 결과로
+     * 새 화면 위에 편집기를 열거나 알럿을 띄우면 안 된다. 다 받았든 아니든 같다.
+     */
+    @Test
+    fun resultIsDroppedWhenTheScreenChangedWhileCounting() = runTest {
+        val gate = gate()
+        val recorder = Recorder()
+        var stillCurrent = true
+
+        listOf(76 to 76, 30 to 76).forEach { counted ->
+            gate.request(
+                progress = {
+                    recorder.progressCalls += 1
+                    counted
+                },
+                onReady = { recorder.ready += 1 },
+                onBlocked = { recorder.blocked += it },
+                isStillCurrent = { stillCurrent },
+            )
+            // 세는 중에 탭을 옮긴다.
+            stillCurrent = false
+            advanceUntilIdle()
+            stillCurrent = true
+        }
+
+        assertEquals("세기는 했다", 2, recorder.progressCalls)
+        assertEquals("화면을 열지 않는다", 0, recorder.ready)
+        assertTrue("알럿도 띄우지 않는다", recorder.blocked.isEmpty())
+        assertFalse("버린 뒤에도 다음 탭을 받아야 한다", gate.inFlight)
+
+        // 그대로면 예전처럼 적용한다.
+        gate.request(
+            progress = { 76 to 76 },
+            onReady = { recorder.ready += 1 },
+            onBlocked = { recorder.blocked += it },
+            isStillCurrent = { stillCurrent },
+        )
+        advanceUntilIdle()
+        assertEquals(1, recorder.ready)
+    }
+
     /** 세다가 던지면 '모른다' 로 막고, 관문은 다시 열린다(갇히면 알람을 영영 못 만든다). */
     @Test
     fun aFailingCheckBlocksAndReleasesTheGate() = runTest {
