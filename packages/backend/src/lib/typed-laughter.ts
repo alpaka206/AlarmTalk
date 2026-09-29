@@ -22,12 +22,17 @@
 /** 이 모듈이 만드는 유일한 태그. */
 export const LAUGH_TAG = '[laughs]';
 
+// 낱말·주소가 이어지는가 — 뒤에 라틴 글자·숫자, 또는 '.글자' 가 오면 웃음이 아니다(work·www.example.com·lol.com).
+const NOT_URL_OR_WORD = '(?![\\p{Script=Latin}\\p{N}]|\\.[\\p{Script=Latin}\\p{N}])';
+
 // 한국어: 호환 자모 ㅋ(U+314B)·ㅎ(U+314E)의 연속. 앞뒤에 다른 호환 자모(U+3131–U+318E)가 붙어 있으면 건너뛴다.
 const KOREAN_JAMO_LAUGH = /(?<![ㄱ-ㆎ])[ㅋㅎ]+(?![ㄱ-ㆎ])/gu;
 
 // 영어: haha(ha)·ahaha·hehe·lol(ol)·lmao·lmfao. 라틴 글자·숫자 사이에 끼어 있으면 낱말의 일부다.
-const LATIN_LAUGH =
-  /(?<![\p{Script=Latin}\p{N}])(?:a?(?:ha){2,}h?|(?:he){2,}h?|lol(?:ol)*|lmf?ao+)(?![\p{Script=Latin}\p{N}])/giu;
+const LATIN_LAUGH = new RegExp(
+  `(?<![\\p{Script=Latin}\\p{N}])(?:a?(?:ha){2,}h?|(?:he){2,}h?|lol(?:ol)*|lmf?ao+)${NOT_URL_OR_WORD}`,
+  'giu',
+);
 
 // 일본어: (笑)·（笑）·(爆笑).
 const JAPANESE_PAREN_LAUGH = /[(（]爆?笑[)）]/gu;
@@ -36,9 +41,6 @@ const JAPANESE_PAREN_LAUGH = /[(（]爆?笑[)）]/gu;
 // 낱말(笑顔·笑う)이라 건너뛴다.
 const JAPANESE_BARE_LAUGH =
   /(?<=^|[\s\p{Script=Hiragana}\p{Script=Katakana}ー〜~、。！？!?])笑(?![\p{L}\p{N}])/gu;
-
-// 주소·영단어가 이어지는가 — w 뒤에 라틴 글자·숫자, 또는 '.글자' 가 오면 웃음이 아니다.
-const NOT_URL_OR_WORD = '(?![\\p{Script=Latin}\\p{N}]|\\.[\\p{Script=Latin}\\p{N}])';
 
 // 일본어: 가나·한자·일본어 문장부호 바로 뒤의 w 는 한 글자라도 웃음이다(「だよw」).
 const JAPANESE_W_AFTER_KANA = new RegExp(
