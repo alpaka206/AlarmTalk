@@ -2154,6 +2154,17 @@ describe('직접 입력의 글자 웃음 → [laughs] (§9)', () => {
     expect(own.text).toBe('[chuckles] Wake up, it is already 8.');
   });
 
+  // Codex #830: 사용자가 대괄호로 친 웃음 태그는 그대로다 — 되살릴 때도 그 철자로.
+  it('번역이 사용자가 대괄호로 친 웃음 태그를 빠뜨리면 그 태그를 그대로 되살린다', async () => {
+    queueContent(geminiText('{"text":"Wake up, it is already 8."}'));
+    const prepared = await prepareAlarmTextWithVertex(ENV, '[chuckles] 일어나 벌써 8시야', {
+      ...LAUGH_OPTIONS,
+      targetLanguage: 'en',
+      translate: true,
+    });
+    expect(prepared.text).toBe('[chuckles] Wake up, it is already 8.');
+  });
+
   // Codex #830: 사용자의 태그 이름을 통째로 빼 주면 모델이 같은 이름으로 더한 웃음도 빠져 두 번 웃는다.
   it('사용자가 친 웃음 태그는 친 수만큼만 사용자 것이다 — 모델이 같은 이름으로 더한 웃음은 지운다', async () => {
     queueContent(geminiText('{"text":"[chuckles] Wake up, it is already 8 [chuckles]."}'));

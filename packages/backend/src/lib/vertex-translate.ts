@@ -396,9 +396,11 @@ function canonicalizeLaughterTags(
 }
 
 /// 번역문에 사용자의 웃음이 하나도 안 남았을 때 — 선두 톤 태그 뒤에 한 번 넣는다(`prepareAlarmTextWithVertex`).
-function withLeadingLaugh(text: string): string {
+/// `laugh` 는 되살릴 웃음 — 사용자가 대괄호로 친 웃음 태그면 **그 철자**다(`[chuckles]` 를 `[laughs]` 로 바꿔
+/// 되살리지 않는다, Codex #830).
+function withLeadingLaugh(text: string, laugh: string = LAUGH_TAG): string {
   const leading = text.match(LEADING_TAGS_RE)?.[0] ?? '';
-  return `${leading.trim()} ${LAUGH_TAG} ${text.slice(leading.length).trim()}`.trim();
+  return `${leading.trim()} ${laugh} ${text.slice(leading.length).trim()}`.trim();
 }
 
 /**
@@ -653,8 +655,12 @@ export async function prepareAlarmTextWithVertex(
   }
   if (shouldTranslate && countLaughterTags(source) > 0 && countLaughterTags(preparedText) === 0) {
     // ⚠ 번역이 사용자의 웃음을 빠뜨렸으면 선두 톤 뒤에 한 번 되살린다(Codex #830). 번역은 어순이 바뀌어 원문
-    //   자리로 되돌릴 수 없다 — 자리·개수 대신 '사용자가 웃었다' 는 것만 지킨다(스펙 §9).
-    preparedText = withLeadingLaugh(preparedText);
+    //   자리로 되돌릴 수 없다 — 자리·개수 대신 '사용자가 웃었다' 는 것만 지킨다(스펙 §9). 되살리는 웃음은 원문의
+    //   첫 웃음 그대로다 — 글자 웃음이면 `[laughs]`, 사용자가 대괄호로 친 태그면 그 철자(`[chuckles]`).
+    preparedText = withLeadingLaugh(
+      preparedText,
+      (source.match(TAG_RE_GLOBAL) ?? []).find(isLaughterTag) ?? LAUGH_TAG,
+    );
   }
   // ⚠ 번역문은 **태그를 벗긴 뒤에도** 낭독할 말이 있어야 한다(Codex #801). 위의 빈 문자열 검사는
   //   `{"text":"[softly]"}` 를 통과시키고, 태그를 지우면 `[cheerfully] ` 만 남아 말 없는 클립이
