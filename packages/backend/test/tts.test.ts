@@ -1436,6 +1436,50 @@ describe('POST /tts/generate — edge cases', () => {
     );
   });
 
+  // Codex #830: 차분한 목소리는 직접 입력에서도 모델이 웃음을 넣지 않는다 — 결은 사전렌더와 같은 값(고른 값 >
+  // 전사 추정값)이다. 사용자가 친 웃음은 그대로다(vertex-translate.test.ts 가 잠근다).
+  it('차분한 목소리의 직접 입력은 웃어도 된다는 지시를 싣지 않고, 모델이 넣은 웃음을 지운다', async () => {
+    const prompts: string[] = [];
+    const mockFetch = vi.fn(async (url: unknown, init?: RequestInit) => {
+      if (String(url) === TOKEN_URI) {
+        return new Response(JSON.stringify({ access_token: 'test-access-token' }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      prompts.push(String(init?.body ?? ''));
+      return geminiText('{"text":"[warmly] 일어나! [laughs] 오늘도 가 보자."}');
+    });
+    vi.stubGlobal('fetch', mockFetch);
+    try {
+      mockDB.pushResult([{ plan: 'plus' }]);
+      mockDB.pushResult([
+        { id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1', voice_energy: 'calm' },
+      ]);
+      mockDB.pushResult([]);
+      pushManualQuotaFlow();
+      mockTextToSpeech.mockResolvedValue(new Uint8Array([6]).buffer);
+      pushPublicationVoice();
+      mockDB.pushResult([], 1);
+      const res = await buildApp().request(
+        jsonReq('POST', '/tts/generate', {
+          voice_profile_id: V1,
+          text: '일어나! 오늘도 가 보자.',
+          category: 'custom',
+        }),
+        undefined,
+        { ...ENV, GOOGLE_VERTEX_CREDENTIALS_JSON: VERTEX_CREDENTIALS_JSON },
+      );
+      expect(res.status).toBe(201);
+      const body = await res.json();
+      expect(body.synthesis_text).toBe('[warmly] 일어나! 오늘도 가 보자.');
+      expect(prompts).toHaveLength(1);
+      expect(prompts[0]).not.toContain('LAUGHTER: a laugh is a sound');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('영어 직접 입력은 번역 없이 language_code=en 으로 합성한다', async () => {
     const text = 'Good morning! Wake up! I hope you have a great day!';
     // 신 allowlist 로컬 기본 태그(구 [warmly] 폐기).

@@ -1033,9 +1033,10 @@ TTS 는 웃음 글자를 **글자로 읽는다**(2026-09-29 v3·v4·v4 Turbo 비
   언어로 합성됐다.
 - **건드리지 않는 것**: 이미 소리 나는 낱말(`하하하`·`호호`·`크크` — 하하하는 세 모델 모두 웃음으로 났다),
   다른 자모와 붙은 ㅋ·ㅎ(`ㅇㅋ`·`ㅎㅇ`·`ㅎㄷㄷ`·`ㅋㅋㅠㅠ`), 낱말 속 글자(`Lolita`·`work`·`笑顔`·`微笑`),
-  주소·메일 주소는 **통째로**(`https://example.com/lol`·`www.예시.한국`·`lol.com`·`lol@example.com`), **대괄호 안**
+  주소·메일 주소는 **통째로**(`https://example.com/lol`·`example.com/lol`·`www.예시.한국`·`lol@example.com` — 스킴
+  없는 도메인은 라틴 글자로만 본다. 넓히면 띄어 쓰지 않은 `일어나.ㅋㅋ` 가 도메인으로 읽힌다), **대괄호 안**
   (사용자가 친 `[haha]`·`[after lunch]` — 그 안을 바꾸면 `[ [laughs] ]` 같은 깨진 지시가 된다). 웃음이 없으면 합성 글자를 **한 글자도 바꾸지 않는다**(캐시 키가 그대로다).
-- **웃음만 있는 문구(`ㅋㅋㅋ`)는 바꾸지 않는다.** 바꾸면 합성 글자에 낭독할 말이 없다 — 태그뿐인 요청은
+- **웃음만 있는 문구(`ㅋㅋㅋ`·`ㅋㅋㅋ!`·`haha…` — 문장부호만 남는 것도)는 바꾸지 않는다.** 바꾸면 합성 글자에 낭독할 말이 없다 — 태그뿐인 요청은
   시험하지 않았고, 번역 경로는 그걸 `empty_spoken` 으로 거절한다.
 - **톤 태깅은 그대로 돈다.** 톤을 붙일지는 **사용자가 친 대괄호**로만 정한다 — 서버가 바꾼 `[laughs]` 를
   보고 톤 태깅을 끄지 않는다. 모델은 `[laughs]` 가 박힌 글을 받고, 그걸 지우거나 옮기거나 낱말로 풀지 말라는
@@ -1078,7 +1079,8 @@ TTS 는 웃음 글자를 **글자로 읽는다**(2026-09-29 v3·v4·v4 Turbo 비
   사전렌더는 톤(모델의 `tag`·카테고리 기본값)을 문장마다 앞세우고 웃음은 제자리에 한 번만 두며, 직접 입력
   태깅은 로컬 톤 태깅으로 돌아간다(사용자가 쓰지 않은 웃음이라 버린다).
 - 차분한 목소리는 넣지 않는다(§4-2 — 프롬프트가 막고 서버가 지운다). 차분한 목소리의 프롬프트에는 웃음
-  허용 지시 자체를 싣지 않는다(두 지시가 부딪힌다).
+  허용 지시 자체를 싣지 않는다(두 지시가 부딪힌다). **직접 입력도 같다** — 결은 사전렌더와 같은 값(고른 값 >
+  녹음 전사 추정값, `withVoiceEnergy`)이고, 모델이 넣은 웃음만 지운다. 사용자가 친 웃음은 그대로다.
 
 ## 10. 합성 모델 — **`eleven_v3` 를 유지한다**
 
@@ -1198,7 +1200,7 @@ v4·v4 Turbo 로 만들어 비교했다(자동 측정·받아쓰기 기준 — *
 | 직접 입력 글자 웃음 → `[laughs]`(합성 글자만) | — 서버가 한다. 화면은 서버의 `text`(친 글 그대로) | — 같음 | `lib/typed-laughter.ts` `typedLaughterToTags` · `lib/vertex-translate.ts` `speakTypedLaughter`(웃음만 있으면 그대로) · `prepareAlarmTextWithVertex` 의 `speakTypedLaughter` 옵션(톤 여부는 원문 대괄호로) ← `routes/tts.ts`(프리셋 제외). 회귀 `typed-laughter.test.ts`·`vertex-translate.test.ts`·`tts.test.ts` |
 | 같은 언어 직접 입력의 화면 문구 = 친 글 · 캐시 키가 화면 문구까지 가린다 | — | — | `routes/tts.ts` 의 `messageText`(`typedSameLanguage` → `deriveAlarmDisplayText(requestText, …)`)·`cacheKeyText` |
 | 웃음은 톤이 아니다(문장마다 앞세우지 않는다) · 사용자 웃음은 친 자리 그대로 | — | — | `isLaughterTag` ← `pickApprovedTag`·`normalizeSameLanguageTaggedText`(`withoutToneTags` 로 자리 대조)·`tagAlarmTextLocally`·`generatePrerenderClipText` |
-| 모델이 넣는 웃음 = `[laughs]` 하나·한 번(차분은 없음) | — | — | `OWN_LAUGH_INSTRUCTION` ← `alarmTextPrompt`·`prerenderClipPrompt`(차분이면 빼고, 서버도 `isCalmIncompatibleTag` 로 지운다) · 모델이 낸 웃음 태그는 `canonicalizeLaughterTags`(`dropWakeUnsafeTags` 뒤) · 사전렌더의 글자 웃음은 `generatePrerenderClipText` 가 `speakTypedLaughter` 로 바꾼 뒤 거른다 |
+| 모델이 넣는 웃음 = `[laughs]` 하나·한 번(차분은 없음) | — | — | `OWN_LAUGH_INSTRUCTION` ← `alarmTextPrompt`·`prerenderClipPrompt`(차분이면 빼고 서버도 지운다 — 사전렌더는 `isCalmIncompatibleTag`, 직접 입력은 `prepareAlarmTextWithVertex` 의 `calmVoice` ← `routes/tts.ts` `withVoiceEnergy`) · 모델이 낸 웃음 태그는 `canonicalizeLaughterTags`(`dropWakeUnsafeTags` 뒤) · 사전렌더의 글자 웃음은 `generatePrerenderClipText` 가 `speakTypedLaughter` 로 바꾼 뒤 거른다 |
 | 합성 모델(기본 `eleven_v3`, 설정하지 않는다) | — | — | `lib/voice-provider.ts` 의 `ttsModelId` ← `ELEVENLABS_TTS_MODEL_ID`(`types.ts` `Env`, `scripts/worker-secret-keys.ts`) |
 
 ## 검증 방법

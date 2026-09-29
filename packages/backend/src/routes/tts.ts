@@ -1379,6 +1379,10 @@ tts.post('/generate', async (c) => {
         autoTag: true,
         // 사용자가 친 ㅋㅋ·haha·www 를 글자로 읽지 않고 웃음소리(`[laughs]`)로 — 프리셋은 우리 대사라 켜지 않는다.
         speakTypedLaughter: !presetTextUsed,
+        // 차분한 목소리면 모델이 웃음을 넣지 않는다(사용자가 친 웃음은 그대로). 결은 사전렌더와 같은 값이다 —
+        // 고른 값 > 녹음 전사 추정값(`withVoiceEnergy`). `vp` 는 `SELECT *` 라 컬럼이 없는 배포 창에도 안전하다.
+        calmVoice:
+          withVoiceEnergy(parseSpeechStyle(vp.speech_style), vp.voice_energy)?.energy === 'calm',
       });
     }
     const synthesisText = prepared.text;

@@ -20,6 +20,7 @@ import {
   modernizeKoreanHonorific,
   isLegacyGeminiModel,
   prepareAlarmTextWithVertex,
+  speakTypedLaughter,
   vertexGenerateContentEndpoint,
 } from '../src/lib/vertex-translate';
 
@@ -2069,6 +2070,31 @@ describe('직접 입력의 글자 웃음 → [laughs] (§9)', () => {
       LAUGH_OPTIONS,
     );
     expect(prepared.text).toBe('[cheerfully] ㅋㅋㅋ');
+  });
+
+  // Codex #830: 문장부호만 남는 것도 '낭독할 말이 없다' 다.
+  it('웃음과 문장부호뿐인 문구도 바꾸지 않는다', () => {
+    expect(speakTypedLaughter('ㅋㅋㅋ!')).toBe('ㅋㅋㅋ!');
+    expect(speakTypedLaughter('haha…')).toBe('haha…');
+    expect(speakTypedLaughter('ㅋㅋ 8시!')).toBe('[laughs] 8시!');
+  });
+
+  it('차분한 목소리면 웃어도 된다는 지시를 싣지 않고 모델이 넣은 웃음을 지운다 — 사용자가 친 웃음은 남긴다', async () => {
+    queueContent(geminiText('{"text":"[warmly] 일어나! [laughs] 오늘도 가 보자."}'));
+    const own = await prepareAlarmTextWithVertex(ENV, '일어나! 오늘도 가 보자.', {
+      ...LAUGH_OPTIONS,
+      calmVoice: true,
+    });
+    expect(sentPromptText()).not.toContain('LAUGHTER: a laugh is a sound');
+    expect(own.text).toBe('[warmly] 일어나! 오늘도 가 보자.');
+
+    mockFetch.mockClear();
+    queueContent(geminiText('{"text":"[warmly] 일어나 [laughs] 오늘도 가 보자."}'));
+    const typed = await prepareAlarmTextWithVertex(ENV, '일어나 ㅋㅋ 오늘도 가 보자.', {
+      ...LAUGH_OPTIONS,
+      calmVoice: true,
+    });
+    expect(typed.text).toBe('[warmly] 일어나 [laughs] 오늘도 가 보자.');
   });
 
   it('옵션을 켜지 않으면(스톡 문구) 글자를 그대로 둔다', async () => {

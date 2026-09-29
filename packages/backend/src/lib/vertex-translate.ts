@@ -345,7 +345,10 @@ function withLeadingLaugh(text: string): string {
  */
 export function speakTypedLaughter(text: string): string {
   const converted = typedLaughterToTags(text);
-  return converted !== text && normalizeAlarmTextWithoutTags(converted) ? converted : text;
+  // 문장부호만 남아도('ㅋㅋㅋ!'·'haha…') 낭독할 말이 없는 것이다 — 글자·숫자가 남아야 한다(Codex #830).
+  return converted !== text && /[\p{L}\p{N}]/u.test(normalizeAlarmTextWithoutTags(converted))
+    ? converted
+    : text;
 }
 
 /// 차분한 목소리의 **대체 기본 태그**. 카테고리 기본값(`cheerfully`·`playfully`)은 들뜬 결이라,
@@ -449,6 +452,11 @@ export async function prepareAlarmTextWithVertex(
      * 스톡 문구는 우리가 확정한 대사라 켜지 않는다(합성 글자가 바뀌면 게시된 클립의 캐시 키가 갈라진다).
      */
     speakTypedLaughter?: boolean;
+    /**
+     * 차분한 목소리(`energy = 'calm'`)인가 — 모델에게 웃어도 된다는 지시를 싣지 않고, **모델이 넣은** 웃음을 지운다.
+     * 사용자가 친 웃음은 그대로다(스펙 §9 「모델이 스스로 넣는 웃음」).
+     */
+    calmVoice?: boolean;
   },
 ): Promise<AlarmTextPreparation> {
   const trimmed = text.trim();
@@ -500,6 +508,7 @@ export async function prepareAlarmTextWithVertex(
     targetLanguage,
     shouldTranslate,
     shouldTag,
+    calmVoice: options.calmVoice === true,
   });
   const provider = 'vertex';
   let raw: string;
@@ -561,7 +570,8 @@ export async function prepareAlarmTextWithVertex(
     // ⚠ '태그가 남았는가' 는 **톤 태그**로 센다 — 사용자의 웃음(`[laughs]`)만 남았으면 톤은 다 버려진 것이다.
     const safe = canonicalizeLaughterTags(
       dropWakeUnsafeTags(preparedText, { allowLowArousal: isWindDownText(trimmed) }),
-      Math.max(countLaughterTags(source), 1),
+      // 모델이 스스로 넣는 웃음은 한 번까지 — 차분한 목소리는 0번이다. 사용자가 친 웃음 수는 언제나 남긴다.
+      countLaughterTags(source) > 0 || options.calmVoice ? countLaughterTags(source) : 1,
     );
     preparedText = extractTags(safe).some((tag) => !isLaughterTag(tag))
       ? safe
@@ -975,6 +985,8 @@ function alarmTextPrompt(args: {
   targetLanguage: string;
   shouldTranslate: boolean;
   shouldTag: boolean;
+  /** 차분한 목소리면 '웃어도 된다' 는 지시를 싣지 않는다(사전렌더 `prerenderClipPrompt` 와 같다). */
+  calmVoice?: boolean;
 }): string {
   const sourceName = LANGUAGE_NAMES[args.sourceLanguage] || args.sourceLanguage;
   const targetName = LANGUAGE_NAMES[args.targetLanguage] || args.targetLanguage;
@@ -991,7 +1003,7 @@ function alarmTextPrompt(args: {
 PLACEMENT: start the first sentence with a tag, and put tags only at the start of a sentence or a clause — never between a modifier and the word it modifies ('오늘은 [happy] 우리 딸 생일' is wrong). One tag per sentence unless the delivery really changes mid-sentence: if a sentence already starts with a tag, don't add another right after a name or comma ('[cheerfully] 엄마, [brightly] 일어날 시간이야' is wrong). A line of one or two sentences usually needs one or two tags. Write exactly one space after every tag ('[cheerfully] 일어나', never '[cheerfully]일어나').
 MATCH THE CONTENT: pacing tags such as [measured, deliberate] slow the voice down — fine, but never use them to calm down an urgent line ('일어나세요! [measured, deliberate] 회의 있어요' is wrong).
 THIS IS AN ALARM: it has to wake someone up. Never use sleepy or hushed directions — every one of these is rejected: ${LOW_AROUSAL_TAG_EXAMPLES} — unless the message itself is a good-night or wind-down message ('잘 자', '수고했어', 'good night', 'おやすみ'), where a calm delivery fits. Never use fear or panic directions either ([panicked], [scared], [terrified]) — urgency is fine, fear is not.
-${OWN_LAUGH_INSTRUCTION}`
+${args.calmVoice ? '' : OWN_LAUGH_INSTRUCTION}`
     : 'Do not add or remove delivery tags.';
   // 직접 입력의 글자 웃음(ㅋㅋ·haha·www)은 서버가 이미 `[laughs]` 로 바꿔서 보낸다(`speakTypedLaughter`).
   // 모델이 그걸 '자기가 붙일 태그' 로 보고 지우거나 옮기거나 낱말로 풀면 사용자가 친 웃음이 사라진다.

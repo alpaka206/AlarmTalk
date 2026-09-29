@@ -68,6 +68,8 @@ describe('typedLaughterToTags — 글자 웃음을 소리 태그로', () => {
       'https://example.com/lol 에 들어가 봐', // 주소 경로
       'www.예시.한국 확인', // 한글 도메인
       'lol@example.com 으로 보내', // 메일 주소
+      'example.com/lol 봐', // 스킴 없는 주소 경로
+      'example.com/haha?x=1', // 스킴 없는 주소 경로
       '笑顔で起きよう', // 笑顔
       '微笑むあなたへ', // 微笑む
       'おはよう、苦笑', // 苦笑(앞이 한자)
@@ -85,6 +87,10 @@ describe('typedLaughterToTags — 글자 웃음을 소리 태그로', () => {
       '[after lunch ㅋㅋ] 일어나 [laughs]',
     );
     expect(typedLaughterToTags('[excited]ㅋㅋ 일어나')).toBe('[excited] [laughs] 일어나');
+  });
+
+  it('스킴 없는 도메인은 라틴 글자로만 본다 — 띄어 쓰지 않은 문장의 웃음은 바꾼다', () => {
+    expect(typedLaughterToTags('일어나.ㅋㅋ')).toBe('일어나. [laughs]');
   });
 
   it('웃음만 있어도 여기서는 바꾼다 — 낭독할 말이 남는지는 호출부(speakTypedLaughter)가 본다', () => {
