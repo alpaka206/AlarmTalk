@@ -319,6 +319,50 @@ struct AlarmEditDraft: Equatable {
         return .generated(RandomPromptContext.normalized(lastMessageContext.nilIfBlank).rawValue)
     }
 
+    /// 문구가 비어 있을 때 직전 선택을 이으면 켜질 **랜덤 종류** — 잇지 않거나(문구가 이미
+    /// 있다) 직접 입력 문구를 이으면 nil.
+    ///
+    /// 직접 녹음 → 목소리(TTS) 선택은 목소리 선택 관문(클립 준비)을 **바꾸기 전에** 통과해야
+    /// 한다(`AlarmEditorSheet.recordingExitNeedsClipPreparation`). 그때 지금 값(녹음 알람이라
+    /// 랜덤 꺼짐)으로 물으면 관문을 통과한 직후 잇기가 랜덤을 켜 **클립이 필요한 상태**가 되므로,
+    /// 이을 값을 따로 내준다. 안드로이드 `AlarmEditorState.randomContextAdoptedByTtsPick` 짝.
+    static func randomContextAdoptedByTtsPick(
+        randomPrompt: Bool,
+        selectedBucket: FreeBucket?,
+        ttsText: String,
+        lastMessageContext: String?,
+        lastManualText: String?
+    ) -> String? {
+        guard hasNoMessageChoice(randomPrompt: randomPrompt, selectedBucket: selectedBucket, ttsText: ttsText) else {
+            return nil
+        }
+        switch lastMessageChoice(lastMessageContext: lastMessageContext, lastManualText: lastManualText) {
+        case .manual: return nil
+        case .generated(let context): return context
+        }
+    }
+
+    /// **유료 사용자가 직접 입력 문구를 쳐 둔 상태인가** — 스톡 클립 목소리(기본 목소리)의
+    /// 강제가 이 상태를 건드리지 않는다: 테마 이어받기(`applyPendingFreeBucketIfNeeded`)와
+    /// 4-값 고정(`coerceFreeVoiceTierConstraints`) 둘 다.
+    ///
+    /// ⚠ 테마 이어받기에 이 가드가 없으면, 직전 선택으로 **직접 입력 문구를 이은** 알람
+    /// (새 알람·알람 전용 → 목소리·직접 녹음 → 목소리)에 기본 목소리가 골라져 있을 때 옛
+    /// 테마가 붙어 이은 문구를 **말없이 대신한다**(2026-09-29 리뷰). 안드로이드
+    /// `AlarmEditorScreen` 의 `if (!freeVoiceTier && manualChosen) return@LaunchedEffect` 짝 —
+    /// 잠긴 등급(무료)에서는 예전 그대로 강제가 돈다.
+    static func keepsPaidTypedManualText(
+        freeVoiceTier: Bool,
+        randomPrompt: Bool,
+        selectedBucket: FreeBucket?,
+        ttsText: String
+    ) -> Bool {
+        !freeVoiceTier
+            && !randomPrompt
+            && selectedBucket == nil
+            && ttsText.nilIfBlank != nil
+    }
+
     // MARK: - Convert to record
 
     /// Draft → record 변환. 기존 record 가 있다면 *시트 외부* 에서만 의미 있는

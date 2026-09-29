@@ -1205,6 +1205,15 @@ struct AlarmEditorSheet: View {
         // 있을 때만 돈다.)
         let losesText = losesManualText(switchingTo: option)
         if voiceSourceMode != .ttsProfile {
+            // ⚠ **관문 1/3 을 바꾸기 _전에_ 본다**(2026-09-29 리뷰, 안드로이드 `VoiceAudioCard`
+            // 의 `applyVoiceSelection` 과 같은 순서). 관문(`selectedProfileID` 의 `onChange`)은
+            // 아래에서 목소리를 적용한 **뒤에** 돌고, 거절하면 목소리 id 만 되돌린다 — 그 전에
+            // 소스를 바꾸고 직전 선택을 이어 두면, 준비 화면을 닫았을 때 사용자가 거절당한
+            // 선택이 녹음 카드를 걷어 내고 다른 목소리·이은 문구로 남는다.
+            if recordingExitNeedsClipPreparation(profileID: option.id) {
+                preparationVoiceID = option.id
+                return
+            }
             switchVoiceSource(to: .ttsProfile)
             // 직접 녹음 → 목소리. 녹음 알람에는 문구가 없어 그대로 두면 **빈 직접 입력**으로
             // 보인다. 비어 있을 때만 직전 선택을 잇는다 — 알람 전용 → 목소리와 같은 규칙
@@ -1331,6 +1340,18 @@ struct AlarmEditorSheet: View {
         guard usesStockClips else { return }
         // 이미 고른 게 있으면 덮지 않는다 — 사용자가 화면에서 고른 값이 우선이다.
         guard selectedFreeBucket == nil else { pendingFreeBucket = nil; return }
+        // ⚠ **직접 입력 문구를 쳐 둔(또는 이어받은) 유료 사용자는 건드리지 않는다**(2026-09-29
+        // 리뷰). 기본 목소리가 골라진 채 직전 선택으로 직접 입력을 이으면, 여기서 옛 테마가
+        // 붙어 이은 문구를 말없이 대신했다. 판정은 4-값 고정과 같은 함수 하나 — 안드로이드
+        // `AlarmEditorScreen` 의 `if (!freeVoiceTier && manualChosen) return@LaunchedEffect` 짝.
+        // 이 갈래는 **아무것도 바꾸지 않는다**(`pendingFreeBucket` 도 그대로) — 안드로이드도
+        // 이 갈래에서 곧바로 빠져나온다.
+        guard !AlarmEditDraft.keepsPaidTypedManualText(
+            freeVoiceTier: freeVoiceTier,
+            randomPrompt: voiceStudio.randomPrompt,
+            selectedBucket: selectedFreeBucket,
+            ttsText: voiceStudio.ttsText
+        ) else { return }
         guard !voiceStudio.stockClips.isEmpty, voiceStudio.selectedProfileID != nil else { return }
 
         let buckets = availableFreeBuckets
@@ -1476,6 +1497,31 @@ struct AlarmEditorSheet: View {
         // 사용자를 막는 근거가 되면 안 된다).
         guard voiceStudio.expectedVariants != nil else { return false }
         return !hasCompleteBucket(category: context.bucketCategory, profileID: profileID)
+    }
+
+    /// 관문 **1/3** 을 **직접 녹음 → 목소리(TTS) 전환 전에**, 바뀔 값으로 본다.
+    ///
+    /// `selectVoiceOption` 은 녹음에서 올 때 소스를 바꾸고 직전 선택을 잇는데
+    /// (`adoptLastMessageChoiceIfUnset`), 관문(`selectedProfileID` 의 `onChange`)은 그 **뒤에**
+    /// 돌고 거절하면 목소리 id 만 되돌린다. 그래서 바꾸기 전에 같은 판정을 **이을 값으로**
+    /// 먼저 본다 — `onChange` 가 쓰는 식(`randomPrompt || wasThemeAlarm`)을 그대로 따르므로
+    /// 여기를 통과하면 `onChange` 도 통과한다. 안드로이드 `needsClipPreparationForVoicePick` 짝.
+    func recordingExitNeedsClipPreparation(profileID: String) -> Bool {
+        let store = DynamicPromptPreferenceStore()
+        let userID = auth.session?.user.id
+        let adopted = AlarmEditDraft.randomContextAdoptedByTtsPick(
+            randomPrompt: voiceStudio.randomPrompt,
+            selectedBucket: selectedFreeBucket,
+            ttsText: voiceStudio.ttsText,
+            lastMessageContext: store.lastMessageContext(userID: userID),
+            lastManualText: store.lastManualText(userID: userID)
+        )
+        let wasThemeAlarm = isActiveStockClipAlarm || (editingAlarm?.bucketId).nilIfBlank != nil
+        return needsClipPreparation(
+            profileID: profileID,
+            randomPrompt: voiceStudio.randomPrompt || adopted != nil || wasThemeAlarm,
+            randomContext: adopted ?? voiceStudio.randomContext
+        )
     }
 
     func prepareSelectedBucketClipIfNeeded() async -> Bool {
@@ -2067,8 +2113,13 @@ struct AlarmEditorSheet: View {
         // 않는다. 그대로 두면 저장 직전 이 강제가 `randomPrompt = true`·`preset` 으로
         // 되돌려, 방금 친 문구 대신 **목소리 자기소개 클립**이 알람으로 저장된다 —
         // 경고도 알럿도 없이. 잠긴 등급(무료)에서는 예전 그대로 돈다.
-        if !freeVoiceTier, !voiceStudio.randomPrompt,
-           (voiceStudio.ttsText).nilIfBlank != nil {
+        // 판정은 테마 이어받기(`applyPendingFreeBucketIfNeeded`)와 같은 함수 하나다.
+        if AlarmEditDraft.keepsPaidTypedManualText(
+            freeVoiceTier: freeVoiceTier,
+            randomPrompt: voiceStudio.randomPrompt,
+            selectedBucket: selectedFreeBucket,
+            ttsText: voiceStudio.ttsText
+        ) {
             return false
         }
         var changed = false

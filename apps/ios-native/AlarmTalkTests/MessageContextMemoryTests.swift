@@ -175,6 +175,63 @@ final class MessageContextMemoryTests: XCTestCase {
         XCTAssertFalse(missing(stock: true))
     }
 
+    /// **직접 녹음 → 목소리 관문은 이을 값으로 본다**(2026-09-29 리뷰). 관문은 소스를 바꾸고
+    /// 직전 선택을 잇기 **전에** 돌므로(`AlarmEditorSheet.recordingExitNeedsClipPreparation`),
+    /// 지금 값(랜덤 꺼짐)이 아니라 잇기가 켤 종류를 알아야 한다. 안드로이드
+    /// `AlarmEditorState.randomContextAdoptedByTtsPick` 짝.
+    func testTtsPickFromRecordingReportsTheKindItWillAdopt() {
+        func adopted(
+            random: Bool = false,
+            bucket: FreeBucket? = nil,
+            text: String = "",
+            lastContext: String? = nil,
+            lastManual: String? = nil
+        ) -> String? {
+            AlarmEditDraft.randomContextAdoptedByTtsPick(
+                randomPrompt: random,
+                selectedBucket: bucket,
+                ttsText: text,
+                lastMessageContext: lastContext,
+                lastManualText: lastManual
+            )
+        }
+        // 문구가 없는 녹음 알람 → 이을 종류(없으면 기본 인사말).
+        XCTAssertEqual(adopted(lastContext: "wake_fortune"), RandomPromptContext.wakeFortune.rawValue)
+        XCTAssertEqual(adopted(), RandomPromptContext.preset.rawValue)
+        // 직접 입력을 이으면 랜덤이 켜지지 않는다 — 클립이 필요 없다.
+        XCTAssertNil(adopted(lastContext: "fortune", lastManual: "회의 자료 챙겨"))
+        // 문구가 이미 있으면 잇지 않는다 — 관문은 지금 값 그대로 본다.
+        XCTAssertNil(adopted(random: true, lastContext: "fortune"))
+        XCTAssertNil(adopted(bucket: .medication, lastContext: "fortune"))
+        XCTAssertNil(adopted(text: "내가 친 문구", lastContext: "fortune"))
+    }
+
+    /// **유료 직접 입력은 기본 목소리의 강제가 건드리지 않는다**(2026-09-29 리뷰). 직전 선택으로
+    /// 직접 입력 문구를 이은 뒤 옛 테마가 붙으면(`applyPendingFreeBucketIfNeeded`) 이은 문구가
+    /// 말없이 사라진다. 4-값 고정(`coerceFreeVoiceTierConstraints`)과 같은 판정 하나.
+    func testPaidTypedManualTextIsLeftAloneByStockClipCoercion() {
+        func keeps(
+            free: Bool = false,
+            random: Bool = false,
+            bucket: FreeBucket? = nil,
+            text: String = "회의 자료 챙겨"
+        ) -> Bool {
+            AlarmEditDraft.keepsPaidTypedManualText(
+                freeVoiceTier: free,
+                randomPrompt: random,
+                selectedBucket: bucket,
+                ttsText: text
+            )
+        }
+        XCTAssertTrue(keeps())
+        // 잠긴 등급(무료)에서는 예전 그대로 테마·기본 인사말로 강제한다.
+        XCTAssertFalse(keeps(free: true))
+        // 직접 입력이 아니면(생성형·테마·빈 문구) 강제가 돈다.
+        XCTAssertFalse(keeps(random: true))
+        XCTAssertFalse(keeps(bucket: .medication))
+        XCTAssertFalse(keeps(text: "   "))
+    }
+
     /// `AlarmEditorSheet.loadVoicePromptState` 의 복원식과 같은 순서.
     private func restoreContext(storedContext: String?, bucketId: String?) -> RandomPromptContext {
         storedContext.nilIfBlank.map(RandomPromptContext.normalized)
