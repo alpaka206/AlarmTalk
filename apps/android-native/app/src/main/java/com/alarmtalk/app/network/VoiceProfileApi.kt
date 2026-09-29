@@ -62,7 +62,7 @@ data class VoiceProfileUpdateRequest(
     /**
      * 등록 확정 화면의 **교체 체크**. 이미 등록된 목소리가 있어 한도에 걸릴 때, 막는 대신
      * **그 목소리 자리에 이 목소리를 앉힌다**(서버가 프로필 행을 지우지 않고 재사용한다 —
-     * 지우면 그 목소리를 쓰던 알람이 전부 기본 알람음으로 떨어진다).
+     * 지우면 그 목소리를 쓰던 알람이 전부 기본 목소리(미나)로 바뀐다).
      * null 이면 키가 아예 안 나가서 서버는 지금까지처럼 한도로 막는다.
      */
     @SerializedName("replace_existing") val replaceExisting: Boolean? = null,

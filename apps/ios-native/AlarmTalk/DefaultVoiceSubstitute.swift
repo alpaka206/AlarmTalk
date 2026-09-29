@@ -253,23 +253,27 @@ enum DefaultVoiceSubstitute {
         return next
     }
 
-    /// **이 저장이 무료 잠금을 이어받는가** — iOS 규칙: 목소리를 그대로 둔 저장(시각·이름만 고침)은
-    /// 잠금을 잇고, 목소리·오디오·재생 방식을 바꾼 저장은 비운다(`docs/spec/billing-lifecycle.md`
-    /// 「목소리를 못 쓰게 되면」). 편집기의 두 자리(`AlarmEditDraft.carryOverNonEditableFields` ·
-    /// `AlarmEditorSheet` 저장 직전)가 이것 하나를 본다.
+    /// **이 저장이 무료 잠금을 이어받는가** — 목소리를 그대로 둔 저장(시각·이름만 고침)은 잠금을 잇고,
+    /// 목소리·오디오·재생 방식을 바꾼 저장은 비운다(`docs/spec/billing-lifecycle.md` 「목소리를 못 쓰게
+    /// 되면」). 편집기의 두 자리(`AlarmEditDraft.carryOverNonEditableFields` · `AlarmEditorSheet` 저장
+    /// 직전)가 이것 하나를 본다. 안드로이드 `lockSurvivesSave`(← `AlarmRepository.updateAlarm`) 와 같은
+    /// 규칙이다 — 한쪽만 고치지 말 것.
     ///
-    /// ⚠ **오디오 없이 잠긴 행에 같은 테마의 클립을 채운 것은 편집이 아니다**(Codex #820). 테마를 남긴
-    /// 잠금 행은 저장할 때 편집기가 그 테마의 기본 목소리 클립을 받아 묶으므로 `audioCacheKey` 가
-    /// nil → 클립 키로 바뀐다. 그걸 '오디오를 바꿨다' 로 읽으면 시각만 고친 저장이 보관본을 버려
-    /// 재결제해도 원래 목소리로 돌아가지 않는다. 테마가 바뀌었으면 사용자가 고친 것이다.
+    /// ⚠ **오디오 없이 잠긴 행에 편집기가 저장하며 클립을 채운 것은 편집이 아니다**(Codex #820). 저장할 때
+    /// 편집기가 기본 목소리 클립을 받아 묶으므로 `audioCacheKey` 가 nil → 클립 키로 바뀐다. 그걸 '오디오를
+    /// 바꿨다' 로 읽으면 시각만 고친 저장이 보관본을 버려 재결제해도 원래 목소리로 돌아가지 않는다.
+    /// - 테마를 남긴 행: **같은 테마**의 클립일 때 잇는다(테마가 바뀌었으면 사용자가 고친 것이다).
+    /// - 테마 없이 잠근 행(기본 인사말·직접 입력): 편집기가 기본 목소리에 줄 수 있는 첫 테마를 **스스로**
+    ///   붙인다(`applyPendingFreeBucketIfNeeded` — voice-and-message.md §2). 사용자가 고른 테마와 편집기가
+    ///   붙인 테마를 행만 보고 가를 수 없으니 잇는다(2026-09-29 — 그 대가로 재결제 때 복원이 그 테마를
+    ///   원래 문구로 되돌린다). 예전에는 여기서 비워, 시각만 고친 인사말 알람이 원래 목소리를 영영 잃었다.
     static func saveKeepsLock(saved: LocalAlarmRecord, editing: LocalAlarmRecord) -> Bool {
         guard saved.voiceProfileId == editing.voiceProfileId, saved.playMode == editing.playMode else {
             return false
         }
         if saved.audioCacheKey == editing.audioCacheKey { return true }
-        guard editing.audioCacheKey?.nilIfBlank == nil, let theme = editing.bucketId?.nilIfBlank else {
-            return false
-        }
+        guard editing.audioCacheKey?.nilIfBlank == nil else { return false }
+        guard let theme = editing.bucketId?.nilIfBlank else { return true }
         return saved.bucketId == theme
     }
 
@@ -298,8 +302,15 @@ enum DefaultVoiceSubstitute {
         next.bucketId = snapshot.bucketId
         next.bucketClipKeys = snapshot.bucketClipKeys
         next.bucketRotationIndex = snapshot.bucketRotationIndex
-        next.contextVariantIndex = snapshot.contextVariantIndex
-        next.contextResolvedAtMillis = snapshot.contextResolvedAtMillis
+        // ⚠ **날씨 조건 자리는 보관본에서 되살리지 않는다**(Codex #828, 안드로이드 `restoredFromLock` 과 같다).
+        // 조건 자리는 목소리와 무관하다(클론·기본 목소리 variant 축이 같다). 잠긴 동안 시각·지역을 고쳐
+        // 저장했으면(잠금은 이어진다 — `saveKeepsLock`) 지금 행의 자리는 그 날짜·지역으로 다시 받았거나
+        // 비워져 있는데, 보관본의 옛 자리·받은 시각을 되살리면 재결제한 알람이 옛 지역의 날씨를 말한다.
+        let keepsCurrentWeather = snapshot.bucketId == "weather" && record.bucketId == "weather"
+        if !keepsCurrentWeather {
+            next.contextVariantIndex = snapshot.contextVariantIndex
+            next.contextResolvedAtMillis = snapshot.contextResolvedAtMillis
+        }
         next.dynamicVoicePreparedForFireAtMillis = snapshot.dynamicVoicePreparedForFireAtMillis
         return next
     }

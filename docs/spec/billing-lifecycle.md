@@ -1152,6 +1152,11 @@ Vibration disabled for ringing alarm
   필드로 읽으면 복원이 목소리 없는 행을 서버에 올린다). 키는 바꾸지 않고 더하기만 한다.
 - **복원**(다시 유료 — 안드로이드 `unlockPaidAlarmTalks`, iOS `restorePaidVoiceAlarms`)은 보관본을
   되돌리고 **동기화 대상으로 올린다** — 잠긴 동안 켜기·끄기가 기본 목소리를 서버에 올렸을 수 있다.
+  ⚠ **날씨 조건 자리(`contextVariantIndex`·`contextResolvedAtMillis`)는 되살리지 않는다**(Codex #828) — 보관본도
+  지금 행도 날씨 테마면 지금 값을 둔다(안드로이드 `restoredFromLock`, iOS `DefaultVoiceSubstitute.restored`).
+  조건 자리는 목소리와 무관하고(클론·기본 목소리 variant 축이 같다), 잠긴 동안 시각·지역을 고쳐 저장하면 잠금이
+  이어지므로(아래 편집 규칙) 지금 행의 자리가 그 날짜·지역의 것이다. 보관본의 옛 자리를 되살리면 재결제한 알람이
+  옛 지역의 날씨를 말하고, 옛 받은 시각 때문에 다시 받는 것도 늦어진다.
 - 잠금·옛 모양 이전·복원이 소리를 바꾼 행은 **켜진 알람만** 다시 예약한다(안드로이드
   `if (updated.enabled) alarmScheduler.schedule(…)`, iOS `SocialFeatureViewModel.rescheduleIfEnabled`).
   ⚠ iOS 의 예약(`AlarmKitViewModel.schedule`)은 끝에서 `enabled = true` 를 박으므로, 꺼진 알람을
@@ -1171,15 +1176,23 @@ Vibration disabled for ringing alarm
   **시작할 때 잠겨 있던 행**은(그 회차의 확정으로 막 풀린 행 포함) 강등 후보에서 뺀다(안드로이드
   `degradeMatchingLocalOwnedVoiceAlarms`, iOS `degradeCustomMessageAlarms`). 다른 강등(삭제·접근권
   상실)은 시스템 목소리를 보지 않으므로 애초에 이 행에 닿지 않는다.
-- 사용자가 잠긴 알람을 편집·저장하면 보관본도 비운다(`preLockPlayMode` 와 같은 이유 — 명시적 편집이
-  이긴다. 안 그러면 재결제 때 복원이 사용자의 편집을 덮는다). 안드로이드는 **어떤 편집이든** 비운다
-  (옛 `preLockPlayMode` 규칙 그대로 — `AlarmRepository` 의 수정 경로). iOS 는 옛 iOS 규칙대로 **목소리를
-  그대로 둔 저장**(시각·이름만 고침)에서는 잠금을 이어받고, 목소리·오디오·재생 방식이 바뀌면 비운다
-  (`AlarmEditDraft.carryOverNonEditableFields` · `AlarmEditorSheet` 의 저장 직전 판정 — 둘 다
-  `DefaultVoiceSubstitute.saveKeepsLock`) — 이 차이는 이번 변경 전부터 `preLockPlayMode` 에 있던 것이다.
-  ⚠ **오디오 없이 잠긴 행에 같은 테마의 클립을 채운 것은 오디오를 바꾼 것이 아니다**(Codex #820) —
-  테마를 남긴 잠금 행은 저장할 때 편집기가 그 테마의 클립을 받아 묶으므로 `audioCacheKey` 가 nil →
-  클립 키로 바뀐다. 이걸 편집으로 읽으면 시각만 고친 저장이 보관본을 버린다. 테마가 바뀌었으면 편집이다.
+- 사용자가 잠긴 알람을 편집·저장할 때 **목소리를 그대로 둔 저장**(시각·이름·요일만 고침)은 잠금(보관본·
+  표시)을 **잇고**, 목소리·재생 방식·오디오를 바꾼 저장은 비운다(`preLockPlayMode` 와 같은 이유 — 명시적
+  편집이 이긴다. 안 그러면 재결제 때 복원이 사용자의 편집을 덮는다). **두 앱이 같은 판정 하나**를 쓴다 —
+  안드로이드 `lockSurvivesSave`(← `AlarmRepository.updateAlarm`), iOS `DefaultVoiceSubstitute.saveKeepsLock`
+  (← `AlarmEditDraft.carryOverNonEditableFields` · `AlarmEditorSheet` 의 저장 직전 판정).
+  ⚠ 2026-09-29 전에는 안드로이드가 **어떤 편집이든** 비워(옛 `preLockPlayMode` 규칙), 시각만 옮긴 잠긴
+  알람이 재결제해도 원래 목소리로 돌아오지 않았다. 옛 모양(보관본 없는 `preLockPlayMode` 만의 잠금·강등
+  표시)은 지금도 어떤 편집이든 비운다.
+  ⚠ **오디오 없이 잠긴 행에 편집기가 저장하며 클립을 채운 것은 오디오를 바꾼 것이 아니다**(Codex #820) —
+  저장할 때 편집기가 기본 목소리 클립을 받아 묶으므로 `audioCacheKey` 가 nil → 클립 키로 바뀐다. 이걸
+  편집으로 읽으면 시각만 고친 저장이 보관본을 버린다.
+  - 테마를 남긴 잠금 행: **같은 테마**의 클립이면 잇는다. 테마가 바뀌었으면 편집이다.
+  - 테마 없이 잠근 행(기본 인사말·직접 입력): 편집기가 기본 목소리에 줄 수 있는 **첫 테마를 스스로**
+    붙인다(voice-and-message.md §2 — 안드로이드 `AlarmEditorScreen` 의 `firstUsable`, iOS
+    `applyPendingFreeBucketIfNeeded`). 사용자가 고른 테마와 편집기가 붙인 테마를 행만 보고 가를 수 없으니
+    **잇는다**(2026-09-29) — 시각만 고친 인사말 알람이 원래 목소리를 영영 잃는 쪽을 막는다. 대가로, 잠긴
+    동안 사용자가 직접 고른 테마는 재결제 때 복원이 원래 문구로 되돌린다.
 - 이 버전 **전에** 잠긴 옛 모양(`alarm_only` + `preLockPlayMode`, 보관본 없음, 클론 참조 그대로)은
   다음 잠금 실행이 새 모양으로 옮긴다. 이미 알린 알람이라 강등 안내 개수에 **다시 세지 않는다.**
   옮기기 전에 울리면 울림 경로가 기본 목소리로 대신한다.
@@ -1221,7 +1234,24 @@ Vibration disabled for ringing alarm
 | --- | --- | --- |
 | 목소리 삭제 · 음성 동의 철회 · 접근권 상실(공유 해제·제공자 취소) | `AlarmRepository.degradeMatchingLocalOwnedVoiceAlarms`(← `degradeAlarmsUsingVoiceProfile`·`degradeAlarmsWithInaccessibleVoice`) | `VoiceStudioViewModel.degrade(records:)`(← `cascadeAlarmsAfterVoiceDeletion`·`reconcileInaccessibleVoiceAlarms`) |
 | 제자리 교체된 목소리의 직접 입력 알람 | 같은 함수(← `degradeCustomMessageAlarmsUsingVoiceProfile`) | 같은 함수(← `degradeCustomMessageAlarms`) |
-| 보낸 사람 탈퇴로 목소리를 걷어낸 **받은** 알람 | `withVoiceRevoked` | `RemoteAlarmPullSync.withVoiceRevoked` |
+| 보낸 사람 탈퇴로 목소리를 걷어낸 **받은** 알람(수신 확인 뒤 — 철회 기록 `revoked_alarm_ids`) | `withVoiceRevoked` | `RemoteAlarmPullSync.withVoiceRevoked` |
+| **수신 확인 전**에 보낸 사람 목소리를 더는 받을 수 없게 된 **받은** 목소리 알람 — 서버가 목소리를 걷어냈거나(목소리 삭제·공유 해제·탈퇴 — `voice-revocation.ts` 가 살아 있는 행의 `message_id`·`voice_profile_id` 를 비운다) 문구의 음원이 없어졌다(제자리 교체된 직접 입력 — `messages.audio_url` 을 비운다) | `buildReceivedAlarmRow`(판정 `senderVoiceNoLongerAvailable`) | `RemoteAlarmPullSync.replacingUnavailableSenderVoice`(← `mergeRemote` 의 세 반영 자리) |
+
+- 넷째 줄은 pull 이 서버본으로 행을 **다시 지을 때**다(수신자가 아직 고치지 않은 행 · 재전송 · 처음 받는 행 —
+  family-alarm.md 「받은 뒤엔 전부 받은 사람 것」). 예전에는 '알람' 모드로 다시 지어 알람음을 강제했다.
+  ⚠ 음원 **다운로드가 실패**한 목소리 전달은 여기 들지 않는다 — 수신 확인을 미뤄 다음 pull 이 다시 받으므로
+  그 사이는 예전처럼 알람음을 강제한다(alarm-ringing.md §4). 편집된 자리표시 행의 복구
+  (`linkRecoveredLegacyRemoteAudio` — 두 앱)가 그 모양을 본다. 놓인 보낸 사람 음원은 다른 알람이 안 쓰면
+  곧바로 지운다(안드로이드 `previousCacheKey` 정리, iOS `releaseLostSenderAudio` — 구운 사본까지. iOS 는 새 예약보다
+  먼저 지우므로 **미나로 바꾼 행에만** 부른다 — 보통의 재구성에서 지우면 새 예약이 실패할 때 살려 둔 옛 예약이
+  목소리를 잃는다, Codex #828).
+  ⚠ **알고 남긴 틈 — 한 번도 받기 전에 걷어낸 전달**(Codex #828, 후속). 수신자 기기가 그 전달을 처음 받기 **전에**
+  서버가 목소리를 걷어내면 서버 행은 '알람' 전달(`message_id`·`voice_profile_id` 없음, `wake_mode` 도
+  `sound_then_voice` 로 덮인다)과 구별되지 않고, 비교할 이 기기의 앞 행도 없다 — 그래서 '알람' 으로 선다
+  (알람음 스위치 기본 켜짐 — 조용하지는 않다). 수신 확인 뒤의 철회 기록(`revoked_alarm_ids`)도 수신 확인 전
+  행에는 없다. 가르려면 서버가 '목소리 전달이었다' 는 표시를 남겨야 한다(예: 걷어낼 때 수신자 행의 `wake_mode`
+  를 덮지 않거나, 살아 있는 행의 철회도 수신자 상태에 기록) — 백엔드·두 앱 계약을 바꾸는 일이라 따로 한다.
+  보내자마자 푸시로 pull 이 돌므로 창은 수신자 기기가 꺼져 있던 동안뿐이다.
 
 - **목소리**: 알람이 이미 기본 목소리면 그 목소리(제자리 교체로 낡은 것은 오디오뿐이다), 아니면 미나 —
   위 표의 규칙 그대로다.
@@ -1536,8 +1566,8 @@ Vibration disabled for ringing alarm
 | 이용권 화면 — 프로모만 쓰는 계정은 개인 카드가 현재(D4) | — | `ui/billing/BillingPanels.kt` `planScreenCurrentOf`(`PlanScreenCurrent` — `isCurrent`·`showsPurchase`·`sharesVouchers`·`promoOnPersonalCard`·`promoLineAboveList`) → `SubscriptionPanel`·`SubscriptionPlanCard`(`showsPurchase`·`sharesVouchers`); 결제 알럿은 산 이용권(`PlayPurchaseDialog` 의 `currentPlanKey`) | `Views/Common/PlanTier.swift` `PlanScreenCurrent.resolve`·`drawsPromoLineAboveList(cardsVisible:)`(카드가 없는 스켈레톤·가져오기 실패 동안은 카드 위 한 줄) → `BillingPanel.planScreen` · `PlanCard`(`showsPurchase`·`statusText`·접근성 컨테이너 `planCard.<key>`); 결제·전환 판정은 산 이용권(`BillingPanel.currentTier`) |
 | 이용권 화면의 프로모 문구(D4 — 나중에 받은 답) | — | `ui/billing/BillingPanels.kt`(`personal_promo_plan_line`) · `planScreenPersonalPromoOf`·`PersonalPromoLedger.planScreenPromo`(`recordBillingAnswer(result)` — 문을 지난 `EntitlementWrite.Applied` 만, `MainViewModel.saveSubscriptionSnapshot` 이 부른다) → `MainViewModel.planScreenPersonalPromo` → `AlarmListScreen` 의 `planScreenPersonalPromo` · `activePersonalPromoOf` | `BillingPanel.personalPromoLine`·`personalPromoLastDay`(세션 하나 — `applyFreshPlan` 의 순번 가드) |
 | 종료 안내(D3·D4) | — | [gates-and-overlays.md](gates-and-overlays.md) 구현 지도 | 같은 곳 |
-| 목소리를 못 쓰게 되면 기본 목소리 — 잠금·울림·복원·확정(2026-09-29) | 바꾸지 않는다 — 잠긴 행의 시스템 목소리·스톡 프리셋은 `usesOnlySystemStockVoice`·`voiceProfileBelongsToCaller`·`messageBelongsToCaller` 의 시스템 갈래가 받는다(빈 문구·테마는 앱이 `null` 로 지운다 — PATCH 는 빠진 필드를 그대로 둔다) | `data/SystemVoices.kt`(`SUBSTITUTE_SYSTEM_VOICE_ID` — 미나) · `data/DefaultVoiceFallback.kt`(`pickDefaultSystemVoiceId`(이미 기본 목소리면 그대로, 아니면 미나)·`lostVoiceReplacedByDefault`·`hasOwnVoiceAudio`·`defaultVoiceBucketFor`·`completeDefaultVoiceClips`(세트 완전성 — `expected_variants`)·`defaultVoiceClipSet`·`LockedPaidVoice`·`lockedToDefaultVoice`·`restoredFromLock`·`finalizedLock`·`isLegacyPlanLock`·`wasVoiceAlarmConvertedBySystem`) · `data/DefaultVoiceClipSource.kt`(`lockBinding`·`ringUri`) · `AlarmRepository.lockPaidAlarmTalks`·`unlockPaidAlarmTalks`·`degradeMatchingLocalOwnedVoiceAlarms`(확정 · 잠긴 행 제외)·`deleteAudioNoAlarmUses`(확정이 놓은 보관본 오디오 전부 — 키 없는 옛 파일은 경로로)·`sweepStaleAudioCache` · `AlarmDao.countByAudioCacheKey`(보관본도 참조) · `AlarmEntity.preLockVoiceJson`(Room 26→27) · 울림 `alarm/RingSoundDecision.kt` → `RingingService` · 동기화 `network/RemoteAlarmMapper.toWriteRequest`(`clearsMissingVoiceReferences`) → `RemoteAlarmWriteRequestAdapterFactory`(빈 `message_id`·`bucket_id` 를 `null` 로) · 목록 `AlarmListScreen`(이름) · 문구 `downgrade_notice_free_message` | `SystemVoices.swift`(`substituteSystemVoiceID` — 미나) · `DefaultVoiceSubstitute.swift`(`pickVoiceID`·`replacedLostVoice`·`LocalAlarmRecord.hasOwnVoiceAudio`·`LockedPaidVoice`·`completeClips`·`binding`·`locked`·`restored`·`finalized`·`substitutedForScheduling`·`fallbackClip`) · 동기화 `RemoteAlarmMapper.toRemoteRequest`(`clearsMissingVoiceReferences`) → `RemoteAlarmWriteRequest.encode(to:)` · `LocalAlarmRecord.preLockVoice` · `LocalAlarmStore.countByAudioCacheKey`(보관본도 참조) · `DefaultVoiceSubstitute.saveKeepsLock`(같은 테마 클립 채우기는 편집 아님) · `AlarmVoicePlayer.playIfNeeded(for:url:)`(in-app 폴백은 판정 URL) · `SocialFeatureViewModel.applyFreePlanVoiceLock`(선별 `FreePlanLockSelection`)·`restorePaidVoiceAlarms`·`rescheduleIfEnabled`(켜진 알람만 다시 예약) · `VoiceStudioViewModel.finalizeDefaultVoiceLocks`(보관본 오디오 전부 + 구운 사본)·`degradeCustomMessageAlarms`(잠긴 행 제외) · `AlarmKitViewModel.defaultVoiceSubstitute` · `AlarmSoundResolver.plan`(1b) · `RemoteAlarmPullSync`(보관본 보존) · `AlarmEditDraft`·`AlarmEditorSheet`(이어받기) · `AlarmsListView`(이름) · `RootView.downgradeNoticeMessage` + 카탈로그 |
-| 회귀 테스트 — 기본 목소리 대체 | — | `RingSoundDecisionTest`(리허설 재현·강제 알람음·받은 알람·사용자 무음·옛 강등 행의 목소리 크기 0 은 무음) · `DefaultVoiceFallbackTest`(대체 목소리는 미나·보관본 JSON 키 고정 포함·빈틈·세트 크기·묶지 못해도 테마 유지) · `DefaultVoiceLockRepositoryTest`(잠금·잠금은 마지막 목소리를 안 보고 미나·목소리 삭제는 같은 테마의 미나 알람·오디오 없는 미나 알람·옛 모양 이전·복원·확정·확정이 보관본 클립을 전부 놓음·키 없는 보관본 파일도 놓음·교체 표식에 잠긴 행 제외·모자란 세트는 자리로 묶지도 울리지도 않음) · `RemoteAlarmMapperTest`(잠긴 행·보관본 없는 기본 목소리 알람의 빈 문구·테마는 `null`) · `RemoteAlarmPullSyncServiceTest`(받은 알람 무음 없음·걷어낸 받은 알람은 미나·옛 버그 잠금 표시 되돌림) · `VoiceReplacementCascadeTest`(직접 입력은 미나·기본 목소리는 그대로·오디오 없는 행 다시 안 셈) · `AlarmOwnerScopedOperationsTest` | `DefaultVoiceSubstituteTests`(대체 목소리는 미나·예약 대체·내장 인사말·조건 클립·모자란 세트·테마 유지) · `RemoteAlarmMapperTests`(잠긴 행·보관본 없는 기본 목소리 알람의 빈 문구·테마는 `null`) · `FreePlanVoiceLockTests`(선별·두 번째 실행 0·보관본 참조 개수·같은 테마 클립 채우기는 잠금 유지·꺼진 알람은 다시 예약 안 함) · `VoiceReplacementCascadeTests`(직접 입력은 미나·기본 목소리는 그대로·오디오 없는 행 다시 안 셈·잠긴 행 제외·확정이 보관본 클립을 전부 놓음) · `InaccessibleVoiceReconcileTests`(접근권을 잃으면 미나) · `RemoteAlarmPullSyncTests`(걷어낸 받은 알람은 미나·수신자의 재생 방식 유지) · `PaidVoiceGateTests` · `AlarmEditDraftTests` |
+| 목소리를 못 쓰게 되면 기본 목소리 — 잠금·울림·복원·확정(2026-09-29) | 바꾸지 않는다 — 잠긴 행의 시스템 목소리·스톡 프리셋은 `usesOnlySystemStockVoice`·`voiceProfileBelongsToCaller`·`messageBelongsToCaller` 의 시스템 갈래가 받는다(빈 문구·테마는 앱이 `null` 로 지운다 — PATCH 는 빠진 필드를 그대로 둔다) | `data/SystemVoices.kt`(`SUBSTITUTE_SYSTEM_VOICE_ID` — 미나) · `data/DefaultVoiceFallback.kt`(`pickDefaultSystemVoiceId`(이미 기본 목소리면 그대로, 아니면 미나)·`lostVoiceReplacedByDefault`·`lockSurvivesSave`(편집 저장이 잠금을 잇는가 ← `AlarmRepository.updateAlarm`)·`hasOwnVoiceAudio`·`defaultVoiceBucketFor`·`completeDefaultVoiceClips`(세트 완전성 — `expected_variants`)·`defaultVoiceClipSet`·`LockedPaidVoice`·`lockedToDefaultVoice`·`restoredFromLock`·`finalizedLock`·`isLegacyPlanLock`·`wasVoiceAlarmConvertedBySystem`) · `data/DefaultVoiceClipSource.kt`(`lockBinding`·`ringUri`) · `AlarmRepository.lockPaidAlarmTalks`·`unlockPaidAlarmTalks`·`degradeMatchingLocalOwnedVoiceAlarms`(확정 · 잠긴 행 제외)·`deleteAudioNoAlarmUses`(확정이 놓은 보관본 오디오 전부 — 키 없는 옛 파일은 경로로)·`sweepStaleAudioCache` · `AlarmDao.countByAudioCacheKey`(보관본도 참조) · `AlarmEntity.preLockVoiceJson`(Room 26→27) · 울림 `alarm/RingSoundDecision.kt` → `RingingService` · 받은 알람 재구성 `RemoteAlarmPullSyncService.kt`(`senderVoiceNoLongerAvailable` → 미나, `withVoiceRevoked`) · 동기화 `network/RemoteAlarmMapper.toWriteRequest`(`clearsMissingVoiceReferences`) → `RemoteAlarmWriteRequestAdapterFactory`(빈 `message_id`·`bucket_id` 를 `null` 로) · 목록 `AlarmListScreen`(이름) · 문구 `downgrade_notice_free_message` | `SystemVoices.swift`(`substituteSystemVoiceID` — 미나) · `DefaultVoiceSubstitute.swift`(`pickVoiceID`·`replacedLostVoice`·`LocalAlarmRecord.hasOwnVoiceAudio`·`LockedPaidVoice`·`completeClips`·`binding`·`locked`·`restored`·`finalized`·`substitutedForScheduling`·`fallbackClip`) · 동기화 `RemoteAlarmMapper.toRemoteRequest`(`clearsMissingVoiceReferences`) → `RemoteAlarmWriteRequest.encode(to:)` · `LocalAlarmRecord.preLockVoice` · `LocalAlarmStore.countByAudioCacheKey`(보관본도 참조) · `DefaultVoiceSubstitute.saveKeepsLock`(같은 테마 클립 채우기·테마 없는 잠금에 편집기가 붙인 첫 테마는 편집 아님) · 받은 알람 재구성 `RemoteAlarmPullSync.replacingUnavailableSenderVoice`(→ 미나)·`releaseLostSenderAudio` · `AlarmVoicePlayer.playIfNeeded(for:url:)`(in-app 폴백은 판정 URL) · `SocialFeatureViewModel.applyFreePlanVoiceLock`(선별 `FreePlanLockSelection`)·`restorePaidVoiceAlarms`·`rescheduleIfEnabled`(켜진 알람만 다시 예약) · `VoiceStudioViewModel.finalizeDefaultVoiceLocks`(보관본 오디오 전부 + 구운 사본)·`degradeCustomMessageAlarms`(잠긴 행 제외) · `AlarmKitViewModel.defaultVoiceSubstitute` · `AlarmSoundResolver.plan`(1b) · `RemoteAlarmPullSync`(보관본 보존) · `AlarmEditDraft`·`AlarmEditorSheet`(이어받기) · `AlarmsListView`(이름) · `RootView.downgradeNoticeMessage` + 카탈로그 |
+| 회귀 테스트 — 기본 목소리 대체 | — | `RingSoundDecisionTest`(리허설 재현·강제 알람음·받은 알람·사용자 무음·옛 강등 행의 목소리 크기 0 은 무음) · `DefaultVoiceFallbackTest`(대체 목소리는 미나·편집 저장이 잠금을 잇는 표(`lockSurvivesSave`)·보관본 JSON 키 고정 포함·빈틈·세트 크기·묶지 못해도 테마 유지) · `DefaultVoiceLockRepositoryTest`(잠금·시각만 고친 저장은 잠금을 잇고 목소리를 바꾸면 비움·인사말 잠금에 편집기가 붙인 첫 테마는 편집 아님·잠금은 마지막 목소리를 안 보고 미나·목소리 삭제는 같은 테마의 미나 알람·오디오 없는 미나 알람·옛 모양 이전·복원·확정·확정이 보관본 클립을 전부 놓음·키 없는 보관본 파일도 놓음·교체 표식에 잠긴 행 제외·모자란 세트는 자리로 묶지도 울리지도 않음) · `RemoteAlarmMapperTest`(잠긴 행·보관본 없는 기본 목소리 알람의 빈 문구·테마는 `null`) · `RemoteAlarmPullSyncServiceTest`(받은 알람 무음 없음·걷어낸 받은 알람은 미나·수신 확인 전 서버가 걷어낸·음원이 없어진 전달은 미나·재전송 '알람' 은 그대로·옛 버그 잠금 표시 되돌림) · `VoiceReplacementCascadeTest`(직접 입력은 미나·기본 목소리는 그대로·오디오 없는 행 다시 안 셈) · `AlarmOwnerScopedOperationsTest` | `DefaultVoiceSubstituteTests`(대체 목소리는 미나·예약 대체·내장 인사말·조건 클립·모자란 세트·테마 유지) · `RemoteAlarmMapperTests`(잠긴 행·보관본 없는 기본 목소리 알람의 빈 문구·테마는 `null`) · `FreePlanVoiceLockTests`(선별·두 번째 실행 0·보관본 참조 개수·같은 테마 클립 채우기는 잠금 유지·테마 없는 잠금에 편집기가 붙인 첫 테마도 잠금 유지·꺼진 알람은 다시 예약 안 함) · `VoiceReplacementCascadeTests`(직접 입력은 미나·기본 목소리는 그대로·오디오 없는 행 다시 안 셈·잠긴 행 제외·확정이 보관본 클립을 전부 놓음) · `InaccessibleVoiceReconcileTests`(접근권을 잃으면 미나) · `RemoteAlarmPullSyncTests`(걷어낸 받은 알람은 미나·수신자의 재생 방식 유지·수신 확인 전 서버가 걷어낸·음원이 없어진 전달은 미나·다운로드 실패·재전송 '알람' 은 그대로) · `PaidVoiceGateTests` · `AlarmEditDraftTests` |
 | 회귀 테스트 | `test/personal-promo.test.ts`(경계·게이트·보류 그룹 공유 목소리·**보류 주인 목소리·클립 PATCH(D8·D13 — 안드로이드 실제 페이로드)**·대조군·한도·쿠폰·전환) · `test/personal-promo-end.test.ts`(**2,500명 크론 시뮬레이션 두 가지(기기 평균 1.06대·2대) — 약속 시각 전 삭제 0**·실행당 subrequest·기한 = max(약속 시각, 전환 + 24시간)(D16)·고정 꼬리 없는 삭제(D15)·굶김(스윕 실패 뒤 전환·전환 실패 포함 시간당 경보 — D14)·자정 문구·배선) · `test/personal-promo-auth.test.ts`(계정 응답 5종·`deletes_voices_at_end`·`computed_at`) · `test/group-disband-batch.test.ts`(보관 판정 JS↔SQL 대조) · `test/promo-welcome-group.test.ts`(#121) · `packages/shared/test/personal-promo.test.ts` | `PaidVoiceAccessTest`(D9 보류 규칙) · `PersonalPromoNoticeTest`(`computed_at` 파싱·첫 결과 실패) · `PersonalPromoPersistenceTest`(D7) · `BillingPreflightSnapshotTest`(D7) · `PersonalPromoLedgerTest`(잠금 대기·잠금 갈래 `foregroundPlanLockAction`·미룬 잠금 `deferredPromoLapseLockDue`·plan 순번 `claimPlanAnswer`·이용권 화면 프로모 문구의 답) · `PlanScreenCurrentTest`(D4 — 개인 카드가 현재·결제 버튼 유지·예전 그대로인 네 갈래) · `EntryRefreshKeepsTokenTest` | `PersonalPromoTests`(D7·D9·종료 안내 판정·D12 `isFreeOnlyByPromoLapse`·`freePlanLockMayApply`·D4 `PlanScreenCurrent` — 안드로이드와 같은 표 + 카드가 없을 때의 폴백) · `AuthViewModelTests`(계정 요청 표·순번·진입 결과·`planAnsweredEntry`·토큰만 구른 답) · `BillingPreflightTests`(세션 밖 요청 실패의 표) · `VoiceShareAccessTests` · `PersonalPromoNoticeUITests`(이용권 화면 D4 — 뱃지·결제 버튼·문구가 개인 카드에 한 번 / 보류 행은 무료 카드·카드 위 한 줄 — 로컬 전용) |
 
 ## 구현 지도

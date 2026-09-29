@@ -417,12 +417,20 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
             // `merge` 는 받은 알람의 시각·꺼짐 같은 수신자 편집을 지켜 주는데, 그대로 두면
             // 새로 보낸 알람이 옛 시각에 **꺼진 채로** 앉는다 — 그 상태로 ACK 되면 서버 행까지
             // 지워져 보낸 알람이 영영 울리지 않는다. 행의 정체(id·예약 핸들)만 잇는다.
-            let merged = currentIsResend
+            let rebuilt = currentIsResend
                 ? Self.rebuiltFromResend(existing: current, mapped: mapped)
                 : Self.merge(existing: current, mapped: mapped)
+            // 보낸 사람 목소리를 더는 받을 수 없으면 미나로(`replacingUnavailableSenderVoice`). 재전송은 새
+            // 알람이라 앞 행이 목소리 알람이었는지를 보지 않는다.
+            let merged = Self.replacingUnavailableSenderVoice(
+                rebuilt,
+                remote: remote,
+                previous: currentIsResend ? nil : current
+            )
             // `syncedNow` — 서버본을 그대로 쓴 행이므로 '수신자가 손대지 않았다' 로 남긴다.
             // ([locallyEditedByRecipient] 가 두 시각의 등호로 판정한다.)
             store.upsert(merged, syncedNow: true)
+            if merged != rebuilt { releaseLostSenderAudio(previous: current) }
 
             // receivedRemote 라면 일정 변경이 있을 수 있으므로 다시 스케줄.
             let reschedule = merged.enabled
@@ -468,10 +476,16 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
                         deliveryVersion: remote.deliveryVersion
                     )
                 }
-                let merged = racedIsResend
+                let rebuilt = racedIsResend
                     ? Self.rebuiltFromResend(existing: raced, mapped: mapped)
                     : Self.merge(existing: raced, mapped: mapped)
+                let merged = Self.replacingUnavailableSenderVoice(
+                    rebuilt,
+                    remote: remote,
+                    previous: racedIsResend ? nil : raced
+                )
                 store.upsert(merged, syncedNow: true)
+                if merged != rebuilt { releaseLostSenderAudio(previous: raced) }
                 let reschedule = merged.enabled
                     ? await rescheduleReceivedRemote(record: merged, existing: raced)
                     : await releaseDisabledReceivedReservation(merged)
@@ -497,7 +511,8 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
             // 종료 게이트(`isLeavingAccount`)는 sweep 가 도는 동안만 닫혀 있어 이걸 못 막는다.
             // 안드로이드 짝은 `RemoteAlarmPullSyncService` 의 `pullOwnerUserId` 대조다.
             guard auth.session?.user.id.nilIfBlank == pullOwnerUserID else { return .unchanged }
-            // 신규 import.
+            // 신규 import. 받을 음원이 없어진 목소리 전달이면 미나로(`replacingUnavailableSenderVoice`).
+            mapped = Self.replacingUnavailableSenderVoice(mapped, remote: remote, previous: nil)
             store.upsert(mapped, syncedNow: true)
 
             // ⚠ **받은 알람을 먼저 걸고, 성공한 뒤에 밀어낸다**(Codex #703 P1).
@@ -863,6 +878,22 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
         static var notNeeded: RescheduleOutcome {
             RescheduleOutcome(scheduled: true, previousReleased: true)
         }
+    }
+
+    /// 보낸 사람 목소리를 더는 받을 수 없어 **미나로 바꾼** 행(`replacingUnavailableSenderVoice`)이 놓은 음원을 —
+    /// 어떤 알람도 더 쓰지 않을 때만 — 지운다. 서버가 걷어낸 목소리(삭제·공유 해제·탈퇴)라 파기 대상이고,
+    /// 안 지우면 보낸 사람의 생체 음원이 캐시 정리 때까지 남는다(안드로이드 `pullReceivedAlarms` 의
+    /// `previousCacheKey` 정리 짝). 예약할 때 떠 둔 사본(`Library/Sounds/`)도 함께 지운다 — 철회 갈래
+    /// (`applyRecipientState`)와 같은 이유·같은 순서다.
+    ///
+    /// ⚠ **보통의 재구성(재전송 등)에는 부르지 않는다**(Codex #828). 이 정리는 새 예약보다 먼저 돈다 — 새 예약이
+    /// 실패하면 `rescheduleReceivedRemote` 는 일부러 옛 예약을 살려 두는데, 그 예약이 트는 사본을 먼저 지우면
+    /// 살려 둔 예약이 목소리를 잃는다. 미나로 바꾼 행은 옛 목소리를 틀면 안 되므로 그래도 된다.
+    private func releaseLostSenderAudio(previous: LocalAlarmRecord) {
+        guard let key = previous.audioCacheKey?.nilIfBlank,
+              store.countByAudioCacheKey(key) == 0 else { return }
+        try? audioCache.deleteCachedAudio(cacheKey: key)
+        AlarmSoundStaging.clearStagedSound(forKey: key)
     }
 
     /// **꺼진 채로 반영된 받은 알람** — 새로 걸 것은 없지만 **옛 예약은 지워야 한다.**
@@ -1284,10 +1315,26 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
     /// 음성 **파일**은 여기서 지우지 않는다 — 같은 캐시를 다른 알람이 쓸 수 있어,
     /// 호출한 쪽이 참조 수를 보고 지운다.
     static func withVoiceRevoked(_ record: LocalAlarmRecord) -> LocalAlarmRecord {
-        var next = record
+        var next = withSenderVoiceReplacedByMina(
+            record,
+            playMode: AlarmPlayMode.decode(record.preLockPlayMode?.nilIfBlank ?? record.playMode)
+        )
         next.label = "알람"
-        next.playMode = AlarmPlayMode.decode(record.preLockPlayMode?.nilIfBlank ?? record.playMode).rawValue
-        // 무료 잠금 복원용 표시도 비운다 — 남겨 두면 재구독 때 없어진 목소리로 되돌리려 한다.
+        next.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1000)
+        return next
+    }
+
+    /// 받은 알람의 목소리를 **미나로** 바꾼다 — 오디오·문구·테마 없는 기본 목소리 알람이라 예약 때
+    /// `AlarmSoundResolver.plan` 의 1b 갈래가 미나의 내장 인사말을 싣는다. 보낸 사람이 고른 테마·클립은
+    /// 받은 쪽이 다시 묶을 근거가 없어 비운다. 라벨·시각·동기 필드는 건드리지 않는다(부르는 쪽이 정한다).
+    /// 무료 잠금 복원용 표시(받은 알람에서는 옛 버그의 잠금 표시)도 비운다 — 남겨 두면 재구독 때 없어진
+    /// 목소리로 되돌리려 한다. 안드로이드 `withSenderVoiceReplacedByMina` 미러.
+    static func withSenderVoiceReplacedByMina(
+        _ record: LocalAlarmRecord,
+        playMode: AlarmPlayMode
+    ) -> LocalAlarmRecord {
+        var next = record
+        next.playMode = playMode.rawValue
         next.preLockPlayMode = nil
         next.localAudioUri = nil
         next.audioCacheKey = nil
@@ -1300,8 +1347,36 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
         next.ttsMessageId = nil
         next.bucketId = nil
         next.bucketClipKeys = nil
-        next.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1000)
         return next
+    }
+
+    /// 이 전달이 **보낸 사람 목소리를 더는 받을 수 없는 목소리 알람**이면 미나로 바꾼다 — 알람음이
+    /// 아니다(2026-09-29 사용자 결정 — `docs/spec/billing-lifecycle.md` 「목소리를 잃은 알람」).
+    /// 안드로이드 `senderVoiceNoLongerAvailable`(← `buildReceivedAlarmRow`) 미러.
+    ///
+    ///  - **서버가 걷어냈다**: 수신 확인 전에 보낸 사람이 목소리를 지웠거나 공유가 끊겼다 —
+    ///    `voice-revocation.ts` 가 살아 있는 행의 `message_id`·`voice_profile_id` 를 비운다. 이 기기의 행은
+    ///    목소리 알람이었다(`previous` — 재전송·새로 받는 행이면 nil).
+    ///  - **음원이 없어졌다**: 문구는 있는데 받을 주소가 없다(제자리 교체된 직접 입력 — 서버가
+    ///    `messages.audio_url` 을 비운다). 수신 확인이 바로 나가 다시 받을 길이 없다.
+    ///
+    /// ⚠ 다운로드가 **실패**한 것은 여기 들지 않는다 — 수신 확인을 미뤄 다음 회차가 다시 받는다
+    /// (`withoutUnavailableRemoteAudio`). 편집된 자리표시 행의 복구(`linkRecoveredLegacyRemoteAudio`)가 그
+    /// 모양을 본다.
+    static func replacingUnavailableSenderVoice(
+        _ record: LocalAlarmRecord,
+        remote: RemoteAlarm,
+        previous: LocalAlarmRecord?
+    ) -> LocalAlarmRecord {
+        guard record.originEnum == .receivedRemote,
+              record.audioCacheKey?.nilIfBlank == nil,
+              !RemoteAlarmMapper.shouldDownloadRemoteMessageAudio(remote) else { return record }
+        let previousWasVoiceAlarm = previous.map {
+            $0.originEnum == .receivedRemote
+                && AlarmPlayMode.decode($0.preLockPlayMode?.nilIfBlank ?? $0.playMode) != .alarmOnly
+        } ?? false
+        guard remote.messageId?.nilIfBlank != nil || previousWasVoiceAlarm else { return record }
+        return withSenderVoiceReplacedByMina(record, playMode: .voiceOnly)
     }
 
     // MARK: Audio fetch

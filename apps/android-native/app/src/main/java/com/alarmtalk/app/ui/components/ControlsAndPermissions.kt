@@ -655,7 +655,7 @@ private fun alarmRowNotice(alarm: AlarmEntity): AlarmRowNotice? = when {
     // 공유 목소리 해제도 **여기서 알리지 않는다**(2026-08-11). 이제 두 경우 모두
     // `DowngradeNoticeStore` 대기표 → 1회성 모달이 맡는다.
     // 행에 계속 붙여 두면 무료로 지내는 내내 알람마다 경고가 보이는데, **알람은 정상
-    // 작동 중이다**(기본 알람음으로 울린다) — 고장난 앱처럼 읽힐 뿐이다.
+    // 작동 중이다**(기본 목소리로 운다) — 고장난 앱처럼 읽힐 뿐이다.
     else -> null
 }
 

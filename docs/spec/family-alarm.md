@@ -134,6 +134,10 @@ ack 한다. 로컬 행과 음원이 있어도 AlarmManager/AlarmKit 예약이 �
   (생체정보 파기). 그건 재구성이 아니라 별도 경로다(`withVoiceRevoked`). 걷어낸 알람은 같은
   시각에 **기본 목소리(미나)** 로 운다 — 재생 방식은 받은 사람이 둔 값 그대로다(2026-09-29 — 그전에는
   '알람' 모드로 내렸다. [billing-lifecycle.md](billing-lifecycle.md) 「목소리를 잃은 알람」).
+- 재구성이 도는 행(아직 안 고친 행)도 같다 — 수신 확인 전에 서버가 목소리를 걷어냈거나 문구의 음원이
+  없어져 보낸 사람 목소리를 **더는 받을 수 없으면** '알람' 모드가 아니라 미나로 다시 짓는다(안드로이드
+  `buildReceivedAlarmRow` 의 `senderVoiceNoLongerAvailable`, iOS `RemoteAlarmPullSync.replacingUnavailableSenderVoice`).
+  음원 **다운로드 실패**는 다음 pull 이 다시 받으므로 그 사이만 알람음이다.
 
 ### ⚠ 보낸 알람은 **절대** 수정할 수 없다 (서버가 강제한다)
 
@@ -475,6 +479,7 @@ offset은 동시 삭제·재정렬에서 누락을 완전히 막을 수 없으�
 | 수신자 편집을 서버에 안 올림 | `AlarmSyncService`(`origin == LOCAL_OWNED`) | `RemoteAlarmPushSync` + `AlarmsListView.shouldPushToServer` | `alarm-mutation.ts` PATCH 소유권 게이트 |
 | 그만받기(삭제) | `MainViewModelAlarmActions`(decline) | `RemoteAlarmSyncViewModel`(decline) | `POST /alarm/:id/decline`, `GET /alarm/declined` |
 | 목소리가 사라짐 → 목소리만 회수 | `withVoiceRevoked` | `RemoteAlarmPullSync.withVoiceRevoked` | `lib/voice-revocation.ts` → `GET /alarm/declined` 의 `revokedAlarmIds` |
+| 수신 확인 전 보낸 사람 목소리를 더는 받을 수 없음 → 미나로 다시 지음 | `buildReceivedAlarmRow`(`senderVoiceNoLongerAvailable`) | `RemoteAlarmPullSync.replacingUnavailableSenderVoice`(← `mergeRemote`) | `lib/voice-revocation.ts`(살아 있는 행의 `message_id`·`voice_profile_id` 를 비움) · 제자리 교체(`messages.audio_url` 을 비움) |
 | 회귀 테스트 | `RemoteAlarmPullSyncServiceTest` | `RemoteAlarmPullSyncTests` | — |
 
 ## 검증 방법

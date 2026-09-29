@@ -613,9 +613,13 @@ class RemoteAlarmPullSyncServiceTest {
         assertTrue(ringSoundOf(rebuilt) is RingSound.Tone)
     }
 
+    /**
+     * 수신 확인 전에 서버가 목소리를 걷어냈다(보낸 사람이 목소리를 지웠거나 공유가 끊겼다 —
+     * `voice-revocation.ts` 가 살아 있는 행의 message_id·voice_profile_id 를 비운다). 목소리 알람이던 행은
+     * **미나로** 운다 — 예전에는 '알람' 모드로 다시 지어 알람음을 강제했다(2026-09-29 사용자 결정).
+     */
     @Test
-    fun serverStrippedVoiceAlarmIsNeverSilent() {
-        // 서버가 목소리를 걷어냈다(`paid-voice-cleanup.ts` — message_id 를 끊는다). 목소리 알람이던 행이다.
+    fun serverStrippedVoiceAlarmBecomesAMinaAlarm() {
         val rebuilt = requireNotNull(
             buildReceivedAlarmRow(
                 context = context,
@@ -623,11 +627,66 @@ class RemoteAlarmPullSyncServiceTest {
                 existing = receivedVoiceAlarmWithHiddenSwitchOff(),
                 cachedAudio = null,
                 currentUserId = "user-1",
+                now = 5_000L,
             ),
         )
 
-        assertTrue(rebuilt.alarmSoundEnabled)
-        assertTrue(ringSoundOf(rebuilt) is RingSound.Tone)
+        assertEquals(AlarmPlayModes.VOICE_ONLY, rebuilt.playMode)
+        assertEquals(VoiceSources.TTS_PROFILE, rebuilt.voiceSource)
+        assertEquals(SUBSTITUTE_SYSTEM_VOICE_ID, rebuilt.voiceProfileId)
+        assertNull(rebuilt.audioCacheKey)
+        assertNull(rebuilt.localAudioUri)
+        assertNull(rebuilt.ttsMessageId)
+        assertNull(rebuilt.bucketId)
+        assertFalse("보낸 사람 음성이 아니다 — 철회가 다시 집지 않는다", hasSenderVoice(rebuilt))
+        assertEquals("'아직 안 고침' 불변식", rebuilt.updatedAtMillis, rebuilt.lastSyncedAtMillis)
+        // 숨은 알람음 스위치(꺼짐)는 울림에 쓰이지 않는다 — 미나가 운다.
+        val sound = decideRingSound(ringSoundFactsFor(rebuilt, rebuilt.localAudioUri) { false }) { "greeting://mina" }
+        assertEquals(RingSound.DefaultVoice("greeting://mina"), sound)
+        // 그 소리마저 없으면 알람음을 강제한다 — 조용하지 않다.
+        assertEquals(RingSound.Tone(forced = true), ringSoundOf(rebuilt))
+    }
+
+    /**
+     * 문구는 있는데 받을 음원이 없다(제자리 교체된 직접 입력 — 서버가 `messages.audio_url` 을 비운다).
+     * 수신 확인이 바로 나가 다시 받을 길이 없으니 미나로 운다.
+     */
+    @Test
+    fun aVoiceMessageWhoseAudioIsGoneBecomesAMinaAlarm() {
+        val remote = remote().copy(messageId = "m1", messageAudioUrl = null)
+        assertFalse("전제 — 받을 음원이 없다", shouldDownloadRemoteMessageAudio(remote))
+
+        val rebuilt = requireNotNull(
+            buildReceivedAlarmRow(
+                context = context,
+                remote = remote,
+                existing = null,
+                cachedAudio = null,
+                currentUserId = "user-1",
+            ),
+        )
+
+        assertEquals(AlarmPlayModes.VOICE_ONLY, rebuilt.playMode)
+        assertEquals(SUBSTITUTE_SYSTEM_VOICE_ID, rebuilt.voiceProfileId)
+        assertNull(rebuilt.ttsMessageId)
+    }
+
+    /** 재전송은 새 알람이다 — 새 전달이 '알람' 이면 앞 전달이 목소리였어도 '알람' 이다. */
+    @Test
+    fun aResendThatCarriesNoVoiceIsStillAnAlarmNotMina() {
+        val rebuilt = requireNotNull(
+            buildReceivedAlarmRow(
+                context = context,
+                remote = remote(),
+                existing = receivedVoiceAlarmWithHiddenSwitchOff(),
+                cachedAudio = null,
+                currentUserId = "user-1",
+                treatAsFreshDelivery = true,
+            ),
+        )
+
+        assertEquals(AlarmPlayModes.ALARM_ONLY, rebuilt.playMode)
+        assertNull(rebuilt.voiceProfileId)
     }
 
     // ── 받은 뒤에는 받은 사람이 관리한다 (docs/spec/family-alarm.md 1절) ──────────────
@@ -687,7 +746,9 @@ class RemoteAlarmPullSyncServiceTest {
             updatedAtMillis = 2_000L,
         )
         assertTrue(locallyEditedByRecipient(edited))
-        // 대조군 — 손대지 않은 행이라면 서버본으로 재구성된다(첫 수신·음성 재시도 경로).
+        // 대조군 — 손대지 않은 행이라면 서버본으로 재구성된다(첫 수신·음성 재시도 경로). 서버본에
+        // 음성이 없으니 그 행의 목소리는 사라진다(목소리 알람이던 행은 미나 — 보낸 사람 목소리를 더는
+        // 받을 수 없는 전달과 같은 모양이다).
         val untouched = edited.copy(updatedAtMillis = edited.lastSyncedAtMillis!!)
         assertFalse(locallyEditedByRecipient(untouched))
         val rebuilt = buildReceivedAlarmRow(
@@ -697,7 +758,8 @@ class RemoteAlarmPullSyncServiceTest {
             cachedAudio = null,
             currentUserId = "recipient",
         )
-        assertEquals(AlarmPlayModes.ALARM_ONLY, rebuilt!!.playMode)
+        assertNull("재구성은 수신자가 고른 목소리를 지운다", rebuilt!!.audioCacheKey)
+        assertEquals(SUBSTITUTE_SYSTEM_VOICE_ID, rebuilt.voiceProfileId)
     }
 
     private fun remote(): RemoteAlarm = RemoteAlarm(
