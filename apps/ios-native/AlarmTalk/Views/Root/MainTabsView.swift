@@ -328,17 +328,32 @@ struct MainTabsView: View {
         }.count
     }
 
+    /// 계정이 정해졌을 때 한 번(콜드 스타트·로그인·계정 전환).
+    ///
+    /// ⚠ **알람 동기화는 여기서 부르지 않는다**(2026-09-29). 같은 순간 앱의 계정 키 `.task`
+    ///   (`AlarmTalkApp` — `remoteSync.runFullSync()`)와 알람 탭 진입(`refreshForSelectedTab`)이
+    ///   이미 push → pull 을 돈다. 예전에는 여기서 pull 을 한 번 더 돌려 콜드 스타트에 `/alarm`
+    ///   쌍이 3~4번 나갔고, 그 사이 토글의 단건 push 가 `isBusy` 가드에 걸려 건너뛰어졌다.
     private func refreshAll() async {
-        await remoteSync.refresh(session: auth.session)
-        await voiceStudio.refresh(session: auth.session)
-        await socialFeatures.refreshAll(session: auth.session)
+        await voiceStudio.refreshOnEntry(session: auth.session)
+        await socialFeatures.refreshOnEntry(session: auth.session)
         alarmKit.refreshAuthorizationState()
+    }
+
+    /// 탭 새로고침 스로틀의 키 — **탭 + 계정**이다.
+    ///
+    /// ⚠ **토큰을 넣지 말 것**(2026-09-29). `/auth/me` 는 부를 때마다 토큰을 굴리는데, 이용권
+    ///   새로고침(`SocialFeatureViewModel.refreshAll`)이 그걸 부른다 — 메뉴·목소리 탭에 한 번
+    ///   들르면 토큰이 바뀌어 **모든 탭의 60초 창이 무효**가 됐다. 같은 계정의 재로그인은
+    ///   이 화면이 새로 만들어져(`RootView`) 표가 비워지므로 계정 id 로 충분하다.
+    static func tabRefreshThrottleKey(tab: NativeTab, userID: String) -> String {
+        "\(tab).\(userID)"
     }
 
     private func refreshForSelectedTab(_ tab: NativeTab) async {
         // 세션이 없으면 알람 탭은 로그인 안내를 띄우고(Android syncNow parity),
         // 나머지 탭은 조용히 빠진다. (각 refresh 는 session nil 이면 자체 no-op)
-        guard auth.session != nil else {
+        guard let userID = auth.session?.user.id else {
             if tab == .alarms {
                 remoteSync.statusMessage = "동기화하려면 먼저 로그인해 주세요"
             }
@@ -354,10 +369,11 @@ struct MainTabsView: View {
             markReceivedAlarmsSeen()
         }
 
-        // 탭+토큰 키로 60초 스로틀. 탭에 필요한 데이터가 비어 있으면(예: 무료 플랜
-        // 정리로 목소리 목록이 비워진 직후) 스로틀을 무시하고 즉시 다시 불러와
-        // 빈 화면이 남지 않게 한다. (Android lastTabRefreshAt + tabDataEmpty parity)
-        let throttleKey = "\(tab).\(auth.session?.token ?? "")"
+        // 탭+계정 키로 60초 스로틀(`tabRefreshThrottleKey` — 토큰이 아니다). 탭에 필요한
+        // 데이터가 비어 있으면(예: 무료 플랜 정리로 목소리 목록이 비워진 직후) 스로틀을
+        // 무시하고 즉시 다시 불러와 빈 화면이 남지 않게 한다.
+        // (Android lastTabRefreshAt + tabDataEmpty parity)
+        let throttleKey = Self.tabRefreshThrottleKey(tab: tab, userID: userID)
         let now = Date()
         let tabDataEmpty: Bool = {
             switch tab {
@@ -374,10 +390,14 @@ struct MainTabsView: View {
 
         switch tab {
         case .menu:
-            await socialFeatures.refreshAll(session: auth.session)
+            await socialFeatures.refreshOnEntry(session: auth.session)
         case .voices:
-            await voiceStudio.refresh(session: auth.session)
-            await socialFeatures.refreshAll(session: auth.session)
+            // ⚠ **목소리 탭의 이용권 갱신은 빼지 말 것**(2026-08-24 실기기, 스펙 plan-gates §4).
+            //   목소리 탭이 앱 시작의 캐시 스냅샷에만 기대면, 다른 기기에서 플랜이 바뀐 가족
+            //   이용권 사용자가 '추가' 를 눌렀는데 이용권 안내 모달이 뜬다. 목소리 패널이 같은
+            //   갱신을 한 번 더 부르던 것은 걷어냈다 — 이 자리가 그 진입의 한 번이다.
+            await voiceStudio.refreshOnEntry(session: auth.session)
+            await socialFeatures.refreshOnEntry(session: auth.session)
         case .alarms:
             // Android: NativeTab.Alarms -> viewModel.syncNow() (push → pull).
             // 기존 pull-only refresh 대신 전체 동기화로 로컬 변경을 먼저 밀어 올린다.

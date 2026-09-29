@@ -121,6 +121,10 @@ final class VoiceStudioViewModel: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
     private var activeUserID: String?
     private var greetingPreviewRequestId = 0
+    /// 화면 진입 갱신(`refreshOnEntry`)의 신선도 창 — 규칙은 `EntryRefreshFreshness`.
+    private var entryFreshness = EntryRefreshFreshness()
+    /// 신선도 창이 보는 지금(진입 번호·시각). 테스트가 바꿔 끼운다.
+    var entryRefreshClock: EntryRefreshClock = { (AppEntrySignal.shared.counter.entry, Date()) }
 
     init(api: AlarmTalkAPI = .shared) {
         self.api = api
@@ -161,6 +165,7 @@ final class VoiceStudioViewModel: ObservableObject {
         // 화면 확인 모드에서는 시드를 지우지 않는다 — 세션 변화마다 목록이 비워진다.
         if UIPreviewSeed.isEnabled { return }
         activeUserID = nil
+        entryFreshness.reset()
         greetingPreviewRequestId += 1
         previewPlayer.stop()
         recorder.clearLatest()
@@ -192,6 +197,8 @@ final class VoiceStudioViewModel: ObservableObject {
     }
 
     func clearPaidVoiceState() {
+        // 목록을 손으로 깎았으니 다음 진입은 서버에서 다시 받는다.
+        entryFreshness.reset()
         greetingPreviewRequestId += 1
         previewPlayer.stop()
         // 시스템(스톡) 목소리는 무료에서도 쓰는 "기본 목소리" — 유료 음성만 제거하고 시스템 음성은 남긴다.
@@ -426,6 +433,19 @@ final class VoiceStudioViewModel: ObservableObject {
         return normalized.isEmpty ? nil : normalized
     }
 
+    /// **화면 진입 갱신** — 같은 계정의 완결된 갱신이 같은 앱 진입 안에서 60초 안에 있었으면
+    /// 다시 받지 않는다(`EntryRefreshFreshness`, 규칙은 `docs/spec/plan-gates.md` §4).
+    ///
+    /// ⚠ **쓰기 뒤·푸시에서는 부르지 말 것** — 방금 바뀐 것을 창이 가린다. 그 자리는
+    ///   `refresh(session:force: true)` 다.
+    func refreshOnEntry(session: AuthSession?) async {
+        if session?.token != nil, let userID = normalizedUserID(session?.user.id) {
+            let clock = entryRefreshClock()
+            if entryFreshness.isFresh(userID: userID, entry: clock.entry, now: clock.now) { return }
+        }
+        await refresh(session: session)
+    }
+
     func refresh(
         session: AuthSession?,
         force: Bool = false,
@@ -448,6 +468,8 @@ final class VoiceStudioViewModel: ObservableObject {
         defaultListenerTitle = defaultVoiceStore.listenerTitle(userID: userID)
         // 읽기 전용이라 `isRefreshing` 만 본다 — 사용자의 쓰기 액션을 막지 않는다.
         guard force || !isRefreshing else { return }
+        // 신선도 창은 이 갱신이 끝까지 성공해야 다시 열린다 — 실패하면 다음 진입이 받는다.
+        entryFreshness.reset()
         let shouldManageBusy = !isRefreshing
         if shouldManageBusy {
             isRefreshing = true
@@ -520,6 +542,11 @@ final class VoiceStudioViewModel: ObservableObject {
             // 오는데, 그대로 대입하면 이미 이번 달을 다 쓴 사용자에게 '추가' 버튼이
             // 다시 켜진다(한도 표시도 사라진다). 실패는 "모른다" 이지 "0 이다" 가 아니다.
             if let quotaResult { draftQuota = quotaResult }
+            // 목록·공유 목소리·한도를 **다** 받았을 때만 창을 연다(반쪽이면 다음 진입이 다시 받는다).
+            if familyAuthoritative, quotaResult != nil {
+                let clock = entryRefreshClock()
+                entryFreshness.record(.init(userID: userID, entry: clock.entry, at: clock.now))
+            }
             if let selectedProfileID,
                !profiles.contains(where: { $0.id == selectedProfileID }),
                !familyVoices.contains(where: { $0.id == selectedProfileID }) {

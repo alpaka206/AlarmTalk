@@ -1,0 +1,242 @@
+import Foundation
+import XCTest
+@testable import AlarmTalk
+
+/// **화면 진입 갱신의 신선도 창**(`docs/spec/plan-gates.md` §4, 2026-09-29).
+///
+/// 편집기·구성원·이용권 화면이 뜰 때마다 같은 목록을 다시 받던 것을, 같은 계정의 **완결된**
+/// 갱신이 같은 앱 진입 안에서 60초 안에 있었으면 건너뛰게 했다. 창이 가리면 안 되는 것 —
+/// 쓰기 뒤·푸시의 `force` 갱신, 실패한 갱신 뒤의 진입, 다른 계정, 다음 앱 진입 — 을 고정한다.
+///
+/// 네트워크는 타지 않는다 — `URLProtocol` 스텁(`BillingPreflightTests` 와 같은 방식).
+@MainActor
+final class EntryRefreshFreshnessTests: XCTestCase {
+    private let t0 = Date(timeIntervalSince1970: 1_800_000_000)
+
+    // MARK: - 창 자체
+
+    func test_같은_계정_같은_진입의_60초_안만_신선하다() {
+        var freshness = EntryRefreshFreshness()
+        XCTAssertFalse(freshness.isFresh(userID: "u1", entry: 1, now: t0), "받은 적이 없으면 받는다")
+
+        freshness.record(.init(userID: "u1", entry: 1, at: t0))
+        XCTAssertTrue(freshness.isFresh(userID: "u1", entry: 1, now: t0.addingTimeInterval(59)))
+        XCTAssertFalse(freshness.isFresh(userID: "u1", entry: 1, now: t0.addingTimeInterval(60)), "60초가 지나면 다시 받는다")
+        XCTAssertFalse(freshness.isFresh(userID: "u2", entry: 1, now: t0.addingTimeInterval(1)), "다른 계정의 창이 아니다")
+        XCTAssertFalse(freshness.isFresh(userID: "u1", entry: 2, now: t0.addingTimeInterval(1)), "앱에 다시 들어오면 다시 받는다")
+        XCTAssertFalse(freshness.isFresh(userID: "u1", entry: 1, now: t0.addingTimeInterval(-1)), "시계가 뒤로 가면 모른다")
+
+        freshness.reset()
+        XCTAssertFalse(freshness.isFresh(userID: "u1", entry: 1, now: t0.addingTimeInterval(1)))
+    }
+
+    /// 회귀(감사 H3): 키에 토큰이 있으면 `/auth/me` 가 토큰을 굴릴 때마다 모든 탭의 창이 무효가 됐다.
+    /// 키를 만드는 함수가 토큰을 받지 않는다 — 계정과 탭만으로 갈린다.
+    func test_탭_스로틀_키는_토큰이_아니라_탭과_계정이다() {
+        let voicesA = MainTabsView.tabRefreshThrottleKey(tab: .voices, userID: "u1")
+        XCTAssertEqual(voicesA, MainTabsView.tabRefreshThrottleKey(tab: .voices, userID: "u1"))
+        XCTAssertNotEqual(voicesA, MainTabsView.tabRefreshThrottleKey(tab: .voices, userID: "u2"))
+        XCTAssertNotEqual(voicesA, MainTabsView.tabRefreshThrottleKey(tab: .menu, userID: "u1"))
+    }
+
+    // MARK: - 이용권 새로고침
+
+    func test_이용권_진입_갱신은_창_안에서_다시_받지_않고_force_와_실패는_창을_무시한다() async throws {
+        let userID = UUID().uuidString
+        let current = AuthSession(token: UUID().uuidString, user: AuthUser(id: userID, email: "entry@example.test"))
+        let host = "\(UUID().uuidString.lowercased()).entry-refresh.example.test"
+        let previous = KeychainStore.readSession()
+        // 권한 스냅샷의 문(`EntitlementWriter`)은 키체인의 세션과 대조한다.
+        try KeychainStore.saveSession(current)
+        let meFails = LockedFlag()
+        let me = try JSONSerialization.data(withJSONObject: [
+            "user": ["id": userID, "email": "entry@example.test", "name": "Test", "plan": "family", "deletion_status": "active"]
+        ])
+        EntryRefreshURLProtocol.configure(host: host) { path in
+            switch path {
+            case "auth/me":
+                return meFails.value ? (503, Data(#"{"error":"unavailable"}"#.utf8)) : (200, me)
+            case "billing/subscription":
+                return (200, Data(#"{"subscription":null,"plan":null,"next_plan":null,"store_renewal_providers":[]}"#.utf8))
+            case "billing/vouchers":
+                return (200, Data(#"{"vouchers":[]}"#.utf8))
+            default:
+                return (200, Data(#"{"group":null,"role":null,"members":[]}"#.utf8))
+            }
+        }
+        let urlSession = Self.stubbedSession()
+        defer {
+            urlSession.invalidateAndCancel()
+            EntryRefreshURLProtocol.configure(host: host, handler: nil)
+            AccessSnapshotStore().clear(userID: userID)
+            if let previous { try? KeychainStore.saveSession(previous) } else { KeychainStore.deleteSession() }
+        }
+        let vm = SocialFeatureViewModel(api: AlarmTalkAPI(baseURL: URL(string: "https://\(host)/api/")!, session: urlSession))
+        let clock = TestClock(now: t0)
+        vm.entryRefreshClock = { (clock.entry, clock.now) }
+        func meCalls() -> Int { EntryRefreshURLProtocol.count(host: host, path: "auth/me") }
+
+        await vm.refreshOnEntry(session: current)
+        XCTAssertEqual(meCalls(), 1)
+        XCTAssertTrue(vm.entitlementSnapshotComplete)
+
+        clock.now = t0.addingTimeInterval(30)
+        await vm.refreshOnEntry(session: current)
+        XCTAssertEqual(meCalls(), 1, "같은 진입의 1분 안 — 편집기·구성원·이용권 화면이 뜰 때마다 다시 받지 않는다")
+
+        await vm.refreshAll(session: current, force: true)
+        XCTAssertEqual(meCalls(), 2, "쓰기 뒤·푸시(`force`)는 창을 보지 않는다")
+
+        // 첫 갱신(t0)에서는 80초, force 갱신(t0+30)에서는 50초 — 창은 뒤의 것부터 잰다.
+        clock.now = t0.addingTimeInterval(80)
+        await vm.refreshOnEntry(session: current)
+        XCTAssertEqual(meCalls(), 2, "창은 마지막으로 완결된 갱신(force 포함)부터 잰다")
+
+        clock.now = t0.addingTimeInterval(91)
+        await vm.refreshOnEntry(session: current)
+        XCTAssertEqual(meCalls(), 3, "1분이 지나면 다시 받는다")
+
+        clock.entry = 2
+        await vm.refreshOnEntry(session: current)
+        XCTAssertEqual(meCalls(), 4, "앱에 다시 들어오면(백그라운드를 거쳐) 다시 받는다")
+
+        meFails.value = true
+        await vm.refreshAll(session: current, force: true)
+        XCTAssertEqual(meCalls(), 5)
+        XCTAssertFalse(vm.entitlementSnapshotComplete)
+        meFails.value = false
+        await vm.refreshOnEntry(session: current)
+        XCTAssertEqual(meCalls(), 6, "가장 최근 갱신이 실패했으면 창은 닫혀 있다 — 진입이 다시 받는다")
+        XCTAssertTrue(vm.entitlementSnapshotComplete)
+
+        vm.clearUserScopedRemoteState()
+        await vm.refreshOnEntry(session: current)
+        XCTAssertEqual(meCalls(), 7, "계정 상태를 비우면(로그아웃·계정 전환) 창도 비워진다")
+    }
+
+    // MARK: - 목소리 새로고침
+
+    func test_목소리_진입_갱신은_창_안에서_다시_받지_않고_반쪽_갱신은_창을_열지_않는다() async throws {
+        let userID = UUID().uuidString
+        let current = AuthSession(token: UUID().uuidString, user: AuthUser(id: userID, email: "entry@example.test"))
+        let host = "\(UUID().uuidString.lowercased()).entry-refresh.example.test"
+        let quotaFails = LockedFlag()
+        EntryRefreshURLProtocol.configure(host: host) { path in
+            switch path {
+            case "voice/draft-quota":
+                if quotaFails.value { return (503, Data(#"{"error":"unavailable"}"#.utf8)) }
+                return (200, Data(#"{"limit":1,"used":0,"remaining":1,"registration_limit":1,"registration_used":0,"registration_remaining":1}"#.utf8))
+            default:
+                // `voice`·`voice/family` 둘 다 빈 목록이다.
+                return (200, Data(#"{"profiles":[]}"#.utf8))
+            }
+        }
+        let urlSession = Self.stubbedSession()
+        defer {
+            urlSession.invalidateAndCancel()
+            EntryRefreshURLProtocol.configure(host: host, handler: nil)
+        }
+        let vm = VoiceStudioViewModel(api: AlarmTalkAPI(baseURL: URL(string: "https://\(host)/api/")!, session: urlSession))
+        let clock = TestClock(now: t0)
+        vm.entryRefreshClock = { (clock.entry, clock.now) }
+        func listCalls() -> Int { EntryRefreshURLProtocol.count(host: host, path: "voice") }
+
+        await vm.refreshOnEntry(session: current)
+        XCTAssertEqual(listCalls(), 1)
+        XCTAssertNotNil(vm.draftQuota)
+
+        clock.now = t0.addingTimeInterval(10)
+        await vm.refreshOnEntry(session: current)
+        XCTAssertEqual(listCalls(), 1, "편집기를 열 때마다 목소리 목록을 다시 받지 않는다")
+
+        vm.clearPaidVoiceState()
+        await vm.refreshOnEntry(session: current)
+        XCTAssertEqual(listCalls(), 2, "무료 정리로 목록을 손으로 깎았으면 다음 진입은 다시 받는다")
+
+        quotaFails.value = true
+        await vm.refresh(session: current, force: true)
+        XCTAssertEqual(listCalls(), 3)
+        quotaFails.value = false
+        await vm.refreshOnEntry(session: current)
+        XCTAssertEqual(listCalls(), 4, "한도를 못 받은 반쪽 갱신은 창을 열지 않는다")
+
+        await vm.refreshOnEntry(session: current)
+        XCTAssertEqual(listCalls(), 4)
+    }
+
+    private static func stubbedSession() -> URLSession {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [EntryRefreshURLProtocol.self]
+        return URLSession(configuration: configuration)
+    }
+}
+
+@MainActor
+private final class TestClock {
+    var entry = 1
+    var now: Date
+
+    init(now: Date) { self.now = now }
+}
+
+private final class LockedFlag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored = false
+
+    var value: Bool {
+        get { lock.lock(); defer { lock.unlock() }; return stored }
+        set { lock.lock(); stored = newValue; lock.unlock() }
+    }
+}
+
+/// 호스트별로 응답을 고르고 **경로별 호출 수**를 센다. 경로는 `/api/` 뒤(`auth/me`, `voice` …).
+private final class EntryRefreshURLProtocol: URLProtocol, @unchecked Sendable {
+    typealias Handler = @Sendable (String) -> (Int, Data)
+    private static let lock = NSLock()
+    nonisolated(unsafe) private static var handlers: [String: Handler] = [:]
+    nonisolated(unsafe) private static var counts: [String: [String: Int]] = [:]
+
+    static func configure(host: String, handler: Handler?) {
+        lock.lock()
+        defer { lock.unlock() }
+        handlers[host] = handler
+        if handler == nil { counts[host] = nil }
+    }
+
+    static func count(host: String, path: String) -> Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return counts[host]?[path] ?? 0
+    }
+
+    override class func canInit(with request: URLRequest) -> Bool {
+        request.url?.host?.hasSuffix(".entry-refresh.example.test") == true
+    }
+
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        guard let url = request.url, let host = url.host else {
+            client?.urlProtocol(self, didFailWithError: URLError(.badURL))
+            return
+        }
+        let path = url.path.components(separatedBy: "/api/").last ?? url.path
+        Self.lock.lock()
+        let handler = Self.handlers[host]
+        if handler != nil { Self.counts[host, default: [:]][path, default: 0] += 1 }
+        Self.lock.unlock()
+        guard let handler else {
+            client?.urlProtocol(self, didFailWithError: URLError(.cancelled))
+            return
+        }
+        let (status, data) = handler(path)
+        client?.urlProtocol(self, didReceive: HTTPURLResponse(
+            url: url, statusCode: status, httpVersion: nil,
+            headerFields: ["Content-Type": "application/json"]
+        )!, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: data)
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
+    override func stopLoading() {}
+}

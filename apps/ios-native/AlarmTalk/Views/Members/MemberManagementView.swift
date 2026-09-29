@@ -204,8 +204,11 @@ struct MemberManagementView: View {
         // 한국어가 "취소됨" 이라, 사용자는 취소한 적 없는 "취소됨" 을 본다
         // (2026-08-10 사용자 보고 → 원인 확인).
         // 다시 돌아야 하는 건 **계정이 바뀔 때**뿐이므로 user.id 로 건다.
+        // 진입 갱신이다 — 더보기 탭 진입이 1분 안에 받아 둔 것이 있으면 다시 받지 않는다
+        // (`refreshOnEntry`, 스펙 plan-gates §4). 쓰기 뒤의 갱신(허용 토글·방해금지·내보내기)은
+        // 창을 보지 않는 `refreshAll` 이다 — 구성원 행의 허용 상태가 그 응답에서 온다.
         .task(id: auth.session?.user.id) {
-            await socialFeatures.refreshAll(session: auth.session)
+            await socialFeatures.refreshOnEntry(session: auth.session)
         }
     }
 

@@ -95,6 +95,30 @@ freeVoiceTier = 로그인함 && !유료
   등록할 수 있다(그 검사는 원시 구독 행만 본다). 등록한 쿠폰 구독은 자기 `expires_at` 대로
   가고, 기간과 겹치는 날은 그냥 소진된다.
 
+## 4. 이용권·목소리 정보는 **언제 다시 받는가** (2026-09-29)
+
+게이트는 받아 둔 값으로 판정한다 — 값이 낡으면 게이트가 틀린다. 그렇다고 화면이 뜰 때마다
+다시 받으면 같은 응답을 몇 번씩 기다린다. 다시 받는 때는 넷이다.
+
+- **진입 갱신** — 탭·화면에 들어갈 때. 같은 계정의 **완결된** 갱신이 **60초** 안에 있었으면
+  다시 받지 않는다. 탭은 탭별 스로틀, 화면(편집기·구성원·이용권)은 뷰모델의 신선도 창이다.
+  - ⚠ **목소리 탭의 진입 갱신은 빼지 말 것**(2026-08-24 실기기). 예전에는 목소리 탭이 앱
+    시작의 캐시 스냅샷에만 기대, 다른 기기에서 플랜이 바뀌면 가족 이용권 사용자가 '추가' 를
+    눌렀는데 이용권 안내 모달이 떴다. 창은 그 낡음을 60초 이하로 묶을 뿐 없애지 않는다.
+  - ⚠ **키에 토큰을 넣지 말 것.** `/auth/me` 는 부를 때마다 토큰을 굴린다 — 토큰을 키로
+    쓰면 이용권 갱신 한 번에 **모든 탭의 창이 무효**가 된다. 키는 계정이다(같은 계정의
+    재로그인은 새 세션이라 창이 비워진다).
+  - 실패했거나 반쪽인 갱신은 창을 열지 않는다 — 다음 진입이 다시 받는다.
+- **쓰기 뒤 갱신** — 쿠폰 등록·나가기·해지·구매·복원·목소리 삭제. 창을 무시한다.
+- **푸시** — `plan_changed`·목소리 변경. 창을 무시한다.
+- **앱 전경 복귀** — `/auth/me`(plan·프로모·토큰). 창과 무관하게 진입마다 한 번이다
+  (개인 플랜 종료 안내 D11 — [`gates-and-overlays.md`](gates-and-overlays.md)).
+
+⚠ **`/auth/me` 를 한 흐름에서 두 번 부르지 말 것.** 이용권 새로고침(`refreshAll`)이 이미
+`/auth/me` 로 plan·프로모·토큰을 받아 세션에 넣는다 — 그 옆에서 사용자 새로고침을 또 부르면
+같은 답을 한 번 더 기다린다. 반대로 **프로필을 고친 뒤에는** 사용자 새로고침이 맞고
+(프로필은 그쪽만 싣는다), 이용권 새로고침은 필요 없다.
+
 ## 구현 지도
 
 | 규칙 | Android | iOS | 백엔드 |
@@ -107,6 +131,8 @@ freeVoiceTier = 로그인함 && !유료
 | 기간 한정 개인 플랜 — 낡은 캐시만 무료로(D1·D7: 받은 시각 = `computed_at`, 없으면 끝 전의 답) | `personalPromoLapsed`·`planAnswerStampMillis`(`ui/billing/PersonalPromo.kt`) | `PersonalPromo.isStale`·`PersonalPromo.fetchedAt` | `personalPromoField` 의 `computed_at` |
 | 쿠폰 등록 | `CodeRedeemField` → `POST /api/code/register` | 같은 라우트 | `routes/code.ts` → `voucher-redemption.ts` / `promo-redemption.ts` |
 | 구독 조회 | `subscriptionResponse` | `socialFeatures.subscription` | `routes/billing-query.ts` |
+| 진입 갱신 — 탭별 60초(키 = 계정) | `ui/app/AlarmTalkApp.kt` 의 `lastTabRefreshAt`(⚠ 아직 키가 `tab to token` 이다 — 이 규칙과 다르다) | `MainTabsView.refreshForSelectedTab` · `MainTabsView.tabRefreshThrottleKey` | — |
+| 진입 갱신 — 화면별 신선도 창(완결된 갱신만) | — | `EntryRefreshFreshness` · `SocialFeatureViewModel.refreshOnEntry` · `VoiceStudioViewModel.refreshOnEntry` | — |
 
 ## 관련 규약 (다른 문서)
 

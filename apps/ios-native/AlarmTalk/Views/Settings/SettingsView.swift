@@ -6,7 +6,6 @@ import SwiftUI
 /// 코드/이용권/공유 이용권 진입은 MainTabsView 의 프로필 메뉴가 맡는다.
 struct SettingsView: View {
     @EnvironmentObject private var auth: AuthViewModel
-    @EnvironmentObject private var socialFeatures: SocialFeatureViewModel
     @EnvironmentObject private var holidayStore: HolidayStore
 
     @State private var nicknameDraft: String = ""
@@ -248,9 +247,11 @@ struct SettingsView: View {
     private func savePromptPreferences(_ preferences: DynamicPromptPreferences) {
         promptPreferences = preferences
         preferences.save(userID: auth.session?.user.id)
+        // 프로필 저장이 끝나면 `updateProfile` 이 사용자를 다시 읽는다(`refreshUser`) — 그걸로
+        // 끝이다. 이용권 새로고침은 부르지 않는다: 날씨 지역·사주는 이용권과 무관하고, 그
+        // 새로고침이 `/auth/me` 를 한 번 더 부른다(스펙 plan-gates §4).
         Task {
             await auth.updateProfile(dynamicPromptSettings: preferences.toSettings())
-            await socialFeatures.refreshAll(session: auth.session, force: true)
         }
     }
 }

@@ -204,12 +204,12 @@ struct AlarmTalkApp: App {
                         // 이후 viewModel.refresh() 는 RemoteAlarmPullSync 를 위임 호출한다.
                         remoteSync.configure(store: alarmStore, alarmKit: alarmKit, auth: auth)
 
-
-                        // 로그인되어 있으면 즉시 한 사이클.
-                        if auth.session != nil {
-                            await remoteSync.runFullSync()
-                            await refreshWeatherVariantsAndReconcile()
-                        }
+                        // ⚠ **여기서 동기화 사이클을 돌리지 않는다**(2026-09-29). 로그인된 채 켜지면
+                        //   아래 계정 키 `.task(id: auth.session?.user.id)` 가 `runFullSync()` 와
+                        //   날씨 갱신을 이미 돈다 — 세션이 복원되는 순간 그 키가 바뀌거나(nil → id)
+                        //   처음부터 id 로 시작한다. 예전에는 여기서도 한 번 더 돌아, 콜드 스타트에
+                        //   `/alarm` 쌍이 3~4번 나갔고 그동안 토글의 단건 push 가 `isBusy` 가드에 걸려
+                        //   건너뛰어졌다. 가족 푸시의 호출별 회차 보장은 `runFullSync` 안에 그대로다.
 
                         // 최초 BGAppRefreshTask 예약. 다음 사이클은 백그라운드 진입/
                         // task 종료 시 재예약.
@@ -225,7 +225,8 @@ struct AlarmTalkApp: App {
                     }
                     // 위와 같은 이유로 user.id 로 건다(토큰은 갱신마다 바뀐다).
                     .task(id: auth.session?.user.id) {
-                        // 로그인 직후 또는 토큰 갱신 시 즉시 sync.
+                        // 콜드 스타트(세션 복원)·로그인 직후 즉시 sync. 앱 시작의 사이클은 여기서만
+                        // 돈다 — 위 `.task` 에서 또 돌리지 않는다(전경 복귀·알람 탭 진입은 각자 돈다).
                         guard auth.session != nil else { return }
                         // ⚠ **계정이 바뀌면 StoreKit 을 다시 읽는다**(2026-08-31 리뷰).
                         // 로그아웃 상태에서는 등급을 아예 세지 않으므로(계정 토큰을 모른다),
@@ -272,8 +273,11 @@ struct AlarmTalkApp: App {
                             }
                         }
                         push.onPlanChanged = {
+                            // 사용자 새로고침(`auth.refreshUser()`)을 따로 부르지 않는다 — `refreshAll`
+                            // 이 `/auth/me` 로 plan·프로모·토큰을 받아 세션에 넣는다(`onFreshPlan`·
+                            // `onRolledToken`). 배경 경로(`PushNotificationCoordinator`)도 이것 하나다
+                            // (스펙 plan-gates §4 「`/auth/me` 를 두 번 부르지 말 것」).
                             await socialFeatures.refreshAll(session: auth.session, force: true)
-                            await auth.refreshUser()
                             // StoreKit 도 다시 읽는다 — 환불·회수는 캐시된 만료 시각을
                             // 무효로 만드는데 그 신호가 판정 1단이다(배경 경로와 같은 이유).
                             await subscriptions.refreshPurchasedProducts()
