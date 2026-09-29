@@ -143,9 +143,52 @@ final class StockReplacementStatus: ObservableObject {
         return pendingUserId == userId
     }
 
-    func setWorking(_ working: Bool) {
-        self.working = working
+    /// 지금 도는 재바인딩 회차들의 키(계정·언어 — `AlarmTalkApp.rebindStockClipsIfNeeded`).
+    private var rebindKeysInFlight: Set<String> = []
+
+    /// **재바인딩 진행 중 가드**(2026-09-29 효율 감사 M1 — iOS). 같은 키의 회차가 이미 돌고 있으면
+    /// false — 부른 쪽은 그 회차가 끝나기를 기다렸다가(`waitForRebind`) 물러난다(그 회차가 같은 일을
+    /// 하고 있다).
+    ///
+    /// 왜: 콜드 스타트에는 언어 키 `.task` 와 전경 복귀(`.active`)가 **거의 동시에** 부른다. 가드가
+    /// 없어 두 회차가 나란히 돌았고 — 매니페스트 강제 조회 두 번, 같은 행을 두 번 재바인딩·정리 —
+    /// 먼저 끝난 쪽이 `working` 을 내려 다른 회차가 도는 중에 차단 화면의 '다시 시도' 가 풀렸다.
+    /// 안드로이드는 워커가 유일 작업(`ExistingWorkPolicy.KEEP`)이라 도는 동안의 요청이 버려진다.
+    ///
+    /// 키가 다르면(계정 전환·언어 변경) 막지 않는다 — 앞 회차는 계정·언어가 바뀐 것을 스스로 보고
+    /// 접거나 옛 언어로 끝나므로, 새 키의 회차가 따로 돌아야 한다. 차단 화면의 '다시 시도' 는 도는
+    /// 동안 잠기므로(`working`) 같은 키로 겹치지 않는다.
+    func beginRebind(key: String) -> Bool {
+        guard rebindKeysInFlight.insert(key).inserted else { return false }
+        working = true
+        return true
     }
+
+    /// `beginRebind` 가 true 를 준 회차가 끝날 때 **반드시** 부른다(`defer`). 도는 회차가 하나도
+    /// 없을 때만 `working` 을 내린다. 그 키의 회차를 기다리던 쪽(`waitForRebind`)을 깨운다.
+    func endRebind(key: String) {
+        rebindKeysInFlight.remove(key)
+        working = !rebindKeysInFlight.isEmpty
+        for waiter in rebindWaiters.removeValue(forKey: key) ?? [] {
+            waiter.resume()
+        }
+    }
+
+    /// `beginRebind` 에서 물러난 쪽이 **도는 회차가 끝날 때까지** 기다린다(합류, 코덱스 #827). 도는
+    /// 회차가 없으면 곧바로 돌아온다.
+    ///
+    /// 왜: 전경 복귀는 재바인딩 **뒤에** 보충을 시작해 재바인딩이 방금 강제로 받은 매니페스트를 신선도
+    /// 창으로 쓴다. 물러나자마자 돌아오면 도는 회차의 강제 조회가 공개되기 전에 보충이 시작돼 같은
+    /// 매니페스트를 한 번 더 받는다. 기다리는 동안 하는 일은 없다 — 끝나면 부른 쪽이 이어 간다.
+    func waitForRebind(key: String) async {
+        guard rebindKeysInFlight.contains(key) else { return }
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            rebindWaiters[key, default: []].append(continuation)
+        }
+    }
+
+    /// `waitForRebind` 로 그 키의 회차를 기다리는 쪽들.
+    private var rebindWaiters: [String: [CheckedContinuation<Void, Never>]] = [:]
 
     func retry() {
         retryToken &+= 1

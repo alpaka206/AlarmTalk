@@ -680,7 +680,9 @@
 - ⚠ **워커의 조회는 묶지 않는다(의도).** `StockClipPrefetchWorker`·`VoiceAccessSyncWorker` 는
   뷰모델이 없는 프로세스에서도 돌고, 교체 확정 판단에는 **그 회차가 직접 받아 공개한** 매니페스트가
   필요하다. 워커의 재바인딩용 강제 조회도 그대로 둔다.
-- iOS 에는 아직 이 묶음이 없다 — 별도 항목(효율 감사 M1 의 iOS 쪽)이다.
+- iOS 는 모양이 다르다(효율 감사 M1 의 iOS 쪽) — 떠 있는 요청을 나눠 쓰지는 않고, **선다운로드**
+  (`StockClipPrefetcher`)만 같은 신선도 창(45초)·신호 뒤를 따른다. 재바인딩·`loadStockClips(force:)` 는
+  강제 조회 그대로다. 규칙은 아래 「언제 받는가 — 한 번이 아니다」.
 
 제자리 교체는 message ID를 보존하므로 파일 존재만으로는 충분하지 않다. 매니페스트의
 `audio_url`을 캐시 메타데이터의 원격 주소와 비교하고, 다르면 같은 `stock_<messageId>` 파일을
@@ -795,6 +797,34 @@ AlarmKit 예약을 다시 만들 수 있다.
 
 **이미 캐시된 클립은 건너뛴다** — 그래서 여러 번 불러도 값이 싸다. "빠진 것만 보충" 이
 이 작업의 정상 동작이고, 중복 호출은 버그가 아니다.
+
+**목록(매니페스트)도 계기마다 새로 받지 않는다**(2026-09-29 효율 감사 M1 — iOS). 클립은 캐시로
+건너뛰었지만 목록(`GET /tts/stock-clips`, 약 168KB)은 부를 때마다 새로 받았다 — 콜드 스타트에
+3~5번, 전경 복귀마다 2번이었다.
+- **신선도 창 45초.** 선다운로드는 이 프로세스에서 **공개된** 매니페스트가 45초 안에 **출발한**
+  것이면 다시 받지 않고 그 공개본으로 받는다. 재는 기준은 도착이 아니라 **출발**이다 — 응답은 출발
+  뒤의 서버 상태라, 늦게 도착했다고 더 새것으로 치지 않는다. 공개 경합의 가드는 그대로다:
+  로그아웃·계정 전환(`clear`) 뒤, 더 새 응답의 쓰기가 실패한 뒤, 다른 계정의 공개본은 세지 않는다.
+  앱을 새로 켜면 창은 비어 있다 — 디스크 시드는 '이번 세션에 받은 것' 이 아니다.
+- **서버가 바뀐 것을 아는 자리는 창을 쓰지 않는다('신호 뒤').** 클론 생성이 끝난 뒤의 다운로드와
+  준비 페이지의 부족분 보충은 그 시각 **뒤에 출발한** 매니페스트만 쓴다 — 그보다 먼저 출발한
+  공개본은 새 클립을 모른다. 클론 등록 진행률도 **그 공개본으로만** 센다 — 디스크의 부분 목록으로
+  세면 그 부분이 다 받아진 순간 '다 받았다' 로 끝나 뒤늦게 만들어진 클립을 안 받는다(코덱스 #827).
+- **강제 조회는 그대로 둔다.** 재바인딩(`rebindStockClipsIfNeeded`)은 언제나 새로 받는다 — 교체
+  시딩은 틱마다 조금씩 채워지므로 부분 목록으로 돌면 아무 일도 안 하고 끝난다. 목소리 교체 푸시·
+  등록 완료 뒤의 조회도 그대로다. 전경 복귀는 **재바인딩을 먼저** 돌리고 보충을 그 뒤에 시작해,
+  보충이 재바인딩이 방금 받은 목록을 쓴다(재바인딩은 묶을 클립을 스스로 받고, 교체 판정도 보충을
+  기다리지 않는다).
+- **재바인딩은 같은 계정·언어로 한 번에 하나다.** 콜드 스타트에는 언어 키 작업과 전경 복귀가 거의
+  동시에 부른다 — 도는 회차가 있으면 뒤 호출은 **그 회차가 끝날 때까지 기다렸다가** 물러난다(그 회차가
+  같은 일을 한다. 곧바로 돌아오면 전경 복귀의 보충이 그 강제 조회가 공개되기 전에 시작돼 매니페스트를
+  또 받는다 — 코덱스 #827). 안드로이드는
+  재바인딩이 선다운로드 워커 안에서 돌고 그 워커가 `enqueueUniqueWork(…, KEEP)` 라 결과가 같다.
+  교체 차단 화면의 '다시 시도' 는 **모든** 회차가 끝나야 풀린다.
+- **준비 페이지의 3초 폴링은 준비가 끝나면 멈춘다** — 다 받았고, 소유자를 기다리는 중이 아니고,
+  관문이 보는 매니페스트에도 그 목소리가 실렸을 때다. **실패로는 멈추지 않는다** — 서버 생성 실패·
+  소유자 대기는 계속 묻는다(크론이 이어 만들거나 '다시 시도' 뒤에 풀리는 것을 화면이 알아야 한다,
+  2026-09-08).
 
 #### 고를 때·저장할 때 — **네트워크를 타지 않는다**
 
@@ -1017,7 +1047,7 @@ CAF 를 직접 쓰고 `AVChannelLayoutKey` 를 반드시 넣는다(없으면 파
 | --- | --- | --- | --- |
 | 매니페스트 조회 세대·소유자 | `StockClipManifestStore`의 저장소 전역 티켓·소유자 | `StockClipManifestStorage`·`StockClipManifestStore` 의 표(revision)·파일 임자 | `GET /tts/stock-clips` |
 | 공개 경합 — superseded 는 실패가 아니고 이긴 매니페스트를 싣는다 | `StockClipPrefetchWorker`(SUPERSEDED = 물러남) · `MainViewModelVoiceActions.fetchAndPublishStockClips` → `syncStockClipsToPublished`(이긴 매니페스트를 임자 대조로 적재 — `StockClipManifestStore.loadPublishedWinner`, 회귀 `StockClipManifestWiringTest`) | `StockClipPrefetcher.run`(디스크 권위로 이어 받음, `StockClipPrefetcherSupersededTests`) · `VoiceStudioViewModel.loadStockClips`(이긴 매니페스트 적재, `VoiceStudioLoadStockClipsSupersededTests`) | — |
-| 매니페스트 조회 한 번에 하나·신선도 창(45초)·신호 뒤 조회 | `StockClipManifestFlights`(`ManifestNeed`) ← `MainViewModelVoiceActions.ensureStockClipManifest`(앱 시작·탭·준비도 `refreshClipReadiness`·클론 `downloadAllPresetClips`·공유 변경); 회귀 `StockClipManifestFlightsTest`·`StockClipManifestWiringTest` | — (별도 항목) | `GET /tts/stock-clips` |
+| 매니페스트 조회 한 번에 하나·신선도 창(45초)·신호 뒤 조회 | `StockClipManifestFlights`(`ManifestNeed`) ← `MainViewModelVoiceActions.ensureStockClipManifest`(앱 시작·탭·준비도 `refreshClipReadiness`·클론 `downloadAllPresetClips`·공유 변경); 회귀 `StockClipManifestFlightsTest`·`StockClipManifestWiringTest` | 선다운로드만 — 아래 '매니페스트 신선도 창' 행(떠 있는 요청 나눠 쓰기는 없다) | `GET /tts/stock-clips` |
 | 메모리가 디스크 공개본을 표 순서로 따라감(워커 공개 포함) · 실은 뒤 교체 수리 | `StockClipManifestStore.publishedTickets` → `MainViewModel` init 의 구독 → `followPublishedStockClips`·`syncStockClipsToPublished`; `applyStockClipManifest`(표 순서)·`afterStockClipManifestApplied`; 회귀 `StockClipManifestWiringTest` | `VoiceStudioViewModel.loadStockClips`(이긴 매니페스트 적재) | — |
 | 매니페스트 디스크 읽기·쓰기 = 메인 밖 · Gson 하나 | `fetchAndPublishStockClips`·`seedStockClipsFromDisk`(`withContext(Dispatchers.IO)`), `StockClipManifestStore` 의 `gson` | — | — |
 | 클론 클립 받기 — 목소리마다 한 벌 · 병렬 4 · 클립마다 한 번 묻기 · 구동 중 탭 폴링 제외 | `VoiceClipDownloads` ← `MainViewModel.cacheVoiceClips`(구동 `downloadAllPresetClips`·목소리 탭 `downloadCloneBuckets`·기본 목소리 선다운로드 `prefetchFreeBucketClips`)·교체 수리 `repairReplacedStockClips`, 행 진행률 `PrerenderDriveState.overallFraction`; 회귀 `VoiceClipDownloadsTest` | — | `GET /tts/messages/:id/audio` |
@@ -1042,6 +1072,9 @@ CAF 를 직접 쓰고 `AVChannelLayoutKey` 를 반드시 넣는다(없으면 파
 | 문구 없던 알람 → 목소리 문구 = 직전 선택 잇기 | `AlarmEditorState.applyAlarmOutput` → `enterVoiceModeFromAlarmOnly`·`adoptLastMessageChoiceIfUnset`(`hasNoMessageChoice`) ← `AlarmEditorScreen.applyAlarmOutput`. 직접 녹음 → 목소리는 `AlarmEditorState.selectTtsVoice`(판정은 목소리 교체 **전**, 잇기는 **뒤**) ← `VoiceAudioCard`, 그 관문은 `needsClipPreparationForVoicePick`(이을 값으로 판정). 목소리 자동 선택은 `AlarmEditorState.preselectVoiceProfile`(이은 직접 입력 문구를 비우지 않는다). 기존 알람 라우트도 직전 선택을 받는다(`AlarmTalkApp`). 알람 전용 저장은 테마까지 비운다(`toDraft`). 회귀 `AlarmEditorStateTest` | `AlarmEditorSheet.adoptLastMessageChoiceIfUnset`(`AlarmEditDraft.hasNoMessageChoice`·`lastMessageChoice`) ← 재생 방식 `.onChange`(`AlarmEditorSheet+AlarmModeSection.swift`)·`commitVoiceSelection`(직접 녹음 → 목소리의 소스 전환·잇기는 선택을 **확정할 때만** — 바로 고름·기본 목소리 확인·공유 목소리 호칭 확인이 모두 여기로 오고, 닫으면 아무것도 안 바뀐다. 잇기가 목소리 적용 **전**이고 녹음 전환이 테마를 안 지워 순서 문제가 없다. 관문은 소스를 바꾸기 **전에** `recordingExitNeedsClipPreparation`(이을 값 `AlarmEditDraft.randomContextAdoptedByTtsPick`)으로 — `selectVoiceOption` 과 확정에서 — 보고, 잇기 뒤 `.onChange` 가 같은 식으로 한 번 더). 이은 직접 입력은 테마 이어받기가 덮지 않는다(`applyPendingFreeBucketIfNeeded` ← `AlarmEditDraft.keepsPaidTypedManualText`, 안드로이드는 `AlarmEditorScreen` 스톡 클립 `LaunchedEffect` 의 `manualChosen` 가드). 알람 전용 저장은 **테마를 남긴다**(`AlarmEditDraft.carryOverNonEditableFields` — 위 ⚠). 회귀 `MessageContextMemoryTests`·`AlarmEditDraftTests.test_toRecord_alarmOnlyKeepsThemeSoVoiceSwitchRestoresIt` | — |
 | 빈 직접 입력은 요청 전에 막는다 | `SaveBlockReason.MANUAL_TEXT_MISSING` ← `emptyMessageBlockReason`(판정 `hasNoMessageChoice`, 저장 버튼이 `saveEditor()` **전에** 판정) | `AlarmEditDraft.manualTextMissing` ← `AlarmEditorSheet.manualTextMissing` — `saveFlow` 첫머리(권한·한도 조회·생성 앞), 버튼은 살려 둔다 | — |
 | 버킷 클립 선다운로드 | `sync/StockClipPrefetchWorker.kt` | `StockClipPrefetcher.swift` | `GET /tts/stock-clips`, `GET /tts/messages/:id/audio` |
+| 매니페스트 신선도 창(출발 기준 45초 · 공개본만 · '신호 뒤' 는 창 무시) | 위 '매니페스트 조회 한 번에 하나' 행(`StockClipManifestFlights.FRESH_WINDOW_MS`) | `StockClipPrefetcher.manifestFreshnessWindow`·`manifestForRun` ← `StockClipManifestStorage.recentlyPublished`; '신호 뒤' 는 `ClonePrerenderDrive`·`ClipPreparationView.refresh` 의 `manifestDepartedAfter`, 등록 진행률은 `StockClipPrefetcher.progressOffMain(manifestDepartedAfter:)` ← `StockClipManifestStorage.publishedManifest`. 회귀 `StockClipManifestStoreTests`·`StockClipPrefetcherSupersededTests`·`StockClipPrefetcherRestartTests` | `GET /tts/stock-clips` |
+| 재바인딩은 계정·언어당 한 번에 하나 · 전경 복귀는 재바인딩 뒤 보충 | 재바인딩이 `StockClipPrefetchWorker` 안에서 돈다(`enqueueUniqueWork(…, KEEP)`) | `StockReplacementStatus.beginRebind`·`endRebind`·`waitForRebind`(물러난 쪽은 합류) ← `AlarmTalkApp.rebindStockClipsIfNeeded`; 전경 복귀 순서는 `AlarmTalkApp` 의 `.active`. 회귀 `StockClipRefetchGuardTests` | — |
+| 준비 페이지 폴링은 준비가 끝나면 멈춘다(실패·소유자 대기는 계속) | — | `ClipPreparationView.pollingCanStop`; 회귀 `StockClipRefetchGuardTests` | `GET /voice/:id/prerender-status` |
 | 대사 교체 = 은퇴 | — | — | `messages.retired_at` (마이그레이션 #110) |
 | 은퇴 행을 빼는 곳 **전부** | — | — | `findMissingStockTargets` · `GET /tts/stock-clips`(`retiredIsNullClause`) · `generateStockClip` 의 INSERT 가드와 게시본 조회 · `deleteStockClips` · `voice-profile.ts` 의 `GET /:id/prerender-status`(진행률)와 `POST /:id/prerender/advance`(게시 개수) (**일곱 곳** = `retired_at IS NULL` 가드 전부) |
 | 은퇴해도 그대로 두는 것 | — | — | `is_preset` = 쓰기 인가(`messageBelongsToCaller`) · 읽기 인가(`/tts/messages/:id/audio`) · TTL 면제(`audio-retention.ts`) |

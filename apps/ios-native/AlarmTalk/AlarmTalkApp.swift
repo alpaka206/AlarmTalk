@@ -504,10 +504,6 @@ struct AlarmTalkApp: App {
                 // 안드로이드는 앱 시작마다 `prefetchStockClips()` 로 같은 일을 한다.
                 Task {
                     guard auth.session != nil else { return }
-                    stockClipPrefetcher.start(
-                            session: auth.session,
-                            ownedVoiceProfileIDs: voiceStudio.ownedVoiceProfileIDs
-                        )
                     // ⚠ **재바인딩도 여기서 한 번 더 돈다**(2026-09-03).
                     //   예전에는 트리거가 콜드 스타트(`.task(id: stockClipLanguageKey)`)
                     //   **하나뿐**이었다. 그런데 프리셋 교체는 서버가 틱마다 조금씩 굽는
@@ -517,6 +513,17 @@ struct AlarmTalkApp: App {
                     //   안드로이드는 WorkManager 재큐잉·백오프로 여러 번 시도한다 —
                     //   iOS 만 한 번이었다. 전부 멱등이라 여기서 또 돌아도 안전하다.
                     await rebindStockClipsIfNeeded()
+                    guard auth.session != nil else { return }
+                    // ⚠ **보충은 재바인딩 뒤에 시작한다**(2026-09-29 효율 감사 M1 — iOS). 재바인딩은
+                    //   매니페스트를 **강제로** 받아 공개하므로(의도), 그 뒤에 도는 선다운로드는
+                    //   신선도 창(`StockClipPrefetcher.manifestFreshnessWindow`)으로 그 공개본을 쓴다.
+                    //   예전처럼 나란히 시작하면 둘이 같은 매니페스트를 한 번씩 — 전경 복귀마다 두 번 —
+                    //   받았다. 재바인딩이 먼저 끝나야 하는 일은 없다: 재바인딩은 묶을 클립을 스스로
+                    //   받고, 교체 판정도 선다운로드를 기다리지 않는다(`hasPendingReplacement`).
+                    stockClipPrefetcher.start(
+                        session: auth.session,
+                        ownedVoiceProfileIDs: voiceStudio.ownedVoiceProfileIDs
+                    )
                 }
                 // Phase 4-D2: 포그라운드 진입 시 세션 정합성을 직렬로 점검.
                 //  1) Apple credentialState — revoke/notFound 이면 즉시 signOut
@@ -585,8 +592,19 @@ struct AlarmTalkApp: App {
         //   A 의 회차가 **B 를 `checkedUserId` 에 적어** B 의 판정이 오기도 전에 B 의
         //   1회성 오버레이를 소진시킨다. 아래 보고 직전에 다시 대조한다.
         guard let startAccount = auth.session?.user.id else { return }
-        StockReplacementStatus.shared.setWorking(true)
-        defer { StockReplacementStatus.shared.setWorking(false) }
+        // ⚠ **같은 계정·언어의 회차가 돌고 있으면 물러난다**(2026-09-29 효율 감사 M1 — iOS).
+        //   부르는 두 곳(언어 키 `.task`·전경 복귀)이 콜드 스타트에 거의 동시에 부른다 — 가드가
+        //   없으면 매니페스트 강제 조회가 두 번 나가고 같은 행을 두 회차가 나란히 고친다.
+        //   규칙은 `StockReplacementStatus.beginRebind`. 도는 회차 **안의** 강제 조회는 그대로다.
+        //   물러날 때는 **그 회차가 끝날 때까지 기다린다**(합류, 코덱스 #827) — 전경 복귀는 이 함수 뒤에
+        //   보충을 시작하는데, 곧바로 돌아오면 도는 회차의 강제 조회가 공개되기 전에 보충이 같은
+        //   매니페스트를 한 번 더 받는다.
+        let rebindKey = "\(startAccount)|\(VoiceStudioViewModel.appVoiceLanguage())"
+        guard StockReplacementStatus.shared.beginRebind(key: rebindKey) else {
+            await StockReplacementStatus.shared.waitForRebind(key: rebindKey)
+            return
+        }
+        defer { StockReplacementStatus.shared.endRebind(key: rebindKey) }
         // ⚠ **알람이 다 올라온 뒤에 시작한다**(2026-09-03 리뷰 10차). 저장소는 콜드 스타트에
         //   빈 배열로 시작해 비동기로 채우는데, 이 경로는 세션 복원만 끝나면 곧바로 들어올
         //   수 있다. 빈 목록으로 돌면 재바인딩은 그냥 0건이지만 **정리는 전부를 지운다.**

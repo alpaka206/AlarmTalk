@@ -136,7 +136,7 @@ final class EntryRefreshFreshnessTests: XCTestCase {
     }
 
     /// 회귀(코덱스 #823 3차): 쓰기·푸시 뒤에는 `/auth/me` 를 **대개 한 번** 부른다. 이용권 새로고침이
-    /// 끝까지 가면 그 `/auth/me` 로 끝이고, 구독 조회가 실패해 `/auth/me` 전에 멈추면 사용자
+    /// 끝까지 가면 그 `/auth/me` 로 끝이고, 구독 조회가 실패해 `/auth/me` 의 답을 쓰기 전에 멈추면 사용자
     /// 새로고침으로 plan 을 받는다 — 확정할 트랜잭션이 없는 회차(만료 뒤 구독 관리·복원할 것 없음)에는
     /// `onServerEntitlementUpdated` 가 사용자를 대신 읽어 주지 않는다.
     func test_이용권_새로고침이_끝까지_못_가면_사용자_새로고침으로_plan_을_받는다() async throws {
@@ -151,10 +151,84 @@ final class EntryRefreshFreshnessTests: XCTestCase {
             XCTAssertEqual(meCalls(), 1, "끝까지 갔으면 그 `/auth/me` 로 끝이다 — 사용자 새로고침을 또 부르지 않는다")
 
             subscriptionFails.value = true
+            let before = meCalls()
             await vm.refreshAllThenUserIfIncomplete(auth: auth)
             XCTAssertFalse(vm.entitlementSnapshotComplete)
-            XCTAssertEqual(meCalls(), 2, "구독 조회에서 멈추면 이용권 쪽 `/auth/me` 는 안 나간다 — 사용자 새로고침이 한 번 받는다")
-            XCTAssertEqual(auth.session?.user.plan, "family", "그 사용자 새로고침이 서버의 지금 plan 을 세션에 넣는다")
+            // 이용권 쪽 `/auth/me` 는 구독 조회와 **나란히** 나가고(효율 감사 M7) 그 답은 이 진입의 결과로
+            // 적는다(코덱스 #827) — 스냅샷이 미완이라 사용자 새로고침이 한 번 더 부른다.
+            XCTAssertEqual(meCalls(), before + 2, "이용권 쪽 한 번 + 사용자 새로고침 한 번")
+            XCTAssertEqual(auth.session?.user.plan, "family", "서버의 지금 plan 이 세션에 들어간다")
+        }
+    }
+
+    /// 회귀(코덱스 #827): 네 조회를 한꺼번에 보내므로 구독·공유 코드가 실패해도 `/auth/me` 는 표와 함께
+    /// 이미 나갔다 — 그 답을 **이 진입의 결과로** 적는다(성공 → `onFreshPlan`, 실패 → `onAccountRequestFailed`).
+    /// 버리면 이 진입의 첫 결과가 비어, 뒤에 오는 다른 응답이 세션 한가운데서 종료 안내를 판정한다(D11).
+    /// 권한 스냅샷은 여전히 미완이다(구독 없는 반쪽 스냅샷 금지).
+    func test_구독_조회가_실패해도_나간_계정_요청의_결과를_적는다() async throws {
+        let subscriptionFails = LockedFlag()
+        subscriptionFails.value = true
+        let meFails = LockedFlag()
+        try await withSocialViewModel(
+            clock: TestClock(now: t0), meFails: meFails, subscriptionFails: subscriptionFails
+        ) { vm, current, meCalls, _ in
+            let ticket = AuthViewModel.AccountRequest(seq: 7, entry: 1)
+            vm.beginAccountRequest = { ticket }
+            var answeredPlans: [String] = []
+            var answeredTickets: [AuthViewModel.AccountRequest?] = []
+            var failedTickets: [AuthViewModel.AccountRequest?] = []
+            vm.onFreshPlan = { _, _, plan, _, request in
+                answeredPlans.append(plan)
+                answeredTickets.append(request)
+            }
+            vm.onAccountRequestFailed = { _, request in failedTickets.append(request) }
+
+            await vm.refreshAll(session: current)
+            XCTAssertFalse(vm.entitlementSnapshotComplete, "구독을 못 받았으니 스냅샷은 미완이다")
+            XCTAssertEqual(meCalls(), 1)
+            XCTAssertEqual(answeredPlans, ["family"], "나간 `/auth/me` 의 답을 세션에 넘긴다")
+            XCTAssertEqual(answeredTickets, [ticket], "보내기 전에 뜬 그 표로 넘긴다")
+            XCTAssertTrue(failedTickets.isEmpty)
+
+            meFails.value = true
+            await vm.refreshAll(session: current)
+            XCTAssertEqual(answeredPlans, ["family"])
+            XCTAssertEqual(failedTickets, [ticket], "`/auth/me` 도 실패했으면 그 실패를 이 진입의 결과로 적는다")
+        }
+    }
+
+    /// 회귀(효율 감사 M7): 이용권 새로고침의 네 조회(그룹·구독·공유 코드·`/auth/me`)는 **한꺼번에** 나간다.
+    /// 예전에는 그룹 → 구독·공유 코드 → `/auth/me` 로 세 번 차례로 기다렸다. 그룹 답을 붙든 채로 나머지
+    /// 셋이 서버에 닿는지 본다 — 차례로 보내면 그룹 답이 오기 전에는 아무것도 나가지 않는다.
+    func test_이용권_새로고침의_네_조회는_한꺼번에_나간다() async throws {
+        let gate = ResponseGate()
+        try await withSocialViewModel(clock: TestClock(now: t0), holdFamilyGroup: gate) { vm, current, meCalls, _ in
+            let refresh = Task { await vm.refreshAll(session: current) }
+            let deadline = Date().addingTimeInterval(5)
+            while meCalls() == 0, Date() < deadline {
+                try await Task.sleep(nanoseconds: 20_000_000)
+            }
+            XCTAssertEqual(meCalls(), 1, "그룹 답을 기다리는 사이 `/auth/me` 도 이미 나갔다")
+            gate.release()
+            await refresh.value
+            XCTAssertTrue(vm.entitlementSnapshotComplete, "받은 것을 쓰는 순서·가드는 그대로라 끝까지 간다")
+            XCTAssertEqual(meCalls(), 1)
+        }
+    }
+
+    /// 회귀(효율 감사 M7): `/auth/me` 가 이제 맨 처음에 나가므로, 계정 요청 표도 **보내기 전에** 뜬다 —
+    /// 늦게 도착한 옛 답이 새 답을 덮지 않게 하는 순번(`AuthViewModel.beginAccountRequest`)이 보낸 순서와
+    /// 어긋나면 안 된다.
+    func test_계정_요청_표는_auth_me_를_보내기_전에_뜬다() async throws {
+        try await withSocialViewModel(clock: TestClock(now: t0)) { vm, current, meCalls, _ in
+            var sentBeforeTicket: [Int] = []
+            vm.beginAccountRequest = {
+                sentBeforeTicket.append(meCalls())
+                return AuthViewModel.AccountRequest(seq: sentBeforeTicket.count, entry: 1)
+            }
+            await vm.refreshAll(session: current)
+            XCTAssertEqual(sentBeforeTicket, [0], "표는 한 번, `/auth/me` 가 서버에 닿기 전에 뜬다")
+            XCTAssertEqual(meCalls(), 1)
         }
     }
 
@@ -271,6 +345,7 @@ final class EntryRefreshFreshnessTests: XCTestCase {
         meFails: LockedFlag = LockedFlag(),
         subscriptionFails: LockedFlag = LockedFlag(),
         onMe: @escaping @Sendable () -> Void = {},
+        holdFamilyGroup: ResponseGate? = nil,
         _ body: (SocialFeatureViewModel, AuthSession, @escaping @Sendable () -> Int, AlarmTalkAPI) async throws -> Void
     ) async throws {
         let userID = UUID().uuidString
@@ -282,18 +357,20 @@ final class EntryRefreshFreshnessTests: XCTestCase {
         let me = try JSONSerialization.data(withJSONObject: [
             "user": ["id": userID, "email": "entry@example.test", "name": "Test", "plan": "family", "deletion_status": "active"]
         ])
-        EntryRefreshURLProtocol.configureSync(host: host) { path in
+        EntryRefreshURLProtocol.configure(host: host) { path, _, reply in
             switch path {
             case "auth/me":
                 onMe()
-                return meFails.value ? (503, Data(#"{"error":"unavailable"}"#.utf8)) : (200, me)
+                meFails.value ? reply(503, Data(#"{"error":"unavailable"}"#.utf8)) : reply(200, me)
             case "billing/subscription":
-                if subscriptionFails.value { return (503, Data(#"{"error":"unavailable"}"#.utf8)) }
-                return (200, Data(#"{"subscription":null,"plan":null,"next_plan":null,"store_renewal_providers":[]}"#.utf8))
+                if subscriptionFails.value { reply(503, Data(#"{"error":"unavailable"}"#.utf8)); return }
+                reply(200, Data(#"{"subscription":null,"plan":null,"next_plan":null,"store_renewal_providers":[]}"#.utf8))
             case "billing/vouchers":
-                return (200, Data(#"{"vouchers":[]}"#.utf8))
+                reply(200, Data(#"{"vouchers":[]}"#.utf8))
             default:
-                return (200, Data(#"{"group":null,"role":null,"members":[]}"#.utf8))
+                // `family/groups/current` — 문을 넘기면 그 문이 열릴 때까지 답을 붙든다.
+                let group = Data(#"{"group":null,"role":null,"members":[]}"#.utf8)
+                if let holdFamilyGroup { holdFamilyGroup.hold { reply(200, group) } } else { reply(200, group) }
             }
         }
         let urlSession = Self.stubbedSession()
