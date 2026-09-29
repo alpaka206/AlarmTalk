@@ -194,6 +194,40 @@ final class VoiceReplacementCascadeTests: XCTestCase {
         XCTAssertNil(after?.preLockPlayMode)
     }
 
+    /// 확정은 보관본이 붙든 오디오를 **전부** 놓는다(Codex #820) — 테마 알람의 보관본은 클립 세트
+    /// 전체를 가리키는데, 대표 키만 지우면 지워진 목소리의 나머지 생성 음성이 캐시 정리 때까지 남는다.
+    /// 목소리로 우는 다른 알람이 세트 안의 키를 쓰고 있으면 그것만 남긴다. 안드로이드
+    /// `DefaultVoiceLockRepositoryTest.finalizingReleasesEveryClipTheSnapshotHeld` 짝.
+    func test_잠금_확정은_보관본의_클립을_전부_놓는다() throws {
+        let store = makeStore()
+        let cache = AudioCacheStore()
+        let tag = UUID().uuidString.prefix(8)
+        let cloneKeys = (0..<3).map { "stock_clone-\(tag)-\($0)" }
+        for key in cloneKeys {
+            _ = try cache.cacheBytes(
+                Data("clip-\(key)".utf8), cacheKey: key, mimeType: "audio/mpeg", source: "tts",
+                durationOverrideMs: 1_000, enforceMaxDuration: false
+            )
+        }
+        defer { cloneKeys.forEach { try? cache.deleteCachedAudio(cacheKey: $0) } }
+        var original = alarm(id: "locked", voiceProfileId: "clone-1", bucketId: "weather", cacheKey: cloneKeys[0])
+        original.bucketClipKeys = cloneKeys
+        store.upsert(DefaultVoiceSubstitute.locked(
+            original, voiceID: systemVoiceIDPrefix + "000000000101", binding: nil, nowMillis: 1
+        ))
+        // 다른(남아 있는) 목소리의 알람이 세트의 마지막 키를 회전에 쓴다.
+        var other = alarm(id: "other", voiceProfileId: "clone-2", bucketId: "weather", cacheKey: "stock_other-\(tag)")
+        other.bucketClipKeys = ["stock_other-\(tag)", cloneKeys[2]]
+        store.upsert(other)
+
+        VoiceStudioViewModel().degradeAlarms(usingVoiceProfileIDs: ["clone-1"], alarmStore: store, audioCache: cache)
+
+        XCTAssertNil(store.record(id: "locked")?.preLockVoice)
+        XCTAssertNil(cache.cachedURL(for: cloneKeys[0]), "대표 클립")
+        XCTAssertNil(cache.cachedURL(for: cloneKeys[1]), "대표가 아닌 세트 클립도 지운다")
+        XCTAssertNotNil(cache.cachedURL(for: cloneKeys[2]), "목소리로 우는 다른 알람이 쓰는 클립은 남긴다")
+    }
+
     func test_기본_목소리는_대상이_아니다() {
         let store = makeStore()
         let systemID = systemVoiceIDPrefix + "000000000101"

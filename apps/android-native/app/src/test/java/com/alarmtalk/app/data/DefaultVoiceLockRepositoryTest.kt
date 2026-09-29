@@ -239,6 +239,38 @@ class DefaultVoiceLockRepositoryTest {
     }
 
     /**
+     * 확정은 보관본이 붙든 오디오를 **전부** 놓는다(Codex #820) — 테마 알람의 보관본은 클립 세트
+     * 전체를 가리키는데, 대표 키만 지우면 지워진 목소리의 나머지 생성 음성이 30일 캐시 정리 때까지
+     * 남는다. 목소리로 우는 다른 알람이 세트 안의 키를 쓰고 있으면 그것만 남긴다.
+     */
+    @Test
+    fun finalizingReleasesEveryClipTheSnapshotHeld() = runBlocking {
+        val store = AlarmAudioStore(context)
+        val cloneKeys = (0..2).map { "stock_clone-weather-$it" }
+        cloneKeys.forEach { key ->
+            store.cacheGeneratedAudio(byteArrayOf(1, 2, 3), "mp3", rawAudioUri = null, cacheKey = key)
+        }
+        dao.upsert(rehearsalCloneAlarm(bucketClipKeysJson = encodeBucketClipKeys(cloneKeys)))
+        repository.lockPaidAlarmTalks()
+        // 잠금 뒤에 생긴, 다른(접근 가능한) 목소리의 알람이 세트의 마지막 키를 회전에 쓴다.
+        dao.upsert(
+            rehearsalCloneAlarm(
+                id = "other",
+                voiceProfileId = "clone-other",
+                audioCacheKey = "stock_other-0",
+                bucketClipKeysJson = encodeBucketClipKeys(listOf("stock_other-0", cloneKeys[2])),
+            ),
+        )
+
+        repository.degradeAlarmsWithInaccessibleVoice(setOf("clone-other"), expectedOwnerUserId = "user-a")
+
+        assertFalse(dao.getById("rehearsal-1")!!.hasLockedPaidVoice())
+        assertNull("대표 클립", store.getCachedAudio(cloneKeys[0]))
+        assertNull("대표가 아닌 세트 클립도 지운다", store.getCachedAudio(cloneKeys[1]))
+        assertNotNull("목소리로 우는 다른 알람이 쓰는 클립은 남긴다", store.getCachedAudio(cloneKeys[2]))
+    }
+
+    /**
      * 테마 없이 잠근 행은 직접 입력 판정에 걸리고 오디오 시각이 0 이다. 그 **대체 기본 목소리**가
      * 제자리 교체되면 낡은 직접 입력 알람으로 잡혀 알람음으로 내려가고 "직접 입력 알람이 기본
      * 알람음으로 바뀌었어요" 가 떴다 — 이 행에는 낡은 오디오가 하나도 없는데.

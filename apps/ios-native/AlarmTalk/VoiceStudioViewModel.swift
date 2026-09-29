@@ -1566,14 +1566,20 @@ final class VoiceStudioViewModel: ObservableObject {
         let locked = alarmStore.alarms.filter { $0.preLockVoice != nil && originalVoiceIsGone($0) }
         guard !locked.isEmpty else { return }
         let now = Int64(Date().timeIntervalSince1970 * 1000)
+        // ⚠ **보관본이 붙든 오디오는 대표 클립 하나가 아니라 전부다**(Codex #820). 테마 알람의 보관본은
+        // 클립 세트 전체를 가리키는데, 대표 키만 지우면 나머지 — 지워진 목소리의 생성 음성과 그 구운
+        // 사본 — 가 캐시 정리 때까지 남는다. 안드로이드 `AlarmRepository.deleteAudioNoAlarmUses` 와 같은 규칙.
         var releasedKeys: Set<String> = []
         for record in locked {
-            if let key = record.preLockVoice?.audioCacheKey?.nilIfBlank { releasedKeys.insert(key) }
+            releasedKeys.formUnion(record.preLockVoice?.referencedCacheKeys.compactMap(\.nilIfBlank) ?? [])
             _ = alarmStore.upsert(DefaultVoiceSubstitute.finalized(record, nowMillis: now))
         }
         if let audioCache, !releasedKeys.isEmpty {
+            // 참조로 세는 것: 대표 클립, **목소리로 우는** 알람의 클립 세트(알람 모드 행은 틀지 않는다),
+            // 무료 잠금 보관본이 붙든 키.
             let stillReferenced = Set(
                 alarmStore.alarms.compactMap(\.audioCacheKey)
+                    + alarmStore.alarms.filter { $0.playModeEnum != .alarmOnly }.flatMap { $0.bucketClipKeys ?? [] }
                     + alarmStore.alarms.flatMap { $0.preLockVoice?.referencedCacheKeys ?? [] }
             )
             for key in releasedKeys.subtracting(stillReferenced) {

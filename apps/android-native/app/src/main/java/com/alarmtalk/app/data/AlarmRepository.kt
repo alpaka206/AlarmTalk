@@ -1013,6 +1013,10 @@ class AlarmRepository(
         // 다른 강등(삭제·접근권 상실)은 시스템 목소리를 보지 않으므로 이 행에 닿지 않는다.
         // (`docs/spec/billing-lifecycle.md` 「목소리를 못 쓰게 되면」)
         val lockedAtStart = alarmDao.getAllAlarms().filter { it.hasLockedPaidVoice() }
+        // ⚠ **보관본이 붙든 오디오는 대표 클립 하나가 아니라 전부다**(Codex #820). 테마 알람의 보관본은
+        // 클립 세트 전체(`bucketClipKeysJson`)를 가리키는데, 대표 키만 지우면 나머지 — 지워진 목소리의
+        // 생성 음성 — 가 30일 캐시 정리 때까지 남는다. 보관본을 버리기 전에 모은다.
+        val releasedKeys = LinkedHashSet<String>()
         lockedAtStart.filter { alarm ->
             alarm.origin == AlarmOrigins.LOCAL_OWNED &&
                 ownedByCurrentSession(alarm, currentUser, ownershipSettled) &&
@@ -1020,11 +1024,11 @@ class AlarmRepository(
                     original.voiceSource == VoiceSources.TTS_PROFILE && match(original)
                 }
         }.forEach { locked ->
-            val releasedKey = locked.lockedPaidVoice()?.audioCacheKey
+            locked.lockedPaidVoice()?.referencedCacheKeys()?.let(releasedKeys::addAll)
             alarmDao.upsertPreservingServerSyncFields(locked.finalizedLock(lockCheckedAt))
-            alarmAudioStore.deleteCachedAudioIfUnreferenced(alarmDao, releasedKey)
             Log.i(TAG, "Finalized a default-voice lock id=${locked.id}: the original voice is no longer accessible")
         }
+        deleteAudioNoAlarmUses(releasedKeys)
         val lockedIds = lockedAtStart.mapTo(HashSet()) { it.id }
         val candidates = alarmDao.getAllAlarms().filter { alarm ->
             alarm.origin == AlarmOrigins.LOCAL_OWNED &&
@@ -1070,6 +1074,29 @@ class AlarmRepository(
             Log.i(TAG, "Degraded alarm id=${current.id}: voice ${current.voiceProfileId} no longer accessible")
         }
         return degraded
+    }
+
+    /**
+     * 놓아준 캐시 키 중 **어떤 알람도 더 쓰지 않는 것만** 지운다.
+     *
+     * 참조로 세는 것: 모든 알람의 대표 클립(`audioCacheKey`), **목소리로 우는** 알람의 클립 세트
+     * (`bucketClipKeys` — 알람 모드 행은 틀지 않는다), 무료 잠금 보관본이 붙든 키. `countByAudioCacheKey`
+     * 는 클립 세트를 세지 않아, 세트 중간의 키를 지우면 다른 알람의 회전이 빈 자리를 튼다 — 여러 키를
+     * 한꺼번에 놓는 자리에서는 이걸 쓴다. iOS `VoiceStudioViewModel.finalizeDefaultVoiceLocks` 와 같은 규칙.
+     */
+    private suspend fun deleteAudioNoAlarmUses(keys: Set<String>) {
+        if (keys.isEmpty()) return
+        val stillReferenced = HashSet<String>()
+        alarmDao.getAllAlarms().forEach { alarm ->
+            alarm.audioCacheKey?.takeIf { it.isNotBlank() }?.let(stillReferenced::add)
+            if (AlarmPlayModes.normalize(alarm.playMode) != AlarmPlayModes.ALARM_ONLY) {
+                stillReferenced.addAll(alarm.bucketClipKeys())
+            }
+            alarm.lockedPaidVoice()?.referencedCacheKeys()?.let(stillReferenced::addAll)
+        }
+        keys.filter { it.isNotBlank() && it !in stillReferenced }.forEach { key ->
+            alarmAudioStore.deleteCachedAudio(key)
+        }
     }
 
     /**
