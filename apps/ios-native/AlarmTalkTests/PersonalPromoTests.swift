@@ -14,7 +14,8 @@ import XCTest
 ///  3. 오프라인 컷오프는 **낡은 캐시에만** 건다 — 끝 **전에** 계산된 `plus` 만 끝난 뒤 무료로
 ///     읽고, 끝 **뒤에** 계산된 답은 서버 값 그대로 믿는다. 계산 시각을 모르면 끝 전의 답이다
 ///     (fail-closed). **활성 구독 행은 언제나 이긴다.**
-///  4. 이용권 화면의 '현재 이용권' 은 **산 것**만 친다 — 프로모는 산 이용권이 아니다.
+///  4. 이용권 화면의 결제·전환은 **산 것**으로만 가른다 — 프로모는 산 이용권이 아니다. 다만
+///     프로모만 쓰는 계정은 '현재 이용권' 뱃지가 **개인 카드**에 붙고 결제 버튼은 남는다(D4).
 ///  5. 종료 안내는 서버가 준 창 안에서, 앱에 **들어올 때마다**, **이 진입에 보낸 계정 요청의
 ///     응답 뒤에**, 다른 모달·권한 팝업이 없을 때, '다시 보지 않기' 전까지 뜬다. 한 진입의 판정은
 ///     한 번이다 — 띄울 것이 없거나 응답이 실패해도 그 진입은 끝난다.
@@ -606,15 +607,16 @@ final class PersonalPromoTests: XCTestCase {
         XCTAssertTrue(PaidVoiceGate.freePlanLockMayApply(freeOnlyByPromoLapse: true, planAnsweredEntry: 2, entry: 2))
     }
 
-    // MARK: - 4. 이용권 화면: 산 것만 '현재 이용권'
+    // MARK: - 4. 이용권 화면: 결제·전환은 산 것으로만
 
     func test_purchasedPlan_excludesPromo() {
         XCTAssertEqual(promoUser(promo: promo).purchasedPlan, "free")
         XCTAssertEqual(promoUser(promo: nil).purchasedPlan, "plus")
         XCTAssertEqual(promoUser(plan: "family", promo: nil).purchasedPlan, "family")
 
-        // 이용권 화면이 넘기는 값으로 등급을 보면 프로모 계정은 무료 카드가 현재다 —
-        // 개인 카드에 결제 버튼이 남고, 전환·환산 문구가 뜨지 않는다.
+        // 이용권 화면이 넘기는 값으로 등급을 보면 프로모 계정의 **산 이용권**은 무료다 —
+        // 버튼 라벨이 '결제하기' 이고, 전환·환산 문구가 뜨지 않는다. ('현재 이용권' 뱃지는
+        // 이 값에서 한 번 더 간다 — 아래 4-1 `PlanScreenCurrent`.)
         XCTAssertEqual(
             PlanTier.bestKnown(serverSubscription: noSubscription, userPlan: promoUser(promo: promo).purchasedPlan),
             .free
@@ -638,6 +640,108 @@ final class PersonalPromoTests: XCTestCase {
 
     func test_lastFreeDay_isOneSecondBeforeExclusiveEnd() {
         XCTAssertEqual(promo.lastFreeDate, end.addingTimeInterval(-1))
+    }
+
+    // MARK: - 4-1. 이용권 화면의 '현재 이용권' 카드(`PlanScreenCurrent` — 스펙 D4)
+    //
+    // 안드로이드 `PlanScreenCurrentTest` 와 **같은 표**다: 프로모만 쓰는 계정은 개인 카드가 현재이고
+    // 문구는 그 카드에만 있다. 그 카드의 결제 버튼은 남는다. 산 이용권·공유 멤버·보류 행·프로모
+    // 없음/끝남은 예전 그대로다.
+
+    private func planScreen(
+        purchased: PlanTier = .free,
+        member: Bool = false,
+        promoActive: Bool = true,
+        held: Bool = false
+    ) -> PlanScreenCurrent {
+        PlanScreenCurrent.resolve(
+            purchasedTier: purchased,
+            isSharedMember: member,
+            promoActive: promoActive,
+            hasHeldSubscriptionRow: held
+        )
+    }
+
+    /// 카드 목록의 모양 — '현재 이용권' 카드와 결제 버튼이 있는 카드들.
+    private struct CardLayout: Equatable {
+        let current: PlanTier
+        let purchase: Set<PlanTier>
+    }
+
+    /// 이 변경 전의 규칙 — 현재 카드는 산 이용권, 결제 버튼은 현재가 아닌 유료 카드.
+    private func legacyLayout(_ purchased: PlanTier) -> CardLayout {
+        CardLayout(current: purchased, purchase: Set(PlanTier.allCases.filter { $0 != .free && $0 != purchased }))
+    }
+
+    private func layout(_ screen: PlanScreenCurrent) -> CardLayout {
+        CardLayout(current: screen.currentTier, purchase: Set(PlanTier.allCases.filter { screen.showsPurchase($0) }))
+    }
+
+    func test_planScreen_promoOnlyAccountShowsPersonalCardAsCurrent() {
+        let screen = planScreen()
+        XCTAssertEqual(screen.currentTier, .personal)
+        XCTAssertTrue(screen.isCurrent(.personal))
+        XCTAssertFalse(screen.isCurrent(.free), "무료 카드는 현재가 아니다")
+        XCTAssertTrue(screen.promoOnPersonalCard)
+        XCTAssertFalse(screen.promoLineAboveList, "같은 말을 카드 위에 또 하지 않는다")
+    }
+
+    func test_planScreen_promoPersonalCardKeepsPurchaseButton() {
+        let screen = planScreen()
+        XCTAssertTrue(screen.showsPurchase(.personal), "끝난 뒤 이어 쓰려면 사야 한다 — 개인 카드의 결제 버튼이 남는다")
+        XCTAssertTrue(screen.showsPurchase(.couple))
+        XCTAssertTrue(screen.showsPurchase(.family))
+        XCTAssertFalse(screen.showsPurchase(.free))
+    }
+
+    func test_planScreen_purchasedPlanStaysCurrentAndPromoLineStaysAbove() {
+        // 산 이용권이 있는데 프로모가 보이는 경우(StoreKit 이 먼저 안 결제 직후 등) — 예전 그대로.
+        let screen = planScreen(purchased: .couple)
+        XCTAssertEqual(screen.currentTier, .couple)
+        XCTAssertFalse(screen.promoOnPersonalCard)
+        XCTAssertTrue(screen.promoLineAboveList)
+        XCTAssertFalse(screen.showsPurchase(.couple), "산 현재 카드에는 결제 버튼이 없다")
+        XCTAssertEqual(layout(screen), legacyLayout(.couple))
+    }
+
+    func test_planScreen_sharedMemberAndHeldRowKeepTodaysLayout() {
+        // 결제 보류 그룹의 멤버 / `deletesVoicesAtEnd == false` 인 결제 보류 계정 — 원시 free 라
+        // 프로모가 있지만 개인 카드에 앉히지 않는다.
+        for screen in [planScreen(member: true), planScreen(held: true)] {
+            XCTAssertEqual(screen.currentTier, .free)
+            XCTAssertFalse(screen.promoOnPersonalCard)
+            XCTAssertTrue(screen.promoLineAboveList)
+            XCTAssertEqual(layout(screen), legacyLayout(.free))
+        }
+    }
+
+    func test_planScreen_onlyThePromoOnlyAccountDiffersFromTodaysLayout() {
+        // 모든 입력 조합에서: 개인 카드에 앉는 갈래만 예전과 다르고 나머지는 예전 규칙 그대로다.
+        // 두 자리(개인 카드·카드 위 한 줄)는 동시에 참이 아니고, 프로모가 있으면 둘 중 하나에는 보인다.
+        for purchased in PlanTier.allCases {
+            for member in [false, true] {
+                for promoActive in [false, true] {
+                    for held in [false, true] {
+                        let screen = planScreen(purchased: purchased, member: member, promoActive: promoActive, held: held)
+                        let label = "\(purchased)/\(member)/\(promoActive)/\(held)"
+                        let promoOnly = promoActive && purchased == .free && !member && !held
+                        XCTAssertEqual(screen.promoOnPersonalCard, promoOnly, label)
+                        XCTAssertFalse(screen.promoOnPersonalCard && screen.promoLineAboveList, label)
+                        XCTAssertEqual(screen.promoOnPersonalCard || screen.promoLineAboveList, promoActive, label)
+                        if !promoOnly {
+                            XCTAssertEqual(layout(screen), legacyLayout(purchased), label)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// 카드 위 한 줄과 개인 카드의 상태 문구는 **같은 카탈로그 키**에서 나온다 — 날짜가 자리에 들어간다.
+    func test_personalPromoLineText_fillsTheDay() {
+        let text = BillingPanel.personalPromoLineText(lastDay: "10월 31일")
+        XCTAssertTrue(text.contains("10월 31일"), text)
+        XCTAssertFalse(text.contains("%@"), text)
     }
 
     // MARK: - 5. 종료 안내

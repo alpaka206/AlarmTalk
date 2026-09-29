@@ -919,7 +919,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     internal var pendingSensitiveConsent by mutableStateOf<SensitiveConsentRequest?>(null)
 
     /**
-     * 기간 한정 개인 플랜의 **진입별 장부** — 계정 응답의 진입·순번, 종료 안내, 이용권 화면 한 줄.
+     * 기간 한정 개인 플랜의 **진입별 장부** — 계정 응답의 진입·순번, 종료 안내, 이용권 화면의 프로모 문구.
      * 규칙은 전부 [PersonalPromoLedger] 에 있고 아래 멤버는 그 위임이다(뷰모델을 단위 테스트에서
      * 세울 수 없어 규칙을 떼어 두었다 — `PersonalPromoLedgerTest`).
      */
@@ -1024,7 +1024,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /**
-     * 이용권 화면 한 줄의 프로모 — 계정 응답과 구독 응답 중 **나중에 받은 답**의 것
+     * 이용권 화면에 보일 프로모 — 계정 응답과 구독 응답 중 **나중에 받은 답**의 것
      * ([PersonalPromoLedger.planScreenPromo]). 방금 결제·쿠폰 등록으로 새 계정 응답에 promo 가
      * 없으면, 결제 전에 캐시된 구독 응답의 promo 가 대신 보이지 않는다.
      */
@@ -1406,7 +1406,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 .also { snapshot -> persisted = snapshot }
         }
         // 부르는 쪽은 문을 통과하면 곧바로 화면 사본(`subscriptionResponse`)을 이 응답으로 바꾼다 —
-        // 이용권 화면 한 줄이 '나중에 받은 답' 을 고를 수 있게 순서를 적는다(문을 지난 응답만 —
+        // 이용권 화면의 프로모 문구가 '나중에 받은 답' 을 고를 수 있게 순서를 적는다(문을 지난 응답만 —
         // 장부가 결과를 보고 가른다).
         personalPromoLedger.recordBillingAnswer(result)
         if (result == EntitlementWrite.Applied && response?.userPlan != null) {

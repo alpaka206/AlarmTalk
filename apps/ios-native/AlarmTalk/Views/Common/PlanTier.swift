@@ -163,3 +163,59 @@ enum PlanTier: String, CaseIterable, Codable, Equatable {
         return !promo.isStale(at: now)
     }
 }
+
+/// 이용권 화면의 **'현재 이용권' 카드**와 기간 한정 개인 플랜 문구의 자리.
+///
+/// 규칙은 `docs/spec/billing-lifecycle.md` 「기간 한정 개인 플랜」 D4 「이용권 화면의 프로모 문구」 이고,
+/// 안드로이드 `PlanScreenCurrent`(`ui/billing/BillingPanels.kt` 의 `planScreenCurrentOf`)와 **같은 입력에
+/// 같은 답**을 낸다.
+///
+/// 프로모가 이 계정의 **유일한 이용권**일 때만 개인 카드가 현재가 된다 — 산 이용권이 없고(`free`),
+/// 공유 멤버가 아니고, 보류 행도 없다. 그 밖(산 이용권·공유 멤버·보류 행·프로모 없음/끝남)은 예전
+/// 그대로다 — 현재 카드는 산 이용권, 프로모는 카드 위 한 줄.
+///
+/// ⚠ **여기 답으로 결제·전환을 가르지 말 것.** 버튼 라벨('결제하기'/'이용권 변경')·확인 알럿의 전환·
+/// 환산 문구·결제 차단(`BillingPanel.purchaseBlockReason`)은 산 이용권(`BillingPanel.currentTier`)으로만
+/// 가른다 — 프로모는 산 이용권이 아니다.
+struct PlanScreenCurrent: Equatable {
+    /// '현재 이용권' 뱃지·강조를 다는 카드.
+    let currentTier: PlanTier
+    /// 프로모가 이 계정의 **유일한** 이용권이라 개인 카드가 현재가 됐다 — 그 카드의 상태 문구가
+    /// 프로모 한 줄이고, 결제 버튼은 남는다(산 이용권이 아니다).
+    let promoOnPersonalCard: Bool
+    /// 프로모 한 줄을 카드 목록 **위에** 그린다 — 프로모가 있는데 개인 카드에 앉지 않는 계정(산 이용권·
+    /// 공유 멤버·보류 행). 예전 그대로다. `promoOnPersonalCard` 와 동시에 참이 되지 않는다.
+    let promoLineAboveList: Bool
+
+    func isCurrent(_ tier: PlanTier) -> Bool { tier == currentTier }
+
+    /// 결제 버튼 — 무료 카드엔 없고, **산** 현재 이용권 카드에도 없다(다시 살 것이 없다).
+    /// 프로모로 현재가 된 개인 카드에는 **있다** — '현재' 와 '결제 버튼 숨김' 은 다른 질문이다.
+    func showsPurchase(_ tier: PlanTier) -> Bool {
+        tier != .free && (!isCurrent(tier) || promoOnPersonalCard)
+    }
+
+    /// - Parameters:
+    ///   - purchasedTier: 산 이용권 — 예전에 현재 카드를 고르던 값 그대로(`BillingPanel.currentTier`).
+    ///   - isSharedMember: 가족·커플 그룹의 멤버(`familyGroup.role == "member"`, 그룹 있음).
+    ///   - promoActive: 이용권 화면에 보일 프로모가 **지금** 살아 있다(끝나지 않았고 마지막 날을 읽을 수 있다).
+    ///   - hasHeldSubscriptionRow: 그 프로모의 `deletesVoicesAtEnd == false` — 원시 free 인데 `active`
+    ///     구독 행이 남은 계정(결제 보류 등). 보류 행은 구독 응답에 실리지 않아 이 값이 아니면 프로모
+    ///     계정과 구별되지 않는다. 키를 모르는 서버는 `true`(보류 아님)로 읽힌다(`PersonalPromo.init(from:)`).
+    static func resolve(
+        purchasedTier: PlanTier,
+        isSharedMember: Bool,
+        promoActive: Bool,
+        hasHeldSubscriptionRow: Bool
+    ) -> PlanScreenCurrent {
+        let promoIsOnlyPlan = promoActive
+            && purchasedTier == .free
+            && !isSharedMember
+            && !hasHeldSubscriptionRow
+        return PlanScreenCurrent(
+            currentTier: promoIsOnlyPlan ? .personal : purchasedTier,
+            promoOnPersonalCard: promoIsOnlyPlan,
+            promoLineAboveList: promoActive && !promoIsOnlyPlan
+        )
+    }
+}
