@@ -187,7 +187,6 @@ final class MessageContextMemoryTests: XCTestCase {
             profileID: String? = "clone-1",
             settling: Bool = false,
             locked: Bool = false,
-            theme: Bool = false,
             ready: Bool = false,
             audio: Bool = false
         ) -> Bool {
@@ -197,25 +196,21 @@ final class MessageContextMemoryTests: XCTestCase {
                 profileID: profileID,
                 settling: settling,
                 lockedByPlan: locked,
-                themeSelected: theme,
                 profileReady: ready,
                 hasUsableAudio: { audioChecked = true; return audio }()
             )
         }
-        // 목록에서 사라진(삭제·공유 해제·미준비) 목소리 + 쓸 음원 없음 → 막는다.
+        // 목록에서 사라진(삭제·공유 해제·미준비) 목소리 + 쓸 음원 없음 → 막는다. 테마를 골랐어도
+        // 같다 — 테마 클립은 그 목소리의 클립이라 목소리가 사라지면 받을 수 없다(Codex #826).
         XCTAssertTrue(unusable())
         // 무료 플랜에서 잠긴 목소리 → 막는다(준비돼 있어도).
         XCTAssertTrue(unusable(locked: true, ready: true))
         // ⚠ 잠금은 기존 음원 재사용으로도 풀리지 않는다 — 서버 `PATCH /alarm` 이 저장된 값
         // 그대로의 유료 목소리도 403 으로 거절하고, 안드로이드도 `voiceAlarmAllowed` 가 막는다.
         XCTAssertTrue(unusable(locked: true, audio: true))
-        // ⚠ 테마로도 풀리지 않는다 — 클론에 붙은 테마 클립은 그 유료 목소리의 클립이다(Codex #826).
-        XCTAssertTrue(unusable(locked: true, theme: true))
         // 준비된 목소리, 또는 기존 알람 음원을 그대로 쓸 수 있으면 막지 않는다.
         XCTAssertFalse(unusable(ready: true))
         XCTAssertFalse(unusable(audio: true))
-        // 테마(스톡 클립)를 골랐으면 클립이 울린다 — 막지 않는다.
-        XCTAssertFalse(unusable(theme: true))
         // 정리 중인 교체 목소리는 "아직 준비 중" 으로 따로 말한다.
         XCTAssertFalse(unusable(settling: true))
         XCTAssertFalse(unusable(settling: true, locked: true))

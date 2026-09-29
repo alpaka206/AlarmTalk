@@ -303,9 +303,10 @@ struct AlarmEditDraft: Equatable {
     ///
     /// - 목소리를 아직 안 골랐으면 여기 갈래가 아니다(목소리 행이 "고르기" 로 말한다).
     /// - **정리 중인 교체 목소리**도 아니다 — 곧 풀리는 상태라 "아직 준비 중" 으로 따로 말한다.
-    /// - 테마(스톡 클립)를 골랐으면 목소리 음원이 아니라 클립이 울리므로 막지 않는다.
-    ///   (삭제·미준비 목소리에만 해당한다. 무료 플랜 잠금은 테마로도 풀리지 않는다 — 그
-    ///   테마의 클립이 곧 그 유료 목소리의 클립이다.)
+    /// - ⚠ **테마를 골랐어도 막는다.** 테마 클립은 그 목소리의 클립이라 목소리가 사라지면
+    ///   받을 수 없다(서버 오디오 라우트가 삭제·접근 불가 목소리를 거절한다). 예외로 두면
+    ///   저장을 눌러 클립 받기 실패를 기다리게 될 뿐이다. 안드로이드 `editorSaveBlockReason`
+    ///   도 테마 갈래보다 **먼저** `usableTtsProfileIds` 를 본다(Codex #826).
     /// - 기존 알람의 음원을 그대로 쓸 수 있으면 막지 않는다 — 시각만 고치는 재저장이 그렇다.
     ///   (삭제·미준비 목소리에만 해당한다. 무료 플랜 잠금은 음원이 있어도 막는다 — 아래 주석.)
     ///
@@ -316,7 +317,6 @@ struct AlarmEditDraft: Equatable {
         profileID: String?,
         settling: Bool,
         lockedByPlan: Bool,
-        themeSelected: Bool,
         profileReady: Bool,
         hasUsableAudio: @autoclosure () -> Bool
     ) -> Bool {
@@ -327,7 +327,6 @@ struct AlarmEditDraft: Equatable {
         // `VOICE_FEATURE_REQUIRES_PAID_PLAN` 으로 거절하고, 안드로이드도 `voiceAlarmAllowed` 가
         // 편집기 판정 뒤에서 막는다. 여기서 통과시키면 저장을 눌러 서버 실패를 기다리게 될 뿐이다.
         if lockedByPlan { return true }
-        if themeSelected { return false }
         return !profileReady && !hasUsableAudio()
     }
 

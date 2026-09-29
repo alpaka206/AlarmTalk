@@ -1034,7 +1034,6 @@ struct AlarmEditorSheet: View {
             // 빠져나가 서버 `PATCH /alarm` 의 403 으로 간다(Codex #826). 안드로이드
             // `usesFreeSystemVoiceAlarm` 도 테마와 무관하게 `isSystemVoiceId` 부터 본다.
             lockedByPlan: planAccess == .free && !voiceStudio.isSystemVoiceProfile(id: profileID),
-            themeSelected: selectedFreeBucket != nil,
             profileReady: profileReady,
             hasUsableAudio: (profileID != nil && voiceStudio.preparedAlarm?.voiceProfileID == profileID) ||
                 reuseExistingTtsForCurrentSelection
