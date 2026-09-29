@@ -228,6 +228,14 @@ struct AlarmTalkApp: App {
                         // 콜드 스타트(세션 복원)·로그인 직후 즉시 sync. 앱 시작의 사이클은 여기서만
                         // 돈다 — 위 `.task` 에서 또 돌리지 않는다(전경 복귀·알람 탭 진입은 각자 돈다).
                         guard auth.session != nil else { return }
+                        // ⚠ **동기화 의존성은 이 태스크가 스스로, 맨 먼저 꽂는다**(코덱스 #823 4차).
+                        //   키체인에 세션이 있으면 `AuthViewModel.init` 이 이미 읽어 두어 이 태스크는
+                        //   **위 `.task` 의 `restoreSession()`·`configure` 를 기다리지 않고** 첫 화면에서
+                        //   곧바로 돈다. `runFullSync()` 는 의존성이 없으면 조용히 돌아가므로, 여기서
+                        //   꽂지 않으면 앱 시작의 유일한 사이클이 빈손으로 끝날 수 있다. `configure` 는
+                        //   멱등이다(이미 꽂혀 있으면 그대로). 알람 탭 진입의 동기화도 이 덕에 대개
+                        //   꽂힌 뒤에 돈다.
+                        remoteSync.configure(store: alarmStore, alarmKit: alarmKit, auth: auth)
                         // ⚠ **계정이 바뀌면 StoreKit 을 다시 읽는다**(2026-08-31 리뷰).
                         // 로그아웃 상태에서는 등급을 아예 세지 않으므로(계정 토큰을 모른다),
                         // 여기서 다시 읽지 않으면 새 계정이 다음 전경 진입 전까지 '모름' 으로
@@ -285,7 +293,6 @@ struct AlarmTalkApp: App {
                         // 여기서 꽂으면 알림 권한 팝업을 기다리는 동안 '끊긴 로그아웃
                         // 이어서 끝내기' 가 기본값(아무것도 안 함)을 부를 수 있다.
                         push.start()
-                        remoteSync.configure(store: alarmStore, alarmKit: alarmKit, auth: auth)
                         await remoteSync.runFullSync()
                         await refreshWeatherVariantsAndReconcile()
                         BackgroundSyncTask.scheduleNext()
