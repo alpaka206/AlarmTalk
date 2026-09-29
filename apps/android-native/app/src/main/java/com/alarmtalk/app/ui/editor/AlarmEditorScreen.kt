@@ -129,12 +129,61 @@ internal enum class SaveBlockReason {
     MESSAGE_PREPARING,
 
     /**
+     * **직접 입력인데 문구가 비었다**(등록 목소리). 만들 문장이 없으니 서버를 부르지 않고
+     * 막는다 — 한도도 깎이지 않는다.
+     *
+     * ⚠ [MESSAGE_PREPARING] 으로 뭉개지 말 것. 그건 스톡 클립이 아직 안 붙은 **과도기**라
+     * "받는 중이에요, 잠시 뒤 다시" 라고 말하는데, 빈 직접 입력은 기다려도 풀리지 않는다 —
+     * 그 말을 믿고 계속 다시 누르게 된다(2026-09-29 이전에는 그렇게 말했다).
+     */
+    MANUAL_TEXT_MISSING,
+
+    /**
      * 오프라인인데 그 직접 입력 문구의 오디오가 **폰에 없다.**
      *
      * 서버에 있든 없든 지금은 가져올 수 없으므로 **요청을 보내 보지 않고** 막는다 —
      * 실패를 기다렸다 에러를 보여 주는 것보다, 누른 즉시 이유를 말하는 편이 낫다.
      */
     OFFLINE_NEW_MESSAGE,
+}
+
+/**
+ * 문구가 비어 저장을 막아야 하는가 — `editorSaveBlockReason` 의 마지막 갈래다.
+ * 저장 버튼이 `saveEditor()`(= 한도 확인·생성 요청) **전에** 이걸 본다.
+ *
+ * 테스트에서 부를 수 있게 컴포저블 밖에 둔다(`AlarmEditorStateTest`).
+ */
+internal fun emptyMessageBlockReason(editor: AlarmEditorState, usesStockClips: Boolean): SaveBlockReason? = when {
+    // 말할 문장이 있다 — 생성형이거나, 친 문구·붙은 클립 문장.
+    editor.voiceRandomPrompt || editor.voiceText.isNotBlank() -> null
+    // 문구가 하나도 없다 = 빈 직접 입력. 등록(클론) 목소리는 테마가 저장 시점에 붙으므로
+    // 편집 중에 '클립을 기다리는' 상태가 없다 — 기다려도 안 풀린다.
+    editor.hasNoMessageChoice() && !usesStockClips -> SaveBlockReason.MANUAL_TEXT_MISSING
+    // 스톡 클립 목소리의 빈 문구, 또는 테마를 골랐는데 클립이 아직 안 붙은 과도기.
+    else -> SaveBlockReason.MESSAGE_PREPARING
+}
+
+/**
+ * 관문 **1/3**(목소리 선택) — [ClipGate.needsClipPreparation] 을 **바뀔 값**으로 부른다.
+ *
+ * 관문은 목소리를 바꾸기 **전에** 돈다. 직접 녹음에서 오면 [AlarmEditorState.selectTtsVoice]
+ * 가 곧 직전 문구 종류를 이어 랜덤을 켜는데, 지금 값(랜덤 꺼짐)으로 물으면 "클립이 필요 없다"
+ * 며 통과시킨 직후 클립이 필요한 상태로 바뀐다(iOS `wasThemeAlarm` 과 같은 이유 — iOS 는
+ * 잇기 뒤의 `.onChange` 에서 판정한다). 테스트에서 부를 수 있게 컴포저블 밖에 둔다.
+ */
+internal fun needsClipPreparationForVoicePick(
+    gate: ClipGate,
+    editor: AlarmEditorState,
+    profileId: String,
+    lastMessageContext: String?,
+    lastManualText: String?,
+): Boolean {
+    val adopted = editor.randomContextAdoptedByTtsPick(lastMessageContext, lastManualText)
+    return gate.needsClipPreparation(
+        profileId = profileId,
+        randomPrompt = editor.voiceRandomPrompt || adopted != null,
+        randomContext = adopted ?: editor.voiceRandomContext,
+    )
 }
 
 @Composable
@@ -172,7 +221,9 @@ internal fun AlarmEditorScreen(
     onPrepareClipsFor: (String) -> Unit = {},
     // 새 알람이 이어받을 '직전 선택' 세 축. 셋 다 계정별로 저장되고, 저장에 성공한 알람에서만
     // 기록된다(MainViewModel.rememberVoiceUsed / rememberMessageChoiceUsed).
-    // 기존 알람을 열 때는 어느 것도 쓰지 않는다 — 열기만 해도 설정이 바뀌면 안 된다.
+    // 기존 알람을 **열 때는** 어느 것도 쓰지 않는다 — 열기만 해도 설정이 바뀌면 안 된다.
+    // 예외는 하나: 문구가 없던 알람(알람 전용·직접 녹음)을 목소리 문구로 옮기는 순간,
+    // 문구가 비어 있으면 잇는다(`AlarmEditorState.adoptLastMessageChoiceIfUnset`).
     lastUsedVoiceId: String? = null,
     lastMessageContext: String? = null,
     lastFreeBucket: String? = null,
@@ -731,29 +782,16 @@ internal fun AlarmEditorScreen(
     // 알람음/목소리 두 토글 → 내부 저장(playMode + alarmSoundEnabled) 매핑.
     //  둘 다 켬 = 알람+목소리 / 목소리만 = 목소리만 / 알람음만 = 알람만 / 둘 다 끔 = 알람만+무음(진동/화면만)
     // 목소리를 켤 때 voiceSource 를 초기화하던 기존 PlayModeCard onSelect 동작을 보존한다.
+    // 상태 변경은 `AlarmEditorState.applyAlarmOutput` 에 있다 — '알람' → '목소리' 에서 직전
+    // 문구 선택을 잇는 연결을 테스트가 거기서 본다(`AlarmEditorStateTest`).
     fun applyAlarmOutput(voice: Boolean, sound: Boolean) {
-        val wasAlarmOnly = editor.playMode == AlarmPlayModes.ALARM_ONLY
-        editor.playMode = when {
-            voice -> AlarmPlayModes.VOICE_ONLY
-            else -> AlarmPlayModes.ALARM_ONLY
-        }
-        // ⚠ **'목소리만' 에서는 alarmSoundEnabled 를 끄지 않는다.**
-        // 톤을 안 트는 것은 playMode 가 이미 표현한다(표시도 파생값이라 화면은 그대로다).
-        // 여기서 0 으로 박으면, 나중에 유료 만료·목소리 삭제로 그 알람이 강등됐을 때
-        // 톤 폴백까지 함께 막혀 **소리가 하나도 안 나는 알람**이 된다 — 폴백이 가장 필요한
-        // 바로 그 상황에서만 꺼진다. 그 값은 '알람음을 쓸 때의 설정' 으로만 둔다.
-        if (sound) {
-            editor.alarmSoundEnabled = true
-        } else if (!voice) {
-            editor.alarmSoundEnabled = false
-        }
-        if (voice && authSession == null) {
-            editor.voiceSource = VoiceSources.LOCAL_AUDIO
-            editor.clearTtsMeta()
-        } else if (voice && wasAlarmOnly) {
-            editor.voiceSource = VoiceSources.TTS_PROFILE
-            editor.clearTtsMeta()
-        }
+        editor.applyAlarmOutput(
+            voice = voice,
+            sound = sound,
+            signedIn = authSession != null,
+            lastMessageContext = lastMessageContext,
+            lastManualText = lastManualText,
+        )
     }
 
     /**
@@ -1232,8 +1270,11 @@ internal fun AlarmEditorScreen(
                     // 있어야 조건 매칭이 되고 없으면 저장이 막히므로, 저장된 도시가 없으면 안 잇는다.
                     // 조건형 테마는 **필요한 값이 있을 때만** 잇는다 — 없으면 저장이 막힌다.
                     // 판정은 저장 게이트와 같은 함수 하나를 본다(위 hoist 주석).
+                    // '새 알람인가' 는 `followsLastMessageChoice` 로 본다 — 문구가 없던 기존
+                    // 알람(알람 전용·직접 녹음)을 목소리 문구로 옮겨 직전 선택을 이어받은 경우도
+                    // 포함한다. `alarm == null` 로 가르면 그때 직전 테마 대신 목록 첫 테마가 붙는다.
                     val remembered = lastFreeBucket?.takeIf {
-                        alarm == null && it in buckets &&
+                        editor.followsLastMessageChoice && it in buckets &&
                             (it != "weather" || weatherLocationReady()) &&
                             (it != "fortune" || fortuneInfoReady())
                     }
@@ -1323,7 +1364,8 @@ internal fun AlarmEditorScreen(
                 familyVoiceIds = readyFamilyVoiceIds,
                 systemVoiceIds = readySystemVoiceIds,
                 profileLoadFinished = voiceProfileLoadFinished,
-            )?.let(editor::selectVoiceProfile)
+            // 자동 선택은 쳐 둔(이어받은) 직접 입력 문구를 비우지 않는다 — `preselectVoiceProfile` 주석.
+            )?.let { editor.preselectVoiceProfile(it) }
         }
     }
 
@@ -1440,10 +1482,8 @@ internal fun AlarmEditorScreen(
                 // 질문이라, 누른 즉시 이유를 말하는 편이 낫다(그리고 서버도 안 부른다).
                 editor.isManualForSave() && text.isNotBlank() && !isOnline &&
                     !manualAudioReadyLocally(profileId, text) -> SaveBlockReason.OFFLINE_NEW_MESSAGE
-                // 빈 문구는 클립이 아직 안 붙은 과도기다.
-                !editor.voiceRandomPrompt && editor.voiceText.trim().isBlank() ->
-                    SaveBlockReason.MESSAGE_PREPARING
-                else -> null
+                // 빈 문구 — 등록 목소리면 '빈 직접 입력', 스톡 클립 목소리면 클립 과도기.
+                else -> emptyMessageBlockReason(editor, usesStockClips)
             }
         }
     }
@@ -1755,11 +1795,14 @@ internal fun AlarmEditorScreen(
                             // ⚠ **아직 못 받은 목소리는 고를 수 없다** — 관문 **1/3**.
                             // 판정은 `needsClipPreparation` 한 곳에만 있다(거기 주석 참조).
                             // 여기는 "**고른 목소리**를 지금 기준으로 본다" 는 자리다.
+                            // 직접 녹음에서 오면 곧 직전 문구 종류를 이으므로 **바뀔 값**으로 판정한다.
                             onNeedsClipPreparation = { profileId ->
-                                clipGate.needsClipPreparation(
+                                needsClipPreparationForVoicePick(
+                                    gate = clipGate,
+                                    editor = editor,
                                     profileId = profileId,
-                                    randomPrompt = editor.voiceRandomPrompt,
-                                    randomContext = editor.voiceRandomContext,
+                                    lastMessageContext = lastMessageContext,
+                                    lastManualText = lastManualText,
                                 )
                             },
                             onOpenClipPreparation = { profileId -> openClipPreparation(profileId) },
@@ -1810,6 +1853,10 @@ internal fun AlarmEditorScreen(
                                 usesStockClips = usesStockClips,
                                 onOpenRandomPromptSettings = ::openRandomPromptSettings,
                                 onOpenVoiceOutputSettings = { settingsDetailPanel = "voice_output" },
+                                // 직접 녹음 → 목소리로 옮겼는데 문구가 비어 있으면 직전 선택을 잇는다
+                                // (알람 전용 → 목소리와 같은 규칙, `AlarmEditorState.selectTtsVoice`).
+                                lastMessageContext = lastMessageContext,
+                                lastManualText = lastManualText,
                             )
                         }
                         }
@@ -1883,6 +1930,7 @@ internal fun AlarmEditorScreen(
                                         SaveBlockReason.FORTUNE_INFO_MISSING -> R.string.editor_block_fortune_title
                                         SaveBlockReason.OFFLINE_NEW_MESSAGE -> R.string.editor_block_offline_title
                                         SaveBlockReason.MESSAGE_PREPARING -> R.string.editor_block_preparing_title
+                                        SaveBlockReason.MANUAL_TEXT_MISSING -> R.string.editor_block_manual_text_title
                                     }
                                     val messageRes = when (reason) {
                                         SaveBlockReason.RECORDING_MISSING -> R.string.editor_block_recording_message
@@ -1897,6 +1945,7 @@ internal fun AlarmEditorScreen(
                                             else R.string.editor_block_fortune_message
                                         SaveBlockReason.OFFLINE_NEW_MESSAGE -> R.string.editor_block_offline_message
                                         SaveBlockReason.MESSAGE_PREPARING -> R.string.editor_block_preparing_message
+                                        SaveBlockReason.MANUAL_TEXT_MISSING -> R.string.editor_block_manual_text_message
                                     }
                                     familyBlockAlert = context.getString(titleRes) to context.getString(messageRes)
                                 }

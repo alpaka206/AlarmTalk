@@ -595,6 +595,36 @@ extension AlarmEditDraftTests {
         XCTAssertEqual(saved.bucketRotationIndex, 2)
     }
 
+    /// ⚠ **알람 전용으로 저장해도 iOS 는 테마를 남긴다 — 안드로이드와 다른 한 곳이다**
+    /// (안드로이드 `AlarmEditorState.toDraft` 는 알람 전용이면 `bucketId` 를 비운다).
+    ///
+    /// 무료 잠금으로 알람 전용이 된 알람을 편집해 저장한 뒤 재결제로 복원되면, 울릴 음원은
+    /// **버킷 키에서만** 나온다 — 알람 전용 저장이 `audioCacheKey` 를 비우고,
+    /// `AlarmSoundResolver` 는 `rotatedBucketClipKey ?? audioCacheKey` 로 고른다. 그래서 이 행을
+    /// '목소리' 로 되돌리면 문구가 비어 있지 않다 — 계정의 직전 선택이 아니라 **그 알람의 옛
+    /// 테마**가 돌아온다(빈 직접 입력은 아니다). 스펙 `voice-and-message.md` §4.
+    func test_toRecord_alarmOnlyKeepsThemeSoVoiceSwitchRestoresIt() {
+        let themed = Self.makeRecord {
+            $0.bucketId = "weather"
+            $0.bucketClipKeys = ["a", "b", "c"]
+        }
+        var draft = AlarmEditDraft(from: themed)
+        draft.playMode = .alarmOnly
+
+        let saved = draft.toRecord(existing: themed, fireAtMillis: 1_000, nowMillis: 500)
+
+        XCTAssertNil(saved.audioCacheKey)
+        XCTAssertEqual(saved.bucketId, "weather")
+        XCTAssertEqual(saved.bucketClipKeys, ["a", "b", "c"])
+        // 편집기가 여는 식 그대로(`loadVoicePromptState`) — 잇기(`adoptLastMessageChoiceIfUnset`)를
+        // 타지 않고 옛 테마로 돌아온다.
+        XCTAssertFalse(AlarmEditDraft.hasNoMessageChoice(
+            randomPrompt: saved.voiceRandomPrompt,
+            selectedBucket: FreeBucket.stored(saved.bucketId),
+            ttsText: saved.voiceText ?? ""
+        ))
+    }
+
     /// 새 알람(기존 레코드 없음)은 당연히 비어 있어야 한다.
     func test_toRecord_newAlarmHasNoCarriedFields() {
         let draft = AlarmEditDraft.newDefault()

@@ -175,6 +175,8 @@
     <string name="editor_block_offline_message">This message\'s audio isn\'t on this device yet. Save again once you\'re back online.</string>
     <string name="editor_block_preparing_title">Preparing the message</string>
     <string name="editor_block_preparing_message">The voice file is still downloading. Try saving again in a moment.</string>
+    <string name="editor_block_manual_text_title">Your custom message is empty</string>
+    <string name="editor_block_manual_text_message">Type the message your alarm should read, or pick another message type on the message screen.</string>
     <string name="editor_error_family_alarm_lead_title">Please pick a later time</string>
     <string name="editor_error_family_alarm_unavailable_title">They can\'t receive alarms then</string>
     <string name="editor_error_family_alarm_lead_too_soon">Set alarms for others to %1$s or later. It takes a moment to reach their phone.</string>

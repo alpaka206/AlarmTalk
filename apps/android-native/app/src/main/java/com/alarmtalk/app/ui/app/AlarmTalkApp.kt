@@ -1537,8 +1537,8 @@ internal fun AlarmTalkApp(
               ) { entry ->
                   val familyTargetMode = entry.arguments?.getBoolean(AppRoute.FamilyTargetModeArg) ?: false
                   val targetUserId = entry.arguments?.getString(AppRoute.TargetUserIdArg)
-                  // 직전 선택은 **새 알람 경로에만** 넘긴다. 기존 알람 편집(아래 라우트)에는
-                  // 넘기지 않는다 — 열기만 해도 문구·테마가 바뀌면 안 되기 때문이다.
+                  // 새 알람은 직전 선택으로 **연다.** 기존 알람 편집(아래 라우트)도 같은 값을
+                  // 받지만 여는 데는 쓰지 않는다 — 열기만 해도 문구·테마가 바뀌면 안 된다.
                   // 계정이 바뀌면 다시 읽는다(저장소가 계정별 키라 값도 계정별이다).
                   val lastMessageContext = remember(authSession?.user?.id) { viewModel.lastMessageContext() }
                   val lastFreeBucket = remember(authSession?.user?.id) { viewModel.lastFreeBucket() }
@@ -1597,6 +1597,13 @@ internal fun AlarmTalkApp(
               ) { entry ->
                   val alarmId = entry.arguments?.getString(AppRoute.AlarmIdArg)
                   val currentAlarm = alarms.firstOrNull { it.id == alarmId }
+                  // ⚠ **기존 알람도 직전 선택을 받는다 — 여는 데는 쓰지 않는다.** 알람 전용·직접
+                  // 녹음 알람에는 문구가 없어서, 목소리 문구로 옮기는 순간 이 값이 없으면 **빈
+                  // 직접 입력**으로 보이고 저장도 못 한다(2026-09-29 실기기 보고). 편집기는 문구가
+                  // 비어 있을 때만 이걸 잇는다(`AlarmEditorState.adoptLastMessageChoiceIfUnset`).
+                  val lastMessageContext = remember(authSession?.user?.id) { viewModel.lastMessageContext() }
+                  val lastFreeBucket = remember(authSession?.user?.id) { viewModel.lastFreeBucket() }
+                  val lastManualText = remember(authSession?.user?.id) { viewModel.lastManualText() }
                   if (currentAlarm == null) {
                       LaunchedEffect(alarmId) {
                           navController.popBackStackOrHome()
@@ -1625,6 +1632,9 @@ internal fun AlarmTalkApp(
                           onRetryClipRenders = viewModel::retryFailedClipRendersAsync,
                           onPrepareClipsFor = { viewModel.refreshClipReadinessAsync(it) },
                           lastUsedVoiceId = viewModel.lastUsedVoiceId,
+                          lastMessageContext = lastMessageContext,
+                          lastFreeBucket = lastFreeBucket,
+                          lastManualText = lastManualText,
                           onCancel = ::goBackInApp,
                           onOpenBilling = { navController.navigateTopLevelTab(NativeTab.Billing) },
                           onCreateVoiceProfile = { navController.navigateTopLevelTab(NativeTab.Voices) },
