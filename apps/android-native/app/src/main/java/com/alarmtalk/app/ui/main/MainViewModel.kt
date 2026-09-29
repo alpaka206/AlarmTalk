@@ -602,7 +602,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     /** 디스크 시드(메인 밖에서 읽는다). 비어 있을 때 연달아 불려도 한 번만 읽는다. */
     internal var stockClipSeedJob: kotlinx.coroutines.Job? = null
 
-    /** 제자리 교체로 낡은 클립 다시 받기. 새 매니페스트가 공개되면 앞 회차를 끊고 새로 돈다. */
+    /**
+     * 제자리 교체로 낡은 클립 다시 받기. 새 매니페스트가 공개되면 앞 회차를 끊고 새로 돈다.
+     * 기본 목소리 선다운로드(`prefetchFreeBucketClips`, IO)가 이 값을 보고 기다리므로 volatile 이다.
+     */
+    @Volatile
     internal var replacedClipRepairJob: kotlinx.coroutines.Job? = null
 
     /** 목소리별 클립 받기 — 드라이브와 목소리 탭이 나눠 쓴다(`cacheVoiceClips`). */

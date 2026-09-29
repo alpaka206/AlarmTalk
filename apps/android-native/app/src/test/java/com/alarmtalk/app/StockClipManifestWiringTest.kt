@@ -87,22 +87,46 @@ class StockClipManifestWiringTest {
     @Test
     fun aSupersededFetchTrustsTheWinnerOnlyWhenItWasPublished() {
         val body = functionBody(voiceActions, "private suspend fun MainViewModel.fetchAndPublishStockClips(")
-        val superseded = body.substring(body.indexOf("PublishResult.SUPERSEDED ->"))
+        assertTrue(
+            "물러난 회차가 이긴 것을 이어받는 길(`adoptPublishedWinner`)을 거치지 않는다.",
+            body.contains("PublishResult.SUPERSEDED -> adoptPublishedWinner(owner)"),
+        )
+        val adopt = functionBody(voiceActions, "private suspend fun MainViewModel.adoptPublishedWinner(")
         assertTrue(
             "물러난 회차가 이긴 것이 공개됐는지 보지 않고 디스크를 싣는다(Codex #825) — 더 새 표의 " +
                 "쓰기가 실패했으면 디스크는 옛 목록이다. 확인과 읽기를 한 잠금에서 하는 " +
                 "`loadPublishedWinner` 를 쓸 것.",
-            superseded.contains("StockClipManifestStore.loadPublishedWinner("),
+            adopt.contains("StockClipManifestStore.loadPublishedWinner("),
         )
-        assertFalse(
-            "물러난 회차가 확인 없이 `load` 로 디스크를 읽는다.",
-            superseded.substring(0, superseded.indexOf("ManifestFlightOutcome.SUPERSEDED"))
-                .contains("StockClipManifestStore.load("),
-        )
+        assertFalse("물러난 회차가 확인 없이 `load` 로 디스크를 읽는다.", adopt.contains("StockClipManifestStore.load("))
         assertTrue(
             "이긴 것을 확인하지 못한 superseded 가 실패로 돌아가지 않는다.",
-            superseded.substring(0, superseded.indexOf("ManifestFlightOutcome.SUPERSEDED"))
-                .contains("return ManifestFlightOutcome.FAILED"),
+            adopt.contains("return ManifestFlightOutcome.FAILED"),
+        )
+    }
+
+    @Test
+    fun aPublishedResponseIsRecheckedRightBeforeItIsApplied() {
+        val body = functionBody(voiceActions, "private suspend fun MainViewModel.fetchAndPublishStockClips(")
+        val published = body.substring(body.indexOf("PublishResult.PUBLISHED ->"))
+        val recheck = published.indexOf("StockClipManifestStore.isStillPublished(ticket)")
+        val apply = published.indexOf("applyStockClipManifest(response)")
+        assertTrue(
+            "공개하고 메인으로 돌아온 뒤 **싣기 직전에** 아직 마지막 공개본인지 다시 보지 않는다(Codex #825) — " +
+                "그 사이 워커가 더 새 것을 공개했으면 지나간 응답을 싣고 신선도로 센다.",
+            recheck in 0 until apply,
+        )
+        assertTrue(published.substring(recheck, apply).contains("return adoptPublishedWinner(owner)"))
+    }
+
+    @Test
+    fun theDefaultVoicePrefetchWaitsForTheReplacementRepair() {
+        val prefetch = functionBody(voiceActions, "internal fun MainViewModel.prefetchFreeBucketClips(")
+        val wait = prefetch.indexOf("awaitReplacedClipRepair()")
+        val download = prefetch.indexOf("downloadTtsMessageAudio(")
+        assertTrue(
+            "기본 목소리 선다운로드가 교체 수리를 기다리지 않는다 — 같은 `stock_` 클립을 동시에 받는다(Codex #825).",
+            wait in 0 until download,
         )
     }
 
@@ -215,6 +239,8 @@ class StockClipManifestWiringTest {
         val newer = StockClipManifestStore.beginFetch()
         assertEquals(published, StockClipManifestStore.save(context, manifest("new"), newer, "u1"))
         assertEquals(superseded, StockClipManifestStore.save(context, manifest("old"), older, "u1"))
+        assertTrue(StockClipManifestStore.isStillPublished(newer))
+        assertFalse(StockClipManifestStore.isStillPublished(older))
         assertEquals("new", StockClipManifestStore.loadPublishedWinner(context, "u1")?.clips?.single()?.messageId)
         assertNull("남의 계정은 이긴 것을 이어받지 못한다(임자 대조).", StockClipManifestStore.loadPublishedWinner(context, "u2"))
 
@@ -231,6 +257,8 @@ class StockClipManifestWiringTest {
             tmp.deleteRecursively()
         }
         assertEquals(superseded, StockClipManifestStore.save(context, manifest("old2"), older2, "u1"))
+        // 디스크의 마지막 공개본은 여전히 1) 의 것이다.
+        assertTrue(StockClipManifestStore.isStillPublished(newer))
         assertNull(
             "더 새 표의 쓰기가 실패했는데 옛 목록을 이긴 것으로 돌려줬다.",
             StockClipManifestStore.loadPublishedWinner(context, "u1"),
@@ -238,7 +266,10 @@ class StockClipManifestWiringTest {
 
         // 3) 로그아웃·계정 전환의 무효화도 '공개된 이긴 것' 이 아니다.
         val beforeSignOut = StockClipManifestStore.beginFetch()
-        assertEquals(published, StockClipManifestStore.save(context, manifest("fresh"), StockClipManifestStore.beginFetch(), "u1"))
+        val freshTicket = StockClipManifestStore.beginFetch()
+        assertEquals(published, StockClipManifestStore.save(context, manifest("fresh"), freshTicket, "u1"))
+        assertTrue(StockClipManifestStore.isStillPublished(freshTicket))
+        assertFalse("다음 공개가 오면 앞 공개본은 더 이상 마지막이 아니다.", StockClipManifestStore.isStillPublished(newer))
         assertEquals("fresh", StockClipManifestStore.loadPublishedWinner(context, "u1")?.clips?.single()?.messageId)
         StockClipManifestStore.invalidateOutstandingTickets()
         assertEquals(superseded, StockClipManifestStore.save(context, manifest("late"), beforeSignOut, "u1"))

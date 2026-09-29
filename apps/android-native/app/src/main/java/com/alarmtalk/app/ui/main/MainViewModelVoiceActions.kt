@@ -737,6 +737,9 @@ internal fun MainViewModel.prefetchFreeBucketClips(voiceProfileId: String? = nul
     var job: kotlinx.coroutines.Job? = null
     job = viewModelScope.launch(Dispatchers.IO) {
         try {
+            // 제자리 교체 수리가 돌고 있으면 끝나기를 기다린다(Codex #825) — 둘 다 같은 `stock_`
+            // 클립을 낡은 것으로 보고 동시에 받는다. 수리가 끝나면 아래 캐시 확인이 고쳐진 것을 건너뛴다.
+            awaitReplacedClipRepair()
             val language = deviceAppVoiceLanguage()
             val audioStore = com.alarmtalk.app.data.AlarmAudioStore(getApplication<Application>())
             // 무료 버킷에서 실제로 쓰이는 카테고리(날씨·약)만 받는다 — greeting 제외 전부를 받으면
@@ -1076,6 +1079,12 @@ private suspend fun MainViewModel.fetchAndPublishStockClips(
         com.alarmtalk.app.data.StockClipManifestStore.PublishResult.PUBLISHED -> {
             // ⚠ **디스크 권위가 받아 준 응답만 화면·판정의 권위가 된다**(Codex #703 P1).
             // 순서: 공개가 확인된 **뒤에** 싣는다.
+            // ⚠ 싣기 **직전에** 아직 마지막 공개본인지 다시 본다(Codex #825). 공개하고 메인으로 돌아오는
+            // 사이 워커가 더 새 응답을 공개했으면(워커는 메모리를 고치지 않는다) 이 응답은 이미 지나갔다 —
+            // 물러난 것과 같이 이긴 것을 싣는다. 이 확인과 싣기 사이에는 멈춤이 없다.
+            if (!com.alarmtalk.app.data.StockClipManifestStore.isStillPublished(ticket)) {
+                return adoptPublishedWinner(owner)
+            }
             applyStockClipManifest(response)
             repairReplacedStockClips(response.clips)
             // 매니페스트 도착 전 setDefaultVoice 로 프리페치가 빈손이었으면 여기서 1회 재시도한다.
@@ -1086,26 +1095,47 @@ private suspend fun MainViewModel.fetchAndPublishStockClips(
             }
             ManifestFlightOutcome.PUBLISHED
         }
-        com.alarmtalk.app.data.StockClipManifestStore.PublishResult.SUPERSEDED -> {
-            // 더 새 표가 이미 나왔다(콜드 스타트엔 프리페치 워커와 거의 동시에 받는다).
-            // 이 응답으로 덮으면 준비 판정이 **교체 이전 스냅샷**을 보고 세대를 확정해 버린다.
-            // 대신 **디스크의 이긴 매니페스트**(임자 대조)를 싣는다 — 준비도·클론 다운로드가
-            // 메모리를 읽으므로, 안 실으면 물러난 회차 뒤에 낡은 목록으로 돈다(스펙 「공개 경합의 규칙」).
-            // ⚠ 단 **이긴 것이 실제로 공개됐을 때만**이다(Codex #825). 더 새 표의 쓰기가 실패했거나
-            // 표가 무효화됐으면 디스크는 비었거나 옛 목록이라, 싣지도 '받았다' 로 세지도 않는다 —
-            // 실패로 돌려 준비도는 앞 값을 지키고, 클론 다운로드는 목소리 탭 폴링에 넘긴다.
-            // 확인과 읽기는 저장소가 한 잠금 안에서 한다(`loadPublishedWinner`).
-            val winner = withContext(Dispatchers.IO) {
-                com.alarmtalk.app.data.StockClipManifestStore.loadPublishedWinner(app, owner.userId)
-            }
-            if (winner == null || !responseStillBelongsToRequester(owner.userId, owner.generation)) {
-                return ManifestFlightOutcome.FAILED
-            }
-            applyStockClipManifest(winner)
-            ManifestFlightOutcome.SUPERSEDED
-        }
+        // 더 새 표가 이미 나왔다(콜드 스타트엔 프리페치 워커와 거의 동시에 받는다).
+        com.alarmtalk.app.data.StockClipManifestStore.PublishResult.SUPERSEDED -> adoptPublishedWinner(owner)
         // 디스크에 못 남겼다 — 아무도 공개하지 못했으니 판정의 권위도 아니다. 다음 호출이 다시 받는다.
         com.alarmtalk.app.data.StockClipManifestStore.PublishResult.FAILED -> ManifestFlightOutcome.FAILED
+    }
+}
+
+/**
+ * 이 요청의 응답이 권위가 되지 못했다 — **디스크의 이긴 매니페스트**(임자 대조)를 대신 싣는다.
+ *
+ * 이 응답으로 덮으면 준비 판정이 **교체 이전 스냅샷**을 보고 세대를 확정해 버린다. 그렇다고 아무것도
+ * 안 실으면 준비도·클론 다운로드가 메모리를 읽으므로 물러난 회차 뒤에 낡은 목록으로 돈다(스펙
+ * 「공개 경합의 규칙」).
+ *
+ * ⚠ 단 **이긴 것이 실제로 공개됐을 때만**이다(Codex #825). 더 새 표의 쓰기가 실패했거나 표가
+ * 무효화됐으면 디스크는 비었거나 옛 목록이라, 싣지도 '받았다' 로 세지도 않는다 — 실패로 돌려
+ * 준비도는 앞 값을 지키고, 클론 다운로드는 목소리 탭 폴링에 넘긴다. 확인과 읽기는 저장소가 한
+ * 잠금 안에서 한다(`loadPublishedWinner`).
+ */
+private suspend fun MainViewModel.adoptPublishedWinner(
+    owner: com.alarmtalk.app.network.SessionEffectKey,
+): ManifestFlightOutcome {
+    val app = getApplication<Application>()
+    val winner = withContext(Dispatchers.IO) {
+        com.alarmtalk.app.data.StockClipManifestStore.loadPublishedWinner(app, owner.userId)
+    }
+    if (winner == null || !responseStillBelongsToRequester(owner.userId, owner.generation)) {
+        return ManifestFlightOutcome.FAILED
+    }
+    applyStockClipManifest(winner)
+    return ManifestFlightOutcome.SUPERSEDED
+}
+
+/**
+ * 도는 제자리 교체 수리(`repairReplacedStockClips`)가 끝나기를 기다린다. 기다리는 사이 새 수리로
+ * 갈렸으면 그것도 기다린다.
+ */
+internal suspend fun MainViewModel.awaitReplacedClipRepair() {
+    while (true) {
+        val repair = replacedClipRepairJob?.takeIf { it.isActive } ?: return
+        repair.join()
     }
 }
 
@@ -1121,6 +1151,7 @@ private suspend fun MainViewModel.fetchAndPublishStockClips(
  * 이 수리와 구동(`downloadAllPresetClips`)·목소리 탭이 **같은 `stock_` 클립**을 낡은 것으로 보고
  * 동시에 받았다 — 목소리마다 한 벌이라던 받기가 두 벌(요청 8개)이 되고 같은 파일을 두 번 썼다.
  * 이제 한쪽이 끝난 뒤 다른 쪽은 **그때 다시 세어** 빠진 것만 받는다. 목소리는 차례로 돈다(동시 4개).
+ * 기본 목소리 선다운로드(`prefetchFreeBucketClips`)는 이 수리가 끝나기를 기다린다(`awaitReplacedClipRepair`).
  */
 private fun MainViewModel.repairReplacedStockClips(clips: List<com.alarmtalk.app.network.StockClip>) {
     replacedClipRepairJob?.cancel()

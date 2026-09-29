@@ -55,10 +55,24 @@ object StockClipManifestStore {
      * 그래서 **더 새 응답을 본 순간** 올린다. 실패한 B 는 자기 retry 로 고치면 되고, 그
      * 사이 디스크는 옛 상태로 남을 뿐 **더 나빠지지는 않는다.**
      */
+    @Volatile
     private var seenTicket: Long = 0
 
-    /** 마지막으로 **실제로 공개된** 응답의 표. 쓰기에 실패한 응답은 여기 오르지 않는다. */
+    /**
+     * 마지막으로 **실제로 공개된** 응답의 표. 쓰기에 실패한 응답은 여기 오르지 않는다.
+     * 쓰기는 [revisionLock] 안에서만 하고, [isStillPublished] 는 잠그지 않고 읽는다(메인에서 불린다).
+     */
+    @Volatile
     private var publishedTicket: Long = 0
+
+    /**
+     * [fetchTicket] 의 응답이 **아직 디스크의 마지막 공개본인가.** 공개(`save` = PUBLISHED)를 받은 뒤
+     * 메모리에 싣기 **직전에** 다시 본다(Codex #825) — `save` 가 끝나고 메인으로 돌아오는 사이
+     * 워커가 더 새 응답을 공개하면, 그걸 모르는 채 이 응답을 실어 신선도로까지 세게 된다.
+     *
+     * 잠그지 않는다 — 메인 스레드에서 부르므로 워커가 쓰는 동안 기다리지 않게. 값은 오르기만 한다.
+     */
+    fun isStillPublished(fetchTicket: Long): Boolean = publishedTicket == fetchTicket
 
     /**
      * 물러난(SUPERSEDED) 회차가 이어받을 **이긴 매니페스트** — 가장 최근에 본 표의 응답이 **실제로
