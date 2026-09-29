@@ -58,7 +58,7 @@ OAuth client ID와 Sentry DSN은 일반적으로 앱에 포함될 수 있는 공
 
 #### ElevenLabs 합성 모델
 
-- `ELEVENLABS_TTS_MODEL_ID` 는 선택 값이고 **설정하지 않는다**(비우면 `eleven_v3`). 게시된 클립(시스템 스톡·클론 사전렌더)은 전부 v3 로 구웠고, 모델만 바꾸면 **다시 굽지 않는다** — 새로 만드는 직접 입력·새 클론만 새 모델이 되어 한 사람의 알람에 두 모델 소리가 섞인다. 바꾸려면 재렌더 계획(스톡 게시 스크립트의 `MODEL_ID`, 클론 사전렌더 다시 굽기, v3 급마감 보완 `withClosingBreath`·`appendMp3TrailingSilence` 재검토)이 먼저다. 2026-09-29 v4 비교와 판단은 `docs/spec/voice-and-message.md` 「합성 모델」.
+- `ELEVENLABS_TTS_MODEL_ID` 는 선택 값이고 **설정하지 않는다**(비우면 `eleven_v3`). 게시된 클립(시스템 스톡·클론 사전렌더)은 전부 v3 로 구웠고, 모델만 바꾸면 **다시 굽지 않는다** — 새로 만드는 직접 입력·새 클론만 새 모델이 되어 한 사람의 알람에 두 모델 소리가 섞인다. 바꾸려면 재렌더 계획(스톡 게시 스크립트의 `MODEL_ID`, 클론 사전렌더 다시 굽기, v3 급마감 보완 `withClosingBreath`·`appendMp3TrailingSilence` 재검토)이 먼저다. `eleven_v4_turbo` 전환을 검토 중이다(클론 비교·실기기 음량 확인 뒤 결정) — 2026-09-29 v4 비교와 검토 상태는 `docs/spec/voice-and-message.md` 「합성 모델」.
 
 #### Vertex / Gemini 동적 문구
 

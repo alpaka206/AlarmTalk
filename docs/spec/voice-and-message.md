@@ -1090,10 +1090,15 @@ TTS 는 웃음 글자를 **글자로 읽는다**(2026-09-29 v3·v4·v4 Turbo 비
   허용 지시 자체를 싣지 않는다(두 지시가 부딪힌다). **직접 입력도 같다** — 결은 사전렌더와 같은 값(고른 값 >
   녹음 전사 추정값, `withVoiceEnergy`)이고, 모델이 넣은 웃음만 지운다. 사용자가 친 웃음은 그대로다.
 
-## 10. 합성 모델 — **`eleven_v3` 를 유지한다**
+## 10. 합성 모델 — 지금은 **`eleven_v3`**, `eleven_v4_turbo` 전환을 검토 중이다
+
+- **지금 운영 모델은 `eleven_v3` 다.** 워커 변수 `ELEVENLABS_TTS_MODEL_ID` 는 **설정하지 않는다**(비우면 v3).
+- **`eleven_v4_turbo` 로 바꾸는 것을 검토 중이다.** 아래 비교를 들어 본 결과 v4 Turbo 가 낫게 들렸고, v4 와는
+  차이를 듣지 못했다. 결정은 **클론 비교**(되살린 dev 클론으로 v3 와 Turbo 를 나란히)와 **실기기 음량 확인**
+  (아래 도현 −4.3dB·애니 −5.9dB 가 폰 스피커에서 어떻게 들리는가) 뒤에 한다. 그 전에는 코드·설정 어디에서도 모델을 바꾸지 않는다.
 
 ElevenLabs v4·v4 Turbo 가 2026-09-28 에 나왔다. 2026-09-29 에 기본 목소리 4종의 지금 클립과 같은 문장을
-v4·v4 Turbo 로 만들어 비교했다(자동 측정·받아쓰기 기준 — **귀로 확인하기 전 값**이다).
+v4·v4 Turbo 로 만들어 비교했다(표의 값은 자동 측정·받아쓰기 기준이다).
 
 | 항목 | v3(지금) | v4 | v4 Turbo |
 | --- | --- | --- | --- |
@@ -1105,15 +1110,19 @@ v4·v4 Turbo 로 만들어 비교했다(자동 측정·받아쓰기 기준 — *
 | 감정 | 목소리 음역을 지킨다 | 태그든 대사든 밝은 신호가 하나라도 있으면 크게 들뜬다 — 차분 태그로 밝은 대사를 못 누른다 | 같음 |
 
 - 기본 목소리를 v4 로 바꾸면 도현 +8.6반음·시우 +6.1반음(결이 달라진다), 도현 −4.3dB·애니 −5.9dB,
-  일부러 늦춘 speed 0.9 가 사라진다.
-- **그래서 운영 모델은 v3 그대로다.** 워커 변수 `ELEVENLABS_TTS_MODEL_ID` 로 바꿀 수는 있지만 **설정하지
-  않는다.** 게시된 클립은 모두 v3 로 구웠고, 무엇을 구울지는 `messages` 행으로 고르므로 모델만 바꾸면
-  **다시 굽지 않는다** — 새로 만드는 직접 입력·새 클론만 새 모델이 되어 한 사람의 알람에 두 모델 소리가
-  섞인다. 바꾸려면 재렌더 계획이 먼저다(`docs/ops/environments.md` 「ElevenLabs 합성 모델」).
-- v4 를 쓴다면 직접 입력부터 시험할 만하다(숫자 읽기·말끝·속도·지금 가격). 단 차분한 목소리는 **문장 자체를**
-  차분하게 써야 하고(태그로는 못 누른다), 말 속도는 설정이 아니라 문장부호로 늦춰야 한다. 클론은 "그 사람
-  목소리로 들리는가" 가 먼저라, 되살린 클론으로 다시 비교한 뒤에 정한다(이번에는 비교할 dev 클론이 슬롯
-  정리로 밀려나 있어 만들지 못했다).
+  일부러 늦춘 speed 0.9 가 사라진다. v4 계열에서는 말 속도를 설정이 아니라 문장부호로 늦춰야 한다.
+- **태그와 문장의 방향**(2026-09-29, v4 Turbo 측정):
+  - 문장과 **같은 방향**의 태그는 붙이든 빼든 차이가 음높이 2반음·음량 1dB 안쪽이다.
+  - 텐션을 **올리는** 태그는 크게 먹는다 — 도현의 차분한 문장이 129→205Hz 로 올랐다.
+  - 텐션을 **누르는** 태그는 거의 안 먹는다 — 신나는 문장이 258→222Hz 에 그쳤다.
+  - 그래서 차분하게 읽히게 하려면 태그가 아니라 **문장을 차분하게** 써야 한다.
+- **바꾸려면 재렌더 계획이 먼저다.** 모델 id 는 오디오 캐시 키에 들어간다(`computeTtsCacheKey`) — 바꾸는
+  순간 서버에 캐시된 직접 입력 오디오가 전부 빗나가 같은 문구도 새로 합성된다. 게시된 클립(시스템 스톡·클론
+  사전렌더)은 모두 v3 로 구웠고, 무엇을 구울지는 `messages` 행으로 고르므로 모델만 바꾸면 **다시 굽지
+  않는다** — 새로 만드는 직접 입력·새 클론만 새 모델이 되어 한 사람의 알람에 두 모델 소리가 섞인다. 계획에
+  들 것: 스톡 게시 스크립트의 `MODEL_ID`, 클론 사전렌더 다시 굽기, v3 급마감 보완(`withClosingBreath`·
+  `appendMp3TrailingSilence`) 재검토(`docs/ops/environments.md` 「ElevenLabs 합성 모델」).
+- 클론 비교는 아직 못 했다 — 비교할 dev 클론이 슬롯 정리로 밀려나 있었다.
 
 ## 구현 지도
 
@@ -1209,7 +1218,7 @@ v4·v4 Turbo 로 만들어 비교했다(자동 측정·받아쓰기 기준 — *
 | 같은 언어 직접 입력의 화면 문구 = 친 글 · 캐시 키가 화면 문구까지 가린다 | — | — | `routes/tts.ts` 의 `messageText`(`typedSameLanguage` → `deriveAlarmDisplayText(requestText, …)`)·`cacheKeyText` |
 | 웃음은 톤이 아니다(문장마다 앞세우지 않는다) · 사용자 웃음은 친 자리 그대로 | — | — | `isLaughterTag` ← `pickApprovedTag`·`normalizeSameLanguageTaggedText`(`withoutToneTags` 로 자리 대조)·`tagAlarmTextLocally`·`generatePrerenderClipText` |
 | 모델이 넣는 웃음 = `[laughs]` 하나·한 번(차분은 없음) | — | — | `OWN_LAUGH_INSTRUCTION` ← `alarmTextPrompt`·`prerenderClipPrompt`(차분이면 빼고 서버도 지운다 — 사전렌더는 `isCalmIncompatibleTag`, 직접 입력은 `prepareAlarmTextWithVertex` 의 `calmVoice` ← `routes/tts.ts` `withVoiceEnergy`) · 모델이 낸 웃음 태그는 `canonicalizeLaughterTags`(`dropWakeUnsafeTags` 뒤, 번역은 태깅 여부와 무관 — 사용자 태그 제외) · 사전렌더의 글자 웃음은 `generatePrerenderClipText` 가 `typedLaughterToTags` 로 바꾼 뒤 거르고, 말이 없으면 `prerenderRejectionReason` 의 `empty_spoken` · 등록 미리듣기는 `allowLaughter: false`(`routes/tts.ts`) |
-| 합성 모델(기본 `eleven_v3`, 설정하지 않는다) | — | — | `lib/voice-provider.ts` 의 `ttsModelId` ← `ELEVENLABS_TTS_MODEL_ID`(`types.ts` `Env`, `scripts/worker-secret-keys.ts`) |
+| 합성 모델(기본 `eleven_v3` · `eleven_v4_turbo` 전환 검토 중 — 결정 전까지 설정하지 않는다) | — | — | `lib/voice-provider.ts` 의 `ttsModelId` ← `ELEVENLABS_TTS_MODEL_ID`(`types.ts` `Env`, `scripts/worker-secret-keys.ts`) |
 
 ## 검증 방법
 
