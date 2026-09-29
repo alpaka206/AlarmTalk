@@ -55,6 +55,7 @@ internal data class RingSoundFacts(
 /**
  * 판정 — **조용한 결과는 사용자가 고른 무음뿐이다.**
  *
+ *  - 목소리 크기 0 인 옛 행 → 무음(사용자의 선택 — 아래 어떤 대체보다 먼저 본다).
  *  - 목소리 알람인데 유료 목소리를 못 쓴다(울릴 때 강등 · 옛 모양 잠금) → **기본 목소리**.
  *    기본 목소리 소리조차 없으면 알람음을 강제한다. 2026-09-29 리허설에서 여기가 '알람' 모드로
  *    내려가 목소리 알람 시절의 꺼진 알람음 스위치를 봤고, 알람이 **아무 소리 없이** 울렸다.
@@ -72,12 +73,14 @@ internal fun decideRingSound(
 ): RingSound {
     val voiceAlarm = facts.playMode == AlarmPlayModes.VOICE_ONLY || facts.legacyPlanLock
     if (voiceAlarm) {
+        // ⚠ **목소리 크기 0 은 사용자가 고른 무음이다 — 어떤 대체보다 먼저 본다**(Codex #820).
+        // 슬라이더로는 0 을 만들 수 없어 옛 행에만 있는 값이다. 오디오가 사라졌거나 권한이 없다고
+        // 기본 목소리·알람음 강제로 넘어가면, 일부러 조용히 둔 알람이 소리를 낸다(alarm-ringing.md §4).
+        if (facts.voiceVolumePercent <= 0) return RingSound.Silent
         if (facts.paidVoiceUnusable || facts.legacyPlanLock) {
             return defaultVoiceUri()?.let { RingSound.DefaultVoice(it) } ?: RingSound.Tone(forced = true)
         }
-        facts.ownVoiceUri?.let { uri ->
-            return if (facts.voiceVolumePercent > 0) RingSound.OwnVoice(uri) else RingSound.Silent
-        }
+        facts.ownVoiceUri?.let { uri -> return RingSound.OwnVoice(uri) }
         if (facts.systemVoice) {
             defaultVoiceUri()?.let { return RingSound.DefaultVoice(it) }
         }

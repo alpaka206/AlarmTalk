@@ -153,6 +153,35 @@ class RingSoundDecisionTest {
         assertEquals(RingSound.Tone(forced = true), sound)
     }
 
+    /**
+     * 목소리 크기 0 인 옛 행은 사용자가 고른 무음이다 — 오디오가 사라졌거나 권한이 없어도, 오디오 없는
+     * 기본 목소리 알람이어도 대체(기본 목소리·알람음 강제)로 넘어가지 않는다(Codex #820).
+     */
+    @Test
+    fun zeroVoiceVolumeStaysSilentBeforeAnyFallback() {
+        var asked = false
+        val muted = listOf(
+            decide(rehearsalCloneAlarm(voiceVolumePercent = 0, localAudioUri = null), ownVoiceUri = null, entitled = true),
+            decide(rehearsalCloneAlarm(voiceVolumePercent = 0), entitled = false) { asked = true },
+            decide(
+                rehearsalCloneAlarm(voiceVolumePercent = 0, voiceProfileId = TEST_SYSTEM_VOICE_ID, localAudioUri = null),
+                ownVoiceUri = null,
+                entitled = false,
+            ),
+            decide(
+                rehearsalCloneAlarm(
+                    voiceVolumePercent = 0,
+                    playMode = AlarmPlayModes.ALARM_ONLY,
+                    preLockPlayMode = AlarmPlayModes.VOICE_ONLY,
+                ),
+                entitled = false,
+            ),
+        )
+
+        assertTrue(muted.all { it == RingSound.Silent })
+        assertFalse("대체 소리를 찾지도 않는다", asked)
+    }
+
     @Test
     fun onlyTheUsersOwnChoicesAreSilent() {
         val silentChoices = listOf(
