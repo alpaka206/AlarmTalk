@@ -372,7 +372,7 @@
   "event": {
     "meta": {
       "title": "A voice message with your name, in a voice you like",
-      "description": "Type a name and hear an AI voice say it in a birthday wish and a Chuseok greeting — in Korean, English and Japanese. AI voices, not real people."
+      "description": "Type a name and hear an AI voice say it in a birthday wish and a message of love — in Korean, English and Japanese. AI voices, not real people."
     },
     "hero": {
       "headline": "Hear a voice message that says your name,\nin a voice you like!"
@@ -385,8 +385,8 @@
         "birthday": {
           "name": "Happy birthday"
         },
-        "chuseok": {
-          "name": "Happy Chuseok"
+        "love": {
+          "name": "I love you"
         }
       },
       "generate": "Generate",
