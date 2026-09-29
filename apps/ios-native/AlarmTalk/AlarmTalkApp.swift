@@ -204,12 +204,12 @@ struct AlarmTalkApp: App {
                         // 이후 viewModel.refresh() 는 RemoteAlarmPullSync 를 위임 호출한다.
                         remoteSync.configure(store: alarmStore, alarmKit: alarmKit, auth: auth)
 
-
-                        // 로그인되어 있으면 즉시 한 사이클.
-                        if auth.session != nil {
-                            await remoteSync.runFullSync()
-                            await refreshWeatherVariantsAndReconcile()
-                        }
+                        // ⚠ **여기서 동기화 사이클을 돌리지 않는다**(2026-09-29). 로그인된 채 켜지면
+                        //   아래 계정 키 `.task(id: auth.session?.user.id)` 가 `runFullSync()` 와
+                        //   날씨 갱신을 이미 돈다 — 세션이 복원되는 순간 그 키가 바뀌거나(nil → id)
+                        //   처음부터 id 로 시작한다. 예전에는 여기서도 한 번 더 돌아, 콜드 스타트에
+                        //   `/alarm` 쌍이 3~4번 나갔고 그동안 토글의 단건 push 가 `isBusy` 가드에 걸려
+                        //   건너뛰어졌다. 가족 푸시의 호출별 회차 보장은 `runFullSync` 안에 그대로다.
 
                         // 최초 BGAppRefreshTask 예약. 다음 사이클은 백그라운드 진입/
                         // task 종료 시 재예약.
@@ -225,8 +225,17 @@ struct AlarmTalkApp: App {
                     }
                     // 위와 같은 이유로 user.id 로 건다(토큰은 갱신마다 바뀐다).
                     .task(id: auth.session?.user.id) {
-                        // 로그인 직후 또는 토큰 갱신 시 즉시 sync.
+                        // 콜드 스타트(세션 복원)·로그인 직후 즉시 sync. 앱 시작의 사이클은 여기서만
+                        // 돈다 — 위 `.task` 에서 또 돌리지 않는다(전경 복귀·알람 탭 진입은 각자 돈다).
                         guard auth.session != nil else { return }
+                        // ⚠ **동기화 의존성은 이 태스크가 스스로, 맨 먼저 꽂는다**(코덱스 #823 4차).
+                        //   키체인에 세션이 있으면 `AuthViewModel.init` 이 이미 읽어 두어 이 태스크는
+                        //   **위 `.task` 의 `restoreSession()`·`configure` 를 기다리지 않고** 첫 화면에서
+                        //   곧바로 돈다. `runFullSync()` 는 의존성이 없으면 조용히 돌아가므로, 여기서
+                        //   꽂지 않으면 앱 시작의 유일한 사이클이 빈손으로 끝날 수 있다. `configure` 는
+                        //   멱등이다(이미 꽂혀 있으면 그대로). 알람 탭 진입의 동기화도 이 덕에 대개
+                        //   꽂힌 뒤에 돈다.
+                        remoteSync.configure(store: alarmStore, alarmKit: alarmKit, auth: auth)
                         // ⚠ **계정이 바뀌면 StoreKit 을 다시 읽는다**(2026-08-31 리뷰).
                         // 로그아웃 상태에서는 등급을 아예 세지 않으므로(계정 토큰을 모른다),
                         // 여기서 다시 읽지 않으면 새 계정이 다음 전경 진입 전까지 '모름' 으로
@@ -242,9 +251,15 @@ struct AlarmTalkApp: App {
                         //   않으므로, **앱을 껐다 켜기 전까지 결제만 되고 선물이 안 나간다.**
                         // 로그아웃 중에 받아 둔 환불 통보를 먼저 민다(적어 둔 이유가
                         // "그때 로그인돼 있지 않아서" 라, 로그인하는 순간이 그 자리다).
-                        await subscriptions.flushPendingRevocations()
-                        await subscriptions.replayUnfinishedTransactions()
-                        await subscriptions.refreshPurchasedProducts()
+                        //
+                        // ⚠ **알람 동기화는 이 복구를 기다리지 않는다**(코덱스 #823 5차). 재전송은
+                        //   미완료 트랜잭션마다 서버 확정을 **차례로** 부를 수 있어 느리거나 오프라인이면
+                        //   오래 걸린다 — 그 뒤에 동기화를 두면 앱 시작의 사이클이 가족 알람의 최소 여유
+                        //   (5분)를 넘겨 밀릴 수 있다. 예전에는 부트스트랩 `.task` 가 따로 한 번 돌아
+                        //   가려져 있었다. 둘은 서로 기다릴 이유가 없어 나란히 돌리고, 이 태스크가 끝나기
+                        //   전에 복구도 끝낸다(계정이 바뀌어 태스크가 접히면 함께 취소된다).
+                        let subscriptionManager = subscriptions
+                        async let storeRecovery: Void = Self.recoverStoreKitForAccount(subscriptionManager)
                         // ⚠ **알림 권한은 여기서 묻지 않는다**(2026-09-17 실기기). 로그인 직후라
                         // 약관 동의·목소리 받기보다 **먼저** 팝업이 떴다. 메인 화면이 처음 뜰 때
                         // 묻는다(`MainTabsView`) — 그 전에는 동의 전이라 서버가 동기화를 막으므로
@@ -272,8 +287,10 @@ struct AlarmTalkApp: App {
                             }
                         }
                         push.onPlanChanged = {
-                            await socialFeatures.refreshAll(session: auth.session, force: true)
-                            await auth.refreshUser()
+                            // 사용자 새로고침은 이용권 새로고침이 **끝까지 못 갔을 때만** 부른다 —
+                            // 끝까지 갔으면 그 `/auth/me` 가 plan·프로모·토큰을 이미 넣었다
+                            // (`refreshAllThenUserIfIncomplete`, 스펙 plan-gates §4).
+                            await socialFeatures.refreshAllThenUserIfIncomplete(auth: auth)
                             // StoreKit 도 다시 읽는다 — 환불·회수는 캐시된 만료 시각을
                             // 무효로 만드는데 그 신호가 판정 1단이다(배경 경로와 같은 이유).
                             await subscriptions.refreshPurchasedProducts()
@@ -282,9 +299,16 @@ struct AlarmTalkApp: App {
                         // 여기서 꽂으면 알림 권한 팝업을 기다리는 동안 '끊긴 로그아웃
                         // 이어서 끝내기' 가 기본값(아무것도 안 함)을 부를 수 있다.
                         push.start()
-                        remoteSync.configure(store: alarmStore, alarmKit: alarmKit, auth: auth)
+                        // ⚠ **알람 저장소가 다 읽힐 때까지 기다린 뒤 돈다**(코덱스 #823 6차). 이
+                        //   태스크는 콜드 스타트 첫 화면에서 곧바로 돌아 디스크 로드보다 앞설 수 있다 —
+                        //   pull 의 준비 대기(3초, `RemoteAlarmPullSync.requireLoadedStore`)를 넘기면
+                        //   `storeNotReady` 로 빈손이 되고, 앱 시작의 사이클은 이것 하나라 놓친 가족
+                        //   알람 푸시를 다음 전경 복귀·탭 진입까지 못 받는다. 기다려도 막히는 것은 이
+                        //   태스크뿐이다(계정이 바뀌어 접히면 대기도 곧바로 물러선다).
+                        await alarmStore.waitUntilLoadedFromDisk(timeout: 30)
                         await remoteSync.runFullSync()
                         await refreshWeatherVariantsAndReconcile()
+                        await storeRecovery
                         BackgroundSyncTask.scheduleNext()
                     }
                     // ⚠ **언어를 키에 넣는다.** 예전에는 선다운로드가 온보딩
@@ -530,6 +554,14 @@ struct AlarmTalkApp: App {
                 break
             }
         }
+    }
+
+    /// 계정이 정해졌을 때의 StoreKit 복구 — 로그아웃 중 받아 둔 환불 통보 → 미완료 트랜잭션
+    /// 재전송 → 등급 다시 읽기, 이 순서다. 계정 키 `.task` 가 알람 동기화와 **나란히** 돌린다.
+    private static func recoverStoreKitForAccount(_ subscriptions: SubscriptionManager) async {
+        await subscriptions.flushPendingRevocations()
+        await subscriptions.replayUnfinishedTransactions()
+        await subscriptions.refreshPurchasedProducts()
     }
 
     /// **새 스톡 클립으로 갈아타고, 다 끝났으면 옛 파일을 지운다.**

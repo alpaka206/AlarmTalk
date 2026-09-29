@@ -115,6 +115,10 @@ final class SocialFeatureViewModel: ObservableObject {
     /// 성공한 구매 전 조회보다 먼저 시작한 구독 읽기는 plan/구독을 되돌릴 수 없다.
     /// 전체 갱신의 세대와 분리해 isRefreshing의 완료 소유권을 빼앗지 않는다.
     private var billingPreflightRevision = 0
+    /// 화면 진입 갱신(`refreshOnEntry`)의 신선도 창 — 규칙은 `EntryRefreshFreshness`.
+    private var entryFreshness = EntryRefreshFreshness()
+    /// 신선도 창이 보는 지금(진입 번호·시각). 테스트가 바꿔 끼운다.
+    var entryRefreshClock: EntryRefreshClock = { (AppEntrySignal.shared.counter.entry, Date()) }
 
     init(
         api: AlarmTalkAPI = .shared,
@@ -139,12 +143,26 @@ final class SocialFeatureViewModel: ObservableObject {
     func clearUserScopedRemoteState() {
         // 권한 스냅샷의 완결성도 함께 내린다 — 빈 상태를 근거로 강등하면 안 된다.
         entitlementSnapshotComplete = false
+        entryFreshness.reset()
         activeUserID = nil
         familyGroup = nil
         subscription = nil
         vouchers = []
         inviteCode = ""
         statusMessage = nil
+    }
+
+    /// **화면 진입 갱신** — 같은 계정의 완결된 갱신이 같은 앱 진입 안에서 60초 안에 있었으면
+    /// 다시 받지 않는다(`EntryRefreshFreshness`, 규칙은 `docs/spec/plan-gates.md` §4).
+    ///
+    /// ⚠ **쓰기 뒤·푸시에서는 부르지 말 것** — 방금 바뀐 것을 창이 가린다. 그 자리는
+    ///   `refreshAll(session:force: true)` 다.
+    func refreshOnEntry(session: AuthSession?) async {
+        if session?.token != nil, let userID = normalizedUserID(session?.user.id) {
+            let clock = entryRefreshClock()
+            if entryFreshness.isFresh(userID: userID, entry: clock.entry, now: clock.now) { return }
+        }
+        await refreshAll(session: session)
     }
 
     func refreshAll(session: AuthSession?, force: Bool = false) async {
@@ -167,6 +185,12 @@ final class SocialFeatureViewModel: ObservableObject {
         // 보고 **부분만 갱신된 스냅샷으로 AlarmKit 정합화를 돌린다.** 이 갱신이 끝나면
         // 아래에서 다시 세운다.
         entitlementSnapshotComplete = false
+        // 신선도 창도 같은 이유로 비운다 — 이 갱신이 끝까지 성공해야 다시 열린다.
+        entryFreshness.reset()
+        // ⚠ **창에 적을 진입·시각은 지금(보내기 전) 잡는다**(코덱스 #823). 응답이 백그라운드를
+        //   건너 다음 진입에 도착했을 때 완료 시점의 진입 번호를 적으면, 떠나 있는 동안 다른
+        //   기기에서 바뀐 것을 돌아와서 1분 동안 못 받는다.
+        let admitted = entryRefreshClock()
         if !isRefreshing { isRefreshing = true }
         // ⚠ **내린는 것은 '지금 세대' 뿐이다**(2026-09-01 리뷰 3차 정정). 세운 사람이
         // 내리게 하면, 밀려난 갱신이 세대 가드에서 돌아가면서 **진행 중인 `force` 갱신의
@@ -302,8 +326,8 @@ final class SocialFeatureViewModel: ObservableObject {
                 // 상황에서만 조건이 거짓이 된다) 서버가 준 값만으로 한다.
                 // ⚠ **여기서 스토어 캐시를 지우지 않는다**(2026-09-01 리뷰 3차 정정).
                 // 29차에는 무조건, 30차에는 `force` 일 때 지웠는데 **둘 다 틀렸다** —
-                // `force` 는 '서버가 강등을 확정했다' 가 아니다: 이용권 시트 진입, 설정 저장,
-                // 구매 성공, 목소리 삭제, 가족 알람 생성이 전부 `force: true` 로 이 갱신을
+                // `force` 는 '서버가 강등을 확정했다' 가 아니다: 쿠폰 등록·나가기·해지,
+                // 구매 성공·복원, 목소리 삭제가 전부 `force: true` 로 이 갱신을
                 // 부른다. 그때 StoreKit 은 갱신을 확인했는데 서버가 아직 옛 free 이면
                 // **살아 있는 신호를 지워 돈 내는 사용자를 강등한다.**
                 //
@@ -324,6 +348,9 @@ final class SocialFeatureViewModel: ObservableObject {
 
         guard activeUserID == userID, generation == refreshGeneration else { return }
         entitlementSnapshotComplete = familyGroupOK && entitlementOK
+        if entitlementSnapshotComplete {
+            entryFreshness.record(.init(userID: userID, entry: admitted.entry, at: admitted.now))
+        }
         // Android 의 social refresh 는 실패 시에만 메시지를 노출한다(스낵바). 성공 토스트는 없음.
         statusMessage = messages.isEmpty ? nil : messages.joined(separator: "\n")
     }
@@ -409,6 +436,24 @@ final class SocialFeatureViewModel: ObservableObject {
                 onAccountRequestFailed?(userID, accountRequest)
             }
             return nil
+        }
+    }
+
+    /// **쓰기·푸시 뒤 이용권 + plan 을 받는다 — `/auth/me` 는 대개 한 번**(스펙 plan-gates §4).
+    ///
+    /// 끝까지 가면 `refreshAll` 의 `/auth/me` 가 plan·프로모·토큰을 이미 세션에 넣었다
+    /// (`onFreshPlan`·`onRolledToken`) — 옆에서 사용자 새로고침을 또 부르지 않는다. 못 갔으면
+    /// (구독·공유 코드 조회 실패로 `/auth/me` 전에 멈췄거나, 그 사이 토큰이 굴러 plan 을 버렸다)
+    /// plan 이 옛 값이다 — 그때만 사용자 새로고침으로 받는다. 그쪽은 토큰이 굴러도 plan 을
+    /// 반영한다(`AuthViewModel.refreshUserApplyingToken`).
+    ///
+    /// ⚠ **"확정 성공이면 `onServerEntitlementUpdated` 가 이미 사용자를 읽었다" 에 기대지 말 것**
+    ///   (코덱스 #823 3차). 그 훅은 확정할 트랜잭션이 있을 때만 불린다 — 만료 뒤의 구독 관리 시트
+    ///   닫힘이나 '복원할 구매 없음' 에서는 안 불린다.
+    func refreshAllThenUserIfIncomplete(auth: AuthViewModel) async {
+        await refreshAll(session: auth.session, force: true)
+        if !entitlementSnapshotComplete {
+            await auth.refreshUser()
         }
     }
 

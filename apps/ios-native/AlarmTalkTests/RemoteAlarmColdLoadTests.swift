@@ -94,6 +94,37 @@ final class RemoteAlarmColdLoadTests: XCTestCase {
         await assertQueuedFullSync(cancelFirst: false, cancelQueued: true)
     }
 
+    /// 회귀(코덱스 #823 7차): 알람 탭의 60초 스로틀은 **완결된 회차만** 칸을 남긴다
+    /// (`AlarmTabSyncThrottle`). 그 판정이 `runFullSync` 의 반환값이다 — 의존성 전·사이클 실패는
+    /// false, 끝까지 간 회차는 true.
+    func test_fullSyncReportsWhetherTheCycleCompleted() async throws {
+        let loader = DeferredAlarmLoad()
+        let store = makeStore(loader)
+        await loader.finish()
+        try await RemoteAlarmPullSync.requireLoadedStore(store)
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [QueuedPullURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+        defer { session.invalidateAndCancel() }
+        let api = AlarmTalkAPI(baseURL: URL(string: "https://pull-queue.example.test/api/")!, session: session)
+        let auth = AuthViewModel(api: api)
+        auth._setSessionForTesting(AuthSession(token: "fresh-token", user: AuthUser(id: "fresh-owner", email: "fresh@example.test")))
+        let model = RemoteAlarmSyncViewModel(api: api)
+
+        let beforeConfigure = await model.runFullSync()
+        XCTAssertFalse(beforeConfigure, "의존성을 꽂기 전의 호출은 아무것도 받지 않았다")
+
+        model.configure(store: store, alarmKit: AlarmKitViewModel(), auth: auth)
+        let completed = await model.runFullSync()
+        XCTAssertTrue(completed, "push·pull 이 끝까지 가고 행 단위 실패가 없으면 완결이다")
+
+        // 스텁은 다른 토큰에 500 을 준다 — 목록 조회가 던지는 회차(오프라인과 같은 갈래).
+        auth._setSessionForTesting(AuthSession(token: "old-token", user: AuthUser(id: "fresh-owner", email: "fresh@example.test")))
+        let failed = await model.runFullSync()
+        XCTAssertFalse(failed, "사이클이 던지면 완결이 아니다 — 다음 알람 탭 진입이 다시 돈다")
+        XCTAssertFalse(model.isBusy)
+    }
+
     private func assertQueuedFullSync(cancelFirst: Bool, cancelQueued: Bool = false) async {
         let loader = DeferredAlarmLoad()
         let store = makeStore(loader)
@@ -148,7 +179,10 @@ final class RemoteAlarmColdLoadTests: XCTestCase {
         auth._setSessionForTesting(AuthSession(token: "fresh-token", user: AuthUser(id: "fresh-owner", email: "fresh@example.test")))
         if cancelFirst { startup.cancel() }
         firstWait.release()
-        await startup.value
+        let startupCompleted = await startup.value
+        // 저장소 로드 전·취소로 접힌 회차는 **완결되지 않았다** — 알람 탭 스로틀이 이 값으로
+        // 칸을 지운다(코덱스 #823 7차).
+        XCTAssertFalse(startupCompleted)
         await fulfillment(of: [secondEntered], timeout: 1)
         XCTAssertTrue(model.isBusy)
         XCTAssertFalse(store.hasLoadedFromDisk)

@@ -560,11 +560,14 @@ struct AlarmEditorSheet: View {
             if freeVoiceTier || lastUsedVoiceID == nil || isSystemVoiceId(lastUsedVoiceID) {
                 selectDefaultVoiceProfileIfNeeded()
             }
+            // 진입 갱신이다 — 탭 진입·앞 편집기가 1분 안에 받아 둔 목록이 있으면 다시 받지
+            // 않는다(`refreshOnEntry`, 스펙 plan-gates §4). 예전에는 편집기를 열 때마다
+            // 목소리 목록(3건)과 가족 모드면 이용권(4건)까지 새로 받았다.
             Task {
-                await voiceStudio.refresh(session: auth.session)
+                await voiceStudio.refreshOnEntry(session: auth.session)
                 selectDefaultVoiceProfileIfNeeded()
                 if target.familyAlarmMode {
-                    await socialFeatures.refreshAll(session: auth.session)
+                    await socialFeatures.refreshOnEntry(session: auth.session)
                     selectDefaultFamilyRecipientIfNeeded()
                 }
             }
@@ -3095,8 +3098,11 @@ struct AlarmEditorSheet: View {
                 )
                 _ = try await AlarmTalkAPI.shared.createAlarm(request, token: token)
             }
-            await remoteSync.refresh(session: auth.session, force: true)
-            await socialFeatures.refreshAll(session: auth.session, force: true)
+            // ⚠ **서버가 받았으면 곧바로 닫는다 — 새로고침을 기다리지 말 것**(2026-09-29,
+            //   `docs/spec/family-alarm.md` §1). 예전에는 여기서 알람 pull 과 이용권 새로고침을
+            //   **기다린 뒤에** 닫아, 저장을 누르고 편집기가 직렬 4~5 왕복 동안 멈춰 있었다.
+            //   보낸 알람은 이 기기에 행을 만들지 않으므로 pull 이 반영할 것이 없고, 보내기로
+            //   바뀌는 이용권 정보도 없다. 안드로이드는 처음부터 `onSuccess { onDone() }` 다.
             validationAlert = nil
             // 가족(상대) 알람 저장 성공 햅틱. self-alarm 경로의 finishScheduling 과 동일하게
             // 정확히 1회만 울리도록, 인라인 생성 호출은 triggerSuccessHaptic:false 로 둔다.

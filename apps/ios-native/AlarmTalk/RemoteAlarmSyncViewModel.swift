@@ -132,13 +132,19 @@ final class RemoteAlarmSyncViewModel: ObservableObject {
     /// 부분 실패(개별 행 push/pull 실패)는 push-failed / pull-failed / 둘 다로
     /// 나눠 안내한다. 사이클 전체가 throw 된 경우(네트워크 단절 등)는 기존
     /// generic fallback 으로 폴백한다.
-    func runFullSync() async {
-        guard let push, let pull else { return }
+    ///
+    /// - Returns: 회차가 **완결됐는가** — push·pull 이 던지지 않았고 행 단위 실패도 없었다.
+    ///   의존성 전(`configure` 전)·취소·사이클 실패·부분 실패는 false 다. 알람 탭의 60초
+    ///   스로틀(`AlarmTabSyncThrottle`)이 이걸 보고 완결되지 않은 회차의 칸을 지운다 —
+    ///   그래야 다음 진입이 곧바로 다시 돈다(코덱스 #823 7차).
+    @discardableResult
+    func runFullSync() async -> Bool {
+        guard let push, let pull else { return false }
         // 가족 푸시도 이 진입점을 쓴다. 표시용 busy 가드에서 버리면 하위 pull 큐에
         // 도달하지 못하므로, 앞 회차의 실패/취소 뒤에도 호출별로 차례를 넘긴다.
         await syncGate.acquire()
         defer { syncGate.release() }
-        guard !Task.isCancelled else { return }
+        guard !Task.isCancelled else { return false }
         busyOperations += 1
         defer { busyOperations -= 1 }
         do {
@@ -150,6 +156,7 @@ final class RemoteAlarmSyncViewModel: ObservableObject {
             )
             // 부분 실패만 알린다 — 성공은 위와 같은 이유로 침묵한다.
             statusMessage = failedMessage
+            return failedMessage == nil
         } catch {
             // ⚠ **사이클 전체 실패는 사용자에게 띄우지 않는다 — 로그만 남긴다.**
             // `runFullSync` 는 사용자가 누른 것이 아니라 앱 시작·세션 변경·전경 복귀·
@@ -171,6 +178,7 @@ final class RemoteAlarmSyncViewModel: ObservableObject {
             } else {
                 Self.syncLogger.error("자동 동기화 실패: \(String(describing: error), privacy: .public)")
             }
+            return false
         }
     }
 
