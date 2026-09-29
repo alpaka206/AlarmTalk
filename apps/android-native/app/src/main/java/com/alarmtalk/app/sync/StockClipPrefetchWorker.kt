@@ -30,6 +30,7 @@ import com.alarmtalk.app.isEntitledOptimistic
 import com.alarmtalk.app.resolvePaidVoiceAccess
 import com.alarmtalk.app.storeSignalStillValid
 import com.alarmtalk.app.network.AuthSessionStore
+import com.alarmtalk.app.network.SessionTokenRenewal
 import com.alarmtalk.app.freshPlanPromoStamp
 import com.alarmtalk.app.network.StockClip
 import java.util.concurrent.TimeUnit
@@ -62,6 +63,30 @@ import kotlinx.coroutines.withContext
  */
 internal fun tokenAfterRoll(previousToken: String, savedToken: String?): String =
     savedToken?.takeIf { it.isNotBlank() } ?: previousToken
+
+/**
+ * 이 워커가 `GET /auth/me` 로 받은 새 토큰을 **저장할 것인가** — 저장할 토큰, 아니면 null.
+ *
+ * **지금 쓰는 토큰의 만료가 가까울 때만**([SessionTokenRenewal.shouldRenew] — 남은 수명
+ * 90일 미만, `exp` 를 못 읽으면 갱신) 저장한다. 주기 동기화(`RemoteAlarmSyncWorker`)와 같은
+ * 판정이다.
+ *
+ * ⚠ **예전에는 받을 때마다 저장했다**(효율 감사 H3). 이 워커는 콜드 스타트마다 뷰모델의 진입
+ * 갱신과 함께 도는데, 그때 저장하면 방금 굴린 토큰을 또 굴려 세션이 한 번 더 바뀌었다 —
+ * 토큰을 키로 쓰던 화면 효과가 그만큼 다시 돌았다. 서버 토큰은 무상태 JWT(365일)라 버려도
+ * 지금 토큰이 그대로 유효하다.
+ * ⚠ **그렇다고 아예 버리지는 않는다**(2026-09-01 리뷰). 이 워커는 배경에서만 도는 일이 있어
+ * (`voice_changed` FCM) 그때는 이 요청이 **그 실행의 유일한 세션 갱신**일 수 있다 — 만료가
+ * 가까운데 버리면 앱이 전경으로 오기 전에 저장된 JWT 가 죽는다. 그래서 판정은 버림이 아니라
+ * 임계값이다.
+ *
+ * 저장하지 않으면 호출부는 헤더와 401 귀속(`usedToken`)을 **그대로** 둔다 — 저장소에 없는
+ * 토큰으로 옮기면 [tokenAfterRoll] 의 두 갈래 사고가 난다.
+ */
+internal fun workerRolledTokenToSave(currentToken: String, rolledToken: String?, nowMillis: Long): String? {
+    val rolled = rolledToken?.takeIf { it.isNotBlank() } ?: return null
+    return rolled.takeIf { SessionTokenRenewal.shouldRenew(currentToken, nowMillis) }
+}
 
 /**
  * 기본(시스템) 목소리 알람 클립을 기기에 내려받는 워커.
@@ -278,13 +303,16 @@ class StockClipPrefetchWorker(
                     // 돈 내는 사용자의 클론 클립을 하나도 안 받는다. 게다가 이 작업은
                     // `ExistingWorkPolicy.KEEP` 이라 뒤이은 재큐잉이 버려져 그 회차가 그대로 굳는다.
                     val plan = me.user.plan
-                    // ⚠ **굴러온 토큰을 버리지 않는다**(2026-09-01 리뷰). 이 워커는 배경에서
-                    // 도는 일이 있어(예: `voice_changed` FCM) 그때는 이 요청이 **그 실행의
-                    // 유일한 세션 갱신**이다. 버리면 앱이 전경으로 오기 전에 저장된 JWT 가
-                    // 죽고, 이후 프리페치·동기화가 그 옛 토큰으로 401 만 받는다.
+                    // ⚠ **만료가 가까우면 굴러온 토큰을 버리지 않는다**(2026-09-01 리뷰). 이
+                    // 워커는 배경에서 도는 일이 있어(예: `voice_changed` FCM) 그때는 이 요청이
+                    // **그 실행의 유일한 세션 갱신**이다. 버리면 앱이 전경으로 오기 전에 저장된
+                    // JWT 가 죽고, 이후 프리페치·동기화가 그 옛 토큰으로 401 만 받는다.
+                    // 만료가 멀면 저장하지 않는다(효율 감사 H3) — 콜드 스타트마다 진입 갱신이
+                    // 방금 굴린 토큰을 또 굴려 세션을 한 번 더 바꿨다. 판정은
+                    // [workerRolledTokenToSave](`SessionTokenRenewal.shouldRenew`).
                     // **검사와 저장을 한 덩어리로** 한다 — 따로 하면 그 사이 로그아웃이
                     // 끼어들어 비운 저장소에 세션을 되쓴다(`PlanChangeSyncWorker` 와 같은 이유).
-                    me.token?.takeIf { it.isNotBlank() }?.let { rolled ->
+                    workerRolledTokenToSave(usedToken, me.token, System.currentTimeMillis())?.let { rolled ->
                         // ⚠ **저장만 하고 끝내지 않는다**(2026-09-21 리뷰). 굴린 토큰으로
                         // 이후 요청(`listVoiceProfiles`·클립 다운로드·재바인딩)과 401 귀속을
                         // **함께** 옮긴다 — 둘이 갈라졌을 때의 두 갈래 사고는 [tokenAfterRoll].

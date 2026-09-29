@@ -53,6 +53,34 @@
 - ⚠ **JWT 서명은 검증하지 않는다.** 이 값은 **판단이 아니라 일정**에 쓴다. 위조된 exp 로
   할 수 있는 최악은 갱신을 한 번 더 시도하는 것뿐이고, 진짜 판정은 서버가 한다.
 
+## 토큰이 굴러도 화면은 다시 불러오지 않는다
+
+rolling refresh 는 **같은 세션 안에서** 토큰을 바꾼다. 그러니 "세션이 바뀌었나" 를 토큰으로
+가르면 안 된다 — 토큰이 굴러갈 때마다 앱이 새로 로그인한 것처럼 전부 다시 불러온다.
+2026-09-29 효율 감사에서 안드로이드 콜드 스타트 한 번에 요청이 **57건**(필요한 것은 그 절반
+이하) 나간 주원인이 이것이었다(H3).
+
+- **안드로이드 앱 루트의 세션 효과와 탭 새로고침 스로틀은 계정 + 세션 세대를 키로 쓴다**
+  (`SessionEffectKey`). 계정 전환, 로그아웃 뒤 재로그인(**같은 계정 포함** — 세대가 오른다)에서만
+  다시 돈다. ⚠ 계정 id 만으로는 부족하다 — 같은 계정 재로그인에서 동의·계정 확인이 다시 돌지
+  않는다.
+- 키가 토큰이 아니므로 어디서 굴리든 화면을 다시 불러오지 않는다. 그래도 **굴릴 이유가 없는
+  자리에서는 굴리지 않는다** — 세션 쓰기·관찰 방출·재구성만 는다.
+  - **굴린다**: 콜드 스타트의 첫 진입 갱신(위 「앱 오픈 갱신」), 사용자가 한 일(로그인·구매·
+    복원·쿠폰·해지·그룹 나가기) 뒤의 갱신, 플랜 변경 신호(`plan_changed`) 뒤의 갱신과 그 신호로
+    도는 워커.
+  - **만료가 가까울 때만 굴린다**(위 「백그라운드 갱신」의 90일 판정): 주기 동기화 워커, 기본
+    목소리 프리페치 워커. 프리페치 워커는 plan 을 지금 받아야 해서 `/auth/me` 를 늘 부르지만,
+    받은 토큰은 이 판정을 거쳐서만 저장한다 — 예전에는 콜드 스타트마다 진입 갱신이 방금 굴린
+    토큰을 한 번 더 굴렸다.
+  - **굴리지 않는다**: 백그라운드에서 돌아올 때의 `/auth/me`(plan·프로모만 받는다), **Play 자동
+    정합화 뒤의 갱신**(H4). 정합화는 앱 시작·알람 탭 진입마다 도는 구독 재확인에서 오는데,
+    거기서 굴리면 토큰을 키로 쓰던 탭 효과가 다시 돌아 또 정합화하는 고리가 생겼다(Play 로
+    결제한 사용자가 홈에 있는 동안 3~5초마다 15건 이상).
+- 굴리지 않아도 잃는 것이 없다 — 서버 토큰은 무상태 JWT(365일)라 지금 토큰이 그대로 유효하다.
+- **iOS** 는 아직 탭 새로고침 스로틀 키에 토큰이 들어 있다(`MainTabsView.refreshForSelectedTab`
+  의 `throttleKey`). 같은 감사의 iOS 묶음에서 계정 기준으로 맞춘다 — 규칙은 두 앱이 같다.
+
 ## 세션을 끊는 경우
 
 백그라운드에서 갱신한 세션은 영속 저장소와 전경 메모리에 함께 수렴한다. 갱신 이후의
@@ -122,8 +150,11 @@ iOS는 네트워크/5xx/응답 해석 실패와 구서버의 `NO_PENDING_DELETIO
 | --- | --- | --- | --- |
 | TTL 365일 | `lib/jwt.ts` `DEFAULT_TTL_SECONDS` | — | — |
 | Apple 서명 키 교체 | `lib/apple-oauth.ts` `verifyAppleIdToken`·공유 JWKS 재조회 | — | 기존 로그인 응답 소비 |
-| rolling refresh | `routes/auth.ts` `GET /me` 의 `rolledToken` | `MainViewModel` 앱 오픈 경로 | `AuthViewModel.refreshUser` |
+| rolling refresh | `routes/auth.ts` `GET /me` 의 `rolledToken` | `MainViewModel` 앱 오픈 경로(첫 진입만 — `refreshAppSessionNow` 의 `rollToken`·`sessionTokenToSave`) | `AuthViewModel.refreshUser` |
 | 갱신 판정(90일·못 읽으면 갱신) | — | `network/SessionTokenRenewal.kt` | `SessionTokenRenewal.swift` |
+| 화면 효과의 세션 키 = 계정 + 세대(토큰 아님) | — | `network/AuthSessionStore.kt` `SessionEffectKey`·`sessionEffectKey` → `AlarmTalkApp` 의 세션 효과·탭 스로틀 | `MainTabsView.refreshForSelectedTab`(아직 토큰 — 후속) |
+| 프리페치 워커는 만료가 가까울 때만 토큰 저장 | — | `sync/StockClipPrefetchWorker.kt` `workerRolledTokenToSave` | — |
+| 자동 정합화 뒤 갱신은 토큰을 굴리지 않음 | — | `MainViewModelBillingActions.kt` `purchaseConfirmRollsToken` | — |
 | 백그라운드 갱신 | — | `sync/RemoteAlarmSyncWorker.renewSessionTokenIfNeeded` | `BackgroundSyncTask.renewSessionTokenIfNeeded` |
 | 저장·메모리 세션 수렴 | — | `MainViewModel`의 세션 저장소 관찰 | `AuthViewModel.absorbStoredSession`·`handleUnauthorized` |
 | 전경 push의 첫 인증 실패 중단 | — | `AlarmSyncService.syncWithBackend` | `RemoteAlarmPushSync.runOnce` |
@@ -132,7 +163,7 @@ iOS는 네트워크/5xx/응답 해석 실패와 구서버의 `NO_PENDING_DELETIO
 | 즉시 폐기 | `authMiddleware` 의 `token_epoch` 비교 | — | — |
 | 탈퇴 취소 뒤 푸시 재등록 | `authMiddleware` 탈퇴 대기 허용 경로·`user.ts` 탈퇴 취소 | `MainViewModelAuthActions.cancelAccountDeletion` → `registerCurrentToken` | `AuthViewModel.prepareAccountRecovery` → `PushNotificationCoordinator.prepareAccountRecovery`를 await한 뒤 상태 확정 → `onAccountRecovered` → `start`(launch에서 연결) |
 | 탈퇴 취소 응답 유실·재확인 | `user.ts` DELETE 멱등 처리(이미 active는 무변경 성공) | 기존 취소 재시도 응답 소비 | `cancelAccountDeletion` 재확인·`refreshUser` 전환 감지 → `completeAccountRecovery` |
-| 회귀 테스트 | `test/auth.test.ts` (TTL·503) | `network/SessionTokenRenewalTest.kt` | `SessionTokenRenewalTests.swift` |
+| 회귀 테스트 | `test/auth.test.ts` (TTL·503) | `network/SessionTokenRenewalTest.kt` · `ColdStartRequestKeysTest.kt` · `EntryRefreshKeepsTokenTest.kt` | `SessionTokenRenewalTests.swift` |
 
 ## 의도된 플랫폼 차이
 
