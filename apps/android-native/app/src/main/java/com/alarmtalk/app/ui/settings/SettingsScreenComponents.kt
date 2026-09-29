@@ -471,7 +471,7 @@ internal fun quietScheduleLabel(context: Context, windows: List<FamilyAlarmQuiet
  * 갖는다. iOS `weatherLocationLabel` 도 같다.
  */
 internal fun weatherLocationSettingsLabel(context: Context, country: String, city: String): String =
-    city.trim().ifBlank { context.getString(R.string.misc2_settings_not_set) }
+    weatherCityDisplayName(context, city).ifBlank { context.getString(R.string.misc2_settings_not_set) }
 
 /**
  * 설정 행에 보이는 운세 정보 — **성별 · 생년월일**까지다.

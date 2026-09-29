@@ -562,6 +562,22 @@
 않았다), 운세도 마찬가지였다. 저장이 안드로이드보다 빨랐던 이유가 그것이다 — 빠른 게
 아니라 **안 하고 있었다.**
 
+#### 날씨 지역은 **보이는 이름과 보내는 값이 다르다**
+
+지역 목록(국내 9개 — 서울·부산·인천·대구·대전·광주·울산·수원·제주)은 **모든 언어가 같은
+목록·같은 순서**다. 목록 밖 지역은 마지막 행 '직접 입력' 으로 받는다.
+
+- **보내는 값은 언어와 무관하게 한국어 이름**이고 나라도 `대한민국` 이다 — 번역하는 것은
+  보이는 이름뿐이다. 이 값은 계정에 묶여 서버(`users.dynamic_prompt_settings_json`)에 올라가고
+  다른 기기·다른 앱이 그대로 읽는다. 번역한 이름을 저장하면 다른 언어 기기에서는 목록에 없는
+  도시가 되어 체크가 사라지고 직접 입력으로 열린다. 서버도 `language=ko` 로 지오코딩하고 결과의
+  한국어 나라 이름과 대조한다(`routes/tts.ts` 의 `resolveWeatherLocation`).
+- 도시가 보이는 자리(설정 행·문구 상세·문구 요약)는 **도시만** 보이고, 프리셋이면 앱 언어의
+  이름으로 바꿔 보인다. 목록 밖(직접 입력) 도시는 적힌 그대로다.
+- ⚠ 2026-09-29 까지 안드로이드 영어 목록은 **비어** 있어 영어 기기에서 도시 목록이 아예 안
+  보였고(직접 입력만), 일본어 목록은 일본 도시 8개였다(나라는 대한민국으로 보냈다). iOS 는 모든
+  언어에서 한국어 이름을 보였다.
+
 ### 미리 받아 둔다
 
 울릴 시각에 네트워크가 없으면 그 회차가 조용히 비므로, **미리** 받아 둔다.
@@ -1118,6 +1134,7 @@ CAF 를 직접 쓰고 `AVChannelLayoutKey` 를 반드시 넣는다(없으면 파
 | 날씨 조건 조회 | `AlarmRepository.resolveWeatherVariantForDraft`(저장 시) | `AlarmEditorSheet.applyWeatherVariant`(저장 시) | `GET /tts/prerender-variant` (`resolvePrerenderWeatherIndex`) |
 | 날씨 조회 반쪽 값 금지(하나라도 못 받으면 `null`) | — (받은 값을 해결로 저장, `weatherVariantNeedsRefresh`) | — (`BucketVariantResolver`) | `loadWeatherSignalInput` 의 `WeatherFetchFailurePolicy` `'unresolved'`(`routes/tts.ts`), 회귀 `prerender-variant.test.ts` |
 | 날씨 조회 대기 상한(8초) | `WEATHER_RESOLVE_TIMEOUT_MILLIS` + `withTimeoutOrNull`(`data/AlarmRepository.kt`, 회귀 `WeatherResolveTimeoutTest`) | `WeatherVariantSaveLookup.timeoutSeconds`(8초) + `withTimeout`(`AsyncTimeout.swift`) — `AlarmEditorSheet.applyWeatherVariant` 가 부른다, 회귀 `WeatherVariantSaveTimeoutTests` | `WEATHER_FETCH_TIMEOUT_MS`(한 fetch 5초, `lib/weather-fetch.ts`) |
+| 날씨 지역 목록(저장 값 ↔ 보이는 이름) | `WeatherPresetCityKeys` + 로케일별 `hs_weather_preset_cities`, `weatherCityDisplayName`(`ui/editor/AlarmRandomPromptSettings.kt`) — 회귀 `WeatherPresetCitiesResourceTest` | `WeatherCityPickerSheet.presetCities` + `Localizable.xcstrings`, `WeatherCityPickerSheet.displayName(for:)` — 회귀 `WeatherPresetCityLocalizationTests` | `resolveWeatherLocation`(`routes/tts.ts`, `language=ko`) |
 | 날씨 준비창 갱신 | `AlarmRepository.resolveDueCloneBucketVariants` + `weatherVariantNeedsRefresh` | `WeatherVariantRefreshService` + `BucketVariantResolver.weatherVariantNeedsRefresh` | 같은 라우트 |
 | 조건 스냅샷 영속 | `AlarmEntity.contextVariantIndex` / `contextResolvedAtMillis` | `LocalAlarmRecord.contextVariantIndex` / `contextResolvedAtMillis` | — |
 | 클립 자리 = `variant` | `bindStockBucketClips`(sortedBy·distinctBy) | `AlarmEditorSheet.bucketClipKeys(forCategory:)`(같은 규칙) | `ORDER BY … variant ASC`, `StockClip.variant` |

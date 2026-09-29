@@ -553,7 +553,7 @@ internal fun GenderChoice(
  */
 @Suppress("UNUSED_PARAMETER")
 internal fun weatherLocationSummary(context: android.content.Context, country: String, city: String): String =
-    city.trim().ifBlank { context.getString(R.string.editor2_weather_location_prompt) }
+    weatherCityDisplayName(context, city).ifBlank { context.getString(R.string.editor2_weather_location_prompt) }
 
 internal fun fortuneInfoSummary(context: android.content.Context, gender: String, birthDate: String, birthTime: String): String =
     listOf(gender, birthDate, birthTime)
