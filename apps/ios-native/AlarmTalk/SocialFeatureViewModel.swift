@@ -439,6 +439,24 @@ final class SocialFeatureViewModel: ObservableObject {
         }
     }
 
+    /// **쓰기·푸시 뒤 이용권 + plan 을 받는다 — `/auth/me` 는 대개 한 번**(스펙 plan-gates §4).
+    ///
+    /// 끝까지 가면 `refreshAll` 의 `/auth/me` 가 plan·프로모·토큰을 이미 세션에 넣었다
+    /// (`onFreshPlan`·`onRolledToken`) — 옆에서 사용자 새로고침을 또 부르지 않는다. 못 갔으면
+    /// (구독·공유 코드 조회 실패로 `/auth/me` 전에 멈췄거나, 그 사이 토큰이 굴러 plan 을 버렸다)
+    /// plan 이 옛 값이다 — 그때만 사용자 새로고침으로 받는다. 그쪽은 토큰이 굴러도 plan 을
+    /// 반영한다(`AuthViewModel.refreshUserApplyingToken`).
+    ///
+    /// ⚠ **"확정 성공이면 `onServerEntitlementUpdated` 가 이미 사용자를 읽었다" 에 기대지 말 것**
+    ///   (코덱스 #823 3차). 그 훅은 확정할 트랜잭션이 있을 때만 불린다 — 만료 뒤의 구독 관리 시트
+    ///   닫힘이나 '복원할 구매 없음' 에서는 안 불린다.
+    func refreshAllThenUserIfIncomplete(auth: AuthViewModel) async {
+        await refreshAll(session: auth.session, force: true)
+        if !entitlementSnapshotComplete {
+            await auth.refreshUser()
+        }
+    }
+
     /// - Parameter successMessage: nil 이면 아무 말도 하지 않는다. 결과가 **화면에 이미
     ///   드러나는** 변경(예: 이용권에서 나가면 카드가 '무료' 로 바뀐다)은 토스트로 한 번 더
     ///   말할 이유가 없다 — 같은 말을 반복하면서 화면만 가린다.

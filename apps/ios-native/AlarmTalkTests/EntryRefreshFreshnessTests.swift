@@ -45,7 +45,7 @@ final class EntryRefreshFreshnessTests: XCTestCase {
     func test_이용권_진입_갱신은_창_안에서_다시_받지_않고_force_와_실패는_창을_무시한다() async throws {
         let meFails = LockedFlag()
         let clock = TestClock(now: t0)
-        try await withSocialViewModel(clock: clock, meFails: meFails) { vm, current, meCalls in
+        try await withSocialViewModel(clock: clock, meFails: meFails) { vm, current, meCalls, _ in
             await vm.refreshOnEntry(session: current)
             XCTAssertEqual(meCalls(), 1)
             XCTAssertTrue(vm.entitlementSnapshotComplete)
@@ -95,7 +95,7 @@ final class EntryRefreshFreshnessTests: XCTestCase {
         try await withSocialViewModel(clock: clock, onMe: {
             // `/auth/me` 가 서버에 가 있는 사이 백그라운드를 거쳐 다시 들어왔다.
             if backgroundOnce.value { backgroundOnce.value = false; clock.entry += 1 }
-        }) { vm, current, meCalls in
+        }) { vm, current, meCalls, _ in
             await vm.refreshOnEntry(session: current)
             XCTAssertEqual(meCalls(), 1)
             XCTAssertTrue(vm.entitlementSnapshotComplete)
@@ -106,6 +106,29 @@ final class EntryRefreshFreshnessTests: XCTestCase {
 
             await vm.refreshOnEntry(session: current)
             XCTAssertEqual(meCalls(), 2, "진입 2 에 보낸 답은 진입 2 의 창을 연다")
+        }
+    }
+
+    /// 회귀(코덱스 #823 3차): 쓰기·푸시 뒤에는 `/auth/me` 를 **대개 한 번** 부른다. 이용권 새로고침이
+    /// 끝까지 가면 그 `/auth/me` 로 끝이고, 구독 조회가 실패해 `/auth/me` 전에 멈추면 사용자
+    /// 새로고침으로 plan 을 받는다 — 확정할 트랜잭션이 없는 회차(만료 뒤 구독 관리·복원할 것 없음)에는
+    /// `onServerEntitlementUpdated` 가 사용자를 대신 읽어 주지 않는다.
+    func test_이용권_새로고침이_끝까지_못_가면_사용자_새로고침으로_plan_을_받는다() async throws {
+        let subscriptionFails = LockedFlag()
+        try await withSocialViewModel(clock: TestClock(now: t0), subscriptionFails: subscriptionFails) { vm, current, meCalls, api in
+            let auth = AuthViewModel(api: api)
+            auth._setSessionForTesting(current)
+            XCTAssertEqual(auth.session?.user.plan, "free")
+
+            await vm.refreshAllThenUserIfIncomplete(auth: auth)
+            XCTAssertTrue(vm.entitlementSnapshotComplete)
+            XCTAssertEqual(meCalls(), 1, "끝까지 갔으면 그 `/auth/me` 로 끝이다 — 사용자 새로고침을 또 부르지 않는다")
+
+            subscriptionFails.value = true
+            await vm.refreshAllThenUserIfIncomplete(auth: auth)
+            XCTAssertFalse(vm.entitlementSnapshotComplete)
+            XCTAssertEqual(meCalls(), 2, "구독 조회에서 멈추면 이용권 쪽 `/auth/me` 는 안 나간다 — 사용자 새로고침이 한 번 받는다")
+            XCTAssertEqual(auth.session?.user.plan, "family", "그 사용자 새로고침이 서버의 지금 plan 을 세션에 넣는다")
         }
     }
 
@@ -201,8 +224,9 @@ final class EntryRefreshFreshnessTests: XCTestCase {
     private func withSocialViewModel(
         clock: TestClock,
         meFails: LockedFlag = LockedFlag(),
+        subscriptionFails: LockedFlag = LockedFlag(),
         onMe: @escaping @Sendable () -> Void = {},
-        _ body: (SocialFeatureViewModel, AuthSession, @escaping @Sendable () -> Int) async throws -> Void
+        _ body: (SocialFeatureViewModel, AuthSession, @escaping @Sendable () -> Int, AlarmTalkAPI) async throws -> Void
     ) async throws {
         let userID = UUID().uuidString
         let current = AuthSession(token: UUID().uuidString, user: AuthUser(id: userID, email: "entry@example.test"))
@@ -219,6 +243,7 @@ final class EntryRefreshFreshnessTests: XCTestCase {
                 onMe()
                 return meFails.value ? (503, Data(#"{"error":"unavailable"}"#.utf8)) : (200, me)
             case "billing/subscription":
+                if subscriptionFails.value { return (503, Data(#"{"error":"unavailable"}"#.utf8)) }
                 return (200, Data(#"{"subscription":null,"plan":null,"next_plan":null,"store_renewal_providers":[]}"#.utf8))
             case "billing/vouchers":
                 return (200, Data(#"{"vouchers":[]}"#.utf8))
@@ -233,9 +258,10 @@ final class EntryRefreshFreshnessTests: XCTestCase {
             AccessSnapshotStore().clear(userID: userID)
             if let previous { try? KeychainStore.saveSession(previous) } else { KeychainStore.deleteSession() }
         }
-        let vm = SocialFeatureViewModel(api: AlarmTalkAPI(baseURL: URL(string: "https://\(host)/api/")!, session: urlSession))
+        let api = AlarmTalkAPI(baseURL: URL(string: "https://\(host)/api/")!, session: urlSession)
+        let vm = SocialFeatureViewModel(api: api)
         vm.entryRefreshClock = { (clock.entry, clock.now) }
-        try await body(vm, current) { EntryRefreshURLProtocol.count(host: host, path: "auth/me") }
+        try await body(vm, current, { EntryRefreshURLProtocol.count(host: host, path: "auth/me") }, api)
     }
 
     private func withVoiceViewModel(

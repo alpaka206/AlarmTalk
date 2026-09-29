@@ -500,11 +500,10 @@ struct BillingPanel: View {
             do {
                 try await AppStore.showManageSubscriptions(in: scene)
                 // 시트에서 해지했을 수 있다 — 닫히면 서버 상태를 다시 읽는다.
-                // `auth.refreshUser()` 를 또 부르지 않는다 — `refreshAll` 이 `/auth/me` 로
-                // plan·프로모·토큰을 받아 세션에 넣고, 확정이 통과하면 `onServerEntitlementUpdated`
-                // 가 사용자도 이미 다시 읽었다(스펙 plan-gates §4 「`/auth/me` 를 두 번 부르지 말 것」).
+                // 사용자 새로고침은 이용권 새로고침이 끝까지 못 갔을 때만 부른다 — 끝까지 갔으면
+                // 그 `/auth/me` 가 plan 을 이미 넣었다(`refreshAllThenUserIfIncomplete`, 스펙 plan-gates §4).
                 await subscriptions.resyncEntitlements()
-                await socialFeatures.refreshAll(session: auth.session, force: true)
+                await socialFeatures.refreshAllThenUserIfIncomplete(auth: auth)
                 return
             } catch {
                 // 시트를 못 띄웠다 — 아래 URL 폴백으로 이어진다.
@@ -525,10 +524,10 @@ struct BillingPanel: View {
             Task {
                 let result = await subscriptions.restorePurchases()
                 // 복원이 성공한 경우에만 백엔드 entitlement 재동기화 + 상태 새로고침.
-                // 사용자 새로고침은 따로 부르지 않는다 — 위 해지 시트 닫힘과 같은 이유다.
+                // 사용자 새로고침은 위 해지 시트 닫힘과 같은 규칙이다(`refreshAllThenUserIfIncomplete`).
                 if result.isSuccess {
                     await subscriptions.resyncEntitlements()
-                    await socialFeatures.refreshAll(session: auth.session, force: true)
+                    await socialFeatures.refreshAllThenUserIfIncomplete(auth: auth)
                 }
                 // 복원됨 N건 / 복원할 구매 없음 / 오류 를 구분해 안내한다.
                 purchaseFeedback = result.userMessage
@@ -597,9 +596,9 @@ struct BillingPanel: View {
         purchaseFeedback = result.userMessage
         if result.isSuccess {
             // 백엔드 plan/구독 row 도 함께 새로고침해 UI 일관성 유지.
-            // 사용자 새로고침은 따로 부르지 않는다 — 확정 성공의 `onServerEntitlementUpdated` 가
-            // 이미 다시 읽었고, `refreshAll` 도 `/auth/me` 로 plan 을 받는다.
-            await socialFeatures.refreshAll(session: auth.session, force: true)
+            // 사용자 새로고침은 이용권 새로고침이 끝까지 못 갔을 때만 부른다
+            // (`refreshAllThenUserIfIncomplete`, 스펙 plan-gates §4).
+            await socialFeatures.refreshAllThenUserIfIncomplete(auth: auth)
         }
     }
 

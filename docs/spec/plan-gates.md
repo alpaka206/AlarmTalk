@@ -124,7 +124,8 @@ freeVoiceTier = 로그인함 && !유료
 `/auth/me` 로 plan·프로모·토큰을 받아 세션에 넣는다 — 그 옆에서 사용자 새로고침을 또 부르면
 같은 답을 한 번 더 기다린다. 예외는 이용권 새로고침이 **끝까지 못 갔을 때**다(구독 조회
 실패로 `/auth/me` 전에 멈췄거나, 그 사이 토큰이 굴러 plan 을 버렸다) — 그때는 plan 이 옛
-값이라 사용자 새로고침으로 받는다(iOS `plan_changed` 의 `onPlanChanged`). 반대로 **프로필을
+값이라 사용자 새로고침으로 받는다. "확정이 성공했으면 사용자도 이미 읽었다" 에 기대지 말 것 —
+확정할 트랜잭션이 없는 회차(만료 뒤 구독 관리·'복원할 구매 없음')가 있다. 반대로 **프로필을
 고친 뒤에는** 사용자 새로고침이 맞고(프로필은 그쪽만 싣는다), 이용권 새로고침은 필요 없다.
 
 ## 구현 지도
@@ -141,6 +142,7 @@ freeVoiceTier = 로그인함 && !유료
 | 구독 조회 | `subscriptionResponse` | `socialFeatures.subscription` | `routes/billing-query.ts` |
 | 진입 갱신 — 목소리·이용권(완결된 갱신만 · 60초 · 같은 계정·같은 앱 진입 · 보낼 때 적는다) | `ui/app/AlarmTalkApp.kt` 의 `lastTabRefreshAt`(⚠ 키가 아직 `tab to token` 이고 표를 갱신 **전에** 적는다 — 이 규칙과 다르다. 고칠 때 키는 계정 id + `AuthSessionStore.sessionGeneration`) | `EntryRefreshFreshness` · `SocialFeatureViewModel.refreshOnEntry` · `VoiceStudioViewModel.refreshOnEntry` — 부르는 자리 `MainTabsView.refreshForSelectedTab`(목소리·더보기)·`MainTabsView.refreshAll`·`AlarmEditorSheet`·`MemberManagementView`·`BillingPanel` | — |
 | 알람 탭 동기화 스로틀(키 = 탭 + 계정 — 토큰 아님) | 같은 `lastTabRefreshAt` | `MainTabsView.tabRefreshThrottleKey`(재로그인은 `MainTabsView` 가 새로 만들어져 표가 비워진다) | — |
+| 쓰기·푸시 뒤 이용권 + plan(`/auth/me` 한 번 — 끝까지 못 가면 사용자 새로고침) | — | `SocialFeatureViewModel.refreshAllThenUserIfIncomplete` — 부르는 자리 `plan_changed`(`AlarmTalkApp` 의 `onPlanChanged`)·`BillingPanel` 의 구매·복원·구독 관리 시트 닫힘 | — |
 
 ## 관련 규약 (다른 문서)
 
