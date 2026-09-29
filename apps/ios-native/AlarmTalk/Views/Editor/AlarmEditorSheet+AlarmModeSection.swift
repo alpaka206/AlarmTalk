@@ -108,7 +108,7 @@ extension AlarmEditorSheet {
                                 weatherCity: voiceStudio.weatherCity,
                                 // 고른 것도 없고 문구도 없다 = 아직 아무것도 정해지지 않았다.
                                 nothingChosenYet: usesStockClips
-                                    && selectedFreeBucket == nil
+                                    && selectedBucketDraft == nil
                                     && (voiceStudio.ttsText).nilIfBlank == nil,
                                 onTap: { messagePaneOpen = true }
                             )
@@ -129,8 +129,7 @@ extension AlarmEditorSheet {
                             elapsedMs: Int(localRecorder.elapsedSeconds * 1000),
                             hasRecording: localRecorder.latestRecordingURL != nil,
                             existingAudioLabel: existingLocalAudioLabel,
-                            isPreviewing: editorPreviewPlayer.isPlaying &&
-                                (previewTarget == .selectedCrop || previewTarget == .cachedLocalAudio),
+                            isPreviewing: editorPreviewPlayer.isPlaying && previewingLocalAudio,
                             message: localAudioMessage,
                             onRecord: toggleLocalRecording,
                             onPreview: previewLocalAlarmAudio,

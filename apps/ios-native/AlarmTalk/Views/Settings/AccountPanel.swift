@@ -6,7 +6,8 @@ import SwiftUI
 /// 로그아웃 시 시트를 닫는 책임만 onSignOut 콜백으로 받는다.
 struct AccountPanel: View {
     @EnvironmentObject private var auth: AuthViewModel
-    @Binding var nicknameDraft: String
+    /// 닉네임 알럿의 입력값. 알럿을 여는 버튼이 그때마다 지금 이름으로 채운다.
+    @State private var nicknameDraft = ""
 
     /// 상한을 **넘겨 쳤을 때만** true. 정확히 상한이면 false 다 —
     /// 잘라 돌려준 값을 IME 가 되돌려 보내면 경고가 곧바로 꺼져 깜빡이기 때문이다.
@@ -103,9 +104,6 @@ struct AccountPanel: View {
                 Text("이름은 \(InputSanitizer.displayNameMaxLength)자까지 쓸 수 있어요.")
             }
         }
-        .onChange(of: nicknameDialogOpen) { _, open in
-            if open { nicknameDraft = user.name }
-        }
         .alert("로그아웃할까요?", isPresented: $logoutConfirming) {
             Button("취소", role: .cancel) { }
             Button("로그아웃", role: .destructive) {
@@ -118,11 +116,9 @@ struct AccountPanel: View {
 
 #if DEBUG
 private struct AccountPanelPreviewHost: View {
-    @State private var nickname = "AlarmTalk"
     var body: some View {
         VStack(spacing: 16) {
             AccountPanel(
-                nicknameDraft: $nickname,
                 user: AuthUser(
                     id: "u1",
                     email: "preview@alarmtalk.app",

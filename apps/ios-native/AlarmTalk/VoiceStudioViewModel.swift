@@ -415,11 +415,6 @@ final class VoiceStudioViewModel: ObservableObject {
         return profiles.first { $0.id == id }.map(isSystemVoice) ?? isSystemVoiceId(id)
     }
 
-    private func normalizedUserID(_ userID: String?) -> String? {
-        let normalized = userID?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return normalized.isEmpty ? nil : normalized
-    }
-
     /// 신선도 창을 닫고 세대를 올린다 — 그 전에 받아들인 갱신은 창을 다시 열지 못한다.
     @discardableResult
     private func closeEntryFreshness() -> Int {
@@ -434,7 +429,7 @@ final class VoiceStudioViewModel: ObservableObject {
     /// ⚠ **쓰기 뒤·푸시에서는 부르지 말 것** — 방금 바뀐 것을 창이 가린다. 그 자리는
     ///   `refresh(session:force: true)` 다.
     func refreshOnEntry(session: AuthSession?) async {
-        if session?.token != nil, let userID = normalizedUserID(session?.user.id) {
+        if session?.token != nil, let userID = session?.user.id.nilIfBlank {
             let clock = entryRefreshClock()
             if entryFreshness.isFresh(userID: userID, entry: clock.entry, now: clock.now) { return }
         }
@@ -451,7 +446,7 @@ final class VoiceStudioViewModel: ObservableObject {
         // 화면 확인 모드는 서버가 없다 — 실패 메시지로 목록을 덮지 않는다.
         if UIPreviewSeed.isEnabled { return }
         guard let token = session?.token,
-              let userID = normalizedUserID(session?.user.id) else {
+              let userID = session?.user.id.nilIfBlank else {
             clearUserScopedRemoteState()
             return
         }
@@ -605,12 +600,7 @@ final class VoiceStudioViewModel: ObservableObject {
         // 비행기모드 콜드스타트에서는 클립을 전부 받아 둔 기기도 알람을 못 만든다.
         // 자세한 것은 `StockClipManifestStore` 주석.
         if stockClips.isEmpty, let cached = StockClipManifestStore.load(ownerUserID: session?.user.id) {
-            stockClips = cached.clips
-            expectedVariants = cached.expectedVariants
-            legacyBucketHints = Dictionary(
-                (cached.legacyBucketHints ?? []).map { ($0.messageId, $0.category) },
-                uniquingKeysWith: { first, _ in first },
-            )
+            adoptStockClipManifest(cached)
         }
         // ⚠ **반환값은 '이번에 서버에서 새로 받았는가' 다**(Codex #703 P1). 예전에는
         // "매니페스트를 갖고 있는가" 라 디스크·메모리 폴백에도 true 였는데, 교체 확정 게이트가
@@ -787,7 +777,7 @@ final class VoiceStudioViewModel: ObservableObject {
         }
         // AlarmKit은 예약 때 Library/Sounds 사본을 고정하므로 새 캐시만 받아서는 부족하다.
         for key in refreshedKeys {
-            AlarmSoundStaging.clearStagedSound(forKey: key)
+            AlarmSoundStaging.clearStagedSoundFiles(forKey: key)
         }
         let unfinished = Set(
             keyOwner.filter { !refreshedKeys.contains($0.key) }.values
@@ -928,7 +918,7 @@ final class VoiceStudioViewModel: ObservableObject {
         listenerTitle: String? = nil,
         language: String = VoiceStudioViewModel.appVoiceLanguage()
     ) async -> VoiceProfile? {
-        guard let token = session?.token else {
+        guard session?.token != nil else {
             statusMessage = "로그인이 필요해요."
             return nil
         }
@@ -945,39 +935,19 @@ final class VoiceStudioViewModel: ObservableObject {
             statusMessage = "먼저 목소리를 녹음해 주세요."
             return nil
         }
-        guard durationMs >= VoiceProfileLimits.minDurationMs && durationMs <= VoiceProfileLimits.maxDurationMs + VoiceProfileLimits.maxDurationToleranceMs else {
-            statusMessage = durationMs < VoiceProfileLimits.minDurationMs
-                ? "12초 이상 녹음해 주세요."
-                : "2분 이하 음성으로 등록할 수 있어요."
-            return nil
-        }
-        guard !isBusy else { return nil }
-        isBusy = true
-        defer { isBusy = false }
-
-        do {
-            let profile = try await api.cloneVoice(
-                audioFileURL: url,
-                name: cloneName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "내 목소리" : cloneName,
-                isShared: isShared,
-                durationMs: durationMs,
-                token: token,
-                relationshipLabel: fields.relationshipLabel,
-                listenerTitle: fields.listenerTitle,
-                language: language
-            )
-            selectedProfileID = profile.id
-            // ⚠ **'등록했어요' 같은 안내를 두지 말 것**(2026-09-21 지시). 이 문구는 다음
-            //   화면(미리듣기 → 진행률)이 이미 말하는 것을 한 번 더 말하는 데다, 아무도
-            //   지우지 않아 **목소리 탭 맨 위에 그대로 남았다.** 안드로이드도 성공 갈래에서
-            //   배너를 비운다(`MainViewModel.createVoiceProfiles` 의 `message = null`).
-            statusMessage = nil
-            await refresh(session: session, force: true)
-            return profile
-        } catch {
-            statusMessage = mapVoiceError(error)
-            return nil
-        }
+        // 나머지(길이·busy·전송·새로고침)는 파일 등록과 같다. 이름·관계·호칭은 이미 정리돼
+        // 있어 다시 정리해도 같은 값이다.
+        return await cloneAudioForProfile(
+            audioFileURL: url,
+            name: fields.name,
+            durationMs: durationMs,
+            isShared: isShared,
+            session: session,
+            relationshipLabel: fields.relationshipLabel,
+            listenerTitle: fields.listenerTitle,
+            language: language,
+            tooShortMessage: "12초 이상 녹음해 주세요."
+        )
     }
 
     /// 녹음 외 파일 업로드/자르기 결과처럼 임의 URL을 곧바로 목소리 프로필로 등록한다.
@@ -990,7 +960,8 @@ final class VoiceStudioViewModel: ObservableObject {
         uploadFileName: String? = nil,
         relationshipLabel: String? = nil,
         listenerTitle: String? = nil,
-        language: String = VoiceStudioViewModel.appVoiceLanguage()
+        language: String = VoiceStudioViewModel.appVoiceLanguage(),
+        tooShortMessage: String = "12초 이상 준비해 주세요."
     ) async -> VoiceProfile? {
         guard let token = session?.token else {
             statusMessage = "로그인이 필요해요."
@@ -1005,7 +976,7 @@ final class VoiceStudioViewModel: ObservableObject {
         }
         guard durationMs >= VoiceProfileLimits.minDurationMs && durationMs <= VoiceProfileLimits.maxDurationMs + VoiceProfileLimits.maxDurationToleranceMs else {
             statusMessage = durationMs < VoiceProfileLimits.minDurationMs
-                ? "12초 이상 준비해 주세요."
+                ? tooShortMessage
                 : "2분 이하 음성으로 등록할 수 있어요."
             return nil
         }
@@ -1610,7 +1581,7 @@ final class VoiceStudioViewModel: ObservableObject {
             )
             for key in releasedKeys.subtracting(stillReferenced) {
                 try? audioCache.deleteCachedAudio(cacheKey: key)
-                AlarmSoundStaging.clearStagedSound(forKey: key)
+                AlarmSoundStaging.clearStagedSoundFiles(forKey: key)
             }
         }
     }
@@ -1677,7 +1648,7 @@ final class VoiceStudioViewModel: ObservableObject {
                 // 에 따로 있어서, 이걸 안 지우면 **지운 목소리가 다음 알람에 그대로 울린다.**
                 // 파기해야 할 생체정보가 디스크와 알람에 남는 셈이라 가장 무거운 누락이었다.
                 // (같은 규약이 `AudioCacheStore` 의 캐시 교체 경로에는 이미 있었다.)
-                AlarmSoundStaging.clearStagedSound(forKey: key)
+                AlarmSoundStaging.clearStagedSoundFiles(forKey: key)
             }
         }
         // 행의 소리를 바꿨으니 예약도 따라가야 한다. 예약은 async 라 여기(sync)서 못 부르고,
@@ -1706,7 +1677,7 @@ final class VoiceStudioViewModel: ObservableObject {
         relationshipLabel: String?,
         listenerTitle: String?
     ) -> RequiredVoiceProfileFields? {
-        let normalizedName = (name).nilIfBlank ?? fallbackName.flatMap { ($0).nilIfBlank }
+        let normalizedName = name.nilIfBlank ?? fallbackName.nilIfBlank
         guard let normalizedName else {
             statusMessage = "목소리 이름을 입력해 주세요."
             return nil
@@ -1724,11 +1695,11 @@ final class VoiceStudioViewModel: ObservableObject {
         relationshipLabel: String?,
         listenerTitle: String?
     ) -> (relationshipLabel: String, listenerTitle: String)? {
-        guard let relationshipLabel = (relationshipLabel ?? "").nilIfBlank else {
+        guard let relationshipLabel = relationshipLabel.nilIfBlank else {
             statusMessage = "나와의 관계를 입력해 주세요."
             return nil
         }
-        guard let listenerTitle = (listenerTitle ?? "").nilIfBlank else {
+        guard let listenerTitle = listenerTitle.nilIfBlank else {
             statusMessage = "이 목소리가 나를 부를 호칭을 입력해 주세요."
             return nil
         }

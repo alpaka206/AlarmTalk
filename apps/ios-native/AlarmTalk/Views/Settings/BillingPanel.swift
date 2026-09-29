@@ -43,7 +43,11 @@ struct BillingPanel: View {
     @State private var showPersonalGiftSheet = false
     @State private var voucherShareTargets: [VoucherItem] = []
     /// 결제 확인 대기 중인 플랜. nil 이면 알럿이 닫혀 있다.
-    @State private var pendingPurchase: PendingPlanPurchase?
+    ///
+    /// 상품이 아니라 **등급**을 든다 — 상품 id 만으로는 **전환인지 신규인지**, **정원이
+    /// 줄어드는지**를 알 수 없고 그 판단이 알럿 문구를 통째로 바꾼다. 상품은 등급에서
+    /// 하나로 정해진다(`SubscriptionProduct.make(tier:)`).
+    @State private var pendingPurchase: PlanTier?
     /// 결제를 막은 이유. **버튼을 죽이지 않고 눌리면 이유를 말한다**(편집기의
     /// `SaveBlockReason` 과 같은 규약 — 죽은 버튼은 고장으로 읽힌다).
     @State private var purchaseBlock: PurchaseBlockReason?
@@ -164,7 +168,7 @@ struct BillingPanel: View {
                         hasActivePlan: currentTier != .free,
                         isBusy: socialFeatures.isBusy,
                         vouchers: shareableVouchers,
-                        onPurchase: { product in beginPurchase(product, tier: tier) },
+                        onPurchase: { beginPurchase(tier: tier) },
                         onGiftPersonal: {
                             showPersonalGiftSheet = true
                         },
@@ -312,7 +316,9 @@ struct BillingPanel: View {
         ) { pending in
             Button("결제하기") {
                 pendingPurchase = nil
-                Task { await confirmAndPurchase(pending.product) }
+                if let product = SubscriptionProduct.make(tier: pending) {
+                    Task { await confirmAndPurchase(product) }
+                }
             }
             Button("취소", role: .cancel) { pendingPurchase = nil }
         } message: { pending in
@@ -442,7 +448,7 @@ struct BillingPanel: View {
     /// **언제 바뀌는지**(업그레이드 즉시 / 다운그레이드는 다음 갱신일)와 **정원이 줄면
     /// 멤버가 나간다**는 사실. 안드로이드는 이미 확인 모달로 말하고 있었는데 iOS 만 곧장
     /// StoreKit 으로 갔다(2026-08-11 대조).
-    private func beginPurchase(_ product: SubscriptionProduct, tier: PlanTier) {
+    private func beginPurchase(tier: PlanTier) {
         if let block = purchaseBlockReason() {
             purchaseBlock = block
             // 모르는 상태였다면 곧바로 다시 읽어 본다 — 사용자가 아무것도 안 해도
@@ -452,7 +458,7 @@ struct BillingPanel: View {
             }
             return
         }
-        pendingPurchase = PendingPlanPurchase(product: product, tier: tier)
+        pendingPurchase = tier
     }
 
     /// **StoreKit 을 부르기 직전에 서버에 다시 묻는다.**
@@ -553,8 +559,8 @@ struct BillingPanel: View {
 
     private var pendingPurchaseTitle: String {
         guard let pending = pendingPurchase else { return "" }
-        let name = pending.tier.displayLabel
-        return isPlanChange(to: pending.tier)
+        let name = pending.displayLabel
+        return isPlanChange(to: pending)
             ? "\(name) 이용권으로 바꿀까요?"
             : "\(name) 이용권을 시작할까요?"
     }
@@ -566,24 +572,21 @@ struct BillingPanel: View {
 
     /// 시점은 **스토어가 정한다**(업그레이드 즉시+비례정산 / 다운그레이드는 다음 갱신일).
     /// 우리가 고르게 하지는 않되, 무엇이 언제 일어나는지는 말한다.
-    private func purchaseMessage(for pending: PendingPlanPurchase) -> String {
-        let name = pending.tier.displayLabel
-        guard isPlanChange(to: pending.tier) else {
-            // 카드에 쓰는 것과 **같은 가격**이다(StoreKit 값 우선, 없으면 폴백표).
-            let price = subscriptions.products
-                .first(where: { $0.id == pending.product.rawValue })?.displayPrice
-                ?? FallbackPlanPrice.label(for: pending.tier)
-                ?? ""
+    private func purchaseMessage(for pending: PlanTier) -> String {
+        let name = pending.displayLabel
+        guard isPlanChange(to: pending) else {
+            // 카드에 쓰는 것과 **같은 가격**이다(`SubscriptionManager.priceLabel(for:)`).
+            let price = subscriptions.priceLabel(for: pending) ?? ""
             return price.isEmpty
                 ? "\(name) 이용권을 App Store로 안전하게 결제해요. 가격은 결제 화면에서 확인할 수 있고, 언제든 해지할 수 있어요. 해지해도 남은 기간은 그대로 이용할 수 있어요."
                 : "\(name) 이용권은 \(price)이에요. App Store로 안전하게 결제되고 언제든 해지할 수 있어요. 해지해도 남은 기간은 그대로 이용할 수 있어요."
         }
-        let upgrade = pending.tier.meetsOrExceeds(currentTier) && pending.tier != currentTier
+        let upgrade = pending.meetsOrExceeds(currentTier) && pending != currentTier
         var text = upgrade
             ? "지금 바로 \(name) 이용권으로 바뀌어요. 남은 기간은 새 이용권 기준으로 환산돼요."
             : "지금은 결제되지 않아요. 지금 이용권을 기간 끝까지 쓰고, 다음 갱신일에 \(name) 이용권으로 바뀌어요."
         // 정원이 줄면 사람이 빠진다 — 결제 뒤에 알면 늦다.
-        if !upgrade, pending.tier.sharedSeats < currentTier.sharedSeats {
+        if !upgrade, pending.sharedSeats < currentTier.sharedSeats {
             text += " 함께 쓰는 인원이 줄어서, 정원을 넘는 멤버는 그룹에서 나가게 돼요."
         }
         return text

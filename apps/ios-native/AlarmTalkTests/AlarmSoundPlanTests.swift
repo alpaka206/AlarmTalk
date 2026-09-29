@@ -258,7 +258,7 @@ final class AlarmSoundPlanTests: XCTestCase {
             keys.append(key)
             addTeardownBlock {
                 try? store.deleteCachedAudio(cacheKey: key)
-                AlarmSoundStaging.clearStagedSound(forKey: key)
+                AlarmSoundStaging.clearStagedSoundFiles(forKey: key)
             }
         }
         return (store, keys)

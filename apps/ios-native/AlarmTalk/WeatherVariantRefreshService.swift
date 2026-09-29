@@ -68,8 +68,8 @@ final class WeatherVariantRefreshService {
         var groups: [GroupKey: [LocalAlarmRecord]] = [:]
         for alarm in due {
             let key = GroupKey(
-                country: alarm.voiceWeatherCountry?.trimmed ?? "",
-                city: alarm.voiceWeatherCity?.trimmed ?? "",
+                country: alarm.voiceWeatherCountry.nilIfBlank ?? "",
+                city: alarm.voiceWeatherCity.nilIfBlank ?? "",
                 targetDate: BucketVariantResolver.localDateString(millis: alarm.fireAtMillis)
             )
             groups[key, default: []].append(alarm)
@@ -107,8 +107,8 @@ final class WeatherVariantRefreshService {
                 guard let current = store.record(id: alarm.id),
                       current.ownerUserId == nil || current.ownerUserId == owner,
                       current.bucketId == "weather",
-                      (current.voiceWeatherCountry?.trimmed ?? "") == key.country,
-                      (current.voiceWeatherCity?.trimmed ?? "") == key.city,
+                      (current.voiceWeatherCountry.nilIfBlank ?? "") == key.country,
+                      (current.voiceWeatherCity.nilIfBlank ?? "") == key.city,
                       BucketVariantResolver.localDateString(millis: current.fireAtMillis) == key.targetDate
                 else { continue }
                 let didChange = current.contextVariantIndex != index
@@ -153,8 +153,4 @@ final class WeatherVariantRefreshService {
         var city: String
         var targetDate: String
     }
-}
-
-private extension String {
-    var trimmed: String { trimmingCharacters(in: .whitespacesAndNewlines) }
 }

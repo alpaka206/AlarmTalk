@@ -155,10 +155,10 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
     /// 잠긴 뒤에도 참이어야 한다는 점은 그대로다: 잠금은 `playMode` 만 바꾸고
     /// `voiceProfileId` 는 남기므로 자원 기준으로 봐도 계속 대상으로 잡힌다.
     var usesPaidVoiceFeatures: Bool {
-        !(localAudioUri?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true) ||
-            !(rawAudioUri?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true) ||
-            !(voiceProfileId?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true) ||
-            !(ttsMessageId?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+        localAudioUri.nilIfBlank != nil ||
+            rawAudioUri.nilIfBlank != nil ||
+            voiceProfileId.nilIfBlank != nil ||
+            ttsMessageId.nilIfBlank != nil
     }
 
     /// **직접 입력 문구로 합성한 음성 알람인가** — 서버 `messages.category = 'custom'` 의 로컬 짝.
@@ -211,8 +211,8 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
         // 한쪽만 고치면 '예약은 목소리로 되는데 앱을 껐다 켜면 잠긴다'(또는 그 반대)가 된다.
         if voiceSourceEnum == .localAudio, localAudioUri?.nilIfBlank != nil { return false }
         let stockVoiceOnly =
-            (localAudioUri?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true) &&
-            (rawAudioUri?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true) &&
+            localAudioUri.nilIfBlank == nil &&
+            rawAudioUri.nilIfBlank == nil &&
             isSystemVoiceId(voiceProfileId)
         return usesPaidVoiceFeatures &&
             !stockVoiceOnly &&
@@ -274,6 +274,19 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
 
     /// 다음 발화 시각 (fireAtMillis 기반).
     var nextFireDate: Date { Date(timeIntervalSince1970: TimeInterval(fireAtMillis) / 1000.0) }
+
+    /// 이 행의 시각·요일·공휴일 설정으로 **다시 계산한** 다음 울림 시각.
+    /// 울릴 날이 없으면 던진다 — 폴백은 부르는 쪽이 정한다.
+    func nextFireAtMillis(nowMillis: Int64, isHoliday: (Date) -> Bool) throws -> Int64 {
+        try AlarmTimeCalculator.nextFireAtMillis(
+            hour: hour,
+            minute: minute,
+            repeatDaysMask: repeatDaysMask,
+            holidayOff: holidayOff,
+            nowMillis: nowMillis,
+            isHoliday: isHoliday
+        )
+    }
 
     // MARK: Defaults / Designated init
 

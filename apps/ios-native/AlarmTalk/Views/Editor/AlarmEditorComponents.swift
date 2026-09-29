@@ -120,7 +120,7 @@ enum FamilyAlarmScheduleRules {
 
     private static func targetDayIndices(hour: Int, minute: Int, repeatDaysMask: Int, nowMillis: Int64) -> [Int] {
         if repeatDaysMask != 0 {
-            return (0...6).filter { repeatDaysMask & (1 << $0) != 0 }
+            return RemoteAlarmMapper.repeatDays(fromMask: repeatDaysMask)
         }
         let fireAt = (try? AlarmTimeCalculator.nextFireAtMillis(
             hour: hour,
@@ -134,8 +134,8 @@ enum FamilyAlarmScheduleRules {
 
     private static func blocks(window: FamilyAlarmQuietWindow, dayIndex: Int, hour: Int, minute: Int) -> Bool {
         guard safeQuietDays(window.days).contains(dayIndex),
-              let start = parseQuietTime(window.start),
-              let end = parseQuietTime(window.end) else {
+              let start = minuteOfDay(window.start),
+              let end = minuteOfDay(window.end) else {
             return false
         }
         let target = hour * 60 + minute
@@ -145,16 +145,9 @@ enum FamilyAlarmScheduleRules {
         return target >= start || target < end
     }
 
-    private static func parseQuietTime(_ value: String) -> Int? {
-        let parts = value.split(separator: ":")
-        guard parts.count >= 2,
-              let hour = Int(parts[0]),
-              let minute = Int(parts[1]),
-              (0...23).contains(hour),
-              (0...59).contains(minute) else {
-            return nil
-        }
-        return hour * 60 + minute
+    /// "HH:mm" → 자정부터 몇 분째인가. 형식은 서버 알람 시각과 같은 파서가 본다.
+    private static func minuteOfDay(_ value: String) -> Int? {
+        RemoteAlarmMapper.parseTime(value).map { $0.0 * 60 + $0.1 }
     }
 
     private static func safeQuietDays(_ days: [Int]?) -> [Int] {

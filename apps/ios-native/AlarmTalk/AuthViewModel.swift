@@ -22,23 +22,14 @@ protocol AuthAPIProviding: AnyObject, Sendable {
 extension AlarmTalkAPI: AuthAPIProviding {}
 
 /// Apple 자격 증명 상태를 조회하는 의존성. 단위 테스트에서 mock 가능.
-/// 실제 구현은 `ASAuthorizationAppleIDProvider.getCredentialState(forUserID:)` 를 호출.
+/// 실제 구현은 `ASAuthorizationAppleIDProvider.credentialState(forUserID:)`(SDK 의 async 판)를 호출.
 protocol AppleCredentialStateProviding: Sendable {
     func credentialState(forUserID userID: String) async throws -> ASAuthorizationAppleIDProvider.CredentialState
 }
 
 struct LiveAppleCredentialStateProvider: AppleCredentialStateProviding {
     func credentialState(forUserID userID: String) async throws -> ASAuthorizationAppleIDProvider.CredentialState {
-        let provider = ASAuthorizationAppleIDProvider()
-        return try await withCheckedThrowingContinuation { continuation in
-            provider.getCredentialState(forUserID: userID) { state, error in
-                if let error {
-                    continuation.resume(throwing: error)
-                } else {
-                    continuation.resume(returning: state)
-                }
-            }
-        }
+        try await ASAuthorizationAppleIDProvider().credentialState(forUserID: userID)
     }
 }
 
@@ -615,31 +606,8 @@ final class AuthViewModel: ObservableObject {
                let hint = appleUserIdHint, !hint.isEmpty {
                 nextSession.user.appleUserId = hint
             }
-            // ⚠ **세션을 공개하기 전에 그 계정의 옛 행을 확정한다**(Codex #699 P2).
-            // `persistSession` 이 먼저 돌면 다른 화면 태스크(무료 플랜 목소리 잠금 등)가
-            // 곧바로 깨어나, A 의 **소유자 미기록** 행을 B 것으로 보고 강등·재예약한다.
-            // ⚠ **내리기 전에 그 계정의 옛 행을 확정한다**(Codex #699 P1). 콜드 스타트에서
-            // A 가 자동 401 로 끊긴 뒤 저장소가 로드되기 전에 B 가 로그인하면, 이 표시가
-            // **A 의 소유자 미기록 행이 A 것이라는 유일한 증거**다. 그냥 지우면 로드 완료
-            // 후의 재시도(`AlarmTalkApp`)가 "세션이 있으니 건너뛴다" 로 빠져, A 의 행이
-            // B 것으로 노출되고 **B 가 나중에 로그아웃할 때 영구히 꺼진다.**
-            // ⚠ **새기지 못했으면 표시를 남긴다**(Codex #699 P1). 저장소 로드가 상한(3초)을
-            // 넘기면 위 호출은 아무것도 못 새기고 돌아오는데, 그때 표시까지 지우면 로드 완료
-            // 후의 재시도는 "세션이 있으니 건너뛴다" 로 빠진다 — A 의 옛 행이 임자 없이 남아
-            // B 것으로 노출되고, **B 가 나중에 로그아웃할 때 영구히 꺼진다.**
-            // ⚠ **다시 로그인했으면 그 계정의 미완 로그아웃은 무효다**(Codex #699 P1).
-            // 남겨 두면 진행 중이던 뒷정리가 `/auth/logout` 으로 `token_epoch` 를 올려
-            // **방금 발급받은 세션까지 죽인다**(그 엔드포인트는 계정 전체에 걸린다).
-            PendingSignOutStore.clear(nextSession.user.id)
-            if await claimAlarmsForExpiredOwnerBeforeSignIn() {
-                // 로그인 확정 — 자동 만료 표시를 내린다(`SessionExpiryStore` 주석).
-                SessionExpiryStore.clear()
-            }
-            // 확정이 끝난 뒤에 세션을 공개한다.
-            persistSession(nextSession)
             // 로그인 응답의 user 도 계정 응답이다(plan·기간 한정 개인 플랜이 실려 온다).
-            recordAccountAnswer(accountRequest)
-            lastNetworkError = nil
+            await adoptSignedInSession(nextSession, accountRequest: accountRequest)
             // 탈퇴 유예 상태 점검 — 유예 중인 계정이 다시 로그인하면 복구 화면을 띄운다.
             await refreshUser()
             // 필수 약관 미동의면 동의 화면으로 게이팅.
@@ -705,31 +673,8 @@ final class AuthViewModel: ObservableObject {
             // 보낸 진입·순번을 응답까지 들고 간다(`recordAccountAnswer`).
             let accountRequest = beginAccountRequest()
             let nextSession = try await AlarmTalkAPI.shared.loginWithEmail(email: email, password: password)
-            // ⚠ **세션을 공개하기 전에 그 계정의 옛 행을 확정한다**(Codex #699 P2).
-            // `persistSession` 이 먼저 돌면 다른 화면 태스크(무료 플랜 목소리 잠금 등)가
-            // 곧바로 깨어나, A 의 **소유자 미기록** 행을 B 것으로 보고 강등·재예약한다.
-            // ⚠ **내리기 전에 그 계정의 옛 행을 확정한다**(Codex #699 P1). 콜드 스타트에서
-            // A 가 자동 401 로 끊긴 뒤 저장소가 로드되기 전에 B 가 로그인하면, 이 표시가
-            // **A 의 소유자 미기록 행이 A 것이라는 유일한 증거**다. 그냥 지우면 로드 완료
-            // 후의 재시도(`AlarmTalkApp`)가 "세션이 있으니 건너뛴다" 로 빠져, A 의 행이
-            // B 것으로 노출되고 **B 가 나중에 로그아웃할 때 영구히 꺼진다.**
-            // ⚠ **새기지 못했으면 표시를 남긴다**(Codex #699 P1). 저장소 로드가 상한(3초)을
-            // 넘기면 위 호출은 아무것도 못 새기고 돌아오는데, 그때 표시까지 지우면 로드 완료
-            // 후의 재시도는 "세션이 있으니 건너뛴다" 로 빠진다 — A 의 옛 행이 임자 없이 남아
-            // B 것으로 노출되고, **B 가 나중에 로그아웃할 때 영구히 꺼진다.**
-            // ⚠ **다시 로그인했으면 그 계정의 미완 로그아웃은 무효다**(Codex #699 P1).
-            // 남겨 두면 진행 중이던 뒷정리가 `/auth/logout` 으로 `token_epoch` 를 올려
-            // **방금 발급받은 세션까지 죽인다**(그 엔드포인트는 계정 전체에 걸린다).
-            PendingSignOutStore.clear(nextSession.user.id)
-            if await claimAlarmsForExpiredOwnerBeforeSignIn() {
-                // 로그인 확정 — 자동 만료 표시를 내린다(`SessionExpiryStore` 주석).
-                SessionExpiryStore.clear()
-            }
-            // 확정이 끝난 뒤에 세션을 공개한다.
-            persistSession(nextSession)
             // 로그인 응답의 user 도 계정 응답이다(plan·기간 한정 개인 플랜이 실려 온다).
-            recordAccountAnswer(accountRequest)
-            lastNetworkError = nil
+            await adoptSignedInSession(nextSession, accountRequest: accountRequest)
             // 탈퇴 유예 상태 점검 — 유예 중인 계정이 다시 로그인하면 복구 화면을 띄운다.
             await refreshUser()
             // 필수 약관 미동의면 동의 화면으로 게이팅.
@@ -761,32 +706,9 @@ final class AuthViewModel: ObservableObject {
                 name: name,
                 verificationCode: verificationCode
             )
-            // ⚠ **세션을 공개하기 전에 그 계정의 옛 행을 확정한다**(Codex #699 P2).
-            // `persistSession` 이 먼저 돌면 다른 화면 태스크(무료 플랜 목소리 잠금 등)가
-            // 곧바로 깨어나, A 의 **소유자 미기록** 행을 B 것으로 보고 강등·재예약한다.
-            // ⚠ **내리기 전에 그 계정의 옛 행을 확정한다**(Codex #699 P1). 콜드 스타트에서
-            // A 가 자동 401 로 끊긴 뒤 저장소가 로드되기 전에 B 가 로그인하면, 이 표시가
-            // **A 의 소유자 미기록 행이 A 것이라는 유일한 증거**다. 그냥 지우면 로드 완료
-            // 후의 재시도(`AlarmTalkApp`)가 "세션이 있으니 건너뛴다" 로 빠져, A 의 행이
-            // B 것으로 노출되고 **B 가 나중에 로그아웃할 때 영구히 꺼진다.**
-            // ⚠ **새기지 못했으면 표시를 남긴다**(Codex #699 P1). 저장소 로드가 상한(3초)을
-            // 넘기면 위 호출은 아무것도 못 새기고 돌아오는데, 그때 표시까지 지우면 로드 완료
-            // 후의 재시도는 "세션이 있으니 건너뛴다" 로 빠진다 — A 의 옛 행이 임자 없이 남아
-            // B 것으로 노출되고, **B 가 나중에 로그아웃할 때 영구히 꺼진다.**
-            // ⚠ **다시 로그인했으면 그 계정의 미완 로그아웃은 무효다**(Codex #699 P1).
-            // 남겨 두면 진행 중이던 뒷정리가 `/auth/logout` 으로 `token_epoch` 를 올려
-            // **방금 발급받은 세션까지 죽인다**(그 엔드포인트는 계정 전체에 걸린다).
-            PendingSignOutStore.clear(nextSession.user.id)
-            if await claimAlarmsForExpiredOwnerBeforeSignIn() {
-                // 로그인 확정 — 자동 만료 표시를 내린다(`SessionExpiryStore` 주석).
-                SessionExpiryStore.clear()
-            }
-            // 확정이 끝난 뒤에 세션을 공개한다.
-            persistSession(nextSession)
             // 가입 응답이 곧 서버 값이다 — 가입 경로는 `/auth/me` 를 따로 부르지 않는다.
-            recordAccountAnswer(accountRequest)
+            await adoptSignedInSession(nextSession, accountRequest: accountRequest)
             statusMessage = "환영해요! 계정이 만들어졌어요."
-            lastNetworkError = nil
             // 신규 가입자는 필수 약관 동의가 필요 — 동의 화면으로 게이팅.
             await checkConsentStatus()
         } catch {
@@ -800,7 +722,7 @@ final class AuthViewModel: ObservableObject {
     /// 계정에만 발송) 응답은 항상 성공이다. 성공 시 `passwordResetCodeSentTo` 를 채워 UI 가
     /// 다음 단계(코드 + 새 비밀번호)를 노출한다. Android `MainViewModel.requestPasswordReset`.
     func requestPasswordReset(email: String) async {
-        let normalized = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let normalized = AuthEmailFormat.normalize(email)
         guard !isBusy, !normalized.isEmpty else { return }
         isBusy = true
         defer { isBusy = false }
@@ -820,7 +742,7 @@ final class AuthViewModel: ObservableObject {
     /// Android `MainViewModel.confirmPasswordReset`.
     @discardableResult
     func confirmPasswordReset(email: String, code: String, newPassword: String) async -> Bool {
-        let normalized = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let normalized = AuthEmailFormat.normalize(email)
         let trimmedCode = code.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !isBusy else { return false }
         guard !normalized.isEmpty, trimmedCode.count == 6, !newPassword.isEmpty else {
@@ -860,6 +782,35 @@ final class AuthViewModel: ObservableObject {
         subsystem: "com.alarmtalk.app",
         category: "AuthSessionPersistence"
     )
+
+    /// 로그인·가입 응답으로 받은 세션을 확정한다 — 애플·이메일 로그인과 가입이 같은 순서를 쓴다.
+    ///
+    /// ⚠ **세션을 공개하기 전에 그 계정의 옛 행을 확정한다**(Codex #699 P2).
+    /// `persistSession` 이 먼저 돌면 다른 화면 태스크(무료 플랜 목소리 잠금 등)가
+    /// 곧바로 깨어나, A 의 **소유자 미기록** 행을 B 것으로 보고 강등·재예약한다.
+    /// ⚠ **내리기 전에 그 계정의 옛 행을 확정한다**(Codex #699 P1). 콜드 스타트에서
+    /// A 가 자동 401 로 끊긴 뒤 저장소가 로드되기 전에 B 가 로그인하면, 이 표시가
+    /// **A 의 소유자 미기록 행이 A 것이라는 유일한 증거**다. 그냥 지우면 로드 완료
+    /// 후의 재시도(`AlarmTalkApp`)가 "세션이 있으니 건너뛴다" 로 빠져, A 의 행이
+    /// B 것으로 노출되고 **B 가 나중에 로그아웃할 때 영구히 꺼진다.**
+    /// ⚠ **새기지 못했으면 표시를 남긴다**(Codex #699 P1). 저장소 로드가 상한(3초)을
+    /// 넘기면 위 호출은 아무것도 못 새기고 돌아오는데, 그때 표시까지 지우면 로드 완료
+    /// 후의 재시도는 "세션이 있으니 건너뛴다" 로 빠진다 — A 의 옛 행이 임자 없이 남아
+    /// B 것으로 노출되고, **B 가 나중에 로그아웃할 때 영구히 꺼진다.**
+    /// ⚠ **다시 로그인했으면 그 계정의 미완 로그아웃은 무효다**(Codex #699 P1).
+    /// 남겨 두면 진행 중이던 뒷정리가 `/auth/logout` 으로 `token_epoch` 를 올려
+    /// **방금 발급받은 세션까지 죽인다**(그 엔드포인트는 계정 전체에 걸린다).
+    private func adoptSignedInSession(_ nextSession: AuthSession, accountRequest: AccountRequest) async {
+        PendingSignOutStore.clear(nextSession.user.id)
+        if await claimAlarmsForExpiredOwnerBeforeSignIn() {
+            // 로그인 확정 — 자동 만료 표시를 내린다(`SessionExpiryStore` 주석).
+            SessionExpiryStore.clear()
+        }
+        // 확정이 끝난 뒤에 세션을 공개한다.
+        persistSession(nextSession)
+        recordAccountAnswer(accountRequest)
+        lastNetworkError = nil
+    }
 
     private func persistSession(_ nextSession: AuthSession) {
         do {
@@ -1241,7 +1192,9 @@ final class AuthViewModel: ObservableObject {
         }
         let normalizedQuietWindows = quietWindows.map(Self.normalizedQuietWindows)
         if let normalizedQuietWindows,
-           normalizedQuietWindows.contains(where: { !Self.isValidTimeText($0.start) || !Self.isValidTimeText($0.end) }) {
+           normalizedQuietWindows.contains(where: {
+               !FamilyAlarmQuietWindow.isValidTime($0.start) || !FamilyAlarmQuietWindow.isValidTime($0.end)
+           }) {
             statusMessage = "시간은 HH:mm 형식으로 입력해 주세요."
             return
         }
@@ -1276,26 +1229,10 @@ final class AuthViewModel: ObservableObject {
     // 명시적으로 켜는 기능이다 — 만들어 주면 아무도 설정한 적 없는 시간에 가족 알람이
     // 막히고, 받는 사람은 자기가 막아 둔 줄 모른다.
 
+    /// 보낼 창 — 요일이 없는 창만 버린다. 시각 형식은 호출부가 따로 보고 **거절한다**
+    /// (읽을 때처럼 조용히 버리면 사용자가 고친 창이 말없이 사라진다).
     private static func normalizedQuietWindows(_ windows: [FamilyAlarmQuietWindow]) -> [FamilyAlarmQuietWindow] {
-        Array(
-            windows
-                .map { window in
-                    FamilyAlarmQuietWindow(
-                        days: Array(Set(window.days.filter { (0...6).contains($0) })).sorted(),
-                        start: window.start,
-                        end: window.end
-                    )
-                }
-                .filter { !$0.days.isEmpty }
-                .prefix(8)
-        )
-    }
-
-    private static func isValidTimeText(_ value: String) -> Bool {
-        value.range(
-            of: #"^([01]\d|2[0-3]):[0-5]\d$"#,
-            options: .regularExpression
-        ) != nil
+        Array(windows.compactMap(\.withNormalizedDays).prefix(FamilyAlarmQuietWindow.maxCount))
     }
 
     func deleteAccount() async {
@@ -1328,13 +1265,7 @@ final class AuthViewModel: ObservableObject {
             PendingSignOutStore.mark(currentUserID)
             if let currentUserID, !currentUserID.isEmpty {
                 accessSnapshotStore.clear(userID: currentUserID)
-                DefaultVoicePreferenceStore().clear(userID: currentUserID)
-                DynamicPromptPreferenceStore().clear(userID: currentUserID)
-                DynamicPromptPreferences.clear(userID: currentUserID)
-                // ⚠ **목소리 교체 표식(`VoiceReplacementMarkerStore`)은 지우지 않는다.**
-                // 취향은 계정과 함께 떠나도 되지만 그 표식은 **남아 있는 로컬 알람의 안전
-                // 기준**이다 — 로그아웃은 알람을 끄기만 하고 지우지 않으므로, 지우면 그 사이의
-                // 교체를 다시 로그인한 기기가 '처음 봤다' 로 읽어 영영 강등하지 않는다.
+                clearAccountPreferences(currentUserID)
             }
             // ⚠ 탈퇴도 로그아웃과 같다 — 계정을 떠났는데 알람이 울리면 안 된다.
             let cleaned = await onLeaveAccountStopAlarms(currentUserID)
@@ -1383,13 +1314,7 @@ final class AuthViewModel: ObservableObject {
             }
             if let currentUserID, !currentUserID.isEmpty {
                 accessSnapshotStore.clear(userID: currentUserID)
-                DefaultVoicePreferenceStore().clear(userID: currentUserID)
-                DynamicPromptPreferenceStore().clear(userID: currentUserID)
-                DynamicPromptPreferences.clear(userID: currentUserID)
-                // ⚠ **목소리 교체 표식(`VoiceReplacementMarkerStore`)은 지우지 않는다.**
-                // 취향은 계정과 함께 떠나도 되지만 그 표식은 **남아 있는 로컬 알람의 안전
-                // 기준**이다 — 로그아웃은 알람을 끄기만 하고 지우지 않으므로, 지우면 그 사이의
-                // 교체를 다시 로그인한 기기가 '처음 봤다' 로 읽어 영영 강등하지 않는다.
+                clearAccountPreferences(currentUserID)
             }
             // ⚠ 탈퇴도 로그아웃과 같다 — 계정을 떠났는데 알람이 울리면 안 된다.
             let cleaned = await onLeaveAccountStopAlarms(currentUserID)
@@ -1967,12 +1892,22 @@ final class AuthViewModel: ObservableObject {
         }
     }
 
-    func signOutExplicitly() {
-        let userID = session?.user.id
+    /// 계정을 떠날 때(명시적 로그아웃·탈퇴) 그 계정의 **취향**을 지운다 — 마지막에 쓴 목소리,
+    /// 문구 종류·테마·직접 입력 문구, 문구 설정.
+    ///
+    /// ⚠ **목소리 교체 표식(`VoiceReplacementMarkerStore`)은 지우지 않는다.**
+    /// 취향은 계정과 함께 떠나도 되지만 그 표식은 **남아 있는 로컬 알람의 안전
+    /// 기준**이다 — 로그아웃은 알람을 끄기만 하고 지우지 않으므로, 지우면 그 사이의
+    /// 교체를 다시 로그인한 기기가 '처음 봤다' 로 읽어 영영 강등하지 않는다.
+    private func clearAccountPreferences(_ userID: String?) {
         DefaultVoicePreferenceStore().clear(userID: userID)
         DynamicPromptPreferenceStore().clear(userID: userID)
         DynamicPromptPreferences.clear(userID: userID)
-        // 목소리 교체 표식은 남긴다 — 위 주석 참조(로그아웃은 로컬 알람을 지우지 않는다).
+    }
+
+    func signOutExplicitly() {
+        let userID = session?.user.id
+        clearAccountPreferences(userID)
         // ⚠ **순서가 중요하다 — 시작만 해 놓으면 소용없다**(2026-08-18 Codex #697 P2).
         // 예전에는 `Task { }` 로 띄우기만 하고 곧바로 `signOut()` 을 불렀는데, 그 안의
         // `/auth/logout` 이 먼저 `token_epoch` 를 올려 버리면 `/push/unregister` 가 401 로
@@ -2094,9 +2029,7 @@ final class AuthViewModel: ObservableObject {
     }
 
     private static func displayName(from components: PersonNameComponents) -> String? {
-        let value = PersonNameComponentsFormatter().string(from: components)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        return value.isEmpty ? nil : value
+        PersonNameComponentsFormatter().string(from: components).nilIfBlank
     }
 
 

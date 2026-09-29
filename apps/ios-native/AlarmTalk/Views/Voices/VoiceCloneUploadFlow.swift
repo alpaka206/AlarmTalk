@@ -364,11 +364,7 @@ struct VoiceCloneUploadFlow: View {
             }
         }
         .background(theme.palette.surfaceVariant.opacity(0.38))
-        .clipShape(RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous)
-                .stroke(theme.palette.outlineVariant, lineWidth: 1)
-        )
+        .outlinedButtonShape()
     }
 
     private var recordingScript: String {
@@ -474,24 +470,19 @@ struct VoiceCloneUploadFlow: View {
     private var sourceModeSection: some View {
         HStack(spacing: 8) {
             ForEach(VoiceCloneSourceMode.allCases) { mode in
+                // 두 갈래는 버튼 스타일·색만 다르다.
+                let label = Text(mode.label)
+                    .font(theme.typography.bodyMedium.weight(.semibold))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 5)
                 if sourceMode == mode {
-                    Button { sourceMode = mode } label: {
-                        Text(mode.label)
-                            .font(theme.typography.bodyMedium.weight(.semibold))
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 5)
-                    }
+                    Button { sourceMode = mode } label: { label }
                         .buttonStyle(.borderedProminent)
                         .buttonBorderShape(.capsule)
                         .tint(theme.palette.secondary)
                         .frame(maxWidth: .infinity, minHeight: 44)
                 } else {
-                    Button { sourceMode = mode } label: {
-                        Text(mode.label)
-                            .font(theme.typography.bodyMedium.weight(.semibold))
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 5)
-                    }
+                    Button { sourceMode = mode } label: { label }
                         .buttonStyle(.bordered)
                         .buttonBorderShape(.capsule)
                         .tint(theme.palette.primary)
@@ -518,11 +509,7 @@ struct VoiceCloneUploadFlow: View {
             }
             .buttonStyle(.plain)
             .background(theme.palette.surface)
-            .clipShape(RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous)
-                    .stroke(theme.palette.outlineVariant, lineWidth: 1)
-            )
+            .outlinedButtonShape()
 
             if let url = selectedFileURL, let durationMs = selectedFileDurationMs {
                 Text("12초 이상 2분 이하 구간을 선택해 주세요.")
@@ -586,11 +573,7 @@ struct VoiceCloneUploadFlow: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
         .background(theme.palette.surfaceVariant.opacity(0.38))
-        .clipShape(RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous)
-                .stroke(theme.palette.outlineVariant, lineWidth: 1)
-        )
+        .outlinedButtonShape()
     }
 
     /// 등록 직전 고지·동의. 생체정보 동의는 **전용 모달이 아니라 폼 안의 체크박스**로 받는다
@@ -602,14 +585,13 @@ struct VoiceCloneUploadFlow: View {
             // 필수로 받는 약관 제7조가 이미 담당한다 — 등록할 때마다 같은 말을 다시 읽히면
             // 만들기 흐름만 길어진다. 아직 동의하지 않은 사람에게 묻는 **생체정보 체크는
             // 남긴다**(그건 고지가 아니라 실제로 받아야 하는 동의다).
-            // (상자를 그릴지는 `detailsSection` 이 정한다 — 여기 오면 늘 물을 것이 있다.)
-            if needsBiometricConsent {
-                consentCheck(
-                    isOn: $voiceBiometricAgreed,
-                    label: "음성 생체정보 처리에 동의해요",
-                    description: "목소리는 음성 프로필 생성·클론·읽어주기에 쓰이고, 개인을 식별·재현할 수 있는 생체정보로 처리돼요.\n본인 또는 적법한 권한과 동의를 받은 사람의 목소리만 등록할 수 있어요(이용약관 제7조).\n목소리를 지우면 함께 삭제되고, 더보기에서 언제든 동의를 철회할 수 있어요."
-                )
-            }
+            // (상자를 그릴지는 `detailsSection` 이 `needsBiometricConsent` 로 정한다 —
+            //  여기 오면 늘 물을 것이 있다.)
+            consentCheck(
+                isOn: $voiceBiometricAgreed,
+                label: "음성 생체정보 처리에 동의해요",
+                description: "목소리는 음성 프로필 생성·클론·읽어주기에 쓰이고, 개인을 식별·재현할 수 있는 생체정보로 처리돼요.\n본인 또는 적법한 권한과 동의를 받은 사람의 목소리만 등록할 수 있어요(이용약관 제7조).\n목소리를 지우면 함께 삭제되고, 더보기에서 언제든 동의를 철회할 수 있어요."
+            )
         }
         .sectionSurface()
     }
@@ -810,19 +792,16 @@ struct VoiceCloneUploadFlow: View {
         do {
             let importedURL = try copyImportedAudio(source)
             let durationMs = try await readAudioDurationMs(importedURL)
-            await MainActor.run {
-                selectedFileURL = importedURL
-                selectedFileName = source.lastPathComponent
-                selectedFileDurationMs = durationMs
-                applyCropDefaults(durationMs: durationMs)
-                localError = durationMs < VoiceProfileLimits.minDurationMs
-                    ? "12초 이상 파일을 선택해 주세요."
-                    : nil
-            }
+            // 뷰는 메인 액터라 await 뒤에도 여기서 곧바로 상태를 고친다.
+            selectedFileURL = importedURL
+            selectedFileName = source.lastPathComponent
+            selectedFileDurationMs = durationMs
+            applyCropDefaults(durationMs: durationMs)
+            localError = durationMs < VoiceProfileLimits.minDurationMs
+                ? "12초 이상 파일을 선택해 주세요."
+                : nil
         } catch {
-            await MainActor.run {
-                localError = AudioUserFacingError.message(for: error, fallback: "선택한 파일을 준비하지 못했어요.")
-            }
+            localError = AudioUserFacingError.message(for: error, fallback: "선택한 파일을 준비하지 못했어요.")
         }
     }
 
@@ -834,10 +813,7 @@ struct VoiceCloneUploadFlow: View {
         let uploadFileName = selectedFileName ?? source.lastPathComponent
         let endMs = min(cropEndMs, sourceDuration)
         let durationMs = max(0, endMs - cropStartMs)
-        guard durationMs >= VoiceProfileLimits.minDurationMs else {
-            throw AudioCropper.CropperError.invalidRange
-        }
-        guard durationMs <= VoiceProfileLimits.maxDurationMs else {
+        guard (VoiceProfileLimits.minDurationMs...VoiceProfileLimits.maxDurationMs).contains(durationMs) else {
             throw AudioCropper.CropperError.invalidRange
         }
         guard AudioCropper.shouldExportAudioOnly(

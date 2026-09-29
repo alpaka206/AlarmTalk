@@ -15,19 +15,8 @@ import Foundation
 struct DowngradeNoticeStore {
     /// ⚠ **선언 순서가 곧 우선순위다**(앞이 셈). 안드로이드 `DowngradeNoticeStore.Cause` 와
     /// 같은 순서여야 한다 — 섞였을 때 두 앱이 다른 문구를 말하면 안 된다.
-    enum Cause: String, Comparable, CaseIterable {
-        static func < (lhs: Cause, rhs: Cause) -> Bool { lhs.rank < rhs.rank }
-
-        /// 우선순위 순(앞이 셈). 안드로이드의 `Cause.values()` 선언 순서와 같아야 한다.
-        static var ordered: [Cause] { allCases.sorted() }
-        private var rank: Int {
-            switch self {
-            case .freePlan: return 0
-            case .sharedReleased: return 1
-            case .voiceReplaced: return 2
-            }
-        }
-
+    /// 우선순위 순은 `allCases`(선언 순서) 그대로다 — 안드로이드의 `Cause.values()` 와 같다.
+    enum Cause: String, CaseIterable {
         /// 유료 → 무료 강등. 이용권을 다시 등록하면 **복원된다**.
         case freePlan
         /// 공유받던 목소리가 끊겼다. **복원되지 않는다** — 다시 공유받아야 한다.
@@ -79,7 +68,7 @@ struct DowngradeNoticeStore {
         migrateLegacy(userID)
         var total = 0
         var top: Cause?
-        for cause in Cause.ordered {
+        for cause in Cause.allCases {
             let count = defaults.integer(forKey: countKey(userID, cause))
             guard count > 0 else { continue }
             total += count
@@ -92,7 +81,7 @@ struct DowngradeNoticeStore {
     /// 사용자가 '확인' 을 눌렀을 때만 부른다 — 말해 준 것을 전부 비운다.
     func clear(userID: String?) {
         guard let userID, !userID.isEmpty else { return }
-        for cause in Cause.ordered { defaults.removeObject(forKey: countKey(userID, cause)) }
+        for cause in Cause.allCases { defaults.removeObject(forKey: countKey(userID, cause)) }
         defaults.removeObject(forKey: legacyCauseKey(userID))
         defaults.removeObject(forKey: legacyCountKey(userID))
     }

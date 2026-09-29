@@ -60,7 +60,7 @@ enum RemoteAlarmMapper {
         let remoteMessageId = remoteMessageIDForAudio(remote)
         let cacheKey: String? = remoteMessageId.map { "remote-message-\($0)" }
         let remoteAudioUri = remoteMessageId == nil ? nil : (
-            trimmedOrNil(remote.messageAudioUrl)
+            remote.messageAudioUrl.nilIfBlank
         )
 
         var record = LocalAlarmRecord(
@@ -113,7 +113,7 @@ enum RemoteAlarmMapper {
         // 없으므로 **테마 id 만** 건너온다 — 받는 쪽이 이걸로 자기 클립을 묶는다.
         // ⚠ `LocalAlarmRecord` 의 명시적 init 에 `bucketId` 가 **없어서** 생성 뒤에 대입한다.
         // (그 init 이 빠뜨린 것이 iOS 가 이 값을 '로컬 전용' 으로 다뤄 온 실질적 이유다.)
-        record.bucketId = trimmedOrNil(remote.bucketId)
+        record.bucketId = remote.bucketId.nilIfBlank
         // ⚠ **받은 알람에도 소유자를 새긴다**(감사 지적 — 안드로이드의 절반만 옮겨져 있었다).
         // 안드로이드는 행을 만들 때 `resolveReceivedOwner(existing, currentUserId)` 로
         // **현재 수신자**를 기록하는데(`RemoteAlarmPullSyncService.kt`), iOS 매퍼는 이 값을
@@ -142,8 +142,8 @@ enum RemoteAlarmMapper {
     /// 수신자가 소리 없는 알람을 받는다. 내 알람 녹음은 폰에만 둔다.
     static func toRemoteRequest(_ local: LocalAlarmRecord) -> RemoteAlarmWriteRequest {
         let hasRemoteVoice = local.ttsMessageId != nil
-        let messageId = trimmedOrNil(local.ttsMessageId)
-        let voiceProfileId = local.voiceSourceEnum == .localAudio ? nil : trimmedOrNil(local.voiceProfileId)
+        let messageId = local.ttsMessageId.nilIfBlank
+        let voiceProfileId = local.voiceSourceEnum == .localAudio ? nil : local.voiceProfileId.nilIfBlank
 
         return RemoteAlarmWriteRequest(
             time: local.timeString,
@@ -156,7 +156,7 @@ enum RemoteAlarmMapper {
             messageId: messageId,
             voiceProfileId: voiceProfileId,
             targetUserId: nil,
-            bucketId: trimmedOrNil(local.bucketId),
+            bucketId: local.bucketId.nilIfBlank,
             clientAlarmId: local.id,
             // 기본 목소리로 바꿔 둔 알람(무료 잠금 · 잠금 확정 · 목소리를 잃어 미나로 바꾼 알람)은 비어
             // 있는 문구·테마를 서버에서도 지운다 — 안 지우면 클론의 message_id·bucket_id 가 기본 목소리
@@ -204,16 +204,11 @@ enum RemoteAlarmMapper {
         (0...6).filter { mask & (1 << $0) != 0 }
     }
 
-    /// `wake_mode` 에 따라 로컬 play mode 를 결정.
-    /// 음성 자원이 전혀 없는 알람은 .alarmOnly 로 강등.
+    /// 로컬 재생 방식. 받을 음성이 있으면 `wake_mode` 가 무엇이든(`voice_only`·옛
+    /// `sound_then_voice`/`alarm_voice` 포함) 목소리다 — 재생 방식은 둘뿐이고 옛 값은 목소리로
+    /// 읽는다(CLAUDE.md). 음성 자원이 전혀 없는 알람만 `.alarmOnly` 로 내린다.
     static func resolvePlayMode(_ remote: RemoteAlarm) -> AlarmPlayMode {
-        let hasVoice = shouldDownloadRemoteMessageAudio(remote)
-        guard hasVoice else { return .alarmOnly }
-        switch remote.wakeMode {
-        case "voice_only": return .voiceOnly
-        case "sound_then_voice", "alarm_voice": return .voiceOnly
-        default: return .voiceOnly
-        }
+        shouldDownloadRemoteMessageAudio(remote) ? .voiceOnly : .alarmOnly
     }
 
     /// 서버에 내려받을 수 있는 음원이 있으면 server_tts, 없으면 local_audio.
@@ -228,26 +223,16 @@ enum RemoteAlarmMapper {
     }
 
     private static func remoteMessageIDForAudio(_ remote: RemoteAlarm) -> String? {
-        guard let messageId = trimmedOrNil(remote.messageId),
-              trimmedOrNil(remote.messageAudioUrl) != nil else {
+        guard let messageId = remote.messageId.nilIfBlank,
+              remote.messageAudioUrl.nilIfBlank != nil else {
             return nil
         }
         return messageId
     }
 
-    private static func trimmedOrNil(_ value: String?) -> String? {
-        guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !trimmed.isEmpty else {
-            return nil
-        }
-        return trimmed
-    }
-
     /// Android `receivedRemoteAlarmLabel(...)` 과 동일한 받은 알람 라벨.
     static func resolveLabel(_ remote: RemoteAlarm) -> String {
-        let sender = [remote.senderName, remote.senderEmail]
-            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .first { !$0.isEmpty }
+        let sender = [remote.senderName, remote.senderEmail].lazy.compactMap(\.nilIfBlank).first
         guard let sender else { return "상대가 보낸 알람" }
         let displayName = sender.hasSuffix("님") ? sender : "\(sender)님"
         return "\(displayName)이 보낸 알람"

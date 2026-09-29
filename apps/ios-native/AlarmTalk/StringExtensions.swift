@@ -22,13 +22,5 @@ extension String {
 
 extension Optional where Wrapped == String {
     /// 공백 trim 후 빈 문자열이면 nil.
-    var nilIfBlank: String? {
-        switch self {
-        case .some(let value):
-            let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-            return trimmed.isEmpty ? nil : trimmed
-        case .none:
-            return nil
-        }
-    }
+    var nilIfBlank: String? { self?.nilIfBlank }
 }

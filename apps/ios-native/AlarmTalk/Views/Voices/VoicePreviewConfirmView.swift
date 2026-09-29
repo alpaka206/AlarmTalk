@@ -143,11 +143,7 @@ struct VoicePreviewConfirmView: View {
             .padding(.horizontal, 14)
             .padding(.vertical, 12)
             .background(theme.palette.surfaceVariant.opacity(0.42))
-            .clipShape(RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous)
-                    .stroke(theme.palette.outlineVariant, lineWidth: 1)
-            )
+            .outlinedButtonShape()
         }
     }
 
@@ -171,11 +167,7 @@ struct VoicePreviewConfirmView: View {
                     .scrollContentBackground(.hidden)
                     .padding(10)
                     .background(theme.palette.surface.opacity(0.74))
-                    .clipShape(RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous)
-                            .stroke(theme.palette.outlineVariant, lineWidth: 1)
-                    )
+                    .outlinedButtonShape()
                     .onChange(of: editDraft) { _, new in
                         // ⚠ **이 글자는 TTS 가 읽는다** — 제어문자·제로폭이 그대로 들어가면
                         // 낭독이 망가진다. 줄바꿈은 지우지 않고 공백으로 바꾼다(안드로이드

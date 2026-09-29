@@ -18,14 +18,12 @@ enum CodeRegistrationError {
     ///   - error: `AlarmTalkAPI` 가 던진 오류. `APIError.server` 가 아니면 폴백.
     ///   - fallback: 표에 없는 코드일 때 보여줄 문구.
     static func message(for error: Error, fallback: String) -> String {
-        guard case let APIError.server(_, serverMessage, errorCode) = error else {
-            return userFacingErrorMessage(error, fallback: fallback)
-        }
-        if let errorCode, let known = table[errorCode] {
+        if case let APIError.server(_, _, errorCode?) = error, let known = table[errorCode] {
             return known
         }
-        // 표에 없는 코드라도 서버가 한국어를 줬다면 그게 폴백보다 낫다.
-        return serverMessage.containsKorean ? serverMessage : fallback
+        // 표에 없는 코드라도 서버가 한국어를 줬다면 그게 폴백보다 낫다 —
+        // `userFacingErrorMessage` 의 `.server` 갈래가 그 규칙이다.
+        return userFacingErrorMessage(error, fallback: fallback)
     }
 
     /// 안드로이드 `msg2_code_fail_*` · `msg2_promo_fail_*` 와 **같은 문구**다.

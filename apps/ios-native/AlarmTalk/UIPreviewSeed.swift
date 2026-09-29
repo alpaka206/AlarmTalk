@@ -42,9 +42,7 @@ enum UIPreviewSeed {
     /// 시뮬레이터에는 스크립트로 탭할 방법이 없어, 화면 확인용 진입점을 인자로 연다.
     static var authScreen: String? {
         #if DEBUG
-        let args = ProcessInfo.processInfo.arguments
-        guard let i = args.firstIndex(of: "-UIPreviewAuthScreen"), i + 1 < args.count else { return nil }
-        return args[i + 1]
+        return argValue("-UIPreviewAuthScreen")
         #else
         return nil
         #endif
@@ -56,9 +54,7 @@ enum UIPreviewSeed {
     /// 없이 열기 위한 것이다.
     static var previewPlan: String {
         #if DEBUG
-        let args = ProcessInfo.processInfo.arguments
-        guard let i = args.firstIndex(of: "-UIPreviewPlan"), i + 1 < args.count else { return "personal" }
-        return args[i + 1]
+        return argValue("-UIPreviewPlan") ?? "personal"
         #else
         return "personal"
         #endif
@@ -74,16 +70,14 @@ enum UIPreviewSeed {
     /// 그 계정의 문구를 카드 위 한 줄로 두고 '현재 이용권' 은 무료 카드다(스펙 D4).
     static var previewPersonalPromo: PersonalPromo? {
         #if DEBUG
-        let args = ProcessInfo.processInfo.arguments
-        guard let i = args.firstIndex(of: "-UIPreviewPersonalPromo"), i + 1 < args.count,
-              let days = Double(args[i + 1]) else { return nil }
+        guard let days = argValue("-UIPreviewPersonalPromo").flatMap(Double.init) else { return nil }
         let end = Date().addingTimeInterval(days * 86_400)
         let from = end.addingTimeInterval(-7 * 86_400)
         let iso = ISO8601DateFormatter()
         return PersonalPromo(
             endsAt: iso.string(from: end),
             noticeFrom: iso.string(from: from),
-            deletesVoicesAtEnd: !args.contains("-UIPreviewPromoKeepsVoices"),
+            deletesVoicesAtEnd: !ProcessInfo.processInfo.arguments.contains("-UIPreviewPromoKeepsVoices"),
             fetchedAt: Date()
         )
         #else
@@ -125,9 +119,7 @@ enum UIPreviewSeed {
     /// 화면을 그리지 않는다는 사실 자체를 확인하는 것도 이 진입점의 목적이다.
     static var ringInSeconds: Int? {
         #if DEBUG
-        let args = ProcessInfo.processInfo.arguments
-        guard let i = args.firstIndex(of: "-UIPreviewRingIn"), i + 1 < args.count else { return nil }
-        return Int(args[i + 1]).map { max(5, min($0, 600)) }
+        return argValue("-UIPreviewRingIn").flatMap { Int($0) }.map { max(5, min($0, 600)) }
         #else
         return nil
         #endif
@@ -136,15 +128,20 @@ enum UIPreviewSeed {
     /// 첫 화면으로 띄울 탭 — `-UIPreviewTab alarms|voices|menu`. 화면 확인용.
     static var initialTab: NativeTab? {
         #if DEBUG
-        let args = ProcessInfo.processInfo.arguments
-        guard let i = args.firstIndex(of: "-UIPreviewTab"), i + 1 < args.count else { return nil }
-        return NativeTab(rawValue: args[i + 1])
+        return argValue("-UIPreviewTab").flatMap(NativeTab.init(rawValue:))
         #else
         return nil
         #endif
     }
 
     #if DEBUG
+    /// `<flag> <값>` 꼴 실행 인자의 값. 플래그가 없거나 값이 뒤따르지 않으면 nil.
+    private static func argValue(_ flag: String) -> String? {
+        let args = ProcessInfo.processInfo.arguments
+        guard let i = args.firstIndex(of: flag), i + 1 < args.count else { return nil }
+        return args[i + 1]
+    }
+
     /// 로그인 다음 게이트(온보딩·기본 목소리 고르기)도 통과 처리한다.
     /// 화면을 보려는 것이지 온보딩을 보려는 게 아니다.
     static func markGatesPassed(userID: String) {
@@ -174,17 +171,7 @@ enum UIPreviewSeed {
         var own = VoiceProfile(id: "preview-voice", name: "엄마 목소리", status: "ready")
         own.relationshipLabel = "엄마"
         own.isShared = true
-        let names = ["시우", "미나", "도현", "애니"]
-        let system = names.enumerated().map { index, name -> VoiceProfile in
-            var profile = VoiceProfile(
-                id: systemVoiceIDPrefix + String(format: "%012d", 101 + index),
-                name: name,
-                status: "ready"
-            )
-            profile.isSystem = true
-            return profile
-        }
-        return [own] + system
+        return [own] + bundledSystemVoiceProfiles()
     }
 
     /// `-UIPreviewRingIn <초>` 용 — 지금부터 그만큼 뒤에 울릴 **단발** 알람.

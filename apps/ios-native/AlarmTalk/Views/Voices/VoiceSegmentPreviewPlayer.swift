@@ -67,11 +67,8 @@ struct VoiceSegmentPreviewPlayer: View {
     }
 
     private var timeLabel: String {
-        let total = max(0, endMs - startMs) / 1000
-        let played = Int(controller.elapsedSec)
-        return String(format: "%d:%02d / %d:%02d",
-                      played / 60, played % 60,
-                      total / 60, total % 60)
+        let played = HelperFormatters.audioTimeLabel(Int(controller.elapsedSec * 1000))
+        return "\(played) / \(HelperFormatters.audioTimeLabel(endMs - startMs))"
     }
 }
 

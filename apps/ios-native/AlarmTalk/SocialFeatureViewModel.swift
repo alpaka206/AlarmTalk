@@ -129,7 +129,7 @@ final class SocialFeatureViewModel: ObservableObject {
     }
 
     func restoreAccessSnapshot(session: AuthSession?) {
-        guard let userID = normalizedUserID(session?.user.id) else {
+        guard let userID = session?.user.id.nilIfBlank else {
             clearUserScopedRemoteState()
             return
         }
@@ -158,7 +158,7 @@ final class SocialFeatureViewModel: ObservableObject {
     /// ⚠ **쓰기 뒤·푸시에서는 부르지 말 것** — 방금 바뀐 것을 창이 가린다. 그 자리는
     ///   `refreshAll(session:force: true)` 다.
     func refreshOnEntry(session: AuthSession?) async {
-        if session?.token != nil, let userID = normalizedUserID(session?.user.id) {
+        if session?.token != nil, let userID = session?.user.id.nilIfBlank {
             let clock = entryRefreshClock()
             if entryFreshness.isFresh(userID: userID, entry: clock.entry, now: clock.now) { return }
         }
@@ -167,7 +167,7 @@ final class SocialFeatureViewModel: ObservableObject {
 
     func refreshAll(session: AuthSession?, force: Bool = false) async {
         guard let token = session?.token,
-              let userID = normalizedUserID(session?.user.id) else {
+              let userID = session?.user.id.nilIfBlank else {
             clearUserScopedRemoteState()
             return
         }
@@ -419,7 +419,7 @@ final class SocialFeatureViewModel: ObservableObject {
         refreshStoreState: Bool
     ) async -> BillingSubscriptionResponse? {
         guard let token = session?.token,
-              let userID = normalizedUserID(session?.user.id) else {
+              let userID = session?.user.id.nilIfBlank else {
             return nil
         }
         activeUserID = userID
@@ -502,11 +502,6 @@ final class SocialFeatureViewModel: ObservableObject {
         if let successMessage { statusMessage = successMessage }
     }
 
-    private func normalizedUserID(_ userID: String?) -> String? {
-        let normalized = userID?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return normalized.isEmpty ? nil : normalized
-    }
-
     func registerCode(_ codeOverride: String? = nil, session: AuthSession?) async -> CodeRegistrationDestination? {
         guard let token = session?.token else {
             statusMessage = "로그인이 필요해요."
@@ -550,35 +545,30 @@ final class SocialFeatureViewModel: ObservableObject {
     }
 
     func ensureFamilyShareCode(session: AuthSession?) async {
-        guard let token = session?.token else {
-            statusMessage = "로그인이 필요해요."
-            return
-        }
-        guard !isBusy else { return }
-        isBusy = true
-        defer { isBusy = false }
-
-        do {
-            let planLabel = Self.shareCodePlanLabel(subscription)
-            let voucher = try await api.ensureFamilyShareCode(token: token)
-            vouchers = Self.upsertingVoucher(voucher, into: vouchers)
-            await refreshAllAfterMutation(
-                session: session,
-                successMessage: "\(planLabel) 공유 코드를 준비했어요."
-            )
-        } catch {
-            let planLabel = Self.shareCodePlanLabel(subscription)
-            statusMessage = Self.billingErrorMessage(
-                error,
-                fallback: "\(planLabel) 공유 코드를 불러오지 못했어요"
-            )
-        }
+        await runShareCodeAction(
+            session: session,
+            call: { try await api.ensureFamilyShareCode(token: $0) },
+            successMessage: { "\($0) 공유 코드를 준비했어요." }
+        )
     }
 
     /// 유출/소진된 공유 코드를 무효화(expired)하고 새 코드를 발급. Android
     /// `MainViewModelGrowthBillingActions.regenerateFamilyShareCode` 와 동등.
     /// 소유자 전용 보안 액션으로 MemberManagementView 에서 확인 후 호출한다.
     func regenerateFamilyShareCode(session: AuthSession?) async {
+        await runShareCodeAction(
+            session: session,
+            call: { try await api.regenerateFamilyShareCode(token: $0) },
+            successMessage: { "\($0) 공유 코드를 새로 발급했어요. 기존 코드는 더 이상 쓸 수 없어요." }
+        )
+    }
+
+    /// 공유 코드 준비·재발급의 공통 흐름 — 다른 것은 부르는 API 와 성공 문구(이용권 이름을 받는다)뿐이다.
+    private func runShareCodeAction(
+        session: AuthSession?,
+        call: (String) async throws -> VoucherItem,
+        successMessage: (String) -> String
+    ) async {
         guard let token = session?.token else {
             statusMessage = "로그인이 필요해요."
             return
@@ -589,13 +579,11 @@ final class SocialFeatureViewModel: ObservableObject {
 
         do {
             let planLabel = Self.shareCodePlanLabel(subscription)
-            let voucher = try await api.regenerateFamilyShareCode(token: token)
+            let voucher = try await call(token)
             vouchers = Self.upsertingVoucher(voucher, into: vouchers)
-            await refreshAllAfterMutation(
-                session: session,
-                successMessage: "\(planLabel) 공유 코드를 새로 발급했어요. 기존 코드는 더 이상 쓸 수 없어요."
-            )
+            await refreshAllAfterMutation(session: session, successMessage: successMessage(planLabel))
         } catch {
+            // 실패 문구는 **실패한 시점의** 이용권으로 다시 읽는다(요청 사이에 바뀌었을 수 있다).
             let planLabel = Self.shareCodePlanLabel(subscription)
             statusMessage = Self.billingErrorMessage(
                 error,

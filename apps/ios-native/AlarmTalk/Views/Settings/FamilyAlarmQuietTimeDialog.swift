@@ -149,9 +149,7 @@ struct FamilyAlarmQuietTimeDialog: View {
     /// 프리셋 집합을 **통째로 대입**한다. 개별 요일을 켜고 끄지 않는다(위 주석 참조).
     private func selectDayPreset(index: Int, days: Set<Int>) {
         guard drafts.indices.contains(index) else { return }
-        var draft = drafts[index]
-        draft.days = days
-        drafts[index] = draft
+        drafts[index].days = days
     }
 
     private func hour(forTarget target: QuietTimePickerTarget) -> Int {
@@ -168,15 +166,13 @@ struct FamilyAlarmQuietTimeDialog: View {
 
     private func apply(hour: Int, minute: Int, target: QuietTimePickerTarget) {
         guard drafts.indices.contains(target.index) else { return }
-        var draft = drafts[target.index]
         if target.isStart {
-            draft.startHour = hour
-            draft.startMinute = minute
+            drafts[target.index].startHour = hour
+            drafts[target.index].startMinute = minute
         } else {
-            draft.endHour = hour
-            draft.endMinute = minute
+            drafts[target.index].endHour = hour
+            drafts[target.index].endMinute = minute
         }
-        drafts[target.index] = draft
     }
 }
 
@@ -197,25 +193,6 @@ private struct QuietWindowDraft: Equatable {
         endMinute: 0
     )
 
-    init(days: Set<Int>, startHour: Int, startMinute: Int, endHour: Int, endMinute: Int) {
-        self.days = days
-        self.startHour = startHour
-        self.startMinute = startMinute
-        self.endHour = endHour
-        self.endMinute = endMinute
-    }
-
-    init(window: FamilyAlarmQuietWindow) {
-        let cleanedDays = window.days.filter { (0...6).contains($0) }
-        days = Set(cleanedDays.isEmpty ? [1, 2, 3, 4, 5] : cleanedDays)
-        let start = QuietWindowDraft.parse(window.start, fallbackHour: 9, fallbackMinute: 0)
-        let end = QuietWindowDraft.parse(window.end, fallbackHour: 18, fallbackMinute: 30)
-        startHour = start.hour
-        startMinute = start.minute
-        endHour = end.hour
-        endMinute = end.minute
-    }
-
     func toWindow() -> FamilyAlarmQuietWindow {
         FamilyAlarmQuietWindow(
             days: days.sorted(),
@@ -233,6 +210,20 @@ private struct QuietWindowDraft: Equatable {
 
     private static func timeString(hour: Int, minute: Int) -> String {
         String(format: "%02d:%02d", max(0, min(23, hour)), max(0, min(59, minute)))
+    }
+}
+
+// 확장에 두어야 합성 멤버와이즈 init 이 살아 있다(본문에 init 을 두면 사라진다).
+extension QuietWindowDraft {
+    init(window: FamilyAlarmQuietWindow) {
+        let cleanedDays = window.days.filter { (0...6).contains($0) }
+        days = Set(cleanedDays.isEmpty ? [1, 2, 3, 4, 5] : cleanedDays)
+        let start = QuietWindowDraft.parse(window.start, fallbackHour: 9, fallbackMinute: 0)
+        let end = QuietWindowDraft.parse(window.end, fallbackHour: 18, fallbackMinute: 30)
+        startHour = start.hour
+        startMinute = start.minute
+        endHour = end.hour
+        endMinute = end.minute
     }
 }
 

@@ -60,7 +60,7 @@ struct AlarmTalkApp: App {
     var body: some Scene {
         WindowGroup {
             AlarmTalkThemeProvider {
-                ContentView()
+                RootView()
                     // ⚠ **상한을 두는 이유**(2026-08-17). 글자가 사용자 설정을 따라가게
                     // 만들면(`Font.pretendard` 의 `relativeTo:`) 접근성 최대치에서 본문이
                     // **3배**까지 커진다. 그 크기를 견디려면 화면마다 레이아웃을 다시

@@ -23,6 +23,20 @@ struct FamilyAlarmQuietWindow: Codable, Equatable {
     var days: [Int]
     var start: String
     var end: String
+
+    /// 계정에 둘 수 있는 창의 최대 개수.
+    static let maxCount = 8
+
+    /// "HH:mm"(00:00~23:59)인가. 서버에서 읽을 때와 서버로 보낼 때가 같은 규칙을 쓴다.
+    static func isValidTime(_ value: String) -> Bool {
+        value.range(of: #"^([01]\d|2[0-3]):[0-5]\d$"#, options: .regularExpression) != nil
+    }
+
+    /// 요일을 0...6 으로 거르고 중복 없이 정렬한 창. 남는 요일이 없으면 nil.
+    var withNormalizedDays: FamilyAlarmQuietWindow? {
+        let normalized = Array(Set(days.filter { (0...6).contains($0) })).sorted()
+        return normalized.isEmpty ? nil : FamilyAlarmQuietWindow(days: normalized, start: start, end: end)
+    }
 }
 
 struct DynamicPromptWeatherSettings: Codable, Equatable {
@@ -250,8 +264,7 @@ struct AuthUser: Codable, Equatable, Identifiable {
         self.familyAlarmQuietWindows = quietWindows
         self.appleUserId = (appleUserId).nilIfBlank
         self.dynamicPromptSettings = dynamicPromptSettings ?? .empty
-        let trimmedDeletion = deletionStatus.trimmingCharacters(in: .whitespacesAndNewlines)
-        self.deletionStatus = trimmedDeletion.isEmpty ? "active" : trimmedDeletion
+        self.deletionStatus = deletionStatus.nilIfBlank ?? "active"
         self.personalPromo = PersonalPromo.normalized(personalPromo)
     }
 
@@ -293,8 +306,7 @@ struct AuthUser: Codable, Equatable, Identifiable {
     }
 
     private static func normalizedPlan(_ value: String?) -> String {
-        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return trimmed.isEmpty ? "free" : trimmed
+        value.nilIfBlank ?? "free"
     }
 
     private static func normalizedQuietDays(_ days: [Int]?) -> [Int] {
@@ -303,27 +315,20 @@ struct AuthUser: Codable, Equatable, Identifiable {
     }
 
     private static func normalizedQuietTime(_ value: String?, fallback: String) -> String {
-        guard let value, value.range(of: #"^([01]\d|2[0-3]):[0-5]\d$"#, options: .regularExpression) != nil else {
-            return fallback
-        }
+        guard let value, FamilyAlarmQuietWindow.isValidTime(value) else { return fallback }
         return value
     }
 
+    /// 서버에서 읽은 창 — 요일이 없거나 시각 형식이 틀린 창은 버린다.
     private static func normalizedQuietWindows(
         _ windows: [FamilyAlarmQuietWindow]?,
         fallback: FamilyAlarmQuietWindow
     ) -> [FamilyAlarmQuietWindow] {
         guard let windows else { return [fallback] }
-        let normalized = windows.compactMap { window -> FamilyAlarmQuietWindow? in
-            let days = Array(Set(window.days.filter { (0...6).contains($0) })).sorted()
-            guard !days.isEmpty else { return nil }
-            guard window.start.range(of: #"^([01]\d|2[0-3]):[0-5]\d$"#, options: .regularExpression) != nil,
-                  window.end.range(of: #"^([01]\d|2[0-3]):[0-5]\d$"#, options: .regularExpression) != nil else {
-                return nil
-            }
-            return FamilyAlarmQuietWindow(days: days, start: window.start, end: window.end)
+        let normalized = windows.compactMap(\.withNormalizedDays).filter {
+            FamilyAlarmQuietWindow.isValidTime($0.start) && FamilyAlarmQuietWindow.isValidTime($0.end)
         }
-        return Array(normalized.prefix(8))
+        return Array(normalized.prefix(FamilyAlarmQuietWindow.maxCount))
     }
 
 }
@@ -538,18 +543,6 @@ struct VoiceProfileUpdateRequest: Encodable {
     var isShared: Bool?
     var relationshipLabel: String?
     var listenerTitle: String?
-
-    init(
-        name: String? = nil,
-        isShared: Bool? = nil,
-        relationshipLabel: String? = nil,
-        listenerTitle: String? = nil,
-    ) {
-        self.name = name
-        self.isShared = isShared
-        self.relationshipLabel = relationshipLabel
-        self.listenerTitle = listenerTitle
-    }
 }
 
 /// `PATCH /voice/:id/relationship` 의 body. 관계/호칭 두 값은 필수.
@@ -608,51 +601,14 @@ struct TtsGenerateRequest: Encodable {
     var fortuneGender: String?
     var fortuneBirthDate: String?
     var fortuneBirthTime: String?
-    /// Family/member alarm TTS target. Android `TtsApi.kt` sends `target_user_id`.
-    var targetUserId: String?
     /// 공유 음성 viewer 가 자신을 부를 호칭.
     var listenerTitle: String?
+    /// Family/member alarm TTS target. Android `TtsApi.kt` sends `target_user_id`.
+    var targetUserId: String?
     /// 등록 확인 스텝의 미리듣기 합성인가. 서버가 이때만 `preview_playback_token` 을
     /// 함께 내려주고, 그 토큰을 `preview-played` 로 돌려줘야 초안 승격이 허용된다.
     var draftPreview: Bool?
-
-    init(
-        voiceProfileId: String,
-        text: String,
-        category: String,
-        language: String,
-        translate: Bool,
-        random: Bool,
-        randomContext: String? = nil,
-        alarmHour: Int? = nil,
-        alarmMinute: Int? = nil,
-        weatherCountry: String? = nil,
-        weatherCity: String? = nil,
-        fortuneGender: String? = nil,
-        fortuneBirthDate: String? = nil,
-        fortuneBirthTime: String? = nil,
-        listenerTitle: String? = nil,
-        targetUserId: String? = nil,
-        draftPreview: Bool? = nil
-    ) {
-        self.voiceProfileId = voiceProfileId
-        self.text = text
-        self.category = category
-        self.language = language
-        self.translate = translate
-        self.random = random
-        self.randomContext = randomContext
-        self.alarmHour = alarmHour
-        self.alarmMinute = alarmMinute
-        self.weatherCountry = weatherCountry
-        self.weatherCity = weatherCity
-        self.fortuneGender = fortuneGender
-        self.fortuneBirthDate = fortuneBirthDate
-        self.fortuneBirthTime = fortuneBirthTime
-        self.listenerTitle = listenerTitle
-        self.targetUserId = targetUserId
-        self.draftPreview = draftPreview
-    }
+    // 멤버와이즈 init 은 합성된다 — 선언 순서가 곧 인자 순서다(옵셔널은 기본값 nil).
 }
 
 struct TtsGenerateResponse: Decodable, Equatable {

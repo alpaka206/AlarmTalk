@@ -8,7 +8,6 @@ struct SettingsView: View {
     @EnvironmentObject private var auth: AuthViewModel
     @EnvironmentObject private var holidayStore: HolidayStore
 
-    @State private var nicknameDraft: String = ""
     @State private var weatherDialogOpen: Bool = false
     @State private var fortuneDialogOpen: Bool = false
     @State private var holidayDialogOpen: Bool = false
@@ -87,7 +86,6 @@ struct SettingsView: View {
 
                 if let user = auth.session?.user {
                     AccountPanel(
-                        nicknameDraft: $nicknameDraft,
                         user: user,
                         onSignOut: onClose
                     )
@@ -138,7 +136,6 @@ struct SettingsView: View {
             }
         }
         .onAppear {
-            nicknameDraft = auth.session?.user.name ?? ""
             loadPromptPreferences()
         }
         .onChange(of: auth.session?.user.dynamicPromptSettings) { _, _ in

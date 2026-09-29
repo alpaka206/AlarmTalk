@@ -483,11 +483,11 @@ final class ConflictScopeTests: XCTestCase {
         store.upsert(alarm(id: "A-것", owner: "A", hour: 7, minute: 0))
 
         XCTAssertNoThrow(
-            try store.requireUniqueTime(hour: 7, minute: 0, repeatDaysMask: 0, ownerUserId: "B"),
+            try store.requireUniqueTime(hour: 7, minute: 0, ownerUserId: "B"),
             "보이지도 않는 알람 때문에 저장이 막히면 사용자는 이유를 알 길이 없다"
         )
         XCTAssertThrowsError(
-            try store.requireUniqueTime(hour: 7, minute: 0, repeatDaysMask: 0, ownerUserId: "A")
+            try store.requireUniqueTime(hour: 7, minute: 0, ownerUserId: "A")
         )
     }
 }

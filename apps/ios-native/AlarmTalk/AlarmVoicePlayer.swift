@@ -34,7 +34,7 @@ import AVFoundation
 //   재생 — `AlarmKitViewModel.startObserving` 이 alarmUpdates 루프에서 `ringing` 진입을
 //   감지하면 `playIfNeeded(record:audioCache:)`.
 //
-//   정지 — **반드시 `AlarmAppContext.stopVoiceIfOwnedStatic(by:)` 을 거친다.**
+//   정지 — **반드시 `AlarmAppContext.stopVoiceIfOwned(by:)` 을 거친다.**
 //   `stop()` 을 직접 부르지 말 것: 지금 재생 중인 것이 **그 알람의 목소리인지** 확인해야
 //   한다. 다른 알람을 지우다가 울리고 있는 알람의 목소리를 끄면, 알람은 계속 울리는데
 //   목소리만 사라진다(안드로이드 `ringingTeardownBelongsToCurrentAlarm` 과 같은 규칙).

@@ -1,3 +1,4 @@
+import AVFoundation
 import CryptoKit
 import Foundation
 
@@ -187,39 +188,14 @@ final class AudioCacheStore {
     /// `nonisolated` — `Task.detached` 등 백그라운드 컨텍스트에서 호출하면 메인 액터를
     /// 막지 않는다(change 5, Android 의 Dispatchers.IO 캐싱과 동일 의도).
     nonisolated static func cache(tts: TtsGenerateResponse, cacheKey overrideCacheKey: String?) throws -> CachedVoiceAudio {
-        // ⚠ **`!data.isEmpty` 를 빼지 말 것.** `Data(base64Encoded: "")` 는 nil 이 아니라
-        // **0바이트 Data** 다(실측). 서버가 빈 audio_base64 를 주면 0바이트 파일이
-        // 캐시에 앉고, 재다운로드도 캐시 히트로 막혀 영영 안 덮인다 — 그 파일을 문
-        // 알람은 무음으로 운다.
-        guard let data = Data(base64Encoded: tts.audioBase64), !data.isEmpty else {
-            throw AudioCacheError.invalidBase64
-        }
-        let format = Self.normalizedFormat(tts.audioFormat)
-
-        // 새 cacheKey 캐시에도 동시 저장 (위젯 공유 캐시 + cascade cleanup 대상).
-        let cacheKey = nonBlank(overrideCacheKey) ?? nonBlank(tts.cacheKey) ?? Self.computeCacheKey(data)
-        // `cacheStockClip` 과 같은 이유로 **먼저, 전파하며** 쓴다 — 이 호출이 실패하면
-        // 돌려주는 `cacheKey` 자리에 파일이 없는데 알람은 그 키로 음원을 찾는다.
-        // 삼키면 저장은 성공한 알람이 울릴 때 조용히 기본 알람음으로 떨어진다.
-        _ = try Self.shared.cacheBytes(
-            data,
-            cacheKey: cacheKey,
-            mimeType: Self.mimeType(forFormat: format),
-            source: "tts",
+        try cacheServerAudio(
+            base64: tts.audioBase64,
+            format: tts.audioFormat,
             messageId: tts.messageId,
             rawAudioUri: tts.remoteAudioURI,
-            durationOverrideMs: nil,
-            enforceMaxDuration: false  // tts 길이는 서버가 보장. 한도는 메타에만.
+            // 새 cacheKey 캐시에도 동시 저장 (위젯 공유 캐시 + cascade cleanup 대상).
+            cacheKey: overrideCacheKey.nilIfBlank ?? tts.cacheKey.nilIfBlank
         )
-
-        let fileName = "\(tts.messageId).\(format)"
-        do {
-            let url = try Self.legacyAudioDirectory().appendingPathComponent(fileName)
-            try data.write(to: url, options: Self.audioWriteOptions)
-            return CachedVoiceAudio(url: url, fileName: fileName, format: format, cacheKey: cacheKey)
-        } catch {
-            throw AudioCacheError.legacyAliasFailed(error)
-        }
     }
 
     /// 스톡 클립 음원(`GET /tts/messages/:id/audio` 응답)을 캐싱한다.
@@ -236,18 +212,43 @@ final class AudioCacheStore {
         messageId: String,
         cacheKey: String
     ) throws -> CachedVoiceAudio {
-        // 0바이트 방어는 위 `cache(tts:cacheKey:)` 주석 참조.
-        guard let data = Data(base64Encoded: response.audioBase64), !data.isEmpty else {
+        try cacheServerAudio(
+            base64: response.audioBase64,
+            format: response.audioFormat,
+            messageId: messageId,
+            rawAudioUri: response.audioUrl,
+            cacheKey: cacheKey
+        )
+    }
+
+    /// 서버가 준 음원(base64)을 `cacheKey` 자리(정본)와 옛 별칭 `<messageId>.<ext>` 에 쓴다.
+    /// 생성 TTS(`cache(tts:cacheKey:)`)와 스톡 클립(`cacheStockClip`)이 같은 순서를 쓴다.
+    /// - cacheKey: nil 이면 바이트 해시로 만든다.
+    private nonisolated static func cacheServerAudio(
+        base64: String,
+        format rawFormat: String,
+        messageId: String,
+        rawAudioUri: String?,
+        cacheKey requestedCacheKey: String?
+    ) throws -> CachedVoiceAudio {
+        // ⚠ **`!data.isEmpty` 를 빼지 말 것.** `Data(base64Encoded: "")` 는 nil 이 아니라
+        // **0바이트 Data** 다(실측). 서버가 빈 audio_base64 를 주면 0바이트 파일이
+        // 캐시에 앉고, 재다운로드도 캐시 히트로 막혀 영영 안 덮인다 — 그 파일을 문
+        // 알람은 무음으로 운다.
+        guard let data = Data(base64Encoded: base64), !data.isEmpty else {
             throw AudioCacheError.invalidBase64
         }
-        let format = Self.normalizedFormat(response.audioFormat)
+        let format = Self.normalizedFormat(rawFormat)
+        let cacheKey = requestedCacheKey ?? Self.computeCacheKey(data)
 
         // ⚠ **정본은 `cacheKey` 자리다 — 이 실패를 삼키지 말 것**(Codex #703 P1).
         // 울릴 때 읽는 것도, 예약 지문의 **세대**(`rawAudioUri`)를 읽는 것도 이 메타다
         // (`AlarmSoundResolver.plan`). 삼키면 호출자는 "새 음원으로 갈았다" 로 읽고 구워 둔
         // `Library/Sounds` 사본까지 버리는데, 메타는 옛 세대 그대로라 지문이 같아 **재예약이
         // 오지 않는다** — 예약은 없는 이름을 가리킨 채 남고 고칠 계기도 사라진다.
-        // 던지면 그 키는 stale 로 남아 다음 회차가 다시 받는다.
+        // 던지면 그 키는 stale 로 남아 다음 회차가 다시 받는다. 생성 TTS 도 같다 — 돌려주는
+        // `cacheKey` 자리에 파일이 없으면, 저장은 성공한 알람이 울릴 때 조용히 기본 알람음으로
+        // 떨어진다.
         //
         // 옛 별칭(`<messageId>.<ext>`)보다 **먼저** 쓴다. 순서를 뒤집으면 실패했을 때
         // 별칭만 새 바이트인 반쯤 갱신된 상태가 남는다.
@@ -257,9 +258,9 @@ final class AudioCacheStore {
             mimeType: Self.mimeType(forFormat: format),
             source: "tts",
             messageId: messageId,
-            rawAudioUri: response.audioUrl,
+            rawAudioUri: rawAudioUri,
             durationOverrideMs: nil,
-            enforceMaxDuration: false
+            enforceMaxDuration: false  // 길이는 서버가 보장. 한도는 메타에만.
         )
 
         let fileName = "\(messageId).\(format)"
@@ -374,7 +375,7 @@ final class AudioCacheStore {
         language: String,
         serverCacheKey: String? = nil
     ) -> String {
-        if let serverKey = nonBlank(serverCacheKey) {
+        if let serverKey = serverCacheKey.nilIfBlank {
             return serverKey
         }
         let normalizedText = text
@@ -1007,29 +1008,14 @@ final class AudioCacheStore {
     /// 메인 캐시 디렉토리. App Group 컨테이너가 있으면 위젯과 공유.
     /// 파일 시스템만 다루므로 `nonisolated` — 백그라운드 sweep 에서도 호출 가능.
     nonisolated static func audioDirectory() throws -> URL {
-        let base: URL
-        if let container = AppGroup.containerURL {
-            base = container
-        } else {
-            let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            base = support
-        }
+        let base = AppGroup.containerURL
+            ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         // ⚠ 테스트는 별도 디렉터리를 쓴다 — 안 그러면 기기에서 테스트를 돌릴 때마다
         // 받아 둔 스톡 클립이 함께 지워져 다음 로그인이 전부 다시 받는다(`TestIsolation`).
-        let directory = base.appendingPathComponent(
+        return try protectedDirectory(base.appendingPathComponent(
             "audio-cache\(TestIsolation.storageSuffix)",
             isDirectory: true
-        )
-        if !FileManager.default.fileExists(atPath: directory.path) {
-            try FileManager.default.createDirectory(
-                at: directory,
-                withIntermediateDirectories: true,
-                // 잠금 화면 알람 재생 호환 — 첫 잠금 해제 이후 접근 가능한 보호 등급을
-                // 디렉터리에 걸어 신규 캐시 파일이 상속하게 한다.
-                attributes: [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication]
-            )
-        }
-        return directory
+        ))
     }
 
     /// Legacy 위치 (messageId 기반 파일명을 그대로 유지하는 디렉토리).
@@ -1040,10 +1026,15 @@ final class AudioCacheStore {
         // ⚠ 여기도 테스트를 갈라야 한다(Codex #699 P2). `cache(tts:cacheKey:)` 가 이 옛 경로로
         // 파일을 쓰므로, 안 가르면 기기 테스트가 **사용자의 실제 음원 디렉터리**에 쓰고
         // id 가 겹치면 진짜 파일을 덮어쓴다 — `audio-cache` 만 가른 것으로는 부족했다.
-        let directory = support.appendingPathComponent(
+        return try protectedDirectory(support.appendingPathComponent(
             "AlarmTalkAudio\(TestIsolation.storageSuffix)",
             isDirectory: true
-        )
+        ))
+    }
+
+    /// 없으면 만든다. 잠금 화면 알람 재생 호환 — 첫 잠금 해제 이후 접근 가능한 보호 등급을
+    /// 디렉터리에 걸어 신규 캐시 파일이 상속하게 한다.
+    private nonisolated static func protectedDirectory(_ directory: URL) throws -> URL {
         if !FileManager.default.fileExists(atPath: directory.path) {
             try FileManager.default.createDirectory(
                 at: directory,
@@ -1084,14 +1075,6 @@ final class AudioCacheStore {
         let s = String(sanitized)
         if s.count <= 96 { return s }
         return String(s.prefix(96))
-    }
-
-    private nonisolated static func nonBlank(_ value: String?) -> String? {
-        guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !trimmed.isEmpty else {
-            return nil
-        }
-        return trimmed
     }
 
     /// "abc.meta.json" → ("abc", "meta.json"), "abc.mp3" → ("abc", "mp3").
@@ -1146,7 +1129,12 @@ final class AudioCacheStore {
     /// (AVURLAsset 의 duration 은 동기 접근이 deprecated 이므로 단위 테스트 등에선
     /// CMTime 직접 추출. 본 phase 에서는 best-effort.)
     nonisolated static func readDurationMillis(url: URL) -> Int64? {
-        return AVAssetDurationReader.readMillis(url: url)
+        let asset = AVURLAsset(url: url, options: [AVURLAssetPreferPreciseDurationAndTimingKey: true])
+        let cmTime = asset.duration
+        if cmTime.isIndefinite || !cmTime.isValid { return nil }
+        let seconds = CMTimeGetSeconds(cmTime)
+        if !seconds.isFinite || seconds < 0 { return nil }
+        return Int64((seconds * 1000).rounded())
     }
 
     /// 비동기 길이 측정. `AVAsset.load(.duration)` 를 사용해 메인 액터를 막지 않는다
@@ -1208,7 +1196,7 @@ final class AudioCacheStore {
             // 영영 고치지 못한다. 원본이 사라진 경우도 같다(지워진 캐시를 되살리지 않는다).
             guard (previous?.rawAudioUri ?? "") == sourceRevision,
                   cachedURL(for: cacheKey) != nil else { return }
-            removeAudioFile(forCacheKey: cacheKey)
+            removeAudioFiles(forCacheKey: cacheKey, keeping: nil)
             _ = try? cacheBytes(
                 data,
                 cacheKey: cacheKey,
@@ -1224,14 +1212,9 @@ final class AudioCacheStore {
         }
     }
 
-    /// cacheKey 에 해당하는 음원 본체(메타 사이드카 제외)만 삭제한다. 트림 시 확장자가
-    /// 달라질 수 있어 메타를 보존한 채 본체만 갈아끼우기 위해 사용한다.
-    private nonisolated func removeAudioFile(forCacheKey cacheKey: String) {
-        removeAudioFiles(forCacheKey: cacheKey, keeping: nil)
-    }
-
-    /// 같은 cacheKey 의 음원 본체를 지운다. `keeping` 을 주면 그 파일만 남겨,
-    /// **확장자가 바뀐 교체**에서 옛 사본이 `cachedURL(for:)` 에 뽑히는 것을 막는다.
+    /// 같은 cacheKey 의 음원 본체(메타 사이드카 제외)를 지운다. `keeping` 을 주면 그 파일만
+    /// 남겨, **확장자가 바뀐 교체**에서 옛 사본이 `cachedURL(for:)` 에 뽑히는 것을 막는다.
+    /// nil 이면 전부 지운다 — 트림은 확장자가 달라질 수 있어 메타를 둔 채 본체만 갈아 끼운다.
     private nonisolated func removeAudioFiles(forCacheKey cacheKey: String, keeping survivor: URL?) {
         guard let directory = try? Self.audioDirectory() else { return }
         let safeKey = Self.safeCacheKey(cacheKey)
@@ -1243,19 +1226,5 @@ final class AudioCacheStore {
                 try? FileManager.default.removeItem(at: directory.appendingPathComponent(name))
             }
         }
-    }
-}
-
-// MARK: - AVAsset Duration Reader (lazy import)
-import AVFoundation
-
-enum AVAssetDurationReader {
-    static func readMillis(url: URL) -> Int64? {
-        let asset = AVURLAsset(url: url, options: [AVURLAssetPreferPreciseDurationAndTimingKey: true])
-        let cmTime = asset.duration
-        if cmTime.isIndefinite || !cmTime.isValid { return nil }
-        let seconds = CMTimeGetSeconds(cmTime)
-        if !seconds.isFinite || seconds < 0 { return nil }
-        return Int64((seconds * 1000).rounded())
     }
 }
