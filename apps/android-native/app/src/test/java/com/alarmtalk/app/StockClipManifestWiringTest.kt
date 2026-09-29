@@ -264,6 +264,27 @@ class StockClipManifestWiringTest {
     }
 
     @Test
+    fun anUnreadableManifestIsDiscardedOnlyIfNothingWasPublishedDuringTheRead() {
+        // 평소 갈래: 깨진 파일은 지운다(남겨 두면 매번 파싱에 실패한다).
+        val target = File(context.filesDir, "stock-clip-manifest.json")
+        target.writeText("{ not json")
+        assertNull(StockClipManifestStore.load(context))
+        assertFalse("깨진 매니페스트를 남겼다.", target.exists())
+
+        // 읽기는 잠그지 않는다(`loadPublishedWinner` 의 낙관적 읽기 포함). 그사이 [save] 가 더 새 파일을
+        // 공개했으면 그 후속본을 지우면 안 된다 — 공개 표가 없는 파일을 가리킨다(Codex #825).
+        val store = withoutLineComments(readSource("data/StockClipManifestStore.kt"))
+        val load = functionBody(store, "fun load(")
+        assertTrue(load.contains("val publishedBeforeRead = publishedTicket"))
+        assertTrue(
+            "깨진 파일을 공개 상태 확인 없이 지운다 — 읽는 사이 공개된 후속본까지 지운다(Codex #825).",
+            Regex("""synchronized\(revisionLock\)\s*\{\s*if \(publishedTicket == publishedBeforeRead\) target\.delete\(\)""")
+                .containsMatchIn(load),
+        )
+        assertEquals("깨진 파일을 지우는 곳은 그 확인 뒤 하나여야 한다.", 1, Regex("""target\.delete\(\)""").findAll(load).count())
+    }
+
+    @Test
     fun aSupersededFetchCanTellAPublishedWinnerFromAFailedOrInvalidatedOne() {
         fun manifest(id: String) = StockClipListResponse(
             clips = listOf(

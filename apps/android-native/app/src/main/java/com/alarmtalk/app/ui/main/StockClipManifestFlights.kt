@@ -64,7 +64,8 @@ internal enum class ManifestFlightOutcome {
  * 받아 **Codex #703 가드를 우회**했다). 이제 셋을 지킨다:
  *  - **떠 있는 요청을 나눠 쓴다.** 같은 계정이 이미 받고 있으면 새로 내지 않고 그 결과를 기다린다.
  *  - **신선도 창.** [ManifestNeed.RECENT] 는 [FRESH_WINDOW_MS] 안에 출발해 공개된 응답이 있으면
- *    요청을 내지 않는다. [ManifestNeed.SESSION] 은 그 세션에 한 번 공개했으면 된다.
+ *    요청을 내지 않는다. 떠 있는 요청도 창 안에 출발한 것만 나눠 쓴다 — 더 오래 떠 있으면 그 뒤에
+ *    줄을 선다. [ManifestNeed.SESSION] 은 그 세션에 한 번 공개했으면 된다.
  *  - **[ManifestNeed.LATEST] 는 부른 뒤에 출발한 요청만 쓴다.** 떠 있는 요청은 부르기 전에
  *    출발했으므로 그 뒤에 **한 번만** 줄을 세우고, 그사이 들어온 LATEST 는 전부 그 줄을 나눠 쓴다.
  *
@@ -96,6 +97,9 @@ internal class StockClipManifestFlights<Owner : Any>(
 
         /** 요청을 이미 냈는가. 줄만 서 있는 동안은 false — 그동안 온 LATEST 가 나눠 쓸 수 있다. */
         var issued = false
+
+        /** 요청을 낸 시각([issued] 와 함께 선다). RECENT 가 오래 떠 있는 요청을 나눠 쓸지 가른다. */
+        var issuedAt: Long? = null
     }
 
     /**
@@ -141,8 +145,16 @@ internal class StockClipManifestFlights<Owner : Any>(
         val active = running[owner]?.takeIf { it.result.isActive }
         // 줄만 서 있고 아직 요청을 안 낸 것 — 누가 와도 나눠 쓸 수 있다(LATEST 도: 부른 뒤에 출발한다).
         val waiting = queued[owner]?.takeIf { !it.issued && it.result.isActive }
-        if (need == ManifestNeed.LATEST) {
-            // 떠 있는 요청은 부르기 **전에** 출발했다 — 그 뒤에 선 줄을 나눠 쓰거나 새로 세운다.
+        // 떠 있는 요청이 이 자리가 원하는 새로움을 못 채우면 그 뒤에 선 줄을 나눠 쓰거나 새로 세운다.
+        //  - LATEST: 떠 있는 요청은 부르기 **전에** 출발했다.
+        //  - RECENT: 창보다 오래 떠 있다(약한 망에서 조회는 60초까지 기다린다) — 그 응답은 창 밖의
+        //    서버 상태라, 나눠 쓰면 준비도·탭 새로고침이 허용보다 낡은 목록을 곧바로 쓴다(Codex #825).
+        val activeTooOld = active != null && when (need) {
+            ManifestNeed.LATEST -> true
+            ManifestNeed.RECENT -> active.issuedAt?.let { clock() - it >= freshWindowMs } ?: false
+            ManifestNeed.SESSION -> false
+        }
+        if (activeTooOld) {
             waiting?.let { return it }
             return start(owner, run, after = active)
         }
@@ -161,6 +173,7 @@ internal class StockClipManifestFlights<Owner : Any>(
             flight.issued = true
             runCount += 1
             val issuedAt = clock()
+            flight.issuedAt = issuedAt
             try {
                 val outcome = try {
                     run()

@@ -171,6 +171,51 @@ class StockClipManifestFlightsTest {
     }
 
     @Test
+    fun recentDoesNotShareARequestThatHasBeenInFlightLongerThanTheWindow() = runTest {
+        val clock = Clock()
+        val flights = flights(clock)
+        val first = CompletableDeferred<Unit>()
+        val second = CompletableDeferred<Unit>()
+        val gates = ArrayDeque(listOf(first, second))
+        var issued = 0
+        val run: suspend () -> ManifestFlightOutcome = {
+            issued += 1
+            gates.removeFirst().await()
+            ManifestFlightOutcome.PUBLISHED
+        }
+
+        val start = async { flights.ensure("u1", ManifestNeed.SESSION, run) }
+        runCurrent()
+        assertEquals(1, issued)
+
+        // 창 안에 출발한 떠 있는 요청은 나눠 쓴다.
+        clock.now += StockClipManifestFlights.FRESH_WINDOW_MS - 1
+        val inside = async { flights.ensure("u1", ManifestNeed.RECENT, run) }
+        runCurrent()
+        assertEquals(1, issued)
+
+        // 약한 망에서 창보다 오래 떠 있다 — 그 응답은 창 밖의 서버 상태다. RECENT 는 그 뒤에 줄을
+        // 서고, 그사이 온 RECENT 는 그 줄을 나눠 쓴다(Codex #825).
+        clock.now += 1
+        val late1 = async { flights.ensure("u1", ManifestNeed.RECENT, run) }
+        val late2 = async { flights.ensure("u1", ManifestNeed.RECENT, run) }
+        runCurrent()
+        assertEquals("떠 있는 요청이 끝나기 전에 줄 선 요청이 나갔다.", 1, issued)
+        // SESSION 은 이번 세션의 요청이면 된다 — 오래 떠 있어도 나눠 쓴다.
+        val session = async { flights.ensure("u1", ManifestNeed.SESSION, run) }
+
+        first.complete(Unit)
+        assertEquals(ManifestFlightOutcome.PUBLISHED, start.await())
+        assertEquals(ManifestFlightOutcome.PUBLISHED, inside.await())
+        assertEquals(ManifestFlightOutcome.PUBLISHED, session.await())
+        runCurrent()
+        assertEquals("창보다 오래 떠 있던 요청을 RECENT 가 그대로 썼다.", 2, issued)
+        second.complete(Unit)
+        listOf(late1, late2).forEach { assertEquals(ManifestFlightOutcome.PUBLISHED, it.await()) }
+        assertEquals("늦은 RECENT 둘이 뒤따르는 요청 하나를 나눠 쓰지 않았다.", 2, flights.runCount)
+    }
+
+    @Test
     fun aLaterFailedWriteVoidsTheRecordedFreshness() = runTest {
         val clock = Clock()
         var lastSeenPublished = true

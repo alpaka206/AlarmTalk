@@ -342,12 +342,20 @@ object StockClipManifestStore {
         }
         val target = file(context)
         if (!target.exists()) return null
+        // 읽기는 잠그지 않는다 — 그사이 [save] 가 더 새 파일로 갈아 끼울 수 있다(아래 삭제 조건).
+        val publishedBeforeRead = publishedTicket
         return runCatching {
             gson.fromJson(target.readText(), StockClipListResponse::class.java)
         }.getOrElse {
             // 깨진 파일은 지운다 — 남겨 두면 매번 파싱에 실패하며 같은 로그만 쌓인다.
             AlarmTalkLog.reportError("Discarding an unreadable stock clip manifest", it)
-            target.delete()
+            // ⚠ **읽은 뒤에 공개된 새 파일은 지우지 않는다**(Codex #825). 파일 교체는 잠금 안에서만
+            // 일어나고 공개마다 [publishedTicket] 이 오르므로, 잠근 채 그 값이 읽기 전과 같을 때만
+            // 지운다 — 아니면 깨진 것은 이미 갈려 나갔다. 그냥 지우면 방금 공개된 후속본을 지워
+            // [publishedTicket] 이 없는 파일을 가리키고, 이긴 것 이어받기·교체 수리가 다음 조회까지 멎는다.
+            synchronized(revisionLock) {
+                if (publishedTicket == publishedBeforeRead) target.delete()
+            }
             null
         }
     }
