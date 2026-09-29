@@ -80,11 +80,16 @@ internal enum class ManifestFlightOutcome {
  * [scope] 의 디스패처(메인)에서만 부른다 — 상태를 잠그지 않는다.
  *
  * @param Owner 계정 + 세션 세대(`SessionEffectKey`). 다른 주인의 요청은 나눠 쓰지 않는다.
+ * @param lastSeenPublished 디스크에서 **가장 최근에 본 표의 응답이 공개됐는가**
+ *   (`StockClipManifestStore.latestPublishedTicket() != null`). 아니면 기록해 둔 신선도를 쓰지 않는다
+ *   (Codex #825) — 신선도를 센 **뒤에** 워커의 더 새 표가 쓰기에 실패하면 이 기록은 그대로인데, 그
+ *   회차는 공개되지 않았으므로 다음 호출은 다시 받아야 한다(스펙 「공개 경합의 규칙」).
  */
 internal class StockClipManifestFlights<Owner : Any>(
     private val scope: CoroutineScope,
     private val clock: () -> Long,
     private val freshWindowMs: Long = FRESH_WINDOW_MS,
+    private val lastSeenPublished: () -> Boolean = { true },
 ) {
     private inner class Flight(val owner: Owner) {
         lateinit var result: Deferred<ManifestFlightOutcome>
@@ -121,7 +126,8 @@ internal class StockClipManifestFlights<Owner : Any>(
         run: suspend () -> ManifestFlightOutcome,
     ): ManifestFlightOutcome {
         val issuedAt = freshIssuedAt[owner]
-        val fresh = issuedAt != null && when (need) {
+        // 기록한 뒤 더 새 표의 쓰기가 실패했으면 그 기록은 '확인된 마지막' 이 아니다(생성자 주석).
+        val fresh = issuedAt != null && lastSeenPublished() && when (need) {
             ManifestNeed.SESSION -> true
             ManifestNeed.RECENT -> clock() - issuedAt < freshWindowMs
             ManifestNeed.LATEST -> false

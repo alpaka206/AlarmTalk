@@ -594,6 +594,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     internal val stockClipManifestFlights = StockClipManifestFlights<com.alarmtalk.app.network.SessionEffectKey>(
         scope = viewModelScope,
         clock = { android.os.SystemClock.elapsedRealtime() },
+        // 신선도를 센 뒤 워커의 더 새 표가 쓰기에 실패했으면 다시 받는다(Codex #825).
+        lastSeenPublished = { com.alarmtalk.app.data.StockClipManifestStore.latestPublishedTicket() != null },
     )
 
     /** 메모리에 매니페스트를 실은 횟수. 디스크 시드가 그사이 실린 서버 응답을 덮지 않게 본다. */

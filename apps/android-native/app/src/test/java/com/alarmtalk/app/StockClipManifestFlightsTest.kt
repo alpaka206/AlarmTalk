@@ -37,10 +37,12 @@ class StockClipManifestFlightsTest {
         }
     }
 
-    private fun TestScope.flights(clock: Clock) = StockClipManifestFlights<String>(
-        scope = this,
-        clock = { clock.now },
-    )
+    private fun TestScope.flights(clock: Clock, lastSeenPublished: () -> Boolean = { true }) =
+        StockClipManifestFlights<String>(
+            scope = this,
+            clock = { clock.now },
+            lastSeenPublished = lastSeenPublished,
+        )
 
     @Test
     fun concurrentCallersShareOneRequest() = runTest {
@@ -165,6 +167,30 @@ class StockClipManifestFlightsTest {
         assertEquals(3, requests.issued)
         assertEquals(ManifestFlightOutcome.FRESH, flights.ensure("u1", ManifestNeed.RECENT) { requests.run() })
         assertEquals(ManifestFlightOutcome.FRESH, flights.ensure("u1", ManifestNeed.SESSION) { requests.run() })
+        assertEquals(3, requests.issued)
+    }
+
+    @Test
+    fun aLaterFailedWriteVoidsTheRecordedFreshness() = runTest {
+        val clock = Clock()
+        var lastSeenPublished = true
+        val flights = flights(clock) { lastSeenPublished }
+        val requests = FakeRequests()
+
+        assertEquals(ManifestFlightOutcome.PUBLISHED, flights.ensure("u1", ManifestNeed.SESSION) { requests.run() })
+        assertEquals(ManifestFlightOutcome.FRESH, flights.ensure("u1", ManifestNeed.RECENT) { requests.run() })
+        assertEquals(1, requests.issued)
+
+        // 신선도를 센 **뒤에** 워커의 더 새 표가 쓰기에 실패했다 — 기록은 그대로지만 그 회차는 공개되지
+        // 않았으므로 창 안이라도, 세션에 이미 받았어도 다시 받는다(Codex #825).
+        lastSeenPublished = false
+        assertEquals(ManifestFlightOutcome.PUBLISHED, flights.ensure("u1", ManifestNeed.RECENT) { requests.run() })
+        assertEquals(ManifestFlightOutcome.PUBLISHED, flights.ensure("u1", ManifestNeed.SESSION) { requests.run() })
+        assertEquals("뒤의 쓰기가 실패했는데 앞의 신선도로 건너뛰었다.", 3, requests.issued)
+
+        // 다시 공개가 확인되면 창이 되살아난다.
+        lastSeenPublished = true
+        assertEquals(ManifestFlightOutcome.FRESH, flights.ensure("u1", ManifestNeed.RECENT) { requests.run() })
         assertEquals(3, requests.issued)
     }
 

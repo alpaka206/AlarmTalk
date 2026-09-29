@@ -152,6 +152,11 @@ class StockClipManifestWiringTest {
             "뷰모델이 다른 쪽(워커)의 공개를 따라가지 않는다 — 워커는 메모리를 모른다(Codex #825).",
             viewModel.contains("StockClipManifestStore.publishedTickets.collect"),
         )
+        assertTrue(
+            "신선도 창이 디스크의 공개 상태를 보지 않는다 — 센 뒤 워커의 더 새 표가 쓰기에 실패해도 " +
+                "창 안이면 건너뛴다(Codex #825).",
+            viewModel.contains("lastSeenPublished = { com.alarmtalk.app.data.StockClipManifestStore.latestPublishedTicket() != null }"),
+        )
     }
 
     @Test
