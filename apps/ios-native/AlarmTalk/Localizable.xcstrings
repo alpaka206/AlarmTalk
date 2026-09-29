@@ -1281,6 +1281,23 @@
         }
       }
     },
+    "고른 목소리를 지금은 쓸 수 없어요. 다른 목소리를 골라 주세요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "That voice isn't available right now. Please pick another one."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "その声は今は使えません。別の声を選んでください。"
+          }
+        }
+      }
+    },
     "공유" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3705,6 +3722,23 @@
         }
       }
     },
+    "목소리를 골라주세요" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pick a voice"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "声を選んでください"
+          }
+        }
+      }
+    },
     "문구 정보" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5836,23 +5870,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "削除"
-          }
-        }
-      }
-    },
-    "삭제된 목소리" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Deleted voice"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "削除された声"
           }
         }
       }
@@ -9203,23 +9220,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "この時間帯を削除"
-          }
-        }
-      }
-    },
-    "이 알람에 저장된 목소리는 그대로 울리지만, 문구를 바꾸려면 다른 목소리를 선택해 주세요." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "The voice saved to this alarm will still play, but to change the phrase, please choose another voice."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "このアラームに保存された声はそのまま鳴りますが、文を変えるには別の声を選択してください。"
           }
         }
       }

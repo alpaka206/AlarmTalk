@@ -226,8 +226,6 @@
     <string name="editor_vibration_pattern">パターン</string>
     <string name="editor_vibration_use">バイブレーションを使う</string>
     <string name="editor_vibration_title">バイブレーション</string>
-    <string name="editor_voice_deleted_desc">このアラームに保存された声はそのまま鳴りますが、文を変えるには別の声を選択してください。</string>
-    <string name="editor_voice_deleted_title">削除された声</string>
     <string name="editor_voice_generation_canceled_time_changed">アラームの時刻が変わったため、音声の生成を中止しました。</string>
     <string name="editor_voice_loading">声を読み込んでいます。</string>
     <string name="editor_voice_output_title">声の大きさ</string>

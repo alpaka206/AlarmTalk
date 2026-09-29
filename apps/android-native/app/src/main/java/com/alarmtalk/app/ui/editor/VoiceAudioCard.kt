@@ -264,9 +264,6 @@ internal fun VoiceAudioCard(
         }
         if (voiceEnabled) {
             if (visibleVoiceSource == VoiceSources.TTS_PROFILE) {
-                val selectedProfileUnavailable = voiceProfileLoadFinished && !voiceProfileBusy &&
-                    !editor.voiceProfileId.isNullOrBlank() &&
-                    profileOptions.none { it.id == editor.voiceProfileId }
                 // 무료·유료 모두 같은 '카드 + 구분선 행'(목소리/문구/목소리 크기) 구조를 쓴다.
                 // 무료는 문구 행이 개별 문구 대신 "테마(버킷)"를 고르는 pane 을 연다 — 버킷 안
                 // 여러 문구는 매 울림마다 순차 회전되며 내용은 노출하지 않는다.
@@ -308,29 +305,10 @@ internal fun VoiceAudioCard(
                         }
                     }
                 }
-                if (selectedProfileUnavailable) {
-                    Surface(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = WakerChipShape,
-                        color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.58f),
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-                            verticalArrangement = Arrangement.spacedBy(4.dp),
-                        ) {
-                            Text(
-                                text = stringResource(R.string.editor_voice_deleted_title),
-                                fontWeight = FontWeight.SemiBold,
-                                color = MaterialTheme.colorScheme.onErrorContainer,
-                            )
-                            Text(
-                                text = stringResource(R.string.editor_voice_deleted_desc),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.78f),
-                            )
-                        }
-                    }
-                }
+                // ⚠ **'삭제된 목소리' 배너를 되살리지 말 것**(2026-09-29 지시). 목소리를 잃은
+                // 알람은 모달이 이미 알린다(앱 진입 때 강등 안내 `downgrade_notice_*`, 직접 지울
+                // 때 `voicesr_delete_dialog_warning`). 편집기에서 쓸 수 없는 목소리로 저장을
+                // 누르면 `SaveBlockReason.VOICE_UNAVAILABLE` 알럿이 말한다.
                 // 문구(MessageModeSummaryRow)는 위 목소리 카드 안으로 옮겨 구분선으로 묶었다(개별 박스 제거).
             } else {
                 // 알람 설정에서는 임의 포맷 파일 업로드(코덱·디코드·크롭이 불안정)를 빼고 녹음만 둔다.

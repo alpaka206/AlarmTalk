@@ -410,7 +410,7 @@ struct AlarmEditorSheet: View {
 
     // ⚠ **여기에 상태 문구를 다시 넣지 말 것**(위 `editorSaveBlocked` 주석).
     // 이 슬롯(`saveBlockedNotice`)은 사유 한 줄이 계속 갈아치워지는 자리였고, 그 사유들은
-    // 전부 값이 사는 자리(목소리 배너·문구 행·녹음 카드)가 더 정확히 말한다.
+    // 전부 값이 사는 자리(문구 행·녹음 카드)나 저장을 누를 때의 알럿이 더 정확히 말한다.
     // 생성 실패는 `showSaveFailureAlert` 로 간다.
 
     // MARK: - Chrome (sheets · panes · alerts)
@@ -921,7 +921,9 @@ struct AlarmEditorSheet: View {
     /// `editorSaveBlocked` 로 바꿨고, iOS 도 맞춘다.
     ///
     /// 이유를 말하는 자리는 **그 값이 사는 곳**이다. 갈래마다 짝이 있다:
-    ///  - 플랜 잠금·사용 불가 목소리 → 목소리 행 아래 `unusableVoiceBanner`("삭제된 목소리").
+    ///  - 플랜 잠금·사용 불가 목소리 → **버튼을 죽이지 않는다**(2026-09-29). 편집기의
+    ///    '삭제된 목소리' 배너를 걷어냈으므로 누르면 `saveFlow` 가 알럿으로 말한다
+    ///    (`selectedVoiceUnusable` — 안드로이드 `SaveBlockReason.VOICE_UNAVAILABLE`).
     ///  - 목소리 미선택 → 목소리 행이 "고르기" 로 비어 있음을 말하고, 목록이 없으면
     ///    '목소리 탭에서 만들기' 버튼이 해결 액션까지 갖고 있다.
     ///  - 녹음 미완료 → `RecordingCard` 자체가 CTA 다.
@@ -942,6 +944,9 @@ struct AlarmEditorSheet: View {
     /// 경로(randomPrompt=true, preset)는 false 여야 저장이 활성화돼 탭 시 생성이 돈다.
     var editorSaveBlocked: Bool {
         if draft.playMode == .alarmOnly { return false }
+        // ⚠ **쓸 수 없는 목소리로는 버튼을 죽이지 않는다**(2026-09-29). 누르면 `saveFlow`
+        // 첫머리가 알럿으로 이유를 말한다 — 그 사유를 말하던 배너가 이제 없다.
+        if selectedVoiceUnusable { return false }
 
         // ⚠ **무료 플랜의 유료 목소리 알람은 저장 전에 막는다.**
         // iOS 에는 이 게이트가 **아예 없어서**, 무료 사용자가 녹음 알람을 저장할 수 있었고
@@ -951,7 +956,8 @@ struct AlarmEditorSheet: View {
         // ⚠ **무료여도 기본(스톡) 프리셋 목소리 알람은 만들 수 있다** — 이건 유료 자산이
         // 아니다. 안드로이드 `MainViewModelAlarmActions.voiceAlarmAllowed` 와 같은 규칙이고,
         // 서버 `alarm-mutation.ts` 의 `usesOnlySystemStockVoice` 도 같은 선을 긋는다.
-        // 말하는 자리: `unusableVoiceBanner`(목소리 행 아래).
+        // 무료 플랜에서 목소리를 고른 경우는 위 `selectedVoiceUnusable` 가 먼저 잡는다 —
+        // 여기 남는 것은 로그아웃과 목소리를 아직 안 고른 경우다.
         if planAccess != .paid, !usesFreeSystemVoiceSelection { return true }
 
         if voiceSourceMode == .localAudio {
@@ -985,10 +991,11 @@ struct AlarmEditorSheet: View {
         guard let profileID = (voiceStudio.selectedProfileID).nilIfBlank else { return true }
         // 선택된 목소리가 더 이상 alarm 선택 대상이 아니면(삭제/미준비 등) 사용 불가.
         // 단, 기존 알람의 음원이 그대로 재사용 가능한 경우엔 막지 않는다(아래 생성 경로가 흡수).
-        // 말하는 자리: `unusableVoiceBanner`.
+        // 그 갈래(정리 중이 아닌 사용 불가)는 위 `selectedVoiceUnusable` 가 먼저 잡아 버튼을
+        // 살려 둔다 — 여기 남는 것은 정리 중인 목소리뿐이다.
         // ⚠ 정리 중인 목소리는 **저장도 막는다**(Codex #703 P1) — 이미 선택돼 있던 경우가
         // 남기 때문이다(자동 선택을 막아도 편집기를 열기 전부터 골라져 있을 수 있다).
-        // 말하는 자리는 아래 배너다.
+        // 말하는 자리는 `saveFlow` 첫머리의 "아직 준비 중이에요" 알럿이다.
         let profileReady = (
             voiceStudio.profiles.contains { $0.id == profileID && $0.isReadyForAlarmSelection } ||
                 voiceStudio.familyVoices.contains { $0.id == profileID && $0.isReadyForAlarmSelection }
@@ -996,7 +1003,7 @@ struct AlarmEditorSheet: View {
         let preparedForProfile = voiceStudio.preparedAlarm?.voiceProfileID == profileID
         // ⚠ **정리 중으로는 버튼을 죽이지 않는다**(Codex #703 P1 — CLAUDE.md 「잠그는 것은
         // '저장 중' 일 때뿐이다」). 곧 풀리는 상태라 죽은 버튼은 고장으로 읽힌다 —
-        // 누를 수 있게 두고 **누르면 이유를 말한다**(`saveFlow` 첫머리). 배너도 함께 뜬다.
+        // 누를 수 있게 두고 **누르면 이유를 말한다**(`saveFlow` 첫머리).
         if !profileReady, !preparedForProfile, !reuseExistingTtsForCurrentSelection { return true }
         // 말하는 자리: 문구 화면의 `PromptDetailCard`("아직 정하지 않았어요").
         if voiceStudio.randomPrompt { return !randomPromptSettingsComplete }
@@ -1006,6 +1013,31 @@ struct AlarmEditorSheet: View {
         if manualTextMissing { return false }
         // 스톡 클립 목소리의 빈 문구는 테마가 붙기 전 과도기다.
         return voiceStudio.ttsText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    /// 고른 목소리를 지금 쓸 수 없어 저장을 막아야 하는가(버튼은 살려 둔다).
+    /// 판정은 `AlarmEditDraft.selectedVoiceUnusable` 한 곳이다 — 안드로이드
+    /// `SaveBlockReason.VOICE_UNAVAILABLE` 짝.
+    var selectedVoiceUnusable: Bool {
+        let profileID = (voiceStudio.selectedProfileID).nilIfBlank
+        let profileReady = profileID.map { id in
+            voiceStudio.profiles.contains { $0.id == id && $0.isReadyForAlarmSelection } ||
+                voiceStudio.familyVoices.contains { $0.id == id && $0.isReadyForAlarmSelection }
+        } ?? false
+        return AlarmEditDraft.selectedVoiceUnusable(
+            playMode: draft.playMode,
+            voiceSource: voiceSourceMode,
+            profileID: profileID,
+            settling: profileID.map { voiceStudio.isReplacementSettling($0) } ?? false,
+            // ⚠ **잠금은 고른 목소리 자체로 판정한다** — `usesFreeSystemVoiceSelection` 을 쓰지
+            // 말 것. 그건 테마만 골라도 참이라, 무료 플랜에서 클론에 테마를 붙인 알람이 잠금을
+            // 빠져나가 서버 `PATCH /alarm` 의 403 으로 간다(Codex #826). 안드로이드
+            // `usesFreeSystemVoiceAlarm` 도 테마와 무관하게 `isSystemVoiceId` 부터 본다.
+            lockedByPlan: planAccess == .free && !voiceStudio.isSystemVoiceProfile(id: profileID),
+            profileReady: profileReady,
+            hasUsableAudio: (profileID != nil && voiceStudio.preparedAlarm?.voiceProfileID == profileID) ||
+                reuseExistingTtsForCurrentSelection
+        )
     }
 
     /// **직접 입력인데 문구가 비었는가** — 저장하면 만들 문장이 없다.
@@ -2393,6 +2425,16 @@ struct AlarmEditorSheet: View {
                 title: "아직 준비 중이에요",
                 message: "바꾼 목소리를 정리하고 있어요. 잠시 후 다시 저장해 주세요.",
                 offersPlanActions: false
+            )
+            return
+        }
+        // ⚠ **쓸 수 없는 목소리는 여기서 막는다**(버튼은 살려 둔다 — `editorSaveBlocked` 주석).
+        // 편집기의 '삭제된 목소리' 배너를 2026-09-29 에 걷어냈으므로 이 알럿이 유일한
+        // 설명이다. 문구는 안드로이드 `editor_block_voice_title`·`editor_block_voice_unavailable_message`.
+        if selectedVoiceUnusable {
+            validationAlert = ValidationAlertContent(
+                title: String(localized: "목소리를 골라주세요"),
+                message: String(localized: "고른 목소리를 지금은 쓸 수 없어요. 다른 목소리를 골라 주세요.")
             )
             return
         }
