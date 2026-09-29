@@ -3983,13 +3983,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Adjust the speaking style however you like."
+            "value" : "Shape the line however you like."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "話し方を好みに合わせて変えてみましょう。"
+            "value" : "話し方は自由に変えられます。"
           }
         }
       }
