@@ -143,8 +143,31 @@ final class StockReplacementStatus: ObservableObject {
         return pendingUserId == userId
     }
 
-    func setWorking(_ working: Bool) {
-        self.working = working
+    /// 지금 도는 재바인딩 회차들의 키(계정·언어 — `AlarmTalkApp.rebindStockClipsIfNeeded`).
+    private var rebindKeysInFlight: Set<String> = []
+
+    /// **재바인딩 진행 중 가드**(2026-09-29 효율 감사 M1 — iOS). 같은 키의 회차가 이미 돌고 있으면
+    /// false — 부른 쪽은 물러난다(그 회차가 같은 일을 하고 있다).
+    ///
+    /// 왜: 콜드 스타트에는 언어 키 `.task` 와 전경 복귀(`.active`)가 **거의 동시에** 부른다. 가드가
+    /// 없어 두 회차가 나란히 돌았고 — 매니페스트 강제 조회 두 번, 같은 행을 두 번 재바인딩·정리 —
+    /// 먼저 끝난 쪽이 `working` 을 내려 다른 회차가 도는 중에 차단 화면의 '다시 시도' 가 풀렸다.
+    /// 안드로이드는 워커가 유일 작업(`ExistingWorkPolicy.KEEP`)이라 도는 동안의 요청이 버려진다.
+    ///
+    /// 키가 다르면(계정 전환·언어 변경) 막지 않는다 — 앞 회차는 계정·언어가 바뀐 것을 스스로 보고
+    /// 접거나 옛 언어로 끝나므로, 새 키의 회차가 따로 돌아야 한다. 차단 화면의 '다시 시도' 는 도는
+    /// 동안 잠기므로(`working`) 같은 키로 겹치지 않는다.
+    func beginRebind(key: String) -> Bool {
+        guard rebindKeysInFlight.insert(key).inserted else { return false }
+        working = true
+        return true
+    }
+
+    /// `beginRebind` 가 true 를 준 회차가 끝날 때 **반드시** 부른다(`defer`). 도는 회차가 하나도
+    /// 없을 때만 `working` 을 내린다.
+    func endRebind(key: String) {
+        rebindKeysInFlight.remove(key)
+        working = !rebindKeysInFlight.isEmpty
     }
 
     func retry() {

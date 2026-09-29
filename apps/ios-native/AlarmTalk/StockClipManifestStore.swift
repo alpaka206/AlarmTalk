@@ -58,6 +58,16 @@ enum StockClipManifestStore {
         storage.publishedNewerResponse(than: ticket)
     }
 
+    /// **신선도 창** — 이 계정의 매니페스트가 `window` 안에 출발해 이 프로세스에서 공개됐으면 그
+    /// 공개본. 상세는 `StockClipManifestStorage.recentlyPublished`.
+    static func recentlyPublished(
+        ownerUserID: String,
+        within window: TimeInterval,
+        departedAfter: Date? = nil
+    ) -> StockClipListResponse? {
+        storage.recentlyPublished(ownerUserID: ownerUserID, within: window, departedAfter: departedAfter)
+    }
+
     static func clear(preservingOwnerUserID: String? = nil) {
         storage.clear(preservingOwnerUserID: preservingOwnerUserID)
     }
@@ -68,6 +78,9 @@ final class StockClipManifestStorage: @unchecked Sendable {
     struct Ticket: Sendable {
         let ownerUserID: String
         let revision: UInt64
+        /// 요청이 **출발한** 시각(표를 뽑은 때). 신선도 창(`recentlyPublished`)은 공개된 응답의 이
+        /// 값으로 잰다 — 응답은 출발 뒤의 서버 상태라, 늦게 도착했다고 더 새것으로 치지 않는다.
+        let departedAt: Date
     }
 
     /// **거절과 실패를 구분한다**(안드로이드 `PublishResult` 와 같다).
@@ -100,16 +113,23 @@ final class StockClipManifestStorage: @unchecked Sendable {
     /// 건드리지 않는다 — 그래서 `.superseded` 가 "더 새 응답이 공개됐다"(이 값이 표보다 크다)인지
     /// "표가 무효화됐다"(작다)인지 가를 수 있다(`publishedNewerResponse`).
     private var publishedRevision: UInt64 = 0
+    /// 마지막으로 공개된 표의 출발 시각 — 신선도 창의 기준(`recentlyPublished`).
+    private var publishedDepartedAt: Date?
     private var cached: Envelope?
     private var quarantined = false
+    /// 지금 시각. 테스트가 바꿔 끼운다.
+    private let now: @Sendable () -> Date
 
-    init(fileURL: URL) { self.fileURL = fileURL }
+    init(fileURL: URL, now: @escaping @Sendable () -> Date = { Date() }) {
+        self.fileURL = fileURL
+        self.now = now
+    }
 
     func beginFetch(session: AuthSession) -> Ticket {
         lock.lock()
         defer { lock.unlock() }
         nextRevision += 1
-        return Ticket(ownerUserID: session.user.id, revision: nextRevision)
+        return Ticket(ownerUserID: session.user.id, revision: nextRevision, departedAt: now())
     }
 
     /// ⚠ **비교·쓰기·표 갱신이 한 임계구역이다**(안드로이드와 같다). 비교만 잠그면 두 writer 가
@@ -128,6 +148,7 @@ final class StockClipManifestStorage: @unchecked Sendable {
             cached = envelope
             quarantined = false
             publishedRevision = ticket.revision
+            publishedDepartedAt = ticket.departedAt
             return .published
         } catch {
             return .failed
@@ -148,6 +169,37 @@ final class StockClipManifestStorage: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         return publishedRevision > ticket.revision && publishedRevision == seenRevision
+    }
+
+    /// **신선도 창**(2026-09-29 효율 감사 M1 — iOS). 이 계정의 매니페스트가 `window` 안에 **출발해**
+    /// 이 프로세스에서 공개됐고, 그것이 가장 최근에 본 응답이면 그 공개본을 돌려준다. 아니면 nil —
+    /// 호출자가 새로 받는다.
+    ///
+    /// 누가 공개했든 센다(선다운로드·`loadStockClips`·재바인딩의 강제 조회). 세지 않는 것:
+    /// - **`clear` 뒤**(로그아웃·계정 전환) — 수위선이 공개된 표를 넘어선다.
+    /// - **더 새 표의 쓰기가 실패한 뒤** — 디스크가 최신이 아니다(`publishedNewerResponse` 와 같은 판정).
+    /// - **다른 계정의 공개본**, 격리된 파일, 시계가 출발 시각보다 뒤로 간 경우.
+    /// - `departedAfter` 가 있으면 그보다 **먼저 출발한** 응답('신호 뒤' — 서버가 바뀐 것을 아는
+    ///   자리. 클론 생성이 끝난 뒤의 다운로드 등).
+    ///
+    /// 네트워크 실패는 수위선을 올리지 않으므로 창을 닫지 않는다 — 마지막 공개본이 여전히 최신이다.
+    /// 공개된 봉투는 메모리에 있으므로 디스크를 읽지 않는다.
+    func recentlyPublished(
+        ownerUserID: String,
+        within window: TimeInterval,
+        departedAfter: Date? = nil
+    ) -> StockClipListResponse? {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !quarantined,
+              publishedRevision > 0, publishedRevision == seenRevision,
+              let departedAt = publishedDepartedAt,
+              let envelope = cached, envelope.ownerUserID == ownerUserID
+        else { return nil }
+        let current = self.now()
+        guard departedAt <= current, current.timeIntervalSince(departedAt) < window else { return nil }
+        if let departedAfter, departedAt < departedAfter { return nil }
+        return envelope.manifest
     }
 
     func load(ownerUserID: String?) -> StockClipListResponse? {

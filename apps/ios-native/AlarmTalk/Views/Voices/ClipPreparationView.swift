@@ -71,13 +71,18 @@ struct ClipPreparationView: View {
             }
         }
         .task { if !registrationStyle { await refresh() } }
-        // 받는 동안 값이 움직이므로 주기적으로 다시 센다. 캐시 파일 검사라 값싸고,
-        // 서버 렌더 상태만 네트워크를 탄다.
+        // 받는 동안 값이 움직이므로 주기적으로 다시 센다. 한 번에 매니페스트·렌더 상태를 서버에
+        // 묻는다(`ClipReadinessModel.refresh`).
+        // ⚠ **준비가 끝나면 멈춘다**(2026-09-29 효율 감사 M1 — iOS). 예전에는 끝낼 조건이 없어,
+        //   "준비됐어요" 를 띄운 채 화면을 닫을 때까지 3초마다 매니페스트(약 168KB)와 렌더 상태를
+        //   다시 받았다. 멈추는 조건은 `pollingCanStop` 하나다 — **실패로는 멈추지 않는다**
+        //   (서버 생성 실패·소유자 대기는 계속 묻는다 — 크론이 이어 만들거나 '다시 시도' 뒤에
+        //   풀리는 것을 이 화면이 알아야 한다, 2026-09-08).
         .task {
             guard !registrationStyle else { return }
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 3_000_000_000)
-                if Task.isCancelled { break }
+                if Task.isCancelled || preparationSettled { break }
                 await refresh()
             }
         }
@@ -242,7 +247,27 @@ struct ClipPreparationView: View {
         return "목소리를 받고 있어요. 앱을 닫아도 계속 받아요."
     }
 
+    /// 3초 폴링을 멈춰도 되는가 — 다 받았고(`isReady`), 소유자를 기다리는 중이 아니고, 관문이 보는
+    /// 매니페스트에도 막힌 그 목소리가 실렸다(아래 `refresh` 의 맞추기 — 그게 실패했으면 다음 회차가
+    /// 다시 맞춘다). 서버 생성 실패는 `isReady` 가 거짓이라 계속 묻는다(의도).
+    nonisolated static func pollingCanStop(isReady: Bool, awaitingOwner: Bool, targetClipsLoaded: Bool) -> Bool {
+        isReady && !awaitingOwner && targetClipsLoaded
+    }
+
+    private var preparationSettled: Bool {
+        Self.pollingCanStop(
+            isReady: readiness.isReady,
+            awaitingOwner: awaitingOwner,
+            targetClipsLoaded: targetVoiceID.flatMap { $0.isEmpty ? nil : $0 }.map { id in
+                voiceStudio.stockClips.contains(where: { $0.voiceProfileId == id })
+            } ?? true
+        )
+    }
+
     private func refresh() async {
+        // 준비도는 서버에서 **지금** 받은 매니페스트로 센다 — 그걸 보고 부족분을 받게 할 때
+        // 프리페처가 그보다 먼저 출발한 목록(신선도 창)으로 받으면 새로 생긴 클립을 놓친다.
+        let askedAt = Date()
         await readiness.refresh(
             session: auth.session,
             ownedVoiceProfileIDs: voiceStudio.ownedVoiceProfileIDs,
@@ -261,7 +286,7 @@ struct ClipPreparationView: View {
         if !readiness.isReady {
             var targets = voiceStudio.ownedVoiceProfileIDs
             if let targetVoiceID, !targetVoiceID.isEmpty { targets.insert(targetVoiceID) }
-            prefetcher.start(session: auth.session, ownedVoiceProfileIDs: targets)
+            prefetcher.start(session: auth.session, ownedVoiceProfileIDs: targets, manifestDepartedAfter: askedAt)
         } else if let targetVoiceID,
                   !voiceStudio.stockClips.contains(where: { $0.voiceProfileId == targetVoiceID }) {
             // ⚠ **관문과 이 화면이 같은 목록을 보게 맞춘다**(2026-09-21). 이 화면은 서버에서

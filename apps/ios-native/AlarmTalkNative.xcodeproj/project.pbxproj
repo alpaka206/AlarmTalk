@@ -157,6 +157,7 @@
 		63953880A52D27B707DAD2CF /* AlarmTalkPalette.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52A22132409AC4AE4AB65E3B /* AlarmTalkPalette.swift */; };
 		6435272191E36EB4988B971A /* StockClipManifestStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0996FA9899B83A51D9A1154D /* StockClipManifestStore.swift */; };
 		6566B7CDF10123C42F5B6DBD /* AuthEmailFormatTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A7AF22ED9CD605A27C041F5 /* AuthEmailFormatTests.swift */; };
+		66B9FA8003ABB652DD337086 /* StockClipRefetchGuardTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C8A89CE775F9628C2A38B82 /* StockClipRefetchGuardTests.swift */; };
 		68169BCE6066FE499AC4DC87 /* SubscriptionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4028869EEA0A313C4D673E6B /* SubscriptionManager.swift */; };
 		68198E3D4BC57296B43E7DE7 /* KoreanLunarHolidayEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5AEC8A234A39D4E7AAFC0F82 /* KoreanLunarHolidayEngine.swift */; };
 		6952BAD905EFB40D45C4EEF4 /* PaidGateCopy.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA09D222C2E3EABB05079D94 /* PaidGateCopy.swift */; };
@@ -493,6 +494,7 @@
 		3A618C960A5C47C0E23AC73B /* SystemRingtoneLibrary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemRingtoneLibrary.swift; sourceTree = "<group>"; };
 		3AECB7E9C88E521DB6347408 /* AuxiliarySheetHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuxiliarySheetHost.swift; sourceTree = "<group>"; };
 		3BFC93E56F33A4EC79AB6F5C /* StringExtensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StringExtensions.swift; sourceTree = "<group>"; };
+		3C8A89CE775F9628C2A38B82 /* StockClipRefetchGuardTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StockClipRefetchGuardTests.swift; sourceTree = "<group>"; };
 		3C91668BFFA3C24F48F19CD2 /* FreeBucketSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FreeBucketSettings.swift; sourceTree = "<group>"; };
 		3D2C0233F3C173D928B67AAD /* AlarmSoundAcousticProbe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlarmSoundAcousticProbe.swift; sourceTree = "<group>"; };
 		3DA90B763DD02D72DFDB6531 /* PressFeedback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PressFeedback.swift; sourceTree = "<group>"; };
@@ -1201,6 +1203,7 @@
 				78725192A752A19FE6B362B1 /* StockClipPrefetcherRestartTests.swift */,
 				5BB9169C934BD78A21ABA66B /* StockClipPrefetcherSupersededTests.swift */,
 				78067BC6BA82E5F920307144 /* StockClipProgressScanTests.swift */,
+				3C8A89CE775F9628C2A38B82 /* StockClipRefetchGuardTests.swift */,
 				5C97D5BF0E20BEB9201D3618 /* SubscriptionConfirmationTests.swift */,
 				291DBF70F5BA99D4BC3C3F25 /* SubscriptionManagerTests.swift */,
 				481AE34FF594622D016836C7 /* SystemRingtoneLibraryTests.swift */,
@@ -1917,6 +1920,7 @@
 				F8EE23A7A6ED464187277E4E /* StockClipPrefetcherRestartTests.swift in Sources */,
 				1E3E37C95AB7597881C4CF7A /* StockClipPrefetcherSupersededTests.swift in Sources */,
 				7861A2CCE7C29CAA40A98E5F /* StockClipProgressScanTests.swift in Sources */,
+				66B9FA8003ABB652DD337086 /* StockClipRefetchGuardTests.swift in Sources */,
 				FA71B3E207E6672692C54335 /* SubscriptionConfirmationTests.swift in Sources */,
 				C9AC298F3AC6D9B84D3F93D5 /* SubscriptionManagerTests.swift in Sources */,
 				A524D29E8CD5E3AB0277A61C /* SystemRingtoneLibraryTests.swift in Sources */,

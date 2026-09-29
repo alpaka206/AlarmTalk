@@ -211,8 +211,27 @@ final class SocialFeatureViewModel: ObservableObject {
 
         var familyGroupOK = false
         var entitlementOK = false
+        // ⚠ **네 조회를 한꺼번에 보낸다**(2026-09-29 효율 감사 M7). 서로의 결과를 입력으로 쓰지
+        //   않는데 예전에는 그룹 → 구독·공유 코드 → `/auth/me` 로 **세 번 차례로** 기다렸다 — 목소리
+        //   탭·이용권·가족 알람·`plan_changed` 가 모두 이 갱신을 기다린다. 안드로이드도 `async` 로
+        //   나란히 보낸다(`MainViewModelBillingActions.refreshShareCodeData`).
+        //   **보내는 것만 한꺼번이고, 받은 것을 쓰는 순서와 가드는 그대로다**(그룹 → 구독·공유 코드 →
+        //   plan·토큰). 그래서:
+        //   - 결제 전 조회 수위(`preflightRevision`)와 계정 요청 표(`accountRequest`)는 **보내기 전에**
+        //     뜬다 — 구독 읽기와 `/auth/me` 가 지금 출발하므로, 그 뒤에 성공한 결제 전 조회·뒤에 보낸
+        //     계정 요청의 답을 이 회차가 되돌리지 못한다.
+        //   - 앞 단계의 가드에서 물러나면 떠 있던 나머지는 취소되고 답은 쓰지 않는다.
+        //   - 구독·공유 코드 조회가 실패하면 `/auth/me` 의 답도 쓰지 않는다 — 예전(그때는 보내지도
+        //     않았다)과 같은 결과다. 버린 답이 굴린 토큰은 무상태 JWT 라 지금 토큰이 그대로 유효하고
+        //     (`docs/spec/session-and-auth.md`), 뜬 표는 순번만 하나 쓴다.
+        let preflightRevision = billingPreflightRevision
+        let accountRequest = beginAccountRequest?()
+        async let familyGroupFetch = api.getFamilyGroup(token: token)
+        async let subscriptionFetch = api.getSubscription(token: token)
+        async let vouchersFetch = api.listVouchers(token: token)
+        async let meFetch = api.me(token: token)
         do {
-            let nextFamilyGroup = try await api.getFamilyGroup(token: token)
+            let nextFamilyGroup = try await familyGroupFetch
             guard activeUserID == userID, generation == refreshGeneration else { return }
             let groupWrite = entitlementWriter.write(accessTicket, "family group") {
                 $0.familyGroup = nextFamilyGroup
@@ -229,11 +248,8 @@ final class SocialFeatureViewModel: ObservableObject {
         }
 
         do {
-            let preflightRevision = billingPreflightRevision
-            async let nextSubscription = api.getSubscription(token: token)
-            async let nextVouchers = api.listVouchers(token: token)
-            let resolvedSubscription = try await nextSubscription
-            let resolvedVouchers = try await nextVouchers
+            let resolvedSubscription = try await subscriptionFetch
+            let resolvedVouchers = try await vouchersFetch
             guard activeUserID == userID, generation == refreshGeneration else { return }
             // 그룹보다 먼저 보는 값이라 구독과 **같이** 적어 둔다(보류 판정의 근거).
             //
@@ -253,10 +269,10 @@ final class SocialFeatureViewModel: ObservableObject {
             var freshPromo: PersonalPromo?
             var planOK = false
             var rolledToken: String?
-            // 표는 보내기 전에 뜬다 — 늦게 도착한 옛 답이 새 답을 덮지 않게(`onFreshPlan`).
-            let accountRequest = beginAccountRequest?()
+            // 표(`accountRequest`)는 위에서 **보내기 전에** 떴다 — 늦게 도착한 옛 답이 새 답을 덮지
+            // 않게(`onFreshPlan`).
             do {
-                let me = try await api.me(token: token)
+                let me = try await meFetch
                 freshPlan = me.user.plan
                 freshPromo = me.user.personalPromo
                 planOK = true
@@ -443,7 +459,8 @@ final class SocialFeatureViewModel: ObservableObject {
     ///
     /// 끝까지 가면 `refreshAll` 의 `/auth/me` 가 plan·프로모·토큰을 이미 세션에 넣었다
     /// (`onFreshPlan`·`onRolledToken`) — 옆에서 사용자 새로고침을 또 부르지 않는다. 못 갔으면
-    /// (구독·공유 코드 조회 실패로 `/auth/me` 전에 멈췄거나, 그 사이 토큰이 굴러 plan 을 버렸다)
+    /// (구독·공유 코드 조회가 실패해 `/auth/me` 의 답을 쓰기 전에 멈췄거나 — 네 조회는 나란히
+    /// 나가지만 답은 예전 순서로 쓴다 — 그 사이 토큰이 굴러 plan 을 버렸다)
     /// plan 이 옛 값이다 — 그때만 사용자 새로고침으로 받는다. 그쪽은 토큰이 굴러도 plan 을
     /// 반영한다(`AuthViewModel.refreshUserApplyingToken`).
     ///

@@ -180,4 +180,104 @@ final class StockClipManifestStoreTests: XCTestCase {
         XCTAssertEqual(storage.load(ownerUserID: "b")?.clips.first?.messageId, "b")
         XCTAssertNil(storage.load(ownerUserID: "a"))
     }
+
+    // MARK: - 신선도 창(2026-09-29 효율 감사 M1 — iOS)
+
+    /// 테스트가 움직이는 시계.
+    private final class TestClock: @unchecked Sendable {
+        private let lock = NSLock()
+        private var stored: Date
+        init(_ start: Date) { stored = start }
+        var now: Date {
+            get { lock.lock(); defer { lock.unlock() }; return stored }
+            set { lock.lock(); stored = newValue; lock.unlock() }
+        }
+    }
+
+    private func makeClockedStorage(_ clock: TestClock, fileURL: URL? = nil) -> StockClipManifestStorage {
+        let url: URL
+        if let fileURL {
+            url = fileURL
+        } else {
+            let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+            url = directory.appendingPathComponent("manifest.json")
+        }
+        return StockClipManifestStorage(fileURL: url, now: { clock.now })
+    }
+
+    /// 창은 **공개된** 응답의 **출발 시각**부터 잰다 — 같은 계정·45초 안만 신선하다.
+    func testRecentlyPublishedCountsFromDepartureOfThePublishedResponse() {
+        let t0 = Date(timeIntervalSince1970: 1_800_000_000)
+        let clock = TestClock(t0)
+        let storage = makeClockedStorage(clock)
+        XCTAssertNil(storage.recentlyPublished(ownerUserID: "owner", within: 45), "공개된 적이 없으면 받는다")
+
+        let ticket = storage.beginFetch(session: session("owner"))
+        XCTAssertNil(storage.recentlyPublished(ownerUserID: "owner", within: 45), "떠 있는 요청은 아직 권위가 아니다")
+        clock.now = t0.addingTimeInterval(10)
+        XCTAssertEqual(storage.save(manifest("fresh"), ticket: ticket), .published)
+
+        clock.now = t0.addingTimeInterval(44)
+        XCTAssertEqual(storage.recentlyPublished(ownerUserID: "owner", within: 45)?.clips.first?.messageId, "fresh")
+        XCTAssertNil(storage.recentlyPublished(ownerUserID: "other", within: 45), "다른 계정의 공개본이 아니다")
+        clock.now = t0.addingTimeInterval(45)
+        XCTAssertNil(
+            storage.recentlyPublished(ownerUserID: "owner", within: 45),
+            "공개(10초)가 아니라 출발(0초)부터 잰다 — 응답은 출발 뒤의 서버 상태다"
+        )
+        clock.now = t0.addingTimeInterval(-1)
+        XCTAssertNil(storage.recentlyPublished(ownerUserID: "owner", within: 45), "시계가 뒤로 가면 모른다")
+    }
+
+    /// '신호 뒤' — 서버가 바뀐 것을 아는 자리는 그 뒤에 출발한 응답만 쓴다.
+    func testRecentlyPublishedHonorsDepartedAfter() {
+        let t0 = Date(timeIntervalSince1970: 1_800_000_000)
+        let clock = TestClock(t0)
+        let storage = makeClockedStorage(clock)
+        XCTAssertEqual(storage.save(manifest("before"), ticket: storage.beginFetch(session: session("owner"))), .published)
+        clock.now = t0.addingTimeInterval(5)
+        let signal = clock.now
+        XCTAssertNil(
+            storage.recentlyPublished(ownerUserID: "owner", within: 45, departedAfter: signal),
+            "신호 전에 출발한 공개본은 새 클립을 모른다"
+        )
+        XCTAssertNotNil(storage.recentlyPublished(ownerUserID: "owner", within: 45), "신호가 없으면 창을 그대로 쓴다")
+        XCTAssertEqual(storage.save(manifest("after"), ticket: storage.beginFetch(session: session("owner"))), .published)
+        clock.now = t0.addingTimeInterval(6)
+        XCTAssertEqual(
+            storage.recentlyPublished(ownerUserID: "owner", within: 45, departedAfter: signal)?.clips.first?.messageId,
+            "after"
+        )
+    }
+
+    /// 창은 표·수위선 가드를 건너뛰지 않는다 — 로그아웃·계정 전환(`clear`)과 더 새 표의 쓰기 실패 뒤에는
+    /// 닫힌다. 네트워크 실패(표만 뽑고 응답 없음)는 닫지 않는다 — 마지막 공개본이 여전히 최신이다.
+    func testRecentlyPublishedClosesOnClearAndOnNewerFailedWriteButNotOnNetworkFailure() throws {
+        let t0 = Date(timeIntervalSince1970: 1_800_000_000)
+        let clock = TestClock(t0)
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let fileURL = directory.appendingPathComponent("manifest.json")
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let storage = makeClockedStorage(clock, fileURL: fileURL)
+
+        XCTAssertEqual(storage.save(manifest("a"), ticket: storage.beginFetch(session: session("owner"))), .published)
+        _ = storage.beginFetch(session: session("owner")) // 네트워크에서 실패한 뒤 요청
+        XCTAssertNotNil(storage.recentlyPublished(ownerUserID: "owner", within: 45), "네트워크 실패는 창을 닫지 않는다")
+
+        // 더 새 표의 쓰기 실패 — 디스크가 최신이 아니다.
+        let newer = storage.beginFetch(session: session("owner"))
+        try FileManager.default.removeItem(at: fileURL)
+        try FileManager.default.createDirectory(at: fileURL, withIntermediateDirectories: true)
+        XCTAssertEqual(storage.save(manifest("b"), ticket: newer), .failed)
+        XCTAssertNil(storage.recentlyPublished(ownerUserID: "owner", within: 45), "더 새 응답의 공개가 실패했으면 다시 받는다")
+
+        // 쓰기가 되살아나 다시 공개된 뒤 같은 계정으로 재로그인(`clear(preserving:)`) — 창은 닫힌다.
+        try FileManager.default.removeItem(at: fileURL)
+        XCTAssertEqual(storage.save(manifest("c"), ticket: storage.beginFetch(session: session("owner"))), .published)
+        XCTAssertNotNil(storage.recentlyPublished(ownerUserID: "owner", within: 45))
+        storage.clear(preservingOwnerUserID: "owner")
+        XCTAssertNotNil(storage.load(ownerUserID: "owner"), "디스크 시드는 남는다")
+        XCTAssertNil(storage.recentlyPublished(ownerUserID: "owner", within: 45), "로그인이 바뀌면 이 세션에 받은 것이 아니다")
+    }
 }

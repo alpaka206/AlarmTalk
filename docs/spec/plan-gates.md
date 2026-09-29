@@ -125,11 +125,22 @@ freeVoiceTier = 로그인함 && !유료
 
 ⚠ **`/auth/me` 를 한 흐름에서 두 번 부르지 말 것.** 이용권 새로고침(`refreshAll`)이 이미
 `/auth/me` 로 plan·프로모·토큰을 받아 세션에 넣는다 — 그 옆에서 사용자 새로고침을 또 부르면
-같은 답을 한 번 더 기다린다. 예외는 이용권 새로고침이 **끝까지 못 갔을 때**다(구독 조회
-실패로 `/auth/me` 전에 멈췄거나, 그 사이 토큰이 굴러 plan 을 버렸다) — 그때는 plan 이 옛
-값이라 사용자 새로고침으로 받는다. "확정이 성공했으면 사용자도 이미 읽었다" 에 기대지 말 것 —
+같은 답을 한 번 더 기다린다. 예외는 이용권 새로고침이 **끝까지 못 갔을 때**다(구독 조회가
+실패해 `/auth/me` 의 답을 쓰기 전에 멈췄거나, 그 사이 토큰이 굴러 plan 을 버렸다) — 그때는
+plan 이 옛 값이라 사용자 새로고침으로 받는다. "확정이 성공했으면 사용자도 이미 읽었다" 에 기대지 말 것 —
 확정할 트랜잭션이 없는 회차(만료 뒤 구독 관리·'복원할 구매 없음')가 있다. 반대로 **프로필을
 고친 뒤에는** 사용자 새로고침이 맞고(프로필은 그쪽만 싣는다), 이용권 새로고침은 필요 없다.
+
+**이용권 새로고침의 조회는 한꺼번에 보낸다**(2026-09-29 효율 감사 M7). 가족 그룹·구독·공유 코드·
+`/auth/me` 넷은 서로의 결과를 입력으로 쓰지 않는다 — 차례로 기다리면 목소리 탭·이용권·가족 알람·
+`plan_changed` 가 왕복 세 번을 기다린다(안드로이드는 처음부터 `async` 로 나란히 보낸다).
+- **보내는 것만 한꺼번이다.** 받은 것을 쓰는 순서(그룹 → 구독·공유 코드 → plan·토큰)와 가드(계정·
+  갱신 세대·결제 전 조회 수위·권한 스냅샷의 문)는 그대로다. 앞 단계의 가드에서 물러나면 떠 있던
+  나머지는 취소되고 답은 쓰지 않는다.
+- 결제 전 조회 수위와 계정 요청 표(순번·진입)는 **보내기 전에** 뜬다 — 구독 읽기와 `/auth/me` 가 맨
+  처음에 출발하므로, 그 뒤에 성공한 결제 전 조회·뒤에 보낸 계정 요청의 답을 이 회차가 되돌리지 못한다.
+- 구독·공유 코드 조회가 실패하면 `/auth/me` 의 답도 쓰지 않는다(위 '끝까지 못 갔을 때') — 버린 답이
+  굴린 토큰은 무상태 JWT 라 지금 토큰이 그대로 유효하다([`session-and-auth.md`](session-and-auth.md)).
 
 ## 구현 지도
 
@@ -146,6 +157,7 @@ freeVoiceTier = 로그인함 && !유료
 | 진입 갱신 — 목소리·이용권(완결된 갱신만 · 60초 · 같은 계정·같은 앱 진입 · 보낼 때 적는다) | `ui/app/AlarmTalkApp.kt` 의 `lastTabRefreshAt`(키는 `tab to sessionEffectKey` — 계정 + 세션 세대라 규칙과 같다. ⚠ 표를 갱신 **전에** 적는다 — 실패 뒤 재시도 규칙은 아직 다르다) | `EntryRefreshFreshness` · `SocialFeatureViewModel.refreshOnEntry` · `VoiceStudioViewModel.refreshOnEntry` — 부르는 자리 `MainTabsView.refreshForSelectedTab`(목소리·더보기)·`MainTabsView.refreshAll`·`AlarmEditorSheet`·`MemberManagementView`·`BillingPanel` | — |
 | 알람 탭 동기화 스로틀(키 = 탭 + 계정 — 토큰 아님 · 완결되지 않은 회차는 칸을 지운다) | 같은 `lastTabRefreshAt`(`tab to sessionEffectKey` — ⚠ 실패해도 칸을 지우지 않는다) | `MainTabsView.tabRefreshThrottleKey` · `AlarmTabSyncThrottle`(완결 판정은 `RemoteAlarmSyncViewModel.runFullSync` 의 반환값. 재로그인은 `MainTabsView` 가 새로 만들어져 표가 비워진다) | — |
 | 쓰기·푸시 뒤 이용권 + plan(`/auth/me` 한 번 — 끝까지 못 가면 사용자 새로고침) | — | `SocialFeatureViewModel.refreshAllThenUserIfIncomplete` — 부르는 자리 `plan_changed`(`AlarmTalkApp` 의 `onPlanChanged`)·`BillingPanel` 의 구매·복원·구독 관리 시트 닫힘 | — |
+| 이용권 새로고침의 조회는 한꺼번에(쓰는 순서·가드는 그대로 · 수위·계정 표는 보내기 전에) | `MainViewModelBillingActions.refreshShareCodeData`·`MainViewModelSocialActions` 의 `async` | `SocialFeatureViewModel.refreshAll`(`async let`); 회귀 `EntryRefreshFreshnessTests`(네 조회가 한꺼번에·표는 보내기 전에) | — |
 
 ## 관련 규약 (다른 문서)
 

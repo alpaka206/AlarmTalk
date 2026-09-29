@@ -33,6 +33,18 @@ final class StockClipPrefetcher: ObservableObject {
     /// (서버·기기 부담을 감안해 안드로이드와 같은 4).
     private static let parallelism = 4
 
+    /// 매니페스트 **신선도 창**(초, 2026-09-29 효율 감사 M1 — iOS). 이 안에 출발해 공개된 매니페스트가
+    /// 있으면 `run` 은 다시 받지 않고 그 공개본으로 받는다(`StockClipManifestStore.recentlyPublished`).
+    ///
+    /// 예전에는 `start` 마다 약 168KB 를 새로 받았다 — 콜드 스타트에 계정 키·언어 키·전경 복귀가
+    /// 거의 동시에 부르고, 내 목소리 목록이 도착하면 대상을 넓혀 또 불러 3~5번, 전경 복귀마다 재바인딩의
+    /// 강제 조회(의도)와 겹쳐 2번이었다. 45초는 한 번의 콜드 스타트·전경 복귀 안에서 겹치는 호출을 덮고,
+    /// 다음 복귀에는 다시 받을 만큼 짧다 — 규칙은 `docs/spec/voice-and-message.md` 「언제 받는가」.
+    ///
+    /// ⚠ **서버가 바뀐 것을 아는 자리는 창을 쓰지 않는다** — `start(manifestDepartedAfter:)` 로 그
+    ///   시각 **뒤에 출발한** 응답만 받게 한다(클론 생성이 끝난 뒤의 다운로드, 준비 화면의 부족분).
+    static let manifestFreshnessWindow: TimeInterval = 45
+
     enum State: Equatable {
         case idle
         case running(done: Int, total: Int)
@@ -47,6 +59,8 @@ final class StockClipPrefetcher: ObservableObject {
     /// 지금 도는 회차가 받기로 한 **내 목소리** id 들. `start` 가 더 넓은 대상을 가져오면 그
     /// 회차를 끊고 넓은 대상으로 다시 시작한다(`shouldRestart`). 회차가 끝나거나 취소되면 비운다.
     private(set) var runningOwnedVoiceProfileIDs: Set<String> = []
+    /// 지금 도는 회차의 '신호 뒤' 요구(`start(manifestDepartedAfter:)`). 넓히기로 다시 시작할 때 잇는다.
+    private(set) var runningManifestDepartedAfter: Date?
     /// `start` 마다 올리는 세대. **취소된 앞 회차가 뒤늦게 상태를 덮어쓰지 못하게** 한다 —
     /// 취소는 배치 경계에서만 확인되므로, 앞 회차가 마지막 배치를 끝내고 `.finished` 를
     /// 쓰면 새 회차가 받는 중인데도 받기 화면이 닫혔다.
@@ -83,20 +97,31 @@ final class StockClipPrefetcher: ObservableObject {
         !requested.isSubset(of: running)
     }
 
+    /// - Parameter manifestDepartedAfter: **'신호 뒤'** — 서버가 바뀐 것을 아는 자리(클론 생성 완료 뒤,
+    ///   준비 화면이 서버에서 새로 본 부족분)가 넘긴다. 이 시각 **뒤에 출발한** 매니페스트만 쓴다 —
+    ///   신선도 창 안이라도 그보다 먼저 출발한 공개본은 새 클립을 모른다. nil 이면 창을 그대로 쓴다.
+    ///   ⚠ 이미 도는 회차를 끊지는 않는다(대상이 넓어질 때만 끊는다 — `shouldRestart`). 그 회차가
+    ///   옛 목록으로 끝나면 부른 쪽이 다시 `start` 한다(준비 화면·클론 구동 모두 되부른다).
     func start(
         session: AuthSession?,
         language: String = VoiceStudioViewModel.appVoiceLanguage(),
-        ownedVoiceProfileIDs: Set<String> = []
+        ownedVoiceProfileIDs: Set<String> = [],
+        manifestDepartedAfter: Date? = nil
     ) {
         guard let session else { return }
         var owned = ownedVoiceProfileIDs
+        var departedAfter = manifestDepartedAfter
         if task != nil {
             guard Self.shouldRestart(running: runningOwnedVoiceProfileIDs, requested: owned) else { return }
             // 좁아지는 쪽으로는 끊지 않으니, 다시 시작하는 회차는 두 대상의 합이다.
             owned.formUnion(runningOwnedVoiceProfileIDs)
+            // '신호 뒤' 도 더 엄한 쪽을 이어 간다 — 창만 쓰는 넓히기가 신호 뒤 회차를 끊고 옛 목록으로
+            // 다시 받으면 새 클립을 놓친다.
+            departedAfter = [departedAfter, runningManifestDepartedAfter].compactMap { $0 }.max()
             cancel()
         }
         runningOwnedVoiceProfileIDs = owned
+        runningManifestDepartedAfter = departedAfter
         generation += 1
         let gen = generation
         // 잡아 둔 세션은 재시도 회차가 그대로 쓴다 — 요청의 bearer 와 매니페스트 임자(user id)
@@ -111,7 +136,13 @@ final class StockClipPrefetcher: ObservableObject {
             // 물러난 회차(`.superseded`)는 실패가 아니라 여기로 오지 않는다(`run` 주석).
             for attempt in 0..<Self.maxAttempts {
                 if Task.isCancelled { break }
-                await self?.run(session: session, language: language, ownedVoiceProfileIDs: owned, gen: gen)
+                await self?.run(
+                    session: session,
+                    language: language,
+                    ownedVoiceProfileIDs: owned,
+                    manifestDepartedAfter: departedAfter,
+                    gen: gen
+                )
                 guard await self?.state == .failed else { break }
                 if attempt < Self.maxAttempts - 1 {
                     try? await Task.sleep(nanoseconds: Self.retryDelaySeconds * 1_000_000_000)
@@ -120,6 +151,7 @@ final class StockClipPrefetcher: ObservableObject {
             if self?.generation == gen {
                 self?.task = nil
                 self?.runningOwnedVoiceProfileIDs = []
+                self?.runningManifestDepartedAfter = nil
             }
         }
     }
@@ -175,6 +207,7 @@ final class StockClipPrefetcher: ObservableObject {
         task?.cancel()
         task = nil
         runningOwnedVoiceProfileIDs = []
+        runningManifestDepartedAfter = nil
         generation += 1
     }
 
@@ -248,59 +281,21 @@ final class StockClipPrefetcher: ObservableObject {
     /// 곧바로 다시 받으면 되는 실패를 30초 대기로 미루지 않는다.
     private static let passesPerRun = 3
 
-    private func run(session: AuthSession, language: String, ownedVoiceProfileIDs: Set<String> = [], gen: Int) async {
+    private func run(
+        session: AuthSession,
+        language: String,
+        ownedVoiceProfileIDs: Set<String> = [],
+        manifestDepartedAfter: Date? = nil,
+        gen: Int
+    ) async {
         setState(.running(done: 0, total: 0), gen: gen)
         let token = session.token
-        let ticket = StockClipManifestStore.beginFetch(session: session)
         do {
-            let fetched = try await api.getStockClipManifest(token: token)
-            // 알람 관문(`defaultVoiceProgress`)이 오프라인 콜드스타트에서도 같은 목록을 보게 남긴다.
-            guard !Task.isCancelled, gen == generation else { return }
-            // 이 회차가 실제로 받을 목록. 공개에 이겼으면 방금 받은 것, 졌으면 **디스크의 권위**다.
-            let manifest: StockClipListResponse
-            // ⚠ **`.published` 가 아니면 전부 실패로 뭉치지 말 것**(2026-09-22 정정).
-            // 세 결과의 뜻이 다르다 — 안드로이드 `StockClipPrefetchWorker` 의 `when` 과 같은
-            // 세 갈래로 가른다.
-            switch StockClipManifestStore.save(fetched, ticket: ticket) {
-            case .published:
-                manifest = fetched
-            case .superseded:
-                // **더 새 매니페스트가 이미 공개됐다 — 정상 경합이지 실패가 아니다.**
-                // 실제로 늘 일어나는 순서다: 로그인·콜드스타트에서 `AlarmTalkApp` 의
-                // `.task(id: auth.session?.user.id)` 가 부르는 `start`(표 N)와
-                // `.task(id: stockClipLanguageKey)` → `loadStockClips(force: true)`(표 N+1)가
-                // 같은 엔드포인트를 거의 동시에 부르고, 등록 흐름에서는 `ClonePrerenderDrive` 가
-                // 다운로드 구간에 들어가는 순간 완료 푸시의 `loadStockClips(force: true)` 가
-                // 겹친다. 뒤 표가 먼저 공개되면 앞 표는 여기로 온다.
-                // 예전에는 이걸 `.failed` 로 뭉쳐서 바깥 루프가 30초를 자고 재시도했고, 그동안
-                // `VoiceSetupView` 는 「목소리를 받지 못했어요」+'다시 시도' 를 띄웠으며,
-                // 등록 진행률은 50% 에 30초 멈췄다(드라이브는 1.5초마다 `start` 를 부르지만
-                // `guard task == nil` 이라 자는 회차를 못 깨운다). 안드로이드 원본은
-                // SUPERSEDED 를 「물러난다 = 성공」으로 끝낸다.
-                // 물러나되 **받는 일은 이어 간다** — 안드로이드는 이긴 쪽이 워커를 다시 걸지만
-                // iOS 의 `loadStockClips` 는 공개만 하고 받지 않으므로, 여기서 이긴 매니페스트
-                // (디스크)를 다시 읽어 그 목록으로 받는다. 받는 목록과 진행률(`defaultVoiceProgress`
-                // 도 디스크를 읽는다)이 같은 권위를 보게 된다.
-                // 디스크에 아무것도 없으면(로그아웃으로 `clear` 됐거나 이긴 쪽의 쓰기가 실패해
-                // 아무도 공개하지 못했다) 받을 근거가 없으니 물러난다 — 실패가 아니므로
-                // 30초 재시도 루프를 돌리지 않는다. 다음 `start`(포그라운드 복귀·알람 관문)가
-                // 새 표로 다시 받아 온다.
-                let owner = session.user.id
-                let winner = await Task.detached(priority: .utility) {
-                    StockClipManifestStore.load(ownerUserID: owner)
-                }.value
-                guard !Task.isCancelled, gen == generation else { return }
-                guard let winner else {
-                    setState(.finished, gen: gen)
-                    return
-                }
-                manifest = winner
-            case .failed:
-                // **디스크 쓰기 실패만 실패다.** 아무도 새 권위를 공개하지 못한 상태라 재시도가
-                // 맞다(안드로이드는 `Result.retry()`).
-                setState(.failed, gen: gen)
-                return
-            }
+            guard let manifest = try await manifestForRun(
+                session: session,
+                departedAfter: manifestDepartedAfter,
+                gen: gen
+            ) else { return }
             let clips = manifest.clips.filter { clip in
                 if isSystemVoiceId(clip.voiceProfileId) {
                     return Self.isDefaultVoiceTarget(clip, language: language)
@@ -357,6 +352,74 @@ final class StockClipPrefetcher: ObservableObject {
             setState(missing.isEmpty ? .finished : .failed, gen: gen)
         } catch {
             setState(.failed, gen: gen)
+        }
+    }
+
+    /// 이 회차가 받을 목록. nil 이면 회차를 여기서 끝낸다(필요한 상태는 여기서 적었다).
+    ///
+    /// **신선도 창 안에 공개된 매니페스트가 있으면 다시 받지 않는다**(`manifestFreshnessWindow`).
+    /// 받는 목록과 진행률(`defaultVoiceProgress` 도 디스크의 공개본을 읽는다)이 같은 권위를 본다 —
+    /// 공개 경합에서 물러났을 때 이긴 쪽을 이어 받는 것과 같은 자리다. 창은 표·세대 가드를 건너뛰지
+    /// 않는다: 공개된(표를 통과한) 응답만 세고, 로그아웃·더 새 표의 쓰기 실패 뒤에는 닫힌다.
+    private func manifestForRun(
+        session: AuthSession,
+        departedAfter: Date?,
+        gen: Int
+    ) async throws -> StockClipListResponse? {
+        if let fresh = StockClipManifestStore.recentlyPublished(
+            ownerUserID: session.user.id,
+            within: Self.manifestFreshnessWindow,
+            departedAfter: departedAfter
+        ) {
+            return fresh
+        }
+        let ticket = StockClipManifestStore.beginFetch(session: session)
+        let fetched = try await api.getStockClipManifest(token: session.token)
+        // 알람 관문(`defaultVoiceProgress`)이 오프라인 콜드스타트에서도 같은 목록을 보게 남긴다.
+        guard !Task.isCancelled, gen == generation else { return nil }
+        // 이 회차가 실제로 받을 목록. 공개에 이겼으면 방금 받은 것, 졌으면 **디스크의 권위**다.
+        // ⚠ **`.published` 가 아니면 전부 실패로 뭉치지 말 것**(2026-09-22 정정).
+        // 세 결과의 뜻이 다르다 — 안드로이드 `StockClipPrefetchWorker` 의 `when` 과 같은
+        // 세 갈래로 가른다.
+        switch StockClipManifestStore.save(fetched, ticket: ticket) {
+        case .published:
+            return fetched
+        case .superseded:
+            // **더 새 매니페스트가 이미 공개됐다 — 정상 경합이지 실패가 아니다.**
+            // 실제로 늘 일어나는 순서다: 로그인·콜드스타트에서 `AlarmTalkApp` 의
+            // `.task(id: auth.session?.user.id)` 가 부르는 `start`(표 N)와
+            // `.task(id: stockClipLanguageKey)` → `loadStockClips(force: true)`(표 N+1)가
+            // 같은 엔드포인트를 거의 동시에 부르고, 등록 흐름에서는 `ClonePrerenderDrive` 가
+            // 다운로드 구간에 들어가는 순간 완료 푸시의 `loadStockClips(force: true)` 가
+            // 겹친다. 뒤 표가 먼저 공개되면 앞 표는 여기로 온다.
+            // 예전에는 이걸 `.failed` 로 뭉쳐서 바깥 루프가 30초를 자고 재시도했고, 그동안
+            // `VoiceSetupView` 는 「목소리를 받지 못했어요」+'다시 시도' 를 띄웠으며,
+            // 등록 진행률은 50% 에 30초 멈췄다(드라이브는 1.5초마다 `start` 를 부르지만
+            // `guard task == nil` 이라 자는 회차를 못 깨운다). 안드로이드 원본은
+            // SUPERSEDED 를 「물러난다 = 성공」으로 끝낸다.
+            // 물러나되 **받는 일은 이어 간다** — 안드로이드는 이긴 쪽이 워커를 다시 걸지만
+            // iOS 의 `loadStockClips` 는 공개만 하고 받지 않으므로, 여기서 이긴 매니페스트
+            // (디스크)를 다시 읽어 그 목록으로 받는다. 받는 목록과 진행률(`defaultVoiceProgress`
+            // 도 디스크를 읽는다)이 같은 권위를 보게 된다.
+            // 디스크에 아무것도 없으면(로그아웃으로 `clear` 됐거나 이긴 쪽의 쓰기가 실패해
+            // 아무도 공개하지 못했다) 받을 근거가 없으니 물러난다 — 실패가 아니므로
+            // 30초 재시도 루프를 돌리지 않는다. 다음 `start`(포그라운드 복귀·알람 관문)가
+            // 새 표로 다시 받아 온다.
+            let owner = session.user.id
+            let winner = await Task.detached(priority: .utility) {
+                StockClipManifestStore.load(ownerUserID: owner)
+            }.value
+            guard !Task.isCancelled, gen == generation else { return nil }
+            guard let winner else {
+                setState(.finished, gen: gen)
+                return nil
+            }
+            return winner
+        case .failed:
+            // **디스크 쓰기 실패만 실패다.** 아무도 새 권위를 공개하지 못한 상태라 재시도가
+            // 맞다(안드로이드는 `Result.retry()`).
+            setState(.failed, gen: gen)
+            return nil
         }
     }
 }
