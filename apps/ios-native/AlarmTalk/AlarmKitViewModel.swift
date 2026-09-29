@@ -214,6 +214,7 @@ final class AlarmKitViewModel: ObservableObject {
             }
             applyAuthorizationState(state)
             if alarmAuthorized {
+                // 허용됐으면 안내할 것이 없다.
             } else if permissionRecoveryNeeded {
                 // 프롬프트가 뜨지 않은 채 돌아온 경우다. "다시 시도" 를 안내하면
                 // 눌러도 아무 일이 없는 버튼을 계속 누르게 만든다.
@@ -295,7 +296,7 @@ final class AlarmKitViewModel: ObservableObject {
             .subtracting(currentIDs)
         let holidayPredicate = holidayStore.holidayPredicate()
         for kitID in disappearedIDs {
-            let recordBeforeStop = store.recordByAlarmKitID(kitID)
+            let recordBeforeStop = store.record(alarmKitID: kitID)
             // In-app voice fallback 재생 중이면 정지 (AlarmKit 자체 stop 과 별개).
             //
             // ⚠ **무조건 끄지 말 것.** 이 루프는 '목록에서 사라진 알람' 을 도는데,
@@ -303,7 +304,7 @@ final class AlarmKitViewModel: ObservableObject {
             // 조건 없이 끄면 **지금 울리고 있는 알람의 목소리가 끊긴다**(알람은 계속
             // 울리는데 목소리만 사라져 '왜 목소리가 안 나오지' 로 보인다).
             // 안드로이드 `ringingTeardownBelongsToCurrentAlarm`(Codex #666 P1)과 같은 규칙.
-            AlarmAppContext.stopVoiceIfOwnedStatic(by: recordBeforeStop?.id)
+            AlarmAppContext.stopVoiceIfOwned(by: recordBeforeStop?.id)
             // LiveActivity 가 아닌 경로(앱이 살아있는 채 알람이 사라진 경우)의 stop 도
             // AlarmAppContext 로 수렴시켜 markStopped + dismiss-time 공휴일 재계산/재무장을
             // 한 곳에서 처리한다.
@@ -331,7 +332,7 @@ final class AlarmKitViewModel: ObservableObject {
                 currentStateRaw.lowercased().contains("alerting") &&
                 previousStateRaw?.lowercased().contains("alerting") != true
             if didEnterAlerting {
-                if let record = store.recordByAlarmKitID(kitID) {
+                if let record = store.record(alarmKitID: kitID) {
                     store.markRinging(id: record.id)
                     // ⚠ **여기서 네트워크를 부르지 않는다**(CLAUDE.md 「Real alarm」).
                     // 로컬 큐에 적기만 하고, 전송은 `UsageEventUploader` 가 나중에 한다.
@@ -445,28 +446,27 @@ final class AlarmKitViewModel: ObservableObject {
         // ⚠ **출처는 지우기 전에 담아 둔다.** `remove` 가 출처 기록도 함께 지우므로,
         // 아래 행 정리에서 읽으면 항상 기본값(남의 계정 정리)이 나와 **행이 영영 안 꺼진다.**
         var resolvedOrigins: [String: PendingAlarmCancellationStore.Origin] = [:]
+        func markResolved(_ raw: String) {
+            resolvedOrigins[raw] = PendingAlarmCancellationStore.origin(of: raw)
+            PendingAlarmCancellationStore.remove(raw)
+            resolved.insert(raw)
+        }
         for raw in pending {
             guard let uuid = UUID(uuidString: raw) else {
                 // UUID 로 읽히지 않으면 취소할 방법이 없다 — 붙들고 있을 이유도 없다.
-                resolvedOrigins[raw] = PendingAlarmCancellationStore.origin(of: raw)
-                PendingAlarmCancellationStore.remove(raw)
-                resolved.insert(raw)
+                markResolved(raw)
                 continue
             }
             if !liveIDs.contains(uuid) {
                 // OS 에 이미 없다(사용자가 지웠거나 발화 후 사라졌다).
-                resolvedOrigins[raw] = PendingAlarmCancellationStore.origin(of: raw)
-                PendingAlarmCancellationStore.remove(raw)
-                resolved.insert(raw)
+                markResolved(raw)
                 cleared += 1
                 continue
             }
             do {
                 if let cancelAlarm { try cancelAlarm(uuid) }
                 else { try AlarmManager.shared.cancel(id: uuid) }
-                resolvedOrigins[raw] = PendingAlarmCancellationStore.origin(of: raw)
-                PendingAlarmCancellationStore.remove(raw)
-                resolved.insert(raw)
+                markResolved(raw)
                 cleared += 1
             } catch {
                 // ⚠ **여기서 `statusMessage` 를 세우지 않는다.** 이 sweep 는 앱을 열 때마다
@@ -574,7 +574,7 @@ final class AlarmKitViewModel: ObservableObject {
     /// 울리기 시작하는 편이 오히려 놀랍다.
     ///
     /// ⚠ **로그아웃 상태에서는 알람 화면에 들어갈 수도 없다** — `RootView` 가
-    /// `!auth.isAuthenticated` 면 `AuthGateView` 를 띄운다. 그래서 예약이 남아 있으면
+    /// `!auth.isAuthenticated` 면 랜딩(`LandingView`)을 띄운다. 그래서 예약이 남아 있으면
     /// 사용자가 **끌 방법이 없는 알람**이 우는 셈이다. 끊어야 하는 진짜 이유가 이것이다.
     ///
     /// 꺼 두는 것이 안전한 이유는 **돌아왔을 때** 화면이 그 사실을 말하기 때문이다 —
@@ -1122,26 +1122,24 @@ final class AlarmKitViewModel: ObservableObject {
         var resolved: Set<String> = []
         // ⚠ 출처는 지우기 전에 담아 둔다 — `remove` 가 출처 기록도 함께 지운다.
         var resolvedOrigins: [String: PendingAlarmCancellationStore.Origin] = [:]
+        func markResolved(_ raw: String) {
+            resolvedOrigins[raw] = PendingAlarmCancellationStore.origin(of: raw)
+            PendingAlarmCancellationStore.remove(raw)
+            resolved.insert(raw)
+        }
         for raw in owed {
-            let origin = PendingAlarmCancellationStore.origin(of: raw)
             guard let uuid = UUID(uuidString: raw) else {
                 // UUID 로 읽히지 않으면 취소할 방법이 없다 — 붙들고 있을 이유도 없다.
-                resolvedOrigins[raw] = origin
-                PendingAlarmCancellationStore.remove(raw)
-                resolved.insert(raw)
+                markResolved(raw)
                 continue
             }
             if let liveIDs, !liveIDs.contains(uuid) {
-                resolvedOrigins[raw] = origin
-                PendingAlarmCancellationStore.remove(raw)
-                resolved.insert(raw)
+                markResolved(raw)
                 continue
             }
             do {
                 try AlarmManager.shared.cancel(id: uuid)
-                resolvedOrigins[raw] = origin
-                PendingAlarmCancellationStore.remove(raw)
-                resolved.insert(raw)
+                markResolved(raw)
             } catch {
                 cleared = false
             }
@@ -1290,7 +1288,7 @@ final class AlarmKitViewModel: ObservableObject {
         // 그 외는 기존 동작 그대로: 단발 -> .relative(.never), 반복 -> .relative(.weekly).
         // AlarmKit 이 timezone 적응 + 자동 재무장을 소유한다 (blast radius 최소화).
         let time = Alarm.Schedule.Relative.Time(hour: record.hour, minute: record.minute)
-        let weekdays = record.repeatDaysMask.repeatDays.compactMap(localeWeekday)
+        let weekdays = record.repeatDaysMask.repeatDays.map { Self.localeWeekdays[$0.rawValue] }
         let recurrence: Alarm.Schedule.Relative.Recurrence = weekdays.isEmpty
             ? .never
             : .weekly(weekdays)
@@ -1396,9 +1394,7 @@ final class AlarmKitViewModel: ObservableObject {
         resolution: AlarmSoundResolution
     ) -> String {
         switch resolution {
-        case .systemDefault:
-            return "\(record.label) 알람을 예약했어요."
-        case .bundledNamed:
+        case .systemDefault, .bundledNamed:
             return "\(record.label) 알람을 예약했어요."
         case .cachedAudio(_, let durationMs):
             let seconds = max(1, Int((durationMs + 500) / 1000))
@@ -1406,15 +1402,8 @@ final class AlarmKitViewModel: ObservableObject {
         }
     }
 
-    private func localeWeekday(_ day: RepeatDay) -> Locale.Weekday? {
-        switch day {
-        case .sunday: return .sunday
-        case .monday: return .monday
-        case .tuesday: return .tuesday
-        case .wednesday: return .wednesday
-        case .thursday: return .thursday
-        case .friday: return .friday
-        case .saturday: return .saturday
-        }
-    }
+    /// `RepeatDay` 의 rawValue(일=0 … 토=6) 순서 그대로.
+    private static let localeWeekdays: [Locale.Weekday] = [
+        .sunday, .monday, .tuesday, .wednesday, .thursday, .friday, .saturday,
+    ]
 }

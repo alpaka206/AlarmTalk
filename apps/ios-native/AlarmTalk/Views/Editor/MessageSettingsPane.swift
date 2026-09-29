@@ -86,7 +86,8 @@ struct MessageSettingsPane: View {
     @State private var contextBeforeDialog: String?
 
     /// 안드로이드 `EditorMessageContexts`(`AlarmEditorControls.kt:480-487`) 순서 그대로.
-    private static let options: [(id: String, label: String)] = [
+    /// 요약 행(`MessageModeSummaryRow`)도 이 표에서 이름을 읽는다 — 표는 하나다.
+    fileprivate static let options: [(id: String, label: String)] = [
         ("preset", "기본 인사말"),
         ("wake_weather", "날씨"),
         ("wake_fortune", "운세"),
@@ -361,12 +362,6 @@ struct MessageSettingsPane: View {
     /// 그전에는 **먼저 고르고 나중에 물어서**, 다이얼로그를 취소하면 **값 없는 종류**가 선택된
     /// 채로 남았다. 이 화면은 나갈 때 자동 반영(`onDisappear`)이라 그대로 편집기에 실리고,
     /// 사용자는 고른 적 없는 미완성 상태로 저장을 시도하게 된다.
-    ///
-    /// nil = 되돌릴 것이 없다(같은 종류를 다시 누른 경우, 또는 상세 카드 '변경하기').
-    private func rollbackTarget(from previous: String, to id: String) -> String? {
-        previous != id ? previous : nil
-    }
-
     private func select(_ id: String) {
         let previous = draftContext
         draftContext = id
@@ -376,7 +371,8 @@ struct MessageSettingsPane: View {
             contextBeforeDialog = nil
             return
         }
-        contextBeforeDialog = rollbackTarget(from: previous, to: id)
+        // nil = 되돌릴 것이 없다(같은 종류를 다시 누른 경우, 또는 상세 카드 '변경하기').
+        contextBeforeDialog = previous != id ? previous : nil
         switch id {
         case "wake_weather": weatherDialogOpen = true
         case "wake_fortune": openFortuneSheet()
@@ -500,15 +496,9 @@ struct MessageModeSummaryRow: View {
         if nothingChosenYet {
             return network.isOnline ? "문구를 준비하고 있어요" : "오프라인이라 문구를 불러오지 못했어요"
         }
-        let label: String
-        switch context {
-        case "wake_weather": label = "날씨"
-        case "wake_fortune": label = "운세"
-        case "cheer", "love": label = "응원"
-        case "medication": label = "약"
-        case MessageSettingsResult.manualContext: label = "직접 입력"
-        default: label = "기본 인사말"
-        }
+        // 옛 이름 `love` 는 응원으로 읽는다(`RandomPromptContext.cheer` 주석). 모르는 값은 기본 인사말.
+        let id = context == "love" ? RandomPromptContext.cheer.rawValue : context
+        let label = MessageSettingsPane.options.first { $0.id == id }?.label ?? "기본 인사말"
         // 날씨는 어느 도시 기준인지 함께 보여준다(예: "날씨 · 서울").
         let city = weatherCity.trimmingCharacters(in: .whitespaces)
         if context == "wake_weather", !city.isEmpty {

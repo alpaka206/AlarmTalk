@@ -34,12 +34,7 @@ final class LocalAlarmStore: ObservableObject {
         storageURL: URL? = nil, loadFromDisk: Bool = true,
         loadRecords: (@Sendable () async -> [LocalAlarmRecord])? = nil
     ) {
-        let resolvedStorageURL: URL
-        if let storageURL {
-            resolvedStorageURL = storageURL
-        } else {
-            resolvedStorageURL = Self.defaultStorageURL()
-        }
+        let resolvedStorageURL = storageURL ?? Self.defaultStorageURL()
         let writer = LocalAlarmFileWriter(url: resolvedStorageURL)
         self.writer = writer
         self.persistence = LocalAlarmPersistence(storageURL: resolvedStorageURL, writer: writer)
@@ -199,8 +194,8 @@ final class LocalAlarmStore: ObservableObject {
         }
     }
 
-    /// `AlarmRepository.requireUniqueTime` 와 동일 의미. mask 동일 + 동일 시각이면 중복.
-    /// 단순화: hour+minute 만 일치해도 중복으로 본다 (Android 원본 의도와 동일).
+    /// `AlarmRepository.requireUniqueTime` 와 동일 의미 — hour+minute 가 같으면 중복이다
+    /// (요일은 보지 않는다. Android 원본 의도와 동일). 판정은 `conflictingAlarms` 하나다.
     ///
     /// ⚠ **소유자를 반드시 넘긴다 — 목록만 거르면 뚫린다**(Codex #699 P1).
     /// 목록에서 남의 알람을 감춰도 이 판정이 저장소 전체를 보면, B 가 A 의 **숨은** 알람과
@@ -209,16 +204,12 @@ final class LocalAlarmStore: ObservableObject {
     func requireUniqueTime(
         hour: Int,
         minute: Int,
-        repeatDaysMask: Int,
         excludingID: String? = nil,
         ownerUserId: String?
     ) throws {
-        let collision = alarms(visibleTo: ownerUserId).contains { record in
-            record.id != excludingID &&
-                record.hour == hour &&
-                record.minute == minute
+        if !conflictingAlarms(hour: hour, minute: minute, excludingID: excludingID, ownerUserId: ownerUserId).isEmpty {
+            throw LocalAlarmValidationError.duplicateTime
         }
-        if collision { throw LocalAlarmValidationError.duplicateTime }
     }
 
     /// 같은 시각(hour+minute)의 기존 알람들. "한 시각에는 알람 하나" 교체 흐름에서
@@ -333,7 +324,7 @@ final class LocalAlarmStore: ObservableObject {
         guard let index = alarms.firstIndex(where: { $0.id == alarm.id }) else {
             return nil
         }
-        let releasedAudioCacheKey = Self.nonEmptyAudioCacheKey(alarms[index].audioCacheKey)
+        let releasedAudioCacheKey = alarms[index].audioCacheKey.nilIfBlank
         alarms.remove(at: index)
         persist()
         guard let releasedAudioCacheKey,
@@ -349,11 +340,6 @@ final class LocalAlarmStore: ObservableObject {
             return nil
         }
         return delete(record)
-    }
-
-    private static func nonEmptyAudioCacheKey(_ value: String?) -> String? {
-        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return trimmed.isEmpty ? nil : trimmed
     }
 
     // MARK: State transitions
@@ -442,14 +428,7 @@ final class LocalAlarmStore: ObservableObject {
         // 안드로이드 `advancedBucketRotationIndex` 와 같은 규칙이다.
         alarms[index].bucketRotationIndex = Self.advancedBucketRotationIndex(alarms[index])
         if alarms[index].repeatDaysMask != 0,
-           let nextFireAt = try? AlarmTimeCalculator.nextFireAtMillis(
-            hour: alarms[index].hour,
-            minute: alarms[index].minute,
-            repeatDaysMask: alarms[index].repeatDaysMask,
-            holidayOff: alarms[index].holidayOff,
-            nowMillis: now,
-            isHoliday: isHoliday
-           ) {
+           let nextFireAt = try? alarms[index].nextFireAtMillis(nowMillis: now, isHoliday: isHoliday) {
             alarms[index].fireAtMillis = nextFireAt
             alarms[index].state = AlarmRuntimeState.armed.rawValue
             alarms[index].enabled = true
@@ -510,14 +489,7 @@ final class LocalAlarmStore: ObservableObject {
 
         if alarms[index].fireAtMillis <= nowMillis {
             if alarms[index].repeatDaysMask != 0,
-               let nextFireAt = try? AlarmTimeCalculator.nextFireAtMillis(
-                hour: alarms[index].hour,
-                minute: alarms[index].minute,
-                repeatDaysMask: alarms[index].repeatDaysMask,
-                holidayOff: alarms[index].holidayOff,
-                nowMillis: nowMillis,
-                isHoliday: isHoliday
-               ) {
+               let nextFireAt = try? alarms[index].nextFireAtMillis(nowMillis: nowMillis, isHoliday: isHoliday) {
                 alarms[index].fireAtMillis = nextFireAt
                 alarms[index].state = AlarmRuntimeState.armed.rawValue
                 alarms[index].enabled = true
@@ -553,14 +525,8 @@ final class LocalAlarmStore: ObservableObject {
     ) {
         guard let index = alarms.firstIndex(where: { $0.id == id }) else { return }
         if enabled {
-            let nextFireAt = (try? AlarmTimeCalculator.nextFireAtMillis(
-                hour: alarms[index].hour,
-                minute: alarms[index].minute,
-                repeatDaysMask: alarms[index].repeatDaysMask,
-                holidayOff: alarms[index].holidayOff,
-                nowMillis: nowMillis,
-                isHoliday: isHoliday
-            )) ?? LocalAlarmRecord.fallbackFireAtMillis(
+            let nextFireAt = (try? alarms[index].nextFireAtMillis(nowMillis: nowMillis, isHoliday: isHoliday))
+                ?? LocalAlarmRecord.fallbackFireAtMillis(
                 hour: alarms[index].hour,
                 minute: alarms[index].minute,
                 referenceMillis: nowMillis

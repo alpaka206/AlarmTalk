@@ -17,7 +17,7 @@ extension Color {
 }
 
 /// Legacy static accessor preserved for compatibility with existing call sites
-/// (ContentView, AuthGateView, AlarmKitViewModel, 그 외 다수). 신규 코드는
+/// (AlarmKitViewModel 외 다수). 신규 코드는
 /// `@Environment(\.voiceAlarmTheme)`(AlarmTalkTheme.swift) 를 우선 사용한다.
 ///
 /// 색 값은 `AlarmTalkPalette.light` / `.dark` (Android `AlarmTalkTheme.kt` 미러)에서

@@ -67,7 +67,9 @@ final class AppVersionGate: ObservableObject {
         return URL(string: "https://apps.apple.com")!
     }
 
-    static func installedVersionCode() -> Int {
+    /// 설치 빌드 번호(`CFBundleVersion`). 번들만 읽으므로 격리가 필요 없다 — API 의
+    /// `X-App-Version` 헤더(`AlarmTalkAPI.applyAppMetadataHeaders`)도 이 값을 쓴다.
+    nonisolated static func installedVersionCode() -> Int {
         let raw = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "1"
         return Int(raw) ?? 1
     }

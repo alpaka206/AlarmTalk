@@ -57,12 +57,12 @@ struct LoginView: View {
         AuthEmailFormat.normalize(email)
     }
 
-    private var passwordAtLeastMin: Bool { password.count >= 8 }
-    private var passwordUnderMax: Bool { password.count <= 128 }
+    // 규칙은 `PasswordPolicy` 한 벌이다. 화면은 체크리스트를 그리려고 조각으로 나눠 본다.
+    private var passwordAtLeastMin: Bool { password.count >= PasswordPolicy.lengthRange.lowerBound }
+    private var passwordUnderMax: Bool { password.count <= PasswordPolicy.lengthRange.upperBound }
     private var passwordLengthValid: Bool { passwordAtLeastMin && passwordUnderMax }
-    // 서버 정책(@alarmtalk/shared PasswordSchema)·Android 와 동일: 영문·숫자 각 1자 이상.
-    private var passwordHasLetter: Bool { password.contains(where: { $0.isLetter }) }
-    private var passwordHasDigit: Bool { password.contains(where: { $0.isNumber }) }
+    private var passwordHasLetter: Bool { PasswordPolicy.hasLetter(password) }
+    private var passwordHasDigit: Bool { PasswordPolicy.hasDigit(password) }
     private var passwordHasLetterAndDigit: Bool { passwordHasLetter && passwordHasDigit }
     private var passwordMatches: Bool { !password.isEmpty && password == confirmPassword }
 
@@ -691,7 +691,7 @@ enum LoginValidator {
 
     /// 비밀번호 길이 정책. 본 함수는 LoginViewModelTests 가 사용한다.
     static func isValidPasswordLength(_ value: String) -> Bool {
-        (8...128).contains(value.count)
+        PasswordPolicy.lengthRange.contains(value.count)
     }
 
     /// 인증코드 = 정확히 6자리 숫자.

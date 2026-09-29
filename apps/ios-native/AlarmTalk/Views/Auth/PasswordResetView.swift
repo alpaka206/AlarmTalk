@@ -35,12 +35,9 @@ struct PasswordResetView: View {
         return sentTo == normalizedEmail
     }
 
-    // 서버 정책(@alarmtalk/shared PasswordSchema)·Android 와 동일: 8~128자 + 영문·숫자 각 1자 이상.
-    private var passwordPolicyValid: Bool {
-        (8...128).contains(password.count) &&
-            password.contains(where: { $0.isLetter }) &&
-            password.contains(where: { $0.isNumber })
-    }
+    // 서버 정책(@alarmtalk/shared PasswordSchema)과 같은 규칙이다.
+    // 판정은 가입 화면과 같은 한 벌(`PasswordPolicy`)을 쓴다.
+    private var passwordPolicyValid: Bool { PasswordPolicy.isValid(password) }
 
     private var canConfirm: Bool {
         !auth.isBusy && codeSent && code.count == 6 && passwordPolicyValid

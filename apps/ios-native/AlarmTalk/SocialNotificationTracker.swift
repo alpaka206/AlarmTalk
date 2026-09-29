@@ -38,13 +38,11 @@ enum SocialNotificationTracker {
     }
 
     static func receivedAlarmRequest(alarmID: String, title: String, time: String) -> SocialNotificationRequest {
-        let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        let trimmedTime = time.trimmingCharacters(in: .whitespacesAndNewlines)
-        return SocialNotificationRequest(
+        SocialNotificationRequest(
             noteID: alarmID,
-            title: trimmedTitle.isEmpty ? "상대가 보낸 알람" : trimmedTitle,
+            title: title.nilIfBlank ?? "상대가 보낸 알람",
             // Android `SocialNotificationFactory.kt:35` 과 동일 문구(마침표 없음).
-            body: trimmedTime.isEmpty ? "상대가 내 알람을 설정했어요" : "\(trimmedTime)에 울려요"
+            body: time.nilIfBlank.map { "\($0)에 울려요" } ?? "상대가 내 알람을 설정했어요"
         )
     }
 

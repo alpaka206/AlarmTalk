@@ -34,16 +34,6 @@ enum KeychainStore {
     private static let sessionLock = NSLock()
 
     /**
-     * **읽고-대조하고-쓰기를 한 덩어리로**(2026-09-01 리뷰).
-     *
-     * ⚠ `readSession()` 으로 확인한 뒤 `saveSession()` 을 부르면 그 사이가 창이다. 같은
-     * 계정으로 로그아웃→재로그인이 끼면 **옛 배경 작업이 방금 발급된 로그인 토큰을 덮는다**
-     * — 이후 요청이 전부 401 이 된다. 계정 id 만 대조해도 같은 계정 재로그인은 못 거르므로
-     * **토큰(에폭)까지** 본다.
-     *
-     * @return 실제로 저장했으면 true. 세션이 바뀌었으면 아무것도 하지 않고 false.
-     */
-    /**
      * 세션이 **아직 그 세션일 때만** [action] 을 돌린다 — 검사와 실행을 한 덩어리로.
      *
      * 안드로이드 `AuthSessionStore.runIfGeneration` 의 짝이다. iOS 에는 세션 세대 카운터가
@@ -67,6 +57,16 @@ enum KeychainStore {
         return true
     }
 
+    /**
+     * **읽고-대조하고-쓰기를 한 덩어리로**(2026-09-01 리뷰).
+     *
+     * ⚠ `readSession()` 으로 확인한 뒤 `saveSession()` 을 부르면 그 사이가 창이다. 같은
+     * 계정으로 로그아웃→재로그인이 끼면 **옛 배경 작업이 방금 발급된 로그인 토큰을 덮는다**
+     * — 이후 요청이 전부 401 이 된다. 계정 id 만 대조해도 같은 계정 재로그인은 못 거르므로
+     * **토큰(에폭)까지** 본다.
+     *
+     * @return 실제로 저장했으면 true. 세션이 바뀌었으면 아무것도 하지 않고 false.
+     */
     @discardableResult
     static func saveSessionIfCurrent(
         expectedUserID: String,
@@ -97,18 +97,12 @@ enum KeychainStore {
         try saveSessionUnlocked(session)
     }
 
+    // 세션도 아래 범용 항목과 같은 쿼리다(account 만 `sessionAccount`). 범용 헬퍼는 잠금을
+    // 잡지 않으므로 `sessionLock` 안에서 불러도 된다 — `NSLock` 은 재진입이 아니라, 잠금을
+    // 쥔 채 `readSession()`·`deleteSession()` 같은 잠그는 판을 부르면 멈춘다.
     private static func saveSessionUnlocked(_ session: AuthSession) throws {
         let data = try JSONEncoder().encode(session)
-        deleteSessionUnlocked()
-
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: sessionAccount,
-            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
-            kSecValueData as String: data,
-        ]
-        let status = SecItemAdd(query as CFDictionary, nil)
+        let status = replaceItem(data, account: sessionAccount)
         guard status == errSecSuccess else {
             throw KeychainError.unhandledStatus(status)
         }
@@ -121,34 +115,13 @@ enum KeychainStore {
     }
 
     private static func readSessionUnlocked() -> AuthSession? {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: sessionAccount,
-            kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne,
-        ]
-
-        var item: CFTypeRef?
-        let status = SecItemCopyMatching(query as CFDictionary, &item)
-        guard status == errSecSuccess, let data = item as? Data else { return nil }
-        return try? JSONDecoder().decode(AuthSession.self, from: data)
+        readData(account: sessionAccount).flatMap { try? JSONDecoder().decode(AuthSession.self, from: $0) }
     }
 
     static func deleteSession() {
         sessionLock.lock()
         defer { sessionLock.unlock() }
-        deleteSessionUnlocked()
-    }
-
-    /// ⚠ `NSLock` 은 재진입이 아니다 — 잠금을 이미 쥔 경로(`saveSessionUnlocked`)는 이걸 쓴다.
-    private static func deleteSessionUnlocked() {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: sessionAccount,
-        ]
-        SecItemDelete(query as CFDictionary)
+        deleteData(account: sessionAccount)
     }
 
     // MARK: - Generic secure blob storage
@@ -160,6 +133,11 @@ enum KeychainStore {
     /// 임의 데이터를 지정 account 로 저장(upsert). 기존 값이 있으면 덮어쓴다.
     @discardableResult
     static func saveData(_ data: Data, account: String) -> Bool {
+        replaceItem(data, account: account) == errSecSuccess
+    }
+
+    /// 지우고 새로 넣는다. 결과 상태를 그대로 돌려준다(세션 저장은 실패를 던진다).
+    private static func replaceItem(_ data: Data, account: String) -> OSStatus {
         deleteData(account: account)
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
@@ -168,7 +146,7 @@ enum KeychainStore {
             kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
             kSecValueData as String: data,
         ]
-        return SecItemAdd(query as CFDictionary, nil) == errSecSuccess
+        return SecItemAdd(query as CFDictionary, nil)
     }
 
     /// 지정 account 의 데이터 조회. 없으면 nil.

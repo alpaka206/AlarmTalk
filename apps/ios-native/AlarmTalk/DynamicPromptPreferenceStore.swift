@@ -39,7 +39,7 @@ struct DynamicPromptPreferenceStore {
     /// 생성형 문구 종류를 기록한다. **직접 입력 기록은 함께 지운다**(마지막 선택은 하나).
     func saveLastMessageContext(userID: String?, context: String?) {
         guard let key = contextKey(userID) else { return }
-        if let context = context?.trimmingCharacters(in: .whitespacesAndNewlines), !context.isEmpty {
+        if let context = context.nilIfBlank {
             defaults.set(context, forKey: key)
         } else {
             defaults.removeObject(forKey: key)
@@ -63,7 +63,7 @@ struct DynamicPromptPreferenceStore {
     /// (`record.voiceText`). 잠금화면 문구와 음성을 맞추려고 그 값을 저장하기 때문이다.
     func saveLastManualText(userID: String?, text: String?) {
         guard let key = manualTextKey(userID) else { return }
-        if let text = text?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty {
+        if let text = text.nilIfBlank {
             defaults.set(text, forKey: key)
             if let contextKey = contextKey(userID) {
                 defaults.removeObject(forKey: contextKey)
@@ -122,10 +122,5 @@ struct DynamicPromptPreferenceStore {
         return "last_manual_text_\(id)"
     }
 
-    private func normalized(_ userID: String?) -> String? {
-        guard let id = userID?.trimmingCharacters(in: .whitespacesAndNewlines), !id.isEmpty else {
-            return nil
-        }
-        return id
-    }
+    private func normalized(_ userID: String?) -> String? { userID.nilIfBlank }
 }

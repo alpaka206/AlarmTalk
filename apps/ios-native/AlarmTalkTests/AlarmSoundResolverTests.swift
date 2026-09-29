@@ -126,7 +126,7 @@ final class AlarmSoundResolverTests: XCTestCase {
         _ = try seedCache(store: store, key: key, durationMs: 15_000)
         addTeardownBlock {
             try? store.deleteCachedAudio(cacheKey: key)
-            AlarmSoundStaging.clearStagedSound(forKey: key)
+            AlarmSoundStaging.clearStagedSoundFiles(forKey: key)
         }
 
         let record = makeRecord(playMode: .voiceOnly, audioCacheKey: key)
@@ -167,7 +167,7 @@ final class AlarmSoundResolverTests: XCTestCase {
         )
         addTeardownBlock {
             try? store.deleteCachedAudio(cacheKey: key)
-            AlarmSoundStaging.clearStagedSound(forKey: key)
+            AlarmSoundStaging.clearStagedSoundFiles(forKey: key)
         }
 
         let record = makeRecord(playMode: .voiceOnly, audioCacheKey: key)

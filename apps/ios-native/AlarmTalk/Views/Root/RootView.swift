@@ -4,7 +4,7 @@ import UIKit
 /// 최상위 라우터. 인증 + 온보딩 상태만 게이팅한다.
 ///
 /// 분기 모델 (Android `App.kt` 의 진입 흐름과 동등)
-///   1. 세션 없음 → `AuthGateView()` (Landing → Login)
+///   1. 세션 없음 → `NavigationStack { LandingView() }` (Landing → Login)
 ///   2. 세션 있고 온보딩 미완료 → `OnboardingView` 단독 노출.
 ///      완료 여부는 Android 처럼 사용자 ID별로 저장한다.
 ///   3. 온보딩 완료 → `MainTabsView()`.
@@ -20,7 +20,7 @@ struct RootView: View {
     /// 강등 안내가 **가리킬 알람이 아직 있는지** 확인하는 데만 쓴다(`evaluateDowngradeNotice`).
     @EnvironmentObject private var alarmStore: LocalAlarmStore
     /// 온보딩 완료 후 기본 목소리를 한 번이라도 골랐는지. 안 골랐으면 `VoiceSetupView` 노출.
-    /// Android `MainViewModel.showVoiceSetup`(= !hasChosen) 게이팅 미러.
+    /// Android `MainViewModel.showVoiceSetup` 게이팅 미러(판정은 `refreshOnboardingCompletion`).
     @State private var voiceSetupDone: Bool?
     /// 동의 화면에서 띄우는 인앱 약관 뷰어.
     @State private var bundledLegalDocument: BundledLegalDocument?
@@ -82,7 +82,9 @@ struct RootView: View {
                 // 예전 iOS 는 이 값을 세우기만 하고 **읽는 뷰가 하나도 없었다**(2026-08-07 수정).
                 UpdateRequiredView(onUpdate: { openURL(versionGate.storeURL) })
             } else if !auth.isAuthenticated {
-                AuthGateView()
+                NavigationStack {
+                    LandingView()
+                }
             } else if auth.pendingDeletion {
                 // 탈퇴 유예 상태 — 복구하거나 로그아웃하기 전까지 앱 진입을 막는다.
                 // Android `AccountPendingDeletionScreen` 게이팅과 동등.

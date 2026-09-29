@@ -938,6 +938,55 @@ final class AlarmTalkAPI: @unchecked Sendable {
         token: String? = nil,
         body: Body? = nil
     ) async throws -> Response {
+        var request = baseRequest(path, method: method, token: token)
+        if let body {
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = try encoder.encode(body)
+        }
+        return try await send(request, token: token)
+    }
+
+    private func request<Response: Decodable>(
+        _ path: String,
+        method: String = "GET",
+        token: String? = nil
+    ) async throws -> Response {
+        let body: EmptyBody? = nil
+        return try await request(path, method: method, token: token, body: body)
+    }
+
+    private func multipartRequest<Response: Decodable>(
+        _ path: String,
+        token: String,
+        fields: [String: String],
+        files: [MultipartFile]
+    ) async throws -> Response {
+        let boundary = "Boundary-\(UUID().uuidString)"
+        var request = baseRequest(path, method: "POST", token: token)
+        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+
+        var data = Data()
+        for (name, value) in fields {
+            data.appendMultipartLine("--\(boundary)")
+            data.appendMultipartLine("Content-Disposition: form-data; name=\"\(name)\"")
+            data.appendMultipartLine("")
+            data.appendMultipartLine(value)
+        }
+        for file in files {
+            data.appendMultipartLine("--\(boundary)")
+            data.appendMultipartLine("Content-Disposition: form-data; name=\"\(file.fieldName)\"; filename=\"\(file.fileName)\"")
+            data.appendMultipartLine("Content-Type: \(file.mimeType)")
+            data.appendMultipartLine("")
+            data.append(file.data)
+            data.appendMultipartLine("")
+        }
+        data.appendMultipartLine("--\(boundary)--")
+        request.httpBody = data
+        return try await send(request, token: token)
+    }
+
+    /// 공통 헤더(Accept·앱 메타·Bearer)를 실은 요청.
+    private func baseRequest(_ path: String, method: String, token: String?) -> URLRequest {
         var request = URLRequest(url: endpoint(path))
         request.httpMethod = method
         request.setValue("application/json", forHTTPHeaderField: "Accept")
@@ -945,11 +994,13 @@ final class AlarmTalkAPI: @unchecked Sendable {
         if let token {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
-        if let body {
-            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            request.httpBody = try encoder.encode(body)
-        }
+        return request
+    }
 
+    /// 보내고 응답을 해석한다. JSON·multipart 요청이 **같은 규칙**을 쓴다 — 2xx 디코드,
+    /// 401 은 세션 만료 알림, 403 `CONSENT_REQUIRED` 는 동의 화면, 그 밖은 `APIError.server`.
+    /// 앱에서 `APIError.server` 를 만드는 곳은 여기 하나다.
+    private func send<Response: Decodable>(_ request: URLRequest, token: String?) async throws -> Response {
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else {
             throw APIError.invalidResponse
@@ -974,68 +1025,6 @@ final class AlarmTalkAPI: @unchecked Sendable {
         )
     }
 
-    private func request<Response: Decodable>(
-        _ path: String,
-        method: String = "GET",
-        token: String? = nil
-    ) async throws -> Response {
-        let body: EmptyBody? = nil
-        return try await request(path, method: method, token: token, body: body)
-    }
-
-    private func multipartRequest<Response: Decodable>(
-        _ path: String,
-        token: String,
-        fields: [String: String],
-        files: [MultipartFile]
-    ) async throws -> Response {
-        let boundary = "Boundary-\(UUID().uuidString)"
-        var request = URLRequest(url: endpoint(path))
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-        Self.applyAppMetadataHeaders(to: &request)
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
-
-        var data = Data()
-        for (name, value) in fields {
-            data.appendMultipartLine("--\(boundary)")
-            data.appendMultipartLine("Content-Disposition: form-data; name=\"\(name)\"")
-            data.appendMultipartLine("")
-            data.appendMultipartLine(value)
-        }
-        for file in files {
-            data.appendMultipartLine("--\(boundary)")
-            data.appendMultipartLine("Content-Disposition: form-data; name=\"\(file.fieldName)\"; filename=\"\(file.fileName)\"")
-            data.appendMultipartLine("Content-Type: \(file.mimeType)")
-            data.appendMultipartLine("")
-            data.append(file.data)
-            data.appendMultipartLine("")
-        }
-        data.appendMultipartLine("--\(boundary)--")
-        request.httpBody = data
-
-        let (responseData, response) = try await session.data(for: request)
-        guard let http = response as? HTTPURLResponse else {
-            throw APIError.invalidResponse
-        }
-        if (200..<300).contains(http.statusCode) {
-            return try decoder.decode(Response.self, from: responseData)
-        }
-        if http.statusCode == 401 {
-            Self.handleUnauthorized(token: token)
-        }
-        let serverError = try? decoder.decode(ServerError.self, from: responseData)
-        if http.statusCode == 403, serverError?.errorCode == Self.consentRequiredErrorCode {
-            Self.handleConsentRequired(consent: serverError?.consent)
-        }
-        throw APIError.server(
-            status: http.statusCode,
-            message: serverError?.error ?? HTTPURLResponse.localizedString(forStatusCode: http.statusCode),
-            errorCode: serverError?.errorCode
-        )
-    }
-
     // MARK: - 공통 헤더 / 401 중앙 처리
 
     /// 모든 요청에 플랫폼/버전 메타데이터를 싣는다. Android `AlarmTalkApiClient` 의
@@ -1044,17 +1033,13 @@ final class AlarmTalkAPI: @unchecked Sendable {
     /// - `X-App-Version`: 설치 빌드 번호(`CFBundleVersion`) 의 문자열. Android 는
     ///   `appVersionCode.toString()` 을 보내므로, marketing 버전(`CFBundleShortVersionString`)
     ///   이 아니라 정수 빌드 번호를 보내야 값 시맨틱이 일치한다.
-    ///   `AppVersionGate.installedVersionCode()` 와 동일한 키(`CFBundleVersion`)·변환을 쓰되,
-    ///   그쪽은 `@MainActor` 격리라 여기서 직접 읽어 actor 격리 위반을 피한다.
+    ///   값은 `AppVersionGate.installedVersionCode()` 하나에서 읽는다.
     private static func applyAppMetadataHeaders(to request: inout URLRequest) {
         request.setValue("ios", forHTTPHeaderField: "X-App-Platform")
         request.setValue(appVersionHeaderValue, forHTTPHeaderField: "X-App-Version")
     }
 
-    private static let appVersionHeaderValue: String = {
-        let raw = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "1"
-        return String(Int(raw) ?? 1)
-    }()
+    private static let appVersionHeaderValue = String(AppVersionGate.installedVersionCode())
 
     /// 401 응답을 받으면 한 번만 세션 만료 알림을 쏜다. Android `UnauthorizedAuthenticator`
     /// 가 응답 체인당 콜백을 한 번만 호출하는 동작과 동등.

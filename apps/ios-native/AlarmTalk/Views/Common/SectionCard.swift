@@ -20,6 +20,12 @@ extension View {
     func settingsCard(title: String?) -> some View {
         modifier(SettingsCardModifier(title: title))
     }
+
+    /// 버튼 반경(`vocaButton`, 18)으로 자르고 `outlineVariant` 1pt 테두리를 두른다.
+    /// 배경은 부르는 쪽이 **먼저** 칠한다 — 그래야 모서리까지 함께 잘린다.
+    func outlinedButtonShape() -> some View {
+        modifier(OutlinedButtonShapeModifier())
+    }
 }
 
 // MARK: - Modifiers
@@ -35,6 +41,19 @@ private struct SectionSurfaceModifier: ViewModifier {
             .clipShape(RoundedRectangle(cornerRadius: theme.shapes.medium, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: theme.shapes.medium, style: .continuous)
+                    .stroke(theme.palette.outlineVariant, lineWidth: 1)
+            )
+    }
+}
+
+private struct OutlinedButtonShapeModifier: ViewModifier {
+    @Environment(\.voiceAlarmTheme) private var theme
+
+    func body(content: Content) -> some View {
+        content
+            .clipShape(RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous)
                     .stroke(theme.palette.outlineVariant, lineWidth: 1)
             )
     }

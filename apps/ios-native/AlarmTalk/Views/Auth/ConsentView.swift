@@ -61,17 +61,10 @@ struct ConsentView: View {
     /// 실제로 그릴 항목과 순서. **필수를 먼저 세우고 선택을 뒤로 민다** — 통과 조건이 되는
     /// 항목이 선택 아래로 밀리면 무엇을 체크해야 버튼이 켜지는지 스크롤해야 알 수 있다.
     private var shownTypes: [String] {
+        // 두 `filter` 가 각자 `consentRowOrder` 순서를 그대로 지킨다.
         let optionalTypes = optionalTypes
-        return consentRowOrder
-            .filter { collect.contains($0) }
-            .sorted { lhs, rhs in
-                // 안정 정렬이 아니므로 그룹이 같으면 원래 순서를 명시적으로 유지한다.
-                let l = optionalTypes.contains(lhs), r = optionalTypes.contains(rhs)
-                if l != r { return !l }
-                let li = consentRowOrder.firstIndex(of: lhs) ?? 0
-                let ri = consentRowOrder.firstIndex(of: rhs) ?? 0
-                return li < ri
-            }
+        let shown = consentRowOrder.filter { collect.contains($0) }
+        return shown.filter { !optionalTypes.contains($0) } + shown.filter { optionalTypes.contains($0) }
     }
 
     /// 통과 판정은 **그리는 목록이 아니라 `collect` 원본**으로 한다.

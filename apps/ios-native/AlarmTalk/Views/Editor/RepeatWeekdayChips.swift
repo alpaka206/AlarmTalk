@@ -19,7 +19,8 @@ struct RepeatWeekdayChips: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            ForEach(RepeatDay.displayOrder, id: \.self) { day in
+            // 일요일이 가장 왼쪽이다(안드로이드와 같다) — `allCases` 가 선언 순서 일→토다.
+            ForEach(RepeatDay.allCases, id: \.self) { day in
                 Button {
                     toggle(day)
                 } label: {
@@ -87,52 +88,17 @@ struct RepeatWeekdayChips: View {
         let border: Color
     }
 
+    /// 요일마다 갈리는 것은 강조색 넷뿐이고, 미선택 배경·테두리는 세 갈래가 같다.
     private func colorPalette(for day: RepeatDay, selected: Bool) -> ChipPalette {
         let p = theme.palette
-        switch day {
-        case .sunday:
-            if selected {
-                return ChipPalette(
-                    background: p.errorContainer,
-                    foreground: p.onErrorContainer,
-                    border: p.error.opacity(0.58)
-                )
-            } else {
-                return ChipPalette(
-                    background: p.surfaceVariant.opacity(0.46),
-                    foreground: p.error,
-                    border: p.outlineVariant
-                )
-            }
-        case .saturday:
-            if selected {
-                return ChipPalette(
-                    background: p.secondaryContainer,
-                    foreground: p.onSecondaryContainer,
-                    border: p.secondary.opacity(0.58)
-                )
-            } else {
-                return ChipPalette(
-                    background: p.surfaceVariant.opacity(0.46),
-                    foreground: p.secondary,
-                    border: p.outlineVariant
-                )
-            }
-        default:
-            if selected {
-                return ChipPalette(
-                    background: p.primaryContainer,
-                    foreground: p.onPrimaryContainer,
-                    border: p.primary.opacity(0.58)
-                )
-            } else {
-                return ChipPalette(
-                    background: p.surfaceVariant.opacity(0.46),
-                    foreground: p.onSurfaceVariant,
-                    border: p.outlineVariant
-                )
-            }
+        let (accent, container, onContainer, idleForeground) = switch day {
+        case .sunday: (p.error, p.errorContainer, p.onErrorContainer, p.error)
+        case .saturday: (p.secondary, p.secondaryContainer, p.onSecondaryContainer, p.secondary)
+        default: (p.primary, p.primaryContainer, p.onPrimaryContainer, p.onSurfaceVariant)
         }
+        return selected
+            ? ChipPalette(background: container, foreground: onContainer, border: accent.opacity(0.58))
+            : ChipPalette(background: p.surfaceVariant.opacity(0.46), foreground: idleForeground, border: p.outlineVariant)
     }
 
     private func accessibilityLabel(for day: RepeatDay) -> String {
@@ -143,9 +109,6 @@ struct RepeatWeekdayChips: View {
 // MARK: - RepeatDay helpers
 
 extension RepeatDay {
-    /// 한국 캘린더 표시 순서. 일요일을 가장 왼쪽에 두는 Android 와 동일.
-    static let displayOrder: [RepeatDay] = [.sunday, .monday, .tuesday, .wednesday, .thursday, .friday, .saturday]
-
     /// "일", "월", "화", "수", "목", "금", "토".
     var shortLabel: String {
         switch self {

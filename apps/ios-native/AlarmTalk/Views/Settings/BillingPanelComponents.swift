@@ -18,11 +18,16 @@ enum FallbackPlanPrice {
 
     /// "3,900원" 꼴. 무료 등급이나 모르는 등급이면 nil.
     static func label(for tier: PlanTier) -> String? {
-        guard let value = krw[tier] else { return nil }
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .decimal
-        let number = formatter.string(from: NSNumber(value: value)) ?? String(value)
-        return "\(number)원"
+        krw[tier].map { "\($0.formatted())원" }
+    }
+}
+
+extension SubscriptionManager {
+    /// 등급의 가격 문자열 — 스토어 값이 있으면 그걸, 없으면 폴백표. 플랜 카드와 결제 확인
+    /// 알럿이 **같은 값**을 보여 주도록 둘 다 이걸 부른다.
+    func priceLabel(for tier: PlanTier) -> String? {
+        SubscriptionProduct.make(tier: tier).flatMap(product(for:))?.displayPrice
+            ?? FallbackPlanPrice.label(for: tier)
     }
 }
 import StoreKit
@@ -81,7 +86,7 @@ struct PlanCard: View {
     let hasActivePlan: Bool
     let isBusy: Bool
     let vouchers: [VoucherItem]
-    let onPurchase: (SubscriptionProduct) -> Void
+    let onPurchase: () -> Void
     let onGiftPersonal: () -> Void
     let onShareVouchers: () -> Void
 
@@ -89,11 +94,7 @@ struct PlanCard: View {
     /// 무료는 상품이 아니라 그냥 0원이다.
     private var priceLabel: String? {
         if tier == .free { return "0원" }
-        if let productID = SubscriptionProduct.make(tier: tier)?.rawValue,
-           let product = subscriptions.products.first(where: { $0.id == productID }) {
-            return "월 \(product.displayPrice)"
-        }
-        return FallbackPlanPrice.label(for: tier).map { "월 \($0)" }
+        return subscriptions.priceLabel(for: tier).map { "월 \($0)" }
     }
 
     var body: some View {
@@ -213,7 +214,7 @@ struct PlanCard: View {
             EmptyView()
         } else if subscriptions.product(for: plan) != nil {
             Button {
-                onPurchase(plan)
+                onPurchase()
             } label: {
                 VStack(spacing: 2) {
                     if subscriptions.isPurchasing {
