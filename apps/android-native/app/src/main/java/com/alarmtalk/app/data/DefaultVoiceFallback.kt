@@ -223,8 +223,8 @@ fun AlarmEntity.lockedPaidVoice(): LockedPaidVoice? = LockedPaidVoice.decode(pre
 /**
  * **이 행을 말하게 할 유료 목소리 자원이 있는가** — 재생 방식은 보지 않는다.
  *
- * `AlarmRepository.lockPaidAlarmTalks` 의 `usesVoice` 와 `RingingService` 의 판정이 쓰는
- * 같은 식이다(재생 방식만으로 '유료 목소리' 라고 하지 말 것 — 2026-08-18).
+ * `AlarmRepository.lockPaidAlarmTalks`(잠금)와 `RingSoundDecision`(울릴 때 강등)이 함께 쓰는
+ * 단일 판정이다 — 식을 호출부에 베끼지 말 것(재생 방식만으로 '유료 목소리' 라고 하지 말 것 — 2026-08-18).
  */
 fun AlarmEntity.hasVoiceResources(): Boolean =
     !localAudioUri.isNullOrBlank() ||

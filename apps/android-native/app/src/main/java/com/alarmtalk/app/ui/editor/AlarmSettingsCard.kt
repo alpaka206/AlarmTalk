@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.Icons
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -134,7 +135,8 @@ internal fun AlarmSettingsCard(
                             )
                         },
                     )
-                    AlarmSettingDivider()
+                    // 세부 설정 카드는 카드 자체 패딩이 있어 인셋 없이 행 텍스트 시작선에 맞는다.
+                    HorizontalDivider()
                 }
                 }
                 AlarmSettingRow(

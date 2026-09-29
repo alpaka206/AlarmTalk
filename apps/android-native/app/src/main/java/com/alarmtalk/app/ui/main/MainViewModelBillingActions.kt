@@ -4,6 +4,7 @@ import com.alarmtalk.app.network.AlarmTalkApiClient
 import com.alarmtalk.app.data.DowngradeNoticeStore
 import android.app.Application
 import android.util.Log
+import androidx.annotation.StringRes
 import androidx.lifecycle.viewModelScope
 import com.alarmtalk.app.core.AlarmTalkLog
 import com.alarmtalk.app.core.AlarmTalkLog.TAG
@@ -458,11 +459,7 @@ internal fun MainViewModel.registerCode(
  */
 internal fun MainViewModel.startGiftPurchase(activity: android.app.Activity) {
     val ticket = accessTicket()
-    val session = authSession
-    if (session == null) {
-        message = getApplication<android.app.Application>().getString(R.string.msg_gb_login_required_purchase_plan)
-        return
-    }
+    val session = sessionOrMessage(R.string.msg_gb_login_required_purchase_plan) ?: return
     if (billingBusy) return
     if (ticket == null || ticket.userId != session.user.id) return
     viewModelScope.launch {
@@ -540,11 +537,7 @@ private suspend fun MainViewModel.crossStoreRenewalBlocked(
  */
 internal fun MainViewModel.startPlayPurchase(activity: android.app.Activity, productId: String) {
     val ticket = accessTicket()
-    val session = authSession
-    if (session == null) {
-        message = getApplication<android.app.Application>().getString(R.string.msg_gb_login_required_purchase_plan)
-        return
-    }
+    val session = sessionOrMessage(R.string.msg_gb_login_required_purchase_plan) ?: return
     if (billingBusy || ticket == null || ticket.userId != session.user.id) return
     viewModelScope.launch {
         billingBusy = true
@@ -719,75 +712,59 @@ internal fun MainViewModel.confirmGooglePurchase(
     }
 }
 
-internal fun MainViewModel.ensureFamilyShareCode() {
-    val authorization = bearerOrMessage(getApplication<android.app.Application>().getString(R.string.msg_gb_login_required_create_share_code)) ?: return
-    val planLabel = when (subscriptionResponse?.plan?.key) {
-        "couple" -> getApplication<android.app.Application>().getString(R.string.msg_gb_plan_label_couple)
-        "family" -> getApplication<android.app.Application>().getString(R.string.msg_gb_plan_label_family)
-        else -> getApplication<android.app.Application>().getString(R.string.msg_gb_plan_label_shared)
-    }
-    val ownerUserId = authSession?.user?.id
-    val ownerTicket = accessTicket()
-    viewModelScope.launch {
-        billingBusy = true
-        runCatching {
-            api.ensureFamilyShareCode(authorization).voucher
-        }.onSuccess { voucher ->
-            // ⚠ **시작한 계정을 잡아 두고 발행 전에 본다**(2026-09-01 리뷰). 인자 자리에서
-            // `authSession?.user?.id` 를 읽으면 **응답이 온 뒤** 평가돼 B 가 잡히고, 가드가
-            // B==B 로 통과해 버린다 — A 의 코드가 B 화면에 뜨고 A 의 결제 데이터가 B 키로 저장된다.
-            if (authSession?.user?.id != ownerUserId) {
-                Log.i(TAG, "Dropping share code result: account changed")
-                return@onSuccess
-            }
-            vouchers = listOf(voucher) + vouchers.filterNot { it.id == voucher.id }
-            message = getApplication<android.app.Application>().getString(R.string.msg_gb_share_code_ready, planLabel)
-            refreshBillingAfterMutation(authorization, "family share code", ownerTicket)
-            refreshSocial()
-        }.onFailure { error ->
-            AlarmTalkLog.reportError("Failed to ensure family share code", error)
-            message = billingFailureMessage(
-                getApplication<android.app.Application>(),
-                apiErrorCode(error),
-                userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_gb_share_code_load_failed, planLabel)),
-            )
-        }
-        billingBusy = false
-    }
-}
+internal fun MainViewModel.ensureFamilyShareCode() = issueFamilyShareCode(
+    call = { api.ensureFamilyShareCode(it).voucher },
+    successRes = R.string.msg_gb_share_code_ready,
+    refreshLabel = "family share code",
+    failureLog = "Failed to ensure family share code",
+)
 
-internal fun MainViewModel.regenerateFamilyShareCode() {
-    val authorization = bearerOrMessage(getApplication<android.app.Application>().getString(R.string.msg_gb_login_required_create_share_code)) ?: return
+internal fun MainViewModel.regenerateFamilyShareCode() = issueFamilyShareCode(
+    call = { api.regenerateFamilyShareCode(it).voucher },
+    successRes = R.string.msg_gb_share_code_regenerated,
+    refreshLabel = "regenerate family share code",
+    failureLog = "Failed to regenerate family share code",
+)
+
+/** 공유 코드 받기·다시 만들기의 공통 뼈대 — 다른 것은 API·성공 문구·로그뿐이다. */
+private fun MainViewModel.issueFamilyShareCode(
+    call: suspend (authorization: String) -> VoucherItem,
+    @StringRes successRes: Int,
+    refreshLabel: String,
+    failureLog: String,
+) {
+    val app = getApplication<android.app.Application>()
+    val authorization = bearerOrMessage(app.getString(R.string.msg_gb_login_required_create_share_code)) ?: return
     val planLabel = when (subscriptionResponse?.plan?.key) {
-        "couple" -> getApplication<android.app.Application>().getString(R.string.msg_gb_plan_label_couple)
-        "family" -> getApplication<android.app.Application>().getString(R.string.msg_gb_plan_label_family)
-        else -> getApplication<android.app.Application>().getString(R.string.msg_gb_plan_label_shared)
+        "couple" -> app.getString(R.string.msg_gb_plan_label_couple)
+        "family" -> app.getString(R.string.msg_gb_plan_label_family)
+        else -> app.getString(R.string.msg_gb_plan_label_shared)
     }
     val ownerUserId = authSession?.user?.id
     val ownerTicket = accessTicket()
     viewModelScope.launch {
         billingBusy = true
         runCatching {
-            api.regenerateFamilyShareCode(authorization).voucher
+            call(authorization)
         }.onSuccess { voucher ->
             // ⚠ **시작한 계정을 잡아 두고 발행 전에 본다**(2026-09-01 리뷰). 인자 자리에서
             // `authSession?.user?.id` 를 읽으면 **응답이 온 뒤** 평가돼 B 가 잡히고, 가드가
             // B==B 로 통과해 버린다 — A 의 코드가 B 화면에 뜨고 A 의 결제 데이터가 B 키로 저장된다.
             if (authSession?.user?.id != ownerUserId) {
-                Log.i(TAG, "Dropping regenerated share code result: account changed")
+                Log.i(TAG, "Dropping $refreshLabel result: account changed")
                 return@onSuccess
             }
             // 새 코드를 즉시 노출. 만료된 옛 코드는 아래 새로고침에서 서버 기준으로 정리된다.
             vouchers = listOf(voucher) + vouchers.filterNot { it.id == voucher.id }
-            message = getApplication<android.app.Application>().getString(R.string.msg_gb_share_code_regenerated, planLabel)
-            refreshBillingAfterMutation(authorization, "regenerate family share code", ownerTicket)
+            message = app.getString(successRes, planLabel)
+            refreshBillingAfterMutation(authorization, refreshLabel, ownerTicket)
             refreshSocial()
         }.onFailure { error ->
-            AlarmTalkLog.reportError("Failed to regenerate family share code", error)
+            AlarmTalkLog.reportError(failureLog, error)
             message = billingFailureMessage(
-                getApplication<android.app.Application>(),
+                app,
                 apiErrorCode(error),
-                userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_gb_share_code_load_failed, planLabel)),
+                userFacingError(error, app.getString(R.string.msg_gb_share_code_load_failed, planLabel)),
             )
         }
         billingBusy = false

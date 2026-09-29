@@ -9,17 +9,13 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.outlined.Visibility
-import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -32,8 +28,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 
 /**
@@ -104,33 +98,25 @@ internal fun PasswordResetScreen(
                 color = TextOnSceneDim,
             )
 
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                AuthFieldLabel(stringResource(R.string.auth_label_email))
-                OutlinedTextField(
-                    value = email,
-                    onValueChange = {
-                        email = it
-                        // 고쳐 치기 시작하면 경고를 지운다 — 남겨 두면 이미 고친 값 아래에
-                        // 옛 경고가 붙어 있다(로그인 화면과 같은 시점).
-                        emailFormatError = false
-                    },
-                    singleLine = true,
-                    enabled = !busy && !codeSent,
-                    shape = WakerInputShape,
-                    colors = authFieldColors(),
-                    isError = emailFormatError,
-                    supportingText = if (emailFormatError) {
-                        { Text(stringResource(R.string.auth_error_email_invalid), color = AuthErrorText) }
-                    } else {
-                        null
-                    },
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Email,
-                        imeAction = ImeAction.Next,
-                    ),
-                    modifier = Modifier.textInputTapTarget().then(Modifier.fillMaxWidth()),
-                )
-            }
+            AuthTextField(
+                label = stringResource(R.string.auth_label_email),
+                value = email,
+                onValueChange = {
+                    email = it
+                    // 고쳐 치기 시작하면 경고를 지운다 — 남겨 두면 이미 고친 값 아래에
+                    // 옛 경고가 붙어 있다(로그인 화면과 같은 시점).
+                    emailFormatError = false
+                },
+                keyboardType = KeyboardType.Email,
+                imeAction = ImeAction.Next,
+                enabled = !busy && !codeSent,
+                isError = emailFormatError,
+                supportingText = if (emailFormatError) {
+                    { Text(stringResource(R.string.auth_error_email_invalid), color = AuthErrorText) }
+                } else {
+                    null
+                },
+            )
 
             // ⚠ **형식으로 버튼을 죽이지 않는다**(CLAUDE.md) — 누를 수는 있고, 누르면 왜
             // 안 되는지 이메일 칸 아래에 말한다. 예전에는 `emailLooksValid` 로 잠가 놔서,
@@ -162,60 +148,27 @@ internal fun PasswordResetScreen(
             }
 
             if (codeSent) {
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    AuthFieldLabel(stringResource(R.string.auth_label_verification_code))
-                    OutlinedTextField(
-                        value = code,
-                        onValueChange = { code = it.filter(Char::isDigit).take(6) },
-                        singleLine = true,
-                        enabled = !busy,
-                        shape = WakerInputShape,
-                        colors = authFieldColors(),
-                        keyboardOptions = KeyboardOptions(
-                            keyboardType = KeyboardType.NumberPassword,
-                            imeAction = ImeAction.Next,
-                        ),
-                        modifier = Modifier.textInputTapTarget().then(Modifier.fillMaxWidth()),
-                    )
-                }
+                AuthTextField(
+                    label = stringResource(R.string.auth_label_verification_code),
+                    value = code,
+                    onValueChange = { code = it.filter(Char::isDigit).take(6) },
+                    keyboardType = KeyboardType.NumberPassword,
+                    imeAction = ImeAction.Next,
+                    enabled = !busy,
+                )
 
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    AuthFieldLabel(stringResource(R.string.auth_reset_new_password))
-                    OutlinedTextField(
-                        value = password,
-                        onValueChange = { password = it },
-                        singleLine = true,
-                        enabled = !busy,
-                        shape = WakerInputShape,
-                        colors = authFieldColors(),
-                        visualTransformation = if (passwordVisible) {
-                            VisualTransformation.None
-                        } else {
-                            PasswordVisualTransformation()
-                        },
-                        trailingIcon = {
-                            IconButton(onClick = { passwordVisible = !passwordVisible }) {
-                                Icon(
-                                    imageVector = if (passwordVisible) {
-                                        Icons.Outlined.VisibilityOff
-                                    } else {
-                                        Icons.Outlined.Visibility
-                                    },
-                                    contentDescription = if (passwordVisible) {
-                                        stringResource(R.string.auth_password_hide)
-                                    } else {
-                                        stringResource(R.string.auth_password_show)
-                                    },
-                                )
-                            }
-                        },
-                        keyboardOptions = KeyboardOptions(
-                            keyboardType = KeyboardType.Password,
-                            imeAction = ImeAction.Done,
-                        ),
-                        modifier = Modifier.textInputTapTarget().then(Modifier.fillMaxWidth()),
-                    )
-                }
+                AuthTextField(
+                    label = stringResource(R.string.auth_reset_new_password),
+                    value = password,
+                    onValueChange = { password = it },
+                    keyboardType = KeyboardType.Password,
+                    imeAction = ImeAction.Done,
+                    enabled = !busy,
+                    passwordVisible = passwordVisible,
+                    onTogglePasswordVisible = { passwordVisible = !passwordVisible },
+                    showPasswordLabel = stringResource(R.string.auth_password_show),
+                    hidePasswordLabel = stringResource(R.string.auth_password_hide),
+                )
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     PasswordRuleRow(
                         text = stringResource(R.string.auth_password_rule_min),

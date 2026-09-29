@@ -2,9 +2,11 @@ package com.alarmtalk.app
 
 import android.app.Application
 import android.util.Log
+import androidx.annotation.StringRes
 import androidx.lifecycle.viewModelScope
 import com.alarmtalk.app.core.AlarmTalkLog
 import com.alarmtalk.app.core.AlarmTalkLog.TAG
+import com.alarmtalk.app.network.AuthSession
 import com.alarmtalk.app.network.AuthSessionStore
 import com.alarmtalk.app.network.DynamicPromptSettings
 import com.alarmtalk.app.network.FamilyAlarmQuietWindow
@@ -17,9 +19,7 @@ import com.alarmtalk.app.network.PasswordResetRequest
 import com.alarmtalk.app.network.RegisterRequest
 import com.alarmtalk.app.network.AlarmTalkApiClient
 import com.alarmtalk.app.sync.RemoteAlarmSyncScheduler
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 
 internal fun MainViewModel.login(email: String, password: String) {
@@ -414,11 +414,7 @@ internal fun MainViewModel.logout(signOutGoogle: suspend () -> Unit = {}) {
 // 회원 탈퇴(유예) 신청 — 즉시 삭제 대신 POST /me/deletion 으로 30일 유예 상태로 둔다.
 // 유예 기간 내 다시 로그인해 철회하면 복구된다. 신청 후에는 로그아웃 처리한다(구글 revoke 안 함).
 internal fun MainViewModel.requestAccountDeletion(signOutGoogle: suspend () -> Unit = {}) {
-    val session = authSession
-    if (session == null) {
-        message = getApplication<android.app.Application>().getString(R.string.msg_login_required_to_use)
-        return
-    }
+    val session = sessionOrMessage(R.string.msg_login_required_to_use) ?: return
     val authorization = com.alarmtalk.app.network.AlarmTalkApiClient.bearer(session.token)
     val shouldSignOutGoogle = session.provider == AuthSessionStore.PROVIDER_GOOGLE
     viewModelScope.launch {
@@ -496,11 +492,7 @@ internal fun MainViewModel.checkAccountStatus() {
 
 // 유예 기간 내 탈퇴 철회 → 계정 복구. 성공 시 복구 화면을 닫고 정상 진입한다.
 internal fun MainViewModel.cancelAccountDeletion() {
-    val session = authSession
-    if (session == null) {
-        message = getApplication<android.app.Application>().getString(R.string.msg_login_required_to_use)
-        return
-    }
+    val session = sessionOrMessage(R.string.msg_login_required_to_use) ?: return
     val authorization = com.alarmtalk.app.network.AlarmTalkApiClient.bearer(session.token)
     viewModelScope.launch {
         authBusy = true
@@ -522,11 +514,7 @@ internal fun MainViewModel.cancelAccountDeletion() {
 }
 
 internal fun MainViewModel.updateNickname(name: String) {
-    val session = authSession
-    if (session == null) {
-        message = getApplication<android.app.Application>().getString(R.string.msg_login_required_to_use)
-        return
-    }
+    val session = sessionOrMessage(R.string.msg_login_required_to_use) ?: return
     val trimmed = name.trim()
     if (trimmed.isEmpty() || trimmed.length > 30) {
         message = getApplication<android.app.Application>().getString(R.string.msg_nickname_length_invalid)
@@ -555,11 +543,7 @@ internal fun MainViewModel.updateFamilyAlarmSettings(
     allowFamilyAlarms: Boolean,
     quietWindows: List<FamilyAlarmQuietWindow>,
 ) {
-    val session = authSession
-    if (session == null) {
-        message = getApplication<android.app.Application>().getString(R.string.msg_login_required_to_use)
-        return
-    }
+    val session = sessionOrMessage(R.string.msg_login_required_to_use) ?: return
     val normalizedWindows = quietWindows
         .map { window -> window.copy(days = window.days.distinct().filter { it in 0..6 }.sorted()) }
         .filter { it.days.isNotEmpty() }
@@ -639,11 +623,7 @@ private fun isValidTimeText(value: String): Boolean =
     Regex("""^([01]\d|2[0-3]):[0-5]\d$""").matches(value)
 
 internal fun MainViewModel.deleteAccount(revokeGoogleAccess: suspend () -> Unit = {}) {
-    val session = authSession
-    if (session == null) {
-        message = getApplication<android.app.Application>().getString(R.string.msg_login_required_to_use)
-        return
-    }
+    val session = sessionOrMessage(R.string.msg_login_required_to_use) ?: return
     val authorization = com.alarmtalk.app.network.AlarmTalkApiClient.bearer(session.token)
     val shouldRevokeGoogle = session.provider == AuthSessionStore.PROVIDER_GOOGLE
     viewModelScope.launch {
@@ -821,11 +801,7 @@ private fun MainViewModel.handleConsentVersionMismatch(error: Throwable): Boolea
 }
 
 internal fun MainViewModel.submitConsents(agreedOptional: Set<String>) {
-    val session = authSession
-    if (session == null) {
-        message = getApplication<android.app.Application>().getString(R.string.msg_login_required_to_use)
-        return
-    }
+    val session = sessionOrMessage(R.string.msg_login_required_to_use) ?: return
     val authorization = com.alarmtalk.app.network.AlarmTalkApiClient.bearer(session.token)
     // 서버에 "현재 정책 버전"으로 기록되도록 직전 checkConsentStatus 가 저장한 버전을 함께 보낸다.
     // version 을 비우면 백엔드가 "1" 로 기록해, 정책이 개정된 뒤엔 옛 버전으로 저장되어
@@ -909,11 +885,7 @@ internal fun MainViewModel.submitConsents(agreedOptional: Set<String>) {
  * 다시 찾아 누르게 만들지 않는다. 실패하면 시트를 닫지 않아 재시도할 수 있게 둔다.
  */
 internal fun MainViewModel.submitVoiceConsents() {
-    val session = authSession
-    if (session == null) {
-        message = getApplication<android.app.Application>().getString(R.string.msg_login_required_to_use)
-        return
-    }
+    val session = sessionOrMessage(R.string.msg_login_required_to_use) ?: return
     val request = pendingSensitiveConsent ?: return
     val authorization = com.alarmtalk.app.network.AlarmTalkApiClient.bearer(session.token)
     val policyVersion = cachedPolicyVersion()
@@ -1018,11 +990,7 @@ internal fun MainViewModel.loadMarketingConsent() {
 // 설정의 '광고성 정보 수신' 토글 변경. marketing 동의를 현재 정책 버전으로 재기록한다(누적 저장,
 // 최신값이 현재 상태). 낙관적으로 즉시 반영하고, 실패하면 직전 값으로 되돌린다.
 internal fun MainViewModel.updateMarketingConsent(agreed: Boolean) {
-    val session = authSession
-    if (session == null) {
-        message = getApplication<android.app.Application>().getString(R.string.msg_login_required_to_use)
-        return
-    }
+    val session = sessionOrMessage(R.string.msg_login_required_to_use) ?: return
     // ⚠ **진행 중인 쓰기가 있으면 버리지 말고 '마지막 값' 으로 예약한다.**
     // 예전에는 그냥 `return` 이라, 스위치가 상시 활성이 된 지금은 연속으로 토글하면
     // **화면은 켜져 있는데 서버는 꺼진 채**로 끝날 수 있다. 낙관적 표시는 아래에서
@@ -1132,9 +1100,7 @@ internal suspend fun MainViewModel.withdrawVoiceBiometricConsent(): Boolean {
     // 안전하다 — 반대로 지운 뒤에 실패하면 되돌릴 방법이 없다. POST 를 보낼 수 있는 상황이면
     // 이 조회도 되므로 실사용에서 막히지 않는다.
     val revokedVoiceIds = runCatching {
-        withContext(Dispatchers.IO) {
-            api.listVoiceProfiles(authorization).profiles
-        }
+        api.listVoiceProfiles(authorization).profiles
     }.getOrElse { error ->
         AlarmTalkLog.reportError("Failed to resolve owned voices before consent withdrawal", error)
         message = userFacingError(
@@ -1532,6 +1498,13 @@ internal fun MainViewModel.responseStillBelongsToRequester(
 ): Boolean = !signingOut &&
     authSession?.user?.id == requestOwner &&
     authSessionStore.sessionGeneration() == startGeneration
+
+/** 로그인 세션이 없으면 [messageRes] 를 띄우고 null — 액션 함수 첫 줄의 `?: return` 가드다. */
+internal fun MainViewModel.sessionOrMessage(@StringRes messageRes: Int): AuthSession? =
+    authSession ?: run {
+        message = getApplication<Application>().getString(messageRes)
+        null
+    }
 
 internal fun MainViewModel.bearerOrMessage(fallbackMessage: String): String? {
     val session = authSession

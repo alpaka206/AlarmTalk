@@ -192,96 +192,78 @@ internal fun MenuTabPanel(
             }
         }
         // 화면·언어 — 토스의 '언어/화면 테마' 행처럼 전체 탭에서 바로 관리한다.
-        Surface(
-            shape = WakerPanelShape,
-            color = MaterialTheme.colorScheme.surface,
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-        ) {
-            Column(modifier = Modifier.padding(8.dp)) {
-                MenuTabRow(
-                    label = stringResource(R.string.hs_settings_theme),
-                    value = themeModeLabel(context, themeMode),
-                    onClick = { themeSheetVisible = true },
-                )
-                // 앱별 언어는 시스템 설정(Android 13+)에 위임한다 — locales_config 기준으로 목록이 뜬다.
-                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-                    val appLocales = context.getSystemService(android.app.LocaleManager::class.java)
-                        ?.applicationLocales
-                    val languageValue = if (appLocales == null || appLocales.isEmpty) {
-                        stringResource(R.string.menu_language_system)
-                    } else {
-                        val locale = appLocales.get(0)
-                        locale.getDisplayLanguage(locale).replaceFirstChar { it.uppercase(locale) }
-                    }
-                    HorizontalDivider(
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                        color = MaterialTheme.colorScheme.outlineVariant,
-                    )
-                    MenuTabRow(
-                        label = stringResource(R.string.menu_language_label),
-                        value = languageValue,
-                        onClick = {
-                            runCatching {
-                                context.startActivity(
-                                    android.content.Intent(
-                                        android.provider.Settings.ACTION_APP_LOCALE_SETTINGS,
-                                        android.net.Uri.fromParts("package", context.packageName, null),
-                                    ),
-                                )
-                            }
-                        },
-                    )
+        SettingsCard(title = null) {
+            MenuTabRow(
+                label = stringResource(R.string.hs_settings_theme),
+                value = themeModeLabel(context, themeMode),
+                onClick = { themeSheetVisible = true },
+            )
+            // 앱별 언어는 시스템 설정(Android 13+)에 위임한다 — locales_config 기준으로 목록이 뜬다.
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                val appLocales = context.getSystemService(android.app.LocaleManager::class.java)
+                    ?.applicationLocales
+                val languageValue = if (appLocales == null || appLocales.isEmpty) {
+                    stringResource(R.string.menu_language_system)
+                } else {
+                    val locale = appLocales.get(0)
+                    locale.getDisplayLanguage(locale).replaceFirstChar { it.uppercase(locale) }
                 }
-            }
-        }
-        Surface(
-            shape = WakerPanelShape,
-            color = MaterialTheme.colorScheme.surface,
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-        ) {
-            Column(modifier = Modifier.padding(8.dp)) {
-                MenuTabRow(
-                    label = stringResource(R.string.hs_profile_menu_pass),
-                    onClick = onOpenBilling,
-                )
                 HorizontalDivider(
                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                     color = MaterialTheme.colorScheme.outlineVariant,
                 )
-                if (hasSharedPass) {
-                    MenuTabRow(
-                        label = stringResource(R.string.hs_profile_menu_shared_pass),
-                        onClick = onOpenMemberManagement,
-                    )
-                } else {
-                    // ⚠ **진입 라벨은 도착 화면의 제목과 같은 문자열이다**(2026-09-06).
-                    // 예전에는 '초대 코드 등록' 이라 눌러서 도착한 '코드 등록' 화면이 초대·선물·
-                    // 프로모션 셋을 다 받는다는 걸 라벨이 가리고 있었다 — 선물 코드를 받은
-                    // 사람은 넣을 자리가 없다고 읽는다.
-                    MenuTabRow(
-                        label = stringResource(R.string.common_tab_code_register),
-                        onClick = onOpenPeople,
-                    )
-                }
+                MenuTabRow(
+                    label = stringResource(R.string.menu_language_label),
+                    value = languageValue,
+                    onClick = {
+                        runCatching {
+                            context.startActivity(
+                                android.content.Intent(
+                                    android.provider.Settings.ACTION_APP_LOCALE_SETTINGS,
+                                    android.net.Uri.fromParts("package", context.packageName, null),
+                                ),
+                            )
+                        }
+                    },
+                )
+            }
+        }
+        SettingsCard(title = null) {
+            MenuTabRow(
+                label = stringResource(R.string.hs_profile_menu_pass),
+                onClick = onOpenBilling,
+            )
+            HorizontalDivider(
+                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                color = MaterialTheme.colorScheme.outlineVariant,
+            )
+            if (hasSharedPass) {
+                MenuTabRow(
+                    label = stringResource(R.string.hs_profile_menu_shared_pass),
+                    onClick = onOpenMemberManagement,
+                )
+            } else {
+                // ⚠ **진입 라벨은 도착 화면의 제목과 같은 문자열이다**(2026-09-06).
+                // 예전에는 '초대 코드 등록' 이라 눌러서 도착한 '코드 등록' 화면이 초대·선물·
+                // 프로모션 셋을 다 받는다는 걸 라벨이 가리고 있었다 — 선물 코드를 받은
+                // 사람은 넣을 자리가 없다고 읽는다.
+                MenuTabRow(
+                    label = stringResource(R.string.common_tab_code_register),
+                    onClick = onOpenPeople,
+                )
             }
         }
         // 법적 정보(약관·오픈소스)는 설정 화면 하단으로 이동 — 더보기는 핵심 항목만 남긴다.
         // 탈퇴하기 — 토스처럼 독립 카드 행. 확인 다이얼로그는 앱 레벨에서 뜬다.
         if (authSession != null) {
-            Surface(
-                shape = WakerPanelShape,
-                color = MaterialTheme.colorScheme.surface,
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-            ) {
-                Column(modifier = Modifier.padding(8.dp)) {
-                    // ⚠ **행을 빨갛게 칠하지 말 것**(2026-08-17 지시). 탈퇴도 이 행에서는
-                    // 아무 일도 일어나지 않는다 — 확인 모달의 [탈퇴하기]가 빨강이고,
-                    // 거기서만 되돌릴 수 없는 일이 벌어진다.
-                    MenuTabRow(
-                        label = stringResource(R.string.hs_settings_delete_account),
-                        onClick = onDeleteAccount,
-                    )
-                }
+            SettingsCard(title = null) {
+                // ⚠ **행을 빨갛게 칠하지 말 것**(2026-08-17 지시). 탈퇴도 이 행에서는
+                // 아무 일도 일어나지 않는다 — 확인 모달의 [탈퇴하기]가 빨강이고,
+                // 거기서만 되돌릴 수 없는 일이 벌어진다.
+                MenuTabRow(
+                    label = stringResource(R.string.hs_settings_delete_account),
+                    onClick = onDeleteAccount,
+                )
             }
         }
         Text(

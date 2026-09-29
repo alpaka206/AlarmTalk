@@ -151,11 +151,7 @@ internal fun MainViewModel.createVoiceProfiles(
     items: List<VoiceProfileCreationDraft>,
     consentAgreedInline: Boolean = false,
 ): Boolean {
-    val session = authSession
-    if (session == null) {
-        message = getApplication<android.app.Application>().getString(R.string.msg_voice_create_login_required)
-        return false
-    }
+    val session = sessionOrMessage(R.string.msg_voice_create_login_required) ?: return false
     if (!isPaidVoiceEntitledOptimistic()) {
         message = getApplication<android.app.Application>().getString(R.string.plan_gate_paid_message)
         return false
@@ -319,18 +315,16 @@ internal fun MainViewModel.promoteVoiceDraft(
         // ⚠ `.onSuccess { }` 로 감싸지 않는다 — 아래 강등은 **정지 함수**이고, 성공 갈래를
         // 그대로 코루틴 본문에 두는 편이 순서를 읽기도 쉽다.
         val result = runCatching {
-            withContext(Dispatchers.IO) {
-                api.updateVoiceProfile(
-                    authorization = AlarmTalkApiClient.bearer(session.token),
-                    id = profileId,
-                    request = VoiceProfileUpdateRequest(
-                        isShared = isShared,
-                        isDraft = false,
-                        language = deviceAppVoiceLanguage(),
-                        replaceExisting = if (replaceExisting) true else null,
-                    ),
-                ).profile
-            }
+            api.updateVoiceProfile(
+                authorization = AlarmTalkApiClient.bearer(session.token),
+                id = profileId,
+                request = VoiceProfileUpdateRequest(
+                    isShared = isShared,
+                    isDraft = false,
+                    language = deviceAppVoiceLanguage(),
+                    replaceExisting = if (replaceExisting) true else null,
+                ),
+            ).profile
         }
         val profile = result.getOrNull()
         if (profile != null) {
@@ -430,13 +424,11 @@ internal fun MainViewModel.promoteVoiceDraft(
 
 internal suspend fun MainViewModel.confirmVoicePreviewPlayed(profileId: String, token: String) {
     val session = authSession ?: error("Authentication required")
-    withContext(Dispatchers.IO) {
-        api.confirmVoicePreviewPlayed(
-            authorization = AlarmTalkApiClient.bearer(session.token),
-            id = profileId,
-            request = com.alarmtalk.app.network.VoicePreviewPlayedRequest(token),
-        )
-    }
+    api.confirmVoicePreviewPlayed(
+        authorization = AlarmTalkApiClient.bearer(session.token),
+        id = profileId,
+        request = com.alarmtalk.app.network.VoicePreviewPlayedRequest(token),
+    )
 }
 
 /**
@@ -445,13 +437,11 @@ internal suspend fun MainViewModel.confirmVoicePreviewPlayed(profileId: String, 
  */
 internal suspend fun MainViewModel.updateVoicePreviewText(profileId: String, text: String): String {
     val session = authSession ?: error("Authentication required")
-    return withContext(Dispatchers.IO) {
-        api.updateVoicePreviewText(
-            authorization = AlarmTalkApiClient.bearer(session.token),
-            id = profileId,
-            request = com.alarmtalk.app.network.VoicePreviewTextUpdateRequest(previewText = text),
-        ).previewText
-    }
+    return api.updateVoicePreviewText(
+        authorization = AlarmTalkApiClient.bearer(session.token),
+        id = profileId,
+        request = com.alarmtalk.app.network.VoicePreviewTextUpdateRequest(previewText = text),
+    ).previewText
 }
 
 internal fun MainViewModel.deleteVoiceDraft(profileId: String) {
@@ -460,13 +450,11 @@ internal fun MainViewModel.deleteVoiceDraft(profileId: String) {
         if (voiceProfileBusy) return@launch
         voiceProfileBusy = true
         runCatching {
-            withContext(Dispatchers.IO) {
-                api.deleteVoiceProfile(
-                    authorization = AlarmTalkApiClient.bearer(session.token),
-                    id = profileId,
-                    draftOnly = true,
-                )
-            }
+            api.deleteVoiceProfile(
+                authorization = AlarmTalkApiClient.bearer(session.token),
+                id = profileId,
+                draftOnly = true,
+            )
         }.onSuccess {
             if (pendingVoiceDraft?.id == profileId) pendingVoiceDraft = null
         }.onFailure { error ->
@@ -482,11 +470,7 @@ internal fun MainViewModel.renameVoiceProfile(
     profileId: String,
     name: String,
 ) {
-    val session = authSession
-    if (session == null) {
-        message = getApplication<android.app.Application>().getString(R.string.msg_voice_edit_login_required)
-        return
-    }
+    val session = sessionOrMessage(R.string.msg_voice_edit_login_required) ?: return
     val trimmedName = name.trim()
     if (trimmedName.isBlank()) {
         message = getApplication<android.app.Application>().getString(R.string.msg_voice_name_required)
@@ -496,15 +480,13 @@ internal fun MainViewModel.renameVoiceProfile(
         if (voiceProfileBusy) return@launch
         voiceProfileBusy = true
         runCatching {
-            withContext(Dispatchers.IO) {
-                api.updateVoiceProfile(
-                    authorization = AlarmTalkApiClient.bearer(session.token),
-                    id = profileId,
-                    request = VoiceProfileUpdateRequest(
-                        name = trimmedName,
-                    ),
-                ).profile
-            }
+            api.updateVoiceProfile(
+                authorization = AlarmTalkApiClient.bearer(session.token),
+                id = profileId,
+                request = VoiceProfileUpdateRequest(
+                    name = trimmedName,
+                ),
+            ).profile
         }.onSuccess { profile ->
             voiceProfiles = voiceProfiles.map {
                 if (it.id == profile.id) {
@@ -527,11 +509,7 @@ internal fun MainViewModel.renameVoiceProfile(
 }
 
 internal fun MainViewModel.setVoiceProfileShared(profileId: String, shared: Boolean) {
-    val session = authSession
-    if (session == null) {
-        message = getApplication<android.app.Application>().getString(R.string.msg_voice_share_login_required)
-        return
-    }
+    val session = sessionOrMessage(R.string.msg_voice_share_login_required) ?: return
     if (!hasCoupleOrFamilyAccess(subscriptionResponse, familyGroup, personalPromoTierHold())) {
         message = getApplication<android.app.Application>().getString(R.string.msg_voice_share_couple_family_required)
         return
@@ -554,13 +532,11 @@ internal fun MainViewModel.setVoiceProfileShared(profileId: String, shared: Bool
         try {
             while (true) {
                 val want = shareToggleDesired[profileId] ?: break
-                val profile = withContext(Dispatchers.IO) {
-                    api.updateVoiceProfile(
-                        authorization = AlarmTalkApiClient.bearer(session.token),
-                        id = profileId,
-                        request = VoiceProfileUpdateRequest(isShared = want),
-                    ).profile
-                }
+                val profile = api.updateVoiceProfile(
+                    authorization = AlarmTalkApiClient.bearer(session.token),
+                    id = profileId,
+                    request = VoiceProfileUpdateRequest(isShared = want),
+                ).profile
                 acked = profile.isShared ?: want
                 // PATCH 중에 다시 토글됐으면 최신 desired 로 재전송(직렬이라 순서 역전 없음).
                 if (shareToggleDesired[profileId] != want) continue
@@ -600,11 +576,7 @@ internal fun MainViewModel.setVoiceProfileShared(profileId: String, shared: Bool
 }
 
 internal fun MainViewModel.deleteVoiceProfile(profileId: String) {
-    val session = authSession
-    if (session == null) {
-        message = getApplication<android.app.Application>().getString(R.string.msg_voice_delete_login_required)
-        return
-    }
+    val session = sessionOrMessage(R.string.msg_voice_delete_login_required) ?: return
 
     viewModelScope.launch {
         if (voiceProfileBusy) return@launch
@@ -616,13 +588,11 @@ internal fun MainViewModel.deleteVoiceProfile(profileId: String) {
             }
         }
         runCatching {
-            withContext(Dispatchers.IO) {
-                api.deleteVoiceProfile(
-                    authorization = AlarmTalkApiClient.bearer(session.token),
-                    id = profileId,
-                    force = true,
-                )
-            }
+            api.deleteVoiceProfile(
+                authorization = AlarmTalkApiClient.bearer(session.token),
+                id = profileId,
+                force = true,
+            )
         }.onSuccess {
             voiceProfiles = voiceProfiles.filterNot { it.id == profileId }
             // 삭제된 목소리를 쓰던 내 알람을 즉시 기본 알람으로 변환한다(공유해제·무료강등과 동일 결과).
@@ -652,9 +622,7 @@ internal suspend fun MainViewModel.generateTtsAudio(request: TtsGenerateRequest)
         getApplication<android.app.Application>().getString(R.string.plan_gate_paid_message)
     }
     val session = authSession ?: throw IllegalStateException(getApplication<android.app.Application>().getString(R.string.msg_voice_tts_generate_login_required))
-    return withContext(Dispatchers.IO) {
-        api.generateTts(AlarmTalkApiClient.bearer(session.token), request)
-    }
+    return api.generateTts(AlarmTalkApiClient.bearer(session.token), request)
 }
 
 internal fun TtsGenerateRequest.isFreeSystemPresetRequest(): Boolean =
@@ -667,9 +635,7 @@ internal fun TtsGenerateRequest.isFreeSystemPresetRequest(): Boolean =
 
 internal suspend fun MainViewModel.downloadTtsMessageAudio(messageId: String): TtsMessageAudioResponse {
     val session = authSession ?: throw IllegalStateException(getApplication<android.app.Application>().getString(R.string.msg_voice_tts_audio_load_login_required))
-    return withContext(Dispatchers.IO) {
-        api.getTtsMessageAudio(AlarmTalkApiClient.bearer(session.token), messageId)
-    }
+    return api.getTtsMessageAudio(AlarmTalkApiClient.bearer(session.token), messageId)
 }
 
 // 이번 달 목소리 초안 생성 쿼터 조회 → voiceDraftQuota 상태 갱신(삭제 전 재생성 가능 판정용).
@@ -678,9 +644,7 @@ internal fun MainViewModel.loadVoiceDraftQuota() {
     val session = authSession ?: return
     viewModelScope.launch {
         runCatching {
-            withContext(Dispatchers.IO) {
-                api.getVoiceDraftQuota(AlarmTalkApiClient.bearer(session.token))
-            }
+            api.getVoiceDraftQuota(AlarmTalkApiClient.bearer(session.token))
         }.onSuccess { voiceDraftQuota = it }
     }
 }
@@ -690,9 +654,7 @@ internal fun MainViewModel.loadVoiceDraftQuota() {
 internal suspend fun MainViewModel.loadManualQuota(): ManualQuotaResponse? {
     val session = authSession ?: return null
     return runCatching {
-        withContext(Dispatchers.IO) {
-            api.getManualQuota(AlarmTalkApiClient.bearer(session.token))
-        }
+        api.getManualQuota(AlarmTalkApiClient.bearer(session.token))
     }.getOrNull()
 }
 
@@ -777,9 +739,7 @@ internal suspend fun MainViewModel.fetchVoicePrerenderStatus(
     profileId: String,
 ): com.alarmtalk.app.network.VoicePrerenderStatusResponse {
     val session = authSession ?: error("Authentication required")
-    return withContext(Dispatchers.IO) {
-        api.getVoicePrerenderStatus(AlarmTalkApiClient.bearer(session.token), profileId)
-    }
+    return api.getVoicePrerenderStatus(AlarmTalkApiClient.bearer(session.token), profileId)
 }
 
 /** 사전렌더 전진 1스텝(서버가 호출당 최대 3클립 생성). 드라이브 루프가 done 까지 반복
@@ -788,9 +748,7 @@ internal suspend fun MainViewModel.advanceVoicePrerender(
     profileId: String,
 ): com.alarmtalk.app.network.VoicePrerenderAdvanceResponse {
     val session = authSession ?: error("Authentication required")
-    return withContext(Dispatchers.IO) {
-        api.advanceVoicePrerender(AlarmTalkApiClient.bearer(session.token), profileId)
-    }
+    return api.advanceVoicePrerender(AlarmTalkApiClient.bearer(session.token), profileId)
 }
 
 /** promote 직후 사전렌더 드라이브 시작: 생성(advance 반복) → 클립 전체 기기 다운로드.
@@ -926,9 +884,7 @@ internal suspend fun MainViewModel.cacheVoiceClips(
 internal suspend fun MainViewModel.retryVoicePrerender(profileId: String): Boolean {
     val session = authSession ?: return false
     return try {
-        withContext(Dispatchers.IO) {
-            api.retryVoicePrerender(AlarmTalkApiClient.bearer(session.token), profileId)
-        }.success
+        api.retryVoicePrerender(AlarmTalkApiClient.bearer(session.token), profileId).success
     } catch (error: kotlin.coroutines.cancellation.CancellationException) {
         throw error
     } catch (error: Exception) {
@@ -945,9 +901,7 @@ internal suspend fun MainViewModel.retryVoicePrerender(profileId: String): Boole
 internal suspend fun MainViewModel.retryVoiceSpeechStyleAnalysis(profileId: String): Boolean {
     val session = authSession ?: return false
     return try {
-        val response = withContext(Dispatchers.IO) {
-            api.retryVoiceSpeechStyle(AlarmTalkApiClient.bearer(session.token), profileId)
-        }
+        val response = api.retryVoiceSpeechStyle(AlarmTalkApiClient.bearer(session.token), profileId)
         if (response.success) {
             voiceProfiles = voiceProfiles.map {
                 if (it.id == profileId) it.copy(speechStyleStatus = response.status ?: "done") else it

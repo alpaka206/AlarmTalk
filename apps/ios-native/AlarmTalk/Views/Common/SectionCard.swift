@@ -42,7 +42,7 @@ private struct SectionSurfaceModifier: ViewModifier {
 
 /// 설정 카드 — **제목이 카드 안에 들어간다.**
 ///
-/// 안드로이드 `ui/settings/SettingsScreenComponents.kt:49-72` 의 `SettingsCard` 대응.
+/// 안드로이드 `ui/settings/SettingsScreenComponents.kt` 의 `SettingsCard` 대응.
 /// 그 주석이 이 컴포넌트의 존재 이유를 말한다: "화면마다 카드/행 간격이 달라 보이던
 /// 문제의 단일 출처".
 ///
