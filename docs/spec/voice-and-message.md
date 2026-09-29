@@ -999,7 +999,7 @@ CAF 를 직접 쓰고 `AVChannelLayoutKey` 를 반드시 넣는다(없으면 파
 | 남은 세대 판정 | — | **세대 값**으로 가른다(`applied` 초과만 남김) — 겹치는 알람 id 로 가르면 뒤 세대 칸을 지운다 | — |
 | 변화 없는 회차도 확인은 잇는다 | — | `applyIfChanged` — 바뀐 게 없어도 남은 칸이 있으면 **확인만** 이어서 한다 | — |
 | 미확인 목록은 세대별로 | — | `pendingApply` 가 세대별 칸에 담고 **확인은 전부·제거는 내 것만** | — |
-| 정리 중인 교체 목소리 | `settlingVoiceProfileIds` — 목록엔 두되 흐리게, **자동 선택·저장 게이트에서 제외** | `isReplacementSettling` — 같은 규칙(`selectDefaultVoiceProfileIfNeeded`·저장 판정·배너) | — |
+| 정리 중인 교체 목소리 | `settlingVoiceProfileIds` — 목록엔 두되 흐리게, **자동 선택·저장 게이트에서 제외** | `isReplacementSettling` — 같은 규칙(`selectDefaultVoiceProfileIfNeeded`·저장 판정·저장 알럿) | — |
 | 표식 확정은 예약까지 | `commitLocked` — 디스크 실패 시 **메모리도 되돌려** 재시도 가능 | `confirmIfReservationsSettled` — 옛 예약 해제 실패면 확정 보류 | — |
 | 같은 시각 충돌 알람 끄기 | `getEnabledAtTime` → `enabled=false`(pull 임포트) | `clearSameTimeConflicts` — 끄고 예약 취소, **실패하면 ACK 보류** | — |
 | 전달 세대 ACK 전 영속 | `NonCancellable` Room 쓰기 | `markRemoteDeliveryVersion` → 동기 저장 확인 후 ACK | `POST /alarm/:id/received` |

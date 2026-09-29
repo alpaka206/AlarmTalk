@@ -294,6 +294,36 @@ struct AlarmEditDraft: Equatable {
             && hasNoMessageChoice(randomPrompt: randomPrompt, selectedBucket: selectedBucket, ttsText: ttsText)
     }
 
+    /// **고른 목소리를 지금 쓸 수 없는가** — 목록에서 사라졌거나(삭제·공유 해제·미준비)
+    /// 무료 플랜이라 잠긴 목소리로 저장하려는 경우. 안드로이드 `SaveBlockReason.VOICE_UNAVAILABLE` 짝.
+    ///
+    /// ⚠ **이걸로 저장 버튼을 죽이지 않는다**(2026-09-29). 편집기의 '삭제된 목소리' 배너를
+    /// 걷어낸 뒤로는 이 사유를 말하는 자리가 **저장을 누를 때 뜨는 알럿** 하나다
+    /// (`AlarmEditorSheet.saveFlow` 첫머리). 죽은 버튼은 이유를 말하지 않아 고장으로 읽힌다.
+    ///
+    /// - 목소리를 아직 안 골랐으면 여기 갈래가 아니다(목소리 행이 "고르기" 로 말한다).
+    /// - **정리 중인 교체 목소리**도 아니다 — 곧 풀리는 상태라 "아직 준비 중" 으로 따로 말한다.
+    /// - 테마(스톡 클립)를 골랐으면 목소리 음원이 아니라 클립이 울리므로 막지 않는다.
+    /// - 기존 알람의 음원을 그대로 쓸 수 있으면 막지 않는다 — 시각만 고치는 재저장이 그렇다.
+    ///
+    /// 뷰 밖에 두는 것은 테스트에서 입력별로 부르기 위해서다(`MessageContextMemoryTests`).
+    static func selectedVoiceUnusable(
+        playMode: AlarmPlayMode,
+        voiceSource: VoiceSource,
+        profileID: String?,
+        settling: Bool,
+        lockedByPlan: Bool,
+        themeSelected: Bool,
+        profileReady: Bool,
+        hasUsableAudio: @autoclosure () -> Bool
+    ) -> Bool {
+        guard playMode != .alarmOnly, voiceSource == .ttsProfile else { return false }
+        guard profileID.nilIfBlank != nil, !settling else { return false }
+        if lockedByPlan { return true }
+        if themeSelected { return false }
+        return !profileReady && !hasUsableAudio()
+    }
+
     /// 계정의 **직전 문구 선택** 하나. 새 알람을 열 때와, 문구가 없던 알람을 목소리 문구로
     /// 옮길 때 같은 규칙으로 잇는다(`CLAUDE.md` 「알람 편집기 기본값 = 직전 선택 유지」).
     enum LastMessageChoice: Equatable {

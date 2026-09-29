@@ -151,6 +151,19 @@ iOS 26 의 `UIAlertController` 를 시뮬레이터에서 재서 얻은 값이다
 도 애플 플랫폼 전용 라이선스다. 안드로이드는 Pretendard 를 쓴다 — 그 자리를 메우려고
 만들어진 글꼴이라 선택은 맞고, 맞춰야 할 것은 **자간과 실제 글리프 크기**다.
 
+## 5. 목소리 카드 · 세부 설정
+
+- ⚠ **'삭제된 목소리' 배너를 두지 않는다**(2026-09-29 지시, 양 앱). 목소리를 잃은 알람은
+  모달이 이미 알린다 — 앱에 들어올 때 강등 안내(무료 전환·공유 해제·제자리 교체), 직접 지울
+  때 삭제 확인. 편집기에 같은 말을 또 띄우면 이미 읽은 안내가 편집할 때마다 경고처럼 남는다.
+- 그 목소리로 **저장을 누르면** 알럿이 말한다: "목소리를 골라주세요 / 고른 목소리를 지금은 쓸
+  수 없어요. 다른 목소리를 골라 주세요." 버튼은 죽이지 않는다(`CLAUDE.md` 「잠그는 것은
+  '저장 중' 일 때뿐이다」). 기존 알람의 음원을 그대로 쓸 수 있으면(시각만 고치는 재저장)
+  막지 않는다. 정리 중인 교체 목소리는 이 갈래가 아니라 "아직 준비 중이에요" 로 따로 말한다.
+- **세부 설정 카드의 행 순서는 알람음 → 진동**이다(2026-09-29 지시, 안드로이드). 알람음 행은
+  재생 방식이 '알람' 일 때만 있으므로, 행 사이 구분선은 **알람음 행에 붙어** 함께 나타나고
+  사라진다. iOS 에는 진동 행이 없다(AlarmKit 이 진동을 소유한다 — 「의도된 차이」).
+
 ## iOS 중복 시각 알람 교체의 실패 처리
 
 새 알람의 저장·예약이 성공한 뒤 충돌 알람을 정리하되, **서버 삭제/그만받기 성공을 확인한
@@ -168,6 +181,7 @@ iOS 26 의 `UIAlertController` 를 시뮬레이터에서 재서 얻은 값이다
 | 무엇 | 왜 |
 | --- | --- |
 | iOS 에 알람 음량 슬라이더 없음 | AlarmKit 이 OS 톤을 소유한다. 못 움직이는 컨트롤을 두면 값을 바꿔 보고 저장하고 확인하기를 반복하게 된다 |
+| iOS 세부 설정에 진동 행 없음 | 같은 이유 — AlarmKit 이 알람 진동을 소유해 고른 패턴이 실제 알람에 닿지 않는다. 그래서 iOS 카드에는 알람음 행 하나뿐이고, 목소리 모드에서는 카드를 통째로 감춘다 |
 | 확인 알럿의 껍데기 | iOS 는 시스템 `.alert`, 안드로이드는 그걸 흉내 낸 `IosAlertDialog`. iOS 에서 껍데기를 새로 만들면 오히려 원본에서 멀어진다 |
 | 숫자 입력 확정 키 | iOS 숫자 키패드에는 완료 키가 없어 **키보드 툴바**로, 안드로이드는 IME 의 **Done** 으로 |
 | 타임휠 **정착 곡선·튕김 판정** | **곡선**: 안드로이드 `TimeWheelEasing = (0.3, 0.6, 0.3, 1)`(`ui/editor/DraggableTimeWheelColumn.kt`) / iOS `TimeWheelSettle.ease` 의 `(0.16, 1, 0.3, 1)`. **튕김**: 안드로이드는 **px/s** 를 받아 최소 `칸높이 × 4.2/s`·칸수 `(속도/칸높이) × 0.09`(`flingStepsFor`), iOS 는 SwiftUI 가 주는 **남은 이동 거리**를 받아 최소 `칸높이 × 0.63`·칸수 `(거리/칸높이) × 0.8`(`TimeWheelPicker.snapStep`). 저사양 실기(SM-A325N) 프레임 예산에 맞춰 2026-08-15 에 **안드로이드만** 0.12 → 0.09 로 낮췄다. 같은 기기 조건도 아니고 들어오는 양 자체가 다른 값이라 **맞추지 않는다** — 한쪽 숫자를 그대로 옮기면 안 된다 |
@@ -185,6 +199,8 @@ iOS 26 의 `UIAlertController` 를 시뮬레이터에서 재서 얻은 값이다
 | 오전/오후 | `ui/editor/AmPmWheelColumn.kt` | `Views/Editor/TimeWheelPicker.swift` 의 `AmPmWheelColumn` |
 | 재생 방식 세그먼트 | `ui/editor/AlarmEditorControls.kt` 의 `EditorSegmentedSelector` | `Views/Editor/VoicePlayModePicker.swift` |
 | '알람' → '목소리' 전환(TTS 갈래 + 직전 선택 잇기) | `AlarmEditorScreen` 의 `applyAlarmOutput` → `AlarmEditorState.applyAlarmOutput` → `enterVoiceModeFromAlarmOnly` | `Views/Editor/AlarmEditorSheet+AlarmModeSection.swift` 의 재생 방식 `.onChange` → `AlarmEditorSheet.adoptLastMessageChoiceIfUnset` |
+| 쓸 수 없는 목소리 — 배너 없음, 저장 시 알럿 | `ui/editor/AlarmEditorScreen.kt` 의 `editorSaveBlockReason`(`SaveBlockReason.VOICE_UNAVAILABLE`) | `AlarmEditDraft.selectedVoiceUnusable` → `AlarmEditorSheet.saveFlow` 첫머리(`editorSaveBlocked` 는 이 갈래로 버튼을 죽이지 않는다) |
+| 세부 설정 행 순서(알람음 → 진동) | `ui/editor/AlarmSettingsCard.kt` 의 `AlarmSettingsCard` | 알람음 행 하나(`AlarmEditorSheet.detailSettingsSection`) |
 | 음성 출력(크기·반복) | `ui/editor/VoiceAudioCard.kt` 의 `VoiceVolumeSelector` | `Views/Editor/AlarmSettingsPanes.swift` 의 `VoiceOutputSettingsPane` |
 | 목록 바텀시트 | `ui/components/WakerModal.kt` 의 `WakerSelectionSheet` | `Views/Common/BottomSheetHost.swift` + `Views/Common/SelectionSheet.swift` |
 | 폼 시트 | `ui/components/WakerModal.kt` 의 `WakerFormSheet` | `Views/Common/FormSheet.swift` |
@@ -196,6 +212,7 @@ iOS 26 의 `UIAlertController` 를 시뮬레이터에서 재서 얻은 값이다
 | 무엇 | 어디 |
 | --- | --- |
 | 정착 곡선·시간표·칸 경계 통과 | `AlarmTalkTests/TimeWheelSettleTests.swift` |
+| 쓸 수 없는 목소리는 버튼이 아니라 저장 알럿으로 막는다 | `AlarmTalkTests/MessageContextMemoryTests.swift` 의 `testUnusableVoiceIsExplainedOnSaveInsteadOfADeadButton` |
 | 교체 시 서버/로컬 삭제 순서·실패 중단·세션 없음·서버 업로드 보류 | `AlarmTalkTests/DuplicateAlarmReplacementTests.swift` |
 | 튕긴 뒤에도 굴러가는가(순간이동 감지) | `AlarmTalkUITests/TimeWheelFlingUITests.swift` |
 | 숫자 탭 = 모달 없이 그 자리 입력, 범위 초과는 잘림 | `AlarmTalkUITests/TimeWheelTypeInUITests.swift` |

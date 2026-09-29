@@ -226,8 +226,6 @@
     <string name="editor_vibration_pattern">Pattern</string>
     <string name="editor_vibration_use">Use vibration</string>
     <string name="editor_vibration_title">Vibration</string>
-    <string name="editor_voice_deleted_desc">The voice saved to this alarm will still play, but to change the phrase, please choose another voice.</string>
-    <string name="editor_voice_deleted_title">Deleted voice</string>
     <string name="editor_voice_generation_canceled_time_changed">The alarm time changed, so voice generation was stopped.</string>
     <string name="editor_voice_loading">Loading voices.</string>
     <string name="editor_voice_output_title">Voice volume</string>

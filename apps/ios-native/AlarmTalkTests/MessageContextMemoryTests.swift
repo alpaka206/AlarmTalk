@@ -175,6 +175,56 @@ final class MessageContextMemoryTests: XCTestCase {
         XCTAssertFalse(missing(stock: true))
     }
 
+    /// **쓸 수 없는 목소리는 버튼을 죽이지 않고 누를 때 알럿으로 막는다**(2026-09-29 —
+    /// 편집기의 '삭제된 목소리' 배너를 걷어낸 뒤로 이 알럿이 유일한 설명이다).
+    /// `saveFlow` 첫머리와 `editorSaveBlocked` 가 같은 판정을 본다.
+    /// 안드로이드 `SaveBlockReason.VOICE_UNAVAILABLE` 짝.
+    func testUnusableVoiceIsExplainedOnSaveInsteadOfADeadButton() {
+        var audioChecked = false
+        func unusable(
+            playMode: AlarmPlayMode = .voiceOnly,
+            source: VoiceSource = .ttsProfile,
+            profileID: String? = "clone-1",
+            settling: Bool = false,
+            locked: Bool = false,
+            theme: Bool = false,
+            ready: Bool = false,
+            audio: Bool = false
+        ) -> Bool {
+            AlarmEditDraft.selectedVoiceUnusable(
+                playMode: playMode,
+                voiceSource: source,
+                profileID: profileID,
+                settling: settling,
+                lockedByPlan: locked,
+                themeSelected: theme,
+                profileReady: ready,
+                hasUsableAudio: { audioChecked = true; return audio }()
+            )
+        }
+        // 목록에서 사라진(삭제·공유 해제·미준비) 목소리 + 쓸 음원 없음 → 막는다.
+        XCTAssertTrue(unusable())
+        // 무료 플랜에서 잠긴 목소리 → 막는다(준비돼 있어도).
+        XCTAssertTrue(unusable(locked: true, ready: true))
+        // 준비된 목소리, 또는 기존 알람 음원을 그대로 쓸 수 있으면 막지 않는다.
+        XCTAssertFalse(unusable(ready: true))
+        XCTAssertFalse(unusable(audio: true))
+        // 테마(스톡 클립)를 골랐으면 클립이 울린다 — 막지 않는다.
+        XCTAssertFalse(unusable(theme: true))
+        // 정리 중인 교체 목소리는 "아직 준비 중" 으로 따로 말한다.
+        XCTAssertFalse(unusable(settling: true))
+        XCTAssertFalse(unusable(settling: true, locked: true))
+        // 목소리 미선택·알람 전용·직접 녹음은 이 갈래가 아니다.
+        XCTAssertFalse(unusable(profileID: nil))
+        XCTAssertFalse(unusable(profileID: "  "))
+        XCTAssertFalse(unusable(playMode: .alarmOnly))
+        XCTAssertFalse(unusable(source: .localAudio))
+        // 음원 재사용 판정(발화 시각 계산)은 준비된 목소리에서는 부르지 않는다.
+        audioChecked = false
+        _ = unusable(ready: true)
+        XCTAssertFalse(audioChecked)
+    }
+
     /// **직접 녹음 → 목소리 관문은 이을 값으로 본다**(2026-09-29 리뷰). 관문은 소스를 바꾸고
     /// 직전 선택을 잇기 **전에** 돌므로(`AlarmEditorSheet.recordingExitNeedsClipPreparation`),
     /// 지금 값(랜덤 꺼짐)이 아니라 잇기가 켤 종류를 알아야 한다. 안드로이드
