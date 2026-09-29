@@ -537,7 +537,7 @@
     <string name="voices_preparing_audio">音声を準備しています。</string>
     <string name="voices_preview_play_failed">プレビューを再生できませんでした。</string>
     <string name="voices_confirm_new_title">この声で保存しますか?</string>
-    <string name="voices_confirm_new_body">保存すると今月作れる声を使い切ります。削除しても翌月までは新しく作れないので、気に入らなければ保存する前に作り直してください。</string>
+    <string name="voices_confirm_replace_body">保存すると以前の声は削除されます。</string>
     <string name="voices_confirm_new_preview">もう一度聞く</string>
     <string name="voices_confirm_new_keep">保存する</string>
     <string name="voices_confirm_new_keep_saving">保存中…</string>
@@ -547,7 +547,7 @@
 完成したらすぐお聞かせします。</string>
     <string name="voices_preview_text_loading">フレーズを準備しています…</string>
     <string name="voices_preview_text_retry_hint">フレーズをまだ準備できていません。試聴を押してもう一度お試しください。</string>
-    <string name="voices_preview_edit_hint">話し方は自由に変えられます。\n毎朝のフレーズはこの話し方で作られます。</string>
+    <string name="voices_preview_edit_hint">話し方は自由に変えられます。</string>
     <string name="voices_preview_edit_action">フレーズを編集</string>
     <string name="voices_preview_edit_save">再生成</string>
     <string name="voices_preview_edit_saving">再生成中…</string>

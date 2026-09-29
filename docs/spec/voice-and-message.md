@@ -181,6 +181,14 @@
   돌아간다 — "다 됐어요" 팝업도, 등록 직후의 '등록했어요' 안내도 두지 않는다. 그 문구는
   다음 화면이 이미 말하는 것을 한 번 더 말하는 데다, 아무도 지우지 않아 목소리 탭 맨 위에
   그대로 남아 있었다. (안드로이드도 성공 갈래에서 배너를 비운다.)
+- **확정 화면의 본문은 교체일 때만 한 줄이다**(2026-09-29 지시). 제목 `이 목소리로 저장할까요?`
+  아래에는 이미 등록된 목소리가 있어 이 저장이 **교체**일 때만 `저장하면 이전 목소리는 삭제돼요.`
+  를 둔다. 그 경우 저장은 교체 체크를 켜야 열리므로 이 화면의 저장은 곧 교체다 — 체크 여부로
+  가르지 않는다(체크할 때마다 맨 위 줄이 생겼다 사라지면 화면이 밀린다). 교체가 아니면 본문
+  없이 곧바로 미리듣기 카드다. **월 등록 한도 경고**("이번 달에 만들 수 있는 목소리를 다 쓰게
+  돼요…")는 사용자 승인으로 뺐다 — 남은 횟수는 목소리 탭 머리의 `생성 가능 n/m회` 가 말한다.
+- **미리듣기 카드 아래 안내는 `말투를 원하는 대로 바꿔 보세요.` 한 문장이다**(2026-09-29 지시).
+  "매일 아침 문구가 이 말투로 만들어져요." 는 뺐다.
 - **공유 설정은 확정 단계에서 고른다.** 아직 버릴 수 있는 초안의 입력 폼에서 묻지 않는다.
   승격 요청은 그 선택을 함께 저장하며, 기존 목소리를 제자리 교체하는 갈래에서도 동일하다.
   일반 공유 on/off는 커밋 직후 알린다. 단 제자리 교체로 공유 목소리의 실체가 바뀌면 모든
@@ -338,10 +346,16 @@
   이 값이 미리듣기와 매일 사전렌더 문구의 언어가 된다.
 - 생성 중·미리듣기에서 그냥 나가면 임시 목소리가 남거나 사라진 이유를 알 수 없다.
   생성 중에는 이탈을 막고, 미리듣기에서는 삭제 결과를 명시한 확인을 거친다.
-- 다섯 단계는 양쪽 모두 **공용 상단바 + 스크롤 본문 + 고정 하단 행동** 골격을 쓴다.
+- 앞의 네 단계는 양쪽 모두 **공용 상단바 + 스크롤 본문 + 고정 하단 행동** 골격을 쓴다.
   상단바는 `목소리 만들기`를 가운데 두고, 음원 준비에서는 목록으로 나가며 세부 정보에서는
   음원 준비로 돌아간다. 생성 중에는 뒤로가기를 숨기고, 미리듣기·확정에서는 초안 삭제 경고를
   거친다. 같은 일을 하는 하단 `이전`이나 별도 X를 함께 두지 않는다.
+- ⚠ **마지막 단계(오프라인 준비)는 그 골격을 쓰지 않는다**(2026-09-29 지시). 상단바 제목
+  `목소리 만들기` 를 두지 않고(뒤로가기도 없는 자리라 제목만 떠 있었다), 제목·안내·퍼센트·막대
+  블록을 화면 **한가운데**(가로·세로)에, `백그라운드에서 계속` 을 화면 **맨 아래**(내비게이션
+  바·홈 인디케이터 위)에 둔다. 블록 위아래를 아래 버튼 줄만큼 똑같이 비워, 정확히 가운데에
+  두면서 글자가 커져도 버튼과 겹치지 않게 한다. 버튼이 하는 일(화면만 닫고 생성·다운로드는
+  계속)과 뒤로가기 동작은 바뀌지 않았다.
 - ⚠ **초안은 저장하지 않으면 없는 것이다**(2026-08-25 확정). 등록 화면을 나가면 경고를 거쳐
   **삭제**한다 — 양 앱 모두. 그러니 "결정을 안 끝낸 초안" 이라는 상태를 **사용자에게 보여
   주지 않는다.**
@@ -912,6 +926,8 @@ CAF 를 직접 쓰고 `AVChannelLayoutKey` 를 반드시 넣는다(없으면 파
 | 편집기 목소리 프리셀렉트 | `AlarmEditorScreen` 화면 스코프 | `AlarmEditorSheet.selectDefaultVoiceProfileIfNeeded` | — |
 | 목소리 등록 5단계 | `VoiceProfileManagementPanel.VoiceRegistrationStep` | `VoicesRoute` + `VoiceCloneUploadFlow.RegistrationStep` | 초안 생성·승격·사전렌더 큐 |
 | 등록 언어·선택 페르소나 | `VoiceProfileManagementPanel` Details | `VoiceCloneUploadFlow.detailsSection` | `POST /voice/clone` |
+| 확정 본문 = 교체일 때만 한 줄 · 월 한도 경고 없음 · 말투 안내 한 문장 | `VoiceProfileManagementPanel` Preview(`replaceTargetVoice` → `voices_confirm_replace_body`, `voices_preview_edit_hint`); `VoiceRegistrationCopyTest` | `VoicePreviewConfirmView`(`registeredVoice`) · `Localizable.xcstrings` | — |
+| 오프라인 준비 배치 — 제목 없음 · 블록 가운데 · '백그라운드에서 계속' 맨 아래 | `VoiceProfileManagementPanel.kt` `VoiceClipPreparationStep` | `ClipPreparationView.registrationPreparation`; `AlarmTalkUITests/VoicePreparationScreenshotUITests` | — |
 | 확정 단계 공유 | `VoiceProfileManagementPanel` Preview | `VoicePreviewConfirmView` | 일반 승격은 `scheduleVoiceShareChangedPush`, 제자리 교체는 `notifySharedVoicePrerenderComplete`(공유 해제만 즉시) |
 | 제자리 교체 원자성·원본 승계 | — | — | `replaceVoiceInPlace` + `voice_uploads` + `voice_prerender_queue` |
 | 교체도 같은 등록 게이트 | — | — | `replaceVoiceInPlace`(플랜·동의·`voice_profile_change_ledger`) |

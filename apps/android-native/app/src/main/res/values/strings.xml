@@ -565,7 +565,7 @@
     <string name="voices_preparing_audio">음성을 준비하고 있어요.</string>
     <string name="voices_preview_play_failed">미리듣기를 재생하지 못했어요.</string>
     <string name="voices_confirm_new_title">이 목소리로 저장할까요?</string>
-    <string name="voices_confirm_new_body">저장하면 이번 달에 만들 수 있는 목소리를 다 쓰게 돼요. 지워도 다음 달까지는 새로 만들 수 없으니, 마음에 들지 않으면 저장하기 전에 다시 만들어 보세요.</string>
+    <string name="voices_confirm_replace_body">저장하면 이전 목소리는 삭제돼요.</string>
     <string name="voices_confirm_new_preview">다시 듣기</string>
     <string name="voices_confirm_new_keep">저장하기</string>
     <string name="voices_confirm_new_keep_saving">저장 중…</string>
@@ -575,7 +575,7 @@
 완성되면 바로 들려드릴게요.</string>
     <string name="voices_preview_text_loading">문구를 준비하고 있어요…</string>
     <string name="voices_preview_text_retry_hint">문구를 아직 준비하지 못했어요. 미리듣기를 눌러 다시 시도해 주세요.</string>
-    <string name="voices_preview_edit_hint">말투를 원하는 대로 바꿔 보세요.\n매일 아침 문구가 이 말투로 만들어져요.</string>
+    <string name="voices_preview_edit_hint">말투를 원하는 대로 바꿔 보세요.</string>
     <string name="voices_preview_edit_action">문구 수정</string>
     <string name="voices_preview_edit_save">재생성</string>
     <string name="voices_preview_edit_saving">재생성 중…</string>

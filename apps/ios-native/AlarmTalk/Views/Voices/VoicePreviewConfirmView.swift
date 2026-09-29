@@ -65,12 +65,20 @@ struct VoicePreviewConfirmView: View {
                         .fontWeight(.semibold)
                         .foregroundStyle(theme.palette.onSurface)
 
-                    Text("저장하면 이번 달에 만들 수 있는 목소리를 다 쓰게 돼요.\n지워도 다음 달까지는 새로 만들 수 없어요.\n마음에 들지 않으면 저장하기 전에 다시 만들어 보세요.")
-                        .font(theme.typography.bodyMedium)
-                        .foregroundStyle(theme.palette.onSurfaceVariant)
+                    // 본문은 **교체일 때만** 한 줄이다(2026-09-29 지시). 이미 등록된 목소리가
+                    // 있으면 저장은 교체 체크를 켜야만 열리므로(`actions` 의 `saveDisabled`),
+                    // 이 화면에서의 저장은 곧 교체다 — 체크 여부로 가르지 않는다(체크할 때마다
+                    // 맨 위 줄이 생겼다 사라지며 화면이 밀린다). 교체가 아니면 본문이 없다.
+                    // 월 등록 한도 경고는 사용자 승인으로 뺐다. 안드로이드
+                    // `ui/voices/VoiceProfileManagementPanel.kt` 의 `voices_confirm_replace_body` 와 같다.
+                    if registeredVoice != nil {
+                        Text("저장하면 이전 목소리는 삭제돼요.")
+                            .font(theme.typography.bodyMedium)
+                            .foregroundStyle(theme.palette.onSurfaceVariant)
+                    }
 
                     previewCard
-                    Text("말투를 원하는 대로 바꿔 보세요.\n매일 아침 문구가 이 말투로 만들어져요.")
+                    Text("말투를 원하는 대로 바꿔 보세요.")
                         .font(theme.typography.bodySmall)
                         .foregroundStyle(theme.palette.onSurfaceVariant)
 

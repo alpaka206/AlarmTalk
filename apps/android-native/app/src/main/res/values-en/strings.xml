@@ -529,7 +529,7 @@ They become available as they finish.</string>
     <string name="voices_preparing_audio">Preparing your audio.</string>
     <string name="voices_preview_play_failed">Couldn\'t play the preview.</string>
     <string name="voices_confirm_new_title">Save this voice?</string>
-    <string name="voices_confirm_new_body">Saving uses up the voice you can create this month. Deleting it later will not free that up until next month, so if you are not happy with it, make another one before you save.</string>
+    <string name="voices_confirm_replace_body">Saving will delete your previous voice.</string>
     <string name="voices_confirm_new_preview">Replay</string>
     <string name="voices_confirm_new_keep">Save</string>
     <string name="voices_confirm_new_keep_saving">Saving…</string>
@@ -539,7 +539,7 @@ They become available as they finish.</string>
 We\'ll play it for you as soon as it\'s ready.</string>
     <string name="voices_preview_text_loading">Preparing the line…</string>
     <string name="voices_preview_text_retry_hint">The line isn\'t ready yet. Tap Preview to try again.</string>
-    <string name="voices_preview_edit_hint">Shape the line however you like.\nYour daily morning lines will follow this tone.</string>
+    <string name="voices_preview_edit_hint">Shape the line however you like.</string>
     <string name="voices_preview_edit_action">Edit line</string>
     <string name="voices_preview_edit_save">Regenerate</string>
     <string name="voices_preview_edit_saving">Regenerating…</string>

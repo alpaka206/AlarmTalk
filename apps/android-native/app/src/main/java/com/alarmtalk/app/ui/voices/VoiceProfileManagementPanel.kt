@@ -43,6 +43,7 @@ import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
@@ -139,6 +140,107 @@ private fun voiceProfileCropDurationError(context: android.content.Context, dura
         VoiceProfileAudioLimits.MAX_DURATION_TOLERANCE_MILLIS ->
         context.getString(R.string.voices_crop_duration_notice)
     else -> null
+}
+
+/**
+ * 목소리 등록 **마지막 단계(오프라인 준비)** — 서버 생성과 기기 다운로드를 한 진행률로 보여 준다.
+ *
+ * ⚠ **등록 폼 골격(상단바 + 스크롤 본문 + 하단 행)을 쓰지 않는다**(2026-09-29 지시).
+ *  - 상단바 제목 '목소리 만들기' 를 두지 않는다 — 뒤로가기도 없는 자리라 제목만 떠 있었다.
+ *  - 제목·안내·퍼센트·막대 블록은 화면 **한가운데**(가로·세로)다. 위아래를 아래 버튼 줄만큼
+ *    **똑같이** 비워, 정확히 가운데에 두면서도 글자가 커졌을 때 버튼과 겹치지 않게 한다.
+ *  - '백그라운드에서 계속' 은 화면 **맨 아래**다. 여백은 앞 단계 하단 행과 같은 값
+ *    ([bottomPadding] — 내비게이션 바 인셋 포함)을 쓴다.
+ *
+ * 누르면 화면만 닫는다 — 드라이브는 viewModelScope 에서 그대로 계속된다. 최초 기본 목소리
+ * 받기 화면과 **같은 낱말**(`onb_voice_download_background`)이다 — 두 화면이 하는 일이 같다.
+ * iOS 는 `ClipPreparationView.registrationPreparation` 이 같은 배치다.
+ */
+@Composable
+private fun VoiceClipPreparationStep(
+    drive: PrerenderDriveState?,
+    bottomPadding: Dp,
+    onContinueInBackground: () -> Unit,
+) {
+    // 생성 0~50%, 다운로드 50~100% 로 이어붙여 매끄러운 하나의 진행률.
+    val target = if (drive != null && drive.total > 0) {
+        val frac = (drive.generated.toFloat() / drive.total.toFloat()).coerceIn(0f, 1f)
+        if (drive.downloading) 0.5f + frac * 0.5f else frac * 0.5f
+    } else {
+        null
+    }
+    val animatedProgress by animateFloatAsState(
+        targetValue = target ?: 0f,
+        animationSpec = tween(durationMillis = 550, easing = FastOutSlowInEasing),
+        label = "prerenderProgress",
+    )
+    // 아래 버튼 줄이 차지하는 높이(버튼 위 여백 + 버튼 + 아래 여백).
+    val bottomActionTopGap = 10.dp
+    val bottomActionReserve = bottomActionTopGap + ButtonDefaults.MinHeight + bottomPadding
+    Box(modifier = Modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 24.dp, vertical = bottomActionReserve),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically),
+        ) {
+            Text(
+                text = stringResource(R.string.voices_prerender_ready_title),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                textAlign = TextAlign.Center,
+            )
+            Text(
+                text = stringResource(R.string.voices_prerender_ready_body),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+            )
+            Spacer(Modifier.height(6.dp))
+            // 퍼센트를 **숫자로도** 말한다(2026-09-21 지시 "하나의 퍼센트").
+            // 막대만으로는 얼마나 남았는지 읽기 어렵다.
+            Text(
+                text = "${(animatedProgress * 100).roundToInt()}%",
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+            if (target != null) {
+                LinearProgressIndicator(
+                    progress = { animatedProgress },
+                    modifier = Modifier
+                        .fillMaxWidth(0.78f)
+                        .height(8.dp),
+                    strokeCap = StrokeCap.Round,
+                    trackColor = MaterialTheme.colorScheme.surfaceVariant,
+                    gapSize = 0.dp,
+                    drawStopIndicator = {},
+                )
+            } else {
+                // 시작 직후(총량 미상): 흐르는 인디터미넌트 바.
+                LinearProgressIndicator(
+                    modifier = Modifier
+                        .fillMaxWidth(0.78f)
+                        .height(8.dp),
+                    strokeCap = StrokeCap.Round,
+                    trackColor = MaterialTheme.colorScheme.surfaceVariant,
+                )
+            }
+        }
+        // ⚠ **나가는 길을 시스템 뒤로가기에만 맡기지 말 것**(2026-08-20 지시). 이 대기는 서버
+        // cron 배치라 십수 분이 걸리는데, 누를 것이 없으면 "닫으면 취소되는 것 아닌가" 로 읽힌다.
+        TextButton(
+            onClick = onContinueInBackground,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(top = bottomActionTopGap, bottom = bottomPadding),
+        ) {
+            Text(
+                text = stringResource(R.string.onb_voice_download_background),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
 }
 
 /**
@@ -1609,6 +1711,19 @@ internal fun VoiceProfileManagementPanel(
                 modifier = dialogSurfaceModifier,
                 color = MaterialTheme.colorScheme.background,
             ) {
+                // ⚠ **마지막 단계(오프라인 준비)는 폼 골격을 쓰지 않는다**(2026-09-29 지시).
+                // 상단바 제목 없이 진행 블록을 화면 한가운데에, '백그라운드에서 계속' 을 화면
+                // 맨 아래에 둔다 — 고를 것도 입력할 것도 없는 대기 화면이라 앞 단계들과 같은
+                // '상단바 + 스크롤 본문 + 하단 행' 에 얹으면 블록이 위로 붙어 비어 보였다.
+                // 나가는 길(시스템 뒤로가기 = 위 `onDismissRequest`)은 그대로다.
+                if (currentStep == VoiceRegistrationStep.Prerendering) {
+                    VoiceClipPreparationStep(
+                        drive = prerenderDrive,
+                        bottomPadding = actionBottomPadding,
+                        onContinueInBackground = { closeCreateDialog() },
+                    )
+                    return@Surface
+                }
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
@@ -1632,8 +1747,9 @@ internal fun VoiceProfileManagementPanel(
                             VoiceRegistrationStep.Preview -> {
                                 { draftExitWarningOpen = true }
                             }
-                            // 생성 중에는 이탈 불가. 준비 중에는 본문의
-                            // '백그라운드에서 계속'이 나가는 유일한 행동이다.
+                            // 생성 중에는 이탈 불가. 준비 중에는 이 상단바를 그리지 않는다
+                            // (`VoiceClipPreparationStep` — 맨 아래 '백그라운드에서 계속' 이
+                            // 나가는 행동이다).
                             VoiceRegistrationStep.Creating,
                             VoiceRegistrationStep.Prerendering -> null
                         },
@@ -1884,90 +2000,8 @@ internal fun VoiceProfileManagementPanel(
                                 }
                             }
 
-                            VoiceRegistrationStep.Prerendering -> {
-                                // 생성(서버)→다운로드(기기 저장)를 한 화면·한 진행률로 합친다.
-                                // 문구도 하나로 통일하고, 나가기=백그라운드는 부제로 안내한다(전용 버튼 없앰
-                                // — 이 스텝은 voiceProfileBusy=false 라 X/뒤로가기로 닫으면 드라이브는
-                                // viewModelScope 에서 그대로 계속된다).
-                                val drive = prerenderDrive
-                                // 생성 0~50%, 다운로드 50~100% 로 이어붙여 매끄러운 하나의 진행률.
-                                val target = if (drive != null && drive.total > 0) {
-                                    val frac = (drive.generated.toFloat() / drive.total.toFloat())
-                                        .coerceIn(0f, 1f)
-                                    if (drive.downloading) 0.5f + frac * 0.5f else frac * 0.5f
-                                } else {
-                                    null
-                                }
-                                val animatedProgress by animateFloatAsState(
-                                    targetValue = target ?: 0f,
-                                    animationSpec = tween(durationMillis = 550, easing = FastOutSlowInEasing),
-                                    label = "prerenderProgress",
-                                )
-                                Column(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(vertical = 72.dp, horizontal = 24.dp),
-                                    horizontalAlignment = Alignment.CenterHorizontally,
-                                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                                ) {
-                                    Text(
-                                        text = stringResource(R.string.voices_prerender_ready_title),
-                                        style = MaterialTheme.typography.titleMedium,
-                                        fontWeight = FontWeight.SemiBold,
-                                    )
-                                    Text(
-                                        text = stringResource(R.string.voices_prerender_ready_body),
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        textAlign = TextAlign.Center,
-                                    )
-                                    Spacer(Modifier.height(6.dp))
-                                    // 퍼센트를 **숫자로도** 말한다(2026-09-21 지시 "하나의 퍼센트").
-                                    // 막대만으로는 얼마나 남았는지 읽기 어렵고, iOS 도 같은 자리에
-                                    // 같은 값을 보여 준다(`ClipPreparationView.registrationPreparation`).
-                                    Text(
-                                        text = "${(animatedProgress * 100).roundToInt()}%",
-                                        style = MaterialTheme.typography.headlineMedium,
-                                        fontWeight = FontWeight.SemiBold,
-                                    )
-                                    if (target != null) {
-                                        LinearProgressIndicator(
-                                            progress = { animatedProgress },
-                                            modifier = Modifier
-                                                .fillMaxWidth(0.78f)
-                                                .height(8.dp),
-                                            strokeCap = StrokeCap.Round,
-                                            trackColor = MaterialTheme.colorScheme.surfaceVariant,
-                                            gapSize = 0.dp,
-                                            drawStopIndicator = {},
-                                        )
-                                    } else {
-                                        // 시작 직후(총량 미상): 흐르는 인디터미넌트 바.
-                                        LinearProgressIndicator(
-                                            modifier = Modifier
-                                                .fillMaxWidth(0.78f)
-                                                .height(8.dp),
-                                            strokeCap = StrokeCap.Round,
-                                            trackColor = MaterialTheme.colorScheme.surfaceVariant,
-                                        )
-                                    }
-                                    // ⚠ **나가는 길을 X 에만 맡기지 말 것**(2026-08-20 지시).
-                                    // 예전에는 전용 버튼 없이 부제로만 "지금 닫아도 계속
-                                    // 만들어져요" 라고 안내했다. 그런데 이 대기는 서버 cron
-                                    // 배치라 십수 분이 걸리는데, 화면에는 누를 것이 오른쪽 위
-                                    // X 뿐이라 "닫으면 취소되는 것 아닌가" 로 읽힌다.
-                                    // 최초 기본 목소리 다운로드 화면과 **같은 낱말·같은 자리**로
-                                    // 맞춘다(`onb_voice_download_background`) — 두 화면이 하는
-                                    // 일이 같으니 말도 같아야 한다.
-                                    Spacer(Modifier.height(6.dp))
-                                    TextButton(onClick = { closeCreateDialog() }) {
-                                        Text(
-                                            text = stringResource(R.string.onb_voice_download_background),
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        )
-                                    }
-                                }
-                            }
+                            // 준비 단계는 이 골격 밖에서 따로 그린다(`VoiceClipPreparationStep`).
+                            VoiceRegistrationStep.Prerendering -> Unit
 
                             VoiceRegistrationStep.Preview -> {
                                 val previewVoice = confirmNewVoice
@@ -1977,11 +2011,20 @@ internal fun VoiceProfileManagementPanel(
                                         style = MaterialTheme.typography.titleMedium,
                                         fontWeight = FontWeight.SemiBold,
                                     )
-                                    Text(
-                                        text = stringResource(R.string.voices_confirm_new_body),
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
+                                    // 본문은 **교체일 때만** 한 줄이다(2026-09-29 지시). 이미 등록된
+                                    // 목소리가 있으면 저장은 교체 체크를 켜야만 열리므로(아래 저장
+                                    // 버튼의 `enabled`), 이 화면에서의 저장은 곧 교체다 — 체크 여부로
+                                    // 가르지 않는다(체크할 때마다 맨 위 줄이 생겼다 사라지며 화면이
+                                    // 밀린다). 교체가 아니면 본문 없이 곧바로 미리듣기 카드다.
+                                    // 월 등록 한도 경고는 사용자 승인으로 뺐다 — 남은 횟수는 목소리
+                                    // 탭 머리의 '생성 가능 n/m회' 가 말한다.
+                                    if (replaceTargetVoice != null) {
+                                        Text(
+                                            text = stringResource(R.string.voices_confirm_replace_body),
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
                                     OutlinedCard(
                                         shape = WakerPanelShape,
                                         border = wakerCardBorder(),
@@ -2279,8 +2322,8 @@ internal fun VoiceProfileManagementPanel(
                             // 만드는 중 — 결정할 것이 없어 하단 액션이 없다(닫기도 불가).
                             VoiceRegistrationStep.Creating -> Unit
 
-                            // 생성/다운로드 중 — '백그라운드에서 계속'은 하단 고정이 아니라
-                            // 로딩 블록 바로 아래(본문)에 있다. 하단 액션 없음.
+                            // 준비 단계는 이 골격 밖에서 따로 그린다(`VoiceClipPreparationStep`
+                            // 가 '백그라운드에서 계속' 을 자기 화면 맨 아래에 둔다).
                             VoiceRegistrationStep.Prerendering -> Unit
 
                             VoiceRegistrationStep.Preview -> {
