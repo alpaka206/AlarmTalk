@@ -28,8 +28,17 @@ export type Celebrity = {
 /** 이 페이지의 이벤트 번호(`lib/events.ts`). 좋아요 카운터·클립 생성의 키다. */
 export const EVENT_ID = "1";
 
-/** 메시지 종류. 순서가 곧 화면의 선택지 순서다. */
-export const MESSAGE_KINDS = ["birthday", "chuseok"] as const;
+/**
+ * 메시지 종류. 순서가 곧 화면의 선택지 순서다. 2026-09-29 에 '추석 인사'(`chuseok`)를
+ * '사랑 한마디'(`love`)로 갈아 끼웠다 — 서버는 캐시된 옛 번들을 위해 `chuseok` 을 옛 문안으로 계속
+ * 받는다(`LEGACY_EVENT_MESSAGE_KINDS`). `love` 는 종류별 사진이 없어 기본 사진(`portrait`)으로 그린다.
+ *
+ * ⚠ 새 종류를 여기 더하는 변경은 **서버가 그 종류를 받게 된 뒤에** prod 에 나가야 한다 — 옛 prod 서버는
+ * 모르는 `kind` 를 400 `INVALID_BODY` 로 거절한다. 랜딩(Vercel)과 백엔드(Workers)는 같은 `main` 머지로
+ * 따로 돌아 순서를 보장하지 못하므로, `love` 는 서버 쪽(#818)을 먼저 prod 에 올리고 이 변경(#815)은 그
+ * 뒤에 올린다(`docs/qa/dev-test-handoff.md` 의 「prod 게재 순서」).
+ */
+export const MESSAGE_KINDS = ["birthday", "love"] as const;
 export type MessageKind = (typeof MESSAGE_KINDS)[number];
 
 export const CELEBRITIES: readonly Celebrity[] = catalog[EVENT_ID].voices.map((v) => ({
