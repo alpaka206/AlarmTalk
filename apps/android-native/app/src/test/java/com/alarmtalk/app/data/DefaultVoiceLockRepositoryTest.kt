@@ -4,7 +4,9 @@ import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.alarmtalk.app.alarm.AlarmScheduler
+import com.alarmtalk.app.network.ExpectedVariantCounts
 import com.alarmtalk.app.network.StockClip
+import com.alarmtalk.app.network.StockClipListResponse
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -34,6 +36,23 @@ class DefaultVoiceLockRepositoryTest {
     private var currentUser: String? = "user-a"
     private var lastUsedVoice: String? = TEST_SECOND_SYSTEM_VOICE_ID
     private var manifest: List<StockClip>? = null
+    private var expectedVariants: ExpectedVariantCounts? = ExpectedVariantCounts(system = mapOf("weather" to 9))
+
+    private fun clipSource() = DefaultVoiceClipSource(
+        context = context,
+        cachedAudio = { key, url ->
+            CachedAlarmAudio(
+                localAudioUri = "file:///audio/$key.mp3",
+                rawAudioUri = url,
+                displayName = key,
+                durationMillis = 3_000L,
+                cacheKey = key,
+            )
+        },
+        manifest = { manifest?.let { StockClipListResponse(clips = it, expectedVariants = expectedVariants) } },
+        lastUsedVoiceId = { lastUsedVoice },
+        deviceVoiceLanguage = { "ko" },
+    )
 
     private val repository by lazy {
         AlarmRepository(
@@ -44,21 +63,7 @@ class DefaultVoiceLockRepositoryTest {
             alarmAudioStore = AlarmAudioStore(context),
             context = context,
             currentUserIdProvider = { currentUser },
-            defaultVoiceClipSource = DefaultVoiceClipSource(
-                context = context,
-                cachedAudio = { key, url ->
-                    CachedAlarmAudio(
-                        localAudioUri = "file:///audio/$key.mp3",
-                        rawAudioUri = url,
-                        displayName = key,
-                        durationMillis = 3_000L,
-                        cacheKey = key,
-                    )
-                },
-                manifestClips = { manifest },
-                lastUsedVoiceId = { lastUsedVoice },
-                deviceVoiceLanguage = { "ko" },
-            ),
+            defaultVoiceClipSource = clipSource(),
         )
     }
 
@@ -143,9 +148,47 @@ class DefaultVoiceLockRepositoryTest {
         val locked = dao.getById("rehearsal-1")!!
         assertEquals(AlarmPlayModes.VOICE_ONLY, locked.playMode)
         assertEquals(TEST_SECOND_SYSTEM_VOICE_ID, locked.voiceProfileId)
-        assertNull(locked.bucketId)
+        assertEquals("테마는 남긴다 — 편집기가 종류를 잃지 않는다", "weather", locked.bucketId)
+        assertNull(locked.bucketClipKeysJson)
         assertNull(locked.localAudioUri)
         assertTrue("울릴 때 강등 대상이 아니다 — 그 목소리의 클립·인사말을 찾는다", locked.usesFreeSystemVoiceAlarm())
+    }
+
+    /**
+     * 매니페스트가 가운데 variant 를 빠뜨렸다(Codex #820) — 받아 둔 것을 순서대로 묶으면 뒤 자리가
+     * 밀려 다른 날씨 조건을 튼다. 묶지 않고 테마만 남긴 오디오 없는 기본 목소리 알람이 된다.
+     */
+    @Test
+    fun aManifestWithAMissingVariantIsNotBoundByPosition() = runBlocking {
+        manifest = weatherClips(TEST_SECOND_SYSTEM_VOICE_ID).filter { it.variant != 4 }
+        dao.upsert(rehearsalCloneAlarm())
+
+        assertEquals(1, repository.lockPaidAlarmTalks())
+
+        val locked = dao.getById("rehearsal-1")!!
+        assertEquals(TEST_SECOND_SYSTEM_VOICE_ID, locked.voiceProfileId)
+        assertEquals("weather", locked.bucketId)
+        assertNull("밀린 세트를 묶지 않는다", locked.bucketClipKeysJson)
+        assertNull(locked.ttsMessageId)
+    }
+
+    /**
+     * 울릴 때도 같다 — 모자란 세트로 자리를 세지 않고 내장 인사말로 간다. 온전한 세트면 알람에
+     * 적힌 날씨 조건 자리(1)의 클립이다.
+     */
+    @Test
+    fun ringTimeFallbackNeverCountsPositionsInAnIncompleteWeatherSet() {
+        val alarm = rehearsalCloneAlarm(voiceProfileId = TEST_SECOND_SYSTEM_VOICE_ID)
+
+        manifest = weatherClips(TEST_SECOND_SYSTEM_VOICE_ID)
+        assertEquals(
+            "file:///audio/stock_$TEST_SECOND_SYSTEM_VOICE_ID-weather-1.mp3",
+            clipSource().ringUri(alarm, "user-a"),
+        )
+
+        manifest = weatherClips(TEST_SECOND_SYSTEM_VOICE_ID).filter { it.variant != 0 }
+        val uri = clipSource().ringUri(alarm, "user-a")
+        assertTrue("다른 조건 대신 내장 인사말: $uri", uri!!.startsWith("android.resource://"))
     }
 
     @Test
@@ -203,7 +246,8 @@ class DefaultVoiceLockRepositoryTest {
     @Test
     fun theSubstituteVoicesInPlaceReplacementLeavesAnUnboundLockAlone() = runBlocking {
         manifest = null
-        dao.upsert(rehearsalCloneAlarm())
+        // 기본 인사말 종류 — 기본 목소리 테마가 없어 테마 없이 잠긴다.
+        dao.upsert(rehearsalCloneAlarm(bucketId = "greeting", voiceRandomContext = "preset"))
         repository.lockPaidAlarmTalks()
         assertTrue("전제 — 이 행은 직접 입력 판정에 걸린다", dao.getById("rehearsal-1")!!.usesCustomMessageVoice())
 

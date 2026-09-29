@@ -115,21 +115,46 @@ enum DefaultVoiceSubstitute {
             .map(\.element)
     }
 
-    /// 잠금·대체가 묶을 클립. ⚠ **하나라도 캐시에 없으면 nil 이다** — 날씨·운세는 자리 번호가 곧
-    /// 조건이라, 빠진 클립을 건너뛰어 묶으면 뒤 자리가 밀려 **맑은 날에 우산 얘기**를 한다.
-    /// 네트워크는 부르지 않는다.
+    /// (목소리 · 테마 · 언어)의 클립 — **세트가 완전할 때만**(variant 0..N-1 이 빠짐없이). 아니면 nil.
+    /// 안드로이드 `completeDefaultVoiceClips` 미러.
+    ///
+    /// ⚠ **매니페스트에 온 것을 그대로 완전한 세트로 읽지 말 것**(Codex #820). 날씨·운세는 자리
+    /// 번호가 곧 조건이라, 가운데 variant 하나가 빠진 목록을 순서대로 묶으면 뒤 자리가 밀려 **다른
+    /// 조건의 문구**를 튼다. 편집기(`hasCompleteBucket`)·재바인더(`replacementIsComplete`)와 같이 서버의
+    /// `expectedVariants` 로 N 을 정한다. 모르면(옛 서버) 받은 개수를 N 으로 보되 0 부터 빈틈없어야 한다.
+    static func completeClips(
+        _ clips: [StockClip],
+        voiceID: String,
+        bucket: String,
+        language: String,
+        expectedVariants: ExpectedVariantCounts?
+    ) -> [StockClip]? {
+        let ordered = orderedClips(clips, voiceID: voiceID, bucket: bucket, language: language)
+        guard !ordered.isEmpty else { return nil }
+        let expected = expectedVariants
+            .flatMap { $0.count(category: bucket, isSystemVoice: isSystemVoiceId(voiceID)) }
+            .flatMap { $0 > 0 ? $0 : nil }
+            ?? ordered.count
+        return ordered.map(\.variant) == Array(0..<expected).map(Optional.some) ? ordered : nil
+    }
+
+    /// 잠금·대체가 묶을 클립. ⚠ **세트가 모자라거나 하나라도 캐시에 없으면 nil 이다** — 날씨·운세는
+    /// 자리 번호가 곧 조건이라, 빠진 클립을 건너뛰어 묶으면 뒤 자리가 밀려 **맑은 날에 우산 얘기**를
+    /// 한다(`completeClips`). 네트워크는 부르지 않는다.
     static func binding(
         for record: LocalAlarmRecord,
         voiceID: String,
         manifest: [StockClip]?,
+        expectedVariants: ExpectedVariantCounts?,
         languages: [String],
         cachedURL: (String) -> URL?
     ) -> Binding? {
         guard let bucket = bucket(bucketId: record.bucketId, voiceRandomContext: record.voiceRandomContext),
               let manifest else { return nil }
         for language in languages {
-            let clips = orderedClips(manifest, voiceID: voiceID, bucket: bucket, language: language)
-            guard !clips.isEmpty else { continue }
+            guard let clips = completeClips(
+                manifest, voiceID: voiceID, bucket: bucket, language: language, expectedVariants: expectedVariants
+            ) else { continue }
             let keys = clips.map { AudioCacheStore.stockCacheKey(messageId: $0.messageId) }
             let urls = keys.map(cachedURL)
             guard urls.allSatisfy({ $0 != nil }) else { continue }
@@ -160,7 +185,11 @@ enum DefaultVoiceSubstitute {
     /// 안드로이드 `lockedToDefaultVoice` 미러:
     /// - 재생 방식은 원래 값 그대로다(옛 모양이면 `preLockPlayMode` 의 값) — '그냥 기본 알람' 이 되지 않는다.
     /// - `binding` 이 있으면 편집기가 테마를 붙일 때와 같은 모양으로 묶고, 없으면 오디오 없는 기본
-    ///   목소리 알람으로 둔다(예약 때 `AlarmSoundResolver` 가 그 목소리의 내장 인사말을 싣는다).
+    ///   목소리 알람으로 둔다(예약 때 `AlarmSoundResolver` 가 그 목소리의 클립·내장 인사말을 싣는다).
+    /// - ⚠ **오디오 없이 두어도 테마는 남긴다**(Codex #820, 안드로이드 `lockedToDefaultVoice` 와 같다).
+    ///   비우면 편집기가 그 알람의 종류를 잃고(`applyPendingFreeBucketIfNeeded` 가 첫 테마를 붙인다)
+    ///   시각만 고쳐 저장해도 문구가 바뀐다. 테마가 남아 있으면 저장할 때 그 테마의 클립을 받아 묶는다.
+    ///   기본 인사말·직접 입력은 기본 목소리 테마가 없으니 비운다.
     /// - 원래 목소리 필드는 보관본에 담는다. 이미 있으면 **덮지 않는다**(다시 잠그면 원래 값을 잃는다).
     /// - 동기 상태는 건드리지 않는다 — 잠금은 로컬만 고친다.
     static func locked(
@@ -190,9 +219,10 @@ enum DefaultVoiceSubstitute {
             next.audioCacheKey = nil
             next.rawAudioUri = nil
             next.ttsMessageId = nil
-            next.bucketId = nil
+            let theme = bucket(bucketId: record.bucketId, voiceRandomContext: record.voiceRandomContext)
+            next.bucketId = theme
             next.bucketClipKeys = nil
-            next.bucketRotationIndex = nil
+            next.bucketRotationIndex = theme != nil && theme == record.bucketId ? record.bucketRotationIndex : nil
             return next
         }
         next.voiceText = binding.texts.first
@@ -264,13 +294,15 @@ enum DefaultVoiceSubstitute {
     /// **오디오가 없는 기본 목소리 알람**이 울릴 소리 — 안드로이드 `DefaultVoiceClipSource.ringUri` 미러.
     ///
     ///  1. 알람의 테마로 그 목소리의 받아 둔 클립 — 알람에 적힌 자리(`BucketVariantResolver.variantIndex`).
-    ///     날씨·운세는 그 자리만 쓴다(다른 자리는 다른 조건이다). 회전 테마는 받아 둔 아무 클립이나.
+    ///     날씨·운세는 세트가 완전할 때 그 자리만 쓴다(다른 자리는 다른 조건이다 — `completeClips`).
+    ///     회전 테마는 받아 둔 아무 클립이나.
     ///  2. 그 목소리의 **내장 인사말** — 네트워크 없이 언제나 있다.
     ///
     /// 잠금이 테마 없이 묶은 행(기본 인사말·직접 입력 종류, 클립을 못 받아 둔 경우)이 이 갈래를 탄다.
     static func fallbackClip(
         for record: LocalAlarmRecord,
         manifest: [StockClip]?,
+        expectedVariants: ExpectedVariantCounts?,
         deviceLanguage: String,
         cachedURL: (String) -> URL?,
         bundle: Bundle = .main
@@ -279,8 +311,14 @@ enum DefaultVoiceSubstitute {
         let languages = languages(for: record, deviceLanguage: deviceLanguage)
         if let voiceID, let manifest,
            let bucket = bucket(bucketId: record.bucketId, voiceRandomContext: record.voiceRandomContext) {
+            let matching = FreeBucket.matchingBucketIDs.contains(bucket)
             for language in languages {
-                let clips = orderedClips(manifest, voiceID: voiceID, bucket: bucket, language: language)
+                // 날씨·운세는 자리가 곧 조건이라 **세트가 완전할 때만** 자리를 믿는다(`completeClips`) —
+                // 모자라면 내장 인사말로 간다. 회전 테마는 어느 클립이든 같은 종류의 말이다.
+                let clips = matching
+                    ? (completeClips(manifest, voiceID: voiceID, bucket: bucket, language: language,
+                                     expectedVariants: expectedVariants) ?? [])
+                    : orderedClips(manifest, voiceID: voiceID, bucket: bucket, language: language)
                 guard !clips.isEmpty else { continue }
                 let keys = clips.map { AudioCacheStore.stockCacheKey(messageId: $0.messageId) }
                 var probe = record
@@ -288,7 +326,7 @@ enum DefaultVoiceSubstitute {
                 probe.bucketClipKeys = keys
                 let preferred = BucketVariantResolver.variantIndex(for: probe)
                 let order: [Int]
-                if FreeBucket.matchingBucketIDs.contains(bucket) {
+                if matching {
                     order = preferred.map { [$0] } ?? []
                 } else if let preferred {
                     order = [preferred] + keys.indices.filter { $0 != preferred }

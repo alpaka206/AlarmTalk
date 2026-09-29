@@ -160,21 +160,23 @@ enum AlarmSoundResolver {
         // 무료 잠금·유료 목소리 대체(`DefaultVoiceSubstitute`)가 테마 없이 묶은 행이 이 갈래를 탄다.
         // 안드로이드 `RingingService` 의 `decideRingSound`(기본 목소리 + 오디오 없음 → 기본 목소리)와
         // 같은 결과다.
-        if record.playModeEnum != .alarmOnly,
-           isSystemVoiceId(record.voiceProfileId),
-           let fallback = DefaultVoiceSubstitute.fallbackClip(
-               for: record,
-               manifest: StockClipManifestStore.load()?.clips,
-               deviceLanguage: VoiceStudioViewModel.appVoiceLanguage(),
-               cachedURL: { audioCache.cachedURL(for: $0) }
-           ) {
-            return .voiceClip(
-                cacheKey: fallback.key,
-                url: fallback.url,
-                durationMs: audioCache.readMetadata(cacheKey: fallback.key)?.durationMs ?? 0,
-                volumePercent: record.voiceVolumePercent,
-                revision: nil
-            )
+        if record.playModeEnum != .alarmOnly, isSystemVoiceId(record.voiceProfileId) {
+            let loaded = StockClipManifestStore.load()
+            if let fallback = DefaultVoiceSubstitute.fallbackClip(
+                for: record,
+                manifest: loaded?.clips,
+                expectedVariants: loaded?.expectedVariants,
+                deviceLanguage: VoiceStudioViewModel.appVoiceLanguage(),
+                cachedURL: { audioCache.cachedURL(for: $0) }
+            ) {
+                return .voiceClip(
+                    cacheKey: fallback.key,
+                    url: fallback.url,
+                    durationMs: audioCache.readMetadata(cacheKey: fallback.key)?.durationMs ?? 0,
+                    volumePercent: record.voiceVolumePercent,
+                    revision: nil
+                )
+            }
         }
 
         // 2) 사용자가 선택한 시스템/번들 사운드 URI

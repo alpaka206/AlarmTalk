@@ -1,5 +1,6 @@
 package com.alarmtalk.app.data
 
+import com.alarmtalk.app.network.ExpectedVariantCounts
 import com.alarmtalk.app.network.StockClip
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -99,7 +100,7 @@ class DefaultVoiceFallbackTest {
             stockClip(TEST_SECOND_SYSTEM_VOICE_ID, "weather", 0),
         )
 
-        val set = defaultVoiceClipSet(clips, TEST_SYSTEM_VOICE_ID, "weather", "ko", ::cachedAll)
+        val set = defaultVoiceClipSet(clips, TEST_SYSTEM_VOICE_ID, "weather", "ko", null, ::cachedAll)
 
         assertEquals(listOf(0, 1, 2), set!!.map { it.text.substringAfter(' ').toInt() })
         assertEquals("stock_$TEST_SYSTEM_VOICE_ID-weather-ko-0", set.first().cacheKey)
@@ -109,11 +110,42 @@ class DefaultVoiceFallbackTest {
     fun aSingleMissingClipMeansNoBinding() {
         // 날씨는 자리 번호가 곧 조건이다 — 빠진 것을 건너뛰어 묶으면 맑은 날에 우산 얘기를 한다.
         val clips = (0..2).map { stockClip(TEST_SYSTEM_VOICE_ID, "weather", it) }
-        val set = defaultVoiceClipSet(clips, TEST_SYSTEM_VOICE_ID, "weather", "ko") { key, url ->
+        val set = defaultVoiceClipSet(clips, TEST_SYSTEM_VOICE_ID, "weather", "ko", null) { key, url ->
             if (key.endsWith("-1")) null else cachedAll(key, url)
         }
 
         assertNull(set)
+    }
+
+    /**
+     * 매니페스트 자체가 모자란 경우(Codex #820) — 가운데 variant 가 빠진 목록을 순서대로 묶으면
+     * 뒤 자리가 밀려 **다른 날씨 조건의 문구**를 튼다. 캐시가 다 있어도 묶지 않는다.
+     */
+    @Test
+    fun aManifestMissingAMiddleVariantIsNeverBound() {
+        val gap = listOf(0, 1, 3).map { stockClip(TEST_SYSTEM_VOICE_ID, "weather", it) }
+
+        assertNull("개수를 몰라도 빈틈은 안다", defaultVoiceClipSet(gap, TEST_SYSTEM_VOICE_ID, "weather", "ko", null, ::cachedAll))
+        assertNull(
+            defaultVoiceClipSet(gap, TEST_SYSTEM_VOICE_ID, "weather", "ko", ExpectedVariantCounts(system = mapOf("weather" to 4)), ::cachedAll),
+        )
+    }
+
+    @Test
+    fun theServersExpectedCountDecidesWhetherTheSetIsComplete() {
+        val three = (0..2).map { stockClip(TEST_SYSTEM_VOICE_ID, "weather", it) }
+        val nine = ExpectedVariantCounts(system = mapOf("weather" to 9), clone = mapOf("weather" to 3))
+
+        // 꼬리가 잘린 세트 — 서버가 9개라고 하니 모자란다(클론 개수와 헷갈리지 않는다).
+        assertNull(defaultVoiceClipSet(three, TEST_SYSTEM_VOICE_ID, "weather", "ko", nine, ::cachedAll))
+        assertEquals(
+            3,
+            defaultVoiceClipSet(three, TEST_SYSTEM_VOICE_ID, "weather", "ko", ExpectedVariantCounts(system = mapOf("weather" to 3)), ::cachedAll)?.size,
+        )
+        assertEquals(
+            listOf(0, 1, 2),
+            completeDefaultVoiceClips(three, TEST_SYSTEM_VOICE_ID, "weather", "ko", null)?.map { it.variant },
+        )
     }
 
     // ------------------------------------------------------------ 잠금 · 복원
@@ -124,6 +156,7 @@ class DefaultVoiceFallbackTest {
             TEST_SYSTEM_VOICE_ID,
             "weather",
             "ko",
+            null,
             ::cachedAll,
         )!!
 
@@ -172,6 +205,34 @@ class DefaultVoiceFallbackTest {
         assertTrue(locked.usesFreeSystemVoiceAlarm())
     }
 
+    /**
+     * 기본 목소리 테마가 있는 종류인데 클립을 다 받아 두지 못했다(Codex #820) — 오디오 없이 두되
+     * **테마는 남긴다.** 비우면 편집기가 종류를 잃어 시각만 고쳐 저장해도 문구가 바뀌고, 날씨
+     * 조건 갱신이 멈춰 울릴 때 대체 클립이 낡은 조건을 고른다.
+     */
+    @Test
+    fun lockingAThemeWithoutClipsKeepsTheTheme() {
+        val original = rehearsalCloneAlarm()
+
+        val locked = original.lockedToDefaultVoice(TEST_SYSTEM_VOICE_ID, bucket = null, language = null, clips = null, nowMillis = 5_000L)
+
+        assertEquals("weather", locked.bucketId)
+        assertEquals("wake_weather", locked.voiceRandomContext)
+        assertNull(locked.bucketClipKeysJson)
+        assertNull(locked.localAudioUri)
+        assertNull(locked.ttsMessageId)
+        assertEquals("날씨 조건 자리는 그대로", original.contextVariantIndex, locked.contextVariantIndex)
+        assertFalse("직접 입력으로 읽히지 않는다", locked.usesCustomMessageVoice())
+        assertTrue(locked.usesFreeSystemVoiceAlarm())
+        // 옛 이름은 새 이름으로 접는다.
+        assertEquals(
+            "cheer",
+            rehearsalCloneAlarm(bucketId = "love", voiceRandomContext = null)
+                .lockedToDefaultVoice(TEST_SYSTEM_VOICE_ID, null, null, null, 5_000L)
+                .bucketId,
+        )
+    }
+
     @Test
     fun lockingAManualTextAlarmKeepsTheTypedText() {
         val manual = rehearsalCloneAlarm(bucketId = null, voiceRandomContext = null, audioCacheKey = "hash-abc")
@@ -179,6 +240,7 @@ class DefaultVoiceFallbackTest {
         val locked = manual.lockedToDefaultVoice(TEST_SYSTEM_VOICE_ID, null, null, null, nowMillis = 5_000L)
 
         assertEquals("비 온대, 우산 챙겨", locked.voiceText)
+        assertNull("직접 입력은 기본 목소리 테마가 없다", locked.bucketId)
     }
 
     @Test

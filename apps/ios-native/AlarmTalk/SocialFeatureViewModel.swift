@@ -737,7 +737,9 @@ final class SocialFeatureViewModel: ObservableObject {
 
         var locked = 0
         let voicePreferences = DefaultVoicePreferenceStore()
-        let manifest = StockClipManifestStore.load()?.clips
+        let loadedManifest = StockClipManifestStore.load()
+        let manifest = loadedManifest?.clips
+        let expectedVariants = loadedManifest?.expectedVariants
         let deviceLanguage = VoiceStudioViewModel.appVoiceLanguage()
         let nowMillis = Int64(Date().timeIntervalSince1970 * 1000)
         for record in targets {
@@ -759,6 +761,7 @@ final class SocialFeatureViewModel: ObservableObject {
                 for: record,
                 voiceID: voiceID,
                 manifest: manifest,
+                expectedVariants: expectedVariants,
                 languages: DefaultVoiceSubstitute.languages(for: record, deviceLanguage: deviceLanguage),
                 cachedURL: { alarmKit.audioCache.cachedURL(for: $0) }
             )

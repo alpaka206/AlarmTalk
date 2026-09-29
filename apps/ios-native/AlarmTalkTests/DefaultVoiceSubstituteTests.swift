@@ -88,17 +88,68 @@ final class DefaultVoiceSubstituteTests: XCTestCase {
         let manifest = weatherManifest(voice: firstSystemVoice)
 
         let bound = DefaultVoiceSubstitute.binding(
-            for: record, voiceID: firstSystemVoice, manifest: manifest, languages: ["ko"], cachedURL: allCached
+            for: record, voiceID: firstSystemVoice, manifest: manifest, expectedVariants: nil,
+            languages: ["ko"], cachedURL: allCached
         )
         XCTAssertEqual(bound?.keys.count, 9)
         XCTAssertEqual(bound?.keys.first, "stock_\(firstSystemVoice)-weather-ko-0")
 
         // 하나라도 빠지면 묶지 않는다 — 날씨는 자리 번호가 곧 조건이다.
         let missing = DefaultVoiceSubstitute.binding(
-            for: record, voiceID: firstSystemVoice, manifest: manifest, languages: ["ko"],
+            for: record, voiceID: firstSystemVoice, manifest: manifest, expectedVariants: nil, languages: ["ko"],
             cachedURL: { $0.hasSuffix("-3") ? nil : self.allCached($0) }
         )
         XCTAssertNil(missing)
+    }
+
+    /// 매니페스트 자체가 모자란 경우(Codex #820) — 가운데 variant 가 빠진 목록을 순서대로 묶으면 뒤 자리가
+    /// 밀려 다른 날씨 조건을 튼다. 캐시가 다 있어도 묶지 않는다. 안드로이드 `aManifestMissingAMiddleVariantIsNeverBound` 짝.
+    func test_binding_rejectsAManifestWithAMissingVariant() {
+        let record = rehearsalAlarm()
+        let gap = weatherManifest(voice: firstSystemVoice).filter { $0.variant != 4 }
+        let nine = ExpectedVariantCounts(system: ["weather": 9], clone: ["weather": 3])
+
+        XCTAssertNil(DefaultVoiceSubstitute.binding(
+            for: record, voiceID: firstSystemVoice, manifest: gap, expectedVariants: nil,
+            languages: ["ko"], cachedURL: allCached
+        ), "개수를 몰라도 빈틈은 안다")
+        XCTAssertNil(DefaultVoiceSubstitute.binding(
+            for: record, voiceID: firstSystemVoice, manifest: gap, expectedVariants: nine,
+            languages: ["ko"], cachedURL: allCached
+        ))
+        // 꼬리가 잘린 세트 — 서버가 9개라고 하니 모자란다.
+        let truncated = weatherManifest(voice: firstSystemVoice).filter { ($0.variant ?? 0) < 3 }
+        XCTAssertNil(DefaultVoiceSubstitute.binding(
+            for: record, voiceID: firstSystemVoice, manifest: truncated, expectedVariants: nine,
+            languages: ["ko"], cachedURL: allCached
+        ))
+        XCTAssertEqual(DefaultVoiceSubstitute.binding(
+            for: record, voiceID: firstSystemVoice, manifest: weatherManifest(voice: firstSystemVoice),
+            expectedVariants: nine, languages: ["ko"], cachedURL: allCached
+        )?.keys.count, 9)
+    }
+
+    /// 테마가 있는 종류인데 클립을 다 받아 두지 못했다 — 오디오 없이 두되 **테마는 남긴다**(Codex #820).
+    /// 비우면 편집기가 종류를 잃어 첫 테마로 바꿔 붙인다. 안드로이드 `lockingAThemeWithoutClipsKeepsTheTheme` 짝.
+    func test_locked_withoutBinding_keepsTheTheme() {
+        let record = rehearsalAlarm()
+
+        let locked = DefaultVoiceSubstitute.locked(record, voiceID: firstSystemVoice, binding: nil, nowMillis: 1)
+
+        XCTAssertEqual(locked.bucketId, "weather")
+        XCTAssertNil(locked.bucketClipKeys)
+        XCTAssertNil(locked.audioCacheKey)
+        XCTAssertNil(locked.ttsMessageId)
+        XCTAssertEqual(locked.contextVariantIndex, record.contextVariantIndex)
+        XCTAssertEqual(locked.voiceRandomContext, RandomPromptContext.wakeWeather.rawValue)
+
+        var greeting = rehearsalAlarm()
+        greeting.bucketId = "greeting"
+        greeting.voiceRandomContext = RandomPromptContext.preset.rawValue
+        XCTAssertNil(
+            DefaultVoiceSubstitute.locked(greeting, voiceID: firstSystemVoice, binding: nil, nowMillis: 1).bucketId,
+            "기본 인사말은 기본 목소리 테마가 없다"
+        )
     }
 
     // MARK: - 예약 때 대체
@@ -116,7 +167,7 @@ final class DefaultVoiceSubstituteTests: XCTestCase {
 
         let binding = DefaultVoiceSubstitute.binding(
             for: record, voiceID: secondSystemVoice, manifest: weatherManifest(voice: secondSystemVoice),
-            languages: ["ko"], cachedURL: allCached
+            expectedVariants: nil, languages: ["ko"], cachedURL: allCached
         )
         let substitute = DefaultVoiceSubstitute.substitutedForScheduling(record, voiceID: secondSystemVoice, binding: binding)
 
@@ -191,11 +242,28 @@ final class DefaultVoiceSubstituteTests: XCTestCase {
         let fallback = DefaultVoiceSubstitute.fallbackClip(
             for: record,
             manifest: weatherManifest(voice: firstSystemVoice),
+            expectedVariants: nil,
             deviceLanguage: "ko",
             cachedURL: allCached
         )
 
         XCTAssertEqual(fallback?.key, "stock_\(firstSystemVoice)-weather-ko-1", "알람에 적힌 날씨 조건 자리")
+    }
+
+    /// 모자란 세트로 자리를 세지 않는다 — 가운데가 빠지면 뒤 자리가 밀려 다른 조건을 튼다(Codex #820).
+    func test_fallbackClip_neverCountsPositionsInAnIncompleteWeatherSet() {
+        var record = rehearsalAlarm()
+        record.voiceProfileId = firstSystemVoice
+
+        let fallback = DefaultVoiceSubstitute.fallbackClip(
+            for: record,
+            manifest: weatherManifest(voice: firstSystemVoice).filter { $0.variant != 0 },
+            expectedVariants: ExpectedVariantCounts(system: ["weather": 9], clone: [:]),
+            deviceLanguage: "ko",
+            cachedURL: allCached
+        )
+
+        XCTAssertEqual(fallback.map { $0.key.hasPrefix("greeting-") }, true, "다른 조건 대신 인사말")
     }
 
     func test_fallbackClip_neverPlaysAnotherWeatherCondition() {
@@ -205,6 +273,7 @@ final class DefaultVoiceSubstituteTests: XCTestCase {
         let fallback = DefaultVoiceSubstitute.fallbackClip(
             for: record,
             manifest: weatherManifest(voice: firstSystemVoice),
+            expectedVariants: nil,
             deviceLanguage: "ko",
             cachedURL: { $0.hasSuffix("-1") ? nil : self.allCached($0) }
         )

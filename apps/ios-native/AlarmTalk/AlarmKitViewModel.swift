@@ -1142,10 +1142,12 @@ final class AlarmKitViewModel: ObservableObject {
             alarmVoiceID: record.voiceProfileId,
             lastUsedVoiceID: DefaultVoicePreferenceStore().lastUsedVoiceId(userID: record.ownerUserId ?? userID)
         )
+        let loaded = StockClipManifestStore.load()
         let binding = DefaultVoiceSubstitute.binding(
             for: record,
             voiceID: voiceID,
-            manifest: StockClipManifestStore.load()?.clips,
+            manifest: loaded?.clips,
+            expectedVariants: loaded?.expectedVariants,
             languages: DefaultVoiceSubstitute.languages(
                 for: record,
                 deviceLanguage: VoiceStudioViewModel.appVoiceLanguage()

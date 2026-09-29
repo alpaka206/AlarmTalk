@@ -2,6 +2,7 @@ package com.alarmtalk.app.data
 
 import com.alarmtalk.app.FreeBucketOrder
 import com.alarmtalk.app.clonePrerenderBucketCategoryFor
+import com.alarmtalk.app.network.ExpectedVariantCounts
 import com.alarmtalk.app.network.StockClip
 import com.alarmtalk.app.randomPromptContextForBucket
 import com.google.gson.Gson
@@ -58,28 +59,66 @@ data class DefaultVoiceClip(
 )
 
 /**
- * (목소리 · 테마 · 언어)의 클립을 **variant 순으로, 전부 캐시에 있을 때만** 모은다.
+ * (목소리 · 테마 · 언어)의 클립을 **variant 순으로** — 정렬·중복 제거는 편집기와 같다
+ * (`sortedBy { variant }.distinctBy { variant }`). 세트가 완전한지는 보지 않는다.
+ */
+fun orderedDefaultVoiceClips(
+    clips: List<StockClip>,
+    voiceProfileId: String,
+    bucket: String,
+    language: String,
+): List<StockClip> =
+    clips
+        .filter { it.voiceProfileId == voiceProfileId && it.category == bucket && (it.language ?: "ko") == language }
+        .sortedBy { it.variant }
+        .distinctBy { it.variant }
+
+/**
+ * (목소리 · 테마 · 언어)의 클립 — **세트가 완전할 때만**(variant 0..N-1 이 빠짐없이). 아니면 null.
+ *
+ * ⚠ **매니페스트에 온 것을 그대로 완전한 세트로 읽지 말 것**(Codex #820). 날씨·운세는 자리 번호가
+ * 곧 조건이라(`keys[i]` = variant i), 가운데 variant 하나가 빠진 목록을 순서대로 묶으면 뒤 자리가
+ * 통째로 밀려 **다른 조건의 문구**를 튼다 — 운세는 세트 크기로 자리를 계산하므로 크기만 달라도
+ * 엉뚱한 자리가 나온다. 그래서 편집기(`freeBucketsFor`)·재바인더(`replacementIsComplete`)와 같이
+ * 서버의 `expected_variants` 로 N 을 정한다. 서버가 개수를 모르면(옛 서버) 받은 개수를 N 으로 보되
+ * **0 부터 빈틈없이** 이어져야 한다 — 빈틈을 알아챌 수 있는 것은 거르고, 꼬리가 잘린 것은 알 길이 없다.
+ */
+fun completeDefaultVoiceClips(
+    clips: List<StockClip>,
+    voiceProfileId: String,
+    bucket: String,
+    language: String,
+    expectedVariants: ExpectedVariantCounts?,
+): List<StockClip>? {
+    val ordered = orderedDefaultVoiceClips(clips, voiceProfileId, bucket, language)
+    if (ordered.isEmpty()) return null
+    val expected = expectedVariants
+        ?.countFor(bucket, isSystemVoice = isSystemVoiceId(voiceProfileId))
+        ?.takeIf { it > 0 }
+        ?: ordered.size
+    return ordered.takeIf { set -> set.map { it.variant } == (0 until expected).toList() }
+}
+
+/**
+ * (목소리 · 테마 · 언어)의 클립을 **variant 순으로, 세트가 완전하고 전부 캐시에 있을 때만** 모은다.
  *
  * ⚠ **하나라도 빠지면 null 이다 — 있는 것만 모으지 말 것.** 날씨·운세는 자리 번호가 곧
  * 조건이라(`keys[i]` = variant i), 빠진 클립을 건너뛰어 묶으면 뒤 자리가 통째로 밀려 **맑은
  * 날에 우산 얘기**를 한다. 편집기(`bindStockBucketClips`)가 빠진 것을 받아서라도 전부 묶는
  * 것과 같은 계약이다 — 여기서는 네트워크를 부르지 않으므로 못 받은 것이 있으면 묶지 않는다.
- *
- * 정렬·중복 제거는 편집기와 같다(`sortedBy { variant }.distinctBy { variant }`).
+ * 매니페스트 자체가 모자란 경우는 [completeDefaultVoiceClips] 가 거른다.
  */
 fun defaultVoiceClipSet(
     clips: List<StockClip>,
     voiceProfileId: String,
     bucket: String,
     language: String,
+    expectedVariants: ExpectedVariantCounts?,
     cached: (cacheKey: String, audioUrl: String?) -> CachedAlarmAudio?,
 ): List<DefaultVoiceClip>? {
-    val matching = clips
-        .filter { it.voiceProfileId == voiceProfileId && it.category == bucket && (it.language ?: "ko") == language }
-        .sortedBy { it.variant }
-        .distinctBy { it.variant }
-    if (matching.isEmpty()) return null
-    return matching.map { clip ->
+    val complete = completeDefaultVoiceClips(clips, voiceProfileId, bucket, language, expectedVariants)
+        ?: return null
+    return complete.map { clip ->
         val key = AlarmAudioStore.STOCK_CACHE_KEY_PREFIX + clip.messageId
         val audio = cached(key, clip.audioUrl) ?: return null
         DefaultVoiceClip(
@@ -229,6 +268,12 @@ fun AlarmEntity.wasVoiceAlarmConvertedBySystem(): Boolean =
  * - [clips] 가 있으면 편집기가 테마를 붙일 때(`AlarmEditorState.setBucketAudio`)와 같은
  *   모양으로 묶는다. null 이면 오디오 없는 기본 목소리 알람으로 둔다 — 울릴 때
  *   `RingingService` 가 그 목소리의 클립·내장 인사말을 찾는다.
+ * - ⚠ **오디오 없이 두어도 테마는 남긴다**(Codex #820). 기본 목소리 테마가 있는 종류(날씨·운세·
+ *   응원·약)인데 클립을 다 받아 두지 못했을 때다. 테마를 비우면 편집기가 그 알람의 종류를 잃어
+ *   (iOS 는 첫 테마로 바꿔 붙인다) 시각만 고쳐 저장해도 문구가 바뀌고, 날씨 조건 갱신
+ *   (`ensureDynamicVoiceRefreshScheduled` 는 `bucketId == "weather"` 만 본다)도 멈춰 울릴 때 대체
+ *   클립이 낡은 조건을 고른다. 테마가 남아 있으면 편집기는 저장할 때 그 테마의 클립을 받아 묶는다.
+ *   기본 인사말·직접 입력은 기본 목소리 테마가 없으니 비운다(서버가 기본 목소리 + greeting 을 거절한다).
  * - 문구 종류(`voiceRandomContext`)는 그대로 둔다 — 편집기 요약이 고른 종류를 말한다.
  * - 원래 목소리 필드는 [LockedPaidVoice] 로 보관한다. 이미 보관본이 있으면 **덮지 않는다**
  *   (다시 잠그면 원래 값을 잃는다).
@@ -244,6 +289,8 @@ fun AlarmEntity.lockedToDefaultVoice(
     val originalMode = preLockPlayMode?.takeIf { it.isNotBlank() } ?: playMode
     val snapshot = preLockVoiceJson?.takeIf { it.isNotBlank() } ?: LockedPaidVoice.encode(LockedPaidVoice.of(this))
     val bound = clips?.takeIf { bucket != null && it.isNotEmpty() }
+    // 묶은 테마가 없으면 알람의 종류에서 유도한 테마(없으면 null — 기본 인사말·직접 입력).
+    val theme = bucket ?: defaultVoiceBucketFor(bucketId, voiceRandomContext)
     val base = copy(
         playMode = AlarmPlayModes.normalize(originalMode),
         preLockPlayMode = originalMode,
@@ -253,7 +300,7 @@ fun AlarmEntity.lockedToDefaultVoice(
         // 호칭은 클론 문구에 녹아 있던 것이라 기본 목소리 클립과 무관하다.
         voiceListenerTitle = null,
         voiceRandomPrompt = false,
-        voiceRandomContext = voiceRandomContext ?: randomPromptContextForBucket(bucket ?: bucketId),
+        voiceRandomContext = voiceRandomContext ?: randomPromptContextForBucket(theme ?: bucketId),
         updatedAtMillis = nowMillis,
     )
     if (bound == null) {
@@ -265,10 +312,10 @@ fun AlarmEntity.lockedToDefaultVoice(
             audioCacheKey = null,
             rawAudioUri = null,
             ttsMessageId = null,
-            bucketId = null,
+            bucketId = theme,
             bucketClipKeysJson = null,
             bucketClipTextsJson = null,
-            bucketRotationIndex = 0,
+            bucketRotationIndex = if (theme != null && theme == bucketId) bucketRotationIndex else 0,
         )
     }
     val first = bound.first()

@@ -3,6 +3,7 @@ package com.alarmtalk.app.network
 import com.alarmtalk.app.data.AlarmEntity
 import com.alarmtalk.app.data.AlarmPlayModes
 import com.alarmtalk.app.data.VoiceSources
+import com.alarmtalk.app.data.hasLockedPaidVoice
 import java.util.TimeZone
 
 object RemoteAlarmMapper {
@@ -27,6 +28,9 @@ object RemoteAlarmMapper {
             timezone = TimeZone.getDefault().id,
             bucketId = alarm.bucketId.trimmedOrNull(),
             clientAlarmId = alarm.id,
+            // 무료 잠금으로 기본 목소리가 된 알람은 비어 있는 문구·테마를 서버에서도 지운다 —
+            // 안 지우면 클론의 message_id·bucket_id 가 기본 목소리 옆에 남는다(Codex #820).
+            clearsMissingVoiceReferences = alarm.hasLockedPaidVoice(),
         )
     }
 
