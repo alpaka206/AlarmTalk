@@ -719,10 +719,12 @@ internal fun MainViewModel.checkConsentStatus() {
         needsConsent = false
         consentChecked = true
     } else if (!consentStatusChecked) {
-        // **한 번 통과시킨 화면을 다시 로딩으로 덮지 않는다.** 이 함수는 토큰이 바뀔 때마다
-        // 다시 도는데(AlarmTalkApp 의 LaunchedEffect(authSession?.token)), 그때마다 false 로
-        // 되돌리면 이미 홈을 쓰고 있던 사용자의 화면이 스피너로 덮인다. 그 화면은
-        // GateBackGuard 가 뒤로가기를 통째로 삼키므로 **그 동안 앱이 안 닫힌다.**
+        // **한 번 통과시킨 화면을 다시 로딩으로 덮지 않는다.** 이 함수는 세션마다 한 번 돈다
+        // (AlarmTalkApp 의 `LaunchedEffect(sessionEffectKey)` — 계정 + 세션 세대가 키다).
+        // 예전에는 키가 토큰이라 rolling refresh 로 토큰이 굴러갈 때마다(콜드 스타트에만 2~3번)
+        // 다시 돌았다 — 키는 고쳤지만(효율 감사 H3) 이 가드는 남긴다. 같은 세션 안에서 다시
+        // 불리는 날 false 로 되돌리면 이미 홈을 쓰고 있던 사용자의 화면이 스피너로 덮이고, 그
+        // 화면은 GateBackGuard 가 뒤로가기를 통째로 삼키므로 **그 동안 앱이 안 닫힌다.**
         //
         // 캐시(isConsentCachedDone)가 아니라 consentStatusChecked 를 보는 이유: 받을 게 남은
         // 계정(선택 동의 재수집 등)은 완료 캐시가 아예 안 만들어져서, 캐시로 판단하면 매번
@@ -1231,8 +1233,8 @@ internal fun MainViewModel.syncNow() {
         // 이번 회차가 시작될 때 표시를 내린다. 도는 도중에 다시 켜지면 한 번 더 돈다.
         syncRequestedWhileBusy = false
         // ⚠ **세션은 회차마다 다시 읽는다.** 미뤄 둔 회차는 앞 회차의 네트워크 왕복이 끝난
-        // 뒤에 도는데, 그 사이 토큰이 바뀔 수 있다(로그인·롤링 갱신 — 알람 탭 효과 자체가
-        // authSession?.token 을 키로 쓴다). 처음 잡아 둔 토큰을 계속 쓰면 옛 자격증명으로
+        // 뒤에 도는데, 그 사이 토큰이 바뀔 수 있다(로그인·롤링 갱신 — 알람 탭 효과는 계정·세션
+        // 세대가 바뀔 때 다시 돈다). 처음 잡아 둔 토큰을 계속 쓰면 옛 자격증명으로
         // 나가고, 더 나쁘게는 repository.syncWithBackend 가 **소유자를 지금 세션 저장소에서**
         // 가져오므로 재로그인 직후엔 새 계정의 로컬 행이 옛 계정 토큰으로 올라간다(Codex #686).
         // 로그아웃됐으면 이번 회차는 돌리지 않고 끝낸다.
@@ -1340,9 +1342,10 @@ internal fun MainViewModel.refreshAppSession(rollToken: Boolean = true) {
 /**
  * `/auth/me` 응답으로 **저장할 토큰** — 저장소의 `saveSessionIfAlive` 에 넘길 `rolledToken`.
  *
- * - 굴리지 않는 갱신(`rollToken = false` — 백그라운드에서 돌아올 때마다의 갱신)이면 null 이다.
- *   저장소는 null 을 받으면 **지금 들고 있는 토큰을 지킨다.** 토큰이 바뀌면 토큰을 키로 쓰는
- *   효과가 전부 다시 돌아 복귀할 때마다 앱 전체를 다시 불러오게 된다.
+ * - 굴리지 않는 갱신(`rollToken = false` — 백그라운드에서 돌아올 때마다의 갱신, Play 자동
+ *   정합화 뒤의 갱신)이면 null 이다. 저장소는 null 을 받으면 **지금 들고 있는 토큰을 지킨다.**
+ *   토큰은 콜드 스타트 한 번과 워커(`SessionTokenRenewal`)면 충분하다 — 365일짜리라 복귀마다
+ *   굴려도 얻는 것이 없고, 굴릴 때마다 세션 쓰기·관찰 방출·재구성만 는다.
  * - 굴리는 갱신이어도 서버가 새 토큰을 주지 않으면(구버전 서버·재발급 실패) null 이다 — 시작할 때
  *   잡아 둔 토큰으로 되돌리면 그 사이 워커가 굴린 토큰을 옛 것으로 덮는다.
  */
@@ -1384,10 +1387,13 @@ internal fun isDestroyedAccountFailure(error: Throwable): Boolean {
  * 캐시된 유료 plan 이 남아 `resolvePaidVoiceAccess` 가 계속 유료로 답한다.
  *
  * @param rollToken 서버가 굴려 준 새 토큰으로 갈아 끼우는가. **백그라운드에서 돌아올 때마다**
- *   부르는 갱신(`MainViewModel` init 의 진입 구독)은 false 다 — 토큰이 바뀌면 토큰을 키로 쓰는
- *   효과가 전부 다시 돈다(동의·계정·목소리 준비 확인과 목소리·클립·구독 선로드). 복귀할 때마다
- *   앱 전체를 다시 불러오게 되므로, 토큰은 예전처럼 콜드 스타트·워커(`SessionTokenRenewal`)가
- *   굴리고 복귀 때는 plan·프로모만 새로 받는다. 서버 토큰은 무상태 JWT 라 버려도 잃는 것이 없다.
+ *   부르는 갱신(`MainViewModel` init 의 진입 구독)과 **Play 자동 정합화 뒤의 갱신**
+ *   (`confirmGooglePurchase` 의 `AutoReconcile`)은 false 다. 토큰은 예전처럼 콜드 스타트·
+ *   워커(`SessionTokenRenewal`)가 굴리고 그 밖에는 plan·프로모만 새로 받는다. 서버 토큰은
+ *   무상태 JWT 라 버려도 잃는 것이 없다.
+ *   (예전에는 앱 루트의 세션 효과가 **토큰을 키로** 써서, 굴릴 때마다 동의·계정·목소리 준비
+ *   확인과 목소리·클립·구독 선로드가 전부 다시 돌았다. 키는 계정 + 세션 세대로 바꿨다 —
+ *   `SessionEffectKey`, 효율 감사 H3. 그래도 굴릴 이유가 없는 자리에서 굴리지 않는 규칙은 둔다.)
  * @return plan 까지 실제로 반영했으면 true. 네트워크 실패·세션 종료·문 거절이면 false.
  */
 internal suspend fun MainViewModel.refreshAppSessionNow(rollToken: Boolean = true): Boolean {
