@@ -409,11 +409,13 @@ struct MessageSettingsPane: View {
         return "\(option.label) (\(max(remaining, 0))/\(limit))"
     }
 
+    /// ⚠ **도시만 보인다 — 나라를 붙이지 말 것.** 안드로이드 `weatherLocationSummary` 와 같은
+    /// 규칙이다(저장은 나라+도시 둘 다, 화면은 도시). 여기만 "대한민국 · 서울" 이면 같은 값이
+    /// 두 이름을 갖는다 — 설정 행(`SettingsView.weatherLocationLabel`)과 문구 요약은 이미 도시뿐이다.
     private var weatherSummary: String {
         let city = draftWeatherCity.trimmingCharacters(in: .whitespaces)
         guard !city.isEmpty else { return "아직 정하지 않았어요" }
-        let country = draftWeatherCountry.trimmingCharacters(in: .whitespaces)
-        return country.isEmpty ? city : "\(country) · \(city)"
+        return WeatherCityPickerSheet.displayName(for: city)
     }
 
     private var fortuneSummary: String {
@@ -509,7 +511,9 @@ struct MessageModeSummaryRow: View {
         }
         // 날씨는 어느 도시 기준인지 함께 보여준다(예: "날씨 · 서울").
         let city = weatherCity.trimmingCharacters(in: .whitespaces)
-        if context == "wake_weather", !city.isEmpty { return "\(label) · \(city)" }
+        if context == "wake_weather", !city.isEmpty {
+            return "\(label) · \(WeatherCityPickerSheet.displayName(for: city))"
+        }
         return label
     }
 

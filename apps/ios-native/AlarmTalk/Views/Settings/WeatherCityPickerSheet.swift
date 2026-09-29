@@ -33,8 +33,23 @@ struct WeatherCityPickerSheet: View {
     /// 고른 도시를 (국가, 도시)로 돌려준다. 국가는 프리셋이면 대한민국이다.
     let onSelect: (String, String) -> Void
 
-    /// 안드로이드 `hs_weather_preset_cities` 와 같은 순서·같은 목록.
+    /// 프리셋 도시의 **저장·전송 값** — 로케일과 무관하게 이 글자를 보낸다. 안드로이드
+    /// `WeatherPresetCityKeys`(`ui/editor/AlarmRandomPromptSettings.kt`)와 같은 목록·같은 순서다.
+    ///
+    /// ⚠ **보이는 이름은 `displayName(for:)` 로 따로 낸다**(2026-09-29). 이 값은 계정에 묶여
+    /// 서버에 올라가고 다른 기기·안드로이드가 그대로 읽으므로, 번역한 이름을 저장하면 다른 언어
+    /// 기기에서 목록에 없는 도시가 된다. 번역은 `Localizable.xcstrings` 에 있고(키 = 이 값),
+    /// 빠진 언어가 없는지는 `WeatherPresetCityLocalizationTests` 가 본다.
     static let presetCities = ["서울", "부산", "인천", "대구", "대전", "광주", "울산", "수원", "제주"]
+
+    /// 저장된 도시 → 화면에 보일 이름. 프리셋이면 앱 언어의 이름, 아니면 적힌 그대로다.
+    /// 안드로이드 `weatherCityDisplayName` 과 같은 규칙 — 도시가 보이는 자리(설정 행·문구
+    /// 상세·문구 요약)는 전부 이걸 거친다.
+    static func displayName(for city: String, bundle: Bundle = .main) -> String {
+        let trimmed = city.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard presetCities.contains(trimmed) else { return trimmed }
+        return bundle.localizedString(forKey: trimmed, value: trimmed, table: nil)
+    }
 
     @State private var customMode = false
     @State private var draftCity = ""
@@ -49,7 +64,7 @@ struct WeatherCityPickerSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: BottomSheetTitle.titleToContentSpacing) {
-            BottomSheetTitle(text: "날씨 지역")
+            BottomSheetTitle(text: String(localized: "날씨 지역"))
 
             // ⚠ **`ScrollViewReader` 를 걷어내지 말 것.** 도시 목록(9개)만으로 이미 시트
             // 상한(화면 절반)을 넘겨서 스크롤 상태다. '직접 입력' 은 **맨 아래 행**이라,
@@ -68,14 +83,17 @@ struct WeatherCityPickerSheet: View {
                     VStack(spacing: 0) {
                         ForEach(Array(Self.presetCities.enumerated()), id: \.element) { index, preset in
                             if index > 0 { Divider() }
-                            row(title: preset, selected: !customMode && currentCity == preset) {
+                            row(
+                                title: Self.displayName(for: preset),
+                                selected: !customMode && currentCity.trimmingCharacters(in: .whitespaces) == preset
+                            ) {
                                 onSelect(Self.defaultCountry, preset)
                                 dismiss()
                             }
                         }
                         Divider()
                         // 탭하면 아래로 입력칸이 열린다(안드로이드도 같은 토글이다).
-                        row(title: "직접 입력", selected: customMode) {
+                        row(title: String(localized: "직접 입력"), selected: customMode) {
                             customMode.toggle()
                         }
 

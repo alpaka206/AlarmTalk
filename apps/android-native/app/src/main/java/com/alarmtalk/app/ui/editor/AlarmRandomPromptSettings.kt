@@ -525,7 +525,7 @@ internal fun RandomPromptDetailRow(
 
 // 지역 선택 — 기본 목소리/테마와 같은 바텀시트 선택 패턴(WakerSelectionSheet). 도시 행을
 // 탭하면 그 자리에서 선택+저장+닫힘(별도 저장 버튼 없음). '직접 입력'을 고르면 시트 안에
-// 입력 필드가 열린다. 프리셋이 없는 로케일은 처음부터 입력 필드만 보여준다.
+// 입력 필드가 열린다. 목록은 모든 로케일이 같다(아래 [WeatherPresetCityKeys]).
 
 /**
  * 직접 입력한 지역 문자열을 **나라와 도시**로 가른다 — iOS `WeatherCityPickerSheet.parseLocation`
@@ -543,9 +543,46 @@ internal fun parseWeatherLocation(context: android.content.Context, raw: String)
     return if (city.isBlank()) defaultWeatherCountry(context) to country else country to city
 }
 
-/** 프리셋·공백 없는 입력에 붙이는 기본 나라. iOS `defaultCountry` 와 같은 값이다. */
+/**
+ * 프리셋·공백 없는 입력에 붙이는 기본 나라. iOS `WeatherCityPickerSheet.parseLocation` 이
+ * 붙이는 값과 **같은 글자**다.
+ *
+ * ⚠ **번역하지 않는다**(`translatable="false"`). 이 값은 보여주는 게 아니라 **보내는** 값이다 —
+ * 서버는 `language=ko` 로 지오코딩한 뒤 결과의 한국어 나라 이름에 이 값이 들어 있는지로 동명
+ * 도시를 고른다(`routes/tts.ts` 의 `resolveWeatherLocation`). 예전에는 영어 기기가
+ * "South Korea", 일본어 기기가 "大韓民国" 을 보내서 그 대조가 늘 빗나갔다. 화면에는 도시만
+ * 나오므로(`weatherLocationSummary`) 번역할 자리도 없다.
+ */
 internal fun defaultWeatherCountry(context: android.content.Context): String =
     context.getString(R.string.hs_weather_default_country)
+
+/**
+ * 프리셋 도시의 **저장·전송 값** — 로케일과 무관하게 이 글자를 보낸다. 화면에 보이는 이름은
+ * `R.array.hs_weather_preset_cities`(로케일마다 번역)이고, **같은 순서**로 짝을 이룬다.
+ * iOS `WeatherCityPickerSheet.presetCities` 와 같은 목록·같은 순서다.
+ *
+ * ⚠ **보이는 이름을 그대로 보내지 말 것**(2026-09-29). 예전에는 행 제목을 그대로 저장했는데,
+ * 이 값은 계정에 묶여 서버(`users.dynamic_prompt_settings_json`)에 올라가고 **다른 기기·iOS 가
+ * 그대로 읽는다.** 영어 기기에서 "Seoul" 로 저장하면 한국어 기기·iOS 에서는 목록에 없는
+ * 도시가 되어 체크가 사라지고 직접 입력으로 열린다. 서버 지오코딩도 `language=ko` 다.
+ * (영어 목록은 2026-07-06 부터 비어 있어 영어 기기에서는 도시 목록이 아예 안 보였고,
+ * 일본어 목록은 일본 도시였는데 나라는 대한민국으로 보냈다.)
+ *
+ * 번역 배열의 개수가 이 목록과 어긋나면 이름과 값이 엇갈린다 — `WeatherPresetCitiesResourceTest`.
+ */
+internal val WeatherPresetCityKeys: List<String> =
+    listOf("서울", "부산", "인천", "대구", "대전", "광주", "울산", "수원", "제주")
+
+/**
+ * 저장된 도시 → 화면에 보일 이름. 프리셋이면 이 로케일의 이름, 아니면 적힌 그대로다.
+ * 도시가 보이는 자리(설정 행·문구 상세·문구 요약)는 전부 이걸 거친다.
+ */
+internal fun weatherCityDisplayName(context: android.content.Context, city: String): String {
+    val trimmed = city.trim()
+    val index = WeatherPresetCityKeys.indexOf(trimmed)
+    if (index < 0) return trimmed
+    return context.resources.getStringArray(R.array.hs_weather_preset_cities).getOrNull(index) ?: trimmed
+}
 
 @Composable
 internal fun WeatherLocationDialog(
@@ -554,13 +591,16 @@ internal fun WeatherLocationDialog(
     onDismissWithoutSave: () -> Unit,
     onConfirm: (String, String) -> Unit,
 ) {
-    val presetCities = androidx.compose.ui.res.stringArrayResource(R.array.hs_weather_preset_cities).toList()
+    // (저장 값, 보이는 이름) 짝. 개수가 어긋나도 짧은 쪽에서 끊겨 엇갈린 짝은 만들지 않는다.
+    val presetCities = WeatherPresetCityKeys.zip(
+        androidx.compose.ui.res.stringArrayResource(R.array.hs_weather_preset_cities).toList(),
+    )
     val context = androidx.compose.ui.platform.LocalContext.current
     // 직접 입력 필드는 항상 빈칸으로 시작 — 이전 도시명을 프리필하지 않는다(기본값 없음 규칙).
     // 현재 저장된 지역은 뒤 화면의 '날씨 지역' 행에 이미 보인다.
     var draftCity by remember(city) { mutableStateOf("") }
     var customMode by remember(city) {
-        mutableStateOf(presetCities.isEmpty() || (city.isNotBlank() && city !in presetCities))
+        mutableStateOf(presetCities.isEmpty() || (city.isNotBlank() && city.trim() !in WeatherPresetCityKeys))
     }
 
     WakerSelectionSheet(
@@ -568,10 +608,10 @@ internal fun WeatherLocationDialog(
         onDismiss = onDismissWithoutSave,
     ) { _ ->
         WakerSheetOptionGroup {
-            presetCities.forEach { preset ->
+            presetCities.forEach { (preset, label) ->
                 WakerSheetOptionRow(
-                    title = preset,
-                    selected = !customMode && city == preset,
+                    title = label,
+                    selected = !customMode && city.trim() == preset,
                     // 탭 = 선택+저장+닫힘(닫힘 전이는 onConfirm 쪽 상태가 담당).
                     // ⚠ **나라를 빈 채로 저장하지 말 것**(2026-08-17). 예전에는 저장된
                     // `country` 를 그대로 흘려보내서, 한 번도 나라가 채워진 적 없는 계정은
@@ -579,7 +619,8 @@ internal fun WeatherLocationDialog(
                     // 고르므로**(`routes/tts.ts` 의 `resolveWeatherLocation`), 나라가 없으면
                     // 동명 도시 중 첫 결과를 쓴다 — 표시가 아니라 **날씨가 틀릴 수 있다.**
                     // 프리셋은 전부 국내 도시라 나라는 하나다(iOS `WeatherCityPickerSheet`
-                    // 의 `defaultCountry` 와 같은 값).
+                    // 의 `defaultCountry` 와 같은 값). 도시는 보이는 이름이 아니라 저장 값이다
+                    // ([WeatherPresetCityKeys]).
                     onClick = { onConfirm(defaultWeatherCountry(context), preset) },
                     divider = true,
                 )

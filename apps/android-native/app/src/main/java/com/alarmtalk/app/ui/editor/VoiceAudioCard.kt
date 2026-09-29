@@ -649,7 +649,8 @@ internal fun MessageModeSummaryRow(
         isManual -> stringResource(R.string.editor_msg_mode_manual)
         // 날씨는 어느 도시 기준인지 함께 보여준다(예: "날씨 · 서울").
         normalized == "wake_weather" && weatherCity.isNotBlank() ->
-            "${stringResource(R.string.editor2_ctx_wake_weather)} · $weatherCity"
+            "${stringResource(R.string.editor2_ctx_wake_weather)} · " +
+                weatherCityDisplayName(androidx.compose.ui.platform.LocalContext.current, weatherCity)
         // preset 은 목록에 없는 보이지 않는 기본값 → '기본 인사말'로 표기.
         normalized == DefaultRandomPromptContext ->
             stringResource(R.string.editor_msg_mode_preset)

@@ -204,7 +204,9 @@ struct SettingsView: View {
     /// 동명 도시를 가르는 단서), 보여주는 것은 도시뿐이다 — 앱의 다른 자리가 전부 도시로
     /// 말한다(`날씨 · 서울`). 안드로이드 `weatherLocationSettingsLabel` 과 같다.
     private var weatherLocationLabel: String {
-        promptPreferences.weatherReady ? promptPreferences.weatherCity : "미설정"
+        promptPreferences.weatherReady
+            ? WeatherCityPickerSheet.displayName(for: promptPreferences.weatherCity)
+            : "미설정"
     }
 
     /// ⚠ **'설정됨' 으로 줄이지도, 태어난 시각까지 넣지도 말 것**(2026-08-17 정리).
