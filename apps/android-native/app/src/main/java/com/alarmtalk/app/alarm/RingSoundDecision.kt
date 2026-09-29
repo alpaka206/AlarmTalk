@@ -29,7 +29,10 @@ internal sealed interface RingSound {
      */
     data class Tone(val forced: Boolean) : RingSound
 
-    /** **사용자가 고른** 무음 — '알람' 모드 + 알람음 끔(진동·화면만), 또는 목소리 크기 0 인 옛 행. */
+    /**
+     * **사용자가 고른** 무음 — '알람' 모드 + 알람음 끔(진동·화면만), 또는 목소리 크기 0 인 옛 행
+     * (시스템이 '알람' 모드로 바꿔 둔 목소리 알람도 포함).
+     */
     data object Silent : RingSound
 }
 
@@ -61,7 +64,8 @@ internal data class RingSoundFacts(
  *    내려가 목소리 알람 시절의 꺼진 알람음 스위치를 봤고, 알람이 **아무 소리 없이** 울렸다.
  *  - 목소리 알람인데 자기 오디오가 없다 → 기본 목소리 알람이면 그 목소리의 클립·인사말
  *    (잠금이 오디오 없이 묶은 행이 이 갈래다), 아니면 알람음 강제.
- *  - '알람' 모드 → 스위치대로. 꺼져 있어도 시스템이 바꿔 둔 목소리 알람이면 강제한다.
+ *  - '알람' 모드 → 스위치대로. 꺼져 있어도 시스템이 바꿔 둔 목소리 알람이면 강제한다 — 단 그
+ *    알람의 목소리 크기가 0 이면 무음(목소리 알람 시절 사용자가 고른 무음이다).
  *
  * 진동은 여기서 정하지 않는다 — 알람의 설정 그대로다(강등이 진동을 건드리지 않는다).
  *
@@ -87,7 +91,12 @@ internal fun decideRingSound(
         return RingSound.Tone(forced = true)
     }
     if (facts.toneSwitchOn) return RingSound.Tone(forced = false)
-    return if (facts.convertedBySystem) RingSound.Tone(forced = true) else RingSound.Silent
+    if (!facts.convertedBySystem) return RingSound.Silent
+    // ⚠ 시스템이 '알람' 모드로 바꿔 둔 목소리 알람(옛 버전의 목소리 삭제·공유 해제 강등, 제자리 교체
+    // 강등이 남긴 표시)도 **목소리 크기 0 이면 사용자가 고른 무음**이다(Codex #820). 강제 알람음은
+    // 꺼진 알람음 스위치를 믿지 않으려는 것이지, 목소리 알람 시절에 일부러 0 으로 둔 선택까지 뒤집으려는
+    // 것이 아니다 — 위 목소리 갈래의 0 판정과 같은 규칙이다.
+    return if (facts.voiceVolumePercent <= 0) RingSound.Silent else RingSound.Tone(forced = true)
 }
 
 /**

@@ -116,7 +116,7 @@ class RingSoundDecisionTest {
 
     @Test
     fun systemConvertedAlarmModeIsNeverSilent() {
-        // 목소리 삭제 강등이 남긴 모양: alarm_only + 표시(목소리), 목소리 참조는 비웠다.
+        // 옛 버전의 목소리 삭제 강등이 남긴 모양: alarm_only + 표시(목소리), 목소리 참조는 비웠다.
         val degraded = rehearsalCloneAlarm(
             playMode = AlarmPlayModes.ALARM_ONLY,
             preLockPlayMode = AlarmPlayModes.VOICE_ONLY,
@@ -127,6 +127,30 @@ class RingSoundDecisionTest {
         )
 
         assertEquals(RingSound.Tone(forced = true), decide(degraded, entitled = true))
+    }
+
+    /**
+     * 같은 모양이어도 **목소리 크기 0** 이면 사용자가 고른 무음이다(Codex #820) — 강제 알람음은 꺼진
+     * 알람음 스위치를 믿지 않으려는 것이지 목소리 알람 시절에 일부러 0 으로 둔 선택까지 뒤집는 것이 아니다.
+     */
+    @Test
+    fun systemConvertedAlarmModeKeepsAZeroVoiceVolumeSilent() {
+        val degraded = rehearsalCloneAlarm(
+            playMode = AlarmPlayModes.ALARM_ONLY,
+            preLockPlayMode = AlarmPlayModes.VOICE_ONLY,
+            voiceProfileId = null,
+            localAudioUri = null,
+            audioCacheKey = null,
+            ttsMessageId = null,
+            voiceVolumePercent = 0,
+        )
+
+        assertEquals(RingSound.Silent, decide(degraded, entitled = true))
+        // 알람음 스위치가 켜져 있으면 그 스위치대로 운다(강제가 아니다).
+        assertEquals(
+            RingSound.Tone(forced = false),
+            decide(degraded.copy(alarmSoundEnabled = true, alarmVolumePercent = 40), entitled = true),
+        )
     }
 
     @Test
