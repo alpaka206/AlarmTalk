@@ -376,7 +376,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             // 문구 포함)를 시드로 읽는다. WorkManager 요청은 세션과 무관하게 살아 있어 취소로는
             // 못 막으므로, 표를 죽이는 것과 파일을 지우는 것이 같은 잠금 안이어야 한다.
             com.alarmtalk.app.data.StockClipManifestStore.clearAndInvalidate(getApplication())
-            stockClipManifestFetched = false
+            // '이번 세션에 받았는가' 는 따로 내리지 않는다 — 조회의 주인이 계정 + 세션 세대라,
+            // 세대가 오르면 다음 세션은 저절로 '아직 안 받음' 이다(`stockClipManifestFlights`).
             // 저장소는 위 임계구역에서 이미 비웠다. 여기서 다시 불러도 무해하고(clear 는 멱등,
             // 임자 표시도 보존된다), 화면 상태(authSession·유저 스코프 캐시)를 마저 정리해야 한다.
             clearSessionKeepingAlarms()
@@ -580,22 +581,52 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         internal set
 
     /**
-     * 이번 실행에서 서버 매니페스트를 받았는가. **디스크 시드와 구분하기 위한 값이다** —
-     * `stockClips.isEmpty()` 로 판정하면 디스크에서 채운 순간 재조회가 막혀, 운영이 추가한
-     * 프리셋이 영영 안 들어온다(`StockClipManifestStore` 주석).
+     * 매니페스트 조회를 **한 번에 하나**로 묶는다(`ensureStockClipManifest`, 효율 감사 M1).
+     *
+     * '이번 세션에 서버에서 받았는가' 도 여기서 판정한다([ManifestNeed.SESSION]) — **디스크
+     * 시드와 구분하기 위해서다.** `stockClips.isEmpty()` 로 판정하면 디스크에서 채운 순간
+     * 재조회가 막혀, 운영이 추가한 프리셋이 영영 안 들어온다(`StockClipManifestStore` 주석).
+     * 주인이 계정 + 세션 세대라 로그아웃·계정 전환 뒤에는 저절로 '아직 안 받음' 이 된다.
+     *
+     * ⚠ 요청들이 **차례로** 뜨므로 늦게 도착한 앞선 응답이 새 매니페스트를 덮지 못한다(예전의
+     * `stockClipManifestRevision` 이 하던 일, Codex #703 P1). 디스크 쪽 순서는 여전히 표가 지킨다.
      */
-    internal var stockClipManifestFetched = false
+    internal val stockClipManifestFlights = StockClipManifestFlights<com.alarmtalk.app.network.SessionEffectKey>(
+        scope = viewModelScope,
+        clock = { android.os.SystemClock.elapsedRealtime() },
+        // 신선도를 센 뒤 워커의 더 새 표가 쓰기에 실패했으면 다시 받는다(Codex #825).
+        lastSeenPublished = { com.alarmtalk.app.data.StockClipManifestStore.latestPublishedTicket() != null },
+    )
+
+    /** 메모리에 매니페스트를 실은 횟수. 디스크 시드가 그사이 실린 서버 응답을 덮지 않게 본다. */
+    internal var stockClipManifestApplyCount: Int = 0
 
     /**
-     * 매니페스트 조회의 **세대**. 늦게 도착한 앞선 응답이 새 매니페스트를 덮는 것을 막는다.
-     *
-     * ⚠ 이 값이 없으면 권위 자체가 뒤로 간다(Codex #703 P1). `loadStockClips` 는
-     * `viewModelScope.launch` 라 겹칠 수 있는데, 교체 **전에** 시작한 요청이 나중에 끝나면
-     * `stockClips` 와 디스크 매니페스트를 옛 것으로 되돌린다. 그러면 캐시 쓰기 경로의
-     * '지나간 응답인가' 대조가 **되살아난 옛 주소**를 기준으로 삼아, 서버의 현재 음원을
-     * 지나간 것으로 판정해 회수된 목소리를 그대로 남긴다.
+     * 메모리에 실린 공개본의 표(0 = 디스크 시드이거나 아직 없음). 메모리는 이 표보다 **앞선 것으로
+     * 되돌아가지 않는다**(`applyStockClipManifest`, Codex #825).
      */
-    internal var stockClipManifestRevision: Int = 0
+    internal var stockClipManifestAppliedTicket: Long = 0L
+
+    /** 디스크 시드(메인 밖에서 읽는다). 비어 있을 때 연달아 불려도 한 번만 읽는다. */
+    internal var stockClipSeedJob: kotlinx.coroutines.Job? = null
+
+    /** 제자리 교체로 낡은 클립 다시 받기. 새 매니페스트가 공개되면 앞 회차를 끊고 새로 돈다. */
+    internal var replacedClipRepairJob: kotlinx.coroutines.Job? = null
+
+    /** 목소리별 클립 받기 — 드라이브와 목소리 탭이 나눠 쓴다(`cacheVoiceClips`). */
+    internal val voiceClipDownloads = VoiceClipDownloads()
+
+    init {
+        // ⚠ **메모리는 디스크의 공개본을 따라간다 — 누가 공개했든**(Codex #825). 프리페치·접근권 워커는
+        // 매니페스트를 따로 받아 공개하지만(의도) 뷰모델 메모리는 모른다. 따라가지 않으면 전경이 자기
+        // 응답을 실은 직후 워커가 더 새 것을 공개해도 준비도·클론 다운로드가 교체 이전 목록을 읽는다.
+        // `Dispatchers.Main`(즉시 아님)이라 생성이 끝난 뒤에 돈다 — 아래에 선언된 상태를 건드리므로.
+        viewModelScope.launch(Dispatchers.Main) {
+            com.alarmtalk.app.data.StockClipManifestStore.publishedTickets.collect { ticket ->
+                if (ticket > stockClipManifestAppliedTicket) followPublishedStockClips()
+            }
+        }
+    }
 
     var socialBusy by mutableStateOf(false)
         internal set
@@ -609,6 +640,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // 이 신선 로드 + voiceProfiles 로드가 모두 확보됐을 때만 수행한다(reconcileInaccessibleVoiceAlarms).
     internal var familyVoicesLoadedFresh: Boolean = false
         internal set
+
+    /**
+     * 지금 [familyVoices] 가 **이 세션에 서버에서 한 번이라도 받은 목록**인가. [familyVoicesLoadedFresh]
+     * 와 다르다 — 그쪽은 조회를 시작할 때마다 내려가고 실패하면 내려간 채지만, 목록 자체는 앞서
+     * 받은 서버 목록 그대로 남는다(`refreshSocialData`). 공유 목록이 바뀌었을 때 매니페스트를
+     * **신호 뒤** 로 받을지(서버에서 바뀌었다) **창** 으로 받을지(세션 첫 목록 — 이제 안 것)를 이걸로
+     * 가른다(Codex #825). 세션이 끝날 때만 내린다. ⚠ [familyVoices] 를 서버 목록으로 바꾸는 곳은
+     * **전부** 이걸 세운다(`refreshSocialData`, 목소리 공유 토글의 목록 갱신).
+     */
+    internal var familyVoicesFromServer: Boolean = false
 
     // 내 음성 목록이 API 로 '성공적으로' 로드됐는지(빈 목록도 유효한 신선 로드로 취급). voiceProfiles.isEmpty()
     // 를 '미로드'로 쓰면 마지막 목소리를 삭제·접근상실한 사용자의 알람 강등이 스킵되므로 별도 플래그로 추적(PR #536 P2).
@@ -1458,6 +1499,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         pendingPrefetchVoiceId = null
         prerenderDriveJob?.cancel()
         prerenderDriveJob = null
+        // 앞 계정의 매니페스트 시드·낡은 클립 다시 받기도 끊는다(다음 계정이 새로 돌린다).
+        stockClipSeedJob?.cancel()
+        stockClipSeedJob = null
+        replacedClipRepairJob?.cancel()
+        replacedClipRepairJob = null
         shareToggleJobs.values.forEach { it.cancel() }
         shareToggleJobs.clear()
         shareToggleDesired.clear()
@@ -1474,6 +1520,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         // 공유 목소리 신선-로드 플래그도 함께 초기화 — 안 그러면 다음 세션에서 fetchVoiceProfiles 가
         // refreshSocial 전에 강등 판단해, 공유 목소리 쓰는 알람이 오강등될 수 있다(PR #536 P2).
         familyVoicesLoadedFresh = false
+        familyVoicesFromServer = false
         subscriptionResponse = null
         // ⚠ **스토어 신호는 계정 것이다.** 안 지우면 유료 A 가 로그아웃한 뒤 무료 B 가
         // 로그인했을 때(액티비티 재생성 없이) B 가 A 의 등급을 물려받아 모든 게이트를 통과한다.
@@ -1637,4 +1684,16 @@ data class PrerenderDriveState(
     val generated: Int,
     val total: Int,
     val downloading: Boolean,
-)
+) {
+    /**
+     * 생성 0~50%, 다운로드 50~100% 로 이어 붙인 **하나의 진행률**(0~1). 전체 개수를 아직 모르면 null.
+     *
+     * 등록 마지막 단계와 목소리 목록의 행이 **이 값 하나**를 쓴다(스펙 「진행률은 하나다」) —
+     * 드라이브가 도는 동안 목록은 따로 폴링하지 않는다(효율 감사 M4).
+     */
+    fun overallFraction(): Float? {
+        if (total <= 0) return null
+        val frac = (generated.toFloat() / total.toFloat()).coerceIn(0f, 1f)
+        return if (downloading) 0.5f + frac * 0.5f else frac * 0.5f
+    }
+}

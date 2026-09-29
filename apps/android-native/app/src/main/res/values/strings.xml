@@ -236,8 +236,6 @@
     <string name="editor_vibration_pattern">패턴</string>
     <string name="editor_vibration_use">진동 사용</string>
     <string name="editor_vibration_title">진동</string>
-    <string name="editor_voice_deleted_desc">이 알람에 저장된 목소리는 그대로 울리지만, 문구를 바꾸려면 다른 목소리를 선택해 주세요.</string>
-    <string name="editor_voice_deleted_title">삭제된 목소리</string>
     <string name="editor_voice_generation_canceled_time_changed">알람 시각이 바뀌어 음성 생성을 중단했어요.</string>
     <string name="editor_voice_loading">목소리를 불러오는 중이에요.</string>
     <string name="editor_voice_output_title">목소리 크기</string>
