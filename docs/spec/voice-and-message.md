@@ -51,6 +51,12 @@
 ⚠ **잠긴 '직접 입력' 행을 목록에서 빼지 말 것.** 빼면 유료에 무엇이 있는지 알 길이 없다.
 자물쇠를 그리고, 누르면 게이트가 이유를 말한다.
 
+⚠ **이용권 카드도 이 규칙을 따른다 — 문구 종류를 유료 혜택처럼 적지 말 것**(2026-09-30).
+개인 카드가 "날씨·운세 등 매일 다른 문구" 라고 적고 있었다. 날씨·운세·응원·약은 기본
+목소리로 무료이고(위 목록), 클립은 준비된 것을 돌려 쓰므로(§5) '매일 새 문구' 도 아니다.
+개인 이용권이 더하는 것은 그 문구를 **등록한 목소리로** 듣는 것이라, 카드는 이제
+"내 목소리로 듣는 날씨·운세 문구" 다(두 앱 같은 글자 — 구현 지도 「이용권 카드 문구」).
+
 ### 2026-09-02 이전: 무료는 2종, 유료는 5종이었다
 
 그전에는 무료·기본 목소리에 **아예 다른 화면**(`FreeBucketSettingsPane`)을 띄우고 목록을
@@ -1207,6 +1213,7 @@ v4·v4 Turbo 로 만들어 비교했다(표의 값은 자동 측정·받아쓰�
 | 문구 목록(하나) | `EditorMessageContexts` → `FreeBucketOrder` (`ui/editor/AlarmEditorControls.kt`) | `MessageSettingsPane.options` → `FreeBucket.order` | `STOCK_CLIP_PRESETS` → `FREE_BUCKET_CATEGORIES` |
 | 목록 자르기(클립 유무) | `freeBucketsFor` + `availableContexts` | `availableFreeBuckets` + `availableContexts` | `GET /tts/stock-clips` |
 | 직접 입력 잠금(등급) | `manualLocked = freeVoiceTier` | `manualLocked: freeVoiceTier` | `tts.ts` manual-tts-quota |
+| 이용권 카드 문구 — 문구 종류를 유료 혜택으로 적지 않는다(§2) | `billing_plan_*feature*` (`ui/billing/BillingPanels.kt`), 회귀 `PlanCardCopyTest` | `PlanCard.features(for:)` (`Views/Settings/BillingPanelComponents.swift`) + `Localizable.xcstrings`, 회귀 `PlanCardCopyTests` | — |
 | 라이브 랜덤 생성 없음 — 서버가 거절(목소리 등록 미리듣기만 예외) | `AlarmEditorScreen` 의 `/tts/generate` 요청 `random = false` 고정 · 등록 미리듣기(`VoiceProfileManagementPanel`)는 random 을 싣지 않는다 | `AlarmEditorSheet.saveFlow` 의 `randomPrompt` 가드(클립에 묶거나 준비 화면) · 예외 `VoiceStudioViewModel.playDraftPreview`(random:true + draftPreview:true) | `routes/tts.ts` `randomRequested`(= `!draftPreviewRequested && body.random === true`) → 400 `RANDOM_TTS_RETIRED` |
 | 스톡 클립 사용(OR) | `usesStockClips` (`ui/editor/AlarmEditorScreen.kt`) | `usesStockClips` (`Views/Editor/AlarmEditorSheet.swift`) | `tts.ts` 무료 등급 게이트 |
 | 상태 강제 | `LaunchedEffect(usesStockClips, …)` | `coerceFreeVoiceTierConstraints` | — |
