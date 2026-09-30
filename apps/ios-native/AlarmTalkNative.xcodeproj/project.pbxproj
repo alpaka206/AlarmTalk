@@ -324,6 +324,7 @@
 		D925AAB9400F82537DF42F9F /* TransientFailureClassificationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 27530B19BDA96A8D3CFCBBB8 /* TransientFailureClassificationTests.swift */; };
 		DA74241C9B726EF21F7111B0 /* TimeWheelPickerLogicTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A12157E5D422109667286EC /* TimeWheelPickerLogicTests.swift */; };
 		DB82555FB5EDA5964A490C43 /* AuthUserDecodingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A1415DAB86286CDD5AB4219 /* AuthUserDecodingTests.swift */; };
+		DC1475A77BC58B61A3777F86 /* PlanCardCopyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A68B4D31B9E6DD9E3A6CE329 /* PlanCardCopyTests.swift */; };
 		DC846EAF76EA555D6780B95B /* voice_greeting_mina_ko.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 4AC94713C9A45FA1028A5BEE /* voice_greeting_mina_ko.mp3 */; };
 		DCDF09A8C792F10053BE06CA /* DuplicateAlarmReplacementTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B74C61B6BD2307B6F95F6F4 /* DuplicateAlarmReplacementTests.swift */; };
 		DEF798B6B98F2007BF6AB469 /* AlarmTalkSpacing.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0DA0DFFC6243F7340FEE4E83 /* AlarmTalkSpacing.swift */; };
@@ -663,6 +664,7 @@
 		A4843EEDBACE08AE27F5F8DD /* EntryRefreshFreshnessTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EntryRefreshFreshnessTests.swift; sourceTree = "<group>"; };
 		A537812556462EBCB324CD35 /* AlarmTalkTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlarmTalkTheme.swift; sourceTree = "<group>"; };
 		A6060CBDBC2E6E31887ADA06 /* AlarmTalkSwitch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlarmTalkSwitch.swift; sourceTree = "<group>"; };
+		A68B4D31B9E6DD9E3A6CE329 /* PlanCardCopyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlanCardCopyTests.swift; sourceTree = "<group>"; };
 		A68D60EBA1A3360EB56578AA /* WeatherVariantSaveTimeoutTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeatherVariantSaveTimeoutTests.swift; sourceTree = "<group>"; };
 		A70196163DEB277ED30F5976 /* KeychainStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainStore.swift; sourceTree = "<group>"; };
 		A70A73CA504BECFEF002F84C /* LargeTextScreenshotUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LargeTextScreenshotUITests.swift; sourceTree = "<group>"; };
@@ -1158,6 +1160,7 @@
 				15619730ABF3EC66C8C2DC0A /* PaidVoiceGateTests.swift */,
 				080502B6BDD7C1BD83309BD3 /* PendingRevokedTransactionStoreTests.swift */,
 				1FD492185CE063ADF17C6CF4 /* PersonalPromoTests.swift */,
+				A68B4D31B9E6DD9E3A6CE329 /* PlanCardCopyTests.swift */,
 				9B04396E3B476332CDB49EE8 /* PretendardFontTests.swift */,
 				CAF9AD1708532E9CF22B407D /* PreviewSeedLeakTests.swift */,
 				E2A4C840404B77BA8FCE5098 /* PurchaseBlockReasonTests.swift */,
@@ -1868,6 +1871,7 @@
 				D88FA641458DDF013DFBAFD7 /* PaidVoiceGateTests.swift in Sources */,
 				A10C205F48512A6B2CF90F1E /* PendingRevokedTransactionStoreTests.swift in Sources */,
 				0CB3B09DD2AB5D099D268FE9 /* PersonalPromoTests.swift in Sources */,
+				DC1475A77BC58B61A3777F86 /* PlanCardCopyTests.swift in Sources */,
 				DF782938329EEED696B72943 /* PretendardFontTests.swift in Sources */,
 				49B32F22AC1AE75B1F8C3009 /* PreviewSeedLeakTests.swift in Sources */,
 				888C1E439AB9D037B3B4EF19 /* PurchaseBlockReasonTests.swift in Sources */,
