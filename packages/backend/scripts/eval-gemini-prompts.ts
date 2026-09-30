@@ -12,9 +12,12 @@
  *    표지(markers)가 전사에 실제로 있는가, 형식
  *
  * 사용 (packages/backend 에서):
- *   npm run eval:gemini                                   # 기본: 2.5-flash@us-central1 vs 3.5-flash@us
- *   npm run eval:gemini -- --models gemini-3.5-flash@us,gemini-3.5-flash-lite@us --suites A,F --reps 2
+ *   npm run eval:gemini                                   # 기본: 운영 모델(`VERTEX_MODEL`)@us 하나
+ *   npm run eval:gemini -- --models gemini-3.8-flash@us,gemini-3.5-flash@us --suites A,F --reps 2
  *   npm run eval:gemini -- --label after-prompt-v2
+ * 운영 코드는 모델을 상수로만 정한다(시크릿으로 덮는 길이 없다). 다른 모델과 비교할 때는 아래 fetch
+ * 가로채기가 **요청 주소의 모델만** 갈아 끼우고, 요청 본문(사고 수준 `LOW` 등)은 운영 그대로 보낸다 —
+ * 그 설정을 받지 않는 모델(2.x·`LOW` 를 모르는 모델)은 400 으로 기록된다.
  * 결과: `.eval/gemini/<시각>-<label>/results.json`·`summary.md`(gitignore — 응답 원문이 들어 있다).
  *
  * 자격 증명은 `.dev.vars.dev` 의 `GOOGLE_VERTEX_CREDENTIALS_JSON` 을 읽는다 — **출력하지 않는다.**
@@ -38,6 +41,7 @@ import {
   prepareAlarmTextWithVertex,
   prerenderRejectionReason,
   tidyEllipsis,
+  VERTEX_MODEL,
   type SpeechStyle,
 } from '../src/lib/vertex-translate.ts';
 import { CLONE_CLIP_SEEDS } from '../src/lib/stock-clips.ts';
@@ -65,7 +69,7 @@ function parseFlags(): Map<string, string> {
 }
 
 const flags = parseFlags();
-const MODELS = (flags.get('--models') ?? 'gemini-2.5-flash@us-central1,gemini-3.5-flash@us')
+const MODELS = (flags.get('--models') ?? `${VERTEX_MODEL}@us`)
   .split(',')
   .map((spec) => {
     const [model, location] = spec.split('@');
@@ -115,9 +119,13 @@ const CREDENTIALS_JSON = readCredentialsJson();
 const envFor = (m: (typeof MODELS)[number]): Env =>
   ({
     GOOGLE_VERTEX_CREDENTIALS_JSON: CREDENTIALS_JSON,
-    GOOGLE_VERTEX_MODEL: m.model,
     GOOGLE_VERTEX_LOCATION: m.location,
   }) as unknown as Env;
+/**
+ * 지금 평가하는 모델 — 아래 fetch 가로채기가 요청 주소의 `VERTEX_MODEL` 을 이것으로 바꾼다. 모델은
+ * 실행부에서 **차례로** 돌므로(한 모델의 스위트가 다 끝난 뒤 다음 모델) 변수 하나로 충분하다.
+ */
+let evalModel: string = VERTEX_MODEL;
 
 // ---------------------------------------------------------------- 원문 응답 기록
 
@@ -163,11 +171,15 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     }
   }
   if (!url.includes(':generateContent')) return realFetch(input, init);
+  const operational = `/models/${VERTEX_MODEL}:generateContent`;
+  // 운영 주소가 아니면 갈아 끼우지 않고 멈춘다 — 조용히 운영 모델로 평가하면 비교표가 거짓이 된다.
+  if (!url.includes(operational)) throw new Error(`예상하지 못한 생성 주소다: ${url}`);
+  const target = url.replace(operational, `/models/${evalModel}:generateContent`);
   const started = Date.now();
   const bucket = callLog.getStore();
   let res: Response;
   try {
-    res = await realFetch(input, init);
+    res = await realFetch(target, init);
   } catch (err) {
     // 타임아웃(운영 클라이언트의 15초 abort)·네트워크 실패도 **시도 하나**로 남긴다(Codex #801) —
     // 안 남기면 재시도 끝에 성공한 문구가 1회차 통과로 잡히고 지연 요약도 느린 쪽에 유리해진다.
@@ -852,6 +864,7 @@ const outDir = resolve(backendRoot, '.eval/gemini', `${stamp}-${LABEL}`);
 mkdirSync(outDir, { recursive: true });
 const rows: AnyRow[] = [];
 for (const m of MODELS) {
+  evalModel = m.model;
   for (const suite of ['A', 'D', 'F'] as const) {
     if (!SUITES.has(suite)) continue;
     process.stderr.write(`${m.label} · ${suite}\n`);

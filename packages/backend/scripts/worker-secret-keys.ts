@@ -16,7 +16,9 @@ export const WORKER_SECRET_KEYS = [
   'GOOGLE_CLIENT_ID',
   'GOOGLE_VERTEX_CREDENTIALS_JSON',
   'GOOGLE_VERTEX_LOCATION',
-  'GOOGLE_VERTEX_MODEL',
+  // `GOOGLE_VERTEX_MODEL` 은 없앴다(2026-09-30) — 모델은 `lib/vertex-translate.ts` 의 `VERTEX_MODEL` 상수가
+  // 정한다. 워커에 남은 옛 값은 코드가 읽지 않으니 `wrangler secret delete GOOGLE_VERTEX_MODEL --env
+  // <dev|production>` 로 치운다(`.dev.vars.*` 의 줄은 여기 없는 키라 올라가지 않는다).
   'RESEND_API_KEY',
   'AUTH_EMAIL_FROM',
   'AUTH_EMAIL_REPLY_TO',
