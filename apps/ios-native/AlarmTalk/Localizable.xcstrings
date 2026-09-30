@@ -176,6 +176,23 @@
         }
       }
     },
+    "%@ 다시 울릴 준비 중" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ will ring again soon"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ まもなく再び鳴ります"
+          }
+        }
+      }
+    },
     "%@ 섹션" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -307,6 +324,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%lld分"
+          }
+        }
+      }
+    },
+    "%lld분 더 자기" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Again in %lld min"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld分後にもう一度"
           }
         }
       }
@@ -2831,6 +2865,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "再開"
+          }
+        }
+      }
+    },
+    "다시 울릴 준비 중" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ringing again soon"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "まもなく再び鳴ります"
           }
         }
       }

@@ -38,11 +38,17 @@
   클래스패스로 돌린다) → Play Developer API edits(`GOOGLE_PLAY_SERVICE_ACCOUNT_JSON`) 로 업로드·트랙·
   validate·commit. iOS 는 xcodegen → archive(`Local.xcconfig`) → export(수동 서명 plist — 자동은
   'No Accounts') → `altool` 검증·업로드 → ASC API 로 버전·whatsNew·빌드 연결·심사 노트·reviewSubmissions.
-  **다음 App Store 버전부터 Copyright(`appStoreVersions` 의 `copyright`)는 `© 2026 vailen`** 이다(2026-09-29
-  사용자 결정). 판매자 이름은 개인 법적 이름 그대로 둔다 — 애플 계정이 개인(개인사업자) 계정이라 판매자
-  이름은 계정 명의를 따른다. 새 버전 레코드를 만들 때 copyright 가 이 값인지 확인한다.
+  **Copyright(`appStoreVersions` 의 `copyright`)는 이미 `© 2026 Vailen` 으로 게재돼 있다**(ASC 입력값
+  `2026 Vailen` — `©` 는 애플이 붙인다. 2026-09-30 KR 공개 페이지 확인). 판매자 이름은 개인 법적 이름 그대로
+  둔다 — 애플 계정이 개인(개인사업자) 계정이라 판매자 이름은 계정 명의를 따른다. 새 버전 레코드를 만들 때
+  copyright 가 이 값으로 따라왔는지 확인한다.
   서버를 먼저 내는 회차는 빌드 전에 main 의 Deploy Backend 실행이 **성공**했고 로그에 그 회차의
   마이그레이션이 적용으로 찍혔는지 눈으로 본다(가정하지 않는다 — 안 돌았으면 `workflow_dispatch`).
+- [ ] **스토어 등록정보 교체 대기**(2026-09-30 — 새 이름 `알람톡: 목소리 알람 시계` 등, 아직 아무것도 올리지
+      않았다). 원본과 순서·조건은 `docs/product/app-store-listing.md`·`docs/product/play-store-listing.md`:
+      Play 는 날씨 주장을 뺀 INTERIM 을 지금 올리고(옛 설명에 익명 후기·해시태그·개인 연락처가 있다), App Store 는
+      프로모션 문구만 지금(P), 이름·부제·검색어·설명은 다음 버전 레코드에서. 날씨가 맞는다고 말하는 문장은
+      **날씨 지역 서버 변경이 prod 에 배포되고 확인된 뒤에만**(W) — 확인하면 결과를 여기 적고 판을 바꾼다.
 - **1.2.10 순서**(2026-09-27 결정 — 서버 먼저): 버전 올림 → #797(develop→main) 머지로 prod 배포·
   마이그레이션 #121·#122 → main 에서 두 앱 빌드·제출 → prod Gemini 시크릿 전환(10/20 전) → iOS 1.2.10
   게재 뒤 iOS 강제 업데이트(하한 7). 실제로는 Android 강제 업데이트(30)를 Play 30 게재 뒤 먼저 냈고

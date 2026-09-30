@@ -1,4 +1,5 @@
 import type { DbExecutor } from './transactions';
+import { voiceUploadKeyPrefix } from './r2-storage';
 
 /**
  * 목소리가 사라졌을 때 걷어내야 할 알람 하나. 그대로 `notifyDowngradedAlarms` 의 target 이다.
@@ -43,6 +44,31 @@ const DOWNGRADE_COLUMNS = `mode = 'sound-only', wake_mode = 'sound_then_voice',
 
 function placeholders(values: readonly unknown[]): string {
   return values.map(() => '?').join(', ');
+}
+
+/**
+ * `column`(문구의 `audio_url`)이 **이 사람들의 업로드 원본**을 가리키는가 — SQL 조각과 인자.
+ *
+ * 받은 사람 소유의 `family-voice` 문구는 보낸 사람의 업로드 키를 그대로 담는다
+ * (`POST /family/alarms/voice`). 판정을 업로드 행(`voice_uploads`)에만 걸면 놓치는 경우가
+ * 있다 — 가족 녹음 원본은 프로필에 안 묶여 **7일 TTL 이 업로드 행을 먼저 지운다**
+ * (`cleanupExpiredAudio`). 그 뒤에도 수신 확인 전 문구·알람은 같은 키를 들고 있으므로,
+ * 키 앞머리(`voiceUploadKeyPrefix`)로도 고른다. `LIKE` 가 아니라 앞머리 비교라 id 안의
+ * `%`·`_` 를 이스케이프할 일이 없다.
+ *
+ * `column` 은 호출부가 고정해 넘기는 열 이름이다(사용자 입력 아님).
+ */
+export function audioUrlPointsAtUploadsOf(
+  column: string,
+  ownerUserIds: readonly string[],
+): { sql: string; args: string[] } {
+  const prefixes = ownerUserIds.map(voiceUploadKeyPrefix);
+  const prefixClauses = prefixes.map(() => `OR substr(${column}, 1, length(?)) = ?`).join(' ');
+  return {
+    sql: `(${column} IN (SELECT object_key FROM voice_uploads WHERE user_id IN (${placeholders(ownerUserIds)}))
+           ${prefixClauses})`,
+    args: [...ownerUserIds, ...prefixes.flatMap((prefix) => [prefix, prefix])],
+  };
 }
 
 /**
@@ -146,15 +172,17 @@ export async function revokeDeletedVoices(
     scopeArgs.push(...voiceProfileIds, ...voiceProfileIds);
   }
   if (senderVoiceOwnerUserIds.length > 0) {
+    // 업로드 행이 TTL 로 먼저 지워진 녹음도 잡는다(`audioUrlPointsAtUploadsOf`) — 못 잡으면
+    // 다운로드는 끝났는데 수신 확인이 실패한 기기에 tombstone 이 안 남아 그 녹음으로 계속 운다.
+    const uploads = audioUrlPointsAtUploadsOf('m.audio_url', senderVoiceOwnerUserIds);
     liveClauses.push(
       `message_id IN (
          SELECT m.id FROM messages m
-         JOIN voice_uploads vu ON vu.object_key = m.audio_url
          WHERE m.category = 'family-voice'
-           AND vu.user_id IN (${placeholders(senderVoiceOwnerUserIds)})
+           AND ${uploads.sql}
        )`,
     );
-    scopeArgs.push(...senderVoiceOwnerUserIds);
+    scopeArgs.push(...uploads.args);
   }
   const scope = `(${liveClauses.join(' OR ')})`;
   const liveAlarms = await tx.execute({
