@@ -164,7 +164,10 @@ suspend fun adoptAccountPromptSettings(
     val weatherAccepted = adoption == AccountSettingsAdoption.Accepted ||
         (adoption as? AccountSettingsAdoption.LocalPending)?.weatherAccepted == true
     if (weatherAccepted) {
-        WeatherRegionHolidaySync.onAccountRegionReceived(holidayStore, userId, settings.weather.resolvedRegion())
+        // ⚠ **받아 적은 뒤의 이 기기 값**으로 맞춘다 — 서버 값이 아니다(Codex #837). 서버의 날씨 묶음이 비어 있으면
+        //   '아직 안 올라갔다' 로 보고 이 기기의 지역을 그대로 두는데, 서버 값으로 맞추면 지역이 없다고 보고 달력을
+        //   기기 기본값(KR)에 둔다 — 화면은 도쿄, 공휴일은 한국이 된다.
+        WeatherRegionHolidaySync.onAccountRegionReceived(holidayStore, userId, promptStore.read(userId).weatherRegion)
     }
     return adoption
 }

@@ -345,27 +345,18 @@ struct AlarmTalkApp: App {
                     //    옛 지역을 따르지 않는다 — 화면의 지역과 달력의 나라가 갈라진다.
                     .onChange(of: accountPromptSettingsKey, initial: true) { _, key in
                         guard let userID = key.userID, let settings = key.settings else { return }
-                        let adoptAccountRegion = {
+                        let adoption = DynamicPromptPreferences.adoptAccount(userID: userID, server: settings)
+                        // 날씨 묶음을 받아들였으면(사주만 밀렸어도) 공휴일 국가도 따른다 — **받아 적은 뒤의 이 기기
+                        // 지역**으로(서버의 날씨가 비어 이 기기 값을 뒀을 수 있다, `acceptsWeather` 주석). 기기에 못
+                        // 적었으면(`.localWriteFailed`) 달력도 옮기지 않는다 — 다음 계정 응답에 다시 받아 적는다.
+                        if adoption.acceptsWeather {
                             holidayStore.adoptCountry(
-                                ofAccountWeatherRegion: WeatherRegions.region(
-                                    key: settings.weather.region,
-                                    country: settings.weather.country,
-                                    city: settings.weather.city
-                                )?.key,
+                                ofAccountWeatherRegion: DynamicPromptPreferences.load(userID: userID).weatherRegion?.key,
                                 userID: userID
                             )
                         }
-                        switch DynamicPromptPreferences.adoptAccount(userID: userID, server: settings) {
-                        case .accepted:
-                            adoptAccountRegion()
-                        case .localPending(let local, let weatherAccepted):
-                            // 날씨 묶음을 받아들였으면(사주만 밀렸어도) 공휴일 국가도 그 지역을 따른다(Codex #837).
-                            if weatherAccepted { adoptAccountRegion() }
+                        if case .localPending(let local, _) = adoption {
                             Task { await auth.updateProfile(dynamicPromptSettings: local) }
-                        case .localWriteFailed:
-                            // 기기에 못 적었다 — 달력의 나라도 옮기지 않는다(기기 값과 갈라지지 않게).
-                            // 다음 계정 응답에 다시 받아 적는다.
-                            break
                         }
                     }
                     // **공휴일 달력이 바뀌면 공휴일off 알람을 다시 건다**(`HolidayOffRescheduler`).
@@ -374,25 +365,7 @@ struct AlarmTalkApp: App {
                     // 갖춰지면 키가 바뀌어 다시 온다 — 예전 콜백(`onCountryChanged`)은 그 두 경우에 조용히
                     // 버려져 다음 한 번이 옛 달력으로 울렸다. 멱등이라 몇 번 불려도 달력 하나에 한 번만 돈다.
                     .onChange(of: holidayOffRescheduleKey, initial: true) { _, _ in
-                        Task { @MainActor in
-                            await HolidayOffRescheduler.shared.runIfNeeded(
-                                currentMarker: {
-                                    guard alarmStore.hasLoadedFromDisk,
-                                          let owner = auth.session?.user.id,
-                                          let calendar = holidayStore.holidayCalendarMarker else { return nil }
-                                    return HolidayOffRescheduler.ownerScopedMarker(
-                                        ownerUserID: owner,
-                                        calendarMarker: calendar
-                                    )
-                                },
-                                recompute: {
-                                    await alarmKit.recomputeHolidayOffAlarms(
-                                        store: alarmStore,
-                                        ownerUserId: auth.session?.user.id
-                                    )
-                                }
-                            )
-                        }
+                        Task { @MainActor in await runHolidayOffRescheduleIfNeeded() }
                     }
                     // 목소리를 지우면 그 목소리로 걸어 둔 예약도 곧바로 걷어낸다 —
                     // 파기 대상 생체정보가 알람에 남아 있으면 안 된다.
@@ -538,6 +511,9 @@ struct AlarmTalkApp: App {
                     // 전경 복귀에서도 한 번 — 로그아웃 직후 실패한 취소를 여기서 만회한다.
                     await alarmKit.retryPendingCancellations(store: alarmStore)
                     await alarmKit.recoverScheduledAlarms(store: alarmStore, ownerUserId: auth.session?.user.id)
+                    // 공휴일off 다시 걸기가 지난번에 다 못 했으면(다른 복구와 겹쳐 건너뛰었거나 계정을 떠나는 중이었다)
+                    // 여기서 다시 본다 — 표지가 같으면 곧바로 돌아간다(Codex #837). 위 복구가 끝난 **뒤**라 겹치지 않는다.
+                    await runHolidayOffRescheduleIfNeeded()
                 }
                 // 밀린 사용 기록을 올려 본다 — 앱을 열 때가 유일하게 확실한 기회다
                 // (울림 경로에서는 네트워크를 부르지 않으므로).
@@ -953,6 +929,23 @@ struct AlarmTalkApp: App {
                 forceHolidayOffRecompute: true
             )
         }
+    }
+
+    /// 공휴일 달력이 바뀌었으면 공휴일off 알람을 다시 건다(`HolidayOffRescheduler` — 멱등, 계정별 표지).
+    /// 표지 축이 바뀔 때(`holidayOffRescheduleKey`)와 전경 복귀 때 부른다 — 뒤의 것은 지난번에 다 못 한 경우의 재시도다.
+    @MainActor
+    private func runHolidayOffRescheduleIfNeeded() async {
+        await HolidayOffRescheduler.shared.runIfNeeded(
+            currentMarker: {
+                guard alarmStore.hasLoadedFromDisk,
+                      let owner = auth.session?.user.id,
+                      let calendar = holidayStore.holidayCalendarMarker else { return nil }
+                return HolidayOffRescheduler.ownerScopedMarker(ownerUserID: owner, calendarMarker: calendar)
+            },
+            recompute: {
+                await alarmKit.recomputeHolidayOffAlarms(store: alarmStore, ownerUserId: auth.session?.user.id)
+            }
+        )
     }
 
     /// 계정 설정을 받아 적을 때 — 계정과 그 계정의 설정, 그리고 **계정 응답**이 축이다(계정이 바뀌면 설정이

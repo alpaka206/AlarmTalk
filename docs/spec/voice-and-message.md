@@ -672,7 +672,9 @@ iOS `Generated/WeatherRegions.generated.swift`)을 쓴다. 생성 파일을 손�
      떠나 **올리기 전의 설정**을 읽은 `/auth/me` 가 오면 받아 적기가 그 옛 값을 적는다. 그래서 올리기가 끝날 때 이미
      떠 있던 계정 요청의 마지막 순번을 울타리로 세우고, 그 이하의 응답은 **설정만** 지금 세션의 값(올린 값)을 지킨다
      — plan·프로모·토큰은 그 응답의 것이다(안드로이드 `promptSettingsAnswerFence`·`fencedAccountSettings`, iOS
-     `AuthViewModel.promptSettingsAnswerFence`).
+     `AuthViewModel.promptSettingsAnswerFence`). 울타리는 올리기 **뒤**에 다른 기기가 고친 값을 읽은 응답도 가리므로,
+     올리기가 끝나면 **울타리 밖의 조회를 한 번 더** 해 서버의 지금 값을 받아 적는다(iOS `refreshUser`, 안드로이드
+     `refreshAppSessionNow(rollToken = false)`).
    - ⚠ **표시는 '올리기가 끝났다' 에서만 내린다**(`markPushed`). 편집기가 서버 값과 같아 올리지 않을 때 내리지 말 것 —
      세션의 서버 값은 아직 끝나지 않은 앞 요청을 모른다. A→B 를 올리는 사이 A 로 되돌리면 '같다' 로 보이는데, 거기서
      내리면 B 가 끝난 뒤 받아 적기가 B 로 덮는다(Codex #837). 정말 같았으면 다음 응답에서 표시만 내린다.

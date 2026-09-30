@@ -784,7 +784,12 @@ final class AlarmKitViewModel: ObservableObject {
             guard let live = store.record(id: record.id), live.enabled else { continue }
             // 또 다른 recovery sweep 가 같은 record 를 await schedule() 중이면 건너뛴다.
             // (`.fixed` one-shot 이 중복 schedule 되어 다음 회차가 이중 발화하는 것을 방지)
-            guard !rearmInFlight.contains(record.id) else { continue }
+            guard !rearmInFlight.contains(record.id) else {
+                // 달력만 바뀐 다시 걸기에서 건너뛰면 **다 못 했다**(Codex #837) — 다른 흐름이 옛 달력으로 걸고 있을 수
+                // 있다. 표지를 적지 않아 다음에(전경 복귀) 다시 돈다.
+                if mode == .calendarOnly { completed = false }
+                continue
+            }
             rearmInFlight.insert(record.id)
             defer { rearmInFlight.remove(record.id) }
 

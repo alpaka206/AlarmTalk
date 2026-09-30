@@ -321,6 +321,24 @@ class AccountPromptSettingsAdoptionTest {
         assertEquals("1990-01-01", adoption.settings.fortune.birthDate)
     }
 
+    /**
+     * **공휴일 국가는 받아 적은 뒤의 이 기기 지역을 따른다 — 서버 값이 아니다**(Codex #837). 서버의 날씨 묶음이 비어
+     * 있으면 '아직 안 올라갔다' 로 보고 이 기기의 지역(도쿄)을 두는데, 서버 값으로 달력을 맞추면 지역이 없다고 보고
+     * 기기 기본값(KR)에 남는다 — 화면은 도쿄, 공휴일은 한국이 된다.
+     */
+    @Test
+    fun 서버_날씨가_비어_이_기기_지역을_두면_공휴일_국가도_그_지역을_따른다() = runTest {
+        val holidays = HolidayCountryPreferenceStore(context)
+        savedAndPushed("user-a", "jp-tokyo")
+        assertFalse(store.hasUnsyncedChange("user-a"))
+
+        val adoption = adoptAccountPromptSettings(store, holidays, "user-a", DynamicPromptSettings())
+
+        assertEquals(AccountSettingsAdoption.Accepted, adoption)
+        assertEquals("jp-tokyo", store.read("user-a").weatherRegion?.key)
+        assertEquals("JP", holidays.read())
+    }
+
     /** 밀린 변경은 다음 응답에서 다시 올린다 — 같은 옛 값이 또 와도 `LocalPending` 이다(멱등). */
     @Test
     fun 밀린_변경은_같은_옛_값이_다시_와도_다시_올릴_것으로_남는다() {

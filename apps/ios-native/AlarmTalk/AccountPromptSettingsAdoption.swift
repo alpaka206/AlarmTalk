@@ -15,6 +15,17 @@ enum AccountPromptSettingsAdoption: Equatable {
     /// 호출부는 공휴일 국가를 서버 지역으로 옮기지 않는다(화면·알람이 읽는 기기 값과 달력의 나라가 갈라진다,
     /// Codex #837). 다음 계정 응답에 다시 받아 적는다. 안드로이드는 SharedPreferences 라 이 갈래가 없다.
     case localWriteFailed
+
+    /// 날씨 묶음을 받아들였는가 — 그러면 공휴일 국가도 계정 지역을 따른다(`AlarmTalkApp`). 따를 지역은 **받아 적은
+    /// 뒤의 이 기기 값**이다(`DynamicPromptPreferences.load(userID:).weatherRegion`) — 서버 값이 아니다(Codex #837):
+    /// 서버의 날씨 묶음이 비어 있으면 이 기기의 지역을 그대로 두는데, 서버 값으로 맞추면 달력이 기기 기본값에 남는다.
+    var acceptsWeather: Bool {
+        switch self {
+        case .accepted: return true
+        case .localPending(_, let weatherAccepted): return weatherAccepted
+        case .localWriteFailed: return false
+        }
+    }
 }
 
 /// **계정 설정 받아 적기**(2026-09-30, 스펙 voice-and-message.md 「계정의 지역·사주는 기기에 받아 적는다」).

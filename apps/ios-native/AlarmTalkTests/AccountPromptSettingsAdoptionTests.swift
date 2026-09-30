@@ -237,6 +237,20 @@ final class AccountPromptSettingsAdoptionTests: XCTestCase {
         XCTAssertEqual(resend.weather.region, "jp-tokyo")
     }
 
+    /// **공휴일 국가는 받아 적은 뒤의 이 기기 지역을 따른다**(Codex #837). 서버의 날씨 묶음이 비어 있으면 이 기기의
+    /// 지역(도쿄)을 그대로 두므로, 따를 지역도 서버 값(없음)이 아니라 그 도쿄다(`acceptsWeather` + `load`).
+    func test_서버_날씨가_비어_이_기기_지역을_두면_따를_지역도_이_기기_값이다() throws {
+        try savedAndPushed("jp-tokyo")
+
+        let adoption = DynamicPromptPreferences.adoptAccount(userID: userID, server: DynamicPromptSettings(), defaults: defaults)
+
+        XCTAssertEqual(adoption, .accepted)
+        XCTAssertTrue(adoption.acceptsWeather)
+        XCTAssertEqual(DynamicPromptPreferences.load(userID: userID).weatherRegion?.key, "jp-tokyo")
+        XCTAssertFalse(AccountPromptSettingsAdoption.localWriteFailed.acceptsWeather)
+        XCTAssertFalse(AccountPromptSettingsAdoption.localPending(DynamicPromptSettings(), weatherAccepted: false).acceptsWeather)
+    }
+
     func test_올린_값이_받아들여지면_표시가_내려가고_다시_다른_기기를_따른다() throws {
         try savedAndPushed("jp-tokyo")
         XCTAssertFalse(hasUnsynced())

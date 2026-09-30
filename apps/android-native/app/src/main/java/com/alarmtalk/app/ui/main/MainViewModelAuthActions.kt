@@ -621,7 +621,8 @@ private suspend fun MainViewModel.uploadDynamicPromptSettings(userId: String, se
     }.onSuccess { response ->
         // ⚠ **표시를 내리기 전에 울타리를 세운다**(Codex #837). 지금 떠 있는 `/auth/me` 는 이 올리기 **전의** 설정을
         // 읽었을 수 있다 — 표시를 내린 뒤 그 응답이 오면 받아 적기가 옛 설정을 이 기기에 적는다. 그 응답들은
-        // 설정만 지금 세션의 값(아래에서 올린 값으로 갈아 끼운다)을 지킨다(`refreshAppSessionNow`).
+        // 설정만 지금 세션의 값(아래에서 올린 값으로 갈아 끼운다)을 지킨다(`refreshAppSessionNow`). 울타리 안의
+        // 응답이 올리기 **뒤의** 다른 기기 변경을 싣고 있었을 수도 있으므로, 끝에서 울타리 뒤의 조회를 한 번 더 한다.
         // ⚠ **올린 계정의 세션이 그대로일 때만** 세운다 — 그 사이 로그아웃·다른 계정 로그인이면 지금 떠 있는 요청은
         //   **다른 계정**의 것이라, 울타리가 그 계정의 권위 있는 설정을 캐시로 가린다(아래 세션 저장도 버려진다).
         if (authSession?.user?.id == session.user.id && authSessionStore.sessionGeneration() == startGeneration) {
@@ -633,8 +634,16 @@ private suspend fun MainViewModel.uploadDynamicPromptSettings(userId: String, se
         dynamicPromptStore.markPushed(session.user.id, settings)
         val updatedSettings = response.dynamicPromptSettings ?: settings
         val updated = session.copy(user = session.user.copy(dynamicPromptSettings = updatedSettings))
-        saveSessionPreservingCurrentToken(updated, startGeneration)?.let { authSession = it }
+        val saved = saveSessionPreservingCurrentToken(updated, startGeneration)?.also { authSession = it }
         refreshSocial()
+        // **울타리 뒤의 조회로 확인한다**(Codex #837) — 울타리는 올리기 전에 떠난 조회를 모두 가리므로, 그중 올리기
+        // **뒤**에 다른 기기가 고친 값을 읽은 응답도 버려진다. 새로 보낸 조회는 울타리 밖이라 서버의 지금 값을 받아
+        // 적는다(iOS `updateProfile` 뒤의 `refreshUser` 와 같다). 토큰은 굴리지 않는다 — 토큰을 키로 쓰는 효과가
+        // 다시 돌 이유가 없다.
+        if (saved != null) {
+            runCatching { refreshAppSessionNow(rollToken = false) }
+                .onFailure { error -> Log.w(TAG, "Account refresh after prompt settings upload failed", error) }
+        }
     }.onFailure { error ->
         // 로컬에는 '안 올라간 변경' 표시가 남는다 — 다음에 계정 설정을 받을 때
         // ([onAccountPromptSettingsReceived]) 서버의 옛 값으로 덮지 않고 다시 올린다.
