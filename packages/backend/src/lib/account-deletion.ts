@@ -242,17 +242,20 @@ export async function purgeUserAccount(
     // 클론 voice/R2 오디오의 외부 삭제 참조를 행 삭제 *전에* 큐에 적재한다.
     // 실제 삭제는 cron 의 drainExternalDeletions 가 수행 (GDPR/개인정보보호법 잔존 방지).
     await enqueueUserVoiceArtifacts(tx, userIds);
-    await cancelActiveSubscriptionsForUser(tx, userPk, new Date(), {
-      deleteVoiceData: false,
-      promoCoversFree,
-    });
 
     // **파기할 내 클론 목록.** 탈퇴가 남에게 미치는 영향은 전부 이 목록에서 나온다.
     // 클론이 하나도 없으면 파기할 생체정보가 없으니 아무도 안 깨운다.
     //
-    // 뽑는 시점이 중요하다 — 아래에서 plan_group_members·plan_groups 를 지우고 나면
-    // '누가 내 목소리를 쓸 수 있었는지' 를 알 방법이 없어진다. 그래서 그룹 해체 **전에**
-    // `revokeDeletedVoices` 를 부른다(그 함수가 동석 멤버를 조회한다).
+    // 뽑는 시점이 중요하다 — 그룹이 해체되고 나면 '누가 내 목소리를 쓸 수 있었는지' 를 알
+    // 방법이 없어진다. 그래서 그룹 해체 **전에** `revokeDeletedVoices` 를 부른다(그 함수가
+    // 동석 멤버를 조회한다).
+    //
+    // ⚠ **구독 취소(`cancelActiveSubscriptionsForUser`)보다도 앞이어야 한다**(2026-09-30).
+    //   그룹 주인의 구독을 취소하면 그 자리에서 **그룹이 해체되고**(멤버 행 삭제) 내가 보낸
+    //   목소리 알람이 무료 강등으로 `message_id` 를 잃는다. 예전에는 취소가 먼저 돌아서,
+    //   아래 철회가 **동석 멤버도, 수신 확인 전 알람도 못 찾았다** — tombstone 도 푸시도
+    //   없이 받는 사람 기기에 탈퇴자의 녹음이 남았다. 유료 사용자(= 클론이 있는 사람)의
+    //   탈퇴가 전부 이 경우였다(`test/account-purge-residue.test.ts`).
     const cloneProfiles = await tx.execute({
       // is_system 이 시스템/클론을 가르는 유일한 컬럼이다(paid-voice-cleanup.ts 와 같은 기준).
       sql: `SELECT id FROM voice_profiles
@@ -272,7 +275,8 @@ export async function purgeUserAccount(
     // 그래서 판정을 **목소리 하나로** 모았다. 목소리 삭제·플랜 강등과 **같은 함수**가 돈다
     // (`lib/voice-revocation.ts`) — 같은 사건이므로 결과도 같아야 한다.
     //
-    // ⚠ **자리를 옮기지 말 것.** 아래 세 가지보다 모두 앞이어야 한다:
+    // ⚠ **자리를 옮기지 말 것.** 아래 네 가지보다 모두 앞이어야 한다:
+    //   구독 취소(그룹을 해체하고 내 보낸 알람을 강등한다 — 위 ⚠),
     //   plan_group_members 삭제(누가 내 목소리를 볼 수 있었는지 알 수 없게 된다),
     //   `DELETE FROM alarms`(아직 수신 확인 전인 내 보낸 알람의 tombstone 을 여기서 남긴다),
     //   messages·voice_profiles 삭제(조회 대상이 사라진다).
@@ -285,6 +289,12 @@ export async function purgeUserAccount(
     });
     revokedTargets.push(...revocation.downgradedAlarms);
     voiceAccessRevokedUserIds.push(...revocation.voiceAccessRevokedUserIds);
+
+    // 철회를 기록한 **뒤에** 구독을 끊는다(위 ⚠ — 순서를 뒤집지 말 것).
+    await cancelActiveSubscriptionsForUser(tx, userPk, new Date(), {
+      deleteVoiceData: false,
+      promoCoversFree,
+    });
 
     // 코드의 ON DELETE SET NULL만으로는 거래 ID가 무기한 남는다. 소유 근거를 지우기
     // 전에 연결도 파기한다. 이미 코드가 없으면 Apple 원장으로 찾고, 거래 증빙은 호출부가
