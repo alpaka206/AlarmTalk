@@ -17,6 +17,7 @@
  *   npm run preview:stock -- --dry-run     # 무엇이 빠졌는지만 본다
  *   npm run preview:stock                  # 빠진 것 전부 굽는다
  *   npm run preview:stock -- --lang ja --voice 미나
+ *   npm run preview:stock -- --category greeting   # 인사말만(앱·랜딩 번들 인사말을 새로 만들 때)
  *   옵션: --force  이미 있어도 다시 굽는다 / --dry-run  무엇을 구울지만 출력
  *
  * ⚠ **`node --experimental-strip-types` 로는 못 돌린다.** 이 스크립트가 가져다 쓰는
@@ -148,6 +149,7 @@ interface Target {
 function collectTargets(): Target[] {
   const onlyLang = argValue('--lang');
   const onlyVoice = argValue('--voice');
+  const onlyCategory = argValue('--category');
   const targets: Target[] = [];
   for (const language of LANGUAGES) {
     if (onlyLang && onlyLang !== language) continue;
@@ -155,6 +157,7 @@ function collectTargets(): Target[] {
       if (onlyVoice && onlyVoice !== voice.name) continue;
       const dir = outputDir(language, voice.name);
       for (const preset of STOCK_CLIP_PRESETS) {
+        if (onlyCategory && onlyCategory !== preset.category) continue;
         const texts = preset.texts[language] as readonly string[] | undefined;
         if (!texts) continue;
         texts.forEach((text, variant) => {
@@ -282,7 +285,8 @@ async function main(): Promise<void> {
   }
 
   // 문구 대조표는 그 세트가 온전할 때만 새로 쓴다(부분 실패 상태를 완성본처럼 남기지 않는다).
-  for (const key of bySet.keys()) {
+  // 카테고리를 골라 구웠으면 쓰지 않는다 — 그 카테고리만 적힌 대조표가 전체 대조표를 덮는다.
+  for (const key of argValue('--category') ? [] : bySet.keys()) {
     const [language, voiceName] = key.split('/') as [Language, string];
     const setTargets = targets.filter((t) => t.language === language && t.voiceName === voiceName);
     if (setTargets.every((t) => existsSync(t.filePath))) {
