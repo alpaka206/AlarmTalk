@@ -377,10 +377,6 @@ export async function purgeUserAccount(
       sql: `DELETE FROM push_tokens WHERE user_id = ?`,
       args: [userPk],
     });
-    writes.push({
-      sql: `DELETE FROM voice_uploads WHERE user_id = ?`,
-      args: [userPk],
-    });
 
     writes.push({
       sql: `DELETE FROM generated_audio_assets
@@ -440,6 +436,35 @@ export async function purgeUserAccount(
     });
     writes.push({
       sql: `DELETE FROM messages WHERE user_id IN (?, ?)`,
+      args: userIds,
+    });
+    // **받은 사람 소유의 녹음 문구**(`family-voice`). `POST /family/alarms/voice` 는 문구 행을
+    // 받는 사람 소유로 만들되 `audio_url` 에 **내 업로드 원본 키**(`voices/<내 id>/…`)를 담는다.
+    // 위 `messages` 삭제는 `user_id`·`voice_profile_id` 로만 고르므로 이 행을 못 집고, 그대로 두면
+    // 파기 뒤에도 내 계정 id 가 키 안에 남는다(원본 파일은 삭제 큐가 지운다).
+    //  1) 위에서 전달 알람을 지웠으니, **더 가리키는 알람이 없는 행은 전달 전용 고아다** —
+    //     수신 확인(`deleteOrphanedDeliveryMessage`)과 같은 판정으로 지운다. 받은 사람 기기의
+    //     걷어내기는 앞의 철회(tombstone)가 맡는다.
+    //  2) 그래도 남는 행(보관함이 가리키는 등)은 받은 사람 것이라 두고, 키만 비운다 —
+    //     플랜 강등의 `detachFamilyAlarmMessagesUsingOwnedUploads` 와 같은 처리다.
+    // ⚠ 셋 다 `DELETE FROM alarms`·`message_library` 삭제 **뒤**여야 하고(참조가 사라진 뒤에
+    //   판정한다), 업로드 표를 하위질의로 읽으므로 `DELETE FROM voice_uploads` 는 맨 뒤다.
+    writes.push({
+      sql: `DELETE FROM messages
+            WHERE category = 'family-voice'
+              AND COALESCE(is_preset, 0) = 0
+              AND audio_url IN (SELECT object_key FROM voice_uploads WHERE user_id IN (?, ?))
+              AND NOT EXISTS (SELECT 1 FROM alarms a WHERE a.message_id = messages.id)
+              AND NOT EXISTS (SELECT 1 FROM message_library ml WHERE ml.message_id = messages.id)`,
+      args: userIds,
+    });
+    writes.push({
+      sql: `UPDATE messages SET audio_url = NULL
+            WHERE audio_url IN (SELECT object_key FROM voice_uploads WHERE user_id IN (?, ?))`,
+      args: userIds,
+    });
+    writes.push({
+      sql: `DELETE FROM voice_uploads WHERE user_id IN (?, ?)`,
       args: userIds,
     });
     writes.push({
