@@ -17,6 +17,10 @@ import java.io.File
  *  - 클립은 준비된 것을 돌려 쓴다(§5) — '매일 새 문구' 가 아니다.
  * 개인 이용권이 더하는 것은 그 문구를 **등록한 목소리로** 듣는 것이다.
  *
+ * ⚠ '내 목소리'·'own voice'·'自分の声' 로 쓰지 말 것(코덱스 #835). 등록은 본인 목소리만이 아니라
+ * **적법한 권한과 동의를 받은 사람의 목소리**도 받는다(이용약관 제7조 — `voices_register_biometric_desc`).
+ * '내 목소리' 라고 하면 엄마·연인 목소리를 등록하려는 사람에게 안 되는 것처럼 읽힌다.
+ *
  * iOS 는 `PlanCard.features(for:)` 와 `Localizable.xcstrings` 가 같은 글자를 쓴다
  * (`AlarmTalkTests/PlanCardCopyTests`) — 한쪽만 바꾸면 같은 상품을 두 스토어에서 다르게 설명한다.
  *
@@ -47,12 +51,26 @@ class PlanCardCopyTest {
     @Test
     fun `개인 카드는 문구 종류가 아니라 등록한 목소리로 듣는 것을 말한다`() {
         val expected = mapOf(
-            "values" to "내 목소리로 듣는 날씨·운세 문구",
-            "values-en" to "Weather and fortune messages in your own voice",
-            "values-ja" to "自分の声で聞く天気・運勢メッセージ",
+            "values" to "등록한 목소리로 듣는 날씨·운세 문구",
+            "values-en" to "Weather and fortune messages in your registered voice",
+            "values-ja" to "登録した声で聞く天気・運勢メッセージ",
         )
         for ((dir, text) in expected) {
             assertEquals("$dir 개인 카드 문구", text, value(dir, "billing_plan_personal_feature_messages_in_voice"))
+        }
+    }
+
+    @Test
+    fun `개인 카드는 본인 목소리만 되는 것처럼 말하지 않는다`() {
+        val ownVoiceClaims = listOf("내 목소리", "own voice", "自分の声")
+        for (dir in dirs) {
+            val personal = featureLines(dir).filterKeys { it.startsWith("billing_plan_personal_") }
+            assertTrue("$dir 에서 개인 카드 문구를 못 읽었다", personal.isNotEmpty())
+            for ((name, text) in personal) {
+                for (claim in ownVoiceClaims) {
+                    assertFalse("$dir/$name 가 '$claim' 이라고 한다: $text", text.contains(claim, ignoreCase = true))
+                }
+            }
         }
     }
 

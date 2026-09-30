@@ -100,7 +100,7 @@
     <!-- ⚠ 날씨·운세·응원·약 문구는 기본 목소리로 **무료**다(docs/spec/voice-and-message.md §2 — 목록은 등급으로 자르지 않는다).
          개인 이용권이 더하는 것은 문구 종류가 아니라 **등록한 목소리로 듣는 것**이다 — 종류를 유료 기능처럼 적지 말 것.
          클립은 준비된 것을 돌려 쓰므로 "매일 새 문구" 도 사실이 아니다. iOS PlanCard.features(for:) 와 글자까지 같다. -->
-    <string name="billing_plan_personal_feature_messages_in_voice">내 목소리로 듣는 날씨·운세 문구</string>
+    <string name="billing_plan_personal_feature_messages_in_voice">등록한 목소리로 듣는 날씨·운세 문구</string>
     <string name="billing_plan_personal_feature_voice">원하는 목소리 1개 등록</string>
     <string name="billing_plan_personal_name">개인</string>
     <string name="billing_play_manage_description">앱에서 해지를 완료하지 못했어요. Google Play 구독 관리에서 직접 해지할 수 있어요. 구독 상태는 바뀌지 않았어요.</string>

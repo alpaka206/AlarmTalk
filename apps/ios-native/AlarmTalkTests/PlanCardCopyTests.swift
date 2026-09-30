@@ -15,17 +15,34 @@ struct PlanCardCopyTests {
 
     @Test("개인 카드는 문구 종류가 아니라 등록한 목소리로 듣는 것을 말한다")
     func personalCardSellsTheVoice() {
-        #expect(PlanCard.features(for: .personal) == ["원하는 목소리 1개 등록", "내 목소리로 듣는 날씨·운세 문구"])
+        #expect(PlanCard.features(for: .personal) == ["원하는 목소리 1개 등록", "등록한 목소리로 듣는 날씨·운세 문구"])
     }
 
     @Test("영어·일본어 문구가 안드로이드 values-en·values-ja 와 같다", arguments: [
-        ("en", "Weather and fortune messages in your own voice"),
-        ("ja", "自分の声で聞く天気・運勢メッセージ"),
+        ("en", "Weather and fortune messages in your registered voice"),
+        ("ja", "登録した声で聞く天気・運勢メッセージ"),
     ])
     func personalLineIsTranslated(language: String, expected: String) throws {
         let path = try #require(Bundle.main.path(forResource: language, ofType: "lproj"))
         let bundle = try #require(Bundle(path: path))
-        #expect(bundle.localizedString(forKey: "내 목소리로 듣는 날씨·운세 문구", value: nil, table: nil) == expected)
+        #expect(bundle.localizedString(forKey: "등록한 목소리로 듣는 날씨·운세 문구", value: nil, table: nil) == expected)
+    }
+
+    /// 등록은 본인 목소리만이 아니라 **적법한 권한과 동의를 받은 사람의 목소리**도 받는다(이용약관
+    /// 제7조). '내 목소리'·'own voice'·'自分の声' 라고 쓰면 엄마·연인 목소리를 등록하려는 사람에게
+    /// 안 되는 것처럼 읽힌다(코덱스 #835).
+    @Test("개인 카드는 본인 목소리만 되는 것처럼 말하지 않는다", arguments: ["en", "ja"])
+    func personalCardDoesNotSayOwnVoiceOnly(language: String) throws {
+        let path = try #require(Bundle.main.path(forResource: language, ofType: "lproj"))
+        let bundle = try #require(Bundle(path: path))
+        for key in PlanCard.features(for: .personal) {
+            let translated = bundle.localizedString(forKey: key, value: nil, table: nil)
+            for text in [key, translated] {
+                for claim in ["내 목소리", "own voice", "自分の声"] {
+                    #expect(!text.localizedCaseInsensitiveContains(claim), "개인 카드가 '\(claim)' 이라고 한다: \(text)")
+                }
+            }
+        }
     }
 
     /// 커플 카드의 이 줄은 2026-09-30 까지 번역만 안드로이드와 달랐다("Set a partner's alarm" /

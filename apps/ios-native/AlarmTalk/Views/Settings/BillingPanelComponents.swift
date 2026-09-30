@@ -289,7 +289,7 @@ struct PlanCard: View {
         case .free:
             return ["일반 알람 무제한", "기본 목소리 알람"]
         case .personal:
-            return ["원하는 목소리 1개 등록", "내 목소리로 듣는 날씨·운세 문구"]
+            return ["원하는 목소리 1개 등록", "등록한 목소리로 듣는 날씨·운세 문구"]
         case .couple:
             return ["개인 이용권 기능 전부 포함", "서로의 목소리 공유", "상대 알람 맞춰주기", "2명이 함께 사용"]
         case .family:
