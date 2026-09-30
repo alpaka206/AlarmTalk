@@ -7,18 +7,30 @@ import com.alarmtalk.app.network.DynamicPromptWeatherSettings
 import com.alarmtalk.app.network.trimmedOrNull
 
 data class DynamicPromptPreferences(
+    /**
+     * 날씨 지역은 **옛 앱이 읽는 글자**로 둔다(나라 `대한민국`/`일본`/`미국` + 한국어 지역 이름,
+     * `WeatherRegions.canonicalLabels`). 지역 키는 따로 적지 않고 [weatherRegion] 이 글자에서
+     * 되짚는다 — 알람 행(`AlarmEntity.voiceWeatherCountry`/`City`)과 같은 모양이라, 둘 사이를
+     * 오가는 복사(`withRecipientConditions`·편집기 프리필)가 그대로 돈다.
+     * 되짚지 못하는 값은 직접 입력 시절의 옛 글자다 — 바꾸기 전까지 서버의 옛 경로로 돈다.
+     */
     val weatherCountry: String = "",
     val weatherCity: String = "",
     val fortuneGender: String = "",
     val fortuneBirthDate: String = "",
     val fortuneBirthTime: String = "",
-)
+) {
+    /** 저장된 글자가 가리키는 목록의 지역. 비었거나 되짚지 못하면 null. */
+    val weatherRegion: WeatherRegion? get() = weatherRegionFor(weatherCountry, weatherCity)
+}
 
 fun DynamicPromptPreferences.toDynamicPromptSettings(): DynamicPromptSettings =
     DynamicPromptSettings(
         weather = DynamicPromptWeatherSettings(
             country = weatherCountry.trimmedOrNull(),
             city = weatherCity.trimmedOrNull(),
+            // 새 서버는 이 키로 저장하고 글자를 다시 적는다. 옛 서버는 모르는 칸을 무시한다.
+            region = weatherRegion?.key,
         ),
         fortune = DynamicPromptFortuneSettings(
             gender = fortuneGender.trimmedOrNull(),
@@ -34,14 +46,18 @@ fun DynamicPromptPreferences.toDynamicPromptSettings(): DynamicPromptSettings =
  * (예: 선다운로드 워커) 서버 값을 쓰려면 UI 패키지를 가져와야 했다 — 그래서 실제로
  * **로컬만 보고 서버를 버리는 코드**가 생겼다(2026-09-03 리뷰 16차).
  */
-fun DynamicPromptSettings.toPromptPreferences(): DynamicPromptPreferences =
-    DynamicPromptPreferences(
-        weatherCountry = weather.country?.trim().orEmpty(),
-        weatherCity = weather.city?.trim().orEmpty(),
+fun DynamicPromptSettings.toPromptPreferences(): DynamicPromptPreferences {
+    // 알맞은 지역 키가 있으면 **그 지역의 옛 앱용 글자**가 이긴다 — 서버도 저장할 때 그렇게
+    // 덮는다(`normalizeSetting`). 키가 없거나 모르는 키면 글자를 그대로 둔다.
+    val labels = WeatherRegions.canonicalLabels(weather.region)
+    return DynamicPromptPreferences(
+        weatherCountry = labels?.country ?: weather.country?.trim().orEmpty(),
+        weatherCity = labels?.city ?: weather.city?.trim().orEmpty(),
         fortuneGender = fortune.gender?.trim().orEmpty(),
         fortuneBirthDate = fortune.birthDate?.trim().orEmpty(),
         fortuneBirthTime = fortune.birthTime?.trim().orEmpty(),
     )
+}
 
 class DynamicPromptPreferenceStore(context: Context) {
     private val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)

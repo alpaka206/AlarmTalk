@@ -521,20 +521,15 @@ internal fun GenderChoice(
 }
 
 /**
- * 문구 화면에 보이는 날씨 지역 — **도시만** 쓴다(설정 화면의 `weatherLocationSettingsLabel`
- * 과 같은 규칙, 2026-08-17 통일).
+ * 편집기 문구 요약에 보이는 날씨 지역 — **지역 이름만** 쓴다(설정 화면의
+ * `weatherLocationSettingsLabel` 과 같은 규칙, 판정은 [weatherRegionDisplay] 한 곳).
  *
- * ⚠ **`country` 를 붙이지 말 것.** 저장은 나라+도시 둘 다 하지만(서버가 동명 도시를
- * 가르는 단서 — `routes/tts.ts` 의 `resolveWeatherLocation`), 화면에는 도시만 나온다.
- * 나라를 채우기 시작한 순간 이 자리가 "대한민국 서울" 로 바뀌어 지적을 받았다 —
- * 저장하는 값과 보여주는 값은 별개다.
- *
- * `country` 를 계속 받는 이유: 호출부가 둘 다 들고 있어 인자를 지우면 전부 고쳐야 하고,
- * 나중에 "해외 도시일 때만 나라를 덧붙인다" 같은 규칙을 넣을 자리가 여기이기 때문이다.
+ * ⚠ **나라를 붙이지 말 것**(2026-08-17 통일). 저장은 나라+지역 글자 둘 다 하지만, 화면에는
+ * 지역 이름만 나온다 — "대한민국 서울" 로 바뀌어 지적을 받았다. 목록의 지역이면 앱 언어의
+ * 이름이고, 되짚지 못한 옛 값이면 적힌 글자 그대로다.
  */
-@Suppress("UNUSED_PARAMETER")
 internal fun weatherLocationSummary(context: android.content.Context, country: String, city: String): String =
-    weatherCityDisplayName(context, city)
+    weatherRegionDisplay(context, country, city).label
 
 internal fun fortuneInfoSummary(gender: String, birthDate: String, birthTime: String): String =
     listOf(gender, birthDate, birthTime)

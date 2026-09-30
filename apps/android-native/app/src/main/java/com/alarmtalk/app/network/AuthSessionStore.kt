@@ -690,6 +690,7 @@ class AuthSessionStore internal constructor(
                 weather = DynamicPromptWeatherSettings(
                     country = weather?.optString("country").trimmedOrNull(),
                     city = weather?.optString("city").trimmedOrNull(),
+                    region = weather?.optString("region").trimmedOrNull(),
                 ),
                 fortune = DynamicPromptFortuneSettings(
                     gender = fortune?.optString("gender").trimmedOrNull(),
@@ -706,7 +707,8 @@ class AuthSessionStore internal constructor(
                 "weather",
                 JSONObject()
                     .put("country", settings.weather.country.trimmedOrNull())
-                    .put("city", settings.weather.city.trimmedOrNull()),
+                    .put("city", settings.weather.city.trimmedOrNull())
+                    .put("region", settings.weather.region.trimmedOrNull()),
             )
             .put(
                 "fortune",
@@ -951,6 +953,7 @@ internal fun normalizeDynamicPromptSettings(settings: DynamicPromptSettings?): D
         weather = DynamicPromptWeatherSettings(
             country = runCatching { weather?.country }.getOrNull().trimmedOrNull(),
             city = runCatching { weather?.city }.getOrNull().trimmedOrNull(),
+            region = runCatching { weather?.region }.getOrNull().trimmedOrNull(),
         ),
         fortune = DynamicPromptFortuneSettings(
             gender = runCatching { fortune?.gender }.getOrNull().trimmedOrNull(),

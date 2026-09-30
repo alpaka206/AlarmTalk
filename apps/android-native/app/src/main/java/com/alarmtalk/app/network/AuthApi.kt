@@ -22,8 +22,16 @@ data class DynamicPromptSettings(
 )
 
 data class DynamicPromptWeatherSettings(
+    /** 옛 앱이 읽는 나라 글자(`대한민국`·`일본`·`미국`). 서버가 [region] 에서 다시 적는다. */
     val country: String? = null,
+    /** 옛 앱이 읽는 지역 글자(한국어 이름). 서버가 [region] 에서 다시 적는다. */
     val city: String? = null,
+    /**
+     * 목록의 지역 키(`kr-seoul`) — docs/spec/voice-and-message.md 「날씨 지역은 목록에서만 고른다」.
+     * 옛 서버·옛 행이면 null 이고, 그때는 위 글자를 되짚는다(`resolvedRegion`). 옛 서버는 모르는
+     * 칸을 무시하므로 보내도 저장이 깨지지 않는다.
+     */
+    val region: String? = null,
 )
 
 data class DynamicPromptFortuneSettings(

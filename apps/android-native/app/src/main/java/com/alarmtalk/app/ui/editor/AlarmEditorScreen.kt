@@ -1533,7 +1533,14 @@ internal fun AlarmEditorScreen(
             randomContextUsesWeather(result.randomContext) &&
             result.weatherCity.isNotBlank()
         ) {
-            dynamicPromptPreferenceStore.saveWeatherLocation(promptOwnerUserId, result.weatherCountry, result.weatherCity)
+            // 목록으로 되짚히는 값이면 **옛 앱이 읽는 표준 글자**로 적는다(설정 '지역' 행과 같다 — 알람에서
+            // 이어받은 옛 별칭 "South Korea"/"Seoul" 도 `대한민국`/`서울` 이 된다). 되짚지 못한 옛 글자는 그대로다.
+            val pickedRegion = com.alarmtalk.app.data.weatherRegionFor(result.weatherCountry, result.weatherCity)
+            dynamicPromptPreferenceStore.saveWeatherLocation(
+                promptOwnerUserId,
+                pickedRegion?.legacyCountry ?: result.weatherCountry,
+                pickedRegion?.legacyCity ?: result.weatherCity,
+            )
             dynamicPromptPreferences = dynamicPromptPreferenceStore.read(promptOwnerUserId)
             shouldSyncOwnDynamicPromptSettings = true
         }

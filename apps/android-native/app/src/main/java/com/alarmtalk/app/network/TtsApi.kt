@@ -156,12 +156,18 @@ interface TtsApi {
     suspend fun getStockClips(@Header("Authorization") authorization: String): StockClipListResponse
 
     // 사전렌더 버킷(날씨)의 '어느 variant 를 틀지' 인덱스만 서버가 resolve. 오디오는 이미 로컬 캐시.
+    //
+    // [region] 은 목록의 지역 키(`kr-seoul`)다 — 서버는 이 키면 미리 계산해 둔 행을 준다
+    // (docs/spec/voice-and-message.md 「서버가 미리 계산해 둔다」). 못 되짚은 옛 글자면 null 이라
+    // 빠지고, 서버는 [country]·[city] 로 엄격한 옛 경로를 탄다. 글자는 **계속 함께 보낸다** —
+    // 새 서버가 배포되기 전 창과 옛 서버 호환(옛 서버는 모르는 쿼리를 무시한다).
     @GET("tts/prerender-variant")
     suspend fun getPrerenderVariant(
         @Header("Authorization") authorization: String,
         @Query("context") context: String,
         @Query("country") country: String?,
         @Query("city") city: String?,
+        @Query("region") region: String?,
         @Query("target_date") targetDate: String?,
         @Query("timezone") timezone: String?,
     ): PrerenderVariantResponse

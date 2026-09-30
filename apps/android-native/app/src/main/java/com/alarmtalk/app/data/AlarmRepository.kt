@@ -1824,6 +1824,8 @@ class AlarmRepository(
                     context = "wake_weather",
                     country = draft.voiceWeatherCountry?.trim()?.takeIf { it.isNotBlank() },
                     city = draft.voiceWeatherCity?.trim()?.takeIf { it.isNotBlank() },
+                    // 행은 옛 앱용 글자를 들고 있고 키는 그 글자에서 되짚는다(`weatherRegionFor`).
+                    region = weatherRegionFor(draft.voiceWeatherCountry, draft.voiceWeatherCity)?.key,
                     targetDate = targetDate,
                     timezone = zone.id,
                 ).variantIndex
@@ -1874,6 +1876,7 @@ class AlarmRepository(
                     context = "wake_weather",
                     country = country.takeIf { it.isNotBlank() },
                     city = city.takeIf { it.isNotBlank() },
+                    region = weatherRegionFor(country, city)?.key,
                     targetDate = targetDate,
                     timezone = timezone,
                 ).variantIndex

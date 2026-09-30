@@ -154,9 +154,9 @@
     <string name="editor_block_voice_title">声を選んでください</string>
     <string name="editor_block_voice_message">アラームを読み上げる声を先に選んでください。</string>
     <string name="editor_block_voice_unavailable_message">その声は今は使えません。別の声を選んでください。</string>
-    <string name="editor_block_weather_title">天気の地域がありません</string>
+    <string name="editor_block_weather_title">地域がありません</string>
     <string name="editor_block_weather_message">天気の文章には地域が必要です。文章の画面で地域を選んでください。</string>
-    <string name="editor_block_weather_family_message">相手はまだ天気の地域を設定していません。別の文章を選んでください。</string>
+    <string name="editor_block_weather_family_message">相手はまだ地域を設定していません。別の文章を選んでください。</string>
     <string name="editor_block_fortune_title">占いの情報がありません</string>
     <string name="editor_block_fortune_message">占いの文章には性別・生年月日・生まれた時間が必要です。文章の画面で入力してください。</string>
     <string name="editor_block_fortune_family_message">相手はまだ占いの情報を設定していません。別の文章を選んでください。</string>
@@ -184,7 +184,7 @@
     <string name="editor_error_voice_generation_failed">音声の生成に失敗しました。</string>
     <string name="editor_error_manual_tts_quota">今月の直接入力の文の作成回数を使い切りました。来月にまた補充されます。</string>
     <string name="editor_error_voice_message_login_required">音声アラームはログイン後にご利用いただけます。</string>
-    <string name="editor_error_weather_location_required">天気を含む文には、都市を入力してください。</string>
+    <string name="editor_error_weather_location_required">天気を含む文には、地域を選んでください。</string>
     <string name="editor_existing_voice_cache_used">既存の音声キャッシュを使用しました。</string>
     <string name="editor_holiday_off_subtitle">振替休日・臨時祝日を含む</string>
     <string name="editor_holiday_off_title">祝日はオフにする</string>
@@ -250,9 +250,8 @@
     <string name="editorp_random_save_button">保存</string>
     <string name="editorp_random_title">文</string>
     <string name="editorp_random_weather_region_required">まだ選んでいません</string>
-    <string name="editorp_random_weather_region_saved">相手が保存した天気の地域を使います。</string>
-    <string name="editorp_random_weather_region_title">天気の地域</string>
-    <string name="editorp_weather_save_button">保存</string>
+    <string name="editorp_random_weather_region_saved">相手が保存した地域を使います。</string>
+    <string name="editorp_random_weather_region_title">地域</string>
     <string name="alarms_target_sheet_title">誰を起こしますか？</string>
     <string name="alarms_target_self_title">自分のアラームを設定</string>
     <string name="hs_delete_account_title">本当に退会しますか？</string>
@@ -287,7 +286,10 @@
     <string name="hs_settings_terms_of_service">利用規約</string>
     <string name="hs_settings_theme">画面テーマ</string>
     <string name="hs_settings_title">設定</string>
-    <string name="hs_settings_weather_region">天気の地域</string>
+    <string name="hs_settings_weather_region">地域</string>
+    <string name="region_picker_legacy_hint">リストから選び直してください</string>
+    <string name="region_picker_legacy_value_hint">「%1$s」はリストにありません。選び直してください。</string>
+    <string name="region_picker_seat_description">%1$sの天気</string>
     <string name="settings_holiday_country_title">祝日カレンダー</string>
     <string name="settings_logout_confirm_title">ログアウトしますか？</string>
     <string name="settings_marketing_load_failed">読み込めませんでした · タップで再試行</string>
@@ -299,20 +301,6 @@
     <string name="hs_perm_banner_exact_alarm">正確なアラームの権限を許可しないと、時間どおりに鳴らないことがあります</string>
     <string name="hs_perm_banner_full_screen">ロック画面の権限を許可しないと、ロック画面に表示されません</string>
     <string name="hs_alarm_row_date_voice">%1$s · %2$sの声</string>
-    <string name="hs_weather_city_label">都市</string>
-    <string name="hs_weather_city_placeholder">例：東京</string>
-    <string name="hs_weather_city_custom">直接入力</string>
-    <string-array name="hs_weather_preset_cities">
-        <item>ソウル</item>
-        <item>釜山</item>
-        <item>仁川</item>
-        <item>大邱</item>
-        <item>大田</item>
-        <item>光州</item>
-        <item>蔚山</item>
-        <item>水原</item>
-        <item>済州</item>
-    </string-array>
     <string name="msg_account_delete_failed">退会に失敗しました。</string>
     <string name="msg_account_deleted">退会が完了しました。</string>
     <string name="msg_account_deleted_google_unlink_failed">退会は完了しましたが、Googleの連携解除に失敗しました。</string>

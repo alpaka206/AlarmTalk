@@ -96,6 +96,17 @@ internal fun SettingsScreen(
                         promptPreferences.weatherCity,
                     ),
                     onClick = { showWeatherLocationDialog = true },
+                    supportingText = if (
+                        weatherRegionDisplay(
+                            context,
+                            promptPreferences.weatherCountry,
+                            promptPreferences.weatherCity,
+                        ).needsRepick
+                    ) {
+                        stringResource(R.string.region_picker_legacy_hint)
+                    } else {
+                        null
+                    },
                 )
                 HorizontalDivider()
                 SettingsRow(
@@ -183,13 +194,14 @@ internal fun SettingsScreen(
     }
 
     if (showWeatherLocationDialog) {
-        // 편집기 문구 pane 과 같은 다이얼로그를 공유한다(제목·필드·저장 버튼 동일).
+        // 편집기 문구 pane 과 같은 지역 고르기를 공유한다(나라 → 지역, 직접 입력 없음).
         WeatherLocationDialog(
             country = promptPreferences.weatherCountry,
             city = promptPreferences.weatherCity,
             onDismissWithoutSave = { showWeatherLocationDialog = false },
-            onConfirm = { country, city ->
-                promptPreferenceStore.saveWeatherLocation(promptOwnerUserId, country, city)
+            onConfirm = { region ->
+                // 계정에는 옛 앱이 읽는 글자를 적고, 서버로는 키도 함께 간다(`toDynamicPromptSettings`).
+                promptPreferenceStore.saveWeatherLocation(promptOwnerUserId, region.legacyCountry, region.legacyCity)
                 promptPreferences = promptPreferenceStore.read(promptOwnerUserId)
                 onUpdateDynamicPromptSettings(promptPreferences.toDynamicPromptSettings())
                 showWeatherLocationDialog = false

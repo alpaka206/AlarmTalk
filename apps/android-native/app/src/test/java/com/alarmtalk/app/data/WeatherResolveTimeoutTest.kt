@@ -80,6 +80,7 @@ class WeatherResolveTimeoutTest {
             context: String,
             country: String?,
             city: String?,
+            region: String?,
             targetDate: String?,
             timezone: String?,
         ): PrerenderVariantResponse {
@@ -97,6 +98,7 @@ class WeatherResolveTimeoutTest {
             context: String,
             country: String?,
             city: String?,
+            region: String?,
             targetDate: String?,
             timezone: String?,
         ): PrerenderVariantResponse = PrerenderVariantResponse(context = context, variantIndex = index)
