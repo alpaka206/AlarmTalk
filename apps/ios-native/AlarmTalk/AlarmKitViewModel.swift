@@ -204,6 +204,21 @@ final class AlarmKitViewModel: ObservableObject {
         return label.isEmpty ? time : "\(time) · \(label)"
     }
 
+    /// 울림 알럿의 다시 울림 버튼 — "5분 더 자기".
+    ///
+    /// ⚠ **`LocalizedStringResource(stringLiteral:)` 에 보간한 문자열을 넘기지 말 것.** 보간
+    /// 결과("5분 더 자기")가 통째로 키가 되어 카탈로그에서 번역을 못 찾고, 영어·일본어 기기의
+    /// 잠금 화면에도 한국어가 뜬다(코덱스 #836). 보간 초기화는 서식 키(`%lld분 더 자기`)를 만들고,
+    /// 번역은 `Localizable.xcstrings` 의 그 키에 있다.
+    nonisolated static func snoozeButtonText(minutes: Int) -> LocalizedStringResource {
+        LocalizedStringResource("\(minutes)분 더 자기")
+    }
+
+    /// 다시 울림 카운트다운 제목 — 같은 이유로 서식 키(`%@ 다시 울릴 준비 중`)로 만든다.
+    nonisolated static func countdownTitle(label: String) -> LocalizedStringResource {
+        LocalizedStringResource("\(label) 다시 울릴 준비 중")
+    }
+
     func requestAuthorization() async {
         // 화면 확인 모드에서는 권한 팝업이 화면을 가린다(스크립트로 탭할 방법이 없다).
         if UIPreviewSeed.isEnabled { return }
@@ -1314,7 +1329,7 @@ final class AlarmKitViewModel: ObservableObject {
         //   SDK 는 `secondaryButton: AlarmButton? = nil` 로 선택이다 — 없는 제약을 근거로
         //   삼지 말 것(CLAUDE.md 「주석의 근거를 믿지 말고 확인할 것」).
         let snoozeButton = AlarmButton(
-            text: LocalizedStringResource(stringLiteral: "\(record.snoozeMinutes)분 더 자기"),
+            text: Self.snoozeButtonText(minutes: record.snoozeMinutes),
             textColor: .white,
             systemImageName: "moon.zzz.fill"
         )
@@ -1335,7 +1350,7 @@ final class AlarmKitViewModel: ObservableObject {
             secondaryButtonBehavior: .custom
         )
         let countdown = AlarmPresentation.Countdown(
-            title: LocalizedStringResource(stringLiteral: "\(record.label) 다시 울릴 준비 중")
+            title: Self.countdownTitle(label: record.label)
         )
         let paused = AlarmPresentation.Paused(
             title: "일시정지됨",
