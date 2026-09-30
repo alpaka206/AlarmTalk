@@ -1511,7 +1511,7 @@ export async function generateStockClip(
         // 위의 조건부 INSERT 에 붙은 claim 가드는 교체 회차에서 **작동하지 않는다** —
         // 같은 preset 이 이미 있어 `WHERE NOT EXISTS` 가 항상 거짓이라 0행이고, 그래서
         // 이 UPDATE 가 유일한 문지기다. 놓치면 옛 목소리가 새 목소리를 덮고, 아래
-        // `replacedAudioUrl` 정리가 **방금 게시된 새 음원**을 R2 에서 지운다.
+        // 옛 오브젝트 삭제 예약이 **방금 게시된 새 음원**을 가리키게 된다.
         const replaced = await tx.execute({
           sql: `UPDATE messages
                 SET text = ?, synthesis_text = ?, delivery_tags_json = ?, audio_url = ?
@@ -1580,13 +1580,21 @@ export async function generateStockClip(
           ],
         });
         await claimKeyFromDeletionQueue(tx);
+        // 밀려난 옛 오브젝트는 **삭제 큐에만** 넣는다 — 게시와 같은 트랜잭션이라 롤백되면 예약도 없다.
+        // ⚠ 여기서 R2 를 바로 지우지 말 것(Codex #840). 같은 목소리의 두 프리셋이 우연히 같은 문장이면
+        //   한 오브젝트를 **나눠 쓴다**(결정론적 키) — 한 자리를 교체하며 지우면 아직 교체되지 않은 다른
+        //   자리가 없는 음원을 가리킨다. 실제로 지울지는 드레인이 `messages.audio_url` 참조를 보고 정한다
+        //   (`drainExternalDeletions` — 아직 참조가 있으면 예약만 내리고, 나머지 자리가 교체될 때 다시 들어온다).
+        const replacedAudioUrl = String(row.audio_url ?? '');
+        const replacedKey = replacedAudioUrl.startsWith('r2://') ? replacedAudioUrl.slice('r2://'.length) : '';
+        if (replacedKey && replacedKey !== audioObjectKey) {
+          await enqueueExternalDeletion(tx, 'r2_object', replacedKey);
+        }
         return {
           inserted: false as const,
           messageId: existingMessageId,
           text: displayText,
           audioUrl,
-          // 덮어쓰기 전 값 — 커밋 뒤 이 오브젝트를 지운다(아래 참조).
-          replacedAudioUrl: String(row.audio_url ?? ''),
         };
       }
 
@@ -1644,19 +1652,6 @@ export async function generateStockClip(
   // **방금 심은 음원을 지워** 알람이 빈 URL 을 물게 되니 주의.
   if (!publication.inserted && publication.audioUrl !== audioUrl) {
     await discardStagedAudio();
-  }
-
-  // 교체로 밀려난 옛 오브젝트를 정리한다. 커밋이 끝난 뒤에 한다 — R2 삭제는 트랜잭션이
-  // 아니라, 롤백되는 트랜잭션 안에서 지우면 되살릴 수 없는 것을 먼저 잃는다.
-  const replacedAudioUrl = (publication as { replacedAudioUrl?: string }).replacedAudioUrl;
-  if (replacedAudioUrl && replacedAudioUrl !== audioUrl && replacedAudioUrl.startsWith('r2://')) {
-    const staleKey = replacedAudioUrl.slice('r2://'.length);
-    try {
-      await new R2VoiceStorage(env.VOICE_BUCKET).delete(staleKey);
-    } catch {
-      // 지우지 못해도 교체 자체는 성공이다 — 큐에 넘겨 나중에 치운다.
-      await enqueueExternalDeletion(db, 'r2_object', staleKey);
-    }
   }
 
   return {
