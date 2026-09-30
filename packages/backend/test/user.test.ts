@@ -163,9 +163,12 @@ describe('PATCH /user/me', () => {
 
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.dynamic_prompt_settings).toEqual(settings);
+    // 옛 글자('KR'·'Seoul')는 그대로 두고, 목록으로 되짚은 지역 키를 함께 적는다
+    // (`normalizeWeatherSetting` — 상세는 weather-region-settings.test.ts).
+    const stored = { ...settings, weather: { ...settings.weather, region: 'kr-seoul' } };
+    expect(body.dynamic_prompt_settings).toEqual(stored);
     expect(mockDB.calls[0].sql).toContain('dynamic_prompt_settings_json = ?');
-    expect(JSON.parse(String(mockDB.calls[0].args[0]))).toEqual(settings);
+    expect(JSON.parse(String(mockDB.calls[0].args[0]))).toEqual(stored);
   });
 
   it('dynamic_prompt_settings 시간 형식 오류 → 400', async () => {
