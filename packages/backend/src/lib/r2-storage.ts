@@ -8,6 +8,17 @@ type StoreAtKeyInput = Omit<StoreInput, 'bytes'> & { bytes: Uint8Array<ArrayBuff
  */
 export const MAX_VOICE_UPLOAD_BYTES = 25 * 1024 * 1024;
 
+/**
+ * 목소리 업로드 원본의 키 앞머리(`voices/<userId>/`) — `store` 가 만드는 키의 **단일 출처**.
+ *
+ * 업로드 행(`voice_uploads`)이 TTL 로 먼저 지워져도 그 키를 들고 있는 문구
+ * (받은 사람 소유의 `family-voice`)를 '누구의 녹음인가' 로 되짚을 때 쓴다
+ * (`lib/voice-revocation.ts` 의 `audioUrlPointsAtUploadsOf`).
+ */
+export function voiceUploadKeyPrefix(userId: string): string {
+  return `voices/${userId}/`;
+}
+
 export class R2VoiceStorage implements VoiceStorage {
   readonly name = 'r2';
   private bucket: R2Bucket;
@@ -19,7 +30,7 @@ export class R2VoiceStorage implements VoiceStorage {
 
   async store(input: StoreInput): Promise<StoredObject> {
     this.counter += 1;
-    const objectKey = `voices/${input.userId}/${Date.now()}_${this.counter}`;
+    const objectKey = `${voiceUploadKeyPrefix(input.userId)}${Date.now()}_${this.counter}`;
     return this.storeAtKey(objectKey, input);
   }
 
