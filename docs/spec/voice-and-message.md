@@ -686,8 +686,11 @@ iOS `Generated/WeatherRegions.generated.swift`)을 쓴다. 생성 파일을 손�
      내리면 B 가 끝난 뒤 받아 적기가 B 로 덮는다(Codex #837). 정말 같았으면 다음 응답에서 표시만 내린다.
    - ⚠ **올리기는 한 번에 하나씩, 부른 순서대로다.** 요청마다 설정 전체를 싣으므로, 겹쳐 돌면 늦게 끝난 옛
      요청이 서버·세션을 옛 값으로 되돌리고 그 옛 값이 표시 없이 이 기기에 받아 적힌다(Codex #837). 안드로이드는
-     `PromptSettingsUploadQueue` 로 줄 세우고, iOS 는 `AuthViewModel.updateProfile` 이 겹친 호출을 받지 않는다
-     (받지 못한 변경은 표시가 남아 다음 계정 응답에서 다시 올라간다).
+     `PromptSettingsUploadQueue` 로 줄 세우고, iOS 는 `AuthViewModel.updateProfile` 이 겹친 호출을 받지 않되 앞
+     올리기가 끝나면 밀린 표시를 보고 **한 번 더** 올린다(`retryPendingPromptSettings`).
+     **올릴 값은 차례가 온 뒤에 정한다** — 줄에 설 때 찍은 사본은 그 사이 같은 값이 이미 올라갔거나 다른 기기의
+     값을 받아 적은 것을 모른다(안드로이드 `pendingUploadSnapshot`: 밀린 것이 없으면 올리지 않고, 있으면 지금의
+     이 기기 값을 올린다).
    - **날씨 묶음이 밀렸으면** 공휴일 국가도 **서버의 옛 지역을 따르지 않는다** — 고를 때 이미 맞췄다
      ([alarm-lifecycle.md](alarm-lifecycle.md) 「공휴일 국가는 지역의 나라다」). 사주만 밀렸으면 날씨 묶음은
      받아들였으니 공휴일 국가도 그 지역을 따른다(`weatherAccepted`, Codex #837).

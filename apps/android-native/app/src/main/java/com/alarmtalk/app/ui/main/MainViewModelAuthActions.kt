@@ -595,19 +595,29 @@ internal fun MainViewModel.updateFamilyAlarmSettings(
     }
 }
 
+/**
+ * 계정 설정(지역·사주)을 올린다. 부르는 쪽은 먼저 이 기기에 적고 '안 올라간 변경' 표시를 남긴다
+ * (`saveWeatherLocation`·`saveFortuneInfo`) — 올릴 값은 [settings] 가 아니라 **차례가 온 뒤의 이 기기 값**이다
+ * (`DynamicPromptPreferenceStore.pendingUploadSnapshot`). [settings] 는 부르는 쪽 모양을 맞추려고 받을 뿐이다.
+ */
+@Suppress("UNUSED_PARAMETER")
 internal fun MainViewModel.updateDynamicPromptSettings(settings: DynamicPromptSettings) {
     val userId = authSession?.user?.id ?: return
     viewModelScope.launch {
         // ⚠ **한 번에 하나씩, 부른 순서대로**(`PromptSettingsUploadQueue`). 요청마다 설정 전체를 싣으므로
         // 겹쳐 돌면 늦게 끝난 옛 요청이 서버·세션을 옛 값으로 되돌린다(Codex #837).
-        promptSettingsUploads.enqueue { uploadDynamicPromptSettings(userId, settings) }
+        promptSettingsUploads.enqueue { uploadDynamicPromptSettings(userId) }
     }
 }
 
-private suspend fun MainViewModel.uploadDynamicPromptSettings(userId: String, settings: DynamicPromptSettings) {
+private suspend fun MainViewModel.uploadDynamicPromptSettings(userId: String) {
     // 차례를 기다리는 사이 계정이 바뀌었으면 남의 설정을 올리지 않는다. 세션·세대는 **차례가 온 뒤에** 읽는다 —
     // 앞 요청이 세션을 갈아 끼웠을 수 있다.
     val session = authSession?.takeIf { it.user.id == userId } ?: return
+    // ⚠ **올릴 값도 차례가 온 뒤에 정한다**(Codex #837). 줄에 설 때 찍은 사본은 그 사이 앞 요청이 같은 값을 올려
+    //   표시를 내렸거나(→ 올릴 것이 없다) 다른 기기의 값을 받아 적은 것을 모른다 — 그대로 올리면 같은 값을 두 번
+    //   올리고, 그 사이 다른 기기가 쓴 값을 옛 사본으로 덮는다.
+    val settings = dynamicPromptStore.pendingUploadSnapshot(userId) ?: return
     // 요청 시작 시점의 세션 세대 — 응답을 저장하기 전에 대조한다.
     val startGeneration = authSessionStore.sessionGeneration()
     val authorization = com.alarmtalk.app.network.AlarmTalkApiClient.bearer(session.token)

@@ -248,6 +248,12 @@ final class AuthViewModel: ObservableObject {
     /// `MainViewModel.promptSettingsAnswerFence`·`fencedAccountSettings` 와 같다.
     private var promptSettingsAnswerFence = 0
 
+    /// 앞 올리기가 도는 사이(`isBusy`) 들어와 받지 못한 계정 설정 올리기가 있었다(Codex #837). 앞 올리기가 끝나면
+    /// 밀린 표시를 보고 **한 번 더** 올린다(`retryPendingPromptSettings`) — 안 그러면 그 변경은 다음 계정 응답까지
+    /// 기기에만 남는다(그 사이 확인 조회가 부르는 재시도도 같은 `isBusy` 에 막힌다). 안드로이드는 올리기 줄
+    /// (`PromptSettingsUploadQueue`)이 같은 일을 한다.
+    private var promptSettingsRetryPending = false
+
     /// 계정 요청 하나의 표 — `/auth/me`·로그인을 **보내기 직전에** 뜬다(`beginAccountRequest`).
     /// 안드로이드 `AccountRequest`(`ui/billing/PersonalPromoLedger.kt`)와 같은 모양이다.
     struct AccountRequest: Equatable {
@@ -1221,9 +1227,19 @@ final class AuthViewModel: ObservableObject {
         // 평일 09:00-18:30 을 되살려, 사용자가 방해금지를 전부 없애도 서버에는 다시
         // 생겼다 — "껐는데 계속 막힌다" 가 된다. 레거시 3필드는 창이 없으면 nil 이다.
         let firstQuietWindow = normalizedQuietWindows?.first
-        guard !isBusy else { return }
+        guard !isBusy else {
+            // ⚠ 계정 설정(지역·사주)은 버리지 않는다 — 앞 올리기가 끝난 뒤 밀린 표시를 보고 다시 올린다.
+            if dynamicPromptSettings != nil { promptSettingsRetryPending = true }
+            return
+        }
         isBusy = true
-        defer { isBusy = false }
+        defer {
+            isBusy = false
+            if promptSettingsRetryPending {
+                promptSettingsRetryPending = false
+                Task { await self.retryPendingPromptSettings() }
+            }
+        }
 
         let requestUserID = session?.user.id
         do {
@@ -1257,6 +1273,24 @@ final class AuthViewModel: ObservableObject {
         } catch {
             failStatus(userFacingErrorMessage(error, fallback: "프로필을 저장하지 못했어요"))
         }
+    }
+
+    /// 앞 올리기가 도는 사이 받지 못한 계정 설정을 다시 올린다 — **지금의** 밀린 표시와 기기 값으로 정한다
+    /// (밀린 묶음은 이 기기 값, 나머지는 세션의 서버 값 — `DynamicPromptPreferences.adoptAccount`). 밀린 것이 없으면
+    /// (앞 올리기가 같은 값을 이미 올렸다) 아무것도 하지 않는다.
+    private func retryPendingPromptSettings() async {
+        guard let session, DynamicPromptPreferences.hasUnsyncedChange(userID: session.user.id) else { return }
+        let settings: DynamicPromptSettings
+        if let server = session.user.dynamicPromptSettings {
+            guard case .localPending(let local, _) = DynamicPromptPreferences.adoptAccount(
+                userID: session.user.id,
+                server: server
+            ) else { return }
+            settings = local
+        } else {
+            settings = DynamicPromptPreferences.load(userID: session.user.id).toSettings()
+        }
+        await updateProfile(dynamicPromptSettings: settings)
     }
 
     // ⚠ **기본 방해금지 창을 되살리지 말 것**(2026-08-08 삭제). 방해금지는 사용자가

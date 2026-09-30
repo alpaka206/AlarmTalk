@@ -14,8 +14,9 @@ import kotlinx.coroutines.sync.withLock
  *    방금 고친 값과 공휴일 국가가 조용히 되돌아간다.
  *
  * 차례대로 돌리면 서버도 세션도 마지막에 부른 값으로 끝난다. [Mutex] 는 공정하다 — 기다린 순서대로 들어간다.
- * iOS 는 `AuthViewModel.updateProfile` 이 `isBusy` 로 겹친 호출을 받지 않고, 받지 못한 변경은 '안 올라간 변경'
- * 표시가 다음 계정 응답에서 다시 올린다.
+ * 올릴 값은 줄에 설 때가 아니라 **차례가 온 뒤에** 정한다(`DynamicPromptPreferenceStore.pendingUploadSnapshot`).
+ * iOS 는 `AuthViewModel.updateProfile` 이 `isBusy` 로 겹친 호출을 받지 않되, 앞 올리기가 끝나면 밀린 표시를 보고
+ * 한 번 더 올린다(`retryPendingPromptSettings`).
  */
 class PromptSettingsUploadQueue {
     private val mutex = Mutex()

@@ -93,6 +93,11 @@ class PromptSettingsAnswerFenceTest {
             fence,
         )
         assertTrue("울타리가 올린 계정·세대를 확인하지 않는다.", guard >= 0 && fence - guard < 200)
+        // 올릴 값은 **차례가 온 뒤의** 밀린 사본이다 — 줄에 설 때의 사본을 올리면 같은 값을 두 번 올리고 다른 기기의
+        // 값을 덮는다(Codex #837).
+        val snapshot = upload.indexOf("dynamicPromptStore.pendingUploadSnapshot(userId) ?: return")
+        val request = upload.indexOf("api.updateProfile(")
+        assertTrue("올리기가 차례가 온 뒤 밀린 사본을 다시 보지 않는다.", snapshot in 0 until request)
 
         val refresh = bodyOf("internal suspend fun MainViewModel.refreshAppSessionNow(")
         assertTrue(

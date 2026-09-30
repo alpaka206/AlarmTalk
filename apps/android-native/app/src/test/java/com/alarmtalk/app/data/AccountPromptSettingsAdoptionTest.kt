@@ -339,6 +339,26 @@ class AccountPromptSettingsAdoptionTest {
         assertEquals("JP", holidays.read())
     }
 
+    /**
+     * **줄에 선 올리기는 차례가 온 뒤의 밀린 사본을 올린다**(Codex #837). 앞 요청이 같은 값을 올려 표시가 내려갔으면
+     * 올릴 것이 없고(null), 밀려 있으면 지금의 이 기기 값(받아 적은 다른 묶음 포함)이다.
+     */
+    @Test
+    fun 올릴_사본은_차례가_온_뒤의_밀린_값이고_이미_올렸으면_없다() {
+        savedAndPushed("user-a", "kr-seoul")
+        assertNull(store.pendingUploadSnapshot("user-a"))
+        val tokyo = requireNotNull(WeatherRegions.byKey("jp-tokyo"))
+        store.saveWeatherLocation("user-a", tokyo.legacyCountry, tokyo.legacyCity)
+        store.saveFortuneInfo("user-a", "여성", "1990-01-01", "07:31~09:30")
+
+        val queued = requireNotNull(store.pendingUploadSnapshot("user-a"))
+        assertEquals("jp-tokyo", queued.weather.region)
+        assertEquals("1990-01-01", queued.fortune.birthDate)
+        // 앞 요청이 같은 값을 올렸다 — 줄에 서 있던 다음 올리기는 올릴 것이 없다.
+        store.markPushed("user-a", queued)
+        assertNull(store.pendingUploadSnapshot("user-a"))
+    }
+
     /** 밀린 변경은 다음 응답에서 다시 올린다 — 같은 옛 값이 또 와도 `LocalPending` 이다(멱등). */
     @Test
     fun 밀린_변경은_같은_옛_값이_다시_와도_다시_올릴_것으로_남는다() {

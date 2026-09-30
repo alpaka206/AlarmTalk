@@ -231,6 +231,51 @@ final class AuthViewModelTests: XCTestCase {
         )
     }
 
+    /// **앞 올리기가 도는 사이 고친 계정 설정도 결국 올라간다**(Codex #837). 두 번째 `updateProfile` 은 `isBusy` 에
+    /// 막히는데, 예전에는 그대로 버려져 그 변경(사주)이 다음 계정 응답까지 기기에만 남았다. 앞 올리기가 끝나면 밀린
+    /// 표시를 보고 한 번 더 올린다 — 밀린 묶음은 이 기기 값, 나머지는 서버 값이다.
+    func testPromptSettingsEditedDuringABusyUploadIsUploadedAfterward() async throws {
+        let api = MockAuthAPI()
+        let vm = AuthViewModel(api: api, appleCredentialProvider: MockAppleCredentialProvider())
+        let session = makeEmailSession()
+        let userID = session.user.id
+        vm._setSessionForTesting(session)
+        addTeardownBlock {
+            KeychainStore.deleteSession()
+            DynamicPromptPreferences.clear(userID: userID)
+        }
+        let tokyoRegion = try XCTUnwrap(WeatherRegions.byKey("jp-tokyo"))
+        var tokyo = DynamicPromptPreferences()
+        tokyo.weatherCountry = tokyoRegion.legacyCountry
+        tokyo.weatherCity = tokyoRegion.legacyCity
+        XCTAssertTrue(tokyo.saveLocalEdit(userID: userID))
+        // 서버는 도쿄 올리기를 받아 확인 조회에 도쿄를 준다.
+        var confirmed = session.user
+        confirmed.dynamicPromptSettings = tokyo.toSettings()
+        api.meResult = .success(confirmed)
+        api.beforeMeResponse = {
+            api.beforeMeResponse = nil
+            // 확인 조회가 떠 있는 사이 사주를 고쳤다 — 이 올리기는 `isBusy` 에 막힌다.
+            var edited = DynamicPromptPreferences.load(userID: userID)
+            edited.fortuneGender = "여성"
+            edited.fortuneBirthDate = "1990-01-01"
+            edited.fortuneBirthTime = "07:31~09:30"
+            edited.saveLocalEdit(userID: userID)
+            await vm.updateProfile(dynamicPromptSettings: edited.toSettings())
+        }
+
+        await vm.updateProfile(dynamicPromptSettings: tokyo.toSettings())
+        for _ in 0..<100 where api.updateProfileCallCount < 2 {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+
+        XCTAssertEqual(api.updateProfileCallCount, 2, "막힌 사주 변경을 다시 올리지 않았다")
+        let resent = try XCTUnwrap(api.lastUpdateProfileRequest?.dynamicPromptSettings)
+        XCTAssertEqual(resent.fortune.birthDate, "1990-01-01")
+        XCTAssertEqual(resent.weather.region, "jp-tokyo")
+        XCTAssertFalse(DynamicPromptPreferences.hasUnsyncedChange(userID: userID))
+    }
+
     /// 회귀(2026-09-27 리뷰 2차): **앞 진입에 보낸** `/auth/me` 가 백그라운드를 건너 복귀 뒤에
     /// 도착하면 이번 진입의 답이 아니다(안드로이드 `accountAnswerEntryFor`). 그 답으로 판정하면
     /// 나가 있는 동안 다른 기기에서 결제한 사람에게 "무료 이용이 곧 끝나요" 가 뜬다.

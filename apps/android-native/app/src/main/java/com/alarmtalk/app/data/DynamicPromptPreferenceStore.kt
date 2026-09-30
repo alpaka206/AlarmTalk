@@ -225,6 +225,16 @@ class DynamicPromptPreferenceStore(context: Context) {
         editor.apply()
     }
 
+    /**
+     * 지금 올릴 값 — 밀린 묶음이 있으면 **지금의 이 기기 값**(밀린 묶음 + 받아 적은 나머지), 없으면 null(올릴 것이 없다).
+     *
+     * 올리기 줄(`PromptSettingsUploadQueue`)은 **차례가 온 뒤에** 이걸 본다(Codex #837). 줄에 설 때 찍은 사본은
+     * 그 사이 앞 요청이 같은 값을 올려 표시를 내렸거나 다른 기기의 값을 받아 적은 것을 모른다 — 그대로 올리면 같은
+     * 값을 두 번 올리고, 그 사이 다른 기기가 쓴 값을 옛 사본으로 덮는다.
+     */
+    fun pendingUploadSnapshot(userId: String?): DynamicPromptSettings? =
+        if (hasUnsyncedChange(userId)) read(userId).toDynamicPromptSettings() else null
+
     /** 이 기기에 아직 서버로 안 올라간 지역·사주 변경이 있는가(어느 묶음이든). */
     fun hasUnsyncedChange(userId: String?): Boolean {
         val weatherPendingKey = scopedKey(KEY_WEATHER_SYNC_PENDING, userId) ?: return false
