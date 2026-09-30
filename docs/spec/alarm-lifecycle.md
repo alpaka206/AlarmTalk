@@ -329,12 +329,57 @@ OR로 합치면 평일 알람을 건너뛸 수 있으므로 계산 폴백 자체
 [KASI 달력자료](https://astro.kasi.re.kr/life/post/calendarData). KASI의 2년 후 자료는 공식 월력요항
 발표 전 자료라는 표시도 함께 따른다.
 
+## 공휴일 국가는 **지역의 나라**다 (2026-09-30)
+
+'공휴일에는 끄기' 가 볼 달력의 나라(KR·JP·US)를 따로 고르는 자리는 **없다.** 설정 화면의
+'공휴일 달력' 행을 지웠고, 나라는 **날씨 지역의 나라**를 따른다 — 지역을 고르는 곳이 '문구 정보'
+카드의 '지역' 하나다([voice-and-message.md](voice-and-message.md) 「날씨 지역은 목록에서만 고른다」).
+
+- 공휴일 국가는 지금처럼 **기기 설정**(안드로이드 `HolidayCountryPreferenceStore`, iOS `HolidayStore` 의
+  UserDefaults)에 둔다. 공휴일 엔진·동기화·음력 계산은 **그대로**다 — 바뀌는 것은 누가 그 값을 쓰느냐뿐이다.
+- 기기가 아는 지역이 바뀔 때마다 그 지역의 나라를 적는다 — 사용자가 고를 때, 그리고 서버에서 계정
+  설정을 받아 그 기기가 받아들일 때(새 기기 로그인·다른 기기에서 고침). 계정 설정은 계정에, 공휴일 국가는
+  기기에 있으므로, 받아 올 때 맞추지 않으면 두 번째 기기는 설정 행도 없이 옛 나라에 남는다. **두 앱이 같은
+  규칙이다:**
+  - 고를 때: 설정 '지역' 행은 **고를 때마다** 적는다. 편집기 문구 화면은 **내 알람에서 지역이 실제로 바뀔
+    때만** 적는다(날씨 종류만 골라도 그 자리를 지나므로). 가족 알람에서 고른 지역은 받는 사람의 것이라
+    **적지 않는다** — 적으면 남의 나라 공휴일로 내 알람이 꺼진다. 서버 저장이 실패해도(오프라인) 이 기기는
+    곧바로 맞춘다.
+  - 받을 때: 이 기기가 계정 설정을 **받아들였을 때만** 지역의 나라로 맞춘다([voice-and-message.md](voice-and-message.md)
+    「계정의 지역·사주는 기기에 받아 적는다」). 이 기기에 **아직 안 올라간 변경**이 있으면 받아들이지 않으므로
+    공휴일 국가도 서버의 옛 지역을 따르지 않는다 — 화면의 지역과 달력의 나라가 갈라진다.
+  - 받을 때: ⚠ **업데이트 직후 처음 받는 계정 지역**인데 이 기기에 옛 '공휴일 달력' 행에서 **직접 고른**
+    나라가 있고 그게 지역의 나라와 다르면, **그 계정 지역이 바뀌기 전까지** 그 나라를 둔다(행이 사라졌다고
+    사용자가 고른 달력을 말없이 바꾸면 공휴일에 꺼지는 날이 조용히 달라진다). 지역을 다시 고르면 곧바로
+    지역의 나라가 된다.
+  - 그 밖에는 **받아들일 때마다** 맞춘다. "지난번에 받은 지역과 같으면 건너뛴다" 를 두지 않는다 — 로그아웃은
+    지역 값과 '안 올라간 변경' 표시를 지우지만 공휴일 국가는 남기므로, 건너뛰면 같은 계정으로 다시 들어왔을 때
+    화면의 지역과 달력의 나라가 갈라진 채 남는다.
+- **나라가 바뀌면 '공휴일에는 끄기' 반복 알람을 새 달력으로 다시 잡는다.** 다음 발생은 저장·해제할 때 그
+  순간의 달력으로 한 번 계산돼 박힌다 — 다시 잡지 않으면 **다음 한 번은 옛 나라의 달력**을 따라, 새 나라의
+  평일인데 옛 나라의 공휴일이라 안 울리거나(사고), 새 나라의 공휴일인데 울린다.
+  - **멱등이다.** 같은 달력으로 몇 번을 다시 잡아도 결과가 같고, 바뀐 것이 없으면 쓰지 않는다.
+  - **KR 밖 나라(JP·US)의 공휴일은 서버에서 받아야 생긴다** — 받은 뒤의 달력으로 잡아야 한다. 안드로이드는
+    새 나라의 공휴일을 먼저 받고 잡는다. iOS 는 '받기 전' 달력(`JP:pending`)으로 한 번, 받은 뒤 한 번 더 잡는다.
+  - 국가를 적는 자리마다 붙이지 않는다 — **국가 값(달력)을 보는 한 곳**이 한다. 앱을 켤 때도 한 번 본다(지난
+    실행에서 국가만 바뀌고 다시 잡기 전에 죽었거나, KR 밖 나라의 공휴일 캐시가 비어 있는 경우를 메운다).
+    알람 저장소를 읽기 전·로그인 전에는 **미루고**, 갖춰지면 다시 본다 — 버리지 않는다(예전 iOS 콜백은
+    그 두 경우에 조용히 버려졌다).
+  - 스누즈 중·울리는 중인 알람과 일회성 알람은 건드리지 않는다. 다시 잡는 것은 사용자의 편집이 아니므로
+    **수정 시각을 올리지 않는다** — 올리면 받은 가족 알람이 '받은 사람이 고쳤다' 로 읽혀, 다시 보낸 알람이
+    덮지 못한다.
+- 지역이 없거나 되짚지 못한 옛 글자뿐이면 **건드리지 않는다** — 지금 값(없으면 기기 로케일이 KR·JP·US
+  면 그 나라, 아니면 KR)이 그대로다.
+- 편집기의 '공휴일에는 끄기' 스위치는 그대로다.
+
 ## 구현 지도
 
 | 규칙 | 백엔드 | 안드로이드 | iOS |
 | --- | --- | --- | --- |
 | 본인 알람 생성 재전송·초기 켜짐 상태 | `alarm-mutation.ts`·`ownAlarmIdentity`·`creation_replayed` | `RemoteAlarmMapper`·`AlarmSyncService.createAndReconcile` | `RemoteAlarmMapper`·`AlarmTalkAPI.createAlarm` |
 | 한국 음력 공휴일 폴백 | 서버 공휴일 동기화는 기존 경로 유지 | `IcuLunarConverter`의 ICU dangi | `KoreanLunarHolidayEngine.seoulLunar`의 ICU dangi |
+| 공휴일 국가 = 지역의 나라(설정의 '공휴일 달력' 행 없음) | — | 고를 때 `WeatherRegionHolidaySync.onRegionSaved`(설정 `SettingsScreen`·편집기 `AlarmEditorScreen`), 받을 때 `adoptAccountPromptSettings` → `WeatherRegionHolidaySync.onAccountRegionReceived`(`data/WeatherRegionSettings.kt`) ← `MainViewModel.onAccountPromptSettingsReceived` ← `AlarmTalkApp` 의 `LaunchedEffect` — 회귀 `WeatherRegionPickerTest`·`AccountPromptSettingsAdoptionTest` | 고를 때 `HolidayStore.adoptCountry(ofWeatherRegion:)` ← `SettingsView`·`AlarmEditorSheet.syncOwnPromptPreferences`, 받을 때 `DynamicPromptPreferences.adoptAccount` 가 `.accepted` 면 `HolidayStore.adoptCountry(ofAccountWeatherRegion:)`(판정 `countryForAccountRegion`) ← `AlarmTalkApp` 의 계정 설정 관찰 — 회귀 `WeatherRegionCatalogTests`·`AccountPromptSettingsAdoptionTests`·`EditorPromptPreferenceUpdateTests` |
+| 나라(달력)가 바뀌면 공휴일off 반복 알람 다시 잡기(멱등 · 앱 시작마다 한 번 · 스누즈·울림·일회성 제외 · 수정 시각 그대로) | — | `HolidayCountryPreferenceStore.countryCode` 수집(`MainViewModel` init) → `AlarmRepository.refreshHolidayOffAlarms`(`ensureHolidaysSynced` 먼저, `reschedulePendingAlarmsLocked` 의 `recomputeHolidayOff`) — 회귀 `HolidayCountryRescheduleTest` | 달력 표지 `HolidayStore.holidayCalendarMarker`(`:pending`) → `HolidayOffRescheduler.runIfNeeded` → `AlarmKitViewModel.recoverScheduledAlarms(forceHolidayOffRecompute: true)` → `LocalAlarmStore.recomputeHolidayOffFireTime`(바뀐 게 없거나 스누즈·울림이면 건너뜀, 수정 시각 그대로) ← `AlarmTalkApp` 의 `holidayOffRescheduleKey` — 회귀 `HolidayOffReschedulerTests` |
 | 1-1 계정 떠날 때 끄기 | — | `data/AlarmRepository.detachAlarmsOnSignOut` | `AlarmKitViewModel.stopAllScheduledAlarms(store:ownerUserId:)` ← `AuthViewModel.onLeaveAccountStopAlarms` |
 | 1-1 탈퇴는 내 행과 나를 향한 미전달 행을 지운다 | `lib/account-deletion.ts` 의 `DELETE FROM alarms WHERE user_id IN (…) OR target_user_id IN (…)` | — | — |
 | 1-1 목소리가 사라질 때 걷어내기 | `lib/voice-revocation.ts` 의 `revokeDeletedVoices`(탈퇴·목소리 삭제·플랜 강등 공용) | `VoiceAccessSyncWorker` | `PushNotificationCoordinator.onAuthoritativeRefresh` |

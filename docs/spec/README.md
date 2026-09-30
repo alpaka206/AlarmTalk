@@ -56,14 +56,14 @@
 | --- | --- |
 | [alarm-ringing.md](alarm-ringing.md) | 알람이 울릴 때 무엇이 뜨고, 어떻게 꺼지는가 |
 | [alarm-editor.md](alarm-editor.md) | 알람을 만드는 화면 — 타임휠, 재생 방식, 모달 세 형태 |
-| [voice-and-message.md](voice-and-message.md) | 목소리·문구를 고르고 저장하는 규칙, 등급별 제한 |
+| [voice-and-message.md](voice-and-message.md) | 목소리·문구를 고르고 저장하는 규칙, 등급별 제한, 날씨 지역 목록(나라 → 지역)·계정의 지역·사주 받아 적기·서버 미리 계산(Open-Meteo 상업 키) |
 | [plan-gates.md](plan-gates.md) | 로그인·이용권 게이트가 뜨는 조건과 문구 |
 | [family-alarm.md](family-alarm.md) | 남에게 보내는 알람 — 보내면 끝, 설정 불가능 시간 |
 | [consent.md](consent.md) | 동의 화면 — 미체크는 철회가 아니다, 재동의 레버 |
 | [gates-and-overlays.md](gates-and-overlays.md) | 차단 게이트와 1회성 오버레이의 순서 |
 | [session-and-auth.md](session-and-auth.md) | 로그인 유지 — 한 번 하면 다시 안 한다, 백그라운드 갱신 |
 | [billing-lifecycle.md](billing-lifecycle.md) | 구독 해지·만료 — 스토어가 권위, 못 물으면 안 바꾼다 |
-| [alarm-lifecycle.md](alarm-lifecycle.md) | 알람의 생애 — 행과 예약은 다른 겹, 계정을 떠날 때 |
+| [alarm-lifecycle.md](alarm-lifecycle.md) | 알람의 생애 — 행과 예약은 다른 겹, 계정을 떠날 때, 공휴일 국가 = 지역의 나라(바뀌면 공휴일off 다시 잡기) |
 | [usage-events.md](usage-events.md) | 사용 기록 — 오프라인에 쌓고 모아 보내기, 울릴 때 네트워크 금지, 보관 1년 |
 | [error-codes.md](error-codes.md) | 에러 코드 — 목록은 하나, 코드는 바꾸지 않는다, 기록은 전부·경보는 골라서 |
 
