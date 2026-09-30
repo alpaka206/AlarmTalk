@@ -200,8 +200,9 @@ final class AlarmKitViewModel: ObservableObject {
     /// (`AlarmLiveActivity.swift`). 알럿이 말할 것은 **어느 알람인가**다.
     nonisolated static func alertTitle(for record: LocalAlarmRecord) -> String {
         let time = "\(record.meridiemLabel) \(record.clockLabel12h)"
-        let label = record.label.trimmingCharacters(in: .whitespacesAndNewlines)
-        return label.isEmpty ? time : "\(time) · \(label)"
+        // 기본 이름("알람")은 이름이 없는 것으로 본다 — `AlarmDefaultLabel`.
+        guard let label = AlarmDefaultLabel.custom(record.label) else { return time }
+        return "\(time) · \(label)"
     }
 
     /// 울림 알럿의 다시 울림 버튼 — "5분 더 자기".
@@ -215,8 +216,13 @@ final class AlarmKitViewModel: ObservableObject {
     }
 
     /// 다시 울림 카운트다운 제목 — 같은 이유로 서식 키(`%@ 다시 울릴 준비 중`)로 만든다.
+    /// 이름이 없거나 기본 이름이면 이름 없는 문구(`다시 울릴 준비 중`)다 — 기본 이름 `"알람"` 을
+    /// 끼우면 번역된 뒷부분 앞에 한국어가 남는다(`AlarmDefaultLabel`).
     nonisolated static func countdownTitle(label: String) -> LocalizedStringResource {
-        LocalizedStringResource("\(label) 다시 울릴 준비 중")
+        guard let custom = AlarmDefaultLabel.custom(label) else {
+            return LocalizedStringResource("다시 울릴 준비 중")
+        }
+        return LocalizedStringResource("\(custom) 다시 울릴 준비 중")
     }
 
     func requestAuthorization() async {

@@ -2869,6 +2869,23 @@
         }
       }
     },
+    "다시 울릴 준비 중" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ringing again soon"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "まもなく再び鳴ります"
+          }
+        }
+      }
+    },
     "다음" : {
       "extractionState" : "manual",
       "localizations" : {
