@@ -11,7 +11,7 @@
  *  - 미리 올려 두면 **동시에 굽는 렌더가 없다.** 경합이 성립하지 않는다.
  *
  * ⚠ **키는 서버가 계산하는 것과 한 글자도 달라선 안 된다.** 그래서 `computeTtsCacheKey`·
- *   `generatedTtsObjectKey`·`withClosingBreath` 를 **서버 소스에서 그대로 가져다 쓴다**
+ *   `generatedTtsObjectKey`·`TTS_MODEL_ID` 를 **서버 소스에서 그대로 가져다 쓴다**
  *   (베끼지 않는다). 어긋나면 `findMissingStockTargets` 가 이 클립을 '없다' 로 세어
  *   cron 이 같은 자리를 다시 굽고, 그때부터 옛 경합이 되살아난다.
  *
@@ -48,7 +48,6 @@ import {
   STOCK_CLIP_PRESETS,
   SYSTEM_VOICE_LIBRARY_USER_ID,
   stripDeliveryTags,
-  withClosingBreath,
 } from '../src/lib/stock-clips.ts';
 import { computeTtsCacheKey, generatedTtsObjectKey } from '../src/lib/audio-cache.ts';
 import { prepareAlarmTextWithVertex } from '../src/lib/vertex-translate.ts';
@@ -283,7 +282,7 @@ async function main(): Promise<void> {
 
   // ⚠ **지문을 먼저 본다**(리뷰 15차). 파일이 있다는 것만으로 올리면, 옛 대사·옛 설정으로
   //   구운 바이트가 **새 카탈로그로 계산한 키와 문구를 달고** 프로덕션에 올라간다.
-  //   실제로 이 작업 중에 그 상태를 만들었다(`withClosingBreath` 누락본 80개).
+  //   실제로 이 작업 중에 그 상태를 만들었다(v3 시절 여운 꼬리 누락본 80개).
   const fingerprints = loadFingerprints(PREVIEW_ROOT);
   const staleFiles: string[] = [];
   for (const t of targets) {
@@ -293,7 +292,7 @@ async function main(): Promise<void> {
       modelId: TTS_MODEL_ID,
       outputFormat: ELEVENLABS_TTS_OUTPUT_FORMAT,
       voiceSettings: TTS_VOICE_SETTINGS,
-      providerText: withClosingBreath((await deriveTexts(t.baseText, t.language)).synthesisText),
+      providerText: (await deriveTexts(t.baseText, t.language)).synthesisText,
     });
     if (fingerprints[fingerprintKey(t.language, t.voiceName, `${t.category}_${String(t.variant).padStart(2, '0')}.mp3`)] !== expected) {
       staleFiles.push(`${t.language}/${t.voiceName}/${t.category}_${t.variant}`);
@@ -346,7 +345,7 @@ async function main(): Promise<void> {
         target.baseText,
         target.language,
       );
-      // ⚠ **제공자에게 보낸 그 글자로 키를 만든다** — 시청본도 같은 글자로 구웠다.
+      // ⚠ **제공자에게 보낸 그 글자로 키를 만든다** — 시청본도 같은 글자로 구웠고, 서버도 같다.
       const cacheKey = await computeTtsCacheKey({
         provider: PROVIDER,
         providerVoiceId: target.providerVoiceId,
@@ -354,7 +353,7 @@ async function main(): Promise<void> {
         modelId: TTS_MODEL_ID,
         language: target.language,
         languageCode: target.language,
-        text: withClosingBreath(synthesisText),
+        text: synthesisText,
         outputFormat: OUTPUT_FORMAT,
       });
       const objectKey = generatedTtsObjectKey(SYSTEM_VOICE_LIBRARY_USER_ID, cacheKey, OUTPUT_FORMAT);

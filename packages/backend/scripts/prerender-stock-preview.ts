@@ -6,9 +6,10 @@
  * 확정되면 같은 바이트를 R2 에 올려 **배포 때 재합성하지 않는다**.
  *
  * ⚠ **백엔드와 파라미터가 한 글자도 달라지면 안 된다.** 여기서 만든 바이트를 그대로
- *   R2 에 올릴 것이므로, 모델·voice_settings·output_format·무음 패딩이 다르면
+ *   R2 에 올릴 것이므로, 모델·voice_settings·output_format·합성 글자가 다르면
  *   시청한 소리와 실제로 울리는 소리가 달라진다. 그래서 `TTS_MODEL_ID`·`TTS_VOICE_SETTINGS`·
- *   `appendMp3TrailingSilence`·`STOCK_CLIP_PRESETS` 를 **서버 소스에서 그대로 가져다 쓴다**(베끼지 않는다).
+ *   `STOCK_CLIP_PRESETS` 를 **서버 소스에서 그대로 가져다 쓴다**(베끼지 않는다). 받은 바이트는 가공하지
+ *   않는다 — 서버(`generateStockClip`)도 그대로 올린다.
  *
  * 멱등하다 — 이미 있는 파일은 건너뛴다. 중간에 끊기면 다시 돌리면 이어서 받는다.
  *
@@ -27,8 +28,7 @@
 import { mkdirSync, existsSync, writeFileSync, readFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 
-import { STOCK_CLIP_PRESETS, withClosingBreath } from '../src/lib/stock-clips.ts';
-import { appendMp3TrailingSilence } from '../src/lib/mp3-silence.ts';
+import { STOCK_CLIP_PRESETS } from '../src/lib/stock-clips.ts';
 import { ELEVENLABS_TTS_OUTPUT_FORMAT } from '../src/lib/elevenlabs.ts';
 import { TTS_MODEL_ID, TTS_VOICE_SETTINGS } from '../src/lib/tts-model.ts';
 import {
@@ -76,11 +76,11 @@ const LANGUAGES = ['ko', 'en', 'ja'] as const;
 type Language = (typeof LANGUAGES)[number];
 
 /**
- * 제공자에게 실제로 보내는 글자. 서버(`generateStockClip`)와 **같은 순서**여야 한다 —
- * `prepareAlarmTextWithVertex` 가 trim 한 글자에 `withClosingBreath` 를 붙인다.
+ * 제공자에게 실제로 보내는 글자. 서버(`generateStockClip`)와 **같아야 한다** — 서버는 프리셋을 trim 한
+ * 글자 그대로 합성하고 그 글자로 캐시 키를 만든다(v3 시절의 여운 꼬리 ` ...` 는 v4 Turbo 에서 뺐다).
  */
 function providerTextFor(text: string): string {
-  return withClosingBreath(text.trim());
+  return text.trim();
 }
 
 function argValue(name: string): string | undefined {
@@ -190,12 +190,8 @@ async function synthesize(apiKey: string, target: Target): Promise<Uint8Array> {
   // 확정 리터럴이라 언어 힌트가 없어도 발음이 갈리지 않는다.
   for (const withLanguage of [true, false]) {
     const body: Record<string, unknown> = {
-      // ⚠ **서버가 제공자에게 보내는 그 글자여야 한다.** `generateStockClip` 은
-      //   `withClosingBreath(synthesisText)` 를 보낸다 — 문장 끝 ` ...` 가 v3 의
-      //   급마감을 막는다. 여기서 빼면 시청본과 실제 알람의 **말끝이 달라진다.**
-      //   ⚠ `trim()` 도 서버를 따른다 — `prepareAlarmTextWithVertex` 가 trim 한 글자로
-      //     합성하고 캐시 키를 만든다. 여기서 안 다듬으면 앞뒤 공백이 있는 프리셋에서
-      //     **소리와 키가 어긋난다.**
+      // ⚠ **서버가 제공자에게 보내는 그 글자여야 한다**(`providerTextFor`). 서버는 trim 한 글자로
+      //   합성하고 캐시 키를 만든다 — 여기서 안 다듬으면 앞뒤 공백이 있는 프리셋에서 **소리와 키가 어긋난다.**
       text: providerTextFor(target.text),
       // 모델·설정은 서버(`textToSpeech`)가 쓰는 그 상수다 — 여기서 따로 적으면 시청한 소리와 실제 알람이 갈라진다.
       model_id: TTS_MODEL_ID,
@@ -211,7 +207,7 @@ async function synthesize(apiKey: string, target: Target): Promise<Uint8Array> {
       },
       body: JSON.stringify(body),
     });
-    if (res.ok) return appendMp3TrailingSilence(new Uint8Array(await res.arrayBuffer()));
+    if (res.ok) return new Uint8Array(await res.arrayBuffer());
     const detail = await res.text().catch(() => '');
     const languageRejected =
       withLanguage && res.status === 422 && detail.toLowerCase().includes('language');

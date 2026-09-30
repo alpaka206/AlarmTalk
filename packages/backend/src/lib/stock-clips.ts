@@ -16,7 +16,6 @@ import {
   type AlarmTextRejectionReason,
 } from './vertex-translate';
 import { withWriteTransaction, type DbExecutor } from './transactions';
-import { appendMp3TrailingSilence } from './mp3-silence';
 import { missingConsentType, SENSITIVE_REQUIRED_CONSENTS } from './consent';
 import { enqueueExternalDeletion } from './audio-retention';
 
@@ -1141,39 +1140,6 @@ export class PrerenderSupersededError extends Error {
   }
 }
 
-/**
- * 합성 요청에만 붙이는 **여운 꼬리**.
- *
- * ⚠ ElevenLabs v3 는 마지막 음소 직후 **그냥 멈춘다.** 실측(2026-09-02, 미나 목소리 20개):
- * API 원본의 끝 무음이 **0.020초**였고, 소리가 멈추는 순간의 세기가 파일 평균의 최대
- * **1.22배** — 한창 말하는 크기에서 뚝 끊긴다. 특히 한국어 **상승조 의문문**("…해 볼까요?")
- * 이 심하다. 끝을 올리다 정점에서 멈추기 때문이다.
- *
- * `appendMp3TrailingSilence` 로는 못 고친다. 그건 `높은 에너지 → 0` 이라는 **계단을 그대로
- * 두고** 뒤에 조용함을 더할 뿐이라, 오히려 계단이 도드라진다.
- *
- * 문장 끝에 말줄임을 붙이면 모델이 **여운 자체를 생성한다** — 같은 문장으로 실측했을 때
- * 끝 무음이 0.020초 → **1.289초**로, 문장을 끝맺고 놓는 소리가 실제로 나온다.
- *
- * ⚠ **요청에만 붙이고 저장하지 않는다.** `synthesisText` 는 `messages.synthesis_text` 로
- * 저장되고 캐시 키·마이그레이션의 문구 대조에 쓰인다 — 꼬리를 섞으면 그 대조가 어긋나
- * 재시드가 옛 문구를 지우지 못한다.
- *
- * ⚠ 이미 말줄임으로 끝나면 덧붙이지 않는다(모델이 길게 늘어뜨린다).
- *
- * v3 급마감(마지막 음절 직후 뚝 끊김) 보완 — 제공자에게 보내는 문장 끝에 ` ...` 를 붙여
- * 말끝을 흐리게 한다. mp3 뒤에 붙이는 무음(`appendMp3TrailingSilence`)과 **다른 장치**이고
- * 둘 다 필요하다: 이건 **말소리**를, 저건 **파일 길이**를 늘린다.
- *
- * 시청본 생성기(`scripts/prerender-stock-preview.ts`)가 같은 함수를 써야 한다 — 안 그러면
- * 사람이 들어 본 소리와 서버가 굽는 소리가 갈린다.
- */
-export function withClosingBreath(text: string): string {
-  const base = text.trimEnd();
-  if (!base || /(\.\.\.|…)$/.test(base)) return base;
-  return `${base} ...`;
-}
-
 export interface LegacyBucketHint {
   messageId: string;
   category: string;
@@ -1389,18 +1355,14 @@ export async function generateStockClip(
     deliveryTagsJson = JSON.stringify(prepared.tags);
   }
 
-  // ⚠ **제공자에게 보내는 바로 그 글자로 캐시 키를 만든다**(2026-09-03 리뷰).
-  //   합성은 여운 꼬리를 붙여 하는데 키를 원본으로 계산하면, **같은 키에 다른 오디오**가
-  //   매달린다 — 일반 TTS 경로(`tts.ts`)는 꼬리 없이 같은 문장을 합성하므로 둘이 같은
-  //   `request_hash`·R2 오브젝트를 놓고 다툰다. 먼저 쓴 쪽이 이기고, 나중 쪽은 자기가
-  //   요청한 것과 다른 소리를 서빙받는다(꼬리가 사라지거나, 반대로 남의 클립을 덮어쓴다).
-  //   저장되는 `synthesis_text`·표시 문구는 **꼬리 없는 원본** 그대로다 — 잠금화면 문구와
-  //   문구 대조가 그 값을 쓴다.
-  const providerText = withClosingBreath(synthesisText);
+  // ⚠ **제공자에게 보내는 바로 그 글자로 캐시 키를 만든다**(2026-09-03 리뷰) — 저장하는 `synthesis_text` 와
+  //   같은 글자다. v3 시절에는 여기서 문장 끝에 ` ...`(여운 꼬리)를 붙이고 mp3 뒤에 무음을 덧댔는데, v3 가
+  //   말끝을 뚝 끊었기 때문이다. v4 Turbo 는 꼬리 없이도 말끝을 스스로 놓아 둘 다 뺐다(2026-09-30 A/B —
+  //   `docs/spec/voice-and-message.md` §10). 되살리면 이 글자와 시청본 지문·게시 스크립트의 키가 갈라진다.
   const attempts = createSynthesisAttempts({
     env,
     profile: { elevenlabs_voice_id: target.elevenlabsVoiceId },
-    text: providerText,
+    text: synthesisText,
     language,
   });
   if (attempts.length === 0) {
@@ -1415,14 +1377,12 @@ export async function generateStockClip(
     modelId: attempt.modelId,
     language,
     languageCode: language,
-    text: providerText,
+    text: synthesisText,
     outputFormat: attempt.outputFormat,
   });
 
   const generated = await attempt.synthesize();
-  // v3 급마감(마지막 음절 직후 뚝 끊김) 보완 — 끝에 0.366초 무음을 붙인다(시딩본과 동일).
-  // 형식이 mp3_44100_128(mono)이 아니면 안전하게 원본 그대로 저장된다.
-  const bytes = appendMp3TrailingSilence(generated.bytes);
+  const bytes = generated.bytes;
   await assertCloneAuthorization();
 
   const storage = new R2VoiceStorage(env.VOICE_BUCKET);

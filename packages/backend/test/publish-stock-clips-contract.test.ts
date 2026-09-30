@@ -14,7 +14,7 @@ import { join } from 'node:path';
 import { createSynthesisAttempts } from '../src/lib/voice-provider';
 import { TTS_MODEL_ID } from '../src/lib/tts-model';
 import { computeTtsCacheKey, generatedTtsObjectKey } from '../src/lib/audio-cache';
-import { SYSTEM_VOICE_LIBRARY_USER_ID, withClosingBreath } from '../src/lib/stock-clips';
+import { SYSTEM_VOICE_LIBRARY_USER_ID } from '../src/lib/stock-clips';
 
 /** `scripts/publish-stock-clips.ts` 상단 상수와 **같은 값**이어야 한다. 모델은 서버 상수를 import 한다. */
 const SCRIPT_PROVIDER = 'elevenlabs';
@@ -46,36 +46,6 @@ describe('publish-stock-clips 가 의존하는 서버 계약', () => {
       expect(source, script).toMatch(/TTS_MODEL_ID/);
       expect(source, script).toMatch(/TTS_VOICE_SETTINGS/);
     }
-  });
-
-  it('여운 꼬리를 붙인 글자로 키를 만든다 — 원본으로 만들면 키가 갈라진다', async () => {
-    const base = '[warmly] 좋은 아침이에요.';
-    expect(withClosingBreath(base)).toBe(`${base} ...`);
-    // 이미 말끝이 흐려져 있으면 덧붙이지 않는다(두 번 붙으면 또 다른 키가 된다).
-    expect(withClosingBreath('아직 졸리죠...')).toBe('아직 졸리죠...');
-
-    const keyOfRaw = await computeTtsCacheKey({
-      provider: SCRIPT_PROVIDER,
-      providerVoiceId: 'voice-1',
-      voiceProfileId: 'profile-1',
-      modelId: SCRIPT_MODEL_ID,
-      language: 'ko',
-      languageCode: 'ko',
-      text: base,
-      outputFormat: SCRIPT_OUTPUT_FORMAT,
-    });
-    const keyOfProviderText = await computeTtsCacheKey({
-      provider: SCRIPT_PROVIDER,
-      providerVoiceId: 'voice-1',
-      voiceProfileId: 'profile-1',
-      modelId: SCRIPT_MODEL_ID,
-      language: 'ko',
-      languageCode: 'ko',
-      text: withClosingBreath(base),
-      outputFormat: SCRIPT_OUTPUT_FORMAT,
-    });
-    // 둘이 달라야 한다 — 같으면 이 테스트가 지키려는 구분 자체가 없다는 뜻이다.
-    expect(keyOfProviderText).not.toBe(keyOfRaw);
   });
 
   it('시스템 스톡의 오브젝트 키는 시스템 라이브러리 계정 아래에 놓인다', () => {
