@@ -5,6 +5,7 @@ import {
   STOCK_CLIP_LANGUAGES,
   STOCK_GREETING_CATEGORY,
   findMissingStockTargets,
+  systemStockTexts,
   type PrerenderVoice,
 } from '../src/lib/stock-clips';
 
@@ -35,11 +36,16 @@ describe('STOCK_CLIP_PRESETS (확정 리터럴)', () => {
     expect(weather.texts.ja[8]).toMatch(/取得できません|お伝えできません/);
   });
 
-  it('모든 문구가 딜리버리 태그로 시작한다(자동 태깅 미사용 전제)', () => {
+  // 2026-09-30(eleven_v4_turbo): 태그를 뺐다 — 합성 글자와 화면 문구가 같은 글이다(`systemStockTexts`).
+  it('어느 문구에도 대괄호 태그가 없고, 앞뒤 공백·겹친 공백도 없다', () => {
     for (const preset of STOCK_CLIP_PRESETS) {
       for (const list of Object.values(preset.texts as Record<string, readonly string[]>)) {
         for (const text of list) {
-          expect(text).toMatch(/^\[[a-z][a-z -]{1,32}\]/i);
+          expect(text).not.toMatch(/\[[a-z][a-z ,-]{1,48}\]/i);
+          expect(text).toBe(text.trim());
+          expect(text).not.toMatch(/\s{2,}/);
+          // 합성 글자·화면 문구·태그 목록이 서버와 게시 스크립트에서 같게 나온다.
+          expect(systemStockTexts(`  ${text} `)).toEqual({ synthesisText: text, displayText: text, deliveryTagsJson: '[]' });
         }
       }
     }

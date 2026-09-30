@@ -28,7 +28,7 @@
 import { mkdirSync, existsSync, writeFileSync, readFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 
-import { STOCK_CLIP_PRESETS } from '../src/lib/stock-clips.ts';
+import { STOCK_CLIP_PRESETS, systemStockTexts } from '../src/lib/stock-clips.ts';
 import { ELEVENLABS_TTS_OUTPUT_FORMAT } from '../src/lib/elevenlabs.ts';
 import { TTS_MODEL_ID, TTS_VOICE_SETTINGS } from '../src/lib/tts-model.ts';
 import {
@@ -76,11 +76,11 @@ const LANGUAGES = ['ko', 'en', 'ja'] as const;
 type Language = (typeof LANGUAGES)[number];
 
 /**
- * 제공자에게 실제로 보내는 글자. 서버(`generateStockClip`)와 **같아야 한다** — 서버는 프리셋을 trim 한
- * 글자 그대로 합성하고 그 글자로 캐시 키를 만든다(v3 시절의 여운 꼬리 ` ...` 는 v4 Turbo 에서 뺐다).
+ * 제공자에게 실제로 보내는 글자. 서버(`generateStockClip`)와 **같은 함수**(`systemStockTexts`)로 만든다 —
+ * 서버는 그 글자로 합성하고 캐시 키를 만든다(v3 시절의 여운 꼬리 ` ...` 는 v4 Turbo 에서 뺐다).
  */
 function providerTextFor(text: string): string {
-  return text.trim();
+  return systemStockTexts(text).synthesisText;
 }
 
 function argValue(name: string): string | undefined {

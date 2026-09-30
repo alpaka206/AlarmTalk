@@ -47,10 +47,9 @@ import { createClient, type Client } from '@libsql/client';
 import {
   STOCK_CLIP_PRESETS,
   SYSTEM_VOICE_LIBRARY_USER_ID,
-  stripDeliveryTags,
+  systemStockTexts,
 } from '../src/lib/stock-clips.ts';
 import { computeTtsCacheKey, generatedTtsObjectKey } from '../src/lib/audio-cache.ts';
-import { prepareAlarmTextWithVertex } from '../src/lib/vertex-translate.ts';
 import { ELEVENLABS_TTS_OUTPUT_FORMAT } from '../src/lib/elevenlabs.ts';
 import { TTS_MODEL_ID, TTS_VOICE_SETTINGS } from '../src/lib/tts-model.ts';
 import {
@@ -181,26 +180,6 @@ function collectTargets(): Target[] {
   return targets;
 }
 
-/**
- * 서버의 시스템 스톡 갈래와 **같은 방식**으로 문구 세 벌을 만든다
- * (`generateStockClip` 의 else 분기).
- *
- * `translate:false` 면 `prepareAlarmTextWithVertex` 는 네트워크를 타지 않고 로컬 패스스루다 —
- * 그래서 `env` 가 비어도 된다.
- */
-async function deriveTexts(baseText: string, language: Language) {
-  const prepared = await prepareAlarmTextWithVertex({} as never, baseText, {
-    targetLanguage: language,
-    sourceLanguage: language,
-    translate: false,
-  });
-  const synthesisText = prepared.text;
-  return {
-    synthesisText,
-    displayText: stripDeliveryTags(synthesisText) || stripDeliveryTags(baseText),
-    deliveryTagsJson: JSON.stringify(prepared.tags),
-  };
-}
 
 /** 이 자리에 이미 살아 있는 프리셋이 있으면 그 id, 없으면 null. */
 async function publishedMessageId(db: Client, target: Target): Promise<string | null> {
@@ -291,7 +270,8 @@ async function main(): Promise<void> {
       modelId: TTS_MODEL_ID,
       outputFormat: ELEVENLABS_TTS_OUTPUT_FORMAT,
       voiceSettings: TTS_VOICE_SETTINGS,
-      providerText: (await deriveTexts(t.baseText, t.language)).synthesisText,
+      // 서버의 시스템 스톡 갈래(`generateStockClip`)와 **같은 함수**로 문구를 만든다.
+      providerText: systemStockTexts(t.baseText).synthesisText,
     });
     if (fingerprints[fingerprintKey(t.language, t.voiceName, `${t.category}_${String(t.variant).padStart(2, '0')}.mp3`)] !== expected) {
       staleFiles.push(`${t.language}/${t.voiceName}/${t.category}_${t.variant}`);
@@ -340,10 +320,7 @@ async function main(): Promise<void> {
   for (const target of targets) {
     const label = `${target.language}/${target.voiceName}/${target.category}_${String(target.variant).padStart(2, '0')}`;
     try {
-      const { synthesisText, displayText, deliveryTagsJson } = await deriveTexts(
-        target.baseText,
-        target.language,
-      );
+      const { synthesisText, displayText, deliveryTagsJson } = systemStockTexts(target.baseText);
       // ⚠ **제공자에게 보낸 그 글자로 키를 만든다** — 시청본도 같은 글자로 구웠고, 서버도 같다.
       const cacheKey = await computeTtsCacheKey({
         provider: PROVIDER,

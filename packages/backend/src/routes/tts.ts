@@ -307,16 +307,11 @@ function pickRandomPresetText(category: string, language: string): string | null
   return messages[randomIndex(messages.length)]!;
 }
 
-// 프리셋 문구 앞에 호칭을 붙인다. 프리셋은 '[brightly] 오늘은…' 처럼 delivery 태그로 시작하는데,
-// 호칭을 그 **앞**에 붙이면 태그가 문장 중간으로 밀려 호칭만 톤 지시 없이 읽힌다.
-// 그래서 선두 태그는 그대로 두고 그 뒤에 끼워 넣는다.
+// 프리셋 문구 앞에 호칭을 붙인다. 프리셋·미리듣기 고정 예문에는 태그가 없다(2026-09-30).
 function presetTextWithListenerTitle(text: string, listenerTitle: string | null): string {
   const title = listenerTitle?.trim();
   const base = text.trim();
-  if (!title || !base) return base;
-  const lead = base.match(/^\[[a-z][a-z -]{1,32}\]\s*/i)?.[0] ?? '';
-  const spoken = base.slice(lead.length);
-  if (!spoken || spoken.startsWith(title)) return base;
+  if (!title || !base || base.startsWith(title)) return base;
   // ⚠ **길이로 호칭을 떨어뜨리지 않는다**(2026-09-02 정정). 예전에는 결과가 200자를 넘으면
   //   호칭을 통째로 버렸는데, 그 200 은 **사용자가 직접 친 문구**의 상한이지 우리 프리셋의
   //   상한이 아니다. 실제로 영어 프리셋은 그 자체가 200자를 넘고(최장 308자), 그래서
@@ -324,7 +319,7 @@ function presetTextWithListenerTitle(text: string, listenerTitle: string | null)
   //   나가면서 호칭만 조용히 사라지는, 앞뒤가 안 맞는 동작이었다.
   //   호칭 자체는 이미 30자로 잘려 들어오므로(`normalizeRelationshipLabel`) 늘어나는
   //   길이는 최대 32자로 묶여 있다.
-  return `${lead}${title}, ${spoken}`;
+  return `${title}, ${base}`;
 }
 
 function draftPreviewText(language: string): string {
@@ -861,8 +856,7 @@ tts.post('/generate', async (c) => {
     );
   }
 
-  // 프리셋 문구는 STOCK_CLIP_PRESETS 에서 오고 '[brightly]' 같은 delivery 태그를 달고 온다.
-  // 사용자가 친 대괄호가 아니라 우리 마크업이므로 표시 문구에서는 벗겨야 한다(아래 messageText).
+  // 프리셋 문구는 STOCK_CLIP_PRESETS 에서 온다 — 사용자가 친 글이 아니다(아래 messageText 는 빈 원문으로 만든다).
   const presetTextUsed = !draftPreviewRequested && randomRequested && randomContext === 'preset';
   let requestText = draftPreviewRequested
     ? draftPreviewText('ko')

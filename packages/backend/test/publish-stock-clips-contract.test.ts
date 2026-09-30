@@ -38,6 +38,15 @@ describe('publish-stock-clips 가 의존하는 서버 계약', () => {
     expect(attempt.modelId).toBe('eleven_v4_turbo');
   });
 
+  it('게시·시청본 스크립트는 문구를 서버와 같은 함수(`systemStockTexts`)로 만든다', () => {
+    // 예전 게시 스크립트는 자기 `deriveTexts` 로 태그를 벗겼다 — 서버와 규칙이 갈라지면 게시한 클립의 키가 어긋난다.
+    for (const script of ['publish-stock-clips.ts', 'prerender-stock-preview.ts']) {
+      const source = readFileSync(join(__dirname, '..', 'scripts', script), 'utf-8');
+      expect(source, script).toMatch(/systemStockTexts\(/);
+      expect(source, script).not.toMatch(/deriveTexts|stripDeliveryTags|withClosingBreath/);
+    }
+  });
+
   it('스톡 스크립트는 모델 id 를 직접 적지 않는다 — 서버 상수(`TTS_MODEL_ID`)를 가져다 쓴다', () => {
     // 예전에는 두 스크립트가 `'eleven_v3'` 를 박아 두어, 서버 모델을 바꾸면 시청본·게시 키가 옛 모델로 남았다.
     for (const script of ['publish-stock-clips.ts', 'prerender-stock-preview.ts']) {
