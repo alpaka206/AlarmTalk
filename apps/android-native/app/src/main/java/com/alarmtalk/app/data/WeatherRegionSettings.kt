@@ -1,5 +1,6 @@
 package com.alarmtalk.app.data
 
+import com.alarmtalk.app.network.AuthSession
 import com.alarmtalk.app.network.DynamicPromptSettings
 import com.alarmtalk.app.network.DynamicPromptWeatherSettings
 
@@ -60,28 +61,62 @@ object WeatherRegionHolidaySync {
      * 설정 행도 없이 옛 나라에 남는다. 그래서 받아들일 때마다 지역의 나라로 맞춘다. 예외는 하나다:
      *
      *  - ⚠ **업데이트 직후 처음 받는 계정 지역**인데 이 기기에 옛 '공휴일 달력' 행에서 **직접 고른**
-     *    나라가 있고 그게 지역의 나라와 다르면, **그 계정 지역이 바뀌기 전까지** 그 나라를 둔다.
+     *    나라가 있고 그게 지역의 나라와 다르면, **그 계정의 지역이 바뀌기 전까지** 그 나라를 둔다.
      *    행이 사라졌다고 사용자가 고른 달력을 말없이 바꾸면 공휴일에 꺼지는 날이 조용히 달라진다.
      *    지역을 다시 고르면([onRegionSaved]) 곧바로 지역의 나라가 된다.
+     *    ⚠ 지키는 것은 **그 계정**([userId])에 대해서뿐이다 — 다른 계정이 들어오면(지역이 같아도) 그
+     *    계정의 지역의 나라를 따른다. 이 기기 전역의 표시를 지역 키로만 가르면 다음 계정이 앞 계정 때
+     *    지켜 둔 나라를 물려받는데, 그 계정에게는 그 나라를 바꿀 행이 없다(Codex #837).
      *
      * "지난번에 받은 지역과 같으면 건너뛴다" 를 두지 않는다(2026-09-30 iOS 와 통일). 이 기기에서 고른
      * 지역의 저장이 실패한 경우는 여기까지 오지 않는다 — 받아 적기가 [AccountSettingsAdoption.LocalPending]
      * 이다. 건너뛰기를 두면 로그아웃(값·표시를 지운다) 뒤 같은 계정으로 다시 들어왔을 때 화면의 지역과
      * 달력의 나라가 갈라진 채 남는다. iOS `HolidayStore.countryForAccountRegion` 과 같은 판정이다.
      */
-    suspend fun onAccountRegionReceived(store: HolidayCountryPreferenceStore, region: WeatherRegion?): Boolean {
+    suspend fun onAccountRegionReceived(
+        store: HolidayCountryPreferenceStore,
+        userId: String,
+        region: WeatherRegion?,
+    ): Boolean {
         region ?: return false
         val code = region.country.code
         val firstReceipt = store.lastAccountRegionKey() == null
         store.rememberAccountRegionKey(region.key)
         if (firstReceipt && store.hasSavedCountry() && store.read() != code) {
-            store.keepCountryForAccountRegion(region.key)
+            store.keepCountryForAccountRegion(userId, region.key)
             return false
         }
-        if (store.keptCountryAccountRegionKey() == region.key) return false
+        if (store.keptCountryAccountRegionKey() == region.key && store.keptCountryAccountUserId() == userId) {
+            return false
+        }
         store.clearKeptCountry()
         return store.setCountry(code)
     }
+}
+
+/**
+ * 계정 설정을 **받았다는 사건** 하나 — 누구의(`userId`) 어떤 값(`settings`)을 언제 받았는가(`answeredAtMillis`).
+ *
+ * 받아 적기(`MainViewModel.onAccountPromptSettingsReceived`)를 다시 돌릴 축이다(`AlarmTalkApp`).
+ * ⚠ **받은 시각이 축에 있어야 한다**(Codex #837). 값만 축으로 두면, 이 기기의 변경을 올리다 실패한 뒤
+ * 서버가 **같은 옛 값**을 다시 줄 때(다음 `/auth/me`) 다시 돌지 않는다 — 그 변경은 '안 올라간 변경' 으로
+ * 남은 채 프로세스가 다시 뜰 때까지 올라가지 않고, 그 사이 다른 기기·받는 가족은 옛 지역을 본다.
+ * 받은 시각은 서버 응답을 저장하는 자리(로그인·`/auth/me`)가 새로 찍고, 프로필만 고친 저장은 그대로
+ * 둔다([AuthSession.userFetchedAtMillis]) — 그때는 값이 바뀌므로 어차피 다시 돈다. 받아 적기는 멱등이다.
+ */
+data class AccountSettingsReceipt(
+    val userId: String,
+    val settings: DynamicPromptSettings,
+    val answeredAtMillis: Long?,
+)
+
+/** 세션 → 받아 적을 사건. 계정이나 설정이 없으면 null(받아 적을 것이 없다). */
+fun accountSettingsReceipt(session: AuthSession?): AccountSettingsReceipt? {
+    val user = session?.user ?: return null
+    // 타입은 non-null 이지만 Gson 이 옛 세션·응답에서 null 을 넣을 수 있다 — 받아 적을 것이 없다.
+    val settings: DynamicPromptSettings? = user.dynamicPromptSettings
+    if (settings == null || user.id.isBlank()) return null
+    return AccountSettingsReceipt(user.id, settings, session.userFetchedAtMillis)
 }
 
 /**
@@ -106,7 +141,7 @@ suspend fun adoptAccountPromptSettings(
 ): AccountSettingsAdoption {
     val adoption = promptStore.adoptAccountSettings(userId, settings)
     if (adoption == AccountSettingsAdoption.Accepted) {
-        WeatherRegionHolidaySync.onAccountRegionReceived(holidayStore, settings.weather.resolvedRegion())
+        WeatherRegionHolidaySync.onAccountRegionReceived(holidayStore, userId, settings.weather.resolvedRegion())
     }
     return adoption
 }

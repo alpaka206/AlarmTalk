@@ -213,22 +213,22 @@ final class WeatherRegionCatalogTests: XCTestCase {
         defer { defaults.removePersistentDomain(forName: suite) }
 
         // 새 기기(직접 고른 나라 없음) — 계정 지역의 나라.
-        XCTAssertEqual(HolidayStore.countryForAccountRegion("jp-tokyo", currentCountry: "KR", defaults: defaults), "JP")
+        XCTAssertEqual(HolidayStore.countryForAccountRegion("jp-tokyo", userID: "user-a", currentCountry: "KR", defaults: defaults), "JP")
         // 지역이 없거나 모르는 키면 건드리지 않는다.
-        XCTAssertNil(HolidayStore.countryForAccountRegion(nil, currentCountry: "KR", defaults: defaults))
-        XCTAssertNil(HolidayStore.countryForAccountRegion("kr-atlantis", currentCountry: "KR", defaults: defaults))
+        XCTAssertNil(HolidayStore.countryForAccountRegion(nil, userID: "user-a", currentCountry: "KR", defaults: defaults))
+        XCTAssertNil(HolidayStore.countryForAccountRegion("kr-atlantis", userID: "user-a", currentCountry: "KR", defaults: defaults))
 
         // 업데이트 직후: 옛 '공휴일 달력' 행에서 JP 를 직접 골라 둔 기기 + 계정 지역은 서울.
         let upgraded = try XCTUnwrap(UserDefaults(suiteName: suite + ".upgraded"))
         defer { upgraded.removePersistentDomain(forName: suite + ".upgraded") }
         upgraded.set("JP", forKey: HolidayStore.countryDefaultsKey)
-        XCTAssertNil(HolidayStore.countryForAccountRegion("kr-seoul", currentCountry: "JP", defaults: upgraded),
+        XCTAssertNil(HolidayStore.countryForAccountRegion("kr-seoul", userID: "user-a", currentCountry: "JP", defaults: upgraded),
                      "처음 받는 지역은 직접 고른 나라를 덮지 않는다")
-        XCTAssertNil(HolidayStore.countryForAccountRegion("kr-seoul", currentCountry: "JP", defaults: upgraded),
+        XCTAssertNil(HolidayStore.countryForAccountRegion("kr-seoul", userID: "user-a", currentCountry: "JP", defaults: upgraded),
                      "같은 지역을 다시 받아도(콜드 스타트) 그대로 둔다")
-        XCTAssertEqual(HolidayStore.countryForAccountRegion("kr-busan", currentCountry: "JP", defaults: upgraded), "KR",
+        XCTAssertEqual(HolidayStore.countryForAccountRegion("kr-busan", userID: "user-a", currentCountry: "JP", defaults: upgraded), "KR",
                        "계정 지역이 바뀌면 그 나라가 된다")
-        XCTAssertEqual(HolidayStore.countryForAccountRegion("kr-busan", currentCountry: "JP", defaults: upgraded), "KR",
+        XCTAssertEqual(HolidayStore.countryForAccountRegion("kr-busan", userID: "user-a", currentCountry: "JP", defaults: upgraded), "KR",
                        "그 뒤로는 받아들일 때마다 지역의 나라로 맞춘다(안드로이드 `onAccountRegionReceived` 와 같다)")
     }
 
@@ -241,10 +241,30 @@ final class WeatherRegionCatalogTests: XCTestCase {
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
 
-        XCTAssertEqual(HolidayStore.countryForAccountRegion("kr-seoul", currentCountry: "KR", defaults: defaults), "KR")
+        XCTAssertEqual(HolidayStore.countryForAccountRegion("kr-seoul", userID: "user-a", currentCountry: "KR", defaults: defaults), "KR")
         // 이 기기에서 도쿄를 골랐다(`adoptCountry(ofWeatherRegion:)` — 달력 JP).
         defaults.set("JP", forKey: HolidayStore.countryDefaultsKey)
-        XCTAssertEqual(HolidayStore.countryForAccountRegion("kr-seoul", currentCountry: "JP", defaults: defaults), "KR")
+        XCTAssertEqual(HolidayStore.countryForAccountRegion("kr-seoul", userID: "user-a", currentCountry: "JP", defaults: defaults), "KR")
+    }
+
+    /// **지켜 둔 나라는 그 계정의 것이다**(Codex #837). 표시는 기기 전역이라 지역 키로만 가르면, 같은 지역의
+    /// 다른 계정이 들어왔을 때 앞 계정 때 지켜 둔 나라를 물려받는다 — 그 계정에게는 바꿀 행이 없다.
+    /// 안드로이드 `WeatherRegionPickerTest.지켜_둔_나라는_다른_계정에_물려주지_않는다` 와 같다.
+    func test_지켜_둔_나라는_다른_계정에_물려주지_않는다() throws {
+        let suite = "WeatherRegionCatalogTests.accounts.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        // 옛 '공휴일 달력' 행에서 JP 를 직접 골라 둔 기기.
+        defaults.set("JP", forKey: HolidayStore.countryDefaultsKey)
+
+        XCTAssertNil(HolidayStore.countryForAccountRegion("kr-seoul", userID: "user-a", currentCountry: "JP", defaults: defaults),
+                     "처음 받는 지역은 직접 고른 나라를 덮지 않는다")
+        XCTAssertNil(HolidayStore.countryForAccountRegion("kr-seoul", userID: "user-a", currentCountry: "JP", defaults: defaults),
+                     "같은 계정이 다시 들어와도 그대로 지킨다")
+        XCTAssertEqual(HolidayStore.countryForAccountRegion("kr-seoul", userID: "user-b", currentCountry: "JP", defaults: defaults), "KR",
+                       "다른 계정은 지역이 같아도 그 계정 지역의 나라를 따른다")
+        XCTAssertNil(defaults.string(forKey: HolidayStore.keptCountryAccountWeatherRegionDefaultsKey))
+        XCTAssertNil(defaults.string(forKey: HolidayStore.keptCountryAccountUserDefaultsKey))
     }
 
     // MARK: - 시트의 첫 나라

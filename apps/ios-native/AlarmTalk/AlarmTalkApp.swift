@@ -352,7 +352,8 @@ struct AlarmTalkApp: App {
                                     key: settings.weather.region,
                                     country: settings.weather.country,
                                     city: settings.weather.city
-                                )?.key
+                                )?.key,
+                                userID: userID
                             )
                         case .localPending(let local):
                             Task { await auth.updateProfile(dynamicPromptSettings: local) }
@@ -935,16 +936,21 @@ struct AlarmTalkApp: App {
         }
     }
 
-    /// 계정 설정을 받아 적을 때 — 계정과 그 계정의 설정이 축이다(계정이 바뀌면 설정이 같아도 다시 본다).
+    /// 계정 설정을 받아 적을 때 — 계정과 그 계정의 설정, 그리고 **계정 응답**이 축이다(계정이 바뀌면 설정이
+    /// 같아도 다시 본다). ⚠ 응답 순번(`AuthViewModel.accountAnswerRevision`)을 빼지 말 것 — 올리기가 실패한 뒤
+    /// 서버가 같은 옛 값을 다시 주면 값만으로는 다시 돌지 않아, 밀린 변경이 앱을 다시 띄울 때까지 안 올라간다
+    /// (Codex #837). 받아 적기는 멱등이다.
     private struct AccountPromptSettingsKey: Equatable {
         var userID: String?
         var settings: DynamicPromptSettings?
+        var answerRevision: Int
     }
 
     private var accountPromptSettingsKey: AccountPromptSettingsKey {
         AccountPromptSettingsKey(
             userID: auth.session?.user.id,
-            settings: auth.session?.user.dynamicPromptSettings
+            settings: auth.session?.user.dynamicPromptSettings,
+            answerRevision: auth.accountAnswerRevision
         )
     }
 

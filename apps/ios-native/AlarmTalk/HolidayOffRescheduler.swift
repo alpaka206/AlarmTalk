@@ -8,7 +8,7 @@ import Foundation
 /// 공휴일이라 **안 울리거나**, 새 나라의 공휴일인데 울린다. 안 울리는 쪽이 사고다.
 ///
 /// 달력이 바뀌는 때는 셋이다: 사용자가 지역을 고를 때(설정·편집기 → `HolidayStore.adoptCountry(ofWeatherRegion:)`),
-/// 서버에서 계정 지역을 받을 때(`adoptCountry(ofAccountWeatherRegion:)`), 그리고 JP·US 공휴일을 서버에서 받아 왔을 때
+/// 서버에서 계정 지역을 받을 때(`adoptCountry(ofAccountWeatherRegion:userID:)`), 그리고 JP·US 공휴일을 서버에서 받아 왔을 때
 /// (나라는 그대로지만 달력이 비어 있다가 채워진다 — `HolidayStore.calendarMarker` 의 `:pending`).
 ///
 /// **멱등이다.** 마지막으로 다시 건 달력의 표지를 UserDefaults 에 남기고, 지금 표지와 같으면 아무것도 하지 않는다.

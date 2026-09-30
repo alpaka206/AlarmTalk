@@ -582,11 +582,14 @@ internal fun AlarmTalkApp(
     // 옛 나라의 달력으로 남는다. 언제 적고 언제 두는지는 `onAccountPromptSettingsReceived` 한 곳이
     // 정한다(이 기기에 안 올라간 변경이 있으면 덮지 않는다). 공휴일 국가 규칙:
     // docs/spec/alarm-lifecycle.md 「공휴일 국가는 지역의 나라다」.
-    val accountUserId = authSession?.user?.id
-    val accountPromptSettings = authSession?.user?.dynamicPromptSettings
-    LaunchedEffect(accountUserId, accountPromptSettings) {
-        if (accountUserId == null || accountPromptSettings == null) return@LaunchedEffect
-        viewModel.onAccountPromptSettingsReceived(accountUserId, accountPromptSettings)
+    //
+    // ⚠ **계정 응답이 올 때마다** 다시 돈다 — 축은 설정 값이 아니라 응답이다(`AccountSettingsReceipt`).
+    // 값만 축으로 두면 저장이 실패한 뒤 서버가 **같은 옛 값**을 다시 줄 때 다시 돌지 않아, 밀린 변경을
+    // 프로세스가 다시 뜰 때까지 올리지 못한다(Codex #837).
+    val accountSettingsReceipt = com.alarmtalk.app.data.accountSettingsReceipt(authSession)
+    LaunchedEffect(accountSettingsReceipt) {
+        val receipt = accountSettingsReceipt ?: return@LaunchedEffect
+        viewModel.onAccountPromptSettingsReceived(receipt.userId, receipt.settings)
     }
     // 상대가 목소리 공유를 켜면(voice_share_changed push) 공유 목록·클립 매니페스트를
     // 즉시 새로고침한다 — 가족 알람 push→pull 과 같은 즉시성.

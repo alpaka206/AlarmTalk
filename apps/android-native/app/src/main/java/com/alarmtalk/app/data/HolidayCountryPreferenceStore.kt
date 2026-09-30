@@ -54,12 +54,26 @@ class HolidayCountryPreferenceStore(context: Context) {
     fun keptCountryAccountRegionKey(): String? =
         prefs.getString(KEY_KEPT_COUNTRY_ACCOUNT_REGION, null)?.trim()?.ifEmpty { null }
 
-    fun keepCountryForAccountRegion(key: String) {
-        prefs.edit().putString(KEY_KEPT_COUNTRY_ACCOUNT_REGION, key).apply()
+    /**
+     * 그 나라를 지키고 있는 **계정**. ⚠ 지역 키만으로 가르지 말 것 — 이 값은 기기 전역이라, 같은
+     * 지역(서울)의 **다른 계정**이 이 기기에 들어와도 앞 계정 때 지켜 둔 나라(JP)를 물려받는다
+     * (Codex #837). iOS `HolidayStore.keptCountryAccountUserDefaultsKey`.
+     */
+    fun keptCountryAccountUserId(): String? =
+        prefs.getString(KEY_KEPT_COUNTRY_ACCOUNT_USER, null)?.trim()?.ifEmpty { null }
+
+    fun keepCountryForAccountRegion(userId: String, key: String) {
+        prefs.edit()
+            .putString(KEY_KEPT_COUNTRY_ACCOUNT_REGION, key)
+            .putString(KEY_KEPT_COUNTRY_ACCOUNT_USER, userId)
+            .apply()
     }
 
     fun clearKeptCountry() {
-        prefs.edit().remove(KEY_KEPT_COUNTRY_ACCOUNT_REGION).apply()
+        prefs.edit()
+            .remove(KEY_KEPT_COUNTRY_ACCOUNT_REGION)
+            .remove(KEY_KEPT_COUNTRY_ACCOUNT_USER)
+            .apply()
     }
 
     companion object {
@@ -72,6 +86,7 @@ class HolidayCountryPreferenceStore(context: Context) {
         private const val KEY_COUNTRY = "country_code"
         private const val KEY_LAST_ACCOUNT_REGION = "last_account_weather_region"
         private const val KEY_KEPT_COUNTRY_ACCOUNT_REGION = "kept_country_for_account_weather_region"
+        private const val KEY_KEPT_COUNTRY_ACCOUNT_USER = "kept_country_for_account_user"
         private const val FALLBACK_COUNTRY = "KR"
 
         @Volatile

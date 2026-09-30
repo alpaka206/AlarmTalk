@@ -234,6 +234,14 @@ final class AuthViewModel: ObservableObject {
     /// 않게. 전경 무료 잠금의 오프라인 차단 갈래(`PaidVoiceGate.freePlanLockMayApply`)가 기다린다.
     @Published private(set) var planAnsweredEntry = 0
 
+    /// 계정 응답(`/auth/me`·로그인·가입)을 세션에 적을 때마다 하나씩 오른다 — **값이 같아도.**
+    ///
+    /// 계정 설정 받아 적기(`AlarmTalkApp` 의 `accountPromptSettingsKey`)의 축이다. 설정 값만 축으로 두면,
+    /// 이 기기의 변경을 올리다 실패한 뒤 서버가 **같은 옛 값**을 다시 줄 때 다시 돌지 않아 밀린 변경이 앱을
+    /// 다시 띄울 때까지 올라가지 않는다(Codex #837). 받아 적기는 멱등이라 몇 번 돌아도 된다.
+    /// 안드로이드는 세션의 받은 시각(`AuthSession.userFetchedAtMillis` → `accountSettingsReceipt`)이 같은 일을 한다.
+    @Published private(set) var accountAnswerRevision = 0
+
     /// 계정 요청 하나의 표 — `/auth/me`·로그인을 **보내기 직전에** 뜬다(`beginAccountRequest`).
     /// 안드로이드 `AccountRequest`(`ui/billing/PersonalPromoLedger.kt`)와 같은 모양이다.
     struct AccountRequest: Equatable {
@@ -294,6 +302,7 @@ final class AuthViewModel: ObservableObject {
     /// (도착한 진입이 보낸 진입과 같으면 그 사이 백그라운드를 거치지 않았다).
     private func recordAccountAnswer(_ request: AccountRequest) {
         if request.seq > accountAnswerSeq { accountAnswerSeq = request.seq }
+        accountAnswerRevision &+= 1
         noteEntryOutcome(request, .answered)
         if let entry = entryOfArrival(request) { planAnsweredEntry = entry }
     }

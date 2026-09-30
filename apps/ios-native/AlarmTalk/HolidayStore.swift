@@ -216,7 +216,7 @@ final class HolidayStore: ObservableObject {
     /// 자리는 여기 하나다. 안드로이드는 `HolidayCountryPreferenceStore.setCountry` 로 같은 일을 한다.
     ///
     /// 서버에서 계정 설정을 받아 **이 기기가 받아들였을 때**(`AlarmTalkApp` — 새 기기 로그인·다른 기기에서 고침,
-    /// `DynamicPromptPreferences.adoptAccount` 가 `.accepted`)는 `adoptCountry(ofAccountWeatherRegion:)` 가
+    /// `DynamicPromptPreferences.adoptAccount` 가 `.accepted`)는 `adoptCountry(ofAccountWeatherRegion:userID:)` 가
     /// 판정(`countryForAccountRegion`)을 거쳐 같은 일을 한다. 계정 설정은 계정에, 공휴일 국가는 기기에 있으므로
     /// 받아 올 때 맞추지 않으면 두 번째 기기는 옛 나라에 남는다.
     ///
@@ -234,6 +234,7 @@ final class HolidayStore: ObservableObject {
         // 사용자가 지역을 골랐다 — 옛 '공휴일 달력' 행에서 고른 나라는 더 지키지 않는다
         // (`countryForAccountRegion`). 남겨 두면 다음 실행에 서버 지역을 받을 때 그 판정이 이 고름을 가린다.
         UserDefaults.standard.removeObject(forKey: Self.keptCountryAccountWeatherRegionDefaultsKey)
+        UserDefaults.standard.removeObject(forKey: Self.keptCountryAccountUserDefaultsKey)
         guard code != selectedCountryCode else { return false }
         selectedCountryCode = code
         return true
@@ -243,6 +244,10 @@ final class HolidayStore: ObservableObject {
     nonisolated static let lastAccountWeatherRegionDefaultsKey = "holiday.lastAccountWeatherRegion"
     /// 옛 '공휴일 달력' 행에서 **직접 고른** 나라를 지키고 있는 계정 지역 키(아래 판정).
     nonisolated static let keptCountryAccountWeatherRegionDefaultsKey = "holiday.keptCountryForAccountWeatherRegion"
+    /// 그 나라를 지키고 있는 **계정**. ⚠ 지역 키만으로 가르지 말 것 — 이 값은 기기 전역이라, 같은 지역의
+    /// **다른 계정**이 이 기기에 들어와도 앞 계정 때 지켜 둔 나라를 물려받는다(Codex #837).
+    /// 안드로이드 `HolidayCountryPreferenceStore.keptCountryAccountUserId`.
+    nonisolated static let keptCountryAccountUserDefaultsKey = "holiday.keptCountryForAccountUser"
 
     /// 이 기기에 적힌 공휴일 국가 — 없으면 기기 로케일 기본값. 안드로이드
     /// `HolidayCountryPreferenceStore.read()` 와 같은 값이다(지역 시트가 처음 보일 나라의 폴백).
@@ -258,6 +263,9 @@ final class HolidayStore: ObservableObject {
     /// 나라가 있고 그게 지역의 나라와 다르면, **그 계정 지역이 바뀌기 전까지** 그 나라를 둔다. 지역을
     /// 다시 고르면(설정 '지역' 행) 곧바로 지역의 나라가 된다. 행이 사라졌다고 사용자가 고른 달력을
     /// 말없이 바꾸면 공휴일에 꺼지는 날이 조용히 달라진다.
+    /// ⚠ 지키는 것은 **그 계정**(`userID`)에 대해서뿐이다 — 다른 계정이 들어오면(지역이 같아도) 그 계정의
+    /// 지역의 나라를 따른다. 지역 키로만 가르면 다음 계정이 앞 계정 때 지켜 둔 나라를 물려받는데, 그 계정에게는
+    /// 그 나라를 바꿀 행이 없다(Codex #837).
     ///
     /// 그 밖에는 **받아들일 때마다** 지역의 나라로 맞춘다("지난번과 같은 지역이면 건너뛴다" 를 두지 않는다).
     /// 이 기기에서 고른 지역의 저장이 실패한 경우는 여기까지 오지 않는다 — 받아 적기가 `.localPending` 이라
@@ -266,6 +274,7 @@ final class HolidayStore: ObservableObject {
     /// `WeatherRegionHolidaySync.onAccountRegionReceived` 도 같은 판정이다.
     nonisolated static func countryForAccountRegion(
         _ key: String?,
+        userID: String?,
         currentCountry: String,
         defaults: UserDefaults = .standard
     ) -> String? {
@@ -277,18 +286,23 @@ final class HolidayStore: ObservableObject {
            defaults.string(forKey: countryDefaultsKey) != nil,
            currentCountry != code {
             defaults.set(region.key, forKey: keptCountryAccountWeatherRegionDefaultsKey)
+            defaults.set(userID, forKey: keptCountryAccountUserDefaultsKey)
             return nil
         }
-        if defaults.string(forKey: keptCountryAccountWeatherRegionDefaultsKey) == region.key { return nil }
+        if defaults.string(forKey: keptCountryAccountWeatherRegionDefaultsKey) == region.key,
+           defaults.string(forKey: keptCountryAccountUserDefaultsKey) == userID {
+            return nil
+        }
         defaults.removeObject(forKey: keptCountryAccountWeatherRegionDefaultsKey)
+        defaults.removeObject(forKey: keptCountryAccountUserDefaultsKey)
         return code
     }
 
     /// 서버에서 받은 계정 지역으로 공휴일 국가를 맞춘다(`AlarmTalkApp` 의 계정 설정 관찰).
     /// 판정은 `countryForAccountRegion` 한 곳이다.
     @discardableResult
-    func adoptCountry(ofAccountWeatherRegion key: String?) -> Bool {
-        guard let code = Self.countryForAccountRegion(key, currentCountry: selectedCountryCode),
+    func adoptCountry(ofAccountWeatherRegion key: String?, userID: String?) -> Bool {
+        guard let code = Self.countryForAccountRegion(key, userID: userID, currentCountry: selectedCountryCode),
               code != selectedCountryCode else { return false }
         // 같은 값이면 쓰지 않는다 — `adoptCountry(ofWeatherRegion:)` 주석과 같은 이유.
         selectedCountryCode = code
@@ -360,7 +374,7 @@ final class HolidayStore: ObservableObject {
         self.didFinishInit = true
         // 지금 걸려 있는 공휴일off 예약은 이 나라 달력으로 계산됐다 — 처음 한 번만 적는다.
         // **나라가 바뀌기 전에** 적어야 한다: 콜드 스타트에서 계정 지역을 받아 곧바로 나라가
-        // 바뀌어도(`adoptCountry(ofAccountWeatherRegion:)`) 그 변화를 놓치지 않는다.
+        // 바뀌어도(`adoptCountry(ofAccountWeatherRegion:userID:)`) 그 변화를 놓치지 않는다.
         HolidayOffRescheduler.recordInitialCalendarIfAbsent(selectedCountryCode)
 
         Task { [persistence] in

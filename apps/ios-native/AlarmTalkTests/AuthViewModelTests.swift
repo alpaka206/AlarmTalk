@@ -164,6 +164,35 @@ final class AuthViewModelTests: XCTestCase {
         XCTAssertEqual(vm.accountEntryAnswer, AccountEntryAnswer(entry: 3, outcome: .failed))
     }
 
+    /// **계정 응답마다 받아 적기를 다시 깨운다 — 값이 같아도**(Codex #837). 이 기기의 지역 변경을 올리다
+    /// 실패하면 서버는 다음 `/auth/me` 에 **같은 옛 값**을 준다. 받아 적기(`AlarmTalkApp` 의
+    /// `accountPromptSettingsKey`)가 값만 보면 그때 다시 돌지 않아 밀린 변경이 앱을 다시 띄울 때까지 안 올라간다.
+    /// 실패한 조회는 응답이 아니다 — 깨우지 않는다(다시 올리기가 헛돌지 않게).
+    func testAccountAnswerRevisionAdvancesOnEveryAnswerEvenWhenSettingsAreUnchanged() async {
+        let api = MockAuthAPI()
+        let vm = AuthViewModel(api: api, appleCredentialProvider: MockAppleCredentialProvider())
+        let session = makeEmailSession()
+        vm._setSessionForTesting(session)
+        addTeardownBlock { KeychainStore.deleteSession() }
+        let before = vm.accountAnswerRevision
+
+        api.meResult = .success(session.user)
+        await vm.refreshUser()
+        let afterFirst = vm.accountAnswerRevision
+        XCTAssertGreaterThan(afterFirst, before)
+
+        // 같은 옛 값이 또 온다.
+        await vm.refreshUser()
+        XCTAssertGreaterThan(vm.accountAnswerRevision, afterFirst)
+        XCTAssertEqual(vm.session?.user.dynamicPromptSettings, session.user.dynamicPromptSettings)
+
+        // 오프라인 — 응답이 아니다.
+        let beforeFailure = vm.accountAnswerRevision
+        api.meResult = .failureRaw(URLError(.notConnectedToInternet))
+        await vm.refreshUser()
+        XCTAssertEqual(vm.accountAnswerRevision, beforeFailure)
+    }
+
     /// 회귀(2026-09-27 리뷰 2차): **앞 진입에 보낸** `/auth/me` 가 백그라운드를 건너 복귀 뒤에
     /// 도착하면 이번 진입의 답이 아니다(안드로이드 `accountAnswerEntryFor`). 그 답으로 판정하면
     /// 나가 있는 동안 다른 기기에서 결제한 사람에게 "무료 이용이 곧 끝나요" 가 뜬다.

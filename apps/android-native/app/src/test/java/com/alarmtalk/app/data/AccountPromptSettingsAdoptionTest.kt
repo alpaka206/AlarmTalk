@@ -8,6 +8,8 @@ import com.alarmtalk.app.network.DynamicPromptWeatherSettings
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -204,5 +206,48 @@ class AccountPromptSettingsAdoptionTest {
         // 화면의 지역(도쿄)과 달력의 나라가 갈라지지 않는다.
         assertEquals("jp-tokyo", store.read("user-a").weatherRegion?.key)
         assertEquals("JP", holidays.read())
+    }
+
+    // ── 3. 언제 다시 받아 적는가 ────────────────────────────────────
+
+    /**
+     * **같은 옛 값을 다시 받아도 다시 돈다**(Codex #837). 저장이 실패한 뒤 서버는 옛 값을 그대로 준다 —
+     * 받아 적기의 축이 값뿐이면 다음 `/auth/me` 가 와도 다시 돌지 않아 밀린 변경이 올라가지 않는다.
+     * 축에 받은 시각이 있어야 한다(`accountSettingsReceipt`).
+     */
+    @Test
+    fun 같은_옛_값을_다시_받아도_받아_적기를_다시_돌린다() {
+        val user = com.alarmtalk.app.network.AuthUser(
+            id = "user-a",
+            email = "a@example.test",
+            dynamicPromptSettings = regionSettings("kr-seoul"),
+        )
+        val first = com.alarmtalk.app.network.AuthSession(
+            token = "t1", provider = "email", user = user, userFetchedAtMillis = 1_000L,
+        )
+        // 다음 진입의 `/auth/me` — 값은 같고 받은 시각만 다르다(토큰도 굴렀다).
+        val next = first.copy(token = "t2", userFetchedAtMillis = 2_000L)
+        assertEquals(accountSettingsReceipt(first), accountSettingsReceipt(first.copy()))
+        assertNotEquals(accountSettingsReceipt(first), accountSettingsReceipt(next))
+        // 프로필만 고친 저장은 받은 시각을 그대로 둔다 — 그때는 값이 바뀌어 다시 돈다.
+        val edited = first.copy(user = user.copy(dynamicPromptSettings = regionSettings("jp-tokyo")))
+        assertNotEquals(accountSettingsReceipt(first), accountSettingsReceipt(edited))
+        // 계정이 없으면 받아 적을 것이 없다.
+        assertNull(accountSettingsReceipt(null))
+    }
+
+    /** 밀린 변경은 다음 응답에서 다시 올린다 — 같은 옛 값이 또 와도 `LocalPending` 이다(멱등). */
+    @Test
+    fun 밀린_변경은_같은_옛_값이_다시_와도_다시_올릴_것으로_남는다() {
+        store.adoptAccountSettings("user-a", regionSettings("kr-seoul"))
+        val tokyo = requireNotNull(WeatherRegions.byKey("jp-tokyo"))
+        store.saveWeatherLocation("user-a", tokyo.legacyCountry, tokyo.legacyCity)
+
+        val firstAnswer = store.adoptAccountSettings("user-a", regionSettings("kr-seoul"))
+        val secondAnswer = store.adoptAccountSettings("user-a", regionSettings("kr-seoul"))
+
+        assertTrue(firstAnswer is AccountSettingsAdoption.LocalPending)
+        assertEquals(firstAnswer, secondAnswer)
+        assertEquals("jp-tokyo", store.read("user-a").weatherRegion?.key)
     }
 }

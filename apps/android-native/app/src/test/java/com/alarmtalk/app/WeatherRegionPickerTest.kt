@@ -194,7 +194,7 @@ class WeatherRegionPickerTest {
     fun 새_기기는_계정_지역의_나라를_받는다() = runTest {
         val store = HolidayCountryPreferenceStore(context)
         assertFalse(store.hasSavedCountry())
-        WeatherRegionHolidaySync.onAccountRegionReceived(store, WeatherRegions.byKey("jp-osaka"))
+        WeatherRegionHolidaySync.onAccountRegionReceived(store, USER_A, WeatherRegions.byKey("jp-osaka"))
         assertEquals("JP", store.read())
         assertEquals("jp-osaka", store.lastAccountRegionKey())
     }
@@ -204,13 +204,13 @@ class WeatherRegionPickerTest {
         val store = HolidayCountryPreferenceStore(context)
         // 옛 '공휴일 달력' 행에서 고른 값.
         store.setCountry("JP")
-        WeatherRegionHolidaySync.onAccountRegionReceived(store, WeatherRegions.byKey("kr-seoul"))
+        WeatherRegionHolidaySync.onAccountRegionReceived(store, USER_A, WeatherRegions.byKey("kr-seoul"))
         assertEquals("JP", store.read())
         // 같은 지역을 다시 받아도 그대로다.
-        WeatherRegionHolidaySync.onAccountRegionReceived(store, WeatherRegions.byKey("kr-seoul"))
+        WeatherRegionHolidaySync.onAccountRegionReceived(store, USER_A, WeatherRegions.byKey("kr-seoul"))
         assertEquals("JP", store.read())
         // 다른 기기에서 지역을 바꿨다 — 이제 따라간다.
-        WeatherRegionHolidaySync.onAccountRegionReceived(store, WeatherRegions.byKey("us-chicago"))
+        WeatherRegionHolidaySync.onAccountRegionReceived(store, USER_A, WeatherRegions.byKey("us-chicago"))
         assertEquals("US", store.read())
     }
 
@@ -221,7 +221,7 @@ class WeatherRegionPickerTest {
     @Test
     fun 받아들일_때마다_지역의_나라로_맞춘다_로그아웃_뒤_같은_계정도() = runTest {
         val store = HolidayCountryPreferenceStore(context)
-        WeatherRegionHolidaySync.onAccountRegionReceived(store, WeatherRegions.byKey("kr-seoul"))
+        WeatherRegionHolidaySync.onAccountRegionReceived(store, USER_A, WeatherRegions.byKey("kr-seoul"))
         assertEquals("KR", store.read())
         // 이 기기에서 도쿄를 골랐다(달력 JP). 저장이 실패한 채 로그아웃하면 값과 '안 올라간 변경' 표시는
         // 지워지고 공휴일 국가만 남는다.
@@ -229,7 +229,7 @@ class WeatherRegionPickerTest {
         assertEquals("JP", store.read())
         // 같은 계정으로 다시 들어와 계정 지역(서울)을 받아들였다 — 화면이 서울이니 달력도 한국이다.
         // ("지난번과 같은 지역이면 건너뛴다" 였다면 JP 에 남았다.)
-        WeatherRegionHolidaySync.onAccountRegionReceived(store, WeatherRegions.byKey("kr-seoul"))
+        WeatherRegionHolidaySync.onAccountRegionReceived(store, USER_A, WeatherRegions.byKey("kr-seoul"))
         assertEquals("KR", store.read())
     }
 
@@ -237,7 +237,7 @@ class WeatherRegionPickerTest {
     fun 직접_고른_나라를_지키던_중_지역을_다시_고르면_지역의_나라가_된다() = runTest {
         val store = HolidayCountryPreferenceStore(context)
         store.setCountry("JP") // 옛 '공휴일 달력' 행에서 고른 값
-        WeatherRegionHolidaySync.onAccountRegionReceived(store, WeatherRegions.byKey("kr-seoul"))
+        WeatherRegionHolidaySync.onAccountRegionReceived(store, USER_A, WeatherRegions.byKey("kr-seoul"))
         assertEquals("JP", store.read())
         assertEquals("kr-seoul", store.keptCountryAccountRegionKey())
         // 설정 '지역' 행에서 서울을 다시 골랐다 — 이제 지키지 않는다.
@@ -245,8 +245,29 @@ class WeatherRegionPickerTest {
         assertEquals("KR", store.read())
         assertNull(store.keptCountryAccountRegionKey())
         // 저장 응답으로 같은 지역을 받아도 한국 그대로다.
-        WeatherRegionHolidaySync.onAccountRegionReceived(store, WeatherRegions.byKey("kr-seoul"))
+        WeatherRegionHolidaySync.onAccountRegionReceived(store, USER_A, WeatherRegions.byKey("kr-seoul"))
         assertEquals("KR", store.read())
+    }
+
+    /**
+     * **지켜 둔 나라는 그 계정의 것이다**(Codex #837). 이 기기 전역의 표시를 지역 키로만 가르면, 같은
+     * 지역(서울)의 다른 계정이 들어왔을 때 앞 계정 때 지켜 둔 나라(JP)를 물려받는다 — 그 계정에게는
+     * 공휴일 국가를 바꿀 행이 없다. 같은 계정으로 다시 들어오면 그대로 지킨다.
+     */
+    @Test
+    fun 지켜_둔_나라는_다른_계정에_물려주지_않는다() = runTest {
+        val store = HolidayCountryPreferenceStore(context)
+        store.setCountry("JP") // 옛 '공휴일 달력' 행에서 고른 값
+        WeatherRegionHolidaySync.onAccountRegionReceived(store, USER_A, WeatherRegions.byKey("kr-seoul"))
+        assertEquals("JP", store.read())
+        // 같은 계정이 다시 들어왔다(로그아웃 뒤 재로그인) — 그대로 지킨다.
+        WeatherRegionHolidaySync.onAccountRegionReceived(store, USER_A, WeatherRegions.byKey("kr-seoul"))
+        assertEquals("JP", store.read())
+        // 다른 계정이 들어왔다 — 지역이 같아도 그 계정의 지역의 나라를 따른다.
+        WeatherRegionHolidaySync.onAccountRegionReceived(store, USER_B, WeatherRegions.byKey("kr-seoul"))
+        assertEquals("KR", store.read())
+        assertNull(store.keptCountryAccountRegionKey())
+        assertNull(store.keptCountryAccountUserId())
     }
 
     @Test
@@ -254,8 +275,13 @@ class WeatherRegionPickerTest {
         val store = HolidayCountryPreferenceStore(context)
         store.setCountry("US")
         val legacy = DynamicPromptWeatherSettings(country = "영국", city = "런던").resolvedRegion()
-        WeatherRegionHolidaySync.onAccountRegionReceived(store, legacy)
+        WeatherRegionHolidaySync.onAccountRegionReceived(store, USER_A, legacy)
         assertEquals("US", store.read())
         assertNull(store.lastAccountRegionKey())
+    }
+
+    private companion object {
+        const val USER_A = "user-a"
+        const val USER_B = "user-b"
     }
 }
