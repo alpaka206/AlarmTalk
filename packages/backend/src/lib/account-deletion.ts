@@ -336,6 +336,18 @@ export async function purgeUserAccount(
       args: [userPk],
     });
 
+    // 직접 입력 월 한도 장부. 풀 키가 **사람 id 그대로**(개인 풀 — 통일 이전 행은 로그인 id)
+    // 이거나 **내가 소유한 그룹 id**(커플·가족 공유 풀)다. 안 지우면 파기 뒤에도 계정 id 가
+    // 남아, pepper 로 가명 보존 기록(`retained_billing_records.pseudonym`)까지 곧장 이어진다 —
+    // 분리 보관이 무너진다. 그룹 풀은 그룹이 곧 사라지므로(아래) 주인 없는 행이 된다.
+    // 남의 그룹 풀(내가 멤버였던 곳)은 그 그룹의 것이라 남긴다 — 키가 그룹 id 라 나를 가리키지 않는다.
+    // ⚠ `plan_groups` 삭제보다 **앞**이어야 한다(하위질의가 그 표를 읽는다).
+    writes.push({
+      sql: `DELETE FROM manual_tts_usage
+            WHERE pool_key IN (?, ?)
+               OR pool_key IN (SELECT id FROM plan_groups WHERE owner_user_id = ?)`,
+      args: [userPk, userLoginId, userPk],
+    });
     writes.push({
       sql: `DELETE FROM plan_group_members WHERE user_id = ?`,
       args: [userPk],
