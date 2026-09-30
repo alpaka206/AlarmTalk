@@ -89,6 +89,14 @@ export interface Env {
    *  SERVICE_KEY_IS_NOT_REGISTERED_ERROR 가 난다.)
    */
   KASI_SERVICE_KEY?: string;
+  /**
+   * Open-Meteo **상업 API 키**(선택). 있으면 날씨 호출(예보·대기질·지오코딩)이 상업 호스트
+   * (`customer-api` / `customer-air-quality-api` / `customer-geocoding-api` `.open-meteo.com`)로 가고
+   * `apikey` 가 붙는다. 없거나 비었으면 무료 호스트 그대로다 — 무료 엔드포인트는 **비상업용**이다.
+   * 고르는 곳은 `lib/weather-fetch.ts` 의 `openMeteoRequestUrl` 하나. ⚠ 로그에 URL 을 남기지 않는다.
+   * 되돌릴 때는 `wrangler secret delete` 다(`secrets:sync` 는 빈 값을 건너뛴다).
+   */
+  OPEN_METEO_API_KEY?: string;
   JWT_SECRET: string;
   PASSWORD_PEPPER: string;
   ENVIRONMENT: string;

@@ -71,6 +71,25 @@ OAuth client ID와 Sentry DSN은 일반적으로 앱에 포함될 수 있는 공
 - `GOOGLE_VERTEX_DYNAMIC_TEXT_ENABLED`는 기본적으로 설정하지 않는다. Gemini 생성 알람 문구를 의도적으로 켤 때만 `true`로 둔다.
 - 기본 정책은 프리셋 우선이다. `GOOGLE_VERTEX_DYNAMIC_TEXT_ENABLED=true`가 아니면 동적 문구 컨텍스트는 로컬 폴백 문구를 쓴다(`lib/vertex-translate.ts`의 `generateDynamicAlarmTextWithVertex`).
 
+#### Open-Meteo 상업 키
+
+- `OPEN_METEO_API_KEY` 는 **선택 값**이다. 비어 있으면 날씨 호출(예보·대기질·지오코딩)은 지금처럼 무료 호스트
+  (`api.open-meteo.com` / `air-quality-api.open-meteo.com` / `geocoding-api.open-meteo.com`)로 간다.
+  값이 있으면 같은 요청이 상업 호스트(`customer-api` / `customer-air-quality-api` / `customer-geocoding-api`
+  `.open-meteo.com`)로 가고 `apikey` 가 붙는다. 고르는 곳은 `packages/backend/src/lib/weather-fetch.ts` 의
+  `openMeteoRequestUrl` 하나다(서버 미리 계산 cron·`GET /tts/prerender-variant`·라이브 생성이 모두 거친다).
+- ⚠ **무료 API 는 비상업용이다**(open-meteo.com/en/terms — "subscriptions or display advertisements" 가 있는 앱은
+  상업 용도). 무료 한도는 분 600 / 시간 5,000 / 일 10,000 / 월 300,000 호출이다(2026-09-30 가격 페이지). 위치를
+  여럿 묶은 요청을 몇 호출로 세는지는 공식 문서에 없다 — 보수적으로 위치마다 센다고 잡는다(cron 한 바퀴 = 133곳 × 예보·대기질).
+  상업 호스트는 키 없이 부르면 예보·대기질이 `401 API key required`, 틀린 키면 `400 The supplied API key is invalid.`
+  로 답한다 — **무료 호스트로 되돌아가지 않으므로 날씨가 전부 미해결(null)이 된다.** 그때 `weather.fetch` 줄은 `warn` 이다.
+- 넣기: `.dev.vars.{dev,prod}` 에 적고 `npm run secrets:sync:{dev,prod}`(목록: `scripts/worker-secret-keys.ts`).
+  단건이면 `npx wrangler secret put OPEN_METEO_API_KEY --env dev`(운영은 `--env production` — `--env` 를 빼지 말 것).
+- ⚠ **무료로 되돌릴 때 파일에서 비우는 것으로는 안 된다**(`secrets:sync` 는 빈 값을 건너뛴다) —
+  `npx wrangler secret delete OPEN_METEO_API_KEY --env <dev|production>`.
+- 확인: `wrangler tail` 의 `at:"weather.fetch"` 줄에 `commercial:true` 가 찍힌다. ⚠ 이 로그는 URL 을 싣지 않는다 —
+  URL 에 키가 들어 있어서다. 진단에 URL 이 필요하면 `redactOpenMeteoUrl` 로 가린 뒤 남긴다.
+
 ### iOS
 
 - 서명·프로비저닝·번들 ID 등 iOS 쪽 환경 값은 여기 적지 않는다. 단일 출처는
