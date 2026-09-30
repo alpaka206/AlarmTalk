@@ -101,6 +101,38 @@ push/pull은 새 토큰을 사용한다. 옛 요청의 401은 저장소에 이�
 JWT 서명 설정 누락도 서버 장애(503)이며 사용자 토큰 만료가 아니다.
 JWT 는 유한한 숫자 만료 시각이 필수이고, 현재 시각이 `exp` 에 도달하면 만료다.
 
+## 탈퇴 파기 — 서버가 지우는 것과 남기는 것
+
+탈퇴 신청(`POST /user/me/deletion`)은 계정을 `pending_deletion` 으로 두고 30일 뒤 크론이
+파기한다(`index.ts` 의 유예 파기 — 틱당 2건). 즉시 삭제(`DELETE /user/me`)도 같은 두 함수를
+같은 순서로 부른다: `pseudonymizeBillingForRetention` → `purgeUserAccount`(한 쓰기 트랜잭션).
+처리방침의 약속은 "서버 데이터를 영구 삭제하되, 법정 보존 결제 기록만 가명처리해 분리
+보관한다" 이다(`docs/legal/privacy-policy.ko.md` 3장).
+
+**파기 뒤 남는 것은 셋뿐이다.** 그 밖에 사람을 가리키는 값(계정 id·로그인 id·이메일·애플 id·
+푸시 토큰·이름)이 남으면 버그다.
+
+| 남는 것 | 왜 남나 | 언제 사라지나 |
+| --- | --- | --- |
+| `retained_billing_records` | 전자상거래법 5년. 사람 대신 `pseudonym = SHA-256(id:pepper)` 와 스토어 거래 증빙만 | 거래일 + 5년(`retain_until`, 크론) |
+| `pending_external_deletions` | 지울 파일·클론의 **주소**(R2 키는 `voices/<id>/…` 처럼 사람 id 로 시작) | 크론이 지우는 순간(`drainExternalDeletions`) |
+| 남의 행이 가리키던 옛 id | 받은 사람의 수신 기록(tombstone)·사용 기록 등 **남의 데이터**. 가리키던 내 행이 전부 없어져 더는 풀리지 않는다 | 그 주인의 규칙대로 |
+
+⚠ **키가 사람 id 인 표를 빼먹기 쉽다.** `user_id` 열이 없어도 사람을 가리킬 수 있다 —
+직접 입력 월 한도 장부(`manual_tts_usage`)는 풀 키가 **계정 id 그대로**(개인 풀)이거나
+**내가 소유한 그룹 id** 라 2026-09-30 까지 파기 뒤에도 남았다. 남은 계정 id 는 서버가 가진
+pepper 로 가명 보존 기록까지 곧장 이어져, 분리 보관을 무너뜨린다. 받은 사람 소유의 녹음
+문구(`family-voice`)도 `audio_url` 이 내 업로드 키(`voices/<내 id>/…`)라 같은 이유로 남았다 —
+지금은 전달 알람이 사라진 고아는 지우고, 남는 행은 키만 비운다.
+
+⚠ **목소리 철회는 구독 취소보다 먼저다.** 그룹 주인의 구독을 끊으면 그 자리에서 그룹이
+해체되고 내가 보낸 목소리 알람이 무료 강등으로 문구를 잃는다. 철회(`revokeDeletedVoices`)가
+그 뒤에 돌면 **동석 멤버도, 수신 확인 전 알람도 못 찾아** tombstone 도 푸시도 없이 받는
+사람 기기에 탈퇴자의 녹음이 남는다(2026-09-30 까지 유료 사용자의 탈퇴가 전부 그랬다).
+
+**표가 새로 생기면** `test/account-purge-residue.test.ts` 의 `TABLES` 가 먼저 깨진다 —
+사용자 데이터가 들어가는 표라면 거기 심고 파기가 지우게 만든 뒤 분류한다.
+
 ## 탈퇴 예약을 취소해 복구할 때
 
 서버가 복구 성공을 확인한 뒤 **현재 기기의 푸시 등록도 다시 시작한다.** 탈퇴 대기 중에는
@@ -162,6 +194,7 @@ iOS는 네트워크/5xx/응답 해석 실패와 구서버의 `NO_PENDING_DELETIO
 | 401 중앙 처리 | — | `UnauthorizedAuthenticator` | `AlarmTalkAPI.unauthorizedNotification`(**실패한 토큰을 싣는다**) → `AuthViewModel.handleUnauthorized` |
 | 즉시 폐기 | `authMiddleware` 의 `token_epoch` 비교 | — | — |
 | 탈퇴 취소 뒤 푸시 재등록 | `authMiddleware` 탈퇴 대기 허용 경로·`user.ts` 탈퇴 취소 | `MainViewModelAuthActions.cancelAccountDeletion` → `registerCurrentToken` | `AuthViewModel.prepareAccountRecovery` → `PushNotificationCoordinator.prepareAccountRecovery`를 await한 뒤 상태 확정 → `onAccountRecovered` → `start`(launch에서 연결) |
+| 탈퇴 파기 범위(남는 것 셋뿐) | `lib/account-deletion.ts` `purgeUserAccount`(유예 파기 `index.ts`·즉시 삭제 `user.ts` 공용) · 회귀 `test/account-purge-residue.test.ts` | — | — |
 | 탈퇴 취소 응답 유실·재확인 | `user.ts` DELETE 멱등 처리(이미 active는 무변경 성공) | 기존 취소 재시도 응답 소비 | `cancelAccountDeletion` 재확인·`refreshUser` 전환 감지 → `completeAccountRecovery` |
 | 회귀 테스트 | `test/auth.test.ts` (TTL·503) | `network/SessionTokenRenewalTest.kt` · `ColdStartRequestKeysTest.kt` · `EntryRefreshKeepsTokenTest.kt` | `SessionTokenRenewalTests.swift` |
 
