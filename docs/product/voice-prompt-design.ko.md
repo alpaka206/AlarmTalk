@@ -7,7 +7,7 @@
 
 ## 1. 배경
 
-목소리 알람 앱. 짧은 알람 문구를 Vertex Gemini(`gemini-3.5-flash` — 2.5 Flash 는 2026-10-20 은퇴. Flash-Lite 는 블라인드 판정에서 품질이 떨어져 쓰지 않는다)로 생성하고 ElevenLabs `eleven_v3`로
+목소리 알람 앱. 짧은 알람 문구를 Vertex Gemini(`gemini-3.8-flash` — 코드 상수 `VERTEX_MODEL` 하나로 정한다. Flash-Lite 는 블라인드 판정에서 품질이 떨어져 쓰지 않는다)로 생성하고 ElevenLabs `eleven_v3`로
 합성한다. 경쟁사 알라미가 게임/미션으로 "무조건 깨움"을 판다면 우리는 **음성** 경험으로 차별화한다.
 
 라이브 동적 생성은 현재 **기본 OFF**다(`GOOGLE_VERTEX_DYNAMIC_TEXT_ENABLED`). 켜지 않으면 스톡 클립/로컬
@@ -118,10 +118,10 @@ user prompt 에는 가변 데이터(모드·관계·언어 블록·날씨 신호
   타깃 언어 불일치, 연인 톤의 '새 인연/연애운/질투'.
 - **SOFT**(수용 + 자동 수리): 조사·띄어쓰기 슬립, 경미한 어체 슬립, 세트 밖 태그(→ 무태그 강등).
   과거의 '정중 어미 전량 reject' 는 SOFT 로 강등했다.
-- **재시도**: 최대 1회, HARD/JSON 실패에만(공통 경로 1왕복 유지). temperature 는 0.85→0.75 로 낮춰 churn 을
-  줄였다. 2차 실패 시 **회전식 폴백**(mode+dateLabel 해시로 템플릿 회전 — 고정 단일 문구 금지).
-- **JSON**: `responseSchema` 가 1차, brace-slice 파서는 최후 폴백으로 남긴다(flash 에서 responseSchema +
-  `thinkingBudget:0` 간헐 빈응답 대비).
+- **재시도**: 최대 1회, HARD/JSON 실패에만(공통 경로 1왕복 유지). temperature 는 보내지 않는다(Gemini 3 는
+  무시한다). 2차 실패 시 **회전식 폴백**(mode+dateLabel 해시로 템플릿 회전 — 고정 단일 문구 금지).
+- **JSON**: `responseSchema` 가 1차, brace-slice 파서는 최후 폴백으로 남긴다(flash 에서 responseSchema
+  간헐 빈응답 대비).
 
 ### 4.8 페르소나·변주
 
