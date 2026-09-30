@@ -55,7 +55,7 @@ import {
   SYSTEM_VOICE_LIBRARY_USER_ID,
   systemStockTexts,
 } from '../src/lib/stock-clips.ts';
-import { computeTtsCacheKey, generatedTtsObjectKey } from '../src/lib/audio-cache.ts';
+import { computeTtsCacheKey, generatedTtsObjectKey, STOCK_TTS_CACHE_SCOPE } from '../src/lib/audio-cache.ts';
 import { ledgerAudioUrlFor, replaceStockClipInPlace } from '../src/lib/stock-clip-replace.ts';
 import { ELEVENLABS_TTS_OUTPUT_FORMAT } from '../src/lib/elevenlabs.ts';
 import { TTS_MODEL_ID, TTS_VOICE_SETTINGS } from '../src/lib/tts-model.ts';
@@ -349,6 +349,7 @@ async function main(): Promise<void> {
         languageCode: target.language,
         text: synthesisText,
         outputFormat: OUTPUT_FORMAT,
+        scope: STOCK_TTS_CACHE_SCOPE, // 서버 `generateStockClip` 과 같은 범위 — 사용자 생성과 키가 겹치지 않는다.
       });
       const objectKey = generatedTtsObjectKey(SYSTEM_VOICE_LIBRARY_USER_ID, cacheKey, OUTPUT_FORMAT);
       const audioUrl = `r2://${objectKey}`;
@@ -376,11 +377,10 @@ async function main(): Promise<void> {
         continue;
       }
 
-      // ⚠ **같은 request_hash 를 다른 오브젝트가 이미 쥐고 있으면 올리지 않는다**(Codex #840). 해시는 주인을 담지
-      //   않고(보이스·모델·문구) 오브젝트 키는 주인을 담는다 — 배포 뒤 게시 전에 누군가 같은 기본 목소리로 같은 문장을
-      //   만들었으면(프리셋 라이브 폴백·직접 입력) 그 사람의 원장 행이 해시를 차지한다. 그대로 게시하면 원장 INSERT
-      //   가 무시돼 우리 오브젝트가 원장에 없다. 그 자리는 옛 소리로 계속 울린다 — 그 행이 보관 기한으로 지워진 뒤
-      //   다시 돌린다(`docs/ops/tts-model-rerender.md`). 실패로 세어 명령이 1 로 끝난다.
+      // ⚠ **같은 request_hash 를 다른 오브젝트가 이미 쥐고 있으면 올리지 않는다**(Codex #840). 해시는 전역 UNIQUE
+      //   인데 오브젝트 키는 주인을 담는다. 스톡 키는 스톡 범위(`STOCK_TTS_CACHE_SCOPE`)라 사용자 생성과 겹치지
+      //   않지만, 겹치는 행이 있으면 그대로 게시할 때 원장 INSERT 가 무시돼 우리 오브젝트가 원장에 없게 된다.
+      //   그 자리는 옛 소리로 계속 울린다(`docs/ops/tts-model-rerender.md`). 실패로 세어 명령이 1 로 끝난다.
       const ledgerUrl = await ledgerAudioUrlFor(db, cacheKey);
       if (ledgerUrl !== null && ledgerUrl !== audioUrl) {
         failed += 1;

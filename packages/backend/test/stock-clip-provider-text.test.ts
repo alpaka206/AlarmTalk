@@ -75,7 +75,8 @@ describe('generateStockClip — 합성 글자와 바이트를 가공하지 않�
           audio_format TEXT, created_at TEXT
         );
         CREATE TABLE pending_external_deletions (
-          id TEXT PRIMARY KEY, kind TEXT NOT NULL, ref TEXT NOT NULL, created_at TEXT
+          id TEXT PRIMARY KEY, kind TEXT NOT NULL, ref TEXT NOT NULL, created_at TEXT,
+      UNIQUE(kind, ref)
         );
         INSERT INTO voice_profiles (id, user_id, name, elevenlabs_voice_id)
           VALUES ('sys-1', '70000000-0000-4000-9000-000000000001', '미나', 'el-mina');
@@ -116,6 +117,7 @@ describe('generateStockClip — 합성 글자와 바이트를 가공하지 않�
           languageCode: 'ko',
           text,
           outputFormat: 'mp3',
+          scope: 'stock',
         }),
       );
     } finally {

@@ -1321,8 +1321,8 @@ describe('POST /tts/generate — edge cases', () => {
   // Codex #830: ㅋㅋ·ㅋㅋㅋ·haha 는 같은 `[laughs]` 로 합성된다. 캐시 키가 합성 글자만 보면 캐시 히트가
   // 다른 철자로 만든 옛 행(message_id·messages.text)을 돌려준다 — 화면 문구가 합성 문구에서 나오지 않을 때만
   // 키가 화면 문구까지 가린다. 웃음이 없으면 예전 키 그대로다(쌓인 캐시를 버리지 않는다).
-  it('웃음 철자가 다르면 합성 글자가 같아도 캐시 키가 다르고, 웃음이 없으면 예전 키 그대로다', async () => {
-    const generate = async (text: string) => {
+  it('웃음 철자가 다르면 합성 글자가 같아도 캐시 키가 다르고, 웃음이 없으면 합성 글자 + 그 사람 범위가 키다', async () => {
+    const generate = async (text: string, userId = 'user-1') => {
       mockDB.reset();
       mockTextToSpeech.mockReset();
       mockDB.pushResult([{ plan: 'plus' }]);
@@ -1333,7 +1333,7 @@ describe('POST /tts/generate — edge cases', () => {
       pushPublicationVoice();
       mockDB.pushResult([], 1);
       const res = await reqWithEnv(
-        buildApp(),
+        buildApp(userId),
         jsonReq('POST', '/tts/generate', { voice_profile_id: V1, text, category: 'custom' }),
       );
       expect(res.status).toBe(201);
@@ -1353,19 +1353,25 @@ describe('POST /tts/generate — edge cases', () => {
     expect(spaced.cache_key).not.toBe(single.cache_key);
 
     const plain = await generate('일어나 벌써 8시야');
-    const { computeTtsCacheKey } = await import('../src/lib/audio-cache');
-    expect(plain.cache_key).toBe(
-      await computeTtsCacheKey({
-        provider: 'elevenlabs',
-        providerVoiceId: 'el-voice-1',
-        voiceProfileId: V1,
-        modelId: 'eleven_v4_turbo',
-        language: 'ko',
-        languageCode: 'ko',
-        text: plain.synthesis_text,
-        outputFormat: 'mp3',
-      }),
-    );
+    const { computeTtsCacheKey, STOCK_TTS_CACHE_SCOPE } = await import('../src/lib/audio-cache');
+    const keyInput = {
+      provider: 'elevenlabs',
+      providerVoiceId: 'el-voice-1',
+      voiceProfileId: V1,
+      modelId: 'eleven_v4_turbo',
+      language: 'ko',
+      languageCode: 'ko',
+      text: plain.synthesis_text,
+      outputFormat: 'mp3',
+    };
+    expect(plain.cache_key).toBe(await computeTtsCacheKey({ ...keyInput, scope: 'manual:user-1' }));
+
+    // ⚠ 직접 입력 키는 그 사람 범위다(Codex #840) — 원장 해시는 전역 UNIQUE 인데 오브젝트는 주인 아래에 놓여,
+    //   두 사람이 같은 글을 치거나 스톡 문장을 그대로 치면 두 번째 원장 행이 조용히 빠진다(계정 삭제에도 못 찾는다).
+    const otherUser = await generate('일어나 벌써 8시야', 'user-2');
+    expect(otherUser.cache_key).toBe(await computeTtsCacheKey({ ...keyInput, scope: 'manual:user-2' }));
+    expect(otherUser.cache_key).not.toBe(plain.cache_key);
+    expect(plain.cache_key).not.toBe(await computeTtsCacheKey({ ...keyInput, scope: STOCK_TTS_CACHE_SCOPE }));
   });
 
   // 같은 언어 직접 입력은 Gemini 를 부르지 않는다(2026-09-30) — 결과 무관하게 친 글 그대로다.

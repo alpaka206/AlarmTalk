@@ -2,7 +2,7 @@ import type { Client } from '@libsql/client/web';
 import type { Env } from '../types';
 import { R2VoiceStorage } from './r2-storage';
 import { sendVoiceShareChangedPush } from './fcm';
-import { computeTtsCacheKey, generatedTtsObjectKey } from './audio-cache';
+import { computeTtsCacheKey, generatedTtsObjectKey, STOCK_TTS_CACHE_SCOPE } from './audio-cache';
 import { createSynthesisAttempts, normalizeSynthesisLanguage } from './voice-provider';
 import {
   parseSpeechStyle,
@@ -1352,6 +1352,10 @@ export async function generateStockClip(
     languageCode: language,
     text: synthesisText,
     outputFormat: attempt.outputFormat,
+    // 스톡은 **스톡 범위**다 — 사용자가 같은 목소리로 같은 문장을 만들어도(직접 입력·초안 미리듣기) 키가 겹치지
+    // 않는다(Codex #840). 겹치면 원장 해시(전역 UNIQUE)를 먼저 쥔 쪽의 행이 이 클립 행이 되고, 그 행이 프리셋이
+    // 아니라 보관 정리가 30일 뒤 오브젝트를 지우며 프리셋의 `audio_url` 까지 비운다. 게시 스크립트도 같은 값.
+    scope: STOCK_TTS_CACHE_SCOPE,
   });
 
   const generated = await attempt.synthesize();

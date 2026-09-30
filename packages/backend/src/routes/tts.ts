@@ -7,7 +7,7 @@ import { callerOwnerIds } from '../lib/caller-ids';
 import { typedRow } from '../lib/db-types';
 import { UUID_RE } from '../lib/validate';
 import { R2VoiceStorage } from '../lib/r2-storage';
-import { computeTtsCacheKey, generatedTtsObjectKey } from '../lib/audio-cache';
+import { computeTtsCacheKey, generatedTtsObjectKey, manualTtsCacheScope } from '../lib/audio-cache';
 import { loadAudioBytes, uint8ToBase64 } from '../lib/audio-loader';
 import { assertSameGroup } from '../lib/family-helpers';
 import {
@@ -1396,6 +1396,12 @@ tts.post('/generate', async (c) => {
             languageCode: synthesisLanguage,
             text: cacheKeyText,
             outputFormat: attempt.outputFormat,
+            // ⚠ 직접 입력은 **그 사람 범위**로 키를 만든다(Codex #840). 원장 해시는 전역 UNIQUE 인데 오브젝트는
+            //   주인 아래에 놓인다 — 두 사람이 같은 기본 목소리로 같은 글을 치거나 스톡 문장을 그대로 치면 키가 겹쳐
+            //   두 번째 원장 행이 조용히 빠지고, 그 오브젝트는 계정 삭제에도 못 찾는다. 직접 입력 캐시는 원래 남과
+            //   나누지 않으므로(`anyUser` 가 false) 잃는 적중이 없다. 초안 미리듣기는 범위 없이 둔다(초안 목소리는
+            //   그 사람 것뿐이고, 스톡 키는 `STOCK_TTS_CACHE_SCOPE` 로 갈려 있다).
+            scope: isManualGeneration ? manualTtsCacheScope(userPk) : undefined,
           });
           return { attempt, cacheKey };
         }),
