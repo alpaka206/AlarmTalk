@@ -58,15 +58,18 @@ OAuth client ID와 Sentry DSN은 일반적으로 앱에 포함될 수 있는 공
 
 #### ElevenLabs 합성 모델
 
-- `ELEVENLABS_TTS_MODEL_ID` 는 선택 값이고 **설정하지 않는다**(워커에 값이 없으면 `eleven_v3`). 게시된 클립(시스템 스톡·클론 사전렌더)은 전부 v3 로 구웠고, 모델만 바꾸면 **다시 굽지 않는다** — 새로 만드는 직접 입력·새 클론만 새 모델이 되어 한 사람의 알람에 두 모델 소리가 섞인다. 바꾸려면 재렌더 계획(스톡 게시 스크립트의 `MODEL_ID`, 클론 사전렌더 다시 굽기, v3 급마감 보완 `withClosingBreath`·`appendMp3TrailingSilence` 재검토)이 먼저다. `eleven_v4_turbo` 전환을 검토 중이다(클론 비교·실기기 음량 확인 뒤 결정) — 2026-09-29 v4 비교와 검토 상태는 `docs/spec/voice-and-message.md` 「합성 모델」.
-- ⚠ **v3 로 되돌릴 때 `.dev.vars.*` 에서 비우는 것으로는 안 된다.** `npm run secrets:sync:{dev,prod}` 는 빈 값을 건너뛰어
-  (올리지도 지우지도 않는다 — `scripts/worker-secret-keys.ts` 의 `selectWorkerSecrets`) 이미 올라간 값이 그대로 남고,
-  배포 뒤에도 새 합성은 옛 값으로 나간다. 워커에서 지운다: `npx wrangler secret delete ELEVENLABS_TTS_MODEL_ID --env dev`
-  (운영은 `--env production`). 값이 없어야 v3 다.
+- ⚠ **모델은 시크릿으로 정하지 않는다** — `packages/backend/src/lib/tts-model.ts` 의 `TTS_MODEL_ID` 상수(`eleven_v4_turbo`, 2026-09-30)
+  하나이고, 서버와 스톡 스크립트(`preview:stock`·`publish:stock`)가 같은 상수를 쓴다. 합성 설정도 상수(`TTS_VOICE_SETTINGS` —
+  stability·similarity 둘)다. 예전의 `ELEVENLABS_TTS_MODEL_ID` 는 없앴다 — 워커에 값이 남아 있어도 코드가 읽지 않는다
+  (치울 거면 `npx wrangler secret delete ELEVENLABS_TTS_MODEL_ID --env dev`, 운영은 `--env production`). 되돌릴 때도 시크릿이
+  아니라 코드를 되돌린다.
+- ⚠ **모델을 바꾸면 게시된 클립은 저절로 다시 굽히지 않는다.** 시스템 스톡은 `publish:stock` 의 교체 갈래로, 클론 사전렌더는
+  큐 재적재 마이그레이션으로 다시 굽는다(v4 Turbo 전환은 #124). 절차·완료 확인은 `docs/ops/tts-model-rerender.md`, 근거와 측정은
+  `docs/spec/voice-and-message.md` §10.
 
 #### Vertex / Gemini 동적 문구
 
-- `GOOGLE_VERTEX_CREDENTIALS_JSON`, `GOOGLE_VERTEX_LOCATION`은 선택 값이다. 운영에서 실제로 쓰는 경로는 직접 입력 문구 태깅·목소리 등록 미리듣기 문구·유료 클론 사전렌더 문구·등록 녹음 말투 분석이다(번역·동적 문구는 앱에서 쓰지 않는다).
+- `GOOGLE_VERTEX_CREDENTIALS_JSON`, `GOOGLE_VERTEX_LOCATION`은 선택 값이다. 운영에서 실제로 쓰는 경로는 목소리 등록 미리듣기 문구·유료 클론 사전렌더 문구·등록 녹음 말투 분석이다(번역·동적 문구는 앱에서 쓰지 않는다). 같은 언어 직접 입력은 2026-09-30 부터 Gemini 를 부르지 않는다 — 태그를 붙이지 않는다(`docs/spec/voice-and-message.md` §10).
 - ⚠ **모델은 시크릿으로 정하지 않는다** — `lib/vertex-translate.ts` 의 `VERTEX_MODEL` 상수(`gemini-3.8-flash`) 하나이고, 모델마다 다른 요청 설정(`buildGenerationConfig` — 3.8 은 `thinkingLevel: LOW`, `MINIMAL` 은 400)과 **한 커밋에서 같이** 바꾼다. 예전의 `GOOGLE_VERTEX_MODEL` 은 2026-09-30 에 없앴다 — 워커에 남은 값은 코드가 읽지 않으니 `npx wrangler secret delete GOOGLE_VERTEX_MODEL --env dev`(운영은 `--env production`)로 치운다. 되돌릴 때도 시크릿이 아니라 코드를 되돌린다. **Flash-Lite 로 내리지 말 것** — 블라인드 판정에서 3.5 Flash-Lite 는 2.5 Flash 에 졌다(69:108, 한국어 36%). 경위는 `docs/qa/dev-test-handoff.md` 「Gemini 3.8 Flash」. 처리방침이 Vertex 처리 국가를 '미국' 으로 적으므로 지역은 `global` 대신 `us` 다(3.8 Flash 는 `global`·`us`·`eu` 에만 있고 `us-central1` 같은 단일 리전은 없다 — `GOOGLE_VERTEX_LOCATION` 을 그런 값으로 두면 전부 실패한다). 호출마다 `at:"vertex.generate"` 로그(모델·HTTP·`finish_reason`·사고 토큰)가 남는다 — 대부분의 호출부가 실패를 삼키므로 전환 뒤에는 이 로그로 확인한다.
 - `GOOGLE_VERTEX_DYNAMIC_TEXT_ENABLED`는 기본적으로 설정하지 않는다. Gemini 생성 알람 문구를 의도적으로 켤 때만 `true`로 둔다.
 - 기본 정책은 프리셋 우선이다. `GOOGLE_VERTEX_DYNAMIC_TEXT_ENABLED=true`가 아니면 동적 문구 컨텍스트는 로컬 폴백 문구를 쓴다(`lib/vertex-translate.ts`의 `generateDynamicAlarmTextWithVertex`).
