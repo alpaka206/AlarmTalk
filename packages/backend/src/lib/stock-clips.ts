@@ -737,7 +737,14 @@ export async function waitForSpeechStyleAnalysis(
   return { settled: false };
 }
 
-/** cron 이 드레인할 pending 큐 항목을 15분 임대로 원자적 claim. limit 은 1..50 로 클램프. */
+/**
+ * cron 이 드레인할 pending 큐 항목을 15분 임대로 원자적 claim. limit 은 1..50 로 클램프.
+ *
+ * ⚠ **새 등록(`refresh_existing = 0`)을 먼저 잡는다**(2026-09-30). 다시 굽는 회차(교체·말투 재렌더·모델 전환
+ *   #124)는 이미 울릴 클립이 있다 — 옛 소리로 울릴 뿐이다. 새 등록은 클립이 0개라 굽기 전에는 그 목소리로
+ *   알람을 못 만든다. 요청 순서로만 줄 세우면 #124 가 한꺼번에 넣은 클론 전부(시간당 ≈5.7개) 뒤에 새 등록이
+ *   몇 시간씩 선다. 같은 갈래 안에서는 예전대로 요청 순서다.
+ */
 export async function claimPendingPrerenderVoices(
   db: Client,
   limit: number,
@@ -758,7 +765,7 @@ export async function claimPendingPrerenderVoices(
                   AND spv.speech_style_status = 'pending'
                   AND datetime(spv.updated_at) > datetime('now', ?)
               )
-            ORDER BY requested_at ASC
+            ORDER BY refresh_existing ASC, requested_at ASC
             LIMIT ?
           )
             AND status = 'pending'
