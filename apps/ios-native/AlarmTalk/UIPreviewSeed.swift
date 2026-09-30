@@ -85,6 +85,25 @@ enum UIPreviewSeed {
         #endif
     }
 
+    /// 계정에 심어 둘 날씨 지역 — `-UIPreviewWeather "<나라>|<도시>"`(예: `대한민국|서울`, 옛 값이면 `대한민국|속초`).
+    ///
+    /// 설정 '지역' 행·문구 화면 상세 카드의 값과 **목록에 없는 옛 값의 안내**를 실기기 계정 없이 보려고 둔다.
+    /// 되짚히는 값이면 지역 키도 함께 심는다(서버가 주는 모양과 같다).
+    static var previewWeather: DynamicPromptWeatherSettings? {
+        #if DEBUG
+        guard let raw = argValue("-UIPreviewWeather") else { return nil }
+        let parts = raw.split(separator: "|", maxSplits: 1).map(String.init)
+        guard parts.count == 2 else { return nil }
+        return DynamicPromptWeatherSettings(
+            country: parts[0],
+            city: parts[1],
+            region: WeatherRegions.resolveAlias(country: parts[0], city: parts[1])?.key
+        )
+        #else
+        return nil
+        #endif
+    }
+
     /// 실행하자마자 알람 편집기를 연다 — `-UIPreviewEditor`. 화면 확인용.
     static var opensEditor: Bool {
         #if DEBUG
@@ -161,6 +180,7 @@ enum UIPreviewSeed {
                 name: "김규원",
                 // 프로모 계정은 서버가 계산값 `plus` 를 준다 — 원시 plan 은 free 다.
                 plan: promo == nil ? previewPlan : "plus",
+                dynamicPromptSettings: previewWeather.map { DynamicPromptSettings(weather: $0) },
                 personalPromo: promo
             )
         )

@@ -2218,8 +2218,15 @@ struct AlarmEditorSheet: View {
         let context = RandomPromptContext.normalized(voiceStudio.randomContext)
         record.voiceRandomPrompt = enabled
         record.voiceRandomContext = enabled ? context.rawValue : nil
-        record.voiceWeatherCountry = enabled && context.usesWeather ? (voiceStudio.weatherCountry).nilIfBlank : nil
-        record.voiceWeatherCity = enabled && context.usesWeather ? (voiceStudio.weatherCity).nilIfBlank : nil
+        // 지역은 **옛 앱이 읽는 표준 글자**로 적는다(목록으로 되짚히는 값이면). 알람 행에는 키 칸이
+        // 없다 — 요청의 `region` 은 이 글자에서 되짚는다(`WeatherVariantSaveLookup`·
+        // `WeatherVariantRefreshService`). 되짚지 못한 옛 글자는 적힌 그대로 둔다(서버의 엄격한 옛 경로).
+        let weatherLabels = WeatherRegions.storageLabels(
+            country: voiceStudio.weatherCountry,
+            city: voiceStudio.weatherCity
+        )
+        record.voiceWeatherCountry = enabled && context.usesWeather ? weatherLabels.country : nil
+        record.voiceWeatherCity = enabled && context.usesWeather ? weatherLabels.city : nil
         record.voiceFortuneGender = enabled && context.usesFortune ? (voiceStudio.fortuneGender).nilIfBlank : nil
         record.voiceFortuneBirthDate = enabled && context.usesFortune ? (voiceStudio.fortuneBirthDate).nilIfBlank : nil
         record.voiceFortuneBirthTime = enabled && context.usesFortune ? (voiceStudio.fortuneBirthTime).nilIfBlank : nil

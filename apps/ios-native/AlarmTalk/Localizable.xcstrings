@@ -61,6 +61,23 @@
     "‘%@’ 대신 이 목소리를 써요" : {
 
     },
+    "‘%@’은(는) 목록에 없어요. 다시 골라 주세요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "“%@” isn't on the list. Please choose again."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "「%@」はリストにありません。選び直してください。"
+          }
+        }
+      }
+    },
     "\"%@, 일어날 시간이에요\"" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -172,6 +189,23 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "%1$@ %2$@"
+          }
+        }
+      }
+    },
+    "%@ 날씨" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Weather in %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@の天気"
           }
         }
       }
@@ -1672,23 +1706,6 @@
         }
       }
     },
-    "광주" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Gwangju"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "光州"
-          }
-        }
-      }
-    },
     "교체하기" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2160,6 +2177,23 @@
         }
       }
     },
+    "나라" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Country"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "国"
+          }
+        }
+      }
+    },
     "나와의 관계" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2228,23 +2262,6 @@
         }
       }
     },
-    "날씨 지역" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Weather region"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "天気の地域"
-          }
-        }
-      }
-    },
     "날씨·운세 등 매일 다른 문구" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2262,19 +2279,19 @@
         }
       }
     },
-    "날씨를 쓸 지역을 입력해 주세요." : {
+    "날씨가 들어간 문구는 지역을 골라 주세요." : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Please enter a region for the weather."
+            "value" : "For phrases with weather, please choose a region."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "天気に使う地域を入力してください。"
+            "value" : "天気を含む文には、地域を選んでください。"
           }
         }
       }
@@ -2886,23 +2903,6 @@
         }
       }
     },
-    "대구" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Daegu"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "大邱"
-          }
-        }
-      }
-    },
     "대기 중" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2916,23 +2916,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "保留中"
-          }
-        }
-      }
-    },
-    "대전" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Daejeon"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "大田"
           }
         }
       }
@@ -3239,6 +3222,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "娘"
+          }
+        }
+      }
+    },
+    "목록에서 다시 골라 주세요" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Please choose again from the list"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "リストから選び直してください"
           }
         }
       }
@@ -3661,53 +3661,19 @@
         }
       }
     },
-    "부산" : {
+    "아직 정하지 않았어요" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Busan"
+            "value" : "Not set yet"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "釜山"
-          }
-        }
-      }
-    },
-    "서울" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Seoul"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ソウル"
-          }
-        }
-      }
-    },
-    "수원" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Suwon"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "水原"
+            "value" : "まだ設定していません"
           }
         }
       }
@@ -6891,29 +6857,6 @@
         }
       }
     },
-    "예: 미국 뉴욕" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "e.g. Korea Seoul"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "例: 韓国 ソウル"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "예: 미국 뉴욕"
-          }
-        }
-      }
-    },
     "예: 손녀, 연인, 동료" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -7185,23 +7128,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "運勢に使う情報をすべて入力してください。"
-          }
-        }
-      }
-    },
-    "울산" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ulsan"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "蔚山"
           }
         }
       }
@@ -7823,23 +7749,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "このコードを登録しますか？"
-          }
-        }
-      }
-    },
-    "인천" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Incheon"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "仁川"
           }
         }
       }
@@ -9036,23 +8945,6 @@
         }
       }
     },
-    "제주" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Jeju"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "済州"
-          }
-        }
-      }
-    },
     "조금 더 뒤로 설정해 주세요" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -9290,6 +9182,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "今は選択できないプランです"
+          }
+        }
+      }
+    },
+    "지역" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Region"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "地域"
           }
         }
       }

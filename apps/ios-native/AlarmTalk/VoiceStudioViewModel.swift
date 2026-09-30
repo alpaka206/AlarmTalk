@@ -1119,7 +1119,7 @@ final class VoiceStudioViewModel: ObservableObject {
         let targetWeatherReady = targetDynamicPromptState?.weatherReady == true
         let targetFortuneReady = targetDynamicPromptState?.fortuneReady == true
         if randomPrompt && promptContext.usesWeather && !hasWeatherInfo && !targetWeatherReady {
-            statusMessage = "날씨를 쓸 지역을 입력해 주세요."
+            statusMessage = "날씨가 들어간 문구는 지역을 골라 주세요."
             return nil
         }
         if randomPrompt && promptContext.usesFortune && !hasFortuneInfo && !targetFortuneReady {

@@ -3,8 +3,9 @@ import os
 
 /// **저장하는 순간**의 날씨 조건 조회 — 기다리는 시간에 상한이 있다.
 ///
-/// 날씨 테마 알람은 저장하면서 서버에 그 도시·그 날짜의 조건을 묻는다
-/// (`AlarmEditorSheet.applyWeatherVariant`). 그 서버는 뒤에서 open-meteo 를 세 번 순차로
+/// 날씨 테마 알람은 저장하면서 서버에 그 지역·그 날짜의 조건을 묻는다
+/// (`AlarmEditorSheet.applyWeatherVariant`). 목록의 지역이면 서버가 미리 계산해 둔 값을
+/// 읽어 빠르지만, 그 값이 없거나 되짚지 못한 옛 글자면 뒤에서 open-meteo 를 두세 번 순차로
 /// 부르므로(지오코딩 → 예보 → 미세먼지) 느린 망에서는 응답이 한참 뒤에 온다. 사용자는 그
 /// 동안 저장 버튼이 잠긴 채(`isWorking`) 기다린다 — 여기서 **8초**를 넘기면 기다리기를
 /// 그만두고 미해결로 저장한다. 안드로이드 `AlarmRepository.resolveWeatherVariantForDraft`
@@ -41,11 +42,14 @@ enum WeatherVariantSaveLookup {
         guard record.bucketId == "weather" else { return nil }
         let country = record.voiceWeatherCountry
         let city = record.voiceWeatherCity
+        // 지역 키는 행의 글자에서 되짚는다(`WeatherVariantRefreshService` 와 같은 규칙).
+        let region = WeatherRegions.resolveAlias(country: country, city: city)?.key
         let targetDate = BucketVariantResolver.localDateString(millis: record.fireAtMillis)
         do {
             return try await withTimeout(seconds: timeoutSeconds) {
                 try await api.getPrerenderVariant(
                     context: "wake_weather",
+                    region: region,
                     country: country,
                     city: city,
                     targetDate: targetDate,

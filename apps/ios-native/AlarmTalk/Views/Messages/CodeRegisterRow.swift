@@ -81,7 +81,6 @@ struct CodeRegisterRow: View {
                     // 거기서 값을 바꿔도 `TextField` 가 제 내부 상태를 그대로 들고 있어
                     // **화면에는 친 그대로 남는다** — 소문자도 한글도 그대로 보이다가
                     // 제출할 때에야 바뀐다(2026-08-13 지적). `onChange` 로 고쳐야 반영된다.
-                    // 같은 이유로 `WeatherCityPickerSheet` 도 `onChange` 를 쓴다.
                     TextField("초대·선물·프로모션 코드", text: $codeDraft)
                     // ⚠ **`.keyboardType(.asciiCapable)` 로 키보드를 바꾸지 말 것**(2026-08-13 지시).
                     // 쓰던 키보드가 갑자기 다른 언어로 바뀌면 당황스럽다 — 막을 것은 키보드가

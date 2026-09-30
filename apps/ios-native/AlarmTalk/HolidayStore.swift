@@ -222,6 +222,13 @@ final class HolidayStore: ObservableObject {
         return supportedCountryCodes.contains(region) ? region : defaultCountryCode
     }
 
+    /// 이 기기에 적힌 공휴일 국가 — 없으면 기기 로케일 기본값. 안드로이드
+    /// `HolidayCountryPreferenceStore.read()` 와 같은 값이다(지역 시트가 처음 보일 나라의 폴백).
+    nonisolated static func persistedCountryCode(defaults: UserDefaults = .standard) -> String {
+        let persisted = defaults.string(forKey: countryDefaultsKey)?.uppercased() ?? ""
+        return supportedCountryCodes.contains(persisted) ? persisted : defaultCountryFromLocale()
+    }
+
     @Published private(set) var holidays: [HolidayEntity] = []
 
     /// 앱 전역 단일 국가 설정 (per-alarm 아님). 변경 시 UserDefaults 영속 +

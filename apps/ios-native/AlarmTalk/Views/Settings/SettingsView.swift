@@ -63,8 +63,9 @@ struct SettingsView: View {
 
                 VStack(alignment: .leading, spacing: 0) {
                     SettingsValueButton(
-                        label: "날씨 지역",
+                        label: "지역",
                         value: weatherLocationLabel,
+                        note: weatherLegacyNote,
                         action: { weatherDialogOpen = true }
                     )
                     Divider()
@@ -142,14 +143,19 @@ struct SettingsView: View {
             loadPromptPreferences()
         }
         .bottomSheet(isPresented: $weatherDialogOpen, onDismiss: { weatherDialogOpen = false }) {
-            // ⚠ **국가·도시 입력 폼으로 되돌리지 말 것.** 안드로이드는 도시 목록
-            // 바텀시트다 — `WeatherCityPickerSheet` 주석 참조.
-            WeatherCityPickerSheet(
-                currentCity: promptPreferences.weatherCity,
-                onSelect: { country, city in
+            // ⚠ **입력 폼·직접 입력으로 되돌리지 말 것** — 나라 → 지역 목록뿐이다
+            // (`WeatherRegionPickerSheet` 주석 참조).
+            WeatherRegionPickerSheet(
+                current: promptPreferences.weatherRegion,
+                legacyLabel: WeatherRegions.unresolvedLegacyLabel(
+                    country: promptPreferences.weatherCountry,
+                    city: promptPreferences.weatherCity
+                ),
+                onSelect: { region in
                     var next = promptPreferences
-                    next.weatherCountry = country
-                    next.weatherCity = city
+                    // 옛 앱이 읽는 표준 글자로 적는다 — 키는 이 글자에서 되짚힌다(`toSettings`).
+                    next.weatherCountry = region.legacyCountry
+                    next.weatherCity = region.legacyCity
                     savePromptPreferences(next)
                     weatherDialogOpen = false
                 }
@@ -196,13 +202,29 @@ struct SettingsView: View {
         return "\(HolidayCountryFlag.emoji(for: code)) \(HolidayStore.localizedCountryName(code))"
     }
 
-    /// ⚠ **나라를 붙이지 말 것**(2026-08-17 통일). 저장은 나라+도시 둘 다 하지만(서버가
-    /// 동명 도시를 가르는 단서), 보여주는 것은 도시뿐이다 — 앱의 다른 자리가 전부 도시로
-    /// 말한다(`날씨 · 서울`). 안드로이드 `weatherLocationSettingsLabel` 과 같다.
+    /// '지역' 행의 값 — 앱 언어의 지역 이름(`WeatherRegions.displayName`).
+    ///
+    /// ⚠ **나라를 붙이지 말 것**(2026-08-17 통일). 저장은 나라+도시 둘 다 하지만, 보여주는 것은
+    /// 지역 이름뿐이다 — 앱의 다른 자리가 전부 그렇게 말한다(`날씨 · 서울`).
+    /// 되짚지 못한 옛 값(직접 입력 시절의 "속초")은 적힌 글자 그대로 보인다(아래 안내가 붙는다).
     private var weatherLocationLabel: String {
-        promptPreferences.weatherReady
-            ? WeatherCityPickerSheet.displayName(for: promptPreferences.weatherCity)
-            : "미설정"
+        guard promptPreferences.weatherReady,
+              let name = WeatherRegions.displayName(
+                  country: promptPreferences.weatherCountry,
+                  city: promptPreferences.weatherCity
+              )
+        else { return String(localized: "미설정") }
+        return name
+    }
+
+    /// 되짚지 못한 옛 값에만 붙는 짧은 안내. 고르게 강요하지 않는다 — 바꾸기 전까지는 서버의
+    /// 옛 경로로 계속 돈다(스펙 「날씨 지역은 목록에서만 고른다」).
+    private var weatherLegacyNote: String? {
+        // 값 칸과 같은 판정(`weatherReady`)을 먼저 본다 — '미설정' 옆에 "다시 골라 주세요" 가 붙으면 안 된다.
+        promptPreferences.weatherReady && WeatherRegions.isUnresolvedLegacy(
+            country: promptPreferences.weatherCountry,
+            city: promptPreferences.weatherCity
+        ) ? String(localized: "목록에서 다시 골라 주세요") : nil
     }
 
     /// ⚠ **'설정됨' 으로 줄이지도, 태어난 시각까지 넣지도 말 것**(2026-08-17 정리).
@@ -261,27 +283,42 @@ struct SettingsValueButton: View {
 
     let label: LocalizedStringKey
     var value: String? = nil
+    /// 행 아래 작은 안내(예: 되짚지 못한 옛 지역의 "목록에서 다시 골라 주세요"). 없으면 안 그린다.
+    var note: String? = nil
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
-            HStack {
-                Text(label)
-                    .fontWeight(.medium)
-                    .foregroundStyle(theme.palette.onSurface)
-                Spacer(minLength: 12)
-                if let value {
-                    // ⚠ **값은 primary 로 강조한다.** 라벨과 값이 둘 다 무채색이면
-                    // 어느 쪽이 현재 설정값인지 안 읽힌다(안드로이드
-                    // `SettingsScreenComponents.kt:100-110` 도 primary + SemiBold).
-                    Text(value)
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(theme.palette.primary)
-                        .lineLimit(1)
-                        .multilineTextAlignment(.trailing)
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Text(label)
+                        .fontWeight(.medium)
+                        .foregroundStyle(theme.palette.onSurface)
+                    Spacer(minLength: 12)
+                    if let value {
+                        // ⚠ **값은 primary 로 강조한다.** 라벨과 값이 둘 다 무채색이면
+                        // 어느 쪽이 현재 설정값인지 안 읽힌다(안드로이드
+                        // `SettingsScreenComponents.kt:100-110` 도 primary + SemiBold).
+                        Text(value)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(theme.palette.primary)
+                            .lineLimit(1)
+                            .multilineTextAlignment(.trailing)
+                    }
+                    Image(systemName: "chevron.right")
+                        .foregroundStyle(theme.palette.onSurfaceVariant)
                 }
-                Image(systemName: "chevron.right")
-                    .foregroundStyle(theme.palette.onSurfaceVariant)
+                if let note {
+                    // ⚠ **왼쪽 정렬, 라벨과 같은 시작선**이다 — 안드로이드 `SettingsRow` 의 `supportingText`
+                    // (`TextAlign.Start`, 행 안쪽 시작 여백)와 같다. 오른쪽 정렬은 이 앱에서 **값**만의
+                    // 자리라, 값 밑에 오른쪽으로 붙이면 안내가 값의 일부처럼 읽힌다. 값 칸 안에 넣지 않는
+                    // 이유: 값은 한 줄로 잘리는 자리라 안내가 먼저 잘려 사라진다.
+                    Text(verbatim: note)
+                        .font(theme.typography.bodySmall)
+                        .foregroundStyle(theme.palette.onSurfaceVariant)
+                        .multilineTextAlignment(.leading)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 14)

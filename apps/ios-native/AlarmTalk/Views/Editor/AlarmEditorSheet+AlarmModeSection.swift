@@ -105,6 +105,7 @@ extension AlarmEditorSheet {
                         EditorCard(verticalPadding: 0) {
                             MessageModeSummaryRow(
                                 context: currentMessageContext,
+                                weatherCountry: voiceStudio.weatherCountry,
                                 weatherCity: voiceStudio.weatherCity,
                                 // 고른 것도 없고 문구도 없다 = 아직 아무것도 정해지지 않았다.
                                 nothingChosenYet: usesStockClips
