@@ -181,6 +181,14 @@ describe('보관 만료 정리 — 가족알람 음성 끊기', () => {
     const alarm = (await db.execute(`SELECT mode, message_id FROM alarms WHERE id = 'al-old'`)).rows[0];
     expect(alarm?.mode).toBe('sound-only');
     expect(alarm?.message_id).toBeNull();
+    // 문구는 받은 사람 것이라 남고 키만 비운다 — 그 **전에** 키를 삭제 큐로 옮겨야 한다.
+    // TTL 이 행만 지우고 큐 적재에 실패했다면 R2 파일의 키를 아는 곳이 이 문구뿐이다.
+    const message = (await db.execute(`SELECT audio_url FROM messages WHERE id = 'msg-old'`)).rows[0];
+    expect(message?.audio_url).toBeNull();
+    const queued = await db.execute(
+      `SELECT kind FROM pending_external_deletions WHERE ref = 'voices/sender/old.m4a'`,
+    );
+    expect(queued.rows.map((row) => row.kind)).toEqual(['r2_object']);
   });
 
   it('내 업로드와 무관한 수신자 메시지는 건드리지 않는다', async () => {

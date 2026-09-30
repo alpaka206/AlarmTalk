@@ -22,6 +22,7 @@ import type { Env } from '../types';
 import type { DbExecutor } from './transactions';
 import { ElevenLabsClient } from './elevenlabs';
 import { logStructured } from './logger';
+import { audioUrlPointsAtUploadsOf } from './voice-revocation';
 
 const VOICE_UPLOAD_TTL_DAYS = 7;
 const GENERATED_TTS_TTL_DAYS = 30;
@@ -89,6 +90,31 @@ export function externalDeletionStatement(
     sql: `INSERT OR IGNORE INTO pending_external_deletions (id, kind, ref)
           VALUES (?, ?, ?)`,
     args: [crypto.randomUUID(), kind, trimmed],
+  };
+}
+
+/**
+ * **이 사람들의 업로드 원본을 가리키는 문구의 키**를 삭제 큐에 옮기는 문장 하나.
+ *
+ * 받은 사람 소유의 `family-voice` 문구는 보낸 사람의 업로드 키를 그대로 담는다. 가족 녹음 원본은
+ * 프로필에 안 묶여 7일 TTL 이 업로드 행을 먼저 지우는데(`cleanupExpiredAudio`), TTL 은 행 삭제와
+ * 큐 적재를 **따로** 커밋한다 — 그 사이가 끊기면 R2 파일은 살아 있고 그 키를 아는 곳이 이
+ * 문구뿐이다. 그래서 문구를 지우거나 키를 비우는 경로는(탈퇴 파기·음성 동의 철회·보관 만료)
+ * **그 전에** 이 문장을 돌린다. 업로드 행에서 읽는 `enqueueUserVoiceArtifacts` 만으로는 못 찾는다.
+ *
+ * 같은 키는 고유 색인 `(kind, ref)` 로 무시된다. id 는 드레인이 식별자로만 쓴다.
+ * 결과를 읽지 않으므로 호출부의 `batch` 에 넣을 수 있다.
+ */
+export function enqueueUploadKeysReferencedByMessagesStatement(
+  ownerUserIds: readonly string[],
+): InStatement {
+  const uploads = audioUrlPointsAtUploadsOf('audio_url', ownerUserIds);
+  return {
+    sql: `INSERT OR IGNORE INTO pending_external_deletions (id, kind, ref)
+          SELECT lower(hex(randomblob(16))), 'r2_object', audio_url
+            FROM messages
+           WHERE audio_url IS NOT NULL AND ${uploads.sql}`,
+    args: uploads.args,
   };
 }
 

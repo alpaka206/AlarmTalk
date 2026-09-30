@@ -2,10 +2,15 @@ import type { InStatement } from '@libsql/client';
 import type { DbExecutor } from './transactions';
 import {
   enqueueExternalDeletionsBatch,
+  enqueueUploadKeysReferencedByMessagesStatement,
   enqueueUserVoiceArtifacts,
   externalDeletionStatement,
 } from './audio-retention';
-import { revokeDeletedVoices, type VoiceRevocationNotifications } from './voice-revocation';
+import {
+  audioUrlPointsAtUploadsOf,
+  revokeDeletedVoices,
+  type VoiceRevocationNotifications,
+} from './voice-revocation';
 
 function uniqueIds(ids: Array<string | null | undefined>): string[] {
   return Array.from(new Set(ids.filter((id): id is string => Boolean(id))));
@@ -93,32 +98,40 @@ async function deleteRelationshipsForOwnedProfiles(db: DbExecutor, ids: string[]
 async function detachFamilyAlarmMessagesUsingOwnedUploads(
   db: DbExecutor,
   ids: string[],
-  ph: string,
 ): Promise<DowngradedAlarm[]> {
+  // '내 업로드를 가리킨다' 는 업로드 행 + 키 앞머리다(`audioUrlPointsAtUploadsOf`) — 가족 녹음
+  // 원본은 7일 TTL 이 업로드 행을 먼저 지우므로 행만 보면 그 뒤의 문구를 놓친다.
+  const uploads = audioUrlPointsAtUploadsOf('audio_url', ids);
   const affectedMessages = `SELECT id FROM messages
      WHERE audio_url IS NOT NULL
-       AND audio_url IN (SELECT object_key FROM voice_uploads WHERE user_id IN (${ph}))`;
+       AND ${uploads.sql}`;
   // 강등 '전에' 대상을 모아 둔다 — UPDATE 가 message_id 를 끊고 나면 다시 찾을 수 없다.
   const owners = await collectDowngradeTargets(
     db,
     `SELECT id, COALESCE(target_user_id, user_id) AS owner_user_id,
             target_user_id IS NOT NULL AS is_received
        FROM alarms WHERE message_id IN (${affectedMessages})`,
-    ids,
+    uploads.args,
   );
-  await db.execute({
-    sql: `UPDATE alarms
-          SET mode = 'sound-only',
-              wake_mode = 'sound_then_voice',
-              message_id = NULL,
-              voice_profile_id = NULL
-          WHERE message_id IN (${affectedMessages})`,
-    args: ids,
-  });
-  await db.execute({
-    sql: `UPDATE messages SET audio_url = NULL WHERE id IN (${affectedMessages})`,
-    args: ids,
-  });
+  // 결과를 읽지 않는 쓰기 셋은 한 번에 보낸다(적은 순서대로 실행된다).
+  await db.batch([
+    // ⚠ **키를 비우기 전에 삭제 큐에 옮긴다** — 업로드 행이 먼저 사라진 녹음은 그 키를 아는
+    //   곳이 이 문구뿐이라, 먼저 비우면 R2 파일을 영영 못 지운다.
+    enqueueUploadKeysReferencedByMessagesStatement(ids),
+    {
+      sql: `UPDATE alarms
+            SET mode = 'sound-only',
+                wake_mode = 'sound_then_voice',
+                message_id = NULL,
+                voice_profile_id = NULL
+            WHERE message_id IN (${affectedMessages})`,
+      args: uploads.args,
+    },
+    {
+      sql: `UPDATE messages SET audio_url = NULL WHERE id IN (${affectedMessages})`,
+      args: uploads.args,
+    },
+  ]);
   return owners;
 }
 
@@ -134,7 +147,7 @@ export async function deletePaidVoiceDataForUser(
   // ElevenLabs 클론/R2 오디오 외부 삭제 참조를 행 삭제 전에 큐에 적재 —
   // 다운그레이드로 유료 음성 데이터가 사라질 때 클로닝 본체도 함께 사라지게 한다.
   await enqueueUserVoiceArtifacts(db, ids);
-  await detachFamilyAlarmMessagesUsingOwnedUploads(db, ids, ph);
+  await detachFamilyAlarmMessagesUsingOwnedUploads(db, ids);
 
   await db.execute({
     sql: `DELETE FROM generated_audio_assets
@@ -366,7 +379,7 @@ export async function deleteSensitiveVoiceDataForOwners(
   });
   for (const target of revocation.downgradedAlarms) downgraded.set(target.alarmId, target);
 
-  for (const target of await detachFamilyAlarmMessagesUsingOwnedUploads(db, ids, ph)) {
+  for (const target of await detachFamilyAlarmMessagesUsingOwnedUploads(db, ids)) {
     downgraded.set(target.alarmId, target);
   }
 

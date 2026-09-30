@@ -1,7 +1,10 @@
 import type { InStatement } from '@libsql/client';
 import type { DbExecutor } from './transactions';
 import { cancelActiveSubscriptionsForUser } from './billing-cancel';
-import { enqueueUserVoiceArtifacts } from './audio-retention';
+import {
+  enqueueUploadKeysReferencedByMessagesStatement,
+  enqueueUserVoiceArtifacts,
+} from './audio-retention';
 import { audioUrlPointsAtUploadsOf, revokeDeletedVoices } from './voice-revocation';
 
 const TEXT_ENCODER = new TextEncoder();
@@ -318,20 +321,11 @@ export async function purgeUserAccount(
     //   ⚠ 결과를 읽어야 하는 문장은 여기 넣지 말 것 — `revokeDeletedVoices` 처럼 자기가
     //   쓴 행을 되읽는 경로는 그대로 `execute` 로 둔다.
     //
-    // **내 녹음 원본을 가리키는 문구의 키를 먼저 삭제 큐에 넣는다.** `enqueueUserVoiceArtifacts`
-    // 는 업로드 행에서만 키를 읽는데, 가족 녹음 원본은 7일 TTL 이 업로드 행을 먼저 지운다 —
-    // TTL 은 행 삭제 뒤 큐 적재를 **따로** 커밋하므로, 그 사이가 끊기면 R2 파일이 살아 있는데
-    // 그 키를 아는 곳이 받은 사람의 문구뿐이다. 아래에서 그 문구를 지우거나 키를 비우기
-    // **전에** 옮겨 두지 않으면 탈퇴자의 녹음이 R2 에 영영 남는다. (같은 키는 고유 색인으로
-    // 무시된다. id 는 드레인이 식별자로만 쓴다.)
+    // **내 녹음 원본을 가리키는 문구의 키를 먼저 삭제 큐에 넣는다.** 아래에서 그 문구를
+    // 지우거나 키를 비우기 **전에** 옮겨 두지 않으면, 업로드 행이 TTL 로 먼저 사라진 녹음은
+    // R2 에 영영 남는다(이유는 `enqueueUploadKeysReferencedByMessagesStatement`).
     const pointsAtMyUploads = audioUrlPointsAtUploadsOf('audio_url', userIds);
-    writes.push({
-      sql: `INSERT OR IGNORE INTO pending_external_deletions (id, kind, ref)
-            SELECT lower(hex(randomblob(16))), 'r2_object', audio_url
-              FROM messages
-             WHERE audio_url IS NOT NULL AND ${pointsAtMyUploads.sql}`,
-      args: pointsAtMyUploads.args,
-    });
+    writes.push(enqueueUploadKeysReferencedByMessagesStatement(userIds));
     writes.push({
       sql: `DELETE FROM voucher_redemptions
             WHERE user_id = ?
