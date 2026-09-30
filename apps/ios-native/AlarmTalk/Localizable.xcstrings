@@ -2245,23 +2245,6 @@
         }
       }
     },
-    "날씨·운세 등 매일 다른 문구" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Fresh lines every day: weather, fortune, and more"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "天気・運勢など毎日新しいひとこと"
-          }
-        }
-      }
-    },
     "날씨를 쓸 지역을 입력해 주세요." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3222,6 +3205,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "登録すると、現在の%@プランが変更されます。"
+          }
+        }
+      }
+    },
+    "등록한 목소리로 듣는 날씨·운세 문구" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Weather and fortune messages in your registered voice"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "登録した声で聞く天気・運勢メッセージ"
           }
         }
       }
@@ -4993,13 +4993,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Set a partner's alarm"
+            "value" : "Set your partner's alarm"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "相手のアラームを設定"
+            "value" : "相手のアラーム設定"
           }
         }
       }

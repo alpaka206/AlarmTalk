@@ -102,6 +102,8 @@ internal fun SubscriptionPanel(
     val scope = rememberCoroutineScope()
     val options = listOf(
         // 감성 설명문 없이 핵심 혜택만 짧게 — 목소리 개수·인원처럼 판단에 필요한 사실 위주로 적는다.
+        // ⚠ 무료에도 있는 것을 유료 혜택처럼 적지 말 것. 날씨·운세 문구는 기본 목소리로 무료다
+        // (docs/spec/voice-and-message.md §2) — 개인 카드가 파는 것은 그 문구를 **등록한 목소리로** 듣는 것이다.
         SubscriptionPlanOption(
             key = "free",
             name = stringResource(R.string.billing_plan_free_name),
@@ -117,7 +119,7 @@ internal fun SubscriptionPanel(
             price = planPriceLabel(context, planPrices, "personal"),
             features = listOf(
                 stringResource(R.string.billing_plan_personal_feature_voice),
-                stringResource(R.string.billing_plan_personal_feature_daily_prompt),
+                stringResource(R.string.billing_plan_personal_feature_messages_in_voice),
             ),
         ),
         SubscriptionPlanOption(
