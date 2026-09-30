@@ -44,13 +44,14 @@ final class HolidayOffRescheduler {
     /// - Parameters:
     ///   - currentMarker: 지금 달력의 표지. nil 이면 **아직 판단할 수 없다**(공휴일 캐시·알람 저장소를 읽기 전,
     ///     로그인 전) — 아무것도 하지 않고, 표지도 건드리지 않는다. 조건이 갖춰지면 다시 불린다.
-    ///   - recompute: 공휴일off 알람을 다시 계산해 다시 건다
-    ///     (`AlarmKitViewModel.recoverScheduledAlarms(forceHolidayOffRecompute: true)`).
+    ///   - recompute: 공휴일off 알람을 다시 계산해 다시 건다(`AlarmKitViewModel.recomputeHolidayOffAlarms`).
+    ///     **끝까지 돌았는가**를 돌려준다 — 도중에 멈췄으면(계정을 떠나는 중) 표지를 적지 않아 다음에 다시 돈다
+    ///     (Codex #837). 적어 버리면 남은 알람이 옛 달력의 날짜로 굳는다.
     /// - Returns: `recompute` 를 부른 횟수.
     @discardableResult
     func runIfNeeded(
         currentMarker: () -> String?,
-        recompute: () async -> Void
+        recompute: () async -> Bool
     ) async -> Int {
         guard !running else { return 0 }
         running = true
@@ -64,13 +65,21 @@ final class HolidayOffRescheduler {
                 continue
             }
             guard marker != done else { continue }
-            await recompute()
+            let completed = await recompute()
             runs += 1
+            guard completed else { break }
             // ⚠ **다시 건 그 달력의 표지를 적는다** — 지금 표지를 다시 읽지 않는다. 도는 사이 나라가 또
             //   바뀌었으면 여기 적힌 옛 표지와 달라서 아래 조건이 한 번 더 돌린다.
             defaults.set(marker, forKey: Self.markerDefaultsKey)
         } while needsRun(currentMarker())
         return runs
+    }
+
+    /// 표지에 **계정**을 싣는다(Codex #837). 다시 걸기는 지금 계정의 알람만 보므로, 표지가 달력만이면 한 기기의 다른
+    /// 계정(A)이 같은 달력을 이미 적어 둔 뒤 들어온 B 의 알람은 옛 달력의 날짜로 남는다. 계정이 바뀌면 한 번 더 돈다
+    /// (멱등). 안드로이드 `MainViewModel` 의 `calendarReadyFor` 도 계정을 함께 본다.
+    nonisolated static func ownerScopedMarker(ownerUserID: String, calendarMarker: String) -> String {
+        "\(ownerUserID)|\(calendarMarker)"
     }
 
     private func needsRun(_ marker: String?) -> Bool {

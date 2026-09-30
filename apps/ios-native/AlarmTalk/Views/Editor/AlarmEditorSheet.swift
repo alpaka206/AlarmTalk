@@ -1764,18 +1764,17 @@ struct AlarmEditorSheet: View {
         let userID = auth.session?.user.id
         // 올릴 값이면 '아직 안 올라간 변경' 표시와 함께 적는다 — 저장이 실패해도(오프라인) 다음에 받는
         // 서버의 옛 값이 덮지 않고 앱이 다시 올린다(`AccountPromptSettingsAdoption.swift`).
-        if update.needsUpload {
-            update.preferences.saveLocalEdit(userID: userID)
-        } else {
-            update.preferences.save(userID: userID)
+        // ⚠ 기기에 **적었을 때만** 뒤따르는 일을 한다(`commitLocalEdit`) — 못 적었는데 공휴일 국가·서버만 새
+        // 지역으로 가면 이 기기 값(다음 알람·설정 화면)과 갈라진다.
+        update.preferences.commitLocalEdit(userID: userID, markUnsynced: update.needsUpload) {
+            // 공휴일 국가 = 지역의 나라. 서버 저장이 실패해도(오프라인) 이 기기는 곧바로 맞춘다 — 설정 화면과 같다.
+            if let key = update.changedRegionKey {
+                holidayStore.adoptCountry(ofWeatherRegion: key)
+            }
+            guard update.needsUpload, userID != nil else { return }
+            let settings = update.preferences.toSettings()
+            Task { await auth.updateProfile(dynamicPromptSettings: settings) }
         }
-        // 공휴일 국가 = 지역의 나라. 서버 저장이 실패해도(오프라인) 이 기기는 곧바로 맞춘다 — 설정 화면과 같다.
-        if let key = update.changedRegionKey {
-            holidayStore.adoptCountry(ofWeatherRegion: key)
-        }
-        guard update.needsUpload, userID != nil else { return }
-        let settings = update.preferences.toSettings()
-        Task { await auth.updateProfile(dynamicPromptSettings: settings) }
     }
 
     // MARK: - 같은 문구 재사용 (입력 캐시)

@@ -99,6 +99,26 @@ final class AccountPromptSettingsAdoptionTests: XCTestCase {
         )
     }
 
+    /// **기기에 적었을 때만 뒤따르는 일(공휴일 국가·서버 올리기)을 한다**(Codex #837). 못 적었는데 하면 화면·서버·
+    /// 달력은 새 지역인데 기기 값(알람·편집기가 읽는 것)은 옛 지역으로 갈라지고, 받아 적기가 실패를 알려도 옮긴
+    /// 달력은 못 되돌린다.
+    func test_기기에_못_적으면_뒤따르는_일을_하지_않는다() throws {
+        let tokyo = try preferences(region: "jp-tokyo")
+        var applied = 0
+
+        XCTAssertFalse(tokyo.commitLocalEdit(userID: userID, defaults: defaults, write: { _, _ in false }) { applied += 1 })
+        XCTAssertFalse(
+            tokyo.commitLocalEdit(userID: userID, markUnsynced: false, defaults: defaults, write: { _, _ in false }) { applied += 1 }
+        )
+        XCTAssertEqual(applied, 0)
+        XCTAssertFalse(hasUnsynced())
+
+        XCTAssertTrue(tokyo.commitLocalEdit(userID: userID, defaults: defaults) { applied += 1 })
+        XCTAssertEqual(applied, 1)
+        XCTAssertTrue(hasUnsynced())
+        XCTAssertEqual(local.weatherRegion?.key, "jp-tokyo")
+    }
+
     func test_키체인에_적으면_표시를_남긴다() throws {
         let tokyo = try preferences(region: "jp-tokyo")
         XCTAssertTrue(tokyo.saveLocalEdit(userID: userID, defaults: defaults))

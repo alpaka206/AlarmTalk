@@ -153,10 +153,12 @@ struct SettingsView: View {
                     // 옛 앱이 읽는 표준 글자로 적는다 — 키는 이 글자에서 되짚힌다(`toSettings`).
                     next.weatherCountry = region.legacyCountry
                     next.weatherCity = region.legacyCity
-                    savePromptPreferences(next)
                     // 공휴일 국가 = 지역의 나라. 서버 저장이 실패해도(오프라인) 이 기기는 곧바로 맞춘다 —
                     // 성공하면 `AlarmTalkApp` 의 계정 설정 관찰이 같은 값으로 한 번 더 부르고, 같으면 쓰지 않는다.
-                    holidayStore.adoptCountry(ofWeatherRegion: region.key)
+                    // ⚠ 기기에 적었을 때만이다 — 못 적었으면 달력만 새 나라로 가고 기기 값은 옛 지역에 남는다.
+                    if savePromptPreferences(next) {
+                        holidayStore.adoptCountry(ofWeatherRegion: region.key)
+                    }
                     weatherDialogOpen = false
                 }
             )
@@ -248,17 +250,26 @@ struct SettingsView: View {
         )
     }
 
-    private func savePromptPreferences(_ preferences: DynamicPromptPreferences) {
-        promptPreferences = preferences
+    /// - Returns: 기기에 적었는가. ⚠ 못 적었으면(키체인 쓰기 실패) 화면도 서버도 공휴일 국가도 바꾸지 않는다 —
+    ///   기기 값(알람·편집기가 읽는 것)과 갈라진다(`DynamicPromptPreferences.commitLocalEdit`, Codex #837).
+    @discardableResult
+    private func savePromptPreferences(_ preferences: DynamicPromptPreferences) -> Bool {
         // '아직 안 올라간 변경' 표시와 함께 적는다 — 아래 저장이 실패해도 다음에 받는 서버의 옛 값이
         // 이 값을 덮지 않고, 앱이 다시 올린다(`AlarmTalkApp`).
-        preferences.saveLocalEdit(userID: auth.session?.user.id)
-        // 프로필 저장이 끝나면 `updateProfile` 이 사용자를 다시 읽는다(`refreshUser`) — 그걸로
-        // 끝이다. 이용권 새로고침은 부르지 않는다: 날씨 지역·사주는 이용권과 무관하고, 그
-        // 새로고침이 `/auth/me` 를 한 번 더 부른다(스펙 plan-gates §4).
-        Task {
-            await auth.updateProfile(dynamicPromptSettings: preferences.toSettings())
+        let wrote = preferences.commitLocalEdit(userID: auth.session?.user.id) {
+            promptPreferences = preferences
+            // 프로필 저장이 끝나면 `updateProfile` 이 사용자를 다시 읽는다(`refreshUser`) — 그걸로
+            // 끝이다. 이용권 새로고침은 부르지 않는다: 날씨 지역·사주는 이용권과 무관하고, 그
+            // 새로고침이 `/auth/me` 를 한 번 더 부른다(스펙 plan-gates §4).
+            Task {
+                await auth.updateProfile(dynamicPromptSettings: preferences.toSettings())
+            }
         }
+        if !wrote {
+            // 적힌 값(옛것)을 그대로 보인다.
+            loadPromptPreferences()
+        }
+        return wrote
     }
 }
 

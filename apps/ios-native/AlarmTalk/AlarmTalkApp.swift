@@ -372,14 +372,18 @@ struct AlarmTalkApp: App {
                         Task { @MainActor in
                             await HolidayOffRescheduler.shared.runIfNeeded(
                                 currentMarker: {
-                                    guard alarmStore.hasLoadedFromDisk, auth.session != nil else { return nil }
-                                    return holidayStore.holidayCalendarMarker
+                                    guard alarmStore.hasLoadedFromDisk,
+                                          let owner = auth.session?.user.id,
+                                          let calendar = holidayStore.holidayCalendarMarker else { return nil }
+                                    return HolidayOffRescheduler.ownerScopedMarker(
+                                        ownerUserID: owner,
+                                        calendarMarker: calendar
+                                    )
                                 },
                                 recompute: {
-                                    _ = await alarmKit.recoverScheduledAlarms(
+                                    await alarmKit.recomputeHolidayOffAlarms(
                                         store: alarmStore,
-                                        ownerUserId: auth.session?.user.id,
-                                        forceHolidayOffRecompute: true
+                                        ownerUserId: auth.session?.user.id
                                     )
                                 }
                             )

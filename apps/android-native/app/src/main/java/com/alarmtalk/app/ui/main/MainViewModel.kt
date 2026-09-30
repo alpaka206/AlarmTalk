@@ -1632,16 +1632,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         // ⚠ **그 나라의 달력을 못 받았으면 앱에 들어올 때마다 다시 본다**(Codex #837). 오프라인에서 JP·US 로
         // 바뀌면 빈 달력으로 잡히는데(안전한 쪽 — 공휴일에 울릴 뿐), 나라 값은 다시 흐르지 않으므로 진입
         // 번호(`AppSignals.appEntries`)도 축에 둔다. 받은 뒤로는 같은 나라에서 다시 돌지 않는다.
+        // ⚠ **계정도 축이다**(Codex #837). 다시 잡기는 지금 계정의 알람만 보므로, 나라만 보면 한 기기의 앞 계정이
+        // 같은 나라로 이미 잡아 둔 뒤 들어온 계정의 알람은 옛 달력의 날짜로 남는다(iOS 표지도 계정을 싣는다 —
+        // `HolidayOffRescheduler.ownerScopedMarker`).
         viewModelScope.launch {
-            var calendarReadyFor: String? = null
+            var calendarReadyFor: Pair<String, String?>? = null
             kotlinx.coroutines.flow.combine(
                 holidayCountryStore.countryCode,
                 com.alarmtalk.app.core.AppSignals.appEntries,
-            ) { country, _ -> country }.collect { country ->
-                if (country == calendarReadyFor) return@collect
+                androidx.compose.runtime.snapshotFlow { authSession?.user?.id },
+            ) { country, _, owner -> country to owner }.collect { calendar ->
+                val (country, _) = calendar
+                if (calendar == calendarReadyFor) return@collect
                 runCatching { repository.refreshHolidayOffAlarms() }
                     .onSuccess { result ->
-                        calendarReadyFor = country.takeIf { result.calendarReady }
+                        calendarReadyFor = calendar.takeIf { result.calendarReady }
                         Log.i(
                             TAG,
                             "Holiday calendar applied country=$country scheduled=${result.scheduled} " +

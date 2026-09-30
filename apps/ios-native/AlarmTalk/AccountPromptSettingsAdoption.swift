@@ -63,6 +63,31 @@ extension DynamicPromptPreferences {
         return true
     }
 
+    /// 이 기기에서 고친 지역·사주를 적고, **적었을 때만** 뒤따르는 일(공휴일 국가·서버 올리기)을 한다(Codex #837).
+    ///
+    /// 키체인에 못 적었는데 뒤따르는 일을 하면, 설정 화면·서버·공휴일 국가는 새 지역인데 기기 값(알람·편집기가 읽는
+    /// 것)은 옛 지역으로 갈라진다 — 받아 적기가 `.localWriteFailed` 를 돌려줘도 이미 옮긴 달력은 못 되돌린다.
+    /// 설정 화면(`SettingsView.savePromptPreferences`)과 편집기(`AlarmEditorSheet.syncOwnPromptPreferences`)가 쓴다.
+    ///
+    /// - Parameters:
+    ///   - markUnsynced: '안 올라간 변경' 표시를 남길지(올릴 값이면 true — `saveLocalEdit`).
+    ///   - apply: 적은 뒤에 할 일.
+    /// - Returns: 적었는가.
+    @discardableResult
+    func commitLocalEdit(
+        userID: String?,
+        markUnsynced: Bool = true,
+        defaults: UserDefaults = .standard,
+        write: (DynamicPromptPreferences, String?) -> Bool = { $0.save(userID: $1) },
+        then apply: () -> Void
+    ) -> Bool {
+        let wrote = markUnsynced
+            ? saveLocalEdit(userID: userID, defaults: defaults, write: write)
+            : write(self, userID)
+        if wrote { apply() }
+        return wrote
+    }
+
     /// 이 기기에 아직 서버로 안 올라간 지역·사주 변경이 있는가.
     static func hasUnsyncedChange(userID: String?, defaults: UserDefaults = .standard) -> Bool {
         guard let key = unsyncedDefaultsKey(userID: userID) else { return false }

@@ -78,15 +78,15 @@ final class HolidayOffReschedulerTests: XCTestCase {
         var calls = 0
 
         // 달력이 그대로면 아무것도 하지 않는다(같은 지역을 다시 골라도 예약을 흔들지 않는다).
-        var runs = await rescheduler.runIfNeeded(currentMarker: { "KR" }, recompute: { calls += 1 })
+        var runs = await rescheduler.runIfNeeded(currentMarker: { "KR" }, recompute: { calls += 1; return true })
         XCTAssertEqual(runs, 0)
 
-        runs = await rescheduler.runIfNeeded(currentMarker: { "JP" }, recompute: { calls += 1 })
+        runs = await rescheduler.runIfNeeded(currentMarker: { "JP" }, recompute: { calls += 1; return true })
         XCTAssertEqual(runs, 1)
         XCTAssertEqual(stored, "JP")
 
         // 다시 불려도(계정 설정을 또 받음·화면이 다시 그려짐) 같은 달력이면 돌지 않는다.
-        runs = await rescheduler.runIfNeeded(currentMarker: { "JP" }, recompute: { calls += 1 })
+        runs = await rescheduler.runIfNeeded(currentMarker: { "JP" }, recompute: { calls += 1; return true })
         XCTAssertEqual(runs, 0)
         XCTAssertEqual(calls, 1)
     }
@@ -96,12 +96,12 @@ final class HolidayOffReschedulerTests: XCTestCase {
         HolidayOffRescheduler.recordInitialCalendarIfAbsent("KR", defaults: defaults)
         var calls = 0
         // 알람 저장소·공휴일 캐시를 읽기 전이다.
-        let runs = await rescheduler.runIfNeeded(currentMarker: { nil }, recompute: { calls += 1 })
+        let runs = await rescheduler.runIfNeeded(currentMarker: { nil }, recompute: { calls += 1; return true })
         XCTAssertEqual(runs, 0)
         XCTAssertEqual(stored, "KR", "미룬 것을 '다 했다' 로 적으면 읽은 뒤에 다시 걸 기회가 사라진다")
 
         // 읽은 뒤 다시 불리면 그때 건다 — 예전 콜백은 이 경우를 그냥 버렸다.
-        await rescheduler.runIfNeeded(currentMarker: { "US" }, recompute: { calls += 1 })
+        await rescheduler.runIfNeeded(currentMarker: { "US" }, recompute: { calls += 1; return true })
         XCTAssertEqual(calls, 1)
         XCTAssertEqual(stored, "US")
     }
@@ -111,9 +111,9 @@ final class HolidayOffReschedulerTests: XCTestCase {
         HolidayOffRescheduler.recordInitialCalendarIfAbsent("KR", defaults: defaults)
         var calls = 0
         // 나라를 JP 로 바꾼 순간은 아직 JP 공휴일이 없다 — 일단 그 달력으로 건다.
-        await rescheduler.runIfNeeded(currentMarker: { "JP:pending" }, recompute: { calls += 1 })
+        await rescheduler.runIfNeeded(currentMarker: { "JP:pending" }, recompute: { calls += 1; return true })
         // 서버에서 JP 공휴일을 받아 오면 나라는 그대로여도 달력이 바뀌었다.
-        await rescheduler.runIfNeeded(currentMarker: { "JP" }, recompute: { calls += 1 })
+        await rescheduler.runIfNeeded(currentMarker: { "JP" }, recompute: { calls += 1; return true })
         XCTAssertEqual(calls, 2)
         XCTAssertEqual(stored, "JP")
     }
@@ -130,8 +130,9 @@ final class HolidayOffReschedulerTests: XCTestCase {
                 // 도는 사이 지역을 또 골랐다(US). 그 순간의 호출은 기다리지 않고 돌아간다 —
                 // 같은 알람을 두 흐름이 동시에 다시 걸면 안 된다.
                 current = "US"
-                nestedRuns = await rescheduler.runIfNeeded(currentMarker: { current }, recompute: { calls += 100 })
+                nestedRuns = await rescheduler.runIfNeeded(currentMarker: { current }, recompute: { calls += 100; return true })
             }
+            return true
         })
         XCTAssertEqual(nestedRuns, 0, "도는 중에 들어온 호출은 겹쳐 돌지 않는다")
         XCTAssertEqual(runs, 2, "끝난 뒤 표지를 다시 보고 새 나라로 한 번 더 건다")
@@ -139,11 +140,62 @@ final class HolidayOffReschedulerTests: XCTestCase {
         XCTAssertEqual(stored, "US")
     }
 
+    /// **도중에 멈춘 다시 걸기는 표지를 적지 않는다**(Codex #837). 계정을 떠나는 중이라 후보를 다 못 돌았는데 표지를
+    /// 적으면, 다음 로그인이 같은 표지를 보고 건너뛰어 남은 알람이 옛 달력의 날짜로 굳는다.
+    func test_도중에_멈춘_다시_걸기는_표지를_적지_않고_다음에_다시_돈다() async {
+        let rescheduler = HolidayOffRescheduler(defaults: defaults)
+        HolidayOffRescheduler.recordInitialCalendarIfAbsent("KR", defaults: defaults)
+        var calls = 0
+
+        let aborted = await rescheduler.runIfNeeded(currentMarker: { "JP" }, recompute: { calls += 1; return false })
+        XCTAssertEqual(aborted, 1)
+        XCTAssertEqual(stored, "KR", "멈춘 다시 걸기를 '다 했다' 로 적으면 남은 알람을 다시 걸 기회가 사라진다")
+
+        await rescheduler.runIfNeeded(currentMarker: { "JP" }, recompute: { calls += 1; return true })
+        XCTAssertEqual(calls, 2)
+        XCTAssertEqual(stored, "JP")
+    }
+
+    /// **표지는 계정마다다**(Codex #837). 달력만 싣으면 한 기기의 A 가 같은 달력을 적어 둔 뒤 들어온 B 의 알람을
+    /// 다시 걸지 않는다 — 다시 걸기는 지금 계정의 알람만 본다.
+    func test_같은_달력이어도_계정이_바뀌면_다시_건다() async {
+        let rescheduler = HolidayOffRescheduler(defaults: defaults)
+        HolidayOffRescheduler.recordInitialCalendarIfAbsent("JP", defaults: defaults)
+        var calls = 0
+        let a = HolidayOffRescheduler.ownerScopedMarker(ownerUserID: "user-a", calendarMarker: "JP@20000")
+        let b = HolidayOffRescheduler.ownerScopedMarker(ownerUserID: "user-b", calendarMarker: "JP@20000")
+        XCTAssertNotEqual(a, b)
+
+        await rescheduler.runIfNeeded(currentMarker: { a }, recompute: { calls += 1; return true })
+        await rescheduler.runIfNeeded(currentMarker: { a }, recompute: { calls += 1; return true })
+        XCTAssertEqual(calls, 1, "같은 계정·같은 달력이면 한 번뿐이다")
+        await rescheduler.runIfNeeded(currentMarker: { b }, recompute: { calls += 1; return true })
+        XCTAssertEqual(calls, 2, "다른 계정이면 같은 달력이어도 그 계정의 알람을 다시 건다")
+    }
+
+    /// 달력만 바뀐 다시 걸기의 대상 — 미래의 '공휴일에는 끄기' 반복뿐이다. 지난 행은 평소 복구가 맡는다(Codex #837).
+    func test_달력만_바뀐_다시_걸기는_미래의_공휴일off_반복만_본다() {
+        let now: Int64 = 1_800_000_000_000
+        var future = LocalAlarmRecord(label: "a", hour: 7, minute: 0, fireAtMillis: now + 3_600_000, repeatDaysMask: 0x7F)
+        future.holidayOff = true
+        var past = future
+        past.fireAtMillis = now - 60_000
+        var plain = future
+        plain.holidayOff = false
+        var oneShot = future
+        oneShot.repeatDaysMask = 0
+
+        XCTAssertTrue(AlarmKitViewModel.isCalendarOnlyCandidate(future, nowMillis: now))
+        XCTAssertFalse(AlarmKitViewModel.isCalendarOnlyCandidate(past, nowMillis: now), "지난 행은 평소 복구가 맡는다")
+        XCTAssertFalse(AlarmKitViewModel.isCalendarOnlyCandidate(plain, nowMillis: now))
+        XCTAssertFalse(AlarmKitViewModel.isCalendarOnlyCandidate(oneShot, nowMillis: now))
+    }
+
     func test_표지가_없으면_지금_달력을_기준으로_삼는다() async {
         // 보통은 `HolidayStore.init` 이 먼저 적는다 — 없을 때 괜히 전부 다시 걸지 않는다.
         let rescheduler = HolidayOffRescheduler(defaults: defaults)
         var calls = 0
-        await rescheduler.runIfNeeded(currentMarker: { "KR" }, recompute: { calls += 1 })
+        await rescheduler.runIfNeeded(currentMarker: { "KR" }, recompute: { calls += 1; return true })
         XCTAssertEqual(calls, 0)
         XCTAssertEqual(stored, "KR")
     }
