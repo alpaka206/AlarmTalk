@@ -449,19 +449,33 @@ export async function purgeUserAccount(
     //     플랜 강등의 `detachFamilyAlarmMessagesUsingOwnedUploads` 와 같은 처리다.
     // ⚠ 셋 다 `DELETE FROM alarms`·`message_library` 삭제 **뒤**여야 하고(참조가 사라진 뒤에
     //   판정한다), 업로드 표를 하위질의로 읽으므로 `DELETE FROM voice_uploads` 는 맨 뒤다.
+    // ⚠ **업로드 행만 보면 놓친다.** 가족 녹음 원본은 프로필에 연결되지 않아 7일 TTL 이
+    //   `voice_uploads` 행을 먼저 지운다(`cleanupExpiredAudio`) — 그 뒤에도 수신 확인 전
+    //   문구는 같은 키를 들고 있다. 그래서 **키 앞머리**(`voices/<내 id>/` — `r2-storage.ts` 의
+    //   `store`)로도 고른다. `LIKE` 대신 앞머리 비교라 id 안의 `%`·`_` 를 이스케이프할 일이 없다.
+    const uploadKeyPrefixes = userIds.map((id) => `voices/${id}/`);
+    const pointsAtMyUpload = `(audio_url IN (SELECT object_key FROM voice_uploads WHERE user_id IN (?, ?))
+                               OR substr(audio_url, 1, length(?)) = ?
+                               OR substr(audio_url, 1, length(?)) = ?)`;
+    const pointsAtMyUploadArgs = [
+      ...userIds,
+      uploadKeyPrefixes[0]!,
+      uploadKeyPrefixes[0]!,
+      uploadKeyPrefixes[1]!,
+      uploadKeyPrefixes[1]!,
+    ];
     writes.push({
       sql: `DELETE FROM messages
             WHERE category = 'family-voice'
               AND COALESCE(is_preset, 0) = 0
-              AND audio_url IN (SELECT object_key FROM voice_uploads WHERE user_id IN (?, ?))
+              AND ${pointsAtMyUpload}
               AND NOT EXISTS (SELECT 1 FROM alarms a WHERE a.message_id = messages.id)
               AND NOT EXISTS (SELECT 1 FROM message_library ml WHERE ml.message_id = messages.id)`,
-      args: userIds,
+      args: pointsAtMyUploadArgs,
     });
     writes.push({
-      sql: `UPDATE messages SET audio_url = NULL
-            WHERE audio_url IN (SELECT object_key FROM voice_uploads WHERE user_id IN (?, ?))`,
-      args: userIds,
+      sql: `UPDATE messages SET audio_url = NULL WHERE ${pointsAtMyUpload}`,
+      args: pointsAtMyUploadArgs,
     });
     writes.push({
       sql: `DELETE FROM voice_uploads WHERE user_id IN (?, ?)`,

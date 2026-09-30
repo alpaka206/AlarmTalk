@@ -93,6 +93,8 @@ const B_PK = 'b0000000-0000-4000-8000-00000000000b';
 const C_PK = 'c0000000-0000-4000-8000-00000000000c';
 
 const A_UPLOAD_KEY = `voices/${A_PK}/1_0`;
+/** 업로드 행이 TTL 로 먼저 지워진 옛 녹음의 키 — 문구만 이 키를 들고 있다. */
+const A_OLD_UPLOAD_KEY = `voices/${A_PK}/0_0`;
 const A_GENERATED_KEY = `generated-tts/${A_PK}/hash-a.mp3`;
 const B_ON_A_GENERATED_KEY = `generated-tts/${B_PK}/hash-shared.mp3`;
 
@@ -105,6 +107,7 @@ const A_OWNED_ROWS: Array<[table: string, column: string, id: string]> = [
   ['message_library', 'id', 'ml-a'],
   ['alarms', 'id', 'al-a-own'],
   ['alarms', 'id', 'al-a-to-b'],
+  ['alarms', 'id', 'al-a-to-b-old'],
   ['subscriptions', 'id', 'sub-a'],
   ['store_transactions', 'id', 'st-a'],
   ['store_transactions', 'id', 'st-a-gift'],
@@ -261,6 +264,19 @@ async function seed(): Promise<void> {
      VALUES ('msg-b-fv', ?, 'vp-b', '녹음해서 보낸 알람', ?, 'family-voice')`,
     [B_PK, A_UPLOAD_KEY],
   );
+  // 같은 모양인데 업로드 행은 이미 없다 — 가족 녹음 원본은 프로필에 안 묶여 7일 TTL 이 먼저
+  // `voice_uploads` 행을 지운다(`cleanupExpiredAudio`). 문구는 여전히 그 키를 들고 있다.
+  await run(
+    `INSERT INTO messages (id, user_id, voice_profile_id, text, audio_url, category)
+     VALUES ('msg-b-fv-old', ?, 'vp-b', '일주일 전에 보낸 녹음', ?, 'family-voice')`,
+    [B_PK, A_OLD_UPLOAD_KEY],
+  );
+  // 보관함이 가리켜 지울 수 없는 녹음 문구 — 받은 사람 것이라 남기고 키만 비운다.
+  await run(
+    `INSERT INTO messages (id, user_id, voice_profile_id, text, audio_url, category)
+     VALUES ('msg-b-fv-kept', ?, 'vp-b', '보관함에 둔 녹음', ?, 'family-voice')`,
+    [B_PK, A_UPLOAD_KEY],
+  );
   await run(
     `INSERT INTO generated_audio_assets (id, user_id, voice_profile_id, message_id, provider, provider_voice_id,
                                          model_id, language, request_hash, text, audio_url, audio_object_key)
@@ -281,6 +297,7 @@ async function seed(): Promise<void> {
   );
   await run(`INSERT INTO message_library (id, user_id, message_id) VALUES ('ml-a', ?, 'msg-a')`, [A_PK]);
   await run(`INSERT INTO message_library (id, user_id, message_id) VALUES ('ml-b', ?, 'msg-b')`, [B_PK]);
+  await run(`INSERT INTO message_library (id, user_id, message_id) VALUES ('ml-b-fv', ?, 'msg-b-fv-kept')`, [B_PK]);
   await run(`INSERT INTO voice_profile_relationships (id, user_id, voice_profile_id, relationship_label) VALUES ('rel-a-on-b', ?, 'vp-b', '친구')`, [A_PK]);
   await run(`INSERT INTO voice_profile_relationships (id, user_id, voice_profile_id, relationship_label) VALUES ('rel-b-on-a', ?, 'vp-a', '엄마')`, [B_PK]);
   await run(`INSERT INTO voice_prerender_queue (voice_profile_id, owner_user_id, language) VALUES ('vp-a', ?, 'ko')`, [A_PK]);
@@ -303,6 +320,11 @@ async function seed(): Promise<void> {
   await run(
     `INSERT INTO alarms (id, user_id, target_user_id, message_id, time, mode, delivery_version)
      VALUES ('al-a-to-b', ?, ?, 'msg-b-fv', '08:00', 'sound-only', 'dv-1')`,
+    [A_PK, B_PK],
+  );
+  await run(
+    `INSERT INTO alarms (id, user_id, target_user_id, message_id, time, mode, delivery_version)
+     VALUES ('al-a-to-b-old', ?, ?, 'msg-b-fv-old', '08:30', 'sound-only', 'dv-0')`,
     [A_PK, B_PK],
   );
   await run(`INSERT INTO alarms (id, user_id, target_user_id, message_id, time) VALUES ('al-b-to-a', ?, ?, 'msg-b', '09:00')`, [B_PK, A_PK]);
@@ -442,9 +464,18 @@ describe('탈퇴 파기 뒤 잔존물 (실제 SQLite)', () => {
       expect(await ids(`SELECT pool_key FROM manual_tts_usage`)).toEqual([B_PK, 'g-c'].sort());
     });
 
-    it('받은 사람 소유의 family-voice 문구 — 전달 알람이 사라진 고아는 지운다', async () => {
-      // 남는 문구는 B 자신의 것 하나다. A 의 클론으로 만든 B 의 문구도 목소리와 함께 사라진다.
-      expect(await ids(`SELECT id FROM messages WHERE user_id IN (?, ?, ?)`, [A_PK, B_PK, C_PK])).toEqual(['msg-b']);
+    it('받은 사람 소유의 family-voice 문구 — 전달 알람이 사라진 고아는 지운다(업로드 행이 먼저 사라졌어도)', async () => {
+      // 남는 문구는 B 자신의 것과 보관함이 붙든 녹음 문구 둘이다. A 의 클론으로 만든 B 의
+      // 문구도 목소리와 함께 사라진다.
+      expect(await ids(`SELECT id FROM messages WHERE user_id IN (?, ?, ?)`, [A_PK, B_PK, C_PK])).toEqual(
+        ['msg-b', 'msg-b-fv-kept'].sort(),
+      );
+    });
+
+    it('지울 수 없는 녹음 문구는 받은 사람 것으로 남기고 A 의 업로드 키만 비운다', async () => {
+      const kept = await db.execute(`SELECT text, audio_url FROM messages WHERE id = 'msg-b-fv-kept'`);
+      expect(kept.rows.map((row) => [row.text, row.audio_url])).toEqual([['보관함에 둔 녹음', null]]);
+      expect(await ids(`SELECT id FROM message_library`)).toEqual(['ml-b', 'ml-b-fv'].sort());
     });
 
     it('남는 사람의 데이터는 남는다 — 과잉 삭제가 없다', async () => {
@@ -453,7 +484,6 @@ describe('탈퇴 파기 뒤 잔존물 (실제 SQLite)', () => {
       expect(await ids(`SELECT id FROM user_consents`)).toEqual(['uc-b']);
       expect(await ids(`SELECT id FROM email_verification_codes`)).toEqual(['evc-b']);
       expect(await ids(`SELECT id FROM promo_code_redemptions`)).toEqual(['pr-b']);
-      expect(await ids(`SELECT id FROM message_library`)).toEqual(['ml-b']);
       expect(await ids(`SELECT id FROM generated_audio_assets WHERE user_id IN (?, ?)`, [A_PK, B_PK])).toEqual(['ga-b']);
       expect(await ids(`SELECT id FROM voice_profiles WHERE user_id IN (?, ?)`, [A_PK, B_PK])).toEqual(['vp-b']);
       expect(await ids(`SELECT id FROM plan_groups`)).toEqual(['g-c']);
@@ -479,12 +509,22 @@ describe('탈퇴 파기 뒤 잔존물 (실제 SQLite)', () => {
         `SELECT alarm_id, recipient_user_id, sender_user_id, voice_profile_id, revoked
            FROM alarm_recipient_state ORDER BY alarm_id`,
       );
-      expect(
-        states.rows.map((row) => [row.alarm_id, row.recipient_user_id, row.sender_user_id, row.voice_profile_id, row.revoked]),
-      ).toEqual([
-        ['al-a-to-b', B_PK, null, null, 1],
-        ['al-delivered-a-to-b', B_PK, null, null, 1],
+      const rows = states.rows.map((row) => [
+        row.alarm_id,
+        row.recipient_user_id,
+        row.sender_user_id,
+        row.voice_profile_id,
+        row.revoked,
       ]);
+      // A 가 받던 쪽(al-delivered-b-to-a)은 사라지고, 남는 것은 전부 B 가 받은 것이다.
+      expect(rows.every(([, recipient, sender]) => recipient === B_PK && sender === null)).toBe(true);
+      // A 의 목소리가 실린 전달은 수신 확인 전·후 모두 철회로 기록된다.
+      expect(rows).toEqual(
+        expect.arrayContaining([
+          ['al-a-to-b', B_PK, null, null, 1],
+          ['al-delivered-a-to-b', B_PK, null, null, 1],
+        ]),
+      );
     });
 
     it('결제 기록은 가명으로만 남는다 — pepper 없이는 계정 id 로 되짚을 수 없다', async () => {
