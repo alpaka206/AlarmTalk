@@ -144,28 +144,43 @@ export function alarmTextRejectionReasonOf(error: unknown): AlarmTextRejectionRe
 
 const CLOUD_PLATFORM_SCOPE = 'https://www.googleapis.com/auth/cloud-platform';
 const DEFAULT_TOKEN_URI = 'https://oauth2.googleapis.com/token';
-// ⚠ **`gemini-2.5-flash` 는 2026-10-20 에 은퇴한다**(Vertex 「Model versions and lifecycle」,
-//   2026-09-22 갱신 — 대체 모델로 `gemini-3.5-flash-lite` / `gemini-3.1-flash-lite` 를 든다).
-//   실제 모델은 워커 시크릿 `GOOGLE_VERTEX_MODEL`·`GOOGLE_VERTEX_LOCATION` 이 정한다 — 이 값은
-//   그게 비었을 때만 쓰인다.
-// ⚠ **대체는 `gemini-3.5-flash` 다 — 표가 권하는 Flash-Lite 가 아니다**(2026-09-23 블라인드 판정,
-//   튜닝에 쓰지 않은 프로필, 같은 프롬프트). 3.5 Flash-Lite 는 2.5 Flash 에 69:108 로 졌고(한국어
-//   36%), 3.5 Flash 는 93:86·72:47 로 대등하거나 나았다(한국어·일본어 우세). 단가는 3.5 Flash 가
-//   약 4~5배(사전렌더 클립 한 개 약 $0.006)이고, 응답 꼬리가 길다(p90 수 초). 가격만 보고 Lite 로
-//   되돌리지 말 것 — 되돌리면 한국어 문구 품질이 눈에 띄게 떨어진다. 은퇴는 2027-05-19 이후.
-// ⚠ **지역은 `us` 다.** 3.5 Flash-Lite 가 도는 곳은 `global` 과 멀티리전 `us`·`eu` 뿐이고
-//   (`us-central1` 없음), 개인정보 처리방침은 Vertex 처리 국가를 '미국' 으로 적는다. `global`
-//   엔드포인트는 처리 지역을 고를 수도 알 수도 없다고 문서가 말하므로 쓰지 않는다. 3.5 Flash 도
-//   `us` 에서 실호출로 확인했다(2026-09-23).
-const DEFAULT_VERTEX_LOCATION = 'us';
-const DEFAULT_VERTEX_MODEL = 'gemini-3.5-flash';
 /**
- * Gemini 3 계열의 출력 상한 하한. **사고 토큰이 `maxOutputTokens` 안에서 세어진다** — 사고에
- * 다 쓰면 `finishReason: MAX_TOKENS` 로 잘린 JSON 이 HTTP 200 으로 온다(2026-09-23 실측:
- * 상한 16 에서 `{"text": "[cheerful] 엄마, 일`). 요금은 실제로 만든 토큰만 나가므로 상한을
- * 올려도 비용은 그대로다.
+ * 모든 Gemini 호출의 모델. **이 상수 하나가 정한다 — 워커 시크릿으로 바꾸는 길은 없다**(2026-09-30).
+ *
+ * ⚠ 예전에는 시크릿 `GOOGLE_VERTEX_MODEL` 이 이 값을 덮었다. 그 길을 남겨 두면 워커에 남은 옛 값
+ *   (dev·prod 는 아직 `gemini-3.5-flash` 를 들고 있다)이 새 코드를 옛 모델로 계속 돌린다 — 모델마다
+ *   사고 설정이 달라서(3.8 은 `MINIMAL` 을 400 으로 거절한다) 조용히 전부 실패할 수도 있다. 그래서
+ *   모델과 그 모델의 요청 설정(`buildGenerationConfig`)을 **한 커밋에서 같이** 바꾸게 했다. 되돌릴 때도
+ *   시크릿이 아니라 코드를 되돌린다.
+ * - `gemini-3.8-flash`: GA(2026-09-02). 목록가가 3.5 Flash 보다 싸다(`us` 입력/출력 100만 토큰당
+ *   $0.825/$4.125 — 2026-12-31 까지 도입가, 그 뒤 $1.65/$8.25. 3.5 Flash 는 $1.65/$9.90). 단 사고를
+ *   `LOW` 밑으로 끌 수 없어 사고 토큰이 늘므로, 실제 단가는 로그의 `thought_tokens` 로 본다.
+ * - ⚠ **Flash-Lite 로 내리지 말 것** — 2026-09-23 블라인드 판정에서 3.5 Flash-Lite 는 2.5 Flash 에
+ *   69:108 로 졌다(한국어 36%). 가격만 보고 고르면 한국어 문구 품질이 눈에 띄게 떨어진다.
+ * - 3.8 Flash 는 은퇴일이 정해지지 않은 '단기 제공' 모델이다(공지 뒤 최소 45일 안에 옮긴다).
  */
-const GEMINI_3_MIN_OUTPUT_TOKENS = 1024;
+export const VERTEX_MODEL = 'gemini-3.8-flash';
+// ⚠ **지역은 `us` 다.** 3.8 Flash 가 도는 곳은 `global` 과 멀티리전 `us`·`eu` 뿐이고(`us-central1` 같은
+//   단일 리전 없음), 개인정보 처리방침은 Vertex 처리 국가를 '미국' 으로 적는다. `global` 엔드포인트는
+//   처리 지역을 고를 수도 알 수도 없다고 문서가 말하므로 쓰지 않는다.
+const DEFAULT_VERTEX_LOCATION = 'us';
+/**
+ * 사고 수준. **3.8 Flash 는 `LOW`·`MEDIUM`(기본)·`HIGH` 만 받는다** — 3.5 까지 쓰던 `MINIMAL` 을
+ * 보내면 요청 검증 오류(400)다("Explicitly setting thinking_level to MINIMAL will return an API
+ * validation error"). 호출부가 실패를 삼키고 폴백하므로 400 은 경보 없이 문구 품질만 떨어뜨린다.
+ * 짧은 알람 문구 한 줄에 긴 사고는 필요 없어 가장 낮은 `LOW` 를 쓴다(지연·사고 토큰이 가장 적다).
+ */
+const VERTEX_THINKING_LEVEL = 'LOW';
+/**
+ * 출력 상한. **사고 토큰이 이 상한 안에서 함께 세어진다** — 사고에 다 쓰면 `finishReason: MAX_TOKENS`
+ * 로 잘린 JSON 이 HTTP 200 으로 온다(2026-09-23 실측: 상한 16 에서 `{"text": "[cheerful] 엄마, 일`).
+ * 답 자체는 문구 한 줄짜리 JSON 이라 수십~백여 토큰이다(2026-09-30 실호출 — 가장 긴 사전렌더 프롬프트
+ * 3,635 토큰에 답 37 토큰, 사고 0, 2.4초). 그래도 `LOW` 는 사고 양을 모델이 정하는 동적 수준이고, 3.8 은
+ * 3.7 보다 토큰을 더 쓴다고 문서가 말한다 — 사고가 길어지는 호출에서 잘리지 않도록 `MINIMAL` 시절의
+ * 1024 에서 4096 으로 올렸다. 요금은 실제로 만든 토큰만 나가므로 상한을 올려도 비용은 그대로이고, 폭주하면
+ * 이 상한보다 15초 타임아웃이 먼저 끊는다(둘 다 호출부의 폴백·재시도로 간다).
+ */
+const MAX_OUTPUT_TOKENS = 4096;
 /// 대괄호 태그의 **모양**. 이 한 벌이 유일 출처다 — 예전에는 같은 문자셋이 네 군데에
 /// 리터럴로 박혀 있어, 하나만 넓히면 "태그로 인식은 되는데 화면에서 안 벗겨지는" 상태가 됐다.
 ///
@@ -594,8 +609,6 @@ export async function prepareAlarmTextWithVertex(
   let raw: string;
   try {
     raw = await generateContentText(env, prompt, {
-      temperature: 0.15,
-      maxOutputTokens: 256,
       // ⚠ 스키마 없이 JSON 만 요구하면 3.5 Flash-Lite 가 영어 문구의 12% 를 **배열**
       //   `[{"text":…}]` 로 준다(2026-09-23 비교 평가). 파서가 받아 주긴 하지만 형식을 못박는다.
       responseSchema: ALARM_TEXT_RESPONSE_SCHEMA,
@@ -721,13 +734,10 @@ export async function generateDynamicAlarmTextWithVertex(
 
   // 2단 검증(§4.7): HARD 차단 시 1회만 재롤하고, 그래도 막히면 회전식 폴백.
   // SOFT 이슈(조사/어체 슬립 등)는 polishDynamicAlarmText로 국소 수리만 하고 수용한다.
-  // temperature 0.85→0.75로 낮춰 churn을 줄인다.
   for (let attempt = 0; attempt < 2; attempt += 1) {
     let raw: string;
     try {
       raw = await generateContentText(env, prompt, {
-        temperature: 0.75,
-        maxOutputTokens: 256,
         systemInstruction: DYNAMIC_SYSTEM_INSTRUCTION,
         responseSchema: DYNAMIC_RESPONSE_SCHEMA,
       });
@@ -885,9 +895,13 @@ async function createAccessToken(
   return json.access_token;
 }
 
+/**
+ * 호출마다 다른 것은 이 둘뿐이다. temperature·출력 상한은 호출부가 정하지 않는다 — 3.x 는
+ * temperature 를 무시하고(문서: "temperature, top_p, top_k are ignored"), 상한은 사고 토큰 때문에
+ * 한 값(`MAX_OUTPUT_TOKENS`)이어야 한다. 예전에 호출부마다 적던 0.15·0.75·0.6/0.9·0.1 과 256 은
+ * 3.x 로 옮긴 뒤로 요청에 실리지 않던 죽은 값이었다.
+ */
 type GenerateContentConfig = {
-  temperature: number;
-  maxOutputTokens: number;
   systemInstruction?: string;
   responseSchema?: unknown;
 };
@@ -898,7 +912,7 @@ async function generateContentText(
   config: GenerateContentConfig,
 ): Promise<string> {
   const location = env.GOOGLE_VERTEX_LOCATION || DEFAULT_VERTEX_LOCATION;
-  const model = env.GOOGLE_VERTEX_MODEL || DEFAULT_VERTEX_MODEL;
+  const model = VERTEX_MODEL;
   // ⚠ 자격 증명 해석·토큰 발급 실패도 호출 한 번으로 남긴다(Codex #801). 생성 요청 앞에서 던지므로 아래
   //   `generateContentAtEndpoint` 의 로그에 닿지 않는데, 호출부는 이것도 삼키고 폴백한다 — 시크릿이 깨졌거나
   //   OAuth 가 죽으면 통째로 안 보인다. 오류 메시지는 `readVertexCredentials` 의 고정 문장이거나 OAuth
@@ -931,18 +945,6 @@ async function generateContentText(
 }
 
 /**
- * Gemini 1·2 계열인가. **사고 설정의 이름이 계열마다 다르다**:
- *  - 2.x 는 `thinkingBudget` 을 받고, `thinkingLevel` 을 보내면 **400** 이다
- *    ("thinking_level is not supported by this model", 2026-09-23 실측).
- *  - 3.x 문서는 "The raw numeric thinking_budget parameter is no longer supported across all
- *    Gemini 3 models" 라고 한다(지금은 받아 주지만 기대지 않는다).
- * 그래서 **모델 문자열로 가른다** — 일괄 치환하면 시크릿이 아직 2.5 인 워커가 전부 400 이 된다.
- */
-export function isLegacyGeminiModel(model: string): boolean {
-  return /^gemini-[12]\./.test(model);
-}
-
-/**
  * generateContent 주소. 멀티리전 `us`·`eu` 는 **전용 호스트**(`aiplatform.{loc}.rep.googleapis.com`)
  * 를 쓴다(Vertex 「Locations」). 그 밖은 지금까지처럼 전역 호스트 + 경로의 location 이다.
  */
@@ -962,25 +964,18 @@ export function vertexGenerateContentEndpoint(
 }
 
 /**
- * 요청의 `generationConfig`. 계열마다 다르게 보낸다:
- *  - 2.x: 지금까지와 **똑같다**(temperature · 호출부 상한 · `thinkingBudget: 0`). 코드를 먼저 배포하고
- *    시크릿을 나중에 바꾸므로, 그 사이 2.5 워커의 동작이 바뀌면 안 된다.
- *  - 3.x: `thinkingLevel: 'MINIMAL'`, 상한은 최소 `GEMINI_3_MIN_OUTPUT_TOKENS`, **temperature 는 뺀다** —
- *    3.5 Flash-Lite 는 "Custom values for parameters like temperature, top-K, and top-P aren't
- *    supported" 이고, Gemini 3 공통 안내는 1.0 미만이면 반복 같은 이상 동작이 날 수 있다고 한다.
+ * 요청의 `generationConfig` — `VERTEX_MODEL` 에 맞춘 한 벌이다. 모델을 바꾸면 여기도 같이 본다.
+ *  - `thinkingLevel: 'LOW'` — 3.8 Flash 는 `MINIMAL` 을 400 으로 거절한다(`VERTEX_THINKING_LEVEL`).
+ *    `thinkingBudget`(2.x 의 숫자 예산)은 3.x 문서가 "no longer supported" 라 보내지 않는다.
+ *  - **temperature 를 보내지 않는다** — 3.8 은 무시하고, Gemini 3 공통 안내는 1.0 미만이면 반복 같은
+ *    이상 동작이 날 수 있다고 한다. `frequency_penalty`·`presence_penalty`·`candidate_count` 는 보내면
+ *    오류라 넣지 않는다.
  */
-export function buildGenerationConfig(
-  model: string,
-  config: GenerateContentConfig,
-): Record<string, unknown> {
-  const legacy = isLegacyGeminiModel(model);
+export function buildGenerationConfig(config: GenerateContentConfig): Record<string, unknown> {
   return {
-    ...(legacy ? { temperature: config.temperature } : {}),
-    maxOutputTokens: legacy
-      ? config.maxOutputTokens
-      : Math.max(config.maxOutputTokens, GEMINI_3_MIN_OUTPUT_TOKENS),
+    maxOutputTokens: MAX_OUTPUT_TOKENS,
     responseMimeType: 'application/json',
-    thinkingConfig: legacy ? { thinkingBudget: 0 } : { thinkingLevel: 'MINIMAL' },
+    thinkingConfig: { thinkingLevel: VERTEX_THINKING_LEVEL },
     ...(config.responseSchema ? { responseSchema: config.responseSchema } : {}),
   };
 }
@@ -1040,7 +1035,7 @@ async function generateContentAtEndpoint(
       ...(config.systemInstruction
         ? { systemInstruction: { parts: [{ text: config.systemInstruction }] } }
         : {}),
-      generationConfig: buildGenerationConfig(model, config),
+      generationConfig: buildGenerationConfig(config),
     }),
   }).catch((err: unknown) => {
     // ⚠ **던져진 호출도 한 줄 남긴다**(Codex #801). 15초 타임아웃·DNS·네트워크 오류는 응답이 없어
@@ -1746,9 +1741,6 @@ export async function generatePrerenderClipText(
     let raw: string;
     try {
       raw = await generateContentText(env, prompt, {
-        // 회차마다 온도를 올려 같은 문장이 되풀이되는 것을 피한다.
-        temperature: attempt === 1 ? 0.6 : 0.9,
-        maxOutputTokens: 256,
         systemInstruction: DYNAMIC_SYSTEM_INSTRUCTION,
         responseSchema: DYNAMIC_RESPONSE_SCHEMA,
       });
@@ -2212,8 +2204,6 @@ export async function analyzeSpeechStyleWithVertex(
   let raw: string;
   try {
     raw = await generateContentText(env, speechStylePrompt(trimmed, language), {
-      temperature: 0.1,
-      maxOutputTokens: 256,
       responseSchema: SPEECH_STYLE_RESPONSE_SCHEMA,
     });
   } catch {

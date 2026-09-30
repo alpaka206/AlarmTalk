@@ -18,10 +18,10 @@ import {
   dropWakeUnsafeTags,
   fallbackTagForEnergy,
   modernizeKoreanHonorific,
-  isLegacyGeminiModel,
   prepareAlarmTextWithVertex,
   speakTypedLaughter,
   vertexGenerateContentEndpoint,
+  VERTEX_MODEL,
 } from '../src/lib/vertex-translate';
 
 const mockFetch = vi.fn();
@@ -116,14 +116,12 @@ beforeEach(() => {
 });
 
 /**
- * ⚠ **`gemini-2.5-flash` 는 2026-10-20 에 은퇴한다** — 대체는 `gemini-3.5-flash`(수명주기 표는 Flash-Lite 를
- * 권하지만 블라인드 판정에서 Lite 가 2.5 에 졌다 — `vertex-translate.ts` 의 `DEFAULT_VERTEX_MODEL` 주석).
- * 코드를 먼저 배포하고 워커 시크릿(`GOOGLE_VERTEX_MODEL`·`GOOGLE_VERTEX_LOCATION`)을 나중에 바꾸므로,
- * **같은 코드가 두 계열을 모두** 맞게 불러야 한다. 2.x 요청은 한 글자도 바뀌면 안 되고(시크릿을
- * 바꾸기 전까지 동작 변화 0), 3.x 에는 3.x 의 설정을 보낸다. 2.5 에 `thinkingLevel` 을 보내면 400
- * 이다(2026-09-23 실측) — 일괄 치환하면 전환 전에 운영이 깨진다.
+ * 모델은 코드 상수 `VERTEX_MODEL`(`gemini-3.8-flash`) 하나가 정한다 — 워커 시크릿 `GOOGLE_VERTEX_MODEL` 로
+ * 덮는 길은 없앴다(2026-09-30). dev·prod 워커에는 옛 값(`gemini-3.5-flash`)이 남아 있으므로, 그 값이
+ * 요청에 새어 나가면 안 된다. 3.8 Flash 는 `thinkingLevel: 'MINIMAL'` 을 400 으로 거절한다 — 호출부가
+ * 실패를 삼키고 폴백하므로 400 은 경보 없이 문구 품질만 떨어뜨린다. 보내는 요청 본문으로 잠근다.
  */
-describe('Gemini 모델 계열별 요청·응답(2.5 은퇴 대비)', () => {
+describe('Gemini 요청 — 모델·사고 설정은 코드가 정한다(3.8 Flash)', () => {
   function contentCall(): { url: string; body: { generationConfig: Record<string, unknown> } } {
     const call = mockFetch.mock.calls.find((c) => String(c[0]) !== TOKEN_URI);
     return { url: String(call?.[0]), body: JSON.parse(String(call?.[1]?.body)) };
@@ -133,89 +131,65 @@ describe('Gemini 모델 계열별 요청·응답(2.5 은퇴 대비)', () => {
     return okJson({ candidates: [candidate] });
   }
 
-  it('계열은 모델 문자열로 가른다', () => {
-    expect(isLegacyGeminiModel('gemini-2.5-flash')).toBe(true);
-    expect(isLegacyGeminiModel('gemini-2.0-flash')).toBe(true);
-    expect(isLegacyGeminiModel('gemini-1.5-pro-002')).toBe(true);
-    expect(isLegacyGeminiModel('gemini-3.5-flash-lite')).toBe(false);
-    expect(isLegacyGeminiModel('gemini-3.1-flash-lite')).toBe(false);
-  });
+  const SPEECH_STYLE_JSON =
+    '{"dialect":"경상","strength":"high","register":"banmal","markers":["~카이"],"persona":"","childlike":false,"energy":"bright","confidence":0.9}';
+  const SPEECH_TRANSCRIPT =
+    '아이고 오늘은 날씨가 참 좋네예. 밥은 묵었나? 니도 밥 잘 챙겨 묵고 댕기래이.';
 
   it('멀티리전 us·eu 는 전용 호스트, 그 밖은 전역 호스트다', () => {
-    expect(vertexGenerateContentEndpoint('p', 'us', 'gemini-3.5-flash-lite')).toBe(
-      'https://aiplatform.us.rep.googleapis.com/v1/projects/p/locations/us/publishers/google/models/gemini-3.5-flash-lite:generateContent',
+    expect(vertexGenerateContentEndpoint('p', 'us', 'gemini-3.8-flash')).toBe(
+      'https://aiplatform.us.rep.googleapis.com/v1/projects/p/locations/us/publishers/google/models/gemini-3.8-flash:generateContent',
     );
-    expect(vertexGenerateContentEndpoint('p', 'eu', 'gemini-3.5-flash-lite')).toBe(
-      'https://aiplatform.eu.rep.googleapis.com/v1/projects/p/locations/eu/publishers/google/models/gemini-3.5-flash-lite:generateContent',
+    expect(vertexGenerateContentEndpoint('p', 'eu', 'gemini-3.8-flash')).toBe(
+      'https://aiplatform.eu.rep.googleapis.com/v1/projects/p/locations/eu/publishers/google/models/gemini-3.8-flash:generateContent',
     );
-    expect(vertexGenerateContentEndpoint('p', 'us-central1', 'gemini-2.5-flash')).toBe(
-      'https://aiplatform.googleapis.com/v1/projects/p/locations/us-central1/publishers/google/models/gemini-2.5-flash:generateContent',
-    );
-    expect(vertexGenerateContentEndpoint('p', 'global', 'gemini-3.5-flash-lite')).toBe(
-      'https://aiplatform.googleapis.com/v1/projects/p/locations/global/publishers/google/models/gemini-3.5-flash-lite:generateContent',
+    expect(vertexGenerateContentEndpoint('p', 'global', 'gemini-3.8-flash')).toBe(
+      'https://aiplatform.googleapis.com/v1/projects/p/locations/global/publishers/google/models/gemini-3.8-flash:generateContent',
     );
   });
 
-  it('2.x 설정은 지금까지와 똑같다 — temperature·호출부 상한·thinkingBudget 0', () => {
-    expect(buildGenerationConfig('gemini-2.5-flash', { temperature: 0.15, maxOutputTokens: 256 })).toEqual({
-      temperature: 0.15,
-      maxOutputTokens: 256,
-      responseMimeType: 'application/json',
-      thinkingConfig: { thinkingBudget: 0 },
-    });
+  it('모델은 3.8 Flash 다', () => {
+    expect(VERTEX_MODEL).toBe('gemini-3.8-flash');
   });
 
-  it('3.x 설정은 thinkingLevel MINIMAL · 상한 최소 1024 · temperature 없음', () => {
-    const config = buildGenerationConfig('gemini-3.5-flash-lite', {
-      temperature: 0.15,
-      maxOutputTokens: 256,
-      responseSchema: { type: 'object' },
-    });
+  it('설정은 thinkingLevel LOW · 상한 4096 · temperature·thinkingBudget 없음', () => {
+    const config = buildGenerationConfig({ responseSchema: { type: 'object' } });
     expect(config).toEqual({
-      maxOutputTokens: 1024,
+      maxOutputTokens: 4096,
       responseMimeType: 'application/json',
-      thinkingConfig: { thinkingLevel: 'MINIMAL' },
+      thinkingConfig: { thinkingLevel: 'LOW' },
       responseSchema: { type: 'object' },
     });
     expect(config).not.toHaveProperty('temperature');
+    expect(buildGenerationConfig({})).not.toHaveProperty('responseSchema');
   });
 
-  // 2.x 의 **계열별 설정**(temperature · 호출부 상한 · thinkingBudget 0)과 주소는 그대로다. 응답
-  // 스키마는 프롬프트 개선(2026-09-23)으로 두 계열에 같이 붙었다 — 그건 모델과 무관한 변경이다.
-  it('워커가 2.5 · us-central1 이면 2.x 설정과 지금의 주소로 부른다', async () => {
-    queueContent(geminiText('{"text":"[cheerfully] 오늘도 화이팅","tags":["cheerfully"]}'));
-    await prepareAlarmTextWithVertex(
-      { ...ENV, GOOGLE_VERTEX_MODEL: 'gemini-2.5-flash', GOOGLE_VERTEX_LOCATION: 'us-central1' },
-      '오늘도 화이팅',
-      { targetLanguage: 'ko', sourceLanguage: 'ko', translate: false, autoTag: true },
-    );
+  it('요청은 3.8 Flash · us 주소와 LOW 사고로 나간다 — MINIMAL·temperature 를 싣지 않는다', async () => {
+    queueContent(geminiText(SPEECH_STYLE_JSON));
+    const style = await analyzeSpeechStyleWithVertex(ENV, SPEECH_TRANSCRIPT, 'ko');
+    expect(style?.dialect).toBe('경상');
     const { url, body } = contentCall();
     expect(url).toBe(
-      'https://aiplatform.googleapis.com/v1/projects/test-project/locations/us-central1/publishers/google/models/gemini-2.5-flash:generateContent',
+      'https://aiplatform.us.rep.googleapis.com/v1/projects/test-project/locations/us/publishers/google/models/gemini-3.8-flash:generateContent',
     );
-    expect(body.generationConfig).toEqual({
-      temperature: 0.15,
-      maxOutputTokens: 256,
-      responseMimeType: 'application/json',
-      thinkingConfig: { thinkingBudget: 0 },
-      responseSchema: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] },
-    });
-  });
-
-  it('시크릿이 비면 기본값 3.5 Flash · us 로 부른다', async () => {
-    queueContent(geminiText('{"text":"[cheerfully] 오늘도 화이팅","tags":["cheerfully"]}'));
-    await prepareAlarmTextWithVertex(ENV, '오늘도 화이팅', {
-      targetLanguage: 'ko',
-      sourceLanguage: 'ko',
-      translate: false,
-      autoTag: true,
-    });
-    const { url, body } = contentCall();
-    expect(url).toBe(
-      'https://aiplatform.us.rep.googleapis.com/v1/projects/test-project/locations/us/publishers/google/models/gemini-3.5-flash:generateContent',
-    );
-    expect(body.generationConfig.thinkingConfig).toEqual({ thinkingLevel: 'MINIMAL' });
+    expect(body.generationConfig.thinkingConfig).toEqual({ thinkingLevel: 'LOW' });
+    expect(body.generationConfig.maxOutputTokens).toBe(4096);
     expect(body.generationConfig).not.toHaveProperty('temperature');
+  });
+
+  it('워커에 옛 GOOGLE_VERTEX_MODEL 시크릿이 남아 있어도 코드의 3.8 Flash 로 부른다', async () => {
+    queueContent(geminiText(SPEECH_STYLE_JSON));
+    // dev·prod 워커가 아직 들고 있는 값이다. Env 타입에서는 뺐으므로 캐스팅해서 넣는다.
+    const staleEnv = {
+      ...ENV,
+      GOOGLE_VERTEX_MODEL: 'gemini-3.5-flash',
+      GOOGLE_VERTEX_LOCATION: 'us',
+    } as Env;
+    await analyzeSpeechStyleWithVertex(staleEnv, SPEECH_TRANSCRIPT, 'ko');
+    const { url, body } = contentCall();
+    expect(url).toContain('/models/gemini-3.8-flash:generateContent');
+    expect(url).not.toContain('gemini-3.5-flash');
+    expect(body.generationConfig.thinkingConfig).toEqual({ thinkingLevel: 'LOW' });
   });
 
   it('답을 꺼낼 때 사고 part 는 버리고 나머지 텍스트 part 를 잇는다', () => {
