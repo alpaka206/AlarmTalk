@@ -177,6 +177,9 @@ struct DynamicPromptPreferences: Codable, Equatable {
     /// 명시적 로그아웃·탈퇴에서만 부른다(자동 401 에서는 부르지 말 것 — 같은 사람이
     /// 다시 로그인할 때 자기 사주를 다시 입력하게 된다).
     static func clear(userID: String?) {
+        // '아직 안 올라간 변경' 표시도 함께 — 값이 없는데 표시만 남으면 다시 로그인했을 때 빈 기기 값이
+        // 서버를 이긴다(`adoptAccount`).
+        clearUnsyncedMark(userID: userID)
         guard let key = storageKey(userID: userID) else { return }
         KeychainStore.deleteData(account: key)
     }

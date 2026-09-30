@@ -1587,23 +1587,6 @@
         }
       }
     },
-    "공휴일 달력" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Holiday calendar"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "祝日カレンダー"
-          }
-        }
-      }
-    },
     "공휴일에는 끄기" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -10231,23 +10214,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "火"
-          }
-        }
-      }
-    },
-    "화면" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Display"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "画面"
           }
         }
       }

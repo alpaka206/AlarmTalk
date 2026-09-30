@@ -549,6 +549,40 @@ final class LocalAlarmStore: ObservableObject {
         return alarms[index]
     }
 
+    /// **달력(공휴일 국가·시간대)이 바뀌었다** — '공휴일에는 끄기' 반복 알람의 다음 발생만 새 달력으로 다시
+    /// 계산한다. 다시 걸어야 하면 바뀐 행을, 그럴 필요가 없으면 nil 을 돌려준다(`AlarmKitViewModel.recoverScheduledAlarms`
+    /// 의 `forceHolidayOffRecompute` 갈래 — 공휴일 국가는 `HolidayOffRescheduler`, 시간대는 `AlarmTalkApp`).
+    ///
+    /// 안드로이드 `AlarmRepository.refreshHolidayOffAlarms`(`reschedulePendingAlarmsLocked` 의 `recomputeHolidayOff`)와
+    /// 같은 규칙이다(스펙 alarm-lifecycle.md 「공휴일 국가는 지역의 나라다」):
+    ///  - **멱등이다.** 다음 발생이 그대로이고 이미 걸려 있으면 nil — 같은 달력으로 몇 번 불러도 예약을 흔들지 않는다.
+    ///  - **스누즈 중·울리는 중이면 건드리지 않는다**(nil). 예전에는 `setEnabled` 로 다시 켜서 스누즈 횟수를
+    ///    지우고 옛 예약을 취소했다 — 그 사이 울리던 알람·스누즈가 사라진다.
+    ///  - ⚠ **수정 시각(`updatedAtMillis`)·동기화 상태를 건드리지 않는다** — 사용자의 편집이 아니다. 올리면 받은
+    ///    가족 알람이 '받은 사람이 고쳤다'(`RemoteAlarmPullSync.locallyEditedByRecipient`)로 읽히고, 내 알람은
+    ///    바뀐 것도 없이 dirty 가 되어 서버로 다시 간다.
+    func recomputeHolidayOffFireTime(
+        id: String,
+        nowMillis: Int64,
+        isHoliday: (Date) -> Bool = { LocalHolidayCalendar.isHoliday($0) }
+    ) -> LocalAlarmRecord? {
+        guard let index = alarms.firstIndex(where: { $0.id == id }),
+              alarms[index].enabled,
+              alarms[index].isHolidayOffRecurring else { return nil }
+        let state = alarms[index].runtimeStateEnum
+        guard state != .snoozed, state != .ringing,
+              let nextFireAt = try? alarms[index].nextFireAtMillis(nowMillis: nowMillis, isHoliday: isHoliday)
+        else { return nil }
+        let needsArm = alarms[index].alarmKitID == nil || state == .failed
+        guard needsArm || nextFireAt != alarms[index].fireAtMillis else { return nil }
+        // 발사 날짜가 바뀌면 받아 둔 날씨 조건을 버린다 — 옛 `fireAtMillis` 로 판정하므로 덮기 전에.
+        Self.invalidateWeatherVariantIfFireDateChanges(&alarms[index], nextFireAtMillis: nextFireAt)
+        alarms[index].fireAtMillis = nextFireAt
+        alarms[index].state = AlarmRuntimeState.armed.rawValue
+        persist()
+        return alarms[index]
+    }
+
     /// - Parameter keepScheduleHandle: 끄면서도 `alarmKitID` 를 남길지.
     ///   ⚠ **취소가 실패했을 때만 `true`** 다(Codex #699 P1). 그 값은 OS 예약을 취소할
     ///   **유일한 손잡이**라, 취소에 실패했는데 지우면 예약은 남고 취소할 방법만 사라진다

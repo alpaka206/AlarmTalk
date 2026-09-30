@@ -178,24 +178,6 @@ enum LocalHolidayCalendar {
     }
 }
 
-/// 국가 flag emoji 헬퍼. region 코드(ISO-3166 alpha-2) → regional indicator symbol.
-enum HolidayCountryFlag {
-    static func emoji(for regionCode: String) -> String {
-        let code = regionCode.uppercased()
-        guard code.count == 2 else { return "🏳️" }
-        var scalarView = String.UnicodeScalarView()
-        let base: UInt32 = 0x1F1E6  // 🇦
-        for ascii in code.unicodeScalars {
-            guard ascii.value >= 65, ascii.value <= 90,
-                  let scalar = Unicode.Scalar(base + (ascii.value - 65)) else {
-                return "🏳️"
-            }
-            scalarView.append(scalar)
-        }
-        return String(scalarView)
-    }
-}
-
 // MARK: - HolidayStore
 /// Android `HolidayCalendarStore` 의 메모리 캐시 + DB 영속 동작을 JSON 파일로 이식.
 /// 메인 스레드에서 호출하므로 디스크 I/O 는 actor 로 격리.
@@ -222,6 +204,46 @@ final class HolidayStore: ObservableObject {
         return supportedCountryCodes.contains(region) ? region : defaultCountryCode
     }
 
+    /// 이 날씨 지역이 정하는 공휴일 국가. 지역이 없거나 모르는 키면 nil — **건드리지 않는다**는 뜻이다.
+    nonisolated static func countryCode(forWeatherRegion key: String?) -> String? {
+        guard let code = WeatherRegions.byKey(key)?.country.code,
+              supportedCountryCodes.contains(code) else { return nil }
+        return code
+    }
+
+    /// **공휴일 국가 = 날씨 지역의 나라**(2026-09-30, `docs/spec/alarm-lifecycle.md`
+    /// 「공휴일 국가는 지역의 나라다」). 설정 화면의 '공휴일 달력' 행은 없다 — 이 값을 쓰는
+    /// 자리는 여기 하나다. 안드로이드는 `HolidayCountryPreferenceStore.setCountry` 로 같은 일을 한다.
+    ///
+    /// 서버에서 계정 설정을 받아 **이 기기가 받아들였을 때**(`AlarmTalkApp` — 새 기기 로그인·다른 기기에서 고침,
+    /// `DynamicPromptPreferences.adoptAccount` 가 `.accepted`)는 `adoptCountry(ofAccountWeatherRegion:)` 가
+    /// 판정(`countryForAccountRegion`)을 거쳐 같은 일을 한다. 계정 설정은 계정에, 공휴일 국가는 기기에 있으므로
+    /// 받아 올 때 맞추지 않으면 두 번째 기기는 옛 나라에 남는다.
+    ///
+    /// 부르는 곳(고를 때): 설정 '지역' 행(`SettingsView` — 고를 때마다), 편집기 문구 화면
+    /// (`AlarmEditorSheet.applyMessageSettings` — 내 알람에서 **지역이 실제로 바뀔 때만**,
+    /// 판정은 `DynamicPromptPreferences.editorUpdate`). 가족 알람에서 고른 지역은 받는 사람의
+    /// 것이라 부르지 않는다.
+    ///
+    /// 같은 값이면 쓰지 않는다 — 써도 공휴일off 알람을 다시 걸지는 않지만(`HolidayOffRescheduler`
+    /// 는 달력 표지가 같으면 돌지 않는다), 괜히 동기화(`ensureSynced`)를 깨울 이유가 없다.
+    /// 지역이 없거나 되짚지 못한 옛 글자뿐이면 지금 값(기기 로케일 기본값 포함)을 그대로 둔다.
+    @discardableResult
+    func adoptCountry(ofWeatherRegion key: String?) -> Bool {
+        guard let code = Self.countryCode(forWeatherRegion: key) else { return false }
+        // 사용자가 지역을 골랐다 — 옛 '공휴일 달력' 행에서 고른 나라는 더 지키지 않는다
+        // (`countryForAccountRegion`). 남겨 두면 다음 실행에 서버 지역을 받을 때 그 판정이 이 고름을 가린다.
+        UserDefaults.standard.removeObject(forKey: Self.keptCountryAccountWeatherRegionDefaultsKey)
+        guard code != selectedCountryCode else { return false }
+        selectedCountryCode = code
+        return true
+    }
+
+    /// 서버에서 마지막으로 받은 계정 지역 키. 없으면 이 업데이트 뒤 아직 한 번도 받지 않았다.
+    nonisolated static let lastAccountWeatherRegionDefaultsKey = "holiday.lastAccountWeatherRegion"
+    /// 옛 '공휴일 달력' 행에서 **직접 고른** 나라를 지키고 있는 계정 지역 키(아래 판정).
+    nonisolated static let keptCountryAccountWeatherRegionDefaultsKey = "holiday.keptCountryForAccountWeatherRegion"
+
     /// 이 기기에 적힌 공휴일 국가 — 없으면 기기 로케일 기본값. 안드로이드
     /// `HolidayCountryPreferenceStore.read()` 와 같은 값이다(지역 시트가 처음 보일 나라의 폴백).
     nonisolated static func persistedCountryCode(defaults: UserDefaults = .standard) -> String {
@@ -229,22 +251,90 @@ final class HolidayStore: ObservableObject {
         return supportedCountryCodes.contains(persisted) ? persisted : defaultCountryFromLocale()
     }
 
+    /// **서버에서 계정 지역을 받았을 때** 공휴일 국가를 무엇으로 할지. nil 이면 건드리지 않는다.
+    ///
+    /// 안드로이드 `WeatherRegionHolidaySync.onAccountRegionReceived` 와 같은 판정이다 —
+    /// **업데이트 직후 처음 받는 계정 지역**인데, 이 기기에 옛 '공휴일 달력' 행에서 **직접 고른**
+    /// 나라가 있고 그게 지역의 나라와 다르면, **그 계정 지역이 바뀌기 전까지** 그 나라를 둔다. 지역을
+    /// 다시 고르면(설정 '지역' 행) 곧바로 지역의 나라가 된다. 행이 사라졌다고 사용자가 고른 달력을
+    /// 말없이 바꾸면 공휴일에 꺼지는 날이 조용히 달라진다.
+    ///
+    /// 그 밖에는 **받아들일 때마다** 지역의 나라로 맞춘다("지난번과 같은 지역이면 건너뛴다" 를 두지 않는다).
+    /// 이 기기에서 고른 지역의 저장이 실패한 경우는 여기까지 오지 않는다 — 받아 적기가 `.localPending` 이라
+    /// 호출부가 부르지 않는다. 건너뛰기를 두면 오히려 로그아웃(값·표시를 지운다) 뒤 같은 계정으로 다시
+    /// 들어왔을 때 화면의 지역과 달력의 나라가 갈라진 채 남는다. 안드로이드
+    /// `WeatherRegionHolidaySync.onAccountRegionReceived` 도 같은 판정이다.
+    nonisolated static func countryForAccountRegion(
+        _ key: String?,
+        currentCountry: String,
+        defaults: UserDefaults = .standard
+    ) -> String? {
+        guard let region = WeatherRegions.byKey(key),
+              let code = countryCode(forWeatherRegion: region.key) else { return nil }
+        let firstReceipt = defaults.string(forKey: lastAccountWeatherRegionDefaultsKey) == nil
+        defaults.set(region.key, forKey: lastAccountWeatherRegionDefaultsKey)
+        if firstReceipt,
+           defaults.string(forKey: countryDefaultsKey) != nil,
+           currentCountry != code {
+            defaults.set(region.key, forKey: keptCountryAccountWeatherRegionDefaultsKey)
+            return nil
+        }
+        if defaults.string(forKey: keptCountryAccountWeatherRegionDefaultsKey) == region.key { return nil }
+        defaults.removeObject(forKey: keptCountryAccountWeatherRegionDefaultsKey)
+        return code
+    }
+
+    /// 서버에서 받은 계정 지역으로 공휴일 국가를 맞춘다(`AlarmTalkApp` 의 계정 설정 관찰).
+    /// 판정은 `countryForAccountRegion` 한 곳이다.
+    @discardableResult
+    func adoptCountry(ofAccountWeatherRegion key: String?) -> Bool {
+        guard let code = Self.countryForAccountRegion(key, currentCountry: selectedCountryCode),
+              code != selectedCountryCode else { return false }
+        // 같은 값이면 쓰지 않는다 — `adoptCountry(ofWeatherRegion:)` 주석과 같은 이유.
+        selectedCountryCode = code
+        return true
+    }
+
     @Published private(set) var holidays: [HolidayEntity] = []
 
-    /// 앱 전역 단일 국가 설정 (per-alarm 아님). 변경 시 UserDefaults 영속 +
-    /// 선택 국가 sync + onCountryChanged 콜백.
+    /// 디스크의 공휴일 캐시를 읽었는가. 읽기 전의 빈 `holidays` 는 '공휴일이 없다' 가 아니다 —
+    /// 그 사이에 달력 표지(`holidayCalendarMarker`)를 내면 JP·US 달력이 비어 보인다.
+    @Published private(set) var hasLoadedHolidays = false
+
+    /// 앱 전역 단일 국가 설정 (per-alarm 아님). 변경 시 UserDefaults 영속 + 선택 국가 sync.
+    ///
+    /// 공휴일off 알람을 다시 거는 일은 여기서 하지 않는다 — `AlarmTalkApp` 이 달력 표지
+    /// (`holidayCalendarMarker`)를 보고 `HolidayOffRescheduler` 로 **멱등하게** 한다. 예전에는 이 `didSet`
+    /// 이 콜백(`onCountryChanged`)을 불렀는데, 세 군데서 조용히 빠졌다: 콜백을 꽂기 전(콜드 스타트에서
+    /// 계정 지역을 받는 순간)·알람 저장소를 읽기 전(`hasLoadedFromDisk` 가드에서 그냥 버렸다)·JP·US 공휴일을
+    /// 서버에서 받아 온 뒤(나라는 그대로라 다시 불리지 않았다). 빠지면 **다음 한 번은 옛 달력으로** 울린다.
     @Published var selectedCountryCode: String {
         didSet {
             guard didFinishInit else { return }
             UserDefaults.standard.set(selectedCountryCode, forKey: Self.countryDefaultsKey)
             let cc = selectedCountryCode
             Task { await self.ensureSynced(countryCode: cc) }
-            onCountryChanged?()
         }
     }
 
-    /// 국가 변경 시 재무장/재계산을 트리거하도록 AlarmTalkApp 이 설정한다.
-    var onCountryChanged: (() -> Void)?
+    /// 공휴일off 예약이 기대는 **달력의 표지** — 나라, 그리고 그 나라 공휴일을 아직 못 받았으면 `:pending`.
+    ///
+    /// KR 은 기기 안에서 계산하므로(시드 + 음력 엔진, `LocalHolidayCalendar`) 언제나 완성이다. JP·US 는
+    /// 서버에서 받아야(`ensureSynced`) 공휴일이 생긴다 — 받기 전에 다시 건 예약은 공휴일이 하나도 없는
+    /// 달력으로 계산된 것이라, 받은 뒤 **한 번 더** 걸어야 한다. 표지가 달라지는 것이 그 신호다.
+    nonisolated static func calendarMarker(country: String, holidays: [HolidayEntity]) -> String {
+        let cc = country.uppercased()
+        if cc == defaultCountryCode || holidays.contains(where: { $0.countryCode.uppercased() == cc }) {
+            return cc
+        }
+        return "\(cc):pending"
+    }
+
+    /// 지금 달력의 표지. 디스크 캐시를 읽기 전이면 nil — 아직 판단하지 않는다.
+    var holidayCalendarMarker: String? {
+        guard hasLoadedHolidays else { return nil }
+        return Self.calendarMarker(country: selectedCountryCode, holidays: holidays)
+    }
 
     /// init 단계에서 didSet 이 UserDefaults 를 다시 쓰지 않도록 가드.
     private var didFinishInit = false
@@ -268,10 +358,17 @@ final class HolidayStore: ObservableObject {
         }
         // init 이후부터 didSet 영속/sync 동작 허용.
         self.didFinishInit = true
+        // 지금 걸려 있는 공휴일off 예약은 이 나라 달력으로 계산됐다 — 처음 한 번만 적는다.
+        // **나라가 바뀌기 전에** 적어야 한다: 콜드 스타트에서 계정 지역을 받아 곧바로 나라가
+        // 바뀌어도(`adoptCountry(ofAccountWeatherRegion:)`) 그 변화를 놓치지 않는다.
+        HolidayOffRescheduler.recordInitialCalendarIfAbsent(selectedCountryCode)
 
         Task { [persistence] in
             let loaded = await persistence.load()
-            await MainActor.run { self.holidays = loaded }
+            await MainActor.run {
+                self.holidays = loaded
+                self.hasLoadedHolidays = true
+            }
             await self.seedDefaultsIfNeeded()
             await self.ensureSynced(countryCode: self.selectedCountryCode)
         }

@@ -2,7 +2,7 @@ import SwiftUI
 
 /// 프로필 버튼에서 띄우는 설정 시트.
 ///
-/// Android 설정 화면과 동일하게 화면/랜덤 문구/계정 편집만 다룬다.
+/// Android 설정 화면과 동일하게 문구 정보(지역·운세)/계정/법적 정보만 다룬다.
 /// 코드/이용권/공유 이용권 진입은 MainTabsView 의 프로필 메뉴가 맡는다.
 struct SettingsView: View {
     @EnvironmentObject private var auth: AuthViewModel
@@ -10,7 +10,6 @@ struct SettingsView: View {
 
     @State private var weatherDialogOpen: Bool = false
     @State private var fortuneDialogOpen: Bool = false
-    @State private var holidayDialogOpen: Bool = false
     @State private var promptPreferences = DynamicPromptPreferences()
     // 운세 폼의 초안. 상단바의 '저장' 이 눌러야 반영되므로 **모달 밖**에 둔다 —
     // 값이 폼 안에만 있으면 상단바가 그걸 볼 수 없다.
@@ -49,17 +48,15 @@ struct SettingsView: View {
                 // `onClose` 는 로그아웃 뒤 화면을 뜨는 데만 남는다.
 
                 // ⚠ **'테마' 행을 여기 다시 넣지 말 것.** 테마는 더보기 탭에서만 바꾼다
-                // (안드로이드 `SettingsScreen.kt:90-99` 주석: "테마·앱 언어는 전체 탭에서
+                // (안드로이드 `ui/settings/SettingsScreen.kt` 주석: "테마·앱 언어는 전체 탭에서
                 // 관리한다"). 양쪽에 두면 같은 값을 바꾸는 자리가 둘이 되어, 한쪽만
                 // 고쳤을 때 다른 쪽이 옛 값을 보여준다.
-                VStack(alignment: .leading, spacing: 0) {
-                    SettingsValueButton(
-                        label: "공휴일 달력",
-                        value: holidayCountryLabel,
-                        action: { holidayDialogOpen = true }
-                    )
-                }
-                .settingsCard(title: "화면")
+                //
+                // ⚠ **'공휴일 달력' 행(과 그것뿐이던 '화면' 카드)을 되살리지 말 것**(2026-09-30).
+                // 공휴일 국가는 **지역의 나라**를 따른다 — 고르는 자리는 아래 '지역' 하나다
+                // (`HolidayStore.adoptCountry(ofWeatherRegion:)`, 스펙 alarm-lifecycle.md
+                // 「공휴일 국가는 지역의 나라다」). 행을 따로 두면 날씨는 도쿄인데 공휴일은 한국인
+                // 알람이 생기고, 어느 쪽이 맞는지 앱이 말해 줄 수 없다.
 
                 VStack(alignment: .leading, spacing: 0) {
                     SettingsValueButton(
@@ -157,6 +154,9 @@ struct SettingsView: View {
                     next.weatherCountry = region.legacyCountry
                     next.weatherCity = region.legacyCity
                     savePromptPreferences(next)
+                    // 공휴일 국가 = 지역의 나라. 서버 저장이 실패해도(오프라인) 이 기기는 곧바로 맞춘다 —
+                    // 성공하면 `AlarmTalkApp` 의 계정 설정 관찰이 같은 값으로 한 번 더 부르고, 같으면 쓰지 않는다.
+                    holidayStore.adoptCountry(ofWeatherRegion: region.key)
                     weatherDialogOpen = false
                 }
             )
@@ -183,23 +183,6 @@ struct SettingsView: View {
                 )
             }
         }
-        .bottomSheet(isPresented: $holidayDialogOpen, onDismiss: { holidayDialogOpen = false }) {
-            HolidayCountryPickerSheet(
-                current: holidayStore.selectedCountryCode,
-                onSelect: { code in
-                    holidayStore.selectedCountryCode = code
-                    holidayDialogOpen = false
-                }
-            )
-            // 높이는 `SelectionSheet` 가 내용에 맞춰 잡는다 — 여기서 `.medium` 을 주면
-            // 항목 3개짜리 시트가 반 화면을 차지해 아래가 빈다.
-        }
-    }
-
-    /// '화면' 카드의 '공휴일 달력' 값 — 국기 + 국가명. Android `holidayCountryDisplayLabel`.
-    private var holidayCountryLabel: String {
-        let code = holidayStore.selectedCountryCode
-        return "\(HolidayCountryFlag.emoji(for: code)) \(HolidayStore.localizedCountryName(code))"
     }
 
     /// '지역' 행의 값 — 앱 언어의 지역 이름(`WeatherRegions.displayName`).
@@ -253,20 +236,23 @@ struct SettingsView: View {
         fortuneDialogOpen = false
     }
 
+    /// 계정 설정을 이 기기에 받아 적은 **뒤의** 기기 값을 보인다(`DynamicPromptPreferences.current`).
+    /// ⚠ 서버 값을 그대로 보이지 말 것 — 이 기기에서 고친 값의 저장이 실패했으면(오프라인) 서버 값은
+    /// 그보다 옛것이고, 서버에 사주만 있을 때 기기에만 있는 지역까지 '미설정' 이 된다. 규칙은
+    /// `AccountPromptSettingsAdoption.swift`, 안드로이드 `SettingsScreen` 의 `adoptAccountSettings` → `read` 와 같다.
+    /// 다시 올리는 일은 `AlarmTalkApp` 의 계정 설정 관찰이 한다 — 여기서는 읽기만 맞춘다.
     private func loadPromptPreferences() {
-        let server = DynamicPromptPreferences.from(settings: auth.session?.user.dynamicPromptSettings)
-        let userID = auth.session?.user.id
-        if server != DynamicPromptPreferences() {
-            promptPreferences = server
-            server.save(userID: userID)
-        } else {
-            promptPreferences = .load(userID: userID)
-        }
+        promptPreferences = .current(
+            userID: auth.session?.user.id,
+            server: auth.session?.user.dynamicPromptSettings
+        )
     }
 
     private func savePromptPreferences(_ preferences: DynamicPromptPreferences) {
         promptPreferences = preferences
-        preferences.save(userID: auth.session?.user.id)
+        // '아직 안 올라간 변경' 표시와 함께 적는다 — 아래 저장이 실패해도 다음에 받는 서버의 옛 값이
+        // 이 값을 덮지 않고, 앱이 다시 올린다(`AlarmTalkApp`).
+        preferences.saveLocalEdit(userID: auth.session?.user.id)
         // 프로필 저장이 끝나면 `updateProfile` 이 사용자를 다시 읽는다(`refreshUser`) — 그걸로
         // 끝이다. 이용권 새로고침은 부르지 않는다: 날씨 지역·사주는 이용권과 무관하고, 그
         // 새로고침이 `/auth/me` 를 한 번 더 부른다(스펙 plan-gates §4).
@@ -325,29 +311,6 @@ struct SettingsValueButton: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(PressScaleButtonStyle())
-    }
-}
-
-/// '공휴일 달력' 국가 선택 시트. Android `HolidayCountryPickerDialog`(`ui/settings/SettingsScreen.kt`)
-/// 의 라디오 목록을 이식 — 행을 누르면 즉시 적용하고 닫는다.
-/// 선택 시트는 공용 껍데기(`SelectionSheet`)를 쓴다 — 라디오 원·'선택됨' 알약을
-/// 화면마다 새로 만들지 않는다(자세한 이유는 `SelectionSheet` 주석).
-private struct HolidayCountryPickerSheet: View {
-    let current: String
-    let onSelect: (String) -> Void
-
-    private struct CountryCode: Identifiable { let id: String }
-
-    var body: some View {
-        SelectionSheet(
-            title: "공휴일 달력",
-            items: HolidayStore.supportedCountryCodes.map(CountryCode.init),
-            selectedID: current,
-            onSelect: { onSelect($0.id) }
-        ) { item in
-            Text("\(HolidayCountryFlag.emoji(for: item.id)) \(HolidayStore.localizedCountryName(item.id))")
-                .foregroundStyle(AlarmTalkTheme.text)
-        }
     }
 }
 

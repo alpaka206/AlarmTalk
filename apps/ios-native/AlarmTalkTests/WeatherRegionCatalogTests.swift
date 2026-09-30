@@ -194,6 +194,59 @@ final class WeatherRegionCatalogTests: XCTestCase {
         XCTAssertEqual(settings.weather.region, "jp-aichi")
     }
 
+    // MARK: - 공휴일 국가 = 지역의 나라
+
+    func test_공휴일_국가는_지역의_나라다() {
+        XCTAssertEqual(HolidayStore.countryCode(forWeatherRegion: "kr-gyeonggi"), "KR")
+        XCTAssertEqual(HolidayStore.countryCode(forWeatherRegion: "jp-tokyo"), "JP")
+        XCTAssertEqual(HolidayStore.countryCode(forWeatherRegion: "us-new-york"), "US")
+        // 지역이 없거나 모르는 키면 건드리지 않는다.
+        XCTAssertNil(HolidayStore.countryCode(forWeatherRegion: nil))
+        XCTAssertNil(HolidayStore.countryCode(forWeatherRegion: "kr-atlantis"))
+    }
+
+    /// 서버에서 받은 계정 지역 — 안드로이드 `WeatherRegionHolidaySync.onAccountRegionReceived` 와 같은 판정.
+    /// ⚠ 테스트는 `.standard` 를 건드리지 않는다(사용자의 진짜 공휴일 국가다) — 따로 만든 저장소로 본다.
+    func test_계정_지역을_받으면_공휴일_국가를_맞추되_업데이트_직후_직접_고른_나라는_둔다() throws {
+        let suite = "WeatherRegionCatalogTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        // 새 기기(직접 고른 나라 없음) — 계정 지역의 나라.
+        XCTAssertEqual(HolidayStore.countryForAccountRegion("jp-tokyo", currentCountry: "KR", defaults: defaults), "JP")
+        // 지역이 없거나 모르는 키면 건드리지 않는다.
+        XCTAssertNil(HolidayStore.countryForAccountRegion(nil, currentCountry: "KR", defaults: defaults))
+        XCTAssertNil(HolidayStore.countryForAccountRegion("kr-atlantis", currentCountry: "KR", defaults: defaults))
+
+        // 업데이트 직후: 옛 '공휴일 달력' 행에서 JP 를 직접 골라 둔 기기 + 계정 지역은 서울.
+        let upgraded = try XCTUnwrap(UserDefaults(suiteName: suite + ".upgraded"))
+        defer { upgraded.removePersistentDomain(forName: suite + ".upgraded") }
+        upgraded.set("JP", forKey: HolidayStore.countryDefaultsKey)
+        XCTAssertNil(HolidayStore.countryForAccountRegion("kr-seoul", currentCountry: "JP", defaults: upgraded),
+                     "처음 받는 지역은 직접 고른 나라를 덮지 않는다")
+        XCTAssertNil(HolidayStore.countryForAccountRegion("kr-seoul", currentCountry: "JP", defaults: upgraded),
+                     "같은 지역을 다시 받아도(콜드 스타트) 그대로 둔다")
+        XCTAssertEqual(HolidayStore.countryForAccountRegion("kr-busan", currentCountry: "JP", defaults: upgraded), "KR",
+                       "계정 지역이 바뀌면 그 나라가 된다")
+        XCTAssertEqual(HolidayStore.countryForAccountRegion("kr-busan", currentCountry: "JP", defaults: upgraded), "KR",
+                       "그 뒤로는 받아들일 때마다 지역의 나라로 맞춘다(안드로이드 `onAccountRegionReceived` 와 같다)")
+    }
+
+    /// "지난번과 같은 지역이면 건너뛴다" 를 두지 않는 이유 — 이 기기에서 고른 지역(달력 JP)의 저장이 실패한 채
+    /// 로그아웃하면 값·'안 올라간 변경' 표시는 지워지고 공휴일 국가만 남는다. 같은 계정으로 다시 들어와 계정
+    /// 지역(서울)을 받아들이면 화면이 서울이니 달력도 한국이어야 한다. 안드로이드
+    /// `WeatherRegionPickerTest.받아들일_때마다_지역의_나라로_맞춘다_로그아웃_뒤_같은_계정도` 와 같다.
+    func test_같은_계정_지역을_다시_받아도_지역의_나라로_맞춘다() throws {
+        let suite = "WeatherRegionCatalogTests.relogin.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        XCTAssertEqual(HolidayStore.countryForAccountRegion("kr-seoul", currentCountry: "KR", defaults: defaults), "KR")
+        // 이 기기에서 도쿄를 골랐다(`adoptCountry(ofWeatherRegion:)` — 달력 JP).
+        defaults.set("JP", forKey: HolidayStore.countryDefaultsKey)
+        XCTAssertEqual(HolidayStore.countryForAccountRegion("kr-seoul", currentCountry: "JP", defaults: defaults), "KR")
+    }
+
     // MARK: - 시트의 첫 나라
 
     func test_시트는_고른_지역의_나라로_열린다() {

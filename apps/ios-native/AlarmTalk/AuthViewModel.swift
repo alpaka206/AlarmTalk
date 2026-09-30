@@ -1219,6 +1219,12 @@ final class AuthViewModel: ObservableObject {
                 ),
                 token: token
             )
+            // ⚠ **세션을 갈아 끼우기(`refreshUser`) 전에** '아직 안 올라간 변경' 표시를 내린다 — 새 세션을
+            // 받는 순간 `AlarmTalkApp` 이 계정 설정을 받아 적는데(`DynamicPromptPreferences.adoptAccount`),
+            // 그때 표시가 남아 있으면 방금 올린 값을 한 번 더 올린다. 안드로이드 `updateDynamicPromptSettings` 와 같다.
+            if let dynamicPromptSettings {
+                DynamicPromptPreferences.markPushed(userID: session?.user.id, pushed: dynamicPromptSettings)
+            }
             await refreshUser()
         } catch {
             failStatus(userFacingErrorMessage(error, fallback: "프로필을 저장하지 못했어요"))

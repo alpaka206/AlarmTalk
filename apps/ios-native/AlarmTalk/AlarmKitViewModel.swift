@@ -741,21 +741,32 @@ final class AlarmKitViewModel: ObservableObject {
             rearmInFlight.insert(record.id)
             defer { rearmInFlight.remove(record.id) }
 
-            // timezone 강제 recompute 경로: 발화 시각이 아직 미래여도 새 zone 기준으로
-            // fireAtMillis 를 다시 박아야 한다. prepareForScheduleRecovery 는 미래 건을
-            // 건드리지 않으므로, `.fixed` 서브셋에 한해 setEnabled 로 재계산을 강제한다.
+            // 달력(공휴일 국가·시간대)이 바뀐 강제 recompute 경로: 발화 시각이 아직 미래여도 새 달력으로
+            // fireAtMillis 를 다시 박아야 한다. prepareForScheduleRecovery 는 미래 건을 건드리지 않으므로
+            // `.fixed` 서브셋은 `recomputeHolidayOffFireTime` 으로 다음 발생만 다시 계산한다 — 바뀐 게 없거나
+            // 스누즈·울리는 중이면 nil 이라 건너뛴다(멱등). ⚠ `setEnabled` 로 되돌리지 말 것 — 그건 수정 시각을
+            // 올리고 스누즈를 지운다(`recomputeHolidayOffFireTime` 주석).
+            let prepared: LocalAlarmRecord
             if forceHolidayOffRecompute,
                record.isHolidayOffRecurring,
                record.fireAtMillis > nowMillis {
-                store.setEnabled(id: record.id, enabled: true, nowMillis: nowMillis, isHoliday: holidayPredicate)
-            }
-
-            guard let prepared = store.prepareForScheduleRecovery(
-                id: record.id,
-                nowMillis: nowMillis,
-                isHoliday: holidayPredicate
-            ) else {
-                continue
+                guard let recomputed = store.recomputeHolidayOffFireTime(
+                    id: record.id,
+                    nowMillis: nowMillis,
+                    isHoliday: holidayPredicate
+                ) else {
+                    continue
+                }
+                prepared = recomputed
+            } else {
+                guard let recovered = store.prepareForScheduleRecovery(
+                    id: record.id,
+                    nowMillis: nowMillis,
+                    isHoliday: holidayPredicate
+                ) else {
+                    continue
+                }
+                prepared = recovered
             }
 
             // ⚠ **거절을 예약 실패로 낙인찍지 않는다**(리뷰 39차). 남의 계정 행이라
