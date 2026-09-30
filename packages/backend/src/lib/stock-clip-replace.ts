@@ -1,5 +1,7 @@
 import type { Client } from '@libsql/client/web';
 
+import { externalDeletionStatement } from './audio-retention';
+
 /**
  * **게시된 스톡 클립의 소리를 같은 message_id 에서 갈아 끼운다** — `scripts/publish-stock-clips.ts` 의 교체 갈래.
  *
@@ -10,10 +12,10 @@ import type { Client } from '@libsql/client/web';
  *
  * 한 트랜잭션에서:
  *  0. **같은 `request_hash` 의 원장 행이 다른 오브젝트를 가리키면 멈춘다**(`'hash-taken'`, Codex #840). 해시는
- *     주인을 담지 않고(보이스·모델·문구) 오브젝트 키는 주인을 담는다 — 배포 뒤 게시 전에 누군가 같은 기본 목소리로
- *     같은 문장을 만들면(프리셋 라이브 폴백·직접 입력) 그 사람의 행이 해시를 먼저 차지한다. 그대로 교체하면 원장
- *     INSERT 가 무시된 채 메시지만 새 오브젝트를 가리켜, 원장·완료 확인이 영영 어긋난다. 멈추면 그 자리는 옛
- *     소리로 계속 울리고(무음 없음), 그 행이 보관 기한으로 지워진 뒤 다시 돌리면 된다.
+ *     전역 UNIQUE 인데 오브젝트 키는 주인을 담는다. 스톡 키는 스톡 범위(`STOCK_TTS_CACHE_SCOPE`)라 사용자 생성과
+ *     겹치지 않지만, 겹치는 행이 있으면(범위를 넣기 전에 생긴 행 등) 그대로 교체할 때 원장 INSERT 가 무시된 채
+ *     메시지만 새 오브젝트를 가리켜 원장·완료 확인이 영영 어긋난다. 멈추면 그 자리는 옛 소리로 계속 울린다
+ *     (무음 없음).
  *  1. **비교 후 교체**(`audio_url IS <지금 값>`) — 그 사이 다른 게시가 바꿨으면 0행이고 아무것도 안 한다.
  *  2. 원장(`generated_audio_assets`)에 새 렌더를 남긴다 — R2 키의 유일한 출처라, 없으면 파기 경로가 못 찾는다.
  *     같은 해시·같은 오브젝트의 행이 이미 있으면(같은 문장을 나눠 쓰는 다른 프리셋) 그 행을 그대로 쓴다.
@@ -86,10 +88,8 @@ export async function replaceStockClipInPlace(
     });
     const previousKey = r.previousAudioUrl?.startsWith('r2://') ? r.previousAudioUrl.slice('r2://'.length) : '';
     if (previousKey && previousKey !== r.objectKey) {
-      await tx.execute({
-        sql: `INSERT OR IGNORE INTO pending_external_deletions (id, kind, ref) VALUES (?, 'r2_object', ?)`,
-        args: [crypto.randomUUID(), previousKey],
-      });
+      // 서버와 같은 문장 — 이미 예약이 있으면 id 를 새로 바꿔, 진행 중인 드레인의 옛 판단이 이 예약을 지우지 못한다.
+      await tx.execute(externalDeletionStatement('r2_object', previousKey)!);
     }
     await tx.commit();
     return 'replaced';

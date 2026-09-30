@@ -999,7 +999,7 @@ describe('POST /clone — 음성 클론 (voice-profile)', () => {
       // 원본 보관은 best-effort — 클론 자체는 성공(201).
       expect(res.status).toBe(201);
       const enqueueCall = mockDB.calls.find((call) =>
-        call.sql.includes('INSERT OR IGNORE INTO pending_external_deletions'),
+        call.sql.includes('INSERT INTO pending_external_deletions'),
       );
       expect(enqueueCall).toBeDefined();
       expect(enqueueCall!.args[1]).toBe('r2_object'); // kind
@@ -1354,7 +1354,7 @@ describe('PATCH /:id — 교체(replace_existing) 시 알람 처리 (voice-profi
     expect(
       mockDB.calls.some(
         (call) =>
-          call.sql.includes('INSERT OR IGNORE INTO pending_external_deletions') &&
+          call.sql.includes('INSERT INTO pending_external_deletions') &&
           call.args.includes('uploads/old.wav'),
       ),
       '교체 전 원본 녹음이 보존 큐 없이 사라진다',

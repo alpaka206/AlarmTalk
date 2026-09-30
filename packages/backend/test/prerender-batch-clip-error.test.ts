@@ -107,7 +107,8 @@ async function prerenderDb(): Promise<{ db: Client; path: string }> {
       created_at TEXT DEFAULT (datetime('now'))
     );
     CREATE TABLE pending_external_deletions (
-      id TEXT PRIMARY KEY, kind TEXT NOT NULL, ref TEXT NOT NULL, created_at TEXT
+      id TEXT PRIMARY KEY, kind TEXT NOT NULL, ref TEXT NOT NULL, created_at TEXT,
+      UNIQUE(kind, ref)
     );
     INSERT INTO voice_profiles (id, user_id, name, elevenlabs_voice_id)
       VALUES ('vp1', 'u1', '엄마 목소리', 'eleven-1');

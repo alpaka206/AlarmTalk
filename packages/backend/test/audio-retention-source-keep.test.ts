@@ -33,7 +33,8 @@ async function setupDb() {
       ref TEXT NOT NULL,
       attempts INTEGER NOT NULL DEFAULT 0,
       last_error TEXT,
-      created_at TEXT DEFAULT (datetime('now'))
+      created_at TEXT DEFAULT (datetime('now')),
+      UNIQUE(kind, ref)
     );
     -- generated_audio_assets 스윕 파트가 참조하는 테이블(빈 채로 존재만 하면 됨)
     CREATE TABLE generated_audio_assets (

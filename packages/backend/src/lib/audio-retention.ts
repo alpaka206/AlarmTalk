@@ -34,6 +34,17 @@ const DRAFT_VOICE_TTL_HOURS = 1;
 const DRAIN_BATCH_SIZE = 10;
 const TTL_BATCH_SIZE = 10;
 
+/**
+ * 같은 `(kind, ref)` 예약이 이미 있으면 **id 를 새로 바꾼다** — 무시하지 않는다(Codex #840).
+ *
+ * 드레인은 예약을 읽고(참조 확인) → 한참 뒤 **그 id 로** 지운다(`drainExternalDeletions`). 그 사이 다른
+ * 트랜잭션이 마지막 참조를 끊고 같은 키를 다시 넣으면, `INSERT OR IGNORE` 는 옛 예약이 있어 무시되고
+ * 드레인은 **옛 판단**('아직 참조가 있다')대로 그 예약을 지운다 — 오브젝트는 참조도 예약도 없는 미아가 된다.
+ * id 를 바꾸면 드레인의 `WHERE id = ?`(삭제·지우기 직전 재확인)가 빗나가 예약이 남고, 다음 회차가 새로 판단한다.
+ * (두 프리셋이 한 오브젝트를 나눠 쓰는 클론 재렌더 교체에서 실제로 겹친다.)
+ */
+const REFRESH_RESERVATION_ON_CONFLICT = 'ON CONFLICT(kind, ref) DO UPDATE SET id = excluded.id';
+
 export type ExternalDeletionKind = 'elevenlabs_voice' | 'r2_object';
 
 /**
@@ -55,7 +66,8 @@ export async function enqueueExternalDeletionsBatch(
     const chunk = unique.slice(i, i + CHUNK);
     const values = chunk.map(() => '(?, ?, ?)').join(', ');
     statements.push({
-      sql: `INSERT OR IGNORE INTO pending_external_deletions (id, kind, ref) VALUES ${values}`,
+      sql: `INSERT INTO pending_external_deletions (id, kind, ref) VALUES ${values}
+            ${REFRESH_RESERVATION_ON_CONFLICT}`,
       args: chunk.flatMap((ref) => [crypto.randomUUID(), kind, ref]),
     });
   }
@@ -66,7 +78,7 @@ export async function enqueueExternalDeletionsBatch(
   else await tx.batch(statements);
 }
 
-/** 큐 적재 — 트랜잭션 내부에서 호출 가능. 동일 (kind, ref) 는 무시(idempotent). */
+/** 큐 적재 — 트랜잭션 내부에서 호출 가능. 동일 (kind, ref) 는 한 행으로 남고 id 만 새로 바뀐다(위 상수). */
 export async function enqueueExternalDeletion(
   tx: DbExecutor,
   kind: ExternalDeletionKind,
@@ -87,8 +99,9 @@ export function externalDeletionStatement(
   const trimmed = ref?.trim();
   if (!trimmed) return null;
   return {
-    sql: `INSERT OR IGNORE INTO pending_external_deletions (id, kind, ref)
-          VALUES (?, ?, ?)`,
+    sql: `INSERT INTO pending_external_deletions (id, kind, ref)
+          VALUES (?, ?, ?)
+          ${REFRESH_RESERVATION_ON_CONFLICT}`,
     args: [crypto.randomUUID(), kind, trimmed],
   };
 }
@@ -102,7 +115,8 @@ export function externalDeletionStatement(
  * 문구뿐이다. 그래서 문구를 지우거나 키를 비우는 경로는(탈퇴 파기·음성 동의 철회·보관 만료)
  * **그 전에** 이 문장을 돌린다. 업로드 행에서 읽는 `enqueueUserVoiceArtifacts` 만으로는 못 찾는다.
  *
- * 같은 키는 고유 색인 `(kind, ref)` 로 무시된다. id 는 드레인이 식별자로만 쓴다.
+ * 같은 키는 고유 색인 `(kind, ref)` 로 한 행이 되고 id 만 새로 바뀐다(`REFRESH_RESERVATION_ON_CONFLICT`).
+ * id 는 드레인이 식별자로만 쓴다.
  * 결과를 읽지 않으므로 호출부의 `batch` 에 넣을 수 있다.
  */
 export function enqueueUploadKeysReferencedByMessagesStatement(
@@ -110,10 +124,11 @@ export function enqueueUploadKeysReferencedByMessagesStatement(
 ): InStatement {
   const uploads = audioUrlPointsAtUploadsOf('audio_url', ownerUserIds);
   return {
-    sql: `INSERT OR IGNORE INTO pending_external_deletions (id, kind, ref)
+    sql: `INSERT INTO pending_external_deletions (id, kind, ref)
           SELECT lower(hex(randomblob(16))), 'r2_object', audio_url
             FROM messages
-           WHERE audio_url IS NOT NULL AND ${uploads.sql}`,
+           WHERE audio_url IS NOT NULL AND ${uploads.sql}
+          ${REFRESH_RESERVATION_ON_CONFLICT}`,
     args: uploads.args,
   };
 }
@@ -288,7 +303,9 @@ export async function drainExternalDeletions(
       //   그리고 그 참조가 사라지는 경로는 스스로 다시 넣는다: TTL 스윕은 `audio_url` 을
       //   비우기 **전에** 넣고(`cleanupExpiredAudio`), 파기는 `messages` 행과 같은
       //   트랜잭션에서 넣는다(`voice-profile` 의 DELETE·`paid-voice-cleanup`).
-      //   제자리 교체만 예외인데(참조만 끊고 원장 행은 남긴다) 그건 TTL 스윕이 거둔다.
+      //   제자리 교체(스톡 게시 `replaceStockClipInPlace`·클론 재렌더 `generateStockClip`)도 밀려난 키를 같은
+      //   트랜잭션에서 다시 넣는다 — 그 재적재가 이 회차의 판단과 겹쳐도 id 가 바뀌어 아래 DELETE 가 빗나간다
+      //   (`REFRESH_RESERVATION_ON_CONFLICT`, Codex #840).
       await db.execute({
         sql: 'DELETE FROM pending_external_deletions WHERE id = ?',
         args: [id],
