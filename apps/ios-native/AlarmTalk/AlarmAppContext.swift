@@ -113,6 +113,8 @@ final class AlarmAppContext {
         // ⚠ **무료 테마 반복 알람은 다음 클립으로 다시 예약해야 한다.**
         // AlarmKit 은 사운드 파일을 **예약할 때** 받아 간다 — `markStopped` 가 회전
         // 인덱스를 올려도, 다시 예약하지 않으면 OS 는 지난 회차의 파일을 그대로 울린다.
+        // 날씨 테마도 이 갈래다(클립 9개) — `markStopped` 가 오늘 받은 날씨 조건을 지우므로
+        // (`invalidateWeatherVariantIfFireDateChanges`) 다시 걸지 않으면 **어제 날씨 파일**이 운다.
         //
         // 공휴일off 반복은 위 재무장이 이미 같은 일을 하므로 건너뛴다(이중 예약 방지).
         if let record = recordBeforeStop,

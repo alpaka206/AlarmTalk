@@ -417,6 +417,38 @@ final class LocalAlarmStore: ObservableObject {
         persist()
     }
 
+    /// **발사 날짜가 바뀌면 받아 둔 날씨 조건을 버린다** — 울린 뒤·다시 켤 때·놓친 회차를
+    /// 넘길 때(스펙 `docs/spec/voice-and-message.md` 5-1 「발사 날짜가 바뀌면 받아 둔 인덱스를 버린다」).
+    ///
+    /// 조건 인덱스는 **그 날짜의** 날씨다. 반복 날씨 알람이 울리고 다음 날로 넘어갈 때 옛 값을
+    /// 남겨 두면 `weatherVariantNeedsRefresh` 가 "이미 받았다" 로 읽고(받은 시각이 24시간 창
+    /// 안이다), 그 사이 갱신을 못 하면 **어제 날씨 클립**이 울린다. 2026-09-30 까지 iOS 는 울린
+    /// 뒤에 지우지 않았다. 안드로이드는 `AlarmRepository.dismiss`·`setEnabled` 가
+    /// `shouldResetWeatherVariant` 로 같은 판정을 한다 — 판정식은 편집 저장과 같은
+    /// `BucketVariantResolver.shouldResetWeatherVariant` 하나다.
+    ///
+    /// 지운 뒤에는 '못 봤어요' 안내 클립 자리가 되고(`BucketVariantResolver.variantIndex`),
+    /// 준비창 갱신(`WeatherVariantRefreshService.refreshDue`)이 새 날짜로 다시 받아 재예약한다.
+    /// ⚠ 여기서 **다시 예약하지는 않는다** — 소리 지문이 바뀌므로 정지 뒤 리컨사일러
+    /// (`AlarmAppContext.reconcileAfterStop`)·복구 경로가 새 소리로 건다.
+    static func invalidateWeatherVariantIfFireDateChanges(
+        _ record: inout LocalAlarmRecord,
+        nextFireAtMillis: Int64,
+        calendar: Calendar = .current
+    ) {
+        guard record.bucketId == "weather",
+              BucketVariantResolver.shouldResetWeatherVariant(
+                  previous: record,
+                  nextBucketId: record.bucketId,
+                  nextCountry: record.voiceWeatherCountry,
+                  nextCity: record.voiceWeatherCity,
+                  nextFireAtMillis: nextFireAtMillis,
+                  calendar: calendar
+              ) else { return }
+        record.contextVariantIndex = nil
+        record.contextResolvedAtMillis = nil
+    }
+
     func markStopped(
         alarmKitID: String,
         isHoliday: (Date) -> Bool = { LocalHolidayCalendar.isHoliday($0) }
@@ -429,6 +461,9 @@ final class LocalAlarmStore: ObservableObject {
         alarms[index].bucketRotationIndex = Self.advancedBucketRotationIndex(alarms[index])
         if alarms[index].repeatDaysMask != 0,
            let nextFireAt = try? alarms[index].nextFireAtMillis(nowMillis: now, isHoliday: isHoliday) {
+            // 다음 날로 넘어가면 오늘 받아 둔 날씨 조건은 버린다 — 옛 `fireAtMillis` 로 판정하므로
+            // **덮기 전에** 부른다(`invalidateWeatherVariantIfFireDateChanges` 주석).
+            Self.invalidateWeatherVariantIfFireDateChanges(&alarms[index], nextFireAtMillis: nextFireAt)
             alarms[index].fireAtMillis = nextFireAt
             alarms[index].state = AlarmRuntimeState.armed.rawValue
             alarms[index].enabled = true
@@ -490,6 +525,8 @@ final class LocalAlarmStore: ObservableObject {
         if alarms[index].fireAtMillis <= nowMillis {
             if alarms[index].repeatDaysMask != 0,
                let nextFireAt = try? alarms[index].nextFireAtMillis(nowMillis: nowMillis, isHoliday: isHoliday) {
+                // 정지 기록 없이 지나간 회차를 넘길 때도 같다 — 날짜가 바뀌면 조건을 버린다.
+                Self.invalidateWeatherVariantIfFireDateChanges(&alarms[index], nextFireAtMillis: nextFireAt)
                 alarms[index].fireAtMillis = nextFireAt
                 alarms[index].state = AlarmRuntimeState.armed.rawValue
                 alarms[index].enabled = true
@@ -531,6 +568,8 @@ final class LocalAlarmStore: ObservableObject {
                 minute: alarms[index].minute,
                 referenceMillis: nowMillis
             )
+            // 다시 켜서 발사 날짜가 바뀌면 옛 날씨 조건을 버린다(안드로이드 `setEnabled` 와 같다).
+            Self.invalidateWeatherVariantIfFireDateChanges(&alarms[index], nextFireAtMillis: nextFireAt)
             alarms[index].fireAtMillis = nextFireAt
             alarms[index].enabled = true
             alarms[index].snoozeCount = 0
