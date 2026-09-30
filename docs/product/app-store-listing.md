@@ -8,6 +8,9 @@ App Store Connect(앱 6799711245)에 올리는 값의 원본이다. 스토어를
 - 상한: 이름·부제 30자 · 프로모션 170자 · 설명 4000자 · 검색어는 아래 K. 출시 노트("이 버전의 새로운 기능")는
   [`release-notes.md`](release-notes.md) 의 ko/en/ja 를 그대로 쓴다.
 - 스크린샷은 ko 것 하나만 올려 두었고, 다른 언어는 애플이 기본 언어(ko) 스크린샷을 그대로 보여 준다.
+- 설명은 **앱 화면 언어**(한국어·영어·일본어 지원)를 말하지 않는다 — 두 앱 모두 영어·일본어 번역이 빠진 화면이
+  남아 있다(예: iOS 이용권 화면의 결제 버튼). 번역을 끝낸 뒤에 되살린다. 목소리가 읽는 언어(한국어·영어·일본어)는
+  사실이라 그대로 둔다.
 - URL 칸은 이번에 바꾸지 않는다(지금 값, en-GB 를 추가하면 en-US 와 같은 값):
 
 | 로컬라이제이션 | 지원 URL | 마케팅 URL | 개인정보 처리방침 URL |
@@ -164,7 +167,7 @@ Start the day with a familiar voice. Default-voice and recorded alarms are free;
 
 ## 설명 — (B) 다음 버전, W 충족 뒤
 
-### ko (2804/4000)
+### ko (2778/4000)
 
 ```text
 좋아하는 목소리로 깨는 아침.
@@ -216,7 +219,6 @@ Start the day with a familiar voice. Default-voice and recorded alarms are free;
 • 로그인이 필요해요(이메일 또는 간편 로그인).
 • 목소리 등록, 문구 준비, 공유, 동기화에는 인터넷이 필요해요.
 • 알람 권한을 허용해야 제시간에 울려요.
-• 앱 화면은 한국어·영어·일본어를 지원해요.
 
 ■ iPhone에서
 • Apple로 로그인 또는 이메일로 시작해요.
@@ -284,7 +286,7 @@ Privacy Policy: https://alarm-talk.com/en/privacy/
 Apple Standard EULA: https://www.apple.com/legal/internet-services/itunes/dev/stdeula/
 ```
 
-### ja (2678/4000)
+### ja (2652/4000)
 
 ```text
 好きな声で目覚める朝を。
@@ -336,7 +338,6 @@ Apple Standard EULA: https://www.apple.com/legal/internet-services/itunes/dev/st
 • ログインが必要です(メールまたは簡単ログイン)。
 • 声の登録、メッセージの準備、共有、同期にはインターネット接続が必要です。
 • 時間どおりに鳴らすには、アラームの権限を許可してください。
-• アプリは日本語・韓国語・英語に対応しています。
 
 ■ iPhoneでは
 • Appleでサインイン、またはメールで始められます。
@@ -355,7 +356,7 @@ Apple 標準使用許諾契約 (EULA): https://www.apple.com/legal/internet-serv
 (B) 에서 날씨를 말하는 줄만 바꾼다(`-` 줄을 `+` 줄로, `+` 가 없으면 그 줄을 지운다). 나머지는 (B) 와 한 글자도
 다르지 않다. Play 의 INTERIM 과 같은 줄이다.
 
-**ko** (결과 2723/4000)
+**ko** (결과 2697/4000)
 
 ```diff
 -• 무료: 기본 목소리 4종이 날씨·운세 같은 문구를 읽어 주고, 알람마다 30초까지 녹음해 두면 그 녹음 그대로 울려요.
@@ -382,7 +383,7 @@ Apple 標準使用許諾契約 (EULA): https://www.apple.com/legal/internet-serv
 +• Send an alarm (time, days, voice, message) to a member who allows it, outside hours they block. Once delivered, it's theirs to change or delete; fortune uses their details.
 ```
 
-**ja** (결과 2603/4000)
+**ja** (결과 2577/4000)
 
 ```diff
 -• 無料：基本の声4種類が天気・運勢などのメッセージを読み上げます。アラームごとに30秒まで録音すれば、録音したそのままの音で鳴ります。
@@ -423,7 +424,7 @@ talk,custom,own,record,message,partner,mom,dad,parents,kids,morning,weather,fort
 | 검색어 대체안 — 글자 / 바이트 | 100바이트 | 46 / 100 | 92 / 98 | 47 / 97 |
 | 프로모션 — 기간판 | 170자 | 141 | 166 | 131 |
 | 프로모션 — 상시판 | 170자 | 93 | 168 | 83 |
-| 설명 — (B) | 4000자 | 2804 | 3781 | 2678 |
-| 설명 — INTERIM | 4000자 | 2723 | 3692 | 2603 |
+| 설명 — (B) | 4000자 | 2778 | 3781 | 2652 |
+| 설명 — INTERIM | 4000자 | 2697 | 3692 | 2577 |
 
 글자 수는 유니코드 코드 포인트 수, 바이트는 UTF-8 이다. 이 표는 위 문구에서 센 값이다 — 문구를 고치면 다시 센다.
