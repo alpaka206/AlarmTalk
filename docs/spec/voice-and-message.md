@@ -453,20 +453,17 @@
 (2026-09-27 지시 — "기본 목소리 대사처럼 사람이 말하는 것처럼, 올라온 목소리의 말투·태그를 고려해서").
 
 - **사람이 쓴 본보기**: 같은 의도의 기본 목소리 대사(`STOCK_CLIP_PRESETS`, 카테고리·순번이 클론 시드와
-  맞물린다)를 함께 준다. 리듬·쉼(…)·공감→권유 흐름·태그 거는 법만 따르고, 문장과 **어체는 그 목소리의
+  맞물린다)를 함께 준다. 리듬·쉼(…)·공감→권유 흐름만 따르고, 문장과 **어체는 그 목소리의
   관계로 새로 쓴다**(본보기는 중립 화자의 해요체다). 인사는 짝이 없다(기본 목소리 인사는 '목소리 소개').
 - **목소리의 결**: `lively`(경쾌) / `calm`(차분·진중) / 정하지 않음.
-  - 경쾌: 짧고 통통 튀는 문장, `[cheerfully]`·`[playfully]`·`[laughs]` 류, 무겁지 않게. 웃음은 `[laughs]` 하나를
-    한 줄에 한 번까지다(§9 「모델이 스스로 넣는 웃음」).
-  - 차분: 차분하고 진심 어린 문장, 느낌표 거의 없음, `[cheerfully]`·`[playfully]`·`[giggles]`·`[excited]`·`[laughs]` 금지,
-    `[warmly]`·`[sincerely]`·`[reassuring]`·`[measured, deliberate]` 류. **차분은 졸림이 아니다** — 끝은
-    분명하게 깨우고 졸린 태그는 여전히 금지. **차분은 존댓말도 아니다** — 연인·친구의 반말은 반말이다.
-  - ⚠ **차분의 금지 태그는 서버가 지운다** — 프롬프트만으로는 모델이 어겨도 그대로 저장된다. 태그가
-    하나도 없을 때 입히는 카테고리 기본값(`cheerfully`·`playfully`)도 차분이면 `warmly` 로 바꾼다.
-    등록 미리듣기가 생성에 실패해 고정 예문으로 떨어져도 같다 — 분석을 기다려 결을 알았으면 그 결(1.2.10 이
-    고른 값 > 추정값)을, 모르면 고른 결만 본다(새 앱의 초안은 고른 결이 없다). 고정 예문으로 합성한 태그는
-    `preview_tag` 에 남겨 확정 뒤 재생이 같은 태그를 쓴다(다시 계산하면 확정 뒤 채워진 분석값 때문에 태그가
-    바뀌어 재생이 캐시를 빗나간다).
+  - 경쾌: 짧고 통통 튀는 문장, 가벼운 느낌표, 무겁지 않게.
+  - 차분: 고르고 진심 어린 문장, 느낌표 거의 없음, 놀리기·신나는 낱말 없음 — v4 Turbo 는 밝은 신호가 하나라도
+    있으면 크게 들뜨므로(§10) 그 신호를 빼게 한다. **차분은 졸림이 아니다** — 끝은 분명하게 깨운다.
+    **차분은 존댓말도 아니다** — 연인·친구의 반말은 반말이다.
+  - ⚠ **결은 문장으로만 전한다 — 태그를 붙이지 않는다**(2026-09-30, §10). 예전에는 결마다 태그 목록(`[cheerfully]`·
+    `[warmly]` …)을 주고, 차분이면 들뜬 태그를 서버가 지우고 기본 태그를 `warmly` 로 바꿨으며, 등록 미리듣기는
+    고정 예문에 입힌 태그를 `preview_tag` 에 남겼다 — 태그와 함께 전부 없앴다. 모델이 태그를 내도 서버가 벗긴다.
+    차분을 지키는 서버 쪽 문장 가드(느낌표 수 같은)는 두지 않았다 — 프롬프트 지시뿐이다.
   - **정하는 곳은 등록 녹음 전사다**(2026-09-29 사용자 결정 — "목소리 느낌 그거 그냥 없애야 할거같아 …
     말투라도 보고 진행해봐"). 두 앱 모두 '세부 정보' 단계에 결을 고르는 칸이 **없고** 클론 요청에 결을 싣지
     않는다. 서버가 전사로 추정한 값(`speech_style.energy`)을 쓰고, 전사가 어느 쪽도 분명히 보여 주지 않으면
@@ -951,6 +948,23 @@ cron 이 한 자리를 먼저 커밋하면 게시는 그 자리를 '이미 있�
 `POST /api/admin/seed-stock-clips` 는 특정 목소리만 다시 굽는 **수동 도구**로 남는다 —
 미리 굽지 않은 프리셋을 급히 채울 때만 쓴다.
 
+### 화면 문구는 그대로이고 소리만 바꿀 때 — **은퇴시키지 않고 제자리 교체한다**(2026-09-30)
+
+합성 모델을 바꾸는 회차(eleven_v3 → eleven_v4_turbo, §10)는 화면 글자가 그대로다(태그를 뺀 프리셋은 그때 화면에
+보이던 문구와 한 글자도 같다). 이때 은퇴시키면 모든 앱이 새 id 로 다시 묶을 때까지 **차단 화면**을 띄운다 —
+얻는 것 없이 잃는 것만 있다. 그래서 **같은 message_id 에 `audio_url` 만 갈아 끼운다.**
+
+- 시스템 스톡: `npm run publish:stock` 의 교체 갈래가 살아 있는 행의 `audio_url` 이 지금 문구·모델로 계산한 키와
+  다르면 바꾼다(비교 후 교체 — 겹친 게시가 서로를 덮지 않는다. 원장 행을 남기고 옛 키는 삭제 큐로).
+  `--dry-run` 이 `[교체]` 로 보여 준다. ⚠ `seed-stock-clips?reset` 은 쓰지 않는다 — 행을 지우고 알람을 뗀다.
+- 클론: 마이그레이션 #124 가 굽혀 있는 클론을 교체 회차(`refresh_existing`)로 큐에 다시 넣는다 — 서버 cron 이
+  같은 message_id 에 덮어쓴다(§5-2 의 교체 경로와 같다). 새 등록은 그 대기열 앞에 선다(claim 이 `refresh_existing
+  = 0` 을 먼저 잡는다).
+- 앱은 매니페스트의 `audio_url` 이 바뀐 것을 보고 다시 받는다 — 받기 전까지는 **옛 파일로 울린다**(무음 없음).
+  어느 단계에서 멈춰도 옛 소리로 울릴 뿐이다.
+- 무효화 마이그레이션 규칙(문구 지문을 이름에 박는다)은 그대로다 — #124 의 이름이 태그를 뺀 문구의 지문을 싣는다.
+  절차·완료 확인 쿼리는 `docs/ops/tts-model-rerender.md`.
+
 ## 6. 무료로 내려가면 — **알람은 잠그고, 목소리는 3일 뒤 지운다**
 
 축이 **둘**이다. 섞어 읽으면 반드시 사고가 난다.
@@ -1086,9 +1100,10 @@ TTS 는 웃음 글자를 **글자로 읽는다**(2026-09-29 v3·v4·v4 Turbo 비
   앱의 입력 캐시(`linkTtsInput`)도 예전처럼 맞는다. 번역하면 번역문이 화면 문구다(웃음은 소리로만 남는다) — 사용자가
   대괄호를 친 번역도 서버가 넣은 `[laughs]` 는 화면에서 벗기고, 사용자가 친 웃음 태그만 친 수만큼 남긴다.
 - **태그는 `[laughs]` 하나다.** 같은 비교에서 한국어 `[laughs]` 는 두 목소리·세 모델 모두 웃음소리가 났고,
-  안 날 때도 글자로 읽지는 않았다(생략). `[soft laugh]` 는 깨우는 경로의 졸린 태그 가드(`soft`)에 걸려
-  모델 출력에서 지워지고 v3 에서 웃음이 안 난 적이 있다. `[chuckles]` 는 v3 남자 목소리에서 한 번 다른
-  언어로 합성됐다.
+  안 날 때도 글자로 읽지는 않았다(생략). `[soft laugh]` 는 v3 에서 웃음이 안 난 적이 있고, `[chuckles]` 는 v3
+  남자 목소리에서 한 번 다른 언어로 합성됐다.
+- **태그를 뺀 뒤에도(§10) 이 변환은 남긴다.** v4 Turbo 도 `ㅋㅋㅋ` 를 '크크크' 로 읽는다 — 글자 웃음을 소리로 내는
+  길은 `[laughs]` 뿐이다. 우리가 붙이는 대괄호는 이제 이것 하나다.
 - **건드리지 않는 것**: 이미 소리 나는 낱말(`하하하`·`호호`·`크크` — 하하하는 세 모델 모두 웃음으로 났다),
   다른 자모와 붙은 ㅋ·ㅎ(`ㅇㅋ`·`ㅎㅇ`·`ㅎㄷㄷ`·`ㅋㅋㅠㅠ`), 낱말 속 글자(`Lolita`·`work`·`笑顔`·`微笑`),
   주소·메일 주소는 **통째로**(`https://example.com/lol`·`example.com/lol`·`www.예시.한국`·`192.168.0.1/lol`·`[::1]/lol`·`lol@example.com` — 스킴
@@ -1097,106 +1112,135 @@ TTS 는 웃음 글자를 **글자로 읽는다**(2026-09-29 v3·v4·v4 Turbo 비
   (사용자가 친 `[haha]`·`[after lunch]` — 그 안을 바꾸면 `[ [laughs] ]` 같은 깨진 지시가 된다). 웃음이 없으면 합성 글자를 **한 글자도 바꾸지 않는다**(캐시 키가 그대로다).
 - **웃음만 있는 문구(`ㅋㅋㅋ`·`ㅋㅋㅋ!`·`haha…` — 문장부호만 남는 것도)는 바꾸지 않는다.** 바꾸면 합성 글자에 낭독할 말이 없다 — 태그뿐인 요청은
   시험하지 않았고, 번역 경로는 그걸 `empty_spoken` 으로 거절한다.
-- **톤 태깅은 그대로 돈다.** 톤을 붙일지는 **사용자가 친 대괄호**로만 정한다 — 서버가 바꾼 `[laughs]` 를
-  보고 톤 태깅을 끄지 않는다. 모델은 `[laughs]` 가 박힌 글을 받고, 그걸 지우거나 옮기거나 낱말로 풀지 말라는
-  지시를 함께 받는다. Vertex 가 없거나 실패해도(로컬 태깅) 같은 변환이 돈다.
-- **사용자의 웃음은 친 자리 그대로다.** 모델이 빠뜨리거나·옮기거나·옆에 자기 웃음을 더하면(톤 태그만 벗긴
-  글이 원문과 다르면) 모델 배치를 버리고 원문 위에 모델의 톤만 다시 입힌다. 개수만 세면 문장 앞으로 옮긴
-  웃음이 '지켰다' 로 읽힌다.
-  - **번역은 예외다** — 어순이 바뀌어 원문 자리로 되돌릴 수 없다. 번역문에 사용자의 웃음이 하나도 안 남았을
-    때만 선두 톤 뒤에 한 번 되살린다(자리·개수 대신 '웃었다' 는 것만 지킨다 — 사용자가 대괄호로 친 웃음 태그면 그
-    철자로, 글자 웃음이면 `[laughs]` 로). 번역문에 모델이 옮겨 쓴 글자
-    웃음(haha·www)도 소리로 바꾸고, 사용자가 대괄호를 쳐서 톤 태깅을 안 하는 번역에서도 모델이 바꾼 웃음 태그
-    (`[laughs]` → `[chuckles]`)는 `[laughs]` 로 맞춘다 — 사용자가 직접 친 태그는 **친 수만큼** 그대로다(모델이 같은
-    이름으로 하나 더 쓰면 그건 모델 웃음이라 맞추고 센다 — 이름으로 통째로 빼 주면 두 번 웃는다). 모델이 사용자의
-    태그를 다른 철자로 바꾸면(`[chuckles]` → `[laughs]`) 그 철자로 되돌린다.
+- **같은 언어 직접 입력은 Gemini 를 부르지 않는다**(2026-09-30). 톤 태그를 붙이지 않으므로(§10) 합성 글자는 친
+  글에서 글자 웃음만 바꾼 것이다 — 웃음은 저절로 **친 자리 그대로**다. Vertex 설정이 없어도 같다.
+- **번역할 때만 모델을 거친다.** 모델은 `[laughs]` 가 박힌 글을 받고, 그걸 지우거나 낱말로 풀지 말고 새 대괄호를
+  넣지 말라는 지시를 함께 받는다. 번역은 어순이 바뀌어 원문 자리로 되돌릴 수 없으므로 **개수만** 지킨다:
+  - 번역문에 사용자의 웃음이 하나도 안 남았으면 앞에 한 번 되살린다(사용자가 대괄호로 친 웃음 태그면 그 철자로,
+    글자 웃음이면 `[laughs]` 로).
+  - 모델이 옮겨 쓴 글자 웃음(haha·www)도 소리로 바꾸고, 모델이 바꾼 웃음 태그(`[laughs]` → `[chuckles]`)는
+    `[laughs]` 로 맞춘다. 사용자가 직접 친 태그는 **친 수만큼** 그대로다(모델이 같은 이름으로 하나 더 쓰면 그건 모델
+    웃음이라 맞추고 센다 — 이름으로 통째로 빼 주면 두 번 웃는다). 모델이 사용자의 태그를 다른 철자로 바꾸면
+    (`[chuckles]` → `[laughs]`) 그 철자로 되돌린다.
+  - 사용자가 웃은 수를 넘는 웃음(모델이 스스로 넣은 것)은 지운다. 원문에 없던 **톤** 태그도 벗긴다 — 우리는 태그를
+    붙이지 않는다. 지운 자리에는 문장부호 앞 공백을 남기지 않는다(`Wake up [laughs].` → `Wake up.`).
   - 원문에 말이 있는데 번역문이 웃음뿐이면(`[cheerfully] haha!`) `empty_spoken` 으로 거절한다 — 글자 웃음을 소리로
-    바꾸면 낭독할 말이 안 남는다. 원문도 웃음뿐이면(`ㅋㅋㅋ`) 같은 언어처럼 그대로 둔다.
+    바꾸면 낭독할 말이 안 남는다. 원문도 웃음뿐이면(`ㅋㅋㅋ`) 같은 언어처럼 글자 그대로 둔다(모델이 붙인 톤만 벗긴다).
 - **캐시 키는 화면 문구까지 가린다 — 화면 문구가 합성 문구에서 나오지 않을 때만.** `ㅋㅋ`·`ㅋㅋㅋ`·`haha` 는 같은
   `[laughs]` 로 합성되므로, 합성 글자만으로 키를 만들면 캐시 히트가 다른 철자로 만든 옛 행(`message_id`·
   `messages.text`)을 돌려준다. 화면 문구는 **공백까지 그대로** 싣는다(키 계산이 공백을 접는다) — 사용자가
   대괄호를 친 문구는 화면 문구가 친 글 그대로라 공백만 달라도 다른 행이다. 화면 문구가 합성 문구에서 태그만
   벗긴 것과 **똑같으면**(대괄호도 웃음도 없는 문구·번역·등록 미리듣기) 예전 키 그대로다. 대괄호를 친 직접 입력의
   서버 캐시는 이 변경으로 한 번 빗나간다(한도는 §8 대로 같다).
-- **웃음은 톤이 아니다.** 문장마다 다시 앞세우는 톤 태그로 웃음 태그를 고르지 않는다 — 고르면 한 번 웃을
-  자리에서 **매 문장 웃는다.** 졸린 태그를 지운 뒤 웃음만 남았으면 톤이 없는 것으로 보고 로컬 톤을 입힌다 — 이때
-  모델이 스스로 넣은 웃음은 버린다(같은 언어는 원문으로 돌아가고, 번역은 사용자의 웃음 수만큼만 남긴다).
-  사용자의 웃음(서버가 바꾼 `[laughs]`)은 '모델이 태그를 몇 개 배치했는가' 에서도 뺀다 — 세면 모델이 톤을
-  안 붙였는데 '여러 개 배치했다' 로 읽혀 톤 없이 합성된다. 모델이 **스스로** 넣은 웃음은 예전처럼 센다.
-- **차분한 목소리여도 지우지 않는다.** 글자 웃음은 사용자가 쓴 것이다 — 사용자가 직접 친 태그를 거르지
-  않는 규칙과 같다(§4-2 의 차분 금지 태그는 **모델이 붙인** 태그에만 건다).
+- **결과 무관하게 사용자가 친 웃음은 지우지 않는다.** 글자 웃음은 사용자가 쓴 것이다 — 사용자가 직접 친 대괄호를
+  거르지 않는 규칙과 같다.
 - **등록 미리듣기의 문구(`preview_text` — 사용자가 고칠 수 있다)는 바꾸지 않는다.** 확정한 뒤의 재생은 저장된
-  문구·태그로 합성 글자를 다시 만들어 캐시를 맞힌다 — 배포 전후로 같은 문구의 합성 글자가 달라지면 이미
-  확정한 초안의 재생이 `VOICE_PREVIEW_UNAVAILABLE` 이 된다.
+  문구로 합성 글자를 다시 만들어 캐시를 맞힌다 — 배포 전후로 같은 문구의 합성 글자가 달라지면 이미
+  확정한 초안의 재생이 `VOICE_PREVIEW_UNAVAILABLE` 이 된다. (eleven_v4_turbo 전환 배포는 모델 id 가 캐시 키에
+  들어가 **한 번** 그렇게 된다 — 배포 순간 확정만 하고 정식 등록 전이던 초안뿐이다. §10)
 - 한도(§8)는 달라지지 않는다. 합성 글자가 바뀌어 예전에 같은 문구로 만든 서버 캐시는 빗나가지만, 차감은
   원래 '폰에 없어서 서버를 부르면 1회' 다.
-- 알려진 한계: 일본어 `[laughs]` 는 v3 에서 두 번 중 한 번만 웃음이 났다(나머지는 생략). 글자로 읽히던 것보다
-  낫지만 확실한 웃음은 아니다. 문장 **끝**에 둔 웃음(`일어나 ㅋㅋ`)이 소리로 나는지는 따로 재지 않았다.
+- 알려진 한계: 일본어 `[laughs]` 는 v3 에서 두 번 중 한 번만 웃음이 났고, **v4·v4 Turbo 에서는 두 목소리 모두
+  웃음 없이 조용히 빠진다**(2026-09-29 받아쓰기 — 글자로 읽지는 않는다). 그래도 변환은 남긴다 — `www` 를
+  '笑笑笑' 로 읽는 것보다 낫다. 문장 **끝**에 둔 웃음(`일어나 ㅋㅋ`)이 소리로 나는지는 따로 재지 않았다.
 
-### 모델이 스스로 넣는 웃음 (직접 입력 태깅·클론 사전렌더)
+### 모델은 웃음을 넣지 않는다 (클론 사전렌더·등록 미리듣기·동적 생성·번역)
 
-- 넣을 때는 `[laughs]` 하나 — `[chuckles]`·`[soft laugh]` 도, 글자 웃음(ㅋㅋ·haha·www)도 쓰지 않는다(위 근거).
-  글자 웃음을 대괄호에 넣은 것(`[haha]`·`[lol]`·`[www]`, 꾸밈말을 붙인 `[haha loudly]` 도)도 웃음 태그로 본다(`isLaughterTag`) — `[laughs]` 로 맞추고,
-  톤으로 고르지 않으며, 차분한 목소리·등록 미리듣기에서는 지운다. 사용자가 친 것은 친 수만큼 그대로다.
-  모델이 어기면 서버가 맞춘다: 웃음 태그(`[chuckles]`·`[giggles]`·`[laughs nervously]` …)는 `[laughs]` 로 바꾸고,
-  졸린 태그 거르기 **뒤**라 `[soft laugh]` 는 예전처럼 지워진다. **한 번**도 서버가 지킨다 — 앞에서부터 한 번만
-  남긴다. 직접 입력에 사용자가 웃었으면 그 수만큼 남긴다(그 웃음은 원문 자리로 맞춘 뒤다). 사용자가 대괄호로
-  친 웃음 태그는 **친 수만큼** 맞추지 않는다. 지운 웃음 자리에는 문장부호 앞 공백을 남기지 않는다
-  (`Wake up [laughs].` → `Wake up.`, `Hello [laughs], now` → `Hello, now`) — 졸린·차분 태그를 지운 자리도 같다.
-  **한 줄에 한 번, 가볍고 장난스러운 문장에만**, 대부분의 줄에는 넣지 않는다. 주의·사과·나쁜 소식·약
-  알림에는 넣지 않는다 — 이건 **프롬프트 지시**다. 서버가 막는 것은 문맥을 구조로 아는 곳뿐이다: 클론 사전렌더의
-  시드가 그런 클립(약 알림 전부·날씨 미해결 안내·운세 '조심')은 웃음 지시를 싣지 않고 넣었으면 지운다
-  (`cloneClipAllowsLaughter`). 직접 입력은 사용자가 쓴 글의 뜻이라 서버가 판정하지 않는다(키워드로 가르면 "약속"
-  같은 낱말에 걸린다) — 모델 웃음의 수(한 번)와 철자(`[laughs]`)만 서버가 지킨다.
-- 클론 사전렌더는 모델이 그래도 글자 웃음을 쓰면(말투 본보기의 ㅋㅋ 를 따라 쓰는 등) 서버가 `[laughs]` 로
-  바꾼다 — 차분 거르기 **앞**에서 바꿔, 차분한 목소리면 그 웃음도 지워진다. 웃음만 남는 줄(`[playfully] haha!`)도
-  바꾸고, 그러면 낭독할 말(글자·숫자)이 없으니 `empty_spoken` 으로 다시 묻는다 — 글자 웃음을 읽는 클립을 저장하지
-  않는다.
-- **등록 미리듣기 문구에는 웃음을 넣지 않는다**(지시도 싣지 않고, 넣었으면 지운다). 미리듣기는 인라인 태그를
-  벗겨 저장하고 톤 하나(`preview_tag`)로 다시 입혀 재생하므로, 넣은 웃음을 들려줄 자리가 없다.
-- 웃음만으로 톤을 대신하지 않는다 — 톤 태그가 따로 있어야 한다. 모델이 톤 없이 웃음만 넣었으면(`[laughs] 자기야…`
-  처럼 앞이든 `자기야, [laughs] 일어나` 처럼 가운데든), 클론 사전렌더는 톤(모델의 `tag`·카테고리 기본값)을 문장마다
-  앞세우고 웃음은 제자리에 한 번만 두며, 직접 입력 태깅은 로컬 톤 태깅으로 돌아간다(사용자가 쓰지 않은 웃음이라
-  버린다). 사전렌더가 '모델이 톤을 몇 개 배치했는가' 를 볼 때도 **톤 태그로만** 센다 — 선두 톤 하나에 웃음을 더한
-  줄도 톤을 문장마다 다시 앞세운다(웃음 뒤 문장부호 앞에는 공백을 두지 않는다: `좋대 [laughs].`).
-- 차분한 목소리는 넣지 않는다(§4-2 — 프롬프트가 막고 서버가 지운다). 차분한 목소리의 프롬프트에는 웃음
-  허용 지시 자체를 싣지 않는다(두 지시가 부딪힌다). **직접 입력도 같다** — 결은 사전렌더와 같은 값(고른 값 >
-  녹음 전사 추정값, `withVoiceEnergy`)이고, 모델이 넣은 웃음만 지운다. 사용자가 친 웃음은 그대로다.
+- 2026-09-30 부터 모델에게 웃음(`[laughs]`)도 톤 태그도 쓰라고 하지 않는다(§10). 모델이 그래도 대괄호를 내면
+  서버가 **전부 벗긴다**(`stripAllTags` — 지운 자리에 문장부호 앞 공백을 남기지 않는다). 번역만 예외다 —
+  사용자의 웃음을 친 수만큼 지킨다(위).
+- 클론 사전렌더는 모델이 글자 웃음을 쓰면(말투 본보기의 ㅋㅋ 를 따라 쓰는 등) 소리 태그로 바꾼 뒤 함께 벗긴다 —
+  TTS 가 글자로 읽는다. 그러고 낭독할 말(글자·숫자)이 안 남으면(`[playfully] haha!`) `empty_spoken` 으로 다시 묻는다.
+- 예전 규칙(모델 웃음 `[laughs]` 한 번·차분이면 없음·약·사과·조심 시드는 금지 `cloneClipAllowsLaughter`)은 웃음을
+  넣지 않게 되면서 통째로 없어졌다.
 
-## 10. 합성 모델 — 지금은 **`eleven_v3`**, `eleven_v4_turbo` 전환을 검토 중이다
+## 10. 합성 모델 — **`eleven_v4_turbo`**, 태그 없이 문장으로 (2026-09-30)
 
-- **지금 운영 모델은 `eleven_v3` 다.** 워커 변수 `ELEVENLABS_TTS_MODEL_ID` 는 **설정하지 않는다**(값이 없으면 v3 — 한 번
-  올린 값을 되돌릴 때는 파일에서 비우지 말고 `wrangler secret delete`, `docs/ops/environments.md` 「ElevenLabs 합성 모델」).
-- **`eleven_v4_turbo` 로 바꾸는 것을 검토 중이다.** 아래 비교를 들어 본 결과 v4 Turbo 가 낫게 들렸고, v4 와는
-  차이를 듣지 못했다. 결정은 **클론 비교**(되살린 dev 클론으로 v3 와 Turbo 를 나란히)와 **실기기 음량 확인**
-  (아래 도현 −4.3dB·애니 −5.9dB 가 폰 스피커에서 어떻게 들리는가) 뒤에 한다. 그 전에는 코드·설정 어디에서도 모델을 바꾸지 않는다.
+- **운영 모델은 `eleven_v4_turbo` 다.** 코드 상수 하나(`lib/tts-model.ts` 의 `TTS_MODEL_ID`)가 정하고, 서버와 스톡
+  스크립트(시청본·게시)가 **같은 상수**를 가져다 쓴다. 워커 변수 `ELEVENLABS_TTS_MODEL_ID` 로 바꾸던 길은 없앴다 —
+  모델 id 가 캐시 키와 시청본 지문에 들어가므로, 한쪽만 다른 값을 쓰면 미리 게시한 클립을 서버가 '없다' 로 센다.
+  되돌릴 때도 시크릿이 아니라 코드를 되돌린다.
+- **합성 설정은 stability 0.5 · similarity_boost 0.8 둘뿐이다**(`TTS_VOICE_SETTINGS`). v4 계열은 style·speed·
+  use_speaker_boost 를 받지 않는다 — 보내도 200 으로 받고 조용히 무시한다(speed 0.7 과 1.2 의 발화 길이가 4.68초·
+  4.81초). v3 시절 일부러 늦춘 speed 0.9 는 사라졌다 — 속도는 문장부호(`…`·쉼표)로만 늦춘다.
+- **태그를 붙이지 않는다.** Gemini 에게 태그를 쓰라고 하던 세 경로(직접 입력 자동 태깅·클론 사전렌더와 등록
+  미리듣기·동적 생성)의 지시와 그 후처리(졸린·공포·차분 금지 태그, 문장마다 다시 앞세우기, 기본 태그,
+  `preview_tag`)를 통째로 없앴다. 스톡 프리셋 60문장의 태그도 뺐다(화면 문구는 그대로 — §5-3). 근거는 아래 측정이다:
+  v4 Turbo 는 문장으로 결을 잡고, 태그는 **차분을 망치는 쪽으로만** 효과가 있었다. 남은 대괄호는 사용자가 친 것과
+  글자 웃음을 바꾼 `[laughs]`(§9) 둘뿐이다. 같은 언어 직접 입력은 이제 Gemini 를 부르지 않는다.
+- **말끝을 가공하지 않는다.** v3 는 마지막 음절 직후 뚝 끊겨(끝 무음 0.02초, 멈추는 순간 세기가 평균의 1.22~1.34배)
+  문장 끝에 ` ...`(여운 꼬리)를 붙이고 mp3 끝에 무음 0.366초를 덧댔다. v4 Turbo 는 그 없이도 말끝을 놓는다 —
+  2026-09-30 A/B(기본 목소리 4 × 태그 없는 프리셋 2문장 × 꼬리 있음·없음 = 16개):
 
-ElevenLabs v4·v4 Turbo 가 2026-09-28 에 나왔다. 2026-09-29 에 기본 목소리 4종의 지금 클립과 같은 문장을
-v4·v4 Turbo 로 만들어 비교했다(표의 값은 자동 측정·받아쓰기 기준이다).
+  | | 끝 무음 | 끝/평균 세기(마지막 50ms) | 받아쓰기 |
+  | --- | --- | --- | --- |
+  | 꼬리 없음 | 0.14~0.29초 | 0.05~0.44(중앙 ≈0.12) | 원문 그대로, 덧붙은 말 없음 |
+  | 꼬리 있음 | 0.19~0.37초 | 0.05~0.33(중앙 ≈0.11) | 같음 |
 
-| 항목 | v3(지금) | v4 | v4 Turbo |
+  가장 센 끝(도현 한국어 상승조 의문문 0.44)도 30dB 를 50ms 에 걸쳐 잦아든다 — 계단이 아니다. 꼬리는 끝 무음을
+  0.1초쯤 늘릴 뿐 결과가 같아 둘 다 뺐다. 반복 재생 사이 간격은 안드로이드가 따로 둔다(`VOICE_REPEAT_GAP_MS`).
+  시청본 지문의 파이프라인 세대를 `plain@2` 로 올렸다 — 옛 시청본은 전부 낡음으로 읽혀 다시 굽는다.
+- **캐시 키에 범위를 넣는다**(Codex #840). 원장 해시(`generated_audio_assets.request_hash`)는 전역 UNIQUE 인데
+  오브젝트는 주인 아래에 놓인다(`generated-tts/<주인>/<키>`). 키가 겹치면 두 번째 렌더의 원장 행이 조용히 빠지고,
+  그 오브젝트는 계정 삭제·보관 정리가 못 찾는다(원장이 R2 키의 유일한 출처다). v3 에서는 태그와 스톡의 여운 꼬리가
+  우연히 키를 갈라 놓았는데, 둘 다 뺀 뒤로는 사용자가 스톡 문장을 그대로 치거나 두 사람이 같은 기본 목소리로 같은
+  글을 치면 키가 같아진다. 그래서:
+  - **스톡**(시스템 스톡 게시·클론 사전렌더)은 스톡 범위(`STOCK_TTS_CACHE_SCOPE`) — 서버와 게시 스크립트가 같은 값.
+  - **직접 입력**은 그 사람 범위(`manualTtsCacheScope(userPk)`). 직접 입력 캐시는 원래 남과 나누지 않으므로 잃는
+    적중이 없다. 등록 미리듣기는 범위 없이 둔다(초안 목소리는 그 사람 것뿐이다).
+  - 그래도 같은 해시를 다른 오브젝트가 쥐고 있으면 게시는 멈춘다(`[보류]` — 옛 소리로 울린다, 무음 없음).
+- **삭제 예약은 다시 넣으면 id 가 바뀐다**(Codex #840). 드레인은 예약을 읽고(참조 확인) 나중에 그 id 로 지운다 —
+  그 사이 마지막 참조가 끊기며 같은 키가 다시 예약되면, 예전(`INSERT OR IGNORE`)에는 무시돼 드레인이 옛 판단대로
+  그 예약을 지웠다(오브젝트가 참조도 예약도 없는 미아). 이제 `(kind, ref)` 충돌 시 id 를 새로 바꿔 드레인의
+  `WHERE id = ?` 가 빗나가고, 다음 회차가 다시 판단한다. 클론 재렌더가 밀려난 옛 오브젝트를 바로 지우지 않고 이
+  큐에 넣는 것과 짝이다(두 프리셋이 한 오브젝트를 나눠 쓸 수 있다).
+
+### v3 → v4 Turbo 비교 (2026-09-29, 기본 목소리 4종 · 같은 문장)
+
+| 항목 | v3(이전) | v4 | v4 Turbo |
 | --- | --- | --- | --- |
 | 생성 시간(중앙값) | 2.6초 | 2.0초 | 0.7초 |
 | 글자당 차감 크레딧(할인가, 10/12 까지) | 1.19 | 0.56 | 0.28 |
 | 한국어 `8시`(4회) | 4회 모두 틀림 | 4회 모두 맞음 | 4회 모두 맞음 |
-| 말끝 | 뚝 끊긴다(그래서 ` ...`·끝 무음을 붙인다) | 0.2~0.4초 잦아든다 | 같음 |
+| 말끝 | 뚝 끊긴다 | 0.2~0.4초 잦아든다 | 같음 |
 | speed·style | 먹는다 | **조용히 무시**(거절하지 않는다) | 같음 |
 | 감정 | 목소리 음역을 지킨다 | 태그든 대사든 밝은 신호가 하나라도 있으면 크게 들뜬다 — 차분 태그로 밝은 대사를 못 누른다 | 같음 |
 
-- 기본 목소리를 v4 로 바꾸면 도현 +8.6반음·시우 +6.1반음(결이 달라진다), 도현 −4.3dB·애니 −5.9dB,
-  일부러 늦춘 speed 0.9 가 사라진다. v4 계열에서는 말 속도를 설정이 아니라 문장부호로 늦춰야 한다.
-- **태그와 문장의 방향**(2026-09-29, v4 Turbo 측정):
-  - 문장과 **같은 방향**의 태그는 붙이든 빼든 차이가 음높이 2반음·음량 1dB 안쪽이다.
-  - 텐션을 **올리는** 태그는 크게 먹는다 — 도현의 차분한 문장이 129→205Hz 로 올랐다.
-  - 텐션을 **누르는** 태그는 거의 안 먹는다 — 신나는 문장이 258→222Hz 에 그쳤다.
-  - 그래서 차분하게 읽히게 하려면 태그가 아니라 **문장을 차분하게** 써야 한다.
-- **바꾸려면 재렌더 계획이 먼저다.** 모델 id 는 오디오 캐시 키에 들어간다(`computeTtsCacheKey`) — 바꾸는
-  순간 서버에 캐시된 직접 입력 오디오가 전부 빗나가 같은 문구도 새로 합성된다. 게시된 클립(시스템 스톡·클론
-  사전렌더)은 모두 v3 로 구웠고, 무엇을 구울지는 `messages` 행으로 고르므로 모델만 바꾸면 **다시 굽지
-  않는다** — 새로 만드는 직접 입력·새 클론만 새 모델이 되어 한 사람의 알람에 두 모델 소리가 섞인다. 계획에
-  들 것: 스톡 게시 스크립트의 `MODEL_ID`, 클론 사전렌더 다시 굽기, v3 급마감 보완(`withClosingBreath`·
-  `appendMp3TrailingSilence`) 재검토(`docs/ops/environments.md` 「ElevenLabs 합성 모델」).
-- 클론 비교는 아직 못 했다 — 비교할 dev 클론이 슬롯 정리로 밀려나 있었다.
+- **태그와 문장의 방향**(v4 Turbo 측정): 문장과 같은 방향의 태그는 붙이든 빼든 차이가 음높이 2반음·음량 1dB
+  안쪽이다. 텐션을 **올리는** 태그는 크게 먹고(도현의 차분한 문장 129→205Hz), **누르는** 태그는 거의 안 먹는다
+  (신나는 문장 258→222Hz). 그래서 차분하게 읽히게 하려면 태그가 아니라 **문장을 차분하게** 써야 한다(§4-2).
+
+### ⚠ 위험 — prod 전에 폰으로 들어 본다
+
+- **남자 목소리가 높아지고, 모든 목소리가 작아진다.** 기본 목소리(같은 문장, v4 Turbo − v3): 도현 +8.7반음·
+  시우 +6.4반음, 음량 중앙 −4.1dB(애니 −6.1·도현 −4.9). 번들 인사말을 다시 구웠을 때(2026-09-30, 12개)도
+  음량 −0.3~−8.4dB(애니 −6~−8·도현 −5~−6), 도현 +3.6~+6.2반음·시우 +2.6~+4.7반음이었다. 남성 클론(8문장)은
+  원녹음 대비 v3 −3반음 → v4 Turbo +4~5반음, 음량 약 −5.5dB, 화자 유사도 0.78 → 0.91. 워커에서는 음량을 맞출
+  수단이 없다 — 폰 스피커에서 작게 들리면 클라 쪽 고정 보정 게인을 따로 정해야 한다('커지게 만들지 말 것' 은
+  램프·반복 증폭을 막는 규칙이고 고정 보정과는 별개다).
+- **클론 문구가 바뀐다.** #124 가 다시 굽는 클론 클립은 Gemini 가 태그 없이 **새로 쓴다** — 잠금화면 문구도 바뀐다.
+  시스템 스톡의 화면 문구는 그대로다.
+- **다시 굽는 동안 목소리 관리 화면이 '준비 중' 이다.** 진행률(`GET /voice/:id/prerender-status`)은 교체 회차에서
+  요청 뒤에 게시된 클립만 세므로 0 부터 다시 센다(말투 재렌더와 같은 모양). 알람 편집기는 막히지 않는다 —
+  목소리 고르기 관문은 매니페스트에 클립이 다 있는가를 보고(옛 클립이 그대로 있다), `rendered_for_current_voice`
+  도 보이스가 같아 참이다.
+- **직접 입력 서버 캐시가 한 번 빗나간다.** 모델 id 가 캐시 키에 들어간다 — 같은 문구도 새로 합성된다(한도는 §8
+  대로 '폰에 없어서 서버를 부르면 1회' 라 달라지지 않는다). 기기에 있는 옛 파일은 그대로 쓴다 — 옛 v3 소리가
+  알람에 남는 것은 사용자가 그 문구를 다시 만들 때까지다(한도를 태우므로 우리가 다시 굽지 않는다).
+- **확정만 하고 정식 등록 전이던 초안 미리듣기**는 배포 뒤 다시 들으려 하면 `VOICE_PREVIEW_UNAVAILABLE` 이 된다(모델 id 가
+  캐시 키에 들어간다). 등록은 그대로 할 수 있고, 문구나 관계·호칭을 고치면 새로 만든다.
+- 밀려난 클론(`elevenlabs_voice_id` NULL)은 #124 가 건너뛴다 — 복구 때 새 보이스로 다시 굽힌다.
+
+### 다시 굽기 — 은퇴 없이 제자리 교체(§5-3)
+
+| 대상 | 방법 | 비용 추정(할인가 0.28 크레딧/글자) |
+| --- | --- | --- |
+| 시스템 스톡 240개 | `preview:stock` → 청취 → `publish:stock --env dev` → 폰 → `main` → `publish:stock --env prod`(교체 갈래) | 프리셋 글자 합 7,824자(ko 1,850·en 4,151·ja 1,823) × 목소리 4 = 31,296자 ≈ 8.8천 크레딧(다시 굽는 회차마다 같은 만큼 — 할인 끝나면 더) |
+| 클론 사전렌더(목소리당 21개) | 마이그레이션 #124 → 서버 cron 이 같은 message_id 에 덮어쓴다(시간당 ≈120클립) | 클립 ≈110자 × 21 ≈ 2.3천 자 ≈ 목소리당 650 크레딧 + Gemini 21회 |
+| 번들 인사말(안드로이드·랜딩 12개 + 안드로이드 랜딩 미리듣기) | 이 PR 에서 다시 구웠다(`preview:stock -- --category greeting`) | — |
+| 직접 입력 | 다시 굽지 않는다(위) | — |
+
+절차·완료 확인 쿼리는 `docs/ops/tts-model-rerender.md`.
 
 ## 구현 지도
 
@@ -1212,7 +1256,7 @@ v4·v4 Turbo 로 만들어 비교했다(표의 값은 자동 측정·받아쓰�
 | 진행률 파일 확인의 실행 위치 | `StockClipPrefetchWorker`의 IO 작업 · 알람 관문 `DefaultVoiceGate`(IO) | `StockClipPrefetcher.progressOffMain`·`missingClipsOffMain` | — |
 | 한 번 세는 데 디렉터리 1회·길이 측정 없음 | `AlarmAudioStore.missingOrStaleCacheKeys`·`snapshot`(단건은 이름으로 찾는 `findCachedFile`, 있는지만은 `hasCachedAudio`); 회귀 `AlarmAudioStoreProbeCountTest` | `AudioCacheStore.missingOrStaleCacheKeys`; 회귀 `StockClipProgressScanTests` | — |
 | 등록 진행률(생성 0~50 + 다운로드 50~100) · 완료 안내 없음 | `ui/voices/VoiceProfileManagementPanel.kt` `VoiceRegistrationStep.Prerendering`·`CloneVoiceReadiness` | `ClonePrerenderDrive`·`ClipPreparationView.registrationPreparation`·`VoicePrerenderStatusRow`; `AlarmTalkTests/ClonePrerenderProgressTests` | `routes/voice-profile.ts` 의 `prerender/advance`·`prerender-status` |
-| 클론 문구의 결·사람이 쓴 본보기 | 결을 고르지도 보내지도 않는다 — `ui/voices/VoiceProfileManagementPanel.kt` `VoiceRegistrationStep.Details` 에 칸이 없고, `network/VoiceCloneRequest.kt` `createVoiceCloneDraft` 가 `voiceEnergy` 파트를 싣지 않는다(2026-09-29 '목소리 느낌' 제거). 초안 페르소나 PATCH 는 없다(관계·호칭을 초안 생성에만 싣는다). 회귀 `VoiceCloneRequestTest`(결 파트 없음) | 결을 고르지도 보내지도 않는다 — `Views/Voices/VoiceCloneUploadFlow.swift` `detailsSection` 에 칸이 없고, `AlarmTalkAPI.voiceCloneMultipartFields` 가 `voiceEnergy` 를 싣지 않는다. 초안 페르소나 PATCH 는 없다(공유 목소리 뷰어의 관계 PATCH `voiceRelationshipUpdateBody` 도 결을 싣지 않는다). 회귀 `VoiceStudioViewModelTests`(결 필드 없음) | 전사 추정 `analyzeSpeechStyleWithVertex`(`speech_style.energy`, `runSpeechStyleAnalysis`) · **1.2.10 호환**: `POST voice/clone` 의 `voiceEnergy`/`voice_energy`(초안 생성) · `PATCH voice/:id/relationship` 의 `voice_energy`(초안만) → `voice_profiles.voice_energy`(#122) · `withVoiceEnergy`(고른 값 > 추정값 — `minSupported` 가 선택지 없는 릴리스를 넘기면 받는 처리를 지운다) · `stockReferenceLine` → `generatePrerenderClipText(humanReference)` · 차분 태그 거르기 `isCalmIncompatibleTag`·`fallbackTagForEnergy`(`lib/vertex-translate.ts`, 미리듣기 `routes/tts.ts` `draftPreviewDefaultTag`) · 교체 `replaceVoiceInPlace` · 분석 대기 `SPEECH_STYLE_ANALYSIS_WAIT_SQL`(`claimPendingPrerenderVoices`, `POST voice/:id/prerender/advance`, 첫 미리듣기 `waitForSpeechStyleAnalysis`) · 결과 기록 대상 `SPEECH_STYLE_RESULT_TARGET_SQL`(`runSpeechStyleAnalysis`). 회귀 `voice-prerender-style-wait.test.ts` |
+| 클론 문구의 결·사람이 쓴 본보기 | 결을 고르지도 보내지도 않는다 — `ui/voices/VoiceProfileManagementPanel.kt` `VoiceRegistrationStep.Details` 에 칸이 없고, `network/VoiceCloneRequest.kt` `createVoiceCloneDraft` 가 `voiceEnergy` 파트를 싣지 않는다(2026-09-29 '목소리 느낌' 제거). 초안 페르소나 PATCH 는 없다(관계·호칭을 초안 생성에만 싣는다). 회귀 `VoiceCloneRequestTest`(결 파트 없음) | 결을 고르지도 보내지도 않는다 — `Views/Voices/VoiceCloneUploadFlow.swift` `detailsSection` 에 칸이 없고, `AlarmTalkAPI.voiceCloneMultipartFields` 가 `voiceEnergy` 를 싣지 않는다. 초안 페르소나 PATCH 는 없다(공유 목소리 뷰어의 관계 PATCH `voiceRelationshipUpdateBody` 도 결을 싣지 않는다). 회귀 `VoiceStudioViewModelTests`(결 필드 없음) | 전사 추정 `analyzeSpeechStyleWithVertex`(`speech_style.energy`, `runSpeechStyleAnalysis`) · **1.2.10 호환**: `POST voice/clone` 의 `voiceEnergy`/`voice_energy`(초안 생성) · `PATCH voice/:id/relationship` 의 `voice_energy`(초안만) → `voice_profiles.voice_energy`(#122) · `withVoiceEnergy`(고른 값 > 추정값 — `minSupported` 가 선택지 없는 릴리스를 넘기면 받는 처리를 지운다) · `stockReferenceLine` → `generatePrerenderClipText(humanReference)` · 결은 문장 지시뿐 `prerenderClipPrompt` 의 `energyInstruction`(태그 없음, `lib/vertex-translate.ts`) · 교체 `replaceVoiceInPlace` · 분석 대기 `SPEECH_STYLE_ANALYSIS_WAIT_SQL`(`claimPendingPrerenderVoices`, `POST voice/:id/prerender/advance`, 첫 미리듣기 `waitForSpeechStyleAnalysis`) · 결과 기록 대상 `SPEECH_STYLE_RESULT_TARGET_SQL`(`runSpeechStyleAnalysis`). 회귀 `voice-prerender-style-wait.test.ts` |
 | 재생 방식 2택 | `PlayModeCard` (`ui/editor/AlarmEditorControls.kt`) | `VoicePlayModePicker` | `wake_mode` (`voice_only` / `sound_then_voice`) |
 | 옛 값 정규화 | `AlarmPlayModes.normalize` | `AlarmPlayMode.decode` | — |
 | 문구 목록(하나) | `EditorMessageContexts` → `FreeBucketOrder` (`ui/editor/AlarmEditorControls.kt`) | `MessageSettingsPane.options` → `FreeBucket.order` | `STOCK_CLIP_PRESETS` → `FREE_BUCKET_CATEGORIES` |
@@ -1237,6 +1281,7 @@ v4·v4 Turbo 로 만들어 비교했다(표의 값은 자동 측정·받아쓰�
 | 은퇴 행을 빼는 곳 **전부** | — | — | `findMissingStockTargets` · `GET /tts/stock-clips`(`retiredIsNullClause`) · `generateStockClip` 의 INSERT 가드와 게시본 조회 · `deleteStockClips` · `voice-profile.ts` 의 `GET /:id/prerender-status`(진행률)와 `POST /:id/prerender/advance`(게시 개수) (**일곱 곳** = `retired_at IS NULL` 가드 전부) |
 | 은퇴해도 그대로 두는 것 | — | — | `is_preset` = 쓰기 인가(`messageBelongsToCaller`) · 읽기 인가(`/tts/messages/:id/audio`) · TTL 면제(`audio-retention.ts`) |
 | 스톡 게시 | — | — | `scripts/prerender-stock-preview.ts` → `scripts/publish-stock-clips.ts`. cron(`index.ts` 의 `scheduled`)의 **시스템 드레인은 꺼져 있다** — 클론 드레인만 산다 |
+| 소리만 바꾸는 회차 = 제자리 교체(은퇴 아님) | 매니페스트 `audio_url` 이 바뀌면 다시 받는다(`StockClipPrefetchWorker` 의 낡음 판정) | `VoiceStudioViewModel.refreshChangedCachedStockClips` | 시스템: `scripts/publish-stock-clips.ts` 의 교체 갈래 → `replaceStockClipInPlace`(`lib/stock-clip-replace.ts`, 회귀 `stock-clip-replace.test.ts`) · 문구 함수 `systemStockTexts`(`lib/stock-clips.ts`) · 클론: 마이그레이션 #124(회귀 `migrations-v4-turbo-requeue.test.ts`) → `generateStockClip` 의 교체 갈래 · 새 등록 먼저 `claimPendingPrerenderVoices`(`ORDER BY refresh_existing`) |
 | 재바인딩이 편집을 안 덮는다 | `applyClipFields` (`sync/StockClipLanguageRebinder.kt`) | `applyClipFields` (`StockClipLanguageRebinder.swift`) | — |
 | 재바인딩 뒤 서버 반영 | `nextLocalSyncState` (`data/AlarmEntity.kt`) | `nextLocalSyncState(for:)` (`LocalAlarmStore.swift`) | — |
 | 기본 목소리 다 받아야 알람 설정 | `StockClipPrefetchWorker.defaultVoicesReady` → `AlarmTalkApp.whenDefaultVoicesReady`(`requestCreateAlarm`·`startCreateAlarm`·`onEditAlarm`) ← `DefaultVoiceGate`(IO·탭당 1회·도는 중 탭은 버림·화면/계정이 바뀌면 결과 버림, 회귀 `DefaultVoiceGateTest`) | `StockClipPrefetcher.defaultVoicesReady` → `MainTabsView.openEditorIfVoicesReady` | `GET /tts/stock-clips` |
@@ -1293,11 +1338,12 @@ v4·v4 Turbo 로 만들어 비교했다(표의 값은 자동 측정·받아쓰�
 | 저장된 알람이 기기 언어를 따라감 | `sync/StockClipLanguageRebinder.kt` | `StockClipLanguageRebinder.swift` | — |
 | 직접 입력 한도 차감 | `ui/editor/AlarmEditorScreen.kt` 의 저장 경로(로컬 확인 → 횟수 확인) | `Views/Editor/AlarmEditorSheet.swift` 의 `manualQuotaBlockIfExhausted` | `routes/tts.ts` 의 `reserveManualTtsQuota`(캐시 히트·미스 양쪽) |
 | 오프라인이면 **요청 없이** 막는다 | `SaveBlockReason.OFFLINE_NEW_MESSAGE` — 저장 버튼이 `saveEditor()` **전에** 판정 | `AlarmEditorSheet.saveFlow` 의 오프라인 갈래는 `manualQuotaBlockIfExhausted` **앞** | — |
-| 직접 입력 글자 웃음 → `[laughs]`(합성 글자만) | — 서버가 한다. 화면은 서버의 `text`(친 글 그대로) | — 같음 | `lib/typed-laughter.ts` `typedLaughterToTags` · `lib/vertex-translate.ts` `speakTypedLaughter`(웃음만 있으면 그대로) · `prepareAlarmTextWithVertex` 의 `speakTypedLaughter` 옵션(톤 여부는 원문 대괄호로) ← `routes/tts.ts`(프리셋 제외). 회귀 `typed-laughter.test.ts`·`vertex-translate.test.ts`·`tts.test.ts` |
+| 직접 입력 글자 웃음 → `[laughs]`(합성 글자만) · 같은 언어는 Gemini 를 부르지 않는다 | — 서버가 한다. 화면은 서버의 `text`(친 글 그대로) | — 같음 | `lib/typed-laughter.ts` `typedLaughterToTags` · `lib/vertex-translate.ts` `speakTypedLaughter`(웃음만 있으면 그대로) · `prepareAlarmTextWithVertex` 의 `speakTypedLaughter` 옵션(번역일 때만 Gemini) ← `routes/tts.ts`(프리셋 제외). 회귀 `typed-laughter.test.ts`·`vertex-translate.test.ts`·`tts.test.ts` |
 | 같은 언어 직접 입력의 화면 문구 = 친 글 · 캐시 키가 화면 문구까지 가린다 · 대괄호 친 번역의 화면 문구에서 서버 웃음 벗기기 | — | — | `routes/tts.ts` 의 `messageText`(`typedSameLanguage` → `deriveAlarmDisplayText(requestText, …)`)·`cacheKeyText` · `deriveAlarmDisplayText` 의 `withoutServerLaughter`(`lib/vertex-translate.ts`) |
-| 웃음은 톤이 아니다(문장마다 앞세우지 않는다) · 사용자 웃음은 친 자리 그대로 | — | — | `isLaughterTag`(대괄호 글자 웃음 `[haha]` 포함 — `isCalmIncompatibleTag` 도 본다) ← `pickApprovedTag`·`normalizeSameLanguageTaggedText`(`withoutToneTags` 로 자리 대조)·`tagAlarmTextLocally`·`generatePrerenderClipText`(톤 태그로만 센다 — `toneTags`·`onlyLeadingTone`) |
-| 모델이 넣는 웃음 = `[laughs]` 하나·한 번(차분은 없음) | — | — | `OWN_LAUGH_INSTRUCTION` ← `alarmTextPrompt`·`prerenderClipPrompt`(차분이면 빼고 서버도 지운다 — 사전렌더는 `isCalmIncompatibleTag`, 직접 입력은 `prepareAlarmTextWithVertex` 의 `calmVoice` ← `routes/tts.ts` `withVoiceEnergy`) · 모델이 낸 웃음 태그는 `canonicalizeLaughterTags`(`dropWakeUnsafeTags` 뒤, 번역은 태깅 여부와 무관 — 사용자 태그는 친 수만큼 제외, `laughterTagCounts`) · 지운 태그 자리 `tagGapFill`(`dropWakeUnsafeTags`·`canonicalizeLaughterTags`·`withoutToneTags`) · 사전렌더의 글자 웃음은 `generatePrerenderClipText` 가 `typedLaughterToTags` 로 바꾼 뒤 거르고, 말이 없으면 `prerenderRejectionReason` 의 `empty_spoken` · 등록 미리듣기는 `allowLaughter: false`(`routes/tts.ts`) · 클론 사전렌더의 약·사과·조심 시드는 `cloneClipAllowsLaughter`(`lib/stock-clips.ts` → `generateStockClip` 의 `allowLaughter`) |
-| 합성 모델(기본 `eleven_v3` · `eleven_v4_turbo` 전환 검토 중 — 결정 전까지 설정하지 않는다) | — | — | `lib/voice-provider.ts` 의 `ttsModelId` ← `ELEVENLABS_TTS_MODEL_ID`(`types.ts` `Env`, `scripts/worker-secret-keys.ts`) |
+| 번역의 웃음 수 = 사용자가 친 수 · 원문에 없던 톤 태그는 벗긴다 | — | — | `prepareAlarmTextWithVertex` 의 번역 갈래 — `canonicalizeLaughterTags`(사용자 태그는 친 수만큼 제외, `laughterTagCounts`)·`withLeadingLaugh`·`stripTagsWhere` · 지운 태그 자리 `tagGapFill` |
+| 태그를 붙이지 않는다 · 모델이 낸 태그는 벗긴다 | 옛 행 표시용 벗기기만 남는다 — `data/DeliveryTags.kt` `stripDeliveryTags` | 같음 — `DeliveryTags.swift` | 프롬프트(`DYNAMIC_SYSTEM_INSTRUCTION`·`dynamicAlarmTextPrompt`·`prerenderClipPrompt`·`alarmTextPrompt` — 태그 지시 없음) · `stripAllTags` ← `generatePrerenderClipText`·`generateDynamicAlarmTextWithVertex` · 스톡 프리셋에 태그 없음(회귀 `stock-clips.test.ts`) · `voice_profiles.preview_tag` 는 읽지도 쓰지도 않는다(다음 회차 DROP) |
+| 합성 모델 = `eleven_v4_turbo`(코드 상수) · 설정은 stability·similarity 둘 · 말끝 가공 없음 | — | — | `lib/tts-model.ts` 의 `TTS_MODEL_ID`·`TTS_VOICE_SETTINGS` ← `lib/elevenlabs.ts` `textToSpeech`·`lib/voice-provider.ts`·`scripts/prerender-stock-preview.ts`·`scripts/publish-stock-clips.ts`(회귀 `voice-provider-model.test.ts`·`elevenlabs.test.ts`·`publish-stock-clips-contract.test.ts`·`stock-clip-provider-text.test.ts`) · 시청본 지문 세대 `PIPELINE_VERSION`(`scripts/stock-preview-fingerprint.ts`) |
+| 캐시 키 범위(스톡 / 직접 입력은 그 사람) · 삭제 예약은 다시 넣으면 id 가 바뀐다 | — | — | `lib/audio-cache.ts` 의 `STOCK_TTS_CACHE_SCOPE`·`manualTtsCacheScope` ← `lib/stock-clips.ts` `generateStockClip`·`scripts/publish-stock-clips.ts`·`routes/tts.ts`(`isManualGeneration`) · `lib/audio-retention.ts` 의 `REFRESH_RESERVATION_ON_CONFLICT`(회귀 `publish-stock-clips-contract.test.ts`·`tts.test.ts`·`audio-retention.test.ts`) |
 
 ## 검증 방법
 

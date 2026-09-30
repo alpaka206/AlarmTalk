@@ -7,7 +7,7 @@ import { callerOwnerIds } from '../lib/caller-ids';
 import { typedRow } from '../lib/db-types';
 import { UUID_RE } from '../lib/validate';
 import { R2VoiceStorage } from '../lib/r2-storage';
-import { computeTtsCacheKey, generatedTtsObjectKey } from '../lib/audio-cache';
+import { computeTtsCacheKey, generatedTtsObjectKey, manualTtsCacheScope } from '../lib/audio-cache';
 import { loadAudioBytes, uint8ToBase64 } from '../lib/audio-loader';
 import { assertSameGroup } from '../lib/family-helpers';
 import {
@@ -21,14 +21,12 @@ import { recloneEvictedVoiceProfile } from '../lib/voice-recover';
 import {
   AlarmTextPreparationInvalidError,
   AlarmTextTranslationUnavailableError,
-  applyDeliveryTagPerSentence,
   generateDynamicAlarmTextWithVertex,
   generatePrerenderClipText,
   deriveAlarmDisplayText,
   normalizeAlarmTextWithoutTags,
   parseSpeechStyle,
   withVoiceEnergy,
-  fallbackTagForEnergy,
   prepareAlarmTextWithVertex,
   type WeatherSignal,
   type WeatherCondition,
@@ -309,16 +307,11 @@ function pickRandomPresetText(category: string, language: string): string | null
   return messages[randomIndex(messages.length)]!;
 }
 
-// 프리셋 문구 앞에 호칭을 붙인다. 프리셋은 '[brightly] 오늘은…' 처럼 delivery 태그로 시작하는데,
-// 호칭을 그 **앞**에 붙이면 태그가 문장 중간으로 밀려 호칭만 톤 지시 없이 읽힌다.
-// 그래서 선두 태그는 그대로 두고 그 뒤에 끼워 넣는다.
+// 프리셋 문구 앞에 호칭을 붙인다. 프리셋·미리듣기 고정 예문에는 태그가 없다(2026-09-30).
 function presetTextWithListenerTitle(text: string, listenerTitle: string | null): string {
   const title = listenerTitle?.trim();
   const base = text.trim();
-  if (!title || !base) return base;
-  const lead = base.match(/^\[[a-z][a-z -]{1,32}\]\s*/i)?.[0] ?? '';
-  const spoken = base.slice(lead.length);
-  if (!spoken || spoken.startsWith(title)) return base;
+  if (!title || !base || base.startsWith(title)) return base;
   // ⚠ **길이로 호칭을 떨어뜨리지 않는다**(2026-09-02 정정). 예전에는 결과가 200자를 넘으면
   //   호칭을 통째로 버렸는데, 그 200 은 **사용자가 직접 친 문구**의 상한이지 우리 프리셋의
   //   상한이 아니다. 실제로 영어 프리셋은 그 자체가 200자를 넘고(최장 308자), 그래서
@@ -326,7 +319,7 @@ function presetTextWithListenerTitle(text: string, listenerTitle: string | null)
   //   나가면서 호칭만 조용히 사라지는, 앞뒤가 안 맞는 동작이었다.
   //   호칭 자체는 이미 30자로 잘려 들어오므로(`normalizeRelationshipLabel`) 늘어나는
   //   길이는 최대 32자로 묶여 있다.
-  return `${lead}${title}, ${spoken}`;
+  return `${title}, ${base}`;
 }
 
 function draftPreviewText(language: string): string {
@@ -863,8 +856,7 @@ tts.post('/generate', async (c) => {
     );
   }
 
-  // 프리셋 문구는 STOCK_CLIP_PRESETS 에서 오고 '[brightly]' 같은 delivery 태그를 달고 온다.
-  // 사용자가 친 대괄호가 아니라 우리 마크업이므로 표시 문구에서는 벗겨야 한다(아래 messageText).
+  // 프리셋 문구는 STOCK_CLIP_PRESETS 에서 온다 — 사용자가 친 글이 아니다(아래 messageText 는 빈 원문으로 만든다).
   const presetTextUsed = !draftPreviewRequested && randomRequested && randomContext === 'preset';
   let requestText = draftPreviewRequested
     ? draftPreviewText('ko')
@@ -1098,13 +1090,6 @@ tts.post('/generate', async (c) => {
   let manualQuotaResult: { used: number; limit: number; remaining: number } | null = null;
   let previewClaimed = false;
   let activePreviewClaimToken: string | null = null;
-  // 미리듣기의 기본 태그. 차분한 목소리면 들뜬 `cheerfully` 대신 `warmly` 다(Codex #802) —
-  // 생성이 실패해 고정 예문으로 떨어지는 갈래에서도 결과 반대로 들리면 안 된다. 여기서는 사용자가
-  // **고른** 결만 본다. 분석이 끝나 추정 결을 알게 되면 생성 갈래가 그걸로 다시 정한다(아래).
-  // ⚠ 고정 예문으로 합성한 태그는 claim 이 `preview_tag` 에 남긴다 — 확정 뒤 재생은 그 값을 쓴다.
-  //   다시 계산하면 확정 뒤에 채워진 분석값 때문에 태그가 바뀌어 재생이 캐시를 빗나간다.
-  const draftPreviewDefaultTag = fallbackTagForEnergy('cheerfully', String(vp.voice_energy ?? ''));
-  let draftPreviewTag = draftPreviewDefaultTag;
 
   try {
     const requestedLanguage = draftPreviewRequested
@@ -1114,7 +1099,7 @@ tts.post('/generate', async (c) => {
     if (draftPreviewRequested) {
       // 미리듣기 문구를 keep(승격) 후 사전렌더될 greeting 과 같은 seed 로 '관계·호칭 톤 적응' 생성한다
       // — 사용자가 확정 전에 그 목소리의 실제 말투(관계에 맞는 어투 + 호칭)를 듣고 결정하게 하기 위함.
-      // 생성 문구는 요청마다 달라질 수 있으므로 첫 생성분을 draft 행(preview_text/preview_tag)에 영속해
+      // 생성 문구는 요청마다 달라질 수 있으므로 첫 생성분을 draft 행(preview_text)에 영속해
       // 재생을 결정적으로 만든다 — previewed_at 이후 재생은 캐시 히트로만 성립하므로 같은 문구가 필수.
       // 관계/호칭 수정 시 previewed_at 과 함께 리셋돼 새 문구로 재생성된다(voice-profile PATCH).
       // 실패(Vertex 미설정·모델 오류·검증 탈락) 시 위의 고정 예문(+호칭 접두어)으로 폴백해 미리듣기
@@ -1122,22 +1107,18 @@ tts.post('/generate', async (c) => {
       // 뒤에만 일어난다.
       const storedText =
         typeof vp.preview_text === 'string' && vp.preview_text.trim() ? vp.preview_text.trim() : null;
+      // ⚠ 합성은 태그 없이 그 문구 그대로다(2026-09-30 — `lib/vertex-translate.ts` 「태그」 머리말). 예전에는
+      //   `preview_tag` 로 톤 태그를 문장마다 입혀 합성했고 그 값을 영속했다 — 이제 읽지도 쓰지도 않는다.
       if (storedText) {
         requestText = storedText;
-        const storedTag = typeof vp.preview_tag === 'string' ? vp.preview_tag.trim() : '';
-        if (storedTag) draftPreviewTag = storedTag;
       } else if (vp.previewed_at) {
         // 이미 확정(previewed_at)됐는데 저장 문구가 없는 draft = 이 기능 이전(또는 고정 폴백으로 확정).
         // 그때 합성된 문구는 '고정 예문+호칭'이므로 새로 생성하면 캐시 키가 어긋나 재생이
         // VOICE_PREVIEW_UNAVAILABLE 이 된다 → 생성하지 않고 고정 폴백을 유지해 재생 캐시 히트를 지킨다.
-        // 태그는 그때 합성한 값(claim 이 남긴 `preview_tag`)을 쓴다. 없으면(이 규칙 이전) 기본값.
-        const storedTag = typeof vp.preview_tag === 'string' ? vp.preview_tag.trim() : '';
-        if (storedTag) draftPreviewTag = storedTag;
       } else {
         // 생성이 어디서 실패하든 합성은 **영속된 문구 아니면 고정 예문** 둘 중 하나여야 한다 — 생성만 되고
         // 영속되지 않은 문구로 합성하면, 그대로 확정했을 때 재생(고정 예문)이 캐시를 빗나간다.
         const fixedPreviewText = requestText;
-        let fixedPreviewTag = draftPreviewDefaultTag;
         try {
           const greetingSeed = CLONE_CLIP_SEEDS.find((s) => s.category === STOCK_GREETING_CATEGORY);
           // ⚠ **말투 분석을 잠깐 기다린다**(Codex #802). 등록 화면은 클론 직후 곧바로 여기로 오고 분석은
@@ -1151,36 +1132,19 @@ tts.post('/generate', async (c) => {
             analysisSettled = waited.settled;
             if (waited.settled) analyzedSpeechStyle = waited.speechStyle;
           }
-          // 분석이 끝났으면 폴백 태그도 실제 결(고른 값 > 추정값)을 따른다 — 생성이 실패해 고정 예문으로
-          // 떨어져도 차분으로 추정된 목소리가 `cheerfully` 로 들리지 않게(Codex #802).
-          if (analysisSettled) {
-            fixedPreviewTag = fallbackTagForEnergy(
-              'cheerfully',
-              withVoiceEnergy(parseSpeechStyle(analyzedSpeechStyle), vp.voice_energy)?.energy,
-            );
-            draftPreviewTag = fixedPreviewTag;
-          }
           if (greetingSeed && analysisSettled) {
             const generated = await generatePrerenderClipText(c.env, {
               seed: greetingSeed.seeds[0]!,
               relationshipLabel: normalizeRelationshipLabel(vp.relationship_label) ?? null,
               listenerTitle: draftPreviewListenerTitle,
               targetLanguage: storedPreviewLanguage,
-              defaultTag: greetingSeed.defaultTag,
               // 등록 녹음에서 분석한 화자 말투(사투리 등) — 미리듣기 문구를 그 말투로. 사용자가 고른
               // 목소리의 결(voice_energy)이 있으면 그게 앞선다(`SELECT *` 라 컬럼이 없던 창에도 안전).
               speechStyle: withVoiceEnergy(parseSpeechStyle(analyzedSpeechStyle), vp.voice_energy),
-              // 미리듣기는 인라인 태그를 벗겨 저장·재생한다 — 웃음을 넣어도 들리지 않으니 넣지 않는다.
-              allowLaughter: false,
             });
-            // ⚠ **여기 들어오는 문구는 태그를 벗겨서 쓴다**(2026-08-20).
-            // `generatePrerenderClipText` 는 이제 딜리버리 태그가 인라인으로 박힌 문구를
-            // 돌려준다. 그런데 이 값은 `preview_text` 로 저장돼 **사용자가 직접 고치는**
-            // 문구이고, 아래에서 `applyDeliveryTagPerSentence` 로 태그를 다시 입힌다 —
-            // 그대로 받으면 화면에 대괄호가 노출되고 합성 문구는 `[cheerfully] [cheerfully] …`
-            // 로 겹친다(테스트 `draft 미리듣기는 … 톤 적응 문구로 합성한다` 가 잡았다).
-            requestText = normalizeAlarmTextWithoutTags(generated.text) || generated.text;
-            if (generated.tag) draftPreviewTag = generated.tag;
+            // 태그 없는 문구다(`generatePrerenderClipText` 가 벗긴다) — `preview_text` 로 저장돼 **사용자가 직접
+            // 고치는** 문구이고, 그대로 합성한다.
+            requestText = generated.text;
             // 합성 전에 영속: 합성이 실패해도 재시도가 같은 문구를 쓰게(중복 생성 방지 + 캐시 정합).
             // 조건부(비어있을 때만) 쓰기 = first-writer-wins: 동시 첫-미리듣기 요청이 겹쳐도 늦은 쪽이
             // 이미 영속된(재생될) 문구를 덮어써 재생 결정성을 깨지 못한다. 지면 승자 문구를 재사용.
@@ -1194,7 +1158,7 @@ tts.post('/generate', async (c) => {
             // 문구를 남겨 재생 캐시 키를 어긋내는 것 방지(claim 과 동일한 5분 lease 기준).
             const persisted = await db.execute({
               sql: `UPDATE voice_profiles
-                    SET preview_text = ?, preview_tag = ?, updated_at = datetime('now')
+                    SET preview_text = ?, updated_at = datetime('now')
                     WHERE id = ? AND user_id IN (?, ?) AND deleted_at IS NULL
                       AND COALESCE(is_draft, 0) = 1
                       AND COALESCE(relationship_label, '') = ?
@@ -1205,11 +1169,8 @@ tts.post('/generate', async (c) => {
                       AND (preview_claimed_at IS NULL
                         OR preview_claimed_at <= datetime('now', '-5 minutes'))`,
               args: [
-                // 위에서 태그를 벗겨 `requestText` 로 쓴 그 문구를 그대로 저장한다.
-                // `generated.text`(태그 포함)를 저장하면 **저장본과 합성·표시본이 갈려**
-                // 다음 재생이 캐시를 빗나가고, 사용자가 고치는 화면에 대괄호가 뜬다.
+                // 합성·표시하는 그 문구를 그대로 저장한다 — 갈리면 다음 재생이 캐시를 빗나간다.
                 requestText,
-                draftPreviewTag,
                 body.voice_profile_id,
                 userPk,
                 userLoginId,
@@ -1220,7 +1181,7 @@ tts.post('/generate', async (c) => {
             });
             if ((persisted.rowsAffected ?? 0) === 0) {
               const winner = await db.execute({
-                sql: `SELECT preview_text, preview_tag FROM voice_profiles
+                sql: `SELECT preview_text FROM voice_profiles
                       WHERE id = ? AND user_id IN (?, ?) AND deleted_at IS NULL
                       LIMIT 1`,
                 args: [body.voice_profile_id, userPk, userLoginId],
@@ -1228,18 +1189,12 @@ tts.post('/generate', async (c) => {
               const winnerRow = winner.rows[0];
               const winnerText =
                 typeof winnerRow?.preview_text === 'string' ? winnerRow.preview_text.trim() : '';
-              if (winnerText) {
-                requestText = winnerText;
-                const winnerTag =
-                  typeof winnerRow?.preview_tag === 'string' ? winnerRow.preview_tag.trim() : '';
-                draftPreviewTag = winnerTag || draftPreviewDefaultTag;
-              }
+              if (winnerText) requestText = winnerText;
             }
           }
         } catch {
-          // 고정 예문 폴백 — 생성 뒤 영속 단계에서 던졌어도 고정 예문과 그 태그로 되돌린다.
+          // 고정 예문 폴백 — 생성 뒤 영속 단계에서 던졌어도 고정 예문으로 되돌린다.
           requestText = fixedPreviewText;
-          draftPreviewTag = fixedPreviewTag;
         }
       }
     }
@@ -1336,41 +1291,14 @@ tts.post('/generate', async (c) => {
     //   이미 더 빡빡하므로(원시 길이) 이 검사는 더해 주는 것이 없었다.
 
     const sourceLanguage = inferSynthesisLanguage(requestText, 'ko');
-    // 동적 모드는 생성 단계에서 이미 태그가 인라인된 {text} 를 한 호출로 받았으므로(순환 모순 제거),
-    // 2차 Vertex 호출(prepareAlarmTextWithVertex autoTag) 없이 그 문구를 그대로 쓴다.
-    // prepare는 preset/custom + 번역 경로 전용으로 남긴다.
+    // ⚠ **태그를 붙이지 않는다**(2026-09-30 — `lib/vertex-translate.ts` 「태그」 머리말). 미리듣기·동적 생성은
+    //   생성한 문구 그대로, 직접 입력·프리셋은 `prepareAlarmTextWithVertex` 가 번역할 때만 Gemini 를 부른다 —
+    //   같은 언어 직접 입력은 사용자가 친 글(글자 웃음만 `[laughs]`) 그대로다.
     let prepared: { text: string; translated: boolean; tags: string[] };
     if (draftPreviewRequested) {
-      // 톤 적응 생성이 성공했으면 그 delivery 태그를, 폴백(고정 예문)이면 기본 태그(`draftPreviewDefaultTag` — 차분이면 warmly)를 쓴다.
-      // 태그는 문장마다 다시 앞세워 끝까지 톤을 고정하고, 상한 초과 시 태그 없이 폴백한다
-      // (그때 tags 배열도 비워 메타와 합성 텍스트를 일치시킨다).
-      // 상한 200 = 아래 synthesisText 200자 검증과 동일 값 — 기본 300을 쓰면 태그 부착으로
-      // 200을 넘긴 텍스트가 폴백 없이 통과했다가 뒤늦게 TEXT_TOO_LONG 으로 거부된다.
-      const taggedText = applyDeliveryTagPerSentence(draftPreviewTag, requestText, 200);
-      const tagApplied = taggedText !== requestText;
-      prepared = {
-        text: taggedText,
-        translated: false,
-        tags: tagApplied ? [draftPreviewTag] : [],
-      };
+      prepared = { text: requestText, translated: false, tags: [] };
     } else if (dynamicGenerated) {
-      // ⚠ **모델이 배치한 인라인 태그를 살린다**(Codex #701 P2).
-      // 예전에는 `tags[0]` 하나를 뽑아 문장마다 다시 앞세웠다. 모델이 태그를 인라인으로
-      // 내기 시작하면 그 경로는 배치를 뭉갤 뿐 아니라, `tags` 가 빈 채로 남아
-      // `delivery_tags_json` 이 `[]` 가 되고 대괄호가 화면 문구로 샌다.
-      // `synthesisText` 가 있으면 그게 곧 합성 문구다(표시는 아래 `messageText` 가 태그 없는
-      // `dynamicGenerated.text` 를 쓴다). 없으면 예전대로 태그 하나를 문장마다 입힌다.
-      const dynamicTag = dynamicGenerated.tags[0] ?? '';
-      // 상한 200: 위 draft 미리듣기 경로와 동일 — 태그 부착이 200자 검증을 넘기지 않게 한다.
-      const taggedText =
-        dynamicGenerated.synthesisText ??
-        applyDeliveryTagPerSentence(dynamicTag, dynamicGenerated.text, 200);
-      const tagApplied = taggedText !== dynamicGenerated.text;
-      prepared = {
-        text: taggedText,
-        translated: false,
-        tags: tagApplied ? dynamicGenerated.tags : [],
-      };
+      prepared = { text: dynamicGenerated.text, translated: false, tags: [] };
     } else {
       const shouldTranslate =
         body.translate === true || (randomRequested && requestedLanguage !== sourceLanguage);
@@ -1378,30 +1306,23 @@ tts.post('/generate', async (c) => {
         targetLanguage: shouldTranslate ? requestedLanguage : sourceLanguage,
         sourceLanguage,
         translate: shouldTranslate,
-        autoTag: true,
         // 사용자가 친 ㅋㅋ·haha·www 를 글자로 읽지 않고 웃음소리(`[laughs]`)로 — 프리셋은 우리 대사라 켜지 않는다.
         speakTypedLaughter: !presetTextUsed,
-        // 차분한 목소리면 모델이 웃음을 넣지 않는다(사용자가 친 웃음은 그대로). 결은 사전렌더와 같은 값이다 —
-        // 고른 값 > 녹음 전사 추정값(`withVoiceEnergy`). `vp` 는 `SELECT *` 라 컬럼이 없는 배포 창에도 안전하다.
-        calmVoice:
-          withVoiceEnergy(parseSpeechStyle(vp.speech_style), vp.voice_energy)?.energy === 'calm',
       });
     }
     const synthesisText = prepared.text;
-    // 표시/저장 문구(messageText): 실제 음성 텍스트(synthesisText, 번역됐으면 번역본)에서
-    // '우리가 자동으로 맨 앞에 붙인 delivery 태그'만 벗긴 값. requestText 에 사용자가 친 대괄호가
-    // 있으면 자동 태그가 아니므로 원문 보존, 없으면 맨 앞 태그 1개만 제거한다(deriveAlarmDisplayText).
+    // 표시/저장 문구(messageText): 실제 음성 텍스트(synthesisText, 번역됐으면 번역본)에서 서버가 넣은 대괄호만
+    // 벗긴 값. requestText 에 사용자가 친 대괄호가 있으면 원문 보존, 없으면 대괄호를 벗긴다(deriveAlarmDisplayText).
     // → (1) 번역 경로에서도 화면 문구가 음성 언어와 일치하고, (2) '[after lunch]'·'[calm]'만 입력 등
-    //   사용자 대괄호가 안 지워지며, (3) 모델이 붙인 비승인 태그도 화면엔 새지 않는다.
+    //   사용자 대괄호가 안 지워진다.
     //
-    // 프리셋 경로는 사용자가 친 문구가 없다(우리 스톡 문구 + 그 안의 delivery 태그). 원문을
-    // 그대로 넘기면 태그를 '사용자 대괄호'로 보고 보존해 화면에 '[brightly] …' 가 샌다.
-    // 빈 원문을 넘겨 태그를 벗긴다 — 사전렌더 경로(stock-clips.ts stripDeliveryTags)와 같은 결과.
+    // 프리셋 경로는 사용자가 친 문구가 없다(우리 스톡 문구). 빈 원문을 넘겨 대괄호를 벗긴다 — 옛 태그가 남은
+    // 문구에서도 화면에 '[brightly] …' 가 새지 않게.
     //
     // ⚠ **같은 언어의 직접 입력은 사용자가 친 글에서 만든다**(합성 문구가 아니라). 합성 문구의 `[laughs]` 는
     //   사용자가 친 ㅋㅋ·haha 를 소리로 바꾼 것이라, 합성 문구에서 태그를 벗기면 그 웃음이 화면에서 사라진다.
-    //   같은 언어면 합성 문구의 글자는 원문과 같다(`normalizeSameLanguageTaggedText` 가 맞춰 본다) — 다른 건
-    //   태그와 웃음뿐이다. 번역은 합성 문구(번역문)에서 만든다.
+    //   같은 언어면 합성 문구는 원문에서 웃음만 바꾼 것이다(`prepareAlarmTextWithVertex` — 태그를 붙이지 않는다).
+    //   번역은 합성 문구(번역문)에서 만든다.
     const typedSameLanguage =
       !draftPreviewRequested && !dynamicGenerated && !presetTextUsed && !prepared.translated;
     const messageText = dynamicGenerated
@@ -1475,6 +1396,12 @@ tts.post('/generate', async (c) => {
             languageCode: synthesisLanguage,
             text: cacheKeyText,
             outputFormat: attempt.outputFormat,
+            // ⚠ 직접 입력은 **그 사람 범위**로 키를 만든다(Codex #840). 원장 해시는 전역 UNIQUE 인데 오브젝트는
+            //   주인 아래에 놓인다 — 두 사람이 같은 기본 목소리로 같은 글을 치거나 스톡 문장을 그대로 치면 키가 겹쳐
+            //   두 번째 원장 행이 조용히 빠지고, 그 오브젝트는 계정 삭제에도 못 찾는다. 직접 입력 캐시는 원래 남과
+            //   나누지 않으므로(`anyUser` 가 false) 잃는 적중이 없다. 초안 미리듣기는 범위 없이 둔다(초안 목소리는
+            //   그 사람 것뿐이고, 스톡 키는 `STOCK_TTS_CACHE_SCOPE` 로 갈려 있다).
+            scope: isManualGeneration ? manualTtsCacheScope(userPk) : undefined,
           });
           return { attempt, cacheKey };
         }),
@@ -1532,11 +1459,8 @@ tts.post('/generate', async (c) => {
     if (draftPreviewRequested && !vp.previewed_at) {
       const previewClaimToken = crypto.randomUUID();
       const claimed = await db.execute({
-        // 영속된 문구가 없으면(고정 예문으로 합성) 합성하는 태그를 `preview_tag` 에 남긴다 — 확정 뒤 재생이
-        // 같은 태그로 캐시를 맞힌다. 영속된 문구가 있으면 그 태그를 그대로 둔다.
         sql: `UPDATE voice_profiles
               SET preview_claimed_at = datetime('now'), preview_claim_token = ?,
-                  preview_tag = CASE WHEN COALESCE(preview_text, '') = '' THEN ? ELSE preview_tag END,
                   updated_at = datetime('now')
               WHERE id = ? AND user_id IN (?, ?) AND deleted_at IS NULL
                 AND COALESCE(is_draft, 0) = 1 AND status = 'ready' AND previewed_at IS NULL
@@ -1546,7 +1470,6 @@ tts.post('/generate', async (c) => {
                 AND (preview_claimed_at IS NULL OR preview_claimed_at <= datetime('now', '-5 minutes'))`,
         args: [
           previewClaimToken,
-          draftPreviewTag,
           body.voice_profile_id,
           userPk,
           userLoginId,

@@ -1,11 +1,6 @@
 export interface Env {
   ELEVENLABS_API_KEY: string;
-  /**
-   * 합성 모델 id(선택). 없으면 `eleven_v3` — **설정하지 않는다.** 바꾸려면 재렌더 계획이 먼저다:
-   * 게시된 클립은 전부 v3 로 구웠고 모델만 바꾸면 다시 굽지 않는다(`lib/voice-provider.ts` 의 `ttsModelId`).
-   * 되돌릴 때는 `wrangler secret delete` 다 — `secrets:sync` 는 빈 값을 건너뛰어 올라간 값이 남는다.
-   */
-  ELEVENLABS_TTS_MODEL_ID?: string;
+  // 합성 모델은 워커 변수가 아니라 `lib/tts-model.ts` 의 `TTS_MODEL_ID` 상수다(2026-09-30, `ELEVENLABS_TTS_MODEL_ID` 제거).
   TURSO_DATABASE_URL: string;
   TURSO_AUTH_TOKEN: string;
   GOOGLE_CLIENT_ID: string;

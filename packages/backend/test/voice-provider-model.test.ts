@@ -1,6 +1,6 @@
-// 합성 모델 id 는 워커 변수 `ELEVENLABS_TTS_MODEL_ID` 로 바꿀 수 있지만 **기본은 eleven_v3** 다(스펙
-// `docs/spec/voice-and-message.md` §10). 게시된 클립이 전부 v3 라 비워 두는 것이 운영값이다 — 기본값이
-// 흔들리면 스톡 게시 스크립트(`MODEL_ID = 'eleven_v3'`)와 캐시 키가 갈라진다.
+// 합성 모델 id 는 코드 상수 `TTS_MODEL_ID`(`lib/tts-model.ts`, eleven_v4_turbo) 하나가 정한다(스펙
+// `docs/spec/voice-and-message.md` §10). 워커 변수 `ELEVENLABS_TTS_MODEL_ID` 로 바꾸던 길은 없앴다 — 그 값이
+// 남아 있으면 서버와 스톡 스크립트의 캐시 키·지문이 서로 다른 모델을 가리키게 된다.
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mockTextToSpeech = vi.fn();
@@ -17,43 +17,31 @@ function attemptFor(env: Record<string, string | undefined>) {
   const attempts = createSynthesisAttempts({
     env: { ELEVENLABS_API_KEY: 'test-key', ...env } as never,
     profile: { elevenlabs_voice_id: 'voice-1' },
-    text: '[cheerfully] 일어나',
+    text: '일어나',
     language: 'ko',
   });
   expect(attempts).toHaveLength(1);
   return attempts[0]!;
 }
 
-describe('합성 모델 id — ELEVENLABS_TTS_MODEL_ID', () => {
+describe('합성 모델 id — 코드 상수 eleven_v4_turbo', () => {
   beforeEach(() => {
     mockTextToSpeech.mockReset();
     mockTextToSpeech.mockResolvedValue(new Uint8Array([1]).buffer);
   });
 
-  it('비어 있으면 eleven_v3 로 합성하고, 캐시 키에 들어갈 modelId 도 같다', async () => {
-    for (const value of [undefined, '', '   ']) {
-      mockTextToSpeech.mockClear();
-      const attempt = attemptFor({ ELEVENLABS_TTS_MODEL_ID: value });
-      expect(attempt.modelId).toBe('eleven_v3');
-      const result = await attempt.synthesize();
-      expect(result.modelId).toBe('eleven_v3');
-      expect(mockTextToSpeech).toHaveBeenCalledWith(
-        'voice-1',
-        '[cheerfully] 일어나',
-        expect.objectContaining({ model_id: 'eleven_v3' }),
-      );
-    }
+  it('eleven_v4_turbo 로 합성하고, 캐시 키에 들어갈 modelId 도 같다', async () => {
+    const attempt = attemptFor({});
+    expect(attempt.modelId).toBe('eleven_v4_turbo');
+    const result = await attempt.synthesize();
+    expect(result.modelId).toBe('eleven_v4_turbo');
+    expect(mockTextToSpeech).toHaveBeenCalledWith('voice-1', '일어나', { language_code: 'ko' });
   });
 
-  it('값이 있으면 그 모델로 합성하고 modelId(캐시 키)도 그 값이다', async () => {
-    const attempt = attemptFor({ ELEVENLABS_TTS_MODEL_ID: ' eleven_v4 ' });
-    expect(attempt.modelId).toBe('eleven_v4');
+  it('워커에 옛 ELEVENLABS_TTS_MODEL_ID 가 남아 있어도 무시한다', async () => {
+    const attempt = attemptFor({ ELEVENLABS_TTS_MODEL_ID: 'eleven_v3' });
+    expect(attempt.modelId).toBe('eleven_v4_turbo');
     const result = await attempt.synthesize();
-    expect(result.modelId).toBe('eleven_v4');
-    expect(mockTextToSpeech).toHaveBeenCalledWith(
-      'voice-1',
-      '[cheerfully] 일어나',
-      expect.objectContaining({ model_id: 'eleven_v4' }),
-    );
+    expect(result.modelId).toBe('eleven_v4_turbo');
   });
 });

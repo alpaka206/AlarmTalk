@@ -817,9 +817,9 @@ voiceProfile.post('/:id/preview-played', async (c) => {
 
 // 등록 미리듣기 문구 직접 수정(초안 전용) — "말투가 마음에 안 들면 수정" 플로우.
 // 수정한 문구가 이후 미리듣기 합성 문구(캐시 키)이자 사전렌더 톤 스타일 레퍼런스가 된다.
-// previewed_at/claim 을 함께 리셋해 수정본을 끝까지 다시 들어야 승격(keep)할 수 있게 하고,
-// preview_tag 도 함께 비운다 — 이전 문구 기준으로 골랐던 delivery 태그가 수정본에 그대로
-// 붙으면(예: 차분한 수정본이 [excited] 로) 어긋나므로, 수정본은 중립 기본 태그로 합성된다.
+// previewed_at/claim 을 함께 리셋해 수정본을 끝까지 다시 들어야 승격(keep)할 수 있게 한다.
+// 합성은 태그 없이 그 문구 그대로다(2026-09-30). `voice_profiles.preview_tag` 는 더 읽지도 쓰지도 않는다 —
+// 컬럼은 다음 회차 마이그레이션에서 DROP 한다(그때 이 파일에 참조가 남으면 안 된다).
 voiceProfile.patch('/:id/preview-text', async (c) => {
   const ids = ownerIds(c);
   const db = getDB(c.env);
@@ -863,7 +863,7 @@ voiceProfile.patch('/:id/preview-text', async (c) => {
   const ph = ids.map(() => '?').join(',');
   const updated = await db.execute({
     sql: `UPDATE voice_profiles
-          SET preview_text = ?, preview_tag = NULL, previewed_at = NULL,
+          SET preview_text = ?, previewed_at = NULL,
               preview_claimed_at = NULL, preview_claim_token = NULL,
               updated_at = datetime('now')
           WHERE id = ? AND user_id IN (${ph}) AND deleted_at IS NULL
@@ -1546,7 +1546,6 @@ voiceProfile.patch('/:id', async (c) => {
     updates.push('preview_claim_token = NULL');
     // 관계가 바뀌면 톤 적응 미리듣기 문구도 무효 — 리셋해 다음 미리듣기가 새 관계로 재생성되게 한다.
     updates.push('preview_text = NULL');
-    updates.push('preview_tag = NULL');
   }
   if (hasListenerTitle) {
     updates.push('listener_title = ?');
@@ -1556,7 +1555,6 @@ voiceProfile.patch('/:id', async (c) => {
       updates.push('preview_claimed_at = NULL');
       updates.push('preview_claim_token = NULL');
       updates.push('preview_text = NULL');
-      updates.push('preview_tag = NULL');
     }
   }
   updates.push("updated_at = datetime('now')");
@@ -1768,7 +1766,7 @@ voiceProfile.patch('/:id/relationship', async (c) => {
       sql: `UPDATE voice_profiles
             SET relationship_label = ?, listener_title = ?,${hasVoiceEnergy ? ' voice_energy = ?,' : ''} previewed_at = NULL,
                 preview_claimed_at = NULL, preview_claim_token = NULL,
-                preview_text = NULL, preview_tag = NULL,
+                preview_text = NULL,
                 updated_at = datetime('now')
             WHERE id = ? AND user_id IN (?, ?) AND deleted_at IS NULL
               AND COALESCE(is_draft, 0) = 1`,

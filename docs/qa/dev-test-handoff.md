@@ -206,6 +206,42 @@
   수만 건이라 DB 행이 끝 + 3일 뒤 몇 시간 안에 지워져도 파일 삭제는 며칠~몇 주 더 걸린다. `pending_external_deletions`
   를 지켜보고, 필요하면 드레인 용량을 따로 늘리는 PR.
 
+## ElevenLabs v4 Turbo + 태그 제거 — 코드는 develop, **다시 굽기는 사람이 듣고 나서** (2026-09-30)
+
+합성 모델이 `eleven_v4_turbo` 다 — `packages/backend/src/lib/tts-model.ts` 의 `TTS_MODEL_ID` 상수 하나이고 서버와 스톡
+스크립트가 같이 쓴다. 워커 변수 `ELEVENLABS_TTS_MODEL_ID` 는 없앴다(원복도 코드). 설정은 stability 0.5·similarity 0.8
+둘뿐(v4 는 style·speed 를 조용히 무시한다). **Gemini 에게 오디오 태그를 쓰라고 하지 않는다** — 같은 언어 직접
+입력은 Gemini 를 아예 부르지 않고, 사전렌더·동적 생성·번역은 모델이 낸 태그를 벗긴다. 스톡 프리셋 60문장의 태그도
+뺐다(화면 문구는 그대로). 남은 대괄호는 사용자가 친 것과 글자 웃음(ㅋㅋ)을 바꾼 `[laughs]` 뿐이다. 근거와 측정은
+`docs/spec/voice-and-message.md` §10, 절차는 `docs/ops/tts-model-rerender.md`.
+
+- v3 말끝 보완(문장 끝 ` ...`·mp3 끝 무음 0.366초)을 뺐다. 2026-09-30 A/B(기본 목소리 4 × 태그 없는 2문장 × 꼬리
+  있음/없음, 16개): 꼬리 없이도 끝 무음 0.14~0.29초·끝/평균 세기 ≤0.44, 받아쓰기에 덧붙은 말 없음. 산출물은
+  세션 스크래치(`v4t-tail/`)에만 있다.
+- 번들 인사말 12개(안드로이드 `res/raw` = 랜딩 `public/audio`, iOS 는 안드로이드 파일을 참조)와 안드로이드 랜딩
+  미리듣기를 v4 Turbo 로 다시 구웠다. 옛 v3 대비 음량 −0.3~−8.4dB, 도현 +3.6~+6.2반음·시우 +2.6~+4.7반음(받아쓰기는
+  원문 그대로).
+- 클론 사전렌더는 마이그레이션 **#124**(`refresh-stock-clips-v4-turbo-…`)가 굽혀 있는 클론을 교체 회차로 큐에
+  다시 넣는다 — 배포 직후부터 cron 이 같은 message_id 에 덮어쓴다(문구도 Gemini 가 새로 쓴다). 새 등록은
+  대기열 앞에 선다.
+- 시스템 스톡은 **자동으로 바뀌지 않는다** — `publish:stock` 의 교체 갈래로 같은 message_id 에 소리만 바꾼다(은퇴
+  아님 → 차단 화면 없음).
+
+남은 일(이 순서로 — `docs/ops/tts-model-rerender.md`):
+- [ ] develop 머지 뒤 dev: 새 직접 입력·새 클론이 v4 Turbo 인지(`generated_audio_assets.model_id`), #124 로 dev 클론
+      재렌더가 도는지(큐 `pending`·`refresh_existing = 1` 이 줄어드는가).
+- [ ] `npm run preview:stock`(240개 — 약 31,300자 ≈ 8.8천 크레딧) → **사람이 듣는다**(남자 목소리 음높이·음량).
+- [ ] `npm run publish:stock -- --env dev`(`[교체]` 240) → dev 폰으로 기본 목소리·클론 알람 확인. 작게 들리면 클라
+      고정 보정 게인을 따로 정한다(스펙 §10 「위험」).
+- [ ] main 머지 → prod #124 → 곧바로 `npm run publish:stock -- --env prod` → 완료 확인 쿼리.
+- [ ] 번들 인사말을 실은 앱 릴리스.
+- [ ] 치우기(아무 때나 — 코드가 읽지 않는다): 워커에 `ELEVENLABS_TTS_MODEL_ID` 가 있으면
+      `npx wrangler secret delete ELEVENLABS_TTS_MODEL_ID --env dev`·`--env production`(없으면 할 일 없음).
+- [ ] 다음 회차 마이그레이션: `voice_profiles.preview_tag` DROP(코드는 이제 읽지도 쓰지도 않는다).
+- 배포 순간 확정만 하고 정식 등록 전이던 초안은 다시 들으려 하면 `VOICE_PREVIEW_UNAVAILABLE` 이 된다(모델 id 가
+  캐시 키에 들어간다). 등록은 그대로 되고, 문구·관계·호칭을 고치면 새로 만든다.
+- 처리방침 메모(아래 Gemini 절 끝): 직접 입력 문구는 이제 **번역할 때만** Vertex 로 간다.
+
 ## Gemini 3.8 Flash — 모델은 **코드 상수** 하나 (2026-09-30)
 
 모든 Gemini 호출은 `packages/backend/src/lib/vertex-translate.ts` 의 `VERTEX_MODEL`(`gemini-3.8-flash`, 지역 `us`)

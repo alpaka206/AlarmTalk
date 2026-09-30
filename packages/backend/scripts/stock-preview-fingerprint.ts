@@ -3,7 +3,7 @@
  *
  * ⚠ 파일이 있다는 것만으로 최신이라고 보면 안 된다(2026-09-03 리뷰 15차). 파일 이름은
  *   `<카테고리>_<변형>.mp3` 라 **대사가 바뀌어도 그대로**고, 목소리를 갈아도 그대로다.
- *   실제로 이 작업 중에 그 함정을 밟았다 — `withClosingBreath` 를 빼먹고 구운 80개와
+ *   실제로 이 작업 중에 그 함정을 밟았다 — v3 시절 여운 꼬리(` ...`)를 빼먹고 구운 80개와
  *   붙여서 구운 160개가 **같은 이름으로 섞였고**, 바이트 크기로는 구분되지 않았다
  *   (v3 는 매번 다르게 합성한다). 그대로 게시했으면 사람이 들어 본 소리와 다른 것이
  *   프로덕션에 올라갔을 것이다.
@@ -20,11 +20,13 @@ import { createHash } from 'node:crypto';
 import { resolve } from 'node:path';
 
 /**
- * 후처리 파이프라인의 세대. `withClosingBreath`·`appendMp3TrailingSilence` 처럼
- * **바이트를 바꾸는 단계**를 더하거나 빼면 이 값을 올린다 — 대사가 그대로여도 소리가
- * 달라지므로 지문이 갈라져야 한다.
+ * 후처리 파이프라인의 세대. 여운 꼬리·끝 무음처럼 **바이트를 바꾸는 단계**를 더하거나 빼면 이 값을
+ * 올린다 — 대사가 그대로여도 소리가 달라지므로 지문이 갈라져야 한다.
+ *
+ * - `closing-breath+mp3-silence@1`: eleven_v3 — 문장 끝 ` ...` + mp3 끝 무음 0.366초.
+ * - `plain@2`(2026-09-30): eleven_v4_turbo — 둘 다 뺐다. 받은 바이트를 그대로 쓴다.
  */
-const PIPELINE_VERSION = 'closing-breath+mp3-silence@1';
+const PIPELINE_VERSION = 'plain@2';
 
 const FINGERPRINT_FILE = '_fingerprints.json';
 
@@ -33,7 +35,7 @@ export interface FingerprintInput {
   modelId: string;
   outputFormat: string;
   voiceSettings: Record<string, number | boolean>;
-  /** 제공자에게 실제로 보내는 글자(여운 꼬리 포함). */
+  /** 제공자에게 실제로 보내는 글자. */
   providerText: string;
 }
 

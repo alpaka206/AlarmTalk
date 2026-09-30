@@ -2,21 +2,17 @@ import type { Client } from '@libsql/client/web';
 import type { Env } from '../types';
 import { R2VoiceStorage } from './r2-storage';
 import { sendVoiceShareChangedPush } from './fcm';
-import { computeTtsCacheKey, generatedTtsObjectKey } from './audio-cache';
+import { computeTtsCacheKey, generatedTtsObjectKey, STOCK_TTS_CACHE_SCOPE } from './audio-cache';
 import { createSynthesisAttempts, normalizeSynthesisLanguage } from './voice-provider';
 import {
-  extractDeliveryTags,
   parseSpeechStyle,
   withVoiceEnergy,
-  prepareAlarmTextWithVertex,
   generatePrerenderClipText,
   alarmTextRejectionReasonOf,
-  TAG_BODY_PATTERN,
   type SpeechStyle,
   type AlarmTextRejectionReason,
 } from './vertex-translate';
 import { withWriteTransaction, type DbExecutor } from './transactions';
-import { appendMp3TrailingSilence } from './mp3-silence';
 import { missingConsentType, SENSITIVE_REQUIRED_CONSENTS } from './consent';
 import { enqueueExternalDeletion } from './audio-retention';
 
@@ -31,10 +27,18 @@ export const STOCK_GREETING_CATEGORY = 'greeting';
 
 /**
  * 스톡 클립 프리셋 — 2026-07-19 확정 대사(voice-preview/대사.md)의 3개 언어 '리터럴'
- * 텍스트다(딜리버리 태그 포함, 예보 전달어법 `~대요`). 합성 시 번역/자동태깅(Vertex)
- * 없이 이 문구가 그대로 ElevenLabs 로 가므로, 재시드해도 항상 같은 문구가 나온다.
- * dev/prod 에 시딩된 실데이터(messages is_preset=1)와 문구가 일치한다 — 문구를 바꾸면
- * /api/admin/seed-stock-clips 로 재시드해야 실데이터에 반영된다.
+ * 텍스트다(예보 전달어법 `~대요`). 합성 시 번역(Vertex) 없이 이 문구가 그대로 ElevenLabs 로
+ * 가므로, 다시 구워도 항상 같은 문구가 나온다(`systemStockTexts`).
+ *
+ * ⚠ **대괄호 태그를 넣지 말 것**(2026-09-30, eleven_v4_turbo). 예전에는 문장마다 `[warmly]` 같은
+ *   태그를 달았다 — v3 는 태그가 있어야 연기했다. v4 Turbo 는 문장으로 결을 잡고 태그는 올리는 쪽으로만
+ *   크게 먹어(스펙 §10) 60문장 전부에서 뺐다. 뺀 결과는 그때 화면에 보이던 문구(태그를 벗긴
+ *   `messages.text`)와 **한 글자도 같다** — 앱에 보이는 글자는 그대로이고 소리만 새로 굽는다.
+ *   회귀 테스트: `test/stock-clips.test.ts`.
+ *
+ * 문구를 바꾸면 무효화 마이그레이션(이름 끝에 문구 지문 — `STOCK_FINGERPRINT_IN_NAME`)을 함께 넣고,
+ * 시청본을 다시 구워(`npm run preview:stock`) 게시한다(`npm run publish:stock` — 같은 message_id 에 소리만
+ * 갈아 끼운다). 절차는 `docs/ops/tts-model-rerender.md`.
  *
  * 카테고리를 늘리려면 여기에 추가하면 findMissingStockTargets 가 자동으로
  * (보이스 × 언어 × variant) 매트릭스를 채운다.
@@ -54,37 +58,37 @@ export const STOCK_CLIP_PRESETS = [
     category: 'weather',
     texts: {
       ko: [
-        '[brightly] 오늘은 괜히 어디론가 나가고 싶어질 만큼 날씨가 좋대요. [warmly] 이런 날 계속 누워 있기엔 좀 아깝잖아요. [encouraging] 슬슬 일어나서... 산책이라도 하러 가볼까요?',
-        '[warmly] 오늘은 비가 올 수 있대요. 비 오는 날엔 빗소리 들으면서 조금만 더 누워 있고 싶어지죠... [encouraging] 그래도 이제 슬슬 일어나 볼까요? [caring] 나갈 때는 우산 꼭 챙겨요.',
-        '[brightly] 오늘은 눈이 올 수 있대요. 눈 내리는 건 가만히 바라보는 것만으로도 참 예쁜 것 같아요. [encouraging] 일단 이불부터 걷고, 창밖을 한 번 볼까요? [caring] 나갈 때는 따뜻하게 입고, 길이 미끄러울 수 있으니까 천천히 가요.',
-        '[caring] 오늘은 미세먼지가 심하대요. 겉으로는 괜찮아 보여도 공기가 답답할 수 있어요. [firmly] 이런 날은 조금 귀찮더라도 마스크 꼭 챙겨요. [encouraging] 공기는 좀 답답하더라도 아침은 힘차게 시작해 볼까요?',
-        '[warmly] 오늘은 하늘이 흐리대요. 이런 날은 아침이 와도 괜히 더 누워 있고 싶어지죠. [encouraging] 그래도 계속 누워 있으면 더 일어나기 싫어질 테니까... [brightly] 일단 커튼부터 열고, 하루를 시작해 볼까요?',
-        '[concerned] 오늘 아침은 안개가 짙대요. 앞이 잘 안 보이면 평소보다 가는 데 시간이 조금 더 걸릴 수도 있어요. [encouraging] 조금 여유 있게 준비하려면, 이제 일어나야겠죠? [firmly] 나갈 때는 앞을 잘 살피고, 서두르지 말고 천천히 가요.',
-        '[warmly] 오늘은 정말 덥대요. 이런 날은 에어컨 바람만 쐬면서 하루 종일 쉬고 싶어지죠. [encouraging] 그래도 더 더워지기 전에 슬슬 일어나 볼까요? [caring] 물 자주 마시고, 한낮에는 너무 무리하지 말아요.',
-        '[caring] 오늘은 많이 춥대요. 이런 날은 이불 밖으로 나오기가 정말 싫어지죠. [warmly] 그래도 따뜻한 물로 세수하면 잠이 조금 깰 거예요... 이제 용기 내서 일어나 볼까요? [caring] 나갈 때는 옷 따뜻하게 챙겨 입는 것도 잊지 말고요.',
-        '[apologetically] 오늘은 날씨 정보를 불러오지 못했어요. [caring] 나가기 전에 창밖을 한 번 보고, 날씨도 꼭 확인해 주세요. [cheerfully] 날씨는 못 알려 드렸지만... 이제 슬슬 일어나서 오늘을 시작해 볼까요?',
+        '오늘은 괜히 어디론가 나가고 싶어질 만큼 날씨가 좋대요. 이런 날 계속 누워 있기엔 좀 아깝잖아요. 슬슬 일어나서... 산책이라도 하러 가볼까요?',
+        '오늘은 비가 올 수 있대요. 비 오는 날엔 빗소리 들으면서 조금만 더 누워 있고 싶어지죠... 그래도 이제 슬슬 일어나 볼까요? 나갈 때는 우산 꼭 챙겨요.',
+        '오늘은 눈이 올 수 있대요. 눈 내리는 건 가만히 바라보는 것만으로도 참 예쁜 것 같아요. 일단 이불부터 걷고, 창밖을 한 번 볼까요? 나갈 때는 따뜻하게 입고, 길이 미끄러울 수 있으니까 천천히 가요.',
+        '오늘은 미세먼지가 심하대요. 겉으로는 괜찮아 보여도 공기가 답답할 수 있어요. 이런 날은 조금 귀찮더라도 마스크 꼭 챙겨요. 공기는 좀 답답하더라도 아침은 힘차게 시작해 볼까요?',
+        '오늘은 하늘이 흐리대요. 이런 날은 아침이 와도 괜히 더 누워 있고 싶어지죠. 그래도 계속 누워 있으면 더 일어나기 싫어질 테니까... 일단 커튼부터 열고, 하루를 시작해 볼까요?',
+        '오늘 아침은 안개가 짙대요. 앞이 잘 안 보이면 평소보다 가는 데 시간이 조금 더 걸릴 수도 있어요. 조금 여유 있게 준비하려면, 이제 일어나야겠죠? 나갈 때는 앞을 잘 살피고, 서두르지 말고 천천히 가요.',
+        '오늘은 정말 덥대요. 이런 날은 에어컨 바람만 쐬면서 하루 종일 쉬고 싶어지죠. 그래도 더 더워지기 전에 슬슬 일어나 볼까요? 물 자주 마시고, 한낮에는 너무 무리하지 말아요.',
+        '오늘은 많이 춥대요. 이런 날은 이불 밖으로 나오기가 정말 싫어지죠. 그래도 따뜻한 물로 세수하면 잠이 조금 깰 거예요... 이제 용기 내서 일어나 볼까요? 나갈 때는 옷 따뜻하게 챙겨 입는 것도 잊지 말고요.',
+        '오늘은 날씨 정보를 불러오지 못했어요. 나가기 전에 창밖을 한 번 보고, 날씨도 꼭 확인해 주세요. 날씨는 못 알려 드렸지만... 이제 슬슬 일어나서 오늘을 시작해 볼까요?',
       ],
       en: [
-        "[brightly] The weather's so nice today, it makes you want to head out somewhere. [warmly] It'd be a shame to stay in bed on a day like this, wouldn't it? [encouraging] How about getting up... and going for a walk?",
-        "[warmly] There's a chance of rain today. Rainy days make you want to stay in bed a little longer and listen to the rain... [encouraging] Still, how about getting up now? [caring] And don't forget your umbrella when you head out.",
-        "[brightly] There's a chance of snow today. There's something so beautiful about just watching it fall. [encouraging] Let's pull back the covers and take a look outside. [caring] Dress warmly when you go out, and take it slow. The roads may be slippery.",
-        "[caring] The air quality is pretty poor today. It may look fine outside, but the air could still feel heavy. [firmly] Even if it's a hassle, make sure to grab a mask before you go out. [encouraging] The air may not be great, but let's start the morning on a bright note.",
-        "[warmly] It's going to be cloudy today. Mornings like this make it even harder to get out of bed, don't they? [encouraging] But the longer you stay there, the harder it gets... [brightly] Let's start by opening the curtains and getting the day going.",
-        "[concerned] It's pretty foggy this morning. If visibility is low, it could take a little longer than usual to get where you're going. [encouraging] If you want a little extra time, it might be time to get up. [firmly] When you head out, keep an eye on what's ahead and take it slow.",
-        "[warmly] It's going to be really hot today. On days like this, you just want to sit in front of the air conditioner all day, don't you? [encouraging] Still, how about getting up before it gets even hotter? [caring] Drink plenty of water, and don't push yourself too hard in the middle of the day.",
-        "[caring] It's going to be very cold today. On days like this, getting out from under the covers feels almost impossible, doesn't it? [warmly] But washing your face with warm water should help wake you up a little... so, shall we be brave and get up? [caring] And don't forget to dress warmly when you go out.",
-        "[apologetically] I couldn't load today's weather information. [caring] Take a look outside and be sure to check the forecast before you head out. [cheerfully] I couldn't tell you the weather... but how about getting up and starting your day?",
+        "The weather's so nice today, it makes you want to head out somewhere. It'd be a shame to stay in bed on a day like this, wouldn't it? How about getting up... and going for a walk?",
+        "There's a chance of rain today. Rainy days make you want to stay in bed a little longer and listen to the rain... Still, how about getting up now? And don't forget your umbrella when you head out.",
+        "There's a chance of snow today. There's something so beautiful about just watching it fall. Let's pull back the covers and take a look outside. Dress warmly when you go out, and take it slow. The roads may be slippery.",
+        "The air quality is pretty poor today. It may look fine outside, but the air could still feel heavy. Even if it's a hassle, make sure to grab a mask before you go out. The air may not be great, but let's start the morning on a bright note.",
+        "It's going to be cloudy today. Mornings like this make it even harder to get out of bed, don't they? But the longer you stay there, the harder it gets... Let's start by opening the curtains and getting the day going.",
+        "It's pretty foggy this morning. If visibility is low, it could take a little longer than usual to get where you're going. If you want a little extra time, it might be time to get up. When you head out, keep an eye on what's ahead and take it slow.",
+        "It's going to be really hot today. On days like this, you just want to sit in front of the air conditioner all day, don't you? Still, how about getting up before it gets even hotter? Drink plenty of water, and don't push yourself too hard in the middle of the day.",
+        "It's going to be very cold today. On days like this, getting out from under the covers feels almost impossible, doesn't it? But washing your face with warm water should help wake you up a little... so, shall we be brave and get up? And don't forget to dress warmly when you go out.",
+        "I couldn't load today's weather information. Take a look outside and be sure to check the forecast before you head out. I couldn't tell you the weather... but how about getting up and starting your day?",
       ],
       ja: [
-        '[brightly] 今日はどこかへ出かけたくなるくらい、いいお天気だそうですよ。 [warmly] こんな日にずっと布団の中にいるのは、ちょっともったいないですよね。 [encouraging] そろそろ起きて... お散歩にでも行ってみませんか?',
-        '[warmly] 今日は雨が降るかもしれません。雨の日って、雨音を聞きながらもう少しだけ横になっていたくなりますよね... [encouraging] でも、そろそろ起きてみませんか? [caring] 出かけるときは、傘を忘れずに。',
-        '[brightly] 今日は雪が降るかもしれません。雪って、ただ眺めているだけでもきれいですよね。 [encouraging] まずは布団から出て、窓の外を見てみませんか? [caring] 出かけるときは暖かくして、道が滑りやすいかもしれないので、ゆっくり歩いてくださいね。',
-        '[caring] 今日は空気中の微粒子が多いそうです。見た目は平気でも、空気が重く感じるかもしれません。 [firmly] こういう日は少し面倒でも、マスクを忘れずに。 [encouraging] 空気はすっきりしなくても、朝は元気に始めてみましょうか?',
-        '[warmly] 今日は曇り空だそうです。こういう朝は、いつもより布団から出たくなくなりますよね。 [encouraging] でも、寝たままでいるとますます起きづらくなるので... [brightly] まずはカーテンを開けて、一日を始めてみませんか?',
-        '[concerned] 今朝は霧がかなり濃いそうです。前が見えにくいと、いつもより移動に時間がかかるかもしれません。 [encouraging] 少し余裕を持って支度するためにも、そろそろ起きましょうか? [firmly] 出かけるときは前をよく見て、急がずゆっくり行ってくださいね。',
-        '[warmly] 今日はかなり暑くなるそうです。こんな日は、一日中エアコンの風に当たっていたくなりますよね。 [encouraging] もっと暑くなる前に、そろそろ起きてみませんか? [caring] こまめに水分をとって、日中は無理しすぎないでくださいね。',
-        '[caring] 今日はかなり冷え込むそうです。こんな日は、布団から出るのが本当にいやになりますよね。 [warmly] でも、温かいお湯で顔を洗えば、少し目が覚めるはずです... ちょっとだけ勇気を出して、起きてみませんか? [caring] 出かけるときは、暖かい服装も忘れずに。',
-        '[apologetically] 今日は天気情報を取得できませんでした。 [caring] 出かける前に窓の外を見て、天気も確認してくださいね。 [cheerfully] お天気はお伝えできませんでしたが... そろそろ起きて、一日を始めてみませんか?',
+        '今日はどこかへ出かけたくなるくらい、いいお天気だそうですよ。 こんな日にずっと布団の中にいるのは、ちょっともったいないですよね。 そろそろ起きて... お散歩にでも行ってみませんか?',
+        '今日は雨が降るかもしれません。雨の日って、雨音を聞きながらもう少しだけ横になっていたくなりますよね... でも、そろそろ起きてみませんか? 出かけるときは、傘を忘れずに。',
+        '今日は雪が降るかもしれません。雪って、ただ眺めているだけでもきれいですよね。 まずは布団から出て、窓の外を見てみませんか? 出かけるときは暖かくして、道が滑りやすいかもしれないので、ゆっくり歩いてくださいね。',
+        '今日は空気中の微粒子が多いそうです。見た目は平気でも、空気が重く感じるかもしれません。 こういう日は少し面倒でも、マスクを忘れずに。 空気はすっきりしなくても、朝は元気に始めてみましょうか?',
+        '今日は曇り空だそうです。こういう朝は、いつもより布団から出たくなくなりますよね。 でも、寝たままでいるとますます起きづらくなるので... まずはカーテンを開けて、一日を始めてみませんか?',
+        '今朝は霧がかなり濃いそうです。前が見えにくいと、いつもより移動に時間がかかるかもしれません。 少し余裕を持って支度するためにも、そろそろ起きましょうか? 出かけるときは前をよく見て、急がずゆっくり行ってくださいね。',
+        '今日はかなり暑くなるそうです。こんな日は、一日中エアコンの風に当たっていたくなりますよね。 もっと暑くなる前に、そろそろ起きてみませんか? こまめに水分をとって、日中は無理しすぎないでくださいね。',
+        '今日はかなり冷え込むそうです。こんな日は、布団から出るのが本当にいやになりますよね。 でも、温かいお湯で顔を洗えば、少し目が覚めるはずです... ちょっとだけ勇気を出して、起きてみませんか? 出かけるときは、暖かい服装も忘れずに。',
+        '今日は天気情報を取得できませんでした。 出かける前に窓の外を見て、天気も確認してくださいね。 お天気はお伝えできませんでしたが... そろそろ起きて、一日を始めてみませんか?',
       ],
     },
   },
@@ -92,16 +96,16 @@ export const STOCK_CLIP_PRESETS = [
     category: 'medication',
     texts: {
       ko: [
-        '[warmly] 약 먹을 시간이에요. 이런 건 잠깐 미뤄 두면 금방 잊어버리기 쉽잖아요. [encouraging] 알람 끄기 전에 지금 바로 챙겨 먹어요.',
-        '[caring] 혹시 약 먹는 거 잊고 있진 않았어요? 바쁘다 보면 깜빡하게 되잖아요. [encouraging] 하던 건 잠깐만 내려놓고, 지금 약부터 챙겨 먹어요.',
+        '약 먹을 시간이에요. 이런 건 잠깐 미뤄 두면 금방 잊어버리기 쉽잖아요. 알람 끄기 전에 지금 바로 챙겨 먹어요.',
+        '혹시 약 먹는 거 잊고 있진 않았어요? 바쁘다 보면 깜빡하게 되잖아요. 하던 건 잠깐만 내려놓고, 지금 약부터 챙겨 먹어요.',
       ],
       en: [
-        "[warmly] It's time to take your medicine. If you put it off, it's easy to forget. [encouraging] Before you turn off the alarm, go ahead and take it now.",
-        "[caring] Did you forget it was time to take your medicine? When you're busy, it can easily slip your mind. [encouraging] Put down what you're doing for just a moment, and take your medicine first.",
+        "It's time to take your medicine. If you put it off, it's easy to forget. Before you turn off the alarm, go ahead and take it now.",
+        "Did you forget it was time to take your medicine? When you're busy, it can easily slip your mind. Put down what you're doing for just a moment, and take your medicine first.",
       ],
       ja: [
-        '[warmly] お薬の時間ですよ。あとでと思っていると、つい忘れてしまいますよね。 [encouraging] アラームを止める前に、今のうちに飲んでおきましょう。',
-        '[caring] お薬の時間、忘れていませんか? 忙しいと、ついうっかりしてしまいますよね。 [encouraging] 今していることを少しだけ止めて、先にお薬を飲みましょう。',
+        'お薬の時間ですよ。あとでと思っていると、つい忘れてしまいますよね。 アラームを止める前に、今のうちに飲んでおきましょう。',
+        'お薬の時間、忘れていませんか? 忙しいと、ついうっかりしてしまいますよね。 今していることを少しだけ止めて、先にお薬を飲みましょう。',
       ],
     },
   },
@@ -112,25 +116,25 @@ export const STOCK_CLIP_PRESETS = [
     category: 'fortune',
     texts: {
       ko: [
-        '[playfully] 오늘은 운이 좀 따라주는 날이래요. 생각보다 일이 술술 풀릴지도 모르겠네요. [brightly] 미뤄 둔 일이 있다면, 오늘은 가볍게 한 번 해봐도 좋겠어요.',
-        '[warmly] 오늘은 서두르지만 않으면 괜찮게 흘러갈 거래요. 마음이 급하면 평소엔 안 하던 실수도 나오잖아요. [encouraging] 오늘은 한 박자만 늦춰서, 하나씩 확인하면서 해봐요.',
-        '[playfully] 오늘은 재물운이 조금 따라준대요. 뜻밖에 돈을 아낄 일이 생기거나, 생각지도 못한 곳에서 작은 이득을 볼지도 모르겠네요. [brightly] 이왕이면... 로또 같은 큰 행운까지 따라오면 정말 좋겠는데요?',
-        '[caring] 오늘은 몸 상태를 조금 더 잘 살피는 게 좋대요. 괜찮다고 넘긴 피로가 나중에 한꺼번에 몰려올 수도 있거든요. [warmly] 평소보다 조금 천천히 움직이고, 지치면 잠깐 쉬어 가요.',
-        '[brightly] 오늘은 사람들과 기분 좋은 일이 생길 수 있대요. 가볍게 건넨 한마디가 생각보다 좋은 분위기를 만들지도 모르겠네요. [warmly] 문득 떠오르는 사람이 있다면, 먼저 안부를 전해 봐요.',
+        '오늘은 운이 좀 따라주는 날이래요. 생각보다 일이 술술 풀릴지도 모르겠네요. 미뤄 둔 일이 있다면, 오늘은 가볍게 한 번 해봐도 좋겠어요.',
+        '오늘은 서두르지만 않으면 괜찮게 흘러갈 거래요. 마음이 급하면 평소엔 안 하던 실수도 나오잖아요. 오늘은 한 박자만 늦춰서, 하나씩 확인하면서 해봐요.',
+        '오늘은 재물운이 조금 따라준대요. 뜻밖에 돈을 아낄 일이 생기거나, 생각지도 못한 곳에서 작은 이득을 볼지도 모르겠네요. 이왕이면... 로또 같은 큰 행운까지 따라오면 정말 좋겠는데요?',
+        '오늘은 몸 상태를 조금 더 잘 살피는 게 좋대요. 괜찮다고 넘긴 피로가 나중에 한꺼번에 몰려올 수도 있거든요. 평소보다 조금 천천히 움직이고, 지치면 잠깐 쉬어 가요.',
+        '오늘은 사람들과 기분 좋은 일이 생길 수 있대요. 가볍게 건넨 한마디가 생각보다 좋은 분위기를 만들지도 모르겠네요. 문득 떠오르는 사람이 있다면, 먼저 안부를 전해 봐요.',
       ],
       en: [
-        "[playfully] Luck might be on your side today. Things could go more smoothly than you expect. [brightly] If there's something you've been putting off, today might be a good day to give it a try.",
-        "[warmly] Today should go pretty smoothly as long as you don't rush. When you're in a hurry, it's easy to make mistakes you normally wouldn't. [encouraging] Take things one beat slower today, and check them one at a time.",
-        "[playfully] You might have a little luck with money today. You could find an unexpected way to save, or get a small benefit from somewhere you didn't expect. [brightly] And while we're at it... wouldn't it be nice if a lottery-sized bit of luck came along too?",
-        "[caring] It may be a good day to pay a little more attention to how you're feeling. Fatigue you brush off can sometimes catch up with you all at once. [warmly] Take things a little slower than usual, and give yourself a break when you need one.",
-        '[brightly] You may have a nice moment with someone today. Something you say in passing could brighten the mood more than you expect. [warmly] If someone comes to mind, try sending them a quick hello.',
+        "Luck might be on your side today. Things could go more smoothly than you expect. If there's something you've been putting off, today might be a good day to give it a try.",
+        "Today should go pretty smoothly as long as you don't rush. When you're in a hurry, it's easy to make mistakes you normally wouldn't. Take things one beat slower today, and check them one at a time.",
+        "You might have a little luck with money today. You could find an unexpected way to save, or get a small benefit from somewhere you didn't expect. And while we're at it... wouldn't it be nice if a lottery-sized bit of luck came along too?",
+        "It may be a good day to pay a little more attention to how you're feeling. Fatigue you brush off can sometimes catch up with you all at once. Take things a little slower than usual, and give yourself a break when you need one.",
+        'You may have a nice moment with someone today. Something you say in passing could brighten the mood more than you expect. If someone comes to mind, try sending them a quick hello.',
       ],
       ja: [
-        '[playfully] 今日は少し運が味方してくれる日だそうですよ。思ったより、物事がすんなり進むかもしれません。 [brightly] 先延ばしにしていたことがあるなら、今日は気軽にやってみてもよさそうですね。',
-        '[warmly] 今日は、焦らなければうまく進みそうです。気持ちが急ぐと、普段ならしないようなミスも出てしまいますよね。 [encouraging] 今日はひと呼吸おいて、一つずつ確認しながら進めてみましょう。',
-        '[playfully] 今日は少し金運に恵まれるそうですよ。思いがけず出費を抑えられたり、予想外のところでちょっと得をしたりするかもしれません。 [brightly] どうせなら... 宝くじが当たるくらいの大きな幸運まで来てくれたら、うれしいんですけどね。',
-        '[caring] 今日は、いつもより少し体調に気を配ったほうがよさそうです。大丈夫だと思っていた疲れが、あとから一気に出ることもありますからね。 [warmly] いつもより少しゆっくり動いて、疲れたらひと休みしてくださいね。',
-        '[brightly] 今日は、人との間にちょっと嬉しいことがあるかもしれません。何気なくかけた一言が、思った以上にいい雰囲気を作ってくれそうです。 [warmly] ふと思い浮かぶ人がいたら、こちらから軽く連絡してみてくださいね。',
+        '今日は少し運が味方してくれる日だそうですよ。思ったより、物事がすんなり進むかもしれません。 先延ばしにしていたことがあるなら、今日は気軽にやってみてもよさそうですね。',
+        '今日は、焦らなければうまく進みそうです。気持ちが急ぐと、普段ならしないようなミスも出てしまいますよね。 今日はひと呼吸おいて、一つずつ確認しながら進めてみましょう。',
+        '今日は少し金運に恵まれるそうですよ。思いがけず出費を抑えられたり、予想外のところでちょっと得をしたりするかもしれません。 どうせなら... 宝くじが当たるくらいの大きな幸運まで来てくれたら、うれしいんですけどね。',
+        '今日は、いつもより少し体調に気を配ったほうがよさそうです。大丈夫だと思っていた疲れが、あとから一気に出ることもありますからね。 いつもより少しゆっくり動いて、疲れたらひと休みしてくださいね。',
+        '今日は、人との間にちょっと嬉しいことがあるかもしれません。何気なくかけた一言が、思った以上にいい雰囲気を作ってくれそうです。 ふと思い浮かぶ人がいたら、こちらから軽く連絡してみてくださいね。',
       ],
     },
   },
@@ -143,19 +147,19 @@ export const STOCK_CLIP_PRESETS = [
     category: 'cheer',
     texts: {
       ko: [
-        '[warmly] 해야 할 일이 많으면 시작하기도 전에 마음부터 바빠지잖아요. [caring] 그렇다고 처음부터 전부 잘할 필요는 없어요. [encouraging] 지금 할 수 있는 것부터 하나씩 해봐요. 하다 보면 생각보다 잘 풀릴지도 모르니까요.',
-        '[warmly] 이것저것 신경 쓰다 보면 정작 스스로를 챙기는 건 자꾸 뒤로 미루게 되죠. [caring] 바쁘더라도 밥은 꼭 챙겨 먹고, 지치면 잠깐이라도 쉬어요. [encouraging] 그래야 하고 싶은 일도 오래 할 수 있잖아요.',
-        '[caring] 힘든 일이 생겨도 혼자 괜찮은 척할 필요는 없어요. [warmly] 믿을 만한 사람에게 슬쩍 털어놓으면 생각보다 마음이 가벼워질 때도 있거든요. [encouraging] 너무 혼자 버티려고만 하지는 말아요.',
+        '해야 할 일이 많으면 시작하기도 전에 마음부터 바빠지잖아요. 그렇다고 처음부터 전부 잘할 필요는 없어요. 지금 할 수 있는 것부터 하나씩 해봐요. 하다 보면 생각보다 잘 풀릴지도 모르니까요.',
+        '이것저것 신경 쓰다 보면 정작 스스로를 챙기는 건 자꾸 뒤로 미루게 되죠. 바쁘더라도 밥은 꼭 챙겨 먹고, 지치면 잠깐이라도 쉬어요. 그래야 하고 싶은 일도 오래 할 수 있잖아요.',
+        '힘든 일이 생겨도 혼자 괜찮은 척할 필요는 없어요. 믿을 만한 사람에게 슬쩍 털어놓으면 생각보다 마음이 가벼워질 때도 있거든요. 너무 혼자 버티려고만 하지는 말아요.',
       ],
       en: [
-        "[warmly] When you have a lot to do, your mind can start racing before you even begin. [caring] But you don't have to do everything perfectly from the start. [encouraging] Just take one thing at a time, starting with what you can do now. It may go better than you think.",
-        "[warmly] When you're busy taking care of everything else, it's easy to keep putting yourself last. [caring] Even on busy days, make sure you eat, and take a short break when you're tired. [encouraging] Taking care of yourself is what lets you keep doing the things you enjoy.",
-        "[caring] When things get hard, you don't have to pretend you're okay. [warmly] Talking it through with someone you trust can make things feel lighter than you expect. [encouraging] So please don't try to carry everything on your own.",
+        "When you have a lot to do, your mind can start racing before you even begin. But you don't have to do everything perfectly from the start. Just take one thing at a time, starting with what you can do now. It may go better than you think.",
+        "When you're busy taking care of everything else, it's easy to keep putting yourself last. Even on busy days, make sure you eat, and take a short break when you're tired. Taking care of yourself is what lets you keep doing the things you enjoy.",
+        "When things get hard, you don't have to pretend you're okay. Talking it through with someone you trust can make things feel lighter than you expect. So please don't try to carry everything on your own.",
       ],
       ja: [
-        '[warmly] やることが多いと、始める前から気持ちばかり焦ってしまいますよね。 [caring] でも、最初から全部うまくやろうとしなくても大丈夫です。 [encouraging] 今できることから、一つずつやってみましょう。始めてみたら、思ったよりうまく進むかもしれませんよ。',
-        '[warmly] あれこれ気にかけていると、自分のことはつい後回しになりますよね。 [caring] 忙しくても食事はきちんととって、疲れたら少しでも休んでください。 [encouraging] そうすれば、やりたいことも無理なく長く続けられますから。',
-        '[caring] つらいことがあっても、一人で平気なふりをしなくていいんですよ。 [warmly] 信頼できる人に少し話してみるだけで、思ったより気持ちが軽くなることもあります。 [encouraging] 何でも一人で抱え込もうとしないでくださいね。',
+        'やることが多いと、始める前から気持ちばかり焦ってしまいますよね。 でも、最初から全部うまくやろうとしなくても大丈夫です。 今できることから、一つずつやってみましょう。始めてみたら、思ったよりうまく進むかもしれませんよ。',
+        'あれこれ気にかけていると、自分のことはつい後回しになりますよね。 忙しくても食事はきちんととって、疲れたら少しでも休んでください。 そうすれば、やりたいことも無理なく長く続けられますから。',
+        'つらいことがあっても、一人で平気なふりをしなくていいんですよ。 信頼できる人に少し話してみるだけで、思ったより気持ちが軽くなることもあります。 何でも一人で抱え込もうとしないでくださいね。',
       ],
     },
   },
@@ -165,13 +169,13 @@ export const STOCK_CLIP_PRESETS = [
     category: STOCK_GREETING_CATEGORY,
     texts: {
       ko: [
-        '[brightly] 안녕하세요, 만나서 반가워요. [warmly] 앞으로 아침마다 이 목소리로 깨워 드릴게요. [playfully] 어때요? 이 목소리, 마음에 드나요?',
+        '안녕하세요, 만나서 반가워요. 앞으로 아침마다 이 목소리로 깨워 드릴게요. 어때요? 이 목소리, 마음에 드나요?',
       ],
       en: [
-        "[brightly] Hi, it's nice to meet you. [warmly] I'll be waking you up with this voice every morning. [playfully] So, what do you think? Do you like it?",
+        "Hi, it's nice to meet you. I'll be waking you up with this voice every morning. So, what do you think? Do you like it?",
       ],
       ja: [
-        '[brightly] はじめまして。お会いできてうれしいです。 [warmly] これから毎朝、この声で起こしますね。 [playfully] どうですか? この声、気に入ってもらえましたか?',
+        'はじめまして。お会いできてうれしいです。 これから毎朝、この声で起こしますね。 どうですか? この声、気に入ってもらえましたか?',
       ],
     },
   },
@@ -193,7 +197,7 @@ const RENAMED_STOCK_CATEGORIES: Readonly<Record<string, string>> = {
 
 /**
  * 클론 시드(`CLONE_CLIP_SEEDS`)와 **같은 의도**를 사람이 직접 쓴 기본 목소리 대사. 두 목록은 카테고리와
- * 순서가 맞물려 있다(날씨 9·운세 5·응원 3, 약은 앞의 2개). 문구 생성이 리듬·쉼·태그 거는 법을
+ * 순서가 맞물려 있다(날씨 9·운세 5·응원 3, 약은 앞의 2개). 문구 생성이 리듬·쉼·공감→권유 흐름을
  * 본보기로 삼는다. 짝이 없으면(인사·약 3번째 등) null.
  *
  * ⚠ 인사(greeting)는 짝이 아니다 — 기본 목소리의 인사는 '목소리 소개' 이고 클론 인사 시드는 '아침 인사' 다.
@@ -263,20 +267,6 @@ export const CLONE_FORTUNE_THEMES = [
 ] as const;
 
 /**
- * 이 클론 클립에 모델이 웃어도 되는가 — 시드 자체가 **약 알림·사과·조심**인 클립은 서버가 막는다(스펙 §9
- * 「모델이 스스로 넣는 웃음」, Codex #830). 프롬프트(`OWN_LAUGH_INSTRUCTION`)만 믿으면 모델이 어겨도 그대로 굽힌다.
- * 막는 것: 약(전부) · 날씨 미해결 안내(마지막 시드 — 미안하다고 알린다) · 운세 '조심'(`caution`).
- * 그 밖의 문맥(날씨 줄 안의 당부 등)은 문장마다 달라 프롬프트가 정한다 — 서버는 글의 뜻을 판정하지 않는다.
- */
-export function cloneClipAllowsLaughter(category: string, variantIndex: number): boolean {
-  const key = normalizeStockCategory(category);
-  if (key === 'medication') return false;
-  if (key === 'weather') return variantIndex !== CLONE_WEATHER_CONDITIONS.length;
-  if (key === 'fortune') return CLONE_FORTUNE_THEMES[variantIndex] !== 'caution';
-  return true;
-}
-
-/**
  * 유료 클론 사전렌더의 '의미 seed'. 각 문자열은 최종 문구가 아니라 생성 지시(outcome)이며,
  * generatePrerenderClipText 가 그 목소리의 관계/호칭/말투에 맞춰 실제 문구로 만든다. 소량 유지.
  * greeting=기상 인사(미리듣기 겸용). weather=CLONE_WEATHER_CONDITIONS 순서(0..7) + 미해결 안내 1(마지막),
@@ -284,19 +274,16 @@ export function cloneClipAllowsLaughter(category: string, variantIndex: number):
  */
 export const CLONE_CLIP_SEEDS: {
   category: string;
-  defaultTag: string;
   seeds: readonly string[];
 }[] = [
   {
     category: STOCK_GREETING_CATEGORY,
-    defaultTag: 'cheerfully',
     seeds: [
       '다정하게 아침 인사를 하며 잘 잤는지 안부를 묻고, 오늘 하루도 기분 좋게 시작하자고 따뜻하게 깨워 준다.',
     ],
   },
   {
     category: 'weather',
-    defaultTag: 'cheerfully',
     // seeds[0..7] = CLONE_WEATHER_CONDITIONS 순서(nice/rain/snow/dust/cloud/fog/heat/cold).
     // seeds[8] = '날씨 미해결' 안내(반드시 마지막). 준비창에서 인터넷이 안 돼 날씨를 못 받아온 경우,
     // 클라가 무음/오재생(맑음) 대신 이 클립으로 폴백해 정직하게 안내한다(클라 bucketVariantIndex 의
@@ -315,7 +302,6 @@ export const CLONE_CLIP_SEEDS: {
   },
   {
     category: 'fortune',
-    defaultTag: 'playfully',
     seeds: [
       '오늘은 운이 따라주는 날이라고 가볍게 재미로 전하며, 일이 생각보다 술술 풀릴 수도 있으니 미뤄 둔 일을 오늘 해봐도 좋겠다고 권한다.',
       '오늘은 서두르지만 않으면 괜찮게 흘러갈 거라고 전하고, 마음이 급하면 평소 안 하던 실수가 나온다며, 한 박자 늦춰 하나씩 확인하면서 하자고 다독인다.',
@@ -328,7 +314,6 @@ export const CLONE_CLIP_SEEDS: {
     // 응원(옛 이름 `love`). 시드도 응원·자기돌봄으로 맞췄다 — 라벨이 '응원' 인데
     // 시드만 "사랑하는 마음을 담아" 로 두면 클론이 라벨과 다른 말을 한다.
     category: 'cheer',
-    defaultTag: 'encouraging',
     seeds: [
       '할 일이 많으면 시작 전부터 마음이 바빠진다고 공감한 뒤, 처음부터 다 잘할 필요는 없다고 하고, 지금 할 수 있는 것부터 하나씩 해보자고 응원한다.',
       '이것저것 신경 쓰다 정작 자기를 챙기는 건 뒤로 미루게 된다고 공감한 뒤, 바빠도 끼니는 챙기고 지치면 잠깐이라도 쉬라고 하며, 그래야 하고 싶은 일도 오래 할 수 있다고 다독인다.',
@@ -337,7 +322,6 @@ export const CLONE_CLIP_SEEDS: {
   },
   {
     category: 'medication',
-    defaultTag: 'cheerfully',
     seeds: [
       '약 먹을 시간이라고 알리고, 미뤄 두면 금방 잊어버리기 쉽다고 일러 준 뒤, 알람 끄기 전에 지금 바로 챙겨 먹으라고 당부한다.',
       '혹시 약 먹는 걸 잊고 있진 않았는지 부드럽게 묻고, 바쁘면 깜빡하게 된다고 공감한 뒤, 하던 일은 잠깐 내려놓고 약부터 챙겨 먹으라고 한다.',
@@ -368,14 +352,12 @@ export interface StockClipTarget {
   variantIndex: number;
   /**
    * true 면 baseText 를 '의미 seed' 로 보고 그 목소리의 관계/호칭/말투에 맞춰 문구를 생성한다
-   * (유료 클론). false(시스템)면 baseText 를 리터럴로 번역+태깅만 한다.
+   * (유료 클론). false(시스템)면 baseText 를 리터럴 그대로 합성한다.
    */
   toneAdapt: boolean;
   /** 톤 적응 생성용 관계/호칭(클론만). generatePrerenderClipText 로 전달된다. */
   relationshipLabel?: string | null;
   listenerTitle?: string | null;
-  /** 톤 적응 생성 시 카테고리 기본 delivery 태그. */
-  defaultTag?: string;
   /** 등록 미리듣기에서 확정된 preview_text(클론만) — 톤/어투 스타일 레퍼런스. */
   styleReference?: string | null;
   /** 등록 녹음 전사에서 분석한 화자 말투(사투리 등, 클론만). */
@@ -599,11 +581,10 @@ export async function findMissingStockTargets(
   const targets: StockClipTarget[] = [];
   for (const voice of prerenderVoices) {
     // 클론=CLONE_CLIP_SEEDS(의미 seed → 관계/호칭 톤 적응 생성, 언어는 확정 시점 앱 언어 1개),
-    // 시스템=STOCK_CLIP_PRESETS(언어별 확정 리터럴 — 번역/태깅 없이 그대로 합성).
+    // 시스템=STOCK_CLIP_PRESETS(언어별 확정 리터럴 — 번역 없이 그대로 합성).
     const sources = voice.isClone
       ? CLONE_CLIP_SEEDS.map((s) => ({
           category: s.category,
-          defaultTag: s.defaultTag as string | undefined,
           perLanguage: [{ language: voice.languageOverride ?? 'ko', entries: s.seeds }],
         }))
       : STOCK_CLIP_PRESETS.map((p) => {
@@ -611,7 +592,6 @@ export async function findMissingStockTargets(
           const languages = voice.languageOverride ? [voice.languageOverride] : Object.keys(texts);
           return {
             category: p.category,
-            defaultTag: undefined as string | undefined,
             // languageOverride 언어의 리터럴이 없으면 빈 배열 → 해당 조합은 생성하지 않는다.
             perLanguage: languages.map((language) => ({
               language,
@@ -637,7 +617,6 @@ export async function findMissingStockTargets(
             toneAdapt: Boolean(voice.isClone),
             relationshipLabel: voice.relationshipLabel ?? null,
             listenerTitle: voice.listenerTitle ?? null,
-            defaultTag: source.defaultTag,
             styleReference: voice.styleReference ?? null,
             speechStyle: voice.speechStyle ?? null,
             refreshExisting,
@@ -758,7 +737,14 @@ export async function waitForSpeechStyleAnalysis(
   return { settled: false };
 }
 
-/** cron 이 드레인할 pending 큐 항목을 15분 임대로 원자적 claim. limit 은 1..50 로 클램프. */
+/**
+ * cron 이 드레인할 pending 큐 항목을 15분 임대로 원자적 claim. limit 은 1..50 로 클램프.
+ *
+ * ⚠ **새 등록(`refresh_existing = 0`)을 먼저 잡는다**(2026-09-30). 다시 굽는 회차(교체·말투 재렌더·모델 전환
+ *   #124)는 이미 울릴 클립이 있다 — 옛 소리로 울릴 뿐이다. 새 등록은 클립이 0개라 굽기 전에는 그 목소리로
+ *   알람을 못 만든다. 요청 순서로만 줄 세우면 #124 가 한꺼번에 넣은 클론 전부(시간당 ≈5.7개) 뒤에 새 등록이
+ *   몇 시간씩 선다. 같은 갈래 안에서는 예전대로 요청 순서다.
+ */
 export async function claimPendingPrerenderVoices(
   db: Client,
   limit: number,
@@ -779,7 +765,7 @@ export async function claimPendingPrerenderVoices(
                   AND spv.speech_style_status = 'pending'
                   AND datetime(spv.updated_at) > datetime('now', ?)
               )
-            ORDER BY requested_at ASC
+            ORDER BY refresh_existing ASC, requested_at ASC
             LIMIT ?
           )
             AND status = 'pending'
@@ -1113,18 +1099,20 @@ export async function deleteAllStockClips(db: Client, env: Env): Promise<number>
   return deleteStockClips(db, env);
 }
 
-/** 표시용 텍스트에서 [tag] 마커 제거 (앱에는 태그 없이 보여준다). */
 /**
- * 표시 문구용 — delivery 태그를 벗긴다. `scripts/publish-stock-clips.ts` 가 **같은 함수를
- * 써야** 미리 게시한 문구와 서버가 굽는 문구가 갈라지지 않는다(그래서 export 다).
+ * 시스템 스톡 문구 세 벌 — 합성 글자·화면 문구·태그 목록(`messages.delivery_tags_json`).
+ *
+ * 서버(`generateStockClip`)와 스톡 스크립트(`scripts/publish-stock-clips.ts`·`scripts/prerender-stock-preview.ts`)가
+ * **같은 함수**를 써야 한다 — 미리 게시한 문구·캐시 키와 서버가 계산하는 것이 한 글자라도 다르면 게시한 클립을
+ * '없다' 로 센다. 프리셋에는 태그가 없으므로(2026-09-30) 셋 다 trim 한 리터럴이다.
  */
-export function stripDeliveryTags(text: string): string {
-  return text
-    // ⚠ 문자셋을 여기 다시 쓰지 말 것 — `TAG_BODY_PATTERN`(vertex-translate)에서 파생한다.
-    // 넷이 따로 놀던 시절에는 하나만 넓히면 "태그로 인식은 되는데 안 벗겨지는" 상태가 됐다.
-    .replace(new RegExp(`\\[${TAG_BODY_PATTERN}\\]`, 'gi'), '')
-    .replace(/\s+/g, ' ')
-    .trim();
+export function systemStockTexts(baseText: string): {
+  synthesisText: string;
+  displayText: string;
+  deliveryTagsJson: string;
+} {
+  const text = baseText.trim();
+  return { synthesisText: text, displayText: text, deliveryTagsJson: '[]' };
 }
 
 /**
@@ -1139,39 +1127,6 @@ export class PrerenderSupersededError extends Error {
     super(message);
     this.name = 'PrerenderSupersededError';
   }
-}
-
-/**
- * 합성 요청에만 붙이는 **여운 꼬리**.
- *
- * ⚠ ElevenLabs v3 는 마지막 음소 직후 **그냥 멈춘다.** 실측(2026-09-02, 미나 목소리 20개):
- * API 원본의 끝 무음이 **0.020초**였고, 소리가 멈추는 순간의 세기가 파일 평균의 최대
- * **1.22배** — 한창 말하는 크기에서 뚝 끊긴다. 특히 한국어 **상승조 의문문**("…해 볼까요?")
- * 이 심하다. 끝을 올리다 정점에서 멈추기 때문이다.
- *
- * `appendMp3TrailingSilence` 로는 못 고친다. 그건 `높은 에너지 → 0` 이라는 **계단을 그대로
- * 두고** 뒤에 조용함을 더할 뿐이라, 오히려 계단이 도드라진다.
- *
- * 문장 끝에 말줄임을 붙이면 모델이 **여운 자체를 생성한다** — 같은 문장으로 실측했을 때
- * 끝 무음이 0.020초 → **1.289초**로, 문장을 끝맺고 놓는 소리가 실제로 나온다.
- *
- * ⚠ **요청에만 붙이고 저장하지 않는다.** `synthesisText` 는 `messages.synthesis_text` 로
- * 저장되고 캐시 키·마이그레이션의 문구 대조에 쓰인다 — 꼬리를 섞으면 그 대조가 어긋나
- * 재시드가 옛 문구를 지우지 못한다.
- *
- * ⚠ 이미 말줄임으로 끝나면 덧붙이지 않는다(모델이 길게 늘어뜨린다).
- *
- * v3 급마감(마지막 음절 직후 뚝 끊김) 보완 — 제공자에게 보내는 문장 끝에 ` ...` 를 붙여
- * 말끝을 흐리게 한다. mp3 뒤에 붙이는 무음(`appendMp3TrailingSilence`)과 **다른 장치**이고
- * 둘 다 필요하다: 이건 **말소리**를, 저건 **파일 길이**를 늘린다.
- *
- * 시청본 생성기(`scripts/prerender-stock-preview.ts`)가 같은 함수를 써야 한다 — 안 그러면
- * 사람이 들어 본 소리와 서버가 굽는 소리가 갈린다.
- */
-export function withClosingBreath(text: string): string {
-  const base = text.trimEnd();
-  if (!base || /(\.\.\.|…)$/.test(base)) return base;
-  return `${base} ...`;
 }
 
 export interface LegacyBucketHint {
@@ -1317,7 +1272,7 @@ export async function findLegacyBucketHints(
 }
 
 /**
- * 스톡 클립 1개 생성: Vertex 로 문구/번역/태그 → ElevenLabs 합성 → R2 저장 →
+ * 스톡 클립 1개 생성: (클론만) Vertex 로 문구 생성 → ElevenLabs 합성 → R2 저장 →
  * messages(is_preset=1) + generated_audio_assets insert. 멱등 보장은 호출자
  * (findMissingStockTargets) 가 담당한다.
  */
@@ -1359,48 +1314,28 @@ export async function generateStockClip(
       relationshipLabel: target.relationshipLabel,
       listenerTitle: target.listenerTitle,
       targetLanguage: language,
-      defaultTag: target.defaultTag,
       styleReference: target.styleReference,
       speechStyle: target.speechStyle ?? null,
       humanReference: stockReferenceLine(target.category, target.variantIndex, language),
-      allowLaughter: cloneClipAllowsLaughter(target.category, target.variantIndex),
     });
-    // ⚠ **여기서 태그를 다시 붙이지 말 것**(2026-08-20). `generatePrerenderClipText` 가
-    // 이미 배치를 확정해서 돌려준다 — 모델이 문장 안에 여러 개를 넣었으면 그대로, 없거나
-    // 선두 하나뿐이면 문장마다 다시 앞세운 형태다. 여기서 한 번 더 `applyDeliveryTagPerSentence`
-    // 를 태우면 `[warmly] [warmly] …` 로 겹친다.
+    // 태그 없는 문구다(`generatePrerenderClipText` 가 모델이 낸 태그까지 벗긴다) — 합성 글자와 화면 문구가 같다.
     synthesisText = generated.text;
-    // 표시 문구(잠금화면·요약)는 **태그를 벗긴 것**이다. 예전에는 모델이 태그를 안 냈기에
-    // 그냥 써도 티가 안 났지만, 인라인 태그가 들어오면 대괄호가 그대로 화면에 새어 나간다.
-    displayText = stripDeliveryTags(generated.text) || generated.text;
-    deliveryTagsJson = JSON.stringify(extractDeliveryTags(generated.text));
+    displayText = generated.text;
+    deliveryTagsJson = '[]';
   } else {
-    // 시스템 스톡: baseText 가 이미 확정된 언어별 리터럴(딜리버리 태그 포함)이다.
-    // translate/autoTag 를 끄면 Vertex 호출 없이 로컬 패스스루로 태그만 추출된다
-    // → 재시드해도 항상 STOCK_CLIP_PRESETS 문구 그대로 합성된다.
-    const prepared = await prepareAlarmTextWithVertex(env, target.baseText, {
-      targetLanguage: language,
-      sourceLanguage: language,
-      translate: false,
-      autoTag: false,
-    });
-    synthesisText = prepared.text;
-    displayText = stripDeliveryTags(synthesisText) || stripDeliveryTags(target.baseText);
-    deliveryTagsJson = JSON.stringify(prepared.tags);
+    // 시스템 스톡: baseText 가 이미 확정된 언어별 리터럴이다 → 다시 구워도 항상 STOCK_CLIP_PRESETS 문구
+    // 그대로 합성된다. 게시 스크립트와 같은 함수로 만든다(`systemStockTexts`).
+    ({ synthesisText, displayText, deliveryTagsJson } = systemStockTexts(target.baseText));
   }
 
-  // ⚠ **제공자에게 보내는 바로 그 글자로 캐시 키를 만든다**(2026-09-03 리뷰).
-  //   합성은 여운 꼬리를 붙여 하는데 키를 원본으로 계산하면, **같은 키에 다른 오디오**가
-  //   매달린다 — 일반 TTS 경로(`tts.ts`)는 꼬리 없이 같은 문장을 합성하므로 둘이 같은
-  //   `request_hash`·R2 오브젝트를 놓고 다툰다. 먼저 쓴 쪽이 이기고, 나중 쪽은 자기가
-  //   요청한 것과 다른 소리를 서빙받는다(꼬리가 사라지거나, 반대로 남의 클립을 덮어쓴다).
-  //   저장되는 `synthesis_text`·표시 문구는 **꼬리 없는 원본** 그대로다 — 잠금화면 문구와
-  //   문구 대조가 그 값을 쓴다.
-  const providerText = withClosingBreath(synthesisText);
+  // ⚠ **제공자에게 보내는 바로 그 글자로 캐시 키를 만든다**(2026-09-03 리뷰) — 저장하는 `synthesis_text` 와
+  //   같은 글자다. v3 시절에는 여기서 문장 끝에 ` ...`(여운 꼬리)를 붙이고 mp3 뒤에 무음을 덧댔는데, v3 가
+  //   말끝을 뚝 끊었기 때문이다. v4 Turbo 는 꼬리 없이도 말끝을 스스로 놓아 둘 다 뺐다(2026-09-30 A/B —
+  //   `docs/spec/voice-and-message.md` §10). 되살리면 이 글자와 시청본 지문·게시 스크립트의 키가 갈라진다.
   const attempts = createSynthesisAttempts({
     env,
     profile: { elevenlabs_voice_id: target.elevenlabsVoiceId },
-    text: providerText,
+    text: synthesisText,
     language,
   });
   if (attempts.length === 0) {
@@ -1415,14 +1350,16 @@ export async function generateStockClip(
     modelId: attempt.modelId,
     language,
     languageCode: language,
-    text: providerText,
+    text: synthesisText,
     outputFormat: attempt.outputFormat,
+    // 스톡은 **스톡 범위**다 — 사용자가 같은 목소리로 같은 문장을 만들어도(직접 입력·초안 미리듣기) 키가 겹치지
+    // 않는다(Codex #840). 겹치면 원장 해시(전역 UNIQUE)를 먼저 쥔 쪽의 행이 이 클립 행이 되고, 그 행이 프리셋이
+    // 아니라 보관 정리가 30일 뒤 오브젝트를 지우며 프리셋의 `audio_url` 까지 비운다. 게시 스크립트도 같은 값.
+    scope: STOCK_TTS_CACHE_SCOPE,
   });
 
   const generated = await attempt.synthesize();
-  // v3 급마감(마지막 음절 직후 뚝 끊김) 보완 — 끝에 0.366초 무음을 붙인다(시딩본과 동일).
-  // 형식이 mp3_44100_128(mono)이 아니면 안전하게 원본 그대로 저장된다.
-  const bytes = appendMp3TrailingSilence(generated.bytes);
+  const bytes = generated.bytes;
   await assertCloneAuthorization();
 
   const storage = new R2VoiceStorage(env.VOICE_BUCKET);
@@ -1578,7 +1515,7 @@ export async function generateStockClip(
         // 위의 조건부 INSERT 에 붙은 claim 가드는 교체 회차에서 **작동하지 않는다** —
         // 같은 preset 이 이미 있어 `WHERE NOT EXISTS` 가 항상 거짓이라 0행이고, 그래서
         // 이 UPDATE 가 유일한 문지기다. 놓치면 옛 목소리가 새 목소리를 덮고, 아래
-        // `replacedAudioUrl` 정리가 **방금 게시된 새 음원**을 R2 에서 지운다.
+        // 옛 오브젝트 삭제 예약이 **방금 게시된 새 음원**을 가리키게 된다.
         const replaced = await tx.execute({
           sql: `UPDATE messages
                 SET text = ?, synthesis_text = ?, delivery_tags_json = ?, audio_url = ?
@@ -1647,13 +1584,21 @@ export async function generateStockClip(
           ],
         });
         await claimKeyFromDeletionQueue(tx);
+        // 밀려난 옛 오브젝트는 **삭제 큐에만** 넣는다 — 게시와 같은 트랜잭션이라 롤백되면 예약도 없다.
+        // ⚠ 여기서 R2 를 바로 지우지 말 것(Codex #840). 같은 목소리의 두 프리셋이 우연히 같은 문장이면
+        //   한 오브젝트를 **나눠 쓴다**(결정론적 키) — 한 자리를 교체하며 지우면 아직 교체되지 않은 다른
+        //   자리가 없는 음원을 가리킨다. 실제로 지울지는 드레인이 `messages.audio_url` 참조를 보고 정한다
+        //   (`drainExternalDeletions` — 아직 참조가 있으면 예약만 내리고, 나머지 자리가 교체될 때 다시 들어온다).
+        const replacedAudioUrl = String(row.audio_url ?? '');
+        const replacedKey = replacedAudioUrl.startsWith('r2://') ? replacedAudioUrl.slice('r2://'.length) : '';
+        if (replacedKey && replacedKey !== audioObjectKey) {
+          await enqueueExternalDeletion(tx, 'r2_object', replacedKey);
+        }
         return {
           inserted: false as const,
           messageId: existingMessageId,
           text: displayText,
           audioUrl,
-          // 덮어쓰기 전 값 — 커밋 뒤 이 오브젝트를 지운다(아래 참조).
-          replacedAudioUrl: String(row.audio_url ?? ''),
         };
       }
 
@@ -1711,19 +1656,6 @@ export async function generateStockClip(
   // **방금 심은 음원을 지워** 알람이 빈 URL 을 물게 되니 주의.
   if (!publication.inserted && publication.audioUrl !== audioUrl) {
     await discardStagedAudio();
-  }
-
-  // 교체로 밀려난 옛 오브젝트를 정리한다. 커밋이 끝난 뒤에 한다 — R2 삭제는 트랜잭션이
-  // 아니라, 롤백되는 트랜잭션 안에서 지우면 되살릴 수 없는 것을 먼저 잃는다.
-  const replacedAudioUrl = (publication as { replacedAudioUrl?: string }).replacedAudioUrl;
-  if (replacedAudioUrl && replacedAudioUrl !== audioUrl && replacedAudioUrl.startsWith('r2://')) {
-    const staleKey = replacedAudioUrl.slice('r2://'.length);
-    try {
-      await new R2VoiceStorage(env.VOICE_BUCKET).delete(staleKey);
-    } catch {
-      // 지우지 못해도 교체 자체는 성공이다 — 큐에 넘겨 나중에 치운다.
-      await enqueueExternalDeletion(db, 'r2_object', staleKey);
-    }
   }
 
   return {
