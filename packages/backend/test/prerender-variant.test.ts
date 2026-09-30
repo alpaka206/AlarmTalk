@@ -102,9 +102,13 @@ import {
 type FetchInit = RequestInit & { cf?: { cacheTtl?: number; cacheEverything?: boolean } };
 
 const TARGET_DATE = '2026-09-23';
-const CITY = 'Busan';
-const CITY_LATITUDE = 35.1796;
-const CITY_LONGITUDE = 129.0756;
+// ⚠ 이 파일은 **옛 글자 경로**(지오코딩)를 고정한다 — 그래서 목록에 없는 도시를 쓴다. 예전에는
+//   'Busan' 이었는데, 부산은 이제 목록 지역(`kr-busan`)이라 지오코딩 없이 박아 둔 좌표로 간다
+//   (그 경로는 `weather-region-daily.test.ts`). 김해는 목록에 없고(시·도 소재지가 아니다)
+//   지오코딩 결과가 기초 소재지(PPLA2)라 엄격한 선택(`pickStrictGeocodeResult`)을 통과한다.
+const CITY = 'Gimhae';
+const CITY_LATITUDE = 35.2342;
+const CITY_LONGITUDE = 128.8811;
 
 function openMeteoJson(body: unknown, cacheStatus = 'HIT'): Response {
   return new Response(JSON.stringify(body), {
@@ -149,6 +153,9 @@ function stubOpenMeteo(options?: {
           {
             name: CITY,
             country: 'South Korea',
+            country_code: 'KR',
+            feature_code: 'PPLA2',
+            population: 530_000,
             latitude: CITY_LATITUDE,
             longitude: CITY_LONGITUDE,
           },
@@ -265,13 +272,18 @@ describe('GET /tts/prerender-variant — Open-Meteo 타임아웃', () => {
   it('지오코딩이 비정상 응답(429)이거나 결과가 없어도 null — 서울 예보로 대신하지 않는다', async () => {
     vi.spyOn(console, 'log').mockImplementation(() => {});
     vi.spyOn(console, 'warn').mockImplementation(() => {});
-    for (const options of [{ geocodeStatus: 429 }, { emptyGeocode: true }]) {
+    // 429 는 '못 받음' 이라 다시 묻지 않는다. 0건은 '없음' 이라, 나라가 대한민국(옛 앱이 자동으로 붙인
+    // 값일 수 있다)이면 나라 없이 한 번 더 묻는다 — 그래도 없으면 null(`weather-signal.ts` 의 `geocodeStrict`).
+    for (const [options, geocodeCalls] of [
+      [{ geocodeStatus: 429 }, 1],
+      [{ emptyGeocode: true }, 2],
+    ] as const) {
       const fetchMock = stubOpenMeteo(options);
       const res = await requestVariant(buildApp());
       expect(res.status).toBe(200);
       expect(await res.json()).toEqual({ context: 'wake_weather', variant_index: null });
       const kinds = fetchMock.mock.calls.map(([input]) => new URL(String(input)).hostname);
-      expect(kinds).toEqual(['geocoding-api.open-meteo.com']);
+      expect(kinds).toEqual(Array(geocodeCalls).fill('geocoding-api.open-meteo.com'));
     }
   });
 

@@ -466,5 +466,9 @@
   "122": {
     "name": "voice-profiles-voice-energy",
     "sha": "38e454e725fa771a"
+  },
+  "123": {
+    "name": "weather-region-daily",
+    "sha": "02e761f1267be5e2"
   }
 }

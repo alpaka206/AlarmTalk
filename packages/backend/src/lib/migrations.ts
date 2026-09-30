@@ -2957,6 +2957,36 @@ export const migrations: Migration[] = [
       `ALTER TABLE voice_profiles ADD COLUMN voice_energy TEXT`,
     ],
   },
+  {
+    id: 123,
+    name: 'weather-region-daily',
+    atomic: true,
+    statements: [
+      // 지역별 날씨를 서버가 미리 계산해 두는 표(`lib/weather-region-daily.ts`,
+      // `docs/spec/voice-and-message.md` 5-1 「서버가 미리 계산해 둔다」). 날씨 클립의 자리는
+      // **지역 × 날짜** 로만 갈리므로 사람마다 따로 묻지 않는다.
+      // - region_key: 목록 키(`packages/shared/src/weather-regions.json`). 나간 키는 바꾸지 않는다.
+      // - target_date: **그 지역 시간대의 달력 날짜**(YYYY-MM-DD).
+      // - variant_index: 클립 자리(`resolvePrerenderWeatherIndex`). 나머지는 그 근거 표본.
+      // - dust_level: 'bad'|'ok'(`isDustyDay`). computed_at: ISO 문자열 — 읽기는 12시간, cron 은
+      //   3시간 기준으로 새로 계산한다.
+      // 사용자 데이터가 없는 파생 캐시다. 새 코드는 표가 없을 때(배포 → 마이그레이션 창) 저장 없이
+      // 계산만 하고, cron 은 건너뛴다 — 창 동안 잃는 것이 없다.
+      `CREATE TABLE IF NOT EXISTS weather_region_daily (
+        region_key TEXT NOT NULL,
+        target_date TEXT NOT NULL,
+        variant_index INTEGER,
+        weather_code INTEGER,
+        temp_max REAL,
+        temp_min REAL,
+        precip_prob INTEGER,
+        precip_sum REAL,
+        dust_level TEXT,
+        computed_at TEXT NOT NULL,
+        PRIMARY KEY (region_key, target_date)
+      )`,
+    ],
+  },
 ];
 // Errors that mean the statement was already applied — safe to ignore so
 // we can recover databases whose `_migrations` ledger is out of sync with

@@ -21,6 +21,12 @@ vi.mock('../src/lib/transactions', () => ({
     .fn()
     .mockResolvedValue({ downgradedAlarms: [], voiceAccessRevokedUserIds: [] }),
 }));
+// 지역 날씨 미리 계산은 매시 첫 틱(이 파일의 시각이 00분이다)에 Open-Meteo 를 부른다. 이 파일은 그 일을
+// 보지 않으므로 끈다 — 안 끄면 테스트가 실제 네트워크로 나간다. 그 동작은 weather-region-daily.test.ts.
+vi.mock('../src/lib/weather-region-daily', () => ({
+  isWeatherRegionRefreshSlot: vi.fn().mockReturnValue(false),
+  refreshWeatherRegionDaily: vi.fn(),
+}));
 vi.mock('../src/lib/fcm', () => ({
   sendAlarmPush: vi.fn().mockResolvedValue(undefined),
   notifyDowngradedAlarms: vi.fn().mockResolvedValue(undefined),
