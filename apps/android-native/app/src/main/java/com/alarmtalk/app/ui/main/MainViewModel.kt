@@ -831,6 +831,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val defaultVoiceStore = com.alarmtalk.app.data.DefaultVoicePreferenceStore(application)
     internal val dynamicPromptStore = com.alarmtalk.app.data.DynamicPromptPreferenceStore(application)
 
+    /** 계정 설정(지역·사주) 올리기를 한 번에 하나씩 — `updateDynamicPromptSettings`. */
+    internal val promptSettingsUploads = com.alarmtalk.app.data.PromptSettingsUploadQueue()
+
     /** 공휴일 국가(앱 전역). 값은 계정 지역의 나라를 따른다 — `onAccountPromptSettingsReceived`. */
     internal val holidayCountryStore = com.alarmtalk.app.data.HolidayCountryPreferenceStore(application)
 

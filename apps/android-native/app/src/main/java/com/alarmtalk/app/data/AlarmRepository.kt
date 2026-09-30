@@ -1541,6 +1541,13 @@ class AlarmRepository(
         }
     }
 
+    /**
+     * 달력이 바뀌었을 때 다시 잡을 알람인가 — '공휴일엔 끄기' 반복이고, 다음 발생이 아직 미래이며,
+     * 스누즈 중이 아니다(스누즈 마감은 달력과 무관한 절대 시각이다). [refreshHolidayOffAlarms] 전용.
+     */
+    private fun AlarmEntity.isFutureHolidayOffRecurrence(now: Long): Boolean =
+        holidayOff && repeatDaysMask != 0 && fireAtMillis > now && state != AlarmStates.SNOOZED
+
     private suspend fun reschedulePendingAlarmsLocked(
         recomputeFireTime: Boolean,
         recomputeHolidayOff: Boolean = false,
@@ -1675,6 +1682,16 @@ class AlarmRepository(
             if (fresh == null || !fresh.enabled || fresh.id in ringingAlarmIdsProvider()) return@forEach
             val alarm = fresh
 
+            // ⚠ **달력만 바뀐 경우([refreshHolidayOffAlarms])에는 미래의 '공휴일엔 끄기' 반복 알람만** 본다
+            // (Codex #837). 나머지를 일반 복원처럼 돌리면 달력과 무관한 알람까지 손댄다 — 지난 일회성은
+            // `FAILED` 로 꺼지고(API 31·32 비정확 폴백이면 아직 배달 대기 중일 수 있다), 지난 반복은
+            // `updatedAtMillis` 가 올라 받은 가족 알람이 '수신자가 고쳤다' 로 읽힌다. 지난 행·스누즈는
+            // 원래 그 일을 맡는 길목(앱 시작·부팅·정합성 워커의 [reschedulePendingAlarms])에 맡긴다 —
+            // 그쪽도 지금 달력으로 계산한다.
+            if (recomputeHolidayOff && !recomputeFireTime && !alarm.isFutureHolidayOffRecurrence(now)) {
+                return@forEach
+            }
+
             runCatching {
                 // recomputeFireTime: 시간대/시스템 시각 변경 시, 저장된 fireAtMillis(과거 기준 절대시각)를
                 // hour/minute 으로 다시 계산해 새 벽시계 시각에 울리게 한다(여행/DST). 그 외(부팅 등)에는
@@ -1703,8 +1720,8 @@ class AlarmRepository(
                 val isSnoozed = alarm.state == AlarmStates.SNOOZED
                 // 달력이 바뀌어 다시 잡는 경우([refreshHolidayOffAlarms]). '공휴일엔 끄기' 는 반복
                 // 알람에만 뜻이 있다(`AlarmTimeCalculator` 가 일회성에서는 보지 않는다).
-                val holidayCalendarOnly = recomputeHolidayOff && alarm.holidayOff &&
-                    alarm.repeatDaysMask != 0 && !recomputeFireTime && alarm.fireAtMillis > now
+                val holidayCalendarOnly = recomputeHolidayOff && !recomputeFireTime &&
+                    alarm.isFutureHolidayOffRecurrence(now)
                 val needsRecompute = !isSnoozed &&
                     (recomputeFireTime || alarm.fireAtMillis <= now || holidayCalendarOnly)
                 val alarmToSchedule = when {

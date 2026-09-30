@@ -156,6 +156,31 @@ class HolidayCountryRescheduleTest {
         assertEquals(SEEDED_UPDATED_AT, dao.getById("every-day")?.updatedAtMillis)
     }
 
+    /**
+     * **달력만 바뀐 호출은 지난 알람을 건드리지 않는다**(Codex #837). 일반 복원처럼 돌리면 지난 일회성은
+     * `FAILED` 로 꺼지고(API 31·32 비정확 폴백이면 아직 배달 대기 중일 수 있다), 지난 반복은 수정 시각이
+     * 올라 받은 가족 알람이 '수신자가 고쳤다' 로 읽힌다. 그 행들은 원래 길목(앱 시작·정합성 워커)이 맡는다.
+     */
+    @Test
+    fun 달력만_바뀐_호출은_지난_알람을_건드리지_않는다() = runBlocking {
+        val past = System.currentTimeMillis() - 10 * 60_000L
+        seed(id = "past-one-shot", fireAtMillis = past, holidayOff = false, repeatDaysMask = 0)
+        seed(id = "past-every-day", fireAtMillis = past, holidayOff = false)
+        seed(id = "past-holiday-off", fireAtMillis = past, holidayOff = true)
+        serverHolidays["JP"] = emptyList()
+        holidayCountry.setCountry("JP")
+
+        repository.refreshHolidayOffAlarms()
+
+        for (id in listOf("past-one-shot", "past-every-day", "past-holiday-off")) {
+            val row = requireNotNull(dao.getById(id))
+            assertEquals("$id 는 켜진 채다", true, row.enabled)
+            assertEquals("$id 의 상태", AlarmStates.SCHEDULED, row.state)
+            assertEquals("$id 의 시각", past, row.fireAtMillis)
+            assertEquals("$id 의 수정 시각", SEEDED_UPDATED_AT, row.updatedAtMillis)
+        }
+    }
+
     @Test
     fun 다시_울림_중인_알람은_그_마감_그대로_둔다() = runBlocking {
         val snoozeDeadline = System.currentTimeMillis() + 5 * 60_000L

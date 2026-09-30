@@ -596,32 +596,41 @@ internal fun MainViewModel.updateFamilyAlarmSettings(
 }
 
 internal fun MainViewModel.updateDynamicPromptSettings(settings: DynamicPromptSettings) {
-    val session = authSession ?: return
+    val userId = authSession?.user?.id ?: return
+    viewModelScope.launch {
+        // ⚠ **한 번에 하나씩, 부른 순서대로**(`PromptSettingsUploadQueue`). 요청마다 설정 전체를 싣으므로
+        // 겹쳐 돌면 늦게 끝난 옛 요청이 서버·세션을 옛 값으로 되돌린다(Codex #837).
+        promptSettingsUploads.enqueue { uploadDynamicPromptSettings(userId, settings) }
+    }
+}
+
+private suspend fun MainViewModel.uploadDynamicPromptSettings(userId: String, settings: DynamicPromptSettings) {
+    // 차례를 기다리는 사이 계정이 바뀌었으면 남의 설정을 올리지 않는다. 세션·세대는 **차례가 온 뒤에** 읽는다 —
+    // 앞 요청이 세션을 갈아 끼웠을 수 있다.
+    val session = authSession?.takeIf { it.user.id == userId } ?: return
     // 요청 시작 시점의 세션 세대 — 응답을 저장하기 전에 대조한다.
     val startGeneration = authSessionStore.sessionGeneration()
     val authorization = com.alarmtalk.app.network.AlarmTalkApiClient.bearer(session.token)
-    viewModelScope.launch {
-        runCatching {
-            api.updateProfile(
-                authorization,
-                com.alarmtalk.app.network.UpdateProfileRequest(
-                    dynamicPromptSettings = settings,
-                ),
-            )
-        }.onSuccess { response ->
-            // ⚠ **세션을 갈아 끼우기 전에** 표시를 내린다. 새 세션이 곧바로
-            // [onAccountPromptSettingsReceived] 를 부르는데, 그때 표시가 남아 있으면 방금 올린 값을
-            // '아직 안 올라간 변경' 으로 보고 한 번 더 올린다.
-            dynamicPromptStore.markPushed(session.user.id, settings)
-            val updatedSettings = response.dynamicPromptSettings ?: settings
-            val updated = session.copy(user = session.user.copy(dynamicPromptSettings = updatedSettings))
-            saveSessionPreservingCurrentToken(updated, startGeneration)?.let { authSession = it }
-            refreshSocial()
-        }.onFailure { error ->
-            // 로컬에는 '안 올라간 변경' 표시가 남는다 — 다음에 계정 설정을 받을 때
-            // ([onAccountPromptSettingsReceived]) 서버의 옛 값으로 덮지 않고 다시 올린다.
-            AlarmTalkLog.reportError("Failed to update dynamic prompt settings", error)
-        }
+    runCatching {
+        api.updateProfile(
+            authorization,
+            com.alarmtalk.app.network.UpdateProfileRequest(
+                dynamicPromptSettings = settings,
+            ),
+        )
+    }.onSuccess { response ->
+        // ⚠ **세션을 갈아 끼우기 전에** 표시를 내린다. 새 세션이 곧바로
+        // [onAccountPromptSettingsReceived] 를 부르는데, 그때 표시가 남아 있으면 방금 올린 값을
+        // '아직 안 올라간 변경' 으로 보고 한 번 더 올린다.
+        dynamicPromptStore.markPushed(session.user.id, settings)
+        val updatedSettings = response.dynamicPromptSettings ?: settings
+        val updated = session.copy(user = session.user.copy(dynamicPromptSettings = updatedSettings))
+        saveSessionPreservingCurrentToken(updated, startGeneration)?.let { authSession = it }
+        refreshSocial()
+    }.onFailure { error ->
+        // 로컬에는 '안 올라간 변경' 표시가 남는다 — 다음에 계정 설정을 받을 때
+        // ([onAccountPromptSettingsReceived]) 서버의 옛 값으로 덮지 않고 다시 올린다.
+        AlarmTalkLog.reportError("Failed to update dynamic prompt settings", error)
     }
 }
 
