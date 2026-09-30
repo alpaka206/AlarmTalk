@@ -40,10 +40,23 @@ extension DynamicPromptPreferences {
     /// 사용자가 **이 기기에서** 고친 지역·사주를 적는다 — '아직 안 올라간 변경' 표시를 함께 남긴다.
     /// 호출부는 곧바로 서버에 올리고(`AuthViewModel.updateProfile`), 성공하면 `markPushed` 가 표시를 내린다.
     /// 안드로이드 `saveWeatherLocation`·`saveFortuneInfo` 와 같다.
-    func saveLocalEdit(userID: String?, defaults: UserDefaults = .standard) {
-        save(userID: userID)
-        guard let key = Self.unsyncedDefaultsKey(userID: userID) else { return }
+    ///
+    /// ⚠ **키체인에 적지 못했으면 표시를 남기지 않는다**(Codex #837). 키체인에는 옛 값이 그대로라, 표시만 남으면
+    /// 서버 저장이 성공해도 `markPushed` 가 그 옛 값과 비교해 표시를 못 내리고, 다음 받아 적기가 옛 값을
+    /// `.localPending` 으로 **다시 올려 방금 저장한 새 값을 덮는다.** 표시가 없으면 서버 값이 이긴다 —
+    /// 올리기가 성공했으면 그게 새 값이다.
+    /// - Parameter write: 기기 값을 적는 곳(테스트가 실패를 흉내 낸다). 기본은 키체인(`save(userID:)`).
+    /// - Returns: 적었는가.
+    @discardableResult
+    func saveLocalEdit(
+        userID: String?,
+        defaults: UserDefaults = .standard,
+        write: (DynamicPromptPreferences, String?) -> Bool = { $0.save(userID: $1) }
+    ) -> Bool {
+        guard write(self, userID) else { return false }
+        guard let key = Self.unsyncedDefaultsKey(userID: userID) else { return true }
         defaults.set(true, forKey: key)
+        return true
     }
 
     /// 이 기기에 아직 서버로 안 올라간 지역·사주 변경이 있는가.

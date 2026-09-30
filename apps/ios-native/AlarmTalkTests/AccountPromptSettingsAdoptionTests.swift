@@ -53,6 +53,36 @@ final class AccountPromptSettingsAdoptionTests: XCTestCase {
         DynamicPromptPreferences.hasUnsyncedChange(userID: userID, defaults: defaults)
     }
 
+    // MARK: - 0. 적기에 실패하면 표시를 남기지 않는다
+
+    /// **키체인에 못 적었으면 '안 올라간 변경' 표시를 남기지 않는다**(Codex #837). 키체인에는 옛 값(서울)이
+    /// 그대로라, 표시만 남으면 서버 저장(도쿄)이 성공해도 표시가 안 내려가고 다음 받아 적기가 옛 서울을
+    /// `.localPending` 으로 다시 올려 새 값을 덮는다. 표시가 없으면 서버의 도쿄를 받아 적는다.
+    func test_키체인에_못_적으면_표시를_남기지_않고_서버_값을_받아_적는다() throws {
+        try savedAndPushed("kr-seoul")
+        let tokyo = try preferences(region: "jp-tokyo")
+
+        let wrote = tokyo.saveLocalEdit(userID: userID, defaults: defaults, write: { _, _ in false })
+
+        XCTAssertFalse(wrote)
+        XCTAssertFalse(hasUnsynced(), "적지 못한 변경에 표시를 남기면 옛 값이 새 값을 덮는다")
+        XCTAssertEqual(local.weatherRegion?.key, "kr-seoul")
+        // 서버 저장은 성공했다(도쿄) — 다음 받아 적기는 서버를 따른다.
+        DynamicPromptPreferences.markPushed(userID: userID, pushed: tokyo.toSettings(), defaults: defaults)
+        XCTAssertEqual(
+            DynamicPromptPreferences.adoptAccount(userID: userID, server: try regionSettings("jp-tokyo"), defaults: defaults),
+            .accepted
+        )
+        XCTAssertEqual(local.weatherRegion?.key, "jp-tokyo")
+    }
+
+    func test_키체인에_적으면_표시를_남긴다() throws {
+        let tokyo = try preferences(region: "jp-tokyo")
+        XCTAssertTrue(tokyo.saveLocalEdit(userID: userID, defaults: defaults))
+        XCTAssertTrue(hasUnsynced())
+        XCTAssertEqual(local.weatherRegion?.key, "jp-tokyo")
+    }
+
     // MARK: - 1. 두 번째 기기
 
     func test_새_기기는_계정의_지역과_사주를_받아_적는다() throws {

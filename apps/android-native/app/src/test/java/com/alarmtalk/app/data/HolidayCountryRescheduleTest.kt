@@ -39,10 +39,13 @@ class HolidayCountryRescheduleTest {
     /** 나라별로 서버가 돌려줄 공휴일. 받은 요청 수도 센다. */
     private val serverHolidays = mutableMapOf<String, List<LocalDate>>()
     private val holidayRequests = mutableListOf<String>()
+    /** true 면 서버가 안 된다(오프라인·5xx). */
+    private var holidayServerDown = false
 
     private val fakeHolidayApi = object : HolidayApi {
         override suspend fun getHolidays(country: String, from: String, to: String, lang: String?): HolidayResponse {
             holidayRequests += country
+            if (holidayServerDown) throw java.io.IOException("offline")
             return HolidayResponse(
                 holidays = serverHolidays[country].orEmpty().map { date ->
                     HolidayDto(date = date.toString(), name = "holiday", type = "public")
@@ -179,6 +182,84 @@ class HolidayCountryRescheduleTest {
             assertEquals("$id 의 시각", past, row.fireAtMillis)
             assertEquals("$id 의 수정 시각", SEEDED_UPDATED_AT, row.updatedAtMillis)
         }
+    }
+
+    /**
+     * **새 나라의 달력을 못 받았으면 빈 달력으로 잡고, 못 받았다고 알린다**(Codex #837). 미루면 옛 나라의
+     * 달력이 남아 옛 나라의 공휴일인 새 나라의 평일에 안 울린다(사고) — 빈 달력은 공휴일에 울릴 뿐이다.
+     * 호출부(`MainViewModel`)는 `calendarReady=false` 를 보고 앱에 들어올 때마다 다시 부른다.
+     */
+    @Test
+    fun 새_나라의_달력을_못_받으면_빈_달력으로_잡고_받은_뒤_다시_잡는다() = runBlocking {
+        // 옛 나라(한국)에서는 D 가 공휴일이라 D+1 로 잡혀 있었다.
+        seed(id = "holiday-off", fireAtMillis = nextDay, holidayOff = true)
+        serverHolidays["JP"] = listOf(dateOf(nextWithoutHolidays))
+        holidayServerDown = true
+        holidayCountry.setCountry("JP")
+
+        val offline = repository.refreshHolidayOffAlarms()
+
+        assertEquals(false, offline.calendarReady)
+        // 옛 나라의 공휴일 때문에 건너뛰던 D 로 돌아온다 — 새 나라에서 D 는 공휴일이지만, 모르는 채로는
+        // 울리는 쪽이 안전하다.
+        assertEquals(nextWithoutHolidays, dao.getById("holiday-off")?.fireAtMillis)
+
+        holidayServerDown = false
+        val online = repository.refreshHolidayOffAlarms()
+
+        assertEquals(true, online.calendarReady)
+        assertEquals(nextDay, dao.getById("holiday-off")?.fireAtMillis)
+    }
+
+    /**
+     * **다시 잡아 날짜가 바뀌면 받아 둔 날씨 조건을 버린다**(Codex #837). 조건은 그 날짜의 날씨다 —
+     * 남기면 준비창 갱신이 "이미 받았다" 로 건너뛰고 옛 날짜의 날씨가 운다. 날짜가 그대로면 지킨다.
+     */
+    @Test
+    fun 다시_잡아_날짜가_바뀌면_받아_둔_날씨_조건을_버린다() = runBlocking {
+        seed(id = "moves", fireAtMillis = nextWithoutHolidays, holidayOff = true)
+        withWeatherVariant("moves")
+        // 새 나라(일본)에서 D 가 공휴일이다 — D+1 로 옮겨진다.
+        serverHolidays["JP"] = listOf(dateOf(nextWithoutHolidays))
+        holidayCountry.setCountry("JP")
+
+        repository.refreshHolidayOffAlarms()
+
+        val moved = requireNotNull(dao.getById("moves"))
+        assertEquals(nextDay, moved.fireAtMillis)
+        assertEquals(null, moved.contextVariantIndex)
+        assertEquals(null, moved.contextResolvedAtMillis)
+
+        // 날짜가 그대로인 다시 잡기(같은 달력)는 조건을 지킨다.
+        withWeatherVariant("moves")
+        repository.refreshHolidayOffAlarms()
+        assertEquals(1, dao.getById("moves")?.contextVariantIndex)
+    }
+
+    /** 놓친 반복 알람을 다음 회차로 넘기는 복원도 같다(iOS `prepareForScheduleRecovery` 와 같은 판정). */
+    @Test
+    fun 놓친_반복_날씨_알람을_넘기면_받아_둔_조건을_버린다() = runBlocking {
+        val missed = System.currentTimeMillis() - 10 * 60_000L
+        seed(id = "missed", fireAtMillis = missed, holidayOff = false)
+        withWeatherVariant("missed")
+
+        repository.reschedulePendingAlarms()
+
+        val rolled = requireNotNull(dao.getById("missed"))
+        assertEquals(true, rolled.fireAtMillis > missed)
+        assertEquals(null, rolled.contextVariantIndex)
+        assertEquals(null, rolled.contextResolvedAtMillis)
+    }
+
+    private suspend fun withWeatherVariant(id: String) {
+        val row = requireNotNull(dao.getById(id))
+        dao.upsert(
+            row.copy(
+                bucketId = "weather",
+                contextVariantIndex = 1,
+                contextResolvedAtMillis = System.currentTimeMillis(),
+            ),
+        )
     }
 
     @Test

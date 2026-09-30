@@ -168,10 +168,12 @@ struct DynamicPromptPreferences: Codable, Equatable {
     }
 
     /// Keychain 에 계정별로 저장한다.
-    func save(userID: String?) {
+    /// - Returns: 키체인에 적었는가. ⚠ '안 올라간 변경' 표시는 적었을 때만 남긴다(`saveLocalEdit`).
+    @discardableResult
+    func save(userID: String?) -> Bool {
         guard let key = Self.storageKey(userID: userID),
-              let data = try? JSONEncoder().encode(normalized()) else { return }
-        KeychainStore.saveData(data, account: key)
+              let data = try? JSONEncoder().encode(normalized()) else { return false }
+        return KeychainStore.saveData(data, account: key)
     }
 
     /// 명시적 로그아웃·탈퇴에서만 부른다(자동 401 에서는 부르지 말 것 — 같은 사람이

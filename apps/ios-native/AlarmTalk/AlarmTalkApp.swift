@@ -529,6 +529,12 @@ struct AlarmTalkApp: App {
                 // 밀린 사용 기록을 올려 본다 — 앱을 열 때가 유일하게 확실한 기회다
                 // (울림 경로에서는 네트워크를 부르지 않으므로).
                 Task { await UsageEventUploader.shared.flush(session: auth.session) }
+                // 지역의 나라(JP·US) 공휴일을 아직 못 받았으면 여기서 다시 받아 본다(Codex #837). 받으면 달력
+                // 표지가 `:pending` 에서 바뀌어 공휴일off 알람을 다시 건다(`HolidayOffRescheduler`). 콜드 스타트·
+                // 나라 변경 때만 받으면, 그때 오프라인이던 기기는 앱을 다시 띄울 때까지 빈 달력으로 잡힌 예약에
+                // 남는다. 이미 받았으면 곧바로 돌아간다(`ensureSynced`). 안드로이드는 `MainViewModel` 이 진입마다
+                // `refreshHolidayOffAlarms` 를 다시 부른다.
+                Task { await holidayStore.ensureSynced(countryCode: holidayStore.selectedCountryCode) }
                 // 빠진 테마 클립을 보충한다. 이미 캐시된 것은 건너뛰므로 값이 싸고,
                 // 콜드 스타트에서 실패했거나 캐시가 정리된 경우를 여기서 메운다.
                 // 안드로이드는 앱 시작마다 `prefetchStockClips()` 로 같은 일을 한다.

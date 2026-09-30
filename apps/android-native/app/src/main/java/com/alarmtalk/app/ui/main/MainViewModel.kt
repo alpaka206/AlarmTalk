@@ -1623,11 +1623,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         // ⚠ **첫 값도 받는다.** 앱을 켤 때마다 한 번 돈다: 지난 실행에서 국가만 바뀌고 다시 잡기
         // 전에 프로세스가 죽었거나, KR 밖 나라의 공휴일 캐시가 비어 있어도(받는 길이 이것뿐이다)
         // 여기서 메운다. 멱등이라 바뀐 게 없으면 행을 쓰지 않는다.
+        // ⚠ **그 나라의 달력을 못 받았으면 앱에 들어올 때마다 다시 본다**(Codex #837). 오프라인에서 JP·US 로
+        // 바뀌면 빈 달력으로 잡히는데(안전한 쪽 — 공휴일에 울릴 뿐), 나라 값은 다시 흐르지 않으므로 진입
+        // 번호(`AppSignals.appEntries`)도 축에 둔다. 받은 뒤로는 같은 나라에서 다시 돌지 않는다.
         viewModelScope.launch {
-            holidayCountryStore.countryCode.collect { country ->
+            var calendarReadyFor: String? = null
+            kotlinx.coroutines.flow.combine(
+                holidayCountryStore.countryCode,
+                com.alarmtalk.app.core.AppSignals.appEntries,
+            ) { country, _ -> country }.collect { country ->
+                if (country == calendarReadyFor) return@collect
                 runCatching { repository.refreshHolidayOffAlarms() }
-                    .onSuccess { scheduled ->
-                        Log.i(TAG, "Holiday calendar applied country=$country scheduled=$scheduled")
+                    .onSuccess { result ->
+                        calendarReadyFor = country.takeIf { result.calendarReady }
+                        Log.i(
+                            TAG,
+                            "Holiday calendar applied country=$country scheduled=${result.scheduled} " +
+                                "ready=${result.calendarReady}",
+                        )
                     }
                     .onFailure { error -> AlarmTalkLog.reportError("Holiday calendar refresh failed", error) }
             }
