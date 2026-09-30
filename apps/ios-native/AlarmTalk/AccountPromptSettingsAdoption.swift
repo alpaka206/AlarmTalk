@@ -8,6 +8,10 @@ enum AccountPromptSettingsAdoption: Equatable {
     /// 이 기기에 서버보다 새 변경이 있어 **덮지 않았다.** 호출부는 이 값을 다시 올린다.
     /// 공휴일 국가도 서버 지역을 따르지 않는다 — 이 기기에서 고를 때 이미 맞췄다.
     case localPending(DynamicPromptSettings)
+    /// 서버 값을 받아들여야 했는데 **기기에 적지 못했다**(키체인 쓰기 실패). 기기 값은 옛것 그대로다 —
+    /// 호출부는 공휴일 국가를 서버 지역으로 옮기지 않는다(화면·알람이 읽는 기기 값과 달력의 나라가 갈라진다,
+    /// Codex #837). 다음 계정 응답에 다시 받아 적는다. 안드로이드는 SharedPreferences 라 이 갈래가 없다.
+    case localWriteFailed
 }
 
 /// **계정 설정 받아 적기**(2026-09-30, 스펙 voice-and-message.md 「계정의 지역·사주는 기기에 받아 적는다」).
@@ -84,11 +88,14 @@ extension DynamicPromptPreferences {
 
     /// 서버의 계정 설정을 이 기기에 받아 적는다. **멱등이다** — 같은 값을 몇 번 받아도 결과가 같다.
     /// 규칙은 이 파일 머리 주석. `server == nil`(옛 서버·로그인 전)이면 아무것도 하지 않는다.
+    ///
+    /// - Parameter write: 기기 값을 적는 곳(테스트가 실패를 흉내 낸다). 기본은 키체인(`save(userID:)`).
     @discardableResult
     static func adoptAccount(
         userID: String?,
         server: DynamicPromptSettings?,
-        defaults: UserDefaults = .standard
+        defaults: UserDefaults = .standard,
+        write: (DynamicPromptPreferences, String?) -> Bool = { $0.save(userID: $1) }
     ) -> AccountPromptSettingsAdoption {
         guard let server, let key = unsyncedDefaultsKey(userID: userID) else { return .accepted }
         let local = load(userID: userID)
@@ -114,8 +121,10 @@ extension DynamicPromptPreferences {
             next.fortuneBirthDate = remote.fortuneBirthDate
             next.fortuneBirthTime = remote.fortuneBirthTime
         }
-        if next != local {
-            next.save(userID: userID)
+        // ⚠ 적지 못했으면 받아들였다고 말하지 않는다 — 기기 값은 옛것인데 공휴일 국가만 서버 지역을 따르면
+        //   둘이 갈라진다(Codex #837).
+        if next != local, !write(next, userID) {
+            return .localWriteFailed
         }
         return .accepted
     }

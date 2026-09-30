@@ -76,6 +76,29 @@ final class AccountPromptSettingsAdoptionTests: XCTestCase {
         XCTAssertEqual(local.weatherRegion?.key, "jp-tokyo")
     }
 
+    /// **받아 적지 못했으면 받아들였다고 말하지 않는다**(Codex #837). 기기 값은 옛것(서울)인데 `.accepted` 면
+    /// 호출부가 공휴일 국가를 서버 지역(도쿄)의 나라로 옮겨, 화면·알람이 읽는 기기 값과 달력의 나라가 갈라진다.
+    func test_서버_값을_기기에_못_적으면_받아들였다고_하지_않는다() throws {
+        try savedAndPushed("kr-seoul")
+
+        let adoption = DynamicPromptPreferences.adoptAccount(
+            userID: userID,
+            server: try regionSettings("jp-tokyo"),
+            defaults: defaults,
+            write: { _, _ in false }
+        )
+
+        XCTAssertEqual(adoption, .localWriteFailed)
+        XCTAssertEqual(local.weatherRegion?.key, "kr-seoul")
+        // 같은 값이면 적을 것이 없다 — 받아들인다.
+        XCTAssertEqual(
+            DynamicPromptPreferences.adoptAccount(
+                userID: userID, server: try regionSettings("kr-seoul"), defaults: defaults, write: { _, _ in false }
+            ),
+            .accepted
+        )
+    }
+
     func test_키체인에_적으면_표시를_남긴다() throws {
         let tokyo = try preferences(region: "jp-tokyo")
         XCTAssertTrue(tokyo.saveLocalEdit(userID: userID, defaults: defaults))

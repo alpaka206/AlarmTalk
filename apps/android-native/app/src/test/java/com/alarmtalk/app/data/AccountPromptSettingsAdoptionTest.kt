@@ -236,6 +236,35 @@ class AccountPromptSettingsAdoptionTest {
         assertNull(accountSettingsReceipt(null))
     }
 
+    /**
+     * **앞 요청이 떠 있는 사이 되돌린 선택은 앞 요청이 끝난 뒤 다시 올린다**(Codex #837). 서울(A) → 도쿄(B)
+     * 를 올리는 사이 서울로 되돌렸다 — 세션의 서버 값은 아직 A 라 편집기는 '같다' 로 보고 올리지 않는다.
+     * 그때 표시를 내리지 않아야, B 가 끝나 세션이 B 가 된 뒤 받아 적기가 A 를 덮지 않고 다시 올린다.
+     */
+    @Test
+    fun 앞_요청이_떠_있는_사이_되돌린_선택은_그_요청이_끝난_뒤_다시_올린다() {
+        val seoul = requireNotNull(WeatherRegions.byKey("kr-seoul"))
+        val tokyo = requireNotNull(WeatherRegions.byKey("jp-tokyo"))
+        savedAndPushed("user-a", "kr-seoul")
+        // B(도쿄)를 고르고 올리기 시작했다.
+        store.saveWeatherLocation("user-a", tokyo.legacyCountry, tokyo.legacyCity)
+        val pushedTokyo = store.read("user-a").toDynamicPromptSettings()
+        // 올리는 사이 A(서울)로 되돌렸다 — 서버 값(아직 A)과 같아 편집기는 올리지 않고, 표시도 그대로 둔다.
+        store.saveWeatherLocation("user-a", seoul.legacyCountry, seoul.legacyCity)
+        // B 가 끝났다 — 올린 값(B)이 지금 값(A)과 달라 표시는 남는다.
+        store.markPushed("user-a", pushedTokyo)
+        assertTrue(store.hasUnsyncedChange("user-a"))
+
+        val adoption = store.adoptAccountSettings("user-a", regionSettings("jp-tokyo"))
+
+        assertTrue(adoption is AccountSettingsAdoption.LocalPending)
+        assertEquals("kr-seoul", store.read("user-a").weatherRegion?.key)
+        assertEquals(
+            "kr-seoul",
+            (adoption as AccountSettingsAdoption.LocalPending).settings.weather.region,
+        )
+    }
+
     /** 밀린 변경은 다음 응답에서 다시 올린다 — 같은 옛 값이 또 와도 `LocalPending` 이다(멱등). */
     @Test
     fun 밀린_변경은_같은_옛_값이_다시_와도_다시_올릴_것으로_남는다() {

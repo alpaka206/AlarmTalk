@@ -1577,13 +1577,14 @@ internal fun AlarmEditorScreen(
         }
         if (shouldSyncOwnDynamicPromptSettings) {
             // 계정에 올리는 것은 **서버 값과 다를 때만**이다 — 날씨 종류만 다시 골라도 이 자리를 지나므로,
-            // 매번 올리면 문구 화면을 나올 때마다 같은 값으로 PATCH 한다. 같으면 올릴 것이 없으니 방금 남긴
-            // '안 올라간 변경' 표시도 내린다. iOS `DynamicPromptPreferences.editorUpdate` 의 `needsUpload` 와 같다.
-            val ownSettings = dynamicPromptPreferences.toDynamicPromptSettings()
+            // 매번 올리면 문구 화면을 나올 때마다 같은 값으로 PATCH 한다. iOS `DynamicPromptPreferences.editorUpdate`
+            // 의 `needsUpload` 와 같다.
+            // ⚠ 같을 때 **'안 올라간 변경' 표시를 내리지 말 것**(Codex #837). 세션의 서버 값은 아직 끝나지 않은 앞
+            // 요청(A→B 의 B)을 모른다 — B 를 올리는 사이 A 로 되돌리면 여기서는 '같다' 로 보이는데, 표시를 내리면
+            // B 가 끝나 세션이 B 가 된 뒤 받아 적기가 표시 없이 B 를 이 기기에 적어 A 가 사라진다. 표시를 두면
+            // 받아 적기가 A 를 다시 올리고, 정말 같았으면 다음 응답에서 표시만 내린다(`adoptAccountSettings`).
             if (dynamicPromptPreferences != authSession?.user?.dynamicPromptSettings?.toPromptPreferences()) {
-                onUpdateDynamicPromptSettings(ownSettings)
-            } else {
-                dynamicPromptPreferenceStore.markPushed(promptOwnerUserId, ownSettings)
+                onUpdateDynamicPromptSettings(dynamicPromptPreferences.toDynamicPromptSettings())
             }
         }
         // 방금 비운 버킷을 다시 붙이라고 스톡 클립 효과를 깨운다(위 `stockClipRebindTick` 주석).

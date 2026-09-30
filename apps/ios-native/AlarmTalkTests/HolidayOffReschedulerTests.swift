@@ -24,9 +24,9 @@ final class HolidayOffReschedulerTests: XCTestCase {
 
     private var stored: String? { defaults.string(forKey: HolidayOffRescheduler.markerDefaultsKey) }
 
-    private func holiday(_ country: String) -> HolidayEntity {
+    private func holiday(_ country: String, epochDay: Int = 20_000) -> HolidayEntity {
         HolidayEntity(
-            countryCode: country, regionCode: "", epochDay: 20_000, localDate: "2024-10-04",
+            countryCode: country, regionCode: "", epochDay: epochDay, localDate: "2024-10-04",
             name: "test", source: "server_sync", updatedAtMillis: 0
         )
     }
@@ -34,13 +34,33 @@ final class HolidayOffReschedulerTests: XCTestCase {
     // MARK: - 달력 표지
 
     func test_달력_표지는_나라와_그_나라_공휴일이_왔는가다() {
+        let today = 19_990 // 공휴일(20_000)보다 앞
         // KR 은 기기 안에서 계산한다 — 받을 것이 없으니 언제나 완성이다.
-        XCTAssertEqual(HolidayStore.calendarMarker(country: "KR", holidays: []), "KR")
+        XCTAssertEqual(HolidayStore.calendarMarker(country: "KR", holidays: [], todayEpochDay: today), "KR")
         // JP·US 는 서버에서 받아야 공휴일이 생긴다.
-        XCTAssertEqual(HolidayStore.calendarMarker(country: "JP", holidays: []), "JP:pending")
-        XCTAssertEqual(HolidayStore.calendarMarker(country: "JP", holidays: [holiday("US")]), "JP:pending",
-                       "다른 나라 공휴일이 있어도 이 나라 것이 아니면 아직이다")
-        XCTAssertEqual(HolidayStore.calendarMarker(country: "jp", holidays: [holiday("JP")]), "JP")
+        XCTAssertEqual(HolidayStore.calendarMarker(country: "JP", holidays: [], todayEpochDay: today), "JP:pending")
+        XCTAssertEqual(
+            HolidayStore.calendarMarker(country: "JP", holidays: [holiday("US")], todayEpochDay: today), "JP:pending",
+            "다른 나라 공휴일이 있어도 이 나라 것이 아니면 아직이다"
+        )
+        // 받았으면 나라와 **덮는 끝**이다 — 새 창을 받아 끝이 늘면 표지가 바뀌어 다시 건다.
+        XCTAssertEqual(HolidayStore.calendarMarker(country: "jp", holidays: [holiday("JP")], todayEpochDay: today), "JP@20000")
+        XCTAssertEqual(
+            HolidayStore.calendarMarker(country: "JP", holidays: [holiday("JP"), holiday("JP", epochDay: 20_365)], todayEpochDay: today),
+            "JP@20365"
+        )
+    }
+
+    /// **지난 공휴일만 남은 옛 창은 아직이다**(Codex #837). 받은 창(~395일)이 지나면 파일에는 그 나라의 지난
+    /// 공휴일만 남는다 — 그걸 완성으로 보면 다시 받지도 다시 걸지도 않아, 공휴일off 알람이 사실상 빈 달력으로
+    /// 계속 돈다.
+    func test_지난_공휴일만_남은_달력은_다시_받을_때까지_아직이다() {
+        XCTAssertEqual(
+            HolidayStore.calendarMarker(country: "JP", holidays: [holiday("JP")], todayEpochDay: 20_001),
+            "JP:pending"
+        )
+        XCTAssertEqual(HolidayStore.coveredThroughEpochDay(country: "jp", holidays: [holiday("JP")]), 20_000)
+        XCTAssertNil(HolidayStore.coveredThroughEpochDay(country: "JP", holidays: [holiday("US")]))
     }
 
     func test_처음_표지는_한_번만_적는다() {

@@ -336,12 +336,29 @@ final class HolidayStore: ObservableObject {
     /// KR 은 기기 안에서 계산하므로(시드 + 음력 엔진, `LocalHolidayCalendar`) 언제나 완성이다. JP·US 는
     /// 서버에서 받아야(`ensureSynced`) 공휴일이 생긴다 — 받기 전에 다시 건 예약은 공휴일이 하나도 없는
     /// 달력으로 계산된 것이라, 받은 뒤 **한 번 더** 걸어야 한다. 표지가 달라지는 것이 그 신호다.
-    nonisolated static func calendarMarker(country: String, holidays: [HolidayEntity]) -> String {
+    ///
+    /// ⚠ **"그 나라 행이 있다" 로 가르지 말 것**(Codex #837). 받은 창(~395일)이 지나면 파일에는 그 나라의 **지난**
+    /// 공휴일만 남는데, 행이 있다고 완성으로 보면 다시 받지도(`ensureSynced`) 다시 걸지도 않아 공휴일off 알람이
+    /// 사실상 빈 달력으로 계속 돈다. 그래서 **아직 오지 않은 공휴일까지 덮는가**로 가르고, 덮는 끝(`@마지막 날`)을
+    /// 표지에 싣는다 — 새 창을 받으면 끝이 늘어 표지가 바뀌고 다시 건다.
+    nonisolated static func calendarMarker(
+        country: String,
+        holidays: [HolidayEntity],
+        todayEpochDay: Int = KoreanLunarHolidayEngine.epochDay(of: Date())
+    ) -> String {
         let cc = country.uppercased()
-        if cc == defaultCountryCode || holidays.contains(where: { $0.countryCode.uppercased() == cc }) {
-            return cc
+        if cc == defaultCountryCode { return cc }
+        guard let coveredThrough = coveredThroughEpochDay(country: cc, holidays: holidays),
+              coveredThrough >= todayEpochDay else {
+            return "\(cc):pending"
         }
-        return "\(cc):pending"
+        return "\(cc)@\(coveredThrough)"
+    }
+
+    /// 받아 둔 그 나라 공휴일의 마지막 날(epochDay). 하나도 없으면 nil.
+    nonisolated static func coveredThroughEpochDay(country: String, holidays: [HolidayEntity]) -> Int? {
+        let cc = country.uppercased()
+        return holidays.lazy.filter { $0.countryCode.uppercased() == cc }.map(\.epochDay).max()
     }
 
     /// 지금 달력의 표지. 디스크 캐시를 읽기 전이면 nil — 아직 판단하지 않는다.
@@ -430,7 +447,9 @@ final class HolidayStore: ObservableObject {
     func ensureSynced(countryCode: String) async {
         let cc = countryCode.uppercased()
         if cc == "KR" { return }
-        if holidays.contains(where: { $0.countryCode.uppercased() == cc }) { return }
+        // ⚠ **아직 오지 않은 공휴일이 있을 때만** 건너뛴다 — 지난 행만 남은 옛 창이면 새 창을 받는다(`calendarMarker`).
+        if let coveredThrough = Self.coveredThroughEpochDay(country: cc, holidays: holidays),
+           coveredThrough >= KoreanLunarHolidayEngine.epochDay(of: Date()) { return }
         if inFlightSyncCountries.contains(cc) { return }
         inFlightSyncCountries.insert(cc)
         defer { inFlightSyncCountries.remove(cc) }

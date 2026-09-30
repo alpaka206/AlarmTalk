@@ -357,6 +357,10 @@ struct AlarmTalkApp: App {
                             )
                         case .localPending(let local):
                             Task { await auth.updateProfile(dynamicPromptSettings: local) }
+                        case .localWriteFailed:
+                            // 기기에 못 적었다 — 달력의 나라도 옮기지 않는다(기기 값과 갈라지지 않게).
+                            // 다음 계정 응답에 다시 받아 적는다.
+                            break
                         }
                     }
                     // **공휴일 달력이 바뀌면 공휴일off 알람을 다시 건다**(`HolidayOffRescheduler`).

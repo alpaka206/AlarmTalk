@@ -372,6 +372,10 @@ OR로 합치면 평일 알람을 건너뛸 수 있으므로 계산 폴백 자체
     미루지 않는다 — 옛 나라의 달력이 남으면 옛 나라의 공휴일인 새 나라의 평일에 **안 울린다**(사고). 빈 달력은
     새 나라의 공휴일에 울릴 뿐이다(안전한 쪽). 나라 값은 다시 흐르지 않으므로 진입이 재시도의 계기다(안드로이드
     `MainViewModel` 의 진입 번호 축 + `HolidayCalendarRefresh.calendarReady`, iOS 전경 복귀의 `ensureSynced`).
+  - ⚠ **'받았다' 는 아직 오지 않은 공휴일까지 덮는가로 가른다** — 그 나라 행이 있는가가 아니다. 받은 창(~1년)이
+    지나면 지난 공휴일만 남는데, 행만 보면 다시 받지도 다시 잡지도 않는다(Codex #837). 안드로이드
+    `ensureHolidaysSynced` 는 다가올 공휴일을 보고, iOS 달력 표지는 덮는 끝을 싣는다(`JP@<마지막 날>` — 새 창을 받아
+    끝이 늘면 표지가 바뀌어 다시 잡는다, 지나면 `JP:pending`).
   - 다시 잡아 **발사 날짜가 바뀌면 받아 둔 날씨 조건을 버린다**([voice-and-message.md](voice-and-message.md) 5-1
     「발사 날짜가 바뀌면 받아 둔 인덱스를 버린다」) — 놓친 회차를 넘기는 복원도 같다(안드로이드 `withNextFireAt`,
     iOS `invalidateWeatherVariantIfFireDateChanges`).
