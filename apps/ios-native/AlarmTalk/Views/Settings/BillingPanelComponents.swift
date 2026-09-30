@@ -138,10 +138,10 @@ struct PlanCard: View {
             }
 
             VStack(alignment: .leading, spacing: 6) {
-                // `LocalizedStringKey` 는 Hashable 이 아니라 `id: \.self` 를 못 쓴다.
-                // 목록이 고정 순서라 인덱스를 id 로 삼아도 안전하다.
-                ForEach(Array(Self.features(for: tier).enumerated()), id: \.offset) { _, feature in
-                    PlanFeatureRow(text: feature)
+                // 목록은 카탈로그 **키**(한국어 원문)라 그리는 자리에서 `LocalizedStringKey` 로 감싼다.
+                // 한 카드 안에서 같은 줄이 두 번 나오지 않으므로 글자를 id 로 삼아도 안전하다.
+                ForEach(Self.features(for: tier), id: \.self) { feature in
+                    PlanFeatureRow(text: LocalizedStringKey(feature))
                 }
             }
 
@@ -274,12 +274,22 @@ struct PlanCard: View {
     /// 주석은 "1:1" 이라고 적혀 있었지만 실제로는 아니었다 — 같은 상품을 두 스토어에서
     /// **다르게 설명**하고 있었고, 커플 카드의 '개인 이용권 기능 전부 포함' 은 아예 빠져
     /// 있어 왜 더 비싼지 알 수 없었다.
-    private static func features(for tier: PlanTier) -> [LocalizedStringKey] {
+    ///
+    /// ⚠ **무료에도 있는 것을 유료 혜택처럼 적지 말 것.** 개인 카드는 2026-09-30 까지
+    /// "날씨·운세 등 매일 다른 문구" 라고 적었는데, 날씨·운세·응원·약 문구는 기본 목소리로
+    /// 무료다(`docs/spec/voice-and-message.md` §2 — 목록은 등급으로 자르지 않는다). 클립은
+    /// 준비된 것을 돌려 쓰므로 '매일 새 문구' 도 사실이 아니다. 개인 이용권이 파는 것은
+    /// 그 문구를 **등록한 목소리로** 듣는 것이다.
+    ///
+    /// 돌려주는 것은 `Localizable.xcstrings` 의 키(한국어 원문)다 — 테스트가 줄마다 영어·일본어
+    /// 번역이 있는지 볼 수 있도록 `LocalizedStringKey` 가 아니라 `String` 이고 `private` 이 아니다.
+    /// 고정 목록이라 뷰의 메인 액터에 묶지 않는다(`nonisolated`) — 테스트가 어느 격리에서든 읽는다.
+    nonisolated static func features(for tier: PlanTier) -> [String] {
         switch tier {
         case .free:
             return ["일반 알람 무제한", "기본 목소리 알람"]
         case .personal:
-            return ["원하는 목소리 1개 등록", "날씨·운세 등 매일 다른 문구"]
+            return ["원하는 목소리 1개 등록", "내 목소리로 듣는 날씨·운세 문구"]
         case .couple:
             return ["개인 이용권 기능 전부 포함", "서로의 목소리 공유", "상대 알람 맞춰주기", "2명이 함께 사용"]
         case .family:

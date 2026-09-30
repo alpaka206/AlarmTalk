@@ -2245,23 +2245,6 @@
         }
       }
     },
-    "날씨·운세 등 매일 다른 문구" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Fresh lines every day: weather, fortune, and more"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "天気・運勢など毎日新しいひとこと"
-          }
-        }
-      }
-    },
     "날씨를 쓸 지역을 입력해 주세요." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2383,6 +2366,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "내 목소리 만들기는 유료 기능이에요"
+          }
+        }
+      }
+    },
+    "내 목소리로 듣는 날씨·운세 문구" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Weather and fortune messages in your own voice"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自分の声で聞く天気・運勢メッセージ"
           }
         }
       }
