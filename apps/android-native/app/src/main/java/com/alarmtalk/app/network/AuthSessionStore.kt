@@ -520,6 +520,11 @@ class AuthSessionStore internal constructor(
         provider: String,
         rolledToken: String?,
         userFetchedAtMillis: Long?,
+        /**
+         * 계정 설정만 이 값으로 적는다(정규화 뒤에 덮는다). 계정 설정 올리기가 끝나기 전에 보낸 `/auth/me` 의
+         * 옛 설정을 쓰지 않을 때(`fencedAccountSettings`). null 이면 [user] 의 것 그대로.
+         */
+        dynamicPromptSettingsOverride: DynamicPromptSettings? = null,
     ): AuthSession? = synchronized(sessionWriteLock) {
         val storedToken = prefs.getString(KEY_TOKEN, null)
         val alive = sessionSurvivedForWrite(
@@ -534,6 +539,7 @@ class AuthSessionStore internal constructor(
             provider = provider,
             user = user,
             userFetchedAtMillis = userFetchedAtMillis,
+            dynamicPromptSettingsOverride = dynamicPromptSettingsOverride,
         )
     }
 
@@ -550,6 +556,7 @@ class AuthSessionStore internal constructor(
         provider: String,
         user: AuthUser,
         userFetchedAtMillis: Long?,
+        dynamicPromptSettingsOverride: DynamicPromptSettings? = null,
     ): AuthSession {
         // 서버가 계산 시각(`personal_promo.computed_at`)을 줬으면 그것이 이 답의 시각이다(D7).
         // **정규화 전에** 읽는다 — 정규화가 그 키를 뺀다. 프로필만 고친 저장은 이미 정규화된
@@ -557,7 +564,11 @@ class AuthSessionStore internal constructor(
         val answeredAtMillis = userFetchedAtMillis?.let { received ->
             planAnswerStampMillis(runCatching { user.personalPromo }.getOrNull(), received)
         }
-        val normalizedUser = normalizeUser(user)
+        // 정규화한 뒤에 덮는다 — 정규화 전의 서버 응답은 Gson 이 빈 칸을 null 로 채워 `copy` 가 깨질 수 있다.
+        val normalizedUser = normalizeUser(user).let { normalized ->
+            dynamicPromptSettingsOverride?.let { normalized.copy(dynamicPromptSettings = normalizeDynamicPromptSettings(it)) }
+                ?: normalized
+        }
         val firstQuietWindow = normalizedUser.familyAlarmQuietWindows.firstOrNull()
             ?: FamilyAlarmQuietWindow(days = normalizedUser.familyAlarmQuietDays)
         prefs.edit()

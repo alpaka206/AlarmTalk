@@ -39,12 +39,23 @@ class HolidayCountryPreferenceStore(context: Context) {
     /** 이 기기에 적힌 값이 있는가(없으면 기기 로케일 기본값으로 읽힌다). */
     fun hasSavedCountry(): Boolean = prefs.contains(KEY_COUNTRY)
 
-    /** 서버에서 마지막으로 받은 계정 지역 키 — [WeatherRegionHolidaySync.onAccountRegionReceived] 전용. */
-    fun lastAccountRegionKey(): String? =
-        prefs.getString(KEY_LAST_ACCOUNT_REGION, null)?.trim()?.ifEmpty { null }
+    /**
+     * 업데이트 뒤 이 기기가 **처음 계정 설정을 받은 계정** — 옛 '공휴일 달력' 행에서 고른 나라를 지킬 기회는 이
+     * 계정 하나에만 있다([WeatherRegionHolidaySync.onAccountRegionReceived] 전용). ⚠ 지역이 없는 계정이어도 적는다 —
+     * 안 적으면 다음에 들어온 **다른 계정**의 첫 지역이 그 기회로 읽혀 앞 계정 때 고른 나라를 물려받는다(Codex #837).
+     */
+    fun legacyCountryAccountId(): String? =
+        prefs.getString(KEY_LEGACY_COUNTRY_ACCOUNT, null)?.trim()?.ifEmpty { null }
 
-    fun rememberAccountRegionKey(key: String) {
-        prefs.edit().putString(KEY_LAST_ACCOUNT_REGION, key).apply()
+    fun rememberLegacyCountryAccount(userId: String) {
+        prefs.edit().putString(KEY_LEGACY_COUNTRY_ACCOUNT, userId).apply()
+    }
+
+    /** 옛 행에서 고른 나라를 지킬지 이미 정했다(그 계정의 첫 지역을 받았거나, 지역을 따라 나라를 적었다). */
+    fun isLegacyCountryDecided(): Boolean = prefs.getBoolean(KEY_LEGACY_COUNTRY_DECIDED, false)
+
+    fun markLegacyCountryDecided() {
+        prefs.edit().putBoolean(KEY_LEGACY_COUNTRY_DECIDED, true).apply()
     }
 
     /**
@@ -84,7 +95,8 @@ class HolidayCountryPreferenceStore(context: Context) {
 
         private const val PREFS_NAME = "holiday_country_preferences"
         private const val KEY_COUNTRY = "country_code"
-        private const val KEY_LAST_ACCOUNT_REGION = "last_account_weather_region"
+        private const val KEY_LEGACY_COUNTRY_ACCOUNT = "legacy_country_account"
+        private const val KEY_LEGACY_COUNTRY_DECIDED = "legacy_country_decided"
         private const val KEY_KEPT_COUNTRY_ACCOUNT_REGION = "kept_country_for_account_weather_region"
         private const val KEY_KEPT_COUNTRY_ACCOUNT_USER = "kept_country_for_account_user"
         private const val FALLBACK_COUNTRY = "KR"

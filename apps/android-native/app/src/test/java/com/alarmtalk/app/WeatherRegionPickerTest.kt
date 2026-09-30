@@ -196,7 +196,8 @@ class WeatherRegionPickerTest {
         assertFalse(store.hasSavedCountry())
         WeatherRegionHolidaySync.onAccountRegionReceived(store, USER_A, WeatherRegions.byKey("jp-osaka"))
         assertEquals("JP", store.read())
-        assertEquals("jp-osaka", store.lastAccountRegionKey())
+        assertEquals(USER_A, store.legacyCountryAccountId())
+        assertTrue(store.isLegacyCountryDecided())
     }
 
     @Test
@@ -277,7 +278,41 @@ class WeatherRegionPickerTest {
         val legacy = DynamicPromptWeatherSettings(country = "영국", city = "런던").resolvedRegion()
         WeatherRegionHolidaySync.onAccountRegionReceived(store, USER_A, legacy)
         assertEquals("US", store.read())
-        assertNull(store.lastAccountRegionKey())
+        // 지역이 없어도 **기회는 그 계정이 가져간다** — 아직 정하지는 않았다.
+        assertEquals(USER_A, store.legacyCountryAccountId())
+        assertFalse(store.isLegacyCountryDecided())
+    }
+
+    /**
+     * **지역 없는 계정 뒤에 들어온 다른 계정은 옛 행의 나라를 물려받지 않는다**(Codex #837). 기회를 지역이 있는
+     * 첫 계정으로 두면, 지역 없는 A 가 먼저 들어온 기기에서 B 의 첫 지역이 그 기회가 되어 A 때 고른 나라(JP)가
+     * B 에게 남는다 — B 에게는 그 나라를 바꿀 행이 없다.
+     */
+    @Test
+    fun 지역_없는_계정_뒤에_들어온_다른_계정은_옛_나라를_물려받지_않는다() = runTest {
+        val store = HolidayCountryPreferenceStore(context)
+        store.setCountry("JP") // 옛 '공휴일 달력' 행에서 고른 값
+        WeatherRegionHolidaySync.onAccountRegionReceived(store, USER_A, null)
+        assertEquals("JP", store.read())
+
+        WeatherRegionHolidaySync.onAccountRegionReceived(store, USER_B, WeatherRegions.byKey("kr-seoul"))
+
+        assertEquals("KR", store.read())
+        assertNull(store.keptCountryAccountRegionKey())
+        // 그 뒤 A 가 지역을 받아도 기회는 이미 끝났다(옛 행의 나라는 B 의 지역으로 바뀐 뒤다).
+        WeatherRegionHolidaySync.onAccountRegionReceived(store, USER_A, WeatherRegions.byKey("us-chicago"))
+        assertEquals("US", store.read())
+    }
+
+    /** 지역 없던 **그 계정**이 나중에 첫 지역을 받으면 그때 옛 행의 나라를 지킨다(업데이트 직후 규칙 그대로). */
+    @Test
+    fun 지역_없던_첫_계정이_나중에_받은_첫_지역에서_옛_나라를_지킨다() = runTest {
+        val store = HolidayCountryPreferenceStore(context)
+        store.setCountry("JP")
+        WeatherRegionHolidaySync.onAccountRegionReceived(store, USER_A, null)
+        WeatherRegionHolidaySync.onAccountRegionReceived(store, USER_A, WeatherRegions.byKey("kr-seoul"))
+        assertEquals("JP", store.read())
+        assertEquals("kr-seoul", store.keptCountryAccountRegionKey())
     }
 
     private companion object {

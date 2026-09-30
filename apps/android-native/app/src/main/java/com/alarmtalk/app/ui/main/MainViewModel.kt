@@ -834,6 +834,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     /** 계정 설정(지역·사주) 올리기를 한 번에 하나씩 — `updateDynamicPromptSettings`. */
     internal val promptSettingsUploads = com.alarmtalk.app.data.PromptSettingsUploadQueue()
 
+    /**
+     * 계정 설정 올리기가 **끝났을 때** 이미 떠 있던 계정 요청의 마지막 순번. 그 이하의 `/auth/me` 응답은 올리기 전의
+     * 설정을 읽었을 수 있어 설정만은 지금 세션의 값을 지킨다(`accountAnswerSettings`, Codex #837).
+     */
+    internal var promptSettingsAnswerFence: Long = 0L
+
     /** 공휴일 국가(앱 전역). 값은 계정 지역의 나라를 따른다 — `onAccountPromptSettingsReceived`. */
     internal val holidayCountryStore = com.alarmtalk.app.data.HolidayCountryPreferenceStore(application)
 

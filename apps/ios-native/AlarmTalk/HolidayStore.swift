@@ -235,13 +235,18 @@ final class HolidayStore: ObservableObject {
         // (`countryForAccountRegion`). 남겨 두면 다음 실행에 서버 지역을 받을 때 그 판정이 이 고름을 가린다.
         UserDefaults.standard.removeObject(forKey: Self.keptCountryAccountWeatherRegionDefaultsKey)
         UserDefaults.standard.removeObject(forKey: Self.keptCountryAccountUserDefaultsKey)
+        UserDefaults.standard.set(true, forKey: Self.legacyCountryDecidedDefaultsKey)
         guard code != selectedCountryCode else { return false }
         selectedCountryCode = code
         return true
     }
 
-    /// 서버에서 마지막으로 받은 계정 지역 키. 없으면 이 업데이트 뒤 아직 한 번도 받지 않았다.
-    nonisolated static let lastAccountWeatherRegionDefaultsKey = "holiday.lastAccountWeatherRegion"
+    /// 업데이트 뒤 이 기기가 **처음 계정 설정을 받은 계정** — 옛 '공휴일 달력' 행에서 고른 나라를 지킬 기회는 이
+    /// 계정 하나의 것이다. ⚠ 지역이 없는 계정이어도 적는다 — 안 적으면 다음에 들어온 **다른 계정**의 첫 지역이 그
+    /// 기회로 읽혀 앞 계정 때 고른 나라를 물려받는다(Codex #837). 안드로이드 `legacyCountryAccountId`.
+    nonisolated static let legacyCountryAccountDefaultsKey = "holiday.legacyCountryAccount"
+    /// 옛 행에서 고른 나라를 지킬지 이미 정했다(그 계정의 첫 지역을 받았거나, 지역을 따라 나라를 적었다).
+    nonisolated static let legacyCountryDecidedDefaultsKey = "holiday.legacyCountryDecided"
     /// 옛 '공휴일 달력' 행에서 **직접 고른** 나라를 지키고 있는 계정 지역 키(아래 판정).
     nonisolated static let keptCountryAccountWeatherRegionDefaultsKey = "holiday.keptCountryForAccountWeatherRegion"
     /// 그 나라를 지키고 있는 **계정**. ⚠ 지역 키만으로 가르지 말 것 — 이 값은 기기 전역이라, 같은 지역의
@@ -259,7 +264,8 @@ final class HolidayStore: ObservableObject {
     /// **서버에서 계정 지역을 받았을 때** 공휴일 국가를 무엇으로 할지. nil 이면 건드리지 않는다.
     ///
     /// 안드로이드 `WeatherRegionHolidaySync.onAccountRegionReceived` 와 같은 판정이다 —
-    /// **업데이트 직후 처음 받는 계정 지역**인데, 이 기기에 옛 '공휴일 달력' 행에서 **직접 고른**
+    /// **업데이트 뒤 처음 계정 설정을 받은 계정의 첫 지역**인데(그 기회는 그 계정 하나의 것이다 — 지역이 없어도 가져가고,
+    /// 다른 계정의 지역을 따라 나라를 적거나 지역을 고르면 끝난다), 이 기기에 옛 '공휴일 달력' 행에서 **직접 고른**
     /// 나라가 있고 그게 지역의 나라와 다르면, **그 계정 지역이 바뀌기 전까지** 그 나라를 둔다. 지역을
     /// 다시 고르면(설정 '지역' 행) 곧바로 지역의 나라가 된다. 행이 사라졌다고 사용자가 고른 달력을
     /// 말없이 바꾸면 공휴일에 꺼지는 날이 조용히 달라진다.
@@ -278,10 +284,15 @@ final class HolidayStore: ObservableObject {
         currentCountry: String,
         defaults: UserDefaults = .standard
     ) -> String? {
+        // 기회는 **업데이트 뒤 처음 받은 계정** 하나의 것이다 — 지역이 없어도 그 계정이 가져간다(Codex #837).
+        let legacyAccount = defaults.string(forKey: legacyCountryAccountDefaultsKey) ?? {
+            defaults.set(userID, forKey: legacyCountryAccountDefaultsKey)
+            return userID
+        }()
         guard let region = WeatherRegions.byKey(key),
               let code = countryCode(forWeatherRegion: region.key) else { return nil }
-        let firstReceipt = defaults.string(forKey: lastAccountWeatherRegionDefaultsKey) == nil
-        defaults.set(region.key, forKey: lastAccountWeatherRegionDefaultsKey)
+        let firstReceipt = legacyAccount == userID && !defaults.bool(forKey: legacyCountryDecidedDefaultsKey)
+        defaults.set(true, forKey: legacyCountryDecidedDefaultsKey)
         if firstReceipt,
            defaults.string(forKey: countryDefaultsKey) != nil,
            currentCountry != code {

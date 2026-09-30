@@ -267,6 +267,38 @@ final class WeatherRegionCatalogTests: XCTestCase {
         XCTAssertNil(defaults.string(forKey: HolidayStore.keptCountryAccountUserDefaultsKey))
     }
 
+    /// **지역 없는 계정 뒤에 들어온 다른 계정은 옛 행의 나라를 물려받지 않는다**(Codex #837). 기회를 지역이 있는
+    /// 첫 계정으로 두면, 지역 없는 A 가 먼저 들어온 기기에서 B 의 첫 지역이 그 기회가 되어 A 때 고른 나라가 B 에게
+    /// 남는다. 안드로이드 `WeatherRegionPickerTest.지역_없는_계정_뒤에_들어온_다른_계정은_옛_나라를_물려받지_않는다`.
+    func test_지역_없는_계정_뒤에_들어온_다른_계정은_옛_나라를_물려받지_않는다() throws {
+        let suite = "WeatherRegionCatalogTests.noRegion.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set("JP", forKey: HolidayStore.countryDefaultsKey)
+
+        XCTAssertNil(HolidayStore.countryForAccountRegion(nil, userID: "user-a", currentCountry: "JP", defaults: defaults))
+        XCTAssertEqual(
+            HolidayStore.countryForAccountRegion("kr-seoul", userID: "user-b", currentCountry: "JP", defaults: defaults), "KR",
+            "기회는 처음 받은 계정(A)의 것이다"
+        )
+        XCTAssertEqual(
+            HolidayStore.countryForAccountRegion("us-chicago", userID: "user-a", currentCountry: "KR", defaults: defaults), "US",
+            "B 의 지역을 따라 나라를 적은 뒤에는 기회가 끝났다"
+        )
+    }
+
+    /// 지역 없던 **그 계정**이 나중에 첫 지역을 받으면 그때 옛 행의 나라를 지킨다(업데이트 직후 규칙 그대로).
+    func test_지역_없던_첫_계정이_나중에_받은_첫_지역에서_옛_나라를_지킨다() throws {
+        let suite = "WeatherRegionCatalogTests.laterRegion.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set("JP", forKey: HolidayStore.countryDefaultsKey)
+
+        XCTAssertNil(HolidayStore.countryForAccountRegion(nil, userID: "user-a", currentCountry: "JP", defaults: defaults))
+        XCTAssertNil(HolidayStore.countryForAccountRegion("kr-seoul", userID: "user-a", currentCountry: "JP", defaults: defaults))
+        XCTAssertEqual(defaults.string(forKey: HolidayStore.keptCountryAccountWeatherRegionDefaultsKey), "kr-seoul")
+    }
+
     // MARK: - 시트의 첫 나라
 
     func test_시트는_고른_지역의_나라로_열린다() {

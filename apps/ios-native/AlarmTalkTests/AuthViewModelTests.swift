@@ -193,6 +193,44 @@ final class AuthViewModelTests: XCTestCase {
         XCTAssertEqual(vm.accountAnswerRevision, beforeFailure)
     }
 
+    /// **계정 설정을 올리기 전에 떠난 `/auth/me` 는 설정을 되돌리지 않는다**(Codex #837). 그 요청은 올리기 전의
+    /// 설정(서울)을 읽었는데, 올리기(도쿄)가 끝나 '안 올라간 변경' 표시를 내린 **뒤에** 도착한다. 그대로 쓰면 세션이
+    /// 서울로 돌아가고 받아 적기가 그 옛 값을 기기에 적는다. 울타리(`promptSettingsAnswerFence`) 이하의 응답은
+    /// 설정만 지금 세션의 값을 지킨다 — plan 등 나머지는 그대로 반영된다.
+    func testAccountAnswerSentBeforePromptSettingsUploadDoesNotRevertSettings() async {
+        let api = MockAuthAPI()
+        let vm = AuthViewModel(api: api, appleCredentialProvider: MockAppleCredentialProvider())
+        var session = makeEmailSession()
+        let seoul = DynamicPromptSettings(
+            weather: DynamicPromptWeatherSettings(country: "대한민국", city: "서울", region: "kr-seoul")
+        )
+        let tokyo = DynamicPromptSettings(
+            weather: DynamicPromptWeatherSettings(country: "일본", city: "도쿄", region: "jp-tokyo")
+        )
+        session.user.dynamicPromptSettings = seoul
+        vm._setSessionForTesting(session)
+        addTeardownBlock { KeychainStore.deleteSession() }
+
+        // 앞서 떠난 조회는 올리기 전의 서울을 읽었다.
+        api.meResult = .success(session.user)
+        api.beforeMeResponse = {
+            api.beforeMeResponse = nil
+            // 그 사이 도쿄를 올리고, 올리기 뒤의 확인 조회는 도쿄를 받는다.
+            var fresh = session.user
+            fresh.dynamicPromptSettings = tokyo
+            api.meResult = .success(fresh)
+            await vm.updateProfile(dynamicPromptSettings: tokyo)
+            XCTAssertEqual(vm.session?.user.dynamicPromptSettings?.weather.region, "jp-tokyo")
+        }
+        await vm.refreshUser()
+
+        XCTAssertEqual(api.updateProfileCallCount, 1)
+        XCTAssertEqual(
+            vm.session?.user.dynamicPromptSettings?.weather.region, "jp-tokyo",
+            "올리기 전에 떠난 조회가 서울로 되돌렸다"
+        )
+    }
+
     /// 회귀(2026-09-27 리뷰 2차): **앞 진입에 보낸** `/auth/me` 가 백그라운드를 건너 복귀 뒤에
     /// 도착하면 이번 진입의 답이 아니다(안드로이드 `accountAnswerEntryFor`). 그 답으로 판정하면
     /// 나가 있는 동안 다른 기기에서 결제한 사람에게 "무료 이용이 곧 끝나요" 가 뜬다.

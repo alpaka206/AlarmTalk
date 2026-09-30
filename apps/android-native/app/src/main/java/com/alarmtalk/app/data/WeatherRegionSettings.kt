@@ -50,6 +50,7 @@ object WeatherRegionHolidaySync {
         // 사용자가 지역을 골랐다 — 옛 '공휴일 달력' 행에서 고른 나라는 더 지키지 않는다
         // ([onAccountRegionReceived]). 남기면 그 판정이 이 고름을 가린다.
         store.clearKeptCountry()
+        store.markLegacyCountryDecided()
         return store.setCountry(region.country.code)
     }
 
@@ -60,8 +61,10 @@ object WeatherRegionHolidaySync {
      * 계정 설정은 계정에, 공휴일 국가는 기기에 있다. 받아 올 때 맞추지 않으면 **두 번째 기기**는
      * 설정 행도 없이 옛 나라에 남는다. 그래서 받아들일 때마다 지역의 나라로 맞춘다. 예외는 하나다:
      *
-     *  - ⚠ **업데이트 직후 처음 받는 계정 지역**인데 이 기기에 옛 '공휴일 달력' 행에서 **직접 고른**
-     *    나라가 있고 그게 지역의 나라와 다르면, **그 계정의 지역이 바뀌기 전까지** 그 나라를 둔다.
+     *  - ⚠ **업데이트 뒤 처음 계정 설정을 받은 계정의 첫 지역**인데 이 기기에 옛 '공휴일 달력' 행에서 **직접 고른**
+     *    나라가 있고 그게 지역의 나라와 다르면, **그 계정의 지역이 바뀌기 전까지** 그 나라를 둔다. 그 기회는
+     *    처음 받은 계정 하나의 것이다 — 지역이 없는 계정이어도 가져가고, 다른 계정의 지역을 따라 나라를 적거나
+     *    지역을 고르면([onRegionSaved]) 끝난다.
      *    행이 사라졌다고 사용자가 고른 달력을 말없이 바꾸면 공휴일에 꺼지는 날이 조용히 달라진다.
      *    지역을 다시 고르면([onRegionSaved]) 곧바로 지역의 나라가 된다.
      *    ⚠ 지키는 것은 **그 계정**([userId])에 대해서뿐이다 — 다른 계정이 들어오면(지역이 같아도) 그
@@ -78,10 +81,14 @@ object WeatherRegionHolidaySync {
         userId: String,
         region: WeatherRegion?,
     ): Boolean {
+        // 옛 행에서 고른 나라를 지킬 기회는 **업데이트 뒤 처음 받은 계정** 하나의 것이다 — 지역이 없는 계정이어도
+        // 그 계정이 기회를 가져간다(Codex #837). 안 그러면 지역 없는 A 뒤에 들어온 B 의 첫 지역이 그 기회가 되어
+        // A 때 고른 나라를 B 가 물려받는다.
+        val legacyAccount = store.legacyCountryAccountId() ?: userId.also { store.rememberLegacyCountryAccount(it) }
         region ?: return false
         val code = region.country.code
-        val firstReceipt = store.lastAccountRegionKey() == null
-        store.rememberAccountRegionKey(region.key)
+        val firstReceipt = legacyAccount == userId && !store.isLegacyCountryDecided()
+        store.markLegacyCountryDecided()
         if (firstReceipt && store.hasSavedCountry() && store.read() != code) {
             store.keepCountryForAccountRegion(userId, region.key)
             return false
@@ -109,6 +116,19 @@ data class AccountSettingsReceipt(
     val settings: DynamicPromptSettings,
     val answeredAtMillis: Long?,
 )
+
+/**
+ * `/auth/me` 응답의 계정 설정 대신 쓸 값 — **계정 설정 올리기가 끝나기 전에 보낸 요청**(`requestSeq <= fenceSeq`)이면
+ * 지금 세션의 값([current]), 아니면 null(응답의 값을 그대로 쓴다, Codex #837). 그 응답은 올리기 전의 설정을 읽었을 수 있는데, 올리기가
+ * 끝나 '안 올라간 변경' 표시를 이미 내렸으므로 그대로 쓰면 받아 적기가 옛 값을 이 기기에 적는다(방금 고른 지역이
+ * 되돌아가고 공휴일 국가도 따라 흔들린다). 올리기가 끝난 뒤 보낸 요청은 서버의 지금 값이라 그대로 쓴다.
+ * iOS `AuthViewModel.promptSettingsAnswerFence` 와 같다.
+ */
+fun fencedAccountSettings(
+    requestSeq: Long,
+    fenceSeq: Long,
+    current: DynamicPromptSettings?,
+): DynamicPromptSettings? = if (requestSeq <= fenceSeq) current else null
 
 /** 세션 → 받아 적을 사건. 계정이나 설정이 없으면 null(받아 적을 것이 없다). */
 fun accountSettingsReceipt(session: AuthSession?): AccountSettingsReceipt? {

@@ -1,0 +1,115 @@
+package com.alarmtalk.app
+
+import android.content.Context
+import androidx.test.core.app.ApplicationProvider
+import com.alarmtalk.app.data.fencedAccountSettings
+import com.alarmtalk.app.network.AuthSessionStore
+import com.alarmtalk.app.network.AuthTokenResponse
+import com.alarmtalk.app.network.AuthUser
+import com.alarmtalk.app.network.DynamicPromptSettings
+import com.alarmtalk.app.network.DynamicPromptWeatherSettings
+import org.junit.After
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+import java.io.File
+
+/**
+ * **계정 설정을 올리기 전에 떠난 `/auth/me` 는 설정을 되돌리지 않는다**(Codex #837).
+ *
+ * 올리기가 끝나면 '안 올라간 변경' 표시를 내린다. 그 전에 떠난 `/auth/me` 가 **올리기 전의 설정**을 읽어 뒤늦게
+ * 오면, 표시가 없으니 받아 적기가 그 옛 값을 이 기기에 적는다 — 방금 고른 지역이 되돌아가고 공휴일 국가도 흔들린다.
+ * 그래서 올리기가 끝날 때 이미 떠 있던 요청의 마지막 순번을 울타리로 세우고(`promptSettingsAnswerFence`), 그 이하의
+ * 응답은 **설정만** 지금 세션의 값을 지킨다(plan·프로모·토큰은 그 응답의 것).
+ *
+ * `MainViewModel` 은 단위 테스트에서 세울 수 없어(`EntryRefreshKeepsTokenTest` 와 같은 사정) 값·저장소·배선으로 나눠 본다.
+ */
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34])
+class PromptSettingsAnswerFenceTest {
+
+    private val context: Context = ApplicationProvider.getApplicationContext()
+    private val prefsName = "prompt-settings-fence-test"
+
+    private val seoul = DynamicPromptSettings(
+        weather = DynamicPromptWeatherSettings(country = "대한민국", city = "서울", region = "kr-seoul"),
+    )
+    private val tokyo = DynamicPromptSettings(
+        weather = DynamicPromptWeatherSettings(country = "일본", city = "도쿄", region = "jp-tokyo"),
+    )
+
+    @After
+    fun deleteTestPrefs() {
+        context.getSharedPreferences(prefsName, Context.MODE_PRIVATE).edit().clear().commit()
+        File(context.filesDir.parentFile, "shared_prefs/$prefsName.xml").delete()
+    }
+
+    @Test
+    fun 울타리_이하의_응답은_지금_세션의_설정을_쓴다() {
+        // 올리기가 끝날 때 떠 있던 요청(순번 3 이하)은 올리기 전의 설정을 읽었을 수 있다.
+        assertEquals(tokyo, fencedAccountSettings(requestSeq = 3, fenceSeq = 3, current = tokyo))
+        assertEquals(tokyo, fencedAccountSettings(requestSeq = 1, fenceSeq = 3, current = tokyo))
+        // 올리기가 끝난 뒤 보낸 요청은 서버의 지금 값이다 — 응답 그대로.
+        assertNull(fencedAccountSettings(requestSeq = 4, fenceSeq = 3, current = tokyo))
+        // 올린 적이 없으면(울타리 0) 언제나 응답 그대로.
+        assertNull(fencedAccountSettings(requestSeq = 1, fenceSeq = 0, current = tokyo))
+    }
+
+    @Test
+    fun 저장소는_설정만_덮어_쓰고_나머지는_응답의_것이다() {
+        val store = AuthSessionStore(context.getSharedPreferences(prefsName, Context.MODE_PRIVATE))
+        val user = AuthUser(id = "u1", email = "u1@example.test", plan = "free", dynamicPromptSettings = tokyo)
+        store.saveAppSession(AuthTokenResponse(token = "t", user = user))
+
+        // 옛 설정(서울)을 읽은 응답이지만 plan 은 새 답(plus)이다.
+        val saved = store.saveSessionIfAlive(
+            expectedGeneration = store.sessionGeneration(),
+            user = user.copy(plan = "plus", dynamicPromptSettings = seoul),
+            provider = "email",
+            rolledToken = null,
+            userFetchedAtMillis = System.currentTimeMillis(),
+            dynamicPromptSettingsOverride = tokyo,
+        )
+
+        assertEquals("jp-tokyo", saved?.user?.dynamicPromptSettings?.weather?.region)
+        assertEquals("jp-tokyo", store.read()?.user?.dynamicPromptSettings?.weather?.region)
+        assertEquals("plus", store.read()?.user?.plan)
+    }
+
+    @Test
+    fun 올리기가_끝나면_표시를_내리기_전에_울타리를_세우고_갱신은_그_울타리를_거친다() {
+        val upload = bodyOf("private suspend fun MainViewModel.uploadDynamicPromptSettings(")
+        val fence = upload.indexOf("promptSettingsAnswerFence = personalPromoLedger.latestRequestSeq()")
+        val pushed = upload.indexOf("dynamicPromptStore.markPushed(")
+        assertTrue("올리기가 울타리를 세우지 않는다.", fence >= 0)
+        assertTrue("울타리는 표시를 내리기(`markPushed`) 전에 세운다.", pushed > fence)
+
+        val refresh = bodyOf("internal suspend fun MainViewModel.refreshAppSessionNow(")
+        assertTrue(
+            "refreshAppSessionNow 가 울타리(`fencedAccountSettings`)를 거쳐 저장하지 않는다.",
+            refresh.contains("fenceSeq = promptSettingsAnswerFence") &&
+                refresh.contains("dynamicPromptSettingsOverride = fencedSettings"),
+        )
+    }
+
+    private val authActions: String by lazy {
+        val file = File("src/main/java/com/alarmtalk/app/ui/main/MainViewModelAuthActions.kt")
+        assertTrue("MainViewModelAuthActions.kt 를 못 찾았다(${file.absolutePath}).", file.exists())
+        file.readText()
+    }
+
+    private fun bodyOf(header: String): String {
+        val start = authActions.indexOf(header)
+        assertTrue("$header 를 못 찾았다 — 이름이 바뀌었으면 이 테스트도 같이 고칠 것.", start >= 0)
+        val rest = authActions.substring(start + header.length)
+        return rest.substring(0, NEXT_DECLARATION.find(rest)?.range?.first ?: rest.length)
+    }
+
+    private companion object {
+        val NEXT_DECLARATION = Regex("""(?m)^[ \t]*(?:internal |private |public )?(?:suspend )?fun\s""")
+    }
+}

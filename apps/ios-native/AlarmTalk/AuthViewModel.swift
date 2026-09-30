@@ -242,6 +242,12 @@ final class AuthViewModel: ObservableObject {
     /// 안드로이드는 세션의 받은 시각(`AuthSession.userFetchedAtMillis` → `accountSettingsReceipt`)이 같은 일을 한다.
     @Published private(set) var accountAnswerRevision = 0
 
+    /// 계정 설정(지역·사주) 올리기가 **끝났을 때** 이미 떠 있던 계정 요청의 마지막 순번. 그 이하의 `/auth/me` 응답은
+    /// 올리기 전의 설정을 읽었을 수 있어 **설정만** 지금 세션의 값을 지킨다(Codex #837) — 올리기가 끝나 '안 올라간
+    /// 변경' 표시를 내린 뒤라, 그 옛 값을 쓰면 받아 적기가 방금 고른 지역을 되돌린다. 안드로이드
+    /// `MainViewModel.promptSettingsAnswerFence`·`fencedAccountSettings` 와 같다.
+    private var promptSettingsAnswerFence = 0
+
     /// 계정 요청 하나의 표 — `/auth/me`·로그인을 **보내기 직전에** 뜬다(`beginAccountRequest`).
     /// 안드로이드 `AccountRequest`(`ui/billing/PersonalPromoLedger.kt`)와 같은 모양이다.
     struct AccountRequest: Equatable {
@@ -1019,6 +1025,10 @@ final class AuthViewModel: ObservableObject {
                 merged.plan = current.user.plan
                 merged.personalPromo = current.user.personalPromo
             }
+            // 계정 설정 올리기가 끝나기 전에 보낸 요청이면 **설정만** 지금 세션의 값을 지킨다(`promptSettingsAnswerFence`).
+            if accountRequest.seq <= promptSettingsAnswerFence, let current = session {
+                merged.dynamicPromptSettings = current.user.dynamicPromptSettings
+            }
             let wasPendingDeletion = pendingDeletion || session?.user.isPendingDeletion == true
             if wasPendingDeletion, merged.deletionStatus != "active", !merged.isPendingDeletion {
                 throw APIError.invalidResponse
@@ -1215,8 +1225,9 @@ final class AuthViewModel: ObservableObject {
         isBusy = true
         defer { isBusy = false }
 
+        let requestUserID = session?.user.id
         do {
-            _ = try await api.updateProfile(
+            let response = try await api.updateProfile(
                 UpdateProfileRequest(
                     name: name,
                     allowFamilyAlarms: allowFamilyAlarms,
@@ -1231,8 +1242,16 @@ final class AuthViewModel: ObservableObject {
             // ⚠ **세션을 갈아 끼우기(`refreshUser`) 전에** '아직 안 올라간 변경' 표시를 내린다 — 새 세션을
             // 받는 순간 `AlarmTalkApp` 이 계정 설정을 받아 적는데(`DynamicPromptPreferences.adoptAccount`),
             // 그때 표시가 남아 있으면 방금 올린 값을 한 번 더 올린다. 안드로이드 `updateDynamicPromptSettings` 와 같다.
-            if let dynamicPromptSettings {
-                DynamicPromptPreferences.markPushed(userID: session?.user.id, pushed: dynamicPromptSettings)
+            if let dynamicPromptSettings, let current = session, current.user.id == requestUserID {
+                // ⚠ **표시를 내리기 전에 울타리를 세운다**(Codex #837). 지금 떠 있는 `/auth/me` 는 올리기 **전의**
+                // 설정을 읽었을 수 있다 — 그 응답이 아래 확인 조회보다 늦게 오면 옛 설정으로 세션을 되돌리고, 표시가
+                // 없으니 받아 적기가 그 옛 값을 이 기기에 적는다. 울타리 이하의 응답은 설정만 지금 세션의 값을 지키고
+                // (`refreshUserApplyingToken`), 그 값이 올린 값이 되도록 세션에도 곧바로 적는다(표시를 내린 뒤).
+                promptSettingsAnswerFence = accountRequestSeq
+                DynamicPromptPreferences.markPushed(userID: current.user.id, pushed: dynamicPromptSettings)
+                var updated = current
+                updated.user.dynamicPromptSettings = response.dynamicPromptSettings ?? dynamicPromptSettings
+                persistSession(updated)
             }
             await refreshUser()
         } catch {
