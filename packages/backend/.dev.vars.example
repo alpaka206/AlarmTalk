@@ -15,19 +15,16 @@ PASSWORD_PEPPER=
 
 # === AI provider ===
 ELEVENLABS_API_KEY=
-# TTS model id. Leave empty (= eleven_v3). Every published clip was rendered with v3 and changing the
-# model does NOT re-render them — plan the re-render first (src/lib/voice-provider.ts ttsModelId).
-# Emptying this line does NOT remove a value already synced to the worker (secrets:sync skips blanks) —
-# revert with `npx wrangler secret delete ELEVENLABS_TTS_MODEL_ID --env <dev|production>`.
-ELEVENLABS_TTS_MODEL_ID=
+# The TTS model is NOT configurable here — it is the TTS_MODEL_ID constant in src/lib/tts-model.ts
+# (eleven_v4_turbo), shared by the worker and the stock-clip scripts so cache keys cannot diverge.
 
 # Vertex Gemini (text tagging, clone prerender lines, speech-style analysis). Service-account JSON.
-# gemini-2.5-flash retires 2026-10-20 — use gemini-3.5-flash (NOT flash-lite: it lost blind quality
-# judging to 2.5 Flash; 3.5 Flash matched or beat it). `us` keeps ML processing in the United States,
-# which the privacy policy states (3.5 Flash-Lite does not run in us-central1 at all).
+# The model is NOT configurable here — it is the VERTEX_MODEL constant in src/lib/vertex-translate.ts
+# (gemini-3.8-flash), changed together with its request settings in code. `us` keeps ML processing in
+# the United States, which the privacy policy states (3.8 Flash runs only in global/us/eu — there is no
+# us-central1).
 GOOGLE_VERTEX_CREDENTIALS_JSON=
 GOOGLE_VERTEX_LOCATION=us
-GOOGLE_VERTEX_MODEL=gemini-3.5-flash
 
 # === Optional: transactional email (Resend) ===
 RESEND_API_KEY=

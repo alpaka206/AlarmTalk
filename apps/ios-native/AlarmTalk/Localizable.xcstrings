@@ -210,6 +210,23 @@
         }
       }
     },
+    "%@ 다시 울릴 준비 중" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ will ring again soon"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ まもなく再び鳴ります"
+          }
+        }
+      }
+    },
     "%@ 섹션" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -341,6 +358,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%lld分"
+          }
+        }
+      }
+    },
+    "%lld분 더 자기" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Again in %lld min"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld分後にもう一度"
           }
         }
       }
@@ -2245,23 +2279,6 @@
         }
       }
     },
-    "날씨·운세 등 매일 다른 문구" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Fresh lines every day: weather, fortune, and more"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "天気・運勢など毎日新しいひとこと"
-          }
-        }
-      }
-    },
     "날씨가 들어간 문구는 지역을 골라 주세요." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2852,6 +2869,23 @@
         }
       }
     },
+    "다시 울릴 준비 중" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ringing again soon"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "まもなく再び鳴ります"
+          }
+        }
+      }
+    },
     "다음" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3188,6 +3222,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "登録すると、現在の%@プランが変更されます。"
+          }
+        }
+      }
+    },
+    "등록한 목소리로 듣는 날씨·운세 문구" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Weather and fortune messages in your registered voice"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "登録した声で聞く天気・運勢メッセージ"
           }
         }
       }
@@ -4942,13 +4993,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Set a partner's alarm"
+            "value" : "Set your partner's alarm"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "相手のアラームを設定"
+            "value" : "相手のアラーム設定"
           }
         }
       }

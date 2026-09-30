@@ -1,8 +1,11 @@
 import type { InStatement } from '@libsql/client';
 import type { DbExecutor } from './transactions';
 import { cancelActiveSubscriptionsForUser } from './billing-cancel';
-import { enqueueUserVoiceArtifacts } from './audio-retention';
-import { revokeDeletedVoices } from './voice-revocation';
+import {
+  enqueueUploadKeysReferencedByMessagesStatement,
+  enqueueUserVoiceArtifacts,
+} from './audio-retention';
+import { audioUrlPointsAtUploadsOf, revokeDeletedVoices } from './voice-revocation';
 
 const TEXT_ENCODER = new TextEncoder();
 
@@ -242,17 +245,20 @@ export async function purgeUserAccount(
     // 클론 voice/R2 오디오의 외부 삭제 참조를 행 삭제 *전에* 큐에 적재한다.
     // 실제 삭제는 cron 의 drainExternalDeletions 가 수행 (GDPR/개인정보보호법 잔존 방지).
     await enqueueUserVoiceArtifacts(tx, userIds);
-    await cancelActiveSubscriptionsForUser(tx, userPk, new Date(), {
-      deleteVoiceData: false,
-      promoCoversFree,
-    });
 
     // **파기할 내 클론 목록.** 탈퇴가 남에게 미치는 영향은 전부 이 목록에서 나온다.
     // 클론이 하나도 없으면 파기할 생체정보가 없으니 아무도 안 깨운다.
     //
-    // 뽑는 시점이 중요하다 — 아래에서 plan_group_members·plan_groups 를 지우고 나면
-    // '누가 내 목소리를 쓸 수 있었는지' 를 알 방법이 없어진다. 그래서 그룹 해체 **전에**
-    // `revokeDeletedVoices` 를 부른다(그 함수가 동석 멤버를 조회한다).
+    // 뽑는 시점이 중요하다 — 그룹이 해체되고 나면 '누가 내 목소리를 쓸 수 있었는지' 를 알
+    // 방법이 없어진다. 그래서 그룹 해체 **전에** `revokeDeletedVoices` 를 부른다(그 함수가
+    // 동석 멤버를 조회한다).
+    //
+    // ⚠ **구독 취소(`cancelActiveSubscriptionsForUser`)보다도 앞이어야 한다**(2026-09-30).
+    //   그룹 주인의 구독을 취소하면 그 자리에서 **그룹이 해체되고**(멤버 행 삭제) 내가 보낸
+    //   목소리 알람이 무료 강등으로 `message_id` 를 잃는다. 예전에는 취소가 먼저 돌아서,
+    //   아래 철회가 **동석 멤버도, 수신 확인 전 알람도 못 찾았다** — tombstone 도 푸시도
+    //   없이 받는 사람 기기에 탈퇴자의 녹음이 남았다. 유료 사용자(= 클론이 있는 사람)의
+    //   탈퇴가 전부 이 경우였다(`test/account-purge-residue.test.ts`).
     const cloneProfiles = await tx.execute({
       // is_system 이 시스템/클론을 가르는 유일한 컬럼이다(paid-voice-cleanup.ts 와 같은 기준).
       sql: `SELECT id FROM voice_profiles
@@ -272,7 +278,8 @@ export async function purgeUserAccount(
     // 그래서 판정을 **목소리 하나로** 모았다. 목소리 삭제·플랜 강등과 **같은 함수**가 돈다
     // (`lib/voice-revocation.ts`) — 같은 사건이므로 결과도 같아야 한다.
     //
-    // ⚠ **자리를 옮기지 말 것.** 아래 세 가지보다 모두 앞이어야 한다:
+    // ⚠ **자리를 옮기지 말 것.** 아래 네 가지보다 모두 앞이어야 한다:
+    //   구독 취소(그룹을 해체하고 내 보낸 알람을 강등한다 — 위 ⚠),
     //   plan_group_members 삭제(누가 내 목소리를 볼 수 있었는지 알 수 없게 된다),
     //   `DELETE FROM alarms`(아직 수신 확인 전인 내 보낸 알람의 tombstone 을 여기서 남긴다),
     //   messages·voice_profiles 삭제(조회 대상이 사라진다).
@@ -285,6 +292,12 @@ export async function purgeUserAccount(
     });
     revokedTargets.push(...revocation.downgradedAlarms);
     voiceAccessRevokedUserIds.push(...revocation.voiceAccessRevokedUserIds);
+
+    // 철회를 기록한 **뒤에** 구독을 끊는다(위 ⚠ — 순서를 뒤집지 말 것).
+    await cancelActiveSubscriptionsForUser(tx, userPk, new Date(), {
+      deleteVoiceData: false,
+      promoCoversFree,
+    });
 
     // 코드의 ON DELETE SET NULL만으로는 거래 ID가 무기한 남는다. 소유 근거를 지우기
     // 전에 연결도 파기한다. 이미 코드가 없으면 Apple 원장으로 찾고, 거래 증빙은 호출부가
@@ -307,6 +320,12 @@ export async function purgeUserAccount(
     //   를 하위질의로 읽으므로 그보다 **먼저** 와야 한다). 재배치하지 말 것.
     //   ⚠ 결과를 읽어야 하는 문장은 여기 넣지 말 것 — `revokeDeletedVoices` 처럼 자기가
     //   쓴 행을 되읽는 경로는 그대로 `execute` 로 둔다.
+    //
+    // **내 녹음 원본을 가리키는 문구의 키를 먼저 삭제 큐에 넣는다.** 아래에서 그 문구를
+    // 지우거나 키를 비우기 **전에** 옮겨 두지 않으면, 업로드 행이 TTL 로 먼저 사라진 녹음은
+    // R2 에 영영 남는다(이유는 `enqueueUploadKeysReferencedByMessagesStatement`).
+    const pointsAtMyUploads = audioUrlPointsAtUploadsOf('audio_url', userIds);
+    writes.push(enqueueUploadKeysReferencedByMessagesStatement(userIds));
     writes.push({
       sql: `DELETE FROM voucher_redemptions
             WHERE user_id = ?
@@ -326,6 +345,18 @@ export async function purgeUserAccount(
       args: [userPk],
     });
 
+    // 직접 입력 월 한도 장부. 풀 키가 **사람 id 그대로**(개인 풀 — 통일 이전 행은 로그인 id)
+    // 이거나 **내가 소유한 그룹 id**(커플·가족 공유 풀)다. 안 지우면 파기 뒤에도 계정 id 가
+    // 남아, pepper 로 가명 보존 기록(`retained_billing_records.pseudonym`)까지 곧장 이어진다 —
+    // 분리 보관이 무너진다. 그룹 풀은 그룹이 곧 사라지므로(아래) 주인 없는 행이 된다.
+    // 남의 그룹 풀(내가 멤버였던 곳)은 그 그룹의 것이라 남긴다 — 키가 그룹 id 라 나를 가리키지 않는다.
+    // ⚠ `plan_groups` 삭제보다 **앞**이어야 한다(하위질의가 그 표를 읽는다).
+    writes.push({
+      sql: `DELETE FROM manual_tts_usage
+            WHERE pool_key IN (?, ?)
+               OR pool_key IN (SELECT id FROM plan_groups WHERE owner_user_id = ?)`,
+      args: [userPk, userLoginId, userPk],
+    });
     writes.push({
       sql: `DELETE FROM plan_group_members WHERE user_id = ?`,
       args: [userPk],
@@ -353,10 +384,6 @@ export async function purgeUserAccount(
 
     writes.push({
       sql: `DELETE FROM push_tokens WHERE user_id = ?`,
-      args: [userPk],
-    });
-    writes.push({
-      sql: `DELETE FROM voice_uploads WHERE user_id = ?`,
       args: [userPk],
     });
 
@@ -418,6 +445,37 @@ export async function purgeUserAccount(
     });
     writes.push({
       sql: `DELETE FROM messages WHERE user_id IN (?, ?)`,
+      args: userIds,
+    });
+    // **받은 사람 소유의 녹음 문구**(`family-voice`). `POST /family/alarms/voice` 는 문구 행을
+    // 받는 사람 소유로 만들되 `audio_url` 에 **내 업로드 원본 키**(`voices/<내 id>/…`)를 담는다.
+    // 위 `messages` 삭제는 `user_id`·`voice_profile_id` 로만 고르므로 이 행을 못 집고, 그대로 두면
+    // 파기 뒤에도 내 계정 id 가 키 안에 남는다(원본 파일은 삭제 큐가 지운다).
+    //  1) 위에서 전달 알람을 지웠으니, **더 가리키는 알람이 없는 행은 전달 전용 고아다** —
+    //     수신 확인(`deleteOrphanedDeliveryMessage`)과 같은 판정으로 지운다. 받은 사람 기기의
+    //     걷어내기는 앞의 철회(tombstone)가 맡는다.
+    //  2) 그래도 남는 행(보관함이 가리키는 등)은 받은 사람 것이라 두고, 키만 비운다 —
+    //     플랜 강등의 `detachFamilyAlarmMessagesUsingOwnedUploads` 와 같은 처리다.
+    // ⚠ 셋 다 `DELETE FROM alarms`·`message_library` 삭제 **뒤**여야 하고(참조가 사라진 뒤에
+    //   판정한다), 업로드 표를 하위질의로 읽으므로 `DELETE FROM voice_uploads` 는 맨 뒤다.
+    // ⚠ **업로드 행만 보면 놓친다** — 판정은 `audioUrlPointsAtUploadsOf`(업로드 행 + 키
+    //   앞머리)다. 가족 녹음 원본은 7일 TTL 이 업로드 행을 먼저 지우기 때문이다. 그렇게 찾은
+    //   키는 맨 앞 묶음에서 삭제 큐에 이미 넣었다(아래 `DELETE`·`UPDATE` 가 키를 버리기 전에).
+    writes.push({
+      sql: `DELETE FROM messages
+            WHERE category = 'family-voice'
+              AND COALESCE(is_preset, 0) = 0
+              AND ${pointsAtMyUploads.sql}
+              AND NOT EXISTS (SELECT 1 FROM alarms a WHERE a.message_id = messages.id)
+              AND NOT EXISTS (SELECT 1 FROM message_library ml WHERE ml.message_id = messages.id)`,
+      args: pointsAtMyUploads.args,
+    });
+    writes.push({
+      sql: `UPDATE messages SET audio_url = NULL WHERE ${pointsAtMyUploads.sql}`,
+      args: pointsAtMyUploads.args,
+    });
+    writes.push({
+      sql: `DELETE FROM voice_uploads WHERE user_id IN (?, ?)`,
       args: userIds,
     });
     writes.push({

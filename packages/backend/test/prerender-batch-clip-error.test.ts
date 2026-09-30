@@ -59,7 +59,7 @@ vi.mock('../src/lib/vertex-translate', async (importOriginal) => {
       generateCalls += 1;
       if (failOnCall !== null && generateCalls === failOnCall) throw failWith!();
       // 회차마다 다른 문구 — 같은 글자면 캐시 키가 겹쳐 두 클립이 한 R2 오브젝트를 공유한다.
-      return { text: `[cheerfully] 좋은 아침이에요. 잘 잤어요? 오늘도 ${generateCalls}`, tag: 'cheerfully' };
+      return { text: `좋은 아침이에요. 잘 잤어요? 오늘도 ${generateCalls}` };
     },
   };
 });
@@ -107,7 +107,8 @@ async function prerenderDb(): Promise<{ db: Client; path: string }> {
       created_at TEXT DEFAULT (datetime('now'))
     );
     CREATE TABLE pending_external_deletions (
-      id TEXT PRIMARY KEY, kind TEXT NOT NULL, ref TEXT NOT NULL, created_at TEXT
+      id TEXT PRIMARY KEY, kind TEXT NOT NULL, ref TEXT NOT NULL, created_at TEXT,
+      UNIQUE(kind, ref)
     );
     INSERT INTO voice_profiles (id, user_id, name, elevenlabs_voice_id)
       VALUES ('vp1', 'u1', '엄마 목소리', 'eleven-1');

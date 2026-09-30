@@ -11,7 +11,8 @@
   2026-09-28T04:57Z — 2026-09-27T15:04Z 제출, `AFTER_APPROVAL` 로 승인 즉시 게재). 심사 노트는 "WHAT'S NEW IN 1.2.10" 머리말로 새로 썼다(3,950자 — 목소리 느낌·자연스러운 문구·**서버가
   켜는 기간 한정 개인 플랜은 심사 중 꺼져 있음**·첫 실행 코드 안내 제거). 첨부 없음.
 - **prod 서버**: #797 머지(d604b08e)로 배포·마이그레이션 #121·#122 적용 확인(2026-09-27). prod Gemini 는
-  `gemini-3.5-flash`/`us` 로 전환했다(시크릿 동기화 — 2.5 은퇴 10/20 대응).
+  `gemini-3.5-flash`/`us` 로 전환했다(시크릿 동기화 — 2.5 은퇴 10/20 대응). 다음 모델 `gemini-3.8-flash` 는
+  시크릿이 아니라 **코드 머지로** 바뀐다 — 아래 「Gemini 3.8 Flash」.
 - **기간 한정 개인 플랜 스위치 켜짐** — prod `PERSONAL_PROMO_STARTS_AT=2026-09-28T11:05:00+09:00`
   (`secrets:sync:prod`). **운영자 결정으로 iOS 1.2.10 게재·dev 리허설 전에 켰다** — 스펙 「운영」 3 의 원래
   순서와 다르다. 켠 뒤 확인: 원시 free 계정(rec3) `/auth/me` 가 `plan: plus` + `personal_promo.ends_at`
@@ -37,11 +38,17 @@
   클래스패스로 돌린다) → Play Developer API edits(`GOOGLE_PLAY_SERVICE_ACCOUNT_JSON`) 로 업로드·트랙·
   validate·commit. iOS 는 xcodegen → archive(`Local.xcconfig`) → export(수동 서명 plist — 자동은
   'No Accounts') → `altool` 검증·업로드 → ASC API 로 버전·whatsNew·빌드 연결·심사 노트·reviewSubmissions.
-  **다음 App Store 버전부터 Copyright(`appStoreVersions` 의 `copyright`)는 `© 2026 vailen`** 이다(2026-09-29
-  사용자 결정). 판매자 이름은 개인 법적 이름 그대로 둔다 — 애플 계정이 개인(개인사업자) 계정이라 판매자
-  이름은 계정 명의를 따른다. 새 버전 레코드를 만들 때 copyright 가 이 값인지 확인한다.
+  **Copyright(`appStoreVersions` 의 `copyright`)는 이미 `© 2026 Vailen` 으로 게재돼 있다**(ASC 입력값
+  `2026 Vailen` — `©` 는 애플이 붙인다. 2026-09-30 KR 공개 페이지 확인). 판매자 이름은 개인 법적 이름 그대로
+  둔다 — 애플 계정이 개인(개인사업자) 계정이라 판매자 이름은 계정 명의를 따른다. 새 버전 레코드를 만들 때
+  copyright 가 이 값으로 따라왔는지 확인한다.
   서버를 먼저 내는 회차는 빌드 전에 main 의 Deploy Backend 실행이 **성공**했고 로그에 그 회차의
   마이그레이션이 적용으로 찍혔는지 눈으로 본다(가정하지 않는다 — 안 돌았으면 `workflow_dispatch`).
+- [ ] **스토어 등록정보 교체 대기**(2026-09-30 — 새 이름 `알람톡: 목소리 알람 시계` 등, 아직 아무것도 올리지
+      않았다). 원본과 순서·조건은 `docs/product/app-store-listing.md`·`docs/product/play-store-listing.md`:
+      Play 는 날씨 주장을 뺀 INTERIM 을 지금 올리고(옛 설명에 익명 후기·해시태그·개인 연락처가 있다), App Store 는
+      프로모션 문구만 지금(P), 이름·부제·검색어·설명은 다음 버전 레코드에서. 날씨가 맞는다고 말하는 문장은
+      **날씨 지역 서버 변경이 prod 에 배포되고 확인된 뒤에만**(W) — 확인하면 결과를 여기 적고 판을 바꾼다.
 - **1.2.10 순서**(2026-09-27 결정 — 서버 먼저): 버전 올림 → #797(develop→main) 머지로 prod 배포·
   마이그레이션 #121·#122 → main 에서 두 앱 빌드·제출 → prod Gemini 시크릿 전환(10/20 전) → iOS 1.2.10
   게재 뒤 iOS 강제 업데이트(하한 7). 실제로는 Android 강제 업데이트(30)를 Play 30 게재 뒤 먼저 냈고
@@ -199,15 +206,65 @@
   수만 건이라 DB 행이 끝 + 3일 뒤 몇 시간 안에 지워져도 파일 삭제는 며칠~몇 주 더 걸린다. `pending_external_deletions`
   를 지켜보고, 필요하면 드레인 용량을 따로 늘리는 PR.
 
-## Gemini 2.5 Flash 은퇴 대응 — **기한 2026-10-20**
+## ElevenLabs v4 Turbo + 태그 제거 — 코드는 develop, **다시 굽기는 사람이 듣고 나서** (2026-09-30)
 
-`gemini-2.5-flash` 는 Vertex 에서 **2026-10-20 에 은퇴**한다(「Model versions and lifecycle」, 2026-09-22
-갱신 — "retirement timelines may be extended, they won't be moved to an earlier date"). 대체는
-**`gemini-3.5-flash`(GA, 은퇴 2027-05-19 이후)**, 지역은 **`us`**(처리방침이 처리 국가를 '미국' 으로 적어
-`global` 은 쓰지 않는다). **2026-09-27 에 dev·prod 모두 `gemini-3.5-flash` / `us` 로 바꿨다**(아래 순서).
+합성 모델이 `eleven_v4_turbo` 다 — `packages/backend/src/lib/tts-model.ts` 의 `TTS_MODEL_ID` 상수 하나이고 서버와 스톡
+스크립트가 같이 쓴다. 워커 변수 `ELEVENLABS_TTS_MODEL_ID` 는 없앴다(원복도 코드). 설정은 stability 0.5·similarity 0.8
+둘뿐(v4 는 style·speed 를 조용히 무시한다). **Gemini 에게 오디오 태그를 쓰라고 하지 않는다** — 같은 언어 직접
+입력은 Gemini 를 아예 부르지 않고, 사전렌더·동적 생성·번역은 모델이 낸 태그를 벗긴다. 스톡 프리셋 60문장의 태그도
+뺐다(화면 문구는 그대로). 남은 대괄호는 사용자가 친 것과 글자 웃음(ㅋㅋ)을 바꾼 `[laughs]` 뿐이다. 근거와 측정은
+`docs/spec/voice-and-message.md` §10, 절차는 `docs/ops/tts-model-rerender.md`.
 
-**표가 권하는 Flash-Lite 가 아니라 Flash 로 가는 이유**(2026-09-23 블라인드 판정 — 원어민 판정자에게
-어느 쪽이 어느 모델인지 가리고, 튜닝에 쓰지 않은 관계·호칭 프로필로, 같은 프롬프트에서 모델만 바꿔 비교):
+- v3 말끝 보완(문장 끝 ` ...`·mp3 끝 무음 0.366초)을 뺐다. 2026-09-30 A/B(기본 목소리 4 × 태그 없는 2문장 × 꼬리
+  있음/없음, 16개): 꼬리 없이도 끝 무음 0.14~0.29초·끝/평균 세기 ≤0.44, 받아쓰기에 덧붙은 말 없음. 산출물은
+  세션 스크래치(`v4t-tail/`)에만 있다.
+- 번들 인사말 12개(안드로이드 `res/raw` = 랜딩 `public/audio`, iOS 는 안드로이드 파일을 참조)와 안드로이드 랜딩
+  미리듣기를 v4 Turbo 로 다시 구웠다. 옛 v3 대비 음량 −0.3~−8.4dB, 도현 +3.6~+6.2반음·시우 +2.6~+4.7반음(받아쓰기는
+  원문 그대로).
+- 클론 사전렌더는 마이그레이션 **#124**(`refresh-stock-clips-v4-turbo-…`)가 굽혀 있는 클론을 교체 회차로 큐에
+  다시 넣는다 — 배포 직후부터 cron 이 같은 message_id 에 덮어쓴다(문구도 Gemini 가 새로 쓴다). 새 등록은
+  대기열 앞에 선다.
+- 시스템 스톡은 **자동으로 바뀌지 않는다** — `publish:stock` 의 교체 갈래로 같은 message_id 에 소리만 바꾼다(은퇴
+  아님 → 차단 화면 없음).
+
+남은 일(이 순서로 — `docs/ops/tts-model-rerender.md`):
+- [ ] develop 머지 뒤 dev: 새 직접 입력·새 클론이 v4 Turbo 인지(`generated_audio_assets.model_id`), #124 로 dev 클론
+      재렌더가 도는지(큐 `pending`·`refresh_existing = 1` 이 줄어드는가).
+- [ ] `npm run preview:stock`(240개 — 약 31,300자 ≈ 8.8천 크레딧) → **사람이 듣는다**(남자 목소리 음높이·음량).
+- [ ] `npm run publish:stock -- --env dev`(`[교체]` 240) → dev 폰으로 기본 목소리·클론 알람 확인. 작게 들리면 클라
+      고정 보정 게인을 따로 정한다(스펙 §10 「위험」).
+- [ ] main 머지 → prod #124 → 곧바로 `npm run publish:stock -- --env prod` → 완료 확인 쿼리.
+- [ ] 번들 인사말을 실은 앱 릴리스.
+- [ ] 치우기(아무 때나 — 코드가 읽지 않는다): 워커에 `ELEVENLABS_TTS_MODEL_ID` 가 있으면
+      `npx wrangler secret delete ELEVENLABS_TTS_MODEL_ID --env dev`·`--env production`(없으면 할 일 없음).
+- [ ] 다음 회차 마이그레이션: `voice_profiles.preview_tag` DROP(코드는 이제 읽지도 쓰지도 않는다).
+- 배포 순간 확정만 하고 정식 등록 전이던 초안은 다시 들으려 하면 `VOICE_PREVIEW_UNAVAILABLE` 이 된다(모델 id 가
+  캐시 키에 들어간다). 등록은 그대로 되고, 문구·관계·호칭을 고치면 새로 만든다.
+- 처리방침 메모(아래 Gemini 절 끝): 직접 입력 문구는 이제 **번역할 때만** Vertex 로 간다.
+
+## Gemini 3.8 Flash — 모델은 **코드 상수** 하나 (2026-09-30)
+
+모든 Gemini 호출은 `packages/backend/src/lib/vertex-translate.ts` 의 `VERTEX_MODEL`(`gemini-3.8-flash`, 지역 `us`)
+로 나간다. **워커 시크릿 `GOOGLE_VERTEX_MODEL` 로 덮는 길은 없앴다** — dev·prod 워커에 남은 옛 값
+(`gemini-3.5-flash`)이 새 코드를 옛 모델로 돌리지 못하게 하려는 것이다. 그래서 전환도 원복도 **코드**다.
+
+- **Pro 는 어디에서도 쓰지 않는다.** 이전 운영 모델은 `gemini-3.5-flash`(2026-09-27 시크릿 전환 — 그 전은
+  `gemini-2.5-flash`/`us-central1`, 2.5 는 2026-10-20 은퇴).
+- 3.8 Flash(GA 2026-09-02)는 사고 수준 `MINIMAL` 을 **400** 으로 거절한다 — 3.5 때 쓰던 값이라 모델 이름만
+  바꿨으면 모든 호출이 실패하고, 호출부가 실패를 삼켜 경보 없이 폴백만 늘었을 것이다. 그래서 `thinkingLevel:
+  LOW` 와 함께 바꿨다(`buildGenerationConfig`). 3.x 는 temperature 를 무시하므로 호출부의 temperature·상한 값도
+  지웠다. 출력 상한은 사고 토큰을 함께 세므로 1024 → 4096(요금은 만든 토큰만).
+- 단가(`us`, 100만 토큰 입력/출력): 3.8 Flash $0.825/$4.125(2026-12-31 까지 도입가, 그 뒤 $1.65/$8.25),
+  3.5 Flash $1.65/$9.90. 사고 토큰도 출력 단가라 실제 비용은 로그의 `thought_tokens` 로 본다.
+- 2026-09-30 실호출 1회(dev 자격 증명, 운영 요청 모양 — 사전렌더 프롬프트·응답 스키마·`LOW`·상한 4096):
+  HTTP 200 · `STOP` · `model_version gemini-3.8-flash` · 2.4초 · 입력 3,635 / 답 37 / 사고 0 토큰.
+- ⚠ **품질 판정은 아직 없다.** 아래 표는 3.5 로 넘어갈 때의 것이다. 비교는
+  `npm run eval:gemini -- --models gemini-3.8-flash@us,gemini-3.5-flash@us`(평가 도구가 요청 주소의 모델만 갈아
+  끼운다 — `scripts/eval-gemini-prompts.ts`).
+- 3.8 Flash 는 은퇴일이 정해지지 않은 '단기 제공' 모델이다(공지 뒤 최소 45일 안에 옮긴다).
+
+**Flash-Lite 로 내리지 말 것**(2026-09-23 블라인드 판정 — 원어민 판정자에게 어느 쪽이 어느 모델인지 가리고,
+튜닝에 쓰지 않은 관계·호칭 프로필로, 같은 프롬프트에서 모델만 바꿔 비교):
 
 | 비교(같은 프롬프트) | 합계 | 한국어 | 영어 | 일본어 |
 | --- | --- | --- | --- | --- |
@@ -216,44 +273,21 @@
 | 3.5 Flash vs 2.5 Flash (세트 3) | **72:47 (61%)** | 24:12 | 23:24 | 25:11 |
 
 - Lite 는 부자연·번역투가 2.5 의 세 배였다. 프롬프트를 여러 번 고쳐도 새 프로필에서 따라잡지 못했다.
-- 3.5 Flash 는 시드 누락·존대 실수가 2.5 보다 적은 대신 **20~30% 길다**(영어 중앙값 33단어).
-- 비용(목록가): 3.5 Flash $1.50/$9.00, 2.5 Flash·3.5 Flash-Lite $0.30/$2.50(입력/출력 100만 토큰).
-  실측 토큰으로 사전렌더 클립 한 개 약 $0.006(2.5 는 $0.0012), 유료 클론 한 목소리(22클립) 약 $0.13.
-  직접 입력 태깅 한 번 약 $0.0013.
-- 응답 시간: p50 1.4~1.6초(2.5 는 0.8~1.0초), **p90 7~8초**. 사전렌더는 cron 이라 괜찮지만 직접 입력
-  태깅은 저장 경로다 — dev 전환 뒤 체감 확인할 것.
 
-**프롬프트도 같이 바뀐다(2.5 에도 적용된다)** — 이 PR 을 머지하면 시크릿을 바꾸기 전에도 2.5 가 새 프롬프트로
-돈다. 같은 판정에서 새 프롬프트(v7)는 이전 커밋 프롬프트(v4)를 79:33(71%, 한국어 27:6)으로 이겼고,
-v4 는 그 전 운영 프롬프트를 2.5 에서 84:25 로 이겼다. 평가 도구: `packages/backend/scripts/eval-gemini-prompts.ts`
-(`npm run eval:gemini`, 결과는 gitignore 된 `.eval/`).
+**모델 이름만 바꾸면 깨지는 곳**(지금까지 실제로 난 것):
+- 3.8 의 `MINIMAL` 400(위). 계열마다 사고 설정 이름도 다르다 — 2.x 는 `thinkingBudget`, 3.x 는 `thinkingLevel`.
+- 응답 스키마 enum 에 빈 문자열이 있으면 Gemini 3 가 400 — 말투 분석이 경보 없이 꺼질 뻔했다(고쳤다).
+- 상한에 걸리면 **잘린 JSON 이 HTTP 200** 으로 온다(`finishReason: MAX_TOKENS`) — 던져서 기존 폴백으로 간다.
 
-**모델 이름만 바꾸면 깨지는 곳이 있었다**(2026-09-23 dev 자격 증명으로 실제 프롬프트 비교):
-- **등록 녹음 말투(사투리) 분석이 400** — 응답 스키마 enum 에 빈 문자열이 있으면 Gemini 3 가 거절한다.
-  그 함수는 실패를 삼키고 null 을 돌려주므로 **경보 없이 사투리 분석이 전부 꺼졌을** 것이다. 고쳤다.
-- 2.x 에 `thinkingLevel` 을 보내면 400, 3.x 문서는 `thinkingBudget` 을 더 이상 지원하지 않는다 →
-  **모델 문자열로 설정을 가른다**(`isLegacyGeminiModel`). 3.x 는 temperature 를 무시한다.
-- 상한에 걸리면 **잘린 JSON 이 HTTP 200** 으로 온다(`finishReason: MAX_TOKENS`) — 전에는 그대로 문구로
-  받았다(2.5 에도 있던 구멍). 이제 던져서 기존 폴백으로 간다.
-- 예비 후보 `gemini-3.1-flash-lite`(@`us`)도 호출은 정상이다(품질 판정은 하지 않았다).
-
-전환 순서(코드가 두 계열을 모두 부르므로 **시크릿만 바꾸면 전환·원복**된다):
-- [x] 코드 PR 을 develop 에 머지 → dev 배포(#801, 2026-09-27).
-- [x] dev 전환: `.dev.vars.dev` 에 `GOOGLE_VERTEX_MODEL=gemini-3.5-flash`, `GOOGLE_VERTEX_LOCATION=us`
-      → `npm run secrets:sync:dev --workspace=backend`(2026-09-27). ⚠ 동기화 스크립트는 빈 값을 건너뛴다 — 값을 지워 기본값으로
-      돌릴 수 없다.
-- [ ] dev 확인: `wrangler tail` 에서 `at:"vertex.generate"` 로그가 `status 200`·`finish_reason STOP` 인지,
-      직접 입력 태깅·등록 미리듣기·클론 사전렌더·말투 분석을 한 번씩 돌려 본다. **아직 워커 로그로는 못 봤다** —
-      같은 자격 증명·모델·지역의 호출은 평가 스크립트(`npm run eval:gemini`, 702건)로만 확인했다. 위 dev
-      리허설 때 함께 본다.
-- [x] develop → main 뒤 **prod 전환**: `.dev.vars.prod` 같은 두 값 → `npm run secrets:sync:prod --workspace=backend`
-      (#797 배포 뒤, 2026-09-27 — 이전 값 `gemini-2.5-flash`/`us-central1`).
-- [ ] prod 모니터링: 며칠 로그(`vertex.generate`)와 Sentry `clip_failure` 를 본다. 전환 직후는 새벽이라
-      호출이 없어 아직 한 건도 못 봤다.
-- 원복: 시크릿을 `gemini-2.5-flash` / `us-central1` 로 되돌리면 된다(10/20 전까지만). 그 뒤의 예비는
-  `gemini-3.5-flash-lite` / `us` — 품질이 떨어지는 것을 알고 쓰는 비상용이다(위 표).
-- 후속(막지 않음): 3.5 Flash 문구가 길다 — 영어 길이 상한 조정 검토. 판정이 짚은 나머지(문장 중간 태그,
-  내용과 안 맞는 태그 일부)는 v4·2.5 에도 같은 정도로 있었다.
+남은 일:
+- [ ] develop 머지 → dev 배포 즉시 3.8(시크릿 무관). `wrangler tail` 에서 `at:"vertex.generate"` 가 `status 200`·
+      `finish_reason STOP`·`model_version gemini-3.8-flash` 인지, 등록 미리듣기·클론 사전렌더·말투 분석(직접 입력
+      태깅이 남아 있으면 그것도)을 한 번씩 돌려 본다. 사고 토큰·지연도 같이 본다(저장 경로 타임아웃 15초).
+- [ ] develop → main 뒤 prod 도 코드로 바뀐다. 며칠 로그(`vertex.generate`)와 Sentry `clip_failure` 를 본다.
+- [ ] 치우기(배포 뒤 아무 때나 — 코드가 읽지 않는다): `npx wrangler secret delete GOOGLE_VERTEX_MODEL --env dev`,
+      `--env production`. `.dev.vars.dev`·`.dev.vars.prod` 의 `GOOGLE_VERTEX_MODEL` 줄도 지운다(동기화 목록에서
+      빠져 올라가지는 않는다).
+- 원복: 코드 되돌리기(revert)다. 3.5 로 돌아가려면 `VERTEX_MODEL` 과 사고 수준을 **같이** 되돌린다.
 
 ⚠ **법무 확인 필요(모델 교체와 별개)**: 개인정보 처리방침 71행은 "동적 문구·번역 기능을 사용하지 않으면
 이 전송은 발생하지 않습니다", 161행 표의 목적은 "동적 알람 문구 생성, 다국어 번역" 이다. 그런데 운영에서는

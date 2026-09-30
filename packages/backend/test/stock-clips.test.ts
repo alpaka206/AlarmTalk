@@ -5,9 +5,9 @@ import {
   STOCK_CLIP_LANGUAGES,
   STOCK_GREETING_CATEGORY,
   findMissingStockTargets,
+  systemStockTexts,
   type PrerenderVoice,
 } from '../src/lib/stock-clips';
-import { appendMp3TrailingSilence } from '../src/lib/mp3-silence';
 
 // ---------- STOCK_CLIP_PRESETS 리터럴 불변식 ----------
 
@@ -36,11 +36,16 @@ describe('STOCK_CLIP_PRESETS (확정 리터럴)', () => {
     expect(weather.texts.ja[8]).toMatch(/取得できません|お伝えできません/);
   });
 
-  it('모든 문구가 딜리버리 태그로 시작한다(자동 태깅 미사용 전제)', () => {
+  // 2026-09-30(eleven_v4_turbo): 태그를 뺐다 — 합성 글자와 화면 문구가 같은 글이다(`systemStockTexts`).
+  it('어느 문구에도 대괄호 태그가 없고, 앞뒤 공백·겹친 공백도 없다', () => {
     for (const preset of STOCK_CLIP_PRESETS) {
       for (const list of Object.values(preset.texts as Record<string, readonly string[]>)) {
         for (const text of list) {
-          expect(text).toMatch(/^\[[a-z][a-z -]{1,32}\]/i);
+          expect(text).not.toMatch(/\[[a-z][a-z ,-]{1,48}\]/i);
+          expect(text).toBe(text.trim());
+          expect(text).not.toMatch(/\s{2,}/);
+          // 합성 글자·화면 문구·태그 목록이 서버와 게시 스크립트에서 같게 나온다.
+          expect(systemStockTexts(`  ${text} `)).toEqual({ synthesisText: text, displayText: text, deliveryTagsJson: '[]' });
         }
       }
     }
@@ -110,119 +115,5 @@ describe('findMissingStockTargets (시스템 리터럴)', () => {
         (t) => t.category === 'weather' && t.language === 'ko' && t.variantIndex === 0,
       ),
     ).toBe(false);
-  });
-});
-
-// ---------- appendMp3TrailingSilence ----------
-
-const FRAME_LEN = 417; // MPEG1 L3 44.1kHz 128k, padding 0
-const SILENCE_BYTES = 5851;
-const SILENCE_FRAMES = 14;
-
-/** MPEG1 Layer III · 44.1kHz · 128kbps · CRC 없음 프레임 헤더 + 지정 채널모드. */
-function frameHeader(channelMode: number): number[] {
-  return [0xff, 0xfb, 0x90, (channelMode & 0x03) << 6];
-}
-
-function makeFrame(channelMode = 3): Uint8Array {
-  const frame = new Uint8Array(FRAME_LEN);
-  frame.set(frameHeader(channelMode), 0);
-  return frame;
-}
-
-/** Info 헤더(FRAMES|BYTES 플래그)를 가진 첫 프레임. side info 17B(mono) 뒤에 마커. */
-function makeInfoFrame(frames: number, bytes: number): Uint8Array {
-  const frame = makeFrame(3);
-  const tagPos = 4 + 17;
-  frame.set([0x49, 0x6e, 0x66, 0x6f], tagPos); // "Info"
-  frame.set([0, 0, 0, 0x03], tagPos + 4); // flags: FRAMES|BYTES
-  new DataView(frame.buffer).setUint32(tagPos + 8, frames);
-  new DataView(frame.buffer).setUint32(tagPos + 12, bytes);
-  return frame;
-}
-
-function concat(...parts: Uint8Array[]): Uint8Array {
-  const total = parts.reduce((a, p) => a + p.length, 0);
-  const out = new Uint8Array(total);
-  let off = 0;
-  for (const p of parts) {
-    out.set(p, off);
-    off += p.length;
-  }
-  return out;
-}
-
-function countFrames(bytes: Uint8Array): number {
-  let off = 0;
-  if (bytes[0] === 0x49 && bytes[1] === 0x44 && bytes[2] === 0x33) {
-    off =
-      10 +
-      (((bytes[6]! & 0x7f) << 21) |
-        ((bytes[7]! & 0x7f) << 14) |
-        ((bytes[8]! & 0x7f) << 7) |
-        (bytes[9]! & 0x7f));
-  }
-  let frames = 0;
-  while (off + 4 <= bytes.length) {
-    if (bytes[off] === 0xff && (bytes[off + 1]! & 0xe0) === 0xe0) {
-      const pad = (bytes[off + 2]! >> 1) & 0x01;
-      frames++;
-      off += FRAME_LEN + pad;
-    } else {
-      off++;
-    }
-  }
-  return frames;
-}
-
-describe('appendMp3TrailingSilence', () => {
-  it('mono 44.1k/128k 스트림 끝에 무음 14프레임(5851B)을 붙인다', () => {
-    const input = concat(makeFrame(), makeFrame());
-    const out = appendMp3TrailingSilence(input);
-    expect(out.length).toBe(input.length + SILENCE_BYTES);
-    expect(countFrames(out)).toBe(2 + SILENCE_FRAMES);
-  });
-
-  it('Info 헤더의 프레임/바이트 카운트를 함께 보정한다', () => {
-    const input = concat(makeInfoFrame(2, FRAME_LEN * 2), makeFrame());
-    const out = appendMp3TrailingSilence(input);
-    const tagPos = 4 + 17;
-    const view = new DataView(out.buffer, out.byteOffset);
-    expect(view.getUint32(tagPos + 8)).toBe(2 + SILENCE_FRAMES);
-    expect(view.getUint32(tagPos + 12)).toBe(FRAME_LEN * 2 + SILENCE_BYTES);
-  });
-
-  it('ID3v2 태그가 앞에 있어도 첫 프레임을 찾아 처리한다', () => {
-    const id3 = new Uint8Array(10);
-    id3.set([0x49, 0x44, 0x33, 3, 0, 0, 0, 0, 0, 0], 0); // 크기 0 인 ID3v2 헤더
-    const input = concat(id3, makeFrame());
-    const out = appendMp3TrailingSilence(input);
-    expect(out.length).toBe(input.length + SILENCE_BYTES);
-  });
-
-  it('mono 가 아니거나(스테레오) MP3 가 아니면 원본을 그대로 반환한다', () => {
-    const stereo = concat(makeFrame(0), makeFrame(0));
-    expect(appendMp3TrailingSilence(stereo)).toBe(stereo);
-    const garbage = new Uint8Array([1, 2, 3, 4, 5]);
-    expect(appendMp3TrailingSilence(garbage)).toBe(garbage);
-  });
-
-  it('내장 무음 프레임 자체가 mono 44.1k/128k 이고 리저버 참조가 없다', () => {
-    // 무음 위에 다시 붙여도(형식 동일) 깨지지 않는지로 간접 검증
-    const once = appendMp3TrailingSilence(concat(makeFrame()));
-    const silencePart = once.slice(FRAME_LEN);
-    expect(silencePart.length).toBe(SILENCE_BYTES);
-    expect(silencePart[0]).toBe(0xff);
-    // 무음 각 프레임의 main_data_begin(side info 첫 9비트) == 0
-    let off = 0, checked = 0;
-    while (off + 4 <= silencePart.length) {
-      expect(silencePart[off]).toBe(0xff);
-      const mainDataBegin = (silencePart[off + 4]! << 1) | (silencePart[off + 5]! >> 7);
-      expect(mainDataBegin).toBe(0);
-      const pad = (silencePart[off + 2]! >> 1) & 0x01;
-      off += FRAME_LEN + pad;
-      checked++;
-    }
-    expect(checked).toBe(SILENCE_FRAMES);
   });
 });

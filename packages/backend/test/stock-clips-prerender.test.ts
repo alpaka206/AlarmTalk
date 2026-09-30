@@ -10,9 +10,6 @@ import {
   markPrerenderFailed,
   CLONE_PRERENDER_CATEGORIES,
   CLONE_CLIP_SEEDS,
-  CLONE_FORTUNE_THEMES,
-  CLONE_WEATHER_CONDITIONS,
-  cloneClipAllowsLaughter,
   type PrerenderVoice,
 } from '../src/lib/stock-clips';
 
@@ -430,6 +427,22 @@ describe('사전렌더 큐 헬퍼', () => {
     await markPrerenderFailed(db, 'v1', lastClaim!.claimToken); // 5회째 → failed
     expect(await claimPendingPrerenderVoices(db, 5)).toEqual([]);
   });
+  // #124 는 굽혀 있던 클론 전부를 한꺼번에 다시 넣는다 — 새 등록이 그 뒤에 몇 시간씩 서면 안 된다.
+  it('새 등록(refresh_existing = 0)을 다시 굽는 회차보다 먼저 잡는다 — 같은 갈래 안에서는 요청 순서', async () => {
+    const db = await setupDb();
+    await db.execute(`INSERT INTO voice_prerender_queue (voice_profile_id, owner_user_id, refresh_existing, requested_at)
+                      VALUES ('bulk-1', 'owner-1', 1, '2026-09-30 00:00:00.000'),
+                             ('bulk-2', 'owner-2', 1, '2026-09-30 00:00:00.001'),
+                             ('new-late', 'owner-3', 0, '2026-09-30 05:00:00'),
+                             ('new-early', 'owner-4', 0, '2026-09-30 04:00:00')`);
+    const order: string[] = [];
+    for (let i = 0; i < 4; i += 1) {
+      const [claim] = await claimPendingPrerenderVoices(db, 1);
+      order.push(claim!.voiceProfileId);
+    }
+    expect(order).toEqual(['new-early', 'new-late', 'bulk-1', 'bulk-2']);
+  });
+
   it('rejects stale claim tokens after a lease is reclaimed', async () => {
     const db = await setupDb();
     await enqueuePrerender(db, 'v1', 'owner-1', 'ko');
@@ -446,28 +459,5 @@ describe('사전렌더 큐 헬퍼', () => {
 
     await releasePrerenderClaim(db, 'v1', currentClaim!.claimToken);
     expect(await claimPendingPrerenderVoices(db, 1)).toHaveLength(1);
-  });
-});
-
-// 스펙 §9 「모델이 스스로 넣는 웃음」 — 시드 자체가 약 알림·사과·조심인 클립은 서버가 웃음을 막는다(Codex #830).
-describe('cloneClipAllowsLaughter', () => {
-  it('약 알림은 전부, 날씨 미해결 안내(사과)와 운세 조심은 웃지 않는다', () => {
-    const medication = CLONE_CLIP_SEEDS.find((s) => s.category === 'medication')!;
-    medication.seeds.forEach((_, i) => expect(cloneClipAllowsLaughter('medication', i)).toBe(false));
-
-    const weather = CLONE_CLIP_SEEDS.find((s) => s.category === 'weather')!;
-    // 미해결 안내는 조건 수 자리(= 마지막 시드)다.
-    expect(weather.seeds.length).toBe(CLONE_WEATHER_CONDITIONS.length + 1);
-    expect(cloneClipAllowsLaughter('weather', CLONE_WEATHER_CONDITIONS.length)).toBe(false);
-    expect(cloneClipAllowsLaughter('weather', CLONE_WEATHER_CONDITIONS.indexOf('nice'))).toBe(true);
-
-    expect(cloneClipAllowsLaughter('fortune', CLONE_FORTUNE_THEMES.indexOf('caution'))).toBe(false);
-    expect(cloneClipAllowsLaughter('fortune', CLONE_FORTUNE_THEMES.indexOf('luck'))).toBe(true);
-  });
-
-  it('응원·인사는 막지 않는다 — 옛 이름(love)도 응원으로 읽는다', () => {
-    expect(cloneClipAllowsLaughter('cheer', 0)).toBe(true);
-    expect(cloneClipAllowsLaughter('love', 0)).toBe(true);
-    expect(cloneClipAllowsLaughter('greeting', 0)).toBe(true);
   });
 });

@@ -40,18 +40,14 @@ type VertexGenerateContentResponse = {
 };
 
 export type AlarmTextPreparation = {
-  /** **표시용** 문구 — 딜리버리 태그가 없는 순수 낭독 텍스트. 화면·저장은 이걸 쓴다. */
+  /**
+   * 합성할 문구. **우리는 태그를 붙이지 않는다**(2026-09-30, eleven_v4_turbo) — 여기 대괄호가 있다면 사용자가
+   * 직접 친 것이거나 사용자가 친 글자 웃음(ㅋㅋ)을 바꾼 `[laughs]` 뿐이다(스펙 §9).
+   */
   text: string;
   translated: boolean;
+  /** `text` 안의 대괄호 태그 목록(`messages.delivery_tags_json`). */
   tags: string[];
-  /**
-   * **합성용** 문구 — 모델이 배치한 인라인 태그가 그대로 박힌 텍스트. 없으면 호출부가
-   * `text` 에 태그를 다시 입힌다(`applyDeliveryTagPerSentence`).
-   *
-   * ⚠ `text` 와 나뉘어 있는 이유: 예전에는 하나였는데, 모델이 인라인 태그를 내기
-   * 시작하자 **그 대괄호가 화면 문구로 그대로 샜다**(Codex #701 P2).
-   */
-  synthesisText?: string;
   provider: 'vertex' | 'local';
 };
 
@@ -107,7 +103,7 @@ export type AlarmTextRejectionReason =
   | 'meta_json'
   | 'too_long'
   | 'language_mismatch'
-  /** 소괄호 지문 또는 저각성 태그 — 낭독돼 버리거나 기상을 방해한다. */
+  /** 소괄호 지문 또는 태그 모양이 아닌 대괄호 — 낭독돼 버린다. */
   | 'stage_direction'
   /** 청자 호칭을 우리가 준 것과 다르게 불렀다. */
   | 'listener_address'
@@ -144,28 +140,43 @@ export function alarmTextRejectionReasonOf(error: unknown): AlarmTextRejectionRe
 
 const CLOUD_PLATFORM_SCOPE = 'https://www.googleapis.com/auth/cloud-platform';
 const DEFAULT_TOKEN_URI = 'https://oauth2.googleapis.com/token';
-// ⚠ **`gemini-2.5-flash` 는 2026-10-20 에 은퇴한다**(Vertex 「Model versions and lifecycle」,
-//   2026-09-22 갱신 — 대체 모델로 `gemini-3.5-flash-lite` / `gemini-3.1-flash-lite` 를 든다).
-//   실제 모델은 워커 시크릿 `GOOGLE_VERTEX_MODEL`·`GOOGLE_VERTEX_LOCATION` 이 정한다 — 이 값은
-//   그게 비었을 때만 쓰인다.
-// ⚠ **대체는 `gemini-3.5-flash` 다 — 표가 권하는 Flash-Lite 가 아니다**(2026-09-23 블라인드 판정,
-//   튜닝에 쓰지 않은 프로필, 같은 프롬프트). 3.5 Flash-Lite 는 2.5 Flash 에 69:108 로 졌고(한국어
-//   36%), 3.5 Flash 는 93:86·72:47 로 대등하거나 나았다(한국어·일본어 우세). 단가는 3.5 Flash 가
-//   약 4~5배(사전렌더 클립 한 개 약 $0.006)이고, 응답 꼬리가 길다(p90 수 초). 가격만 보고 Lite 로
-//   되돌리지 말 것 — 되돌리면 한국어 문구 품질이 눈에 띄게 떨어진다. 은퇴는 2027-05-19 이후.
-// ⚠ **지역은 `us` 다.** 3.5 Flash-Lite 가 도는 곳은 `global` 과 멀티리전 `us`·`eu` 뿐이고
-//   (`us-central1` 없음), 개인정보 처리방침은 Vertex 처리 국가를 '미국' 으로 적는다. `global`
-//   엔드포인트는 처리 지역을 고를 수도 알 수도 없다고 문서가 말하므로 쓰지 않는다. 3.5 Flash 도
-//   `us` 에서 실호출로 확인했다(2026-09-23).
-const DEFAULT_VERTEX_LOCATION = 'us';
-const DEFAULT_VERTEX_MODEL = 'gemini-3.5-flash';
 /**
- * Gemini 3 계열의 출력 상한 하한. **사고 토큰이 `maxOutputTokens` 안에서 세어진다** — 사고에
- * 다 쓰면 `finishReason: MAX_TOKENS` 로 잘린 JSON 이 HTTP 200 으로 온다(2026-09-23 실측:
- * 상한 16 에서 `{"text": "[cheerful] 엄마, 일`). 요금은 실제로 만든 토큰만 나가므로 상한을
- * 올려도 비용은 그대로다.
+ * 모든 Gemini 호출의 모델. **이 상수 하나가 정한다 — 워커 시크릿으로 바꾸는 길은 없다**(2026-09-30).
+ *
+ * ⚠ 예전에는 시크릿 `GOOGLE_VERTEX_MODEL` 이 이 값을 덮었다. 그 길을 남겨 두면 워커에 남은 옛 값
+ *   (dev·prod 는 아직 `gemini-3.5-flash` 를 들고 있다)이 새 코드를 옛 모델로 계속 돌린다 — 모델마다
+ *   사고 설정이 달라서(3.8 은 `MINIMAL` 을 400 으로 거절한다) 조용히 전부 실패할 수도 있다. 그래서
+ *   모델과 그 모델의 요청 설정(`buildGenerationConfig`)을 **한 커밋에서 같이** 바꾸게 했다. 되돌릴 때도
+ *   시크릿이 아니라 코드를 되돌린다.
+ * - `gemini-3.8-flash`: GA(2026-09-02). 목록가가 3.5 Flash 보다 싸다(`us` 입력/출력 100만 토큰당
+ *   $0.825/$4.125 — 2026-12-31 까지 도입가, 그 뒤 $1.65/$8.25. 3.5 Flash 는 $1.65/$9.90). 단 사고를
+ *   `LOW` 밑으로 끌 수 없어 사고 토큰이 늘므로, 실제 단가는 로그의 `thought_tokens` 로 본다.
+ * - ⚠ **Flash-Lite 로 내리지 말 것** — 2026-09-23 블라인드 판정에서 3.5 Flash-Lite 는 2.5 Flash 에
+ *   69:108 로 졌다(한국어 36%). 가격만 보고 고르면 한국어 문구 품질이 눈에 띄게 떨어진다.
+ * - 3.8 Flash 는 은퇴일이 정해지지 않은 '단기 제공' 모델이다(공지 뒤 최소 45일 안에 옮긴다).
  */
-const GEMINI_3_MIN_OUTPUT_TOKENS = 1024;
+export const VERTEX_MODEL = 'gemini-3.8-flash';
+// ⚠ **지역은 `us` 다.** 3.8 Flash 가 도는 곳은 `global` 과 멀티리전 `us`·`eu` 뿐이고(`us-central1` 같은
+//   단일 리전 없음), 개인정보 처리방침은 Vertex 처리 국가를 '미국' 으로 적는다. `global` 엔드포인트는
+//   처리 지역을 고를 수도 알 수도 없다고 문서가 말하므로 쓰지 않는다.
+const DEFAULT_VERTEX_LOCATION = 'us';
+/**
+ * 사고 수준. **3.8 Flash 는 `LOW`·`MEDIUM`(기본)·`HIGH` 만 받는다** — 3.5 까지 쓰던 `MINIMAL` 을
+ * 보내면 요청 검증 오류(400)다("Explicitly setting thinking_level to MINIMAL will return an API
+ * validation error"). 호출부가 실패를 삼키고 폴백하므로 400 은 경보 없이 문구 품질만 떨어뜨린다.
+ * 짧은 알람 문구 한 줄에 긴 사고는 필요 없어 가장 낮은 `LOW` 를 쓴다(지연·사고 토큰이 가장 적다).
+ */
+const VERTEX_THINKING_LEVEL = 'LOW';
+/**
+ * 출력 상한. **사고 토큰이 이 상한 안에서 함께 세어진다** — 사고에 다 쓰면 `finishReason: MAX_TOKENS`
+ * 로 잘린 JSON 이 HTTP 200 으로 온다(2026-09-23 실측: 상한 16 에서 `{"text": "[cheerful] 엄마, 일`).
+ * 답 자체는 문구 한 줄짜리 JSON 이라 수십~백여 토큰이다(2026-09-30 실호출 — 가장 긴 사전렌더 프롬프트
+ * 3,635 토큰에 답 37 토큰, 사고 0, 2.4초). 그래도 `LOW` 는 사고 양을 모델이 정하는 동적 수준이고, 3.8 은
+ * 3.7 보다 토큰을 더 쓴다고 문서가 말한다 — 사고가 길어지는 호출에서 잘리지 않도록 `MINIMAL` 시절의
+ * 1024 에서 4096 으로 올렸다. 요금은 실제로 만든 토큰만 나가므로 상한을 올려도 비용은 그대로이고, 폭주하면
+ * 이 상한보다 15초 타임아웃이 먼저 끊는다(둘 다 호출부의 폴백·재시도로 간다).
+ */
+const MAX_OUTPUT_TOKENS = 4096;
 /// 대괄호 태그의 **모양**. 이 한 벌이 유일 출처다 — 예전에는 같은 문자셋이 네 군데에
 /// 리터럴로 박혀 있어, 하나만 넓히면 "태그로 인식은 되는데 화면에서 안 벗겨지는" 상태가 됐다.
 ///
@@ -203,120 +214,26 @@ function tagGapFill(piece: string, offset: number, whole: string): string {
   if (/^[ \t]|[ \t]$/.test(piece)) return ' ';
   return isSpacedWordChar(after) && (isSpacedWordChar(before) || /[,.!?…;:]/u.test(before)) ? ' ' : '';
 }
-// ElevenLabs v3 태그는 고정 enum이 아니라 대괄호 안 자연어 지시이며, 실제 효과는 보이스·문맥·
-// stability에 따라 달라진다(2026-06-28 사용자/공식문서 검증).
+// ── 태그 ────────────────────────────────────────────────────────────────────────
+// ⚠ **우리는 딜리버리 태그를 붙이지 않는다**(2026-09-30, eleven_v4_turbo 전환). 예전에는 Gemini 가 직접 입력·
+//   사전렌더·동적 생성에 `[cheerfully]` 같은 태그를 달았다(eleven_v3 는 태그가 있어야 연기했다). v4 Turbo 는 문장의
+//   뜻과 문장부호로 스스로 결을 잡고, 같은 방향 태그는 차이가 ±2반음·1dB 안쪽이며 누르는 태그는 거의 안 먹고
+//   올리는 태그만 크게 먹었다(129→205Hz) — 태그가 '차분을 망치는' 쪽으로만 효과가 있었다(스펙 §10). 그래서
+//   태그 지시와 그 후처리(졸린·공포·차분 금지 태그, 문장마다 다시 앞세우기, 기본 태그)를 통째로 뺐다.
 //
-// ⚠ **닫힌 허용 목록으로 되돌리지 말 것**(2026-08-13 확정).
-// 예전에는 감정 형용사 10개짜리 allowlist 였고, 그 밖의 태그는 조용히 무태그로 강등됐다.
-// 그래서 [laughs]·[through gritted teeth]·[defiant] 같은 **비언어 소리·발성 방식·태도**
-// 지시를 아예 쓸 수 없었다 — 목록을 넓혀도 새 어휘가 나올 때마다 또 막힌다.
-// 이제 판정은 **모양(TAG_RE) + 아래 저각성 금지**뿐이다.
-//
-// 프롬프트에 예시로 보여줄 어휘. 목록에 없다고 막지는 않는다 — 모델에게 방향만 준다.
-const TAG_EXAMPLES = [
-  // 감정·태도
-  'happy', 'cheerfully', 'excited', 'playfully', 'curious', 'lighthearted',
-  'proud', 'defiant', 'flustered', 'fierce', 'embarrassed',
-  // 비언어 소리 — 웃음은 `[laughs]` 하나만 보여 준다. 다른 웃음 태그는 서버가 `[laughs]` 로 맞춘다
-  // (`canonicalizeLaughterTags`, 근거는 아래 `OWN_LAUGH_INSTRUCTION`).
-  'laughs', 'sighs',
-  // 발성 방식
-  'shouting', 'low, controlled', 'through gritted teeth', 'measured, deliberate',
-];
-/**
- * 모델이 **스스로** 웃음을 넣을 때의 규칙 — 직접 입력 태깅과 클론 사전렌더가 같이 쓴다.
- *
- * 근거(2026-09-29 v3·v4·v4 Turbo 비교, 받아쓰기 기준): 한국어 `[laughs]` 는 두 목소리·세 모델 모두
- * 웃음소리가 났다. `[chuckles]` 는 v3 남자 목소리에서 한 번 **다른 언어**로 합성됐고, `[soft laugh]` 는
- * v3 에서 웃음이 안 난 적이 있으며 깨우는 경로에서는 `soft` 때문에 서버가 지운다(`LOW_AROUSAL_WORDS`).
- * 그래서 이름을 하나로 못박는다. 웃음은 톤이 아니라 한 번 나는 소리라 '한 번만·가벼운 문장에만' 이고,
- * 문장마다 되풀이하는 톤 태그로는 쓰지 않는다(`isLaughterTag`).
- */
-const OWN_LAUGH_INSTRUCTION =
-  "LAUGHTER: a laugh is a sound, not a tone. Only when a laugh really fits a light, playful moment, write exactly [laughs] — never [chuckles] or [soft laugh], and never laughter spelled in letters (ㅋㅋ, ㅎㅎ, haha, www, 笑), which text-to-speech reads aloud — at most once, and never as the line's only tag. Most lines need none; never laugh on a caution, an apology, bad news or a medication reminder.";
-
-// Bruck/McFarlane: 저각성 신호는 기상을 방해한다. 깨우는 경로(동적 생성·사전렌더)는 서버가
-// 이 뜻을 가진 태그를 무조건 드롭한다.
-//
-// ⚠ **"천천히" 와 "졸리게" 를 섞지 말 것**(2026-08-13 확정 — C안).
-// 말 속도를 늦추는 지시(measured·deliberate·slow)는 **허용**한다. 사용자가 "말이 너무
-// 빠르다" 고 했고, 천천히 말하는 것은 각성을 낮추지 않는다. 막는 것은 **졸리고 작게**
-// 말하라는 쪽이다.
-const LOW_AROUSAL_WORDS = [
-  'tired', 'sleepy', 'drowsy', 'yawn',
-  'whisper', 'whispers', 'whispering',
-  'quiet', 'quietly', 'soft', 'softly', 'hushed',
-  'calm', 'calmly', 'soothing', 'gentle', 'gently',
-  'mumbl', 'murmur',
-];
-
-/**
- * 프롬프트에 그대로 실을 금지 태그 문구. `LOW_AROUSAL_WORDS` 에서 **파생**시킨다.
- *
- * ⚠ 손으로 적어 두면 가드와 어긋난다(실측 2026-08-21): 목록에 `[gently]` 만 있고
- * `[gentle]` 이 없어서, 모델이 형용사형 `[gentle]` 을 붙였다가 가드에 걸려 일본어 운세
- * '건강' 시드가 3회 전부 실패했다. 무엇이 막히는지 모델에게 정확히 알려 준다.
- */
-const LOW_AROUSAL_TAG_EXAMPLES = LOW_AROUSAL_WORDS.filter(
-  (word) => !word.endsWith('l') && word !== 'mumbl',
-)
-  .map((word) => `[${word}]`)
-  .join(', ');
-
-/**
- * 공포·공황 지시. 깨우는 알람은 급할 수는 있어도 겁을 주면 안 된다 — 마무리 문구에서도 쓰지 않는다.
- * 프롬프트가 금지해도 모델이 어기면 그대로 합성·저장되므로 서버가 지운다(Codex #801).
- */
-const FEAR_WORDS = ['panic', 'scared', 'terrified', 'terror', 'frighten', 'horrified', 'afraid', 'fearful'];
-
-export function isFearTag(tag: string): boolean {
-  const normalized = normalizeTag(tag);
-  return !!normalized && FEAR_WORDS.some((word) => normalized.includes(word));
-}
-
-/**
- * 차분한 목소리(`energy = 'calm'`)와 맞지 않는 들뜬 지시 — 스펙 §4-2 의 금지 목록(`[playfully]`·
- * `[giggles]`·`[excited]`·`[laughs]`)과 그 변형. 프롬프트로만 막으면 모델이 어겨도 그대로 합성·저장되고,
- * 사용자가 '차분' 을 고른 목소리가 영구히 들뜬 클립을 문다(Codex #802). 그래서 서버가 지운다.
- */
-const CALM_INCOMPATIBLE_WORDS = [
-  // 밝게 튀는 결 — 경쾌한 목소리의 대표 태그다(스펙 §4-2). 기본값 폴백만 막고 모델 출력은 통과시키면
-  // 같은 태그가 경로에 따라 금지였다 허용이었다 한다(Codex #802).
-  'cheer',
-  'playful',
-  'excite',
-  'giggl',
-  'laugh',
-  'chuckl',
-  'teasing',
-  'mischiev',
-  'cheeky',
-  'giddy',
-  'bouncy',
-  'squeal',
-];
-
-export function isCalmIncompatibleTag(tag: string): boolean {
-  const normalized = normalizeTag(tag);
-  // 글자 웃음을 대괄호에 넣은 것(`[haha]`)도 웃음이다 — 낱말 목록으로는 안 걸린다(`isLaughterTag`).
-  return !!normalized && (CALM_INCOMPATIBLE_WORDS.some((word) => normalized.includes(word)) || isLaughterTag(normalized));
-}
+// 남은 대괄호는 둘뿐이다:
+//  1. **사용자가 직접 친 것** — 사용자의 글이라 건드리지 않는다.
+//  2. **사용자가 친 글자 웃음(ㅋㅋ·haha·www)을 바꾼 `[laughs]`** — v4 도 'ㅋㅋㅋ' 를 '크크크' 로 읽는다(스펙 §9).
+// 모델이 쓴 글(사전렌더·동적 생성)의 대괄호는 전부 벗긴다(`stripAllTags`). 번역은 원문에 없던 톤 태그만 벗긴다.
 
 /**
  * 웃음 태그인가(`[laughs]`·`[giggles]`·`[chuckles]`·`[laughs nervously]` …).
  *
- * 웃음은 **톤이 아니라 한 번 나는 소리**다. 그래서 톤 태그와 다르게 다룬다:
- * - 문장마다 다시 앞세우는 **톤 태그로 고르지 않는다**(`pickApprovedTag`·`generatePrerenderClipText`). 고르면
- *   한 번 웃을 자리에서 매 문장 웃는다.
- * - '톤이 남았는가' 를 볼 때 세지 않는다(`prepareAlarmTextWithVertex` 의 졸린 태그 거르기 뒤·`tagAlarmTextLocally`).
- *   웃음만 남았으면 톤은 다 버려진 것이다.
- * - 직접 입력의 글자 웃음(ㅋㅋ)을 바꾼 `[laughs]` 는 사용자가 쓴 것이라 '모델이 태그를 몇 개 배치했는가' 에서도
- *   뺀다(`normalizeSameLanguageTaggedText`).
+ * 웃음은 **한 번 나는 소리**라 개수로 다룬다 — 번역이 사용자의 웃음을 빠뜨리거나 더하지 않게 세고
+ * (`canonicalizeLaughterTags`·`withLeadingLaugh`), 화면 문구에서는 서버가 넣은 웃음만 벗긴다(`withoutServerLaughter`).
  *
  * 글자 웃음을 대괄호에 넣은 것(`[haha]`·`[lol]`·`[www]`)도, 거기에 꾸밈말을 붙인 것(`[haha loudly]`·`[lol nervously]`)도
- * 웃음이다(Codex #830) — `[laughs nervously]` 를 웃음으로 보는 것과 같다. 소리 태그가 아니라 글자라, 웃음으로 안 보면
- * 톤으로 골라져 문장마다 붙고 등록 미리듣기(`allowLaughter: false`)의 웃음 제거도 비켜 간다. 모델이 낸 것은
- * `[laughs]` 로 맞추고(`canonicalizeLaughterTags`), 사용자가 친 것은 친 수만큼 그대로다.
+ * 웃음이다(Codex #830) — `[laughs nervously]` 를 웃음으로 보는 것과 같다.
  */
 export function isLaughterTag(tag: string): boolean {
   const normalized = normalizeTag(tag);
@@ -331,22 +248,6 @@ export function isLaughterTag(tag: string): boolean {
 /// 태그를 벗기고도 낭독할 말(글자·숫자)이 남는가. 문장부호만 남으면 말이 없는 것이다.
 function hasSpokenWords(text: string): boolean {
   return /[\p{L}\p{N}]/u.test(normalizeAlarmTextWithoutTags(text));
-}
-
-/// 톤 태그만 벗기고 웃음 태그는 **제자리에** 남긴다. 사전렌더는 이걸 합성 글자의 바탕으로 쓰고
-/// (`generatePrerenderClipText`), 직접 입력은 사용자의 웃음 자리를 대조하는 데 쓴다(`normalizeSameLanguageTaggedText`).
-///
-/// 지운 톤 자리는 `tagGapFill` 로 메우고, 웃음 뒤 문장부호 앞에는 공백을 두지 않는다 — `typedLaughterToTags` 와
-/// 같은 모양('좋아 [laughs].')이다. 예전처럼 웃음 양옆에 공백을 붙이기만 하면 `좋아 [laughs] .` 이 합성·저장된다
-/// (Codex #830).
-function withoutToneTags(text: string): string {
-  return text
-    .replace(TAG_WITH_GAP_RE_GLOBAL, (piece: string, offset: number, whole: string) =>
-      isLaughterTag(piece.trim()) ? ` ${piece.trim()} ` : tagGapFill(piece, offset, whole),
-    )
-    .replace(/\s+/g, ' ')
-    .replace(/\] (?=[,.!?…;:~〜、。，．！？；：])/gu, ']')
-    .trim();
 }
 
 function countLaughterTags(text: string): number {
@@ -364,17 +265,11 @@ function laughterTagCounts(text: string): Map<string, number> {
 }
 
 /**
- * **모델이 낸** 웃음 태그를 `[laughs]` 로 맞춘다(`[chuckles]`·`[giggles]`·`[laughs nervously]` → `[laughs]`).
+ * 번역문의 웃음 수를 원문에 맞춘다 — **모델이 낸** 웃음 태그는 `[laughs]` 로 맞추고(`[chuckles]`·`[giggles]` →
+ * `[laughs]`), `maxLaughs` 번을 넘는 웃음은 지운다(앞에서부터 남긴다). 붙어 있는 웃음(`[chuckles] [giggles]`)은 한
+ * 번으로 본다. 지운 자리는 `tagGapFill` 로 메운다 — 문장부호 앞에 공백을 남기지 않는다.
  *
- * 프롬프트가 `[laughs]` 만 쓰라고 해도 모델이 어기면 그대로 합성된다 — `[chuckles]` 는 v3 남자 목소리에서
- * 다른 언어로 합성된 적이 있다(`OWN_LAUGH_INSTRUCTION`). 졸린 태그 거르기(`dropWakeUnsafeTags`) **뒤에**
- * 부른다 — `[soft laugh]` 는 예전처럼 지워지고, 차분한 목소리는 웃음이 이미 다 지워진 뒤다.
- *
- * 웃음은 `maxLaughs` 번까지만 남긴다(앞에서부터) — 모델이 스스로 넣는 웃음은 **한 줄에 한 번**이다(스펙 §9).
- * 직접 입력은 사용자가 친 웃음 수만큼(그 웃음은 `normalizeSameLanguageTaggedText` 가 원문 자리로 맞춘 뒤다),
- * 사용자가 웃지 않았으면 1이다(Codex #830 — 프롬프트만 믿으면 `[chuckles] … [giggles]` 가 두 번 웃는다).
- * 붙어 있는 웃음(`[chuckles] [giggles]`)은 한 번으로 본다. 지운 자리는 `tagGapFill` 로 메운다 — 문장부호
- * 앞에 공백을 남기지 않는다.
+ * `[chuckles]` 는 v3 남자 목소리에서 다른 언어로 합성된 적이 있어 모델 웃음은 한 이름으로 모은다(스펙 §9).
  *
  * ⚠ **사용자가 친 태그는 친 수만큼만 사용자 것이다**(`userTags`, Codex #830). 이름으로 통째로 빼 주면
  *   번역 모델이 사용자의 `[chuckles]` 를 지키면서 `[chuckles]` 를 하나 더 써도 그것까지 빠져 두 번 웃는다.
@@ -414,7 +309,7 @@ function canonicalizeLaughterTags(
   return limited === text ? text : limited.replace(/[ \t]{2,}/g, ' ').trim();
 }
 
-/// 번역문에 사용자의 웃음이 하나도 안 남았을 때 — 선두 톤 태그 뒤에 한 번 넣는다(`prepareAlarmTextWithVertex`).
+/// 번역문에 사용자의 웃음이 하나도 안 남았을 때 — 선두 태그(사용자가 친 것) 뒤에 한 번 넣는다(`prepareAlarmTextWithVertex`).
 /// `laugh` 는 되살릴 웃음 — 사용자가 대괄호로 친 웃음 태그면 **그 철자**다(`[chuckles]` 를 `[laughs]` 로 바꿔
 /// 되살리지 않는다, Codex #830).
 function withLeadingLaugh(text: string, laugh: string = LAUGH_TAG): string {
@@ -435,80 +330,23 @@ export function speakTypedLaughter(text: string): string {
   return converted !== text && hasSpokenWords(converted) ? converted : text;
 }
 
-/// 차분한 목소리의 **대체 기본 태그**. 카테고리 기본값(`cheerfully`·`playfully`)은 들뜬 결이라,
-/// 모델이 태그를 안 붙였을 때 그걸 입히면 차분을 고른 목소리가 밝게 튄다.
-const CALM_FALLBACK_TAG = 'warmly';
-
-/// 모델이 태그를 안 붙였을 때 입힐 기본 태그 — 차분한 목소리면 들뜬 기본값을 `warmly` 로 바꾼다.
-export function fallbackTagForEnergy(defaultTag: string, energy: string | null | undefined): string {
-  if (energy !== 'calm' || !defaultTag) return defaultTag;
-  return isCalmIncompatibleTag(defaultTag) ? CALM_FALLBACK_TAG : defaultTag;
+/**
+ * 대괄호 태그를 **전부** 벗긴다 — 모델이 쓴 글(사전렌더·등록 미리듣기·동적 생성)에 쓴다. 우리는 태그를 붙이지
+ * 않으므로 모델이 스스로 낸 태그도 합성하지 않는다(위 머리말).
+ *
+ * `normalizeAlarmTextWithoutTags` 와 달리 지운 자리를 `tagGapFill` 로 메운다 — 공백으로 바꾸면 '좋아 [laughs].' 가
+ * '좋아 .' 로 합성·저장된다(Codex #830 과 같은 모양).
+ */
+export function stripAllTags(text: string): string {
+  return stripTagsWhere(text, () => true);
 }
 
-/// 이 태그가 저각성(기상 방해) 뜻을 갖는가. 여러 마디 태그도 낱말 단위로 본다.
-export function isLowArousalTag(tag: string): boolean {
-  const normalized = normalizeTag(tag);
-  if (!normalized) return false;
-  return LOW_AROUSAL_WORDS.some((word) => normalized.includes(word));
-}
-
-/// 태그로 받아들일 수 있는가 — **모양만** 본다(닫힌 목록 없음).
-///
-/// ⚠ 예전에는 여기서 큐레이트 세트 멤버십을 봤고, 밖의 태그는 조용히 무태그가 됐다.
-/// 그래서 프롬프트만 넓히면 **모델은 태그를 내는데 결과는 무태그**라 원인을 못 찾았다.
-function normalizeApprovedTag(tag: string): string {
-  const normalized = normalizeTag(tag);
-  if (!normalized) return '';
-  return TAG_RE.test(`[${normalized}]`) ? normalized : '';
-}
-
-// 모드별 기본 delivery 태그(§4.4). 폴백/가이드에 쓰인다.
-function modeDefaultTag(mode: DynamicAlarmTextMode): string {
-  switch (mode) {
-    case 'wake_weather':
-      return 'cheerfully';
-    case 'wake_fortune':
-      return 'playfully';
-    case 'cheer':
-      return 'happy';
-  }
-}
-
-// 동적 생성의 tag 필드를 정제한다: 큐레이트 세트 검증 → 저각성 태그 차단(남은 모드는 전부
-// '깨우는' 알람이다). 부적합하면 빈 문자열(무태그)로 강등(reject 아님 = SOFT).
-/// 깨우는 경로용 — 모양이 맞고 **저각성이 아니면** 통과.
-function sanitizeDeliveryTag(tag: string): string {
-  const approved = normalizeApprovedTag(tag);
-  if (!approved) return '';
-  if (isLowArousalTag(approved) || isFearTag(approved)) return '';
-  return approved;
-}
-
-/// 텍스트 안의 태그들을 깨우는 경로 기준으로 거른다 — 공포 태그는 언제나, 저각성 태그는
-/// `allowLowArousal`(잠들기 전·마무리 문구)이 아닐 때 지운다. `calmVoice`(차분을 고른 목소리)면
-/// 들뜬 태그(`isCalmIncompatibleTag`)도 지운다. 나머지는 **위치까지 그대로** 남긴다 — 여러 개·
-/// 중간 태그가 요점이다.
-export function dropWakeUnsafeTags(
-  text: string,
-  options: { allowLowArousal?: boolean; calmVoice?: boolean } = {},
-): string {
-  return text
-    .replace(TAG_WITH_GAP_RE_GLOBAL, (piece: string, offset: number, whole: string) => {
-      const body = normalizeTag(piece.trim());
-      if (
-        !isFearTag(body) &&
-        (options.allowLowArousal || !isLowArousalTag(body)) &&
-        !(options.calmVoice && isCalmIncompatibleTag(body))
-      ) {
-        return piece;
-      }
-      // ⚠ 지운 자리는 `tagGapFill` 로 메운다 — 낱말 사이에 붙은 태그('Good[softly]morning')를 빈 문자열로
-      //   지우면 두 낱말이 붙고(Codex #801), 문장부호 앞의 태그('Wake up [laughs].')를 공백으로 지우면
-      //   'Wake up .' 이 된다(Codex #830).
-      return tagGapFill(piece, offset, whole);
-    })
-    .replace(/[ \t]{2,}/g, ' ')
-    .trim();
+/// `drop` 이 참인 태그만 벗긴다(정규화한 이름을 받는다). 지운 자리는 `tagGapFill` 로 메운다.
+function stripTagsWhere(text: string, drop: (normalizedTag: string) => boolean): string {
+  const stripped = text.replace(TAG_WITH_GAP_RE_GLOBAL, (piece: string, offset: number, whole: string) =>
+    drop(normalizeTag(piece.trim())) ? tagGapFill(piece, offset, whole) : piece,
+  );
+  return stripped === text ? text : stripped.replace(/[ \t]{2,}/g, ' ').trim();
 }
 
 const LANGUAGE_NAMES: Record<string, string> = {
@@ -519,6 +357,13 @@ const LANGUAGE_NAMES: Record<string, string> = {
   ko: 'Korean',
 };
 
+/**
+ * 직접 입력·스톡 문구를 합성할 글자로 만든다. **Gemini 는 번역할 때만 부른다**(2026-09-30).
+ *
+ * 같은 언어 문구는 태그를 붙이지 않으므로(위 「태그」 머리말) 사용자가 친 글 그대로다 — 글자 웃음만 `[laughs]` 로
+ * 바꾼다(`speakTypedLaughter`). 예전에는 같은 언어 직접 입력마다 태그를 달려고 Gemini 를 불렀다. 이제 호출도
+ * 지연도 없고, 사용자의 글이 국외(Google)로 가지도 않는다.
+ */
 export async function prepareAlarmTextWithVertex(
   env: Env,
   text: string,
@@ -526,184 +371,84 @@ export async function prepareAlarmTextWithVertex(
     targetLanguage: string;
     sourceLanguage?: string;
     translate?: boolean;
-    autoTag?: boolean;
     /**
      * 사용자가 친 글자 웃음(ㅋㅋ·haha·www·(笑))을 `[laughs]` 로 바꿔 합성한다 — **직접 입력만** 켠다.
      * 스톡 문구는 우리가 확정한 대사라 켜지 않는다(합성 글자가 바뀌면 게시된 클립의 캐시 키가 갈라진다).
      */
     speakTypedLaughter?: boolean;
-    /**
-     * 차분한 목소리(`energy = 'calm'`)인가 — 모델에게 웃어도 된다는 지시를 싣지 않고, **모델이 넣은** 웃음을 지운다.
-     * 사용자가 친 웃음은 그대로다(스펙 §9 「모델이 스스로 넣는 웃음」).
-     */
-    calmVoice?: boolean;
   },
 ): Promise<AlarmTextPreparation> {
   const trimmed = text.trim();
   const sourceLanguage = options.sourceLanguage ?? 'ko';
   const targetLanguage = options.targetLanguage || sourceLanguage;
   const shouldTranslate = options.translate === true && targetLanguage !== sourceLanguage;
-  // ⚠ 태그를 칠지는 **사용자가 친 대괄호**로만 정한다 — 아래 `source` 가 아니라 `trimmed` 로 본다.
-  //   글자 웃음을 바꾼 `[laughs]` 로 보면 웃음이 든 문구마다 톤 태깅이 통째로 꺼진다.
-  const shouldTag = options.autoTag !== false && !TAG_RE.test(trimmed);
   const speak = (value: string) => (options.speakTypedLaughter ? speakTypedLaughter(value) : value);
-  /** 합성할 원문 — 글자 웃음만 `[laughs]` 로 바꿨다. 모델도 이걸 받는다(ㅋㅋ 를 읽거나 지우지 않게). */
+  /** 합성할 원문 — 글자 웃음만 `[laughs]` 로 바꿨다. 번역 모델도 이걸 받는다(ㅋㅋ 를 읽거나 지우지 않게). */
   const source = speak(trimmed);
 
-  if (!trimmed) {
-    return { text: trimmed, translated: false, tags: [], provider: 'local' };
+  // ⚠ 사용자가 **직접 쓴** 대괄호는 거르지 않는다. 알람 문구는 사용자가 쓴 글이고, '[panicked] 지각이다!!' 같은
+  //   장난 알람도 그 사람의 의도다 — 조용히 바꾸면 쓴 글과 다른 소리가 난다.
+  if (!trimmed || !shouldTranslate) {
+    return { text: source, translated: false, tags: extractTags(source), provider: 'local' };
   }
-
-  // ⚠ 사용자가 **직접 쓴** 태그는 거르지 않는다(졸린 태그·공포 태그 모두). 알람 문구는 사용자가 쓴
-  //   글이고, '[panicked] 지각이다!!' 같은 장난 알람도 그 사람의 의도다 — 조용히 바꾸면 쓴 글과 다른
-  //   소리가 난다. 서버가 지우는 것은 **모델이 붙인** 태그뿐이다(아래 `dropWakeUnsafeTags`).
-  //   글자 웃음을 바꾼 `[laughs]` 도 사용자가 쓴 것으로 본다 — 차분한 목소리라도 지우지 않는다.
-  if (!shouldTranslate && !shouldTag) {
-    return {
-      text: source,
-      translated: false,
-      tags: extractTags(source),
-      provider: 'local',
-    };
-  }
-
-  // 로컬 태깅은 **원문**에 톤을 입히고 나서 웃음을 바꾼다 — 마무리 문구 판정·길이 상한을 원문으로 잰다.
-  const localFallbackText = shouldTag ? speak(tagAlarmTextLocally(trimmed)) : source;
-
   if (!hasGeminiConfiguration(env)) {
-    if (shouldTranslate) {
-      throw new AlarmTextTranslationUnavailableError();
-    }
-    return {
-      text: localFallbackText,
-      translated: false,
-      tags: extractTags(localFallbackText),
-      provider: 'local',
-    };
+    throw new AlarmTextTranslationUnavailableError();
   }
 
-  const prompt = alarmTextPrompt({
-    text: source,
-    sourceLanguage,
-    targetLanguage,
-    shouldTranslate,
-    shouldTag,
-    calmVoice: options.calmVoice === true,
-  });
-  const provider = 'vertex';
   let raw: string;
   try {
-    raw = await generateContentText(env, prompt, {
-      temperature: 0.15,
-      maxOutputTokens: 256,
+    raw = await generateContentText(env, alarmTextPrompt({ text: source, sourceLanguage, targetLanguage }), {
       // ⚠ 스키마 없이 JSON 만 요구하면 3.5 Flash-Lite 가 영어 문구의 12% 를 **배열**
       //   `[{"text":…}]` 로 준다(2026-09-23 비교 평가). 파서가 받아 주긴 하지만 형식을 못박는다.
       responseSchema: ALARM_TEXT_RESPONSE_SCHEMA,
     });
   } catch (err) {
-    if (shouldTranslate) {
-      // ⚠ **전송 실패다 — 내용 위반이 아니다.** 이 라우트의 502(`TEXT_PREPARATION_FAILED`)
-      // 계약은 그대로 둬야 해서 클래스는 바꾸지 않고, 사유와 `cause` 만 실어 보낸다.
-      // 그래야 Sentry 에서 "모델이 금지 문장을 낸다" 와 갈라 볼 수 있다.
-      throw new AlarmTextPreparationInvalidError('upstream_unavailable', { cause: err });
-    }
-    return {
-      text: localFallbackText,
-      translated: false,
-      tags: extractTags(localFallbackText),
-      provider: 'local',
-    };
+    // ⚠ **전송 실패다 — 내용 위반이 아니다.** 이 라우트의 502(`TEXT_PREPARATION_FAILED`)
+    // 계약은 그대로 둬야 해서 클래스는 바꾸지 않고, 사유와 `cause` 만 실어 보낸다.
+    // 그래야 Sentry 에서 "모델이 금지 문장을 낸다" 와 갈라 볼 수 있다.
+    throw new AlarmTextPreparationInvalidError('upstream_unavailable', { cause: err });
   }
   const parsed = parseAlarmTextPreparation(raw);
-  const fallbackText = localFallbackText;
-  let preparedText = parsed.text;
-
-  if (
-    !preparedText ||
-    isMetaJsonResponse(preparedText) ||
-    (!parsed.parsedJson && isMetaJsonResponse(raw))
-  ) {
-    if (shouldTranslate) {
-      throw new AlarmTextPreparationInvalidError(!preparedText ? 'empty_spoken' : 'meta_json');
-    }
-    preparedText = fallbackText;
+  if (!parsed.text || isMetaJsonResponse(parsed.text) || (!parsed.parsedJson && isMetaJsonResponse(raw))) {
+    throw new AlarmTextPreparationInvalidError(!parsed.text ? 'empty_spoken' : 'meta_json');
   }
 
-  if (shouldTranslate) {
-    // 번역문에 모델이 옮겨 쓴 글자 웃음(haha·www)도 소리로 — 웃음 수를 맞추기(아래 `canonicalizeLaughterTags`)
-    // 전에 바꾼다. 같은 언어 경로는 `source` 에서 이미 바꿨다.
-    preparedText = speak(preparedText);
-  }
-  if (shouldTag && !shouldTranslate) {
-    // 모델이 받은 글(`source` — 웃음이 `[laughs]` 로 바뀐 것)과 맞춰 본다. 원문(`trimmed`)과 맞추면
-    // ㅋㅋ 가 사라진 모델 출력이 '글자를 바꿨다' 로 읽혀 매번 로컬 태깅으로 떨어진다.
-    preparedText =
-      normalizeSameLanguageTaggedText(preparedText, source, parsed.tags) ?? fallbackText;
-  }
-  if (shouldTag) {
-    // 깨우는 알람이다 — 모델이 붙인 졸린 태그는 사전렌더 경로와 같이 버린다. 사용자가
-    // 직접 친 태그는 여기 오지 않는다(`shouldTag` 가 거짓이다). 잠들기 전·마무리 문구
-    // (`isWindDownText`)는 calm 이 맞으므로 졸린 태그를 남긴다. 공포 태그는 어느 쪽이든 버린다.
-    // 다 버려져 태그가 하나도 안 남으면 로컬 태깅(마무리 문구가 아니면 cheerfully)으로 돌아간다.
-    // ⚠ 번역 중이면 `fallbackText`(원문 언어)로 돌아가지 말고 **번역문에** 태그를 붙인다
-    //   (Codex #801 P1). 원문으로 돌아가면 `translated: true` 인 채 원문이 합성·저장된다.
-    // ⚠ '태그가 남았는가' 는 **톤 태그**로 센다 — 사용자의 웃음(`[laughs]`)만 남았으면 톤은 다 버려진 것이다.
-    const safe = canonicalizeLaughterTags(
-      dropWakeUnsafeTags(preparedText, { allowLowArousal: isWindDownText(trimmed) }),
-      // 모델이 스스로 넣는 웃음은 한 번까지 — 차분한 목소리는 0번이다. 사용자가 친 웃음 수는 언제나 남긴다.
-      countLaughterTags(source) > 0 || options.calmVoice ? countLaughterTags(source) : 1,
-    );
-    // 톤이 하나도 안 남아 로컬 톤으로 돌아갈 때는 모델이 스스로 넣은 웃음을 버린다 — 같은 언어는 원문
-    // (`fallbackText`)으로 돌아가 저절로 빠지고, 번역은 번역문에 톤을 입히므로 사용자의 웃음 수만큼만 남긴다
-    // (Codex #830 — '톤 없는 웃음 하나' 를 모델이 배치한 것으로 두지 않는다).
-    preparedText = extractTags(safe).some((tag) => !isLaughterTag(tag))
-      ? safe
-      : shouldTranslate
-        ? tagAlarmTextLocally(canonicalizeLaughterTags(safe, countLaughterTags(source)))
-        : fallbackText;
-  }
-  if (shouldTranslate && !shouldTag) {
-    // 사용자가 대괄호를 쳐서 톤 태깅을 안 하는 번역도 모델이 웃음 태그를 바꿀 수 있다(`[laughs]` → `[chuckles]`,
-    // Codex #830). 사용자가 직접 친 웃음 태그는 **친 수만큼** 철자 그대로 두고, 나머지 웃음은 `[laughs]` 로 맞춘다 —
-    // 모델이 사용자의 `[chuckles]` 옆에 `[chuckles]` 를 하나 더 써도 그건 모델 웃음이다.
-    preparedText = canonicalizeLaughterTags(
-      preparedText,
-      // 원문에 있던 웃음(사용자가 친 ㅋㅋ 를 바꾼 `[laughs]` + 사용자가 직접 친 웃음 태그) 수만큼 — 모델이 더한 웃음은 지운다.
-      countLaughterTags(source),
-      laughterTagCounts(trimmed),
-    );
-  }
-  if (shouldTranslate && countLaughterTags(source) > 0 && countLaughterTags(preparedText) === 0) {
-    // ⚠ 번역이 사용자의 웃음을 빠뜨렸으면 선두 톤 뒤에 한 번 되살린다(Codex #830). 번역은 어순이 바뀌어 원문
-    //   자리로 되돌릴 수 없다 — 자리·개수 대신 '사용자가 웃었다' 는 것만 지킨다(스펙 §9). 되살리는 웃음은 원문의
-    //   첫 웃음 그대로다 — 글자 웃음이면 `[laughs]`, 사용자가 대괄호로 친 태그면 그 철자(`[chuckles]`).
+  // 번역문에 모델이 옮겨 쓴 글자 웃음(haha·www)도 소리로 — 웃음 수를 맞추기(아래 `canonicalizeLaughterTags`) 전에 바꾼다.
+  // 원문에 없던 **톤** 태그는 벗긴다 — 우리는 태그를 붙이지 않는다(위 「태그」 머리말). 사용자가 친 태그 이름은 남긴다.
+  const userTagNames = new Set(extractTags(trimmed));
+  let preparedText = stripTagsWhere(
+    speak(parsed.text),
+    (tag) => !isLaughterTag(tag) && !userTagNames.has(tag),
+  );
+  // 웃음은 원문에 있던 수만큼만(사용자가 친 ㅋㅋ 를 바꾼 `[laughs]` + 사용자가 직접 친 웃음 태그) — 모델이 더한 웃음은
+  // 지운다. 사용자가 직접 친 웃음 태그는 **친 수만큼** 철자 그대로 두고, 나머지 웃음은 `[laughs]` 로 맞춘다(Codex #830).
+  preparedText = canonicalizeLaughterTags(preparedText, countLaughterTags(source), laughterTagCounts(trimmed));
+  if (countLaughterTags(source) > 0 && countLaughterTags(preparedText) === 0) {
+    // ⚠ 번역이 사용자의 웃음을 빠뜨렸으면 앞에 한 번 되살린다(Codex #830). 번역은 어순이 바뀌어 원문 자리로
+    //   되돌릴 수 없다 — 자리·개수 대신 '사용자가 웃었다' 는 것만 지킨다(스펙 §9). 되살리는 웃음은 원문의 첫 웃음
+    //   그대로다 — 글자 웃음이면 `[laughs]`, 사용자가 대괄호로 친 태그면 그 철자(`[chuckles]`).
     preparedText = withLeadingLaugh(
       preparedText,
       (source.match(TAG_RE_GLOBAL) ?? []).find(isLaughterTag) ?? LAUGH_TAG,
     );
   }
-  // ⚠ 번역문은 **태그를 벗긴 뒤에도** 낭독할 말이 있어야 한다(Codex #801). 위의 빈 문자열 검사는
-  //   `{"text":"[softly]"}` 를 통과시키고, 태그를 지우면 `[cheerfully] ` 만 남아 말 없는 클립이
-  //   '번역 성공' 으로 합성·저장된다. 같은 언어면 `normalizeSameLanguageTaggedText` 가 이미 원문과
-  //   맞춰 보므로 여기 걸릴 일이 없다.
-  // ⚠ 웃음만 남은 번역(`[cheerfully] haha!`)도 말이 없는 것이다(Codex #830). `speak` 는 웃음뿐인 글을 일부러
-  //   글자로 두므로(사용자가 'ㅋㅋㅋ' 만 친 경우) 그대로 두면 'haha' 를 읽는 클립이 '번역 성공' 이 된다. 원문에
-  //   말이 있었는데 번역문의 글자 웃음을 소리로 바꾸면 말이 안 남는다면 거절한다 — 원문도 웃음뿐이면 그대로 둔다.
+  // ⚠ 번역문은 **태그를 벗긴 뒤에도** 낭독할 말이 있어야 한다(Codex #801). `{"text":"[softly]"}` 처럼 태그뿐인
+  //   응답을 '번역 성공' 으로 합성·저장하면 말 없는 클립이 된다.
+  // ⚠ 웃음만 남은 번역(`haha!`)도 말이 없는 것이다(Codex #830). `speak` 는 웃음뿐인 글을 일부러 글자로 두므로
+  //   (사용자가 'ㅋㅋㅋ' 만 친 경우) 그대로 두면 'haha' 를 읽는 클립이 '번역 성공' 이 된다. 원문에 말이 있었는데
+  //   번역문의 글자 웃음을 소리로 바꾸면 말이 안 남는다면 거절한다 — 원문도 웃음뿐이면 그대로 둔다.
   if (
-    shouldTranslate &&
-    (!normalizeAlarmTextWithoutTags(preparedText) ||
-      (hasSpokenWords(typedLaughterToTags(trimmed)) && !hasSpokenWords(typedLaughterToTags(preparedText))))
+    !normalizeAlarmTextWithoutTags(preparedText) ||
+    (hasSpokenWords(typedLaughterToTags(trimmed)) && !hasSpokenWords(typedLaughterToTags(preparedText)))
   ) {
     throw new AlarmTextPreparationInvalidError('empty_spoken');
   }
 
-  const tags = extractTags(preparedText);
-
   return {
     text: preparedText,
-    translated: shouldTranslate,
-    tags,
-    provider,
+    translated: true,
+    tags: extractTags(preparedText),
+    provider: 'vertex',
   };
 }
 
@@ -721,13 +466,10 @@ export async function generateDynamicAlarmTextWithVertex(
 
   // 2단 검증(§4.7): HARD 차단 시 1회만 재롤하고, 그래도 막히면 회전식 폴백.
   // SOFT 이슈(조사/어체 슬립 등)는 polishDynamicAlarmText로 국소 수리만 하고 수용한다.
-  // temperature 0.85→0.75로 낮춰 churn을 줄인다.
   for (let attempt = 0; attempt < 2; attempt += 1) {
     let raw: string;
     try {
       raw = await generateContentText(env, prompt, {
-        temperature: 0.75,
-        maxOutputTokens: 256,
         systemInstruction: DYNAMIC_SYSTEM_INSTRUCTION,
         responseSchema: DYNAMIC_RESPONSE_SCHEMA,
       });
@@ -736,60 +478,20 @@ export async function generateDynamicAlarmTextWithVertex(
       return fallback;
     }
 
-    const parsed = parseDynamicAlarmTextResult(raw);
-    const raw2 = parsed.text.trim();
-    // ⚠ **검증·수리·표시는 태그를 뺀 본문으로 한다**(Codex #701 P2).
-    // 모델이 인라인 태그를 내기 시작하면서 `[warmly]` 같은 영어 대괄호가 본문에 섞이는데,
-    // 그대로 재면 (1) 200자 상한에 장식이 얹히고 (2) `hasLanguageMismatch` 가 한국어
-    // 문구를 영어 섞임으로 오판하며 (3) 무엇보다 그 대괄호가 **화면 문구로 샌다.**
-    // ⚠ **수리(polish)는 합성 문구에도 반영돼야 한다**(Codex #701 P2).
-    // 예전에는 태그를 벗긴 본문만 수리하고 합성에는 원문을 넘겨, 조사·띄어쓰기 수리가
-    // 화면에만 반영되고 **실제로 들리는 소리는 안 고쳐진** 상태가 됐다.
-    // 태그가 붙은 원문을 그대로 수리하되, 수리가 태그를 건드렸으면(개수·내용이 달라지면)
-    // 그 결과는 믿지 않고 태그 없는 쪽만 쓴다.
-    const polishedTagged = polishDynamicAlarmText(raw2, context);
-    const tagsSurvivedPolish =
-      JSON.stringify(extractTags(polishedTagged)) === JSON.stringify(extractTags(raw2));
-    const taggedSource = tagsSurvivedPolish ? polishedTagged : raw2;
-    const spoken = tagsSurvivedPolish
-      ? normalizeAlarmTextWithoutTags(polishedTagged)
-      : polishDynamicAlarmText(normalizeAlarmTextWithoutTags(raw2), context);
-
-    // 태그 검사만 **원문**으로 한다 — 저각성 태그(`[quietly]`)는 벗긴 뒤엔 보이지 않아
-    // 그대로 통과해 버린다. 나머지(길이·언어·호칭·유출)는 태그를 뺀 본문 기준이다.
-    if (dynamicTextHardFailure(spoken, context, taggedSource)) {
+    // 모델이 태그를 내도 합성하지 않는다(위 「태그」 머리말) — 벗긴 글을 수리·검증하고 그대로 합성한다.
+    // 화면 문구와 합성 문구가 같은 글이다.
+    const spoken = polishDynamicAlarmText(stripAllTags(parseDynamicAlarmTextResult(raw).text.trim()), context);
+    if (dynamicTextHardFailure(spoken, context)) {
       continue; // HARD → 1회 재롤
     }
-
-    // 저각성 태그는 기상을 방해하므로 여기서 떨군다(`sanitizeDeliveryTag` 와 같은 규칙).
-    const inlineTags = extractTags(taggedSource)
-      .map((tag) => sanitizeDeliveryTag(tag))
-      .filter(Boolean);
-    const legacyTag = sanitizeDeliveryTag(parsed.tag);
-    const tags = inlineTags.length > 0 ? inlineTags : legacyTag ? [legacyTag] : [];
-    // 모델이 배치한 자리를 살린다. 다만 저각성 태그를 떨궜다면 원문을 그대로 쓸 수 없으므로
-    // (떨군 태그가 남는다) 그때는 호출부가 `text` 에 다시 입히게 넘기지 않는다.
-    const keptAllInlineTags =
-      inlineTags.length > 0 && inlineTags.length === extractTags(taggedSource).length;
-    return {
-      text: spoken,
-      translated: false,
-      tags,
-      ...(keptAllInlineTags ? { synthesisText: taggedSource } : {}),
-      provider: 'vertex',
-    };
+    return { text: spoken, translated: false, tags: [], provider: 'vertex' };
   }
 
   return fallback;
 }
 
-// HARD 차단(§4.7): 차단 시 재롤→폴백. allowlist/단일태그/저각성 가드는 별도(태그 정제는 SOFT).
-function dynamicTextHardFailure(
-  text: string,
-  context: DynamicAlarmTextContext,
-  /** 태그가 붙어 있는 원문. 태그 관련 검사만 이걸 본다(없으면 `text`). */
-  taggedText?: string,
-): boolean {
+// HARD 차단(§4.7): 차단 시 재롤→폴백.
+function dynamicTextHardFailure(text: string, context: DynamicAlarmTextContext): boolean {
   if (!text) return true;
   // 파싱불가/메타 JSON('here is the json' 등)은 형식 위반.
   if (isMetaJsonResponse(text)) return true;
@@ -806,9 +508,8 @@ function dynamicTextHardFailure(
   ) {
     return true;
   }
-  // 소괄호 지문과 **저각성 대괄호 태그**는 HARD. 태그를 벗긴 본문으로 재면 저각성 태그가
-  // 보이지 않아 그대로 통과하므로 반드시 원문으로 본다.
-  if (hasDeliveryTagOrStageDirection(taggedText ?? text)) return true;
+  // 소괄호 지문·태그 모양이 아닌 대괄호(`[다정하게]`)는 HARD — 태그를 벗긴 뒤에도 남아 낭독된다.
+  if (hasStageDirection(text)) return true;
   if (hasAlarmTimeEcho(text, context.alarmTimeLabel)) return true;
   if (hasDateLabelEcho(text, context.dateLabel)) return true;
   // 연인/배우자 톤: '새 인연/연애운/질투' 어휘만 HARD. 정중 어미 슬립은 SOFT로 강등.
@@ -885,9 +586,13 @@ async function createAccessToken(
   return json.access_token;
 }
 
+/**
+ * 호출마다 다른 것은 이 둘뿐이다. temperature·출력 상한은 호출부가 정하지 않는다 — 3.x 는
+ * temperature 를 무시하고(문서: "temperature, top_p, top_k are ignored"), 상한은 사고 토큰 때문에
+ * 한 값(`MAX_OUTPUT_TOKENS`)이어야 한다. 예전에 호출부마다 적던 0.15·0.75·0.6/0.9·0.1 과 256 은
+ * 3.x 로 옮긴 뒤로 요청에 실리지 않던 죽은 값이었다.
+ */
 type GenerateContentConfig = {
-  temperature: number;
-  maxOutputTokens: number;
   systemInstruction?: string;
   responseSchema?: unknown;
 };
@@ -898,7 +603,7 @@ async function generateContentText(
   config: GenerateContentConfig,
 ): Promise<string> {
   const location = env.GOOGLE_VERTEX_LOCATION || DEFAULT_VERTEX_LOCATION;
-  const model = env.GOOGLE_VERTEX_MODEL || DEFAULT_VERTEX_MODEL;
+  const model = VERTEX_MODEL;
   // ⚠ 자격 증명 해석·토큰 발급 실패도 호출 한 번으로 남긴다(Codex #801). 생성 요청 앞에서 던지므로 아래
   //   `generateContentAtEndpoint` 의 로그에 닿지 않는데, 호출부는 이것도 삼키고 폴백한다 — 시크릿이 깨졌거나
   //   OAuth 가 죽으면 통째로 안 보인다. 오류 메시지는 `readVertexCredentials` 의 고정 문장이거나 OAuth
@@ -931,18 +636,6 @@ async function generateContentText(
 }
 
 /**
- * Gemini 1·2 계열인가. **사고 설정의 이름이 계열마다 다르다**:
- *  - 2.x 는 `thinkingBudget` 을 받고, `thinkingLevel` 을 보내면 **400** 이다
- *    ("thinking_level is not supported by this model", 2026-09-23 실측).
- *  - 3.x 문서는 "The raw numeric thinking_budget parameter is no longer supported across all
- *    Gemini 3 models" 라고 한다(지금은 받아 주지만 기대지 않는다).
- * 그래서 **모델 문자열로 가른다** — 일괄 치환하면 시크릿이 아직 2.5 인 워커가 전부 400 이 된다.
- */
-export function isLegacyGeminiModel(model: string): boolean {
-  return /^gemini-[12]\./.test(model);
-}
-
-/**
  * generateContent 주소. 멀티리전 `us`·`eu` 는 **전용 호스트**(`aiplatform.{loc}.rep.googleapis.com`)
  * 를 쓴다(Vertex 「Locations」). 그 밖은 지금까지처럼 전역 호스트 + 경로의 location 이다.
  */
@@ -962,25 +655,18 @@ export function vertexGenerateContentEndpoint(
 }
 
 /**
- * 요청의 `generationConfig`. 계열마다 다르게 보낸다:
- *  - 2.x: 지금까지와 **똑같다**(temperature · 호출부 상한 · `thinkingBudget: 0`). 코드를 먼저 배포하고
- *    시크릿을 나중에 바꾸므로, 그 사이 2.5 워커의 동작이 바뀌면 안 된다.
- *  - 3.x: `thinkingLevel: 'MINIMAL'`, 상한은 최소 `GEMINI_3_MIN_OUTPUT_TOKENS`, **temperature 는 뺀다** —
- *    3.5 Flash-Lite 는 "Custom values for parameters like temperature, top-K, and top-P aren't
- *    supported" 이고, Gemini 3 공통 안내는 1.0 미만이면 반복 같은 이상 동작이 날 수 있다고 한다.
+ * 요청의 `generationConfig` — `VERTEX_MODEL` 에 맞춘 한 벌이다. 모델을 바꾸면 여기도 같이 본다.
+ *  - `thinkingLevel: 'LOW'` — 3.8 Flash 는 `MINIMAL` 을 400 으로 거절한다(`VERTEX_THINKING_LEVEL`).
+ *    `thinkingBudget`(2.x 의 숫자 예산)은 3.x 문서가 "no longer supported" 라 보내지 않는다.
+ *  - **temperature 를 보내지 않는다** — 3.8 은 무시하고, Gemini 3 공통 안내는 1.0 미만이면 반복 같은
+ *    이상 동작이 날 수 있다고 한다. `frequency_penalty`·`presence_penalty`·`candidate_count` 는 보내면
+ *    오류라 넣지 않는다.
  */
-export function buildGenerationConfig(
-  model: string,
-  config: GenerateContentConfig,
-): Record<string, unknown> {
-  const legacy = isLegacyGeminiModel(model);
+export function buildGenerationConfig(config: GenerateContentConfig): Record<string, unknown> {
   return {
-    ...(legacy ? { temperature: config.temperature } : {}),
-    maxOutputTokens: legacy
-      ? config.maxOutputTokens
-      : Math.max(config.maxOutputTokens, GEMINI_3_MIN_OUTPUT_TOKENS),
+    maxOutputTokens: MAX_OUTPUT_TOKENS,
     responseMimeType: 'application/json',
-    thinkingConfig: legacy ? { thinkingBudget: 0 } : { thinkingLevel: 'MINIMAL' },
+    thinkingConfig: { thinkingLevel: VERTEX_THINKING_LEVEL },
     ...(config.responseSchema ? { responseSchema: config.responseSchema } : {}),
   };
 }
@@ -1040,7 +726,7 @@ async function generateContentAtEndpoint(
       ...(config.systemInstruction
         ? { systemInstruction: { parts: [{ text: config.systemInstruction }] } }
         : {}),
-      generationConfig: buildGenerationConfig(model, config),
+      generationConfig: buildGenerationConfig(config),
     }),
   }).catch((err: unknown) => {
     // ⚠ **던져진 호출도 한 줄 남긴다**(Codex #801). 15초 타임아웃·DNS·네트워크 오류는 응답이 없어
@@ -1084,53 +770,27 @@ async function generateContentAtEndpoint(
   return extractGeneratedText(json);
 }
 
-function alarmTextPrompt(args: {
-  text: string;
-  sourceLanguage: string;
-  targetLanguage: string;
-  shouldTranslate: boolean;
-  shouldTag: boolean;
-  /** 차분한 목소리면 '웃어도 된다' 는 지시를 싣지 않는다(사전렌더 `prerenderClipPrompt` 와 같다). */
-  calmVoice?: boolean;
-}): string {
+/**
+ * 직접 입력 번역 프롬프트. 태그는 붙이게 하지 않는다(위 「태그」 머리말) — 사용자가 친 대괄호는 그대로 옮기고
+ * 새로 넣지 말라고만 한다. 모델이 그래도 넣은 톤 태그는 `prepareAlarmTextWithVertex` 가 벗긴다.
+ */
+function alarmTextPrompt(args: { text: string; sourceLanguage: string; targetLanguage: string }): string {
   const sourceName = LANGUAGE_NAMES[args.sourceLanguage] || args.sourceLanguage;
   const targetName = LANGUAGE_NAMES[args.targetLanguage] || args.targetLanguage;
-  const action = args.shouldTranslate
-    ? `Translate the user's alarm message from ${sourceName} to ${targetName}.`
-    : `Keep the user's alarm message in ${sourceName}.`;
-  // ⚠ 아래 태그 규칙 셋은 2026-09-23 비교 평가(`scripts/eval-gemini-prompts.ts`)에서 나온 것이다:
-  //   - **졸린 태그** — 이 경로만 저각성 금지가 없어서 3.5 Flash-Lite 가 25% 로 `[gentle]`·
-  //     `[softly]` 를 붙였다. 깨우는 알람이다. 서버도 걸러 낸다(`dropWakeUnsafeTags`).
-  //   - **띄어쓰기** — 3.5 가 `[warm, gentle]할머니` 처럼 붙여 썼다.
-  //   - **자리** — 2.5 가 `오늘은 [happy] 우리 딸 생일` 처럼 꾸밈말과 명사 사이에 넣었다.
-  const tagInstruction = args.shouldTag
-    ? `Add ElevenLabs v3 delivery tags in square brackets so the line is performed, not just read. Use as many as the line needs — typically 1 to 3 — and put them where the delivery changes, including mid-sentence. Tags are free-form natural-language directions, not a fixed list; these are only examples: ${TAG_EXAMPLES.map((tag) => `[${tag}]`).join(', ')}. Mix kinds when it helps: feeling ([proud], [flustered]), non-verbal sounds ([laughs], [sighs]), voice quality ([low, controlled], [through gritted teeth]), and pacing ([measured, deliberate]). Prefer an unhurried pace — a rushed alarm is hard to follow. Do not rewrite, add, remove, or reorder any words unless translation is requested; tags are the only thing you may insert.
-PLACEMENT: start the first sentence with a tag, and put tags only at the start of a sentence or a clause — never between a modifier and the word it modifies ('오늘은 [happy] 우리 딸 생일' is wrong). One tag per sentence unless the delivery really changes mid-sentence: if a sentence already starts with a tag, don't add another right after a name or comma ('[cheerfully] 엄마, [brightly] 일어날 시간이야' is wrong). A line of one or two sentences usually needs one or two tags. Write exactly one space after every tag ('[cheerfully] 일어나', never '[cheerfully]일어나').
-MATCH THE CONTENT: pacing tags such as [measured, deliberate] slow the voice down — fine, but never use them to calm down an urgent line ('일어나세요! [measured, deliberate] 회의 있어요' is wrong).
-THIS IS AN ALARM: it has to wake someone up. Never use sleepy or hushed directions — every one of these is rejected: ${LOW_AROUSAL_TAG_EXAMPLES} — unless the message itself is a good-night or wind-down message ('잘 자', '수고했어', 'good night', 'おやすみ'), where a calm delivery fits. Never use fear or panic directions either ([panicked], [scared], [terrified]) — urgency is fine, fear is not.
-${args.calmVoice ? '' : OWN_LAUGH_INSTRUCTION}`
-    : 'Do not add or remove delivery tags.';
   // 직접 입력의 글자 웃음(ㅋㅋ·haha·www)은 서버가 이미 `[laughs]` 로 바꿔서 보낸다(`speakTypedLaughter`).
-  // 모델이 그걸 '자기가 붙일 태그' 로 보고 지우거나 옮기거나 낱말로 풀면 사용자가 친 웃음이 사라진다.
+  // 모델이 그걸 지우거나 낱말로 풀면 사용자가 친 웃음이 사라진다.
   const typedLaughterInstruction = /\[laughs\]/i.test(args.text)
-    ? `LAUGHTER: every [laughs] already in the message is the user's own laughter (they typed it as letters such as ㅋㅋ, haha or www). Keep each one exactly where it is${
-        args.shouldTranslate ? ' in the translation' : ''
-      }, never turn it into words, and never add another laugh right next to it.${
-        // 태깅하지 않는 요청(사용자가 대괄호를 쳤다)은 위에서 '태그를 더하지 말라' 고 했다 — 톤을 붙이라고 하면 부딪힌다.
-        args.shouldTag ? " It is a sound, not the line's tone — still start the line with a tone tag of your own." : ''
-      }`
+    ? "LAUGHTER: every [laughs] already in the message is the user's own laughter (they typed it as letters such as ㅋㅋ, haha or www). Keep each one where it belongs in the translation, never turn it into words, and never add another laugh."
     : '';
 
   return [
-    'You prepare short voice-alarm text for text-to-speech.',
-    action,
-    tagInstruction,
+    'You translate short voice-alarm text for text-to-speech.',
+    `Translate the user's alarm message from ${sourceName} to ${targetName}.`,
+    'Keep any text in square brackets exactly as written, and never add new square brackets — the voice reads the words themselves, so say it the way a native speaker would.',
     ...(typedLaughterInstruction ? [typedLaughterInstruction] : []),
     'Do not add explanations, markdown, quotes, emojis, or extra fields.',
     'Keep the final text natural, spoken, and 200 characters or fewer.',
-    // 태그 목록은 받지 않는다 — `text` 안의 인라인 태그가 전부이고, 목록은 거기서 뽑는다
-    // (`extractTags`). 필요한 것만 받는다(2026-09-23).
-    'Return strict JSON with one field: {"text":"final text with the delivery tags inline"}.',
+    'Return strict JSON with one field: {"text":"the translated text"}.',
     '',
     args.text,
   ].join('\n');
@@ -1205,7 +865,7 @@ function isGrandchildRelationship(relationshipLabel: string | null | undefined):
   return GRANDCHILD_RELATIONSHIPS.some((keyword) => label.includes(keyword));
 }
 
-// 고정 철학·출력계약·태그규칙·NEVER 목록(§4.2 전문). 프롬프트 캐시 친화를 위해
+// 고정 철학·출력계약·NEVER 목록(§4.2 전문). 프롬프트 캐시 친화를 위해
 // 가변 데이터(user prompt)와 분리해 systemInstruction으로 전달한다.
 const DYNAMIC_SYSTEM_INSTRUCTION = `You are the voice of a personal voice-alarm app. You write ONE short spoken line — usually one
 sentence, sometimes two very short ones — that one real, familiar person says out loud to gently
@@ -1242,15 +902,12 @@ REGISTER (one consistent register per line, matched to the relationship)
   for a guessed family title like grandmother/mom/son). If no title is given, use a natural
   title-free greeting.
 
-DELIVERY TAG (ElevenLabs v3)
-- Write delivery tags INLINE inside "text", in square brackets, at each point where the delivery
-  changes — including mid-line. Use as many as the line needs (typically 1 to 3).
-- For pauses/pacing use punctuation and ellipses (…) as well — the engine has no SSML breaks
-  and a soft '…' or comma after the greeting is the soft-start.
-- If a line is very short (under ~20 characters), one tag is plenty; never stack tags on a
-  single short clause, and never invent a tag that the delivery does not actually change.
-- Tag effects are SUBTLE in Japanese and Korean — carry the emotion in word/particle/ending
-  choice too; treat tags as a light touch, not a replacement for good wording.
+DELIVERY (the voice performs your words alone)
+- The TTS voice reads the line and takes its feeling from the words and punctuation. Write NO
+  square-bracket tags or stage directions — carry the emotion in word, particle and ending choice
+  and in the rhythm of the sentences.
+- For pauses/pacing use punctuation and ellipses (…) — the engine has no SSML breaks, and a soft
+  '…' or comma after the greeting is the soft-start.
 
 NEVER
 - Never recite raw values the user did not write: temperatures, percentages, weather codes, exact
@@ -1264,16 +921,13 @@ NEVER
   왔어", "엄마가 시켜서", "엄마 심부름으로".
 - Never use a stiff/formal/business register (Korean 합니다체; Japanese ビジネス敬語/文語;
   English "Please be advised") for family, friends, or partners.
-- No markdown, emojis, quotes, explanations, or extra fields.
-
-- Write exactly one space after every tag ('[warmly] 할머니', never '[warmly]할머니').
+- No markdown, emojis, quotes, explanations, square brackets, or extra fields.
 
 OUTPUT
 - Return STRICT JSON only, matching the schema: {"text": string}. "text" = the final spoken line
-  in the target language, WITH delivery tags written inline in square brackets where the
-  delivery changes. No other fields.`;
+  in the target language, words only (no square brackets). No other fields.`;
 
-/** 직접 입력 태깅 응답. 태그는 `text` 안에 인라인으로만 받는다. */
+/** 직접 입력 번역 응답. */
 const ALARM_TEXT_RESPONSE_SCHEMA = {
   type: 'object',
   properties: {
@@ -1381,28 +1035,27 @@ function activeLanguageBlock(targetLanguage: string): string {
 
 // few-shot(§4.9).
 //
-// ⚠ **예시가 곧 계약이다**(2026-08-20). 프롬프트에는 "태그를 문장 안 전달이 바뀌는 자리마다
-// 인라인으로 쓰라" 고 적어 두고, 정작 예시는 `text` 에 태그가 없고 `tag` 한 개만 채운
-// 형태였다. 모델은 지시문이 아니라 **예시와 반환 형식을 따랐다** — dev 실측에서 받은 응답이
-// 전부 무태그 `text` + `tag:"cheerfully"` 였다. 지시만 고치고 예시를 두면 또 무효가 된다.
+// ⚠ **예시가 곧 계약이다**(2026-08-20). 모델은 지시문보다 **예시와 반환 형식을 따른다** — 지시만 고치고
+// 예시를 두면 무효가 된다. 그래서 태그를 뺄 때(2026-09-30) 예시의 대괄호도 함께 뺐다. 예시에 태그가 남으면
+// 모델이 태그를 계속 낸다.
 const DYNAMIC_FEW_SHOT: Record<string, Array<{ context: string; text: string }>> = {
   ko: [
-    { context: 'wake_weather, 손녀→할아버지, rain', text: '[warmly] 할아버지, 일어나실 시간이에요. [caring] 오늘은 비가 올 수 있대요, 나가실 때 우산 꼭 챙기세요.' },
-    { context: 'wake_weather, 연인, dust', text: '[playfully] 자기야, 일어나자. [lightly] 오늘 미세먼지 많대 — 마스크 꼭 챙겨, 알았지?' },
-    { context: 'wake_fortune, 중립', text: '[curious] 오늘은 작은 선택에 좋은 기운이 따른대요… [lighthearted] 가벼운 마음으로 시작해 봐요.' },
+    { context: 'wake_weather, 손녀→할아버지, rain', text: '할아버지, 일어나실 시간이에요. 오늘은 비가 올 수 있대요, 나가실 때 우산 꼭 챙기세요.' },
+    { context: 'wake_weather, 연인, dust', text: '자기야, 일어나자. 오늘 미세먼지 많대 — 마스크 꼭 챙겨, 알았지?' },
+    { context: 'wake_fortune, 중립', text: '오늘은 작은 선택에 좋은 기운이 따른대요… 가벼운 마음으로 시작해 봐요.' },
   ],
   ja: [
-    { context: 'wake_weather, 孫→祖母(タメ口), rain', text: '[warmly] おばあちゃん、起きる時間だよ。[caring] 今日は雨が降るみたい、出かけるとき傘忘れないでね。' },
-    { context: 'wake_weather, 距離/불명(です・ます), cold', text: '[warmly] 今日は冷えるみたいですよ。[caring] 一枚羽織ってから出かけてくださいね。' },
-    { context: 'wake_fortune, 중립/casual', text: '[curious] 今日はちょっといいことがありそうだよ… [lighthearted] 気楽にいこうね。' },
+    { context: 'wake_weather, 孫→祖母(タメ口), rain', text: 'おばあちゃん、起きる時間だよ。今日は雨が降るみたい、出かけるとき傘忘れないでね。' },
+    { context: 'wake_weather, 距離/불명(です・ます), cold', text: '今日は冷えるみたいですよ。一枚羽織ってから出かけてくださいね。' },
+    { context: 'wake_fortune, 중립/casual', text: '今日はちょっといいことがありそうだよ… 気楽にいこうね。' },
   ],
   en: [
-    { context: 'wake_weather, neutral, rain', text: '[warmly] Hey… time to get up. [caring] Looks like rain later, grab your umbrella before you head out.' },
+    { context: 'wake_weather, neutral, rain', text: 'Hey… time to get up. Looks like rain later, grab your umbrella before you head out.' },
     // ⚠ **예시가 지시문을 이긴다**(2026-09-03 리뷰 4차). 이 자리는 `love, romantic, babe`
     //   였는데, 지시문만 응원으로 고치고 예시를 두면 모델은 **예시를 따라 연애 문구**를
     //   낸다(바로 아래 `fewShotBlock` 주석이 경고하는 그것). 카테고리 이름을 바꾸면
     //   예시도 함께 바꾼다.
-    { context: 'cheer, neutral', text: "[caring] Lots on your plate — you don't have to do it all at once. [encouraging] Just start with one thing, okay?" },
+    { context: 'cheer, neutral', text: "Lots on your plate — you don't have to do it all at once. Just start with one thing, okay?" },
   ],
 };
 
@@ -1410,7 +1063,7 @@ function fewShotBlock(targetLanguage: string): string {
   const examples = DYNAMIC_FEW_SHOT[targetLanguage];
   if (!examples || examples.length === 0) return '';
   const lines = examples.map((ex) => `- (${ex.context}) -> {"text":"${ex.text}"}`);
-  return ['Few-shot examples — note the tags live INSIDE "text":', ...lines].join('\n');
+  return ['Few-shot examples (words only — no square brackets):', ...lines].join('\n');
 }
 
 function dynamicAlarmTextPrompt(context: DynamicAlarmTextContext): string {
@@ -1455,22 +1108,12 @@ function dynamicAlarmTextPrompt(context: DynamicAlarmTextContext): string {
   })();
 
   const languageBlock = activeLanguageBlock(context.targetLanguage);
-  // ⚠ **태그를 "tag" 필드 하나로 받지 말 것**(2026-08-13 — C안).
-  // 예전에는 별도 필드에 한 개만 받아서, 여러 개도 중간 배치도 **구조적으로 불가능**했다.
-  // 이제 텍스트 안에 직접 쓰게 한다. `tag` 필드는 옛 클라이언트 호환으로만 남는다.
-  //
-  // ⚠ **저각성 금지를 여기에 명시해야 한다.** 예전에는 허용 목록에서 빼는 것으로만
-  // 막았는데, 자유형으로 바뀌면 그 장치가 사라진다 — 말로 적어 둔다.
-  const tagAllowlistInstruction = `DELIVERY TAGS: write them inline in "text", in square brackets, where the delivery changes — including mid-sentence. Use as many as the line needs (typically 1 to 3). Tags are free-form natural-language directions; these are only examples: ${TAG_EXAMPLES.filter(
-    (tag) => !isLowArousalTag(tag),
-  )
-    .map((tag) => `[${tag}]`)
-    .join(' ')}. Mix kinds when it helps: feeling, non-verbal sounds ([laughs], [sighs]), voice quality ([low, controlled]), and pacing ([measured, deliberate]).
+  // 결은 문장이 싣는다 — 태그는 쓰게 하지 않는다(위 「태그」 머리말). 쉼·모양·우선순위 지시는 태그와 무관하게 남긴다.
+  const deliveryInstruction = `WORDS ONLY: the voice takes its tone from your words and punctuation — write no square-bracket tags or stage directions.
 PACING: prefer an unhurried delivery — a rushed alarm is hard to follow right after waking.
 Use an ellipsis ("...") where the speaker would naturally pause or trail off before turning to the point ("그래도 이제... 슬슬 일어나 볼까?"). One or two per line at most — it is a breath, not a mannerism.
-SHAPE: acknowledge how the listener feels first, then turn to waking them. A line that only reports facts does not wake anyone; a line that only nags is unpleasant to hear every morning. Lead with the empathy, land on the nudge.
-⚠ PRIORITY: the relationship and this speaker's own way of talking come FIRST. Everything above is shape, not a script — if a pause, a tag, or the empathy-then-nudge order would make this person sound like someone else, drop it and sound like them.
-NEVER use sleepy or hushed directions — every one of these is rejected: ${LOW_AROUSAL_TAG_EXAMPLES}. This line has to wake someone up, and a low-arousal delivery works against that.`;
+SHAPE: acknowledge how the listener feels first, then turn to waking them. A line that only reports facts does not wake anyone; a line that only nags is unpleasant to hear every morning. Lead with the empathy, land on the nudge — this line has to wake someone up, never lull them back to sleep.
+⚠ PRIORITY: the relationship and this speaker's own way of talking come FIRST. Everything above is shape, not a script — if a pause or the empathy-then-nudge order would make this person sound like someone else, drop it and sound like them.`;
 
   return [
     `LANGUAGE: write the spoken line in ${targetName}.`,
@@ -1493,9 +1136,9 @@ NEVER use sleepy or hushed directions — every one of these is rejected: ${LOW_
       ? '문장 구조 예시 (wake_weather): "할아버지, 일어나실 시간이에요. 오늘은 비가 올 수 있대요. 나가실 때 우산 꼭 챙기세요." / "할머니, 좋은 아침이에요. 미세먼지가 많대요. 외출하실 때 마스크 챙기세요." / "자기야, 일어나자. 비 온대. 나가기 전에 우산 챙겨, 감기 걸리면 안 돼." / "일어나실 시간이에요. 날씨가 좋대요. 잠깐 산책 가기에도 딱이에요." — 위치/날짜/관계/숫자 없이 시작해서, 날씨 상태와 그에 맞는 행동 권유를 한두 마디로 자연스럽게 묶고 짧게 마무리. "예보 보니까" 같은 출처 도입은 선택 사항이며, 강수확률·기온 숫자를 그대로 읽는 패턴은 금지. 손녀→할아버지처럼 손아랫사람이 손윗사람에게 말할 때는 "오늘은 비가 올 수 있대요", "나가실 때 우산 꼭 챙기세요"처럼 조사와 띄어쓰기가 살아 있는 다정한 말투를 우선한다.'
       : '',
     'Make it feel meaningfully different from a prerecorded fixed alarm.',
-    tagAllowlistInstruction,
+    deliveryInstruction,
     fewShotBlock(context.targetLanguage),
-    'Return STRICT JSON only: {"text":"final spoken line in the target language, with delivery tags inline in square brackets"}. No other fields.',
+    'Return STRICT JSON only: {"text":"final spoken line in the target language"}. No other fields.',
   ]
     .filter(Boolean)
     .join('\n');
@@ -1504,22 +1147,19 @@ NEVER use sleepy or hushed directions — every one of these is rejected: ${LOW_
 // ── 사전렌더(유료 클론) 톤 적응 생성 ─────────────────────────────────────────────
 // 라이브 동적 경로(generateDynamicAlarmTextWithVertex)와 분리된, seed 기반 1회 생성기.
 // 카테고리 outcome 을 자연어 seed 로 받아 그 목소리의 관계/호칭/말투에 맞춘 알람 문구를 만든다.
-// 동적 경로의 품질 규칙(관계 어체·호칭 호출·자연스러움·태그 allowlist·few-shot)을 그대로 재사용해
+// 동적 경로의 품질 규칙(관계 어체·호칭 호출·자연스러움·쉼과 모양·few-shot)을 그대로 재사용해
 // "할아버지, 약 먹을 시간이에요. 까먹지 말고 꼭 드시고 건강하셔야 해요!" 수준을 보장한다.
 function prerenderClipPrompt(params: {
   seed: string;
   relationshipLabel?: string | null;
   listenerTitle?: string | null;
   targetLanguage: string;
-  defaultTag?: string;
   /** 사용자가 등록 미리듣기에서 확정(직접 수정 포함)한 문구 — 톤/어투 기준. 내용 복제 금지. */
   styleReference?: string | null;
   /** 등록 녹음 전사에서 분석한 화자 말투(사투리·존댓말·특징 어미). styleReference 가 우선. */
   speechStyle?: SpeechStyle | null;
-  /** 같은 의도를 사람이 직접 쓴 기본 목소리 대사(`STOCK_CLIP_PRESETS`). 리듬·쉼·태그 거는 법의 본보기. */
+  /** 같은 의도를 사람이 직접 쓴 기본 목소리 대사(`STOCK_CLIP_PRESETS`). 리듬·쉼의 본보기. */
   humanReference?: string | null;
-  /** false 면 웃음 규칙을 싣지 않는다(등록 미리듣기 — `generatePrerenderClipText`). */
-  allowLaughter?: boolean;
 }): string {
   const targetName = LANGUAGE_NAMES[params.targetLanguage] || params.targetLanguage;
   const listenerTitle = params.listenerTitle?.trim();
@@ -1537,38 +1177,31 @@ function prerenderClipPrompt(params: {
     params.targetLanguage === 'ko' && isRomanticRelationship(params.relationshipLabel)
       ? '연인/배우자 톤: 실제 남자친구·여자친구·아내·남편이 사적으로 건네는 말투로. 친밀한 반말을 쓰고 해요체/합니다체를 쓰지 말 것(아내·남편도). 따뜻하고 살짝 설레게, 하지만 짧게. 새 인연·연애운·질투·다른 사람에게 끌림 언급 금지.'
       : '';
-  // 사전렌더도 동적 경로와 **같은 규칙**이다(위 `tagAllowlistInstruction` 주석 참조).
-  const tagAllowlistInstruction = `DELIVERY TAGS: write them inline in "text", in square brackets, where the delivery changes — including mid-sentence. Use as many as the line needs (typically 1 to 3). Tags are free-form natural-language directions; these are only examples: ${TAG_EXAMPLES.filter(
-    (tag) => !isLowArousalTag(tag),
-  )
-    .map((tag) => `[${tag}]`)
-    .join(' ')}. Mix kinds when it helps: feeling, non-verbal sounds ([laughs], [sighs]), voice quality ([low, controlled]), and pacing ([measured, deliberate]).
+  // 사전렌더도 동적 경로와 **같은 규칙**이다 — 결은 문장이 싣고 태그는 쓰게 하지 않는다(위 「태그」 머리말).
+  const deliveryInstruction = `WORDS ONLY: the voice takes its tone from your words and punctuation — write no square-bracket tags, stage directions or laughter spelled in letters (ㅋㅋ, haha, www), which text-to-speech reads aloud.
 PACING: prefer an unhurried delivery — a rushed alarm is hard to follow right after waking.
-NEVER use sleepy or hushed directions — every one of these is rejected: ${LOW_AROUSAL_TAG_EXAMPLES}. This line has to wake someone up.
-MATCH EACH TAG TO ITS SENTENCE: apologies, cautions and bad news (rain, snow, fine dust, fog, cold, a failed weather check) take caring, apologetic or concerned tones — never playful, excited or bright ones. A tone written in the intent ('미안한 듯', '가볍게', '다정하게') wins over the voice's usual mood. Start the first sentence with a tag. Avoid energy-dropping sounds such as [sighs] in a wake-up line.${
-    // 차분한 목소리는 웃음을 아예 쓰지 않는다(아래 VOICE ENERGY 가 금지하고, 서버도 지운다) — '가벼운
-    // 문장에는 웃어도 된다' 를 같이 주면 두 지시가 부딪힌다.
-    params.speechStyle?.energy === 'calm' || params.allowLaughter === false ? '' : `\n${OWN_LAUGH_INSTRUCTION}`
-  }`;
+MATCH EACH SENTENCE TO ITS CONTENT: apologies, cautions and bad news (rain, snow, fine dust, fog, cold, a failed weather check) are said with care — never playfully or with excitement. A tone written in the intent ('미안한 듯', '가볍게', '다정하게') wins over the voice's usual mood. This line has to wake someone up — never let it drift into a sleepy or hushed lull.`;
   const styleReference = params.styleReference?.trim();
   const styleReferenceInstruction = styleReference
     ? `STYLE REFERENCE (tone only): the user approved this exact line for this same voice: "${styleReference}". Match its register, warmth, sentence length and overall speaking style — but write NEW content for the current intent; never copy or lightly rephrase the reference line itself.`
     : '';
   // ⚠ **사람이 쓴 같은 의도의 대사를 본보기로 준다**(2026-09-27 사용자 지시 — "기본 목소리 대사처럼
   //   사람이 말하는 것처럼"). 시드는 의도를 설명한 글이라 모델이 설명문처럼 옮기기 쉽다. 본보기는
-  //   중립 화자의 존댓말이므로 **리듬·쉼·공감→권유 흐름·태그 거는 법만** 가져오고, 문장과 어체는
+  //   중립 화자의 존댓말이므로 **리듬·쉼·공감→권유 흐름만** 가져오고, 문장과 어체는
   //   이 목소리의 관계·호칭·말투로 새로 쓰게 한다.
   const humanReference = params.humanReference?.trim();
   const humanReferenceInstruction = humanReference
-    ? `HUMAN-WRITTEN REFERENCE for this same intent (a script line written by a person for a neutral narrator in polite speech): "${humanReference}". This is how a real person says it — match its natural rhythm, short sentence shapes, pauses (…), its empathy-then-nudge flow, and how each tag follows its own sentence's feeling. But re-voice it completely for THIS speaker (relationship register, title, dialect, energy); do not copy its sentences. Its endings are polite (해요체/です・ます) because the narrator is neutral — REWRITE EVERY ENDING into this speaker's register (e.g. for 반말: '온대요'→'온대', '볼까요?'→'볼까?', '챙겨요'→'챙겨'); never let one sentence keep the reference's register.`
+    ? `HUMAN-WRITTEN REFERENCE for this same intent (a script line written by a person for a neutral narrator in polite speech): "${humanReference}". This is how a real person says it — match its natural rhythm, short sentence shapes, pauses (…) and its empathy-then-nudge flow. But re-voice it completely for THIS speaker (relationship register, title, dialect, energy); do not copy its sentences. Its endings are polite (해요체/です・ます) because the narrator is neutral — REWRITE EVERY ENDING into this speaker's register (e.g. for 반말: '온대요'→'온대', '볼까요?'→'볼까?', '챙겨요'→'챙겨'); never let one sentence keep the reference's register.`
     : '';
   const speechStyle = params.speechStyle;
-  // 목소리의 결(경쾌/진중)이 문장 에너지와 태그를 정한다 — 결과 어긋나면 그 목소리의 핵심이 깨진다.
+  // 목소리의 결(경쾌/진중)이 문장 에너지를 정한다 — 결과 어긋나면 그 목소리의 핵심이 깨진다. 태그가 없으니 결은
+  // **문장 모양으로만** 전한다(스펙 §4-2). v4 는 밝은 신호(느낌표·신나는 낱말)가 하나라도 있으면 크게 들뜨므로
+  // (스펙 §10) 차분 쪽은 그 신호를 빼게 한다.
   const energyInstruction =
     speechStyle?.energy === 'lively'
-      ? 'VOICE ENERGY — this voice is bright and LIVELY. Let the line bounce: short upbeat sentences, a light exclamation or a small laugh where it fits ([cheerfully], [playfully], [laughs], [excited], [brightly]). Never flat, solemn or preachy. Cautions and apologies stay caring, just warm and quick rather than heavy.'
+      ? 'VOICE ENERGY — this voice is bright and LIVELY. Let the line bounce: short upbeat sentences and a light exclamation where it fits. Never flat, solemn or preachy. Cautions and apologies stay caring, just warm and quick rather than heavy.'
       : speechStyle?.energy === 'calm'
-        ? 'VOICE ENERGY — this voice is low-key, CALM and sincere. Keep the line composed and grounded: steady sentences, few or no exclamation marks, no giggles or teasing, and none of [cheerfully], [playfully], [excited], [giggles], [laughs]. Use tags like [warmly], [sincerely], [reassuring], [caring], [steady], [measured, deliberate]. Calm is not sleepy — the line still ends with a clear, firm nudge to get up or act, and never uses sleepy or hushed tags. Calm is not formal either — a calm partner, friend or parent still speaks the relationship\'s own register (반말 stays 반말). This overrides the tag examples listed below.'
+        ? 'VOICE ENERGY — this voice is low-key, CALM and sincere. Keep the line composed and grounded: steady, even sentences, few or no exclamation marks, and no teasing or excited words — the voice lifts at every bright signal, so leave them out. Calm is not sleepy — the line still ends with a clear, firm nudge to get up or act. Calm is not formal either — a calm partner, friend or parent still speaks the relationship\'s own register (반말 stays 반말).'
         : '';
   const speechStyleInstruction =
     speechStyle && (speechStyle.dialect || speechStyle.markers.length > 0 || speechStyle.persona)
@@ -1598,10 +1231,10 @@ MATCH EACH TAG TO ITS SENTENCE: apologies, cautions and bad news (rain, snow, fi
         'REQUIRED — spell one or two words the way a small child actually says them, instead of textbook-correct spelling: stretch an ending ("주라아", "가자아"), soften a consonant ("힘드러어", "이러나아"), or repeat a word ("빨리빨리"). Exactly one or two such words per line — the rest stays normally spelled so the message is still clear enough to wake someone.',
         'Never write the whole line in broken spelling, and never break the word that carries the actual point (medicine, umbrella, waking up).',
         params.targetLanguage === 'ko'
-          ? 'Child examples: "[excited] 아빠아, [laughs] 일어나아! 오늘 비 온대. 우산 꼭 챙겨!" / "[playfully] 엄마, 약 먹을 시간이야. 빨리빨리 먹어어!"'
+          ? 'Child examples: "아빠아, 일어나아! 오늘 비 온대. 우산 꼭 챙겨!" / "엄마, 약 먹을 시간이야. 빨리빨리 먹어어!"'
           : params.targetLanguage === 'ja'
-            ? 'Child examples: "[excited] パパ、[laughs] おきてー！きょうはあめなんだって。かさもってってね！" / "[playfully] ママ、おくすりのじかんだよ。はやくのんでー！"'
-            : 'Child examples: "[excited] Daddy, [laughs] wake uuup! It\'s gonna rain, take your umbrella, okay?" / "[playfully] Mommy, medicine time! Take it now-now-now!"',
+            ? 'Child examples: "パパ、おきてー！きょうはあめなんだって。かさもってってね！" / "ママ、おくすりのじかんだよ。はやくのんでー！"'
+            : 'Child examples: "Daddy, wake uuup! It\'s gonna rain, take your umbrella, okay?" / "Mommy, medicine time! Take it now-now-now!"',
       ].join(' ')
     : '';
   return [
@@ -1623,7 +1256,7 @@ MATCH EACH TAG TO ITS SENTENCE: apologies, cautions and bad news (rain, snow, fi
     //   3.5 Flash-Lite 가 영어에서 200자를 넘기던 것은 이 상한으로 막는다.
     `COMPLETENESS FIRST: say every part of the intent — the fact, the empathy, the reason, and above all its closing action (get up now, take it now, look outside). If you must shorten, drop greetings (unless the intent is itself a greeting) and repeated titles first, never the closing action. Never say the same thing twice ('시작해 보자, 일어나자'). Add nothing the intent does not say: no invented circumstances ('I left a glass of water for you', 'traffic will be bad') — the clip is replayed on other days — and no piled-up adjectives ('a really healthy, wonderful day'). Use the shortest line that carries all of it: usually two short sentences, at most three — ${
       params.targetLanguage === 'en' ? 'at most about 30 English words' : 'at most about 110 characters'
-    } of spoken text (tags do not count).`,
+    } of spoken text.`,
     'OPENER: do not assume the time of day. Use a morning greeting (좋은 아침, 잘 잤어, good morning, おはよう) only when the intent itself is a greeting — and then DO open with it; skipping the greeting drops part of the intent. Never for medication, which can ring at any hour. Do not open medication or cheer lines with a wake-up call (\'일어나\', \'get up\', \'起きて\') unless the intent asks for it — the listener may already be up. Otherwise start with the listener\'s title (or a short soft opener) and get straight to the point, and vary the opener.',
     'The intent above is written as a neutral Korean description; its wording and politeness are NOT the output register — use the relationship\'s register (e.g. a mom speaking to her daughter never says "드실").',
     params.targetLanguage === 'ko'
@@ -1640,9 +1273,9 @@ MATCH EACH TAG TO ITS SENTENCE: apologies, cautions and bad news (rain, snow, fi
       ? '뉴스 앵커처럼 들리지 않게 진짜 옆에서 말하는 톤. 손녀·손자·손주→조부모, 자식→부모는 존대 해요체("일어나실 시간이에요", "챙기세요")로, 형제·자매·친구는 반말, 연인·배우자는 사적인 반말로. 조사와 띄어쓰기를 살려 다정하게.'
       : '',
     'Make it feel warm and human, not a robotic prerecorded template.',
-    tagAllowlistInstruction,
+    deliveryInstruction,
     fewShotBlock(params.targetLanguage),
-    'Return STRICT JSON only: {"text":"final spoken line in the target language, with delivery tags inline in square brackets"}. No other fields.',
+    'Return STRICT JSON only: {"text":"final spoken line in the target language"}. No other fields.',
   ]
     .filter(Boolean)
     .join('\n');
@@ -1651,6 +1284,9 @@ MATCH EACH TAG TO ITS SENTENCE: apologies, cautions and bad news (rain, snow, fi
 /**
  * 사전렌더 클립 1개의 톤 적응 문구를 생성한다(유료 클론 전용). 실패(Vertex 미설정/네트워크/
  * 검증 위반)하면 throw 하여 호출자(cron)가 재시도하도록 한다 — 나쁜 폴백 문구를 저장하지 않는다.
+ *
+ * 돌려주는 문구는 **합성할 글이자 화면 문구**다 — 태그가 없다(위 「태그」 머리말). 모델이 태그나 글자 웃음을
+ * 내도 벗긴다.
  */
 export async function generatePrerenderClipText(
   env: Env,
@@ -1659,35 +1295,18 @@ export async function generatePrerenderClipText(
     relationshipLabel?: string | null;
     listenerTitle?: string | null;
     targetLanguage: string;
-    defaultTag?: string;
     /** 등록 미리듣기에서 확정된 preview_text — 있으면 톤/어투 스타일 레퍼런스로 쓴다. */
     styleReference?: string | null;
     /** 등록 녹음 전사에서 분석한 화자 말투(사투리 등) — 문구를 그 말투로 작성. */
     speechStyle?: SpeechStyle | null;
-    /** 같은 의도를 사람이 쓴 기본 목소리 대사 — 리듬·태그의 본보기(`stockReferenceLine`). */
+    /** 같은 의도를 사람이 쓴 기본 목소리 대사 — 리듬·쉼의 본보기(`stockReferenceLine`). */
     humanReference?: string | null;
-    /**
-     * false 면 모델이 웃음을 넣지 않는다(지시를 싣지 않고, 넣었으면 지운다) — **등록 미리듣기**가 쓴다. 미리듣기는
-     * 인라인 태그를 벗겨 저장하고 톤 하나(`preview_tag`)로 다시 입혀 재생하므로, 넣은 웃음을 되살릴 자리가 없다
-     * — 들려주지도 않을 웃음을 만들지 않는다(Codex #830).
-     */
-    allowLaughter?: boolean;
   },
-): Promise<{ text: string; tag: string }> {
+): Promise<{ text: string }> {
   const targetLanguage = params.targetLanguage || 'ko';
   if (!hasGeminiConfiguration(env)) {
     throw new AlarmTextPreparationInvalidError('vertex_not_configured');
   }
-  // 사전렌더 클립은 전부 기상/알림용이다. 저각성 태그(calm/tired/whispers/quietly)는 기상을
-  // 방해하므로 동적 경로 sanitizeDeliveryTag 와 동일하게 여기서도 드롭한다. 안 그러면 모델이
-  // medication/love 등에 calm 을 붙였을 때 안 깨우는 알람 클립이 영구 저장된다.
-  // 차분을 고른 목소리면 들뜬 태그도 여기서 막는다 — 인라인·`tag` 필드·기본값 세 갈래 모두(스펙 §4-2).
-  const calmVoice = params.speechStyle?.energy === 'calm';
-  const sanitizePrerenderTag = (raw: string): string => {
-    const approved = normalizeApprovedTag(raw);
-    if (!approved || isLowArousalTag(approved) || isFearTag(approved)) return '';
-    return calmVoice && isCalmIncompatibleTag(approved) ? '' : approved;
-  };
 
   // ⚠ **한 번 던지고 끝내지 말 것**(2026-08-20). 예전에는 1회 호출 뒤 검증에 걸리면 곧바로
   // throw 했고, cron 은 그걸 5번 반복한 뒤 큐를 `failed` 로 내렸다. 그런데 거절 사유가
@@ -1703,20 +1322,14 @@ export async function generatePrerenderClipText(
   let lastWrongEndings: string[] = [];
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
     const label = params.relationshipLabel?.trim();
-    // ⚠ 재시도 힌트에 **태그 제약을 다시 말한다.** 실측(2026-08-21): 영어 안개 시드 ×
-    // 관계 '엄마' 가 3회 전부 `[softly]` 를 붙여 나와 저각성 가드에 걸려 **영구 실패**했다.
-    // '다르게 써 봐' 만으로는 모델이 문장만 바꾸고 태그는 그대로 둔다.
-    const retryTagHint =
-      ` The rejection may have been the delivery tags: never use sleepy or hushed ones` +
-      ` (${LOW_AROUSAL_TAG_EXAMPLES}) — this line must wake someone up.`;
     const retryHint =
       attempt === 1
         ? ''
         : attempt === 2
-          ? `RETRY: the previous attempt was rejected. Keep the same intent but rephrase it differently — vary the sentence shape and wording.${retryTagHint}`
+          ? 'RETRY: the previous attempt was rejected. Keep the same intent but rephrase it differently — vary the sentence shape and wording.'
           : label
-            ? `RETRY (final): earlier attempts were rejected. Write the line WITHOUT using the word "${label}" anywhere — speak purely in the first person ("나는"/"내가") and keep it short.${retryTagHint}`
-            : `RETRY (final): earlier attempts were rejected. Write a shorter, plainer line in the first person.${retryTagHint}`;
+            ? `RETRY (final): earlier attempts were rejected. Write the line WITHOUT using the word "${label}" anywhere — speak purely in the first person ("나는"/"내가") and keep it short.`
+            : 'RETRY (final): earlier attempts were rejected. Write a shorter, plainer line in the first person.';
     // ⚠ **길어서 걸렸으면 길이를 숫자로 다시 말한다**(2026-09-23 비교 평가). 첫 시도는
     //   완결성을 앞세우므로(프롬프트 COMPLETENESS FIRST) 3.5 Flash-Lite 가 영어에서 200자를
     //   넘기기도 한다. 일반 힌트('다르게 써 봐')로는 세 번 다 길게 써서 **영구 실패**했다
@@ -1746,9 +1359,6 @@ export async function generatePrerenderClipText(
     let raw: string;
     try {
       raw = await generateContentText(env, prompt, {
-        // 회차마다 온도를 올려 같은 문장이 되풀이되는 것을 피한다.
-        temperature: attempt === 1 ? 0.6 : 0.9,
-        maxOutputTokens: 256,
         systemInstruction: DYNAMIC_SYSTEM_INSTRUCTION,
         responseSchema: DYNAMIC_RESPONSE_SCHEMA,
       });
@@ -1756,64 +1366,23 @@ export async function generatePrerenderClipText(
       lastError = err;
       continue;
     }
-    const parsed = parseDynamicAlarmTextResult(raw);
-    // ⚠ **졸린 태그는 거절하지 않고 지운다**(2026-09-23 — 직접 입력 경로와 같게 — `dropWakeUnsafeTags`).
-    //   예전에는 `[gently]` 하나만 있어도 문장 전체를 버리고 다시 물었다. 2.5 Flash 는 같은
-    //   관계(엄마→딸)에서 세 번 다 `[gently]` 를 붙여 **클립이 영구 실패**했고, 1회차 거절의
-    //   대부분(비교 평가 47/210)이 이것이었다. 태그만 빼면 문장은 멀쩡하다. 소괄호 지문처럼
-    //   **낭독돼 버리는** 것은 아래 검사가 그대로 거절한다.
-    // 모델이 웃음을 글자로 썼으면(말투 본보기의 ㅋㅋ 를 따라 쓰는 등) 소리 태그로 먼저 바꾼다 — TTS 는 글자를
-    // 읽는다(스펙 §9). 차분 거르기보다 **앞**이어야 차분한 목소리에서 그 웃음도 지워진다.
-    // 모델이 낸 웃음 태그는 졸린·차분 거르기 뒤에 `[laughs]` 로 맞춘다(`canonicalizeLaughterTags`).
-    const tidied = tidyEllipsis(
-      canonicalizeLaughterTags(
-        // 웃음만 남는 줄('[playfully] haha')도 바꾼다 — 그대로 두면 글자를 읽는 클립이 영구 저장된다. 낭독할
-        // 말이 안 남으면 아래 `prerenderRejectionReason` 이 `empty_spoken` 으로 다시 묻는다(Codex #830).
-        dropWakeUnsafeTags(typedLaughterToTags(parsed.text.trim()), { calmVoice }),
-        params.allowLaughter === false ? 0 : 1,
-      ),
-    );
+    // 모델이 태그를 내도 합성하지 않는다(위 「태그」 머리말) — 벗긴다. 글자 웃음(말투 본보기의 ㅋㅋ 를 따라 쓴 것)은
+    // TTS 가 글자로 읽으므로(스펙 §9) 소리 태그로 바꾼 뒤 함께 벗긴다. 낭독할 말이 안 남으면 아래
+    // `prerenderRejectionReason` 이 `empty_spoken` 으로 다시 묻는다(Codex #830).
+    const tidied = tidyEllipsis(stripAllTags(typedLaughterToTags(parseDynamicAlarmTextResult(raw).text.trim())));
     const text = targetLanguage === 'ko' ? modernizeKoreanHonorific(tidied) : tidied;
-    // ⚠ 길이는 **태그를 뺀 본문**으로 잰다. 태그가 인라인으로 들어오면서 `[warmly] ` 같은
-    // 장식이 글자 수에 얹히는데, 그걸 그대로 세면 멀쩡한 한 문장이 상한에 걸려 떨어진다.
-    const spoken = normalizeAlarmTextWithoutTags(text);
     // ⚠ **사유를 잃지 말 것**(2026-09-21, ALARMTALK-BACKEND-9). 예전에는 검사 일곱 개가
     // 한 덩어리 `if` 였고 에러에는 아무것도 안 실려서, Sentry 에서 '길이 초과' 와 '관계
     // 라벨 누출' 이 **같은 한 줄**로 보였다 — 무엇을 고쳐야 하는지 알 길이 없었다.
-    const reason = prerenderRejectionReason(spoken, text, targetLanguage, params);
+    const reason = prerenderRejectionReason(text, targetLanguage, params);
     if (reason) {
       lastError = new AlarmTextPreparationInvalidError(reason);
       lastReason = reason;
       lastWrongEndings =
-        reason === 'register_mixed' ? (koreanRegisterViolation(spoken, params)?.wrong ?? []).slice(0, 4) : [];
+        reason === 'register_mixed' ? (koreanRegisterViolation(text, params)?.wrong ?? []).slice(0, 4) : [];
       continue;
     }
-    // 모델이 태그를 스스로 배치했으면 그대로 둔다. 아예 없거나 선두 하나뿐이면 문장마다
-    // 다시 앞세운다 — v3 태그는 뒤로 갈수록 풀려 끝 문장이 빨라진다
-    // (`normalizeSameLanguageTaggedText` 와 같은 규칙, 한 곳에서 두 번 정하지 않는다).
-    //
-    // ⚠ **웃음은 톤이 아니다**(`isLaughterTag`). 문장마다 앞세울 태그(= 돌려주는 `tag`, 등록 미리듣기도
-    //   문장마다 입힌다)로 웃음을 고르지 않는다 — 고르면 `[laughs]` 하나로 시작한 문구가 **매 문장 웃는다.**
-    //   그때는 톤(모델의 `tag`·카테고리 기본값)을 앞세우고, 모델이 넣은 웃음은 제자리에 한 번만 남긴다.
-    //   '톤을 몇 개 배치했는가' 도 **톤 태그로만** 센다 — 웃음 하나만 문장 가운데 있는 줄(`자기야, [laughs] 일어나`)
-    //   을 '모델이 배치했다' 로 읽으면 톤 없이 저장되고 `tag` 만 톤을 주장한다(Codex #830).
-    const inlineTags = extractTags(text);
-    const toneTags = inlineTags.filter((tag) => !isLaughterTag(tag));
-    const onlyLeadingTone =
-      toneTags.length === 1 && extractTags(text.match(LEADING_TAGS_RE)?.[0] ?? '').includes(toneTags[0]!);
-    const sanitizeToneTag = (raw: string) => (isLaughterTag(raw) ? '' : sanitizePrerenderTag(raw));
-    const primaryTag =
-      sanitizeToneTag(toneTags[0] ?? '') ||
-      sanitizeToneTag(parsed.tag) ||
-      sanitizeToneTag(fallbackTagForEnergy(params.defaultTag ?? '', params.speechStyle?.energy));
-    if (toneTags.length === 0 || onlyLeadingTone) {
-      const base = withoutToneTags(text);
-      return {
-        text: primaryTag ? applyDeliveryTagPerSentence(primaryTag, base) : base,
-        tag: primaryTag,
-      };
-    }
-    return { text, tag: primaryTag };
+    return { text };
   }
   // ⚠ **전송 실패를 내용 위반으로 둔갑시키지 말 것**(2026-09-21, ALARMTALK-BACKEND-9).
   // 예전에는 세 회차가 전부 fetch 실패(타임아웃·상류 5xx·서브리퀘스트 소진)여도 마지막에
@@ -1834,9 +1403,7 @@ export async function generatePrerenderClipText(
  * ⚠ 반환값에 문구 원문을 섞지 말 것. 이 값은 그대로 Sentry 태그가 된다.
  */
 export function prerenderRejectionReason(
-  /** 태그를 벗긴 낭독 본문. 길이·언어·호칭·유출은 이걸로 잰다. */
-  spoken: string,
-  /** 모델이 준 원문(인라인 태그 포함). 형식·태그 검사만 이걸로 본다. */
+  /** 합성할 글 — 모델 응답에서 태그를 벗긴 것(`generatePrerenderClipText`). */
   text: string,
   targetLanguage: string,
   params: {
@@ -1848,15 +1415,15 @@ export function prerenderRejectionReason(
     styleReference?: string | null;
   },
 ): AlarmTextRejectionReason | null {
-  // ⚠ `!text` 가 아니라 `!spoken` 이다(Codex #701 P2) — `{"text":"[happy] [excited]"}`
-  // 처럼 **태그만** 온 응답은 text 가 비지 않아 통과하고, 낭독할 말이 하나도 없는
-  // 클립이 영구 저장된다.
-  // 문장부호만 남아도(`[laughs]!`) 낭독할 말이 없는 것이다 — 글자·숫자가 있어야 한다.
+  // 길이·언어·호칭·유출은 공백을 접은 본문으로 잰다. 형식·지문 검사만 원문(`text`)을 본다.
+  const spoken = normalizeAlarmTextWithoutTags(text);
+  // 문장부호만 남아도(`!`) 낭독할 말이 없는 것이다 — 글자·숫자가 있어야 한다. 태그만 온 응답
+  // (`{"text":"[happy] [excited]"}`)도 태그를 벗기면 여기 걸린다(Codex #701 P2).
   if (!/[\p{L}\p{N}]/u.test(spoken)) return 'empty_spoken';
   if (isMetaJsonResponse(text)) return 'meta_json';
   if (spoken.length > 200) return 'too_long';
   if (hasLanguageMismatch(spoken, targetLanguage, params.listenerTitle)) return 'language_mismatch';
-  if (hasDeliveryTagOrStageDirection(text)) return 'stage_direction';
+  if (hasStageDirection(text)) return 'stage_direction';
   if (hasUnsupportedListenerAddress(spoken, params.listenerTitle)) return 'listener_address';
   if (
     hasRelationshipLabelLeak(
@@ -2212,8 +1779,6 @@ export async function analyzeSpeechStyleWithVertex(
   let raw: string;
   try {
     raw = await generateContentText(env, speechStylePrompt(trimmed, language), {
-      temperature: 0.1,
-      maxOutputTokens: 256,
       responseSchema: SPEECH_STYLE_RESPONSE_SCHEMA,
     });
   } catch {
@@ -2547,12 +2112,11 @@ function weatherSignalPromptHint(signal: WeatherSignal | null | undefined): stri
 function dynamicAlarmTextPreparationFallback(
   context: DynamicAlarmTextContext,
 ): AlarmTextPreparation {
-  const text = dynamicAlarmTextReadableFallback(context);
-  // 폴백은 일반적 문구이므로 모드 기본 태그를 붙인다(modeDefaultTag — 전부 고각성).
+  // 폴백도 태그 없이 문장 그대로 합성한다(위 「태그」 머리말).
   return {
-    text,
+    text: dynamicAlarmTextReadableFallback(context),
     translated: false,
-    tags: [modeDefaultTag(context.mode)],
+    tags: [],
     provider: 'local',
   };
 }
@@ -2971,19 +2535,16 @@ function hasRelationshipLabelLeak(
 
 /// 모델 출력에 **낭독되면 안 되는 지문**이 섞였는가.
 ///
-/// ⚠ **대괄호 태그 자체는 이제 정상이다**(2026-08-13 — C안). 예전에는 대괄호가 하나라도
-/// 있으면 HARD 실패로 보고 재롤/폴백했는데, 그러면 여러 개·중간 태그가 구조적으로 불가능했다.
-/// 지금 막는 것은 둘뿐이다:
+/// 태그 모양의 대괄호는 거절하지 않고 벗긴다(`stripAllTags`, 2026-09-30). 막는 것은 벗길 수 없는 것뿐이다:
 ///  1. **전각/소괄호 지문** — `（다정하게）` `(웃으며)` 는 ElevenLabs 가 태그로 안 읽고
-///     **글자 그대로 낭독**한다. 대괄호만 태그다.
-///  2. **저각성 지시** — 대괄호든 아니든, 졸리게 말하라는 뜻이면 깨우는 알람에 맞지 않는다.
+///     **글자 그대로 낭독**한다.
+///  2. **태그 모양이 아닌 대괄호** — 아래 `hasUnknownBracketedSegment`.
 /**
  * 태그 문법에 **맞지 않는 대괄호**가 남아 있는가 — 예: `[다정하게]`, `[아침 인사]`.
  *
  * ⚠ `TAG_BODY_PATTERN` 은 ASCII 소문자만 받는다(`[a-z][a-z ,-]{1,48}`). 그래서 한글
- * 대괄호 지문은 **태그로 인식되지도, 벗겨지지도 않는다** — 그대로 두면 합성 문구에도
- * 표시 문구에도 남아 낭독되거나 화면에 뜬다(Codex #701 P2). 인라인 태그를 쓰라고
- * 지시하기 시작하면서 모델이 이 형태를 낼 여지가 커졌으므로 명시적으로 거절한다.
+ * 대괄호 지문은 **태그로 인식되지도, 벗겨지지도 않는다**(`stripAllTags`) — 그대로 두면 합성 문구에도
+ * 표시 문구에도 남아 낭독되거나 화면에 뜬다(Codex #701 P2). 그래서 명시적으로 거절한다.
  */
 function hasUnknownBracketedSegment(text: string): boolean {
   // 인식되는 태그를 먼저 걷어내고, **대괄호가 한 짝이라도 남으면** 거절한다.
@@ -2993,7 +2554,11 @@ function hasUnknownBracketedSegment(text: string): boolean {
   return withoutKnownTags.includes('[') || withoutKnownTags.includes(']');
 }
 
-function hasDeliveryTagOrStageDirection(text: string): boolean {
+/**
+ * 낭독돼 버리는 지문이 있는가 — 태그 모양이 아닌 대괄호, 소괄호 지문(`(다정하게)`). 모델이 쓴 글(동적 생성·사전렌더)에만
+ * 쓴다. 태그 모양의 대괄호는 이미 벗긴 뒤다(`stripAllTags`).
+ */
+function hasStageDirection(text: string): boolean {
   if (hasUnknownBracketedSegment(text)) return true;
   // 소괄호·전각괄호로 시작하면 지문이다(대괄호는 태그라 통과).
   if (/^\s*[（(]/.test(text)) return true;
@@ -3008,10 +2573,7 @@ function hasDeliveryTagOrStageDirection(text: string): boolean {
   ) {
     return true;
   }
-
-  // 대괄호 태그 중 저각성이 있으면 실패로 본다 — 깨우는 경로 전용 판정이다.
-  const bracketed = text.match(TAG_RE_GLOBAL) ?? [];
-  return bracketed.some((part) => isLowArousalTag(part.slice(1, -1)));
+  return false;
 }
 
 function hasAlarmTimeEcho(text: string, alarmTimeLabel: string | null | undefined): boolean {
@@ -3150,9 +2712,9 @@ function containsNormalized(text: string, needle: string): boolean {
   return normalize(text).includes(normalize(needle));
 }
 
+/** 번역 응답 파서. 내보내는 건 평가 스크립트(`scripts/eval-gemini-prompts.ts`)가 같은 판정을 하려는 것이다. */
 export function parseAlarmTextPreparation(raw: string): {
   text: string;
-  tags: string[];
   parsedJson: boolean;
 } {
   const cleaned = raw
@@ -3164,31 +2726,19 @@ export function parseAlarmTextPreparation(raw: string): {
   const end = cleaned.lastIndexOf('}');
   const candidate = start >= 0 && end > start ? cleaned.slice(start, end + 1) : cleaned;
   try {
-    const parsed = JSON.parse(candidate) as { text?: unknown; tags?: unknown };
+    const parsed = JSON.parse(candidate) as { text?: unknown };
     const text = typeof parsed.text === 'string' ? parsed.text.trim() : '';
-    const tags = Array.isArray(parsed.tags)
-      ? parsed.tags.filter((tag): tag is string => typeof tag === 'string').map(normalizeTag)
-      : extractTags(text);
-    return {
-      text: stripWrappingQuotes(text),
-      tags: tags.filter(Boolean),
-      parsedJson: true,
-    };
+    return { text: stripWrappingQuotes(text), parsedJson: true };
   } catch {
-    return {
-      text: stripWrappingQuotes(cleaned),
-      tags: extractTags(cleaned),
-      parsedJson: false,
-    };
+    return { text: stripWrappingQuotes(cleaned), parsedJson: false };
   }
 }
 
-// 동적 생성 응답 파서. responseSchema({text, tag})를 1차로 읽고, 간헐 빈응답/포맷이탈 대비
+// 동적 생성·사전렌더 응답 파서. responseSchema({text})를 1차로 읽고, 간헐 빈응답/포맷이탈 대비
 // brace-slice를 최후 폴백으로 둔다(§4.7: 레거시 파서 유지).
 /** 내보내는 건 평가 스크립트(`scripts/eval-gemini-prompts.ts`)가 시도마다 같은 판정을 하려는 것이다. */
 export function parseDynamicAlarmTextResult(raw: string): {
   text: string;
-  tag: string;
   parsedJson: boolean;
 } {
   const cleaned = raw
@@ -3200,12 +2750,11 @@ export function parseDynamicAlarmTextResult(raw: string): {
   const end = cleaned.lastIndexOf('}');
   const candidate = start >= 0 && end > start ? cleaned.slice(start, end + 1) : cleaned;
   try {
-    const parsed = JSON.parse(candidate) as { text?: unknown; tag?: unknown };
+    const parsed = JSON.parse(candidate) as { text?: unknown };
     const text = typeof parsed.text === 'string' ? stripWrappingQuotes(parsed.text.trim()) : '';
-    const tag = typeof parsed.tag === 'string' ? normalizeTag(parsed.tag) : '';
-    return { text, tag, parsedJson: true };
+    return { text, parsedJson: true };
   } catch {
-    return { text: stripWrappingQuotes(cleaned), tag: '', parsedJson: false };
+    return { text: stripWrappingQuotes(cleaned), parsedJson: false };
   }
 }
 
@@ -3248,81 +2797,6 @@ function stripWrappingQuotes(text: string): string {
     .trim();
 }
 
-/// 사용자가 친 문구에 모델이 태그만 얹었는지 확인하고, **얹은 그대로** 돌려준다.
-///
-/// ⚠ **태그를 하나로 접어 원문에 다시 붙이지 말 것**(2026-08-13 — C안).
-/// 예전에는 `pickApprovedTag` 로 **첫 태그 하나만** 고른 뒤 `applyDeliveryTagPerSentence`
-/// 로 원문을 재조립했다. 그래서 모델이 어디에 몇 개를 넣었든 **결과는 언제나 '원문 앞에
-/// 태그 하나'** 였다 — 프롬프트를 아무리 고쳐도 이 경로에서는 변화가 관측되지 않았다.
-///
-/// 지금은 글자(태그를 뺀 본문)가 원문과 같은지만 확인하고 배치는 모델에 맡긴다.
-function normalizeSameLanguageTaggedText(
-  preparedText: string,
-  originalText: string,
-  candidateTags: string[],
-): string | null {
-  if (normalizeAlarmTextWithoutTags(preparedText) !== normalizeAlarmTextWithoutTags(originalText)) {
-    return null;
-  }
-  // ⚠ **사용자가 친 웃음(ㅋㅋ 를 바꾼 `[laughs]` — `speakTypedLaughter`)은 원문 자리 그대로여야 한다.**
-  //   톤 태그만 벗긴 두 글이 같은지로 본다 — 개수만 세면 모델이 웃음을 문장 앞으로 옮겨도 '지켰다' 로
-  //   읽혀 사용자가 웃은 자리와 다른 곳에서 웃는다(Codex #830). 빠뜨렸거나·옮겼거나·자기 웃음을 더했으면
-  //   모델 배치를 버리고 **원문 위에** 모델의 톤만 다시 입힌다.
-  const typedLaughter = countLaughterTags(originalText) > 0;
-  if (typedLaughter && withoutToneTags(preparedText) !== withoutToneTags(originalText)) {
-    const tag = pickApprovedTag([...extractTags(preparedText), ...candidateTags]);
-    return tag ? applyDeliveryTagPerSentence(tag, originalText, 200) : null;
-  }
-  // 그러고 나면 남은 웃음은 전부 사용자 것이라 '모델이 태그를 몇 개 배치했는가' 에서 뺀다 — 세면 모델이 톤을
-  // 하나도 안 붙였는데 '여러 개 배치했다' 로 읽혀 톤 없이 합성된다. 원문에 웃음이 없으면 모델이 **스스로**
-  // 넣은 웃음은 예전처럼 센다.
-  const tagsInText = (preparedText.match(TAG_RE_GLOBAL) ?? []).filter(
-    (tag) => !typedLaughter || !isLaughterTag(tag),
-  );
-
-  // ⚠ **선두 태그 하나뿐이면 문장마다 다시 앞세운다 — 이 장치를 없애지 말 것.**
-  // v3 태그는 뒤로 갈수록 효력이 약해져, 여러 문장을 선두 태그 하나로 합성하면 **끝
-  // 문장에서 톤이 풀리고 말이 빨라진다.** 사용자가 지적한 "말이 엄청 빠르다" 와 같은 축이다.
-  // 모델이 스스로 여러 개·중간에 배치했다면 그건 의도이므로 건드리지 않는다.
-  const onlyLeadingTag =
-    tagsInText.length === 1 && preparedText.trimStart().startsWith(tagsInText[0]!);
-  if (tagsInText.length === 0 || onlyLeadingTag) {
-    const tag = pickApprovedTag([...extractTags(preparedText), ...candidateTags]);
-    if (!tag) return null;
-    return applyDeliveryTagPerSentence(tag, originalText, 200);
-  }
-  return preparedText.trim();
-}
-
-// ElevenLabs v3 delivery 태그는 뒤따르는 구간에서 갈수록 효력이 약해져, 여러 문장을
-// 선두 태그 하나로 합성하면 끝 문장에서 톤이 풀리고 말이 빨라지는 드리프트가 생긴다.
-// 문장 경계마다 같은 태그를 다시 앞세워 전달 톤을 끝까지 고정한다(태그는 발화되지 않음).
-// 상한을 넘으면 선두 1회 태그로, 그것도 넘으면 원문 그대로 폴백한다.
-/// 문구에 인라인으로 박힌 딜리버리 태그 목록(중복 제거·소문자). `messages.delivery_tags_json`
-/// 처럼 "이 클립이 어떤 전달 톤으로 합성됐나" 를 남길 때 쓴다.
-///
-/// ⚠ 정규식을 호출부에 다시 쓰지 말 것 — `TAG_BODY_PATTERN` 한 곳에서 파생한다.
-export function extractDeliveryTags(text: string): string[] {
-  return extractTags(text);
-}
-
-export function applyDeliveryTagPerSentence(tag: string, text: string, maxLength = 300): string {
-  const trimmed = text.trim();
-  if (!tag) return trimmed;
-  const sentences =
-    trimmed
-      .match(/[^.!?…]+[.!?…]*/g)
-      ?.map((sentence) => sentence.trim())
-      .filter(Boolean) ?? [];
-  const perSentence =
-    sentences.length > 1
-      ? sentences.map((sentence) => `[${tag}] ${sentence}`).join(' ')
-      : `[${tag}] ${trimmed}`;
-  if (perSentence.length <= maxLength) return perSentence;
-  const single = `[${tag}] ${trimmed}`;
-  return single.length <= maxLength ? single : trimmed;
-}
-
 export function normalizeAlarmTextWithoutTags(text: string): string {
   return text
     .replace(new RegExp(`\\s*\\[${TAG_BODY_PATTERN}\\]\\s*`, 'gi'), ' ')
@@ -3330,16 +2804,13 @@ export function normalizeAlarmTextWithoutTags(text: string): string {
     .trim();
 }
 
-// 표시/저장 문구(messageText)용: 우리가 자동으로 붙인 delivery 태그는 제거하되,
-// 사용자가 직접 입력한 대괄호는 그대로 보존한다.
+// 표시/저장 문구(messageText)용: 사용자가 직접 입력한 대괄호는 그대로 보존하고, 그 밖의 대괄호는 벗긴다.
 //
-// 근거: 자동 태그는 prepareAlarmTextWithVertex 에서 '사용자가 대괄호를 하나도 안 쳤을 때만'
-// (shouldTag = autoTag && !TAG_RE.test) 붙는다. 그러므로
-// - originalText 에 대괄호가 있으면: 자동 태그가 아니므로 합성 텍스트를 그대로 쓴다(트림만).
+// - originalText 에 대괄호가 있으면: 사용자가 친 것이므로 합성 텍스트를 그대로 쓴다(트림만).
 //   '[after lunch]'·'오늘도 [happy]'·'[calm]'만 입력해도 문구가 안 지워진다.
-// - 없으면: 합성 텍스트 안의 대괄호는 전부 자동/모델이 붙인 delivery 태그이므로 위치·개수와
-//   무관하게 모두 제거하고 내부 공백을 한 칸으로 정리한다. 모델이 지시를 어기고 태그를 2개
-//   붙이거나 문장 중간·이중 공백을 내도 화면에 새지 않는다(normalizeAlarmTextWithoutTags 재사용).
+// - 없으면: 합성 텍스트 안의 대괄호는 서버가 넣은 것(글자 웃음을 바꾼 `[laughs]`)이거나 옛 태그뿐이므로
+//   위치·개수와 무관하게 모두 제거하고 내부 공백을 한 칸으로 정리한다(normalizeAlarmTextWithoutTags 재사용).
+//   우리는 이제 태그를 붙이지 않지만(위 「태그」 머리말), 프리셋 경로는 빈 원문을 넘겨 이 갈래로 온다.
 //
 // ⚠ 사용자가 대괄호를 친 **번역**은 번역문에 서버가 넣은 웃음(`[laughs]` — 사용자가 친 ㅋㅋ 를 바꾼 것)이 섞여
 //   있다. 그건 소리로만 남기고 화면에는 싣지 않는다(스펙 §9, Codex #830) — 사용자가 대괄호로 친 웃음 태그만 친
@@ -3366,53 +2837,6 @@ function withoutServerLaughter(text: string, userTags: ReadonlyMap<string, numbe
     return tagGapFill(piece, offset, whole);
   });
   return stripped === text ? text : stripped.replace(/[ \t]{2,}/g, ' ').trim();
-}
-
-/// 문장마다 앞세울 **톤 태그** 하나를 고른다. 웃음 태그는 고르지 않는다 — 한 번 웃을 자리에서 매 문장
-/// 웃게 된다(`isLaughterTag`).
-function pickApprovedTag(tags: string[]): string | null {
-  for (const tag of tags) {
-    // 큐레이트 세트에 있으면 채택, 아니면 다음 후보로(세트 밖 옛 태그는 무시).
-    const approved = normalizeApprovedTag(tag);
-    if (approved && !isLaughterTag(approved)) return approved;
-  }
-  return null;
-}
-
-/**
- * 잠들기 전·하루 마무리 문구인가(잘 자 / 수고했어 / good night / おやすみ …). 이런 문구에서만
- * 저각성 톤(calm 등)을 허용한다 — 그 밖의 알람은 깨우는 것이 일이다. 로컬 태거와 직접 입력
- * 태깅의 저각성 거르기가 **같은 판정**을 쓴다.
- */
-export function isWindDownText(text: string): boolean {
-  if (['잘 자', '잘자', '고생', '퇴근', '수고', 'おやすみ', 'お疲れ'].some((hint) => text.includes(hint))) return true;
-  // ⚠ 영어·프랑스어·이탈리아어는 낱말 조각으로 보지 말 것(Codex #801) — 'sleep' 이 "Hey sleepyhead",
-  //   "Don't oversleep" 같은 **깨우는** 문구에, 'night' 가 "tonight" 에 걸려 졸린 태그가 붙거나 남았다.
-  //   합성 언어(`SUPPORTED_SYNTHESIS_LANGUAGES`: ko·en·ja·fr·it)마다 표현을 둔다 — 빠진 언어는 잠들기 전
-  //   문구에도 `[calm]` 을 지우고 `[cheerfully]` 를 붙인다.
-  return WIND_DOWN_PHRASES.some((pattern) => pattern.test(text));
-}
-
-const WIND_DOWN_PHRASES = [
-  // en
-  /\bgood\s?night\b|\bnight[- ]night\b|\bsleep (?:well|tight)\b|\bsweet dreams\b|\b(?:go|off) to (?:bed|sleep)\b|\b(?:time for|get some) (?:bed|sleep|rest)\b/i,
-  // fr — '침대' 는 '자러 가' 명령일 때만('Ne reste pas au lit' 는 깨우는 말이다)
-  /\bbonne nuit\b|\bdors bien\b|\bbeaux r[êe]ves\b|\b(?:va|allez|file) (?:te coucher|vous coucher|dormir|au lit)\b/i,
-  // it — 같은 이유로 'a letto' 단독은 보지 않는다('Non restare a letto, alzati')
-  /\bbuona ?notte\b|\bdormi bene\b|\bsogni d['’]oro\b|\b(?:vai|andiamo|andate) a (?:letto|dormire)\b/i,
-];
-
-function tagAlarmTextLocally(text: string): string {
-  // 웃음 태그만 있으면 톤은 아직 없는 것이다(번역문의 `[laughs]` — `prepareAlarmTextWithVertex`).
-  if (extractTags(text).some((tag) => !isLaughterTag(tag))) return text;
-  // 신 allowlist 기반 로컬 태깅(구 어휘 폐기). 모드 컨텍스트가 없는 preset/custom 경로라
-  // 저각성 calm은 밤/마무리 뉘앙스에만 제한적으로 쓴다.
-  // ⚠ **약·건강 문구에 calm 을 붙이지 않는다**(2026-09-23). 예전에는 '약'·'건강'·'물' 이
-  //   calm 이었는데, 그건 위 주석(밤·마무리에만)과도 어긋나고 약 알람은 대개 **깨우는** 알람이다.
-  //   비교 평가에서 "약 먹을 시간이야" 가 `[calm]` 으로 나갔다.
-  const tag = isWindDownText(text) ? '[calm]' : '[cheerfully]';
-  const tagged = `${tag} ${text}`;
-  return tagged.length <= 200 ? tagged : text;
 }
 
 async function signJwt(

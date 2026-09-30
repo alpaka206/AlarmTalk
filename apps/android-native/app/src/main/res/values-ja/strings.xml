@@ -94,7 +94,7 @@
     <string name="billing_plan_free_name">無料</string>
     <string name="billing_plan_free_price">無料</string>
     <string name="billing_plan_monthly_price_fallback">月額%1$,dウォン</string>
-    <string name="billing_plan_personal_feature_daily_prompt">天気・運勢など毎日新しいひとこと</string>
+    <string name="billing_plan_personal_feature_messages_in_voice">登録した声で聞く天気・運勢メッセージ</string>
     <string name="billing_plan_personal_feature_voice">好きな声を1つ登録</string>
     <string name="billing_plan_personal_name">パーソナル</string>
     <string name="billing_play_manage_description">アプリで解約を完了できませんでした。Google Playの定期購入管理から直接解約できます。契約状態は変わっていません。</string>

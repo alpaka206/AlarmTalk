@@ -53,7 +53,7 @@ describe('ElevenLabsClient', () => {
   });
 
   describe('textToSpeech', () => {
-    it('옵션 미지정 시 v3 디폴트 voice_settings를 전송한다', async () => {
+    it('eleven_v4_turbo 에 stability·similarity_boost 두 값만 보낸다', async () => {
       mockFetch.mockResolvedValueOnce(okArrayBuffer());
 
       await client.textToSpeech('voice-123', '안녕하세요');
@@ -66,60 +66,21 @@ describe('ElevenLabsClient', () => {
       expect(opts.method).toBe('POST');
       const body = JSON.parse(opts.body);
       expect(body.text).toBe('안녕하세요');
-      expect(body.model_id).toBe('eleven_v3');
-      // 검증된 버그 수정: v3에도 항상 voice_settings를 전송한다(이전엔 역조건으로 미전송).
-      expect(body.voice_settings).toEqual({
-        stability: 0.5,
-        similarity_boost: 0.8,
-        style: 0.4,
-        speed: 0.9,
-        use_speaker_boost: true,
-      });
+      expect(body.model_id).toBe('eleven_v4_turbo');
+      // v4 계열은 style·speed·use_speaker_boost 를 받지 않는다(보내도 조용히 무시한다) — 보내지 않는다.
+      expect(body.voice_settings).toEqual({ stability: 0.5, similarity_boost: 0.8 });
+      expect(body).not.toHaveProperty('language_code');
     });
 
-    it('v3도 커스텀 voice settings 옵션을 전송한다(버그 수정)', async () => {
+    it('language_code 를 넘기면 그대로 싣는다', async () => {
       mockFetch.mockResolvedValueOnce(okArrayBuffer());
 
-      await client.textToSpeech('v1', 'hello', {
-        stability: 0.8,
-        similarity_boost: 0.9,
-        style: 0.3,
-        speed: 0.7,
-        use_speaker_boost: true,
-        language_code: 'ko',
-      });
+      await client.textToSpeech('v1', 'hello', { language_code: 'en' });
 
       const body = JSON.parse(mockFetch.mock.calls[0][1].body);
-      expect(body.model_id).toBe('eleven_v3');
-      expect(body.language_code).toBe('ko');
-      expect(body.voice_settings.stability).toBe(0.8);
-      expect(body.voice_settings.similarity_boost).toBe(0.9);
-      expect(body.voice_settings.style).toBe(0.3);
-      expect(body.voice_settings.speed).toBe(0.7);
-      expect(body.voice_settings.use_speaker_boost).toBe(true);
-    });
-
-    it('비-v3 모델도 커스텀 옵션을 반영(미지정 항목은 디폴트)', async () => {
-      mockFetch.mockResolvedValueOnce(okArrayBuffer());
-
-      await client.textToSpeech('v1', 'hello', {
-        stability: 0.8,
-        similarity_boost: 0.9,
-        style: 0.3,
-        model_id: 'eleven_turbo_v2',
-        language_code: 'ko',
-      });
-
-      const body = JSON.parse(mockFetch.mock.calls[0][1].body);
-      expect(body.model_id).toBe('eleven_turbo_v2');
-      expect(body.language_code).toBe('ko');
-      expect(body.voice_settings.stability).toBe(0.8);
-      expect(body.voice_settings.similarity_boost).toBe(0.9);
-      expect(body.voice_settings.style).toBe(0.3);
-      // ⚠ 알람은 막 깬 사람이 듣는다 — 평상시 속도(1.0)로 읽으면 따라가지 못한다.
-      // 2026-08-13 사용자 지적("말이 엄청 빠르다")으로 0.9 가 기본이 됐다.
-      expect(body.voice_settings.speed).toBe(0.9);
-      expect(body.voice_settings.use_speaker_boost).toBe(true);
+      expect(body.model_id).toBe('eleven_v4_turbo');
+      expect(body.language_code).toBe('en');
+      expect(body.voice_settings).toEqual({ stability: 0.5, similarity_boost: 0.8 });
     });
 
     it('ArrayBuffer 반환', async () => {

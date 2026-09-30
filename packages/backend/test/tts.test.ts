@@ -225,9 +225,8 @@ describe('POST /tts/generate — TTS 생성', () => {
     expect(res.status).toBe(201);
     const body = await res.json();
     expect(body.text).toBe('우리 아들, 좋은 아침이야. 오늘도 기분 좋게 일어나자.');
-    expect(body.synthesis_text).toBe(
-      '[cheerfully] 우리 아들, 좋은 아침이야. [cheerfully] 오늘도 기분 좋게 일어나자.',
-    );
+    // 태그를 붙이지 않는다(2026-09-30) — 화면 문구 그대로 합성한다.
+    expect(body.synthesis_text).toBe(body.text);
     expect(mockTextToSpeech).toHaveBeenCalledWith(
       'el-draft',
       body.synthesis_text,
@@ -246,51 +245,8 @@ describe('POST /tts/generate — TTS 생성', () => {
     expect(claimCall?.sql).toContain("COALESCE(listener_title, '') = ?");
     // 목소리의 결도 페르소나다 — 결만 바뀐 PATCH 뒤의 낡은 요청이 claim 을 잡지 못해야 한다(Codex #802).
     expect(claimCall?.sql).toContain("COALESCE(voice_energy, '') = ?");
-  });
-
-  // ⚠ **생성이 실패해 고정 예문으로 떨어져도 고른 결을 지킨다**(Codex #802). 차분을 고른 목소리에
-  // 기본 `cheerfully` 를 입히면 사용자가 바로 그 미리듣기를 듣고 확정한다 — 고른 결과 반대로.
-  it('차분을 고른 draft 의 고정 예문 미리듣기는 warmly 로 합성한다', async () => {
-    mockDB.pushResult([{ plan: 'plus' }]);
-    mockDB.pushResult([
-      {
-        id: V1,
-        user_id: 'user-1',
-        status: 'ready',
-        is_draft: 1,
-        elevenlabs_voice_id: 'el-draft',
-        listener_title: '우리 아들',
-        voice_energy: 'calm',
-      },
-    ]);
-    mockDB.pushResult([], 1);
-    mockDB.pushResult([]);
-    pushPublicationVoice({
-      is_draft: 1,
-      elevenlabs_voice_id: 'el-draft',
-      listener_title: '우리 아들',
-      voice_energy: 'calm',
-    });
-    mockDB.pushResult([], 1);
-    mockDB.pushResult([], 1);
-    mockDB.pushResult([], 1);
-    mockTextToSpeech.mockResolvedValue(new Uint8Array([1, 2]).buffer);
-
-    const res = await reqWithEnv(
-      buildApp(),
-      jsonReq('POST', '/tts/generate', {
-        voice_profile_id: V1,
-        language: 'ko',
-        draft_preview: true,
-      }),
-    );
-
-    expect(res.status).toBe(201);
-    const body = await res.json();
-    expect(body.text).toBe('우리 아들, 좋은 아침이야. 오늘도 기분 좋게 일어나자.');
-    expect(body.synthesis_text).toBe(
-      '[warmly] 우리 아들, 좋은 아침이야. [warmly] 오늘도 기분 좋게 일어나자.',
-    );
+    // `preview_tag` 는 읽지도 쓰지도 않는다(다음 회차에 DROP).
+    expect(claimCall?.sql).not.toContain('preview_tag');
   });
 
   // ⚠ iOS `playDraftPreview` 는 **`random:true` 와 `draft_preview:true` 를 함께** 보낸다
@@ -351,8 +307,8 @@ describe('POST /tts/generate — TTS 생성', () => {
           headers: { 'content-type': 'application/json' },
         });
       }
-      // Gemini 톤 적응 생성 응답 — {text, tag} JSON
-      return geminiText(JSON.stringify({ text: toneText, tag: 'cheerfully' }));
+      // Gemini 톤 적응 생성 응답 — {text} JSON(태그 없음)
+      return geminiText(JSON.stringify({ text: toneText }));
     });
     vi.stubGlobal('fetch', mockFetch);
     try {
@@ -396,7 +352,7 @@ describe('POST /tts/generate — TTS 생성', () => {
       const body = await res.json();
       // 고정 예문이 아니라 관계·호칭 톤 적응 생성 문구로 합성/표시된다.
       expect(body.text).toBe(toneText);
-      expect(body.synthesis_text).toBe('[cheerfully] 우리 아들, 잘 잤어? [cheerfully] 오늘도 기분 좋게 하루 시작해 보자.');
+      expect(body.synthesis_text).toBe(toneText);
       expect(mockTextToSpeech).toHaveBeenCalledWith(
         'el-draft',
         body.synthesis_text,
@@ -410,7 +366,8 @@ describe('POST /tts/generate — TTS 생성', () => {
       // 확정/활성 claim 중에는 저장 금지(늦은 영속이 실제 합성 문구와 어긋나는 것 방지).
       expect(persist!.sql).toContain('previewed_at IS NULL');
       expect(persist!.sql).toContain('preview_claimed_at IS NULL');
-      // 미리듣기는 인라인 태그를 벗겨 저장·재생하므로 웃음을 넣으라고 하지 않는다(Codex #830).
+      expect(persist!.sql).not.toContain('preview_tag');
+      // 태그·웃음을 쓰게 하지 않는다(2026-09-30).
       const vertexBodies = mockFetch.mock.calls
         .filter((call) => String(call[0]) !== TOKEN_URI)
         .map((call) => String(((call as unknown[])[1] as RequestInit | undefined)?.body ?? ''));
@@ -436,7 +393,7 @@ describe('POST /tts/generate — TTS 생성', () => {
         });
       }
       prompts.push(String(init?.body ?? ''));
-      return geminiText(JSON.stringify({ text: '우리 아들, 이제 일어날 시간이야. 천천히 시작하자.', tag: 'warmly' }));
+      return geminiText(JSON.stringify({ text: '우리 아들, 이제 일어날 시간이야. 천천히 시작하자.' }));
     });
     vi.stubGlobal('fetch', mockFetch);
     try {
@@ -473,9 +430,8 @@ describe('POST /tts/generate — TTS 생성', () => {
     }
   });
 
-  // 분석을 기다려 결을 알게 됐으면, 생성이 실패해 고정 예문으로 떨어져도 그 결을 따른다(Codex #802).
-  // 합성한 태그는 claim 이 `preview_tag` 에 남겨 확정 뒤 재생이 같은 태그로 캐시를 맞힌다.
-  it('분석으로 차분이 추정되면 생성이 실패해도 고정 예문을 warmly 로 합성하고 그 태그를 남긴다', async () => {
+  // 생성이 실패하면 고정 예문을 태그 없이 합성하고 영속하지 않는다 — 다음 미리듣기가 다시 만든다.
+  it('분석 뒤 생성이 실패하면 고정 예문을 태그 없이 합성하고 영속하지 않는다', async () => {
     const calmStyle = JSON.stringify({
       dialect: '', strength: '', register: 'banmal', markers: [], persona: '', childlike: false, energy: 'calm',
     });
@@ -510,10 +466,9 @@ describe('POST /tts/generate — TTS 생성', () => {
       );
       expect(res.status).toBe(201);
       const body = await res.json();
-      expect(body.synthesis_text).toBe('[warmly] 우리 아들, 좋은 아침이야. [warmly] 오늘도 기분 좋게 일어나자.');
+      expect(body.synthesis_text).toBe('우리 아들, 좋은 아침이야. 오늘도 기분 좋게 일어나자.');
       const claim = mockDB.calls.find((call) => call.sql.includes('preview_claim_token = ?'));
-      expect(claim!.sql).toContain("preview_tag = CASE WHEN COALESCE(preview_text, '') = ''");
-      expect(claim!.args[1]).toBe('warmly');
+      expect(claim!.sql).not.toContain('preview_tag');
       expect(mockDB.calls.some((call) => call.sql.includes('SET preview_text'))).toBe(false);
     } finally {
       vi.unstubAllGlobals();
@@ -577,7 +532,7 @@ describe('POST /tts/generate — TTS 생성', () => {
           headers: { 'content-type': 'application/json' },
         });
       }
-      return geminiText(JSON.stringify({ text: loserText, tag: 'cheerfully' }));
+      return geminiText(JSON.stringify({ text: loserText }));
     });
     vi.stubGlobal('fetch', mockFetch);
     try {
@@ -594,7 +549,7 @@ describe('POST /tts/generate — TTS 생성', () => {
         },
       ]);
       mockDB.pushResult([], 0); // 조건부 영속 실패(다른 요청이 먼저 씀)
-      mockDB.pushResult([{ preview_text: winnerText, preview_tag: 'cheerfully' }]); // 승자 재조회
+      mockDB.pushResult([{ preview_text: winnerText }]); // 승자 재조회
       mockDB.pushResult([], 1); // preview claim
       mockDB.pushResult([]);
       pushPublicationVoice({
@@ -622,7 +577,7 @@ describe('POST /tts/generate — TTS 생성', () => {
       const body = await res.json();
       // 진 쪽의 새 생성 문구(loserText)가 아니라 이미 영속된 승자 문구로 합성된다.
       expect(body.text).toBe(winnerText);
-      expect(body.synthesis_text).toBe('[cheerfully] 우리 아들, 잘 잤어? [cheerfully] 오늘 하루도 힘내자.');
+      expect(body.synthesis_text).toBe(winnerText);
     } finally {
       vi.unstubAllGlobals();
     }
@@ -640,7 +595,7 @@ describe('POST /tts/generate — TTS 생성', () => {
           headers: { 'content-type': 'application/json' },
         });
       }
-      return geminiText(JSON.stringify({ text: staleText, tag: 'cheerfully' }));
+      return geminiText(JSON.stringify({ text: staleText }));
     });
     vi.stubGlobal('fetch', mockFetch);
     try {
@@ -658,7 +613,7 @@ describe('POST /tts/generate — TTS 생성', () => {
         },
       ]);
       mockDB.pushResult([], 0); // 영속 실패 — PATCH 가 결을 바꿨다
-      mockDB.pushResult([{ preview_text: null, preview_tag: null }]); // 승자 없음(PATCH 가 비웠다)
+      mockDB.pushResult([{ preview_text: null }]); // 승자 없음(PATCH 가 비웠다)
       mockDB.pushResult([], 0); // claim 실패 — 결이 달라 잡지 못한다
 
       const res = await buildApp().request(
@@ -739,7 +694,6 @@ describe('POST /tts/generate — TTS 생성', () => {
         relationship_label: '엄마',
         listener_title: '우리 아들',
         preview_text: storedText,
-        preview_tag: 'cheerfully',
       },
     ]);
     mockDB.pushResult([], 1);
@@ -768,15 +722,16 @@ describe('POST /tts/generate — TTS 생성', () => {
     const body = await res.json();
     // 고정 예문/새 생성이 아니라 저장된 문구 그대로 — 재생이 결정적(같은 캐시키)이다.
     expect(body.text).toBe(storedText);
-    expect(body.synthesis_text).toBe('[cheerfully] 우리 아들, 잘 잤어? [cheerfully] 오늘도 힘내 보자.');
+    expect(body.synthesis_text).toBe(storedText);
     // 재사용 경로는 재생성/재영속하지 않는다.
     expect(mockDB.calls.some((call) => call.sql.includes('SET preview_text'))).toBe(false);
   });
 
-  // 태그 부착 상한 = /tts/generate 의 200자 상한(경계 정합). 기본 상한(300)을 쓰면
-  // 원문은 200자 이내인데 문장별 태그 부착으로 200을 넘긴 텍스트가 폴백 없이 통과했다가
-  // 뒤늦게 TEXT_TOO_LONG(400)으로 거부된다 — 폴백(선두 1회 태그/무태그)으로 성공해야 한다.
-  function pushStoredPreviewFlow(storedText: string) {
+  // 예전에는 문장마다 태그를 붙이다 200자 상한을 넘겨 태그를 줄이는 폴백이 있었다. 이제 태그를 붙이지 않으므로
+  // 200자에 가까운 저장 문구도 그대로 합성된다(TEXT_TOO_LONG 아님).
+  it('200자에 가까운 저장 문구도 태그 없이 그대로 합성한다', async () => {
+    const storedText = `${'a'.repeat(90)}. ${'c'.repeat(103)}.`;
+    expect(storedText.length).toBe(196);
     mockDB.pushResult([{ plan: 'plus' }]);
     mockDB.pushResult([
       {
@@ -788,7 +743,6 @@ describe('POST /tts/generate — TTS 생성', () => {
         relationship_label: '엄마',
         listener_title: '우리 아들',
         preview_text: storedText,
-        preview_tag: 'cheerfully',
       },
     ]);
     mockDB.pushResult([], 1);
@@ -802,38 +756,6 @@ describe('POST /tts/generate — TTS 생성', () => {
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
-  }
-
-  it('문장별 태그가 200자를 넘기면 선두 1회 태그로 폴백해 성공한다(경계 정합)', async () => {
-    // 183자 2문장: 문장별 태그(209자) > 200, 선두 1회 태그(196자) ≤ 200.
-    const s1 = `${'a'.repeat(90)}.`;
-    const s2 = `${'b'.repeat(90)}.`;
-    const storedText = `${s1} ${s2}`;
-    expect(storedText.length).toBe(183);
-    pushStoredPreviewFlow(storedText);
-    mockTextToSpeech.mockResolvedValue(new Uint8Array([1, 2]).buffer);
-
-    const res = await reqWithEnv(
-      buildApp(),
-      jsonReq('POST', '/tts/generate', {
-        voice_profile_id: V1,
-        language: 'ko',
-        draft_preview: true,
-      }),
-    );
-
-    expect(res.status).toBe(201);
-    const body = await res.json();
-    expect(body.synthesis_text).toBe(`[cheerfully] ${storedText}`);
-    expect(body.synthesis_text.length).toBeLessThanOrEqual(200);
-    expect(body.text).toBe(storedText);
-  });
-
-  it('선두 1회 태그도 200자를 넘기면 무태그로 폴백해 성공한다(TEXT_TOO_LONG 아님)', async () => {
-    // 195자 1문장: 태그 부착 시 208자 > 200 → 원문 그대로 합성.
-    const storedText = `${'c'.repeat(194)}.`;
-    expect(storedText.length).toBe(195);
-    pushStoredPreviewFlow(storedText);
     mockTextToSpeech.mockResolvedValue(new Uint8Array([1, 2]).buffer);
 
     const res = await reqWithEnv(
@@ -1321,10 +1243,10 @@ describe('POST /tts/generate — edge cases', () => {
     expect(insertSql!.args[6]).toBe('morning');
   });
 
-  it('수동 입력 문구에도 delivery tag가 자동 삽입된다', async () => {
+  // 2026-09-30: 직접 입력에 태그를 붙이지 않는다 — 같은 언어는 Gemini 도 부르지 않고 친 글 그대로 합성한다.
+  it('수동 입력 문구는 태그 없이 친 글 그대로 합성한다', async () => {
     const text = '좋은 아침이에요! 일어나세요! 오늘 하루도 힘내봐요!';
-    // 신 allowlist 로컬 태깅: '힘' 키워드 → [cheerfully] (구 [encouraging] 폐기).
-    const taggedText = `[cheerfully] ${text}`;
+    const taggedText = text;
     // 수동 입력은 유료 전용 경로 — free 로 두면 페이월(403)에 걸려 태깅까지 못 간다.
     mockDB.pushResult([{ plan: 'plus' }]);
     mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]);
@@ -1344,18 +1266,16 @@ describe('POST /tts/generate — edge cases', () => {
     expect(body.text).toBe(text);
     expect(body.original_text).toBe(text);
     expect(body.synthesis_text).toBe(taggedText);
-    expect(body.tags).toEqual(['cheerfully']);
+    expect(body.tags).toEqual([]);
     const inserted = mockDB.calls.find((c) => c.sql.includes('INSERT INTO messages'));
     expect(inserted!.args[3]).toBe(text);
     expect(inserted!.args[4]).toBe(taggedText);
-    expect(inserted!.args[5]).toBe(JSON.stringify(['cheerfully']));
+    expect(inserted!.args[5]).toBe('[]');
     expect(mockTextToSpeech).toHaveBeenCalledWith(
       'el-voice-1',
       taggedText,
-      expect.objectContaining({
-        model_id: 'eleven_v3',
-        language_code: 'ko',
-      }),
+      // 모델·합성 설정은 호출부가 고르지 않는다 — `textToSpeech` 가 `TTS_MODEL_ID`·`TTS_VOICE_SETTINGS` 로 보낸다.
+      { language_code: 'ko' },
     );
     const ttsOptions = mockTextToSpeech.mock.calls[0][2];
     expect(ttsOptions).not.toHaveProperty('stability');
@@ -1368,7 +1288,7 @@ describe('POST /tts/generate — edge cases', () => {
   // 화면 문구를 합성 문구에서 태그를 벗겨 만들면 사용자가 친 ㅋㅋ 가 사라진다.
   it('직접 입력의 ㅋㅋ 는 [laughs] 로 합성하고, 화면 문구는 친 글 그대로 둔다', async () => {
     const text = '일어나 ㅋㅋㅋ 벌써 8시야';
-    const synthesis = '[cheerfully] 일어나 [laughs] 벌써 8시야';
+    const synthesis = '일어나 [laughs] 벌써 8시야';
     mockDB.pushResult([{ plan: 'plus' }]);
     mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]);
     mockDB.pushResult([]);
@@ -1387,7 +1307,7 @@ describe('POST /tts/generate — edge cases', () => {
     expect(body.text).toBe(text);
     expect(body.original_text).toBe(text);
     expect(body.synthesis_text).toBe(synthesis);
-    expect(body.tags).toEqual(['cheerfully', 'laughs']);
+    expect(body.tags).toEqual(['laughs']);
     const inserted = mockDB.calls.find((c) => c.sql.includes('INSERT INTO messages'));
     expect(inserted!.args[3]).toBe(text);
     expect(inserted!.args[4]).toBe(synthesis);
@@ -1401,8 +1321,8 @@ describe('POST /tts/generate — edge cases', () => {
   // Codex #830: ㅋㅋ·ㅋㅋㅋ·haha 는 같은 `[laughs]` 로 합성된다. 캐시 키가 합성 글자만 보면 캐시 히트가
   // 다른 철자로 만든 옛 행(message_id·messages.text)을 돌려준다 — 화면 문구가 합성 문구에서 나오지 않을 때만
   // 키가 화면 문구까지 가린다. 웃음이 없으면 예전 키 그대로다(쌓인 캐시를 버리지 않는다).
-  it('웃음 철자가 다르면 합성 글자가 같아도 캐시 키가 다르고, 웃음이 없으면 예전 키 그대로다', async () => {
-    const generate = async (text: string) => {
+  it('웃음 철자가 다르면 합성 글자가 같아도 캐시 키가 다르고, 웃음이 없으면 합성 글자 + 그 사람 범위가 키다', async () => {
+    const generate = async (text: string, userId = 'user-1') => {
       mockDB.reset();
       mockTextToSpeech.mockReset();
       mockDB.pushResult([{ plan: 'plus' }]);
@@ -1413,7 +1333,7 @@ describe('POST /tts/generate — edge cases', () => {
       pushPublicationVoice();
       mockDB.pushResult([], 1);
       const res = await reqWithEnv(
-        buildApp(),
+        buildApp(userId),
         jsonReq('POST', '/tts/generate', { voice_profile_id: V1, text, category: 'custom' }),
       );
       expect(res.status).toBe(201);
@@ -1433,34 +1353,31 @@ describe('POST /tts/generate — edge cases', () => {
     expect(spaced.cache_key).not.toBe(single.cache_key);
 
     const plain = await generate('일어나 벌써 8시야');
-    const { computeTtsCacheKey } = await import('../src/lib/audio-cache');
-    expect(plain.cache_key).toBe(
-      await computeTtsCacheKey({
-        provider: 'elevenlabs',
-        providerVoiceId: 'el-voice-1',
-        voiceProfileId: V1,
-        modelId: 'eleven_v3',
-        language: 'ko',
-        languageCode: 'ko',
-        text: plain.synthesis_text,
-        outputFormat: 'mp3',
-      }),
-    );
+    const { computeTtsCacheKey, STOCK_TTS_CACHE_SCOPE } = await import('../src/lib/audio-cache');
+    const keyInput = {
+      provider: 'elevenlabs',
+      providerVoiceId: 'el-voice-1',
+      voiceProfileId: V1,
+      modelId: 'eleven_v4_turbo',
+      language: 'ko',
+      languageCode: 'ko',
+      text: plain.synthesis_text,
+      outputFormat: 'mp3',
+    };
+    expect(plain.cache_key).toBe(await computeTtsCacheKey({ ...keyInput, scope: 'manual:user-1' }));
+
+    // ⚠ 직접 입력 키는 그 사람 범위다(Codex #840) — 원장 해시는 전역 UNIQUE 인데 오브젝트는 주인 아래에 놓여,
+    //   두 사람이 같은 글을 치거나 스톡 문장을 그대로 치면 두 번째 원장 행이 조용히 빠진다(계정 삭제에도 못 찾는다).
+    const otherUser = await generate('일어나 벌써 8시야', 'user-2');
+    expect(otherUser.cache_key).toBe(await computeTtsCacheKey({ ...keyInput, scope: 'manual:user-2' }));
+    expect(otherUser.cache_key).not.toBe(plain.cache_key);
+    expect(plain.cache_key).not.toBe(await computeTtsCacheKey({ ...keyInput, scope: STOCK_TTS_CACHE_SCOPE }));
   });
 
-  // Codex #830: 차분한 목소리는 직접 입력에서도 모델이 웃음을 넣지 않는다 — 결은 사전렌더와 같은 값(고른 값 >
-  // 전사 추정값)이다. 사용자가 친 웃음은 그대로다(vertex-translate.test.ts 가 잠근다).
-  it('차분한 목소리의 직접 입력은 웃어도 된다는 지시를 싣지 않고, 모델이 넣은 웃음을 지운다', async () => {
-    const prompts: string[] = [];
-    const mockFetch = vi.fn(async (url: unknown, init?: RequestInit) => {
-      if (String(url) === TOKEN_URI) {
-        return new Response(JSON.stringify({ access_token: 'test-access-token' }), {
-          status: 200,
-          headers: { 'content-type': 'application/json' },
-        });
-      }
-      prompts.push(String(init?.body ?? ''));
-      return geminiText('{"text":"[warmly] 일어나! [laughs] 오늘도 가 보자."}');
+  // 같은 언어 직접 입력은 Gemini 를 부르지 않는다(2026-09-30) — 결과 무관하게 친 글 그대로다.
+  it('같은 언어 직접 입력은 Vertex 가 설정돼 있어도 Gemini 를 부르지 않는다', async () => {
+    const mockFetch = vi.fn(async () => {
+      throw new Error('same-language manual input must not call Vertex');
     });
     vi.stubGlobal('fetch', mockFetch);
     try {
@@ -1484,9 +1401,8 @@ describe('POST /tts/generate — edge cases', () => {
       );
       expect(res.status).toBe(201);
       const body = await res.json();
-      expect(body.synthesis_text).toBe('[warmly] 일어나! 오늘도 가 보자.');
-      expect(prompts).toHaveLength(1);
-      expect(prompts[0]).not.toContain('LAUGHTER: a laugh is a sound');
+      expect(body.synthesis_text).toBe('일어나! 오늘도 가 보자.');
+      expect(mockFetch).not.toHaveBeenCalled();
     } finally {
       vi.unstubAllGlobals();
     }
@@ -1494,8 +1410,7 @@ describe('POST /tts/generate — edge cases', () => {
 
   it('영어 직접 입력은 번역 없이 language_code=en 으로 합성한다', async () => {
     const text = 'Good morning! Wake up! I hope you have a great day!';
-    // 신 allowlist 로컬 기본 태그(구 [warmly] 폐기).
-    const taggedText = `[cheerfully] ${text}`;
+    const taggedText = text;
     // 수동 입력은 유료 전용 경로 — free 로 두면 페이월(403)에 걸려 합성 언어 검증까지 못 간다.
     mockDB.pushResult([{ plan: 'plus' }]);
     mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]);
@@ -1520,7 +1435,7 @@ describe('POST /tts/generate — edge cases', () => {
     expect(body.text).toBe(text);
     expect(body.original_text).toBe(text);
     expect(body.synthesis_text).toBe(taggedText);
-    expect(body.tags).toEqual(['cheerfully']);
+    expect(body.tags).toEqual([]);
     expect(body.language).toBe('en');
     expect(mockTextToSpeech).toHaveBeenCalledWith(
       'el-voice-1',

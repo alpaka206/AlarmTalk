@@ -5,16 +5,20 @@
  * 자동 채점한다. 모델을 바꾸거나 프롬프트를 고칠 때 전후를 숫자로 비교하려고 만들었다
  * (2026-09-23 — `gemini-2.5-flash` 은퇴 대비 + 프롬프트 고도화).
  *
- *  - A 직접 입력 태깅(`prepareAlarmTextWithVertex`) — 원문 보존, 오디오 태그, 폴백률, 형식
+ *  - A 직접 입력 번역(`prepareAlarmTextWithVertex` 의 번역 — 같은 언어는 2026-09-30 부터 Gemini 를 부르지
+ *    않는다) — 형식, 모델이 스스로 붙인 태그(운영은 벗긴다), 사용자 웃음 보존
  *  - D 유료 클론 사전렌더 문구(`generatePrerenderClipText`, 등록 미리듣기 C 도 같은 함수) —
- *    시도별 거절 사유, 날짜·숫자 누출, 호칭·어체·사투리·아이 말투, 오디오 태그, 형식
+ *    시도별 거절 사유, 날짜·숫자 누출, 호칭·어체·사투리·아이 말투, 모델이 낸 태그(운영은 벗긴다), 형식
  *  - F 등록 녹음 말투 분석(`analyzeSpeechStyleWithVertex`) — 정답 라벨 대비 사투리·어체·아이 판정,
  *    표지(markers)가 전사에 실제로 있는가, 형식
  *
  * 사용 (packages/backend 에서):
- *   npm run eval:gemini                                   # 기본: 2.5-flash@us-central1 vs 3.5-flash@us
- *   npm run eval:gemini -- --models gemini-3.5-flash@us,gemini-3.5-flash-lite@us --suites A,F --reps 2
+ *   npm run eval:gemini                                   # 기본: 운영 모델(`VERTEX_MODEL`)@us 하나
+ *   npm run eval:gemini -- --models gemini-3.8-flash@us,gemini-3.5-flash@us --suites A,F --reps 2
  *   npm run eval:gemini -- --label after-prompt-v2
+ * 운영 코드는 모델을 상수로만 정한다(시크릿으로 덮는 길이 없다). 다른 모델과 비교할 때는 아래 fetch
+ * 가로채기가 **요청 주소의 모델만** 갈아 끼우고, 요청 본문(사고 수준 `LOW` 등)은 운영 그대로 보낸다 —
+ * 그 설정을 받지 않는 모델(2.x·`LOW` 를 모르는 모델)은 400 으로 기록된다.
  * 결과: `.eval/gemini/<시각>-<label>/results.json`·`summary.md`(gitignore — 응답 원문이 들어 있다).
  *
  * 자격 증명은 `.dev.vars.dev` 의 `GOOGLE_VERTEX_CREDENTIALS_JSON` 을 읽는다 — **출력하지 않는다.**
@@ -26,20 +30,19 @@ import { resolve } from 'node:path';
 
 import {
   analyzeSpeechStyleWithVertex,
-  dropWakeUnsafeTags,
   extractTags,
   generatePrerenderClipText,
-  isFearTag,
-  isLowArousalTag,
-  isWindDownText,
   normalizeAlarmTextWithoutTags,
   parseAlarmTextPreparation,
   parseDynamicAlarmTextResult,
   prepareAlarmTextWithVertex,
   prerenderRejectionReason,
+  stripAllTags,
   tidyEllipsis,
+  VERTEX_MODEL,
   type SpeechStyle,
 } from '../src/lib/vertex-translate.ts';
+import { typedLaughterToTags } from '../src/lib/typed-laughter.ts';
 import { CLONE_CLIP_SEEDS } from '../src/lib/stock-clips.ts';
 import type { Env } from '../src/types.ts';
 
@@ -65,7 +68,7 @@ function parseFlags(): Map<string, string> {
 }
 
 const flags = parseFlags();
-const MODELS = (flags.get('--models') ?? 'gemini-2.5-flash@us-central1,gemini-3.5-flash@us')
+const MODELS = (flags.get('--models') ?? `${VERTEX_MODEL}@us`)
   .split(',')
   .map((spec) => {
     const [model, location] = spec.split('@');
@@ -115,9 +118,13 @@ const CREDENTIALS_JSON = readCredentialsJson();
 const envFor = (m: (typeof MODELS)[number]): Env =>
   ({
     GOOGLE_VERTEX_CREDENTIALS_JSON: CREDENTIALS_JSON,
-    GOOGLE_VERTEX_MODEL: m.model,
     GOOGLE_VERTEX_LOCATION: m.location,
   }) as unknown as Env;
+/**
+ * 지금 평가하는 모델 — 아래 fetch 가로채기가 요청 주소의 `VERTEX_MODEL` 을 이것으로 바꾼다. 모델은
+ * 실행부에서 **차례로** 돌므로(한 모델의 스위트가 다 끝난 뒤 다음 모델) 변수 하나로 충분하다.
+ */
+let evalModel: string = VERTEX_MODEL;
 
 // ---------------------------------------------------------------- 원문 응답 기록
 
@@ -163,11 +170,15 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     }
   }
   if (!url.includes(':generateContent')) return realFetch(input, init);
+  const operational = `/models/${VERTEX_MODEL}:generateContent`;
+  // 운영 주소가 아니면 갈아 끼우지 않고 멈춘다 — 조용히 운영 모델로 평가하면 비교표가 거짓이 된다.
+  if (!url.includes(operational)) throw new Error(`예상하지 못한 생성 주소다: ${url}`);
+  const target = url.replace(operational, `/models/${evalModel}:generateContent`);
   const started = Date.now();
   const bucket = callLog.getStore();
   let res: Response;
   try {
-    res = await realFetch(input, init);
+    res = await realFetch(target, init);
   } catch (err) {
     // 타임아웃(운영 클라이언트의 15초 abort)·네트워크 실패도 **시도 하나**로 남긴다(Codex #801) —
     // 안 남기면 재시도 끝에 성공한 문구가 1회차 통과로 잡히고 지연 요약도 느린 쪽에 유리해진다.
@@ -221,11 +232,8 @@ console.log = (...args: unknown[]) => {
 
 // ---------------------------------------------------------------- 공통 채점 도구
 
-/** 태그 뒤에 띄어쓰기가 없다(`[warmly]할머니`). */
-const tagWithoutSpace = (text: string) => /\[[a-z][a-z ,-]{1,48}\](?=[^\s[])/i.test(text);
-// 운영 판정을 그대로 쓴다 — 목록을 따로 두면 채점과 실제 거르기가 어긋난다(Codex #801).
-const isFear = isFearTag;
-const isLowArousal = isLowArousalTag;
+/** 모델이 스스로 낸 태그 — 운영은 붙이게 하지 않고, 내면 벗긴다. 사용자 웃음(`[laughs]`)은 뺀다. */
+const modelTags = (text: string) => extractTags(text).filter((tag) => tag !== 'laughs');
 
 /** 날짜·요일·시각·숫자·온도·지명 누출. 사전렌더 규칙이 금지하는 것들. */
 function leaks(spoken: string, language: string): string[] {
@@ -297,7 +305,7 @@ async function pool<T, R>(items: T[], n: number, fn: (item: T, i: number) => Pro
   return out;
 }
 
-// ---------------------------------------------------------------- A 직접 입력 태깅
+// ---------------------------------------------------------------- A 직접 입력 번역
 
 const A_INPUTS: { id: string; text: string; lang: 'ko' | 'en' | 'ja' }[] = [
   { id: 'ko-mom-cheer', text: '엄마, 일어날 시간이야. 오늘도 힘내!', lang: 'ko' },
@@ -308,11 +316,13 @@ const A_INPUTS: { id: string; text: string; lang: 'ko' | 'en' | 'ja' }[] = [
   { id: 'ko-birthday', text: '오늘은 우리 딸 생일! 축하해 사랑해', lang: 'ko' },
   { id: 'en-vitamins', text: 'Good morning! Time to get up and take your vitamins.', lang: 'en' },
   { id: 'en-dentist', text: "Hey sleepyhead, you've got a dentist appointment at 9.", lang: 'en' },
-  { id: 'en-game', text: 'Rise and shine, champ. Big game today!', lang: 'en' },
+  { id: 'en-game', text: 'Rise and shine, champ. Big game today! haha', lang: 'en' },
   { id: 'ja-ganbarou', text: 'おはよう。今日も一日がんばろうね。', lang: 'ja' },
   { id: 'ja-train', text: '起きて！8時の電車に遅れるよ。', lang: 'ja' },
   { id: 'ja-grandma-meds', text: 'おばあちゃん、お薬の時間ですよ〜', lang: 'ja' },
 ];
+/** 번역 방향 — 세 언어를 한 바퀴 돈다. */
+const A_TARGET: Record<'ko' | 'en' | 'ja', 'ko' | 'en' | 'ja'> = { ko: 'en', en: 'ja', ja: 'ko' };
 
 async function runA(m: (typeof MODELS)[number]) {
   const jobs = A_INPUTS.flatMap((input) => Array.from({ length: REPS }, (_, rep) => ({ input, rep })));
@@ -323,10 +333,10 @@ async function runA(m: (typeof MODELS)[number]) {
     await callLog.run(calls, async () => {
       try {
         result = await prepareAlarmTextWithVertex(envFor(m), input.text, {
-          targetLanguage: input.lang,
+          targetLanguage: A_TARGET[input.lang],
           sourceLanguage: input.lang,
-          translate: false,
-          autoTag: true,
+          translate: true,
+          speakTypedLaughter: true,
         });
       } catch (e) {
         error = (e as Error).message;
@@ -336,22 +346,15 @@ async function runA(m: (typeof MODELS)[number]) {
     const raw = calls[0]?.text ?? '';
     const shape = rawJsonShape(raw, TEXT_ONLY);
     const rawParsed = raw ? parseAlarmTextPreparation(raw) : null;
-    const rawInlineTags = rawParsed ? extractTags(rawParsed.text) : [];
-    const finalTags = r ? extractTags(r.text) : [];
-    const spoken = r ? normalizeAlarmTextWithoutTags(r.text) : '';
-    // ⚠ 모델을 불렀어도 운영이 결과를 버리고 로컬 태깅으로 갈아 끼우면 provider 는 'vertex' 그대로다
-    //   (Codex #801). 결과가 로컬 태거의 모양이고 모델이 그걸 낸 게 아니면 폴백으로 센다.
-    const trimmedInput = input.text.trim();
-    const localTagged = `${isWindDownText(trimmedInput) ? '[calm]' : '[cheerfully]'} ${trimmedInput}`;
-    const fellBack = r?.provider === 'local' || (r?.text === localTagged && rawParsed?.text.trim() !== localTagged);
+    const typedLaugh = typedLaughterToTags(input.text) !== input.text;
     return {
       suite: 'A',
       model: m.label,
       id: input.id,
       rep,
       input: input.text,
+      target: A_TARGET[input.lang],
       output: r?.text ?? null,
-      provider: r?.provider ?? null,
       error,
       rawText: raw,
       raw: {
@@ -359,23 +362,18 @@ async function runA(m: (typeof MODELS)[number]) {
         finishReason: calls[0]?.finishReason ?? null,
         jsonOk: shape.ok,
         extraKeys: shape.extraKeys,
-        inlineTags: rawInlineTags,
-        // 원문 보존: 태그를 벗긴 모델 출력이 입력과 같은가(모델 자체의 준수율 — 폴백 전).
-        preserved: rawParsed ? normalizeAlarmTextWithoutTags(rawParsed.text) === normalizeAlarmTextWithoutTags(input.text) : false,
-        lowArousal: rawInlineTags.filter(isLowArousal),
-        fear: rawInlineTags.filter(isFear),
-        tagWithoutSpace: rawParsed ? tagWithoutSpace(rawParsed.text) : false,
+        // 지시("새 대괄호를 넣지 말 것")를 어기고 모델이 붙인 태그 — 운영은 벗긴다.
+        modelTags: rawParsed ? modelTags(rawParsed.text) : [],
         latencyMs: calls[0]?.latencyMs ?? null,
         inputTokens: calls[0]?.inputTokens ?? null,
         outputTokens: calls[0]?.outputTokens ?? null,
         thoughtTokens: calls[0]?.thoughtTokens ?? null,
       },
       final: {
-        fallback: fellBack,
-        preserved: r ? spoken === normalizeAlarmTextWithoutTags(input.text) : false,
-        tagCount: finalTags.length,
-        tags: finalTags,
-        lowArousal: finalTags.filter(isLowArousal),
+        ok: r !== null,
+        tags: r ? extractTags(r.text) : [],
+        // 사용자가 친 글자 웃음이 번역문에 소리(`[laughs]`)로 남았는가.
+        laughKept: typedLaugh ? Boolean(r && /\[laughs\]/i.test(r.text)) : null,
       },
     };
   });
@@ -471,7 +469,7 @@ const D_FRESH2_PROFILES: Profile[] = [
 function fresh2Seeds() {
   const pick = (category: string, index: number) => {
     const group = CLONE_CLIP_SEEDS.find((g) => g.category === category)!;
-    return { category, index, seed: group.seeds[index]!, defaultTag: group.defaultTag };
+    return { category, index, seed: group.seeds[index]! };
   };
   return [
     pick('greeting', 0),
@@ -491,7 +489,7 @@ function fresh2Seeds() {
 function freshSeeds() {
   const pick = (category: string, index: number) => {
     const group = CLONE_CLIP_SEEDS.find((g) => g.category === category)!;
-    return { category, index, seed: group.seeds[index]!, defaultTag: group.defaultTag };
+    return { category, index, seed: group.seeds[index]! };
   };
   return [
     pick('greeting', 0),
@@ -510,12 +508,12 @@ function subsetSeeds() {
   const pick = (category: string, index: number) => {
     const group = CLONE_CLIP_SEEDS.find((g) => g.category === category)!;
     const i = index < 0 ? group.seeds.length + index : index;
-    return { category, index: i, seed: group.seeds[i]!, defaultTag: group.defaultTag };
+    return { category, index: i, seed: group.seeds[i]! };
   };
   return [pick('greeting', 0), pick('weather', 0), pick('weather', -1), pick('medication', 0), pick('fortune', 0), pick(CLONE_CLIP_SEEDS.find((g) => g.category === 'cheer') ? 'cheer' : 'love', 0)];
 }
 function allSeeds() {
-  return CLONE_CLIP_SEEDS.flatMap((g) => g.seeds.map((seed, index) => ({ category: g.category, index, seed, defaultTag: g.defaultTag })));
+  return CLONE_CLIP_SEEDS.flatMap((g) => g.seeds.map((seed, index) => ({ category: g.category, index, seed })));
 }
 
 const POLITE_KO = /(요|세요|니다|시죠|께요|죠)[.!?~…\s]*$/;
@@ -559,14 +557,13 @@ async function runD(m: (typeof MODELS)[number]) {
   const jobs = cases.flatMap((c) => Array.from({ length: REPS }, (_, rep) => ({ ...c, rep })));
   return pool(jobs, CONCURRENCY, async ({ p, s, rep }) => {
     const calls: RawCall[] = [];
-    let result: { text: string; tag: string } | null = null;
+    let result: { text: string } | null = null;
     let error: string | null = null;
     const params = {
       seed: s.seed,
       relationshipLabel: p.relationshipLabel,
       listenerTitle: p.listenerTitle,
       targetLanguage: p.lang,
-      defaultTag: s.defaultTag,
       speechStyle: p.speechStyle ?? null,
     };
     await callLog.run(calls, async () => {
@@ -576,7 +573,7 @@ async function runD(m: (typeof MODELS)[number]) {
         error = (e as Error).message;
       }
     });
-    const r = result as { text: string; tag: string } | null;
+    const r = result as { text: string } | null;
     // 시도마다 운영과 같은 판정을 다시 한다 — 어느 규칙이 몇 번째 시도에서 막혔는가.
     const attempts = calls.map((c) => {
       if (c.stage === 'auth') return { reason: `auth_${c.status}`, finishReason: null };
@@ -584,22 +581,19 @@ async function runD(m: (typeof MODELS)[number]) {
       // 운영(`extractGeneratedText`)은 STOP 이 아니면 던지고 다시 묻는다 — 잘린 본문을 채점하지 않는다.
       if (c.finishReason && c.finishReason !== 'STOP') return { reason: `finish_${c.finishReason}`, finishReason: c.finishReason };
       const parsed = parseDynamicAlarmTextResult(c.text);
-      // 운영과 같게 — 졸린 태그는 거절하지 않고 지운 뒤 판정한다.
-      const text = tidyEllipsis(dropWakeUnsafeTags(parsed.text.trim()));
-      const spoken = normalizeAlarmTextWithoutTags(text);
+      // 운영(`generatePrerenderClipText`)과 같게 — 글자 웃음·태그를 벗긴 뒤 판정한다.
+      const text = tidyEllipsis(stripAllTags(typedLaughterToTags(parsed.text.trim())));
       const shape = rawJsonShape(c.text, TEXT_ONLY);
       return {
-        reason: prerenderRejectionReason(spoken, text, p.lang, params) ?? 'ok',
+        reason: prerenderRejectionReason(text, p.lang, params) ?? 'ok',
         finishReason: c.finishReason,
         jsonOk: shape.ok,
         extraKeys: shape.extraKeys,
-        legacyTagFilled: parsed.tag.trim() !== '',
-        inlineTags: extractTags(text),
-        rawLowArousal: extractTags(parsed.text).filter(isLowArousal),
+        // 지시를 어기고 모델이 낸 태그 — 운영은 벗긴다. 얼마나 자주 어기는지만 본다.
+        modelTags: modelTags(parsed.text),
       };
     });
     const spoken = r ? normalizeAlarmTextWithoutTags(r.text) : '';
-    const tags = r ? extractTags(r.text) : [];
     const endings = sentenceEndings(spoken);
     return {
       suite: 'D',
@@ -617,14 +611,10 @@ async function runD(m: (typeof MODELS)[number]) {
       final: r
         ? {
             length: spoken.length,
-            tagCount: tags.length,
-            tags,
-            lowArousal: tags.filter(isLowArousal),
             leaks: leaks(spoken, p.lang),
             titleUsed: p.listenerTitle ? spoken.includes(p.listenerTitle) : null,
             politeAllEndings: p.lang === 'ko' ? !endings.some((e) => BANMAL_KO.test(e)) && endings.some((e) => POLITE_KO.test(e)) : null,
             anyPoliteEnding: p.lang === 'ko' ? endings.some((e) => POLITE_KO.test(e)) : null,
-            tagWithoutSpace: tagWithoutSpace(r.text),
             dialectMarkers: p.speechStyle?.dialect
               ? p.speechStyle.markers.filter((mk) => spoken.includes(mk.replace(/^[~〜]/, '')))
               : null,
@@ -773,28 +763,29 @@ function summarize(rows: AnyRow[]): string {
   const byModel = (suite: string) => MODELS.map((m) => ({ m, rs: rows.filter((r) => r.suite === suite && r.model === m.label) }));
 
   if (SUITES.has('A')) {
-    lines.push('## A 직접 입력 태깅', '', '| 모델 | n | 모델 원문 보존 | JSON 형식 | 여분 필드 | 폴백(로컬) | 최종 보존 | 평균 태그 | 저각성(모델) | 저각성(최종) | 공포 태그 | 태그 뒤 붙여쓰기 | 평균 지연 ms |', '|---|---|---|---|---|---|---|---|---|---|---|---|---|');
+    lines.push('## A 직접 입력 번역', '', '| 모델 | n | 성공 | JSON 형식 | 여분 필드 | 모델이 붙인 태그 | 웃음 보존 | 평균 지연 ms | 평균 사고 토큰 |', '|---|---|---|---|---|---|---|---|---|');
     for (const { m, rs } of byModel('A')) {
       const raw = rs.map((r) => r.raw as AnyRow);
       const fin = rs.map((r) => r.final as AnyRow);
-      lines.push(`| ${m.label} | ${rs.length} | ${pct(raw.filter((x) => x.preserved).length, rs.length)} | ${pct(raw.filter((x) => x.jsonOk).length, rs.length)} | ${pct(raw.filter((x) => (x.extraKeys as string[]).length).length, rs.length)} | ${pct(fin.filter((x) => x.fallback).length, rs.length)} | ${pct(fin.filter((x) => x.preserved).length, rs.length)} | ${avg(fin.map((x) => x.tagCount as number))} | ${pct(raw.filter((x) => (x.lowArousal as string[]).length).length, rs.length)} | ${pct(fin.filter((x) => ((x.lowArousal as string[]) ?? []).length).length, rs.length)} | ${pct(raw.filter((x) => ((x.fear as string[]) ?? []).length).length, rs.length)} | ${pct(raw.filter((x) => x.tagWithoutSpace).length, rs.length)} | ${avg(raw.map((x) => (x.latencyMs as number) ?? 0))} |`);
+      const laughCases = fin.filter((x) => x.laughKept !== null);
+      lines.push(`| ${m.label} | ${rs.length} | ${pct(fin.filter((x) => x.ok).length, rs.length)} | ${pct(raw.filter((x) => x.jsonOk).length, rs.length)} | ${pct(raw.filter((x) => (x.extraKeys as string[]).length).length, rs.length)} | ${pct(raw.filter((x) => ((x.modelTags as string[]) ?? []).length).length, rs.length)} | ${pct(laughCases.filter((x) => x.laughKept).length, laughCases.length)} | ${avg(raw.map((x) => (x.latencyMs as number) ?? 0))} | ${avg(raw.map((x) => (x.thoughtTokens as number) ?? 0))} |`);
     }
     lines.push('');
     for (const { m, rs } of byModel('A')) {
       lines.push(`### A 표본 — ${m.label}`, '');
-      for (const r of rs.filter((x) => x.rep === 0)) lines.push(`- \`${r.id}\` ${(r.final as AnyRow).fallback ? '**[폴백]** ' : ''}${r.output}`);
+      for (const r of rs.filter((x) => x.rep === 0)) lines.push(`- \`${r.id}\` → ${r.target}: ${r.output ?? `**실패** ${String(r.error).slice(0, 60)}`}`);
       lines.push('');
     }
   }
 
   if (SUITES.has('D')) {
-    lines.push('## D 사전렌더 문구(등록 미리듣기 포함)', '', '| 모델 | n | 최종 성공 | 1회차 통과 | 평균 시도 | 1회차 거절 사유 | 최종 실패 사유 | 누출(날짜·숫자 등) | 호칭 사용 | 평균 태그 | legacy tag 채움 | 여분 필드 | 평균 길이 | 평균 지연 ms |', '|---|---|---|---|---|---|---|---|---|---|---|---|---|---|');
+    lines.push('## D 사전렌더 문구(등록 미리듣기 포함)', '', '| 모델 | n | 최종 성공 | 1회차 통과 | 평균 시도 | 1회차 거절 사유 | 최종 실패 사유 | 누출(날짜·숫자 등) | 호칭 사용 | 모델이 낸 태그(벗김) | 여분 필드 | 평균 길이 | 평균 지연 ms |', '|---|---|---|---|---|---|---|---|---|---|---|---|---|');
     for (const { m, rs } of byModel('D')) {
       const ok = rs.filter((r) => r.final);
       const first = rs.map((r) => ((r.attempts as AnyRow[])[0]?.reason as string) ?? 'none');
       const allAttempts = rs.flatMap((r) => r.attempts as AnyRow[]);
       const titled = ok.filter((r) => (r.final as AnyRow).titleUsed !== null);
-      lines.push(`| ${m.label} | ${rs.length} | ${pct(ok.length, rs.length)} | ${pct(first.filter((x) => x === 'ok').length, rs.length)} | ${avg(rs.map((r) => (r.attempts as AnyRow[]).length))} | ${hist(first.filter((x) => x !== 'ok'))} | ${hist(rs.filter((r) => !r.final).map((r) => String(r.error).slice(0, 40)))} | ${pct(ok.filter((r) => ((r.final as AnyRow).leaks as string[]).length).length, ok.length)} | ${pct(titled.filter((r) => (r.final as AnyRow).titleUsed).length, titled.length)} | ${avg(ok.map((r) => (r.final as AnyRow).tagCount as number))} | ${pct(allAttempts.filter((a) => a.legacyTagFilled).length, allAttempts.length)} | ${pct(allAttempts.filter((a) => ((a.extraKeys as string[]) ?? []).length).length, allAttempts.length)} | ${avg(ok.map((r) => (r.final as AnyRow).length as number))} | ${avg(rs.flatMap((r) => (r.calls as AnyRow[]).map((c) => c.latencyMs as number)))} |`);
+      lines.push(`| ${m.label} | ${rs.length} | ${pct(ok.length, rs.length)} | ${pct(first.filter((x) => x === 'ok').length, rs.length)} | ${avg(rs.map((r) => (r.attempts as AnyRow[]).length))} | ${hist(first.filter((x) => x !== 'ok'))} | ${hist(rs.filter((r) => !r.final).map((r) => String(r.error).slice(0, 40)))} | ${pct(ok.filter((r) => ((r.final as AnyRow).leaks as string[]).length).length, ok.length)} | ${pct(titled.filter((r) => (r.final as AnyRow).titleUsed).length, titled.length)} | ${pct(allAttempts.filter((a) => ((a.modelTags as string[]) ?? []).length).length, allAttempts.length)} | ${pct(allAttempts.filter((a) => ((a.extraKeys as string[]) ?? []).length).length, allAttempts.length)} | ${avg(ok.map((r) => (r.final as AnyRow).length as number))} | ${avg(rs.flatMap((r) => (r.calls as AnyRow[]).map((c) => c.latencyMs as number)))} |`);
     }
     lines.push('', '### D 프로필별 규칙 준수', '', '| 모델 | 프로필 | n | 성공 | 규칙 |', '|---|---|---|---|---|');
     for (const { m, rs } of byModel('D')) {
@@ -811,7 +802,7 @@ function summarize(rows: AnyRow[]): string {
           expect === 'dialect' ? `사투리 표지 1개 이상 ${pct(f.filter((x) => ((x.dialectMarkers as string[]) ?? []).length).length, f.length)} · ${leakRate}` :
           expect === 'child' ? `아이 철자 ${pct(f.filter((x) => x.childSpelling).length, f.length)} · 존대 섞임 ${pct(f.filter((x) => x.childPolite).length, f.length)} · ${leakRate}` :
           leakRate;
-        lines.push(`| ${m.label} | ${pid} | ${prs.length} | ${pct(ok.length, prs.length)} | ${rule} · 태그 붙여쓰기 ${pct(f.filter((x) => x.tagWithoutSpace).length, f.length)} · 평균 길이 ${avg(f.map((x) => x.length as number))} |`);
+        lines.push(`| ${m.label} | ${pid} | ${prs.length} | ${pct(ok.length, prs.length)} | ${rule} · 평균 길이 ${avg(f.map((x) => x.length as number))} |`);
       }
     }
     lines.push('');
@@ -852,6 +843,7 @@ const outDir = resolve(backendRoot, '.eval/gemini', `${stamp}-${LABEL}`);
 mkdirSync(outDir, { recursive: true });
 const rows: AnyRow[] = [];
 for (const m of MODELS) {
+  evalModel = m.model;
   for (const suite of ['A', 'D', 'F'] as const) {
     if (!SUITES.has(suite)) continue;
     process.stderr.write(`${m.label} · ${suite}\n`);

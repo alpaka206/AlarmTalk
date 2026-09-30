@@ -54,10 +54,15 @@ struct AlarmTalkMetadata: AlarmMetadata, Codable, Hashable, Sendable {
     }
 
     /// "오전 7:30" — 없으면 nil(옛 레코드 호환).
+    ///
+    /// 오전·오후는 **그 프로세스 번들의 카탈로그**로 번역한다 — Live Activity 는 위젯 프로세스라
+    /// `AlarmTalkWidget/Localizable.xcstrings` 에서, 앱은 앱 카탈로그에서 찾는다. 글자로 박아 두면
+    /// 영어·일본어 기기의 잠금 화면 시계가 "오전 7:30" 으로 뜬다(코덱스 #836).
     var clockLabel: String? {
         guard let hour, let minute, (0...23).contains(hour), (0...59).contains(minute) else { return nil }
         let h12 = hour % 12 == 0 ? 12 : hour % 12
-        return String(format: "%@ %d:%02d", hour < 12 ? "오전" : "오후", h12, minute)
+        let meridiem = hour < 12 ? String(localized: "오전") : String(localized: "오후")
+        return String(format: "%@ %d:%02d", meridiem, h12, minute)
     }
 
     /// ⚠ **새 필드를 여기 빠뜨리면 조용히 사라진다.** `CodingKeys` 를 손으로 적는 순간

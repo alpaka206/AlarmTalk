@@ -133,6 +133,10 @@ const STALE_STOCK_PRESET_SUBQUERY_2026_07_19 = `SELECT m.id FROM messages m
  *
  * 테스트(`test/migrations-stock-refresh.test.ts`)가 최신 무효화 마이그레이션 이름에서
  * 지문을 뽑아 현재 문구와 대조한다.
+ *
+ * 무효화가 꼭 '옛 행 지우기·은퇴' 일 필요는 없다. 화면 문구가 그대로이고 소리만 바뀌는 회차(#124 —
+ * eleven_v4_turbo 전환)는 행을 두고 **같은 message_id 에 소리만 갈아 끼운다**(`publish:stock` 의 교체 갈래가
+ * 원장 `request_hash` 로 낡은 행을 찾는다). 그 회차의 마이그레이션도 이름에 지문을 박는다.
  */
 export const STOCK_FINGERPRINT_IN_NAME = /-([0-9a-f]{16})$/;
 
@@ -2985,6 +2989,51 @@ export const migrations: Migration[] = [
         computed_at TEXT NOT NULL,
         PRIMARY KEY (region_key, target_date)
       )`,
+    ],
+  },
+  {
+    // ElevenLabs 합성 모델을 eleven_v3 → eleven_v4_turbo 로 바꾸고(`lib/tts-model.ts`) 태그를 뺐다(2026-09-30).
+    // 이름 끝의 지문은 태그를 뺀 STOCK_CLIP_PRESETS 의 것이다(`STOCK_FINGERPRINT_IN_NAME`).
+    //
+    // ⚠ **시스템 스톡 프리셋은 여기서 은퇴시키지 않는다.** #110 처럼 은퇴시키면 모든 앱이 새 id 로 다시 묶을
+    //   때까지 차단 화면을 띄운다. 이번에는 문구(화면 글자)가 그대로이고 소리만 바뀌므로 **같은 message_id 에
+    //   소리만 갈아 끼운다** — `npm run publish:stock` 의 교체 갈래가 원장 `request_hash` 로 낡은 행을 찾아
+    //   바꾼다(`scripts/publish-stock-clips.ts`). 앱은 audio_url 이 바뀐 것을 보고 다시 받고, 받기 전까지는
+    //   옛 파일로 울린다(무음 없음).
+    //
+    // 여기서 하는 일은 **클론 사전렌더 재적재**다 — 클론 클립은 서버 cron 이 굽으므로 큐에 다시 넣으면 된다.
+    // 말투 재렌더(routes/voice-profile.ts)와 같은 모양이다: `refresh_existing = 1` 에 `requested_at` 을 지금으로
+    // 올려 '이 요청 뒤에 게시된 클립만 최신' 으로 센다(`findMissingStockTargets` — 같은 provider 보이스라
+    // 보이스 대조만으로는 옛 클립이 '있다' 로 세어진다). 게시는 같은 message_id 로 덮어쓴다(`generateStockClip`
+    // 의 교체 갈래). 문구는 Gemini 가 태그 없이 **새로 만든다** — 잠금화면 문구도 바뀐다.
+    // - 대상은 굽혀 있는 클립이 있는 준비된 클론뿐이다. 클립이 하나도 없는 행(대기·실패)은 건드리지 않는다.
+    // - 밀려난 클론(`elevenlabs_voice_id` NULL)은 굽지 못하므로 빼고, 복구 때 새 보이스로 다시 굽힌다.
+    // - 새 등록이 이 대기열 뒤에 서지 않게 claim 이 `refresh_existing = 0` 을 먼저 잡는다
+    //   (`claimPendingPrerenderVoices`).
+    // 코드가 이 결과에 기대지 않는다(데이터 UPDATE) — 배포→마이그레이션 창 문제가 없다.
+    id: 124,
+    name: 'refresh-stock-clips-v4-turbo-c0e0f678c172a871',
+    atomic: true,
+    statements: [
+      `UPDATE voice_prerender_queue
+          SET status = 'pending', attempts = 0, refresh_existing = 1,
+              requested_at = strftime('%Y-%m-%d %H:%M:%f', 'now'),
+              claimed_at = NULL, claim_token = NULL, updated_at = datetime('now')
+        WHERE voice_profile_id IN (
+          SELECT vp.id FROM voice_profiles vp
+           WHERE COALESCE(vp.is_system, 0) = 0
+             AND COALESCE(vp.is_draft, 0) = 0
+             AND vp.deleted_at IS NULL
+             AND vp.status = 'ready'
+             AND vp.elevenlabs_voice_id IS NOT NULL
+             AND EXISTS (
+               SELECT 1 FROM messages m
+                WHERE m.voice_profile_id = vp.id
+                  AND COALESCE(m.is_preset, 0) = 1
+                  AND m.retired_at IS NULL
+                  AND m.audio_url IS NOT NULL
+             )
+        )`,
     ],
   },
 ];

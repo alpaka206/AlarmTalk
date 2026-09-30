@@ -140,7 +140,7 @@ describe('사전렌더 문구 생성 실패 — 전송 실패', () => {
   });
 
   it('앞 회차가 내용 위반이어도 마지막이 전송 실패면 전송 실패로 올린다', async () => {
-    queueContent(geminiText(JSON.stringify({ text: '(다정하게) 일어나!', tag: '' })));
+    queueContent(geminiText(JSON.stringify({ text: '(다정하게) 일어나!' })));
     queueContent(new Error('Vertex upstream unreachable (503)'));
     queueContent(new Error('Vertex upstream unreachable (503)'));
 
@@ -155,7 +155,7 @@ describe('사전렌더 문구 생성 실패 — 전송 실패', () => {
 
 describe('사전렌더 문구 생성 실패 — 거절 사유', () => {
   it('소괄호 지문은 stage_direction 으로 구분된다', async () => {
-    queueContentThrice(() => geminiText(JSON.stringify({ text: '(다정하게) 일어나!', tag: '' })));
+    queueContentThrice(() => geminiText(JSON.stringify({ text: '(다정하게) 일어나!' })));
 
     const err = await caught(
       generatePrerenderClipText(ENV, { seed: '깨운다', targetLanguage: 'ko' }),
@@ -169,7 +169,7 @@ describe('사전렌더 문구 생성 실패 — 거절 사유', () => {
     // 200자를 넘기는 한 줄(태그를 벗긴 본문 기준).
     const tooLong = '좋은 아침이에요. '.repeat(30).trim();
     expect(tooLong.length).toBeGreaterThan(200);
-    queueContentThrice(() => geminiText(JSON.stringify({ text: tooLong, tag: '' })));
+    queueContentThrice(() => geminiText(JSON.stringify({ text: tooLong })));
 
     const err = await caught(
       generatePrerenderClipText(ENV, { seed: '깨운다', targetLanguage: 'ko' }),
@@ -180,7 +180,7 @@ describe('사전렌더 문구 생성 실패 — 거절 사유', () => {
 
   it('타깃 언어와 다른 글자는 language_mismatch 로 구분된다', async () => {
     queueContentThrice(() =>
-      geminiText(JSON.stringify({ text: '좋은 아침이에요, 일어나세요.', tag: '' })),
+      geminiText(JSON.stringify({ text: '좋은 아침이에요, 일어나세요.' })),
     );
 
     const err = await caught(
@@ -191,7 +191,7 @@ describe('사전렌더 문구 생성 실패 — 거절 사유', () => {
   });
 
   it('태그만 오면 empty_spoken 으로 구분된다', async () => {
-    queueContentThrice(() => geminiText(JSON.stringify({ text: '[happy] [excited]', tag: '' })));
+    queueContentThrice(() => geminiText(JSON.stringify({ text: '[happy] [excited]' })));
 
     const err = await caught(
       generatePrerenderClipText(ENV, { seed: '깨운다', targetLanguage: 'ko' }),
@@ -213,7 +213,7 @@ describe('사전렌더 문구 생성 실패 — 거절 사유', () => {
 
   it('⚠ 낭독 문구 원문은 에러에 실리지 않는다 — 개인 목소리 콘텐츠다', async () => {
     const spoken = '(다정하게) 규원아, 약 먹을 시간이야.';
-    queueContentThrice(() => geminiText(JSON.stringify({ text: spoken, tag: '' })));
+    queueContentThrice(() => geminiText(JSON.stringify({ text: spoken })));
 
     const err = await caught(
       generatePrerenderClipText(ENV, {
