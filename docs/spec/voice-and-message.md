@@ -1180,6 +1180,20 @@ TTS 는 웃음 글자를 **글자로 읽는다**(2026-09-29 v3·v4·v4 Turbo 비
   가장 센 끝(도현 한국어 상승조 의문문 0.44)도 30dB 를 50ms 에 걸쳐 잦아든다 — 계단이 아니다. 꼬리는 끝 무음을
   0.1초쯤 늘릴 뿐 결과가 같아 둘 다 뺐다. 반복 재생 사이 간격은 안드로이드가 따로 둔다(`VOICE_REPEAT_GAP_MS`).
   시청본 지문의 파이프라인 세대를 `plain@2` 로 올렸다 — 옛 시청본은 전부 낡음으로 읽혀 다시 굽는다.
+- **캐시 키에 범위를 넣는다**(Codex #840). 원장 해시(`generated_audio_assets.request_hash`)는 전역 UNIQUE 인데
+  오브젝트는 주인 아래에 놓인다(`generated-tts/<주인>/<키>`). 키가 겹치면 두 번째 렌더의 원장 행이 조용히 빠지고,
+  그 오브젝트는 계정 삭제·보관 정리가 못 찾는다(원장이 R2 키의 유일한 출처다). v3 에서는 태그와 스톡의 여운 꼬리가
+  우연히 키를 갈라 놓았는데, 둘 다 뺀 뒤로는 사용자가 스톡 문장을 그대로 치거나 두 사람이 같은 기본 목소리로 같은
+  글을 치면 키가 같아진다. 그래서:
+  - **스톡**(시스템 스톡 게시·클론 사전렌더)은 스톡 범위(`STOCK_TTS_CACHE_SCOPE`) — 서버와 게시 스크립트가 같은 값.
+  - **직접 입력**은 그 사람 범위(`manualTtsCacheScope(userPk)`). 직접 입력 캐시는 원래 남과 나누지 않으므로 잃는
+    적중이 없다. 등록 미리듣기는 범위 없이 둔다(초안 목소리는 그 사람 것뿐이다).
+  - 그래도 같은 해시를 다른 오브젝트가 쥐고 있으면 게시는 멈춘다(`[보류]` — 옛 소리로 울린다, 무음 없음).
+- **삭제 예약은 다시 넣으면 id 가 바뀐다**(Codex #840). 드레인은 예약을 읽고(참조 확인) 나중에 그 id 로 지운다 —
+  그 사이 마지막 참조가 끊기며 같은 키가 다시 예약되면, 예전(`INSERT OR IGNORE`)에는 무시돼 드레인이 옛 판단대로
+  그 예약을 지웠다(오브젝트가 참조도 예약도 없는 미아). 이제 `(kind, ref)` 충돌 시 id 를 새로 바꿔 드레인의
+  `WHERE id = ?` 가 빗나가고, 다음 회차가 다시 판단한다. 클론 재렌더가 밀려난 옛 오브젝트를 바로 지우지 않고 이
+  큐에 넣는 것과 짝이다(두 프리셋이 한 오브젝트를 나눠 쓸 수 있다).
 
 ### v3 → v4 Turbo 비교 (2026-09-29, 기본 목소리 4종 · 같은 문장)
 
@@ -1329,6 +1343,7 @@ TTS 는 웃음 글자를 **글자로 읽는다**(2026-09-29 v3·v4·v4 Turbo 비
 | 번역의 웃음 수 = 사용자가 친 수 · 원문에 없던 톤 태그는 벗긴다 | — | — | `prepareAlarmTextWithVertex` 의 번역 갈래 — `canonicalizeLaughterTags`(사용자 태그는 친 수만큼 제외, `laughterTagCounts`)·`withLeadingLaugh`·`stripTagsWhere` · 지운 태그 자리 `tagGapFill` |
 | 태그를 붙이지 않는다 · 모델이 낸 태그는 벗긴다 | 옛 행 표시용 벗기기만 남는다 — `data/DeliveryTags.kt` `stripDeliveryTags` | 같음 — `DeliveryTags.swift` | 프롬프트(`DYNAMIC_SYSTEM_INSTRUCTION`·`dynamicAlarmTextPrompt`·`prerenderClipPrompt`·`alarmTextPrompt` — 태그 지시 없음) · `stripAllTags` ← `generatePrerenderClipText`·`generateDynamicAlarmTextWithVertex` · 스톡 프리셋에 태그 없음(회귀 `stock-clips.test.ts`) · `voice_profiles.preview_tag` 는 읽지도 쓰지도 않는다(다음 회차 DROP) |
 | 합성 모델 = `eleven_v4_turbo`(코드 상수) · 설정은 stability·similarity 둘 · 말끝 가공 없음 | — | — | `lib/tts-model.ts` 의 `TTS_MODEL_ID`·`TTS_VOICE_SETTINGS` ← `lib/elevenlabs.ts` `textToSpeech`·`lib/voice-provider.ts`·`scripts/prerender-stock-preview.ts`·`scripts/publish-stock-clips.ts`(회귀 `voice-provider-model.test.ts`·`elevenlabs.test.ts`·`publish-stock-clips-contract.test.ts`·`stock-clip-provider-text.test.ts`) · 시청본 지문 세대 `PIPELINE_VERSION`(`scripts/stock-preview-fingerprint.ts`) |
+| 캐시 키 범위(스톡 / 직접 입력은 그 사람) · 삭제 예약은 다시 넣으면 id 가 바뀐다 | — | — | `lib/audio-cache.ts` 의 `STOCK_TTS_CACHE_SCOPE`·`manualTtsCacheScope` ← `lib/stock-clips.ts` `generateStockClip`·`scripts/publish-stock-clips.ts`·`routes/tts.ts`(`isManualGeneration`) · `lib/audio-retention.ts` 의 `REFRESH_RESERVATION_ON_CONFLICT`(회귀 `publish-stock-clips-contract.test.ts`·`tts.test.ts`·`audio-retention.test.ts`) |
 
 ## 검증 방법
 
