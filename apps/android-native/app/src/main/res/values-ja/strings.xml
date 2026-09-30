@@ -281,7 +281,6 @@
     <string name="hs_settings_no_name">名前なし</string>
     <string name="hs_settings_privacy_policy">プライバシーポリシー</string>
     <string name="hs_settings_section_account">アカウント</string>
-    <string name="hs_settings_section_display">画面</string>
     <string name="hs_settings_section_random_phrase">文言の情報</string>
     <string name="hs_settings_terms_of_service">利用規約</string>
     <string name="hs_settings_theme">画面テーマ</string>
@@ -290,7 +289,6 @@
     <string name="region_picker_legacy_hint">リストから選び直してください</string>
     <string name="region_picker_legacy_value_hint">「%1$s」はリストにありません。選び直してください。</string>
     <string name="region_picker_seat_description">%1$sの天気</string>
-    <string name="settings_holiday_country_title">祝日カレンダー</string>
     <string name="settings_logout_confirm_title">ログアウトしますか？</string>
     <string name="settings_marketing_load_failed">読み込めませんでした · タップで再試行</string>
     <string name="hs_empty_card_helper">聞きたい声が起こしてくれます。</string>

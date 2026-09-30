@@ -3,7 +3,9 @@ package com.alarmtalk.app
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import com.alarmtalk.app.data.DynamicPromptPreferences
+import com.alarmtalk.app.data.HolidayCountryPreferenceStore
 import com.alarmtalk.app.data.WeatherCountry
+import com.alarmtalk.app.data.WeatherRegionHolidaySync
 import com.alarmtalk.app.data.WeatherRegions
 import com.alarmtalk.app.data.resolvedRegion
 import com.alarmtalk.app.data.toDynamicPromptSettings
@@ -12,6 +14,7 @@ import com.alarmtalk.app.network.DynamicPromptSettings
 import com.alarmtalk.app.network.DynamicPromptWeatherSettings
 import com.alarmtalk.app.network.normalizeDynamicPromptSettings
 import java.io.File
+import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -30,6 +33,7 @@ import org.robolectric.annotation.Config
  *  1. **보이는 이름은 앱 언어**, 저장 값은 옛 앱용 한국어 글자 한 벌이다.
  *  2. 되짚히는 옛 값은 그 지역으로 보이고, 못 되짚은 옛 값은 **적힌 글자 그대로 + 다시 고르라는 안내**.
  *  3. 계정 설정은 서버로 `region` 키를 함께 보내고, 받은 키는 옛 앱용 글자를 이긴다.
+ *  4. 공휴일 국가는 지역의 나라다 — 되짚지 못하면 건드리지 않고, 서버 값은 **바뀌었을 때만** 적는다.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], qualifiers = "ko")
@@ -172,5 +176,86 @@ class WeatherRegionPickerTest {
             "kr-busan",
             DynamicPromptWeatherSettings(country = "대한민국", city = "부산").resolvedRegion()?.key,
         )
+    }
+
+    // ── 4. 공휴일 국가 = 지역의 나라 ─────────────────────────────────
+
+    @Test
+    fun 지역을_저장하면_공휴일_국가가_그_나라가_되고_못_되짚으면_그대로다() = runTest {
+        val store = HolidayCountryPreferenceStore(context)
+        store.setCountry("KR")
+        WeatherRegionHolidaySync.onRegionSaved(store, WeatherRegions.byKey("us-new-york"))
+        assertEquals("US", store.read())
+        WeatherRegionHolidaySync.onRegionSaved(store, null)
+        assertEquals("US", store.read())
+    }
+
+    @Test
+    fun 새_기기는_계정_지역의_나라를_받는다() = runTest {
+        val store = HolidayCountryPreferenceStore(context)
+        assertFalse(store.hasSavedCountry())
+        WeatherRegionHolidaySync.onAccountRegionReceived(store, WeatherRegions.byKey("jp-osaka"))
+        assertEquals("JP", store.read())
+        assertEquals("jp-osaka", store.lastAccountRegionKey())
+    }
+
+    @Test
+    fun 업데이트_직후_직접_고른_공휴일_국가는_지역이_바뀌기_전까지_둔다() = runTest {
+        val store = HolidayCountryPreferenceStore(context)
+        // 옛 '공휴일 달력' 행에서 고른 값.
+        store.setCountry("JP")
+        WeatherRegionHolidaySync.onAccountRegionReceived(store, WeatherRegions.byKey("kr-seoul"))
+        assertEquals("JP", store.read())
+        // 같은 지역을 다시 받아도 그대로다.
+        WeatherRegionHolidaySync.onAccountRegionReceived(store, WeatherRegions.byKey("kr-seoul"))
+        assertEquals("JP", store.read())
+        // 다른 기기에서 지역을 바꿨다 — 이제 따라간다.
+        WeatherRegionHolidaySync.onAccountRegionReceived(store, WeatherRegions.byKey("us-chicago"))
+        assertEquals("US", store.read())
+    }
+
+    // ⚠ '이 기기에서 고른 뒤 저장이 실패했는데 서버가 옛 지역을 준다' 는 여기 오지 않는다 — 받아 적기가
+    //   LocalPending 이라 [WeatherRegionHolidaySync.onAccountRegionReceived] 를 부르지 않는다
+    //   (`AccountPromptSettingsAdoptionTest.이_기기의_변경이_밀려_있으면_공휴일_국가도_서버의_옛_지역을_따르지_않는다`).
+
+    @Test
+    fun 받아들일_때마다_지역의_나라로_맞춘다_로그아웃_뒤_같은_계정도() = runTest {
+        val store = HolidayCountryPreferenceStore(context)
+        WeatherRegionHolidaySync.onAccountRegionReceived(store, WeatherRegions.byKey("kr-seoul"))
+        assertEquals("KR", store.read())
+        // 이 기기에서 도쿄를 골랐다(달력 JP). 저장이 실패한 채 로그아웃하면 값과 '안 올라간 변경' 표시는
+        // 지워지고 공휴일 국가만 남는다.
+        WeatherRegionHolidaySync.onRegionSaved(store, WeatherRegions.byKey("jp-tokyo"))
+        assertEquals("JP", store.read())
+        // 같은 계정으로 다시 들어와 계정 지역(서울)을 받아들였다 — 화면이 서울이니 달력도 한국이다.
+        // ("지난번과 같은 지역이면 건너뛴다" 였다면 JP 에 남았다.)
+        WeatherRegionHolidaySync.onAccountRegionReceived(store, WeatherRegions.byKey("kr-seoul"))
+        assertEquals("KR", store.read())
+    }
+
+    @Test
+    fun 직접_고른_나라를_지키던_중_지역을_다시_고르면_지역의_나라가_된다() = runTest {
+        val store = HolidayCountryPreferenceStore(context)
+        store.setCountry("JP") // 옛 '공휴일 달력' 행에서 고른 값
+        WeatherRegionHolidaySync.onAccountRegionReceived(store, WeatherRegions.byKey("kr-seoul"))
+        assertEquals("JP", store.read())
+        assertEquals("kr-seoul", store.keptCountryAccountRegionKey())
+        // 설정 '지역' 행에서 서울을 다시 골랐다 — 이제 지키지 않는다.
+        WeatherRegionHolidaySync.onRegionSaved(store, WeatherRegions.byKey("kr-seoul"))
+        assertEquals("KR", store.read())
+        assertNull(store.keptCountryAccountRegionKey())
+        // 저장 응답으로 같은 지역을 받아도 한국 그대로다.
+        WeatherRegionHolidaySync.onAccountRegionReceived(store, WeatherRegions.byKey("kr-seoul"))
+        assertEquals("KR", store.read())
+    }
+
+    @Test
+    fun 계정_지역이_없거나_못_되짚으면_공휴일_국가를_건드리지_않는다() = runTest {
+        val store = HolidayCountryPreferenceStore(context)
+        store.setCountry("US")
+        val legacy = DynamicPromptWeatherSettings(country = "영국", city = "런던").resolvedRegion()
+        WeatherRegionHolidaySync.onAccountRegionReceived(store, legacy)
+        assertEquals("US", store.read())
+        assertNull(store.lastAccountRegionKey())
     }
 }

@@ -577,6 +577,17 @@ internal fun AlarmTalkApp(
         viewModel.preloadSocial()
         viewModel.preloadBilling()
     }
+    // 계정 설정(지역·사주)은 서버에, 설정 화면·편집기가 읽는 값과 공휴일 국가는 기기에 있다 —
+    // 받아 올 때(로그인·/auth/me·설정 저장 응답) 맞추지 않으면 두 번째 기기는 '지역: 미설정' 에
+    // 옛 나라의 달력으로 남는다. 언제 적고 언제 두는지는 `onAccountPromptSettingsReceived` 한 곳이
+    // 정한다(이 기기에 안 올라간 변경이 있으면 덮지 않는다). 공휴일 국가 규칙:
+    // docs/spec/alarm-lifecycle.md 「공휴일 국가는 지역의 나라다」.
+    val accountUserId = authSession?.user?.id
+    val accountPromptSettings = authSession?.user?.dynamicPromptSettings
+    LaunchedEffect(accountUserId, accountPromptSettings) {
+        if (accountUserId == null || accountPromptSettings == null) return@LaunchedEffect
+        viewModel.onAccountPromptSettingsReceived(accountUserId, accountPromptSettings)
+    }
     // 상대가 목소리 공유를 켜면(voice_share_changed push) 공유 목록·클립 매니페스트를
     // 즉시 새로고침한다 — 가족 알람 push→pull 과 같은 즉시성.
     LaunchedEffect(sessionEffectKey) {

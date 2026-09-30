@@ -609,12 +609,44 @@ internal fun MainViewModel.updateDynamicPromptSettings(settings: DynamicPromptSe
                 ),
             )
         }.onSuccess { response ->
+            // ⚠ **세션을 갈아 끼우기 전에** 표시를 내린다. 새 세션이 곧바로
+            // [onAccountPromptSettingsReceived] 를 부르는데, 그때 표시가 남아 있으면 방금 올린 값을
+            // '아직 안 올라간 변경' 으로 보고 한 번 더 올린다.
+            dynamicPromptStore.markPushed(session.user.id, settings)
             val updatedSettings = response.dynamicPromptSettings ?: settings
             val updated = session.copy(user = session.user.copy(dynamicPromptSettings = updatedSettings))
             saveSessionPreservingCurrentToken(updated, startGeneration)?.let { authSession = it }
             refreshSocial()
         }.onFailure { error ->
+            // 로컬에는 '안 올라간 변경' 표시가 남는다 — 다음에 계정 설정을 받을 때
+            // ([onAccountPromptSettingsReceived]) 서버의 옛 값으로 덮지 않고 다시 올린다.
             AlarmTalkLog.reportError("Failed to update dynamic prompt settings", error)
+        }
+    }
+}
+
+/**
+ * 서버의 계정 설정(`dynamic_prompt_settings`)을 받았다 — 로그인·`/auth/me`·설정 저장 응답.
+ *
+ * 이 기기의 지역·사주와 공휴일 국가를 맞추는 규칙은 `adoptAccountPromptSettings`
+ * (data/WeatherRegionSettings.kt) 한 곳이다. 여기서 더하는 것은 둘뿐이다:
+ *  - 이 기기에 아직 안 올라간 변경이 있으면(저장이 실패했던 지역·사주) **그걸 다시 올린다.**
+ *    안 올리면 서버는 옛 값에 머물고, 이 기기는 다른 기기의 변경을 영영 받지 않는다.
+ *  - 공휴일 국가가 바뀌어 알람을 다시 잡는 일은 여기서 하지 않는다 — 국가 흐름 수집기
+ *    (`MainViewModel` init → `AlarmRepository.refreshHolidayOffAlarms`)가 한다.
+ */
+internal fun MainViewModel.onAccountPromptSettingsReceived(userId: String, settings: DynamicPromptSettings) {
+    viewModelScope.launch {
+        // 응답이 오는 사이 계정이 바뀌었으면 남의 설정을 이 계정에 적지 않는다.
+        if (authSession?.user?.id != userId) return@launch
+        val adoption = com.alarmtalk.app.data.adoptAccountPromptSettings(
+            promptStore = dynamicPromptStore,
+            holidayStore = holidayCountryStore,
+            userId = userId,
+            settings = settings,
+        )
+        if (adoption is com.alarmtalk.app.data.AccountSettingsAdoption.LocalPending) {
+            updateDynamicPromptSettings(adoption.settings)
         }
     }
 }

@@ -281,7 +281,6 @@
     <string name="hs_settings_no_name">No name</string>
     <string name="hs_settings_privacy_policy">Privacy Policy</string>
     <string name="hs_settings_section_account">Account</string>
-    <string name="hs_settings_section_display">Display</string>
     <string name="hs_settings_section_random_phrase">Message info</string>
     <string name="hs_settings_terms_of_service">Terms of Service</string>
     <string name="hs_settings_theme">Display theme</string>
@@ -290,7 +289,6 @@
     <string name="region_picker_legacy_hint">Please choose again from the list</string>
     <string name="region_picker_legacy_value_hint">“%1$s” isn\'t on the list. Please choose again.</string>
     <string name="region_picker_seat_description">Weather in %1$s</string>
-    <string name="settings_holiday_country_title">Holiday calendar</string>
     <string name="settings_logout_confirm_title">Log out?</string>
     <string name="settings_marketing_load_failed">Couldn\'t load · Tap to retry</string>
     <string name="hs_empty_card_helper">Wake up to a voice you love.</string>

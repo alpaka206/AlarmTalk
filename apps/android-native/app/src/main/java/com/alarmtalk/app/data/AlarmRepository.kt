@@ -1518,7 +1518,33 @@ class AlarmRepository(
         // 로그아웃·다른 복원과 직렬화한다 — 이유는 [restoreMutex] 주석 참고.
         restoreMutex.withLock { reschedulePendingAlarmsLocked(recomputeFireTime) }
 
-    private suspend fun reschedulePendingAlarmsLocked(recomputeFireTime: Boolean): Int {
+    /**
+     * **공휴일 국가가 바뀌었다** — '공휴일엔 끄기' 반복 알람의 다음 발생을 새 달력으로 다시 잡는다
+     * (docs/spec/alarm-lifecycle.md 「공휴일 국가는 지역의 나라다」).
+     *
+     * 다음 발생은 저장할 때·끌 때(`dismiss`) 그 순간의 달력으로 한 번 계산돼 행에 박힌다. 나라만
+     * 바뀌고 이걸 안 부르면, 이미 잡힌 발생은 **옛 나라의 달력**을 따른다 — 새 나라의 공휴일에
+     * 울리고, 옛 나라의 공휴일(이제 평일)은 건너뛴다. 한 번 울리고 나서야 새 달력으로 돈다.
+     *
+     * 순서: 새 나라의 공휴일을 먼저 받는다(KR 외에는 온디바이스 엔진이 없어 서버 캐시가 유일한
+     * 출처다 — [ensureHolidaysSynced]). 네트워크는 락 밖이다. 그다음 예약 복원과 **같은 길목**
+     * ([reschedulePendingAlarmsLocked])으로 다시 잡는다 — 소유자·울리는 중·스누즈 게이트를 따로
+     * 베끼지 않는다.
+     *
+     * **멱등이다.** 다음 발생은 시·분·요일·달력만으로 정해지므로, 같은 달력으로 몇 번을 불러도
+     * 결과가 같고 바뀐 것이 없으면 행을 쓰지 않는다.
+     */
+    suspend fun refreshHolidayOffAlarms(): Int {
+        ensureHolidaysSynced(currentHolidayCountry())
+        return restoreMutex.withLock {
+            reschedulePendingAlarmsLocked(recomputeFireTime = false, recomputeHolidayOff = true)
+        }
+    }
+
+    private suspend fun reschedulePendingAlarmsLocked(
+        recomputeFireTime: Boolean,
+        recomputeHolidayOff: Boolean = false,
+    ): Int {
         // 예약 전에 소유자를 확정한다 — 이 함수는 로그인 뒤처리·앱 시작·부팅 복구가 모두
         // 지나는 길목이라, 여기서 한 번 막으면 나머지 경로가 따로 새지 않는다.
         val ownershipSettled = settlePendingAlarmOwnership()
@@ -1675,9 +1701,35 @@ class AlarmRepository(
                 // 여부를 따로 추적해야 한다(별도 과제). 짐작한 창을 다시 넣지 말 것 — 굳은 행의
                 // 자가치유를 막는 대가가 더 크다.
                 val isSnoozed = alarm.state == AlarmStates.SNOOZED
-                val needsRecompute = !isSnoozed && (recomputeFireTime || alarm.fireAtMillis <= now)
+                // 달력이 바뀌어 다시 잡는 경우([refreshHolidayOffAlarms]). '공휴일엔 끄기' 는 반복
+                // 알람에만 뜻이 있다(`AlarmTimeCalculator` 가 일회성에서는 보지 않는다).
+                val holidayCalendarOnly = recomputeHolidayOff && alarm.holidayOff &&
+                    alarm.repeatDaysMask != 0 && !recomputeFireTime && alarm.fireAtMillis > now
+                val needsRecompute = !isSnoozed &&
+                    (recomputeFireTime || alarm.fireAtMillis <= now || holidayCalendarOnly)
                 val alarmToSchedule = when {
                     !needsRecompute -> alarm
+                    holidayCalendarOnly -> {
+                        val nextFireAt = AlarmTimeCalculator.nextFireAtMillis(
+                            hour = alarm.hour,
+                            minute = alarm.minute,
+                            repeatDaysMask = alarm.repeatDaysMask,
+                            holidayOff = true,
+                            nowMillis = now,
+                            isHoliday = holidayPredicate,
+                        )
+                        // 바뀐 게 없으면 쓰지 않는다(멱등). 바뀌었어도 `updatedAtMillis` 는 그대로
+                        // 둔다 — 사용자의 편집이 아니다. 올리면 받은 가족 알람이 '수신자가 고쳤다'
+                        // (`locallyEditedByRecipient`)로 읽혀, 다시 보낸 알람이 더는 덮지 못한다.
+                        // 쓰기는 서버 발급 필드를 지키는 쪽으로 한다 — 동기화(`syncWithBackend`)는
+                        // 이 락을 잡지 않아 그 사이 `remoteAlarmId` 를 새겼을 수 있다.
+                        if (nextFireAt == alarm.fireAtMillis && alarm.state == AlarmStates.SCHEDULED) {
+                            alarm
+                        } else {
+                            alarm.copy(fireAtMillis = nextFireAt, state = AlarmStates.SCHEDULED)
+                                .also { alarmDao.upsertPreservingServerSyncFields(it) }
+                        }
+                    }
                     alarm.repeatDaysMask != 0 || recomputeFireTime -> alarm.copy(
                         fireAtMillis = AlarmTimeCalculator.nextFireAtMillis(
                             hour = alarm.hour,

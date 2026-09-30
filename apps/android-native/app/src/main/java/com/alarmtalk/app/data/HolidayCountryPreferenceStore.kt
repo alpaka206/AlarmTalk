@@ -7,8 +7,12 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 /**
- * 앱 전역 공휴일 달력 국가 설정(알람별 아님). KR/JP/US/VN/CN 만 지원하며, 기본값은
+ * 앱 전역 공휴일 달력 국가 설정(알람별 아님). KR/JP/US 만 지원하며, 기본값은
  * 기기 로케일 국가가 지원 목록에 있으면 그 값, 아니면 KR.
+ *
+ * ⚠ **이 값을 고르는 화면은 없다**(2026-09-30). 공휴일 국가는 **날씨 지역의 나라**다 —
+ * 쓰는 쪽은 [WeatherRegionHolidaySync] 하나다(docs/spec/alarm-lifecycle.md
+ * 「공휴일 국가는 지역의 나라다」). 설정 화면의 '공휴일 달력' 행은 지웠다.
  *
  * 코드베이스에 DataStore 가 없으므로(다른 설정도 SharedPreferences 사용) SharedPreferences 를
  * 그대로 쓰되, 화면이 변경을 관찰할 수 있도록 [Flow] 로 노출한다. SharedPreferences 가
@@ -23,10 +27,39 @@ class HolidayCountryPreferenceStore(context: Context) {
 
     fun read(): String = normalize(prefs.getString(KEY_COUNTRY, null))
 
-    suspend fun setCountry(code: String) {
+    /** 적고, **알람이 보는 값**([countryCode])이 실제로 바뀌었는지 돌려준다. */
+    suspend fun setCountry(code: String): Boolean {
         val normalized = normalize(code)
+        val before = state.value
         prefs.edit().putString(KEY_COUNTRY, normalized).apply()
         state.value = normalized
+        return before != normalized
+    }
+
+    /** 이 기기에 적힌 값이 있는가(없으면 기기 로케일 기본값으로 읽힌다). */
+    fun hasSavedCountry(): Boolean = prefs.contains(KEY_COUNTRY)
+
+    /** 서버에서 마지막으로 받은 계정 지역 키 — [WeatherRegionHolidaySync.onAccountRegionReceived] 전용. */
+    fun lastAccountRegionKey(): String? =
+        prefs.getString(KEY_LAST_ACCOUNT_REGION, null)?.trim()?.ifEmpty { null }
+
+    fun rememberAccountRegionKey(key: String) {
+        prefs.edit().putString(KEY_LAST_ACCOUNT_REGION, key).apply()
+    }
+
+    /**
+     * 옛 '공휴일 달력' 행에서 **직접 고른** 나라를 지키고 있는 계정 지역 키
+     * ([WeatherRegionHolidaySync.onAccountRegionReceived] 전용). iOS `HolidayStore.keptCountryAccountWeatherRegionDefaultsKey`.
+     */
+    fun keptCountryAccountRegionKey(): String? =
+        prefs.getString(KEY_KEPT_COUNTRY_ACCOUNT_REGION, null)?.trim()?.ifEmpty { null }
+
+    fun keepCountryForAccountRegion(key: String) {
+        prefs.edit().putString(KEY_KEPT_COUNTRY_ACCOUNT_REGION, key).apply()
+    }
+
+    fun clearKeptCountry() {
+        prefs.edit().remove(KEY_KEPT_COUNTRY_ACCOUNT_REGION).apply()
     }
 
     companion object {
@@ -37,6 +70,8 @@ class HolidayCountryPreferenceStore(context: Context) {
 
         private const val PREFS_NAME = "holiday_country_preferences"
         private const val KEY_COUNTRY = "country_code"
+        private const val KEY_LAST_ACCOUNT_REGION = "last_account_weather_region"
+        private const val KEY_KEPT_COUNTRY_ACCOUNT_REGION = "kept_country_for_account_weather_region"
         private const val FALLBACK_COUNTRY = "KR"
 
         @Volatile
@@ -61,22 +96,4 @@ class HolidayCountryPreferenceStore(context: Context) {
             }
         }
     }
-}
-
-/** ISO 3166-1 alpha-2 국가코드를 리저널 인디케이터 심볼(국기 이모지)로 변환한다. */
-fun holidayCountryFlagEmoji(countryCode: String): String {
-    val code = countryCode.trim().uppercase(Locale.ROOT)
-    if (code.length != 2 || !code.all { it in 'A'..'Z' }) return ""
-    val base = 0x1F1E6 - 'A'.code
-    val first = base + code[0].code
-    val second = base + code[1].code
-    return String(Character.toChars(first)) + String(Character.toChars(second))
-}
-
-/** 현재 로케일 기준 국가 표시 이름(예: KR -> "대한민국"). 비면 코드 그대로. */
-fun holidayCountryDisplayName(countryCode: String, locale: Locale = Locale.getDefault()): String {
-    val code = countryCode.trim().uppercase(Locale.ROOT)
-    if (code.isEmpty()) return countryCode
-    val name = Locale("", code).getDisplayCountry(locale)
-    return name.ifBlank { code }
 }

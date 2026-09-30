@@ -829,7 +829,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         internal set
 
     private val defaultVoiceStore = com.alarmtalk.app.data.DefaultVoicePreferenceStore(application)
-    private val dynamicPromptStore = com.alarmtalk.app.data.DynamicPromptPreferenceStore(application)
+    internal val dynamicPromptStore = com.alarmtalk.app.data.DynamicPromptPreferenceStore(application)
+
+    /** 공휴일 국가(앱 전역). 값은 계정 지역의 나라를 따른다 — `onAccountPromptSettingsReceived`. */
+    internal val holidayCountryStore = com.alarmtalk.app.data.HolidayCountryPreferenceStore(application)
 
     // 첫 로그인 "목소리 고르기" 스텝 표시 여부. 기본 목소리를 아직 안 고른 사용자에게만 1회.
     var showVoiceSetup by mutableStateOf(false)
@@ -1609,6 +1612,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 Log.i(TAG, "Startup alarm sync complete scheduled=$scheduled")
             }.onFailure { error ->
                 AlarmTalkLog.reportError("Startup alarm sync failed", error)
+            }
+        }
+        // 공휴일 국가가 바뀌면 '공휴일엔 끄기' 알람을 새 달력으로 다시 잡는다
+        // (`AlarmRepository.refreshHolidayOffAlarms`). 국가를 적는 자리는 셋(설정 '지역'·편집기
+        // 문구 화면·계정 설정 수신)인데, 호출부마다 붙이면 하나가 빠진다 — 값의 흐름 한 곳에서 본다.
+        // ⚠ **첫 값도 받는다.** 앱을 켤 때마다 한 번 돈다: 지난 실행에서 국가만 바뀌고 다시 잡기
+        // 전에 프로세스가 죽었거나, KR 밖 나라의 공휴일 캐시가 비어 있어도(받는 길이 이것뿐이다)
+        // 여기서 메운다. 멱등이라 바뀐 게 없으면 행을 쓰지 않는다.
+        viewModelScope.launch {
+            holidayCountryStore.countryCode.collect { country ->
+                runCatching { repository.refreshHolidayOffAlarms() }
+                    .onSuccess { scheduled ->
+                        Log.i(TAG, "Holiday calendar applied country=$country scheduled=$scheduled")
+                    }
+                    .onFailure { error -> AlarmTalkLog.reportError("Holiday calendar refresh failed", error) }
             }
         }
         // 결제 직후 앱 종료 등으로 서버 검증이 누락된 Play 구매를 앱 시작 시 재전송.
