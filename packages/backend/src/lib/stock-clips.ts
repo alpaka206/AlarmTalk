@@ -5,7 +5,6 @@ import { sendVoiceShareChangedPush } from './fcm';
 import { computeTtsCacheKey, generatedTtsObjectKey } from './audio-cache';
 import { createSynthesisAttempts, normalizeSynthesisLanguage } from './voice-provider';
 import {
-  extractDeliveryTags,
   parseSpeechStyle,
   withVoiceEnergy,
   prepareAlarmTextWithVertex,
@@ -192,7 +191,7 @@ const RENAMED_STOCK_CATEGORIES: Readonly<Record<string, string>> = {
 
 /**
  * 클론 시드(`CLONE_CLIP_SEEDS`)와 **같은 의도**를 사람이 직접 쓴 기본 목소리 대사. 두 목록은 카테고리와
- * 순서가 맞물려 있다(날씨 9·운세 5·응원 3, 약은 앞의 2개). 문구 생성이 리듬·쉼·태그 거는 법을
+ * 순서가 맞물려 있다(날씨 9·운세 5·응원 3, 약은 앞의 2개). 문구 생성이 리듬·쉼·공감→권유 흐름을
  * 본보기로 삼는다. 짝이 없으면(인사·약 3번째 등) null.
  *
  * ⚠ 인사(greeting)는 짝이 아니다 — 기본 목소리의 인사는 '목소리 소개' 이고 클론 인사 시드는 '아침 인사' 다.
@@ -262,20 +261,6 @@ export const CLONE_FORTUNE_THEMES = [
 ] as const;
 
 /**
- * 이 클론 클립에 모델이 웃어도 되는가 — 시드 자체가 **약 알림·사과·조심**인 클립은 서버가 막는다(스펙 §9
- * 「모델이 스스로 넣는 웃음」, Codex #830). 프롬프트(`OWN_LAUGH_INSTRUCTION`)만 믿으면 모델이 어겨도 그대로 굽힌다.
- * 막는 것: 약(전부) · 날씨 미해결 안내(마지막 시드 — 미안하다고 알린다) · 운세 '조심'(`caution`).
- * 그 밖의 문맥(날씨 줄 안의 당부 등)은 문장마다 달라 프롬프트가 정한다 — 서버는 글의 뜻을 판정하지 않는다.
- */
-export function cloneClipAllowsLaughter(category: string, variantIndex: number): boolean {
-  const key = normalizeStockCategory(category);
-  if (key === 'medication') return false;
-  if (key === 'weather') return variantIndex !== CLONE_WEATHER_CONDITIONS.length;
-  if (key === 'fortune') return CLONE_FORTUNE_THEMES[variantIndex] !== 'caution';
-  return true;
-}
-
-/**
  * 유료 클론 사전렌더의 '의미 seed'. 각 문자열은 최종 문구가 아니라 생성 지시(outcome)이며,
  * generatePrerenderClipText 가 그 목소리의 관계/호칭/말투에 맞춰 실제 문구로 만든다. 소량 유지.
  * greeting=기상 인사(미리듣기 겸용). weather=CLONE_WEATHER_CONDITIONS 순서(0..7) + 미해결 안내 1(마지막),
@@ -283,19 +268,16 @@ export function cloneClipAllowsLaughter(category: string, variantIndex: number):
  */
 export const CLONE_CLIP_SEEDS: {
   category: string;
-  defaultTag: string;
   seeds: readonly string[];
 }[] = [
   {
     category: STOCK_GREETING_CATEGORY,
-    defaultTag: 'cheerfully',
     seeds: [
       '다정하게 아침 인사를 하며 잘 잤는지 안부를 묻고, 오늘 하루도 기분 좋게 시작하자고 따뜻하게 깨워 준다.',
     ],
   },
   {
     category: 'weather',
-    defaultTag: 'cheerfully',
     // seeds[0..7] = CLONE_WEATHER_CONDITIONS 순서(nice/rain/snow/dust/cloud/fog/heat/cold).
     // seeds[8] = '날씨 미해결' 안내(반드시 마지막). 준비창에서 인터넷이 안 돼 날씨를 못 받아온 경우,
     // 클라가 무음/오재생(맑음) 대신 이 클립으로 폴백해 정직하게 안내한다(클라 bucketVariantIndex 의
@@ -314,7 +296,6 @@ export const CLONE_CLIP_SEEDS: {
   },
   {
     category: 'fortune',
-    defaultTag: 'playfully',
     seeds: [
       '오늘은 운이 따라주는 날이라고 가볍게 재미로 전하며, 일이 생각보다 술술 풀릴 수도 있으니 미뤄 둔 일을 오늘 해봐도 좋겠다고 권한다.',
       '오늘은 서두르지만 않으면 괜찮게 흘러갈 거라고 전하고, 마음이 급하면 평소 안 하던 실수가 나온다며, 한 박자 늦춰 하나씩 확인하면서 하자고 다독인다.',
@@ -327,7 +308,6 @@ export const CLONE_CLIP_SEEDS: {
     // 응원(옛 이름 `love`). 시드도 응원·자기돌봄으로 맞췄다 — 라벨이 '응원' 인데
     // 시드만 "사랑하는 마음을 담아" 로 두면 클론이 라벨과 다른 말을 한다.
     category: 'cheer',
-    defaultTag: 'encouraging',
     seeds: [
       '할 일이 많으면 시작 전부터 마음이 바빠진다고 공감한 뒤, 처음부터 다 잘할 필요는 없다고 하고, 지금 할 수 있는 것부터 하나씩 해보자고 응원한다.',
       '이것저것 신경 쓰다 정작 자기를 챙기는 건 뒤로 미루게 된다고 공감한 뒤, 바빠도 끼니는 챙기고 지치면 잠깐이라도 쉬라고 하며, 그래야 하고 싶은 일도 오래 할 수 있다고 다독인다.',
@@ -336,7 +316,6 @@ export const CLONE_CLIP_SEEDS: {
   },
   {
     category: 'medication',
-    defaultTag: 'cheerfully',
     seeds: [
       '약 먹을 시간이라고 알리고, 미뤄 두면 금방 잊어버리기 쉽다고 일러 준 뒤, 알람 끄기 전에 지금 바로 챙겨 먹으라고 당부한다.',
       '혹시 약 먹는 걸 잊고 있진 않았는지 부드럽게 묻고, 바쁘면 깜빡하게 된다고 공감한 뒤, 하던 일은 잠깐 내려놓고 약부터 챙겨 먹으라고 한다.',
@@ -367,14 +346,12 @@ export interface StockClipTarget {
   variantIndex: number;
   /**
    * true 면 baseText 를 '의미 seed' 로 보고 그 목소리의 관계/호칭/말투에 맞춰 문구를 생성한다
-   * (유료 클론). false(시스템)면 baseText 를 리터럴로 번역+태깅만 한다.
+   * (유료 클론). false(시스템)면 baseText 를 리터럴 그대로 합성한다.
    */
   toneAdapt: boolean;
   /** 톤 적응 생성용 관계/호칭(클론만). generatePrerenderClipText 로 전달된다. */
   relationshipLabel?: string | null;
   listenerTitle?: string | null;
-  /** 톤 적응 생성 시 카테고리 기본 delivery 태그. */
-  defaultTag?: string;
   /** 등록 미리듣기에서 확정된 preview_text(클론만) — 톤/어투 스타일 레퍼런스. */
   styleReference?: string | null;
   /** 등록 녹음 전사에서 분석한 화자 말투(사투리 등, 클론만). */
@@ -598,11 +575,10 @@ export async function findMissingStockTargets(
   const targets: StockClipTarget[] = [];
   for (const voice of prerenderVoices) {
     // 클론=CLONE_CLIP_SEEDS(의미 seed → 관계/호칭 톤 적응 생성, 언어는 확정 시점 앱 언어 1개),
-    // 시스템=STOCK_CLIP_PRESETS(언어별 확정 리터럴 — 번역/태깅 없이 그대로 합성).
+    // 시스템=STOCK_CLIP_PRESETS(언어별 확정 리터럴 — 번역 없이 그대로 합성).
     const sources = voice.isClone
       ? CLONE_CLIP_SEEDS.map((s) => ({
           category: s.category,
-          defaultTag: s.defaultTag as string | undefined,
           perLanguage: [{ language: voice.languageOverride ?? 'ko', entries: s.seeds }],
         }))
       : STOCK_CLIP_PRESETS.map((p) => {
@@ -610,7 +586,6 @@ export async function findMissingStockTargets(
           const languages = voice.languageOverride ? [voice.languageOverride] : Object.keys(texts);
           return {
             category: p.category,
-            defaultTag: undefined as string | undefined,
             // languageOverride 언어의 리터럴이 없으면 빈 배열 → 해당 조합은 생성하지 않는다.
             perLanguage: languages.map((language) => ({
               language,
@@ -636,7 +611,6 @@ export async function findMissingStockTargets(
             toneAdapt: Boolean(voice.isClone),
             relationshipLabel: voice.relationshipLabel ?? null,
             listenerTitle: voice.listenerTitle ?? null,
-            defaultTag: source.defaultTag,
             styleReference: voice.styleReference ?? null,
             speechStyle: voice.speechStyle ?? null,
             refreshExisting,
@@ -1283,7 +1257,7 @@ export async function findLegacyBucketHints(
 }
 
 /**
- * 스톡 클립 1개 생성: Vertex 로 문구/번역/태그 → ElevenLabs 합성 → R2 저장 →
+ * 스톡 클립 1개 생성: (클론만) Vertex 로 문구 생성 → ElevenLabs 합성 → R2 저장 →
  * messages(is_preset=1) + generated_audio_assets insert. 멱등 보장은 호출자
  * (findMissingStockTargets) 가 담당한다.
  */
@@ -1325,30 +1299,21 @@ export async function generateStockClip(
       relationshipLabel: target.relationshipLabel,
       listenerTitle: target.listenerTitle,
       targetLanguage: language,
-      defaultTag: target.defaultTag,
       styleReference: target.styleReference,
       speechStyle: target.speechStyle ?? null,
       humanReference: stockReferenceLine(target.category, target.variantIndex, language),
-      allowLaughter: cloneClipAllowsLaughter(target.category, target.variantIndex),
     });
-    // ⚠ **여기서 태그를 다시 붙이지 말 것**(2026-08-20). `generatePrerenderClipText` 가
-    // 이미 배치를 확정해서 돌려준다 — 모델이 문장 안에 여러 개를 넣었으면 그대로, 없거나
-    // 선두 하나뿐이면 문장마다 다시 앞세운 형태다. 여기서 한 번 더 `applyDeliveryTagPerSentence`
-    // 를 태우면 `[warmly] [warmly] …` 로 겹친다.
+    // 태그 없는 문구다(`generatePrerenderClipText` 가 모델이 낸 태그까지 벗긴다) — 합성 글자와 화면 문구가 같다.
     synthesisText = generated.text;
-    // 표시 문구(잠금화면·요약)는 **태그를 벗긴 것**이다. 예전에는 모델이 태그를 안 냈기에
-    // 그냥 써도 티가 안 났지만, 인라인 태그가 들어오면 대괄호가 그대로 화면에 새어 나간다.
-    displayText = stripDeliveryTags(generated.text) || generated.text;
-    deliveryTagsJson = JSON.stringify(extractDeliveryTags(generated.text));
+    displayText = generated.text;
+    deliveryTagsJson = '[]';
   } else {
-    // 시스템 스톡: baseText 가 이미 확정된 언어별 리터럴(딜리버리 태그 포함)이다.
-    // translate/autoTag 를 끄면 Vertex 호출 없이 로컬 패스스루로 태그만 추출된다
-    // → 재시드해도 항상 STOCK_CLIP_PRESETS 문구 그대로 합성된다.
+    // 시스템 스톡: baseText 가 이미 확정된 언어별 리터럴이다. 번역을 끄면 Vertex 호출 없이 trim 한 글자
+    // 그대로다 → 재시드해도 항상 STOCK_CLIP_PRESETS 문구 그대로 합성된다.
     const prepared = await prepareAlarmTextWithVertex(env, target.baseText, {
       targetLanguage: language,
       sourceLanguage: language,
       translate: false,
-      autoTag: false,
     });
     synthesisText = prepared.text;
     displayText = stripDeliveryTags(synthesisText) || stripDeliveryTags(target.baseText);

@@ -185,15 +185,14 @@ function collectTargets(): Target[] {
  * 서버의 시스템 스톡 갈래와 **같은 방식**으로 문구 세 벌을 만든다
  * (`generateStockClip` 의 else 분기).
  *
- * `translate:false, autoTag:false` 면 `prepareAlarmTextWithVertex` 는 네트워크를 타지 않고
- * 로컬 패스스루로 태그만 뽑는다 — 그래서 `env` 가 비어도 된다.
+ * `translate:false` 면 `prepareAlarmTextWithVertex` 는 네트워크를 타지 않고 로컬 패스스루다 —
+ * 그래서 `env` 가 비어도 된다.
  */
 async function deriveTexts(baseText: string, language: Language) {
   const prepared = await prepareAlarmTextWithVertex({} as never, baseText, {
     targetLanguage: language,
     sourceLanguage: language,
     translate: false,
-    autoTag: false,
   });
   const synthesisText = prepared.text;
   return {

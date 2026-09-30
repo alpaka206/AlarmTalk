@@ -59,7 +59,7 @@ vi.mock('../src/lib/vertex-translate', async (importOriginal) => {
       generateCalls += 1;
       if (failOnCall !== null && generateCalls === failOnCall) throw failWith!();
       // 회차마다 다른 문구 — 같은 글자면 캐시 키가 겹쳐 두 클립이 한 R2 오브젝트를 공유한다.
-      return { text: `[cheerfully] 좋은 아침이에요. 잘 잤어요? 오늘도 ${generateCalls}`, tag: 'cheerfully' };
+      return { text: `좋은 아침이에요. 잘 잤어요? 오늘도 ${generateCalls}` };
     },
   };
 });

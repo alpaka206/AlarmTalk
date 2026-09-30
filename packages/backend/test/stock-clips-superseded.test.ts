@@ -59,7 +59,7 @@ vi.mock('../src/lib/voice-provider', async (importOriginal) => ({
 
 vi.mock('../src/lib/vertex-translate', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../src/lib/vertex-translate')>()),
-  generatePrerenderClipText: async () => ({ text: '옛 목소리 문구', tags: [] }),
+  generatePrerenderClipText: async () => ({ text: '옛 목소리 문구' }),
 }));
 
 import { generateStockClip, PrerenderSupersededError } from '../src/lib/stock-clips';
