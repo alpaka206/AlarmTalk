@@ -33,12 +33,30 @@ enum AccountPromptSettingsAdoption: Equatable {
 /// 있으면 **기기에만 있던 지역까지 '미설정'** 으로 보였다(통째로 서버 값을 썼다).
 extension DynamicPromptPreferences {
 
-    /// '아직 안 올라간 변경' 표시의 UserDefaults 키(계정별). 값은 참/거짓뿐이라 키체인에 두지 않는다.
+    /// '아직 안 올라간 변경' 표시가 붙는 묶음. ⚠ 표시는 **묶음마다**다(Codex #837) — 한 칸으로 두면, 이 기기에서
+    /// 지역만 고쳐 밀려 있는 사이 다른 기기가 사주를 고쳤을 때 이 기기가 **옛 사주까지** 다시 올려 그 변경을 지운다
+    /// (서버는 설정 전체를 갈아 끼운다 — `PATCH /user/me`). 안드로이드 `DynamicPromptPreferenceStore` 도 묶음마다다.
+    enum SyncBundle: String, CaseIterable {
+        case weather
+        case fortune
+    }
+
+    /// '아직 안 올라간 변경' 표시의 UserDefaults 키(계정·묶음별). 값은 참/거짓뿐이라 키체인에 두지 않는다.
     static let unsyncedDefaultsKeyPrefix = "dynamic_prompt_settings_unsynced_"
 
-    static func unsyncedDefaultsKey(userID: String?) -> String? {
+    static func unsyncedDefaultsKey(userID: String?, bundle: SyncBundle) -> String? {
         guard let userID = userID.nilIfBlank else { return nil }
-        return unsyncedDefaultsKeyPrefix + userID
+        return "\(unsyncedDefaultsKeyPrefix)\(bundle.rawValue)_\(userID)"
+    }
+
+    func hasSameWeather(as other: DynamicPromptPreferences) -> Bool {
+        weatherCountry == other.weatherCountry && weatherCity == other.weatherCity
+    }
+
+    func hasSameFortune(as other: DynamicPromptPreferences) -> Bool {
+        fortuneGender == other.fortuneGender &&
+            fortuneBirthDate == other.fortuneBirthDate &&
+            fortuneBirthTime == other.fortuneBirthTime
     }
 
     /// 사용자가 **이 기기에서** 고친 지역·사주를 적는다 — '아직 안 올라간 변경' 표시를 함께 남긴다.
@@ -57,9 +75,15 @@ extension DynamicPromptPreferences {
         defaults: UserDefaults = .standard,
         write: (DynamicPromptPreferences, String?) -> Bool = { $0.save(userID: $1) }
     ) -> Bool {
+        // 표시는 **이 기기 값에서 바뀐 묶음에만** 붙인다(위 `SyncBundle`) — 적기 전의 값과 비교한다.
+        let previous = Self.load(userID: userID)
         guard write(self, userID) else { return false }
-        guard let key = Self.unsyncedDefaultsKey(userID: userID) else { return true }
-        defaults.set(true, forKey: key)
+        if !hasSameWeather(as: previous), let key = Self.unsyncedDefaultsKey(userID: userID, bundle: .weather) {
+            defaults.set(true, forKey: key)
+        }
+        if !hasSameFortune(as: previous), let key = Self.unsyncedDefaultsKey(userID: userID, bundle: .fortune) {
+            defaults.set(true, forKey: key)
+        }
         return true
     }
 
@@ -90,16 +114,21 @@ extension DynamicPromptPreferences {
 
     /// 이 기기에 아직 서버로 안 올라간 지역·사주 변경이 있는가.
     static func hasUnsyncedChange(userID: String?, defaults: UserDefaults = .standard) -> Bool {
-        guard let key = unsyncedDefaultsKey(userID: userID) else { return false }
-        return defaults.bool(forKey: key)
+        SyncBundle.allCases.contains { bundle in
+            unsyncedDefaultsKey(userID: userID, bundle: bundle).map { defaults.bool(forKey: $0) } ?? false
+        }
     }
 
     /// 서버 저장이 성공했다. 올린 값이 **지금도** 기기 값과 같을 때만 표시를 내린다 — 올리는 사이에
     /// 또 고쳤으면 그 새 값은 아직 안 올라갔다. ⚠ 세션을 갈아 끼우기(`refreshUser`) **전에** 부른다 —
     /// 늦으면 새 세션을 받는 순간 방금 올린 값을 '안 올라간 변경' 으로 보고 한 번 더 올린다.
     static func markPushed(userID: String?, pushed: DynamicPromptSettings, defaults: UserDefaults = .standard) {
-        guard let key = unsyncedDefaultsKey(userID: userID) else { return }
-        if load(userID: userID).toSettings() == pushed {
+        // 올린 값은 이 기기 값에서 만든 것이다(`toSettings`) — 같은 모양으로 **묶음마다** 비교한다.
+        let local = load(userID: userID).toSettings()
+        if local.weather == pushed.weather, let key = unsyncedDefaultsKey(userID: userID, bundle: .weather) {
+            defaults.removeObject(forKey: key)
+        }
+        if local.fortune == pushed.fortune, let key = unsyncedDefaultsKey(userID: userID, bundle: .fortune) {
             defaults.removeObject(forKey: key)
         }
     }
@@ -107,8 +136,9 @@ extension DynamicPromptPreferences {
     /// 명시적 로그아웃·탈퇴에서 값과 함께 지운다(`clear(userID:)` 가 부른다). 남기면 다시 로그인했을 때
     /// 빈 기기 값이 서버를 이겨 계정 값을 받아 오지 못한다.
     static func clearUnsyncedMark(userID: String?, defaults: UserDefaults = .standard) {
-        guard let key = unsyncedDefaultsKey(userID: userID) else { return }
-        defaults.removeObject(forKey: key)
+        for bundle in SyncBundle.allCases {
+            if let key = unsyncedDefaultsKey(userID: userID, bundle: bundle) { defaults.removeObject(forKey: key) }
+        }
     }
 
     /// 서버의 계정 설정을 이 기기에 받아 적는다. **멱등이다** — 같은 값을 몇 번 받아도 결과가 같다.
@@ -122,26 +152,31 @@ extension DynamicPromptPreferences {
         defaults: UserDefaults = .standard,
         write: (DynamicPromptPreferences, String?) -> Bool = { $0.save(userID: $1) }
     ) -> AccountPromptSettingsAdoption {
-        guard let server, let key = unsyncedDefaultsKey(userID: userID) else { return .accepted }
+        guard let server,
+              let weatherKey = unsyncedDefaultsKey(userID: userID, bundle: .weather),
+              let fortuneKey = unsyncedDefaultsKey(userID: userID, bundle: .fortune) else { return .accepted }
         let local = load(userID: userID)
         let remote = from(settings: server)
-        if defaults.bool(forKey: key) {
-            if local == remote {
-                defaults.removeObject(forKey: key)
-                return .accepted
-            }
-            return .localPending(local.toSettings())
-        }
         var next = local
-        let remoteHasWeather = !remote.weatherCountry.isEmpty || !remote.weatherCity.isEmpty
-        if remoteHasWeather {
+        var pendingLeft = false
+        // **묶음마다** 본다(`SyncBundle`) — 밀린 묶음은 이 기기 값을 지키고, 나머지는 서버가 이긴다.
+        if defaults.bool(forKey: weatherKey) {
+            if local.hasSameWeather(as: remote) {
+                defaults.removeObject(forKey: weatherKey)
+            } else {
+                pendingLeft = true
+            }
+        } else if !remote.weatherCountry.isEmpty || !remote.weatherCity.isEmpty {
             next.weatherCountry = remote.weatherCountry
             next.weatherCity = remote.weatherCity
         }
-        let remoteHasFortune = !remote.fortuneGender.isEmpty ||
-            !remote.fortuneBirthDate.isEmpty ||
-            !remote.fortuneBirthTime.isEmpty
-        if remoteHasFortune {
+        if defaults.bool(forKey: fortuneKey) {
+            if local.hasSameFortune(as: remote) {
+                defaults.removeObject(forKey: fortuneKey)
+            } else {
+                pendingLeft = true
+            }
+        } else if !remote.fortuneGender.isEmpty || !remote.fortuneBirthDate.isEmpty || !remote.fortuneBirthTime.isEmpty {
             next.fortuneGender = remote.fortuneGender
             next.fortuneBirthDate = remote.fortuneBirthDate
             next.fortuneBirthTime = remote.fortuneBirthTime
@@ -151,7 +186,9 @@ extension DynamicPromptPreferences {
         if next != local, !write(next, userID) {
             return .localWriteFailed
         }
-        return .accepted
+        // 밀린 묶음이 남았으면 다시 올린다 — **밀린 묶음은 이 기기 값, 나머지는 방금 받은 서버 값**이다(이 기기의
+        // 옛 사주를 함께 올려 다른 기기가 고친 사주를 지우지 않는다).
+        return pendingLeft ? .localPending(next.toSettings()) : .accepted
     }
 
     /// 화면이 읽는 값 — 계정 설정을 받아 적은 **뒤의** 이 기기 값(설정 화면·편집기).

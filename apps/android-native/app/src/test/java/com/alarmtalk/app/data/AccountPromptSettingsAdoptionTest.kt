@@ -265,6 +265,40 @@ class AccountPromptSettingsAdoptionTest {
         )
     }
 
+    /**
+     * **밀린 표시는 묶음(날씨·사주)마다다**(Codex #837). 이 기기에서 지역만 고쳐 밀려 있는 사이 다른 기기가 사주를
+     * 고쳤으면, 다시 올릴 값은 **밀린 지역 + 서버의 새 사주**다 — 이 기기의 옛 사주까지 올리면 서버가 설정 전체를
+     * 갈아 끼워 다른 기기의 변경이 지워진다.
+     */
+    @Test
+    fun 밀린_지역을_다시_올릴_때_다른_기기가_고친_사주는_받아_적고_함께_올린다() {
+        val oldFortune = DynamicPromptFortuneSettings(gender = "여성", birthDate = "1990-01-01", birthTime = "07:31~09:30")
+        val newFortune = DynamicPromptFortuneSettings(gender = "남성", birthDate = "1988-05-05", birthTime = "05:31~07:30")
+        savedAndPushed("user-a", "kr-seoul")
+        store.saveFortuneInfo("user-a", oldFortune.gender!!, oldFortune.birthDate!!, oldFortune.birthTime!!)
+        store.markPushed("user-a", store.read("user-a").toDynamicPromptSettings())
+        assertFalse(store.hasUnsyncedChange("user-a"))
+        // 이 기기에서 도쿄로 바꿨는데 올리지 못했다(오프라인) — 지역만 밀려 있다.
+        val tokyo = requireNotNull(WeatherRegions.byKey("jp-tokyo"))
+        store.saveWeatherLocation("user-a", tokyo.legacyCountry, tokyo.legacyCity)
+        // 그 사이 다른 기기가 사주를 고쳤다 — 서버는 서울 + 새 사주.
+        val server = regionSettings("kr-seoul").copy(fortune = newFortune)
+
+        val adoption = store.adoptAccountSettings("user-a", server)
+
+        assertTrue(adoption is AccountSettingsAdoption.LocalPending)
+        val resend = (adoption as AccountSettingsAdoption.LocalPending).settings
+        assertEquals("jp-tokyo", resend.weather.region)
+        assertEquals(newFortune, resend.fortune)
+        // 이 기기에도 새 사주를 받아 적고, 지역은 밀린 도쿄 그대로다.
+        val local = store.read("user-a")
+        assertEquals("jp-tokyo", local.weatherRegion?.key)
+        assertEquals("1988-05-05", local.fortuneBirthDate)
+        // 다시 올리기가 끝나면 표시가 모두 내려간다.
+        store.markPushed("user-a", resend)
+        assertFalse(store.hasUnsyncedChange("user-a"))
+    }
+
     /** 밀린 변경은 다음 응답에서 다시 올린다 — 같은 옛 값이 또 와도 `LocalPending` 이다(멱등). */
     @Test
     fun 밀린_변경은_같은_옛_값이_다시_와도_다시_올릴_것으로_남는다() {

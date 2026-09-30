@@ -22,6 +22,19 @@ data class DynamicPromptPreferences(
 ) {
     /** 저장된 글자가 가리키는 목록의 지역. 비었거나 되짚지 못하면 null. */
     val weatherRegion: WeatherRegion? get() = weatherRegionFor(weatherCountry, weatherCity)
+
+    internal fun hasWeather(): Boolean = weatherCountry.isNotEmpty() || weatherCity.isNotEmpty()
+
+    internal fun hasFortune(): Boolean =
+        fortuneGender.isNotEmpty() || fortuneBirthDate.isNotEmpty() || fortuneBirthTime.isNotEmpty()
+
+    internal fun hasSameWeather(other: DynamicPromptPreferences): Boolean =
+        weatherCountry == other.weatherCountry && weatherCity == other.weatherCity
+
+    internal fun hasSameFortune(other: DynamicPromptPreferences): Boolean =
+        fortuneGender == other.fortuneGender &&
+            fortuneBirthDate == other.fortuneBirthDate &&
+            fortuneBirthTime == other.fortuneBirthTime
 }
 
 fun DynamicPromptPreferences.toDynamicPromptSettings(): DynamicPromptSettings =
@@ -100,19 +113,23 @@ class DynamicPromptPreferenceStore(context: Context) {
      * 사용자가 **이 기기에서** 고른 지역. 서버로 올리기 전까지는 '아직 안 올라간 변경' 으로
      * 표시한다([adoptAccountSettings] 가 서버의 옛 값으로 덮지 않게). 호출부는 곧바로 서버에
      * 올리고(`updateDynamicPromptSettings`), 성공하면 [markPushed] 가 표시를 내린다.
+     *
+     * ⚠ 표시는 **묶음(날씨·사주)마다**다(Codex #837). 한 칸으로 두면, 이 기기에서 지역만 고쳐 밀려 있는 사이
+     * 다른 기기가 사주를 고쳤을 때 이 기기가 **옛 사주까지** 다시 올려 그 변경을 지운다 — 서버는 설정 전체를
+     * 갈아 끼운다(`PATCH /user/me`).
      */
     fun saveWeatherLocation(userId: String?, country: String, city: String) {
         saveScoped(KEY_WEATHER_COUNTRY, userId, country)
         saveScoped(KEY_WEATHER_CITY, userId, city)
-        markUnsynced(userId)
+        markUnsynced(userId, KEY_WEATHER_SYNC_PENDING)
     }
 
-    /** [saveWeatherLocation] 의 사주 짝 — 같은 '안 올라간 변경' 표시를 남긴다. */
+    /** [saveWeatherLocation] 의 사주 짝 — 사주 묶음에 '안 올라간 변경' 표시를 남긴다. */
     fun saveFortuneInfo(userId: String?, gender: String, birthDate: String, birthTime: String) {
         saveScoped(KEY_FORTUNE_GENDER, userId, gender)
         saveScoped(KEY_FORTUNE_BIRTH_DATE, userId, birthDate)
         saveScoped(KEY_FORTUNE_BIRTH_TIME, userId, birthTime)
-        markUnsynced(userId)
+        markUnsynced(userId, KEY_FORTUNE_SYNC_PENDING)
     }
 
     /**
@@ -124,75 +141,88 @@ class DynamicPromptPreferenceStore(context: Context) {
      * 계정에 지역이 있는데도 '미설정' 으로 보였다. iOS 설정(`SettingsView.loadPromptPreferences`)은
      * 처음부터 서버 값을 먼저 본다.
      *
-     * 규칙:
-     *  - **이 기기에 아직 안 올라간 변경이 있으면 덮지 않는다**([saveWeatherLocation]·
+     * 규칙(**묶음 — 날씨·사주 — 마다** 따로 본다, Codex #837):
+     *  - **그 묶음에 이 기기의 안 올라간 변경이 있으면 덮지 않는다**([saveWeatherLocation]·
      *    [saveFortuneInfo] 뒤 서버 저장이 실패한 경우). 서버가 준 값은 그 변경보다 **옛것**이다 —
-     *    덮으면 방금 고른 지역이 조용히 되돌아간다. 그때는 [AccountSettingsAdoption.LocalPending]
-     *    을 돌려주고, 호출부가 로컬 값을 다시 올린다. 서버 값이 로컬과 같아졌으면(올리기는
-     *    성공했는데 응답을 못 받은 경우) 표시만 내린다.
-     *  - 그 밖에는 **서버가 이긴다**(다른 기기에서 바꾼 값). 단 묶음(날씨·사주)마다 서버가
-     *    비어 있으면 로컬을 그대로 둔다 — 비어 있는 것은 '지웠다' 가 아니라 '아직 안 올라갔다'
-     *    이다(서버에는 이 값을 지우는 경로가 없다).
+     *    덮으면 방금 고른 지역이 조용히 되돌아간다. 서버 값이 로컬과 같아졌으면(올리기는
+     *    성공했는데 응답을 못 받은 경우) 그 묶음의 표시만 내린다.
+     *  - 안 올라간 변경이 없는 묶음은 **서버가 이긴다**(다른 기기에서 바꾼 값). 단 서버가 비어 있으면
+     *    로컬을 그대로 둔다 — 비어 있는 것은 '지웠다' 가 아니라 '아직 안 올라갔다' 이다(서버에는 이
+     *    값을 지우는 경로가 없다).
+     *  - 밀린 묶음이 남았으면 [AccountSettingsAdoption.LocalPending] 을 돌려준다 — 실어 보낼 값은 **밀린
+     *    묶음은 이 기기 값, 나머지는 방금 받은 서버 값**이다. 이 기기의 옛 사주를 함께 올려 다른 기기가
+     *    고친 사주를 지우지 않는다.
      */
     fun adoptAccountSettings(userId: String?, server: DynamicPromptSettings): AccountSettingsAdoption {
-        val pendingKey = scopedKey(KEY_ACCOUNT_SYNC_PENDING, userId) ?: return AccountSettingsAdoption.Accepted
+        val weatherPendingKey = scopedKey(KEY_WEATHER_SYNC_PENDING, userId) ?: return AccountSettingsAdoption.Accepted
+        val fortunePendingKey = scopedKey(KEY_FORTUNE_SYNC_PENDING, userId) ?: return AccountSettingsAdoption.Accepted
         val local = read(userId)
         val remote = server.toPromptPreferences()
-        if (prefs.getBoolean(pendingKey, false)) {
-            if (local == remote) {
-                prefs.edit().remove(pendingKey).apply()
-                return AccountSettingsAdoption.Accepted
-            }
-            return AccountSettingsAdoption.LocalPending(local.toDynamicPromptSettings())
-        }
         val editor = prefs.edit()
         var changed = false
-        val remoteHasWeather = remote.weatherCountry.isNotEmpty() || remote.weatherCity.isNotEmpty()
-        if (remoteHasWeather &&
-            (remote.weatherCountry != local.weatherCountry || remote.weatherCity != local.weatherCity)
-        ) {
+        var pendingLeft = false
+
+        val weatherPending = prefs.getBoolean(weatherPendingKey, false)
+        if (weatherPending) {
+            if (local.hasSameWeather(remote)) {
+                editor.remove(weatherPendingKey)
+                changed = true
+            } else {
+                pendingLeft = true
+            }
+        } else if (remote.hasWeather() && !local.hasSameWeather(remote)) {
             putScoped(editor, KEY_WEATHER_COUNTRY, userId, remote.weatherCountry)
             putScoped(editor, KEY_WEATHER_CITY, userId, remote.weatherCity)
             changed = true
         }
-        val remoteHasFortune = remote.fortuneGender.isNotEmpty() ||
-            remote.fortuneBirthDate.isNotEmpty() ||
-            remote.fortuneBirthTime.isNotEmpty()
-        if (remoteHasFortune &&
-            (
-                remote.fortuneGender != local.fortuneGender ||
-                    remote.fortuneBirthDate != local.fortuneBirthDate ||
-                    remote.fortuneBirthTime != local.fortuneBirthTime
-                )
-        ) {
+
+        val fortunePending = prefs.getBoolean(fortunePendingKey, false)
+        if (fortunePending) {
+            if (local.hasSameFortune(remote)) {
+                editor.remove(fortunePendingKey)
+                changed = true
+            } else {
+                pendingLeft = true
+            }
+        } else if (remote.hasFortune() && !local.hasSameFortune(remote)) {
             putScoped(editor, KEY_FORTUNE_GENDER, userId, remote.fortuneGender)
             putScoped(editor, KEY_FORTUNE_BIRTH_DATE, userId, remote.fortuneBirthDate)
             putScoped(editor, KEY_FORTUNE_BIRTH_TIME, userId, remote.fortuneBirthTime)
             changed = true
         }
-        if (changed) editor.apply()
-        return AccountSettingsAdoption.Accepted
-    }
 
-    /**
-     * 서버 저장이 성공했다. 올린 값이 **지금도** 로컬과 같을 때만 '안 올라간 변경' 표시를 내린다 —
-     * 올리는 사이에 또 고쳤으면 그 새 값은 아직 안 올라갔다.
-     */
-    fun markPushed(userId: String?, pushed: DynamicPromptSettings) {
-        val pendingKey = scopedKey(KEY_ACCOUNT_SYNC_PENDING, userId) ?: return
-        if (read(userId).toDynamicPromptSettings() == pushed) {
-            prefs.edit().remove(pendingKey).apply()
+        if (changed) editor.apply()
+        return if (pendingLeft) {
+            AccountSettingsAdoption.LocalPending(read(userId).toDynamicPromptSettings())
+        } else {
+            AccountSettingsAdoption.Accepted
         }
     }
 
-    /** 이 기기에 아직 서버로 안 올라간 지역·사주 변경이 있는가. */
-    fun hasUnsyncedChange(userId: String?): Boolean {
-        val pendingKey = scopedKey(KEY_ACCOUNT_SYNC_PENDING, userId) ?: return false
-        return prefs.getBoolean(pendingKey, false)
+    /**
+     * 서버 저장이 성공했다. 묶음마다, 올린 값이 **지금도** 로컬과 같을 때만 그 묶음의 '안 올라간 변경'
+     * 표시를 내린다 — 올리는 사이에 또 고쳤으면 그 새 값은 아직 안 올라갔다.
+     */
+    fun markPushed(userId: String?, pushed: DynamicPromptSettings) {
+        val weatherPendingKey = scopedKey(KEY_WEATHER_SYNC_PENDING, userId) ?: return
+        val fortunePendingKey = scopedKey(KEY_FORTUNE_SYNC_PENDING, userId) ?: return
+        // 올린 값은 이 기기 값에서 만든 것이다(`toDynamicPromptSettings`) — 같은 모양으로 묶음마다 비교한다.
+        val local = read(userId).toDynamicPromptSettings()
+        val editor = prefs.edit()
+        if (local.weather == pushed.weather) editor.remove(weatherPendingKey)
+        if (local.fortune == pushed.fortune) editor.remove(fortunePendingKey)
+        editor.apply()
     }
 
-    private fun markUnsynced(userId: String?) {
-        val pendingKey = scopedKey(KEY_ACCOUNT_SYNC_PENDING, userId) ?: return
+    /** 이 기기에 아직 서버로 안 올라간 지역·사주 변경이 있는가(어느 묶음이든). */
+    fun hasUnsyncedChange(userId: String?): Boolean {
+        val weatherPendingKey = scopedKey(KEY_WEATHER_SYNC_PENDING, userId) ?: return false
+        val fortunePendingKey = scopedKey(KEY_FORTUNE_SYNC_PENDING, userId) ?: return false
+        return prefs.getBoolean(weatherPendingKey, false) || prefs.getBoolean(fortunePendingKey, false)
+    }
+
+    private fun markUnsynced(userId: String?, bundleKey: String) {
+        val pendingKey = scopedKey(bundleKey, userId) ?: return
         prefs.edit().putBoolean(pendingKey, true).apply()
     }
 
@@ -328,7 +358,8 @@ class DynamicPromptPreferenceStore(context: Context) {
         }
         // 값을 지웠으니 '안 올라간 변경' 도 없다 — 남기면 다시 로그인했을 때 빈 로컬이 서버를
         // 이겨 계정 값을 받아 오지 못한다.
-        scopedKey(KEY_ACCOUNT_SYNC_PENDING, userId)?.let { editor.remove(it) }
+        scopedKey(KEY_WEATHER_SYNC_PENDING, userId)?.let { editor.remove(it) }
+        scopedKey(KEY_FORTUNE_SYNC_PENDING, userId)?.let { editor.remove(it) }
         editor.apply()
     }
 
@@ -352,8 +383,9 @@ class DynamicPromptPreferenceStore(context: Context) {
         private const val KEY_LAST_MESSAGE_CONTEXT = "last_message_context"
         private const val KEY_LAST_FREE_BUCKET = "last_free_bucket"
         private const val KEY_LAST_MANUAL_TEXT = "last_manual_text"
-        // 이 기기에서 고친 지역·사주가 아직 서버로 안 올라갔다([adoptAccountSettings]).
-        private const val KEY_ACCOUNT_SYNC_PENDING = "account_settings_unsynced"
+        // 이 기기에서 고친 지역·사주가 아직 서버로 안 올라갔다([adoptAccountSettings]) — 묶음마다.
+        private const val KEY_WEATHER_SYNC_PENDING = "account_weather_unsynced"
+        private const val KEY_FORTUNE_SYNC_PENDING = "account_fortune_unsynced"
 
         // 마지막 선택은 계정별로 나눈다 — 날씨/사주와 달리 이건 '그 사람이 쓰던 것'이라
         // 기기 전역으로 두면 계정을 바꿨을 때 앞 사람 선택으로 첫 알람이 열린다.

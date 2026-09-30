@@ -119,6 +119,38 @@ final class AccountPromptSettingsAdoptionTests: XCTestCase {
         XCTAssertEqual(local.weatherRegion?.key, "jp-tokyo")
     }
 
+    /// **밀린 표시는 묶음(날씨·사주)마다다**(Codex #837). 지역만 밀려 있는 사이 다른 기기가 사주를 고쳤으면, 다시
+    /// 올릴 값은 **밀린 지역 + 서버의 새 사주**다 — 이 기기의 옛 사주까지 올리면 다른 기기의 변경이 지워진다.
+    /// 안드로이드 `AccountPromptSettingsAdoptionTest.밀린_지역을_다시_올릴_때_다른_기기가_고친_사주는_받아_적고_함께_올린다`.
+    func test_밀린_지역을_다시_올릴_때_다른_기기가_고친_사주는_받아_적고_함께_올린다() throws {
+        var seoul = try preferences(region: "kr-seoul")
+        seoul.fortuneGender = "여성"
+        seoul.fortuneBirthDate = "1990-01-01"
+        seoul.fortuneBirthTime = "07:31~09:30"
+        seoul.saveLocalEdit(userID: userID, defaults: defaults)
+        DynamicPromptPreferences.markPushed(userID: userID, pushed: seoul.toSettings(), defaults: defaults)
+        XCTAssertFalse(hasUnsynced())
+        // 이 기기에서 도쿄로 바꿨는데 올리지 못했다 — 지역만 밀려 있다.
+        var tokyo = seoul
+        let tokyoRegion = try XCTUnwrap(WeatherRegions.byKey("jp-tokyo"))
+        tokyo.weatherCountry = tokyoRegion.legacyCountry
+        tokyo.weatherCity = tokyoRegion.legacyCity
+        tokyo.saveLocalEdit(userID: userID, defaults: defaults)
+        // 그 사이 다른 기기가 사주를 고쳤다 — 서버는 서울 + 새 사주.
+        var server = try regionSettings("kr-seoul")
+        server.fortune = DynamicPromptFortuneSettings(gender: "남성", birthDate: "1988-05-05", birthTime: "05:31~07:30")
+
+        let adoption = DynamicPromptPreferences.adoptAccount(userID: userID, server: server, defaults: defaults)
+
+        guard case .localPending(let resend) = adoption else { return XCTFail("밀린 지역을 다시 올려야 한다: \(adoption)") }
+        XCTAssertEqual(resend.weather.region, "jp-tokyo")
+        XCTAssertEqual(resend.fortune.birthDate, "1988-05-05", "다른 기기가 고친 사주를 옛 값으로 덮으면 안 된다")
+        XCTAssertEqual(local.weatherRegion?.key, "jp-tokyo")
+        XCTAssertEqual(local.fortuneBirthDate, "1988-05-05")
+        DynamicPromptPreferences.markPushed(userID: userID, pushed: resend, defaults: defaults)
+        XCTAssertFalse(hasUnsynced())
+    }
+
     func test_키체인에_적으면_표시를_남긴다() throws {
         let tokyo = try preferences(region: "jp-tokyo")
         XCTAssertTrue(tokyo.saveLocalEdit(userID: userID, defaults: defaults))
