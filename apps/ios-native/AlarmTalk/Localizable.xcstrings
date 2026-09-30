@@ -4993,13 +4993,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Set a partner's alarm"
+            "value" : "Set your partner's alarm"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "相手のアラームを設定"
+            "value" : "相手のアラーム設定"
           }
         }
       }

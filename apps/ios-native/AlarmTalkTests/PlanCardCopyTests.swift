@@ -28,6 +28,18 @@ struct PlanCardCopyTests {
         #expect(bundle.localizedString(forKey: "내 목소리로 듣는 날씨·운세 문구", value: nil, table: nil) == expected)
     }
 
+    /// 커플 카드의 이 줄은 2026-09-30 까지 번역만 안드로이드와 달랐다("Set a partner's alarm" /
+    /// "相手のアラームを設定") — 한국어 키가 같아 대조에서 눈에 띄지 않았다.
+    @Test("커플 카드 '상대 알람 맞춰주기' 번역도 안드로이드와 같다", arguments: [
+        ("en", "Set your partner's alarm"),
+        ("ja", "相手のアラーム設定"),
+    ])
+    func coupleMessageLineMatchesAndroid(language: String, expected: String) throws {
+        let path = try #require(Bundle.main.path(forResource: language, ofType: "lproj"))
+        let bundle = try #require(Bundle(path: path))
+        #expect(bundle.localizedString(forKey: "상대 알람 맞춰주기", value: nil, table: nil) == expected)
+    }
+
     /// 카탈로그에 키가 없으면 `localizedString` 은 키(한국어)를 그대로 돌려준다 — 그러면 영어·
     /// 일본어 기기의 이용권 화면에 한국어 한 줄이 섞인다.
     @Test("모든 카드의 모든 줄에 영어·일본어 번역이 있다", arguments: ["en", "ja"])
