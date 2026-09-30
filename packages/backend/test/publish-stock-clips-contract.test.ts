@@ -8,14 +8,17 @@
 // 스크립트는 top-level `await main()` 이라 import 할 수 없어서, **의존하는 값**을 여기서
 // 서버 쪽 단일 출처와 대조한다.
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 import { createSynthesisAttempts } from '../src/lib/voice-provider';
+import { TTS_MODEL_ID } from '../src/lib/tts-model';
 import { computeTtsCacheKey, generatedTtsObjectKey } from '../src/lib/audio-cache';
 import { SYSTEM_VOICE_LIBRARY_USER_ID, withClosingBreath } from '../src/lib/stock-clips';
 
-/** `scripts/publish-stock-clips.ts` 상단 상수와 **같은 값**이어야 한다. */
+/** `scripts/publish-stock-clips.ts` 상단 상수와 **같은 값**이어야 한다. 모델은 서버 상수를 import 한다. */
 const SCRIPT_PROVIDER = 'elevenlabs';
-const SCRIPT_MODEL_ID = 'eleven_v3';
+const SCRIPT_MODEL_ID = TTS_MODEL_ID;
 const SCRIPT_OUTPUT_FORMAT = 'mp3';
 
 describe('publish-stock-clips 가 의존하는 서버 계약', () => {
@@ -32,6 +35,17 @@ describe('publish-stock-clips 가 의존하는 서버 계약', () => {
     expect(attempt.provider).toBe(SCRIPT_PROVIDER);
     expect(attempt.modelId).toBe(SCRIPT_MODEL_ID);
     expect(attempt.outputFormat).toBe(SCRIPT_OUTPUT_FORMAT);
+    expect(attempt.modelId).toBe('eleven_v4_turbo');
+  });
+
+  it('스톡 스크립트는 모델 id 를 직접 적지 않는다 — 서버 상수(`TTS_MODEL_ID`)를 가져다 쓴다', () => {
+    // 예전에는 두 스크립트가 `'eleven_v3'` 를 박아 두어, 서버 모델을 바꾸면 시청본·게시 키가 옛 모델로 남았다.
+    for (const script of ['publish-stock-clips.ts', 'prerender-stock-preview.ts']) {
+      const source = readFileSync(join(__dirname, '..', 'scripts', script), 'utf-8');
+      expect(source, script).not.toMatch(/['"]eleven_[a-z0-9_]+['"]/);
+      expect(source, script).toMatch(/TTS_MODEL_ID/);
+      expect(source, script).toMatch(/TTS_VOICE_SETTINGS/);
+    }
   });
 
   it('여운 꼬리를 붙인 글자로 키를 만든다 — 원본으로 만들면 키가 갈라진다', async () => {

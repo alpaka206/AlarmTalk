@@ -53,28 +53,19 @@ import {
 import { computeTtsCacheKey, generatedTtsObjectKey } from '../src/lib/audio-cache.ts';
 import { prepareAlarmTextWithVertex } from '../src/lib/vertex-translate.ts';
 import { ELEVENLABS_TTS_OUTPUT_FORMAT } from '../src/lib/elevenlabs.ts';
+import { TTS_MODEL_ID, TTS_VOICE_SETTINGS } from '../src/lib/tts-model.ts';
 import {
   computeFingerprint,
   fingerprintKey,
   loadFingerprints,
 } from './stock-preview-fingerprint.ts';
 
-/** `voice-provider.ts` 의 elevenlabs 갈래와 같은 값. 바뀌면 캐시 키가 갈라진다. */
-const PROVIDER = 'elevenlabs';
-const MODEL_ID = 'eleven_v3';
-const OUTPUT_FORMAT = 'mp3';
-
 /**
- * ⚠ `prerender-stock-preview.ts` 의 `VOICE_SETTINGS` 와 **같은 값**이어야 한다 —
- * 지문 계산에 들어가므로 다르면 멀쩡한 시청본이 전부 '낡음' 으로 읽힌다.
+ * `voice-provider.ts` 의 elevenlabs 갈래와 같은 값. 바뀌면 캐시 키가 갈라진다.
+ * 모델(`TTS_MODEL_ID`)과 합성 설정(`TTS_VOICE_SETTINGS` — 지문에 들어간다)은 서버 상수를 그대로 쓴다.
  */
-const PREVIEW_VOICE_SETTINGS = {
-  stability: 0.5,
-  similarity_boost: 0.8,
-  style: 0.4,
-  speed: 0.9,
-  use_speaker_boost: true,
-} as const;
+const PROVIDER = 'elevenlabs';
+const OUTPUT_FORMAT = 'mp3';
 
 /** 교체 후의 시스템 목소리. `migrations.ts` #111 · 시청본 생성기와 **같은 값**이어야 한다. */
 const VOICES = [
@@ -257,7 +248,7 @@ async function repairLedgerIfMissing(
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     args: [
       crypto.randomUUID(), SYSTEM_VOICE_LIBRARY_USER_ID, target.profileId, messageId,
-      PROVIDER, target.providerVoiceId, MODEL_ID, target.language,
+      PROVIDER, target.providerVoiceId, TTS_MODEL_ID, target.language,
       cacheKey, synthesisText, `r2://${objectKey}`, objectKey, OUTPUT_FORMAT,
     ],
   });
@@ -299,9 +290,9 @@ async function main(): Promise<void> {
     if (!existsSync(t.filePath)) continue;
     const expected = computeFingerprint({
       providerVoiceId: t.providerVoiceId,
-      modelId: MODEL_ID,
+      modelId: TTS_MODEL_ID,
       outputFormat: ELEVENLABS_TTS_OUTPUT_FORMAT,
-      voiceSettings: PREVIEW_VOICE_SETTINGS,
+      voiceSettings: TTS_VOICE_SETTINGS,
       providerText: withClosingBreath((await deriveTexts(t.baseText, t.language)).synthesisText),
     });
     if (fingerprints[fingerprintKey(t.language, t.voiceName, `${t.category}_${String(t.variant).padStart(2, '0')}.mp3`)] !== expected) {
@@ -360,7 +351,7 @@ async function main(): Promise<void> {
         provider: PROVIDER,
         providerVoiceId: target.providerVoiceId,
         voiceProfileId: target.profileId,
-        modelId: MODEL_ID,
+        modelId: TTS_MODEL_ID,
         language: target.language,
         languageCode: target.language,
         text: withClosingBreath(synthesisText),
@@ -429,7 +420,7 @@ async function main(): Promise<void> {
                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             args: [
               crypto.randomUUID(), SYSTEM_VOICE_LIBRARY_USER_ID, target.profileId, messageId,
-              PROVIDER, target.providerVoiceId, MODEL_ID, target.language,
+              PROVIDER, target.providerVoiceId, TTS_MODEL_ID, target.language,
               cacheKey, synthesisText, audioUrl, objectKey, OUTPUT_FORMAT,
             ],
           });

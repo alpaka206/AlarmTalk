@@ -1352,10 +1352,8 @@ describe('POST /tts/generate — edge cases', () => {
     expect(mockTextToSpeech).toHaveBeenCalledWith(
       'el-voice-1',
       taggedText,
-      expect.objectContaining({
-        model_id: 'eleven_v3',
-        language_code: 'ko',
-      }),
+      // 모델·합성 설정은 호출부가 고르지 않는다 — `textToSpeech` 가 `TTS_MODEL_ID`·`TTS_VOICE_SETTINGS` 로 보낸다.
+      { language_code: 'ko' },
     );
     const ttsOptions = mockTextToSpeech.mock.calls[0][2];
     expect(ttsOptions).not.toHaveProperty('stability');
@@ -1439,7 +1437,7 @@ describe('POST /tts/generate — edge cases', () => {
         provider: 'elevenlabs',
         providerVoiceId: 'el-voice-1',
         voiceProfileId: V1,
-        modelId: 'eleven_v3',
+        modelId: 'eleven_v4_turbo',
         language: 'ko',
         languageCode: 'ko',
         text: plain.synthesis_text,

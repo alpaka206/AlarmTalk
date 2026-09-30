@@ -7,8 +7,8 @@
  *
  * ⚠ **백엔드와 파라미터가 한 글자도 달라지면 안 된다.** 여기서 만든 바이트를 그대로
  *   R2 에 올릴 것이므로, 모델·voice_settings·output_format·무음 패딩이 다르면
- *   시청한 소리와 실제로 울리는 소리가 달라진다. 그래서 `appendMp3TrailingSilence`
- *   와 `STOCK_CLIP_PRESETS` 를 **서버 소스에서 그대로 가져다 쓴다**(베끼지 않는다).
+ *   시청한 소리와 실제로 울리는 소리가 달라진다. 그래서 `TTS_MODEL_ID`·`TTS_VOICE_SETTINGS`·
+ *   `appendMp3TrailingSilence`·`STOCK_CLIP_PRESETS` 를 **서버 소스에서 그대로 가져다 쓴다**(베끼지 않는다).
  *
  * 멱등하다 — 이미 있는 파일은 건너뛴다. 중간에 끊기면 다시 돌리면 이어서 받는다.
  *
@@ -30,6 +30,7 @@ import { resolve, dirname } from 'node:path';
 import { STOCK_CLIP_PRESETS, withClosingBreath } from '../src/lib/stock-clips.ts';
 import { appendMp3TrailingSilence } from '../src/lib/mp3-silence.ts';
 import { ELEVENLABS_TTS_OUTPUT_FORMAT } from '../src/lib/elevenlabs.ts';
+import { TTS_MODEL_ID, TTS_VOICE_SETTINGS } from '../src/lib/tts-model.ts';
 import {
   computeFingerprint,
   fingerprintKey,
@@ -73,17 +74,6 @@ const VOICES: { name: string; providerVoiceId: string }[] = [
 
 const LANGUAGES = ['ko', 'en', 'ja'] as const;
 type Language = (typeof LANGUAGES)[number];
-
-/** `elevenlabs.ts` 의 `textToSpeech` 기본값과 동일. 바꾸면 소리가 갈라진다. */
-const MODEL_ID = 'eleven_v3';
-const VOICE_SETTINGS = {
-  stability: 0.5,
-  similarity_boost: 0.8,
-  style: 0.4,
-  // ⚠ 1.0 으로 올리지 말 것 — 알람은 막 깬 사람이 듣는다(elevenlabs.ts 주석 참조).
-  speed: 0.9,
-  use_speaker_boost: true,
-} as const;
 
 /**
  * 제공자에게 실제로 보내는 글자. 서버(`generateStockClip`)와 **같은 순서**여야 한다 —
@@ -180,9 +170,9 @@ function collectTargets(): Target[] {
             filePath: resolve(dir, fileName),
             fingerprint: computeFingerprint({
               providerVoiceId: voice.providerVoiceId,
-              modelId: MODEL_ID,
+              modelId: TTS_MODEL_ID,
               outputFormat: ELEVENLABS_TTS_OUTPUT_FORMAT,
-              voiceSettings: { ...VOICE_SETTINGS },
+              voiceSettings: { ...TTS_VOICE_SETTINGS },
               providerText: providerTextFor(text),
             }),
             fingerprintKey: fingerprintKey(language, voice.name, fileName),
@@ -207,8 +197,9 @@ async function synthesize(apiKey: string, target: Target): Promise<Uint8Array> {
       //     합성하고 캐시 키를 만든다. 여기서 안 다듬으면 앞뒤 공백이 있는 프리셋에서
       //     **소리와 키가 어긋난다.**
       text: providerTextFor(target.text),
-      model_id: MODEL_ID,
-      voice_settings: VOICE_SETTINGS,
+      // 모델·설정은 서버(`textToSpeech`)가 쓰는 그 상수다 — 여기서 따로 적으면 시청한 소리와 실제 알람이 갈라진다.
+      model_id: TTS_MODEL_ID,
+      voice_settings: TTS_VOICE_SETTINGS,
     };
     if (withLanguage) body.language_code = target.language;
     const res = await fetch(url, {

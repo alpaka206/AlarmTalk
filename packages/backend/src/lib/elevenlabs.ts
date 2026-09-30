@@ -1,5 +1,6 @@
+import { TTS_MODEL_ID, TTS_VOICE_SETTINGS } from './tts-model';
+
 const ELEVENLABS_BASE_URL = 'https://api.elevenlabs.io';
-const DEFAULT_TTS_MODEL_ID = 'eleven_v3';
 const DEFAULT_AUDIO_MIME_TYPE = 'audio/wav';
 // TTS 출력 포맷을 명시 고정한다(미지정 시 제공자 기본값에 의존). mp3 44.1kHz 128kbps →
 // mimeType audio/mpeg, 파일 확장자 'mp3' 와 일치한다(voice-provider.ts 의 outputFormat 라벨/
@@ -91,50 +92,20 @@ export class ElevenLabsClient {
     return res.json();
   }
 
-  /** TTS - 텍스트를 음성으로 변환 */
+  /** TTS - 텍스트를 음성으로 변환(`TTS_MODEL_ID`·`TTS_VOICE_SETTINGS`). */
   async textToSpeech(
     voiceId: string,
     text: string,
-    options?: {
-      stability?: number;
-      similarity_boost?: number;
-      style?: number;
-      speed?: number;
-      use_speaker_boost?: boolean;
-      model_id?: string;
-      language_code?: string;
-    },
+    options?: { language_code?: string },
   ): Promise<ArrayBuffer> {
-    const modelId = options?.model_id ?? DEFAULT_TTS_MODEL_ID;
     const body: Record<string, unknown> = {
       text,
-      model_id: modelId,
+      model_id: TTS_MODEL_ID,
+      voice_settings: TTS_VOICE_SETTINGS,
     };
     if (options?.language_code) {
       body.language_code = options.language_code;
     }
-
-    // v3(eleven_v3)는 우리의 유일한 운영 모델이다. 과거에는 `modelId !== DEFAULT_TTS_MODEL_ID`
-    // 라는 역조건 때문에 v3에는 voice_settings를 아예 보내지 않아 서버 디폴트가 적용됐고,
-    // 그 결과 delivery 태그가 약하게 실현됐다(검증된 버그). 이제 모델과 무관하게 항상 전송한다.
-    // 기본값: stability 0.5(Natural), similarity_boost 0.8, style 0.4, speed 1.0,
-    // use_speaker_boost true. Robust(0.7+) 안정도는 태그를 억제하므로 쓰지 않는다.
-    const voiceSettings: Record<string, number | boolean> = {
-      stability: options?.stability ?? 0.5,
-      similarity_boost: options?.similarity_boost ?? 0.8,
-      style: options?.style ?? 0.4,
-      // ⚠ **1.0 으로 되돌리지 말 것**(2026-08-13 사용자 지적 "말이 엄청 빠르다").
-      // 알람은 **막 깬 사람**이 듣는다 — 평상시 대화 속도로 읽으면 따라가지 못한다.
-      // 태그(`[measured, deliberate]`)로도 늦출 수 있지만 태그는 보이스·문맥에 따라
-      // 실현이 들쭉날쭉하고, 이 파라미터는 확정적이다. 둘을 같이 쓴다.
-      //
-      // ⚠ 이 값을 바꾸면 **캐시가 안 깨진다** — `computeTtsCacheKey` 는 voice_settings 를
-      // 해시하지 않는다. 이미 만들어 둔 오디오는 옛 속도 그대로 서빙되므로, 값을 바꿀 때는
-      // 캐시 무효화를 함께 생각할 것(태그가 텍스트에 있으면 텍스트 변화로 자동 무효화된다).
-      speed: options?.speed ?? 0.9,
-      use_speaker_boost: options?.use_speaker_boost ?? true,
-    };
-    body.voice_settings = voiceSettings;
 
     const res = await this.request(
       `/v1/text-to-speech/${voiceId}?output_format=${ELEVENLABS_TTS_OUTPUT_FORMAT}`,
