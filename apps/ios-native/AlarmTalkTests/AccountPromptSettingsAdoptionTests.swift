@@ -142,7 +142,7 @@ final class AccountPromptSettingsAdoptionTests: XCTestCase {
 
         let adoption = DynamicPromptPreferences.adoptAccount(userID: userID, server: server, defaults: defaults)
 
-        guard case .localPending(let resend) = adoption else { return XCTFail("밀린 지역을 다시 올려야 한다: \(adoption)") }
+        guard case .localPending(let resend, _) = adoption else { return XCTFail("밀린 지역을 다시 올려야 한다: \(adoption)") }
         XCTAssertEqual(resend.weather.region, "jp-tokyo")
         XCTAssertEqual(resend.fortune.birthDate, "1988-05-05", "다른 기기가 고친 사주를 옛 값으로 덮으면 안 된다")
         XCTAssertEqual(local.weatherRegion?.key, "jp-tokyo")
@@ -208,11 +208,33 @@ final class AccountPromptSettingsAdoptionTests: XCTestCase {
         let adoption = DynamicPromptPreferences.adoptAccount(userID: userID, server: try regionSettings("kr-seoul"), defaults: defaults)
 
         XCTAssertEqual(local.weatherRegion?.key, "jp-tokyo")
-        guard case .localPending(let resend) = adoption else {
+        guard case .localPending(let resend, _) = adoption else {
             return XCTFail("다시 올릴 값을 돌려줘야 한다: \(adoption)")
         }
         XCTAssertEqual(resend.weather.region, "jp-tokyo")
         XCTAssertTrue(hasUnsynced())
+    }
+
+    /// **사주만 밀렸으면 날씨 묶음은 받아들였다고 알린다**(Codex #837) — 호출부(`AlarmTalkApp`)가 공휴일 국가도 받은
+    /// 지역의 나라로 맞춘다. 전체 결과만 보고 건너뛰면 화면의 지역과 달력의 나라가 갈라진다.
+    /// 안드로이드 `AccountPromptSettingsAdoptionTest.사주만_밀렸으면_받은_지역의_나라로_공휴일_국가를_맞춘다`.
+    func test_사주만_밀렸으면_날씨_묶음은_받아들였다고_알린다() throws {
+        try savedAndPushed("kr-seoul")
+        var fortune = local
+        fortune.fortuneGender = "여성"
+        fortune.fortuneBirthDate = "1990-01-01"
+        fortune.fortuneBirthTime = "07:31~09:30"
+        fortune.saveLocalEdit(userID: userID, defaults: defaults)
+
+        let adoption = DynamicPromptPreferences.adoptAccount(userID: userID, server: try regionSettings("jp-tokyo"), defaults: defaults)
+
+        guard case .localPending(let resend, let weatherAccepted) = adoption else {
+            return XCTFail("밀린 사주를 다시 올려야 한다: \(adoption)")
+        }
+        XCTAssertTrue(weatherAccepted)
+        XCTAssertEqual(local.weatherRegion?.key, "jp-tokyo")
+        XCTAssertEqual(resend.fortune.birthDate, "1990-01-01")
+        XCTAssertEqual(resend.weather.region, "jp-tokyo")
     }
 
     func test_올린_값이_받아들여지면_표시가_내려가고_다시_다른_기기를_따른다() throws {

@@ -239,7 +239,8 @@ class HolidayCountryRescheduleTest {
     /** 놓친 반복 알람을 다음 회차로 넘기는 복원도 같다(iOS `prepareForScheduleRecovery` 와 같은 판정). */
     @Test
     fun 놓친_반복_날씨_알람을_넘기면_받아_둔_조건을_버린다() = runBlocking {
-        val missed = System.currentTimeMillis() - 10 * 60_000L
+        // 놓친 회차는 **다음 회차의 하루 전**이다 — 넘기면 반드시 날짜가 바뀐다(지금 시각과 무관하게).
+        val missed = Instant.ofEpochMilli(nextWithoutHolidays).atZone(zone).minusDays(1).toInstant().toEpochMilli()
         seed(id = "missed", fireAtMillis = missed, holidayOff = false)
         withWeatherVariant("missed")
 

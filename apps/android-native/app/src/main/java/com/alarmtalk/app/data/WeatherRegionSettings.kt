@@ -160,7 +160,10 @@ suspend fun adoptAccountPromptSettings(
     settings: DynamicPromptSettings,
 ): AccountSettingsAdoption {
     val adoption = promptStore.adoptAccountSettings(userId, settings)
-    if (adoption == AccountSettingsAdoption.Accepted) {
+    // 날씨 묶음을 받아들였으면(사주만 밀렸어도) 공휴일 국가도 그 지역을 따른다(Codex #837).
+    val weatherAccepted = adoption == AccountSettingsAdoption.Accepted ||
+        (adoption as? AccountSettingsAdoption.LocalPending)?.weatherAccepted == true
+    if (weatherAccepted) {
         WeatherRegionHolidaySync.onAccountRegionReceived(holidayStore, userId, settings.weather.resolvedRegion())
     }
     return adoption

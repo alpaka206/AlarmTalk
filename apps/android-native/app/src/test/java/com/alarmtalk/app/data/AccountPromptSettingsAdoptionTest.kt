@@ -299,6 +299,28 @@ class AccountPromptSettingsAdoptionTest {
         assertFalse(store.hasUnsyncedChange("user-a"))
     }
 
+    /**
+     * **사주만 밀렸으면 받은 지역의 나라로 공휴일 국가를 맞춘다**(Codex #837). 날씨 묶음은 서버 값을 받아 적었으니
+     * 달력도 따라야 한다 — 전체 결과(`LocalPending`)만 보고 건너뛰면 화면의 지역과 달력의 나라가 갈라진다.
+     */
+    @Test
+    fun 사주만_밀렸으면_받은_지역의_나라로_공휴일_국가를_맞춘다() = runTest {
+        val holidays = HolidayCountryPreferenceStore(context)
+        adoptAccountPromptSettings(store, holidays, "user-a", regionSettings("kr-seoul"))
+        assertEquals("KR", holidays.read())
+        // 이 기기에서 사주를 고쳤는데 올리지 못했다 — 사주만 밀려 있다.
+        store.saveFortuneInfo("user-a", "여성", "1990-01-01", "07:31~09:30")
+        // 다른 기기가 지역을 도쿄로 바꿨다.
+
+        val adoption = adoptAccountPromptSettings(store, holidays, "user-a", regionSettings("jp-tokyo"))
+
+        assertTrue(adoption is AccountSettingsAdoption.LocalPending)
+        assertTrue((adoption as AccountSettingsAdoption.LocalPending).weatherAccepted)
+        assertEquals("jp-tokyo", store.read("user-a").weatherRegion?.key)
+        assertEquals("JP", holidays.read())
+        assertEquals("1990-01-01", adoption.settings.fortune.birthDate)
+    }
+
     /** 밀린 변경은 다음 응답에서 다시 올린다 — 같은 옛 값이 또 와도 `LocalPending` 이다(멱등). */
     @Test
     fun 밀린_변경은_같은_옛_값이_다시_와도_다시_올릴_것으로_남는다() {

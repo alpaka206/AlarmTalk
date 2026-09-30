@@ -78,10 +78,16 @@ sealed interface AccountSettingsAdoption {
     data object Accepted : AccountSettingsAdoption
 
     /**
-     * 이 기기에 서버보다 새 변경이 있어 **덮지 않았다**. 호출부는 [settings] 를 다시 올린다.
-     * 공휴일 국가도 서버 지역을 따르지 않는다 — 이 기기에서 고를 때 이미 맞췄다.
+     * 이 기기에 서버보다 새 변경이 있어 **덮지 않았다**(밀린 묶음). 호출부는 [settings] 를 다시 올린다.
+     *
+     * [weatherAccepted] 는 **날씨 묶음은 밀리지 않아 서버 값을 받아들였는가**다(사주만 밀린 경우). 그러면 공휴일
+     * 국가도 서버 지역을 따른다 — 안 따르면 화면의 지역과 달력의 나라가 갈라진다(Codex #837). 날씨 묶음이
+     * 밀렸으면 따르지 않는다 — 이 기기에서 고를 때 이미 맞췄다.
      */
-    data class LocalPending(val settings: DynamicPromptSettings) : AccountSettingsAdoption
+    data class LocalPending(
+        val settings: DynamicPromptSettings,
+        val weatherAccepted: Boolean = false,
+    ) : AccountSettingsAdoption
 }
 
 class DynamicPromptPreferenceStore(context: Context) {
@@ -163,12 +169,14 @@ class DynamicPromptPreferenceStore(context: Context) {
         var pendingLeft = false
 
         val weatherPending = prefs.getBoolean(weatherPendingKey, false)
+        var weatherPendingLeft = false
         if (weatherPending) {
             if (local.hasSameWeather(remote)) {
                 editor.remove(weatherPendingKey)
                 changed = true
             } else {
                 pendingLeft = true
+                weatherPendingLeft = true
             }
         } else if (remote.hasWeather() && !local.hasSameWeather(remote)) {
             putScoped(editor, KEY_WEATHER_COUNTRY, userId, remote.weatherCountry)
@@ -193,7 +201,10 @@ class DynamicPromptPreferenceStore(context: Context) {
 
         if (changed) editor.apply()
         return if (pendingLeft) {
-            AccountSettingsAdoption.LocalPending(read(userId).toDynamicPromptSettings())
+            AccountSettingsAdoption.LocalPending(
+                settings = read(userId).toDynamicPromptSettings(),
+                weatherAccepted = !weatherPendingLeft,
+            )
         } else {
             AccountSettingsAdoption.Accepted
         }

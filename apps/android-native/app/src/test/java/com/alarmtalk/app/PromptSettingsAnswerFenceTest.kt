@@ -87,6 +87,12 @@ class PromptSettingsAnswerFenceTest {
         val pushed = upload.indexOf("dynamicPromptStore.markPushed(")
         assertTrue("올리기가 울타리를 세우지 않는다.", fence >= 0)
         assertTrue("울타리는 표시를 내리기(`markPushed`) 전에 세운다.", pushed > fence)
+        // ⚠ 올린 계정의 세션이 그대로일 때만 — 그 사이 다른 계정이 들어왔으면 떠 있는 요청은 그 계정의 것이다.
+        val guard = upload.lastIndexOf(
+            "if (authSession?.user?.id == session.user.id && authSessionStore.sessionGeneration() == startGeneration)",
+            fence,
+        )
+        assertTrue("울타리가 올린 계정·세대를 확인하지 않는다.", guard >= 0 && fence - guard < 200)
 
         val refresh = bodyOf("internal suspend fun MainViewModel.refreshAppSessionNow(")
         assertTrue(

@@ -345,8 +345,7 @@ struct AlarmTalkApp: App {
                     //    옛 지역을 따르지 않는다 — 화면의 지역과 달력의 나라가 갈라진다.
                     .onChange(of: accountPromptSettingsKey, initial: true) { _, key in
                         guard let userID = key.userID, let settings = key.settings else { return }
-                        switch DynamicPromptPreferences.adoptAccount(userID: userID, server: settings) {
-                        case .accepted:
+                        let adoptAccountRegion = {
                             holidayStore.adoptCountry(
                                 ofAccountWeatherRegion: WeatherRegions.region(
                                     key: settings.weather.region,
@@ -355,7 +354,13 @@ struct AlarmTalkApp: App {
                                 )?.key,
                                 userID: userID
                             )
-                        case .localPending(let local):
+                        }
+                        switch DynamicPromptPreferences.adoptAccount(userID: userID, server: settings) {
+                        case .accepted:
+                            adoptAccountRegion()
+                        case .localPending(let local, let weatherAccepted):
+                            // 날씨 묶음을 받아들였으면(사주만 밀렸어도) 공휴일 국가도 그 지역을 따른다(Codex #837).
+                            if weatherAccepted { adoptAccountRegion() }
                             Task { await auth.updateProfile(dynamicPromptSettings: local) }
                         case .localWriteFailed:
                             // 기기에 못 적었다 — 달력의 나라도 옮기지 않는다(기기 값과 갈라지지 않게).

@@ -7,7 +7,10 @@ enum AccountPromptSettingsAdoption: Equatable {
     case accepted
     /// 이 기기에 서버보다 새 변경이 있어 **덮지 않았다.** 호출부는 이 값을 다시 올린다.
     /// 공휴일 국가도 서버 지역을 따르지 않는다 — 이 기기에서 고를 때 이미 맞췄다.
-    case localPending(DynamicPromptSettings)
+    ///
+    /// `weatherAccepted` 는 **날씨 묶음은 밀리지 않아 서버 값을 받아들였는가**다(사주만 밀린 경우). 그러면 공휴일
+    /// 국가도 서버 지역을 따른다 — 안 따르면 화면의 지역과 달력의 나라가 갈라진다(Codex #837).
+    case localPending(DynamicPromptSettings, weatherAccepted: Bool)
     /// 서버 값을 받아들여야 했는데 **기기에 적지 못했다**(키체인 쓰기 실패). 기기 값은 옛것 그대로다 —
     /// 호출부는 공휴일 국가를 서버 지역으로 옮기지 않는다(화면·알람이 읽는 기기 값과 달력의 나라가 갈라진다,
     /// Codex #837). 다음 계정 응답에 다시 받아 적는다. 안드로이드는 SharedPreferences 라 이 갈래가 없다.
@@ -159,12 +162,14 @@ extension DynamicPromptPreferences {
         let remote = from(settings: server)
         var next = local
         var pendingLeft = false
+        var weatherPendingLeft = false
         // **묶음마다** 본다(`SyncBundle`) — 밀린 묶음은 이 기기 값을 지키고, 나머지는 서버가 이긴다.
         if defaults.bool(forKey: weatherKey) {
             if local.hasSameWeather(as: remote) {
                 defaults.removeObject(forKey: weatherKey)
             } else {
                 pendingLeft = true
+                weatherPendingLeft = true
             }
         } else if !remote.weatherCountry.isEmpty || !remote.weatherCity.isEmpty {
             next.weatherCountry = remote.weatherCountry
@@ -188,7 +193,7 @@ extension DynamicPromptPreferences {
         }
         // 밀린 묶음이 남았으면 다시 올린다 — **밀린 묶음은 이 기기 값, 나머지는 방금 받은 서버 값**이다(이 기기의
         // 옛 사주를 함께 올려 다른 기기가 고친 사주를 지우지 않는다).
-        return pendingLeft ? .localPending(next.toSettings()) : .accepted
+        return pendingLeft ? .localPending(next.toSettings(), weatherAccepted: !weatherPendingLeft) : .accepted
     }
 
     /// 화면이 읽는 값 — 계정 설정을 받아 적은 **뒤의** 이 기기 값(설정 화면·편집기).
