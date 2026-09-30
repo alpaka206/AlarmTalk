@@ -47,6 +47,15 @@ describe('publish-stock-clips 가 의존하는 서버 계약', () => {
     }
   });
 
+  it('게시 스크립트는 옛 소리를 가리키는 살아 있는 행을 같은 id 에서 교체한다 — 은퇴·reset 을 쓰지 않는다', () => {
+    const source = readFileSync(join(__dirname, '..', 'scripts', 'publish-stock-clips.ts'), 'utf-8');
+    expect(source).toMatch(/replaceStockClipInPlace\(/);
+    // --dry-run 이 무엇을 바꿀지 보여 준다.
+    expect(source).toContain('[교체]');
+    // 행을 은퇴시키지 않는다(SET retired_at) — 은퇴는 앱에 차단 화면을 띄운다.
+    expect(source).not.toMatch(/retired_at\s*=/);
+  });
+
   it('스톡 스크립트는 모델 id 를 직접 적지 않는다 — 서버 상수(`TTS_MODEL_ID`)를 가져다 쓴다', () => {
     // 예전에는 두 스크립트가 `'eleven_v3'` 를 박아 두어, 서버 모델을 바꾸면 시청본·게시 키가 옛 모델로 남았다.
     for (const script of ['publish-stock-clips.ts', 'prerender-stock-preview.ts']) {

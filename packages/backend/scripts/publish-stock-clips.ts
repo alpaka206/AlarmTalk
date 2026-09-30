@@ -17,17 +17,23 @@
  *
  * 멱등하다 — 이미 게시된 자리는 건너뛴다. 중간에 끊기면 다시 돌리면 이어서 한다.
  *
+ * **교체 갈래**(2026-09-30): 같은 자리에 살아 있는 행이 있는데 그 `audio_url` 이 지금 문구·모델로 계산한 키와
+ * 다르면(= 원장 `request_hash` 가 새 캐시 키와 다르면 — 키가 결정론적이라 둘은 같은 질문이다) **같은 message_id 에
+ * 소리만 갈아 끼운다**(`replaceStockClipInPlace`). 합성 모델을 바꾼 회차(eleven_v3 → eleven_v4_turbo)가 이 길로
+ * 간다 — 행을 은퇴시키지 않으므로 앱에 차단 화면이 뜨지 않고, 앱은 바뀐 `audio_url` 을 보고 다시 받는다.
+ * ⚠ `POST /api/admin/seed-stock-clips?reset=` 은 쓰지 말 것 — 행을 지우고 알람을 sound-only 로 뗀다.
+ *
  * 사용 (packages/backend 에서):
- *   npm run publish:stock -- --env dev --dry-run   # 무엇을 올릴지만 본다
+ *   npm run publish:stock -- --env dev --dry-run   # 무엇을 올릴지·바꿀지만 본다([예정]·[교체])
  *   npm run publish:stock -- --env dev
  *   npm run publish:stock -- --env prod
  *
  * ⚠ **R2 버킷과 DB 는 환경별로 따로다**(dev `voice-alarm-voices` / prod
  *   `voice-alarm-voices-prod`). 합성은 한 번이지만 **게시는 두 번** 해야 한다.
  *
- * ⚠ **prod 는 `#110` 이 옛 프리셋을 은퇴시킨 뒤에 돌린다.** 은퇴 전에는 같은 자리에 살아
- *   있는 행이 있어 이 스크립트가 전부 건너뛴다(`retired_at` 컬럼 자체가 없으면 아무것도
- *   하지 않고 먼저 멈춘다). R2 업로드만 먼저 해 두는 것은 무해하다 — 키가 결정론적이라
+ * ⚠ **`retired_at`(#110) 이 없는 DB 에서는 아무것도 하지 않고 먼저 멈춘다.** 살아 있는 행이 옛 소리를
+ *   가리키면 위 교체 갈래가 같은 id 에 소리만 바꾼다(2026-09-30 전에는 건너뛰었다 — 그래서 #110 이 먼저
+ *   은퇴시켜야 했다). R2 업로드만 먼저 해 두는 것은 무해하다 — 키가 결정론적이라
  *   나중에 이 스크립트가 **같은 자리에 같은 바이트를 다시 PUT** 하고, 그때 원장 행이 그
  *   키를 가리키게 된다.
  *
@@ -50,6 +56,7 @@ import {
   systemStockTexts,
 } from '../src/lib/stock-clips.ts';
 import { computeTtsCacheKey, generatedTtsObjectKey } from '../src/lib/audio-cache.ts';
+import { replaceStockClipInPlace } from '../src/lib/stock-clip-replace.ts';
 import { ELEVENLABS_TTS_OUTPUT_FORMAT } from '../src/lib/elevenlabs.ts';
 import { TTS_MODEL_ID, TTS_VOICE_SETTINGS } from '../src/lib/tts-model.ts';
 import {
@@ -181,16 +188,21 @@ function collectTargets(): Target[] {
 }
 
 
-/** 이 자리에 이미 살아 있는 프리셋이 있으면 그 id, 없으면 null. */
-async function publishedMessageId(db: Client, target: Target): Promise<string | null> {
+/** 이 자리에 이미 살아 있는 프리셋이 있으면 그 id 와 지금 가리키는 소리, 없으면 null. */
+async function publishedMessage(
+  db: Client,
+  target: Target,
+): Promise<{ id: string; audioUrl: string | null } | null> {
   const rows = await db.execute({
-    sql: `SELECT id FROM messages
+    sql: `SELECT id, audio_url FROM messages
            WHERE voice_profile_id = ? AND category = ? AND language = ? AND variant = ?
              AND COALESCE(is_preset, 0) = 1 AND retired_at IS NULL
            LIMIT 1`,
     args: [target.profileId, target.category, target.language, target.variant],
   });
-  return rows.rows[0] ? String(rows.rows[0].id) : null;
+  const row = rows.rows[0];
+  if (!row) return null;
+  return { id: String(row.id), audioUrl: row.audio_url == null ? null : String(row.audio_url) };
 }
 
 /**
@@ -315,6 +327,7 @@ async function main(): Promise<void> {
   console.log(`환경 ${envName} · 버킷 ${bucket} · 대상 ${targets.length}개`);
 
   let published = 0;
+  let replaced = 0;
   let skipped = 0;
   let failed = 0;
   for (const target of targets) {
@@ -336,19 +349,57 @@ async function main(): Promise<void> {
       const audioUrl = `r2://${objectKey}`;
       const size = statSync(target.filePath).size;
 
+      const existing = await publishedMessage(db, target);
+      // 이미 지금 문구·모델로 게시됐다(키가 결정론적이라 audio_url 이 같으면 request_hash 도 같다).
       // ⚠ **건너뛰기 전에 원장부터 본다**(리뷰 15차). message 는 들어갔는데 원장 INSERT
       //   전에 끊긴 상태가 남을 수 있고, 그냥 건너뛰면 그 구멍을 **아무도 못 고친다.**
-      const existingId = await publishedMessageId(db, target);
-      if (existingId) {
+      if (existing && existing.audioUrl === audioUrl) {
         if (dryRun) {
           skipped += 1;
           continue;
         }
         const repaired = await repairLedgerIfMissing(
-          db, target, existingId, cacheKey, objectKey, synthesisText,
+          db, target, existing.id, cacheKey, objectKey, synthesisText,
         );
         if (repaired) console.log(`[원장 복구] ${label}`);
         skipped += 1;
+        continue;
+      }
+
+      // ── 교체 갈래: 살아 있는 행이 옛 소리(옛 모델·옛 문구)를 가리킨다 → 같은 message_id 에 소리만 바꾼다.
+      if (existing) {
+        if (dryRun) {
+          console.log(`[교체] ${label}  ${(size / 1024).toFixed(0)}KB  ${existing.audioUrl ?? '(없음)'} → ${objectKey}`);
+          replaced += 1;
+          continue;
+        }
+        // 올린 뒤에 행을 바꾼다 — 행이 없는 오브젝트를 가리키는 순간이 없게.
+        uploadToR2(bucket, objectKey, target.filePath, env);
+        const outcome = await replaceStockClipInPlace(db, {
+          messageId: existing.id,
+          previousAudioUrl: existing.audioUrl,
+          ownerUserId: SYSTEM_VOICE_LIBRARY_USER_ID,
+          voiceProfileId: target.profileId,
+          provider: PROVIDER,
+          providerVoiceId: target.providerVoiceId,
+          modelId: TTS_MODEL_ID,
+          language: target.language,
+          cacheKey,
+          objectKey,
+          outputFormat: OUTPUT_FORMAT,
+          displayText,
+          synthesisText,
+          deliveryTagsJson,
+        });
+        if (outcome === 'replaced') {
+          replaced += 1;
+          console.log(`[교체 ${replaced}] ${label}  ${(size / 1024).toFixed(0)}KB`);
+        } else {
+          // 그 사이 다른 게시가 이 행을 바꿨다 — 다시 돌리면 그 값 기준으로 다시 본다. 방금 올린 오브젝트는
+          // 지우지 않는다(결정론적 키라 이긴 쪽이 같은 키일 수 있다 — 아래 새 게시 갈래와 같은 이유).
+          skipped += 1;
+          console.log(`[교체 건너뜀] ${label} — 그 사이 다른 게시가 바꿨다`);
+        }
         continue;
       }
 
@@ -428,7 +479,7 @@ async function main(): Promise<void> {
   }
 
   console.log(
-    `\n게시 ${published}개 · 이미 있음 ${skipped}개${failed ? ` · 실패 ${failed}개(다시 돌리면 그것만 재시도한다)` : ''}`,
+    `\n게시 ${published}개 · 교체 ${replaced}개 · 이미 있음 ${skipped}개${failed ? ` · 실패 ${failed}개(다시 돌리면 그것만 재시도한다)` : ''}`,
   );
   if (failed > 0) process.exitCode = 1;
 }
