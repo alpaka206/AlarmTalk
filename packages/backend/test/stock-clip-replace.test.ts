@@ -8,7 +8,7 @@ import { rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { replaceStockClipInPlace, type StockClipReplacement } from '../src/lib/stock-clip-replace';
+import { ledgerAudioUrlFor, replaceStockClipInPlace, type StockClipReplacement } from '../src/lib/stock-clip-replace';
 
 const OWNER = '70000000-0000-4000-9000-000000000001';
 const VOICE = '70000000-0000-4000-9000-000000000102';
@@ -122,6 +122,60 @@ describe('replaceStockClipInPlace — 같은 message_id 에 소리만 바꾼다'
       await db.execute(`UPDATE messages SET retired_at = '2026-09-03 00:00:00' WHERE id = 'm1'`);
       expect(await replaceStockClipInPlace(db, replacement())).toBe('conflict');
       expect((await db.execute('SELECT audio_url FROM messages')).rows[0]!.audio_url).toBe(`r2://${OLD_KEY}`);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('같은 해시를 다른 오브젝트가 쥐고 있으면 멈춘다 — 메시지·원장·삭제 큐 모두 그대로(Codex #840)', async () => {
+    const { db, cleanup } = await setupDb();
+    try {
+      // 배포 뒤 게시 전에 누군가 같은 기본 목소리로 같은 문장을 만들었다 — 해시는 같고 오브젝트 키(주인)는 다르다.
+      const userKey = `generated-tts/80000000-0000-4000-9000-000000000001/${'b'.repeat(64)}.mp3`;
+      await db.execute({
+        sql: `INSERT INTO generated_audio_assets (id, user_id, voice_profile_id, message_id, provider, provider_voice_id,
+                model_id, language, request_hash, text, audio_url, audio_object_key, audio_format)
+              VALUES ('ga-user', '80000000-0000-4000-9000-000000000001', ?, NULL, 'elevenlabs', 'el-mina',
+                'eleven_v4_turbo', 'ko', ?, '약 먹을 시간이에요.', ?, ?, 'mp3')`,
+        args: [VOICE, 'b'.repeat(64), `r2://${userKey}`, userKey],
+      });
+
+      expect(await ledgerAudioUrlFor(db, 'b'.repeat(64))).toBe(`r2://${userKey}`);
+      expect(await replaceStockClipInPlace(db, replacement())).toBe('hash-taken');
+
+      expect((await db.execute('SELECT audio_url FROM messages')).rows[0]!.audio_url).toBe(`r2://${OLD_KEY}`);
+      const ledger = (await db.execute('SELECT id FROM generated_audio_assets ORDER BY id')).rows.map((r) => r.id);
+      expect(ledger).toEqual(['ga-old', 'ga-user']);
+      expect((await db.execute('SELECT ref FROM pending_external_deletions')).rows.map((r) => r.ref)).toEqual([NEW_KEY]);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('같은 해시·같은 오브젝트의 원장 행이 있으면 그 행을 쓴다 — 새 행을 만들지 않는다', async () => {
+    const { db, cleanup } = await setupDb();
+    try {
+      // 같은 문장을 나눠 쓰는 다른 프리셋이 먼저 교체돼 원장 행을 남겼다.
+      await db.execute({
+        sql: `INSERT INTO generated_audio_assets (id, user_id, voice_profile_id, message_id, provider, provider_voice_id,
+                model_id, language, request_hash, text, audio_url, audio_object_key, audio_format)
+              VALUES ('ga-sibling', ?, ?, 'm0', 'elevenlabs', 'el-mina', 'eleven_v4_turbo', 'ko', ?,
+                '약 먹을 시간이에요.', ?, ?, 'mp3')`,
+        args: [OWNER, VOICE, 'b'.repeat(64), `r2://${NEW_KEY}`, NEW_KEY],
+      });
+      expect(await replaceStockClipInPlace(db, replacement())).toBe('replaced');
+      expect((await db.execute('SELECT audio_url FROM messages')).rows[0]!.audio_url).toBe(`r2://${NEW_KEY}`);
+      expect((await db.execute('SELECT COUNT(*) AS n FROM generated_audio_assets')).rows[0]!.n).toBe(2);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('원장 조회 — 행이 없으면 null', async () => {
+    const { db, cleanup } = await setupDb();
+    try {
+      expect(await ledgerAudioUrlFor(db, 'c'.repeat(64))).toBeNull();
+      expect(await ledgerAudioUrlFor(db, 'a'.repeat(64))).toBe(`r2://${OLD_KEY}`);
     } finally {
       cleanup();
     }

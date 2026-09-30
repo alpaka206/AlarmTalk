@@ -56,7 +56,7 @@ import {
   systemStockTexts,
 } from '../src/lib/stock-clips.ts';
 import { computeTtsCacheKey, generatedTtsObjectKey } from '../src/lib/audio-cache.ts';
-import { replaceStockClipInPlace } from '../src/lib/stock-clip-replace.ts';
+import { ledgerAudioUrlFor, replaceStockClipInPlace } from '../src/lib/stock-clip-replace.ts';
 import { ELEVENLABS_TTS_OUTPUT_FORMAT } from '../src/lib/elevenlabs.ts';
 import { TTS_MODEL_ID, TTS_VOICE_SETTINGS } from '../src/lib/tts-model.ts';
 import {
@@ -214,7 +214,11 @@ async function publishedMessage(
  *   `generated_audio_assets` 는 R2 키의 **유일한 출처**라, 없으면 동의 철회·계정 삭제에도
  *   그 오디오를 찾아 지울 수 없다.
  *
- * @returns 실제로 채웠으면 true.
+ * ⚠ **판정은 message_id 가 아니라 지금 가리키는 오브젝트(`audio_url`)로 한다**(Codex #840). 교체는 같은
+ *   message_id 에 소리만 바꾸므로 옛 모델의 원장 행이 그 id 로 남아 있다 — id 로 보면 새 오브젝트의 원장이
+ *   빠져도 "있다" 로 읽는다.
+ * ⚠ 같은 `request_hash` 를 다른 오브젝트가 쥐고 있으면 채울 수 없다(`UNIQUE`) — 조용히 무시하지 않고
+ *   `'hash-taken'` 으로 알린다.
  */
 async function repairLedgerIfMissing(
   db: Client,
@@ -223,14 +227,15 @@ async function repairLedgerIfMissing(
   cacheKey: string,
   objectKey: string,
   synthesisText: string,
-): Promise<boolean> {
+): Promise<'present' | 'repaired' | 'hash-taken'> {
   const existing = await db.execute({
-    sql: 'SELECT 1 FROM generated_audio_assets WHERE message_id = ? LIMIT 1',
-    args: [messageId],
+    sql: 'SELECT 1 FROM generated_audio_assets WHERE audio_url = ? LIMIT 1',
+    args: [`r2://${objectKey}`],
   });
-  if (existing.rows.length > 0) return false;
-  const result = await db.execute({
-    sql: `INSERT OR IGNORE INTO generated_audio_assets
+  if (existing.rows.length > 0) return 'present';
+  if ((await ledgerAudioUrlFor(db, cacheKey)) !== null) return 'hash-taken';
+  await db.execute({
+    sql: `INSERT INTO generated_audio_assets
             (id, user_id, voice_profile_id, message_id, provider, provider_voice_id,
              model_id, language, request_hash, text,
              audio_url, audio_object_key, audio_format)
@@ -241,7 +246,7 @@ async function repairLedgerIfMissing(
       cacheKey, synthesisText, `r2://${objectKey}`, objectKey, OUTPUT_FORMAT,
     ],
   });
-  return (result.rowsAffected ?? 0) > 0;
+  return 'repaired';
 }
 
 function uploadToR2(bucket: string, key: string, filePath: string, env: Record<string, string>): void {
@@ -358,11 +363,28 @@ async function main(): Promise<void> {
           skipped += 1;
           continue;
         }
-        const repaired = await repairLedgerIfMissing(
+        const ledger = await repairLedgerIfMissing(
           db, target, existing.id, cacheKey, objectKey, synthesisText,
         );
-        if (repaired) console.log(`[원장 복구] ${label}`);
+        if (ledger === 'hash-taken') {
+          failed += 1;
+          console.error(`[보류] ${label} — 원장이 빠졌는데 같은 request_hash 를 다른 오브젝트가 쥐고 있어 채울 수 없다`);
+          continue;
+        }
+        if (ledger === 'repaired') console.log(`[원장 복구] ${label}`);
         skipped += 1;
+        continue;
+      }
+
+      // ⚠ **같은 request_hash 를 다른 오브젝트가 이미 쥐고 있으면 올리지 않는다**(Codex #840). 해시는 주인을 담지
+      //   않고(보이스·모델·문구) 오브젝트 키는 주인을 담는다 — 배포 뒤 게시 전에 누군가 같은 기본 목소리로 같은 문장을
+      //   만들었으면(프리셋 라이브 폴백·직접 입력) 그 사람의 원장 행이 해시를 차지한다. 그대로 게시하면 원장 INSERT
+      //   가 무시돼 우리 오브젝트가 원장에 없다. 그 자리는 옛 소리로 계속 울린다 — 그 행이 보관 기한으로 지워진 뒤
+      //   다시 돌린다(`docs/ops/tts-model-rerender.md`). 실패로 세어 명령이 1 로 끝난다.
+      const ledgerUrl = await ledgerAudioUrlFor(db, cacheKey);
+      if (ledgerUrl !== null && ledgerUrl !== audioUrl) {
+        failed += 1;
+        console.error(`[보류] ${label} — 같은 request_hash 의 원장 행이 다른 오브젝트(${ledgerUrl})를 가리킨다`);
         continue;
       }
 
@@ -394,6 +416,10 @@ async function main(): Promise<void> {
         if (outcome === 'replaced') {
           replaced += 1;
           console.log(`[교체 ${replaced}] ${label}  ${(size / 1024).toFixed(0)}KB`);
+        } else if (outcome === 'hash-taken') {
+          // 위 확인과 이 트랜잭션 사이에 누가 해시를 차지했다 — 행은 그대로다(옛 소리). 다시 돌리면 다시 본다.
+          failed += 1;
+          console.error(`[보류] ${label} — 게시 직전에 같은 request_hash 의 다른 원장 행이 생겼다`);
         } else {
           // 그 사이 다른 게시가 이 행을 바꿨다 — 다시 돌리면 그 값 기준으로 다시 본다. 방금 올린 오브젝트는
           // 지우지 않는다(결정론적 키라 이긴 쪽이 같은 키일 수 있다 — 아래 새 게시 갈래와 같은 이유).
@@ -438,8 +464,14 @@ async function main(): Promise<void> {
         });
         insertedRows = inserted.rowsAffected ?? 0;
         if (insertedRows > 0) {
-          await tx.execute({
-            sql: `INSERT OR IGNORE INTO generated_audio_assets
+          // 위 업로드 전 확인과 같은 판정을 트랜잭션 안에서 한 번 더 한다(Codex #840) — 해시를 다른 오브젝트가
+          // 쥐었으면 던져서 message INSERT 까지 되돌린다. 같은 오브젝트의 행이 있으면 그 행을 쓴다.
+          const heldBy = await ledgerAudioUrlFor(tx, cacheKey);
+          if (heldBy !== null && heldBy !== audioUrl) {
+            throw new Error(`같은 request_hash 의 원장 행이 다른 오브젝트(${heldBy})를 가리킨다`);
+          }
+          if (heldBy === null) await tx.execute({
+            sql: `INSERT INTO generated_audio_assets
                     (id, user_id, voice_profile_id, message_id, provider, provider_voice_id,
                      model_id, language, request_hash, text,
                      audio_url, audio_object_key, audio_format)

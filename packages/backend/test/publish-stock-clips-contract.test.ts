@@ -56,6 +56,20 @@ describe('publish-stock-clips 가 의존하는 서버 계약', () => {
     expect(source).not.toMatch(/retired_at\s*=/);
   });
 
+  it('같은 request_hash 를 다른 오브젝트가 쥐고 있으면 올리기 전에 멈춘다(Codex #840)', () => {
+    const source = readFileSync(join(__dirname, '..', 'scripts', 'publish-stock-clips.ts'), 'utf-8');
+    const precheck = source.indexOf('await ledgerAudioUrlFor(db, cacheKey)');
+    const firstUpload = source.indexOf('uploadToR2(bucket, objectKey');
+    expect(precheck).toBeGreaterThan(0);
+    expect(precheck).toBeLessThan(firstUpload);
+    // 트랜잭션 안에서도 한 번 더 본다(새 행 갈래) — 무시되는 INSERT OR IGNORE 로 원장을 빠뜨리지 않는다.
+    expect(source).toMatch(/ledgerAudioUrlFor\(tx, cacheKey\)/);
+    expect(source).not.toMatch(/INSERT OR IGNORE INTO generated_audio_assets/);
+    // 교체 트랜잭션이 경합으로 막힌 경우도 실패로 센다.
+    expect(source).toMatch(/outcome === 'hash-taken'/);
+    expect(source).toContain('[보류]');
+  });
+
   it('스톡 스크립트는 모델 id 를 직접 적지 않는다 — 서버 상수(`TTS_MODEL_ID`)를 가져다 쓴다', () => {
     // 예전에는 두 스크립트가 `'eleven_v3'` 를 박아 두어, 서버 모델을 바꾸면 시청본·게시 키가 옛 모델로 남았다.
     for (const script of ['publish-stock-clips.ts', 'prerender-stock-preview.ts']) {
