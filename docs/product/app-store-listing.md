@@ -164,7 +164,7 @@ Start the day with a familiar voice. Default-voice and recorded alarms are free;
 
 ## 설명 — (B) 다음 버전, W 충족 뒤
 
-### ko (2797/4000)
+### ko (2804/4000)
 
 ```text
 좋아하는 목소리로 깨는 아침.
@@ -176,7 +176,7 @@ Start the day with a familiar voice. Default-voice and recorded alarms are free;
 수학 문제나 흔들기 같은 해제 미션 없이, 듣고 싶은 목소리로 일어나요.
 
 ■ 무료 — 기본 목소리와 녹음 알람
-• 일반 알람은 개수 제한 없이 만들어요. 요일마다 반복하거나 한 번만 울릴 수 있어요.
+• 알람은 요일마다 반복하거나 한 번만 울리게 만들 수 있어요.
 • 기본 목소리 4종(시우·미나·도현·애니)이 앱 언어(한국어·영어·일본어)로 알람을 읽어 줘요. 목소리 대신 알람음으로 울리게 할 수도 있어요.
 • 문구는 날씨·운세·응원·약 중에서 골라요.
   - 날씨: 그날 날씨(맑음·비·눈·미세먼지·더위·추위 등)에 맞는 문구. 지역은 국내 주요 9개 도시 중에서 골라요.
@@ -188,7 +188,7 @@ Start the day with a familiar voice. Default-voice and recorded alarms are free;
 ■ 등록한 목소리로 새 문장을 — 개인 이용권
 • 앱에서 녹음하거나 음성 파일(12초~2분)을 올려 목소리 1개를 등록해요. 본인 목소리이거나, 권리를 가진 사람에게 허락받은 목소리만 등록할 수 있어요.
 • 등록한 목소리는 AI 음성 합성으로 녹음에 없던 문장을 읽어요. 기상 인사·날씨·운세·응원·약 문구는 서버에서 미리 만들어 폰에 받아 두고, 나와의 관계(예: 딸)와 나를 부를 이름(예: 엄마)을 적으면(둘 다 선택) 거기에 맞춰 만들어요.
-• 직접 입력: 내가 쓴 문장을 AI가 그 목소리로 읽어 줘요. 새로 만들기는 월 30회이고, 폰에 이미 있는 문장을 다시 쓰면 횟수가 줄지 않아요.
+• 직접 입력: 내가 쓴 문장을 AI가 그 목소리로 읽어 줘요. 새로 만들기는 월 30회이고, 같은 목소리로 같은 문장을 쓰는 알람이 이 폰에 남아 있으면 다시 써도 횟수가 줄지 않아요.
 • 알람을 읽어 줄 언어는 한국어·영어·일본어 중에서 골라요.
 • 목소리는 한 계정에 1개, 등록·교체는 한 달에 한 번 할 수 있어요.
 • 개인 1개월 이용권을 선물 코드로 보낼 수도 있어요(1회 결제, 자동 갱신 없음).
@@ -230,7 +230,7 @@ Start the day with a familiar voice. Default-voice and recorded alarms are free;
 Apple 표준 사용권 계약(EULA): https://www.apple.com/legal/internet-services/itunes/dev/stdeula/
 ```
 
-### en-US (3774/4000)
+### en-US (3781/4000)
 
 ```text
 Wake up to a voice you love.
@@ -242,7 +242,7 @@ AlarmTalk (알람톡 · アラームトーク) wakes you with a voice.
 No math, no shaking.
 
 ■ Free
-• Unlimited alarms, repeating or one-time
+• Repeating or one-time alarms
 • Four default voices speak the app language (English, Korean or Japanese), or use an alarm sound
 • Messages: Weather (the day's weather, from rain to poor air; one of 9 major Korean cities), Fortune (for fun, from gender, birth date and time), Encouragement and Meds (each ring plays the next prepared one)
 • Recorded alarm: up to 30 seconds per alarm, played exactly as recorded; it can't read other text
@@ -251,7 +251,7 @@ No math, no shaking.
 ■ Personal plan
 • Register one voice per account, once a month, by recording or uploading audio (12 sec to 2 min): yours, or one you have permission to use
 • Wake-up, weather, fortune, encouragement and meds messages in that voice are made in advance on our servers and downloaded to your phone, tailored to who the voice is to you and what it calls you (both optional)
-• Type it yourself: AI reads your text in that voice (30 new a month; text already on your phone doesn't count)
+• Type it yourself: AI reads your text in that voice (30 new a month; free if an alarm on this phone has the same text and voice)
 • Messages in Korean, English or Japanese
 • Gift a 1-month Personal plan by code (one-time purchase, no renewal)
 
@@ -284,7 +284,7 @@ Privacy Policy: https://alarm-talk.com/en/privacy/
 Apple Standard EULA: https://www.apple.com/legal/internet-services/itunes/dev/stdeula/
 ```
 
-### ja (2677/4000)
+### ja (2678/4000)
 
 ```text
 好きな声で目覚める朝を。
@@ -296,7 +296,7 @@ Apple Standard EULA: https://www.apple.com/legal/internet-services/itunes/dev/st
 計算問題やシェイクのようなミッションはなく、聞きたい声で目を覚ませます。
 
 ■ 無料 — 基本の声と録音アラーム
-• 通常アラームは無制限。曜日ごとの繰り返しも、1回だけのアラームも設定できます。
+• 曜日ごとの繰り返しも、1回だけのアラームも設定できます。
 • 基本の声4種類が、アプリの言語(日本語・韓国語・英語)でアラームを読み上げます。声の代わりにアラーム音で鳴らすこともできます。
 • メッセージは天気・運勢・応援・薬から選べます。
   - 天気：その日の天気(晴れ・雨・雪・PM2.5・暑さ・寒さなど)に合わせたメッセージ。都市は韓国の主要9都市から選びます。
@@ -308,7 +308,7 @@ Apple Standard EULA: https://www.apple.com/legal/internet-services/itunes/dev/st
 ■ 登録した声で新しいメッセージを — パーソナルプラン
 • アプリで録音するか、音声ファイル(12秒〜2分)をアップロードして、声を1つ登録します。登録できるのは、本人の声か、権利を持つ人から許可を得た声だけです。
 • 登録した声は、AI音声合成で録音にない文を読み上げます。起床のあいさつ・天気・運勢・応援・薬のメッセージはサーバーであらかじめ作ってスマホにダウンロードし、あなたとの関係(例：娘)と、あなたを呼ぶ名前(例：ママ)を入れると(どちらも任意)、それに合わせて作ります。
-• 自分で入力：書いた文をAIがその声で読み上げます。新しく作れるのは月30回まで。スマホにすでにある文を使う場合は回数に数えません。
+• 自分で入力：書いた文をAIがその声で読み上げます。新しく作れるのは月30回まで。同じ声・同じ文を使うアラームがこのスマホに残っていれば、回数に数えません。
 • 読み上げる言語は、日本語・韓国語・英語から選べます。
 • 声は1アカウントに1つ。登録・変更は月1回までです。
 • パーソナル1か月分をギフトコードで贈ることもできます(1回限りの購入、自動更新なし)。
@@ -355,7 +355,7 @@ Apple 標準使用許諾契約 (EULA): https://www.apple.com/legal/internet-serv
 (B) 에서 날씨를 말하는 줄만 바꾼다(`-` 줄을 `+` 줄로, `+` 가 없으면 그 줄을 지운다). 나머지는 (B) 와 한 글자도
 다르지 않다. Play 의 INTERIM 과 같은 줄이다.
 
-**ko** (결과 2716/4000)
+**ko** (결과 2723/4000)
 
 ```diff
 -• 무료: 기본 목소리 4종이 날씨·운세 같은 문구를 읽어 주고, 알람마다 30초까지 녹음해 두면 그 녹음 그대로 울려요.
@@ -369,7 +369,7 @@ Apple 標準使用許諾契約 (EULA): https://www.apple.com/legal/internet-serv
 +  - 운세 문구는 받는 사람의 정보로 골라요.
 ```
 
-**en-US** (결과 3685/4000)
+**en-US** (결과 3692/4000)
 
 ```diff
 -• Free: default voices read messages like weather and fortune, and a recording plays exactly as recorded.
@@ -382,7 +382,7 @@ Apple 標準使用許諾契約 (EULA): https://www.apple.com/legal/internet-serv
 +• Send an alarm (time, days, voice, message) to a member who allows it, outside hours they block. Once delivered, it's theirs to change or delete; fortune uses their details.
 ```
 
-**ja** (결과 2602/4000)
+**ja** (결과 2603/4000)
 
 ```diff
 -• 無料：基本の声4種類が天気・運勢などのメッセージを読み上げます。アラームごとに30秒まで録音すれば、録音したそのままの音で鳴ります。
@@ -423,7 +423,7 @@ talk,custom,own,record,message,partner,mom,dad,parents,kids,morning,weather,fort
 | 검색어 대체안 — 글자 / 바이트 | 100바이트 | 46 / 100 | 92 / 98 | 47 / 97 |
 | 프로모션 — 기간판 | 170자 | 141 | 166 | 131 |
 | 프로모션 — 상시판 | 170자 | 93 | 168 | 83 |
-| 설명 — (B) | 4000자 | 2797 | 3774 | 2677 |
-| 설명 — INTERIM | 4000자 | 2716 | 3685 | 2602 |
+| 설명 — (B) | 4000자 | 2804 | 3781 | 2678 |
+| 설명 — INTERIM | 4000자 | 2723 | 3692 | 2603 |
 
 글자 수는 유니코드 코드 포인트 수, 바이트는 UTF-8 이다. 이 표는 위 문구에서 센 값이다 — 문구를 고치면 다시 센다.

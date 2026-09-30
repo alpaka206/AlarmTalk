@@ -61,7 +61,7 @@ Play Console 에 올리는 값의 원본이다. 콘솔을 고칠 때는 이 파�
 
 ## 전체 설명 — INTERIM (지금)
 
-### ko-KR (2908/4000)
+### ko-KR (2915/4000)
 
 ```text
 좋아하는 목소리로 깨는 아침.
@@ -73,7 +73,7 @@ Play Console 에 올리는 값의 원본이다. 콘솔을 고칠 때는 이 파�
 수학 문제나 흔들기 같은 해제 미션 없이, 듣고 싶은 목소리로 일어나요.
 
 ■ 무료 — 기본 목소리와 녹음 알람
-• 일반 알람은 개수 제한 없이 만들어요. 요일마다 반복하거나 한 번만 울릴 수 있어요.
+• 알람은 요일마다 반복하거나 한 번만 울리게 만들 수 있어요.
 • 기본 목소리 4종(시우·미나·도현·애니)이 앱 언어(한국어·영어·일본어)로 알람을 읽어 줘요. 목소리 대신 알람음으로 울리게 할 수도 있어요.
 • 문구는 운세·응원·약 등에서 골라요.
   - 운세: 성별·생년월일·태어난 시간으로 고르는, 재미로 보는 오늘의 운세
@@ -84,7 +84,7 @@ Play Console 에 올리는 값의 원본이다. 콘솔을 고칠 때는 이 파�
 ■ 등록한 목소리로 새 문장을 — 개인 이용권
 • 앱에서 녹음하거나 음성 파일(12초~2분)을 올려 목소리 1개를 등록해요. 본인 목소리이거나, 권리를 가진 사람에게 허락받은 목소리만 등록할 수 있어요.
 • 등록한 목소리는 AI 음성 합성으로 녹음에 없던 문장을 읽어요. 기상 인사·운세·응원·약 문구는 서버에서 미리 만들어 폰에 받아 두고, 나와의 관계(예: 딸)와 나를 부를 이름(예: 엄마)을 적으면(둘 다 선택) 거기에 맞춰 만들어요.
-• 직접 입력: 내가 쓴 문장을 AI가 그 목소리로 읽어 줘요. 새로 만들기는 월 30회이고, 폰에 이미 있는 문장을 다시 쓰면 횟수가 줄지 않아요.
+• 직접 입력: 내가 쓴 문장을 AI가 그 목소리로 읽어 줘요. 새로 만들기는 월 30회이고, 같은 목소리로 같은 문장을 쓰는 알람이 이 폰에 남아 있으면 다시 써도 횟수가 줄지 않아요.
 • 알람을 읽어 줄 언어는 한국어·영어·일본어 중에서 골라요.
 • 목소리는 한 계정에 1개, 등록·교체는 한 달에 한 번 할 수 있어요.
 • 개인 1개월 이용권을 선물 코드로 보낼 수도 있어요(1회 결제, 자동 갱신 없음).
@@ -133,7 +133,7 @@ Play Console 에 올리는 값의 원본이다. 콘솔을 고칠 때는 이 파�
 고객 지원: https://alarm-talk.com/contact/
 ```
 
-### en-US (3719/4000)
+### en-US (3726/4000)
 
 ```text
 Wake up to a voice you love.
@@ -145,7 +145,7 @@ AlarmTalk (알람톡 · アラームトーク) wakes you with a voice.
 No math, no shaking.
 
 ■ Free
-• Unlimited alarms, repeating or one-time
+• Repeating or one-time alarms
 • Four default voices speak the app language (English, Korean or Japanese), or use an alarm sound
 • Messages include Fortune (for fun, from gender, birth date and time), Encouragement and Meds (each ring plays the next prepared one)
 • Recorded alarm: up to 30 seconds per alarm, played exactly as recorded; it can't read other text
@@ -154,7 +154,7 @@ No math, no shaking.
 ■ Personal plan
 • Register one voice per account, once a month, by recording or uploading audio (12 sec to 2 min): yours, or one you have permission to use
 • Wake-up, fortune, encouragement and meds messages in that voice are made in advance on our servers and downloaded to your phone, tailored to who the voice is to you and what it calls you (both optional)
-• Type it yourself: AI reads your text in that voice (30 new a month; text already on your phone doesn't count)
+• Type it yourself: AI reads your text in that voice (30 new a month; free if an alarm on this phone has the same text and voice)
 • Messages in Korean, English or Japanese
 • Gift a 1-month Personal plan by code (one-time purchase, no renewal)
 
@@ -194,7 +194,7 @@ Terms of Service: https://alarm-talk.com/en/terms/
 Support: https://alarm-talk.com/en/contact/
 ```
 
-### ja-JP (2788/4000)
+### ja-JP (2789/4000)
 
 ```text
 好きな声で目覚める朝を。
@@ -206,7 +206,7 @@ Support: https://alarm-talk.com/en/contact/
 計算問題やシェイクのようなミッションはなく、聞きたい声で目を覚ませます。
 
 ■ 無料 — 基本の声と録音アラーム
-• 通常アラームは無制限。曜日ごとの繰り返しも、1回だけのアラームも設定できます。
+• 曜日ごとの繰り返しも、1回だけのアラームも設定できます。
 • 基本の声4種類が、アプリの言語(日本語・韓国語・英語)でアラームを読み上げます。声の代わりにアラーム音で鳴らすこともできます。
 • メッセージは運勢・応援・薬などから選べます。
   - 運勢：性別・生年月日・生まれた時間から選ぶ、お楽しみの今日の運勢
@@ -217,7 +217,7 @@ Support: https://alarm-talk.com/en/contact/
 ■ 登録した声で新しいメッセージを — パーソナルプラン
 • アプリで録音するか、音声ファイル(12秒〜2分)をアップロードして、声を1つ登録します。登録できるのは、本人の声か、権利を持つ人から許可を得た声だけです。
 • 登録した声は、AI音声合成で録音にない文を読み上げます。起床のあいさつ・運勢・応援・薬のメッセージはサーバーであらかじめ作ってスマホにダウンロードし、あなたとの関係(例：娘)と、あなたを呼ぶ名前(例：ママ)を入れると(どちらも任意)、それに合わせて作ります。
-• 自分で入力：書いた文をAIがその声で読み上げます。新しく作れるのは月30回まで。スマホにすでにある文を使う場合は回数に数えません。
+• 自分で入力：書いた文をAIがその声で読み上げます。新しく作れるのは月30回まで。同じ声・同じ文を使うアラームがこのスマホに残っていれば、回数に数えません。
 • 読み上げる言語は、日本語・韓国語・英語から選べます。
 • 声は1アカウントに1つ。登録・変更は月1回までです。
 • パーソナル1か月分をギフトコードで贈ることもできます(1回限りの購入、自動更新なし)。
@@ -268,7 +268,7 @@ Support: https://alarm-talk.com/en/contact/
 
 ## 전체 설명 — (B) 다음 Android 버전, W 뒤
 
-### ko-KR (2989/4000)
+### ko-KR (2996/4000)
 
 ```text
 좋아하는 목소리로 깨는 아침.
@@ -280,7 +280,7 @@ Support: https://alarm-talk.com/en/contact/
 수학 문제나 흔들기 같은 해제 미션 없이, 듣고 싶은 목소리로 일어나요.
 
 ■ 무료 — 기본 목소리와 녹음 알람
-• 일반 알람은 개수 제한 없이 만들어요. 요일마다 반복하거나 한 번만 울릴 수 있어요.
+• 알람은 요일마다 반복하거나 한 번만 울리게 만들 수 있어요.
 • 기본 목소리 4종(시우·미나·도현·애니)이 앱 언어(한국어·영어·일본어)로 알람을 읽어 줘요. 목소리 대신 알람음으로 울리게 할 수도 있어요.
 • 문구는 날씨·운세·응원·약 중에서 골라요.
   - 날씨: 그날 날씨(맑음·비·눈·미세먼지·더위·추위 등)에 맞는 문구. 지역은 국내 주요 9개 도시 중에서 골라요.
@@ -292,7 +292,7 @@ Support: https://alarm-talk.com/en/contact/
 ■ 등록한 목소리로 새 문장을 — 개인 이용권
 • 앱에서 녹음하거나 음성 파일(12초~2분)을 올려 목소리 1개를 등록해요. 본인 목소리이거나, 권리를 가진 사람에게 허락받은 목소리만 등록할 수 있어요.
 • 등록한 목소리는 AI 음성 합성으로 녹음에 없던 문장을 읽어요. 기상 인사·날씨·운세·응원·약 문구는 서버에서 미리 만들어 폰에 받아 두고, 나와의 관계(예: 딸)와 나를 부를 이름(예: 엄마)을 적으면(둘 다 선택) 거기에 맞춰 만들어요.
-• 직접 입력: 내가 쓴 문장을 AI가 그 목소리로 읽어 줘요. 새로 만들기는 월 30회이고, 폰에 이미 있는 문장을 다시 쓰면 횟수가 줄지 않아요.
+• 직접 입력: 내가 쓴 문장을 AI가 그 목소리로 읽어 줘요. 새로 만들기는 월 30회이고, 같은 목소리로 같은 문장을 쓰는 알람이 이 폰에 남아 있으면 다시 써도 횟수가 줄지 않아요.
 • 알람을 읽어 줄 언어는 한국어·영어·일본어 중에서 골라요.
 • 목소리는 한 계정에 1개, 등록·교체는 한 달에 한 번 할 수 있어요.
 • 개인 1개월 이용권을 선물 코드로 보낼 수도 있어요(1회 결제, 자동 갱신 없음).
@@ -341,7 +341,7 @@ Support: https://alarm-talk.com/en/contact/
 고객 지원: https://alarm-talk.com/contact/
 ```
 
-### en-US (3808/4000)
+### en-US (3815/4000)
 
 ```text
 Wake up to a voice you love.
@@ -353,7 +353,7 @@ AlarmTalk (알람톡 · アラームトーク) wakes you with a voice.
 No math, no shaking.
 
 ■ Free
-• Unlimited alarms, repeating or one-time
+• Repeating or one-time alarms
 • Four default voices speak the app language (English, Korean or Japanese), or use an alarm sound
 • Messages: Weather (the day's weather, from rain to poor air; one of 9 major Korean cities), Fortune (for fun, from gender, birth date and time), Encouragement and Meds (each ring plays the next prepared one)
 • Recorded alarm: up to 30 seconds per alarm, played exactly as recorded; it can't read other text
@@ -362,7 +362,7 @@ No math, no shaking.
 ■ Personal plan
 • Register one voice per account, once a month, by recording or uploading audio (12 sec to 2 min): yours, or one you have permission to use
 • Wake-up, weather, fortune, encouragement and meds messages in that voice are made in advance on our servers and downloaded to your phone, tailored to who the voice is to you and what it calls you (both optional)
-• Type it yourself: AI reads your text in that voice (30 new a month; text already on your phone doesn't count)
+• Type it yourself: AI reads your text in that voice (30 new a month; free if an alarm on this phone has the same text and voice)
 • Messages in Korean, English or Japanese
 • Gift a 1-month Personal plan by code (one-time purchase, no renewal)
 
@@ -402,7 +402,7 @@ Terms of Service: https://alarm-talk.com/en/terms/
 Support: https://alarm-talk.com/en/contact/
 ```
 
-### ja-JP (2863/4000)
+### ja-JP (2864/4000)
 
 ```text
 好きな声で目覚める朝を。
@@ -414,7 +414,7 @@ Support: https://alarm-talk.com/en/contact/
 計算問題やシェイクのようなミッションはなく、聞きたい声で目を覚ませます。
 
 ■ 無料 — 基本の声と録音アラーム
-• 通常アラームは無制限。曜日ごとの繰り返しも、1回だけのアラームも設定できます。
+• 曜日ごとの繰り返しも、1回だけのアラームも設定できます。
 • 基本の声4種類が、アプリの言語(日本語・韓国語・英語)でアラームを読み上げます。声の代わりにアラーム音で鳴らすこともできます。
 • メッセージは天気・運勢・応援・薬から選べます。
   - 天気：その日の天気(晴れ・雨・雪・PM2.5・暑さ・寒さなど)に合わせたメッセージ。都市は韓国の主要9都市から選びます。
@@ -426,7 +426,7 @@ Support: https://alarm-talk.com/en/contact/
 ■ 登録した声で新しいメッセージを — パーソナルプラン
 • アプリで録音するか、音声ファイル(12秒〜2分)をアップロードして、声を1つ登録します。登録できるのは、本人の声か、権利を持つ人から許可を得た声だけです。
 • 登録した声は、AI音声合成で録音にない文を読み上げます。起床のあいさつ・天気・運勢・応援・薬のメッセージはサーバーであらかじめ作ってスマホにダウンロードし、あなたとの関係(例：娘)と、あなたを呼ぶ名前(例：ママ)を入れると(どちらも任意)、それに合わせて作ります。
-• 自分で入力：書いた文をAIがその声で読み上げます。新しく作れるのは月30回まで。スマホにすでにある文を使う場合は回数に数えません。
+• 自分で入力：書いた文をAIがその声で読み上げます。新しく作れるのは月30回まで。同じ声・同じ文を使うアラームがこのスマホに残っていれば、回数に数えません。
 • 読み上げる言語は、日本語・韓国語・英語から選べます。
 • 声は1アカウントに1つ。登録・変更は月1回までです。
 • パーソナル1か月分をギフトコードで贈ることもできます(1回限りの購入、自動更新なし)。
@@ -480,14 +480,14 @@ Support: https://alarm-talk.com/en/contact/
 (B) 와 ko 는 한 글자도 다르지 않다. en·ja 는 날씨 한 줄만 다르다 — Android 30 의 en 은 프리셋이 없고 ja 프리셋은
 일본 도시라서 '국내 9개 도시'를 말하지 않는다. (B) 에서 `-` 줄을 `+` 줄로 바꾼다.
 
-**en-US** (결과 3778/4000)
+**en-US** (결과 3785/4000)
 
 ```diff
 -• Messages: Weather (the day's weather, from rain to poor air; one of 9 major Korean cities), Fortune (for fun, from gender, birth date and time), Encouragement and Meds (each ring plays the next prepared one)
 +• Messages: Weather (the day's weather, from rain to poor air), Fortune (for fun, from gender, birth date and time), Encouragement and Meds (each ring plays the next prepared one)
 ```
 
-**ja-JP** (결과 2845/4000)
+**ja-JP** (결과 2846/4000)
 
 ```diff
 -  - 天気：その日の天気(晴れ・雨・雪・PM2.5・暑さ・寒さなど)に合わせたメッセージ。都市は韓国の主要9都市から選びます。
@@ -544,14 +544,14 @@ R2 (100자)
 | 제목 | 30 | 14 | 28 | 16 |
 | 짧은 설명 — INTERIM | 80 | 54 | 78 | 53 |
 | 짧은 설명 — (A)·(B) | 80 | 54 | 80 | 53 |
-| 전체 설명 — INTERIM | 4000 | 2908 | 3719 | 2788 |
-| 전체 설명 — INTERIM + R1 | 4000 | 2961 | 3779 | 2830 |
-| 전체 설명 — INTERIM + R1 + R2 | 4000 | 3063 | 3897 | 2930 |
-| 전체 설명 — (A) | 4000 | 2989 | 3778 | 2845 |
-| 전체 설명 — (A) + R1 | 4000 | 3042 | 3838 | 2887 |
-| 전체 설명 — (A) + R1 + R2 | 4000 | 3144 | 3956 | 2987 |
-| 전체 설명 — (B) | 4000 | 2989 | 3808 | 2863 |
-| 전체 설명 — (B) + R1 | 4000 | 3042 | 3868 | 2905 |
-| 전체 설명 — (B) + R1 + R2 | 4000 | 3144 | 3986 | 3005 |
+| 전체 설명 — INTERIM | 4000 | 2915 | 3726 | 2789 |
+| 전체 설명 — INTERIM + R1 | 4000 | 2968 | 3786 | 2831 |
+| 전체 설명 — INTERIM + R1 + R2 | 4000 | 3070 | 3904 | 2931 |
+| 전체 설명 — (A) | 4000 | 2996 | 3785 | 2846 |
+| 전체 설명 — (A) + R1 | 4000 | 3049 | 3845 | 2888 |
+| 전체 설명 — (A) + R1 + R2 | 4000 | 3151 | 3963 | 2988 |
+| 전체 설명 — (B) | 4000 | 2996 | 3815 | 2864 |
+| 전체 설명 — (B) + R1 | 4000 | 3049 | 3875 | 2906 |
+| 전체 설명 — (B) + R1 + R2 | 4000 | 3151 | 3993 | 3006 |
 
 글자 수는 유니코드 코드 포인트 수다. 이 표는 위 문구에서 센 값이다 — 문구를 고치면 다시 센다.
