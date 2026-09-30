@@ -2,7 +2,7 @@ import type { InStatement } from '@libsql/client';
 import type { DbExecutor } from './transactions';
 import { cancelActiveSubscriptionsForUser } from './billing-cancel';
 import { enqueueUserVoiceArtifacts } from './audio-retention';
-import { revokeDeletedVoices } from './voice-revocation';
+import { audioUrlPointsAtUploadsOf, revokeDeletedVoices } from './voice-revocation';
 
 const TEXT_ENCODER = new TextEncoder();
 
@@ -317,6 +317,21 @@ export async function purgeUserAccount(
     //   를 하위질의로 읽으므로 그보다 **먼저** 와야 한다). 재배치하지 말 것.
     //   ⚠ 결과를 읽어야 하는 문장은 여기 넣지 말 것 — `revokeDeletedVoices` 처럼 자기가
     //   쓴 행을 되읽는 경로는 그대로 `execute` 로 둔다.
+    //
+    // **내 녹음 원본을 가리키는 문구의 키를 먼저 삭제 큐에 넣는다.** `enqueueUserVoiceArtifacts`
+    // 는 업로드 행에서만 키를 읽는데, 가족 녹음 원본은 7일 TTL 이 업로드 행을 먼저 지운다 —
+    // TTL 은 행 삭제 뒤 큐 적재를 **따로** 커밋하므로, 그 사이가 끊기면 R2 파일이 살아 있는데
+    // 그 키를 아는 곳이 받은 사람의 문구뿐이다. 아래에서 그 문구를 지우거나 키를 비우기
+    // **전에** 옮겨 두지 않으면 탈퇴자의 녹음이 R2 에 영영 남는다. (같은 키는 고유 색인으로
+    // 무시된다. id 는 드레인이 식별자로만 쓴다.)
+    const pointsAtMyUploads = audioUrlPointsAtUploadsOf('audio_url', userIds);
+    writes.push({
+      sql: `INSERT OR IGNORE INTO pending_external_deletions (id, kind, ref)
+            SELECT lower(hex(randomblob(16))), 'r2_object', audio_url
+              FROM messages
+             WHERE audio_url IS NOT NULL AND ${pointsAtMyUploads.sql}`,
+      args: pointsAtMyUploads.args,
+    });
     writes.push({
       sql: `DELETE FROM voucher_redemptions
             WHERE user_id = ?
@@ -449,33 +464,21 @@ export async function purgeUserAccount(
     //     플랜 강등의 `detachFamilyAlarmMessagesUsingOwnedUploads` 와 같은 처리다.
     // ⚠ 셋 다 `DELETE FROM alarms`·`message_library` 삭제 **뒤**여야 하고(참조가 사라진 뒤에
     //   판정한다), 업로드 표를 하위질의로 읽으므로 `DELETE FROM voice_uploads` 는 맨 뒤다.
-    // ⚠ **업로드 행만 보면 놓친다.** 가족 녹음 원본은 프로필에 연결되지 않아 7일 TTL 이
-    //   `voice_uploads` 행을 먼저 지운다(`cleanupExpiredAudio`) — 그 뒤에도 수신 확인 전
-    //   문구는 같은 키를 들고 있다. 그래서 **키 앞머리**(`voices/<내 id>/` — `r2-storage.ts` 의
-    //   `store`)로도 고른다. `LIKE` 대신 앞머리 비교라 id 안의 `%`·`_` 를 이스케이프할 일이 없다.
-    const uploadKeyPrefixes = userIds.map((id) => `voices/${id}/`);
-    const pointsAtMyUpload = `(audio_url IN (SELECT object_key FROM voice_uploads WHERE user_id IN (?, ?))
-                               OR substr(audio_url, 1, length(?)) = ?
-                               OR substr(audio_url, 1, length(?)) = ?)`;
-    const pointsAtMyUploadArgs = [
-      ...userIds,
-      uploadKeyPrefixes[0]!,
-      uploadKeyPrefixes[0]!,
-      uploadKeyPrefixes[1]!,
-      uploadKeyPrefixes[1]!,
-    ];
+    // ⚠ **업로드 행만 보면 놓친다** — 판정은 `audioUrlPointsAtUploadsOf`(업로드 행 + 키
+    //   앞머리)다. 가족 녹음 원본은 7일 TTL 이 업로드 행을 먼저 지우기 때문이다. 그렇게 찾은
+    //   키는 맨 앞 묶음에서 삭제 큐에 이미 넣었다(아래 `DELETE`·`UPDATE` 가 키를 버리기 전에).
     writes.push({
       sql: `DELETE FROM messages
             WHERE category = 'family-voice'
               AND COALESCE(is_preset, 0) = 0
-              AND ${pointsAtMyUpload}
+              AND ${pointsAtMyUploads.sql}
               AND NOT EXISTS (SELECT 1 FROM alarms a WHERE a.message_id = messages.id)
               AND NOT EXISTS (SELECT 1 FROM message_library ml WHERE ml.message_id = messages.id)`,
-      args: pointsAtMyUploadArgs,
+      args: pointsAtMyUploads.args,
     });
     writes.push({
-      sql: `UPDATE messages SET audio_url = NULL WHERE ${pointsAtMyUpload}`,
-      args: pointsAtMyUploadArgs,
+      sql: `UPDATE messages SET audio_url = NULL WHERE ${pointsAtMyUploads.sql}`,
+      args: pointsAtMyUploads.args,
     });
     writes.push({
       sql: `DELETE FROM voice_uploads WHERE user_id IN (?, ?)`,

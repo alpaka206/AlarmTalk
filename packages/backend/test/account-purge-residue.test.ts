@@ -416,19 +416,20 @@ describe('탈퇴 파기 뒤 잔존물 (실제 SQLite)', () => {
       const queue = await db.execute(`SELECT kind, ref FROM pending_external_deletions ORDER BY ref`);
       const jobs = queue.rows.map((row) => [String(row.kind), String(row.ref)]);
       // A 의 클론·원본 녹음·A 의 목소리로 만든 음원(B 가 만든 것까지)이 전부 들어 있다.
-      expect(jobs).toEqual(
-        expect.arrayContaining([
-          ['elevenlabs_voice', 'el-voice-a'],
-          ['r2_object', A_GENERATED_KEY],
-          ['r2_object', B_ON_A_GENERATED_KEY],
-          ['r2_object', A_UPLOAD_KEY],
-        ]),
-      );
+      // 업로드 행이 TTL 로 먼저 지워진 옛 녹음도 — 그 키를 아는 곳이 B 의 문구뿐이었으므로
+      // 문구를 지우기 전에 옮겨 둬야 R2 에 남지 않는다.
+      const aJobs = [
+        ['elevenlabs_voice', 'el-voice-a'],
+        ['r2_object', A_GENERATED_KEY],
+        ['r2_object', B_ON_A_GENERATED_KEY],
+        ['r2_object', A_UPLOAD_KEY],
+        ['r2_object', A_OLD_UPLOAD_KEY],
+      ];
+      expect(jobs).toEqual(expect.arrayContaining(aJobs));
       // 나머지는 A 와 무관하다 — 그룹이 해체돼 무료가 된 B 의 클론 슬롯 반납(원본은 남아
-      // 다시 복제할 수 있다)이다. A 를 가리키는 것은 위 넷뿐이다.
-      const others = jobs.filter(
-        ([, ref]) => !['el-voice-a', A_GENERATED_KEY, B_ON_A_GENERATED_KEY, A_UPLOAD_KEY].includes(ref!),
-      );
+      // 다시 복제할 수 있다)이다. A 를 가리키는 것은 위 다섯뿐이다.
+      const aRefs = aJobs.map(([, ref]) => ref);
+      const others = jobs.filter(([, ref]) => !aRefs.includes(ref));
       expect(others).toEqual([['elevenlabs_voice', 'el-voice-b']]);
       const bVoice = await db.execute(`SELECT elevenlabs_voice_id, evicted_at FROM voice_profiles WHERE id = 'vp-b'`);
       expect(bVoice.rows[0]?.elevenlabs_voice_id).toBeNull();
@@ -440,6 +441,9 @@ describe('탈퇴 파기 뒤 잔존물 (실제 SQLite)', () => {
       expect(purged.downgradedAlarms).toEqual(
         expect.arrayContaining([
           { alarmId: 'al-a-to-b', ownerUserId: B_PK, isReceived: true },
+          // 업로드 행이 먼저 사라진 옛 녹음도 — 다운로드는 끝났는데 수신 확인이 실패한 기기가
+          // 그 녹음으로 계속 울지 않도록.
+          { alarmId: 'al-a-to-b-old', ownerUserId: B_PK, isReceived: true },
           { alarmId: 'al-delivered-a-to-b', ownerUserId: B_PK, isReceived: true },
           { alarmId: 'al-b-own', ownerUserId: B_PK, isReceived: false },
         ]),
@@ -522,6 +526,7 @@ describe('탈퇴 파기 뒤 잔존물 (실제 SQLite)', () => {
       expect(rows).toEqual(
         expect.arrayContaining([
           ['al-a-to-b', B_PK, null, null, 1],
+          ['al-a-to-b-old', B_PK, null, null, 1],
           ['al-delivered-a-to-b', B_PK, null, null, 1],
         ]),
       );
