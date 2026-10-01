@@ -462,7 +462,7 @@
     **차분은 존댓말도 아니다** — 연인·친구의 반말은 반말이다.
   - ⚠ **결은 문장으로만 전한다 — 태그를 붙이지 않는다**(2026-09-30, §10). 예전에는 결마다 태그 목록(`[cheerfully]`·
     `[warmly]` …)을 주고, 차분이면 들뜬 태그를 서버가 지우고 기본 태그를 `warmly` 로 바꿨으며, 등록 미리듣기는
-    고정 예문에 입힌 태그를 `preview_tag` 에 남겼다 — 태그와 함께 전부 없앴다. 모델이 태그를 내도 서버가 벗긴다.
+    고정 예문에 입힌 태그를 `preview_tag` 에 남겼다 — 태그와 함께 전부 없앴다(그 칸은 마이그레이션 #125 가 DROP). 모델이 태그를 내도 서버가 벗긴다.
     차분을 지키는 서버 쪽 문장 가드(느낌표 수 같은)는 두지 않았다 — 프롬프트 지시뿐이다.
   - **정하는 곳은 등록 녹음 전사다**(2026-09-29 사용자 결정 — "목소리 느낌 그거 그냥 없애야 할거같아 …
     말투라도 보고 진행해봐"). 두 앱 모두 '세부 정보' 단계에 결을 고르는 칸이 **없고** 클론 요청에 결을 싣지
@@ -1165,7 +1165,7 @@ TTS 는 웃음 글자를 **글자로 읽는다**(2026-09-29 v3·v4·v4 Turbo 비
   4.81초). v3 시절 일부러 늦춘 speed 0.9 는 사라졌다 — 속도는 문장부호(`…`·쉼표)로만 늦춘다.
 - **태그를 붙이지 않는다.** Gemini 에게 태그를 쓰라고 하던 세 경로(직접 입력 자동 태깅·클론 사전렌더와 등록
   미리듣기·동적 생성)의 지시와 그 후처리(졸린·공포·차분 금지 태그, 문장마다 다시 앞세우기, 기본 태그,
-  `preview_tag`)를 통째로 없앴다. 스톡 프리셋 60문장의 태그도 뺐다(화면 문구는 그대로 — §5-3). 근거는 아래 측정이다:
+  `preview_tag` — 칸은 마이그레이션 #125 가 DROP)를 통째로 없앴다. 스톡 프리셋 60문장의 태그도 뺐다(화면 문구는 그대로 — §5-3). 근거는 아래 측정이다:
   v4 Turbo 는 문장으로 결을 잡고, 태그는 **차분을 망치는 쪽으로만** 효과가 있었다. 남은 대괄호는 사용자가 친 것과
   글자 웃음을 바꾼 `[laughs]`(§9) 둘뿐이다. 같은 언어 직접 입력은 이제 Gemini 를 부르지 않는다.
 - **말끝을 가공하지 않는다.** v3 는 마지막 음절 직후 뚝 끊겨(끝 무음 0.02초, 멈추는 순간 세기가 평균의 1.22~1.34배)
@@ -1341,7 +1341,7 @@ TTS 는 웃음 글자를 **글자로 읽는다**(2026-09-29 v3·v4·v4 Turbo 비
 | 직접 입력 글자 웃음 → `[laughs]`(합성 글자만) · 같은 언어는 Gemini 를 부르지 않는다 | — 서버가 한다. 화면은 서버의 `text`(친 글 그대로) | — 같음 | `lib/typed-laughter.ts` `typedLaughterToTags` · `lib/vertex-translate.ts` `speakTypedLaughter`(웃음만 있으면 그대로) · `prepareAlarmTextWithVertex` 의 `speakTypedLaughter` 옵션(번역일 때만 Gemini) ← `routes/tts.ts`(프리셋 제외). 회귀 `typed-laughter.test.ts`·`vertex-translate.test.ts`·`tts.test.ts` |
 | 같은 언어 직접 입력의 화면 문구 = 친 글 · 캐시 키가 화면 문구까지 가린다 · 대괄호 친 번역의 화면 문구에서 서버 웃음 벗기기 | — | — | `routes/tts.ts` 의 `messageText`(`typedSameLanguage` → `deriveAlarmDisplayText(requestText, …)`)·`cacheKeyText` · `deriveAlarmDisplayText` 의 `withoutServerLaughter`(`lib/vertex-translate.ts`) |
 | 번역의 웃음 수 = 사용자가 친 수 · 원문에 없던 톤 태그는 벗긴다 | — | — | `prepareAlarmTextWithVertex` 의 번역 갈래 — `canonicalizeLaughterTags`(사용자 태그는 친 수만큼 제외, `laughterTagCounts`)·`withLeadingLaugh`·`stripTagsWhere` · 지운 태그 자리 `tagGapFill` |
-| 태그를 붙이지 않는다 · 모델이 낸 태그는 벗긴다 | 옛 행 표시용 벗기기만 남는다 — `data/DeliveryTags.kt` `stripDeliveryTags` | 같음 — `DeliveryTags.swift` | 프롬프트(`DYNAMIC_SYSTEM_INSTRUCTION`·`dynamicAlarmTextPrompt`·`prerenderClipPrompt`·`alarmTextPrompt` — 태그 지시 없음) · `stripAllTags` ← `generatePrerenderClipText`·`generateDynamicAlarmTextWithVertex` · 스톡 프리셋에 태그 없음(회귀 `stock-clips.test.ts`) · `voice_profiles.preview_tag` 는 읽지도 쓰지도 않는다(다음 회차 DROP) |
+| 태그를 붙이지 않는다 · 모델이 낸 태그는 벗긴다 | 옛 행 표시용 벗기기만 남는다 — `data/DeliveryTags.kt` `stripDeliveryTags` | 같음 — `DeliveryTags.swift` | 프롬프트(`DYNAMIC_SYSTEM_INSTRUCTION`·`dynamicAlarmTextPrompt`·`prerenderClipPrompt`·`alarmTextPrompt` — 태그 지시 없음) · `stripAllTags` ← `generatePrerenderClipText`·`generateDynamicAlarmTextWithVertex` · 스톡 프리셋에 태그 없음(회귀 `stock-clips.test.ts`) · `voice_profiles.preview_tag` 칸은 마이그레이션 #125 가 DROP(회귀 `migration-125-drop-preview-tag.test.ts`) |
 | 합성 모델 = `eleven_v4_turbo`(코드 상수) · 설정은 stability·similarity 둘 · 말끝 가공 없음 | — | — | `lib/tts-model.ts` 의 `TTS_MODEL_ID`·`TTS_VOICE_SETTINGS` ← `lib/elevenlabs.ts` `textToSpeech`·`lib/voice-provider.ts`·`scripts/prerender-stock-preview.ts`·`scripts/publish-stock-clips.ts`(회귀 `voice-provider-model.test.ts`·`elevenlabs.test.ts`·`publish-stock-clips-contract.test.ts`·`stock-clip-provider-text.test.ts`) · 시청본 지문 세대 `PIPELINE_VERSION`(`scripts/stock-preview-fingerprint.ts`) |
 | 캐시 키 범위(스톡 / 직접 입력은 그 사람) · 삭제 예약은 다시 넣으면 id 가 바뀐다 | — | — | `lib/audio-cache.ts` 의 `STOCK_TTS_CACHE_SCOPE`·`manualTtsCacheScope` ← `lib/stock-clips.ts` `generateStockClip`·`scripts/publish-stock-clips.ts`·`routes/tts.ts`(`isManualGeneration`) · `lib/audio-retention.ts` 의 `REFRESH_RESERVATION_ON_CONFLICT`(회귀 `publish-stock-clips-contract.test.ts`·`tts.test.ts`·`audio-retention.test.ts`) |
 
