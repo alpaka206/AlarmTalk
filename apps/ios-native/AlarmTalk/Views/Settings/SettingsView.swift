@@ -250,6 +250,12 @@ struct SettingsView: View {
     }
 
     private var promptObservation: PromptObservation {
+        Self.observation(of: auth)
+    }
+
+    /// 관찰 값 — 화면(`onChange`)과 회귀 테스트가 같은 함수를 쓴다(`AuthViewModelTests`).
+    @MainActor
+    static func observation(of auth: AuthViewModel) -> PromptObservation {
         PromptObservation(
             userID: auth.session?.user.id,
             settings: auth.session?.user.dynamicPromptSettings,

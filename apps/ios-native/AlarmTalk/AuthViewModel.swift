@@ -262,6 +262,14 @@ final class AuthViewModel: ObservableObject {
     /// 전환으로 잘못 읽는다. 안드로이드 `AuthSessionStore.sessionGeneration` 과 같은 자리다.
     private var sessionRevision: UInt = 0
 
+    /// **이 계정을 떠나기 시작했다**(명시적 로그아웃·탈퇴). 세션 번호를 곧바로 올려, 떠 있던 계정 설정 올리기의
+    /// 응답이 떠나는 계정의 세션·기기 값에 다시 적히지 않게 한다(`updateProfile` 의 `requestSessionRevision`).
+    /// ⚠ `signOut` 은 알람 정리를 기다린 **뒤에야** 불린다 — 거기서만 올리면 그 사이(최대 수 초) 도착한 응답이
+    /// 통과한다. 안드로이드는 세션을 먼저 비우고(`clear` → 세대) 기기 값을 나중에 지워 같은 창이 없다.
+    private func beginLeavingAccount() {
+        sessionRevision &+= 1
+    }
+
     /// 계정 요청 하나의 표 — `/auth/me`·로그인을 **보내기 직전에** 뜬다(`beginAccountRequest`).
     /// 안드로이드 `AccountRequest`(`ui/billing/PersonalPromoLedger.kt`)와 같은 모양이다.
     struct AccountRequest: Equatable {
@@ -1350,6 +1358,7 @@ final class AuthViewModel: ObservableObject {
             // 오프라인·5xx 로 실패했을 때도 표시가 살아남아, **다음 실행이 계정이 멀쩡한
             // 사용자를 로그아웃시키고 알람까지 끈다.**
             PendingSignOutStore.mark(currentUserID)
+            beginLeavingAccount()
             if let currentUserID, !currentUserID.isEmpty {
                 accessSnapshotStore.clear(userID: currentUserID)
                 clearAccountPreferences(currentUserID)
@@ -1357,6 +1366,8 @@ final class AuthViewModel: ObservableObject {
             // ⚠ 탈퇴도 로그아웃과 같다 — 계정을 떠났는데 알람이 울리면 안 된다.
             let cleaned = await onLeaveAccountStopAlarms(currentUserID)
             signOut(message: "회원 탈퇴가 완료됐어요.")
+            // 세션을 비운 뒤 한 번 더 — 알람 정리를 기다리는 사이 받아 적힌 값을 지운다(`signOutExplicitly` 주석).
+            if let currentUserID, !currentUserID.isEmpty { clearAccountPreferences(currentUserID) }
             // 탈퇴는 되살릴 계정 자체가 없다 — 자동 만료 표시를 남기지 않는다.
             SessionExpiryStore.clear()
             // ⚠ **뒷정리가 실제로 끝났을 때만** 표시를 내린다(Codex #699 P1). 콜드 스타트에서
@@ -1399,6 +1410,7 @@ final class AuthViewModel: ObservableObject {
                 // 토큰을 다시 등록하므로, 그때는 이 표시가 정리된다.
                 PendingSignOutStore.markServerCleanup(token: token, for: currentUserID)
             }
+            beginLeavingAccount()
             if let currentUserID, !currentUserID.isEmpty {
                 accessSnapshotStore.clear(userID: currentUserID)
                 clearAccountPreferences(currentUserID)
@@ -1416,6 +1428,8 @@ final class AuthViewModel: ObservableObject {
                 message: "회원 탈퇴가 접수됐어요. 30일 안에 다시 로그인하면 취소할 수 있어요.",
                 revokeOnServer: false
             )
+            // 세션을 비운 뒤 한 번 더 — 알람 정리를 기다리는 사이 받아 적힌 값을 지운다(`signOutExplicitly` 주석).
+            if let currentUserID, !currentUserID.isEmpty { clearAccountPreferences(currentUserID) }
             // 탈퇴는 되살릴 계정 자체가 없다 — 자동 만료 표시를 남기지 않는다.
             SessionExpiryStore.clear()
             // 로컬 뒷정리와 푸시 해제가 **둘 다** 끝났을 때만 표시를 내린다.
@@ -1994,6 +2008,7 @@ final class AuthViewModel: ObservableObject {
 
     func signOutExplicitly() {
         let userID = session?.user.id
+        beginLeavingAccount()
         clearAccountPreferences(userID)
         // ⚠ **순서가 중요하다 — 시작만 해 놓으면 소용없다**(2026-08-18 Codex #697 P2).
         // 예전에는 `Task { }` 로 띄우기만 하고 곧바로 `signOut()` 을 불렀는데, 그 안의
@@ -2038,6 +2053,10 @@ final class AuthViewModel: ObservableObject {
             await stopAlarms(departingUserID)
             isBusy = false
             signOut(revokeOnServer: false)
+            // ⚠ **세션을 비운 뒤 한 번 더 지운다**(멱등, Codex #837 검증). 위 알람 정리를 기다리는 동안에도 세션은
+            //   살아 있어, 그 사이 도착한 `/auth/me` 를 앱 루트가 받아 적으면(`AlarmTalkApp` 의 계정 설정 관찰) 떠나는
+            //   계정의 지역·사주가 기기에 다시 적힌다. 세션이 비면 더는 적히지 않는다.
+            clearAccountPreferences(departingUserID)
             // 서버 쪽까지 끝났을 때만 표시를 내린다 — 실패하면 남겨서 다음 실행이 재시도한다.
             // ⚠ 줄에 태운다 — 이 요청이 날아가는 동안 새 로그인이 끝나면 `token_epoch` 가
             // 올라가 **그 새 세션이 죽는다**(`authServerMutation` 주석).

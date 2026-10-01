@@ -276,6 +276,31 @@ final class AuthViewModelTests: XCTestCase {
         XCTAssertFalse(DynamicPromptPreferences.hasUnsyncedChange(userID: userID))
     }
 
+    /// 회귀(Codex #837 11차): **설정 화면은 같은 내용의 `/auth/me` 도 새 응답으로 보고 기기 값을 다시 읽는다.** 값만
+    /// 관찰하면 앞서 키체인 받아 적기가 실패했다가 같은 내용의 다음 응답에서 성공해도 화면이 옛 스냅샷에 남고, 그
+    /// 스냅샷에서 다른 묶음을 고치면 옛 값 전체가 올라간다. 화면이 쓰는 관찰 함수(`SettingsView.observation(of:)`)를
+    /// 실제 뷰모델로 돌린다.
+    func testSettingsScreenObservationChangesOnEveryAccountAnswerEvenWithSameSettings() async throws {
+        let api = MockAuthAPI()
+        let vm = AuthViewModel(api: api, appleCredentialProvider: MockAppleCredentialProvider())
+        var user = makeEmailSession().user
+        let seoul = try XCTUnwrap(WeatherRegions.canonicalLabels(key: "kr-seoul"))
+        user.dynamicPromptSettings = DynamicPromptSettings(
+            weather: DynamicPromptWeatherSettings(country: seoul.country, city: seoul.city, region: "kr-seoul")
+        )
+        vm._setSessionForTesting(AuthSession(token: "test-jwt", user: user))
+        addTeardownBlock { KeychainStore.deleteSession() }
+        api.meResult = .success(user)
+
+        await vm.refreshUser()
+        let first = SettingsView.observation(of: vm)
+        await vm.refreshUser()
+        let second = SettingsView.observation(of: vm)
+
+        XCTAssertEqual(first.settings, second.settings, "전제: 두 응답의 계정 설정은 같다")
+        XCTAssertNotEqual(first, second, "같은 내용의 응답에 설정 화면이 다시 읽지 않는다")
+    }
+
     /// 회귀(Codex #837 11차): **로그아웃 전에 보낸 설정 PATCH 의 응답은, 같은 계정으로 다시 로그인한 새 세션에 적지 않는다.**
     /// 계정 id 만 보면 통과한다 — 그러면 앞 세션의 응답이 새 세션의 설정을 옛 값으로 덮고(받아 적기가 그 옛 값을 기기에
     /// 적는다), 새 세션에 떠 있는 조회를 울타리로 가리고, 확인 조회까지 한다. 세션 번호(`sessionRevision`)로 가른다 —
@@ -323,6 +348,53 @@ final class AuthViewModelTests: XCTestCase {
         XCTAssertEqual(api.meCallCount, 0, "끝난 세션의 응답으로 확인 조회를 했다")
         XCTAssertEqual(vm.accountAnswerRevision, answersBefore, "끝난 세션의 응답이 계정 응답으로 적혔다")
         XCTAssertNil(vm.statusMessage)
+    }
+
+    /// 회귀(Codex #837 11차 검증): **명시적 로그아웃은 시작하는 순간 떠 있던 설정 올리기의 응답을 버리고, 세션을 비운
+    /// 뒤 기기 값을 한 번 더 지운다.** `signOut` 은 알람 정리를 기다린 뒤에야 불린다 — 그 사이 도착한 응답이 세션에
+    /// 적히고 확인 조회까지 하면, 앱 루트의 받아 적기가 떠나는 계정의 지역·사주를 기기에 다시 적어 로그아웃 뒤에도
+    /// 남는다(스펙 voice-and-message.md 4항 — 명시적 로그아웃은 값을 지운다).
+    func testExplicitSignOutDropsInFlightPromptSettingsAcknowledgementAndClearsRewrittenValues() async throws {
+        let api = MockAuthAPI()
+        let vm = AuthViewModel(api: api, appleCredentialProvider: MockAppleCredentialProvider())
+        let session = makeEmailSession()
+        let userID = session.user.id
+        vm._setSessionForTesting(session)
+        addTeardownBlock {
+            KeychainStore.deleteSession()
+            DynamicPromptPreferences.clear(userID: userID)
+            PendingSignOutStore.clear(userID)
+        }
+        let seoulRegion = try XCTUnwrap(WeatherRegions.byKey("kr-seoul"))
+        var seoul = DynamicPromptPreferences()
+        seoul.weatherCountry = seoulRegion.legacyCountry
+        seoul.weatherCity = seoulRegion.legacyCity
+        XCTAssertTrue(seoul.saveLocalEdit(userID: userID))
+        api.meResult = .success(session.user)
+        // 알람 정리를 기다리는 사이 앱 루트가 받아 적기를 돌려 떠나는 계정의 값을 다시 적었다고 친다.
+        let rewritten = seoul
+        vm.onLeaveAccountStopAlarms = { departing in
+            XCTAssertTrue(rewritten.save(userID: departing))
+            return true
+        }
+        api.beforeUpdateProfileResponse = {
+            api.beforeUpdateProfileResponse = nil
+            // PATCH 가 떠 있는 사이 로그아웃을 눌렀다.
+            vm.signOutExplicitly()
+        }
+
+        await vm.updateProfile(dynamicPromptSettings: seoul.toSettings())
+        for _ in 0..<200 where vm.session != nil || vm.isBusy {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+
+        XCTAssertNil(vm.session)
+        XCTAssertEqual(api.meCallCount, 0, "떠나는 계정의 응답으로 확인 조회를 했다")
+        XCTAssertEqual(
+            DynamicPromptPreferences.load(userID: userID), DynamicPromptPreferences(),
+            "로그아웃 뒤에도 떠나는 계정의 지역·사주가 기기에 남았다"
+        )
+        XCTAssertFalse(DynamicPromptPreferences.hasUnsyncedChange(userID: userID))
     }
 
     /// 회귀(2026-09-27 리뷰 2차): **앞 진입에 보낸** `/auth/me` 가 백그라운드를 건너 복귀 뒤에

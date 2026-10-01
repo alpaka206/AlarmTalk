@@ -355,13 +355,4 @@ final class AccountPromptSettingsAdoptionTests: XCTestCase {
         XCTAssertEqual(local.weatherRegion?.key, "jp-tokyo")
         XCTAssertEqual(edited.toSettings().weather.region, "jp-tokyo", "올릴 값에 옛 지역이 실린다")
     }
-
-    /// **설정 화면은 같은 내용의 응답도 새 응답으로 보고 다시 읽는다** — 축에 응답 순번이 있다
-    /// (`SettingsView.PromptObservation`, 앱 루트의 `accountPromptSettingsKey` 와 같은 축).
-    func test_설정_화면은_같은_값의_응답도_다시_읽는다() throws {
-        let settings = try regionSettings("kr-seoul")
-        let first = SettingsView.PromptObservation(userID: userID, settings: settings, answerRevision: 1)
-        XCTAssertEqual(first, SettingsView.PromptObservation(userID: userID, settings: settings, answerRevision: 1))
-        XCTAssertNotEqual(first, SettingsView.PromptObservation(userID: userID, settings: settings, answerRevision: 2))
-    }
 }
