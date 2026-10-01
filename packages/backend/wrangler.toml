@@ -30,10 +30,14 @@ binding = "VOICE_BUCKET"
 bucket_name = "voice-alarm-voices"
 
 [env.dev.triggers]
-# 5분 틱이 본체다. "* * * * *" 는 기간 한정 개인 플랜 종료(전환·보관 스윕) 전용 —
-# src/lib/personal-promo.ts 의 PERSONAL_PROMO_END_CRON 과 같은 문자열이어야 한다.
-# 끝 시각 전에는 DB 를 부르지 않는다. 끝부터는 삭제가 다 끝난 뒤에도 **분당 존재 확인 조회 하나**를
-# 돌린다(D15 — 고정 꼬리 없이 끝까지 비운다). 정리 PR 에서 PERSONAL_PROMO_STARTS_AT 과 함께 뺀다.
+# 5분 틱이 본체다. "* * * * *" 는 실행마다 예산(subrequest)을 통째로 받는 전용 크론이다 —
+# src/lib/personal-promo.ts 의 PERSONAL_PROMO_END_CRON 과 같은 문자열이어야 한다. 두 일을 나눠 쓴다:
+#  - 홀수 분: 탈퇴 등급 통지 대기열(pending_plan_notifications) — 대기 행이 있을 때만 그 분을 통째로 쓴다.
+#    비어 있으면 조회 하나만 하고 아래 일에 넘긴다(그래서 끝 시각 전에도 홀수 분마다 조회 하나가 돈다).
+#  - 기간 한정 개인 플랜 종료(전환·보관 스윕). 끝부터는 삭제가 다 끝난 뒤에도 분당 존재 확인 조회 하나를
+#    돌린다(D15 — 고정 꼬리 없이 끝까지 비운다).
+# ⚠ 정리 PR 에서 개인 플랜 종료 분기는 빼도 **이 크론은 지우지 말 것** — 탈퇴 등급 통지를 비우는 곳이
+#   여기뿐이다(지우면 유예 파기로 해체된 멤버가 등급 변경·목소리 삭제 예고를 영영 못 받는다).
 crons = ["*/5 * * * *", "* * * * *"]
 
 [env.production]
@@ -52,7 +56,8 @@ binding = "VOICE_BUCKET"
 bucket_name = "voice-alarm-voices-prod"
 
 [env.production.triggers]
-# dev 와 같다 — "* * * * *" 는 기간 한정 개인 플랜 종료 전용(PERSONAL_PROMO_END_CRON).
+# dev 와 같다 — "* * * * *" 는 전용 크론(PERSONAL_PROMO_END_CRON): 탈퇴 등급 통지 대기열(홀수 분) +
+# 기간 한정 개인 플랜 종료. 정리 PR 에서도 이 크론은 지우지 말 것(위 dev 주석).
 crons = ["*/5 * * * *", "* * * * *"]
 
 # Set real values with `wrangler secret put <KEY> --env <dev|production>`

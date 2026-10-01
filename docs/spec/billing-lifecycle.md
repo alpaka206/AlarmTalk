@@ -377,7 +377,11 @@ ID 로도 조회되고 최신 갱신 정보를 준다. 구글의 `getPlaySubscri
     때만** 그 실행을 통째로 쓴다(`runPlanNotificationDrainTurn`). 대기열이 비어 있으면(거의 언제나) 조회
     한 번만 하고 같은 실행에서 개인 플랜 종료 작업이 이어 돈다(그 작업의 예산 45 는 그대로 — ~50 중
     여유 안). 짝수 분은 늘 종료 작업 차례라, 비우기가 차례를 쓰는 동안에도 종료 작업은 2분에 한 번은 돈다.
-    비우기가 던지면 그 실행의 예산을 모르므로 그 분의 종료 작업은 건너뛴다.
+    비우기가 던지면 그 실행의 예산을 모르므로 그 분의 종료 작업은 건너뛴다(표가 없는 배포 창은 예외 —
+    아무것도 안 썼으니 종료 작업에 넘긴다). 실패 경보는 **그 시각의 첫 비우기 분(UTC 1분)** 에만 올린다 —
+    ⚠ 종료 작업의 시간당 자리(0분)를 빌려 쓰면 홀수 분에만 도는 비우기는 영영 경보를 못 올린다. 상한에서
+    버린 사람(예고를 끝내 못 보냄)은 드물고 되돌릴 수 없어 그때마다 경보로 올린다.
+    ⚠ 정리 PR 이 개인 플랜 종료 분기를 지울 때도 **1분 크론은 남긴다** — 이 대기열을 비우는 곳이 거기뿐이다.
   - **비용을 미리 센다.** 사람마다 기기 수(기기당 최대 두 통 — 보이는 예고 + 재조회 신호)로
     `PLAN_NOTIFY_RUN_BUDGET`(45) − `PLAN_NOTIFY_RUN_OVERHEAD`(8) 안에 드는 만큼만 잡는다. 안 드는 사람은
     **잡지 않으므로 시도 횟수가 예산 때문에 오르는 일이 없고**, 다음 차례에 그대로 나간다. 한 사람만으로
@@ -401,6 +405,11 @@ ID 로도 조회되고 최신 갱신 정보를 준다. 구글의 `getPlaySubscri
   - 지우기는 **꺼낸 시각(`created_at`)이 그대로인 행만** 지운다. 보내는 사이 같은 사람이 다른 탈퇴로
     다시 들어오면 시각이 새로 찍히고 시도 횟수·잠금이 풀려(새 사건) 남는다.
   - 떠나는 사람 자신의 대기 행(다른 사람의 탈퇴로 들어간 것)은 파기가 함께 지운다.
+  - ⚠ **받을 기기가 없는 사람은 꺼내지 않는다**(코덱스 #841). 로그아웃 등으로 기기가 없을 때 꺼내면
+    0통으로 행이 지워져, 보관 기한 전에 다시 로그인한 사람이 삭제 예고를 영영 못 받는다. 기기가 생길
+    때까지 그대로 두고, 5분 틱이 **기기가 없고 지울 목소리도 없는**(보관 행이 없거나 기한이 지난) 행만
+    지운다(`prunePendingPlanNotifications`). 늦게 나가는 예고의 문구는 '며칠 뒤' 를 처음 기준으로 말하므로
+    실제 남은 날보다 길게 읽힐 수 있다 — 알려진 한계(아예 못 받는 것보다 낫다).
 - **즉시 삭제에서는 등급 통지를 목소리 철회 통지보다 먼저 보낸다**(코덱스 #841). 등급 통지에는
   **보이는 삭제 예고**가 실리고 철회 통지(`notifyDowngradedAlarms`)는 무음 신호뿐인데, 그 요청의
   예산은 공유라 철회 통지가 먼저 돌아 예산을 다 쓰면 예고가 잘린다(잘려도 대기열이 남아 전용 크론이
@@ -1037,9 +1046,12 @@ entitlement 가 기기에 남은 채 지금은 Play 구독을 쓰는 사용자�
 5분 틱 하나로는 부족했다(리뷰). 2,500명이면 사람마다 삭제에 DB 왕복이 스무 번 남짓이라 5분 틱의
 사람마다 스윕(틱당 2명)으로는 며칠이 걸린다.
 
-- 1분 크론은 **이 일만** 한다(`index.ts` 의 첫 분기 → `runPersonalPromoEnd(role: 'dedicated')`).
-  실행마다 subrequest 를 따로 받는 것이 전용 크론의 이유다. 끝 전·스위치 꺼짐에는 **DB 를 부르지
-  않고** 끝난다 — 기간 내내 1분마다 도는 실행이다.
+- 1분 크론은 **전용 실행**이다(`index.ts` 의 첫 분기 → `runPersonalPromoEnd(role: 'dedicated')`).
+  실행마다 subrequest 를 따로 받는 것이 전용 크론의 이유다. 끝 전·스위치 꺼짐에는 종료 작업이 **DB 를
+  부르지 않고** 끝난다 — 기간 내내 1분마다 도는 실행이다. ⚠ **홀수 분은 탈퇴 등급 통지 대기열이 먼저
+  본다**(「그룹 주인이 탈퇴하면」) — 비어 있으면 조회 하나 뒤 종료 작업이 그대로 돌고(예산 45 + 1, ~50 안),
+  대기 행이 있으면 그 분을 대기열이 통째로 쓴다(종료 작업은 다음 짝수 분). 종료 작업의 시간당 경보
+  자리(0분)는 짝수 분이라 가려지지 않는다.
 - 끝 뒤 매 실행의 첫 왕복은 스윕의 조회 — "기한이 온 보관 행이 남았나"(첫날 뒤에는 전환 대상의
   행만 — 아래)다. 없으면 **그 왕복 하나로** 끝난다. 그래서 끝부터 정리 PR 이 이 크론을 지울 때까지
   한가한 실행은 분당 조회 하나다(D15 — 예전의 '약속 시각 + 하루 뒤에는 DB 를 부르지 않는다' 는 그
@@ -1111,7 +1123,8 @@ entitlement 가 기기에 남은 채 지금은 Play 구독을 쓰는 사용자�
 - 대상 조건은 **원시 free** 라 끝난 뒤에만 의미가 있다 — 기간 중에 돌면 모든 목소리 보유
   무료 계정에 삭제를 예약하게 된다. 그래서 `지금 ≥ 끝` 이 첫 줄이다.
 - ⚠ **`PERSONAL_PROMO_STARTS_AT` 을 지우면 이 단계도 멈춘다**(꺼짐 = 프로모 없음). 정리
-  PR 이 이 분기와 1분 크론을 지울 때까지 운영 값은 그대로 둔다.
+  PR 이 이 분기를 지울 때까지 운영 값은 그대로 둔다. ⚠ 정리 PR 은 **1분 크론 자체는 지우지 않는다** —
+  탈퇴 등급 통지 대기열을 비우는 곳이 거기뿐이다(「그룹 주인이 탈퇴하면」).
 
 **스윕**(`sweepDueRetentionInBulk`) — 묶음 = 한 쓰기 트랜잭션, DB 왕복 28(사람 수와 무관)
 
@@ -1667,7 +1680,7 @@ Vibration disabled for ringing alarm
 | 결제 직전 권위 조회 | `GET /billing/subscription?refresh_store=1`(옵트인) | `crossStoreRenewalBlocked` (`MainViewModelBillingActions`) | `BillingPanel.confirmAndPurchase` |
 | 결제 앵커(`last_paid_at`) | 애플 `purchaseDate` · 구글 `googlePaymentAnchor`(Orders API) — 확정·RTDN·재조회·선물 모두 실제 결제일 사용 | — | — |
 | 영구 탈퇴 시 Apple 선물 연결 파기 | `lib/account-deletion.ts` `purgeUserAccount`(즉시 삭제·유예 파기 공통); 증빙은 `pseudonymizeBillingForRetention` → `index.ts` 보존 기한 정리 | 기존 탈퇴 API 사용 | 기존 탈퇴 API 사용 |
-| 그룹 주인 탈퇴 — 해체된 멤버에게 커밋 뒤 `plan_changed`(+삭제 예고), 클론 유무 무관, 대기열로 잇기, 철회 통지보다 먼저 | `lib/account-deletion.ts` `purgeUserAccount`(`cancelActiveSubscriptionsForUser` 반환값 + 파기 묶음 첫 문장의 남은 소유 그룹 멤버 → 같은 묶음에서 `pending_plan_notifications` 적재 — 마이그레이션 126) → `lib/pending-plan-notifications.ts` `runPlanNotificationDrainTurn`(1분 전용 크론 홀수 분 — `index.ts` `planNotificationDrainTurn` · 기기 수로 비용을 미리 셈 `PLAN_NOTIFY_RUN_BUDGET`·`PLAN_NOTIFY_RUN_OVERHEAD` · 원자적 잡기·잠금 `claimed_until` · 보낸 뒤 지움 · 상한 `PLAN_NOTIFY_MAX_ATTEMPTS`)·`sendPlanNotificationsNow`(`routes/user.ts` `DELETE /user/me` 자기 파기분 — 시도 횟수 안 씀) → `notifyBillingStateChanged`; `test/account-purge-plan-push.test.ts`·`test/pending-plan-notifications.test.ts`·`test/account-purge-residue.test.ts`·`test/user.test.ts`·`test/scheduled-purge-isolation.test.ts` | 기존 `plan_changed` 처리 | 기존 `plan_changed` 처리 |
+| 그룹 주인 탈퇴 — 해체된 멤버에게 커밋 뒤 `plan_changed`(+삭제 예고), 클론 유무 무관, 대기열로 잇기, 철회 통지보다 먼저 | `lib/account-deletion.ts` `purgeUserAccount`(`cancelActiveSubscriptionsForUser` 반환값 + 파기 묶음 첫 문장의 남은 소유 그룹 멤버 → 같은 묶음에서 `pending_plan_notifications` 적재 — 마이그레이션 126) → `lib/pending-plan-notifications.ts` `runPlanNotificationDrainTurn`(기기 있는 사람만 · 1분 전용 크론 홀수 분 — `index.ts` `planNotificationDrainTurn` · 기기 수로 비용을 미리 셈 `PLAN_NOTIFY_RUN_BUDGET`·`PLAN_NOTIFY_RUN_OVERHEAD` · 원자적 잡기·잠금 `claimed_until` · 보낸 뒤 지움 · 상한 `PLAN_NOTIFY_MAX_ATTEMPTS`)·`sendPlanNotificationsNow`(`routes/user.ts` `DELETE /user/me` 자기 파기분 — 시도 횟수 안 씀)·`prunePendingPlanNotifications`(5분 틱 — 기기·지울 목소리 둘 다 없는 행) → `notifyBillingStateChanged`; `test/account-purge-plan-push.test.ts`·`test/pending-plan-notifications.test.ts`·`test/pending-plan-notifications-subrequests.test.ts`(한 차례 subrequest 실측)·`test/account-purge-residue.test.ts`·`test/user.test.ts`·`test/scheduled-purge-isolation.test.ts`(1분 크론 배선·경보 자리) | 기존 `plan_changed` 처리 | 기존 `plan_changed` 처리 |
 | 구매 차단 — 빠른 거절(권위 아님) | `routes/billing-apple.ts` 선행 검사 | — | — |
 | 경쟁 애플 갱신 상태 최신화 | `refreshCompetingAppleRenewalState` → `reconcileStoreSubscription`; Google 확정·RTDN entitle에서 사용. 결제 전 조회는 `reconcileBillingPreflight` | — | — |
 | 로그아웃 중 환불 큐 | — | — | `PendingRevokedTransactionStore` · `flushPendingRevocations` |
