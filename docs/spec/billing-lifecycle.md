@@ -382,13 +382,18 @@ ID 로도 조회되고 최신 갱신 정보를 준다. 구글의 `getPlaySubscri
   - ⚠ **처음 시도만 묶음이고, 다시 시도는 한 사람씩이다**(코덱스 #841). 묶음째 다시 보내면 앞 사람이
     매번 예산을 다 써 뒷사람은 한 번도 못 받은 채 시도 횟수만 함께 올라 버려진다. 한 사람씩이면
     시도 횟수가 **그 사람의** 횟수가 되고, 상한에 닿는 것은 혼자서도 예산에 안 들어가는 사람뿐이다.
-  - ⚠ **보낼 행은 원자적으로 잡는다**(코덱스 #841). 크론과 즉시 삭제가 같은 행을 읽어도, 시도 횟수를
-    '읽은 값 그대로일 때만' 올리고(`UPDATE … RETURNING`) 잡은 행에만 보낸다 — 같은 예고가 두 번 나가지
-    않는다.
+  - ⚠ **보낼 행은 원자적으로 잡고, 보내는 동안 잠근다**(코덱스 #841). 크론과 즉시 삭제가 같은 행을
+    읽어도, 시도 횟수를 '읽은 값 그대로일 때만' 올리고(`UPDATE … RETURNING`) 잡은 행에만 보낸다. 잡을 때
+    `claimed_until`(지금 + `PLAN_NOTIFY_LEASE_MINUTES` 10분)을 찍어 그 전에는 어떤 실행도 그 행을 고르지
+    않는다 — 잡은 실행이 보내고 지우기 전에 다른 실행이 시작돼도 같은 예고가 두 번 나가지 않는다. 잡은
+    실행이 중간에 죽으면 기한 뒤 다시 고른다. 새 행 묶음이 예산을 다 쓰면 재시도의 잡기 문장이 먼저
+    실패해 그 사람의 시도 횟수는 오르지 않는다.
   - 지우기는 **꺼낸 시각(`created_at`)이 그대로인 행만** 지운다. 보내는 사이 같은 사람이 다른 탈퇴로
     다시 들어오면 시각이 새로 찍히고 시도 횟수가 0 으로 돌아가(새 사건) 남는다.
   - 즉시 삭제(`DELETE /user/me`)는 커밋 뒤 자기 파기분을 곧바로 보내고, 유예 파기 크론은 매 틱
-    `finally` 에서 대기열을 **시도가 적고 오래된 순으로 `PLAN_NOTIFY_DRAIN_LIMIT`(5)명씩** 비운다 — 파기할 계정이
+    `finally` 에서 대기열을 비운다 — **새 행 묶음 `PLAN_NOTIFY_FRESH_LIMIT`(10)명**(한 틱 최대 적재량 =
+    파기 2건 × 떨어져 나갈 멤버 5명이라 대기열이 불어나지 않는다), 그다음 **다시 시도할 행 하나**를
+    따로(새 행이 계속 들어와도 재시도가 굶지 않는다 — 코덱스 #841) — 파기할 계정이
     없는 틱에도 돈다(남은 행을 비우는 자리가 거기뿐이다). 뒤 계정이 실패해도 앞 계정분은 이미
     대기열에 있다.
   - 떠나는 사람 자신의 대기 행(다른 사람의 탈퇴로 들어간 것)은 파기가 함께 지운다.
@@ -1660,7 +1665,7 @@ Vibration disabled for ringing alarm
 | 결제 직전 권위 조회 | `GET /billing/subscription?refresh_store=1`(옵트인) | `crossStoreRenewalBlocked` (`MainViewModelBillingActions`) | `BillingPanel.confirmAndPurchase` |
 | 결제 앵커(`last_paid_at`) | 애플 `purchaseDate` · 구글 `googlePaymentAnchor`(Orders API) — 확정·RTDN·재조회·선물 모두 실제 결제일 사용 | — | — |
 | 영구 탈퇴 시 Apple 선물 연결 파기 | `lib/account-deletion.ts` `purgeUserAccount`(즉시 삭제·유예 파기 공통); 증빙은 `pseudonymizeBillingForRetention` → `index.ts` 보존 기한 정리 | 기존 탈퇴 API 사용 | 기존 탈퇴 API 사용 |
-| 그룹 주인 탈퇴 — 해체된 멤버에게 커밋 뒤 `plan_changed`(+삭제 예고), 클론 유무 무관, 대기열로 잇기, 철회 통지보다 먼저 | `lib/account-deletion.ts` `purgeUserAccount`(`cancelActiveSubscriptionsForUser` 반환값 + 파기 묶음 첫 문장의 남은 소유 그룹 멤버 → 같은 묶음에서 `pending_plan_notifications` 적재 — 마이그레이션 126) → `lib/pending-plan-notifications.ts` `drainPendingPlanNotifications`(보낸 뒤 지움 · `PLAN_NOTIFY_DRAIN_LIMIT`) ← `routes/user.ts` `DELETE /user/me`(자기 파기분)·`index.ts` 유예 파기 크론(`finally`, 매 틱) → `notifyBillingStateChanged`; `test/account-purge-plan-push.test.ts`·`test/pending-plan-notifications.test.ts`·`test/account-purge-residue.test.ts`·`test/user.test.ts`·`test/scheduled-purge-isolation.test.ts` | 기존 `plan_changed` 처리 | 기존 `plan_changed` 처리 |
+| 그룹 주인 탈퇴 — 해체된 멤버에게 커밋 뒤 `plan_changed`(+삭제 예고), 클론 유무 무관, 대기열로 잇기, 철회 통지보다 먼저 | `lib/account-deletion.ts` `purgeUserAccount`(`cancelActiveSubscriptionsForUser` 반환값 + 파기 묶음 첫 문장의 남은 소유 그룹 멤버 → 같은 묶음에서 `pending_plan_notifications` 적재 — 마이그레이션 126) → `lib/pending-plan-notifications.ts` `drainPendingPlanNotifications`(새 행 묶음 `PLAN_NOTIFY_FRESH_LIMIT` + 재시도 한 명 · 원자적 잡기·잠금 `claimed_until` · 보낸 뒤 지움 · 상한 `PLAN_NOTIFY_MAX_ATTEMPTS`) ← `routes/user.ts` `DELETE /user/me`(자기 파기분)·`index.ts` 유예 파기 크론(`finally`, 매 틱) → `notifyBillingStateChanged`; `test/account-purge-plan-push.test.ts`·`test/pending-plan-notifications.test.ts`·`test/account-purge-residue.test.ts`·`test/user.test.ts`·`test/scheduled-purge-isolation.test.ts` | 기존 `plan_changed` 처리 | 기존 `plan_changed` 처리 |
 | 구매 차단 — 빠른 거절(권위 아님) | `routes/billing-apple.ts` 선행 검사 | — | — |
 | 경쟁 애플 갱신 상태 최신화 | `refreshCompetingAppleRenewalState` → `reconcileStoreSubscription`; Google 확정·RTDN entitle에서 사용. 결제 전 조회는 `reconcileBillingPreflight` | — | — |
 | 로그아웃 중 환불 큐 | — | — | `PendingRevokedTransactionStore` · `flushPendingRevocations` |
