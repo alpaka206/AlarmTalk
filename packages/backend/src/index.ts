@@ -456,6 +456,9 @@ async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext)
     });
     const revokedTargets: RevokedRecipientTarget[] = [];
     const voiceAccessRevokedUserIds: string[] = [];
+    // 파기된 주인의 그룹이 해체돼 등급이 바뀐 멤버들 — 목소리 철회와 별개로 모은다
+    // (클론이 없는 주인이면 위 두 목록은 비지만 멤버의 등급은 바뀐다).
+    const planChangedUserIds: string[] = [];
     // **이미 커밋된 파기는 반드시 알린다.** 배치 뒤쪽 계정에서 던져도 앞 계정의 파기는
     // 이미 커밋돼 되돌아가지 않는다 — 그 수신자들에게 안 알리면 탈퇴자의 목소리를 폴백
     // 주기만큼 더 들고 있게 된다. 그래서 발송은 finally 에 둔다(모아 보내는 건 유지 —
@@ -494,6 +497,7 @@ async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext)
           });
           revokedTargets.push(...purged.downgradedAlarms);
           voiceAccessRevokedUserIds.push(...purged.voiceAccessRevokedUserIds);
+          planChangedUserIds.push(...purged.planChangedUserIds);
         } catch (err) {
           captureCron('scheduled.account_purge.user', err);
         }
@@ -510,6 +514,15 @@ async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext)
         await notifyDowngradedAlarms(db, env, revokedTargets, voiceAccessRevokedUserIds);
       } catch (notifyErr) {
         captureCron('scheduled.account_purge_notify', notifyErr);
+      }
+      // 해체로 등급이 바뀐 멤버들 — 다른 해체 경로와 같은 통지(`plan_changed` + 보관 유예가
+      // 걸린 사람에게 삭제 예고). 위 발송이 실패해도 이건 따로 보낸다(서로 다른 사실이다).
+      // 계정 사이에 중복이 있어도 함수가 접는다.
+      try {
+        const { notifyBillingStateChanged } = await import('./lib/billing-cancel');
+        await notifyBillingStateChanged(db, env, planChangedUserIds);
+      } catch (notifyErr) {
+        captureCron('scheduled.account_purge_plan_notify', notifyErr);
       }
     }
   } catch (err) {

@@ -186,7 +186,10 @@ export type RevokedRecipientTarget = {
   isReceived: boolean;
 };
 
-/** 탈퇴 커밋 후 보내야 할 알림. 그대로 `notifyDowngradedAlarms` 의 3·4번째 인자다. */
+/**
+ * 탈퇴 커밋 후 보내야 할 알림. 앞의 둘은 그대로 `notifyDowngradedAlarms` 의 3·4번째 인자,
+ * `planChangedUserIds` 는 `notifyBillingStateChanged` 의 3번째 인자다.
+ */
 export type AccountPurgeNotifications = {
   /** 서버 알람 행에서 찾은 강등 대상. 받은 알람이면 pull, 본인 알람이면 접근권 재확인. */
   downgradedAlarms: RevokedRecipientTarget[];
@@ -198,6 +201,15 @@ export type AccountPurgeNotifications = {
    * 녹음으로 계속 울린다. 그래서 **내 목소리를 볼 수 있었던 사람 전부**에게 알린다.
    */
   voiceAccessRevokedUserIds: string[];
+  /**
+   * 내 구독 취소로 **등급이 바뀐 사람들** — 내가 주인이던 그룹이 해체돼 떨어져 나간 멤버.
+   * 호출부가 커밋 뒤 `notifyBillingStateChanged` 로 `plan_changed`(+삭제 예고)를 보낸다.
+   *
+   * ⚠ 위 두 목록과 **별개다.** 그 둘은 '내 목소리를 들고 있던 사람' 이라 클론이 없는 주인이
+   * 탈퇴하면 비어 있다 — 그러면 가족에서 무료로 내려간 멤버가 아무 신호도 못 받았다.
+   * 떠나는 사람 자신은 빠져 있다(그 기기는 곧 사라진다).
+   */
+  planChangedUserIds: string[];
 };
 
 /**
@@ -235,6 +247,7 @@ export async function purgeUserAccount(
   }
   const revokedTargets: RevokedRecipientTarget[] = [];
   const voiceAccessRevokedUserIds: string[] = [];
+  const planChangedUserIds: string[] = [];
   // 결과를 읽지 않는 쓰기를 모아 두는 자리(아래 `tx.batch` 한 번으로 나간다).
   const writes: InStatement[] = [];
   if (userPk) {
@@ -294,10 +307,20 @@ export async function purgeUserAccount(
     voiceAccessRevokedUserIds.push(...revocation.voiceAccessRevokedUserIds);
 
     // 철회를 기록한 **뒤에** 구독을 끊는다(위 ⚠ — 순서를 뒤집지 말 것).
-    await cancelActiveSubscriptionsForUser(tx, userPk, new Date(), {
+    //
+    // ⚠ **반환값을 버리지 말 것**(2026-10-01). 내가 주인이면 여기서 그룹이 해체되고 멤버의
+    //   등급이 다시 계산된다(가족 → 무료 등). 다른 해체 경로(해지·만료·환불)는 이 목록으로
+    //   커밋 뒤 `plan_changed` 를 보내는데, 탈퇴만 버리고 있었다 — 클론이 없는 주인이면 위
+    //   철회도 아무도 안 깨우므로 멤버는 다음 앱 시작·주기 pull 까지 옛 등급을 들고 있었다.
+    //   취소 당사자(나)가 목록에 들어 있으니 뺀다 — 내 기기는 곧 사라진다.
+    const leaving = new Set(userIds);
+    const changed = await cancelActiveSubscriptionsForUser(tx, userPk, new Date(), {
       deleteVoiceData: false,
       promoCoversFree,
     });
+    for (const id of new Set(changed)) {
+      if (!leaving.has(id)) planChangedUserIds.push(id);
+    }
 
     // 코드의 ON DELETE SET NULL만으로는 거래 ID가 무기한 남는다. 소유 근거를 지우기
     // 전에 연결도 파기한다. 이미 코드가 없으면 Apple 원장으로 찾고, 거래 증빙은 호출부가
@@ -551,5 +574,5 @@ export async function purgeUserAccount(
   // 모아 둔 쓰기를 **한 번의 요청**으로 보낸다(위 주석 참조).
   await tx.batch(writes);
 
-  return { downgradedAlarms: revokedTargets, voiceAccessRevokedUserIds };
+  return { downgradedAlarms: revokedTargets, voiceAccessRevokedUserIds, planChangedUserIds };
 }

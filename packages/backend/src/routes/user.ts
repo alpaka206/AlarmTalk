@@ -6,6 +6,7 @@ import { logRouteError } from '../lib/logger';
 import { deleteSensitiveVoiceDataForUser, type DowngradedAlarm } from '../lib/paid-voice-cleanup';
 import { notifyDowngradedAlarms } from '../lib/fcm';
 import { purgeUserAccount, pseudonymizeBillingForRetention } from '../lib/account-deletion';
+import { notifyBillingStateChanged } from '../lib/billing-cancel';
 import { withWriteTransaction } from '../lib/transactions';
 import {
   normalizeQuietWindows,
@@ -303,6 +304,15 @@ user.delete('/me', async (c) => {
         purgeNotifications.downgradedAlarms,
         purgeNotifications.voiceAccessRevokedUserIds,
       );
+    } catch (err) {
+      logRouteError(c, err);
+    }
+    // 내가 주인이던 그룹이 해체돼 **등급이 바뀐 멤버들**에게도 커밋 후에 알린다 — 위 철회
+    // 통지와 별개다(클론이 없는 주인이면 위는 아무도 안 깨운다). 다른 해체 경로와 같은 함수다:
+    // `plan_changed` + 보관 유예가 걸린 사람에게 삭제 예고. 던지지 않지만 탈퇴 응답을 지키려고
+    // 한 번 더 감싼다.
+    try {
+      await notifyBillingStateChanged(db, c.env, purgeNotifications.planChangedUserIds);
     } catch (err) {
       logRouteError(c, err);
     }
