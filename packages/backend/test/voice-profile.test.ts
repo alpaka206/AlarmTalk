@@ -311,7 +311,7 @@ describe('PATCH /:id/preview-text — 미리듣기 문구 수정 (voice-profile)
     expect(body.preview_text).toBe('좋은 아침이야, 오늘도 힘내자');
     const sql = mockDB.calls[0]!.sql;
     expect(sql).toContain('preview_text = ?');
-    // 미리듣기는 태그 없이 합성한다(2026-09-30) — `preview_tag` 는 읽지도 쓰지도 않는다(다음 회차에 DROP).
+    // 미리듣기는 태그 없이 합성한다(2026-09-30) — `preview_tag` 는 읽지도 쓰지도 않는다(마이그레이션 125 가 DROP).
     expect(sql).not.toContain('preview_tag');
     expect(sql).toContain('previewed_at = NULL');
     expect(sql).toContain('preview_claimed_at = NULL');

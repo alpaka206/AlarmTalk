@@ -1108,7 +1108,8 @@ tts.post('/generate', async (c) => {
       const storedText =
         typeof vp.preview_text === 'string' && vp.preview_text.trim() ? vp.preview_text.trim() : null;
       // ⚠ 합성은 태그 없이 그 문구 그대로다(2026-09-30 — `lib/vertex-translate.ts` 「태그」 머리말). 예전에는
-      //   `preview_tag` 로 톤 태그를 문장마다 입혀 합성했고 그 값을 영속했다 — 이제 읽지도 쓰지도 않는다.
+      //   `preview_tag` 로 톤 태그를 문장마다 입혀 합성했고 그 값을 영속했다 — 이제 읽지도 쓰지도 않고,
+      //   컬럼은 마이그레이션 125 가 DROP 한다 — 그 뒤에는 칸이 없으니 참조를 되살리지 말 것.
       if (storedText) {
         requestText = storedText;
       } else if (vp.previewed_at) {

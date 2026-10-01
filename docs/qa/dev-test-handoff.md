@@ -237,7 +237,10 @@
 - [ ] 번들 인사말을 실은 앱 릴리스.
 - [ ] 치우기(아무 때나 — 코드가 읽지 않는다): 워커에 `ELEVENLABS_TTS_MODEL_ID` 가 있으면
       `npx wrangler secret delete ELEVENLABS_TTS_MODEL_ID --env dev`·`--env production`(없으면 할 일 없음).
-- [ ] 다음 회차 마이그레이션: `voice_profiles.preview_tag` DROP(코드는 이제 읽지도 쓰지도 않는다).
+- [ ] 마이그레이션 #125(`drop-voice-profiles-preview-tag`): develop 머지 뒤 dev 에서 `PRAGMA table_info(voice_profiles)`
+      에 `preview_tag` 가 없는지 본다. 되돌릴 수 없는 DDL 이라 prod(`main`)는 dev 확인 뒤에 올린다. 코드는 #840 부터
+      그 칸을 읽지도 쓰지도 않아 배포→마이그레이션 창에 영향이 없다. 실패하면 워크플로가 빨간불로 죽는다
+      (그 칸에 손으로 건 인덱스가 있으면 `after drop column` — 원장에 기록되지 않으니 인덱스를 지우고 다시 돌린다).
 - 배포 순간 확정만 하고 정식 등록 전이던 초안은 다시 들으려 하면 `VOICE_PREVIEW_UNAVAILABLE` 이 된다(모델 id 가
   캐시 키에 들어간다). 등록은 그대로 되고, 문구·관계·호칭을 고치면 새로 만든다.
 - 처리방침 메모(아래 Gemini 절 끝): 직접 입력 문구는 이제 **번역할 때만** Vertex 로 간다.
