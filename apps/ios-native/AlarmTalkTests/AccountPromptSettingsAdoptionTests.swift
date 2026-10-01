@@ -324,4 +324,44 @@ final class AccountPromptSettingsAdoptionTests: XCTestCase {
         )
         XCTAssertEqual(DynamicPromptPreferences.load(userID: nil), DynamicPromptPreferences())
     }
+
+    // MARK: - 설정 화면 (Codex #837 11차)
+
+    /// **설정 화면은 고칠 때 낡은 스냅샷이 아니라 받아 적은 기기 값에서 시작한다.** 화면이 열려 있는 사이 앱 루트가
+    /// 다른 기기의 새 지역(도쿄)을 받아 적었는데 화면의 관찰이 그 응답을 못 봤으면(같은 내용의 응답·앞선 키체인
+    /// 실패), 화면은 옛 스냅샷(서울)을 들고 있다. 그 스냅샷에서 사주만 고쳐 설정 전체를 적고 올리면 도쿄가 서울로
+    /// 되돌아간다. 안드로이드는 고친 묶음만 적고 올릴 값을 기기에서 다시 읽으므로(`pendingUploadSnapshot`) 같은 결과다.
+    func test_설정_화면은_낡은_스냅샷이_아니라_받아_적은_기기_값에서_고친다() throws {
+        var opened = try preferences(region: "kr-seoul")
+        opened.fortuneGender = "여성"
+        opened.fortuneBirthDate = "1990-01-01"
+        opened.fortuneBirthTime = "07:31~09:30"
+        opened.saveLocalEdit(userID: userID, defaults: defaults)
+        DynamicPromptPreferences.markPushed(userID: userID, pushed: opened.toSettings(), defaults: defaults)
+        // 화면을 열 때 읽은 스냅샷.
+        let snapshot = DynamicPromptPreferences.load(userID: userID)
+        // 그 사이 다른 기기가 지역을 도쿄로 바꿨고, 앱 루트가 그 응답을 받아 적었다.
+        var server = opened.toSettings()
+        server.weather = try regionSettings("jp-tokyo").weather
+        XCTAssertEqual(DynamicPromptPreferences.adoptAccount(userID: userID, server: server, defaults: defaults), .accepted)
+
+        // 사주만 고친다.
+        var edited = SettingsView.editBase(userID: userID, server: server, defaults: defaults)
+        edited.fortuneBirthDate = "1991-02-02"
+
+        XCTAssertEqual(snapshot.weatherRegion?.key, "kr-seoul", "전제: 화면의 스냅샷은 낡았다")
+        XCTAssertEqual(edited.weatherRegion?.key, "jp-tokyo", "고치지 않은 지역이 화면의 옛 스냅샷으로 되돌아간다")
+        XCTAssertTrue(edited.saveLocalEdit(userID: userID, defaults: defaults))
+        XCTAssertEqual(local.weatherRegion?.key, "jp-tokyo")
+        XCTAssertEqual(edited.toSettings().weather.region, "jp-tokyo", "올릴 값에 옛 지역이 실린다")
+    }
+
+    /// **설정 화면은 같은 내용의 응답도 새 응답으로 보고 다시 읽는다** — 축에 응답 순번이 있다
+    /// (`SettingsView.PromptObservation`, 앱 루트의 `accountPromptSettingsKey` 와 같은 축).
+    func test_설정_화면은_같은_값의_응답도_다시_읽는다() throws {
+        let settings = try regionSettings("kr-seoul")
+        let first = SettingsView.PromptObservation(userID: userID, settings: settings, answerRevision: 1)
+        XCTAssertEqual(first, SettingsView.PromptObservation(userID: userID, settings: settings, answerRevision: 1))
+        XCTAssertNotEqual(first, SettingsView.PromptObservation(userID: userID, settings: settings, answerRevision: 2))
+    }
 }

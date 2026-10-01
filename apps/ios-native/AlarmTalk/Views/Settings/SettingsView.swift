@@ -136,7 +136,10 @@ struct SettingsView: View {
         .onAppear {
             loadPromptPreferences()
         }
-        .onChange(of: auth.session?.user.dynamicPromptSettings) { _, _ in
+        // ⚠ **축은 값이 아니라 응답이다**(`PromptObservation`, Codex #837 11차) — 앱 루트의 받아 적기
+        //   (`AlarmTalkApp.accountPromptSettingsKey`)와 같은 축. 값만 보면, 같은 내용의 `/auth/me` 가 기기 값을 바꿔도
+        //   (앞서 키체인 받아 적기가 실패했다가 이번에 성공했다 등) 화면은 옛 스냅샷에 남는다.
+        .onChange(of: promptObservation) { _, _ in
             loadPromptPreferences()
         }
         .bottomSheet(isPresented: $weatherDialogOpen, onDismiss: { weatherDialogOpen = false }) {
@@ -149,7 +152,7 @@ struct SettingsView: View {
                     city: promptPreferences.weatherCity
                 ),
                 onSelect: { region in
-                    var next = promptPreferences
+                    var next = editBase()
                     // 옛 앱이 읽는 표준 글자로 적는다 — 키는 이 글자에서 되짚힌다(`toSettings`).
                     next.weatherCountry = region.legacyCountry
                     next.weatherCity = region.legacyCity
@@ -230,12 +233,48 @@ struct SettingsView: View {
             birthDate: fortuneBirthDateDraft,
             birthTime: fortuneBirthTimeDraft
         ) else { return }
-        var next = promptPreferences
+        var next = editBase()
         next.fortuneGender = FortunePromptInputFormat.normalizedGender(fortuneGenderDraft)
         next.fortuneBirthDate = FortunePromptInputFormat.normalizedBirthDate(fortuneBirthDateDraft)
         next.fortuneBirthTime = FortunePromptInputFormat.normalizedBirthTime(fortuneBirthTimeDraft)
         savePromptPreferences(next)
         fortuneDialogOpen = false
+    }
+
+    /// 화면이 기기 값을 다시 읽을 때 — 계정·그 계정의 설정, 그리고 **계정 응답 순번**이 축이다.
+    /// 안드로이드 설정 화면의 `accountSettingsReceipt` 축과 같다.
+    struct PromptObservation: Equatable {
+        var userID: String?
+        var settings: DynamicPromptSettings?
+        var answerRevision: Int
+    }
+
+    private var promptObservation: PromptObservation {
+        PromptObservation(
+            userID: auth.session?.user.id,
+            settings: auth.session?.user.dynamicPromptSettings,
+            answerRevision: auth.accountAnswerRevision
+        )
+    }
+
+    /// 고칠 때의 출발점 — 화면의 스냅샷이 아니라 **지금 이 기기 값**(받아 적은 뒤)이다(Codex #837 11차).
+    /// 한 묶음(지역·사주)만 고쳐도 기기에는 설정 전체를 적고 그대로 올리므로, 스냅샷이 낡았으면 고치지 않은
+    /// 묶음이 옛 값으로 되돌아가 다른 기기가 고친 지역·사주를 지운다. 안드로이드는 고친 묶음만 적고 올릴 값을
+    /// 차례가 온 뒤 기기에서 다시 읽는다(`saveWeatherLocation`·`pendingUploadSnapshot`) — 같은 결과다.
+    private func editBase() -> DynamicPromptPreferences {
+        let fresh = Self.editBase(userID: auth.session?.user.id, server: auth.session?.user.dynamicPromptSettings)
+        promptPreferences = fresh
+        return fresh
+    }
+
+    /// `editBase()` 의 규칙 — 받아 적은 뒤의 이 기기 값(`DynamicPromptPreferences.current` 와 같은 순서).
+    static func editBase(
+        userID: String?,
+        server: DynamicPromptSettings?,
+        defaults: UserDefaults = .standard
+    ) -> DynamicPromptPreferences {
+        DynamicPromptPreferences.adoptAccount(userID: userID, server: server, defaults: defaults)
+        return DynamicPromptPreferences.load(userID: userID)
     }
 
     /// 계정 설정을 이 기기에 받아 적은 **뒤의** 기기 값을 보인다(`DynamicPromptPreferences.current`).

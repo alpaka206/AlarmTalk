@@ -51,11 +51,14 @@ internal fun SettingsScreen(
     // `.onChange(of: dynamicPromptSettings)` 와 같은 자리다. 받아 적는 규칙은 저장소 한 곳
     // (`adoptAccountSettings`, 멱등)이고, 이 기기에 안 올라간 변경이 있으면 덮지 않는다.
     // 다시 올리는 일은 뷰모델(`onAccountPromptSettingsReceived`)이 한다 — 여기서는 읽기만 맞춘다.
-    val accountPromptSettings = authSession?.user?.dynamicPromptSettings
-    LaunchedEffect(promptOwnerUserId, accountPromptSettings) {
-        if (promptOwnerUserId == null || accountPromptSettings == null) return@LaunchedEffect
-        promptPreferenceStore.adoptAccountSettings(promptOwnerUserId, accountPromptSettings)
-        promptPreferences = promptPreferenceStore.read(promptOwnerUserId)
+    // ⚠ **축은 값이 아니라 응답이다**(`AccountSettingsReceipt`, Codex #837 11차) — 앱 루트의 받아 적기와 같은 축.
+    //   값만 보면 같은 내용의 응답이 기기 값을 바꿔도(밀린 표시가 풀려 서버 값을 받아들였다 등) 화면은 옛 스냅샷에 남는다.
+    val accountSettingsReceipt = com.alarmtalk.app.data.accountSettingsReceipt(authSession)
+    LaunchedEffect(promptOwnerUserId, accountSettingsReceipt) {
+        val receipt = accountSettingsReceipt ?: return@LaunchedEffect
+        if (promptOwnerUserId != receipt.userId) return@LaunchedEffect
+        promptPreferenceStore.adoptAccountSettings(receipt.userId, receipt.settings)
+        promptPreferences = promptPreferenceStore.read(receipt.userId)
     }
     // 공휴일 국가는 **지역의 나라**다 — 고르는 행은 없고, 지역을 저장할 때 맞춘다
     // (docs/spec/alarm-lifecycle.md 「공휴일 국가는 지역의 나라다」).
