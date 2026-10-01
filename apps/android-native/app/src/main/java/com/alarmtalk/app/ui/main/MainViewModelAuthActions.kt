@@ -648,7 +648,8 @@ private suspend fun MainViewModel.uploadDynamicPromptSettings(userId: String) {
         dynamicPromptStore.markPushed(session.user.id, settings)
         val updatedSettings = response.dynamicPromptSettings ?: settings
         val updated = session.copy(user = session.user.copy(dynamicPromptSettings = updatedSettings))
-        val saved = saveSessionPreservingCurrentToken(updated, startGeneration)?.also { authSession = it }
+        val saved = saveSessionPreservingCurrentToken(updated, startGeneration, promptSettings = updatedSettings)
+            ?.also { authSession = it }
         refreshSocial()
         // **울타리 뒤의 조회로 확인한다**(Codex #837) — 울타리는 올리기 전에 떠난 조회를 모두 가리므로, 그중 올리기
         // **뒤**에 다른 기기가 고친 값을 읽은 응답도 버려진다. 새로 보낸 조회는 울타리 밖이라 서버의 지금 값을 받아
@@ -1347,6 +1348,11 @@ internal fun MainViewModel.clearMessage() {
 internal fun MainViewModel.saveSessionPreservingCurrentToken(
     updated: com.alarmtalk.app.network.AuthSession,
     expectedGeneration: Long,
+    /**
+     * 이 저장이 **올린** 계정 설정(지역·사주 올리기). null 이면 이 저장은 계정 설정을 바꾸지 않은 것이라 저장소에 지금
+     * 있는 값을 지킨다 — [updated] 는 요청 전의 복사본이라 그 사이 받아 적은 새 값을 되돌린다(`keepStoredPromptSettings`).
+     */
+    promptSettings: DynamicPromptSettings? = null,
 ): com.alarmtalk.app.network.AuthSession? {
     // **세션이 그 사이 끝났거나 다른 계정이 되었으면 버린다.** 토큰만 지금 것으로 갈아 끼우면
     // A 의 유저 정보에 B 의 토큰이 붙은 잡종 세션이 저장된다 — 목록은 A 로 걸러지는데 서버
@@ -1364,6 +1370,8 @@ internal fun MainViewModel.saveSessionPreservingCurrentToken(
         rolledToken = null,
         // plan·프로모는 들고 있던 세션의 것을 그대로 복사했다 — 받은 시각도 그 답의 것이다.
         userFetchedAtMillis = updated.userFetchedAtMillis,
+        dynamicPromptSettingsOverride = promptSettings,
+        keepStoredPromptSettings = promptSettings == null,
     )
     if (saved == null) {
         Log.i(TAG, "Dropping stale profile save: session ended or switched")
@@ -1469,6 +1477,13 @@ internal suspend fun MainViewModel.refreshAppSessionNow(rollToken: Boolean = tru
             //   다른 응답이 끼어들지 못한다.
             if (!personalPromoLedger.claimPlanAnswer(accountRequest)) {
                 Log.i(TAG, "Dropping superseded /auth/me result: a later request's answer is already applied")
+                // ⚠ **받아 적기는 다시 돌린다** — 이 답은 버려도 '응답이 왔다' 는 같다(Codex #837 검증, 스펙
+                //   「경계는 넷이다」의 응답 경계). 더 새 답이 반영된 **뒤에** 올리기가 실패했으면, 그 뒤 처음 온 응답이
+                //   이 밀린 답일 수 있다 — 여기서 안 돌리면 밀린 변경이 다음 저장되는 응답까지 안 올라간다. 값은 지금
+                //   세션의 것(더 새 답)이다. iOS 는 밀린 답도 `recordAccountAnswer` 로 세어 같은 일이 난다.
+                com.alarmtalk.app.data.accountSettingsReceipt(authSession)?.let { receipt ->
+                    onAccountPromptSettingsReceived(receipt.userId, receipt.settings)
+                }
                 return@onSuccess
             }
             // 서버가 새 토큰을 주면 갈아 끼운다(rolling refresh) — 앱을 열 때마다 만료가

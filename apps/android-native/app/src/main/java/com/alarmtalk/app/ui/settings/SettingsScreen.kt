@@ -48,7 +48,7 @@ internal fun SettingsScreen(
         mutableStateOf(promptPreferenceStore.read(promptOwnerUserId))
     }
     // 계정 설정을 새로 받으면(다른 기기에서 지역을 바꿨다 등) 화면에도 반영한다 — iOS 설정의
-    // `.onChange(of: dynamicPromptSettings)` 와 같은 자리다. 받아 적는 규칙은 저장소 한 곳
+    // `.onChange(of: promptObservation)`(응답 순번 `accountAnswerRevision` 이 축)와 같은 자리다. 받아 적는 규칙은 저장소 한 곳
     // (`adoptAccountSettings`, 멱등)이고, 이 기기에 안 올라간 변경이 있으면 덮지 않는다.
     // 다시 올리는 일은 뷰모델(`onAccountPromptSettingsReceived`)이 한다 — 여기서는 읽기만 맞춘다.
     // ⚠ **축은 값이 아니라 응답이다**(`AccountSettingsReceipt`, Codex #837 11차) — 앱 루트의 받아 적기와 같은 축.

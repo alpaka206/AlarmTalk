@@ -539,6 +539,13 @@ class AuthSessionStore internal constructor(
          * 옛 설정을 쓰지 않을 때(`fencedAccountSettings`). null 이면 [user] 의 것 그대로.
          */
         dynamicPromptSettingsOverride: DynamicPromptSettings? = null,
+        /**
+         * 계정 설정은 **저장소에 지금 있는 값**을 지킨다 — 이름·가족 설정처럼 다른 칸만 고친 저장(Codex #837 검증).
+         * 그런 저장의 [user] 는 요청 **전에** 잡아 둔 세션의 복사본이라, 그 사이 올리기·`/auth/me` 가 적은 새 지역·사주를
+         * 옛 값으로 되쓴다 — 그러면 받아 적기가 그 옛 값을 기기와 공휴일 국가에 적는다. 읽기와 쓰기를 같은 락 안에서
+         * 한다. [dynamicPromptSettingsOverride] 가 있으면 그쪽이 이긴다.
+         */
+        keepStoredPromptSettings: Boolean = false,
     ): AuthSession? = synchronized(sessionWriteLock) {
         val storedToken = prefs.getString(KEY_TOKEN, null)
         val alive = sessionSurvivedForWrite(
@@ -553,7 +560,8 @@ class AuthSessionStore internal constructor(
             provider = provider,
             user = user,
             userFetchedAtMillis = userFetchedAtMillis,
-            dynamicPromptSettingsOverride = dynamicPromptSettingsOverride,
+            dynamicPromptSettingsOverride = dynamicPromptSettingsOverride
+                ?: if (keepStoredPromptSettings) readDynamicPromptSettings() else null,
         )
     }
 
