@@ -20,13 +20,14 @@ import { logStructured } from './logger';
  *   통지와 같은 최선 노력이다. 발송 결과를 사람마다 돌려받아 실패한 사람만 남기는 것은 이 표의 다음
  *   단계다(`docs/spec/billing-lifecycle.md` 「그룹 주인이 탈퇴하면」).
  *
- * 한 번의 비우기는 두 걸음이다 — **새 행 묶음**, 그다음 **다시 시도할 행 하나**:
+ * 한 번의 비우기는 두 걸음이다 — **다시 시도할 행 하나**, 그다음 **새 행 묶음**:
  *  - 새 행(`attempts = 0`)은 한 틱에 [PLAN_NOTIFY_FRESH_LIMIT] 명까지 묶어 보낸다 — 크론이 한 틱에
  *    적재할 수 있는 최대치라 대기열이 쌓이지 않는다(코덱스 #841).
  *  - **다시 시도는 한 사람씩, 매 틱 한 자리를 따로 둔다.** 묶음째 다시 보내면 앞 사람이 매번 예산을
  *    다 써 뒷사람은 한 번도 못 받은 채 시도 횟수만 함께 올라 버려진다 — 한 사람씩이면 시도 횟수가
- *    **그 사람의** 횟수다. 새 행이 계속 들어와도 재시도가 굶지 않게 자리를 따로 둔다. 새 행 묶음이
- *    예산을 다 쓰면 재시도의 잡기 문장이 먼저 실패하므로 그 사람의 시도 횟수는 오르지 않는다.
+ *    **그 사람의** 횟수다. 새 행이 계속 들어와도 재시도가 굶지 않게 자리를 따로, **먼저** 둔다 — 뒤에
+ *    두면 매 틱 예산을 다 쓰는 새 행 묶음이 던지는 순간 재시도까지 닿지 못한다(코덱스 #841). 재시도
+ *    한 사람이 예산을 다 쓰면 새 행 묶음의 잡기 문장이 먼저 실패하므로 그들의 시도 횟수는 오르지 않는다.
  *  - [PLAN_NOTIFY_MAX_ATTEMPTS] 번 시도한 행은 보내지 않고 지운다(오류 기록) — 같은 예고가 5분마다
  *    영원히 나가는 일의 상한이다. 혼자 보내도 끝내 안 들어가는, 기기가 예산보다 많은 사람이다.
  *
@@ -87,7 +88,7 @@ type QueuedRow = { userId: string; createdAt: string; attempts: number };
  * 대기열에서 꺼내 등급 통지를 보내고, **보낸 뒤에** 행을 지운다.
  *
  * - `userIds` 를 주면 그 사람들만(즉시 삭제 `DELETE /user/me` 가 자기 파기분을 곧바로 보낼 때),
- *   없으면 새 행 묶음 + 다시 시도할 행 하나(크론 — 앞 틱에서 남은 것까지 잇는다).
+ *   없으면 다시 시도할 행 하나 + 새 행 묶음(크론 — 앞 틱에서 남은 것까지 잇는다).
  * - ⚠ **지우기를 발송 앞으로 옮기지 말 것.** 발송은 실패를 삼키므로, 앞에서 지우면 예산이 바닥난
  *   실행에서 행만 사라지고 예고는 안 나간다 — 이 표가 있는 이유가 통째로 무너진다.
  * - ⚠ **시도 횟수는 발송 앞에서(잡을 때) 올린다.** 뒤에서 올리면 예산이 바닥난 실행에서는 그 문장도
@@ -117,7 +118,26 @@ export async function drainPendingPlanNotifications(
     return;
   }
 
-  // 1) 새 행 묶음.
+  // 1) 다시 시도할 행 하나 — **먼저**, 따로(위 머리말). 뒤에 두면 새 행 묶음이 예산을 다 써 던지는 틱마다
+  //    재시도까지 닿지 못해, 앞선 실패자가 끝없이 밀린다(코덱스 #841). 이 한 사람이 예산을 다 쓰면 아래
+  //    새 행 묶음의 잡기 문장이 먼저 실패해 그들의 시도 횟수는 오르지 않는다 — 다음 틱에 그대로 나간다.
+  let retryError: unknown = null;
+  try {
+    await sendClaimed(
+      db,
+      env,
+      toRows(
+        await db.execute(`SELECT user_id, created_at, attempts FROM pending_plan_notifications
+                          WHERE attempts > 0 AND ${UNCLAIMED}
+                          ORDER BY attempts, created_at, user_id
+                          LIMIT 1`),
+      ),
+    );
+  } catch (err) {
+    // 예산 소진이면 아래도 곧바로 실패한다(해가 없다). 다른 실패면 새 행은 그대로 보낸다.
+    retryError = err;
+  }
+  // 2) 새 행 묶음.
   await sendClaimed(
     db,
     env,
@@ -131,17 +151,7 @@ export async function drainPendingPlanNotifications(
       }),
     ),
   );
-  // 2) 다시 시도할 행 하나 — 따로 보낸다(위 머리말).
-  await sendClaimed(
-    db,
-    env,
-    toRows(
-      await db.execute(`SELECT user_id, created_at, attempts FROM pending_plan_notifications
-                        WHERE attempts > 0 AND ${UNCLAIMED}
-                        ORDER BY attempts, created_at, user_id
-                        LIMIT 1`),
-    ),
-  );
+  if (retryError) throw retryError;
 }
 
 /** 읽은 행을 잡고(원자적으로), 잡은 행에만 보내고, 보낸 뒤 지운다. */
