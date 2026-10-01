@@ -106,6 +106,123 @@ describe('weather-regions.json — 날씨 지역 목록', () => {
   });
 });
 
+/**
+ * 기상청 단기예보 격자 변환 — 「기상청41_단기예보 조회서비스_오픈API활용가이드」(2609) 참고자료의 C 예제
+ * `lamcproj`/`map_conv`(위경도 → 격자) 를 그대로 옮겼다. 상수도 가이드 원문 그대로다(지구 반경 6371.00877km,
+ * 격자 5km, 표준위도 30·60, 기준점 126E·38N, 기준점 격자 210/5·675/5, 결과는 `(int)(x + 1.5)`).
+ * 서버는 이 식을 쓰지 않는다 — 격자를 JSON 에 박아 두고, 여기서 다시 계산해 대조만 한다.
+ */
+function latLonToKmaGrid(lat: number, lon: number): { nx: number; ny: number } {
+  const PI = Math.asin(1.0) * 2.0;
+  const DEGRAD = PI / 180.0;
+  const re = 6371.00877 / 5.0;
+  const slat1 = 30.0 * DEGRAD;
+  const slat2 = 60.0 * DEGRAD;
+  const olon = 126.0 * DEGRAD;
+  const olat = 38.0 * DEGRAD;
+  const sn =
+    Math.log(Math.cos(slat1) / Math.cos(slat2)) /
+    Math.log(Math.tan(PI * 0.25 + slat2 * 0.5) / Math.tan(PI * 0.25 + slat1 * 0.5));
+  const sf = (Math.pow(Math.tan(PI * 0.25 + slat1 * 0.5), sn) * Math.cos(slat1)) / sn;
+  const ro = (re * sf) / Math.pow(Math.tan(PI * 0.25 + olat * 0.5), sn);
+  const ra = (re * sf) / Math.pow(Math.tan(PI * 0.25 + lat * DEGRAD * 0.5), sn);
+  let theta = lon * DEGRAD - olon;
+  if (theta > PI) theta -= 2.0 * PI;
+  if (theta < -PI) theta += 2.0 * PI;
+  theta *= sn;
+  const x = ra * Math.sin(theta) + 210 / 5;
+  const y = ro - ra * Math.cos(theta) + 675 / 5;
+  return { nx: Math.trunc(x + 1.5), ny: Math.trunc(y + 1.5) };
+}
+
+describe('weather-regions.json — 날씨 원천의 칸(source)', () => {
+  it('나라마다 원천이 하나다 — KR 은 기상청, JP 는 気象庁, US 는 NWS', () => {
+    for (const r of WeatherRegions.all) {
+      const expected = { KR: 'kma', JP: 'jma', US: 'nws' }[r.country];
+      expect(r.source.kind, r.key).toBe(expected);
+    }
+  });
+
+  it('LCC 식은 가이드의 C 예제와 같다 — (126.929810, 37.488201) → (59, 125)', () => {
+    expect(latLonToKmaGrid(37.488201, 126.92981)).toEqual({ nx: 59, ny: 125 });
+    // 공식 격자 엑셀(2607)의 서울 종로구 행: (126.98164, 37.57038) → 60,127.
+    expect(latLonToKmaGrid(37.57038, 126.98164)).toEqual({ nx: 60, ny: 127 });
+  });
+
+  it('한국 17곳의 격자는 박아 둔 소재지 좌표를 LCC 로 바꾼 값과 같다(시·도청이 아니라 앱이 보여 주는 소재지)', () => {
+    for (const r of WeatherRegions.byCountry('KR')) {
+      if (r.source.kind !== 'kma') throw new Error(r.key);
+      expect({ nx: r.source.nx, ny: r.source.ny }, r.key).toEqual(latLonToKmaGrid(r.lat, r.lon));
+    }
+    const grid = (key: string) => {
+      const source = WeatherRegions.byKey(key)?.source;
+      return source?.kind === 'kma' ? [source.nx, source.ny] : null;
+    };
+    // 시·도청 칸과 다른 곳(소재지가 다르다) — 경북은 예천 도청(87,106)이 아니라 안동이다.
+    expect(grid('kr-seoul')).toEqual([60, 127]);
+    expect(grid('kr-gyeongbuk')).toEqual([91, 106]);
+    expect(grid('kr-chungnam')).toEqual([55, 106]);
+    expect(grid('kr-gyeonggi')).toEqual([60, 121]);
+    expect(grid('kr-jeju')).toEqual([53, 38]);
+    // 17곳이 모두 다른 칸이다.
+    const cells = WeatherRegions.byCountry('KR').map((r) => JSON.stringify(grid(r.key)));
+    expect(new Set(cells).size).toBe(17);
+  });
+
+  it('일본: office·class10 은 6자리, 기온 지점은 5자리, class10 은 그 office 안이다', () => {
+    for (const r of WeatherRegions.byCountry('JP')) {
+      if (r.source.kind !== 'jma') throw new Error(r.key);
+      const { office, class10, tempStation, week } = r.source;
+      expect(office, r.key).toMatch(/^\d{6}$/);
+      expect(class10, r.key).toMatch(/^\d{6}$/);
+      expect(tempStation, r.key).toMatch(/^\d{5}$/);
+      // class10 의 앞 두 자리는 현 코드다(大阪·香川는 class10 = office).
+      expect(class10.slice(0, 2), r.key).toBe(office.slice(0, 2));
+      expect(week.length, r.key).toBeGreaterThan(0);
+      for (const w of week) {
+        expect(w.area.slice(0, 2), r.key).toBe(office.slice(0, 2));
+        expect(w.tempStation, r.key).toMatch(/^\d{5}$/);
+      }
+    }
+    // 주간 구역이 계절마다 갈리는 곳은 후보가 여럿이다(실제로 있는 첫 구역을 쓴다).
+    const aomori = WeatherRegions.byKey('jp-aomori')!.source;
+    expect(aomori.kind === 'jma' && aomori.week.map((w) => w.area)).toEqual(['020000', '020010', '020100']);
+    const shiga = WeatherRegions.byKey('jp-shiga')!.source;
+    expect(shiga.kind === 'jma' && shiga.week).toEqual([
+      { area: '250000', tempStation: '60131' },
+      { area: '250010', tempStation: '60216' },
+    ]);
+  });
+
+  it('미국: gridId 는 예보청 세 글자, 격자는 0 이상 정수다', () => {
+    for (const r of WeatherRegions.byCountry('US')) {
+      if (r.source.kind !== 'nws') throw new Error(r.key);
+      expect(r.source.gridId, r.key).toMatch(/^[A-Z]{3}$/);
+      expect(Number.isInteger(r.source.gridX) && r.source.gridX >= 0, r.key).toBe(true);
+      expect(Number.isInteger(r.source.gridY) && r.source.gridY >= 0, r.key).toBe(true);
+    }
+    expect(WeatherRegions.byKey('us-new-york')!.source).toEqual({ kind: 'nws', gridId: 'OKX', gridX: 33, gridY: 42 });
+  });
+
+  it('원천이 없거나 나라와 다르면 목록을 거절한다 — 모르는 키를 조용히 지우지 않게 필수다', () => {
+    const base = structuredClone(WEATHER_REGION_CATALOG);
+    const first = base.regions[0]!;
+    const { source: _omitted, ...withoutSource } = first;
+    void _omitted;
+    expect(
+      WeatherRegionCatalogSchema.safeParse({ ...base, regions: [withoutSource, ...base.regions.slice(1)] }).success,
+    ).toBe(false);
+    const crossed = { ...first, source: { kind: 'nws', gridId: 'OKX', gridX: 1, gridY: 1 } };
+    expect(WeatherRegionCatalogSchema.safeParse({ ...base, regions: [crossed, ...base.regions.slice(1)] }).success).toBe(
+      false,
+    );
+    const typo = { ...first, source: { kind: 'kma', nx: 60 } };
+    expect(WeatherRegionCatalogSchema.safeParse({ ...base, regions: [typo, ...base.regions.slice(1)] }).success).toBe(
+      false,
+    );
+  });
+});
+
 describe('WeatherRegions.resolveAlias — 옛 (나라, 도시) 글자 되짚기', () => {
   it('안드로이드 30(main)·develop·iOS 1.2.10 의 프리셋은 전부 되짚힌다', () => {
     // 한국어 프리셋 — 모든 빌드가 나라 '대한민국' 으로 보냈다.
