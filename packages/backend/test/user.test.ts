@@ -18,6 +18,14 @@ vi.mock('../src/lib/billing-cancel', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../src/lib/billing-cancel')>()),
   notifyBillingStateChanged,
 }));
+// 목소리 철회 통지 — 등급 통지와의 **순서**만 본다(코덱스 #841).
+const notifyDowngradedAlarms = vi.hoisted(() =>
+  vi.fn<(...args: unknown[]) => Promise<void>>(async () => undefined),
+);
+vi.mock('../src/lib/fcm', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/lib/fcm')>()),
+  notifyDowngradedAlarms,
+}));
 vi.mock('../src/lib/account-deletion', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/lib/account-deletion')>();
   return { ...actual, purgeUserAccount: vi.fn(actual.purgeUserAccount) };
@@ -45,6 +53,8 @@ beforeEach(() => {
   mockDB.client.execute = originalExecute;
   notifyBillingStateChanged.mockReset();
   notifyBillingStateChanged.mockImplementation(async () => undefined);
+  notifyDowngradedAlarms.mockReset();
+  notifyDowngradedAlarms.mockImplementation(async () => undefined);
 });
 
 describe('PATCH /user/me', () => {
@@ -260,6 +270,40 @@ describe('DELETE /user/me', () => {
 
     expect(res.status).toBe(200);
     expect((await res.json()).success).toBe(true);
+  });
+
+  it('등급 통지(보이는 삭제 예고)를 목소리 철회 통지보다 **먼저** 보낸다(코덱스 #841)', async () => {
+    // 무음 철회 신호가 먼저 subrequest 예산을 다 쓰면 예고가 잘린다 — 순서가 곧 보장이다.
+    mockDB.pushResult([{ id: 'pk-1' }]);
+    vi.mocked(purgeUserAccount).mockResolvedValueOnce({
+      downgradedAlarms: [{ alarmId: 'al-1', ownerUserId: 'member-1', isReceived: true }],
+      voiceAccessRevokedUserIds: ['member-1'],
+      planChangedUserIds: ['member-1'],
+    });
+
+    const res = await buildApp().request(jsonReq('DELETE', '/user/me'), undefined, DELETE_ENV);
+
+    expect(res.status).toBe(200);
+    expect(notifyBillingStateChanged).toHaveBeenCalledTimes(1);
+    expect(notifyDowngradedAlarms).toHaveBeenCalledTimes(1);
+    expect(notifyBillingStateChanged.mock.invocationCallOrder[0]!).toBeLessThan(
+      notifyDowngradedAlarms.mock.invocationCallOrder[0]!,
+    );
+  });
+
+  it('등급 통지가 던져도 목소리 철회 통지는 따로 나간다', async () => {
+    mockDB.pushResult([{ id: 'pk-1' }]);
+    vi.mocked(purgeUserAccount).mockResolvedValueOnce({
+      downgradedAlarms: [],
+      voiceAccessRevokedUserIds: ['member-1'],
+      planChangedUserIds: ['member-1'],
+    });
+    notifyBillingStateChanged.mockRejectedValueOnce(new Error('FCM down'));
+
+    const res = await buildApp().request(jsonReq('DELETE', '/user/me'), undefined, DELETE_ENV);
+
+    expect(res.status).toBe(200);
+    expect(notifyDowngradedAlarms).toHaveBeenCalledTimes(1);
   });
 
   it('파기가 롤백되면 등급 변경 통지를 보내지 않는다', async () => {

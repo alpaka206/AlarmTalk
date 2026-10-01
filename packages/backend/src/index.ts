@@ -506,18 +506,14 @@ async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext)
         logStructured('info', { at: 'scheduled.account_purge', purged: due.rows.length });
       }
     } finally {
-      // 파기된 계정의 목소리를 들고 있는 기기들에 알린다 — 받은 알람은 pull 신호로,
-      // 본인 알람·미동기화 알람은 접근권 재확인으로. **여기서 던지면 안 된다** —
-      // 원래 파기 실패를 이 실패가 덮어써 바깥 catch 가 엉뚱한 걸 기록한다.
-      try {
-        const { notifyDowngradedAlarms } = await import('./lib/fcm');
-        await notifyDowngradedAlarms(db, env, revokedTargets, voiceAccessRevokedUserIds);
-      } catch (notifyErr) {
-        captureCron('scheduled.account_purge_notify', notifyErr);
-      }
       // 해체로 등급이 바뀐 멤버들 — 다른 해체 경로와 같은 통지(`plan_changed` + 보관 유예가
-      // 걸린 사람에게 삭제 예고). 위 발송이 실패해도 이건 따로 보낸다(서로 다른 사실이다).
-      // 계정 사이에 중복이 있어도 함수가 접는다.
+      // 걸린 사람에게 삭제 예고). 아래 철회 발송과 따로 보낸다(서로 다른 사실이다).
+      // 계정 사이에 중복이 있어도 함수가 접는다. **여기서 던지면 안 된다** — 원래 파기 실패를
+      // 이 실패가 덮어써 바깥 catch 가 엉뚱한 걸 기록한다.
+      // ⚠ **철회 발송보다 먼저다**(코덱스 #841). 이쪽에 **보이는 삭제 예고**가 실린다 — 한 실행의
+      //   subrequest 예산은 공유라, 무음 철회 신호가 먼저 예산을 다 쓰면 예고가 잘려 멤버가 예고
+      //   없이 목소리를 잃는다(각 발송이 한도 오류를 삼켜도 쓴 예산은 돌아오지 않는다). 무음 신호는
+      //   놓쳐도 다음 진입·주기 재조회가 메운다(`docs/spec/billing-lifecycle.md` 「그룹 주인이 탈퇴하면」).
       // ⚠ 위의 '모아 보낸다' 는 **계정 사이**를 모은다는 뜻이다 — 이 두 발송은 일부러 따로 둔다.
       //   클론 있는 그룹 주인이 파기된 틱에서는 토큰 조회·OAuth 가 한 벌 더 들지만, 파기는 틱당
       //   최대 2건이고 목록이 비면 DB 호출 없이 끝난다. 한 발송으로 합치면 한쪽 실패(예: 무음
@@ -527,6 +523,14 @@ async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext)
         await notifyBillingStateChanged(db, env, planChangedUserIds);
       } catch (notifyErr) {
         captureCron('scheduled.account_purge_plan_notify', notifyErr);
+      }
+      // 파기된 계정의 목소리를 들고 있는 기기들에 알린다 — 받은 알람은 pull 신호로,
+      // 본인 알람·미동기화 알람은 접근권 재확인으로.
+      try {
+        const { notifyDowngradedAlarms } = await import('./lib/fcm');
+        await notifyDowngradedAlarms(db, env, revokedTargets, voiceAccessRevokedUserIds);
+      } catch (notifyErr) {
+        captureCron('scheduled.account_purge_notify', notifyErr);
       }
     }
   } catch (err) {

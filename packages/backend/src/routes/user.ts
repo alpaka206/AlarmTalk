@@ -293,6 +293,18 @@ user.delete('/me', async (c) => {
       return purgeUserAccount(tx, userPk, userLoginId, personalPromoCoversFree(c.env));
     });
 
+    // 내가 주인이던 그룹이 해체돼 **등급이 바뀐 멤버들**에게 커밋 후에 알린다 — 아래 철회
+    // 통지와 별개다(클론이 없는 주인이면 그쪽은 아무도 안 깨운다). 다른 해체 경로와 같은 함수다:
+    // `plan_changed` + 보관 유예가 걸린 사람에게 삭제 예고. 던지지 않지만 탈퇴 응답을 지키려고
+    // 한 번 더 감싼다.
+    // ⚠ **철회 통지보다 먼저다**(코덱스 #841). 이쪽에 **보이는 삭제 예고**가 실린다 — 무음 철회
+    //   신호가 먼저 subrequest 예산을 다 쓰면 예고가 잘려, 멤버가 예고 없이 목소리를 잃는다.
+    //   (`docs/spec/billing-lifecycle.md` 「그룹 주인이 탈퇴하면」)
+    try {
+      await notifyBillingStateChanged(db, c.env, purgeNotifications.planChangedUserIds);
+    } catch (err) {
+      logRouteError(c, err);
+    }
     // 내 목소리를 들고 있는 기기들에 **커밋 후에** 알린다 — 받은 알람은 pull 신호로
     // (family_alarm), 본인 알람·미동기화 알람은 접근권 재확인으로(voice_access_revoked).
     // 안 보내면 다음 주기까지 탈퇴자의 복제 목소리로 계속 울린다.
@@ -304,15 +316,6 @@ user.delete('/me', async (c) => {
         purgeNotifications.downgradedAlarms,
         purgeNotifications.voiceAccessRevokedUserIds,
       );
-    } catch (err) {
-      logRouteError(c, err);
-    }
-    // 내가 주인이던 그룹이 해체돼 **등급이 바뀐 멤버들**에게도 커밋 후에 알린다 — 위 철회
-    // 통지와 별개다(클론이 없는 주인이면 위는 아무도 안 깨운다). 다른 해체 경로와 같은 함수다:
-    // `plan_changed` + 보관 유예가 걸린 사람에게 삭제 예고. 던지지 않지만 탈퇴 응답을 지키려고
-    // 한 번 더 감싼다.
-    try {
-      await notifyBillingStateChanged(db, c.env, purgeNotifications.planChangedUserIds);
     } catch (err) {
       logRouteError(c, err);
     }

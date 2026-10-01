@@ -122,4 +122,41 @@ describe('scheduled() — 계정 파기 격리', () => {
     expect(notifyBillingStateChanged).toHaveBeenCalledTimes(1);
     expect(notifyBillingStateChanged.mock.calls[0]![2]).toEqual(['m1', 'm2']);
   });
+  it('등급 통지(보이는 삭제 예고)를 목소리 철회 통지보다 **먼저** 보낸다(코덱스 #841)', async () => {
+    const { notifyDowngradedAlarms } = await import('../src/lib/fcm');
+    withWriteTransaction.mockResolvedValue({
+      downgradedAlarms: [],
+      voiceAccessRevokedUserIds: ['m1'],
+      planChangedUserIds: ['m1'],
+    });
+
+    await worker.scheduled(
+      { scheduledTime: new Date('2026-09-20T00:00:00.000Z').getTime(), cron: '*/5 * * * *' } as never,
+      { TURSO_DATABASE_URL: 'mock', TURSO_AUTH_TOKEN: 'mock', PASSWORD_PEPPER: 'pep' } as never,
+    );
+
+    expect(notifyBillingStateChanged).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(notifyDowngradedAlarms)).toHaveBeenCalledTimes(1);
+    expect(notifyBillingStateChanged.mock.invocationCallOrder[0]!).toBeLessThan(
+      vi.mocked(notifyDowngradedAlarms).mock.invocationCallOrder[0]!,
+    );
+  });
+
+  it('등급 통지가 던져도 목소리 철회 통지는 따로 나간다', async () => {
+    const { notifyDowngradedAlarms } = await import('../src/lib/fcm');
+    notifyBillingStateChanged.mockRejectedValueOnce(new Error('FCM down'));
+    withWriteTransaction.mockResolvedValue({
+      downgradedAlarms: [],
+      voiceAccessRevokedUserIds: ['m1'],
+      planChangedUserIds: ['m1'],
+    });
+
+    await worker.scheduled(
+      { scheduledTime: new Date('2026-09-20T00:00:00.000Z').getTime(), cron: '*/5 * * * *' } as never,
+      { TURSO_DATABASE_URL: 'mock', TURSO_AUTH_TOKEN: 'mock', PASSWORD_PEPPER: 'pep' } as never,
+    );
+
+    expect(vi.mocked(notifyDowngradedAlarms)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(notifyDowngradedAlarms).mock.calls[0]![3]).toContain('m1');
+  });
 });
