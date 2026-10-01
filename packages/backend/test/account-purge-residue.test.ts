@@ -455,6 +455,11 @@ describe('탈퇴 파기 뒤 잔존물 (실제 SQLite)', () => {
       expect(purged.downgradedAlarms.some((target) => target.ownerUserId === A_PK)).toBe(false);
     });
 
+    it('A 의 그룹이 해체돼 떨어져 나간 B 에게 등급 변경도 알린다 — 목소리 철회와 별개 목록', () => {
+      // A 가 멤버이던 C 의 그룹은 A 가 빠질 뿐이라 C 의 등급은 그대로다.
+      expect(purged.planChangedUserIds).toEqual([B_PK]);
+    });
+
     it('A 가 소유했던 행은 그 id 로 더는 풀리지 않는다', async () => {
       const resolvable: string[] = [];
       for (const [table, column, id] of A_OWNED_ROWS) {

@@ -9,7 +9,22 @@ vi.mock('../src/lib/db', () => ({
   getDB: () => mockDB.client,
 }));
 
+// 탈퇴 커밋 뒤 등급 변경 통지(배선만 본다). 나머지는 실제 구현 그대로 둔다 — 아래 DELETE
+// 테스트들이 실제 파기 문장 순서를 확인한다.
+const notifyBillingStateChanged = vi.hoisted(() =>
+  vi.fn<(...args: unknown[]) => Promise<void>>(async () => undefined),
+);
+vi.mock('../src/lib/billing-cancel', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/lib/billing-cancel')>()),
+  notifyBillingStateChanged,
+}));
+vi.mock('../src/lib/account-deletion', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/lib/account-deletion')>();
+  return { ...actual, purgeUserAccount: vi.fn(actual.purgeUserAccount) };
+});
+
 import userRoutes from '../src/routes/user';
+import { purgeUserAccount } from '../src/lib/account-deletion';
 import { CURRENT_POLICY_VERSION } from '../src/lib/consent';
 
 function buildApp(userId = 'user-1') {
@@ -28,6 +43,8 @@ const originalExecute = mockDB.client.execute;
 beforeEach(() => {
   mockDB.reset();
   mockDB.client.execute = originalExecute;
+  notifyBillingStateChanged.mockReset();
+  notifyBillingStateChanged.mockImplementation(async () => undefined);
 });
 
 describe('PATCH /user/me', () => {
@@ -206,6 +223,53 @@ describe('DELETE /user/me', () => {
     expect(indexOf('DELETE FROM message_library')).toBeLessThan(indexOf('DELETE FROM messages'));
     expect(indexOf('DELETE FROM messages')).toBeLessThan(indexOf('DELETE FROM voice_profiles'));
     expect(indexOf('DELETE FROM users')).toBeGreaterThan(indexOf('DELETE FROM voice_profiles'));
+  });
+
+  it('그룹이 해체돼 등급이 바뀐 멤버에게 **커밋 뒤** 등급 변경 통지를 보낸다', async () => {
+    mockDB.pushResult([{ id: 'pk-1' }]);
+    vi.mocked(purgeUserAccount).mockResolvedValueOnce({
+      downgradedAlarms: [],
+      voiceAccessRevokedUserIds: [],
+      planChangedUserIds: ['member-1', 'member-2'],
+    });
+    let commitsAtNotify = -1;
+    notifyBillingStateChanged.mockImplementationOnce(async () => {
+      commitsAtNotify = mockDB.transactions.commits;
+    });
+
+    const res = await buildApp().request(jsonReq('DELETE', '/user/me'), undefined, DELETE_ENV);
+
+    expect(res.status).toBe(200);
+    expect(notifyBillingStateChanged).toHaveBeenCalledTimes(1);
+    expect(notifyBillingStateChanged.mock.calls[0]![0]).toBe(mockDB.client);
+    expect(notifyBillingStateChanged.mock.calls[0]![2]).toEqual(['member-1', 'member-2']);
+    // 트랜잭션 안에서 쏘지 않는다 — 부르는 시점에 파기가 이미 커밋돼 있다.
+    expect(commitsAtNotify).toBe(1);
+  });
+
+  it('등급 변경 통지가 던져도 탈퇴는 성공이다', async () => {
+    mockDB.pushResult([{ id: 'pk-1' }]);
+    vi.mocked(purgeUserAccount).mockResolvedValueOnce({
+      downgradedAlarms: [],
+      voiceAccessRevokedUserIds: [],
+      planChangedUserIds: ['member-1'],
+    });
+    notifyBillingStateChanged.mockRejectedValueOnce(new Error('FCM down'));
+
+    const res = await buildApp().request(jsonReq('DELETE', '/user/me'), undefined, DELETE_ENV);
+
+    expect(res.status).toBe(200);
+    expect((await res.json()).success).toBe(true);
+  });
+
+  it('파기가 롤백되면 등급 변경 통지를 보내지 않는다', async () => {
+    mockDB.pushResult([{ id: 'pk-1' }]);
+    vi.mocked(purgeUserAccount).mockRejectedValueOnce(new Error('Too many subrequests'));
+
+    const res = await buildApp().request(jsonReq('DELETE', '/user/me'), undefined, DELETE_ENV);
+
+    expect(res.status).toBe(500);
+    expect(notifyBillingStateChanged).not.toHaveBeenCalled();
   });
 
   it('userPk 미해석인데 사용자 행이 존재하면 throw → 500 (고아 PII 방지)', async () => {

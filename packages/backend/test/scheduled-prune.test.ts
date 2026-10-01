@@ -8,18 +8,19 @@ vi.mock('../src/lib/audio-retention', () => ({
 }));
 vi.mock('../src/lib/billing-cancel', () => ({
   processSubscriptionExpiry: vi.fn().mockResolvedValue(undefined),
+  notifyBillingStateChanged: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock('../src/lib/account-deletion', () => ({
   // 커밋 후 알릴 대상을 돌려준다. 비어 있어도 **형태는 지켜야** cron 이 그대로 펴 담는다.
   purgeUserAccount: vi
     .fn()
-    .mockResolvedValue({ downgradedAlarms: [], voiceAccessRevokedUserIds: [] }),
+    .mockResolvedValue({ downgradedAlarms: [], voiceAccessRevokedUserIds: [], planChangedUserIds: [] }),
   pseudonymizeBillingForRetention: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock('../src/lib/transactions', () => ({
   withWriteTransaction: vi
     .fn()
-    .mockResolvedValue({ downgradedAlarms: [], voiceAccessRevokedUserIds: [] }),
+    .mockResolvedValue({ downgradedAlarms: [], voiceAccessRevokedUserIds: [], planChangedUserIds: [] }),
 }));
 vi.mock('../src/lib/fcm', () => ({
   sendAlarmPush: vi.fn().mockResolvedValue(undefined),
@@ -163,6 +164,7 @@ describe('scheduled() — 탈퇴 파기 알림', () => {
       .mockResolvedValueOnce({
         downgradedAlarms: [{ alarmId: 'al-1', ownerUserId: 'R1', isReceived: true }],
         voiceAccessRevokedUserIds: ['M1'],
+        planChangedUserIds: ['G1'],
       } as never)
       .mockRejectedValueOnce(new Error('turso down'));
 
@@ -177,5 +179,9 @@ describe('scheduled() — 탈퇴 파기 알림', () => {
       { alarmId: 'al-1', ownerUserId: 'R1', isReceived: true },
     ]);
     expect(vi.mocked(notifyDowngradedAlarms).mock.calls[0]![3]).toEqual(['M1']);
+    // 그룹 해체로 등급이 바뀐 G1 도 같은 이유로 알린다.
+    const { notifyBillingStateChanged } = await import('../src/lib/billing-cancel');
+    expect(notifyBillingStateChanged).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(notifyBillingStateChanged).mock.calls[0]![2]).toEqual(['G1']);
   });
 });

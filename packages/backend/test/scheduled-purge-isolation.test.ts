@@ -9,11 +9,13 @@ vi.mock('../src/lib/audio-retention', () => ({
   cleanupStaleDraftVoices: vi.fn().mockResolvedValue(undefined),
   drainExternalDeletions: vi.fn().mockResolvedValue(undefined),
 }));
+const notifyBillingStateChanged = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 vi.mock('../src/lib/billing-cancel', () => ({
   processSubscriptionExpiry: vi.fn().mockResolvedValue(undefined),
+  notifyBillingStateChanged,
 }));
 vi.mock('../src/lib/account-deletion', () => ({
-  purgeUserAccount: vi.fn().mockResolvedValue({ downgradedAlarms: [], voiceAccessRevokedUserIds: [] }),
+  purgeUserAccount: vi.fn().mockResolvedValue({ downgradedAlarms: [], voiceAccessRevokedUserIds: [], planChangedUserIds: [] }),
   pseudonymizeBillingForRetention: vi.fn().mockResolvedValue(undefined),
 }));
 const withWriteTransaction = vi.hoisted(() => vi.fn());
@@ -52,7 +54,7 @@ describe('scheduled() — 계정 파기 격리', () => {
   it('앞 계정의 파기가 던져도 뒤 계정의 파기를 시도한다', async () => {
     withWriteTransaction
       .mockRejectedValueOnce(new Error('Too many subrequests by single Worker invocation.'))
-      .mockResolvedValue({ downgradedAlarms: [], voiceAccessRevokedUserIds: [] });
+      .mockResolvedValue({ downgradedAlarms: [], voiceAccessRevokedUserIds: [], planChangedUserIds: [] });
 
     await worker.scheduled(
       { scheduledTime: new Date('2026-09-20T00:00:00.000Z').getTime(), cron: '*/5 * * * *' } as never,
@@ -63,7 +65,7 @@ describe('scheduled() — 계정 파기 격리', () => {
   });
 
   it('파기 순서는 기한이 먼저 온 계정부터로 고정이다', async () => {
-    withWriteTransaction.mockResolvedValue({ downgradedAlarms: [], voiceAccessRevokedUserIds: [] });
+    withWriteTransaction.mockResolvedValue({ downgradedAlarms: [], voiceAccessRevokedUserIds: [], planChangedUserIds: [] });
     await worker.scheduled(
       { scheduledTime: new Date('2026-09-20T00:00:00.000Z').getTime(), cron: '*/5 * * * *' } as never,
       { TURSO_DATABASE_URL: 'mock', TURSO_AUTH_TOKEN: 'mock', PASSWORD_PEPPER: 'pep' } as never,
@@ -72,5 +74,52 @@ describe('scheduled() — 계정 파기 격리', () => {
       .map(([arg]) => (typeof arg === 'string' ? arg : (arg as { sql: string }).sql))
       .find((sql) => sql.includes("deletion_status = 'pending_deletion'"));
     expect(purgeQuery).toMatch(/ORDER BY deletion_purge_at, id/);
+  });
+
+  it('계정별 등급 변경 대상을 모아 커밋 뒤 한 번에 알린다', async () => {
+    withWriteTransaction
+      .mockResolvedValueOnce({ downgradedAlarms: [], voiceAccessRevokedUserIds: [], planChangedUserIds: ['m1', 'm2'] })
+      .mockResolvedValueOnce({ downgradedAlarms: [], voiceAccessRevokedUserIds: [], planChangedUserIds: ['m3'] });
+
+    await worker.scheduled(
+      { scheduledTime: new Date('2026-09-20T00:00:00.000Z').getTime(), cron: '*/5 * * * *' } as never,
+      { TURSO_DATABASE_URL: 'mock', TURSO_AUTH_TOKEN: 'mock', PASSWORD_PEPPER: 'pep' } as never,
+    );
+
+    expect(notifyBillingStateChanged).toHaveBeenCalledTimes(1);
+    expect(notifyBillingStateChanged.mock.calls[0]![2]).toEqual(['m1', 'm2', 'm3']);
+    // 두 계정의 트랜잭션이 모두 끝난 뒤다 — 트랜잭션 안에서 쏘지 않는다.
+    const lastTx = Math.max(...withWriteTransaction.mock.invocationCallOrder);
+    expect(notifyBillingStateChanged.mock.invocationCallOrder[0]!).toBeGreaterThan(lastTx);
+  });
+
+  it('뒤 계정의 파기가 실패해도 이미 커밋된 앞 계정의 멤버에게는 알린다', async () => {
+    withWriteTransaction
+      .mockResolvedValueOnce({ downgradedAlarms: [], voiceAccessRevokedUserIds: [], planChangedUserIds: ['m1'] })
+      .mockRejectedValueOnce(new Error('Too many subrequests by single Worker invocation.'));
+
+    await worker.scheduled(
+      { scheduledTime: new Date('2026-09-20T00:00:00.000Z').getTime(), cron: '*/5 * * * *' } as never,
+      { TURSO_DATABASE_URL: 'mock', TURSO_AUTH_TOKEN: 'mock', PASSWORD_PEPPER: 'pep' } as never,
+    );
+
+    expect(notifyBillingStateChanged).toHaveBeenCalledTimes(1);
+    expect(notifyBillingStateChanged.mock.calls[0]![2]).toEqual(['m1']);
+  });
+
+  it('목소리 철회 통지가 던져도 등급 변경 통지는 따로 나간다', async () => {
+    const { notifyDowngradedAlarms } = await import('../src/lib/fcm');
+    vi.mocked(notifyDowngradedAlarms).mockRejectedValueOnce(new Error('FCM down'));
+    withWriteTransaction
+      .mockResolvedValueOnce({ downgradedAlarms: [], voiceAccessRevokedUserIds: ['m1'], planChangedUserIds: ['m1'] })
+      .mockResolvedValueOnce({ downgradedAlarms: [], voiceAccessRevokedUserIds: [], planChangedUserIds: ['m2'] });
+
+    await worker.scheduled(
+      { scheduledTime: new Date('2026-09-20T00:00:00.000Z').getTime(), cron: '*/5 * * * *' } as never,
+      { TURSO_DATABASE_URL: 'mock', TURSO_AUTH_TOKEN: 'mock', PASSWORD_PEPPER: 'pep' } as never,
+    );
+
+    expect(notifyBillingStateChanged).toHaveBeenCalledTimes(1);
+    expect(notifyBillingStateChanged.mock.calls[0]![2]).toEqual(['m1', 'm2']);
   });
 });
