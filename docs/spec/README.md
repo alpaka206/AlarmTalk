@@ -56,7 +56,7 @@
 | --- | --- |
 | [alarm-ringing.md](alarm-ringing.md) | 알람이 울릴 때 무엇이 뜨고, 어떻게 꺼지는가 |
 | [alarm-editor.md](alarm-editor.md) | 알람을 만드는 화면 — 타임휠, 재생 방식, 모달 세 형태 |
-| [voice-and-message.md](voice-and-message.md) | 목소리·문구를 고르고 저장하는 규칙, 등급별 제한, 날씨 지역 목록(나라 → 지역)·계정의 지역·사주 받아 적기·서버 미리 계산(Open-Meteo 상업 키) |
+| [voice-and-message.md](voice-and-message.md) | 목소리·문구를 고르고 저장하는 규칙, 등급별 제한, 날씨 지역 목록(나라 → 지역)·계정의 지역·사주 받아 적기·서버 미리 계산(나라별 공식 예보 — 기상청·気象庁·NWS, 현지 슬롯, 출처 표기) |
 | [plan-gates.md](plan-gates.md) | 로그인·이용권 게이트가 뜨는 조건과 문구 |
 | [family-alarm.md](family-alarm.md) | 남에게 보내는 알람 — 보내면 끝, 설정 불가능 시간 |
 | [consent.md](consent.md) | 동의 화면 — 미체크는 철회가 아니다, 재동의 레버 |
