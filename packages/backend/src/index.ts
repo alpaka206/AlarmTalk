@@ -518,6 +518,10 @@ async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext)
       // 해체로 등급이 바뀐 멤버들 — 다른 해체 경로와 같은 통지(`plan_changed` + 보관 유예가
       // 걸린 사람에게 삭제 예고). 위 발송이 실패해도 이건 따로 보낸다(서로 다른 사실이다).
       // 계정 사이에 중복이 있어도 함수가 접는다.
+      // ⚠ 위의 '모아 보낸다' 는 **계정 사이**를 모은다는 뜻이다 — 이 두 발송은 일부러 따로 둔다.
+      //   클론 있는 그룹 주인이 파기된 틱에서는 토큰 조회·OAuth 가 한 벌 더 들지만, 파기는 틱당
+      //   최대 2건이고 목록이 비면 DB 호출 없이 끝난다. 한 발송으로 합치면 한쪽 실패(예: 무음
+      //   신호 조립 오류)가 다른 쪽 사실까지 삼킨다. 합칠 때는 그 격리를 지킬 것.
       try {
         const { notifyBillingStateChanged } = await import('./lib/billing-cancel');
         await notifyBillingStateChanged(db, env, planChangedUserIds);
