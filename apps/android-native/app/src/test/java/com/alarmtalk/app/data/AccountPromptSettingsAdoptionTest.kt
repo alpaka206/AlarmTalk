@@ -213,7 +213,7 @@ class AccountPromptSettingsAdoptionTest {
     /**
      * **같은 옛 값을 다시 받아도 다시 돈다**(Codex #837). 저장이 실패한 뒤 서버는 옛 값을 그대로 준다 —
      * 받아 적기의 축이 값뿐이면 다음 `/auth/me` 가 와도 다시 돌지 않아 밀린 변경이 올라가지 않는다.
-     * 축에 받은 시각이 있어야 한다(`accountSettingsReceipt`).
+     * 축에 저장 순번이 있어야 한다(`accountSettingsReceipt`).
      */
     @Test
     fun 같은_옛_값을_다시_받아도_받아_적기를_다시_돌린다() {
@@ -223,17 +223,67 @@ class AccountPromptSettingsAdoptionTest {
             dynamicPromptSettings = regionSettings("kr-seoul"),
         )
         val first = com.alarmtalk.app.network.AuthSession(
-            token = "t1", provider = "email", user = user, userFetchedAtMillis = 1_000L,
+            token = "t1", provider = "email", user = user, userFetchedAtMillis = 1_000L, accountAnswerSeq = 1L,
         )
-        // 다음 진입의 `/auth/me` — 값은 같고 받은 시각만 다르다(토큰도 굴렀다).
-        val next = first.copy(token = "t2", userFetchedAtMillis = 2_000L)
+        // 다음 진입의 `/auth/me` — 값도 받은 시각도 같고(같은 초의 서버 계산 시각) 순번만 다르다.
+        val next = first.copy(token = "t2", accountAnswerSeq = 2L)
         assertEquals(accountSettingsReceipt(first), accountSettingsReceipt(first.copy()))
         assertNotEquals(accountSettingsReceipt(first), accountSettingsReceipt(next))
-        // 프로필만 고친 저장은 받은 시각을 그대로 둔다 — 그때는 값이 바뀌어 다시 돈다.
-        val edited = first.copy(user = user.copy(dynamicPromptSettings = regionSettings("jp-tokyo")))
-        assertNotEquals(accountSettingsReceipt(first), accountSettingsReceipt(edited))
         // 계정이 없으면 받아 적을 것이 없다.
         assertNull(accountSettingsReceipt(null))
+    }
+
+    /**
+     * **개인 프로모 계정도 응답마다 새 사건이다**(Codex #837 11차). 저장소는 받은 시각을 서버의
+     * `personal_promo.computed_at`(초 단위)으로 바꿔 적어서, 같은 초에 계산된 `/auth/me` 두 번은 받은 시각이
+     * 같다. 그 시각을 축으로 쓰면 두 번째 응답이 받아 적기를 다시 돌리지 않아 — 첫 업로드가 실패했을 때 —
+     * 밀린 변경이 재시도되지 않는다. 축은 저장소가 저장마다 올리는 순번이다.
+     */
+    @Test
+    fun 같은_초에_계산된_프로모_응답_두_번도_다른_사건이다() {
+        val prefsName = "account-answer-seq-test"
+        val sessionStore = com.alarmtalk.app.network.AuthSessionStore(
+            context.getSharedPreferences(prefsName, Context.MODE_PRIVATE),
+        )
+        try {
+            val promo = com.alarmtalk.app.network.PersonalPromo(
+                endsAt = "2026-10-31T15:00:00Z",
+                computedAt = "2026-10-01T00:00:00Z",
+            )
+            val user = com.alarmtalk.app.network.AuthUser(
+                id = "user-a",
+                email = "a@example.test",
+                plan = "plus",
+                dynamicPromptSettings = regionSettings("kr-seoul"),
+                personalPromo = promo,
+            )
+            val login = sessionStore.saveAppSession(com.alarmtalk.app.network.AuthTokenResponse(token = "t1", user = user))
+            fun me(receivedAt: Long) = checkNotNull(
+                sessionStore.saveSessionIfAlive(
+                    expectedGeneration = sessionStore.sessionGeneration(),
+                    user = user,
+                    provider = login.provider,
+                    rolledToken = null,
+                    userFetchedAtMillis = receivedAt,
+                ),
+            )
+            val first = me(receivedAt = 5_000L)
+            val second = me(receivedAt = 5_400L)
+
+            // 받은 시각은 서버 계산 시각으로 같아졌다 — 그래서 그것만으로는 못 가른다.
+            assertEquals(first.userFetchedAtMillis, second.userFetchedAtMillis)
+            assertNotEquals(accountSettingsReceipt(first), accountSettingsReceipt(second))
+            assertTrue(second.accountAnswerSeq > first.accountAnswerSeq)
+            // 저장본을 다시 읽어도 같은 사건이다(관찰 경로가 메모리 사본과 갈라지지 않는다).
+            assertEquals(accountSettingsReceipt(second), accountSettingsReceipt(sessionStore.read()))
+
+            // 로그아웃 뒤 같은 계정으로 다시 들어와도 순번은 되감기지 않는다.
+            sessionStore.clear()
+            val again = sessionStore.saveAppSession(com.alarmtalk.app.network.AuthTokenResponse(token = "t3", user = user))
+            assertTrue(again.accountAnswerSeq > second.accountAnswerSeq)
+        } finally {
+            context.getSharedPreferences(prefsName, Context.MODE_PRIVATE).edit().clear().commit()
+        }
     }
 
     /**

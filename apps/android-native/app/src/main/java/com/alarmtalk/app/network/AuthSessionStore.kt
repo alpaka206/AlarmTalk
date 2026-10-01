@@ -33,6 +33,16 @@ data class AuthSession(
      * 시각도 그 답의 것이어야 한다.
      */
     val userFetchedAtMillis: Long? = null,
+    /**
+     * 이 세션을 적은 **저장 순번** — 저장할 때마다 1씩 오르고 줄지 않는다(세션이 끝나도 이어진다).
+     *
+     * 계정 설정 받아 적기가 "새 응답이 왔다" 를 가르는 축이다(`AccountSettingsReceipt`).
+     * ⚠ [userFetchedAtMillis] 로 가르지 말 것(Codex #837) — 개인 프로모 계정은 그 값이 서버의
+     * `computed_at`(초 단위)으로 바뀌어 같은 초의 `/auth/me` 두 번이 **같은 값**이 되고, 값이 같은
+     * 응답은 받아 적기를 다시 돌리지 않는다 — 앞 업로드가 실패했으면 밀린 변경이 남는다.
+     * 플랜·시계와 무관한 순번이어야 한다.
+     */
+    val accountAnswerSeq: Long = 0L,
 )
 
 /**
@@ -245,6 +255,7 @@ class AuthSessionStore internal constructor(
                 personalPromo = readPersonalPromo(),
             ),
             userFetchedAtMillis = prefs.getLong(KEY_USER_FETCHED_AT, 0L).takeIf { it > 0L },
+            accountAnswerSeq = prefs.getLong(KEY_ACCOUNT_ANSWER_SEQ, 0L),
         )
     }
 
@@ -294,10 +305,13 @@ class AuthSessionStore internal constructor(
         // 세션 세대를 올린다 — 이 값이 바뀌면 "그 사이 세션이 끝났다" 는 뜻이다.
         // 자세한 계약은 [sessionGeneration] 주석 참고.
         val nextGeneration = prefs.getLong(KEY_SESSION_GENERATION, 0L) + 1L
+        // 저장 순번도 이어 간다 — 줄지 않아야 '새 응답' 판정이 세션을 넘어서도 겹치지 않는다([AuthSession.accountAnswerSeq]).
+        val answerSeq = prefs.getLong(KEY_ACCOUNT_ANSWER_SEQ, 0L)
         prefs.edit()
             .clear()
             .putString(KEY_PENDING_OWNER_USER_ID, pendingOwner)
             .putLong(KEY_SESSION_GENERATION, nextGeneration)
+            .putLong(KEY_ACCOUNT_ANSWER_SEQ, answerSeq)
             .also { if (expiredOwner != null) it.putString(KEY_SESSION_EXPIRED_OWNER, expiredOwner) }
             .also { if (!pendingDisables.isNullOrEmpty()) it.putStringSet(KEY_PENDING_DISABLE_ALARM_IDS, pendingDisables) }
             .also { if (signOutStartedAt > 0L) it.putLong(KEY_SIGN_OUT_STARTED_AT, signOutStartedAt) }
@@ -557,7 +571,7 @@ class AuthSessionStore internal constructor(
         user: AuthUser,
         userFetchedAtMillis: Long?,
         dynamicPromptSettingsOverride: DynamicPromptSettings? = null,
-    ): AuthSession {
+    ): AuthSession = synchronized(sessionWriteLock) {
         // 서버가 계산 시각(`personal_promo.computed_at`)을 줬으면 그것이 이 답의 시각이다(D7).
         // **정규화 전에** 읽는다 — 정규화가 그 키를 뺀다. 프로필만 고친 저장은 이미 정규화된
         // user 라 키가 없어, 들고 있던 값이 그대로 남는다.
@@ -571,7 +585,11 @@ class AuthSessionStore internal constructor(
         }
         val firstQuietWindow = normalizedUser.familyAlarmQuietWindows.firstOrNull()
             ?: FamilyAlarmQuietWindow(days = normalizedUser.familyAlarmQuietDays)
+        // 저장마다 새 순번 — 내용이 똑같은 응답도 '새 응답' 으로 보이게([AuthSession.accountAnswerSeq]).
+        // 읽고 올려 쓰기가 한 덩어리여야 해서 이 함수 전체가 세션 쓰기 락 안이다(재진입 가능).
+        val answerSeq = prefs.getLong(KEY_ACCOUNT_ANSWER_SEQ, 0L) + 1L
         prefs.edit()
+            .putLong(KEY_ACCOUNT_ANSWER_SEQ, answerSeq)
             .putString(KEY_TOKEN, token)
             .putString(KEY_PROVIDER, provider)
             .putString(KEY_USER_ID, normalizedUser.id)
@@ -615,11 +633,12 @@ class AuthSessionStore internal constructor(
                 }
             }
             .apply()
-        return AuthSession(
+        AuthSession(
             token = token,
             provider = provider,
             user = normalizedUser,
             userFetchedAtMillis = answeredAtMillis?.takeIf { it > 0L },
+            accountAnswerSeq = answerSeq,
         )
     }
 
@@ -933,6 +952,7 @@ class AuthSessionStore internal constructor(
         private const val KEY_PERSONAL_PROMO_NOTICE_FROM = "personal_promo_notice_from"
         private const val KEY_PERSONAL_PROMO_DELETES_VOICES = "personal_promo_deletes_voices_at_end"
         private const val KEY_USER_FETCHED_AT = "user_fetched_at_millis"
+        private const val KEY_ACCOUNT_ANSWER_SEQ = "account_answer_seq"
         // 방해금지 창은 최대 2개(평일 근무 + 주말 정도). 백엔드 family-alarm-settings.ts와 동일.
         private const val MAX_QUIET_WINDOWS = 2
     }

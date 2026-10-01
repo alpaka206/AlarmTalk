@@ -102,19 +102,20 @@ object WeatherRegionHolidaySync {
 }
 
 /**
- * 계정 설정을 **받았다는 사건** 하나 — 누구의(`userId`) 어떤 값(`settings`)을 언제 받았는가(`answeredAtMillis`).
+ * 계정 설정을 **받았다는 사건** 하나 — 누구의(`userId`) 어떤 값(`settings`)을 몇 번째 저장으로 받았는가(`answerSeq`).
  *
  * 받아 적기(`MainViewModel.onAccountPromptSettingsReceived`)를 다시 돌릴 축이다(`AlarmTalkApp`).
- * ⚠ **받은 시각이 축에 있어야 한다**(Codex #837). 값만 축으로 두면, 이 기기의 변경을 올리다 실패한 뒤
+ * ⚠ **응답마다 다른 순번이 축에 있어야 한다**(Codex #837). 값만 축으로 두면, 이 기기의 변경을 올리다 실패한 뒤
  * 서버가 **같은 옛 값**을 다시 줄 때(다음 `/auth/me`) 다시 돌지 않는다 — 그 변경은 '안 올라간 변경' 으로
  * 남은 채 프로세스가 다시 뜰 때까지 올라가지 않고, 그 사이 다른 기기·받는 가족은 옛 지역을 본다.
- * 받은 시각은 서버 응답을 저장하는 자리(로그인·`/auth/me`)가 새로 찍고, 프로필만 고친 저장은 그대로
- * 둔다([AuthSession.userFetchedAtMillis]) — 그때는 값이 바뀌므로 어차피 다시 돈다. 받아 적기는 멱등이다.
+ * ⚠ 받은 시각([AuthSession.userFetchedAtMillis])은 순번이 아니다 — 개인 프로모 계정은 서버 계산 시각(초 단위)
+ * 으로 바뀌어 같은 초의 두 응답이 같은 값이 된다. 순번은 세션 저장소가 저장마다 올린다
+ * ([AuthSession.accountAnswerSeq]). 받아 적기는 멱등이라 프로필만 고친 저장으로 한 번 더 돌아도 해가 없다.
  */
 data class AccountSettingsReceipt(
     val userId: String,
     val settings: DynamicPromptSettings,
-    val answeredAtMillis: Long?,
+    val answerSeq: Long,
 )
 
 /**
@@ -136,7 +137,7 @@ fun accountSettingsReceipt(session: AuthSession?): AccountSettingsReceipt? {
     // 타입은 non-null 이지만 Gson 이 옛 세션·응답에서 null 을 넣을 수 있다 — 받아 적을 것이 없다.
     val settings: DynamicPromptSettings? = user.dynamicPromptSettings
     if (settings == null || user.id.isBlank()) return null
-    return AccountSettingsReceipt(user.id, settings, session.userFetchedAtMillis)
+    return AccountSettingsReceipt(user.id, settings, session.accountAnswerSeq)
 }
 
 /**
