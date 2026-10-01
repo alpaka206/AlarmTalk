@@ -284,9 +284,13 @@ app.onError((err, c) => {
  * 1분 전용 크론의 **홀수 분**에 탈퇴 등급 통지 대기열을 비운다(`lib/pending-plan-notifications.ts`).
  * 이 실행을 썼으면 `true` — 그 분의 개인 플랜 종료 작업은 건너뛴다(다음 짝수 분이 한다).
  *
- * 실패도 `true` 다 — 이 실행의 예산을 얼마나 썼는지 모르므로 종료 작업에 넘기지 않는다. 잡은 행은
- * 잠금 기한 뒤 다시 고른다. 1분마다 도는 실행이라 계속되는 실패를 매번 경보로 올리지 않는다
- * (종료 작업과 같은 시간당 자리 — `isPromoEndAlertSlot`).
+ * - 실패도 `true` 다 — 이 실행의 예산을 얼마나 썼는지 모르므로 종료 작업에 넘기지 않는다. 잡은 행은
+ *   잠금 기한 뒤 다시 고른다. 단 **표가 없으면**(배포가 마이그레이션 126 보다 먼저 돈 창) 아무것도 안 썼으니
+ *   `false` 로 종료 작업에 넘긴다.
+ * - 경보는 **그 시각의 첫 비우기 분(UTC 1분)** 에만 올린다 — 1분마다 도는 실행이라 계속되는 실패를 매번
+ *   올리면 다른 사고가 묻힌다. ⚠ 종료 작업의 시간당 자리(`isPromoEndAlertSlot` — 0분)를 쓰지 말 것 —
+ *   비우기는 홀수 분에만 돌아 그 자리에 닿지 못하고, 경보가 **영영** 안 올라간다(리뷰).
+ * - 상한에서 버린 행(예고를 못 보낸 사람)은 드물고 되돌릴 수 없으니 **그때마다** 올린다.
  */
 async function planNotificationDrainTurn(
   db: ReturnType<typeof getDB>,
@@ -294,16 +298,22 @@ async function planNotificationDrainTurn(
   now: Date,
   captureCron: (at: string, err: unknown) => void,
 ): Promise<boolean> {
-  if (now.getUTCMinutes() % 2 !== 1) return false;
   try {
     const drain = await import('./lib/pending-plan-notifications');
     if (!drain.isPlanNotificationDrainMinute(now)) return false;
-    return await drain.runPlanNotificationDrainTurn(db, env);
+    return await drain.runPlanNotificationDrainTurn(db, env, {
+      onGaveUp: (users) =>
+        captureCron(
+          'scheduled.plan_notify_drain.gave_up',
+          new Error(`pending_plan_notifications: gave up on ${users} recipient(s)`),
+        ),
+    });
   } catch (err) {
-    const alertSlot = await import('./lib/personal-promo-end')
-      .then((module) => module.isPromoEndAlertSlot(now))
-      .catch(() => true);
-    if (alertSlot) captureCron('scheduled.plan_notify_drain', err);
+    if (/no such table/i.test(String(err))) {
+      logStructured('error', { at: 'scheduled.plan_notify_drain', error: String(err) });
+      return false;
+    }
+    if (now.getUTCMinutes() === 1) captureCron('scheduled.plan_notify_drain', err);
     else logStructured('error', { at: 'scheduled.plan_notify_drain', error: String(err) });
     return true;
   }
@@ -543,6 +553,14 @@ async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext)
     } finally {
       // (해체로 등급이 바뀐 멤버들의 통지는 여기서 보내지 않는다 — 파기 트랜잭션이 대기열에 적고,
       //  1분 전용 크론의 홀수 분이 자기 예산으로 비운다. 이 틱의 남은 예산을 나눠 쓰면 잘린다.)
+      // 기기가 없어 비우기가 꺼내지 않는 행 중 더는 소용없어진 것(지울 목소리도 없음)만 정리한다 —
+      // 한 줄이고 실패해도 다음 틱이 한다.
+      try {
+        const { prunePendingPlanNotifications } = await import('./lib/pending-plan-notifications');
+        await prunePendingPlanNotifications(db, now);
+      } catch (pruneErr) {
+        captureCron('scheduled.plan_notify_prune', pruneErr);
+      }
       // 파기된 계정의 목소리를 들고 있는 기기들에 알린다 — 받은 알람은 pull 신호로,
       // 본인 알람·미동기화 알람은 접근권 재확인으로.
       try {

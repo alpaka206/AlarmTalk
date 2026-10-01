@@ -12,6 +12,7 @@ vi.mock('../src/lib/billing-cancel', () => ({
 vi.mock('../src/lib/pending-plan-notifications', () => ({
   runPlanNotificationDrainTurn: vi.fn().mockResolvedValue(false),
   isPlanNotificationDrainMinute: () => false,
+  prunePendingPlanNotifications: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock('../src/lib/account-deletion', () => ({
   // 커밋 후 알릴 대상을 돌려준다. 비어 있어도 **형태는 지켜야** cron 이 그대로 펴 담는다.

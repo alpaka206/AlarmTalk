@@ -88,6 +88,33 @@ export const REQUEUE_ON_CONFLICT = `ON CONFLICT(user_id) DO UPDATE SET
 /** 지금 아무 실행도 잡고 있지 않은 행. */
 const UNCLAIMED = `(claimed_until IS NULL OR claimed_until <= strftime('%Y-%m-%d %H:%M:%f', 'now'))`;
 
+/**
+ * 받을 기기가 있는 사람만 꺼낸다(코덱스 #841). 기기가 없을 때(로그아웃 등) 꺼내면 메시지가 0통인 채로
+ * 행이 지워져, 보관 기한 전에 다시 로그인한 사람이 **삭제 예고를 영영 못 받는다** — 앱은 진입 때 삭제
+ * 기한을 다시 받지 않는다. 그래서 기기가 생길 때까지 그대로 두고, 더는 소용없어진 행만
+ * [prunePendingPlanNotifications] 가 지운다.
+ */
+const HAS_DEVICE = `EXISTS (SELECT 1 FROM push_tokens pt WHERE pt.user_id = {uid})`;
+
+/**
+ * **기기가 없고 지울 목소리도 없는** 대기 행을 지운다 — 5분 틱이 부른다(예산과 무관한 정리 한 줄).
+ *
+ * 기기가 없는 행은 비우기가 꺼내지 않는다([HAS_DEVICE]). 그 사람의 목소리 보관 기한이 아직 오지 않았으면
+ * 다시 로그인했을 때 예고를 받아야 하므로 남기고, 보관 행이 없거나 기한이 지났으면(예고할 것이 없다 —
+ * 등급은 다음 진입의 재조회가 맞춘다) 지운다. 탈퇴로 사라진 사람도 여기서 같이 빠진다.
+ */
+export async function prunePendingPlanNotifications(db: Client, now: Date): Promise<void> {
+  await db.execute({
+    sql: `DELETE FROM pending_plan_notifications
+          WHERE NOT ${HAS_DEVICE.replaceAll('{uid}', 'pending_plan_notifications.user_id')}
+            AND NOT EXISTS (
+              SELECT 1 FROM paid_voice_retention r
+              WHERE r.user_id = pending_plan_notifications.user_id AND r.delete_after > ?
+            )`,
+    args: [now.toISOString()],
+  });
+}
+
 /** 1분 전용 크론 중 대기열 비우기가 차례를 갖는 분 — 홀수 분(짝수 분은 늘 개인 플랜 종료 작업). */
 export function isPlanNotificationDrainMinute(now: Date): boolean {
   return now.getUTCMinutes() % 2 === 1;
@@ -104,6 +131,10 @@ type QueuedRow = { userId: string; createdAt: string; attempts: number; devices:
 export async function runPlanNotificationDrainTurn(
   db: Client,
   env: Parameters<typeof notifyBillingStateChanged>[1],
+  hooks: {
+    /** 상한에서 버린 사람 수 — 예고를 끝내 못 보냈다. 드물고 되돌릴 수 없으니 호출부가 경보로 올린다. */
+    onGaveUp?: (users: number) => void;
+  } = {},
 ): Promise<boolean> {
   const candidates = toRows(
     await db.execute({
@@ -111,6 +142,7 @@ export async function runPlanNotificationDrainTurn(
                    (SELECT COUNT(*) FROM push_tokens pt WHERE pt.user_id = q.user_id) AS devices
               FROM pending_plan_notifications q
              WHERE ${UNCLAIMED.replaceAll('claimed_until', 'q.claimed_until')}
+               AND ${HAS_DEVICE.replaceAll('{uid}', 'q.user_id')}
              ORDER BY q.attempts, q.created_at, q.user_id
              LIMIT ?`,
       args: [PLAN_NOTIFY_CANDIDATES],
@@ -141,6 +173,7 @@ export async function runPlanNotificationDrainTurn(
       users: exhausted.length,
       attempts: PLAN_NOTIFY_MAX_ATTEMPTS,
     });
+    hooks.onGaveUp?.(exhausted.length);
   }
   if (sending.length > 0) {
     await notifyBillingStateChanged(
@@ -172,7 +205,8 @@ export async function sendPlanNotificationsNow(
   const rows = toRows(
     await db.execute({
       sql: `SELECT user_id, created_at, attempts FROM pending_plan_notifications
-            WHERE user_id IN (${ids.map(() => '?').join(', ')}) AND ${UNCLAIMED}`,
+            WHERE user_id IN (${ids.map(() => '?').join(', ')}) AND ${UNCLAIMED}
+              AND ${HAS_DEVICE.replaceAll('{uid}', 'pending_plan_notifications.user_id')}`,
       args: ids,
     }),
   );

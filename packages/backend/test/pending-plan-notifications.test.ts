@@ -20,6 +20,7 @@ import { runMigrations } from '../src/lib/migrations';
 import {
   enqueuePlanNotificationsStatement,
   isPlanNotificationDrainMinute,
+  prunePendingPlanNotifications,
   runPlanNotificationDrainTurn,
   sendPlanNotificationsNow,
   PLAN_NOTIFY_MAX_ATTEMPTS,
@@ -37,10 +38,23 @@ async function queued(): Promise<string[]> {
 }
 
 async function enqueueAt(userId: string, createdAt: string, attempts = 0): Promise<void> {
+  await ensureDevice(userId);
   await db.execute({
     sql: `INSERT INTO pending_plan_notifications (user_id, created_at, attempts) VALUES (?, ?, ?)`,
     args: [userId, createdAt, attempts],
   });
+}
+
+/** 받을 기기가 없으면 하나 심는다 — 비우기는 기기가 있는 사람만 꺼낸다. */
+async function ensureDevice(userId: string): Promise<void> {
+  const has = await db.execute({ sql: `SELECT 1 FROM push_tokens WHERE user_id = ?`, args: [userId] });
+  if (has.rows.length === 0) await withDevices(userId, 1);
+}
+
+/** 대기열에 넣는다(파기 묶음과 같은 문장) — 기기 하나와 함께. */
+async function enqueue(userIds: string[]): Promise<void> {
+  for (const id of userIds) await ensureDevice(id);
+  await db.execute(enqueuePlanNotificationsStatement(userIds)!);
 }
 
 /** 이 사람에게 기기 `n` 대를 심는다(비용 계산이 센다). */
@@ -49,7 +63,9 @@ async function withDevices(userId: string, n: number): Promise<void> {
     sql: `INSERT OR IGNORE INTO users (id, email, name, plan) VALUES (?, ?, ?, 'free')`,
     args: [userId, `${userId}@example.com`, userId],
   });
-  for (let i = 0; i < n; i++) {
+  const existing = await db.execute({ sql: `SELECT COUNT(*) AS n FROM push_tokens WHERE user_id = ?`, args: [userId] });
+  const from = Number(existing.rows[0]!.n);
+  for (let i = from; i < from + n; i++) {
     await db.execute({
       sql: `INSERT INTO push_tokens (id, user_id, token, platform) VALUES (?, ?, ?, 'android')`,
       args: [`pt-${userId}-${i}`, userId, `tok-${userId}-${i}`],
@@ -161,7 +177,7 @@ describe('탈퇴 등급 통지 대기열 — 1분 전용 크론의 홀수 분(�
   });
 
   it('**보낸 뒤에** 지운다 — 보낸 뒤 실행이 죽으면 행이 남아 잠금 기한 뒤 다시 보낸다', async () => {
-    await db.execute(enqueuePlanNotificationsStatement(['m1'])!);
+    await enqueue(['m1']);
     let queuedAtSend: string[] = [];
     notifyBillingStateChanged.mockImplementationOnce(async () => {
       queuedAtSend = await queued();
@@ -181,7 +197,7 @@ describe('탈퇴 등급 통지 대기열 — 1분 전용 크론의 홀수 분(�
   });
 
   it('거듭 죽은 행은 상한에서 보내지 않고 지운다 — 같은 예고가 끝없이 반복되지 않는다', async () => {
-    await db.execute(enqueuePlanNotificationsStatement(['stuck'])!);
+    await enqueue(['stuck']);
     for (let i = 0; i < PLAN_NOTIFY_MAX_ATTEMPTS; i++) {
       await expect(runPlanNotificationDrainTurn(diesAtDelete(), undefined)).rejects.toThrow();
       await leasesExpire();
@@ -196,10 +212,10 @@ describe('탈퇴 등급 통지 대기열 — 1분 전용 크론의 홀수 분(�
   });
 
   it('보내는 사이 같은 사람이 다른 탈퇴로 다시 들어오면 그 새 사건은 지우지 않는다', async () => {
-    await db.execute(enqueuePlanNotificationsStatement(['m1'])!);
+    await enqueue(['m1']);
     notifyBillingStateChanged.mockImplementationOnce(async () => {
       await new Promise((resolve) => setTimeout(resolve, 2));
-      await db.execute(enqueuePlanNotificationsStatement(['m1'])!);
+      await enqueue(['m1']);
     });
 
     await runPlanNotificationDrainTurn(db, undefined);
@@ -211,7 +227,7 @@ describe('탈퇴 등급 통지 대기열 — 1분 전용 크론의 홀수 분(�
 
 describe('탈퇴 등급 통지 대기열 — 즉시 삭제의 곧바로 보내기', () => {
   it('지정한 사람만 보내고 지운다', async () => {
-    await db.execute(enqueuePlanNotificationsStatement(['m1', 'm2', 'other'])!);
+    await enqueue(['m1', 'm2', 'other']);
 
     await sendPlanNotificationsNow(db, undefined, ['m1', 'm2']);
 
@@ -220,7 +236,7 @@ describe('탈퇴 등급 통지 대기열 — 즉시 삭제의 곧바로 보내�
   });
 
   it('**시도 횟수를 쓰지 않는다** — 그 요청은 파기로 예산을 이미 썼고, 잘린 것은 그 사람의 실패가 아니다', async () => {
-    await db.execute(enqueuePlanNotificationsStatement(['m1'])!);
+    await enqueue(['m1']);
 
     await expect(sendPlanNotificationsNow(diesAtDelete(), undefined, ['m1'])).rejects.toThrow();
 
@@ -232,7 +248,7 @@ describe('탈퇴 등급 통지 대기열 — 즉시 삭제의 곧바로 보내�
   });
 
   it('잡힌 행은 다른 실행이 고르지 않는다 — 전용 크론과 겹쳐도 같은 예고가 두 번 나가지 않는다', async () => {
-    await db.execute(enqueuePlanNotificationsStatement(['m1'])!);
+    await enqueue(['m1']);
     // 즉시 삭제가 잡고 보내는 도중에 전용 크론과 다른 즉시 삭제가 같은 사람을 찾는다.
     notifyBillingStateChanged.mockImplementationOnce(async () => {
       expect(await runPlanNotificationDrainTurn(db, undefined)).toBe(false);
@@ -246,7 +262,7 @@ describe('탈퇴 등급 통지 대기열 — 즉시 삭제의 곧바로 보내�
   });
 
   it('두 실행이 같은 행을 읽어도 한쪽만 잡는다(읽은 값 그대로일 때만 잡기)', async () => {
-    await db.execute(enqueuePlanNotificationsStatement(['m1'])!);
+    await enqueue(['m1']);
     let raced = false;
     const cron = {
       execute: async (stmt: Parameters<Client['execute']>[0]) => {
@@ -266,3 +282,48 @@ describe('탈퇴 등급 통지 대기열 — 즉시 삭제의 곧바로 보내�
     expect(await queued()).toEqual([]);
   });
 });
+
+describe('탈퇴 등급 통지 대기열 — 받을 기기가 없는 사람(코덱스 #841)', () => {
+  const NOW = new Date('2026-10-01T00:00:00.000Z');
+
+  async function retentionUntil(userId: string, deleteAfter: string): Promise<void> {
+    await db.execute({
+      sql: `INSERT INTO users (id, email, name, plan) VALUES (?, ?, ?, 'free') ON CONFLICT(id) DO NOTHING`,
+      args: [userId, `${userId}@example.com`, userId],
+    });
+    await db.execute({
+      sql: `INSERT INTO paid_voice_retention (user_id, delete_after) VALUES (?, ?)`,
+      args: [userId, deleteAfter],
+    });
+  }
+
+  it('기기가 없으면 꺼내지 않는다 — 0통으로 지워져 다시 로그인한 사람이 예고를 영영 못 받는 일이 없다', async () => {
+    await db.execute(enqueuePlanNotificationsStatement(['away'])!);
+
+    expect(await runPlanNotificationDrainTurn(db, undefined)).toBe(false);
+    await sendPlanNotificationsNow(db, undefined, ['away']);
+
+    expect(notifyBillingStateChanged).not.toHaveBeenCalled();
+    expect(await queued()).toEqual(['away']);
+    expect(await attemptsOf('away')).toBe(0);
+
+    // 다시 로그인해 기기가 생기면 그때 보낸다.
+    await withDevices('away', 1);
+    expect(await runPlanNotificationDrainTurn(db, undefined)).toBe(true);
+    expect(notifyBillingStateChanged.mock.calls[0]![2]).toEqual(['away']);
+    expect(await queued()).toEqual([]);
+  });
+
+  it('정리는 기기가 없고 지울 목소리도 없는(보관 행 없음·기한 지남) 행만 지운다', async () => {
+    await retentionUntil('pending', '2026-10-05T00:00:00.000Z'); // 아직 지울 목소리가 있다 — 남긴다
+    await retentionUntil('expired', '2026-09-30T00:00:00.000Z'); // 기한이 지났다 — 예고할 것이 없다
+    await db.execute(enqueuePlanNotificationsStatement(['pending', 'expired', 'nothing'])!);
+    await withDevices('reachable', 1); // 기기가 있는 사람은 비우기가 보낸다 — 정리가 건드리지 않는다
+    await db.execute(enqueuePlanNotificationsStatement(['reachable'])!);
+
+    await prunePendingPlanNotifications(db, NOW);
+
+    expect(await queued()).toEqual(['pending', 'reachable']);
+  });
+});
+
