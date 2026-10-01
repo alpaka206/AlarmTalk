@@ -4,8 +4,8 @@ import XCTest
 
 /// **저장이 날씨 조회에 붙잡히지 않는다**(2026-09-22 "인터넷이 느려도 괜찮도록").
 ///
-/// 날씨 테마 알람은 저장하면서 `GET /tts/prerender-variant` 를 기다리는데, 그 서버는 뒤에서
-/// open-meteo 를 세 번 순차로 부르는 동안 한 바이트도 보내지 않는다. 상한이 없던 때는
+/// 날씨 테마 알람은 저장하면서 `GET /tts/prerender-variant` 를 기다리는데, 그 서버는 미리 계산한
+/// 값이 없으면 뒤에서 날씨 원천을 부르는 동안 한 바이트도 보내지 않는다. 상한이 없던 때는
 /// 세션의 유휴 타임아웃(60초)까지 저장 버튼이 잠긴 채였다. 지금은
 /// `WeatherVariantSaveLookup.timeoutSeconds`(8초)에서 기다리기를 그만두고 **기존 실패와 같은
 /// 경로**(미해결로 저장 → `WeatherVariantRefreshService.refreshDue` 가 채움)로 간다.
