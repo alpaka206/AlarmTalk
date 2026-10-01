@@ -3006,6 +3006,25 @@ export const migrations: Migration[] = [
         )`,
     ],
   },
+  {
+    // 등록 미리듣기의 톤 태그(#65 가 `preview_text` 와 함께 더한 칸)를 지운다. #840(2026-09-30)에서 태그를
+    // 통째로 없앤 뒤로 이 칸은 **읽지도 쓰지도 않는다** — `tts.ts`·`voice-profile.ts` 에 SQL·행 접근이 0건이고,
+    // `SELECT *` 로 행을 읽는 곳(`findUsableVoiceProfile`·목소리 삭제)도 이 칸을 꺼내 쓰거나 응답에 싣지 않는다.
+    // 배포가 이 마이그레이션보다 먼저 돌아도 새 코드는 칸이 있든 없든 같은 SQL 이라 창 문제가 없다.
+    // - 칸에 값이 남은 행이 있어도 지운다(CLAUDE.md 「안 쓰는 컬럼·인덱스는 실데이터가 있어도 DROP」) —
+    //   그 칸 값만 사라지고 목소리 행·다른 칸은 그대로다(`test/migration-125-drop-preview-tag.test.ts`).
+    // - 이 칸을 **이름으로** 참조하는 인덱스·트리거·뷰는 없다. 그래서 DROP INDEX 같은 선행 문장이 필요 없다.
+    //   libSQL 의 DROP COLUMN 은 DROP 뒤 스키마를 다시 풀어 보는데, 막히는 것은 지운 칸을 이름으로 부르는 객체뿐이다.
+    //   `SELECT *` 뷰(#81 이 지운 `voice_profiles_kst` 같은 것)는 막지 않고 그 칸만 빠진 채 남는다.
+    //   ⚠ 누가 손으로 그 칸에 인덱스·트리거·이름 지정 뷰를 걸어 둔 DB 라면 libSQL 이 `... after drop column` 으로
+    //   실패하고, 러너는 그걸 '이미 적용됨' 으로 삼키지 않는다(`isIdempotentDDLError`) — 워크플로가 빨간불로 죽는다.
+    //   조용히 넘어가지 않는다.
+    // - `atomic` 이 아니다(#108 과 같다): 문장 하나라 묶을 것이 없고, 칸이 이미 없는 DB 의 재실행은
+    //   'no such column' 관용으로 통과해야 한다.
+    id: 125,
+    name: 'drop-voice-profiles-preview-tag',
+    statements: [`ALTER TABLE voice_profiles DROP COLUMN preview_tag`],
+  },
 ];
 // Errors that mean the statement was already applied — safe to ignore so
 // we can recover databases whose `_migrations` ledger is out of sync with
