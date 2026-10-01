@@ -50,8 +50,10 @@ describe('#125 — voice_profiles.preview_tag 를 지운다', () => {
     await runMigrationsRange(db, 1, 124);
     expect(await columnsOf(db, 'voice_profiles')).toContain('preview_tag');
 
-    // DROP COLUMN 은 그 칸을 참조하는 인덱스·트리거·뷰가 있으면 실패한다. 우리 스키마에는 없다 —
+    // DROP COLUMN 은 그 칸을 **이름으로** 부르는 인덱스·트리거·뷰가 있으면 실패한다. 우리 스키마에는 없다 —
     // 생기면 마이그레이션에 DROP INDEX 등을 먼저 넣어야 한다(#82 와 같은 순서).
+    // 이 글자 검색은 이름으로 부르는 객체만 찾는다. `SELECT *` 뷰는 못 찾지만 그런 뷰는 DROP 을 막지도
+    // 않는다(아래 「SELECT * 뷰」 테스트). 검색이 놓친 것이 있어도 바로 밑의 실제 DROP 이 실패해 이 테스트가 깨진다.
     const referencing = await db.execute(
       `SELECT type, name FROM sqlite_master
         WHERE type IN ('index', 'trigger', 'view') AND sql LIKE '%preview_tag%'`,
@@ -98,5 +100,37 @@ describe('#125 — voice_profiles.preview_tag 를 지운다', () => {
     const ledger = await db.execute(`SELECT id FROM _migrations WHERE id = 125`);
     expect(ledger.rows).toEqual([]);
     expect(await columnsOf(db, 'voice_profiles')).toContain('preview_tag');
+  });
+
+  it('그 칸을 이름으로 부르는 뷰·트리거도 실패로 남는다', async () => {
+    for (const ddl of [
+      `CREATE VIEW v_manual_preview_tag AS SELECT id, preview_tag FROM voice_profiles`,
+      `CREATE TRIGGER tr_manual_preview_tag AFTER INSERT ON voice_profiles BEGIN SELECT NEW.preview_tag; END`,
+    ]) {
+      const db = createClient({ url: ':memory:' });
+      await runMigrationsRange(db, 1, 124);
+      await db.execute(ddl);
+
+      await expect(runMigrationsRange(db, 125, 125)).rejects.toThrow(/after drop column/);
+      const ledger = await db.execute(`SELECT id FROM _migrations WHERE id = 125`);
+      expect(ledger.rows).toEqual([]);
+      expect(await columnsOf(db, 'voice_profiles')).toContain('preview_tag');
+    }
+  });
+
+  it('SELECT * 뷰는 DROP 을 막지 않는다 — 뷰는 그 칸만 빠진 채 남는다', async () => {
+    // #81 이 지운 `voice_profiles_kst` 와 같은 모양. 위 sqlite_master 글자 검색이 이런 뷰를 못 찾아도
+    // 괜찮은 이유가 이것이다 — 막는 객체는 칸을 이름으로 부르는 것뿐이다.
+    const db = createClient({ url: ':memory:' });
+    await runMigrationsRange(db, 1, 124);
+    await db.execute(
+      `CREATE VIEW v_star_profiles AS SELECT *, datetime(created_at, '+9 hours') AS created_at_kst FROM voice_profiles`,
+    );
+
+    expect(await runMigrationsRange(db, 125, 125)).toEqual(['125_drop-voice-profiles-preview-tag']);
+    expect(await columnsOf(db, 'voice_profiles')).not.toContain('preview_tag');
+    const viewColumns = (await db.execute(`SELECT * FROM v_star_profiles`)).columns;
+    expect(viewColumns).not.toContain('preview_tag');
+    expect(viewColumns).toContain('created_at_kst');
   });
 });
