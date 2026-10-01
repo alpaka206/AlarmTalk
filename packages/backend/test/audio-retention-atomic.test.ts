@@ -144,6 +144,28 @@ describe('cleanupExpiredAudio — 행 삭제와 삭제 예약은 한 트랜잭�
   });
 
   /**
+   * ⚠ 위 케이스는 batch 의 **첫 문장**(예약)을 터뜨리므로, 두 문장을 따로 커밋하도록 되돌려도 DELETE 가 아예
+   * 안 불려 똑같이 통과한다 — 순서만 고정할 뿐 원자성은 고정하지 못한다. 그래서 **두 번째 문장**(행 삭제)을
+   * 터뜨려, 이미 실행된 예약까지 함께 롤백되는지 본다. 따로 커밋하면 예약만 남아 드레인이 R2 원본을 지우는데
+   * 행은 남는다 — 그 draft 가 나중에 promote 되면 확정 목소리의 재클론 소스가 사라진다.
+   */
+  it('업로드 행 삭제가 실패하면 이미 넣은 삭제 예약도 함께 롤백된다', async () => {
+    await seed();
+    await db.execute(`CREATE TEMP TRIGGER boom_upload_delete BEFORE DELETE ON voice_uploads
+                      BEGIN SELECT RAISE(ABORT, 'boom'); END`);
+
+    await expect(cleanupExpiredAudio(db, NOW)).rejects.toThrow(/boom/);
+
+    expect(await ids('voice_uploads')).toEqual(['up_draft', 'up_family', 'up_final', 'up_orphan']);
+    expect(await queuedRefs(), '행이 남았는데 예약만 커밋되면 쓰일 수 있는 원본이 지워진다').toEqual([]);
+
+    await db.execute('DROP TRIGGER boom_upload_delete');
+    await cleanupExpiredAudio(db, NOW);
+    expect(await ids('voice_uploads')).toEqual(['up_final']);
+    expect(await queuedRefs()).toEqual(EXPECTED_QUEUE);
+  });
+
+  /**
    * 생성 음원 갈래도 같다 — 예전에는 큐 적재 → 포인터 비우기 → 원장 행 삭제를 각각 커밋해, 마지막에서
    * 끊기면 문구는 소리를 잃었는데 원장 행은 남아(다음 회차가 또 비우고 또 넣는) 반쯤 지운 상태가 됐다.
    */
@@ -228,6 +250,26 @@ describe('cleanupStaleDraftVoices — 소프트 삭제와 클론 삭제 예약�
     await cleanupStaleDraftVoices(db, NOW);
     const after = await db.execute(`SELECT id FROM voice_profiles WHERE user_id = 'u1' AND deleted_at IS NULL ORDER BY id`);
     expect(after.rows.map((r) => String(r.id))).toEqual(['d_fresh']);
+    expect(await queuedRefs()).toEqual(['elevenlabs_voice:elv-stale']);
+  });
+
+  // 위 케이스는 첫 문장(예약)을 터뜨려 순서만 고정한다 — 두 번째 문장(소프트 삭제)을 터뜨려 원자성을 고정한다.
+  // 따로 커밋하면 draft 는 살아 있는데 클론 삭제 예약만 남아, 곧 promote 될 수 있는 클론이 파기된다.
+  it('소프트 삭제가 실패하면 이미 넣은 클론 삭제 예약도 함께 롤백된다', async () => {
+    await insertProfile('d_stale', { isDraft: true, voiceId: 'elv-stale', createdAt: '2020-01-01 00:00:00' });
+    await db.execute(`CREATE TEMP TRIGGER boom_claim BEFORE UPDATE ON voice_profiles
+                      BEGIN SELECT RAISE(ABORT, 'boom'); END`);
+
+    await expect(cleanupStaleDraftVoices(db, NOW)).rejects.toThrow(/boom/);
+
+    const live = await db.execute(`SELECT id FROM voice_profiles WHERE user_id = 'u1' AND deleted_at IS NULL ORDER BY id`);
+    expect(live.rows.map((r) => String(r.id))).toEqual(['d_stale']);
+    expect(await queuedRefs(), 'draft 가 살았는데 예약만 커밋되면 쓰일 수 있는 클론이 파기된다').toEqual([]);
+
+    await db.execute('DROP TRIGGER boom_claim');
+    await cleanupStaleDraftVoices(db, NOW);
+    const after = await db.execute(`SELECT id FROM voice_profiles WHERE user_id = 'u1' AND deleted_at IS NULL ORDER BY id`);
+    expect(after.rows.map((r) => String(r.id))).toEqual([]);
     expect(await queuedRefs()).toEqual(['elevenlabs_voice:elv-stale']);
   });
 });
