@@ -24,8 +24,15 @@ import { logStructured } from './logger';
  *   매번 맨 앞에 서서, 예산 안에 든 기기는 5분마다 삭제 예고를 다시 받고 뒤 행은 영영 막힌다. 그래서
  *   - 꺼내는 순간 시도 횟수를 **먼저** 올리고(예산이 남아 있을 때다), 시도가 적은 행부터 꺼낸다 —
  *     실패한 머리는 뒤로 밀리고 새 행이 앞에 선다.
+ *   - **한 번 실패한 행은 혼자 다시 보낸다**(코덱스 #841). 묶음째 다시 보내면 앞 사람이 매번 예산을
+ *     다 써 뒷사람은 한 번도 못 받은 채 시도 횟수만 함께 올라 버려진다. 처음 시도는 묶음으로
+ *     (`attempts = 0` 인 행만), 다시 시도는 한 사람씩 — 그래서 시도 횟수가 **사람마다의** 횟수가 된다.
  *   - [PLAN_NOTIFY_MAX_ATTEMPTS] 번 시도한 행은 보내지 않고 지운다(오류 기록) — 반복 예고의 상한이다.
- *     그때까지 적어도 한 번은 예산 안에서 보내졌거나, 기기가 예산보다 많은 사람이다.
+ *     혼자 보내도 끝내 안 들어간다는 뜻이라, 기기가 예산보다 많은 사람이다.
+ *
+ * ⚠ **보낼 행은 원자적으로 잡는다**(코덱스 #841). 크론과 즉시 삭제가 겹치면 둘이 같은 행을 읽는다 —
+ *   시도 횟수를 '읽은 값 그대로일 때만' 올리고(`RETURNING`) **잡은 행에만** 보낸다. 늦은 쪽은 아무것도
+ *   못 잡아 같은 예고를 두 번 보내지 않는다.
  */
 
 /** 크론 한 틱이 대기열에서 꺼내 보낼 사람 수 — 그룹 하나(가족 최대 5명)를 한 번에 비운다. */
@@ -88,19 +95,42 @@ export async function drainPendingPlanNotifications(
       }),
     );
   } else {
+    // 처음 시도하는 행은 묶음으로, 없으면 다시 시도할 행 **하나**를(위 머리말).
+    const limit = Math.max(0, options.limit ?? PLAN_NOTIFY_DRAIN_LIMIT);
     rows = toRows(
       await db.execute({
         sql: `SELECT user_id, created_at, attempts FROM pending_plan_notifications
-              ORDER BY attempts, created_at, user_id
+              WHERE attempts = 0
+              ORDER BY created_at, user_id
               LIMIT ?`,
-        args: [Math.max(0, options.limit ?? PLAN_NOTIFY_DRAIN_LIMIT)],
+        args: [limit],
       }),
     );
+    if (rows.length === 0 && limit > 0) {
+      rows = toRows(
+        await db.execute(`SELECT user_id, created_at, attempts FROM pending_plan_notifications
+                          ORDER BY attempts, created_at, user_id
+                          LIMIT 1`),
+      );
+    }
   }
   if (rows.length === 0) return;
 
-  const exhausted = rows.filter((row) => row.attempts >= PLAN_NOTIFY_MAX_ATTEMPTS);
-  const sending = rows.filter((row) => row.attempts < PLAN_NOTIFY_MAX_ATTEMPTS);
+  // 잡기 — 읽은 그대로(사람·시각·시도 횟수)인 행만 시도 횟수를 올리고 돌려받는다. 다른 실행이 먼저
+  // 잡았거나, 그 사이 다시 들어왔거나(시각이 바뀜), 지워졌으면 여기서 빠진다.
+  const claimed = toRows(
+    await db.execute({
+      sql: `UPDATE pending_plan_notifications SET attempts = attempts + 1
+            WHERE ${matchRows(rows, { withAttempts: true }).sql}
+            RETURNING user_id, created_at, attempts`,
+      args: matchRows(rows, { withAttempts: true }).args,
+    }),
+  ).map((row) => ({ ...row, attempts: row.attempts - 1 }));
+  if (claimed.length === 0) return;
+
+  // 잡기 전에 이미 상한에 닿은 행은 보내지 않고 지운다.
+  const exhausted = claimed.filter((row) => row.attempts >= PLAN_NOTIFY_MAX_ATTEMPTS);
+  const sending = claimed.filter((row) => row.attempts < PLAN_NOTIFY_MAX_ATTEMPTS);
   if (exhausted.length > 0) {
     logStructured('error', {
       at: 'billing.pending_plan_notifications',
@@ -109,13 +139,7 @@ export async function drainPendingPlanNotifications(
       attempts: PLAN_NOTIFY_MAX_ATTEMPTS,
     });
   }
-
   if (sending.length > 0) {
-    await db.execute({
-      sql: `UPDATE pending_plan_notifications SET attempts = attempts + 1
-            WHERE ${matchRows(sending).sql}`,
-      args: matchRows(sending).args,
-    });
     await notifyBillingStateChanged(
       db,
       env,
@@ -123,10 +147,11 @@ export async function drainPendingPlanNotifications(
     );
   }
 
-  const done = [...exhausted, ...sending];
+  // 지우기 — 잡은 그대로(시각만 본다: 시도 횟수는 방금 우리가 올렸다)인 행만. 그 사이 다시 들어온
+  // 사람(시각이 바뀜)은 남긴다.
   await db.execute({
-    sql: `DELETE FROM pending_plan_notifications WHERE ${matchRows(done).sql}`,
-    args: matchRows(done).args,
+    sql: `DELETE FROM pending_plan_notifications WHERE ${matchRows(claimed).sql}`,
+    args: matchRows(claimed).args,
   });
 }
 
@@ -138,10 +163,21 @@ function toRows(res: { rows: ArrayLike<Record<string, unknown>> }): QueuedRow[] 
   }));
 }
 
-/** 꺼낸 그대로의 행만 가리키는 조건 — 사람과 적힌 시각이 둘 다 같아야 한다. */
-function matchRows(rows: readonly QueuedRow[]): { sql: string; args: string[] } {
+/**
+ * 꺼낸 그대로의 행만 가리키는 조건 — 사람과 적힌 시각이 같아야 한다. `withAttempts` 면 시도 횟수까지
+ * 같아야 한다(잡기 — 다른 실행이 먼저 올렸으면 빠진다).
+ */
+function matchRows(
+  rows: readonly QueuedRow[],
+  options: { withAttempts?: boolean } = {},
+): { sql: string; args: Array<string | number> } {
+  const one = options.withAttempts
+    ? '(user_id = ? AND created_at = ? AND attempts = ?)'
+    : '(user_id = ? AND created_at = ?)';
   return {
-    sql: rows.map(() => '(user_id = ? AND created_at = ?)').join(' OR '),
-    args: rows.flatMap((row) => [row.userId, row.createdAt]),
+    sql: rows.map(() => one).join(' OR '),
+    args: rows.flatMap((row) =>
+      options.withAttempts ? [row.userId, row.createdAt, row.attempts] : [row.userId, row.createdAt],
+    ),
   };
 }

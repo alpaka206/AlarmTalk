@@ -155,4 +155,59 @@ describe('탈퇴 등급 통지 대기열', () => {
     expect(await queued()).toEqual(['m1']);
     expect(await attemptsOf('m1')).toBe(0);
   });
+  it('묶음이 일부만 나간 뒤에는 한 사람씩 다시 보낸다 — 뒷사람이 한 번도 못 받은 채 버려지지 않는다(코덱스 #841)', async () => {
+    // 'heavy' 는 기기가 많아 함께 보내면 매번 예산을 다 쓴다. 'light' 는 혼자면 들어간다.
+    await enqueueAt('heavy', '2026-10-01 00:00:00.000');
+    await enqueueAt('light', '2026-10-01 00:00:01.000');
+    const sentTo: string[][] = [];
+    notifyBillingStateChanged.mockImplementation(async (...args: unknown[]) => {
+      sentTo.push(args[2] as string[]);
+    });
+    /** heavy 가 들어간 실행만 예산이 바닥난다. */
+    const runOnce = async () => {
+      const before = sentTo.length;
+      const lastSend = () => (sentTo.length > before ? sentTo[sentTo.length - 1]! : []);
+      const client = {
+        execute: async (stmt: Parameters<Client['execute']>[0]) => {
+          const sql = typeof stmt === 'string' ? stmt : stmt.sql;
+          if (sql.includes('DELETE FROM pending_plan_notifications') && lastSend().includes('heavy')) {
+            throw new Error('Too many subrequests by single Worker invocation.');
+          }
+          return db.execute(stmt);
+        },
+      } as unknown as Client;
+      await drainPendingPlanNotifications(client, undefined).catch(() => undefined);
+    };
+
+    for (let tick = 0; tick < PLAN_NOTIFY_MAX_ATTEMPTS + 3; tick++) await runOnce();
+
+    // 처음 한 번만 함께, 그 뒤로는 혼자씩 — light 는 혼자 보내져 지워졌다.
+    expect(sentTo[0]).toEqual(['heavy', 'light']);
+    expect(sentTo.slice(1).every((ids) => ids.length === 1)).toBe(true);
+    expect(sentTo.slice(1)).toContainEqual(['light']);
+    // heavy 는 혼자서도 끝내 안 들어가 상한에서 버려졌다 — 대기열이 비었다.
+    expect(await queued()).toEqual([]);
+  });
+
+  it('두 실행이 같은 행을 읽어도 한쪽만 잡아 보낸다 — 같은 예고가 두 번 나가지 않는다(코덱스 #841)', async () => {
+    await db.execute(enqueuePlanNotificationsStatement(['m1'])!);
+    // 크론(A)이 행을 읽은 직후, 즉시 삭제(B)의 비우기가 끝까지 돈다.
+    let raced = false;
+    const cron = {
+      execute: async (stmt: Parameters<Client['execute']>[0]) => {
+        const res = await db.execute(stmt);
+        const sql = typeof stmt === 'string' ? stmt : stmt.sql;
+        if (!raced && sql.trimStart().startsWith('SELECT')) {
+          raced = true;
+          await drainPendingPlanNotifications(db, undefined, { userIds: ['m1'] });
+        }
+        return res;
+      },
+    } as unknown as Client;
+
+    await drainPendingPlanNotifications(cron, undefined);
+
+    expect(notifyBillingStateChanged).toHaveBeenCalledTimes(1);
+    expect(await queued()).toEqual([]);
+  });
 });
