@@ -302,6 +302,7 @@
     <string name="region_picker_legacy_hint">목록에서 다시 골라 주세요</string>
     <string name="region_picker_legacy_value_hint">‘%1$s’은(는) 목록에 없어요. 다시 골라 주세요.</string>
     <string name="region_picker_seat_description">%1$s 날씨</string>
+    <string name="region_picker_weather_attribution">날씨 정보: 기상청 · 気象庁 · 미국 기상청(NWS)의 예보를 바탕으로 AlarmTalk가 가공</string>
     <string name="settings_logout_confirm_title">로그아웃할까요?</string>
     <string name="settings_marketing_load_failed">불러오지 못했어요 · 다시 시도</string>
     <string name="hs_empty_card_helper">듣고 싶은 목소리가 깨워줘요.</string>

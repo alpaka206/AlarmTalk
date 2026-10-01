@@ -677,5 +677,16 @@ internal fun WeatherLocationDialog(
                 )
             }
         }
+        // 날씨 출처 — 목록 **아래 고정**(목록이 `weight(1f, fill = false)` 라 늘 보인다). 가공해 쓴다는 사실은
+        // 気象庁 약관(공공데이터 이용규약 — 가공 시 그 사실을 적는다)이 요구한다. 지역을 고르는 곳이 이 시트
+        // 하나라(설정·편집기 공용) 여기 한 곳에만 둔다. iOS `WeatherRegionPickerSheet` 와 같은 문장이다.
+        Text(
+            text = stringResource(R.string.region_picker_weather_attribution),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp),
+        )
     }
 }

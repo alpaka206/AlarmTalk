@@ -1860,7 +1860,8 @@ class AlarmRepository(
 
     /**
      * 사전렌더 '날씨' 버킷 알람의 조건 인덱스를 서버로 resolve 해 contextVariantIndex 를 갱신한다.
-     * 저장 위치로 서버가 실시간 날씨(open-meteo)를 판정→CLONE_WEATHER_CONDITIONS 순서 인덱스를 반환.
+     * 저장 위치로 서버가 그 나라의 공식 예보(기상청·気象庁·NWS — 지역마다 미리 계산)를 판정→
+     * CLONE_WEATHER_CONDITIONS 순서 인덱스를 반환.
      * 발사는 그 인덱스로 오프라인 lookup. 준비창 워커가 매일(반복 알람 전날) + 저장 직후(runOnce)
      * 호출한다. 항상 동작(오프라인 날씨 매칭 전용).
      */
@@ -1875,7 +1876,7 @@ class AlarmRepository(
      * 알람 전까지의 재시도가 채운다. 알람을 못 만들게 막지는 않는다.
      *
      * **기다리는 시간에는 상한이 있다**([WEATHER_RESOLVE_TIMEOUT_MILLIS]). 저장 버튼이 이
-     * 응답을 동기로 기다리므로, 서버(Open-Meteo)가 느리면 그만큼 저장이 붙잡힌다 — OkHttp 의
+     * 응답을 동기로 기다리므로, 서버(날씨 원천)가 느리면 그만큼 저장이 붙잡힌다 — OkHttp 의
      * 읽기 타임아웃(60초, `AlarmTalkApiClient`)까지 기다리게 둘 수는 없다. 상한을 넘기면
      * **실패와 정확히 같은 결과**다: null 을 돌려줘 미해결로 저장되고, 저장 경로가 거는
      * `DynamicVoiceRefreshScheduler.runOnce` → `DynamicVoiceRefreshWorker` →
@@ -1955,7 +1956,7 @@ class AlarmRepository(
         val alarms = alarmDao.getEnabledWeatherBucketAlarms()
             .filter { weatherVariantNeedsRefresh(it, now) }
         if (alarms.isEmpty()) return 0
-        // 같은 (국가·도시)는 1회만 호출(open-meteo 중복 요청·배터리·쿼터 절약).
+        // 같은 (국가·도시)는 1회만 호출(중복 요청·배터리·서버 원천 호출 절약).
         val zone = java.time.ZoneId.systemDefault()
         val byLocationAndDate = alarms.groupBy {
             Triple(
@@ -1991,7 +1992,7 @@ class AlarmRepository(
             if (index == null) continue
             for (alarm in group) {
                 // 인덱스가 그대로여도 resolvedAt 은 무조건 갱신해 12h 게이트를 전진시킨다. (change 일 때만
-                // 갱신하면 안정 날씨는 시계가 안 올라가 매 워커틱마다 open-meteo 재호출 → 배터리·쿼터 낭비.)
+                // 갱신하면 안정 날씨는 시계가 안 올라가 매 워커틱마다 서버 재호출 → 배터리·쿼터 낭비.)
                 val updatedRows = alarmDao.updateContextVariantIndexIfContextMatches(
                     id = alarm.id,
                     index = index,
@@ -2233,7 +2234,7 @@ internal fun shouldResetWeatherVariant(
 /**
  * 이 날씨 알람의 조건을 지금 다시 받아야 하는가.
  *
- *  - 준비창(48h): open-meteo 는 며칠 뒤 예보의 정확도가 떨어지므로 곧 울릴 알람만 대상.
+ *  - 준비창(48h): 며칠 뒤 예보는 정확도가 떨어지므로 곧 울릴 알람만 대상(서버는 지역의 +3일까지만 계산한다).
  *  - 임박(24h): 신선도 게이트를 무시하고 무조건 다시 받는다. 갱신이 하루 한 번(22시)이라,
  *    12h 게이트를 그대로 두면 '오늘 낮에 해결됨 → 22시엔 신선하다고 건너뜀 → 내일 아침
  *    알람이 어제 조건으로 울림'이 된다. 임박한 알람은 한 번 더 받는 편이 항상 옳다.
@@ -2242,7 +2243,7 @@ internal fun shouldResetWeatherVariant(
 /**
  * 이 날씨 알람의 조건을 지금 받아야 하는가 — **한 발사분에 한 번만** 받는다.
  *
- *  - 준비창(48h) 밖이면 대상이 아니다. open-meteo 는 며칠 뒤 예보의 정확도가 떨어져,
+ *  - 준비창(48h) 밖이면 대상이 아니다. 며칠 뒤 예보는 정확도가 떨어져,
  *    지금 굳히면 엉뚱한 조건이 박힌다.
  *  - 아직 못 받았으면 받는다.
  *  - 이미 받았고 발사까지 24시간 넘게 남았으면 그대로 둔다.
@@ -2275,12 +2276,12 @@ private const val WEATHER_RESOLVE_VALID_WINDOW_MILLIS = 24 * 60 * 60 * 1000L
 /**
  * 저장이 날씨 조건 응답을 기다리는 상한. iOS 도 같은 8초다(`docs/spec/voice-and-message.md` 5-1).
  *
- * 8초인 이유: 서버는 Open-Meteo 를 세 번 순차로 부르고 한 번의 상한이 5초다
- * (`packages/backend/src/lib/weather-fetch.ts` 의 `WEATHER_FETCH_TIMEOUT_MS`). 정상 응답은
- * 수백 ms 라, 한 번이 상한에 걸린 경우(5초 + 나머지 둘 + 왕복)까지는 받아 주고 그 이상은
- * 기다리지 않는다. 서버 최악(세 번 모두 5초 = 15초)까지 기다리지 않는 것은 의도다 — 그때는
- * 서버도 대개 `variant_index: null` 을 돌려주고, 저장 직후 `DynamicVoiceRefreshScheduler.runOnce`
- * 가 뒤에서 마저 받는다. 사용자에게는 8초 넘게 붙잡힌 저장 버튼이 '고장' 으로 읽힌다.
+ * 8초인 이유: 서버는 미리 계산한 값이 없을 때 그 나라의 공식 예보 원천(기상청·気象庁·NWS)을
+ * **한 번** 부르고 그 상한이 5초다(`packages/backend/src/lib/weather-fetch.ts` 의
+ * `WEATHER_FETCH_TIMEOUT_MS`). 원천이 상한에 걸린 경우(5초 + 왕복)까지는 받아 주고 그 이상은
+ * 기다리지 않는다 — 그때는 서버도 대개 `variant_index: null` 을 돌려주고, 저장 직후
+ * `DynamicVoiceRefreshScheduler.runOnce` 가 뒤에서 마저 받는다. 사용자에게는 8초 넘게 붙잡힌
+ * 저장 버튼이 '고장' 으로 읽힌다. 미리 계산한 지역은 DB 한 번 읽기라 이 상한에 닿지 않는다.
  * 테스트가 이 값을 가상 시계로 확인한다(`WeatherResolveTimeoutTest`).
  */
 internal const val WEATHER_RESOLVE_TIMEOUT_MILLIS = 8_000L

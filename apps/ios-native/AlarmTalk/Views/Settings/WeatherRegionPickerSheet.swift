@@ -32,6 +32,8 @@ struct WeatherRegionPickerSheet: View {
     @State private var countryBarHeight: CGFloat = 0
     /// 옛 값 안내 줄의 실제 높이 — 같은 이유로 뺀다.
     @State private var legacyNoteHeight: CGFloat = 0
+    /// 목록 아래 날씨 출처 줄의 실제 높이 — 같은 이유로 뺀다. Dynamic Type 으로 줄 수가 바뀌어도 실측이라 맞는다.
+    @State private var attributionHeight: CGFloat = 0
 
     init(
         current: WeatherRegion?,
@@ -80,10 +82,12 @@ struct WeatherRegionPickerSheet: View {
                 // 때마다 시트 높이가 튄다. 셋 다 화면을 넘으므로 늘 스크롤 갈래로 둔다.
                 // ⚠ 세그먼트 몫(+ 그 아래 간격)을 **빼지 않으면** 시트가 화면을 꽉 채워 뒤 스크림이
                 // 사라진다 — 바깥을 눌러 닫을 곳이 없다(2026-09-30 시뮬레이터 실측).
+                // ⚠ 아래 출처 줄(+ 그 위 간격)도 같은 이유로 뺀다 — 빼먹으면 스크림이 사라진다.
                 SheetScrollingContent(
                     alwaysScrolls: true,
                     reservedHeight: countryBarHeight + BottomSheetTitle.titleToContentSpacing
                         + (legacyLabel == nil ? 0 : legacyNoteHeight + 3)
+                        + attributionHeight + BottomSheetTitle.titleToContentSpacing
                 ) {
                     // ⚠ `LazyVStack` 으로 바꾸지 말 것 — `SelectionSheet` 주석과 같은 이유다.
                     VStack(spacing: 0) {
@@ -99,6 +103,17 @@ struct WeatherRegionPickerSheet: View {
                 // 사용자 지시). 안드로이드는 나라마다 목록 상태를 새로 만들어 같은 결과가 된다.
                 .onChange(of: country) { _, _ in scrollToTop(proxy) }
             }
+
+            // 날씨 출처 — 목록 **아래 고정**. 가공해 쓴다는 사실은 気象庁 약관(공공데이터 이용규약 — 가공 시 그
+            // 사실을 적는다)이 요구한다. 지역을 고르는 곳이 이 시트 하나라(설정·편집기 공용) 여기 한 곳에만 둔다.
+            // 안드로이드 `WeatherLocationDialog` 의 `region_picker_weather_attribution` 과 같은 문장이다.
+            Text(String(localized: "날씨 정보: 기상청 · 気象庁 · 미국 기상청(NWS)의 예보를 바탕으로 AlarmTalk가 가공"))
+                .font(theme.typography.bodySmall)
+                .foregroundStyle(theme.palette.onSurfaceVariant)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, BottomSheetTitle.horizontalPadding)
+                .fixedSize(horizontal: false, vertical: true)
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { attributionHeight = $0 }
         }
         .padding(.bottom, 8)
         .frame(maxWidth: .infinity, alignment: .leading)
