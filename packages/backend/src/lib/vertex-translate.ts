@@ -589,9 +589,12 @@ async function createAccessToken(
   });
   const json: VertexTokenResponse = await response.json<VertexTokenResponse>().catch(() => ({}));
   if (!response.ok || !json.access_token) {
-    throw new Error(
+    const err = new Error(
       json.error_description || json.error || `Vertex auth failed (${response.status})`,
     );
+    // 토큰 엔드포인트의 429·5xx 도 상류가 잠깐 못 받은 것이다 — 생성 요청과 같은 규칙으로 다시 묻는다(Codex #844).
+    //   400(invalid_grant 등)은 다시 보내도 같으므로 표시하지 않는다.
+    throw TRANSIENT_VERTEX_STATUSES.has(response.status) ? markTransportFailure(err) : err;
   }
   return json.access_token;
 }
@@ -861,7 +864,7 @@ function alarmTextPrompt(args: { text: string; sourceLanguage: string; targetLan
   //   말인데 'our daughter's birthday' 로 3인칭으로 옮겼고, '오늘도 힘내!' 를 'Have a great day!'(작별 인사)로 옮겼다.
   const koToEnInstruction =
     args.sourceLanguage === 'ko' && args.targetLanguage === 'en'
-      ? "Korean '우리' before a family word is an affectionate 'my', not 'our' (우리 딸 → my girl, 우리 아들 → my boy); when it names the person hearing the alarm, keep talking to them as 'you'. Translate what a phrase does, not a stock line: '힘내' cheers them on ('You've got this!', 'Hang in there!') — it is not 'Have a great day'."
+      ? "Korean '우리' before a family word is an affectionate 'my' only when that word is the person hearing the alarm — the message calls them or talks about them to them (우리 딸, 일어나 → my girl, wake up; 오늘은 우리 딸 생일! said to the daughter → it's your birthday, my girl). When it names someone else or a group the speaker belongs to, it is a real 'our' (여보, 우리 아들 깨워 줘 → honey, wake our son up; 우리 가족 여행 → our family trip; 우리 팀 → our team). Translate what a phrase does, not a stock line: '힘내' cheers them on ('You've got this!', 'Hang in there!') — it is not 'Have a great day'."
       : '';
 
   return [
@@ -1743,7 +1746,11 @@ export function hasJapanesePoliteEnding(
   params: { relationshipLabel?: string | null; speechStyle?: SpeechStyle | null; styleReference?: string | null },
 ): boolean {
   if (/polite|jondae|丁寧|敬語/i.test(params.speechStyle?.register ?? '')) return false;
-  if (params.styleReference && /です|ます/.test(params.styleReference)) return false;
+  // 확정 문구가 정중체인지도 **문장 끝**으로 가린다(Codex #844) — '目を覚ます時間だよ' 처럼 사전형 동사의 'ます' 가 있는
+  //   반말 문구를 정중체로 읽으면 검사가 통째로 꺼진다.
+  if (params.styleReference && params.styleReference.split(/(?<=[。！？!?…])/).some(isJapanesePoliteSentence)) {
+    return false;
+  }
   const casual =
     params.speechStyle?.childlike === true || isConfirmedCloseRelationshipLabel(params.relationshipLabel ?? '');
   if (!casual) return false;

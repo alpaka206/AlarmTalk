@@ -2092,7 +2092,10 @@ describe('사전렌더 — 3.8 튜닝(2026-10-01)', () => {
       translate: true,
     });
     const koEn = sentPromptText();
-    expect(koEn).toContain("Korean '우리' before a family word");
+    expect(koEn).toContain("Korean '우리' before a family word is an affectionate 'my' only when that word is the person hearing the alarm");
+    // 받는 사람이 아닌 가족·무리를 부를 때는 진짜 'our' 다(Codex #844 — '여보, 우리 아들 깨워 줘').
+    expect(koEn).toContain('wake our son up');
+    expect(koEn).toContain('our family trip');
     expect(koEn).toContain("it is not 'Have a great day'");
     expect(koEn).toContain('typed like a chat with little or no punctuation');
     // 웃음 뒤에 부호를 또 찍지 않게 한다('You've got this! [laughs].' 가 나왔다).
@@ -2392,6 +2395,13 @@ describe('hasJapanesePoliteEnding — 엄격한 허용 목록', () => {
     }
   });
 
+  it('확정 문구의 정중체는 문장 끝으로 가린다 — 사전형 동사의 ます 가 든 반말 문구는 검사를 끄지 않는다(Codex #844)', () => {
+    expect(hasJapanesePoliteEnding(polite, { relationshipLabel: '엄마', styleReference: 'ゆい、そろそろ目を覚ます時間だよ。' })).toBe(true);
+    expect(hasJapanesePoliteEnding(polite, { relationshipLabel: '엄마', styleReference: 'ゆい、目を覚ます' })).toBe(true);
+    // 진짜 정중체로 확정했으면 그 말투를 따르므로 검사하지 않는다.
+    expect(hasJapanesePoliteEnding(polite, { relationshipLabel: '엄마', styleReference: 'おはようございます。起きる時間ですよ。' })).toBe(false);
+  });
+
   it('아이 목소리는 라벨이 없어도, 확인되지 않은 라벨이어도 본다', () => {
     const child = { dialect: '', strength: '' as const, register: 'casual', markers: [], persona: '', childlike: true };
     expect(hasJapanesePoliteEnding('パパ、おきる時間です！', { speechStyle: child })).toBe(true);
@@ -2447,6 +2457,21 @@ describe('analyzeSpeechStyleWithVertex — 전송 실패만 마감 안에서 다
     expect((await analyzeSpeechStyleWithVertex(ENV, TRANSCRIPT, 'ko', { sleep }))?.dialect).toBe('경상');
     expect(contentCalls()).toBe(1);
     expect(slept).toEqual([SPEECH_STYLE_RETRY_DELAYS_MS[0]]);
+  });
+
+  it('토큰 발급이 429·5xx 로 답해도 다시 묻고, 400 은 다시 묻지 않는다(Codex #844)', async () => {
+    mockFetch.mockImplementationOnce(async () => new Response(JSON.stringify({ error: 'rate_limited' }), { status: 429 }));
+    queueContent(geminiText(STYLE_JSON));
+    expect((await analyzeSpeechStyleWithVertex(ENV, TRANSCRIPT, 'ko', { sleep }))?.dialect).toBe('경상');
+    expect(contentCalls()).toBe(1);
+    expect(slept).toEqual([SPEECH_STYLE_RETRY_DELAYS_MS[0]]);
+
+    mockFetch.mockClear();
+    slept.length = 0;
+    mockFetch.mockImplementationOnce(async () => new Response(JSON.stringify({ error: 'invalid_grant' }), { status: 400 }));
+    expect(await analyzeSpeechStyleWithVertex(ENV, TRANSCRIPT, 'ko', { sleep })).toBeNull();
+    expect(contentCalls()).toBe(0);
+    expect(slept).toEqual([]);
   });
 
   it('세 번 다 전송 실패면 null — 네 번째는 없다', async () => {
