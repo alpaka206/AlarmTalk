@@ -6,7 +6,7 @@ import { logRouteError } from '../lib/logger';
 import { deleteSensitiveVoiceDataForUser, type DowngradedAlarm } from '../lib/paid-voice-cleanup';
 import { notifyDowngradedAlarms } from '../lib/fcm';
 import { purgeUserAccount, pseudonymizeBillingForRetention } from '../lib/account-deletion';
-import { notifyBillingStateChanged } from '../lib/billing-cancel';
+import { drainPendingPlanNotifications } from '../lib/pending-plan-notifications';
 import { withWriteTransaction } from '../lib/transactions';
 import {
   normalizeQuietWindows,
@@ -300,8 +300,12 @@ user.delete('/me', async (c) => {
     // ⚠ **철회 통지보다 먼저다**(코덱스 #841). 이쪽에 **보이는 삭제 예고**가 실린다 — 무음 철회
     //   신호가 먼저 subrequest 예산을 다 쓰면 예고가 잘려, 멤버가 예고 없이 목소리를 잃는다.
     //   (`docs/spec/billing-lifecycle.md` 「그룹 주인이 탈퇴하면」)
+    // 받을 사람은 파기 트랜잭션에서 이미 대기열에 적혔다 — 여기서 못 보내면(예산·실패) 행이 남아
+    // 유예 파기 크론이 다음 틱에 잇는다(`drainPendingPlanNotifications`).
     try {
-      await notifyBillingStateChanged(db, c.env, purgeNotifications.planChangedUserIds);
+      await drainPendingPlanNotifications(db, c.env, {
+        userIds: purgeNotifications.planChangedUserIds,
+      });
     } catch (err) {
       logRouteError(c, err);
     }

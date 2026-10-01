@@ -39,6 +39,11 @@ async function one(sql: string, args: InValue[] = []): Promise<Record<string, un
   return res.rows[0] as unknown as Record<string, unknown>;
 }
 
+async function queued(): Promise<string[]> {
+  const res = await db.execute(`SELECT user_id FROM pending_plan_notifications ORDER BY user_id`);
+  return res.rows.map((row) => String(row.user_id));
+}
+
 async function purgeA(): Promise<AccountPurgeNotifications> {
   return withWriteTransaction(db, async (tx) => {
     await pseudonymizeBillingForRetention(tx, A_PK, PEPPER, NOW);
@@ -107,6 +112,8 @@ describe('그룹 주인 탈퇴 — 해체된 멤버의 등급 변경 통지 (실
     expect((await one(`SELECT status FROM subscriptions WHERE id = 'sub-c'`)).status).toBe('active');
     // 떠나는 사람은 파기됐다.
     expect((await one(`SELECT COUNT(*) AS n FROM users WHERE id = ?`, [A_PK])).n).toBe(0);
+    // 받을 사람은 파기와 **같은 트랜잭션**에서 통지 대기열에 적혔다 — 커밋 뒤 발송이 잘려도 크론이 잇는다.
+    expect(await queued()).toEqual([B_PK]);
   });
 
   it('클론 있는 주인도 같다 — 목소리 철회 통지와 별개로 멤버가 목록에 있다', async () => {
@@ -176,5 +183,18 @@ describe('그룹 주인 탈퇴 — 해체된 멤버의 등급 변경 통지 (실
     // 그룹·멤버십은 실제로 사라졌다(알린 사실과 같다).
     expect(await one(`SELECT COUNT(*) AS n FROM plan_group_members WHERE user_id = ?`, [B_PK])).toEqual({ n: 0 });
     expect(await one(`SELECT COUNT(*) AS n FROM plan_groups WHERE id = 'g-a'`)).toEqual({ n: 0 });
+    expect(await queued()).toEqual([B_PK]);
+  });
+
+  it('파기가 롤백되면 대기열에도 아무도 남지 않는다(통지와 파기는 같이 커밋된다)', async () => {
+    await seedFamily();
+    await expect(
+      withWriteTransaction(db, async (tx) => {
+        await purgeUserAccount(tx, A_PK, A_LOGIN, false);
+        throw new Error('later step failed');
+      }),
+    ).rejects.toThrow('later step failed');
+    expect(await queued()).toEqual([]);
+    expect((await one(`SELECT COUNT(*) AS n FROM users WHERE id = ?`, [A_PK])).n).toBe(1);
   });
 });

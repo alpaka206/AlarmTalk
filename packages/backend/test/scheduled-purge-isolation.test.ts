@@ -9,11 +9,13 @@ vi.mock('../src/lib/audio-retention', () => ({
   cleanupStaleDraftVoices: vi.fn().mockResolvedValue(undefined),
   drainExternalDeletions: vi.fn().mockResolvedValue(undefined),
 }));
-const notifyBillingStateChanged = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 vi.mock('../src/lib/billing-cancel', () => ({
   processSubscriptionExpiry: vi.fn().mockResolvedValue(undefined),
-  notifyBillingStateChanged,
 }));
+// 등급 통지는 파기 트랜잭션이 대기열에 적고(실제 DB 로 `account-purge-plan-push.test.ts` 가 본다),
+// 크론은 finally 에서 그 대기열을 비운다 — 여기서는 비우는 **배선**만 본다.
+const drainPendingPlanNotifications = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
+vi.mock('../src/lib/pending-plan-notifications', () => ({ drainPendingPlanNotifications }));
 vi.mock('../src/lib/account-deletion', () => ({
   purgeUserAccount: vi.fn().mockResolvedValue({ downgradedAlarms: [], voiceAccessRevokedUserIds: [], planChangedUserIds: [] }),
   pseudonymizeBillingForRetention: vi.fn().mockResolvedValue(undefined),
@@ -76,24 +78,22 @@ describe('scheduled() — 계정 파기 격리', () => {
     expect(purgeQuery).toMatch(/ORDER BY deletion_purge_at, id/);
   });
 
-  it('계정별 등급 변경 대상을 모아 커밋 뒤 한 번에 알린다', async () => {
-    withWriteTransaction
-      .mockResolvedValueOnce({ downgradedAlarms: [], voiceAccessRevokedUserIds: [], planChangedUserIds: ['m1', 'm2'] })
-      .mockResolvedValueOnce({ downgradedAlarms: [], voiceAccessRevokedUserIds: [], planChangedUserIds: ['m3'] });
+  it('등급 통지 대기열은 모든 파기 트랜잭션이 끝난 뒤 한 번 비운다(트랜잭션 안에서 쏘지 않는다)', async () => {
+    withWriteTransaction.mockResolvedValue({ downgradedAlarms: [], voiceAccessRevokedUserIds: [], planChangedUserIds: ['m1'] });
 
     await worker.scheduled(
       { scheduledTime: new Date('2026-09-20T00:00:00.000Z').getTime(), cron: '*/5 * * * *' } as never,
       { TURSO_DATABASE_URL: 'mock', TURSO_AUTH_TOKEN: 'mock', PASSWORD_PEPPER: 'pep' } as never,
     );
 
-    expect(notifyBillingStateChanged).toHaveBeenCalledTimes(1);
-    expect(notifyBillingStateChanged.mock.calls[0]![2]).toEqual(['m1', 'm2', 'm3']);
-    // 두 계정의 트랜잭션이 모두 끝난 뒤다 — 트랜잭션 안에서 쏘지 않는다.
+    expect(drainPendingPlanNotifications).toHaveBeenCalledTimes(1);
+    // 오래된 순으로 꺼낸다 — 특정 사람을 지정하지 않는다(앞 틱에서 잘린 행까지 잇는다).
+    expect(drainPendingPlanNotifications.mock.calls[0]![2]).toBeUndefined();
     const lastTx = Math.max(...withWriteTransaction.mock.invocationCallOrder);
-    expect(notifyBillingStateChanged.mock.invocationCallOrder[0]!).toBeGreaterThan(lastTx);
+    expect(drainPendingPlanNotifications.mock.invocationCallOrder[0]!).toBeGreaterThan(lastTx);
   });
 
-  it('뒤 계정의 파기가 실패해도 이미 커밋된 앞 계정의 멤버에게는 알린다', async () => {
+  it('뒤 계정의 파기가 실패해도 대기열은 비운다(앞 계정분이 들어 있다)', async () => {
     withWriteTransaction
       .mockResolvedValueOnce({ downgradedAlarms: [], voiceAccessRevokedUserIds: [], planChangedUserIds: ['m1'] })
       .mockRejectedValueOnce(new Error('Too many subrequests by single Worker invocation.'));
@@ -103,53 +103,45 @@ describe('scheduled() — 계정 파기 격리', () => {
       { TURSO_DATABASE_URL: 'mock', TURSO_AUTH_TOKEN: 'mock', PASSWORD_PEPPER: 'pep' } as never,
     );
 
-    expect(notifyBillingStateChanged).toHaveBeenCalledTimes(1);
-    expect(notifyBillingStateChanged.mock.calls[0]![2]).toEqual(['m1']);
+    expect(drainPendingPlanNotifications).toHaveBeenCalledTimes(1);
   });
 
-  it('목소리 철회 통지가 던져도 등급 변경 통지는 따로 나간다', async () => {
-    const { notifyDowngradedAlarms } = await import('../src/lib/fcm');
-    vi.mocked(notifyDowngradedAlarms).mockRejectedValueOnce(new Error('FCM down'));
-    withWriteTransaction
-      .mockResolvedValueOnce({ downgradedAlarms: [], voiceAccessRevokedUserIds: ['m1'], planChangedUserIds: ['m1'] })
-      .mockResolvedValueOnce({ downgradedAlarms: [], voiceAccessRevokedUserIds: [], planChangedUserIds: ['m2'] });
-
-    await worker.scheduled(
-      { scheduledTime: new Date('2026-09-20T00:00:00.000Z').getTime(), cron: '*/5 * * * *' } as never,
-      { TURSO_DATABASE_URL: 'mock', TURSO_AUTH_TOKEN: 'mock', PASSWORD_PEPPER: 'pep' } as never,
-    );
-
-    expect(notifyBillingStateChanged).toHaveBeenCalledTimes(1);
-    expect(notifyBillingStateChanged.mock.calls[0]![2]).toEqual(['m1', 'm2']);
+  it('파기할 계정이 없는 틱에도 대기열을 비운다 — 앞 틱에서 잘린 사람을 잇는 자리다', async () => {
+    // 이 테스트만 '파기할 계정 없음' — 끝나면 원래 구현으로 되돌린다(구현은 clearAllMocks 로 안 풀린다).
+    const original = executeMock.getMockImplementation()!;
+    executeMock.mockImplementation(() => Promise.resolve({ rows: [] }));
+    try {
+      await worker.scheduled(
+        { scheduledTime: new Date('2026-09-20T00:00:00.000Z').getTime(), cron: '*/5 * * * *' } as never,
+        { TURSO_DATABASE_URL: 'mock', TURSO_AUTH_TOKEN: 'mock', PASSWORD_PEPPER: 'pep' } as never,
+      );
+    } finally {
+      executeMock.mockImplementation(original);
+    }
+    expect(withWriteTransaction).not.toHaveBeenCalled();
+    expect(drainPendingPlanNotifications).toHaveBeenCalledTimes(1);
   });
+
   it('등급 통지(보이는 삭제 예고)를 목소리 철회 통지보다 **먼저** 보낸다(코덱스 #841)', async () => {
     const { notifyDowngradedAlarms } = await import('../src/lib/fcm');
-    withWriteTransaction.mockResolvedValue({
-      downgradedAlarms: [],
-      voiceAccessRevokedUserIds: ['m1'],
-      planChangedUserIds: ['m1'],
-    });
+    withWriteTransaction.mockResolvedValue({ downgradedAlarms: [], voiceAccessRevokedUserIds: ['m1'], planChangedUserIds: ['m1'] });
 
     await worker.scheduled(
       { scheduledTime: new Date('2026-09-20T00:00:00.000Z').getTime(), cron: '*/5 * * * *' } as never,
       { TURSO_DATABASE_URL: 'mock', TURSO_AUTH_TOKEN: 'mock', PASSWORD_PEPPER: 'pep' } as never,
     );
 
-    expect(notifyBillingStateChanged).toHaveBeenCalledTimes(1);
+    expect(drainPendingPlanNotifications).toHaveBeenCalledTimes(1);
     expect(vi.mocked(notifyDowngradedAlarms)).toHaveBeenCalledTimes(1);
-    expect(notifyBillingStateChanged.mock.invocationCallOrder[0]!).toBeLessThan(
+    expect(drainPendingPlanNotifications.mock.invocationCallOrder[0]!).toBeLessThan(
       vi.mocked(notifyDowngradedAlarms).mock.invocationCallOrder[0]!,
     );
   });
 
-  it('등급 통지가 던져도 목소리 철회 통지는 따로 나간다', async () => {
+  it('대기열 비우기가 던져도 목소리 철회 통지는 따로 나간다', async () => {
     const { notifyDowngradedAlarms } = await import('../src/lib/fcm');
-    notifyBillingStateChanged.mockRejectedValueOnce(new Error('FCM down'));
-    withWriteTransaction.mockResolvedValue({
-      downgradedAlarms: [],
-      voiceAccessRevokedUserIds: ['m1'],
-      planChangedUserIds: ['m1'],
-    });
+    drainPendingPlanNotifications.mockRejectedValueOnce(new Error('Too many subrequests'));
+    withWriteTransaction.mockResolvedValue({ downgradedAlarms: [], voiceAccessRevokedUserIds: ['m1'], planChangedUserIds: ['m1'] });
 
     await worker.scheduled(
       { scheduledTime: new Date('2026-09-20T00:00:00.000Z').getTime(), cron: '*/5 * * * *' } as never,
@@ -158,5 +150,18 @@ describe('scheduled() — 계정 파기 격리', () => {
 
     expect(vi.mocked(notifyDowngradedAlarms)).toHaveBeenCalledTimes(1);
     expect(vi.mocked(notifyDowngradedAlarms).mock.calls[0]![3]).toContain('m1');
+  });
+
+  it('목소리 철회 통지가 던져도 대기열 비우기는 이미 끝났다(먼저 돈다)', async () => {
+    const { notifyDowngradedAlarms } = await import('../src/lib/fcm');
+    vi.mocked(notifyDowngradedAlarms).mockRejectedValueOnce(new Error('FCM down'));
+    withWriteTransaction.mockResolvedValue({ downgradedAlarms: [], voiceAccessRevokedUserIds: ['m1'], planChangedUserIds: ['m1'] });
+
+    await worker.scheduled(
+      { scheduledTime: new Date('2026-09-20T00:00:00.000Z').getTime(), cron: '*/5 * * * *' } as never,
+      { TURSO_DATABASE_URL: 'mock', TURSO_AUTH_TOKEN: 'mock', PASSWORD_PEPPER: 'pep' } as never,
+    );
+
+    expect(drainPendingPlanNotifications).toHaveBeenCalledTimes(1);
   });
 });

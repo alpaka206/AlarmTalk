@@ -8,7 +8,9 @@ vi.mock('../src/lib/audio-retention', () => ({
 }));
 vi.mock('../src/lib/billing-cancel', () => ({
   processSubscriptionExpiry: vi.fn().mockResolvedValue(undefined),
-  notifyBillingStateChanged: vi.fn().mockResolvedValue(undefined),
+}));
+vi.mock('../src/lib/pending-plan-notifications', () => ({
+  drainPendingPlanNotifications: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock('../src/lib/account-deletion', () => ({
   // 커밋 후 알릴 대상을 돌려준다. 비어 있어도 **형태는 지켜야** cron 이 그대로 펴 담는다.
@@ -179,9 +181,8 @@ describe('scheduled() — 탈퇴 파기 알림', () => {
       { alarmId: 'al-1', ownerUserId: 'R1', isReceived: true },
     ]);
     expect(vi.mocked(notifyDowngradedAlarms).mock.calls[0]![3]).toEqual(['M1']);
-    // 그룹 해체로 등급이 바뀐 G1 도 같은 이유로 알린다.
-    const { notifyBillingStateChanged } = await import('../src/lib/billing-cancel');
-    expect(notifyBillingStateChanged).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(notifyBillingStateChanged).mock.calls[0]![2]).toEqual(['G1']);
+    // 그룹 해체로 등급이 바뀐 G1 은 A 의 파기 트랜잭션이 대기열에 적었다 — 크론은 그 대기열을 비운다.
+    const { drainPendingPlanNotifications } = await import('../src/lib/pending-plan-notifications');
+    expect(drainPendingPlanNotifications).toHaveBeenCalledTimes(1);
   });
 });

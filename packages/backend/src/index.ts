@@ -456,9 +456,8 @@ async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext)
     });
     const revokedTargets: RevokedRecipientTarget[] = [];
     const voiceAccessRevokedUserIds: string[] = [];
-    // 파기된 주인의 그룹이 해체돼 등급이 바뀐 멤버들 — 목소리 철회와 별개로 모은다
-    // (클론이 없는 주인이면 위 두 목록은 비지만 멤버의 등급은 바뀐다).
-    const planChangedUserIds: string[] = [];
+    // (파기된 주인의 그룹이 해체돼 등급이 바뀐 멤버들은 여기서 모으지 않는다 — 파기 트랜잭션이
+    //  통지 대기열에 직접 적고, 아래 finally 가 그 대기열을 비운다.)
     // **이미 커밋된 파기는 반드시 알린다.** 배치 뒤쪽 계정에서 던져도 앞 계정의 파기는
     // 이미 커밋돼 되돌아가지 않는다 — 그 수신자들에게 안 알리면 탈퇴자의 목소리를 폴백
     // 주기만큼 더 들고 있게 된다. 그래서 발송은 finally 에 둔다(모아 보내는 건 유지 —
@@ -497,7 +496,6 @@ async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext)
           });
           revokedTargets.push(...purged.downgradedAlarms);
           voiceAccessRevokedUserIds.push(...purged.voiceAccessRevokedUserIds);
-          planChangedUserIds.push(...purged.planChangedUserIds);
         } catch (err) {
           captureCron('scheduled.account_purge.user', err);
         }
@@ -507,20 +505,20 @@ async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext)
       }
     } finally {
       // 해체로 등급이 바뀐 멤버들 — 다른 해체 경로와 같은 통지(`plan_changed` + 보관 유예가
-      // 걸린 사람에게 삭제 예고). 아래 철회 발송과 따로 보낸다(서로 다른 사실이다).
-      // 계정 사이에 중복이 있어도 함수가 접는다. **여기서 던지면 안 된다** — 원래 파기 실패를
-      // 이 실패가 덮어써 바깥 catch 가 엉뚱한 걸 기록한다.
+      // 걸린 사람에게 삭제 예고). 아래 철회 발송과 따로 보낸다(서로 다른 사실이다 — 합치면 한쪽
+      // 실패가 다른 쪽까지 삼킨다). **여기서 던지면 안 된다** — 원래 파기 실패를 이 실패가 덮어써
+      // 바깥 catch 가 엉뚱한 걸 기록한다.
       // ⚠ **철회 발송보다 먼저다**(코덱스 #841). 이쪽에 **보이는 삭제 예고**가 실린다 — 한 실행의
-      //   subrequest 예산은 공유라, 무음 철회 신호가 먼저 예산을 다 쓰면 예고가 잘려 멤버가 예고
-      //   없이 목소리를 잃는다(각 발송이 한도 오류를 삼켜도 쓴 예산은 돌아오지 않는다). 무음 신호는
-      //   놓쳐도 다음 진입·주기 재조회가 메운다(`docs/spec/billing-lifecycle.md` 「그룹 주인이 탈퇴하면」).
-      // ⚠ 위의 '모아 보낸다' 는 **계정 사이**를 모은다는 뜻이다 — 이 두 발송은 일부러 따로 둔다.
-      //   클론 있는 그룹 주인이 파기된 틱에서는 토큰 조회·OAuth 가 한 벌 더 들지만, 파기는 틱당
-      //   최대 2건이고 목록이 비면 DB 호출 없이 끝난다. 한 발송으로 합치면 한쪽 실패(예: 무음
-      //   신호 조립 오류)가 다른 쪽 사실까지 삼킨다. 합칠 때는 그 격리를 지킬 것.
+      //   subrequest 예산은 공유라, 무음 철회 신호가 먼저 예산을 다 쓰면 예고가 잘린다(각 발송이
+      //   한도 오류를 삼켜도 쓴 예산은 돌아오지 않는다). 무음 신호는 놓쳐도 다음 진입·주기 재조회가
+      //   메운다(`docs/spec/billing-lifecycle.md` 「그룹 주인이 탈퇴하면」).
+      // 받을 사람은 파기 트랜잭션에서 이미 대기열에 적혔다(`pending_plan_notifications`) — 이 틱
+      // 것이든 앞 틱에서 잘린 것이든 오래된 순으로 `PLAN_NOTIFY_DRAIN_LIMIT` 명씩 보내고, 보낸
+      // 뒤에만 지운다. 예산이 바닥나 못 보낸 사람은 행이 남아 다음 틱이 잇는다(코덱스 #841).
+      // 파기할 계정이 없는 틱에도 돈다(조회 한 번) — 남은 행을 비우는 자리가 여기뿐이다.
       try {
-        const { notifyBillingStateChanged } = await import('./lib/billing-cancel');
-        await notifyBillingStateChanged(db, env, planChangedUserIds);
+        const { drainPendingPlanNotifications } = await import('./lib/pending-plan-notifications');
+        await drainPendingPlanNotifications(db, env);
       } catch (notifyErr) {
         captureCron('scheduled.account_purge_plan_notify', notifyErr);
       }
