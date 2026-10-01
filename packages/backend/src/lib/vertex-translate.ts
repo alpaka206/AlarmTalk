@@ -587,7 +587,7 @@ async function createAccessToken(
   }).catch((err: unknown) => {
     throw markTransportFailure(err);
   });
-  const json: VertexTokenResponse = await response.json<VertexTokenResponse>().catch(() => ({}));
+  const json = await readJsonBody<VertexTokenResponse>(response);
   if (!response.ok || !json.access_token) {
     const err = new Error(
       json.error_description || json.error || `Vertex auth failed (${response.status})`,
@@ -647,6 +647,25 @@ const transportFailures = new WeakSet<object>();
 function markTransportFailure(err: unknown): unknown {
   if (typeof err === 'object' && err !== null) transportFailures.add(err);
   return err;
+}
+
+/**
+ * 응답 본문을 JSON 으로 읽는다. 머리는 받았는데 **본문을 읽다가** 끊긴 것(시간 초과·연결 끊김)은 fetch 가 던진 것과
+ * 같은 전송 실패로 표시해 던진다(Codex #844 — 예전에는 `.json().catch(() => ({}))` 가 그것까지 삼켜, 2xx 생성 응답은
+ * '빈 답' 으로, 토큰 응답은 표시 없는 오류로 바뀌어 다시 묻지 않았다). 본문이 JSON 이 아닌 것만 `{}` 다.
+ */
+async function readJsonBody<T>(response: Response): Promise<T> {
+  let raw: string;
+  try {
+    raw = await response.text();
+  } catch (err) {
+    throw markTransportFailure(err);
+  }
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    return {} as T;
+  }
 }
 
 /** 생성 요청이 2xx 가 아닌 응답을 받았다. 메시지는 예전과 같다(상류 오류 문장 또는 상태 코드). */
@@ -819,9 +838,20 @@ async function generateContentAtEndpoint(
     });
     throw markTransportFailure(err);
   });
-  const json: VertexGenerateContentResponse & { error?: { message?: string } } = await response
-    .json<VertexGenerateContentResponse & { error?: { message?: string } }>()
-    .catch(() => ({}));
+  const json = await readJsonBody<VertexGenerateContentResponse & { error?: { message?: string } }>(response).catch(
+    (err: unknown) => {
+      // 본문을 읽다 끊긴 것도 한 줄 남긴다 — fetch 가 던진 것과 같은 자리의 실패다.
+      logStructured('warn', {
+        at: 'vertex.generate',
+        stage: 'generate_body',
+        model,
+        status: response.status,
+        error: err instanceof Error ? err.name : 'unknown',
+        elapsed_ms: Date.now() - started,
+      });
+      throw err;
+    },
+  );
   // 호출마다 한 줄 — 모델 교체 뒤 확인할 길이 이것뿐이다. 호출부 대부분(직접 입력 태깅·등록
   // 미리듣기·말투 분석)이 실패를 삼키고 폴백하므로, 이 줄이 없으면 은퇴·설정 오류·잘림이
   // 사용자에게도 Sentry 에도 드러나지 않는다. ⚠ 프롬프트·응답 **원문은 싣지 않는다.**
@@ -1333,7 +1363,9 @@ MATCH EACH SENTENCE TO ITS CONTENT: apologies, cautions and bad news (rain, snow
         ? 'VOICE ENERGY — this voice is low-key, CALM and sincere. Keep the line composed and grounded: steady, even sentences, few or no exclamation marks, and no teasing or excited words — the voice lifts at every bright signal, so leave them out. Calm is not sleepy — the line still ends with a clear, firm nudge to get up or act. Calm is not formal either — a calm partner, friend or parent still speaks the relationship\'s own register (반말 stays 반말).'
         : '';
   const speechStyleInstruction =
-    speechStyle && (speechStyle.dialect || speechStyle.markers.length > 0 || speechStyle.persona)
+    // 어체만 있는 분석(사투리 없는 정중체 화자 — register 'polite')도 싣는다(Codex #844). 일본어 존댓말 검사는 그
+    //   어체를 보고 면제되는데, 프롬프트가 그걸 모르면 첫 미리듣기가 가족 반말로 나와 그대로 확정 문구가 된다.
+    speechStyle && (speechStyle.dialect || speechStyle.markers.length > 0 || speechStyle.persona || speechStyle.register)
       ? `SPEAKER DIALECT/STYLE (analyzed from this speaker's own recording): dialect="${
           speechStyle.dialect || 'standard'
         }"${speechStyle.strength ? ` (strength: ${speechStyle.strength})` : ''}${
@@ -1653,7 +1685,10 @@ export function prerenderRejectionReason(
 export function hasKoreanCollocationError(spoken: string): boolean {
   if (/운이\s*술술/.test(spoken)) return true;
   // '~려면' 과 존대 꼴 '~려 하시면'(2026-10-01 확인 평가에서 이 꼴로 빠져나갔다) 둘 다 본다.
-  return /나중에\s+(?:[가-힣]+\s+)?[가-힣]+(?:(?:으)?려면|(?:으)?려\s*하(?:시)?면)\s*(?:금방\s*|쉽게\s*)?(?:잊|까먹|깜빡)/.test(spoken);
+  //   잊는다는 **긍정** 꼴만 본다 — '잊지 않게'·'까먹지 말고'·'깜빡하지 않도록' 같은 부정·목적절은 바른 말이다(Codex #844).
+  return /나중에\s+(?:[가-힣]+\s+)?[가-힣]+(?:(?:으)?려면|(?:으)?려\s*하(?:시)?면)\s*(?:금방\s*|쉽게\s*|깜빡\s*)?(?:잊(?:기|어|으니|을|는)|까먹(?:기|어|으니|을|는)|깜빡(?:하기|할|하니|해))/.test(
+    spoken,
+  );
 }
 
 /**
@@ -1697,17 +1732,18 @@ const JA_CASUAL_RELATIONSHIP_LABELS = new Set([
   '엄마', '어머니', '아빠', '아버지', '할머니', '할아버지', '외할머니', '외할아버지', '친할머니', '친할아버지',
   '딸', '아들', '큰딸', '작은딸', '막내딸', '큰아들', '작은아들', '막내아들', '손녀', '손자', '손주',
   '언니', '누나', '오빠', '형', '큰언니', '작은언니', '큰누나', '작은누나', '큰오빠', '작은오빠', '큰형', '작은형',
-  '동생', '여동생', '남동생', '막내동생', '친구', '친한친구', '절친', '베프',
+  '동생', '여동생', '남동생', '막내동생', '형제자매', '형제', '자매', '친구', '친한친구', '절친', '베프',
   '남자친구', '여자친구', '남친', '여친', '애인', '연인', '아내', '남편', '와이프', '여보', '자기', '신랑', '배우자',
   // 일본어
   '母', '父', 'ママ', 'パパ', 'お母さん', 'お父さん', 'おかあさん', 'おとうさん', '母さん', '父さん', 'かあさん', 'とうさん',
   'おかん', 'おとん', 'おふくろ', '親父', 'おやじ', '祖母', '祖父', 'おばあちゃん', 'おじいちゃん', 'ばあちゃん', 'じいちゃん',
-  'ばあば', 'じいじ', '孫', '娘', '息子', '姉', '兄', '妹', '弟', 'お姉ちゃん', 'お兄ちゃん', '姉ちゃん', '兄ちゃん',
+  'ばあば', 'じいじ', '孫', '孫娘', '孫息子', '娘', '息子', '姉', '兄', '妹', '弟', '兄弟姉妹', '兄弟', '姉妹', 'お姉ちゃん', 'お兄ちゃん', '姉ちゃん', '兄ちゃん',
   'お姉さん', 'お兄さん', '姉さん', '兄さん', '友達', '友だち', '友人', '親友', '彼氏', '彼女', '恋人', '妻', '夫', '旦那',
   // 영어
   'mom', 'mum', 'mommy', 'mummy', 'mama', 'mother', 'dad', 'daddy', 'papa', 'father', 'grandma', 'grandpa',
   'grandmother', 'grandfather', 'granny', 'grandson', 'granddaughter', 'grandchild', 'son', 'daughter',
-  'sister', 'brother', 'sis', 'bro', 'friend', 'bestfriend', 'bff', 'boyfriend', 'girlfriend', 'wife', 'husband',
+  'sister', 'brother', 'sibling', 'siblings', 'sis', 'bro', 'friend', 'bestfriend', 'bff', 'boyfriend', 'girlfriend', 'wife',
+  'husband',
 ]);
 /** 라벨 앞에 붙어도 관계가 바뀌지 않는 말('우리 엄마'·'my mom'·'うちの母'). */
 const RELATIONSHIP_LABEL_PREFIXES = ['우리', '울', '내', '나의', 'my', 'うちの', '私の'];

@@ -2196,6 +2196,25 @@ describe('사전렌더 — 마지막 튜닝 회차(2026-10-01)', () => {
     return sentPromptText();
   };
 
+  it('어체만 있는 말투 분석(사투리 없는 정중체)도 프롬프트에 싣는다(Codex #844)', async () => {
+    const politeOnly = { dialect: '', strength: '' as const, register: 'polite', markers: [], persona: '', childlike: false };
+    const prompt = await promptFor(
+      { seed: GREETING_SEED, relationshipLabel: 'お母さん', listenerTitle: 'ゆい', targetLanguage: 'ja', speechStyle: politeOnly },
+      '{"text":"ゆい、おはようございます。今日も一日がんばりましょうね。"}',
+    );
+    expect(prompt).toContain('SPEAKER DIALECT/STYLE');
+    expect(prompt).toContain('register: polite');
+  });
+
+  it("'나중에 ~려면' 뒤의 부정·목적절(잊지 않게·깜빡하지 않도록)은 korean_collocation 이 아니다(Codex #844)", () => {
+    const mom = { relationshipLabel: '엄마', listenerTitle: '우리 딸' };
+    expect(prerenderRejectionReason('우리 딸, 나중에 약을 먹으려면 잊지 않게 메모해 둬.', 'ko', mom)).toBeNull();
+    expect(prerenderRejectionReason('우리 딸, 나중에 챙기려면 깜빡하지 않도록 알람 하나 더 맞춰 둬.', 'ko', mom)).toBeNull();
+    expect(prerenderRejectionReason('우리 딸, 나중에 먹으려면 까먹지 말고 지금 챙겨.', 'ko', mom)).toBeNull();
+    // 긍정 꼴은 그대로 잡는다.
+    expect(prerenderRejectionReason('우리 딸, 나중에 먹으려면 깜빡하기 쉬우니까 지금 먹자.', 'ko', mom)).toBe('korean_collocation');
+  });
+
   it('조심스러운 문장의 사투리·어체도 확정 문구가 있으면 그 문구를 따른다(사투리 지시 네 자리와 같은 규칙)', async () => {
     const withRef = await promptFor({
       seed: WEATHER_FAIL_SEED, relationshipLabel: '엄마', listenerTitle: '우리 아들', targetLanguage: 'ko',
@@ -2402,6 +2421,20 @@ describe('hasJapanesePoliteEnding — 엄격한 허용 목록', () => {
     expect(hasJapanesePoliteEnding(polite, { relationshipLabel: '엄마', styleReference: 'おはようございます。起きる時間ですよ。' })).toBe(false);
   });
 
+  it('두 앱의 관계 프리셋(한·영·일, 연예인·직접 입력 제외)은 모두 가까운 관계로 본다(Codex #844 — 형제·자매)', () => {
+    for (const label of [
+      '엄마', '아빠', '할머니', '할아버지', '아들', '딸', '손녀', '손주', '형제·자매', '남자친구', '여자친구', '남편', '아내', '친구',
+      'Mom', 'Dad', 'Grandma', 'Grandpa', 'Son', 'Daughter', 'Granddaughter', 'Grandson', 'Sibling', 'Boyfriend', 'Girlfriend',
+      'Husband', 'Wife', 'Friend',
+      'お母さん', 'お父さん', 'おばあちゃん', 'おじいちゃん', '息子', '娘', '孫娘', '孫息子', '兄弟・姉妹', '彼氏', '彼女', '夫', '妻', '友だち',
+    ]) {
+      expect(hasJapanesePoliteEnding(polite, { relationshipLabel: label }), label).toBe(true);
+    }
+    for (const label of ['연예인', 'Celebrity', '芸能人', '직접 입력']) {
+      expect(hasJapanesePoliteEnding(polite, { relationshipLabel: label }), label).toBe(false);
+    }
+  });
+
   it('아이 목소리는 라벨이 없어도, 확인되지 않은 라벨이어도 본다', () => {
     const child = { dialect: '', strength: '' as const, register: 'casual', markers: [], persona: '', childlike: true };
     expect(hasJapanesePoliteEnding('パパ、おきる時間です！', { speechStyle: child })).toBe(true);
@@ -2472,6 +2505,31 @@ describe('analyzeSpeechStyleWithVertex — 전송 실패만 마감 안에서 다
     expect(await analyzeSpeechStyleWithVertex(ENV, TRANSCRIPT, 'ko', { sleep })).toBeNull();
     expect(contentCalls()).toBe(0);
     expect(slept).toEqual([]);
+  });
+
+  it('머리는 받았는데 본문을 읽다 끊겨도 전송 실패로 다시 묻는다 — 생성 응답·토큰 응답 모두(Codex #844)', async () => {
+    const brokenBody = () =>
+      new Response(
+        new ReadableStream({
+          start(controller) {
+            controller.error(timeout());
+          },
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      );
+    queueContent(brokenBody());
+    queueContent(geminiText(STYLE_JSON));
+    expect((await analyzeSpeechStyleWithVertex(ENV, TRANSCRIPT, 'ko', { sleep }))?.dialect).toBe('경상');
+    expect(contentCalls()).toBe(2);
+    expect(slept).toEqual([SPEECH_STYLE_RETRY_DELAYS_MS[0]]);
+
+    mockFetch.mockClear();
+    slept.length = 0;
+    mockFetch.mockImplementationOnce(async () => brokenBody());
+    queueContent(geminiText(STYLE_JSON));
+    expect((await analyzeSpeechStyleWithVertex(ENV, TRANSCRIPT, 'ko', { sleep }))?.dialect).toBe('경상');
+    expect(contentCalls()).toBe(1);
+    expect(slept).toEqual([SPEECH_STYLE_RETRY_DELAYS_MS[0]]);
   });
 
   it('세 번 다 전송 실패면 null — 네 번째는 없다', async () => {
