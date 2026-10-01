@@ -582,21 +582,44 @@ async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext)
   //  틱마다 Turso row-read 만 소모했다.)
 
   // 지역별 날씨 미리 계산(`lib/weather-region-daily.ts`, `docs/spec/voice-and-message.md` 5-1).
-  // 매시 첫 틱에만 들여다보고, 3시간 안에 계산한 지역은 건너뛴다 — 도는 틱의 subrequest 는
-  // 조회 1 + Open-Meteo 최대 6(50곳 묶음 × 예보·대기질) + 쓰기 최대 3 이다.
-  // 클론 드레인(아래)**보다 먼저** 둔다: 그쪽은 subrequest 가 모자라면 스스로 멈추고 다음 틱에
-  // 잇지만, 여기는 한 번 놓치면 한 시간 뒤라서다(그 사이는 읽기 경로가 즉석 계산으로 메운다).
+  // 지역마다 **현지 슬롯**(21:00~21:59 저녁, 06:00~06:59 아침)에서만 일한다 — 슬롯이 열린 지역이 없으면
+  // 시간대 계산만 하고 DB·네트워크를 부르지 않는다. 도는 틱의 subrequest 는 조회 1 + 원천 fetch 최대 10
+  // (KMA 3·JMA 8·NWS 4) + 쓰기 1 = 최대 12 다. 클론 드레인(아래)**보다 먼저** 둔다: 그쪽은 subrequest 가
+  // 모자라면 스스로 멈추고 다음 틱에 잇지만, 여기는 슬롯이 닫히면 다음 슬롯(12시간 뒤)까지 기다린다.
   try {
-    const { isWeatherRegionRefreshSlot, refreshWeatherRegionDaily } = await import(
-      './lib/weather-region-daily'
-    );
-    if (isWeatherRegionRefreshSlot(now)) {
-      const { openMeteoApiKey } = await import('./lib/weather-fetch');
+    const { hasOpenWeatherSlot, refreshWeatherRegionDaily } = await import('./lib/weather-region-daily');
+    if (hasOpenWeatherSlot(now)) {
+      const { kmaServiceKey } = await import('./lib/weather-source');
       const result = await refreshWeatherRegionDaily(db, now, {
-        openMeteoApiKey: openMeteoApiKey(env),
+        kmaServiceKey: kmaServiceKey(env),
+        // 키가 없을 때 dev 는 info 로그만, 운영은 KR 슬롯마다 경보.
+        alertOnMissingKey: env.ENVIRONMENT !== 'development',
+        // ⚠ 경보는 **슬롯 마지막 틱**에 (나라, 시간대 묶음)마다 한 번 — 하루 슬롯 수만큼으로 묶인다.
+        onAlert: (alert) =>
+          captureCron(
+            'scheduled.weather_region_daily.slot_failed',
+            new Error(`weather slot failed: ${alert.country} ${alert.slot} ${alert.source} ${alert.reason}`),
+            {
+              country: alert.country,
+              slot: alert.slot,
+              source: alert.source,
+              reason: alert.reason,
+              done: `${alert.done}/${alert.total}`,
+            },
+          ),
       });
-      if (result.due > 0) {
-        logStructured('info', { at: 'scheduled.weather_region_daily', ...result });
+      if (result.due > 0 || result.alerts.length > 0) {
+        logStructured('info', {
+          at: 'scheduled.weather_region_daily',
+          open: result.open,
+          due: result.due,
+          attempted: result.attempted,
+          stored: result.stored,
+          failed: result.failures.length,
+          deferred: result.deferred,
+          budgetExhausted: result.budgetExhausted,
+          missingTable: result.missingTable,
+        });
       }
     }
   } catch (err) {

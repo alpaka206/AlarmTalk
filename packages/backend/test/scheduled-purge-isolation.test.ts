@@ -41,10 +41,11 @@ vi.mock('../src/lib/account-deletion', () => ({
 }));
 const withWriteTransaction = vi.hoisted(() => vi.fn());
 vi.mock('../src/lib/transactions', () => ({ withWriteTransaction }));
-// 지역 날씨 미리 계산은 매시 첫 틱(이 파일의 시각이 00분이다)에 Open-Meteo 를 부른다. 이 파일은 그 일을
-// 보지 않으므로 끈다 — 안 끄면 테스트가 실제 네트워크로 나간다. 그 동작은 weather-region-daily.test.ts.
+// 지역 날씨 미리 계산은 지역의 현지 슬롯(21시·06시)이 열린 틱에 원천(기상청·気象庁·NWS)을 부른다. 이 파일은
+// 그 일을 보지 않으므로 끈다 — 안 끄면 시각에 따라 테스트가 실제 네트워크로 나간다. 그 동작은
+// weather-region-daily.test.ts.
 vi.mock('../src/lib/weather-region-daily', () => ({
-  isWeatherRegionRefreshSlot: vi.fn().mockReturnValue(false),
+  hasOpenWeatherSlot: vi.fn().mockReturnValue(false),
   refreshWeatherRegionDaily: vi.fn(),
 }));
 vi.mock('../src/lib/fcm', () => ({
