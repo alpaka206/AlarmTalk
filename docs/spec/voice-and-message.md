@@ -694,14 +694,21 @@ iOS `Generated/WeatherRegions.generated.swift`)을 쓴다. 생성 파일을 손�
    - **날씨 묶음이 밀렸으면** 공휴일 국가도 **서버의 옛 지역을 따르지 않는다** — 고를 때 이미 맞췄다
      ([alarm-lifecycle.md](alarm-lifecycle.md) 「공휴일 국가는 지역의 나라다」). 사주만 밀렸으면 날씨 묶음은
      받아들였으니 공휴일 국가도 그 지역을 따른다(`weatherAccepted`, Codex #837).
-   - 울타리는 **올린 계정의 세션이 그대로일 때만** 세운다 — 그 사이 다른 계정이 들어왔으면 떠 있는 요청은 그
-     계정의 것이다(Codex #837).
+   - 올리기의 응답은 **보낸 세션이 그대로일 때만** 받는다 — 울타리·표시 내리기·세션 쓰기·확인 조회 **전부**다
+     (Codex #837). 세션은 계정 id 가 아니라 **세션 번호**로 가른다(안드로이드 `AuthSessionStore.sessionGeneration`,
+     iOS `AuthViewModel.sessionRevision` — 세션이 끝나거나 새로 시작될 때만 오른다). 계정 id 만 보면 로그아웃 뒤
+     **같은 계정**으로 다시 들어온 새 세션에 앞 세션의 응답이 적힌다 — 새 세션의 표시를 내리고, 새 세션의 조회를
+     울타리로 가리고, 옛 설정을 세션에 적는다(확인 조회가 실패하면 그대로 남는다).
 2. 그 밖에는 **서버가 이긴다**(다른 기기에서 바꾼 값). 단 **묶음(날씨·사주)마다** 서버가 비어 있으면 로컬을 그대로
    둔다 — 비어 있는 것은 '지웠다' 가 아니라 '아직 안 올라갔다' 다(서버에는 이 값을 지우는 경로가 없다).
 3. **멱등이다.** 같은 값을 몇 번 받아도 결과가 같다.
    - ⚠ 그래서 **응답마다** 다시 본다 — 값이 바뀌었을 때만 보지 않는다. 올리기가 실패한 뒤 서버는 **같은 옛 값**을
-     다시 준다. 값만 보고 있으면 그 응답에 다시 돌지 않아 밀린 변경이 프로세스가 다시 뜰 때까지 안 올라간다
-     (안드로이드는 받은 시각 `userFetchedAtMillis`, iOS 는 계정 응답 순번 `accountAnswerRevision` 을 축에 둔다).
+     다시 준다. 값만 보고 있으면 그 응답에 다시 돌지 않아 밀린 변경이 프로세스가 다시 뜰 때까지 안 올라간다.
+     축은 **응답마다 오르는 순번**이다(안드로이드 `AuthSession.accountAnswerSeq` — 세션 저장소가 저장마다 올리고
+     로그아웃에도 되감지 않는다, iOS `AuthViewModel.accountAnswerRevision`).
+   - ⚠ **받은 시각을 축으로 쓰지 말 것**(Codex #837 11차). 개인 프로모 계정은 받은 시각이 서버 계산 시각
+     (`personal_promo.computed_at`, 초 단위)으로 바뀌어 같은 초의 두 응답이 같은 값이 된다 — 두 번째 응답이 다시
+     돌지 않는다.
 4. 명시적 로그아웃·탈퇴는 값과 함께 표시도 지운다 — 남기면 다시 로그인했을 때 빈 로컬이 서버를 이긴다.
 
 - ⚠ **"서버 값이 있으면 서버, 없으면 기기" 로 되돌리지 말 것**(2026-09-30 전 iOS). 오프라인에서 고른 지역이
@@ -714,7 +721,23 @@ iOS `Generated/WeatherRegions.generated.swift`)을 쓴다. 생성 파일을 손�
     알람·설정 화면이 옛 지역으로 조용히 되돌아갔다. 알람 저장 때 따로 적는 길은 없다(두 앱 모두 문구 화면·설정
     두 곳뿐).
 - 편집기가 **열려 있는 동안** 서버 값이 바뀌어도 그 화면은 다시 읽지 않는다(열 때 읽는다). 설정 화면은 받을 때마다
-  다시 읽는다.
+  다시 읽는다 — 축은 앱 루트의 받아 적기와 **같은 응답 순번**이다(값만 보면 같은 내용의 응답이 기기 값을 바꿔도
+  화면이 옛 스냅샷에 남는다, Codex #837 11차).
+  - ⚠ **설정 화면은 고칠 때 화면의 스냅샷이 아니라 지금 이 기기 값에서 시작한다.** iOS 는 한 묶음만 고쳐도 설정
+    전체를 적고 올리므로, 스냅샷이 낡았으면 고치지 않은 묶음이 옛 값으로 되돌아가 다른 기기의 변경을 지운다
+    (`SettingsView.editBase`). 안드로이드는 고친 묶음만 적고 올릴 값을 차례가 온 뒤 기기에서 읽어 같은 결과다.
+
+##### 경계는 넷이다 (Codex #837 4~11차 정리)
+
+4~11차 지적은 전부 같은 영역(받아 적기·밀린 업로드·공휴일 국가)의 가장자리였다. 새 경우를 막을 때는 덧대기 전에
+아래 넷 중 어느 것이 빠졌는지부터 본다:
+
+| 경계 | 규칙 | 안드로이드 | iOS |
+| --- | --- | --- | --- |
+| 응답 | 계정 응답마다 **단조 증가 순번** — 받아 적기·설정 화면이 그 순번을 본다 | `AuthSession.accountAnswerSeq` → `accountSettingsReceipt` | `accountAnswerRevision` → `accountPromptSettingsKey`·`SettingsView.PromptObservation` |
+| 요청 | 요청을 보낸 **세션 번호**를 잡고, 응답을 적기 전에 대조한다 | `sessionGeneration` | `sessionRevision` |
+| 올리기 | **한 줄**, 올릴 값은 **차례가 온 뒤** 기기에서 정한다 | `PromptSettingsUploadQueue` + `pendingUploadSnapshot` | `isBusy` + `retryPendingPromptSettings` |
+| 늦은 조회 | 올리기가 끝날 때 떠 있던 조회는 **설정만** 지금 값을 지킨다(울타리) | `promptSettingsAnswerFence` | `promptSettingsAnswerFence` |
 
 #### 서버가 **미리 계산해 둔다** (2026-09-30)
 
@@ -1509,7 +1532,7 @@ TTS 는 웃음 글자를 **글자로 읽는다**(2026-09-29 v3·v4·v4 Turbo 비
 | 옛 글자 되짚기(네 구현이 같은 규칙) | `WeatherRegions.resolveAlias`(생성) ← `weatherRegionFor`(`data/WeatherRegionSettings.kt`) — 회귀 `WeatherRegionsAliasTest`(shared 의 표를 그대로 옮김) | `WeatherRegions.resolveAlias`(생성) ← `WeatherRegions.region(key:country:city:)`(`WeatherRegionSupport.swift`) — 회귀 `WeatherRegionCatalogTests` | `WeatherRegions.resolveAlias`(shared) = 스크립트의 `resolve` ← `weatherRegionFor`(`lib/weather-signal.ts`) |
 | 지역 고르기(나라 → 지역) · 행 이름 '날씨 지역' → '지역' · 되짚지 못한 옛 값은 글자 + 다시 고르라는 안내 | `WeatherLocationDialog`·`weatherRegionDisplay`·`initialWeatherPickerCountry`(`ui/editor/AlarmRandomPromptSettings.kt`), 설정 `SettingsRow` 의 `supportingText` — 회귀 `WeatherRegionPickerTest` | `WeatherRegionPickerSheet`(`legacyLabel` 부제)·`WeatherRegions.displayName`·`unresolvedLegacyLabel`·`initialPickerCountry`(`WeatherRegionSupport.swift`), `SettingsView`·`MessageSettingsPane`·`PromptDetailCard` 의 `note` — 회귀 `WeatherRegionCatalogTests` | — |
 | 계정 설정 `weather.region`(알맞으면 옛 글자로 덮고, 모르면 그 칸만 버리고, 없으면 옛 글자를 되짚는다 — 읽을 때도 같다) | 보낼 때 `toDynamicPromptSettings`(키를 글자에서 되짚어 싣는다), 받을 때 `toPromptPreferences`·`resolvedRegion`(키가 글자를 이긴다) | 보낼 때 `DynamicPromptPreferences.toSettings`, 받을 때 `DynamicPromptPreferences.from(settings:)` | `normalizeWeatherSetting`(`lib/dynamic-prompt-settings.ts`) → `WeatherRegions.normalizeSetting`, 회귀 `weather-region-settings.test.ts` |
-| 계정의 지역·사주 받아 적기(안 올라간 변경은 덮지 않고 다시 올린다 · 빈 묶음은 로컬 유지 · 멱등 · 로그아웃이 표시도 지운다) | `DynamicPromptPreferenceStore.adoptAccountSettings`·`markPushed`·`saveWeatherLocation`/`saveFortuneInfo`(표시) ← `MainViewModel.onAccountPromptSettingsReceived`(← `AlarmTalkApp` 의 `LaunchedEffect`, 축 `accountSettingsReceipt`)·`SettingsScreen`, 표시 내리기 `updateDynamicPromptSettings` — 회귀 `AccountPromptSettingsAdoptionTest` | `DynamicPromptPreferences.adoptAccount`·`markPushed`·`saveLocalEdit`·`current`(`AccountPromptSettingsAdoption.swift`) ← `AlarmTalkApp` 의 계정 설정 관찰(`accountPromptSettingsKey` — 축에 `AuthViewModel.accountAnswerRevision`)·`SettingsView.loadPromptPreferences`·`AlarmEditorSheet.savedPromptPreferences`, 표시 내리기 `AuthViewModel.updateProfile` — 회귀 `AccountPromptSettingsAdoptionTests` | `PATCH /user/me` 의 `dynamic_prompt_settings`(`normalizeWeatherSetting`) |
+| 계정의 지역·사주 받아 적기(안 올라간 변경은 덮지 않고 다시 올린다 · 빈 묶음은 로컬 유지 · 멱등 · 로그아웃이 표시도 지운다) | `DynamicPromptPreferenceStore.adoptAccountSettings`·`markPushed`·`saveWeatherLocation`/`saveFortuneInfo`(표시) ← `MainViewModel.onAccountPromptSettingsReceived`(← `AlarmTalkApp` 의 `LaunchedEffect`, 축 `accountSettingsReceipt` = 응답 순번 `AuthSession.accountAnswerSeq`)·`SettingsScreen`(같은 축), 표시 내리기 `uploadDynamicPromptSettings`(보낸 세대가 그대로일 때만) — 회귀 `AccountPromptSettingsAdoptionTest`·`PromptSettingsAnswerFenceTest` | `DynamicPromptPreferences.adoptAccount`·`markPushed`·`saveLocalEdit`·`current`(`AccountPromptSettingsAdoption.swift`) ← `AlarmTalkApp` 의 계정 설정 관찰(`accountPromptSettingsKey` — 축에 `AuthViewModel.accountAnswerRevision`)·`SettingsView.loadPromptPreferences`(같은 축 `PromptObservation`, 고칠 때는 `editBase`)·`AlarmEditorSheet.savedPromptPreferences`, 표시 내리기 `AuthViewModel.updateProfile`(보낸 `sessionRevision` 이 그대로일 때만) — 회귀 `AccountPromptSettingsAdoptionTests`·`AuthViewModelTests` | `PATCH /user/me` 의 `dynamic_prompt_settings`(`normalizeWeatherSetting`) |
 | 편집기 문구 화면 → 내 계정 설정(가족·직접 입력 제외 · 서버 값과 다를 때만 올린다 · 표준 글자로 적는다 · 지역이 바뀔 때만 공휴일 국가) | `AlarmEditorScreen` 의 문구 결과 처리(`saveWeatherLocation`·`saveFortuneInfo` → `onUpdateDynamicPromptSettings`, `WeatherRegionHolidaySync.onRegionSaved`) | `AlarmEditorSheet.syncOwnPromptPreferences` ← 판정 `DynamicPromptPreferences.editorUpdate`(`EditorPromptPreferenceUpdate.swift`) — 회귀 `EditorPromptPreferenceUpdateTests` | — |
 | 지역 시트: 나라 세그먼트 고정 · 열 때 고른 지역으로 스크롤 · 나라를 바꾸면 맨 위 · 화면의 90% 까지 | `WeatherLocationDialog`(`scrollsContent = false`) ← `WakerSelectionSheet`(`ui/components/WakerModal.kt`) | `WeatherRegionPickerSheet`(`ScrollViewReader`) ← `SheetScrollingContent.reservedHeight`·`BottomSheetMetrics.maxFraction` | — |
 | 새 알람: 행에 옛 앱용 글자 + 요청에 `region` | 고를 때 `region.legacyCountry`/`legacyCity` 를 적고, 요청은 `weatherRegionFor(…)?.key` ← `AlarmRepository.resolveWeatherVariantForDraft`·`resolveDueCloneBucketVariants` — 회귀 `WeatherRegionRequestTest` | `WeatherRegions.storageLabels` ← `AlarmEditorSheet`, 요청은 `resolveAlias(…)?.key` ← `WeatherVariantSaveLookup`·`WeatherVariantRefreshService` — 회귀 `WeatherVariantOwnerScopeTests` | `GET /tts/prerender-variant` 의 `region` |
