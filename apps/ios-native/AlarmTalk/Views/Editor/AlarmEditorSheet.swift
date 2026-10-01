@@ -22,7 +22,10 @@ struct AlarmEditorSheet: View {
     @EnvironmentObject var socialFeatures: SocialFeatureViewModel
     @EnvironmentObject var subscriptions: SubscriptionManager
 
-    @StateObject var holidayStore = HolidayStore()
+    /// 앱 전역 단일 공휴일 설정(`AlarmTalkApp` 이 주입한다). ⚠ **편집기가 따로 만들지 말 것** — 예전에는
+    /// 여기서 `HolidayStore()` 를 새로 만들어, 편집기에서 지역을 골라 공휴일 국가를 바꾸면 그 사본만 바뀌고
+    /// 앱의 달력(공휴일off 재예약·울림 뒤 재무장이 보는 것)은 옛 나라에 남았다.
+    @EnvironmentObject var holidayStore: HolidayStore
     @StateObject var localRecorder = VoiceRecorder()
     /// 에디터의 단일 미리듣기 플레이어(change 4). 기존의 두 플레이어
     /// (voiceStudio.previewPlayer 사용분 + localPreviewPlayer)를 이 하나로 통합한다.
@@ -1742,6 +1745,36 @@ struct AlarmEditorSheet: View {
         voiceStudio.fortuneGender = result.fortuneGender
         voiceStudio.fortuneBirthDate = result.fortuneBirthDate
         voiceStudio.fortuneBirthTime = result.fortuneBirthTime
+        syncOwnPromptPreferences(from: result)
+    }
+
+    /// 문구 화면에서 고른 지역·운세를 **내 계정 설정**에 반영한다 — 설정 '지역' 행과 같은 길이다
+    /// (기기 저장 + `PATCH /user/me` + 지역이 바뀌면 공휴일 국가). 판정은 `DynamicPromptPreferences.editorUpdate`
+    /// 한 곳이고, 안드로이드 `AlarmEditorScreen` 의 문구 결과 처리와 같다.
+    ///
+    /// 알람 저장을 기다리지 않는다 — 안드로이드도 문구 화면을 나오는 순간 올린다. 문구 종류의 '직전 선택'
+    /// 기억(저장 성공 시 한 곳)과는 다른 축이다: 이건 알람의 선택이 아니라 **내 정보**(지역·사주)다.
+    func syncOwnPromptPreferences(from result: MessageSettingsResult) {
+        guard let update = DynamicPromptPreferences.editorUpdate(
+            result: result,
+            familyAlarmMode: target.familyAlarmMode,
+            saved: savedPromptPreferences(),
+            server: DynamicPromptPreferences.from(settings: auth.session?.user.dynamicPromptSettings)
+        ) else { return }
+        let userID = auth.session?.user.id
+        // 올릴 값이면 '아직 안 올라간 변경' 표시와 함께 적는다 — 저장이 실패해도(오프라인) 다음에 받는
+        // 서버의 옛 값이 덮지 않고 앱이 다시 올린다(`AccountPromptSettingsAdoption.swift`).
+        // ⚠ 기기에 **적었을 때만** 뒤따르는 일을 한다(`commitLocalEdit`) — 못 적었는데 공휴일 국가·서버만 새
+        // 지역으로 가면 이 기기 값(다음 알람·설정 화면)과 갈라진다.
+        update.preferences.commitLocalEdit(userID: userID, markUnsynced: update.needsUpload) {
+            // 공휴일 국가 = 지역의 나라. 서버 저장이 실패해도(오프라인) 이 기기는 곧바로 맞춘다 — 설정 화면과 같다.
+            if let key = update.changedRegionKey {
+                holidayStore.adoptCountry(ofWeatherRegion: key)
+            }
+            guard update.needsUpload, userID != nil else { return }
+            let settings = update.preferences.toSettings()
+            Task { await auth.updateProfile(dynamicPromptSettings: settings) }
+        }
     }
 
     // MARK: - 같은 문구 재사용 (입력 캐시)
@@ -2172,45 +2205,17 @@ struct AlarmEditorSheet: View {
         voiceStudio.preparedAlarm = nil
     }
 
-    func savedPromptPreferences() -> DynamicPromptPreferences {
-        let server = DynamicPromptPreferences.from(settings: auth.session?.user.dynamicPromptSettings)
-        return server == DynamicPromptPreferences() ? .load(userID: auth.session?.user.id) : server
-    }
-
-    /// 저장 시 사용자가 입력한 날씨 지역·운세 정보를 계정 기본값에 보존해, 다음 알람을
-    /// 만들 때 매번 도시·생년월일을 다시 입력하지 않게 한다.
-    /// 안드로이드 `ui/editor/AlarmEditorScreen.kt` 의 `saveWeatherLocation`/`saveFortuneInfo`
-    /// 미러 — 가족(상대) 알람은 상대 정보라 내 기본값을 덮어쓰지 않는다.
+    /// 내 계정의 지역·사주 — 계정 설정을 이 기기에 받아 적은 **뒤의** 기기 값이다(`DynamicPromptPreferences.current`).
+    /// 새 알람의 프리필과 문구 화면 결과의 바탕(`syncOwnPromptPreferences`)이 이걸 본다. 안드로이드 편집기가
+    /// `DynamicPromptPreferenceStore.read` 를 보는 것과 같다.
     ///
-    /// ⚠ **테마(스톡) 알람도 여기 들어와야 한다.** 테마 알람은 `randomPrompt` 가 꺼지므로
-    /// 그것만 보고 걸러내면 '날씨' 테마로 도시를 넣어도 저장되지 않아, 다음 새 알람이
-    /// 날씨를 이어받지 못하고 매번 '약' 으로 돌아간다. 안드로이드 `weatherContextForSave()`·
-    /// `fortuneContextForSave()` 가 버킷 알람을 예외 처리하는 것과 같은 이유다.
-    func persistDynamicPromptPreferencesIfNeeded() {
-        guard !target.familyAlarmMode else { return }
-        guard voiceStudio.randomPrompt || isActiveStockClipAlarm else { return }
-        let context = activePromptContext
-        var prefs = DynamicPromptPreferences.load(userID: auth.session?.user.id)
-        var changed = false
-        if context.usesWeather,
-           let country = (voiceStudio.weatherCountry).nilIfBlank,
-           let city = (voiceStudio.weatherCity).nilIfBlank {
-            prefs.weatherCountry = country
-            prefs.weatherCity = city
-            changed = true
-        }
-        if context.usesFortune,
-           let gender = (voiceStudio.fortuneGender).nilIfBlank,
-           let birthDate = (voiceStudio.fortuneBirthDate).nilIfBlank,
-           let birthTime = (voiceStudio.fortuneBirthTime).nilIfBlank {
-            prefs.fortuneGender = gender
-            prefs.fortuneBirthDate = birthDate
-            prefs.fortuneBirthTime = birthTime
-            changed = true
-        }
-        if changed {
-            prefs.save(userID: auth.session?.user.id)
-        }
+    /// ⚠ **알람을 저장할 때 여기(키체인)에 따로 적지 않는다**(2026-09-30 삭제 — 옛
+    /// `persistDynamicPromptPreferencesIfNeeded`). 내 지역·사주가 바뀌는 자리는 문구 화면을 나올 때
+    /// (`syncOwnPromptPreferences`)와 설정 화면 둘뿐이다 — 안드로이드도 그 두 곳에서만 적는다. 저장 때 또
+    /// 적으면 **옛 알람을 열어 저장만 해도** 그 알람의 옛 지역이 '안 올라간 변경' 없이 기기 값이 되어,
+    /// 서버에 지역이 없는 계정은 다음 새 알람이 그 옛 지역으로 열린다.
+    func savedPromptPreferences() -> DynamicPromptPreferences {
+        .current(userID: auth.session?.user.id, server: auth.session?.user.dynamicPromptSettings)
     }
 
     func applyVoicePromptState(to record: inout LocalAlarmRecord) {
@@ -2218,8 +2223,15 @@ struct AlarmEditorSheet: View {
         let context = RandomPromptContext.normalized(voiceStudio.randomContext)
         record.voiceRandomPrompt = enabled
         record.voiceRandomContext = enabled ? context.rawValue : nil
-        record.voiceWeatherCountry = enabled && context.usesWeather ? (voiceStudio.weatherCountry).nilIfBlank : nil
-        record.voiceWeatherCity = enabled && context.usesWeather ? (voiceStudio.weatherCity).nilIfBlank : nil
+        // 지역은 **옛 앱이 읽는 표준 글자**로 적는다(목록으로 되짚히는 값이면). 알람 행에는 키 칸이
+        // 없다 — 요청의 `region` 은 이 글자에서 되짚는다(`WeatherVariantSaveLookup`·
+        // `WeatherVariantRefreshService`). 되짚지 못한 옛 글자는 적힌 그대로 둔다(서버의 엄격한 옛 경로).
+        let weatherLabels = WeatherRegions.storageLabels(
+            country: voiceStudio.weatherCountry,
+            city: voiceStudio.weatherCity
+        )
+        record.voiceWeatherCountry = enabled && context.usesWeather ? weatherLabels.country : nil
+        record.voiceWeatherCity = enabled && context.usesWeather ? weatherLabels.city : nil
         record.voiceFortuneGender = enabled && context.usesFortune ? (voiceStudio.fortuneGender).nilIfBlank : nil
         record.voiceFortuneBirthDate = enabled && context.usesFortune ? (voiceStudio.fortuneBirthDate).nilIfBlank : nil
         record.voiceFortuneBirthTime = enabled && context.usesFortune ? (voiceStudio.fortuneBirthTime).nilIfBlank : nil
@@ -2652,11 +2664,8 @@ struct AlarmEditorSheet: View {
         // 예외로 남는다(안드로이드 `expectedOwnerUserId` 게이트와 같은 취지).
         merged.ownerUserId = auth.session?.user.id ?? existing?.ownerUserId
         applyVoicePromptState(to: &merged)
-        // 입력한 날씨 지역/운세 정보를 기기 기본값에 보존(다음 알람 입력 생략). 음성 비활성
-        // 알람은 randomPrompt 가 무시되므로 enabled 분기를 한 번 더 게이트한다.
-        if merged.playModeEnum != .alarmOnly {
-            persistDynamicPromptPreferencesIfNeeded()
-        }
+        // 지역·사주를 내 기본값에 적는 일은 여기서 하지 않는다 — 문구 화면을 나올 때 이미 했다
+        // (`syncOwnPromptPreferences`, `savedPromptPreferences` 주석).
         if let cachedLocalAudio, draft.playMode != .alarmOnly {
             merged.voiceSource = VoiceSource.localAudio.rawValue
             merged.localAudioUri = cachedLocalAudio.fileName

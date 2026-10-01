@@ -1,13 +1,64 @@
 /**
  * Open-Meteo 호출 한 곳 — 타임아웃·엣지 캐시·관측 로그를 세 fetch(지오코딩·예보·미세먼지)가
- * 똑같이 받게 한다. 호출부는 `routes/tts.ts` 의 `resolveWeatherLocation` /
- * `loadWeatherSignalInput` / `loadDustSignal` 셋뿐이다.
+ * 똑같이 받게 한다. 호출부는 `lib/weather-signal.ts` 의 `resolveWeatherLocation` /
+ * `loadWeatherSignalInput` / `loadDustSignal` 셋과, 지역을 50곳씩 묶어 부르는 cron 미리 계산
+ * (`lib/weather-region-daily.ts` 의 `fetchLocationList`)이다.
  *
- * 이 세 호출은 `GET /api/tts/prerender-variant` 안에서 **순차로** 돌고, 앱은 날씨 테마 알람을
+ * 앞의 세 호출은 `GET /api/tts/prerender-variant` 안에서 **순차로** 돈다 — 미리 계산한 행이 없거나
+ * 오래됐을 때만(목록 지역은 지오코딩 없이 둘, 옛 글자는 셋). 앱은 날씨 테마 알람을
  * 저장하기 전에 그 응답을 동기로 기다린다(Android `MainViewModelAlarmActions.withResolvedWeatherVariant`,
  * iOS `AlarmEditorSheet.applyWeatherVariant`). 그래서 여기서 느려지면 저장 버튼이 그만큼 붙잡힌다.
+ *
+ * **상업 키(선택)** — `OPEN_METEO_API_KEY` 가 있으면 같은 요청을 상업 호스트(`customer-` 접두)로
+ * 보내고 `apikey` 를 붙인다. 없으면 지금처럼 무료 호스트다. 호스트를 고르고 키를 붙이는 곳은
+ * `openMeteoRequestUrl` 하나뿐이다 — 호출부는 언제나 무료 호스트로 URL 을 만들고 키만 넘긴다.
  */
 import { logStructured } from './logger';
+
+/**
+ * 무료 호스트 → 상업 호스트. Open-Meteo 문서: "The server URL requires the prefix customer-"
+ * (예보·대기질·지오코딩 문서의 `apikey` 항목, 2026-09-30 확인). 세 상업 호스트는 실재한다 —
+ * 키 없이 부르면 예보·대기질은 401 `API key required` 로 답한다(같은 날 실측).
+ *
+ * ⚠ 여기 없는 호스트에는 **키를 붙이지 않는다** — 키가 남의 서버로 새지 않게 하는 마지막 문이다.
+ */
+const OPEN_METEO_COMMERCIAL_HOSTS: Readonly<Record<string, string>> = {
+  'api.open-meteo.com': 'customer-api.open-meteo.com',
+  'air-quality-api.open-meteo.com': 'customer-air-quality-api.open-meteo.com',
+  'geocoding-api.open-meteo.com': 'customer-geocoding-api.open-meteo.com',
+};
+
+/**
+ * 워커 환경에서 상업 키를 꺼낸다. 없거나 공백뿐이면 `undefined`(= 무료 호스트).
+ * 규칙: `docs/ops/environments.md` 「Open-Meteo 상업 키」.
+ */
+export function openMeteoApiKey(env: { OPEN_METEO_API_KEY?: string } | undefined): string | undefined {
+  const key = env?.OPEN_METEO_API_KEY?.trim();
+  return key ? key : undefined;
+}
+
+/**
+ * 실제로 부를 URL. 키가 없으면 **받은 URL 그대로**(무료 호스트 — 예전과 같다). 키가 있으면 호스트를
+ * `customer-` 로 바꾸고 `apikey` 를 붙인 **사본**을 만든다(호출부의 URL 은 건드리지 않는다).
+ *
+ * ⚠ 이 URL 은 키를 담는다 — 로그·에러 메시지에 싣지 말 것(`fetchOpenMeteo` 는 `kind` 로만 남긴다).
+ */
+export function openMeteoRequestUrl(url: URL, apiKey: string | undefined): URL {
+  if (!apiKey) return url;
+  const commercialHost = OPEN_METEO_COMMERCIAL_HOSTS[url.hostname];
+  if (!commercialHost) return url;
+  const target = new URL(url.toString());
+  target.hostname = commercialHost;
+  target.searchParams.set('apikey', apiKey);
+  return target;
+}
+
+/** 로그·진단 출력용 — `apikey` 값을 가린다. URL 을 남겨야 할 일이 생기면 반드시 이걸 거친다. */
+export function redactOpenMeteoUrl(url: URL | string): string {
+  const copy = new URL(String(url));
+  if (copy.searchParams.has('apikey')) copy.searchParams.set('apikey', 'REDACTED');
+  return copy.toString();
+}
 
 /**
  * Open-Meteo 한 번 호출의 상한. 세 번 순차라 최악 15초지만, 정상 응답은 수백 ms 다.
@@ -46,7 +97,7 @@ export type WeatherFetchKind = 'geocode' | 'forecast' | 'air';
  *
  * - 타임아웃: `AbortSignal.timeout` 이 만료되면 `fetch` 가 거부된다(`lib/perso.ts` ·
  *   `lib/elevenlabs.ts` 와 같은 방식). **여기서 잡지 않고 다시 던진다** — 세 호출부가 각자
- *   try/catch 로 '못 받음'(null)을 돌려주고, 그걸 폴백할지는 `routes/tts.ts` 의
+ *   try/catch 로 '못 받음'(null)을 돌려주고, 그걸 폴백할지는 `lib/weather-signal.ts` 의
  *   `WeatherFetchFailurePolicy` 한 곳이 정한다(사전렌더 인덱스는 미해결, 라이브 문장은 폴백).
  *   삼키면 그 규약이 두 겹이 된다.
  * - 엣지 캐시: `cf.cacheTtl` 은 오리진의 캐시 헤더와 무관하게 응답을 TTL 만큼 캐시하고,
@@ -61,6 +112,7 @@ export type WeatherFetchKind = 'geocode' | 'forecast' | 'air';
  *   developers.cloudflare.com/cache/how-to/configure-cache-status-code)
  * - 로그: `cf-cache-status`(HIT/MISS/EXPIRED…)와 소요 ms 를 남겨 배포 뒤 `wrangler tail` 로
  *   히트율을 잴 수 있게 한다. ⚠ 도시명·좌표 같은 사용자 값은 넣지 않는다 — `kind` 로만 가른다.
+ *   ⚠ URL 도 넣지 않는다 — 상업 키를 쓰면 URL 에 `apikey` 가 있다. 어느 쪽으로 불렀는지는 `commercial` 로.
  */
 export async function fetchOpenMeteo(
   kind: WeatherFetchKind,
@@ -72,17 +124,27 @@ export async function fetchOpenMeteo(
    * 다른 날짜끼리 섞이지 않는다.
    */
   cacheTtlSeconds: number | null,
+  /**
+   * 상업 키(`openMeteoApiKey(env)`). 없으면 무료 호스트 — 예전과 똑같다. 있으면 `openMeteoRequestUrl`
+   * 이 상업 호스트 + `apikey` 로 바꾼다. 엣지 캐시 키도 그 URL 이라 무료·상업 응답이 섞이지 않는다.
+   */
+  apiKey?: string,
 ): Promise<Response> {
   const startedAt = Date.now();
+  // 어느 쪽으로 불렀는지만 남긴다(키 자체·URL 은 남기지 않는다).
+  const commercial = Boolean(apiKey);
   try {
-    const response = await fetch(url.toString(), {
+    const response = await fetch(openMeteoRequestUrl(url, apiKey).toString(), {
       headers: { accept: 'application/json' },
       signal: AbortSignal.timeout(WEATHER_FETCH_TIMEOUT_MS),
       ...(cacheTtlSeconds === null ? {} : { cf: { cacheTtl: cacheTtlSeconds, cacheEverything: true } }),
     });
-    logStructured('info', {
+    // 실패 상태는 warn — 상업 키가 틀리면 예보·대기질이 400(`The supplied API key is invalid.`,
+    // 2026-09-30 실측)으로 답해 **모든 날씨가 미해결**이 되는데, info 에 섞이면 `wrangler tail` 에서 못 본다.
+    logStructured(response.ok ? 'info' : 'warn', {
       at: 'weather.fetch',
       kind,
+      commercial,
       status: response.status,
       cacheStatus: response.headers.get('cf-cache-status'),
       ms: Date.now() - startedAt,
@@ -94,11 +156,13 @@ export async function fetchOpenMeteo(
     logStructured('warn', {
       at: 'weather.fetch',
       kind,
+      commercial,
       status: null,
       cacheStatus: null,
       ms: Date.now() - startedAt,
       timedOut,
-      // 타임아웃이 아닌 실패(DNS·연결 거부 등)만 이름을 남긴다. 메시지는 URL(=좌표·도시)을 담을 수 있어 뺀다.
+      // 타임아웃이 아닌 실패(DNS·연결 거부 등)만 이름을 남긴다. 메시지는 URL(=좌표·도시, 상업 키를
+      // 쓰면 `apikey` 까지)을 담을 수 있어 뺀다.
       ...(timedOut ? {} : { error: errorName(err) }),
     });
     throw err;

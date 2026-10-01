@@ -1533,9 +1533,31 @@ internal fun AlarmEditorScreen(
             randomContextUsesWeather(result.randomContext) &&
             result.weatherCity.isNotBlank()
         ) {
-            dynamicPromptPreferenceStore.saveWeatherLocation(promptOwnerUserId, result.weatherCountry, result.weatherCity)
+            val previousRegion = dynamicPromptPreferences.weatherRegion
+            // 목록으로 되짚히는 값이면 **옛 앱이 읽는 표준 글자**로 적는다(설정 '지역' 행과 같다 — 알람에서
+            // 이어받은 옛 별칭 "South Korea"/"Seoul" 도 `대한민국`/`서울` 이 된다). 되짚지 못한 옛 글자는 그대로다.
+            // iOS `WeatherRegions.storageLabels` ← `DynamicPromptPreferences.editorUpdate` 와 같다.
+            val pickedRegion = com.alarmtalk.app.data.weatherRegionFor(result.weatherCountry, result.weatherCity)
+            dynamicPromptPreferenceStore.saveWeatherLocation(
+                promptOwnerUserId,
+                pickedRegion?.legacyCountry ?: result.weatherCountry,
+                pickedRegion?.legacyCity ?: result.weatherCity,
+            )
             dynamicPromptPreferences = dynamicPromptPreferenceStore.read(promptOwnerUserId)
             shouldSyncOwnDynamicPromptSettings = true
+            // 공휴일 국가 = 내 지역의 나라(docs/spec/alarm-lifecycle.md) — **지역이 바뀌었을 때만**
+            // 적는다. 이 자리는 날씨 종류를 고르기만 해도 지나므로(지역은 그대로), 매번 적으면
+            // 지역을 건드리지도 않았는데 달력이 바뀐다. 되짚지 못한 옛 글자면 null 이라 건드리지 않는다.
+            // **가족 알람은 여기 오지 않는다**(위 `!familyAlarmMode`) — 받는 사람의 지역이다.
+            val savedRegion = dynamicPromptPreferences.weatherRegion
+            if (savedRegion != null && savedRegion.key != previousRegion?.key) {
+                scope.launch {
+                    com.alarmtalk.app.data.WeatherRegionHolidaySync.onRegionSaved(
+                        com.alarmtalk.app.data.HolidayCountryPreferenceStore(appContext),
+                        savedRegion,
+                    )
+                }
+            }
         }
         if (
             !familyAlarmMode &&
@@ -1554,7 +1576,16 @@ internal fun AlarmEditorScreen(
             shouldSyncOwnDynamicPromptSettings = true
         }
         if (shouldSyncOwnDynamicPromptSettings) {
-            onUpdateDynamicPromptSettings(dynamicPromptPreferences.toDynamicPromptSettings())
+            // 계정에 올리는 것은 **서버 값과 다를 때만**이다 — 날씨 종류만 다시 골라도 이 자리를 지나므로,
+            // 매번 올리면 문구 화면을 나올 때마다 같은 값으로 PATCH 한다. iOS `DynamicPromptPreferences.editorUpdate`
+            // 의 `needsUpload` 와 같다.
+            // ⚠ 같을 때 **'안 올라간 변경' 표시를 내리지 말 것**(Codex #837). 세션의 서버 값은 아직 끝나지 않은 앞
+            // 요청(A→B 의 B)을 모른다 — B 를 올리는 사이 A 로 되돌리면 여기서는 '같다' 로 보이는데, 표시를 내리면
+            // B 가 끝나 세션이 B 가 된 뒤 받아 적기가 표시 없이 B 를 이 기기에 적어 A 가 사라진다. 표시를 두면
+            // 받아 적기가 A 를 다시 올리고, 정말 같았으면 다음 응답에서 표시만 내린다(`adoptAccountSettings`).
+            if (dynamicPromptPreferences != authSession?.user?.dynamicPromptSettings?.toPromptPreferences()) {
+                onUpdateDynamicPromptSettings(dynamicPromptPreferences.toDynamicPromptSettings())
+            }
         }
         // 방금 비운 버킷을 다시 붙이라고 스톡 클립 효과를 깨운다(위 `stockClipRebindTick` 주석).
         stockClipRebindTick++

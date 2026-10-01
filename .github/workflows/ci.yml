@@ -110,6 +110,14 @@ jobs:
       - name: Check auth email contract
         run: python3 scripts/check-auth-email-contract.py
 
+      # 날씨 지역 목록의 원본은 `packages/shared/src/weather-regions.json` 하나다. 두 앱은
+      # TypeScript 를 못 쓰니 생성 파일(안드로이드 `WeatherRegions.kt`·리소스, iOS
+      # `WeatherRegions.generated.swift`)을 쓰는데, JSON 만 고치고 다시 만들지 않으면 서버와
+      # 앱이 같은 옛 값을 다른 지역으로 읽는다. 예전 도시 목록은 손으로 맞춘 세 벌이었고
+      # 실제로 갈라져 있었다(영어 목록은 비어 있었다).
+      - name: Check generated weather region files match the catalog
+        run: python3 scripts/gen-weather-regions.py --check
+
       # 유닛 테스트가 호스트 앱 프로세스에서 도는 탓에, 저장 위치를 손으로 조립하면
       # **사용자가 쓰는 그 파일**을 잡는다. 실제로 기기에서 테스트를 돌릴 때마다
       # 로그인·알람·기본 목소리 클립이 지워지고 있었다(2026-08-19). 테스트는 초록으로

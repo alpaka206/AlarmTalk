@@ -42,6 +42,12 @@ struct FamilyAlarmQuietWindow: Codable, Equatable {
 struct DynamicPromptWeatherSettings: Codable, Equatable {
     var country: String?
     var city: String?
+    /// 날씨 지역 키(`kr-seoul`·`jp-aichi`·`us-new-york` — `WeatherRegions`). 2026-09-30 추가.
+    ///
+    /// 서버는 알맞은 키를 받으면 `country`·`city` 를 옛 앱용 표준 글자로 덮고, 모르는 키면 이
+    /// 칸만 버린다(PATCH 전체를 400 으로 막지 않는다 — 운세가 같은 payload 에 실린다).
+    /// 옛 서버는 모르는 칸이라 무시한다. 읽을 때는 되짚히는 옛 값에도 이 키를 채워 준다.
+    var region: String? = nil
 }
 
 struct DynamicPromptFortuneSettings: Codable, Equatable {
@@ -60,7 +66,8 @@ struct DynamicPromptSettings: Codable, Equatable {
     ) {
         self.weather = DynamicPromptWeatherSettings(
             country: (weather.country).nilIfBlank,
-            city: (weather.city).nilIfBlank
+            city: (weather.city).nilIfBlank,
+            region: (weather.region).nilIfBlank
         )
         self.fortune = DynamicPromptFortuneSettings(
             gender: (fortune.gender).nilIfBlank,
@@ -117,10 +124,18 @@ struct DynamicPromptPreferences: Codable, Equatable {
         return "\(legacyStorageKey)_\(userID)"
     }
 
+    /// 서버 계정 설정 → 이 앱이 쓰는 모양.
+    ///
+    /// ⚠ **`region` 이 알맞으면 글자보다 먼저다.** 그 키의 옛 앱용 표준 글자로 채운다 — 서버도
+    /// 저장할 때 같은 일을 하므로 보통은 같은 값이지만, 키와 글자가 어긋나 오면 키가 이긴다
+    /// (`WeatherRegions.normalizeSetting` 과 같은 우선순위).
     static func from(settings: DynamicPromptSettings?) -> DynamicPromptPreferences {
-        DynamicPromptPreferences(
-            weatherCountry: settings?.weather.country?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "",
-            weatherCity: settings?.weather.city?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "",
+        let regionLabels = WeatherRegions.canonicalLabels(key: settings?.weather.region)
+        return DynamicPromptPreferences(
+            weatherCountry: regionLabels?.country
+                ?? settings?.weather.country?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "",
+            weatherCity: regionLabels?.city
+                ?? settings?.weather.city?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "",
             fortuneGender: settings?.fortune.gender?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "",
             fortuneBirthDate: settings?.fortune.birthDate?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "",
             fortuneBirthTime: settings?.fortune.birthTime?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -153,24 +168,32 @@ struct DynamicPromptPreferences: Codable, Equatable {
     }
 
     /// Keychain 에 계정별로 저장한다.
-    func save(userID: String?) {
+    /// - Returns: 키체인에 적었는가. ⚠ '안 올라간 변경' 표시는 적었을 때만 남긴다(`saveLocalEdit`).
+    @discardableResult
+    func save(userID: String?) -> Bool {
         guard let key = Self.storageKey(userID: userID),
-              let data = try? JSONEncoder().encode(normalized()) else { return }
-        KeychainStore.saveData(data, account: key)
+              let data = try? JSONEncoder().encode(normalized()) else { return false }
+        return KeychainStore.saveData(data, account: key)
     }
 
     /// 명시적 로그아웃·탈퇴에서만 부른다(자동 401 에서는 부르지 말 것 — 같은 사람이
     /// 다시 로그인할 때 자기 사주를 다시 입력하게 된다).
     static func clear(userID: String?) {
+        // '아직 안 올라간 변경' 표시도 함께 — 값이 없는데 표시만 남으면 다시 로그인했을 때 빈 기기 값이
+        // 서버를 이긴다(`adoptAccount`).
+        clearUnsyncedMark(userID: userID)
         guard let key = storageKey(userID: userID) else { return }
         KeychainStore.deleteData(account: key)
     }
 
+    /// 서버로 보낼 모양. 지역 키는 저장된 글자에서 되짚어 **함께** 보낸다(`region`) — 글자도
+    /// 계속 보낸다(새 서버가 배포되기 전 창과 옛 서버 호환). 못 되짚는 옛 글자면 키 없이 글자만 간다.
     func toSettings() -> DynamicPromptSettings {
         DynamicPromptSettings(
             weather: DynamicPromptWeatherSettings(
                 country: (weatherCountry).nilIfBlank,
-                city: (weatherCity).nilIfBlank
+                city: (weatherCity).nilIfBlank,
+                region: weatherRegion?.key
             ),
             fortune: DynamicPromptFortuneSettings(
                 gender: (fortuneGender).nilIfBlank,
@@ -182,6 +205,12 @@ struct DynamicPromptPreferences: Codable, Equatable {
 
     var weatherReady: Bool {
         (weatherCountry).nilIfBlank != nil && (weatherCity).nilIfBlank != nil
+    }
+
+    /// 저장된 글자가 가리키는 지역. 되짚지 못한 옛 글자면 nil(그래도 `weatherReady` 일 수 있다 —
+    /// 그 값은 서버의 엄격한 옛 경로로 계속 돈다).
+    var weatherRegion: WeatherRegion? {
+        WeatherRegions.resolveAlias(country: weatherCountry, city: weatherCity)
     }
 
     var fortuneReady: Bool {

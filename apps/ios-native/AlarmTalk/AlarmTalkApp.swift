@@ -177,20 +177,8 @@ struct AlarmTalkApp: App {
                         // AlarmAppContext.holidayPredicate·timezone 재무장과 동일한 공휴일
                         // 집합을 본다 (Android 단일 holidayCalendarStore parity).
                         alarmKit.configure(holidayStore: holidayStore)
-                        // Phase 2: 공휴일 국가가 바뀌면 활성 공휴일off 알람을 재계산+재무장한다.
-                        // (선택 국가의 공휴일 집합 기준으로 다음 발화 시각이 달라질 수 있으므로
-                        // timezone 변경과 동일하게 forceHolidayOffRecompute 로 강제.)
-                        holidayStore.onCountryChanged = { [weak alarmKit, weak alarmStore] in
-                            guard let alarmKit, let alarmStore else { return }
-                            Task { @MainActor in
-                                guard alarmStore.hasLoadedFromDisk else { return }
-                                await alarmKit.recoverScheduledAlarms(
-                                    store: alarmStore,
-                                    ownerUserId: BackgroundDependencies.shared.auth.session?.user.id,
-                                    forceHolidayOffRecompute: true
-                                )
-                            }
-                        }
+                        // 공휴일 달력이 바뀌면 공휴일off 알람을 다시 거는 일은 아래
+                        // `.onChange(of: holidayOffRescheduleKey)` 가 한다(`HolidayOffRescheduler`).
                         await auth.restoreSession()
                         await alarmKit.startObserving(store: alarmStore)
 
@@ -345,6 +333,40 @@ struct AlarmTalkApp: App {
                         guard auth.session != nil, !owned.isEmpty else { return }
                         stockClipPrefetcher.start(session: auth.session, ownedVoiceProfileIDs: owned)
                     }
+                    // **계정 설정(지역·사주)을 이 기기에 받아 적는다**(2026-09-30, 스펙 voice-and-message.md
+                    // 「계정의 지역·사주는 기기에 받아 적는다」). 로그인·`/auth/me`·설정 저장 응답이 모두 여기로
+                    // 온다(콜드 스타트의 세션 복원은 `initial`). 규칙은 `DynamicPromptPreferences.adoptAccount`
+                    // 한 곳이고, 안드로이드 `AlarmTalkApp` 의 `LaunchedEffect` → `onAccountPromptSettingsReceived`
+                    // 와 같다:
+                    //  - 받아들였으면 공휴일 국가를 계정 지역의 나라로 맞춘다(스펙 alarm-lifecycle.md 「공휴일
+                    //    국가는 지역의 나라다」 — 업데이트 직후 옛 '공휴일 달력' 행에서 직접 고른 나라는 지역이
+                    //    바뀌기 전까지 둔다, `HolidayStore.countryForAccountRegion`).
+                    //  - 이 기기에 아직 안 올라간 변경이 있으면 덮지 않고 **다시 올린다.** 공휴일 국가도 서버의
+                    //    옛 지역을 따르지 않는다 — 화면의 지역과 달력의 나라가 갈라진다.
+                    .onChange(of: accountPromptSettingsKey, initial: true) { _, key in
+                        guard let userID = key.userID, let settings = key.settings else { return }
+                        let adoption = DynamicPromptPreferences.adoptAccount(userID: userID, server: settings)
+                        // 날씨 묶음을 받아들였으면(사주만 밀렸어도) 공휴일 국가도 따른다 — **받아 적은 뒤의 이 기기
+                        // 지역**으로(서버의 날씨가 비어 이 기기 값을 뒀을 수 있다, `acceptsWeather` 주석). 기기에 못
+                        // 적었으면(`.localWriteFailed`) 달력도 옮기지 않는다 — 다음 계정 응답에 다시 받아 적는다.
+                        if adoption.acceptsWeather {
+                            holidayStore.adoptCountry(
+                                ofAccountWeatherRegion: DynamicPromptPreferences.load(userID: userID).weatherRegion?.key,
+                                userID: userID
+                            )
+                        }
+                        if case .localPending(let local, _) = adoption {
+                            Task { await auth.updateProfile(dynamicPromptSettings: local) }
+                        }
+                    }
+                    // **공휴일 달력이 바뀌면 공휴일off 알람을 다시 건다**(`HolidayOffRescheduler`).
+                    // 나라가 바뀌었을 때(위 계정 지역·설정·편집기에서 고른 지역)와 JP·US 공휴일을 서버에서
+                    // 받아 왔을 때 표지가 바뀐다. 알람 저장소를 읽기 전·로그인 전에는 판단을 미루고, 그것이
+                    // 갖춰지면 키가 바뀌어 다시 온다 — 예전 콜백(`onCountryChanged`)은 그 두 경우에 조용히
+                    // 버려져 다음 한 번이 옛 달력으로 울렸다. 멱등이라 몇 번 불려도 달력 하나에 한 번만 돈다.
+                    .onChange(of: holidayOffRescheduleKey, initial: true) { _, _ in
+                        Task { @MainActor in await runHolidayOffRescheduleIfNeeded() }
+                    }
                     // 목소리를 지우면 그 목소리로 걸어 둔 예약도 곧바로 걷어낸다 —
                     // 파기 대상 생체정보가 알람에 남아 있으면 안 된다.
                     .task(id: voiceStudio.scheduleReconcileRevision) {
@@ -489,10 +511,19 @@ struct AlarmTalkApp: App {
                     // 전경 복귀에서도 한 번 — 로그아웃 직후 실패한 취소를 여기서 만회한다.
                     await alarmKit.retryPendingCancellations(store: alarmStore)
                     await alarmKit.recoverScheduledAlarms(store: alarmStore, ownerUserId: auth.session?.user.id)
+                    // 공휴일off 다시 걸기가 지난번에 다 못 했으면(다른 복구와 겹쳐 건너뛰었거나 계정을 떠나는 중이었다)
+                    // 여기서 다시 본다 — 표지가 같으면 곧바로 돌아간다(Codex #837). 위 복구가 끝난 **뒤**라 겹치지 않는다.
+                    await runHolidayOffRescheduleIfNeeded()
                 }
                 // 밀린 사용 기록을 올려 본다 — 앱을 열 때가 유일하게 확실한 기회다
                 // (울림 경로에서는 네트워크를 부르지 않으므로).
                 Task { await UsageEventUploader.shared.flush(session: auth.session) }
+                // 지역의 나라(JP·US) 공휴일을 아직 못 받았으면 여기서 다시 받아 본다(Codex #837). 받으면 달력
+                // 표지가 `:pending` 에서 바뀌어 공휴일off 알람을 다시 건다(`HolidayOffRescheduler`). 콜드 스타트·
+                // 나라 변경 때만 받으면, 그때 오프라인이던 기기는 앱을 다시 띄울 때까지 빈 달력으로 잡힌 예약에
+                // 남는다. 이미 받았으면 곧바로 돌아간다(`ensureSynced`). 안드로이드는 `MainViewModel` 이 진입마다
+                // `refreshHolidayOffAlarms` 를 다시 부른다.
+                Task { await holidayStore.ensureSynced(countryCode: holidayStore.selectedCountryCode) }
                 // 빠진 테마 클립을 보충한다. 이미 캐시된 것은 건너뛰므로 값이 싸고,
                 // 콜드 스타트에서 실패했거나 캐시가 정리된 경우를 여기서 메운다.
                 // 안드로이드는 앱 시작마다 `prefetchStockClips()` 로 같은 일을 한다.
@@ -898,6 +929,51 @@ struct AlarmTalkApp: App {
                 forceHolidayOffRecompute: true
             )
         }
+    }
+
+    /// 공휴일 달력이 바뀌었으면 공휴일off 알람을 다시 건다(`HolidayOffRescheduler` — 멱등, 계정별 표지).
+    /// 표지 축이 바뀔 때(`holidayOffRescheduleKey`)와 전경 복귀 때 부른다 — 뒤의 것은 지난번에 다 못 한 경우의 재시도다.
+    @MainActor
+    private func runHolidayOffRescheduleIfNeeded() async {
+        await HolidayOffRescheduler.shared.runIfNeeded(
+            currentMarker: {
+                guard alarmStore.hasLoadedFromDisk,
+                      let owner = auth.session?.user.id,
+                      let calendar = holidayStore.holidayCalendarMarker else { return nil }
+                return HolidayOffRescheduler.ownerScopedMarker(ownerUserID: owner, calendarMarker: calendar)
+            },
+            recompute: {
+                await alarmKit.recomputeHolidayOffAlarms(store: alarmStore, ownerUserId: auth.session?.user.id)
+            }
+        )
+    }
+
+    /// 계정 설정을 받아 적을 때 — 계정과 그 계정의 설정, 그리고 **계정 응답**이 축이다(계정이 바뀌면 설정이
+    /// 같아도 다시 본다). ⚠ 응답 순번(`AuthViewModel.accountAnswerRevision`)을 빼지 말 것 — 올리기가 실패한 뒤
+    /// 서버가 같은 옛 값을 다시 주면 값만으로는 다시 돌지 않아, 밀린 변경이 앱을 다시 띄울 때까지 안 올라간다
+    /// (Codex #837). 받아 적기는 멱등이다.
+    private struct AccountPromptSettingsKey: Equatable {
+        var userID: String?
+        var settings: DynamicPromptSettings?
+        var answerRevision: Int
+    }
+
+    private var accountPromptSettingsKey: AccountPromptSettingsKey {
+        AccountPromptSettingsKey(
+            userID: auth.session?.user.id,
+            settings: auth.session?.user.dynamicPromptSettings,
+            answerRevision: auth.accountAnswerRevision
+        )
+    }
+
+    /// 공휴일off 알람을 다시 걸지 볼 때 — 달력 표지(나라·JP·US 공휴일 도착), 알람 저장소 로드, 계정이 축이다.
+    /// 뒤 둘이 갖춰지기 전의 판단은 미뤄지므로(`HolidayOffRescheduler`) 갖춰지는 순간 다시 와야 한다.
+    private var holidayOffRescheduleKey: String {
+        [
+            holidayStore.holidayCalendarMarker ?? "-",
+            alarmStore.hasLoadedFromDisk ? "loaded" : "loading",
+            auth.session?.user.id ?? "-",
+        ].joined(separator: "|")
     }
 
     /// 선다운로드·재바인딩을 다시 돌려야 하는 시점. 계정과 **기기 언어**가 축이다.

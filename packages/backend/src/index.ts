@@ -581,6 +581,28 @@ async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext)
   // (push 제거 후 남아 있던 '발사 대상 스캔+로그' 블록도 정리 — 소비자 없는 알람 테이블 풀스캔이
   //  틱마다 Turso row-read 만 소모했다.)
 
+  // 지역별 날씨 미리 계산(`lib/weather-region-daily.ts`, `docs/spec/voice-and-message.md` 5-1).
+  // 매시 첫 틱에만 들여다보고, 3시간 안에 계산한 지역은 건너뛴다 — 도는 틱의 subrequest 는
+  // 조회 1 + Open-Meteo 최대 6(50곳 묶음 × 예보·대기질) + 쓰기 최대 3 이다.
+  // 클론 드레인(아래)**보다 먼저** 둔다: 그쪽은 subrequest 가 모자라면 스스로 멈추고 다음 틱에
+  // 잇지만, 여기는 한 번 놓치면 한 시간 뒤라서다(그 사이는 읽기 경로가 즉석 계산으로 메운다).
+  try {
+    const { isWeatherRegionRefreshSlot, refreshWeatherRegionDaily } = await import(
+      './lib/weather-region-daily'
+    );
+    if (isWeatherRegionRefreshSlot(now)) {
+      const { openMeteoApiKey } = await import('./lib/weather-fetch');
+      const result = await refreshWeatherRegionDaily(db, now, {
+        openMeteoApiKey: openMeteoApiKey(env),
+      });
+      if (result.due > 0) {
+        logStructured('info', { at: 'scheduled.weather_region_daily', ...result });
+      }
+    }
+  } catch (err) {
+    captureCron('scheduled.weather_region_daily', err);
+  }
+
   // ⚠⚠ **기본(시스템) 목소리 스톡 클립 드레인은 껐다**(2026-09-03 리뷰 15차).
   //
   // 7차에 이걸 붙인 이유는 "교체가 배포되는 순간 기본 목소리에 클립이 0개가 된다" 였다.

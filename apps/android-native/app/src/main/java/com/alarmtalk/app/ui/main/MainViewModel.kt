@@ -829,7 +829,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         internal set
 
     private val defaultVoiceStore = com.alarmtalk.app.data.DefaultVoicePreferenceStore(application)
-    private val dynamicPromptStore = com.alarmtalk.app.data.DynamicPromptPreferenceStore(application)
+    internal val dynamicPromptStore = com.alarmtalk.app.data.DynamicPromptPreferenceStore(application)
+
+    /** 계정 설정(지역·사주) 올리기를 한 번에 하나씩 — `updateDynamicPromptSettings`. */
+    internal val promptSettingsUploads = com.alarmtalk.app.data.PromptSettingsUploadQueue()
+
+    /**
+     * 계정 설정 올리기가 **끝났을 때** 이미 떠 있던 계정 요청의 마지막 순번. 그 이하의 `/auth/me` 응답은 올리기 전의
+     * 설정을 읽었을 수 있어 설정만은 지금 세션의 값을 지킨다(`accountAnswerSettings`, Codex #837).
+     */
+    internal var promptSettingsAnswerFence: Long = 0L
+
+    /** 공휴일 국가(앱 전역). 값은 계정 지역의 나라를 따른다 — `onAccountPromptSettingsReceived`. */
+    internal val holidayCountryStore = com.alarmtalk.app.data.HolidayCountryPreferenceStore(application)
 
     // 첫 로그인 "목소리 고르기" 스텝 표시 여부. 기본 목소리를 아직 안 고른 사용자에게만 1회.
     var showVoiceSetup by mutableStateOf(false)
@@ -1609,6 +1621,39 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 Log.i(TAG, "Startup alarm sync complete scheduled=$scheduled")
             }.onFailure { error ->
                 AlarmTalkLog.reportError("Startup alarm sync failed", error)
+            }
+        }
+        // 공휴일 국가가 바뀌면 '공휴일엔 끄기' 알람을 새 달력으로 다시 잡는다
+        // (`AlarmRepository.refreshHolidayOffAlarms`). 국가를 적는 자리는 셋(설정 '지역'·편집기
+        // 문구 화면·계정 설정 수신)인데, 호출부마다 붙이면 하나가 빠진다 — 값의 흐름 한 곳에서 본다.
+        // ⚠ **첫 값도 받는다.** 앱을 켤 때마다 한 번 돈다: 지난 실행에서 국가만 바뀌고 다시 잡기
+        // 전에 프로세스가 죽었거나, KR 밖 나라의 공휴일 캐시가 비어 있어도(받는 길이 이것뿐이다)
+        // 여기서 메운다. 멱등이라 바뀐 게 없으면 행을 쓰지 않는다.
+        // ⚠ **그 나라의 달력을 못 받았으면 앱에 들어올 때마다 다시 본다**(Codex #837). 오프라인에서 JP·US 로
+        // 바뀌면 빈 달력으로 잡히는데(안전한 쪽 — 공휴일에 울릴 뿐), 나라 값은 다시 흐르지 않으므로 진입
+        // 번호(`AppSignals.appEntries`)도 축에 둔다. 받은 뒤로는 같은 나라에서 다시 돌지 않는다.
+        // ⚠ **계정도 축이다**(Codex #837). 다시 잡기는 지금 계정의 알람만 보므로, 나라만 보면 한 기기의 앞 계정이
+        // 같은 나라로 이미 잡아 둔 뒤 들어온 계정의 알람은 옛 달력의 날짜로 남는다(iOS 표지도 계정을 싣는다 —
+        // `HolidayOffRescheduler.ownerScopedMarker`).
+        viewModelScope.launch {
+            var calendarReadyFor: Pair<String, String?>? = null
+            kotlinx.coroutines.flow.combine(
+                holidayCountryStore.countryCode,
+                com.alarmtalk.app.core.AppSignals.appEntries,
+                androidx.compose.runtime.snapshotFlow { authSession?.user?.id },
+            ) { country, _, owner -> country to owner }.collect { calendar ->
+                val (country, _) = calendar
+                if (calendar == calendarReadyFor) return@collect
+                runCatching { repository.refreshHolidayOffAlarms() }
+                    .onSuccess { result ->
+                        calendarReadyFor = calendar.takeIf { result.calendarReady }
+                        Log.i(
+                            TAG,
+                            "Holiday calendar applied country=$country scheduled=${result.scheduled} " +
+                                "ready=${result.calendarReady}",
+                        )
+                    }
+                    .onFailure { error -> AlarmTalkLog.reportError("Holiday calendar refresh failed", error) }
             }
         }
         // 결제 직후 앱 종료 등으로 서버 검증이 누락된 Play 구매를 앱 시작 시 재전송.

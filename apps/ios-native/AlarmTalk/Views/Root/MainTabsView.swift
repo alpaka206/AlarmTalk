@@ -186,7 +186,7 @@ struct MainTabsView: View {
             // 이 `currentTab != null` 을 보므로 탭이 아닌 목적지에서는 크롬을 내린다.
             //
             // ⚠ 바텀시트로 남겨 둔 것들과 헷갈리지 말 것. 「누구를 깨울까요?」·목소리
-            // 고르기·화면 테마·공휴일 국가·날씨 지역은 **안드로이드도 바텀시트**
+            // 고르기·화면 테마·지역은 **안드로이드도 바텀시트**
             // (`WakerSelectionSheet`)라 그대로 둔다.
             .navigationDestination(item: $editorTarget) { target in
                 AlarmEditorSheet(

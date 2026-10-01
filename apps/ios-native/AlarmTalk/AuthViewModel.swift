@@ -234,6 +234,42 @@ final class AuthViewModel: ObservableObject {
     /// 않게. 전경 무료 잠금의 오프라인 차단 갈래(`PaidVoiceGate.freePlanLockMayApply`)가 기다린다.
     @Published private(set) var planAnsweredEntry = 0
 
+    /// 계정 응답(`/auth/me`·로그인·가입)을 세션에 적을 때마다 하나씩 오른다 — **값이 같아도.**
+    ///
+    /// 계정 설정 받아 적기(`AlarmTalkApp` 의 `accountPromptSettingsKey`)의 축이다. 설정 값만 축으로 두면,
+    /// 이 기기의 변경을 올리다 실패한 뒤 서버가 **같은 옛 값**을 다시 줄 때 다시 돌지 않아 밀린 변경이 앱을
+    /// 다시 띄울 때까지 올라가지 않는다(Codex #837). 받아 적기는 멱등이라 몇 번 돌아도 된다.
+    /// 안드로이드는 세션 저장소의 응답 순번(`AuthSession.accountAnswerSeq` → `accountSettingsReceipt`)이 같은 일을 한다.
+    /// 설정 화면도 같은 축을 본다(`SettingsView.PromptObservation`).
+    @Published private(set) var accountAnswerRevision = 0
+
+    /// 계정 설정(지역·사주) 올리기가 **끝났을 때** 이미 떠 있던 계정 요청의 마지막 순번. 그 이하의 `/auth/me` 응답은
+    /// 올리기 전의 설정을 읽었을 수 있어 **설정만** 지금 세션의 값을 지킨다(Codex #837) — 올리기가 끝나 '안 올라간
+    /// 변경' 표시를 내린 뒤라, 그 옛 값을 쓰면 받아 적기가 방금 고른 지역을 되돌린다. 안드로이드
+    /// `MainViewModel.promptSettingsAnswerFence`·`fencedAccountSettings` 와 같다.
+    private var promptSettingsAnswerFence = 0
+
+    /// 앞 올리기가 도는 사이(`isBusy`) 들어와 받지 못한 계정 설정 올리기가 있었다(Codex #837). 앞 올리기가 끝나면
+    /// 밀린 표시를 보고 **한 번 더** 올린다(`retryPendingPromptSettings`) — 안 그러면 그 변경은 다음 계정 응답까지
+    /// 기기에만 남는다(그 사이 확인 조회가 부르는 재시도도 같은 `isBusy` 에 막힌다). 안드로이드는 올리기 줄
+    /// (`PromptSettingsUploadQueue`)이 같은 일을 한다.
+    private var promptSettingsRetryPending = false
+
+    /// **로그인 세션의 번호** — 세션이 끝나거나(`signOut`) 새로 시작될 때(`adoptSignedInSession`)만 오른다.
+    ///
+    /// 오래 걸린 요청이 응답을 적기 직전에 "내가 보낸 그 세션이 아직인가" 를 가른다(Codex #837 11차). 계정 id 로는
+    /// 로그아웃 뒤 **같은 계정**으로 다시 들어온 것을 못 가르고, 토큰으로는 같은 세션 안의 rolling refresh 를 세션
+    /// 전환으로 잘못 읽는다. 안드로이드 `AuthSessionStore.sessionGeneration` 과 같은 자리다.
+    private var sessionRevision: UInt = 0
+
+    /// **이 계정을 떠나기 시작했다**(명시적 로그아웃·탈퇴). 세션 번호를 곧바로 올려, 떠 있던 계정 설정 올리기의
+    /// 응답이 떠나는 계정의 세션·기기 값에 다시 적히지 않게 한다(`updateProfile` 의 `requestSessionRevision`).
+    /// ⚠ `signOut` 은 알람 정리를 기다린 **뒤에야** 불린다 — 거기서만 올리면 그 사이(최대 수 초) 도착한 응답이
+    /// 통과한다. 안드로이드는 세션을 먼저 비우고(`clear` → 세대) 기기 값을 나중에 지워 같은 창이 없다.
+    private func beginLeavingAccount() {
+        sessionRevision &+= 1
+    }
+
     /// 계정 요청 하나의 표 — `/auth/me`·로그인을 **보내기 직전에** 뜬다(`beginAccountRequest`).
     /// 안드로이드 `AccountRequest`(`ui/billing/PersonalPromoLedger.kt`)와 같은 모양이다.
     struct AccountRequest: Equatable {
@@ -294,6 +330,7 @@ final class AuthViewModel: ObservableObject {
     /// (도착한 진입이 보낸 진입과 같으면 그 사이 백그라운드를 거치지 않았다).
     private func recordAccountAnswer(_ request: AccountRequest) {
         if request.seq > accountAnswerSeq { accountAnswerSeq = request.seq }
+        accountAnswerRevision &+= 1
         noteEntryOutcome(request, .answered)
         if let entry = entryOfArrival(request) { planAnsweredEntry = entry }
     }
@@ -806,6 +843,8 @@ final class AuthViewModel: ObservableObject {
             // 로그인 확정 — 자동 만료 표시를 내린다(`SessionExpiryStore` 주석).
             SessionExpiryStore.clear()
         }
+        // 새 로그인 세션이다 — 앞 세션에 보낸 요청의 응답은 이 세션에 적지 않는다(`sessionRevision`).
+        sessionRevision &+= 1
         // 확정이 끝난 뒤에 세션을 공개한다.
         persistSession(nextSession)
         recordAccountAnswer(accountRequest)
@@ -1010,6 +1049,10 @@ final class AuthViewModel: ObservableObject {
                 merged.plan = current.user.plan
                 merged.personalPromo = current.user.personalPromo
             }
+            // 계정 설정 올리기가 끝나기 전에 보낸 요청이면 **설정만** 지금 세션의 값을 지킨다(`promptSettingsAnswerFence`).
+            if accountRequest.seq <= promptSettingsAnswerFence, let current = session {
+                merged.dynamicPromptSettings = current.user.dynamicPromptSettings
+            }
             let wasPendingDeletion = pendingDeletion || session?.user.isPendingDeletion == true
             if wasPendingDeletion, merged.deletionStatus != "active", !merged.isPendingDeletion {
                 throw APIError.invalidResponse
@@ -1202,12 +1245,25 @@ final class AuthViewModel: ObservableObject {
         // 평일 09:00-18:30 을 되살려, 사용자가 방해금지를 전부 없애도 서버에는 다시
         // 생겼다 — "껐는데 계속 막힌다" 가 된다. 레거시 3필드는 창이 없으면 nil 이다.
         let firstQuietWindow = normalizedQuietWindows?.first
-        guard !isBusy else { return }
+        guard !isBusy else {
+            // ⚠ 계정 설정(지역·사주)은 버리지 않는다 — 앞 올리기가 끝난 뒤 밀린 표시를 보고 다시 올린다.
+            if dynamicPromptSettings != nil { promptSettingsRetryPending = true }
+            return
+        }
         isBusy = true
-        defer { isBusy = false }
+        defer {
+            isBusy = false
+            if promptSettingsRetryPending {
+                promptSettingsRetryPending = false
+                Task { await self.retryPendingPromptSettings() }
+            }
+        }
 
+        let requestUserID = session?.user.id
+        // 보낸 세션 — 응답을 적기 전에 대조한다(`sessionRevision`).
+        let requestSessionRevision = sessionRevision
         do {
-            _ = try await api.updateProfile(
+            let response = try await api.updateProfile(
                 UpdateProfileRequest(
                     name: name,
                     allowFamilyAlarms: allowFamilyAlarms,
@@ -1219,10 +1275,49 @@ final class AuthViewModel: ObservableObject {
                 ),
                 token: token
             )
+            // ⚠ **세션을 갈아 끼우기(`refreshUser`) 전에** '아직 안 올라간 변경' 표시를 내린다 — 새 세션을
+            // 받는 순간 `AlarmTalkApp` 이 계정 설정을 받아 적는데(`DynamicPromptPreferences.adoptAccount`),
+            // 그때 표시가 남아 있으면 방금 올린 값을 한 번 더 올린다. 안드로이드 `updateDynamicPromptSettings` 와 같다.
+            // ⚠ **보낸 세션이 그대로일 때만 받는다**(Codex #837 11차). 계정 id 만 보면 로그아웃 뒤 같은 계정으로 다시
+            //   들어온 새 세션에 앞 세션의 응답이 적힌다 — 새 세션의 '안 올라간 변경' 표시를 내리고, 새 세션에 떠 있는
+            //   조회를 울타리로 가리고, 옛 설정을 세션에 적는다. 세션이 바뀌었으면 확인 조회도 하지 않는다 — 새 세션은
+            //   자기 로그인 응답으로 이미 받아 적었다. 안드로이드 `uploadDynamicPromptSettings` 의 세대 대조와 같다.
+            guard sessionRevision == requestSessionRevision else { return }
+            if let dynamicPromptSettings, let current = session, current.user.id == requestUserID {
+                // ⚠ **표시를 내리기 전에 울타리를 세운다**(Codex #837). 지금 떠 있는 `/auth/me` 는 올리기 **전의**
+                // 설정을 읽었을 수 있다 — 그 응답이 아래 확인 조회보다 늦게 오면 옛 설정으로 세션을 되돌리고, 표시가
+                // 없으니 받아 적기가 그 옛 값을 이 기기에 적는다. 울타리 이하의 응답은 설정만 지금 세션의 값을 지키고
+                // (`refreshUserApplyingToken`), 그 값이 올린 값이 되도록 세션에도 곧바로 적는다(표시를 내린 뒤).
+                promptSettingsAnswerFence = accountRequestSeq
+                DynamicPromptPreferences.markPushed(userID: current.user.id, pushed: dynamicPromptSettings)
+                var updated = current
+                updated.user.dynamicPromptSettings = response.dynamicPromptSettings ?? dynamicPromptSettings
+                persistSession(updated)
+            }
             await refreshUser()
         } catch {
+            // 끝난 세션의 실패를 새 세션에 띄우지 않는다(위 `requestSessionRevision`).
+            guard sessionRevision == requestSessionRevision else { return }
             failStatus(userFacingErrorMessage(error, fallback: "프로필을 저장하지 못했어요"))
         }
+    }
+
+    /// 앞 올리기가 도는 사이 받지 못한 계정 설정을 다시 올린다 — **지금의** 밀린 표시와 기기 값으로 정한다
+    /// (밀린 묶음은 이 기기 값, 나머지는 세션의 서버 값 — `DynamicPromptPreferences.adoptAccount`). 밀린 것이 없으면
+    /// (앞 올리기가 같은 값을 이미 올렸다) 아무것도 하지 않는다.
+    private func retryPendingPromptSettings() async {
+        guard let session, DynamicPromptPreferences.hasUnsyncedChange(userID: session.user.id) else { return }
+        let settings: DynamicPromptSettings
+        if let server = session.user.dynamicPromptSettings {
+            guard case .localPending(let local, _) = DynamicPromptPreferences.adoptAccount(
+                userID: session.user.id,
+                server: server
+            ) else { return }
+            settings = local
+        } else {
+            settings = DynamicPromptPreferences.load(userID: session.user.id).toSettings()
+        }
+        await updateProfile(dynamicPromptSettings: settings)
     }
 
     // ⚠ **기본 방해금지 창을 되살리지 말 것**(2026-08-08 삭제). 방해금지는 사용자가
@@ -1263,6 +1358,7 @@ final class AuthViewModel: ObservableObject {
             // 오프라인·5xx 로 실패했을 때도 표시가 살아남아, **다음 실행이 계정이 멀쩡한
             // 사용자를 로그아웃시키고 알람까지 끈다.**
             PendingSignOutStore.mark(currentUserID)
+            beginLeavingAccount()
             if let currentUserID, !currentUserID.isEmpty {
                 accessSnapshotStore.clear(userID: currentUserID)
                 clearAccountPreferences(currentUserID)
@@ -1270,6 +1366,8 @@ final class AuthViewModel: ObservableObject {
             // ⚠ 탈퇴도 로그아웃과 같다 — 계정을 떠났는데 알람이 울리면 안 된다.
             let cleaned = await onLeaveAccountStopAlarms(currentUserID)
             signOut(message: "회원 탈퇴가 완료됐어요.")
+            // 세션을 비운 뒤 한 번 더 — 알람 정리를 기다리는 사이 받아 적힌 값을 지운다(`signOutExplicitly` 주석).
+            if let currentUserID, !currentUserID.isEmpty { clearAccountPreferences(currentUserID) }
             // 탈퇴는 되살릴 계정 자체가 없다 — 자동 만료 표시를 남기지 않는다.
             SessionExpiryStore.clear()
             // ⚠ **뒷정리가 실제로 끝났을 때만** 표시를 내린다(Codex #699 P1). 콜드 스타트에서
@@ -1312,6 +1410,7 @@ final class AuthViewModel: ObservableObject {
                 // 토큰을 다시 등록하므로, 그때는 이 표시가 정리된다.
                 PendingSignOutStore.markServerCleanup(token: token, for: currentUserID)
             }
+            beginLeavingAccount()
             if let currentUserID, !currentUserID.isEmpty {
                 accessSnapshotStore.clear(userID: currentUserID)
                 clearAccountPreferences(currentUserID)
@@ -1329,6 +1428,8 @@ final class AuthViewModel: ObservableObject {
                 message: "회원 탈퇴가 접수됐어요. 30일 안에 다시 로그인하면 취소할 수 있어요.",
                 revokeOnServer: false
             )
+            // 세션을 비운 뒤 한 번 더 — 알람 정리를 기다리는 사이 받아 적힌 값을 지운다(`signOutExplicitly` 주석).
+            if let currentUserID, !currentUserID.isEmpty { clearAccountPreferences(currentUserID) }
             // 탈퇴는 되살릴 계정 자체가 없다 — 자동 만료 표시를 남기지 않는다.
             SessionExpiryStore.clear()
             // 로컬 뒷정리와 푸시 해제가 **둘 다** 끝났을 때만 표시를 내린다.
@@ -1907,6 +2008,7 @@ final class AuthViewModel: ObservableObject {
 
     func signOutExplicitly() {
         let userID = session?.user.id
+        beginLeavingAccount()
         clearAccountPreferences(userID)
         // ⚠ **순서가 중요하다 — 시작만 해 놓으면 소용없다**(2026-08-18 Codex #697 P2).
         // 예전에는 `Task { }` 로 띄우기만 하고 곧바로 `signOut()` 을 불렀는데, 그 안의
@@ -1951,6 +2053,10 @@ final class AuthViewModel: ObservableObject {
             await stopAlarms(departingUserID)
             isBusy = false
             signOut(revokeOnServer: false)
+            // ⚠ **세션을 비운 뒤 한 번 더 지운다**(멱등, Codex #837 검증). 위 알람 정리를 기다리는 동안에도 세션은
+            //   살아 있어, 그 사이 도착한 `/auth/me` 를 앱 루트가 받아 적으면(`AlarmTalkApp` 의 계정 설정 관찰) 떠나는
+            //   계정의 지역·사주가 기기에 다시 적힌다. 세션이 비면 더는 적히지 않는다.
+            clearAccountPreferences(departingUserID)
             // 서버 쪽까지 끝났을 때만 표시를 내린다 — 실패하면 남겨서 다음 실행이 재시도한다.
             // ⚠ 줄에 태운다 — 이 요청이 날아가는 동안 새 로그인이 끝나면 `token_epoch` 가
             // 올라가 **그 새 세션이 죽는다**(`authServerMutation` 주석).
@@ -1998,6 +2104,8 @@ final class AuthViewModel: ObservableObject {
         }
         KeychainStore.deleteSession()
         session = nil
+        // 세션이 끝났다 — 떠 있던 요청의 응답은 다음 세션에 적지 않는다(`sessionRevision`).
+        sessionRevision &+= 1
         pendingDeletion = false
         needsConsent = false
         // 동의 수집 상태도 계정별이다 — 앞 계정의 '받을 게 없음' 이 새 계정에 새면

@@ -69,6 +69,7 @@ const TABLES: Record<string, 'per-user' | 'no-personal-data' | 'retained-pseudon
   promo_codes: 'no-personal-data',
   event_likes: 'no-personal-data', // 랜딩 공개 카운터 — 사용자와 묶지 않는다
   event_slot_cursor: 'no-personal-data',
+  weather_region_daily: 'no-personal-data', // 지역 × 날짜의 날씨 캐시 — 사용자와 묶지 않는다(#123)
   _migrations: 'no-personal-data',
   sqlite_sequence: 'no-personal-data',
 };

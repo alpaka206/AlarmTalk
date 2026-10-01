@@ -36,12 +36,20 @@ import SwiftUI
 /// 안 들어가면 다음 후보로 넘어간다. 그래서 짧은 내용은 자연 높이로, 긴 내용은 스크롤로
 /// 알아서 갈린다 — 우리가 숫자를 다룰 일이 없다.
 struct SheetScrollingContent<Content: View>: View {
-    /// **항상 스크롤한다.** 입력칸이 있는 시트에 쓴다.
+    /// **항상 스크롤한다.** 입력칸이 있는 시트, 그리고 내용 길이가 바뀌어도 높이가 튀면 안 되는
+    /// 시트(나라마다 길이가 다른 `WeatherRegionPickerSheet`)에 쓴다.
     ///
     /// ⚠ 입력칸이 있으면 스크롤 갈래를 고정해야 한다. 키보드가 올라오면 쓸 수 있는 높이가
     /// 줄어드는데, 스크롤이 없는 갈래로 떨어져 있으면 내용이 **화면 밖으로 밀려날 뿐**
     /// 따라 올라오지 못한다. `ScrollViewReader.scrollTo` 도 스크롤뷰가 있어야 듣는다.
     var alwaysScrolls = false
+    /// 제목 말고도 목록 **위에** 더 얹은 것의 높이(예: `WeatherRegionPickerSheet` 의 나라 세그먼트).
+    ///
+    /// ⚠ **상수로 적지 말고 그 뷰를 재서 넘길 것**(`onGeometryChange`). 아래 상한은 제목·핸들
+    /// 몫만 빼므로, 목록 위에 무언가를 더 얹고 이 값을 안 주면 시트가 화면을 **꽉 채워** 뒤의
+    /// 스크림이 사라진다 — 바깥을 눌러 닫을 곳이 없어진다(2026-09-30 시뮬레이터 실측).
+    /// 재는 것은 스크롤 **밖의 형제 뷰**라 이 파일 머리 주석의 순환 문제가 없다.
+    var reservedHeight: CGFloat = 0
     @ViewBuilder var content: () -> Content
 
     /// 내용 영역 높이 상한. 시트 전체가 아니라 **여기**에 건다 —
@@ -49,7 +57,7 @@ struct SheetScrollingContent<Content: View>: View {
     /// 핸들·홈인디케이터 몫을 빼고 잡아, 시트 전체가 `BottomSheetMetrics.maxFraction` 언저리에
     /// 머물게 한다.
     private var maxContentHeight: CGFloat {
-        UIScreen.main.bounds.height * BottomSheetMetrics.maxFraction - 80
+        UIScreen.main.bounds.height * BottomSheetMetrics.maxFraction - 80 - max(reservedHeight, 0)
     }
 
     var body: some View {

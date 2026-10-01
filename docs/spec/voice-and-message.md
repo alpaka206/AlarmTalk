@@ -529,7 +529,7 @@
 
 | | 무엇으로 고르나 | 언제 정하나 | 네트워크 |
 | --- | --- | --- | --- |
-| **날씨** | 그 도시·그 **발사 날짜**의 실제 예보(서버가 open-meteo 조회) | 저장할 때 + 준비창(48h) 갱신 | 저장 시 1회 |
+| **날씨** | 그 **지역**·그 **발사 날짜**의 실제 예보 — 서버가 지역마다 **미리 계산해 둔 값**(아래 「서버가 미리 계산해 둔다」) | 저장할 때 + 준비창(48h) 갱신 | 저장 시 1회 |
 | 날씨 **대기 상한** | 저장은 그 응답을 **8초**까지만 기다린다(양 앱 같은 값) | 넘기면 **실패와 같다** — 미해결로 저장하고 뒤에서 받는다 | 저장 시 1회, 최대 8초 |
 | **운세** | **사주 + 발사 날짜**로 기기에서 결정적 계산 | 읽을 때마다(계산이라 저장 불필요) | 없음 |
 
@@ -539,8 +539,8 @@
   우산 얘기를 한다.
 - **못 받았으면 `null` 이고, 그건 '맑음' 이 아니다.** 0 으로 때우지 말 것. 안내 클립(마지막)이
   있는 묶음이면 그걸 틀고, 없는 옛 묶음이면 대표 클립으로 둔다.
-- ⚠ **서버도 반쪽 값을 내보내지 않는다**(2026-09-22, 코덱스 #788). 인덱스는 세 조회(지오코딩·
-  예보·미세먼지)로 만드는데, 클라는 받은 인덱스를 **해결된 사실**로 저장하고 발사 24시간 창 안에서
+- ⚠ **서버도 반쪽 값을 내보내지 않는다**(2026-09-22, 코덱스 #788). 인덱스는 예보·미세먼지 두 조회로
+  만들고(옛 글자 경로는 지오코딩까지 세 조회), 클라는 받은 인덱스를 **해결된 사실**로 저장하고 발사 24시간 창 안에서
   다시 받지 않는다. 그래서 **하나라도 못 받았으면 `null`** 이다 — 지오코딩만 타임아웃일 때 서울
   좌표로 예보를 이어 받으면 부산 알람에 서울 날씨가 박히고, 미세먼지만 못 받았을 때 '없음' 으로
   굳히면 먼지 나쁜 날 산책을 권한다. 서울 폴백·먼지 없음 폴백은 **라이브 생성 문장에만** 있었다
@@ -549,9 +549,10 @@
   `'fallback'` — `'fallback'` 은 라이브 생성 코드를 지울 때 함께 지운다).
 - **저장이 날씨 응답을 기다리는 시간에는 상한이 있다 — 8초, 양 앱 같은 값**(2026-09-22).
   이 조회가 저장 버튼을 붙잡는 유일한 네트워크라, 인터넷이 느리면 그만큼 저장이 멈췄다
-  (안드로이드는 OkHttp 읽기 타임아웃 60초까지). 8초인 이유: 서버는 Open-Meteo 를 세 번
-  순차로 부르고 한 번의 상한이 5초다(`weather-fetch.ts` 의 `WEATHER_FETCH_TIMEOUT_MS`) —
-  정상 응답은 수백 ms 라, 한 번이 상한에 걸린 경우까지는 받아 주고 그 이상은 기다리지 않는다.
+  (안드로이드는 OkHttp 읽기 타임아웃 60초까지). 8초인 이유: 서버는 (미리 계산한 값이 없을 때)
+  Open-Meteo 를 두세 번 순차로 부르고 한 번의 상한이 5초다(`weather-fetch.ts` 의
+  `WEATHER_FETCH_TIMEOUT_MS`) — 정상 응답은 수백 ms 라, 한 번이 상한에 걸린 경우까지는 받아 주고
+  그 이상은 기다리지 않는다. 미리 계산해 둔 지역은 DB 한 번 읽기라 이 상한에 닿지 않는다.
   **상한을 넘긴 결과는 실패와 정확히 같아야 한다**: 미해결(`null`)로 저장하고(새 알람은
   `null`, 수정은 받아 둔 값 유지), 저장 직후 백그라운드 갱신(안드로이드 `runOnce` 워커 →
   1시간 재시도, iOS `WeatherVariantRefreshService.refreshDue`)이 채운다. 타임아웃 뒤에 늦게
@@ -563,27 +564,250 @@
   똑같이 박아** 두었다(`FortuneThemeIndexTest` ↔ `BucketVariantResolverTests`).
 - ⚠ **iOS 는 조건이 바뀌면 다시 예약해야 한다.** 값만 고쳐 두면 행에는 비 문구가 적혀
   있는데 **어제 스테이징한 맑음 파일**이 울린다(위 회전과 같은 이유).
+- ⚠ **발사 날짜가 바뀌면 받아 둔 인덱스를 버린다 — 울린 뒤에도(양 앱).** 인덱스는 **그 날짜의**
+  날씨다. 반복 날씨 알람이 울리고 다음 날짜로 넘어갈 때(해제·정지 뒤 재예약), 시간·반복을 고쳐
+  날짜가 바뀔 때, 다시 켤 때 옛 인덱스를 남겨 두면 준비창 갱신이 "이미 받았다" 로 건너뛰고,
+  그 사이 오프라인이면 **어제 날씨 클립**이 울린다. 안드로이드는 `shouldResetWeatherVariant`
+  (날짜·목소리·지역·테마가 바뀌면 참)로 지운다. iOS 는 2026-09-30 까지 울린 뒤에 지우지 않았다
+  — 같은 판정으로 맞춘다(구현 지도 **(신규)** 행).
 
 ⚠ **iOS 는 2026-08-18 까지 이걸 아예 안 했다.** `prerender-variant` 호출이 없어서 날씨
 알람이 저장할 때 미리듣던 클립 하나를 **매일 그대로** 재생했고(회전 대상도 아니라 바뀌지도
 않았다), 운세도 마찬가지였다. 저장이 안드로이드보다 빨랐던 이유가 그것이다 — 빠른 게
 아니라 **안 하고 있었다.**
 
-#### 날씨 지역은 **보이는 이름과 보내는 값이 다르다**
+#### 날씨 지역은 **목록에서만** 고른다 — 나라 → 지역 (2026-09-30)
 
-지역 목록(국내 9개 — 서울·부산·인천·대구·대전·광주·울산·수원·제주)은 **모든 언어가 같은
-목록·같은 순서**다. 목록 밖 지역은 마지막 행 '직접 입력' 으로 받는다.
+**직접 입력은 없다.** 나라(대한민국 · 일본 · 미국)를 고르고, 그 나라의 지역을 목록에서 고른다.
+목록은 `packages/shared/src/weather-regions.json` **하나**가 원본이다 — 백엔드는 그대로 읽고, 두 앱은
+`scripts/gen-weather-regions.py` 가 만든 파일(안드로이드 `data/WeatherRegions.kt` + `res/values*/weather_regions.xml`,
+iOS `Generated/WeatherRegions.generated.swift`)을 쓴다. 생성 파일을 손으로 고치지 말 것(CI lint 의
+`--check` 가 어긋남을 잡는다).
 
-- **보내는 값은 언어와 무관하게 한국어 이름**이고 나라도 `대한민국` 이다 — 번역하는 것은
-  보이는 이름뿐이다. 이 값은 계정에 묶여 서버(`users.dynamic_prompt_settings_json`)에 올라가고
-  다른 기기·다른 앱이 그대로 읽는다. 번역한 이름을 저장하면 다른 언어 기기에서는 목록에 없는
-  도시가 되어 체크가 사라지고 직접 입력으로 열린다. 서버도 `language=ko` 로 지오코딩하고 결과의
-  한국어 나라 이름과 대조한다(`routes/tts.ts` 의 `resolveWeatherLocation`).
-- 도시가 보이는 자리(설정 행·문구 상세·문구 요약)는 **도시만** 보이고, 프리셋이면 앱 언어의
-  이름으로 바꿔 보인다. 목록 밖(직접 입력) 도시는 적힌 그대로다.
-- ⚠ 2026-09-29 까지 안드로이드 영어 목록은 **비어** 있어 영어 기기에서 도시 목록이 아예 안
-  보였고(직접 입력만), 일본어 목록은 일본 도시 8개였다(나라는 대한민국으로 보냈다). iOS 는 모든
-  언어에서 한국어 이름을 보였다.
+| 나라 | 지역 | 날씨를 재는 곳 |
+| --- | --- | --- |
+| 대한민국 | 17개 시·도(행정 표준 순) | **시·도청 소재지** — 경기 → 수원, 강원 → 춘천, 충북 → 청주, 충남 → 홍성, 전북 → 전주, 전남 → 무안, 경북 → 안동, 경남 → 창원, 제주 → 제주시, 광역시·세종은 그 도시 |
+| 일본 | 47개 도도부현(JIS 코드 순) | **도도부현청 소재지**(愛知 → 名古屋, 神奈川 → 横浜 …) |
+| 미국 | 50개 주의 최대 도시 + 워싱턴 D.C. + 잘 알려진 대도시(샌프란시스코·댈러스·마이애미 …) | 그 도시. 목록은 **대도시권 인구 순**(대략) |
+
+- **좌표·시간대는 JSON 에 박아 둔다**(`lat`·`lon`·`tz`, IANA). 서버는 이 지역들을 **지오코딩하지
+  않는다.** 예전에는 두 글자 한국어 이름을 `language=ko` 로 지오코딩했는데, 동명 마을을 잡거나
+  (부산 → 경북 의성군의 마을, 인천 → 전남 나주의 마을) 아무것도 못 찾았다(서울·제주 → 0건 →
+  2026-09-22 부터는 '못 봤어요' 클립). 좌표는 한 번 Open-Meteo 지오코딩(영어 이름 + 나라 코드,
+  시·도청 소재지 feature)으로 찾아 **사람이 확인한 값**이다 — 세종만 GeoNames 점(옛 조치원)이 아니라
+  시청(보람동)으로 두었다.
+- **저장·전송 값은 지역 키**(`kr-seoul`, `jp-aichi`, `us-new-york`)다. 계정 설정은
+  `dynamic_prompt_settings.weather.region` 에, 알람 행의 나라·도시 칸에는 **옛 앱이 읽는 한국어
+  글자**(`WeatherRegions.canonicalLabels` — 나라 `대한민국`/`일본`/`미국` + 한국어 지역 이름)를 함께
+  적는다. 옛 앱은 그 글자를 그대로 서버에 보내고, 서버는 그 글자를 다시 키로 되짚는다.
+  ⚠ **나간 키는 바꾸거나 지우지 않는다** — 계정·알람 행·미리 계산한 날씨 행에 저장돼 있다.
+  이름·좌표·별칭은 고쳐도 된다.
+- **보이는 이름은 앱 언어로 번역한다**(ko·en·ja 가 JSON 에 있다). 지역이 보이는 자리(설정 '문구 정보'
+  카드의 **'지역'** 행, 문구 화면 상세 카드의 **'지역'**, 문구 요약)는 모두 그 이름이다.
+- **옛 값(키 없이 글자만)은 되짚는다**(`WeatherRegions.resolveAlias`) — 서버·안드로이드·iOS·생성
+  스크립트 **네 구현이 글자 하나까지 같은 규칙**이다(하나만 고치지 말 것, 회귀 표는
+  `packages/shared/test/weather-regions.test.ts` 를 두 앱 테스트에 그대로 옮긴다):
+  1. 정규화: NFKC → 소문자 → `.,·・'’"()/_-、。` 와 공백류를 공백으로 → 공백 하나로. 별칭 표의
+     열쇠는 거기서 **공백까지 뺀** 것이다("오클라호마 시티" = "오클라호마시티").
+  2. 나라가 비었거나 **아는 나라**(대한민국·South Korea·大韓民国·Japan·アメリカ·US …)면 **도시로**
+     찾는다. 나라가 `대한민국` 이면 도시가 다른 나라 지역이어도 받는다 — 옛 앱은 공백 없는 입력에
+     나라를 `대한민국` 으로 자동으로 붙였다(안드로이드 30 일본어 목록의 東京·名古屋 …, 영어 기기의
+     "Tokyo"). **일본·미국이라고 적었으면 그 나라 안에서만** 찾는다("미국 광주" 는 되짚지 않는다).
+  3. **모르는 나라**면 옛 입력칸이 첫 낱말을 나라로 떼어 간 것이다("New York" → New / York,
+     "경기도 수원시", "서울 강남구"). 둘을 이어 붙여 찾는다. **도시만으로는 찾지 않는다** — "영국 버밍엄"
+     이 앨라배마로 가면 안 된다.
+  4. **첫 낱말로 한 번 더** 찾는 것(여러 낱말 도시의 첫 낱말 "뉴욕 맨해튼", 모르는 나라 자리의 낱말
+     "서울 강남구")은 그 낱말에 **로마자가 없을 때만**이다. 한국어·일본어 주소는 넓은 곳이 앞이지만,
+     영어는 도시가 앞이고 뒤가 주·나라라서("Birmingham England", "La Paz", "Jackson Hole") 앞 낱말만
+     보면 다른 나라의 같은 이름 도시로 간다.
+  5. 정확히 맞는 별칭이 없으면 행정 접미사(특별시·광역시·시·도·군·都·府·県·市, city·-shi …)를
+     **한 번만** 떼어 본다.
+  6. 별칭은 **이름(세 언어) + 대표 도시 이름 + 옛 표기**뿐이다. ⚠ **대표 지점이 아닌 도시는
+     별칭으로 넣지 않는다** — 속초를 강원(춘천)으로 되짚으면 해안 날씨가 내륙 날씨로 조용히 바뀐다.
+     그런 옛 값은 되짚지 않는다(아래).
+- **되짚히는 옛 값**은 그 지역이 고른 것으로 보인다(체크 표시). **되짚지 못한 옛 값**은 적힌 글자를
+  그대로 보이고 짧은 안내("목록에서 다시 골라 주세요")를 붙인다 — 바꾸기 전까지는 서버의 **엄격한
+  옛 경로**(아래)로 계속 돈다. 고르게 강요하지 않는다(모달·차단 없음).
+  - 안내가 붙는 자리: 설정 '지역' 행 아래, 문구 화면 상세 카드의 값 아래, 그리고 지역 시트의 제목
+    아래("‘속초’은(는) 목록에 없어요. 다시 골라 주세요." — 목록에 없는 것을 고른 채로 둘 수 없으므로
+    체크 표시 대신 이 줄이다).
+  - 보이는 글자: 나라 칸이 아는 나라(옛 앱이 자동으로 붙인 `대한민국` 등)면 도시만, 모르는 글자면
+    옛 입력칸이 첫 낱말을 나라 칸으로 떼어 간 것이라 둘을 이어 붙인다("Birmingham England").
+- **지역 시트**: 위에 나라 세그먼트, 아래에 그 나라의 지역(목록 순서). 날씨를 재는 대표 도시가 이름과
+  다르면 행 설명에 "수원 날씨" 를 붙인다. 처음 보일 나라는 고른 지역의 나라, 없으면 **이 기기의
+  공휴일 국가**(없으면 기기 지역이 KR·JP·US 면 그 나라, 아니면 KR)다.
+  - **나라 세그먼트는 제자리에 남고 목록만 스크롤한다** — 미국(69곳)을 내려가서 나라를 바꾸려고 맨 위로
+    되돌아가지 않게.
+  - **열면 고른 지역이 보이는 자리로 스크롤한다**(목록 끝의 제주·미국의 뒤쪽 지역도).
+  - **나라를 바꾸면 목록은 곧바로 맨 위다**(애니메이션 없이). 고른 지역이 있는 나라로 되돌아와도 같다 —
+    고른 지역을 찾아가는 것은 시트를 연 직후 한 번뿐이다(2026-09-30 사용자 지시).
+  - **시트는 화면의 90% 까지만** 올라온다 — 꽉 채우면 뒤의 스크림이 사라져 바깥을 눌러 닫을 곳이 없다.
+- **새 알람**은 행에 옛 앱용 글자를 적고, `prerender-variant` 요청에 **`region=<키>` 를 함께** 보낸다
+  (`country`·`city` 도 계속 보낸다 — 새 서버가 배포되기 전 창과 옛 서버 호환).
+- **공휴일 국가 = 지역의 나라.** 설정 화면의 '공휴일 달력' 행은 없다 — 규칙은
+  [alarm-lifecycle.md](alarm-lifecycle.md) 「공휴일 국가는 지역의 나라다」.
+- **가족 알람**은 그대로 **받는 사람의 지역**이다([family-alarm.md](family-alarm.md) 4절) — 받는 사람
+  계정 설정의 `region` 으로 풀린다.
+- **내 지역·사주는 계정 설정이다**(아래 「계정의 지역·사주는 기기에 받아 적는다」) — 설정 '지역' 행에서 고르든
+  편집기 문구 화면에서 고르든 계정(`PATCH /user/me` 의 `dynamic_prompt_settings`)에 올라가고, 다른 기기는
+  받아 적는다.
+- 이력: 2026-09-29 까지는 국내 9개 도시(서울·부산·인천·대구·대전·광주·울산·수원·제주) + '직접 입력'
+  이었고, 안드로이드 영어 목록은 **비어** 있었으며(영어 기기는 직접 입력만, 나라는 "South Korea"),
+  일본어 목록은 일본 도시 8개였는데 나라는 `대한민국` 으로 보냈다. 이 값들은 전부 위 규칙으로
+  되짚힌다(회귀 테스트가 main·develop 의 옛 목록을 전부 돈다).
+
+#### 계정의 지역·사주는 **기기에 받아 적는다** (2026-09-30)
+
+설정 '지역'·'운세 정보' 행과 편집기(새 알람의 프리필, 문구 화면)는 **이 기기에 적힌 값**을 읽는다(안드로이드
+`DynamicPromptPreferenceStore`, iOS 키체인의 `DynamicPromptPreferences`). 계정 설정은 서버에 있으므로, 서버에서
+받을 때마다(로그인·`/auth/me`·설정 저장 응답) 이 기기 값을 맞춘다 — 안 맞추면 **두 번째 기기·새로 깐 기기**는
+계정에 지역이 있는데도 '지역: 미설정' 이고 공휴일 국가도 옛 나라에 남는다. 두 앱이 **같은 규칙**이다:
+
+1. **이 기기에 아직 안 올라간 변경이 있으면 덮지 않는다** — **묶음(날씨·사주)마다** 본다. 다시 올릴 값은 **밀린
+   묶음은 이 기기 값, 나머지는 방금 받은 서버 값**이다(Codex #837). 한 칸으로 두면 지역만 밀려 있는 사이 다른 기기가
+   고친 사주를 이 기기의 옛 사주로 지운다 — 서버는 설정 전체를 갈아 끼운다(`PATCH /user/me`).
+   이 기기에서 고친 값(설정 '지역'·'운세 정보', 편집기 문구 화면)은 '안 올라간 변경' 표시와 함께 적고, 서버 저장이 성공하면 표시를 내린다. 표시가 남아 있는데
+   서버 값이 오면 그 값은 이 변경보다 **옛것**이다 — 덮지 않고 **로컬 값을 다시 올린다.** 서버 값이 로컬과
+   같아졌으면(올리기는 됐는데 응답을 못 받았다) 표시만 내린다.
+   - 표시는 **세션을 갈아 끼우기 전에** 내린다 — 늦으면 새 세션을 받는 순간 방금 올린 값을 한 번 더 올린다.
+   - 올리는 사이에 또 고쳤으면 표시를 내리지 않는다(올린 값과 지금 값이 다르다).
+   - ⚠ **기기에 적지 못했으면 표시를 남기지 않는다**(iOS 키체인 쓰기 실패, Codex #837). 기기에는 옛 값이 그대로라
+     표시만 남으면 올리기가 성공해도 표시가 안 내려가고, 다음 받아 적기가 그 옛 값을 다시 올려 새 값을 덮는다.
+     거꾸로 **서버 값을 받아 적지 못했으면 받아들였다고 하지 않는다**(`localWriteFailed`) — 공휴일 국가도 옮기지 않는다.
+   - ⚠ **올리기 전에 떠난 계정 조회는 설정을 되돌리지 않는다**(Codex #837). 올리기가 끝나 표시를 내린 뒤, 그 전에
+     떠나 **올리기 전의 설정**을 읽은 `/auth/me` 가 오면 받아 적기가 그 옛 값을 적는다. 그래서 올리기가 끝날 때 이미
+     떠 있던 계정 요청의 마지막 순번을 울타리로 세우고, 그 이하의 응답은 **설정만** 지금 세션의 값(올린 값)을 지킨다
+     — plan·프로모·토큰은 그 응답의 것이다(안드로이드 `promptSettingsAnswerFence`·`fencedAccountSettings`, iOS
+     `AuthViewModel.promptSettingsAnswerFence`). 울타리는 올리기 **뒤**에 다른 기기가 고친 값을 읽은 응답도 가리므로,
+     올리기가 끝나면 **울타리 밖의 조회를 한 번 더** 해 서버의 지금 값을 받아 적는다(iOS `refreshUser`, 안드로이드
+     `refreshAppSessionNow(rollToken = false)`).
+   - ⚠ **표시는 '올리기가 끝났다' 에서만 내린다**(`markPushed`). 편집기가 서버 값과 같아 올리지 않을 때 내리지 말 것 —
+     세션의 서버 값은 아직 끝나지 않은 앞 요청을 모른다. A→B 를 올리는 사이 A 로 되돌리면 '같다' 로 보이는데, 거기서
+     내리면 B 가 끝난 뒤 받아 적기가 B 로 덮는다(Codex #837). 정말 같았으면 다음 응답에서 표시만 내린다.
+   - ⚠ **올리기는 한 번에 하나씩, 부른 순서대로다.** 요청마다 설정 전체를 싣으므로, 겹쳐 돌면 늦게 끝난 옛
+     요청이 서버·세션을 옛 값으로 되돌리고 그 옛 값이 표시 없이 이 기기에 받아 적힌다(Codex #837). 안드로이드는
+     `PromptSettingsUploadQueue` 로 줄 세우고, iOS 는 `AuthViewModel.updateProfile` 이 겹친 호출을 받지 않되 앞
+     올리기가 끝나면 밀린 표시를 보고 **한 번 더** 올린다(`retryPendingPromptSettings`).
+     **올릴 값은 차례가 온 뒤에 정한다** — 줄에 설 때 찍은 사본은 그 사이 같은 값이 이미 올라갔거나 다른 기기의
+     값을 받아 적은 것을 모른다(안드로이드 `pendingUploadSnapshot`: 밀린 것이 없으면 올리지 않고, 있으면 지금의
+     이 기기 값을 올린다).
+   - **날씨 묶음이 밀렸으면** 공휴일 국가도 **서버의 옛 지역을 따르지 않는다** — 고를 때 이미 맞췄다
+     ([alarm-lifecycle.md](alarm-lifecycle.md) 「공휴일 국가는 지역의 나라다」). 사주만 밀렸으면 날씨 묶음은
+     받아들였으니 공휴일 국가도 그 지역을 따른다(`weatherAccepted`, Codex #837).
+   - 올리기의 응답은 **보낸 세션이 그대로일 때만** 받는다 — 울타리·표시 내리기·세션 쓰기·확인 조회 **전부**다
+     (Codex #837). 세션은 계정 id 가 아니라 **세션 번호**로 가른다 — 안드로이드 `AuthSessionStore.sessionGeneration` 은
+     세션이 끝날 때(`clear`) 오르고, iOS `AuthViewModel.sessionRevision` 은 계정을 떠나기 시작할 때(`beginLeavingAccount`
+     — 명시적 로그아웃·탈퇴의 첫머리)·세션이 끝날 때(`signOut`)·로그인을 확정할 때(`adoptSignedInSession`) 오른다. 어느
+     쪽이든 로그아웃 → 같은 계정 재로그인 사이에는 값이 바뀐다. 계정 id 만 보면 로그아웃 뒤
+     **같은 계정**으로 다시 들어온 새 세션에 앞 세션의 응답이 적힌다 — 새 세션의 표시를 내리고, 새 세션의 조회를
+     울타리로 가리고, 옛 설정을 세션에 적는다(확인 조회가 실패하면 그대로 남는다).
+   - ⚠ **이름·가족 설정처럼 다른 칸만 고친 저장은 계정 설정을 되쓰지 않는다**(Codex #837 검증). 그런 저장은 요청
+     **전에** 잡아 둔 세션의 복사본이라, 그 사이 올리기·`/auth/me` 가 적은 새 지역·사주를 옛 값으로 되돌리고, 받아
+     적기가 그 옛 값을 기기와 공휴일 국가에 적는다. 안드로이드는 저장소가 지금 값을 같은 락 안에서 지킨다
+     (`saveSessionIfAlive(keepStoredPromptSettings)` ← `saveSessionPreservingCurrentToken` — 올린 값이 있을 때만 그
+     값을 적는다). iOS 는 그런 저장이 세션을 복사하지 않고 `refreshUser` 로 서버 값을 받아 같은 결과다.
+2. 그 밖에는 **서버가 이긴다**(다른 기기에서 바꾼 값). 단 **묶음(날씨·사주)마다** 서버가 비어 있으면 로컬을 그대로
+   둔다 — 비어 있는 것은 '지웠다' 가 아니라 '아직 안 올라갔다' 다(서버에는 이 값을 지우는 경로가 없다).
+3. **멱등이다.** 같은 값을 몇 번 받아도 결과가 같다.
+   - ⚠ 그래서 **응답마다** 다시 본다 — 값이 바뀌었을 때만 보지 않는다. 올리기가 실패한 뒤 서버는 **같은 옛 값**을
+     다시 준다. 값만 보고 있으면 그 응답에 다시 돌지 않아 밀린 변경이 프로세스가 다시 뜰 때까지 안 올라간다.
+     축은 **응답마다 오르는 순번**이다(안드로이드 `AuthSession.accountAnswerSeq` — 세션 저장소가 저장마다 올리고
+     로그아웃에도 되감지 않는다, iOS `AuthViewModel.accountAnswerRevision`).
+   - **더 새 답이 이미 반영돼 버리는 응답도 '응답이 왔다' 다.** iOS 는 그 답도 `recordAccountAnswer` 로 세고, 안드로이드는
+     저장 없이 버리는 갈래(`refreshAppSessionNow` 의 `claimPlanAnswer` 실패)에서 지금 세션의 값으로 받아 적기를 한 번
+     다시 돌린다(Codex #837 검증). 올리기가 실패한 뒤 처음 온 응답이 그런 밀린 답이면, 안 돌릴 때 밀린 변경이 다음
+     저장되는 응답까지 안 올라간다. 거꾸로 안드로이드는 이름·가족 설정 같은 프로필 저장에도 순번이 오른다 — 받아
+     적기는 멱등이라 한 번 더 돌 뿐이다.
+   - ⚠ **받은 시각을 축으로 쓰지 말 것**(Codex #837 11차). 개인 프로모 계정은 받은 시각이 서버 계산 시각
+     (`personal_promo.computed_at`, 초 단위)으로 바뀌어 같은 초의 두 응답이 같은 값이 된다 — 두 번째 응답이 다시
+     돌지 않는다.
+4. 명시적 로그아웃·탈퇴는 값과 함께 표시도 지운다 — 남기면 다시 로그인했을 때 빈 로컬이 서버를 이긴다.
+   - ⚠ **세션이 비기 전에 받아 적힌 값도 지운다**(Codex #837 검증). iOS 는 알람 정리를 기다린 **뒤에야** 세션을 비운다
+     (`signOutExplicitly`·`deleteAccount`·`requestAccountDeletion`). 그 사이 도착한 `/auth/me` 를 앱 루트가 받아 적으면
+     떠나는 계정의 지역·사주가 기기에 다시 적힌다 — 그래서 세션을 비운 **뒤에** 한 번 더 지운다(멱등). 떠 있던 올리기의
+     응답은 떠나기 시작할 때 올린 세션 번호(`beginLeavingAccount`)에 걸려 아무것도 적지 않는다. 안드로이드는 세션을
+     먼저 비우고(`clear` → 세대) 기기 값을 나중에 지워 같은 창이 없다.
+
+- ⚠ **"서버 값이 있으면 서버, 없으면 기기" 로 되돌리지 말 것**(2026-09-30 전 iOS). 오프라인에서 고른 지역이
+  다음 실행에 서버의 옛 지역으로 되돌아갔고, 서버에 사주만 있으면 기기에만 있던 지역까지 '미설정' 이 됐다.
+- **편집기 문구 화면에서 고른 내 지역·사주도 계정에 올린다** — 문구 화면을 **나올 때**(알람 저장을 기다리지
+  않는다). 가족 알람(받는 사람의 값)과 직접 입력은 올리지 않는다. 날씨는 지역이 있을 때, 운세는 세 칸이 다 찼을
+  때만 적고, **서버 값과 다를 때만** 올린다(날씨 종류만 다시 골라도 이 자리를 지나므로). 목록으로 되짚히는 값은
+  옛 앱이 읽는 표준 글자로 적는다. 공휴일 국가는 **지역이 실제로 바뀌었을 때만** 맞춘다.
+  - ⚠ 예전 iOS 는 편집기에서 고른 지역을 **알람을 저장할 때 키체인에만** 적었다 — 계정에 지역이 있으면 다음
+    알람·설정 화면이 옛 지역으로 조용히 되돌아갔다. 알람 저장 때 따로 적는 길은 없다(두 앱 모두 문구 화면·설정
+    두 곳뿐).
+- 편집기가 **열려 있는 동안** 서버 값이 바뀌어도 그 화면은 다시 읽지 않는다(열 때 읽는다). 설정 화면은 받을 때마다
+  다시 읽는다 — 축은 앱 루트의 받아 적기와 **같은 응답 순번**이다(값만 보면 같은 내용의 응답이 기기 값을 바꿔도
+  화면이 옛 스냅샷에 남는다, Codex #837 11차).
+  - ⚠ **설정 화면은 고칠 때 화면의 스냅샷이 아니라 지금 이 기기 값에서 시작한다.** iOS 는 한 묶음만 고쳐도 설정
+    전체를 적고 올리므로, 스냅샷이 낡았으면 고치지 않은 묶음이 옛 값으로 되돌아가 다른 기기의 변경을 지운다
+    (`SettingsView.editBase`). 안드로이드는 고친 묶음만 적고 올릴 값을 차례가 온 뒤 기기에서 읽어 같은 결과다.
+
+##### 경계는 넷이다 (Codex #837 4~11차 정리)
+
+4~11차 지적은 전부 같은 영역(받아 적기·밀린 업로드·공휴일 국가)의 가장자리였다. 새 경우를 막을 때는 덧대기 전에
+아래 넷 중 어느 것이 빠졌는지부터 본다:
+
+| 경계 | 규칙 | 안드로이드 | iOS |
+| --- | --- | --- | --- |
+| 응답 | 계정 응답마다 **단조 증가 순번** — 받아 적기·설정 화면이 그 순번을 본다 | `AuthSession.accountAnswerSeq` → `accountSettingsReceipt` | `accountAnswerRevision` → `accountPromptSettingsKey`·`SettingsView.PromptObservation` |
+| 요청 | 요청을 보낸 **세션 번호**를 잡고, 응답을 적기 전에 대조한다 | `sessionGeneration` | `sessionRevision` |
+| 올리기 | **한 줄**, 올릴 값은 **차례가 온 뒤** 기기에서 정한다 | `PromptSettingsUploadQueue` + `pendingUploadSnapshot` | `isBusy` + `retryPendingPromptSettings` |
+| 늦은 조회 | 올리기가 끝날 때 떠 있던 조회는 **설정만** 지금 값을 지킨다(울타리) | `promptSettingsAnswerFence` | `promptSettingsAnswerFence` |
+
+#### 서버가 **미리 계산해 둔다** (2026-09-30)
+
+날씨 인덱스는 **지역 × 날짜** 로만 갈린다(클립 9개 중 어느 것인지). 사람마다 따로 물을 이유가 없다.
+
+- **표**: `weather_region_daily(region_key, target_date, variant_index, weather_code, temp_max,
+  temp_min, precip_prob, precip_sum, dust_level, computed_at)`, 키는 `(region_key, target_date)`.
+  append-only 마이그레이션으로 만든다.
+- **언제**: `scheduled` 의 기존 5분 cron 틱에 얹되 **매시 첫 틱(UTC 분 0~4)에만** 들여다본다. 갱신은
+  **3시간에 한 번까지** — 3시간 안에 계산한 (지역, 날짜)는 건너뛴다. 지역마다 **그 지역 시간대의**
+  오늘·내일·모레(`WeatherRegions.localDate`)를 계산한다. 한 실행의 하위 요청은 조회 1 + Open-Meteo
+  최대 6(50곳 묶음 3개 × 예보·대기질) + 쓰기 최대 3 이다. cron 은 엣지 캐시를 쓰지 않는다(읽기 경로의
+  즉석 계산은 쓴다 — 그래서 즉석 계산으로 적힌 행은 최악 6시간 전 예보일 수 있다).
+- **어떻게**: Open-Meteo 예보·대기질 API 는 위경도 목록(쉼표)을 받는다 — 한 요청에 **50곳까지** 묶어
+  부른다. Workers 의 하위 요청 한도(~50)와 `lib/weather-fetch.ts` 의 타임아웃을 지키고, 행은
+  `db.batch` 로 한 번에 upsert 한다.
+- **`GET /tts/prerender-variant` 의 우선순위**:
+  1. `region` 이 알맞은 키 → `(region, target_date)` 행. 없거나 **12시간보다 오래됐으면** 그 지역 하나를
+     박아 둔 좌표로 곧바로 계산해(지오코딩 없음) upsert 하고 돌려준다.
+  2. `region` 이 없으면 옛 `country`/`city` 를 `resolveAlias` 로 되짚어 1과 같이.
+  3. 되짚지 못한 옛 글자 → **옛 지오코딩 경로를 남기되 엄격하게**: 나라 이름 → `countryCode`
+     (Open-Meteo 파라미터)로 거르고, 소재지(`PPLC`·`PPLA`·`PPLA2`)·인구가 큰 곳을 고르며,
+     **`results[0]` 을 그냥 집지 않는다.** 모호하거나 알맞은 후보가 없으면 `variant_index: null`.
+     옛 앱 버전을 위한 경로다. 여럿이면 가장 큰 곳이 다음 곳의 **두 배 이상**일 때만 고른다.
+     ⚠ 나라가 `대한민국` 인데 한국 안에 알맞은 곳이 없으면 **나라 없이 한 번 더** 찾는다(같은 엄격한
+     규칙) — 옛 앱은 공백 없는 입력에 나라를 `대한민국`(영어 기기는 "South Korea")으로 **자동으로**
+     붙였다(되짚기 둘째 규칙과 같은 이유). 그러지 않으면 영어 기기에서 "London" 을 친 옛 값이 영영
+     `null` 이 된다. 첫 조회가 실패(타임아웃·비정상 응답)면 다시 묻지 않는다.
+- **`target_date` 는 달력 날짜**(YYYY-MM-DD, 시간대 없음)이고, 서버는 그 날짜를 **지역 시간대의
+  달력**으로 읽는다(일 단위 예보를 지역 시간대로 모은다). 클라는 지금처럼 발사 시각의 기기 날짜를
+  보낸다 — 기기와 지역의 시간대가 다른 경우(서울 기기 + 뉴욕 지역)에도 "알람이 울리는 그 날짜" 의
+  그 지역 날씨다. 미리 계산 범위 밖 날짜는 1의 즉석 계산으로 간다.
+  - ⚠ **지역 시간대로 '울리는 순간의 지역 날짜' 를 계산해 보내지 말 것**(2026-09-30 검토). 서울 10월 1일 08:00
+    알람은 뉴욕으로는 9월 30일 19:00 이라 그렇게 하면 **이미 저문 날**의 날씨를 아침에 읽는다. 사용자가 깨는
+    날(기기 달력)의 그 지역 예보가 알람의 뜻이다. 발사 날짜가 바뀌었는지(무효화·쓰기 가드)도 기기 날짜로 보므로,
+    묻는 날짜만 따로 두면 두 기준이 갈라진다.
+- **미해결 계약은 그대로다**: 못 구하면 `null` → 클라가 다시 받고, 끝내 못 받으면 '못 봤어요' 클립.
+- **새 표가 아직 없으면**(배포 → 마이그레이션 창) 읽기 경로는 저장 없이 즉석 계산만 한다 — 클라가
+  이미 실패를 견디는 읽기 경로라 창 동안 느려질 뿐이다(CLAUDE.md 「배포가 마이그레이션보다 먼저
+  돈다」의 읽기 경로 규칙).
+- ⚠ **Open-Meteo 무료 엔드포인트는 비상업용이다.** 상업 키는 **워커 시크릿 `OPEN_METEO_API_KEY` 로 켠다** —
+  비어 있으면 지금처럼 무료 호스트, 있으면 모든 날씨 호출(cron·`prerender-variant`·라이브 생성의 예보·대기질·
+  지오코딩)이 `customer-` 호스트 + `apikey` 로 간다(`lib/weather-fetch.ts` 의 `openMeteoRequestUrl` 한 곳).
+  - 키가 틀리면 **무료 호스트로 되돌아가지 않는다** — 날씨가 전부 미해결(`null` → '못 봤어요' 클립)이 되고
+    `weather.fetch` 줄이 `warn` 이다. 비상업 약관을 지키고, 잘못된 설정을 가리지 않기 위해서다. 넣은 직후
+    `wrangler tail` 에서 `commercial:true`·`status:200` 을 확인한다.
+  - 키·URL 은 로그에 싣지 않는다(`redactOpenMeteoUrl`). 넣는 법·되돌리는 법(`wrangler secret delete`)은
+    [docs/ops/environments.md](../ops/environments.md) 「Open-Meteo 상업 키」.
+  - **키를 살지는 운영 결정이다**(2026-09-30 기준 아직 키 없음). 한 바퀴는 133곳 × (예보·대기질)이고,
+    여러 위치를 묶은 요청을 몇 호출로 세는지는 공식 문서에 없다 — 위치마다 센다고 잡으면 하루 약 2,100 호출이다.
+  - ⚠ **날씨 숫자의 원천을 LLM(Gemini) 으로 바꾸지 말 것.** 모델은 관측·예보 값을 가진 곳이 아니다 — 그럴듯한
+    숫자를 지어낸다. 미리 받아 두는 구조(위 cron + 행 캐시)는 이미 있고, 바꿀 수 있는 것은 원천(Open-Meteo
+    무료/상업, 또는 다른 예보 API)뿐이다.
 
 ### 미리 받아 둔다
 
@@ -1344,10 +1568,22 @@ R2 파일·ElevenLabs 클론은 DB 트랜잭션 안에서 지울 수 없으므�
 | 회전 상태 영속 | `AlarmEntity.bucketClipKeysJson` / `bucketRotationIndex` | `LocalAlarmRecord.bucketClipKeys` / `bucketRotationIndex` | — |
 | 날씨·운세 자리 판정 | `AlarmEntity.bucketVariantIndex()` | `BucketVariantResolver.variantIndex(for:)` | — |
 | 운세 온디바이스 계산 | `fortuneThemeIndex` (`data/AlarmEntity.kt`) | `BucketVariantResolver.fortuneThemeIndex` | — |
-| 날씨 조건 조회 | `AlarmRepository.resolveWeatherVariantForDraft`(저장 시) | `AlarmEditorSheet.applyWeatherVariant`(저장 시) | `GET /tts/prerender-variant` (`resolvePrerenderWeatherIndex`) |
+| 날씨 조건 조회 | `AlarmRepository.resolveWeatherVariantForDraft`(저장 시) | `AlarmEditorSheet.applyWeatherVariant`(저장 시) | `GET /tts/prerender-variant` (`resolvePrerenderWeatherIndex`) — 지역이면 미리 계산한 행(아래 '서버 미리 계산' 행) |
 | 날씨 조회 반쪽 값 금지(하나라도 못 받으면 `null`) | — (받은 값을 해결로 저장, `weatherVariantNeedsRefresh`) | — (`BucketVariantResolver`) | `loadWeatherSignalInput` 의 `WeatherFetchFailurePolicy` `'unresolved'`(`routes/tts.ts`), 회귀 `prerender-variant.test.ts` |
 | 날씨 조회 대기 상한(8초) | `WEATHER_RESOLVE_TIMEOUT_MILLIS` + `withTimeoutOrNull`(`data/AlarmRepository.kt`, 회귀 `WeatherResolveTimeoutTest`) | `WeatherVariantSaveLookup.timeoutSeconds`(8초) + `withTimeout`(`AsyncTimeout.swift`) — `AlarmEditorSheet.applyWeatherVariant` 가 부른다, 회귀 `WeatherVariantSaveTimeoutTests` | `WEATHER_FETCH_TIMEOUT_MS`(한 fetch 5초, `lib/weather-fetch.ts`) |
-| 날씨 지역 목록(저장 값 ↔ 보이는 이름) | `WeatherPresetCityKeys` + 로케일별 `hs_weather_preset_cities`, `weatherCityDisplayName`(`ui/editor/AlarmRandomPromptSettings.kt`) — 회귀 `WeatherPresetCitiesResourceTest` | `WeatherCityPickerSheet.presetCities` + `Localizable.xcstrings`, `WeatherCityPickerSheet.displayName(for:)` — 회귀 `WeatherPresetCityLocalizationTests` | `resolveWeatherLocation`(`routes/tts.ts`, `language=ko`) |
+| 날씨 지역 목록(유일 출처 = JSON · 좌표 박제 · 직접 입력 없음) | 생성 `data/WeatherRegions.kt`(`WeatherRegions`·`WeatherRegion`·`WeatherCountry`) + `res/values{,-en,-ja}/weather_regions.xml` | 생성 `Generated/WeatherRegions.generated.swift`(`WeatherRegions`·`WeatherRegion`·`WeatherCountry`) | `packages/shared/src/weather-regions.json` + `weather-regions.ts`(`WeatherRegions`). 생성·검사 `scripts/gen-weather-regions.py`(`--check` 는 CI lint), 회귀 `packages/shared/test/weather-regions.test.ts` |
+| 옛 글자 되짚기(네 구현이 같은 규칙) | `WeatherRegions.resolveAlias`(생성) ← `weatherRegionFor`(`data/WeatherRegionSettings.kt`) — 회귀 `WeatherRegionsAliasTest`(shared 의 표를 그대로 옮김) | `WeatherRegions.resolveAlias`(생성) ← `WeatherRegions.region(key:country:city:)`(`WeatherRegionSupport.swift`) — 회귀 `WeatherRegionCatalogTests` | `WeatherRegions.resolveAlias`(shared) = 스크립트의 `resolve` ← `weatherRegionFor`(`lib/weather-signal.ts`) |
+| 지역 고르기(나라 → 지역) · 행 이름 '날씨 지역' → '지역' · 되짚지 못한 옛 값은 글자 + 다시 고르라는 안내 | `WeatherLocationDialog`·`weatherRegionDisplay`·`initialWeatherPickerCountry`(`ui/editor/AlarmRandomPromptSettings.kt`), 설정 `SettingsRow` 의 `supportingText` — 회귀 `WeatherRegionPickerTest` | `WeatherRegionPickerSheet`(`legacyLabel` 부제)·`WeatherRegions.displayName`·`unresolvedLegacyLabel`·`initialPickerCountry`(`WeatherRegionSupport.swift`), `SettingsView`·`MessageSettingsPane`·`PromptDetailCard` 의 `note` — 회귀 `WeatherRegionCatalogTests` | — |
+| 계정 설정 `weather.region`(알맞으면 옛 글자로 덮고, 모르면 그 칸만 버리고, 없으면 옛 글자를 되짚는다 — 읽을 때도 같다) | 보낼 때 `toDynamicPromptSettings`(키를 글자에서 되짚어 싣는다), 받을 때 `toPromptPreferences`·`resolvedRegion`(키가 글자를 이긴다) | 보낼 때 `DynamicPromptPreferences.toSettings`, 받을 때 `DynamicPromptPreferences.from(settings:)` | `normalizeWeatherSetting`(`lib/dynamic-prompt-settings.ts`) → `WeatherRegions.normalizeSetting`, 회귀 `weather-region-settings.test.ts` |
+| 계정의 지역·사주 받아 적기(안 올라간 변경은 덮지 않고 다시 올린다 · 빈 묶음은 로컬 유지 · 멱등 · 로그아웃이 표시도 지운다) | `DynamicPromptPreferenceStore.adoptAccountSettings`·`markPushed`·`saveWeatherLocation`/`saveFortuneInfo`(표시) ← `MainViewModel.onAccountPromptSettingsReceived`(← `AlarmTalkApp` 의 `LaunchedEffect`, 축 `accountSettingsReceipt` = 응답 순번 `AuthSession.accountAnswerSeq`)·`SettingsScreen`(같은 축), 표시 내리기 `uploadDynamicPromptSettings`(보낸 세대가 그대로일 때만), 프로필 저장은 `keepStoredPromptSettings`, 밀린 응답도 받아 적기 — 회귀 `AccountPromptSettingsAdoptionTest`·`PromptSettingsAnswerFenceTest` | `DynamicPromptPreferences.adoptAccount`·`markPushed`·`saveLocalEdit`·`current`(`AccountPromptSettingsAdoption.swift`) ← `AlarmTalkApp` 의 계정 설정 관찰(`accountPromptSettingsKey` — 축에 `AuthViewModel.accountAnswerRevision`)·`SettingsView.loadPromptPreferences`(같은 축 `PromptObservation` ← `SettingsView.observation(of:)`, 고칠 때는 `editBase`)·`AlarmEditorSheet.savedPromptPreferences`, 표시 내리기 `AuthViewModel.updateProfile`(보낸 `sessionRevision` 이 그대로일 때만), 떠날 때 `beginLeavingAccount` + 세션을 비운 뒤 다시 지우기 — 회귀 `AccountPromptSettingsAdoptionTests`(`editBase` 판정 — ⚠ 화면의 두 호출부 `onSelect`·`saveFortuneDraft` 는 SwiftUI 라 유닛 테스트가 닿지 않는다)·`AuthViewModelTests`(관찰 축·재로그인·로그아웃 창) | `PATCH /user/me` 의 `dynamic_prompt_settings`(`normalizeWeatherSetting`) |
+| 편집기 문구 화면 → 내 계정 설정(가족·직접 입력 제외 · 서버 값과 다를 때만 올린다 · 표준 글자로 적는다 · 지역이 바뀔 때만 공휴일 국가) | `AlarmEditorScreen` 의 문구 결과 처리(`saveWeatherLocation`·`saveFortuneInfo` → `onUpdateDynamicPromptSettings`, `WeatherRegionHolidaySync.onRegionSaved`) | `AlarmEditorSheet.syncOwnPromptPreferences` ← 판정 `DynamicPromptPreferences.editorUpdate`(`EditorPromptPreferenceUpdate.swift`) — 회귀 `EditorPromptPreferenceUpdateTests` | — |
+| 지역 시트: 나라 세그먼트 고정 · 열 때 고른 지역으로 스크롤 · 나라를 바꾸면 맨 위 · 화면의 90% 까지 | `WeatherLocationDialog`(`scrollsContent = false`) ← `WakerSelectionSheet`(`ui/components/WakerModal.kt`) | `WeatherRegionPickerSheet`(`ScrollViewReader`) ← `SheetScrollingContent.reservedHeight`·`BottomSheetMetrics.maxFraction` | — |
+| 새 알람: 행에 옛 앱용 글자 + 요청에 `region` | 고를 때 `region.legacyCountry`/`legacyCity` 를 적고, 요청은 `weatherRegionFor(…)?.key` ← `AlarmRepository.resolveWeatherVariantForDraft`·`resolveDueCloneBucketVariants` — 회귀 `WeatherRegionRequestTest` | `WeatherRegions.storageLabels` ← `AlarmEditorSheet`, 요청은 `resolveAlias(…)?.key` ← `WeatherVariantSaveLookup`·`WeatherVariantRefreshService` — 회귀 `WeatherVariantOwnerScopeTests` | `GET /tts/prerender-variant` 의 `region` |
+| 서버 미리 계산 · 우선순위(region → 되짚기 → 엄격한 옛 지오코딩) · 표가 없으면 저장 없이 즉석 계산 | — | — | 마이그레이션 #123 `weather_region_daily` · `refreshWeatherRegionDaily`·`isWeatherRegionRefreshSlot`(매시 첫 틱, 3시간·50곳 묶음) · 읽기 `resolveRegionVariantIndex`(12시간) — `lib/weather-region-daily.ts`, 회귀 `weather-region-daily.test.ts` |
+| 엄격한 옛 지오코딩(소재지·인구·두 배, `대한민국` 이면 나라 없이 한 번 더) | — | — | `pickStrictGeocodeResult`·`geocodeStrict`(`lib/weather-signal.ts`), 회귀 `weather-legacy-geocode.test.ts` |
+| Open-Meteo 상업 키(없으면 무료 호스트 · 있으면 `customer-` 호스트 + `apikey` · 틀린 키는 무료로 되돌아가지 않는다 · 로그에 키·URL 없음) | — | — | `openMeteoApiKey`·`openMeteoRequestUrl`·`redactOpenMeteoUrl`(`lib/weather-fetch.ts`) ← `OPEN_METEO_API_KEY`(`types.ts` `Env`, `scripts/worker-secret-keys.ts`), 회귀 `weather-open-meteo-key.test.ts` |
+| 발사 날짜가 바뀌면 인덱스를 버린다(울린 뒤 포함) | `shouldResetWeatherVariant`(`data/AlarmRepository.kt` 의 편집·재활성화·해제 롤오버, `AlarmDao.upsertPreservingServerSyncFields`) | `LocalAlarmStore.invalidateWeatherVariantIfFireDateChanges`(정지·다시 켜기·지나간 회차) → 정지 뒤 `AlarmAppContext.reconcileAfterStop` 이 새 소리로 다시 건다 — 회귀 `WeatherVariantRolloverTests` | — |
+| 공휴일 국가 = 지역의 나라 | [alarm-lifecycle.md](alarm-lifecycle.md) 구현 지도 | 같음 | — |
 | 날씨 준비창 갱신 | `AlarmRepository.resolveDueCloneBucketVariants` + `weatherVariantNeedsRefresh` | `WeatherVariantRefreshService` + `BucketVariantResolver.weatherVariantNeedsRefresh` | 같은 라우트 |
 | 조건 스냅샷 영속 | `AlarmEntity.contextVariantIndex` / `contextResolvedAtMillis` | `LocalAlarmRecord.contextVariantIndex` / `contextResolvedAtMillis` | — |
 | 클립 자리 = `variant` | `bindStockBucketClips`(sortedBy·distinctBy) | `AlarmEditorSheet.bucketClipKeys(forCategory:)`(같은 규칙) | `ORDER BY … variant ASC`, `StockClip.variant` |

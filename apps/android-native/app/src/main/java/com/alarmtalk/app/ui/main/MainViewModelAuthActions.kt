@@ -595,26 +595,99 @@ internal fun MainViewModel.updateFamilyAlarmSettings(
     }
 }
 
+/**
+ * 계정 설정(지역·사주)을 올린다. 부르는 쪽은 먼저 이 기기에 적고 '안 올라간 변경' 표시를 남긴다
+ * (`saveWeatherLocation`·`saveFortuneInfo`) — 올릴 값은 [settings] 가 아니라 **차례가 온 뒤의 이 기기 값**이다
+ * (`DynamicPromptPreferenceStore.pendingUploadSnapshot`). [settings] 는 부르는 쪽 모양을 맞추려고 받을 뿐이다.
+ */
+@Suppress("UNUSED_PARAMETER")
 internal fun MainViewModel.updateDynamicPromptSettings(settings: DynamicPromptSettings) {
-    val session = authSession ?: return
+    val userId = authSession?.user?.id ?: return
+    viewModelScope.launch {
+        // ⚠ **한 번에 하나씩, 부른 순서대로**(`PromptSettingsUploadQueue`). 요청마다 설정 전체를 싣으므로
+        // 겹쳐 돌면 늦게 끝난 옛 요청이 서버·세션을 옛 값으로 되돌린다(Codex #837).
+        promptSettingsUploads.enqueue { uploadDynamicPromptSettings(userId) }
+    }
+}
+
+private suspend fun MainViewModel.uploadDynamicPromptSettings(userId: String) {
+    // 차례를 기다리는 사이 계정이 바뀌었으면 남의 설정을 올리지 않는다. 세션·세대는 **차례가 온 뒤에** 읽는다 —
+    // 앞 요청이 세션을 갈아 끼웠을 수 있다.
+    val session = authSession?.takeIf { it.user.id == userId } ?: return
+    // ⚠ **올릴 값도 차례가 온 뒤에 정한다**(Codex #837). 줄에 설 때 찍은 사본은 그 사이 앞 요청이 같은 값을 올려
+    //   표시를 내렸거나(→ 올릴 것이 없다) 다른 기기의 값을 받아 적은 것을 모른다 — 그대로 올리면 같은 값을 두 번
+    //   올리고, 그 사이 다른 기기가 쓴 값을 옛 사본으로 덮는다.
+    val settings = dynamicPromptStore.pendingUploadSnapshot(userId) ?: return
     // 요청 시작 시점의 세션 세대 — 응답을 저장하기 전에 대조한다.
     val startGeneration = authSessionStore.sessionGeneration()
     val authorization = com.alarmtalk.app.network.AlarmTalkApiClient.bearer(session.token)
+    runCatching {
+        api.updateProfile(
+            authorization,
+            com.alarmtalk.app.network.UpdateProfileRequest(
+                dynamicPromptSettings = settings,
+            ),
+        )
+    }.onSuccess { response ->
+        // ⚠ **보낸 세션이 그대로일 때만 받는다**(Codex #837 11차) — 세대는 세션이 끝날 때만 오르므로, 로그아웃 뒤
+        //   **같은 계정**으로 다시 들어온 새 세션도 가른다. 세션이 바뀌었으면 아무것도 적지 않는다: 울타리는 새 세션에
+        //   떠 있는 조회를 캐시로 가리고, 표시 내리기는 새 세션의 '안 올라간 변경' 을 지우고(남은 표시는 다음 받아
+        //   적기가 다시 올린다), 세션 저장은 어차피 버려진다. iOS `updateProfile` 의 `sessionRevision` 대조와 같다.
+        if (authSession?.user?.id != session.user.id || authSessionStore.sessionGeneration() != startGeneration) {
+            Log.i(TAG, "Dropping prompt settings upload result: session ended or switched")
+            return@onSuccess
+        }
+        // ⚠ **표시를 내리기 전에 울타리를 세운다**(Codex #837). 지금 떠 있는 `/auth/me` 는 이 올리기 **전의** 설정을
+        // 읽었을 수 있다 — 표시를 내린 뒤 그 응답이 오면 받아 적기가 옛 설정을 이 기기에 적는다. 그 응답들은
+        // 설정만 지금 세션의 값(아래에서 올린 값으로 갈아 끼운다)을 지킨다(`refreshAppSessionNow`). 울타리 안의
+        // 응답이 올리기 **뒤의** 다른 기기 변경을 싣고 있었을 수도 있으므로, 끝에서 울타리 뒤의 조회를 한 번 더 한다.
+        promptSettingsAnswerFence = personalPromoLedger.latestRequestSeq()
+        // ⚠ **세션을 갈아 끼우기 전에** 표시를 내린다. 새 세션이 곧바로
+        // [onAccountPromptSettingsReceived] 를 부르는데, 그때 표시가 남아 있으면 방금 올린 값을
+        // '아직 안 올라간 변경' 으로 보고 한 번 더 올린다.
+        dynamicPromptStore.markPushed(session.user.id, settings)
+        val updatedSettings = response.dynamicPromptSettings ?: settings
+        val updated = session.copy(user = session.user.copy(dynamicPromptSettings = updatedSettings))
+        val saved = saveSessionPreservingCurrentToken(updated, startGeneration, promptSettings = updatedSettings)
+            ?.also { authSession = it }
+        refreshSocial()
+        // **울타리 뒤의 조회로 확인한다**(Codex #837) — 울타리는 올리기 전에 떠난 조회를 모두 가리므로, 그중 올리기
+        // **뒤**에 다른 기기가 고친 값을 읽은 응답도 버려진다. 새로 보낸 조회는 울타리 밖이라 서버의 지금 값을 받아
+        // 적는다(iOS `updateProfile` 뒤의 `refreshUser` 와 같다). 토큰은 굴리지 않는다 — 토큰을 키로 쓰는 효과가
+        // 다시 돌 이유가 없다.
+        if (saved != null) {
+            runCatching { refreshAppSessionNow(rollToken = false) }
+                .onFailure { error -> Log.w(TAG, "Account refresh after prompt settings upload failed", error) }
+        }
+    }.onFailure { error ->
+        // 로컬에는 '안 올라간 변경' 표시가 남는다 — 다음에 계정 설정을 받을 때
+        // ([onAccountPromptSettingsReceived]) 서버의 옛 값으로 덮지 않고 다시 올린다.
+        AlarmTalkLog.reportError("Failed to update dynamic prompt settings", error)
+    }
+}
+
+/**
+ * 서버의 계정 설정(`dynamic_prompt_settings`)을 받았다 — 로그인·`/auth/me`·설정 저장 응답.
+ *
+ * 이 기기의 지역·사주와 공휴일 국가를 맞추는 규칙은 `adoptAccountPromptSettings`
+ * (data/WeatherRegionSettings.kt) 한 곳이다. 여기서 더하는 것은 둘뿐이다:
+ *  - 이 기기에 아직 안 올라간 변경이 있으면(저장이 실패했던 지역·사주) **그걸 다시 올린다.**
+ *    안 올리면 서버는 옛 값에 머물고, 이 기기는 다른 기기의 변경을 영영 받지 않는다.
+ *  - 공휴일 국가가 바뀌어 알람을 다시 잡는 일은 여기서 하지 않는다 — 국가 흐름 수집기
+ *    (`MainViewModel` init → `AlarmRepository.refreshHolidayOffAlarms`)가 한다.
+ */
+internal fun MainViewModel.onAccountPromptSettingsReceived(userId: String, settings: DynamicPromptSettings) {
     viewModelScope.launch {
-        runCatching {
-            api.updateProfile(
-                authorization,
-                com.alarmtalk.app.network.UpdateProfileRequest(
-                    dynamicPromptSettings = settings,
-                ),
-            )
-        }.onSuccess { response ->
-            val updatedSettings = response.dynamicPromptSettings ?: settings
-            val updated = session.copy(user = session.user.copy(dynamicPromptSettings = updatedSettings))
-            saveSessionPreservingCurrentToken(updated, startGeneration)?.let { authSession = it }
-            refreshSocial()
-        }.onFailure { error ->
-            AlarmTalkLog.reportError("Failed to update dynamic prompt settings", error)
+        // 응답이 오는 사이 계정이 바뀌었으면 남의 설정을 이 계정에 적지 않는다.
+        if (authSession?.user?.id != userId) return@launch
+        val adoption = com.alarmtalk.app.data.adoptAccountPromptSettings(
+            promptStore = dynamicPromptStore,
+            holidayStore = holidayCountryStore,
+            userId = userId,
+            settings = settings,
+        )
+        if (adoption is com.alarmtalk.app.data.AccountSettingsAdoption.LocalPending) {
+            updateDynamicPromptSettings(adoption.settings)
         }
     }
 }
@@ -1275,6 +1348,11 @@ internal fun MainViewModel.clearMessage() {
 internal fun MainViewModel.saveSessionPreservingCurrentToken(
     updated: com.alarmtalk.app.network.AuthSession,
     expectedGeneration: Long,
+    /**
+     * 이 저장이 **올린** 계정 설정(지역·사주 올리기). null 이면 이 저장은 계정 설정을 바꾸지 않은 것이라 저장소에 지금
+     * 있는 값을 지킨다 — [updated] 는 요청 전의 복사본이라 그 사이 받아 적은 새 값을 되돌린다(`keepStoredPromptSettings`).
+     */
+    promptSettings: DynamicPromptSettings? = null,
 ): com.alarmtalk.app.network.AuthSession? {
     // **세션이 그 사이 끝났거나 다른 계정이 되었으면 버린다.** 토큰만 지금 것으로 갈아 끼우면
     // A 의 유저 정보에 B 의 토큰이 붙은 잡종 세션이 저장된다 — 목록은 A 로 걸러지는데 서버
@@ -1292,6 +1370,8 @@ internal fun MainViewModel.saveSessionPreservingCurrentToken(
         rolledToken = null,
         // plan·프로모는 들고 있던 세션의 것을 그대로 복사했다 — 받은 시각도 그 답의 것이다.
         userFetchedAtMillis = updated.userFetchedAtMillis,
+        dynamicPromptSettingsOverride = promptSettings,
+        keepStoredPromptSettings = promptSettings == null,
     )
     if (saved == null) {
         Log.i(TAG, "Dropping stale profile save: session ended or switched")
@@ -1397,6 +1477,13 @@ internal suspend fun MainViewModel.refreshAppSessionNow(rollToken: Boolean = tru
             //   다른 응답이 끼어들지 못한다.
             if (!personalPromoLedger.claimPlanAnswer(accountRequest)) {
                 Log.i(TAG, "Dropping superseded /auth/me result: a later request's answer is already applied")
+                // ⚠ **받아 적기는 다시 돌린다** — 이 답은 버려도 '응답이 왔다' 는 같다(Codex #837 검증, 스펙
+                //   「경계는 넷이다」의 응답 경계). 더 새 답이 반영된 **뒤에** 올리기가 실패했으면, 그 뒤 처음 온 응답이
+                //   이 밀린 답일 수 있다 — 여기서 안 돌리면 밀린 변경이 다음 저장되는 응답까지 안 올라간다. 값은 지금
+                //   세션의 것(더 새 답)이다. iOS 는 밀린 답도 `recordAccountAnswer` 로 세어 같은 일이 난다.
+                com.alarmtalk.app.data.accountSettingsReceipt(authSession)?.let { receipt ->
+                    onAccountPromptSettingsReceived(receipt.userId, receipt.settings)
+                }
                 return@onSuccess
             }
             // 서버가 새 토큰을 주면 갈아 끼운다(rolling refresh) — 앱을 열 때마다 만료가
@@ -1410,9 +1497,18 @@ internal suspend fun MainViewModel.refreshAppSessionNow(rollToken: Boolean = tru
             // 차단은 '종료 전에 받은 답' 만 자른다(`AuthSession.userFetchedAtMillis`).
             // 응답이 계산 시각(`computed_at`)을 실었으면 저장소가 그것으로 바꿔 적는다(D7).
             val receivedAt = System.currentTimeMillis()
+            // 계정 설정 올리기가 끝나기 전에 보낸 요청이면 **설정만** 지금 세션의 값을 지킨다(Codex #837) —
+            // 올리기 전의 설정을 읽었을 수 있고, 올리기가 끝나 '안 올라간 변경' 표시를 내린 뒤라 받아 적기가 그
+            // 옛 값을 이 기기에 적는다. 나머지(plan·프로모·토큰)는 그대로 이 응답의 것이다.
+            val fencedSettings = com.alarmtalk.app.data.fencedAccountSettings(
+                requestSeq = accountRequest.seq,
+                fenceSeq = promptSettingsAnswerFence,
+                current = authSession?.user?.dynamicPromptSettings,
+            )
             val saved = authSessionStore.saveSessionIfAlive(
                 expectedGeneration = startGeneration,
                 user = me.user,
+                dynamicPromptSettingsOverride = fencedSettings,
                 provider = session.provider,
                 rolledToken = sessionTokenToSave(rollToken, me.token),
                 userFetchedAtMillis = receivedAt,

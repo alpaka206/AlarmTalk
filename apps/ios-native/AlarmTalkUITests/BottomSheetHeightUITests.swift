@@ -53,8 +53,12 @@ final class BottomSheetHeightUITests: XCTestCase {
         )
     }
 
-    /// 공휴일 달력도 항목이 셋(KR/JP/US)이다 — 같은 기준.
-    func test_공휴일달력_시트는_내용만큼만_올라온다() throws {
+    /// **지역 시트는 나라를 바꾸면 그 나라의 지역을 보인다**(2026-09-30).
+    ///
+    /// 예전 자리의 두 검사(공휴일 달력 시트 높이, 날씨 '직접 입력' 칸과 키보드)는 그 화면이 없어져
+    /// 지웠다 — 공휴일 국가는 지역의 나라를 따르고, 지역은 목록에서만 고른다(직접 입력 없음).
+    /// 짧은 시트의 자연 높이는 위 '화면 테마' 검사가 계속 본다.
+    func test_지역_시트는_나라를_바꾸면_그_나라_지역을_보인다() throws {
         let app = launch(tab: "menu")
 
         let account = app.descendants(matching: .any)
@@ -63,67 +67,37 @@ final class BottomSheetHeightUITests: XCTestCase {
         XCTAssertTrue(account.waitForExistence(timeout: 10), "설정으로 들어갈 행이 없다")
         account.tap()
 
-        let row = app.descendants(matching: .any)
-            .matching(NSPredicate(format: "label CONTAINS %@", "공휴일 달력"))
-            .element(boundBy: 0)
-        guard row.waitForExistence(timeout: 5) else {
-            throw XCTSkip("설정 화면에 '공휴일 달력' 행이 보이지 않는다(레이아웃 변경)")
-        }
-        row.tap()
-
-        let sheetTitle = app.staticTexts.matching(NSPredicate(format: "label == %@", "공휴일 달력"))
-        XCTAssertTrue(sheetTitle.firstMatch.waitForExistence(timeout: 5), "시트가 열리지 않았다")
-
-        let screenHeight = app.windows.firstMatch.frame.height
-        let top = try XCTUnwrap(
-            sheetTitle.allElementsBoundByIndex.max(by: { $0.frame.minY < $1.frame.minY })
-        ).frame.minY
-        let sheetHeight = screenHeight - top
-
-        XCTAssertLessThan(
-            sheetHeight, screenHeight * 0.5,
-            "행이 셋인 시트가 화면의 \(Int(sheetHeight / screenHeight * 100))% 를 차지한다"
+        XCTAssertFalse(
+            app.descendants(matching: .any)
+                .matching(NSPredicate(format: "label CONTAINS %@", "공휴일 달력"))
+                .element(boundBy: 0).waitForExistence(timeout: 2),
+            "설정에 '공휴일 달력' 행이 되살아났다 — 공휴일 국가는 지역의 나라다"
         )
-    }
 
-    /// **입력칸은 키보드 위에 있어야 한다.**
-    ///
-    /// 2026-08-13 지적: "날씨 지역 직접 입력할 때 입력창은 키보드 위로 올려줘야 하지 않나."
-    /// 원인은 `BottomSheetHost` 의 인자 없는 `.ignoresSafeArea()` — 인자를 안 주면
-    /// `.keyboard` 영역까지 무시해 **키보드 자동 회피가 통째로 꺼진다.** 무엇을 치고 있는지
-    /// 안 보이는 채로 입력하게 된다.
-    func test_지역_직접입력칸은_키보드에_가리지_않는다() throws {
-        let app = launch(tab: "menu")
-
-        let account = app.descendants(matching: .any)
-            .matching(NSPredicate(format: "label CONTAINS %@", "내 정보")).element(boundBy: 0)
-        XCTAssertTrue(account.waitForExistence(timeout: 10), "설정으로 들어갈 행이 없다")
-        account.tap()
-
-        let row = app.descendants(matching: .any)
-            .matching(NSPredicate(format: "label CONTAINS %@", "날씨 지역")).element(boundBy: 0)
+        let row = app.buttons.containing(.staticText, identifier: "지역").firstMatch
         guard row.waitForExistence(timeout: 5) else {
-            throw XCTSkip("설정 화면에 '날씨 지역' 행이 보이지 않는다(레이아웃 변경)")
+            throw XCTSkip("설정 화면에 '지역' 행이 보이지 않는다(레이아웃 변경)")
         }
         row.tap()
 
-        let custom = app.descendants(matching: .any)
-            .matching(NSPredicate(format: "label CONTAINS %@", "직접 입력")).element(boundBy: 0)
-        XCTAssertTrue(custom.waitForExistence(timeout: 5), "'직접 입력' 행이 없다")
-        custom.tap()
+        let japan = app.segmentedControls.buttons["일본"]
+        XCTAssertTrue(japan.waitForExistence(timeout: 5), "나라 세그먼트가 없다")
+        XCTAssertFalse(app.textFields.firstMatch.exists, "지역 시트에 직접 입력칸이 되살아났다")
+        japan.tap()
 
-        let field = app.textFields.firstMatch
-        XCTAssertTrue(field.waitForExistence(timeout: 5), "입력칸이 열리지 않았다")
-        field.tap()
+        // ⚠ 글자 하나짜리 행은 버튼 하나로 합쳐져 노출된다 — `staticTexts` 로 찾으면 없다고 나온다.
+        XCTAssertTrue(app.buttons["도쿄"].waitForExistence(timeout: 5), "일본을 골랐는데 도쿄가 없다")
+        XCTAssertFalse(app.buttons["부산"].exists, "일본 목록에 한국 지역이 섞였다")
 
-        let keyboard = app.keyboards.firstMatch
-        XCTAssertTrue(keyboard.waitForExistence(timeout: 5), "키보드가 올라오지 않았다")
-
-        XCTAssertLessThan(
-            field.frame.maxY, keyboard.frame.minY,
-            """
-            입력칸 아래쪽(\(Int(field.frame.maxY)))이 키보드 위쪽(\(Int(keyboard.frame.minY)))보다             아래다 — 치는 글자가 안 보인다.
-            """
+        // 긴 목록이라도 시트 위로 스크림이 남아야 한다 — 없으면 바깥을 눌러 닫을 곳이 없다.
+        let title = try XCTUnwrap(
+            app.staticTexts.matching(NSPredicate(format: "label == %@", "지역"))
+                .allElementsBoundByIndex.max(by: { $0.frame.minY < $1.frame.minY })
+        )
+        let screenHeight = app.windows.firstMatch.frame.height
+        XCTAssertGreaterThan(
+            title.frame.minY, screenHeight * 0.08,
+            "지역 시트가 화면을 꽉 채웠다(제목 위 \(Int(title.frame.minY))pt) — 세그먼트 높이를 상한에서 빼지 않았다"
         )
     }
 }

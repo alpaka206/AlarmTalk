@@ -34,6 +34,9 @@ export const WORKER_SECRET_KEYS = [
   'GOOGLE_RTDN_VERIFICATION_TOKEN',
   'ADMIN_SECRET',
   'KASI_SERVICE_KEY',
+  // Open-Meteo 상업 키(선택). 비어 있으면 무료 호스트(비상업용) 그대로 — `lib/weather-fetch.ts`.
+  // ⚠ 무료로 되돌릴 때는 파일에서 비우는 것으로는 안 된다(빈 값 skip) — `wrangler secret delete`.
+  'OPEN_METEO_API_KEY',
   // Apple — **세 갈래이고 키가 서로 다르다.** 빈 값은 자동 skip.
   //  1) 로그인 검증: APPLE_BUNDLE_ID 하나(애플 공개키 JWKS 검증이라 비밀키 불필요)
   //  2) 탈퇴 시 연결 해제: APPLE_TEAM_ID + APPLE_SIGNIN_* (Sign in with Apple 키)

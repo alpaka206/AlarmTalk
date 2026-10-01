@@ -30,6 +30,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
@@ -61,6 +62,14 @@ internal fun WakerSelectionSheet(
     title: String,
     onDismiss: () -> Unit,
     subtitle: String? = null,
+    /**
+     * 껍데기가 내용 전체를 스크롤할지. 기본은 한다(짧은 목록은 스크롤할 일이 없다).
+     *
+     * `false` 면 제목과 내용 윗부분이 **제자리에 남고**, 내용이 스스로 스크롤한다 — 긴 목록
+     * 위의 선택기(지역 고르기의 나라 세그먼트)를 붙잡아 둘 때 쓴다. 그때 내용의 스크롤 영역은
+     * `Modifier.weight(1f, fill = false)` 로 남은 높이만 갖게 한다(`WeatherLocationDialog`).
+     */
+    scrollsContent: Boolean = true,
     content: @Composable ColumnScope.(dismiss: () -> Unit) -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -68,6 +77,10 @@ internal fun WakerSelectionSheet(
     val dismiss: () -> Unit = {
         scope.launch { sheetState.hide() }.invokeOnCompletion { onDismiss() }
     }
+    // 내용이 스스로 스크롤하는 시트(긴 목록)는 화면의 **90% 까지만** 올라온다 — 꽉 채우면 뒤의 스크림이
+    // 사라져 바깥을 눌러 닫을 곳이 없다(2026-09-30 A32, 미국 69곳). iOS `BottomSheetMetrics.maxFraction`
+    // 과 같은 값이다. 드래그 핸들 몫(약 32dp)은 뺀다.
+    val selfScrollingMaxHeight = (LocalConfiguration.current.screenHeightDp * 0.9f).dp - 32.dp
     // 자기 창을 여는 모달 — 진입 안내가 이 위에 겹치지 않게 적어 둔다(`OpenModalRegistry`).
     TrackOpenModal()
     ModalBottomSheet(
@@ -86,9 +99,15 @@ internal fun WakerSelectionSheet(
             modifier = Modifier
                 .fillMaxWidth()
                 // ⚠ **시트는 자기 창이다** — 본체(`AlarmTalkApp`)에 건 제스처가 닿지 않으므로
-                // 컨테이너에서 건다. 여기 한 곳이 모든 사용처를 덮는다(날씨 도시 직접입력 등).
+                // 컨테이너에서 건다. 여기 한 곳이 모든 사용처를 덮는다(시트 안에 입력칸을 넣는 경우).
                 .clearFocusOnOutsideTap()
-                .verticalScroll(rememberScrollState())
+                .let {
+                    if (scrollsContent) {
+                        it.verticalScroll(rememberScrollState())
+                    } else {
+                        it.heightIn(max = selfScrollingMaxHeight)
+                    }
+                }
                 .navigationBarsPadding()
                 .padding(bottom = 20.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),

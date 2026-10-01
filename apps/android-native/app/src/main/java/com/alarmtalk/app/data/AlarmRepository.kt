@@ -1518,7 +1518,73 @@ class AlarmRepository(
         // 로그아웃·다른 복원과 직렬화한다 — 이유는 [restoreMutex] 주석 참고.
         restoreMutex.withLock { reschedulePendingAlarmsLocked(recomputeFireTime) }
 
-    private suspend fun reschedulePendingAlarmsLocked(recomputeFireTime: Boolean): Int {
+    /**
+     * **공휴일 국가가 바뀌었다** — '공휴일엔 끄기' 반복 알람의 다음 발생을 새 달력으로 다시 잡는다
+     * (docs/spec/alarm-lifecycle.md 「공휴일 국가는 지역의 나라다」).
+     *
+     * 다음 발생은 저장할 때·끌 때(`dismiss`) 그 순간의 달력으로 한 번 계산돼 행에 박힌다. 나라만
+     * 바뀌고 이걸 안 부르면, 이미 잡힌 발생은 **옛 나라의 달력**을 따른다 — 새 나라의 공휴일에
+     * 울리고, 옛 나라의 공휴일(이제 평일)은 건너뛴다. 한 번 울리고 나서야 새 달력으로 돈다.
+     *
+     * 순서: 새 나라의 공휴일을 먼저 받는다(KR 외에는 온디바이스 엔진이 없어 서버 캐시가 유일한
+     * 출처다 — [ensureHolidaysSynced]). 네트워크는 락 밖이다. 그다음 예약 복원과 **같은 길목**
+     * ([reschedulePendingAlarmsLocked])으로 다시 잡는다 — 소유자·울리는 중·스누즈 게이트를 따로
+     * 베끼지 않는다.
+     *
+     * **멱등이다.** 다음 발생은 시·분·요일·달력만으로 정해지므로, 같은 달력으로 몇 번을 불러도
+     * 결과가 같고 바뀐 것이 없으면 행을 쓰지 않는다.
+     */
+    suspend fun refreshHolidayOffAlarms(): HolidayCalendarRefresh {
+        val calendarReady = ensureHolidaysSynced(currentHolidayCountry())
+        // ⚠ **달력을 못 받았어도 지금 가진 달력으로 다시 잡는다**(Codex #837). 미루면 옛 나라의 달력이 남아,
+        // 옛 나라의 공휴일인 새 나라의 평일에 **안 울린다**(사고). 빈 달력이면 새 나라의 공휴일에 울릴 뿐이다
+        // (안전한 쪽). 대신 [HolidayCalendarRefresh.calendarReady] 로 알려, 호출부가 달력을 받을 때까지 다시
+        // 부르게 한다(`MainViewModel` — 앱에 들어올 때마다).
+        val scheduled = restoreMutex.withLock {
+            reschedulePendingAlarmsLocked(recomputeFireTime = false, recomputeHolidayOff = true)
+        }
+        return HolidayCalendarRefresh(scheduled = scheduled, calendarReady = calendarReady)
+    }
+
+    /**
+     * 달력이 바뀌었을 때 다시 잡을 알람인가 — '공휴일엔 끄기' 반복이고, 다음 발생이 아직 미래이며,
+     * 스누즈 중이 아니다(스누즈 마감은 달력과 무관한 절대 시각이다). [refreshHolidayOffAlarms] 전용.
+     */
+    private fun AlarmEntity.isFutureHolidayOffRecurrence(now: Long): Boolean =
+        holidayOff && repeatDaysMask != 0 && fireAtMillis > now && state != AlarmStates.SNOOZED
+
+    /**
+     * 다음 발생을 옮긴다 — **발사 날짜가 바뀌면 받아 둔 날씨 조건을 버린다**(스펙 voice-and-message.md 5-1
+     * 「발사 날짜가 바뀌면 받아 둔 인덱스를 버린다」, Codex #837). 조건 인덱스는 **그 날짜의** 날씨다. 남기면
+     * 준비창 갱신이 "이미 받았다" 로 건너뛰고, 그 사이 못 받으면 **옛 날짜의 날씨 클립**이 운다. 편집·해제
+     * (`dismiss`)·다시 켜기와 같은 판정([shouldResetWeatherVariant])이고, iOS 는
+     * `LocalAlarmStore.invalidateWeatherVariantIfFireDateChanges` 다. 달력이 바뀐 다시 잡기와 놓친 회차
+     * 넘기기(복원)가 이걸 거친다.
+     */
+    private fun AlarmEntity.withNextFireAt(nextFireAt: Long): AlarmEntity {
+        val reset = shouldResetWeatherVariant(
+            currentBucketId = bucketId,
+            nextBucketId = bucketId,
+            currentVoiceProfileId = voiceProfileId,
+            nextVoiceProfileId = voiceProfileId,
+            currentCountry = voiceWeatherCountry,
+            nextCountry = voiceWeatherCountry,
+            currentCity = voiceWeatherCity,
+            nextCity = voiceWeatherCity,
+            currentFireAtMillis = fireAtMillis,
+            nextFireAtMillis = nextFireAt,
+        )
+        return copy(
+            fireAtMillis = nextFireAt,
+            contextVariantIndex = if (reset) null else contextVariantIndex,
+            contextResolvedAtMillis = if (reset) null else contextResolvedAtMillis,
+        )
+    }
+
+    private suspend fun reschedulePendingAlarmsLocked(
+        recomputeFireTime: Boolean,
+        recomputeHolidayOff: Boolean = false,
+    ): Int {
         // 예약 전에 소유자를 확정한다 — 이 함수는 로그인 뒤처리·앱 시작·부팅 복구가 모두
         // 지나는 길목이라, 여기서 한 번 막으면 나머지 경로가 따로 새지 않는다.
         val ownershipSettled = settlePendingAlarmOwnership()
@@ -1649,6 +1715,16 @@ class AlarmRepository(
             if (fresh == null || !fresh.enabled || fresh.id in ringingAlarmIdsProvider()) return@forEach
             val alarm = fresh
 
+            // ⚠ **달력만 바뀐 경우([refreshHolidayOffAlarms])에는 미래의 '공휴일엔 끄기' 반복 알람만** 본다
+            // (Codex #837). 나머지를 일반 복원처럼 돌리면 달력과 무관한 알람까지 손댄다 — 지난 일회성은
+            // `FAILED` 로 꺼지고(API 31·32 비정확 폴백이면 아직 배달 대기 중일 수 있다), 지난 반복은
+            // `updatedAtMillis` 가 올라 받은 가족 알람이 '수신자가 고쳤다' 로 읽힌다. 지난 행·스누즈는
+            // 원래 그 일을 맡는 길목(앱 시작·부팅·정합성 워커의 [reschedulePendingAlarms])에 맡긴다 —
+            // 그쪽도 지금 달력으로 계산한다.
+            if (recomputeHolidayOff && !recomputeFireTime && !alarm.isFutureHolidayOffRecurrence(now)) {
+                return@forEach
+            }
+
             runCatching {
                 // recomputeFireTime: 시간대/시스템 시각 변경 시, 저장된 fireAtMillis(과거 기준 절대시각)를
                 // hour/minute 으로 다시 계산해 새 벽시계 시각에 울리게 한다(여행/DST). 그 외(부팅 등)에는
@@ -1675,11 +1751,37 @@ class AlarmRepository(
                 // 여부를 따로 추적해야 한다(별도 과제). 짐작한 창을 다시 넣지 말 것 — 굳은 행의
                 // 자가치유를 막는 대가가 더 크다.
                 val isSnoozed = alarm.state == AlarmStates.SNOOZED
-                val needsRecompute = !isSnoozed && (recomputeFireTime || alarm.fireAtMillis <= now)
+                // 달력이 바뀌어 다시 잡는 경우([refreshHolidayOffAlarms]). '공휴일엔 끄기' 는 반복
+                // 알람에만 뜻이 있다(`AlarmTimeCalculator` 가 일회성에서는 보지 않는다).
+                val holidayCalendarOnly = recomputeHolidayOff && !recomputeFireTime &&
+                    alarm.isFutureHolidayOffRecurrence(now)
+                val needsRecompute = !isSnoozed &&
+                    (recomputeFireTime || alarm.fireAtMillis <= now || holidayCalendarOnly)
                 val alarmToSchedule = when {
                     !needsRecompute -> alarm
-                    alarm.repeatDaysMask != 0 || recomputeFireTime -> alarm.copy(
-                        fireAtMillis = AlarmTimeCalculator.nextFireAtMillis(
+                    holidayCalendarOnly -> {
+                        val nextFireAt = AlarmTimeCalculator.nextFireAtMillis(
+                            hour = alarm.hour,
+                            minute = alarm.minute,
+                            repeatDaysMask = alarm.repeatDaysMask,
+                            holidayOff = true,
+                            nowMillis = now,
+                            isHoliday = holidayPredicate,
+                        )
+                        // 바뀐 게 없으면 쓰지 않는다(멱등). 바뀌었어도 `updatedAtMillis` 는 그대로
+                        // 둔다 — 사용자의 편집이 아니다. 올리면 받은 가족 알람이 '수신자가 고쳤다'
+                        // (`locallyEditedByRecipient`)로 읽혀, 다시 보낸 알람이 더는 덮지 못한다.
+                        // 쓰기는 서버 발급 필드를 지키는 쪽으로 한다 — 동기화(`syncWithBackend`)는
+                        // 이 락을 잡지 않아 그 사이 `remoteAlarmId` 를 새겼을 수 있다.
+                        if (nextFireAt == alarm.fireAtMillis && alarm.state == AlarmStates.SCHEDULED) {
+                            alarm
+                        } else {
+                            alarm.withNextFireAt(nextFireAt).copy(state = AlarmStates.SCHEDULED)
+                                .also { alarmDao.upsertPreservingServerSyncFields(it) }
+                        }
+                    }
+                    alarm.repeatDaysMask != 0 || recomputeFireTime -> alarm.withNextFireAt(
+                        AlarmTimeCalculator.nextFireAtMillis(
                             hour = alarm.hour,
                             minute = alarm.minute,
                             repeatDaysMask = alarm.repeatDaysMask,
@@ -1687,6 +1789,7 @@ class AlarmRepository(
                             nowMillis = now,
                             isHoliday = holidayPredicate,
                         ),
+                    ).copy(
                         state = AlarmStates.SCHEDULED,
                         updatedAtMillis = now,
                     ).also { alarmDao.upsert(it) }
@@ -1824,6 +1927,8 @@ class AlarmRepository(
                     context = "wake_weather",
                     country = draft.voiceWeatherCountry?.trim()?.takeIf { it.isNotBlank() },
                     city = draft.voiceWeatherCity?.trim()?.takeIf { it.isNotBlank() },
+                    // 행은 옛 앱용 글자를 들고 있고 키는 그 글자에서 되짚는다(`weatherRegionFor`).
+                    region = weatherRegionFor(draft.voiceWeatherCountry, draft.voiceWeatherCity)?.key,
                     targetDate = targetDate,
                     timezone = zone.id,
                 ).variantIndex
@@ -1874,6 +1979,7 @@ class AlarmRepository(
                     context = "wake_weather",
                     country = country.takeIf { it.isNotBlank() },
                     city = city.takeIf { it.isNotBlank() },
+                    region = weatherRegionFor(country, city)?.key,
                     targetDate = targetDate,
                     timezone = timezone,
                 ).variantIndex
@@ -2020,18 +2126,21 @@ class AlarmRepository(
      * 비-KR 국가의 공휴일을 서버(/holiday)에서 받아 로컬 캐시에 채운다. 근접 윈도우에 이미
      * 행이 있으면 네트워크를 건너뛴다. KR 은 온디바이스 엔진이 있어 동기화하지 않는다.
      * Best-effort — 네트워크 오류는 삼키고 조용히 실패한다(공휴일 표시는 부가 기능).
+     *
+     * @return 이 나라의 달력을 **쓸 수 있는가** — KR(온디바이스 엔진)이거나, 캐시에 다가올 공휴일이 있다.
+     *   못 받았으면 false 다([refreshHolidayOffAlarms] 가 알려 호출부가 다시 부른다).
      */
-    suspend fun ensureHolidaysSynced(countryCode: String) {
+    suspend fun ensureHolidaysSynced(countryCode: String): Boolean {
         val normalized = countryCode.trim().uppercase()
-        if (normalized.isEmpty() || normalized == HolidayCalendarStore.DEFAULT_COUNTRY_CODE) return
-        runCatching {
+        if (normalized.isEmpty() || normalized == HolidayCalendarStore.DEFAULT_COUNTRY_CODE) return true
+        return runCatching {
             val today = currentLocalDate(System.currentTimeMillis())
             val existing = holidayCalendarStore.upcomingHolidays(
                 countryCode = normalized,
                 from = today,
                 count = 1,
             )
-            if (existing.isNotEmpty()) return
+            if (existing.isNotEmpty()) return true
             val from = today
             val to = today.plusYears(1)
             // 기기 UI 언어(ISO-639-1)를 보내 비-KR 공휴일 이름을 같은 로케일로 받는다.
@@ -2049,9 +2158,10 @@ class AlarmRepository(
                     holidays = holidays,
                 )
             }
+            holidays.isNotEmpty()
         }.onFailure { error ->
             Log.w(TAG, "Failed to sync holidays for country=$countryCode", error)
-        }
+        }.getOrDefault(false)
     }
 
     /**
@@ -2248,3 +2358,9 @@ class DuplicateAlarmTimeException(
     val minute: Int,
     val existingLabel: String?,
 ) : Exception("이미 ${"%02d:%02d".format(hour, minute)} 에 알람이 있어요.")
+
+/**
+ * [AlarmRepository.refreshHolidayOffAlarms] 의 결과. [calendarReady] 가 false 면 새 나라(JP·US)의 공휴일을
+ * 아직 못 받아 **빈 달력으로** 다시 잡았다는 뜻이다 — 받을 때까지 다시 불러야 한다(`MainViewModel`).
+ */
+data class HolidayCalendarRefresh(val scheduled: Int, val calendarReady: Boolean)

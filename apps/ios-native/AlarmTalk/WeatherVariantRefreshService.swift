@@ -4,6 +4,7 @@ import os
 protocol PrerenderVariantResolving: Sendable {
     func getPrerenderVariant(
         context: String,
+        region: String?,
         country: String?,
         city: String?,
         targetDate: String,
@@ -84,6 +85,9 @@ final class WeatherVariantRefreshService {
             if Task.isCancelled { break }
             let index = try? await api.getPrerenderVariant(
                 context: "wake_weather",
+                // 지역 키는 행의 글자에서 되짚는다 — 목록에서 고른 값은 표준 글자로 적혀 있어
+                // 언제나 되짚히고, 못 되짚는 옛 글자는 키 없이 글자만 간다(서버의 엄격한 옛 경로).
+                region: WeatherRegions.resolveAlias(country: key.country, city: key.city)?.key,
                 country: key.country.nilIfBlank,
                 city: key.city.nilIfBlank,
                 targetDate: key.targetDate,

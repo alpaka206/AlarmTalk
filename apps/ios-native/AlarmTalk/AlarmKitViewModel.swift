@@ -708,6 +708,45 @@ final class AlarmKitViewModel: ObservableObject {
         ownerUserId: String?,
         forceHolidayOffRecompute: Bool = false
     ) async -> Int {
+        await recoverScheduledAlarms(
+            store: store,
+            ownerUserId: ownerUserId,
+            mode: forceHolidayOffRecompute ? .forceHolidayOff : .normal
+        ).recovered
+    }
+
+    /// **공휴일 달력만 바뀌었다** — 다음 발생이 아직 미래인 '공휴일에는 끄기' 반복 알람만 새 달력으로 다시 건다
+    /// (`HolidayOffRescheduler`). 지난 행·스누즈 중·다른 알람은 건드리지 않는다 — 평소 복구가 지금 달력으로 맡는다.
+    /// 복구 갈래로 떨어뜨리면 지난 회차를 넘기며 스누즈를 지우고 수정 시각을 올려, 늦게 배달될 울림을 삼키거나 받은
+    /// 가족 알람을 '받은 사람이 고쳤다' 로 만든다(Codex #837). 안드로이드 `refreshHolidayOffAlarms` 와 같은 범위다.
+    ///
+    /// - Returns: **끝까지 돌았는가.** 계정을 떠나는 중이라 도중에 멈췄으면 false — 호출부는 달력 표지를 적지 않아
+    ///   다음에 다시 돈다(`HolidayOffRescheduler.runIfNeeded`).
+    func recomputeHolidayOffAlarms(store: LocalAlarmStore, ownerUserId: String?) async -> Bool {
+        await recoverScheduledAlarms(store: store, ownerUserId: ownerUserId, mode: .calendarOnly).completed
+    }
+
+    enum RecoveryMode: Equatable {
+        /// 평소 복구 — 예약이 없거나 실패한 행, 지난 공휴일off 반복.
+        case normal
+        /// 평소 복구 + 미래의 공휴일off 반복도 새 달력으로(시간대가 바뀌었을 때).
+        case forceHolidayOff
+        /// 미래의 공휴일off 반복**만** 새 달력으로(공휴일 국가가 바뀌었을 때).
+        case calendarOnly
+    }
+
+    /// 달력만 바뀐 다시 걸기의 대상인가 — '공휴일에는 끄기' 반복이고 다음 발생이 아직 미래다. 스누즈·울리는 중은
+    /// `recomputeHolidayOffFireTime` 이 다시 거른다.
+    nonisolated static func isCalendarOnlyCandidate(_ record: LocalAlarmRecord, nowMillis: Int64) -> Bool {
+        record.enabled && record.isHolidayOffRecurring && record.fireAtMillis > nowMillis
+    }
+
+    private func recoverScheduledAlarms(
+        store: LocalAlarmStore,
+        ownerUserId: String?,
+        mode: RecoveryMode
+    ) async -> (recovered: Int, completed: Bool) {
+        let forceHolidayOffRecompute = mode != .normal
         let nowMillis = Int64(Date().timeIntervalSince1970 * 1000)
         let holidayPredicate = holidayStore.holidayPredicate()
         // ⚠ **계정이 없다고 재무장을 통째로 건너뛰지도, 아무나 되살리지도 말 것**
@@ -724,12 +763,16 @@ final class AlarmKitViewModel: ObservableObject {
         // 표시가 없는 기기는 아무것도 되살리지 않는다 — 못 가릴 때는 되살려서 못 끄게
         // 만드는 쪽보다 로그인 한 번 시키는 쪽이 안전하다.
         guard let owner = ownerUserId?.nilIfBlank ?? SessionExpiryStore.expiredOwnerUserId else {
-            return 0
+            // 다시 건 것이 없다 — 달력 표지를 적게 하지 않는다(`completed: false`).
+            return (0, false)
         }
         let candidates = store.alarms.filter { record in
             // 앞 계정 알람을 **다른 계정의** 로그인으로 되살리지 않는다.
-            (record.ownerUserId == nil || record.ownerUserId == owner) &&
-            record.enabled && (
+            guard record.ownerUserId == nil || record.ownerUserId == owner else { return false }
+            if mode == .calendarOnly {
+                return Self.isCalendarOnlyCandidate(record, nowMillis: nowMillis)
+            }
+            return record.enabled && (
                 record.alarmKitUUID == nil ||
                 record.runtimeStateEnum == .failed ||
                 // PR3: `.fixed` 공휴일off 반복 one-shot 은 발화 후에도 OS 자동 재무장이
@@ -744,6 +787,7 @@ final class AlarmKitViewModel: ObservableObject {
             )
         }
         var recovered = 0
+        var completed = true
 
         for record in candidates {
             // PR3 FIX: double-arm race guard. rearmIfHolidayOffOneShot(dismiss 경로)나
@@ -754,29 +798,51 @@ final class AlarmKitViewModel: ObservableObject {
             // 이어지는 예약이 게이트가 이미 닫힌 뒤라 그대로 성공해, **로그아웃한 계정의
             // 알람이 로그인 화면 뒤에서 되살아난다.** 종료 게이트는 `schedule` 진입점에만
             // 있어 이 경로를 못 막는다.
-            guard !isLeavingAccount else { break }
+            guard !isLeavingAccount else {
+                completed = false
+                break
+            }
             guard let live = store.record(id: record.id), live.enabled else { continue }
             // 또 다른 recovery sweep 가 같은 record 를 await schedule() 중이면 건너뛴다.
             // (`.fixed` one-shot 이 중복 schedule 되어 다음 회차가 이중 발화하는 것을 방지)
-            guard !rearmInFlight.contains(record.id) else { continue }
+            guard !rearmInFlight.contains(record.id) else {
+                // 달력만 바뀐 다시 걸기에서 건너뛰면 **다 못 했다**(Codex #837) — 다른 흐름이 옛 달력으로 걸고 있을 수
+                // 있다. 표지를 적지 않아 다음에(전경 복귀) 다시 돈다.
+                if mode == .calendarOnly { completed = false }
+                continue
+            }
             rearmInFlight.insert(record.id)
             defer { rearmInFlight.remove(record.id) }
 
-            // timezone 강제 recompute 경로: 발화 시각이 아직 미래여도 새 zone 기준으로
-            // fireAtMillis 를 다시 박아야 한다. prepareForScheduleRecovery 는 미래 건을
-            // 건드리지 않으므로, `.fixed` 서브셋에 한해 setEnabled 로 재계산을 강제한다.
+            // 달력(공휴일 국가·시간대)이 바뀐 강제 recompute 경로: 발화 시각이 아직 미래여도 새 달력으로
+            // fireAtMillis 를 다시 박아야 한다. prepareForScheduleRecovery 는 미래 건을 건드리지 않으므로
+            // `.fixed` 서브셋은 `recomputeHolidayOffFireTime` 으로 다음 발생만 다시 계산한다 — 바뀐 게 없거나
+            // 스누즈·울리는 중이면 nil 이라 건너뛴다(멱등). ⚠ `setEnabled` 로 되돌리지 말 것 — 그건 수정 시각을
+            // 올리고 스누즈를 지운다(`recomputeHolidayOffFireTime` 주석).
+            let prepared: LocalAlarmRecord
             if forceHolidayOffRecompute,
                record.isHolidayOffRecurring,
                record.fireAtMillis > nowMillis {
-                store.setEnabled(id: record.id, enabled: true, nowMillis: nowMillis, isHoliday: holidayPredicate)
-            }
-
-            guard let prepared = store.prepareForScheduleRecovery(
-                id: record.id,
-                nowMillis: nowMillis,
-                isHoliday: holidayPredicate
-            ) else {
+                guard let recomputed = store.recomputeHolidayOffFireTime(
+                    id: record.id,
+                    nowMillis: nowMillis,
+                    isHoliday: holidayPredicate
+                ) else {
+                    continue
+                }
+                prepared = recomputed
+            } else if mode == .calendarOnly {
+                // 그 사이 지난 행이 됐다 — 달력만 바뀐 다시 걸기는 손대지 않는다(평소 복구가 맡는다).
                 continue
+            } else {
+                guard let recovered = store.prepareForScheduleRecovery(
+                    id: record.id,
+                    nowMillis: nowMillis,
+                    isHoliday: holidayPredicate
+                ) else {
+                    continue
+                }
+                prepared = recovered
             }
 
             // ⚠ **거절을 예약 실패로 낙인찍지 않는다**(리뷰 39차). 남의 계정 행이라
@@ -801,7 +867,7 @@ final class AlarmKitViewModel: ObservableObject {
         if recovered > 0 {
             statusMessage = "예약된 알람 \(recovered)개를 다시 연결했어요."
         }
-        return recovered
+        return (recovered, completed)
     }
 
     /// PR3: dismiss 직후 `.fixed` 공휴일off one-shot 을 다음 비공휴일 회차로 재무장한다.

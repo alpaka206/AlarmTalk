@@ -570,8 +570,13 @@ final class AlarmTalkAPI: @unchecked Sendable {
     /// ⚠ **날씨 조회 실패는 `nil` 이다.** '맑음(0)' 과 구분되어야 한다 — 못 받았는데
     /// 0 으로 저장하면 비 오는 날에 "하늘 한 번 올려다보세요" 가 나간다.
     /// 안드로이드 `AlarmTalkApi.getPrerenderVariant` 미러.
+    ///
+    /// - Parameter region: 날씨 지역 키(`WeatherRegions`). 있으면 서버는 그 지역의 **미리 계산해 둔**
+    ///   값을 준다(지오코딩 없음). `country`·`city` 는 **계속 함께 보낸다** — 새 서버가 배포되기
+    ///   전 창과 옛 서버는 그 글자로 찾는다(`docs/spec/voice-and-message.md` 「날씨 지역은 목록에서만 고른다」).
     func getPrerenderVariant(
         context: String,
+        region: String?,
         country: String?,
         city: String?,
         targetDate: String,
@@ -579,6 +584,7 @@ final class AlarmTalkAPI: @unchecked Sendable {
         token: String
     ) async throws -> Int? {
         var items = [URLQueryItem(name: "context", value: context)]
+        if let region = region?.nilIfBlank { items.append(URLQueryItem(name: "region", value: region)) }
         if let country = country?.nilIfBlank { items.append(URLQueryItem(name: "country", value: country)) }
         if let city = city?.nilIfBlank { items.append(URLQueryItem(name: "city", value: city)) }
         items.append(URLQueryItem(name: "target_date", value: targetDate))

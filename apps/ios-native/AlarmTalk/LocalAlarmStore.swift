@@ -417,6 +417,38 @@ final class LocalAlarmStore: ObservableObject {
         persist()
     }
 
+    /// **발사 날짜가 바뀌면 받아 둔 날씨 조건을 버린다** — 울린 뒤·다시 켤 때·놓친 회차를
+    /// 넘길 때(스펙 `docs/spec/voice-and-message.md` 5-1 「발사 날짜가 바뀌면 받아 둔 인덱스를 버린다」).
+    ///
+    /// 조건 인덱스는 **그 날짜의** 날씨다. 반복 날씨 알람이 울리고 다음 날로 넘어갈 때 옛 값을
+    /// 남겨 두면 `weatherVariantNeedsRefresh` 가 "이미 받았다" 로 읽고(받은 시각이 24시간 창
+    /// 안이다), 그 사이 갱신을 못 하면 **어제 날씨 클립**이 울린다. 2026-09-30 까지 iOS 는 울린
+    /// 뒤에 지우지 않았다. 안드로이드는 `AlarmRepository.dismiss`·`setEnabled` 가
+    /// `shouldResetWeatherVariant` 로 같은 판정을 한다 — 판정식은 편집 저장과 같은
+    /// `BucketVariantResolver.shouldResetWeatherVariant` 하나다.
+    ///
+    /// 지운 뒤에는 '못 봤어요' 안내 클립 자리가 되고(`BucketVariantResolver.variantIndex`),
+    /// 준비창 갱신(`WeatherVariantRefreshService.refreshDue`)이 새 날짜로 다시 받아 재예약한다.
+    /// ⚠ 여기서 **다시 예약하지는 않는다** — 소리 지문이 바뀌므로 정지 뒤 리컨사일러
+    /// (`AlarmAppContext.reconcileAfterStop`)·복구 경로가 새 소리로 건다.
+    static func invalidateWeatherVariantIfFireDateChanges(
+        _ record: inout LocalAlarmRecord,
+        nextFireAtMillis: Int64,
+        calendar: Calendar = .current
+    ) {
+        guard record.bucketId == "weather",
+              BucketVariantResolver.shouldResetWeatherVariant(
+                  previous: record,
+                  nextBucketId: record.bucketId,
+                  nextCountry: record.voiceWeatherCountry,
+                  nextCity: record.voiceWeatherCity,
+                  nextFireAtMillis: nextFireAtMillis,
+                  calendar: calendar
+              ) else { return }
+        record.contextVariantIndex = nil
+        record.contextResolvedAtMillis = nil
+    }
+
     func markStopped(
         alarmKitID: String,
         isHoliday: (Date) -> Bool = { LocalHolidayCalendar.isHoliday($0) }
@@ -429,6 +461,9 @@ final class LocalAlarmStore: ObservableObject {
         alarms[index].bucketRotationIndex = Self.advancedBucketRotationIndex(alarms[index])
         if alarms[index].repeatDaysMask != 0,
            let nextFireAt = try? alarms[index].nextFireAtMillis(nowMillis: now, isHoliday: isHoliday) {
+            // 다음 날로 넘어가면 오늘 받아 둔 날씨 조건은 버린다 — 옛 `fireAtMillis` 로 판정하므로
+            // **덮기 전에** 부른다(`invalidateWeatherVariantIfFireDateChanges` 주석).
+            Self.invalidateWeatherVariantIfFireDateChanges(&alarms[index], nextFireAtMillis: nextFireAt)
             alarms[index].fireAtMillis = nextFireAt
             alarms[index].state = AlarmRuntimeState.armed.rawValue
             alarms[index].enabled = true
@@ -490,6 +525,8 @@ final class LocalAlarmStore: ObservableObject {
         if alarms[index].fireAtMillis <= nowMillis {
             if alarms[index].repeatDaysMask != 0,
                let nextFireAt = try? alarms[index].nextFireAtMillis(nowMillis: nowMillis, isHoliday: isHoliday) {
+                // 정지 기록 없이 지나간 회차를 넘길 때도 같다 — 날짜가 바뀌면 조건을 버린다.
+                Self.invalidateWeatherVariantIfFireDateChanges(&alarms[index], nextFireAtMillis: nextFireAt)
                 alarms[index].fireAtMillis = nextFireAt
                 alarms[index].state = AlarmRuntimeState.armed.rawValue
                 alarms[index].enabled = true
@@ -508,6 +545,40 @@ final class LocalAlarmStore: ObservableObject {
         }
 
         alarms[index].updatedAtMillis = nowMillis
+        persist()
+        return alarms[index]
+    }
+
+    /// **달력(공휴일 국가·시간대)이 바뀌었다** — '공휴일에는 끄기' 반복 알람의 다음 발생만 새 달력으로 다시
+    /// 계산한다. 다시 걸어야 하면 바뀐 행을, 그럴 필요가 없으면 nil 을 돌려준다(`AlarmKitViewModel.recoverScheduledAlarms`
+    /// 의 `forceHolidayOffRecompute` 갈래 — 공휴일 국가는 `HolidayOffRescheduler`, 시간대는 `AlarmTalkApp`).
+    ///
+    /// 안드로이드 `AlarmRepository.refreshHolidayOffAlarms`(`reschedulePendingAlarmsLocked` 의 `recomputeHolidayOff`)와
+    /// 같은 규칙이다(스펙 alarm-lifecycle.md 「공휴일 국가는 지역의 나라다」):
+    ///  - **멱등이다.** 다음 발생이 그대로이고 이미 걸려 있으면 nil — 같은 달력으로 몇 번 불러도 예약을 흔들지 않는다.
+    ///  - **스누즈 중·울리는 중이면 건드리지 않는다**(nil). 예전에는 `setEnabled` 로 다시 켜서 스누즈 횟수를
+    ///    지우고 옛 예약을 취소했다 — 그 사이 울리던 알람·스누즈가 사라진다.
+    ///  - ⚠ **수정 시각(`updatedAtMillis`)·동기화 상태를 건드리지 않는다** — 사용자의 편집이 아니다. 올리면 받은
+    ///    가족 알람이 '받은 사람이 고쳤다'(`RemoteAlarmPullSync.locallyEditedByRecipient`)로 읽히고, 내 알람은
+    ///    바뀐 것도 없이 dirty 가 되어 서버로 다시 간다.
+    func recomputeHolidayOffFireTime(
+        id: String,
+        nowMillis: Int64,
+        isHoliday: (Date) -> Bool = { LocalHolidayCalendar.isHoliday($0) }
+    ) -> LocalAlarmRecord? {
+        guard let index = alarms.firstIndex(where: { $0.id == id }),
+              alarms[index].enabled,
+              alarms[index].isHolidayOffRecurring else { return nil }
+        let state = alarms[index].runtimeStateEnum
+        guard state != .snoozed, state != .ringing,
+              let nextFireAt = try? alarms[index].nextFireAtMillis(nowMillis: nowMillis, isHoliday: isHoliday)
+        else { return nil }
+        let needsArm = alarms[index].alarmKitID == nil || state == .failed
+        guard needsArm || nextFireAt != alarms[index].fireAtMillis else { return nil }
+        // 발사 날짜가 바뀌면 받아 둔 날씨 조건을 버린다 — 옛 `fireAtMillis` 로 판정하므로 덮기 전에.
+        Self.invalidateWeatherVariantIfFireDateChanges(&alarms[index], nextFireAtMillis: nextFireAt)
+        alarms[index].fireAtMillis = nextFireAt
+        alarms[index].state = AlarmRuntimeState.armed.rawValue
         persist()
         return alarms[index]
     }
@@ -531,6 +602,8 @@ final class LocalAlarmStore: ObservableObject {
                 minute: alarms[index].minute,
                 referenceMillis: nowMillis
             )
+            // 다시 켜서 발사 날짜가 바뀌면 옛 날씨 조건을 버린다(안드로이드 `setEnabled` 와 같다).
+            Self.invalidateWeatherVariantIfFireDateChanges(&alarms[index], nextFireAtMillis: nextFireAt)
             alarms[index].fireAtMillis = nextFireAt
             alarms[index].enabled = true
             alarms[index].snoozeCount = 0

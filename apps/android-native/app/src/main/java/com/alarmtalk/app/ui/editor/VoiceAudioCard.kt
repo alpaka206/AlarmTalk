@@ -259,6 +259,7 @@ internal fun VoiceAudioCard(
                             // 표시 판정 — 재생 방식과 무관(`hasBucketMessageChoice` 주석).
                             isManual = editor.isManualForDisplay(),
                             randomContext = editor.voiceRandomContext,
+                            weatherCountry = editor.voiceWeatherCountry,
                             weatherCity = editor.voiceWeatherCity,
                             // 고른 것도 없고 문구도 없다 = 아직 아무것도 정해지지 않았다.
                             // 이 행이 이걸 `isManual` 보다 먼저 본다.
@@ -566,7 +567,11 @@ private fun VoicePreviewButton(
 internal fun MessageModeSummaryRow(
     isManual: Boolean,
     randomContext: String,
-    /** 날씨를 골랐을 때 함께 보여줄 도시. 비면 종류 이름만 나온다. */
+    /**
+     * 날씨를 골랐을 때 함께 보여줄 지역(옛 앱용 글자 한 벌). 비면 종류 이름만 나온다.
+     * 나라도 받는 이유: 지역 키를 되짚을 때 나라가 갈래를 가른다("미국 광주" 는 광주광역시가 아니다).
+     */
+    weatherCountry: String = "",
     weatherCity: String = "",
     /**
      * 아직 아무것도 정해지지 않았는가(`voiceText` 도 비고 버킷도 없음).
@@ -592,10 +597,14 @@ internal fun MessageModeSummaryRow(
         // 예전에는 `"직접 입력 문구 · <문장>"` 으로 붙였고, 재생 방식을 바꿀 때 이 줄이
         // 사라지는 카드에 실려 잠깐 읽히는 것이 계속 지적됐다.
         isManual -> stringResource(R.string.editor_msg_mode_manual)
-        // 날씨는 어느 도시 기준인지 함께 보여준다(예: "날씨 · 서울").
+        // 날씨는 어느 지역 기준인지 함께 보여준다(예: "날씨 · 서울").
         normalized == "wake_weather" && weatherCity.isNotBlank() ->
             "${stringResource(R.string.editor2_ctx_wake_weather)} · " +
-                weatherCityDisplayName(androidx.compose.ui.platform.LocalContext.current, weatherCity)
+                weatherLocationSummary(
+                    androidx.compose.ui.platform.LocalContext.current,
+                    weatherCountry,
+                    weatherCity,
+                )
         // preset 은 목록에 없는 보이지 않는 기본값 → '기본 인사말'로 표기.
         normalized == DefaultRandomPromptContext ->
             stringResource(R.string.editor_msg_mode_preset)

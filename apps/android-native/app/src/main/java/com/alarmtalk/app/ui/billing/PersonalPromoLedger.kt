@@ -92,6 +92,9 @@ internal class PersonalPromoLedger(private val currentEntry: () -> Long) {
 
     fun beginAccountRequest(): AccountRequest = AccountRequest(seq = ++requestSeq, entry = currentEntry())
 
+    /** 지금까지 뜬 계정 요청 표의 마지막 순번 — 표를 새로 뜨지 않는다(계정 설정 올리기의 울타리 `promptSettingsAnswerFence`). */
+    fun latestRequestSeq(): Long = requestSeq
+
     /**
      * 계정 응답을 적는다. **지금 이 계정의 응답일 때만** 부른다(부르는 쪽이 세션·세대를 본다).
      *

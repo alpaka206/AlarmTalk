@@ -234,6 +234,7 @@ private final class LateResolver: PrerenderVariantResolving, @unchecked Sendable
 
     func getPrerenderVariant(
         context: String,
+        region: String?,
         country: String?,
         city: String?,
         targetDate: String,
