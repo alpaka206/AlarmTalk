@@ -274,7 +274,9 @@ struct SettingsView: View {
     }
 
     /// `editBase()` 의 규칙 — 받아 적은 뒤의 이 기기 값(`DynamicPromptPreferences.current` 와 같은 순서).
-    static func editBase(
+    /// 화면 상태를 건드리지 않으므로 `nonisolated` 다 — 뷰의 메인 액터 격리를 물려받으면 비격리 유닛 테스트가
+    /// `defaults` 를 넘길 수 없다(Swift 6 "sending risks causing data races").
+    nonisolated static func editBase(
         userID: String?,
         server: DynamicPromptSettings?,
         defaults: UserDefaults = .standard
