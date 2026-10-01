@@ -819,7 +819,7 @@ voiceProfile.post('/:id/preview-played', async (c) => {
 // 수정한 문구가 이후 미리듣기 합성 문구(캐시 키)이자 사전렌더 톤 스타일 레퍼런스가 된다.
 // previewed_at/claim 을 함께 리셋해 수정본을 끝까지 다시 들어야 승격(keep)할 수 있게 한다.
 // 합성은 태그 없이 그 문구 그대로다(2026-09-30). `voice_profiles.preview_tag` 는 더 읽지도 쓰지도 않는다 —
-// 컬럼은 다음 회차 마이그레이션에서 DROP 한다(그때 이 파일에 참조가 남으면 안 된다).
+// 컬럼은 마이그레이션 125 가 DROP 한다 — 그 뒤에는 칸이 없으니 이 파일에 참조를 되살리지 말 것.
 voiceProfile.patch('/:id/preview-text', async (c) => {
   const ids = ownerIds(c);
   const db = getDB(c.env);

@@ -245,7 +245,7 @@ describe('POST /tts/generate — TTS 생성', () => {
     expect(claimCall?.sql).toContain("COALESCE(listener_title, '') = ?");
     // 목소리의 결도 페르소나다 — 결만 바뀐 PATCH 뒤의 낡은 요청이 claim 을 잡지 못해야 한다(Codex #802).
     expect(claimCall?.sql).toContain("COALESCE(voice_energy, '') = ?");
-    // `preview_tag` 는 읽지도 쓰지도 않는다(다음 회차에 DROP).
+    // `preview_tag` 는 읽지도 쓰지도 않는다(마이그레이션 125 가 DROP).
     expect(claimCall?.sql).not.toContain('preview_tag');
   });
 
