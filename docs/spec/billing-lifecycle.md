@@ -347,6 +347,34 @@ ID 로도 조회되고 최신 갱신 정보를 준다. 구글의 `getPlaySubscri
 - 회귀 테스트: `test/cron-fairness.test.ts`, `test/scheduled-purge-isolation.test.ts`,
   `test/personal-promo-end.test.ts`(매번 실패하는 사람).
 
+## 그룹 주인이 탈퇴하면 — 해체와 **같은 통지**를 보낸다 (2026-10-01)
+
+탈퇴 파기(`purgeUserAccount` — 즉시 삭제 `DELETE /user/me`·유예 파기 크론 공용)는 주인의
+활성 구독을 취소하고(`cancelActiveSubscriptionsForUser`), 그 자리에서 소유 그룹이 해체된다.
+멤버는 **다른 해체와 똑같이** 그룹 구독이 끊기고 등급이 다시 계산된다(가족 → 무료 등).
+그러니 통지도 다른 해체와 같다:
+
+- **멤버도 커밋 뒤 `plan_changed` 를 받고, 보관 유예가 걸렸으면 삭제 예고도 받는다**
+  (`notifyBillingStateChanged`). 대상은 해체로 그룹에서 떨어진 멤버 전원이다 — 독립 유료
+  이용권이 남은 멤버도 그룹 접근은 바뀌었으므로 `plan_changed` 는 받고, 예고는 유예 행이
+  있는 사람만 받는다(위 「결제 전 조회의 원자성」의 규칙 그대로).
+- ⚠ **주인의 클론 유무와 무관하다.** 목소리 철회(`revokeDeletedVoices`)가 깨우는 것은
+  **내 목소리를 들고 있던 사람**뿐이라, 클론이 없는 주인이 탈퇴하면 멤버에게는 아무 신호도
+  안 갔다 — 가족에서 무료로 내려갔는데 다음 앱 시작·주기 pull 까지 옛 등급으로 남았다.
+  등급 통지는 목소리 철회와 **별개의 목록**(`AccountPurgeNotifications.planChangedUserIds`)이다.
+- **떠나는 사람 자신은 넣지 않는다** — 그 기기는 곧 사라진다(계정 id·로그인 id 둘 다 뺀다).
+- **보내는 시점은 커밋 뒤다.** 트랜잭션 안에서 FCM/APNs 를 쏘지 않는다. 통지 실패는 탈퇴를
+  실패로 만들지 않는다(던지지 않는다 — 정확성은 재조회가 맡는다). 크론은 계정별 결과를 모아
+  `finally` 에서 한 번에 보내고, **이미 커밋된 계정분은 뒤 계정이 실패해도 반드시 보낸다**
+  (목소리 철회 통지와 같은 구조 — 「크론은 한 건에 막혀…」).
+- 해체가 일어나는 근거: 주인 구독이 `status = 'active'` 이면 보류·미확인·유예·만료 크론 대기
+  중이어도 `findActiveSubscriptionsByUserPk` 에 잡혀 취소·해체된다. 주인 구독이 `active` 가
+  아닌데 멤버가 남은 그룹은 지금 코드로는 생기지 않는다 — `status` 를 `cancelled` 로 바꾸는
+  유일한 문장(`cancelSubscriptionRowStatements`)을 주인 구독에 쓰는 길은
+  `cancelSubscriptionImmediate` 하나이고, 그 함수가 같은 트랜잭션에서 연결된 그룹과 뒷받침 없는
+  소유 그룹(방어 스윕)을 해체한다. 이어받기(`preserveGroupId`)는 같은 트랜잭션에서 새 활성
+  구독에 그룹을 다시 매단다. 초대 사용도 발급 구독이 `active`·`entitled` 일 때만 된다.
+
 ## 플랜 변경 — **스토어 시트가 시점을 정한다**
 
 ⚠ **'지금 변경 / 종료일에 변경' 을 우리가 묻는 UI 를 만들지 말 것.** 두 스토어 모두 전환을
@@ -1589,6 +1617,7 @@ Vibration disabled for ringing alarm
 | 결제 직전 권위 조회 | `GET /billing/subscription?refresh_store=1`(옵트인) | `crossStoreRenewalBlocked` (`MainViewModelBillingActions`) | `BillingPanel.confirmAndPurchase` |
 | 결제 앵커(`last_paid_at`) | 애플 `purchaseDate` · 구글 `googlePaymentAnchor`(Orders API) — 확정·RTDN·재조회·선물 모두 실제 결제일 사용 | — | — |
 | 영구 탈퇴 시 Apple 선물 연결 파기 | `lib/account-deletion.ts` `purgeUserAccount`(즉시 삭제·유예 파기 공통); 증빙은 `pseudonymizeBillingForRetention` → `index.ts` 보존 기한 정리 | 기존 탈퇴 API 사용 | 기존 탈퇴 API 사용 |
+| 그룹 주인 탈퇴 — 해체된 멤버에게 커밋 뒤 `plan_changed`(+삭제 예고), 클론 유무 무관 | `lib/account-deletion.ts` `purgeUserAccount` → `AccountPurgeNotifications.planChangedUserIds`(`cancelActiveSubscriptionsForUser` 반환값에서 떠나는 사람 제외) → `routes/user.ts` `DELETE /user/me`·`index.ts` 유예 파기 크론(`finally` 에서 모아) → `notifyBillingStateChanged`; `test/account-purge-plan-push.test.ts`·`test/account-purge-residue.test.ts`·`test/user.test.ts`·`test/scheduled-purge-isolation.test.ts` | 기존 `plan_changed` 처리 | 기존 `plan_changed` 처리 |
 | 구매 차단 — 빠른 거절(권위 아님) | `routes/billing-apple.ts` 선행 검사 | — | — |
 | 경쟁 애플 갱신 상태 최신화 | `refreshCompetingAppleRenewalState` → `reconcileStoreSubscription`; Google 확정·RTDN entitle에서 사용. 결제 전 조회는 `reconcileBillingPreflight` | — | — |
 | 로그아웃 중 환불 큐 | — | — | `PendingRevokedTransactionStore` · `flushPendingRevocations` |

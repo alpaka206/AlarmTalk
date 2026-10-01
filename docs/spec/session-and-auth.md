@@ -134,6 +134,11 @@ pepper 로 가명 보존 기록까지 곧장 이어져, 분리 보관을 무너�
 그 뒤에 돌면 **동석 멤버도, 수신 확인 전 알람도 못 찾아** tombstone 도 푸시도 없이 받는
 사람 기기에 탈퇴자의 녹음이 남는다(2026-09-30 까지 유료 사용자의 탈퇴가 전부 그랬다).
 
+⚠ **그룹 주인의 탈퇴는 멤버의 등급도 바꾼다.** 구독 취소가 소유 그룹을 해체하므로 멤버는
+가족 → 무료 등으로 내려간다. 그 멤버들에게는 **클론 유무와 무관하게** 커밋 뒤 `plan_changed`
+(+보관 유예가 걸렸으면 삭제 예고)를 보낸다 — 목소리 철회 통지와 별개다
+([billing-lifecycle.md](billing-lifecycle.md) 「그룹 주인이 탈퇴하면」).
+
 **표가 새로 생기면** `test/account-purge-residue.test.ts` 의 `TABLES` 가 먼저 깨진다 —
 사용자 데이터가 들어가는 표라면 거기 심고 파기가 지우게 만든 뒤 분류한다.
 
@@ -199,6 +204,7 @@ iOS는 네트워크/5xx/응답 해석 실패와 구서버의 `NO_PENDING_DELETIO
 | 즉시 폐기 | `authMiddleware` 의 `token_epoch` 비교 | — | — |
 | 탈퇴 취소 뒤 푸시 재등록 | `authMiddleware` 탈퇴 대기 허용 경로·`user.ts` 탈퇴 취소 | `MainViewModelAuthActions.cancelAccountDeletion` → `registerCurrentToken` | `AuthViewModel.prepareAccountRecovery` → `PushNotificationCoordinator.prepareAccountRecovery`를 await한 뒤 상태 확정 → `onAccountRecovered` → `start`(launch에서 연결) |
 | 탈퇴 파기 범위(남는 것 셋뿐) | `lib/account-deletion.ts` `purgeUserAccount`(유예 파기 `index.ts`·즉시 삭제 `user.ts` 공용) · 회귀 `test/account-purge-residue.test.ts` | — | — |
+| 그룹 주인 탈퇴 — 멤버 등급 통지 | `purgeUserAccount` 의 `planChangedUserIds` → 커밋 뒤 `notifyBillingStateChanged`(`user.ts`·`index.ts`) · 회귀 `test/account-purge-plan-push.test.ts` | 기존 `plan_changed` 처리 | 기존 `plan_changed` 처리 |
 | 탈퇴 취소 응답 유실·재확인 | `user.ts` DELETE 멱등 처리(이미 active는 무변경 성공) | 기존 취소 재시도 응답 소비 | `cancelAccountDeletion` 재확인·`refreshUser` 전환 감지 → `completeAccountRecovery` |
 | 회귀 테스트 | `test/auth.test.ts` (TTL·503) | `network/SessionTokenRenewalTest.kt` · `ColdStartRequestKeysTest.kt` · `EntryRefreshKeepsTokenTest.kt` | `SessionTokenRenewalTests.swift` |
 
