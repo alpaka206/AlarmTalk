@@ -3040,6 +3040,7 @@ export const migrations: Migration[] = [
       `CREATE TABLE IF NOT EXISTS pending_plan_notifications (
         user_id TEXT PRIMARY KEY,
         attempts INTEGER NOT NULL DEFAULT 0,
+        claimed_until TEXT,
         created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%f', 'now'))
       )`,
     ],

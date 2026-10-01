@@ -513,7 +513,7 @@ async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext)
       //   한도 오류를 삼켜도 쓴 예산은 돌아오지 않는다). 무음 신호는 놓쳐도 다음 진입·주기 재조회가
       //   메운다(`docs/spec/billing-lifecycle.md` 「그룹 주인이 탈퇴하면」).
       // 받을 사람은 파기 트랜잭션에서 이미 대기열에 적혔다(`pending_plan_notifications`) — 이 틱
-      // 것이든 앞 틱에서 잘린 것이든 오래된 순으로 `PLAN_NOTIFY_DRAIN_LIMIT` 명씩 보내고, 보낸
+      // 것이든 앞 틱에서 잘린 것이든 새 행 묶음(`PLAN_NOTIFY_FRESH_LIMIT`) + 다시 시도 한 명씩 보내고, 보낸
       // 뒤에만 지운다. 예산이 바닥나 못 보낸 사람은 행이 남아 다음 틱이 잇는다(코덱스 #841).
       // 파기할 계정이 없는 틱에도 돈다(조회 한 번) — 남은 행을 비우는 자리가 여기뿐이다.
       try {
