@@ -1242,6 +1242,32 @@ TTS 는 웃음 글자를 **글자로 읽는다**(2026-09-29 v3·v4·v4 Turbo 비
 
 절차·완료 확인 쿼리는 `docs/ops/tts-model-rerender.md`.
 
+## 11. 서버 보관 만료 — **행을 지우는 것과 삭제를 예약하는 것은 한 트랜잭션**이다 (2026-10-01)
+
+크론(`cleanupExpiredAudio`·`cleanupStaleDraftVoices`)이 기한이 지난 것을 거둔다:
+
+| 대상 | 기한 | 거두지 않는 것 |
+| --- | --- | --- |
+| 클론 학습용 업로드 원본(`voice_uploads`) | 7일 | 확정(살아 있고 draft 가 아닌) 목소리에 묶인 원본 — 재클론 소스라 그 목소리를 지울 때까지 보관 |
+| 생성 음성 캐시(`generated_audio_assets`) | 30일 | 알람이 쓰는 음원 · 프리셋 클립(§5-3) |
+| 화자 분리 후보 draft 보이스 | 1시간 | promote 된 보이스 |
+
+R2 파일·ElevenLabs 클론은 DB 트랜잭션 안에서 지울 수 없으므로 **삭제 큐(`pending_external_deletions`)에 예약**하고
+드레인이 나중에 지운다 — 큐는 outbox 다. 그래서 규칙은 하나다:
+
+- **행을 지우는(비우는) 쓰기와 그 외부 자원의 삭제 예약은 같은 batch 로 커밋한다.** 예전에는 행마다 DELETE 를
+  커밋하고 예약을 **따로** 커밋해, 그 사이가 끊기면(워커 subrequest 한도·네트워크) 파일·클론이 참조도 예약도 없이
+  영구히 남았다 — 처리방침의 파기 약속 위반이다. 실패하면 **통째로 롤백**하고 다음 회차(5분)가 다시 한다.
+- **쓰기 문장은 고를 때의 조건을 다시 본다.** 고른 id 로 범위를 묶되 같은 조건을 걸어, 고른 뒤 promote 된 원본·
+  새로 알람이 붙은 음원은 예약도 삭제도 하지 않는다. 예약은 `INSERT … SELECT` 로 DELETE **앞에** 둔다 — 같은
+  트랜잭션이라 둘이 같은 상태를 보고, 지운 행과 예약한 키가 어긋날 수 없다.
+- **독약 행은 없다**(따져 본 근거). 쓰기는 전부 집합 단위라 행 값에 따라 터질 자리가 없다 — 큐 충돌은
+  `ON CONFLICT` 가 흡수하고(위 §10 의 id 갱신), 빈 키는 예약에서 거르고, 지우는 표를 참조하는 FK 도 없다. 남는
+  실패는 batch 전체에 똑같이 걸리므로 다음 회차의 재시도가 맞다. 회차당 DB 왕복도 단계당 고르기 1 + 쓰기 1 로
+  줄었다(예전에는 행마다 2~3 왕복이라 그것만으로 한도 ~50 에 닿을 수 있었다).
+- 탈퇴 파기·음성 동의 철회가 **문구의 업로드 키**도 다시 예약하는 것(`enqueueUploadKeysReferencedByMessagesStatement`)
+  은 그대로 둔다. 이 규칙 전에 따로 커밋하다 끊긴 녹음은 그 키를 아는 곳이 문구뿐이라, 그 잔재를 거두는 길이다.
+
 ## 구현 지도
 
 | 규칙 | Android | iOS | 백엔드 |
@@ -1344,6 +1370,7 @@ TTS 는 웃음 글자를 **글자로 읽는다**(2026-09-29 v3·v4·v4 Turbo 비
 | 태그를 붙이지 않는다 · 모델이 낸 태그는 벗긴다 | 옛 행 표시용 벗기기만 남는다 — `data/DeliveryTags.kt` `stripDeliveryTags` | 같음 — `DeliveryTags.swift` | 프롬프트(`DYNAMIC_SYSTEM_INSTRUCTION`·`dynamicAlarmTextPrompt`·`prerenderClipPrompt`·`alarmTextPrompt` — 태그 지시 없음) · `stripAllTags` ← `generatePrerenderClipText`·`generateDynamicAlarmTextWithVertex` · 스톡 프리셋에 태그 없음(회귀 `stock-clips.test.ts`) · `voice_profiles.preview_tag` 칸은 마이그레이션 #125 가 DROP(회귀 `migration-125-drop-preview-tag.test.ts`) |
 | 합성 모델 = `eleven_v4_turbo`(코드 상수) · 설정은 stability·similarity 둘 · 말끝 가공 없음 | — | — | `lib/tts-model.ts` 의 `TTS_MODEL_ID`·`TTS_VOICE_SETTINGS` ← `lib/elevenlabs.ts` `textToSpeech`·`lib/voice-provider.ts`·`scripts/prerender-stock-preview.ts`·`scripts/publish-stock-clips.ts`(회귀 `voice-provider-model.test.ts`·`elevenlabs.test.ts`·`publish-stock-clips-contract.test.ts`·`stock-clip-provider-text.test.ts`) · 시청본 지문 세대 `PIPELINE_VERSION`(`scripts/stock-preview-fingerprint.ts`) |
 | 캐시 키 범위(스톡 / 직접 입력은 그 사람) · 삭제 예약은 다시 넣으면 id 가 바뀐다 | — | — | `lib/audio-cache.ts` 의 `STOCK_TTS_CACHE_SCOPE`·`manualTtsCacheScope` ← `lib/stock-clips.ts` `generateStockClip`·`scripts/publish-stock-clips.ts`·`routes/tts.ts`(`isManualGeneration`) · `lib/audio-retention.ts` 의 `REFRESH_RESERVATION_ON_CONFLICT`(회귀 `publish-stock-clips-contract.test.ts`·`tts.test.ts`·`audio-retention.test.ts`) |
+| 보관 만료 — 행 삭제와 삭제 예약은 한 batch · 쓰기 문장이 고를 때의 조건을 다시 본다(§11) | — | — | `lib/audio-retention.ts` 의 `cleanupExpiredAudio`·`cleanupStaleDraftVoices` ← 예약 문장 `externalDeletionsFromSelectStatement`(`enqueueUploadKeysReferencedByMessagesStatement` 도 같은 문장) · 회귀 `audio-retention-atomic.test.ts`(트리거로 중간 실패 → 롤백)·`audio-retention-source-keep.test.ts` |
 
 ## 검증 방법
 

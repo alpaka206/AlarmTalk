@@ -189,7 +189,10 @@ async function discardAbandonedDrafts(tx: DbExecutor, ownerIds: string[]): Promi
   for (const row of drafts.rows) {
     const draftId = String(row.id);
     // 소프트 삭제를 **먼저 클레임**한다 — 그 사이 승격(is_draft=0)된 행의 클론을 큐에
-    // 넣어 파기하는 TOCTOU 를 막는다(`cleanupStaleDraftVoices` 와 같은 순서).
+    // 넣어 파기하는 TOCTOU 를 막는다. 클레임이 성공한 행만 예약하고, 둘이 같이 커밋되는
+    // 것은 호출부의 트랜잭션(`tx`)이 보장한다.
+    // (cron 의 `cleanupStaleDraftVoices` 는 순서가 반대다 — 집합 단위 batch 라 행마다 클레임
+    //  결과를 볼 수 없으므로, 같은 조건의 예약 `INSERT … SELECT` 를 소프트 삭제 **앞에** 둔다.)
     const claimed = await tx.execute({
       sql: `UPDATE voice_profiles
             SET deleted_at = datetime('now'), updated_at = datetime('now')
