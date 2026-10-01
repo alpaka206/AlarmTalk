@@ -250,6 +250,8 @@ export async function purgeUserAccount(
   const planChangedUserIds: string[] = [];
   // 결과를 읽지 않는 쓰기를 모아 두는 자리(아래 `tx.batch` 한 번으로 나간다).
   const writes: InStatement[] = [];
+  // 묶음 안에 끼운 읽기(남은 소유 그룹의 멤버)의 자리 — `userPk` 가 있을 때만 끼운다.
+  let remainingOwnedMembersIndex: number | null = null;
   if (userPk) {
     // 중복을 제거하지 않는다. 아래 DELETE 들이 `IN (?, ?)` 로 개수를 고정해 두고 있어서,
     // 두 값이 같을 때(=정규화 이후의 일반적인 경우) 하나로 줄이면 바인딩 개수가 어긋나
@@ -348,6 +350,20 @@ export async function purgeUserAccount(
     // 지우거나 키를 비우기 **전에** 옮겨 두지 않으면, 업로드 행이 TTL 로 먼저 사라진 녹음은
     // R2 에 영영 남는다(이유는 `enqueueUploadKeysReferencedByMessagesStatement`).
     const pointsAtMyUploads = audioUrlPointsAtUploadsOf('audio_url', userIds);
+    // ⚠ **맨 앞은 읽기 하나다 — 아래 `DELETE FROM plan_group_members` 가 지울 멤버**(코덱스 #841).
+    //   위 취소는 **활성 구독**이 있는 그룹만 해체한다. 주인 구독이 이미 끝났는데 그룹이 남은
+    //   경우(레거시 복구 `repairFamilyPlanGroupForUser` 가 멤버의 옛 가족 구독을 다시 붙인 그룹 등)는
+    //   취소가 아무도 돌려주지 않는데, 아래 묶음이 그 멤버십·그룹을 무조건 지운다 — 등급은 멤버 자기
+    //   구독이 받쳐 그대로일 수 있어도 **그룹 접근·공유 목소리·받는 사람 목록은 바뀐다.** 클론 없는
+    //   주인이면 철회 통지도 안 가므로 다음 재조회까지 옛 그룹을 들고 있다. 그래서 지우기 직전의
+    //   멤버를 읽어 등급 통지 목록에 더한다. 묶음 안이라 왕복이 늘지 않는다(결과는 `batch` 가 돌려준다).
+    remainingOwnedMembersIndex = writes.length;
+    writes.push({
+      sql: `SELECT DISTINCT m.user_id FROM plan_group_members m
+            JOIN plan_groups g ON g.id = m.plan_group_id
+            WHERE g.owner_user_id = ? AND m.user_id NOT IN (?, ?)`,
+      args: [userPk, userPk, userLoginId],
+    });
     writes.push(enqueueUploadKeysReferencedByMessagesStatement(userIds));
     writes.push({
       sql: `DELETE FROM voucher_redemptions
@@ -572,7 +588,13 @@ export async function purgeUserAccount(
   });
 
   // 모아 둔 쓰기를 **한 번의 요청**으로 보낸다(위 주석 참조).
-  await tx.batch(writes);
+  const results = await tx.batch(writes);
+  if (remainingOwnedMembersIndex !== null) {
+    for (const row of results[remainingOwnedMembersIndex]?.rows ?? []) {
+      const id = String(row.user_id);
+      if (!planChangedUserIds.includes(id)) planChangedUserIds.push(id);
+    }
+  }
 
   return { downgradedAlarms: revokedTargets, voiceAccessRevokedUserIds, planChangedUserIds };
 }

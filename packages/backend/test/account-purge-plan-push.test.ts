@@ -163,4 +163,18 @@ describe('그룹 주인 탈퇴 — 해체된 멤버의 등급 변경 통지 (실
     expect((await one(`SELECT plan FROM users WHERE id = ?`, [C_PK])).plan).toBe('family');
     expect((await one(`SELECT status FROM subscriptions WHERE id = 'sub-c'`)).status).toBe('active');
   });
+  it('주인 구독이 이미 끝났는데 남은 소유 그룹의 멤버도 목록에 있다(코덱스 #841)', async () => {
+    // 레거시 복구(`repairFamilyPlanGroupForUser`)가 멤버의 옛 가족 구독을 다시 붙인 그룹처럼,
+    // 주인 구독은 `cancelled` 인데 그룹·멤버십이 남은 모양. 취소는 아무도 돌려주지 않지만 파기
+    // 묶음이 그 멤버십·그룹을 지우므로 멤버의 그룹 접근이 바뀐다 — 알려야 한다.
+    await seedFamily();
+    await run(`UPDATE subscriptions SET status = 'cancelled' WHERE id = 'sub-a'`);
+
+    const purged = await purgeA();
+
+    expect(purged.planChangedUserIds).toEqual([B_PK]);
+    // 그룹·멤버십은 실제로 사라졌다(알린 사실과 같다).
+    expect(await one(`SELECT COUNT(*) AS n FROM plan_group_members WHERE user_id = ?`, [B_PK])).toEqual({ n: 0 });
+    expect(await one(`SELECT COUNT(*) AS n FROM plan_groups WHERE id = 'g-a'`)).toEqual({ n: 0 });
+  });
 });
