@@ -3025,6 +3025,26 @@ export const migrations: Migration[] = [
     name: 'drop-voice-profiles-preview-tag',
     statements: [`ALTER TABLE voice_profiles DROP COLUMN preview_tag`],
   },
+  {
+    // 탈퇴 파기로 등급·그룹이 바뀐 멤버에게 보낼 통지의 대기열(`lib/pending-plan-notifications.ts`).
+    // 파기와 **같은 트랜잭션**에서 받을 사람을 적고, 커밋 뒤 발송이 끝난 다음에만 지운다 — 발송이
+    // subrequest 예산에 잘려도 다음 크론 틱이 잇는다(코덱스 #841). 탈퇴자 행은 이미 사라져 다시
+    // 고를 근거가 없고, 실리는 목소리 삭제 예고는 되돌릴 수 없는 일의 예고다.
+    // - 125 는 #843(`preview_tag` DROP)이다. 러너는 id 마다 적용 여부를 본다.
+    // - 배포가 이 마이그레이션보다 먼저 돌면 파기 묶음의 INSERT 가 'no such table' 로 실패해
+    //   파기 트랜잭션이 **통째로 롤백된다**(fail-closed) — 즉시 삭제는 500 으로 재시도하고, 유예 파기는
+    //   다음 틱이 다시 한다. 통지 없이 파기만 커밋되는 창은 없다.
+    id: 126,
+    name: 'pending-plan-notifications',
+    statements: [
+      `CREATE TABLE IF NOT EXISTS pending_plan_notifications (
+        user_id TEXT PRIMARY KEY,
+        attempts INTEGER NOT NULL DEFAULT 0,
+        claimed_until TEXT,
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%f', 'now'))
+      )`,
+    ],
+  },
 ];
 // Errors that mean the statement was already applied — safe to ignore so
 // we can recover databases whose `_migrations` ledger is out of sync with

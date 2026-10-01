@@ -9,17 +9,22 @@ vi.mock('../src/lib/audio-retention', () => ({
 vi.mock('../src/lib/billing-cancel', () => ({
   processSubscriptionExpiry: vi.fn().mockResolvedValue(undefined),
 }));
+vi.mock('../src/lib/pending-plan-notifications', () => ({
+  runPlanNotificationDrainTurn: vi.fn().mockResolvedValue(false),
+  isPlanNotificationDrainMinute: () => false,
+  prunePendingPlanNotifications: vi.fn().mockResolvedValue(undefined),
+}));
 vi.mock('../src/lib/account-deletion', () => ({
   // 커밋 후 알릴 대상을 돌려준다. 비어 있어도 **형태는 지켜야** cron 이 그대로 펴 담는다.
   purgeUserAccount: vi
     .fn()
-    .mockResolvedValue({ downgradedAlarms: [], voiceAccessRevokedUserIds: [] }),
+    .mockResolvedValue({ downgradedAlarms: [], voiceAccessRevokedUserIds: [], planChangedUserIds: [] }),
   pseudonymizeBillingForRetention: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock('../src/lib/transactions', () => ({
   withWriteTransaction: vi
     .fn()
-    .mockResolvedValue({ downgradedAlarms: [], voiceAccessRevokedUserIds: [] }),
+    .mockResolvedValue({ downgradedAlarms: [], voiceAccessRevokedUserIds: [], planChangedUserIds: [] }),
 }));
 vi.mock('../src/lib/fcm', () => ({
   sendAlarmPush: vi.fn().mockResolvedValue(undefined),
@@ -163,6 +168,7 @@ describe('scheduled() — 탈퇴 파기 알림', () => {
       .mockResolvedValueOnce({
         downgradedAlarms: [{ alarmId: 'al-1', ownerUserId: 'R1', isReceived: true }],
         voiceAccessRevokedUserIds: ['M1'],
+        planChangedUserIds: ['G1'],
       } as never)
       .mockRejectedValueOnce(new Error('turso down'));
 
@@ -177,5 +183,9 @@ describe('scheduled() — 탈퇴 파기 알림', () => {
       { alarmId: 'al-1', ownerUserId: 'R1', isReceived: true },
     ]);
     expect(vi.mocked(notifyDowngradedAlarms).mock.calls[0]![3]).toEqual(['M1']);
+    // 그룹 해체로 등급이 바뀐 G1 은 A 의 파기 트랜잭션이 대기열에 적었다 — 이 틱은 비우지 않고
+    // 1분 전용 크론이 자기 예산으로 비운다(`pending-plan-notifications.test.ts`).
+    const { runPlanNotificationDrainTurn } = await import('../src/lib/pending-plan-notifications');
+    expect(runPlanNotificationDrainTurn).not.toHaveBeenCalled();
   });
 });

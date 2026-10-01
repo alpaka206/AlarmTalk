@@ -6,6 +6,7 @@ import {
   enqueueUserVoiceArtifacts,
 } from './audio-retention';
 import { audioUrlPointsAtUploadsOf, revokeDeletedVoices } from './voice-revocation';
+import { enqueuePlanNotificationsStatement, REQUEUE_ON_CONFLICT } from './pending-plan-notifications';
 
 const TEXT_ENCODER = new TextEncoder();
 
@@ -186,7 +187,11 @@ export type RevokedRecipientTarget = {
   isReceived: boolean;
 };
 
-/** 탈퇴 커밋 후 보내야 할 알림. 그대로 `notifyDowngradedAlarms` 의 3·4번째 인자다. */
+/**
+ * 탈퇴 커밋 후 보내야 할 알림. 앞의 둘은 그대로 `notifyDowngradedAlarms` 의 3·4번째 인자,
+ * `planChangedUserIds` 는 같은 트랜잭션에서 통지 대기열에 이미 적힌 사람들이다
+ * (즉시 삭제는 커밋 뒤 `sendPlanNotificationsNow` 로 곧바로 보내고, 남으면 1분 전용 크론이 잇는다).
+ */
 export type AccountPurgeNotifications = {
   /** 서버 알람 행에서 찾은 강등 대상. 받은 알람이면 pull, 본인 알람이면 접근권 재확인. */
   downgradedAlarms: RevokedRecipientTarget[];
@@ -198,6 +203,17 @@ export type AccountPurgeNotifications = {
    * 녹음으로 계속 울린다. 그래서 **내 목소리를 볼 수 있었던 사람 전부**에게 알린다.
    */
   voiceAccessRevokedUserIds: string[];
+  /**
+   * 내 구독 취소로 **등급·그룹이 바뀐 사람들** — 내가 주인이던 그룹이 해체돼 떨어져 나간 멤버.
+   * 파기와 같은 트랜잭션에서 통지 대기열(`pending_plan_notifications`)에 적히고, 커밋 뒤
+   * `plan_changed`(+삭제 예고)가 나간다 — 즉시 삭제는 곧바로(`sendPlanNotificationsNow`), 남은 것은 1분 전용
+   * 크론의 홀수 분이 자기 예산으로(`runPlanNotificationDrainTurn`).
+   *
+   * ⚠ 위 두 목록과 **별개다.** 그 둘은 '내 목소리를 들고 있던 사람' 이라 클론이 없는 주인이
+   * 탈퇴하면 비어 있다 — 그러면 가족에서 무료로 내려간 멤버가 아무 신호도 못 받았다.
+   * 떠나는 사람 자신은 빠져 있다(그 기기는 곧 사라진다).
+   */
+  planChangedUserIds: string[];
 };
 
 /**
@@ -235,8 +251,11 @@ export async function purgeUserAccount(
   }
   const revokedTargets: RevokedRecipientTarget[] = [];
   const voiceAccessRevokedUserIds: string[] = [];
+  const planChangedUserIds: string[] = [];
   // 결과를 읽지 않는 쓰기를 모아 두는 자리(아래 `tx.batch` 한 번으로 나간다).
   const writes: InStatement[] = [];
+  // 묶음 안에 끼운 읽기(남은 소유 그룹의 멤버)의 자리 — `userPk` 가 있을 때만 끼운다.
+  let remainingOwnedMembersIndex: number | null = null;
   if (userPk) {
     // 중복을 제거하지 않는다. 아래 DELETE 들이 `IN (?, ?)` 로 개수를 고정해 두고 있어서,
     // 두 값이 같을 때(=정규화 이후의 일반적인 경우) 하나로 줄이면 바인딩 개수가 어긋나
@@ -294,10 +313,20 @@ export async function purgeUserAccount(
     voiceAccessRevokedUserIds.push(...revocation.voiceAccessRevokedUserIds);
 
     // 철회를 기록한 **뒤에** 구독을 끊는다(위 ⚠ — 순서를 뒤집지 말 것).
-    await cancelActiveSubscriptionsForUser(tx, userPk, new Date(), {
+    //
+    // ⚠ **반환값을 버리지 말 것**(2026-10-01). 내가 주인이면 여기서 그룹이 해체되고 멤버의
+    //   등급이 다시 계산된다(가족 → 무료 등). 다른 해체 경로(해지·만료·환불)는 이 목록으로
+    //   커밋 뒤 `plan_changed` 를 보내는데, 탈퇴만 버리고 있었다 — 클론이 없는 주인이면 위
+    //   철회도 아무도 안 깨우므로 멤버는 다음 앱 시작·주기 pull 까지 옛 등급을 들고 있었다.
+    //   취소 당사자(나)가 목록에 들어 있으니 뺀다 — 내 기기는 곧 사라진다.
+    const leaving = new Set(userIds);
+    const changed = await cancelActiveSubscriptionsForUser(tx, userPk, new Date(), {
       deleteVoiceData: false,
       promoCoversFree,
     });
+    for (const id of new Set(changed)) {
+      if (!leaving.has(id)) planChangedUserIds.push(id);
+    }
 
     // 코드의 ON DELETE SET NULL만으로는 거래 ID가 무기한 남는다. 소유 근거를 지우기
     // 전에 연결도 파기한다. 이미 코드가 없으면 Apple 원장으로 찾고, 거래 증빙은 호출부가
@@ -325,6 +354,41 @@ export async function purgeUserAccount(
     // 지우거나 키를 비우기 **전에** 옮겨 두지 않으면, 업로드 행이 TTL 로 먼저 사라진 녹음은
     // R2 에 영영 남는다(이유는 `enqueueUploadKeysReferencedByMessagesStatement`).
     const pointsAtMyUploads = audioUrlPointsAtUploadsOf('audio_url', userIds);
+    // ⚠ **맨 앞은 읽기 하나다 — 아래 `DELETE FROM plan_group_members` 가 지울 멤버**(코덱스 #841).
+    //   위 취소는 **활성 구독**이 있는 그룹만 해체한다. 주인 구독이 이미 끝났는데 그룹이 남은
+    //   경우(레거시 복구 `repairFamilyPlanGroupForUser` 가 멤버의 옛 가족 구독을 다시 붙인 그룹 등)는
+    //   취소가 아무도 돌려주지 않는데, 아래 묶음이 그 멤버십·그룹을 무조건 지운다 — 등급은 멤버 자기
+    //   구독이 받쳐 그대로일 수 있어도 **그룹 접근·공유 목소리·받는 사람 목록은 바뀐다.** 클론 없는
+    //   주인이면 철회 통지도 안 가므로 다음 재조회까지 옛 그룹을 들고 있다. 그래서 지우기 직전의
+    //   멤버를 읽어 등급 통지 목록에 더한다. 묶음 안이라 왕복이 늘지 않는다(결과는 `batch` 가 돌려준다).
+    const remainingOwnedMembers = {
+      sql: `SELECT DISTINCT m.user_id FROM plan_group_members m
+            JOIN plan_groups g ON g.id = m.plan_group_id
+            WHERE g.owner_user_id = ? AND m.user_id NOT IN (?, ?)`,
+      args: [userPk, userPk, userLoginId],
+    };
+    remainingOwnedMembersIndex = writes.length;
+    writes.push(remainingOwnedMembers);
+    // ⚠ **통지 받을 사람은 파기와 같은 트랜잭션에 적는다**(코덱스 #841 —
+    //   `lib/pending-plan-notifications.ts`). 커밋 뒤 발송이 예산에 잘려도 다음 틱이 잇는다.
+    //   취소가 돌려준 사람(이미 알고 있다)과, 위 읽기와 같은 조건의 남은 소유 그룹 멤버를 함께
+    //   넣는다 — 후자는 아래 `DELETE FROM plan_group_members` 보다 **앞**이어야 한다.
+    const enqueueChanged = enqueuePlanNotificationsStatement(planChangedUserIds);
+    if (enqueueChanged) writes.push(enqueueChanged);
+    writes.push({
+      // `ON CONFLICT` 앞의 `WHERE` 는 빼지 말 것 — SQLite 는 `INSERT … SELECT … ON CONFLICT` 에서
+      // WHERE 가 없으면 `ON` 을 조인 조건으로 읽는다(여기는 조인의 ON 도 있어 더 헷갈린다).
+      sql: `INSERT INTO pending_plan_notifications (user_id)
+            ${remainingOwnedMembers.sql}
+            ${REQUEUE_ON_CONFLICT}`,
+      args: remainingOwnedMembers.args,
+    });
+    // 떠나는 사람 자신이 앞서 다른 사람의 탈퇴로 대기열에 들어 있었다면 함께 지운다 — 기기는 곧
+    // 사라지고, 남겨 두면 파기 뒤에도 계정 id 가 남는다.
+    writes.push({
+      sql: `DELETE FROM pending_plan_notifications WHERE user_id IN (?, ?)`,
+      args: userIds,
+    });
     writes.push(enqueueUploadKeysReferencedByMessagesStatement(userIds));
     writes.push({
       sql: `DELETE FROM voucher_redemptions
@@ -549,7 +613,13 @@ export async function purgeUserAccount(
   });
 
   // 모아 둔 쓰기를 **한 번의 요청**으로 보낸다(위 주석 참조).
-  await tx.batch(writes);
+  const results = await tx.batch(writes);
+  if (remainingOwnedMembersIndex !== null) {
+    for (const row of results[remainingOwnedMembersIndex]?.rows ?? []) {
+      const id = String(row.user_id);
+      if (!planChangedUserIds.includes(id)) planChangedUserIds.push(id);
+    }
+  }
 
-  return { downgradedAlarms: revokedTargets, voiceAccessRevokedUserIds };
+  return { downgradedAlarms: revokedTargets, voiceAccessRevokedUserIds, planChangedUserIds };
 }

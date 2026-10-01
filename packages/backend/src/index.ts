@@ -280,6 +280,45 @@ app.onError((err, c) => {
 
 // Cloudflare Workers Cron Trigger 진입점 — wrangler.toml [triggers] crons = ["*/5 * * * *", "* * * * *"].
 // 5분 틱이 본체이고, 1분 크론은 기간 한정 개인 플랜 종료 전용이다(아래 첫 분기).
+/**
+ * 1분 전용 크론의 **홀수 분**에 탈퇴 등급 통지 대기열을 비운다(`lib/pending-plan-notifications.ts`).
+ * 이 실행을 썼으면 `true` — 그 분의 개인 플랜 종료 작업은 건너뛴다(다음 짝수 분이 한다).
+ *
+ * - 실패도 `true` 다 — 이 실행의 예산을 얼마나 썼는지 모르므로 종료 작업에 넘기지 않는다. 잡은 행은
+ *   잠금 기한 뒤 다시 고른다. 단 **표가 없으면**(배포가 마이그레이션 126 보다 먼저 돈 창) 아무것도 안 썼으니
+ *   `false` 로 종료 작업에 넘긴다.
+ * - 경보는 **그 시각의 첫 비우기 분(UTC 1분)** 에만 올린다 — 1분마다 도는 실행이라 계속되는 실패를 매번
+ *   올리면 다른 사고가 묻힌다. ⚠ 종료 작업의 시간당 자리(`isPromoEndAlertSlot` — 0분)를 쓰지 말 것 —
+ *   비우기는 홀수 분에만 돌아 그 자리에 닿지 못하고, 경보가 **영영** 안 올라간다(리뷰).
+ * - 상한에서 버린 행(예고를 못 보낸 사람)은 드물고 되돌릴 수 없으니 **그때마다** 올린다.
+ */
+async function planNotificationDrainTurn(
+  db: ReturnType<typeof getDB>,
+  env: Env,
+  now: Date,
+  captureCron: (at: string, err: unknown) => void,
+): Promise<boolean> {
+  try {
+    const drain = await import('./lib/pending-plan-notifications');
+    if (!drain.isPlanNotificationDrainMinute(now)) return false;
+    return await drain.runPlanNotificationDrainTurn(db, env, {
+      onGaveUp: (users) =>
+        captureCron(
+          'scheduled.plan_notify_drain.gave_up',
+          new Error(`pending_plan_notifications: gave up on ${users} recipient(s)`),
+        ),
+    });
+  } catch (err) {
+    if (/no such table/i.test(String(err))) {
+      logStructured('error', { at: 'scheduled.plan_notify_drain', error: String(err) });
+      return false;
+    }
+    if (now.getUTCMinutes() === 1) captureCron('scheduled.plan_notify_drain', err);
+    else logStructured('error', { at: 'scheduled.plan_notify_drain', error: String(err) });
+    return true;
+  }
+}
+
 async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
   // 읽기 재시도는 `getDB` 가 두른다(`withTransientReadRetry`) — 여기서 또 감싸면 3×3 회가 된다.
   // 실패한 유지보수 쓰기는 다음 틱에 재개되므로 그대로 둔다.
@@ -323,25 +362,33 @@ async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext)
   // 이 실행은 **이 일만** 한다 — 실행마다 subrequest(~50)를 따로 받는 것이 전용 크론을 둔 이유다
   // (`lib/personal-promo-end.ts`). 끝 전이거나 스위치가 꺼져 있으면 DB 를 부르지 않고 끝난다.
   if (event.cron === PERSONAL_PROMO_END_CRON) {
-    try {
-      const { runPersonalPromoEnd } = await import('./lib/personal-promo-end');
-      await runPersonalPromoEnd(db, env, now, {
-        role: 'dedicated',
-        hooks: {
-          onError: (stage, err, tags) =>
-            captureCron(`scheduled.personal_promo_end.${stage}`, err, tags),
-        },
-      });
-    } catch (err) {
-      // ⚠ **이 실행은 1분마다 돈다**(Codex #803) — DB 장애처럼 계속되는 실패를 매번 Sentry 로 올리면 하루
-      // 1,440건이 되어 다른 사고가 묻힌다. 로그는 매번 남기고, 경보는 단계별 경보와 같은 시간당 자리
-      // (`isPromoEndAlertSlot`)에서만 올린다. 모듈을 못 불렀으면(배포 사고) 그대로 올린다.
-      const alertSlot = await import('./lib/personal-promo-end')
-        .then((module) => module.isPromoEndAlertSlot(now))
-        .catch(() => true);
-      // `captureCron` 도 같은 줄을 로그로 남긴다 — 경보 자리가 아니면 로그만.
-      if (alertSlot) captureCron('scheduled.personal_promo_end', err);
-      else logStructured('error', { at: 'scheduled.personal_promo_end', error: String(err) });
+    // ── 탈퇴 등급 통지 대기열(홀수 분, 대기 행이 있을 때만 이 실행을 통째로 쓴다) ──────────────
+    // 비우기는 **자기 예산을 통째로 가진 실행**에서만 한다 — 5분 틱 끝에서 남은 예산을 나눠 쓰면
+    // 시도 횟수·재시도·처리량이 어떻게 짜도 어긋났다(코덱스 #841, `lib/pending-plan-notifications.ts`).
+    // 대기열이 비어 있으면(거의 언제나) 조회 한 번만 하고 아래 개인 플랜 종료 작업이 이어 쓴다 —
+    // 그 작업의 예산(45)은 그대로 들어간다(~50 중 여유 안). 짝수 분은 늘 종료 작업 차례다.
+    const tookDrainTurn = await planNotificationDrainTurn(db, env, now, captureCron);
+    if (!tookDrainTurn) {
+      try {
+        const { runPersonalPromoEnd } = await import('./lib/personal-promo-end');
+        await runPersonalPromoEnd(db, env, now, {
+          role: 'dedicated',
+          hooks: {
+            onError: (stage, err, tags) =>
+              captureCron(`scheduled.personal_promo_end.${stage}`, err, tags),
+          },
+        });
+      } catch (err) {
+        // ⚠ **이 실행은 1분마다 돈다**(Codex #803) — DB 장애처럼 계속되는 실패를 매번 Sentry 로 올리면 하루
+        // 1,440건이 되어 다른 사고가 묻힌다. 로그는 매번 남기고, 경보는 단계별 경보와 같은 시간당 자리
+        // (`isPromoEndAlertSlot`)에서만 올린다. 모듈을 못 불렀으면(배포 사고) 그대로 올린다.
+        const alertSlot = await import('./lib/personal-promo-end')
+          .then((module) => module.isPromoEndAlertSlot(now))
+          .catch(() => true);
+        // `captureCron` 도 같은 줄을 로그로 남긴다 — 경보 자리가 아니면 로그만.
+        if (alertSlot) captureCron('scheduled.personal_promo_end', err);
+        else logStructured('error', { at: 'scheduled.personal_promo_end', error: String(err) });
+      }
     }
     return;
   }
@@ -456,6 +503,8 @@ async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext)
     });
     const revokedTargets: RevokedRecipientTarget[] = [];
     const voiceAccessRevokedUserIds: string[] = [];
+    // (파기된 주인의 그룹이 해체돼 등급이 바뀐 멤버들은 여기서 모으지 않는다 — 파기 트랜잭션이
+    //  통지 대기열에 직접 적고, 아래 finally 가 그 대기열을 비운다.)
     // **이미 커밋된 파기는 반드시 알린다.** 배치 뒤쪽 계정에서 던져도 앞 계정의 파기는
     // 이미 커밋돼 되돌아가지 않는다 — 그 수신자들에게 안 알리면 탈퇴자의 목소리를 폴백
     // 주기만큼 더 들고 있게 된다. 그래서 발송은 finally 에 둔다(모아 보내는 건 유지 —
@@ -502,9 +551,18 @@ async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext)
         logStructured('info', { at: 'scheduled.account_purge', purged: due.rows.length });
       }
     } finally {
+      // (해체로 등급이 바뀐 멤버들의 통지는 여기서 보내지 않는다 — 파기 트랜잭션이 대기열에 적고,
+      //  1분 전용 크론의 홀수 분이 자기 예산으로 비운다. 이 틱의 남은 예산을 나눠 쓰면 잘린다.)
+      // 기기가 없어 비우기가 꺼내지 않는 행 중 더는 소용없어진 것(지울 목소리도 없음)만 정리한다 —
+      // 한 줄이고 실패해도 다음 틱이 한다.
+      try {
+        const { prunePendingPlanNotifications } = await import('./lib/pending-plan-notifications');
+        await prunePendingPlanNotifications(db, now);
+      } catch (pruneErr) {
+        captureCron('scheduled.plan_notify_prune', pruneErr);
+      }
       // 파기된 계정의 목소리를 들고 있는 기기들에 알린다 — 받은 알람은 pull 신호로,
-      // 본인 알람·미동기화 알람은 접근권 재확인으로. **여기서 던지면 안 된다** —
-      // 원래 파기 실패를 이 실패가 덮어써 바깥 catch 가 엉뚱한 걸 기록한다.
+      // 본인 알람·미동기화 알람은 접근권 재확인으로.
       try {
         const { notifyDowngradedAlarms } = await import('./lib/fcm');
         await notifyDowngradedAlarms(db, env, revokedTargets, voiceAccessRevokedUserIds);

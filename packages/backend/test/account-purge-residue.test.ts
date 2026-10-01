@@ -54,6 +54,7 @@ const TABLES: Record<string, 'per-user' | 'no-personal-data' | 'retained-pseudon
   user_consents: 'per-user',
   email_verification_codes: 'per-user',
   push_tokens: 'per-user',
+  pending_plan_notifications: 'per-user', // 다른 사람의 탈퇴로 들어간 통지 대기 — 내가 떠나면 같이 지운다
   subscriptions: 'per-user',
   store_transactions: 'per-user',
   plan_groups: 'per-user',
@@ -371,6 +372,8 @@ async function seed(): Promise<void> {
   );
   await run(`INSERT INTO push_tokens (id, user_id, token, platform) VALUES ('pt-a', ?, ?, 'android')`, [A_PK, A_PUSH]);
   await run(`INSERT INTO push_tokens (id, user_id, token, platform) VALUES ('pt-b', ?, 'push-token-b', 'ios')`, [B_PK]);
+  // 앞서 다른 그룹 주인이 탈퇴해 A 가 등급 통지 대기열에 들어가 있다(아직 못 보냈다).
+  await run(`INSERT INTO pending_plan_notifications (user_id) VALUES (?)`, [A_PK]);
 }
 
 beforeAll(async () => {
@@ -453,6 +456,15 @@ describe('탈퇴 파기 뒤 잔존물 (실제 SQLite)', () => {
       // 떠나는 사람에게는 보내지 않는다(받을 기기가 곧 사라진다).
       expect(purged.voiceAccessRevokedUserIds).not.toContain(A_PK);
       expect(purged.downgradedAlarms.some((target) => target.ownerUserId === A_PK)).toBe(false);
+    });
+
+    it('A 의 그룹이 해체돼 떨어져 나간 B 에게 등급 변경도 알린다 — 목소리 철회와 별개 목록', () => {
+      // A 가 멤버이던 C 의 그룹은 A 가 빠질 뿐이라 C 의 등급은 그대로다.
+      expect(purged.planChangedUserIds).toEqual([B_PK]);
+    });
+
+    it('B 는 파기와 같은 트랜잭션에서 통지 대기열에 적혔고, 대기 중이던 A 의 행은 사라졌다', async () => {
+      expect(await ids(`SELECT user_id FROM pending_plan_notifications`)).toEqual([B_PK]);
     });
 
     it('A 가 소유했던 행은 그 id 로 더는 풀리지 않는다', async () => {
