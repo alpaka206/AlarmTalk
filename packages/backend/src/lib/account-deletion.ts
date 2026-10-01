@@ -6,7 +6,7 @@ import {
   enqueueUserVoiceArtifacts,
 } from './audio-retention';
 import { audioUrlPointsAtUploadsOf, revokeDeletedVoices } from './voice-revocation';
-import { enqueuePlanNotificationsStatement } from './pending-plan-notifications';
+import { enqueuePlanNotificationsStatement, REQUEUE_ON_CONFLICT } from './pending-plan-notifications';
 
 const TEXT_ENCODER = new TextEncoder();
 
@@ -379,7 +379,7 @@ export async function purgeUserAccount(
       // WHERE 가 없으면 `ON` 을 조인 조건으로 읽는다(여기는 조인의 ON 도 있어 더 헷갈린다).
       sql: `INSERT INTO pending_plan_notifications (user_id)
             ${remainingOwnedMembers.sql}
-            ON CONFLICT(user_id) DO NOTHING`,
+            ${REQUEUE_ON_CONFLICT}`,
       args: remainingOwnedMembers.args,
     });
     // 떠나는 사람 자신이 앞서 다른 사람의 탈퇴로 대기열에 들어 있었다면 함께 지운다 — 기기는 곧

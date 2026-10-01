@@ -46,6 +46,14 @@ function buildApp(userId = 'user-1') {
 // pepper 를 세팅한 env 로 요청한다.
 const DELETE_ENV = { PASSWORD_PEPPER: 'test-pepper' } as unknown as AppEnv['Bindings'];
 
+/** 파기 트랜잭션이 대기열에 적은 행 — 커밋 뒤 비우기가 이 행을 읽어 보낸다(실제 DB 는 `pending-plan-notifications.test.ts`). */
+function queuedForDrain(userIds: string[]): void {
+  mockDB.pushResultFor(
+    'SELECT user_id, created_at, attempts FROM pending_plan_notifications',
+    userIds.map((id) => ({ user_id: id, created_at: '2026-10-01 00:00:00.000', attempts: 0 })),
+  );
+}
+
 const originalExecute = mockDB.client.execute;
 
 beforeEach(() => {
@@ -242,6 +250,7 @@ describe('DELETE /user/me', () => {
       voiceAccessRevokedUserIds: [],
       planChangedUserIds: ['member-1', 'member-2'],
     });
+    queuedForDrain(['member-1', 'member-2']);
     let commitsAtNotify = -1;
     notifyBillingStateChanged.mockImplementationOnce(async () => {
       commitsAtNotify = mockDB.transactions.commits;
@@ -280,6 +289,7 @@ describe('DELETE /user/me', () => {
       voiceAccessRevokedUserIds: ['member-1'],
       planChangedUserIds: ['member-1'],
     });
+    queuedForDrain(['member-1']);
 
     const res = await buildApp().request(jsonReq('DELETE', '/user/me'), undefined, DELETE_ENV);
 
