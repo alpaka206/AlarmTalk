@@ -47,6 +47,7 @@ vi.mock('../src/lib/vertex-translate', async (importOriginal) => {
 
 import voiceProfile from '../src/routes/voice-profile';
 import { CLONE_CLIP_SEEDS } from '../src/lib/stock-clips';
+import { SPEECH_STYLE_ANALYSIS_BUDGET_MS } from '../src/lib/vertex-translate';
 
 const ENV: Env = {
   ELEVENLABS_API_KEY: 'test-key',
@@ -180,11 +181,15 @@ describe('POST /clone — 말투 분석 상태 기록 (speech_style_status)', ()
     // 현역 행에 써야 한다(Codex #802). 그 열쇠가 이 provider 보이스 id 다.
     expect(doneCall!.sql).toContain('elevenlabs_voice_id = ?');
     expect(doneCall!.args).toContain('elv-ok');
+    // 말투 분석의 재시도는 waitUntil(응답 뒤 30초에 잘린다) 안에서만 한다 — 전사 전부터 센 마감을 넘긴다.
     expect(mockAnalyzeSpeechStyle).toHaveBeenCalledWith(
       expect.anything(),
       '마 오늘 아침은 우째 이래 좋노, 퍼뜩 일어나라 마',
       'ko',
+      expect.objectContaining({ deadlineAt: expect.any(Number) }),
     );
+    const { deadlineAt } = mockAnalyzeSpeechStyle.mock.calls[0]![3] as { deadlineAt: number };
+    expect(deadlineAt - Date.now()).toBeLessThanOrEqual(SPEECH_STYLE_ANALYSIS_BUDGET_MS);
   });
 
   it('전사 실패 시 speech_style_status=failed 기록 (조용히 삼키지 않음)', async () => {
@@ -522,7 +527,12 @@ describe('POST /:id/speech-style/retry — 말투 분석 재시도', () => {
 
     const res = await req(buildApp(), jsonReq('POST', `/vp/${V1}/speech-style/retry`));
     expect(res.status).toBe(200);
-    expect(mockAnalyzeSpeechStyle).toHaveBeenCalledWith(expect.anything(), expect.any(String), 'ja');
+    expect(mockAnalyzeSpeechStyle).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.any(String),
+      'ja',
+      expect.objectContaining({ deadlineAt: expect.any(Number) }),
+    );
   });
 
   it('재분석 실패 시 failed 기록 + 502 SPEECH_STYLE_ANALYSIS_FAILED', async () => {
