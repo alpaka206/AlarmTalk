@@ -239,7 +239,8 @@ final class AuthViewModel: ObservableObject {
     /// 계정 설정 받아 적기(`AlarmTalkApp` 의 `accountPromptSettingsKey`)의 축이다. 설정 값만 축으로 두면,
     /// 이 기기의 변경을 올리다 실패한 뒤 서버가 **같은 옛 값**을 다시 줄 때 다시 돌지 않아 밀린 변경이 앱을
     /// 다시 띄울 때까지 올라가지 않는다(Codex #837). 받아 적기는 멱등이라 몇 번 돌아도 된다.
-    /// 안드로이드는 세션의 받은 시각(`AuthSession.userFetchedAtMillis` → `accountSettingsReceipt`)이 같은 일을 한다.
+    /// 안드로이드는 세션 저장소의 응답 순번(`AuthSession.accountAnswerSeq` → `accountSettingsReceipt`)이 같은 일을 한다.
+    /// 설정 화면도 같은 축을 본다(`SettingsView.PromptObservation`).
     @Published private(set) var accountAnswerRevision = 0
 
     /// 계정 설정(지역·사주) 올리기가 **끝났을 때** 이미 떠 있던 계정 요청의 마지막 순번. 그 이하의 `/auth/me` 응답은
@@ -253,6 +254,13 @@ final class AuthViewModel: ObservableObject {
     /// 기기에만 남는다(그 사이 확인 조회가 부르는 재시도도 같은 `isBusy` 에 막힌다). 안드로이드는 올리기 줄
     /// (`PromptSettingsUploadQueue`)이 같은 일을 한다.
     private var promptSettingsRetryPending = false
+
+    /// **로그인 세션의 번호** — 세션이 끝나거나(`signOut`) 새로 시작될 때(`adoptSignedInSession`)만 오른다.
+    ///
+    /// 오래 걸린 요청이 응답을 적기 직전에 "내가 보낸 그 세션이 아직인가" 를 가른다(Codex #837 11차). 계정 id 로는
+    /// 로그아웃 뒤 **같은 계정**으로 다시 들어온 것을 못 가르고, 토큰으로는 같은 세션 안의 rolling refresh 를 세션
+    /// 전환으로 잘못 읽는다. 안드로이드 `AuthSessionStore.sessionGeneration` 과 같은 자리다.
+    private var sessionRevision: UInt = 0
 
     /// 계정 요청 하나의 표 — `/auth/me`·로그인을 **보내기 직전에** 뜬다(`beginAccountRequest`).
     /// 안드로이드 `AccountRequest`(`ui/billing/PersonalPromoLedger.kt`)와 같은 모양이다.
@@ -827,6 +835,8 @@ final class AuthViewModel: ObservableObject {
             // 로그인 확정 — 자동 만료 표시를 내린다(`SessionExpiryStore` 주석).
             SessionExpiryStore.clear()
         }
+        // 새 로그인 세션이다 — 앞 세션에 보낸 요청의 응답은 이 세션에 적지 않는다(`sessionRevision`).
+        sessionRevision &+= 1
         // 확정이 끝난 뒤에 세션을 공개한다.
         persistSession(nextSession)
         recordAccountAnswer(accountRequest)
@@ -1242,6 +1252,8 @@ final class AuthViewModel: ObservableObject {
         }
 
         let requestUserID = session?.user.id
+        // 보낸 세션 — 응답을 적기 전에 대조한다(`sessionRevision`).
+        let requestSessionRevision = sessionRevision
         do {
             let response = try await api.updateProfile(
                 UpdateProfileRequest(
@@ -1258,6 +1270,11 @@ final class AuthViewModel: ObservableObject {
             // ⚠ **세션을 갈아 끼우기(`refreshUser`) 전에** '아직 안 올라간 변경' 표시를 내린다 — 새 세션을
             // 받는 순간 `AlarmTalkApp` 이 계정 설정을 받아 적는데(`DynamicPromptPreferences.adoptAccount`),
             // 그때 표시가 남아 있으면 방금 올린 값을 한 번 더 올린다. 안드로이드 `updateDynamicPromptSettings` 와 같다.
+            // ⚠ **보낸 세션이 그대로일 때만 받는다**(Codex #837 11차). 계정 id 만 보면 로그아웃 뒤 같은 계정으로 다시
+            //   들어온 새 세션에 앞 세션의 응답이 적힌다 — 새 세션의 '안 올라간 변경' 표시를 내리고, 새 세션에 떠 있는
+            //   조회를 울타리로 가리고, 옛 설정을 세션에 적는다. 세션이 바뀌었으면 확인 조회도 하지 않는다 — 새 세션은
+            //   자기 로그인 응답으로 이미 받아 적었다. 안드로이드 `uploadDynamicPromptSettings` 의 세대 대조와 같다.
+            guard sessionRevision == requestSessionRevision else { return }
             if let dynamicPromptSettings, let current = session, current.user.id == requestUserID {
                 // ⚠ **표시를 내리기 전에 울타리를 세운다**(Codex #837). 지금 떠 있는 `/auth/me` 는 올리기 **전의**
                 // 설정을 읽었을 수 있다 — 그 응답이 아래 확인 조회보다 늦게 오면 옛 설정으로 세션을 되돌리고, 표시가
@@ -1271,6 +1288,8 @@ final class AuthViewModel: ObservableObject {
             }
             await refreshUser()
         } catch {
+            // 끝난 세션의 실패를 새 세션에 띄우지 않는다(위 `requestSessionRevision`).
+            guard sessionRevision == requestSessionRevision else { return }
             failStatus(userFacingErrorMessage(error, fallback: "프로필을 저장하지 못했어요"))
         }
     }
@@ -2066,6 +2085,8 @@ final class AuthViewModel: ObservableObject {
         }
         KeychainStore.deleteSession()
         session = nil
+        // 세션이 끝났다 — 떠 있던 요청의 응답은 다음 세션에 적지 않는다(`sessionRevision`).
+        sessionRevision &+= 1
         pendingDeletion = false
         needsConsent = false
         // 동의 수집 상태도 계정별이다 — 앞 계정의 '받을 게 없음' 이 새 계정에 새면

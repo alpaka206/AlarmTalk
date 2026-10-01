@@ -276,6 +276,55 @@ final class AuthViewModelTests: XCTestCase {
         XCTAssertFalse(DynamicPromptPreferences.hasUnsyncedChange(userID: userID))
     }
 
+    /// 회귀(Codex #837 11차): **로그아웃 전에 보낸 설정 PATCH 의 응답은, 같은 계정으로 다시 로그인한 새 세션에 적지 않는다.**
+    /// 계정 id 만 보면 통과한다 — 그러면 앞 세션의 응답이 새 세션의 설정을 옛 값으로 덮고(받아 적기가 그 옛 값을 기기에
+    /// 적는다), 새 세션에 떠 있는 조회를 울타리로 가리고, 확인 조회까지 한다. 세션 번호(`sessionRevision`)로 가른다 —
+    /// 안드로이드 `uploadDynamicPromptSettings` 의 세대 대조와 같다.
+    func testPromptSettingsAcknowledgementFromEndedSessionIsDroppedAfterSameAccountRelogin() async throws {
+        let api = MockAuthAPI()
+        let vm = AuthViewModel(api: api, appleCredentialProvider: MockAppleCredentialProvider())
+        let session = makeEmailSession()
+        let userID = session.user.id
+        vm._setSessionForTesting(session)
+        addTeardownBlock {
+            KeychainStore.deleteSession()
+            DynamicPromptPreferences.clear(userID: userID)
+        }
+        let seoulRegion = try XCTUnwrap(WeatherRegions.byKey("kr-seoul"))
+        var seoul = DynamicPromptPreferences()
+        seoul.weatherCountry = seoulRegion.legacyCountry
+        seoul.weatherCity = seoulRegion.legacyCity
+        XCTAssertTrue(seoul.saveLocalEdit(userID: userID))
+        let tokyoRegion = try XCTUnwrap(WeatherRegions.byKey("jp-tokyo"))
+        var tokyo = DynamicPromptPreferences()
+        tokyo.weatherCountry = tokyoRegion.legacyCountry
+        tokyo.weatherCity = tokyoRegion.legacyCity
+        // 새 세션의 로그인 응답이 실은 계정 설정(도쿄).
+        var reloggedUser = session.user
+        reloggedUser.dynamicPromptSettings = tokyo.toSettings()
+        // 확인 조회는 실패한다(오프라인) — 앞 세션의 응답이 적힌 옛 설정을 아무도 되돌리지 않는 경우다.
+        api.meResult = .failureRaw(URLError(.notConnectedToInternet))
+        api.beforeUpdateProfileResponse = {
+            api.beforeUpdateProfileResponse = nil
+            // PATCH(서울)가 떠 있는 사이 로그아웃했다가 같은 계정으로 다시 들어왔다.
+            vm.signOut(revokeOnServer: false)
+            vm._setSessionForTesting(AuthSession(token: "relogin-jwt", user: reloggedUser))
+        }
+        let answersBefore = vm.accountAnswerRevision
+
+        await vm.updateProfile(dynamicPromptSettings: seoul.toSettings())
+
+        XCTAssertEqual(api.updateProfileCallCount, 1)
+        XCTAssertEqual(
+            vm.session?.user.dynamicPromptSettings?.weather.region, "jp-tokyo",
+            "앞 세션의 응답이 새 세션의 설정을 옛 값으로 덮었다"
+        )
+        XCTAssertEqual(vm.session?.token, "relogin-jwt")
+        XCTAssertEqual(api.meCallCount, 0, "끝난 세션의 응답으로 확인 조회를 했다")
+        XCTAssertEqual(vm.accountAnswerRevision, answersBefore, "끝난 세션의 응답이 계정 응답으로 적혔다")
+        XCTAssertNil(vm.statusMessage)
+    }
+
     /// 회귀(2026-09-27 리뷰 2차): **앞 진입에 보낸** `/auth/me` 가 백그라운드를 건너 복귀 뒤에
     /// 도착하면 이번 진입의 답이 아니다(안드로이드 `accountAnswerEntryFor`). 그 답으로 판정하면
     /// 나가 있는 동안 다른 기기에서 결제한 사람에게 "무료 이용이 곧 끝나요" 가 뜬다.
@@ -1983,6 +2032,8 @@ private final class MockAuthAPI: AuthAPIProviding, @unchecked Sendable {
 
     var meResult: StubResult = .failure(.invalidResponse)
     var beforeMeResponse: (@MainActor @Sendable () async -> Void)?
+    /// `updateProfile` 이 서버에 닿은 뒤 응답이 돌아오기 전 — 그 사이의 로그아웃·재로그인을 흉내 낸다.
+    var beforeUpdateProfileResponse: (@MainActor @Sendable () async -> Void)?
     var updateProfileResult: Result<UpdateProfileResponse, Error> = .success(
         UpdateProfileResponse(
             success: true,
@@ -2035,7 +2086,9 @@ private final class MockAuthAPI: AuthAPIProviding, @unchecked Sendable {
     func updateProfile(_ requestBody: UpdateProfileRequest, token: String) async throws -> UpdateProfileResponse {
         updateProfileCallCount += 1
         lastUpdateProfileRequest = requestBody
-        switch updateProfileResult {
+        let result = updateProfileResult
+        await beforeUpdateProfileResponse?()
+        switch result {
         case .success(let response):
             return response
         case .failure(let error):

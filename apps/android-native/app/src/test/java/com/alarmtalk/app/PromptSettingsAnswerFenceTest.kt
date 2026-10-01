@@ -87,12 +87,16 @@ class PromptSettingsAnswerFenceTest {
         val pushed = upload.indexOf("dynamicPromptStore.markPushed(")
         assertTrue("올리기가 울타리를 세우지 않는다.", fence >= 0)
         assertTrue("울타리는 표시를 내리기(`markPushed`) 전에 세운다.", pushed > fence)
-        // ⚠ 올린 계정의 세션이 그대로일 때만 — 그 사이 다른 계정이 들어왔으면 떠 있는 요청은 그 계정의 것이다.
-        val guard = upload.lastIndexOf(
-            "if (authSession?.user?.id == session.user.id && authSessionStore.sessionGeneration() == startGeneration)",
-            fence,
+        // ⚠ 보낸 세션이 그대로일 때만 — 그 사이 다른 계정이 들어왔거나 **같은 계정으로 다시 로그인했으면**(세대가 오른다)
+        //   떠 있는 요청은 그 세션의 것이고, 표시도 그 세션의 것이다(Codex #837 11차). 울타리·표시 내리기 **둘 다** 앞에서
+        //   막아야 한다 — 예전에는 울타리만 막아, 앞 세션의 응답이 새 세션의 '안 올라간 변경' 표시를 지웠다.
+        val guard = upload.indexOf(
+            "if (authSession?.user?.id != session.user.id || authSessionStore.sessionGeneration() != startGeneration) {",
         )
-        assertTrue("울타리가 올린 계정·세대를 확인하지 않는다.", guard >= 0 && fence - guard < 200)
+        assertTrue("올리기 응답이 보낸 계정·세대를 확인하지 않는다.", guard >= 0)
+        assertTrue("세션 확인은 울타리·표시 내리기보다 먼저다.", guard < fence && guard < pushed)
+        val guardBody = upload.substring(guard, fence)
+        assertTrue("세션이 바뀌었으면 아무것도 적지 않고 돌아간다.", guardBody.contains("return@onSuccess"))
         // 올릴 값은 **차례가 온 뒤의** 밀린 사본이다 — 줄에 설 때의 사본을 올리면 같은 값을 두 번 올리고 다른 기기의
         // 값을 덮는다(Codex #837).
         val snapshot = upload.indexOf("dynamicPromptStore.pendingUploadSnapshot(userId) ?: return")

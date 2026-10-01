@@ -629,15 +629,19 @@ private suspend fun MainViewModel.uploadDynamicPromptSettings(userId: String) {
             ),
         )
     }.onSuccess { response ->
+        // ⚠ **보낸 세션이 그대로일 때만 받는다**(Codex #837 11차) — 세대는 세션이 끝날 때만 오르므로, 로그아웃 뒤
+        //   **같은 계정**으로 다시 들어온 새 세션도 가른다. 세션이 바뀌었으면 아무것도 적지 않는다: 울타리는 새 세션에
+        //   떠 있는 조회를 캐시로 가리고, 표시 내리기는 새 세션의 '안 올라간 변경' 을 지우고(남은 표시는 다음 받아
+        //   적기가 다시 올린다), 세션 저장은 어차피 버려진다. iOS `updateProfile` 의 `sessionRevision` 대조와 같다.
+        if (authSession?.user?.id != session.user.id || authSessionStore.sessionGeneration() != startGeneration) {
+            Log.i(TAG, "Dropping prompt settings upload result: session ended or switched")
+            return@onSuccess
+        }
         // ⚠ **표시를 내리기 전에 울타리를 세운다**(Codex #837). 지금 떠 있는 `/auth/me` 는 이 올리기 **전의** 설정을
         // 읽었을 수 있다 — 표시를 내린 뒤 그 응답이 오면 받아 적기가 옛 설정을 이 기기에 적는다. 그 응답들은
         // 설정만 지금 세션의 값(아래에서 올린 값으로 갈아 끼운다)을 지킨다(`refreshAppSessionNow`). 울타리 안의
         // 응답이 올리기 **뒤의** 다른 기기 변경을 싣고 있었을 수도 있으므로, 끝에서 울타리 뒤의 조회를 한 번 더 한다.
-        // ⚠ **올린 계정의 세션이 그대로일 때만** 세운다 — 그 사이 로그아웃·다른 계정 로그인이면 지금 떠 있는 요청은
-        //   **다른 계정**의 것이라, 울타리가 그 계정의 권위 있는 설정을 캐시로 가린다(아래 세션 저장도 버려진다).
-        if (authSession?.user?.id == session.user.id && authSessionStore.sessionGeneration() == startGeneration) {
-            promptSettingsAnswerFence = personalPromoLedger.latestRequestSeq()
-        }
+        promptSettingsAnswerFence = personalPromoLedger.latestRequestSeq()
         // ⚠ **세션을 갈아 끼우기 전에** 표시를 내린다. 새 세션이 곧바로
         // [onAccountPromptSettingsReceived] 를 부르는데, 그때 표시가 남아 있으면 방금 올린 값을
         // '아직 안 올라간 변경' 으로 보고 한 번 더 올린다.
