@@ -370,40 +370,41 @@ ID 로도 조회되고 최신 갱신 정보를 준다. 구글의 `getPlaySubscri
   있는데, 탈퇴자 행은 이미 사라져 다음 틱이 그 사람을 다시 고를 근거가 없고, 앱은 진입 때 삭제
   기한을 다시 받지 않는다 — 예고는 푸시가 유일한 길이다. 그래서:
   - 파기 묶음이 취소가 돌려준 멤버와 지울 소유 그룹의 멤버를 대기열에 넣는다(롤백되면 같이 사라진다).
-  - **보낸 뒤에만 지운다**(`drainPendingPlanNotifications`). 예산이 바닥나면 지우는 문장도
-    subrequest 라 같이 실패해 행이 남고 다음 틱이 다시 보낸다(같은 예고가 다시 갈 수는 있다).
-  - ⚠ **지키는 것은 '예산에 잘린 발송' 하나다.** 예산이 남은 채 실패한 발송(OAuth 실패·FCM 5xx·APNs
+  - **보낸 뒤에만 지운다.** 실행이 보낸 뒤 죽으면 행이 남아 다시 보낸다(같은 예고가 다시 갈 수는 있다).
+  - ⚠ **비우기는 자기 예산을 통째로 가진 실행에서만 한다**(코덱스 #841 — 다섯 차례 지적의 뿌리).
+    5분 틱 끝에서 남은 예산을 나눠 쓰면 '얼마나 남았나' 를 알 수 없어, 시도 횟수·재시도 순서·처리량을
+    어떻게 짜도 다른 모서리에서 어긋났다. 그래서 **1분 전용 크론(`* * * * *`)의 홀수 분, 대기 행이 있을
+    때만** 그 실행을 통째로 쓴다(`runPlanNotificationDrainTurn`). 대기열이 비어 있으면(거의 언제나) 조회
+    한 번만 하고 같은 실행에서 개인 플랜 종료 작업이 이어 돈다(그 작업의 예산 45 는 그대로 — ~50 중
+    여유 안). 짝수 분은 늘 종료 작업 차례라, 비우기가 차례를 쓰는 동안에도 종료 작업은 2분에 한 번은 돈다.
+    비우기가 던지면 그 실행의 예산을 모르므로 그 분의 종료 작업은 건너뛴다.
+  - **비용을 미리 센다.** 사람마다 기기 수(기기당 최대 두 통 — 보이는 예고 + 재조회 신호)로
+    `PLAN_NOTIFY_RUN_BUDGET`(45) − `PLAN_NOTIFY_RUN_OVERHEAD`(8) 안에 드는 만큼만 잡는다. 안 드는 사람은
+    **잡지 않으므로 시도 횟수가 예산 때문에 오르는 일이 없고**, 다음 차례에 그대로 나간다. 한 사람만으로
+    예산을 넘으면(기기가 아주 많은 사람) 그 사람만 보내되 메시지를 예산까지 자른다(`maxMessages` — 보이는
+    예고가 먼저라 잘리는 것은 무음 신호부터다). 한 차례에 기기 하나인 사람 18명 — 2분마다라 파기 크론의
+    최대 적재량(5분에 파기 2건 × 떨어져 나갈 멤버 5명)을 넉넉히 넘는다.
+  - **즉시 삭제(`DELETE /user/me`)는 커밋 뒤 자기 파기분을 곧바로 보낸다**(`sendPlanNotificationsNow`) —
+    즉시성을 위한 것이고 **시도 횟수를 쓰지 않는다**(그 요청은 파기로 예산을 이미 써서 잘릴 수 있는데,
+    그건 그 사람의 실패가 아니다). 잘리면 잠금 기한 뒤 전용 크론이 잇는다. 유예 파기 크론(5분 틱)은
+    대기열에 적기만 하고 보내지 않는다.
+  - ⚠ **지키는 것은 '예산에 잘린 발송' 이다.** 예산이 남은 채 실패한 발송(OAuth 실패·FCM 5xx·APNs
     네트워크 오류)은 발송 함수가 삼켜 지우기가 성공한다 — 다른 결제 경로의 통지와 같은 최선 노력이다.
     사람마다 발송 결과를 돌려받아 실패한 사람만 남기는 것은 다음 단계다.
-  - **같은 머리가 매 틱 다시 나가지 않는다.** 꺼내는 순간 시도 횟수(`attempts`)를 **발송 앞에서**
-    올리고 시도가 적은 행부터 꺼낸다 — 예산에 끝내 안 들어가는 묶음은 뒤로 밀리고 새 행이 앞에 선다.
-    `PLAN_NOTIFY_MAX_ATTEMPTS`(3)번 시도한 행은 보내지 않고 지운다(오류 기록) — 같은 예고가 5분마다
-    영원히 나가는 일의 상한이다.
-  - ⚠ **처음 시도만 묶음이고, 다시 시도는 한 사람씩이다**(코덱스 #841). 묶음째 다시 보내면 앞 사람이
-    매번 예산을 다 써 뒷사람은 한 번도 못 받은 채 시도 횟수만 함께 올라 버려진다. 한 사람씩이면
-    시도 횟수가 **그 사람의** 횟수가 되고, 상한에 닿는 것은 혼자서도 예산에 안 들어가는 사람뿐이다.
-  - ⚠ **보낼 행은 원자적으로 잡고, 보내는 동안 잠근다**(코덱스 #841). 크론과 즉시 삭제가 같은 행을
-    읽어도, 시도 횟수를 '읽은 값 그대로일 때만' 올리고(`UPDATE … RETURNING`) 잡은 행에만 보낸다. 잡을 때
-    `claimed_until`(지금 + `PLAN_NOTIFY_LEASE_MINUTES` 10분)을 찍어 그 전에는 어떤 실행도 그 행을 고르지
-    않는다 — 잡은 실행이 보내고 지우기 전에 다른 실행이 시작돼도 같은 예고가 두 번 나가지 않는다. 잡은
-    실행이 중간에 죽으면 기한 뒤 다시 고른다. 재시도 한 사람이 예산을 다 쓰면 새 행 묶음의 잡기 문장이
-    먼저 실패해 새 사람들의 시도 횟수는 오르지 않는다.
+  - ⚠ **보낼 행은 원자적으로 잡고, 보내는 동안 잠근다.** 읽은 값(사람·시각·시도 횟수) 그대로일 때만
+    잡고(`UPDATE … RETURNING`) 잡은 행에만 보낸다. 잡을 때 `claimed_until`(지금 +
+    `PLAN_NOTIFY_LEASE_MINUTES` 10분)을 찍어 그 전에는 어떤 실행도 그 행을 고르지 않는다 — 전용 크론과
+    즉시 삭제가 겹쳐도 같은 예고가 두 번 나가지 않는다. 잡은 실행이 중간에 죽으면 기한 뒤 다시 고른다.
+  - **시도 횟수는 전용 크론의 잡기만 올린다** — 예산 때문에는 오르지 않으니 오르는 것은 실행이 거듭
+    죽은 경우뿐이다. 시도가 적은 행부터 꺼내고, `PLAN_NOTIFY_MAX_ATTEMPTS`(3)번 시도한 행은 보내지 않고
+    지운다(오류 기록) — 같은 예고가 끝없이 반복되는 일의 상한이다.
   - 지우기는 **꺼낸 시각(`created_at`)이 그대로인 행만** 지운다. 보내는 사이 같은 사람이 다른 탈퇴로
-    다시 들어오면 시각이 새로 찍히고 시도 횟수가 0 으로 돌아가(새 사건) 남는다.
-  - 즉시 삭제(`DELETE /user/me`)는 커밋 뒤 자기 파기분을 곧바로 보내고, 유예 파기 크론은 매 틱
-    `finally` 에서 대기열을 비운다 — 먼저 **다시 시도할 행 하나**를 따로, 그다음 **새 행 묶음
-    `PLAN_NOTIFY_FRESH_LIMIT`(10)명**(한 틱 최대 적재량 = 파기 2건 × 떨어져 나갈 멤버 5명이라 대기열이
-    불어나지 않는다). ⚠ 재시도가 **먼저**다(코덱스 #841) — 뒤에 두면 매 틱 예산을 다 쓰는 새 행 묶음이
-    던지는 순간 재시도까지 닿지 못해 앞선 실패자가 끝없이 밀린다 — 파기할 계정이
-    없는 틱에도 돈다(남은 행을 비우는 자리가 거기뿐이다). 뒤 계정이 실패해도 앞 계정분은 이미
-    대기열에 있다.
+    다시 들어오면 시각이 새로 찍히고 시도 횟수·잠금이 풀려(새 사건) 남는다.
   - 떠나는 사람 자신의 대기 행(다른 사람의 탈퇴로 들어간 것)은 파기가 함께 지운다.
-- ⚠ **등급 통지를 목소리 철회 통지보다 먼저 보낸다**(코덱스 #841). 등급 통지에는 **보이는
-  삭제 예고**가 실리고, 철회 통지(`notifyDowngradedAlarms`)는 무음 신호뿐이다. 실행의
-  subrequest 예산(~50)은 공유라, 철회 통지가 먼저 돌아 예산을 다 쓰면 예고가 잘린다 —
-  각 발송이 한도 오류를 삼켜도 쓴 예산은 돌아오지 않는다. 그러면 멤버는 예고 없이 보관 기한이
-  지나 목소리를 영구히 잃는다. 무음 신호는 놓쳐도 다음 진입·주기 재조회가 메운다. 위 「커밋 뒤
-  알림은 한 묶음이다」의 **보이는 예고를 먼저**와 같은 규칙이다(즉시 삭제·유예 파기 둘 다).
+- **즉시 삭제에서는 등급 통지를 목소리 철회 통지보다 먼저 보낸다**(코덱스 #841). 등급 통지에는
+  **보이는 삭제 예고**가 실리고 철회 통지(`notifyDowngradedAlarms`)는 무음 신호뿐인데, 그 요청의
+  예산은 공유라 철회 통지가 먼저 돌아 예산을 다 쓰면 예고가 잘린다(잘려도 대기열이 남아 전용 크론이
+  잇지만 늦어진다). 위 「커밋 뒤 알림은 한 묶음이다」의 **보이는 예고를 먼저**와 같은 규칙이다.
 - 해체가 일어나는 근거: 주인 구독이 `status = 'active'` 이면 보류·미확인·유예·만료 크론 대기
   중이어도 `findActiveSubscriptionsByUserPk` 에 잡혀 취소·해체된다. 주인 구독이 `active` 가
   아닌데 멤버가 남은 그룹은 지금 코드로는 생기지 않는다 — `status` 를 `cancelled` 로 바꾸는
@@ -1666,7 +1667,7 @@ Vibration disabled for ringing alarm
 | 결제 직전 권위 조회 | `GET /billing/subscription?refresh_store=1`(옵트인) | `crossStoreRenewalBlocked` (`MainViewModelBillingActions`) | `BillingPanel.confirmAndPurchase` |
 | 결제 앵커(`last_paid_at`) | 애플 `purchaseDate` · 구글 `googlePaymentAnchor`(Orders API) — 확정·RTDN·재조회·선물 모두 실제 결제일 사용 | — | — |
 | 영구 탈퇴 시 Apple 선물 연결 파기 | `lib/account-deletion.ts` `purgeUserAccount`(즉시 삭제·유예 파기 공통); 증빙은 `pseudonymizeBillingForRetention` → `index.ts` 보존 기한 정리 | 기존 탈퇴 API 사용 | 기존 탈퇴 API 사용 |
-| 그룹 주인 탈퇴 — 해체된 멤버에게 커밋 뒤 `plan_changed`(+삭제 예고), 클론 유무 무관, 대기열로 잇기, 철회 통지보다 먼저 | `lib/account-deletion.ts` `purgeUserAccount`(`cancelActiveSubscriptionsForUser` 반환값 + 파기 묶음 첫 문장의 남은 소유 그룹 멤버 → 같은 묶음에서 `pending_plan_notifications` 적재 — 마이그레이션 126) → `lib/pending-plan-notifications.ts` `drainPendingPlanNotifications`(재시도 한 명(먼저) + 새 행 묶음 `PLAN_NOTIFY_FRESH_LIMIT` · 원자적 잡기·잠금 `claimed_until` · 보낸 뒤 지움 · 상한 `PLAN_NOTIFY_MAX_ATTEMPTS`) ← `routes/user.ts` `DELETE /user/me`(자기 파기분)·`index.ts` 유예 파기 크론(`finally`, 매 틱) → `notifyBillingStateChanged`; `test/account-purge-plan-push.test.ts`·`test/pending-plan-notifications.test.ts`·`test/account-purge-residue.test.ts`·`test/user.test.ts`·`test/scheduled-purge-isolation.test.ts` | 기존 `plan_changed` 처리 | 기존 `plan_changed` 처리 |
+| 그룹 주인 탈퇴 — 해체된 멤버에게 커밋 뒤 `plan_changed`(+삭제 예고), 클론 유무 무관, 대기열로 잇기, 철회 통지보다 먼저 | `lib/account-deletion.ts` `purgeUserAccount`(`cancelActiveSubscriptionsForUser` 반환값 + 파기 묶음 첫 문장의 남은 소유 그룹 멤버 → 같은 묶음에서 `pending_plan_notifications` 적재 — 마이그레이션 126) → `lib/pending-plan-notifications.ts` `runPlanNotificationDrainTurn`(1분 전용 크론 홀수 분 — `index.ts` `planNotificationDrainTurn` · 기기 수로 비용을 미리 셈 `PLAN_NOTIFY_RUN_BUDGET`·`PLAN_NOTIFY_RUN_OVERHEAD` · 원자적 잡기·잠금 `claimed_until` · 보낸 뒤 지움 · 상한 `PLAN_NOTIFY_MAX_ATTEMPTS`)·`sendPlanNotificationsNow`(`routes/user.ts` `DELETE /user/me` 자기 파기분 — 시도 횟수 안 씀) → `notifyBillingStateChanged`; `test/account-purge-plan-push.test.ts`·`test/pending-plan-notifications.test.ts`·`test/account-purge-residue.test.ts`·`test/user.test.ts`·`test/scheduled-purge-isolation.test.ts` | 기존 `plan_changed` 처리 | 기존 `plan_changed` 처리 |
 | 구매 차단 — 빠른 거절(권위 아님) | `routes/billing-apple.ts` 선행 검사 | — | — |
 | 경쟁 애플 갱신 상태 최신화 | `refreshCompetingAppleRenewalState` → `reconcileStoreSubscription`; Google 확정·RTDN entitle에서 사용. 결제 전 조회는 `reconcileBillingPreflight` | — | — |
 | 로그아웃 중 환불 큐 | — | — | `PendingRevokedTransactionStore` · `flushPendingRevocations` |
