@@ -12,46 +12,52 @@ import { logStructured } from './logger';
  *  - 탈퇴자 행은 이미 파기돼 **다음 틱이 그 사람을 다시 고르지 않는다** — 다른 해체 경로처럼
  *    "다음에 다시 시도" 할 근거가 남지 않는다.
  *  - 앱은 진입 때 삭제 기한을 다시 받지 않는다 — 예고는 푸시가 유일한 길이다.
- * 그래서 받을 사람을 **파기와 같은 트랜잭션에** 적어 두고, 보낸 뒤에만 지운다. 예산이 바닥나면
- * 지우는 문장도 subrequest 라 함께 실패해 행이 남고, 다음 틱이 이어서 보낸다.
+ * 그래서 받을 사람을 **파기와 같은 트랜잭션에** 적어 두고, 보낸 뒤에만 지운다.
  *
- * ⚠ **이 표가 지키는 것은 '예산에 잘린 발송' 하나다.** 예산이 남은 채 실패한 발송(OAuth 실패·FCM
- *   5xx·APNs 네트워크 오류)은 발송 함수가 삼키므로 지우기가 성공해 행이 사라진다 — 다른 결제 경로의
- *   통지와 같은 최선 노력이다. 발송 결과를 사람마다 돌려받아 실패한 사람만 남기는 것은 이 표의 다음
- *   단계다(`docs/spec/billing-lifecycle.md` 「그룹 주인이 탈퇴하면」).
+ * ⚠ **비우기는 자기 예산을 통째로 가진 실행에서만 한다**(코덱스 #841 — 다섯 차례 지적의 뿌리).
+ *   5분 틱 끝에서 남은 예산을 나눠 쓰면 '얼마나 남았나' 를 알 수 없어, 시도 횟수·재시도 순서·처리량을
+ *   어떻게 짜도 다른 모서리에서 어긋났다. 그래서
+ *  - **1분 전용 크론의 홀수 분, 대기 행이 있을 때만** 그 실행을 통째로 쓴다([runPlanNotificationDrainTurn]).
+ *    대기열이 비어 있으면(거의 언제나) 조회 한 번만 하고 기간 한정 개인 플랜 종료 작업에 넘긴다.
+ *  - 그 실행 안에서는 **비용을 미리 센다** — 사람마다 기기 수(기기당 최대 두 통)로 [PLAN_NOTIFY_RUN_BUDGET]
+ *    안에 드는 만큼만 잡는다. 예산에 안 드는 사람은 잡지 않으므로 **시도 횟수가 예산 때문에 오르는
+ *    일이 없다.** 한 사람만으로 예산을 넘으면(기기가 아주 많은 사람) 그 사람만 보내되 메시지를 예산까지
+ *    자른다(`maxMessages` — 보이는 예고가 먼저라 잘리는 것은 무음 신호부터다).
+ *  - 즉시 삭제(`DELETE /user/me`)는 커밋 뒤 자기 파기분을 곧바로 보낸다([sendPlanNotificationsNow]) —
+ *    즉시성을 위한 것이고 **시도 횟수를 쓰지 않는다**(그 요청은 파기로 예산을 이미 썼다). 잘리면 행이
+ *    남아 전용 크론이 잇는다.
  *
- * 한 번의 비우기는 두 걸음이다 — **다시 시도할 행 하나**, 그다음 **새 행 묶음**:
- *  - 새 행(`attempts = 0`)은 한 틱에 [PLAN_NOTIFY_FRESH_LIMIT] 명까지 묶어 보낸다 — 크론이 한 틱에
- *    적재할 수 있는 최대치라 대기열이 쌓이지 않는다(코덱스 #841).
- *  - **다시 시도는 한 사람씩, 매 틱 한 자리를 따로 둔다.** 묶음째 다시 보내면 앞 사람이 매번 예산을
- *    다 써 뒷사람은 한 번도 못 받은 채 시도 횟수만 함께 올라 버려진다 — 한 사람씩이면 시도 횟수가
- *    **그 사람의** 횟수다. 새 행이 계속 들어와도 재시도가 굶지 않게 자리를 따로, **먼저** 둔다 — 뒤에
- *    두면 매 틱 예산을 다 쓰는 새 행 묶음이 던지는 순간 재시도까지 닿지 못한다(코덱스 #841). 재시도
- *    한 사람이 예산을 다 쓰면 새 행 묶음의 잡기 문장이 먼저 실패하므로 그들의 시도 횟수는 오르지 않는다.
- *  - [PLAN_NOTIFY_MAX_ATTEMPTS] 번 시도한 행은 보내지 않고 지운다(오류 기록) — 같은 예고가 5분마다
- *    영원히 나가는 일의 상한이다. 혼자 보내도 끝내 안 들어가는, 기기가 예산보다 많은 사람이다.
+ * ⚠ **이 표가 지키는 것은 '예산에 잘린 발송' 이다.** 예산이 남은 채 실패한 발송(OAuth 실패·FCM 5xx·
+ *   APNs 네트워크 오류)은 발송 함수가 삼키므로 지우기가 성공해 행이 사라진다 — 다른 결제 경로의 통지와
+ *   같은 최선 노력이다. 사람마다 발송 결과를 돌려받아 실패한 사람만 남기는 것은 다음 단계다.
  *
- * ⚠ **보낼 행은 원자적으로 잡고, 보내는 동안 잠근다**(코덱스 #841). 크론과 즉시 삭제가 겹치면 둘이
- *   같은 행을 읽는다 —
- *  - 시도 횟수를 '읽은 값 그대로일 때만' 올리고(`RETURNING`) **잡은 행에만** 보낸다.
- *  - 잡을 때 `claimed_until`(지금 + [PLAN_NOTIFY_LEASE_MINUTES]분)을 찍고, 그 시각 전에는 어떤
- *    실행도 그 행을 고르지 않는다. 잡은 실행이 보내고 지우기 전에 다른 실행이 시작돼도 같은 예고를
- *    다시 보내지 않는다. 잡은 실행이 중간에 죽으면 기한이 지난 뒤 다시 고를 수 있다.
+ * ⚠ **보낼 행은 원자적으로 잡고, 보내는 동안 잠근다.** 잡을 때 `claimed_until`(지금 +
+ *   [PLAN_NOTIFY_LEASE_MINUTES]분)을 찍고, 그 시각 전에는 어떤 실행도 그 행을 고르지 않는다 — 전용
+ *   크론과 즉시 삭제가 겹쳐도 같은 예고가 두 번 나가지 않는다. 잡은 실행이 중간에 죽으면 기한 뒤 다시
+ *   고른다. 전용 크론의 잡기만 시도 횟수를 올리고, [PLAN_NOTIFY_MAX_ATTEMPTS] 번 시도한 행(예산과 무관하게
+ *   거듭 죽은 행)은 보내지 않고 지운다(오류 기록) — 같은 예고가 끝없이 반복되는 일의 상한이다.
+ *
+ * 규칙: `docs/spec/billing-lifecycle.md` 「그룹 주인이 탈퇴하면」.
  */
 
+/** 전용 크론의 비우기 한 번이 쓰는 subrequest 상한 — 워커 ~50 에서 로깅·재시도 여유를 남긴다. */
+export const PLAN_NOTIFY_RUN_BUDGET = 45;
+
 /**
- * 크론 한 틱이 꺼내는 **새 행** 수 — 유예 파기 크론이 한 틱에 파기하는 계정 수(`index.ts` 의
- * `LIMIT 2`) × 그룹 하나에서 떨어져 나갈 수 있는 최대 멤버(옛 6인 정원의 가족 − 주인 = 5).
- * 이보다 작으면 탈퇴가 이어지는 동안 대기열이 틱마다 불어난다.
+ * 비우기 한 번의 **메시지 밖** 비용 — 대기열 조회(1, 대기 확인 겸)·잡기(1)·지우기(1) + 발송 함수의
+ * 유예 조회(1)·토큰 조회(1)·OAuth(1)·죽은 토큰 정리(FCM 1·APNs 1).
  */
-export const PLAN_NOTIFY_FRESH_LIMIT = 10;
+export const PLAN_NOTIFY_RUN_OVERHEAD = 8;
+
+/** 사람을 고를 후보 수 — 기기가 없는 사람만 이어져도 이보다 많이는 한 번에 잡지 않는다. */
+export const PLAN_NOTIFY_CANDIDATES = 20;
 
 /** 한 사람을 몇 번까지 시도하는가 — 넘으면 보내지 않고 지운다(같은 예고의 반복 상한). */
 export const PLAN_NOTIFY_MAX_ATTEMPTS = 3;
 
 /**
- * 잡은 행을 다른 실행이 고르지 못하게 막는 시간(분) — 한 실행(크론 틱·요청)이 끝나기에 넉넉하고,
- * 다음 틱(5분) 몇 번 안에 다시 고를 수 있을 만큼 짧다.
+ * 잡은 행을 다른 실행이 고르지 못하게 막는 시간(분) — 한 실행(크론·요청)이 끝나기에 넉넉하고,
+ * 전용 크론 몇 번 안에 다시 고를 수 있을 만큼 짧다.
  */
 export const PLAN_NOTIFY_LEASE_MINUTES = 10;
 
@@ -82,102 +88,50 @@ export const REQUEUE_ON_CONFLICT = `ON CONFLICT(user_id) DO UPDATE SET
 /** 지금 아무 실행도 잡고 있지 않은 행. */
 const UNCLAIMED = `(claimed_until IS NULL OR claimed_until <= strftime('%Y-%m-%d %H:%M:%f', 'now'))`;
 
-type QueuedRow = { userId: string; createdAt: string; attempts: number };
-
-/**
- * 대기열에서 꺼내 등급 통지를 보내고, **보낸 뒤에** 행을 지운다.
- *
- * - `userIds` 를 주면 그 사람들만(즉시 삭제 `DELETE /user/me` 가 자기 파기분을 곧바로 보낼 때),
- *   없으면 다시 시도할 행 하나 + 새 행 묶음(크론 — 앞 틱에서 남은 것까지 잇는다).
- * - ⚠ **지우기를 발송 앞으로 옮기지 말 것.** 발송은 실패를 삼키므로, 앞에서 지우면 예산이 바닥난
- *   실행에서 행만 사라지고 예고는 안 나간다 — 이 표가 있는 이유가 통째로 무너진다.
- * - ⚠ **시도 횟수는 발송 앞에서(잡을 때) 올린다.** 뒤에서 올리면 예산이 바닥난 실행에서는 그 문장도
- *   못 돌아 같은 머리가 영원히 0회로 맨 앞에 선다.
- * - 던질 수 있다(조회·잡기·삭제 실패). 호출부는 커밋 뒤라 잡아서 기록만 한다 — 행이 남으므로 다음
- *   크론 틱이 다시 보낸다.
- */
-export async function drainPendingPlanNotifications(
-  db: Client,
-  env: Parameters<typeof notifyBillingStateChanged>[1],
-  options: { userIds?: readonly string[] } = {},
-): Promise<void> {
-  if (options.userIds) {
-    const ids = Array.from(new Set(options.userIds.filter(Boolean)));
-    if (ids.length === 0) return;
-    await sendClaimed(
-      db,
-      env,
-      toRows(
-        await db.execute({
-          sql: `SELECT user_id, created_at, attempts FROM pending_plan_notifications
-                WHERE user_id IN (${ids.map(() => '?').join(', ')}) AND ${UNCLAIMED}`,
-          args: ids,
-        }),
-      ),
-    );
-    return;
-  }
-
-  // 1) 다시 시도할 행 하나 — **먼저**, 따로(위 머리말). 뒤에 두면 새 행 묶음이 예산을 다 써 던지는 틱마다
-  //    재시도까지 닿지 못해, 앞선 실패자가 끝없이 밀린다(코덱스 #841). 이 한 사람이 예산을 다 쓰면 아래
-  //    새 행 묶음의 잡기 문장이 먼저 실패해 그들의 시도 횟수는 오르지 않는다 — 다음 틱에 그대로 나간다.
-  let retryError: unknown = null;
-  try {
-    await sendClaimed(
-      db,
-      env,
-      toRows(
-        await db.execute(`SELECT user_id, created_at, attempts FROM pending_plan_notifications
-                          WHERE attempts > 0 AND ${UNCLAIMED}
-                          ORDER BY attempts, created_at, user_id
-                          LIMIT 1`),
-      ),
-    );
-  } catch (err) {
-    // 예산 소진이면 아래도 곧바로 실패한다(해가 없다). 다른 실패면 새 행은 그대로 보낸다.
-    retryError = err;
-  }
-  // 2) 새 행 묶음.
-  await sendClaimed(
-    db,
-    env,
-    toRows(
-      await db.execute({
-        sql: `SELECT user_id, created_at, attempts FROM pending_plan_notifications
-              WHERE attempts = 0 AND ${UNCLAIMED}
-              ORDER BY created_at, user_id
-              LIMIT ?`,
-        args: [PLAN_NOTIFY_FRESH_LIMIT],
-      }),
-    ),
-  );
-  if (retryError) throw retryError;
+/** 1분 전용 크론 중 대기열 비우기가 차례를 갖는 분 — 홀수 분(짝수 분은 늘 개인 플랜 종료 작업). */
+export function isPlanNotificationDrainMinute(now: Date): boolean {
+  return now.getUTCMinutes() % 2 === 1;
 }
 
-/** 읽은 행을 잡고(원자적으로), 잡은 행에만 보내고, 보낸 뒤 지운다. */
-async function sendClaimed(
+type QueuedRow = { userId: string; createdAt: string; attempts: number; devices: number };
+
+/**
+ * **1분 전용 크론의 홀수 분**에 부른다. 대기 행이 없으면 `false`(조회 한 번 — 이 실행은 개인 플랜 종료
+ * 작업이 이어 쓴다), 있으면 예산 안에서 보내고 `true`(이 실행은 여기서 끝난다).
+ *
+ * 던질 수 있다(조회·잡기·삭제 실패). 호출부는 기록만 한다 — 행이 남거나(잡기 전) 잠금 기한 뒤 다시 고른다.
+ */
+export async function runPlanNotificationDrainTurn(
   db: Client,
   env: Parameters<typeof notifyBillingStateChanged>[1],
-  rows: readonly QueuedRow[],
-): Promise<void> {
-  if (rows.length === 0) return;
-
-  // 잡기 — 읽은 그대로(사람·시각·시도 횟수)이고 아무도 잡지 않은 행만 시도 횟수를 올리고 잠근 뒤
-  // 돌려받는다. 다른 실행이 먼저 잡았거나, 그 사이 다시 들어왔거나(시각이 바뀜), 지워졌으면 빠진다.
-  const match = matchRows(rows, { withAttempts: true });
-  const claimed = toRows(
+): Promise<boolean> {
+  const candidates = toRows(
     await db.execute({
-      sql: `UPDATE pending_plan_notifications
-               SET attempts = attempts + 1,
-                   claimed_until = strftime('%Y-%m-%d %H:%M:%f', 'now', ?)
-             WHERE (${match.sql}) AND ${UNCLAIMED}
-            RETURNING user_id, created_at, attempts`,
-      args: [`+${PLAN_NOTIFY_LEASE_MINUTES} minutes`, ...match.args],
+      sql: `SELECT q.user_id, q.created_at, q.attempts,
+                   (SELECT COUNT(*) FROM push_tokens pt WHERE pt.user_id = q.user_id) AS devices
+              FROM pending_plan_notifications q
+             WHERE ${UNCLAIMED.replaceAll('claimed_until', 'q.claimed_until')}
+             ORDER BY q.attempts, q.created_at, q.user_id
+             LIMIT ?`,
+      args: [PLAN_NOTIFY_CANDIDATES],
     }),
-  ).map((row) => ({ ...row, attempts: row.attempts - 1 }));
-  if (claimed.length === 0) return;
+  );
+  if (candidates.length === 0) return false;
 
-  // 잡기 전에 이미 상한에 닿은 행은 보내지 않고 지운다.
+  // 비용을 미리 센다 — 기기당 최대 두 통(보이는 예고 + 재조회 신호). 앞에서부터 예산에 드는 만큼.
+  const messageBudget = PLAN_NOTIFY_RUN_BUDGET - PLAN_NOTIFY_RUN_OVERHEAD;
+  const picked: QueuedRow[] = [];
+  let messages = 0;
+  for (const row of candidates) {
+    const cost = 2 * row.devices;
+    if (picked.length > 0 && messages + cost > messageBudget) break;
+    picked.push(row);
+    messages += cost;
+  }
+  // 한 사람만으로 예산을 넘으면 그 사람의 메시지를 예산까지 자른다(보이는 예고가 먼저 남는다).
+  const maxMessages = messages > messageBudget ? messageBudget : undefined;
+
+  const claimed = await claim(db, picked, { countAttempt: true });
   const exhausted = claimed.filter((row) => row.attempts >= PLAN_NOTIFY_MAX_ATTEMPTS);
   const sending = claimed.filter((row) => row.attempts < PLAN_NOTIFY_MAX_ATTEMPTS);
   if (exhausted.length > 0) {
@@ -193,11 +147,79 @@ async function sendClaimed(
       db,
       env,
       sending.map((row) => row.userId),
+      { maxMessages },
     );
   }
+  await deleteClaimed(db, claimed);
+  return true;
+}
 
-  // 지우기 — 잡은 그대로(시각만 본다: 시도 횟수는 방금 우리가 올렸다)인 행만. 그 사이 다시 들어온
-  // 사람(시각이 바뀜)은 남긴다.
+/**
+ * 즉시 삭제(`DELETE /user/me`)가 커밋 뒤 **자기 파기분을 곧바로** 보낸다 — 즉시성을 위한 것이다.
+ *
+ * - **시도 횟수를 쓰지 않는다.** 이 요청은 파기로 예산을 이미 써서 발송이 잘릴 수 있는데, 그건 그 사람의
+ *   실패가 아니다. 잘리면 행이 (잠금 기한 뒤) 남아 전용 크론이 예산을 셈해 다시 보낸다.
+ * - 잠금은 건다 — 그 사이 전용 크론이 같은 행을 잡아 두 번 보내지 않는다.
+ * - 던질 수 있다. 호출부는 탈퇴 응답을 지키려고 잡아서 기록만 한다.
+ */
+export async function sendPlanNotificationsNow(
+  db: Client,
+  env: Parameters<typeof notifyBillingStateChanged>[1],
+  userIds: readonly string[],
+): Promise<void> {
+  const ids = Array.from(new Set(userIds.filter(Boolean)));
+  if (ids.length === 0) return;
+  const rows = toRows(
+    await db.execute({
+      sql: `SELECT user_id, created_at, attempts FROM pending_plan_notifications
+            WHERE user_id IN (${ids.map(() => '?').join(', ')}) AND ${UNCLAIMED}`,
+      args: ids,
+    }),
+  );
+  const claimed = await claim(db, rows, { countAttempt: false });
+  if (claimed.length === 0) return;
+  await notifyBillingStateChanged(
+    db,
+    env,
+    claimed.map((row) => row.userId),
+  );
+  await deleteClaimed(db, claimed);
+}
+
+/**
+ * 잡기 — 읽은 그대로(사람·시각·시도 횟수)이고 아무도 잡지 않은 행만 잠그고(`countAttempt` 면 시도
+ * 횟수도 올리고) 돌려받는다. 다른 실행이 먼저 잡았거나, 그 사이 다시 들어왔거나(시각이 바뀜),
+ * 지워졌으면 빠진다. 돌려주는 `attempts` 는 **잡기 전** 값이다.
+ */
+async function claim(
+  db: Client,
+  rows: readonly QueuedRow[],
+  options: { countAttempt: boolean },
+): Promise<QueuedRow[]> {
+  if (rows.length === 0) return [];
+  const match = matchRows(rows, { withAttempts: true });
+  const res = await db.execute({
+    sql: `UPDATE pending_plan_notifications
+             SET ${options.countAttempt ? 'attempts = attempts + 1,' : ''}
+                 claimed_until = strftime('%Y-%m-%d %H:%M:%f', 'now', ?)
+           WHERE (${match.sql}) AND ${UNCLAIMED}
+          RETURNING user_id, created_at, attempts`,
+    args: [`+${PLAN_NOTIFY_LEASE_MINUTES} minutes`, ...match.args],
+  });
+  const devicesOf = new Map(rows.map((row) => [row.userId, row.devices]));
+  return toRows(res).map((row) => ({
+    ...row,
+    attempts: options.countAttempt ? row.attempts - 1 : row.attempts,
+    devices: devicesOf.get(row.userId) ?? 0,
+  }));
+}
+
+/**
+ * 지우기 — **보낸 뒤에만**, 잡은 그대로(시각만 본다)인 행만. 그 사이 다시 들어온 사람(시각이 바뀜)은 남긴다.
+ * ⚠ 발송 앞으로 옮기지 말 것 — 발송은 실패를 삼키므로, 앞에서 지우면 잘린 실행에서 행만 사라진다.
+ */
+async function deleteClaimed(db: Client, claimed: readonly QueuedRow[]): Promise<void> {
+  if (claimed.length === 0) return;
   const done = matchRows(claimed);
   await db.execute({
     sql: `DELETE FROM pending_plan_notifications WHERE ${done.sql}`,
@@ -210,6 +232,7 @@ function toRows(res: { rows: ArrayLike<Record<string, unknown>> }): QueuedRow[] 
     userId: String(row.user_id),
     createdAt: String(row.created_at),
     attempts: Number(row.attempts ?? 0),
+    devices: Number(row.devices ?? 0),
   }));
 }
 

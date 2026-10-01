@@ -54,7 +54,7 @@ function queuedForDrain(userIds: string[]): void {
   );
   // 잡기(`UPDATE … RETURNING`) — 이 실행이 잡은 행만 보낸다.
   mockDB.pushResultFor(
-    'SET attempts = attempts + 1',
+    'UPDATE pending_plan_notifications',
     userIds.map((id) => ({ user_id: id, created_at: '2026-10-01 00:00:00.000', attempts: 1 })),
   );
 }

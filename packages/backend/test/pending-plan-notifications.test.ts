@@ -1,7 +1,9 @@
 // **탈퇴 등급 통지 대기열** — 실제 SQLite(코덱스 #841).
 //
 // 파기 트랜잭션이 받을 사람을 적고(`account-purge-plan-push.test.ts`), 커밋 뒤 발송이 끝난 다음에만
-// 지운다. 발송이 subrequest 예산에 잘리면 지우는 문장도 같이 실패해 행이 남고, 다음 크론 틱이 잇는다.
+// 지운다. 비우기는 1분 전용 크론의 홀수 분이 **자기 예산을 통째로 가진 실행**에서 하고, 사람마다 기기
+// 수로 비용을 미리 세어 예산 안에 드는 만큼만 잡는다 — 예산 때문에 시도 횟수가 오르지 않는다.
+// 즉시 삭제는 커밋 뒤 자기 파기분을 곧바로 보내되 시도 횟수를 쓰지 않는다.
 // 규칙: `docs/spec/billing-lifecycle.md` 「그룹 주인이 탈퇴하면」.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createClient, type Client } from '@libsql/client';
@@ -16,11 +18,16 @@ vi.mock('../src/lib/billing-cancel', async (importOriginal) => ({
 
 import { runMigrations } from '../src/lib/migrations';
 import {
-  drainPendingPlanNotifications,
   enqueuePlanNotificationsStatement,
-  PLAN_NOTIFY_FRESH_LIMIT,
+  isPlanNotificationDrainMinute,
+  runPlanNotificationDrainTurn,
+  sendPlanNotificationsNow,
   PLAN_NOTIFY_MAX_ATTEMPTS,
+  PLAN_NOTIFY_RUN_BUDGET,
+  PLAN_NOTIFY_RUN_OVERHEAD,
 } from '../src/lib/pending-plan-notifications';
+
+const MESSAGE_BUDGET = PLAN_NOTIFY_RUN_BUDGET - PLAN_NOTIFY_RUN_OVERHEAD;
 
 let db: Client;
 
@@ -36,23 +43,18 @@ async function enqueueAt(userId: string, createdAt: string, attempts = 0): Promi
   });
 }
 
-/** 발송이 예산을 다 쓴 실행 — 그 뒤의 지우기는 던진다(그 앞의 조회·시도 횟수 올리기는 된다). */
-function budgetExhaustedAtDelete(): Client {
-  return {
-    execute: async (stmt: Parameters<Client['execute']>[0]) => {
-      const sql = typeof stmt === 'string' ? stmt : stmt.sql;
-      if (sql.includes('DELETE FROM pending_plan_notifications')) {
-        throw new Error('Too many subrequests by single Worker invocation.');
-      }
-      return db.execute(stmt);
-    },
-  } as unknown as Client;
-}
-
-/** 잠금 기한이 지난 뒤의 틱 — 테스트는 같은 순간에 도므로 기한을 직접 지난 시각으로 돌린다. */
-async function leasesExpire(): Promise<void> {
-  await db.execute(`UPDATE pending_plan_notifications SET claimed_until = '2000-01-01 00:00:00.000'
-                    WHERE claimed_until IS NOT NULL`);
+/** 이 사람에게 기기 `n` 대를 심는다(비용 계산이 센다). */
+async function withDevices(userId: string, n: number): Promise<void> {
+  await db.execute({
+    sql: `INSERT OR IGNORE INTO users (id, email, name, plan) VALUES (?, ?, ?, 'free')`,
+    args: [userId, `${userId}@example.com`, userId],
+  });
+  for (let i = 0; i < n; i++) {
+    await db.execute({
+      sql: `INSERT INTO push_tokens (id, user_id, token, platform) VALUES (?, ?, ?, 'android')`,
+      args: [`pt-${userId}-${i}`, userId, `tok-${userId}-${i}`],
+    });
+  }
 }
 
 async function attemptsOf(userId: string): Promise<number> {
@@ -63,6 +65,23 @@ async function attemptsOf(userId: string): Promise<number> {
   return Number(res.rows[0]?.attempts ?? -1);
 }
 
+/** 잠금 기한이 지난 뒤 — 테스트는 같은 순간에 도므로 기한을 직접 지난 시각으로 돌린다. */
+async function leasesExpire(): Promise<void> {
+  await db.execute(`UPDATE pending_plan_notifications SET claimed_until = '2000-01-01 00:00:00.000'
+                    WHERE claimed_until IS NOT NULL`);
+}
+
+/** 지우기에서 던지는 실행(실행이 그 지점에서 죽었다) — 그 앞의 조회·잡기·발송은 된다. */
+function diesAtDelete(): Client {
+  return {
+    execute: async (stmt: Parameters<Client['execute']>[0]) => {
+      const sql = typeof stmt === 'string' ? stmt : stmt.sql;
+      if (sql.includes('DELETE FROM pending_plan_notifications')) throw new Error('worker died');
+      return db.execute(stmt);
+    },
+  } as unknown as Client;
+}
+
 beforeEach(async () => {
   db = createClient({ url: ':memory:' });
   await runMigrations(db);
@@ -70,237 +89,164 @@ beforeEach(async () => {
   notifyBillingStateChanged.mockImplementation(async () => undefined);
 });
 
-describe('탈퇴 등급 통지 대기열', () => {
-  it('넣는 문장은 중복을 접고, 이미 있는 사람은 한 행으로 남되 새 사건으로 다시 센다', async () => {
+describe('탈퇴 등급 통지 대기열 — 넣기', () => {
+  it('중복을 접고, 이미 있는 사람은 한 행으로 남되 새 사건으로 다시 센다(시도 횟수·잠금을 되돌린다)', async () => {
     await db.execute(enqueuePlanNotificationsStatement(['m1', 'm2', 'm1', ''])!);
-    await db.execute(`UPDATE pending_plan_notifications SET attempts = 2 WHERE user_id = 'm2'`);
+    await db.execute(
+      `UPDATE pending_plan_notifications SET attempts = 2, claimed_until = '2999-01-01 00:00:00.000' WHERE user_id = 'm2'`,
+    );
     await db.execute(enqueuePlanNotificationsStatement(['m2', 'm3'])!);
     expect(await queued()).toEqual(['m1', 'm2', 'm3']);
-    // 다시 들어온 사람은 시도 횟수가 되돌아간다(새 사건 — 지난 시도의 상한에 걸리면 안 된다).
     expect(await attemptsOf('m2')).toBe(0);
+    const lease = await db.execute(`SELECT claimed_until FROM pending_plan_notifications WHERE user_id = 'm2'`);
+    expect(lease.rows[0]!.claimed_until).toBeNull();
     expect(enqueuePlanNotificationsStatement([])).toBeNull();
   });
+});
 
-  it('크론은 새 행을 오래된 순으로 한도만큼 꺼내 보내고, 보낸 사람만 지운다', async () => {
-    const ids = Array.from({ length: PLAN_NOTIFY_FRESH_LIMIT + 2 }, (_, i) => `m${String(i).padStart(2, '0')}`);
+describe('탈퇴 등급 통지 대기열 — 1분 전용 크론의 홀수 분(자기 예산을 통째로 가진 실행)', () => {
+  it('홀수 분에만 차례가 있다 — 짝수 분은 늘 개인 플랜 종료 작업이다', () => {
+    expect(isPlanNotificationDrainMinute(new Date('2026-10-01T00:01:00Z'))).toBe(true);
+    expect(isPlanNotificationDrainMinute(new Date('2026-10-01T00:02:00Z'))).toBe(false);
+  });
+
+  it('비어 있으면 차례를 쓰지 않는다(false) — 아무도 깨우지 않는다', async () => {
+    expect(await runPlanNotificationDrainTurn(db, undefined)).toBe(false);
+    expect(notifyBillingStateChanged).not.toHaveBeenCalled();
+  });
+
+  it('비용을 미리 센다 — 기기 수로 예산에 드는 사람만 잡고, 안 드는 사람은 잡지 않아 시도 횟수가 그대로다', async () => {
+    // 기기당 두 통. 한 사람 기기 6대 = 12통 — 예산(메시지)에 세 사람까지 든다.
+    const perPerson = 6;
+    const fits = Math.floor(MESSAGE_BUDGET / (2 * perPerson));
+    const ids = Array.from({ length: fits + 2 }, (_, i) => `m${i}`);
     for (const [i, id] of ids.entries()) {
-      await enqueueAt(id, `2026-10-01 00:00:${String(i).padStart(2, '0')}.000`);
+      await withDevices(id, perPerson);
+      await enqueueAt(id, `2026-10-01 00:00:0${i}.000`);
     }
 
-    await drainPendingPlanNotifications(db, undefined);
+    expect(await runPlanNotificationDrainTurn(db, undefined)).toBe(true);
 
     expect(notifyBillingStateChanged).toHaveBeenCalledTimes(1);
-    expect(notifyBillingStateChanged.mock.calls[0]![2]).toEqual(ids.slice(0, PLAN_NOTIFY_FRESH_LIMIT));
-    // 남은 사람은 다음 틱이 잇는다.
-    expect(await queued()).toEqual(ids.slice(PLAN_NOTIFY_FRESH_LIMIT));
+    expect(notifyBillingStateChanged.mock.calls[0]![2]).toEqual(ids.slice(0, fits));
+    // 예산 안에 다 들었으므로 자르지 않는다.
+    expect(notifyBillingStateChanged.mock.calls[0]![3]).toEqual({ maxMessages: undefined });
+    // 안 든 사람은 잡지 않았다 — 시도 횟수 0, 다음 차례에 그대로 나간다.
+    expect(await queued()).toEqual(ids.slice(fits));
+    for (const id of ids.slice(fits)) expect(await attemptsOf(id)).toBe(0);
   });
 
-  it('한도는 크론 한 틱의 최대 적재량(파기 2건 × 떨어져 나갈 멤버 5명)을 덮는다 — 대기열이 불어나지 않는다(코덱스 #841)', () => {
-    expect(PLAN_NOTIFY_FRESH_LIMIT).toBeGreaterThanOrEqual(2 * 5);
+  it('한 사람만으로 예산을 넘으면 그 사람만 보내되 메시지를 예산까지 자른다(보이는 예고가 먼저 남는다)', async () => {
+    await withDevices('many', MESSAGE_BUDGET); // 기기 수 = 메시지 예산 → 두 통씩이면 두 배
+    await withDevices('next', 1);
+    await enqueueAt('many', '2026-10-01 00:00:00.000');
+    await enqueueAt('next', '2026-10-01 00:00:01.000');
+
+    await runPlanNotificationDrainTurn(db, undefined);
+
+    expect(notifyBillingStateChanged.mock.calls[0]![2]).toEqual(['many']);
+    expect(notifyBillingStateChanged.mock.calls[0]![3]).toEqual({ maxMessages: MESSAGE_BUDGET });
+    expect(await queued()).toEqual(['next']);
   });
 
-  it('새 행이 계속 들어와도 다시 시도할 행이 매 틱 **먼저** 따로 한 자리를 받는다(코덱스 #841)', async () => {
-    await enqueueAt('retry', '2026-10-01 00:00:00.000', 1);
-    for (let i = 0; i < PLAN_NOTIFY_FRESH_LIMIT; i++) {
-      await enqueueAt(`f${String(i).padStart(2, '0')}`, `2026-10-01 00:01:${String(i).padStart(2, '0')}.000`);
-    }
+  it('시도가 적은 행이 먼저다 — 거듭 죽은 행이 새 사람을 막지 않는다', async () => {
+    await enqueueAt('crashed', '2026-10-01 00:00:00.000', 2);
+    await enqueueAt('fresh', '2026-10-01 00:05:00.000');
+    await withDevices('crashed', MESSAGE_BUDGET); // 혼자서 예산을 다 쓰는 사람
+    await withDevices('fresh', 1);
 
-    await drainPendingPlanNotifications(db, undefined);
+    await runPlanNotificationDrainTurn(db, undefined);
 
-    // 재시도 혼자 한 번, 그다음 새 행 묶음 한 번.
-    expect(notifyBillingStateChanged).toHaveBeenCalledTimes(2);
-    expect(notifyBillingStateChanged.mock.calls[0]![2]).toEqual(['retry']);
-    expect(notifyBillingStateChanged.mock.calls[1]![2]).toHaveLength(PLAN_NOTIFY_FRESH_LIMIT);
-    expect(await queued()).toEqual([]);
+    expect(notifyBillingStateChanged.mock.calls[0]![2]).toEqual(['fresh']);
   });
 
-  it('새 행 묶음이 매 틱 예산을 다 써도 앞선 실패자의 재시도는 매 틱 나간다 — 끝없이 밀리지 않는다(코덱스 #841)', async () => {
-    await enqueueAt('older', '2026-10-01 00:00:00.000', 1);
-    const sentTo: string[][] = [];
-    notifyBillingStateChanged.mockImplementation(async (...args: unknown[]) => {
-      sentTo.push(args[2] as string[]);
-    });
-    for (let tick = 0; tick < 2; tick++) {
-      // 매 틱 새로 들어온 묶음이 예산을 다 쓴다(그 묶음을 지우는 순간 바닥난다).
-      await enqueueAt(`fresh${tick}`, `2026-10-01 00:0${tick + 1}:00.000`);
-      const before = sentTo.length;
-      const client = {
-        execute: async (stmt: Parameters<Client['execute']>[0]) => {
-          const sql = typeof stmt === 'string' ? stmt : stmt.sql;
-          const last = sentTo.length > before ? sentTo[sentTo.length - 1]! : [];
-          if (sql.includes('DELETE FROM pending_plan_notifications') && last.some((id) => id.startsWith('fresh'))) {
-            throw new Error('Too many subrequests by single Worker invocation.');
-          }
-          return db.execute(stmt);
-        },
-      } as unknown as Client;
-      await drainPendingPlanNotifications(client, undefined).catch(() => undefined);
-      await leasesExpire();
-    }
-    // older 는 첫 틱에 혼자 나가 지워졌다.
-    expect(sentTo[0]).toEqual(['older']);
-    expect(await queued()).not.toContain('older');
-  });
-
-  it('재시도 한 사람이 예산을 다 쓰면 새 행은 잡히지 않는다 — 새 사람의 시도 횟수가 억울하게 오르지 않는다', async () => {
-    await enqueueAt('retry', '2026-10-01 00:00:00.000', 1);
-    await enqueueAt('fresh', '2026-10-01 00:01:00.000');
-    // 재시도 행을 지우는 순간 예산이 바닥난다 — 그 뒤 문장(새 행 조회·잡기)은 전부 던진다.
-    let exhausted = false;
-    const client = {
-      execute: async (stmt: Parameters<Client['execute']>[0]) => {
-        if (exhausted) throw new Error('Too many subrequests by single Worker invocation.');
-        const sql = typeof stmt === 'string' ? stmt : stmt.sql;
-        if (sql.includes('DELETE FROM pending_plan_notifications')) {
-          exhausted = true;
-          throw new Error('Too many subrequests by single Worker invocation.');
-        }
-        return db.execute(stmt);
-      },
-    } as unknown as Client;
-
-    await expect(drainPendingPlanNotifications(client, undefined)).rejects.toThrow(/subrequests/);
-
-    expect(await attemptsOf('retry')).toBe(2);
-    expect(await attemptsOf('fresh')).toBe(0);
-  });
-
-  it('지정한 사람만 보내고 지운다(즉시 삭제가 자기 파기분을 곧바로 보낼 때)', async () => {
-    await db.execute(enqueuePlanNotificationsStatement(['m1', 'm2', 'other'])!);
-
-    await drainPendingPlanNotifications(db, undefined, { userIds: ['m1', 'm2'] });
-
-    expect(notifyBillingStateChanged.mock.calls[0]![2]).toEqual(['m1', 'm2']);
-    expect(await queued()).toEqual(['other']);
-  });
-
-  it('**보낸 뒤에** 지운다 — 예산이 바닥나 지우기가 실패하면 행이 남아 다음 틱이 다시 보낸다', async () => {
+  it('**보낸 뒤에** 지운다 — 보낸 뒤 실행이 죽으면 행이 남아 잠금 기한 뒤 다시 보낸다', async () => {
     await db.execute(enqueuePlanNotificationsStatement(['m1'])!);
     let queuedAtSend: string[] = [];
     notifyBillingStateChanged.mockImplementationOnce(async () => {
       queuedAtSend = await queued();
     });
-    const exhausted = budgetExhaustedAtDelete();
-    await expect(drainPendingPlanNotifications(exhausted, undefined)).rejects.toThrow(/subrequests/);
+
+    await expect(runPlanNotificationDrainTurn(diesAtDelete(), undefined)).rejects.toThrow('worker died');
     // 보낼 때 행은 아직 있었다(지우기를 앞으로 옮기면 이 단언이 깨진다).
     expect(queuedAtSend).toEqual(['m1']);
     expect(await queued()).toEqual(['m1']);
+    // 잠금 기한 전에는 아무도 못 고른다.
+    expect(await runPlanNotificationDrainTurn(db, undefined)).toBe(false);
 
-    // 다음 틱(잠금 기한 뒤) — 다시 보내고 이번에는 지운다.
     await leasesExpire();
-    await drainPendingPlanNotifications(db, undefined);
+    expect(await runPlanNotificationDrainTurn(db, undefined)).toBe(true);
     expect(notifyBillingStateChanged).toHaveBeenCalledTimes(2);
     expect(await queued()).toEqual([]);
   });
 
-  it('비어 있으면 아무도 깨우지 않는다', async () => {
-    await drainPendingPlanNotifications(db, undefined);
-    expect(notifyBillingStateChanged).not.toHaveBeenCalled();
-  });
-  it('끝내 예산에 안 들어가는 사람은 상한에서 보내지 않고 지우고, 그동안 새 행을 막지 않는다(반복 예고 상한)', async () => {
-    // 'stuck' 은 매번 예산을 다 써 지우기까지 못 간다.
-    await enqueueAt('stuck', '2026-10-01 00:00:00.000');
+  it('거듭 죽은 행은 상한에서 보내지 않고 지운다 — 같은 예고가 끝없이 반복되지 않는다', async () => {
+    await db.execute(enqueuePlanNotificationsStatement(['stuck'])!);
     for (let i = 0; i < PLAN_NOTIFY_MAX_ATTEMPTS; i++) {
-      await expect(drainPendingPlanNotifications(budgetExhaustedAtDelete(), undefined)).rejects.toThrow();
+      await expect(runPlanNotificationDrainTurn(diesAtDelete(), undefined)).rejects.toThrow();
       await leasesExpire();
     }
     expect(await attemptsOf('stuck')).toBe(PLAN_NOTIFY_MAX_ATTEMPTS);
-
-    await enqueueAt('fresh', '2026-10-01 00:00:09.000');
     notifyBillingStateChanged.mockClear();
-    await drainPendingPlanNotifications(db, undefined);
 
-    // 새 사람은 나갔고, 상한에 닿은 머리는 더 보내지 않고 지웠다 — 같은 예고가 영원히 나가지 않는다.
-    expect(notifyBillingStateChanged).toHaveBeenCalledTimes(1);
-    expect(notifyBillingStateChanged.mock.calls[0]![2]).toEqual(['fresh']);
-    expect(await queued()).toEqual([]);
-  });
+    await runPlanNotificationDrainTurn(db, undefined);
 
-  it('잡힌 행은 잠금 기한까지 다른 실행이 고르지 않는다 — 보내는 동안 다시 잡혀 두 번 나가지 않는다(코덱스 #841)', async () => {
-    await db.execute(enqueuePlanNotificationsStatement(['m1'])!);
-    // 크론(A)이 잡고 보내는 도중에, 즉시 삭제(B)와 다음 틱(C)이 같은 사람을 찾는다.
-    notifyBillingStateChanged.mockImplementationOnce(async () => {
-      await drainPendingPlanNotifications(db, undefined, { userIds: ['m1'] });
-      await drainPendingPlanNotifications(db, undefined);
-    });
-
-    await drainPendingPlanNotifications(db, undefined);
-
-    expect(notifyBillingStateChanged).toHaveBeenCalledTimes(1);
-    expect(await queued()).toEqual([]);
-  });
-
-  it('잡은 실행이 보내기 전에 죽으면 잠금 기한이 지난 뒤 다시 보낸다', async () => {
-    await db.execute(enqueuePlanNotificationsStatement(['m1'])!);
-    notifyBillingStateChanged.mockImplementationOnce(async () => {
-      throw new Error('worker killed');
-    });
-    await expect(drainPendingPlanNotifications(db, undefined)).rejects.toThrow('worker killed');
-
-    // 기한 전에는 아무도 못 고른다.
-    await drainPendingPlanNotifications(db, undefined);
-    expect(notifyBillingStateChanged).toHaveBeenCalledTimes(1);
-
-    await leasesExpire();
-    await drainPendingPlanNotifications(db, undefined);
-    expect(notifyBillingStateChanged).toHaveBeenCalledTimes(2);
+    expect(notifyBillingStateChanged).not.toHaveBeenCalled();
     expect(await queued()).toEqual([]);
   });
 
   it('보내는 사이 같은 사람이 다른 탈퇴로 다시 들어오면 그 새 사건은 지우지 않는다', async () => {
     await db.execute(enqueuePlanNotificationsStatement(['m1'])!);
     notifyBillingStateChanged.mockImplementationOnce(async () => {
-      // 발송 중에 두 번째 그룹 주인이 탈퇴해 m1 이 다시 적혔다(시각이 달라지도록 1ms 띄운다).
       await new Promise((resolve) => setTimeout(resolve, 2));
       await db.execute(enqueuePlanNotificationsStatement(['m1'])!);
     });
 
-    await drainPendingPlanNotifications(db, undefined);
+    await runPlanNotificationDrainTurn(db, undefined);
 
-    // 처음 사건은 보냈고, 새 사건은 남아 다음 틱이 보낸다.
     expect(await queued()).toEqual(['m1']);
     expect(await attemptsOf('m1')).toBe(0);
   });
-  it('묶음이 일부만 나간 뒤에는 한 사람씩 다시 보낸다 — 뒷사람이 한 번도 못 받은 채 버려지지 않는다(코덱스 #841)', async () => {
-    // 'heavy' 는 기기가 많아 함께 보내면 매번 예산을 다 쓴다. 'light' 는 혼자면 들어간다.
-    await enqueueAt('heavy', '2026-10-01 00:00:00.000');
-    await enqueueAt('light', '2026-10-01 00:00:01.000');
-    const sentTo: string[][] = [];
-    notifyBillingStateChanged.mockImplementation(async (...args: unknown[]) => {
-      sentTo.push(args[2] as string[]);
-    });
-    /** heavy 가 들어간 실행만 예산이 바닥난다. */
-    const runOnce = async () => {
-      const before = sentTo.length;
-      const lastSend = () => (sentTo.length > before ? sentTo[sentTo.length - 1]! : []);
-      const client = {
-        execute: async (stmt: Parameters<Client['execute']>[0]) => {
-          const sql = typeof stmt === 'string' ? stmt : stmt.sql;
-          if (sql.includes('DELETE FROM pending_plan_notifications') && lastSend().includes('heavy')) {
-            throw new Error('Too many subrequests by single Worker invocation.');
-          }
-          return db.execute(stmt);
-        },
-      } as unknown as Client;
-      await drainPendingPlanNotifications(client, undefined).catch(() => undefined);
-    };
+});
 
-    for (let tick = 0; tick < PLAN_NOTIFY_MAX_ATTEMPTS + 3; tick++) {
-      await runOnce();
-      await leasesExpire();
-    }
+describe('탈퇴 등급 통지 대기열 — 즉시 삭제의 곧바로 보내기', () => {
+  it('지정한 사람만 보내고 지운다', async () => {
+    await db.execute(enqueuePlanNotificationsStatement(['m1', 'm2', 'other'])!);
 
-    // 처음 한 번만 함께, 그 뒤로는 혼자씩 — light 는 혼자 보내져 지워졌다.
-    expect(sentTo[0]).toEqual(['heavy', 'light']);
-    expect(sentTo.slice(1).every((ids) => ids.length === 1)).toBe(true);
-    expect(sentTo.slice(1)).toContainEqual(['light']);
-    // heavy 는 혼자서도 끝내 안 들어가 상한에서 버려졌다 — 대기열이 비었다.
+    await sendPlanNotificationsNow(db, undefined, ['m1', 'm2']);
+
+    expect(notifyBillingStateChanged.mock.calls[0]![2]).toEqual(['m1', 'm2']);
+    expect(await queued()).toEqual(['other']);
+  });
+
+  it('**시도 횟수를 쓰지 않는다** — 그 요청은 파기로 예산을 이미 썼고, 잘린 것은 그 사람의 실패가 아니다', async () => {
+    await db.execute(enqueuePlanNotificationsStatement(['m1'])!);
+
+    await expect(sendPlanNotificationsNow(diesAtDelete(), undefined, ['m1'])).rejects.toThrow();
+
+    expect(await attemptsOf('m1')).toBe(0);
+    // 잠금 기한 뒤 전용 크론이 잇는다.
+    await leasesExpire();
+    expect(await runPlanNotificationDrainTurn(db, undefined)).toBe(true);
     expect(await queued()).toEqual([]);
   });
 
-  it('두 실행이 같은 행을 읽어도 한쪽만 잡아 보낸다 — 같은 예고가 두 번 나가지 않는다(코덱스 #841)', async () => {
+  it('잡힌 행은 다른 실행이 고르지 않는다 — 전용 크론과 겹쳐도 같은 예고가 두 번 나가지 않는다', async () => {
     await db.execute(enqueuePlanNotificationsStatement(['m1'])!);
-    // 크론(A)이 행을 읽은 직후, 즉시 삭제(B)의 비우기가 끝까지 돈다.
+    // 즉시 삭제가 잡고 보내는 도중에 전용 크론과 다른 즉시 삭제가 같은 사람을 찾는다.
+    notifyBillingStateChanged.mockImplementationOnce(async () => {
+      expect(await runPlanNotificationDrainTurn(db, undefined)).toBe(false);
+      await sendPlanNotificationsNow(db, undefined, ['m1']);
+    });
+
+    await sendPlanNotificationsNow(db, undefined, ['m1']);
+
+    expect(notifyBillingStateChanged).toHaveBeenCalledTimes(1);
+    expect(await queued()).toEqual([]);
+  });
+
+  it('두 실행이 같은 행을 읽어도 한쪽만 잡는다(읽은 값 그대로일 때만 잡기)', async () => {
+    await db.execute(enqueuePlanNotificationsStatement(['m1'])!);
     let raced = false;
     const cron = {
       execute: async (stmt: Parameters<Client['execute']>[0]) => {
@@ -308,13 +254,13 @@ describe('탈퇴 등급 통지 대기열', () => {
         const sql = typeof stmt === 'string' ? stmt : stmt.sql;
         if (!raced && sql.trimStart().startsWith('SELECT')) {
           raced = true;
-          await drainPendingPlanNotifications(db, undefined, { userIds: ['m1'] });
+          await sendPlanNotificationsNow(db, undefined, ['m1']);
         }
         return res;
       },
     } as unknown as Client;
 
-    await drainPendingPlanNotifications(cron, undefined);
+    await runPlanNotificationDrainTurn(cron, undefined);
 
     expect(notifyBillingStateChanged).toHaveBeenCalledTimes(1);
     expect(await queued()).toEqual([]);

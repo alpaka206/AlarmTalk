@@ -1499,6 +1499,11 @@ export async function notifyBillingStateChanged(
   db: Client,
   env: ExpiryEnv | undefined,
   userIds: string[],
+  /**
+   * 보낼 메시지 수의 상한 — 만든 순서대로 자른다(보이는 예고가 먼저). 실행의 subrequest 예산을
+   * 부르는 쪽이 셈할 때만 준다(탈퇴 등급 통지 대기열 — `lib/pending-plan-notifications.ts`).
+   */
+  options: { maxMessages?: number } = {},
 ): Promise<void> {
   const unique = Array.from(new Set(userIds.filter(Boolean)));
   if (unique.length === 0) return;
@@ -1514,6 +1519,7 @@ export async function notifyBillingStateChanged(
       planChangedUserIds: unique,
       deletionWarningUserPks: res.rows.map((r) => String(r.user_id)),
       retentionDays: PAID_VOICE_RETENTION_DAYS,
+      maxMessages: options.maxMessages,
     });
   } catch (err) {
     logStructured('error', {
