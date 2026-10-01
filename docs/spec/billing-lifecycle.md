@@ -374,6 +374,15 @@ ID 로도 조회되고 최신 갱신 정보를 준다. 구글의 `getPlaySubscri
   `cancelSubscriptionImmediate` 하나이고, 그 함수가 같은 트랜잭션에서 연결된 그룹과 뒷받침 없는
   소유 그룹(방어 스윕)을 해체한다. 이어받기(`preserveGroupId`)는 같은 트랜잭션에서 새 활성
   구독에 그룹을 다시 매단다. 초대 사용도 발급 구독이 `active`·`entitled` 일 때만 된다.
+  - ⚠ **예외 하나 — 레거시 복구 경로.** `GET /family/group` 은 멤버십이 없으면
+    `repairFamilyPlanGroupForUser` 로 **자기 활성 가족 구독**(그룹 연결이 빈 레거시 행)을
+    발급자의 그룹에 다시 붙이는데, 발급자 그룹을 찾는 조회(`resolveFamilyPlanGroupForRedeemedVoucher`)
+    는 발급 구독의 `status` 를 보지 않는다. 해체는 `plan_groups` 행을 남기므로(멤버 행만 지운다),
+    주인 구독이 이미 `cancelled` 인 그룹에 멤버가 다시 붙을 수 있다. 그 주인이 탈퇴하면 해체 없이
+    파기 batch 의 `DELETE FROM plan_group_members` 가 멤버 행을 지운다 — 그래도 **등급은 바뀌지
+    않는다.** 그 멤버의 등급은 남의 그룹이 아니라 **자기 활성 가족 구독**이 받치고, 그 구독은
+    파기 batch 가 건드리지 않는다. 그래서 여기는 통지할 등급 변경이 없다(목록에 넣지 않는다).
+    남는 것은 그 구독의 `plan_group_id` 가 사라진 그룹을 가리키는 잔재뿐이고, 등급 판정과는 무관하다.
 
 ## 플랜 변경 — **스토어 시트가 시점을 정한다**
 
