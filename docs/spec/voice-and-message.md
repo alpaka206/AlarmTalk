@@ -485,6 +485,19 @@
     구우면 21개가 말투·결 없이 게시되고 뒤늦은 분석은 되돌리지 못한다. 분석이 `pending` 인 동안 cron 은
     건너뛰고, 소유자 주도 전진은 `claim_stuck` 으로 "잠깐 뒤 다시" 를 답한다. **상한 10분** — 분석이
     죽어 `pending` 이 남아도 그 뒤에는 말투 없이 굽는다(영영 안 굽는 것보다 낫다).
+  - ⚠ **말투 분석은 전송 실패만 다시 묻는다**(2026-10-01). 상류 시간 초과(15초) 한 번이 곧 `failed` 였고, 사전렌더는
+    `pending` 만 기다리므로 그 목소리의 클립은 **말투 없이** 구워졌다 — 살리는 길은 사용자의 재시도 버튼뿐이었다.
+    이제 시간 초과·네트워크 실패·429/5xx 는 최대 2번 더(0.5초·1.5초 쉬고) 묻는다 — 생성 요청뿐 아니라 **토큰 발급의
+    429/5xx 도** 같고, 머리는 받았는데 **본문을 읽다 끊긴 것**도 같다(Codex #844 — `readJsonBody`). 토큰 발급의
+    400(invalid_grant 등)과 본문이 JSON 이 아닌 것은 다시 보내도 같으므로 묻지 않는다. 등록 경로는 `waitUntil` 이라
+    **응답 뒤 30초에 잘리고**, 잘리면 상태가 `pending` 에 갇혀 재시도 버튼(`failed` 만 받는다)도 못 쓴다 — 그래서
+    다시 묻기는 **전사 시작부터 26초 안**에서만 하고(남는 4초는 동의 재확인·기록 몫), 남은 시간이 4초 미만이면
+    묻지 않는다. **어느 회차의 어느 요청도 그 마감을 넘기지 않는다** — 토큰 발급은 min(8초, 남은 시간), 생성 요청은
+    min(15초, 남은 시간)이고, 둘 다 **그 요청을 보내기 직전에** 잰다. 마감이 이미 지났으면 보내지 않는다. 마감이
+    넉넉한 첫 회차는 예전 그대로(토큰 8초·생성 15초)다. 형식 오류·확신 낮음·잘린 답은 다시 묻지 않는다(같은 요청은
+    같은 답을 낸다). 재시도 버튼(`POST /voice/:id/speech-style/retry`, 동기)도 같은 함수라 같은 규칙이다.
+    - ⚠ 생성 상한을 토큰 발급 **앞에서** 미리 재 두지 말 것(2026-10-01 리뷰). 다시 묻는 회차의 토큰 발급이 8초 걸리면
+      미리 잰 상한이 그 8초를 모른 채 남아 생성 요청이 마감을 넘기고, `waitUntil` 에 잘려 상태가 `pending` 에 갇힌다.
   - ⚠ **등록 첫 미리듣기도 분석을 기다린다**(최대 ≈10초). 등록 화면은 클론 직후 곧바로 미리듣기를 부르는데,
     안 기다리면 결 없이 만든 문구가 영속되고 사용자가 그걸 듣고 확정한다 — 알람 클립과 다른 결을 승인하는
     셈이다. 그래도 안 끝나면 **생성하지 않고** 고정 예문으로 들려주고 영속하지 않는다(다음 미리듣기가 분석 뒤에
@@ -498,6 +511,63 @@
     시각으로 올린다 — 같은 provider 보이스라 보이스 대조만으로는 옛 클립이 '이미 있다' 로 세어지므로, 다시 굽는
     회차는 **그 요청 뒤에 게시된 클립만** 최신으로 센다(대상 고르기·진행률 둘 다). 두 시각은 밀리초까지 남기고
     엄격한 `>` 로 비교한다 — 같은 순간이면 한 번 더 굽는 쪽으로 기운다(옛 결이 섞이는 것보다 낫다).
+- **말투·내용 규칙**(2026-10-01 — `gemini-3.8-flash` 하나로 평가해 고쳤다. 다른 모델과 비교하지 않는다):
+  - **사투리는 주제마다 같은 강도로, 그 지역 것만** 쓴다 — 사과·주의 줄(날씨 확인 실패)도 사투리로 조심스럽게
+    말하고, 다른 지역 어미(경상 화자의 전라 '~응께')·옛 무대 말투(関西 'なはれ')는 쓰지 않는다. 사람이 쓴 본보기는
+    표준어라 그 낱말까지 사투리로 다시 쓴다. 조심스러운 어조는 **어조만** 바꾼다(사투리·어체는 그대로). 확정 문구가
+    있으면 이 말도 '화자 자신의 사투리' 가 아니라 '줄의 나머지와 같은 말씨' 다 — 사투리냐 표준어냐는 아래 확정 문구
+    갈래가 정한다. ⚠ 이 문장에 '확정 문구의 사투리/표준어 선택을 따르라' 를 쓰거나 문장을 빼면 표준어 확정 문구의
+    関西 화자가 오히려 더 자주 関西弁 으로 샜다(2026-10-01, 같은 조건 60줄씩: 16/60·16/60, 지금 문장 6/60).
+  - ⚠ **사용자가 확정한 미리듣기 문구가 말투 분석을 이긴다**(2026-10-01 리뷰). 운영 크론은 거의 모든 클론에 그 문구
+    (`preview_text`)를 말투 본보기(`styleReference`)로 넘긴다. 그 문구가 **표준어면 분석이 사투리여도 표준어로**
+    쓴다 — 위의 사투리 지시(말투 블록·본보기를 사투리로 다시 쓰라는 말·프롬프트 끝의 `DIALECT` 줄)는 확정 문구가
+    있으면 전부 "그 문구가 사투리면 사투리로, 표준어면 표준어로" 로 바뀐다 — 말투 블록의 "약 알림도 사투리로, 표준어는
+    안 된다" 와 "교과서 표준어 대신 사투리 어미로" 도 그때는 싣지 않는다. 문구가 사투리인지는 코드가 가르지 않고
+    모델이 문구를 보고 고른다. 확정 문구가 없을 때만 무조건 사투리로 쓰라고 한다.
+    - 근거(2026-10-01 3.8 평가): 끝에 "확정 문구가 이긴다" 만 덧붙였을 때는 표준어 확정 문구에도 경상 약 줄 2/2·
+      関西 12줄 중 9줄이 사투리였다. 말투 블록부터 조건부로 바꾸니 표준어 확정 문구는 경상 30/30·関西 28/30 이 표준어
+      (남은 둘은 関西 '날씨 확인 실패' 사과 줄), 사투리 확정 문구는 경상·関西 모두 사투리를 지켰다.
+    - 알려진 틈: 분석이 **실패한 채** 첫 미리듣기가 만들어지면 그 문구는 표준어이고, 사용자가 그대로 확정한 뒤
+      재시도 버튼으로 사투리가 잡혀도 다시 굽는 클립은 확정 문구(표준어)를 따른다. 위의 자동 재시도로 이 경우를
+      줄였다.
+  - **확정 문구는 말투의 본보기이지 틀이 아니다**(2026-10-01 마지막 회차). 어체·사투리·에너지는 가져오되 **끝 어미는
+    그 문구를 본뜨지 않는다**(경상 확정 문구의 '…보자카이' 를 12줄 중 8줄이 끝으로 썼다 → 0/18). 피할 끝말은 코드가
+    확정 문구의 마지막 말로 집어 준다('보자카이'·'ほな起きよか'). 이 지시에는 'dialect' 를 쓰지 않는다 — '같은 사투리
+    안에서 어미를 바꾸라' 는 문장을 함께 실었을 때 표준어 확정 문구의 関西 누출이 22/60 까지 늘었다. 인사 시드는 확정 문구와 같은
+    **인사말 낱말**(좋은 아침·おはよう·おはようさん·Good morning)로 열어도 된다 — 복제 금지에 밀려 일본어가 'いい朝だよ'
+    로, 関西 이 'おはようさん' 없이 열었다. 나머지 문장은 새로 쓴다.
+  - **아이 목소리는 이유를 옮기지 않는다** — 의도의 사실과 마무리 행동만 아이 말로. 어른 목소리는 지금처럼
+    사실·공감·이유·행동을 다 말한다. 영어는 **절 하나도 빼지 않는다**고 따로 말한다(줄여야 하면 절을 줄이지 버리지
+    않는다 — 영어 운세#0 이 '일이 생각보다 술술 풀릴 수도' 절을 6줄 중 2줄에서 빠뜨렸다 → 9/9). 한국어·일본어에는 그
+    누락이 없었고, 같은 문장을 모든 언어에 실었더니 표준어 関西 누출이 늘어 영어에만 둔다.
+    - 아이 철자(늘인 끝·무른 받침·되풀이)는 한 줄에 한두 낱말, **요점이 아닌 낱말에만** 쓴다 — 깨우는 말(일어나·起きて·
+      wake up)·약·우산은 바르게 쓴다. 예전에는 필수 예가 '이러나아' 라 '요점 낱말은 깨지 말라' 와 부딪혔다.
+    - 아이 목소리의 운세도 가능성으로 말한다 — 아이 말투의 추측('~할지도 몰라!'·'かもね'·'maybe')으로, 전하는 말('~래')
+      이 아니게. 막는 것은 어른·존대 추측('~ㄹ지도 몰라요'·'~면 좋겠어요')뿐이다.
+  - **운세는 가능성으로만**(시드의 '~수도·~지도' 를 지킨다), 사람 운은 이미 아는 사람과의 일이다 — **새 인연·연애운을
+    말하지 않는다**(연인 목소리만이 아니라 전부). 운세 '주의' 시드(`CLONE_CLIP_SEEDS` 운세 1번)는 단정('괜찮게 흘러갈
+    거라고')을 시켜 모델이 그대로 단정했으므로 시드를 '흘러갈 수도 있다고 재미로' 로 고쳤다 — 이미 구운 클립은
+    그대로이고, 새 목소리·다시 굽는 회차부터 쓰인다.
+  - **인사가 아니면 아침 인사를 하지 않는다**(맨 'Morning,' 포함) — 프롬프트 끝에서 한 번 더 말하고, 검사
+    (`time_of_day`)는 그대로 둔다.
+  - **일본어 가족·친구·연인 문구가 です・ます 로 끝나면 다시 묻는다**(`register_mixed`) — 한국어 어체 검사와 같은 자리다.
+    **가족·친구·연인으로 확인된 라벨만** 본다 — 일본어 규칙이 タメ口 라고 못 박은 관계(조부모↔손주·부모↔자식·형제자매·
+    친구·연인/배우자)의 **낱말 그 자체**(한·일·영 허용 목록. 앞에 '우리·내·my·うちの' 정도와 띄어쓰기·장식은 무시)일
+    때만이다. ⚠ **두 앱의 관계 프리셋은 한·영·일 전부 이 목록에 있어야 한다**(연예인·직접 입력 제외 — '형제·자매'·
+    'Sibling'·'兄弟・姉妹'·'孫娘'·'孫息子' 가 빠져 있었다, Codex #844). 프리셋을 더하면 여기도 더한다. 낱말이 **들어 있기만** 한 라벨('이웃 할머니'·'교회 오빠'·'형수'·'息子の嫁'·'ママ友'·'寮母')과 모르는
+    라벨·먼 사이(先生 등)·이모·삼촌·사돈·시댁·처가(형부·올케·처제·동서·義母·嫁·婿·며느리 등)는 です・ます 가 맞을 수
+    있어 거절하면 그 클립이 영구 실패하므로 검사하지 않는다(예전에는 부분 일치라 이것들이 가족으로 잡혔다). 화자
+    녹음이 정중체였거나 사용자가 정중체 문구를 확정했으면(문장 끝으로 가린다) 그 말투를 따르고, 어체만 있는 분석도 프롬프트에 싣는다. 아이 목소리는 라벨과 무관하게 본다.
+    문장 끝만 본다 — 'でした' 는 정중체다. 사전형이 'ます' 로 끝나는 동사(覚ます·冷ます·励ます·済ます·澄ます 등)와 누구에게나
+    쓰는 인사말(いただきます·いってきます·ごちそうさまでした)은 정중체가 아니고, 'でしょう' 는 가족 말투('だめでしょう？')
+    에도 흔해 세지 않는다 — 잘못 거절하면 세 회차 다 걸려 그 클립이 영구 실패한다.
+  - **영어 운세의 '재물운' 직역('money luck'·'financial luck')은 다시 묻는다**(`literal_translation`) — 프롬프트가 금지해도
+    다시 나왔다. 그 두 꼴만 본다('luck with money' 같은 자연스러운 말은 막지 않는다).
+  - **한국어의 어긋난 낱말 짝 둘도 다시 묻는다**(`korean_collocation`, `hasKoreanCollocationError`) — '운이 술술'(술술은
+    일이 '풀리다' 에만 붙는다 — 이 꼴로 쓸 때 시드의 '~수도' 까지 같이 떨어졌다)과 '나중에 챙기려면(챙기려 하시면) 잊기
+    쉬우니까'(시드의 '미뤄 두면 잊기 쉽다' 를 엉뚱한 뜻으로 옮긴 것). 프롬프트가 금지해도 손주→조부모 프로필에서 되풀이됐다
+    (2026-10-01 평가 12/16·4/13). 그 두 꼴만 본다 — 같은 날 3.8 한국어 출력 1,359줄에 돌려 걸린 14줄이 전부 이 결함이었다.
+    잊는다는 **긍정** 꼴만 본다 — '나중에 먹으려면 잊지 않게 메모해 둬'·'깜빡하지 않도록' 같은 부정·목적절은 바른 말이다.
 
 ## 5. 무료 버킷은 **울릴 때마다 다음 클립으로 넘어간다**
 
@@ -1507,6 +1577,9 @@ R2 파일·ElevenLabs 클론은 DB 트랜잭션 안에서 지울 수 없으므�
 | 한 번 세는 데 디렉터리 1회·길이 측정 없음 | `AlarmAudioStore.missingOrStaleCacheKeys`·`snapshot`(단건은 이름으로 찾는 `findCachedFile`, 있는지만은 `hasCachedAudio`); 회귀 `AlarmAudioStoreProbeCountTest` | `AudioCacheStore.missingOrStaleCacheKeys`; 회귀 `StockClipProgressScanTests` | — |
 | 등록 진행률(생성 0~50 + 다운로드 50~100) · 완료 안내 없음 | `ui/voices/VoiceProfileManagementPanel.kt` `VoiceRegistrationStep.Prerendering`·`CloneVoiceReadiness` | `ClonePrerenderDrive`·`ClipPreparationView.registrationPreparation`·`VoicePrerenderStatusRow`; `AlarmTalkTests/ClonePrerenderProgressTests` | `routes/voice-profile.ts` 의 `prerender/advance`·`prerender-status` |
 | 클론 문구의 결·사람이 쓴 본보기 | 결을 고르지도 보내지도 않는다 — `ui/voices/VoiceProfileManagementPanel.kt` `VoiceRegistrationStep.Details` 에 칸이 없고, `network/VoiceCloneRequest.kt` `createVoiceCloneDraft` 가 `voiceEnergy` 파트를 싣지 않는다(2026-09-29 '목소리 느낌' 제거). 초안 페르소나 PATCH 는 없다(관계·호칭을 초안 생성에만 싣는다). 회귀 `VoiceCloneRequestTest`(결 파트 없음) | 결을 고르지도 보내지도 않는다 — `Views/Voices/VoiceCloneUploadFlow.swift` `detailsSection` 에 칸이 없고, `AlarmTalkAPI.voiceCloneMultipartFields` 가 `voiceEnergy` 를 싣지 않는다. 초안 페르소나 PATCH 는 없다(공유 목소리 뷰어의 관계 PATCH `voiceRelationshipUpdateBody` 도 결을 싣지 않는다). 회귀 `VoiceStudioViewModelTests`(결 필드 없음) | 전사 추정 `analyzeSpeechStyleWithVertex`(`speech_style.energy`, `runSpeechStyleAnalysis`) · **1.2.10 호환**: `POST voice/clone` 의 `voiceEnergy`/`voice_energy`(초안 생성) · `PATCH voice/:id/relationship` 의 `voice_energy`(초안만) → `voice_profiles.voice_energy`(#122) · `withVoiceEnergy`(고른 값 > 추정값 — `minSupported` 가 선택지 없는 릴리스를 넘기면 받는 처리를 지운다) · `stockReferenceLine` → `generatePrerenderClipText(humanReference)` · 결은 문장 지시뿐 `prerenderClipPrompt` 의 `energyInstruction`(태그 없음, `lib/vertex-translate.ts`) · 교체 `replaceVoiceInPlace` · 분석 대기 `SPEECH_STYLE_ANALYSIS_WAIT_SQL`(`claimPendingPrerenderVoices`, `POST voice/:id/prerender/advance`, 첫 미리듣기 `waitForSpeechStyleAnalysis`) · 결과 기록 대상 `SPEECH_STYLE_RESULT_TARGET_SQL`(`runSpeechStyleAnalysis`). 회귀 `voice-prerender-style-wait.test.ts` |
+| 클론 문구의 말투·내용 규칙(사투리 강도·아이는 이유 없이·운세는 가능성·일본어 가족 です・ます 거절·영어 직역 거절·한국어 어긋난 낱말 짝 거절·확정 문구의 끝 어미를 본뜨지 않음) | — (서버가 만든다) | — (서버가 만든다) | `prerenderClipPrompt`(`speechStyleInstruction`·`humanReferenceInstruction`·`styleReferenceInstruction`(피할 끝말 `lastPhrase`)·`careKeepsVoice`·`childlikeInstruction`·끝의 `TIME OF DAY`·`DIALECT` 줄) · 검사 `prerenderRejectionReason` → `hasMixedKoreanRegister`·`hasJapanesePoliteEnding`(문장 판정 `isJapanesePoliteSentence`, 허용 목록 `isConfirmedCloseRelationshipLabel`)·`hasAssumedMorning`·`hasEnglishLiteralCalque`·`hasKoreanCollocationError`(`lib/vertex-translate.ts`) · 운세 시드 `CLONE_CLIP_SEEDS`(`lib/stock-clips.ts`). 회귀 `vertex-translate.test.ts`「사전렌더 — 3.8 튜닝」·「사전렌더 — 마지막 튜닝 회차」·「hasJapanesePoliteEnding — 엄격한 허용 목록」·`prerender-clip-failure-reason.test.ts`(재시도 힌트) |
+| 확정 미리듣기 문구가 사투리 지시를 이긴다 | — (서버가 만든다) | — (서버가 만든다) | `prerenderClipPrompt` 의 `styleReference` 갈래(`dialectFollowsReference` → `speechStyleInstruction`·`humanReferenceInstruction`·끝의 `DIALECT` 줄) ← `stock-clips.ts` 가 `preview_text` 를 넘긴다. 회귀 `vertex-translate.test.ts`「확정 문구(STYLE REFERENCE)가 있으면 사투리 지시가 그것을 따른다」· 평가 `scripts/eval-gemini-prompts.ts`(프로필마다 `styleReference`, `*-stdref` 프로필) |
+| 말투 분석 재시도(전송 실패만·`waitUntil` 마감 안) | — | — | `analyzeSpeechStyleWithVertex`(`SPEECH_STYLE_RETRY_DELAYS_MS`·`SPEECH_STYLE_ANALYSIS_BUDGET_MS`, 판정 `isVertexTransportFailure` ← `markTransportFailure`·`VertexHttpError`, 요청마다 직전에 재는 상한 `GenerateContentConfig.deadlineAt` → `deadlineBoundedTimeoutMs`(토큰 `createAccessToken`·생성 `generateContentAtEndpoint`), `lib/vertex-translate.ts`) · 마감은 `runSpeechStyleAnalysis`(`routes/voice-profile.ts`)가 전사 전부터 센다. 회귀 `vertex-translate.test.ts`「전송 실패만 마감 안에서 다시 묻는다」(「어느 회차도 마감을 넘기지 않는다(가짜 시계)」 — 토큰 발급 8초)·`voice-profile-speech-style.test.ts`(마감 전달) |
 | 재생 방식 2택 | `PlayModeCard` (`ui/editor/AlarmEditorControls.kt`) | `VoicePlayModePicker` | `wake_mode` (`voice_only` / `sound_then_voice`) |
 | 옛 값 정규화 | `AlarmPlayModes.normalize` | `AlarmPlayMode.decode` | — |
 | 문구 목록(하나) | `EditorMessageContexts` → `FreeBucketOrder` (`ui/editor/AlarmEditorControls.kt`) | `MessageSettingsPane.options` → `FreeBucket.order` | `STOCK_CLIP_PRESETS` → `FREE_BUCKET_CATEGORIES` |
