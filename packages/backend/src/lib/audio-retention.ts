@@ -107,30 +107,52 @@ export function externalDeletionStatement(
 }
 
 /**
+ * **SELECT 가 고른 참조들**을 삭제 큐에 넣는 문장 하나 — 결과를 읽지 않으므로 호출부의 `batch` 에 넣을 수 있다.
+ *
+ * 행을 지우는 문장과 **같은 batch(= 한 트랜잭션)** 에 넣으려고 둔다. 미리 읽어 둔 키를 `VALUES` 로 넣으면
+ * 읽은 뒤 바뀐 상태(그 사이 promote 된 원본 등)를 못 보지만, `INSERT … SELECT` 는 같은 트랜잭션 안에서
+ * 바로 뒤의 DELETE 와 **같은 조건·같은 상태**를 본다 — 지우는 행과 예약하는 키가 어긋날 수 없다.
+ *
+ * `select` 는 `ref` 열 하나를 내야 한다. 빈 참조는 거른다(`externalDeletionStatement` 와 같은 규칙).
+ * 같은 `(kind, ref)` 는 한 행이 되고 id 만 새로 바뀐다(`REFRESH_RESERVATION_ON_CONFLICT`).
+ * (바깥 SELECT 의 `WHERE` 는 빼지 말 것 — SQLite 는 `INSERT … SELECT … ON CONFLICT` 에서 WHERE 가
+ * 없으면 `ON` 을 조인 조건으로 읽는다.)
+ */
+export function externalDeletionsFromSelectStatement(
+  kind: ExternalDeletionKind,
+  select: { sql: string; args: ReadonlyArray<string | number | null> },
+): InStatement {
+  return {
+    sql: `INSERT INTO pending_external_deletions (id, kind, ref)
+          SELECT lower(hex(randomblob(16))), ?, ref
+            FROM (${select.sql})
+           WHERE ref IS NOT NULL AND ref <> ''
+          ${REFRESH_RESERVATION_ON_CONFLICT}`,
+    args: [kind, ...select.args],
+  };
+}
+
+/**
  * **이 사람들의 업로드 원본을 가리키는 문구의 키**를 삭제 큐에 옮기는 문장 하나.
  *
  * 받은 사람 소유의 `family-voice` 문구는 보낸 사람의 업로드 키를 그대로 담는다. 가족 녹음 원본은
- * 프로필에 안 묶여 7일 TTL 이 업로드 행을 먼저 지우는데(`cleanupExpiredAudio`), TTL 은 행 삭제와
- * 큐 적재를 **따로** 커밋한다 — 그 사이가 끊기면 R2 파일은 살아 있고 그 키를 아는 곳이 이
- * 문구뿐이다. 그래서 문구를 지우거나 키를 비우는 경로는(탈퇴 파기·음성 동의 철회·보관 만료)
- * **그 전에** 이 문장을 돌린다. 업로드 행에서 읽는 `enqueueUserVoiceArtifacts` 만으로는 못 찾는다.
+ * 프로필에 안 묶여 7일 TTL 이 업로드 행을 먼저 지우므로(`cleanupExpiredAudio`), 업로드 행에서 읽는
+ * `enqueueUserVoiceArtifacts` 만으로는 그 키를 못 찾는다. 그래서 문구를 지우거나 키를 비우는 경로는
+ * (탈퇴 파기·음성 동의 철회·보관 만료) **그 전에** 이 문장을 돌린다.
  *
- * 같은 키는 고유 색인 `(kind, ref)` 로 한 행이 되고 id 만 새로 바뀐다(`REFRESH_RESERVATION_ON_CONFLICT`).
- * id 는 드레인이 식별자로만 쓴다.
- * 결과를 읽지 않으므로 호출부의 `batch` 에 넣을 수 있다.
+ * TTL 은 이제 행 삭제와 큐 적재를 한 트랜잭션으로 묶지만(2026-10-01), 그 전에는 **따로** 커밋해 그 사이가
+ * 끊긴 녹음은 R2 파일의 키를 아는 곳이 이 문구뿐이다 — 그 잔재를 거두려고 이 문장은 그대로 둔다.
+ * 이미 예약된 키를 다시 넣어도 한 행이고 id 만 바뀐다.
  */
 export function enqueueUploadKeysReferencedByMessagesStatement(
   ownerUserIds: readonly string[],
 ): InStatement {
   const uploads = audioUrlPointsAtUploadsOf('audio_url', ownerUserIds);
-  return {
-    sql: `INSERT INTO pending_external_deletions (id, kind, ref)
-          SELECT lower(hex(randomblob(16))), 'r2_object', audio_url
-            FROM messages
-           WHERE audio_url IS NOT NULL AND ${uploads.sql}
-          ${REFRESH_RESERVATION_ON_CONFLICT}`,
+  return externalDeletionsFromSelectStatement('r2_object', {
+    sql: `SELECT audio_url AS ref FROM messages
+           WHERE audio_url IS NOT NULL AND ${uploads.sql}`,
     args: uploads.args,
-  };
+  });
 }
 
 /**
@@ -343,30 +365,45 @@ export async function drainExternalDeletions(
  */
 export async function cleanupStaleDraftVoices(db: Client, now: Date): Promise<void> {
   const cutoff = new Date(now.getTime() - DRAFT_VOICE_TTL_HOURS * 60 * 60 * 1000).toISOString();
+  // 고르는 조건과 쓰는 조건은 **같은 조각**이다 — 쓰기 문장이 다시 본다(아래).
+  const staleDraft = {
+    sql: `COALESCE(is_draft, 0) = 1
+          AND deleted_at IS NULL
+          AND datetime(created_at) <= datetime(?)`,
+    args: [cutoff],
+  };
   const stale = await db.execute({
-    sql: `SELECT id, elevenlabs_voice_id FROM voice_profiles
-          WHERE COALESCE(is_draft, 0) = 1
-            AND deleted_at IS NULL
-            AND datetime(created_at) <= datetime(?)
+    sql: `SELECT id FROM voice_profiles
+          WHERE ${staleDraft.sql}
           ORDER BY created_at ASC
           LIMIT ?`,
-    args: [cutoff, TTL_BATCH_SIZE],
+    args: [...staleDraft.args, TTL_BATCH_SIZE],
   });
-  let expired = 0;
-  for (const row of stale.rows) {
-    // 소프트 삭제를 먼저 '클레임'하고(가드 재확인), 성공했을 때만 클론 파기를 큐에 넣는다.
-    // 순서를 바꾸면 SELECT 와 UPDATE 사이에 promote(is_draft=0)된 정식 보이스의 클론이
-    // 큐에 적재돼 파기되는 TOCTOU 레이스가 생긴다.
-    const claimed = await db.execute({
-      sql: `UPDATE voice_profiles
-            SET deleted_at = datetime('now'), updated_at = datetime('now')
-            WHERE id = ? AND COALESCE(is_draft, 0) = 1 AND deleted_at IS NULL`,
-      args: [String(row.id)],
-    });
-    if ((claimed.rowsAffected ?? 0) === 0) continue;
-    await enqueueExternalDeletion(db, 'elevenlabs_voice', row.elevenlabs_voice_id as string | null);
-    expired += 1;
-  }
+  const ids = stale.rows.map((row) => String(row.id));
+  if (ids.length === 0) return;
+  const ph = ids.map(() => '?').join(', ');
+  // ⚠ **클론 삭제 예약과 소프트 삭제는 한 batch(= 한 트랜잭션)다**(`cleanupExpiredAudio` 의 같은 주석).
+  //   예전에는 행마다 소프트 삭제를 커밋한 뒤 예약을 **따로** 넣어, 그 사이가 끊기면 draft 는 사라지고
+  //   ElevenLabs 클론은 예약 없이 슬롯을 영구히 점유했다.
+  //   두 문장 모두 조건을 **다시 본다** — 고른 뒤 promote(is_draft=0)된 정식 보이스의 클론을 파기하는
+  //   TOCTOU 를 막는다. 예약이 **먼저** 와야 한다: 소프트 삭제 뒤에는 조건이 거짓이 되어 아무것도 못 고른다.
+  const [, claimed] = await db.batch(
+    [
+      externalDeletionsFromSelectStatement('elevenlabs_voice', {
+        sql: `SELECT trim(elevenlabs_voice_id) AS ref FROM voice_profiles
+               WHERE id IN (${ph}) AND ${staleDraft.sql}`,
+        args: [...ids, ...staleDraft.args],
+      }),
+      {
+        sql: `UPDATE voice_profiles
+              SET deleted_at = datetime('now'), updated_at = datetime('now')
+              WHERE id IN (${ph}) AND ${staleDraft.sql}`,
+        args: [...ids, ...staleDraft.args],
+      },
+    ],
+    'write',
+  );
+  const expired = claimed?.rowsAffected ?? 0;
   if (expired > 0) {
     logStructured('info', {
       at: 'audio-retention.stale_drafts',
@@ -387,42 +424,66 @@ export async function cleanupExpiredAudio(db: Client, now: Date): Promise<void> 
     now.getTime() - GENERATED_TTS_TTL_DAYS * 24 * 60 * 60 * 1000,
   ).toISOString();
 
+  // ⚠ **행을 지우는 것과 삭제를 예약하는 것은 한 batch(= 한 트랜잭션)다**(2026-10-01,
+  //   `docs/spec/voice-and-message.md` §11). 예전에는 행마다 DELETE 를 커밋하고 그 뒤에 큐 적재를 **따로**
+  //   커밋했다 — 그 사이가 끊기면(워커 subrequest 한도·네트워크) R2 파일이 참조도 삭제 예약도 없이 영구히
+  //   남는다. `pending_external_deletions` 는 outbox 다: DB 쪽 변화와 '외부를 지워라' 는 기록이 같이
+  //   커밋되거나 같이 없어야 하고, 외부 I/O(R2 삭제)는 트랜잭션 밖의 드레인이 한다.
+  //
+  //   한 단계는 **고르기(SELECT) 한 번 + 쓰기 batch 한 번** 이다. 쓰기 문장은 고른 id 로 범위를 묶되
+  //   **고를 때와 같은 조건을 다시 건다** — 고른 뒤 바뀐 행(promote 된 원본, 새로 알람이 붙은 음원)은
+  //   예약도 삭제도 하지 않는다. `INSERT … SELECT`(예약)를 DELETE **앞에** 두므로 둘은 같은 상태를 본다.
+  //   예전처럼 행마다 왕복하면 회차당 최대 1 + 10×2(원본) + 1 + 10×3(음원) = 52 subrequest 로 그것만으로
+  //   워커 한도(~50)를 넘을 수 있었다 — 지금은 4 다.
+  //
+  //   **독약 행**(한 행 때문에 batch 가 매번 실패해 같은 자리에서 영원히 막히는 것)은 따져 봤다:
+  //   쓰기는 전부 집합 단위라 행 값에 따라 터질 자리가 없다 — 큐 충돌은 `ON CONFLICT` 가 흡수하고, 빈
+  //   키는 예약에서 거르고(`externalDeletionsFromSelectStatement`), kind 는 상수이며, 지우는 두 표를
+  //   참조하는 FK 도 없다(`voice_speakers` 는 #79 에서 DROP). 남는 실패는 네트워크·스키마 창처럼
+  //   **batch 전체에 똑같이** 걸리는 것뿐이라, 통째로 롤백하고 다음 회차(5분)가 다시 하는 것이 맞다.
+  //   행마다 따로 커밋하던 예전에도 한 행의 DELETE 가 던지면 그 회차 전체가 멈췄다 — 나빠진 것은 없다.
+
   // 1) 클론 학습용 업로드 원본.
   //    최종 확정(promote)된 목소리의 원본은 보관한다 — 나중에 프로바이더/API 키가 바뀌어도
   //    이 원본으로 클론을 재생성할 수 있어야 하기 때문(voice_profile_id 로 연결·live·non-draft).
   //    그 외(미승격 draft, 프로필과 무관한 raw 업로드, 삭제된 프로필의 잔여분)만 7일 후 정리한다.
   //    확정 목소리를 명시적으로 삭제하면 DELETE /voice/:id 가 원본을 함께 cascade 삭제한다.
+  const expiredUpload = {
+    sql: `voice_uploads.created_at <= ?
+          AND NOT EXISTS (
+            SELECT 1 FROM voice_profiles vp
+            WHERE vp.id = voice_uploads.voice_profile_id
+              AND vp.deleted_at IS NULL
+              AND COALESCE(vp.is_draft, 0) = 0
+          )`,
+    args: [uploadCutoff],
+  };
   const uploads = await db.execute({
-    sql: `SELECT id, object_key FROM voice_uploads
-          WHERE created_at <= ?
-            AND NOT EXISTS (
-              SELECT 1 FROM voice_profiles vp
-              WHERE vp.id = voice_uploads.voice_profile_id
-                AND vp.deleted_at IS NULL
-                AND COALESCE(vp.is_draft, 0) = 0
-            )
+    sql: `SELECT id FROM voice_uploads
+          WHERE ${expiredUpload.sql}
           ORDER BY created_at ASC
           LIMIT ?`,
-    args: [uploadCutoff, TTL_BATCH_SIZE],
+    args: [...expiredUpload.args, TTL_BATCH_SIZE],
   });
-  for (const row of uploads.rows) {
-    const uploadId = String(row.id);
-    // TOCTOU 하드닝: 위 SELECT 와 이 삭제 사이에 이 업로드의 draft 가 promote 되어 프로필이
-    // live·non-draft(확정)가 됐다면 원본을 지우면 안 된다(재생성 소스 유실 방지). 삭제 조건을
-    // 다시 걸고, 실제로 지워졌을 때만 R2 삭제를 큐에 적재한다.
-    const deletedUpload = await db.execute({
-      sql: `DELETE FROM voice_uploads
-            WHERE id = ?
-              AND NOT EXISTS (
-                SELECT 1 FROM voice_profiles vp
-                WHERE vp.id = voice_uploads.voice_profile_id
-                  AND vp.deleted_at IS NULL
-                  AND COALESCE(vp.is_draft, 0) = 0
-              )`,
-      args: [uploadId],
-    });
-    if ((deletedUpload.rowsAffected ?? 0) === 0) continue; // 그 사이 확정됨 → 원본 보관
-    await enqueueExternalDeletion(db, 'r2_object', row.object_key as string);
+  let expiredUploads = 0;
+  const uploadIds = uploads.rows.map((row) => String(row.id));
+  if (uploadIds.length > 0) {
+    const ph = uploadIds.map(() => '?').join(', ');
+    const [, deleted] = await db.batch(
+      [
+        externalDeletionsFromSelectStatement('r2_object', {
+          sql: `SELECT trim(object_key) AS ref FROM voice_uploads
+                 WHERE id IN (${ph}) AND ${expiredUpload.sql}`,
+          args: [...uploadIds, ...expiredUpload.args],
+        }),
+        {
+          sql: `DELETE FROM voice_uploads WHERE id IN (${ph}) AND ${expiredUpload.sql}`,
+          args: [...uploadIds, ...expiredUpload.args],
+        },
+      ],
+      'write',
+    );
+    expiredUploads = deleted?.rowsAffected ?? 0;
   }
 
   // 2) TTS 캐시 — 알람이 message_id → messages.audio_url 로 참조 중인 오브젝트는
@@ -435,47 +496,72 @@ export async function cleanupExpiredAudio(db: Client, now: Date): Promise<void> 
   //    때문**이다 — ack 는 다운로드가 끝난 뒤에만 나간다. 뒤집어 말하면 클라가 음원
   //    확보 전에 ack 하면 이 정리가 그 알람의 음원을 지워도 아무도 막지 못한다.
   //    (전달 전 알람은 행이 남아 있으므로 여기서 정상적으로 보존된다.)
+  //
+  //    시스템 스톡(프리셋) 클립은 무료 버킷 회전·미리듣기용으로 의도적으로 보관한다.
+  //    다수 variant 가 alarm.message_id 로 직접 참조되지 않으므로 TTL 정리에서 제외한다
+  //    (제외 안 하면 30일 후 audio_url 이 비워져 /tts/stock-clips 가 끊기고 재시드 전까지
+  //    무료 음성이 무음이 된다).
+  const expiredGenerated = {
+    sql: `g.created_at <= ?
+          AND g.audio_object_key IS NOT NULL
+          AND NOT EXISTS (
+            SELECT 1 FROM alarms a
+            JOIN messages m ON m.id = a.message_id
+            WHERE m.audio_url = 'r2://' || g.audio_object_key
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM messages mp
+            WHERE mp.id = g.message_id AND COALESCE(mp.is_preset, 0) = 1
+          )`,
+    args: [generatedCutoff],
+  };
   const generated = await db.execute({
-    sql: `SELECT g.id, g.audio_object_key FROM generated_audio_assets g
-          WHERE g.created_at <= ?
-            AND g.audio_object_key IS NOT NULL
-            AND NOT EXISTS (
-              SELECT 1 FROM alarms a
-              JOIN messages m ON m.id = a.message_id
-              WHERE m.audio_url = 'r2://' || g.audio_object_key
-            )
-            -- 시스템 스톡(프리셋) 클립은 무료 버킷 회전·미리듣기용으로 의도적으로 보관한다.
-            -- 다수 variant 가 alarm.message_id 로 직접 참조되지 않으므로 TTL 정리에서 제외한다
-            -- (제외 안 하면 30일 후 audio_url 이 비워져 /tts/stock-clips 가 끊기고 재시드 전까지
-            -- 무료 음성이 무음이 된다).
-            AND NOT EXISTS (
-              SELECT 1 FROM messages mp
-              WHERE mp.id = g.message_id AND COALESCE(mp.is_preset, 0) = 1
-            )
+    sql: `SELECT g.id FROM generated_audio_assets g
+          WHERE ${expiredGenerated.sql}
           ORDER BY g.created_at ASC
           LIMIT ?`,
-    args: [generatedCutoff, TTL_BATCH_SIZE],
+    args: [...expiredGenerated.args, TTL_BATCH_SIZE],
   });
-  for (const row of generated.rows) {
-    const objectKey = row.audio_object_key as string;
-    await enqueueExternalDeletion(db, 'r2_object', objectKey);
-    // 라이브러리 메시지가 가리키던 포인터를 비워, 오브젝트 삭제 후 깨진 r2:// 참조
-    // (재생 시 404)가 라이브러리에 남지 않도록 한다.
-    await db.execute({
-      sql: `UPDATE messages SET audio_url = NULL WHERE audio_url = 'r2://' || ?`,
-      args: [objectKey],
-    });
-    await db.execute({
-      sql: 'DELETE FROM generated_audio_assets WHERE id = ?',
-      args: [String(row.id)],
-    });
+  let expiredGeneratedCount = 0;
+  const generatedIds = generated.rows.map((row) => String(row.id));
+  if (generatedIds.length > 0) {
+    const ph = generatedIds.map(() => '?').join(', ');
+    // 고른 id 중 **지금도** 만료 조건에 맞는 원장 행. 세 문장이 같은 조각을 쓴다 — 포인터를 비워도
+    // 조건의 참·거짓은 바뀌지 않는다(알람 가드는 '그 키를 쓰는 알람이 없다' 이고, 비우면 더 없어질 뿐이다).
+    const stillExpired = {
+      sql: `SELECT g.id, g.audio_object_key FROM generated_audio_assets g
+             WHERE g.id IN (${ph}) AND ${expiredGenerated.sql}`,
+      args: [...generatedIds, ...expiredGenerated.args],
+    };
+    const [, , deleted] = await db.batch(
+      [
+        externalDeletionsFromSelectStatement('r2_object', {
+          sql: `SELECT trim(audio_object_key) AS ref FROM (${stillExpired.sql})`,
+          args: stillExpired.args,
+        }),
+        // 라이브러리 메시지가 가리키던 포인터를 비워, 오브젝트 삭제 후 깨진 r2:// 참조
+        // (재생 시 404)가 라이브러리에 남지 않도록 한다.
+        {
+          sql: `UPDATE messages SET audio_url = NULL
+                WHERE audio_url IN (SELECT 'r2://' || audio_object_key FROM (${stillExpired.sql}))`,
+          args: stillExpired.args,
+        },
+        {
+          sql: `DELETE FROM generated_audio_assets
+                WHERE id IN (SELECT id FROM (${stillExpired.sql}))`,
+          args: stillExpired.args,
+        },
+      ],
+      'write',
+    );
+    expiredGeneratedCount = deleted?.rowsAffected ?? 0;
   }
 
-  if (uploads.rows.length > 0 || generated.rows.length > 0) {
+  if (expiredUploads > 0 || expiredGeneratedCount > 0) {
     logStructured('info', {
       at: 'audio-retention.ttl',
-      expired_uploads: uploads.rows.length,
-      expired_generated: generated.rows.length,
+      expired_uploads: expiredUploads,
+      expired_generated: expiredGeneratedCount,
     });
   }
 }
