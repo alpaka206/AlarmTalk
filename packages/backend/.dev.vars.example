@@ -70,10 +70,11 @@ APPLE_PRIVATE_KEY=
 #    BadEnvironmentKeyInToken 으로 전부 막힌다.
 APNS_KEY_ID=
 APNS_PRIVATE_KEY=
-# Open-Meteo 상업 API 키(선택). 비워 두면 무료 호스트(api.open-meteo.com 등 — 비상업용) 그대로다.
-# 넣으면 날씨 호출이 customer-*.open-meteo.com 으로 가고 apikey 가 붙는다(src/lib/weather-fetch.ts).
-# ⚠ 이미 올린 값은 여기서 비워도 안 지워진다 — `npx wrangler secret delete OPEN_METEO_API_KEY --env <dev|production>`.
-OPEN_METEO_API_KEY=
+# 기상청 단기예보 서비스 키(data.go.kr VilageFcstInfoService_2.0) — **일반 인증키(Decoding)** 를 넣는다.
+# 한국 지역 날씨(src/lib/weather-kma.ts)에 쓴다. 비워 두면 KR 날씨만 미해결(운영은 슬롯마다 경보).
+# Encoding 키를 넣으면 이중 인코딩되어 SERVICE_KEY_IS_NOT_REGISTERED_ERROR(30)가 난다.
+# (일본 気象庁·미국 NWS 는 키가 없다. 예전 OPEN_METEO_API_KEY 는 없앴다.)
+KMA_SERVICE_KEY=
 
 # Perso API 키 (랜딩 이벤트 메시지 클립, routes/event.ts). 없으면 그 라우트만 503.
 # 프로젝트·문장 슬롯은 src/lib/event-voices.ts 에 있다.

@@ -529,7 +529,7 @@
 
 | | 무엇으로 고르나 | 언제 정하나 | 네트워크 |
 | --- | --- | --- | --- |
-| **날씨** | 그 **지역**·그 **발사 날짜**의 실제 예보 — 서버가 지역마다 **미리 계산해 둔 값**(아래 「서버가 미리 계산해 둔다」) | 저장할 때 + 준비창(48h) 갱신 | 저장 시 1회 |
+| **날씨** | 그 **지역**·그 **발사 날짜**의 실제 예보 — 그 나라의 **공식 예보**(기상청·気象庁·NWS)로 서버가 지역마다 **미리 계산해 둔 값**(아래 「서버가 미리 계산해 둔다」) | 저장할 때 + 준비창(48h) 갱신 | 저장 시 1회 |
 | 날씨 **대기 상한** | 저장은 그 응답을 **8초**까지만 기다린다(양 앱 같은 값) | 넘기면 **실패와 같다** — 미해결로 저장하고 뒤에서 받는다 | 저장 시 1회, 최대 8초 |
 | **운세** | **사주 + 발사 날짜**로 기기에서 결정적 계산 | 읽을 때마다(계산이라 저장 불필요) | 없음 |
 
@@ -539,20 +539,26 @@
   우산 얘기를 한다.
 - **못 받았으면 `null` 이고, 그건 '맑음' 이 아니다.** 0 으로 때우지 말 것. 안내 클립(마지막)이
   있는 묶음이면 그걸 틀고, 없는 옛 묶음이면 대표 클립으로 둔다.
-- ⚠ **서버도 반쪽 값을 내보내지 않는다**(2026-09-22, 코덱스 #788). 인덱스는 예보·미세먼지 두 조회로
-  만들고(옛 글자 경로는 지오코딩까지 세 조회), 클라는 받은 인덱스를 **해결된 사실**로 저장하고 발사 24시간 창 안에서
-  다시 받지 않는다. 그래서 **하나라도 못 받았으면 `null`** 이다 — 지오코딩만 타임아웃일 때 서울
-  좌표로 예보를 이어 받으면 부산 알람에 서울 날씨가 박히고, 미세먼지만 못 받았을 때 '없음' 으로
-  굳히면 먼지 나쁜 날 산책을 권한다. 서울 폴백·먼지 없음 폴백은 **라이브 생성 문장에만** 있었다
-  (저장되지 않는 문장 하나라 다시 받을 기회가 없다) — 그 경로는 2026-09-23 부터 서버가 거절해
-  닿지 않는다. 판정은 `routes/tts.ts` 의 `WeatherFetchFailurePolicy` 한 곳(`'unresolved'` /
-  `'fallback'` — `'fallback'` 은 라이브 생성 코드를 지울 때 함께 지운다).
+- ⚠ **서버도 반쪽 값을 내보내지 않는다**(2026-09-22 코덱스 #788, 2026-10-01 다시 정의). 클라는 받은 인덱스를
+  **해결된 사실**로 저장하고 발사 24시간 창 안에서 다시 받지 않는다. 그래서 **원천이 원래 주는 표본이 하나라도
+  빠지면 그 날짜는 `null`** 이다. 원천에 **원래 없는** 표본은 '재지 않음'(DB NULL)으로 두고 규칙에서 뺀다 —
+  먼지 전부, 일본 강수량, 한국·일본 안개, NWS 의 72시간 너머 강수량. 필수 표본은 나라마다 다르다:
+
+  | 나라 | 필수 표본 | 재지 않음 |
+  | --- | --- | --- |
+  | KR(기상청) | 상태·최고·최저·강수확률·강수량 | 안개·먼지 |
+  | JP(気象庁) | 상태·최고·최저·강수확률 | 강수량·안개·먼지 |
+  | US(NWS) | 상태·최고·최저·강수확률·강수량(발표 뒤 약 72시간까지) | 그 너머의 강수량·먼지 |
+
+  예전 정의(Open-Meteo 시절)는 '다섯 값이 다 유한해야 한다' 였다 — 일본에는 강수량이 없어 그대로 두면 일본은
+  영영 미해결이다. 서울 폴백·먼지 없음 폴백(`'fallback'`)은 라이브 생성 문장과 함께 지웠다(2026-10-01). 판정은
+  `lib/weather-source.ts` 의 `finalizeSourceDay` 한 곳.
 - **저장이 날씨 응답을 기다리는 시간에는 상한이 있다 — 8초, 양 앱 같은 값**(2026-09-22).
   이 조회가 저장 버튼을 붙잡는 유일한 네트워크라, 인터넷이 느리면 그만큼 저장이 멈췄다
   (안드로이드는 OkHttp 읽기 타임아웃 60초까지). 8초인 이유: 서버는 (미리 계산한 값이 없을 때)
-  Open-Meteo 를 두세 번 순차로 부르고 한 번의 상한이 5초다(`weather-fetch.ts` 의
-  `WEATHER_FETCH_TIMEOUT_MS`) — 정상 응답은 수백 ms 라, 한 번이 상한에 걸린 경우까지는 받아 주고
-  그 이상은 기다리지 않는다. 미리 계산해 둔 지역은 DB 한 번 읽기라 이 상한에 닿지 않는다.
+  그 나라의 **원천을 한 번** 부르고 그 상한이 5초다(`weather-fetch.ts` 의 `WEATHER_FETCH_TIMEOUT_MS`) —
+  원천이 상한에 걸린 경우까지는 받아 주고 그 이상은 기다리지 않는다. 미리 계산해 둔 지역은 DB 한 번 읽기라
+  이 상한에 닿지 않는다. (2026-10-01 전에는 근거가 'Open-Meteo 두세 번 순차' 였다 — 값은 그대로 둔다.)
   **상한을 넘긴 결과는 실패와 정확히 같아야 한다**: 미해결(`null`)로 저장하고(새 알람은
   `null`, 수정은 받아 둔 값 유지), 저장 직후 백그라운드 갱신(안드로이드 `runOnce` 워커 →
   1시간 재시도, iOS `WeatherVariantRefreshService.refreshDue`)이 채운다. 타임아웃 뒤에 늦게
@@ -590,12 +596,27 @@ iOS `Generated/WeatherRegions.generated.swift`)을 쓴다. 생성 파일을 손�
 | 일본 | 47개 도도부현(JIS 코드 순) | **도도부현청 소재지**(愛知 → 名古屋, 神奈川 → 横浜 …) |
 | 미국 | 50개 주의 최대 도시 + 워싱턴 D.C. + 잘 알려진 대도시(샌프란시스코·댈러스·마이애미 …) | 그 도시. 목록은 **대도시권 인구 순**(대략) |
 
-- **좌표·시간대는 JSON 에 박아 둔다**(`lat`·`lon`·`tz`, IANA). 서버는 이 지역들을 **지오코딩하지
-  않는다.** 예전에는 두 글자 한국어 이름을 `language=ko` 로 지오코딩했는데, 동명 마을을 잡거나
+- **좌표·시간대·원천의 칸은 JSON 에 박아 둔다**(`lat`·`lon`·`tz`(IANA)·`source`). 서버는 이 지역들을
+  **지오코딩하지 않는다.** 예전에는 두 글자 한국어 이름을 `language=ko` 로 지오코딩했는데, 동명 마을을 잡거나
   (부산 → 경북 의성군의 마을, 인천 → 전남 나주의 마을) 아무것도 못 찾았다(서울·제주 → 0건 →
-  2026-09-22 부터는 '못 봤어요' 클립). 좌표는 한 번 Open-Meteo 지오코딩(영어 이름 + 나라 코드,
-  시·도청 소재지 feature)으로 찾아 **사람이 확인한 값**이다 — 세종만 GeoNames 점(옛 조치원)이 아니라
-  시청(보람동)으로 두었다.
+  2026-09-22 부터는 '못 봤어요' 클립). 좌표는 한 번 지오코딩(영어 이름 + 나라 코드, 시·도청 소재지
+  feature)으로 찾아 **사람이 확인한 값**이다 — 세종만 GeoNames 점(옛 조치원)이 아니라 시청(보람동)으로 두었다.
+  - **`source` — 날씨를 읽는 원천의 칸**(2026-10-01, 아래 「서버가 미리 계산해 둔다」). 필수다(zod 는 모르는 키를
+    지우므로 선택으로 두면 오타가 조용히 사라진다). 나라마다 원천이 하나다: KR `{"kind":"kma","nx","ny"}`
+    (기상청 격자), JP `{"kind":"jma","office","class10","tempStation","week":[{area,tempStation}…]}`(気象庁 예보구역·
+    AMeDAS 지점), US `{"kind":"nws","gridId","gridX","gridY"}`(NWS 격자).
+  - **KR 격자는 소재지 좌표를 가이드의 LCC 식으로 바꾼 값과 같다** — 17곳 모두 공식 격자표(2607 xlsx)의 한 행과
+    정확히 같다(대부분 소재지 시·군·구 행, 서울·인천·경남·충북·대구는 시·도 행과도 같다). 시·도청 행과 다른 곳은
+    그 시·도에서 날씨를 재는 소재지가 달라서다 — 경북(안동 91,106 vs 예천 도청 87,106), 충남(홍성읍 55,106 vs
+    내포 55,107), 경기(수원 장안 60,121 vs 60,120), 제주(제주시 53,38 vs 52,38). 앱이 보여 주는 소재지('안동 날씨')와
+    맞추려고 LCC(lat,lon) 값을 고정했다. 회귀: `packages/shared/test/weather-regions.test.ts` 가 매번 다시 계산한다.
+  - **JP 는 도도부현청 소재지가 속한 1차 세분 구역(class10)과 그 대표 기온 지점**(`forecast_area.json` 의
+    `amedas[0]`)이다. 주간 예보의 구역은 계절에 따라 세분이 바뀌므로(青森·滋賀) 후보를 `week_area05.json` 순서대로
+    두고 그날 응답에 **실제로 있는 첫 구역**과 그 짝 지점(`week_area.json`)을 쓴다.
+  - **US 는 `lat`/`lon` 으로 `/points` 를 한 번 조회해 얻은 격자**다. 격자는 바뀔 수 있어 점검 스크립트가 다시
+    조회해 대조한다(`npm run check:weather`, 아래 「검증 방법」).
+  - ⚠ **KR 2026-07 행정 통합 메모**: 2607 격자표에서 광주와 전남이 '전남광주통합특별시'(1단계 51,67)로 합쳐져
+    있다. 격자 값에는 영향이 없다(우리 칸은 광주 59,74 · 무안 52,71 그대로). 이름·별칭이 낡았는지는 따로 본다.
 - **저장·전송 값은 지역 키**(`kr-seoul`, `jp-aichi`, `us-new-york`)다. 계정 설정은
   `dynamic_prompt_settings.weather.region` 에, 알람 행의 나라·도시 칸에는 **옛 앱이 읽는 한국어
   글자**(`WeatherRegions.canonicalLabels` — 나라 `대한민국`/`일본`/`미국` + 한국어 지역 이름)를 함께
@@ -626,8 +647,9 @@ iOS `Generated/WeatherRegions.generated.swift`)을 쓴다. 생성 파일을 손�
      별칭으로 넣지 않는다** — 속초를 강원(춘천)으로 되짚으면 해안 날씨가 내륙 날씨로 조용히 바뀐다.
      그런 옛 값은 되짚지 않는다(아래).
 - **되짚히는 옛 값**은 그 지역이 고른 것으로 보인다(체크 표시). **되짚지 못한 옛 값**은 적힌 글자를
-  그대로 보이고 짧은 안내("목록에서 다시 골라 주세요")를 붙인다 — 바꾸기 전까지는 서버의 **엄격한
-  옛 경로**(아래)로 계속 돈다. 고르게 강요하지 않는다(모달·차단 없음).
+  그대로 보이고 짧은 안내("목록에서 다시 골라 주세요")를 붙인다 — 바꾸기 전까지 서버는 그 날씨를 **`null`**
+  로 답한다(2026-10-01 — 지오코딩을 없앴다. 목록 밖의 곳은 공식 예보의 칸을 정할 수 없다). 알람은 '못
+  봤어요' 클립을 튼다. 고르게 강요하지 않는다(모달·차단 없음).
   - 안내가 붙는 자리: 설정 '지역' 행 아래, 문구 화면 상세 카드의 값 아래, 그리고 지역 시트의 제목
     아래("‘속초’은(는) 목록에 없어요. 다시 골라 주세요." — 목록에 없는 것을 고른 채로 둘 수 없으므로
     체크 표시 대신 이 줄이다).
@@ -642,6 +664,8 @@ iOS `Generated/WeatherRegions.generated.swift`)을 쓴다. 생성 파일을 손�
   - **나라를 바꾸면 목록은 곧바로 맨 위다**(애니메이션 없이). 고른 지역이 있는 나라로 되돌아와도 같다 —
     고른 지역을 찾아가는 것은 시트를 연 직후 한 번뿐이다(2026-09-30 사용자 지시).
   - **시트는 화면의 90% 까지만** 올라온다 — 꽉 채우면 뒤의 스크림이 사라져 바깥을 눌러 닫을 곳이 없다.
+  - **목록 아래에 날씨 출처 한 줄을 고정한다**(2026-10-01 — 아래 「서버가 미리 계산해 둔다」의 출처 표기). 목록만
+    스크롤하고 이 줄은 늘 보인다. iOS 는 그 줄의 실측 높이도 목록 높이 상한에서 뺀다 — 빼먹으면 스크림이 사라진다.
 - **새 알람**은 행에 옛 앱용 글자를 적고, `prerender-variant` 요청에 **`region=<키>` 를 함께** 보낸다
   (`country`·`city` 도 계속 보낸다 — 새 서버가 배포되기 전 창과 옛 서버 호환).
 - **공휴일 국가 = 지역의 나라.** 설정 화면의 '공휴일 달력' 행은 없다 — 규칙은
@@ -756,58 +780,168 @@ iOS `Generated/WeatherRegions.generated.swift`)을 쓴다. 생성 파일을 손�
 | 올리기 | **한 줄**, 올릴 값은 **차례가 온 뒤** 기기에서 정한다 | `PromptSettingsUploadQueue` + `pendingUploadSnapshot` | `isBusy` + `retryPendingPromptSettings` |
 | 늦은 조회 | 올리기가 끝날 때 떠 있던 조회는 **설정만** 지금 값을 지킨다(울타리) | `promptSettingsAnswerFence` | `promptSettingsAnswerFence` |
 
-#### 서버가 **미리 계산해 둔다** (2026-09-30)
+#### 서버가 **미리 계산해 둔다** (2026-09-30, 원천 교체 2026-10-01)
 
 날씨 인덱스는 **지역 × 날짜** 로만 갈린다(클립 9개 중 어느 것인지). 사람마다 따로 물을 이유가 없다.
 
-- **표**: `weather_region_daily(region_key, target_date, variant_index, weather_code, temp_max,
-  temp_min, precip_prob, precip_sum, dust_level, computed_at)`, 키는 `(region_key, target_date)`.
-  append-only 마이그레이션으로 만든다.
-- **언제**: `scheduled` 의 기존 5분 cron 틱에 얹되 **매시 첫 틱(UTC 분 0~4)에만** 들여다본다. 갱신은
-  **3시간에 한 번까지** — 3시간 안에 계산한 (지역, 날짜)는 건너뛴다. 지역마다 **그 지역 시간대의**
-  오늘·내일·모레(`WeatherRegions.localDate`)를 계산한다. 한 실행의 하위 요청은 조회 1 + Open-Meteo
-  최대 6(50곳 묶음 3개 × 예보·대기질) + 쓰기 최대 3 이다. cron 은 엣지 캐시를 쓰지 않는다(읽기 경로의
-  즉석 계산은 쓴다 — 그래서 즉석 계산으로 적힌 행은 최악 6시간 전 예보일 수 있다).
-- **어떻게**: Open-Meteo 예보·대기질 API 는 위경도 목록(쉼표)을 받는다 — 한 요청에 **50곳까지** 묶어
-  부른다. Workers 의 하위 요청 한도(~50)와 `lib/weather-fetch.ts` 의 타임아웃을 지키고, 행은
-  `db.batch` 로 한 번에 upsert 한다.
-- **`GET /tts/prerender-variant` 의 우선순위**:
-  1. `region` 이 알맞은 키 → `(region, target_date)` 행. 없거나 **12시간보다 오래됐으면** 그 지역 하나를
-     박아 둔 좌표로 곧바로 계산해(지오코딩 없음) upsert 하고 돌려준다.
-  2. `region` 이 없으면 옛 `country`/`city` 를 `resolveAlias` 로 되짚어 1과 같이.
-  3. 되짚지 못한 옛 글자 → **옛 지오코딩 경로를 남기되 엄격하게**: 나라 이름 → `countryCode`
-     (Open-Meteo 파라미터)로 거르고, 소재지(`PPLC`·`PPLA`·`PPLA2`)·인구가 큰 곳을 고르며,
-     **`results[0]` 을 그냥 집지 않는다.** 모호하거나 알맞은 후보가 없으면 `variant_index: null`.
-     옛 앱 버전을 위한 경로다. 여럿이면 가장 큰 곳이 다음 곳의 **두 배 이상**일 때만 고른다.
-     ⚠ 나라가 `대한민국` 인데 한국 안에 알맞은 곳이 없으면 **나라 없이 한 번 더** 찾는다(같은 엄격한
-     규칙) — 옛 앱은 공백 없는 입력에 나라를 `대한민국`(영어 기기는 "South Korea")으로 **자동으로**
-     붙였다(되짚기 둘째 규칙과 같은 이유). 그러지 않으면 영어 기기에서 "London" 을 친 옛 값이 영영
-     `null` 이 된다. 첫 조회가 실패(타임아웃·비정상 응답)면 다시 묻지 않는다.
-- **`target_date` 는 달력 날짜**(YYYY-MM-DD, 시간대 없음)이고, 서버는 그 날짜를 **지역 시간대의
-  달력**으로 읽는다(일 단위 예보를 지역 시간대로 모은다). 클라는 지금처럼 발사 시각의 기기 날짜를
-  보낸다 — 기기와 지역의 시간대가 다른 경우(서울 기기 + 뉴욕 지역)에도 "알람이 울리는 그 날짜" 의
-  그 지역 날씨다. 미리 계산 범위 밖 날짜는 1의 즉석 계산으로 간다.
+##### 원천 — 나라별 **공식 예보** (2026-10-01 오너 결정)
+
+Open-Meteo 무료 엔드포인트는 비상업용이고 유료 키는 사지 않기로 했다. 그래서 나라마다 그 나라의 공식 예보를
+쓴다. **한 나라는 한 원천만** 쓴다 — 원천을 못 받으면 다른 원천으로 대신하지 않고 `null` 이다.
+
+| 나라 | 원천 | 키 | 한 지역의 호출 | 재지 않음 |
+| --- | --- | --- | --- | --- |
+| KR | 기상청 단기예보 — `apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getVilageFcst`(data.go.kr) | `KMA_SERVICE_KEY`(일반 인증키 Decoding) | 격자 하나, `numOfRows=1500` 한 페이지(1,052건·141KB·1.3초) | 안개·먼지 |
+| JP | 気象庁 bosai 예보 JSON — `www.jma.go.jp/bosai/forecast/data/forecast/{office}.json` | 없음 | office 하나(2~6KB) | 강수량·안개·먼지 |
+| US | NWS 원시 격자 — `api.weather.gov/gridpoints/{gridId}/{x},{y}` | 없음(User-Agent 필수) | 격자 하나(원본 248KB, gzip 9KB) | 72시간 너머 강수량·먼지 |
+
+- **날씨 상태는 WMO 대리 코드로 적는다** — 맑음 0 / 흐림 3 / 안개 45 / 비 61 / 눈 71(`WEATHER_PROXY_CODE`).
+  그래서 분류기(`resolvePrerenderWeatherIndex`)와 `weather_code` 컬럼의 뜻은 그대로다. 자리 순서와 응답 계약
+  (`{context, variant_index: 0..7 | null}`)도 그대로다 — 새 오류 코드는 없다.
+- **KR**(`lib/weather-kma.ts`): 회차는 '지금 − 10분' 이전의 가장 최근 것(02·05·08·11·14·17·20·23시, 10분 뒤 공개).
+  결과 코드 03(NODATA)이면 한 회차 물러서서 한 번 더(예산 안에서만). `resultCode` 00, 행 수 = `totalCount`(다르면
+  다음 페이지, 그래도 다르면 실패). ±900 이상은 결측. **PCP·SNO 는 날짜가 아니라 값의 모양으로 읽는다** —
+  '강수없음'·'1mm 미만'·'6.2mm'·'30.0~50.0mm'·'50.0mm 이상'·맨숫자(3시간 간격 칸의 정성코드 '2' 나 '0.4')가 섞여
+  온다(2026-10-01 실측). 그 밖의 글자는 그 날짜 미해결 + warn. 날짜 D 는 그날의 칸 전체(24칸 또는 3시간 간격 8칸,
+  오늘은 첫 칸부터 23시까지). 눈 = PTY 3 또는 SNO > 0, 비 = PTY 1·4, 흐림 = 06~18시 칸의 절반 이상이 SKY ≥ 3,
+  강수확률 = POP 최댓값, 강수량 = PCP 합(진단용 근사), 최고·최저 = TMX·TMN(없으면 TMP 가 24시간 다 있을 때만 그
+  최대·최소).
+- **JP**(`lib/weather-jma.ts`): 공식 API 가 아니고 200 을 주면서 갱신이 멈춘 전례가 있어 **발표 시각을 잰다** —
+  단기 `[0].reportDatetime` 13시간, 주간 `[1]` 20시간을 넘으면 못 받은 것이다. 값은 **위치가 아니라
+  `timeDefines` 의 날짜로** 맞춘다. 날씨 = 1차 세분 구역의 `weatherCodes`(없으면 주간), 강수확률 = 그날 6시간
+  `pops` 최댓값(없으면 주간 하루 값), 기온 = 17시 발표 [내일 최저, 내일 최고] / 05·11시 발표 [오늘 최고, …, 내일
+  최저, 내일 최고](JMA 페이지 스크립트와 같은 인덱스 규칙, 날짜가 어긋나면 미해결), +2·+3 은 주간. 코드는 현행 공식
+  66개 표(이름에 雪 → 눈, 雨 → 비, くもり로 시작 → 흐림, 晴 → 맑음)이고 모르는 코드는 미해결. **오늘 최저는 어떤
+  발표에도 없다** — 늘 이어받기로 채운다(아래).
+- **US**(`lib/weather-nws.ts`): `updateTime` 이 18시간을 넘으면 못 받은 것이다. 날짜 D 는 지역 시간대 [00, 24).
+  최고·최저 = 구간 **중점**의 현지 날짜가 D 인 값, 강수확률 = D 와 겹치는 PoP 최댓값(⚠ `/forecast` 의 12시간 PoP 는
+  밤 구간이 자정을 걸쳐 276건 중 76건이 어긋났다 — 쓰지 않는다), 강수량 = QPF 를 겹친 비율만큼 나눠 더한 값.
+  눈 = 눈 계열 `weather` + (적설 > 0 또는 PoP ≥ 30), 비 = PoP ≥ 30 또는 QPF > 0(**coverage 만 보고 비를 만들지
+  않는다** — NYC 'chance rain_showers' 인데 PoP 7), 안개 = fog 계열이고 patchy 가 아님, 흐림 = 07~19시 하늘 평균
+  > 50. 아이콘·`shortForecast` 는 폐기 예고 필드라 쓰지 않는다.
+  - ⚠ **QPF 는 발표 뒤 약 72시간까지만 온다**(2026-10-01 실측 — PoP·하늘은 8일). 그 지평 **너머**는 '재지 않음'
+    이다(덮인 부분에 이미 비가 있으면 그 합). 지평 **안**의 빈틈은 '빠짐'(미해결). 이걸 빠짐으로 보면 동부·중부의
+    +3 은 영영 미해결이고 cron 이 슬롯 내내 다시 부른다.
+
+##### 표 — 마이그레이션 없음
+
+- `weather_region_daily(region_key, target_date, variant_index, weather_code, temp_max, temp_min, precip_prob,
+  precip_sum, dust_level, computed_at)`, 키는 `(region_key, target_date)`(마이그레이션 #123). 원천을 바꾸면서
+  **스키마는 그대로다** — 키와 `computed_at` 밖의 컬럼은 모두 NULL 을 허용한다. '재지 않음' 은 NULL 로 적는다
+  (`precip_sum` 은 JP·NWS 72시간 너머, `dust_level` 은 언제나). 그래서 배포가 마이그레이션보다 먼저 도는 창이 없다.
+
+##### 언제 — **현지 슬롯**(5분 cron 틱 안)
+
+| 슬롯 | 현지 시각 | 계산하는 날짜 | 원천 발표와의 맞물림 |
+| --- | --- | --- | --- |
+| 저녁 | 21:00~21:59 | 내일 ~ +3 | KR 2000 회차(20:10 공개) · JP 17시 발표(JSON 16:40경, 이후 수정분 포함) · US 언제든 |
+| 아침 | 06:00~06:59 | 오늘 ~ +3 | KR 0500 회차(05:10) · JP 05시 발표(04:40경) · US 언제든 |
+
+- 안드로이드는 기기 22:00 에 받고 iOS 는 아침에 앱을 열 때 받는다 — 두 시점 모두 슬롯 직후다. 미리 계산하는
+  기간은 **오늘 ~ +3(4일)** 이다(예전 3일).
+- **슬롯 밖이면 DB 도 네트워크도 부르지 않는다** — 슬롯이 열렸는지는 시간대 계산만으로 안다
+  (`hasOpenWeatherSlot`). 서머타임 경계에서도 현지 21시·06시는 하루에 한 번씩이다.
+- **due**: 슬롯이 열린 지역 가운데 [내일, +3] 의 어느 날짜에 `computed_at ≥ 슬롯 시작` 인 행이 없으면 due 다.
+  **오늘은 판정에서 뺀다** — 이어받을 값이 없어 오늘을 구조적으로 못 만드는 경우(무한 재시도)를 막는다. 오늘은 아침
+  슬롯에 가져올 때 함께 쓴다.
+- **한 틱**: SELECT 1회(열린 지역들의 행 — 이어받기용 극값·계산 시각 포함, IN 플레이스홀더 생성기) → fetch 최대
+  10회(원천별 상한 KMA 3 · JMA 8 · NWS 4, 원천을 번갈아, 동시 4 — 첫 fetch 몫은 시작할 때 잡는다) → `db.batch`
+  1회(upsert + `DELETE target_date < UTC 오늘 − 3`). 합계 최대 12 subrequest. 클론 드레인보다 앞자리다.
+- **시간당 용량** 10 × 12틱 = 120. 가장 붐비는 겨울 12:00 UTC 가 KR 저녁 17 + JP 저녁 47 + 미 중부 아침 22 = 86 —
+  재시도 여유 34. 미국 동부 저녁(여름 01:00 UTC) 30곳은 NWS 상한 4 × 12 = 48 안이다.
+- **CPU**: 무료 플랜이면 실행당 CPU 10ms 일 수 있다(확인 안 됨). 원천별 상한이 한 틱의 큰 JSON 파싱 수를 묶는다 —
+  dev 관측으로 `cpuTime` 을 잰다(아래 「검증 방법」).
+
+##### 실패 — 세 갈래, 경보는 **슬롯 끝에서**
+
+| 갈래 | 무엇 | 그 틱에서 |
+| --- | --- | --- |
+| 일시 실패 | 타임아웃·5xx·429, KMA 01/02/03/04/05/99, JMA·NWS 낡은 발표 | 같은 슬롯의 다음 틱이 다시 한다 |
+| 설정 실패 | 키 없음, KMA 10~12·20/21/22/30/31/32/33 또는 401/403, NWS 403 HTML·404 InvalidGridpoint·400, JMA 404 | 그 원천은 더 부르지 않는다 |
+| 예산 소진 | 'Too many subrequests'(또는 이 틱의 fetch 상한) | 날씨 작업을 멈춘다(쓰지도 않는다) — 실패로 세지 않는다 |
+
+- 판정은 **슬롯 마지막 틱(현지 분 ≥ 55)** 에 (나라, 시간대 묶음)마다 한다. 한 곳도 못 했거나 설정 실패가 있으면
+  `captureCron('scheduled.weather_region_daily.slot_failed', …, {country, slot, source, reason, done})`. 일부만
+  실패했으면 warn 한 줄(`slot_partial`). 경보는 하루 슬롯 수만큼으로 묶인다.
+- **`KMA_SERVICE_KEY` 가 없으면** KR 은 네트워크를 부르지 않는다 — 운영은 KR 슬롯마다 경보(`missing_key`), dev
+  (`ENVIRONMENT=development`)는 info 로그(`slot_skipped`)만.
+
+##### 오늘 행의 극값만 **이어받는다**
+
+대상 날짜가 지역의 오늘이고 원천이 구조적으로 더는 주지 않는 최저·최고에 한해, 같은 (지역, 날짜)의 저장 행이
+**36시간 안에** 계산된 것이면 그 `temp_min`·`temp_max` 로 메운다(`finalizeSourceDay`). **상태·강수확률·강수량은 절대
+이어받지 않는다.** 메울 값이 없으면 그 날짜는 쓰지 않는다(기존 행 유지). 쓰는 곳: KR 0500 회차의 오늘 TMN, JP 오늘
+최저, NWS 아침이 지난 오늘 최저. 첫 아침 슬롯(전환 당일)에는 그 원천이 Open-Meteo 시절의 행일 수 있다(결정 D6).
+
+##### `GET /tts/prerender-variant`
+
+1. `region` 이 알맞은 키 → `(region, target_date)` 행. **36시간 안에** 계산했으면 그대로(슬롯 두 번이 연달아 실패해도
+   버틴다). 아니면 대상 날짜가 지역의 **[오늘, +3] 안일 때만** 그 지역 원천을 **한 번** 부르고(타임아웃 5초, 같은 이어받기
+   규칙) 계산되면 적고 돌려준다. **밖이면 네트워크 없이 `null`** — 쿼터를 지키고 아무 날짜나 물어 원천을 태우는 요청을
+   막는다. 표에 적는 날짜는 지역의 어제 ~ +3 이다.
+2. `region` 이 없거나 모르는 키 → 옛 `country`/`city` 를 `resolveAlias` 로 되짚어 1과 같이.
+3. **되짚지 못한 옛 글자 → `null`**(2026-10-01). 지오코딩은 없다 — 목록 밖의 곳은 공식 예보의 칸을 정할 수 없다.
+- **엣지 캐시**: JMA·NWS 의 즉석 계산에만 2xx 를 600초 캐시한다. KMA 는 쓰지 않는다(200 본문에 NODATA 가 올 수
+  있어 독이 되고, URL 에 키가 있다). cron 은 캐시를 쓰지 않는다.
+- **`target_date` 는 달력 날짜**(YYYY-MM-DD, 시간대 없음)이고, 서버는 그 날짜를 **지역 시간대의 달력**으로 읽는다.
+  클라는 지금처럼 발사 시각의 기기 날짜를 보낸다 — 기기와 지역의 시간대가 다른 경우(서울 기기 + 뉴욕 지역)에도
+  "알람이 울리는 그 날짜" 의 그 지역 날씨다.
   - ⚠ **지역 시간대로 '울리는 순간의 지역 날짜' 를 계산해 보내지 말 것**(2026-09-30 검토). 서울 10월 1일 08:00
     알람은 뉴욕으로는 9월 30일 19:00 이라 그렇게 하면 **이미 저문 날**의 날씨를 아침에 읽는다. 사용자가 깨는
     날(기기 달력)의 그 지역 예보가 알람의 뜻이다. 발사 날짜가 바뀌었는지(무효화·쓰기 가드)도 기기 날짜로 보므로,
     묻는 날짜만 따로 두면 두 기준이 갈라진다.
 - **미해결 계약은 그대로다**: 못 구하면 `null` → 클라가 다시 받고, 끝내 못 받으면 '못 봤어요' 클립.
-- **새 표가 아직 없으면**(배포 → 마이그레이션 창) 읽기 경로는 저장 없이 즉석 계산만 한다 — 클라가
-  이미 실패를 견디는 읽기 경로라 창 동안 느려질 뿐이다(CLAUDE.md 「배포가 마이그레이션보다 먼저
-  돈다」의 읽기 경로 규칙).
-- ⚠ **Open-Meteo 무료 엔드포인트는 비상업용이다.** 상업 키는 **워커 시크릿 `OPEN_METEO_API_KEY` 로 켠다** —
-  비어 있으면 지금처럼 무료 호스트, 있으면 모든 날씨 호출(cron·`prerender-variant`·라이브 생성의 예보·대기질·
-  지오코딩)이 `customer-` 호스트 + `apikey` 로 간다(`lib/weather-fetch.ts` 의 `openMeteoRequestUrl` 한 곳).
-  - 키가 틀리면 **무료 호스트로 되돌아가지 않는다** — 날씨가 전부 미해결(`null` → '못 봤어요' 클립)이 되고
-    `weather.fetch` 줄이 `warn` 이다. 비상업 약관을 지키고, 잘못된 설정을 가리지 않기 위해서다. 넣은 직후
-    `wrangler tail` 에서 `commercial:true`·`status:200` 을 확인한다.
-  - 키·URL 은 로그에 싣지 않는다(`redactOpenMeteoUrl`). 넣는 법·되돌리는 법(`wrangler secret delete`)은
-    [docs/ops/environments.md](../ops/environments.md) 「Open-Meteo 상업 키」.
-  - **키를 살지는 운영 결정이다**(2026-09-30 기준 아직 키 없음). 한 바퀴는 133곳 × (예보·대기질)이고,
-    여러 위치를 묶은 요청을 몇 호출로 세는지는 공식 문서에 없다 — 위치마다 센다고 잡으면 하루 약 2,100 호출이다.
-  - ⚠ **날씨 숫자의 원천을 LLM(Gemini) 으로 바꾸지 말 것.** 모델은 관측·예보 값을 가진 곳이 아니다 — 그럴듯한
-    숫자를 지어낸다. 미리 받아 두는 구조(위 cron + 행 캐시)는 이미 있고, 바꿀 수 있는 것은 원천(Open-Meteo
-    무료/상업, 또는 다른 예보 API)뿐이다.
+- **표가 없으면**(배포 → 마이그레이션 창) 읽기 경로는 저장 없이 즉석 계산만 한다.
+
+##### 나오지 않는 자리 — 먼지·안개
+
+- **먼지는 끈다** — `hasDust` 는 언제나 false, `dust_level` 은 NULL. 자리 3(미세먼지)은 나오지 않는다. 에어코리아는
+  공공누리 3유형(변경금지)이고 운영 계정이 심의 승인이라 지금은 쓰지 않는다.
+- **안개**: 기상청 단기예보에는 안개 요소가 없고, 気象庁 현행 66개 코드에도 안개가 없다(209 霧는 퇴역). 그래서
+  **KR·JP 에서는 안개 클립(5)이 나오지 않는다.** US 만 나온다.
+
+##### 추측하지 않는다 · 출처 표기 · 개인정보
+
+- 위 어느 경우에도 값을 지어내지 않는다. **일본 예보를 끝내 못 받아도 다른 원천으로 대신하지 않는다** — 気象業務法
+  FAQ 의 '독자 예보'(허가 없이 예보를 만드는 것) 우려 때문이다. `null` → 클립 8.
+- ⚠ **날씨 숫자의 원천을 LLM(Gemini) 으로 바꾸지 말 것.** 모델은 관측·예보 값을 가진 곳이 아니다 — 그럴듯한
+  숫자를 지어낸다.
+- **출처 표기(양 앱, 결정 D4)**: 지역 시트(설정·편집기 공용 — 안드로이드 `WeatherLocationDialog`, iOS
+  `WeatherRegionPickerSheet`) 목록 아래에 한 줄을 고정한다. 気象庁 약관(공공데이터 이용규약 1.0)은 **가공했다는
+  사실**을 적으라고 하고, 국가가 만든 것처럼 보이게 하는 것을 금한다.
+  - ko `날씨 정보: 기상청 · 気象庁 · 미국 기상청(NWS)의 예보를 바탕으로 AlarmTalk가 가공`
+  - en `Weather data: forecasts from KMA (Korea), JMA (Japan) and the U.S. National Weather Service, processed by AlarmTalk`
+  - ja `天気情報：韓国気象庁・気象庁・米国国立気象局（NWS）の予報をもとにAlarmTalkが加工`
+- **개인정보**: 원천으로 나가는 것은 **고정 격자·예보구역 코드와 날짜뿐**이고 이용자 식별자가 없다. 호출은 전부
+  서버(Cloudflare Worker)에서 나가 원천은 이용자 단말 IP 도 보지 못한다. `docs/qa/cleanup-audit-2026-08-01.md` 의
+  Open-Meteo 판정과 같은 논리로 **위탁·국외이전 고지 대상이 아니다**(다시 볼 조건도 같다 — 정밀 좌표·식별자 전송,
+  앱의 직접 호출, 개인 단위 축적).
+
+##### 배포 순서와 전환
+
+- **PR A(앱)**: 출처 줄과 주석. 다음 스토어 빌드에 싣는다.
+- **PR B(백엔드·shared·스펙)**: **두 앱의 출처 표기 버전이 스토어에 게재된 뒤** develop 에 머지한다 — develop 은
+  다음 main 머지 때 prod 로 간다. 일찍 머지하려면 main 머지를 붙잡아야 한다(결정 D5). 그 사이 prod 는 Open-Meteo
+  무료(비상업 약관) 그대로다.
+  - 머지 전: 유닛 테스트(실측 픽스처) + 읽기 전용 점검(`npm run check:weather`).
+  - dev 하루 관측: 슬롯 4개, `weather.fetch` 의 source 별 200/00, `cpuTime`, Sentry 0건.
+  - 키: `KMA_SERVICE_KEY` 를 dev·prod 워커에 넣는다([docs/ops/environments.md](../ops/environments.md)
+    「기상청 단기예보 키」).
+- **전환 당일**: Open-Meteo 시절 행은 최대 36시간 더 읽히고 3일 뒤 지워진다(새 호출 없음). 첫 아침 슬롯의 이어받기
+  원천이 그 옛 행일 수 있다(결정 D6).
+- **롤백**은 PR B 되돌리기다. 스키마 변경이 없어 즉시 된다.
+
+##### 오너 결정 (기본값으로 구현했다)
+
+| | 결정 | 기본값 | 바꾸는 곳 |
+| --- | --- | --- | --- |
+| D1 | 섞인 강수(KR PTY 2, JP 雨か雪, US rain_snow·sleet) | **눈**(세 나라 일관) | `MIXED_PRECIPITATION_IS_SNOW`(`lib/weather-source.ts`) |
+| D2 | US 안개 | patchy 제외 | `lib/weather-nws.ts` |
+| D3 | 흐림 임계값 | KR 낮 SKY ≥ 3 이 절반 이상 / US 07~19시 하늘 평균 > 50 / JP くもり 계열 | 각 어댑터 |
+| D4 | 출처 문구 | 위 '가공' 문구. 랜딩에 전문 출처(공공누리 1유형 문구와 링크)를 둘지는 미정 | 앱 문자열 |
+| D5 | 순서 | 앱 게재 뒤에 백엔드를 prod 로 | 배포 |
+| D6 | 전환 | 옛 행을 그대로 둔다(36시간 뒤 자연 소멸) | — |
+| D7 | 강수확률만으로 비라고 보는 하한 | 강수 **형태**를 주는 원천(KR PTY·PCP, JP 날씨 코드)은 형태가 1차이고 강수확률은 **60** 부터, NWS 는 **30**('Chance') 그대로. 예전 공통 30 은 원천이 '강수 없음'이라고 한 날도 비로 만들었다(2026-10-01 실측: KR 비 판정 34건 중 33건이 PTY 전 시간 0, JP 54건 중 33건이 晴·くもり) | `CODED_SOURCE_RAIN_PROBABILITY_THRESHOLD`(`lib/weather-signal.ts`) ← `finalizeSourceDay` 의 `source` |
 
 ### 미리 받아 둔다
 
@@ -1569,8 +1703,8 @@ R2 파일·ElevenLabs 클론은 DB 트랜잭션 안에서 지울 수 없으므�
 | 날씨·운세 자리 판정 | `AlarmEntity.bucketVariantIndex()` | `BucketVariantResolver.variantIndex(for:)` | — |
 | 운세 온디바이스 계산 | `fortuneThemeIndex` (`data/AlarmEntity.kt`) | `BucketVariantResolver.fortuneThemeIndex` | — |
 | 날씨 조건 조회 | `AlarmRepository.resolveWeatherVariantForDraft`(저장 시) | `AlarmEditorSheet.applyWeatherVariant`(저장 시) | `GET /tts/prerender-variant` (`resolvePrerenderWeatherIndex`) — 지역이면 미리 계산한 행(아래 '서버 미리 계산' 행) |
-| 날씨 조회 반쪽 값 금지(하나라도 못 받으면 `null`) | — (받은 값을 해결로 저장, `weatherVariantNeedsRefresh`) | — (`BucketVariantResolver`) | `loadWeatherSignalInput` 의 `WeatherFetchFailurePolicy` `'unresolved'`(`routes/tts.ts`), 회귀 `prerender-variant.test.ts` |
-| 날씨 조회 대기 상한(8초) | `WEATHER_RESOLVE_TIMEOUT_MILLIS` + `withTimeoutOrNull`(`data/AlarmRepository.kt`, 회귀 `WeatherResolveTimeoutTest`) | `WeatherVariantSaveLookup.timeoutSeconds`(8초) + `withTimeout`(`AsyncTimeout.swift`) — `AlarmEditorSheet.applyWeatherVariant` 가 부른다, 회귀 `WeatherVariantSaveTimeoutTests` | `WEATHER_FETCH_TIMEOUT_MS`(한 fetch 5초, `lib/weather-fetch.ts`) |
+| 날씨 반쪽 값 금지(원천이 주는 표본이 하나라도 빠지면 `null` · 원천에 없는 표본은 재지 않음) | — (받은 값을 해결로 저장, `weatherVariantNeedsRefresh`) | — (`BucketVariantResolver`) | `finalizeSourceDay`(`lib/weather-source.ts`), 회귀 `weather-kma`·`weather-jma`·`weather-nws.test.ts` |
+| 날씨 조회 대기 상한(8초) | `WEATHER_RESOLVE_TIMEOUT_MILLIS` + `withTimeoutOrNull`(`data/AlarmRepository.kt`, 회귀 `WeatherResolveTimeoutTest`) | `WeatherVariantSaveLookup.timeoutSeconds`(8초) + `withTimeout`(`AsyncTimeout.swift`) — `AlarmEditorSheet.applyWeatherVariant` 가 부른다, 회귀 `WeatherVariantSaveTimeoutTests` | `WEATHER_FETCH_TIMEOUT_MS`(원천 한 번 5초, `lib/weather-fetch.ts`) |
 | 날씨 지역 목록(유일 출처 = JSON · 좌표 박제 · 직접 입력 없음) | 생성 `data/WeatherRegions.kt`(`WeatherRegions`·`WeatherRegion`·`WeatherCountry`) + `res/values{,-en,-ja}/weather_regions.xml` | 생성 `Generated/WeatherRegions.generated.swift`(`WeatherRegions`·`WeatherRegion`·`WeatherCountry`) | `packages/shared/src/weather-regions.json` + `weather-regions.ts`(`WeatherRegions`). 생성·검사 `scripts/gen-weather-regions.py`(`--check` 는 CI lint), 회귀 `packages/shared/test/weather-regions.test.ts` |
 | 옛 글자 되짚기(네 구현이 같은 규칙) | `WeatherRegions.resolveAlias`(생성) ← `weatherRegionFor`(`data/WeatherRegionSettings.kt`) — 회귀 `WeatherRegionsAliasTest`(shared 의 표를 그대로 옮김) | `WeatherRegions.resolveAlias`(생성) ← `WeatherRegions.region(key:country:city:)`(`WeatherRegionSupport.swift`) — 회귀 `WeatherRegionCatalogTests` | `WeatherRegions.resolveAlias`(shared) = 스크립트의 `resolve` ← `weatherRegionFor`(`lib/weather-signal.ts`) |
 | 지역 고르기(나라 → 지역) · 행 이름 '날씨 지역' → '지역' · 되짚지 못한 옛 값은 글자 + 다시 고르라는 안내 | `WeatherLocationDialog`·`weatherRegionDisplay`·`initialWeatherPickerCountry`(`ui/editor/AlarmRandomPromptSettings.kt`), 설정 `SettingsRow` 의 `supportingText` — 회귀 `WeatherRegionPickerTest` | `WeatherRegionPickerSheet`(`legacyLabel` 부제)·`WeatherRegions.displayName`·`unresolvedLegacyLabel`·`initialPickerCountry`(`WeatherRegionSupport.swift`), `SettingsView`·`MessageSettingsPane`·`PromptDetailCard` 의 `note` — 회귀 `WeatherRegionCatalogTests` | — |
@@ -1579,9 +1713,11 @@ R2 파일·ElevenLabs 클론은 DB 트랜잭션 안에서 지울 수 없으므�
 | 편집기 문구 화면 → 내 계정 설정(가족·직접 입력 제외 · 서버 값과 다를 때만 올린다 · 표준 글자로 적는다 · 지역이 바뀔 때만 공휴일 국가) | `AlarmEditorScreen` 의 문구 결과 처리(`saveWeatherLocation`·`saveFortuneInfo` → `onUpdateDynamicPromptSettings`, `WeatherRegionHolidaySync.onRegionSaved`) | `AlarmEditorSheet.syncOwnPromptPreferences` ← 판정 `DynamicPromptPreferences.editorUpdate`(`EditorPromptPreferenceUpdate.swift`) — 회귀 `EditorPromptPreferenceUpdateTests` | — |
 | 지역 시트: 나라 세그먼트 고정 · 열 때 고른 지역으로 스크롤 · 나라를 바꾸면 맨 위 · 화면의 90% 까지 | `WeatherLocationDialog`(`scrollsContent = false`) ← `WakerSelectionSheet`(`ui/components/WakerModal.kt`) | `WeatherRegionPickerSheet`(`ScrollViewReader`) ← `SheetScrollingContent.reservedHeight`·`BottomSheetMetrics.maxFraction` | — |
 | 새 알람: 행에 옛 앱용 글자 + 요청에 `region` | 고를 때 `region.legacyCountry`/`legacyCity` 를 적고, 요청은 `weatherRegionFor(…)?.key` ← `AlarmRepository.resolveWeatherVariantForDraft`·`resolveDueCloneBucketVariants` — 회귀 `WeatherRegionRequestTest` | `WeatherRegions.storageLabels` ← `AlarmEditorSheet`, 요청은 `resolveAlias(…)?.key` ← `WeatherVariantSaveLookup`·`WeatherVariantRefreshService` — 회귀 `WeatherVariantOwnerScopeTests` | `GET /tts/prerender-variant` 의 `region` |
-| 서버 미리 계산 · 우선순위(region → 되짚기 → 엄격한 옛 지오코딩) · 표가 없으면 저장 없이 즉석 계산 | — | — | 마이그레이션 #123 `weather_region_daily` · `refreshWeatherRegionDaily`·`isWeatherRegionRefreshSlot`(매시 첫 틱, 3시간·50곳 묶음) · 읽기 `resolveRegionVariantIndex`(12시간) — `lib/weather-region-daily.ts`, 회귀 `weather-region-daily.test.ts` |
-| 엄격한 옛 지오코딩(소재지·인구·두 배, `대한민국` 이면 나라 없이 한 번 더) | — | — | `pickStrictGeocodeResult`·`geocodeStrict`(`lib/weather-signal.ts`), 회귀 `weather-legacy-geocode.test.ts` |
-| Open-Meteo 상업 키(없으면 무료 호스트 · 있으면 `customer-` 호스트 + `apikey` · 틀린 키는 무료로 되돌아가지 않는다 · 로그에 키·URL 없음) | — | — | `openMeteoApiKey`·`openMeteoRequestUrl`·`redactOpenMeteoUrl`(`lib/weather-fetch.ts`) ← `OPEN_METEO_API_KEY`(`types.ts` `Env`, `scripts/worker-secret-keys.ts`), 회귀 `weather-open-meteo-key.test.ts` |
+| 서버 미리 계산 · 현지 슬롯(21시 내일~+3 / 06시 오늘~+3) · due([내일, +3]) · 틱 예산(SELECT 1 + fetch 10(KMA 3·JMA 8·NWS 4) + batch 1) · 실패 세 갈래 · 슬롯 끝 경보 · 오늘 극값 이어받기(36h) · 읽기 36h·지평 가드([오늘, +3] 밖은 네트워크 없이 null) · 표가 없으면 저장 없이 즉석 계산 | — | — | 마이그레이션 #123 `weather_region_daily`(스키마 그대로) · `hasOpenWeatherSlot`·`openWeatherSlot`·`refreshWeatherRegionDaily` · 읽기 `resolveRegionVariantIndex` — `lib/weather-region-daily.ts` · 원천 디스패치·실패 분류·이어받기 `lib/weather-source.ts` · 어댑터 `lib/weather-kma.ts`·`weather-jma.ts`·`weather-nws.ts`, 회귀 `weather-region-daily.test.ts`(실제 libSQL)·`weather-kma`·`weather-jma`·`weather-nws.test.ts`(2026-10-01 실측 픽스처) |
+| 지역마다 원천의 칸 고정(`source` — KR 격자 = LCC(lat,lon), JP office·class10·지점·주간 후보, US NWS 격자) | — (앱으로 내보내지 않는다) | — | `WeatherSourceSchema`(`packages/shared/src/weather-regions.ts`, 필수·나라↔원천 검사), 회귀 `packages/shared/test/weather-regions.test.ts` · 수동 점검 `npm run check:weather`(`scripts/weather-sources-check.ts` — NWS /points 재조회·JMA 상수 대조·133곳 드라이런, DB 무접촉) |
+| 되짚지 못한 옛 글자 → `null`(지오코딩 없음, 네트워크 없음) | — | — | `GET /tts/prerender-variant`(`routes/tts.ts`), 회귀 `prerender-variant.test.ts` |
+| KMA 키 · NWS User-Agent(로그에 키·URL 없음) | — | — | `KMA_SERVICE_KEY`(`types.ts` `Env`, `scripts/worker-secret-keys.ts`, `kmaServiceKey` — `lib/weather-source.ts`) · `NWS_USER_AGENT`(`lib/weather-nws.ts`) · 로그 `logWeatherFetch`(`lib/weather-fetch.ts`) |
+| 날씨 출처 표기(지역 시트 목록 아래 한 줄, ko·en·ja) | `WeatherLocationDialog`(`ui/editor/AlarmRandomPromptSettings.kt`) · `region_picker_weather_attribution`(`res/values{,-en,-ja}/strings.xml`) | `WeatherRegionPickerSheet`(`attributionHeight` 를 목록 상한에서 뺀다) · `Localizable.xcstrings` | — |
 | 발사 날짜가 바뀌면 인덱스를 버린다(울린 뒤 포함) | `shouldResetWeatherVariant`(`data/AlarmRepository.kt` 의 편집·재활성화·해제 롤오버, `AlarmDao.upsertPreservingServerSyncFields`) | `LocalAlarmStore.invalidateWeatherVariantIfFireDateChanges`(정지·다시 켜기·지나간 회차) → 정지 뒤 `AlarmAppContext.reconcileAfterStop` 이 새 소리로 다시 건다 — 회귀 `WeatherVariantRolloverTests` | — |
 | 공휴일 국가 = 지역의 나라 | [alarm-lifecycle.md](alarm-lifecycle.md) 구현 지도 | 같음 | — |
 | 날씨 준비창 갱신 | `AlarmRepository.resolveDueCloneBucketVariants` + `weatherVariantNeedsRefresh` | `WeatherVariantRefreshService` + `BucketVariantResolver.weatherVariantNeedsRefresh` | 같은 라우트 |
@@ -1609,6 +1745,21 @@ R2 파일·ElevenLabs 클론은 DB 트랜잭션 안에서 지울 수 없으므�
 | 보관 만료 — 행 삭제와 삭제 예약은 한 batch · 쓰기 문장이 고를 때의 조건을 다시 본다(§11) | — | — | `lib/audio-retention.ts` 의 `cleanupExpiredAudio`·`cleanupStaleDraftVoices` ← 예약 문장 `externalDeletionsFromSelectStatement`(`enqueueUploadKeysReferencedByMessagesStatement` 도 같은 문장) · 회귀 `audio-retention-atomic.test.ts`(트리거로 중간 실패 → 롤백)·`audio-retention-source-keep.test.ts` |
 
 ## 검증 방법
+
+### 날씨 원천(5-1 「서버가 미리 계산해 둔다」)
+
+- **유닛**: `packages/backend` 에서 `npx vitest run test/weather-kma.test.ts test/weather-jma.test.ts
+  test/weather-nws.test.ts test/weather-region-daily.test.ts test/prerender-variant.test.ts` — 픽스처는 2026-10-01
+  실측 응답이다(키 없음). `packages/shared` 의 `weather-regions.test.ts` 가 KR 격자를 LCC 로 다시 계산한다.
+- **읽기 전용 점검**(DB 무접촉, 키는 출력하지 않는다): `npm run check:weather -- --env-file .dev.vars.dev` — NWS
+  `/points` 재조회 대조, JMA 상수 대조, 133곳 드라이런(나라별 원천 성공 수·자리 분포). 오늘 행은 이어받기 없이 세므로
+  KR(1700 회차 이후)·JP·NWS(아침 이후)의 오늘이 미해결로 나오는 것은 정상이다. 2026-10-01 19:20 KST 결과:
+  KR 17/17 · JP 47/47 · US 69/69, /points 69곳·JMA 47곳 모두 일치.
+- **dev 하루 관측**(PR B 머지 뒤): `wrangler tail --env dev` 에서 슬롯 4개(KR·JP 저녁 12Z·아침 21Z, 미 동부·중부 등)의
+  `at:"scheduled.weather_region_daily"`(open·due·attempted·stored·failed), `at:"weather.fetch"` 의 source 별
+  `status:200`·`resultCode:"00"`(KMA), 실행의 `cpuTime`, 그리고 Sentry `scheduled.weather_region_daily.slot_failed` 0건.
+
+### 목소리
 
 목소리가 **실제로 나오는지**는 실기기에서만 확인된다. 특히:
 - raw API 로 만든 알람은 `voice_profile_id`·`message_id`·`bucket_id` 가 비어 있어
