@@ -222,6 +222,15 @@ describe('슬롯 — 현지 21:00~21:59(저녁), 06:00~06:59(아침)', () => {
         if (expected) expect(hasOpenWeatherSlot(now)).toBe(true);
       }
     }
+    // 스펙의 '하루 13틱'(날씨가 5분 틱의 맨 앞에 서는 틱 수 — 그만큼 다른 작업의 예산이 준다). 목록에 시간대가 늘면
+    // 스펙 5-1 「실패」와 함께 고친다.
+    for (const day of ['2026-07-01', '2026-12-01']) {
+      let lastTicks = 0;
+      for (let minute = 0; minute < 24 * 60; minute += 5) {
+        if (hasWeatherSlotLastTick(new Date(Date.parse(`${day}T00:00:00Z`) + minute * 60_000))) lastTicks += 1;
+      }
+      expect(lastTicks, day).toBe(13);
+    }
   });
 });
 

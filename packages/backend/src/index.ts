@@ -463,8 +463,9 @@ async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext)
   // 마지막 틱(현지 분 ≥ 55) 뒤에는 그 슬롯의 틱이 없어 판정·경보(`slot_failed`)가 여기서만 나간다. 경보(Sentry)도
   // subrequest 하나라, 아래 작업들이 이 실행의 한도(~50)를 먼저 다 쓰면 판정을 해도 **언제나** 닿지 않는다(코덱스
   // #846). 맨 앞이면 날씨 작업의 최대(조회 1 + 게이트웨이 재시도 2 + fetch 10 + 쓰기 1 + 경보 몇 건)가 한도에 닿을 수
-  // 없다. 아래 작업들은 남은 예산으로 돌고, 모자라면 늘 하던 대로 다음 틱이 잇는다 — 그쪽은 다음 틱이 있고 날씨
-  // 슬롯은 없다. 그 밖의 틱은 원래 자리(계정 파기 뒤, 클론 드레인 앞)다.
+  // 없다. 대가로 아래 작업들은 날씨가 쓴 만큼 적은 예산으로 돌고, 한도에 걸리면 각자의 원래 규칙대로다(대개 다음
+  // 틱이 잇는다 — 붐비는 틱이면 전부터 있던 위험이고, 이 순서가 되는 틱은 하루 13개다). 날씨 슬롯에는 마지막 틱
+  // 다음이 없다. 그 밖의 틱은 원래 자리(계정 파기 뒤, 클론 드레인 앞)다.
   const weatherFirst = await isWeatherSlotLastTick(now);
   if (weatherFirst) await weatherRegionDailyTick(db, env, now, captureCron);
 
