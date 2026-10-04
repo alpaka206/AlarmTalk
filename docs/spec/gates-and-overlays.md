@@ -84,8 +84,9 @@ PR #660 에서 **같은 모양의 버그가 네 번** 나왔다(동의 → 버�
       (전경 잠금의 기다림 — [`billing-lifecycle.md`](billing-lifecycle.md) D12)으로는 그대로 쓴다.
   - **결과는 어느 경로로 반영되든, 버려지든 적는다.** 이번 진입에 보낸 요청의 답이 세션 밖 경로로
     반영되거나(iOS `SocialFeatureViewModel` 의 `/auth/me` → `applyFreshPlan(…request:)` — 순번에 밀려
-    짝을 쓰지 않아도), 이 계정의 토큰이 그 사이 굴러 응답 본문을 버리는 경우에도(iOS
-    `refreshUserApplyingToken` 의 `isTokenRolledWithinSignIn` — 성공이면 짝을 반영하고 적고, 실패면
+    짝을 쓰지 않아도), 이 계정의 토큰이 그 사이 굴러 에폭 가드에 걸리는 경우에도(iOS
+    `refreshUserApplyingToken` 의 `isTokenRolledWithinSignIn` — 성공이면 지금 토큰 위에 짝과 프로필 칸을 반영하고
+    적고(`applyAccountAnswerOnRolledToken` — 밀린 답이면 쓰지 않고 적기만), 실패면
     실패로 적는다) **이 진입의 결과**는 적는다 — 안 적으면 진입이 '대기' 로 남아, 같은 진입의 나중
     응답이 첫 결과가 되어 세션 한가운데서 판정한다(리뷰). 안드로이드는 세션을 세대로 가르므로
     (`saveSessionIfAlive`) 토큰이 굴러도 응답이 버려지지 않는다.

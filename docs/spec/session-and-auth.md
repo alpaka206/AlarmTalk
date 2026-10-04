@@ -74,7 +74,7 @@ rolling refresh 는 **같은 세션 안에서** 토큰을 바꾼다. 그러니 "
     받은 토큰은 이 판정을 거쳐서만 저장한다 — 예전에는 콜드 스타트마다 진입 갱신이 방금 굴린
     토큰을 한 번 더 굴렸다.
   - **굴리지 않는다**: 백그라운드에서 돌아올 때의 `/auth/me`(plan·프로모만 받는다), 프로필·계정 설정
-    저장 뒤의 확인 조회(아래 「프로필 저장은 바꾼 칸만 세션에 적는다」), **Play 자동
+    저장 뒤의 확인 조회(아래 「프로필 저장은 바꾼 칸만 세션에 적는다」 — iOS 는 굴린다, 그 토큰이 옛 답을 가른다), **Play 자동
     정합화 뒤의 갱신**(H4). 정합화는 앱 시작·알람 탭 진입마다 도는 구독 재확인에서 오는데,
     거기서 굴리면 토큰을 키로 쓰던 탭 효과가 다시 돌아 또 정합화하는 고리가 생겼다(Play 로
     결제한 사용자가 홈에 있는 동안 3~5초마다 15건 이상).
@@ -98,9 +98,19 @@ rolling refresh 는 **같은 세션 안에서** 토큰을 바꾼다. 그러니 "
   박는다. iOS 는 `MainActor` 라 응답을 기다린 **뒤에** 읽은 세션 위에 얹는다(`AuthViewModel.updateProfile`).
 - 저장이 끝나면 **확인 조회**를 한 번 한다 — 저장 **전에** 떠난 `/auth/me` 가 옛 이름·가족 설정을 싣고 늦게
   와도, 확인 조회가 그 뒤에 덮거나(옛 답이 먼저 온 경우) 옛 답이 순번에 밀려 버려진다(확인 조회가 먼저 온 경우 —
-  안드로이드 `claimPlanAnswer`, iOS 는 확인 조회가 굴린 토큰의 에폭). 안드로이드는 토큰을 굴리지 않는다
-  (`rollToken = false`, 위 「토큰이 굴러도…」). 확인 조회까지 실패하면 그 칸은 다음 `/auth/me` 까지 옛 값일 수
-  있다 — 계정 설정만 울타리가 그 틈까지 막는다([voice-and-message.md](voice-and-message.md) §5-1).
+  안드로이드 `claimPlanAnswer`, iOS 는 확인 조회가 굴린 토큰에 걸린 옛 답이 밀린 답이 되어 아무것도 쓰지 않는다).
+  안드로이드는 토큰을 굴리지 않는다(`rollToken = false`, 위 「토큰이 굴러도…」). iOS 는 굴린다 — 그 토큰이 옛 답을
+  가르는 에폭이다.
+  - ⚠ **iOS 에서 옛 답이 먼저 오면 토큰이 이미 굴러 있다**(2026-10-05 리뷰). 서버는 `/auth/me` 마다 토큰을 굴리므로
+    (`routes/auth.ts`), 확인 조회의 답은 보낸 토큰이 지금 세션 토큰과 달라 '토큰만 구른 같은 로그인' 갈래
+    (`isTokenRolledWithinSignIn`)로 온다. 그 갈래도 밀리지 않은 답이면 plan·프로모와 함께 **프로필 칸(이름·가족 설정·
+    계정 설정 — 울타리는 따른다)까지** 지금 토큰 위에 적는다(`AuthViewModel.applyAccountAnswerOnRolledToken` — 토큰·
+    탈퇴 유예만 지금 세션 것). 예전에는 그 갈래가 짝만 적어, 저장도 확인 조회도 성공했는데 옛 이름·가족 설정이 다음
+    `/auth/me` 까지 남았다. 안드로이드는 토큰이 아니라 세대로 가르므로(`saveSessionIfAlive`) 같은 경우에 응답 전체를 쓴다.
+  - 남는 틈(두 앱): 확인 조회까지 실패하면 그 칸은 다음 `/auth/me` 까지 옛 값일 수 있다 — 계정 설정만 울타리가 그
+    틈까지 막는다([voice-and-message.md](voice-and-message.md) §5-1). 확인 조회보다 **뒤에 보낸** plan 답(안드로이드
+    결제 전 조회, iOS 세션 밖 `/auth/me`·결제 전 조회 — 프로필 칸은 쓰지 않는다)이 확인 조회의 답보다 먼저 반영돼도
+    같다 — 확인 조회의 답이 밀린 답이 되어 프로필 칸을 쓰지 않는다.
 - **탈퇴 복구 저장도 같다**(iOS — 아래 「탈퇴 예약을 취소해 복구할 때」).
 
 ## 세션을 끊는 경우
@@ -228,7 +238,7 @@ iOS는 네트워크/5xx/응답 해석 실패와 구서버의 `NO_PENDING_DELETIO
 | 저장·메모리 세션 수렴 | — | `MainViewModel`의 세션 저장소 관찰 | `AuthViewModel.absorbStoredSession`·`handleUnauthorized` |
 | 전경 push의 첫 인증 실패 중단 | — | `AlarmSyncService.syncWithBackend` | `RemoteAlarmPushSync.runOnce` |
 | 저장 경합 방지 | — | `AuthSessionStore.saveTokenIfGeneration`·`saveSessionIfAlive` | `AuthViewModel` 의 출처 **토큰** 재확인(`refreshUser`·`applyRolledToken`·`applyFreshPlan`) |
-| 프로필 저장은 바꾼 칸만 쓰는 순간의 세션 위에(plan·프로모·받은 시각·토큰은 그대로) + 확인 조회 | `PATCH /user/me`(`user.ts`) | `AuthSessionStore.updateUserIfAlive` ← `MainViewModelAuthActions` 의 `saveProfileEdit`(`updateNickname`·`updateFamilyAlarmSettings`·`uploadDynamicPromptSettings`) → `refreshAppSession(rollToken = false)`·`refreshAppSessionNow(rollToken = false)` · 회귀 `ProfileSaveKeepsAccountAnswerTest.kt` | `AuthViewModel.updateProfile`(응답 뒤 `var updated = current`) → `refreshUser` · 회귀 `AuthViewModelTests` |
+| 프로필 저장은 바꾼 칸만 쓰는 순간의 세션 위에(plan·프로모·받은 시각·토큰은 그대로) + 확인 조회 | `PATCH /user/me`(`user.ts`) | `AuthSessionStore.updateUserIfAlive` ← `MainViewModelAuthActions` 의 `saveProfileEdit`(`updateNickname`·`updateFamilyAlarmSettings`·`uploadDynamicPromptSettings`) → `refreshAppSession(rollToken = false)`·`refreshAppSessionNow(rollToken = false)` · 회귀 `ProfileSaveKeepsAccountAnswerTest.kt` | `AuthViewModel.updateProfile`(응답 뒤 `var updated = current`) → `refreshUser`(옛 답이 먼저 와 토큰이 굴렀으면 `isTokenRolledWithinSignIn` → `applyAccountAnswerOnRolledToken` 이 프로필 칸까지) · 회귀 `AuthViewModelTests`(확인 조회와 옛 답의 두 도착 순서 — 닉네임·가족 설정) |
 | 탈퇴 복구 저장은 준비 뒤의 세션 위에 | `user.ts` 탈퇴 취소 | — (복구 저장에 기다림이 없다 — `cancelAccountDeletion` 은 `pendingDeletion` 만 내린다) | `AuthViewModel.completeAccountRecovery`(기다린 뒤 `latest` · `/auth/me` 경로는 `reconcileAccountAnswer` 로 다시 다듬기) · 회귀 `AuthViewModelTests` |
 | 401 중앙 처리 | — | `UnauthorizedAuthenticator` | `AlarmTalkAPI.unauthorizedNotification`(**실패한 토큰을 싣는다**) → `AuthViewModel.handleUnauthorized` |
 | 즉시 폐기 | `authMiddleware` 의 `token_epoch` 비교 | — | — |
