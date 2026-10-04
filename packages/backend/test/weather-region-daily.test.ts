@@ -539,6 +539,62 @@ describe('슬롯 끝 경보 — 마지막 틱(현지 분 ≥ 55)에 (나라, 시
     db.close();
   });
 
+  it('마지막 틱이 워커 한도(Too many subrequests)로 멈춰도 판정한다 — 그 틱에 받은 것은 세지 않고 사유는 subrequest_limit', async () => {
+    // 마지막 틱 뒤에는 슬롯이 닫혀 다른 틱이 없다 — 여기서 빠지면 그 슬롯은 신호 없이 지나간다(코덱스 #846).
+    const db = await freshDb();
+    let jmaCalls = 0;
+    // 앞의 두 office 는 받았지만(적지 못한다) 그 뒤에 한도에 걸린다.
+    stubSources({ fail: { jma: () => (jmaCalls++ < 2 ? null : new Error('Too many subrequests.')) } });
+    const batch = vi.spyOn(db, 'batch');
+    const alerts: WeatherSlotAlert[] = [];
+    const result = await refreshWeatherRegionDaily(asExecutor(db), EVENING_LAST, {
+      kmaServiceKey: KEY,
+      regions: jp(),
+      onAlert: (a) => alerts.push(a),
+    });
+    expect(result).toMatchObject({ budgetExhausted: true, stored: 0, failures: [] });
+    expect(batch).not.toHaveBeenCalled();
+    expect(alerts).toEqual([{ country: 'JP', slot: 'evening', source: 'jma', reason: 'subrequest_limit', done: 0, total: 47 }]);
+    expect(result.alerts).toEqual(alerts);
+    db.close();
+  });
+
+  it('마지막 틱의 한도 소진도 DB 에 이미 있는 행은 마친 것으로 센다 — 일부만 못 했으면 warn 한 줄', async () => {
+    const db = await freshDb();
+    for (const r of jp().slice(0, 10)) {
+      for (const d of ['2026-10-02', '2026-10-03', '2026-10-04']) await insertRow(db, r.key, d, '2026-10-01T12:10:00.000Z');
+    }
+    stubSources({ fail: { jma: () => new Error('Too many subrequests.') } });
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const alerts: WeatherSlotAlert[] = [];
+    const result = await refreshWeatherRegionDaily(asExecutor(db), EVENING_LAST, {
+      kmaServiceKey: KEY,
+      regions: jp(),
+      onAlert: (a) => alerts.push(a),
+    });
+    expect(result.budgetExhausted).toBe(true);
+    expect(alerts).toEqual([]);
+    const partial = warn.mock.calls.map(([l]) => String(l)).find((l) => l.includes('slot_partial'));
+    expect(JSON.parse(partial!)).toMatchObject({ reason: 'subrequest_limit', done: 10, total: 47 });
+    db.close();
+  });
+
+  it('쓰기(db.batch)에서 처음 한도에 걸려도 예산 소진이다 — 던지지 않고, 마지막 틱이면 판정한다', async () => {
+    const db = await freshDb();
+    stubSources();
+    vi.spyOn(db, 'batch').mockRejectedValueOnce(new Error('Too many subrequests.'));
+    const alerts: WeatherSlotAlert[] = [];
+    const result = await refreshWeatherRegionDaily(asExecutor(db), EVENING_LAST, {
+      kmaServiceKey: KEY,
+      regions: jp(),
+      onAlert: (a) => alerts.push(a),
+    });
+    expect(result).toMatchObject({ budgetExhausted: true, stored: 0, failures: [] });
+    expect(await rowsOf(db)).toEqual([]);
+    expect(alerts).toEqual([{ country: 'JP', slot: 'evening', source: 'jma', reason: 'subrequest_limit', done: 0, total: 47 }]);
+    db.close();
+  });
+
   it('KMA 키가 없으면 네트워크 없이 — 운영은 경보(missing_key), dev 는 info 로그만', async () => {
     const db = await freshDb();
     const calls = stubSources();

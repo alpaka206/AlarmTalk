@@ -10,7 +10,7 @@
  *   안다). 슬롯이 열린 지역 가운데 [내일, +3] 의 어느 날짜에 `computed_at ≥ 슬롯 시작` 인 행이 없으면 due 다.
  *   한 틱은 SELECT 1 + fetch 최대 10(원천별 KMA 3·JMA 8·NWS 4, 원천을 번갈아, 동시 4) + `db.batch` 1 = 최대 12
  *   subrequest 다. 실패한 지역은 같은 슬롯의 다음 틱이 다시 하고, 슬롯 마지막 틱(현지 분 ≥ 55)에 판정해
- *   (나라, 시간대 묶음)에서 한 곳도 못 했거나 설정 실패가 있으면 경보를 올린다.
+ *   (나라, 시간대 묶음)에서 한 곳도 못 했거나 설정 실패가 있으면 경보를 올린다 — 그 틱이 예산 소진으로 멈췄어도.
  * - **읽기**(`resolveRegionVariantIndex`): 행이 36시간 안에 계산한 것이면 그대로. 아니면 대상 날짜가 지역의
  *   [오늘, +3] 안일 때만 원천을 **한 번** 부르고(밖이면 네트워크 없이 null, 호출 전체의 마감 5초), 계산되면 적고
  *   돌려준다. ⚠ 표가 없으면(배포 → 마이그레이션 창) 저장 없이 계산만 한다.
@@ -20,7 +20,7 @@ import type { InStatement } from '@libsql/client';
 import { inPlaceholders } from './caller-ids';
 import { logStructured } from './logger';
 import type { DbExecutor } from './transactions';
-import { WEATHER_SOURCE_CACHE_TTL_SECONDS, type WeatherSourceKind } from './weather-fetch';
+import { isSubrequestLimitError, WEATHER_SOURCE_CACHE_TTL_SECONDS, type WeatherSourceKind } from './weather-fetch';
 import { resolvePrerenderWeatherIndex, TARGET_DATE_RE, type WeatherSignalInput } from './weather-signal';
 import {
   addDaysToDate,
@@ -292,7 +292,7 @@ export type WeatherSlotAlert = {
   country: WeatherCountryCode;
   slot: WeatherSlotKind;
   source: WeatherSourceKind;
-  /** `missing_key`·`kma_30`·`invalid_gridpoint`·`http_503`·`timeout`·`stale_report`·`not_attempted` … */
+  /** `missing_key`·`kma_30`·`invalid_gridpoint`·`http_503`·`timeout`·`stale_report`·`subrequest_limit`·`not_attempted` … */
   reason: string;
   /** 그 묶음에서 이번 슬롯을 마친 지역 수 / 전체. */
   done: number;
@@ -319,7 +319,10 @@ export type WeatherRegionRefreshResult = {
   failures: WeatherRegionFailure[];
   /** 예산(이 틱의 fetch 상한·워커 subrequest 한도)이 다해 남은 지역을 다음 틱에 넘겼다. */
   deferred: number;
-  /** 워커 subrequest 한도에 걸려 이 틱의 날씨 작업을 멈췄다(쓰기도 하지 않았다). */
+  /**
+   * 워커 subrequest 한도에 걸려 이 틱의 날씨 작업을 멈췄다(fetch 든 쓰기든 — 쓰기는 하지 않았거나 실패했다).
+   * 마지막 틱이면 판정은 그래도 한다(`evaluateSlotEnds`).
+   */
   budgetExhausted: boolean;
   /** 표가 아직 없어 건너뛰었다(배포 → 마이그레이션 창). */
   missingTable: boolean;
@@ -482,23 +485,37 @@ export async function refreshWeatherRegionDaily(
   };
   await Promise.all(Array.from({ length: Math.min(WEATHER_FETCH_CONCURRENCY, tasks.length) }, worker));
 
+  // 3) db.batch 1회 — upsert + 지난 행 정리(UTC 오늘 − 3일 이전). 워커 한도에 걸렸으면 쓰기도 실패하므로 부르지
+  //    않는다. 쓰기에서 처음 걸려도 같은 예산 소진이다(실패로 세지 않는다 — 다음 틱이 이어 한다).
+  if (!result.budgetExhausted && statements.length > 0) {
+    try {
+      await db.batch([
+        { sql: 'DELETE FROM weather_region_daily WHERE target_date < ?', args: [addDaysToDate(computedAt.slice(0, 10), -3)] },
+        ...statements,
+      ]);
+      result.stored = statements.length;
+    } catch (err) {
+      if (!isSubrequestLimitError(err)) throw err;
+      result.budgetExhausted = true;
+    }
+  }
   if (result.budgetExhausted) {
-    // 워커 한도면 쓰기도 실패한다 — 다음 틱이 이어 한다. 받은 것은 버린다(새 발표라 다음 틱에도 같다).
+    // 받은 것은 버린다(새 발표라 다음 틱에도 같다). 적지 않았으니 '이번 틱에 마친 것' 으로도 세지 않는다 — 아래
+    // 판정은 DB 에 이미 있는 행만 본다.
+    written.clear();
     logStructured('warn', { at: 'scheduled.weather_region_daily', budgetExhausted: true, attempted: result.attempted });
-    return result;
   }
 
-  // 3) db.batch 1회 — upsert + 지난 행 정리(UTC 오늘 − 3일 이전).
-  if (statements.length > 0) {
-    await db.batch([
-      { sql: 'DELETE FROM weather_region_daily WHERE target_date < ?', args: [addDaysToDate(computedAt.slice(0, 10), -3)] },
-      ...statements,
-    ]);
-    result.stored = statements.length;
-  }
-
-  // 4) 슬롯 마지막 틱의 판정 — (나라, 시간대 묶음)마다.
-  evaluateSlotEnds(slots, { isDone, failedReasons, kmaKey, result, options });
+  // 4) 슬롯 마지막 틱의 판정 — (나라, 시간대 묶음)마다. ⚠ 예산이 다해 멈춘 틱에도 한다: 마지막 틱 뒤에는 슬롯이
+  //    닫혀 다른 틱이 없으므로, 여기서 빠지면 그 슬롯은 아무 신호 없이 지나간다(코덱스 #846).
+  evaluateSlotEnds(slots, {
+    isDone,
+    failedReasons,
+    kmaKey,
+    result,
+    options,
+    unrecordedReason: result.budgetExhausted ? 'subrequest_limit' : 'not_attempted',
+  });
   return result;
 }
 
@@ -545,6 +562,8 @@ function evaluateSlotEnds(
     kmaKey: string | undefined;
     result: WeatherRegionRefreshResult;
     options: { alertOnMissingKey?: boolean; onAlert?: (alert: WeatherSlotAlert) => void };
+    /** 못 마쳤는데 실패가 적히지 않은 묶음의 사유 — 워커 한도로 멈춘 틱이면 `subrequest_limit`. */
+    unrecordedReason: string;
   },
 ): void {
   const groups = new Map<string, OpenWeatherSlot[]>();
@@ -567,7 +586,7 @@ function evaluateSlotEnds(
     if (done === group.length && !configFailure) continue;
     const reason = missingKey
       ? 'missing_key'
-      : (configFailure?.reason ?? failures.at(-1)?.reason ?? 'not_attempted');
+      : (configFailure?.reason ?? failures.at(-1)?.reason ?? context.unrecordedReason);
     const alert: WeatherSlotAlert = {
       country: first.region.country,
       slot: first.slot,
