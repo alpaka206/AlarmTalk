@@ -145,7 +145,29 @@ describe('원시 격자 → 날짜(지역 시간대 [00, 24))', () => {
     );
     const gap = nwsDaysFromGrid(g, region('us-new-york').tz, NOW).get('2026-10-02')!;
     expect(gap.precipitation).toBeNull();
-    expect(finalizeSourceDay(gap, { isToday: false, now: NOW })).toBeNull();
+    expect(finalizeSourceDay(gap, { isToday: false, now: NOW, source: 'nws' })).toBeNull();
+  });
+
+  it('QPF 층에 숫자 표본이 하나도 없으면(빈 values · 값이 전부 null) 지평이 없다 — 모든 날짜가 빠짐(미해결)', () => {
+    // 지평을 −∞ 로 두고 '전부 지평 너머(재지 않음)' 로 읽으면 오늘·내일까지 강수량 없이 해결된다(코덱스 #846).
+    const tz = region('us-new-york').tz;
+    const empty = grid('us-new-york');
+    empty.properties.quantitativePrecipitation.values = [];
+    const allNull = grid('us-new-york');
+    allNull.properties.quantitativePrecipitation.values = allNull.properties.quantitativePrecipitation.values.map(
+      (v: { validTime: string }) => ({ ...v, value: null }),
+    );
+    for (const g of [empty, allNull]) {
+      const days = nwsDaysFromGrid(g, tz, NOW);
+      expect([...days.keys()]).toEqual(['2026-10-01', '2026-10-02', '2026-10-03', '2026-10-04']);
+      for (const [date, day] of days) {
+        expect(day.precipitation).toBeNull();
+        expect(day.code).toBeNull();
+        expect(finalizeSourceDay(day, { isToday: date === '2026-10-01', now: NOW, source: 'nws' })).toBeNull();
+      }
+    }
+    // 표본이 있는 층의 지평 너머는 여전히 '재지 않음' 이다(위 테스트와 같은 규칙).
+    expect(Number.isNaN(nwsDaysFromGrid(grid('us-new-york'), tz, NOW).get('2026-10-04')!.precipitation)).toBe(true);
   });
 
   it('발표가 18시간보다 낡았으면 transient:stale_grid, 층이 없으면 transient:nws_layers', () => {

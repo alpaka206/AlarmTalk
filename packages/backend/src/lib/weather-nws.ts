@@ -16,6 +16,7 @@
  *  - 아이콘·`shortForecast` 는 폐기 예고 필드라 쓰지 않는다.
  *  - 필수 표본(코드·최고·최저·PoP·QPF)의 층이 그날을 다 덮지 못하면 그 날짜는 미해결이다. 단 QPF 는 발표 뒤
  *    약 72시간까지만 오는 층이라, **그 지평 너머**는 빠짐이 아니라 '재지 않음'(NaN)이다(`qpfBeyondHorizon`).
+ *    지평은 실제로 온 숫자 표본이 정한다 — 표본이 하나도 없는 QPF 층에는 지평이 없어 모든 날짜가 빠짐이다.
  */
 import type { WeatherRegion, WeatherSource } from '@alarmtalk/shared';
 import { logStructured } from './logger';
@@ -124,8 +125,11 @@ function covers<T>(samples: readonly Sample<T>[], window: Interval): boolean {
  *  - 층의 끝(지평)까지는 빈틈없이 덮여 있고 그 뒤가 비었다 → 지평 너머는 **재지 않음**. 덮인 부분에 이미 비가
  *    있으면(합 > 0) 그 합(아래 경계 — 분류는 0 보다 큰지만 본다), 없으면 NaN(재지 않음 — 비는 PoP 가 정한다).
  *  - 지평 안에 빈틈이 있다 → **빠짐**(null, 그 날짜는 미해결).
+ *  - 숫자 표본이 하나도 없다(빈 `values`, 값이 전부 null) → 지평이 없다 — **빠짐**. ⚠ 지평을 −∞ 로 두고 '모든
+ *    날짜가 지평 너머' 로 읽으면 오늘·내일까지 강수량 없이 해결된다(반쪽 값, 코덱스 #846).
  */
 function qpfBeyondHorizon(qpf: readonly Sample<number>[], window: Interval): number | null {
+  if (qpf.length === 0) return null;
   const horizon = qpf.reduce((end, s) => Math.max(end, s.end), Number.NEGATIVE_INFINITY);
   if (!(horizon < window.end)) return null; // 지평 안의 빈틈
   if (horizon <= window.start) return Number.NaN;
