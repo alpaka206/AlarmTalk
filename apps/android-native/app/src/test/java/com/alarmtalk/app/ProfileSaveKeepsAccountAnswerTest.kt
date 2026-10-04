@@ -237,13 +237,35 @@ class ProfileSaveKeepsAccountAnswerTest {
 
     // ── 배선 ────────────────────────────────────────────────────────────
 
+    /**
+     * 사본 저장을 잡는 감시가 **옛 모양을 실제로 잡는지** 먼저 본다. 글자 그대로(`contains("session.copy(user")`) 찾으면
+     * 공백·줄바꿈이 다른 모양을 놓친다 — 예전 `updateFamilyAlarmSettings` 는 `session.copy(` 뒤에 줄을 바꿔
+     * `user = session.user.copy(` 를 쓰는 여러 줄 모양이라, 감시가 그 경로에서 아무것도 지키지 않았다(2026-10-05 리뷰).
+     */
+    @Test
+    fun 사본_저장_감시는_한_줄과_여러_줄_모양을_모두_잡는다() {
+        val oldShapes = listOf(
+            // 예전 updateNickname·uploadDynamicPromptSettings — 한 줄
+            "val updated = session.copy(user = session.user.copy(name = trimmed))",
+            // 예전 updateFamilyAlarmSettings — 여러 줄
+            "val updated = session.copy(\n                user = session.user.copy(\n                    allowFamilyAlarms = allowFamilyAlarms,",
+            // 점 앞뒤로 줄을 바꾼 모양
+            "val updated = session\n    .copy(\n        user = session.user,\n    )",
+        )
+        for (shape in oldShapes) {
+            assertTrue("감시가 옛 사본 저장 모양을 못 잡는다:\n$shape", SESSION_COPY_SAVE.containsMatchIn(shape))
+        }
+        // 지금 모양(바꾼 칸만 얹기)은 걸리지 않는다.
+        assertFalse(SESSION_COPY_SAVE.containsMatchIn("saveProfileEdit(session.user.id, startGeneration) { it.copy(name = trimmed) }"))
+    }
+
     @Test
     fun 프로필_저장_세_곳은_바꾼_칸만_지금_세션_위에_적는다() {
         for (header in PROFILE_SAVES) {
             val body = bodyOf(header)
             assertFalse(
                 "$header 가 요청 전 세션 사본을 통째로 저장한다 — 그 사이 받은 plan·프로모·받은 시각을 되돌린다.",
-                body.contains("session.copy(user"),
+                SESSION_COPY_SAVE.containsMatchIn(body),
             )
             assertTrue(
                 "$header 가 `saveProfileEdit(session.user.id, startGeneration)` 로 바꾼 칸만 적지 않는다.",
@@ -290,6 +312,9 @@ class ProfileSaveKeepsAccountAnswerTest {
 
     private companion object {
         val NEXT_DECLARATION = Regex("""(?m)^[ \t]*(?:internal |private |public )?(?:suspend )?fun\s""")
+
+        /** 요청 전 세션 사본을 통째로 저장하는 모양 — `session.copy(user = …)`. 공백·줄바꿈이 어디 끼어도 잡는다. */
+        val SESSION_COPY_SAVE = Regex("""\bsession\s*\.\s*copy\s*\(\s*user\b""")
         val PROFILE_SAVES = listOf(
             "internal fun MainViewModel.updateNickname(",
             "internal fun MainViewModel.updateFamilyAlarmSettings(",
