@@ -1045,14 +1045,8 @@ final class AuthViewModel: ObservableObject {
             //   프로모를 옛 값으로 되돌린다(결제한 사람에게 "무료 이용이 곧 끝나요" 가 다시 뜬다).
             //   더 새 답이 이미 반영됐으면 **그 짝(plan·프로모)은 지킨다.** 나머지(굴린 토큰·탈퇴
             //   유예)는 예전처럼 반영한다 — 응답 전체를 버리면 그 갱신까지 한 회차 잃는다.
-            if isSuperseded(accountRequest), let current = session {
-                merged.plan = current.user.plan
-                merged.personalPromo = current.user.personalPromo
-            }
-            // 계정 설정 올리기가 끝나기 전에 보낸 요청이면 **설정만** 지금 세션의 값을 지킨다(`promptSettingsAnswerFence`).
-            if accountRequest.seq <= promptSettingsAnswerFence, let current = session {
-                merged.dynamicPromptSettings = current.user.dynamicPromptSettings
-            }
+            //   계정 설정 올리기가 끝나기 전에 보낸 요청이면 **설정만** 지금 세션의 값을 지킨다(`promptSettingsAnswerFence`).
+            merged = reconcileAccountAnswer(merged, request: accountRequest)
             let wasPendingDeletion = pendingDeletion || session?.user.isPendingDeletion == true
             if wasPendingDeletion, merged.deletionStatus != "active", !merged.isPendingDeletion {
                 throw APIError.invalidResponse
@@ -1065,7 +1059,10 @@ final class AuthViewModel: ObservableObject {
             // 탈퇴 유예 상태 반영 — pending_deletion 이면 RootView 가 복구 화면으로 게이팅.
             // Android `MainViewModel.checkAccountStatus()` 와 동등.
             if wasPendingDeletion, merged.deletionStatus == "active" {
-                guard await completeAccountRecovery(userID: merged.id, recoveredSession: nextSession) else { return nil }
+                guard await completeAccountRecovery(
+                    userID: merged.id,
+                    recoveredAnswer: (session: nextSession, request: accountRequest)
+                ) else { return nil }
             } else {
                 persistSession(nextSession)
                 pendingDeletion = merged.isPendingDeletion
@@ -1136,6 +1133,27 @@ final class AuthViewModel: ObservableObject {
             noteEntryOutcome(accountRequest, .failed)
         }
         return nil
+    }
+
+    /// 계정 응답(`/auth/me`)의 사용자를 **지금 세션**에 맞춰 다듬는다 — 세션에 쓰기 **직전에** 부른다.
+    ///
+    /// - 더 나중에 보낸 요청의 답이 이미 반영됐으면(`isSuperseded`) plan·프로모 짝은 지금 세션의 것을 지킨다.
+    /// - 계정 설정 올리기가 끝나기 전에 보낸 요청이면(`promptSettingsAnswerFence`) 설정만 지금 세션의 값을 지킨다.
+    ///
+    /// ⚠ **응답을 받은 뒤 또 기다리면 그 뒤에 다시 부른다**(2026-10-05). 탈퇴 복구는 푸시 준비를 기다린 뒤에야
+    /// 저장하는데(`completeAccountRecovery`), 그 사이 더 새 답·올리기가 반영될 수 있다 — 기다리기 전에 다듬은 값을
+    /// 그대로 저장하면 그 답을 되돌린다. 순번·울타리는 줄지 않으므로 두 번 불러도 결과가 어긋나지 않는다.
+    private func reconcileAccountAnswer(_ user: AuthUser, request: AccountRequest) -> AuthUser {
+        guard let current = session else { return user }
+        var reconciled = user
+        if isSuperseded(request) {
+            reconciled.plan = current.user.plan
+            reconciled.personalPromo = current.user.personalPromo
+        }
+        if request.seq <= promptSettingsAnswerFence {
+            reconciled.dynamicPromptSettings = current.user.dynamicPromptSettings
+        }
+        return reconciled
     }
 
     /// 어떤 API 요청이든 401 을 받으면 호출 — 세션 만료로 보고 강제 로그아웃.
@@ -1283,15 +1301,30 @@ final class AuthViewModel: ObservableObject {
             //   조회를 울타리로 가리고, 옛 설정을 세션에 적는다. 세션이 바뀌었으면 확인 조회도 하지 않는다 — 새 세션은
             //   자기 로그인 응답으로 이미 받아 적었다. 안드로이드 `uploadDynamicPromptSettings` 의 세대 대조와 같다.
             guard sessionRevision == requestSessionRevision else { return }
-            if let dynamicPromptSettings, let current = session, current.user.id == requestUserID {
-                // ⚠ **표시를 내리기 전에 울타리를 세운다**(Codex #837). 지금 떠 있는 `/auth/me` 는 올리기 **전의**
-                // 설정을 읽었을 수 있다 — 그 응답이 아래 확인 조회보다 늦게 오면 옛 설정으로 세션을 되돌리고, 표시가
-                // 없으니 받아 적기가 그 옛 값을 이 기기에 적는다. 울타리 이하의 응답은 설정만 지금 세션의 값을 지키고
-                // (`refreshUserApplyingToken`), 그 값이 올린 값이 되도록 세션에도 곧바로 적는다(표시를 내린 뒤).
-                promptSettingsAnswerFence = accountRequestSeq
-                DynamicPromptPreferences.markPushed(userID: current.user.id, pushed: dynamicPromptSettings)
+            // ⚠ **바꾼 칸만, 응답을 기다린 뒤의 세션 위에 얹는다**(2026-10-05 — 안드로이드 `saveProfileEdit` 와 같은 규칙).
+            //   요청 전에 잡은 사본을 저장하면 그 사이 반영된 plan·프로모(결제 전 조회·세션 밖 `/auth/me`)와 다른 칸을
+            //   되돌린다 — 프로필 저장은 plan 답이 아니다. 이름·가족 설정도 곧바로 적는다: 확인 조회(`refreshUser`)가
+            //   실패해도 방금 저장한 값이 보이게(예전에는 확인 조회만 기다려, 실패하면 저장된 이름이 옛 이름으로 보였다).
+            if let current = session, current.user.id == requestUserID {
                 var updated = current
-                updated.user.dynamicPromptSettings = response.dynamicPromptSettings ?? dynamicPromptSettings
+                if let name { updated.user.name = name.trimmingCharacters(in: .whitespacesAndNewlines) }
+                if let allowFamilyAlarms { updated.user.allowFamilyAlarms = allowFamilyAlarms }
+                if let normalizedQuietWindows {
+                    updated.user.familyAlarmQuietWindows = normalizedQuietWindows
+                    // 레거시 3칸은 첫 창, 창이 없으면 자리값 — 판정은 언제나 창 목록이다(빈 목록 = 방해금지 없음).
+                    updated.user.familyAlarmQuietDays = firstQuietWindow?.days ?? [1, 2, 3, 4, 5]
+                    updated.user.familyAlarmQuietStart = firstQuietWindow?.start ?? "09:00"
+                    updated.user.familyAlarmQuietEnd = firstQuietWindow?.end ?? "18:30"
+                }
+                if let dynamicPromptSettings {
+                    // ⚠ **표시를 내리기 전에 울타리를 세운다**(Codex #837). 지금 떠 있는 `/auth/me` 는 올리기 **전의**
+                    // 설정을 읽었을 수 있다 — 그 응답이 아래 확인 조회보다 늦게 오면 옛 설정으로 세션을 되돌리고, 표시가
+                    // 없으니 받아 적기가 그 옛 값을 이 기기에 적는다. 울타리 이하의 응답은 설정만 지금 세션의 값을 지키고
+                    // (`refreshUserApplyingToken`), 그 값이 올린 값이 되도록 세션에도 곧바로 적는다(표시를 내린 뒤).
+                    promptSettingsAnswerFence = accountRequestSeq
+                    DynamicPromptPreferences.markPushed(userID: current.user.id, pushed: dynamicPromptSettings)
+                    updated.user.dynamicPromptSettings = response.dynamicPromptSettings ?? dynamicPromptSettings
+                }
                 persistSession(updated)
             }
             await refreshUser()
@@ -1485,16 +1518,30 @@ final class AuthViewModel: ObservableObject {
     }
 
     /// 성공 응답과 이후의 권위 조회가 같은 복구 후처리를 사용한다.
-    private func completeAccountRecovery(userID: String, recoveredSession: AuthSession? = nil) async -> Bool {
+    ///
+    /// ⚠ **저장할 세션은 준비를 기다린 뒤에 만든다**(2026-10-05). 기다리기 전에 잡은 세션(또는 그때 다듬은 `/auth/me`
+    /// 답)을 그대로 저장하면, 준비를 기다리는 사이 반영된 plan·프로모(결제 전 조회·세션 밖 `/auth/me` 처럼 토큰을
+    /// 굴리지 않고 plan 을 쓰는 답)를 다음 조회까지 옛 값으로 되돌린다(드문 경로 — 복구 화면에서 준비를 기다리는 사이에만
+    /// 열린다). 탈퇴 상태만 바꾸고 나머지는 **그때의** 세션 것이다. `/auth/me` 로 복구를 확인한 경로(`recoveredAnswer`)는
+    /// 그 답을 기다린 뒤 다시 다듬는다(`reconcileAccountAnswer`). 안드로이드는 탈퇴 취소 뒤 세션을 다시 쓰지 않는다
+    /// (`cancelAccountDeletion` 은 `pendingDeletion` 만 내린다).
+    private func completeAccountRecovery(
+        userID: String,
+        recoveredAnswer: (session: AuthSession, request: AccountRequest)? = nil
+    ) async -> Bool {
         guard let userID = userID.nilIfBlank,
               let current = session, current.user.id == userID else { return false }
         let recoveryRevision = accountRecoveryRevision
         // 큐 앞의 네트워크 요청 때문에 준비가 지연돼도 저장된 pending은 남는다.
         // 앱이 이 await에서 중단되면 다음 실행의 pending→active 조회가 다시 준비한다.
         await prepareAccountRecovery(userID)
-        guard !Task.isCancelled, session?.user.id == userID, token == current.token,
+        guard !Task.isCancelled, let latest = session, latest.user.id == userID, latest.token == current.token,
               accountRecoveryRevision == recoveryRevision else { return false }
-        var recovered = recoveredSession ?? current
+        var recovered = latest
+        if let recoveredAnswer {
+            recovered = recoveredAnswer.session
+            recovered.user = reconcileAccountAnswer(recoveredAnswer.session.user, request: recoveredAnswer.request)
+        }
         recovered.user.deletionStatus = "active"
         accountRecoveryRevision &+= 1
         // active 저장보다 먼저 지운다. 반대 순서에서 중단되면 다음 실행이 복구된

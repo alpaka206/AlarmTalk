@@ -1355,6 +1355,67 @@ final class AuthViewModelTests: XCTestCase {
         XCTAssertEqual(vm.statusMessage, "시간은 HH:mm 형식으로 입력해 주세요.")
     }
 
+    /// **프로필 저장은 plan 답이 아니다 — 바꾼 칸만 응답을 기다린 뒤의 세션 위에 얹는다**(2026-10-05,
+    /// `docs/spec/session-and-auth.md` 「프로필 저장은 바꾼 칸만 세션에 적는다」). 저장이 떠 있는 사이 결제 전 조회·세션 밖
+    /// `/auth/me`(`applyFreshPlan` — 토큰을 굴리지 않는다)가 plus + 개인 프로모를 반영했으면 저장 뒤에도 그 짝이 남고,
+    /// 확인 조회가 실패해도 방금 저장한 이름은 곧바로 보인다(예전에는 확인 조회만 기다려 옛 이름이 보였다).
+    func testNicknameSaveKeepsThePlanAnsweredMeanwhileAndShowsTheNewNameWithoutConfirmation() async {
+        let api = MockAuthAPI()
+        let vm = AuthViewModel(api: api, appleCredentialProvider: MockAppleCredentialProvider())
+        let session = makeEmailSession()
+        vm._setSessionForTesting(session)
+        addTeardownBlock { KeychainStore.deleteSession() }
+        let promo = PersonalPromo(endsAt: "2026-10-31T15:00:00Z", noticeFrom: "2026-10-24T15:00:00Z", fetchedAt: Date())
+        api.beforeUpdateProfileResponse = {
+            vm.applyFreshPlan(
+                userID: session.user.id, from: session.token, plan: "plus", personalPromo: promo,
+                request: vm.beginAccountRequest()
+            )
+        }
+        // 확인 조회는 실패한다(저장 직후 연결이 끊겼다).
+        api.meResult = .failureRaw(URLError(.notConnectedToInternet))
+
+        await vm.updateProfile(name: "새 이름")
+
+        XCTAssertEqual(vm.session?.user.name, "새 이름", "확인 조회가 실패하자 저장한 이름이 안 보였다")
+        XCTAssertEqual(vm.session?.user.plan, "plus", "요청 전의 사본이 plus 를 되돌렸다")
+        XCTAssertEqual(vm.session?.user.personalPromo?.endsAt, promo.endsAt)
+        XCTAssertEqual(vm.session?.token, session.token)
+        XCTAssertEqual(KeychainStore.readSession()?.user.name, "새 이름")
+        XCTAssertEqual(KeychainStore.readSession()?.user.plan, "plus")
+    }
+
+    /// 가족 알람 설정도 같다 — 초대 코드 등록 직후 가족 plan 이 반영된 사람이 '내 알람 맞추기 허용' 을 켜면, 그 plan 은
+    /// 남고 허용·방해금지 창은 확인 조회 없이도 세션에 적힌다(안드로이드 `updateFamilyAlarmSettings` 와 같다).
+    func testFamilyAlarmSettingsSaveKeepsThePlanAnsweredMeanwhile() async {
+        let api = MockAuthAPI()
+        let vm = AuthViewModel(api: api, appleCredentialProvider: MockAppleCredentialProvider())
+        let session = makeEmailSession()
+        vm._setSessionForTesting(session)
+        addTeardownBlock { KeychainStore.deleteSession() }
+        api.beforeUpdateProfileResponse = {
+            vm.applyFreshPlan(
+                userID: session.user.id, from: session.token, plan: "family", personalPromo: nil,
+                request: vm.beginAccountRequest()
+            )
+        }
+        api.meResult = .failureRaw(URLError(.notConnectedToInternet))
+        let window = FamilyAlarmQuietWindow(days: [1, 3], start: "22:00", end: "07:00")
+
+        await vm.updateProfile(allowFamilyAlarms: true, quietWindows: [window])
+
+        XCTAssertEqual(vm.session?.user.plan, "family", "요청 전의 무료 사본이 가족 plan 을 되돌렸다")
+        XCTAssertEqual(vm.session?.user.allowFamilyAlarms, true)
+        XCTAssertEqual(vm.session?.user.familyAlarmQuietWindows, [window])
+        XCTAssertEqual(vm.session?.user.familyAlarmQuietDays, [1, 3])
+        XCTAssertEqual(vm.session?.user.name, session.user.name, "바꾸지 않은 칸은 그대로다")
+
+        // 창을 다 지우면 지운 대로 둔다 — 레거시 3칸은 자리값이다.
+        await vm.updateProfile(allowFamilyAlarms: true, quietWindows: [])
+        XCTAssertEqual(vm.session?.user.familyAlarmQuietWindows, [])
+        XCTAssertEqual(vm.session?.user.plan, "family")
+    }
+
     // MARK: - signOut clears state
 
     func test_signOut_clearsSessionAndLastNetworkError() {
@@ -1833,6 +1894,41 @@ final class AuthViewModelTests: XCTestCase {
                 await vm.cancelAccountDeletion()
                 XCTAssertEqual(vm.session?.token, replacement?.token)
                 XCTAssertEqual(restarts, 0)
+            }
+        }
+    }
+
+    /// **탈퇴 복구 저장은 푸시 준비를 기다린 뒤의 세션 위에 만든다**(2026-10-05). 기다리는 사이 세션 밖 조회가 토큰을
+    /// 굴리지 않고 더 새 답(plus + 개인 프로모)을 반영했으면, 기다리기 전의 사본(취소 경로)이나 그때 다듬은 `/auth/me` 답
+    /// (조회 경로 — 복구를 확인한 답은 아직 무료를 읽었다)이 그 짝을 되돌리지 않는다. 탈퇴 상태만 `active` 로 바뀐다.
+    func test_recoveryKeepsPlanAnsweredWhilePreparingPush() async throws {
+        for throughRefresh in [false, true] {
+            try await withPendingDeletion { vm, api in
+                let userID = try XCTUnwrap(vm.session?.user.id)
+                let token = try XCTUnwrap(vm.session?.token)
+                var active = try XCTUnwrap(vm.session?.user)
+                active.deletionStatus = "active"
+                api.meResult = .success(active)
+                let promo = PersonalPromo(
+                    endsAt: "2026-10-31T15:00:00Z", noticeFrom: "2026-10-24T15:00:00Z", fetchedAt: Date()
+                )
+                vm.prepareAccountRecovery = { _ in
+                    vm.applyFreshPlan(
+                        userID: userID, from: token, plan: "plus", personalPromo: promo,
+                        request: vm.beginAccountRequest()
+                    )
+                }
+
+                if throughRefresh { await vm.refreshUser() }
+                else { await vm.cancelAccountDeletion() }
+
+                let path = throughRefresh ? "조회" : "취소"
+                XCTAssertFalse(vm.pendingDeletion, path)
+                XCTAssertEqual(vm.session?.user.deletionStatus, "active", path)
+                XCTAssertEqual(vm.session?.user.plan, "plus", "기다리기 전의 값이 plus 를 되돌렸다(\(path))")
+                XCTAssertEqual(vm.session?.user.personalPromo?.endsAt, promo.endsAt, path)
+                XCTAssertEqual(KeychainStore.readSession()?.user.plan, "plus", path)
+                XCTAssertEqual(KeychainStore.readSession()?.user.deletionStatus, "active", path)
             }
         }
     }
