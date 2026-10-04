@@ -799,8 +799,9 @@ Open-Meteo 무료 엔드포인트는 비상업용이고 유료 키는 사지 않
   그래서 분류기(`resolvePrerenderWeatherIndex`)와 `weather_code` 컬럼의 뜻은 그대로다. 자리 순서와 응답 계약
   (`{context, variant_index: 0..7 | null}`)도 그대로다 — 새 오류 코드는 없다.
 - **KR**(`lib/weather-kma.ts`): 회차는 '지금 − 10분' 이전의 가장 최근 것(02·05·08·11·14·17·20·23시, 10분 뒤 공개).
-  결과 코드 03(NODATA)이면 한 회차 물러서서 한 번 더(예산 안에서만). `resultCode` 00, 행 수 = `totalCount`(다르면
-  다음 페이지, 그래도 다르면 실패). ±900 이상은 결측. **PCP·SNO 는 날짜가 아니라 값의 모양으로 읽는다** —
+  결과 코드 03(NODATA)이면 한 회차 물러서서 한 번 더(예산 안에서만 — 읽기 경로는 원천 호출 전체의 마감 5초 안에서만,
+  아래 `GET /tts/prerender-variant`). `resultCode` 00, 행 수 = `totalCount`(다르면 다음 페이지 — 같은 예산·마감 안,
+  그래도 다르면 실패). ±900 이상은 결측. **PCP·SNO 는 날짜가 아니라 값의 모양으로 읽는다** —
   '강수없음'·'1mm 미만'·'6.2mm'·'30.0~50.0mm'·'50.0mm 이상'·맨숫자(3시간 간격 칸의 정성코드 '2' 나 '0.4')가 섞여
   온다(2026-10-01 실측). 그 밖의 글자는 그 날짜 미해결 + warn. 날짜 D 는 그날의 칸 전체(24칸 또는 3시간 간격 8칸,
   오늘은 첫 칸부터 23시까지). 눈 = PTY 3 또는 SNO > 0, 비 = PTY 1·4, 흐림 = 06~18시 칸의 절반 이상이 SKY ≥ 3,
@@ -822,6 +823,9 @@ Open-Meteo 무료 엔드포인트는 비상업용이고 유료 키는 사지 않
   - ⚠ **QPF 는 발표 뒤 약 72시간까지만 온다**(2026-10-01 실측 — PoP·하늘은 8일). 그 지평 **너머**는 '재지 않음'
     이다(덮인 부분에 이미 비가 있으면 그 합). 지평 **안**의 빈틈은 '빠짐'(미해결). 이걸 빠짐으로 보면 동부·중부의
     +3 은 영영 미해결이고 cron 이 슬롯 내내 다시 부른다.
+  - ⚠ **지평은 실제로 온 숫자 표본이 정한다**(코덱스 #846). 층은 있는데 숫자 표본이 하나도 없으면(빈 `values`, 값이
+    전부 null) 지평이 없다 — **모든 날짜가 '빠짐'(미해결)** 이다. 빈 층을 '전부 지평 너머' 로 읽으면 오늘·내일까지
+    강수량 없이 해결되어 반쪽 값이 된다.
 
 ##### 표 — 마이그레이션 없음
 
@@ -857,12 +861,21 @@ Open-Meteo 무료 엔드포인트는 비상업용이고 유료 키는 사지 않
 | 갈래 | 무엇 | 그 틱에서 |
 | --- | --- | --- |
 | 일시 실패 | 타임아웃·5xx·429, KMA 01/02/03/04/05/99, JMA·NWS 낡은 발표 | 같은 슬롯의 다음 틱이 다시 한다 |
-| 설정 실패 | 키 없음, KMA 10~12·20/21/22/30/31/32/33 또는 401/403, NWS 403 HTML·404 InvalidGridpoint·400, JMA 404 | 그 원천은 더 부르지 않는다 |
-| 예산 소진 | 'Too many subrequests'(또는 이 틱의 fetch 상한) | 날씨 작업을 멈춘다(쓰지도 않는다) — 실패로 세지 않는다 |
+| 설정 실패 — 원천 전체 | 키 없음, KMA 10~12·20/21/22/30/31/32/33 또는 401/403(그 밖의 4xx 도), NWS 403 HTML·404 밖의 4xx, JMA 404 밖의 4xx | 그 원천은 더 부르지 않는다 |
+| 설정 실패 — 그 지역의 칸 | NWS 404(`InvalidGridpoint`·없는 office·격자 — 2026-10-05 실측 셋 다 404), JMA 404(없는 office JSON — 같은 날 실측 404 HTML) | **그 지역만** 실패 — 같은 원천의 다른 지역은 계속 부른다 |
+| 예산 소진 | 'Too many subrequests'(fetch 든 쓰기든), 또는 이 틱의 fetch 상한 | 날씨 작업을 멈춘다(쓰지도 않는다) — 실패로 세지 않는다. 마지막 틱이면 판정은 한다(아래) |
 
+- ⚠ **지역의 칸이 틀린 것으로 원천을 끄지 말 것**(코덱스 #846). 원천 안의 순서는 틱마다 같은 목록 순서라, 틀린 칸
+  하나가 슬롯 내내 틱마다 앞쪽에서 원천을 꺼 **그 뒤의 지역이 한 곳도 계산되지 않는다.** 그 지역은 틱마다 한 번씩
+  다시 부른다(원천 상한 안 — 슬롯 용량에서 틱마다 1을 쓴다). 고치는 길은 목록이다(`npm run check:weather` 가 칸을
+  다시 대조한다) — 그래서 설정 실패는 범위와 상관없이 슬롯 끝 경보로 올린다.
 - 판정은 **슬롯 마지막 틱(현지 분 ≥ 55)** 에 (나라, 시간대 묶음)마다 한다. 한 곳도 못 했거나 설정 실패가 있으면
   `captureCron('scheduled.weather_region_daily.slot_failed', …, {country, slot, source, reason, done})`. 일부만
   실패했으면 warn 한 줄(`slot_partial`). 경보는 하루 슬롯 수만큼으로 묶인다.
+- ⚠ **마지막 틱이 예산 소진으로 멈춰도 판정은 한다**(코덱스 #846). 그 틱 뒤에는 슬롯이 닫혀 다른 틱이 없다 —
+  빠뜨리면 그 슬롯은 아무 신호 없이 지나간다. 그 틱에 받은 것은 적지 않으므로 **DB 에 이미 있는 행만** 마친 것으로
+  센다. 실패가 적히지 않은 묶음의 사유는 `subrequest_limit` 이다. 한도가 다했으면 같은 실행의 Sentry 전송도 빠질 수
+  있지만, `captureCron` 의 error 로그 한 줄(`at: "scheduled.weather_region_daily.slot_failed"`)은 남는다.
 - **`KMA_SERVICE_KEY` 가 없으면** KR 은 네트워크를 부르지 않는다 — 운영은 KR 슬롯마다 경보(`missing_key`), dev
   (`ENVIRONMENT=development`)는 info 로그(`slot_skipped`)만.
 
@@ -876,9 +889,14 @@ Open-Meteo 무료 엔드포인트는 비상업용이고 유료 키는 사지 않
 ##### `GET /tts/prerender-variant`
 
 1. `region` 이 알맞은 키 → `(region, target_date)` 행. **36시간 안에** 계산했으면 그대로(슬롯 두 번이 연달아 실패해도
-   버틴다). 아니면 대상 날짜가 지역의 **[오늘, +3] 안일 때만** 그 지역 원천을 **한 번** 부르고(타임아웃 5초, 같은 이어받기
-   규칙) 계산되면 적고 돌려준다. **밖이면 네트워크 없이 `null`** — 쿼터를 지키고 아무 날짜나 물어 원천을 태우는 요청을
+   버틴다). 아니면 대상 날짜가 지역의 **[오늘, +3] 안일 때만** 그 지역 원천을 **한 번** 부르고(같은 이어받기 규칙)
+   계산되면 적고 돌려준다. **밖이면 네트워크 없이 `null`** — 쿼터를 지키고 아무 날짜나 물어 원천을 태우는 요청을
    막는다. 표에 적는 날짜는 지역의 어제 ~ +3 이다.
+   - ⚠ **원천 호출 전체의 마감은 5초다**(`WEATHER_READ_DEADLINE_MS`, 코덱스 #846). KMA 의 한 회차 물러서기·다음
+     페이지도 그 안에서만 하고, fetch 하나의 타임아웃은 min(5초, 남은 시간)이다 — 남은 시간이 없으면 부르지 않는다
+     (일시 실패 `timeout` → `null`). 앱은 저장에서 8초만 기다리므로(`WEATHER_RESOLVE_TIMEOUT_MILLIS` ·
+     `WeatherVariantSaveLookup.timeoutSeconds`) fetch 마다 5초를 새로 주면 늦은 NODATA 하나로 10초가 되어, 서버가
+     아직 계산 중인 답을 앱이 버린다. cron 에는 마감이 없다 — 물러서기는 fetch 마다 5초 그대로다.
 2. `region` 이 없거나 모르는 키 → 옛 `country`/`city` 를 `resolveAlias` 로 되짚어 1과 같이.
 3. **되짚지 못한 옛 글자 → `null`**(2026-10-01). 지오코딩은 없다 — 목록 밖의 곳은 공식 예보의 칸을 정할 수 없다.
 - **엣지 캐시**: JMA·NWS 의 즉석 계산에만 2xx 를 600초 캐시한다. KMA 는 쓰지 않는다(200 본문에 NODATA 가 올 수
@@ -1703,8 +1721,8 @@ R2 파일·ElevenLabs 클론은 DB 트랜잭션 안에서 지울 수 없으므�
 | 날씨·운세 자리 판정 | `AlarmEntity.bucketVariantIndex()` | `BucketVariantResolver.variantIndex(for:)` | — |
 | 운세 온디바이스 계산 | `fortuneThemeIndex` (`data/AlarmEntity.kt`) | `BucketVariantResolver.fortuneThemeIndex` | — |
 | 날씨 조건 조회 | `AlarmRepository.resolveWeatherVariantForDraft`(저장 시) | `AlarmEditorSheet.applyWeatherVariant`(저장 시) | `GET /tts/prerender-variant` (`resolvePrerenderWeatherIndex`) — 지역이면 미리 계산한 행(아래 '서버 미리 계산' 행) |
-| 날씨 반쪽 값 금지(원천이 주는 표본이 하나라도 빠지면 `null` · 원천에 없는 표본은 재지 않음) | — (받은 값을 해결로 저장, `weatherVariantNeedsRefresh`) | — (`BucketVariantResolver`) | `finalizeSourceDay`(`lib/weather-source.ts`), 회귀 `weather-kma`·`weather-jma`·`weather-nws.test.ts` |
-| 날씨 조회 대기 상한(8초) | `WEATHER_RESOLVE_TIMEOUT_MILLIS` + `withTimeoutOrNull`(`data/AlarmRepository.kt`, 회귀 `WeatherResolveTimeoutTest`) | `WeatherVariantSaveLookup.timeoutSeconds`(8초) + `withTimeout`(`AsyncTimeout.swift`) — `AlarmEditorSheet.applyWeatherVariant` 가 부른다, 회귀 `WeatherVariantSaveTimeoutTests` | `WEATHER_FETCH_TIMEOUT_MS`(원천 한 번 5초, `lib/weather-fetch.ts`) |
+| 날씨 반쪽 값 금지(원천이 주는 표본이 하나라도 빠지면 `null` · 원천에 없는 표본은 재지 않음 · NWS 빈 QPF 층은 지평이 없어 빠짐) | — (받은 값을 해결로 저장, `weatherVariantNeedsRefresh`) | — (`BucketVariantResolver`) | `finalizeSourceDay`(`lib/weather-source.ts` — 원천 종류 `source` 는 필수, 결정 D7 의 하한이 원천마다 다르다) · `qpfBeyondHorizon`(`lib/weather-nws.ts`), 회귀 `weather-kma`·`weather-jma`·`weather-nws.test.ts` |
+| 날씨 조회 대기 상한(8초) | `WEATHER_RESOLVE_TIMEOUT_MILLIS` + `withTimeoutOrNull`(`data/AlarmRepository.kt`, 회귀 `WeatherResolveTimeoutTest`) | `WeatherVariantSaveLookup.timeoutSeconds`(8초) + `withTimeout`(`AsyncTimeout.swift`) — `AlarmEditorSheet.applyWeatherVariant` 가 부른다, 회귀 `WeatherVariantSaveTimeoutTests` | 읽기 경로의 원천 호출 전체 마감 `WEATHER_READ_DEADLINE_MS`(5초 — KMA 물러서기·다음 페이지 포함, `lib/weather-region-daily.ts`) → `deadlineAt` → `fetchWeatherSource`(fetch 하나 min(`WEATHER_FETCH_TIMEOUT_MS` 5초, 남은 시간), `lib/weather-fetch.ts`), 회귀 `weather-kma.test.ts`·`weather-region-daily.test.ts` |
 | 날씨 지역 목록(유일 출처 = JSON · 좌표 박제 · 직접 입력 없음) | 생성 `data/WeatherRegions.kt`(`WeatherRegions`·`WeatherRegion`·`WeatherCountry`) + `res/values{,-en,-ja}/weather_regions.xml` | 생성 `Generated/WeatherRegions.generated.swift`(`WeatherRegions`·`WeatherRegion`·`WeatherCountry`) | `packages/shared/src/weather-regions.json` + `weather-regions.ts`(`WeatherRegions`). 생성·검사 `scripts/gen-weather-regions.py`(`--check` 는 CI lint), 회귀 `packages/shared/test/weather-regions.test.ts` |
 | 옛 글자 되짚기(네 구현이 같은 규칙) | `WeatherRegions.resolveAlias`(생성) ← `weatherRegionFor`(`data/WeatherRegionSettings.kt`) — 회귀 `WeatherRegionsAliasTest`(shared 의 표를 그대로 옮김) | `WeatherRegions.resolveAlias`(생성) ← `WeatherRegions.region(key:country:city:)`(`WeatherRegionSupport.swift`) — 회귀 `WeatherRegionCatalogTests` | `WeatherRegions.resolveAlias`(shared) = 스크립트의 `resolve` ← `weatherRegionFor`(`lib/weather-signal.ts`) |
 | 지역 고르기(나라 → 지역) · 행 이름 '날씨 지역' → '지역' · 되짚지 못한 옛 값은 글자 + 다시 고르라는 안내 | `WeatherLocationDialog`·`weatherRegionDisplay`·`initialWeatherPickerCountry`(`ui/editor/AlarmRandomPromptSettings.kt`), 설정 `SettingsRow` 의 `supportingText` — 회귀 `WeatherRegionPickerTest` | `WeatherRegionPickerSheet`(`legacyLabel` 부제)·`WeatherRegions.displayName`·`unresolvedLegacyLabel`·`initialPickerCountry`(`WeatherRegionSupport.swift`), `SettingsView`·`MessageSettingsPane`·`PromptDetailCard` 의 `note` — 회귀 `WeatherRegionCatalogTests` | — |
@@ -1713,8 +1731,8 @@ R2 파일·ElevenLabs 클론은 DB 트랜잭션 안에서 지울 수 없으므�
 | 편집기 문구 화면 → 내 계정 설정(가족·직접 입력 제외 · 서버 값과 다를 때만 올린다 · 표준 글자로 적는다 · 지역이 바뀔 때만 공휴일 국가) | `AlarmEditorScreen` 의 문구 결과 처리(`saveWeatherLocation`·`saveFortuneInfo` → `onUpdateDynamicPromptSettings`, `WeatherRegionHolidaySync.onRegionSaved`) | `AlarmEditorSheet.syncOwnPromptPreferences` ← 판정 `DynamicPromptPreferences.editorUpdate`(`EditorPromptPreferenceUpdate.swift`) — 회귀 `EditorPromptPreferenceUpdateTests` | — |
 | 지역 시트: 나라 세그먼트 고정 · 열 때 고른 지역으로 스크롤 · 나라를 바꾸면 맨 위 · 화면의 90% 까지 | `WeatherLocationDialog`(`scrollsContent = false`) ← `WakerSelectionSheet`(`ui/components/WakerModal.kt`) | `WeatherRegionPickerSheet`(`ScrollViewReader`) ← `SheetScrollingContent.reservedHeight`·`BottomSheetMetrics.maxFraction` | — |
 | 새 알람: 행에 옛 앱용 글자 + 요청에 `region` | 고를 때 `region.legacyCountry`/`legacyCity` 를 적고, 요청은 `weatherRegionFor(…)?.key` ← `AlarmRepository.resolveWeatherVariantForDraft`·`resolveDueCloneBucketVariants` — 회귀 `WeatherRegionRequestTest` | `WeatherRegions.storageLabels` ← `AlarmEditorSheet`, 요청은 `resolveAlias(…)?.key` ← `WeatherVariantSaveLookup`·`WeatherVariantRefreshService` — 회귀 `WeatherVariantOwnerScopeTests` | `GET /tts/prerender-variant` 의 `region` |
-| 서버 미리 계산 · 현지 슬롯(21시 내일~+3 / 06시 오늘~+3) · due([내일, +3]) · 틱 예산(SELECT 1 + fetch 10(KMA 3·JMA 8·NWS 4) + batch 1) · 실패 세 갈래 · 슬롯 끝 경보 · 오늘 극값 이어받기(36h) · 읽기 36h·지평 가드([오늘, +3] 밖은 네트워크 없이 null) · 표가 없으면 저장 없이 즉석 계산 | — | — | 마이그레이션 #123 `weather_region_daily`(스키마 그대로) · `hasOpenWeatherSlot`·`openWeatherSlot`·`refreshWeatherRegionDaily` · 읽기 `resolveRegionVariantIndex` — `lib/weather-region-daily.ts` · 원천 디스패치·실패 분류·이어받기 `lib/weather-source.ts` · 어댑터 `lib/weather-kma.ts`·`weather-jma.ts`·`weather-nws.ts`, 회귀 `weather-region-daily.test.ts`(실제 libSQL)·`weather-kma`·`weather-jma`·`weather-nws.test.ts`(2026-10-01 실측 픽스처) |
-| 지역마다 원천의 칸 고정(`source` — KR 격자 = LCC(lat,lon), JP office·class10·지점·주간 후보, US NWS 격자) | — (앱으로 내보내지 않는다) | — | `WeatherSourceSchema`(`packages/shared/src/weather-regions.ts`, 필수·나라↔원천 검사), 회귀 `packages/shared/test/weather-regions.test.ts` · 수동 점검 `npm run check:weather`(`scripts/weather-sources-check.ts` — NWS /points 재조회·JMA 상수 대조·133곳 드라이런, DB 무접촉) |
+| 서버 미리 계산 · 현지 슬롯(21시 내일~+3 / 06시 오늘~+3) · due([내일, +3]) · 틱 예산(SELECT 1 + fetch 10(KMA 3·JMA 8·NWS 4) + batch 1) · 실패 세 갈래(설정 실패는 원천 전체 / 그 지역의 칸 — 지역의 칸이면 원천을 끄지 않는다) · 슬롯 끝 경보(예산이 다해 멈춘 마지막 틱에도 — DB 에 있는 행만 센다) · 오늘 극값 이어받기(36h) · 읽기 36h·지평 가드([오늘, +3] 밖은 네트워크 없이 null) · 표가 없으면 저장 없이 즉석 계산 | — | — | 마이그레이션 #123 `weather_region_daily`(스키마 그대로) · `hasOpenWeatherSlot`·`openWeatherSlot`·`refreshWeatherRegionDaily`(`evaluateSlotEnds`) · 읽기 `resolveRegionVariantIndex` — `lib/weather-region-daily.ts` · 원천 디스패치·실패 분류(`SourceFailureScope`)·이어받기 `lib/weather-source.ts` · 어댑터 `lib/weather-kma.ts`·`weather-jma.ts`·`weather-nws.ts`(지역의 칸 404 는 `scope: 'region'`), 회귀 `weather-region-daily.test.ts`(실제 libSQL)·`weather-kma`·`weather-jma`·`weather-nws.test.ts`(2026-10-01 실측 픽스처) |
+| 지역마다 원천의 칸 고정(`source` — KR 격자 = LCC(lat,lon), JP office·class10·지점·주간 후보, US NWS 격자) | — (앱으로 내보내지 않는다) | — | `WeatherSourceSchema`(`packages/shared/src/weather-regions.ts`, 필수·나라↔원천 검사), 회귀 `packages/shared/test/weather-regions.test.ts` · 수동 점검 `npm run check:weather`(`scripts/weather-sources-check.ts` — NWS /points 재조회·JMA 상수 대조·133곳 드라이런(운영과 같은 분류 — `finalizeSourceDay` 에 원천 종류를 넘긴다), DB 무접촉) |
 | 되짚지 못한 옛 글자 → `null`(지오코딩 없음, 네트워크 없음) | — | — | `GET /tts/prerender-variant`(`routes/tts.ts`), 회귀 `prerender-variant.test.ts` |
 | KMA 키 · NWS User-Agent(로그에 키·URL 없음) | — | — | `KMA_SERVICE_KEY`(`types.ts` `Env`, `scripts/worker-secret-keys.ts`, `kmaServiceKey` — `lib/weather-source.ts`) · `NWS_USER_AGENT`(`lib/weather-nws.ts`) · 로그 `logWeatherFetch`(`lib/weather-fetch.ts`) |
 | 날씨 출처 표기(지역 시트 목록 아래 한 줄, ko·en·ja) | `WeatherLocationDialog`(`ui/editor/AlarmRandomPromptSettings.kt`) · `region_picker_weather_attribution`(`res/values{,-en,-ja}/strings.xml`) | `WeatherRegionPickerSheet`(`attributionHeight` 를 목록 상한에서 뺀다) · `Localizable.xcstrings` | — |
@@ -1752,9 +1770,10 @@ R2 파일·ElevenLabs 클론은 DB 트랜잭션 안에서 지울 수 없으므�
   test/weather-nws.test.ts test/weather-region-daily.test.ts test/prerender-variant.test.ts` — 픽스처는 2026-10-01
   실측 응답이다(키 없음). `packages/shared` 의 `weather-regions.test.ts` 가 KR 격자를 LCC 로 다시 계산한다.
 - **읽기 전용 점검**(DB 무접촉, 키는 출력하지 않는다): `npm run check:weather -- --env-file .dev.vars.dev` — NWS
-  `/points` 재조회 대조, JMA 상수 대조, 133곳 드라이런(나라별 원천 성공 수·자리 분포). 오늘 행은 이어받기 없이 세므로
-  KR(1700 회차 이후)·JP·NWS(아침 이후)의 오늘이 미해결로 나오는 것은 정상이다. 2026-10-01 19:20 KST 결과:
-  KR 17/17 · JP 47/47 · US 69/69, /points 69곳·JMA 47곳 모두 일치.
+  `/points` 재조회 대조, JMA 상수 대조, 133곳 드라이런(나라별 원천 성공 수·자리 분포). 자리는 **운영과 같은 분류**로
+  센다 — 원천 종류를 넘겨 KR·JP 는 강수확률 60 부터만 비다(결정 D7. 2026-10-05 전에는 빠뜨려 KR·JP 의 강수확률
+  30~59 날이 비로 세어졌다). 오늘 행은 이어받기 없이 세므로 KR(1700 회차 이후)·JP·NWS(아침 이후)의 오늘이 미해결로
+  나오는 것은 정상이다. 2026-10-01 19:20 KST 결과: KR 17/17 · JP 47/47 · US 69/69, /points 69곳·JMA 47곳 모두 일치.
 - **dev 하루 관측**(PR B 머지 뒤): `wrangler tail --env dev` 에서 슬롯 4개(KR·JP 저녁 12Z·아침 21Z, 미 동부·중부 등)의
   `at:"scheduled.weather_region_daily"`(open·due·attempted·stored·failed), `at:"weather.fetch"` 의 source 별
   `status:200`·`resultCode:"00"`(KMA), 실행의 `cpuTime`, 그리고 Sentry `scheduled.weather_region_daily.slot_failed` 0건.
