@@ -186,7 +186,8 @@ async function dryRun(): Promise<void> {
     problems += stat.failed.length;
   }
   out('  (내일~+3 의 미해결은 cron 이 슬롯 내내 다시 부르는 날이다 — 0 이어야 한다.');
-  out('   오늘은 이어받기 없이 센다 — KR 1700 이후·JP(오늘 최저가 어떤 발표에도 없어 언제나 전부)·NWS 아침 이후는 미해결이 정상이다)');
+  out('   오늘은 이어받기 없이 센다 — KR 0500 회차 이후(오늘 TMN 이 없다)·JP(오늘 최저가 어떤 발표에도 없어 언제나 전부)·');
+  out('   NWS 아침 이후는 미해결이 정상이다)');
 }
 
 await checkNwsPoints();

@@ -15,8 +15,8 @@ import { addDaysToDate, finalizeSourceDay, zonedParts, type SourceDay } from '..
 /**
  * 한 지역의 원천 결과 → 지역의 오늘부터 +3 까지, 날짜 순서의 클립 자리. 못 구한 날짜는 null(미해결).
  *
- * DB 를 보지 않으므로 오늘 행의 극값을 이어받지 않는다 — KR(1700 회차 이후)·JP·NWS(아침 이후)의 오늘은 미해결이
- * 정상이다.
+ * DB 를 보지 않으므로 오늘 행의 극값을 이어받지 않는다 — KR(0500 회차 이후 — 오늘 TMN 이 없다)·JP·NWS(아침 이후)의
+ * 오늘은 미해결이 정상이다.
  */
 export function dryRunVariants(
   region: WeatherRegion,
