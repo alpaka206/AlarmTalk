@@ -910,8 +910,8 @@ final class AuthViewModel: ObservableObject {
     }
 
     /// 계정 응답의 **plan·프로모 짝**을 지금 세션에 반영하고 이 진입의 답으로 적는다. 계정·토큰
-    /// 대조는 부르는 쪽이 끝냈다(`applyFreshPlan` 의 에폭 가드, `refreshUserApplyingToken` 의
-    /// `isTokenRolledWithinSignIn`).
+    /// 대조는 부르는 쪽(`applyFreshPlan` 의 에폭 가드)이 끝냈다. 토큰만 구른 `refreshUser` 의 답은 여기가
+    /// 아니라 프로필 칸까지 적는 `applyAccountAnswerOnRolledToken` 이다.
     ///
     /// - 끝난 로그인의 표면 아무것도 하지 않는다(`isFromEndedSignIn`).
     /// - 더 나중에 보낸 요청의 답이 이미 반영됐으면 **그 짝을 지킨다** — 그래도 이 진입의 응답이
@@ -937,6 +937,32 @@ final class AuthViewModel: ObservableObject {
         if let request { recordAccountAnswer(request) }
     }
 
+    /// **토큰만 구른 같은 로그인**의 `/auth/me` 답(`isTokenRolledWithinSignIn`)을 지금 세션에 반영하고 이 진입의 답으로
+    /// 적는다. 토큰과 탈퇴 유예는 지금 세션 것 그대로다 — 지금 토큰은 이미 살아 있고, 탈퇴 복구는 토큰이 그대로인
+    /// 갈래(`completeAccountRecovery`)만 마친다.
+    ///
+    /// - 더 나중에 보낸 요청의 답이 이미 반영됐으면 아무것도 쓰지 않는다 — 그래도 이 진입의 응답이 왔다는 사실은
+    ///   같다(`applyAccountPlanAnswer` 와 같은 순번 가드).
+    /// - 아니면 plan·프로모와 함께 **프로필 칸(이름·가족 설정·계정 설정)도** 적는다(2026-10-05 리뷰). 서버는 `/auth/me`
+    ///   마다 토큰을 굴리므로, 프로필 저장 뒤의 확인 조회(`updateProfile` → `refreshUser`)는 저장 **전에** 떠난 조회의
+    ///   답이 먼저 와 토큰을 굴리면 언제나 이 갈래로 온다. 그 옛 답이 방금 저장한 이름·가족 설정을 되돌렸으므로, 짝만
+    ///   적으면 확인 조회가 성공하고도 옛 값이 다음 `/auth/me` 까지 남는다. 안드로이드는 토큰이 아니라 세션 세대로
+    ///   가르므로(`saveSessionIfAlive`) 같은 경우에 응답 전체를 반영한다. 계정 설정은 울타리를 따른다(`reconcileAccountAnswer`).
+    private func applyAccountAnswerOnRolledToken(_ answer: AuthUser, request: AccountRequest) {
+        guard let current = session else { return }
+        guard !isSuperseded(request) else {
+            recordAccountAnswer(request)
+            return
+        }
+        var user = reconcileAccountAnswer(answer, request: request)
+        user.deletionStatus = current.user.deletionStatus
+        if user != current.user {
+            persistSession(AuthSession(token: current.token, user: user))
+        }
+        // 세션에 쓴 **뒤에** 적는다 — plan 반영(`planAnsweredEntry`)을 기다리던 잠금이 새 plan 으로 판정하게.
+        recordAccountAnswer(request)
+    }
+
     /// 세션 밖에서 표를 뜬 계정 요청(`SocialFeatureViewModel` 의 `/auth/me`·결제 전 조회)이
     /// **실패했다** — 그 진입의 첫 결과면 그 진입의 종료 안내 판정은 '띄울 것 없음' 으로 끝난다
     /// (D11, 안드로이드 `PersonalPromoLedger.recordAccountFailure`). 성공은 `applyFreshPlan` 이 적는다.
@@ -953,8 +979,8 @@ final class AuthViewModel: ObservableObject {
         noteEntryOutcome(request, .failed)
     }
 
-    /// 응답을 기다리는 사이 **같은 로그인 안에서 이 계정의 토큰만 굴렀는가** — 다른 경로의
-    /// `/auth/me`(`SocialFeatureViewModel` 의 갱신·배경 갱신)가 새 토큰으로 갈아 끼웠다.
+    /// 응답을 기다리는 사이 **같은 로그인 안에서 이 계정의 토큰만 굴렀는가** — 다른 `/auth/me`(먼저 도착한 다른
+    /// `refreshUser`·`SocialFeatureViewModel` 의 갱신·배경 갱신)가 새 토큰으로 갈아 끼웠다.
     ///
     /// 로그아웃(같은 계정 재로그인 포함)·계정 전환·탈퇴 철회 진행·취소면 false 다 — 그때의 답은
     /// 지금 세션의 것이 아니다. 로그아웃은 토큰이 아니라 표의 순번으로 가른다
@@ -1023,19 +1049,18 @@ final class AuthViewModel: ObservableObject {
                   session?.user.id == merged.id,
                   accountRecoveryRevision == recoveryRevision else {
                 // ⚠ **이 계정의 토큰만 굴렀으면 답을 통째로 버리지 않는다**(2026-09-27 리뷰 3차, D11).
-                //   세션 밖의 `/auth/me`(`SocialFeatureViewModel.refreshAll`)는 응답의 plan 을 반영하고
-                //   곧바로 토큰을 굴린다 — 서버는 `/auth/me` 마다 새 토큰을 준다. 그 사이 떠 있던
-                //   이 요청은 위 가드에 걸리는데, 여기서 아무것도 안 적으면 이 진입의 계정 응답이
-                //   '아직' 으로 남아 같은 진입의 뒤 응답(제어 센터를 닫을 때의 재조회·결제 신호)이
-                //   세션 한가운데서 종료 안내를 판정한다.
-                //   plan·프로모 짝은 지금 세션에 반영하고(순번 가드는 그대로 — 더 새 답이 반영됐으면
-                //   그 짝을 지킨다) 이 진입의 결과를 적는다. 토큰·프로필·탈퇴 유예는 건드리지 않는다 —
-                //   지금 세션의 토큰은 이미 살아 있다. 안드로이드는 토큰이 아니라 세션 세대로 가르므로
-                //   (`saveSessionIfAlive`) 같은 경우에 응답 전체를 반영한다.
+                //   서버는 `/auth/me` 마다 새 토큰을 준다 — 세션 밖의 `/auth/me`(`SocialFeatureViewModel.refreshAll`)도,
+                //   먼저 도착한 다른 `refreshUser` 도 그 사이 토큰을 굴린다. 그 사이 떠 있던 이 요청은 위 가드에
+                //   걸리는데, 여기서 아무것도 안 적으면 이 진입의 계정 응답이 '아직' 으로 남아 같은 진입의 뒤
+                //   응답(제어 센터를 닫을 때의 재조회·결제 신호)이 세션 한가운데서 종료 안내를 판정한다.
+                //   답은 **지금 토큰 위에** 반영하고(순번 가드는 그대로 — 더 새 답이 반영됐으면 아무것도 쓰지 않는다)
+                //   이 진입의 결과를 적는다. plan·프로모 짝만이 아니라 프로필 칸도 적는다(2026-10-05 리뷰) — 프로필
+                //   저장 뒤의 확인 조회가 이 갈래로 오기 때문이다(`applyAccountAnswerOnRolledToken`). 토큰·탈퇴 유예는
+                //   건드리지 않는다 — 지금 세션의 토큰은 이미 살아 있다.
                 if isTokenRolledWithinSignIn(
                     sentWith: token, userID: merged.id, request: accountRequest, recoveryRevision: recoveryRevision
                 ) {
-                    applyAccountPlanAnswer(plan: merged.plan, personalPromo: merged.personalPromo, request: accountRequest)
+                    applyAccountAnswerOnRolledToken(merged, request: accountRequest)
                 }
                 return nil
             }
@@ -1327,6 +1352,9 @@ final class AuthViewModel: ObservableObject {
                 }
                 persistSession(updated)
             }
+            // 확인 조회 — 저장 **전에** 떠나 옛 이름·가족 설정을 읽은 `/auth/me` 가 늦게 와도 바로잡는다. 확인 조회가 먼저
+            // 오면 그 옛 답은 확인 조회가 굴린 토큰에 걸려 밀린 답이 되고(아무것도 쓰지 않는다), 옛 답이 먼저 와 토큰을
+            // 굴렸으면 확인 조회의 답이 토큰만 구른 갈래에서 프로필 칸까지 다시 적는다(`applyAccountAnswerOnRolledToken`).
             await refreshUser()
         } catch {
             // 끝난 세션의 실패를 새 세션에 띄우지 않는다(위 `requestSessionRevision`).
