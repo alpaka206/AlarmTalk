@@ -9,7 +9,8 @@
  *  2. JMA: 상수 JSON(area · forecast_area · week_area · week_area05)에 office·class10·기온 지점·주간 구역이
  *     지금도 있고 서로 맞는지 본다.
  *     (KR 격자는 `packages/shared/test/weather-regions.test.ts` 가 LCC 식으로 매번 다시 계산한다.)
- *  3. 드라이런: 133곳을 어댑터(`fetchRegionSourceDays`)로 받아 나라별 성공 수와 클립 자리 분포를 낸다.
+ *  3. 드라이런: 133곳을 어댑터(`fetchRegionSourceDays`)로 받아 나라별 성공 수와 클립 자리 분포를 낸다. 자리는
+ *     운영과 같은 분류로 센다 — `dryRunVariants`(`weather-sources-dry-run.ts`, 회귀 `test/weather-sources-dry-run.test.ts`).
  *
  * 사용 (packages/backend 에서):
  *   npm run check:weather                          # 셋 다
@@ -27,14 +28,8 @@ import { resolve } from 'node:path';
 import { WeatherRegions, type WeatherCountryCode } from '@alarmtalk/shared';
 import { NWS_USER_AGENT } from '../src/lib/weather-nws.ts';
 import { CLONE_WEATHER_CONDITIONS } from '../src/lib/stock-clips.ts';
-import { resolvePrerenderWeatherIndex } from '../src/lib/weather-signal.ts';
-import {
-  addDaysToDate,
-  fetchRegionSourceDays,
-  finalizeSourceDay,
-  fixedFetchBudget,
-  zonedParts,
-} from '../src/lib/weather-source.ts';
+import { fetchRegionSourceDays, fixedFetchBudget } from '../src/lib/weather-source.ts';
+import { dryRunVariants } from './weather-sources-dry-run.ts';
 
 // ---------------------------------------------------------------- 인자·키
 
@@ -167,13 +162,10 @@ async function dryRun(): Promise<void> {
       stat.failed.push(`${r.key}(${outcome.failure}:${outcome.reason})`);
     } else {
       stat.ok += 1;
-      const today = zonedParts(now, r.tz).date;
-      for (let i = 0; i <= 3; i += 1) {
-        const date = addDaysToDate(today, i);
-        // 원천 종류를 넘긴다 — 운영(cron·읽기 경로)과 같은 분류다(결정 D7: KR·JP 는 강수확률 60 부터만 비).
-        const input = finalizeSourceDay(outcome.days.get(date), { isToday: i === 0, now, source: r.source.kind });
-        if (input) stat.variants.push(resolvePrerenderWeatherIndex(input));
-        else stat.unresolved += 1;
+      // 운영(cron·읽기 경로)과 같은 분류다 — 원천 종류를 넘긴다(결정 D7). 분류는 테스트가 그대로 거치는 함수에 있다.
+      for (const variant of dryRunVariants(r, outcome.days, now)) {
+        if (variant === null) stat.unresolved += 1;
+        else stat.variants.push(variant);
       }
     }
     await sleep(r.source.kind === 'nws' ? 400 : 150);
