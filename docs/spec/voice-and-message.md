@@ -701,11 +701,21 @@ iOS `Generated/WeatherRegions.generated.swift`)을 쓴다. 생성 파일을 손�
      쪽이든 로그아웃 → 같은 계정 재로그인 사이에는 값이 바뀐다. 계정 id 만 보면 로그아웃 뒤
      **같은 계정**으로 다시 들어온 새 세션에 앞 세션의 응답이 적힌다 — 새 세션의 표시를 내리고, 새 세션의 조회를
      울타리로 가리고, 옛 설정을 세션에 적는다(확인 조회가 실패하면 그대로 남는다).
-   - ⚠ **이름·가족 설정처럼 다른 칸만 고친 저장은 계정 설정을 되쓰지 않는다**(Codex #837 검증). 그런 저장은 요청
-     **전에** 잡아 둔 세션의 복사본이라, 그 사이 올리기·`/auth/me` 가 적은 새 지역·사주를 옛 값으로 되돌리고, 받아
-     적기가 그 옛 값을 기기와 공휴일 국가에 적는다. 안드로이드는 저장소가 지금 값을 같은 락 안에서 지킨다
-     (`saveSessionIfAlive(keepStoredPromptSettings)` ← `saveSessionPreservingCurrentToken` — 올린 값이 있을 때만 그
-     값을 적는다). iOS 는 그런 저장이 세션을 복사하지 않고 `refreshUser` 로 서버 값을 받아 같은 결과다.
+   - ⚠ **프로필 저장은 바꾼 칸만, 쓰는 순간의 세션 위에 얹는다**(Codex #837 검증 → 2026-10-05 넓힘). 이름·가족
+     설정·계정 설정 저장(`PATCH /user/me`)이 세션에 적는 것은 **그 저장이 바꾼 칸뿐**이다 — 요청 **전에** 잡아 둔 세션의
+     사본을 다시 저장하지 않는다. 사본에는 그 사이 올리기·`/auth/me` 가 적은 값이 옛 값으로 들어 있다: 새 지역·사주(받아
+     적기가 옛 값을 기기·공휴일 국가에 적는다), plan·프로모·받은 시각(방금 가족이 된 사람이 다음 `/auth/me` 까지 편집기·
+     목소리 화면에서 무료로 보인다 — [billing-lifecycle.md](billing-lifecycle.md) 「plan·프로모 쓰기의 순번 가드」), 다른
+     기기에서 바꾼 이름·가족 설정. #837 검증은 계정 설정 한 칸만 지켰다(`keepStoredPromptSettings`) — 같은 뿌리의 나머지
+     칸이 그대로 남아 있었다.
+     - 안드로이드: 저장소가 지금 세션을 같은 락 안에서 읽어 바꾼 칸만 얹는다(`AuthSessionStore.updateUserIfAlive` ←
+       `saveProfileEdit`). plan·프로모·받은 시각·토큰은 저장소의 것 그대로다 — 바꾼 칸이 무엇이든 plan·프로모는 덮지 않는다.
+     - iOS: 응답을 기다린 **뒤의** 세션(`var updated = current`)에 바꾼 칸만 얹는다(`AuthViewModel.updateProfile`).
+     - 저장이 끝나면 두 앱 모두 **확인 조회**를 한 번 한다(안드로이드 `refreshAppSession(rollToken = false)`·
+       `refreshAppSessionNow(rollToken = false)` — 토큰은 굴리지 않는다, iOS `refreshUser`). 저장 **전에** 떠나 옛 이름·가족
+       설정을 읽은 `/auth/me` 가 늦게 와 그 칸을 되돌려도, 확인 조회가 먼저 오면 옛 답이 순번에 밀려 버려지고(iOS 는 굴린
+       토큰의 에폭) 늦게 오면 확인 조회가 덮는다. 확인 조회가 실패하면 다음 `/auth/me` 까지 되돌아간 채일 수 있다 — 그
+       틈까지 막는 울타리는 계정 설정에만 있다(위 항목).
 2. 그 밖에는 **서버가 이긴다**(다른 기기에서 바꾼 값). 단 **묶음(날씨·사주)마다** 서버가 비어 있으면 로컬을 그대로
    둔다 — 비어 있는 것은 '지웠다' 가 아니라 '아직 안 올라갔다' 다(서버에는 이 값을 지우는 경로가 없다).
 3. **멱등이다.** 같은 값을 몇 번 받아도 결과가 같다.
@@ -744,10 +754,11 @@ iOS `Generated/WeatherRegions.generated.swift`)을 쓴다. 생성 파일을 손�
     전체를 적고 올리므로, 스냅샷이 낡았으면 고치지 않은 묶음이 옛 값으로 되돌아가 다른 기기의 변경을 지운다
     (`SettingsView.editBase`). 안드로이드는 고친 묶음만 적고 올릴 값을 차례가 온 뒤 기기에서 읽어 같은 결과다.
 
-##### 경계는 넷이다 (Codex #837 4~11차 정리)
+##### 경계는 다섯이다 (Codex #837 4~11차 정리 + 2026-10-05 쓰기)
 
 4~11차 지적은 전부 같은 영역(받아 적기·밀린 업로드·공휴일 국가)의 가장자리였다. 새 경우를 막을 때는 덧대기 전에
-아래 넷 중 어느 것이 빠졌는지부터 본다:
+아래 다섯 중 어느 것이 빠졌는지부터 본다. 다섯째(쓰기)는 #837 검증이 계정 설정 한 칸에만 막아 두었던 것을 2026-10-05
+에 **모든 칸**으로 넓힌 것이다 — 그 사이 plan·프로모·받은 시각이 같은 길로 되돌아가고 있었다.
 
 | 경계 | 규칙 | 안드로이드 | iOS |
 | --- | --- | --- | --- |
@@ -755,6 +766,7 @@ iOS `Generated/WeatherRegions.generated.swift`)을 쓴다. 생성 파일을 손�
 | 요청 | 요청을 보낸 **세션 번호**를 잡고, 응답을 적기 전에 대조한다 | `sessionGeneration` | `sessionRevision` |
 | 올리기 | **한 줄**, 올릴 값은 **차례가 온 뒤** 기기에서 정한다 | `PromptSettingsUploadQueue` + `pendingUploadSnapshot` | `isBusy` + `retryPendingPromptSettings` |
 | 늦은 조회 | 올리기가 끝날 때 떠 있던 조회는 **설정만** 지금 값을 지킨다(울타리) | `promptSettingsAnswerFence` | `promptSettingsAnswerFence` |
+| 쓰기 | 프로필 저장은 **바꾼 칸만**, 쓰는 순간의 세션 위에 얹는다 — 요청 전 사본을 되쓰지 않는다 | `AuthSessionStore.updateUserIfAlive` ← `saveProfileEdit` | `updateProfile` 의 `var updated = current`(응답을 기다린 뒤) |
 
 #### 서버가 **미리 계산해 둔다** (2026-09-30)
 
@@ -1575,7 +1587,7 @@ R2 파일·ElevenLabs 클론은 DB 트랜잭션 안에서 지울 수 없으므�
 | 옛 글자 되짚기(네 구현이 같은 규칙) | `WeatherRegions.resolveAlias`(생성) ← `weatherRegionFor`(`data/WeatherRegionSettings.kt`) — 회귀 `WeatherRegionsAliasTest`(shared 의 표를 그대로 옮김) | `WeatherRegions.resolveAlias`(생성) ← `WeatherRegions.region(key:country:city:)`(`WeatherRegionSupport.swift`) — 회귀 `WeatherRegionCatalogTests` | `WeatherRegions.resolveAlias`(shared) = 스크립트의 `resolve` ← `weatherRegionFor`(`lib/weather-signal.ts`) |
 | 지역 고르기(나라 → 지역) · 행 이름 '날씨 지역' → '지역' · 되짚지 못한 옛 값은 글자 + 다시 고르라는 안내 | `WeatherLocationDialog`·`weatherRegionDisplay`·`initialWeatherPickerCountry`(`ui/editor/AlarmRandomPromptSettings.kt`), 설정 `SettingsRow` 의 `supportingText` — 회귀 `WeatherRegionPickerTest` | `WeatherRegionPickerSheet`(`legacyLabel` 부제)·`WeatherRegions.displayName`·`unresolvedLegacyLabel`·`initialPickerCountry`(`WeatherRegionSupport.swift`), `SettingsView`·`MessageSettingsPane`·`PromptDetailCard` 의 `note` — 회귀 `WeatherRegionCatalogTests` | — |
 | 계정 설정 `weather.region`(알맞으면 옛 글자로 덮고, 모르면 그 칸만 버리고, 없으면 옛 글자를 되짚는다 — 읽을 때도 같다) | 보낼 때 `toDynamicPromptSettings`(키를 글자에서 되짚어 싣는다), 받을 때 `toPromptPreferences`·`resolvedRegion`(키가 글자를 이긴다) | 보낼 때 `DynamicPromptPreferences.toSettings`, 받을 때 `DynamicPromptPreferences.from(settings:)` | `normalizeWeatherSetting`(`lib/dynamic-prompt-settings.ts`) → `WeatherRegions.normalizeSetting`, 회귀 `weather-region-settings.test.ts` |
-| 계정의 지역·사주 받아 적기(안 올라간 변경은 덮지 않고 다시 올린다 · 빈 묶음은 로컬 유지 · 멱등 · 로그아웃이 표시도 지운다) | `DynamicPromptPreferenceStore.adoptAccountSettings`·`markPushed`·`saveWeatherLocation`/`saveFortuneInfo`(표시) ← `MainViewModel.onAccountPromptSettingsReceived`(← `AlarmTalkApp` 의 `LaunchedEffect`, 축 `accountSettingsReceipt` = 응답 순번 `AuthSession.accountAnswerSeq`)·`SettingsScreen`(같은 축), 표시 내리기 `uploadDynamicPromptSettings`(보낸 세대가 그대로일 때만), 프로필 저장은 `keepStoredPromptSettings`, 밀린 응답도 받아 적기 — 회귀 `AccountPromptSettingsAdoptionTest`·`PromptSettingsAnswerFenceTest` | `DynamicPromptPreferences.adoptAccount`·`markPushed`·`saveLocalEdit`·`current`(`AccountPromptSettingsAdoption.swift`) ← `AlarmTalkApp` 의 계정 설정 관찰(`accountPromptSettingsKey` — 축에 `AuthViewModel.accountAnswerRevision`)·`SettingsView.loadPromptPreferences`(같은 축 `PromptObservation` ← `SettingsView.observation(of:)`, 고칠 때는 `editBase`)·`AlarmEditorSheet.savedPromptPreferences`, 표시 내리기 `AuthViewModel.updateProfile`(보낸 `sessionRevision` 이 그대로일 때만), 떠날 때 `beginLeavingAccount` + 세션을 비운 뒤 다시 지우기 — 회귀 `AccountPromptSettingsAdoptionTests`(`editBase` 판정 — ⚠ 화면의 두 호출부 `onSelect`·`saveFortuneDraft` 는 SwiftUI 라 유닛 테스트가 닿지 않는다)·`AuthViewModelTests`(관찰 축·재로그인·로그아웃 창) | `PATCH /user/me` 의 `dynamic_prompt_settings`(`normalizeWeatherSetting`) |
+| 계정의 지역·사주 받아 적기(안 올라간 변경은 덮지 않고 다시 올린다 · 빈 묶음은 로컬 유지 · 멱등 · 로그아웃이 표시도 지운다) | `DynamicPromptPreferenceStore.adoptAccountSettings`·`markPushed`·`saveWeatherLocation`/`saveFortuneInfo`(표시) ← `MainViewModel.onAccountPromptSettingsReceived`(← `AlarmTalkApp` 의 `LaunchedEffect`, 축 `accountSettingsReceipt` = 응답 순번 `AuthSession.accountAnswerSeq`)·`SettingsScreen`(같은 축), 표시 내리기 `uploadDynamicPromptSettings`(보낸 세대가 그대로일 때만), 프로필 저장은 바꾼 칸만 지금 세션 위에(`AuthSessionStore.updateUserIfAlive` ← `saveProfileEdit`, 끝나면 확인 조회), 밀린 응답도 받아 적기 — 회귀 `AccountPromptSettingsAdoptionTest`·`PromptSettingsAnswerFenceTest`·`ProfileSaveKeepsAccountAnswerTest` | `DynamicPromptPreferences.adoptAccount`·`markPushed`·`saveLocalEdit`·`current`(`AccountPromptSettingsAdoption.swift`) ← `AlarmTalkApp` 의 계정 설정 관찰(`accountPromptSettingsKey` — 축에 `AuthViewModel.accountAnswerRevision`)·`SettingsView.loadPromptPreferences`(같은 축 `PromptObservation` ← `SettingsView.observation(of:)`, 고칠 때는 `editBase`)·`AlarmEditorSheet.savedPromptPreferences`, 표시 내리기 `AuthViewModel.updateProfile`(보낸 `sessionRevision` 이 그대로일 때만 — 바꾼 칸만 응답 뒤의 세션 위에, 끝나면 `refreshUser`), 떠날 때 `beginLeavingAccount` + 세션을 비운 뒤 다시 지우기 — 회귀 `AccountPromptSettingsAdoptionTests`(`editBase` 판정 — ⚠ 화면의 두 호출부 `onSelect`·`saveFortuneDraft` 는 SwiftUI 라 유닛 테스트가 닿지 않는다)·`AuthViewModelTests`(관찰 축·재로그인·로그아웃 창) | `PATCH /user/me` 의 `dynamic_prompt_settings`(`normalizeWeatherSetting`) |
 | 편집기 문구 화면 → 내 계정 설정(가족·직접 입력 제외 · 서버 값과 다를 때만 올린다 · 표준 글자로 적는다 · 지역이 바뀔 때만 공휴일 국가) | `AlarmEditorScreen` 의 문구 결과 처리(`saveWeatherLocation`·`saveFortuneInfo` → `onUpdateDynamicPromptSettings`, `WeatherRegionHolidaySync.onRegionSaved`) | `AlarmEditorSheet.syncOwnPromptPreferences` ← 판정 `DynamicPromptPreferences.editorUpdate`(`EditorPromptPreferenceUpdate.swift`) — 회귀 `EditorPromptPreferenceUpdateTests` | — |
 | 지역 시트: 나라 세그먼트 고정 · 열 때 고른 지역으로 스크롤 · 나라를 바꾸면 맨 위 · 화면의 90% 까지 | `WeatherLocationDialog`(`scrollsContent = false`) ← `WakerSelectionSheet`(`ui/components/WakerModal.kt`) | `WeatherRegionPickerSheet`(`ScrollViewReader`) ← `SheetScrollingContent.reservedHeight`·`BottomSheetMetrics.maxFraction` | — |
 | 새 알람: 행에 옛 앱용 글자 + 요청에 `region` | 고를 때 `region.legacyCountry`/`legacyCity` 를 적고, 요청은 `weatherRegionFor(…)?.key` ← `AlarmRepository.resolveWeatherVariantForDraft`·`resolveDueCloneBucketVariants` — 회귀 `WeatherRegionRequestTest` | `WeatherRegions.storageLabels` ← `AlarmEditorSheet`, 요청은 `resolveAlias(…)?.key` ← `WeatherVariantSaveLookup`·`WeatherVariantRefreshService` — 회귀 `WeatherVariantOwnerScopeTests` | `GET /tts/prerender-variant` 의 `region` |

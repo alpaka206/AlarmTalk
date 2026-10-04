@@ -103,7 +103,9 @@ PR #660 에서 **같은 모양의 버그가 네 번** 나왔다(동의 → 버�
     `PersonalPromoLedger.claimPlanAnswer`(plan 순번은 따로 — `checkAccountStatus` 는 plan 을 쓰지
     않는다), plan 반영 표시는 `recordPlanApplied`(밀린 요청을 다시 거른다). iOS:
     `AuthViewModel.applyFreshPlan(…request:)` 과 `refreshUserApplyingToken` 이 한 순번으로 가른다. 더 새
-    답이 이미 반영됐으면 그 plan·프로모 짝을 지킨다 — 탈퇴 유예는 그대로 반영한다. 규칙 전문은
+    답이 이미 반영됐으면 그 plan·프로모 짝을 지킨다 — 탈퇴 유예는 그대로 반영한다. plan 답이 아닌 저장
+    (프로필 저장·iOS 탈퇴 복구)은 plan·프로모를 **아예 쓰지 않는다** — 들고 있던 세션 사본째 저장하면 순번을
+    지나 반영된 더 새 답을 되돌린다(2026-10-05). 규칙 전문은
     [`billing-lifecycle.md`](billing-lifecycle.md) 「앱」의 순번 가드.
   - 세션 밖에서 계정 답을 받는 경로(iOS `SocialFeatureViewModel` 의 `/auth/me`·결제 전 조회)도 같은
     표를 받는다(`SocialFeatureViewModel.beginAccountRequest` → `onFreshPlan`·`onAccountRequestFailed`).
