@@ -57,8 +57,10 @@ export type SourceDay = {
  *  - `transient`: 타임아웃(읽기 경로의 마감 포함)·5xx·429, KMA 01/02/03/04/05/99, 낡은 발표(JMA·NWS) → 같은 슬롯
  *    안에서 다음 틱이 다시 한다.
  *  - `config`: 다시 해도 소용없는 것 → 슬롯 끝에서 경보를 올린다. 얼마나 번지는지는 `SourceFailureScope` 가 가른다.
- *  - `budget`: 워커 subrequest 한도('Too many subrequests') 또는 이 틱의 fetch 예산 소진 → 그 틱의 날씨 작업을
- *    멈춘다. 실패로 세지 않는다.
+ *  - `budget`: 실패로 세지 않는다. 사유가 둘이고 cron 에서 결과가 다르다(`refreshWeatherRegionDaily`):
+ *    - `fetch_budget` — 이 틱의 fetch 상한(틱 10·원천별) → **그 지역만** 다음 틱으로 넘긴다. 다른 원천은 계속
+ *      부르고, 받은 것은 그대로 적는다. (즉석 계산이면 그 한 번의 상한이고 결과는 `null` 이다.)
+ *    - `subrequest_limit` — 워커 subrequest 한도('Too many subrequests') → 그 틱의 날씨 작업을 멈춘다(쓰지도 않는다).
  */
 export type SourceFailureKind = 'transient' | 'config' | 'budget';
 

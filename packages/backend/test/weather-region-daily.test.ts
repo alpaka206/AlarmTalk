@@ -237,6 +237,27 @@ describe('refreshWeatherRegionDaily — 실제 libSQL', () => {
     db.close();
   });
 
+  it('틱 상한(fetch_budget)에 닿은 것은 그 지역만 다음 틱으로 — 워커 한도와 달리 멈추지 않고, 다른 원천을 계속 부르며 받은 것은 적는다', async () => {
+    // 스펙 5-1 「실패」 표의 두 '예산 소진' 줄은 결과가 다르다. 이걸 '멈춘다(쓰지 않는다)' 로 고치면 상한에 매 틱
+    // 닿는 붐비는 시간(12:00 UTC, 86곳)에 받은 행이 하나도 적히지 않아 슬롯이 끝나지 않는다.
+    const db = await freshDb();
+    const calls = stubSources();
+    const batch = vi.spyOn(db, 'batch');
+    const result = await refreshWeatherRegionDaily(asExecutor(db), EVENING, { kmaServiceKey: KEY });
+    const hosts = calls.map((c) => c.host);
+    expect(hosts.filter((host) => host === 'kma')).toHaveLength(WEATHER_SOURCE_FETCH_CAPS.kma);
+    // KMA 가 상한에 닿은 뒤에도 다른 원천은 불렸다.
+    expect(hosts.slice(hosts.lastIndexOf('kma') + 1).some((host) => host !== 'kma')).toBe(true);
+    expect(result.budgetExhausted).toBe(false);
+    expect(result.deferred).toBe(result.due - result.attempted);
+    expect(result.deferred).toBeGreaterThan(0);
+    expect(batch).toHaveBeenCalledTimes(1);
+    expect(result.stored).toBeGreaterThan(0);
+    // 부른 지역은 모두 적었고, 넘긴 지역은 다음 틱이 한다.
+    expect(new Set((await rowsOf(db)).map((r) => String(r.region_key))).size).toBe(result.attempted);
+    db.close();
+  });
+
   it('due 판정 — 슬롯 시작 뒤에 계산한 [내일, +3] 행이 다 있으면 건너뛰고, 슬롯 전의 행은 다시 한다', async () => {
     const db = await freshDb();
     const kr = WeatherRegions.byCountry('KR');

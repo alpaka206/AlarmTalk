@@ -321,6 +321,7 @@ export type WeatherRegionRefreshResult = {
   deferred: number;
   /**
    * 워커 subrequest 한도에 걸려 이 틱의 날씨 작업을 멈췄다(fetch 든 쓰기든 — 쓰기는 하지 않았거나 실패했다).
+   * 이 틱의 fetch 상한(틱 10·원천별)에 닿은 것은 여기 들지 않는다 — 그 지역만 `deferred` 로 넘기고 받은 것은 적는다.
    * 마지막 틱이면 판정은 그래도 한다(`evaluateSlotEnds`).
    */
   budgetExhausted: boolean;
@@ -336,8 +337,9 @@ type StoredRow = StoredExtremes & { computedAtMs: number };
  *
  * 표본이 빠진 (지역, 날짜)는 적지 않는다(반쪽 값 금지 — `finalizeSourceDay`). 원천 실패는 세 갈래다
  * (`SourceFailureKind`): 일시 실패는 다음 틱이 다시 하고, 설정 실패는 원천 전체면 그 틱에서 그 원천을 더 부르지
- * 않고 그 지역의 칸이면 그 지역만 실패로 둔다(`SourceFailureScope`), 예산 소진은 실패로 세지 않는다 — 그래도 슬롯
- * 마지막 틱이면 판정은 한다.
+ * 않고 그 지역의 칸이면 그 지역만 실패로 둔다(`SourceFailureScope`), 예산 소진은 실패로 세지 않는다 — 이 틱의 fetch
+ * 상한이면 그 지역만 다음 틱으로 넘기고, 워커 한도면 그 틱의 날씨 작업을 멈춘다(그래도 슬롯 마지막 틱이면 판정은
+ * 한다 — `budgetExhausted`).
  */
 export async function refreshWeatherRegionDaily(
   db: DbExecutor,
