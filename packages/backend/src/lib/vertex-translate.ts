@@ -1701,68 +1701,106 @@ export function hasEnglishLiteralCalque(spoken: string): boolean {
   return /\b(?:money|financial) luck\b/i.test(spoken);
 }
 
+/** 문장 끝에서 걷어 내는 문장부호·늘임표·쉼표·띄어쓰기 — 어체는 그 앞 낱말로 가린다. */
+const JA_SENTENCE_TRAILER = /[\s、，,。！？!?…〜ー～]+$/u;
 /**
- * です・ます(정중체)로 끝나는 일본어 문장. 기원 '〜ますように' 도 정중체다(프롬프트가 금지한다). 'でした'(=だった)도 넣는다.
+ * 서술어 뒤에 붙어도 어체를 바꾸지 않는 꼬리 — 종조사(よ·ね·な·の·か·わ·ぞ·さ)와 문장을 맺는 접속·인용 조사(から·けど·
+ * けれど(も)·ので·のに·し·が·って·っけ·もの·もん). 어체는 꼬리 **앞** 서술어가 정한다(Codex #844) — '時間ですからね'·
+ * '時間ですので'·'雨ですって'·'朝ですもの'·'でしたっけ' 는 'です'·'でした' 가 정중체로, '時間だからね' 는 'だ' 가 반말로 만든다.
+ */
+const JA_PREDICATE_TAIL = /(?:から|けれども|けれど|けど|ので|のに|もの|もん|って|っけ|し|が|[よねなのかわぞさ])+$/u;
+/**
+ * です・ます(정중체) 서술어 끝. 기원 '〜ますように'·'〜ませんように'(に 없이 'ますよう' 로 맺어도)도 정중체다(프롬프트가
+ * 금지한다). 'でした'(=だった)도 넣는다.
  * ⚠ 'でしょう' 는 넣지 않는다(2026-10-01 마지막 회차) — 엄마가 아이에게 하는 'だめでしょう？'·'寒いでしょう' 처럼 가족
  *   말투에도 흔하고, 거절은 세 회차 다 걸리면 그 클립을 영구 실패시킨다. 'ましょう'(行きましょう)는 정중체 그대로다.
  */
-const JA_POLITE_SENTENCE_END = /(です|でした|ます|ました|ません|ましょう|ください|下さい|ますように)[よねか]*[。！？!?…〜ー]*$/;
+const JA_POLITE_PREDICATE = /(?:です|でした|ます|ました|ません|ましょう|ください|下さい|(?:ます|ません)ように?)$/u;
 /**
- * 'ます' 로 끝나도 정중체가 **아닌** 문장 끝(2026-10-01 마지막 회차):
- *  - 사전형 자체가 'ます' 로 끝나는 동사 — 覚ます·冷ます·醒ます·励ます·済ます·澄ます·悩ます(かな: さます·すます·
- *    はげます·なやます). 정중형은 覚まします 처럼 'します' 로 끝나므로 여기 걸리지 않는다. 試す(ためす)는 'ます' 가 아니다.
+ * 정중체로 세지는 않지만 **반말도 아닌** 서술어 끝 — 'でしょう(でしょ)'(위 주석)와 목록 밖 정중형 'でして'·'まして'
+ * ('遅くなりまして')·'ませ'('くださいませ'). 생성 문구 검사는 이것을 거절하지 않고, 확정 문구의 어체를 가릴 때는 반말로
+ * 세지 않는다 — 'て' 로 끝난다고 반말로 읽으면 분석의 정중체를 덮는다(Codex #844).
+ */
+const JA_POLITE_LIKE_PREDICATE = /(?:でしょう?|でして|まして|ませ)$/u;
+/**
+ * 'ます'·'ました'·'まして'·'ませ' 로 끝나도 정중형이 **아닌** 서술어 끝(2026-10-01 마지막 회차):
+ *  - 사전형 자체가 'ます' 로 끝나는 동사와 그 활용 — 覚ます·冷ます·醒ます·励ます·済ます·澄ます·悩ます(かな: さます·すます·
+ *    はげます·なやます)와 그 과거·て형·명령('目を覚ました'·'目ぇ覚まして'·'目を覚ませ'). 정중형은 覚まします·覚ましました
+ *    처럼 'し' 뒤에 'ます' 가 오므로 여기 걸리지 않는다. 試す(ためす)는 'ます' 가 아니다.
  *  - 누구에게나 그대로 쓰는 인사말 — いただきます·いってきます·ごちそうさまでした. おやすみなさい 는 です・ます 가
  *    아니라 애초에 걸리지 않는다.
  */
-const JA_NOT_POLITE_SENTENCE_END =
-  /(?:(?:[覚冷醒励済澄悩]|さ|す|はげ|なや)ます|いただきます|頂きます|いってきます|行ってきます|ごちそうさまでした|ご馳走様でした)[よねか]*[。！？!?…〜ー]*$/;
+const JA_NOT_POLITE_PREDICATE =
+  /(?:(?:[覚冷醒励済澄悩]|さ|す|はげ|なや)ま(?:すように?|す|した|して|せ)|いただきます|頂きます|いってきます|行ってきます|ごちそうさまでした|ご馳走様でした)$/u;
 
-/** 일본어 한 문장이 です・ます(정중체)로 끝나는가 — 사전형이 'ます' 인 동사·인사말은 아니다. */
+/** 문장 끝 서술어 — 끝 문장부호와 꼬리(`JA_PREDICATE_TAIL`)를 걷은 것('時間ですからね。' → '時間です'). */
+function japanesePredicateEnd(sentence: string): string {
+  return sentence.trim().replace(JA_SENTENCE_TRAILER, '').replace(JA_PREDICATE_TAIL, '');
+}
+
+/**
+ * 일본어 한 문장이 です・ます(정중체)로 끝나는가 — 꼬리('からね'·'ので'·'って'·'もの')는 걷고 그 앞 서술어로 본다.
+ * 사전형이 'ます' 인 동사(와 그 활용)·인사말은 아니다.
+ */
 export function isJapanesePoliteSentence(sentence: string): boolean {
-  const s = sentence.trim();
-  return JA_POLITE_SENTENCE_END.test(s) && !JA_NOT_POLITE_SENTENCE_END.test(s);
+  const end = japanesePredicateEnd(sentence);
+  return JA_POLITE_PREDICATE.test(end) && !JA_NOT_POLITE_PREDICATE.test(end);
+}
+
+/**
+ * 어체를 가릴 일본어 문장들 — 태그를 벗기고, 청자 호칭을 지우고(한국어 `koreanEndingEntries` 와 같다), 。！？…로 끊어
+ * 끝의 문장부호·쉼표를 걷는다. ⚠ 확정 문구(`japaneseReferenceRegister`)와 생성 문구(`hasJapanesePoliteEnding`)는
+ * **같은 질문**을 하므로 둘 다 이것으로 끊는다(Codex #844) — 한쪽만 호칭을 지우면 'お薬の時間ですよ、ひな。' 가 확정
+ * 문구로는 정중체, 생성 문구로는 정중체 아님으로 갈린다. 평가 도구(`scripts/eval-gemini-prompts.ts`)도 이것을 쓴다.
+ */
+export function japaneseSentenceEnds(text: string, listenerTitle?: string | null): string[] {
+  const normalized = normalizeAlarmTextWithoutTags(text);
+  const title = listenerTitle?.trim();
+  return (title ? normalized.split(title).join(' ') : normalized)
+    .split(/(?<=[。！？!?…])/)
+    .map((s) => s.trim().replace(JA_SENTENCE_TRAILER, ''))
+    .filter(Boolean);
 }
 
 /** 문장 끝 종조사 줄(よ·ね·な·の·か·わ·ぞ·さ — 'よね'·'かな' 처럼 겹쳐도 한 줄로). */
 const JA_SENTENCE_PARTICLES = /[よねなのかわぞさ]+$/u;
 /**
- * 종조사 없이 끝나도 반말(タメ口)인 끝 — だ·た(과거)·て·で(부탁·関西)·や(関西)·ろ(명령·だろ)·じゃん·っけ·ねん·へん·ない,
- * 의지·인사의 う(起きよう·行こう·帰ろう·おはよう·ありがとう). 'でしょう' 는 작은 'ょ' 라 걸리지 않는다.
+ * 종조사 없이 끝나도 반말(タメ口)인 끝 — だ·た(과거)·て·で(부탁·関西 — 이음말 'ので' 는 아니다)·や(関西)·ろ(명령·だろ)·
+ * じゃん·っけ·ねん·へん·ない, 의지·인사의 う(起きよう·行こう·帰ろう·おはよう·ありがとう). 'でしょう' 는 작은 'ょ' 라
+ * 걸리지 않는다. 정중형 뒤에 붙은 것('ですって'·'ですので'·'でしたっけ'·'まして')은 먼저 걸러 낸다(`isJapaneseCasualSentence`).
  */
-const JA_CASUAL_BARE_END = /(?:だ|た|て|で|や|ろ|じゃん|っけ|ねん|へん|ない|[よこそとぼもろごお]う)$/u;
-/** 문장 끝에서 걷어 내는 문장부호·늘임표·쉼표·띄어쓰기 — 어체는 그 앞 낱말로 가린다. */
-const JA_SENTENCE_TRAILER = /[\s、，,。！？!?…〜ー～]+$/u;
+const JA_CASUAL_BARE_END = /(?:だ|た|て|(?<!の)で|や|ろ|じゃん|っけ|ねん|へん|ない|[よこそとぼもろごお]う)$/u;
 
 /**
  * 일본어 한 문장이 **반말로 확실히** 끝나는가 — 확정 문구가 반말을 세웠는지 가릴 때만 쓴다(`japaneseReferenceRegister`).
- * 정중체가 아니고, 종조사로 끝나면 그 앞 줄기도 정중체가 아니어야 한다('ですわ'·'くださいな'·'でしょうね' 는 아니다).
- * 명사·호칭·'〜を' 로 끝나는 문장('いい一日を。'·'いってらっしゃい。')은 어느 쪽도 아니다 — 잘못 반말로 읽으면 분석의
- * 정중체를 덮고 です・ます 클립을 거절하게 되므로, 모르는 끝은 세지 않는다.
+ * 꼬리(`JA_PREDICATE_TAIL` — 종조사·접속조사)를 걷은 서술어가 정중체이거나 그에 가까우면 반말이 아니다
+ * ('時間ですからね'·'雨ですって'·'時間ですので'·'でしょうね'·'遅くなりまして' — Codex #844). 그다음 종조사가 정중체 아닌
+ * 서술어에 붙었거나(起きてね·時間だよ) 반말에만 오는 끝(`JA_CASUAL_BARE_END`)일 때만 반말이다. 명사·호칭·'〜を'·이음말로
+ * 끝나는 문장('いい一日を。'·'いってらっしゃい。'·'雨なので。')은 어느 쪽도 아니다 — 잘못 반말로 읽으면 분석의 정중체를 덮고
+ * です・ます 클립을 거절하게 되므로, 모르는 끝은 세지 않는다.
  */
 function isJapaneseCasualSentence(sentence: string): boolean {
   const s = sentence.trim().replace(JA_SENTENCE_TRAILER, '');
-  if (!s || isJapanesePoliteSentence(s)) return false;
+  const end = japanesePredicateEnd(s);
+  if (!/\p{L}/u.test(end) || isJapanesePoliteSentence(s)) return false;
+  if (JA_POLITE_LIKE_PREDICATE.test(end) && !JA_NOT_POLITE_PREDICATE.test(end)) return false;
   const stem = s.replace(JA_SENTENCE_PARTICLES, '');
-  if (stem !== s) return stem.length > 0 && !isJapanesePoliteSentence(stem) && !/でしょう?$/u.test(stem);
+  if (stem !== s) return /\p{L}$/u.test(stem);
   return JA_CASUAL_BARE_END.test(s);
 }
 
 /**
  * 사용자가 확정한 일본어 문구가 **세운** 어체 — 정중체 문장이 하나라도 있으면 'polite', 아니면 반말 문장이 있을 때
- * 'casual', 문구가 없거나 어느 쪽도 세우지 않으면 null. 청자 호칭은 먼저 지운다(한국어 `koreanEndings` 와 같다) —
- * 끝 호칭이 정중체를 가리거나('起きる時間ですよ、ひな。') 'た'·'な' 로 끝나는 이름('ゆうた'·'ひな')이 반말로 세지면 안 된다.
+ * 'casual', 문구가 없거나 어느 쪽도 세우지 않으면 null. 문장은 생성 문구 검사와 같은 `japaneseSentenceEnds` 로 끊는다 —
+ * 청자 호칭을 지우므로 끝 호칭이 정중체를 가리거나('起きる時間ですよ、ひな。') 'た'·'な' 로 끝나는 이름('ゆうた'·'ひな')이
+ * 반말로 세지지 않는다.
  */
 function japaneseReferenceRegister(
   reference: string | null | undefined,
   listenerTitle?: string | null,
 ): 'polite' | 'casual' | null {
-  const text = reference?.trim();
-  if (!text) return null;
-  const title = listenerTitle?.trim();
-  const sentences = (title ? text.split(title).join('') : text)
-    .split(/(?<=[。！？!?…])/)
-    .map((s) => s.replace(JA_SENTENCE_TRAILER, ''))
-    .filter(Boolean);
+  if (!reference?.trim()) return null;
+  const sentences = japaneseSentenceEnds(reference, listenerTitle);
   if (sentences.some(isJapanesePoliteSentence)) return 'polite';
   return sentences.some(isJapaneseCasualSentence) ? 'casual' : null;
 }
@@ -1843,7 +1881,9 @@ export function hasJapanesePoliteEnding(
   const casual =
     params.speechStyle?.childlike === true || isConfirmedCloseRelationshipLabel(params.relationshipLabel ?? '');
   if (!casual) return false;
-  return spoken.split(/(?<=[。！？!?…])/).some(isJapanesePoliteSentence);
+  // 확정 문구와 **같은 문장 끊기**로 본다(Codex #844) — 청자 호칭을 지우지 않으면 'お薬の時間ですよ、ひな。' 의 끝 호칭이
+  //   です・ます 를 가려 그 가족 클립이 그대로 영구 저장된다.
+  return japaneseSentenceEnds(spoken, params.listenerTitle).some(isJapanesePoliteSentence);
 }
 
 /**

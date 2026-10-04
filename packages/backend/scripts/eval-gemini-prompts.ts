@@ -41,6 +41,7 @@ import {
   extractTags,
   generatePrerenderClipText,
   isJapanesePoliteSentence,
+  japaneseSentenceEnds,
   normalizeAlarmTextWithoutTags,
   parseAlarmTextPreparation,
   parseDynamicAlarmTextResult,
@@ -787,8 +788,10 @@ async function runD(m: (typeof MODELS)[number]) {
             politeAllEndings: p.lang === 'ko' ? !endings.some(isBanmalEnding) && endings.some((e) => POLITE_KO.test(e)) : null,
             anyPoliteEnding: p.lang === 'ko' ? endings.some((e) => POLITE_KO.test(e)) : null,
             // 일본어 정중체(です・ます) 문장 수 — 가족·친구 프로필에서 보이면 어체가 어긋난 것이다(정보 표시만). 판정은
-            // 운영 검사(`hasJapanesePoliteEnding`)와 같은 함수다 — 따로 정규식을 두면 둘이 갈라진다.
-            jaPoliteEndings: p.lang === 'ja' ? endings.filter(isJapanesePoliteSentence).length : null,
+            // 운영 검사(`hasJapanesePoliteEnding`)와 같은 함수다 — 문장 끊기(청자 호칭 지우기·'…' 끊기)도 같은
+            // `japaneseSentenceEnds` 다. 따로 정규식·끊기를 두면 둘이 갈라진다('…ですよ、ゆい。' 를 한쪽만 센다).
+            jaPoliteEndings:
+              p.lang === 'ja' ? japaneseSentenceEnds(spoken, p.listenerTitle).filter(isJapanesePoliteSentence).length : null,
             // 프로필 markers 또는 사투리 어휘 사전 — 둘 다 합친 것이 '사투리가 남았는가' 의 근거다.
             dialectMarkers: dialect ? [...dialect.profile, ...dialect.lexicon.filter((l) => !dialect.profile.includes(l))] : null,
             dialectProfileMarkers: dialect?.profile ?? null,
