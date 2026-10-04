@@ -356,6 +356,79 @@ describe('refreshWeatherRegionDaily — 실제 libSQL', () => {
     expect(result.failures).toEqual([]);
     expect(batch).not.toHaveBeenCalled();
     expect(calls.length).toBeLessThan(10);
+    // 마지막 틱이 아니면 경보는 없다 — 다음 틱이 이어 한다.
+    expect(result.alerts).toEqual([]);
+    db.close();
+  });
+
+  it('그 지역의 칸이 틀린 설정 실패(JMA office 404)는 그 지역만 — 원천을 끄지 않아 슬롯 안에 나머지를 다 채운다', async () => {
+    // 원천을 끄면 틀린 office 가 틱마다 맨 앞에서 다시 걸려 그 뒤 지역이 슬롯 내내 밀린다(코덱스 #846).
+    const db = await freshDb();
+    const jp = WeatherRegions.byCountry('JP');
+    const bad = jp[0]!;
+    if (bad.source.kind !== 'jma') throw new Error('jma');
+    const badPath = `/${bad.source.office}.json`;
+    const calls = stubSources({
+      fail: {
+        jma: (url) =>
+          url.pathname.endsWith(badPath)
+            ? new Response('<!DOCTYPE html>', { status: 404, headers: { 'content-type': 'text/html' } })
+            : null,
+      },
+    });
+    const first = await refreshWeatherRegionDaily(asExecutor(db), EVENING, { kmaServiceKey: KEY, regions: jp });
+    // 한 틱에 JMA 상한(8)을 다 쓴다 — 틀린 office 하나 + 나머지 일곱.
+    expect(calls.filter((c) => c.host === 'jma')).toHaveLength(WEATHER_SOURCE_FETCH_CAPS.jma);
+    expect(first.failures).toEqual([{ regionKey: bad.key, source: 'jma', failure: 'config', reason: 'http_404' }]);
+    expect(first.stored).toBe((WEATHER_SOURCE_FETCH_CAPS.jma - 1) * 3);
+
+    // 슬롯의 나머지 틱 — 틀린 office 는 틱마다 다시 부르지만(상한 안), 나머지 46곳은 마지막 틱까지 다 채운다.
+    const alerts: WeatherSlotAlert[] = [];
+    for (let minute = 10; minute < 60; minute += 5) {
+      const now = new Date(`2026-10-01T12:${String(minute).padStart(2, '0')}:00Z`);
+      await refreshWeatherRegionDaily(asExecutor(db), now, { kmaServiceKey: KEY, regions: jp, onAlert: (a) => alerts.push(a) });
+    }
+    const keys = new Set((await rowsOf(db)).map((r) => String(r.region_key)));
+    expect(keys.has(bad.key)).toBe(false);
+    expect(keys.size).toBe(jp.length - 1);
+    // 설정 실패라 일부가 끝났어도 슬롯 끝에서 경보는 오른다 — 목록의 칸을 고치게.
+    expect(alerts).toEqual([
+      { country: 'JP', slot: 'evening', source: 'jma', reason: 'http_404', done: jp.length - 1, total: jp.length },
+    ]);
+    db.close();
+  });
+
+  it('NWS 격자 404(InvalidGridpoint)도 그 지역만 — 같은 틱의 다른 NWS 지역은 상한까지 부른다', async () => {
+    const db = await freshDb();
+    // 원천이 섞인 틱(일본 저녁 + 미 산지 아침). 틀린 격자를 NWS 줄의 맨 앞에 둔다.
+    const mountain = WeatherRegions.byCountry('US').filter((r) => openWeatherSlot(r, EVENING));
+    const bad = mountain[0]!;
+    if (bad.source.kind !== 'nws') throw new Error('nws');
+    expect(mountain.length).toBeGreaterThan(WEATHER_SOURCE_FETCH_CAPS.nws);
+    const badPath = `/gridpoints/${bad.source.gridId}/${bad.source.gridX},${bad.source.gridY}`;
+    const calls = stubSources({
+      fail: {
+        nws: (url) =>
+          url.pathname === badPath
+            ? new Response(JSON.stringify({ type: 'https://api.weather.gov/problems/InvalidGridpoint', status: 404 }), {
+                status: 404,
+                headers: { 'content-type': 'application/problem+json' },
+              })
+            : null,
+      },
+    });
+    const result = await refreshWeatherRegionDaily(asExecutor(db), EVENING, {
+      kmaServiceKey: KEY,
+      regions: [...WeatherRegions.byCountry('JP'), ...mountain],
+    });
+    const nws = calls.filter((c) => c.host === 'nws');
+    expect(nws).toHaveLength(WEATHER_SOURCE_FETCH_CAPS.nws);
+    expect(nws[0]!.url.pathname).toBe(badPath);
+    expect(result.failures).toEqual([{ regionKey: bad.key, source: 'nws', failure: 'config', reason: 'invalid_gridpoint' }]);
+    // 틀린 격자 뒤의 세 곳은 계산해 적었다.
+    for (const r of mountain.slice(1, WEATHER_SOURCE_FETCH_CAPS.nws)) {
+      expect((await rowsOf(db, r.key)).length).toBeGreaterThan(0);
+    }
     db.close();
   });
 

@@ -54,19 +54,31 @@ export type SourceDay = {
 
 /**
  * 실패의 세 갈래.
- *  - `transient`: 타임아웃·5xx·429, KMA 01/02/03/04/05/99, 낡은 발표(JMA·NWS) → 같은 슬롯 안에서 다음 틱이 다시 한다.
- *  - `config`: 키 없음, KMA 20/21/22/30/31/32/33 또는 401/403 봉투, NWS 403 HTML·404 InvalidGridpoint·400,
- *    JMA 404 → 그 틱에서 그 원천은 더 부르지 않고 슬롯 끝에서 경보를 올린다.
+ *  - `transient`: 타임아웃(읽기 경로의 마감 포함)·5xx·429, KMA 01/02/03/04/05/99, 낡은 발표(JMA·NWS) → 같은 슬롯
+ *    안에서 다음 틱이 다시 한다.
+ *  - `config`: 다시 해도 소용없는 것 → 슬롯 끝에서 경보를 올린다. 얼마나 번지는지는 `SourceFailureScope` 가 가른다.
  *  - `budget`: 워커 subrequest 한도('Too many subrequests') 또는 이 틱의 fetch 예산 소진 → 그 틱의 날씨 작업을
  *    멈춘다. 실패로 세지 않는다.
  */
 export type SourceFailureKind = 'transient' | 'config' | 'budget';
+
+/**
+ * 설정 실패가 미치는 범위.
+ *  - `source`(기본): 원천 전체가 안 된다 — 키 없음, KMA 10~12·20/21/22/30/31/32/33·401/403(그 밖의 4xx 도),
+ *    NWS 403 HTML(UA 차단)·404 밖의 4xx, JMA 404 밖의 4xx → 그 틱에서 그 원천은 더 부르지 않는다.
+ *  - `region`: 그 지역에 박아 둔 칸만 틀렸다 — NWS 404(`InvalidGridpoint`·없는 office·격자), JMA 404(없는 office
+ *    JSON) → **그 지역만** 실패로 두고 같은 원천의 다른 지역은 계속 부른다. 원천을 끄면 틱마다 같은 자리에서 다시
+ *    걸려 그 뒤의 지역이 슬롯 내내 계산되지 않는다(코덱스 #846).
+ * 일시·예산 실패는 끄는 일이 없어 늘 `source` 로 둔다.
+ */
+export type SourceFailureScope = 'source' | 'region';
 
 export class WeatherSourceError extends Error {
   constructor(
     readonly failure: SourceFailureKind,
     /** 짧은 식별자(`http_503`·`kma_30`·`stale_report` …) — 경보 태그로 그대로 나간다. URL·본문은 넣지 않는다. */
     readonly reason: string,
+    readonly scope: SourceFailureScope = 'source',
   ) {
     super(`${failure}:${reason}`);
     this.name = 'WeatherSourceError';
@@ -75,7 +87,7 @@ export class WeatherSourceError extends Error {
 
 export type SourceOutcome =
   | { ok: true; days: Map<string, SourceDay> }
-  | { ok: false; failure: SourceFailureKind; reason: string };
+  | { ok: false; failure: SourceFailureKind; reason: string; scope: SourceFailureScope };
 
 /**
  * 한 번의 작업(cron 한 틱 · 즉석 계산 한 번)이 원천에 보낼 수 있는 fetch 수. 어댑터는 fetch **직전에**
@@ -133,12 +145,14 @@ export async function fetchRegionSourceDays(
 }
 
 /** 어댑터 밖으로 나온 예외를 세 갈래로. 모르는 예외는 일시 실패다(다음 틱이 다시 한다). */
-export function classifySourceError(err: unknown): { ok: false; failure: SourceFailureKind; reason: string } {
-  if (err instanceof WeatherSourceError) return { ok: false, failure: err.failure, reason: err.reason };
-  if (isSubrequestLimitError(err)) return { ok: false, failure: 'budget', reason: 'subrequest_limit' };
-  if (isTimeoutError(err)) return { ok: false, failure: 'transient', reason: 'timeout' };
+export function classifySourceError(err: unknown): Extract<SourceOutcome, { ok: false }> {
+  if (err instanceof WeatherSourceError) {
+    return { ok: false, failure: err.failure, reason: err.reason, scope: err.scope };
+  }
+  if (isSubrequestLimitError(err)) return { ok: false, failure: 'budget', reason: 'subrequest_limit', scope: 'source' };
+  if (isTimeoutError(err)) return { ok: false, failure: 'transient', reason: 'timeout', scope: 'source' };
   // 연결 실패(DNS·연결 끊김)든 예상 밖의 예외든 다음 틱이 다시 한다. 메시지는 URL(키)을 담을 수 있어 싣지 않는다.
-  return { ok: false, failure: 'transient', reason: 'error' };
+  return { ok: false, failure: 'transient', reason: 'error', scope: 'source' };
 }
 
 /** HTTP 상태만으로 가를 수 있는 실패. 2xx 면 null(본문을 봐야 한다). */

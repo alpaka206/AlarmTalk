@@ -267,6 +267,15 @@ export function jmaDaysFromDocument(doc: unknown, source: JmaSource, now: Date):
 }
 
 /**
+ * 오류 응답 → 실패 갈래. 404 는 그 office 의 JSON 이 없다는 뜻이라 **그 지역의 칸** 설정 실패다(2026-10-05 실측 —
+ * 없는 office 는 404 HTML). 그 밖의 4xx 는 원천 전체, 429·5xx 는 일시 실패.
+ */
+function jmaFailure(status: number): WeatherSourceError | null {
+  if (status === 404) return new WeatherSourceError('config', 'http_404', 'region');
+  return httpFailure(status);
+}
+
+/**
  * 지역 하나의 예보를 받는다. 실패는 `WeatherSourceError` 로 던진다. 즉석 계산(읽기 경로)만 엣지 캐시를 건다.
  */
 export async function fetchJmaDays(
@@ -288,7 +297,7 @@ export async function fetchJmaDays(
       timedOut: false,
       items,
     });
-  const failure = httpFailure(result.status);
+  const failure = jmaFailure(result.status);
   if (failure) {
     log('warn', failure.reason, null);
     throw failure;

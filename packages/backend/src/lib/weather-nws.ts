@@ -245,11 +245,18 @@ function round1(value: number): number {
   return Math.round(value * 10) / 10;
 }
 
-/** 오류 응답 → 실패 갈래. 403(HTML — UA 차단)·404(InvalidGridpoint)·400 은 설정 실패, 429·5xx 는 일시 실패. */
+/**
+ * 오류 응답 → 실패 갈래. 429·5xx 는 일시 실패, 그 밖의 4xx 는 설정 실패다.
+ *  - 404 는 **그 지역의 칸**(`scope: 'region'`)이다 — 2026-10-05 실측으로 박아 둔 칸이 틀린 경우가 셋 다 404 였다:
+ *    없는 격자(`InvalidGridpoint`), 없는 office(`NotFound` + `path.wfo`), 숫자가 아닌 x(`NotFound` + `path.x`).
+ *  - 403 HTML(UA 차단)·400 등 나머지는 원천 전체다.
+ */
 function nwsFailure(status: number, body: string, contentType: string): WeatherSourceError | null {
   const failure = httpFailure(status);
   if (!failure) return null;
-  if (status === 404 && /InvalidGridpoint/i.test(body)) return new WeatherSourceError('config', 'invalid_gridpoint');
+  if (status === 404) {
+    return new WeatherSourceError('config', /InvalidGridpoint/i.test(body) ? 'invalid_gridpoint' : 'http_404', 'region');
+  }
   if (status === 403 && contentType.includes('html')) return new WeatherSourceError('config', 'http_403_html');
   return failure;
 }

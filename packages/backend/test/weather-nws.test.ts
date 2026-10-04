@@ -221,4 +221,23 @@ describe('fetchNwsDays — 호출', () => {
     await expect(run(429, '{}')).rejects.toMatchObject({ failure: 'transient', reason: 'http_429' });
     await expect(run(503, '{}')).rejects.toMatchObject({ failure: 'transient', reason: 'http_503' });
   });
+
+  it('404 는 그 지역의 칸(scope region) — 원천 전체(UA 차단·400)와 가른다', async () => {
+    // 2026-10-05 실측: 없는 격자 → InvalidGridpoint, 없는 office·숫자가 아닌 x → NotFound. 셋 다 404 다.
+    const run = (status: number, body: string, contentType = 'application/problem+json') => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async () => new Response(body, { status, headers: { 'content-type': contentType } })),
+      );
+      return fetchNwsDays(ny, source, { now: NOW, budget: fixedFetchBudget(1) });
+    };
+    await expect(
+      run(404, JSON.stringify({ type: 'https://api.weather.gov/problems/InvalidGridpoint', status: 404 })),
+    ).rejects.toMatchObject({ failure: 'config', reason: 'invalid_gridpoint', scope: 'region' });
+    await expect(
+      run(404, JSON.stringify({ type: 'https://api.weather.gov/problems/NotFound', parameterErrors: [{ parameter: 'path.wfo' }] })),
+    ).rejects.toMatchObject({ failure: 'config', reason: 'http_404', scope: 'region' });
+    await expect(run(403, '<html>Access Denied</html>', 'text/html')).rejects.toMatchObject({ scope: 'source' });
+    await expect(run(400, '{}')).rejects.toMatchObject({ scope: 'source' });
+  });
 });

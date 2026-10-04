@@ -228,7 +228,10 @@ describe('fetchJmaDays — 호출', () => {
       vi.stubGlobal('fetch', vi.fn(async () => new Response('x', { status })));
       return fetchJmaDays(region, sourceOf('jp-tokyo'), { now: AFTER_1700, budget: fixedFetchBudget(1) });
     };
-    await expect(run(404)).rejects.toMatchObject({ failure: 'config', reason: 'http_404' });
+    // 404 는 그 office 의 JSON 이 없다는 것 — 그 지역의 칸만 틀렸다(2026-10-05 실측: 없는 office 는 404 HTML).
+    await expect(run(404)).rejects.toMatchObject({ failure: 'config', reason: 'http_404', scope: 'region' });
+    // 그 밖의 4xx 는 원천 전체다.
+    await expect(run(403)).rejects.toMatchObject({ failure: 'config', reason: 'http_403', scope: 'source' });
     await expect(run(503)).rejects.toMatchObject({ failure: 'transient', reason: 'http_503' });
     const fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);

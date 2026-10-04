@@ -323,8 +323,9 @@ type StoredRow = StoredExtremes & { computedAtMs: number };
  * 슬롯이 열린 지역들을 미리 계산한다. 슬롯 밖이면 곧바로 끝난다(DB·네트워크 없음).
  *
  * 표본이 빠진 (지역, 날짜)는 적지 않는다(반쪽 값 금지 — `finalizeSourceDay`). 원천 실패는 세 갈래다
- * (`SourceFailureKind`): 일시 실패는 다음 틱이 다시 하고, 설정 실패는 그 틱에서 그 원천을 더 부르지 않고,
- * 예산 소진은 실패로 세지 않는다.
+ * (`SourceFailureKind`): 일시 실패는 다음 틱이 다시 하고, 설정 실패는 원천 전체면 그 틱에서 그 원천을 더 부르지
+ * 않고 그 지역의 칸이면 그 지역만 실패로 둔다(`SourceFailureScope`), 예산 소진은 실패로 세지 않는다 — 그래도 슬롯
+ * 마지막 틱이면 판정은 한다.
  */
 export async function refreshWeatherRegionDaily(
   db: DbExecutor,
@@ -439,7 +440,9 @@ export async function refreshWeatherRegionDaily(
           if (outcome.reason === 'subrequest_limit') result.budgetExhausted = true;
           continue;
         }
-        if (outcome.failure === 'config') disabled.add(source);
+        // 원천 전체의 설정 실패만 원천을 끈다. 그 지역의 칸이 틀린 것(격자·office 404)으로 끄면 틱마다 같은 자리에서
+        // 다시 걸려 그 뒤의 지역이 슬롯 내내 계산되지 않는다 — 그 지역만 실패로 둔다(경보는 슬롯 끝에서 같이 오른다).
+        if (outcome.failure === 'config' && outcome.scope === 'source') disabled.add(source);
         const failure = { regionKey: slot.region.key, source, failure: outcome.failure, reason: outcome.reason };
         result.failures.push(failure);
         failedReasons.set(slot.region.key, failure);
