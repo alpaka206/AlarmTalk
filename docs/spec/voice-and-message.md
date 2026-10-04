@@ -1785,8 +1785,11 @@ R2 파일·ElevenLabs 클론은 DB 트랜잭션 안에서 지울 수 없으므�
 ### 날씨 원천(5-1 「서버가 미리 계산해 둔다」)
 
 - **유닛**: `packages/backend` 에서 `npx vitest run test/weather-kma.test.ts test/weather-jma.test.ts
-  test/weather-nws.test.ts test/weather-region-daily.test.ts test/prerender-variant.test.ts` — 픽스처는 2026-10-01
-  실측 응답이다(키 없음). `packages/shared` 의 `weather-regions.test.ts` 가 KR 격자를 LCC 로 다시 계산한다.
+  test/weather-nws.test.ts test/weather-region-daily.test.ts test/prerender-variant.test.ts
+  test/scheduled-weather-last-tick.test.ts` — 픽스처는 2026-10-01 실측 응답이다(키 없음).
+  `scheduled-weather-last-tick` 은 마지막 틱의 순서(날씨가 5분 틱의 맨 앞 — 「실패」)를 지킨다. `packages/shared` 의
+  `weather-regions.test.ts` 가 KR 격자를 LCC 로 다시 계산한다. ⚠ 이 절의 규칙에 회귀 테스트 파일을 더하면 이
+  명령에도 더한다 — 「구현 지도」가 대는 파일이 여기서 빠지면 로컬에서 그 회귀가 보이지 않는다.
 - **읽기 전용 점검**(DB 무접촉, 키는 출력하지 않는다): `npm run check:weather -- --env-file .dev.vars.dev` — NWS
   `/points` 재조회 대조, JMA 상수 대조, 133곳 드라이런(나라별 원천 성공 수·자리 분포). 자리는 **운영과 같은 분류**로
   센다 — 원천 종류를 넘겨 KR·JP 는 강수확률 60 부터만 비다(결정 D7. 2026-10-05 전에는 빠뜨려 KR·JP 의 강수확률
