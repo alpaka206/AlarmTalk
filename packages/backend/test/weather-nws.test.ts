@@ -86,6 +86,7 @@ describe('원시 격자 → 날짜(지역 시간대 [00, 24))', () => {
         finalizeSourceDay(nwsDaysFromGrid(grid(key), region(key).tz, NOW).get('2026-10-01'), {
           isToday: true,
           now: NOW,
+          source: 'nws',
         })!,
       );
     expect(index('us-new-york')).toBe(idx('cloud'));
@@ -110,11 +111,12 @@ describe('원시 격자 → 날짜(지역 시간대 [00, 24))', () => {
     g.properties.minTemperature.values = g.properties.minTemperature.values.slice(1);
     const today = nwsDaysFromGrid(g, region('us-new-york').tz, NOW).get('2026-10-01');
     expect(today!.minTemp).toBeNull();
-    expect(finalizeSourceDay(today, { isToday: true, now: NOW })).toBeNull();
+    expect(finalizeSourceDay(today, { isToday: true, now: NOW, source: 'nws' })).toBeNull();
     expect(
       finalizeSourceDay(today, {
         isToday: true,
         now: NOW,
+        source: 'nws',
         stored: { tempMin: 18, tempMax: 30, computedAt: '2026-10-01T01:05:00.000Z' },
       }),
     ).toMatchObject({ minTemp: 18, maxTemp: 24.4, code: 3 });
@@ -127,7 +129,7 @@ describe('원시 격자 → 날짜(지역 시간대 [00, 24))', () => {
     );
     const days = nwsDaysFromGrid(g, region('us-new-york').tz, NOW);
     expect(days.get('2026-10-02')).toMatchObject({ code: null, rainProbability: null });
-    expect(finalizeSourceDay(days.get('2026-10-02'), { isToday: false, now: NOW })).toBeNull();
+    expect(finalizeSourceDay(days.get('2026-10-02'), { isToday: false, now: NOW, source: 'nws' })).toBeNull();
     expect(days.get('2026-10-03')!.code).not.toBeNull();
   });
 
@@ -137,7 +139,7 @@ describe('원시 격자 → 날짜(지역 시간대 [00, 24))', () => {
     const d3 = days.get('2026-10-04')!;
     expect(Number.isNaN(d3.precipitation)).toBe(true);
     expect(d3).toMatchObject({ code: 61, rainProbability: 37, maxTemp: 19.4, minTemp: 15 });
-    expect(finalizeSourceDay(d3, { isToday: false, now: NOW })).not.toBeNull();
+    expect(finalizeSourceDay(d3, { isToday: false, now: NOW, source: 'nws' })).not.toBeNull();
     // 지평 **안**의 빈틈은 빠짐이다 — 그 날짜는 미해결.
     const g = grid('us-new-york');
     g.properties.quantitativePrecipitation.values = g.properties.quantitativePrecipitation.values.filter(

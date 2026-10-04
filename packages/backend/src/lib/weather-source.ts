@@ -156,10 +156,13 @@ export type StoredExtremes = { tempMin: number | null; tempMax: number | null; c
  *
  * 오늘(`isToday`)이고 최저·최고가 비었으면 **그 둘만** `stored` 에서 이어받는다 — 36시간 안에 계산한 행이고
  * 값이 숫자일 때. 상태·강수확률·강수량은 이어받지 않는다.
+ *
+ * ⚠ `source` 는 **필수**다 — 강수확률만으로 비라고 보는 하한이 원천마다 다르다(결정 D7). 빼면 KR·JP 가 조용히 NWS
+ * 하한(30)으로 분류된다: 점검 스크립트가 그렇게 빠뜨려 운영과 다른 분포를 냈다(코덱스 #846).
  */
 export function finalizeSourceDay(
   day: SourceDay | undefined,
-  context: { isToday: boolean; stored?: StoredExtremes | null; now: Date; source?: 'kma' | 'jma' | 'nws' },
+  context: { isToday: boolean; stored?: StoredExtremes | null; now: Date; source: WeatherSourceKind },
 ): WeatherSignalInput | null {
   if (!day) return null;
   const inherit = context.isToday ? usableStored(context.stored, context.now) : null;

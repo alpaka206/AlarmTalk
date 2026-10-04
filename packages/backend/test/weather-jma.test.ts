@@ -137,13 +137,15 @@ describe('17시 발표 — 실측 원본', () => {
     const none = doc('250000');
     none[1].timeSeries[0].areas[0].area.code = '259999';
     const day = jmaDaysFromDocument(none, shiga, AFTER_1700).get('2026-10-03');
-    expect(finalizeSourceDay(day, { isToday: false, now: AFTER_1700 })).toBeNull();
+    expect(finalizeSourceDay(day, { isToday: false, now: AFTER_1700, source: 'jma' })).toBeNull();
   });
 
   it('분류: 東京 내일은 비(1), 모레는 맑음(0)', () => {
     const days = jmaDaysFromDocument(doc('130000'), sourceOf('jp-tokyo'), AFTER_1700);
     const index = (date: string) =>
-      resolvePrerenderWeatherIndex(finalizeSourceDay(days.get(date), { isToday: false, now: AFTER_1700 })!);
+      resolvePrerenderWeatherIndex(
+        finalizeSourceDay(days.get(date), { isToday: false, now: AFTER_1700, source: 'jma' })!,
+      );
     expect(index('2026-10-02')).toBe(idx('rain'));
     expect(index('2026-10-03')).toBe(idx('nice'));
   });
@@ -162,9 +164,9 @@ describe('05시 발표 — 합성본(17시 원본의 모양만 바꿈)', () => {
 
   it('오늘 최저는 어떤 발표에도 없어 늘 이어받는다 — 36시간 안의 저장 행에서', () => {
     const today = jmaDaysFromDocument(tokyo0500(), sourceOf('jp-tokyo'), MORNING).get('2026-10-02');
-    expect(finalizeSourceDay(today, { isToday: true, now: MORNING })).toBeNull();
+    expect(finalizeSourceDay(today, { isToday: true, now: MORNING, source: 'jma' })).toBeNull();
     const stored = { tempMin: 20, tempMax: 22, computedAt: '2026-10-01T12:05:00.000Z' };
-    expect(finalizeSourceDay(today, { isToday: true, stored, now: MORNING })).toMatchObject({
+    expect(finalizeSourceDay(today, { isToday: true, stored, now: MORNING, source: 'jma' })).toMatchObject({
       code: 61,
       minTemp: 20,
       maxTemp: 22,

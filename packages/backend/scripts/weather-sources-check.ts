@@ -170,7 +170,8 @@ async function dryRun(): Promise<void> {
       const today = zonedParts(now, r.tz).date;
       for (let i = 0; i <= 3; i += 1) {
         const date = addDaysToDate(today, i);
-        const input = finalizeSourceDay(outcome.days.get(date), { isToday: i === 0, now });
+        // 원천 종류를 넘긴다 — 운영(cron·읽기 경로)과 같은 분류다(결정 D7: KR·JP 는 강수확률 60 부터만 비).
+        const input = finalizeSourceDay(outcome.days.get(date), { isToday: i === 0, now, source: r.source.kind });
         if (input) stat.variants.push(resolvePrerenderWeatherIndex(input));
         else stat.unresolved += 1;
       }

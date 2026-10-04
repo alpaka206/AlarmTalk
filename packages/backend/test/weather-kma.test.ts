@@ -167,21 +167,23 @@ describe('날짜별 집계 — 실측 응답', () => {
   it('0500 의 오늘 TMN 은 36시간 안의 저장 행에서만 이어받는다 — 상태·강수확률은 이어받지 않는다', () => {
     const today = kmaDaysFromItems(itemsOf('0500'), '2026-10-01').get('2026-10-01');
     const now = new Date('2026-09-30T21:10:00Z');
-    expect(finalizeSourceDay(today, { isToday: true, stored: null, now })).toBeNull();
+    const source = 'kma';
+    expect(finalizeSourceDay(today, { isToday: true, stored: null, now, source })).toBeNull();
     const stored = { tempMin: 12, tempMax: 99, computedAt: '2026-09-30T12:05:00.000Z' };
-    expect(finalizeSourceDay(today, { isToday: true, stored, now })).toEqual({
+    expect(finalizeSourceDay(today, { isToday: true, stored, now, source })).toEqual({
       code: 0,
       maxTemp: 20, // 원천에 있는 값이 이긴다.
       minTemp: 12,
       rainProbability: 30,
       precipitation: 0,
       hasDust: false,
+      rainProbabilityThreshold: 60, // 결정 D7 — 기상청은 강수 형태가 1차다.
     });
     // 오늘이 아니면 이어받지 않는다.
-    expect(finalizeSourceDay(today, { isToday: false, stored, now })).toBeNull();
+    expect(finalizeSourceDay(today, { isToday: false, stored, now, source })).toBeNull();
     // 36시간을 넘긴 행은 쓰지 않는다.
     const old = { ...stored, computedAt: '2026-09-29T08:00:00.000Z' };
-    expect(finalizeSourceDay(today, { isToday: true, stored: old, now })).toBeNull();
+    expect(finalizeSourceDay(today, { isToday: true, stored: old, now, source })).toBeNull();
   });
 
   it('TMX·TMN 이 없으면 TMP 가 24시간 다 있을 때만 그 최대·최소 — 3시간 간격 날은 대신하지 않는다', () => {
