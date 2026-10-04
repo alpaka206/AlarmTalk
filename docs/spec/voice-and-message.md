@@ -853,7 +853,8 @@ Open-Meteo 무료 엔드포인트는 비상업용이고 유료 키는 사지 않
   슬롯에 가져올 때 함께 쓴다.
 - **한 틱**: SELECT 1회(열린 지역들의 행 — 이어받기용 극값·계산 시각 포함, IN 플레이스홀더 생성기) → fetch 최대
   10회(원천별 상한 KMA 3 · JMA 8 · NWS 4, 원천을 번갈아, 동시 4 — 첫 fetch 몫은 시작할 때 잡는다) → `db.batch`
-  1회(upsert + `DELETE target_date < UTC 오늘 − 3`). 합계 최대 12 subrequest. 클론 드레인보다 앞자리다.
+  1회(upsert + `DELETE target_date < UTC 오늘 − 3`). 합계 최대 12 subrequest. 클론 드레인보다 앞자리다 — **슬롯
+  마지막 틱이면 5분 틱의 맨 앞**이다(아래 「실패」).
 - **시간당 용량** 10 × 12틱 = 120. 가장 붐비는 겨울 12:00 UTC 가 KR 저녁 17 + JP 저녁 47 + 미 중부 아침 22 = 86 —
   재시도 여유 34. 미국 동부 저녁(여름 01:00 UTC) 30곳은 NWS 상한 4 × 12 = 48 안이다.
 - **CPU**: 무료 플랜이면 실행당 CPU 10ms 일 수 있다(확인 안 됨). 원천별 상한이 한 틱의 큰 JSON 파싱 수를 묶는다 —
@@ -867,7 +868,7 @@ Open-Meteo 무료 엔드포인트는 비상업용이고 유료 키는 사지 않
 | 설정 실패 — 원천 전체 | 키 없음, KMA 10~12·20/21/22/30/31/32/33 또는 401/403(그 밖의 4xx 도), NWS 403 HTML·404 밖의 4xx, JMA 404 밖의 4xx | 그 원천은 더 부르지 않는다 |
 | 설정 실패 — 그 지역의 칸 | NWS 404(`InvalidGridpoint`·없는 office·격자 — 2026-10-05 실측 셋 다 404), JMA 404(없는 office JSON — 같은 날 실측 404 HTML) | **그 지역만** 실패 — 같은 원천의 다른 지역은 계속 부른다 |
 | 예산 소진 — 틱 상한 | 이 틱의 fetch 상한(틱 10 · 원천별 KMA 3·JMA 8·NWS 4 — 시작할 때 몫을 못 잡았거나, 어댑터가 물러서기·다음 페이지에서 `fetch_budget`) | **그 지역만** 다음 틱으로 넘긴다(`deferred`) — 다른 원천은 계속 부르고 받은 것은 `db.batch` 로 적는다. 실패로 세지 않는다 |
-| 예산 소진 — 워커 한도 | 'Too many subrequests'(fetch 든 쓰기든) | 그 틱의 날씨 작업을 멈춘다 — 더 부르지 않고 받은 것도 쓰지 않는다(`budgetExhausted`). 실패로 세지 않는다(다음 틱이 잇는다). 마지막 틱이면 판정은 한다(아래) |
+| 예산 소진 — 워커 한도 | 'Too many subrequests'(fetch 든 쓰기든) | 그 틱의 날씨 작업을 멈춘다 — 더 부르지 않고 받은 것도 쓰지 않는다(`budgetExhausted`). 실패로 세지 않는다(다음 틱이 잇는다). 마지막 틱에는 닿지 않게 짰다(아래) |
 
 - ⚠ **지역의 칸이 틀린 것으로 원천을 끄지 말 것**(코덱스 #846). 원천 안의 순서는 틱마다 같은 목록 순서라, 틀린 칸
   하나가 슬롯 내내 틱마다 앞쪽에서 원천을 꺼 **그 뒤의 지역이 한 곳도 계산되지 않는다.** 그 지역은 틱마다 한 번씩
@@ -876,10 +877,20 @@ Open-Meteo 무료 엔드포인트는 비상업용이고 유료 키는 사지 않
 - 판정은 **슬롯 마지막 틱(현지 분 ≥ 55)** 에 (나라, 시간대 묶음)마다 한다. 한 곳도 못 했거나 설정 실패가 있으면
   `captureCron('scheduled.weather_region_daily.slot_failed', …, {country, slot, source, reason, done})`. 일부만
   실패했으면 warn 한 줄(`slot_partial`). 경보는 하루 슬롯 수만큼으로 묶인다.
-- ⚠ **마지막 틱이 예산 소진으로 멈춰도 판정은 한다**(코덱스 #846). 그 틱 뒤에는 슬롯이 닫혀 다른 틱이 없다 —
-  빠뜨리면 그 슬롯은 아무 신호 없이 지나간다. 그 틱에 받은 것은 적지 않으므로 **DB 에 이미 있는 행만** 마친 것으로
-  센다. 실패가 적히지 않은 묶음의 사유는 `subrequest_limit` 이다. 한도가 다했으면 같은 실행의 Sentry 전송도 빠질 수
-  있지만, `captureCron` 의 error 로그 한 줄(`at: "scheduled.weather_region_daily.slot_failed"`)은 남는다.
+- ⚠ **마지막 틱에는 날씨 작업을 5분 틱의 맨 앞에서 돌린다**(`hasWeatherSlotLastTick` ← `scheduled`, 코덱스 #846).
+  그 틱 뒤에는 슬롯이 닫혀 다른 틱이 없으므로 판정·경보는 거기서만 나간다. 그런데 **경보의 Sentry 전송도
+  subrequest 하나다** — 앞선 cron 작업(오디오 정리·만료·파기 …)이 실행의 한도(무료 50)를 다 쓴 뒤라면 판정을 해도
+  **언제나** 닿지 않는다. 맨 앞이면 날씨 작업의 최대(조회 1 + 게이트웨이 재시도 2 + fetch 10 + 쓰기 1 + 경보 몇 건)가
+  한도에 닿을 수 없어, 판정과 경보가 그 실행의 **새 예산**으로 나간다. 나머지 작업은 남은 예산으로 돌고 모자라면 늘
+  하던 대로 다음 틱이 잇는다 — 그쪽은 다음 틱이 있고 여기는 없다. 그 밖의 틱은 원래 자리(계정 파기 뒤, 클론 드레인
+  앞)다. ⚠ 마지막 틱에 날씨 앞으로 작업을 붙이거나 틱 상한을 크게 올리면 이 보장이 깨진다.
+  - 판정을 '슬롯이 닫힌 뒤 첫 틱' 으로 미루는 길도 있었지만 택하지 않았다 — 그 틱은 원천을 부르지 않아 실패 사유
+    (설정 실패의 `kma_30`·`invalid_gridpoint` 등)를 모르고, 그래서 일부만 끝난 묶음의 설정 실패 경보를 잃는다.
+  - 그래도 마지막 틱이 워커 한도에 걸리면(위 보장이 깨진 경우) 판정은 하되 그 틱에 받은 것은 적지 않으므로 **DB 에
+    이미 있는 행만** 마친 것으로 센다. 실패가 적히지 않은 묶음의 사유는 `subrequest_limit` 이다. ⚠ 그 경보는
+    **Sentry 에 닿지 못한다** — 같은 한도에 걸린다. 남는 것은 `captureCron` 의 error 로그 한 줄
+    (`at: "scheduled.weather_region_daily.slot_failed"`)뿐이라, 「검증 방법」은 Sentry 0건과 함께 마지막 틱의
+    `budgetExhausted` 도 본다.
 - **`KMA_SERVICE_KEY` 가 없으면** KR 은 네트워크를 부르지 않는다 — 운영은 KR 슬롯마다 경보(`missing_key`), dev
   (`ENVIRONMENT=development`)는 info 로그(`slot_skipped`)만.
 
@@ -1735,7 +1746,7 @@ R2 파일·ElevenLabs 클론은 DB 트랜잭션 안에서 지울 수 없으므�
 | 편집기 문구 화면 → 내 계정 설정(가족·직접 입력 제외 · 서버 값과 다를 때만 올린다 · 표준 글자로 적는다 · 지역이 바뀔 때만 공휴일 국가) | `AlarmEditorScreen` 의 문구 결과 처리(`saveWeatherLocation`·`saveFortuneInfo` → `onUpdateDynamicPromptSettings`, `WeatherRegionHolidaySync.onRegionSaved`) | `AlarmEditorSheet.syncOwnPromptPreferences` ← 판정 `DynamicPromptPreferences.editorUpdate`(`EditorPromptPreferenceUpdate.swift`) — 회귀 `EditorPromptPreferenceUpdateTests` | — |
 | 지역 시트: 나라 세그먼트 고정 · 열 때 고른 지역으로 스크롤 · 나라를 바꾸면 맨 위 · 화면의 90% 까지 | `WeatherLocationDialog`(`scrollsContent = false`) ← `WakerSelectionSheet`(`ui/components/WakerModal.kt`) | `WeatherRegionPickerSheet`(`ScrollViewReader`) ← `SheetScrollingContent.reservedHeight`·`BottomSheetMetrics.maxFraction` | — |
 | 새 알람: 행에 옛 앱용 글자 + 요청에 `region` | 고를 때 `region.legacyCountry`/`legacyCity` 를 적고, 요청은 `weatherRegionFor(…)?.key` ← `AlarmRepository.resolveWeatherVariantForDraft`·`resolveDueCloneBucketVariants` — 회귀 `WeatherRegionRequestTest` | `WeatherRegions.storageLabels` ← `AlarmEditorSheet`, 요청은 `resolveAlias(…)?.key` ← `WeatherVariantSaveLookup`·`WeatherVariantRefreshService` — 회귀 `WeatherVariantOwnerScopeTests` | `GET /tts/prerender-variant` 의 `region` |
-| 서버 미리 계산 · 현지 슬롯(21시 내일~+3 / 06시 오늘~+3) · due([내일, +3]) · 틱 예산(SELECT 1 + fetch 10(KMA 3·JMA 8·NWS 4) + batch 1) · 실패 세 갈래(설정 실패는 원천 전체 / 그 지역의 칸 — 지역의 칸이면 원천을 끄지 않는다 · 예산 소진은 틱 상한이면 그 지역만 넘기고 워커 한도면 멈춘다) · 슬롯 끝 경보(예산이 다해 멈춘 마지막 틱에도 — DB 에 있는 행만 센다) · 오늘 극값 이어받기(36h) · 읽기 36h·지평 가드([오늘, +3] 밖은 네트워크 없이 null) · 표가 없으면 저장 없이 즉석 계산 | — | — | 마이그레이션 #123 `weather_region_daily`(스키마 그대로) · `hasOpenWeatherSlot`·`openWeatherSlot`·`refreshWeatherRegionDaily`(`evaluateSlotEnds`) · 읽기 `resolveRegionVariantIndex` — `lib/weather-region-daily.ts` · 원천 디스패치·실패 분류(`SourceFailureScope`)·이어받기 `lib/weather-source.ts` · 어댑터 `lib/weather-kma.ts`·`weather-jma.ts`·`weather-nws.ts`(지역의 칸 404 는 `scope: 'region'`), 회귀 `weather-region-daily.test.ts`(실제 libSQL)·`weather-kma`·`weather-jma`·`weather-nws.test.ts`(2026-10-01 실측 픽스처) |
+| 서버 미리 계산 · 현지 슬롯(21시 내일~+3 / 06시 오늘~+3) · due([내일, +3]) · 틱 예산(SELECT 1 + fetch 10(KMA 3·JMA 8·NWS 4) + batch 1) · 실패 세 갈래(설정 실패는 원천 전체 / 그 지역의 칸 — 지역의 칸이면 원천을 끄지 않는다 · 예산 소진은 틱 상한이면 그 지역만 넘기고 워커 한도면 멈춘다) · 슬롯 끝 경보(마지막 틱은 날씨를 5분 틱의 맨 앞에서 — 경보도 subrequest 라 새 예산으로 · 그래도 한도면 DB 에 있는 행만 센다) · 오늘 극값 이어받기(36h) · 읽기 36h·지평 가드([오늘, +3] 밖은 네트워크 없이 null) · 표가 없으면 저장 없이 즉석 계산 | — | — | 마이그레이션 #123 `weather_region_daily`(스키마 그대로) · `hasOpenWeatherSlot`·`hasWeatherSlotLastTick`·`openWeatherSlot`·`refreshWeatherRegionDaily`(`evaluateSlotEnds`) · 읽기 `resolveRegionVariantIndex` — `lib/weather-region-daily.ts` · 마지막 틱의 순서 `scheduled`(`isWeatherSlotLastTick` → `weatherRegionDailyTick`, `src/index.ts`) · 원천 디스패치·실패 분류(`SourceFailureScope`)·이어받기 `lib/weather-source.ts` · 어댑터 `lib/weather-kma.ts`·`weather-jma.ts`·`weather-nws.ts`(지역의 칸 404 는 `scope: 'region'`), 회귀 `weather-region-daily.test.ts`(실제 libSQL)·`weather-kma`·`weather-jma`·`weather-nws.test.ts`(2026-10-01 실측 픽스처)·`scheduled-weather-last-tick.test.ts`(실행 하나의 subrequest 모형) |
 | 지역마다 원천의 칸 고정(`source` — KR 격자 = LCC(lat,lon), JP office·class10·지점·주간 후보, US NWS 격자) | — (앱으로 내보내지 않는다) | — | `WeatherSourceSchema`(`packages/shared/src/weather-regions.ts`, 필수·나라↔원천 검사), 회귀 `packages/shared/test/weather-regions.test.ts` · 수동 점검 `npm run check:weather`(`scripts/weather-sources-check.ts` — NWS /points 재조회·JMA 상수 대조·133곳 드라이런(운영과 같은 분류 — `finalizeSourceDay` 에 원천 종류를 넘긴다), DB 무접촉) |
 | 되짚지 못한 옛 글자 → `null`(지오코딩 없음, 네트워크 없음) | — | — | `GET /tts/prerender-variant`(`routes/tts.ts`), 회귀 `prerender-variant.test.ts` |
 | KMA 키 · NWS User-Agent(로그에 키·URL 없음) | — | — | `KMA_SERVICE_KEY`(`types.ts` `Env`, `scripts/worker-secret-keys.ts`, `kmaServiceKey` — `lib/weather-source.ts`) · `NWS_USER_AGENT`(`lib/weather-nws.ts`) · 로그 `logWeatherFetch`(`lib/weather-fetch.ts`) |
@@ -1781,6 +1792,8 @@ R2 파일·ElevenLabs 클론은 DB 트랜잭션 안에서 지울 수 없으므�
 - **dev 하루 관측**(PR B 머지 뒤): `wrangler tail --env dev` 에서 슬롯 4개(KR·JP 저녁 12Z·아침 21Z, 미 동부·중부 등)의
   `at:"scheduled.weather_region_daily"`(open·due·attempted·stored·failed), `at:"weather.fetch"` 의 source 별
   `status:200`·`resultCode:"00"`(KMA), 실행의 `cpuTime`, 그리고 Sentry `scheduled.weather_region_daily.slot_failed` 0건.
+  ⚠ Sentry 0건만으로는 모자라다 — 마지막 틱이 워커 한도에 걸리면 그 경보는 Sentry 에 닿지 못한다(「실패」). 그래서
+  슬롯 마지막 틱(현지 분 55)의 `at:"scheduled.weather_region_daily"` 줄에 `budgetExhausted: true` 가 **없는지**도 본다.
 
 ### 목소리
 

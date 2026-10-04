@@ -10,7 +10,9 @@
  *   안다). 슬롯이 열린 지역 가운데 [내일, +3] 의 어느 날짜에 `computed_at ≥ 슬롯 시작` 인 행이 없으면 due 다.
  *   한 틱은 SELECT 1 + fetch 최대 10(원천별 KMA 3·JMA 8·NWS 4, 원천을 번갈아, 동시 4) + `db.batch` 1 = 최대 12
  *   subrequest 다. 실패한 지역은 같은 슬롯의 다음 틱이 다시 하고, 슬롯 마지막 틱(현지 분 ≥ 55)에 판정해
- *   (나라, 시간대 묶음)에서 한 곳도 못 했거나 설정 실패가 있으면 경보를 올린다 — 그 틱이 예산 소진으로 멈췄어도.
+ *   (나라, 시간대 묶음)에서 한 곳도 못 했거나 설정 실패가 있으면 경보를 올린다. ⚠ 그 틱에는 cron 이 날씨 작업을
+ *   **맨 앞에서** 돌린다(`hasWeatherSlotLastTick` ← `scheduled`) — 경보(Sentry)도 subrequest 하나라 실행의 한도가
+ *   남아 있어야 닿는다.
  * - **읽기**(`resolveRegionVariantIndex`): 행이 36시간 안에 계산한 것이면 그대로. 아니면 대상 날짜가 지역의
  *   [오늘, +3] 안일 때만 원천을 **한 번** 부르고(밖이면 네트워크 없이 null, 호출 전체의 마감 5초), 계산되면 적고
  *   돌려준다. ⚠ 표가 없으면(배포 → 마이그레이션 창) 저장 없이 계산만 한다.
@@ -287,6 +289,24 @@ export function hasOpenWeatherSlot(now: Date, regions: readonly WeatherRegion[] 
   return hours.has(WEATHER_SLOT_HOURS.evening) || hours.has(WEATHER_SLOT_HOURS.morning);
 }
 
+/**
+ * 이 틱이 어느 지역 슬롯의 **마지막 틱**(현지 분 ≥ 55 — `openWeatherSlot(…).lastTick`)인가. DB·네트워크 없음.
+ *
+ * cron 은 이 틱에 날씨 작업을 **맨 앞에서** 돌린다(`scheduled`, 스펙 5-1 「실패」). 마지막 틱 뒤에는 그 슬롯의 틱이
+ * 없어 판정·경보가 여기서만 나가는데, 경보(Sentry 전송)도 subrequest 하나라 앞선 작업이 실행의 한도를 다 쓰면
+ * 판정을 해도 닿지 않는다(코덱스 #846). 맨 앞이면 날씨 작업의 최대(조회 1 + 게이트웨이 재시도 2 + fetch 10 + 쓰기
+ * 1 + 경보 몇 건)가 한도(무료 50)에 닿을 수 없다.
+ */
+export function hasWeatherSlotLastTick(now: Date, regions: readonly WeatherRegion[] = WeatherRegions.all): boolean {
+  return [...new Set(regions.map((region) => region.tz))].some((tz) => {
+    const local = zonedParts(now, tz);
+    return (
+      (local.hour === WEATHER_SLOT_HOURS.evening || local.hour === WEATHER_SLOT_HOURS.morning) &&
+      local.minute >= WEATHER_SLOT_LAST_TICK_MINUTE
+    );
+  });
+}
+
 /** 슬롯 끝 경보 한 건 — `captureCron('scheduled.weather_region_daily.slot_failed', …, 태그)` 로 나간다. */
 export type WeatherSlotAlert = {
   country: WeatherCountryCode;
@@ -322,7 +342,9 @@ export type WeatherRegionRefreshResult = {
   /**
    * 워커 subrequest 한도에 걸려 이 틱의 날씨 작업을 멈췄다(fetch 든 쓰기든 — 쓰기는 하지 않았거나 실패했다).
    * 이 틱의 fetch 상한(틱 10·원천별)에 닿은 것은 여기 들지 않는다 — 그 지역만 `deferred` 로 넘기고 받은 것은 적는다.
-   * 마지막 틱이면 판정은 그래도 한다(`evaluateSlotEnds`).
+   * 마지막 틱이면 판정은 그래도 한다(`evaluateSlotEnds`) — ⚠ 다만 그 경보의 Sentry 전송도 같은 한도에 걸려 닿지
+   * 않는다(남는 것은 error 로그 한 줄). 그래서 cron 은 마지막 틱에 날씨를 맨 앞에서 돌려 이 갈래에 닿지 않게 한다
+   * (`hasWeatherSlotLastTick`).
    */
   budgetExhausted: boolean;
   /** 표가 아직 없어 건너뛰었다(배포 → 마이그레이션 창). */
@@ -508,8 +530,10 @@ export async function refreshWeatherRegionDaily(
     logStructured('warn', { at: 'scheduled.weather_region_daily', budgetExhausted: true, attempted: result.attempted });
   }
 
-  // 4) 슬롯 마지막 틱의 판정 — (나라, 시간대 묶음)마다. ⚠ 예산이 다해 멈춘 틱에도 한다: 마지막 틱 뒤에는 슬롯이
-  //    닫혀 다른 틱이 없으므로, 여기서 빠지면 그 슬롯은 아무 신호 없이 지나간다(코덱스 #846).
+  // 4) 슬롯 마지막 틱의 판정 — (나라, 시간대 묶음)마다. 마지막 틱 뒤에는 슬롯이 닫혀 다른 틱이 없다(코덱스 #846).
+  //    ⚠ 경보가 닿게 하는 것은 여기가 아니라 cron 의 순서다 — 마지막 틱에는 날씨를 맨 앞에서 돌려 한도에 닿지 않는다
+  //    (`hasWeatherSlotLastTick`). 그래도 한도에 걸렸으면 판정은 하되(error 로그 한 줄은 남는다) Sentry 전송은 같은
+  //    한도에 걸려 빠진다.
   evaluateSlotEnds(slots, {
     isDone,
     failedReasons,

@@ -4,7 +4,8 @@
 //  - cron 은 지역마다 **현지 슬롯**(21:00~21:59 저녁 → 내일~+3, 06:00~06:59 아침 → 오늘~+3)에서만 일한다.
 //    슬롯 밖이면 DB·네트워크를 부르지 않는다. [내일, +3] 에 슬롯 시작 뒤의 행이 없으면 due.
 //  - 한 틱은 SELECT 1 + fetch ≤ 10(KMA 3·JMA 8·NWS 4) + batch 1. 'Too many subrequests' 면 멈춘다.
-//  - 슬롯 마지막 틱(현지 분 ≥ 55)에 (나라, 시간대 묶음)마다 판정해 경보를 올린다.
+//  - 슬롯 마지막 틱(현지 분 ≥ 55)에 (나라, 시간대 묶음)마다 판정해 경보를 올린다. cron 은 그 틱에 날씨를 5분 틱의
+//    맨 앞에서 돌린다(경보도 subrequest 라 — `scheduled-weather-last-tick.test.ts`).
 //  - 읽기 경로는 36시간 안의 행이면 그대로, 아니면 [오늘, +3] 안에서만 원천을 한 번 부른다.
 //
 // DB 는 **실제 libSQL**(:memory: + runMigrations)이다 — 마이그레이션 #123 의 DDL·upsert·DELETE 를 그대로 돌린다.
@@ -25,6 +26,7 @@ import ttsRoutes from '../src/routes/tts';
 import { runMigrations } from '../src/lib/migrations';
 import {
   hasOpenWeatherSlot,
+  hasWeatherSlotLastTick,
   openWeatherSlot,
   refreshWeatherRegionDaily,
   resolveRegionVariantIndex,
@@ -202,6 +204,24 @@ describe('슬롯 — 현지 21:00~21:59(저녁), 06:00~06:59(아침)', () => {
     expect(batch).not.toHaveBeenCalled();
     expect(fetchMock).not.toHaveBeenCalled();
     expect(hasOpenWeatherSlot(EVENING)).toBe(true);
+  });
+
+  it('마지막 틱인가(cron 이 그 틱에 날씨를 맨 앞에서 돌린다) — 지역별 lastTick 과 늘 같은 답, 서머타임 날에도', () => {
+    expect(hasWeatherSlotLastTick(EVENING_LAST)).toBe(true); // 21:55 KST·JST
+    expect(hasWeatherSlotLastTick(EVENING)).toBe(false); // 21:05
+    expect(hasWeatherSlotLastTick(new Date('2026-10-01T12:50:00Z'))).toBe(false);
+    expect(hasWeatherSlotLastTick(new Date('2026-10-01T13:00:00Z'))).toBe(false); // 닫힌 뒤
+    expect(hasWeatherSlotLastTick(new Date('2026-10-01T08:55:00Z'))).toBe(false); // 슬롯이 열린 곳이 없다
+    // 시간대마다 한 곳씩이면 충분하다 — 판정은 시간대만 본다.
+    const perZone = [...new Map(WeatherRegions.all.map((r) => [r.tz, r])).values()];
+    for (const day of ['2026-10-01', '2026-11-01', '2026-03-08']) {
+      for (let minute = 0; minute < 24 * 60; minute += 5) {
+        const now = new Date(Date.parse(`${day}T00:00:00Z`) + minute * 60_000);
+        const expected = perZone.some((r) => openWeatherSlot(r, now)?.lastTick === true);
+        expect(hasWeatherSlotLastTick(now), now.toISOString()).toBe(expected);
+        if (expected) expect(hasOpenWeatherSlot(now)).toBe(true);
+      }
+    }
   });
 });
 
@@ -561,7 +581,9 @@ describe('슬롯 끝 경보 — 마지막 틱(현지 분 ≥ 55)에 (나라, 시
   });
 
   it('마지막 틱이 워커 한도(Too many subrequests)로 멈춰도 판정한다 — 그 틱에 받은 것은 세지 않고 사유는 subrequest_limit', async () => {
-    // 마지막 틱 뒤에는 슬롯이 닫혀 다른 틱이 없다 — 여기서 빠지면 그 슬롯은 신호 없이 지나간다(코덱스 #846).
+    // 마지막 틱 뒤에는 슬롯이 닫혀 다른 틱이 없다(코덱스 #846). cron 은 그 틱에 날씨를 맨 앞에서 돌려 이 갈래에 닿지
+    // 않게 한다(`scheduled-weather-last-tick.test.ts`). 그래도 닿으면 판정은 한다 — error 로그 한 줄은 남지만 Sentry
+    // 전송은 같은 한도에 걸려 빠진다.
     const db = await freshDb();
     let jmaCalls = 0;
     // 앞의 두 office 는 받았지만(적지 못한다) 그 뒤에 한도에 걸린다.

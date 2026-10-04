@@ -31,6 +31,7 @@ vi.mock('../src/lib/transactions', () => ({
 // weather-region-daily.test.ts.
 vi.mock('../src/lib/weather-region-daily', () => ({
   hasOpenWeatherSlot: vi.fn().mockReturnValue(false),
+  hasWeatherSlotLastTick: vi.fn().mockReturnValue(false),
   refreshWeatherRegionDaily: vi.fn(),
 }));
 vi.mock('../src/lib/fcm', () => ({
