@@ -28,9 +28,9 @@ data class AuthSession(
      * `userPlanPromo`) — 캐시된 계산값 `plus` 는 **종료 전에 받은 것**일 때만, 종료가 지나면
      * 무료로 읽는다. 종료 **뒤에** 받은 답은 서버가 이미 계산한 것이라 그대로 믿는다.
      *
-     * 서버 응답을 저장하는 자리(로그인·`/auth/me`)가 새로 찍고, 프로필만 고쳐 다시 저장하는
-     * 자리는 **들고 있던 값을 그대로** 넘긴다 — plan·프로모와 함께 복사된 옛 답이므로 받은
-     * 시각도 그 답의 것이어야 한다.
+     * 서버 응답을 저장하는 자리(로그인·`/auth/me`)가 새로 찍는다. 프로필만 고친 저장
+     * ([AuthSessionStore.updateUserIfAlive])은 plan 답이 아니라 **저장소의 값을 그대로** 둔다 —
+     * plan·프로모와 한 벌이라, 셋 중 하나만 옛 답의 것이 되면 오프라인 차단이 엉뚱한 답을 자른다.
      */
     val userFetchedAtMillis: Long? = null,
     /**
@@ -520,8 +520,8 @@ class AuthSessionStore internal constructor(
      * @param rolledToken 서버가 이번 응답으로 **새로 준** 토큰. 없으면(null·공백) 저장소의
      *   현재 토큰을 지킨다 — 호출부가 시작할 때 잡아 둔 토큰으로 되돌리면 안 된다. 그 사이
      *   굴러간 토큰을 옛 것으로 덮는 것이기 때문이다.
-     * @param userFetchedAtMillis [user] 를 서버에서 받은 시각([AuthSession.userFetchedAtMillis]).
-     *   `/auth/me` 응답이면 지금, 들고 있던 세션의 프로필만 고친 것이면 **그 세션의 값**이다.
+     * @param userFetchedAtMillis [user] 를 서버에서 받은 시각([AuthSession.userFetchedAtMillis]) — 방금 받은
+     *   응답이면 지금. 들고 있던 세션의 프로필만 고친 저장은 이 함수가 아니라 [updateUserIfAlive] 다.
      *
      * 저장하지 않는 경우(모두 null 반환):
      *  - 시작할 때의 세션이 이미 끝났다([sessionSurvivedForWrite]).
@@ -539,13 +539,6 @@ class AuthSessionStore internal constructor(
          * 옛 설정을 쓰지 않을 때(`fencedAccountSettings`). null 이면 [user] 의 것 그대로.
          */
         dynamicPromptSettingsOverride: DynamicPromptSettings? = null,
-        /**
-         * 계정 설정은 **저장소에 지금 있는 값**을 지킨다 — 이름·가족 설정처럼 다른 칸만 고친 저장(Codex #837 검증).
-         * 그런 저장의 [user] 는 요청 **전에** 잡아 둔 세션의 복사본이라, 그 사이 올리기·`/auth/me` 가 적은 새 지역·사주를
-         * 옛 값으로 되쓴다 — 그러면 받아 적기가 그 옛 값을 기기와 공휴일 국가에 적는다. 읽기와 쓰기를 같은 락 안에서
-         * 한다. [dynamicPromptSettingsOverride] 가 있으면 그쪽이 이긴다.
-         */
-        keepStoredPromptSettings: Boolean = false,
     ): AuthSession? = synchronized(sessionWriteLock) {
         val storedToken = prefs.getString(KEY_TOKEN, null)
         val alive = sessionSurvivedForWrite(
@@ -560,8 +553,49 @@ class AuthSessionStore internal constructor(
             provider = provider,
             user = user,
             userFetchedAtMillis = userFetchedAtMillis,
-            dynamicPromptSettingsOverride = dynamicPromptSettingsOverride
-                ?: if (keepStoredPromptSettings) readDynamicPromptSettings() else null,
+            dynamicPromptSettingsOverride = dynamicPromptSettingsOverride,
+        )
+    }
+
+    /**
+     * 프로필 저장(`PATCH /user/me` — 닉네임·가족 알람 설정·계정 설정)의 결과를 적는다 — **지금 저장된 세션 위에
+     * 바꾼 칸만** 얹는다. 시작할 때의 세션이 살아 있지 않거나 다른 계정이 됐으면 아무것도 쓰지 않고 null.
+     *
+     * ⚠ **요청 전에 잡아 둔 세션의 사본을 저장하지 말 것**(2026-10-05). 그 사본에는 plan·프로모·받은 시각·다른 칸이
+     * 요청을 보낼 때의 값으로 들어 있어, 그 사이 `/auth/me`(쿠폰·초대 등록 뒤의 갱신, `plan_changed`, 복귀 갱신,
+     * 다른 기기 결제)가 적은 더 새 답을 다음 `/auth/me` 까지 되돌린다 — 판정 스냅샷은 그대로여도, 세션 plan 을
+     * 직접 읽는 편집기(`freeVoiceTier`)·목소리 관리(`paidVoiceAccess`)가 방금 가족이 된 사람을 무료로 그렸다.
+     * 예전에는 계정 설정 한 칸만 지켰다(Codex #837 검증의 `keepStoredPromptSettings`).
+     *
+     * - **plan·프로모·받은 시각은 저장소의 짝 그대로다** — 프로필 저장은 plan 답이 아니다. [change] 가 무엇을
+     *   돌려주든 plan·프로모·계정 id 는 저장소의 값으로 다시 박는다(받은 시각과 한 벌 — [AuthSession.userFetchedAtMillis]).
+     * - 토큰·provider 도 저장소의 것이다(Codex #665 P2 — 그 사이 굴러간 토큰을 옛 것으로 덮지 않는다).
+     * - 읽기·확인·쓰기를 [saveSessionIfAlive]·[clear] 와 같은 락 안에서 한다 — 따로 하면 그 사이 끼어든 쓰기를 되돌린다.
+     *
+     * @param userId 요청을 보낸 계정. 그 사이 다른 계정이 됐으면 남의 세션에 쓰지 않는다(Codex #665 P1).
+     * @param change 바꾼 칸만 고친다(`{ it.copy(name = …) }`). 저장소에서 읽은 사용자를 받는다.
+     */
+    fun updateUserIfAlive(
+        expectedGeneration: Long,
+        userId: String,
+        change: (AuthUser) -> AuthUser,
+    ): AuthSession? = synchronized(sessionWriteLock) {
+        val alive = sessionSurvivedForWrite(
+            expectedGeneration = expectedGeneration,
+            currentGeneration = prefs.getLong(KEY_SESSION_GENERATION, 0L),
+            currentToken = prefs.getString(KEY_TOKEN, null),
+        )
+        if (!alive) return@synchronized null
+        val stored = read()?.takeIf { it.user.id == userId } ?: return@synchronized null
+        save(
+            token = stored.token,
+            provider = stored.provider,
+            user = change(stored.user).copy(
+                id = stored.user.id,
+                plan = stored.user.plan,
+                personalPromo = stored.user.personalPromo,
+            ),
+            userFetchedAtMillis = stored.userFetchedAtMillis,
         )
     }
 
@@ -581,8 +615,8 @@ class AuthSessionStore internal constructor(
         dynamicPromptSettingsOverride: DynamicPromptSettings? = null,
     ): AuthSession = synchronized(sessionWriteLock) {
         // 서버가 계산 시각(`personal_promo.computed_at`)을 줬으면 그것이 이 답의 시각이다(D7).
-        // **정규화 전에** 읽는다 — 정규화가 그 키를 뺀다. 프로필만 고친 저장은 이미 정규화된
-        // user 라 키가 없어, 들고 있던 값이 그대로 남는다.
+        // **정규화 전에** 읽는다 — 정규화가 그 키를 뺀다. 프로필만 고친 저장([updateUserIfAlive])은
+        // 저장소에서 읽은 user 라 키가 없어, 저장소의 받은 시각이 그대로 남는다.
         val answeredAtMillis = userFetchedAtMillis?.let { received ->
             planAnswerStampMillis(runCatching { user.personalPromo }.getOrNull(), received)
         }

@@ -8,6 +8,7 @@ import com.alarmtalk.app.core.AlarmTalkLog
 import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import com.alarmtalk.app.network.AuthSession
 import com.alarmtalk.app.network.AuthSessionStore
+import com.alarmtalk.app.network.AuthUser
 import com.alarmtalk.app.network.DynamicPromptSettings
 import com.alarmtalk.app.network.FamilyAlarmQuietWindow
 import com.alarmtalk.app.network.EmailVerificationConfirmRequest
@@ -528,8 +529,13 @@ internal fun MainViewModel.updateNickname(name: String) {
         runCatching {
             api.updateProfile(authorization, com.alarmtalk.app.network.UpdateProfileRequest(name = trimmed))
         }.onSuccess {
-            val updated = session.copy(user = session.user.copy(name = trimmed))
-            saveSessionPreservingCurrentToken(updated, startGeneration)?.let { authSession = it }
+            // 바꾼 칸(이름)만 **지금 세션** 위에 — 요청 전의 `session` 사본을 되쓰면 그 사이 `/auth/me` 가 적은
+            // plan·프로모·받은 시각을 되돌린다([saveProfileEdit]).
+            saveProfileEdit(session.user.id, startGeneration) { it.copy(name = trimmed) }?.let { saved ->
+                authSession = saved
+                // 확인 조회 — 저장 전에 떠나 옛 이름을 읽은 `/auth/me` 가 늦게 와도 바로잡는다([saveProfileEdit]).
+                refreshAppSession(rollToken = false)
+            }
             dismissEditNickname()
         }.onFailure { error ->
             AlarmTalkLog.reportError("Failed to update nickname", error)
@@ -573,8 +579,10 @@ internal fun MainViewModel.updateFamilyAlarmSettings(
                 ),
             )
         }.onSuccess {
-            val updated = session.copy(
-                user = session.user.copy(
+            // 바꾼 칸(가족 설정 다섯)만 **지금 세션** 위에 — 초대 코드 등록 직후라면 그 사이 `/auth/me` 가 적은
+            // 가족 plan 을 요청 전의 무료 사본이 되돌린다([saveProfileEdit]).
+            saveProfileEdit(session.user.id, startGeneration) { user ->
+                user.copy(
                     allowFamilyAlarms = allowFamilyAlarms,
                     familyAlarmQuietDays = firstWindow?.days ?: emptyList(),
                     // 세션 캐시의 레거시 3필드는 non-null 이라 표시용 자리값을 둔다.
@@ -582,9 +590,12 @@ internal fun MainViewModel.updateFamilyAlarmSettings(
                     familyAlarmQuietStart = firstWindow?.start ?: "09:00",
                     familyAlarmQuietEnd = firstWindow?.end ?: "18:30",
                     familyAlarmQuietWindows = normalizedWindows,
-                ),
-            )
-            saveSessionPreservingCurrentToken(updated, startGeneration)?.let { authSession = it }
+                )
+            }?.let { saved ->
+                authSession = saved
+                // 확인 조회 — 저장 전에 떠나 옛 가족 설정을 읽은 `/auth/me` 가 늦게 와도 바로잡는다([saveProfileEdit]).
+                refreshAppSession(rollToken = false)
+            }
             refreshSocial()
             message = getApplication<android.app.Application>().getString(R.string.msg_family_alarm_settings_saved)
         }.onFailure { error ->
@@ -647,8 +658,9 @@ private suspend fun MainViewModel.uploadDynamicPromptSettings(userId: String) {
         // '아직 안 올라간 변경' 으로 보고 한 번 더 올린다.
         dynamicPromptStore.markPushed(session.user.id, settings)
         val updatedSettings = response.dynamicPromptSettings ?: settings
-        val updated = session.copy(user = session.user.copy(dynamicPromptSettings = updatedSettings))
-        val saved = saveSessionPreservingCurrentToken(updated, startGeneration, promptSettings = updatedSettings)
+        // 올린 값(계정 설정)만 **지금 세션** 위에 — 차례가 온 뒤 잡은 `session` 도 요청 전의 사본이라, 그대로 되쓰면 그 사이
+        // `/auth/me` 가 적은 plan·프로모·받은 시각과 다른 칸을 되돌린다([saveProfileEdit]).
+        val saved = saveProfileEdit(session.user.id, startGeneration) { it.copy(dynamicPromptSettings = updatedSettings) }
             ?.also { authSession = it }
         refreshSocial()
         // **울타리 뒤의 조회로 확인한다**(Codex #837) — 울타리는 올리기 전에 떠난 조회를 모두 가리므로, 그중 올리기
@@ -1338,41 +1350,29 @@ internal fun MainViewModel.clearMessage() {
 }
 
 /**
- * 프로필 일부만 바꿔 세션을 다시 저장할 때 쓴다.
+ * 프로필 저장(`PATCH /user/me` — 닉네임·가족 알람 설정·계정 설정)이 성공한 뒤 **바꾼 칸만** 세션에 적는다.
+ * 저장소가 지금 세션을 같은 락 안에서 읽어 [change] 만 얹는다(`AuthSessionStore.updateUserIfAlive`).
  *
- * **토큰은 잡아 둔 것이 아니라 지금 저장소에 있는 것**을 쓴다. 요청이 도는 사이 `GET /auth/me`
- * 의 rolling refresh 가 토큰을 굴렸을 수 있는데, 그때 옛 토큰을 그대로 다시 저장하면 새 토큰이
- * 사라진다 — 하필 옛 토큰의 만료가 임박한 상황(=갱신이 필요했던 바로 그 상황)이면 다음 요청이
- * 401 로 사용자를 로그아웃시킨다(Codex #665 P2).
+ * ⚠ **요청 전에 잡은 세션의 사본을 다시 저장하지 말 것**(2026-10-05). 예전에는 `session.copy(user = …)` 를 통째로
+ * 저장해, 요청이 도는 사이 `/auth/me`(쿠폰·초대 등록 뒤의 갱신, `plan_changed`, 복귀 갱신)가 적은 plan·프로모·받은
+ * 시각과 다른 칸(다른 기기에서 바꾼 이름·가족 설정)을 다음 `/auth/me` 까지 되돌렸다. 판정 스냅샷은 그대로였지만
+ * 세션 plan 을 직접 읽는 편집기(`freeVoiceTier`)·목소리 관리(`paidVoiceAccess`)가 방금 가족이 된 사람을 무료로
+ * 그렸다. 계정 설정 한 칸만 지키던 것(Codex #837 검증)을 안 바꾼 칸 전부로 넓혔다.
+ *
+ * 토큰도 저장소의 것을 지킨다 — 요청이 도는 사이 rolling refresh 가 굴린 토큰을 옛 것으로 덮으면, 하필 옛 토큰의
+ * 만료가 임박했을 때 다음 요청이 401 로 사용자를 로그아웃시킨다(Codex #665 P2). 세션이 그 사이 끝났거나 다른 계정이
+ * 됐으면 아무것도 적지 않는다 — A 의 유저 정보에 B 의 토큰이 붙은 잡종 세션이 된다(Codex #665 P1).
+ *
+ * 저장이 끝나면 부르는 쪽이 **확인 조회**를 한다(토큰은 굴리지 않는다) — 저장 **전에** 떠나 옛 이름·가족 설정을 읽은
+ * `/auth/me` 가 늦게 와도, 확인 조회가 뒤에 덮거나 그 옛 답이 확인 조회의 순번에 밀려 버려진다
+ * (`PersonalPromoLedger.claimPlanAnswer`). iOS `updateProfile` 뒤의 `refreshUser` 와 같다.
  */
-internal fun MainViewModel.saveSessionPreservingCurrentToken(
-    updated: com.alarmtalk.app.network.AuthSession,
+internal fun MainViewModel.saveProfileEdit(
+    userId: String,
     expectedGeneration: Long,
-    /**
-     * 이 저장이 **올린** 계정 설정(지역·사주 올리기). null 이면 이 저장은 계정 설정을 바꾸지 않은 것이라 저장소에 지금
-     * 있는 값을 지킨다 — [updated] 는 요청 전의 복사본이라 그 사이 받아 적은 새 값을 되돌린다(`keepStoredPromptSettings`).
-     */
-    promptSettings: DynamicPromptSettings? = null,
-): com.alarmtalk.app.network.AuthSession? {
-    // **세션이 그 사이 끝났거나 다른 계정이 되었으면 버린다.** 토큰만 지금 것으로 갈아 끼우면
-    // A 의 유저 정보에 B 의 토큰이 붙은 잡종 세션이 저장된다 — 목록은 A 로 걸러지는데 서버
-    // 호출은 B 로 나가고, 이어지는 재예약이 A 의 알람을 되살리고 B 의 것을 취소한다
-    // (Codex #665 P1). refreshAppSession 과 같은 기준으로 본다.
-    //
-    // 그 판정과 저장을 **저장소가 한 덩어리로** 한다. 여기서 읽고·병합하고·쓰면 그 사이에
-    // 워커가 굴러간 토큰을 저장할 수 있고, 그러면 이 저장이 옛 토큰을 되써서 **방금 갱신된
-    // 토큰을 버린다**(Codex #665 P2).
-    val saved = authSessionStore.saveSessionIfAlive(
-        expectedGeneration = expectedGeneration,
-        user = updated.user,
-        provider = updated.provider,
-        // 프로필 갱신은 토큰을 건드리지 않는다 — 저장소의 현재 토큰을 그대로 지킨다.
-        rolledToken = null,
-        // plan·프로모는 들고 있던 세션의 것을 그대로 복사했다 — 받은 시각도 그 답의 것이다.
-        userFetchedAtMillis = updated.userFetchedAtMillis,
-        dynamicPromptSettingsOverride = promptSettings,
-        keepStoredPromptSettings = promptSettings == null,
-    )
+    change: (AuthUser) -> AuthUser,
+): AuthSession? {
+    val saved = authSessionStore.updateUserIfAlive(expectedGeneration, userId, change)
     if (saved == null) {
         Log.i(TAG, "Dropping stale profile save: session ended or switched")
     }
@@ -1478,7 +1478,7 @@ internal suspend fun MainViewModel.refreshAppSessionNow(rollToken: Boolean = tru
             if (!personalPromoLedger.claimPlanAnswer(accountRequest)) {
                 Log.i(TAG, "Dropping superseded /auth/me result: a later request's answer is already applied")
                 // ⚠ **받아 적기는 다시 돌린다** — 이 답은 버려도 '응답이 왔다' 는 같다(Codex #837 검증, 스펙
-                //   「경계는 넷이다」의 응답 경계). 더 새 답이 반영된 **뒤에** 올리기가 실패했으면, 그 뒤 처음 온 응답이
+                //   「경계는 다섯이다」의 응답 경계). 더 새 답이 반영된 **뒤에** 올리기가 실패했으면, 그 뒤 처음 온 응답이
                 //   이 밀린 답일 수 있다 — 여기서 안 돌리면 밀린 변경이 다음 저장되는 응답까지 안 올라간다. 값은 지금
                 //   세션의 것(더 새 답)이다. iOS 는 밀린 답도 `recordAccountAnswer` 로 세어 같은 일이 난다.
                 com.alarmtalk.app.data.accountSettingsReceipt(authSession)?.let { receipt ->
