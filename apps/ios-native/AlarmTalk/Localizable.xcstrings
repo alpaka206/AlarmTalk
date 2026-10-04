@@ -2279,6 +2279,23 @@
         }
       }
     },
+    "날씨 정보: 기상청 · 気象庁 · 미국 기상청(NWS)의 예보를 바탕으로 AlarmTalk가 가공" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Weather data: forecasts from KMA (Korea), JMA (Japan) and the U.S. National Weather Service, processed by AlarmTalk"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "天気情報：韓国気象庁・気象庁・米国国立気象局（NWS）の予報をもとにAlarmTalkが加工"
+          }
+        }
+      }
+    },
     "날씨가 들어간 문구는 지역을 골라 주세요." : {
       "extractionState" : "manual",
       "localizations" : {

@@ -656,6 +656,40 @@ iOS `Generated/WeatherRegions.generated.swift`)을 쓴다. 생성 파일을 손�
   일본어 목록은 일본 도시 8개였는데 나라는 `대한민국` 으로 보냈다. 이 값들은 전부 위 규칙으로
   되짚힌다(회귀 테스트가 main·develop 의 옛 목록을 전부 돈다).
 
+##### 지역 시트의 날씨 출처 줄 — **서버가 원천을 말할 때만** (2026-10-05)
+
+지역 시트(설정·편집기 공용 — 지역을 고르는 곳은 이 시트 하나다)의 목록 **아래에 고정**한 한 줄이 날씨의 출처를
+말한다. 원천과 가공했다는 사실을 적는 것은 기상법 제12조의3 ⑤(출처 표시)와 気象庁 공공데이터 이용규약(가공했으면
+그 사실을 적고, 국가가 만든 것처럼 보이게 하지 않는다)이 요구한다. 문장은 세 언어 그대로이고 두 앱이 같다:
+
+- ko `날씨 정보: 기상청 · 気象庁 · 미국 기상청(NWS)의 예보를 바탕으로 AlarmTalk가 가공`
+- en `Weather data: forecasts from KMA (Korea), JMA (Japan) and the U.S. National Weather Service, processed by AlarmTalk`
+- ja `天気情報：韓国気象庁・気象庁・米国国立気象局（NWS）の予報をもとにAlarmTalkが加工`
+
+⚠ **이 줄은 서버가 그 원천을 쓴다고 말할 때만 보인다**(코덱스 #845). 문장은 **서버가 실제로 쓰는 원천**에 대한
+사실이다 — 앱은 스토어에 먼저 나가고 서버의 원천 교체는 따로 배포되므로(늦어지거나 되돌려질 수 있다), 앱이 문장을
+스스로 단정하면 그 사이 쓰지 않는 기관을 출처로 적는다. 표기의 목적이 거꾸로 된다.
+
+- **계약**: `GET /api/app/version`(두 앱이 이미 부르는 버전 확인 — 인증 불필요, 캐시하지 않는다)의
+  `weather_attribution`. 값은 **불투명 토큰 하나**다 — `"kma_jma_nws"` = 서버의 날씨가 기상청(KR)·気象庁(JP)·NWS(US)의
+  예보에서 온다. 백엔드의 단일 출처는 `WEATHER_ATTRIBUTION`(`lib/weather-attribution.ts`)이다.
+  - **지금은 `null`** 이다 — 서버는 아직 Open-Meteo 로 받는다(아래 「서버가 미리 계산해 둔다」). 원천을 공식 예보로
+    바꾸는 변경이 **그 변경 안에서** `"kma_jma_nws"` 로 올린다 — 배포·롤백이 원천과 표기를 함께 옮긴다. 회귀 테스트가
+    Open-Meteo 를 부르는 코드가 남아 있는 동안 토큰이 `null` 인지 본다.
+- **보이는 규칙**: 토큰이 **정확히** `"kma_jma_nws"` 일 때만 그린다. 그 밖 — 모르는 값·`null`·필드가 없는 옛 서버·버전
+  확인 실패·아직 응답 전 — 은 숨긴다(대소문자·공백을 고쳐 읽지 않는다).
+  - iOS 는 그 줄의 실측 높이(+ 그 위 간격)를 목록 높이 상한에서 **그릴 때만** 뺀다 — 그리는데 안 빼면 시트가 화면을
+    꽉 채워 스크림이 사라지고, 안 그리는데 빼면 목록만 짧아진다.
+- **값은 이 프로세스 동안만** 들고 있다 — 저장하지 않고, 이것 때문에 새로 묻지도 않는다. 버전 확인(안드로이드
+  `checkAppVersion` — 앱 화면이 뜰 때, iOS `AppVersionGate.checkAppVersion` — 실행 때 한 번)이 받아 온 값을 쓰고,
+  확인이 **실패하면 지운다** — 앞 응답의 원천을 계속 말하지 않는다. 서버가 원천을 되돌리면 **다음 확인부터** 숨는다
+  (응답을 캐시하지 않는다). 이미 떠 있는 프로세스는 그 확인 전까지 앞 값을 쓴다 — 새 요청을 두지 않은 대가다.
+- **토큰을 늘릴 때**(원천 조합이 바뀌면): 새 토큰과 그 문장을 두 앱에 먼저 더하고, 서버는 그 앱이 나간 뒤에 새 토큰을
+  낸다. 옛 앱은 모르는 토큰을 숨기므로 틀린 문장을 말하지 않는다. **이미 나간 토큰의 뜻은 바꾸지 않는다.**
+- **순서**: 이 계약(서버 `null`)이 먼저 들어가고, 원천 교체가 토큰을 올린다 — 그 전에는 어느 앱 버전에서도 줄이
+  안 보인다. 거꾸로 원천 교체를 prod 에 낼 때는 이 줄을 그릴 줄 아는 앱이 스토어에 있어야 한다 — 옛 앱에는 줄
+  자체가 없어서, 먼저 내면 그 사용자는 출처 없이 공식 예보를 받는다.
+
 #### 계정의 지역·사주는 **기기에 받아 적는다** (2026-09-30)
 
 설정 '지역'·'운세 정보' 행과 편집기(새 알람의 프리필, 문구 화면)는 **이 기기에 적힌 값**을 읽는다(안드로이드
@@ -1578,6 +1612,8 @@ R2 파일·ElevenLabs 클론은 DB 트랜잭션 안에서 지울 수 없으므�
 | 계정의 지역·사주 받아 적기(안 올라간 변경은 덮지 않고 다시 올린다 · 빈 묶음은 로컬 유지 · 멱등 · 로그아웃이 표시도 지운다) | `DynamicPromptPreferenceStore.adoptAccountSettings`·`markPushed`·`saveWeatherLocation`/`saveFortuneInfo`(표시) ← `MainViewModel.onAccountPromptSettingsReceived`(← `AlarmTalkApp` 의 `LaunchedEffect`, 축 `accountSettingsReceipt` = 응답 순번 `AuthSession.accountAnswerSeq`)·`SettingsScreen`(같은 축), 표시 내리기 `uploadDynamicPromptSettings`(보낸 세대가 그대로일 때만), 프로필 저장은 `keepStoredPromptSettings`, 밀린 응답도 받아 적기 — 회귀 `AccountPromptSettingsAdoptionTest`·`PromptSettingsAnswerFenceTest` | `DynamicPromptPreferences.adoptAccount`·`markPushed`·`saveLocalEdit`·`current`(`AccountPromptSettingsAdoption.swift`) ← `AlarmTalkApp` 의 계정 설정 관찰(`accountPromptSettingsKey` — 축에 `AuthViewModel.accountAnswerRevision`)·`SettingsView.loadPromptPreferences`(같은 축 `PromptObservation` ← `SettingsView.observation(of:)`, 고칠 때는 `editBase`)·`AlarmEditorSheet.savedPromptPreferences`, 표시 내리기 `AuthViewModel.updateProfile`(보낸 `sessionRevision` 이 그대로일 때만), 떠날 때 `beginLeavingAccount` + 세션을 비운 뒤 다시 지우기 — 회귀 `AccountPromptSettingsAdoptionTests`(`editBase` 판정 — ⚠ 화면의 두 호출부 `onSelect`·`saveFortuneDraft` 는 SwiftUI 라 유닛 테스트가 닿지 않는다)·`AuthViewModelTests`(관찰 축·재로그인·로그아웃 창) | `PATCH /user/me` 의 `dynamic_prompt_settings`(`normalizeWeatherSetting`) |
 | 편집기 문구 화면 → 내 계정 설정(가족·직접 입력 제외 · 서버 값과 다를 때만 올린다 · 표준 글자로 적는다 · 지역이 바뀔 때만 공휴일 국가) | `AlarmEditorScreen` 의 문구 결과 처리(`saveWeatherLocation`·`saveFortuneInfo` → `onUpdateDynamicPromptSettings`, `WeatherRegionHolidaySync.onRegionSaved`) | `AlarmEditorSheet.syncOwnPromptPreferences` ← 판정 `DynamicPromptPreferences.editorUpdate`(`EditorPromptPreferenceUpdate.swift`) — 회귀 `EditorPromptPreferenceUpdateTests` | — |
 | 지역 시트: 나라 세그먼트 고정 · 열 때 고른 지역으로 스크롤 · 나라를 바꾸면 맨 위 · 화면의 90% 까지 | `WeatherLocationDialog`(`scrollsContent = false`) ← `WakerSelectionSheet`(`ui/components/WakerModal.kt`) | `WeatherRegionPickerSheet`(`ScrollViewReader`) ← `SheetScrollingContent.reservedHeight`·`BottomSheetMetrics.maxFraction` | — |
+| 지역 시트 날씨 출처 줄(목록 아래 고정 · ko·en·ja 같은 문장) — **서버 토큰이 정확히 `"kma_jma_nws"` 일 때만**, 그 밖·확인 실패·응답 전은 숨김 | `WeatherLocationDialog` 의 `if (showsAttribution)` ← 판정 `showsWeatherAttribution` ← `LocalWeatherAttribution`(`ui/editor/AlarmRandomPromptSettings.kt`, `MainActivity` 가 내려 준다) · 문장 `region_picker_weather_attribution`(`res/values{,-en,-ja}/strings.xml`, 그리는 자리는 이 하나) — 회귀 `WeatherAttributionTest` | `WeatherRegionPickerSheet` 의 `showsAttribution`(그릴 때만 `attributionHeight` 를 `reservedListHeight` 에서 뺀다) ← 판정 `WeatherAttribution.showsLine` · `Localizable.xcstrings` — 회귀 `WeatherAttributionTests` | — |
+| 날씨 출처 토큰 계약 — `GET /api/app/version` 의 `weather_attribution`(불투명 토큰 · 지금 `null` · 원천 교체가 올린다) · 저장하지 않고 새로 묻지 않는다 · 확인이 실패하면 지운다 | `AppVersionResponse.weatherAttribution`(`network/AuthApi.kt`) → `MainViewModel.weatherAttribution` ← `checkAppVersion`(실패면 null) — 회귀 `WeatherAttributionTest` | `AppVersionResponse.weatherAttribution`(`AlarmTalkAPIModels.swift`) → `AppVersionGate.weatherAttribution` ← `checkAppVersion`(실패면 nil) — 회귀 `AppVersionGateTests`·`WeatherAttributionTests` | `WEATHER_ATTRIBUTION`(`lib/weather-attribution.ts`) → `GET /api/app/version`(`index.ts`) — 회귀 `app-version.test.ts`(필드가 실리고 `null` · Open-Meteo 를 부르는 코드가 남아 있으면 `null`) |
 | 새 알람: 행에 옛 앱용 글자 + 요청에 `region` | 고를 때 `region.legacyCountry`/`legacyCity` 를 적고, 요청은 `weatherRegionFor(…)?.key` ← `AlarmRepository.resolveWeatherVariantForDraft`·`resolveDueCloneBucketVariants` — 회귀 `WeatherRegionRequestTest` | `WeatherRegions.storageLabels` ← `AlarmEditorSheet`, 요청은 `resolveAlias(…)?.key` ← `WeatherVariantSaveLookup`·`WeatherVariantRefreshService` — 회귀 `WeatherVariantOwnerScopeTests` | `GET /tts/prerender-variant` 의 `region` |
 | 서버 미리 계산 · 우선순위(region → 되짚기 → 엄격한 옛 지오코딩) · 표가 없으면 저장 없이 즉석 계산 | — | — | 마이그레이션 #123 `weather_region_daily` · `refreshWeatherRegionDaily`·`isWeatherRegionRefreshSlot`(매시 첫 틱, 3시간·50곳 묶음) · 읽기 `resolveRegionVariantIndex`(12시간) — `lib/weather-region-daily.ts`, 회귀 `weather-region-daily.test.ts` |
 | 엄격한 옛 지오코딩(소재지·인구·두 배, `대한민국` 이면 나라 없이 한 번 더) | — | — | `pickStrictGeocodeResult`·`geocodeStrict`(`lib/weather-signal.ts`), 회귀 `weather-legacy-geocode.test.ts` |

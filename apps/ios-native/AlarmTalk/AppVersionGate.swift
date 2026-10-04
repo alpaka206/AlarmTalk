@@ -15,6 +15,11 @@ extension AlarmTalkAPI: AppVersionProviding {}
 final class AppVersionGate: ObservableObject {
     @Published private(set) var updateRequired = false
     @Published private(set) var storeURLString = ""
+    /// 서버가 알려 준 날씨 원천 토큰 — `GET /api/app/version` 의 `weather_attribution`. 지역 시트
+    /// (`WeatherRegionPickerSheet`)가 출처 줄을 그릴지 이 값으로 정한다(`WeatherAttribution.showsLine`) —
+    /// 앱이 원천을 스스로 단정하지 않는다. 저장하지 않고 새로 묻지도 않는다: 실행 때 한 번의 확인이 받아 온 값을
+    /// 이 프로세스 동안만 들고, 확인이 실패하면 nil(숨김)이다. 안드로이드 `MainViewModel.weatherAttribution`.
+    @Published private(set) var weatherAttribution: String?
 
     /// 버전 확인이 **끝났는지**(성공·실패 무관). 안드로이드 `MainViewModel.versionChecked`.
     ///
@@ -50,9 +55,14 @@ final class AppVersionGate: ObservableObject {
             storeURLString = policy.storeUrl
             // Android: appVersionCode in 1 until minSupportedVersion
             updateRequired = appVersionCode >= 1 && appVersionCode < policy.minSupportedVersion
+            // 지역 시트의 날씨 출처 줄 — 서버가 지금 쓰는 원천을 말할 때만 그린다(`WeatherAttribution.showsLine`).
+            weatherAttribution = policy.weatherAttribution
         } catch {
             // 정책 조회 실패 시 앱 사용을 막지 않는다.
             updateRequired = false
+            // 원천을 확인하지 못했으면 출처를 말하지 않는다 — 앞 응답의 값을 남기면 그 사이 원천을 되돌린
+            // 서버에서도 옛 원천을 출처로 적는다.
+            weatherAttribution = nil
         }
         // 성공·실패 모두 여기로 온다 — 위 `checked` 주석 참조.
         checked = true
