@@ -759,10 +759,15 @@ internal fun MainViewModel.checkAppVersion() {
             // 이 판정 결과를 InAppUpdateManager 가 그대로 소비한다(버전 비교 중복 구현 금지).
             updateRequired = appVersionCode in 1 until policy.minSupportedVersion
             updateRecommended = appVersionCode in 1 until policy.latestVersion
+            // 지역 시트의 날씨 출처 줄 — 서버가 지금 쓰는 원천을 말할 때만 그린다(`showsWeatherAttribution`).
+            weatherAttribution = policy.weatherAttribution
         }.onFailure { error ->
             Log.w(TAG, "Failed to check app version", error)
             updateRequired = false
             updateRecommended = false
+            // 원천을 확인하지 못했으면 출처를 말하지 않는다 — 앞 응답의 값을 남기면 그 사이 원천을 되돌린
+            // 서버에서도 옛 원천을 출처로 적는다.
+            weatherAttribution = null
         }
         // 성공·실패 모두 '확인은 끝났다'. 네트워크 실패로 영영 false 면 1회성 오버레이가
         // 영영 안 뜬다 — 버전을 못 물어본 것이 앱을 못 쓰게 할 이유는 아니다.

@@ -63,7 +63,7 @@ final class WeatherVariantRefreshService {
             .filter { BucketVariantResolver.weatherVariantNeedsRefresh($0, nowMillis: nowMillis) }
         guard !due.isEmpty else { return 0 }
 
-        // 같은 (도시, 날짜)는 한 번만 물어본다 — 같은 답을 받으려고 open-meteo 를 여러 번
+        // 같은 (도시, 날짜)는 한 번만 물어본다 — 같은 답을 받으려고 서버를 여러 번
         // 두드리면 배터리와 쿼터만 쓴다.
         let timezone = TimeZone.current.identifier
         var groups: [GroupKey: [LocalAlarmRecord]] = [:]

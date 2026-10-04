@@ -289,6 +289,7 @@
     <string name="region_picker_legacy_hint">リストから選び直してください</string>
     <string name="region_picker_legacy_value_hint">「%1$s」はリストにありません。選び直してください。</string>
     <string name="region_picker_seat_description">%1$sの天気</string>
+    <string name="region_picker_weather_attribution">天気情報：韓国気象庁・気象庁・米国国立気象局（NWS）の予報をもとにAlarmTalkが加工</string>
     <string name="settings_logout_confirm_title">ログアウトしますか？</string>
     <string name="settings_marketing_load_failed">読み込めませんでした · タップで再試行</string>
     <string name="hs_empty_card_helper">聞きたい声が起こしてくれます。</string>

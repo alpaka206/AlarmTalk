@@ -1,5 +1,19 @@
 import { describe, it, expect } from 'vitest';
+import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { join } from 'node:path';
+import app from '../src/index';
 import { appVersionPolicy } from '../src/lib/app-version';
+import { WEATHER_ATTRIBUTION } from '../src/lib/weather-attribution';
+
+const SRC = join(import.meta.dirname, '..', 'src');
+
+function walk(dir: string): string[] {
+  return readdirSync(dir).flatMap((name) => {
+    const path = join(dir, name);
+    if (statSync(path).isDirectory()) return walk(path);
+    return path.endsWith('.ts') ? [path] : [];
+  });
+}
 
 describe('appVersionPolicy', () => {
   it('android 정책 반환', () => {
@@ -85,5 +99,39 @@ it('대소문자 무시', () => {
   it('모르는 플랫폼이 ios 정책으로 새지 않는다', () => {
     expect(appVersionPolicy('windows')).not.toEqual(appVersionPolicy('ios'));
     expect(appVersionPolicy(undefined)).not.toEqual(appVersionPolicy('ios'));
+  });
+});
+
+// 지역 시트의 날씨 출처 줄은 **서버가 원천을 말할 때만** 보인다(코덱스 #845) — 두 앱은 이 필드가 정확히
+// 'kma_jma_nws' 일 때만 "기상청 · 気象庁 · 미국 기상청(NWS)" 출처를 그리고, 그 밖은 숨긴다.
+// 규칙: docs/spec/voice-and-message.md 「지역 시트의 날씨 출처 줄 — 서버가 원천을 말할 때만」.
+describe('GET /api/app/version — weather_attribution', () => {
+  // ⚠ 원천을 공식 예보로 바꾸는 변경은 `WEATHER_ATTRIBUTION` 과 **함께** 이 기대값을 'kma_jma_nws' 로 바꾼다.
+  it('두 플랫폼 응답에 필드가 실리고, 지금(Open-Meteo)은 null 이다 — 앱이 출처 줄을 숨긴다', async () => {
+    for (const platform of ['android', 'ios']) {
+      const res = await app.fetch(
+        new Request(`http://localhost/api/app/version?platform=${platform}`),
+        {} as never,
+      );
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as Record<string, unknown>;
+      // 키가 있어야 한다 — `undefined` 면 JSON 에서 빠져 옛 서버와 구별되지 않는다.
+      expect(body).toHaveProperty('weather_attribution');
+      expect(body.weather_attribution).toBeNull();
+      // 기존 계약은 그대로다.
+      expect(body.platform).toBe(platform);
+      expect(body.min_supported_version).toBe(appVersionPolicy(platform).minSupported);
+    }
+  });
+
+  // 토큰을 실제 원천과 묶는다 — Open-Meteo 호스트를 부르는 코드가 남아 있는 동안 공식 예보 원천을 말하면,
+  // 앱이 쓰지 않는 기관을 출처로 적는다(원천 교체 일부만 되돌린 경우 포함).
+  it('Open-Meteo 를 부르는 코드가 남아 있으면 토큰은 null 이다', () => {
+    const callers = walk(SRC).filter((file) =>
+      /['"`]https:\/\/[a-z.-]*open-meteo\.com/.test(readFileSync(file, 'utf8')),
+    );
+    if (callers.length > 0) {
+      expect(WEATHER_ATTRIBUTION, `Open-Meteo 를 부르는 파일: ${callers.join(', ')}`).toBeNull();
+    }
   });
 });
