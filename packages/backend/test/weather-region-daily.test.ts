@@ -742,6 +742,22 @@ describe('읽기 경로 — resolveRegionVariantIndex', () => {
     db.close();
   });
 
+  it('원천 호출 전체의 마감(WEATHER_READ_DEADLINE_MS)은 두 앱의 저장 대기(8초)보다 짧다 — 앱 값은 소스에서 읽는다', () => {
+    // 앱 상한의 근거는 fetch 하나의 상한이 아니라 이 마감이다(스펙 5-1 「대기 상한」). 한쪽만 올리면 서버가 아직
+    // 계산 중인 답을 앱이 버린다 — 그래서 두 앱의 실제 상수와 맞대어 본다.
+    const root = join(__dirname, '../../..');
+    const android = readFileSync(
+      join(root, 'apps/android-native/app/src/main/java/com/alarmtalk/app/data/AlarmRepository.kt'),
+      'utf8',
+    );
+    const ios = readFileSync(join(root, 'apps/ios-native/AlarmTalk/WeatherVariantSaveLookup.swift'), 'utf8');
+    const androidMs = Number(/WEATHER_RESOLVE_TIMEOUT_MILLIS = ([\d_]+)L/.exec(android)?.[1]?.replace(/_/g, ''));
+    const iosMs = Number(/static let timeoutSeconds: TimeInterval = (\d+)/.exec(ios)?.[1]) * 1000;
+    expect([androidMs, iosMs]).toEqual([8_000, 8_000]);
+    // DB 읽기·쓰기와 왕복을 남긴다.
+    expect(WEATHER_READ_DEADLINE_MS).toBeLessThan(Math.min(androidMs, iosMs));
+  });
+
   it('원천 호출 전체의 마감은 5초 — 늦은 KMA NODATA 뒤에는 물러서지 않고 null, cron 은 마감 없이 물러선다', async () => {
     // 앱은 저장에서 8초만 기다린다. 물러서기에 새 5초를 주면 늦은 NODATA 하나로 10초가 된다(코덱스 #846).
     expect(WEATHER_READ_DEADLINE_MS).toBe(5_000);
