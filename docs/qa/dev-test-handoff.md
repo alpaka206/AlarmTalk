@@ -118,9 +118,21 @@
     `claimPlanAnswer`). iOS 는 예약할 때 울릴 시각으로 프로모를 본다(AlarmKit — `billing-lifecycle.md` D1).
   - [ ] iOS 실기기: 끝 직전에 다음날 한 번 울릴 클론 알람을 맞추면 기본 알람음으로 예약되는지, 반복 알람은
     끝 뒤 앱을 열거나 백그라운드 새로고침이 돈 뒤 기본 알람음으로 바뀌는지.
-  - 안드로이드 닉네임 수정(`updateNickname` → `saveSessionPreservingCurrentToken`)은 PATCH 를 시작할 때
-    잡은 세션 사용자(plan·`personal_promo`·받은 시각 포함)를 그대로 쓴다 — 그 사이 `/auth/me` 가 오면
-    세션의 plan·프로모가 다음 `/auth/me` 까지 되돌아간다(기존 문제, 판정 스냅샷은 영향 없음).
+  - (해결 — 2026-10-05 `fix/profile-save-keeps-plan`) 안드로이드 닉네임 수정(`updateNickname` →
+    `saveSessionPreservingCurrentToken`)이 PATCH 를 시작할 때 잡은 세션 사용자(plan·`personal_promo`·받은 시각
+    포함)를 그대로 저장해, 그 사이 `/auth/me` 가 오면 세션의 plan·프로모가 다음 `/auth/me` 까지 되돌아가던 것.
+    판정 스냅샷은 영향이 없었지만 **세션 plan 을 직접 읽는 편집기(`AlarmEditorScreen` 의 `freeVoiceTier`)·목소리
+    관리(`VoiceProfileManagementPanel` 의 `paidVoiceAccess`)는 그 사이 무료로 보였다**(클론 숨김·동적 문구 잠금·
+    목소리 등록 막힘). 가족 알람 설정 저장·계정 설정 올리기(안드로이드)와 탈퇴 복구 저장(iOS
+    `completeAccountRecovery` — 푸시 준비를 기다리기 전의 사본)도 같은 뿌리였다. 이제 바꾼 칸만 쓰는 순간의
+    세션 위에 얹고(안드로이드 `AuthSessionStore.updateUserIfAlive` ← `saveProfileEdit`, iOS `updateProfile`·
+    `completeAccountRecovery` ← `reconcileAccountAnswer`), 저장 뒤 확인 조회를 한다(`session-and-auth.md`
+    「프로필 저장은 바꾼 칸만 세션에 적는다」). 회귀: 안드로이드 `ProfileSaveKeepsAccountAnswerTest`, iOS
+    `AuthViewModelTests`(닉네임·가족 설정·탈퇴 복구 두 경로).
+  - [ ] 남은 것(낮음): 프로필 저장 뒤 확인 조회까지 실패하면, 저장 **전에** 떠나 옛 이름·가족 설정을 읽은
+    `/auth/me` 가 되돌린 칸이 다음 조회까지 남는다(계정 설정만 울타리가 막는다). iOS 배경 갱신
+    (`BackgroundSyncTask.renewSessionTokenIfNeeded` → `EntitlementWriter.renewSession`)의 plan·프로모 패치는 토큰
+    CAS 만 보고 계정 요청 순번은 안 본다 — 그 사이 전경의 결제 전 조회가 더 새 plan 을 썼으면 덮을 수 있다(미검증).
   - Compose 배선은 단위 테스트가 없다 — 종료 안내 이펙트의 키(`accountEntryAnswer`·`anyModalOpen`·
     `activityResumed`·`systemPermissionPromptOpen`)와 `planAnsweredEntry` 재확인 이펙트의 호출 자리.
     iOS 도 `promoLapseLockWaitKey` 가 실제 콜드 스타트에서 잠금을 다시 돌리는지는 순수 함수 테스트뿐이다.
