@@ -13,14 +13,16 @@
 import { logStructured } from './logger';
 
 /**
- * fetch **하나**의 상한.
+ * fetch **하나**의 상한 — cron 은 fetch 마다 이 값을 쓴다.
  *
- * 5초인 이유: 저장 버튼이 `GET /tts/prerender-variant` 를 **동기로** 기다리는데(앱 상한 8초 — 스펙 5-1 「대기
- * 상한」), 미리 계산한 행이 없을 때 그 라우트는 원천을 **한 번** 부른다. 실패의 대가는 작다 — 서버는
- * `variant_index: null` 을 돌려주고 앱은 미해결로 저장한 뒤 뒤에서 다시 받는다(Android
- * `DynamicVoiceRefreshWorker`, iOS `WeatherVariantRefreshService.refreshDue`). 오래 기다려 얻을 게 없다.
- * ⚠ 한 번의 원천 호출이 fetch 를 둘 할 수 있다(KMA 의 한 회차 물러서기·다음 페이지). 그래서 읽기 경로는 이 값과
- * 따로 **호출 전체의 마감**(`deadlineAt` ← `WEATHER_READ_DEADLINE_MS`)을 건다 — fetch 마다 5초를 새로 주면 10초다.
+ * ⚠ 앱이 저장에서 기다리는 상한(8초 — 스펙 5-1 「대기 상한」)의 근거는 이 값이 **아니라** 읽기 경로의 원천 호출
+ * 전체 마감(`WEATHER_READ_DEADLINE_MS`, `lib/weather-region-daily.ts`)이다. 한 번의 원천 호출이 fetch 를 둘 할 수
+ * 있어서(KMA 의 한 회차 물러서기·다음 페이지) fetch 마다 5초를 새로 주면 10초가 된다. 읽기 경로에서는 그 마감이
+ * `deadlineAt` 으로 내려와 fetch 하나의 타임아웃이 min(이 값, 남은 시간)이 된다.
+ *
+ * 5초인 이유: 실패의 대가가 작다 — 읽기 경로는 `variant_index: null` 을 돌려주고 앱은 미해결로 저장한 뒤 뒤에서
+ * 다시 받는다(Android `DynamicVoiceRefreshWorker`, iOS `WeatherVariantRefreshService.refreshDue`). cron 은 같은
+ * 슬롯의 다음 틱이 다시 한다. 정상 응답은 1초 안팎(KMA 1.3초)이라 오래 기다려 얻을 게 없다.
  */
 export const WEATHER_FETCH_TIMEOUT_MS = 5_000;
 
