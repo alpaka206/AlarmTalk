@@ -1363,8 +1363,9 @@ MATCH EACH SENTENCE TO ITS CONTENT: apologies, cautions and bad news (rain, snow
         ? 'VOICE ENERGY — this voice is low-key, CALM and sincere. Keep the line composed and grounded: steady, even sentences, few or no exclamation marks, and no teasing or excited words — the voice lifts at every bright signal, so leave them out. Calm is not sleepy — the line still ends with a clear, firm nudge to get up or act. Calm is not formal either — a calm partner, friend or parent still speaks the relationship\'s own register (반말 stays 반말).'
         : '';
   const speechStyleInstruction =
-    // 어체만 있는 분석(사투리 없는 정중체 화자 — register 'polite')도 싣는다(Codex #844). 일본어 존댓말 검사는 그
-    //   어체를 보고 면제되는데, 프롬프트가 그걸 모르면 첫 미리듣기가 가족 반말로 나와 그대로 확정 문구가 된다.
+    // 어체만 있는 분석(사투리 없는 정중체 화자 — register 'polite')도 싣는다(Codex #844). 일본어 존댓말 검사는 확정
+    //   문구가 어체를 세우지 않을 때 그 어체를 보고 면제되는데, 프롬프트가 그걸 모르면 첫 미리듣기(확정 문구 없이 만든다)가
+    //   가족 반말로 나와 그대로 확정 문구가 되고, 그 뒤로는 확정 문구의 반말이 분석을 이긴다(`hasJapanesePoliteEnding`).
     speechStyle && (speechStyle.dialect || speechStyle.markers.length > 0 || speechStyle.persona || speechStyle.register)
       ? `SPEAKER DIALECT/STYLE (analyzed from this speaker's own recording): dialect="${
           speechStyle.dialect || 'standard'
@@ -1721,6 +1722,50 @@ export function isJapanesePoliteSentence(sentence: string): boolean {
   const s = sentence.trim();
   return JA_POLITE_SENTENCE_END.test(s) && !JA_NOT_POLITE_SENTENCE_END.test(s);
 }
+
+/** 문장 끝 종조사 줄(よ·ね·な·の·か·わ·ぞ·さ — 'よね'·'かな' 처럼 겹쳐도 한 줄로). */
+const JA_SENTENCE_PARTICLES = /[よねなのかわぞさ]+$/u;
+/**
+ * 종조사 없이 끝나도 반말(タメ口)인 끝 — だ·た(과거)·て·で(부탁·関西)·や(関西)·ろ(명령·だろ)·じゃん·っけ·ねん·へん·ない,
+ * 의지·인사의 う(起きよう·行こう·帰ろう·おはよう·ありがとう). 'でしょう' 는 작은 'ょ' 라 걸리지 않는다.
+ */
+const JA_CASUAL_BARE_END = /(?:だ|た|て|で|や|ろ|じゃん|っけ|ねん|へん|ない|[よこそとぼもろごお]う)$/u;
+/** 문장 끝에서 걷어 내는 문장부호·늘임표·쉼표·띄어쓰기 — 어체는 그 앞 낱말로 가린다. */
+const JA_SENTENCE_TRAILER = /[\s、，,。！？!?…〜ー～]+$/u;
+
+/**
+ * 일본어 한 문장이 **반말로 확실히** 끝나는가 — 확정 문구가 반말을 세웠는지 가릴 때만 쓴다(`japaneseReferenceRegister`).
+ * 정중체가 아니고, 종조사로 끝나면 그 앞 줄기도 정중체가 아니어야 한다('ですわ'·'くださいな'·'でしょうね' 는 아니다).
+ * 명사·호칭·'〜を' 로 끝나는 문장('いい一日を。'·'いってらっしゃい。')은 어느 쪽도 아니다 — 잘못 반말로 읽으면 분석의
+ * 정중체를 덮고 です・ます 클립을 거절하게 되므로, 모르는 끝은 세지 않는다.
+ */
+function isJapaneseCasualSentence(sentence: string): boolean {
+  const s = sentence.trim().replace(JA_SENTENCE_TRAILER, '');
+  if (!s || isJapanesePoliteSentence(s)) return false;
+  const stem = s.replace(JA_SENTENCE_PARTICLES, '');
+  if (stem !== s) return stem.length > 0 && !isJapanesePoliteSentence(stem) && !/でしょう?$/u.test(stem);
+  return JA_CASUAL_BARE_END.test(s);
+}
+
+/**
+ * 사용자가 확정한 일본어 문구가 **세운** 어체 — 정중체 문장이 하나라도 있으면 'polite', 아니면 반말 문장이 있을 때
+ * 'casual', 문구가 없거나 어느 쪽도 세우지 않으면 null. 청자 호칭은 먼저 지운다(한국어 `koreanEndings` 와 같다) —
+ * 끝 호칭이 정중체를 가리거나('起きる時間ですよ、ひな。') 'た'·'な' 로 끝나는 이름('ゆうた'·'ひな')이 반말로 세지면 안 된다.
+ */
+function japaneseReferenceRegister(
+  reference: string | null | undefined,
+  listenerTitle?: string | null,
+): 'polite' | 'casual' | null {
+  const text = reference?.trim();
+  if (!text) return null;
+  const title = listenerTitle?.trim();
+  const sentences = (title ? text.split(title).join('') : text)
+    .split(/(?<=[。！？!?…])/)
+    .map((s) => s.replace(JA_SENTENCE_TRAILER, ''))
+    .filter(Boolean);
+  if (sentences.some(isJapanesePoliteSentence)) return 'polite';
+  return sentences.some(isJapaneseCasualSentence) ? 'casual' : null;
+}
 /**
  * 일본어로 タメ口 가 **확실한** 관계 라벨 — `JAPANESE_NATIVE_RULES` 가 casual 로 못 박은 갈래만: 조부모↔손주, 부모↔자식,
  * 형제자매, 친구, 연인·배우자(한국어·일본어·영어). 이모·삼촌·사돈·시댁·처가(형수·형부·매형·처형·올케·시누·처제·동서·
@@ -1774,19 +1819,27 @@ function isConfirmedCloseRelationshipLabel(label: string): boolean {
  *
  * ⚠ **가족·친구·연인으로 확인된 라벨만 본다**(`isConfirmedCloseRelationshipLabel` — 엄격한 허용 목록). 모르는 라벨·
  *   먼 사이('家庭教師'·'先生')·사돈('義母'·'며느리')·이웃('이웃 할머니')은 프롬프트가 です・ます 를 허용하는 '먼 사이'
- *   일 수 있어, 거절하면 세 회차 다 걸려 그 클립이 영구 실패한다. 화자 녹음이 정중체였거나(말투 분석) 사용자가
- *   정중체 문구를 확정했으면 그 말투를 따르므로 검사하지 않는다. 아이 목소리는 라벨과 무관하게 언제나 タメ口 다.
+ *   일 수 있어, 거절하면 세 회차 다 걸려 그 클립이 영구 실패한다. 사용자가 정중체 문구를 확정했거나, 확정 문구가
+ *   어체를 세우지 않는데 화자 녹음이 정중체였으면(말투 분석) 그 말투를 따르므로 검사하지 않는다. 아이 목소리는 라벨과
+ *   무관하게 언제나 タメ口 다.
  */
 export function hasJapanesePoliteEnding(
   spoken: string,
-  params: { relationshipLabel?: string | null; speechStyle?: SpeechStyle | null; styleReference?: string | null },
+  params: {
+    relationshipLabel?: string | null;
+    listenerTitle?: string | null;
+    speechStyle?: SpeechStyle | null;
+    styleReference?: string | null;
+  },
 ): boolean {
-  if (/polite|jondae|丁寧|敬語/i.test(params.speechStyle?.register ?? '')) return false;
-  // 확정 문구가 정중체인지도 **문장 끝**으로 가린다(Codex #844) — '目を覚ます時間だよ' 처럼 사전형 동사의 'ます' 가 있는
-  //   반말 문구를 정중체로 읽으면 검사가 통째로 꺼진다.
-  if (params.styleReference && params.styleReference.split(/(?<=[。！？!?…])/).some(isJapanesePoliteSentence)) {
-    return false;
-  }
+  // ⚠ **확정 문구의 어체를 먼저 본다**(Codex #844 — 스펙 §4-2 '확정 문구가 말투 분석을 이긴다'). 분석이 정중체여도
+  //   사용자가 반말 문구('おはよう。起きてね。')를 확정했으면 프롬프트는 그 반말을 따르라고 한다 — 분석부터 보고 검사를
+  //   끄면 です・ます 로 끝난 가족 클립이 그대로 영구 저장된다. 분석의 어체는 확정 문구가 어느 쪽도 세우지 않을 때만 쓴다.
+  //   정중체인지는 **문장 끝**으로 가린다 — '目を覚ます時間だよ' 처럼 사전형 동사의 'ます' 가 있는 반말 문구를 정중체로
+  //   읽으면 검사가 통째로 꺼진다.
+  const referenceRegister = japaneseReferenceRegister(params.styleReference, params.listenerTitle);
+  if (referenceRegister === 'polite') return false;
+  if (referenceRegister === null && /polite|jondae|丁寧|敬語/i.test(params.speechStyle?.register ?? '')) return false;
   const casual =
     params.speechStyle?.childlike === true || isConfirmedCloseRelationshipLabel(params.relationshipLabel ?? '');
   if (!casual) return false;

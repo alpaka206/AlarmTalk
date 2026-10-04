@@ -2421,6 +2421,74 @@ describe('hasJapanesePoliteEnding — 엄격한 허용 목록', () => {
     expect(hasJapanesePoliteEnding(polite, { relationshipLabel: '엄마', styleReference: 'おはようございます。起きる時間ですよ。' })).toBe(false);
   });
 
+  // 리뷰 수정(Codex #844 3차) — 분석의 정중체가 확정 문구를 보기도 전에 검사를 껐다. 반말로 고쳐 확정한 가족 목소리의
+  // です・ます 클립이 그대로 저장됐다(스펙 §4-2 '확정 문구가 말투 분석을 이긴다').
+  const POLITE_SPEAKER = { dialect: '', strength: '' as const, register: 'polite', markers: [], persona: '', childlike: false };
+
+  it('확정 문구가 반말이면 말투 분석이 정중체여도 검사한다 — 확정 문구가 분석을 이긴다(Codex #844)', () => {
+    const mom = { relationshipLabel: '母', listenerTitle: 'ゆい', speechStyle: POLITE_SPEAKER };
+    expect(hasJapanesePoliteEnding(polite, { ...mom, styleReference: 'おはよう。起きてね。' })).toBe(true);
+    // 운영 확정 문구 모양(인사 시드로 만든 첫 미리듣기 — 평가 프로필 그대로)도 반말로 읽는다. 関西 의 'か' 끝도.
+    expect(
+      hasJapanesePoliteEnding(polite, {
+        ...mom,
+        styleReference: 'ゆい、おはよう…よく眠れた？今日も気持ちのいい一日にしようね、さあ起きよ。',
+      }),
+    ).toBe(true);
+    expect(
+      hasJapanesePoliteEnding(polite, {
+        relationshipLabel: 'おかん',
+        listenerTitle: 'たろう',
+        speechStyle: POLITE_SPEAKER,
+        styleReference: 'たろう、おはようさん…ぐっすり眠れたか？今日もええ一日にしよな、ほな起きよか。',
+      }),
+    ).toBe(true);
+    expect(
+      prerenderRejectionReason('ゆい、お薬の時間ですよ。', 'ja', { ...mom, styleReference: 'ゆい、おはよう。起きてね。' }),
+    ).toBe('register_mixed');
+    // 확정 문구가 정중체면 그 말투를, 확정 문구가 없으면 분석의 정중체를 따른다(예전 그대로).
+    expect(hasJapanesePoliteEnding(polite, { ...mom, styleReference: 'おはようございます。起きる時間ですよ。' })).toBe(false);
+    expect(hasJapanesePoliteEnding(polite, mom)).toBe(false);
+    // 반말 확정 문구라도 라벨 규칙은 넓히지 않는다 — 허용 목록 밖은 그대로 검사하지 않는다.
+    expect(
+      hasJapanesePoliteEnding(polite, { relationshipLabel: '先生', speechStyle: POLITE_SPEAKER, styleReference: 'おはよう。起きてね。' }),
+    ).toBe(false);
+  });
+
+  it('확정 문구가 어체를 세우지 않을 때만 분석을 따른다 — 모르는 끝은 반말로 세지 않고, 청자 호칭은 지우고 가린다', () => {
+    const mom = { relationshipLabel: '母', speechStyle: POLITE_SPEAKER };
+    // 호칭·명사·'〜を' 로만 끝난다 — 어느 쪽도 아니라 분석(정중체)을 따른다.
+    expect(hasJapanesePoliteEnding(polite, { ...mom, listenerTitle: 'ゆい', styleReference: 'ゆい！' })).toBe(false);
+    expect(hasJapanesePoliteEnding(polite, { ...mom, styleReference: '今日もいい一日を。' })).toBe(false);
+    expect(hasJapanesePoliteEnding(polite, { ...mom, styleReference: 'いってらっしゃい。' })).toBe(false);
+    // 종조사가 붙어도 앞이 정중체면 반말이 아니다.
+    expect(hasJapanesePoliteEnding(polite, { ...mom, styleReference: '明日は雨でしょうね。' })).toBe(false);
+    expect(hasJapanesePoliteEnding(polite, { ...mom, styleReference: 'お薬の時間ですわ。' })).toBe(false);
+    expect(hasJapanesePoliteEnding(polite, { ...mom, styleReference: '起きてくださいな。' })).toBe(false);
+    // 'た' 로 끝나는 이름은 반말이 아니다 — 호칭을 지우면 어체가 없다.
+    expect(hasJapanesePoliteEnding(polite, { ...mom, listenerTitle: 'ゆうた', styleReference: '今日もいい一日を、ゆうた。' })).toBe(false);
+    // 끝 호칭이 정중체를 가리지도 않는다 — 분석이 없어도 정중체 확정 문구를 따른다.
+    expect(
+      hasJapanesePoliteEnding(polite, { relationshipLabel: '母', listenerTitle: 'ひな', styleReference: '起きる時間ですよ、ひな。' }),
+    ).toBe(false);
+    // 사전형 동사의 'ます'(目を覚ます)에 종조사가 붙은 반말도 반말로 센다.
+    expect(hasJapanesePoliteEnding(polite, { ...mom, listenerTitle: 'ゆい', styleReference: 'ゆい、目を覚ますよ。' })).toBe(true);
+  });
+
+  it('반말 확정 문구 + 정중체 분석이면 です・ます 줄은 다시 묻고 반말 줄을 받는다(Codex #844)', async () => {
+    queueContent(geminiText('{"text":"ゆい、お薬の時間ですよ。忘れずに飲んでくださいね。"}'));
+    queueContent(geminiText('{"text":"ゆい、お薬の時間だよ。忘れずに飲んでね。"}'));
+    const out = await generatePrerenderClipText(ENV, {
+      seed: '약 드실 시간이라고 알리며 건강하게 잘 보내라고 응원한다.',
+      relationshipLabel: '母',
+      listenerTitle: 'ゆい',
+      targetLanguage: 'ja',
+      speechStyle: POLITE_SPEAKER,
+      styleReference: 'ゆい、おはよう。起きてね。',
+    });
+    expect(out.text).toBe('ゆい、お薬の時間だよ。忘れずに飲んでね。');
+  });
+
   it('두 앱의 관계 프리셋(한·영·일, 연예인·직접 입력 제외)은 모두 가까운 관계로 본다(Codex #844 — 형제·자매)', () => {
     for (const label of [
       '엄마', '아빠', '할머니', '할아버지', '아들', '딸', '손녀', '손주', '형제·자매', '남자친구', '여자친구', '남편', '아내', '친구',
