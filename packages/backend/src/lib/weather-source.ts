@@ -114,6 +114,12 @@ export type SourceFetchOptions = {
   kmaServiceKey?: string;
   /** 즉석 계산(읽기 경로)에서만 JMA·NWS 에 건다. KMA·cron 은 언제나 null. */
   cacheTtlSeconds?: number | null;
+  /**
+   * 원천 호출 **전체**의 마감(epoch ms, 실제 시계 `Date.now()` 기준) — 즉석 계산(읽기 경로)만 건다. KMA 의 '한 회차
+   * 물러서기'·다음 페이지도 이 안에서만 하고, fetch 하나의 타임아웃은 min(5초, 남은 시간)이다(`fetchWeatherSource`).
+   * 없으면(cron) fetch 마다 5초. `now` 는 회차·날짜를 고르는 논리 시각이라 마감에 쓰지 않는다.
+   */
+  deadlineAt?: number | null;
 };
 
 /** 지역의 원천을 골라 날짜별 표본을 받는다. 던지지 않는다 — 실패는 `{ ok: false }` 로 돌아온다. */

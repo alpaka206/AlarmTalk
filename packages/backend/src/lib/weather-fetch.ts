@@ -13,12 +13,14 @@
 import { logStructured } from './logger';
 
 /**
- * 원천 한 번 호출의 상한.
+ * fetch **하나**의 상한.
  *
  * 5초인 이유: 저장 버튼이 `GET /tts/prerender-variant` 를 **동기로** 기다리는데(앱 상한 8초 — 스펙 5-1 「대기
  * 상한」), 미리 계산한 행이 없을 때 그 라우트는 원천을 **한 번** 부른다. 실패의 대가는 작다 — 서버는
  * `variant_index: null` 을 돌려주고 앱은 미해결로 저장한 뒤 뒤에서 다시 받는다(Android
  * `DynamicVoiceRefreshWorker`, iOS `WeatherVariantRefreshService.refreshDue`). 오래 기다려 얻을 게 없다.
+ * ⚠ 한 번의 원천 호출이 fetch 를 둘 할 수 있다(KMA 의 한 회차 물러서기·다음 페이지). 그래서 읽기 경로는 이 값과
+ * 따로 **호출 전체의 마감**(`deadlineAt` ← `WEATHER_READ_DEADLINE_MS`)을 건다 — fetch 마다 5초를 새로 주면 10초다.
  */
 export const WEATHER_FETCH_TIMEOUT_MS = 5_000;
 
@@ -49,19 +51,25 @@ export type WeatherFetchResult = {
  *   다시 던진다** — 어댑터가 '일시 실패' 로 분류한다.
  * - 엣지 캐시: `cacheTtlSeconds` 가 있으면 `cf.cacheTtl` + `cacheEverything`. Cloudflare 기본 규칙상 실패
  *   응답(429·5xx)은 캐시되지 않는다. 한계: 캐시는 데이터센터 단위다.
+ * - 마감: `deadlineAt`(epoch ms)이 있으면 타임아웃은 min(5초, 남은 시간)이다. 남은 시간이 없으면 **부르지 않고**
+ *   `TimeoutError` 로 거부한다 — 어댑터가 타임아웃(일시 실패)으로 분류한다.
  */
 export async function fetchWeatherSource(
   source: WeatherSourceKind,
   kind: string,
   url: URL,
-  options: { headers?: Record<string, string>; cacheTtlSeconds?: number | null } = {},
+  options: { headers?: Record<string, string>; cacheTtlSeconds?: number | null; deadlineAt?: number | null } = {},
 ): Promise<WeatherFetchResult> {
   const startedAt = Date.now();
   const ttl = options.cacheTtlSeconds ?? null;
+  const deadlineAt = options.deadlineAt ?? null;
+  const timeoutMs =
+    deadlineAt === null ? WEATHER_FETCH_TIMEOUT_MS : Math.min(WEATHER_FETCH_TIMEOUT_MS, deadlineAt - startedAt);
+  if (timeoutMs <= 0) throw new DOMException('weather source deadline passed', 'TimeoutError');
   try {
     const response = await fetch(url.toString(), {
       headers: options.headers ?? { accept: 'application/json' },
-      signal: AbortSignal.timeout(WEATHER_FETCH_TIMEOUT_MS),
+      signal: AbortSignal.timeout(timeoutMs),
       ...(ttl === null ? {} : { cf: { cacheTtl: ttl, cacheEverything: true } }),
     });
     const body = await response.text();

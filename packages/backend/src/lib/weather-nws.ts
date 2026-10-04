@@ -273,6 +273,7 @@ export async function fetchNwsDays(
   const result = await fetchWeatherSource('nws', 'gridpoint', nwsGridUrl(source), {
     headers: { 'user-agent': NWS_USER_AGENT, accept: 'application/geo+json' },
     cacheTtlSeconds: options.cacheTtlSeconds ?? null,
+    deadlineAt: options.deadlineAt ?? null,
   });
   const log = (level: 'info' | 'warn', resultCode: string | null, items: number | null) =>
     logWeatherFetch(level, {

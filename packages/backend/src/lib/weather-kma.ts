@@ -417,8 +417,9 @@ export function kmaDaysFromItems(items: readonly KmaItem[], today: string): Map<
  * 지역 하나의 단기예보를 받는다. 실패는 `WeatherSourceError` 로 던진다(`fetchRegionSourceDays` 가 받는다).
  *
  * - 키가 없으면 네트워크를 부르지 않고 `config:missing_key`.
- * - 결과 코드 03(NODATA)이면 **한 회차 물러서서 한 번 더** — 예산 안에서만.
- * - `items.length` ≠ `totalCount` 면 다음 페이지를 받는다(예산 안). 그래도 다르면 실패다.
+ * - 결과 코드 03(NODATA)이면 **한 회차 물러서서 한 번 더** — 예산 안에서만, 그리고 마감(`deadlineAt`, 읽기 경로)
+ *   안에서만. 마감이 지났으면 부르지 않고 타임아웃이다(`fetchWeatherSource`).
+ * - `items.length` ≠ `totalCount` 면 다음 페이지를 받는다(예산·마감 안). 그래도 다르면 실패다.
  * - 엣지 캐시는 쓰지 않는다(`weather-fetch.ts` 의 `WEATHER_SOURCE_CACHE_TTL_SECONDS` 주석).
  */
 export async function fetchKmaDays(
@@ -483,6 +484,7 @@ async function fetchPage(
   if (!options.budget.take('kma')) throw new WeatherSourceError('budget', 'fetch_budget');
   const result = await fetchWeatherSource('kma', 'vilage', kmaRequestUrl(source, run, serviceKey, pageNo), {
     cacheTtlSeconds: null,
+    deadlineAt: options.deadlineAt ?? null,
   });
   try {
     const page = readKmaPage(result.status, result.body);

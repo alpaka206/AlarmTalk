@@ -17,7 +17,12 @@ import {
   readKmaPage,
   type KmaItem,
 } from '../src/lib/weather-kma';
-import { fixedFetchBudget, finalizeSourceDay, WeatherSourceError } from '../src/lib/weather-source';
+import {
+  fetchRegionSourceDays,
+  fixedFetchBudget,
+  finalizeSourceDay,
+  WeatherSourceError,
+} from '../src/lib/weather-source';
 import { resolvePrerenderWeatherIndex } from '../src/lib/weather-signal';
 import { CLONE_WEATHER_CONDITIONS } from '../src/lib/stock-clips';
 
@@ -298,6 +303,46 @@ describe('fetchKmaDays — 호출', () => {
     await expect(
       fetchKmaDays(SEOUL, SEOUL_SOURCE, { now: NOW, budget: fixedFetchBudget(1), kmaServiceKey: KEY }),
     ).rejects.toMatchObject({ failure: 'budget' });
+  });
+
+  it('마감(deadlineAt — 읽기 경로)이 있으면 물러서기도 그 안에서만 — fetch 마다 5초를 새로 주지 않는다', async () => {
+    // 앱은 저장에서 8초만 기다린다. 늦은 NODATA 뒤에 새 5초를 주면 10초가 된다(코덱스 #846).
+    const nodata = JSON.stringify({ response: { header: { resultCode: '03', resultMsg: 'NO_DATA' } } });
+    let clock = Date.UTC(2026, 9, 1, 12, 5);
+    vi.spyOn(Date, 'now').mockImplementation(() => clock);
+    const timeouts = vi.spyOn(AbortSignal, 'timeout');
+    /** 응답이 `ms` 만큼 걸렸다. */
+    const after = (ms: number, body: string) => () => {
+      clock += ms;
+      return json(body)();
+    };
+    const options = () => ({ now: NOW, budget: fixedFetchBudget(2), kmaServiceKey: KEY, deadlineAt: clock + 5_000 });
+
+    // 첫 응답(NODATA)이 마감을 다 썼다 → 물러서지 않는다(부르지 않는다) — 일시 실패 'timeout'.
+    let calls = stub([after(5_000, nodata), json(relabel('1700', '1700'))]);
+    expect(await fetchRegionSourceDays(SEOUL, options())).toEqual({
+      ok: false,
+      failure: 'transient',
+      reason: 'timeout',
+      scope: 'source',
+    });
+    expect(calls).toHaveLength(1);
+
+    // 첫 응답이 0.3초 → 물러서기는 남은 4.7초를 타임아웃으로 받는다.
+    timeouts.mockClear();
+    calls = stub([after(300, nodata), json(relabel('1700', '1700'))]);
+    const quick = await fetchRegionSourceDays(SEOUL, options());
+    expect(quick.ok).toBe(true);
+    expect(calls.map((u) => u.searchParams.get('base_time'))).toEqual(['2000', '1700']);
+    expect(timeouts.mock.calls.map(([ms]) => ms)).toEqual([5_000, 4_700]);
+
+    // 마감이 없으면(cron) fetch 마다 5초 그대로 — 늦은 NODATA 여도 물러선다.
+    timeouts.mockClear();
+    calls = stub([after(5_000, nodata), json(relabel('1700', '1700'))]);
+    const cron = await fetchRegionSourceDays(SEOUL, { now: NOW, budget: fixedFetchBudget(2), kmaServiceKey: KEY });
+    expect(cron.ok).toBe(true);
+    expect(calls).toHaveLength(2);
+    expect(timeouts.mock.calls.map(([ms]) => ms)).toEqual([5_000, 5_000]);
   });
 
   it('행 수가 totalCount 보다 적으면 다음 페이지를 받아 잇는다 — 그래도 모자라면 실패', async () => {

@@ -12,8 +12,8 @@
  *   subrequest 다. 실패한 지역은 같은 슬롯의 다음 틱이 다시 하고, 슬롯 마지막 틱(현지 분 ≥ 55)에 판정해
  *   (나라, 시간대 묶음)에서 한 곳도 못 했거나 설정 실패가 있으면 경보를 올린다.
  * - **읽기**(`resolveRegionVariantIndex`): 행이 36시간 안에 계산한 것이면 그대로. 아니면 대상 날짜가 지역의
- *   [오늘, +3] 안일 때만 원천을 **한 번** 부르고(밖이면 네트워크 없이 null), 계산되면 적고 돌려준다.
- *   ⚠ 표가 없으면(배포 → 마이그레이션 창) 저장 없이 계산만 한다.
+ *   [오늘, +3] 안일 때만 원천을 **한 번** 부르고(밖이면 네트워크 없이 null, 호출 전체의 마감 5초), 계산되면 적고
+ *   돌려준다. ⚠ 표가 없으면(배포 → 마이그레이션 창) 저장 없이 계산만 한다.
  */
 import { WeatherRegions, type WeatherCountryCode, type WeatherRegion } from '@alarmtalk/shared';
 import type { InStatement } from '@libsql/client';
@@ -59,6 +59,13 @@ export const WEATHER_SOURCE_FETCH_CAPS: Readonly<Record<WeatherSourceKind, numbe
 export const WEATHER_FETCH_CONCURRENCY = 4;
 /** 즉석 계산 한 번의 fetch 상한 — KMA 의 '한 회차 물러서기'까지. */
 export const WEATHER_READ_FETCH_BUDGET = 2;
+/**
+ * 즉석 계산 한 번의 **원천 호출 전체** 마감 — fetch 가 둘이어도(KMA 물러서기·다음 페이지) 합쳐서 이 안이다.
+ * 앱이 저장에서 8초만 기다리므로(`WEATHER_RESOLVE_TIMEOUT_MILLIS` · `WeatherVariantSaveLookup.timeoutSeconds`)
+ * DB 읽기·쓰기와 왕복을 남기고 5초다. fetch 마다 5초를 새로 주면 늦은 NODATA 하나로 10초가 되어 앱이 서버가 아직
+ * 계산 중인 답을 버린다(코덱스 #846).
+ */
+export const WEATHER_READ_DEADLINE_MS = 5_000;
 
 export type WeatherSlotKind = keyof typeof WEATHER_SLOT_HOURS;
 
@@ -189,6 +196,8 @@ export async function resolveRegionVariantIndex(
     kmaServiceKey: options.kmaServiceKey,
     // JMA·NWS 의 즉석 계산만 엣지 캐시를 건다 — KMA 는 200 본문에 NODATA 가 올 수 있고 URL 에 키가 있다.
     cacheTtlSeconds: region.source.kind === 'kma' ? null : WEATHER_SOURCE_CACHE_TTL_SECONDS,
+    // ⚠ 마감은 실제 시계로 잰다 — `now` 는 회차·날짜를 고르는 논리 시각이다(테스트가 바꿔 넣는다).
+    deadlineAt: Date.now() + WEATHER_READ_DEADLINE_MS,
   });
   if (!outcome.ok) {
     logStructured('warn', {

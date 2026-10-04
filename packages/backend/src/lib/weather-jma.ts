@@ -286,6 +286,7 @@ export async function fetchJmaDays(
   if (!options.budget.take('jma')) throw new WeatherSourceError('budget', 'fetch_budget');
   const result = await fetchWeatherSource('jma', 'forecast', jmaForecastUrl(source.office), {
     cacheTtlSeconds: options.cacheTtlSeconds ?? null,
+    deadlineAt: options.deadlineAt ?? null,
   });
   const log = (level: 'info' | 'warn', resultCode: string | null, items: number | null) =>
     logWeatherFetch(level, {

@@ -28,6 +28,7 @@ import {
   openWeatherSlot,
   refreshWeatherRegionDaily,
   resolveRegionVariantIndex,
+  WEATHER_READ_DEADLINE_MS,
   WEATHER_REGION_READ_STALE_MS,
   WEATHER_SOURCE_FETCH_CAPS,
   WEATHER_TICK_FETCH_BUDGET,
@@ -630,6 +631,37 @@ describe('읽기 경로 — resolveRegionVariantIndex', () => {
     expect(await resolveRegionVariantIndex(() => asExecutor(db), region('jp-tokyo'), '2026-10-02', { now: AFTER_1700 })).toBe(
       idx('rain'),
     );
+    db.close();
+  });
+
+  it('원천 호출 전체의 마감은 5초 — 늦은 KMA NODATA 뒤에는 물러서지 않고 null, cron 은 마감 없이 물러선다', async () => {
+    // 앱은 저장에서 8초만 기다린다. 물러서기에 새 5초를 주면 늦은 NODATA 하나로 10초가 된다(코덱스 #846).
+    expect(WEATHER_READ_DEADLINE_MS).toBe(5_000);
+    const db = await freshDb();
+    let clock = Date.UTC(2026, 9, 1, 8, 30);
+    vi.spyOn(Date, 'now').mockImplementation(() => clock);
+    const nodata = JSON.stringify({ response: { header: { resultCode: '03', resultMsg: 'NO_DATA' } } });
+    /** 그 회차는 NODATA 를 마감까지 다 써서(5초) 돌려준다. */
+    const slowNodataAt = (baseTime: string) => (url: URL) => {
+      if (url.searchParams.get('base_time') !== baseTime) return null;
+      clock += 5_000;
+      return new Response(nodata, { status: 200, headers: { 'content-type': 'application/json' } });
+    };
+    // 17:30 KST → 1700 회차. 물러서면 1400 이지만 마감이 다해 부르지 않는다.
+    let calls = stubSources({ fail: { kma: slowNodataAt('1700') } });
+    expect(
+      await resolveRegionVariantIndex(() => asExecutor(db), region('kr-seoul'), '2026-10-02', {
+        now: AFTER_1700,
+        kmaServiceKey: KEY,
+      }),
+    ).toBeNull();
+    expect(calls.map((c) => c.url.searchParams.get('base_time'))).toEqual(['1700']);
+
+    // cron 에는 마감이 없다 — 같은 늦은 NODATA 에도 한 회차 물러서서 적는다(21:05 KST → 2000 → 1700).
+    calls = stubSources({ fail: { kma: slowNodataAt('2000') } });
+    const result = await refreshWeatherRegionDaily(asExecutor(db), EVENING, { kmaServiceKey: KEY, regions: [region('kr-seoul')] });
+    expect(calls.map((c) => c.url.searchParams.get('base_time'))).toEqual(['2000', '1700']);
+    expect(result.stored).toBe(3);
     db.close();
   });
 
