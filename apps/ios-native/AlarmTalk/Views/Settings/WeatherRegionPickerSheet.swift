@@ -19,6 +19,8 @@ import SwiftUI
 struct WeatherRegionPickerSheet: View {
     @Environment(\.voiceAlarmTheme) private var theme
     @Environment(\.dismiss) private var dismiss
+    /// 버전 확인이 받아 온 서버의 날씨 원천 토큰(`AppVersionGate.weatherAttribution`) — 출처 줄을 그릴지 정한다.
+    @EnvironmentObject private var versionGate: AppVersionGate
 
     /// 지금 저장된 값이 가리키는 지역(체크 표시용). 되짚지 못한 옛 값이면 nil.
     let current: WeatherRegion?
@@ -47,6 +49,20 @@ struct WeatherRegionPickerSheet: View {
     }
 
     private var language: String { WeatherRegions.currentLanguage() }
+
+    /// 목록 아래 날씨 출처 줄을 그리는가 — 서버가 지금 쓰는 원천을 말할 때만(`WeatherAttribution.showsLine`).
+    private var showsAttribution: Bool { WeatherAttribution.showsLine(versionGate.weatherAttribution) }
+
+    /// 목록 높이 상한에서 뺄 몫 — 나라 세그먼트(+ 그 아래 간격), 옛 값 안내 줄, 출처 줄(+ 그 위 간격).
+    /// ⚠ 출처 줄은 **그릴 때만** 뺀다. 안 그리는데 빼면 목록이 그만큼 짧아지고, 그리는데 안 빼면 시트가 화면을
+    /// 꽉 채워 스크림이 사라진다. 판정은 높이 값이 아니라 `showsAttribution` 이다 — 한 번 그렸다 숨기면
+    /// `attributionHeight` 에는 옛 실측이 남는다.
+    private var reservedListHeight: CGFloat {
+        var reserved = countryBarHeight + BottomSheetTitle.titleToContentSpacing
+        if legacyLabel != nil { reserved += legacyNoteHeight + 3 }
+        if showsAttribution { reserved += attributionHeight + BottomSheetTitle.titleToContentSpacing }
+        return reserved
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: BottomSheetTitle.titleToContentSpacing) {
@@ -82,12 +98,11 @@ struct WeatherRegionPickerSheet: View {
                 // 때마다 시트 높이가 튄다. 셋 다 화면을 넘으므로 늘 스크롤 갈래로 둔다.
                 // ⚠ 세그먼트 몫(+ 그 아래 간격)을 **빼지 않으면** 시트가 화면을 꽉 채워 뒤 스크림이
                 // 사라진다 — 바깥을 눌러 닫을 곳이 없다(2026-09-30 시뮬레이터 실측).
-                // ⚠ 아래 출처 줄(+ 그 위 간격)도 같은 이유로 뺀다 — 빼먹으면 스크림이 사라진다.
+                // ⚠ 아래 출처 줄(+ 그 위 간격)도 **그릴 때는** 같은 이유로 뺀다(`reservedListHeight`) — 빼먹으면
+                // 스크림이 사라진다.
                 SheetScrollingContent(
                     alwaysScrolls: true,
-                    reservedHeight: countryBarHeight + BottomSheetTitle.titleToContentSpacing
-                        + (legacyLabel == nil ? 0 : legacyNoteHeight + 3)
-                        + attributionHeight + BottomSheetTitle.titleToContentSpacing
+                    reservedHeight: reservedListHeight
                 ) {
                     // ⚠ `LazyVStack` 으로 바꾸지 말 것 — `SelectionSheet` 주석과 같은 이유다.
                     VStack(spacing: 0) {
@@ -104,16 +119,20 @@ struct WeatherRegionPickerSheet: View {
                 .onChange(of: country) { _, _ in scrollToTop(proxy) }
             }
 
-            // 날씨 출처 — 목록 **아래 고정**. 가공해 쓴다는 사실은 気象庁 약관(공공데이터 이용규약 — 가공 시 그
-            // 사실을 적는다)이 요구한다. 지역을 고르는 곳이 이 시트 하나라(설정·편집기 공용) 여기 한 곳에만 둔다.
-            // 안드로이드 `WeatherLocationDialog` 의 `region_picker_weather_attribution` 과 같은 문장이다.
-            Text(String(localized: "날씨 정보: 기상청 · 気象庁 · 미국 기상청(NWS)의 예보를 바탕으로 AlarmTalk가 가공"))
-                .font(theme.typography.bodySmall)
-                .foregroundStyle(theme.palette.onSurfaceVariant)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, BottomSheetTitle.horizontalPadding)
-                .fixedSize(horizontal: false, vertical: true)
-                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { attributionHeight = $0 }
+            // 날씨 출처 — 목록 **아래 고정**. 원천과 가공해 쓴다는 사실은 기상법(출처 표시)과 気象庁 약관(공공데이터
+            // 이용규약 — 가공 시 그 사실을 적는다)이 요구한다. 지역을 고르는 곳이 이 시트 하나라(설정·편집기 공용)
+            // 여기 한 곳에만 둔다. 안드로이드 `WeatherLocationDialog` 의 `region_picker_weather_attribution` 과 같은 문장이다.
+            // ⚠ **서버가 그 원천을 쓴다고 말할 때만 그린다**(`showsAttribution`). 문장을 늘 그리면 서버의 원천 교체가
+            // 늦거나 되돌려진 동안 쓰지 않는 기관을 출처로 적는다(코덱스 #845).
+            if showsAttribution {
+                Text(String(localized: "날씨 정보: 기상청 · 気象庁 · 미국 기상청(NWS)의 예보를 바탕으로 AlarmTalk가 가공"))
+                    .font(theme.typography.bodySmall)
+                    .foregroundStyle(theme.palette.onSurfaceVariant)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, BottomSheetTitle.horizontalPadding)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { attributionHeight = $0 }
+            }
         }
         .padding(.bottom, 8)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -169,6 +188,25 @@ struct WeatherRegionPickerSheet: View {
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(region.key == current?.key ? .isSelected : [])
+    }
+}
+
+/// 지역 시트의 날씨 출처 줄을 그릴지 — **서버가 원천을 말할 때만**.
+///
+/// 계약은 `GET /api/app/version` 의 `weather_attribution`(`AppVersionResponse.weatherAttribution` →
+/// `AppVersionGate.weatherAttribution`), 백엔드 단일 출처는 `packages/backend/src/lib/weather-attribution.ts`.
+/// 출처 문장은 서버가 **실제로 쓰는 원천**을 따라가야 한다 — 앱이 단정하면 서버의 원천 교체가 늦거나 되돌려진
+/// 동안 쓰지 않는 기관을 출처로 적는다(코덱스 #845). 규칙 원문은 `docs/spec/voice-and-message.md`
+/// 「지역 시트의 날씨 출처 줄 — 서버가 원천을 말할 때만」.
+/// 안드로이드는 `showsWeatherAttribution`(`ui/editor/AlarmRandomPromptSettings.kt`)이 같은 판정이다.
+enum WeatherAttribution {
+    /// 서버의 날씨가 기상청(KR)·気象庁(JP)·NWS(US)의 예보에서 온다는 토큰.
+    static let officialForecasts = "kma_jma_nws"
+
+    /// 정확히 그 토큰일 때만 true. 그 밖 — 모르는 값·nil(필드 없는 옛 서버, 버전 확인 실패·응답 전) — 은 숨긴다.
+    /// 불투명 토큰이라 대소문자·공백을 고쳐 읽지 않는다.
+    static func showsLine(_ token: String?) -> Bool {
+        token == officialForecasts
     }
 }
 

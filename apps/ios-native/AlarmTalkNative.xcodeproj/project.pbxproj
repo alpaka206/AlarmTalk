@@ -134,6 +134,7 @@
 		52BCEA662568B583A9C9121E /* RemoteAlarmPushQueueTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 60492571B9D70001CDE7157C /* RemoteAlarmPushQueueTests.swift */; };
 		53289664AD6C8783B454760D /* EntryRefreshFreshnessTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4843EEDBACE08AE27F5F8DD /* EntryRefreshFreshnessTests.swift */; };
 		5492863435B4BD0E97A7F73B /* GradientCta.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4FA548127A2AE3F3ED3B6D3 /* GradientCta.swift */; };
+		567E773BE244A680AF7B1BCC /* WeatherAttributionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68623B8C742341D6D3C7DF72 /* WeatherAttributionTests.swift */; };
 		575988ABEFC6557E72CB222B /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21CBB976863F3883B2FCE2A2 /* Theme.swift */; };
 		57ADA6ACCC85DFE6A0015F10 /* RemoteAlarmMapper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C33B74B73D468DD0A54CBA5 /* RemoteAlarmMapper.swift */; };
 		59DBB9915C0BE83812284186 /* FortuneBirthDateEditTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A565E1FA348483063072D64 /* FortuneBirthDateEditTests.swift */; };
@@ -584,6 +585,7 @@
 		6591AF9B9A7B055141D618C9 /* ClipReadinessTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipReadinessTests.swift; sourceTree = "<group>"; };
 		65E21A05EC23A5BC2A3198BF /* AlarmEditorSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlarmEditorSheet.swift; sourceTree = "<group>"; };
 		6631E3233534A061DF16833B /* AppVersionGateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppVersionGateTests.swift; sourceTree = "<group>"; };
+		68623B8C742341D6D3C7DF72 /* WeatherAttributionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeatherAttributionTests.swift; sourceTree = "<group>"; };
 		6894609DC63A6B0C2487A2D9 /* HolidayOffReschedulerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HolidayOffReschedulerTests.swift; sourceTree = "<group>"; };
 		691A9D66BAE7853E51A2044C /* PendingRevokedTransactionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PendingRevokedTransactionStore.swift; sourceTree = "<group>"; };
 		69EA3F5BEDD6EAC8982DED8B /* AlarmKitPresentationLocalizationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlarmKitPresentationLocalizationTests.swift; sourceTree = "<group>"; };
@@ -1231,6 +1233,7 @@
 				DD88376E4686A1C79C01C265 /* VoiceShareAccessTests.swift */,
 				4D6B9AB322B789829ECCE211 /* VoiceStudioLoadStockClipsSupersededTests.swift */,
 				6BB3292333BDA9F421AC0D0A /* VoiceStudioViewModelTests.swift */,
+				68623B8C742341D6D3C7DF72 /* WeatherAttributionTests.swift */,
 				B7D8EAC6D0EFB8B88C7CA40E /* WeatherRegionCatalogTests.swift */,
 				F184596631F66837EF36205A /* WeatherVariantOwnerScopeTests.swift */,
 				D0C75DB9B643CF3B45BF58E0 /* WeatherVariantRolloverTests.swift */,
@@ -1966,6 +1969,7 @@
 				F4592AC12059D8F4652C2BD7 /* VoiceShareAccessTests.swift in Sources */,
 				8DE17EE557F652A0477D46E6 /* VoiceStudioLoadStockClipsSupersededTests.swift in Sources */,
 				00B56BDA058D957CBAA95386 /* VoiceStudioViewModelTests.swift in Sources */,
+				567E773BE244A680AF7B1BCC /* WeatherAttributionTests.swift in Sources */,
 				F7AE5B9A2F35323387FE7BA5 /* WeatherRegionCatalogTests.swift in Sources */,
 				4CE5F30A54535517CEDDC44A /* WeatherVariantOwnerScopeTests.swift in Sources */,
 				D12B4A02203BA1C6F7FEBE3B /* WeatherVariantRolloverTests.swift in Sources */,
