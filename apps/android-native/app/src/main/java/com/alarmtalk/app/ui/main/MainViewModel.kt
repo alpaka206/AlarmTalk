@@ -1169,6 +1169,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         internal set
     var updateStoreUrl by mutableStateOf("")
         internal set
+    /**
+     * 서버가 알려 준 날씨 원천 토큰 — `GET /api/app/version` 의 `weather_attribution`. 지역 시트가 출처 줄을
+     * 그릴지 이 값으로 정한다(`showsWeatherAttribution`) — 앱이 원천을 스스로 단정하지 않는다.
+     * 저장하지 않고 새로 묻지도 않는다: [checkAppVersion] 이 받아 온 값을 이 뷰모델이 사는 동안만 들고,
+     * 확인이 실패하면 null(숨김)로 되돌린다. 화면에는 `MainActivity` 가 `LocalWeatherAttribution` 으로 내려 준다.
+     */
+    var weatherAttribution by mutableStateOf<String?>(null)
+        internal set
     // FLEXIBLE In-App Update 다운로드가 끝나면 InAppUpdateManager 가 true 로 세팅 →
     // AlarmTalkApp 이 '재시작' 스낵바를 띄우고, 액션 시 completeUpdate() 를 호출한다.
     var flexibleUpdateDownloaded by mutableStateOf(false)

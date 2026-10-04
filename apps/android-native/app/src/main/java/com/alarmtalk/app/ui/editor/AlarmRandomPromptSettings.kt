@@ -22,6 +22,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
@@ -581,6 +582,30 @@ internal fun initialWeatherPickerCountry(
     current?.country ?: WeatherCountry.fromCode(fallbackCountryCode) ?: WeatherCountry.KR
 
 /**
+ * 서버의 날씨가 기상청(KR)·気象庁(JP)·NWS(US)의 예보에서 온다는 토큰 — `GET /api/app/version` 의
+ * `weather_attribution`(백엔드 `WEATHER_ATTRIBUTION`, `packages/backend/src/lib/weather-attribution.ts`).
+ */
+internal const val OFFICIAL_FORECASTS_WEATHER_ATTRIBUTION = "kma_jma_nws"
+
+/**
+ * 지역 시트에 날씨 출처 줄을 그릴까 — 서버가 **정확히** [OFFICIAL_FORECASTS_WEATHER_ATTRIBUTION] 을 줄 때만.
+ * 그 밖(모르는 값·null·필드가 없는 옛 서버·버전 확인 실패·아직 응답 전)은 숨긴다.
+ *
+ * 출처 문장은 서버가 **실제로 쓰는 원천**을 따라가야 한다 — 앱이 단정하면 서버의 원천 교체가 늦거나 되돌려진
+ * 동안 쓰지 않는 기관을 출처로 적는다(코덱스 #845). 규칙: `docs/spec/voice-and-message.md` 「지역 시트의 날씨
+ * 출처 줄 — 서버가 원천을 말할 때만」. iOS 는 `WeatherAttribution.showsLine` 이 같은 판정이다.
+ */
+internal fun showsWeatherAttribution(token: String?): Boolean =
+    token == OFFICIAL_FORECASTS_WEATHER_ATTRIBUTION
+
+/**
+ * 서버가 알려 준 날씨 원천 토큰(`MainViewModel.weatherAttribution`) — `MainActivity` 가 앱 전체에 내려 준다.
+ * 지역 시트는 설정·편집기 두 곳에서 열리므로 인자로 실어 나르지 않고 여기서 읽는다. 기본값 null = 숨김이라,
+ * 내려 주지 않은 곳에서 열려도 출처를 지어내지 않는다.
+ */
+internal val LocalWeatherAttribution = compositionLocalOf<String?> { null }
+
+/**
  * 지역 고르기 — **나라 → 지역**, 직접 입력은 없다(2026-09-30).
  *
  * 위에 나라 세그먼트(대한민국 · 일본 · 미국), 아래에 그 나라의 지역 목록(목록 순서 — 생성
@@ -609,6 +634,7 @@ internal fun WeatherLocationDialog(
     var shownCountry by remember(display.region?.key) {
         mutableStateOf(initialWeatherPickerCountry(display.region, fallbackCountry))
     }
+    val showsAttribution = showsWeatherAttribution(LocalWeatherAttribution.current)
 
     val regions = WeatherRegions.byCountry(shownCountry)
     // 나라마다 목록을 새로 연다 — 새 목록은 맨 위에서 시작한다.
@@ -677,16 +703,21 @@ internal fun WeatherLocationDialog(
                 )
             }
         }
-        // 날씨 출처 — 목록 **아래 고정**(목록이 `weight(1f, fill = false)` 라 늘 보인다). 가공해 쓴다는 사실은
-        // 気象庁 약관(공공데이터 이용규약 — 가공 시 그 사실을 적는다)이 요구한다. 지역을 고르는 곳이 이 시트
-        // 하나라(설정·편집기 공용) 여기 한 곳에만 둔다. iOS `WeatherRegionPickerSheet` 와 같은 문장이다.
-        Text(
-            text = stringResource(R.string.region_picker_weather_attribution),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp),
-        )
+        // 날씨 출처 — 목록 **아래 고정**(목록이 `weight(1f, fill = false)` 라 늘 보인다). 원천과 가공해 쓴다는
+        // 사실은 기상법(출처 표시)과 気象庁 약관(공공데이터 이용규약 — 가공 시 그 사실을 적는다)이 요구한다. 지역을
+        // 고르는 곳이 이 시트 하나라(설정·편집기 공용) 여기 한 곳에만 둔다. iOS `WeatherRegionPickerSheet` 와 같은
+        // 문장이다.
+        // ⚠ **서버가 그 원천을 쓴다고 말할 때만 그린다**([showsWeatherAttribution]). 문장을 늘 그리면 서버의 원천
+        // 교체가 늦거나 되돌려진 동안 쓰지 않는 기관을 출처로 적는다(코덱스 #845).
+        if (showsAttribution) {
+            Text(
+                text = stringResource(R.string.region_picker_weather_attribution),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp),
+            )
+        }
     }
 }
