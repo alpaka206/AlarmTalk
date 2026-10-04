@@ -1792,13 +1792,18 @@ R2 파일·ElevenLabs 클론은 DB 트랜잭션 안에서 지울 수 없으므�
   `weather-regions.test.ts` 가 KR 격자를 LCC 로 다시 계산한다. ⚠ 이 절의 규칙에 회귀 테스트 파일을 더하면 이
   명령에도 더한다 — 「구현 지도」가 대는 파일이 여기서 빠지면 로컬에서 그 회귀가 보이지 않는다.
 - **읽기 전용 점검**(DB 무접촉, 키는 출력하지 않는다): `npm run check:weather -- --env-file .dev.vars.dev` — NWS
-  `/points` 재조회 대조, JMA 상수 대조, 133곳 드라이런(나라별 원천 성공 수·자리 분포). 자리는 **운영과 같은 분류**로
-  센다 — 원천 종류를 넘겨 KR·JP 는 강수확률 60 부터만 비다(결정 D7. 2026-10-05 전에는 빠뜨려 KR·JP 의 강수확률
-  30~59 날이 비로 세어졌다). 그 분류는 스크립트 본문이 아니라 `dryRunVariants`(`scripts/weather-sources-dry-run.ts`)
-  에 있다 — 위 유닛의 `weather-sources-dry-run` 이 그 함수를 그대로 거치고, `finalizeSourceDay` 의 `source` 가
-  필수라 빠뜨리면 `npm run typecheck`(`tsc -p scripts/tsconfig.json`)가 막는다. 오늘 행은 이어받기 없이 세므로
-  KR(1700 회차 이후)·JP·NWS(아침 이후)의 오늘이 미해결로 나오는 것은 정상이다. 2026-10-01 19:20 KST 결과:
-  KR 17/17 · JP 47/47 · US 69/69, /points 69곳·JMA 47곳 모두 일치.
+  `/points` 재조회 대조, JMA 상수 대조, 133곳 드라이런(나라별 원천 성공 수·(지역, 날짜) 미해결 수·자리 분포). 자리는
+  **운영과 같은 분류**로 센다 — 원천 종류를 넘겨 KR·JP 는 강수확률 60 부터만 비다(결정 D7. 2026-10-05 전에는 빠뜨려
+  KR·JP 의 강수확률 30~59 날이 비로 세어졌다). 그 분류는 스크립트 본문이 아니라 `dryRunVariants`
+  (`scripts/weather-sources-dry-run.ts`)에 있다 — 위 유닛의 `weather-sources-dry-run` 이 그 함수를 그대로 거치고,
+  `finalizeSourceDay` 의 `source` 가 필수라 빠뜨리면 `npm run typecheck`(`tsc -p scripts/tsconfig.json`)가 막는다.
+  미해결은 **내일~+3 과 오늘을 따로** 센다. 내일~+3 은 cron 의 due 날짜라 **0 이어야 한다**(남으면 슬롯 내내 다시
+  부른다). 오늘은 이어받기 없이 세므로 KR(1700 회차 이후)·JP·NWS(아침 이후)의 오늘이 미해결로 나오는 것은 정상이다 —
+  JP 는 오늘 최저가 어떤 발표에도 없어(`lib/weather-jma.ts`) 원천이 성공한 곳의 오늘이 **언제나 전부** 미해결이다
+  (47곳이면 47). (둘을 합쳐 세면 JP 의 미해결이 늘 47 이라 내일~+3 이 0 인지 읽을 수 없어 2026-10-05 에 나눴다.)
+  2026-10-01 19:20 KST 결과: KR 17/17 · JP 47/47 · US 69/69, /points 69곳·JMA 47곳 모두 일치. 2026-10-05 05:10 KST
+  결과(JP·US, 원천 종류를 넘긴 뒤): JP 47/47 · US 69/69, 미해결 내일~+3 은 둘 다 0 · 오늘은 JP 47 · US 0,
+  /points 69곳·JMA 47곳 모두 일치.
 - **dev 하루 관측**(PR B 머지 뒤): `wrangler tail --env dev` 에서 슬롯 4개(KR·JP 저녁 12Z·아침 21Z, 미 동부·중부 등)의
   `at:"scheduled.weather_region_daily"`(open·due·attempted·stored·failed), `at:"weather.fetch"` 의 source 별
   `status:200`·`resultCode:"00"`(KMA), 실행의 `cpuTime`, 그리고 Sentry `scheduled.weather_region_daily.slot_failed` 0건.

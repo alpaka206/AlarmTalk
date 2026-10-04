@@ -9,8 +9,9 @@
  *  2. JMA: 상수 JSON(area · forecast_area · week_area · week_area05)에 office·class10·기온 지점·주간 구역이
  *     지금도 있고 서로 맞는지 본다.
  *     (KR 격자는 `packages/shared/test/weather-regions.test.ts` 가 LCC 식으로 매번 다시 계산한다.)
- *  3. 드라이런: 133곳을 어댑터(`fetchRegionSourceDays`)로 받아 나라별 성공 수와 클립 자리 분포를 낸다. 자리는
- *     운영과 같은 분류로 센다 — `dryRunVariants`(`weather-sources-dry-run.ts`, 회귀 `test/weather-sources-dry-run.test.ts`).
+ *  3. 드라이런: 133곳을 어댑터(`fetchRegionSourceDays`)로 받아 나라별 성공 수, (지역, 날짜) 미해결 수(내일~+3 과
+ *     오늘을 따로), 클립 자리 분포를 낸다. 자리는 운영과 같은 분류로 센다 — `dryRunVariants`
+ *     (`weather-sources-dry-run.ts`, 회귀 `test/weather-sources-dry-run.test.ts`).
  *
  * 사용 (packages/backend 에서):
  *   npm run check:weather                          # 셋 다
@@ -153,9 +154,10 @@ async function dryRun(): Promise<void> {
   const key = readKmaKey();
   out(`== 드라이런 (${regions.length}곳, DB 무접촉) — KMA 키 ${key ? '있음' : '없음'}`);
   const now = new Date();
-  const byCountry = new Map<WeatherCountryCode, { ok: number; failed: string[]; variants: number[]; unresolved: number }>();
+  type Stat = { ok: number; failed: string[]; variants: number[]; unresolvedLater: number; unresolvedToday: number };
+  const byCountry = new Map<WeatherCountryCode, Stat>();
   for (const r of regions) {
-    const stat = byCountry.get(r.country) ?? { ok: 0, failed: [], variants: [], unresolved: 0 };
+    const stat = byCountry.get(r.country) ?? { ok: 0, failed: [], variants: [], unresolvedLater: 0, unresolvedToday: 0 };
     byCountry.set(r.country, stat);
     const outcome = await fetchRegionSourceDays(r, { now, budget: fixedFetchBudget(2), kmaServiceKey: key });
     if (!outcome.ok) {
@@ -163,21 +165,28 @@ async function dryRun(): Promise<void> {
     } else {
       stat.ok += 1;
       // 운영(cron·읽기 경로)과 같은 분류다 — 원천 종류를 넘긴다(결정 D7). 분류는 테스트가 그대로 거치는 함수에 있다.
-      for (const variant of dryRunVariants(r, outcome.days, now)) {
-        if (variant === null) stat.unresolved += 1;
-        else stat.variants.push(variant);
-      }
+      // 미해결은 내일~+3 과 오늘을 따로 센다 — cron 의 due 는 내일~+3 만 보고, 오늘은 저장 행의 극값을 이어받아야
+      // 만들어지는 날이 있는데 이 드라이런은 DB 를 보지 않는다(합쳐 세면 JP 는 언제나 47 이라 0 인지 읽을 수 없다).
+      dryRunVariants(r, outcome.days, now).forEach((variant, day) => {
+        if (variant !== null) stat.variants.push(variant);
+        else if (day === 0) stat.unresolvedToday += 1;
+        else stat.unresolvedLater += 1;
+      });
     }
     await sleep(r.source.kind === 'nws' ? 400 : 150);
   }
   for (const [country, stat] of byCountry) {
     const total = regions.filter((r) => r.country === country).length;
     const dist = CLONE_WEATHER_CONDITIONS.map((name, i) => `${name}=${stat.variants.filter((v) => v === i).length}`);
-    out(`  ${country}: 원천 성공 ${stat.ok}/${total} · (지역, 날짜) 미해결 ${stat.unresolved} · 자리 ${dist.join(' ')}`);
+    out(
+      `  ${country}: 원천 성공 ${stat.ok}/${total} · (지역, 날짜) 미해결 내일~+3 ${stat.unresolvedLater} · 오늘 ${stat.unresolvedToday}` +
+        ` · 자리 ${dist.join(' ')}`,
+    );
     for (const f of stat.failed) out(`    ✗ ${f}`);
     problems += stat.failed.length;
   }
-  out('  (오늘 행은 이어받기 없이 센다 — KR 1700 이후·JP·NWS 아침 이후의 오늘은 미해결이 정상이다)');
+  out('  (내일~+3 의 미해결은 cron 이 슬롯 내내 다시 부르는 날이다 — 0 이어야 한다.');
+  out('   오늘은 이어받기 없이 센다 — KR 1700 이후·JP(오늘 최저가 어떤 발표에도 없어 언제나 전부)·NWS 아침 이후는 미해결이 정상이다)');
 }
 
 await checkNwsPoints();
