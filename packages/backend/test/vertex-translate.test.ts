@@ -2566,6 +2566,72 @@ describe('hasJapanesePoliteEnding — 엄격한 허용 목록', () => {
     expect(out.text).toBe('お薬の時間だよ、ひな。');
   });
 
+  // 리뷰 수정(Codex #844 3차 재검토 2) — 호칭을 낱말 안에서도 지워('split(title)'), 'しょう'(翔)·'よう'(陽)를 부르는 목소리의
+  // 'がんばりましょう'·'過ごせますように' 가 'がんばりま'·'過ごせます に' 로 깨졌다. 생성 문구의 です・ます 를 못 봤고(d3d2194b 는
+  // 거절했다), 정중체 확정 문구를 반말이나 '어체 없음' 으로 읽어 정중체 클립을 거절했다.
+  it('호칭은 부름말 자리에서만 지운다 — 낱말 안의 같은 글자(ましょう 의 しょう·ますように 의 よう)는 그대로 본다(Codex #844)', () => {
+    const momTo = (listenerTitle: string, styleReference?: string) => ({ relationshipLabel: '母', listenerTitle, styleReference });
+    // 생성 문구 — 이 호칭들에서도 가족 클립의 です・ます 를 다시 묻는다(확정 문구가 없을 때, 반말 확정 문구가 정중체 분석을 이길 때).
+    for (const [line, title] of [
+      ['しょう、今日も一緒にがんばりましょう！', 'しょう'],
+      ['しょう、お薬の時間だよ。忘れずに飲みましょう。', 'しょう'],
+      ['よう、お薬の時間だよ。今日も元気に過ごせますように。', 'よう'],
+    ] as const) {
+      expect(prerenderRejectionReason(line, 'ja', momTo(title)), line).toBe('register_mixed');
+    }
+    expect(
+      prerenderRejectionReason('しょう、お薬の時間だよ。忘れずに飲みましょう。', 'ja', {
+        ...momTo('しょう', 'しょう、おはよう。起きてね。'),
+        speechStyle: POLITE_SPEAKER,
+      }),
+    ).toBe('register_mixed');
+    // 반말 끝은 그대로 받는다 — 'おはよう'·'がんばろう' 의 'よう'·'ろう' 도 호칭이 아니다.
+    for (const [line, title] of [
+      ['しょう、お薬の時間だよ。忘れずに飲もうね。', 'しょう'],
+      ['よう、おはよう！今日も一日がんばろう。', 'よう'],
+    ] as const) {
+      expect(prerenderRejectionReason(line, 'ja', momTo(title)), line).toBeNull();
+    }
+    // 확정 문구 — 정중체를 세운다. 분석이 정중체여도, 분석이 없어도 정중체 클립을 받는다.
+    const politeClip = 'お薬の時間ですよ。忘れずに飲んでくださいね。';
+    for (const [reference, title] of [
+      ['しょう、おはよう！今日も一緒にがんばりましょう。', 'しょう'],
+      ['しょう、今日も一日がんばりましょう。', 'しょう'],
+      ['よう、今日もいい一日になりますように。', 'よう'],
+    ] as const) {
+      expect(hasJapanesePoliteEnding(politeClip, { ...momTo(title, reference), speechStyle: POLITE_SPEAKER }), reference).toBe(false);
+      expect(hasJapanesePoliteEnding(politeClip, momTo(title, reference)), reference).toBe(false);
+    }
+    // 반말 확정 문구는 그대로 반말이다 — 'おはよう' 의 'よう' 를 지우면 어체가 사라져 분석의 정중체가 검사를 껐다.
+    expect(hasJapanesePoliteEnding(politeClip, { ...momTo('よう', 'よう、おはよう！'), speechStyle: POLITE_SPEAKER })).toBe(true);
+    // 끊기 자체 — 부름말만 지우고 낱말 안은 남긴다.
+    expect(japaneseSentenceEnds('しょう、今日も一緒にがんばりましょう！', 'しょう')).toEqual(['、今日も一緒にがんばりましょう']);
+    expect(japaneseSentenceEnds('今日も元気に過ごせますように、よう。', 'よう')).toEqual(['今日も元気に過ごせますように']);
+    expect(japaneseSentenceEnds('ゆうた！お薬の時間ですよ ゆうた〜', 'ゆうた')).toEqual(['お薬の時間ですよ']);
+  });
+
+  it('띄어쓰기·쉼표 없이 붙여 쓴 끝 호칭은 떼어 낸 앞이 정중체일 때만 뗀다 — 반말 쪽으로는 떼지 않는다(Codex #844)', () => {
+    // 붙여 쓴 끝 호칭이 です・ます 를 가리지 않는다 — 생성 문구는 다시 묻고, 확정 문구는 정중체를 세운다('た'·'な' 로 반말이 되지 않는다).
+    for (const [line, title] of [
+      ['お薬の時間ですよゆうた。', 'ゆうた'],
+      ['おはようございますひな。', 'ひな'],
+    ] as const) {
+      expect(prerenderRejectionReason(line, 'ja', { relationshipLabel: '母', listenerTitle: title }), line).toBe('register_mixed');
+      expect(
+        hasJapanesePoliteEnding(polite, { relationshipLabel: '母', listenerTitle: title, speechStyle: POLITE_SPEAKER, styleReference: line }),
+        line,
+      ).toBe(false);
+      expect(hasJapanesePoliteEnding(polite, { relationshipLabel: '母', listenerTitle: title, styleReference: line }), line).toBe(false);
+    }
+    expect(japaneseSentenceEnds('お薬の時間ですよゆうた。', 'ゆうた')).toEqual(['お薬の時間ですよ']);
+    // 떼면 어미가 깨지거나(ましょう) 없던 반말이 생기면(でしょう → で) 떼지 않는다.
+    expect(japaneseSentenceEnds('がんばりましょう。', 'しょう')).toEqual(['がんばりましょう']);
+    expect(japaneseSentenceEnds('だめでしょう？', 'しょう')).toEqual(['だめでしょう']);
+    expect(
+      hasJapanesePoliteEnding(polite, { relationshipLabel: '母', listenerTitle: 'しょう', speechStyle: POLITE_SPEAKER, styleReference: 'だめでしょう？' }),
+    ).toBe(false);
+  });
+
   it('두 앱의 관계 프리셋(한·영·일, 연예인·직접 입력 제외)은 모두 가까운 관계로 본다(Codex #844 — 형제·자매)', () => {
     for (const label of [
       '엄마', '아빠', '할머니', '할아버지', '아들', '딸', '손녀', '손주', '형제·자매', '남자친구', '여자친구', '남편', '아내', '친구',

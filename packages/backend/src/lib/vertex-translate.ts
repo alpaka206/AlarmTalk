@@ -1701,8 +1701,13 @@ export function hasEnglishLiteralCalque(spoken: string): boolean {
   return /\b(?:money|financial) luck\b/i.test(spoken);
 }
 
+/**
+ * 일본어 문장·마디의 가장자리 글자 — 문장부호·늘임표·쉼표·띄어쓰기. 문장 끝에서 걷어 내는 것(`JA_SENTENCE_TRAILER`)이자
+ * 부름말로 홀로 선 청자 호칭을 가르는 경계(`japaneseVocativePattern`)다 — 두 목록이 갈라지지 않게 한 곳에 둔다.
+ */
+const JA_EDGE_CHARS = '\\s、，,。！？!?…〜ー～';
 /** 문장 끝에서 걷어 내는 문장부호·늘임표·쉼표·띄어쓰기 — 어체는 그 앞 낱말로 가린다. */
-const JA_SENTENCE_TRAILER = /[\s、，,。！？!?…〜ー～]+$/u;
+const JA_SENTENCE_TRAILER = new RegExp(`[${JA_EDGE_CHARS}]+$`, 'u');
 /**
  * 서술어 뒤에 붙어도 어체를 바꾸지 않는 꼬리 — 종조사(よ·ね·な·の·か·わ·ぞ·さ)와 문장을 맺는 접속·인용 조사(から·けど·
  * けれど(も)·ので·のに·し·が·って·っけ·もの·もん). 어체는 꼬리 **앞** 서술어가 정한다(Codex #844) — '時間ですからね'·
@@ -1748,17 +1753,42 @@ export function isJapanesePoliteSentence(sentence: string): boolean {
 }
 
 /**
- * 어체를 가릴 일본어 문장들 — 태그를 벗기고, 청자 호칭을 지우고(한국어 `koreanEndingEntries` 와 같다), 。！？…로 끊어
- * 끝의 문장부호·쉼표를 걷는다. ⚠ 확정 문구(`japaneseReferenceRegister`)와 생성 문구(`hasJapanesePoliteEnding`)는
- * **같은 질문**을 하므로 둘 다 이것으로 끊는다(Codex #844) — 한쪽만 호칭을 지우면 'お薬の時間ですよ、ひな。' 가 확정
- * 문구로는 정중체, 생성 문구로는 정중체 아님으로 갈린다. 평가 도구(`scripts/eval-gemini-prompts.ts`)도 이것을 쓴다.
+ * 부름말로 **홀로 선** 청자 호칭 — 앞뒤가 글 처음·끝이거나 가장자리 글자(`JA_EDGE_CHARS` — 띄어쓰기·쉼표·문장부호·
+ * 늘임표)일 때만('ゆい、起きて'·'時間ですよ、ひな。'·'ゆうた！'·'時間ですよ ゆうた〜').
+ * ⚠ 낱말 안의 같은 글자는 호칭이 아니다(Codex #844) — 일본어는 낱말 사이를 띄우지 않아 이름이 어미 안에도 온다. 아무
+ *   데서나 지우면 'しょう'(翔)를 부르는 목소리의 'がんばりましょう' 가 'がんばりま' 로, 'よう'(陽)의 '過ごせますように' 가
+ *   '過ごせます に' 로 깨져, 생성 문구의 です・ます 를 못 보고 정중체 확정 문구도 정중체로 읽지 못한다. 한국어
+ *   (`koreanEndingEntries`)는 호칭 뒤에 '야·아' 가 붙어('민지야') 낱말째 지우고 남은 한 글자를 부름말로 건너뛰는 다른 방식이다.
+ */
+function japaneseVocativePattern(title: string): RegExp {
+  return new RegExp(`(?<=^|[${JA_EDGE_CHARS}])${escapeRegExp(title)}(?=[${JA_EDGE_CHARS}]|$)`, 'gu');
+}
+
+/**
+ * 띄어쓰기·쉼표 없이 서술어에 **붙여 쓴** 끝 호칭('お薬の時間ですよゆうた')은 떼어 낸 앞이 정중체일 때만 뗀다 — 그래야
+ * 끝 호칭이 です・ます 를 가리지 않으면서, 'がんばりましょう'(호칭 'しょう')처럼 떼면 어미가 깨지는 낱말은 그대로 남는다
+ * (문장이 이미 정중체면 떼지 않는다). 반말 쪽으로는 떼지 않는다 — 'おはよう'(호칭 'よう')는 떼면 반말이 사라지고,
+ * 'だめでしょう'(호칭 'しょう')는 떼면 없던 반말 'で' 가 생긴다.
+ */
+function withoutGluedPoliteVocative(sentence: string, title: string | undefined): string {
+  if (!title || !sentence.endsWith(title) || isJapanesePoliteSentence(sentence)) return sentence;
+  const rest = sentence.slice(0, -title.length).replace(JA_SENTENCE_TRAILER, '');
+  return isJapanesePoliteSentence(rest) ? rest : sentence;
+}
+
+/**
+ * 어체를 가릴 일본어 문장들 — 태그를 벗기고, 부름말로 홀로 선 청자 호칭을 지우고(`japaneseVocativePattern`), 。！？…로
+ * 끊어 끝의 문장부호·쉼표를 걷는다(붙여 쓴 끝 호칭은 `withoutGluedPoliteVocative`). ⚠ 확정 문구(`japaneseReferenceRegister`)와
+ * 생성 문구(`hasJapanesePoliteEnding`)는 **같은 질문**을 하므로 둘 다 이것으로 끊는다(Codex #844) — 한쪽만 호칭을 지우면
+ * 'お薬の時間ですよ、ひな。' 가 확정 문구로는 정중체, 생성 문구로는 정중체 아님으로 갈린다. 평가 도구
+ * (`scripts/eval-gemini-prompts.ts`)도 이것을 쓴다.
  */
 export function japaneseSentenceEnds(text: string, listenerTitle?: string | null): string[] {
   const normalized = normalizeAlarmTextWithoutTags(text);
   const title = listenerTitle?.trim();
-  return (title ? normalized.split(title).join(' ') : normalized)
+  return (title ? normalized.replace(japaneseVocativePattern(title), ' ') : normalized)
     .split(/(?<=[。！？!?…])/)
-    .map((s) => s.trim().replace(JA_SENTENCE_TRAILER, ''))
+    .map((s) => withoutGluedPoliteVocative(s.trim().replace(JA_SENTENCE_TRAILER, ''), title))
     .filter(Boolean);
 }
 
@@ -1792,8 +1822,8 @@ function isJapaneseCasualSentence(sentence: string): boolean {
 /**
  * 사용자가 확정한 일본어 문구가 **세운** 어체 — 정중체 문장이 하나라도 있으면 'polite', 아니면 반말 문장이 있을 때
  * 'casual', 문구가 없거나 어느 쪽도 세우지 않으면 null. 문장은 생성 문구 검사와 같은 `japaneseSentenceEnds` 로 끊는다 —
- * 청자 호칭을 지우므로 끝 호칭이 정중체를 가리거나('起きる時間ですよ、ひな。') 'た'·'な' 로 끝나는 이름('ゆうた'·'ひな')이
- * 반말로 세지지 않는다.
+ * 부름말 자리의 청자 호칭을 지우므로 끝 호칭이 정중체를 가리거나('起きる時間ですよ、ひな。') 'た'·'な' 로 끝나는 이름
+ * ('ゆうた'·'ひな')이 반말로 세지지 않고, 낱말 안의 같은 글자('がんばりましょう' 의 'しょう')는 지우지 않아 정중체가 깨지지 않는다.
  */
 function japaneseReferenceRegister(
   reference: string | null | undefined,
@@ -1882,7 +1912,8 @@ export function hasJapanesePoliteEnding(
     params.speechStyle?.childlike === true || isConfirmedCloseRelationshipLabel(params.relationshipLabel ?? '');
   if (!casual) return false;
   // 확정 문구와 **같은 문장 끊기**로 본다(Codex #844) — 청자 호칭을 지우지 않으면 'お薬の時間ですよ、ひな。' 의 끝 호칭이
-  //   です・ます 를 가려 그 가족 클립이 그대로 영구 저장된다.
+  //   です・ます 를 가려 그 가족 클립이 그대로 영구 저장된다. 지우는 것은 부름말 자리의 호칭뿐이다 — 낱말 안까지 지우면
+  //   'しょう' 를 부르는 목소리의 'がんばりましょう' 가 깨져 거꾸로 저장된다.
   return japaneseSentenceEnds(spoken, params.listenerTitle).some(isJapanesePoliteSentence);
 }
 
