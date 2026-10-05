@@ -60,14 +60,14 @@ struct SettingsView: View {
 
                 VStack(alignment: .leading, spacing: 0) {
                     SettingsValueButton(
-                        label: String(localized: "지역"),
+                        label: "지역",
                         value: weatherLocationLabel,
                         note: weatherLegacyNote,
                         action: { weatherDialogOpen = true }
                     )
                     Divider()
                     SettingsValueButton(
-                        label: String(localized: "운세 정보"),
+                        label: "운세 정보",
                         value: fortuneInfoLabel,
                         action: {
                             // 열 때마다 저장된 값에서 다시 시작한다 — 취소하고 다시 열었을 때
@@ -102,11 +102,11 @@ struct SettingsView: View {
                 // ⚠ 예전에는 여기 웹 `Link` 두 개뿐이었다 — 외부 Safari 로 나가는 데다
                 // **동의 내역(생체정보 철회) 경로가 앱에 아예 없었다.**
                 VStack(alignment: .leading, spacing: 0) {
-                    SettingsValueButton(label: String(localized: "약관 및 개인정보 처리 동의")) {
+                    SettingsValueButton(label: "약관 및 개인정보 처리 동의") {
                         legalDestination = .consentHistory
                     }
                     Divider().padding(.horizontal, 8).padding(.vertical, 4)
-                    SettingsValueButton(label: String(localized: "오픈소스 라이선스")) {
+                    SettingsValueButton(label: "오픈소스 라이선스") {
                         legalDestination = .ossLicenses
                     }
                 }
