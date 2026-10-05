@@ -1841,10 +1841,12 @@ export function japaneseSentenceEnds(text: string, listenerTitle?: string | null
 }
 
 /**
- * 어체를 가릴 **말** — 태그를 벗기고, 글자 웃음(w·笑·(笑) 등)도 벗긴다(`typedLaughterToTags` — TTS 도 그것을 글자로 읽지
- * 않는다). 웃음 자리는 `mark` 로 메운다(일본어는 `JA_DECORATION_BREAK`). 사용자가 고쳐 확정한 문구는 끝에 웃음을 붙이기
- * 쉬워('起きてね笑'·'起きてね(笑)') 그대로 두면 웃음이 서술어를 가려 '어체 없음' 이 된다(Codex #844). 생성 문구는 합성 전에
- * 웃음·태그를 이미 벗겨서 오므로(`generatePrerenderClipText` — 모델은 웃음을 넣지 않는다, 스펙 §9) 여기서 바뀌는 것이 없다.
+ * 어체를 가릴 **말** — 태그를 벗기고, 글자 웃음(ㅋㅋ·ㅎㅎ·haha·w·笑·(笑))도 벗긴다(`typedLaughterToTags` — TTS 도 그것을 글자로
+ * 읽지 않는다). 웃음 자리는 `mark` 로 메운다(일본어는 `JA_DECORATION_BREAK`, 한국어는 띄어쓰기 — 한국어의 문장 끊기는
+ * 예전 그대로다). 사용자가 고쳐 확정한 문구는 끝에 웃음을 붙이기 쉬워('起きてね笑'·'일어나요 haha') 그대로 두면 웃음이
+ * 서술어를 가려 '어체 없음' 이 된다(Codex #844). 생성 문구는 합성 전에 웃음·태그를 이미 벗겨서 오므로
+ * (`generatePrerenderClipText` — 모델은 웃음을 넣지 않는다, 스펙 §9) 여기서 바뀌는 것이 없다.
+ * 일본어(`japaneseSentenceEnds`)·한국어(`koreanEndingEntries`) 공용.
  */
 function spokenForRegister(text: string, mark: string): string {
   return normalizeAlarmTextWithoutTags(typedLaughterToTags(text).split(LAUGH_TAG).join(mark));
@@ -1857,7 +1859,7 @@ function spokenForRegister(text: string, mark: string): string {
 const PARENTHETICAL_ASIDE = new RegExp(`[ヽヾ]*[(（][^()（）]*[)）](?:[ノﾉゞシｼ]+(?=${JA_EDGE}|$))?`, 'gu');
 
 /**
- * 괄호 덧말('(泣)'·'(汗)'·'(*ﾉωﾉ)'·'ヽ(・∀・)ノ'·'(^^)ノシ')을 지운다 — 서술어가 아니라 덧붙인 말이다. 얼굴 문자의
+ * 괄호 덧말('(泣)'·'(汗)'·'(*ﾉωﾉ)'·'(웃음)'·'ヽ(・∀・)ノ'·'(^^)ノシ')을 지운다 — 서술어가 아니라 덧붙인 말이다. 얼굴 문자의
  * 가나 팔은 가장자리(`JA_EDGE`)가 아니라 끝 장식으로 걷히지 않으므로 여기서 함께 지운다(`PARENTHETICAL_ASIDE`) — 남기면
  * 'ゆい、起きてね(^^)ノ' 가 'ノ' 로 끝나 '어체 없음' 이 된다(Codex #844). 지운 자리는 `mark` 로 메운다(`spokenForRegister` 와
  * 같다). 청자 호칭을 지운 **뒤에** 부른다 — 먼저 지우면 괄호가 든 호칭('ゆい(娘)')을 못 찾는다.
@@ -2151,11 +2153,26 @@ const KO_INTERJECTIONS = new Set(['자자', '아이고', '어머', '에이', '�
  */
 type KoEndingEntry = { word: string; kind: 'polite' | 'banmal' };
 
-/** `koreanEndings` 와 같지만 끝 낱말도 함께 — 재시도 힌트에 **틀린 낱말을 그대로** 짚어 주려고. */
-function koreanEndingEntries(spoken: string, listenerTitle?: string | null): KoEndingEntry[] {
+/**
+ * 마디 끝에서 걷어 내는 장식 — **완성형 한글 음절이 아닌 것 전부**: 문장부호·물결·괄호·기호(♡♪)·이모지·^^·숫자·라틴 글자
+ * (XD)·호환 자모(ㅠㅠ·ㅜㅜ·ㅋㅋ·ㅎㅎ). 서술어는 언제나 완성형 음절로 끝나므로 어체는 그 앞 낱말로 가린다.
+ * ⚠ 글자 목록으로 되돌리지 말 것(Codex #844 — 일본어 `JA_EDGE` 와 같은 사각이다). 예전 목록(띄어쓰기·.!?！？~…,)은
+ *   '일어나요😊'·'일어나♡'·'일어나요^^'·'일어나요ㅠㅠ' 의 어체를 읽지 못했다. 확정 문구가 그렇게 끝나면 어체가 없는 것으로 보고
+ *   관계·분석으로 돌아가서, 연인에게 해요체로 고쳐 확정한 목소리의 해요체 클립이 거절되고(재시도 힌트가 그 '-요' 를 틀렸다고
+ *   짚는다), 반말로 분석된 화자가 해요체로 확정한 문구를 분석이 이겼다.
+ */
+const KO_TRAILING_DECORATION = /[^가-힣]+$/u;
+
+/**
+ * `koreanEndings` 와 같지만 끝 낱말도 함께 — 재시도 힌트에 **틀린 낱말을 그대로** 짚어 주려고. 확정 문구와 생성 문구를 같은
+ * 방법으로 읽는다 — 태그·글자 웃음을 벗기고(`spokenForRegister`), 호칭과 괄호 덧말(`withoutParentheticalAsides`)을 지우고,
+ * 마디 끝의 장식(`KO_TRAILING_DECORATION`)을 걷는다.
+ */
+function koreanEndingEntries(text: string, listenerTitle?: string | null): KoEndingEntry[] {
+  const spoken = spokenForRegister(text, ' ');
   const title = listenerTitle?.trim();
-  const withoutTitle = title ? spoken.split(title).join(' ') : spoken;
-  const lastWord = (s: string) => s.replace(/[\s.!?！？~…,]+$/u, '').match(/[가-힣]+$/u)?.[0] ?? '';
+  const withoutTitle = withoutParentheticalAsides(title ? spoken.split(title).join(' ') : spoken, ' ');
+  const lastWord = (s: string) => s.replace(KO_TRAILING_DECORATION, '').match(/[가-힣]+$/u)?.[0] ?? '';
   return withoutTitle
     .split(/(?<=[.!?！？])\s*/)
     .flatMap((sentence) => {
@@ -2203,9 +2220,9 @@ export function koreanRegisterViolation(spoken: string, params: KoreanRegisterPa
   //   하는데 검사가 관계만 보면, 배우자에게 해요체로 고쳐 확정한 사용자의 클립이 세 번 다 거절돼 **영구
   //   실패**한다 — 같은 확정 문구가 그 목소리의 클립 전부에 실린다. 확정 문구 자체가 섞여 있으면 섞임도
   //   문제 삼지 않는다.
-  const reference = params.styleReference?.trim()
-    ? koreanEndings(normalizeAlarmTextWithoutTags(params.styleReference), params.listenerTitle)
-    : [];
+  //   확정 문구는 사용자가 고친 글이라 끝에 웃음·이모지·괄호 덧말을 붙이기 쉽다('일어나요ㅎㅎ'·'일어나요 haha'·'일어나요😊') —
+  //   그것들을 걷고 읽는다(`koreanEndingEntries` — Codex #844). 못 읽으면 위의 실패가 그대로 난다.
+  const reference = params.styleReference?.trim() ? koreanEndings(params.styleReference, params.listenerTitle) : [];
   const referencePolite = reference.includes('polite');
   const referenceBanmal = reference.includes('banmal');
   if (referencePolite && referenceBanmal) return null;

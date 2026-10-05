@@ -610,6 +610,35 @@ describe('Gemini 요청 — 모델·사고 설정은 코드가 정한다(3.8 Fla
     expect(prompts).toHaveLength(1);
   });
 
+  // 리뷰 수정(Codex #844 3차 재검토 3 — 일본어와 같은 질문) — 마디 끝에서 걷는 글자가 짧은 목록뿐이라 확정 문구가 이모지·♡·
+  // ^^·ㅎㅎ·ㅠㅠ·글자 웃음으로 끝나면 어체를 읽지 못했다. 그러면 관계·분석으로 돌아가, 연인에게 해요체로 고쳐 확정한 목소리의
+  // 해요체 클립이 거절되고(영구 실패), 반말로 분석된 화자가 해요체로 확정한 문구를 분석이 이겼다.
+  it('확정 문구 끝의 이모지·기호·글자 웃음은 걷고 어체를 읽는다 — 그 어체가 관계·분석을 이긴다(Codex #844)', () => {
+    for (const reference of [
+      '오빠, 일어나요😊', '오빠, 일어나요♡', '오빠, 일어나요^^', '오빠, 일어나요ㅎㅎ', '오빠, 일어나요ㅠㅠ', '오빠, 일어나요 haha',
+      '오빠, 일어나요~♪', '오빠, 일어나요 :)', '오빠, 일어나요 XD', '오빠, 일어나요(웃음)',
+    ]) {
+      expect(
+        prerenderRejectionReason('오빠, 비 온대요. 우산 챙겨요.', 'ko', {
+          relationshipLabel: '여자친구',
+          listenerTitle: '오빠',
+          styleReference: reference,
+        }),
+        reference,
+      ).toBeNull();
+    }
+    const casualSpeaker = { dialect: '', strength: '' as const, register: 'banmal', markers: [], persona: '', childlike: false };
+    for (const reference of ['일어나세요😊', '일어나세요♡', '일어나세요ㅎㅎ']) {
+      expect(
+        prerenderRejectionReason('비 온대. 우산 챙겨.', 'ko', { speechStyle: casualSpeaker, styleReference: reference }),
+        reference,
+      ).toBe('register_mixed');
+    }
+    // 생성 문구도 같은 끝으로 읽는다 — 이모지로 끝난 해요체가 연인 클립으로 새지 않고, 반말 끝은 그대로 받는다.
+    expect(hasMixedKoreanRegister('자기야, 비 온대요😊', { relationshipLabel: '남자친구', listenerTitle: '자기' })).toBe(true);
+    expect(hasMixedKoreanRegister('자기야, 비 온대♡ 우산 챙겨😊', { relationshipLabel: '남자친구', listenerTitle: '자기' })).toBe(false);
+  });
+
   it('목소리의 결: 사용자가 고른 값이 분석값보다 앞서고, 고르지 않으면 분석값을 둔다', () => {
     const analyzed = { dialect: '경상', strength: 'low' as const, register: 'banmal', markers: ['~카이'], persona: '', childlike: false, energy: 'lively' as const };
     expect(withVoiceEnergy(analyzed, 'calm')).toEqual({ ...analyzed, energy: 'calm' });
