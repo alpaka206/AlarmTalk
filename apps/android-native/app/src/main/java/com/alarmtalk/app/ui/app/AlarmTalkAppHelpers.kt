@@ -25,6 +25,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -186,9 +187,9 @@ internal sealed interface AuthRoute {
 
 internal enum class MessageSeverity { Success, Error, Info }
 
-internal fun messageSeverity(text: String): MessageSeverity = when {
-    "실패" in text || "못했어요" in text || "오류" in text -> MessageSeverity.Error
-    "했어요" in text || "었어요" in text || "완료" in text -> MessageSeverity.Success
+internal fun messageSeverity(text: String, errorMarkers: Array<String>, successMarkers: Array<String>): MessageSeverity = when {
+    errorMarkers.any { text.contains(it, ignoreCase = true) } -> MessageSeverity.Error
+    successMarkers.any { text.contains(it, ignoreCase = true) } -> MessageSeverity.Success
     else -> MessageSeverity.Info
 }
 
@@ -198,7 +199,11 @@ internal fun PrettySnackbar(
     actionLabel: String? = null,
     onAction: () -> Unit = {},
 ) {
-    val severity = messageSeverity(message)
+    val severity = messageSeverity(
+        message,
+        stringArrayResource(R.array.snackbar_error_markers),
+        stringArrayResource(R.array.snackbar_success_markers),
+    )
     val scheme = MaterialTheme.colorScheme
     val containerColor = when (severity) {
         MessageSeverity.Error -> scheme.error

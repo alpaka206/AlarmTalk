@@ -328,7 +328,7 @@ final class SubscriptionManager: ObservableObject {
             return .failure(
                 reason: Self.userFacingPurchaseError(
                     error,
-                    fallback: "결제에 실패했어요. 잠시 후 다시 시도해 주세요."
+                    fallback: String(localized: "결제에 실패했어요. 잠시 후 다시 시도해 주세요.")
                 )
             )
         }
@@ -360,7 +360,7 @@ final class SubscriptionManager: ObservableObject {
             return .failure(
                 reason: Self.userFacingPurchaseError(
                     error,
-                    fallback: "이전 구매를 복원하지 못했어요. 잠시 후 다시 시도해 주세요."
+                    fallback: String(localized: "이전 구매를 복원하지 못했어요. 잠시 후 다시 시도해 주세요.")
                 )
             )
         }
@@ -810,9 +810,8 @@ final class SubscriptionManager: ObservableObject {
         return plan.isSubscription || serverConfirmed
     }
 
-    private static func userFacingPurchaseError(_ error: Error, fallback: String) -> String {
-        let message = error.localizedDescription.trimmingCharacters(in: .whitespacesAndNewlines)
-        return message.containsKorean ? message : fallback
+    nonisolated static func userFacingPurchaseError(_ error: Error, fallback: String) -> String {
+        userFacingErrorMessage(error, fallback: fallback)
     }
 }
 

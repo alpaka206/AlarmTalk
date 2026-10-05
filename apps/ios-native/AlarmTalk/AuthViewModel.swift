@@ -169,7 +169,7 @@ final class AuthViewModel: ObservableObject {
         }
         // 화면이 맡지 않은 코드는 **공용 표**가 받는다 — 안드로이드
         // `ui/main/MainViewModelAuthActions.kt` 의 로그인 갈래와 같은 층 순서다
-        // (화면 전용 → 공용 표 → 서버 문장/폴백). 로그인은 `authRateLimitMiddleware`
+        // (화면 전용 → 공용 표 → 화면 폴백). 로그인은 `authRateLimitMiddleware`
         // 뒤에 있어 `RATE_LIMITED` 가 실제로 온다 — 표가 없으면 그 429 가
         // "로그인에 실패했어요" 로 읽혀 사용자가 계속 다시 시도한다.
         return APIErrorMessages.message(for: code)

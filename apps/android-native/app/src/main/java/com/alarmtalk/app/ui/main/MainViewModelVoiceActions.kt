@@ -246,7 +246,7 @@ internal fun MainViewModel.createVoiceProfiles(
                     api.createVoiceCloneDraft(
                         authorization = AlarmTalkApiClient.bearer(session.token),
                         draft = draft,
-                        audio = voiceUploadPart(draft.audio),
+                        audio = voiceUploadPart(getApplication(), draft.audio),
                         fallbackLanguage = deviceAppVoiceLanguage(),
                     )
                 }
@@ -618,10 +618,10 @@ internal fun MainViewModel.deleteVoiceProfile(profileId: String) {
 }
 
 internal suspend fun MainViewModel.generateTtsAudio(request: TtsGenerateRequest): TtsGenerateResponse {
-    check(isPaidVoiceEntitledOptimistic() || request.isFreeSystemPresetRequest()) {
-        getApplication<android.app.Application>().getString(R.string.plan_gate_paid_message)
+    if (!isPaidVoiceEntitledOptimistic() && !request.isFreeSystemPresetRequest()) {
+        throw UserFacingException(getApplication<android.app.Application>().getString(R.string.plan_gate_paid_message))
     }
-    val session = authSession ?: throw IllegalStateException(getApplication<android.app.Application>().getString(R.string.msg_voice_tts_generate_login_required))
+    val session = authSession ?: throw UserFacingException(getApplication<android.app.Application>().getString(R.string.msg_voice_tts_generate_login_required))
     return api.generateTts(AlarmTalkApiClient.bearer(session.token), request)
 }
 
@@ -634,7 +634,7 @@ internal fun TtsGenerateRequest.isFreeSystemPresetRequest(): Boolean =
         text.isBlank()
 
 internal suspend fun MainViewModel.downloadTtsMessageAudio(messageId: String): TtsMessageAudioResponse {
-    val session = authSession ?: throw IllegalStateException(getApplication<android.app.Application>().getString(R.string.msg_voice_tts_audio_load_login_required))
+    val session = authSession ?: throw UserFacingException(getApplication<android.app.Application>().getString(R.string.msg_voice_tts_audio_load_login_required))
     return api.getTtsMessageAudio(AlarmTalkApiClient.bearer(session.token), messageId)
 }
 

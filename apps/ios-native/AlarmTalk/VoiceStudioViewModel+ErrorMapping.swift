@@ -14,36 +14,33 @@ extension VoiceStudioViewModel {
         if let code = extractServerErrorCode(from: error) {
             return Self.localizedVoiceMessage(forCode: code)
         }
-        // 2) URLError / VoiceRecorderError / 일반 메시지.
         if let recorderError = error as? VoiceRecorderError {
-            return recorderError.errorDescription ?? "녹음 중 오류가 발생했어요."
+            return userFacingErrorMessage(recorderError, fallback: String(localized: "녹음 중 오류가 발생했어요."))
         }
         if let urlError = error as? URLError {
             switch urlError.code {
             case .notConnectedToInternet, .networkConnectionLost, .timedOut:
-                return "네트워크가 불안정해요. 잠시 후 다시 시도해 주세요."
+                return String(localized: "네트워크가 불안정해요. 잠시 후 다시 시도해 주세요.")
             default:
-                return "연결에 실패했어요. 다시 시도해 주세요."
+                return String(localized: "연결에 실패했어요. 다시 시도해 주세요.")
             }
         }
         if let apiError = error as? APIError {
             switch apiError {
             case .invalidResponse:
-                return "서버 응답을 해석하지 못했어요."
-            case .server(let status, let message, _):
-                let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines)
-                if status == 401 { return "권한이 없어요. 로그인 상태를 확인해 주세요." }
-                if status == 403 {
-                    return trimmed.containsKorean ? trimmed : "권한이 없어요. 로그인 상태를 확인해 주세요."
+                return String(localized: "서버 응답을 해석하지 못했어요.")
+            case .server(let status, _, _):
+                if status == 401 || status == 403 {
+                    return String(localized: "권한이 없어요. 로그인 상태를 확인해 주세요.")
                 }
-                if status >= 500 { return "서버가 응답하지 않아요. 잠시 후 다시 시도해 주세요." }
-                return trimmed.containsKorean ? trimmed : "처리 중 오류가 발생했어요."
+                if status >= 500 { return String(localized: "서버가 응답하지 않아요. 잠시 후 다시 시도해 주세요.") }
+                return String(localized: "처리 중 오류가 발생했어요.")
             }
         }
-        return "처리 중 오류가 발생했어요."
+        return userFacingErrorMessage(error, fallback: String(localized: "처리 중 오류가 발생했어요."))
     }
 
-    /// 코드 -> 한국어 메시지. 테스트가 직접 호출할 수 있게 static.
+    /// 코드 -> 현재 앱 언어의 메시지. 테스트가 직접 호출할 수 있게 static.
     nonisolated static func localizedVoiceMessage(forCode code: String) -> String {
         // 목소리 등록·확정 화면에서만 다르게 말해야 하는 코드들. 나머지는 공용 표가 받는다.
         switch code {

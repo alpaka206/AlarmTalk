@@ -149,12 +149,12 @@ private suspend fun MainViewModel.createFamilyTargetAlarm(draft: AlarmDraft, onD
                 val audioStore = AlarmAudioStore(getApplication<Application>())
                 val localAudio = draft.toCachedLocalAudio(getApplication<Application>(), audioStore)
                 val resolvedDurationMillis = localAudio.durationMillis
-                    ?: throw IllegalArgumentException(
+                    ?: throw UserFacingException(
                         getApplication<Application>().getString(R.string.msg_voice_duration_unknown),
                     )
                 val upload = api.uploadVoiceAudio(
                     authorization = AlarmTalkApiClient.bearer(session.token),
-                    audio = voiceUploadPart(localAudio),
+                    audio = voiceUploadPart(getApplication(), localAudio),
                     durationMs = resolvedDurationMillis.toString().toRequestBody("text/plain".toMediaType()),
                     originalName = localAudio.displayName.toRequestBody("text/plain".toMediaType()),
                 ).upload
@@ -177,9 +177,7 @@ private suspend fun MainViewModel.createFamilyTargetAlarm(draft: AlarmDraft, onD
             }
         }
     }.onSuccess {
-        val target = draft.targetUserName?.takeIf { it.isNotBlank() }
-            ?: getApplication<Application>().getString(R.string.msg_family_alarm_target_fallback)
-        message = getApplication<Application>().getString(R.string.msg_family_alarm_set_for_target, target)
+        message = familyAlarmCompletionMessage(getApplication(), draft.targetUserName)
         onDone()
     }.onFailure { error ->
         AlarmTalkLog.reportError("Failed to create family target alarm target=${draft.targetUserId}", error)
@@ -355,3 +353,8 @@ internal fun MainViewModel.deleteAlarm(alarmId: String) {
     }
 }
 
+
+internal fun familyAlarmCompletionMessage(context: android.content.Context, targetName: String?): String =
+    targetName?.takeIf { it.isNotBlank() }?.let {
+        context.getString(R.string.msg_family_alarm_set_for_target, it)
+    } ?: context.getString(R.string.msg_family_alarm_set_for_target_other)

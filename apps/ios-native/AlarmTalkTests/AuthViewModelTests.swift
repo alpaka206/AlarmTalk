@@ -1071,12 +1071,12 @@ final class AuthViewModelTests: XCTestCase {
         )
     }
 
-    func test_userFacingErrorMessage_keepsKoreanServerMessageLikeAndroid() {
+    func test_userFacingErrorMessage_usesFallbackLikeAndroid() {
         let error = APIError.server(status: 400, message: "이미 가입된 이메일이에요", errorCode: nil)
 
         XCTAssertEqual(
             userFacingErrorMessage(error, fallback: "회원가입에 실패했어요"),
-            "이미 가입된 이메일이에요"
+            "회원가입에 실패했어요"
         )
     }
 
