@@ -72,7 +72,7 @@ struct LandingView: View {
                 // 안드로이드는 CTA 가 **하나**다(LandingScreen.kt:194-198). 로그인/회원가입
                 // 갈래는 로그인 화면 하단 전환 행에서 고른다 — 첫 화면에서 두 개를 물으면
                 // 아직 계정이 있는지도 모르는 사람에게 결정을 강요하게 된다.
-                GradientCta(title: String(localized: "시작하기")) {
+                GradientCta(title: "시작하기") {
                     navigateToLogin = .login
                 }
             }
