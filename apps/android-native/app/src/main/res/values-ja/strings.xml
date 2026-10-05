@@ -880,14 +880,6 @@
         <item>されました</item>
         <item>完了</item>
     </string-array>
-    <string name="voices_clip_prep_waiting">準備中です</string>
-    <string name="voices_clip_prep_ready">準備ができました</string>
-    <string name="voices_clip_prep_owner_wait">送った人がこの声を作成しています。準備ができたらアラームで選べます。</string>
-    <string name="voices_clip_prep_ready_body">オフラインでも声でアラームが鳴ります。</string>
-    <string name="voices_clip_prep_failed_body">声を作成できませんでした。もう一度お試しください。</string>
-    <string name="voices_clip_prep_rendering_body">声を作成しています。数分かかる場合があります。</string>
-    <string name="voices_clip_prep_downloading_body">声をダウンロードしています。アプリを閉じても続きます。</string>
-    <string name="voices_clip_prep_retry">もう一度試す</string>
     <string name="notification_ringing_name">アラームの鳴動</string>
     <string name="notification_ringing_description">アラームが鳴るときにロック画面にアラーム画面を表示します。</string>
     <string name="notification_ringing_quiet_name">表示中のアラーム</string>
@@ -900,4 +892,12 @@
     <string name="notification_download_description">アラームの声をダウンロードしている間の進行状況を表示します。</string>
     <string name="legal_terms_url">https://alarm-talk.com/ja/terms</string>
     <string name="legal_privacy_url">https://alarm-talk.com/ja/privacy</string>
+    <string name="voices_clip_prep_waiting">準備中です</string>
+    <string name="voices_clip_prep_ready">準備ができました</string>
+    <string name="voices_clip_prep_owner_wait">送った人がこの声を作成しています。準備ができたらアラームで選べます。</string>
+    <string name="voices_clip_prep_ready_body">オフラインでも声でアラームが鳴ります。</string>
+    <string name="voices_clip_prep_failed_body">声を作成できませんでした。もう一度お試しください。</string>
+    <string name="voices_clip_prep_rendering_body">声を作成しています。数分かかる場合があります。</string>
+    <string name="voices_clip_prep_downloading_body">声をダウンロードしています。アプリを閉じても続きます。</string>
+    <string name="voices_clip_prep_retry">もう一度試す</string>
 </resources>

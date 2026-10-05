@@ -893,14 +893,6 @@
         <item>restored</item>
         <item>completed</item>
     </string-array>
-    <string name="voices_clip_prep_waiting">Getting ready</string>
-    <string name="voices_clip_prep_ready">Ready</string>
-    <string name="voices_clip_prep_owner_wait">The sender is creating this voice. You can choose it for alarms when it is ready.</string>
-    <string name="voices_clip_prep_ready_body">Your voice alarms are ready to ring offline.</string>
-    <string name="voices_clip_prep_failed_body">Could not create the voice. Please try again.</string>
-    <string name="voices_clip_prep_rendering_body">Creating your voice. This may take a few minutes.</string>
-    <string name="voices_clip_prep_downloading_body">Downloading your voice. The download continues even if you close the app.</string>
-    <string name="voices_clip_prep_retry">Try again</string>
     <string name="notification_ringing_name">Ringing alarms</string>
     <string name="notification_ringing_description">Shows the ringing alarm on the lock screen.</string>
     <string name="notification_ringing_quiet_name">Alarms on screen</string>
@@ -913,4 +905,12 @@
     <string name="notification_download_description">Shows progress while alarm voices are downloading.</string>
     <string name="legal_terms_url">https://alarm-talk.com/en/terms</string>
     <string name="legal_privacy_url">https://alarm-talk.com/en/privacy</string>
+    <string name="voices_clip_prep_waiting">Getting ready</string>
+    <string name="voices_clip_prep_ready">Ready</string>
+    <string name="voices_clip_prep_owner_wait">The sender is creating this voice. You can choose it for alarms when it is ready.</string>
+    <string name="voices_clip_prep_ready_body">Your voice alarms are ready to ring offline.</string>
+    <string name="voices_clip_prep_failed_body">Could not create the voice. Please try again.</string>
+    <string name="voices_clip_prep_rendering_body">Creating your voice. This may take a few minutes.</string>
+    <string name="voices_clip_prep_downloading_body">Downloading your voice. The download continues even if you close the app.</string>
+    <string name="voices_clip_prep_retry">Try again</string>
 </resources>
