@@ -58,11 +58,8 @@ final class LocalizedDisplayTests: XCTestCase {
             let bundle = try bundle(language)
             for preset in VoiceRelationshipPreset.allCases {
                 XCTAssertNotEqual(preset.localizedDisplayLabel(bundle: bundle), preset.label)
-                if preset != .custom {
-                    XCTAssertEqual(displayRelationshipLabel(preset.label, bundle: bundle), preset.localizedDisplayLabel(bundle: bundle))
-                }
             }
-            XCTAssertEqual(displayRelationshipLabel("나의 소중한 친구", bundle: bundle), "나의 소중한 친구")
+            XCTAssertEqual(parseVoiceRelationshipLabel("나의 소중한 친구").localizedDisplayLabel(bundle: bundle), "나의 소중한 친구")
         }
         XCTAssertEqual(VoiceRelationshipPreset.custom.localizedDisplayLabel(bundle: try bundle("en")), "Custom")
     }
@@ -83,6 +80,9 @@ final class LocalizedDisplayTests: XCTestCase {
             let custom = VoiceRelationshipSelection(preset: .custom, customLabel: "엄마")
             XCTAssertEqual(custom.localizedDisplayLabel(bundle: bundle), "엄마")
             XCTAssertEqual(custom.resolved, "엄마")
+            let restored = parseVoiceRelationshipLabel(custom.resolved)
+            XCTAssertEqual(restored.preset, .custom)
+            XCTAssertEqual(restored.localizedDisplayLabel(bundle: bundle), "엄마")
             XCTAssertEqual(VoiceRelationshipSelection(preset: .mom).localizedDisplayLabel(bundle: bundle),
                            VoiceRelationshipPreset.mom.localizedDisplayLabel(bundle: bundle))
         }

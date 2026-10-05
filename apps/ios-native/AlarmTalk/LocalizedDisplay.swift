@@ -25,12 +25,6 @@ extension VoiceRelationshipPreset {
     }
 }
 
-/// 표준 프리셋의 저장값만 번역한다. 사용자가 직접 쓴 관계는 보존한다.
-func displayRelationshipLabel(_ stored: String, bundle: Bundle = .main) -> String {
-    guard let preset = VoiceRelationshipPreset.allCases.first(where: { $0 != .custom && $0.label == stored }) else { return stored }
-    return preset.localizedDisplayLabel(bundle: bundle)
-}
-
 extension VoiceRelationshipSelection {
     func localizedDisplayLabel(bundle: Bundle = .main) -> String {
         guard let preset, preset != .custom else { return resolved }
