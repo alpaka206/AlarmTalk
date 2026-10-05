@@ -77,6 +77,17 @@ final class LocalizedDisplayTests: XCTestCase {
         XCTAssertEqual(receivedAlarmDisplayLabel(sender: "  ", bundle: japanese), "相手から届いたアラーム")
     }
 
+    func testCustomRelationshipMatchingPresetKeepsUserInput() throws {
+        for language in ["ko", "en", "ja"] {
+            let bundle = try bundle(language)
+            let custom = VoiceRelationshipSelection(preset: .custom, customLabel: "엄마")
+            XCTAssertEqual(custom.localizedDisplayLabel(bundle: bundle), "엄마")
+            XCTAssertEqual(custom.resolved, "엄마")
+            XCTAssertEqual(VoiceRelationshipSelection(preset: .mom).localizedDisplayLabel(bundle: bundle),
+                           VoiceRelationshipPreset.mom.localizedDisplayLabel(bundle: bundle))
+        }
+    }
+
     func testSharedVoiceOwnerUsesCurrentLanguageAndOneHonorific() throws {
         for (language, owner, expected) in [
             ("en", "Alex", "Voice shared by Alex"),

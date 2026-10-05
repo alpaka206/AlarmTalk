@@ -150,14 +150,14 @@ struct VoiceRelationshipInputField: View {
 
 struct VoiceListenerPreviewCard: View {
     let listenerTitle: String
-    let relationshipLabel: String
+    let relationshipSelection: VoiceRelationshipSelection
 
     private var trimmedListener: String {
         listenerTitle.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private var trimmedRelationship: String {
-        displayRelationshipLabel(relationshipLabel.trimmingCharacters(in: .whitespacesAndNewlines))
+        relationshipSelection.localizedDisplayLabel()
     }
 
     var body: some View {
