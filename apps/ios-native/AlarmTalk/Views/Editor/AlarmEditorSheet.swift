@@ -1629,7 +1629,7 @@ struct AlarmEditorSheet: View {
     /// 지역·발사날짜가 바뀌었으면 옛 값을 버린다(`shouldResetWeatherVariant`).
     ///
     /// ⚠ **기다리는 시간에 상한이 있다**(`WeatherVariantSaveLookup.timeoutSeconds`, 8초).
-    /// 서버가 open-meteo 를 세 번 순차로 부르는 동안 한 바이트도 오지 않으므로, 느린 망에서는
+    /// 서버가 (미리 계산한 값이 없을 때) 날씨 원천을 부르는 동안 한 바이트도 오지 않으므로, 느린 망에서는
     /// 세션의 60초 유휴 타임아웃까지 저장 버튼이 잠긴 채였다. 상한을 넘기면 위의 실패와
     /// **같은 경로**다 — 미해결로 저장·예약하고 `WeatherVariantRefreshService.refreshDue` 가
     /// 채운다. 늦게 온 응답이 값을 덮어쓰는 일은 없다: 조회는 한 번만 돌아오고, 그 뒤에는

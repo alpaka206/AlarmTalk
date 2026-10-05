@@ -289,6 +289,7 @@
     <string name="region_picker_legacy_hint">Please choose again from the list</string>
     <string name="region_picker_legacy_value_hint">“%1$s” isn\'t on the list. Please choose again.</string>
     <string name="region_picker_seat_description">Weather in %1$s</string>
+    <string name="region_picker_weather_attribution">Weather data: forecasts from KMA (Korea), JMA (Japan) and the U.S. National Weather Service, processed by AlarmTalk</string>
     <string name="settings_logout_confirm_title">Log out?</string>
     <string name="settings_marketing_load_failed">Couldn\'t load · Tap to retry</string>
     <string name="hs_empty_card_helper">Wake up to a voice you love.</string>
