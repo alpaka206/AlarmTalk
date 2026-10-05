@@ -37,13 +37,13 @@ struct MenuView: View {
 
             VStack(alignment: .leading, spacing: 0) {
                 SettingsValueButton(
-                    label: "화면 테마",
+                    label: String(localized: "화면 테마"),
                     value: currentThemeMode.label,
                     action: { themeDialogOpen = true }
                 )
                 Divider()
                 SettingsValueButton(
-                    label: "앱 언어",
+                    label: String(localized: "앱 언어"),
                     value: appLanguageLabel,
                     // iOS 는 앱별 언어를 시스템 설정에서만 바꾼다 — 앱 안에 고르는 화면이 없다.
                     action: { openAppSettings() }
@@ -52,15 +52,15 @@ struct MenuView: View {
             .settingsCard(title: nil)
 
             VStack(alignment: .leading, spacing: 0) {
-                SettingsValueButton(label: "이용권", action: onOpenBilling)
+                SettingsValueButton(label: String(localized: "이용권"), action: onOpenBilling)
                 Divider()
                 // ⚠ **공유 이용권 유무로 갈린다**(안드로이드 `HomeComponents.kt:219-229`).
                 // 그룹이 없는 사람에게 '구성원 관리' 를 보여주면 관리할 게 없는 화면으로
                 // 보내고, 정작 필요한 **코드 등록** 경로가 더보기에 없어진다.
                 if hasSharedPass {
-                    SettingsValueButton(label: "초대 및 구성원 관리", action: onOpenMembers)
+                    SettingsValueButton(label: String(localized: "초대 및 구성원 관리"), action: onOpenMembers)
                 } else {
-                    SettingsValueButton(label: "코드 등록", action: onOpenPeople)
+                    SettingsValueButton(label: String(localized: "코드 등록"), action: onOpenPeople)
                 }
             }
             .settingsCard(title: nil)
@@ -70,7 +70,7 @@ struct MenuView: View {
                     deleteConfirming = true
                 } label: {
                     HStack {
-                        Text("회원 탈퇴")
+                        Text(String(localized: "회원 탈퇴"))
                             .fontWeight(.medium)
                             .foregroundStyle(theme.palette.onSurface)
                         Spacer(minLength: 12)
@@ -85,7 +85,7 @@ struct MenuView: View {
             }
             .settingsCard(title: nil)
 
-            Text("앱 버전 \(Self.appVersion)")
+            Text(String(localized: "앱 버전 \(Self.appVersion)"))
                 .font(.footnote)
                 .foregroundStyle(theme.palette.onSurfaceVariant)
                 .frame(maxWidth: .infinity, alignment: .center)
@@ -101,13 +101,13 @@ struct MenuView: View {
             // 높이는 `SelectionSheet` 가 내용에 맞춰 잡는다(위 주석 참조).
         }
         // 30일 유예 탈퇴. 즉시 삭제가 아니라는 것을 문구가 분명히 말해야 한다.
-        .alert("정말 탈퇴할까요?", isPresented: $deleteConfirming) {
-            Button("탈퇴", role: .destructive) {
+        .alert(String(localized: "정말 탈퇴할까요?"), isPresented: $deleteConfirming) {
+            Button(String(localized: "탈퇴"), role: .destructive) {
                 Task { await auth.requestAccountDeletion() }
             }
-            Button("취소", role: .cancel) {}
+            Button(String(localized: "취소"), role: .cancel) {}
         } message: {
-            Text("30일 뒤에 계정과 모든 데이터가 영구 삭제돼요. 그 전에 다시 로그인하면 탈퇴를 취소할 수 있어요.")
+            Text(String(localized: "30일 뒤에 계정과 모든 데이터가 영구 삭제돼요. 그 전에 다시 로그인하면 탈퇴를 취소할 수 있어요."))
         }
     }
 
@@ -119,7 +119,7 @@ struct MenuView: View {
                         .font(.title3.weight(.bold))
                         .foregroundStyle(theme.palette.onSurface)
                         .lineLimit(1)
-                    Text("내 정보 · 앱 설정")
+                    Text(String(localized: "내 정보 · 앱 설정"))
                         .font(.subheadline)
                         .foregroundStyle(theme.palette.onSurfaceVariant)
                 }
@@ -136,7 +136,7 @@ struct MenuView: View {
     }
 
     private var displayName: String {
-        auth.session?.user.name.nilIfBlank ?? auth.session?.user.email ?? "내 계정"
+        auth.session?.user.name.nilIfBlank ?? auth.session?.user.email ?? String(localized: "내 계정")
     }
 
     private var currentThemeMode: AlarmTalkThemeMode {

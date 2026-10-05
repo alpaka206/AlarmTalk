@@ -53,7 +53,7 @@ struct AlarmsListView: View {
                                 .contentShape(Rectangle())
                                 .onTapGesture { dismissDisplayedMessage() }
                                 .accessibilityAddTraits(.isButton)
-                                .accessibilityHint("탭하면 닫혀요")
+                                .accessibilityHint(String(localized: "탭하면 닫혀요"))
                         }
                         localAlarmSection
                     }
@@ -235,7 +235,7 @@ struct AlarmsListView: View {
                 Image(systemName: "exclamationmark.circle")
                     .font(.system(size: 20))
                     .foregroundStyle(theme.palette.error)
-                Text("알람 권한이 없어 알람이 예약되지 않아요.")
+                Text(String(localized: "알람 권한이 없어 알람이 예약되지 않아요."))
                     .font(theme.typography.bodyMedium)
                     .foregroundStyle(theme.palette.onSurface)
                 Spacer(minLength: 0)
@@ -269,10 +269,10 @@ struct AlarmsListView: View {
 
         func label(_ name: String, _ relationship: String?) -> String {
             let trimmed = relationship?.trimmingCharacters(in: .whitespaces) ?? ""
-            return trimmed.isEmpty ? name : trimmed
+            return trimmed.isEmpty ? name : displayRelationshipLabel(trimmed)
         }
         if let profile = voiceStudio.profiles.first(where: { $0.id == id }) {
-            return label(profile.name, profile.relationshipLabel)
+            return label(profile.displayName, profile.relationshipLabel)
         }
         // ⚠ **공유받은 목소리 폴백.** `GET /voice-profile` 은 내 것과 시스템 것만 주므로,
         // 가족이 공유한 목소리로 만든 알람은 위에서 못 찾고 이름이 통째로 사라졌다.
@@ -295,10 +295,10 @@ struct AlarmsListView: View {
         } label: {
             HStack(alignment: .center, spacing: 16) {
                 VStack(alignment: .leading, spacing: 12) {
-                    Text("첫 알람 만들기")
+                    Text(String(localized: "첫 알람 만들기"))
                         .font(.pretendard(.bold, size: 24))
                         .foregroundStyle(theme.palette.onSurface)
-                    Text("듣고 싶은 목소리가 깨워줘요.")
+                    Text(String(localized: "듣고 싶은 목소리가 깨워줘요."))
                         .font(theme.typography.bodyMedium)
                         .foregroundStyle(theme.palette.onSurfaceVariant)
                 }
@@ -325,7 +325,7 @@ struct AlarmsListView: View {
             )
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("첫 알람 만들기")
+        .accessibilityLabel(String(localized: "첫 알람 만들기"))
     }
 
     /// 헤드라인이 셀 '다음 알람' — 켜져 있는 것 중 가장 먼저 울릴 것.
@@ -361,7 +361,7 @@ struct AlarmsListView: View {
             await alarmKit.requestAuthorization()
             alarmKit.refreshAuthorizationState()
             guard alarmKit.alarmAuthorized else {
-                actionMessage = "알람 권한을 허용해야 알람을 만들 수 있어요. \(AlarmKitViewModel.alarmDeniedConsequence)"
+                actionMessage = String(localized: "알람 권한을 허용해야 알람을 만들 수 있어요. \(AlarmKitViewModel.alarmDeniedConsequence)")
                 return
             }
             presentCreateEntry()
@@ -394,7 +394,7 @@ struct AlarmsListView: View {
                 guard alarmKit.alarmAuthorized else {
                     actionMessage = alarmKit.permissionRecoveryNeeded
                         ? AlarmKitViewModel.alarmRecoveryMessage
-                        : "알람 권한을 허용해야 알람을 켤 수 있어요. \(AlarmKitViewModel.alarmDeniedConsequence)"
+                        : String(localized: "알람 권한을 허용해야 알람을 켤 수 있어요. \(AlarmKitViewModel.alarmDeniedConsequence)")
                     return
                 }
             }
@@ -407,7 +407,7 @@ struct AlarmsListView: View {
                 // 자동으로 끄지 않는다. 권한을 되돌려도 꺼진 채라 더 위험하다.)
                 store.setEnabled(id: updated.id, enabled: false)
                 store.markFailed(id: updated.id)
-                actionMessage = alarmKit.statusMessage ?? "알람 상태 변경에 실패했어요."
+                actionMessage = alarmKit.statusMessage ?? String(localized: "알람 상태 변경에 실패했어요.")
                 return
             }
             if let synced = store.record(id: updated.id), shouldPushToServer(synced) {
@@ -418,7 +418,7 @@ struct AlarmsListView: View {
             let canceled = await alarmKit.cancelScheduledAlarm(record: alarm)
             guard canceled else {
                 store.markFailed(id: alarm.id)
-                actionMessage = alarmKit.statusMessage ?? "알람 상태 변경에 실패했어요."
+                actionMessage = alarmKit.statusMessage ?? String(localized: "알람 상태 변경에 실패했어요.")
                 return
             }
             store.setEnabled(id: alarm.id, enabled: false)
@@ -466,13 +466,13 @@ struct AlarmsListView: View {
     private func deleteAlarm(_ alarm: LocalAlarmRecord) async {
         if alarm.originEnum == .receivedRemote {
             guard await remoteSync.deleteRemote(record: alarm, session: auth.session) else {
-                actionMessage = remoteSync.statusMessage ?? "알람 삭제에 실패했어요."
+                actionMessage = remoteSync.statusMessage ?? String(localized: "알람 삭제에 실패했어요.")
                 return
             }
         }
         let deleted = await alarmKit.cancel(record: alarm, store: store)
         guard deleted else {
-            actionMessage = alarmKit.statusMessage ?? "알람 삭제에 실패했어요."
+            actionMessage = alarmKit.statusMessage ?? String(localized: "알람 삭제에 실패했어요.")
             return
         }
         if alarm.originEnum != .receivedRemote {

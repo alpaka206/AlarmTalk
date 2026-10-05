@@ -1,5 +1,6 @@
 package com.alarmtalk.app.alarm
 
+import com.alarmtalk.app.R
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
@@ -71,10 +72,10 @@ object NotificationChannels {
         val notificationManager = requireNotNull(context.getSystemService<NotificationManager>())
         val ringingChannel = NotificationChannel(
             RINGING_CHANNEL_ID,
-            "음성 알람 울림",
+            context.getString(R.string.notification_ringing_name),
             NotificationManager.IMPORTANCE_HIGH,
         ).apply {
-            description = "알람이 울릴 때 잠금 화면 위에 울림 화면을 여는 알림(소리는 앱이 낸다)"
+            description = context.getString(R.string.notification_ringing_description)
             lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
             setSound(null, null)
             enableVibration(false)
@@ -82,10 +83,10 @@ object NotificationChannels {
 
         val quietRingingChannel = NotificationChannel(
             RINGING_QUIET_CHANNEL_ID,
-            "음성 알람 울림(화면 표시 중)",
+            context.getString(R.string.notification_ringing_quiet_name),
             NotificationManager.IMPORTANCE_LOW,
         ).apply {
-            description = "울림 화면이 이미 떠 있을 때 배너 없이 알림창에만 두는 알림(소리는 앱이 낸다)"
+            description = context.getString(R.string.notification_ringing_quiet_description)
             lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
             setSound(null, null)
             enableVibration(false)
@@ -93,10 +94,10 @@ object NotificationChannels {
 
         val fallbackChannel = NotificationChannel(
             RINGING_FALLBACK_CHANNEL_ID,
-            "음성 알람 울림(폴백)",
+            context.getString(R.string.notification_ringing_fallback_name),
             NotificationManager.IMPORTANCE_HIGH,
         ).apply {
-            description = "포그라운드 서비스 시작이 차단됐을 때 알림 자체가 소리·진동으로 울리는 폴백 채널"
+            description = context.getString(R.string.notification_ringing_fallback_description)
             lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
             setBypassDnd(true)
             enableLights(true)
@@ -111,19 +112,19 @@ object NotificationChannels {
 
         val socialChannel = NotificationChannel(
             SOCIAL_CHANNEL_ID,
-            "Voice Alarm updates",
+            context.getString(R.string.notification_social_name),
             NotificationManager.IMPORTANCE_DEFAULT,
         ).apply {
-            description = "Messages and alarms sent by connected people"
+            description = context.getString(R.string.notification_social_description)
             lockscreenVisibility = android.app.Notification.VISIBILITY_PRIVATE
         }
 
         val clipPrefetchChannel = NotificationChannel(
             CLIP_PREFETCH_CHANNEL_ID,
-            "Voice download",
+            context.getString(R.string.notification_download_name),
             NotificationManager.IMPORTANCE_LOW,
         ).apply {
-            description = "Progress while alarm voices are downloading"
+            description = context.getString(R.string.notification_download_description)
             setShowBadge(false)
             lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
         }

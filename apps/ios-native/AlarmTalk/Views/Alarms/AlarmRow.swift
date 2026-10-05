@@ -127,7 +127,7 @@ struct AlarmRow: View {
     private var secondLine: String {
         let date = alarm.nextFireDateLabel()
         guard let voiceName, !voiceName.trimmingCharacters(in: .whitespaces).isEmpty else { return date }
-        return "\(date) · \(voiceName) 목소리"
+        return String(localized: "\(date) · \(voiceName) 목소리")
     }
 
     private var rowContent: some View {
@@ -185,7 +185,7 @@ struct AlarmRow: View {
                     // 그대로라 옅은 하늘색 트랙 위에서 바래 보인다. 공용 스타일이 트랙·
                     // 손잡이를 **둘 다** 안드로이드와 같은 규칙으로 정한다.
                     .alarmTalkSwitch()
-                    .accessibilityLabel(Text(alarm.enabled ? "알람 끄기" : "알람 켜기"))
+                    .accessibilityLabel(Text(alarm.enabled ? String(localized: "알람 끄기") : String(localized: "알람 켜기")))
                 }
             }
 
@@ -213,7 +213,7 @@ struct AlarmRow: View {
         .padding(18)
         // Android 길게 누르기 삭제 메뉴와 동치인 접근성 대체 경로(스와이프 외).
         .contextMenu {
-            Button("삭제", role: .destructive, action: onDelete)
+            Button(String(localized: "삭제"), role: .destructive, action: onDelete)
         }
     }
 
@@ -228,7 +228,7 @@ struct AlarmRow: View {
                 VStack(spacing: 4) {
                     Image(systemName: "trash")
                         .font(.title3)
-                    Text("삭제")
+                    Text(String(localized: "삭제"))
                         .font(.pretendard(.semibold, size: 12))
                 }
                 .foregroundStyle(theme.palette.onError)
@@ -238,7 +238,7 @@ struct AlarmRow: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(Text("알람 삭제"))
+            .accessibilityLabel(Text(String(localized: "알람 삭제")))
         }
         .background(theme.palette.error)
         .clipShape(RoundedRectangle(cornerRadius: theme.shapes.vocaCard, style: .continuous))
@@ -303,7 +303,7 @@ struct AlarmRow: View {
         if alarm.runtimeStateEnum == .failed {
             // 예약 자체가 실패해 **정말 안 울린다.** 다시 저장해 달라고 해야 한다.
             return RowNotice(
-                text: "알람을 다시 예약하지 못했어요. 시간을 확인하고 다시 저장해 주세요.",
+                text: String(localized: "알람을 다시 예약하지 못했어요. 시간을 확인하고 다시 저장해 주세요."),
                 isError: true
             )
         }
@@ -401,7 +401,7 @@ struct AlarmSelectionBar: View {
     var body: some View {
         HStack(spacing: 4) {
             Spacer(minLength: 0)
-            Button("취소", action: onCancel)
+            Button(String(localized: "취소"), action: onCancel)
                 .font(theme.typography.titleMedium)
                 .buttonStyle(.plain)
                 .foregroundStyle(theme.palette.onSurfaceVariant)
@@ -410,7 +410,7 @@ struct AlarmSelectionBar: View {
                 // ⚠ 없으면 글리프만 눌린다 — `frame`/`padding` 이 넓힌 자리는 투명해 히트테스트를 건너뛴다.
                 .contentShape(Rectangle())
 
-            Button("삭제", action: onDelete)
+            Button(String(localized: "삭제"), action: onDelete)
                 .font(theme.typography.titleMedium.weight(.semibold))
                 .buttonStyle(.plain)
                 .foregroundStyle(theme.palette.error)

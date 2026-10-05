@@ -21,12 +21,12 @@ struct FormSheet<Content: View>: View {
     @Environment(\.voiceAlarmTheme) private var theme
 
     let title: String
-    var saveTitle: String = "저장"
+    var saveTitle: String = String(localized: "저장")
     /// 좌측 액션 라벨. 기본은 `취소` 지만 **되돌릴 것이 없는 모달은 `닫기`** 가 맞다
     /// (쿠폰 입력 시트처럼 입력을 취소하는 게 아니라 안내를 지나치는 경우).
     /// 안드로이드 `WakerFormSheet` 의 `cancelLabel` 짝이다 — 한쪽만 고정하면 같은 모달의
     /// 왼쪽 글자가 두 앱에서 달라진다.
-    var cancelTitle: String = "취소"
+    var cancelTitle: String = String(localized: "취소")
     /// 확정 버튼을 누를 수 있는가. **화면마다 규칙이 다르다** — 값이 갖춰져야만 누르게 할
     /// 수도 있고(설정 불가능 시간), 항상 누르게 두고 누른 뒤 어느 칸이 비었는지 알려 줄
     /// 수도 있다(운세 정보). 여기서 하나로 정하지 않는다.
@@ -89,7 +89,7 @@ extension View {
     func formSheet<Content: View>(
         isPresented: Binding<Bool>,
         title: String,
-        saveTitle: String = "저장",
+        saveTitle: String = String(localized: "저장"),
         saveEnabled: Bool = true,
         onCancel: @escaping () -> Void,
         onSave: @escaping () -> Void,

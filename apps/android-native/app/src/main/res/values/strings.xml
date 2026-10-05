@@ -754,8 +754,7 @@
     <string name="consent_load_failed">동의 내역을 불러오지 못했어요. 눌러서 다시 시도해 주세요.</string>
     <string name="r3app_bottom_create_alarm_desc">알람 만들기</string>
     <string name="r3app_update_required_title">업데이트가 필요해요</string>
-    <string name="r3app_update_required_body">이 버전은 더 이상 쓸 수 없어요.
-최신 버전으로 업데이트해 주세요.</string>
+    <string name="r3app_update_required_body">이 버전은 더 이상 쓸 수 없어요.\n최신 버전으로 업데이트해 주세요.</string>
     <string name="r3app_update_required_button">업데이트하기</string>
     <string name="r3app_update_downloaded">업데이트를 다 받았어요. 재시작하면 적용돼요.</string>
     <string name="r3app_update_restart">재시작</string>
@@ -923,4 +922,16 @@
     <string name="voices_clip_prep_rendering_body">목소리를 만들고 있어요. 몇 분 걸릴 수 있어요.</string>
     <string name="voices_clip_prep_downloading_body">목소리를 받고 있어요. 앱을 닫아도 계속 받아요.</string>
     <string name="voices_clip_prep_retry">다시 시도하기</string>
+    <string name="notification_ringing_name">알람 울림</string>
+    <string name="notification_ringing_description">알람이 울릴 때 잠금 화면에 울림 화면을 표시해요.</string>
+    <string name="notification_ringing_quiet_name">알람 울림 화면</string>
+    <string name="notification_ringing_quiet_description">울림 화면을 보고 있을 때 알림창에 알람을 표시해요.</string>
+    <string name="notification_ringing_fallback_name">알람 울림 보조</string>
+    <string name="notification_ringing_fallback_description">기본 울림을 시작하지 못할 때 알림 소리와 진동으로 알람을 알려요.</string>
+    <string name="notification_social_name">공유 알람 소식</string>
+    <string name="notification_social_description">함께 쓰는 사람이 보낸 알람과 공유 상태 변경을 알려요.</string>
+    <string name="notification_download_name">목소리 다운로드</string>
+    <string name="notification_download_description">알람 목소리를 받는 진행 상황을 표시해요.</string>
+    <string name="legal_terms_url">https://alarm-talk.com/ko/terms</string>
+    <string name="legal_privacy_url">https://alarm-talk.com/ko/privacy</string>
 </resources>

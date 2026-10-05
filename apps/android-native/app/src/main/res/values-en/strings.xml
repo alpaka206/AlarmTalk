@@ -721,8 +721,7 @@
     <string name="consent_load_failed">Couldn\'t load your consents. Tap to retry.</string>
     <string name="r3app_bottom_create_alarm_desc">Create alarm</string>
     <string name="r3app_update_required_title">An update is needed</string>
-    <string name="r3app_update_required_body">This version is no longer supported.
-Please update to the latest version.</string>
+    <string name="r3app_update_required_body">This version is no longer supported.\nPlease update to the latest version.</string>
     <string name="r3app_update_required_button">Update</string>
     <string name="r3app_update_downloaded">An update has been downloaded. Restart the app to apply it.</string>
     <string name="r3app_update_restart">Restart</string>
@@ -902,4 +901,16 @@ Please update to the latest version.</string>
     <string name="voices_clip_prep_rendering_body">Creating your voice. This may take a few minutes.</string>
     <string name="voices_clip_prep_downloading_body">Downloading your voice. The download continues even if you close the app.</string>
     <string name="voices_clip_prep_retry">Try again</string>
+    <string name="notification_ringing_name">Ringing alarms</string>
+    <string name="notification_ringing_description">Shows the ringing alarm on the lock screen.</string>
+    <string name="notification_ringing_quiet_name">Alarms on screen</string>
+    <string name="notification_ringing_quiet_description">Keeps the alarm in the notification panel while its ringing screen is open.</string>
+    <string name="notification_ringing_fallback_name">Backup alarm alerts</string>
+    <string name="notification_ringing_fallback_description">Uses notification sound and vibration when normal alarm playback cannot start.</string>
+    <string name="notification_social_name">Shared alarm updates</string>
+    <string name="notification_social_description">Updates about alarms from people you share with and changes to sharing.</string>
+    <string name="notification_download_name">Voice downloads</string>
+    <string name="notification_download_description">Shows progress while alarm voices are downloading.</string>
+    <string name="legal_terms_url">https://alarm-talk.com/en/terms</string>
+    <string name="legal_privacy_url">https://alarm-talk.com/en/privacy</string>
 </resources>
