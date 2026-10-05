@@ -5742,13 +5742,19 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Grandson"
+            "value" : "Grandchild"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "孫息子"
+            "value" : "孫"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "손주"
           }
         }
       }
@@ -12636,6 +12642,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "기본 목소리"
+          }
+        }
+      }
+    },
+    "voice.register.submit" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Register"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "登録"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "등록"
           }
         }
       }

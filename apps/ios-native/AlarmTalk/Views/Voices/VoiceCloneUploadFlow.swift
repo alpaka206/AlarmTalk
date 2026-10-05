@@ -28,6 +28,7 @@ private enum RegistrationStep {
 /// Android `VoiceProfileManagementPanel.VoiceRegistrationStep` 의 Source/Details/Creating 을
 /// SwiftUI 화면으로 분리한 것. 이후 Preview/Prerendering 은 `VoicesRoute` 가 잇는다.
 struct VoiceCloneUploadFlow: View {
+    @State private var didBeginCreation = false
     @Environment(\.voiceAlarmTheme) private var theme
     @EnvironmentObject private var auth: AuthViewModel
     @EnvironmentObject private var voice: VoiceStudioViewModel
@@ -177,7 +178,10 @@ struct VoiceCloneUploadFlow: View {
         }
         .homeGradientBackground()
         .onAppear {
-            profileName = voice.cloneName
+            guard !didBeginCreation else { return }
+            didBeginCreation = true
+            voice.beginVoiceCreation()
+            profileName = ""
         }
         .fileImporter(
             isPresented: $fileImporterPresented,
@@ -649,7 +653,7 @@ struct VoiceCloneUploadFlow: View {
             Button {
                 Task { await submit() }
             } label: {
-                Text(String(localized: "등록")).frame(maxWidth: .infinity)
+                Text(String(localized: "voice.register.submit")).frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
             .tint(theme.palette.primary)

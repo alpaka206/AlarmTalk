@@ -8,6 +8,12 @@ struct VoiceLocalizationTests {
     func emptyNameIsRequired() async {
         let vm = VoiceStudioViewModel()
         #expect(vm.cloneName.isEmpty)
+        // 취소하거나 이전 등록을 마친 뒤 같은 앱 전역 모델로 다시 시작해도 비어야 한다.
+        for previousName in ["지난 목소리", "다른 목소리"] {
+            vm.cloneName = previousName
+            vm.beginVoiceCreation()
+            #expect(vm.cloneName.isEmpty)
+        }
         let session = AuthSession(token: "unused-test-token", user: AuthUser(id: "voice-localization", email: "test@example.test"))
         #expect(await vm.uploadRecordingForClone(session: session) == nil)
         #expect(vm.statusMessage == String(localized: "목소리 이름을 입력해 주세요."))
@@ -30,6 +36,10 @@ struct VoiceLocalizationTests {
         }
         #expect(bundle.localizedString(forKey: "voice.section.default", value: nil, table: nil)
                 == (language == "en" ? "Default voices" : "基本の声"))
+        #expect(bundle.localizedString(forKey: "voice.register.submit", value: nil, table: nil)
+                == (language == "en" ? "Register" : "登録"))
+        #expect(VoiceRelationshipPreset.grandson.localizedDisplayLabel(bundle: bundle)
+                == (language == "en" ? "Grandchild" : "孫"))
         let quota = bundle.localizedString(forKey: "생성 가능 %lld/%lld회", value: nil, table: nil)
         #expect(String(format: quota, 1, 2).contains("1/2"))
     }

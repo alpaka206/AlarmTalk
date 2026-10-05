@@ -93,6 +93,10 @@ final class VoiceStudioViewModel: ObservableObject {
     @Published var fortuneBirthDate = ""
     @Published var fortuneBirthTime = ""
     @Published var cloneName = ""
+    /// 등록 화면의 첫 진입에서만 부른다. 파일 선택기·권한 시트 왕복 중에는 입력을 보존한다.
+    func beginVoiceCreation() {
+        cloneName = ""
+    }
     /// **사용자가 시작한 쓰기**(등록·삭제·이름변경·공유 토글…) 전용. 화면이 버튼을 잠근다.
     @Published var isBusy = false
 
