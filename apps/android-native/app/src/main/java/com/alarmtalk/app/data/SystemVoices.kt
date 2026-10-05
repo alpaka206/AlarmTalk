@@ -1,5 +1,7 @@
 package com.alarmtalk.app.data
 
+import android.content.Context
+import com.alarmtalk.app.R
 import com.alarmtalk.app.network.StockClip
 import com.alarmtalk.app.network.VoiceProfile
 
@@ -188,4 +190,13 @@ fun greetingStockClipFor(
         ?: greetings.firstOrNull { (it.language ?: "ko") == "ko" }
         ?: greetings.firstOrNull()
         ?: clips.firstOrNull { it.voiceProfileId == voiceProfileId }
+}
+
+/** 저장 이름을 바꾸지 않고 기본 목소리 id에 맞는 화면 이름만 고른다. */
+fun systemVoiceDisplayName(context: Context, id: String?, fallback: String): String = when (id) {
+    SYSTEM_VOICE_ID_PREFIX + "000000000101" -> context.getString(R.string.system_voice_name_siwoo)
+    SYSTEM_VOICE_ID_PREFIX + "000000000102" -> context.getString(R.string.system_voice_name_mina)
+    SYSTEM_VOICE_ID_PREFIX + "000000000103" -> context.getString(R.string.system_voice_name_dohyun)
+    SYSTEM_VOICE_ID_PREFIX + "000000000104" -> context.getString(R.string.system_voice_name_aeni)
+    else -> fallback
 }

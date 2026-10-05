@@ -901,6 +901,10 @@
     <!-- 종료 전환 대상이 아닌 계정(deletes_voices_at_end = false, 예: 결제 보류로 활성 구독 행이 남음). 삭제 문장만 뺀다. -->
     <string name="personal_promo_end_notice_message_keep_voices">%1$s까지 개인 플랜을 무료로 쓸 수 있어요. %2$s부터는 무료 플랜으로 돌아가요.</string>
     <string name="personal_promo_end_notice_dont_show_again">다시 보지 않기</string>
+    <string name="system_voice_name_siwoo">시우</string>
+    <string name="system_voice_name_mina">미나</string>
+    <string name="system_voice_name_dohyun">도현</string>
+    <string name="system_voice_name_aeni">애니</string>
     <string-array name="snackbar_error_markers">
         <item>실패</item>
         <item>못했어요</item>
