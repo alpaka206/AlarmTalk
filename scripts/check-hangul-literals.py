@@ -127,7 +127,7 @@ class Declarations:
 
 
 def call_at(source: str, opening: int) -> str:
-    match = re.search(r"([\w.]+)\s*$", source[:opening])
+    match = re.search(r"([#\w.]+)\s*$", source[:opening])
     return match[1] if match else ""
 
 
@@ -337,6 +337,8 @@ def audit(root: Path, rules: list[tuple[str, str, str, str]]) -> list[Issue]:
             if literal["debug"] or kind == "comment" or value == "" or allowed(path, value, rules):
                 continue
             calls = [call_at(source, pos) for token, pos in literal["stack"] if token == "("]
+            if "#Preview" in calls:
+                continue
             if any(re.search(r"(?:AlarmTalkLog\.\w+|(?:\w*[Ll]ogger)\.(?:info|debug|error|warning|notice)|print)$", call) for call in calls):
                 continue
             if not localized:

@@ -477,7 +477,7 @@ struct LoginView: View {
     /// 비밀번호 찾기 진입 — 로그인 모드에서만 노출. Android `AuthScreen.kt:311-325`.
     private var findPasswordRow: some View {
         HStack(spacing: 4) {
-            Text(String(localized: "비밀번호를 잊으셨나요?"))
+            Text("비밀번호를 잊으셨나요?")
                 .font(theme.typography.bodyMedium)
                 .foregroundStyle(theme.palette.onSurfaceVariant)
             Button {

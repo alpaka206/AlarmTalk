@@ -6087,6 +6087,7 @@
       }
     },
     "알람 ID" : {
+      "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -6097,13 +6098,7 @@
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "アラーム ID"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "알람 ID"
+            "value" : "アラームID"
           }
         }
       }
@@ -6212,23 +6207,18 @@
       }
     },
     "알람 다시 울리기" : {
+      "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Snooze alarm"
+            "value" : "Snooze the alarm"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "アラームを再通知"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "알람 다시 울리기"
           }
         }
       }
