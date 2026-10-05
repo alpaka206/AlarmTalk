@@ -13,7 +13,9 @@ enum FortunePromptInputFormat {
     static let unknownTime = "시간 모름"
 
     static func displayLabel(_ value: String, bundle: Bundle = .main) -> String {
-        switch value {
+        let gender = normalizedGender(value)
+        let canonical = gender.isEmpty ? normalizedBirthTime(value) : gender
+        switch canonical {
         case male: return String(localized: "남성", bundle: bundle)
         case female: return String(localized: "여성", bundle: bundle)
         case unknownTime: return String(localized: "시간 모름", bundle: bundle)
