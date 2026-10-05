@@ -162,7 +162,7 @@
     <string name="editor_block_fortune_family_message">They haven\'t set their fortune details yet. Please pick a different message.</string>
     <string name="editor_block_manual_quota_title">You\'ve used this month\'s creations</string>
     <string name="editor_block_manual_quota_message">You can create %1$d new custom messages a month. Messages you already made still work.</string>
-    <string name="editor_block_offline_title">You\'re offline</string>
+    <string name="editor_block_offline_title">Connection needed</string>
     <string name="editor_block_offline_message">This message\'s audio isn\'t on this device yet. Save again once you\'re back online.</string>
     <string name="editor_block_preparing_title">Preparing the message</string>
     <string name="editor_block_preparing_message">The voice file is still downloading. Try saving again in a moment.</string>
@@ -501,8 +501,7 @@
     <string name="voices_mic_permission_required">Microphone permission is required.</string>
     <string name="voices_name_label">Voice name</string>
     <string name="voices_prerender_ready_title">Creating alarm lines in this voice</string>
-    <string name="voices_prerender_ready_body">You can close this. It keeps going.
-They become available as they finish.</string>
+    <string name="voices_prerender_ready_body">You can use them in alarms as soon as they are ready.</string>
     <string name="voices_language_label">Language for alarm lines</string>
     <string name="voices_name_placeholder">e.g. Mom\'s voice</string>
     <string name="voices_next">Next</string>
@@ -518,8 +517,7 @@ They become available as they finish.</string>
     <string name="voices_confirm_new_keep_saving">Saving…</string>
     <string name="voices_confirm_new_delete">Make another</string>
     <string name="voices_creating_title">Creating your voice</string>
-    <string name="voices_creating_body">Just a moment.
-We\'ll play it for you as soon as it\'s ready.</string>
+    <string name="voices_creating_body">Just a moment.\nWe\'ll play it for you as soon as it\'s ready.</string>
     <string name="voices_preview_text_loading">Preparing the line…</string>
     <string name="voices_preview_text_retry_hint">The line isn\'t ready yet. Tap Preview to try again.</string>
     <string name="voices_preview_edit_hint">Shape the line however you like.</string>
@@ -638,7 +636,7 @@ We\'ll play it for you as soon as it\'s ready.</string>
     <string name="voices2_relationship_son">Son</string>
     <string name="voices2_relationship_daughter">Daughter</string>
     <string name="voices2_relationship_granddaughter">Granddaughter</string>
-    <string name="voices2_relationship_grandson">Grandson</string>
+    <string name="voices2_relationship_grandson">Grandchild</string>
     <string name="voices2_relationship_sibling">Sibling</string>
     <string name="voices2_relationship_boyfriend">Boyfriend</string>
     <string name="voices2_relationship_girlfriend">Girlfriend</string>
@@ -786,7 +784,7 @@ We\'ll play it for you as soon as it\'s ready.</string>
     <string name="msg_voice_consent_required">Creating a voice needs your consent to use voice data. Go to More → Terms &amp; consents and agree again.</string>
     <string name="voices_my_voices_title">My voices</string>
     <string name="voices_shared_voices_title">Shared with me</string>
-    <string name="voices_system_voices_title">Built-in voices</string>
+    <string name="voices_system_voices_title">Default voices</string>
     <string name="plan_gate_redeem_action">I have a code</string>
     <string name="plan_gate_redeem_title">Enter a code</string>
     <string name="plan_gate_redeem_desc">Enter a promo or gift code. Invite codes work here too.</string>
@@ -812,7 +810,7 @@ We\'ll play it for you as soon as it\'s ready.</string>
     <string name="voice_consent_agree_continue">Agree and continue</string>
     <string name="onb_voice_title_failed">We could not get the voices</string>
     <string name="voices_register_biometric_consent">I agree to voice biometric processing</string>
-    <string name="voices_register_biometric_desc">Your voice is used to build a voice profile, clone it, and read alarms aloud, and is handled as biometric information that can identify or reproduce a person. Deleting the voice deletes it too, and you can withdraw consent any time from the More tab.\nYou may register only your own voice, or one whose owner gave you permission (Terms of Service, Article 7).</string>
+    <string name="voices_register_biometric_desc">Your voice is used to create voice profiles, clone voices, and read alarms aloud. It is treated as biometric information that can identify or reproduce a person.\nOnly register your own voice or a voice for which you have lawful authority and consent (Terms of Service, Article 7).\nDeleting the voice also deletes this data. You can withdraw consent at any time in More.</string>
     <string name="msg_consent_update_required">Update the app to continue with consent.</string>
     <string name="consent_withdraw_action">Withdraw consent</string>
     <string name="consent_withdraw_voice_title">Withdrawing deletes every voice you made</string>
@@ -907,4 +905,12 @@ We\'ll play it for you as soon as it\'s ready.</string>
     <string name="notification_download_description">Shows progress while alarm voices are downloading.</string>
     <string name="legal_terms_url">https://alarm-talk.com/en/terms</string>
     <string name="legal_privacy_url">https://alarm-talk.com/en/privacy</string>
+    <string name="voices_clip_prep_waiting">Getting ready</string>
+    <string name="voices_clip_prep_ready">Ready</string>
+    <string name="voices_clip_prep_owner_wait">The sender is creating this voice. You can choose it for alarms when it is ready.</string>
+    <string name="voices_clip_prep_ready_body">Your voice alarms are ready to ring offline.</string>
+    <string name="voices_clip_prep_failed_body">Could not create the voice. Please try again.</string>
+    <string name="voices_clip_prep_rendering_body">Creating your voice. This may take a few minutes.</string>
+    <string name="voices_clip_prep_downloading_body">Downloading your voice. The download continues even if you close the app.</string>
+    <string name="voices_clip_prep_retry">Try again</string>
 </resources>

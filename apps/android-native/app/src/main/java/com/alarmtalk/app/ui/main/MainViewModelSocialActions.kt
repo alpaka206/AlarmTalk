@@ -20,7 +20,7 @@ internal fun MainViewModel.preloadSocial() {
 
 private fun MainViewModel.refreshSocialData(showMessage: Boolean) {
     if (socialBusy) return
-    val authorization = bearerOrMessage("Login is required to load shared plan data.") ?: return
+    val authorization = bearerOrMessage(getApplication<android.app.Application>().getString(R.string.msg_gb_login_required_generic)) ?: return
     // **이 조회를 시작한 계정과 세대.** 응답이 늦게 도착하는 사이 로그아웃·계정 전환이 있었으면
     // 그 응답은 지금 계정의 것이 아니다 — 반영하면 A 의 목록이 B 의 상태로 자리 잡고, 이어지는
     // 강등이 A 의 목록으로 B 의 알람을 훑어 목소리를 영구히 벗긴다(Codex #665 P1).
@@ -86,7 +86,7 @@ private fun MainViewModel.refreshSocialData(showMessage: Boolean) {
             }.onFailure { error ->
                 AlarmTalkLog.reportError("Failed to refresh social data", error)
                 if (showMessage) {
-                    message = userFacingError(error, "Failed to load shared plan data")
+                    message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_gb_billing_info_load_failed))
                 }
             }
         } finally {

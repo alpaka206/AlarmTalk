@@ -550,8 +550,7 @@
     <string name="voices_confirm_new_keep_saving">저장 중…</string>
     <string name="voices_confirm_new_delete">다시 만들기</string>
     <string name="voices_creating_title">목소리를 만드는 중이에요</string>
-    <string name="voices_creating_body">잠시만 기다려 주세요.
-완성되면 바로 들려드릴게요.</string>
+    <string name="voices_creating_body">잠시만 기다려 주세요.\n완성되면 바로 들려드릴게요.</string>
     <string name="voices_preview_text_loading">문구를 준비하고 있어요…</string>
     <string name="voices_preview_text_retry_hint">문구를 아직 준비하지 못했어요. 미리듣기를 눌러 다시 시도해 주세요.</string>
     <string name="voices_preview_edit_hint">말투를 원하는 대로 바꿔 보세요.</string>
@@ -927,4 +926,12 @@
     <string name="notification_download_description">알람 목소리를 받는 진행 상황을 표시해요.</string>
     <string name="legal_terms_url">https://alarm-talk.com/ko/terms</string>
     <string name="legal_privacy_url">https://alarm-talk.com/ko/privacy</string>
+    <string name="voices_clip_prep_waiting">준비 중이에요</string>
+    <string name="voices_clip_prep_ready">준비됐어요</string>
+    <string name="voices_clip_prep_owner_wait">보낸 사람 쪽에서 이 목소리를 만들고 있어요. 다 되면 알람에서 고를 수 있어요.</string>
+    <string name="voices_clip_prep_ready_body">이제 오프라인에서도 목소리로 울려요.</string>
+    <string name="voices_clip_prep_failed_body">목소리를 만들다 실패했어요. 다시 시도해 주세요.</string>
+    <string name="voices_clip_prep_rendering_body">목소리를 만들고 있어요. 몇 분 걸릴 수 있어요.</string>
+    <string name="voices_clip_prep_downloading_body">목소리를 받고 있어요. 앱을 닫아도 계속 받아요.</string>
+    <string name="voices_clip_prep_retry">다시 시도하기</string>
 </resources>

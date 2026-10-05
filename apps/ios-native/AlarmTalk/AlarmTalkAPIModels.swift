@@ -838,8 +838,14 @@ extension FamilyVoiceProfile {
     }
 
     var sharedFromLabel: String {
+        localizedSharedFromLabel()
+    }
+
+    func localizedSharedFromLabel(bundle: Bundle = .main) -> String {
         let owner = ownerName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return owner.isEmpty ? "공유받은 목소리" : "\(owner)님에게 공유받은 목소리"
+        guard !owner.isEmpty else { return String(localized: "공유받은 목소리", bundle: bundle) }
+        let name = personDisplayName(owner, bundle: bundle)
+        return String(localized: "\(name)에게 공유받은 목소리", bundle: bundle)
     }
 }
 
@@ -922,6 +928,12 @@ struct VoucherItem: Decodable, Identifiable, Equatable {
     var expiresAt: String
     var maxUses: Int?
     var useCount: Int?
+}
+
+extension VoucherItem {
+    func localizedPlanName(bundle: Bundle = .main) -> String {
+        PlanTier.displayName(forPlanKey: planKey, bundle: bundle) ?? String(localized: "이용권", bundle: bundle)
+    }
 }
 
 // ⚠ **`/checkout` 요청·응답 모델을 되살리지 말 것**(2026-08-07 삭제).

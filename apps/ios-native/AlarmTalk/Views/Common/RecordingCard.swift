@@ -54,9 +54,9 @@ struct RecordingCard: View {
     @Environment(\.voiceAlarmTheme) private var theme
 
     private var title: String {
-        if isRecording { return "녹음 중…" }
+        if isRecording { return String(localized: "녹음 중…") }
         if let statusText { return statusText }
-        return hasRecording ? "녹음을 저장했어요" : "녹음하기"
+        return hasRecording ? String(localized: "녹음을 저장했어요") : String(localized: "녹음하기")
     }
 
     var body: some View {
@@ -81,7 +81,7 @@ struct RecordingCard: View {
                                 onTint: theme.palette.onPrimary,
                                 action: onPreview
                             )
-                            .accessibilityLabel(Text(isPreviewing ? "정지" : "들어보기"))
+                            .accessibilityLabel(Text(isPreviewing ? String(localized: "정지") : String(localized: "들어보기")))
                         }
                         if let onRedo {
                             RecordingCircleButton(
@@ -91,7 +91,7 @@ struct RecordingCard: View {
                                 onTint: theme.palette.onPrimary,
                                 action: onRedo
                             )
-                            .accessibilityLabel(Text("다시 녹음"))
+                            .accessibilityLabel(Text(String(localized: "다시 녹음")))
                         }
                     }
                 } else {
@@ -102,7 +102,7 @@ struct RecordingCard: View {
                         onTint: theme.palette.onPrimary,
                         action: onRecord
                     )
-                    .accessibilityLabel(Text(isRecording ? "녹음 정지" : "녹음 시작"))
+                    .accessibilityLabel(Text(isRecording ? String(localized: "녹음 정지") : String(localized: "녹음 시작")))
                 }
             }
             if let note, !note.isEmpty {

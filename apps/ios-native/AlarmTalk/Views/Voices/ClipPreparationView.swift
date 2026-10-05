@@ -122,7 +122,7 @@ struct ClipPreparationView: View {
                 if !readiness.failedVoiceIDs.isEmpty, !awaitingOwner {
                     // 서버가 만들다 실패한 목소리 — 다시 큐에 올린다. 다운로드 실패는
                     // 선다운로드가 다음 회차에 부족분만 다시 받으므로 버튼이 필요 없다.
-                    Button("다시 시도하기") {
+                    Button(String(localized: "다시 시도하기")) {
                         Task {
                             await readiness.retryFailedRenders(session: auth.session)
                             await refresh()
@@ -133,7 +133,7 @@ struct ClipPreparationView: View {
                 }
 
                 if let onDismiss {
-                    Button(readiness.isReady ? "완료" : "백그라운드에서 계속") {
+                    Button(readiness.isReady ? String(localized: "완료") : String(localized: "백그라운드에서 계속")) {
                         onDismiss()
                     }
                     .font(theme.typography.bodyMedium)
@@ -157,12 +157,12 @@ struct ClipPreparationView: View {
     /// 안드로이드 `ui/voices/VoiceProfileManagementPanel.kt` 의 `VoiceClipPreparationStep` 과 같은 배치다.
     private var registrationPreparation: some View {
         VStack(spacing: 12) {
-            Text("이 목소리로 알람 문구를 만들고 있어요")
+            Text(String(localized: "이 목소리로 알람 문구를 만들고 있어요"))
                 .font(theme.typography.titleMedium)
                 .fontWeight(.semibold)
                 .foregroundStyle(theme.palette.onSurface)
                 .multilineTextAlignment(.center)
-            Text("준비되는 대로 알람에서 쓸 수 있어요.")
+            Text(String(localized: "준비되는 대로 알람에서 쓸 수 있어요."))
                 .font(theme.typography.bodyMedium)
                 .foregroundStyle(theme.palette.onSurfaceVariant)
                 .multilineTextAlignment(.center)
@@ -198,7 +198,7 @@ struct ClipPreparationView: View {
                 Button {
                     onDismiss()
                 } label: {
-                    Text("백그라운드에서 계속")
+                    Text(String(localized: "백그라운드에서 계속"))
                         .font(theme.typography.bodyMedium)
                         .foregroundStyle(theme.palette.onSurfaceVariant)
                         .padding(.horizontal, 12)
@@ -224,8 +224,8 @@ struct ClipPreparationView: View {
     private var headline: String {
         // ⚠ 소유자를 기다리는 중에 퍼센트를 보여 주지 말 것 — 그 값은 내 목소리들의
         // 진행률이라 100% 가 되고, 사용자는 끝난 줄 알고 돌아갔다가 또 막힌다.
-        if awaitingOwner { return "준비 중이에요" }
-        return readiness.isReady ? "준비됐어요" : "\(readiness.percent)%"
+        if awaitingOwner { return String(localized: "준비 중이에요") }
+        return readiness.isReady ? String(localized: "준비됐어요") : "\(readiness.percent)%"
     }
 
     /// ⚠ **무엇을 기다리는지 말한다.** 퍼센트만 있으면 멈춘 것처럼 보인다 —
@@ -233,18 +233,18 @@ struct ClipPreparationView: View {
     private var statusLine: String {
         if awaitingOwner {
             // 받는 사람이 할 수 있는 일이 없다 — '다시 시도' 도 소유자 큐라 못 누른다.
-            return "보낸 사람 쪽에서 이 목소리를 만들고 있어요. 다 되면 알람에서 고를 수 있어요."
+            return String(localized: "보낸 사람 쪽에서 이 목소리를 만들고 있어요. 다 되면 알람에서 고를 수 있어요.")
         }
         if readiness.isReady {
-            return "이제 오프라인에서도 목소리로 울려요."
+            return String(localized: "이제 오프라인에서도 목소리로 울려요.")
         }
         if !readiness.failedVoiceIDs.isEmpty {
-            return "목소리를 만들다 실패했어요. 다시 시도해 주세요."
+            return String(localized: "목소리를 만들다 실패했어요. 다시 시도해 주세요.")
         }
         if readiness.voices.contains(where: { $0.isRendering }) {
-            return "목소리를 만들고 있어요. 몇 분 걸릴 수 있어요."
+            return String(localized: "목소리를 만들고 있어요. 몇 분 걸릴 수 있어요.")
         }
-        return "목소리를 받고 있어요. 앱을 닫아도 계속 받아요."
+        return String(localized: "목소리를 받고 있어요. 앱을 닫아도 계속 받아요.")
     }
 
     /// 3초 폴링을 멈춰도 되는가 — 다 받았고(`isReady`), 소유자를 기다리는 중이 아니고, 관문이 보는
