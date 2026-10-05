@@ -90,17 +90,12 @@ class PersonalPromoPersistenceTest {
         assertTrue(loginStamp >= before)
         assertEquals(loginStamp, store.read()?.userFetchedAtMillis)
 
-        // 프로필만 고쳐 다시 저장 — plan·프로모는 들고 있던 것이므로 받은 시각도 그대로다.
+        // 프로필만 고쳐 다시 저장 — plan 답이 아니라 저장소의 plan·프로모·받은 시각을 그대로 둔다(`updateUserIfAlive`).
         val generation = store.sessionGeneration()
-        val renamed = store.saveSessionIfAlive(
-            expectedGeneration = generation,
-            user = login.user.copy(name = "새 이름"),
-            provider = login.provider,
-            rolledToken = null,
-            userFetchedAtMillis = login.userFetchedAtMillis,
-        )
+        val renamed = store.updateUserIfAlive(generation, login.user.id) { it.copy(name = "새 이름") }
         assertEquals("새 이름", renamed?.user?.name)
         assertEquals(loginStamp, store.read()?.userFetchedAtMillis)
+        assertEquals(loginStamp, renamed?.userFetchedAtMillis)
 
         // `/auth/me` 로 새로 받았다 — 그 시각으로 바뀐다.
         store.saveSessionIfAlive(
@@ -158,14 +153,8 @@ class PersonalPromoPersistenceTest {
         // 종료 전에 계산된 답이다 — 종료 뒤에는 낡은 캐시로 잘린다(기기가 앞서 있어도).
         assertTrue(personalPromoLapsed(restored.planPromoStamp(), deviceReceipt + 60_000L))
 
-        // 프로필만 고쳐 다시 저장 — 정규화된 user 라 계산 시각이 없어, 들고 있던 값이 그대로 남는다.
-        store.saveSessionIfAlive(
-            expectedGeneration = store.sessionGeneration(),
-            user = restored.user.copy(name = "새 이름"),
-            provider = restored.provider,
-            rolledToken = null,
-            userFetchedAtMillis = restored.userFetchedAtMillis,
-        )
+        // 프로필만 고쳐 다시 저장 — 저장소에서 읽은 user 라 계산 시각이 없어, 저장소의 받은 시각이 그대로 남는다.
+        store.updateUserIfAlive(store.sessionGeneration(), restored.user.id) { it.copy(name = "새 이름") }
         assertEquals(computedMillis, store.read()?.userFetchedAtMillis)
     }
 

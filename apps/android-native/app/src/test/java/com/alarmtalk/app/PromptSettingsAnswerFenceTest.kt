@@ -81,62 +81,47 @@ class PromptSettingsAnswerFenceTest {
     }
 
     /**
-     * **이름·가족 설정만 고친 저장은 계정 설정을 되쓰지 않는다**(Codex #837 검증). 그런 저장은 요청 **전에** 잡아 둔 세션의
-     * 복사본이라, 그 사이 올리기·`/auth/me` 가 적은 새 지역(도쿄)을 옛 지역(서울)으로 되돌린다 — 그러면 받아 적기가 그
-     * 옛 값을 기기와 공휴일 국가에 적는다. 저장소가 지금 값을 같은 락 안에서 지킨다(`keepStoredPromptSettings`).
+     * **이름·가족 설정만 고친 저장은 계정 설정을 되쓰지 않는다**(Codex #837 검증). 예전 저장은 요청 **전에** 잡아 둔 세션의
+     * 복사본이라, 그 사이 올리기·`/auth/me` 가 적은 새 지역(도쿄)을 옛 지역(서울)으로 되돌렸다 — 그러면 받아 적기가 그
+     * 옛 값을 기기와 공휴일 국가에 적는다. 이제 프로필 저장은 저장소가 지금 세션을 같은 락 안에서 읽어 **바꾼 칸만** 얹는다
+     * (`updateUserIfAlive` — plan·프로모 등 나머지 칸은 `ProfileSaveKeepsAccountAnswerTest`).
      */
     @Test
     fun 다른_칸만_고친_저장은_저장소의_지금_계정_설정을_지킨다() {
         val store = AuthSessionStore(context.getSharedPreferences(prefsName, Context.MODE_PRIVATE))
         val before = AuthUser(id = "u1", email = "u1@example.test", name = "옛 이름", dynamicPromptSettings = seoul)
         val login = store.saveAppSession(AuthTokenResponse(token = "t", user = before))
+        val generation = store.sessionGeneration()
         // 닉네임 PATCH 가 떠 있는 사이 지역 올리기가 끝나 세션이 도쿄가 됐다.
         store.saveSessionIfAlive(
-            expectedGeneration = store.sessionGeneration(),
+            expectedGeneration = generation,
             user = before.copy(dynamicPromptSettings = tokyo),
             provider = login.provider,
             rolledToken = null,
             userFetchedAtMillis = login.userFetchedAtMillis,
         )
 
-        // 닉네임 응답 — 요청 전의 복사본(서울)에 이름만 바꿔 저장한다.
-        val renamed = store.saveSessionIfAlive(
-            expectedGeneration = store.sessionGeneration(),
-            user = login.user.copy(name = "새 이름"),
-            provider = login.provider,
-            rolledToken = null,
-            userFetchedAtMillis = login.userFetchedAtMillis,
-            keepStoredPromptSettings = true,
-        )
+        // 닉네임 응답 — 이름만 바꾼다.
+        val renamed = store.updateUserIfAlive(generation, login.user.id) { it.copy(name = "새 이름") }
 
         assertEquals("새 이름", renamed?.user?.name)
         assertEquals("jp-tokyo", renamed?.user?.dynamicPromptSettings?.weather?.region)
         assertEquals("jp-tokyo", store.read()?.user?.dynamicPromptSettings?.weather?.region)
         // 계정 설정을 실제로 올린 저장은 그 값을 적는다(지키지 않는다).
-        val uploaded = store.saveSessionIfAlive(
-            expectedGeneration = store.sessionGeneration(),
-            user = login.user,
-            provider = login.provider,
-            rolledToken = null,
-            userFetchedAtMillis = login.userFetchedAtMillis,
-            dynamicPromptSettingsOverride = seoul,
-            keepStoredPromptSettings = false,
-        )
+        val uploaded = store.updateUserIfAlive(generation, login.user.id) { it.copy(dynamicPromptSettings = seoul) }
         assertEquals("kr-seoul", uploaded?.user?.dynamicPromptSettings?.weather?.region)
+        assertEquals("kr-seoul", store.read()?.user?.dynamicPromptSettings?.weather?.region)
+        assertEquals("새 이름", store.read()?.user?.name)
     }
 
     @Test
-    fun 프로필_저장은_올린_설정이_없으면_저장소의_계정_설정을_지킨다() {
-        val helper = bodyOf("internal fun MainViewModel.saveSessionPreservingCurrentToken(")
-        assertTrue(
-            "이름·가족 설정 저장이 요청 전의 계정 설정을 되쓴다(`keepStoredPromptSettings`).",
-            helper.contains("dynamicPromptSettingsOverride = promptSettings,") &&
-                helper.contains("keepStoredPromptSettings = promptSettings == null,"),
-        )
+    fun 올리기는_올린_값만_세션에_적는다() {
         val upload = bodyOf("private suspend fun MainViewModel.uploadDynamicPromptSettings(")
         assertTrue(
-            "올리기는 올린 값을 세션에 적어야 한다(`promptSettings = updatedSettings`).",
-            upload.contains("saveSessionPreservingCurrentToken(updated, startGeneration, promptSettings = updatedSettings)"),
+            "올리기는 올린 값(`updatedSettings`)만 지금 세션 위에 적어야 한다(`saveProfileEdit`).",
+            upload.contains(
+                "saveProfileEdit(session.user.id, startGeneration) { it.copy(dynamicPromptSettings = updatedSettings) }",
+            ),
         )
     }
 

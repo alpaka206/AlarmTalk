@@ -549,6 +549,9 @@ ID 로도 조회되고 최신 갱신 정보를 준다. 구글의 `getPlaySubscri
 계정에서 **옛 유료 값을 판정에 심는다**(보류면 `/billing/subscription` 이 남은 행을 그대로
 돌려주므로 그 경로가 그대로 돈다). 안 적혀 있는 것이 옛 값보다 낫다 — 판정기가 구독·그룹
 으로 답하면 되고, 다음 `/auth/me` 가 채운다.
+**세션도 같다**(2026-10-05). 프로필 저장·탈퇴 복구처럼 plan 을 받아 오지 않은 저장은 세션의 plan·프로모·
+받은 시각을 쓰지 않는다 — 손에 들고 있던 세션 사본째 저장하면 그 사이 반영된 더 새 답을 되돌린다(아래
+「앱」의 순번 가드, 프로필 저장 항목).
 
 ⚠ **스토어가 "없다" 고 답한 것은 '무료 확정' 이 아니다.** Play·StoreKit 은 **그 스토어에서
 그 계정으로 산 것**만 돌려준다 — iOS 에서 결제하고 안드로이드로 로그인한 사람, 다른 구글
@@ -1477,10 +1480,14 @@ Vibration disabled for ringing alarm
     `refreshUserApplyingToken` 이 같은 순번(`accountAnswerSeq`)으로 가른다. 밀린 답은 plan·프로모 짝을
     쓰지 않지만 **이 진입의 결과**로는 센다(D11 — 같은 진입의 더 새 답이 이미 plan 을 썼다).
     `refreshUserApplyingToken` 의 답이 **이 계정의 토큰만 굴러**(같은 로그인 안) 에폭 가드에 걸리면
-    짝은 순번 가드를 지나 반영하고 토큰·프로필·탈퇴 유예는 건드리지 않는다
-    (`isTokenRolledWithinSignIn` — 로그아웃 전에 뜬 표는 `signedOutRequestSeq` 로 가른다).
+    순번 가드를 지난 답만 지금 토큰 위에 반영한다 — 짝과 **프로필 칸**(이름·가족 설정·계정 설정 — 울타리는 따른다)을
+    쓰고, 토큰·탈퇴 유예는 건드리지 않는다(`isTokenRolledWithinSignIn` → `applyAccountAnswerOnRolledToken` — 로그아웃
+    전에 뜬 표는 `signedOutRequestSeq` 로 가른다). 예전에는 짝만 썼는데, 서버가 `/auth/me` 마다 토큰을 굴리므로 프로필
+    저장 뒤의 확인 조회가 늘 이 갈래로 와서 먼저 온 옛 답이 되돌린 이름·가족 설정을 바로잡지 못했다(2026-10-05 리뷰,
+    [session-and-auth.md](session-and-auth.md) 「프로필 저장은 바꾼 칸만 세션에 적는다」).
   - 모양 차이(동작은 같다): 안드로이드는 세션을 **세대**로 가르므로(`saveSessionIfAlive`) 토큰이
-    굴러도 응답 전체를 반영하고, iOS 는 토큰 에폭으로 가르므로 굴렀을 때 짝만 반영한다.
+    굴러도 응답 전체를 반영하고, iOS 는 토큰 에폭으로 가르므로 굴렀을 때 토큰·탈퇴 유예만 지금 세션 것으로 두고
+    나머지를 반영한다(탈퇴 복구는 토큰이 그대로인 갈래의 `completeAccountRecovery` 만 마친다).
   - 결제 전 조회(`refresh_store=1`)의 `user_plan`·`personal_promo` 도 plan 답이라 **같은 순번**이다 —
     안드로이드 `crossStoreRenewalBlocked` 가 보내기 직전에 표를 뜨고 쓰기 전에 `claimPlanAnswer` 로
     잡는다(Codex #803). 더 새 계정 답이 이미 plan 을 차지했으면 plan 은 비우고(`user_plan` 없이) 구독만
@@ -1489,6 +1496,17 @@ Vibration disabled for ringing alarm
     예약·백그라운드 판정(스냅샷을 읽는다)이 끝난 프로모를 되살리거나 결제자를 강등한다 — iOS
     `SocialFeatureViewModel` 의 두 스냅샷 쓰기(`refreshAll`·결제 전 조회)는 `AuthViewModel.isPlanAnswerCurrent`
     가 참일 때만 plan·프로모를 쓴다(자기 답을 막 반영한 요청도 최신 — 경계가 `isSuperseded` 와 다르다).
+  - **프로필 저장·탈퇴 복구 저장은 plan 답이 아니다 — 세션의 plan·프로모·받은 시각을 쓰지 않는다**(2026-10-05).
+    순번 가드는 plan 답끼리만 가른다. 그런데 안드로이드 프로필 저장(`PATCH /user/me` — 닉네임·가족 설정·계정 설정)은
+    요청 **전에** 잡은 세션 사본을, iOS 탈퇴 복구는 푸시 준비를 기다리기 **전에** 잡은 사본을 통째로 저장해, 그 사이 가드를
+    지나 반영된 더 새 답(쿠폰·초대 등록 뒤의 갱신, `plan_changed`, 복귀 갱신, 다른 기기 결제, 결제 전 조회)을 다음
+    `/auth/me` 까지 되돌렸다 — 세션과 디스크 모두. 판정 스냅샷은 그 저장이 건드리지 않아 그대로였지만, 세션 plan 을
+    직접 읽는 화면(안드로이드 편집기의 `freeVoiceTier`·목소리 관리의 `paidVoiceAccess`)은 방금 가족이 된 사람을 무료로
+    그렸다(클론 숨김·동적 문구 잠금·목소리 등록 막힘). 그런 저장은 **바꾼 칸만 쓰는 순간의 세션 위에** 얹는다 —
+    안드로이드 `AuthSessionStore.updateUserIfAlive`(plan·프로모·받은 시각은 저장소의 짝 그대로), iOS
+    `AuthViewModel.updateProfile`·`completeAccountRecovery`(기다린 **뒤의** 세션에서 만든다 — `/auth/me` 로 복구를 확인한
+    경로는 그 답을 기다린 뒤 다시 다듬는다: 밀린 답이면 plan·프로모는 지금 세션의 짝). 규칙 전문은
+    [session-and-auth.md](session-and-auth.md) 「프로필 저장은 바꾼 칸만 세션에 적는다」.
 
 **D2 — `deletes_voices_at_end`.** 위 「API 가 내보내는 것」. `false` 면 종료 안내에서 삭제 문장을
 뺀다. `personal_promo` 가 **있으면** 원시 plan 이 free 다 — 구독 행·그룹으로 커플·가족을 열지
@@ -1647,7 +1665,7 @@ Vibration disabled for ringing alarm
 | 알람 PATCH 는 목소리·클립이 바뀔 때만 소유권을 본다(D8·D13) | `routes/alarm-mutation.ts` PATCH 의 `changedVoiceProfileId` → `voiceProfileBelongsToCaller` · `changedMessageId` → `messageBelongsToCaller`(바깥 게이트·트랜잭션 재확인 둘 다; POST 는 언제나) | `network/RemoteAlarmApi.kt` `RemoteAlarmWriteRequest`(매번 그대로 보낸다 — 앱은 바꾸지 않는다) | — |
 | 보류 규칙 — 기간 중 커플·가족은 스토어·계산값만(D2·D9) | — | `ui/util/PlatformAndLabelUtils.kt` `PersonalPromoTierHold`(`allowsCoupleOrFamily`)·`personalPromoTierHoldOf` → `MainViewModel.personalPromoTierHold` → `hasCoupleOrFamilyAccess`·`canShareVoiceWithOthers`(필수 인자 `promoHold`) · 판정기 plan 공백 갈래(`resolvePaidVoiceAccess`) · `AlarmTalkApp` 잠금 이펙트·`canCreateFamilyAlarm` · `AlarmListScreen`·`VoiceProfileManagementPanel` 의 `personalPromoTierHold` · `MainViewModelVoiceActions`(공유 설정)·`MainViewModelAlarmActions`(가족 알람) | `PlanTier.bestKnown(user:)` 의 기간 중 갈래 · `PlanTier.personalPromoHoldActive` → `canShareVoiceWithOthers`(`VoiceShareAccess.swift`) · `AlarmEditorSheet.familyAlarmLocked` · `AlarmsListView` 의 「누구를 깨울까요?」(`familyAlarmHeldByPromo`) |
 | 응답 필드(`deletes_voices_at_end`·`computed_at` 포함) | `lib/personal-promo.ts` `personalPromoField`(`computed_at` = `promo.now`)·`loadPersonalPromoField`·`activeSubscriptionRowExistsSql` → `routes/auth.ts`(5종) · `routes/billing-query.ts`; shared `PersonalPromoSchema.computed_at`(optional) | `network/AuthApi.kt` `PersonalPromo`(`computedAt` 포함) · `AuthUser.personalPromo` · `network/BillingApi.kt` `BillingSubscriptionResponse.personalPromo` · `network/PersonalPromoJsonAdapter.kt`(관대한 파싱 — D5) · `network/AuthSessionStore.kt` `normalizePersonalPromo`(`computedAt` 은 벗긴다) | `PersonalPromo.swift` `PersonalPromo`(`init(from:)` 은 던지지 않는다 — D5, `computedAt` 을 읽는다) · `AlarmTalkAPIModels.swift` `AuthUser.personalPromo`·`BillingSubscriptionResponse.personalPromo` |
-| 판정 스냅샷 — plan·프로모(·받은 시각, D1·D7) 같은 응답에서 | `/auth/me` · 결제 전 `user_plan` · 받은 시각의 원본 `personal_promo.computed_at` | 받은 시각: `ui/billing/PersonalPromo.kt` `planAnswerStampMillis` ← `AuthSessionStore` 의 `save`(`AuthSession.userFetchedAtMillis`) · `AccessSnapshot.withServerUser(user, receivedAtMillis)`·`withBillingResponse(response, receivedAtMillis)`(`userPlanPromoEndsAt`·`userPlanFetchedAtMillis`); 문: `EntitlementWriter` · `MainViewModelAuthActions` `refreshAppSessionNow`(쓰기 전 순번 가드 `PersonalPromoLedger.claimPlanAnswer` — 밀린 답은 세션·스냅샷·`recordPlanApplied` 를 건너뛴다) | 받은 시각: `PersonalPromo.fetchedAt`(저장 키 `receivedAtMillis`) ← `PersonalPromo.init(from:)` · `AlarmTalkAPI.makeResponseDecoder`(`PersonalPromo.stampsReceiptKey`); 문: `EntitlementWriter.renewSession` · `SocialFeatureViewModel.refreshAll` · `AuthViewModel.applyFreshPlan(userID:from:plan:personalPromo:request:)`(→ `applyAccountPlanAnswer` — 순번 가드) · `refreshUserApplyingToken`(토큰만 구른 답은 `isTokenRolledWithinSignIn` → `applyAccountPlanAnswer`) · `AccessSnapshot.personalPromo` |
+| 판정 스냅샷 — plan·프로모(·받은 시각, D1·D7) 같은 응답에서 | `/auth/me` · 결제 전 `user_plan` · 받은 시각의 원본 `personal_promo.computed_at` | 받은 시각: `ui/billing/PersonalPromo.kt` `planAnswerStampMillis` ← `AuthSessionStore` 의 `save`(`AuthSession.userFetchedAtMillis`) · `AccessSnapshot.withServerUser(user, receivedAtMillis)`·`withBillingResponse(response, receivedAtMillis)`(`userPlanPromoEndsAt`·`userPlanFetchedAtMillis`); 문: `EntitlementWriter` · `MainViewModelAuthActions` `refreshAppSessionNow`(쓰기 전 순번 가드 `PersonalPromoLedger.claimPlanAnswer` — 밀린 답은 세션·스냅샷·`recordPlanApplied` 를 건너뛴다); plan 답이 아닌 프로필 저장은 저장소의 plan·프로모·받은 시각을 그대로 둔다(`AuthSessionStore.updateUserIfAlive` ← `saveProfileEdit` — 회귀 `ProfileSaveKeepsAccountAnswerTest`) | 받은 시각: `PersonalPromo.fetchedAt`(저장 키 `receivedAtMillis`) ← `PersonalPromo.init(from:)` · `AlarmTalkAPI.makeResponseDecoder`(`PersonalPromo.stampsReceiptKey`); 문: `EntitlementWriter.renewSession` · `SocialFeatureViewModel.refreshAll` · `AuthViewModel.applyFreshPlan(userID:from:plan:personalPromo:request:)`(→ `applyAccountPlanAnswer` — 순번 가드) · `refreshUserApplyingToken`(→ `reconcileAccountAnswer` — 순번 가드·울타리; 토큰만 구른 답은 `isTokenRolledWithinSignIn` → `applyAccountAnswerOnRolledToken` → `reconcileAccountAnswer`) · `AccessSnapshot.personalPromo`; plan 답이 아닌 저장은 그 저장이 바꾼 칸만 — `updateProfile`(응답을 기다린 뒤 `var updated = current` 에 바꾼 칸만 얹고 → `refreshUser` 로 확인 조회), `completeAccountRecovery`(푸시 준비를 기다린 뒤의 세션에 탈퇴 상태만 — `/auth/me` 경로는 → `reconcileAccountAnswer` 로 다시 다듬기) — 회귀 `AuthViewModelTests` |
 | 오프라인 차단(D1 — 받은 시각이 없으면 끝 전의 답) | — | `resolvePaidVoiceAccess`(`ui/util/PlatformAndLabelUtils.kt`) · `personalPromoLapsed`·`PlanPromoStamp`(`ui/billing/PersonalPromo.kt`) · 파괴적 경로 `sync/PlanChangeSyncWorker`(`freshPlanPromoStamp`) | `PaidVoiceGate.resolve` · `PersonalPromo.isStale` · `PlanTier.bestKnown(user:)` · 파괴적 경로 `AlarmTalkApp.applyFreePlanVoiceLockIfNeeded` |
 | 전경 무료 잠금 — 무료의 근거가 낡은 프로모 하나면 이번 진입의 plan 반영 뒤에(D1·D12) | — | `ui/billing/PersonalPromoLedger.kt` `freePlanLockMayApply` · `foregroundPlanLockAction`(`ForegroundPlanLockAction` — `Lock`·`WaitForEntryPlan`·`Restore`·`RefreshPlan`·`None`) · `deferredPromoLapseLockDue` · `MainViewModel.isFreeOnlyByPromoLapse`·`planAnsweredEntry`(`PersonalPromoLedger.recordPlanApplied` ← `refreshAppSessionNow`, `claimPlanAnswer` 를 지난 답만) · `AlarmTalkApp` 잠금 이펙트와 `planAnsweredEntry` 재확인 이펙트 | `PaidVoiceGate.freePlanLockMayApply` · `PaidVoiceGate.isFreeOnlyByPromoLapse` · `AuthViewModel.planAnsweredEntry`(`recordAccountAnswer` ← `refreshUserApplyingToken` · 로그인·가입 · `applyFreshPlan`; `signOut` 이 지운다) · `AlarmTalkApp.applyFreePlanVoiceLockIfNeeded` · 재확인은 `freePlanVoiceLockKey` 의 `promoLapseLockWaitKey`(진입 번호는 `AlarmTalkApp.appEntrySignal` 이 `AppEntrySignal.shared` 를 읽는다) |
 | 보관 판정의 프로모 인자 | `lib/billing-cancel.ts` `hasActivePaidEntitlement` · `retentionSyncStatements` · `syncPaidVoiceRetention` · `sweepPaidVoiceRetention`(호출부가 `personalPromoCoversFree` 로 푼 값을 넘긴다) | — | — |
