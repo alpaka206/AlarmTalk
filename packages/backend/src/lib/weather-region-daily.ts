@@ -1,5 +1,5 @@
 /**
- * 지역별 날씨를 **서버가 미리 계산해 둔다** — `weather_region_daily`(마이그레이션 #123, 스키마 그대로).
+ * 지역별 날씨를 **서버가 미리 계산해 둔다** — `weather_region_daily_official`(마이그레이션 #127, 옛 Open-Meteo 캐시와 분리).
  *
  * 날씨 클립의 자리(인덱스)는 **지역 × 날짜** 로만 갈린다. 사람마다 원천에 물을 이유가 없어서 cron 이 지역마다
  * 계산해 두고 `GET /tts/prerender-variant` 는 DB 한 번 읽기로 답한다. 원천은 나라별 공식 예보다(기상청·気象庁·
@@ -8,7 +8,7 @@
  * - **cron**(`refreshWeatherRegionDaily`, 5분 틱): 지역마다 **현지 시각의 슬롯**에서만 일한다 — 저녁 21:00~21:59
  *   (내일~+3을 계산), 아침 06:00~06:59(오늘~+3). 슬롯 밖이면 DB 도 네트워크도 부르지 않는다(시간대 계산만으로
  *   안다). 슬롯이 열린 지역 가운데 [내일, +3] 의 어느 날짜에 `computed_at ≥ 슬롯 시작` 인 행이 없으면 due 다.
- *   한 틱은 SELECT 1 + fetch 최대 10(원천별 KMA 3·JMA 8·NWS 4, 원천을 번갈아, 동시 4) + `db.batch` 1 = 최대 12
+ *   한 틱은 SELECT 1 + fetch 최대 12(원천별 KMA 6·JMA 8·NWS 4, 원천을 번갈아, 동시 4) + `db.batch` 1 = 최대 14
  *   subrequest 다. 실패한 지역은 같은 슬롯의 다음 틱이 다시 하고, 슬롯 마지막 틱(현지 분 ≥ 55)에 판정해
  *   (나라, 시간대 묶음)에서 한 곳도 못 했거나 설정 실패가 있으면 경보를 올린다. ⚠ 그 틱에는 cron 이 날씨 작업을
  *   **맨 앞에서** 돌린다(`hasWeatherSlotLastTick` ← `scheduled`) — 경보(Sentry)도 subrequest 하나라 실행의 한도가
@@ -51,13 +51,13 @@ export const WEATHER_SLOT_HOURS = { evening: 21, morning: 6 } as const;
 /** 이 분 이후의 틱이 그 슬롯의 마지막 틱이다(5분 틱이라 55분). 판정·경보는 여기서만 한다. */
 export const WEATHER_SLOT_LAST_TICK_MINUTE = 55;
 /** 한 틱이 원천에 보내는 fetch 상한. */
-export const WEATHER_TICK_FETCH_BUDGET = 10;
+export const WEATHER_TICK_FETCH_BUDGET = 12;
 /**
  * 원천별 한 틱 상한 — 큰 응답의 파싱 수도 이것으로 묶는다(KMA 141KB·1.3초, JMA 2~6KB, NWS 원본 248KB).
- * 시간당 용량은 10 × 12틱 = 120 이다. 가장 붐비는 겨울 12:00 UTC(KR 저녁 17 + JP 저녁 47 + 미 중부 아침 22 = 86)
- * 에도 재시도 여유가 34 남는다.
+ * 시간당 용량은 12 × 12틱 = 144 이다. 가장 붐비는 겨울 12:00 UTC(KR 저녁 17 + JP 저녁 47 + 미 중부 아침 22 = 86)
+ * 에서 KMA가 각 3페이지여도 총 120회라 재시도 여유가 24 남는다.
  */
-export const WEATHER_SOURCE_FETCH_CAPS: Readonly<Record<WeatherSourceKind, number>> = { kma: 3, jma: 8, nws: 4 };
+export const WEATHER_SOURCE_FETCH_CAPS: Readonly<Record<WeatherSourceKind, number>> = { kma: 6, jma: 8, nws: 4 };
 export const WEATHER_FETCH_CONCURRENCY = 4;
 /** 즉석 계산 한 번의 fetch 상한 — KMA 의 '한 회차 물러서기'까지. */
 export const WEATHER_READ_FETCH_BUDGET = 2;
@@ -71,7 +71,7 @@ export const WEATHER_READ_DEADLINE_MS = 5_000;
 
 export type WeatherSlotKind = keyof typeof WEATHER_SLOT_HOURS;
 
-const UPSERT_SQL = `INSERT INTO weather_region_daily (
+const UPSERT_SQL = `INSERT INTO weather_region_daily_official (
     region_key, target_date, variant_index, weather_code, temp_max, temp_min,
     precip_prob, precip_sum, dust_level, computed_at
   ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -154,7 +154,7 @@ export async function resolveRegionVariantIndex(
   try {
     db = openDb();
     const result = await db.execute({
-      sql: `SELECT variant_index, computed_at, temp_min, temp_max FROM weather_region_daily
+      sql: `SELECT variant_index, computed_at, temp_min, temp_max FROM weather_region_daily_official
             WHERE region_key = ? AND target_date = ? LIMIT 1`,
       args: [region.key, targetDate],
     });
@@ -294,7 +294,7 @@ export function hasOpenWeatherSlot(now: Date, regions: readonly WeatherRegion[] 
  *
  * cron 은 이 틱에 날씨 작업을 **맨 앞에서** 돌린다(`scheduled`, 스펙 5-1 「실패」). 마지막 틱 뒤에는 그 슬롯의 틱이
  * 없어 판정·경보가 여기서만 나가는데, 경보(Sentry 전송)도 subrequest 하나라 앞선 작업이 실행의 한도를 다 쓰면
- * 판정을 해도 닿지 않는다(코덱스 #846). 맨 앞이면 날씨 작업의 최대(조회 1 + 게이트웨이 재시도 2 + fetch 10 + 쓰기
+ * 판정을 해도 닿지 않는다(코덱스 #846). 맨 앞이면 날씨 작업의 최대(조회 1 + 게이트웨이 재시도 2 + fetch 12 + 쓰기
  * 1 + 경보 몇 건)가 한도(무료 50)에 닿을 수 없다.
  */
 export function hasWeatherSlotLastTick(now: Date, regions: readonly WeatherRegion[] = WeatherRegions.all): boolean {
@@ -341,7 +341,7 @@ export type WeatherRegionRefreshResult = {
   deferred: number;
   /**
    * 워커 subrequest 한도에 걸려 이 틱의 날씨 작업을 멈췄다(fetch 든 쓰기든 — 쓰기는 하지 않았거나 실패했다).
-   * 이 틱의 fetch 상한(틱 10·원천별)에 닿은 것은 여기 들지 않는다 — 그 지역만 `deferred` 로 넘기고 받은 것은 적는다.
+   * 이 틱의 fetch 상한(틱 12·원천별)에 닿은 것은 여기 들지 않는다 — 그 지역만 `deferred` 로 넘기고 받은 것은 적는다.
    * 마지막 틱이면 판정은 그래도 한다(`evaluateSlotEnds`) — ⚠ 다만 그 경보의 Sentry 전송도 같은 한도에 걸려 닿지
    * 않는다(남는 것은 error 로그 한 줄). 그래서 cron 은 마지막 틱에 날씨를 맨 앞에서 돌려 이 갈래에 닿지 않게 한다
    * (`hasWeatherSlotLastTick`).
@@ -400,7 +400,7 @@ export async function refreshWeatherRegionDaily(
   const stored = new Map<string, StoredRow>();
   try {
     const rows = await db.execute({
-      sql: `SELECT region_key, target_date, temp_min, temp_max, computed_at FROM weather_region_daily
+      sql: `SELECT region_key, target_date, temp_min, temp_max, computed_at FROM weather_region_daily_official
             WHERE region_key IN (${inPlaceholders(keys)}) AND target_date >= ? AND target_date <= ?`,
       args: [...keys, earliest, latest],
     });
@@ -449,7 +449,7 @@ export async function refreshWeatherRegionDaily(
     while (next < tasks.length) {
       const slot = tasks[next++]!;
       const source = slot.region.source.kind;
-      // KMA의 3회 몫을 세 지역의 첫 페이지가 동시에 다 쓰지 않게 한다.
+      // KMA의 페이지 몫을 세 지역의 첫 페이지가 동시에 다 쓰지 않게 한다.
       let releaseKma = () => {};
       if (source === 'kma') {
         const previous = kmaTail;
@@ -530,7 +530,7 @@ export async function refreshWeatherRegionDaily(
   if (!result.budgetExhausted && statements.length > 0) {
     try {
       await db.batch([
-        { sql: 'DELETE FROM weather_region_daily WHERE target_date < ?', args: [addDaysToDate(computedAt.slice(0, 10), -3)] },
+        { sql: 'DELETE FROM weather_region_daily_official WHERE target_date < ?', args: [addDaysToDate(computedAt.slice(0, 10), -3)] },
         ...statements,
       ]);
       result.stored = statements.length;
@@ -561,7 +561,7 @@ export async function refreshWeatherRegionDaily(
   return result;
 }
 
-/** 이 틱의 fetch 예산 — 틱 상한(10)과 원천별 상한을 함께 센다. */
+/** 이 틱의 fetch 예산 — 틱 상한(12)과 원천별 상한을 함께 센다. */
 function tickBudget(hasPendingKma: () => boolean): FetchBudget {
   let total = WEATHER_TICK_FETCH_BUDGET;
   const left: Record<WeatherSourceKind, number> = { ...WEATHER_SOURCE_FETCH_CAPS };

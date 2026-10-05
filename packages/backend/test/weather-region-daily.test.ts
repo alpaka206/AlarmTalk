@@ -3,7 +3,7 @@
 //
 //  - cron 은 지역마다 **현지 슬롯**(21:00~21:59 저녁 → 내일~+3, 06:00~06:59 아침 → 오늘~+3)에서만 일한다.
 //    슬롯 밖이면 DB·네트워크를 부르지 않는다. [내일, +3] 에 슬롯 시작 뒤의 행이 없으면 due.
-//  - 한 틱은 SELECT 1 + fetch ≤ 10(KMA 3·JMA 8·NWS 4) + batch 1. 'Too many subrequests' 면 멈춘다.
+//  - 한 틱은 SELECT 1 + fetch ≤ 12(KMA 6·JMA 8·NWS 4) + batch 1. 'Too many subrequests' 면 멈춘다.
 //  - 슬롯 마지막 틱(현지 분 ≥ 55)에 (나라, 시간대 묶음)마다 판정해 경보를 올린다. cron 은 그 틱에 날씨를 5분 틱의
 //    맨 앞에서 돌린다(경보도 subrequest 라 — `scheduled-weather-last-tick.test.ts`).
 //  - 읽기 경로는 36시간 안의 행이면 그대로, 아니면 [오늘, +3] 안에서만 원천을 한 번 부른다.
@@ -123,7 +123,7 @@ const asExecutor = (db: Client) => db as unknown as DbExecutor;
 async function rowsOf(db: Client, key?: string) {
   const result = await db.execute({
     sql: `SELECT region_key, target_date, variant_index, weather_code, temp_max, temp_min, precip_prob, precip_sum,
-                 dust_level, computed_at FROM weather_region_daily ${key ? 'WHERE region_key = ?' : ''}
+                 dust_level, computed_at FROM weather_region_daily_official ${key ? 'WHERE region_key = ?' : ''}
           ORDER BY region_key, target_date`,
     args: key ? [key] : [],
   });
@@ -132,7 +132,7 @@ async function rowsOf(db: Client, key?: string) {
 
 async function insertRow(db: Client, key: string, date: string, computedAt: string, extra: Partial<Record<string, number>> = {}) {
   await db.execute({
-    sql: `INSERT INTO weather_region_daily (region_key, target_date, variant_index, weather_code, temp_max, temp_min,
+    sql: `INSERT INTO weather_region_daily_official (region_key, target_date, variant_index, weather_code, temp_max, temp_min,
             precip_prob, precip_sum, dust_level, computed_at) VALUES (?, ?, ?, 0, ?, ?, 0, 0, NULL, ?)`,
     args: [key, date, extra.variant ?? 4, extra.max ?? 25, extra.min ?? 15, computedAt],
   });
@@ -235,7 +235,36 @@ describe('슬롯 — 현지 21:00~21:59(저녁), 06:00~06:59(아침)', () => {
 });
 
 describe('refreshWeatherRegionDaily — 실제 libSQL', () => {
-  it('한 틱: SELECT 1 + fetch ≤ 10(원천별 상한) + batch 1 — 원천을 번갈아 부른다', async () => {
+  it('원천 전환·롤백의 캐시는 섞이지 않는다 — 마이그레이션은 옛 행을 보존한다', async () => {
+    const db = createClient({ url: ':memory:' });
+    const { runMigrationsRange } = await import('../src/lib/migrations');
+    await runMigrationsRange(db, 1, 126);
+    await db.execute({
+      sql: `INSERT INTO weather_region_daily (region_key, target_date, variant_index, temp_min, temp_max, computed_at)
+            VALUES (?, ?, ?, ?, ?, ?)`,
+      args: ['kr-seoul', '2026-10-02', 7, 99, 100, EVENING.toISOString()],
+    });
+    const calls = stubSources();
+    // 마이그레이션 전에도 옛 행 대신 공식 원천을 읽는다(저장은 하지 않는다).
+    expect(await resolveRegionVariantIndex(() => asExecutor(db), region('kr-seoul'), '2026-10-02', {
+      now: EVENING, kmaServiceKey: KEY,
+    })).toBe(idx('nice'));
+    expect(calls).toHaveLength(1);
+    await runMigrationsRange(db, 127, 127);
+    expect(await rowsOf(db)).toEqual([]);
+    const result = await refreshWeatherRegionDaily(asExecutor(db), EVENING, {
+      kmaServiceKey: KEY, regions: [region('kr-seoul')],
+    });
+    expect(result.due).toBe(1);
+    expect(await rowsOf(db, 'kr-seoul')).toHaveLength(3);
+    expect((await db.execute('SELECT variant_index, temp_min FROM weather_region_daily')).rows).toEqual([
+      expect.objectContaining({ variant_index: 7, temp_min: 99 }),
+    ]);
+    expect(await runMigrationsRange(db, 127, 127)).toEqual([]);
+    db.close();
+  });
+
+  it('한 틱: SELECT 1 + fetch ≤ 12(원천별 상한) + batch 1 — 원천을 번갈아 부른다', async () => {
     const db = await freshDb();
     const calls = stubSources();
     const execute = vi.spyOn(db, 'execute');
@@ -244,20 +273,20 @@ describe('refreshWeatherRegionDaily — 실제 libSQL', () => {
     const result = await refreshWeatherRegionDaily(asExecutor(db), EVENING, { kmaServiceKey: KEY });
 
     const count = (host: Host) => calls.filter((c) => c.host === host).length;
-    expect(WEATHER_TICK_FETCH_BUDGET).toBe(10);
-    expect(WEATHER_SOURCE_FETCH_CAPS).toEqual({ kma: 3, jma: 8, nws: 4 });
-    expect(calls.length).toBe(10);
-    expect(count('kma')).toBe(3);
+    expect(WEATHER_TICK_FETCH_BUDGET).toBe(12);
+    expect(WEATHER_SOURCE_FETCH_CAPS).toEqual({ kma: 6, jma: 8, nws: 4 });
+    expect(calls.length).toBe(12);
+    expect(count('kma')).toBe(6);
     expect(count('nws')).toBeLessThanOrEqual(4);
     expect(count('jma')).toBeLessThanOrEqual(8);
-    // 원천을 번갈아 세운다 — 한 원천이 틱을 다 쓰지 않는다(KMA 3, NWS 3, JMA 4).
-    expect([count('kma'), count('jma'), count('nws')]).toEqual([3, 4, 3]);
+    // KMA 페이지 예산을 남겨 두고, 다른 원천도 같은 틱에 진행한다.
+    expect([count('kma'), count('jma'), count('nws')]).toEqual([6, 3, 3]);
     expect(execute).toHaveBeenCalledTimes(1);
     expect(batch).toHaveBeenCalledTimes(1);
     // 한국 17 + 일본 47 + 미 산지 아침.
     const mountain = WeatherRegions.byCountry('US').filter((r) => openWeatherSlot(r, EVENING)).length;
     expect(mountain).toBeGreaterThan(0);
-    expect(result).toMatchObject({ open: 17 + 47 + mountain, due: 17 + 47 + mountain, attempted: 10, failures: [] });
+    expect(result).toMatchObject({ open: 17 + 47 + mountain, due: 17 + 47 + mountain, attempted: 12, failures: [] });
     // cron 은 엣지 캐시를 쓰지 않는다. 타임아웃은 건다.
     for (const c of calls) {
       expect(c.init.cf).toBeUndefined();
@@ -275,8 +304,8 @@ describe('refreshWeatherRegionDaily — 실제 libSQL', () => {
     const result = await refreshWeatherRegionDaily(asExecutor(db), EVENING, { kmaServiceKey: KEY });
     const hosts = calls.map((c) => c.host);
     expect(hosts.filter((host) => host === 'kma')).toHaveLength(WEATHER_SOURCE_FETCH_CAPS.kma);
-    // KMA 가 상한에 닿은 뒤에도 다른 원천은 불렸다.
-    expect(hosts.slice(hosts.lastIndexOf('kma') + 1).some((host) => host !== 'kma')).toBe(true);
+    // KMA가 페이지 예산을 모두 써도 다른 원천의 계산 몫은 남는다.
+    expect(hosts.filter((host) => host !== 'kma')).toHaveLength(6);
     expect(result.budgetExhausted).toBe(false);
     expect(result.deferred).toBe(result.due - result.attempted);
     expect(result.deferred).toBeGreaterThan(0);
@@ -311,10 +340,15 @@ describe('refreshWeatherRegionDaily — 실제 libSQL', () => {
     db.close();
   });
 
-  it.each([2, 3])('KMA가 %i페이지로 잘라도 한 지역을 끝까지 받고 다음 틱에서 남은 지역을 잇는다', async (pageCount) => {
+  it.each([2, 3])('KMA %i페이지여도 겨울의 전체 86지역을 12틱 안에 채운다', async (pageCount) => {
     const db = await freshDb();
-    const kr = WeatherRegions.byCountry('KR').slice(0, 3);
-    const other = [...WeatherRegions.byCountry('JP'), ...WeatherRegions.byCountry('US')];
+    // 원본 실측 픽스처는 10월이다. 날짜는 보존하고 미국 중부 겨울 UTC-6만 적용한다.
+    const winter = WeatherRegions.all.map((r) => r.country === 'US'
+      ? { ...r, tz: new Set(['America/Chicago', 'America/Indiana/Knox', 'America/Menominee', 'America/North_Dakota/Center', 'America/North_Dakota/New_Salem', 'America/North_Dakota/Beulah']).has(r.tz) ? 'Etc/GMT+6' : 'Etc/GMT+5' }
+      : r);
+    const start = new Date('2026-10-01T12:00:00Z');
+    const open = winter.filter((r) => openWeatherSlot(r, start));
+    expect(open).toHaveLength(86);
     const calls = stubSources({ fail: { kma: (url) => {
       const document = JSON.parse(kmaBody(url));
       const body = document.response.body;
@@ -324,26 +358,28 @@ describe('refreshWeatherRegionDaily — 실제 libSQL', () => {
       body.items.item = body.items.item.slice((page - 1) * size, page * size);
       return Response.json(document);
     } } });
-    for (let tick = 0; tick < 3; tick += 1) {
+    for (let tick = 0; tick < 12; tick += 1) {
       const before = calls.length;
-      const result = await refreshWeatherRegionDaily(asExecutor(db), new Date(EVENING.getTime() + tick * 5 * 60_000), {
-        kmaServiceKey: KEY, regions: [...kr, ...other],
+      const result = await refreshWeatherRegionDaily(asExecutor(db), new Date(start.getTime() + tick * 5 * 60_000), {
+        kmaServiceKey: KEY, regions: winter,
       });
       const current = calls.slice(before);
-      expect(current.length).toBeLessThanOrEqual(10);
-      const kma = current.filter((call) => call.host === 'kma');
-      expect(kma.length).toBeLessThanOrEqual(3);
-      expect(kma.slice(0, pageCount).map((call) => call.url.searchParams.get('pageNo'))).toEqual(
-        Array.from({ length: pageCount }, (_, i) => String(i + 1)),
-      );
-      expect(current.some((call) => call.host !== 'kma')).toBe(true);
+      expect(current.length).toBeLessThanOrEqual(WEATHER_TICK_FETCH_BUDGET);
+      for (const host of ['kma', 'jma', 'nws'] as const) {
+        expect(current.filter((call) => call.host === host).length).toBeLessThanOrEqual(WEATHER_SOURCE_FETCH_CAPS[host]);
+      }
       expect(result.failures).toEqual([]);
-      expect(await rowsOf(db, kr[tick]!.key)).toHaveLength(3);
     }
+    const rows = await rowsOf(db);
+    for (const r of open) {
+      const dates = rows.filter((row) => row.region_key === r.key).map((row) => row.target_date);
+      expect(dates, r.key).toEqual(expect.arrayContaining(['2026-10-02', '2026-10-03', '2026-10-04']));
+    }
+    expect(calls.filter((call) => call.host === 'kma')).toHaveLength(17 * pageCount);
     db.close();
   });
 
-  it('한국만: KMA 상한 3 — 틱마다 세 곳씩, 슬롯 안에서 다 채운다', async () => {
+  it('한국만: KMA 상한 6 — 틱마다 여섯 곳씩, 슬롯 안에서 다 채운다', async () => {
     const db = await freshDb();
     const kr = WeatherRegions.byCountry('KR');
     stubSources();
@@ -351,7 +387,7 @@ describe('refreshWeatherRegionDaily — 실제 libSQL', () => {
     for (let minute = 5; minute < 60; minute += 5) {
       const now = new Date(`2026-10-01T12:${String(minute).padStart(2, '0')}:00Z`);
       const result = await refreshWeatherRegionDaily(asExecutor(db), now, { kmaServiceKey: KEY, regions: kr });
-      expect(result.attempted).toBeLessThanOrEqual(3);
+      expect(result.attempted).toBeLessThanOrEqual(6);
       stored += result.stored;
     }
     expect(stored).toBe(17 * 3);
@@ -515,7 +551,7 @@ describe('refreshWeatherRegionDaily — 실제 libSQL', () => {
     db.close();
   });
 
-  it('설정 실패(KMA 30)면 그 틱에서 그 원천을 더 부르지 않는다 — 다른 원천은 계속', async () => {
+  it('설정 실패(KMA 60)면 그 틱에서 그 원천을 더 부르지 않는다 — 다른 원천은 계속', async () => {
     const db = await freshDb();
     const keyError = `<OpenAPI_ServiceResponse><cmmMsgHeader><returnReasonCode>30</returnReasonCode></cmmMsgHeader></OpenAPI_ServiceResponse>`;
     const calls = stubSources({ fail: { kma: () => new Response(keyError, { status: 200 }) } });

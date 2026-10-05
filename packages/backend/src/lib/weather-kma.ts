@@ -262,14 +262,13 @@ function isoDate(yyyymmdd: string): string {
   return `${yyyymmdd.slice(0, 4)}-${yyyymmdd.slice(4, 6)}-${yyyymmdd.slice(6, 8)}`;
 }
 
-/** 칸 시각이 날짜의 모양에 맞는가 — 24칸, 3시간 간격 8칸, 또는 (오늘이면) 첫 칸부터 23시까지 1시간 간격. */
-function hasExpectedShape(hours: readonly number[], isToday: boolean): boolean {
+/** 오늘의 시작 칸은 발표 회차가 정한다. 첫 응답 칸으로 추측하면 통째로 빠진 시작 칸을 못 잡는다. */
+function hasExpectedShape(hours: readonly number[], date: string, run: KmaRun): boolean {
   const same = (expected: readonly number[]) =>
     hours.length === expected.length && hours.every((h, i) => h === expected[i]);
-  if (same(HOURLY_DAY) || same(THREE_HOURLY_DAY)) return true;
-  if (!isToday || hours.length === 0) return false;
-  const first = hours[0]!;
-  return same(Array.from({ length: 24 - first }, (_, i) => first + i));
+  if (date !== isoDate(run.baseDate)) return same(HOURLY_DAY) || same(THREE_HOURLY_DAY);
+  const first = Number(run.baseTime.slice(0, 2)) + 1;
+  return first < 24 && same(Array.from({ length: 24 - first }, (_, i) => first + i));
 }
 
 function warnValue(category: string, value: unknown): void {
@@ -293,7 +292,10 @@ function warnValue(category: string, value: unknown): void {
  *   (오늘이면 공통 규칙의 이어받기, 아니면 미해결 — `finalizeSourceDay`).
  * - 안개 요소는 없다 — KR 에서는 안개 클립(5)이 나오지 않는다.
  */
-export function kmaDaysFromItems(items: readonly KmaItem[], today: string): Map<string, SourceDay> {
+export function kmaDaysFromItems(items: readonly KmaItem[], today: string, run?: KmaRun): Map<string, SourceDay> {
+  const baseDate = run?.baseDate ?? String(items[0]?.baseDate ?? '');
+  const baseTime = run?.baseTime ?? String(items[0]?.baseTime ?? '');
+  if (!/^\d{8}$/.test(baseDate) || !/^(02|05|08|11|14|17|20|23)00$/.test(baseTime)) return new Map();
   const byDate = new Map<string, Map<string, Map<number, unknown>>>();
   for (const item of items) {
     if (!/^\d{8}$/.test(item.fcstDate) || !/^\d{4}$/.test(item.fcstTime)) continue;
@@ -309,11 +311,10 @@ export function kmaDaysFromItems(items: readonly KmaItem[], today: string): Map<
   const days = new Map<string, SourceDay>();
   for (const [date, categories] of byDate) {
     if (date < today) continue;
-    const isToday = date === today;
     const sky = categories.get('SKY');
     if (!sky) continue;
     const hours = [...sky.keys()].sort((a, b) => a - b);
-    if (!hasExpectedShape(hours, isToday)) continue;
+    if (!hasExpectedShape(hours, date, { baseDate, baseTime })) continue;
     const sameHours = KMA_SLOT_CATEGORIES.every((category) => {
       const slots = categories.get(category);
       return slots !== undefined && slots.size === hours.length && hours.every((h) => slots.has(h));
@@ -434,7 +435,7 @@ export async function fetchKmaDays(
   for (let attempt = 0; ; attempt += 1) {
     try {
       const items = await fetchAllPages(source, run, serviceKey, options);
-      return kmaDaysFromItems(items, today);
+      return kmaDaysFromItems(items, today, run);
     } catch (err) {
       if (attempt === 0 && err instanceof WeatherSourceError && err.reason === KMA_NODATA_REASON) {
         run = previousKmaRun(run);

@@ -137,6 +137,15 @@ describe('응답 봉투 — 두 모양 + 상태', () => {
 });
 
 describe('날짜별 집계 — 실측 응답', () => {
+  it.each(['0200', '0500', '1700'])('%s 발표의 오늘 첫 시간대 전체가 빠지면 미해결이다', (baseTime) => {
+    const items = itemsOf(baseTime);
+    const first = `${String(Number(baseTime.slice(0, 2)) + 1).padStart(2, '0')}00`;
+    const missing = items.filter((item) => !(item.fcstDate === '20261001' && item.fcstTime === first));
+    expect(kmaDaysFromItems(items, '2026-10-01').has('2026-10-01')).toBe(true);
+    expect(kmaDaysFromItems(missing, '2026-10-01').has('2026-10-01')).toBe(false);
+    expect(kmaDaysFromItems(missing, '2026-10-01').has('2026-10-02')).toBe(true);
+  });
+
   it.each(['PCP', 'SNO'])('%s 행이 있어도 값이 null·누락이면 해당 날짜만 미해결이다', (category) => {
     for (const value of [null, undefined]) {
       const items = itemsOf('1700');

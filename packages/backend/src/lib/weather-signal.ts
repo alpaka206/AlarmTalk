@@ -4,7 +4,7 @@
  * 신호(`WeatherSignalInput`)는 나라별 공식 예보(기상청·気象庁·NWS)에서 어댑터가 만든다 —
  * `lib/weather-source.ts`(나라별 디스패치) 와 `weather-kma.ts`·`weather-jma.ts`·`weather-nws.ts`.
  * 날씨 상태는 **WMO 대리 코드**로 적는다(맑음 0 / 흐림 3 / 안개 45 / 비 61 / 눈 71 — `WEATHER_PROXY_CODE`).
- * 그래서 아래 분류기와 `weather_region_daily.weather_code` 컬럼의 뜻은 원천이 바뀌어도 그대로다.
+ * 그래서 아래 분류기와 `weather_region_daily_official.weather_code` 컬럼의 뜻은 원천이 바뀌어도 그대로다.
  *
  * 규칙 전문은 `docs/spec/voice-and-message.md` 5-1(「날씨 지역은 목록에서만 고른다」·「서버가 미리
  * 계산해 둔다」).

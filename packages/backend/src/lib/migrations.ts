@@ -3075,6 +3075,27 @@ export const migrations: Migration[] = [
       )`,
     ],
   },
+  {
+    // 공식 원천 전환과 롤백 모두 출처가 섞이지 않게 캐시를 나눈다. 옛 표는 복사·삭제하지 않는다.
+    // 배포→마이그레이션 창에는 공식 원천을 저장 없이 읽고, cron은 다음 틱에 다시 시도한다.
+    id: 127,
+    name: 'weather-region-daily-official',
+    statements: [
+      `CREATE TABLE IF NOT EXISTS weather_region_daily_official (
+        region_key TEXT NOT NULL,
+        target_date TEXT NOT NULL,
+        variant_index INTEGER,
+        weather_code INTEGER,
+        temp_max REAL,
+        temp_min REAL,
+        precip_prob INTEGER,
+        precip_sum REAL,
+        dust_level TEXT,
+        computed_at TEXT NOT NULL,
+        PRIMARY KEY (region_key, target_date)
+      )`,
+    ],
+  },
 ];
 // Errors that mean the statement was already applied — safe to ignore so
 // we can recover databases whose `_migrations` ledger is out of sync with

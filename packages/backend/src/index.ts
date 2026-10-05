@@ -340,8 +340,8 @@ async function isWeatherSlotLastTick(now: Date): Promise<boolean> {
  * 지역별 날씨 미리 계산 한 차례(`lib/weather-region-daily.ts`, `docs/spec/voice-and-message.md` 5-1).
  *
  * 지역마다 **현지 슬롯**(21:00~21:59 저녁, 06:00~06:59 아침)에서만 일한다 — 슬롯이 열린 지역이 없으면 시간대 계산만
- * 하고 DB·네트워크를 부르지 않는다. 도는 틱의 subrequest 는 조회 1 + 원천 fetch 최대 10(KMA 3·JMA 8·NWS 4) + 쓰기
- * 1 = 최대 12 다(조회의 게이트웨이 재시도 2 와 경보는 따로). 오류는 여기서 올린다.
+ * 하고 DB·네트워크를 부르지 않는다. 도는 틱의 subrequest 는 조회 1 + 원천 fetch 최대 12(KMA 6·JMA 8·NWS 4) + 쓰기
+ * 1 = 최대 14 다(조회의 게이트웨이 재시도 2 와 경보는 따로). 오류는 여기서 올린다.
  */
 async function weatherRegionDailyTick(
   db: ReturnType<typeof getDB>,
@@ -466,7 +466,7 @@ async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext)
   // ── 날씨 슬롯의 **마지막 틱**이면 날씨를 맨 앞에서 ───────────────────────────────────────────
   // 마지막 틱(현지 분 ≥ 55) 뒤에는 그 슬롯의 틱이 없어 판정·경보(`slot_failed`)가 여기서만 나간다. 경보(Sentry)도
   // subrequest 하나라, 아래 작업들이 이 실행의 한도(~50)를 먼저 다 쓰면 판정을 해도 **언제나** 닿지 않는다(코덱스
-  // #846). 맨 앞이면 날씨 작업의 최대(조회 1 + 게이트웨이 재시도 2 + fetch 10 + 쓰기 1 + 경보 몇 건)가 한도에 닿을 수
+  // #846). 맨 앞이면 날씨 작업의 최대(조회 1 + 게이트웨이 재시도 2 + fetch 12 + 쓰기 1 + 경보 몇 건)가 한도에 닿을 수
   // 없다. 대가로 아래 작업들은 날씨가 쓴 만큼 적은 예산으로 돌고, 한도에 걸리면 각자의 원래 규칙대로다(대개 다음
   // 틱이 잇는다 — 붐비는 틱이면 전부터 있던 위험이고, 이 순서가 되는 틱은 하루 13개다). 날씨 슬롯에는 마지막 틱
   // 다음이 없다. 그 밖의 틱은 원래 자리(계정 파기 뒤, 클론 드레인 앞)다.

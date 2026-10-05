@@ -91,14 +91,14 @@ vi.mock('../src/lib/stock-clips', async (importOriginal) => ({
     return { rendered: 0, claimed: 0 };
   }),
 }));
-// 날씨 작업은 한 틱의 최대(조회 1 + fetch 10 + 쓰기 1)를 쓰고, 마지막 틱이면 판정에서 경보 하나를 낸다.
+// 날씨 작업은 한 틱의 최대(조회 1 + fetch 12 + 쓰기 1)를 쓰고, 마지막 틱이면 판정에서 경보 하나를 낸다.
 vi.mock('../src/lib/weather-region-daily', () => ({
   hasOpenWeatherSlot: () => true,
   hasWeatherSlotLastTick: () => h.state.lastTick,
   refreshWeatherRegionDaily: vi.fn(
     async (_db: unknown, _now: Date, options: { onAlert?: (alert: Record<string, unknown>) => void }) => {
       h.state.order.push('weather');
-      h.spend(12);
+      h.spend(14);
       const alert = { country: 'JP', slot: 'evening', source: 'jma', reason: 'http_503', done: 0, total: 47 };
       if (h.state.lastTick) options.onAlert?.(alert);
       return {
