@@ -25,6 +25,18 @@ import java.io.File
  */
 class VoiceRegistrationCopyTest {
 
+    @Test
+    fun `생성 안내 줄바꿈과 생체정보 동의의 세 문단을 보존한다`() {
+        for (dir in dirs) {
+            for (key in listOf("voices_prerender_ready_body", "voices_creating_body", "voices_register_biometric_desc")) {
+                assertFalse("$dir/$key", value(dir, key)!!.contains('\n'))
+            }
+            assertEquals("$dir 동의 문단", 3, value(dir, "voices_register_biometric_desc")!!.split("\\n").size)
+        }
+        assertEquals("Grandchild", value("values-en", "voices2_relationship_grandson"))
+        assertEquals("孫", value("values-ja", "voices2_relationship_grandson"))
+    }
+
     private val dirs = listOf("values", "values-en", "values-ja")
 
     private fun strings(dir: String): String {

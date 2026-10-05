@@ -11,8 +11,8 @@ private enum VoiceCloneSourceMode: String, CaseIterable, Identifiable {
 
     var label: String {
         switch self {
-        case .record: return "녹음"
-        case .file: return "파일"
+        case .record: return String(localized: "녹음")
+        case .file: return String(localized: "파일")
         }
     }
 }
@@ -28,6 +28,7 @@ private enum RegistrationStep {
 /// Android `VoiceProfileManagementPanel.VoiceRegistrationStep` 의 Source/Details/Creating 을
 /// SwiftUI 화면으로 분리한 것. 이후 Preview/Prerendering 은 `VoicesRoute` 가 잇는다.
 struct VoiceCloneUploadFlow: View {
+    @State private var didBeginCreation = false
     @Environment(\.voiceAlarmTheme) private var theme
     @EnvironmentObject private var auth: AuthViewModel
     @EnvironmentObject private var voice: VoiceStudioViewModel
@@ -151,7 +152,7 @@ struct VoiceCloneUploadFlow: View {
     var body: some View {
         VStack(spacing: 0) {
             WakerTopBar(
-                title: "목소리 만들기",
+                title: String(localized: "목소리 만들기"),
                 onBack: topBarBackAction,
                 backEnabled: !voice.isBusy
             )
@@ -177,7 +178,10 @@ struct VoiceCloneUploadFlow: View {
         }
         .homeGradientBackground()
         .onAppear {
-            profileName = voice.cloneName
+            guard !didBeginCreation else { return }
+            didBeginCreation = true
+            voice.beginVoiceCreation()
+            profileName = ""
         }
         .fileImporter(
             isPresented: $fileImporterPresented,
@@ -189,7 +193,7 @@ struct VoiceCloneUploadFlow: View {
                 guard let source = urls.first else { return }
                 Task { await importAudioFile(source) }
             case .failure(let error):
-                localError = AudioUserFacingError.message(for: error, fallback: "파일을 선택하지 못했어요.")
+                localError = AudioUserFacingError.message(for: error, fallback: String(localized: "파일을 선택하지 못했어요."))
             }
         }
         // ⚠ **동의를 받았으면 등록을 이어서 한다**(Codex #703 P2). 시트의 CTA 는
@@ -232,10 +236,10 @@ struct VoiceCloneUploadFlow: View {
 
     private var nameSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("목소리 이름")
+            Text(String(localized: "목소리 이름"))
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(theme.palette.onSurfaceVariant)
-            TextField("예: 엄마 목소리", text: $profileName)
+            TextField(String(localized: "예: 엄마 목소리"), text: $profileName)
                 .onChange(of: profileName) { _, newValue in
                     voice.cloneName = newValue
                     let cleaned = InputSanitizer.clampVoiceName(newValue)
@@ -246,24 +250,24 @@ struct VoiceCloneUploadFlow: View {
                 }
                 .alarmTalkFieldStyle()
             if submitted && profileName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                Text("목소리 이름을 입력해 주세요.")
+                Text(String(localized: "목소리 이름을 입력해 주세요."))
                     .font(.caption2.weight(.semibold))
                     .foregroundStyle(AlarmTalkTheme.error)
             }
 
             VoiceRelationshipInputField(
                 selection: $relationshipSelection,
-                title: "나와의 관계 (선택)",
+                title: String(localized: "나와의 관계 (선택)"),
                 submitted: submitted,
                 required: false
             )
             .padding(.top, 4)
 
-            Text("이 목소리가 나를 부를 이름 (선택)")
+            Text(String(localized: "이 목소리가 나를 부를 이름 (선택)"))
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(theme.palette.onSurfaceVariant)
                 .padding(.top, 4)
-            TextField("예: 엄마, 자기, 김팀장", text: $listenerTitle)
+            TextField(String(localized: "예: 엄마, 자기, 김팀장"), text: $listenerTitle)
                 .onChange(of: listenerTitle) { _, newValue in
                     if newValue.count > 30 {
                         listenerTitle = InputSanitizer.clampDisplayName(newValue)
@@ -288,7 +292,7 @@ struct VoiceCloneUploadFlow: View {
             hasRecording: recordingIsLongEnough,
             isPreviewing: voice.previewPlayer.isPlaying,
             statusText: hasRecording && !recordingIsLongEnough
-                ? "12초 이상 녹음해 주세요"
+                ? String(localized: "12초 이상 녹음해 주세요")
                 : nil,
             note: nil,
             onRecord: {
@@ -318,8 +322,8 @@ struct VoiceCloneUploadFlow: View {
         if sourceMode == .record {
             recordingSection
             VStack(alignment: .leading, spacing: 4) {
-                Text("너무 짧으면 목소리가 다르게 나올 수 있어요.")
-                Text("원하는 목소리 파일이 없다면 영상을 틀고 녹음해도 돼요.")
+                Text(String(localized: "너무 짧으면 목소리가 다르게 나올 수 있어요."))
+                Text(String(localized: "원하는 목소리 파일이 없다면 영상을 틀고 녹음해도 돼요."))
             }
             .font(theme.typography.bodySmall)
             .foregroundStyle(theme.palette.onSurfaceVariant)
@@ -339,7 +343,7 @@ struct VoiceCloneUploadFlow: View {
                 }
             } label: {
                 HStack {
-                    Text("예시 대본")
+                    Text(String(localized: "예시 대본"))
                         .font(theme.typography.titleSmall)
                         .fontWeight(.semibold)
                     Spacer()
@@ -440,10 +444,10 @@ struct VoiceCloneUploadFlow: View {
 
     private var languageSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("알람을 읽어줄 언어")
+            Text(String(localized: "알람을 읽어줄 언어"))
                 .font(.subheadline.weight(.semibold))
-            Picker("알람을 읽어줄 언어", selection: $previewLanguage) {
-                Text("한국어").tag("ko")
+            Picker(String(localized: "알람을 읽어줄 언어"), selection: $previewLanguage) {
+                Text(verbatim: "한국어").tag("ko")
                 Text("English").tag("en")
                 Text("日本語").tag("ja")
             }
@@ -455,10 +459,10 @@ struct VoiceCloneUploadFlow: View {
         VStack(spacing: 18) {
             ProgressView()
                 .controlSize(.large)
-            Text("목소리를 만드는 중이에요")
+            Text(String(localized: "목소리를 만드는 중이에요"))
                 .font(theme.typography.titleMedium)
                 .fontWeight(.semibold)
-            Text("잠시만 기다려 주세요.\n완성되면 바로 들려드릴게요.")
+            Text(String(localized: "잠시만 기다려 주세요.\n완성되면 바로 들려드릴게요."))
                 .font(theme.typography.bodyMedium)
                 .foregroundStyle(theme.palette.onSurfaceVariant)
                 .multilineTextAlignment(.center)
@@ -498,7 +502,7 @@ struct VoiceCloneUploadFlow: View {
                 VStack(spacing: 10) {
                     Image(systemName: "arrow.up.doc")
                         .font(.system(size: selectedFileURL == nil ? 28 : 18))
-                    Text(selectedFileURL == nil ? "파일 또는 영상 업로드" : "재업로드")
+                    Text(selectedFileURL == nil ? String(localized: "파일 또는 영상 업로드") : String(localized: "재업로드"))
                         .font(theme.typography.bodyMedium)
                         .fontWeight(.semibold)
                 }
@@ -512,11 +516,11 @@ struct VoiceCloneUploadFlow: View {
             .outlinedButtonShape()
 
             if let url = selectedFileURL, let durationMs = selectedFileDurationMs {
-                Text("12초 이상 2분 이하 구간을 선택해 주세요.")
+                Text(String(localized: "12초 이상 2분 이하 구간을 선택해 주세요."))
                     .font(theme.typography.bodySmall)
                     .foregroundStyle(theme.palette.onSurfaceVariant)
                 fileCropCard(url: url, durationMs: durationMs)
-                Text("한 사람 목소리만 들어간 오디오를 넣어주세요.\n여러 명의 음성이 들어가 있으면 목소리가 달라질 수 있어요.")
+                Text(String(localized: "한 사람 목소리만 들어간 오디오를 넣어주세요.\n여러 명의 음성이 들어가 있으면 목소리가 달라질 수 있어요."))
                     .font(theme.typography.bodySmall)
                     .foregroundStyle(theme.palette.onSurfaceVariant)
             }
@@ -536,7 +540,7 @@ struct VoiceCloneUploadFlow: View {
             if durationMs >= VoiceProfileLimits.minDurationMs {
                 VStack(alignment: .leading, spacing: 6) {
                     HStack {
-                        Text("구간 자르기")
+                        Text(String(localized: "구간 자르기"))
                             .font(theme.typography.labelLarge)
                             .fontWeight(.semibold)
                         Spacer()
@@ -561,7 +565,7 @@ struct VoiceCloneUploadFlow: View {
             }
 
             VoiceSegmentPreviewPlayer(
-                title: "선택 구간 미리듣기",
+                title: String(localized: "선택 구간 미리듣기"),
                 subtitle: "\(HelperFormatters.audioTimeLabel(cropStartMs)) - \(HelperFormatters.audioTimeLabel(effectiveEndMs))",
                 audioURL: url,
                 startMs: cropStartMs,
@@ -589,8 +593,8 @@ struct VoiceCloneUploadFlow: View {
             //  여기 오면 늘 물을 것이 있다.)
             consentCheck(
                 isOn: $voiceBiometricAgreed,
-                label: "음성 생체정보 처리에 동의해요",
-                description: "목소리는 음성 프로필 생성·클론·읽어주기에 쓰이고, 개인을 식별·재현할 수 있는 생체정보로 처리돼요.\n본인 또는 적법한 권한과 동의를 받은 사람의 목소리만 등록할 수 있어요(이용약관 제7조).\n목소리를 지우면 함께 삭제되고, 더보기에서 언제든 동의를 철회할 수 있어요."
+                label: String(localized: "음성 생체정보 처리에 동의해요"),
+                description: String(localized: "목소리는 음성 프로필 생성·클론·읽어주기에 쓰이고, 개인을 식별·재현할 수 있는 생체정보로 처리돼요.\n본인 또는 적법한 권한과 동의를 받은 사람의 목소리만 등록할 수 있어요(이용약관 제7조).\n목소리를 지우면 함께 삭제되고, 더보기에서 언제든 동의를 철회할 수 있어요.")
             )
         }
         .sectionSurface()
@@ -649,7 +653,7 @@ struct VoiceCloneUploadFlow: View {
             Button {
                 Task { await submit() }
             } label: {
-                Text("등록").frame(maxWidth: .infinity)
+                Text(String(localized: "voice.register.submit")).frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
             .tint(theme.palette.primary)
@@ -662,10 +666,10 @@ struct VoiceCloneUploadFlow: View {
     }
 
     private var sourceActionTitle: String {
-        guard hasPreparedSource, !isInValidRange else { return "다음" }
+        guard hasPreparedSource, !isInValidRange else { return String(localized: "다음") }
         return sourceMode == .record
-            ? "12초 이상 녹음해 주세요"
-            : "12초 이상인 파일을 선택해 주세요"
+            ? String(localized: "12초 이상 녹음해 주세요")
+            : String(localized: "12초 이상인 파일을 선택해 주세요")
     }
 
     // MARK: - Actions
@@ -673,12 +677,12 @@ struct VoiceCloneUploadFlow: View {
     private func submit() async {
         submitted = true
         guard hasPaidVoiceAccess else {
-            voice.statusMessage = "유료 이용권에서 사용할 수 있어요."
+            voice.statusMessage = String(localized: "유료 이용권에서 사용할 수 있어요.")
             return
         }
         let trimmedName = profileName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedName.isEmpty else {
-            voice.statusMessage = "목소리 이름을 입력해 주세요."
+            voice.statusMessage = String(localized: "목소리 이름을 입력해 주세요.")
             return
         }
         // ⚠ **인라인이 묻지 못한 민감 동의는 업로드 전에 시트로 받는다.** 그냥 올리면
@@ -701,7 +705,7 @@ struct VoiceCloneUploadFlow: View {
         if needsBiometricConsent, voiceBiometricAgreed {
             let recorded = await auth.submitSensitiveConsents(types: ["voice_biometric"])
             guard recorded else {
-                voice.statusMessage = "동의를 기록하지 못했어요. 다시 시도해 주세요."
+                voice.statusMessage = String(localized: "동의를 기록하지 못했어요. 다시 시도해 주세요.")
                 return
             }
         }
@@ -714,7 +718,7 @@ struct VoiceCloneUploadFlow: View {
         case .record:
             guard voice.recorder.latestRecordingURL != nil,
                   voice.recorder.latestDurationMs != nil else {
-                voice.statusMessage = "먼저 목소리를 녹음해 주세요."
+                voice.statusMessage = String(localized: "먼저 목소리를 녹음해 주세요.")
                 registrationStep = .source
                 return
             }
@@ -741,7 +745,7 @@ struct VoiceCloneUploadFlow: View {
                     language: previewLanguage
                 )
             } catch {
-                let message = AudioUserFacingError.message(for: error, fallback: "선택한 음성을 준비하지 못했어요.")
+                let message = AudioUserFacingError.message(for: error, fallback: String(localized: "선택한 음성을 준비하지 못했어요."))
                 localError = message
                 voice.statusMessage = message
                 registrationStep = .details
@@ -798,10 +802,10 @@ struct VoiceCloneUploadFlow: View {
             selectedFileDurationMs = durationMs
             applyCropDefaults(durationMs: durationMs)
             localError = durationMs < VoiceProfileLimits.minDurationMs
-                ? "12초 이상 파일을 선택해 주세요."
+                ? String(localized: "12초 이상 파일을 선택해 주세요.")
                 : nil
         } catch {
-            localError = AudioUserFacingError.message(for: error, fallback: "선택한 파일을 준비하지 못했어요.")
+            localError = AudioUserFacingError.message(for: error, fallback: String(localized: "선택한 파일을 준비하지 못했어요."))
         }
     }
 

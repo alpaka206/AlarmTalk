@@ -19,6 +19,7 @@
 		066A9036C7FBFCCFADB503E9 /* RemoteAlarmColdLoadTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FED2731B0430687D596C08AA /* RemoteAlarmColdLoadTests.swift */; };
 		090399E0C7D0B71051595D9A /* TimeTypeInUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF34E13AF50391900495E3FB /* TimeTypeInUITests.swift */; };
 		0A6ACB831790221147A16ECF /* EditorPromptPreferenceUpdate.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED15BBE45240517F3F5FA0D0 /* EditorPromptPreferenceUpdate.swift */; };
+		0AB0CBC277334C0CDBEF96E6 /* VoiceLocalizationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17ABB1DBD1E69A0359329FF8 /* VoiceLocalizationTests.swift */; };
 		0AE3879EDDA7283C43C0F283 /* RedeemCodeKeyboardUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD9CB57E1616D3E06EF33C86 /* RedeemCodeKeyboardUITests.swift */; };
 		0CA57323774BA469F4DE6795 /* AlarmTalkTypography.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAD5F56821B87C0A0466A321 /* AlarmTalkTypography.swift */; };
 		0CB3B09DD2AB5D099D268FE9 /* PersonalPromoTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1FD492185CE063ADF17C6CF4 /* PersonalPromoTests.swift */; };
@@ -464,6 +465,7 @@
 		15619730ABF3EC66C8C2DC0A /* PaidVoiceGateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaidVoiceGateTests.swift; sourceTree = "<group>"; };
 		1627BDE1D5B3BE0F482BC71B /* LocalAlarmStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalAlarmStore.swift; sourceTree = "<group>"; };
 		16516A5700E953E5C1170E41 /* RemoteAlarmPullSyncTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteAlarmPullSyncTests.swift; sourceTree = "<group>"; };
+		17ABB1DBD1E69A0359329FF8 /* VoiceLocalizationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceLocalizationTests.swift; sourceTree = "<group>"; };
 		1A565E1FA348483063072D64 /* FortuneBirthDateEditTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FortuneBirthDateEditTests.swift; sourceTree = "<group>"; };
 		1B7AC62042283150DBD4F91A /* UsageEventUploader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UsageEventUploader.swift; sourceTree = "<group>"; };
 		1BD42DD19447E0239ED5639D /* voice_greeting_narin_ko.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = voice_greeting_narin_ko.mp3; sourceTree = "<group>"; };
@@ -1243,6 +1245,7 @@
 				AA0B286412740802B493AEC9 /* UsageEventQueueTests.swift */,
 				434ADC6E3657D5F86AA2B43C /* UsageEventUploaderTests.swift */,
 				22CBB5AEC61506D5E9A1B5C7 /* UserFacingErrorTests.swift */,
+				17ABB1DBD1E69A0359329FF8 /* VoiceLocalizationTests.swift */,
 				8EE6667B9A49C3688FA3F5C9 /* VoiceReplacementCascadeTests.swift */,
 				4E3174AF97FA524C0A1BA68A /* VoiceReplacementMarkerTests.swift */,
 				DD88376E4686A1C79C01C265 /* VoiceShareAccessTests.swift */,
@@ -1988,6 +1991,7 @@
 				F76DD8473F7E79B256AA76A6 /* UsageEventQueueTests.swift in Sources */,
 				6CACDDC14575022C592714AE /* UsageEventUploaderTests.swift in Sources */,
 				0CF827BE8A681B76673BBE99 /* UserFacingErrorTests.swift in Sources */,
+				0AB0CBC277334C0CDBEF96E6 /* VoiceLocalizationTests.swift in Sources */,
 				8132BEED9F3AA2F380D55B59 /* VoiceReplacementCascadeTests.swift in Sources */,
 				B6A5C5A3091CDBC0DE80E181 /* VoiceReplacementMarkerTests.swift in Sources */,
 				F4592AC12059D8F4652C2BD7 /* VoiceShareAccessTests.swift in Sources */,

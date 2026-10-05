@@ -153,11 +153,11 @@ struct VoiceProfileManagementPanel: View {
             isPresented: Binding(get: { actionSheetTarget != nil }, set: { if !$0 { actionSheetTarget = nil } }),
             titleVisibility: .visible
         ) {
-            Button("이 목소리 사용") {
+            Button(String(localized: "이 목소리 사용")) {
                 if let profile = actionSheetTarget { voice.selectedProfileID = profile.id }
                 actionSheetTarget = nil
             }
-            Button("이름 수정") {
+            Button(String(localized: "이름 수정")) {
                 if let profile = actionSheetTarget {
                     editName = profile.name
                     actionSheetTarget = nil
@@ -167,19 +167,19 @@ struct VoiceProfileManagementPanel: View {
                 }
             }
             if canShareVoice, let profile = actionSheetTarget {
-                Button(profile.isShared == true ? "공유 끄기" : "공유 허용") {
+                Button(profile.isShared == true ? String(localized: "공유 끄기") : String(localized: "공유 허용")) {
                     let next = !(profile.isShared ?? false)
                     actionSheetTarget = nil
                     Task { await voice.toggleShare(profile, isShared: next, session: auth.session) }
                 }
             }
-            Button("삭제", role: .destructive) {
+            Button(String(localized: "삭제"), role: .destructive) {
                 if let profile = actionSheetTarget {
                     actionSheetTarget = nil
                     DispatchQueue.main.async { deleteTarget = profile }
                 }
             }
-            Button("취소", role: .cancel) { actionSheetTarget = nil }
+            Button(String(localized: "취소"), role: .cancel) { actionSheetTarget = nil }
         }
         // 사전렌더 진행 폴링 — 준비 중인 목소리가 하나라도 있는 동안만 돈다.
         .task(id: ownVoices.map(\.id).joined(separator: ",")) {
@@ -201,15 +201,15 @@ struct VoiceProfileManagementPanel: View {
         // `VOICE_PERSONA_LOCKED` 로 거절해(`voice-profile.ts:733-741`) **이름 변경조차
         // 실패했다.** 등록이 끝난 뒤엔 알람 클립이 이미 그 페르소나로 전부 렌더돼 있어
         // 바꿀 수 있는 값이 아니다. 관계·호칭 입력은 등록 플로우에만 둔다.
-        .alert("이름 수정", isPresented: renameAlertBinding) {
-            TextField("목소리 이름", text: $editName)
+        .alert(String(localized: "이름 수정"), isPresented: renameAlertBinding) {
+            TextField(String(localized: "목소리 이름"), text: $editName)
                 .textInputAutocapitalization(.never)
-            Button("닫기", role: .cancel) { editTarget = nil }
+            Button(String(localized: "닫기"), role: .cancel) { editTarget = nil }
             // ⚠ **빈 이름을 조용히 삼키지 말 것.** 예전에는 `editTarget = nil` 로
             // 알럿을 먼저 닫고 그다음 guard 로 return 했다 — 저장을 눌러도 알럿만
             // 닫히고 아무 일도 일어나지 않아, 사용자는 저장된 줄 안다.
             // 이제 빈 값이면 **버튼 자체가 비활성**이라 그 상태가 만들어지지 않는다.
-            Button("저장") {
+            Button(String(localized: "저장")) {
                 guard let profile = editTarget else { return }
                 let newName = InputSanitizer.clampVoiceName(
                     InputSanitizer.sanitizeDisplayName(editName)
@@ -224,21 +224,21 @@ struct VoiceProfileManagementPanel: View {
                     .isEmpty
             )
         } message: {
-            Text("알람 목록과 목소리 탭에 보이는 이름이에요. 이름은 비울 수 없어요.")
+            Text(String(localized: "알람 목록과 목소리 탭에 보이는 이름이에요. 이름은 비울 수 없어요."))
         }
         // ⚠ **확인형 모달은 시스템 `.alert` 다**(CLAUDE.md 「iOS 는 안드로이드를 원본으로
         // 삼는다」의 플랫폼 표준 갈래). 예전에는 커스텀 시트였고, 거기에 안드로이드에
         // 없는 '사용 중인 알람도 함께 정리' 토글이 붙어 있었다 — 끄면 사용 중인 목소리는
         // 삭제가 조용히 실패한다. 안드로이드는 선택지를 주지 않고 **항상 강등 삭제**다.
         .alert(
-            monthlyExhausted ? "정말 삭제할까요?" : "목소리 삭제",
+            monthlyExhausted ? String(localized: "정말 삭제할까요?") : String(localized: "목소리 삭제"),
             isPresented: Binding(
                 get: { deleteTarget != nil },
                 set: { if !$0 { deleteTarget = nil } }
             ),
             presenting: deleteTarget
         ) { profile in
-            Button("삭제", role: .destructive) {
+            Button(String(localized: "삭제"), role: .destructive) {
                 let target = profile
                 deleteTarget = nil
                 // ⚠ **누르는 순간에도 자격을 다시 본다**(2026-09-01 리뷰). 알럿이 떠 있는
@@ -260,28 +260,28 @@ struct VoiceProfileManagementPanel: View {
                     }
                 }
             }
-            Button("취소", role: .cancel) { deleteTarget = nil }
+            Button(String(localized: "취소"), role: .cancel) { deleteTarget = nil }
         } message: { profile in
             if monthlyExhausted {
-                Text("이 목소리로 만든 알람은 기본 목소리로 바뀌고, 저장된 음성도 함께 지워져요. 되돌릴 수 없어요. 이번 달에는 새 목소리를 만들 수 없고, 다음 달부터 다시 만들 수 있어요.")
+                Text(String(localized: "이 목소리로 만든 알람은 기본 목소리로 바뀌고, 저장된 음성도 함께 지워져요. 되돌릴 수 없어요. 이번 달에는 새 목소리를 만들 수 없고, 다음 달부터 다시 만들 수 있어요."))
             } else {
-                Text("'\(profile.name)' 목소리를 삭제할까요?\n이 목소리를 쓰는 알람은 기본 목소리로 바뀌어요. 저장된 음원 파일도 함께 삭제돼요.")
+                Text(String(localized: "'\(profile.name)' 목소리를 삭제할까요?\n이 목소리를 쓰는 알람은 기본 목소리로 바뀌어요. 저장된 음원 파일도 함께 삭제돼요."))
             }
         }
         // 화자 분리는 제품에서 사라졌다(VoicesPanelView 주석 참조) — 없는 기능을 근거로
         // 결제를 권하지 않는다.
-        .alert("이번 달 목소리는 다 만들었어요", isPresented: $monthlyLimitNoticeOpen) {
-            Button("닫기", role: .cancel) {}
+        .alert(String(localized: "이번 달 목소리는 다 만들었어요"), isPresented: $monthlyLimitNoticeOpen) {
+            Button(String(localized: "닫기"), role: .cancel) {}
         } message: {
-            Text("목소리는 한 달에 1개 만들 수 있어요. 다음 달에 새로 만들 수 있고, 지금 목소리를 지워도 이번 달에는 다시 만들 수 없어요.")
+            Text(String(localized: "목소리는 한 달에 1개 만들 수 있어요. 다음 달에 새로 만들 수 있고, 지금 목소리를 지워도 이번 달에는 다시 만들 수 없어요."))
         }
         // ⚠ **alert 제목에 마침표를 찍지 말 것**(Apple HIG). 제목은 짧은 구절이고,
         // 문장이 필요하면 `message` 로 내린다 — 다른 alert 들도 전부 그렇게 돼 있다.
         // ⚠ **쿠폰 갈래를 빼지 말 것.** 안드로이드 게이트에는 처음부터 있었는데
         // 여기만 없어서, 같은 상황에서 iOS 사용자는 **코드로 여는 길을 못 봤다**
         // (2026-08-11 전수 조사). 제목도 안드로이드(`voices_create_paid_title`)에 맞춘다.
-        .alert("내 목소리 만들기는 유료 기능이에요", isPresented: $planGateOpen) {
-            Button("닫기", role: .cancel) {}
+        .alert(String(localized: "내 목소리 만들기는 유료 기능이에요"), isPresented: $planGateOpen) {
+            Button(String(localized: "닫기"), role: .cancel) {}
             Button(PaidGateCopy.redeemCode) { redeemCodeAlertOpen = true }
             Button(PaidGateCopy.viewPlans) { onRequestBilling?() }
                 // ⚠ **이 줄이 강조를 만든다 — 빼지 말 것.** 시스템 알럿은 버튼 색을 직접
@@ -355,7 +355,7 @@ struct VoiceProfileManagementPanel: View {
         // 이미 무엇을 해야 하는지 말하고 있어서 같은 말을 두 번 하는 셈이었다.
         // (그 문구는 번역 카탈로그에도 없어 en/ja 기기에는 한국어로 떴다.)
         VoiceSectionCard(
-            title: "내 목소리",
+            title: String(localized: "voice.section.own", defaultValue: "내 목소리"),
             trailing: AnyView(addVoiceHeaderTrailing),
             hasContent: !ownVoices.isEmpty
         ) {
@@ -364,7 +364,7 @@ struct VoiceProfileManagementPanel: View {
                     Divider().overlay(theme.palette.outlineVariant).padding(.leading, 16)
                 }
                 VoiceCatalogRow(
-                    name: profile.name,
+                    name: profile.displayName,
                     subtitle: ownSubtitle(profile),
                     isPlaying: voice.previewingGreetingVoiceId == profile.id,
                     onPreview: {
@@ -404,7 +404,7 @@ struct VoiceProfileManagementPanel: View {
             // 이미 다 쓴 것처럼 읽혀 거짓말이 된다 — 무료는 숫자 없이 버튼만 두고,
             // 눌렀을 때 이용권 안내로 보낸다.
             if let quota = monthlyQuota, paidVoiceEntitledNow, quota.registrationLimit > 0 {
-                Text("생성 가능 \(max(quota.registrationRemaining, 0))/\(quota.registrationLimit)회")
+                Text(String(localized: "생성 가능 \(max(quota.registrationRemaining, 0))/\(quota.registrationLimit)회"))
                     .font(theme.typography.bodySmall)
                     .foregroundStyle(theme.palette.onSurfaceVariant)
             }
@@ -439,7 +439,7 @@ struct VoiceProfileManagementPanel: View {
                 // 그래서 예전에는 터치 타깃만 44 였고 **보이는 버튼은 31pt** 였다
                 // (2026-08-11 스크린샷 픽셀로 실측 — 눈으로 작아 보인 게 맞았다).
                 // 안드로이드 M3 `Button` 기본 높이 40dp 에 맞춘다.
-                Text("추가")
+                Text(String(localized: "추가"))
                     .padding(.vertical, 5)
                     // 좌우도 라벨에 준다 — 세로와 같은 이유다(캡슐은 **라벨 크기**에 맞춰
                     // 그려지므로 버튼 바깥 여백으로는 안 넓어진다). 2026-08-11 지적
@@ -475,20 +475,20 @@ struct VoiceProfileManagementPanel: View {
     /// 행 둘째 줄 — 관계 라벨이 있으면 그걸, 없으면 상태를 보여준다.
     private func ownSubtitle(_ profile: VoiceProfile) -> String? {
         switch normalizedStatus(profile.status) {
-        case "processing": return "만드는 중"
-        case "failed": return "만들지 못했어요"
+        case "processing": return String(localized: "만드는 중")
+        case "failed": return String(localized: "만들지 못했어요")
         default: break
         }
         var parts: [String] = []
         if let relationship = profile.relationshipLabel?.nilIfBlank { parts.append(relationship) }
-        if profile.isShared == true { parts.append("공유 중") }
+        if profile.isShared == true { parts.append(String(localized: "공유 중")) }
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 
     @ViewBuilder
     private var familyProfilesSection: some View {
         if canShareVoice && !voice.familyVoices.isEmpty {
-            VoiceSectionCard(title: "공유받은 목소리") {
+            VoiceSectionCard(title: String(localized: "voice.section.shared", defaultValue: "공유받은 목소리")) {
                 ForEach(Array(voice.familyVoices.enumerated()), id: \.element.id) { index, family in
                     if index > 0 {
                         Divider().overlay(theme.palette.outlineVariant).padding(.leading, 16)
@@ -507,7 +507,7 @@ struct VoiceProfileManagementPanel: View {
                                 Button {
                                     sharedViewerInfoTarget = family
                                 } label: {
-                                    Text("이 목소리가 나를 어떻게 부를지 설정")
+                                    Text(String(localized: "이 목소리가 나를 어떻게 부를지 설정"))
                                         .font(theme.typography.bodySmall.weight(.semibold))
                                         .frame(maxWidth: .infinity)
                                         .padding(.vertical, 8)
@@ -538,7 +538,7 @@ struct VoiceProfileManagementPanel: View {
                 ProgressView()
                     .controlSize(.mini)
                     .tint(theme.palette.primary)
-                Text("받는 중 \(min(done * 100 / total, 99))%")
+                Text(String(localized: "받는 중 \(min(done * 100 / total, 99))%"))
                     .font(theme.typography.labelMedium)
                     .foregroundStyle(theme.palette.onSurfaceVariant)
                     .monospacedDigit()
@@ -554,7 +554,7 @@ struct VoiceProfileManagementPanel: View {
     /// '호칭' TextField 도 여기 두지 않는다(안드로이드에 없다). 호칭은 등록 플로우에서 받는다.
     @ViewBuilder
     private var systemVoicesSection: some View {
-        VoiceSectionCard(title: "기본 목소리", trailing: defaultVoiceDownloadBadge) {
+        VoiceSectionCard(title: String(localized: "voice.section.default", defaultValue: "기본 목소리"), trailing: defaultVoiceDownloadBadge) {
             ForEach(Array(systemVoices.enumerated()), id: \.element.id) { index, profile in
                 if index > 0 {
                     Divider().overlay(theme.palette.outlineVariant).padding(.leading, 16)
@@ -563,7 +563,7 @@ struct VoiceProfileManagementPanel: View {
                 // 말하고, 이 행에는 관리할 게 없다(안드로이드 `VoiceProfileManagementPanel.kt:1403`).
                 // 행 전체가 미리듣기다.
                 VoiceCatalogRow(
-                    name: profile.name,
+                    name: profile.displayName,
                     isPlaying: voice.previewingGreetingVoiceId == profile.id,
                     onPreview: {
                         Task { await voice.previewGreeting(voiceId: profile.id, session: auth.session) }
@@ -624,7 +624,7 @@ struct VoiceProfileManagementPanel: View {
         retryingPrerenderIDs.insert(profile.id)
         defer { retryingPrerenderIDs.remove(profile.id) }
         guard (try? await AlarmTalkAPI.shared.retryVoicePrerender(id: profile.id, token: token)) != nil else {
-            voice.statusMessage = "다시 시도하지 못했어요. 잠시 뒤에 눌러 주세요."
+            voice.statusMessage = String(localized: "다시 시도하지 못했어요. 잠시 뒤에 눌러 주세요.")
             return
         }
         await pollPrerenderStatuses()
@@ -640,7 +640,7 @@ struct VoiceProfileManagementPanel: View {
             // 상태는 서버가 다시 계산하므로 목록을 새로 읽어 실패 행이 사라지게 한다.
             await voice.refresh(session: auth.session)
         } catch {
-            voice.statusMessage = "말투 분석을 다시 시도하지 못했어요. 잠시 뒤에 눌러 주세요."
+            voice.statusMessage = String(localized: "말투 분석을 다시 시도하지 못했어요. 잠시 뒤에 눌러 주세요.")
         }
     }
 

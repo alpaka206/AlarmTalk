@@ -350,7 +350,7 @@
       "alt": {
         "own": "The app’s Voices tab, My voices group: one voice you registered and an Add button",
         "shared": "The app’s Voices tab, Shared with me group: two voices shared by Dad and Grandma",
-        "system": "The app’s Voices tab, Built-in voices group: Siwoo, Mina, Dohyun and Aeni"
+        "system": "The app’s Voices tab, Default voices group: Siwoo, Mina, Dohyun and Aeni"
       }
     }
   },
