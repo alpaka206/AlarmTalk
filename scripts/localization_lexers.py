@@ -126,7 +126,7 @@ class SwiftLexer:
         return self.lits
 
 
-def kotlin_literals(src):
+def kotlin_literals(src, static_text=False):
     """Return (start, end, decoded text, raw) for strings and nested templates."""
     i = 0
     n = len(src)
@@ -170,7 +170,8 @@ def kotlin_literals(src):
                         buf.append(chr(int(unicode_escape[1], 16)))
                         i += unicode_escape.end()
                         continue
-                    buf.append(src[i:i + 2])
+                    escape = src[i:i + 2]
+                    buf.append({r"\n": "\n", r"\t": "\t", r"\r": "\r", r"\b": "\b"}.get(escape, escape) if static_text else escape)
                     i += 2
                     continue
                 if c == '"':
@@ -203,9 +204,15 @@ def kotlin_literals(src):
                     elif src[j] == "}":
                         depth -= 1
                     j += 1
-                buf.append("${" + src[i + 2:j - 1] + "}")
+                buf.append("${}" if static_text else "${" + src[i + 2:j - 1] + "}")
                 i = j
                 continue
+            if static_text and src[i] == "$":
+                identifier = re.match(r"\$[A-Za-z_][A-Za-z_0-9]*", src[i:])
+                if identifier:
+                    buf.append("${}")
+                    i += identifier.end()
+                    continue
             buf.append(src[i])
             i += 1
         return i
@@ -240,4 +247,3 @@ def kotlin_literals(src):
             continue
         i += 1
     return results
-

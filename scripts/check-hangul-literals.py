@@ -28,10 +28,13 @@ ROOT = Path(__file__).resolve().parents[1]
 LANGUAGES = ("en", "ja")
 SWIFT_ROOTS = ("apps/ios-native/AlarmTalk", "apps/ios-native/AlarmTalkWidget", "apps/ios-native/Shared")
 CATALOGS = ("apps/ios-native/AlarmTalk/Localizable.xcstrings", "apps/ios-native/AlarmTalkWidget/Localizable.xcstrings")
-CATEGORIES = {"generated", "seed-data", "data-contract", "debug-preview", "log", "endonym", "tts-content", "not-rendered"}
+CATEGORIES = {"generated", "seed-data", "data-contract", "debug-preview", "log", "endonym", "tts-content", "not-rendered", "language-neutral"}
 SWIFT_UI = {"Text", "Button", "Label", "Toggle", "TextField", "SecureField", "Section", "Picker", "Link",
             "navigationTitle", "alert", "confirmationDialog", "accessibilityLabel", "accessibilityHint"}
 LOCALIZED_TYPE = r"LocalizedString(?:Key|Resource)"
+# English date pickers use bare numbers; Korean/Japanese append year/month/day.
+# Only emptiness is exempted. Missing resources or copied Korean still fail.
+EMPTY_ANDROID_UNITS = {("en", "editorp_fortune_unit_" + unit) for unit in ("year", "month", "day")}
 
 
 def fingerprint(value: str) -> str:
@@ -288,6 +291,14 @@ def string_units(value):
             yield from string_units(child)
 
 
+def android_text_is_blank(value: str) -> bool:
+    # Android decodes escaped whitespace and removes surrounding quotes.
+    value = re.sub(r'\\(?:[ntr]|u(?:0020|0009|000[aAdD]))', ' ', value).strip()
+    if value.startswith('"') and value.endswith('"'):
+        value = value[1:-1]
+    return not value.strip()
+
+
 def catalog_issues(root: Path) -> list[Issue]:
     issues = []
     for relative in (*CATALOGS, "apps/ios-native/AlarmTalk/InfoPlist.xcstrings"):
@@ -305,6 +316,8 @@ def catalog_issues(root: Path) -> list[Issue]:
                                      or not isinstance(leaf.get("value"), str)
                                      or not leaf["value"].strip() for leaf in leaves):
                     issues.append(Issue(relative, 0, key, f"{language} translation missing, unfinished or empty"))
+                if language in LANGUAGES and any(HANGUL.search(str(leaf.get("value", ""))) for leaf in leaves):
+                    issues.append(Issue(relative, 0, key, f"{language} translation contains Hangul"))
     resources = root / "apps/android-native/app/src/main/res"
     localized = {}
     for language in ("ko", *LANGUAGES):
@@ -327,7 +340,62 @@ def catalog_issues(root: Path) -> list[Issue]:
                 issues.append(Issue(target, 0, key, "resource type/array length differs"))
             if HANGUL.search("".join(other.itertext())):
                 issues.append(Issue(target, 0, key, f"Android {language} resource contains Hangul"))
+            leaves = [other] if other.tag == "string" else list(other)
+            if (not leaves or any(android_text_is_blank("".join(leaf.itertext())) for leaf in leaves)) and (language, key) not in EMPTY_ANDROID_UNITS:
+                issues.append(Issue(target, 0, key, f"Android {language} resource contains an empty translation"))
     return issues
+
+
+def kotlin_ui_context(code: str, start: int, pairs: dict[int, int]) -> bool:
+    """Recognize literal arguments at text/notification sinks, in any language.
+
+    Code has strings/comments blanked, preserving offsets. A lambda body starts
+    a new context: an onClick log is not a title merely because it is inside UI.
+    This is a call-site check, not Kotlin data-flow/type analysis.
+    """
+    def expression_branch(opening):
+        before = code[:opening].rstrip()
+        if re.search(r"\belse$|->$", before):
+            return True
+        if before.endswith(")"):
+            condition = next((a for a, b in pairs.items() if b == len(before) - 1), None)
+            return condition is not None and call_at(code, condition) in {"if", "when"}
+        return False
+
+    block = max((opening for opening, end in pairs.items() if code[opening] == "{" and opening < start < end
+                 and not expression_branch(opening)), default=-1)
+    for opening, end in sorted(pairs.items(), reverse=True):
+        if code[opening] != "(" or not block < opening < start < end:
+            continue
+        call = call_at(code, opening).split(".")[-1]
+        if call in {"if", "when", "while"}:
+            # A compared contract value does not become UI copy merely because
+            # the enclosing expression supplies a title.
+            return False
+        fragment = code[opening + 1:start]
+        depth, last, argument_index = 0, 0, 0
+        for i, char in enumerate(fragment):
+            if char in "([{":
+                depth += 1
+            elif char in ")]}":
+                depth -= 1
+            elif char == "," and depth == 0:
+                last, argument_index = i + 1, argument_index + 1
+        argument = fragment[last:].strip()
+        named = re.match(r"(\w+)\s*=\s*(?!=)", argument)
+        parameter = named[1] if named else None
+        if call in {"Text", "BasicText", "AnnotatedString"} and (parameter == "text" or (not parameter and argument_index == 0)):
+            return True
+        if call in {"setContentTitle", "setContentText", "setSubText", "showSnackbar"} and argument_index == 0:
+            return True
+        if call == "makeText" and argument_index == 1:
+            return True
+        if parameter in {"text", "title", "message", "contentDescription", "label"}:
+            # Compose animation labels are debugger identifiers, not UI copy.
+            if parameter == "label" and (call.startswith("animate") or call in {"rememberInfiniteTransition", "updateTransition"}):
+                continue
+            return True
+    return False
 
 
 def format_issues(root: Path) -> list[Issue]:
@@ -410,13 +478,19 @@ def audit(root: Path, rules: list[tuple[str, str, str, str]]) -> list[Issue]:
     for file in (root / "apps/android-native/app/src/main/java").rglob("*.kt"):
         path, source = str(file.relative_to(root)), file.read_text()
         literals = kotlin_literals(source)
-        for start, _, value, _ in literals:
-            if HANGUL.search(value) and not allowed(path, value, rules):
-                issues.append(Issue(path, source.count("\n", 0, start) + 1, value, "Kotlin UI text must use resources or a documented exception"))
         masked = list(source)
         for start, end, _, _ in literals:
             masked[start:end] = [" " for _ in source[start:end]]
-        gate_source = blank_comments("".join(masked)) + "\n" + "\n".join(value for _, _, value, _ in literals)
+        code = blank_comments("".join(masked))
+        pairs = delimiter_pairs(code)
+        static = {start: value for start, _, value, _ in kotlin_literals(source, static_text=True)}
+        for start, _, value, _ in literals:
+            if allowed(path, value, rules):
+                continue
+            ui_copy = any(char.isalpha() for char in static[start]) and kotlin_ui_context(code, start, pairs)
+            if HANGUL.search(value) or ui_copy:
+                issues.append(Issue(path, source.count("\n", 0, start) + 1, value, "Kotlin UI text must use resources or a documented exception"))
+        gate_source = code + "\n" + "\n".join(value for _, _, value, _ in literals)
         if language_gate(gate_source) and not allowed(path, "language-gate", rules):
             issues.append(Issue(path, 0, "containsKorean", "language-based server-error filter is forbidden"))
     issues.extend(issue for issue in catalog_issues(root) if not allowed(issue.path, issue.value, rules))
@@ -634,6 +708,69 @@ class SelfTests(unittest.TestCase):
         self.assertTrue(any("Android en resource missing" in issue.reason for issue in audit(root, rules)))
         path.write_text('<resources><string name="hello">안녕</string></resources>')
         self.assertTrue(any("contains Hangul" in issue.reason for issue in audit(root, rules)))
+
+    def test_kotlin_ui_literals_are_checked_in_every_language(self):
+        root = self.fixture(source="")
+        file = root / "apps/android-native/app/src/main/java/example/Screen.kt"
+        file.parent.mkdir(parents=True)
+        for source in ['Text("Try again")', 'BasicText(text = "Retry")',
+                       'Text("再試行")', 'Text(text = if (busy) "Wait" else "Retry")',
+                       'Text(text = if (busy) { "Wait" } else { "Retry" })',
+                       'Icon(imageVector = icon, contentDescription = "Delete")',
+                       'Card(title = "Settings")', 'builder.setContentText("Ready")',
+                       'Toast.makeText(context, "Ready", 0)', 'state.showSnackbar("Failed")',
+                       'Text(format("Count: %d", count))', 'Text("Retry $count")']:
+            file.write_text(source)
+            self.assertTrue(any("Kotlin UI" in issue.reason for issue in audit(root, [])), source)
+        for source in ['val route = "settings"', 'Text(stringResource(R.string.title))',
+                       'Text("$count%")', 'Text("${format(count)}%")',
+                       'Text("\\n")', 'Card(title = if (plan == "couple") resource else other)',
+                       'Button(onClick = { Log.d("Tag", "Clicked") }) {}',
+                       'animateFloatAsState(targetValue = value, label = "progress")',
+                       '// Text("Retry")\n/* Text("Again") */']:
+            file.write_text(source)
+            self.assertEqual(audit(root, []), [], source)
+
+    def test_catalog_target_languages_reject_hangul_in_every_leaf(self):
+        root = self.fixture(source="")
+        for relative in (*CATALOGS, "apps/ios-native/AlarmTalk/InfoPlist.xcstrings"):
+            file = root / relative
+            original = file.read_text()
+            for language in LANGUAGES:
+                for variation in [False, True]:
+                    data = json.loads(original)
+                    unit = {"stringUnit": {"state": "translated", "value": "Hello 안녕"}}
+                    if variation:
+                        unit = {"variations": {"plural": {"other": unit}}}
+                    data["strings"]["안녕"]["localizations"][language] = unit
+                    file.write_text(json.dumps(data))
+                    self.assertTrue(any(i.path == relative and i.reason.startswith(language)
+                                        and "contains Hangul" in i.reason for i in catalog_issues(root)))
+            file.write_text(original)
+
+    def test_android_translations_cannot_have_blank_leaves(self):
+        root = self.fixture(source="")
+        base = root / "apps/android-native/app/src/main/res"
+        for tag, contents in [("string", "{value}"),
+                              ("string-array", '<item>Hello</item><item>{value}</item>'),
+                              ("plurals", '<item quantity="other">{value}</item>')]:
+            for language in LANGUAGES:
+                for value in ["", " \n\t ", r"\n\t", '""', '" "']:
+                    xml = '<resources><' + tag + ' name="hello">' + contents + '</' + tag + '></resources>'
+                    (base / "values/strings.xml").write_text(xml.format(value="Hello"))
+                    (base / f"values-{language}/strings.xml").write_text(xml.format(value=value))
+                    self.assertTrue(any(i.reason == f"Android {language} resource contains an empty translation"
+                                        for i in catalog_issues(root)))
+        # Documented English date units may be empty, but not missing or Korean.
+        key = "editorp_fortune_unit_year"
+        (base / "values/strings.xml").write_text(f'<resources><string name="{key}">년</string></resources>')
+        file = base / "values-en/strings.xml"
+        file.write_text(f'<resources><string name="{key}"></string></resources>')
+        self.assertFalse(any("Android en" in i.reason for i in catalog_issues(root)))
+        file.write_text('<resources/>')
+        self.assertTrue(any(i.reason == "Android en resource missing" for i in catalog_issues(root)))
+        file.write_text(f'<resources><string name="{key}">년</string></resources>')
+        self.assertTrue(any(i.reason == "Android en resource contains Hangul" for i in catalog_issues(root)))
 
     def test_language_gate_is_forbidden_even_with_no_korean_ui_literals(self):
         for source in ['var containsKorean = true', 'let range = 0xAC00...0xD7A3', 'let pattern = "[가-힣]"']:
