@@ -905,6 +905,7 @@
         <item>실패</item>
         <item>못했어요</item>
         <item>오류</item>
+        <item>문제가</item>
     </string-array>
     <string-array name="snackbar_success_markers">
         <item>했어요</item>

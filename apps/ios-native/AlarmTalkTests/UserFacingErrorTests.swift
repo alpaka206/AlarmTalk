@@ -39,6 +39,15 @@ final class UserFacingErrorTests: XCTestCase {
         }
     }
 
+    func test_purchaseMapperPreservesTranslatedAppAndNetworkDescriptions() {
+        for message in ["Could not complete the purchase.", "購入を完了できませんでした。"] {
+            XCTAssertEqual(SubscriptionManager.userFacingPurchaseError(AppMessage(errorDescription: message), fallback: "fallback"), message)
+            let error = URLError(.notConnectedToInternet, userInfo: [NSLocalizedDescriptionKey: message])
+            XCTAssertEqual(SubscriptionManager.userFacingPurchaseError(error, fallback: "fallback"), message)
+        }
+        XCTAssertEqual(SubscriptionManager.userFacingPurchaseError(Described(errorDescription: "내부 오류"), fallback: "fallback"), "fallback")
+    }
+
     // MARK: - 맹글링된 내부 이름이 새지 않는다
 
     func test_bareSwiftError_neverLeaksFoundationGenericMessage() {

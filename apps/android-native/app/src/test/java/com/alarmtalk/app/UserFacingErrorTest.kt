@@ -67,4 +67,21 @@ class UserFacingErrorTest {
             assertEquals(language, MessageSeverity.Info, messageSeverity("12345", errors, successes))
         }
     }
+    @Test
+    fun `서버 오류와 실패 안내를 완료 색상으로 표시하지 않는다`() {
+        val failureResources = R.string::class.java.fields.filter {
+            it.name.startsWith("api_error_") || it.name.endsWith("_failed")
+        }
+        for (language in listOf("ko", "en", "ja")) {
+            val context = context(language)
+            val errors = context.resources.getStringArray(R.array.snackbar_error_markers)
+            val successes = context.resources.getStringArray(R.array.snackbar_success_markers)
+            for (field in failureResources) {
+                val text = context.getString(field.getInt(null))
+                org.junit.Assert.assertNotEquals("$language: ${field.name}: $text", MessageSeverity.Success, messageSeverity(text, errors, successes))
+            }
+            assertEquals(language, MessageSeverity.Error, messageSeverity(context.getString(R.string.api_error_server), errors, successes))
+        }
+    }
+
 }

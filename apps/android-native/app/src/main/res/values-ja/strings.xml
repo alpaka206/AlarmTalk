@@ -869,7 +869,8 @@
     <string name="personal_promo_end_notice_message_keep_voices">%1$sまでパーソナルプランを無料でご利用いただけます。%2$sからは無料プランに戻ります。</string>
     <string name="personal_promo_end_notice_dont_show_again">今後表示しない</string>
     <string-array name="snackbar_error_markers">
-        <item>できませんでした</item>
+        <item>ません</item>
+        <item>問題が発生</item>
         <item>失敗</item>
         <item>エラー</item>
     </string-array>
