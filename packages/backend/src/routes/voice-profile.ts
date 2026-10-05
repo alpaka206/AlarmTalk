@@ -36,7 +36,7 @@ import {
   evictLruClonesIfOverCapTx,
   hasCloneSlotCapacity,
 } from '../lib/voice-slots';
-import { analyzeSpeechStyleWithVertex } from '../lib/vertex-translate';
+import { analyzeSpeechStyleWithVertex, SPEECH_STYLE_ANALYSIS_BUDGET_MS } from '../lib/vertex-translate';
 import { getSharedInMemoryVoiceStorage } from '@alarmtalk/voice';
 import {
   VoiceEnergySchema,
@@ -504,6 +504,9 @@ async function runSpeechStyleAnalysis(
   },
 ): Promise<{ ok: true; written: boolean } | { ok: false; error: unknown }> {
   const db = getDB(env);
+  // 등록 경로는 `waitUntil`(응답 뒤 30초에 잘린다) — 전사까지 포함해 여기서부터 센다. 말투 분석의 재시도는 이 마감
+  // 안에서만 한다(`SPEECH_STYLE_ANALYSIS_BUDGET_MS`).
+  const deadlineAt = Date.now() + SPEECH_STYLE_ANALYSIS_BUDGET_MS;
   const targetClause = SPEECH_STYLE_RESULT_TARGET_SQL;
   const providerVoiceId = options.providerVoiceId ?? null;
   const targetArgs = speechStyleResultTargetArgs(profileId, {
@@ -523,10 +526,12 @@ async function runSpeechStyleAnalysis(
     const transcript = await client.speechToText(audioData, {
       mimeType: options.mimeType,
       fileName: options.fileName,
+      deadlineAt,
     });
     // null = Vertex 미설정/호출 실패/전사가 너무 짧음(전사 실패 의심) — 재시도로 복구 여지가
-    // 있으므로 'failed' 로 기록한다(성공 판단은 speech_style 저장 여부).
-    const style = await analyzeSpeechStyleWithVertex(env, transcript, options.language);
+    // 있으므로 'failed' 로 기록한다(성공 판단은 speech_style 저장 여부). 상류 시간 초과·5xx 는 함수 안에서
+    // 마감까지 다시 묻는다.
+    const style = await analyzeSpeechStyleWithVertex(env, transcript, options.language, { deadlineAt });
     if (!style) {
       throw new Error('Speech style analysis produced no result (empty transcript or Vertex failure).');
     }

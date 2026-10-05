@@ -84,13 +84,12 @@ export interface Env {
    */
   KASI_SERVICE_KEY?: string;
   /**
-   * Open-Meteo **상업 API 키**(선택). 있으면 날씨 호출(예보·대기질·지오코딩)이 상업 호스트
-   * (`customer-api` / `customer-air-quality-api` / `customer-geocoding-api` `.open-meteo.com`)로 가고
-   * `apikey` 가 붙는다. 없거나 비었으면 무료 호스트 그대로다 — 무료 엔드포인트는 **비상업용**이다.
-   * 고르는 곳은 `lib/weather-fetch.ts` 의 `openMeteoRequestUrl` 하나. ⚠ 로그에 URL 을 남기지 않는다.
-   * 되돌릴 때는 `wrangler secret delete` 다(`secrets:sync` 는 빈 값을 건너뛴다).
+   * 기상청 단기예보(data.go.kr `VilageFcstInfoService_2.0`) 서비스 키 — **일반 인증키(Decoding)**. 한국 지역의
+   * 날씨(`lib/weather-kma.ts`)에 쓴다. 없으면 KR 날씨는 부르지 않고 미해결이다 — 운영에서는 KR 슬롯마다 경보가
+   * 오른다(`lib/weather-region-daily.ts`). `URLSearchParams` 로 한 번만 인코딩하므로 Encoding 키를 넣으면 이중
+   * 인코딩되어 `SERVICE_KEY_IS_NOT_REGISTERED_ERROR`(30)가 난다. ⚠ 요청 URL 에 키가 실리므로 URL 을 로그에 남기지 않는다.
    */
-  OPEN_METEO_API_KEY?: string;
+  KMA_SERVICE_KEY?: string;
   JWT_SECRET: string;
   PASSWORD_PEPPER: string;
   ENVIRONMENT: string;

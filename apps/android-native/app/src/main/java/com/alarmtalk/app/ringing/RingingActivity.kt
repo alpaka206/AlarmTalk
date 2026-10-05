@@ -75,6 +75,9 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.ui.graphics.graphicsLayer
 import com.alarmtalk.app.AlarmTalkDarkColorScheme
 import com.alarmtalk.app.R
+import com.alarmtalk.app.data.AlarmOrigins
+import com.alarmtalk.app.data.customRingingAlarmLabel
+import com.alarmtalk.app.data.localizedReceivedAlarmLabel
 import com.alarmtalk.app.stripDeliveryTags
 import com.alarmtalk.app.fitToWidthScale
 import com.alarmtalk.app.alarm.AlarmContract.EXTRA_ALARM_ID
@@ -1121,8 +1124,10 @@ private fun AlarmEntity.toRingingUiState(
     context: android.content.Context,
     playbackVariantIndex: Int?,
 ): RingingUiState {
-    val customTitle = label.trim()
-        .takeIf { it.isNotBlank() && it != context.getString(R.string.rd_default_alarm_label) }
+    val displayLabel = if (origin == AlarmOrigins.RECEIVED_REMOTE) {
+        localizedReceivedAlarmLabel(context, label)
+    } else label
+    val customTitle = customRingingAlarmLabel(displayLabel)
     // 표시 텍스트: 버킷 알람이면 발사 시 고른 variant 의 문구를 쓴다(오디오와 같은 bucketVariantIndex).
     // 그래야 날씨/운세 매칭 버킷에서 음성('비 와요')과 잠금화면 문구가 어긋나지 않는다. 버킷이 아니면
     // 기존 voiceText. 서버가 delivery 태그를 이미 제거하지만 과거분/회귀 대비 한 번 더 벗긴다 —

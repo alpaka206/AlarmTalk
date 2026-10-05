@@ -2274,16 +2274,16 @@ private const val WEATHER_PREPARE_WINDOW_MILLIS = 48 * 60 * 60 * 1000L
 private const val WEATHER_RESOLVE_VALID_WINDOW_MILLIS = 24 * 60 * 60 * 1000L
 
 /**
- * 저장이 날씨 조건 응답을 기다리는 상한. iOS 도 같은 8초다(`docs/spec/voice-and-message.md` 5-1).
+ * 저장이 날씨 조건 응답을 기다리는 상한. iOS 도 같은 8초다(`docs/spec/voice-and-message.md` 5-1 「대기 상한」).
  *
- * 8초인 이유: 서버는 미리 계산한 값이 없으면 날씨 원천을 부르고, 원천 호출 하나의 상한이 5초다
- * (`packages/backend/src/lib/weather-fetch.ts` 의 `WEATHER_FETCH_TIMEOUT_MS`). 지금 원천(Open-Meteo)은
- * 두세 번을 순차로 부르고, 서버가 원천을 나라별 공식 예보(기상청·気象庁·NWS)로 바꾼 뒤에는 한 번이다.
- * 정상 응답은 수백 ms 라, 한 번이 상한에 걸린 경우(5초 + 나머지 + 왕복)까지는 받아 주고 그 이상은
- * 기다리지 않는다. 서버 최악(모든 호출이 상한)까지 기다리지 않는 것은 의도다 — 그때는 서버도 대개
- * `variant_index: null` 을 돌려주고, 저장 직후 `DynamicVoiceRefreshScheduler.runOnce` 가 뒤에서 마저
- * 받는다. 사용자에게는 8초 넘게 붙잡힌 저장 버튼이 '고장' 으로 읽힌다. 미리 계산한 지역은 DB 한 번
- * 읽기라 이 상한에 닿지 않는다.
+ * 8초인 이유: 서버는 미리 계산한 값이 없으면 그 나라의 날씨 원천(기상청·気象庁·NWS)을 한 번 부르고, 그 한 번
+ * **전체**에 마감 5초를 둔다(`packages/backend/src/lib/weather-region-daily.ts` 의 `WEATHER_READ_DEADLINE_MS` —
+ * 기상청의 한 회차 물러서기·다음 페이지까지 합친 시간). ⚠ fetch 하나의 상한(`lib/weather-fetch.ts` 의
+ * `WEATHER_FETCH_TIMEOUT_MS`)은 근거가 아니다 — 한 번의 원천 호출이 fetch 를 둘 할 수 있어 그 값만 보면 이 상한과
+ * 어긋난다. 원천이 마감에 걸린 경우(5초 + DB 읽기·쓰기 + 왕복)까지는 받아 주고, 그 이상(느린 망)은 기다리지
+ * 않는다 — 미해결로 저장하고 저장 직후 `DynamicVoiceRefreshScheduler.runOnce` 가 뒤에서 마저 받는다. 사용자에게는
+ * 8초 넘게 붙잡힌 저장 버튼이 '고장' 으로 읽힌다. 미리 계산한 지역은 DB 한 번 읽기라 이 상한에 닿지 않는다.
+ * 서버 마감은 이 값보다 짧아야 한다 — 백엔드 `weather-region-daily.test.ts` 가 이 상수를 소스에서 읽어 맞대어 본다.
  * 테스트가 이 값을 가상 시계로 확인한다(`WeatherResolveTimeoutTest`).
  */
 internal const val WEATHER_RESOLVE_TIMEOUT_MILLIS = 8_000L
