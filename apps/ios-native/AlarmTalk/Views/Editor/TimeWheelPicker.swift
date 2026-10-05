@@ -31,7 +31,7 @@ struct TimeWheelPicker: View {
 
     /// 축소 배율을 정하려고 **폭만** 잰다. 높이는 우리가 정하므로 순환하지 않는다.
     @State private var measuredWidth: CGFloat = 0
-    /// 지금 그 자리에서 고쳐 쓰는 칼럼("시"/"분"). 두 칼럼이 **함께** 본다 —
+    /// 지금 그 자리에서 고쳐 쓰는 칼럼(hour/minute). 두 칼럼이 **함께** 본다 —
     /// 한쪽을 고치는 동안 양쪽의 회색 이웃 숫자를 숨기기 위해서다.
     @State private var editingColumn: String?
 
@@ -62,7 +62,7 @@ struct TimeWheelPicker: View {
                 range: 0...23,
                 formatter: { String(TimeWheelMath.hour24To12($0)) },
                 scale: scale,
-                typeInTitle: "시",
+                columnID: "hour",
                 // 사용자는 화면에 보이는 **12시간** 숫자를 넣는다 — 지금 오전/오후를
                 // 유지한 채 24시간으로 되돌린다. (오전/오후를 바꾸려면 그 칼럼을 쓴다.)
                 applyTypedValue: { typed in
@@ -80,7 +80,7 @@ struct TimeWheelPicker: View {
                 range: 0...59,
                 formatter: { String(format: "%02d", $0) },
                 scale: scale,
-                typeInTitle: "분",
+                columnID: "minute",
                 applyTypedValue: { typed in minute = min(max(typed, 0), 59) },
                 editingColumn: $editingColumn
             )
@@ -100,7 +100,7 @@ struct TimeWheelPicker: View {
         // 다(`AlarmTimePicker.kt:48`). `primaryContainer` 파란 박스를 두면 시각이 한 덩어리
         // 위젯처럼 보여, 화면의 주인공이어야 할 숫자가 배경에 갇힌다.
         .accessibilityElement(children: .contain)
-        .accessibilityLabel(Text("시간 선택"))
+        .accessibilityLabel(Text(String(localized: "시간 선택")))
     }
 
     /// 가용 폭에 비례한 휠 축소 배율. 안드로이드와 같은 식·같은 하한.
@@ -156,13 +156,12 @@ struct DraggableNumberColumn: View {
     /// 가용 폭에 따른 축소 배율. 상위 `TimeWheelPicker` 가 계산해 내려준다.
     var scale: CGFloat = 1
 
-    /// 탭하면 **그 자리에서** 고쳐 쓰는 칼럼의 이름("시"/"분"). 오전/오후 칼럼은 이 타입이
-    /// 아니다(`AmPmWheelColumn`).
-    let typeInTitle: String
+    /// 표시 언어와 무관한 칼럼 식별자(hour/minute). 편집 상태와 UI 테스트가 함께 쓴다.
+    let columnID: String
     /// 직접 입력한 값을 실제 값으로 바꾼다. 시 칼럼은 12시간 표기를 24시간으로 되돌려야 해서
     /// 칼럼마다 규칙이 다르다 — 그래서 호출부가 준다.
     let applyTypedValue: (Int) -> Void
-    /// 지금 어느 칼럼을 고쳐 쓰는 중인가(`typeInTitle` 값). 두 칼럼이 공유한다 —
+    /// 지금 어느 칼럼을 고쳐 쓰는 중인가(`columnID` 값). 두 칼럼이 공유한다 —
     /// 한쪽을 고치는 동안 **양쪽의** 회색 이웃 숫자를 숨기기 위해서다.
     @Binding var editingColumn: String?
 
@@ -175,7 +174,7 @@ struct DraggableNumberColumn: View {
 
     private var itemHeight: CGFloat { TimeWheelPicker.itemHeight * scale }
     /// 이 칼럼을 고쳐 쓰는 중인가.
-    private var isEditing: Bool { editingColumn == typeInTitle }
+    private var isEditing: Bool { editingColumn == columnID }
     /// 둘 중 어느 칼럼이든 고쳐 쓰는 중인가.
     private var anyEditing: Bool { editingColumn != nil }
 
@@ -215,7 +214,7 @@ struct DraggableNumberColumn: View {
         .accessibilityLabel(Text(formatter(value)))
         // UI 테스트가 이 칼럼 하나를 집어 값 변화를 읽는다(`TimeWheelFlingUITests`).
         // 라벨은 값 자체라 칼럼을 특정할 수 없어 식별자를 따로 둔다.
-        .accessibilityIdentifier("timeWheel.\(typeInTitle)")
+        .accessibilityIdentifier("timeWheel.\(columnID)")
         .accessibilityAdjustableAction { direction in
             switch direction {
             case .increment: applyStep(1)
@@ -316,14 +315,14 @@ struct DraggableNumberColumn: View {
         settleDriver.cancel()
         dragOffset = 0
         typeInDraft = ""
-        editingColumn = typeInTitle
+        editingColumn = columnID
         typeInFocused = true
     }
 
     private func commitTypeIn() {
         let draft = typeInDraft
         typeInDraft = ""
-        if editingColumn == typeInTitle { editingColumn = nil }
+        if editingColumn == columnID { editingColumn = nil }
         // 범위를 벗어나면 **거절하지 않고 잘라서** 넣는다 — 여기서 튕기면
         // 사용자는 왜 안 되는지 모른 채 같은 값을 다시 넣는다(스누즈 알럿과 같은 규칙).
         guard let typed = Int(draft.filter(\.isNumber)) else { return }
@@ -491,13 +490,13 @@ struct AmPmWheelColumn: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            label(title: "오전", selected: !isPM)
+            label(title: String(localized: "오전"), selected: !isPM)
                 .frame(height: itemHeight)
                 // ⚠ 없으면 글리프만 눌린다 — `frame`/`padding` 이 넓힌 자리는 투명해 히트테스트를 건너뛴다.
                 .contentShape(Rectangle())
                 .onTapGesture { select(pm: false) }
 
-            label(title: "오후", selected: isPM)
+            label(title: String(localized: "오후"), selected: isPM)
                 .frame(height: itemHeight)
                 .contentShape(Rectangle())
                 .onTapGesture { select(pm: true) }
@@ -508,7 +507,7 @@ struct AmPmWheelColumn: View {
         // 시 칼럼이 11↔12 를 넘겨 밖에서 바뀔 때만 기본 자리를 애니메이션한다.
         .animation(animateBase ? .snappy(duration: 0.25) : nil, value: isPM)
         .accessibilityElement()
-        .accessibilityLabel(Text(isPM ? "오후 선택됨" : "오전 선택됨"))
+        .accessibilityLabel(Text(isPM ? String(localized: "오후 선택됨") : String(localized: "오전 선택됨")))
         .accessibilityAdjustableAction { direction in
             switch direction {
             case .increment, .decrement:

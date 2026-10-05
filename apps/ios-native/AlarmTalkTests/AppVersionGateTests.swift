@@ -67,7 +67,7 @@ final class AppVersionGateTests: XCTestCase {
         XCTAssertTrue(WeatherAttribution.showsLine(gate.weatherAttribution))
     }
 
-    /// 지금 서버(Open-Meteo)·옛 서버는 토큰이 없다 — 줄을 숨긴다.
+    /// Open-Meteo 를 쓰는 서버(원천 교체 전·되돌린 뒤)·옛 서버는 토큰이 없다 — 줄을 숨긴다.
     func test_weatherAttribution_staysHiddenWithoutAToken() async {
         let api = MockAppVersionAPI()
         api.result = .success(AppVersionResponse(minSupportedVersion: 7))

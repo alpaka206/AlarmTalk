@@ -205,9 +205,9 @@ struct AlarmEditorSheet: View {
     @MainActor
     func showSaveFailureAlert() {
         validationAlert = ValidationAlertContent(
-            title: "저장할 수 없어요",
+            title: String(localized: "저장할 수 없어요"),
             message: (voiceStudio.statusMessage).nilIfBlank
-                ?? "목소리를 준비하지 못했어요. 잠시 뒤에 다시 시도해 주세요."
+                ?? String(localized: "목소리를 준비하지 못했어요. 잠시 뒤에 다시 시도해 주세요.")
         )
     }
 
@@ -284,7 +284,7 @@ struct AlarmEditorSheet: View {
             EditorActionBar(
                 saveTitle: saveButtonTitle,
                 saving: isWorking || voiceStudio.isBusy,
-                savingLabel: voiceStudio.isBusy ? "음성 만드는 중…" : "저장 중…",
+                savingLabel: voiceStudio.isBusy ? String(localized: "음성 만드는 중…") : String(localized: "저장 중…"),
                 saveEnabled: !editorSaveBlocked,
                 onCancel: onClose,
                 onSave: { Task { await saveFlow() } }
@@ -326,7 +326,7 @@ struct AlarmEditorSheet: View {
                     .foregroundStyle(theme.palette.onSurfaceVariant)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.top, 10)
-                    .accessibilityLabel(Text("반복 \(repeatSummary)"))
+                    .accessibilityLabel(Text(String(localized: "반복 \(repeatSummary)")))
                 RepeatWeekdayChips(mask: $draft.repeatDaysMask)
                     .padding(.vertical, 10)
                 // Android `ScheduleDetailsCard` 와 동일: 반복 요일이 하나라도 선택됐을 때만
@@ -393,7 +393,7 @@ struct AlarmEditorSheet: View {
                 // ⚠ 위에 아무 행도 없으므로 구분선을 앞에 두지 말 것 — 카드 맨 위에
                 //   금이 하나 그어진 것처럼 보인다.
                 AlarmSettingRow(
-                    title: "알람음",
+                    title: String(localized: "알람음"),
                     subtitle: alarmSoundDisplayLabel,
                     onTap: { settingsPane = .alarmSound }
                 )
@@ -518,7 +518,7 @@ struct AlarmEditorSheet: View {
             Alert(
                 title: Text(content.title),
                 message: Text(content.message),
-                dismissButton: .default(Text("확인"))
+                dismissButton: .default(Text(String(localized: "확인")))
             )
         }
         .voicePlanGateAlert(
@@ -539,12 +539,12 @@ struct AlarmEditorSheet: View {
         }
         .alert(item: $duplicateAlarmConfirm) { content in
             Alert(
-                title: Text("같은 시각 알람이 있어요"),
+                title: Text(String(localized: "같은 시각 알람이 있어요")),
                 message: Text(duplicateAlarmMessage(content)),
-                primaryButton: .destructive(Text("교체하기")) {
+                primaryButton: .destructive(Text(String(localized: "교체하기"))) {
                     Task { await confirmReplaceDuplicate(content) }
                 },
-                secondaryButton: .cancel(Text("취소"))
+                secondaryButton: .cancel(Text(String(localized: "취소")))
             )
         }
         .onAppear {
@@ -574,19 +574,19 @@ struct AlarmEditorSheet: View {
             Task { await voiceStudio.loadStockClips(session: auth.session) }
         }
         .alert(
-            "기본 목소리로 바꿀까요?",
+            String(localized: "기본 목소리로 바꿀까요?"),
             isPresented: Binding(
                 get: { pendingVoiceSwitch != nil },
                 set: { if !$0 { pendingVoiceSwitch = nil } }
             )
         ) {
-            Button("바꾸기") {
+            Button(String(localized: "바꾸기")) {
                 if let pending = pendingVoiceSwitch { applyVoiceSelection(pending) }
                 pendingVoiceSwitch = nil
             }
-            Button("닫기", role: .cancel) { pendingVoiceSwitch = nil }
+            Button(String(localized: "닫기"), role: .cancel) { pendingVoiceSwitch = nil }
         } message: {
-            Text("기본 목소리는 준비된 문구로만 말할 수 있어서, 직접 입력한 문구는 사라져요.")
+            Text(String(localized: "기본 목소리는 준비된 문구로만 말할 수 있어서, 직접 입력한 문구는 사라져요."))
         }
         .sheet(item: $sharedVoiceSetupTarget) { profile in
             SharedVoiceSelectionSetupSheet(
@@ -738,7 +738,7 @@ struct AlarmEditorSheet: View {
             if seconds >= TimeInterval(AlarmAudioLimits.maxDurationMillis / 1000),
                localRecorder.isRecording {
                 localRecorder.stop()
-                localAudioMessage = "최대 \(AlarmAudioLimits.maxDurationMillis / 1000)초까지 녹음했어요."
+                localAudioMessage = String(localized: "최대 \(AlarmAudioLimits.maxDurationMillis / 1000)초까지 녹음했어요.")
             }
         }
         .onDisappear {
@@ -775,7 +775,7 @@ struct AlarmEditorSheet: View {
     var saveButtonTitle: String {
         if target.familyAlarmMode, let name = (selectedFamilyRecipient?.name).nilIfBlank {
             // 받는 사람 이름은 사용자 데이터다 — 동사만 번역해서 붙인다.
-            return "\(String(localized: "저장")) · \(name)"
+            return String(localized: "\(String(localized: "저장")) · \(name)")
         }
         // ⚠ **'수정 저장' 으로 되돌리지 말 것**(2026-08-18 지시). 새 알람이든 편집이든
         // 버튼이 하는 일은 같다 — 지금 화면의 값을 저장한다. 편집일 때만 말이 길어지면
@@ -786,7 +786,7 @@ struct AlarmEditorSheet: View {
     /// 알람음 종류 라벨. 고른 것이 있으면 그 이름, 없으면 '기본 알람음'.
     /// (Android `editor2_default_alarm_sound` 미러.)
     var alarmSoundDisplayLabel: String {
-        draft.alarmSoundLabel.nilIfBlank ?? "기본 알람음"
+        draft.alarmSoundLabel.nilIfBlank ?? String(localized: "기본 알람음")
     }
 
     /// 알람음 미리듣기 — 편집기의 단일 플레이어로 튼다(목소리 미리듣기와 같은 자리).
@@ -818,8 +818,8 @@ struct AlarmEditorSheet: View {
         manualQuota = quota
         guard quota.limit > 0, quota.remaining <= 0 else { return nil }
         return ValidationAlertContent(
-            title: "이번 달 만들기 횟수를 다 썼어요",
-            message: "직접 입력 문구는 한 달에 \(quota.limit)번까지 새로 만들 수 있어요. 이미 만들어 둔 문구는 그대로 쓸 수 있어요."
+            title: String(localized: "이번 달 만들기 횟수를 다 썼어요"),
+            message: String(localized: "직접 입력 문구는 한 달에 \(quota.limit)번까지 새로 만들 수 있어요. 이미 만들어 둔 문구는 그대로 쓸 수 있어요.")
         )
     }
 
@@ -887,10 +887,10 @@ struct AlarmEditorSheet: View {
     /// Android `AlarmEditorControls.kt` RepeatSelector 상단 요약과 같은 의도.
     var repeatSummary: String {
         let mask = draft.repeatDaysMask
-        if mask == 0x7f { return "매일" }
+        if mask == 0x7f { return String(localized: "매일") }
         if mask != 0 {
             let days = mask.repeatDays.map(\.shortLabel).joined(separator: " ")
-            return "매주: \(days)"
+            return String(localized: "매주: \(days)")
         }
         // mask == 0 : 한 번만 — 다음 발화 날짜를 보여준다(공휴일 OFF 는 의미 없지만 계산은 동일).
         let fireAt = draftFireAtMillis(now: Int64(Date().timeIntervalSince1970 * 1000))
@@ -1135,14 +1135,14 @@ struct AlarmEditorSheet: View {
             .map {
                 VoiceSelectionSheet.Option(
                     id: $0.id,
-                    name: $0.name,
-                    detail: $0.relationshipLabel?.nilIfBlank,
+                    name: $0.displayName,
+                    detail: $0.relationshipLabel?.nilIfBlank.map { displayRelationshipLabel($0) },
                     // 무료 등급은 시스템 목소리만 쓸 수 있다(서버 `tts.ts:684-693`).
                     locked: freeVoiceTier,
                     // 교체 정리가 끝나지 않은 목소리는 **자리에 두되 못 고른다** — 감추면
                     // 사라진 것으로 보여 고장으로 읽힌다.
                     unavailableReason: voiceStudio.isReplacementSettling($0.id)
-                        ? "목소리 정리 중이에요"
+                        ? String(localized: "목소리 정리 중이에요")
                         : nil
                 )
             }
@@ -1151,14 +1151,14 @@ struct AlarmEditorSheet: View {
             .map {
                 VoiceSelectionSheet.Option(
                     id: $0.id,
-                    name: $0.name,
+                    name: $0.displayName,
                     detail: $0.sharedFromLabel,
                     locked: freeVoiceTier
                 )
             }
         let system = voiceStudio.profiles
             .filter { $0.isReadyForAlarmSelection && isSystemVoice($0) }
-            .map { VoiceSelectionSheet.Option(id: $0.id, name: $0.name, detail: "기본 목소리") }
+            .map { VoiceSelectionSheet.Option(id: $0.id, name: $0.displayName, detail: String(localized: "alarm.editor.defaultVoice", defaultValue: "기본 목소리")) }
         return own + shared + system
     }
 
@@ -1170,8 +1170,8 @@ struct AlarmEditorSheet: View {
         voiceProfileOptions + [
             VoiceSelectionSheet.Option(
                 id: Self.recordingOptionID,
-                name: "직접 녹음",
-                detail: "이 알람에만 쓸 소리를 직접 녹음하기",
+                name: String(localized: "직접 녹음"),
+                detail: String(localized: "이 알람에만 쓸 소리를 직접 녹음하기"),
                 // ⚠ **잠그지 말 것** — 직접 녹음은 유료 기능이 아니다(2026-08-12 확정).
                 // 예전 주석은 "안드로이드 `VoiceAudioCard.kt` 와 같은 판정" 이라고 했지만
                 // 안드로이드의 `VoiceProfileOption` 에는 `locked` 필드가 **아예 없다** —
@@ -1189,8 +1189,8 @@ struct AlarmEditorSheet: View {
 
     /// 목소리 행이 보여줄 값 — 녹음 갈래면 '직접 녹음', 아니면 고른 목소리 이름.
     var voiceRowSubtitle: String {
-        if voiceSourceMode == .localAudio { return "직접 녹음" }
-        return selectedVoiceName ?? "고르기"
+        if voiceSourceMode == .localAudio { return String(localized: "직접 녹음") }
+        return selectedVoiceName ?? String(localized: "고르기")
     }
 
     var selectedVoiceName: String? {
@@ -1206,8 +1206,8 @@ struct AlarmEditorSheet: View {
         // 없이 벗긴다. 이유를 말하고 물러선다(행은 목록에 그대로 있다).
         if option.unavailableReason != nil {
             voiceGateAlert = VoiceGateAlertContent(
-                title: "아직 준비 중이에요",
-                message: "바꾼 목소리를 정리하고 있어요. 잠시 후 다시 골라 주세요.",
+                title: String(localized: "아직 준비 중이에요"),
+                message: String(localized: "바꾼 목소리를 정리하고 있어요. 잠시 후 다시 골라 주세요."),
                 offersPlanActions: false
             )
             return
@@ -1550,7 +1550,7 @@ struct AlarmEditorSheet: View {
         guard let bucketCategory = bucketCategoryForSave() else { return true }
         let clips = stockClips(forCategory: bucketCategory)
         guard let firstClip = clips.first else {
-            voiceStudio.statusMessage = "이 테마의 문구를 아직 받지 못했어요. 잠시 뒤에 다시 시도해 주세요."
+            voiceStudio.statusMessage = String(localized: "이 테마의 문구를 아직 받지 못했어요. 잠시 뒤에 다시 시도해 주세요.")
             return false
         }
 
@@ -1826,7 +1826,7 @@ struct AlarmEditorSheet: View {
             language: "ko",
             listenerTitle: alias.displayText.isEmpty ? nil : voiceStudio.selectedListenerTitle
         )
-        voiceStudio.statusMessage = "전에 만든 음성을 그대로 사용했어요."
+        voiceStudio.statusMessage = String(localized: "전에 만든 음성을 그대로 사용했어요.")
         return true
     }
 
@@ -1858,8 +1858,8 @@ struct AlarmEditorSheet: View {
     }
 
     var navigationTitle: String {
-        if target.familyAlarmMode { return "상대 알람 맞추기" }
-        return target.editingAlarmID == nil ? "알람 만들기" : "알람 수정"
+        if target.familyAlarmMode { return String(localized: "상대 알람 맞추기") }
+        return target.editingAlarmID == nil ? String(localized: "알람 만들기") : String(localized: "알람 수정")
     }
 
     var activePromptContext: RandomPromptContext {
@@ -1951,7 +1951,7 @@ struct AlarmEditorSheet: View {
               alarm.audioCacheKey != nil else {
             return nil
         }
-        return "저장된 녹음/파일 음성을 사용 중이에요."
+        return String(localized: "저장된 녹음/파일 음성을 사용 중이에요.")
     }
 
     var familyRecipients: [FamilyGroupMember] {
@@ -2245,19 +2245,19 @@ struct AlarmEditorSheet: View {
         let message: String
         switch planAccess {
         case .loggedOut:
-            message = "음성 알람은 로그인 후 사용할 수 있어요."
+            message = String(localized: "음성 알람은 로그인 후 사용할 수 있어요.")
         case .free:
             // 유료 게이트 설명은 `PaidGateCopy` 한 곳에서만 정한다(안드 `plan_gate_paid_message`).
             message = PaidGateCopy.message
         case .paid:
             // 유료인데 막혔다 = 플랜이 아니라 **목소리 종류**의 문제다.
-            message = "기본 목소리는 준비된 문구로만 말할 수 있어요. 직접 입력한 문구로 깨우려면 내 목소리를 골라 주세요."
+            message = String(localized: "기본 목소리는 준비된 문구로만 말할 수 있어요. 직접 입력한 문구로 깨우려면 내 목소리를 골라 주세요.")
         }
         let title: String
         switch planAccess {
-        case .loggedOut: title = "로그인이 필요해요"
-        case .free: title = "유료 이용권이 필요해요"
-        case .paid: title = "기본 목소리로는 직접 입력을 쓸 수 없어요"
+        case .loggedOut: title = String(localized: "로그인이 필요해요")
+        case .free: title = String(localized: "유료 이용권이 필요해요")
+        case .paid: title = String(localized: "기본 목소리로는 직접 입력을 쓸 수 없어요")
         }
         voiceGateAlert = VoiceGateAlertContent(
             title: title,
@@ -2401,8 +2401,8 @@ struct AlarmEditorSheet: View {
            voiceSourceMode == .ttsProfile,
            voiceStudio.isReplacementSettling(profileID) {
             voiceGateAlert = VoiceGateAlertContent(
-                title: "아직 준비 중이에요",
-                message: "바꾼 목소리를 정리하고 있어요. 잠시 후 다시 저장해 주세요.",
+                title: String(localized: "아직 준비 중이에요"),
+                message: String(localized: "바꾼 목소리를 정리하고 있어요. 잠시 후 다시 저장해 주세요."),
                 offersPlanActions: false
             )
             return
@@ -2430,7 +2430,7 @@ struct AlarmEditorSheet: View {
         let errors = draft.validate()
         if let first = errors.first {
             validationAlert = ValidationAlertContent(
-                title: "저장할 수 없어요",
+                title: String(localized: "저장할 수 없어요"),
                 message: errorMessage(first)
             )
             return
@@ -2446,10 +2446,10 @@ struct AlarmEditorSheet: View {
             alarmKit.refreshAuthorizationState()
             guard alarmKit.alarmAuthorized else {
                 validationAlert = ValidationAlertContent(
-                    title: "알람 권한이 필요해요",
+                    title: String(localized: "알람 권한이 필요해요"),
                     message: alarmKit.permissionRecoveryNeeded
                         ? AlarmKitViewModel.alarmRecoveryMessage
-                        : "알람 권한을 허용해야 알람을 저장할 수 있어요. \(AlarmKitViewModel.alarmDeniedConsequence)"
+                        : String(localized: "알람 권한을 허용해야 알람을 저장할 수 있어요. \(AlarmKitViewModel.alarmDeniedConsequence)")
                 )
                 return
             }
@@ -2467,8 +2467,8 @@ struct AlarmEditorSheet: View {
 
         if target.familyAlarmMode && familyAlarmLocked {
             validationAlert = ValidationAlertContent(
-                title: "이용권이 필요해요",
-                message: "상대 알람은 커플/가족 이용권에서 사용할 수 있어요."
+                title: String(localized: "이용권이 필요해요"),
+                message: String(localized: "상대 알람은 커플/가족 이용권에서 사용할 수 있어요.")
             )
             return
         }
@@ -2573,8 +2573,8 @@ struct AlarmEditorSheet: View {
                 // 네트워크를 부른다 — 순서가 뒤집히면 스펙이 "요청도 보내지 않는다" 라고
                 // 적은 상태에서 요청이 나가고, 소켓이 매달리면 저장 버튼이 멈춘 것처럼 보인다.
                 validationAlert = ValidationAlertContent(
-                    title: "연결이 필요해요",
-                    message: "이 문구의 음성이 아직 이 기기에 없어요. 연결되면 다시 저장해 주세요."
+                    title: String(localized: "연결이 필요해요"),
+                    message: String(localized: "이 문구의 음성이 아직 이 기기에 없어요. 연결되면 다시 저장해 주세요.")
                 )
                 return
             } else if let quotaBlock = await manualQuotaBlockIfExhausted() {
@@ -2625,7 +2625,7 @@ struct AlarmEditorSheet: View {
                     displayName: "alarm-recording.m4a"
                 )
             } catch {
-                localAudioMessage = AudioUserFacingError.message(for: error, fallback: "선택한 알람 음성을 준비하지 못했어요.")
+                localAudioMessage = AudioUserFacingError.message(for: error, fallback: String(localized: "선택한 알람 음성을 준비하지 못했어요."))
                 return
             }
         } else {
@@ -2639,7 +2639,7 @@ struct AlarmEditorSheet: View {
             do {
                 cachedLocalAudio = try await cachedLocalAudioForSave(existing: existing)
             } catch {
-                localAudioMessage = AudioUserFacingError.message(for: error, fallback: "선택한 알람 음성을 준비하지 못했어요.")
+                localAudioMessage = AudioUserFacingError.message(for: error, fallback: String(localized: "선택한 알람 음성을 준비하지 못했어요."))
                 return
             }
         } else {
@@ -2783,8 +2783,8 @@ struct AlarmEditorSheet: View {
             try LocalAlarmStore.validateDraft(merged)
         } catch {
             validationAlert = ValidationAlertContent(
-                title: "저장할 수 없어요",
-                message: AudioUserFacingError.message(for: error, fallback: "알람 설정을 확인해 주세요.")
+                title: String(localized: "저장할 수 없어요"),
+                message: AudioUserFacingError.message(for: error, fallback: String(localized: "알람 설정을 확인해 주세요."))
             )
             return
         }
@@ -2830,8 +2830,8 @@ struct AlarmEditorSheet: View {
         if let profileID = merged.voiceProfileId?.nilIfBlank,
            voiceStudio.isReplacementSettling(profileID) {
             voiceGateAlert = VoiceGateAlertContent(
-                title: "아직 준비 중이에요",
-                message: "바꾼 목소리를 정리하고 있어요. 잠시 후 다시 저장해 주세요.",
+                title: String(localized: "아직 준비 중이에요"),
+                message: String(localized: "바꾼 목소리를 정리하고 있어요. 잠시 후 다시 저장해 주세요."),
                 offersPlanActions: false
             )
             return false
@@ -2854,8 +2854,8 @@ struct AlarmEditorSheet: View {
                 store.deleteByID(merged.id)
             }
             validationAlert = ValidationAlertContent(
-                title: "예약할 수 없어요",
-                message: alarmKit.statusMessage ?? "알람 예약에 실패했어요."
+                title: String(localized: "예약할 수 없어요"),
+                message: alarmKit.statusMessage ?? String(localized: "알람 예약에 실패했어요.")
             )
             return false
         }
@@ -2868,8 +2868,8 @@ struct AlarmEditorSheet: View {
                 }
             }
             validationAlert = ValidationAlertContent(
-                title: "저장할 수 없어요",
-                message: remoteSync.statusMessage ?? "알람 삭제에 실패했어요"
+                title: String(localized: "저장할 수 없어요"),
+                message: remoteSync.statusMessage ?? String(localized: "알람 삭제에 실패했어요")
             )
             return false
         }
@@ -3015,17 +3015,14 @@ struct AlarmEditorSheet: View {
     }
 
     private func duplicateAlarmMessage(_ content: DuplicateAlarmConfirmContent) -> String {
-        if let label = content.existingLabel, !label.isEmpty {
-            return "\(content.timeLabel)에 이미 '\(label)' 알람이 있어요.\n기존 알람을 새 알람으로 교체할까요?"
-        }
-        return "\(content.timeLabel)에 이미 알람이 있어요.\n기존 알람을 새 알람으로 교체할까요?"
+        return String(localized: "\(content.timeLabel) 알람을 새 알람으로 교체할까요?")
     }
 
     func validateFamilyAlarmTarget() -> FamilyGroupMember? {
         guard let recipient = selectedFamilyRecipient else {
             validationAlert = ValidationAlertContent(
-                title: "받을 사람이 없어요",
-                message: "상대가 내 알람 맞추기를 허용하면 여기에 표시돼요."
+                title: String(localized: "받을 사람이 없어요"),
+                message: String(localized: "상대가 내 알람 맞추기를 허용하면 여기에 표시돼요.")
             )
             return nil
         }
@@ -3049,8 +3046,8 @@ struct AlarmEditorSheet: View {
                 timeIntervalSince1970: Double(Self.earliestSelectableFamilyAlarmMillis(nowMillis: nowMillis)) / 1000
             )
             validationAlert = ValidationAlertContent(
-                title: "조금 더 뒤로 설정해 주세요",
-                message: "상대 알람은 \(Self.leadTimeFormatter.string(from: earliest)) 이후로 맞춰 주세요. 상대 기기에 전달될 시간이 조금 필요해요."
+                title: String(localized: "조금 더 뒤로 설정해 주세요"),
+                message: String(localized: "상대 알람은 \(Self.leadTimeFormatter.string(from: earliest)) 이후로 맞춰 주세요. 상대 기기에 전달될 시간이 조금 필요해요.")
             )
             return nil
         }
@@ -3062,8 +3059,8 @@ struct AlarmEditorSheet: View {
             nowMillis: nowMillis
         ) {
             validationAlert = ValidationAlertContent(
-                title: "받을 수 없는 시간이에요",
-                message: "상대가 이 시간에는 알람을 받지 않도록 해뒀어요."
+                title: String(localized: "받을 수 없는 시간이에요"),
+                message: String(localized: "상대가 이 시간에는 알람을 받지 않도록 해뒀어요.")
             )
             return nil
         }
@@ -3075,7 +3072,7 @@ struct AlarmEditorSheet: View {
         localVoiceSource: FamilyLocalVoiceUploadSource?
     ) async {
         guard let token = auth.session?.token else {
-            validationAlert = ValidationAlertContent(title: "로그인이 필요해요", message: "상대 알람은 로그인 후 사용할 수 있어요.")
+            validationAlert = ValidationAlertContent(title: String(localized: "로그인이 필요해요"), message: String(localized: "상대 알람은 로그인 후 사용할 수 있어요."))
             return
         }
         do {
@@ -3129,10 +3126,10 @@ struct AlarmEditorSheet: View {
             onSchedulingDidFinish()
         } catch {
             validationAlert = ValidationAlertContent(
-                title: "상대 알람 설정에 실패했어요",
+                title: String(localized: "상대 알람 설정에 실패했어요"),
                 message: userFacingErrorMessage(
                     error,
-                    fallback: "상대 알람 설정에 실패했어요."
+                    fallback: String(localized: "상대 알람 설정에 실패했어요.")
                 )
             )
         }
@@ -3142,7 +3139,7 @@ struct AlarmEditorSheet: View {
         stopAllEditorPreviews()
         if localRecorder.isRecording {
             localRecorder.stop()
-            localAudioMessage = "녹음을 저장했어요."
+            localAudioMessage = String(localized: "녹음을 저장했어요.")
             clearExistingLocalAudio = false
             return
         }
@@ -3151,9 +3148,9 @@ struct AlarmEditorSheet: View {
         Task {
             do {
                 try await localRecorder.start()
-                localAudioMessage = "녹음 중…"
+                localAudioMessage = String(localized: "녹음 중…")
             } catch {
-                localAudioMessage = AudioUserFacingError.message(for: error, fallback: "녹음을 시작하지 못했어요.")
+                localAudioMessage = AudioUserFacingError.message(for: error, fallback: String(localized: "녹음을 시작하지 못했어요."))
             }
         }
     }
@@ -3187,7 +3184,7 @@ struct AlarmEditorSheet: View {
                 }
             } catch {
                 stopAllEditorPreviews()
-                localAudioMessage = AudioUserFacingError.message(for: error, fallback: "미리듣기를 재생하지 못했어요.")
+                localAudioMessage = AudioUserFacingError.message(for: error, fallback: String(localized: "미리듣기를 재생하지 못했어요."))
             }
         }
     }
@@ -3196,7 +3193,7 @@ struct AlarmEditorSheet: View {
         stopAllEditorPreviews()
         localRecorder.clearLatest()
         clearExistingLocalAudio = true
-        localAudioMessage = "음성 오디오를 지웠어요."
+        localAudioMessage = String(localized: "음성 오디오를 지웠어요.")
     }
 
     func cachedLocalAudioForSave(existing: LocalAlarmRecord?) async throws -> CachedLocalAlarmAudio {
@@ -3253,17 +3250,17 @@ struct AlarmEditorSheet: View {
     func errorMessage(_ error: AlarmEditDraft.ValidationError) -> String {
         switch error {
         case .invalidHour:
-            return "시간 값이 올바르지 않아요. 0~23 사이여야 해요."
+            return String(localized: "시간 값이 올바르지 않아요. 0~23 사이여야 해요.")
         case .invalidMinute:
-            return "분 값이 올바르지 않아요. 0~59 사이여야 해요."
+            return String(localized: "분 값이 올바르지 않아요. 0~59 사이여야 해요.")
         case .invalidRepeatDaysMask:
-            return "반복 요일 값이 올바르지 않아요."
+            return String(localized: "반복 요일 값이 올바르지 않아요.")
         case .invalidSnoozeMinutes:
-            return "스누즈 간격은 1~30분 사이여야 해요."
+            return String(localized: "스누즈 간격은 1~30분 사이여야 해요.")
         case .invalidAlarmVolume:
-            return "알람 볼륨은 0~100% 사이여야 해요."
+            return String(localized: "알람 볼륨은 0~100% 사이여야 해요.")
         case .invalidVoiceVolume:
-            return "목소리 크기는 30~100% 사이여야 해요."
+            return String(localized: "목소리 크기는 30~100% 사이여야 해요.")
         }
     }
 }

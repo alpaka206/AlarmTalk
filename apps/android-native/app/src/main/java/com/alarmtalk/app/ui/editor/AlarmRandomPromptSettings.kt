@@ -336,7 +336,7 @@ internal fun RandomPromptSettingsPane(
                             draftFortuneGender.isNotBlank() &&
                                 draftFortuneBirthDate.isNotBlank() &&
                                 draftFortuneBirthTime.isNotBlank() ->
-                                fortuneInfoSummary(draftFortuneGender, draftFortuneBirthDate, draftFortuneBirthTime)
+                                fortuneInfoSummary(fortuneValueLabel(context, draftFortuneGender), draftFortuneBirthDate, fortuneValueLabel(context, draftFortuneBirthTime))
                             usingTargetDynamicPromptSettings && savedFortuneConfigured ->
                                 stringResource(R.string.editorp_random_fortune_saved)
                             else -> stringResource(R.string.editorp_random_fortune_required)

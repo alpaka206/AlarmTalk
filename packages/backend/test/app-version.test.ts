@@ -106,8 +106,9 @@ it('대소문자 무시', () => {
 // 'kma_jma_nws' 일 때만 "기상청 · 気象庁 · 미국 기상청(NWS)" 출처를 그리고, 그 밖은 숨긴다.
 // 규칙: docs/spec/voice-and-message.md 「지역 시트의 날씨 출처 줄 — 서버가 원천을 말할 때만」.
 describe('GET /api/app/version — weather_attribution', () => {
-  // ⚠ 원천을 공식 예보로 바꾸는 변경은 `WEATHER_ATTRIBUTION` 과 **함께** 이 기대값을 'kma_jma_nws' 로 바꾼다.
-  it('두 플랫폼 응답에 필드가 실리고, 지금(Open-Meteo)은 null 이다 — 앱이 출처 줄을 숨긴다', async () => {
+  // 원천을 공식 예보(기상청·気象庁·NWS)로 바꾼 변경(#846)이 `WEATHER_ATTRIBUTION` 과 **함께** 이 기대값을 올렸다.
+  // 원천을 되돌리면 둘을 함께 null 로 되돌린다.
+  it('두 플랫폼 응답에 필드가 실리고, 원천이 공식 예보라 kma_jma_nws 다 — 앱이 출처 줄을 그린다', async () => {
     for (const platform of ['android', 'ios']) {
       const res = await app.fetch(
         new Request(`http://localhost/api/app/version?platform=${platform}`),
@@ -117,7 +118,7 @@ describe('GET /api/app/version — weather_attribution', () => {
       const body = (await res.json()) as Record<string, unknown>;
       // 키가 있어야 한다 — `undefined` 면 JSON 에서 빠져 옛 서버와 구별되지 않는다.
       expect(body).toHaveProperty('weather_attribution');
-      expect(body.weather_attribution).toBeNull();
+      expect(body.weather_attribution).toBe('kma_jma_nws');
       // 기존 계약은 그대로다.
       expect(body.platform).toBe(platform);
       expect(body.min_supported_version).toBe(appVersionPolicy(platform).minSupported);
@@ -133,5 +134,18 @@ describe('GET /api/app/version — weather_attribution', () => {
     if (callers.length > 0) {
       expect(WEATHER_ATTRIBUTION, `Open-Meteo 를 부르는 파일: ${callers.join(', ')}`).toBeNull();
     }
+  });
+
+  // 거꾸로도 묶는다 — 'kma_jma_nws' 를 말하는 동안에는 세 원천을 부르는 코드가 실제로 있어야 한다. 원천 하나를
+  // 빼거나 바꾸면 토큰도 새로 만든다(이미 나간 토큰의 뜻은 바꾸지 않는다).
+  it("'kma_jma_nws' 를 말하는 동안에는 기상청·気象庁·NWS 를 부르는 코드가 있다", () => {
+    if (WEATHER_ATTRIBUTION !== 'kma_jma_nws') return;
+    const sources = walk(SRC).map((file) => readFileSync(file, 'utf8')).join('\n');
+    const endpoints = [
+      'https://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/', // 기상청 단기예보(KR)
+      'https://www.jma.go.jp/bosai/forecast/', // 気象庁(JP)
+      'https://api.weather.gov/gridpoints/', // NWS(US)
+    ];
+    expect(endpoints.filter((endpoint) => !sources.includes(endpoint))).toEqual([]);
   });
 });
