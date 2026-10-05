@@ -184,7 +184,7 @@ async function dryRun(): Promise<void> {
         ` · 자리 ${dist.join(' ')}`,
     );
     for (const f of stat.failed) out(`    ✗ ${f}`);
-    problems += stat.failed.length;
+    problems += stat.failed.length + stat.unresolvedLater;
   }
   out('  (내일~+3 의 미해결은 cron 이 슬롯 내내 다시 부르는 날이다 — 0 이어야 한다.');
   out('   오늘은 이어받기 없이 세서 돌린 시각에 달렸다 — KR 0500 회차 이후(오늘 TMN 이 없다)·JP 05시 발표 이후(그 뒤의');

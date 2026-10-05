@@ -77,7 +77,8 @@ describe('PCP·SNO — 날짜가 아니라 값의 모양으로 읽는다', () =>
     ['적설없음', 0],
     ['-', 0],
     ['0', 0],
-    [null, 0],
+    [null, null],
+    [undefined, null],
     ['6.2mm', 6.2],
     ['1.0cm', 1],
     ['30.0~50.0mm', 30],
@@ -136,6 +137,18 @@ describe('응답 봉투 — 두 모양 + 상태', () => {
 });
 
 describe('날짜별 집계 — 실측 응답', () => {
+  it.each(['PCP', 'SNO'])('%s 행이 있어도 값이 null·누락이면 해당 날짜만 미해결이다', (category) => {
+    for (const value of [null, undefined]) {
+      const items = itemsOf('1700');
+      const item = items.find((row) => row.category === category && row.fcstDate === '20261002')!;
+      if (value === undefined) delete (item as Partial<KmaItem>).fcstValue;
+      else item.fcstValue = value;
+      const days = kmaDaysFromItems(items, '2026-10-01');
+      expect(days.has('2026-10-02')).toBe(false);
+      expect(days.has('2026-10-03')).toBe(true);
+    }
+  });
+
   it('1700 회차: 오늘은 18~23시뿐이고 TMX·TMN 이 없다 → 극값은 비워 둔다(이어받기 대상)', () => {
     const days = kmaDaysFromItems(itemsOf('1700'), '2026-10-01');
     expect(days.get('2026-10-01')).toEqual({

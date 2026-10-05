@@ -230,7 +230,7 @@ const BARE_NUMBER_RE = new RegExp(String.raw`^${NUMBER}$`);
  *  - 그 밖의 글자 → null
  */
 export function parseKmaPrecipAmount(value: unknown): number | null {
-  if (value === null || value === undefined) return 0;
+  if (value === null || value === undefined) return null;
   if (typeof value === 'number') return Number.isFinite(value) && !isMissingSentinel(value) ? value : null;
   if (typeof value !== 'string') return null;
   const text = value.trim();
