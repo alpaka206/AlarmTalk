@@ -39,7 +39,10 @@ export class ElevenLabsClient {
    * 실패해도 등록은 막지 않지만, 호출자는 speech_style_status 로 실패를 기록해야 한다.
    * scribe_v1 은 2026-07-09 ElevenLabs 에서 제거됨 — scribe_v2 사용(응답 {text} 동일).
    */
-  async speechToText(audioData: ArrayBuffer, options?: AudioUploadOptions): Promise<string> {
+  async speechToText(
+    audioData: ArrayBuffer,
+    options?: AudioUploadOptions & { deadlineAt?: number },
+  ): Promise<string> {
     const formData = new FormData();
     const mimeType = normalizeAudioMimeType(options?.mimeType);
     formData.append('model_id', 'scribe_v2');
@@ -48,11 +51,13 @@ export class ElevenLabsClient {
       new Blob([audioData], { type: mimeType }),
       normalizeAudioFileName(options?.fileName, 'sample', mimeType),
     );
+    const remaining = options?.deadlineAt === undefined ? 120_000 : Math.floor(options.deadlineAt - Date.now());
+    if (remaining <= 0) throw new DOMException('Speech transcription deadline exceeded', 'TimeoutError');
     const res = await this.request('/v1/speech-to-text', {
       method: 'POST',
       body: formData,
-      // 1~2분 녹음 전사는 클론 생성보다 오래 걸릴 수 있어 여유를 둔다.
-      signal: AbortSignal.timeout(120_000),
+      // waitUntil 분석은 전사·Vertex가 같은 마감을 쓴다. 이 signal은 응답 본문 읽기에도 적용된다.
+      signal: AbortSignal.timeout(Math.min(120_000, remaining)),
     });
     const json = (await res.json()) as { text?: string };
     return (json.text ?? '').trim();
