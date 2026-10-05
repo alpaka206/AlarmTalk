@@ -666,18 +666,18 @@ enum LocalAlarmValidationError: LocalizedError, Equatable {
 
     var errorDescription: String? {
         switch self {
-        case .invalidHour: return "시는 0~23 사이여야 해요."
-        case .invalidMinute: return "분은 0~59 사이여야 해요."
-        case .invalidRepeatDaysMask: return "반복 요일 비트가 유효하지 않아요."
-        case .invalidSnoozeMinutes: return "다시 울림은 1~30분이어야 해요."
-        case .invalidSnoozeRepeatLimit: return "다시 울림 반복 횟수가 유효하지 않아요."
-        case .invalidAlarmVolume: return "알람 볼륨은 0~100 사이여야 해요."
-        case .invalidVoiceVolume: return "목소리 크기는 0~100 사이여야 해요."
-        case .unknownVibrationPattern: return "지원하지 않는 진동 패턴이에요."
-        case .unknownPlayMode: return "지원하지 않는 재생 방식이에요."
-        case .unknownVoiceSource: return "지원하지 않는 음성 소스예요."
-        case .voiceAudioRequired: return "음성 알람은 음원을 먼저 캐싱해야 해요."
-        case .duplicateTime: return "이미 같은 시간에 알람이 있어요. 다른 시간을 선택해 주세요."
+        case .invalidHour: return String(localized: "시는 0~23 사이여야 해요.")
+        case .invalidMinute: return String(localized: "분은 0~59 사이여야 해요.")
+        case .invalidRepeatDaysMask: return String(localized: "반복 요일 비트가 유효하지 않아요.")
+        case .invalidSnoozeMinutes: return String(localized: "다시 울림은 1~30분이어야 해요.")
+        case .invalidSnoozeRepeatLimit: return String(localized: "다시 울림 반복 횟수가 유효하지 않아요.")
+        case .invalidAlarmVolume: return String(localized: "알람 볼륨은 0~100 사이여야 해요.")
+        case .invalidVoiceVolume: return String(localized: "목소리 크기는 0~100 사이여야 해요.")
+        case .unknownVibrationPattern: return String(localized: "지원하지 않는 진동 패턴이에요.")
+        case .unknownPlayMode: return String(localized: "지원하지 않는 재생 방식이에요.")
+        case .unknownVoiceSource: return String(localized: "지원하지 않는 음성 소스예요.")
+        case .voiceAudioRequired: return String(localized: "음성 알람은 음원을 먼저 캐싱해야 해요.")
+        case .duplicateTime: return String(localized: "이미 같은 시간에 알람이 있어요. 다른 시간을 선택해 주세요.")
         }
     }
 }

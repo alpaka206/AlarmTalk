@@ -16,6 +16,7 @@ struct AlarmKitPresentationLocalizationTests {
 
     @Test("다시 울림 버튼·카운트다운 제목은 서식 키로 만든다")
     func usesFormatKeys() {
+        #expect(AlarmKitViewModel.dismissButtonText.key == "alarm.action.dismiss")
         #expect(AlarmKitViewModel.snoozeButtonText(minutes: 7).key == "%lld분 더 자기")
         #expect(AlarmKitViewModel.countdownTitle(label: "출근").key == "%@ 다시 울릴 준비 중")
     }
@@ -50,6 +51,7 @@ struct AlarmKitPresentationLocalizationTests {
     /// Live Activity(`AlarmLiveActivity`)와 그 시계(`AlarmTalkMetadata.clockLabel`)가 쓰는 키.
     /// 위젯 코드에 문구를 더하면 여기에도 더한다 — 카탈로그에서 빠지면 그 문구만 한국어로 뜬다.
     static let liveActivityKeys = [
+        "alarm.action.dismiss",
         "끄기", "다시 울리기", "다시 울림", "다시 울림 대기 중", "알람", "알람 소리로 깨워요", "알람 울림",
         "알람 후 음성으로 깨워요", "예약됨", "오전", "오후", "음성 알람", "음성으로 깨워요", "일시정지",
         "일시정지됨", "지금 울리는 중",
