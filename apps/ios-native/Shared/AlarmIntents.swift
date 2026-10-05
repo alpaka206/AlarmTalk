@@ -41,7 +41,7 @@ struct StopAlarmIntent: LiveActivityIntent {
     /// Live Activity 버튼이 부르는 것이지 사람이 부르는 것이 아니다.
     static let isDiscoverable = false
 
-    static let title: LocalizedStringResource = "알람 끄기"
+    static let title = LocalizedStringResource("alarm.action.dismiss", defaultValue: "알람 끄기")
 
     @Parameter(title: "알람 ID")
     var alarmID: String

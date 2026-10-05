@@ -185,12 +185,13 @@ final class AlarmKitViewModel: ObservableObject {
     ///    알람이 **예약조차 되지 않는다**. 울릴 코드가 애초에 돌지 않으므로 정말 안 울린다.
     ///
     /// 그러니 안드로이드 문구("알림만 안 뜬다")를 iOS 로 옮겨 오면 그게 거짓말이 된다.
-    nonisolated static let alarmDeniedConsequence = "권한이 없으면 알람이 예약되지 않아 울리지 않아요."
+    nonisolated static var alarmDeniedConsequence: String { String(localized: "권한이 없으면 알람이 예약되지 않아 울리지 않아요.") }
 
     /// 거부가 굳은 뒤의 안내. **"다시 시도" 라고 하지 않는다** — iOS 는 권한 프롬프트를 한 번만
     /// 띄우므로 눌러도 아무 일이 없다. 유일하게 남은 경로(설정 앱)를 그대로 말한다.
-    nonisolated static let alarmRecoveryMessage =
-        "설정에서 알람 권한을 켜 주세요. \(alarmDeniedConsequence)"
+    nonisolated static var alarmRecoveryMessage: String {
+        String(localized: "설정에서 알람 권한을 켜 주세요. \(alarmDeniedConsequence)")
+    }
 
     /// 울림 알럿 제목 — "오전 7:30 · 아침 알람". 라벨이 없으면 시각만.
     ///
@@ -201,7 +202,7 @@ final class AlarmKitViewModel: ObservableObject {
     nonisolated static func alertTitle(for record: LocalAlarmRecord) -> String {
         let time = "\(record.meridiemLabel) \(record.clockLabel12h)"
         // 기본 이름("알람")은 이름이 없는 것으로 본다 — `AlarmDefaultLabel`.
-        guard let label = AlarmDefaultLabel.custom(record.label) else { return time }
+        guard let label = AlarmDefaultLabel.custom(record.localizedDisplayLabel) else { return time }
         return "\(time) · \(label)"
     }
 
@@ -225,7 +226,12 @@ final class AlarmKitViewModel: ObservableObject {
         return LocalizedStringResource("\(custom) 다시 울릴 준비 중")
     }
 
+    nonisolated static var dismissButtonText: LocalizedStringResource {
+        LocalizedStringResource("alarm.action.dismiss", defaultValue: "알람 끄기")
+    }
+
     func requestAuthorization() async {
+        statusMessage = nil
         // 화면 확인 모드에서는 권한 팝업이 화면을 가린다(스크립트로 탭할 방법이 없다).
         if UIPreviewSeed.isEnabled { return }
         do {
@@ -241,10 +247,10 @@ final class AlarmKitViewModel: ObservableObject {
                 // 눌러도 아무 일이 없는 버튼을 계속 누르게 만든다.
                 statusMessage = Self.alarmRecoveryMessage
             } else {
-                statusMessage = "알람 권한을 허용한 뒤 다시 시도해 주세요."
+                statusMessage = String(localized: "알람 권한을 허용한 뒤 다시 시도해 주세요.")
             }
         } catch {
-            statusMessage = "알람 권한을 확인하지 못했어요. 잠시 후 다시 시도해 주세요."
+            statusMessage = String(localized: "알람 권한을 확인하지 못했어요. 잠시 후 다시 시도해 주세요.")
         }
     }
 
@@ -746,6 +752,7 @@ final class AlarmKitViewModel: ObservableObject {
         ownerUserId: String?,
         mode: RecoveryMode
     ) async -> (recovered: Int, completed: Bool) {
+        statusMessage = nil
         let forceHolidayOffRecompute = mode != .normal
         let nowMillis = Int64(Date().timeIntervalSince1970 * 1000)
         let holidayPredicate = holidayStore.holidayPredicate()
@@ -865,7 +872,7 @@ final class AlarmKitViewModel: ObservableObject {
         }
 
         if recovered > 0 {
-            statusMessage = "예약된 알람 \(recovered)개를 다시 연결했어요."
+            statusMessage = String(localized: "예약된 알람 \(recovered)개를 다시 연결했어요.")
         }
         return (recovered, completed)
     }
@@ -955,7 +962,8 @@ final class AlarmKitViewModel: ObservableObject {
 
     @discardableResult
     func schedule(record: LocalAlarmRecord, store: LocalAlarmStore) async -> Bool {
-        await self.schedule(record: record, store: store, retriesLeft: 1)
+        statusMessage = nil
+        return await self.schedule(record: record, store: store, retriesLeft: 1)
     }
 
     private func schedule(
@@ -992,7 +1000,7 @@ final class AlarmKitViewModel: ObservableObject {
                 }
                 applyAuthorizationState(state)
                 guard state == .authorized else {
-                    statusMessage = "알람 권한이 필요해요. 권한을 허용한 뒤 다시 시도해 주세요."
+                    statusMessage = String(localized: "알람 권한이 필요해요. 권한을 허용한 뒤 다시 시도해 주세요.")
                     return false
                 }
             }
@@ -1110,10 +1118,11 @@ final class AlarmKitViewModel: ObservableObject {
                     resolution: resolution
                 )
             )
-            statusMessage = describeScheduleStatus(record: record, resolution: resolution)
+            AlarmPresentationLanguage.didSchedule(record.id)
+            statusMessage = Self.describeScheduleStatus(record: record, resolution: resolution)
             return true
         } catch {
-            statusMessage = "알람 예약에 실패했어요. 잠시 후 다시 시도해 주세요."
+            statusMessage = String(localized: "알람 예약에 실패했어요. 잠시 후 다시 시도해 주세요.")
             return false
         }
     }
@@ -1165,6 +1174,7 @@ final class AlarmKitViewModel: ObservableObject {
         record: LocalAlarmRecord,
         cancellationOrigin: PendingAlarmCancellationStore.Origin = .foreignCleanup
     ) async -> Bool {
+        statusMessage = nil
         guard let alarmKitUUID = record.alarmKitUUID else { return true }
         do {
             try AlarmManager.shared.cancel(id: alarmKitUUID)
@@ -1182,7 +1192,7 @@ final class AlarmKitViewModel: ObservableObject {
                 origin: cancellationOrigin,
                 alarmID: record.id
             )
-            statusMessage = "알람 취소에 실패했어요. 잠시 후 다시 시도해 주세요."
+            statusMessage = String(localized: "알람 취소에 실패했어요. 잠시 후 다시 시도해 주세요.")
             return false
         }
     }
@@ -1254,6 +1264,7 @@ final class AlarmKitViewModel: ObservableObject {
         record: LocalAlarmRecord,
         cancellationOrigin: PendingAlarmCancellationStore.Origin = .foreignCleanup
     ) async -> Bool {
+        statusMessage = nil
         guard let alarmKitUUID = record.alarmKitUUID else { return true }
         if let live = try? AlarmManager.shared.alarms,
            !live.contains(where: { $0.id == alarmKitUUID }) {
@@ -1287,6 +1298,7 @@ final class AlarmKitViewModel: ObservableObject {
     /// `alarmUpdates` 스냅샷(`lastAlarmStateSnapshot`)으로 한다.
     @discardableResult
     func cancel(record: LocalAlarmRecord, store: LocalAlarmStore) async -> Bool {
+        statusMessage = nil
         guard let alarmKitUUID = record.alarmKitUUID else {
             deleteLocalAlarm(record, store: store)
             return true
@@ -1393,7 +1405,7 @@ final class AlarmKitViewModel: ObservableObject {
         resolution: AlarmSoundResolution
     ) -> AlarmManager.AlarmConfiguration<AlarmTalkMetadata> {
         typealias AlarmConfiguration = AlarmManager.AlarmConfiguration<AlarmTalkMetadata>
-        let stopButton = AlarmButton(text: "알람 끄기", textColor: .white, systemImageName: "stop.fill")
+        let stopButton = AlarmButton(text: Self.dismissButtonText, textColor: .white, systemImageName: "stop.fill")
         // 다시 울림 버튼 라벨에 분을 접어 정직하게 만든다(안드로이드 `RingingSnoozeRow` 의
         // "N분 더 자기" 와 같은 말). **언제나 붙인다** — 다시 울림에는 조건이 없다
         // (`LocalAlarmRecord.canSnooze` = true, 2026-09-09).
@@ -1422,7 +1434,7 @@ final class AlarmKitViewModel: ObservableObject {
             secondaryButtonBehavior: .custom
         )
         let countdown = AlarmPresentation.Countdown(
-            title: Self.countdownTitle(label: record.label)
+            title: Self.countdownTitle(label: record.localizedDisplayLabel)
         )
         let paused = AlarmPresentation.Paused(
             title: "일시정지됨",
@@ -1447,7 +1459,7 @@ final class AlarmKitViewModel: ObservableObject {
         }()
         let metadata = AlarmTalkMetadata(
             localAlarmID: record.id,
-            label: record.label,
+            label: record.localizedDisplayLabel,
             playMode: record.playMode,
             voiceCacheKey: record.audioCacheKey,
             alarmKitID: alarmKitID.uuidString,
@@ -1476,16 +1488,21 @@ final class AlarmKitViewModel: ObservableObject {
     }
 
     /// schedule(...) 의 statusMessage 문구를 사운드 전략에 맞춰 구성한다.
-    private func describeScheduleStatus(
+    nonisolated static func describeScheduleStatus(
         record: LocalAlarmRecord,
         resolution: AlarmSoundResolution
     ) -> String {
+        let label = AlarmDefaultLabel.custom(record.localizedDisplayLabel)
         switch resolution {
         case .systemDefault, .bundledNamed:
-            return "\(record.label) 알람을 예약했어요."
+            guard let label else { return String(localized: "알람을 예약했어요.") }
+            return String(localized: "\(label) 알람을 예약했어요.")
         case .cachedAudio(_, let durationMs):
             let seconds = max(1, Int((durationMs + 500) / 1000))
-            return "\(record.label) 알람을 예약했어요. \(seconds)초 목소리는 iOS 제한으로 기본 알람음 뒤 앱이 열려 있을 때 재생돼요."
+            guard let label else {
+                return String(localized: "알람을 예약했어요. \(seconds)초 목소리는 iOS 제한으로 기본 알람음 뒤 앱이 열려 있을 때 재생돼요.")
+            }
+            return String(localized: "\(label) 알람을 예약했어요. \(seconds)초 목소리는 iOS 제한으로 기본 알람음 뒤 앱이 열려 있을 때 재생돼요.")
         }
     }
 
