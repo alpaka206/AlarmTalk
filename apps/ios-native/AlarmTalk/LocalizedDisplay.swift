@@ -31,12 +31,16 @@ func displayRelationshipLabel(_ stored: String, bundle: Bundle = .main) -> Strin
     return preset.localizedDisplayLabel(bundle: bundle)
 }
 
+func personDisplayName(_ name: String, bundle: Bundle = .main) -> String {
+    name.hasSuffix("님") || name.hasSuffix("さん")
+        ? name : String(localized: "\(name)님", bundle: bundle)
+}
+
 func receivedAlarmDisplayLabel(sender: String?, bundle: Bundle = .main) -> String {
     guard let sender = sender?.trimmingCharacters(in: .whitespacesAndNewlines), !sender.isEmpty else {
         return String(localized: "상대가 보낸 알람", bundle: bundle)
     }
-    let name = sender.hasSuffix("님") || sender.hasSuffix("さん")
-        ? sender : String(localized: "\(sender)님", bundle: bundle)
+    let name = personDisplayName(sender, bundle: bundle)
     return String(localized: "\(name)이 보낸 알람", bundle: bundle)
 }
 
