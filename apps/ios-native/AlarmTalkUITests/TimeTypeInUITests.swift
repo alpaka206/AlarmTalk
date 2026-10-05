@@ -12,8 +12,8 @@ final class TimeTypeInUITests: XCTestCase {
         app.launchArguments += ["-UIPreviewSeed", "-UIPreviewEditor"]
         app.launch()
 
-        let hourWheel = app.otherElements["timeWheel.시"].firstMatch
-        let minuteWheel = app.otherElements["timeWheel.분"].firstMatch
+        let hourWheel = app.otherElements["timeWheel.hour"].firstMatch
+        let minuteWheel = app.otherElements["timeWheel.minute"].firstMatch
         guard hourWheel.waitForExistence(timeout: 30), minuteWheel.exists else {
             throw XCTSkip("타임휠을 못 찾았다")
         }
