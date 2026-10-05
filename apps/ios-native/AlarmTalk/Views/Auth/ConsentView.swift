@@ -116,7 +116,7 @@ struct ConsentView: View {
 
             // ⚠ `\n` 으로 줄을 **강제하지 않는다**(2026-08-18). 두 줄로 못 박으면 글자 크기
             // 설정·기기 폭과 무관하게 항상 두 줄을 차지해 목록이 그만큼 밀린다.
-            Text(isReconsent ? "약관이 개정되어 다시 동의가 필요해요" : "서비스 이용을 위해 약관에 동의해 주세요")
+            Text(isReconsent ? String(localized: "약관이 개정되어 다시 동의가 필요해요") : String(localized: "서비스 이용을 위해 약관에 동의해 주세요"))
                 .font(.title2.weight(.bold))
                 .foregroundStyle(AlarmTalkTheme.text)
 
@@ -124,12 +124,12 @@ struct ConsentView: View {
             // 신규 가입자에게는 제목만으로 충분해 덧붙이지 않는다.
             if isReconsent {
                 Spacer().frame(height: 8)
-                Text("변경된 내용을 확인하고 동의해 주세요. 이전에 동의하신 항목 중 바뀐 것만 다시 여쭤봐요.")
+                Text(String(localized: "변경된 내용을 확인하고 동의해 주세요. 이전에 동의하신 항목 중 바뀐 것만 다시 여쭤봐요."))
                     .font(.subheadline)
                     .foregroundStyle(AlarmTalkTheme.textSecondary)
             } else {
                 Spacer().frame(height: 8)
-                Text("서비스를 이용하려면 아래 약관에 동의해야 해요.")
+                Text(String(localized: "서비스를 이용하려면 아래 약관에 동의해야 해요."))
                     .font(.subheadline)
                     .foregroundStyle(AlarmTalkTheme.textSecondary)
             }
@@ -145,7 +145,7 @@ struct ConsentView: View {
                         ConsentRow(
                             checked: allChecked,
                             onToggle: { setAll(!allChecked) },
-                            label: "전체 동의",
+                            label: String(localized: "전체 동의"),
                             emphasized: true
                         )
                         Spacer().frame(height: 4)
@@ -162,7 +162,7 @@ struct ConsentView: View {
                 // 화면에서 실제로 체크한 '선택' 유형만 넘긴다.
                 onAgree(checked.intersection(optionalTypes))
             } label: {
-                Text(busy ? "처리 중…" : "동의하고 시작하기")
+                Text(busy ? String(localized: "처리 중…") : String(localized: "동의하고 시작하기"))
                     .fontWeight(.semibold)
                     .frame(maxWidth: .infinity, minHeight: 50)
             }
@@ -192,42 +192,41 @@ struct ConsentView: View {
     @ViewBuilder
     private func row(for type: String) -> some View {
         let isOptional = optionalTypes.contains(type)
-        let prefix = isOptional ? "[선택] " : "[필수] "
         let toggle = { toggleChecked(type) }
         switch type {
         case "age14":
-            ConsentRow(checked: checked.contains(type), onToggle: toggle, label: prefix + "만 14세 이상입니다")
+            ConsentRow(checked: checked.contains(type), onToggle: toggle, label: isOptional ? String(localized: "[선택] 만 14세 이상입니다") : String(localized: "[필수] 만 14세 이상입니다"))
         case "terms":
-            ConsentRow(checked: checked.contains(type), onToggle: toggle, label: prefix + "이용약관 동의", onOpenDetail: onOpenTerms)
+            ConsentRow(checked: checked.contains(type), onToggle: toggle, label: isOptional ? String(localized: "[선택] 이용약관 동의") : String(localized: "[필수] 이용약관 동의"), onOpenDetail: onOpenTerms)
         case "privacy":
-            ConsentRow(checked: checked.contains(type), onToggle: toggle, label: prefix + "개인정보 처리방침 동의", onOpenDetail: onOpenPrivacy)
+            ConsentRow(checked: checked.contains(type), onToggle: toggle, label: isOptional ? String(localized: "[선택] 개인정보 처리방침 동의") : String(localized: "[필수] 개인정보 처리방침 동의"), onOpenDetail: onOpenPrivacy)
         case "voice_biometric":
             ConsentRow(
                 checked: checked.contains(type),
                 onToggle: toggle,
-                label: prefix + "음성 생체정보 처리 동의",
+                label: isOptional ? String(localized: "[선택] 음성 생체정보 처리 동의") : String(localized: "[필수] 음성 생체정보 처리 동의"),
                 // ⚠ 안드로이드 `auth_consent_voice_biometric_desc` 와 **같은 세 문장**이다.
                 // iOS 는 가운데 한 문장만 있어서, "안 해도 기본 목소리는 그대로 쓸 수 있다" 는
                 // 안심시키는 맥락이 빠져 있었다 — 그게 없으면 선택 동의가 필수처럼 읽힌다.
                 // 마침표마다 줄을 바꿔 문장이 한눈에 끊기게 한다.
-                description: """
+                description: String(localized: """
                 내 목소리를 알람에 쓰고 싶을 때만 필요해요.
                 녹음하거나 업로드한 목소리를 음성 프로필 생성·클론·TTS 생성에 사용하며, 개인을 식별·재현할 수 있는 생체정보로 처리합니다.
                 본인 또는 적법한 권한과 동의를 받은 사람의 목소리만 등록할 수 있어요(이용약관 제7조).
                 지금 동의하지 않아도 기본 목소리 알람은 그대로 쓸 수 있고, 나중에 목소리를 등록할 때 다시 여쭤봐요.
-                """,
+                """),
                 collapsibleDescription: true
             )
         case "overseas_transfer":
             ConsentRow(
                 checked: checked.contains(type),
                 onToggle: toggle,
-                label: prefix + "음성 AI 처리를 위한 국외 이전 동의",
-                description: "음성 AI, 번역, 동적 문구 처리를 위해 음성·알람 문구·운세 입력값이 ElevenLabs, Google Vertex 등 국외 처리자에게 전송될 수 있습니다.",
+                label: isOptional ? String(localized: "[선택] 음성 AI 처리를 위한 국외 이전 동의") : String(localized: "[필수] 음성 AI 처리를 위한 국외 이전 동의"),
+                description: String(localized: "음성 AI, 번역, 동적 문구 처리를 위해 음성·알람 문구·운세 입력값이 ElevenLabs, Google Vertex 등 국외 처리자에게 전송될 수 있습니다."),
                 collapsibleDescription: true
             )
         case "marketing":
-            ConsentRow(checked: checked.contains(type), onToggle: toggle, label: prefix + "광고성 정보 수신 동의")
+            ConsentRow(checked: checked.contains(type), onToggle: toggle, label: isOptional ? String(localized: "[선택] 광고성 정보 수신 동의") : String(localized: "[필수] 광고성 정보 수신 동의"))
         default:
             EmptyView()
         }
@@ -241,13 +240,9 @@ struct ConsentView: View {
 private struct ConsentRow: View {
     let checked: Bool
     let onToggle: () -> Void
-    // ⚠ **여기만 `String` 이다 — 다른 컴포넌트를 따라 `LocalizedStringKey` 로 바꾸지 말 것.**
-    // 동의 항목 라벨은 `"[필수] " + "이용약관 동의"` 처럼 **런타임에 결합**되므로 리터럴
-    // 키가 될 수 없다. 대신 카탈로그가 **합쳐진 전체 문자열**을 키로 갖고 있어서
-    // (`"[필수] 이용약관 동의"` → `"[Required] Agree to Terms of Service"`),
-    // 결합한 결과를 `LocalizedStringKey` 로 감싸면 그대로 조회된다.
+    // 호출부에서 필수/선택을 포함한 완성 문장을 현재 언어로 조회한다.
     let label: String
-    var description: LocalizedStringKey? = nil
+    var description: String? = nil
     /// 설명을 **접어 둘지**. 민감 동의(생체정보·국외이전)는 설명이 길어 펼쳐 두면 목록이
     /// 설명으로 뒤덮여 **무엇을 고르는 화면인지** 가 묻힌다.
     ///
@@ -273,7 +268,7 @@ private struct ConsentRow: View {
                         .font(.title3)
                         .foregroundStyle(checked ? AlarmTalkTheme.primary : AlarmTalkTheme.textSecondary)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(LocalizedStringKey(label))
+                        Text(label)
                             .font(emphasized ? .body.weight(.bold) : .body)
                             .foregroundStyle(AlarmTalkTheme.text)
                             .multilineTextAlignment(.leading)
@@ -303,11 +298,11 @@ private struct ConsentRow: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel(Text(expanded ? "설명 접기" : "설명 펼치기"))
+                .accessibilityLabel(Text(expanded ? String(localized: "설명 접기") : String(localized: "설명 펼치기")))
             }
 
             if let onOpenDetail {
-                Button("보기", action: onOpenDetail)
+                Button(String(localized: "보기"), action: onOpenDetail)
                     .font(.subheadline)
                     .foregroundStyle(AlarmTalkTheme.primary)
             }
