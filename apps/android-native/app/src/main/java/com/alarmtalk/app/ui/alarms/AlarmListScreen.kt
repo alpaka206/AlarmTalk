@@ -26,6 +26,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
+import com.alarmtalk.app.data.systemVoiceDisplayName
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -155,6 +157,7 @@ internal fun AlarmListScreen(
     }
     val hasAnyAlarm = sortedAlarms.isNotEmpty()
 
+    val context = LocalContext.current
     val listState = rememberLazyListState()
     // ⚠ **이용권에서 나가면 맨 위로 올린다**(2026-08-15 지시).
     // 나가기 버튼은 화면 **아래쪽**에 있어서, 나간 뒤 그 자리에 그대로 있으면 바뀐 이용권
@@ -355,7 +358,7 @@ internal fun AlarmListScreen(
                     val voiceName = alarm.voiceProfileId
                         ?.takeIf { alarm.voiceSource != VoiceSources.LOCAL_AUDIO && !alarm.wasVoiceAlarmConvertedBySystem() }
                         ?.let { profileId ->
-                            voiceProfiles.firstOrNull { it.id == profileId }?.name
+                            voiceProfiles.firstOrNull { it.id == profileId }?.let { systemVoiceDisplayName(context, it.id, it.name) }
                                 ?: familyVoices.firstOrNull { it.id == profileId }?.name
                         }
                     AlarmRow(

@@ -1740,9 +1740,9 @@ internal fun AlarmTalkApp(
                           stringResource(R.string.hs_settings_terms_of_service)
                       },
                       url = if (docType == "privacy") {
-                          "https://alarm-talk.com/ko/privacy"
+                          context.getString(R.string.legal_privacy_url)
                       } else {
-                          "https://alarm-talk.com/ko/terms"
+                          context.getString(R.string.legal_terms_url)
                       },
                       onBack = ::goBackInApp,
                   )

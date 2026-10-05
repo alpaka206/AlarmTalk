@@ -722,8 +722,7 @@
     <string name="consent_load_failed">同意内容を読み込めませんでした。タップして再試行してください。</string>
     <string name="r3app_bottom_create_alarm_desc">アラームを作成</string>
     <string name="r3app_update_required_title">アップデートが必要です</string>
-    <string name="r3app_update_required_body">このバージョンはご利用いただけなくなりました。
-最新バージョンにアップデートしてください。</string>
+    <string name="r3app_update_required_body">このバージョンはご利用いただけなくなりました。\n最新バージョンにアップデートしてください。</string>
     <string name="r3app_update_required_button">アップデートする</string>
     <string name="r3app_update_downloaded">アップデートをダウンロードしました。アプリを再起動して適用してください。</string>
     <string name="r3app_update_restart">再起動</string>
@@ -883,4 +882,16 @@
         <item>されました</item>
         <item>完了</item>
     </string-array>
+    <string name="notification_ringing_name">アラームの鳴動</string>
+    <string name="notification_ringing_description">アラームが鳴るときにロック画面にアラーム画面を表示します。</string>
+    <string name="notification_ringing_quiet_name">表示中のアラーム</string>
+    <string name="notification_ringing_quiet_description">アラーム画面を表示中は、通知パネルにアラームを表示します。</string>
+    <string name="notification_ringing_fallback_name">アラームの補助通知</string>
+    <string name="notification_ringing_fallback_description">通常のアラーム再生を開始できないときに、通知音と振動でお知らせします。</string>
+    <string name="notification_social_name">共有アラームのお知らせ</string>
+    <string name="notification_social_description">共有相手からのアラームや共有状態の変更をお知らせします。</string>
+    <string name="notification_download_name">声のダウンロード</string>
+    <string name="notification_download_description">アラームの声をダウンロードしている間の進行状況を表示します。</string>
+    <string name="legal_terms_url">https://alarm-talk.com/ja/terms</string>
+    <string name="legal_privacy_url">https://alarm-talk.com/ja/privacy</string>
 </resources>

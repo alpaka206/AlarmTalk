@@ -478,7 +478,7 @@ internal fun fortuneInfoSettingsLabel(
     gender: String,
     birthDate: String,
 ): String {
-    val value = listOf(gender, birthDate)
+    val value = listOf(fortuneValueLabel(context, gender.trim()), birthDate)
         .map { it.trim() }
         .filter { it.isNotBlank() }
         .joinToString(" · ")
