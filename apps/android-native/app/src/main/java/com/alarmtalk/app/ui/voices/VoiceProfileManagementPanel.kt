@@ -1542,7 +1542,7 @@ internal fun VoiceProfileManagementPanel(
                         {
                             // 부가설명은 두지 않는다 — 섹션 이름이 이미 '기본 목소리'라고 말한다.
                             VoiceCatalogRow(
-                                name = profile.name,
+                                name = com.alarmtalk.app.data.systemVoiceDisplayName(context, profile.id, profile.name),
                                 subtitle = null,
                                 isPlaying = playingGreetingVoiceId == profile.id,
                                 onPreview = { playGreeting(profile) },

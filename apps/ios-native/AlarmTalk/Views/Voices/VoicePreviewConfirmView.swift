@@ -60,7 +60,7 @@ struct VoicePreviewConfirmView: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
-                    Text("이 목소리로 저장할까요?")
+                    Text(String(localized: "이 목소리로 저장할까요?"))
                         .font(theme.typography.titleMedium)
                         .fontWeight(.semibold)
                         .foregroundStyle(theme.palette.onSurface)
@@ -72,13 +72,13 @@ struct VoicePreviewConfirmView: View {
                     // 월 등록 한도 경고는 사용자 승인으로 뺐다. 안드로이드
                     // `ui/voices/VoiceProfileManagementPanel.kt` 의 `voices_confirm_replace_body` 와 같다.
                     if registeredVoice != nil {
-                        Text("저장하면 이전 목소리는 삭제돼요.")
+                        Text(String(localized: "저장하면 이전 목소리는 삭제돼요."))
                             .font(theme.typography.bodyMedium)
                             .foregroundStyle(theme.palette.onSurfaceVariant)
                     }
 
                     previewCard
-                    Text("말투를 원하는 대로 바꿔 보세요.")
+                    Text(String(localized: "말투를 원하는 대로 바꿔 보세요."))
                         .font(theme.typography.bodySmall)
                         .foregroundStyle(theme.palette.onSurfaceVariant)
 
@@ -110,27 +110,27 @@ struct VoicePreviewConfirmView: View {
             // 첫 재생이 채운다. 들어보라고 만든 화면이니 들어오자마자 한 번 들려준다.
             await play()
         }
-        .alert("나가면 임시 목소리가 삭제돼요", isPresented: $exitWarningOpen) {
-            Button("나가고 삭제", role: .destructive) {
+        .alert(String(localized: "나가면 임시 목소리가 삭제돼요"), isPresented: $exitWarningOpen) {
+            Button(String(localized: "나가고 삭제"), role: .destructive) {
                 Task { await discard() }
             }
-            Button("계속 만들기", role: .cancel) {}
+            Button(String(localized: "계속 만들기"), role: .cancel) {}
         } message: {
-            Text("지금 나가면 만들고 있던 목소리(초안)가 삭제되고, 처음부터 다시 만들어야 해요.")
+            Text(String(localized: "지금 나가면 만들고 있던 목소리(초안)가 삭제되고, 처음부터 다시 만들어야 해요."))
         }
     }
 
     private var sharingSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("공유 설정")
+            Text(String(localized: "공유 설정"))
                 .font(theme.typography.titleSmall)
                 .fontWeight(.semibold)
             HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("가족·연인에게 공유 허용")
+                    Text(String(localized: "가족·연인에게 공유 허용"))
                         .font(theme.typography.bodyMedium)
                         .fontWeight(.semibold)
-                    Text("등록한 목소리를 가족·연인도 함께 사용할 수 있어요.")
+                    Text(String(localized: "등록한 목소리를 가족·연인도 함께 사용할 수 있어요."))
                         .font(theme.typography.bodySmall)
                         .foregroundStyle(theme.palette.onSurfaceVariant)
                 }
@@ -181,7 +181,7 @@ struct VoicePreviewConfirmView: View {
                     }
 
                 HStack(spacing: 8) {
-                    Button("취소") {
+                    Button(String(localized: "취소")) {
                         editing = false
                         editDraft = ""
                     }
@@ -189,7 +189,7 @@ struct VoicePreviewConfirmView: View {
                     .frame(maxWidth: .infinity)
                     .disabled(saving)
 
-                    Button(saving ? "재생성 중…" : "재생성") {
+                    Button(saving ? String(localized: "재생성 중…") : String(localized: "재생성")) {
                         Task { await savePreviewText() }
                     }
                     .buttonStyle(.borderedProminent)
@@ -216,7 +216,7 @@ struct VoicePreviewConfirmView: View {
                     .buttonStyle(.plain)
                     .foregroundStyle(theme.palette.onSurfaceVariant)
                     .disabled(busy || previewText.isEmpty)
-                    .accessibilityLabel("문구 수정")
+                    .accessibilityLabel(String(localized: "문구 수정"))
 
                     Button {
                         Task { await play() }
@@ -231,7 +231,7 @@ struct VoicePreviewConfirmView: View {
                     .buttonStyle(.plain)
                     .foregroundStyle(theme.palette.primary)
                     .disabled(busy)
-                    .accessibilityLabel("다시 듣기")
+                    .accessibilityLabel(String(localized: "다시 듣기"))
                 }
             }
         }
@@ -249,8 +249,8 @@ struct VoicePreviewConfirmView: View {
 
     private var previewDisplayText: String {
         if !previewText.isEmpty { return "“\(previewText)”" }
-        if busy || !previewAttempted { return "문구를 준비하고 있어요…" }
-        return "문구를 아직 준비하지 못했어요. 미리듣기를 눌러 다시 시도해 주세요."
+        if busy || !previewAttempted { return String(localized: "문구를 준비하고 있어요…") }
+        return String(localized: "문구를 아직 준비하지 못했어요. 미리듣기를 눌러 다시 시도해 주세요.")
     }
 
     /// 이미 등록된 **내** 목소리(이 초안 제외). 있으면 저장이 한도에 걸리므로
@@ -287,11 +287,11 @@ struct VoicePreviewConfirmView: View {
                         .font(.title3)
                         .foregroundStyle(replaceExisting ? theme.palette.primary : theme.palette.onSurfaceVariant)
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("‘\(registeredVoice.name)’ 대신 이 목소리를 써요")
+                        Text(String(localized: "‘\(registeredVoice.name)’ 대신 이 목소리를 써요"))
                             .font(theme.typography.bodyMedium)
                             .fontWeight(.semibold)
                             .foregroundStyle(theme.palette.onSurface)
-                        Text("이전에 저장한 목소리는 삭제돼요. 직접 입력 문구로 만든 알람도 기본 목소리로 바뀌어요.")
+                        Text(String(localized: "이전에 저장한 목소리는 삭제돼요. 직접 입력 문구로 만든 알람도 기본 목소리로 바뀌어요."))
                             .font(theme.typography.bodySmall)
                             .foregroundStyle(theme.palette.onSurfaceVariant)
                     }
@@ -528,7 +528,7 @@ struct VoicePreviewConfirmView: View {
                         // 고르기 때문이다. 다음 새로고침이 정리를 마치면 곧바로 풀린다.
                         voice.suppressReplacedProfile(promoted.id)
                         voice.statusMessage =
-                            "목소리는 바뀌었지만 기존 알람 정리를 끝내지 못했어요. 목소리 탭을 새로고침해 주세요."
+                            String(localized: "목소리는 바뀌었지만 기존 알람 정리를 끝내지 못했어요. 목소리 탭을 새로고침해 주세요.")
                     }
                 }
             }

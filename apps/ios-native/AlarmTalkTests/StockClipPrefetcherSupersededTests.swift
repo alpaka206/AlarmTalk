@@ -30,7 +30,8 @@ final class StockClipPrefetcherSupersededTests: XCTestCase {
         AuthSession(token: "token-superseded", user: AuthUser(id: ownerID, email: "test@example.test"))
     }
 
-    private var prefetcher: StockClipPrefetcher?
+    private var prefetchers: [StockClipPrefetcher] = []
+    private var sessions: [URLSession] = []
 
     override func setUpWithError() throws {
         // 전역 저장소는 프로세스에 하나다 — 앞 테스트가 남긴 표·격리 표시를 지운다.
@@ -43,12 +44,18 @@ final class StockClipPrefetcherSupersededTests: XCTestCase {
         SupersededManifestURLProtocol.reset()
     }
 
-    override func tearDownWithError() throws {
-        // 실패 회차는 30초를 자므로, 남겨 두면 다음 테스트까지 산다.
-        prefetcher?.cancel()
-        prefetcher = nil
+    override func tearDown() async throws {
+        // 한 테스트가 여러 회차를 만든다. 마지막 것만 취소하면 앞 회차가 유출된다.
+        // 취소 신호만 보낸 뒤 기록을 비우지 않고 파일 처리·요청이 끝날 때까지 기다린다.
+        for prefetcher in prefetchers {
+            await prefetcher.cancelAndWait()
+        }
+        prefetchers.removeAll()
+        sessions.forEach { $0.invalidateAndCancel() }
+        sessions.removeAll()
         SupersededManifestURLProtocol.reset()
         StockClipManifestStore.clear()
+        try await super.tearDown()
     }
 
     // MARK: - 재료
@@ -62,7 +69,7 @@ final class StockClipPrefetcherSupersededTests: XCTestCase {
             category: "weather",
             language: "ko",
             text: "오늘은 맑아요",
-            audioUrl: "https://r2.example/\(messageID).mp3",
+            audioUrl: "https://r2.example/\(messageID).wav",
             variant: nil,
             renderedForCurrentVoice: nil
         )
@@ -75,12 +82,14 @@ final class StockClipPrefetcherSupersededTests: XCTestCase {
     private func makePrefetcher() -> StockClipPrefetcher {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [SupersededManifestURLProtocol.self]
+        let urlSession = URLSession(configuration: configuration)
+        sessions.append(urlSession)
         let api = AlarmTalkAPI(
             baseURL: URL(string: "https://\(Self.host)/api/")!,
-            session: URLSession(configuration: configuration)
+            session: urlSession
         )
         let prefetcher = StockClipPrefetcher(api: api)
-        self.prefetcher = prefetcher
+        prefetchers.append(prefetcher)
         return prefetcher
     }
 
@@ -203,7 +212,6 @@ extension StockClipPrefetcherSupersededTests {
         // 받아 둔 것이 사라졌다(캐시 정리) — 다음 회차가 실제로 도는지 보려고 받을 것을 만든다.
         try emptyAudioCache()
         let second = makePrefetcher()
-        defer { second.cancel() }
         second.start(session: session, language: "ko")
         let secondState = await waitForTerminalState(second)
 
@@ -224,11 +232,11 @@ extension StockClipPrefetcherSupersededTests {
 
         let first = makePrefetcher()
         first.start(session: session, language: "ko")
-        _ = await waitForTerminalState(first)
+        let firstState = await waitForTerminalState(first)
+        XCTAssertEqual(firstState, .finished)
         XCTAssertEqual(SupersededManifestURLProtocol.manifestRequestCount, 1)
 
         let second = makePrefetcher()
-        defer { second.cancel() }
         second.start(session: session, language: "ko", manifestDepartedAfter: Date())
         let state = await waitForTerminalState(second)
 
@@ -287,13 +295,14 @@ extension StockClipPrefetcherSupersededTests {
 
         let first = makePrefetcher()
         first.start(session: session, language: "ko")
-        _ = await waitForTerminalState(first)
+        let firstState = await waitForTerminalState(first)
+        XCTAssertEqual(firstState, .finished)
         StockClipManifestStore.clear(preservingOwnerUserID: ownerID)
 
         let second = makePrefetcher()
-        defer { second.cancel() }
         second.start(session: session, language: "ko")
-        _ = await waitForTerminalState(second)
+        let secondState = await waitForTerminalState(second)
+        XCTAssertEqual(secondState, .finished)
         XCTAssertEqual(SupersededManifestURLProtocol.manifestRequestCount, 2)
     }
 }
@@ -303,6 +312,30 @@ extension StockClipPrefetcherSupersededTests {
 /// 매니페스트 응답을 돌려주기 **직전에** `beforeManifestResponse` 를 돌린다 — 그 자리에서
 /// 경합 상대가 더 새 표로 먼저 공개하면, 요청 중이던 프리페처의 표는 반드시 밀린다.
 private final class SupersededManifestURLProtocol: URLProtocol, @unchecked Sendable {
+    /// 8kHz 모노 PCM 50ms. 가짜 문자열을 MP3라고 보내면 AVFoundation의 길이 조회가
+    /// 손상 파일 파싱에 매달려 CI에서 정상 다운로드 회차도 15초 상한을 넘길 수 있다.
+    private static let audioFixture: Data = {
+        let pcm = Data(repeating: 0, count: 800)
+        var data = Data("RIFF".utf8)
+        func append<T: FixedWidthInteger>(_ value: T) {
+            var littleEndian = value.littleEndian
+            withUnsafeBytes(of: &littleEndian) { data.append(contentsOf: $0) }
+        }
+        append(UInt32(36 + pcm.count))
+        data.append(Data("WAVEfmt ".utf8))
+        append(UInt32(16))
+        append(UInt16(1)) // PCM
+        append(UInt16(1)) // mono
+        append(UInt32(8_000))
+        append(UInt32(16_000))
+        append(UInt16(2))
+        append(UInt16(16))
+        data.append(Data("data".utf8))
+        append(UInt32(pcm.count))
+        data.append(pcm)
+        return data
+    }()
+
     private static let lock = NSLock()
     private nonisolated(unsafe) static var manifestJSON = Data()
     private nonisolated(unsafe) static var beforeManifestResponse: (@Sendable () -> Void)?
@@ -389,10 +422,10 @@ private final class SupersededManifestURLProtocol: URLProtocol, @unchecked Senda
             Self.lock.unlock()
             // 매니페스트가 가리키는 주소와 **같은** 주소를 싣는다 — 다르면 캐시가 '지나간
             // 응답' 으로 보고 쓰지 않는다(`AudioCacheStore.incomingIsSupersededByManifest`).
-            let audio = Data("audio-\(messageID)".utf8).base64EncodedString()
+            let audio = Self.audioFixture.base64EncodedString()
             body = Data("""
-            {"message_id":"\(messageID)","audio_base64":"\(audio)","audio_format":"mp3",\
-            "audio_url":"https://r2.example/\(messageID).mp3"}
+            {"message_id":"\(messageID)","audio_base64":"\(audio)","audio_format":"wav",\
+            "audio_url":"https://r2.example/\(messageID).wav"}
             """.utf8)
         } else {
             client?.urlProtocol(self, didFailWithError: URLError(.unsupportedURL))

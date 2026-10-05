@@ -59,7 +59,20 @@
       }
     },
     "‘%@’ 대신 이 목소리를 써요" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Replace ‘%1$@’ with this voice"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "「%1$@」をこの声に置き換えます"
+          }
+        }
+      }
     },
     "‘%@’은(는) 목록에 없어요. 다시 골라 주세요." : {
       "extractionState" : "manual",
@@ -578,13 +591,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Select a section between 12 seconds and 2 minutes."
+            "value" : "Please select a segment between 12 seconds and 2 minutes."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "12秒以上2分以内の範囲を選んでください。"
+            "value" : "12秒以上2分以内の区間を選んでください。"
           }
         }
       }
@@ -595,7 +608,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Please record for at least 12 seconds"
+            "value" : "Record at least 12 seconds"
           }
         },
         "ja" : {
@@ -663,7 +676,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Select a file at least 12 seconds long"
+            "value" : "Choose a file at least 12 seconds long"
           }
         },
         "ja" : {
@@ -902,7 +915,20 @@
       }
     },
     "가족·연인에게 공유 허용" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Allow sharing with family or partner"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "家族・恋人への共有を許可"
+          }
+        }
+      }
     },
     "가족·커플 이용권을 등록하면 여기에서 함께 쓰는 사람을 관리할 수 있어요." : {
       "extractionState" : "manual",
@@ -1244,7 +1270,20 @@
       }
     },
     "공유 설정" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sharing settings"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "共有設定"
+          }
+        }
+      }
     },
     "공유 음성 정보를 저장했어요." : {
       "extractionState" : "manual",
@@ -1762,13 +1801,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Trim section"
+            "value" : "Trim segment"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "範囲を切り取る"
+            "value" : "区間の切り取り"
           }
         }
       }
@@ -2250,13 +2289,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Relationship to me (optional)"
+            "value" : "Relationship to you (optional)"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "自分との関係（任意）"
+            "value" : "あなたとの関係（任意）"
           }
         }
       }
@@ -2420,13 +2459,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Creating your own voice is a paid feature"
+            "value" : "Creating your voice is a paid feature"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "自分の声を作るのは有料機能です"
+            "value" : "自分の声の作成は有料機能です"
           }
         },
         "ko" : {
@@ -2511,13 +2550,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "If it's too short, the voice may sound different."
+            "value" : "Too short and the voice may not match."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "短すぎると、声が違って聞こえることがあります。"
+            "value" : "短すぎると声が違って聞こえることがあります。"
           }
         }
       }
@@ -2795,7 +2834,20 @@
       }
     },
     "다시 녹음" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Record again"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "録り直す"
+          }
+        }
+      }
     },
     "다시 듣기" : {
       "extractionState" : "manual",
@@ -3211,7 +3263,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Register"
+            "value" : "Redeem"
           }
         },
         "ja" : {
@@ -4282,13 +4334,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "The phrase isn't ready yet. Tap Preview to try again."
+            "value" : "The line isn't ready yet. Tap Preview to try again."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "フレーズをまだ準備できませんでした。プレビューを押してもう一度お試しください。"
+            "value" : "フレーズをまだ準備できていません。プレビューを押してもう一度お試しください。"
           }
         }
       }
@@ -4316,7 +4368,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Preparing the phrase…"
+            "value" : "Preparing the line…"
           }
         },
         "ja" : {
@@ -5245,16 +5297,6 @@
         }
       }
     },
-    "생성 가능 %@/%@회" : {
-      "localizations" : {
-        "ko" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "생성 가능 %1$@/%2$@회"
-          }
-        }
-      }
-    },
     "서로의 목소리 공유" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5482,13 +5524,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Couldn't trim the selected range into an audio file. Adjust the start point a little or try another file."
+            "value" : "We couldn't trim the selected section into an audio file. Try adjusting the start point a little, or use a different file."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "選択した区間を音声ファイルに切り出せませんでした。開始位置を少し調整するか、別のファイルでお試しください。"
+            "value" : "選択した区間をオーディオファイルに切り出せませんでした。開始点を少し調整するか、別のファイルでもう一度お試しください。"
           }
         }
       }
@@ -5686,13 +5728,19 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Grandson"
+            "value" : "Grandchild"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "孫息子"
+            "value" : "孫"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "손주"
           }
         }
       }
@@ -6612,7 +6660,20 @@
       }
     },
     "알람을 읽어줄 언어" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Language for alarm lines"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "アラームを読み上げる言語"
+          }
+        }
+      }
     },
     "알람음" : {
       "extractionState" : "manual",
@@ -6950,7 +7011,7 @@
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "例：お母さんの声"
+            "value" : "例:お母さんの声"
           }
         }
       }
@@ -6961,13 +7022,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "e.g. Mom, honey, Manager Kim"
+            "value" : "e.g. Mom, honey, Mr. Kim"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "例：お母さん、あなた、キムチーム長"
+            "value" : "例:ママ、あなた、キムさん"
           }
         }
       }
@@ -7007,7 +7068,20 @@
       }
     },
     "예시 대본" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Example script"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "例文"
+          }
+        }
+      }
     },
     "예약할 수 없어요" : {
       "extractionState" : "manual",
@@ -7219,13 +7293,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "If you don't have a voice file, you can play a video and record it."
+            "value" : "No file of the voice you want? Play a video and record that."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "使いたい音声ファイルがなければ、動画を再生して録音してもかまいません。"
+            "value" : "使いたい声の音源がなければ、動画を流して録音しても大丈夫です。"
           }
         }
       }
@@ -7632,13 +7706,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "What this voice calls me (optional)"
+            "value" : "What this voice will call you (optional)"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "この声が自分を呼ぶ名前（任意）"
+            "value" : "この声があなたを呼ぶ名前（任意）"
           }
         }
       }
@@ -7734,13 +7808,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Creating alarm phrases with this voice"
+            "value" : "Creating alarm lines in this voice"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "この声でアラームのフレーズを作成しています"
+            "value" : "この声でアラーム文言を作っています"
           }
         }
       }
@@ -8640,13 +8714,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Please wait a moment.\nYou'll hear it as soon as it's ready."
+            "value" : "Just a moment.\nWe'll play it for you as soon as it's ready."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "少しお待ちください。\n完成したらすぐにお聞かせします。"
+            "value" : "少々お待ちください。\n完成したらすぐお聞かせします。"
           }
         }
       }
@@ -8776,7 +8850,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Upload again"
+            "value" : "Re-upload"
           }
         },
         "ja" : {
@@ -9132,7 +9206,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "You can use it in alarms as soon as it's ready."
+            "value" : "You can use them in alarms as soon as they are ready."
           }
         },
         "ja" : {
@@ -10005,13 +10079,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Upload an audio or video file"
+            "value" : "Upload a file or video"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "音声または動画をアップロード"
+            "value" : "ファイルまたは動画をアップロード"
           }
         }
       }
@@ -10090,30 +10164,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Please use audio with only one person speaking.\nThe voice may sound different if multiple people are speaking."
+            "value" : "Use audio with only one person's voice.\nIf several voices are mixed, the cloned voice won't be accurate."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "一人の声だけが入った音声を使用してください。\n複数人の声が入っていると、声が違って聞こえることがあります。"
-          }
-        }
-      }
-    },
-    "한국어" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Korean"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "韓国語"
+            "value" : "一人の声だけが入った音声を入れてください。\n複数人の声が混ざると、声が変わってしまうことがあります。"
           }
         }
       }
@@ -10962,13 +11019,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Downloading %lld%%"
+            "value" : "Downloading %1$lld%%"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "ダウンロード中 %lld%%"
+            "value" : "ダウンロード中 %1$lld%%"
           }
         }
       }
@@ -10994,13 +11051,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Your voice is used to build a voice profile, clone it, and read alarms aloud, and is handled as biometric information that can identify or recreate a person.\nYou may register only your own voice, or one whose owner gave you permission (Terms of Service, Article 7).\nDeleting the voice deletes it too, and you can withdraw consent anytime under More."
+            "value" : "Your voice is used to create voice profiles, clone voices, and read alarms aloud. It is treated as biometric information that can identify or reproduce a person.\nOnly register your own voice or a voice for which you have lawful authority and consent (Terms of Service, Article 7).\nDeleting the voice also deletes this data. You can withdraw consent at any time in More."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "声は音声プロフィール作成・クローン・読み上げに使われ、個人を識別または再現し得る生体情報として扱われます。\n登録できるのは、ご本人の声か、声の持ち主から許可を得た録音だけです(利用規約第7条)。\n声を削除すると一緒に消え、「その他」からいつでも同意を撤回できます。"
+            "value" : "声は音声プロフィールの作成・クローン・読み上げに使われ、個人を識別・再現できる生体情報として扱われます。\n本人の声、または適法な権限と同意を得た人の声のみ登録できます（利用規約第7条）。\n声を削除すると一緒に削除され、「その他」からいつでも同意を撤回できます。"
           }
         }
       }
@@ -12683,505 +12740,6 @@
         }
       }
     },
-    "기본 목소리" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Default voice"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "基本の声"
-          }
-        }
-      }
-    },
-    "기본 인사말" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Default greeting"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "基本のあいさつ"
-          }
-        }
-      }
-    },
-    "날씨" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Weather"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "天気"
-          }
-        }
-      }
-    },
-    "매주: %@" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Every week: %@"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "毎週：%@"
-          }
-        }
-      }
-    },
-    "목소리 정리 중이에요" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Finishing up this voice"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "音声を整理中です"
-          }
-        }
-      }
-    },
-    "바꾼 목소리를 정리하고 있어요. 잠시 후 다시 골라 주세요." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "We’re finishing up your replaced voice. Please pick it again in a moment."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "変更した音声を整理しています。しばらくしてからもう一度選んでください。"
-          }
-        }
-      }
-    },
-    "바꾼 목소리를 정리하고 있어요. 잠시 후 다시 저장해 주세요." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "We're finishing up your replaced voice. Please save again in a moment."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "変更した音声を整理しています。しばらくしてからもう一度保存してください。"
-          }
-        }
-      }
-    },
-    "상대 알람은 %@ 이후로 맞춰 주세요. 상대 기기에 전달될 시간이 조금 필요해요." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Set alarms for others to %1$@ or later. It takes a moment to reach their phone."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "相手のアラームは%1$@以降にしてください。相手の端末に届くまで少し時間がかかります。"
-          }
-        }
-      }
-    },
-    "시" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Hour"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "時"
-          }
-        }
-      }
-    },
-    "실제 알람 문구가 아니라 인사말로 들려드려요." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Plays the greeting sample, not your alarm message."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "実際のアラーム文言ではなく、あいさつのサンプルを再生します。"
-          }
-        }
-      }
-    },
-    "아직 입력하지 않았어요" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Not entered yet"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "まだ入力していません"
-          }
-        }
-      }
-    },
-    "아직 준비 중이에요" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Almost ready"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "まだ準備中です"
-          }
-        }
-      }
-    },
-    "알람 권한을 허용해야 알람을 저장할 수 있어요. %@" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Allow alarm access to save an alarm. %@"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "アラームを保存するには、アラームへのアクセスを許可してください。%@"
-          }
-        }
-      }
-    },
-    "알람 권한이 필요해요" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Alarm permission required"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "アラームの許可が必要です"
-          }
-        }
-      }
-    },
-    "알람 음성은 최대 %lld초까지 사용할 수 있어요." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Alarm audio can be up to %lld seconds long."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "アラーム音声は最大%lld秒まで使えます。"
-          }
-        }
-      }
-    },
-    "없음" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "None"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "なし"
-          }
-        }
-      }
-    },
-    "연결이 필요해요" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Connection needed"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "接続が必要です"
-          }
-        }
-      }
-    },
-    "운세" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Fortune"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "運勢"
-          }
-        }
-      }
-    },
-    "이 문구의 음성이 아직 이 기기에 없어요. 연결되면 다시 저장해 주세요." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "This message's audio isn't on this device yet. Save again once you're back online."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "この文言の音声はまだこの端末にありません。接続できたら、もう一度保存してください。"
-          }
-        }
-      }
-    },
-    "이 알람에만 쓸 소리를 직접 녹음하기" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Record a sound just for this alarm"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "このアラームだけに使う音をその場で録音"
-          }
-        }
-      }
-    },
-    "이 테마의 문구를 아직 받지 못했어요. 잠시 뒤에 다시 시도해 주세요." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Messages for this theme haven't arrived yet. Please try again in a moment."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "このテーマの文言をまだ受信していません。しばらくしてからもう一度お試しください。"
-          }
-        }
-      }
-    },
-    "이번 달 만들기 횟수를 다 썼어요" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "You've used this month's creations"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "今月の作成回数を使い切りました"
-          }
-        }
-      }
-    },
-    "전에 만든 음성을 그대로 사용했어요." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Used the audio you created earlier."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "以前作成した音声をそのまま使用しました。"
-          }
-        }
-      }
-    },
-    "주말" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Weekend"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "週末"
-          }
-        }
-      }
-    },
-    "직접 입력 문구는 한 달에 %lld번까지 새로 만들 수 있어요. 이미 만들어 둔 문구는 그대로 쓸 수 있어요." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "You can create %1$lld new custom messages a month. Messages you already made still work."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "直接入力の文言は1か月に%1$lld回まで新しく作成できます。すでに作成した文言はそのまま使えます。"
-          }
-        }
-      }
-    },
-    "최대 %lld초까지 녹음했어요." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Recorded up to the %lld-second limit."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "上限の%lld秒まで録音しました。"
-          }
-        }
-      }
-    },
-    "클래식" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Classic"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "クラシック"
-          }
-        }
-      }
-    },
-    "평일" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Weekdays"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "平日"
-          }
-        }
-      }
-    },
-    "alarm.editor.defaultVoice" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Default voice"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "基本の声"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "기본 목소리"
-          }
-        }
-      }
-    },
     "%@ (필수)" : {
       "localizations" : {
         "en" : {
@@ -14828,6 +14386,1149 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "현재 이용권 사용 중이에요. 등록은 이용권이 종료된 다음 가능해요."
+          }
+        }
+      }
+    },
+    "기본 목소리" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Default voice"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "基本の声"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "기본 목소리"
+          }
+        }
+      }
+    },
+    "기본 인사말" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Default greeting"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "基本のあいさつ"
+          }
+        }
+      }
+    },
+    "날씨" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Weather"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "天気"
+          }
+        }
+      }
+    },
+    "매주: %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Every week: %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "毎週：%@"
+          }
+        }
+      }
+    },
+    "목소리 정리 중이에요" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Finishing up this voice"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "音声を整理中です"
+          }
+        }
+      }
+    },
+    "바꾼 목소리를 정리하고 있어요. 잠시 후 다시 골라 주세요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "We’re finishing up your replaced voice. Please pick it again in a moment."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "変更した音声を整理しています。しばらくしてからもう一度選んでください。"
+          }
+        }
+      }
+    },
+    "바꾼 목소리를 정리하고 있어요. 잠시 후 다시 저장해 주세요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "We're finishing up your replaced voice. Please save again in a moment."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "変更した音声を整理しています。しばらくしてからもう一度保存してください。"
+          }
+        }
+      }
+    },
+    "상대 알람은 %@ 이후로 맞춰 주세요. 상대 기기에 전달될 시간이 조금 필요해요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Set alarms for others to %1$@ or later. It takes a moment to reach their phone."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "相手のアラームは%1$@以降にしてください。相手の端末に届くまで少し時間がかかります。"
+          }
+        }
+      }
+    },
+    "시" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hour"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "時"
+          }
+        }
+      }
+    },
+    "실제 알람 문구가 아니라 인사말로 들려드려요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Plays the greeting sample, not your alarm message."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "実際のアラーム文言ではなく、あいさつのサンプルを再生します。"
+          }
+        }
+      }
+    },
+    "아직 입력하지 않았어요" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not entered yet"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "まだ入力していません"
+          }
+        }
+      }
+    },
+    "아직 준비 중이에요" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Almost ready"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "まだ準備中です"
+          }
+        }
+      }
+    },
+    "알람 권한을 허용해야 알람을 저장할 수 있어요. %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Allow alarm access to save an alarm. %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "アラームを保存するには、アラームへのアクセスを許可してください。%@"
+          }
+        }
+      }
+    },
+    "알람 권한이 필요해요" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alarm permission required"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "アラームの許可が必要です"
+          }
+        }
+      }
+    },
+    "알람 음성은 최대 %lld초까지 사용할 수 있어요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alarm audio can be up to %lld seconds long."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "アラーム音声は最大%lld秒まで使えます。"
+          }
+        }
+      }
+    },
+    "없음" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "None"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "なし"
+          }
+        }
+      }
+    },
+    "연결이 필요해요" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Connection needed"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "接続が必要です"
+          }
+        }
+      }
+    },
+    "운세" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fortune"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "運勢"
+          }
+        }
+      }
+    },
+    "이 문구의 음성이 아직 이 기기에 없어요. 연결되면 다시 저장해 주세요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This message's audio isn't on this device yet. Save again once you're back online."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この文言の音声はまだこの端末にありません。接続できたら、もう一度保存してください。"
+          }
+        }
+      }
+    },
+    "이 알람에만 쓸 소리를 직접 녹음하기" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Record a sound just for this alarm"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このアラームだけに使う音をその場で録音"
+          }
+        }
+      }
+    },
+    "이 테마의 문구를 아직 받지 못했어요. 잠시 뒤에 다시 시도해 주세요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Messages for this theme haven't arrived yet. Please try again in a moment."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このテーマの文言をまだ受信していません。しばらくしてからもう一度お試しください。"
+          }
+        }
+      }
+    },
+    "이번 달 만들기 횟수를 다 썼어요" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You've used this month's creations"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "今月の作成回数を使い切りました"
+          }
+        }
+      }
+    },
+    "전에 만든 음성을 그대로 사용했어요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Used the audio you created earlier."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "以前作成した音声をそのまま使用しました。"
+          }
+        }
+      }
+    },
+    "주말" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Weekend"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "週末"
+          }
+        }
+      }
+    },
+    "직접 입력 문구는 한 달에 %lld번까지 새로 만들 수 있어요. 이미 만들어 둔 문구는 그대로 쓸 수 있어요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You can create %1$lld new custom messages a month. Messages you already made still work."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "直接入力の文言は1か月に%1$lld回まで新しく作成できます。すでに作成した文言はそのまま使えます。"
+          }
+        }
+      }
+    },
+    "최대 %lld초까지 녹음했어요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recorded up to the %lld-second limit."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "上限の%lld秒まで録音しました。"
+          }
+        }
+      }
+    },
+    "클래식" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Classic"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "クラシック"
+          }
+        }
+      }
+    },
+    "평일" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Weekdays"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "平日"
+          }
+        }
+      }
+    },
+    "alarm.editor.defaultVoice" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Default voice"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "基本の声"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "기본 목소리"
+          }
+        }
+      }
+    },
+    "녹음 정지" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stop recording"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "録音を停止"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "녹음 정지"
+          }
+        }
+      }
+    },
+    "녹음하기" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Record"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "録音する"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "녹음하기"
+          }
+        }
+      }
+    },
+    "녹음하려면 마이크 권한이 필요해요." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Microphone permission is required to record."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "録音するにはマイクの権限が必要です。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "녹음하려면 마이크 권한이 필요해요."
+          }
+        }
+      }
+    },
+    "다시 시도하기" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Try again"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "もう一度試す"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "다시 시도하기"
+          }
+        }
+      }
+    },
+    "다시 시도하지 못했어요. 잠시 뒤에 눌러 주세요." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Could not retry. Please try again shortly."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "再試行できませんでした。しばらくしてからもう一度お試しください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "다시 시도하지 못했어요. 잠시 뒤에 눌러 주세요."
+          }
+        }
+      }
+    },
+    "동의를 기록하지 못했어요. 다시 시도해 주세요." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Could not save your consent. Please try again."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "同意を記録できませんでした。もう一度お試しください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "동의를 기록하지 못했어요. 다시 시도해 주세요."
+          }
+        }
+      }
+    },
+    "등록한 목소리를 가족·연인도 함께 사용할 수 있어요." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your family or partner can use the voice you register, too."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "登録した声を家族・恋人も一緒に使えます。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "등록한 목소리를 가족·연인도 함께 사용할 수 있어요."
+          }
+        }
+      }
+    },
+    "만드는 중" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Creating"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "作成中"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "만드는 중"
+          }
+        }
+      }
+    },
+    "만들지 못했어요" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Could not create"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "作成できませんでした"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "만들지 못했어요"
+          }
+        }
+      }
+    },
+    "말투 분석을 다시 시도하지 못했어요. 잠시 뒤에 눌러 주세요." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Could not retry speaking style analysis. Please try again shortly."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "話し方の分析を再試行できませんでした。しばらくしてからもう一度お試しください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "말투 분석을 다시 시도하지 못했어요. 잠시 뒤에 눌러 주세요."
+          }
+        }
+      }
+    },
+    "목소리는 바뀌었지만 기존 알람 정리를 끝내지 못했어요. 목소리 탭을 새로고침해 주세요." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The voice was replaced, but tidying up your old alarms did not finish. Please refresh the Voices tab."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "声は変わりましたが、以前のアラームの整理が終わりませんでした。声タブを更新してください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "목소리는 바뀌었지만 기존 알람 정리를 끝내지 못했어요. 목소리 탭을 새로고침해 주세요."
+          }
+        }
+      }
+    },
+    "목소리를 만들고 있어요. 몇 분 걸릴 수 있어요." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Creating your voice. This may take a few minutes."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "声を作成しています。数分かかる場合があります。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "목소리를 만들고 있어요. 몇 분 걸릴 수 있어요."
+          }
+        }
+      }
+    },
+    "목소리를 만들다 실패했어요. 다시 시도해 주세요." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Could not create the voice. Please try again."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "声を作成できませんでした。もう一度お試しください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "목소리를 만들다 실패했어요. 다시 시도해 주세요."
+          }
+        }
+      }
+    },
+    "목소리를 받고 있어요. 앱을 닫아도 계속 받아요." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Downloading your voice. The download continues even if you close the app."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "声をダウンロードしています。アプリを閉じても続きます。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "목소리를 받고 있어요. 앱을 닫아도 계속 받아요."
+          }
+        }
+      }
+    },
+    "목소리를 받는 중이에요…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Downloading voices…"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "声をダウンロード中です…"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "목소리를 받는 중이에요…"
+          }
+        }
+      }
+    },
+    "미리듣기 확인에 실패했어요. 다시 들어 주세요." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Could not confirm the preview. Please listen again."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "プレビューを確認できませんでした。もう一度お聞きください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "미리듣기 확인에 실패했어요. 다시 들어 주세요."
+          }
+        }
+      }
+    },
+    "미리듣기를 준비하고 있어요. 잠시 뒤에 다시 눌러 주세요." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Preparing the preview. Please try again shortly."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "プレビューを準備しています。しばらくしてからもう一度押してください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "미리듣기를 준비하고 있어요. 잠시 뒤에 다시 눌러 주세요."
+          }
+        }
+      }
+    },
+    "보낸 사람 쪽에서 이 목소리를 만들고 있어요. 다 되면 알람에서 고를 수 있어요." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The sender is creating this voice. You can choose it for alarms when it is ready."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "送った人がこの声を作成しています。準備ができたらアラームで選べます。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "보낸 사람 쪽에서 이 목소리를 만들고 있어요. 다 되면 알람에서 고를 수 있어요."
+          }
+        }
+      }
+    },
+    "생성 가능 %lld/%lld회" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld/%2$lld creations available"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "作成可能 %1$lld/%2$lld回"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "생성 가능 %lld/%lld회"
+          }
+        }
+      }
+    },
+    "완료" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Done"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "完了"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "완료"
+          }
+        }
+      }
+    },
+    "음성 생체정보 처리에 동의해요" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "I agree to voice biometric processing"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "音声生体情報の処理に同意します"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "음성 생체정보 처리에 동의해요"
+          }
+        }
+      }
+    },
+    "이제 오프라인에서도 목소리로 울려요." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your voice alarms are ready to ring offline."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "オフラインでも声でアラームが鳴ります。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "이제 오프라인에서도 목소리로 울려요."
+          }
+        }
+      }
+    },
+    "준비 중이에요" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Getting ready"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "準備中です"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "준비 중이에요"
+          }
+        }
+      }
+    },
+    "준비됐어요" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ready"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "準備ができました"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "준비됐어요"
+          }
+        }
+      }
+    },
+    "voice.section.own" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "My voices"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自分の声"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "내 목소리"
+          }
+        }
+      }
+    },
+    "voice.section.shared" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Shared with me"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "共有された声"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "공유받은 목소리"
+          }
+        }
+      }
+    },
+    "voice.section.default" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Default voices"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "基本の声"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "기본 목소리"
+          }
+        }
+      }
+    },
+    "voice.register.submit" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Register"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "登録"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "등록"
+          }
+        }
+      }
+    },
+    "%@에게 공유받은 목소리" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Voice shared by %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@から共有された声"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@에게 공유받은 목소리"
           }
         }
       }
