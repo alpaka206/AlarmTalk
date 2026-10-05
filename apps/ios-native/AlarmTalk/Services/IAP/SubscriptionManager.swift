@@ -760,18 +760,14 @@ final class SubscriptionManager: ObservableObject {
             //   재설치·계정 갈아타기에서 실제로 나오고, 사용자가 할 수 있는 일이 있다:
             //   그 계정으로 로그인하면 된다. 안드로이드도 같은 코드에 같은 문구를 쓴다
             //   (`MainViewModelBillingActions.billingFailureMessage`).
-            let message = String(
-                localized: String(localized: "이 결제는 다른 계정에 이미 연결돼 있어요. 그 계정으로 로그인해 주세요")
-            )
+            let message = String(localized: "이 결제는 다른 계정에 이미 연결돼 있어요. 그 계정으로 로그인해 주세요")
             if surfacesError { self.lastError = message }
             return ConfirmOutcome(confirmed: false, rejection: message)
         } catch APIError.server(let status, _, let code) where status == 403
             && code == "TRANSACTION_ACCOUNT_MISMATCH" {
             // 이 결제는 **살아 있는 다른 계정**이 산 것이다(서버가 주인 없는 표식은 이어받는다).
             // 재시도해도 결과가 같으니 무엇을 해야 하는지 말한다.
-            let message = String(
-                localized: String(localized: "이 결제는 다른 계정으로 구매한 거예요. 그 계정으로 로그인해 주세요.")
-            )
+            let message = String(localized: "이 결제는 다른 계정으로 구매한 거예요. 그 계정으로 로그인해 주세요.")
             if surfacesError { self.lastError = message }
             return ConfirmOutcome(confirmed: false, rejection: message)
         } catch APIError.server(let status, _, let code) where (400...499).contains(status)
