@@ -4408,7 +4408,7 @@
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "試聴"
+            "value" : "プレビュー"
           }
         }
       }
@@ -12762,6 +12762,28 @@
         }
       }
     },
+    "%@에게 공유받은 목소리" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Voice shared by %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@から共有された声"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@에게 공유받은 목소리"
+          }
+        }
+      }
+    },
     "%@ 이용권으로 바꿀까요?" : {
       "localizations" : {
         "en" : {
@@ -13660,6 +13682,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "결제를 확인하지 못했어요. '이전 구매 복원'을 눌러 다시 시도해 주세요."
+          }
+        }
+      }
+    },
+    "이전 구매 1건을 복원했어요." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Restored 1 purchase."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "以前の購入1件を復元しました。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "이전 구매 1건을 복원했어요."
           }
         }
       }

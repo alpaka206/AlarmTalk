@@ -854,10 +854,13 @@ enum RestoreResult: Equatable {
     }
 
     /// UI 토스트 메시지 — 세 가지 결과를 명확히 구분해 안내한다.
-    var userMessage: String {
+    var userMessage: String { localizedUserMessage() }
+
+    func localizedUserMessage(bundle: Bundle = .main) -> String {
         switch self {
-        case .restored(let count): return String(localized: "이전 구매 \(count)건을 복원했어요.")
-        case .nothingToRestore:    return String(localized: "복원할 구매 내역이 없어요.")
+        case .restored(count: 1): return String(localized: "이전 구매 1건을 복원했어요.", bundle: bundle)
+        case .restored(let count): return String(localized: "이전 구매 \(count)건을 복원했어요.", bundle: bundle)
+        case .nothingToRestore:    return String(localized: "복원할 구매 내역이 없어요.", bundle: bundle)
         case .failure(let r):      return r
         }
     }
