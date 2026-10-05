@@ -64,7 +64,7 @@ struct VoiceSetupView: View {
 
             VStack(spacing: 0) {
                 if failed {
-                    GradientCta(title: String(localized: "다시 시도")) {
+                    GradientCta(title: "다시 시도") {
                         prefetcher.cancel()
                         prefetcher.start(session: auth.session)
                     }

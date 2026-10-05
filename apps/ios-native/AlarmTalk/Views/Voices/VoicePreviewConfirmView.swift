@@ -52,7 +52,7 @@ struct VoicePreviewConfirmView: View {
     var body: some View {
         VStack(spacing: 0) {
             WakerTopBar(
-                title: String(localized: "목소리 만들기"),
+                title: "목소리 만들기",
                 onBack: { exitWarningOpen = true },
                 backEnabled: !busy
             )
@@ -333,7 +333,7 @@ struct VoicePreviewConfirmView: View {
             let each = max((geo.size.width - gap) / 2, 0)
             HStack(spacing: gap) {
                 actionButton(
-                title: String(localized: "다시 만들기"),
+                title: "다시 만들기",
                 foreground: theme.palette.error,
                     background: theme.palette.surface,
                     border: theme.palette.outlineVariant,
