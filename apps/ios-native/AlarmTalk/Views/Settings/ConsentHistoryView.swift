@@ -32,7 +32,7 @@ struct ConsentHistoryView: View {
                     Button {
                         reloadTick += 1
                     } label: {
-                        Text("동의 내역을 불러오지 못했어요. 눌러서 다시 시도해 주세요.")
+                        Text(String(localized: "동의 내역을 불러오지 못했어요. 눌러서 다시 시도해 주세요."))
                             .font(theme.typography.bodyMedium)
                             .foregroundStyle(theme.palette.onSurfaceVariant)
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -50,52 +50,52 @@ struct ConsentHistoryView: View {
             .padding(.vertical, 12)
         }
         .homeGradientBackground()
-        .navigationTitle("약관 및 개인정보 처리 동의")
+        .navigationTitle(String(localized: "약관 및 개인정보 처리 동의"))
         .navigationBarTitleDisplayMode(.inline)
         .task(id: reloadTick) { await load() }
         // iOS 에서는 시스템 알럿이 곧 표준이다 — 안드로이드의 `IosAlertDialog` 은
         // 그 시스템 알럿을 Compose 로 흉내 낸 것이므로, 여기서 커스텀 껍데기를 만들면
         // 오히려 원본에서 멀어진다.
-        .alert("철회하면 등록한 목소리가 모두 삭제돼요", isPresented: $withdrawConfirmOpen) {
-            Button("취소", role: .cancel) { }
-            Button("철회하고 삭제", role: .destructive) {
+        .alert(String(localized: "철회하면 등록한 목소리가 모두 삭제돼요"), isPresented: $withdrawConfirmOpen) {
+            Button(String(localized: "취소"), role: .cancel) { }
+            Button(String(localized: "철회하고 삭제"), role: .destructive) {
                 Task { await withdraw() }
             }
         } message: {
-            Text("지금까지 만든 목소리와 녹음 원본, 생성된 음성 파일, 저장한 알람 문구가 즉시 삭제되고 되돌릴 수 없어요. 이 목소리로 울리던 알람은 가족에게 공유한 알람까지 기본 목소리로 바뀌어요. 다시 쓰려면 처음부터 새로 녹음해야 해요.")
+            Text(String(localized: "지금까지 만든 목소리와 녹음 원본, 생성된 음성 파일, 저장한 알람 문구가 즉시 삭제되고 되돌릴 수 없어요. 이 목소리로 울리던 알람은 가족에게 공유한 알람까지 기본 목소리로 바뀌어요. 다시 쓰려면 처음부터 새로 녹음해야 해요."))
         }
     }
 
     // MARK: - 섹션
 
     private var requiredSection: some View {
-        ConsentSectionCard(title: "필수 동의 내용") {
-            ConsentRow(label: "서비스 이용약관", record: records["terms"], onOpen: onOpenTerms)
+        ConsentSectionCard(title: String(localized: "필수 동의 내용")) {
+            ConsentRow(label: String(localized: "서비스 이용약관"), record: records["terms"], onOpen: onOpenTerms)
             Divider().overlay(theme.palette.outlineVariant)
-            ConsentRow(label: "개인정보 처리방침", record: records["privacy"], onOpen: onOpenPrivacy)
+            ConsentRow(label: String(localized: "개인정보 처리방침"), record: records["privacy"], onOpen: onOpenPrivacy)
             Divider().overlay(theme.palette.outlineVariant)
-            ConsentRow(label: "만 14세 이상 확인", record: records["age14"], onOpen: nil)
+            ConsentRow(label: String(localized: "만 14세 이상 확인"), record: records["age14"], onOpen: nil)
             Divider().overlay(theme.palette.outlineVariant)
             // 국외 이전은 서비스 이용에 필수라 철회 액션을 두지 않는다. 철회하면 등록
             // 데이터가 지워지는 데다 다음 실행에 동의 게이트로 앱이 잠긴다 — 30일 유예로
             // 되돌릴 수 있는 회원 탈퇴가 더 안전하고 정직한 경로라 그쪽으로 안내한다.
-            ConsentRow(label: "음성 AI 국외 이전 동의", record: records["overseas_transfer"], onOpen: onOpenPrivacy)
+            ConsentRow(label: String(localized: "음성 AI 국외 이전 동의"), record: records["overseas_transfer"], onOpen: onOpenPrivacy)
         }
     }
 
     private var overseasNotice: some View {
-        Text("국외 이전 동의는 서비스 이용에 반드시 필요해요. 철회하려면 더보기에서 회원 탈퇴를 진행해 주세요.")
+        Text(String(localized: "국외 이전 동의는 서비스 이용에 반드시 필요해요. 철회하려면 더보기에서 회원 탈퇴를 진행해 주세요."))
             .font(theme.typography.bodySmall)
             .foregroundStyle(theme.palette.onSurfaceVariant)
             .padding(.horizontal, 4)
     }
 
     private var optionalSection: some View {
-        ConsentSectionCard(title: "선택 동의") {
+        ConsentSectionCard(title: String(localized: "선택 동의")) {
             // 음성 생체정보는 백엔드에서도 '선택'(FEATURE_CONSENT_TYPES)이다. 필수 섹션에
             // 두면 가입 화면의 '[선택]' 표기와 어긋나고, 이 동의를 이용 조건처럼 보이게 한다.
             ConsentRow(
-                label: "음성 생체정보 처리 동의",
+                label: String(localized: "음성 생체정보 처리 동의"),
                 record: records["voice_biometric"],
                 onOpen: onOpenPrivacy,
                 // 재동의는 이 화면이 아니라 목소리를 다시 등록할 때 받는다 — 그래서 토글이
@@ -106,7 +106,7 @@ struct ConsentHistoryView: View {
             // 읽기 전용 이력이 아니라 실제로 켜고 끄는 토글 — 설정에 있던 마케팅 카드를
             // 이 법적 정보 화면으로 통합했다(안드로이드와 같은 위치).
             ConsentToggleRow(
-                label: "광고성 정보 수신 동의",
+                label: String(localized: "광고성 정보 수신 동의"),
                 agreed: auth.marketingConsentLoadFailed ? nil : auth.marketingConsentAgreed,
                 busy: marketingBusy,
                 loadFailed: auth.marketingConsentLoadFailed,
@@ -188,7 +188,7 @@ private struct ConsentRow: View {
 
     private var statusText: String {
         guard let record else { return "—" }
-        guard record.agreed else { return "미동의" }
+        guard record.agreed else { return String(localized: "미동의") }
         return Self.formatConsentDate(record.agreedAt) ?? "—"
     }
 
@@ -206,7 +206,7 @@ private struct ConsentRow: View {
 
             // 철회는 동의한 상태에서만 뜻이 있다.
             if let onWithdraw, record?.agreed == true {
-                Button("동의 철회", action: onWithdraw)
+                Button(String(localized: "동의 철회"), action: onWithdraw)
                     .font(theme.typography.bodyMedium)
                     .fontWeight(.semibold)
                     .tint(theme.palette.error)
@@ -278,7 +278,7 @@ private struct ConsentToggleRow: View {
 
             if loadFailed && agreed == nil {
                 // 값을 못 읽었으면 'off' 로 오인되지 않게 스위치 대신 다시 시도 행을 보여준다.
-                Button("불러오지 못했어요 · 다시 시도", action: onRetry)
+                Button(String(localized: "불러오지 못했어요 · 다시 시도"), action: onRetry)
                     .font(theme.typography.bodyMedium)
                     .buttonStyle(.plain)
                     .foregroundStyle(theme.palette.onSurfaceVariant)

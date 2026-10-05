@@ -42,7 +42,7 @@ struct LandingView: View {
 
                             VStack(alignment: .leading, spacing: 0) {
                                 // 강조는 **가운데 키워드만**, 색만 다르고 굵기는 같다(둘 다 Bold).
-                                Text("좋아하는 \(Text("목소리").foregroundColor(AuthSceneColors.accent))로\n깨어나는 아침")
+                                Text("좋아하는 \(Text("auth.landing.voiceKeyword").foregroundColor(AuthSceneColors.accent))로\n깨어나는 아침")
                                     .font(theme.typography.headlineLarge)
                                     .fontWeight(.bold)
                                     .foregroundStyle(AuthSceneColors.text)
@@ -50,7 +50,7 @@ struct LandingView: View {
 
                                 Color.clear.frame(height: 10)
 
-                                Text("매일 아침, 그 목소리가 새로운 한마디로 깨워드려요.")
+                                Text(String(localized: "매일 아침, 그 목소리가 새로운 한마디로 깨워드려요."))
                                     .font(theme.typography.bodyMedium)
                                     .foregroundStyle(AuthSceneColors.textDim)
 
@@ -72,7 +72,7 @@ struct LandingView: View {
                 // 안드로이드는 CTA 가 **하나**다(LandingScreen.kt:194-198). 로그인/회원가입
                 // 갈래는 로그인 화면 하단 전환 행에서 고른다 — 첫 화면에서 두 개를 물으면
                 // 아직 계정이 있는지도 모르는 사람에게 결정을 강요하게 된다.
-                GradientCta(title: "시작하기") {
+                GradientCta(title: String(localized: "시작하기")) {
                     navigateToLogin = .login
                 }
             }
@@ -136,10 +136,10 @@ private struct VoicePreviewCard: View {
             }
             .buttonStyle(.plain)
             .disabled(!preview.hasAudio)
-            .accessibilityLabel(preview.isPlaying ? "미리듣기 일시정지" : "목소리 미리듣기")
+            .accessibilityLabel(preview.isPlaying ? String(localized: "미리듣기 일시정지") : String(localized: "목소리 미리듣기"))
 
             VStack(alignment: .leading, spacing: 8) {
-                Text("할아버지, 좋은 아침이에요\n오늘은 비가 온대요\n나가실 때 우산 꼭 챙기세요")
+                Text(String(localized: "할아버지, 좋은 아침이에요\n오늘은 비가 온대요\n나가실 때 우산 꼭 챙기세요"))
                     .font(theme.typography.bodyMedium)
                     .fontWeight(.medium)
                     .foregroundStyle(AuthSceneColors.text)
