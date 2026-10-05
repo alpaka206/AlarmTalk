@@ -1151,7 +1151,7 @@ struct AlarmEditorSheet: View {
             .map {
                 VoiceSelectionSheet.Option(
                     id: $0.id,
-                    name: $0.displayName,
+                    name: $0.name,
                     detail: $0.sharedFromLabel,
                     locked: freeVoiceTier
                 )
