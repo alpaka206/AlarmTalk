@@ -68,8 +68,8 @@ struct MemberManagementView: View {
             LazyVStack(alignment: .leading, spacing: 12) {
                 if group == nil {
                     EmptyStatePlaceholder(
-                        title: String(localized: "현재 함께 쓰는 이용권이 없어요."),
-                        subtitle: String(localized: "가족·커플 이용권을 등록하면 여기에서 함께 쓰는 사람을 관리할 수 있어요."),
+                        title: "현재 함께 쓰는 이용권이 없어요.",
+                        subtitle: "가족·커플 이용권을 등록하면 여기에서 함께 쓰는 사람을 관리할 수 있어요.",
                         icon: "person.2"
                     )
                     .padding(.vertical, 12)
@@ -79,8 +79,8 @@ struct MemberManagementView: View {
                     if let user = auth.session?.user {
                         FamilyAlarmPermissionCard(
                             title: activePlanKey == "couple"
-                                ? String(localized: "커플이 내 알람 맞추기 허용")
-                                : String(localized: "가족이 내 알람 맞추기 허용"),
+                                ? LocalizedStringKey("커플이 내 알람 맞추기 허용")
+                                : LocalizedStringKey("가족이 내 알람 맞추기 허용"),
                             allowFamilyAlarms: user.allowFamilyAlarms ?? false,
                             quietWindows: user.familyAlarmQuietWindows ?? [],
                             isBusy: auth.isBusy || socialFeatures.isBusy,
