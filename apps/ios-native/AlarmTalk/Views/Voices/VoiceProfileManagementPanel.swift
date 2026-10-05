@@ -479,10 +479,7 @@ struct VoiceProfileManagementPanel: View {
         case "failed": return String(localized: "만들지 못했어요")
         default: break
         }
-        var parts: [String] = []
-        if let relationship = profile.relationshipLabel?.nilIfBlank { parts.append(relationship) }
-        if profile.isShared == true { parts.append(String(localized: "공유 중")) }
-        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+        return voiceRelationshipSubtitle(profile.relationshipLabel, isShared: profile.isShared == true)
     }
 
     @ViewBuilder
