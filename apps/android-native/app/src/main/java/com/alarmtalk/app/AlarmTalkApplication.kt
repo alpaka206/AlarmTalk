@@ -1,6 +1,7 @@
 package com.alarmtalk.app
 
 import android.app.Application
+import android.content.res.Configuration
 import android.os.Build
 import android.util.Log
 import androidx.lifecycle.DefaultLifecycleObserver
@@ -68,6 +69,8 @@ class AlarmTalkApplication : Application() {
             ProcessLifecycleOwner.get().lifecycle.addObserver(
                 object : DefaultLifecycleObserver {
                     override fun onStart(owner: LifecycleOwner) {
+                        runCatching { NotificationChannels.ensure(this@AlarmTalkApplication) }
+                            .onFailure { AlarmTalkLog.reportError("NotificationChannels locale refresh failed", it) }
                         // 세션과 무관하게 **먼저** 센다 — '진입할 때마다' 뜨는 안내의 기준이다
                         // (`AppSignals.appEntries`). 아래 동기화가 실패해도 진입은 진입이다.
                         com.alarmtalk.app.core.AppSignals.markAppEntered()
@@ -94,6 +97,13 @@ class AlarmTalkApplication : Application() {
                 .onFailure { AlarmTalkLog.reportError("Stale audio cache sweep failed", it) }
         }
         Log.i(TAG, "Voice Alarm native application started")
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        // 앱별 언어 변경은 프로세스를 다시 만들지 않아 onCreate가 호출되지 않는다.
+        runCatching { NotificationChannels.ensure(createConfigurationContext(newConfig)) }
+            .onFailure { AlarmTalkLog.reportError("NotificationChannels configuration refresh failed", it) }
     }
 
     private fun initializeSentry() {
