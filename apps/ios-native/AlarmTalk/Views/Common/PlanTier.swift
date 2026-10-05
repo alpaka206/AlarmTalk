@@ -15,14 +15,28 @@ enum PlanTier: String, CaseIterable, Codable, Equatable {
     case couple
     case family
 
-    /// 화면에 노출하는 한국어 라벨.
-    var displayLabel: String {
+    var displayLabel: String { localizedDisplayLabel() }
+
+    func localizedDisplayLabel(bundle: Bundle = .main) -> String {
         switch self {
-        case .free: return "무료"
-        case .personal: return "개인"
-        case .couple: return "커플"
-        case .family: return "가족"
+        case .free: return String(localized: "plan.name.free", defaultValue: "무료", bundle: bundle)
+        case .personal: return String(localized: "plan.name.personal", defaultValue: "개인", bundle: bundle)
+        case .couple: return String(localized: "plan.name.couple", defaultValue: "커플", bundle: bundle)
+        case .family: return String(localized: "plan.name.family", defaultValue: "가족", bundle: bundle)
         }
+    }
+
+    /// 표시만 바꾼다. 권한 판정(from)은 기존 계약을 유지한다. 모르는 키는 호출부가 폴백한다.
+    static func displayName(forPlanKey key: String?, bundle: Bundle = .main) -> String? {
+        let tier: PlanTier
+        switch key?.lowercased() {
+        case "free": tier = .free
+        case "personal", "individual", "plus", "plus_monthly", "plus_yearly": tier = .personal
+        case "couple", "couple_monthly", "couple_yearly": tier = .couple
+        case "family", "family_monthly", "family_yearly": tier = .family
+        default: return nil
+        }
+        return tier.localizedDisplayLabel(bundle: bundle)
     }
 
     /// 백엔드 plan key (소문자).
