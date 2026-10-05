@@ -269,7 +269,7 @@ struct AlarmsListView: View {
 
         func label(_ name: String, _ relationship: String?) -> String {
             let trimmed = relationship?.trimmingCharacters(in: .whitespaces) ?? ""
-            return trimmed.isEmpty ? name : displayRelationshipLabel(trimmed)
+            return trimmed.isEmpty ? name : trimmed
         }
         if let profile = voiceStudio.profiles.first(where: { $0.id == id }) {
             return label(profile.displayName, profile.relationshipLabel)
