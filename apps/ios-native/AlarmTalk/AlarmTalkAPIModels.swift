@@ -930,6 +930,12 @@ struct VoucherItem: Decodable, Identifiable, Equatable {
     var useCount: Int?
 }
 
+extension VoucherItem {
+    func localizedPlanName(bundle: Bundle = .main) -> String {
+        PlanTier.displayName(forPlanKey: planKey, bundle: bundle) ?? String(localized: "이용권", bundle: bundle)
+    }
+}
+
 // ⚠ **`/checkout` 요청·응답 모델을 되살리지 말 것**(2026-08-07 삭제).
 // iOS 결제는 **StoreKit** 을 거친다 — 서버 `/billing/checkout` 은 안드로이드(구글 결제)
 // 전용이고, iOS 에는 그 라우트를 부르는 코드가 없어 모델만 남아 있었다.

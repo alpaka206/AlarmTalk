@@ -249,7 +249,7 @@ struct SharedVoiceSelectionSetupSheet: View {
             )
             VoiceListenerPreviewCard(
                 listenerTitle: listenerTitle,
-                relationshipLabel: trimmedRelationship
+                relationshipSelection: relationshipSelection
             )
 
             Button(action: onPreview) {

@@ -70,9 +70,7 @@ struct VoiceRelationshipSelection: Equatable {
 func parseVoiceRelationshipLabel(_ raw: String?) -> VoiceRelationshipSelection {
     let trimmed = raw?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     guard !trimmed.isEmpty else { return VoiceRelationshipSelection() }
-    if let match = VoiceRelationshipPreset.allCases.first(where: { $0 != .custom && $0.label == trimmed }) {
-        return VoiceRelationshipSelection(preset: match)
-    }
+    // 저장 계약에는 선택 출처가 없으므로 사용자 입력을 프리셋으로 재분류하지 않는다.
     return VoiceRelationshipSelection(preset: .custom, customLabel: trimmed)
 }
 
@@ -150,14 +148,14 @@ struct VoiceRelationshipInputField: View {
 
 struct VoiceListenerPreviewCard: View {
     let listenerTitle: String
-    let relationshipLabel: String
+    let relationshipSelection: VoiceRelationshipSelection
 
     private var trimmedListener: String {
         listenerTitle.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private var trimmedRelationship: String {
-        displayRelationshipLabel(relationshipLabel.trimmingCharacters(in: .whitespacesAndNewlines))
+        relationshipSelection.localizedDisplayLabel()
     }
 
     var body: some View {
