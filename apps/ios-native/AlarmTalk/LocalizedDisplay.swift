@@ -31,6 +31,13 @@ func displayRelationshipLabel(_ stored: String, bundle: Bundle = .main) -> Strin
     return preset.localizedDisplayLabel(bundle: bundle)
 }
 
+extension VoiceRelationshipSelection {
+    func localizedDisplayLabel(bundle: Bundle = .main) -> String {
+        guard let preset, preset != .custom else { return resolved }
+        return preset.localizedDisplayLabel(bundle: bundle)
+    }
+}
+
 func personDisplayName(_ name: String, bundle: Bundle = .main) -> String {
     name.hasSuffix("님") || name.hasSuffix("さん")
         ? name : String(localized: "\(name)님", bundle: bundle)
