@@ -11,7 +11,8 @@
  *    시도별 거절 사유, 날짜·숫자 누출, 호칭·어체·사투리·아이 말투, 모델이 낸 태그(운영은 벗긴다), 형식.
  *    운영 크론(`stock-clips.ts`)처럼 사람이 쓴 본보기(`humanReference`)와 **사용자가 확정한 미리듣기 문구
  *    (`styleReference` — 프로필마다 하나)** 를 함께 넘긴다. 2026-10-01 오후 전의 D 수치(`tuned-38-r2` 까지)는
- *    확정 문구 없이 잰 것이라 운영 프롬프트의 측정값이 아니다.
+ *    확정 문구 없이 잰 것이라 크론 프롬프트의 측정값이 아니다. 등록 첫 미리듣기는 인사 #0을 두 본보기 없이
+ *    별도 실행하고 `path: registration_preview`로 기록한다.
  *  - F 등록 녹음 말투 분석(`analyzeSpeechStyleWithVertex`) — 정답 라벨 대비 사투리·어체·아이 판정,
  *    표지(markers)가 전사에 실제로 있는가, 형식
  *
@@ -33,6 +34,7 @@
  * ⚠ `node --experimental-strip-types` 로는 못 돌린다 — `eval:gemini` 가 esbuild 로 먼저 번들한다.
  */
 import { AsyncLocalStorage } from 'node:async_hooks';
+import { createEvaluationFetch, evaluationPaths, type RawCall } from './eval-gemini-calls.ts';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
@@ -150,101 +152,13 @@ let evalModel: string = VERTEX_MODEL;
 
 // ---------------------------------------------------------------- 원문 응답 기록
 
-type RawCall = {
-  status: number;
-  finishReason: string | null;
-  text: string;
-  latencyMs: number;
-  inputTokens: number | null;
-  outputTokens: number | null;
-  thoughtTokens: number | null;
-  error: string | null;
-  /** 'auth' = OAuth 토큰 발급 실패(생성 요청까지 가지 못했다). */
-  stage?: 'auth';
-};
 const callLog = new AsyncLocalStorage<RawCall[]>();
-const realFetch = globalThis.fetch;
-globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
-  const url = String(input);
-  if (url.includes('oauth2.googleapis.com/token')) {
-    // 토큰 발급 **실패**도 시도 하나로 센다(Codex #801) — 안 세면 인증 장애 중 시도 수·지연이 0 으로 잡힌다.
-    // 성공한 발급은 생성 시도가 아니라서 남기지 않는다.
-    const started = Date.now();
-    const fail = (status: number, error: string) =>
-      callLog.getStore()?.push({
-        status,
-        finishReason: null,
-        text: '',
-        latencyMs: Date.now() - started,
-        inputTokens: null,
-        outputTokens: null,
-        thoughtTokens: null,
-        error,
-        stage: 'auth',
-      });
-    try {
-      const res = await realFetch(input, init);
-      if (!res.ok) fail(res.status, `auth ${res.status}`);
-      return res;
-    } catch (err) {
-      fail(0, String(err).slice(0, 200));
-      throw err;
-    }
-  }
-  if (!url.includes(':generateContent')) return realFetch(input, init);
-  const operational = `/models/${VERTEX_MODEL}:generateContent`;
-  // 운영 주소가 아니면 갈아 끼우지 않고 멈춘다 — 조용히 운영 모델로 평가하면 비교표가 거짓이 된다.
-  if (!url.includes(operational)) throw new Error(`예상하지 못한 생성 주소다: ${url}`);
-  const target = url.replace(operational, `/models/${evalModel}:generateContent`);
-  const started = Date.now();
-  const bucket = callLog.getStore();
-  let res: Response;
-  try {
-    res = await realFetch(target, CLIENT_TIMEOUT_MS ? { ...init, signal: AbortSignal.timeout(CLIENT_TIMEOUT_MS) } : init);
-  } catch (err) {
-    // 타임아웃(운영 클라이언트의 15초 abort)·네트워크 실패도 **시도 하나**로 남긴다(Codex #801) —
-    // 안 남기면 재시도 끝에 성공한 문구가 1회차 통과로 잡히고 지연 요약도 느린 쪽에 유리해진다.
-    bucket?.push({
-      status: 0,
-      finishReason: null,
-      text: '',
-      latencyMs: Date.now() - started,
-      inputTokens: null,
-      outputTokens: null,
-      thoughtTokens: null,
-      error: String(err).slice(0, 200),
-    });
-    throw err;
-  }
-  if (bucket) {
-    const body = await res.clone().text();
-    let j: {
-      candidates?: { finishReason?: string; content?: { parts?: { text?: string; thought?: boolean }[] } }[];
-      usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number; thoughtsTokenCount?: number };
-      error?: { message?: string };
-    } = {};
-    try {
-      j = JSON.parse(body);
-    } catch {
-      /* 비 JSON */
-    }
-    const cand = j.candidates?.[0];
-    bucket.push({
-      status: res.status,
-      finishReason: cand?.finishReason ?? null,
-      text: (cand?.content?.parts ?? [])
-        .filter((p) => p.thought !== true)
-        .map((p) => p.text ?? '')
-        .join(''),
-      latencyMs: Date.now() - started,
-      inputTokens: j.usageMetadata?.promptTokenCount ?? null,
-      outputTokens: j.usageMetadata?.candidatesTokenCount ?? null,
-      thoughtTokens: j.usageMetadata?.thoughtsTokenCount ?? null,
-      error: res.ok ? null : String(j.error?.message ?? res.status).slice(0, 200),
-    });
-  }
-  return res;
-}) as typeof fetch;
+globalThis.fetch = createEvaluationFetch(globalThis.fetch, {
+  calls: () => callLog.getStore(),
+  operationalModel: VERTEX_MODEL,
+  model: () => evalModel,
+  clientTimeoutMs: CLIENT_TIMEOUT_MS,
+});
 // 운영 코드의 호출마다 로그 한 줄은 평가 출력에서 뺀다.
 const realLog = console.log;
 console.log = (...args: unknown[]) => {
@@ -713,8 +627,9 @@ async function runD(m: (typeof MODELS)[number]) {
     ...(DSETS.has('fresh') ? tag('fresh', fresh) : []),
     ...(DSETS.has('fresh2') ? tag('fresh2', fresh2) : []),
   ].filter((c) => picked(`${c.p.id}/${c.s.category}#${c.s.index}`));
-  const jobs = cases.flatMap((c) => Array.from({ length: REPS }, (_, rep) => ({ ...c, rep })));
-  return pool(jobs, CONCURRENCY, async ({ p, s, rep, dset }) => {
+  const jobs = cases.flatMap((c) => evaluationPaths(c.s.category, c.s.index).flatMap((path) =>
+    Array.from({ length: REPS }, (_, rep) => ({ ...c, path, rep }))));
+  return pool(jobs, CONCURRENCY, async ({ p, s, rep, dset, path }) => {
     const calls: RawCall[] = [];
     let result: { text: string } | null = null;
     let error: string | null = null;
@@ -726,11 +641,11 @@ async function runD(m: (typeof MODELS)[number]) {
       speechStyle: p.speechStyle ?? null,
       // 운영 크론(`stock-clips.ts` 의 사전렌더)과 같게 — 사람이 쓴 같은 의도의 대사를 본보기로 준다
       // (2026-09-27 운영 도입). 예전 평가는 이걸 빠뜨려 **운영에 없는 프롬프트**를 재고 있었다.
-      // 인사·약 3번째는 짝이 없어 null 이다(등록 미리듣기도 인사라 같은 null).
-      humanReference: stockReferenceLine(s.category, s.index, p.lang),
+      // 등록 첫 미리듣기는 tts 라우트처럼 두 본보기를 모두 생략한다.
+      humanReference: path === 'registration_preview' ? null : stockReferenceLine(s.category, s.index, p.lang),
       // 운영 크론과 같게 — 사용자가 확정한 미리듣기 문구(`preview_text`)를 말투 본보기로 준다(2026-10-01 리뷰:
       // 예전 평가는 이것도 빠뜨려, 사투리 지시가 확정 문구와 부딪히는 운영 모양을 재지 못했다).
-      styleReference: p.styleReference,
+      styleReference: path === 'registration_preview' ? null : p.styleReference,
     };
     await callLog.run(calls, async () => {
       try {
@@ -764,6 +679,7 @@ async function runD(m: (typeof MODELS)[number]) {
     const dialect = r && p.speechStyle?.dialect ? dialectHits(spoken, p.speechStyle) : null;
     return {
       suite: 'D',
+      path,
       model: m.label,
       dset,
       profile: p.id,
@@ -773,7 +689,7 @@ async function runD(m: (typeof MODELS)[number]) {
       seed: s.seed,
       humanReference: params.humanReference,
       styleReference: params.styleReference,
-      expect: p.expect ?? null,
+      expect: path === 'registration_preview' && p.expect === 'standard_ref' ? 'dialect' : p.expect ?? null,
       speechRegister: p.speechStyle?.register ?? null,
       output: r?.text ?? null,
       error,
@@ -879,7 +795,7 @@ async function runF(m: (typeof MODELS)[number]) {
     const s = style as SpeechStyle | null;
     // 운영은 전송 실패(시간 초과·429/5xx)를 마감 안에서 다시 묻는다(2026-10-01) — 형식 채점은 **답을 받은 호출**로 한다.
     // 첫 호출만 보면 시간 초과 뒤 살아난 결과가 '형식 오류' 로 잡힌다.
-    const answered = [...calls].reverse().find((c) => c.status === 200) ?? calls[calls.length - 1];
+    const answered = [...calls].reverse().find((c) => c.stage !== 'auth' && c.status === 200) ?? calls[calls.length - 1];
     const raw = answered?.text ?? '';
     const shape = rawJsonShape(raw, {
       dialect: 'string',
@@ -985,17 +901,21 @@ function summarize(rows: AnyRow[]): string {
 
   if (SUITES.has('D')) {
     lines.push('## D 사전렌더 문구(등록 미리듣기 포함)', '', '| 모델 | n | 최종 성공 | 1회차 통과 | 1회차 내용 통과(응답 받은 것 중) | 전송 실패(시간 초과 등) 호출 | 평균 시도 | 1회차 거절 사유 | 최종 실패 사유 | 누출(날짜·숫자 등) | 호칭 사용 | 모델이 낸 태그(벗김) | 여분 필드 | 평균 길이 | 평균 지연 ms |', '|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|');
-    for (const { m, rs } of byModel('D')) {
-      const ok = rs.filter((r) => r.final);
-      const first = rs.map((r) => ((r.attempts as AnyRow[])[0]?.reason as string) ?? 'none');
-      const allAttempts = rs.flatMap((r) => r.attempts as AnyRow[]);
-      const titled = ok.filter((r) => (r.final as AnyRow).titleUsed !== null);
-      lines.push(`| ${m.label} | ${rs.length} | ${pct(ok.length, rs.length)} | ${pct(first.filter((x) => x === 'ok').length, rs.length)} | ${pct(first.filter((x) => x === 'ok').length, first.filter((x) => !TRANSPORT_REASON.test(x)).length)} | ${pct(allAttempts.filter((a) => TRANSPORT_REASON.test(String(a.reason))).length, allAttempts.length)} | ${avg(rs.map((r) => (r.attempts as AnyRow[]).length))} | ${hist(first.filter((x) => x !== 'ok'))} | ${hist(rs.filter((r) => !r.final).map((r) => String(r.error).slice(0, 40)))} | ${pct(ok.filter((r) => ((r.final as AnyRow).leaks as string[]).length).length, ok.length)} | ${pct(titled.filter((r) => (r.final as AnyRow).titleUsed).length, titled.length)} | ${pct(allAttempts.filter((a) => ((a.modelTags as string[]) ?? []).length).length, allAttempts.length)} | ${pct(allAttempts.filter((a) => ((a.extraKeys as string[]) ?? []).length).length, allAttempts.length)} | ${avg(ok.map((r) => (r.final as AnyRow).length as number))} | ${avg(rs.flatMap((r) => (r.calls as AnyRow[]).map((c) => c.latencyMs as number)))} |`);
+    for (const { m, rs: modelRows } of byModel('D')) {
+      for (const path of ['stock_clip', 'registration_preview']) {
+        const rs = modelRows.filter((r) => r.path === path);
+        if (!rs.length) continue;
+        const ok = rs.filter((r) => r.final);
+        const first = rs.map((r) => ((r.attempts as AnyRow[])[0]?.reason as string) ?? 'none');
+        const allAttempts = rs.flatMap((r) => r.attempts as AnyRow[]);
+        const titled = ok.filter((r) => (r.final as AnyRow).titleUsed !== null);
+        lines.push(`| ${m.label} (${path}) | ${rs.length} | ${pct(ok.length, rs.length)} | ${pct(first.filter((x) => x === 'ok').length, rs.length)} | ${pct(first.filter((x) => x === 'ok').length, first.filter((x) => !TRANSPORT_REASON.test(x)).length)} | ${pct(allAttempts.filter((a) => TRANSPORT_REASON.test(String(a.reason))).length, allAttempts.length)} | ${avg(rs.map((r) => (r.attempts as AnyRow[]).length))} | ${hist(first.filter((x) => x !== 'ok'))} | ${hist(rs.filter((r) => !r.final).map((r) => String(r.error).slice(0, 40)))} | ${pct(ok.filter((r) => ((r.final as AnyRow).leaks as string[]).length).length, ok.length)} | ${pct(titled.filter((r) => (r.final as AnyRow).titleUsed).length, titled.length)} | ${pct(allAttempts.filter((a) => ((a.modelTags as string[]) ?? []).length).length, allAttempts.length)} | ${pct(allAttempts.filter((a) => ((a.extraKeys as string[]) ?? []).length).length, allAttempts.length)} | ${avg(ok.map((r) => (r.final as AnyRow).length as number))} | ${avg(rs.flatMap((r) => (r.calls as AnyRow[]).map((c) => c.latencyMs as number)))} |`);
+      }
     }
     lines.push('', '### D 프로필별 규칙 준수', '', '| 모델 | 프로필 | n | 성공 | 규칙 |', '|---|---|---|---|---|');
     for (const { m, rs } of byModel('D')) {
-      for (const pid of [...new Set(rs.map((r) => r.profile as string))]) {
-        const prs = rs.filter((r) => r.profile === pid);
+      for (const pid of [...new Set(rs.map((r) => `${r.path}/${r.profile}`))]) {
+        const prs = rs.filter((r) => `${r.path}/${r.profile}` === pid);
         const ok = prs.filter((r) => r.final);
         const f = ok.map((r) => r.final as AnyRow);
         // 규칙은 프로필이 **선언한** expect 로 고른다 — id 조각으로 추측하면 새 프로필이 빠진다(Codex #801).
@@ -1030,14 +950,14 @@ function summarize(rows: AnyRow[]): string {
       for (const r of dialectRows) {
         const f = r.final as AnyRow | null;
         const marks = f ? `[표지 ${((f.dialectMarkers as string[]) ?? []).join('/') || '없음'}${((f.dialectForeign as string[]) ?? []).length ? ` · 다른 사투리 ${(f.dialectForeign as string[]).join('/')}` : ''}]` : '';
-        lines.push(`- \`${r.profile}/${r.category}#${r.seedIndex}·${r.rep}\` ${marks} ${r.output ?? `**실패** ${String(r.error).slice(0, 60)}`}`);
+        lines.push(`- \`${r.path}/${r.profile}/${r.category}#${r.seedIndex}·${r.rep}\` ${marks} ${r.output ?? `**실패** ${String(r.error).slice(0, 60)}`}`);
       }
       lines.push('');
     }
     for (const { m, rs } of byModel('D')) {
       lines.push(`### D 표본 — ${m.label}`, '');
       for (const r of rs.filter((x) => x.rep === 0 && (x.profile !== 'ko-mom-to-daughter' || (x.seedIndex as number) < 2)).slice(0, 40)) {
-        lines.push(`- \`${r.profile}/${r.category}#${r.seedIndex}\` ${r.output ?? `**실패** ${String(r.error).slice(0, 60)}`}`);
+        lines.push(`- \`${r.path}/${r.profile}/${r.category}#${r.seedIndex}\` ${r.output ?? `**실패** ${String(r.error).slice(0, 60)}`}`);
       }
       lines.push('');
     }

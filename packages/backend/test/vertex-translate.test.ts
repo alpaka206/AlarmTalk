@@ -2340,6 +2340,11 @@ describe('사전렌더 — 마지막 튜닝 회차(2026-10-01)', () => {
     expect(
       prerenderRejectionReason('할아버지, 약 드실 시간이에요. 나중에 챙기려 하시면 잊기 쉬우니까, 알람 끄시기 전에 지금 꼭 챙겨 드세요.', 'ko', grand),
     ).toBe('korean_collocation');
+    for (const action of ['약을 챙겨 먹으려면', '약을 잊지 않고 챙겨 드시려 하시면']) {
+      expect(prerenderRejectionReason(`할아버지, 나중에 ${action} 잊기 쉬우니까 지금 드세요.`, 'ko', grand)).toBe('korean_collocation');
+      expect(prerenderRejectionReason(`할아버지, 나중에 ${action} 잊지 않게 메모해 두세요.`, 'ko', grand)).toBeNull();
+    }
+    expect(prerenderRejectionReason('할아버지, 나중에 약을 챙겨 드세요. 먹으려면 잊기 쉬운 것부터 확인하세요.', 'ko', grand)).toBeNull();
     // 바른 짝·다른 뜻의 '나중에 ~려면' 은 막지 않는다.
     expect(prerenderRejectionReason('할아버지, 오늘은 운이 따라주는 날이래요. 일이 생각보다 술술 풀릴 수도 있대요.', 'ko', grand)).toBeNull();
     expect(prerenderRejectionReason('할머니, 약 드실 시간이에요. 미뤄 두면 잊기 쉬우니까 지금 바로 드세요.', 'ko', { relationshipLabel: '손녀', listenerTitle: '할머니' })).toBeNull();
