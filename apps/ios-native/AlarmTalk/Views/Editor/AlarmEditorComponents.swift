@@ -22,11 +22,11 @@ enum LocalAlarmAudioError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .missingSource:
-            return "녹음하거나 파일을 선택해 주세요."
+            return String(localized: "녹음하거나 파일을 선택해 주세요.")
         case .tooShort:
-            return "1초 이상 들리는 음성이 필요해요."
+            return String(localized: "1초 이상 들리는 음성이 필요해요.")
         case .tooLong:
-            return "알람 음성은 최대 \(AlarmAudioLimits.maxDurationMillis / 1000)초까지 사용할 수 있어요."
+            return String(localized: "알람 음성은 최대 \(AlarmAudioLimits.maxDurationMillis / 1000)초까지 사용할 수 있어요.")
         }
     }
 }
@@ -203,9 +203,9 @@ struct SharedVoiceSelectionSetupSheet: View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("공유받은 목소리 설정")
+                    Text(String(localized: "공유받은 목소리 설정"))
                         .font(.title3.weight(.bold))
-                    Text("알람에서 이 목소리가 나를 어떻게 부를지 정해요.")
+                    Text(String(localized: "알람에서 이 목소리가 나를 어떻게 부를지 정해요."))
                         .font(.subheadline)
                         .foregroundStyle(AlarmTalkTheme.textSecondary)
                 }
@@ -242,8 +242,8 @@ struct SharedVoiceSelectionSetupSheet: View {
                 submitted: submitted
             )
             field(
-                title: "이 목소리가 나를 부를 이름",
-                placeholder: "예: 지호야, 여보",
+                title: String(localized: "이 목소리가 나를 부를 이름"),
+                placeholder: String(localized: "예: 지호야, 여보"),
                 text: $listenerTitle,
                 showError: submitted && trimmedListener.isEmpty
             )
@@ -253,13 +253,13 @@ struct SharedVoiceSelectionSetupSheet: View {
             )
 
             Button(action: onPreview) {
-                Label("미리듣기", systemImage: "play.fill")
+                Label(String(localized: "미리듣기"), systemImage: "play.fill")
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.bordered)
             .disabled(isWorking)
 
-            Button("저장하고 선택") {
+            Button(String(localized: "저장하고 선택")) {
                 submitted = true
                 if !trimmedRelationship.isEmpty && !trimmedListener.isEmpty {
                     onConfirm(trimmedRelationship, trimmedListener)
@@ -296,7 +296,7 @@ struct SharedVoiceSelectionSetupSheet: View {
                 }
                 .alarmTalkFieldStyle()
             if showError {
-                Text("꼭 입력해 주세요.")
+                Text(String(localized: "꼭 입력해 주세요."))
                     .font(.caption2.weight(.semibold))
                     .foregroundStyle(AlarmTalkTheme.error)
             }

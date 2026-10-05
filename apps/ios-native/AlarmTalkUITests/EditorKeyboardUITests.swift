@@ -21,7 +21,7 @@ final class EditorKeyboardUITests: XCTestCase {
         let before = save.frame
 
         // 가운데 시(hour) 숫자를 눌러 그 자리 입력을 연다(`TimeTypeInUITests` 와 같은 식별자).
-        let hour = app.otherElements["timeWheel.시"].firstMatch
+        let hour = app.otherElements["timeWheel.hour"].firstMatch
         XCTAssertTrue(hour.waitForExistence(timeout: 5), "타임휠 시 칼럼이 없다")
         hour.tap()
 

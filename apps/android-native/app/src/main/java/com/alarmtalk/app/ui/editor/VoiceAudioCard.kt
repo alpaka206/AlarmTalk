@@ -1,5 +1,7 @@
 package com.alarmtalk.app
 
+import com.alarmtalk.app.data.systemVoiceDisplayName
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -166,7 +168,7 @@ internal fun VoiceAudioCard(
     val profileOptions = readyOwnProfiles.map {
         VoiceProfileOption(
             id = it.id,
-            name = it.name,
+            name = systemVoiceDisplayName(context, it.id, it.name),
             detail = ownedVoiceDetail(context, it),
             unavailableReason = settlingReason.takeIf { _ -> it.id in settlingVoiceProfileIds },
         )
@@ -181,7 +183,7 @@ internal fun VoiceAudioCard(
         visibleSystemProfiles.map {
             VoiceProfileOption(
                 id = it.id,
-                name = it.name,
+                name = systemVoiceDisplayName(context, it.id, it.name),
                 detail = ownedVoiceDetail(context, it),
             )
         }

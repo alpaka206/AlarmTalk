@@ -520,7 +520,7 @@
     <string name="voices_creating_body">少々お待ちください。
 完成したらすぐお聞かせします。</string>
     <string name="voices_preview_text_loading">フレーズを準備しています…</string>
-    <string name="voices_preview_text_retry_hint">フレーズをまだ準備できていません。試聴を押してもう一度お試しください。</string>
+    <string name="voices_preview_text_retry_hint">フレーズをまだ準備できていません。プレビューを押してもう一度お試しください。</string>
     <string name="voices_preview_edit_hint">話し方は自由に変えられます。</string>
     <string name="voices_preview_edit_action">フレーズを編集</string>
     <string name="voices_preview_edit_save">再生成</string>
@@ -560,7 +560,7 @@
     <string name="voicesr_prerender_progress">アラーム音声を準備中 %1$d%%</string>
     <string name="voicesr_prerender_failed">生成に失敗しました</string>
     <string name="voicesr_prerender_retry">再試行</string>
-    <string name="voicesr_preview">試聴</string>
+    <string name="voicesr_preview">プレビュー</string>
     <string name="voicesr_relationship_custom_label">関係を直接入力</string>
     <string name="voicesr_relationship_custom_placeholder">例:孫娘、恋人、同僚</string>
     <string name="voicesr_relationship_label_required">あなたとの関係（任意）</string>

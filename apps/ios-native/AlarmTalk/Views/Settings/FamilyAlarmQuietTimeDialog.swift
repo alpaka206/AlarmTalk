@@ -29,9 +29,9 @@ struct FamilyAlarmQuietTimeDialog: View {
     /// 달라진다(예: 월·수만 골라도 평일 전체로 저장된다). 안드로이드는 처음부터
     /// `QUIET_DAY_PRESETS` 3택이다.
     static let dayPresets: [(label: String, days: Set<Int>)] = [
-        ("평일", [1, 2, 3, 4, 5]),
-        ("주말", [0, 6]),
-        ("매일", [0, 1, 2, 3, 4, 5, 6]),
+        (String(localized: "평일"), [1, 2, 3, 4, 5]),
+        (String(localized: "주말"), [0, 6]),
+        (String(localized: "매일"), [0, 1, 2, 3, 4, 5, 6]),
     ]
 
     var body: some View {
@@ -61,7 +61,7 @@ struct FamilyAlarmQuietTimeDialog: View {
                             drafts.append(QuietWindowDraft.defaultEvening)
                         }
                     } label: {
-                        Text("+ 시간 추가")
+                        Text(String(localized: "+ 시간 추가"))
                             .font(.subheadline.weight(.semibold))
                             .frame(maxWidth: .infinity)
                     }
@@ -102,7 +102,7 @@ struct FamilyAlarmQuietTimeDialog: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Text("설정 불가 시간")
+                Text(String(localized: "설정 불가 시간"))
                     .font(.title3.weight(.bold))
                 Spacer()
                 Button(action: onCancel) {
@@ -111,7 +111,7 @@ struct FamilyAlarmQuietTimeDialog: View {
                 }
                 .buttonStyle(.plain)
             }
-            Text("선택한 시간대에는 다른 사람이 내게 알람을 만들 수 없어요.")
+            Text(String(localized: "선택한 시간대에는 다른 사람이 내게 알람을 만들 수 없어요."))
                 .font(.footnote)
                 .foregroundStyle(AlarmTalkTheme.textSecondary)
         }
@@ -124,7 +124,7 @@ struct FamilyAlarmQuietTimeDialog: View {
         // (`ui/settings/SettingsScreenComponents.kt` 의 설정 불가 시간 다이얼로그)도
         // `ModalDialogTitle` 의 X + [저장] **둘뿐**이고 취소가 없다.
         HStack(spacing: 10) {
-            Button("저장") {
+            Button(String(localized: "저장")) {
                 onConfirm(drafts.map { $0.toWindow() })
             }
             .buttonStyle(.borderedProminent)
@@ -249,7 +249,7 @@ private struct QuietWindowCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("시간대 \(index + 1)")
+                Text(String(localized: "시간대 \(index + 1)"))
                     .font(.subheadline.weight(.semibold))
                 Spacer()
                 if removable {
@@ -258,7 +258,7 @@ private struct QuietWindowCard: View {
                             .foregroundStyle(AlarmTalkTheme.error)
                     }
                     .buttonStyle(.borderless)
-                    .accessibilityLabel("이 시간대 삭제")
+                    .accessibilityLabel(String(localized: "이 시간대 삭제"))
                 }
             }
             HStack(spacing: 6) {
@@ -349,7 +349,7 @@ private struct QuietTimePicker: View {
             .frame(maxWidth: .infinity)
             // 취소는 위 X 하나로 낸다(같은 이유 — `footer` 주석 참조).
             HStack(spacing: 10) {
-                Button("확인") {
+                Button(String(localized: "확인")) {
                     let cal = Calendar(identifier: .gregorian)
                     let parts = cal.dateComponents([.hour, .minute], from: selection)
                     onConfirm(parts.hour ?? 0, parts.minute ?? 0)
