@@ -669,19 +669,19 @@ final class SocialFeatureViewModel: ObservableObject {
     static func billingFailureMessage(errorCode: String?, fallback: String) -> String {
         switch errorCode {
         case "SAME_PLAN":
-            return "이미 사용 중인 이용권이에요"
+            return String(localized: "이미 사용 중인 이용권이에요")
         case "NO_ACTIVE_SUBSCRIPTION":
-            return "현재 적용된 이용권이 없어 새 이용권으로 적용할게요"
+            return String(localized: "현재 적용된 이용권이 없어 새 이용권으로 적용할게요")
         case "PLAN_NOT_FOUND":
-            return "이용권 정보를 찾지 못했어요"
+            return String(localized: "이용권 정보를 찾지 못했어요")
         case "PLAN_INACTIVE":
-            return "지금은 선택할 수 없는 이용권이에요"
+            return String(localized: "지금은 선택할 수 없는 이용권이에요")
         case "FREE_NOT_BILLABLE":
-            return "무료 이용권은 여기에서 적용할 수 없어요"
+            return String(localized: "무료 이용권은 여기에서 적용할 수 없어요")
         case "GIFT_PERSONAL_ONLY":
-            return "선물하기는 개인 이용권에서만 사용할 수 있어요"
+            return String(localized: "선물하기는 개인 이용권에서만 사용할 수 있어요")
         case "USER_NOT_FOUND":
-            return "로그인 정보를 다시 확인해 주세요"
+            return String(localized: "로그인 정보를 다시 확인해 주세요")
         default:
             return fallback
         }

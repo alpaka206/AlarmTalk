@@ -66,6 +66,7 @@
 | [alarm-lifecycle.md](alarm-lifecycle.md) | 알람의 생애 — 행과 예약은 다른 겹, 계정을 떠날 때, 공휴일 국가 = 지역의 나라(바뀌면 공휴일off 다시 잡기) |
 | [usage-events.md](usage-events.md) | 사용 기록 — 오프라인에 쌓고 모아 보내기, 울릴 때 네트워크 금지, 보관 1년 |
 | [error-codes.md](error-codes.md) | 에러 코드 — 목록은 하나, 코드는 바꾸지 않는다, 기록은 전부·경보는 골라서 |
+| [localization.md](localization.md) | 앱 화면 번역 — 같은 화면의 용어, 저장값과 표시 문구, 오류·존칭·언어 변경 |
 
 ## 여기 넣지 않는 것
 

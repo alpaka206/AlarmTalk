@@ -913,7 +913,7 @@
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "家族・カップルプランを登録すると、ここで一緒に使う人を管理できます。"
+            "value" : "ファミリー・カップルプランを登録すると、ここで一緒に使う人を管理できます。"
           }
         }
       }
@@ -1043,7 +1043,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Gift a Personal pass"
+            "value" : "Gift a Personal plan"
           }
         },
         "ja" : {
@@ -1253,7 +1253,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Shared pass"
+            "value" : "Shared plan"
           }
         },
         "ja" : {
@@ -1287,7 +1287,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "You've left the shared pass"
+            "value" : "You've left the shared plan"
           }
         },
         "ja" : {
@@ -1304,7 +1304,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Leave shared pass"
+            "value" : "Leave shared plan"
           }
         },
         "ja" : {
@@ -1508,13 +1508,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "The shared voice was released, so %lld alarm(s) switched to a default voice. To use it again, register a pass or get a new invite code."
+            "value" : "The shared voice is no longer available, so %lld alarm(s) now use a default voice. To use it again you need your own plan or a new invite code."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "共有されていた声が切れたため、アラーム%lld件が基本の声に変わりました。もう一度使うには利用券の登録か新しい招待コードが必要です。"
+            "value" : "共有されていた声が使えなくなり、アラーム%lld件が基本の声に変わりました。再び使うには利用券の登録か新しい招待コードが必要です。"
           }
         }
       }
@@ -1593,7 +1593,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Choose a pass to share"
+            "value" : "Choose a plan to share"
           }
         },
         "ja" : {
@@ -1610,7 +1610,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "You don't have any pass codes to share."
+            "value" : "You don't have any plan codes to share."
           }
         },
         "ja" : {
@@ -2166,7 +2166,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "If you leave, you'll switch to the free pass. You'll need a new invite code to rejoin."
+            "value" : "If you leave, you'll switch to the Free plan. You'll need a new invite code to rejoin."
           }
         },
         "ja" : {
@@ -2770,13 +2770,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Another store is already billing a pass for this account."
+            "value" : "Another store is already billing a plan for this account."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "別のストアで課金中のパスがあります。"
+            "value" : "別のストアで課金中の利用券があります。"
           }
         }
       }
@@ -3888,13 +3888,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%lld voice alarm(s) switched to a default voice. Re-register a pass within 3 days to get your voices back; after that they're deleted for good."
+            "value" : "%lld voice alarm(s) now use a default voice. Subscribe again within 3 days to get your voices back; after that they are deleted permanently."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "音声アラーム%lld件が基本の声に変わりました。3日以内に利用券を再登録すれば自分の声が戻り、過ぎると完全に削除されます。"
+            "value" : "声のアラーム%lld件が基本の声に変わりました。3日以内に利用券を登録し直すと自分の声が戻り、過ぎると完全に削除されます。"
           }
         }
       }
@@ -4211,7 +4211,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "You're on the free pass now"
+            "value" : "You're on the Free plan now"
           }
         },
         "ja" : {
@@ -4228,7 +4228,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "The free plan can't be applied here"
+            "value" : "The Free plan can't be applied here"
           }
         },
         "ja" : {
@@ -4466,7 +4466,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Create a Personal pass code that the recipient can register themselves. Your own pass stays the same."
+            "value" : "Create a Personal plan code that the recipient can register themselves. Your own plan stays the same."
           }
         },
         "ja" : {
@@ -5377,13 +5377,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Gifting is only available with personal plans"
+            "value" : "Gifting is only available with the Personal plan"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "プレゼントは個人プランでのみご利用いただけます"
+            "value" : "プレゼントはパーソナルプランでのみご利用いただけます"
           }
         }
       }
@@ -6642,7 +6642,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "I sent you an AlarmTalk pass.\n\nPass code: %1$@\n\n1. Install AlarmTalk %2$@\n2. Sign up and log in\n3. Enter the code under More → Register code"
+            "value" : "I sent you an AlarmTalk plan.\n\nPlan code: %1$@\n\n1. Install AlarmTalk %2$@\n2. Sign up and log in\n3. Enter the code under More → Register code"
           }
         },
         "ja" : {
@@ -7342,7 +7342,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "A paid pass is required"
+            "value" : "A paid plan is required"
           }
         },
         "ja" : {
@@ -8136,7 +8136,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Loading pass info"
+            "value" : "Loading plan info"
           }
         },
         "ja" : {
@@ -8153,13 +8153,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Couldn't load pass info"
+            "value" : "Couldn't load your plan info"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "利用券情報を読み込めませんでした"
+            "value" : "プラン情報を読み込めませんでした"
           }
         }
       }
@@ -8187,7 +8187,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Share pass code"
+            "value" : "Share plan code"
           }
         },
         "ja" : {
@@ -8221,7 +8221,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Cancel pass"
+            "value" : "Cancel plan"
           }
         },
         "ja" : {
@@ -8255,7 +8255,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Cancel your pass?"
+            "value" : "Cancel your plan?"
           }
         },
         "ja" : {
@@ -9141,13 +9141,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Your current pass renews automatically through Google Play. Buying on Apple would bill you in both places. Cancel it in Play Store → Subscriptions first, or try again after it expires."
+            "value" : "Your current plan renews automatically through Google Play. Buying on Apple would bill you in both places. Cancel it in Play Store → Subscriptions first, or try again after it expires."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "現在のパスは Google Play で自動更新されています。Apple で購入すると両方から請求されます。Play ストア → 定期購入で先に解約するか、期間終了後にもう一度お試しください。"
+            "value" : "現在の利用券は Google Play で自動更新されています。Apple で購入すると両方から請求されます。Play ストア → 定期購入で先に解約するか、期間終了後にもう一度お試しください。"
           }
         }
       }
@@ -9158,13 +9158,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "We're checking which store renews your current pass. Please try again in a moment."
+            "value" : "We're checking which store renews your current plan. Please try again in a moment."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "現在のパスがどのストアで更新されるか確認しています。しばらくしてからもう一度お試しください。"
+            "value" : "現在の利用券がどのストアで更新されるか確認しています。しばらくしてからもう一度お試しください。"
           }
         }
       }
@@ -9453,7 +9453,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Invite codes, gifted pass codes, and promo codes all work here."
+            "value" : "Invite codes, gifted plan codes, and promo codes all work here."
           }
         },
         "ja" : {
@@ -10133,7 +10133,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "This feature is available with a paid pass."
+            "value" : "This feature is available with a paid plan."
           }
         },
         "ja" : {
@@ -10190,7 +10190,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Current pass"
+            "value" : "Current plan"
           }
         },
         "ja" : {
@@ -10556,7 +10556,7 @@
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "声の変更は月に1回だけです。来月もう一度お試しください。"
+            "value" : "声は月に1回だけ変更できます。来月またお試しください。"
           }
         }
       }
@@ -10567,13 +10567,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Creating a voice requires your consent to voice data use. Go to More → Terms & Consent to agree again."
+            "value" : "Creating a voice needs your consent to use voice data. Go to More → Terms & consents and agree again."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "声を作成するには音声情報の利用に同意が必要です。「その他」→「規約と同意」から再度同意してください。"
+            "value" : "声を作るには音声情報の利用同意が必要です。その他 → 規約と同意から、もう一度同意してください。"
           }
         }
       }
@@ -10618,13 +10618,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "You're on the free plan, so this voice is locked. Register a plan again to restore it."
+            "value" : "You're on the Free plan now, so this voice can't be used. Register a plan again to bring it back."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "無料プランに変わったため、この声は使えません。プランを再登録すると戻ります。"
+            "value" : "無料利用券に変わり、この声は使えません。利用券を登録し直すと戻ります。"
           }
         }
       }
@@ -10635,13 +10635,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "The phrase changed. Listen to the new one all the way through, then save."
+            "value" : "The preview text changed. Listen to the new one all the way through, then save."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "フレーズが変わりました。新しいフレーズを最後まで聞いてから保存してください。"
+            "value" : "文章が変わりました。新しい文章を最後まで聴いてから保存してください。"
           }
         }
       }
@@ -10754,13 +10754,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "You've used all your custom phrase creations this month. They refill next month."
+            "value" : "You've used up this month's custom-message creations. They refill next month."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "今月の自由入力フレーズの作成回数を使い切りました。来月に回復します。"
+            "value" : "今月の直接入力の文の作成回数を使い切りました。来月にまた補充されます。"
           }
         }
       }
