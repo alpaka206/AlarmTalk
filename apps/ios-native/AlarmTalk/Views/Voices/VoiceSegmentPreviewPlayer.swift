@@ -25,7 +25,7 @@ struct VoiceSegmentPreviewPlayer: View {
                     if controller.isPlaying {
                         controller.stop()
                     } else {
-                        let errorMessage = "미리듣기를 재생하지 못했어요."
+                        let errorMessage = String(localized: "미리듣기를 재생하지 못했어요.")
                         if controller.play(url: audioURL, startMs: startMs, endMs: endMs) {
                             localError = nil
                         } else {

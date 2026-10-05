@@ -92,7 +92,7 @@ final class VoiceStudioViewModel: ObservableObject {
     @Published var fortuneGender = ""
     @Published var fortuneBirthDate = ""
     @Published var fortuneBirthTime = ""
-    @Published var cloneName = "내 목소리"
+    @Published var cloneName = ""
     /// **사용자가 시작한 쓰기**(등록·삭제·이름변경·공유 토글…) 전용. 화면이 버튼을 잠근다.
     @Published var isBusy = false
 
@@ -293,7 +293,7 @@ final class VoiceStudioViewModel: ObservableObject {
                 return (try? previewPlayer.play(url: url)) != nil
             }()
             guard started else {
-                statusMessage = "미리듣기를 재생하지 못했어요."
+                statusMessage = String(localized: "미리듣기를 재생하지 못했어요.")
                 return
             }
             previewingGreetingVoiceId = voiceId
@@ -302,7 +302,7 @@ final class VoiceStudioViewModel: ObservableObject {
         guard let clip = greetingClip(voiceId: voiceId) else {
             // 클론은 사전렌더가 끝나야 인사말 클립이 생긴다 — 조용히 아무 일도 안 하면
             // 버튼이 고장 난 것처럼 보인다.
-            statusMessage = "미리듣기를 준비하고 있어요. 잠시 뒤에 다시 눌러 주세요."
+            statusMessage = String(localized: "미리듣기를 준비하고 있어요. 잠시 뒤에 다시 눌러 주세요.")
             return
         }
         greetingPreviewRequestId += 1
@@ -339,7 +339,7 @@ final class VoiceStudioViewModel: ObservableObject {
         session: AuthSession?,
         onTextReady: ((String) -> Void)? = nil
     ) async -> DraftPreviewOutcome {
-        guard let token = session?.token else { return .failed("로그인이 필요해요.") }
+        guard let token = session?.token else { return .failed(String(localized: "로그인이 필요해요.")) }
         do {
             let response = try await api.generateTTS(
                 TtsGenerateRequest(
@@ -378,7 +378,7 @@ final class VoiceStudioViewModel: ObservableObject {
                     token: token
                 )
             } else if response.previewPlaybackConfirmed != true {
-                return .failed("미리듣기 확인에 실패했어요. 다시 들어 주세요.")
+                return .failed(String(localized: "미리듣기 확인에 실패했어요. 다시 들어 주세요."))
             }
             return .played(response.text)
         } catch {
@@ -795,7 +795,7 @@ final class VoiceStudioViewModel: ObservableObject {
     /// 경로 미러. cacheKey 는 `stock_<messageId>`.
     func prepareStockClip(_ clip: StockClip, session: AuthSession?) async -> PreparedAlarmTalk? {
         guard let token = session?.token else {
-            statusMessage = "로그인이 필요해요."
+            statusMessage = String(localized: "로그인이 필요해요.")
             return nil
         }
         let stockKey = AudioCacheStore.stockCacheKey(messageId: clip.messageId)
@@ -919,12 +919,11 @@ final class VoiceStudioViewModel: ObservableObject {
         language: String = VoiceStudioViewModel.appVoiceLanguage()
     ) async -> VoiceProfile? {
         guard session?.token != nil else {
-            statusMessage = "로그인이 필요해요."
+            statusMessage = String(localized: "로그인이 필요해요.")
             return nil
         }
         guard let fields = requiredVoiceProfileFields(
             name: cloneName,
-            fallbackName: "내 목소리",
             relationshipLabel: relationshipLabel,
             listenerTitle: listenerTitle
         ) else {
@@ -932,7 +931,7 @@ final class VoiceStudioViewModel: ObservableObject {
         }
         cloneName = fields.name
         guard let url = recorder.latestRecordingURL, let durationMs = recorder.latestDurationMs else {
-            statusMessage = "먼저 목소리를 녹음해 주세요."
+            statusMessage = String(localized: "먼저 목소리를 녹음해 주세요.")
             return nil
         }
         // 나머지(길이·busy·전송·새로고침)는 파일 등록과 같다. 이름·관계·호칭은 이미 정리돼
@@ -946,7 +945,7 @@ final class VoiceStudioViewModel: ObservableObject {
             relationshipLabel: fields.relationshipLabel,
             listenerTitle: fields.listenerTitle,
             language: language,
-            tooShortMessage: "12초 이상 녹음해 주세요."
+            tooShortMessage: String(localized: "12초 이상 녹음해 주세요.")
         )
     }
 
@@ -961,10 +960,10 @@ final class VoiceStudioViewModel: ObservableObject {
         relationshipLabel: String? = nil,
         listenerTitle: String? = nil,
         language: String = VoiceStudioViewModel.appVoiceLanguage(),
-        tooShortMessage: String = "12초 이상 준비해 주세요."
+        tooShortMessage: String = String(localized: "12초 이상 준비해 주세요.")
     ) async -> VoiceProfile? {
         guard let token = session?.token else {
-            statusMessage = "로그인이 필요해요."
+            statusMessage = String(localized: "로그인이 필요해요.")
             return nil
         }
         guard let fields = requiredVoiceProfileFields(
@@ -977,7 +976,7 @@ final class VoiceStudioViewModel: ObservableObject {
         guard durationMs >= VoiceProfileLimits.minDurationMs && durationMs <= VoiceProfileLimits.maxDurationMs + VoiceProfileLimits.maxDurationToleranceMs else {
             statusMessage = durationMs < VoiceProfileLimits.minDurationMs
                 ? tooShortMessage
-                : "2분 이하 음성으로 등록할 수 있어요."
+                : String(localized: "2분 이하 음성으로 등록할 수 있어요.")
             return nil
         }
         guard !isBusy else { return nil }
@@ -1018,7 +1017,7 @@ final class VoiceStudioViewModel: ObservableObject {
         session: AuthSession?
     ) async {
         guard let token = session?.token else {
-            statusMessage = "로그인이 필요해요."
+            statusMessage = String(localized: "로그인이 필요해요.")
             return
         }
         guard let fields = requiredVoiceRelationshipFields(
@@ -1037,7 +1036,7 @@ final class VoiceStudioViewModel: ObservableObject {
                 listenerTitle: fields.listenerTitle,
                 token: token
             )
-            statusMessage = "공유 음성 정보를 저장했어요."
+            statusMessage = String(localized: "공유 음성 정보를 저장했어요.")
             await refresh(session: session, force: true)
         } catch {
             statusMessage = mapVoiceError(error)
@@ -1047,7 +1046,7 @@ final class VoiceStudioViewModel: ObservableObject {
     /// 공유받은 목소리를 설정할 때 Android 와 같은 문장으로 짧게 미리듣는다.
     func previewSharedVoice(profileId: String, session: AuthSession?) async {
         guard let token = session?.token else {
-            statusMessage = "로그인이 필요해요."
+            statusMessage = String(localized: "로그인이 필요해요.")
             return
         }
         guard !isBusy else { return }
@@ -1100,30 +1099,30 @@ final class VoiceStudioViewModel: ObservableObject {
         triggerSuccessHaptic: Bool = true
     ) async -> PreparedAlarmTalk? {
         guard let token = session?.token else {
-            statusMessage = "로그인이 필요해요."
+            statusMessage = String(localized: "로그인이 필요해요.")
             return nil
         }
         guard let profileID = selectedProfileID else {
-            statusMessage = "사용할 목소리를 먼저 선택해 주세요."
+            statusMessage = String(localized: "사용할 목소리를 먼저 선택해 주세요.")
             return nil
         }
         if selectedFamilyVoice?.requiresViewerInfo == true {
-            statusMessage = "공유받은 목소리의 관계와 호칭을 먼저 설정해 주세요."
+            statusMessage = String(localized: "공유받은 목소리의 관계와 호칭을 먼저 설정해 주세요.")
             return nil
         }
         guard randomPrompt || !ttsText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            statusMessage = "깨워줄 말을 입력하거나 문구 종류를 골라 주세요."
+            statusMessage = String(localized: "깨워줄 말을 입력하거나 문구 종류를 골라 주세요.")
             return nil
         }
         let promptContext = RandomPromptContext.normalized(randomContext)
         let targetWeatherReady = targetDynamicPromptState?.weatherReady == true
         let targetFortuneReady = targetDynamicPromptState?.fortuneReady == true
         if randomPrompt && promptContext.usesWeather && !hasWeatherInfo && !targetWeatherReady {
-            statusMessage = "날씨가 들어간 문구는 지역을 골라 주세요."
+            statusMessage = String(localized: "날씨가 들어간 문구는 지역을 골라 주세요.")
             return nil
         }
         if randomPrompt && promptContext.usesFortune && !hasFortuneInfo && !targetFortuneReady {
-            statusMessage = "운세에 쓸 정보를 모두 입력해 주세요."
+            statusMessage = String(localized: "운세에 쓸 정보를 모두 입력해 주세요.")
             return nil
         }
         guard !isBusy else { return nil }
@@ -1186,7 +1185,7 @@ final class VoiceStudioViewModel: ObservableObject {
                 listenerTitle: requestListenerTitle
             )
             preparedAlarm = prepared
-            statusMessage = response.cacheHit == true ? "캐시된 음성을 준비했어요." : "새 음성을 생성하고 로컬에 저장했어요."
+            statusMessage = response.cacheHit == true ? String(localized: "캐시된 음성을 준비했어요.") : String(localized: "새 음성을 생성하고 로컬에 저장했어요.")
             if triggerSuccessHaptic {
                 UINotificationFeedbackGenerator().notificationOccurred(.success)
             }
@@ -1205,7 +1204,7 @@ final class VoiceStudioViewModel: ObservableObject {
     /// editorPreviewPlayer 를 넘긴다(change 1, 절대 generateTTS 를 부르지 않음).
     func playPreparedAudio(using player: AudioPreviewPlayer? = nil, volumePercent: Int? = nil) {
         guard let preparedAlarm else {
-            statusMessage = "먼저 음성을 생성해 주세요."
+            statusMessage = String(localized: "먼저 음성을 생성해 주세요.")
             return
         }
         let target = player ?? previewPlayer
@@ -1227,7 +1226,7 @@ final class VoiceStudioViewModel: ObservableObject {
             return
         }
         guard let url = recorder.latestRecordingURL else {
-            statusMessage = "재생할 녹음이 없어요."
+            statusMessage = String(localized: "재생할 녹음이 없어요.")
             return
         }
         do {
@@ -1673,13 +1672,12 @@ final class VoiceStudioViewModel: ObservableObject {
 
     private func requiredVoiceProfileFields(
         name: String,
-        fallbackName: String? = nil,
         relationshipLabel: String?,
         listenerTitle: String?
     ) -> RequiredVoiceProfileFields? {
-        let normalizedName = name.nilIfBlank ?? fallbackName.nilIfBlank
+        let normalizedName = name.nilIfBlank
         guard let normalizedName else {
-            statusMessage = "목소리 이름을 입력해 주세요."
+            statusMessage = String(localized: "목소리 이름을 입력해 주세요.")
             return nil
         }
         return RequiredVoiceProfileFields(
@@ -1696,11 +1694,11 @@ final class VoiceStudioViewModel: ObservableObject {
         listenerTitle: String?
     ) -> (relationshipLabel: String, listenerTitle: String)? {
         guard let relationshipLabel = relationshipLabel.nilIfBlank else {
-            statusMessage = "나와의 관계를 입력해 주세요."
+            statusMessage = String(localized: "나와의 관계를 입력해 주세요.")
             return nil
         }
         guard let listenerTitle = listenerTitle.nilIfBlank else {
-            statusMessage = "이 목소리가 나를 부를 호칭을 입력해 주세요."
+            statusMessage = String(localized: "이 목소리가 나를 부를 호칭을 입력해 주세요.")
             return nil
         }
         return (relationshipLabel, listenerTitle)
@@ -1719,7 +1717,7 @@ final class VoiceStudioViewModel: ObservableObject {
         }
         let trimmed = InputSanitizer.clampVoiceName(newName)
         guard !trimmed.isEmpty else {
-            statusMessage = "이름을 비울 수 없어요."
+            statusMessage = String(localized: "이름을 비울 수 없어요.")
             return
         }
         guard !isBusy else { return }
@@ -1751,7 +1749,7 @@ final class VoiceStudioViewModel: ObservableObject {
         defer { isBusy = false }
         do {
             _ = try await api.updateVoiceProfile(id: profile.id, name: nil, isShared: isShared, token: token)
-            statusMessage = isShared ? "공유를 켰어요." : "공유를 껐어요."
+            statusMessage = isShared ? String(localized: "공유를 켰어요.") : String(localized: "공유를 껐어요.")
             await refresh(session: session, force: true)
         } catch {
             statusMessage = mapVoiceError(error)

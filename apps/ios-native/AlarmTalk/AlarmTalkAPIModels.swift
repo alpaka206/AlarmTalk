@@ -839,7 +839,7 @@ extension FamilyVoiceProfile {
 
     var sharedFromLabel: String {
         let owner = ownerName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return owner.isEmpty ? "공유받은 목소리" : "\(owner)님에게 공유받은 목소리"
+        return owner.isEmpty ? String(localized: "공유받은 목소리") : String(localized: "\(owner)님에게 공유받은 목소리")
     }
 }
 

@@ -35,7 +35,7 @@ struct VoiceSetupView: View {
     var body: some View {
         VStack(spacing: 0) {
             VStack(spacing: 0) {
-                Text(failed ? "목소리를 받지 못했어요" : "알람에 쓸 목소리를 받고 있어요")
+                Text(failed ? String(localized: "목소리를 받지 못했어요") : String(localized: "알람에 쓸 목소리를 받고 있어요"))
                     .font(theme.typography.headlineSmall)
                     .fontWeight(.bold)
                     .foregroundStyle(theme.palette.onSurface)
@@ -44,7 +44,7 @@ struct VoiceSetupView: View {
                 Spacer().frame(height: 28)
 
                 if failed {
-                    Text("잠시 뒤 다시 시도해 주세요.")
+                    Text(String(localized: "잠시 뒤 다시 시도해 주세요."))
                         .font(theme.typography.bodyMedium)
                         .foregroundStyle(theme.palette.onSurfaceVariant)
                         .multilineTextAlignment(.center)
@@ -64,7 +64,7 @@ struct VoiceSetupView: View {
 
             VStack(spacing: 0) {
                 if failed {
-                    GradientCta(title: "다시 시도") {
+                    GradientCta(title: String(localized: "다시 시도")) {
                         prefetcher.cancel()
                         prefetcher.start(session: auth.session)
                     }
@@ -79,7 +79,7 @@ struct VoiceSetupView: View {
                 // 처음부터 보이므로 그 틈에 누를 수 있다. 그때 '나중에 받기' 로 뜨면
                 // `skipVoiceSetup()` 이 **영구히 '안 받겠다'** 를 기록하고 게이트를 닫는다 —
                 // 정상 다운로드 경로인데도. 곧 시작될 상태이므로 '계속' 쪽으로 읽는다.
-                Button(prefetcher.state == .finished || failed ? "나중에 받기" : "백그라운드에서 계속") {
+                Button(prefetcher.state == .finished || failed ? String(localized: "나중에 받기") : String(localized: "백그라운드에서 계속")) {
                     onSkip?()
                 }
                 .font(theme.typography.bodyMedium)
@@ -110,6 +110,6 @@ struct VoiceSetupView: View {
         if case let .running(done, total) = prefetcher.state, total > 0 {
             return "\(done * 100 / total)%"
         }
-        return "목소리를 받는 중이에요…"
+        return String(localized: "목소리를 받는 중이에요…")
     }
 }
