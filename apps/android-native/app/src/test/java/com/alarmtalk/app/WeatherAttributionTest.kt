@@ -30,7 +30,7 @@ class WeatherAttributionTest {
         assertTrue(showsWeatherAttribution("kma_jma_nws"))
         // 응답 전·확인 실패·필드 없는 옛 서버.
         assertFalse(showsWeatherAttribution(null))
-        // 지금 서버(Open-Meteo) 또는 앱이 모르는 다른 원천 조합 — 틀린 문장을 말하지 않는다.
+        // Open-Meteo 를 쓰는 서버(원천 교체 전·되돌린 뒤) 또는 앱이 모르는 다른 원천 조합 — 틀린 문장을 말하지 않는다.
         assertFalse(showsWeatherAttribution(""))
         assertFalse(showsWeatherAttribution("open_meteo"))
         // 불투명 토큰이다 — 대소문자·공백을 고쳐 읽지 않는다.

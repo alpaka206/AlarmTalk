@@ -18,10 +18,10 @@ enum HelperFormatters {
     /// 앞 2개 윈도우만 표시하고 나머지는 "외 N개" 로 축약한다. 비어 있으면 "없음".
     static func quietScheduleLabel(_ windows: [FamilyAlarmQuietWindow]?) -> String {
         let list = windows ?? []
-        if list.isEmpty { return "없음" }
+        if list.isEmpty { return String(localized: "없음") }
         let visible = list.prefix(2).map(quietWindowLabel).joined(separator: " · ")
         let hidden = list.count - 2
-        return hidden > 0 ? "\(visible) 외 \(hidden)개" : visible
+        return hidden > 0 ? String(localized: "\(visible) 외 \(hidden)개") : visible
     }
 
     private static func quietWindowLabel(_ window: FamilyAlarmQuietWindow) -> String {
@@ -41,12 +41,12 @@ enum HelperFormatters {
     static func quietDaysLabel(_ days: [Int]) -> String {
         let sorted = Array(Set(days)).sorted()
         switch sorted {
-        case []: return "없음"
-        case [1, 2, 3, 4, 5]: return "평일"
-        case [0, 6]: return "주말"
-        case [0, 1, 2, 3, 4, 5, 6]: return "매일"
+        case []: return String(localized: "없음")
+        case [1, 2, 3, 4, 5]: return String(localized: "평일")
+        case [0, 6]: return String(localized: "주말")
+        case [0, 1, 2, 3, 4, 5, 6]: return String(localized: "매일")
         default:
-            let labels = ["일", "월", "화", "수", "목", "금", "토"]
+            let labels = [String(localized: "일"), String(localized: "월"), String(localized: "화"), String(localized: "수"), String(localized: "목"), String(localized: "금"), String(localized: "토")]
             return sorted.map { labels[max(0, min(6, $0))] }.joined(separator: ",")
         }
     }
