@@ -14,9 +14,9 @@ struct PeoplePanel: View {
             if let group = socialFeatures.familyGroup?.group {
                 HStack {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("가족 그룹")
+                        Text(String(localized: "가족 그룹"))
                             .font(.headline)
-                        Text("멤버 \(socialFeatures.familyGroup?.members.count ?? 0)/\(group.maxMembers)")
+                        Text(String(localized: "멤버 \(socialFeatures.familyGroup?.members.count ?? 0)/\(group.maxMembers)"))
                             .font(.footnote)
                             .foregroundStyle(AlarmTalkTheme.textSecondary)
                     }
@@ -29,7 +29,7 @@ struct PeoplePanel: View {
                         VStack(alignment: .leading, spacing: 3) {
                             Text(member.name ?? member.email ?? member.userId)
                                 .font(.subheadline.weight(.semibold))
-                            Text(member.allowFamilyAlarms == true ? "상대방 알람 허용" : "상대방 알람 꺼짐")
+                            Text(member.allowFamilyAlarms == true ? String(localized: "상대방 알람 허용") : String(localized: "상대방 알람 꺼짐"))
                                 .font(.caption)
                                 .foregroundStyle(AlarmTalkTheme.textSecondary)
                         }
