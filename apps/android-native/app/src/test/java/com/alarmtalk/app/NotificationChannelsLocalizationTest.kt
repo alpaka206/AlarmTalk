@@ -1,5 +1,6 @@
 package com.alarmtalk.app
 
+import android.app.Application
 import android.app.NotificationManager
 import android.content.Context
 import android.content.res.Configuration
@@ -56,7 +57,9 @@ class NotificationChannelsLocalizationTest {
 
     @Test
     fun `프로세스 재시작 없이 언어 구성 콜백만으로 모든 채널의 표시를 갱신한다`() {
-        val application = ApplicationProvider.getApplicationContext<AlarmTalkApplication>()
+        // 테스트의 plain Application을 유지해 Sentry·동기화 초기화를 실행하지 않는다.
+        val application = ApplicationProvider.getApplicationContext<Application>()
+        NotificationChannels.install(application)
         NotificationChannels.ensure(context("ko"))
         val manager = application.getSystemService(NotificationManager::class.java)
         val settings = manager.notificationChannels.associate { it.id to Triple(it.importance, it.sound, it.shouldVibrate()) }

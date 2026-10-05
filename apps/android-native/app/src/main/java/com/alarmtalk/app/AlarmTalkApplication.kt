@@ -1,7 +1,6 @@
 package com.alarmtalk.app
 
 import android.app.Application
-import android.content.res.Configuration
 import android.os.Build
 import android.util.Log
 import androidx.lifecycle.DefaultLifecycleObserver
@@ -37,7 +36,7 @@ class AlarmTalkApplication : Application() {
         // 일이 없지만 같은 모양으로 감싼다 — 실패해도 앱 진입을 막지 않는다.
         runCatching { com.alarmtalk.app.alarm.VisibleActivityTracker.install(this) }
             .onFailure { AlarmTalkLog.reportError("VisibleActivityTracker install failed", it) }
-        runCatching { NotificationChannels.ensure(this) }
+        runCatching { NotificationChannels.install(this) }
             .onFailure { AlarmTalkLog.reportError("NotificationChannels init failed", it) }
         // ⚠ **우리가 올려 둔 기기 알람 볼륨을 여기서도 되돌린다.** 울림은 서비스가 끝내면서
         //   되돌리고 그 서비스가 다시 뜰 때 한 번 더 본다. 그런데 **미리듣기**도 같은 크기로
@@ -97,13 +96,6 @@ class AlarmTalkApplication : Application() {
                 .onFailure { AlarmTalkLog.reportError("Stale audio cache sweep failed", it) }
         }
         Log.i(TAG, "Voice Alarm native application started")
-    }
-
-    override fun onConfigurationChanged(newConfig: Configuration) {
-        super.onConfigurationChanged(newConfig)
-        // 앱별 언어 변경은 프로세스를 다시 만들지 않아 onCreate가 호출되지 않는다.
-        runCatching { NotificationChannels.ensure(createConfigurationContext(newConfig)) }
-            .onFailure { AlarmTalkLog.reportError("NotificationChannels configuration refresh failed", it) }
     }
 
     private fun initializeSentry() {
