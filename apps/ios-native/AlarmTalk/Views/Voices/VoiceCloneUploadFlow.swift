@@ -152,7 +152,7 @@ struct VoiceCloneUploadFlow: View {
     var body: some View {
         VStack(spacing: 0) {
             WakerTopBar(
-                title: String(localized: "목소리 만들기"),
+                title: "목소리 만들기",
                 onBack: topBarBackAction,
                 backEnabled: !voice.isBusy
             )
