@@ -9,6 +9,19 @@ struct SettingsHomeLocalizationTests {
         return try #require(Bundle(path: path))
     }
 
+    @Test("받지 않는 시간의 요일도 번역하고 목록 끄기는 울림 해제와 구분한다", arguments: ["en", "ja"])
+    func quietScheduleAndToggle(language: String) throws {
+        let bundle = try bundle(language)
+        let windows = [FamilyAlarmQuietWindow(days: [1, 2, 3, 4, 5], start: "07:00", end: "18:00")]
+        let member = FamilyGroupMember(id: "member", userId: "user", role: "member", joinedAt: "2026-10-05", familyAlarmQuietWindows: windows)
+        let weekdays = language == "en" ? "Weekdays" : "平日"
+        #expect(FamilyAlarmScheduleRules.quietScheduleLabel(member, bundle: bundle) == "\(weekdays) 07:00-18:00")
+        #expect(HelperFormatters.quietDaysLabel([0, 6], bundle: bundle) == (language == "en" ? "Weekends" : "週末"))
+        #expect(HelperFormatters.quietDaysLabel(Array(0...6), bundle: bundle) == (language == "en" ? "Every day" : "毎日"))
+        #expect(HelperFormatters.quietDaysLabel([1, 3], bundle: bundle) == (language == "en" ? "Mon,Wed" : "月,水"))
+        #expect(bundle.localizedString(forKey: "알람 끄기", value: nil, table: nil) == (language == "en" ? "Turn alarm off" : "アラームをオフにする"))
+    }
+
     @Test("홈의 날짜·목소리 서식을 언어에 맞게 표시하고 이름 없는 구성원은 단수다", arguments: ["en", "ja"])
     func rowAndRecipient(language: String) throws {
         let bundle = try bundle(language)
