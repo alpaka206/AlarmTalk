@@ -20,7 +20,8 @@
     "samples:event": "esbuild scripts/make-event-samples.ts --bundle --platform=node --format=esm --log-level=error --outfile=node_modules/.cache/make-event-samples.mjs && node node_modules/.cache/make-event-samples.mjs",
     "preview:stock": "esbuild scripts/prerender-stock-preview.ts --bundle --platform=node --format=esm --log-level=error --outfile=node_modules/.cache/prerender-stock-preview.mjs && node node_modules/.cache/prerender-stock-preview.mjs",
     "publish:stock": "esbuild scripts/publish-stock-clips.ts --bundle --platform=node --format=esm --external:@libsql/client --log-level=error --outfile=node_modules/.cache/publish-stock-clips.mjs && node node_modules/.cache/publish-stock-clips.mjs",
-    "eval:gemini": "esbuild scripts/eval-gemini-prompts.ts --bundle --platform=node --format=esm --external:@libsql/client --log-level=error --outfile=node_modules/.cache/eval-gemini-prompts.mjs && node node_modules/.cache/eval-gemini-prompts.mjs"
+    "eval:gemini": "esbuild scripts/eval-gemini-prompts.ts --bundle --platform=node --format=esm --external:@libsql/client --log-level=error --outfile=node_modules/.cache/eval-gemini-prompts.mjs && node node_modules/.cache/eval-gemini-prompts.mjs",
+    "check:weather": "esbuild scripts/weather-sources-check.ts --bundle --platform=node --format=esm --log-level=error --outfile=node_modules/.cache/weather-sources-check.mjs && node node_modules/.cache/weather-sources-check.mjs"
   },
   "type": "module",
   "devDependencies": {

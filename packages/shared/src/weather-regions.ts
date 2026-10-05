@@ -8,7 +8,8 @@ import catalogJson from './weather-regions.json';
  *
  * - 사용자는 **나라(KR·JP·US) → 그 나라의 지역**을 목록에서 고른다. 직접 입력은 없다.
  *   한국 17개 시·도, 일본 47개 도도부현, 미국은 50개 주의 최대 도시 + 워싱턴 D.C. + 잘 알려진
- *   대도시. 날씨는 지역마다 **고정 좌표**(`lat`/`lon`, 한국·일본은 시·도청 소재지)로 잰다 —
+ *   대도시. 날씨는 지역마다 **고정된 원천의 칸**(`source` — 기상청 격자·気象庁 예보구역·NWS 격자)에서
+ *   읽는다. 좌표(`lat`/`lon`, 한국·일본은 시·도청 소재지)는 그 칸을 찾고 검증하는 근거다 —
  *   지오코딩이 없다. 예전에는 두 글자 한국어 이름을 지오코딩해 동명 마을을 잡았다
  *   (부산 → 경북 의성군의 마을, 서울·제주 → 결과 0건).
  * - 저장·전송 값은 **키**(`kr-seoul`)다. 보이는 이름(`names`)은 번역하고, 옛 앱이 읽는
@@ -44,6 +45,48 @@ export const WeatherCountrySchema = z.object({
   aliases: z.array(z.string().min(1)),
 });
 
+/**
+ * 날씨를 **어느 나라 원천의 어느 칸**에서 읽는가 — 지역마다 고정한다(`docs/spec/voice-and-message.md`
+ * 5-1 「서버가 미리 계산해 둔다」). 좌표(`lat`/`lon`)에서 매번 계산하지 않고 박아 두는 이유는, 원천의
+ * 칸이 바뀌면 그 지역의 날씨가 **조용히 다른 곳의 것**이 되기 때문이다 — 바꿀 때는 사람이 본다.
+ *
+ * - `kma`(기상청 단기예보): 격자 `nx`·`ny`. 값은 `lat`/`lon` 을 가이드의 LCC 식으로 바꾼 것과 같다
+ *   (`packages/shared/test/weather-regions.test.ts` 가 다시 계산해 대조한다). 시·도청이 아니라 **앱이
+ *   보여 주는 소재지**(경북 → 안동)의 칸이다.
+ * - `jma`(気象庁 bosai): 예보 `office`, 날씨·강수확률을 읽는 1차 세분 구역 `class10`, 기온 지점
+ *   `tempStation`(AMeDAS). 주간 예보의 구역은 계절에 따라 갈라지므로(青森·滋賀) 후보를 순서대로 두고
+ *   그날 응답에 **실제로 있는 첫 구역**을 쓴다 — 기온 지점은 구역마다 짝지어 둔다.
+ * - `nws`(미국 국립기상청): 원시 격자 `gridId`/`gridX`,`gridY`(`/points` 로 한 번 찾은 값).
+ *
+ * ⚠ 이 칸은 **필수**다 — zod 는 스키마에 없는 키를 지우므로, 선택으로 두면 오타 난 키가 조용히
+ *   사라지고 그 지역의 날씨가 영영 미해결이 된다.
+ */
+export const WeatherSourceSchema = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('kma'),
+    nx: z.number().int().min(1).max(149),
+    ny: z.number().int().min(1).max(253),
+  }),
+  z.object({
+    kind: z.literal('jma'),
+    office: z.string().regex(/^\d{6}$/),
+    class10: z.string().regex(/^\d{6}$/),
+    tempStation: z.string().regex(/^\d{5}$/),
+    week: z
+      .array(z.object({ area: z.string().regex(/^\d{6}$/), tempStation: z.string().regex(/^\d{5}$/) }))
+      .min(1),
+  }),
+  z.object({
+    kind: z.literal('nws'),
+    gridId: z.string().regex(/^[A-Z]{3}$/),
+    gridX: z.number().int().nonnegative(),
+    gridY: z.number().int().nonnegative(),
+  }),
+]);
+
+/** 나라 → 그 나라의 원천. 한 나라는 한 원천만 쓴다 — 다른 나라 원천으로 대신하지 않는다. */
+export const WEATHER_SOURCE_KIND_BY_COUNTRY = { KR: 'kma', JP: 'jma', US: 'nws' } as const;
+
 export const WeatherRegionSchema = z.object({
   key: z.string().regex(KEY_RE),
   country: z.enum(WEATHER_COUNTRY_CODES),
@@ -56,6 +99,8 @@ export const WeatherRegionSchema = z.object({
   lon: z.number().min(-180).max(180),
   /** IANA 시간대. `target_date` 는 이 시간대의 달력 날짜다. */
   tz: z.string().min(1),
+  /** 날씨 원천의 칸(`WeatherSourceSchema`). 앱으로는 내보내지 않는다(서버만 쓴다). */
+  source: WeatherSourceSchema,
   /** 이름·대표 도시 밖의 표기(옛 앱이 저장했을 글자). 정규형으로 적는다. */
   aliases: z.array(z.string().min(1)),
 });
@@ -78,10 +123,17 @@ export const WeatherRegionCatalogSchema = z
       if (!region.key.startsWith(`${region.country.toLowerCase()}-`)) {
         ctx.addIssue({ code: 'custom', message: `키 접두사와 나라가 다르다: ${region.key}` });
       }
+      if (region.source.kind !== WEATHER_SOURCE_KIND_BY_COUNTRY[region.country]) {
+        ctx.addIssue({
+          code: 'custom',
+          message: `${region.key}: ${region.country} 지역의 원천은 ${WEATHER_SOURCE_KIND_BY_COUNTRY[region.country]} 여야 한다`,
+        });
+      }
     }
   });
 
 export type WeatherCountry = z.infer<typeof WeatherCountrySchema>;
+export type WeatherSource = z.infer<typeof WeatherSourceSchema>;
 export type WeatherRegion = z.infer<typeof WeatherRegionSchema>;
 export type WeatherRegionCatalog = z.infer<typeof WeatherRegionCatalogSchema>;
 export type WeatherRegionLabels = { country: string; city: string };

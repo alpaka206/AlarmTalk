@@ -5,12 +5,15 @@ import os
 ///
 /// 날씨 테마 알람은 저장하면서 서버에 그 지역·그 날짜의 조건을 묻는다
 /// (`AlarmEditorSheet.applyWeatherVariant`). 서버가 미리 계산해 둔 값이면 DB 한 번 읽기라
-/// 빠르지만, 그 값이 없으면 뒤에서 날씨 원천을 부르므로(호출마다 상한 5초 — 지금 원천인
-/// Open-Meteo 는 두세 번을 순차로, 서버가 원천을 나라별 공식 예보(기상청·気象庁·NWS)로 바꾼 뒤에는
-/// 한 번) 느린 망에서는 응답이 한참 뒤에 온다. 사용자는 그
+/// 빠르지만, 그 값이 없으면 뒤에서 그 나라의 날씨 원천(기상청·気象庁·NWS)을 한 번 부르고, 그 한 번
+/// **전체**에 마감 5초를 둔다(백엔드 `lib/weather-region-daily.ts` 의 `WEATHER_READ_DEADLINE_MS` — 기상청의
+/// 한 회차 물러서기·다음 페이지까지 합친 시간. fetch 하나의 상한 `WEATHER_FETCH_TIMEOUT_MS` 는 근거가
+/// 아니다 — 한 번의 원천 호출이 fetch 를 둘 할 수 있다). 8초는 그 마감에 DB 읽기·쓰기와 왕복을 더한
+/// 몫이고, 느린 망에서는 응답이 그보다도 한참 뒤에 온다. 사용자는 그
 /// 동안 저장 버튼이 잠긴 채(`isWorking`) 기다린다 — 여기서 **8초**를 넘기면 기다리기를
 /// 그만두고 미해결로 저장한다. 안드로이드 `AlarmRepository.resolveWeatherVariantForDraft`
 /// 의 `WEATHER_RESOLVE_TIMEOUT_MILLIS` 와 같은 값이다 — **한쪽만 바꾸지 말 것.**
+/// 서버 마감은 이 값보다 짧아야 한다 — 백엔드 `weather-region-daily.test.ts` 가 이 상수를 소스에서 읽어 맞대어 본다.
 ///
 /// 상한을 넘긴 결과는 **기존 실패(오프라인)와 같다**: `nil` 을 돌려주고 호출자는
 /// `BucketVariantResolver.nextWeatherVariantState` 로 옛 값을 지키거나 미해결로 남긴다.

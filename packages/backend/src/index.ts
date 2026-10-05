@@ -323,6 +323,72 @@ async function planNotificationDrainTurn(
   }
 }
 
+/**
+ * 이 틱이 어느 지역 날씨 슬롯의 **마지막 틱**인가(`hasWeatherSlotLastTick`) — 그러면 날씨 작업을 5분 틱의 맨 앞에서
+ * 돌린다(아래 `scheduled`). 모듈을 못 불렀으면 false — 원래 자리의 날씨 작업이 그 오류를 올린다.
+ */
+async function isWeatherSlotLastTick(now: Date): Promise<boolean> {
+  try {
+    const { hasWeatherSlotLastTick } = await import('./lib/weather-region-daily');
+    return hasWeatherSlotLastTick(now);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 지역별 날씨 미리 계산 한 차례(`lib/weather-region-daily.ts`, `docs/spec/voice-and-message.md` 5-1).
+ *
+ * 지역마다 **현지 슬롯**(21:00~21:59 저녁, 06:00~06:59 아침)에서만 일한다 — 슬롯이 열린 지역이 없으면 시간대 계산만
+ * 하고 DB·네트워크를 부르지 않는다. 도는 틱의 subrequest 는 조회 1 + 원천 fetch 최대 12(KMA 6·JMA 8·NWS 4) + 쓰기
+ * 1 = 최대 14 다(조회의 게이트웨이 재시도 2 와 경보는 따로). 오류는 여기서 올린다.
+ */
+async function weatherRegionDailyTick(
+  db: ReturnType<typeof getDB>,
+  env: Env,
+  now: Date,
+  captureCron: (at: string, err: unknown, tags?: Record<string, string>) => void,
+): Promise<void> {
+  try {
+    const { hasOpenWeatherSlot, refreshWeatherRegionDaily } = await import('./lib/weather-region-daily');
+    if (!hasOpenWeatherSlot(now)) return;
+    const { kmaServiceKey } = await import('./lib/weather-source');
+    const result = await refreshWeatherRegionDaily(db, now, {
+      kmaServiceKey: kmaServiceKey(env),
+      // 키가 없을 때 dev 는 info 로그만, 운영은 KR 슬롯마다 경보.
+      alertOnMissingKey: env.ENVIRONMENT !== 'development',
+      // ⚠ 경보는 **슬롯 마지막 틱**에 (나라, 시간대 묶음)마다 한 번 — 하루 슬롯 수만큼으로 묶인다.
+      onAlert: (alert) =>
+        captureCron(
+          'scheduled.weather_region_daily.slot_failed',
+          new Error(`weather slot failed: ${alert.country} ${alert.slot} ${alert.source} ${alert.reason}`),
+          {
+            country: alert.country,
+            slot: alert.slot,
+            source: alert.source,
+            reason: alert.reason,
+            done: `${alert.done}/${alert.total}`,
+          },
+        ),
+    });
+    if (result.due > 0 || result.alerts.length > 0) {
+      logStructured('info', {
+        at: 'scheduled.weather_region_daily',
+        open: result.open,
+        due: result.due,
+        attempted: result.attempted,
+        stored: result.stored,
+        failed: result.failures.length,
+        deferred: result.deferred,
+        budgetExhausted: result.budgetExhausted,
+        missingTable: result.missingTable,
+      });
+    }
+  } catch (err) {
+    captureCron('scheduled.weather_region_daily', err);
+  }
+}
+
 async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
   // 읽기 재시도는 `getDB` 가 두른다(`withTransientReadRetry`) — 여기서 또 감싸면 3×3 회가 된다.
   // 실패한 유지보수 쓰기는 다음 틱에 재개되므로 그대로 둔다.
@@ -396,6 +462,16 @@ async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext)
     }
     return;
   }
+
+  // ── 날씨 슬롯의 **마지막 틱**이면 날씨를 맨 앞에서 ───────────────────────────────────────────
+  // 마지막 틱(현지 분 ≥ 55) 뒤에는 그 슬롯의 틱이 없어 판정·경보(`slot_failed`)가 여기서만 나간다. 경보(Sentry)도
+  // subrequest 하나라, 아래 작업들이 이 실행의 한도(~50)를 먼저 다 쓰면 판정을 해도 **언제나** 닿지 않는다(코덱스
+  // #846). 맨 앞이면 날씨 작업의 최대(조회 1 + 게이트웨이 재시도 2 + fetch 12 + 쓰기 1 + 경보 몇 건)가 한도에 닿을 수
+  // 없다. 대가로 아래 작업들은 날씨가 쓴 만큼 적은 예산으로 돌고, 한도에 걸리면 각자의 원래 규칙대로다(대개 다음
+  // 틱이 잇는다 — 붐비는 틱이면 전부터 있던 위험이고, 이 순서가 되는 틱은 하루 13개다). 날씨 슬롯에는 마지막 틱
+  // 다음이 없다. 그 밖의 틱은 원래 자리(계정 파기 뒤, 클론 드레인 앞)다.
+  const weatherFirst = await isWeatherSlotLastTick(now);
+  if (weatherFirst) await weatherRegionDailyTick(db, env, now, captureCron);
 
   // 외부 자원(ElevenLabs 클론 / R2 오디오) 지연 삭제 큐 드레인 + TTL 정리.
   try {
@@ -585,27 +661,10 @@ async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext)
   // (push 제거 후 남아 있던 '발사 대상 스캔+로그' 블록도 정리 — 소비자 없는 알람 테이블 풀스캔이
   //  틱마다 Turso row-read 만 소모했다.)
 
-  // 지역별 날씨 미리 계산(`lib/weather-region-daily.ts`, `docs/spec/voice-and-message.md` 5-1).
-  // 매시 첫 틱에만 들여다보고, 3시간 안에 계산한 지역은 건너뛴다 — 도는 틱의 subrequest 는
-  // 조회 1 + Open-Meteo 최대 6(50곳 묶음 × 예보·대기질) + 쓰기 최대 3 이다.
-  // 클론 드레인(아래)**보다 먼저** 둔다: 그쪽은 subrequest 가 모자라면 스스로 멈추고 다음 틱에
-  // 잇지만, 여기는 한 번 놓치면 한 시간 뒤라서다(그 사이는 읽기 경로가 즉석 계산으로 메운다).
-  try {
-    const { isWeatherRegionRefreshSlot, refreshWeatherRegionDaily } = await import(
-      './lib/weather-region-daily'
-    );
-    if (isWeatherRegionRefreshSlot(now)) {
-      const { openMeteoApiKey } = await import('./lib/weather-fetch');
-      const result = await refreshWeatherRegionDaily(db, now, {
-        openMeteoApiKey: openMeteoApiKey(env),
-      });
-      if (result.due > 0) {
-        logStructured('info', { at: 'scheduled.weather_region_daily', ...result });
-      }
-    }
-  } catch (err) {
-    captureCron('scheduled.weather_region_daily', err);
-  }
+  // 지역별 날씨 미리 계산(`weatherRegionDailyTick`, 스펙 5-1). 클론 드레인(아래)**보다 먼저** 둔다: 그쪽은
+  // subrequest 가 모자라면 스스로 멈추고 다음 틱에 잇지만, 여기는 슬롯이 닫히면 다음 슬롯(12시간 뒤)까지 기다린다.
+  // 슬롯의 마지막 틱이면 이미 맨 앞에서 돌았다(위 `weatherFirst`).
+  if (!weatherFirst) await weatherRegionDailyTick(db, env, now, captureCron);
 
   // ⚠⚠ **기본(시스템) 목소리 스톡 클립 드레인은 껐다**(2026-09-03 리뷰 15차).
   //

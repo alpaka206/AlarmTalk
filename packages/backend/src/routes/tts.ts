@@ -28,8 +28,6 @@ import {
   parseSpeechStyle,
   withVoiceEnergy,
   prepareAlarmTextWithVertex,
-  type WeatherSignal,
-  type WeatherCondition,
 } from '../lib/vertex-translate';
 import {
   CLONE_CLIP_SEEDS,
@@ -58,24 +56,13 @@ import {
 } from '../lib/dynamic-prompt-settings';
 import { withWriteTransaction, type DbExecutor } from '../lib/transactions';
 import { enqueueExternalDeletion } from '../lib/audio-retention';
-import {
-  loadWeatherSignalInput,
-  RAIN_WMO_CODES,
-  resolvePrerenderWeatherIndex,
-  SNOW_WMO_CODES,
-  weatherRegionFor,
-  type WeatherSignalInput,
-} from '../lib/weather-signal';
+import { weatherRegionFor } from '../lib/weather-signal';
 import { resolveRegionVariantIndex } from '../lib/weather-region-daily';
-import { openMeteoApiKey } from '../lib/weather-fetch';
+import { kmaServiceKey } from '../lib/weather-source';
 
-// 날씨 조회·분류는 `lib/weather-signal.ts` 로 옮겼다(서버 미리 계산 cron 과 같이 쓴다). 이 라우트를
-// 기준으로 부르던 테스트·문서가 있어 이름은 여기서도 그대로 내보낸다.
-export {
-  loadWeatherSignalInput,
-  resolvePrerenderWeatherIndex,
-  type WeatherSignalInput,
-} from '../lib/weather-signal';
+// 날씨 분류는 `lib/weather-signal.ts` 에 있다(서버 미리 계산 cron 과 같이 쓴다). 이 라우트를 기준으로
+// 부르던 테스트·문서가 있어 이름은 여기서도 그대로 내보낸다.
+export { resolvePrerenderWeatherIndex, type WeatherSignalInput } from '../lib/weather-signal';
 
 const tts = new Hono<AppEnv>();
 // 클라가 보내는 카테고리(= messages.category 저장값). 넷이 전부다.
@@ -210,10 +197,6 @@ function fortuneProfile(args: {
     birthTime ? `birth time=${birthTime}` : null,
   ].filter(Boolean);
   return parts.length > 0 ? parts.join(', ') : null;
-}
-
-function randomContextUsesWeather(context: RandomContext): boolean {
-  return context === 'wake_weather';
 }
 
 async function loadTargetDynamicPromptSettings(
@@ -369,69 +352,6 @@ async function findViewerRelationshipField(
     args: [voiceProfileId, userPk, userLoginId],
   });
   return normalizeRelationshipLabel(result.rows[0]?.[column]);
-}
-
-async function loadWeatherSignal(
-  args: {
-    latitude?: unknown;
-    longitude?: unknown;
-    locationLabel?: unknown;
-    region?: unknown;
-    country?: unknown;
-    city?: unknown;
-  },
-  apiKey: string | undefined,
-): Promise<WeatherSignal | null> {
-  // 라이브 생성: 그 자리에서 읽을 문장 하나라, 지오코딩·미세먼지를 못 받았다고 문장을 통째로 비우기보다
-  // 서울 좌표·먼지 없음으로 이어 가는 기존 규약을 지킨다. 저장되는 값이 아니라 다시 받을 기회도 없다.
-  const input = await loadWeatherSignalInput(args, 'fallback', apiKey);
-  return input ? buildWeatherSignal(input) : null;
-}
-
-// 날씨를 언어무관 구조화 시그널(condition+action, 최대 2개)로 환원한다(설계 #7). 한국어/타깃어
-// 표면 생성은 vertex-translate의 *WeatherSurface 헬퍼가 담당.
-function buildWeatherSignal(input: WeatherSignalInput): WeatherSignal | null {
-  const { code, maxTemp, minTemp, rainProbability, precipitation, hasDust } = input;
-  const heavyRain =
-    (Number.isFinite(rainProbability) && rainProbability >= 60) ||
-    (Number.isFinite(precipitation) && precipitation > 1) ||
-    RAIN_WMO_CODES.includes(code);
-  const lightRain =
-    !heavyRain &&
-    ((Number.isFinite(rainProbability) && rainProbability >= 30) ||
-      (Number.isFinite(precipitation) && precipitation > 0));
-  const snowy = SNOW_WMO_CODES.includes(code);
-
-  const conditions: WeatherCondition[] = [];
-  if (snowy) {
-    conditions.push({ kind: 'snow', action: 'coat' });
-  } else if (heavyRain || lightRain) {
-    conditions.push({ kind: 'rain', action: 'umbrella' });
-  }
-
-  if (hasDust) {
-    conditions.push({ kind: 'dust', action: 'mask' });
-  }
-
-  if (conditions.length === 0) {
-    if (Number.isFinite(maxTemp) && maxTemp >= 30) {
-      conditions.push({ kind: 'heat', action: 'water' });
-    } else if (Number.isFinite(maxTemp) && maxTemp >= 25) {
-      conditions.push({ kind: 'nice', action: 'walk' });
-    } else if (
-      (Number.isFinite(minTemp) && minTemp <= 0) ||
-      (Number.isFinite(maxTemp) && maxTemp <= 5)
-    ) {
-      conditions.push({ kind: 'cold', action: 'coat' });
-    } else if (Number.isFinite(maxTemp) && maxTemp <= 12) {
-      conditions.push({ kind: 'cold', action: 'coat' });
-    } else if (Number.isFinite(maxTemp) && maxTemp >= 15 && maxTemp <= 24) {
-      conditions.push({ kind: 'nice', action: 'walk' });
-    }
-  }
-
-  if (conditions.length === 0) return null;
-  return { conditions: conditions.slice(0, 2) };
 }
 
 tts.post('/generate', async (c) => {
@@ -919,33 +839,10 @@ tts.post('/generate', async (c) => {
         normalizeRelationshipLabel(body.listener_title ?? body.listenerTitle) ??
         (await findViewerRelationshipField(db, userPk, userLoginId, body.voice_profile_id, 'listener_title')) ??
         (isSharedVoiceProfile ? null : normalizeRelationshipLabel(vp.listener_title));
-      const weatherSignal = randomContextUsesWeather(randomContext)
-        ? await loadWeatherSignal(
-            {
-              latitude: body.weather_latitude ?? body.weatherLatitude,
-              longitude: body.weather_longitude ?? body.weatherLongitude,
-              locationLabel: body.weather_location_label ?? body.weatherLocationLabel,
-              // 목록 지역 키(`docs/spec/voice-and-message.md` 5-1). 요청에 도시 글자가 따로 오면 그
-              // 글자가 이긴다(예전 순서) — 계정 설정의 지역은 요청이 아무 위치도 싣지 않았을 때만.
-              region:
-                firstNonBlankText(body.weather_region, body.weatherRegion) ??
-                (firstNonBlankText(body.weather_city, body.weatherCity)
-                  ? null
-                  : targetDynamicPromptSettings.weather.region),
-              country: firstNonBlankText(
-                body.weather_country,
-                body.weatherCountry,
-                targetDynamicPromptSettings.weather.country,
-              ),
-              city: firstNonBlankText(
-                body.weather_city,
-                body.weatherCity,
-                targetDynamicPromptSettings.weather.city,
-              ),
-            },
-            openMeteoApiKey(c.env),
-          )
-        : null;
+      // ⚠ 이 갈래는 닿지 않는다 — 라이브 랜덤 생성은 위에서 `RANDOM_TTS_RETIRED`(400)로 거절된다. 날씨 원천을
+      // 나라별 공식 예보로 바꾸면서(2026-10-01) 이 경로의 날씨 조회(서울 폴백·먼지 없음 폴백)를 지웠다 — 문장용
+      // 날씨는 더 만들지 않는다. 남은 코드를 지우는 것은 후속 정리다.
+      const weatherSignal = null;
       const generated = await generateDynamicAlarmTextWithVertex(c.env, {
         mode: randomContext,
         category,
@@ -1986,39 +1883,26 @@ tts.get('/prerender-variant', async (c) => {
   const context = c.req.query('context') ?? '';
   if (context === 'wake_weather') {
     // 우선순위(`docs/spec/voice-and-message.md` 5-1 「서버가 미리 계산해 둔다」):
-    //  1. `region` 이 목록의 키 → 미리 계산한 (지역, target_date) 행. 없거나 12시간보다 오래됐으면
-    //     박아 둔 좌표로 곧바로 계산해 적는다. `target_date` 는 **지역 시간대의 달력 날짜**다.
+    //  1. `region` 이 목록의 키 → 미리 계산한 (지역, target_date) 행. 없거나 36시간보다 오래됐으면 그 지역의
+    //     원천(기상청·気象庁·NWS)을 한 번 불러 곧바로 계산해 적는다 — 대상 날짜가 지역의 [오늘, +3] 밖이면
+    //     네트워크 없이 null. `target_date` 는 **지역 시간대의 달력 날짜**다.
     //  2. `region` 이 없거나 모르는 키 → 옛 `country`/`city` 글자를 목록으로 되짚어 1과 같이.
-    //  3. 되짚지 못한 옛 글자 → 엄격한 옛 지오코딩(옛 앱 버전용 — `pickStrictGeocodeResult`).
-    // 어느 경로든 한 조각이라도 못 받으면 null — 이 인덱스는 클라가 '해결된 사실' 로 저장하고 발사
-    // 24시간 창 안에서 다시 받지 않으므로, 서울 좌표·먼지 없음 같은 폴백으로 만든 값을 내보내면 그게
-    // 그 알람의 최종 조건이 된다. null 이면 클라는 '맑음(0)' 과 구분해 미해결로 두고 시간당 재시도한다
-    // (`WeatherFetchFailurePolicy`).
+    //  3. 되짚지 못한 옛 글자 → **null**. 지오코딩은 없다(목록 밖의 곳은 공식 예보의 칸을 정할 수 없다).
+    // 어느 경로든 한 조각이라도 못 받으면 null — 이 인덱스는 클라가 '해결된 사실' 로 저장하고 발사 24시간 창
+    // 안에서 다시 받지 않는다. null 이면 클라는 '맑음(0)' 과 구분해 미해결로 두고 시간당 재시도한다.
     const region = weatherRegionFor(
       c.req.query('region'),
       c.req.query('country'),
       c.req.query('city'),
     );
-    if (region) {
-      const variantIndex = await resolveRegionVariantIndex(
-        () => getDB(c.env),
-        region,
-        c.req.query('target_date'),
-        { openMeteoApiKey: openMeteoApiKey(c.env) },
-      );
-      return c.json({ context, variant_index: variantIndex });
-    }
-    const input = await loadWeatherSignalInput(
-      {
-        country: c.req.query('country'),
-        city: c.req.query('city'),
-        targetDate: c.req.query('target_date'),
-        timezone: c.req.query('timezone'),
-      },
-      'unresolved',
-      openMeteoApiKey(c.env),
+    if (!region) return c.json({ context, variant_index: null });
+    const variantIndex = await resolveRegionVariantIndex(
+      () => getDB(c.env),
+      region,
+      c.req.query('target_date'),
+      { kmaServiceKey: kmaServiceKey(c.env) },
     );
-    return c.json({ context, variant_index: input ? resolvePrerenderWeatherIndex(input) : null });
+    return c.json({ context, variant_index: variantIndex });
   }
   // 운세는 클라가 사주+날짜로 온디바이스 결정(fortuneThemeIndex)한다. 그 외(love/medication 회전)도
   // 서버 인덱스 불필요.
