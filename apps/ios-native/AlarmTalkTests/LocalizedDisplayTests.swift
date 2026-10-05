@@ -13,7 +13,15 @@ final class LocalizedDisplayTests: XCTestCase {
             let bundle = try bundle(language)
             XCTAssertEqual(FortunePromptInputFormat.displayLabel("남성", bundle: bundle), male)
             XCTAssertEqual(FortunePromptInputFormat.displayLabel("여성", bundle: bundle), female)
-            XCTAssertEqual(FortunePromptInputFormat.displayLabel("시간 모름", bundle: bundle), unknown)
+            for alias in ["male", "M", "남자"] {
+                XCTAssertEqual(FortunePromptInputFormat.displayLabel(alias, bundle: bundle), male)
+            }
+            for alias in ["female", "F", "여자"] {
+                XCTAssertEqual(FortunePromptInputFormat.displayLabel(alias, bundle: bundle), female)
+            }
+            for alias in ["시간 모름", "모름", "알 수 없음"] {
+                XCTAssertEqual(FortunePromptInputFormat.displayLabel(alias, bundle: bundle), unknown)
+            }
             XCTAssertEqual(FortunePromptInputFormat.displayLabel("09:31~11:30", bundle: bundle), "09:31~11:30")
             XCTAssertEqual(FortunePromptInputFormat.male, "남성")
             XCTAssertEqual(FortunePromptInputFormat.unknownTime, "시간 모름")
@@ -67,6 +75,17 @@ final class LocalizedDisplayTests: XCTestCase {
         XCTAssertEqual(receivedAlarmDisplayLabel(sender: "Tanaka", bundle: try bundle("en")), "Alarm from Tanaka")
         XCTAssertEqual(receivedAlarmDisplayLabel(sender: nil, bundle: try bundle("en")), "Alarm from someone")
         XCTAssertEqual(receivedAlarmDisplayLabel(sender: "  ", bundle: japanese), "相手から届いたアラーム")
+    }
+
+    func testSharedVoiceOwnerUsesCurrentLanguageAndOneHonorific() throws {
+        for (language, owner, expected) in [
+            ("en", "Alex", "Voice shared by Alex"),
+            ("ja", "田中さん", "田中さんから共有された声"),
+            ("ko", "민수님", "민수님에게 공유받은 목소리")
+        ] {
+            let voice = FamilyVoiceProfile(id: "shared", name: "Voice", ownerName: owner)
+            XCTAssertEqual(voice.localizedSharedFromLabel(bundle: try bundle(language)), expected)
+        }
     }
 
     func testLegalLinksFollowAppLanguageWithKoreanFallback() {
