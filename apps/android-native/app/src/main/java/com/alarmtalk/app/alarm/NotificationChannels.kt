@@ -1,9 +1,13 @@
 package com.alarmtalk.app.alarm
 
 import com.alarmtalk.app.R
+import android.app.Application
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.content.ComponentCallbacks
 import android.content.Context
+import android.content.res.Configuration
+import com.alarmtalk.app.core.AlarmTalkLog
 import android.media.AudioAttributes
 import android.media.RingtoneManager
 import android.net.Uri
@@ -67,6 +71,19 @@ object NotificationChannels {
 
     // 폴백 채널 진동 패턴(대기, 진동, 대기, 진동…). 정상 경로는 RingingService 가 per-alarm 패턴으로 직접 진동한다.
     private val FALLBACK_VIBRATION_PATTERN = longArrayOf(0L, 600L, 400L, 600L, 400L, 600L)
+
+    /** Application 시작에서 한 번 설치한다. 언어 변경은 프로세스를 재시작하지 않는다. */
+    fun install(application: Application) {
+        application.registerComponentCallbacks(object : ComponentCallbacks {
+            override fun onConfigurationChanged(newConfig: Configuration) {
+                runCatching { ensure(application.createConfigurationContext(newConfig)) }
+                    .onFailure { AlarmTalkLog.reportError("NotificationChannels configuration refresh failed", it) }
+            }
+
+            override fun onLowMemory() = Unit
+        })
+        ensure(application)
+    }
 
     fun ensure(context: Context) {
         val notificationManager = requireNotNull(context.getSystemService<NotificationManager>())
