@@ -15,8 +15,9 @@ import { addDaysToDate, finalizeSourceDay, zonedParts, type SourceDay } from '..
 /**
  * 한 지역의 원천 결과 → 지역의 오늘부터 +3 까지, 날짜 순서의 클립 자리. 못 구한 날짜는 null(미해결).
  *
- * DB 를 보지 않으므로 오늘 행의 극값을 이어받지 않는다 — KR(0500 회차 이후 — 오늘 TMN 이 없다)·JP·NWS(아침 이후)의
- * 오늘은 미해결이 정상이다.
+ * DB 를 보지 않으므로 오늘 행의 극값을 이어받지 않는다 — KR(0500 회차 이후 — 오늘 TMN 이 없다)·JP(05시 발표 이후 —
+ * 오늘 최저가 없다)·NWS(아침 이후)의 오늘은 미해결이 정상이다. ⚠ JP 도 늘 그렇지는 않다 — 자정 ~ 05시 발표 전(JST)에는
+ * 전날 17시 발표의 내일 최저·최고가 곧 오늘 값이라 오늘도 해결된다(회귀 `test/weather-sources-dry-run.test.ts`).
  */
 export function dryRunVariants(
   region: WeatherRegion,

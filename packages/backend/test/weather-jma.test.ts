@@ -162,7 +162,7 @@ describe('05시 발표 — 합성본(17시 원본의 모양만 바꿈)', () => {
     expect(days.get('2026-10-04')).toMatchObject({ code: 3, rainProbability: 30, minTemp: 16, maxTemp: 24 });
   });
 
-  it('오늘 최저는 어떤 발표에도 없어 늘 이어받는다 — 36시간 안의 저장 행에서', () => {
+  it('05시 발표에는 오늘 최저가 없어 이어받는다 — 36시간 안의 저장 행에서(자정 ~ 05시 발표 전은 weather-sources-dry-run)', () => {
     const today = jmaDaysFromDocument(tokyo0500(), sourceOf('jp-tokyo'), MORNING).get('2026-10-02');
     expect(finalizeSourceDay(today, { isToday: true, now: MORNING, source: 'jma' })).toBeNull();
     const stored = { tempMin: 20, tempMax: 22, computedAt: '2026-10-01T12:05:00.000Z' };

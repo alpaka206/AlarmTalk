@@ -166,7 +166,8 @@ async function dryRun(): Promise<void> {
       stat.ok += 1;
       // 운영(cron·읽기 경로)과 같은 분류다 — 원천 종류를 넘긴다(결정 D7). 분류는 테스트가 그대로 거치는 함수에 있다.
       // 미해결은 내일~+3 과 오늘을 따로 센다 — cron 의 due 는 내일~+3 만 보고, 오늘은 저장 행의 극값을 이어받아야
-      // 만들어지는 날이 있는데 이 드라이런은 DB 를 보지 않는다(합쳐 세면 JP 는 언제나 47 이라 0 인지 읽을 수 없다).
+      // 만들어지는 날이 있는데 이 드라이런은 DB 를 보지 않는다. 그 오늘은 돌린 시각에 달렸다(JP 는 05시 발표 뒤면
+      // 47, 자정 ~ 05시 발표 전이면 대개 0) — 합쳐 세면 그 수에 묻혀 내일~+3 이 0 인지 읽을 수 없다.
       dryRunVariants(r, outcome.days, now).forEach((variant, day) => {
         if (variant !== null) stat.variants.push(variant);
         else if (day === 0) stat.unresolvedToday += 1;
@@ -186,8 +187,9 @@ async function dryRun(): Promise<void> {
     problems += stat.failed.length;
   }
   out('  (내일~+3 의 미해결은 cron 이 슬롯 내내 다시 부르는 날이다 — 0 이어야 한다.');
-  out('   오늘은 이어받기 없이 센다 — KR 0500 회차 이후(오늘 TMN 이 없다)·JP(오늘 최저가 어떤 발표에도 없어 언제나 전부)·');
-  out('   NWS 아침 이후는 미해결이 정상이다)');
+  out('   오늘은 이어받기 없이 세서 돌린 시각에 달렸다 — KR 0500 회차 이후(오늘 TMN 이 없다)·JP 05시 발표 이후(그 뒤의');
+  out('   발표에는 오늘 최저가 없어 원천이 성공한 곳 전부)·NWS 아침 이후는 미해결이 정상이다. JP 는 자정 ~ 05시 발표');
+  out('   전(JST)에는 전날 17시 발표의 내일 최저·최고가 곧 오늘 값이라 오늘도 대개 해결된다)');
 }
 
 await checkNwsPoints();
