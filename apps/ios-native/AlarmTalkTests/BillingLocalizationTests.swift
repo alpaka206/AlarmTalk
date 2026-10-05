@@ -4,6 +4,18 @@ import Testing
 
 @MainActor
 struct BillingLocalizationTests {
+    @Test("공유 코드의 서버 한국어 이름은 보존하고 화면은 플랜 키로 번역한다", arguments: ["en", "ja"])
+    func voucherPlanName(language: String) throws {
+        let bundle = try bundle(language)
+        var voucher = VoucherItem(id: "voucher", code: "INV-TEST", planKey: "couple", planName: "서버의 커플 이용권",
+                                  planType: "family", status: "active", expiresAt: "2099-01-01")
+        #expect(voucher.localizedPlanName(bundle: bundle) == (language == "en" ? "Couple" : "カップル"))
+        #expect(voucher.planName == "서버의 커플 이용권")
+        voucher.planKey = "unknown"
+        #expect(voucher.localizedPlanName(bundle: bundle) == (language == "en" ? "Plan" : "利用券"))
+        #expect(!voucher.localizedPlanName(bundle: bundle).contains(voucher.planName))
+    }
+
     private func bundle(_ language: String) throws -> Bundle {
         let path = try #require(Bundle.main.path(forResource: language, ofType: "lproj"))
         return try #require(Bundle(path: path))
@@ -39,6 +51,8 @@ struct BillingLocalizationTests {
     @Test("복원 결과의 건수와 다운그레이드 안내의 이름은 서식 인자로 유지된다", arguments: ["en", "ja"])
     func formatArguments(language: String) throws {
         let bundle = try bundle(language)
+        let failedVerification = "결제를 확인하지 못했어요. '이전 구매 복원'을 눌러 다시 시도해 주세요."
+        #expect(bundle.localizedString(forKey: failedVerification, value: nil, table: nil) != failedVerification)
         let restore = bundle.localizedString(forKey: "이전 구매 %lld건을 복원했어요.", value: nil, table: nil)
         #expect(String(format: restore, 3).contains("3"))
         #expect(!restore.contains("이전 구매"))

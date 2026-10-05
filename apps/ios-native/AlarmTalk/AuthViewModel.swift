@@ -586,14 +586,14 @@ final class AuthViewModel: ObservableObject {
 
     func handleAppleAuthorization(_ authorization: ASAuthorization, rawNonce: String?) async {
         guard let credential = authorization.credential as? ASAuthorizationAppleIDCredential else {
-            statusMessage = "Apple 로그인 정보를 확인하지 못했어요."
+            statusMessage = String(localized: "Apple 로그인 정보를 확인하지 못했어요.")
             return
         }
         guard
             let tokenData = credential.identityToken,
             let idToken = String(data: tokenData, encoding: .utf8)
         else {
-            statusMessage = "Apple identity token을 받지 못했어요."
+            statusMessage = String(localized: "Apple identity token을 받지 못했어요.")
             return
         }
 
@@ -615,7 +615,7 @@ final class AuthViewModel: ObservableObject {
     }
 
     func handleAppleAuthorizationFailure(_ error: Error) {
-        failStatus(userFacingErrorMessage(error, fallback: "Apple 로그인에 실패했어요. 다시 시도해 주세요."))
+        failStatus(userFacingErrorMessage(error, fallback: String(localized: "Apple 로그인에 실패했어요. 다시 시도해 주세요.")))
     }
 
     private func performLoginWithApple(
@@ -650,7 +650,7 @@ final class AuthViewModel: ObservableObject {
             // 필수 약관 미동의면 동의 화면으로 게이팅.
             await checkConsentStatus()
         } catch {
-            failStatus(userFacingErrorMessage(error, fallback: "Apple 로그인에 실패했어요. 다시 시도해 주세요."))
+            failStatus(userFacingErrorMessage(error, fallback: String(localized: "Apple 로그인에 실패했어요. 다시 시도해 주세요.")))
         }
     }
 
@@ -691,13 +691,13 @@ final class AuthViewModel: ObservableObject {
         do {
             let response = try await AlarmTalkAPI.shared.verifyEmailCode(email: email, code: code)
             if response.verified == false {
-                statusMessage = "인증 코드가 일치하지 않아요."
+                statusMessage = String(localized: "인증 코드가 일치하지 않아요.")
                 return false
             }
-            statusMessage = "이메일 인증이 완료됐어요."
+            statusMessage = String(localized: "이메일 인증이 완료됐어요.")
             return true
         } catch {
-            failStatus(userFacingErrorMessage(error, fallback: "인증 코드가 맞지 않아요"))
+            failStatus(userFacingErrorMessage(error, fallback: String(localized: "인증 코드가 맞지 않아요")))
             return false
         }
     }
@@ -745,11 +745,11 @@ final class AuthViewModel: ObservableObject {
             )
             // 가입 응답이 곧 서버 값이다 — 가입 경로는 `/auth/me` 를 따로 부르지 않는다.
             await adoptSignedInSession(nextSession, accountRequest: accountRequest)
-            statusMessage = "환영해요! 계정이 만들어졌어요."
+            statusMessage = String(localized: "환영해요! 계정이 만들어졌어요.")
             // 신규 가입자는 필수 약관 동의가 필요 — 동의 화면으로 게이팅.
             await checkConsentStatus()
         } catch {
-            failStatus(userFacingErrorMessage(error, fallback: "회원가입에 실패했어요"))
+            failStatus(userFacingErrorMessage(error, fallback: String(localized: "회원가입에 실패했어요")))
         }
     }
 
@@ -767,9 +767,9 @@ final class AuthViewModel: ObservableObject {
         do {
             _ = try await AlarmTalkAPI.shared.requestPasswordReset(email: normalized)
             passwordResetCodeSentTo = normalized
-            statusMessage = "재설정 코드를 보냈어요. 메일을 확인해 주세요."
+            statusMessage = String(localized: "재설정 코드를 보냈어요. 메일을 확인해 주세요.")
         } catch {
-            failStatus(userFacingErrorMessage(error, fallback: "인증 코드를 보내지 못했어요"))
+            failStatus(userFacingErrorMessage(error, fallback: String(localized: "인증 코드를 보내지 못했어요")))
         }
     }
 
@@ -783,7 +783,7 @@ final class AuthViewModel: ObservableObject {
         let trimmedCode = code.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !isBusy else { return false }
         guard !normalized.isEmpty, trimmedCode.count == 6, !newPassword.isEmpty else {
-            statusMessage = "모든 항목을 입력해 주세요."
+            statusMessage = String(localized: "모든 항목을 입력해 주세요.")
             return false
         }
         isBusy = true
@@ -796,10 +796,10 @@ final class AuthViewModel: ObservableObject {
                 password: newPassword
             )
             passwordResetCodeSentTo = nil
-            statusMessage = "비밀번호를 변경했어요. 새 비밀번호로 로그인해 주세요."
+            statusMessage = String(localized: "비밀번호를 변경했어요. 새 비밀번호로 로그인해 주세요.")
             return true
         } catch {
-            failStatus(userFacingErrorMessage(error, fallback: "비밀번호 재설정에 실패했어요"))
+            failStatus(userFacingErrorMessage(error, fallback: String(localized: "비밀번호 재설정에 실패했어요")))
             return false
         }
     }
@@ -1121,20 +1121,20 @@ final class AuthViewModel: ObservableObject {
                     // 화면 확인 모드는 서버 없이 도는 모드라 첫 /auth/me 가 401 이다.
                     // 여기서 로그아웃하면 랜딩으로 튕겨 아무 화면도 못 본다.
                     if !UIPreviewSeed.isEnabled {
-                        signOut(message: "세션이 만료됐어요. 다시 로그인해 주세요.")
+                        signOut(message: String(localized: "세션이 만료됐어요. 다시 로그인해 주세요."))
                     }
                 } else if status == 403 {
                     // 권한 박탈 — 세션은 유지하되 사용자에게 알림
-                    lastNetworkError = "이 계정으로는 접근할 수 없는 기능이 있어요."
+                    lastNetworkError = String(localized: "이 계정으로는 접근할 수 없는 기능이 있어요.")
                 } else {
                     // 5xx, 4xx 기타 오류는 세션을 유지하되 영어 서버 메시지를 그대로 노출하지 않는다.
                     lastNetworkError = userFacingErrorMessage(
                         apiError,
-                        fallback: "서버에 일시적으로 연결할 수 없어요."
+                        fallback: String(localized: "서버에 일시적으로 연결할 수 없어요.")
                     )
                 }
             case .invalidResponse:
-                lastNetworkError = "서버 응답을 해석하지 못했어요."
+                lastNetworkError = String(localized: "서버 응답을 해석하지 못했어요.")
             }
             // 세션이 끝났으면(401) 적지 않는다 — 그 진입의 안내는 이미 대상이 없다.
             if session?.token == token { noteEntryOutcome(accountRequest, .failed) }
@@ -1145,7 +1145,7 @@ final class AuthViewModel: ObservableObject {
                 return nil
             }
             // 네트워크 끊김, 타임아웃 등 — 세션 보존
-            lastNetworkError = "네트워크 연결을 확인해 주세요."
+            lastNetworkError = String(localized: "네트워크 연결을 확인해 주세요.")
             noteEntryOutcome(accountRequest, .failed)
         } catch {
             guard !Task.isCancelled, session?.token == token,
@@ -1154,7 +1154,7 @@ final class AuthViewModel: ObservableObject {
                 return nil
             }
             // 알 수 없는 에러 — 보수적으로 세션 보존
-            lastNetworkError = "잠시 후 다시 시도해 주세요."
+            lastNetworkError = String(localized: "잠시 후 다시 시도해 주세요.")
             noteEntryOutcome(accountRequest, .failed)
         }
         return nil
@@ -1198,7 +1198,7 @@ final class AuthViewModel: ObservableObject {
         // UI 미리보기 모드에서는 401 로 로그아웃하지 않는다 — 서버 없이 화면만 보는 모드라
         // 첫 요청이 실패하는 순간 로그인 화면으로 튕겨 아무것도 못 본다.
         if UIPreviewSeed.isEnabled { return }
-        signOut(message: "세션이 만료됐어요. 다시 로그인해 주세요.")
+        signOut(message: String(localized: "세션이 만료됐어요. 다시 로그인해 주세요."))
     }
 
     /// 데이터 라우트가 403 CONSENT_REQUIRED 를 받았을 때. 세션은 유지한다(로그아웃하지 않음).
@@ -1235,7 +1235,7 @@ final class AuthViewModel: ObservableObject {
     private func handleAppleCredentialRevoked() {
         // Apple 로그인 사용자가 아니라면 무시. (이메일/Google 사용자는 영향 없음.)
         guard session?.user.appleUserId.nilIfBlank != nil else { return }
-        signOut(message: "Apple ID 로그인이 해제되었어요.")
+        signOut(message: String(localized: "Apple ID 로그인이 해제되었어요."))
     }
 
     /// 앱 foreground 진입 시 호출 — Apple credentialState 점검. Apple 로그인 사용자만.
@@ -1253,16 +1253,16 @@ final class AuthViewModel: ObservableObject {
                 // OK — 정상 세션
                 return
             case .revoked, .notFound:
-                signOut(message: "Apple ID 로그인이 더 이상 유효하지 않아요. 다시 로그인해 주세요.")
+                signOut(message: String(localized: "Apple ID 로그인이 더 이상 유효하지 않아요. 다시 로그인해 주세요."))
             case .transferred:
                 // iCloud 가족 공유로 디바이스가 다른 사용자에게 이전 — 안내만, 세션 유지
-                lastNetworkError = "다른 기기로 이전된 Apple ID 입니다. 다시 로그인해 주세요."
+                lastNetworkError = String(localized: "다른 기기로 이전된 Apple ID 입니다. 다시 로그인해 주세요.")
             @unknown default:
                 return
             }
         } catch {
             // credentialState 조회 실패(드물게 시스템 오류) — 세션 보존
-            lastNetworkError = "Apple 로그인 상태를 확인하지 못했어요."
+            lastNetworkError = String(localized: "Apple 로그인 상태를 확인하지 못했어요.")
         }
     }
 
@@ -1273,7 +1273,7 @@ final class AuthViewModel: ObservableObject {
         dynamicPromptSettings: DynamicPromptSettings? = nil
     ) async {
         guard let token else {
-            statusMessage = "로그인이 필요해요."
+            statusMessage = String(localized: "로그인이 필요해요.")
             return
         }
         let normalizedQuietWindows = quietWindows.map(Self.normalizedQuietWindows)
@@ -1281,7 +1281,7 @@ final class AuthViewModel: ObservableObject {
            normalizedQuietWindows.contains(where: {
                !FamilyAlarmQuietWindow.isValidTime($0.start) || !FamilyAlarmQuietWindow.isValidTime($0.end)
            }) {
-            statusMessage = "시간은 HH:mm 형식으로 입력해 주세요."
+            statusMessage = String(localized: "시간은 HH:mm 형식으로 입력해 주세요.")
             return
         }
         // ⚠ **창을 다 지웠으면 지운 대로 둔다**(2026-08-08 변경). 예전에는 여기서
@@ -1359,7 +1359,7 @@ final class AuthViewModel: ObservableObject {
         } catch {
             // 끝난 세션의 실패를 새 세션에 띄우지 않는다(위 `requestSessionRevision`).
             guard sessionRevision == requestSessionRevision else { return }
-            failStatus(userFacingErrorMessage(error, fallback: "프로필을 저장하지 못했어요"))
+            failStatus(userFacingErrorMessage(error, fallback: String(localized: "프로필을 저장하지 못했어요")))
         }
     }
 
@@ -1393,7 +1393,7 @@ final class AuthViewModel: ObservableObject {
 
     func deleteAccount() async {
         guard let token else {
-            statusMessage = "로그인이 필요해요."
+            statusMessage = String(localized: "로그인이 필요해요.")
             return
         }
         let currentUserID = session?.user.id.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1426,7 +1426,7 @@ final class AuthViewModel: ObservableObject {
             }
             // ⚠ 탈퇴도 로그아웃과 같다 — 계정을 떠났는데 알람이 울리면 안 된다.
             let cleaned = await onLeaveAccountStopAlarms(currentUserID)
-            signOut(message: "회원 탈퇴가 완료됐어요.")
+            signOut(message: String(localized: "회원 탈퇴가 완료됐어요."))
             // 세션을 비운 뒤 한 번 더 — 알람 정리를 기다리는 사이 받아 적힌 값을 지운다(`signOutExplicitly` 주석).
             if let currentUserID, !currentUserID.isEmpty { clearAccountPreferences(currentUserID) }
             // 탈퇴는 되살릴 계정 자체가 없다 — 자동 만료 표시를 남기지 않는다.
@@ -1436,7 +1436,7 @@ final class AuthViewModel: ObservableObject {
             // 표시까지 지우면 **탈퇴한 계정의 OS 예약이 그대로 울면서** 되짚을 길이 없다.
             if cleaned { PendingSignOutStore.clear(currentUserID) }
         } catch {
-            failStatus(userFacingErrorMessage(error, fallback: "회원 탈퇴에 실패했어요"))
+            failStatus(userFacingErrorMessage(error, fallback: String(localized: "회원 탈퇴에 실패했어요")))
         }
     }
 
@@ -1445,7 +1445,7 @@ final class AuthViewModel: ObservableObject {
     /// Android `MainViewModel.requestAccountDeletion()`.
     func requestAccountDeletion() async {
         guard let token else {
-            statusMessage = "로그인이 필요해요."
+            statusMessage = String(localized: "로그인이 필요해요.")
             return
         }
         let currentUserID = session?.user.id.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1486,7 +1486,7 @@ final class AuthViewModel: ObservableObject {
             // (`middleware/auth.ts` — 탈퇴 철회와 푸시 해제만 허용). 부르면 실패할 뿐이고,
             // 무엇보다 그 토큰은 **탈퇴를 철회할 때 필요하다.**
             signOut(
-                message: "회원 탈퇴가 접수됐어요. 30일 안에 다시 로그인하면 취소할 수 있어요.",
+                message: String(localized: "회원 탈퇴가 접수됐어요. 30일 안에 다시 로그인하면 취소할 수 있어요."),
                 revokeOnServer: false
             )
             // 세션을 비운 뒤 한 번 더 — 알람 정리를 기다리는 사이 받아 적힌 값을 지운다(`signOutExplicitly` 주석).
@@ -1496,7 +1496,7 @@ final class AuthViewModel: ObservableObject {
             // 로컬 뒷정리와 푸시 해제가 **둘 다** 끝났을 때만 표시를 내린다.
             if cleaned && pushUnregistered { PendingSignOutStore.clear(currentUserID) }
         } catch {
-            failStatus(userFacingErrorMessage(error, fallback: "회원 탈퇴 신청에 실패했어요"))
+            failStatus(userFacingErrorMessage(error, fallback: String(localized: "회원 탈퇴 신청에 실패했어요")))
         }
     }
 
@@ -1504,7 +1504,7 @@ final class AuthViewModel: ObservableObject {
     /// Android `MainViewModel.cancelAccountDeletion()`.
     func cancelAccountDeletion() async {
         guard let token, let ownerUserID = session?.user.id else {
-            statusMessage = "로그인이 필요해요."
+            statusMessage = String(localized: "로그인이 필요해요.")
             return
         }
         guard !isBusy else { return }
@@ -1518,7 +1518,7 @@ final class AuthViewModel: ObservableObject {
                   accountRecoveryRevision == recoveryRevision else { return }
             guard response.success, response.status == "active" else { throw APIError.invalidResponse }
             guard await completeAccountRecovery(userID: ownerUserID) else { return }
-            statusMessage = "회원 탈퇴를 취소했어요. 계정이 복구됐어요."
+            statusMessage = String(localized: "회원 탈퇴를 취소했어요. 계정이 복구됐어요.")
         } catch {
             guard !Task.isCancelled, session?.user.id == ownerUserID, self.token == token,
                   accountRecoveryRevision == recoveryRevision else { return }
@@ -1530,7 +1530,7 @@ final class AuthViewModel: ObservableObject {
                       accountRecoveryRevision == recoveryRevision,
                       self.token == (confirmedToken ?? token) else { return }
             }
-            failStatus(userFacingErrorMessage(error, fallback: "탈퇴 취소에 실패했어요. 다시 시도해 주세요"))
+            failStatus(userFacingErrorMessage(error, fallback: String(localized: "탈퇴 취소에 실패했어요. 다시 시도해 주세요")))
         }
     }
 
@@ -1709,7 +1709,7 @@ final class AuthViewModel: ObservableObject {
         let bundled = Int(LegalPolicy.bundledVersion)
         let server = serverPolicyVersionHint.flatMap(Int.init)
         if let server, let bundled, server <= bundled {
-            statusMessage = "동의 기록에 실패했어요. 잠시 후 다시 시도해 주세요"
+            statusMessage = String(localized: "동의 기록에 실패했어요. 잠시 후 다시 시도해 주세요")
             return true
         }
         consentUnsupported = true
@@ -1722,7 +1722,7 @@ final class AuthViewModel: ObservableObject {
     /// 동의 화면 제출. 성공 시 `needsConsent` 를 내려 정상 진입. Android `MainViewModel.submitConsents()`.
     func submitConsents(agreedOptional: Set<String>) async {
         guard let token else {
-            statusMessage = "로그인이 필요해요."
+            statusMessage = String(localized: "로그인이 필요해요.")
             return
         }
         guard !isBusy else { return }
@@ -1739,7 +1739,7 @@ final class AuthViewModel: ObservableObject {
         )
         guard !request.consents.isEmpty else {
             // 이 앱이 그릴 수 있는 유형이 하나도 없다 = 서버가 앞서 있다. 업데이트가 답이다.
-            statusMessage = "앱을 업데이트해야 동의를 진행할 수 있어요."
+            statusMessage = String(localized: "앱을 업데이트해야 동의를 진행할 수 있어요.")
             return
         }
         isBusy = true
@@ -1766,10 +1766,10 @@ final class AuthViewModel: ObservableObject {
             if collect.contains("marketing") {
                 marketingConsentAgreed = agreedOptional.contains("marketing")
             }
-            statusMessage = "동의가 완료됐어요"
+            statusMessage = String(localized: "동의가 완료됐어요")
         } catch {
             if handleConsentVersionMismatch(error) { return }
-            failStatus(userFacingErrorMessage(error, fallback: "동의 기록에 실패했어요. 다시 시도해 주세요"))
+            failStatus(userFacingErrorMessage(error, fallback: String(localized: "동의 기록에 실패했어요. 다시 시도해 주세요")))
         }
     }
 
@@ -1780,13 +1780,13 @@ final class AuthViewModel: ObservableObject {
     @discardableResult
     func submitSensitiveConsents(types: [String]) async -> Bool {
         guard let token else {
-            statusMessage = "로그인이 필요해요."
+            statusMessage = String(localized: "로그인이 필요해요.")
             return false
         }
         let ownerUserID = session?.user.id
         let recordable = types.filter { Self.knownConsentTypes.contains($0) }
         guard !recordable.isEmpty else {
-            statusMessage = "앱을 업데이트해야 동의를 진행할 수 있어요."
+            statusMessage = String(localized: "앱을 업데이트해야 동의를 진행할 수 있어요.")
             return false
         }
         guard !isBusy else { return false }
@@ -1807,7 +1807,7 @@ final class AuthViewModel: ObservableObject {
             return true
         } catch {
             if handleConsentVersionMismatch(error) { return false }
-            failStatus(userFacingErrorMessage(error, fallback: "동의 기록에 실패했어요. 다시 시도해 주세요"))
+            failStatus(userFacingErrorMessage(error, fallback: String(localized: "동의 기록에 실패했어요. 다시 시도해 주세요")))
             return false
         }
     }
@@ -1836,7 +1836,7 @@ final class AuthViewModel: ObservableObject {
     /// 되돌린다. Android `MainViewModel.updateMarketingConsent`.
     func updateMarketingConsent(_ agreed: Bool) async {
         guard let token else {
-            statusMessage = "로그인이 필요해요."
+            statusMessage = String(localized: "로그인이 필요해요.")
             return
         }
         let previous = marketingConsentAgreed
@@ -1853,7 +1853,7 @@ final class AuthViewModel: ObservableObject {
         } catch {
             marketingConsentAgreed = previous
             if handleConsentVersionMismatch(error) { return }
-            failStatus(userFacingErrorMessage(error, fallback: "마케팅 수신 설정을 변경하지 못했어요"))
+            failStatus(userFacingErrorMessage(error, fallback: String(localized: "마케팅 수신 설정을 변경하지 못했어요")))
         }
     }
 
@@ -1875,7 +1875,7 @@ final class AuthViewModel: ObservableObject {
         audioCache: AudioCacheStore?
     ) async -> Bool {
         guard let token else {
-            statusMessage = "로그인이 필요해요."
+            statusMessage = String(localized: "로그인이 필요해요.")
             return false
         }
         let userID = session?.user.id
@@ -1886,7 +1886,7 @@ final class AuthViewModel: ObservableObject {
             // 시스템(기본) 목소리는 내 생체정보가 아니라 철회와 무관하다.
             revokedVoiceIDs = profiles.filter { $0.isSystem != true }.map(\.id).filter { !$0.isEmpty }
         } catch {
-            failStatus(userFacingErrorMessage(error, fallback: "동의를 철회하지 못했어요"))
+            failStatus(userFacingErrorMessage(error, fallback: String(localized: "동의를 철회하지 못했어요")))
             return false
         }
 
@@ -1899,7 +1899,7 @@ final class AuthViewModel: ObservableObject {
             )
         } catch {
             if handleConsentVersionMismatch(error) { return false }
-            failStatus(userFacingErrorMessage(error, fallback: "동의를 철회하지 못했어요"))
+            failStatus(userFacingErrorMessage(error, fallback: String(localized: "동의를 철회하지 못했어요")))
             return false
         }
 
@@ -1916,7 +1916,7 @@ final class AuthViewModel: ObservableObject {
         if !consentSensitiveMissing.contains("voice_biometric") {
             consentSensitiveMissing.append("voice_biometric")
         }
-        statusMessage = "음성 생체정보 처리 동의를 철회했어요."
+        statusMessage = String(localized: "음성 생체정보 처리 동의를 철회했어요.")
         return true
     }
 

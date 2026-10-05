@@ -74,24 +74,32 @@ OAuth client ID와 Sentry DSN은 일반적으로 앱에 포함될 수 있는 공
 - `GOOGLE_VERTEX_DYNAMIC_TEXT_ENABLED`는 기본적으로 설정하지 않는다. Gemini 생성 알람 문구를 의도적으로 켤 때만 `true`로 둔다.
 - 기본 정책은 프리셋 우선이다. `GOOGLE_VERTEX_DYNAMIC_TEXT_ENABLED=true`가 아니면 동적 문구 컨텍스트는 로컬 폴백 문구를 쓴다(`lib/vertex-translate.ts`의 `generateDynamicAlarmTextWithVertex`).
 
-#### Open-Meteo 상업 키
+#### 기상청 단기예보 키(KMA_SERVICE_KEY)
 
-- `OPEN_METEO_API_KEY` 는 **선택 값**이다. 비어 있으면 날씨 호출(예보·대기질·지오코딩)은 지금처럼 무료 호스트
-  (`api.open-meteo.com` / `air-quality-api.open-meteo.com` / `geocoding-api.open-meteo.com`)로 간다.
-  값이 있으면 같은 요청이 상업 호스트(`customer-api` / `customer-air-quality-api` / `customer-geocoding-api`
-  `.open-meteo.com`)로 가고 `apikey` 가 붙는다. 고르는 곳은 `packages/backend/src/lib/weather-fetch.ts` 의
-  `openMeteoRequestUrl` 하나다(서버 미리 계산 cron·`GET /tts/prerender-variant`·라이브 생성이 모두 거친다).
-- ⚠ **무료 API 는 비상업용이다**(open-meteo.com/en/terms — "subscriptions or display advertisements" 가 있는 앱은
-  상업 용도). 무료 한도는 분 600 / 시간 5,000 / 일 10,000 / 월 300,000 호출이다(2026-09-30 가격 페이지). 위치를
-  여럿 묶은 요청을 몇 호출로 세는지는 공식 문서에 없다 — 보수적으로 위치마다 센다고 잡는다(cron 한 바퀴 = 133곳 × 예보·대기질).
-  상업 호스트는 키 없이 부르면 예보·대기질이 `401 API key required`, 틀린 키면 `400 The supplied API key is invalid.`
-  로 답한다 — **무료 호스트로 되돌아가지 않으므로 날씨가 전부 미해결(null)이 된다.** 그때 `weather.fetch` 줄은 `warn` 이다.
-- 넣기: `.dev.vars.{dev,prod}` 에 적고 `npm run secrets:sync:{dev,prod}`(목록: `scripts/worker-secret-keys.ts`).
-  단건이면 `npx wrangler secret put OPEN_METEO_API_KEY --env dev`(운영은 `--env production` — `--env` 를 빼지 말 것).
-- ⚠ **무료로 되돌릴 때 파일에서 비우는 것으로는 안 된다**(`secrets:sync` 는 빈 값을 건너뛴다) —
+날씨는 나라별 공식 예보로 계산한다 — KR 기상청 단기예보, JP 気象庁 bosai JSON, US NWS(규칙 전문은
+`docs/spec/voice-and-message.md` 5-1 「서버가 미리 계산해 둔다」). **키가 필요한 것은 기상청 하나다.**
+
+- 공공데이터포털(data.go.kr) 「기상청_단기예보 ((구)_동네예보) 조회서비스」(15084084) 활용 신청으로 받은
+  **일반 인증키(Decoding)** 를 넣는다. 서버가 `URLSearchParams` 로 정확히 한 번 인코딩한다(KASI 와 같은 규약) —
+  Encoding 키를 넣으면 이중 인코딩되어 `SERVICE_KEY_IS_NOT_REGISTERED_ERROR`(30)가 난다.
+  - ⚠ 활용가이드 2609판의 예제 주소는 기상청 API허브(`apihub.kma.go.kr`, `authKey`)다 — 그건 **별도 회원 키**라
+    data.go.kr 키로는 쓸 수 없다. 서버는 `apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getVilageFcst` 를 부른다.
+- 넣기: `.dev.vars.{dev,prod}` 의 `KMA_SERVICE_KEY=` 에 적고 `npm run secrets:sync:{dev,prod}`(목록:
+  `scripts/worker-secret-keys.ts` — **필수 목록에는 없다**, dev 에는 없을 수 있다). 단건이면
+  `npx wrangler secret put KMA_SERVICE_KEY --env dev`(운영은 `--env production` — `--env` 를 빼지 말 것).
+- 없으면: KR 날씨는 원천을 부르지 않고 미해결(`null` → '못 봤어요' 클립). 운영은 KR 슬롯(현지 21시·06시)마다
+  `scheduled.weather_region_daily.slot_failed`(`reason: missing_key`) 경보가 오르고, dev(`ENVIRONMENT=development`)는
+  info 로그(`slot_skipped`)만 남긴다.
+- 확인(`wrangler tail --env <dev|production>`): KR 슬롯 틱(UTC 12시·21시)에 `at:"weather.fetch"` 줄이
+  `source:"kma"`·`status:200`·`resultCode:"00"`·`items`(1,000건 안팎)로 찍힌다. 키가 틀리면 `resultCode` 가
+  `kma_30`·`kma_20`·`http_401` 같은 값이고 슬롯 끝에 경보가 오른다. ⚠ **이 로그는 URL 을 싣지 않는다** — URL 에
+  키가 들어 있다. 진단에 URL 을 남기지 말 것.
+- **JP·NWS 는 키가 없다.** NWS 는 User-Agent 로 호출자를 식별한다 — 서버는
+  `AlarmTalkBackend (alarm-talk.com, support@alarm-talk.com)` 를 보낸다(`lib/weather-nws.ts` 의 `NWS_USER_AGENT`).
+  UA 가 막히면 403 HTML 이 오고 설정 실패로 경보가 오른다.
+- 읽기 전용 점검: `npm run check:weather -- --env-file .dev.vars.dev`(DB 무접촉, 키는 출력하지 않는다).
+- **`OPEN_METEO_API_KEY` 는 없앴다**(2026-10-01). 워커에 남은 값은 코드가 읽지 않는다 — 치울 거면
   `npx wrangler secret delete OPEN_METEO_API_KEY --env <dev|production>`.
-- 확인: `wrangler tail` 의 `at:"weather.fetch"` 줄에 `commercial:true` 가 찍힌다. ⚠ 이 로그는 URL 을 싣지 않는다 —
-  URL 에 키가 들어 있어서다. 진단에 URL 이 필요하면 `redactOpenMeteoUrl` 로 가린 뒤 남긴다.
 
 ### iOS
 

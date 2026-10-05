@@ -71,7 +71,7 @@ struct VoucherRow: View {
                 Text(voucher.code)
                     .font(.subheadline.weight(.bold))
                     .foregroundStyle(AlarmTalkTheme.text)
-                Text(String(localized: "\(PlanTier.displayName(forPlanKey: voucher.planKey) ?? String(localized: "이용권")) · \(voucherStatusLabel(voucher.status)) · \(voucher.useCount ?? 0)/\(voucher.maxUses ?? 1)"))
+                Text(String(localized: "\(voucher.localizedPlanName()) · \(voucherStatusLabel(voucher.status)) · \(voucher.useCount ?? 0)/\(voucher.maxUses ?? 1)"))
                     .font(.caption)
                     .foregroundStyle(AlarmTalkTheme.textSecondary)
             }

@@ -35,8 +35,8 @@ enum AlarmPlayMode: String, Codable, CaseIterable, Identifiable {
 
     var label: String {
         switch self {
-        case .alarmOnly: return "알람"
-        case .voiceOnly: return "목소리"
+        case .alarmOnly: return String(localized: "alarm.playMode.alarm", defaultValue: "알람")
+        case .voiceOnly: return String(localized: "alarm.playMode.voice", defaultValue: "목소리")
         }
     }
 

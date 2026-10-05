@@ -28,7 +28,7 @@ struct RepeatWeekdayChips: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(Text(accessibilityLabel(for: day)))
-                .accessibilityValue(Text(mask.hasRepeatDay(day) ? "선택됨" : "선택 안 됨"))
+                .accessibilityValue(Text(mask.hasRepeatDay(day) ? String(localized: "선택됨") : String(localized: "선택 안 됨")))
                 .accessibilityAddTraits(.isButton)
             }
         }
@@ -102,7 +102,7 @@ struct RepeatWeekdayChips: View {
     }
 
     private func accessibilityLabel(for day: RepeatDay) -> String {
-        "\(day.fullLabel) 반복"
+        String(localized: "\(day.fullLabel) 반복")
     }
 }
 
@@ -112,26 +112,26 @@ extension RepeatDay {
     /// "일", "월", "화", "수", "목", "금", "토".
     var shortLabel: String {
         switch self {
-        case .sunday: return "일"
-        case .monday: return "월"
-        case .tuesday: return "화"
-        case .wednesday: return "수"
-        case .thursday: return "목"
-        case .friday: return "금"
-        case .saturday: return "토"
+        case .sunday: return String(localized: "일")
+        case .monday: return String(localized: "월")
+        case .tuesday: return String(localized: "화")
+        case .wednesday: return String(localized: "수")
+        case .thursday: return String(localized: "목")
+        case .friday: return String(localized: "금")
+        case .saturday: return String(localized: "토")
         }
     }
 
     /// 접근성 라벨용 풀 한국어.
     var fullLabel: String {
         switch self {
-        case .sunday: return "일요일"
-        case .monday: return "월요일"
-        case .tuesday: return "화요일"
-        case .wednesday: return "수요일"
-        case .thursday: return "목요일"
-        case .friday: return "금요일"
-        case .saturday: return "토요일"
+        case .sunday: return String(localized: "일요일")
+        case .monday: return String(localized: "월요일")
+        case .tuesday: return String(localized: "화요일")
+        case .wednesday: return String(localized: "수요일")
+        case .thursday: return String(localized: "목요일")
+        case .friday: return String(localized: "금요일")
+        case .saturday: return String(localized: "토요일")
         }
     }
 }
