@@ -17,7 +17,7 @@ final class TapOutsideEndsEditingUITests: XCTestCase {
         app.launch()
 
         // 타임휠의 '그 자리 입력' 을 연다(`EditorKeyboardUITests` 와 같은 식별자).
-        let hour = app.otherElements["timeWheel.시"].firstMatch
+        let hour = app.otherElements["timeWheel.hour"].firstMatch
         XCTAssertTrue(hour.waitForExistence(timeout: 10), "타임휠 시 칼럼이 없다")
         hour.tap()
 
