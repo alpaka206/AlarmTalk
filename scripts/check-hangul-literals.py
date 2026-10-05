@@ -205,6 +205,23 @@ def localized_context(path: str, source: str, literal: dict, declarations: Decla
     return False, None
 
 
+def string_in_key_parameter(path: str, source: str, literal: dict, declarations: Declarations) -> bool:
+    """A translated String cannot be passed to a custom key/resource parameter."""
+    stack = [pos for kind, pos in literal["stack"] if kind == "("]
+    if len(stack) < 2 or call_at(source, stack[-1]) != "String":
+        return False
+    if argument_prefix(source, literal, stack[-1]) != "localized:":
+        return False
+    # The outer Text interpolation contains a String expression, not a key arg.
+    if any(kind == "interp" and pos > stack[-2] for kind, pos in literal["stack"]):
+        return False
+    start = re.search(r"\bString\s*$", source[:stack[-1]]).start()
+    prefix = argument_prefix(source, {"start": start}, stack[-2])
+    argument = re.match(r"(\w+)\s*:", prefix)
+    call = call_at(source, stack[-2]).split(".")[-1]
+    return bool(argument and declarations.accepts(path, call, argument[1]))
+
+
 @dataclass
 class Issue:
     path: str
@@ -332,6 +349,8 @@ def audit(root: Path, rules: list[tuple[str, str, str, str]]) -> list[Issue]:
         for literal in SwiftLexer(source, path).run():
             value = literal_value(literal)
             localized, kind = localized_context(path, source, literal, declarations)
+            if string_in_key_parameter(path, source, literal, declarations):
+                issues.append(Issue(path, literal["line"], value, "String(localized:) passed to a key/resource parameter; retain its literal key"))
             if not HANGUL.search(value) and not localized:
                 continue
             if literal["debug"] or kind == "comment" or value == "" or allowed(path, value, rules):
@@ -435,6 +454,17 @@ class SelfTests(unittest.TestCase):
         declarations = Declarations({"a.swift": source})
         actual = [localized_context("a.swift", source, l, declarations)[0] for l in SwiftLexer(source).run()]
         self.assertEqual(actual, [False, True, True])
+
+    def test_translated_string_cannot_replace_custom_key_argument(self):
+        declaration = 'struct Row { let title: LocalizedStringKey }\n'
+        for expression in ['Row(title: String(localized: "안녕"))',
+                           'Row(title: busy ? String(localized: "안녕") : other)']:
+            source = declaration + expression
+            literal = SwiftLexer(source).run()[0]
+            self.assertTrue(string_in_key_parameter("a.swift", source, literal, Declarations({"a.swift": source})))
+        source = 'struct Row { let title: String }\nRow(title: String(localized: "안녕"))'
+        literal = SwiftLexer(source).run()[0]
+        self.assertFalse(string_in_key_parameter("a.swift", source, literal, Declarations({"a.swift": source})))
 
     def test_overloads_are_conservative_and_private_declarations_are_local(self):
         sources = {"a.swift": 'struct Row { let title: String }', "b.swift": 'struct Row { let title: LocalizedStringKey }'}
