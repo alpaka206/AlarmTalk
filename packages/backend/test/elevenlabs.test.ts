@@ -98,6 +98,38 @@ describe('ElevenLabsClient', () => {
   });
 
   describe('speechToText', () => {
+    it('전체 마감이 지나면 전사 요청을 보내지 않는다', async () => {
+      await expect(client.speechToText(new ArrayBuffer(10), { deadlineAt: Date.now() - 1 }))
+        .rejects.toMatchObject({ name: 'TimeoutError' });
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it.each(['headers', 'body'])('마감에 걸리면 %s 대기도 중단한다', async (stage) => {
+      const controller = new AbortController();
+      const timeout = vi.spyOn(AbortSignal, 'timeout').mockReturnValue(controller.signal);
+      try {
+        const readUntilAbort = (signal: AbortSignal) => new Promise<never>((_, reject) => {
+          signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+        });
+        mockFetch.mockImplementation(async (_url, init) => {
+          if (stage === 'headers') return readUntilAbort(init.signal);
+          return { ok: true, json: () => readUntilAbort(init.signal) };
+        });
+        const pending = client.speechToText(new ArrayBuffer(10), { deadlineAt: Date.now() + 26_000 });
+        const assertion = expect(pending).rejects.toMatchObject({ name: 'TimeoutError' });
+        await vi.waitFor(() => expect(timeout).toHaveBeenCalledOnce());
+        // 응답 본문을 기다리는 경우에도 같은 취소 신호를 쓴다.
+        await Promise.resolve();
+        const [duration] = timeout.mock.calls[0];
+        expect(duration).toBeGreaterThan(0);
+        expect(duration).toBeLessThanOrEqual(26_000);
+        controller.abort(new DOMException('Deadline exceeded', 'TimeoutError'));
+        await assertion;
+      } finally {
+        timeout.mockRestore();
+      }
+    });
+
     it('scribe_v2 모델로 전사 요청 (scribe_v1 은 2026-07-09 제거됨)', async () => {
       mockFetch.mockResolvedValueOnce(okJson({ text: '  안녕하세요 반갑습니다  ' }));
 

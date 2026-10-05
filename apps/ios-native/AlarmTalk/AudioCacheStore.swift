@@ -64,17 +64,17 @@ enum AudioCacheError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .superseded:
-            return "더 새 목소리가 게시돼 이 음원은 쓰지 않았어요."
+            return String(localized: "더 새 목소리가 게시돼 이 음원은 쓰지 않았어요.")
         case .invalidBase64:
-            return "음성 오디오를 해석하지 못했어요."
+            return String(localized: "음성 오디오를 해석하지 못했어요.")
         case .durationExceedsLimit(let limit):
-            return "음성은 최대 \(limit / 1000)초까지 사용할 수 있어요."
+            return String(localized: "음성은 최대 \(limit / 1000)초까지 사용할 수 있어요.")
         case .appGroupContainerUnavailable:
-            return "오디오 저장 공간을 사용할 수 없어요."
+            return String(localized: "오디오 저장 공간을 사용할 수 없어요.")
         case .writeFailed(let error):
-            return "오디오 파일을 저장하지 못했어요."
+            return String(localized: "오디오 파일을 저장하지 못했어요.")
         case .legacyAliasFailed(let error):
-            return "오디오 파일을 저장하지 못했어요."
+            return String(localized: "오디오 파일을 저장하지 못했어요.")
         }
     }
 }

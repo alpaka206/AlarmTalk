@@ -85,6 +85,9 @@ enum AlarmScheduleReconciler {
         var attempted: Set<String> = []
 
         let owner = ownerUserId?.nilIfBlank ?? SessionExpiryStore.expiredOwnerUserId
+        let presentationIds = owner.map {
+            AlarmPresentationLanguage.pending(owner: $0, alarms: store.alarms(visibleTo: $0))
+        } ?? []
         for snapshot in store.alarms(visibleTo: owner) {
             guard !Task.isCancelled else { break }
             guard !attempted.contains(snapshot.id) else { continue }
@@ -99,6 +102,7 @@ enum AlarmScheduleReconciler {
             guard let current = store.record(id: snapshot.id) else { continue }
             guard needsReschedule(
                 current, alarmKit: alarmKit, audioCache: audioCache, forceRearmIds: forceRearmIds,
+                presentationRearmIds: presentationIds,
             ) else { continue }
             // 울리는 중·스누즈 중에는 건드리지 않는다 — 재예약이 지금 울리는 알람을
             // 취소하거나 카운트다운을 날린다.
@@ -123,6 +127,9 @@ enum AlarmScheduleReconciler {
         }
         if repaired > 0 {
             Self.logger.info("Schedule reconcile repaired \(repaired, privacy: .public) alarm(s)")
+        }
+        if !Task.isCancelled, let owner {
+            AlarmPresentationLanguage.finishIfComplete(owner: owner, alarms: store.alarms(visibleTo: owner))
         }
         return repaired
     }
@@ -204,9 +211,11 @@ enum AlarmScheduleReconciler {
         ///   않는 게 맞지만(멀쩡한 예약을 흔들지 않는다), **이번 교체가 소리를 갈아 끼운
         ///   행**은 다르다 — AlarmKit 은 예약 시점 사운드를 그대로 울리므로 다시 걸지
         ///   않으면 **은퇴한 목소리로 운다**(2026-09-03 리뷰 20차).
-        forceRearmIds: Set<String> = []
+        forceRearmIds: Set<String> = [],
+        presentationRearmIds: Set<String> = []
     ) -> Bool {
         guard record.enabled, record.alarmKitID != nil else { return false }
+        if presentationRearmIds.contains(record.id) { return true }
         guard let scheduled = record.scheduledSoundFingerprint else {
             return forceRearmIds.contains(record.id)
         }

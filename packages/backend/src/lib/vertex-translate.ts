@@ -114,7 +114,11 @@ export type AlarmTextRejectionReason =
   /** 인사가 아닌 알람에 아침 인사를 넣었다 — 사전렌더 클립은 몇 시에 울릴지 모른다. */
   | 'time_of_day'
   /** 영어가 축약 없이 글말로 나왔다('let us', 'do not') — 낭독하면 로봇처럼 들린다. */
-  | 'uncontracted';
+  | 'uncontracted'
+  /** 영어가 한국어 낱말을 그대로 옮겼다('money luck' — 재물운). 원어민은 그렇게 말하지 않는다. */
+  | 'literal_translation'
+  /** 한국어 낱말 짝이 어긋났다('운이 술술', '나중에 챙기려면 잊기 쉬우니까'). */
+  | 'korean_collocation';
 
 export class AlarmTextPreparationInvalidError extends Error {
   /**
@@ -547,6 +551,8 @@ function readVertexCredentials(env: Env): Required<
 
 async function createAccessToken(
   credentials: ReturnType<typeof readVertexCredentials>,
+  /** 넘기지 않을 시각(epoch ms) — `GenerateContentConfig.deadlineAt`. 없으면 8초 상한 그대로다. */
+  deadlineAt?: number,
 ): Promise<string> {
   const now = Math.floor(Date.now() / 1000);
   const assertion = await signJwt(
@@ -564,11 +570,13 @@ async function createAccessToken(
     credentials.private_key,
   );
 
+  // 서명(위) 뒤, 요청 **직전에** 잰다 — 마감이 있으면 남은 시간을 넘기지 않는다.
+  const timeoutMs = deadlineBoundedTimeoutMs(VERTEX_TOKEN_TIMEOUT_MS, deadlineAt);
   const response = await fetch(credentials.token_uri, {
     method: 'POST',
     // 상류(Google OAuth) 지연이 사용자 대면 요청(알람 생성/TTS)을 워커 상한까지 볼모로
     // 잡지 않도록 타임아웃을 건다. abort 시 fetch reject → 기존 catch 폴백으로 흐른다.
-    signal: AbortSignal.timeout(8000),
+    signal: AbortSignal.timeout(timeoutMs),
     headers: {
       'content-type': 'application/x-www-form-urlencoded',
     },
@@ -576,18 +584,23 @@ async function createAccessToken(
       grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
       assertion,
     }),
+  }).catch((err: unknown) => {
+    throw markTransportFailure(err);
   });
-  const json: VertexTokenResponse = await response.json<VertexTokenResponse>().catch(() => ({}));
+  const json = await readJsonBody<VertexTokenResponse>(response);
   if (!response.ok || !json.access_token) {
-    throw new Error(
+    const err = new Error(
       json.error_description || json.error || `Vertex auth failed (${response.status})`,
     );
+    // 토큰 엔드포인트의 429·5xx 도 상류가 잠깐 못 받은 것이다 — 생성 요청과 같은 규칙으로 다시 묻는다(Codex #844).
+    //   400(invalid_grant 등)은 다시 보내도 같으므로 표시하지 않는다.
+    throw TRANSIENT_VERTEX_STATUSES.has(response.status) ? markTransportFailure(err) : err;
   }
   return json.access_token;
 }
 
 /**
- * 호출마다 다른 것은 이 둘뿐이다. temperature·출력 상한은 호출부가 정하지 않는다 — 3.x 는
+ * 요청 본문에서 호출마다 다른 것은 앞의 둘뿐이다. temperature·출력 상한은 호출부가 정하지 않는다 — 3.x 는
  * temperature 를 무시하고(문서: "temperature, top_p, top_k are ignored"), 상한은 사고 토큰 때문에
  * 한 값(`MAX_OUTPUT_TOKENS`)이어야 한다. 예전에 호출부마다 적던 0.15·0.75·0.6/0.9·0.1 과 256 은
  * 3.x 로 옮긴 뒤로 요청에 실리지 않던 죽은 값이었다.
@@ -595,7 +608,88 @@ async function createAccessToken(
 type GenerateContentConfig = {
   systemInstruction?: string;
   responseSchema?: unknown;
+  /**
+   * 이 시각(epoch ms)을 넘기지 않는다 — 요청 본문에는 실리지 않는다. 주면 토큰 발급은 min(8초, 남은 시간),
+   * 생성 요청은 min(15초, 남은 시간)이고, 둘 다 **그 요청을 보내기 직전에** 잰다. 남은 시간이 없으면 보내지 않고
+   * 시간 초과(전송 실패)로 던진다. 말투 분석만 쓴다(`waitUntil` 30초 마감 — `SPEECH_STYLE_ANALYSIS_BUDGET_MS`).
+   * ⚠ 생성 상한을 토큰 발급 **앞에서** 미리 재 두지 말 것(2026-10-01 리뷰) — 그 사이 토큰 발급이 8초를 먹으면
+   *   생성 요청이 마감을 8초 넘겨 `waitUntil` 에 잘리고, 상태가 'pending' 에 갇힌다.
+   */
+  deadlineAt?: number;
 };
+
+/** 생성 요청 한 번의 기본 대기 상한. */
+const VERTEX_GENERATE_TIMEOUT_MS = 15_000;
+/** OAuth 토큰 발급 한 번의 대기 상한. */
+const VERTEX_TOKEN_TIMEOUT_MS = 8_000;
+
+/**
+ * 요청 하나의 대기 상한 — `capMs` 와 마감까지 남은 시간 중 작은 것. 마감이 없으면 `capMs`. 이미 지났으면 요청을
+ * 보내지 않고 시간 초과로 던진다(전송 실패로 표시 — `AbortSignal.timeout` 은 0 이하를 받지 않는다).
+ */
+function deadlineBoundedTimeoutMs(capMs: number, deadlineAt: number | undefined): number {
+  if (deadlineAt === undefined) return capMs;
+  const remaining = Math.floor(deadlineAt - Date.now());
+  if (remaining <= 0) {
+    const err = new Error('Vertex request deadline reached before sending');
+    err.name = 'TimeoutError';
+    throw markTransportFailure(err);
+  }
+  return Math.min(capMs, remaining);
+}
+
+/**
+ * **응답을 받지 못한** 실패(시간 초과·네트워크 — fetch 가 던진 것)를 표시해 둔다. 이름으로 가르면 런타임마다 다르다
+ * (Node 는 `TypeError: fetch failed`, workerd 는 다른 오류) — 던져진 그 자리에서 표시한다. 오류 객체는 그대로다.
+ */
+const transportFailures = new WeakSet<object>();
+
+function markTransportFailure(err: unknown): unknown {
+  if (typeof err === 'object' && err !== null) transportFailures.add(err);
+  return err;
+}
+
+/**
+ * 응답 본문을 JSON 으로 읽는다. 머리는 받았는데 **본문을 읽다가** 끊긴 것(시간 초과·연결 끊김)은 fetch 가 던진 것과
+ * 같은 전송 실패로 표시해 던진다(Codex #844 — 예전에는 `.json().catch(() => ({}))` 가 그것까지 삼켜, 2xx 생성 응답은
+ * '빈 답' 으로, 토큰 응답은 표시 없는 오류로 바뀌어 다시 묻지 않았다). 본문이 JSON 이 아닌 것만 `{}` 다.
+ */
+async function readJsonBody<T>(response: Response): Promise<T> {
+  let raw: string;
+  try {
+    raw = await response.text();
+  } catch (err) {
+    throw markTransportFailure(err);
+  }
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    return {} as T;
+  }
+}
+
+/** 생성 요청이 2xx 가 아닌 응답을 받았다. 메시지는 예전과 같다(상류 오류 문장 또는 상태 코드). */
+export class VertexHttpError extends Error {
+  constructor(
+    readonly status: number,
+    message: string,
+  ) {
+    super(message);
+    this.name = 'VertexHttpError';
+  }
+}
+
+/** 상류가 잠깐 못 받은 응답 — 같은 요청을 다시 보내면 될 수 있다. 400(요청 자체가 틀림)·403 등은 다시 보내도 같다. */
+const TRANSIENT_VERTEX_STATUSES = new Set([429, 500, 502, 503, 504]);
+
+/**
+ * 다시 물어볼 만한 실패인가 — **전송 실패만**(시간 초과·네트워크·429/5xx). 모델이 답을 냈는데 잘렸거나
+ * (`GeminiIncompleteResponseError`) 형식이 틀렸거나 내용이 모자란 것은 아니다: 같은 요청은 같은 답을 낸다.
+ */
+function isVertexTransportFailure(err: unknown): boolean {
+  if (err instanceof VertexHttpError) return TRANSIENT_VERTEX_STATUSES.has(err.status);
+  return typeof err === 'object' && err !== null && transportFailures.has(err);
+}
 
 async function generateContentText(
   env: Env,
@@ -613,7 +707,7 @@ async function generateContentText(
   let accessToken: string;
   try {
     credentials = readVertexCredentials(env);
-    accessToken = await createAccessToken(credentials);
+    accessToken = await createAccessToken(credentials, config.deadlineAt);
   } catch (err) {
     logStructured('warn', {
       at: 'vertex.generate',
@@ -708,10 +802,12 @@ async function generateContentAtEndpoint(
   config: GenerateContentConfig,
   extraHeaders: Record<string, string> = {},
 ): Promise<string> {
+  // 토큰 발급 **뒤**, 요청 직전에 잰다 — 마감이 있으면 그때 남은 시간을 넘기지 않는다(`deadlineAt`).
+  const timeoutMs = deadlineBoundedTimeoutMs(VERTEX_GENERATE_TIMEOUT_MS, config.deadlineAt);
   const started = Date.now();
   const response = await fetch(endpoint, {
     method: 'POST',
-    signal: AbortSignal.timeout(15000),
+    signal: AbortSignal.timeout(timeoutMs),
     headers: {
       ...extraHeaders,
       'content-type': 'application/json',
@@ -740,11 +836,22 @@ async function generateContentAtEndpoint(
       error: err instanceof Error ? err.name : 'unknown',
       elapsed_ms: Date.now() - started,
     });
-    throw err;
+    throw markTransportFailure(err);
   });
-  const json: VertexGenerateContentResponse & { error?: { message?: string } } = await response
-    .json<VertexGenerateContentResponse & { error?: { message?: string } }>()
-    .catch(() => ({}));
+  const json = await readJsonBody<VertexGenerateContentResponse & { error?: { message?: string } }>(response).catch(
+    (err: unknown) => {
+      // 본문을 읽다 끊긴 것도 한 줄 남긴다 — fetch 가 던진 것과 같은 자리의 실패다.
+      logStructured('warn', {
+        at: 'vertex.generate',
+        stage: 'generate_body',
+        model,
+        status: response.status,
+        error: err instanceof Error ? err.name : 'unknown',
+        elapsed_ms: Date.now() - started,
+      });
+      throw err;
+    },
+  );
   // 호출마다 한 줄 — 모델 교체 뒤 확인할 길이 이것뿐이다. 호출부 대부분(직접 입력 태깅·등록
   // 미리듣기·말투 분석)이 실패를 삼키고 폴백하므로, 이 줄이 없으면 은퇴·설정 오류·잘림이
   // 사용자에게도 Sentry 에도 드러나지 않는다. ⚠ 프롬프트·응답 **원문은 싣지 않는다.**
@@ -765,7 +872,7 @@ async function generateContentAtEndpoint(
     thought_tokens: json.usageMetadata?.thoughtsTokenCount ?? null,
   });
   if (!response.ok) {
-    throw new Error(json.error?.message || `Gemini text preparation failed (${response.status})`);
+    throw new VertexHttpError(response.status, json.error?.message || `Gemini text preparation failed (${response.status})`);
   }
   return extractGeneratedText(json);
 }
@@ -783,13 +890,26 @@ function alarmTextPrompt(args: { text: string; sourceLanguage: string; targetLan
     ? "LAUGHTER: every [laughs] already in the message is the user's own laughter (they typed it as letters such as ㅋㅋ, haha or www). Keep each one where it belongs in the translation, never turn it into words, and never add another laugh."
     : '';
 
+  // ⚠ 한→영 번역의 결정적 오역 두 가지(2026-10-01 3.8 평가, 2회 다 같았다): '오늘은 우리 딸 생일!' 을 딸에게 하는
+  //   말인데 'our daughter's birthday' 로 3인칭으로 옮겼고, '오늘도 힘내!' 를 'Have a great day!'(작별 인사)로 옮겼다.
+  const koToEnInstruction =
+    args.sourceLanguage === 'ko' && args.targetLanguage === 'en'
+      ? "Korean '우리' before a family word is an affectionate 'my' only when that word is the person hearing the alarm — the message calls them or talks about them to them (우리 딸, 일어나 → my girl, wake up; 오늘은 우리 딸 생일! said to the daughter → it's your birthday, my girl). When it names someone else or a group the speaker belongs to, it is a real 'our' (여보, 우리 아들 깨워 줘 → honey, wake our son up; 우리 가족 여행 → our family trip; 우리 팀 → our team). Translate what a phrase does, not a stock line: '힘내' cheers them on ('You've got this!', 'Hang in there!') — it is not 'Have a great day'."
+      : '';
+
   return [
     'You translate short voice-alarm text for text-to-speech.',
     `Translate the user's alarm message from ${sourceName} to ${targetName}.`,
     'Keep any text in square brackets exactly as written, and never add new square brackets — the voice reads the words themselves, so say it the way a native speaker would.',
     ...(typedLaughterInstruction ? [typedLaughterInstruction] : []),
+    ...(koToEnInstruction ? [koToEnInstruction] : []),
     'Do not add explanations, markdown, quotes, emojis, or extra fields.',
     'Keep the final text natural, spoken, and 200 characters or fewer.',
+    // 채팅처럼 문장부호 없이 친 직접 입력('약 먹을 시간이야 ㅎㅎ 까먹지 말고')을 번역문도 부호 없이 이어 써서, 두 생각을
+    // 한 호흡으로 읽고 끝 억양이 열린 채 끝났다(2026-10-01 3.8 평가). 느낌표는 음성을 들뜨게 하므로 마침표·물음표만.
+    // ⚠ 웃음 뒤에도 부호를 찍으라고 했더니 'You've got this! [laughs].'·'試合だよ！ [laughs]。' 처럼 부호가 겹쳤다 —
+    //   웃음은 부호 뒤에 두고 제 부호를 달지 않게 한다.
+    "If the message is typed like a chat with little or no punctuation, punctuate the translation as the spoken sentences it is — a period or question mark where each thought ends — because the voice paces itself by punctuation. A [laughs] goes right after that mark and gets no mark of its own (\"…your medicine. [laughs] Don't forget.\").",
     'Return strict JSON with one field: {"text":"the translated text"}.',
     '',
     args.text,
@@ -1177,23 +1297,62 @@ function prerenderClipPrompt(params: {
     params.targetLanguage === 'ko' && isRomanticRelationship(params.relationshipLabel)
       ? '연인/배우자 톤: 실제 남자친구·여자친구·아내·남편이 사적으로 건네는 말투로. 친밀한 반말을 쓰고 해요체/합니다체를 쓰지 말 것(아내·남편도). 따뜻하고 살짝 설레게, 하지만 짧게. 새 인연·연애운·질투·다른 사람에게 끌림 언급 금지.'
       : '';
+  const styleReference = params.styleReference?.trim();
+  // ⚠ 조심스러운 문장도 **확정 문구가 있으면 '화자 자신의 사투리' 를 말하지 않는다**(2026-10-01 마지막 회차 — 사투리
+  //   지시 네 자리 중 여기만 무조건이었다). 사투리냐 표준어냐는 아래 `dialectFollowsReference` 갈래와 끝의 DIALECT 줄이
+  //   확정 문구를 보고 정한다 — 여기서는 '줄의 나머지와 같은 말씨' 만 말한다.
+  //   ⚠ 여기에 '확정 문구의 사투리/표준어 선택을 따르라' 를 쓰거나 이 문장을 아예 빼면, 표준어 확정 문구의 関西 화자가
+  //   더 자주 関西弁 으로 샜다(같은 조건 30줄씩 두 번: 문구를 쓴 것 16/60·뺀 것 16/60, 이 문장 6/60, 고치기 전 10/120).
+  const careKeepsVoice = styleReference
+    ? 'Care changes the tone only — these sentences keep the same speech level and way of speaking as the rest of the line.'
+    : "Care changes the tone only — these sentences keep the speaker's own dialect and speech level.";
   // 사전렌더도 동적 경로와 **같은 규칙**이다 — 결은 문장이 싣고 태그는 쓰게 하지 않는다(위 「태그」 머리말).
   const deliveryInstruction = `WORDS ONLY: the voice takes its tone from your words and punctuation — write no square-bracket tags, stage directions or laughter spelled in letters (ㅋㅋ, haha, www), which text-to-speech reads aloud.
 PACING: prefer an unhurried delivery — a rushed alarm is hard to follow right after waking.
-MATCH EACH SENTENCE TO ITS CONTENT: apologies, cautions and bad news (rain, snow, fine dust, fog, cold, a failed weather check) are said with care — never playfully or with excitement. A tone written in the intent ('미안한 듯', '가볍게', '다정하게') wins over the voice's usual mood. This line has to wake someone up — never let it drift into a sleepy or hushed lull.`;
-  const styleReference = params.styleReference?.trim();
+MATCH EACH SENTENCE TO ITS CONTENT: apologies, cautions and bad news (rain, snow, fine dust, fog, cold, a failed weather check) are said with care — never playfully or with excitement. A tone written in the intent ('미안한 듯', '가볍게', '다정하게') wins over the voice's usual mood. ${careKeepsVoice} This line has to wake someone up — never let it drift into a sleepy or hushed lull.`;
+  // ⚠ **인사 시드는 표준 인사말을 그대로 써도 된다**(2026-10-01 마지막 회차). 확정 문구는 거의 언제나 인사 줄이라
+  //   ('복제·살짝 바꿔 쓰기 금지' 의 압력으로) 일본어 인사가 おはよう 를 피해 'いい朝だよ' 로, 関西 이 'おはようさん' 을
+  //   피해 열었다. 인사말 낱말만 허용하고 나머지 문장은 새로 쓰게 한다.
+  // ⚠ **어미를 본뜨지 말 것**(같은 회차). 경상 확정 문구의 끝 '…보자카이' 를 12줄 중 8줄이 그대로 끝으로 썼다 — 한
+  //   목소리의 알람이 전부 같은 꼬리로 끝난다. 피할 끝말은 **코드가 집어 준다**(`lastPhrase`).
+  //   ⚠ 이 문장에 'dialect' 를 쓰지 말 것 — '같은 사투리 안에서 어미를 바꾸라' 류의 문장을 다른 수정과 함께 실었더니
+  //     표준어 확정 문구의 関西 화자가 関西弁 으로 새는 줄이 22/60 까지 늘었다(고치기 전 10/120). 사투리냐 표준어냐는
+  //     말투 블록·끝의 DIALECT 줄이 확정 문구를 보고 정한다.
+  const referenceTail = styleReference ? lastPhrase(styleReference) : '';
   const styleReferenceInstruction = styleReference
-    ? `STYLE REFERENCE (tone only): the user approved this exact line for this same voice: "${styleReference}". Match its register, warmth, sentence length and overall speaking style — but write NEW content for the current intent; never copy or lightly rephrase the reference line itself.`
+    ? `STYLE REFERENCE (tone only): the user approved this exact line for this same voice: "${styleReference}". Match its register, warmth, sentence length and overall speaking style — but write NEW content for the current intent; never copy or lightly rephrase the reference line itself.${
+        isGreetingSeed(params.seed)
+          ? " This intent is a greeting: open with the same plain greeting word the reference uses (e.g. 좋은 아침, おはよう, おはようさん, Good morning) — reusing that word is not copying; only the rest of the line must be new."
+          : ''
+      } Keep its register and energy, but vary your sentence endings: this voice says many different lines, so do not end your line the way the reference ends${
+        referenceTail ? ` ("${referenceTail}")` : ''
+      }.`
     : '';
   // ⚠ **사람이 쓴 같은 의도의 대사를 본보기로 준다**(2026-09-27 사용자 지시 — "기본 목소리 대사처럼
   //   사람이 말하는 것처럼"). 시드는 의도를 설명한 글이라 모델이 설명문처럼 옮기기 쉽다. 본보기는
   //   중립 화자의 존댓말이므로 **리듬·쉼·공감→권유 흐름만** 가져오고, 문장과 어체는
   //   이 목소리의 관계·호칭·말투로 새로 쓰게 한다.
+  // ⚠ **사투리 화자에게는 본보기의 낱말까지 사투리로 다시 쓰라고 따로 말한다**(2026-10-01 3.8 평가). 어체 예시가
+  //   표준 반말뿐이라('온대요'→'온대'), 경상 엄마의 '날씨 확인 실패' 줄이 본보기 뼈대를 표준 반말로만 고쳐 옮겨
+  //   사투리가 통째로 빠졌다(2회 중 1회).
+  // ⚠ **사용자가 확정한 문구(STYLE REFERENCE)가 있으면 사투리 지시는 그 문구를 따른다**(2026-10-01 리뷰). 운영 크론은
+  //   거의 모든 클론에 확정 문구를 넘긴다(`stock-clips.ts` 의 `preview_text`). 그 문구가 표준어면(사용자가 고쳤거나
+  //   분석이 실패한 채 만들어졌다) 분석이 사투리라고 해도 표준어로 쓴다 — '확정 문구가 분석을 이긴다' 가 규칙이다
+  //   (스펙 §4-2). 문구가 사투리인지는 코드가 가르지 않고 모델이 문구를 보고 고른다.
+  const dialectName = params.speechStyle?.dialect;
   const humanReference = params.humanReference?.trim();
   const humanReferenceInstruction = humanReference
-    ? `HUMAN-WRITTEN REFERENCE for this same intent (a script line written by a person for a neutral narrator in polite speech): "${humanReference}". This is how a real person says it — match its natural rhythm, short sentence shapes, pauses (…) and its empathy-then-nudge flow. But re-voice it completely for THIS speaker (relationship register, title, dialect, energy); do not copy its sentences. Its endings are polite (해요체/です・ます) because the narrator is neutral — REWRITE EVERY ENDING into this speaker's register (e.g. for 반말: '온대요'→'온대', '볼까요?'→'볼까?', '챙겨요'→'챙겨'); never let one sentence keep the reference's register.`
+    ? `HUMAN-WRITTEN REFERENCE for this same intent (a script line written by a person for a neutral narrator in polite speech): "${humanReference}". This is how a real person says it — match its natural rhythm, short sentence shapes, pauses (…) and its empathy-then-nudge flow. But re-voice it completely for THIS speaker (relationship register, title, dialect, energy); do not copy its sentences. Its endings are polite (해요체/です・ます) because the narrator is neutral — REWRITE EVERY ENDING into this speaker's register (e.g. for 반말: '온대요'→'온대', '볼까요?'→'볼까?', '챙겨요'→'챙겨'); never let one sentence keep the reference's register.${
+        !dialectName
+          ? ''
+          : styleReference
+            ? ` This reference is standard language. If the approved STYLE REFERENCE line is in ${dialectName} dialect, re-voice this reference's wording into that dialect too, in every sentence; if the STYLE REFERENCE is in standard language, keep standard language like it.`
+            : ` The reference is standard language and this speaker talks in ${dialectName} dialect — re-voice its wording into that dialect too, in every sentence.`
+      }`
     : '';
   const speechStyle = params.speechStyle;
+  /** 사투리 분석이 있는데 사용자가 확정한 문구도 있다 — 사투리 지시는 전부 그 문구를 따르는 조건부가 된다. */
+  const dialectFollowsReference = Boolean(speechStyle?.dialect && styleReference);
   // 목소리의 결(경쾌/진중)이 문장 에너지를 정한다 — 결과 어긋나면 그 목소리의 핵심이 깨진다. 태그가 없으니 결은
   // **문장 모양으로만** 전한다(스펙 §4-2). v4 는 밝은 신호(느낌표·신나는 낱말)가 하나라도 있으면 크게 들뜨므로
   // (스펙 §10) 차분 쪽은 그 신호를 빼게 한다.
@@ -1204,7 +1363,10 @@ MATCH EACH SENTENCE TO ITS CONTENT: apologies, cautions and bad news (rain, snow
         ? 'VOICE ENERGY — this voice is low-key, CALM and sincere. Keep the line composed and grounded: steady, even sentences, few or no exclamation marks, and no teasing or excited words — the voice lifts at every bright signal, so leave them out. Calm is not sleepy — the line still ends with a clear, firm nudge to get up or act. Calm is not formal either — a calm partner, friend or parent still speaks the relationship\'s own register (반말 stays 반말).'
         : '';
   const speechStyleInstruction =
-    speechStyle && (speechStyle.dialect || speechStyle.markers.length > 0 || speechStyle.persona)
+    // 어체만 있는 분석(사투리 없는 정중체 화자 — register 'polite')도 싣는다(Codex #844). 일본어 존댓말 검사는 확정
+    //   문구가 어체를 세우지 않을 때 그 어체를 보고 면제되는데, 프롬프트가 그걸 모르면 첫 미리듣기(확정 문구 없이 만든다)가
+    //   가족 반말로 나와 그대로 확정 문구가 되고, 그 뒤로는 확정 문구의 반말이 분석을 이긴다(`hasJapanesePoliteEnding`).
+    speechStyle && (speechStyle.dialect || speechStyle.markers.length > 0 || speechStyle.persona || speechStyle.register)
       ? `SPEAKER DIALECT/STYLE (analyzed from this speaker's own recording): dialect="${
           speechStyle.dialect || 'standard'
         }"${speechStyle.strength ? ` (strength: ${speechStyle.strength})` : ''}${
@@ -1215,7 +1377,24 @@ MATCH EACH SENTENCE TO ITS CONTENT: apologies, cautions and bad news (rain, snow
           speechStyle.markers.length > 0
             ? `, typical endings/expressions: ${speechStyle.markers.map((m) => `"${m}"`).join(', ')}`
             : ''
-        }. Write the line the way THIS speaker actually talks — keep their first-person pronoun, signature sentence endings (語尾癖) and energy, using the dialect's natural endings and vocabulary instead of standard textbook language. Do not exaggerate or stack markers; if strength is low, keep it to a light touch on sentence endings only. If a STYLE REFERENCE line is present above, it wins over this analysis.`
+        }. Write the line the way THIS speaker actually talks — keep their first-person pronoun, signature sentence endings (語尾癖) and energy${
+          dialectFollowsReference ? '' : ", using the dialect's natural endings and vocabulary instead of standard textbook language"
+        }.${
+          // ⚠ 사투리는 **주제마다 같은 강도로**, **그 지역 것만** 쓴다(2026-10-01 3.8 평가). 사과·주의 줄(날씨 확인
+          //   실패)에서 사투리가 빠졌고(경상 2회 중 1회 표준어), 경상 줄에 전라 '~응께' 가 섞였으며(5회 중 3회),
+          //   関西 줄에 무대 말투 'なはれ' 가 나왔다. 표지(markers)에 있는 어미는 그 화자의 것이라 허용한다.
+          // ⚠ 확정 문구가 있으면 이 블록부터 **조건부**다(2026-10-01 리뷰 재평가). 뒤에 '확정 문구가 이긴다' 만 덧붙였을
+          //   때는 표준어 확정 문구에도 '약 알림도 사투리로, 표준어는 절대 안 된다' 는 이 문장이 이겨 경상 약 줄 2/2 가
+          //   사투리였고, 関西 은 페르소나·표지까지 겹쳐 12줄 중 9줄이 関西弁 이었다.
+          !speechStyle.dialect
+            ? ''
+            : dialectFollowsReference
+              ? ` This dialect applies ONLY if the approved STYLE REFERENCE line below is itself in ${speechStyle.dialect} dialect. If it is, keep the dialect at the same strength on every topic (apologies, a failed weather check and medication reminders included), using only this region's own present-day forms: never another region's endings (e.g. a 경상 speaker never uses 전라 '~응께') and no archaic or stage forms (e.g. 〜なはれ in 関西 speech) unless they are in the markers above. If the STYLE REFERENCE is in standard language, the user chose standard speech for this voice: write standard language with no dialect endings or words at all — ignore the dialect, the markers and any dialect in the verbal identity.`
+              : " Keep the dialect at the same strength on every topic — an apology, a failed weather check or a medication reminder is said gently IN the dialect, never in standard language. Use only this region's own present-day forms: never another region's endings (e.g. a 경상 speaker never uses 전라 '~응께') and no archaic or stage forms (e.g. 〜なはれ in 関西 speech) unless they are in the markers above."
+        } Do not exaggerate or stack markers; if strength is low, keep it to a light touch on sentence endings only.${
+          // 확정 문구는 이 블록 **뒤에** 온다(아래 return 순서) — 예전 문장('present above')은 위치가 틀렸다.
+          styleReference ? ' The approved STYLE REFERENCE line given below wins over this analysis.' : ''
+        }`
       : '';
   // 아이 목소리로 **판정된 경우에만** 켠다(SpeechStyle.childlike). 어른 목소리가 이렇게
   // 말하면 이상하므로 분석 쪽에서 보수적으로 판단하고, 여기서는 그 결과를 그대로 따른다.
@@ -1226,15 +1405,19 @@ MATCH EACH SENTENCE TO ITS CONTENT: apologies, cautions and bad news (rain, snow
   const childlikeInstruction = params.speechStyle?.childlike
     ? [
         'CHILD SPEAKER: this voice is a young child talking to a grown-up they love. Write it as that child, not as an adult imitating one. This OVERRIDES the relationship register rules above: a small child talks to a parent or grandparent in plain casual speech (Korean 반말 — no 요/세요/습니다; Japanese タメ口; simple English).',
-        'Sound like a child: very short sentences, small everyday words, a bit of repetition, and eager affection. No polished adult phrasing, no advice-giving, no long clauses, no reported-speech hedging (never "~ㄹ지도 몰라요", "~면 좋겠어요", "~지요?").',
-        'A child does not pass on the intent\'s reasons or explanations — say only the one thing the child wants the grown-up to do, in child words (for a child this overrides COMPLETENESS FIRST): not "미뤄 두면 까먹으니까 알람 끄기 전에 지금 바로 먹어" but "아빠, 지금 약 먹어, 응?".',
-        'REQUIRED — spell one or two words the way a small child actually says them, instead of textbook-correct spelling: stretch an ending ("주라아", "가자아"), soften a consonant ("힘드러어", "이러나아"), or repeat a word ("빨리빨리"). Exactly one or two such words per line — the rest stays normally spelled so the message is still clear enough to wake someone.',
-        'Never write the whole line in broken spelling, and never break the word that carries the actual point (medicine, umbrella, waking up).',
+        // ⚠ **규칙끼리 부딪히지 않게 하나로 묶었다**(2026-10-01 마지막 회차). 예전에는 (1) 필수 아이 철자의 예가
+        //   '이러나아'(일어나)였는데 바로 다음 줄이 '깨우는 낱말은 깨지 말라' 였고, 예문도 '일어나아'·'wake uuup' 이었다.
+        //   (2) '추측 화법 금지' 가 '~ㄹ지도' 를 막는데 운세 규칙은 '시드의 ~지도·~수도 를 지켜라' 였다. 이제 아이 철자는
+        //   요점이 아닌 낱말에만, 운세는 아이 말로 된 추측('~할지도 몰라!')으로 — 전하는 말('~래')이 아니게.
+        'Sound like a child: very short sentences, small everyday words, a bit of repetition, and eager affection. No polished adult phrasing, no advice-giving, no long clauses, no polite or adult hedging ("~ㄹ지도 몰라요", "~면 좋겠어요", "~지요?").',
+        'A fortune is still only a maybe: keep its hedge, said the way a child says it ("~할지도 몰라!", "かもね！", "maybe!") — never as a sure thing, and not as passed-on talk ("~래", "~대", "they say").',
+        'A child does not pass on the intent\'s reasons or explanations — say only the one thing the child wants the grown-up to do, in child words (the COMPLETENESS rule below is written for a child for this reason): not "미뤄 두면 까먹으니까 알람 끄기 전에 지금 바로 먹어" but "아빠, 지금 약 먹어, 응?".',
+        'REQUIRED — spell one or two words per line the way a small child actually says them, instead of textbook-correct spelling: stretch an ending ("가자아", "아빠아"), soften a consonant ("힘드러어", "조아아"), or repeat a word ("빨리빨리"). Only on words that do not carry the point: the wake-up word (일어나, 起きて, wake up), medicine (약, くすり, medicine) and umbrella (우산, かさ, umbrella) stay correctly spelled and unstretched — "일어나" never becomes "이러나" or "일어나아". Never write the whole line in broken spelling — the rest stays normally spelled so the message is still clear enough to wake someone.',
         params.targetLanguage === 'ko'
-          ? 'Child examples: "아빠아, 일어나아! 오늘 비 온대. 우산 꼭 챙겨!" / "엄마, 약 먹을 시간이야. 빨리빨리 먹어어!"'
+          ? 'Child examples: "아빠아, 일어나! 오늘 비 온대. 우산 꼭 챙겨!" / "엄마, 약 먹을 시간이야. 빨리빨리 먹어어!" / "아빠, 오늘 조은 일 생길지도 몰라!"'
           : params.targetLanguage === 'ja'
-            ? 'Child examples: "パパ、おきてー！きょうはあめなんだって。かさもってってね！" / "ママ、おくすりのじかんだよ。はやくのんでー！"'
-            : 'Child examples: "Daddy, wake uuup! It\'s gonna rain, take your umbrella, okay?" / "Mommy, medicine time! Take it now-now-now!"',
+            ? 'Child examples: "パパ、起きて！きょうはあめなんだって。かさ、もってってねー！" / "ママ、おくすりのじかんだよ。はやくのんでー！" / "パパ、きょういいことあるかもね！"'
+            : 'Child examples: "Daddy, wake up! It\'s gonna rain, take your umbrella, okaaay?" / "Mommy, medicine time! Take it now-now-now!" / "Daddy, maybe something good happens today!"',
       ].join(' ')
     : '';
   return [
@@ -1248,23 +1431,35 @@ MATCH EACH SENTENCE TO ITS CONTENT: apologies, cautions and bad news (rain, snow
     childlikeInstruction,
     styleReferenceInstruction,
     humanReferenceInstruction,
-    'Write it like ONE real person speaking warmly and naturally to the listener — call them by their title when provided, hold the relationship register, and make it caring and specific. Do NOT just state a bare fact ("비가 와요" alone is not enough); pair it with a short, natural caring action or wish that fits the intent (weather → suggest umbrella/mask/warm clothes/careful steps; medication → remind kindly and wish good health; fortune → a light playful mood, entertainment only). Keep it to one or two short sentences, usable as an alarm.',
+    'Write it like ONE real person speaking warmly and naturally to the listener — call them by their title when provided, hold the relationship register, and make it caring and specific. Do NOT just state a bare fact ("비가 와요" alone is not enough); pair it with a short, natural caring action or wish that fits the intent (weather → suggest umbrella/mask/warm clothes/careful steps; medication → remind kindly and wish good health; fortune → a light playful mood, entertainment only: keep every hedge the intent has (\'~수도\', \'~지도\', \'might\', \'かも\'), and luck with people means people the listener already knows — never a new encounter or love luck (\'새 인연\', \'いい出会い\', \'someone special\')). Keep it to one or two short sentences, usable as an alarm.',
     // ⚠ **완결성이 먼저, 길이는 그다음**(2026-09-23 블라인드 판정). 처음엔 "영어 25단어·90자" 로
     //   묶었는데, 시드는 대부분 '사실 → 공감 → 권유' 세 마디라 **마지막 권유("이제 일어나자",
     //   "지금 먹자")가 잘려** 알람이 깨우지를 못했다(시드 누락 지적 72건, 2.5 영어는 새 프롬프트가
     //   10:20 으로 졌다). 그래서 무엇을 먼저 버릴지(인사·호칭 반복)를 정해 주고 상한은 넉넉히 둔다.
     //   3.5 Flash-Lite 가 영어에서 200자를 넘기던 것은 이 상한으로 막는다.
-    `COMPLETENESS FIRST: say every part of the intent — the fact, the empathy, the reason, and above all its closing action (get up now, take it now, look outside). If you must shorten, drop greetings (unless the intent is itself a greeting) and repeated titles first, never the closing action. Never say the same thing twice ('시작해 보자, 일어나자'). Add nothing the intent does not say: no invented circumstances ('I left a glass of water for you', 'traffic will be bad') — the clip is replayed on other days — and no piled-up adjectives ('a really healthy, wonderful day'). Use the shortest line that carries all of it: usually two short sentences, at most three — ${
-      params.targetLanguage === 'en' ? 'at most about 30 English words' : 'at most about 110 characters'
-    } of spoken text.`,
+    // ⚠ **아이 목소리는 이유를 옮기지 않는다 — 그래서 이 규칙도 아이에게는 다르게 준다**(2026-10-01 3.8 평가).
+    //   CHILD SPEAKER 가 '이유를 빼라' 고 해도 뒤에 오는 이 줄이 '이유까지 전부' 를 요구해 이겼다 — 약 시드는
+    //   5회 중 5회 이유를 옮겼고 4회는 비문('나중에 먹으려면 까먹으니까')이었다. 바꾸니 4회 중 1회.
+    // ⚠ **'절 하나도 빼지 말 것' 은 영어에만 준다**(2026-10-01 마지막 회차). 영어 운세#0 이 '일이 생각보다 술술 풀릴 수도'
+    //   절을 빠뜨렸다(6줄 중 2줄 → 고친 뒤 9/9). 한국어·일본어에는 그 누락이 없었는데, 같은 문장을 모든 언어에 실었더니
+    //   표준어 확정 문구의 関西 화자가 関西弁 으로 새는 줄이 늘었다(이 문장만 더해 9/60 — 인사 줄 4/10, 고치기 전 10/120).
+    params.speechStyle?.childlike
+      ? "COMPLETENESS (child speaker): say the intent's main fact and its closing action in child words; leave out its reasons and explanations. Add nothing the intent does not say, and never say the same thing twice."
+      : `COMPLETENESS FIRST: ${
+          params.targetLanguage === 'en'
+            ? "every clause of the intent must survive in your line — the fact, the empathy, the reason, a maybe it adds ('일이 생각보다 술술 풀릴 수도' → 'things might go more smoothly than you think'), and above all its closing action (get up now, take it now, look outside). Shorten a clause rather than drop it."
+            : 'say every part of the intent — the fact, the empathy, the reason, and above all its closing action (get up now, take it now, look outside).'
+        } If you must shorten, drop greetings (unless the intent is itself a greeting) and repeated titles first, never the closing action. Never say the same thing twice ('시작해 보자, 일어나자'). Add nothing the intent does not say: no invented circumstances ('I left a glass of water for you', 'traffic will be bad') — the clip is replayed on other days — and no piled-up adjectives ('a really healthy, wonderful day'). Use the shortest line that carries all of it: usually two short sentences, at most three — ${
+          params.targetLanguage === 'en' ? 'at most about 30 English words' : 'at most about 110 characters'
+        } of spoken text.`,
     'OPENER: do not assume the time of day. Use a morning greeting (좋은 아침, 잘 잤어, good morning, おはよう) only when the intent itself is a greeting — and then DO open with it; skipping the greeting drops part of the intent. Never for medication, which can ring at any hour. Do not open medication or cheer lines with a wake-up call (\'일어나\', \'get up\', \'起きて\') unless the intent asks for it — the listener may already be up. Otherwise start with the listener\'s title (or a short soft opener) and get straight to the point, and vary the opener.',
     'The intent above is written as a neutral Korean description; its wording and politeness are NOT the output register — use the relationship\'s register (e.g. a mom speaking to her daughter never says "드실").',
     params.targetLanguage === 'ko'
-      ? '어미를 시드에서 옮겨 오지 말 것: 반말 화자는 한 문장도 \'-요\'로 끝내지 않는다(\'흐리대요\'→\'흐리대\', \'날이래요\'→\'날이래\'). 한 줄 안에서 반말과 해요체를 섞지 않는다. 낱말: 바람은 \'쐬다\'(\'쬐다\' 아님 — 햇볕만 쬔다).'
+      ? '어미를 시드에서 옮겨 오지 말 것: 반말 화자는 한 문장도 \'-요\'로 끝내지 않는다(\'흐리대요\'→\'흐리대\', \'날이래요\'→\'날이래\'). 한 줄 안에서 반말과 해요체를 섞지 않는다. 낱말: 바람은 \'쐬다\'(\'쬐다\' 아님 — 햇볕만 쬔다). \'술술\'은 일이 \'풀리다\'에만 붙는다(\'운이 술술 따라주는\'(X) → \'운이 따라주는 날\', \'일이 술술 풀릴지도\').'
       : // ⚠ 영어·일본어는 **한국어 메모를 번역하지 말 것**(2026-09-23 블라인드 판정 — 직역투가
         //   영어 패배의 절반). 시드 21개 전체에서 옮기기 까다로운 개념만 입말로 대응시켜 준다.
         params.targetLanguage === 'en'
-        ? "Don't translate the Korean note — say it the way a native English speaker would say it out loud. Tricky ideas: 미세먼지 → 'the air's pretty bad today' (never 'heavy dust'); 재물운 → 'a little extra money might come your way' (never 'money luck'); 운이 따라주는 날 → 'luck's on your side today'; 끼니 챙기기 → 'don't skip meals'; 한 박자 늦춰 → 'slow down a beat'; 깜빡하기 쉽다 → 'it's easy to forget'; 건강하게 잘 보내 → 'take care of yourself today' (never 'have a healthy day'). The listener's own tasks are 'you', not 'we' (a daughter tells Dad 'take your time', not 'as long as we don't rush') — 'let's get up' is fine."
+        ? "Don't translate the Korean note — say it the way a native English speaker would say it out loud. Tricky ideas: 미세먼지 → 'the air's pretty bad today' (never 'dust' or 'fine dust' — talk about the air); 재물운 → 'a little extra money might come your way' (never 'money luck' or 'financial luck'); 운이 따라주는 날 → 'luck's on your side today'; 끼니 챙기기 → 'don't skip meals'; 한 박자 늦춰 → 'take a breath and slow down a little' (never 'a beat slower'); 깜빡하기 쉽다 → 'it's easy to forget'; 건강하게 잘 보내 → 'take care of yourself today' (never 'have a healthy day'). The listener's own tasks are 'you', not 'we' (a daughter tells Dad 'take your time', not 'as long as we don't rush') — 'let's get up' is fine."
         : params.targetLanguage === 'ja'
           ? '韓国語のメモを訳さず、日本語話者が実際に口にする言い方で。訳しにくい言葉: 미세먼지 → 「空気がよくない」「PM2.5が多い」(「微小粒子状物質」は使わない)、재물운 → 「ちょっと臨時収入があるかも」、운이 따라주는 날 → 「ツイてる日」、끼니 챙기기 → 「ちゃんとご飯食べてね」、한 박자 늦춰 → 「ひと呼吸おいて」、따뜻한 물 → 「お湯」(「温かいお水」とは言わない)。家族への言葉は普通体で、「〜ます」「〜です」「〜ますように」で終えない。'
           : '',
@@ -1275,6 +1470,26 @@ MATCH EACH SENTENCE TO ITS CONTENT: apologies, cautions and bad news (rain, snow
     'Make it feel warm and human, not a robotic prerecorded template.',
     deliveryInstruction,
     fewShotBlock(params.targetLanguage),
+    // ⚠ **인사가 아닌 시드에는 시각 규칙을 끝에서 한 번 더 말한다**(2026-10-01 3.8 평가). 위 OPENER 만으로는 영어가
+    //   'Morning, sweetie…'·'Morning, honey…' 로 열어 1회차 거절(`time_of_day`)이 7케이스×3회 중 14~15번이었다 —
+    //   맨 'Morning,' 을 인사로 보지 않는다. OPENER 괄호에 그 꼴을 더해도 11번이었고, 이 줄을 **끝에** 두니 0번.
+    //   인사 시드는 3/3 그대로 'Good morning' 으로 열었다. 검사기(`hasAssumedMorning`)는 그대로 필요하다.
+    isGreetingSeed(params.seed)
+      ? ''
+      : "TIME OF DAY: this intent is not a greeting and the alarm can ring at any hour — no morning greeting of any kind, including a bare 'Morning,' before the title (좋은 아침, 잘 잤어, good morning, おはよう). Open with the listener's title or go straight to the point.",
+    // ⚠ 사투리도 끝에서 한 번 더(2026-10-01 3.8 평가 2차). 위 SPEAKER DIALECT 블록만으로는 경상 응원 줄이 두 번 다
+    //   '없응께'(전라)를 썼고, '날씨 확인 실패' 줄은 두 번 중 한 번이 거의 표준어였다 — TIME OF DAY 처럼 끝 위치가 듣는다.
+    // ⚠ 확정 문구(STYLE REFERENCE)가 있으면 이 줄도 **그 문구를 따른다** — 끝 위치가 가장 잘 듣는 자리라, 무조건
+    //   '사투리로' 라고 하면 사용자가 표준어로 확정한 문구를 이 줄이 이긴다(위 humanReference 주석).
+    dialectName
+      ? styleReference
+        ? `DIALECT — the approved STYLE REFERENCE line decides, not the analysis. If that line is in standard language, every sentence is standard language: no ${dialectName} endings or words at all. If it is in ${dialectName} dialect, every sentence — apologies and cautions included — stays in ${dialectName} dialect at the strength given above, using only ${dialectName}'s own endings${
+            /경상/.test(dialectName) ? " (a 경상 speaker never says 전라 '~응께'; '~니까' is fine)" : ''
+          }.`
+        : `DIALECT: every sentence — apologies and cautions included — stays in ${dialectName} dialect at the strength given above, using only ${dialectName}'s own endings${
+            /경상/.test(dialectName) ? " (a 경상 speaker never says 전라 '~응께'; '~니까' is fine)" : ''
+          }.`
+      : '',
     'Return STRICT JSON only: {"text":"final spoken line in the target language"}. No other fields.',
   ]
     .filter(Boolean)
@@ -1313,19 +1528,26 @@ export async function generatePrerenderClipText(
   // **결정적**이면(같은 시드+관계에서 모델이 매번 같은 문장을 낸다) 재시도는 전부 같은
   // 결과라, 21개 중 1개가 영구히 안 만들어지고 '다시 시도' 버튼도 무력했다 —
   // 실제로 사랑 3번 시드 × 관계 '엄마' 에서 그렇게 막혔다.
-  // 그래서 **회차마다 제약을 더해** 다시 묻는다. 마지막 회차는 관계 낱말 자체를 금지한다.
+  // 그래서 **거절될 때마다 제약을 더해** 다시 묻는다. 두 번 거절된 뒤에는 관계 낱말 자체를 금지한다.
   const MAX_ATTEMPTS = 3;
   let lastError: unknown = null;
   /** 직전 회차가 내용 검사에서 걸린 사유 — 그 사유에 맞는 재시도 힌트를 준다. */
   let lastReason: AlarmTextRejectionReason | null = null;
   /** 직전 회차에서 어체가 틀린 낱말들(register_mixed 일 때). */
   let lastWrongEndings: string[] = [];
+  /**
+   * **내용 검사에서 거절된 횟수** — 재시도 힌트는 회차 번호가 아니라 이것으로 고른다(2026-10-01 3.8 평가).
+   * 회차로 고르면 시간 초과 뒤 회차가 거절된 적도 없는데 '앞 시도가 거절됐다' 를 받고, 시간 초과 두 번 뒤
+   * 3회차는 '관계 낱말 없이 짧게' 를 받아 자기 지칭('엄마는 늘 네 편이야')과 시드 절을 버렸다(평가 D 282건 중
+   * 약 4%). 전송 실패 뒤에는 같은 프롬프트를 그대로 다시 보낸다.
+   */
+  let rejections = 0;
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
     const label = params.relationshipLabel?.trim();
     const retryHint =
-      attempt === 1
+      rejections === 0
         ? ''
-        : attempt === 2
+        : rejections === 1
           ? 'RETRY: the previous attempt was rejected. Keep the same intent but rephrase it differently — vary the sentence shape and wording.'
           : label
             ? `RETRY (final): earlier attempts were rejected. Write the line WITHOUT using the word "${label}" anywhere — speak purely in the first person ("나는"/"내가") and keep it short.`
@@ -1344,7 +1566,9 @@ export async function generatePrerenderClipText(
           } — and keep the closing action.`
         : '';
     const registerHint =
-      lastReason === 'register_mixed'
+      lastReason === 'register_mixed' && targetLanguage === 'ja'
+        ? 'The previous line ended a sentence in です・ます. Family and friends talk in plain casual Japanese — end every sentence in plain form (〜よ/〜ね/〜てね), wishes included (not 〜ますように).'
+        : lastReason === 'register_mixed'
         ? `The previous line used the WRONG speech level${
             lastWrongEndings.length > 0 ? ` in: ${lastWrongEndings.map((w) => `'${w}'`).join(', ')}` : ''
           }. Hold ONE level for the whole line: the approved STYLE REFERENCE's level if one is given, otherwise the one the relationship calls for (romantic partner, sibling, friend or child → 반말 with no '-요' at all; grandchild→grandparent, child→parent or no relationship → warm 해요체 throughout).`
@@ -1352,7 +1576,11 @@ export async function generatePrerenderClipText(
           ? 'The previous line assumed it was morning. This alarm can ring at any hour — no morning greeting (좋은 아침, 잘 잤어, morning, おはよう); open with the listener\'s title or go straight to the point (medication and cheer lines also skip wake-up calls).'
           : lastReason === 'uncontracted'
             ? "The previous line sounded robotic — spoken English always contracts: it's, don't, let's, you're, I'm."
-            : '';
+            : lastReason === 'literal_translation'
+              ? "The previous line said 'money luck' or 'financial luck' — a word-for-word copy of the Korean 재물운 that no native speaker says. Say it the natural way: 'a little extra money might come your way'."
+              : lastReason === 'korean_collocation'
+                ? "The previous line used an unnatural Korean pairing. '술술' goes only with 일이 '풀리다' — write '운이 따라주는 날' and '일이 생각보다 술술 풀릴 수도' (keep the intent's '~수도/~지도' maybe). For forgetting, say '미뤄 두면 잊기 쉬우니까', never '나중에 챙기려면 잊기 쉬우니까'."
+                : '';
     const prompt = [prerenderClipPrompt({ ...params, targetLanguage }), retryHint, lengthHint, registerHint]
       .filter(Boolean)
       .join('\n');
@@ -1378,8 +1606,11 @@ export async function generatePrerenderClipText(
     if (reason) {
       lastError = new AlarmTextPreparationInvalidError(reason);
       lastReason = reason;
+      rejections += 1;
       lastWrongEndings =
-        reason === 'register_mixed' ? (koreanRegisterViolation(text, params)?.wrong ?? []).slice(0, 4) : [];
+        reason === 'register_mixed' && targetLanguage === 'ko'
+          ? (koreanRegisterViolation(text, params)?.wrong ?? []).slice(0, 4)
+          : [];
       continue;
     }
     return { text };
@@ -1436,9 +1667,349 @@ export function prerenderRejectionReason(
     return 'relationship_leak';
   }
   if (targetLanguage === 'ko' && hasMixedKoreanRegister(spoken, params)) return 'register_mixed';
+  if (targetLanguage === 'ja' && hasJapanesePoliteEnding(spoken, params)) return 'register_mixed';
   if (params.seed && hasAssumedMorning(spoken, params.seed, targetLanguage)) return 'time_of_day';
   if (targetLanguage === 'en' && isUncontractedEnglish(spoken)) return 'uncontracted';
+  if (targetLanguage === 'en' && hasEnglishLiteralCalque(spoken)) return 'literal_translation';
+  if (targetLanguage === 'ko' && hasKoreanCollocationError(spoken)) return 'korean_collocation';
   return null;
+}
+
+/**
+ * 프롬프트가 금지해도 3.8 이 되풀이한 한국어 낱말 짝 두 가지(2026-10-01 마지막 회차 평가, 손주→조부모 프로필).
+ *  - '운이 술술' — '술술' 은 일이 '풀리다' 에만 붙는다. 이 꼴로 쓸 때는 시드의 '~수도'(가능성)까지 같이 떨어졌다(4/13).
+ *  - '나중에 챙기려면 잊기 쉬우니까' — '나중에 ~(으)려면' 뒤에 '잊/까먹' 이 오면 '나중에 먹고 싶으면 잊기 쉽다' 는 엉뚱한
+ *    뜻이 된다. 시드의 '미뤄 두면 잊기 쉽다' 를 옮기다 생긴다(12/16).
+ * **이 두 꼴만** 본다 — '일이 술술 풀릴지도', '미뤄 두면 잊기 쉬우니까' 는 막지 않는다. 거절이 세 회차 연속이면 그 클립이
+ * 실패로 남으므로 넓히지 말 것.
+ */
+export function hasKoreanCollocationError(spoken: string): boolean {
+  if (/운이\s*술술/.test(spoken)) return true;
+  // '~려면' 과 존대 꼴 '~려 하시면'(2026-10-01 확인 평가에서 이 꼴로 빠져나갔다) 둘 다 본다.
+  //   잊는다는 **긍정** 꼴만 본다 — '잊지 않게'·'까먹지 말고'·'깜빡하지 않도록' 같은 부정·목적절은 바른 말이다(Codex #844).
+  return /나중에\s+(?:[가-힣]+\s+)*?[가-힣]+(?:(?:으)?려면|(?:으)?려\s*하(?:시)?면)\s*(?:금방\s*|쉽게\s*|깜빡\s*)?(?:잊(?:기|어|으니|을|는)|까먹(?:기|어|으니|을|는)|깜빡(?:하기|할|하니|해))/.test(
+    spoken,
+  );
+}
+
+/**
+ * 한국어 '재물운' 을 낱말째 옮긴 영어('money luck'·'financial luck'). 프롬프트가 금지해도 3.8 영어 운세 줄에 다시
+ * 나왔다(2026-10-01 3.8 평가) — 원어민은 'a little extra money might come your way' 처럼 말한다. **이 두 꼴만**
+ * 본다 — 'luck with money' 같은 자연스러운 말은 막지 않는다.
+ */
+export function hasEnglishLiteralCalque(spoken: string): boolean {
+  return /\b(?:money|financial) luck\b/i.test(spoken);
+}
+
+/**
+ * 일본어 문장·마디의 가장자리 — **일본어 낱말 글자(히라가나·가타카나·한자)가 아닌 것 전부**: 문장부호·쉼표·띄어쓰기·물결·
+ * 늘임표 'ー'·괄호·기호(♪☆♡)·이모지·숫자, 그리고 라틴·그리스 글자(XD·얼굴 문자의 ω·m(_ _)m). 문장 끝에서 걷어 내는 것
+ * (`JA_SENTENCE_TRAILER`)이자 부름말로 홀로 선 청자 호칭을 가르는 경계(`japaneseVocativePattern`)다 — 둘이 갈라지지 않게 한
+ * 곳에 둔다. 문자 종류(Script)로 가른다 — 'ー'·'。'·'・' 는 가나와 함께 쓰여도 Script 가 Common 이라 가장자리다
+ * (Script_Extensions 로 바꾸면 그것들이 낱말 글자가 된다).
+ * ⚠ 글자 목록으로 되돌리지 말 것(Codex #844). 예전 목록(띄어쓰기·、，,。！？!?…〜ー～)은 전각 마침표 '．'(IME 의 '，．'
+ *   설정)·'.'·'~'·'・・・'·'‥'·'♪'·이모지를 몰라, 그런 글자로 끝나게 고쳐 확정한 반말 문구('ゆい、起きてね．')를 '어체 없음'
+ *   으로 읽었다 — 그러면 분석의 정중체가 다시 검사를 꺼서 です・ます 가족 클립이 그대로 저장됐고, 생성 문구의
+ *   'お薬の時間ですよ．' 도 정중체로 보지 못했다. 사용자가 문장 끝에 붙이는 것은 목록으로 다 셀 수 없다.
+ */
+const JA_EDGE = '[^\\p{Script=Hiragana}\\p{Script=Katakana}\\p{Script=Han}]';
+/**
+ * 끝을 늘이는 작은 히라가나('起きてねぇ'·'時間だよぉ'·'ですぅ'·'起きてねっ'·'起きよっ') — 서술어 글자가 아니라 늘임이다. 걷지 않으면
+ * 'ねぇ'·'ですっ' 이 종조사·정중형으로 읽히지 않아 반말 확정 문구도 정중체 확정 문구도 '어체 없음' 이 된다(Codex #844).
+ * 가나라서 `JA_EDGE` 는 아니다 — 부름말 경계로는 호칭 **뒤**에서만 본다('ゆいっ！', `japaneseVocativePattern`).
+ * ⚠ 히라가나만. 가타카나 작은 글자는 외래어 이름 끝('ケイティ'·'アンディ')에 와서, 걷으면 붙여 쓴 끝 호칭
+ *   (`withoutGluedPoliteVocative`)을 못 찾는다. 'ゃゅょ' 는 늘임이 아니라 음절('じゃ'·'きょ')이다.
+ */
+const JA_TRAILING_SMALL_KANA = '[ぁぃぅぇぉっ]';
+/** 문장 끝에서 걷어 내는 가장자리(`JA_EDGE`)와 늘임 작은 글자(`JA_TRAILING_SMALL_KANA`) — 어체는 그 앞 낱말로 가린다. */
+const JA_SENTENCE_TRAILER = new RegExp(`(?:${JA_EDGE}|${JA_TRAILING_SMALL_KANA})+$`, 'u');
+/**
+ * 문장을 끝내는 표시 — 마침표(。．｡.)·느낌표·물음표(‼⁉ 포함)·말줄임(…‥⋯, 가운뎃점·쉼표 둘 이상 ・・·、、)·기호와
+ * 이모지(♪☆♡😊 — `\p{So}`), 그리고 지운 글자 웃음·괄호 덧말·얼굴 문자 자리(`JA_DECORATION_BREAK`). 쉼표 하나(、，,)·
+ * 띄어쓰기·따옴표는 문장 안이다. 마침표를 '。' 로만 알면 IME 를 '，．' 로 둔 사용자의 'お薬の時間です．忘れずにね．' 가 한
+ * 문장이 되어 가운데 です 를 못 본다.
+ * ⚠ 물결(〜～~)·늘임표(ー)에서는 끊지 않는다 — 낱말 안('で〜す'·'すご〜い')이나 이음말 뒤('お薬で〜元気になってね')의
+ *   늘임에도 쓰여서, 끊으면 'で' 로 끝난 조각이 반말로 읽힌다(정중체 확정 문구 'お薬の時間で〜す' 를 반말로 읽어 승인한 말투와
+ *   반대인 검사가 켜진다). 늘임은 장식이라 문장 끝에 오면 가장자리로 걷고, 히라가나 사이에 오면 지운다(`JA_INNER_ELONGATION`).
+ *   **뒤에 띄어쓰기가 올 때만** 문장 끝이다('おはよう〜 朝ごはん、何にする？') — 늘임을 마침표 자리에 두고 띄어 쓴 것이다.
+ */
+const JA_SENTENCE_BREAK = /(?<=[。．｡.！？!?‼⁉…‥⋯\p{So}]|[・･]{2}|[、，,]{2})|(?<=[〜～~ー])(?=\s)/u;
+/**
+ * 일본어에서 지운 글자 웃음·괄호 덧말 자리에 두는 문장 끝 표시. 일본어 글에서 얼굴 문자·'w'·'(笑)' 는 이모지처럼 마침표
+ * 자리에 온다('おはよう(^^)ノ 朝ごはん、何にする？') — 띄어쓰기로만 메우면 앞뒤 문장이 한 문장이 되어 앞 문장의 어체를 못
+ * 읽는다(끝 문장이 물음·명사면 '어체 없음'). 이모지는 이미 문장 끝이다(`JA_SENTENCE_BREAK` 의 `\p{So}`).
+ */
+const JA_DECORATION_BREAK = '。';
+/**
+ * 히라가나 사이의 늘임(ー·〜·～·~) — 낱말 안을 늘인 것이라 지우고 읽는다('で〜す' → 'です', '起きて〜ね' → '起きてね',
+ * 'おはよ〜う' → 'おはよう'). 그대로 두면 서술어가 끊겨 정중체도 반말도 아닌 것으로 읽힌다 — 반말 확정 문구('ゆい、起きて〜ね')가
+ * '어체 없음' 이 되어 분석의 정중체가 검사를 끄고, 생성 문구의 'お薬の時間で〜す' 도 정중체로 보지 못한다(Codex #844).
+ * 가타카나 낱말의 장음('コーヒー')은 건드리지 않는다.
+ */
+const JA_INNER_ELONGATION = /(?<=\p{Script=Hiragana})[ー〜～~]+(?=\p{Script=Hiragana})/gu;
+/**
+ * 서술어 뒤에 붙어도 어체를 바꾸지 않는 꼬리 — 종조사(よ·ね·な·の·か·わ·ぞ·さ)와 문장을 맺는 접속·인용 조사(から·けど·
+ * けれど(も)·ので·のに·し·が·って·っけ·もの·もん). 어체는 꼬리 **앞** 서술어가 정한다(Codex #844) — '時間ですからね'·
+ * '時間ですので'·'雨ですって'·'朝ですもの'·'でしたっけ' 는 'です'·'でした' 가 정중체로, '時間だからね' 는 'だ' 가 반말로 만든다.
+ */
+const JA_PREDICATE_TAIL = ['から', 'けれども', 'けれど', 'けど', 'ので', 'のに', 'もの', 'もん', 'って', 'っけ', 'し', 'が', ...'よねなのかわぞさ'] as const;
+/**
+ * です・ます(정중체) 서술어 끝. 기원 '〜ますように'·'〜ませんように'(に 없이 'ますよう' 로 맺어도)도 정중체다(프롬프트가
+ * 금지한다). 'でした'(=だった)도 넣는다.
+ * ⚠ 'でしょう' 는 넣지 않는다(2026-10-01 마지막 회차) — 엄마가 아이에게 하는 'だめでしょう？'·'寒いでしょう' 처럼 가족
+ *   말투에도 흔하고, 거절은 세 회차 다 걸리면 그 클립을 영구 실패시킨다. 'ましょう'(行きましょう)는 정중체 그대로다.
+ */
+const JA_POLITE_PREDICATE = /(?:です|でした|ます|ました|ません|ましょう|ください|下さい|(?:ます|ません)ように?)$/u;
+/**
+ * 정중체로 세지는 않지만 **반말도 아닌** 서술어 끝 — 'でしょう(でしょ)'(위 주석)와 목록 밖 정중형 'でして'·'まして'
+ * ('遅くなりまして')·'ませ'('くださいませ'). 생성 문구 검사는 이것을 거절하지 않고, 확정 문구의 어체를 가릴 때는 반말로
+ * 세지 않는다 — 'て' 로 끝난다고 반말로 읽으면 분석의 정중체를 덮는다(Codex #844).
+ */
+const JA_POLITE_LIKE_PREDICATE = /(?:でしょう?|でして|まして|ませ)$/u;
+/**
+ * 'ます'·'ました'·'まして'·'ませ' 로 끝나도 정중형이 **아닌** 서술어 끝(2026-10-01 마지막 회차):
+ *  - 사전형 자체가 'ます' 로 끝나는 동사와 그 활용 — 覚ます·冷ます·醒ます·励ます·済ます·澄ます·悩ます(かな: さます·すます·
+ *    はげます·なやます)와 그 과거·て형·명령('目を覚ました'·'目ぇ覚まして'·'目を覚ませ'). 정중형은 覚まします·覚ましました
+ *    처럼 'し' 뒤에 'ます' 가 오므로 여기 걸리지 않는다. 試す(ためす)는 'ます' 가 아니다.
+ *  - 누구에게나 그대로 쓰는 인사말 — いただきます·いってきます·ごちそうさまでした. おやすみなさい 는 です・ます 가
+ *    아니라 애초에 걸리지 않는다.
+ */
+const JA_NOT_POLITE_PREDICATE =
+  /(?:(?:[覚冷醒励済澄悩]|さ|す|はげ|なや)ま(?:すように?|す|した|して|せ)|いただきます|頂きます|いってきます|行ってきます|ごちそうさまでした|ご馳走様でした)$/u;
+
+/** 문장 끝 서술어 — 끝 문장부호와 꼬리(`JA_PREDICATE_TAIL`)를 걷은 것('時間ですからね。' → '時間です'). */
+function japanesePredicateEnd(sentence: string): string {
+  const end = sentence.trim().replace(JA_SENTENCE_TRAILER, '');
+  // 꼬리 토큰을 이을 수 있는 접미부를 뒤에서 한 번만 계산한다. 겹치는 토큰을 + 정규식으로
+  // 반복하면 'けれどもの'가 이어진 실패 입력에서 지수적인 되짚기가 생긴다(CodeQL #844).
+  // 가능한 가장 왼쪽 시작을 골라 기존 정규식의 '꼬리 전체 제거' 의미는 그대로 유지한다.
+  const removable = new Uint8Array(end.length + 1);
+  removable[end.length] = 1;
+  let earliest = end.length;
+  for (let index = end.length - 1; index >= 0; index -= 1) {
+    for (const tail of JA_PREDICATE_TAIL) {
+      if (removable[index + tail.length] && end.startsWith(tail, index)) {
+        removable[index] = 1;
+        earliest = index;
+        break;
+      }
+    }
+  }
+  return end.slice(0, earliest);
+}
+
+/**
+ * 일본어 한 문장이 です・ます(정중체)로 끝나는가 — 꼬리('からね'·'ので'·'って'·'もの')는 걷고 그 앞 서술어로 본다.
+ * 사전형이 'ます' 인 동사(와 그 활용)·인사말은 아니다.
+ */
+export function isJapanesePoliteSentence(sentence: string): boolean {
+  const end = japanesePredicateEnd(sentence);
+  return JA_POLITE_PREDICATE.test(end) && !JA_NOT_POLITE_PREDICATE.test(end);
+}
+
+/**
+ * 부름말로 **홀로 선** 청자 호칭 — 앞뒤가 글 처음·끝이거나 가장자리(`JA_EDGE` — 가나·한자가 아닌 것)일 때만
+ * ('ゆい、起きて'·'時間ですよ、ひな。'·'ゆうた！'·'時間ですよ ゆうた〜'·'ゆい♪起きてね'). 호칭 **뒤**에는 늘임 작은 글자가
+ * 끼어도 된다('おはよう、ゆいっ！'·'ゆいぃ〜' — `JA_TRAILING_SMALL_KANA`) — 그 뒤가 가장자리·끝일 때만이라 낱말 안('きっと' 의
+ * 'き')은 아니다.
+ * ⚠ 낱말 안의 같은 글자는 호칭이 아니다(Codex #844) — 일본어는 낱말 사이를 띄우지 않아 이름이 어미 안에도 온다. 아무
+ *   데서나 지우면 'しょう'(翔)를 부르는 목소리의 'がんばりましょう' 가 'がんばりま' 로, 'よう'(陽)의 '過ごせますように' 가
+ *   '過ごせます に' 로 깨져, 생성 문구의 です・ます 를 못 보고 정중체 확정 문구도 정중체로 읽지 못한다. 한국어
+ *   (`koreanEndingEntries`)는 호칭 뒤에 '야·아' 가 붙어('민지야') 낱말째 지우고 남은 한 글자를 부름말로 건너뛰는 다른 방식이다.
+ */
+function japaneseVocativePattern(title: string): RegExp {
+  return new RegExp(
+    `(?<=^|${JA_EDGE})${escapeRegExp(title)}(?=${JA_TRAILING_SMALL_KANA}*(?:${JA_EDGE}|$))`,
+    'gu',
+  );
+}
+
+/**
+ * 띄어쓰기·쉼표 없이 서술어에 **붙여 쓴** 끝 호칭('お薬の時間ですよゆうた')은 떼어 낸 앞이 정중체일 때만 뗀다 — 그래야
+ * 끝 호칭이 です・ます 를 가리지 않으면서, 'がんばりましょう'(호칭 'しょう')처럼 떼면 어미가 깨지는 낱말은 그대로 남는다
+ * (문장이 이미 정중체면 떼지 않는다). 반말 쪽으로는 떼지 않는다 — 'おはよう'(호칭 'よう')는 떼면 반말이 사라지고,
+ * 'だめでしょう'(호칭 'しょう')는 떼면 없던 반말 'で' 가 생긴다.
+ */
+function withoutGluedPoliteVocative(sentence: string, title: string | undefined): string {
+  if (!title || !sentence.endsWith(title) || isJapanesePoliteSentence(sentence)) return sentence;
+  const rest = sentence.slice(0, -title.length).replace(JA_SENTENCE_TRAILER, '');
+  return isJapanesePoliteSentence(rest) ? rest : sentence;
+}
+
+/**
+ * 어체를 가릴 일본어 문장들 — 태그·글자 웃음을 벗기고(`spokenForRegister`), 부름말로 홀로 선 청자 호칭을 지우고
+ * (`japaneseVocativePattern`), 히라가나 사이의 늘임(`JA_INNER_ELONGATION`)과 괄호 덧말(`withoutParentheticalAsides`)을
+ * 지우고, 문장 끝 표시(`JA_SENTENCE_BREAK`)로 끊어 끝의 가장자리와 늘임 작은 글자(`JA_SENTENCE_TRAILER` — 가나·한자가 아닌
+ * 것, 'ねぇ'·'ねっ' 의 'ぇ'·'っ')를 걷는다(붙여 쓴 끝 호칭은 `withoutGluedPoliteVocative`). 지운 웃음·괄호 덧말 자리는 이모지처럼
+ * 문장 끝으로 본다(`JA_DECORATION_BREAK`).
+ * ⚠ 확정 문구(`japaneseReferenceRegister`)와 생성 문구(`hasJapanesePoliteEnding`)는 **같은 질문**을 하므로 둘 다 이것으로
+ * 끊는다(Codex #844) — 한쪽만 호칭을 지우면 'お薬の時間ですよ、ひな。' 가 확정 문구로는 정중체, 생성 문구로는 정중체 아님으로
+ * 갈린다. 평가 도구(`scripts/eval-gemini-prompts.ts`)도 이것을 쓴다.
+ */
+export function japaneseSentenceEnds(text: string, listenerTitle?: string | null): string[] {
+  const spoken = spokenForRegister(text, JA_DECORATION_BREAK);
+  const title = listenerTitle?.trim();
+  const withoutTitle = title ? spoken.replace(japaneseVocativePattern(title), ' ') : spoken;
+  return withoutParentheticalAsides(withoutTitle.replace(JA_INNER_ELONGATION, ''), JA_DECORATION_BREAK)
+    .split(JA_SENTENCE_BREAK)
+    .map((s) => withoutGluedPoliteVocative(s.trim().replace(JA_SENTENCE_TRAILER, ''), title))
+    .filter(Boolean);
+}
+
+/**
+ * 어체를 가릴 **말** — 태그를 벗기고, 글자 웃음(ㅋㅋ·ㅎㅎ·haha·w·笑·(笑))도 벗긴다(`typedLaughterToTags` — TTS 도 그것을 글자로
+ * 읽지 않는다). 웃음 자리는 `mark` 로 메운다(일본어는 `JA_DECORATION_BREAK`, 한국어는 띄어쓰기 — 한국어의 문장 끊기는
+ * 예전 그대로다). 사용자가 고쳐 확정한 문구는 끝에 웃음을 붙이기 쉬워('起きてね笑'·'일어나요 haha') 그대로 두면 웃음이
+ * 서술어를 가려 '어체 없음' 이 된다(Codex #844). 생성 문구는 합성 전에 웃음·태그를 이미 벗겨서 오므로
+ * (`generatePrerenderClipText` — 모델은 웃음을 넣지 않는다, 스펙 §9) 여기서 바뀌는 것이 없다.
+ * 일본어(`japaneseSentenceEnds`)·한국어(`koreanEndingEntries`) 공용.
+ */
+function spokenForRegister(text: string, mark: string): string {
+  return normalizeAlarmTextWithoutTags(typedLaughterToTags(text).split(LAUGH_TAG).join(mark));
+}
+
+/**
+ * 괄호 덧말 — 소괄호·전각 소괄호 한 겹(안에 괄호가 없는 것)과, 얼굴 문자면 그 바깥에 붙은 가나 팔(왼쪽 'ヽ'·'ヾ', 오른쪽
+ * 'ノ'·'ﾉ'·'ゞ'·'シ'·'ｼ'). 오른팔은 그 뒤가 가장자리·끝일 때만 본다 — '(株)シャープ' 의 'シ' 는 낱말이다.
+ */
+const PARENTHETICAL_ASIDE = new RegExp(`[ヽヾ]*[(（][^()（）]*[)）](?:[ノﾉゞシｼ]+(?=${JA_EDGE}|$))?`, 'gu');
+
+/**
+ * 괄호 덧말('(泣)'·'(汗)'·'(*ﾉωﾉ)'·'(웃음)'·'ヽ(・∀・)ノ'·'(^^)ノシ')을 지운다 — 서술어가 아니라 덧붙인 말이다. 얼굴 문자의
+ * 가나 팔은 가장자리(`JA_EDGE`)가 아니라 끝 장식으로 걷히지 않으므로 여기서 함께 지운다(`PARENTHETICAL_ASIDE`) — 남기면
+ * 'ゆい、起きてね(^^)ノ' 가 'ノ' 로 끝나 '어체 없음' 이 된다(Codex #844). 지운 자리는 `mark` 로 메운다(`spokenForRegister` 와
+ * 같다). 청자 호칭을 지운 **뒤에** 부른다 — 먼저 지우면 괄호가 든 호칭('ゆい(娘)')을 못 찾는다.
+ */
+function withoutParentheticalAsides(text: string, mark: string): string {
+  return text.replace(PARENTHETICAL_ASIDE, mark);
+}
+
+/** 문장 끝 종조사 줄(よ·ね·な·の·か·わ·ぞ·さ — 'よね'·'かな' 처럼 겹쳐도 한 줄로). */
+const JA_SENTENCE_PARTICLES = /[よねなのかわぞさ]+$/u;
+/**
+ * 종조사 없이 끝나도 반말(タメ口)인 끝 — だ·た(과거)·て·で(부탁·関西 — 이음말 'ので' 는 아니다)·や(関西)·ろ(명령·だろ)·
+ * じゃん·っけ·ねん·へん·ない, 의지·인사의 う(起きよう·行こう·帰ろう·おはよう·ありがとう). 'でしょう' 는 작은 'ょ' 라
+ * 걸리지 않는다. 정중형 뒤에 붙은 것('ですって'·'ですので'·'でしたっけ'·'まして')은 먼저 걸러 낸다(`isJapaneseCasualSentence`).
+ */
+const JA_CASUAL_BARE_END = /(?:だ|た|て|(?<!の)で|や|ろ|じゃん|っけ|ねん|へん|ない|[よこそとぼもろごお]う)$/u;
+
+/**
+ * 일본어 한 문장이 **반말로 확실히** 끝나는가 — 확정 문구가 반말을 세웠는지 가릴 때만 쓴다(`japaneseReferenceRegister`).
+ * 꼬리(`JA_PREDICATE_TAIL` — 종조사·접속조사)를 걷은 서술어가 정중체이거나 그에 가까우면 반말이 아니다
+ * ('時間ですからね'·'雨ですって'·'時間ですので'·'でしょうね'·'遅くなりまして' — Codex #844). 그다음 종조사가 정중체 아닌
+ * 서술어에 붙었거나(起きてね·時間だよ) 반말에만 오는 끝(`JA_CASUAL_BARE_END`)일 때만 반말이다. 명사·호칭·'〜を'·이음말로
+ * 끝나는 문장('いい一日を。'·'いってらっしゃい。'·'雨なので。')은 어느 쪽도 아니다 — 잘못 반말로 읽으면 분석의 정중체를 덮고
+ * です・ます 클립을 거절하게 되므로, 모르는 끝은 세지 않는다.
+ */
+function isJapaneseCasualSentence(sentence: string): boolean {
+  const s = sentence.trim().replace(JA_SENTENCE_TRAILER, '');
+  const end = japanesePredicateEnd(s);
+  if (!/\p{L}/u.test(end) || isJapanesePoliteSentence(s)) return false;
+  if (JA_POLITE_LIKE_PREDICATE.test(end) && !JA_NOT_POLITE_PREDICATE.test(end)) return false;
+  const stem = s.replace(JA_SENTENCE_PARTICLES, '');
+  if (stem !== s) return /\p{L}$/u.test(stem);
+  return JA_CASUAL_BARE_END.test(s);
+}
+
+/**
+ * 사용자가 확정한 일본어 문구가 **세운** 어체 — 정중체 문장이 하나라도 있으면 'polite', 아니면 반말 문장이 있을 때
+ * 'casual', 문구가 없거나 어느 쪽도 세우지 않으면 null. 문장은 생성 문구 검사와 같은 `japaneseSentenceEnds` 로 끊는다 —
+ * 부름말 자리의 청자 호칭을 지우므로 끝 호칭이 정중체를 가리거나('起きる時間ですよ、ひな。') 'た'·'な' 로 끝나는 이름
+ * ('ゆうた'·'ひな')이 반말로 세지지 않고, 낱말 안의 같은 글자('がんばりましょう' 의 'しょう')는 지우지 않아 정중체가 깨지지 않는다.
+ * ⚠ 확정 문구가 이기는지는 이 함수가 어체를 **읽어 내느냐**에 달렸다 — null 이면 분석의 정중체가 검사를 끈다. 그래서 사용자가
+ * 문장 끝에 붙이는 것(．·.·~·・・・·‥·♪·이모지·XD·w·(笑)·(泣)·(^^)ノ, 늘임 'ねぇ'·'ねっ'·'で〜す')은 전부 걷고 읽는다
+ * (`JA_EDGE`·`JA_TRAILING_SMALL_KANA`·`JA_SENTENCE_BREAK`·`JA_INNER_ELONGATION`·`spokenForRegister`·`withoutParentheticalAsides`).
+ */
+function japaneseReferenceRegister(
+  reference: string | null | undefined,
+  listenerTitle?: string | null,
+): 'polite' | 'casual' | null {
+  if (!reference?.trim()) return null;
+  const sentences = japaneseSentenceEnds(reference, listenerTitle);
+  if (sentences.some(isJapanesePoliteSentence)) return 'polite';
+  return sentences.some(isJapaneseCasualSentence) ? 'casual' : null;
+}
+/**
+ * 일본어로 タメ口 가 **확실한** 관계 라벨 — `JAPANESE_NATIVE_RULES` 가 casual 로 못 박은 갈래만: 조부모↔손주, 부모↔자식,
+ * 형제자매, 친구, 연인·배우자(한국어·일본어·영어). 이모·삼촌·사돈·시댁·처가(형수·형부·매형·처형·올케·시누·처제·동서·
+ * 사돈·嫁·婿·義母)는 넣지 않는다 — 일본어에서 です・ます 가 맞을 수 있다.
+ * 비교는 `compactRelationshipLabel` 로 정리한 **낱말 그 자체**다(아래 함수 주석).
+ */
+const JA_CASUAL_RELATIONSHIP_LABELS = new Set([
+  // 한국어
+  '엄마', '어머니', '아빠', '아버지', '할머니', '할아버지', '외할머니', '외할아버지', '친할머니', '친할아버지',
+  '딸', '아들', '큰딸', '작은딸', '막내딸', '큰아들', '작은아들', '막내아들', '손녀', '손자', '손주',
+  '언니', '누나', '오빠', '형', '큰언니', '작은언니', '큰누나', '작은누나', '큰오빠', '작은오빠', '큰형', '작은형',
+  '동생', '여동생', '남동생', '막내동생', '형제자매', '형제', '자매', '친구', '친한친구', '절친', '베프',
+  '남자친구', '여자친구', '남친', '여친', '애인', '연인', '아내', '남편', '와이프', '여보', '자기', '신랑', '배우자',
+  // 일본어
+  '母', '父', 'ママ', 'パパ', 'お母さん', 'お父さん', 'おかあさん', 'おとうさん', '母さん', '父さん', 'かあさん', 'とうさん',
+  'おかん', 'おとん', 'おふくろ', '親父', 'おやじ', '祖母', '祖父', 'おばあちゃん', 'おじいちゃん', 'ばあちゃん', 'じいちゃん',
+  'ばあば', 'じいじ', '孫', '孫娘', '孫息子', '娘', '息子', '姉', '兄', '妹', '弟', '兄弟姉妹', '兄弟', '姉妹', 'お姉ちゃん', 'お兄ちゃん', '姉ちゃん', '兄ちゃん',
+  'お姉さん', 'お兄さん', '姉さん', '兄さん', '友達', '友だち', '友人', '親友', '彼氏', '彼女', '恋人', '妻', '夫', '旦那',
+  // 영어
+  'mom', 'mum', 'mommy', 'mummy', 'mama', 'mother', 'dad', 'daddy', 'papa', 'father', 'grandma', 'grandpa',
+  'grandmother', 'grandfather', 'granny', 'grandson', 'granddaughter', 'grandchild', 'son', 'daughter',
+  'sister', 'brother', 'sibling', 'siblings', 'sis', 'bro', 'friend', 'bestfriend', 'bff', 'boyfriend', 'girlfriend', 'wife',
+  'husband',
+]);
+/** 라벨 앞에 붙어도 관계가 바뀌지 않는 말('우리 엄마'·'my mom'·'うちの母'). */
+const RELATIONSHIP_LABEL_PREFIXES = ['우리', '울', '내', '나의', 'my', 'うちの', '私の'];
+
+/** 라벨을 비교할 꼴로 — 호환 문자를 펴고(NFKC) 소문자로, 글자·숫자 말고는(띄어쓰기·하트·문장부호) 뺀다. */
+function compactRelationshipLabel(label: string): string {
+  return label.normalize('NFKC').toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
+}
+
+/**
+ * 가족·친구·연인으로 **확인된** 라벨인가 — 목록의 낱말 그 자체이거나 그 앞에 `RELATIONSHIP_LABEL_PREFIXES` 하나만
+ * 붙은 것. 낱말이 **들어 있기만** 한 라벨('이웃 할머니'·'교회 오빠'·'형수'·'息子の嫁'·'ママ友'·'寮母'·
+ * '近所のおばあちゃん')은 아니다 — 예전에는 부분 일치(`koreanRelationshipRegister`·정규식)라 이것들이 가족으로 잡혔다.
+ */
+function isConfirmedCloseRelationshipLabel(label: string): boolean {
+  const compact = compactRelationshipLabel(label);
+  if (!compact) return false;
+  if (JA_CASUAL_RELATIONSHIP_LABELS.has(compact)) return true;
+  return RELATIONSHIP_LABEL_PREFIXES.some(
+    (prefix) => compact.startsWith(prefix) && JA_CASUAL_RELATIONSHIP_LABELS.has(compact.slice(prefix.length)),
+  );
+}
+
+/**
+ * 일본어 가족·친구·연인 문구가 です・ます 로 끝나는 문장을 냈는가(2026-10-01 3.8 평가 — 엄마→ゆい 의 약 클립이
+ * '今日も元気いっぱい過ごせますように。' 로 끝났다. 42줄 중 1줄). 한국어만 어체를 검사하고 일본어는 프롬프트에만
+ * 맡겨, 이런 줄이 그대로 영구 저장됐다. 일본어는 가족·친구·연인에게 タメ口 다(`JAPANESE_NATIVE_RULES`).
+ *
+ * ⚠ **가족·친구·연인으로 확인된 라벨만 본다**(`isConfirmedCloseRelationshipLabel` — 엄격한 허용 목록). 모르는 라벨·
+ *   먼 사이('家庭教師'·'先生')·사돈('義母'·'며느리')·이웃('이웃 할머니')은 프롬프트가 です・ます 를 허용하는 '먼 사이'
+ *   일 수 있어, 거절하면 세 회차 다 걸려 그 클립이 영구 실패한다. 사용자가 정중체 문구를 확정했거나, 확정 문구가
+ *   어체를 세우지 않는데 화자 녹음이 정중체였으면(말투 분석) 그 말투를 따르므로 검사하지 않는다. 아이 목소리는 라벨과
+ *   무관하게 언제나 タメ口 다.
+ */
+export function hasJapanesePoliteEnding(
+  spoken: string,
+  params: {
+    relationshipLabel?: string | null;
+    listenerTitle?: string | null;
+    speechStyle?: SpeechStyle | null;
+    styleReference?: string | null;
+  },
+): boolean {
+  // ⚠ **확정 문구의 어체를 먼저 본다**(Codex #844 — 스펙 §4-2 '확정 문구가 말투 분석을 이긴다'). 분석이 정중체여도
+  //   사용자가 반말 문구('おはよう。起きてね。')를 확정했으면 프롬프트는 그 반말을 따르라고 한다 — 분석부터 보고 검사를
+  //   끄면 です・ます 로 끝난 가족 클립이 그대로 영구 저장된다. 분석의 어체는 확정 문구가 어느 쪽도 세우지 않을 때만 쓴다.
+  //   정중체인지는 **문장 끝**으로 가린다 — '目を覚ます時間だよ' 처럼 사전형 동사의 'ます' 가 있는 반말 문구를 정중체로
+  //   읽으면 검사가 통째로 꺼진다.
+  const referenceRegister = japaneseReferenceRegister(params.styleReference, params.listenerTitle);
+  if (referenceRegister === 'polite') return false;
+  if (referenceRegister === null && /polite|jondae|丁寧|敬語/i.test(params.speechStyle?.register ?? '')) return false;
+  const casual =
+    params.speechStyle?.childlike === true || isConfirmedCloseRelationshipLabel(params.relationshipLabel ?? '');
+  if (!casual) return false;
+  // 확정 문구와 **같은 문장 끊기**로 본다(Codex #844) — 청자 호칭을 지우지 않으면 'お薬の時間ですよ、ひな。' 의 끝 호칭이
+  //   です・ます 를 가려 그 가족 클립이 그대로 영구 저장된다. 지우는 것은 부름말 자리의 호칭뿐이다 — 낱말 안까지 지우면
+  //   'しょう' 를 부르는 목소리의 'がんばりましょう' 가 깨져 거꾸로 저장된다.
+  return japaneseSentenceEnds(spoken, params.listenerTitle).some(isJapanesePoliteSentence);
 }
 
 /**
@@ -1468,6 +2039,12 @@ export function modernizeKoreanHonorific(text: string): string {
  * 타·내·끄·지키·켜·마치·내리·고르·가지·도우). 목록에 없는 존대형은 옛 모양 그대로 남는다 — 어색할 뿐 뜻은 맞다.
  */
 const HONORIFIC_SYEOYO_RE = /(으|보|가|오|하|드|무|계|기|나|서|주|쉬|두|타|내|끄|키|켜|치|리|르|지|우)셔요/g;
+
+/** 글의 마지막 말 — 끝 문장부호를 떼고 띄어쓰기·쉼표·마침표로 끊은 마지막 조각('…시작해 보자카이.' → '보자카이', 'さあ起きよ。' → 'さあ起きよ'). */
+function lastPhrase(text: string): string {
+  const parts = text.replace(/[\s.!?。！？…~〜"'」』]+$/u, '').split(/[\s、，,。.!?！？…]+/u);
+  return parts[parts.length - 1] ?? '';
+}
 
 /** 이 시드가 아침 인사 자체인가(`CLONE_CLIP_SEEDS` 의 인사 시드). 아침 인사를 허용하고, 줄일 때도 인사를 남긴다. */
 function isGreetingSeed(seed: string | null | undefined): boolean {
@@ -1592,11 +2169,26 @@ const KO_INTERJECTIONS = new Set(['자자', '아이고', '어머', '에이', '�
  */
 type KoEndingEntry = { word: string; kind: 'polite' | 'banmal' };
 
-/** `koreanEndings` 와 같지만 끝 낱말도 함께 — 재시도 힌트에 **틀린 낱말을 그대로** 짚어 주려고. */
-function koreanEndingEntries(spoken: string, listenerTitle?: string | null): KoEndingEntry[] {
+/**
+ * 마디 끝에서 걷어 내는 장식 — **완성형 한글 음절이 아닌 것 전부**: 문장부호·물결·괄호·기호(♡♪)·이모지·^^·숫자·라틴 글자
+ * (XD)·호환 자모(ㅠㅠ·ㅜㅜ·ㅋㅋ·ㅎㅎ). 서술어는 언제나 완성형 음절로 끝나므로 어체는 그 앞 낱말로 가린다.
+ * ⚠ 글자 목록으로 되돌리지 말 것(Codex #844 — 일본어 `JA_EDGE` 와 같은 사각이다). 예전 목록(띄어쓰기·.!?！？~…,)은
+ *   '일어나요😊'·'일어나♡'·'일어나요^^'·'일어나요ㅠㅠ' 의 어체를 읽지 못했다. 확정 문구가 그렇게 끝나면 어체가 없는 것으로 보고
+ *   관계·분석으로 돌아가서, 연인에게 해요체로 고쳐 확정한 목소리의 해요체 클립이 거절되고(재시도 힌트가 그 '-요' 를 틀렸다고
+ *   짚는다), 반말로 분석된 화자가 해요체로 확정한 문구를 분석이 이겼다.
+ */
+const KO_TRAILING_DECORATION = /[^가-힣]+$/u;
+
+/**
+ * `koreanEndings` 와 같지만 끝 낱말도 함께 — 재시도 힌트에 **틀린 낱말을 그대로** 짚어 주려고. 확정 문구와 생성 문구를 같은
+ * 방법으로 읽는다 — 태그·글자 웃음을 벗기고(`spokenForRegister`), 호칭과 괄호 덧말(`withoutParentheticalAsides`)을 지우고,
+ * 마디 끝의 장식(`KO_TRAILING_DECORATION`)을 걷는다.
+ */
+function koreanEndingEntries(text: string, listenerTitle?: string | null): KoEndingEntry[] {
+  const spoken = spokenForRegister(text, ' ');
   const title = listenerTitle?.trim();
-  const withoutTitle = title ? spoken.split(title).join(' ') : spoken;
-  const lastWord = (s: string) => s.replace(/[\s.!?！？~…,]+$/u, '').match(/[가-힣]+$/u)?.[0] ?? '';
+  const withoutTitle = withoutParentheticalAsides(title ? spoken.split(title).join(' ') : spoken, ' ');
+  const lastWord = (s: string) => s.replace(KO_TRAILING_DECORATION, '').match(/[가-힣]+$/u)?.[0] ?? '';
   return withoutTitle
     .split(/(?<=[.!?！？])\s*/)
     .flatMap((sentence) => {
@@ -1644,9 +2236,9 @@ export function koreanRegisterViolation(spoken: string, params: KoreanRegisterPa
   //   하는데 검사가 관계만 보면, 배우자에게 해요체로 고쳐 확정한 사용자의 클립이 세 번 다 거절돼 **영구
   //   실패**한다 — 같은 확정 문구가 그 목소리의 클립 전부에 실린다. 확정 문구 자체가 섞여 있으면 섞임도
   //   문제 삼지 않는다.
-  const reference = params.styleReference?.trim()
-    ? koreanEndings(normalizeAlarmTextWithoutTags(params.styleReference), params.listenerTitle)
-    : [];
+  //   확정 문구는 사용자가 고친 글이라 끝에 웃음·이모지·괄호 덧말을 붙이기 쉽다('일어나요ㅎㅎ'·'일어나요 haha'·'일어나요😊') —
+  //   그것들을 걷고 읽는다(`koreanEndingEntries` — Codex #844). 못 읽으면 위의 실패가 그대로 난다.
+  const reference = params.styleReference?.trim() ? koreanEndings(params.styleReference, params.listenerTitle) : [];
   const referencePolite = reference.includes('polite');
   const referenceBanmal = reference.includes('banmal');
   if (referencePolite && referenceBanmal) return null;
@@ -1765,24 +2357,68 @@ function speechStylePrompt(transcript: string, language: string): string {
 }
 
 /**
+ * 말투 분석 한 회차(전사 + 분석 + 저장)에 쓸 시간 — 시작 시각부터 센다. 등록 경로는 응답 뒤 `waitUntil` 로 돌고,
+ * `waitUntil` 은 응답 뒤 **30초**에 잘린다(Cloudflare 「Context」 문서). 잘리면 상태가 'pending' 인 채 남아
+ * 재시도 버튼(`failed` 만 받는다)도 못 쓴다 — 그래서 다시 묻기는 이 안에서만 하고, 남는 4초는 동의 재확인과
+ * 결과 기록(DB) 몫이다.
+ */
+export const SPEECH_STYLE_ANALYSIS_BUDGET_MS = 26_000;
+
+/**
+ * 말투 분석이 **전송 실패**(시간 초과·네트워크·429/5xx)로 끝났을 때 다시 묻기 전에 쉬는 시간 — 최대 2번 더 묻는다.
+ * 내용 실패(형식이 틀림·확신 낮음·답이 잘림)는 다시 묻지 않는다.
+ */
+export const SPEECH_STYLE_RETRY_DELAYS_MS: readonly number[] = [500, 1_500];
+
+/**
+ * 다시 물을 때 남아 있어야 하는 시간. 이보다 적으면 묻지 않는다 — 답이 올 시간이 없다. 2026-10-01 3.8 평가에서
+ * 말투 분석 응답은 44회 모두 4.2초 안에 왔다.
+ */
+const SPEECH_STYLE_MIN_RETRY_WINDOW_MS = 4_000;
+
+/**
  * 전사 텍스트에서 화자 말투(사투리·격식·특징 어미)를 분석한다. confidence 가 낮거나
  * 실패하면 null — 호출자는 저장을 건너뛴다(표준어로 동작, 사용자 미리듣기 수정으로 교정 가능).
+ *
+ * ⚠ **전송 실패는 마감 안에서 다시 묻는다**(2026-10-01). 상류 시간 초과 한 번이 곧 `speech_style_status='failed'`
+ *   였고, 사전렌더는 'pending' 만 기다리므로 그 목소리의 클립은 **사투리 없이** 구워졌다 — 되살리는 길은 사용자가
+ *   재시도 버튼을 누르는 것뿐이었다. **어느 회차도 마감을 넘기지 않는다** — 토큰 발급은 min(8초, 남은 시간), 생성
+ *   요청은 min(15초, 남은 시간)이고 둘 다 그 요청을 보내기 직전에 잰다(`GenerateContentConfig.deadlineAt`). 마감이
+ *   넉넉한 첫 회차는 예전 그대로(8초·15초)다. `deadlineAt` 은 호출자가 준다(`runSpeechStyleAnalysis` — 전사 전부터
+ *   센다). 안 주면 지금부터 예산만큼.
  */
 export async function analyzeSpeechStyleWithVertex(
   env: Env,
   transcript: string,
   language: string,
+  options: { deadlineAt?: number; sleep?: (ms: number) => Promise<void> } = {},
 ): Promise<SpeechStyle | null> {
   if (!hasGeminiConfiguration(env)) return null;
   const trimmed = transcript.trim();
   if (trimmed.length < 20) return null;
+  const deadlineAt = options.deadlineAt ?? Date.now() + SPEECH_STYLE_ANALYSIS_BUDGET_MS;
+  const sleep = options.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+  const prompt = speechStylePrompt(trimmed, language);
   let raw: string;
-  try {
-    raw = await generateContentText(env, speechStylePrompt(trimmed, language), {
-      responseSchema: SPEECH_STYLE_RESPONSE_SCHEMA,
-    });
-  } catch {
-    return null;
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      raw = await generateContentText(env, prompt, {
+        responseSchema: SPEECH_STYLE_RESPONSE_SCHEMA,
+        // 상한은 여기서 재지 않는다 — 토큰 발급·생성 요청 각각을 보내기 직전에 마감에서 잰다(`deadlineAt`).
+        deadlineAt,
+      });
+      break;
+    } catch (err) {
+      const delay = SPEECH_STYLE_RETRY_DELAYS_MS[attempt];
+      if (delay === undefined || !isVertexTransportFailure(err)) return null;
+      if (deadlineAt - Date.now() - delay < SPEECH_STYLE_MIN_RETRY_WINDOW_MS) return null;
+      logStructured('warn', {
+        at: 'vertex.speech_style_retry',
+        attempt: attempt + 2,
+        error: err instanceof VertexHttpError ? `http_${err.status}` : err instanceof Error ? err.name : 'unknown',
+      });
+      await sleep(delay);
+    }
   }
   try {
     const parsed = JSON.parse(raw) as {
@@ -1794,7 +2430,9 @@ export async function analyzeSpeechStyleWithVertex(
     };
     const confidence = typeof parsed.confidence === 'number' ? parsed.confidence : 0;
     if (confidence < 0.6) return null;
-    const dialect = typeof parsed.dialect === 'string' ? parsed.dialect.trim().slice(0, 20) : '';
+    // 40자 — 20자일 때 'Southern American English' 가 'Southern American En' 으로 잘려 저장되고 그대로 사전렌더
+    // 프롬프트에 들어갔다(2026-10-01 3.8 평가). dialect 는 프롬프트에만 쓰인다(클라 응답에 실리지 않는다).
+    const dialect = typeof parsed.dialect === 'string' ? parsed.dialect.trim().slice(0, 40) : '';
     const strengthRaw = typeof parsed.strength === 'string' ? parsed.strength.trim() : '';
     const strength = (['low', 'medium', 'high'].includes(strengthRaw) ? strengthRaw : '') as
       | ''

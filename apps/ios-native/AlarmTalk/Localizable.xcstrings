@@ -6119,13 +6119,19 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Please allow alarm permission and try again."
+            "value" : "Allow alarm permission, then try again."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "アラームの権限を許可してからもう一度お試しください。"
+            "value" : "アラームの権限を許可してから、もう一度お試しください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "알람 권한을 허용한 뒤 다시 시도해 주세요."
           }
         }
       }
@@ -6136,13 +6142,19 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Couldn't check alarm permission. Please try again in a moment."
+            "value" : "Could not check alarm permission. Please try again shortly."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "アラームの権限を確認できませんでした。しばらくしてからもう一度お試しください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "알람 권한을 확인하지 못했어요. 잠시 후 다시 시도해 주세요."
           }
         }
       }
@@ -6170,13 +6182,19 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Alarm permission is required. Please allow it and try again."
+            "value" : "Alarm permission is required. Allow it, then try again."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "アラームの権限が必要です。許可してからもう一度お試しください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "알람 권한이 필요해요. 권한을 허용한 뒤 다시 시도해 주세요."
           }
         }
       }
@@ -6476,13 +6494,19 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Couldn't schedule the alarm. Please try again in a moment."
+            "value" : "Could not schedule the alarm. Please try again shortly."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "アラームの予約に失敗しました。しばらくしてからもう一度お試しください。"
+            "value" : "アラームを予約できませんでした。しばらくしてからもう一度お試しください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "알람 예약에 실패했어요. 잠시 후 다시 시도해 주세요."
           }
         }
       }
@@ -6544,13 +6568,19 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Couldn't cancel the alarm. Please try again in a moment."
+            "value" : "Could not cancel the alarm. Please try again shortly."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "アラームのキャンセルに失敗しました。しばらくしてからもう一度お試しください。"
+            "value" : "アラームを取り消せませんでした。しばらくしてからもう一度お試しください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "알람 취소에 실패했어요. 잠시 후 다시 시도해 주세요."
           }
         }
       }
@@ -8102,13 +8132,19 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "You already have an alarm at this time. Please choose a different time."
+            "value" : "An alarm already exists at this time. Choose another time."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "すでに同じ時間にアラームがあります。別の時間を選んでください。"
+            "value" : "同じ時刻にアラームがあります。別の時刻を選んでください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "이미 같은 시간에 알람이 있어요. 다른 시간을 선택해 주세요."
           }
         }
       }
@@ -11412,6 +11448,534 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "애니"
+          }
+        }
+      }
+    },
+    "권한이 없으면 알람이 예약되지 않아 울리지 않아요." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Without permission, alarms cannot be scheduled and will not ring."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "権限がないとアラームを予約できず、鳴りません。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "권한이 없으면 알람이 예약되지 않아 울리지 않아요."
+          }
+        }
+      }
+    },
+    "다시 울림 반복 횟수가 유효하지 않아요." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Invalid snooze repeat count."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "スヌーズの繰り返し回数が無効です。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "다시 울림 반복 횟수가 유효하지 않아요."
+          }
+        }
+      }
+    },
+    "다시 울림은 1~30분이어야 해요." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Snooze must be between 1 and 30 minutes."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "スヌーズは1〜30分にしてください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "다시 울림은 1~30분이어야 해요."
+          }
+        }
+      }
+    },
+    "더 새 목소리가 게시돼 이 음원은 쓰지 않았어요." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A newer voice is available, so this audio was not used."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "新しい声が公開されたため、この音声は使用しませんでした。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "더 새 목소리가 게시돼 이 음원은 쓰지 않았어요."
+          }
+        }
+      }
+    },
+    "목소리 크기는 0~100 사이여야 해요." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Voice volume must be between 0 and 100."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "声の音量は0〜100にしてください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "목소리 크기는 0~100 사이여야 해요."
+          }
+        }
+      }
+    },
+    "반복 요일 비트가 유효하지 않아요." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The repeat days are invalid."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "繰り返す曜日が無効です。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "반복 요일 비트가 유효하지 않아요."
+          }
+        }
+      }
+    },
+    "분은 0~59 사이여야 해요." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Minutes must be between 0 and 59."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "分は0〜59にしてください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "분은 0~59 사이여야 해요."
+          }
+        }
+      }
+    },
+    "설정에서 알람 권한을 켜 주세요. %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enable alarm permission in Settings. %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "設定でアラームの権限を許可してください。%@"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "설정에서 알람 권한을 켜 주세요. %@"
+          }
+        }
+      }
+    },
+    "시는 0~23 사이여야 해요." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hours must be between 0 and 23."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "時は0〜23にしてください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "시는 0~23 사이여야 해요."
+          }
+        }
+      }
+    },
+    "알람 볼륨은 0~100 사이여야 해요." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alarm volume must be between 0 and 100."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "アラームの音量は0〜100にしてください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "알람 볼륨은 0~100 사이여야 해요."
+          }
+        }
+      }
+    },
+    "예약된 알람 %lld개를 다시 연결했어요." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reconnected %lld scheduled alarms."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "予約済みのアラーム%lld件を再接続しました。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "예약된 알람 %lld개를 다시 연결했어요."
+          }
+        }
+      }
+    },
+    "오디오 저장 공간을 사용할 수 없어요." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Audio storage is unavailable."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "音声の保存領域を利用できません。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "오디오 저장 공간을 사용할 수 없어요."
+          }
+        }
+      }
+    },
+    "오디오 파일을 저장하지 못했어요." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Could not save the audio file."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "音声ファイルを保存できませんでした。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "오디오 파일을 저장하지 못했어요."
+          }
+        }
+      }
+    },
+    "음성 알람은 음원을 먼저 캐싱해야 해요." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Download the audio before using a voice alarm."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "音声アラームを使う前に音声をダウンロードしてください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "음성 알람은 음원을 먼저 캐싱해야 해요."
+          }
+        }
+      }
+    },
+    "음성 오디오를 해석하지 못했어요." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Could not read the voice audio."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "音声を読み取れませんでした。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "음성 오디오를 해석하지 못했어요."
+          }
+        }
+      }
+    },
+    "음성은 최대 %lld초까지 사용할 수 있어요." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Audio can be up to %lld seconds long."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "音声は最大%lld秒まで使用できます。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "음성은 최대 %lld초까지 사용할 수 있어요."
+          }
+        }
+      }
+    },
+    "지원하지 않는 음성 소스예요." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This voice source is not supported."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この音声ソースはサポートされていません。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "지원하지 않는 음성 소스예요."
+          }
+        }
+      }
+    },
+    "지원하지 않는 재생 방식이에요." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This playback mode is not supported."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この再生方式はサポートされていません。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "지원하지 않는 재생 방식이에요."
+          }
+        }
+      }
+    },
+    "지원하지 않는 진동 패턴이에요." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This vibration pattern is not supported."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このバイブレーションパターンはサポートされていません。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "지원하지 않는 진동 패턴이에요."
+          }
+        }
+      }
+    },
+    "알람을 예약했어요." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alarm scheduled."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "アラームを予約しました。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "알람을 예약했어요."
+          }
+        }
+      }
+    },
+    "%@ 알람을 예약했어요." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scheduled the %@ alarm."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@のアラームを予約しました。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 알람을 예약했어요."
+          }
+        }
+      }
+    },
+    "알람을 예약했어요. %lld초 목소리는 iOS 제한으로 기본 알람음 뒤 앱이 열려 있을 때 재생돼요." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alarm scheduled. Due to iOS limits, the %lld-second voice plays after the default alarm sound while the app is open."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "アラームを予約しました。iOSの制限により、%lld秒の音声は標準のアラーム音の後、アプリが開いているときに再生されます。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "알람을 예약했어요. %lld초 목소리는 iOS 제한으로 기본 알람음 뒤 앱이 열려 있을 때 재생돼요."
+          }
+        }
+      }
+    },
+    "%@ 알람을 예약했어요. %lld초 목소리는 iOS 제한으로 기본 알람음 뒤 앱이 열려 있을 때 재생돼요." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scheduled the %1$@ alarm. Due to iOS limits, the %2$lld-second voice plays after the default alarm sound while the app is open."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@のアラームを予約しました。iOSの制限により、%2$lld秒の音声は標準のアラーム音の後、アプリが開いているときに再生されます。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 알람을 예약했어요. %lld초 목소리는 iOS 제한으로 기본 알람음 뒤 앱이 열려 있을 때 재생돼요."
+          }
+        }
+      }
+    },
+    "alarm.action.dismiss" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dismiss"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "アラームを止める"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "알람 끄기"
           }
         }
       }
