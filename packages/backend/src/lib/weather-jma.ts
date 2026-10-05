@@ -149,6 +149,8 @@ export function jmaDaysFromDocument(doc: unknown, source: JmaSource, now: Date):
     throw new WeatherSourceError('transient', 'stale_report');
   }
   const reportDate = String(short.reportDatetime).slice(0, 10);
+  const reportHour = Number(String(short.reportDatetime).slice(11, 13));
+  const remainingPopHours = [0, 6, 12, 18].filter((hour) => hour >= reportHour);
 
   type Draft = { code?: string; pop?: number | null; max?: number | null; min?: number | null };
   const drafts = new Map<string, Draft>();
@@ -169,7 +171,7 @@ export function jmaDaysFromDocument(doc: unknown, source: JmaSource, now: Date):
     });
   }
 
-  // 2) 6시간 강수확률 — 날짜로 묶어 최댓값. 오늘이 아니면 4칸이 다 있어야 그날의 값이다.
+  // 2) 6시간 강수확률 — 발표일도 남은 칸을 모두 확인한다. timeDefines 자체가 빠질 수 있다.
   const ts1 = seriesAt(short, 1);
   const dates1 = datesOf(ts1);
   const hours1 = hoursOf(ts1);
@@ -184,8 +186,9 @@ export function jmaDaysFromDocument(doc: unknown, source: JmaSource, now: Date):
     });
     for (const [date, { hours, values }] of byDate) {
       if (values.some((v) => v === null)) continue;
-      const fullDay = hours.join(',') === '0,6,12,18';
-      if (date !== reportDate && !fullDay) continue;
+      const expectedHours = date === reportDate ? remainingPopHours : [0, 6, 12, 18];
+      if (expectedHours.length === 0 || !expectedHours.every((hour) => hours.includes(hour))) continue;
+      if (new Set(hours).size !== hours.length || hours.some((hour) => ![0, 6, 12, 18].includes(hour))) continue;
       draft(date).pop = Math.max(...(values as number[]));
     }
   }

@@ -311,6 +311,38 @@ describe('refreshWeatherRegionDaily — 실제 libSQL', () => {
     db.close();
   });
 
+  it.each([2, 3])('KMA가 %i페이지로 잘라도 한 지역을 끝까지 받고 다음 틱에서 남은 지역을 잇는다', async (pageCount) => {
+    const db = await freshDb();
+    const kr = WeatherRegions.byCountry('KR').slice(0, 3);
+    const other = [...WeatherRegions.byCountry('JP'), ...WeatherRegions.byCountry('US')];
+    const calls = stubSources({ fail: { kma: (url) => {
+      const document = JSON.parse(kmaBody(url));
+      const body = document.response.body;
+      const size = Math.ceil(body.items.item.length / pageCount);
+      const page = Number(url.searchParams.get('pageNo'));
+      body.numOfRows = size;
+      body.items.item = body.items.item.slice((page - 1) * size, page * size);
+      return Response.json(document);
+    } } });
+    for (let tick = 0; tick < 3; tick += 1) {
+      const before = calls.length;
+      const result = await refreshWeatherRegionDaily(asExecutor(db), new Date(EVENING.getTime() + tick * 5 * 60_000), {
+        kmaServiceKey: KEY, regions: [...kr, ...other],
+      });
+      const current = calls.slice(before);
+      expect(current.length).toBeLessThanOrEqual(10);
+      const kma = current.filter((call) => call.host === 'kma');
+      expect(kma.length).toBeLessThanOrEqual(3);
+      expect(kma.slice(0, pageCount).map((call) => call.url.searchParams.get('pageNo'))).toEqual(
+        Array.from({ length: pageCount }, (_, i) => String(i + 1)),
+      );
+      expect(current.some((call) => call.host !== 'kma')).toBe(true);
+      expect(result.failures).toEqual([]);
+      expect(await rowsOf(db, kr[tick]!.key)).toHaveLength(3);
+    }
+    db.close();
+  });
+
   it('한국만: KMA 상한 3 — 틱마다 세 곳씩, 슬롯 안에서 다 채운다', async () => {
     const db = await freshDb();
     const kr = WeatherRegions.byCountry('KR');

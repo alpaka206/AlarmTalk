@@ -174,6 +174,33 @@ describe('05시 발표 — 합성본(17시 원본의 모양만 바꿈)', () => {
     });
   });
 
+  it.each([6, 12, 18])('발표 당일의 %i시 timeDefines가 통째로 빠져도 부분 최댓값을 쓰지 않는다', (hour) => {
+    const d = tokyo0500();
+    const series = d[0].timeSeries[1];
+    const index = series.timeDefines.findIndex((time: string) => time === `2026-10-02T${String(hour).padStart(2, '0')}:00:00+09:00`);
+    series.timeDefines.splice(index, 1);
+    for (const area of series.areas) area.pops.splice(index, 1);
+    const today = jmaDaysFromDocument(d, sourceOf('jp-tokyo'), MORNING).get('2026-10-02');
+    expect(today!.rainProbability).toBeNull();
+    expect(finalizeSourceDay(today, {
+      isToday: true, source: 'jma', now: MORNING,
+      stored: { tempMin: 20, tempMax: 22, computedAt: '2026-10-01T12:05:00.000Z' },
+    })).toBeNull();
+  });
+
+  it('11시 발표는 12·18시 칸을 모두 요구하고 이미 지난 06시 칸은 요구하지 않는다', () => {
+    const d = tokyo0500();
+    d[0].reportDatetime = '2026-10-02T11:00:00+09:00';
+    const series = d[0].timeSeries[1];
+    series.timeDefines.shift();
+    for (const area of series.areas) area.pops.shift();
+    const now = new Date('2026-10-02T02:10:00Z');
+    expect(jmaDaysFromDocument(d, sourceOf('jp-tokyo'), now).get('2026-10-02')!.rainProbability).toBe(30);
+    series.timeDefines.shift();
+    for (const area of series.areas) area.pops.shift();
+    expect(jmaDaysFromDocument(d, sourceOf('jp-tokyo'), now).get('2026-10-02')!.rainProbability).toBeNull();
+  });
+
   it('기온 칸의 날짜가 인덱스 규칙과 어긋나면 쓰지 않는다(추측 금지)', () => {
     const d = tokyo0500();
     d[0].timeSeries[2].timeDefines[2] = '2026-10-04T00:00:00+09:00';

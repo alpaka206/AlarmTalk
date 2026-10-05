@@ -437,7 +437,9 @@ export async function refreshWeatherRegionDaily(
 
   // 2) fetch — 원천을 번갈아, 원천별 상한·틱 상한 안에서, 동시 4.
   const tasks = interleaveBySource(runnable);
-  const budget = tickBudget();
+  let pendingKma = tasks.filter((slot) => slot.region.source.kind === 'kma').length;
+  const budget = tickBudget(() => pendingKma > 0);
+  let kmaTail = Promise.resolve();
   const disabled = new Set<WeatherSourceKind>();
   const computedAt = now.toISOString();
   const statements: InStatement[] = [];
@@ -447,63 +449,77 @@ export async function refreshWeatherRegionDaily(
     while (next < tasks.length) {
       const slot = tasks[next++]!;
       const source = slot.region.source.kind;
-      // ⚠ 첫 fetch 몫은 **시작할 때 곧바로** 잡아 둔다 — 동시 4 라, 어댑터가 실제로 부를 때 세면 그 사이에 시작한
-      //   다른 지역이 같은 몫을 보고 들어와 상한을 넘긴 채 시작했다가 '예산 없음' 으로 버려진다.
-      if (result.budgetExhausted || disabled.has(source) || !budget.take(source)) {
-        result.deferred += 1;
-        continue;
+      // KMA의 3회 몫을 세 지역의 첫 페이지가 동시에 다 쓰지 않게 한다.
+      let releaseKma = () => {};
+      if (source === 'kma') {
+        const previous = kmaTail;
+        kmaTail = new Promise<void>((resolve) => { releaseKma = resolve; });
+        await previous;
       }
-      result.attempted += 1;
-      let reserved = true;
-      const outcome: SourceOutcome = await fetchRegionSourceDays(slot.region, {
-        now,
-        budget: {
-          take(kind) {
-            if (reserved) {
-              reserved = false;
-              return true;
-            }
-            return budget.take(kind);
-          },
-        },
-        kmaServiceKey: kmaKey,
-        cacheTtlSeconds: null,
-      });
-      if (!outcome.ok) {
-        if (outcome.failure === 'budget') {
-          // 실패로 세지 않는다. 워커 한도면 이 틱의 날씨 작업을 멈춘다.
+      try {
+        // ⚠ 첫 fetch 몫은 **시작할 때 곧바로** 잡아 둔다 — 동시 4 라, 어댑터가 실제로 부를 때 세면 그 사이에 시작한
+        //   다른 지역이 같은 몫을 보고 들어와 상한을 넘긴 채 시작했다가 '예산 없음' 으로 버려진다.
+        if (result.budgetExhausted || disabled.has(source) || !budget.take(source)) {
           result.deferred += 1;
-          if (outcome.reason === 'subrequest_limit') result.budgetExhausted = true;
           continue;
         }
-        // 원천 전체의 설정 실패만 원천을 끈다. 그 지역의 칸이 틀린 것(격자·office 404)으로 끄면 틱마다 같은 자리에서
-        // 다시 걸려 그 뒤의 지역이 슬롯 내내 계산되지 않는다 — 그 지역만 실패로 둔다(경보는 슬롯 끝에서 같이 오른다).
-        if (outcome.failure === 'config' && outcome.scope === 'source') disabled.add(source);
-        const failure = { regionKey: slot.region.key, source, failure: outcome.failure, reason: outcome.reason };
-        result.failures.push(failure);
-        failedReasons.set(slot.region.key, failure);
-        continue;
-      }
-      for (const date of slot.dates) {
-        const key = `${slot.region.key}|${date}`;
-        const input = finalizeSourceDay(outcome.days.get(date), {
-          isToday: date === slot.today,
-          stored: stored.get(key),
+        result.attempted += 1;
+        let reserved = true;
+        const outcome: SourceOutcome = await fetchRegionSourceDays(slot.region, {
           now,
-          source,
+          budget: {
+            take(kind) {
+              if (reserved) {
+                reserved = false;
+                return true;
+              }
+              return budget.take(kind);
+            },
+          },
+          kmaServiceKey: kmaKey,
+          cacheTtlSeconds: null,
         });
-        if (!input) continue;
-        statements.push(upsertStatement(slot.region.key, date, input, resolvePrerenderWeatherIndex(input), computedAt));
-        written.add(key);
-      }
-      if (!isDone(slot)) {
-        // 원천은 받았는데 [내일, +3] 가운데 못 만든 날짜가 있다 — 다음 틱이 다시 한다.
-        logStructured('warn', {
-          at: 'scheduled.weather_region_daily',
-          op: 'unresolved_dates',
-          source,
-          missing: slot.dueDates.filter((d) => !written.has(`${slot.region.key}|${d}`)).length,
-        });
+        if (!outcome.ok) {
+          if (outcome.failure === 'budget') {
+            // 실패로 세지 않는다. 워커 한도면 이 틱의 날씨 작업을 멈춘다.
+            result.deferred += 1;
+            if (outcome.reason === 'subrequest_limit') result.budgetExhausted = true;
+            continue;
+          }
+          // 원천 전체의 설정 실패만 원천을 끈다. 그 지역의 칸이 틀린 것(격자·office 404)으로 끄면 틱마다 같은 자리에서
+          // 다시 걸려 그 뒤의 지역이 슬롯 내내 계산되지 않는다 — 그 지역만 실패로 둔다(경보는 슬롯 끝에서 같이 오른다).
+          if (outcome.failure === 'config' && outcome.scope === 'source') disabled.add(source);
+          const failure = { regionKey: slot.region.key, source, failure: outcome.failure, reason: outcome.reason };
+          result.failures.push(failure);
+          failedReasons.set(slot.region.key, failure);
+          continue;
+        }
+        for (const date of slot.dates) {
+          const key = `${slot.region.key}|${date}`;
+          const input = finalizeSourceDay(outcome.days.get(date), {
+            isToday: date === slot.today,
+            stored: stored.get(key),
+            now,
+            source,
+          });
+          if (!input) continue;
+          statements.push(upsertStatement(slot.region.key, date, input, resolvePrerenderWeatherIndex(input), computedAt));
+          written.add(key);
+        }
+        if (!isDone(slot)) {
+          // 원천은 받았는데 [내일, +3] 가운데 못 만든 날짜가 있다 — 다음 틱이 다시 한다.
+          logStructured('warn', {
+            at: 'scheduled.weather_region_daily',
+            op: 'unresolved_dates',
+            source,
+            missing: slot.dueDates.filter((d) => !written.has(`${slot.region.key}|${d}`)).length,
+          });
+        }
+      } finally {
+        if (source === 'kma') {
+          pendingKma -= 1;
+          releaseKma();
+        }
       }
     }
   };
@@ -546,12 +562,13 @@ export async function refreshWeatherRegionDaily(
 }
 
 /** 이 틱의 fetch 예산 — 틱 상한(10)과 원천별 상한을 함께 센다. */
-function tickBudget(): FetchBudget {
+function tickBudget(hasPendingKma: () => boolean): FetchBudget {
   let total = WEATHER_TICK_FETCH_BUDGET;
   const left: Record<WeatherSourceKind, number> = { ...WEATHER_SOURCE_FETCH_CAPS };
   return {
     take(source) {
-      if (total <= 0 || left[source] <= 0) return false;
+      const reserved = source !== 'kma' && hasPendingKma() ? left.kma : 0;
+      if (total <= reserved || left[source] <= 0) return false;
       total -= 1;
       left[source] -= 1;
       return true;
