@@ -1752,7 +1752,7 @@ const JA_INNER_ELONGATION = /(?<=\p{Script=Hiragana})[ー〜～~]+(?=\p{Script=H
  * けれど(も)·ので·のに·し·が·って·っけ·もの·もん). 어체는 꼬리 **앞** 서술어가 정한다(Codex #844) — '時間ですからね'·
  * '時間ですので'·'雨ですって'·'朝ですもの'·'でしたっけ' 는 'です'·'でした' 가 정중체로, '時間だからね' 는 'だ' 가 반말로 만든다.
  */
-const JA_PREDICATE_TAIL = /(?:から|けれども|けれど|けど|ので|のに|もの|もん|って|っけ|し|が|[よねなのかわぞさ])+$/u;
+const JA_PREDICATE_TAIL = ['から', 'けれども', 'けれど', 'けど', 'ので', 'のに', 'もの', 'もん', 'って', 'っけ', 'し', 'が', ...'よねなのかわぞさ'] as const;
 /**
  * です・ます(정중체) 서술어 끝. 기원 '〜ますように'·'〜ませんように'(に 없이 'ますよう' 로 맺어도)도 정중체다(프롬프트가
  * 금지한다). 'でした'(=だった)도 넣는다.
@@ -1779,7 +1779,23 @@ const JA_NOT_POLITE_PREDICATE =
 
 /** 문장 끝 서술어 — 끝 문장부호와 꼬리(`JA_PREDICATE_TAIL`)를 걷은 것('時間ですからね。' → '時間です'). */
 function japanesePredicateEnd(sentence: string): string {
-  return sentence.trim().replace(JA_SENTENCE_TRAILER, '').replace(JA_PREDICATE_TAIL, '');
+  const end = sentence.trim().replace(JA_SENTENCE_TRAILER, '');
+  // 꼬리 토큰을 이을 수 있는 접미부를 뒤에서 한 번만 계산한다. 겹치는 토큰을 + 정규식으로
+  // 반복하면 'けれどもの'가 이어진 실패 입력에서 지수적인 되짚기가 생긴다(CodeQL #844).
+  // 가능한 가장 왼쪽 시작을 골라 기존 정규식의 '꼬리 전체 제거' 의미는 그대로 유지한다.
+  const removable = new Uint8Array(end.length + 1);
+  removable[end.length] = 1;
+  let earliest = end.length;
+  for (let index = end.length - 1; index >= 0; index -= 1) {
+    for (const tail of JA_PREDICATE_TAIL) {
+      if (removable[index + tail.length] && end.startsWith(tail, index)) {
+        removable[index] = 1;
+        earliest = index;
+        break;
+      }
+    }
+  }
+  return end.slice(0, earliest);
 }
 
 /**

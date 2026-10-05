@@ -3038,3 +3038,21 @@ describe('analyzeSpeechStyleWithVertex — 전송 실패만 마감 안에서 다
     });
   });
 });
+
+
+describe('일본어 서술어 꼬리 — CodeQL 되짚기 회귀', () => {
+  it('겹치는 꼬리를 길게 이어도 한 번에 걷고 실패 접미부는 그대로 둔다', () => {
+    const tail = 'けれどもの'.repeat(10_000);
+    const started = performance.now();
+    expect(isJapanesePoliteSentence(`朝です${tail}`)).toBe(true);
+    expect(isJapanesePoliteSentence(`朝です${tail}べ`)).toBe(false);
+    expect(performance.now() - started).toBeLessThan(1_000);
+  });
+
+  it('짧은 겹침과 종조사 조합은 기존 접미부 제거 의미를 유지한다', () => {
+    for (const tail of ['からね', 'けれどものに', 'けれどももの', 'けれどのに', 'ものの', 'ってよね', 'しがか']) {
+      expect(isJapanesePoliteSentence(`朝です${tail}`), tail).toBe(true);
+      expect(isJapanesePoliteSentence(`朝だ${tail}`), tail).toBe(false);
+    }
+  });
+});
