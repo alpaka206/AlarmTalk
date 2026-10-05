@@ -138,7 +138,7 @@ struct MainTabsView: View {
                     .padding(.trailing, 20)
                     // 하단바(76) 위에 얹는다.
                     .padding(.bottom, 92)
-                    .accessibilityLabel("알람 만들기")
+                    .accessibilityLabel(String(localized: "알람 만들기"))
                     .transition(.scale(scale: 0.85).combined(with: .opacity))
                 }
             }
@@ -154,9 +154,9 @@ struct MainTabsView: View {
                 }
                 SystemPermissionPrompts.shared.markNotificationRequestSettled()
             }
-            .alert("목소리를 아직 받는 중이에요", isPresented: $voicesNotReadyAlert) {
+            .alert(String(localized: "목소리를 아직 받는 중이에요"), isPresented: $voicesNotReadyAlert) {
                 // 받기는 막는 순간 이미 다시 걸었다 — 누를 버튼을 따로 두지 않는다.
-                Button("확인", role: .cancel) {}
+                Button(String(localized: "확인"), role: .cancel) {}
             } message: {
                 Text(voicesNotReadyMessage)
             }
@@ -354,7 +354,7 @@ struct MainTabsView: View {
         // 나머지 탭은 조용히 빠진다. (각 refresh 는 session nil 이면 자체 no-op)
         guard let userID = auth.session?.user.id else {
             if tab == .alarms {
-                remoteSync.statusMessage = "동기화하려면 먼저 로그인해 주세요"
+                remoteSync.statusMessage = String(localized: "동기화하려면 먼저 로그인해 주세요")
             }
             return
         }

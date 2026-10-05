@@ -36,7 +36,7 @@ class AlarmTalkApplication : Application() {
         // 일이 없지만 같은 모양으로 감싼다 — 실패해도 앱 진입을 막지 않는다.
         runCatching { com.alarmtalk.app.alarm.VisibleActivityTracker.install(this) }
             .onFailure { AlarmTalkLog.reportError("VisibleActivityTracker install failed", it) }
-        runCatching { NotificationChannels.ensure(this) }
+        runCatching { NotificationChannels.install(this) }
             .onFailure { AlarmTalkLog.reportError("NotificationChannels init failed", it) }
         // ⚠ **우리가 올려 둔 기기 알람 볼륨을 여기서도 되돌린다.** 울림은 서비스가 끝내면서
         //   되돌리고 그 서비스가 다시 뜰 때 한 번 더 본다. 그런데 **미리듣기**도 같은 크기로
@@ -68,6 +68,8 @@ class AlarmTalkApplication : Application() {
             ProcessLifecycleOwner.get().lifecycle.addObserver(
                 object : DefaultLifecycleObserver {
                     override fun onStart(owner: LifecycleOwner) {
+                        runCatching { NotificationChannels.ensure(this@AlarmTalkApplication) }
+                            .onFailure { AlarmTalkLog.reportError("NotificationChannels locale refresh failed", it) }
                         // 세션과 무관하게 **먼저** 센다 — '진입할 때마다' 뜨는 안내의 기준이다
                         // (`AppSignals.appEntries`). 아래 동기화가 실패해도 진입은 진입이다.
                         com.alarmtalk.app.core.AppSignals.markAppEntered()

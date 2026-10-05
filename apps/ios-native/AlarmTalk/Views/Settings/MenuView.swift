@@ -70,7 +70,7 @@ struct MenuView: View {
                     deleteConfirming = true
                 } label: {
                     HStack {
-                        Text("회원 탈퇴")
+                        Text(String(localized: "회원 탈퇴"))
                             .fontWeight(.medium)
                             .foregroundStyle(theme.palette.onSurface)
                         Spacer(minLength: 12)
@@ -85,7 +85,7 @@ struct MenuView: View {
             }
             .settingsCard(title: nil)
 
-            Text("앱 버전 \(Self.appVersion)")
+            Text(String(localized: "앱 버전 \(Self.appVersion)"))
                 .font(.footnote)
                 .foregroundStyle(theme.palette.onSurfaceVariant)
                 .frame(maxWidth: .infinity, alignment: .center)
@@ -101,13 +101,13 @@ struct MenuView: View {
             // 높이는 `SelectionSheet` 가 내용에 맞춰 잡는다(위 주석 참조).
         }
         // 30일 유예 탈퇴. 즉시 삭제가 아니라는 것을 문구가 분명히 말해야 한다.
-        .alert("정말 탈퇴할까요?", isPresented: $deleteConfirming) {
-            Button("탈퇴", role: .destructive) {
+        .alert(String(localized: "정말 탈퇴할까요?"), isPresented: $deleteConfirming) {
+            Button(String(localized: "탈퇴"), role: .destructive) {
                 Task { await auth.requestAccountDeletion() }
             }
-            Button("취소", role: .cancel) {}
+            Button(String(localized: "취소"), role: .cancel) {}
         } message: {
-            Text("30일 뒤에 계정과 모든 데이터가 영구 삭제돼요. 그 전에 다시 로그인하면 탈퇴를 취소할 수 있어요.")
+            Text(String(localized: "30일 뒤에 계정과 모든 데이터가 영구 삭제돼요. 그 전에 다시 로그인하면 탈퇴를 취소할 수 있어요."))
         }
     }
 
@@ -119,7 +119,7 @@ struct MenuView: View {
                         .font(.title3.weight(.bold))
                         .foregroundStyle(theme.palette.onSurface)
                         .lineLimit(1)
-                    Text("내 정보 · 앱 설정")
+                    Text(String(localized: "내 정보 · 앱 설정"))
                         .font(.subheadline)
                         .foregroundStyle(theme.palette.onSurfaceVariant)
                 }
@@ -136,7 +136,7 @@ struct MenuView: View {
     }
 
     private var displayName: String {
-        auth.session?.user.name.nilIfBlank ?? auth.session?.user.email ?? "내 계정"
+        auth.session?.user.name.nilIfBlank ?? auth.session?.user.email ?? String(localized: "내 계정")
     }
 
     private var currentThemeMode: AlarmTalkThemeMode {

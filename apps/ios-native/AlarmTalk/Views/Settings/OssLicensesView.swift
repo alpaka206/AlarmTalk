@@ -66,7 +66,7 @@ struct OssLicensesView: View {
         }
         .listStyle(.plain)
         .homeGradientBackground()
-        .navigationTitle("오픈소스 라이선스")
+        .navigationTitle(String(localized: "오픈소스 라이선스"))
         .navigationBarTitleDisplayMode(.inline)
     }
 }
@@ -109,7 +109,7 @@ private struct LicenseTextView: View {
                 let loaded = try? String(contentsOf: url, encoding: .utf8)
             else {
                 // 번들 누락은 개발 실수다. 빈 화면 대신 그렇다고 말한다.
-                text = "라이선스 전문을 불러오지 못했어요."
+                text = String(localized: "라이선스 전문을 불러오지 못했어요.")
                 return
             }
             text = loaded

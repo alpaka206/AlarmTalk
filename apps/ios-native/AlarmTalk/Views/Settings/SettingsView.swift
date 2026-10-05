@@ -30,8 +30,8 @@ struct SettingsView: View {
     }
 
     /// 약관/방침 외부 링크. Android 는 `AlarmTalkApp.kt` 의 `LegalDocumentScreen` 라우트가 같은 주소를 쓴다.
-    private static let termsURL = URL(string: "https://alarm-talk.com/ko/terms")!
-    private static let privacyURL = URL(string: "https://alarm-talk.com/ko/privacy")!
+    private static var termsURL: URL { LegalLinks.terms }
+    private static var privacyURL: URL { LegalLinks.privacy }
 
     /// 이 화면을 떠나야 할 때(로그아웃 직후) 호출. **닫기 버튼용이 아니다** — 아래 참조.
     let onClose: () -> Void
@@ -80,7 +80,7 @@ struct SettingsView: View {
                         }
                     )
                 }
-                .settingsCard(title: "문구 정보")
+                .settingsCard(title: String(localized: "문구 정보"))
 
                 if let user = auth.session?.user {
                     AccountPanel(
@@ -110,13 +110,13 @@ struct SettingsView: View {
                         legalDestination = .ossLicenses
                     }
                 }
-                .settingsCard(title: "법적 정보")
+                .settingsCard(title: String(localized: "법적 정보"))
             }
             .padding(20)
         }
         .homeGradientBackground()
         // 제목은 네비게이션 바가 그린다(본문에 또 두지 않는다 — 위 주석).
-        .navigationTitle("설정")
+        .navigationTitle(String(localized: "설정"))
         .navigationBarTitleDisplayMode(.inline)
         .navigationDestination(item: $legalDestination) { destination in
             switch destination {
@@ -128,9 +128,9 @@ struct SettingsView: View {
             case .ossLicenses:
                 OssLicensesView()
             case .terms:
-                LegalDocumentView(title: "서비스 이용약관", url: Self.termsURL)
+                LegalDocumentView(title: String(localized: "서비스 이용약관"), url: Self.termsURL)
             case .privacy:
-                LegalDocumentView(title: "개인정보 처리방침", url: Self.privacyURL)
+                LegalDocumentView(title: String(localized: "개인정보 처리방침"), url: Self.privacyURL)
             }
         }
         .onAppear {
@@ -170,7 +170,7 @@ struct SettingsView: View {
         // 상단바에 취소·제목·저장을 둔다(`FormSheet` 주석 참조).
         .formSheet(
             isPresented: $fortuneDialogOpen,
-            title: "운세 정보",
+            title: String(localized: "운세 정보"),
             onCancel: { fortuneDialogOpen = false },
             // ⚠ **저장을 잠그지 않는다.** 잠가 두면 왜 못 누르는지 알 수 없다 — 눌렀을 때
             // 어느 칸이 비었는지 알려 주는 쪽이 낫다(`fortuneSubmitted`).
@@ -221,8 +221,8 @@ struct SettingsView: View {
     /// 안드로이드 `fortuneInfoSettingsLabel` 과 같은 구성이다.
     private var fortuneInfoLabel: String {
         promptPreferences.fortuneReady
-            ? [promptPreferences.fortuneGender, promptPreferences.fortuneBirthDate].joined(separator: " · ")
-            : "미설정"
+            ? [FortunePromptInputFormat.displayLabel(promptPreferences.fortuneGender), promptPreferences.fortuneBirthDate].joined(separator: " · ")
+            : String(localized: "미설정")
     }
 
     /// 상단바 '저장'. 빈 칸이 있으면 **닫지 않고** 어느 칸이 비었는지 보여 준다.
@@ -379,7 +379,7 @@ struct ThemeModePickerSheet: View {
 
     var body: some View {
         SelectionSheet(
-            title: "화면 테마",
+            title: String(localized: "화면 테마"),
             items: AlarmTalkThemeMode.allCases,
             selectedID: current.id,
             onSelect: onSelect

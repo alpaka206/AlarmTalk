@@ -13,17 +13,17 @@ enum AlarmTalkThemeMode: String, CaseIterable, Identifiable {
         switch self {
         // 안드로이드 `misc2_theme_mode_system` 과 같은 문구다 — '시스템 설정' 만 쓰면
         // 설정 화면으로 가는 링크처럼 읽힌다.
-        case .system: return "시스템 설정과 같이"
-        case .light: return "밝은 모드"
-        case .dark: return "어두운 모드"
+        case .system: return String(localized: "시스템 설정과 같이")
+        case .light: return String(localized: "밝은 모드")
+        case .dark: return String(localized: "어두운 모드")
         }
     }
 
     var pickerTitle: String {
         switch self {
-        case .system: return "시스템"
-        case .light: return "밝게"
-        case .dark: return "어둡게"
+        case .system: return String(localized: "시스템")
+        case .light: return String(localized: "밝게")
+        case .dark: return String(localized: "어둡게")
         }
     }
 
