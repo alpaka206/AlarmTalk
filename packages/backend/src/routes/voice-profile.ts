@@ -526,6 +526,7 @@ async function runSpeechStyleAnalysis(
     const transcript = await client.speechToText(audioData, {
       mimeType: options.mimeType,
       fileName: options.fileName,
+      deadlineAt,
     });
     // null = Vertex 미설정/호출 실패/전사가 너무 짧음(전사 실패 의심) — 재시도로 복구 여지가
     // 있으므로 'failed' 로 기록한다(성공 판단은 speech_style 저장 여부). 상류 시간 초과·5xx 는 함수 안에서

@@ -190,6 +190,22 @@ describe('POST /clone — 말투 분석 상태 기록 (speech_style_status)', ()
     );
     const { deadlineAt } = mockAnalyzeSpeechStyle.mock.calls[0]![3] as { deadlineAt: number };
     expect(deadlineAt - Date.now()).toBeLessThanOrEqual(SPEECH_STYLE_ANALYSIS_BUDGET_MS);
+    expect(mockSpeechToText).toHaveBeenCalledWith(expect.any(ArrayBuffer), expect.objectContaining({ deadlineAt }));
+  });
+
+  it('전사 시간 초과도 failed로 기록하고 Vertex 요청은 보내지 않는다', async () => {
+    pushCloneSuccessResults();
+    mockCreateInstantClone.mockResolvedValue({ voice_id: 'elv-ok' });
+    mockSpeechToText.mockRejectedValue(new DOMException('Deadline exceeded', 'TimeoutError'));
+    const { ctx, drain } = fakeExecutionCtx();
+    const res = await buildApp().request(cloneForm(), undefined, ENV, ctx);
+    expect(res.status).toBe(201);
+    await drain();
+    expect(mockSpeechToText).toHaveBeenCalledWith(expect.any(ArrayBuffer), expect.objectContaining({
+      deadlineAt: expect.any(Number),
+    }));
+    expect(statusCalls('failed')).toHaveLength(1);
+    expect(mockAnalyzeSpeechStyle).not.toHaveBeenCalled();
   });
 
   it('전사 실패 시 speech_style_status=failed 기록 (조용히 삼키지 않음)', async () => {
@@ -431,6 +447,7 @@ describe('POST /:id/speech-style/retry — 말투 분석 재시도', () => {
     expect(mockSpeechToText).toHaveBeenCalledWith(expect.any(ArrayBuffer), {
       mimeType: 'audio/wav',
       fileName: 'sample.wav',
+      deadlineAt: expect.any(Number),
     });
     // pending 전환은 무조건 UPDATE 가 아니라 failed 일 때만 성립하는 원자적 클레임이다.
     const claims = retryClaimCalls();
