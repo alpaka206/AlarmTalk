@@ -10,7 +10,7 @@ import XCTest
 /// `WeatherVariantSaveLookup.timeoutSeconds`(8초)에서 기다리기를 그만두고 **기존 실패와 같은
 /// 경로**(미해결로 저장 → `WeatherVariantRefreshService.refreshDue` 가 채움)로 간다.
 ///
-/// 실제 8초를 기다리지 않는다 — 상한은 주입 가능하고 여기서는 0.2초로 잰다.
+/// 실제 8초를 기다리지 않는다 — 상한은 0.2초로 주입하고 요청이 취소됐는지 검증한다.
 @MainActor
 final class WeatherVariantSaveTimeoutTests: XCTestCase {
 
@@ -33,8 +33,8 @@ final class WeatherVariantSaveTimeoutTests: XCTestCase {
 
     /// 응답을 주지 않는 서버 위의 진짜 `AlarmTalkAPI`.
     ///
-    /// 세션의 유휴 타임아웃을 **3초**로 둔다 — 상한이 없으면 조회가 그때 가서야 돌아오므로
-    /// 아래 "1.5초 안" 단언이 60초를 매달리지 않고 곧바로 떨어진다. 앱에서는 그 값이
+    /// 세션의 유휴 타임아웃을 **3초**로 둔다 — 상한이 사라져도 테스트가 60초를 매달리지
+    /// 않는다. 그때는 `.timedOut` 이므로 아래 취소 오류 단언이 실패한다. 앱에서는 그 값이
     /// 60초다(`AlarmTalkAPI.makeDefaultSession`).
     private func hangingAPI() -> AlarmTalkAPI {
         HangingWeatherURLProtocol.reset()
@@ -50,20 +50,18 @@ final class WeatherVariantSaveTimeoutTests: XCTestCase {
 
     // ── 상한 ────────────────────────────────────────────────────────────────
 
-    /// 고치기 전에는 실패한다: 조회가 세션 타임아웃(여기서는 3초, 앱은 60초)까지 돌아오지
-    /// 않아 1.5초 단언에 걸린다. 상한이 있으면 0.2초에 `nil` 로 끝나고, 취소가 요청까지
-    /// 닿아(`stopLoading`) 늦게 올 응답 자체가 없다.
+    /// 상한이 없으면 세션의 `.timedOut` 으로 끝나므로 실패한다. 상한이 있으면 요청이
+    /// 취소 오류로 끝나고 `stopLoading` 까지 전달된다. CI 시뮬레이터가 일시 정지된 시간까지
+    /// 포함하는 벽시계 대신, 상한이 실제 요청을 취소했는지 검증한다.
     func test_매달린_요청은_상한_안에_미해결로_끝난다() async {
-        let api = hangingAPI()
-        let started = Date()
+        let api = CancellationRecordingResolver(api: hangingAPI())
 
         let index = await WeatherVariantSaveLookup.freshIndex(
             record: weatherRecord(), token: "t", api: api, timeoutSeconds: 0.2
         )
 
-        let elapsed = Date().timeIntervalSince(started)
         XCTAssertNil(index, "상한을 넘긴 조회는 오프라인과 같은 nil 이다")
-        XCTAssertLessThan(elapsed, 1.5, "저장이 세션 타임아웃까지 붙잡혔다 (\(elapsed)s)")
+        XCTAssertTrue(api.wasCancelled, "세션 유휴 타임아웃이 아니라 저장 상한이 요청을 취소해야 한다")
         XCTAssertEqual(HangingWeatherURLProtocol.startCount, 1, "요청은 실제로 나갔어야 한다")
         // `stopLoading` 은 세션 내부 큐에서 온다 — 돌아온 직후 한 박자 늦을 수 있어 잠깐 기다린다.
         let stopped = await Self.waitUntil { HangingWeatherURLProtocol.stopCount == 1 }
@@ -195,6 +193,46 @@ final class WeatherVariantSaveTimeoutTests: XCTestCase {
 }
 
 // MARK: - 스텁
+
+/// 진짜 API 의 오류를 관찰한다. `stopLoading` 만으로는 세션의 유휴 타임아웃과
+/// 작업 취소를 구분할 수 없으므로, 요청이 취소 오류로 끝났는지도 따로 확인한다.
+private final class CancellationRecordingResolver: PrerenderVariantResolving, @unchecked Sendable {
+    private let api: AlarmTalkAPI
+    private let lock = NSLock()
+    private var cancelled = false
+
+    init(api: AlarmTalkAPI) { self.api = api }
+
+    var wasCancelled: Bool {
+        lock.lock(); defer { lock.unlock() }
+        return cancelled
+    }
+
+    private func record(_ error: Error) {
+        lock.lock(); defer { lock.unlock() }
+        cancelled = isCancellation(error)
+    }
+
+    func getPrerenderVariant(
+        context: String,
+        region: String?,
+        country: String?,
+        city: String?,
+        targetDate: String,
+        timezone: String,
+        token: String
+    ) async throws -> Int? {
+        do {
+            return try await api.getPrerenderVariant(
+                context: context, region: region, country: country, city: city,
+                targetDate: targetDate, timezone: timezone, token: token
+            )
+        } catch {
+            record(error)
+            throw error
+        }
+    }
+}
 
 /// 취소를 **무시하는** 조회 — `delay` 뒤에 무조건 `index` 를 돌려준다.
 /// 상한 뒤에 도착하는 응답을 만들 때 쓴다(`Task.sleep` 은 취소되면 곧바로 던져서 늦은

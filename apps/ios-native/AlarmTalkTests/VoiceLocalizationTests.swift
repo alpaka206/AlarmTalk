@@ -10,7 +10,7 @@ struct VoiceLocalizationTests {
         let bundle = try #require(Bundle(path: path))
         #expect(VoiceRelationshipSelection(preset: .custom, customLabel: "엄마").localizedDisplayLabel(bundle: bundle) == "엄마")
         #expect(VoiceRelationshipSelection(preset: .mom).localizedDisplayLabel(bundle: bundle)
-                == (language == "en" ? "Mom" : language == "ja" ? "母" : "엄마"))
+                == (language == "en" ? "Mom" : language == "ja" ? "お母さん" : "엄마"))
         let owner = language == "ja" ? "田中さん" : language == "ko" ? "민수님" : "Alex"
         let voice = FamilyVoiceProfile(id: "shared", name: "Voice", ownerName: owner)
         #expect(voice.localizedSharedFromLabel(bundle: bundle)
