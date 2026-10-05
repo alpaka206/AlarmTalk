@@ -16,16 +16,16 @@ enum HelperFormatters {
     /// 가족 알람 quiet schedule 라벨.
     /// Android `quietScheduleLabel`(`ui/settings/SettingsScreenComponents.kt`) 1:1.
     /// 앞 2개 윈도우만 표시하고 나머지는 "외 N개" 로 축약한다. 비어 있으면 "없음".
-    static func quietScheduleLabel(_ windows: [FamilyAlarmQuietWindow]?) -> String {
+    static func quietScheduleLabel(_ windows: [FamilyAlarmQuietWindow]?, bundle: Bundle = .main) -> String {
         let list = windows ?? []
-        if list.isEmpty { return "없음" }
-        let visible = list.prefix(2).map(quietWindowLabel).joined(separator: " · ")
+        if list.isEmpty { return String(localized: "없음", bundle: bundle) }
+        let visible = list.prefix(2).map { quietWindowLabel($0, bundle: bundle) }.joined(separator: " · ")
         let hidden = list.count - 2
-        return hidden > 0 ? "\(visible) 외 \(hidden)개" : visible
+        return hidden > 0 ? String(localized: "\(visible) 외 \(hidden)개", bundle: bundle) : visible
     }
 
-    private static func quietWindowLabel(_ window: FamilyAlarmQuietWindow) -> String {
-        "\(quietDaysLabel(window.days)) \(formatQuietTime(window.start)) ~ \(formatQuietTime(window.end))"
+    private static func quietWindowLabel(_ window: FamilyAlarmQuietWindow, bundle: Bundle) -> String {
+        "\(quietDaysLabel(window.days, bundle: bundle)) \(formatQuietTime(window.start)) ~ \(formatQuietTime(window.end))"
     }
 
     /// "07:00" → "7:00" (시각 앞자리 0 제거, 분은 2자리 유지). Android `formatQuietTime`.
@@ -38,15 +38,15 @@ enum HelperFormatters {
 
     /// 요일 묶음 라벨. 0=일 … 6=토. Android `quietDaysLabel` 와 동일한 스마트 그룹핑.
     /// (에디터의 FamilyAlarmScheduleRules 와 공용으로 쓰도록 internal.)
-    static func quietDaysLabel(_ days: [Int]) -> String {
+    static func quietDaysLabel(_ days: [Int], bundle: Bundle = .main) -> String {
         let sorted = Array(Set(days)).sorted()
         switch sorted {
-        case []: return "없음"
-        case [1, 2, 3, 4, 5]: return "평일"
-        case [0, 6]: return "주말"
-        case [0, 1, 2, 3, 4, 5, 6]: return "매일"
+        case []: return String(localized: "없음", bundle: bundle)
+        case [1, 2, 3, 4, 5]: return String(localized: "평일", bundle: bundle)
+        case [0, 6]: return String(localized: "주말", bundle: bundle)
+        case [0, 1, 2, 3, 4, 5, 6]: return String(localized: "매일", bundle: bundle)
         default:
-            let labels = ["일", "월", "화", "수", "목", "금", "토"]
+            let labels = [String(localized: "일", bundle: bundle), String(localized: "월", bundle: bundle), String(localized: "화", bundle: bundle), String(localized: "수", bundle: bundle), String(localized: "목", bundle: bundle), String(localized: "금", bundle: bundle), String(localized: "토", bundle: bundle)]
             return sorted.map { labels[max(0, min(6, $0))] }.joined(separator: ",")
         }
     }

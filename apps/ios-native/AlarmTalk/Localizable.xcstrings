@@ -6163,13 +6163,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Dismiss"
+            "value" : "Turn alarm off"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "アラームを止める"
+            "value" : "アラームをオフにする"
           }
         }
       }

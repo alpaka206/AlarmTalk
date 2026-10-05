@@ -84,9 +84,9 @@ struct LocalAlarmAudioEditor: View {
 // `FAMILY_ALARM_MIN_LEAD_MINUTES` 와 **같아야 한다**. 죽은 사본이 옛 값을 들고 있으면
 // 그걸 고치고 고쳤다고 믿게 된다(실제로 오늘 리드타임을 내릴 때 그럴 뻔했다).
 enum FamilyAlarmScheduleRules {
-    static func quietScheduleLabel(_ member: FamilyGroupMember) -> String {
+    static func quietScheduleLabel(_ member: FamilyGroupMember, bundle: Bundle = .main) -> String {
         quietWindows(member).map { window in
-            "\(HelperFormatters.quietDaysLabel(window.days)) \(window.start)-\(window.end)"
+            "\(HelperFormatters.quietDaysLabel(window.days, bundle: bundle)) \(window.start)-\(window.end)"
         }.joined(separator: " · ")
     }
 
