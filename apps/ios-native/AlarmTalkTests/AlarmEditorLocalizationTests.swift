@@ -11,7 +11,7 @@ final class AlarmEditorLocalizationTests: XCTestCase {
                 XCTAssertNotEqual(preset.localizedDisplayLabel(bundle: bundle), preset.label)
                 XCTAssertEqual(VoiceRelationshipSelection(preset: preset).resolved, preset.label)
             }
-            XCTAssertEqual(displayRelationshipLabel("직접 정한 관계", bundle: bundle), "직접 정한 관계")
+            XCTAssertEqual(parseVoiceRelationshipLabel("직접 정한 관계").localizedDisplayLabel(bundle: bundle), "직접 정한 관계")
         }
     }
 
