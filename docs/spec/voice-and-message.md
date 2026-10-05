@@ -563,18 +563,22 @@
     목소리의 です・ます 클립이 그대로 저장됐다. 화자 녹음이 정중체라는 분석은 확정 문구가 **어체를 세우지 않을 때만**(문구가
     없을 때 — 첫 미리듣기 — 이거나 호칭·명사로만 끝날 때: 'ゆい！'·'いい一日を。') 따른다. 반말 확정 문구도 위의 라벨 규칙을
     넓히지는 않는다. 어체만 있는 분석도 프롬프트에 싣는다. 아이 목소리는 라벨과 무관하게 본다.
-    ⚠ **확정 문구와 생성 문구는 같은 질문이라 같은 방법으로 본다**(Codex #844 — `japaneseSentenceEnds`). 태그를 벗기고
-    **부름말 자리의 청자 호칭을 지운 뒤** 。！？… 로 끊고 끝의 문장부호·쉼표를 걷는다 — 한쪽만 지우면 'お薬の時間ですよ、ひな。'
+    ⚠ **확정 문구와 생성 문구는 같은 질문이라 같은 방법으로 본다**(Codex #844 — `japaneseSentenceEnds`). 태그·글자 웃음을
+    벗기고 **부름말 자리의 청자 호칭을 지운 뒤** 낱말 안의 늘임과 괄호 덧말을 지우고, 문장 끝 표시로 끊어 끝의 장식을 걷는다(아래
+    '끝에 붙인 장식' 항목) — 한쪽만 지우면 'お薬の時間ですよ、ひな。'
     가 확정 문구로는 정중체, 생성 문구로는 정중체 아님으로 갈려 끝 호칭이 가린 가족 클립이 그대로 저장된다. 호칭을 지우므로 'た'·'な' 로
     끝나는 이름('ゆうた'·'ひな')도 반말로 세지지 않는다. 평가 도구의 です・ます 집계도 같은 끊기를 쓴다.
     ⚠ **호칭은 부름말 자리에서만 지운다 — 낱말 안의 같은 글자는 그대로 둔다**(Codex #844). 일본어는 낱말 사이를 띄우지 않아
     이름이 어미 안에도 온다 — 아무 데서나 지우면 'しょう'(翔)를 부르는 목소리의 'がんばりましょう' 가 'がんばりま' 로, 'よう'(陽)의
     '過ごせますように' 가 '過ごせます に' 로 깨져, 생성 문구의 です・ます 를 못 보고 정중체 확정 문구도 정중체로 읽지 못한다
-    (한국어는 호칭 뒤에 '야·아' 가 붙어 낱말째 지우는 다른 방식이다). 부름말 자리는 둘이다: 앞뒤가 글 처음·끝·띄어쓰기·쉼표·
-    문장부호·늘임표인 호칭('ゆい、'·'、ひな。'·'ゆうた！'), 그리고 띄어쓰기·쉼표 없이 서술어에 붙여 쓴 끝 호칭('お薬の時間ですよゆうた')
+    (한국어는 호칭 뒤에 '야·아' 가 붙어 낱말째 지우는 다른 방식이다). 부름말 자리는 둘이다: 앞뒤가 글 처음·끝이거나 가나·한자가
+    아닌 글자(띄어쓰기·쉼표·문장부호·늘임표·기호·이모지·라틴 글자 — 아래 '끝에 붙인 장식' 의 가장자리와 같다)인 호칭('ゆい、'·
+    '、ひな。'·'ゆうた！'·'ゆい♪' — 호칭 **뒤**에는 늘임 작은 글자가 끼어도 된다: 'おはよう、ゆいっ！'. 그 뒤가 가장자리·끝일 때만이라
+    'きっと' 의 'き' 는 아니다), 그리고 띄어쓰기·쉼표 없이 서술어에 붙여 쓴 끝 호칭('お薬の時間ですよゆうた')
     가운데 **떼어 낸 앞이 정중체인 것**. 붙여 쓴 끝 호칭을 반말 쪽으로는 떼지 않는다 — 'おはよう'(호칭 'よう')는 떼면 반말이
-    사라지고 'だめでしょう'(호칭 'しょう')는 없던 반말이 생긴다. 저장된 평가 일본어 응답에서 호칭은 3,363번 중 3,362번이 앞뒤
-    경계 안에 있었고, 나머지 하나도 문장 가운데('ごめんねおばあちゃん、…')라 판정과 무관하다.
+    사라지고 'だめでしょう'(호칭 'しょう')는 없던 반말이 생긴다. 저장된 평가 일본어 응답(시도 단위 4,002줄)에서 호칭은 3,998번 중
+    3,997번이 앞뒤 경계 안에 있었고, 나머지 하나도 문장 가운데('ごめんねおばあちゃん、…')라 판정과 무관하다(경계를 가나·한자가
+    아닌 것 전부로 넓히고 호칭 뒤 늘임 작은 글자를 넣어 다시 세어도 같다).
     **어체는 문장 끝 서술어로 본다 — 뒤에 붙은 꼬리는 걷고 그 앞을 본다.** 꼬리는 종조사(よ·ね·な·の·か·わ·ぞ·さ)와 문장을 맺는
     조사(から·けど·けれど(も)·ので·のに·し·が·って·っけ·もの·もん)다. 그래서 '時間ですからね'·'時間ですので'·'雨ですって'·
     '朝ですもの'·'時間ですけどね'·'でしたっけ'·'ですわ'·'くださいな' 는 **정중체다** — 확정 문구로는 정중체를 세우고, 가족
@@ -589,6 +593,34 @@
     - 반말: 종조사가 정중체 아닌 서술어에 붙은 것('起きてね'·'時間だよ'·'時間だからね')과 반말에만 오는 끝(だ·た·て·で·や·ろ·
       じゃん·っけ·ねん·へん·ない, 의지·인사의 う — おはよう·起きよう)뿐이다. 이음말로 끝난 'ので'('雨なので。')·명사·호칭·
       '〜を' 처럼 **모르는 끝은 세지 않는다** — 잘못 반말로 읽으면 분석의 정중체를 덮고 클립을 거절한다.
+  - **일본어 어체는 끝에 붙인 장식을 걷고 읽는다 — 확정 문구·생성 문구 모두**(Codex #844). 확정 문구가 이기는지는
+    검사가 그 문구의 어체를 **읽어 내느냐**에 달렸다 — 못 읽으면 어체가 없는 것으로 보고 분석·관계로 돌아간다. 사용자가 고쳐
+    확정한 문구는 끝에 문장부호 변형·기호·이모지·웃음을 붙이기 쉬운데(확정 문구 수정 API 는 대괄호만 막는다), 예전 검사는
+    그런 끝을 몰라 이렇게 됐다: 반말로 고쳐 확정한 일본어 가족 목소리('ゆい、起きてね．'·'…起きてね♪'·'…起きてね😊')의
+    です・ます 클립이 분석의 정중체에 밀려 저장됐고, 생성 문구 'お薬の時間ですよ．' 도 정중체로 보지 못했다. 그래서 장식은
+    **글자 목록이 아니라 문자 종류로** 가른다 — 사용자가 붙이는 것은 목록으로 다 셀 수 없다.
+    - 일본어: 가나·한자가 아닌 것은 전부 문장 가장자리다(문장부호·쉼표·띄어쓰기·물결·늘임표 ー·괄호·기호 ♪☆♡·이모지·숫자·
+      라틴/그리스 글자 — XD·m(_ _)m·얼굴 문자의 ω). 끝을 늘이는 **작은 히라가나**('起きてねぇ'·'時間だよぉ'·'ですぅ'·'起きてねっ')도
+      끝에서 걷는다 — 가나라 가장자리는 아니지만 서술어 글자가 아니라 늘임이다. ⚠ 가타카나 작은 글자는 걷지 않는다 — 외래어 이름
+      끝('ケイティ'·'アンディ')이라 걷으면 붙여 쓴 끝 호칭을 못 찾는다. 문장은 마침표(。．｡.)·느낌표·물음표·말줄임(…‥⋯, 가운뎃점·
+      쉼표 둘 이상)·기호와 이모지, 그리고 지운 글자 웃음·괄호 덧말·얼굴 문자 자리에서 끊는다 — IME 를 '，．' 로 둔 사용자의
+      'お薬の時間です．忘れずにね．' 도, 얼굴 문자를 마침표 자리에 둔 'おはよう(^^)ノ朝ごはん、何にする？' 도 두 문장이다(한
+      문장으로 보면 끝 문장이 물음이라 앞 문장의 반말을 못 읽는다). 쉼표 하나·띄어쓰기·따옴표는 문장 안이다.
+    - 일본어의 늘임(〜·～·~·ー)은 장식이다 — 끝에 오면 걷고, 히라가나 사이(낱말 안 — 'で〜す'·'起きて〜ね'·'おはよ〜う')에
+      오면 지우고 읽는다(그대로 두면 서술어가 끊겨 'ゆい、起きて〜ね' 가 '어체 없음' 이 된다). ⚠ **늘임에서 문장을 끊지 말 것** —
+      낱말 안이나 이음말 뒤('お薬で〜元気になってね')에도 와서, 끊으면 'で' 로 끝난 조각이 반말로 읽힌다(정중체 확정 문구
+      'お薬の時間で〜す' 를 반말로 읽어 승인한 말투와 반대로 검사한다). 그래서 'ですよ〜忘れずにね' 처럼 늘임 하나로 붙여 이은
+      것은 한 문장으로 본다. 늘임 **뒤에 띄어쓰기가 오면** 마침표 자리에 둔 것이라 문장 끝이다('おはよう〜 朝ごはん、何にする？').
+    - 글자 웃음(w·笑·(笑))은 낭독되지 않으므로 벗기고, 괄호 덧말('(泣)'·'(汗)')과 얼굴 문자의 가나 팔('ヽ(・∀・)ノ'·'(^^)ノシ'·
+      '(*^^*)ゞ' — 오른팔은 그 뒤가 가장자리·끝일 때만이라 '(株)シャープ' 의 'シ' 는 낱말이다)은 서술어가 아니므로 지운다 —
+      청자 호칭을 지운 **뒤에**(괄호가 든 호칭 'ゆい(娘)' 도 찾는다). 지운 자리는 위처럼 문장 끝이다.
+    걷고 나서도 어체가 없으면(호칭·명사로 끝나거나, 괄호 없이 쓴 팔 'ﾉｼ'·짝이 안 맞는 '(^^ゞ' 처럼 가나로 끝나는 얼굴 문자) 예전처럼
+    분석·관계를 따른다. '笑'·'〜' 를 띄어 쓰지 않고 다음 문장에 붙인 것('おはよう笑今日も…'·'…ね〜朝ごはん…')도 한 문장이다 — '笑' 는
+    뒤에 글자가 오면 낱말('笑顔')일 수 있어 글자 웃음으로 보지 않고(§9), 늘임은 위의 이유로 끊지 않는다.
+    저장된 일본어 평가 응답 전부(시도 단위 4,002줄)에 돌려 생성 문구로도 확정 문구로도 예전과 판정이 갈린 줄이 없었고, 그
+    응답에 장식을 입혀(。→．·.·♪·😊·(^^)ノ·w·(笑)·'〜 ', 끝에 😊·w·(泣)·XD·(^^)ノ·ヽ(・∀・)ノ·~·・・・·‥, 끝의 'ね' 를 '〜ね'·'ねぇ' 로,
+    문장 끝마다 'っ') 다시 읽어도 어체가 바뀐 줄이 없었다 — 예전 검사는 '。→．' 하나로 일본어 반말 1,688줄을, 문장 끝마다 'っ' 를
+    붙이면 2,250줄을 '어체 없음' 으로 읽었다(중복을 뺀 일본어 응답 3,243줄 기준).
   - **영어 운세의 '재물운' 직역('money luck'·'financial luck')은 다시 묻는다**(`literal_translation`) — 프롬프트가 금지해도
     다시 나왔다. 그 두 꼴만 본다('luck with money' 같은 자연스러운 말은 막지 않는다).
   - **한국어의 어긋난 낱말 짝 둘도 다시 묻는다**(`korean_collocation`, `hasKoreanCollocationError`) — '운이 술술'(술술은
@@ -1605,7 +1637,7 @@ R2 파일·ElevenLabs 클론은 DB 트랜잭션 안에서 지울 수 없으므�
 | 한 번 세는 데 디렉터리 1회·길이 측정 없음 | `AlarmAudioStore.missingOrStaleCacheKeys`·`snapshot`(단건은 이름으로 찾는 `findCachedFile`, 있는지만은 `hasCachedAudio`); 회귀 `AlarmAudioStoreProbeCountTest` | `AudioCacheStore.missingOrStaleCacheKeys`; 회귀 `StockClipProgressScanTests` | — |
 | 등록 진행률(생성 0~50 + 다운로드 50~100) · 완료 안내 없음 | `ui/voices/VoiceProfileManagementPanel.kt` `VoiceRegistrationStep.Prerendering`·`CloneVoiceReadiness` | `ClonePrerenderDrive`·`ClipPreparationView.registrationPreparation`·`VoicePrerenderStatusRow`; `AlarmTalkTests/ClonePrerenderProgressTests` | `routes/voice-profile.ts` 의 `prerender/advance`·`prerender-status` |
 | 클론 문구의 결·사람이 쓴 본보기 | 결을 고르지도 보내지도 않는다 — `ui/voices/VoiceProfileManagementPanel.kt` `VoiceRegistrationStep.Details` 에 칸이 없고, `network/VoiceCloneRequest.kt` `createVoiceCloneDraft` 가 `voiceEnergy` 파트를 싣지 않는다(2026-09-29 '목소리 느낌' 제거). 초안 페르소나 PATCH 는 없다(관계·호칭을 초안 생성에만 싣는다). 회귀 `VoiceCloneRequestTest`(결 파트 없음) | 결을 고르지도 보내지도 않는다 — `Views/Voices/VoiceCloneUploadFlow.swift` `detailsSection` 에 칸이 없고, `AlarmTalkAPI.voiceCloneMultipartFields` 가 `voiceEnergy` 를 싣지 않는다. 초안 페르소나 PATCH 는 없다(공유 목소리 뷰어의 관계 PATCH `voiceRelationshipUpdateBody` 도 결을 싣지 않는다). 회귀 `VoiceStudioViewModelTests`(결 필드 없음) | 전사 추정 `analyzeSpeechStyleWithVertex`(`speech_style.energy`, `runSpeechStyleAnalysis`) · **1.2.10 호환**: `POST voice/clone` 의 `voiceEnergy`/`voice_energy`(초안 생성) · `PATCH voice/:id/relationship` 의 `voice_energy`(초안만) → `voice_profiles.voice_energy`(#122) · `withVoiceEnergy`(고른 값 > 추정값 — `minSupported` 가 선택지 없는 릴리스를 넘기면 받는 처리를 지운다) · `stockReferenceLine` → `generatePrerenderClipText(humanReference)` · 결은 문장 지시뿐 `prerenderClipPrompt` 의 `energyInstruction`(태그 없음, `lib/vertex-translate.ts`) · 교체 `replaceVoiceInPlace` · 분석 대기 `SPEECH_STYLE_ANALYSIS_WAIT_SQL`(`claimPendingPrerenderVoices`, `POST voice/:id/prerender/advance`, 첫 미리듣기 `waitForSpeechStyleAnalysis`) · 결과 기록 대상 `SPEECH_STYLE_RESULT_TARGET_SQL`(`runSpeechStyleAnalysis`). 회귀 `voice-prerender-style-wait.test.ts` |
-| 클론 문구의 말투·내용 규칙(사투리 강도·아이는 이유 없이·운세는 가능성·일본어 가족 です・ます 거절(어체는 확정 문구가 먼저, 분석은 그다음 · 확정 문구와 생성 문구는 같은 끊기·같은 판정 · 호칭은 부름말 자리에서만 지운다 · 꼬리 걷고 서술어로)·영어 직역 거절·한국어 어긋난 낱말 짝 거절·확정 문구의 끝 어미를 본뜨지 않음) | — (서버가 만든다) | — (서버가 만든다) | `prerenderClipPrompt`(`speechStyleInstruction`·`humanReferenceInstruction`·`styleReferenceInstruction`(피할 끝말 `lastPhrase`)·`careKeepsVoice`·`childlikeInstruction`·끝의 `TIME OF DAY`·`DIALECT` 줄) · 검사 `prerenderRejectionReason` → `hasMixedKoreanRegister`·`hasJapanesePoliteEnding`(문장 끊기 `japaneseSentenceEnds`(부름말 자리의 호칭만 지우기 — 앞뒤 경계 `japaneseVocativePattern`(`JA_EDGE_CHARS`)·붙여 쓴 끝 호칭 `withoutGluedPoliteVocative` — 확정 문구·생성 문구·평가 도구 `scripts/eval-gemini-prompts.ts` 의 `jaPoliteEndings` 공용), 문장 판정 `isJapanesePoliteSentence`(꼬리 `JA_PREDICATE_TAIL` 를 걷은 서술어 끝 `japanesePredicateEnd`, 정중형 아님 `JA_NOT_POLITE_PREDICATE`), 확정 문구의 어체 `japaneseReferenceRegister`(반말 판정 `isJapaneseCasualSentence` — 정중체에 가까운 끝 `JA_POLITE_LIKE_PREDICATE` 는 반말 아님), 허용 목록 `isConfirmedCloseRelationshipLabel`)·`hasAssumedMorning`·`hasEnglishLiteralCalque`·`hasKoreanCollocationError`(`lib/vertex-translate.ts`) · 운세 시드 `CLONE_CLIP_SEEDS`(`lib/stock-clips.ts`). 회귀 `vertex-translate.test.ts`「사전렌더 — 3.8 튜닝」·「사전렌더 — 마지막 튜닝 회차」·「hasJapanesePoliteEnding — 엄격한 허용 목록」·`prerender-clip-failure-reason.test.ts`(재시도 힌트) |
+| 클론 문구의 말투·내용 규칙(사투리 강도·아이는 이유 없이·운세는 가능성·일본어 가족 です・ます 거절(어체는 확정 문구가 먼저, 분석은 그다음 · 확정 문구와 생성 문구는 같은 끊기·같은 판정 · 호칭은 부름말 자리에서만 지운다 · 꼬리 걷고 서술어로)·일본어 어체는 끝 장식을 걷고 읽는다(문자 종류로, 끝을 늘인 작은 히라가나·얼굴 문자의 팔까지, 늘임은 띄어 쓸 때만 끊는다)·영어 직역 거절·한국어 어긋난 낱말 짝 거절·확정 문구의 끝 어미를 본뜨지 않음) | — (서버가 만든다) | — (서버가 만든다) | `prerenderClipPrompt`(`speechStyleInstruction`·`humanReferenceInstruction`·`styleReferenceInstruction`(피할 끝말 `lastPhrase`)·`careKeepsVoice`·`childlikeInstruction`·끝의 `TIME OF DAY`·`DIALECT` 줄) · 검사 `prerenderRejectionReason` → `hasMixedKoreanRegister`·`hasJapanesePoliteEnding`(문장 끊기 `japaneseSentenceEnds`(부름말 자리의 호칭만 지우기 — 앞뒤 경계 `japaneseVocativePattern`(`JA_EDGE`)·붙여 쓴 끝 호칭 `withoutGluedPoliteVocative`, 문장 끝 표시 `JA_SENTENCE_BREAK`(지운 웃음·괄호 덧말 자리 `JA_DECORATION_BREAK`), 끝 장식 `JA_SENTENCE_TRAILER`(가장자리 `JA_EDGE`·늘임 작은 글자 `JA_TRAILING_SMALL_KANA`), 낱말 안 늘임 `JA_INNER_ELONGATION` — 확정 문구·생성 문구·평가 도구 `scripts/eval-gemini-prompts.ts` 의 `jaPoliteEndings` 공용), 글자 웃음 `spokenForRegister`·괄호 덧말과 얼굴 문자의 팔 `withoutParentheticalAsides`(`PARENTHETICAL_ASIDE`), 문장 판정 `isJapanesePoliteSentence`(꼬리 `JA_PREDICATE_TAIL` 를 걷은 서술어 끝 `japanesePredicateEnd`, 정중형 아님 `JA_NOT_POLITE_PREDICATE`), 확정 문구의 어체 `japaneseReferenceRegister`(반말 판정 `isJapaneseCasualSentence` — 정중체에 가까운 끝 `JA_POLITE_LIKE_PREDICATE` 는 반말 아님), 허용 목록 `isConfirmedCloseRelationshipLabel`)·`hasAssumedMorning`·`hasEnglishLiteralCalque`·`hasKoreanCollocationError`(`lib/vertex-translate.ts`) · 운세 시드 `CLONE_CLIP_SEEDS`(`lib/stock-clips.ts`). 회귀 `vertex-translate.test.ts`「사전렌더 — 3.8 튜닝」·「사전렌더 — 마지막 튜닝 회차」·「hasJapanesePoliteEnding — 엄격한 허용 목록」(끝 장식은 '문장 끝에 붙인 마침표 변형·기호·이모지·글자 웃음은 걷고 읽는다…'·'낱말 안의 늘임은 지우고 읽는다…'·'늘임 작은 글자·얼굴 문자의 팔은 걷고…')·`prerender-clip-failure-reason.test.ts`(재시도 힌트) |
 | 확정 미리듣기 문구가 사투리 지시를 이긴다 | — (서버가 만든다) | — (서버가 만든다) | `prerenderClipPrompt` 의 `styleReference` 갈래(`dialectFollowsReference` → `speechStyleInstruction`·`humanReferenceInstruction`·끝의 `DIALECT` 줄) ← `stock-clips.ts` 가 `preview_text` 를 넘긴다. 회귀 `vertex-translate.test.ts`「확정 문구(STYLE REFERENCE)가 있으면 사투리 지시가 그것을 따른다」· 평가 `scripts/eval-gemini-prompts.ts`(프로필마다 `styleReference`, `*-stdref` 프로필) |
 | 말투 분석 재시도(전송 실패만·`waitUntil` 마감 안) | — | — | `analyzeSpeechStyleWithVertex`(`SPEECH_STYLE_RETRY_DELAYS_MS`·`SPEECH_STYLE_ANALYSIS_BUDGET_MS`, 판정 `isVertexTransportFailure` ← `markTransportFailure`·`VertexHttpError`, 요청마다 직전에 재는 상한 `GenerateContentConfig.deadlineAt` → `deadlineBoundedTimeoutMs`(토큰 `createAccessToken`·생성 `generateContentAtEndpoint`), `lib/vertex-translate.ts`) · 마감은 `runSpeechStyleAnalysis`(`routes/voice-profile.ts`)가 전사 전부터 센다. 회귀 `vertex-translate.test.ts`「전송 실패만 마감 안에서 다시 묻는다」(「어느 회차도 마감을 넘기지 않는다(가짜 시계)」 — 토큰 발급 8초)·`voice-profile-speech-style.test.ts`(마감 전달) |
 | 재생 방식 2택 | `PlayModeCard` (`ui/editor/AlarmEditorControls.kt`) | `VoicePlayModePicker` | `wake_mode` (`voice_only` / `sound_then_voice`) |

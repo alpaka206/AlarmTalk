@@ -1702,12 +1702,51 @@ export function hasEnglishLiteralCalque(spoken: string): boolean {
 }
 
 /**
- * 일본어 문장·마디의 가장자리 글자 — 문장부호·늘임표·쉼표·띄어쓰기. 문장 끝에서 걷어 내는 것(`JA_SENTENCE_TRAILER`)이자
- * 부름말로 홀로 선 청자 호칭을 가르는 경계(`japaneseVocativePattern`)다 — 두 목록이 갈라지지 않게 한 곳에 둔다.
+ * 일본어 문장·마디의 가장자리 — **일본어 낱말 글자(히라가나·가타카나·한자)가 아닌 것 전부**: 문장부호·쉼표·띄어쓰기·물결·
+ * 늘임표 'ー'·괄호·기호(♪☆♡)·이모지·숫자, 그리고 라틴·그리스 글자(XD·얼굴 문자의 ω·m(_ _)m). 문장 끝에서 걷어 내는 것
+ * (`JA_SENTENCE_TRAILER`)이자 부름말로 홀로 선 청자 호칭을 가르는 경계(`japaneseVocativePattern`)다 — 둘이 갈라지지 않게 한
+ * 곳에 둔다. 문자 종류(Script)로 가른다 — 'ー'·'。'·'・' 는 가나와 함께 쓰여도 Script 가 Common 이라 가장자리다
+ * (Script_Extensions 로 바꾸면 그것들이 낱말 글자가 된다).
+ * ⚠ 글자 목록으로 되돌리지 말 것(Codex #844). 예전 목록(띄어쓰기·、，,。！？!?…〜ー～)은 전각 마침표 '．'(IME 의 '，．'
+ *   설정)·'.'·'~'·'・・・'·'‥'·'♪'·이모지를 몰라, 그런 글자로 끝나게 고쳐 확정한 반말 문구('ゆい、起きてね．')를 '어체 없음'
+ *   으로 읽었다 — 그러면 분석의 정중체가 다시 검사를 꺼서 です・ます 가족 클립이 그대로 저장됐고, 생성 문구의
+ *   'お薬の時間ですよ．' 도 정중체로 보지 못했다. 사용자가 문장 끝에 붙이는 것은 목록으로 다 셀 수 없다.
  */
-const JA_EDGE_CHARS = '\\s、，,。！？!?…〜ー～';
-/** 문장 끝에서 걷어 내는 문장부호·늘임표·쉼표·띄어쓰기 — 어체는 그 앞 낱말로 가린다. */
-const JA_SENTENCE_TRAILER = new RegExp(`[${JA_EDGE_CHARS}]+$`, 'u');
+const JA_EDGE = '[^\\p{Script=Hiragana}\\p{Script=Katakana}\\p{Script=Han}]';
+/**
+ * 끝을 늘이는 작은 히라가나('起きてねぇ'·'時間だよぉ'·'ですぅ'·'起きてねっ'·'起きよっ') — 서술어 글자가 아니라 늘임이다. 걷지 않으면
+ * 'ねぇ'·'ですっ' 이 종조사·정중형으로 읽히지 않아 반말 확정 문구도 정중체 확정 문구도 '어체 없음' 이 된다(Codex #844).
+ * 가나라서 `JA_EDGE` 는 아니다 — 부름말 경계로는 호칭 **뒤**에서만 본다('ゆいっ！', `japaneseVocativePattern`).
+ * ⚠ 히라가나만. 가타카나 작은 글자는 외래어 이름 끝('ケイティ'·'アンディ')에 와서, 걷으면 붙여 쓴 끝 호칭
+ *   (`withoutGluedPoliteVocative`)을 못 찾는다. 'ゃゅょ' 는 늘임이 아니라 음절('じゃ'·'きょ')이다.
+ */
+const JA_TRAILING_SMALL_KANA = '[ぁぃぅぇぉっ]';
+/** 문장 끝에서 걷어 내는 가장자리(`JA_EDGE`)와 늘임 작은 글자(`JA_TRAILING_SMALL_KANA`) — 어체는 그 앞 낱말로 가린다. */
+const JA_SENTENCE_TRAILER = new RegExp(`(?:${JA_EDGE}|${JA_TRAILING_SMALL_KANA})+$`, 'u');
+/**
+ * 문장을 끝내는 표시 — 마침표(。．｡.)·느낌표·물음표(‼⁉ 포함)·말줄임(…‥⋯, 가운뎃점·쉼표 둘 이상 ・・·、、)·기호와
+ * 이모지(♪☆♡😊 — `\p{So}`), 그리고 지운 글자 웃음·괄호 덧말·얼굴 문자 자리(`JA_DECORATION_BREAK`). 쉼표 하나(、，,)·
+ * 띄어쓰기·따옴표는 문장 안이다. 마침표를 '。' 로만 알면 IME 를 '，．' 로 둔 사용자의 'お薬の時間です．忘れずにね．' 가 한
+ * 문장이 되어 가운데 です 를 못 본다.
+ * ⚠ 물결(〜～~)·늘임표(ー)에서는 끊지 않는다 — 낱말 안('で〜す'·'すご〜い')이나 이음말 뒤('お薬で〜元気になってね')의
+ *   늘임에도 쓰여서, 끊으면 'で' 로 끝난 조각이 반말로 읽힌다(정중체 확정 문구 'お薬の時間で〜す' 를 반말로 읽어 승인한 말투와
+ *   반대인 검사가 켜진다). 늘임은 장식이라 문장 끝에 오면 가장자리로 걷고, 히라가나 사이에 오면 지운다(`JA_INNER_ELONGATION`).
+ *   **뒤에 띄어쓰기가 올 때만** 문장 끝이다('おはよう〜 朝ごはん、何にする？') — 늘임을 마침표 자리에 두고 띄어 쓴 것이다.
+ */
+const JA_SENTENCE_BREAK = /(?<=[。．｡.！？!?‼⁉…‥⋯\p{So}]|[・･]{2}|[、，,]{2})|(?<=[〜～~ー])(?=\s)/u;
+/**
+ * 일본어에서 지운 글자 웃음·괄호 덧말 자리에 두는 문장 끝 표시. 일본어 글에서 얼굴 문자·'w'·'(笑)' 는 이모지처럼 마침표
+ * 자리에 온다('おはよう(^^)ノ 朝ごはん、何にする？') — 띄어쓰기로만 메우면 앞뒤 문장이 한 문장이 되어 앞 문장의 어체를 못
+ * 읽는다(끝 문장이 물음·명사면 '어체 없음'). 이모지는 이미 문장 끝이다(`JA_SENTENCE_BREAK` 의 `\p{So}`).
+ */
+const JA_DECORATION_BREAK = '。';
+/**
+ * 히라가나 사이의 늘임(ー·〜·～·~) — 낱말 안을 늘인 것이라 지우고 읽는다('で〜す' → 'です', '起きて〜ね' → '起きてね',
+ * 'おはよ〜う' → 'おはよう'). 그대로 두면 서술어가 끊겨 정중체도 반말도 아닌 것으로 읽힌다 — 반말 확정 문구('ゆい、起きて〜ね')가
+ * '어체 없음' 이 되어 분석의 정중체가 검사를 끄고, 생성 문구의 'お薬の時間で〜す' 도 정중체로 보지 못한다(Codex #844).
+ * 가타카나 낱말의 장음('コーヒー')은 건드리지 않는다.
+ */
+const JA_INNER_ELONGATION = /(?<=\p{Script=Hiragana})[ー〜～~]+(?=\p{Script=Hiragana})/gu;
 /**
  * 서술어 뒤에 붙어도 어체를 바꾸지 않는 꼬리 — 종조사(よ·ね·な·の·か·わ·ぞ·さ)와 문장을 맺는 접속·인용 조사(から·けど·
  * けれど(も)·ので·のに·し·が·って·っけ·もの·もん). 어체는 꼬리 **앞** 서술어가 정한다(Codex #844) — '時間ですからね'·
@@ -1753,15 +1792,20 @@ export function isJapanesePoliteSentence(sentence: string): boolean {
 }
 
 /**
- * 부름말로 **홀로 선** 청자 호칭 — 앞뒤가 글 처음·끝이거나 가장자리 글자(`JA_EDGE_CHARS` — 띄어쓰기·쉼표·문장부호·
- * 늘임표)일 때만('ゆい、起きて'·'時間ですよ、ひな。'·'ゆうた！'·'時間ですよ ゆうた〜').
+ * 부름말로 **홀로 선** 청자 호칭 — 앞뒤가 글 처음·끝이거나 가장자리(`JA_EDGE` — 가나·한자가 아닌 것)일 때만
+ * ('ゆい、起きて'·'時間ですよ、ひな。'·'ゆうた！'·'時間ですよ ゆうた〜'·'ゆい♪起きてね'). 호칭 **뒤**에는 늘임 작은 글자가
+ * 끼어도 된다('おはよう、ゆいっ！'·'ゆいぃ〜' — `JA_TRAILING_SMALL_KANA`) — 그 뒤가 가장자리·끝일 때만이라 낱말 안('きっと' 의
+ * 'き')은 아니다.
  * ⚠ 낱말 안의 같은 글자는 호칭이 아니다(Codex #844) — 일본어는 낱말 사이를 띄우지 않아 이름이 어미 안에도 온다. 아무
  *   데서나 지우면 'しょう'(翔)를 부르는 목소리의 'がんばりましょう' 가 'がんばりま' 로, 'よう'(陽)의 '過ごせますように' 가
  *   '過ごせます に' 로 깨져, 생성 문구의 です・ます 를 못 보고 정중체 확정 문구도 정중체로 읽지 못한다. 한국어
  *   (`koreanEndingEntries`)는 호칭 뒤에 '야·아' 가 붙어('민지야') 낱말째 지우고 남은 한 글자를 부름말로 건너뛰는 다른 방식이다.
  */
 function japaneseVocativePattern(title: string): RegExp {
-  return new RegExp(`(?<=^|[${JA_EDGE_CHARS}])${escapeRegExp(title)}(?=[${JA_EDGE_CHARS}]|$)`, 'gu');
+  return new RegExp(
+    `(?<=^|${JA_EDGE})${escapeRegExp(title)}(?=${JA_TRAILING_SMALL_KANA}*(?:${JA_EDGE}|$))`,
+    'gu',
+  );
 }
 
 /**
@@ -1777,19 +1821,49 @@ function withoutGluedPoliteVocative(sentence: string, title: string | undefined)
 }
 
 /**
- * 어체를 가릴 일본어 문장들 — 태그를 벗기고, 부름말로 홀로 선 청자 호칭을 지우고(`japaneseVocativePattern`), 。！？…로
- * 끊어 끝의 문장부호·쉼표를 걷는다(붙여 쓴 끝 호칭은 `withoutGluedPoliteVocative`). ⚠ 확정 문구(`japaneseReferenceRegister`)와
- * 생성 문구(`hasJapanesePoliteEnding`)는 **같은 질문**을 하므로 둘 다 이것으로 끊는다(Codex #844) — 한쪽만 호칭을 지우면
- * 'お薬の時間ですよ、ひな。' 가 확정 문구로는 정중체, 생성 문구로는 정중체 아님으로 갈린다. 평가 도구
- * (`scripts/eval-gemini-prompts.ts`)도 이것을 쓴다.
+ * 어체를 가릴 일본어 문장들 — 태그·글자 웃음을 벗기고(`spokenForRegister`), 부름말로 홀로 선 청자 호칭을 지우고
+ * (`japaneseVocativePattern`), 히라가나 사이의 늘임(`JA_INNER_ELONGATION`)과 괄호 덧말(`withoutParentheticalAsides`)을
+ * 지우고, 문장 끝 표시(`JA_SENTENCE_BREAK`)로 끊어 끝의 가장자리와 늘임 작은 글자(`JA_SENTENCE_TRAILER` — 가나·한자가 아닌
+ * 것, 'ねぇ'·'ねっ' 의 'ぇ'·'っ')를 걷는다(붙여 쓴 끝 호칭은 `withoutGluedPoliteVocative`). 지운 웃음·괄호 덧말 자리는 이모지처럼
+ * 문장 끝으로 본다(`JA_DECORATION_BREAK`).
+ * ⚠ 확정 문구(`japaneseReferenceRegister`)와 생성 문구(`hasJapanesePoliteEnding`)는 **같은 질문**을 하므로 둘 다 이것으로
+ * 끊는다(Codex #844) — 한쪽만 호칭을 지우면 'お薬の時間ですよ、ひな。' 가 확정 문구로는 정중체, 생성 문구로는 정중체 아님으로
+ * 갈린다. 평가 도구(`scripts/eval-gemini-prompts.ts`)도 이것을 쓴다.
  */
 export function japaneseSentenceEnds(text: string, listenerTitle?: string | null): string[] {
-  const normalized = normalizeAlarmTextWithoutTags(text);
+  const spoken = spokenForRegister(text, JA_DECORATION_BREAK);
   const title = listenerTitle?.trim();
-  return (title ? normalized.replace(japaneseVocativePattern(title), ' ') : normalized)
-    .split(/(?<=[。！？!?…])/)
+  const withoutTitle = title ? spoken.replace(japaneseVocativePattern(title), ' ') : spoken;
+  return withoutParentheticalAsides(withoutTitle.replace(JA_INNER_ELONGATION, ''), JA_DECORATION_BREAK)
+    .split(JA_SENTENCE_BREAK)
     .map((s) => withoutGluedPoliteVocative(s.trim().replace(JA_SENTENCE_TRAILER, ''), title))
     .filter(Boolean);
+}
+
+/**
+ * 어체를 가릴 **말** — 태그를 벗기고, 글자 웃음(w·笑·(笑) 등)도 벗긴다(`typedLaughterToTags` — TTS 도 그것을 글자로 읽지
+ * 않는다). 웃음 자리는 `mark` 로 메운다(일본어는 `JA_DECORATION_BREAK`). 사용자가 고쳐 확정한 문구는 끝에 웃음을 붙이기
+ * 쉬워('起きてね笑'·'起きてね(笑)') 그대로 두면 웃음이 서술어를 가려 '어체 없음' 이 된다(Codex #844). 생성 문구는 합성 전에
+ * 웃음·태그를 이미 벗겨서 오므로(`generatePrerenderClipText` — 모델은 웃음을 넣지 않는다, 스펙 §9) 여기서 바뀌는 것이 없다.
+ */
+function spokenForRegister(text: string, mark: string): string {
+  return normalizeAlarmTextWithoutTags(typedLaughterToTags(text).split(LAUGH_TAG).join(mark));
+}
+
+/**
+ * 괄호 덧말 — 소괄호·전각 소괄호 한 겹(안에 괄호가 없는 것)과, 얼굴 문자면 그 바깥에 붙은 가나 팔(왼쪽 'ヽ'·'ヾ', 오른쪽
+ * 'ノ'·'ﾉ'·'ゞ'·'シ'·'ｼ'). 오른팔은 그 뒤가 가장자리·끝일 때만 본다 — '(株)シャープ' 의 'シ' 는 낱말이다.
+ */
+const PARENTHETICAL_ASIDE = new RegExp(`[ヽヾ]*[(（][^()（）]*[)）](?:[ノﾉゞシｼ]+(?=${JA_EDGE}|$))?`, 'gu');
+
+/**
+ * 괄호 덧말('(泣)'·'(汗)'·'(*ﾉωﾉ)'·'ヽ(・∀・)ノ'·'(^^)ノシ')을 지운다 — 서술어가 아니라 덧붙인 말이다. 얼굴 문자의
+ * 가나 팔은 가장자리(`JA_EDGE`)가 아니라 끝 장식으로 걷히지 않으므로 여기서 함께 지운다(`PARENTHETICAL_ASIDE`) — 남기면
+ * 'ゆい、起きてね(^^)ノ' 가 'ノ' 로 끝나 '어체 없음' 이 된다(Codex #844). 지운 자리는 `mark` 로 메운다(`spokenForRegister` 와
+ * 같다). 청자 호칭을 지운 **뒤에** 부른다 — 먼저 지우면 괄호가 든 호칭('ゆい(娘)')을 못 찾는다.
+ */
+function withoutParentheticalAsides(text: string, mark: string): string {
+  return text.replace(PARENTHETICAL_ASIDE, mark);
 }
 
 /** 문장 끝 종조사 줄(よ·ね·な·の·か·わ·ぞ·さ — 'よね'·'かな' 처럼 겹쳐도 한 줄로). */
@@ -1824,6 +1898,9 @@ function isJapaneseCasualSentence(sentence: string): boolean {
  * 'casual', 문구가 없거나 어느 쪽도 세우지 않으면 null. 문장은 생성 문구 검사와 같은 `japaneseSentenceEnds` 로 끊는다 —
  * 부름말 자리의 청자 호칭을 지우므로 끝 호칭이 정중체를 가리거나('起きる時間ですよ、ひな。') 'た'·'な' 로 끝나는 이름
  * ('ゆうた'·'ひな')이 반말로 세지지 않고, 낱말 안의 같은 글자('がんばりましょう' 의 'しょう')는 지우지 않아 정중체가 깨지지 않는다.
+ * ⚠ 확정 문구가 이기는지는 이 함수가 어체를 **읽어 내느냐**에 달렸다 — null 이면 분석의 정중체가 검사를 끈다. 그래서 사용자가
+ * 문장 끝에 붙이는 것(．·.·~·・・・·‥·♪·이모지·XD·w·(笑)·(泣)·(^^)ノ, 늘임 'ねぇ'·'ねっ'·'で〜す')은 전부 걷고 읽는다
+ * (`JA_EDGE`·`JA_TRAILING_SMALL_KANA`·`JA_SENTENCE_BREAK`·`JA_INNER_ELONGATION`·`spokenForRegister`·`withoutParentheticalAsides`).
  */
 function japaneseReferenceRegister(
   reference: string | null | undefined,

@@ -2632,6 +2632,145 @@ describe('hasJapanesePoliteEnding — 엄격한 허용 목록', () => {
     ).toBe(false);
   });
 
+  // 리뷰 수정(Codex #844 3차 재검토 3) — 확정 문구가 이기는지는 그 문구의 어체를 읽어 내느냐에 달렸는데, 문장을 。！？!?… 로만
+  // 끊고 끝에서 걷는 글자도 짧은 목록뿐이었다. 전각 마침표 '．'(IME 의 '，．' 설정)·'.'·'~'·'・・・'·'‥'·'♪'·이모지로 끝나게
+  // 고쳐 확정한 반말 문구는 '어체 없음' 이 되어 분석의 정중체가 다시 검사를 껐다. 같은 끊기를 쓰는 생성 문구도
+  // 'ゆい、お薬の時間ですよ．' 를 가족 클립으로 받았다.
+  it('문장 끝에 붙인 마침표 변형·기호·이모지·글자 웃음은 걷고 읽는다 — 그렇게 끝난 반말 확정 문구도 분석의 정중체를 이긴다(Codex #844)', () => {
+    const politeClip = 'ゆい、お薬の時間ですよ。忘れずに飲んでくださいね。';
+    for (const reference of [
+      'ゆい、起きてね．', 'ゆい，おはよう．起きてね．', 'ゆい、起きてね.', 'ゆい、起きてね｡', 'ゆい、起きてね・・・', 'ゆい、起きてね･･･',
+      'ゆい、起きてね‥', 'ゆい、起きてね⋯', 'ゆい、起きてね、、、', 'ゆい、起きてね~', 'ゆい、おはよう♪起きてね♪', 'ゆい、起きてね☆',
+      'ゆい、起きてね😊', 'ゆい、起きてね❤️', 'ゆい、起きてね👍🏻', 'ゆい、起きてね（＾＾）', 'ゆい、起きてね(*´ω`*)', 'ゆい、起きてねXD',
+      'ゆい、起きてね(笑)', 'ゆい、起きてね(泣)', 'ゆい、起きてねw',
+    ]) {
+      expect(
+        prerenderRejectionReason(politeClip, 'ja', {
+          relationshipLabel: '母',
+          listenerTitle: 'ゆい',
+          speechStyle: POLITE_SPEAKER,
+          styleReference: reference,
+        }),
+        reference,
+      ).toBe('register_mixed');
+    }
+    // 정중체 확정 문구도 그렇게 끝나면 정중체를 세운다 — 승인한 말투를 따라 です・ます 클립을 받는다.
+    for (const reference of [
+      'ゆいさん、起きる時間ですよ．', 'ゆいさん、おはようございます😊', 'ゆいさん、今日もがんばりましょう♪', 'ゆいさん、起きる時間ですよ(笑)',
+      'ゆいさん、今日もよろしくお願いしますm(_ _)m',
+    ]) {
+      expect(hasJapanesePoliteEnding(politeClip, { relationshipLabel: '母', listenerTitle: 'ゆい', styleReference: reference }), reference).toBe(false);
+    }
+    // 걷고 나도 어체가 없으면 그대로 분석을 따른다 — 'た' 로 끝나는 이름 뒤에 장식이 붙어도 반말로 세지 않는다.
+    expect(
+      hasJapanesePoliteEnding(politeClip, {
+        relationshipLabel: '母',
+        listenerTitle: 'ゆうた',
+        speechStyle: POLITE_SPEAKER,
+        styleReference: '今日もいい一日を、ゆうたXD',
+      }),
+    ).toBe(false);
+    // 괄호가 든 호칭도 덧말보다 먼저 지운다.
+    expect(japaneseSentenceEnds('お薬の時間ですよ、ゆい(娘)', 'ゆい(娘)')).toEqual(['お薬の時間ですよ']);
+    // 생성 문구 — 끝이든 가운데든 그 표시 앞의 です・ます 를 본다.
+    for (const line of [
+      'ゆい、お薬の時間ですよ．', 'ゆい、お薬の時間ですよ.', 'ゆい、お薬の時間ですよ♪', 'ゆい、お薬の時間ですよ😊', 'ゆい、お薬の時間ですよ・・・',
+      'ゆい、お薬の時間です．忘れずにね．', 'ゆい、お薬の時間です♪忘れずにね。', 'ゆい、お薬の時間です、、、忘れずにね。',
+    ]) {
+      expect(prerenderRejectionReason(line, 'ja', { relationshipLabel: '母', listenerTitle: 'ゆい' }), line).toBe('register_mixed');
+    }
+    // 반말 생성 문구는 그대로 받는다 — 낱말 사이 가운뎃점 하나와 'PM2.5' 의 점은 어체를 만들지 않는다.
+    for (const line of [
+      'ゆい、お薬の時間だよ♪忘れずにね😊', 'ゆい、今日はPM2.5が多いみたい．マスクしてね．', 'ゆい、今日はマリー・アントワネットみたいにおしゃれしてね〜',
+    ]) {
+      expect(prerenderRejectionReason(line, 'ja', { relationshipLabel: '母', listenerTitle: 'ゆい' }), line).toBeNull();
+    }
+    expect(japaneseSentenceEnds('ゆい，おはよう．起きてね．', 'ゆい')).toEqual(['，おはよう', '起きてね']);
+    expect(japaneseSentenceEnds('ゆい、お薬の時間ですよ♪忘れずにね😊', 'ゆい')).toEqual(['、お薬の時間ですよ', '忘れずにね']);
+    expect(japaneseSentenceEnds('ゆい、起きてねw', 'ゆい')).toEqual(['、起きてね']);
+    expect(japaneseSentenceEnds('ゆい、起きてね(泣)XD', 'ゆい')).toEqual(['、起きてね']);
+  });
+
+  // 같은 회차 — 낱말 안의 늘임('で〜す'·'起きて〜ね'·'おはよ〜う')이 서술어를 끊어 정중체도 반말도 아닌 것으로 읽혔다(반말 확정
+  // 문구가 '어체 없음' 이 되어 분석의 정중체가 검사를 껐다). 늘임에서 문장을 끊으면 'で〜す' 가 'で'(반말)로 읽히므로, 끊지 않고
+  // 히라가나 사이의 늘임을 지우고 읽는다.
+  it('낱말 안의 늘임은 지우고 읽는다 — 늘임에서 문장을 끊지 않는다(Codex #844)', () => {
+    const politeClip = 'ゆい、お薬の時間ですよ。忘れずに飲んでくださいね。';
+    // 반말 확정 문구 — 정중체 분석을 이긴다.
+    for (const reference of ['ゆい、起きて〜ね', 'ゆい、おはよ〜う', 'ゆい、今日もがんばろ〜う', 'ゆい、起きる時間だよ〜ね']) {
+      expect(
+        prerenderRejectionReason(politeClip, 'ja', {
+          relationshipLabel: '母',
+          listenerTitle: 'ゆい',
+          speechStyle: POLITE_SPEAKER,
+          styleReference: reference,
+        }),
+        reference,
+      ).toBe('register_mixed');
+    }
+    // 정중체 확정 문구 — 분석이 없어도 정중체를 세운다('で' 를 반말로 읽지 않는다).
+    for (const reference of ['ゆいさん、お薬の時間で〜す', 'ゆいさん、よろしくお願いしま〜す♪', 'ゆいさん、起きる時間でーす', 'ゆいさん、今日もがんばりましょ〜う']) {
+      expect(hasJapanesePoliteEnding(politeClip, { relationshipLabel: '母', listenerTitle: 'ゆい', styleReference: reference }), reference).toBe(false);
+    }
+    // 생성 문구 — 늘인 です・ます 도 가족 클립이면 다시 묻고, 늘인 반말과 가타카나 장음은 그대로 받는다.
+    for (const line of ['ゆい、お薬の時間で〜す', 'ゆい、お薬の時間でーす！', 'ゆい、忘れずに飲みま〜す']) {
+      expect(prerenderRejectionReason(line, 'ja', { relationshipLabel: '母', listenerTitle: 'ゆい' }), line).toBe('register_mixed');
+    }
+    for (const line of ['ゆい、すご〜い！今日もがんばろ〜ね', 'ゆい、コーヒー飲んで起きてね〜']) {
+      expect(prerenderRejectionReason(line, 'ja', { relationshipLabel: '母', listenerTitle: 'ゆい' }), line).toBeNull();
+    }
+    expect(japaneseSentenceEnds('ゆい、起きて〜ね♪お薬で〜す', 'ゆい')).toEqual(['、起きてね', 'お薬です']);
+  });
+
+  // 같은 회차 — 늘임 작은 글자('ねぇ'·'ねっ'·'ですぅ')와 얼굴 문자의 가나 팔('(^^)ノ')은 가나라서 끝 장식으로 걷히지 않았다. 그렇게
+  // 끝난 반말 확정 문구는 '어체 없음' 이 되어 분석의 정중체가 검사를 껐고, 정중체 확정 문구는 분석이 없으면 정중체 클립을 거절했다.
+  // 얼굴 문자·글자 웃음·띄어 쓴 늘임을 마침표 자리에 두면 앞뒤가 한 문장이 되어, 끝 문장이 물음이면 앞 문장의 어체를 못 읽었다.
+  it('늘임 작은 글자·얼굴 문자의 팔은 걷고, 마침표 자리의 얼굴 문자·웃음·띄어 쓴 늘임은 문장 끝으로 읽는다(Codex #844)', () => {
+    const politeClip = 'ゆい、お薬の時間ですよ。忘れずに飲んでくださいね。';
+    for (const reference of [
+      'ゆい、起きてねぇ', 'ゆい、起きてねっ', 'ゆい、おはよぉ', 'ゆい、時間だよぉ〜', 'ゆい、起きる時間だぞっ', 'ゆい、起きてねっ♪',
+      'おはよう、ゆいっ！', 'ゆい、起きてね(^^)ノ', 'ゆい、起きてね(^^)ノシ', 'ゆい、起きてねヽ(・∀・)ノ', 'ゆい、起きてね(*^^*)ゞ',
+      // 장식이 마침표 자리에 있고 끝 문장은 물음이라 어체가 없다 — 앞 문장의 반말을 읽어야 한다.
+      'ゆい、おはよう(^^)ノ朝ごはん、何にする？', 'ゆい、おはようw 朝ごはん、何にする？', 'ゆい、おはよう(笑)朝ごはん、何にする？',
+      'ゆい、おはよう〜 朝ごはん、何にする？',
+    ]) {
+      expect(
+        prerenderRejectionReason(politeClip, 'ja', {
+          relationshipLabel: '母',
+          listenerTitle: 'ゆい',
+          speechStyle: POLITE_SPEAKER,
+          styleReference: reference,
+        }),
+        reference,
+      ).toBe('register_mixed');
+    }
+    // 정중체 확정 문구도 그렇게 끝나면 정중체를 세운다 — 분석이 없어도 승인한 말투를 따라 です・ます 클립을 받는다.
+    for (const reference of [
+      'ゆいさん、起きてくださいねぇ', 'ゆいさん、起きる時間ですぅ', 'ゆいさん、起きる時間ですっ！', 'ゆいさん、起きる時間です(^^)ノ',
+      'ゆいさん、おはようございます(^^)ノ朝ごはん、何にする？',
+    ]) {
+      expect(hasJapanesePoliteEnding(politeClip, { relationshipLabel: '母', listenerTitle: 'ゆい', styleReference: reference }), reference).toBe(false);
+    }
+    // 생성 문구도 같은 방법으로 읽는다 — 늘인 です・ます 와 얼굴 문자·띄어 쓴 늘임 앞의 です・ます 는 가족 클립이면 다시 묻는다.
+    for (const line of [
+      'ゆい、お薬の時間ですぅ', 'ゆい、お薬の時間ですっ！', 'ゆい、お薬の時間です(^^)ノ忘れずにね', 'ゆい、お薬の時間です〜 忘れずにね',
+      'お薬の時間ですよゆうたっ',
+    ]) {
+      expect(prerenderRejectionReason(line, 'ja', { relationshipLabel: '母', listenerTitle: line.includes('ゆうた') ? 'ゆうた' : 'ゆい' }), line).toBe(
+        'register_mixed',
+      );
+    }
+    for (const line of ['ゆい、お薬の時間だよぉ', 'ゆい、お薬の時間だよ(^^)ノ忘れずにね', 'ゆい、お薬の時間だよ〜 忘れずにね']) {
+      expect(prerenderRejectionReason(line, 'ja', { relationshipLabel: '母', listenerTitle: 'ゆい' }), line).toBeNull();
+    }
+    // 작은 글자는 히라가나만 걷는다 — 가타카나 이름 끝('ケイティ')을 걷으면 붙여 쓴 끝 호칭을 못 찾는다.
+    expect(japaneseSentenceEnds('お薬の時間ですよケイティ', 'ケイティ')).toEqual(['お薬の時間ですよ']);
+    // 호칭 뒤의 작은 글자는 그 뒤가 가장자리·끝일 때만 부름말이다 — 'きっと' 의 'き' 는 낱말이다.
+    expect(japaneseSentenceEnds('きっと大丈夫だよ。', 'き')).toEqual(['きっと大丈夫だよ']);
+    // 얼굴 문자의 오른팔은 그 뒤가 가장자리·끝일 때만 — '(株)シャープ' 의 'シ' 는 낱말이다.
+    expect(japaneseSentenceEnds('(株)シャープです。', null)).toEqual(['シャープです']);
+  });
+
   it('두 앱의 관계 프리셋(한·영·일, 연예인·직접 입력 제외)은 모두 가까운 관계로 본다(Codex #844 — 형제·자매)', () => {
     for (const label of [
       '엄마', '아빠', '할머니', '할아버지', '아들', '딸', '손녀', '손주', '형제·자매', '남자친구', '여자친구', '남편', '아내', '친구',
