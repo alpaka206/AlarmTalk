@@ -1610,7 +1610,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "You don't have any pass codes to share."
+            "value" : "You don't have any plan codes to share."
           }
         },
         "ja" : {
@@ -2776,7 +2776,7 @@
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "別のストアで課金中のパスがあります。"
+            "value" : "別のストアで課金中の利用券があります。"
           }
         }
       }
@@ -7342,7 +7342,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "A paid pass is required"
+            "value" : "A paid plan is required"
           }
         },
         "ja" : {
@@ -9147,7 +9147,7 @@
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "現在のパスは Google Play で自動更新されています。Apple で購入すると両方から請求されます。Play ストア → 定期購入で先に解約するか、期間終了後にもう一度お試しください。"
+            "value" : "現在の利用券は Google Play で自動更新されています。Apple で購入すると両方から請求されます。Play ストア → 定期購入で先に解約するか、期間終了後にもう一度お試しください。"
           }
         }
       }
@@ -9164,7 +9164,7 @@
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "現在のパスがどのストアで更新されるか確認しています。しばらくしてからもう一度お試しください。"
+            "value" : "現在の利用券がどのストアで更新されるか確認しています。しばらくしてからもう一度お試しください。"
           }
         }
       }
@@ -10133,7 +10133,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "This feature is available with a paid pass."
+            "value" : "This feature is available with a paid plan."
           }
         },
         "ja" : {
