@@ -87,11 +87,11 @@ final class SocialFeatureViewModelBillingTests: XCTestCase {
         )
     }
 
-    func test_billingErrorMessage_keepsKoreanServerMessageWhenCodeIsUnknown() {
+    func test_billingErrorMessage_usesFallbackWhenCodeIsUnknown() {
         let error = APIError.server(status: 400, message: "이미 사용된 코드예요", errorCode: "UNKNOWN")
         XCTAssertEqual(
             SocialFeatureViewModel.billingErrorMessage(error, fallback: "fallback"),
-            "이미 사용된 코드예요"
+            "fallback"
         )
     }
 
@@ -103,11 +103,11 @@ final class SocialFeatureViewModelBillingTests: XCTestCase {
         )
     }
 
-    func test_userFacingErrorMessage_keepsKoreanServerMessageLikeAndroid() {
+    func test_userFacingErrorMessage_usesFallbackLikeAndroid() {
         let error = APIError.server(status: 400, message: "이미 처리된 요청이에요", errorCode: nil)
         XCTAssertEqual(
             userFacingErrorMessage(error, fallback: "fallback"),
-            "이미 처리된 요청이에요"
+            "fallback"
         )
     }
 
