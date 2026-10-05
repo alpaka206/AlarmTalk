@@ -35,11 +35,11 @@ struct CodeRegisterRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             if canManageShareCode {
-                Text("공유 이용권을 관리 중이에요.")
+                Text(String(localized: "공유 이용권을 관리 중이에요."))
                     .font(.footnote)
                     .foregroundStyle(AlarmTalkTheme.textSecondary)
             } else if hasActivePlan && !showCodeInputs {
-                Text("\(activePlanName ?? "현재") 이용권 사용 중이에요. 등록은 이용권이 종료된 다음 가능해요.")
+                Text(activePlanDescription)
                     .font(.footnote)
                     .foregroundStyle(AlarmTalkTheme.textSecondary)
                 Button {
@@ -49,7 +49,7 @@ struct CodeRegisterRow: View {
                         showCodeInputs = true
                     }
                 } label: {
-                    Text(isSharedMember ? "나가고 등록하기" : "다른 코드 등록")
+                    Text(isSharedMember ? String(localized: "나가고 등록하기") : String(localized: "다른 코드 등록"))
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.bordered)
@@ -57,7 +57,7 @@ struct CodeRegisterRow: View {
                 .disabled(socialFeatures.isBusy)
             } else {
                 if hasActivePlan {
-                    Text("등록하면 현재 \(activePlanName ?? "이용권") 이용권이 변경돼요.")
+                    Text(planChangeDescription)
                         .font(.footnote)
                         .foregroundStyle(AlarmTalkTheme.textSecondary)
                 }
@@ -70,10 +70,10 @@ struct CodeRegisterRow: View {
                 //   2. 받는 사람은 자기 코드가 어떤 종류인지 모른다 — 그건 서버가 안다.
                 // 안드로이드는 이미 한 칸으로 합쳐 두었다(`ui/social/SocialPanels.kt` 의
                 // "통합 입력" 주석과 `CodeRedeemField`). iOS 만 옛 2칸으로 남아 있었다.
-                Text("코드 입력")
+                Text(String(localized: "코드 입력"))
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(AlarmTalkTheme.text)
-                Text("초대 코드, 이용권 선물 코드, 프로모션 코드 모두 등록할 수 있어요.")
+                Text(String(localized: "초대 코드, 이용권 선물 코드, 프로모션 코드 모두 등록할 수 있어요."))
                     .font(.footnote)
                     .foregroundStyle(AlarmTalkTheme.textSecondary)
                 HStack(spacing: 8) {
@@ -81,7 +81,7 @@ struct CodeRegisterRow: View {
                     // 거기서 값을 바꿔도 `TextField` 가 제 내부 상태를 그대로 들고 있어
                     // **화면에는 친 그대로 남는다** — 소문자도 한글도 그대로 보이다가
                     // 제출할 때에야 바뀐다(2026-08-13 지적). `onChange` 로 고쳐야 반영된다.
-                    TextField("초대·선물·프로모션 코드", text: $codeDraft)
+                    TextField(String(localized: "초대·선물·프로모션 코드"), text: $codeDraft)
                     // ⚠ **`.keyboardType(.asciiCapable)` 로 키보드를 바꾸지 말 것**(2026-08-13 지시).
                     // 쓰던 키보드가 갑자기 다른 언어로 바뀌면 당황스럽다 — 막을 것은 키보드가
                     // 아니라 **들어가는 글자**다. 아래 `onChange` 가 친 즉시 걸러 낸다.
@@ -102,7 +102,7 @@ struct CodeRegisterRow: View {
                     Button {
                         pendingCode = codeDraft
                     } label: {
-                        Text("등록")
+                        Text(String(localized: "code.redeem.submit"))
                             .font(theme.typography.labelLarge)
                             // 입력칸과 **같은 높이·같은 최소 폭**이고, 그 값은 안드로이드
                             // (`WakerControlHeight`/`WakerControlMinWidth`)와 같다.
@@ -141,15 +141,15 @@ struct CodeRegisterRow: View {
         // 버튼 둘이 됐다(CLAUDE.md 「모달」 — 취소와 같은 일을 하는 버튼을 두 개 두지 않는다).
         // 다른 확인형 모달은 이미 전부 `.alert` 로 통일돼 있었고 여기만 남아 있었다.
         .alert(
-            "현재 이용권에서 나가고 새 코드를 등록할까요?",
+            String(localized: "현재 이용권에서 나가고 새 코드를 등록할까요?"),
             isPresented: Binding(
                 get: { leaveGroupId != nil },
                 set: { if !$0 { leaveGroupId = nil } }
             ),
             presenting: leaveGroupId
         ) { groupId in
-            Button("취소", role: .cancel) { leaveGroupId = nil }
-            Button("나가고 등록하기", role: .destructive) {
+            Button(String(localized: "취소"), role: .cancel) { leaveGroupId = nil }
+            Button(String(localized: "나가고 등록하기"), role: .destructive) {
                 leaveGroupId = nil
                 showCodeInputs = true
                 Task {
@@ -159,15 +159,15 @@ struct CodeRegisterRow: View {
             }
         }
         .alert(
-            "이 코드를 등록할까요?",
+            String(localized: "이 코드를 등록할까요?"),
             isPresented: Binding(
                 get: { pendingCode != nil },
                 set: { if !$0 { pendingCode = nil } }
             ),
             presenting: pendingCode
         ) { code in
-            Button("취소", role: .cancel) { pendingCode = nil }
-            Button("등록") {
+            Button(String(localized: "취소"), role: .cancel) { pendingCode = nil }
+            Button(String(localized: "code.redeem.submit")) {
                 pendingCode = nil
                 // ⚠ **여기서 입력을 비우지 말 것.** 실패하면 되돌려 넣어야 하는데, 그
                 // 되돌려 넣는 대입이 아래 `onChange(of: codeDraft)` 를 깨워 **방금 세운
@@ -185,7 +185,7 @@ struct CodeRegisterRow: View {
                         // 실패 사유는 **입력창 밑**에서 말한다 — 틀린 값 바로 옆이라야 읽힌다.
                         // 입력은 그대로 두므로 `onChange` 가 깨지 않는다.
                         await MainActor.run {
-                            codeError = socialFeatures.statusMessage ?? "잘못된 코드입니다."
+                            codeError = socialFeatures.statusMessage ?? String(localized: "잘못된 코드입니다.")
                             socialFeatures.statusMessage = nil
                         }
                     }
@@ -194,7 +194,7 @@ struct CodeRegisterRow: View {
         } message: { _ in
             // 이용권을 쓰는 중일 때만 부가 설명이 붙는다(안드로이드와 같다).
             if hasActivePlan {
-                Text("등록 가능한 코드라면 현재 \(activePlanName ?? "이용권") 이용권은 종료되고 새 이용권으로 바뀌어요.")
+                Text(planReplacementDescription)
             }
         }
     }
@@ -214,32 +214,33 @@ struct CodeRegisterRow: View {
     }
 
     private var activePlanName: String? {
-        guard socialFeatures.subscription?.subscription != nil else { return nil }
-        return socialFeatures.subscription?.plan?.name
-            ?? codeRegisterPlanName(socialFeatures.subscription?.plan?.key)
+        PlanTier.displayName(forPlanKey: socialFeatures.subscription?.plan?.key)
     }
 
     private var hasActivePlan: Bool {
-        activePlanName != nil
+        socialFeatures.subscription?.subscription != nil
     }
 
-}
+    private var activePlanDescription: String {
+        if let activePlanName {
+            return String(localized: "\(activePlanName) 이용권 사용 중이에요. 등록은 이용권이 종료된 다음 가능해요.")
+        }
+        return String(localized: "현재 이용권 사용 중이에요. 등록은 이용권이 종료된 다음 가능해요.")
+    }
 
+    private var planChangeDescription: String {
+        if let activePlanName { return String(localized: "등록하면 현재 \(activePlanName) 이용권이 변경돼요.") }
+        return String(localized: "등록하면 현재 이용권이 변경돼요.")
+    }
 
-private func codeRegisterPlanName(_ planKey: String?) -> String {
-    switch planKey {
-    case "free":
-        return "무료"
-    case "personal", "individual", "plus":
-        return "개인"
-    case "couple":
-        return "커플"
-    case "family":
-        return "가족"
-    default:
-        return "이용권"
+    private var planReplacementDescription: String {
+        if let activePlanName {
+            return String(localized: "등록 가능한 코드라면 현재 \(activePlanName) 이용권은 종료되고 새 이용권으로 바뀌어요.")
+        }
+        return String(localized: "등록 가능한 코드라면 현재 이용권은 종료되고 새 이용권으로 바뀌어요.")
     }
 }
+
 
 #if DEBUG
 #Preview("CodeRegisterRow") {

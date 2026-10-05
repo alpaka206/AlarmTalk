@@ -242,9 +242,9 @@ final class SocialFeatureViewModel: ObservableObject {
             familyGroupOK = true
         } catch {
             messages.append(Self.scopedRefreshErrorMessage(
-                label: "가족 그룹",
+                label: String(localized: "가족 그룹"),
                 error: error,
-                fallback: "공유 이용권 정보를 불러오지 못했어요"
+                fallback: String(localized: "공유 이용권 정보를 불러오지 못했어요")
             ))
         }
 
@@ -280,9 +280,9 @@ final class SocialFeatureViewModel: ObservableObject {
                 rolledToken = me.token?.nilIfBlank
             } catch {
                 messages.append(Self.scopedRefreshErrorMessage(
-                    label: "이용권",
+                    label: String(localized: "이용권"),
                     error: error,
-                    fallback: "이용권 정보를 불러오지 못했어요"
+                    fallback: String(localized: "이용권 정보를 불러오지 못했어요")
                 ))
             }
             // ⚠ **await 뒤에는 다시 본다**(2026-08-31 리뷰 2차). 위 가드를 통과한 뒤 이
@@ -357,9 +357,9 @@ final class SocialFeatureViewModel: ObservableObject {
             entitlementOK = planOK
         } catch {
             messages.append(Self.scopedRefreshErrorMessage(
-                label: "이용권",
+                label: String(localized: "이용권"),
                 error: error,
-                fallback: "공유 코드 정보를 불러오지 못했어요"
+                fallback: String(localized: "공유 코드 정보를 불러오지 못했어요")
             ))
             // ⚠ **`/auth/me` 는 이미 나갔다 — 그 답을 이 진입의 결과로 적는다**(코덱스 #827). 네 조회를
             //   한꺼번에 보내므로 구독·공유 코드가 실패해도 계정 요청은 표와 함께 실제로 나갔다. 여기서
@@ -503,13 +503,15 @@ final class SocialFeatureViewModel: ObservableObject {
     }
 
     func registerCode(_ codeOverride: String? = nil, session: AuthSession?) async -> CodeRegistrationDestination? {
+        // 이번 등록을 시작하지 못해도 지난 성공·다른 작업의 안내를 오류로 재사용하지 않는다.
+        statusMessage = nil
         guard let token = session?.token else {
-            statusMessage = "로그인이 필요해요."
+            statusMessage = String(localized: "로그인이 필요해요.")
             return nil
         }
         let code = (codeOverride ?? inviteCode).trimmingCharacters(in: .whitespacesAndNewlines)
         guard !code.isEmpty else {
-            statusMessage = "코드를 입력해 주세요."
+            statusMessage = String(localized: "코드를 입력해 주세요.")
             return nil
         }
         guard !isBusy else { return nil }
@@ -521,12 +523,12 @@ final class SocialFeatureViewModel: ObservableObject {
             if codeOverride == nil || inviteCode.trimmingCharacters(in: .whitespacesAndNewlines) == code {
                 inviteCode = ""
             }
-            await refreshAllAfterMutation(session: session, successMessage: "코드를 등록했어요.")
+            await refreshAllAfterMutation(session: session, successMessage: String(localized: "코드를 등록했어요."))
             return Self.codeRegistrationDestination(responseType: response.type, code: code)
         } catch {
-            // ⚠ 서버가 영어로 주는 사유를 한국어로 옮긴다. 이걸 `userFacingErrorMessage`
+            // 사유별 오류 코드를 현재 앱 언어로 옮긴다. 이걸 `userFacingErrorMessage`
             // 로 되돌리면 만료·중복·정원초과가 전부 같은 폴백 한 줄이 된다.
-            statusMessage = CodeRegistrationError.message(for: error, fallback: "코드 등록에 실패했어요.")
+            statusMessage = CodeRegistrationError.message(for: error, fallback: String(localized: "코드 등록에 실패했어요."))
             return nil
         }
     }
@@ -538,17 +540,16 @@ final class SocialFeatureViewModel: ObservableObject {
     /// 그걸 그대로 읽으면 **직전 성공 문구**("코드를 등록했어요.")가 남아 있을 수 있어
     /// 먼저 비운다 — `isBusy` 로 조용히 빠지는 갈래도 그때 폴백 문구를 받는다.
     func registerCodeReportingFailure(_ code: String, session: AuthSession?) async -> String? {
-        statusMessage = nil
         let destination = await registerCode(code, session: session)
         guard destination == nil else { return nil }
-        return statusMessage ?? "코드 등록에 실패했어요."
+        return statusMessage ?? String(localized: "코드 등록에 실패했어요.")
     }
 
     func ensureFamilyShareCode(session: AuthSession?) async {
         await runShareCodeAction(
             session: session,
             call: { try await api.ensureFamilyShareCode(token: $0) },
-            successMessage: { "\($0) 공유 코드를 준비했어요." }
+            successMessage: { String(localized: "\($0) 공유 코드를 준비했어요.") }
         )
     }
 
@@ -559,7 +560,7 @@ final class SocialFeatureViewModel: ObservableObject {
         await runShareCodeAction(
             session: session,
             call: { try await api.regenerateFamilyShareCode(token: $0) },
-            successMessage: { "\($0) 공유 코드를 새로 발급했어요. 기존 코드는 더 이상 쓸 수 없어요." }
+            successMessage: { String(localized: "\($0) 공유 코드를 새로 발급했어요. 기존 코드는 더 이상 쓸 수 없어요.") }
         )
     }
 
@@ -570,7 +571,7 @@ final class SocialFeatureViewModel: ObservableObject {
         successMessage: (String) -> String
     ) async {
         guard let token = session?.token else {
-            statusMessage = "로그인이 필요해요."
+            statusMessage = String(localized: "로그인이 필요해요.")
             return
         }
         guard !isBusy else { return }
@@ -587,14 +588,14 @@ final class SocialFeatureViewModel: ObservableObject {
             let planLabel = Self.shareCodePlanLabel(subscription)
             statusMessage = Self.billingErrorMessage(
                 error,
-                fallback: "\(planLabel) 공유 코드를 불러오지 못했어요"
+                fallback: String(localized: "\(planLabel) 공유 코드를 불러오지 못했어요")
             )
         }
     }
 
     func cancelSubscription(mode: String = "at_period_end", session: AuthSession?) async {
         guard let token = session?.token else {
-            statusMessage = "로그인이 필요해요."
+            statusMessage = String(localized: "로그인이 필요해요.")
             return
         }
         guard !isBusy else { return }
@@ -604,7 +605,7 @@ final class SocialFeatureViewModel: ObservableObject {
         do {
             let normalizedMode = Self.normalizedCancellationMode(mode)
             _ = try await api.cancelSubscription(mode: normalizedMode, token: token)
-            let successMessage = normalizedMode == "immediate" ? "이용권을 해지했어요." : "구독 해지를 예약했어요."
+            let successMessage = normalizedMode == "immediate" ? String(localized: "이용권을 해지했어요.") : String(localized: "구독 해지를 예약했어요.")
             await refreshAllAfterMutation(session: session, successMessage: successMessage)
         } catch {
             // ⚠ **App Store 구독은 서버가 못 끊는다.** Apple 에는 Play 의
@@ -617,7 +618,7 @@ final class SocialFeatureViewModel: ObservableObject {
                 statusMessage = nil
                 return
             }
-            statusMessage = Self.billingErrorMessage(error, fallback: "해지에 실패했어요")
+            statusMessage = Self.billingErrorMessage(error, fallback: String(localized: "해지에 실패했어요"))
         }
     }
 
@@ -630,17 +631,17 @@ final class SocialFeatureViewModel: ObservableObject {
     static func shareCodePlanLabel(_ response: BillingSubscriptionResponse?) -> String {
         switch response?.plan?.key {
         case "couple":
-            return "커플"
+            return PlanTier.couple.displayLabel
         case "family":
-            return "가족"
+            return PlanTier.family.displayLabel
         default:
             switch response?.plan?.planType {
             case "couple":
-                return "커플"
+                return PlanTier.couple.displayLabel
             case "family":
-                return "가족"
+                return PlanTier.family.displayLabel
             default:
-                return "공유"
+                return String(localized: "group.plan.shared")
             }
         }
     }
@@ -689,7 +690,7 @@ final class SocialFeatureViewModel: ObservableObject {
 
 
     static func scopedRefreshErrorMessage(label: String, error: Error, fallback: String) -> String {
-        "\(label): \(userFacingErrorMessage(error, fallback: fallback))"
+        String(format: String(localized: "%1$@: %2$@"), label, userFacingErrorMessage(error, fallback: fallback))
     }
 
     private static func extractServerErrorCode(from error: Error) -> String? {
@@ -729,7 +730,7 @@ final class SocialFeatureViewModel: ObservableObject {
     /// 내가 가족/커플 그룹에서 나간다. Android `MainViewModelSocialActions.leaveFamilyGroup` 와 동등.
     func leaveFamilyGroup(groupId: String, session: AuthSession?) async {
         guard let token = session?.token else {
-            statusMessage = "로그인이 필요해요."
+            statusMessage = String(localized: "로그인이 필요해요.")
             return
         }
         guard !isBusy else { return }
@@ -743,14 +744,14 @@ final class SocialFeatureViewModel: ObservableObject {
             // 실패만 알린다(아래 catch) — 그건 화면에 안 나타나는 사실이다.
             await refreshAllAfterMutation(session: session, successMessage: nil)
         } catch {
-            statusMessage = userFacingErrorMessage(error, fallback: "이용권에서 나가지 못했어요")
+            statusMessage = userFacingErrorMessage(error, fallback: String(localized: "이용권에서 나가지 못했어요"))
         }
     }
 
     /// 소유자가 다른 멤버를 내보낸다. MemberManagementView 에서 alert 확인 후 호출.
     func removeMember(groupId: String, userId: String, session: AuthSession?) async {
         guard let token = session?.token else {
-            statusMessage = "로그인이 필요해요."
+            statusMessage = String(localized: "로그인이 필요해요.")
             return
         }
         guard !isBusy else { return }
@@ -759,9 +760,9 @@ final class SocialFeatureViewModel: ObservableObject {
 
         do {
             _ = try await api.removeFamilyMember(groupId: groupId, userId: userId, token: token)
-            await refreshAllAfterMutation(session: session, successMessage: "멤버를 내보냈어요.")
+            await refreshAllAfterMutation(session: session, successMessage: String(localized: "멤버를 내보냈어요."))
         } catch {
-            statusMessage = userFacingErrorMessage(error, fallback: "멤버를 내보내지 못했어요")
+            statusMessage = userFacingErrorMessage(error, fallback: String(localized: "멤버를 내보내지 못했어요"))
         }
     }
 
@@ -888,7 +889,7 @@ final class SocialFeatureViewModel: ObservableObject {
             restored += 1
         }
         if restored > 0 {
-            statusMessage = "이용권이 확인되어 목소리 알람을 다시 켰어요."
+            statusMessage = String(localized: "이용권이 확인되어 목소리 알람을 다시 켰어요.")
         }
         return restored
     }
@@ -920,8 +921,8 @@ final class SocialFeatureViewModel: ObservableObject {
         if lockedAlarmCount > 0 {
             // '삭제했어요' 라고 하지 않는다 — 지우지 않았고, 알람은 **기본 목소리로** 계속 울린다.
             // 강등 모달(`RootView.downgradeNoticeMessage` 의 `.freePlan`)과 같은 뜻이어야 한다 —
-            // 코드 등록 실패 문구로도 꺼내 보인다(`CodeRegisterRow`).
-            statusMessage = "무료 이용권으로 전환되어 목소리 알람이 기본 목소리로 바뀌었어요. 3일 안에 다시 등록하면 내 목소리가 돌아오고, 지나면 영구 삭제돼요."
+            // 코드 등록 오류로는 재사용하지 않는다(등록 시작 시 지난 상태를 비운다).
+            statusMessage = String(localized: "무료 이용권으로 전환되어 목소리 알람이 기본 목소리로 바뀌었어요. 3일 안에 다시 등록하면 내 목소리가 돌아오고, 지나면 영구 삭제돼요.")
         }
     }
 }
