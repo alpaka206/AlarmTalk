@@ -331,10 +331,10 @@
     <string name="msg_family_alarm_couple_family_only">상대 알람은 커플/가족 이용권에서 사용할 수 있어요</string>
     <string name="msg_family_alarm_login_required">상대 알람을 설정하려면 먼저 로그인해 주세요</string>
     <string name="msg_family_alarm_set_failed">상대 알람 설정에 실패했어요</string>
+    <string name="msg_family_alarm_set_for_target_other">상대에게 알람을 설정했어요</string>
     <string name="msg_family_alarm_set_for_target">%1$s에게 알람을 설정했어요</string>
     <string name="msg_family_alarm_settings_save_failed">상대 알람 설정을 저장하지 못했어요</string>
     <string name="msg_family_alarm_settings_saved">상대 알람 설정을 저장했어요</string>
-    <string name="msg_family_alarm_target_fallback">상대</string>
     <string name="msg_family_voice_default_label">가족이 보낸 음성</string>
     <string name="msg_gb_code_input_required_period">코드를 입력해 주세요.</string>
     <string name="msg_gb_code_register_failed">코드 등록에 실패했어요</string>
@@ -442,6 +442,9 @@
     <string name="msg_voice_slot_exhausted">지금은 목소리 생성 요청이 많아요. 잠시 후 다시 시도해 주세요.</string>
     <string name="msg_voice_tts_audio_load_login_required">저장된 음성 오디오를 불러오려면 먼저 로그인해 주세요</string>
     <string name="msg_voice_tts_generate_login_required">음성 오디오를 만들려면 먼저 로그인해 주세요</string>
+    <string name="rd_audio_upload_local_only">로컬에 저장된 오디오만 업로드할 수 있어요.</string>
+    <string name="rd_audio_upload_path_missing">오디오 파일 경로를 찾을 수 없어요.</string>
+    <string name="rd_audio_upload_file_missing">오디오 파일을 찾을 수 없어요.</string>
     <string name="rd_audio_duration_unreadable">오디오 길이를 확인할 수 없는 파일은 사용할 수 없어요.</string>
     <string name="rd_audio_extract_failed">선택한 파일에서 오디오를 추출하지 못했어요. 다른 파일로 시도해 주세요.</string>
     <string name="rd_audio_mp3_trim_failed">MP3 구간을 저장하지 못했어요. 다른 파일을 선택해 주세요.</string>
@@ -898,4 +901,14 @@
     <!-- 종료 전환 대상이 아닌 계정(deletes_voices_at_end = false, 예: 결제 보류로 활성 구독 행이 남음). 삭제 문장만 뺀다. -->
     <string name="personal_promo_end_notice_message_keep_voices">%1$s까지 개인 플랜을 무료로 쓸 수 있어요. %2$s부터는 무료 플랜으로 돌아가요.</string>
     <string name="personal_promo_end_notice_dont_show_again">다시 보지 않기</string>
+    <string-array name="snackbar_error_markers">
+        <item>실패</item>
+        <item>못했어요</item>
+        <item>오류</item>
+    </string-array>
+    <string-array name="snackbar_success_markers">
+        <item>했어요</item>
+        <item>었어요</item>
+        <item>완료</item>
+    </string-array>
 </resources>

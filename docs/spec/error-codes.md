@@ -139,7 +139,14 @@
 1. **화면별 문구** — 그 화면에서만 다르게 말해야 하는 것(목소리 등록 중의
    `VOICE_FEATURE_REQUIRES_PAID_PLAN`).
 2. **공용 표** — `ApiErrorMessages.kt` / `APIErrorMessages.swift`. 아무도 안 맡은 코드를 받는다.
-3. **폴백** — 서버 문장(한국어면) 또는 화면이 준 기본 문장.
+3. **폴백** — 화면이 준 번역된 기본 문장. 서버 문장은 언어와 무관하게 두 앱 모두 표시하지 않는다.
+
+일반 오류 헬퍼는 글에 한글이 있는지가 아니라 **사용자에게 보여줄 문구로 만든 출처**인지 본다.
+Android는 `UserFacingException`(원인 예외 안의 것도 포함), iOS는 `AppUserFacingError`의
+`userFacingDescription`만 언어와 무관하게 표시한다. iOS의 URL 오류는 `NSURLErrorDomain`에
+`NSLocalizedDescriptionKey`가 실제로 채워진 경우만, StoreKit 구매 오류는 시스템의 현지화된
+`Product.PurchaseError.errorDescription`을 쓴다. StoreKit 네트워크 오류는 앱의 네트워크 문구로,
+나머지 시스템·개발자 오류는 화면 폴백으로 바꾼다. 취소 여부는 문구 판정보다 먼저 확인한다.
 
 ⚠ **공용 표는 '아무 데서나' 가 아니라 정해진 자리에서 불린다.** 일반 오류 헬퍼
 (`userFacingError` / `userFacingErrorMessage`)는 코드를 보지 않는다 — 표를 부르는 자리는
@@ -203,5 +210,6 @@
 | 파기된 계정의 404 는 401 과 **같은 갈래**(코드 없는 404 는 **세션 유지**) | `ui/main/MainViewModelAuthActions.kt` 의 `isDestroyedAccountFailure` → `MainViewModel.handleUnauthorized` · `DestroyedAccountSessionTest` | `AuthViewModel.refreshUserApplyingToken` 의 `status == 404 && errorCode == "AUTH_USER_NOT_FOUND"` · `AlarmTalkTests/UnauthorizedSessionHandlingTests` 의 `SessionHealthCheckDestroyedAccountTests` | `routes/auth.ts` 의 `GET /auth/me`(그 밖의 라우트는 `middleware/auth.ts` 가 401) |
 | 응답에서 코드 꺼내기 | `network/ApiErrors.kt` 의 `apiErrorCode` | `APIError.serverErrorCode` | — |
 | 코드 → 문구(공용) | `network/ApiErrorMessages.kt` | `APIErrorMessages.swift` | — |
+| 일반 오류 문구의 출처 | `ui/util/PlatformAndLabelUtils.kt`의 `UserFacingException`·`userFacingError` | `UserFacingError.swift`의 `AppUserFacingError`·`userFacingErrorMessage`, `AudioUserFacingError`도 위임 | 서버 문장은 앱에서 직접 표시하지 않음 |
 | 코드 → 문구(목소리 화면) | `ui/main/MainViewModelVoiceActions.kt` | `VoiceStudioViewModel+ErrorMapping.swift` | — |
 | 코드 → 문구(로그인 화면) | `ui/main/MainViewModelAuthActions.kt` 의 login 갈래 | `AuthViewModel.loginErrorMessage` | — |

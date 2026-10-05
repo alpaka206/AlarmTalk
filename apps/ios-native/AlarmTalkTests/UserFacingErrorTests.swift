@@ -14,6 +14,31 @@ final class UserFacingErrorTests: XCTestCase {
         let errorDescription: String?
     }
 
+    private struct AppMessage: AppUserFacingError {
+        let errorDescription: String?
+    }
+
+    func test_appMessagesRemainVisibleInEverySupportedLanguage() {
+        for message in ["오디오 파일을 열 수 없어요.", "Could not open the audio file.", "音声ファイルを開けません。"] {
+            XCTAssertEqual(userFacingErrorMessage(AppMessage(errorDescription: message), fallback: "fallback"), message)
+        }
+        XCTAssertEqual(userFacingErrorMessage(AppMessage(errorDescription: nil), fallback: "fallback"), "fallback")
+    }
+
+    func test_networkDescriptionsRemainVisibleInEnglishAndJapanese() {
+        for message in ["The Internet connection appears to be offline.", "インターネット接続がオフラインのようです。"] {
+            let error = URLError(.notConnectedToInternet, userInfo: [NSLocalizedDescriptionKey: message])
+            XCTAssertEqual(userFacingErrorMessage(error, fallback: "fallback"), message)
+        }
+    }
+
+    func test_unknownNSErrorDomainCannotExposeDescriptionsInAnyLanguage() {
+        for message in ["내부 오류입니다", "Internal error", "内部エラーです"] {
+            let error = NSError(domain: "Internal.Module", code: 1, userInfo: [NSLocalizedDescriptionKey: message])
+            XCTAssertEqual(userFacingErrorMessage(error, fallback: "fallback"), "fallback")
+        }
+    }
+
     // MARK: - 맹글링된 내부 이름이 새지 않는다
 
     func test_bareSwiftError_neverLeaksFoundationGenericMessage() {
@@ -26,9 +51,9 @@ final class UserFacingErrorTests: XCTestCase {
 
     // MARK: - 우리가 쓴 문장은 그대로 나간다
 
-    func test_localizedError_withKoreanDescription_isShown() {
+    func test_unmarkedLocalizedError_withKoreanDescription_usesFallback() {
         let error = Described(errorDescription: "녹음 파일을 열 수 없어요")
-        XCTAssertEqual(userFacingErrorMessage(error, fallback: "폴백"), "녹음 파일을 열 수 없어요")
+        XCTAssertEqual(userFacingErrorMessage(error, fallback: "폴백"), "폴백")
     }
 
     func test_localizedError_withEnglishDescription_usesFallback() {
@@ -42,9 +67,9 @@ final class UserFacingErrorTests: XCTestCase {
 
     // MARK: - APIError 갈래
 
-    func test_serverError_withKoreanMessage_isShown() {
+    func test_serverError_withKoreanMessage_usesFallback() {
         let error = APIError.server(status: 400, message: "이미 등록한 코드예요", errorCode: nil)
-        XCTAssertEqual(userFacingErrorMessage(error, fallback: "폴백"), "이미 등록한 코드예요")
+        XCTAssertEqual(userFacingErrorMessage(error, fallback: "폴백"), "폴백")
     }
 
     /// 백엔드는 영어 메시지를 던지는 갈래가 많다 — 그건 사용자에게 보여주지 않는다.

@@ -318,10 +318,10 @@
     <string name="msg_family_alarm_couple_family_only">相手のアラームは、カップル・ファミリープランでご利用いただけます。</string>
     <string name="msg_family_alarm_login_required">相手のアラームを設定するには、まずログインしてください。</string>
     <string name="msg_family_alarm_set_failed">相手のアラーム設定に失敗しました。</string>
+    <string name="msg_family_alarm_set_for_target_other">相手にアラームを設定しました。</string>
     <string name="msg_family_alarm_set_for_target">%1$sさんにアラームを設定しました。</string>
     <string name="msg_family_alarm_settings_save_failed">相手のアラーム設定を保存できませんでした。</string>
     <string name="msg_family_alarm_settings_saved">相手のアラーム設定を保存しました。</string>
-    <string name="msg_family_alarm_target_fallback">相手</string>
     <string name="msg_family_voice_default_label">家族からの音声</string>
     <string name="msg_gb_code_input_required_period">コードを入力してください。</string>
     <string name="msg_gb_code_register_failed">コードの登録に失敗しました。</string>
@@ -411,6 +411,9 @@
     <string name="msg_voice_slot_exhausted">現在、声の作成リクエストが集中しています。しばらくしてからもう一度お試しください。</string>
     <string name="msg_voice_tts_audio_load_login_required">保存した音声オーディオを読み込むには、まずログインしてください。</string>
     <string name="msg_voice_tts_generate_login_required">音声オーディオを作成するには、まずログインしてください。</string>
+    <string name="rd_audio_upload_local_only">端末に保存した音声のみアップロードできます。</string>
+    <string name="rd_audio_upload_path_missing">音声ファイルのパスが見つかりません。</string>
+    <string name="rd_audio_upload_file_missing">音声ファイルが見つかりません。</string>
     <string name="rd_audio_duration_unreadable">オーディオの長さを確認できないファイルは使用できません。</string>
     <string name="rd_audio_extract_failed">選択したファイルからオーディオを抽出できませんでした。別のファイルでお試しください。</string>
     <string name="rd_audio_mp3_trim_failed">MP3の区間を保存できませんでした。別のファイルを選んでください。</string>
@@ -865,4 +868,14 @@
     <string name="personal_promo_end_notice_message">%1$sまでパーソナルプランを無料でご利用いただけます。%2$sからは無料プランに戻り、登録した声は3日間保管した後に削除されます。</string>
     <string name="personal_promo_end_notice_message_keep_voices">%1$sまでパーソナルプランを無料でご利用いただけます。%2$sからは無料プランに戻ります。</string>
     <string name="personal_promo_end_notice_dont_show_again">今後表示しない</string>
+    <string-array name="snackbar_error_markers">
+        <item>できませんでした</item>
+        <item>失敗</item>
+        <item>エラー</item>
+    </string-array>
+    <string-array name="snackbar_success_markers">
+        <item>しました</item>
+        <item>されました</item>
+        <item>完了</item>
+    </string-array>
 </resources>

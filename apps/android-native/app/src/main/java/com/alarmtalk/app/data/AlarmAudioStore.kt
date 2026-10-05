@@ -11,6 +11,7 @@ import android.provider.OpenableColumns
 import android.util.Log
 import android.webkit.MimeTypeMap
 import androidx.core.net.toUri
+import com.alarmtalk.app.UserFacingException
 import com.alarmtalk.app.R
 import com.alarmtalk.app.core.AlarmTalkLog
 import com.alarmtalk.app.core.AlarmTalkLog.TAG
@@ -139,7 +140,7 @@ class AlarmAudioStore(
         startMillis: Long = 0L,
     ): CachedAlarmAudio {
         val durationMillis = readDurationMillis(sourceUri)
-            ?: throw IllegalArgumentException(context.getString(R.string.rd_audio_duration_unreadable))
+            ?: throw UserFacingException(context.getString(R.string.rd_audio_duration_unreadable))
         val displayName = readDisplayName(sourceUri) ?: "voice_${System.currentTimeMillis()}"
         val extension = extensionFor(sourceUri, displayName)
         val sourceMimeType = context.contentResolver.getType(sourceUri)
@@ -259,7 +260,7 @@ class AlarmAudioStore(
             }.onFailure { error ->
                 AlarmTalkLog.reportError("trimToMaxDuration failed", error)
                 runCatching { trimTarget.delete() }
-                throw IllegalArgumentException(
+                throw UserFacingException(
                     context.getString(R.string.rd_audio_trim_failed),
                     error,
                 )
@@ -272,15 +273,15 @@ class AlarmAudioStore(
                 AlarmTalkLog.reportError("trim output empty path=${trimTarget.absolutePath} size=${trimTarget.length()} duration=$trimDuration",
                 )
                 runCatching { trimTarget.delete() }
-                throw IllegalArgumentException(
+                throw UserFacingException(
                     context.getString(R.string.rd_audio_trim_failed),
                 )
             }
         } else {
             File(audioDir, "${safeCacheKey(cacheKey)}.$extension").also { file ->
                 context.contentResolver.openInputStream(sourceUri).use { input ->
-                    requireNotNull(input) { context.getString(R.string.rd_audio_open_failed) }
-                    file.outputStream().use { output -> input.copyTo(output) }
+                    val source = input ?: throw UserFacingException(context.getString(R.string.rd_audio_open_failed))
+                    file.outputStream().use { output -> source.copyTo(output) }
                 }
             }
         }
@@ -295,7 +296,7 @@ class AlarmAudioStore(
             AlarmTalkLog.reportError("Cached audio empty path=${target.absolutePath} size=${target.length()} duration=$trimmedDuration",
             )
             runCatching { target.delete() }
-            throw IllegalArgumentException(context.getString(R.string.rd_audio_extract_failed))
+            throw UserFacingException(context.getString(R.string.rd_audio_extract_failed))
         }
         val cachedDurationMillis = trimmedDuration
         val normalizedDurationMillis = normalizeDurationWithinLimit(
@@ -826,7 +827,7 @@ class AlarmAudioStore(
             // 전체 URI 는 Logcat 에만 남기고 Sentry 로 가는 메시지에는 scheme 만 포함한다.
             Log.e(TAG, "Failed to trim selected voice audio uri=$sourceUri", error)
             AlarmTalkLog.reportError("Failed to trim selected voice audio scheme=${sourceUri.scheme}", error)
-            throw IllegalArgumentException(context.getString(R.string.rd_audio_over_limit_trim_failed, maxDurationMillis / 1000), error)
+            throw UserFacingException(context.getString(R.string.rd_audio_over_limit_trim_failed, maxDurationMillis / 1000), error)
         }.getOrThrow()
     }
 
@@ -877,7 +878,7 @@ class AlarmAudioStore(
             // 위 trimMp4 와 동일 — 전체 URI 는 Logcat 전용, Sentry 메시지는 scheme 만.
             Log.e(TAG, "Failed to trim selected mp3 voice audio uri=$sourceUri", error)
             AlarmTalkLog.reportError("Failed to trim selected mp3 voice audio scheme=${sourceUri.scheme}", error)
-            throw IllegalArgumentException(context.getString(R.string.rd_audio_mp3_trim_failed), error)
+            throw UserFacingException(context.getString(R.string.rd_audio_mp3_trim_failed), error)
         }.getOrThrow()
     }
 

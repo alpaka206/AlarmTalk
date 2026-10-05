@@ -318,10 +318,10 @@
     <string name="msg_family_alarm_couple_family_only">Partner alarms are available with a Couple or Family plan.</string>
     <string name="msg_family_alarm_login_required">Please log in first to set your partner\'s alarm.</string>
     <string name="msg_family_alarm_set_failed">Couldn\'t set your partner\'s alarm.</string>
+    <string name="msg_family_alarm_set_for_target_other">Set an alarm for the other person.</string>
     <string name="msg_family_alarm_set_for_target">Set an alarm for %1$s.</string>
     <string name="msg_family_alarm_settings_save_failed">Couldn\'t save your partner\'s alarm settings.</string>
     <string name="msg_family_alarm_settings_saved">Your partner\'s alarm settings have been saved.</string>
-    <string name="msg_family_alarm_target_fallback">Partner</string>
     <string name="msg_family_voice_default_label">Voice from family</string>
     <string name="msg_gb_code_input_required_period">Please enter a code.</string>
     <string name="msg_gb_code_register_failed">Couldn\'t register the code.</string>
@@ -412,6 +412,9 @@
     <string name="msg_voice_slot_exhausted">There are a lot of voice creation requests right now. Please try again in a moment.</string>
     <string name="msg_voice_tts_audio_load_login_required">Please log in first to load saved voice audio.</string>
     <string name="msg_voice_tts_generate_login_required">Please log in first to create voice audio.</string>
+    <string name="rd_audio_upload_local_only">Only locally saved audio can be uploaded.</string>
+    <string name="rd_audio_upload_path_missing">The audio file path could not be found.</string>
+    <string name="rd_audio_upload_file_missing">The audio file could not be found.</string>
     <string name="rd_audio_duration_unreadable">Files whose audio length can\'t be read can\'t be used.</string>
     <string name="rd_audio_extract_failed">We couldn\'t extract audio from the selected file. Please try a different file.</string>
     <string name="rd_audio_mp3_trim_failed">We couldn\'t save the MP3 section. Please choose a different file.</string>
@@ -866,4 +869,25 @@ Please update to the latest version.</string>
     <string name="personal_promo_end_notice_message">You can use the Personal plan for free until %1$s. From %2$s, you\'ll return to the Free plan, and voices you registered will be kept for 3 days and then deleted.</string>
     <string name="personal_promo_end_notice_message_keep_voices">You can use the Personal plan for free until %1$s. From %2$s, you\'ll return to the Free plan.</string>
     <string name="personal_promo_end_notice_dont_show_again">Don\'t show again</string>
+    <string-array name="snackbar_error_markers">
+        <item>Couldn\'t</item>
+        <item>could not</item>
+        <item>failed</item>
+        <item>error</item>
+        <item>unable</item>
+    </string-array>
+    <string-array name="snackbar_success_markers">
+        <item>saved</item>
+        <item>updated</item>
+        <item>created</item>
+        <item>deleted</item>
+        <item>removed</item>
+        <item>registered</item>
+        <item>sent</item>
+        <item>set an alarm</item>
+        <item>copied</item>
+        <item>canceled</item>
+        <item>restored</item>
+        <item>completed</item>
+    </string-array>
 </resources>
