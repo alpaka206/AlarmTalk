@@ -70,16 +70,16 @@ struct ConsentHistoryView: View {
 
     private var requiredSection: some View {
         ConsentSectionCard(title: String(localized: "필수 동의 내용")) {
-            ConsentRow(label: String(localized: "서비스 이용약관"), record: records["terms"], onOpen: onOpenTerms)
+            ConsentRow(label: "서비스 이용약관", record: records["terms"], onOpen: onOpenTerms)
             Divider().overlay(theme.palette.outlineVariant)
-            ConsentRow(label: String(localized: "개인정보 처리방침"), record: records["privacy"], onOpen: onOpenPrivacy)
+            ConsentRow(label: "개인정보 처리방침", record: records["privacy"], onOpen: onOpenPrivacy)
             Divider().overlay(theme.palette.outlineVariant)
-            ConsentRow(label: String(localized: "만 14세 이상 확인"), record: records["age14"], onOpen: nil)
+            ConsentRow(label: "만 14세 이상 확인", record: records["age14"], onOpen: nil)
             Divider().overlay(theme.palette.outlineVariant)
             // 국외 이전은 서비스 이용에 필수라 철회 액션을 두지 않는다. 철회하면 등록
             // 데이터가 지워지는 데다 다음 실행에 동의 게이트로 앱이 잠긴다 — 30일 유예로
             // 되돌릴 수 있는 회원 탈퇴가 더 안전하고 정직한 경로라 그쪽으로 안내한다.
-            ConsentRow(label: String(localized: "음성 AI 국외 이전 동의"), record: records["overseas_transfer"], onOpen: onOpenPrivacy)
+            ConsentRow(label: "음성 AI 국외 이전 동의", record: records["overseas_transfer"], onOpen: onOpenPrivacy)
         }
     }
 
@@ -95,7 +95,7 @@ struct ConsentHistoryView: View {
             // 음성 생체정보는 백엔드에서도 '선택'(FEATURE_CONSENT_TYPES)이다. 필수 섹션에
             // 두면 가입 화면의 '[선택]' 표기와 어긋나고, 이 동의를 이용 조건처럼 보이게 한다.
             ConsentRow(
-                label: String(localized: "음성 생체정보 처리 동의"),
+                label: "음성 생체정보 처리 동의",
                 record: records["voice_biometric"],
                 onOpen: onOpenPrivacy,
                 // 재동의는 이 화면이 아니라 목소리를 다시 등록할 때 받는다 — 그래서 토글이
@@ -106,7 +106,7 @@ struct ConsentHistoryView: View {
             // 읽기 전용 이력이 아니라 실제로 켜고 끄는 토글 — 설정에 있던 마케팅 카드를
             // 이 법적 정보 화면으로 통합했다(안드로이드와 같은 위치).
             ConsentToggleRow(
-                label: String(localized: "광고성 정보 수신 동의"),
+                label: "광고성 정보 수신 동의",
                 agreed: auth.marketingConsentLoadFailed ? nil : auth.marketingConsentAgreed,
                 busy: marketingBusy,
                 loadFailed: auth.marketingConsentLoadFailed,
