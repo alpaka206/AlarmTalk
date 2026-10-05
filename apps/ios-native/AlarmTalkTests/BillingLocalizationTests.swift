@@ -48,6 +48,13 @@ struct BillingLocalizationTests {
                 == (language == "en" ? "Pay" : "決済する"))
     }
 
+    @Test("영어 구매 복원 결과는 한 건과 여러 건을 구분한다")
+    func restoredPurchaseCount() throws {
+        let english = try bundle("en")
+        #expect(RestoreResult.restored(count: 1).localizedUserMessage(bundle: english) == "Restored 1 purchase.")
+        #expect(RestoreResult.restored(count: 3).localizedUserMessage(bundle: english) == "Restored 3 purchases.")
+    }
+
     @Test("복원 결과의 건수와 다운그레이드 안내의 이름은 서식 인자로 유지된다", arguments: ["en", "ja"])
     func formatArguments(language: String) throws {
         let bundle = try bundle(language)

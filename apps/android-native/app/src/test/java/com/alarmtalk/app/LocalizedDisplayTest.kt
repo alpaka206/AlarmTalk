@@ -41,6 +41,9 @@ class LocalizedDisplayTest {
         for ((language, expected) in mapOf("en" to listOf("Male", "Female", "Unknown"), "ja" to listOf("男性", "女性", "時間不明"))) {
             val context = context(language)
             assertEquals(expected, listOf(FortuneGenderMale, FortuneGenderFemale, FortuneBirthTimeUnknown).map { fortuneValueLabel(context, it) })
+            listOf("male", "M", "남자").forEach { assertEquals(expected[0], fortuneValueLabel(context, it)) }
+            listOf("female", "F", "여자").forEach { assertEquals(expected[1], fortuneValueLabel(context, it)) }
+            listOf("모름", "알 수 없음").forEach { assertEquals(expected[2], fortuneValueLabel(context, it)) }
             assertEquals("09:31~11:30", fortuneValueLabel(context, "09:31~11:30"))
         }
         assertEquals("남성", FortuneGenderMale)
