@@ -84,7 +84,7 @@ struct FamilyAlarmQuietTimeDialog: View {
         }
         .sheet(item: $pickerTarget) { target in
             QuietTimePicker(
-                title: target.isStart ? String(localized: "시작 시간") : String(localized: "종료 시간"),
+                title: target.isStart ? "시작 시간" : "종료 시간",
                 initialHour: hour(forTarget: target),
                 initialMinute: minute(forTarget: target),
                 onCancel: { pickerTarget = nil },
