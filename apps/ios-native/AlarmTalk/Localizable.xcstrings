@@ -14112,6 +14112,28 @@
           }
         }
       }
+    },
+    "이전 구매 1건을 복원했어요." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Restored 1 purchase."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "以前の購入1件を復元しました。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "이전 구매 1건을 복원했어요."
+          }
+        }
+      }
     }
   },
   "version" : "1.0"
