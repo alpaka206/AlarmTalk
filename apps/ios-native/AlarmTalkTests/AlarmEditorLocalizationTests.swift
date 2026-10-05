@@ -3,6 +3,18 @@ import XCTest
 @testable import AlarmTalk
 
 final class AlarmEditorLocalizationTests: XCTestCase {
+    func testRelationshipPickerDisplaysLocalizedNamesAndStoresContractValues() throws {
+        for language in ["en", "ja"] {
+            let path = try XCTUnwrap(Bundle.main.path(forResource: language, ofType: "lproj"))
+            let bundle = try XCTUnwrap(Bundle(path: path))
+            for preset in VoiceRelationshipPreset.allCases where preset != .custom {
+                XCTAssertNotEqual(preset.localizedDisplayLabel(bundle: bundle), preset.label)
+                XCTAssertEqual(VoiceRelationshipSelection(preset: preset).resolved, preset.label)
+            }
+            XCTAssertEqual(displayRelationshipLabel("직접 정한 관계", bundle: bundle), "직접 정한 관계")
+        }
+    }
+
     private func localized(_ key: String, language: String) throws -> String {
         let path = try XCTUnwrap(Bundle.main.path(forResource: language, ofType: "lproj"))
         let bundle = try XCTUnwrap(Bundle(path: path))

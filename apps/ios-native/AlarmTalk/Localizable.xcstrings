@@ -12574,6 +12574,28 @@
           }
         }
       }
+    },
+    "%@ (필수)" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ (required)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@（必須）"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ (필수)"
+          }
+        }
+      }
     }
   },
   "version" : "1.0"
