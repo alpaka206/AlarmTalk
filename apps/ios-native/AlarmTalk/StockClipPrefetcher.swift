@@ -198,6 +198,15 @@ final class StockClipPrefetcher: ObservableObject {
         generation += 1
     }
 
+    /// 취소 신호를 보낸 뒤 현재 회차의 하위 작업까지 끝났는지 확인한다.
+    /// 테스트의 공유 저장소 정리는 이 반환 뒤에 한다. `cancel()` 만으로는 이미 시작한
+    /// 오디오 파일 처리까지 즉시 끝나지 않아 다음 테스트의 캐시·요청 기록과 겹칠 수 있다.
+    func cancelAndWait() async {
+        let currentTask = task
+        cancel()
+        await currentTask?.value
+    }
+
     /// 이 회차가 아직 현재 회차일 때만 상태를 쓴다.
     private func setState(_ new: State, gen: Int) {
         guard gen == generation, !Task.isCancelled else { return }
