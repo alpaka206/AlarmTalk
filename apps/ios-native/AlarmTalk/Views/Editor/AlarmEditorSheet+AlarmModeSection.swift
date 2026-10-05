@@ -6,7 +6,7 @@ extension AlarmEditorSheet {
     var alarmModeSection: some View {
             // 제목은 **'재생 방식'** 이다 — 안드로이드 `editor_play_mode_title` 과 같은
             // 말로 맞춘다('알람 방식' 은 iOS 에만 있던 표현이었다).
-            EditorSectionTitle(text: "재생 방식")
+            EditorSectionTitle(text: String(localized: "재생 방식"))
             Group {
                 VoicePlayModePicker(
                     mode: $draft.playMode,
@@ -45,7 +45,7 @@ extension AlarmEditorSheet {
                     // 서피스로 감싼다 — 카드 밖에 두면 편집기에서 이 행만 배경 없이 떠 있다.
                     EditorCard(verticalPadding: 0) {
                         AlarmSettingRow(
-                            title: "목소리",
+                            title: String(localized: "alarm.editor.voice", defaultValue: "목소리"),
                             subtitle: voiceRowSubtitle,
                             onTap: { voiceSheetOpen = true }
                         )
@@ -77,7 +77,7 @@ extension AlarmEditorSheet {
                             Button {
                                 onJumpToVoices()
                             } label: {
-                                Label("목소리 탭에서 만들기", systemImage: "waveform")
+                                Label(String(localized: "목소리 탭에서 만들기"), systemImage: "waveform")
                             }
                             .buttonStyle(.bordered)
                         }
@@ -153,7 +153,7 @@ extension AlarmEditorSheet {
     @ViewBuilder
     private var voiceVolumeRow: some View {
         AlarmSettingRow(
-            title: "목소리 크기",
+            title: String(localized: "목소리 크기"),
             subtitle: "\(draft.voiceVolumePercent)%",
             onTap: { settingsPane = .voiceOutput }
         )

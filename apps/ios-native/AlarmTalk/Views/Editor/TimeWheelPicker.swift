@@ -62,7 +62,7 @@ struct TimeWheelPicker: View {
                 range: 0...23,
                 formatter: { String(TimeWheelMath.hour24To12($0)) },
                 scale: scale,
-                typeInTitle: "시",
+                typeInTitle: String(localized: "시"),
                 // 사용자는 화면에 보이는 **12시간** 숫자를 넣는다 — 지금 오전/오후를
                 // 유지한 채 24시간으로 되돌린다. (오전/오후를 바꾸려면 그 칼럼을 쓴다.)
                 applyTypedValue: { typed in
@@ -80,7 +80,7 @@ struct TimeWheelPicker: View {
                 range: 0...59,
                 formatter: { String(format: "%02d", $0) },
                 scale: scale,
-                typeInTitle: "분",
+                typeInTitle: String(localized: "분"),
                 applyTypedValue: { typed in minute = min(max(typed, 0), 59) },
                 editingColumn: $editingColumn
             )
@@ -100,7 +100,7 @@ struct TimeWheelPicker: View {
         // 다(`AlarmTimePicker.kt:48`). `primaryContainer` 파란 박스를 두면 시각이 한 덩어리
         // 위젯처럼 보여, 화면의 주인공이어야 할 숫자가 배경에 갇힌다.
         .accessibilityElement(children: .contain)
-        .accessibilityLabel(Text("시간 선택"))
+        .accessibilityLabel(Text(String(localized: "시간 선택")))
     }
 
     /// 가용 폭에 비례한 휠 축소 배율. 안드로이드와 같은 식·같은 하한.
@@ -491,13 +491,13 @@ struct AmPmWheelColumn: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            label(title: "오전", selected: !isPM)
+            label(title: String(localized: "오전"), selected: !isPM)
                 .frame(height: itemHeight)
                 // ⚠ 없으면 글리프만 눌린다 — `frame`/`padding` 이 넓힌 자리는 투명해 히트테스트를 건너뛴다.
                 .contentShape(Rectangle())
                 .onTapGesture { select(pm: false) }
 
-            label(title: "오후", selected: isPM)
+            label(title: String(localized: "오후"), selected: isPM)
                 .frame(height: itemHeight)
                 .contentShape(Rectangle())
                 .onTapGesture { select(pm: true) }
@@ -508,7 +508,7 @@ struct AmPmWheelColumn: View {
         // 시 칼럼이 11↔12 를 넘겨 밖에서 바뀔 때만 기본 자리를 애니메이션한다.
         .animation(animateBase ? .snappy(duration: 0.25) : nil, value: isPM)
         .accessibilityElement()
-        .accessibilityLabel(Text(isPM ? "오후 선택됨" : "오전 선택됨"))
+        .accessibilityLabel(Text(isPM ? String(localized: "오후 선택됨") : String(localized: "오전 선택됨")))
         .accessibilityAdjustableAction { direction in
             switch direction {
             case .increment, .decrement:
