@@ -349,7 +349,7 @@ struct VoicePreviewConfirmView: View {
             // 버튼이 된다 — 무엇을 해야 저장되는지도 알 수 없다.
                 let saveDisabled = busy || !listened || (registeredVoice != nil && !replaceExisting)
                 actionButton(
-                    title: saving ? String(localized: "저장 중…") : String(localized: "저장하기"),
+                    title: saving ? "저장 중…" : "저장하기",
                     foreground: theme.palette.onPrimary,
                     background: saveDisabled
                         ? theme.palette.primary.opacity(0.4)
