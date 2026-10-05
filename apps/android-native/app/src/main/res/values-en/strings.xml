@@ -65,20 +65,20 @@
     <string name="auth_verification_code_hint">Enter the 6-digit code from your email.</string>
     <string name="billing_cancel_at_date">Cancel on %1$s</string>
     <string name="billing_cancel_at_end_date">Cancel on the end date</string>
-    <string name="billing_cancel_description_no_date">Choose when to cancel. Canceling on the end date keeps your pass until the current period ends. Canceling now gives you a prorated refund for the remaining time.</string>
-    <string name="billing_cancel_description_with_date">Canceling on the end date keeps your pass until %1$s. Canceling now ends your pass immediately with a prorated refund for the remaining time.</string>
-    <string name="billing_cancel_dialog_title">Cancel your pass?</string>
+    <string name="billing_cancel_description_no_date">Choose when to cancel. Canceling on the end date keeps your plan until the current period ends. Canceling now gives you a prorated refund for the remaining time.</string>
+    <string name="billing_cancel_description_with_date">Canceling on the end date keeps your plan until %1$s. Canceling now ends your plan immediately with a prorated refund for the remaining time.</string>
+    <string name="billing_cancel_dialog_title">Cancel your plan?</string>
     <string name="billing_gift_personal_action">Gift</string>
     <string name="billing_gift_failed">We couldn\'t create the gift code. Please try again in a moment.</string>
     <string name="billing_cancel_immediate_description">The remaining period is refunded pro rata and your plan ends right away. Your voice is kept for 3 days. Resubscribe within that window and it comes back as it was; after that it is deleted for good.</string>
     <string name="billing_cancel_immediate_title">Cancel right now?</string>
     <string name="billing_cancel_now">Cancel now</string>
-    <string name="billing_cancel_pass">Cancel pass</string>
-    <string name="billing_change_pass">Change pass</string>
-    <string name="billing_current_pass_label">Current pass</string>
+    <string name="billing_cancel_pass">Cancel plan</string>
+    <string name="billing_change_pass">Change plan</string>
+    <string name="billing_current_pass_label">Current plan</string>
     <string name="billing_leave_button">Leave</string>
-    <string name="billing_leave_shared_pass">Leave shared pass</string>
-    <string name="billing_leave_shared_pass_description">If you leave, you\'ll switch to the free pass. You\'ll need a new invite code to rejoin.</string>
+    <string name="billing_leave_shared_pass">Leave shared plan</string>
+    <string name="billing_leave_shared_pass_description">If you leave, you\'ll switch to the Free plan. You\'ll need a new invite code to rejoin.</string>
     <string name="billing_monthly_subscription">Subscribe</string>
     <string name="billing_plan_couple_feature_max_two">For 2 people together</string>
     <string name="billing_plan_couple_feature_message">Set your partner\'s alarm</string>
@@ -101,12 +101,12 @@
     <string name="billing_play_manage_open">Open Google Play</string>
     <string name="billing_play_manage_title">Manage it directly in Google Play</string>
     <string name="billing_play_purchase_description_no_price">%1$s is purchased securely through Google Play. You can check the price on the payment screen and cancel anytime. You\'ll keep access for the time you\'ve paid for.</string>
-    <string name="billing_play_purchase_description">The %1$s pass is %2$s. Payment is handled securely by Google Play, and you can cancel anytime. You\'ll keep access for the time you\'ve paid for.</string>
-    <string name="billing_play_purchase_title">Start the %1$s pass?</string>
-    <string name="billing_play_change_seats_warning">Fewer people can share this pass, so members over the limit will leave the group.</string>
-    <string name="billing_play_change_downgrade">You are not charged now. You keep your current pass until it ends, then it switches to the %1$s pass at the next renewal.</string>
-    <string name="billing_play_change_upgrade">You switch to the %1$s pass right away. Your remaining time is prorated at the new rate.</string>
-    <string name="billing_play_change_title">Switch to the %1$s pass?</string>
+    <string name="billing_play_purchase_description">The %1$s plan is %2$s. Payment is handled securely by Google Play, and you can cancel anytime. You\'ll keep access for the time you\'ve paid for.</string>
+    <string name="billing_play_purchase_title">Start the %1$s plan?</string>
+    <string name="billing_play_change_seats_warning">Fewer people can share this plan, so members over the limit will leave the group.</string>
+    <string name="billing_play_change_downgrade">You are not charged now. You keep your current plan until it ends, then it switches to the %1$s plan at the next renewal.</string>
+    <string name="billing_play_change_upgrade">You switch to the %1$s plan right away. Your remaining time is prorated at the new rate.</string>
+    <string name="billing_play_change_title">Switch to the %1$s plan?</string>
     <string name="code_redeem_placeholder">Invite, gift, or promo code</string>
     <string name="code_redeem_submit">Redeem</string>
     <string name="billing_restore_purchases">Restore purchases</string>
@@ -114,17 +114,17 @@
     <string name="billing_restore_checking">Checking your purchases…</string>
     <string name="billing_select_button">Pay</string>
     <string name="billing_share_button">Share</string>
-    <string name="billing_share_voucher_code">Share pass code</string>
+    <string name="billing_share_voucher_code">Share plan code</string>
     <string name="billing_share_voucher_select_description">Pick an unregistered code and share it right away.</string>
-    <string name="billing_share_voucher_select_title">Choose a pass to share</string>
+    <string name="billing_share_voucher_select_title">Choose a plan to share</string>
     <string name="billing_status_available_until">Available until %1$s.</string>
-    <string name="billing_status_change_to_next_after_date">Switches to the %2$s pass after %1$s.</string>
-    <string name="billing_status_change_to_next_scheduled">Scheduled to switch to the %1$s pass.</string>
+    <string name="billing_status_change_to_next_after_date">Switches to the %2$s plan after %1$s.</string>
+    <string name="billing_status_change_to_next_scheduled">Scheduled to switch to the %1$s plan.</string>
     <string name="billing_status_end_after_date">Available until %1$s, then ends.</string>
-    <string name="billing_status_end_scheduled">Your current pass is scheduled to end.</string>
-    <string name="billing_status_in_use">This is your active pass.</string>
-    <string name="billing_status_shared_member">You\'re part of a shared pass.</string>
-    <string name="billing_status_shared_member_until">On a shared pass until %1$s.</string>
+    <string name="billing_status_end_scheduled">Your current plan is scheduled to end.</string>
+    <string name="billing_status_in_use">This is your active plan.</string>
+    <string name="billing_status_shared_member">You\'re part of a shared plan.</string>
+    <string name="billing_status_shared_member_until">On a shared plan until %1$s.</string>
     <string name="billing_voucher_unregistered">Unregistered</string>
     <string name="billing_voucher_unregistered_with_date">Unregistered · Issued %1$s</string>
     <string name="common_alarm_delete">Delete</string>
@@ -262,7 +262,7 @@
     <string name="hs_nickname_save">Save</string>
     <string name="hs_nickname_saving">Saving</string>
     <string name="hs_profile_content_desc">Profile</string>
-    <string name="hs_profile_menu_pass">Pass</string>
+    <string name="hs_profile_menu_pass">Plan</string>
     <string name="hs_profile_menu_shared_pass">Invite &amp; manage members</string>
     <string name="hs_quiet_time_add">+ Add time</string>
     <string name="hs_quiet_time_confirm">OK</string>
@@ -348,10 +348,10 @@
     <string name="msg_gb_share_code_load_failed">Couldn\'t load the %1$s share code.</string>
     <string name="msg_gb_share_code_ready">Your %1$s share code is ready.</string>
     <string name="msg_gb_share_code_regenerated">Issued a new %1$s share code. The old code no longer works.</string>
-    <string name="msg_gb_subscription_cancel_at_period_end">You can keep using your pass until the end of this period. There\'s no next payment.</string>
+    <string name="msg_gb_subscription_cancel_at_period_end">You can keep using your plan until the end of this period. There\'s no next payment.</string>
     <string name="msg_gb_subscription_cancel_failed">Couldn\'t cancel your plan.</string>
 
-    <string name="msg_gb_subscription_canceled_voice_locked">Your pass is cancelled. Voices are kept for 3 days. Subscribe again within that time to keep them; after that they are deleted permanently</string>
+    <string name="msg_gb_subscription_canceled_voice_locked">Your plan is canceled. Voices are kept for 3 days. Subscribe again within that time to keep them; after that they are deleted permanently</string>
 
 
 
@@ -379,8 +379,8 @@
     <string name="msg_remove_member_failed">Couldn\'t remove the member.</string>
     <string name="msg_remove_member_login_required">Please log in first to remove a member.</string>
     <plurals name="msg_received_alarm_arrived">
-        <item quantity="one">A new alarm set for you by your family arrived.</item>
-        <item quantity="other">%1$d new alarms set for you by your family arrived.</item>
+        <item quantity="one">A new alarm set for you arrived.</item>
+        <item quantity="other">%1$d new alarms set for you arrived.</item>
     </plurals>
     <string name="msg_sync_login_required">Please log in first to sync.</string>
     <string name="msg_sync_pull_partial_failed">Some received alarms haven\'t loaded yet. We\'ll retry automatically in a moment.</string>
@@ -478,7 +478,7 @@
     <string name="social_shared_plan_title">Invite &amp; manage members</string>
 
     <string name="social_code_input_label">Enter a code</string>
-    <string name="social_code_input_hint">Invite codes, gifted pass codes, and promo codes all work here.</string>
+    <string name="social_code_input_hint">Invite codes, gifted plan codes, and promo codes all work here.</string>
     <string name="social_members_capacity">%1$d/%2$d</string>
     <string name="social_capacity_full">Full, so you can\'t share</string>
     <string name="voices_create_dialog_title">Create a voice</string>
@@ -648,7 +648,7 @@ We\'ll play it for you as soon as it\'s ready.</string>
     <string name="msg2_billing_fail_no_active_subscription">You have no active plan, so we\'ll apply this as a new one</string>
     <string name="msg2_billing_fail_plan_not_found">We couldn\'t find the plan information</string>
     <string name="msg2_billing_fail_plan_inactive">This plan can\'t be selected right now</string>
-    <string name="msg2_billing_fail_free_not_billable">The free plan can\'t be applied here</string>
+    <string name="msg2_billing_fail_free_not_billable">The Free plan can\'t be applied here</string>
     <string name="msg2_billing_fail_checkout_disabled">In the test version, please enter an invite code</string>
     <string name="msg2_billing_fail_user_not_found">Please check your login details again</string>
     <string name="msg2_billing_fail_transaction_owned_by_other_user">This purchase is already linked to another account. Please sign in with that account</string>
@@ -662,15 +662,15 @@ We\'ll play it for you as soon as it\'s ready.</string>
     <string name="msg2_code_fail_code_already_redeemed_by_you">You\'ve already registered this code</string>
     <string name="msg2_code_fail_self_issued">You can\'t register a code you issued yourself</string>
     <string name="msg2_code_fail_group_full">This code is already full</string>
-    <string name="msg2_code_fail_invalid_plan_type">The code and pass type don\'t match</string>
-    <string name="msg2_code_fail_plan_not_found">We couldn\'t find the pass info for this code</string>
+    <string name="msg2_code_fail_invalid_plan_type">The code and plan type don\'t match</string>
+    <string name="msg2_code_fail_plan_not_found">We couldn\'t find the plan info for this code</string>
     <string name="msg2_code_fail_user_not_found">Please check your login info again</string>
     <string name="msg2_promo_fail_code_inactive">This promo code isn\'t available right now</string>
     <string name="msg2_promo_fail_not_in_window">This promo code isn\'t active yet or has ended</string>
     <string name="msg2_promo_fail_code_exhausted">This promo code has reached its usage limit</string>
     <string name="msg2_promo_fail_group_already_redeemed">You\'ve already used a promo code from this promotion. This benefit is limited to once per account</string>
     <string name="msg2_promo_fail_owns_active_group">You already have an active group plan, so this promo code can\'t be applied</string>
-    <string name="msg2_promo_fail_active_subscription">You already have an active pass. Cancel it before redeeming a coupon</string>
+    <string name="msg2_promo_fail_active_subscription">You already have an active plan. Cancel it before redeeming a coupon</string>
     <string name="onb_voice_title">Getting the voices your alarms will use</string>
     <string name="onb_voice_loading">Downloading voices…</string>
     <string name="misc2_theme_mode_system">Match system</string>
@@ -693,7 +693,7 @@ We\'ll play it for you as soon as it\'s ready.</string>
     <string name="misc2_pass_plan_personal">Personal</string>
     <string name="misc2_pass_plan_couple">Couple</string>
     <string name="misc2_pass_plan_family">Family</string>
-    <string name="misc2_pass_plan_default">Pass</string>
+    <string name="misc2_pass_plan_default">Plan</string>
     <string name="misc2_voice_preview_preparing">Preparing preview</string>
     <string name="misc2_voice_preview_pause">Stop preview</string>
     <string name="misc2_voice_preview_play">Play preview</string>
@@ -748,7 +748,7 @@ Please update to the latest version.</string>
     <string name="r3ed_google_signin_error_failed_status">Google sign-in failed. status=%1$d</string>
     <string name="r3ed_ampm_wheel_am">AM</string>
     <string name="r3ed_ampm_wheel_pm">PM</string>
-    <string name="r3data_received_alarm_from_other">Alarm from your friend</string>
+    <string name="r3data_received_alarm_from_other">Alarm from someone</string>
     <string name="r3data_honorific_name">%1$s</string>
     <string name="r3data_received_alarm_from_sender">Alarm from %1$s</string>
     <string name="r3misc_billing_purchase_pending">Your payment is pending. It will be applied automatically once your payment method is approved.</string>
@@ -760,7 +760,7 @@ Please update to the latest version.</string>
     <string name="r3misc_notif_received_alarm_sent">%1$s sent you an alarm.</string>
     <string name="r3misc_notif_received_alarm_sent_other">Someone sent you an alarm.</string>
     <string name="r3misc_notif_received_alarm_time">Rings at %1$s</string>
-    <string name="r3misc_notif_received_alarm_default">Your friend set an alarm for you</string>
+    <string name="r3misc_notif_received_alarm_default">Someone set an alarm for you</string>
     <string name="r3misc_ringing_action_snooze">Snooze</string>
     <string name="r3misc_ringing_action_dismiss">Dismiss</string>
     <string name="r3misc_billing_already_owned">You\'re already subscribed to this item. Please refresh your subscription status in a moment.</string>
@@ -774,7 +774,7 @@ Please update to the latest version.</string>
     <string name="onb_voice_download_later">Download later</string>
     <string name="onb_voice_download_background">Continue in the background</string>
     <string name="voicesr_share_voice_desc">Family on your plan can build alarms with this voice.</string>
-    <string name="voicesr_share_voice_locked">Sharing is available on the family and couple plans.</string>
+    <string name="voicesr_share_voice_locked">Sharing is available on the Family and Couple plans.</string>
     <string name="voicesr_preview_action">Play</string>
     <string name="voices_add">Add</string>
     <string name="voices_monthly_quota">%1$d/%2$d creations available</string>
@@ -801,7 +801,7 @@ Please update to the latest version.</string>
     <string name="auth_consent_collapse">Collapse item</string>
     <string name="auth_consent_marketing_detail">News about new features, events, and offers, sent by push or email. Declining changes nothing about signing up or using the app, and you can turn it off any time from the More tab. Promotional messages are only sent between 8am and 9pm; alarms you set yourself are not promotions and ring exactly when you scheduled them.</string>
     <string name="share_code_invite_body">Come use my voice alarms on AlarmTalk!\n\nInvite code: %1$s\n\n1. Install AlarmTalk https://alarm-talk.com/en/\n2. Sign up and log in\n3. Enter the code under More → Register code</string>
-    <string name="share_code_gift_body">I sent you an AlarmTalk pass.\n\nPass code: %1$s\n\n1. Install AlarmTalk https://alarm-talk.com/en/\n2. Sign up and log in\n3. Enter the code under More → Register code</string>
+    <string name="share_code_gift_body">I sent you an AlarmTalk plan.\n\nPass code: %1$s\n\n1. Install AlarmTalk https://alarm-talk.com/en/\n2. Sign up and log in\n3. Enter the code under More → Register code</string>
     <string name="auth_consent_title_updated">We have updated our terms</string>
     <string name="auth_consent_subtitle_updated">Only the items that changed are listed below. Everything you already agreed to stays as it is.</string>
     <string name="tts_consent_title">Creating a spoken alarm needs your consent</string>
@@ -824,16 +824,16 @@ Please update to the latest version.</string>
     <string name="misc2_theme_mode_system_short">System</string>
     <string name="misc2_theme_mode_light_short">Light</string>
     <string name="misc2_theme_mode_dark_short">Dark</string>
-    <string name="downgrade_notice_free_title">You\'re on the free pass now</string>
+    <string name="downgrade_notice_free_title">You\'re on the Free plan now</string>
     <string name="downgrade_notice_free_message">%1$d voice alarm(s) now use a default voice. Subscribe again within 3 days to get your voices back; after that they are deleted permanently.</string>
-    <string name="downgrade_notice_shared_title">You\'ve left the shared pass</string>
+    <string name="downgrade_notice_shared_title">You\'ve left the shared plan</string>
     <string name="downgrade_notice_replaced_title">Your voice was replaced</string>
     <string name="downgrade_notice_replaced_message">Registering a new voice switched %1$d alarm(s) with custom text to a default voice. Create those messages again with the new voice.</string>
-    <string name="downgrade_notice_shared_message">The shared voice is no longer available, so %1$d alarm(s) now use a default voice. To use it again you need your own pass or a new invite code.</string>
-    <string name="downgrade_notice_open_billing">View passes</string>
-    <string name="plan_gate_paid_message">This feature is available with a paid pass.</string>
+    <string name="downgrade_notice_shared_message">The shared voice is no longer available, so %1$d alarm(s) now use a default voice. To use it again you need your own plan or a new invite code.</string>
+    <string name="downgrade_notice_open_billing">View plans</string>
+    <string name="plan_gate_paid_message">This feature is available with a paid plan.</string>
     <string name="msg_voice_preset_only">Basic voices can only say prepared phrases. Choose your own voice to wake up with text you type.</string>
-    <string name="msg_voice_locked_free_plan">Your pass ended, so this voice can\'t be used. Register a pass again to bring it back.</string>
+    <string name="msg_voice_locked_free_plan">You\'re on the Free plan now, so this voice can\'t be used. Register a plan again to bring it back.</string>
     <string name="clip_prefetch_notification_title">Downloading voices</string>
     <string name="voices_clip_prep_done">Done</string>
     <string name="voices_clip_prep_background">Continue in the background</string>

@@ -315,7 +315,7 @@
     <string name="msg_marketing_consent_update_failed">設定の変更に失敗しました。もう一度お試しください。</string>
     <string name="msg_email_required">メールアドレスを入力してください。</string>
     <string name="msg_email_verification_completed">メールアドレスの認証が完了しました。</string>
-    <string name="msg_family_alarm_couple_family_only">相手のアラームは、カップル・家族プランでご利用いただけます。</string>
+    <string name="msg_family_alarm_couple_family_only">相手のアラームは、カップル・ファミリープランでご利用いただけます。</string>
     <string name="msg_family_alarm_login_required">相手のアラームを設定するには、まずログインしてください。</string>
     <string name="msg_family_alarm_set_failed">相手のアラーム設定に失敗しました。</string>
     <string name="msg_family_alarm_set_for_target">%1$sさんにアラームを設定しました。</string>
@@ -451,7 +451,7 @@
     <string name="social_no_share_code_yet">共有コードはまだありません。%1$sのメンバーを招待する招待コードを作成してください。</string>
     <string name="social_no_shared_plan">現在、一緒に使っているプランはありません。</string>
     <string name="social_plan_label_couple">カップル</string>
-    <string name="social_plan_label_family">家族</string>
+    <string name="social_plan_label_family">ファミリー</string>
     <string name="social_plan_label_shared">共有</string>
     <string name="social_quiet_time_label">アラームを受け取らない時間</string>
 
@@ -689,9 +689,9 @@
     <string name="misc2_day_fri">金</string>
     <string name="misc2_day_sat">土</string>
     <string name="misc2_pass_plan_free">無料</string>
-    <string name="misc2_pass_plan_personal">個人</string>
+    <string name="misc2_pass_plan_personal">パーソナル</string>
     <string name="misc2_pass_plan_couple">カップル</string>
-    <string name="misc2_pass_plan_family">家族</string>
+    <string name="misc2_pass_plan_family">ファミリー</string>
     <string name="misc2_pass_plan_default">利用券</string>
     <string name="misc2_voice_preview_preparing">プレビュー準備中</string>
     <string name="misc2_voice_preview_pause">プレビューを停止</string>
