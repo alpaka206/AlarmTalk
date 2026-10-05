@@ -184,7 +184,8 @@
             "value" : "%1$@ · %2$@ · %3$@/%4$@"
           }
         }
-      }
+      },
+      "shouldTranslate" : false
     },
     "%@ / %@" : {
       "localizations" : {
@@ -205,7 +206,8 @@
             "value" : "%1$@ %2$@"
           }
         }
-      }
+      },
+      "shouldTranslate" : false
     },
     "%@ 날씨" : {
       "extractionState" : "manual",
@@ -13971,28 +13973,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ (필수)"
-          }
-        }
-      }
-    },
-    "%@에게 공유받은 목소리" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Voice shared by %@"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@から共有された声"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@에게 공유받은 목소리"
           }
         }
       }

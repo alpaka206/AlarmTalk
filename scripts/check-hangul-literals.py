@@ -280,7 +280,7 @@ def catalog_issues(root: Path) -> list[Issue]:
     for relative in (*CATALOGS, "apps/ios-native/AlarmTalk/InfoPlist.xcstrings"):
         data = json.loads((root / relative).read_text())
         for key, entry in data["strings"].items():
-            if not entry.get("shouldTranslate", True) or not HANGUL.search(key):
+            if not entry.get("shouldTranslate", True):
                 continue
             for language in LANGUAGES:
                 units = entry.get("localizations", {}).get(language, {})
@@ -316,8 +316,17 @@ def catalog_issues(root: Path) -> list[Issue]:
 def format_issues(root: Path) -> list[Issue]:
     """Catch dropped/type-changed arguments; positional reordering is allowed."""
     def signature(value):
-        tokens = re.finditer(r"%%|%(?:\d+\$)?(?:\.\d+)?(lld|ld|d|lf|f|@)", value)
-        return Counter(match[1] for match in tokens if match[1])
+        tokens = re.finditer(r"%%|%(?:(\d+)\$)?(?:\.\d+)?(lld|ld|d|lf|f|@)", value)
+        result = Counter()
+        next_index = 1
+        for match in tokens:
+            if not match[2]:
+                continue
+            index = int(match[1]) if match[1] else next_index
+            if not match[1]:
+                next_index += 1
+            result[(index, match[2])] += 1
+        return result
     issues = []
     for relative in CATALOGS:
         for key, entry in json.loads((root / relative).read_text())["strings"].items():
@@ -330,7 +339,7 @@ def format_issues(root: Path) -> list[Issue]:
             for language in LANGUAGES:
                 value = localizations.get(language, {}).get("stringUnit", {}).get("value")
                 if value is not None and signature(source) != signature(value):
-                    issues.append(Issue(relative, 0, key, f"{language} format argument types/count differ"))
+                    issues.append(Issue(relative, 0, key, f"{language} format argument indices/types/count differ"))
     return issues
 
 
@@ -509,6 +518,27 @@ class SelfTests(unittest.TestCase):
         file.write_text(json.dumps({"strings": {"안녕": {"localizations": {"en": {"stringUnit": {"state": "new", "value": "Hello"}}}}}}))
         self.assertTrue(any("unfinished" in issue.reason for issue in audit(root, [])))
 
+    def test_permission_and_semantic_keys_require_all_translations(self):
+        root = self.fixture()
+        for relative in (*CATALOGS, "apps/ios-native/AlarmTalk/InfoPlist.xcstrings"):
+            file = root / relative
+            original = file.read_text()
+            for language in LANGUAGES:
+                for state in [None, "new"]:
+                    entry = {"localizations": {lang: {"stringUnit": {"state": "translated", "value": "Permission"}}
+                                               for lang in LANGUAGES}}
+                    if state is None:
+                        del entry["localizations"][language]
+                    else:
+                        entry["localizations"][language]["stringUnit"]["state"] = state
+                    file.write_text(json.dumps({"strings": {"NSAlarmKitUsageDescription": entry}}))
+                    issues = catalog_issues(root)
+                    self.assertTrue(any(i.path == relative and i.value == "NSAlarmKitUsageDescription"
+                                        and i.reason.startswith(language) for i in issues))
+            file.write_text(json.dumps({"strings": {"CFBundleDisplayName": {"shouldTranslate": False}}}))
+            self.assertFalse(any(i.path == relative for i in catalog_issues(root)))
+            file.write_text(original)
+
     def test_semantic_default_and_comments(self):
         root = self.fixture('String(localized: "hello.title", defaultValue: "안녕", comment: "번역 설명")', "hello.title")
         self.assertEqual(audit(root, []), [])
@@ -570,6 +600,22 @@ class SelfTests(unittest.TestCase):
     def test_translation_format_arguments_cannot_disappear(self):
         root = self.fixture(source='String(localized: "알람 %lld개")', key="알람 %lld개")
         self.assertTrue(any("format argument" in issue.reason for issue in audit(root, [])))
+
+    def test_format_arguments_keep_indices_and_allow_reordering(self):
+        cases = [
+            ("이름 %@와 %@", "%2$@ and %1$@", False),
+            ("이름 %1$@와 %2$@", "%1$@ and %1$@", True),
+            ("이름 %@와 %@", "%1$@", True),
+            ("이름 %@ 수 %lld", "%2$lld: %1$@", False),
+            ("이름 %@ 수 %lld", "%1$lld: %2$@", True),
+            ("진행 %lld%% 이름 %@", "%2$@: %1$lld%%", False),
+        ]
+        for source, translated, fails in cases:
+            root = self.fixture(source="")
+            entry = {"localizations": {lang: {"stringUnit": {"state": "translated", "value": translated}}
+                                       for lang in LANGUAGES}}
+            (root / CATALOGS[0]).write_text(json.dumps({"strings": {source: entry}}))
+            self.assertEqual(bool(format_issues(root)), fails, (source, translated))
 
 
 if __name__ == "__main__":
