@@ -284,7 +284,7 @@ struct AlarmEditorSheet: View {
             EditorActionBar(
                 saveTitle: saveButtonTitle,
                 saving: isWorking || voiceStudio.isBusy,
-                savingLabel: voiceStudio.isBusy ? String(localized: "음성 만드는 중…") : String(localized: "저장 중…"),
+                savingLabel: voiceStudio.isBusy ? "음성 만드는 중…" : "저장 중…",
                 saveEnabled: !editorSaveBlocked,
                 onCancel: onClose,
                 onSave: { Task { await saveFlow() } }
