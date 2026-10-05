@@ -51,6 +51,8 @@ struct BillingLocalizationTests {
     @Test("복원 결과의 건수와 다운그레이드 안내의 이름은 서식 인자로 유지된다", arguments: ["en", "ja"])
     func formatArguments(language: String) throws {
         let bundle = try bundle(language)
+        let failedVerification = "결제를 확인하지 못했어요. '이전 구매 복원'을 눌러 다시 시도해 주세요."
+        #expect(bundle.localizedString(forKey: failedVerification, value: nil, table: nil) != failedVerification)
         let restore = bundle.localizedString(forKey: "이전 구매 %lld건을 복원했어요.", value: nil, table: nil)
         #expect(String(format: restore, 3).contains("3"))
         #expect(!restore.contains("이전 구매"))
