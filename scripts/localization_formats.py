@@ -58,12 +58,12 @@ def source_values_for_path(source, path):
 def catalog_format_mismatches(source, target, source_key):
     sources = catalog_values(source) or {(): source_key}
     return [path for path, value in catalog_values(target).items()
-            if any(format_signature(expected) != format_signature(value)
+            if any(format_signature(expected) != format_signature(value) or line_breaks(expected) != line_breaks(value)
                    for expected in source_values_for_path(sources, path))]
 
 
-def android_format_mismatches(source, target):
-    if source.get("formatted") == "false" or source.tag != target.tag:
+def android_format_mismatches(source, target, check_line_breaks=True):
+    if source.tag != target.tag:
         return []
     if source.tag == "string":
         pairs = [("string", source, target)]
@@ -79,6 +79,20 @@ def android_format_mismatches(source, target):
                 expected = sources.get("other")
             if expected is not None:
                 pairs.append((quantity, expected, item))
-    return [path for path, a, b in pairs
-            if format_signature("".join(a.itertext()), "android")
-            != format_signature("".join(b.itertext()), "android")]
+    mismatches = []
+    for path, a, b in pairs:
+        first, second = "".join(a.itertext()), "".join(b.itertext())
+        formatted = source.get("formatted") != "false"
+        if (formatted and format_signature(first, "android") != format_signature(second, "android")) or (check_line_breaks and line_breaks(first, "android", formatted) != line_breaks(second, "android", formatted)):
+            mismatches.append(path)
+    return mismatches
+
+
+def line_breaks(value, platform="swift", formatted=True):
+    if platform == "android":
+        # Decode escapes once: \\n is a newline, but \\\\n is literal text.
+        value = re.sub(r'\\(u[0-9a-fA-F]{4}|.)',
+                       lambda match: chr(int(match[1][1:], 16)) if match[1].startswith('u') else {'n': '\n', 'r': '\r'}.get(match[1], match[1]), value)
+        if formatted:
+            value = re.sub(r'%%|%n', lambda match: '\n' if match[0] == '%n' else '%', value)
+    return len(re.findall(r'\r\n|\r|\n', value))

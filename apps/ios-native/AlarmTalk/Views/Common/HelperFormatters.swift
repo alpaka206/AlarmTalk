@@ -19,7 +19,7 @@ enum HelperFormatters {
     static func quietScheduleLabel(_ windows: [FamilyAlarmQuietWindow]?, bundle: Bundle = .main) -> String {
         let list = windows ?? []
         if list.isEmpty { return String(localized: "없음", bundle: bundle) }
-        let visible = list.prefix(2).map { quietWindowLabel($0, bundle: bundle) }.joined(separator: " · ")
+        let visible: String = list.prefix(2).map { quietWindowLabel($0, bundle: bundle) }.joined(separator: " · ")
         let hidden = list.count - 2
         return hidden > 0 ? String(localized: "\(visible) 외 \(hidden)개", bundle: bundle) : visible
     }

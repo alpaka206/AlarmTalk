@@ -549,7 +549,7 @@ final class SocialFeatureViewModel: ObservableObject {
         await runShareCodeAction(
             session: session,
             call: { try await api.ensureFamilyShareCode(token: $0) },
-            successMessage: { String(localized: "\($0) 공유 코드를 준비했어요.") }
+            successMessage: { String(localized: "\(String($0)) 공유 코드를 준비했어요.") }
         )
     }
 
@@ -560,7 +560,7 @@ final class SocialFeatureViewModel: ObservableObject {
         await runShareCodeAction(
             session: session,
             call: { try await api.regenerateFamilyShareCode(token: $0) },
-            successMessage: { String(localized: "\($0) 공유 코드를 새로 발급했어요. 기존 코드는 더 이상 쓸 수 없어요.") }
+            successMessage: { String(localized: "\(String($0)) 공유 코드를 새로 발급했어요. 기존 코드는 더 이상 쓸 수 없어요.") }
         )
     }
 

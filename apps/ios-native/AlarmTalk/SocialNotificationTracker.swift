@@ -42,7 +42,7 @@ enum SocialNotificationTracker {
             noteID: alarmID,
             title: title.nilIfBlank ?? String(localized: "상대가 보낸 알람"),
             // Android `SocialNotificationFactory.kt:35` 과 동일 문구(마침표 없음).
-            body: time.nilIfBlank.map { String(localized: "\($0)에 울려요") } ?? String(localized: "상대가 내 알람을 설정했어요")
+            body: time.nilIfBlank.map { String(localized: "\(String($0))에 울려요") } ?? String(localized: "상대가 내 알람을 설정했어요")
         )
     }
 

@@ -22,7 +22,8 @@ import unittest
 import xml.etree.ElementTree as ET
 
 from localization_lexers import HANGUL, SwiftLexer, kotlin_literals
-from localization_formats import android_format_mismatches, catalog_format_mismatches
+from localization_formats import android_format_mismatches, catalog_format_mismatches, line_breaks
+from localization_swift_types import SwiftTypes
 
 ROOT = Path(__file__).resolve().parents[1]
 LANGUAGES = ("en", "ja")
@@ -35,6 +36,9 @@ LOCALIZED_TYPE = r"LocalizedString(?:Key|Resource)"
 # English date pickers use bare numbers; Korean/Japanese append year/month/day.
 # Only emptiness is exempted. Missing resources or copied Korean still fail.
 EMPTY_ANDROID_UNITS = {("en", "editorp_fortune_unit_" + unit) for unit in ("year", "month", "day")}
+# LandingScreen concatenates these fragments around the highlighted word. The
+# English sentence moves the break to the prefix; compare the rendered whole.
+ANDROID_LINE_BREAK_GROUPS = (("auth_landing_headline_pre", "auth_landing_headline_keyword", "auth_landing_headline_post"),)
 
 
 def fingerprint(value: str) -> str:
@@ -159,16 +163,23 @@ def literal_value(literal: dict) -> str:
     return value
 
 
-def key_pattern(literal: dict) -> re.Pattern:
-    # Swift extraction chooses %@/%lld/%lf by expression type. The audit does not
-    # type-check expressions; it requires the actual key shape and checks formats
-    # across translations separately. No unbounded Cartesian expansion.
+def key_pattern(literal: dict, infer=lambda expression: None) -> re.Pattern:
+    # Preserve the actual primitive interpolation type. Unknown expressions
+    # require an explicit typed expression instead of matching every format.
     interpolated = any(kind == "interp" for kind, _ in literal["parts"])
-    value = "".join((value.replace("%", "%%") if interpolated else value) if kind == "lit" else "\0" for kind, value in literal["parts"])
+    parts = []
+    for kind, value in literal["parts"]:
+        if kind == "lit":
+            parts.append(value.replace("%", "%%") if interpolated else value)
+        else:
+            conversion = infer(value)
+            if conversion is None:
+                raise ValueError(value)
+            parts.append("%" + conversion)
+    value = "".join(parts)
     if literal["multiline"]:
         value = textwrap.dedent(value.removeprefix("\n")).rstrip(" \t").removesuffix("\n")
-    pattern = re.escape(value).replace("\x00", r"%(?:@|lld|ld|d|lf|f)")
-    return re.compile("^" + pattern + "$")
+    return re.compile("^" + re.escape(value) + "$")
 
 
 def localized_context(path: str, source: str, literal: dict, declarations: Declarations) -> tuple[bool, str | None]:
@@ -321,6 +332,13 @@ def android_text_is_blank(value: str) -> bool:
     return not value.strip()
 
 
+def translated_leaves(node) -> bool:
+    leaves = list(string_units(node))
+    return bool(leaves) and all(leaf.get("state") == "translated"
+                                and isinstance(leaf.get("value"), str)
+                                and leaf["value"].strip() for leaf in leaves)
+
+
 def catalog_issues(root: Path) -> list[Issue]:
     issues = []
     for relative in (*CATALOGS, "apps/ios-native/AlarmTalk/InfoPlist.xcstrings"):
@@ -330,13 +348,12 @@ def catalog_issues(root: Path) -> list[Issue]:
                 continue
             # A Korean source-text key can fall back to the key itself. An opaque
             # identifier cannot: require an explicit Korean value as well.
-            required_languages = LANGUAGES if HANGUL.search(key) else (*LANGUAGES, "ko")
+            localizations = entry.get("localizations", {})
+            required_languages = (*LANGUAGES, "ko") if not HANGUL.search(key) or "ko" in localizations else LANGUAGES
             for language in required_languages:
                 units = entry.get("localizations", {}).get(language, {})
                 leaves = list(string_units(units))
-                if not leaves or any(leaf.get("state") != "translated"
-                                     or not isinstance(leaf.get("value"), str)
-                                     or not leaf["value"].strip() for leaf in leaves):
+                if not translated_leaves(units):
                     issues.append(Issue(relative, 0, key, f"{language} translation missing, unfinished or empty"))
                 if language in LANGUAGES and any(HANGUL.search(str(leaf.get("value", ""))) for leaf in leaves):
                     issues.append(Issue(relative, 0, key, f"{language} translation contains Hangul"))
@@ -360,13 +377,26 @@ def catalog_issues(root: Path) -> list[Issue]:
             other, target = match
             if entry.tag != other.tag or (entry.tag == "string-array" and len(entry) != len(other)):
                 issues.append(Issue(target, 0, key, "resource type/array length differs"))
+            if other.tag == "plurals":
+                required = {"one", "other"} if language == "en" else {"other"}
+                if not required.issubset({item.get("quantity") for item in other}):
+                    issues.append(Issue(target, 0, key, f"Android {language} required plural quantities missing"))
             if HANGUL.search("".join(other.itertext())):
                 issues.append(Issue(target, 0, key, f"Android {language} resource contains Hangul"))
             leaves = [other] if other.tag == "string" else list(other)
             if (not leaves or any(android_text_is_blank("".join(leaf.itertext())) for leaf in leaves)) and (language, key) not in EMPTY_ANDROID_UNITS:
                 issues.append(Issue(target, 0, key, f"Android {language} resource contains an empty translation"))
-            for leaf in android_format_mismatches(entry, other):
-                issues.append(Issue(target, 0, key, f"Android {language} format argument indices/types/count differ ({leaf})"))
+            grouped = any(key in group for group in ANDROID_LINE_BREAK_GROUPS)
+            for leaf in android_format_mismatches(entry, other, check_line_breaks=not grouped):
+                issues.append(Issue(target, 0, key, f"Android {language} format argument indices/types/count or line breaks differ ({leaf})"))
+    for group in ANDROID_LINE_BREAK_GROUPS:
+        for language in LANGUAGES:
+            if not all(key in localized[locale] for locale in ("ko", language) for key in group):
+                continue  # Individual missing-resource checks report these.
+            counts = [sum(line_breaks("".join(localized[locale][key][0].itertext()), "android") for key in group)
+                      for locale in ("ko", language)]
+            if counts[0] != counts[1]:
+                issues.append(Issue(localized[language][group[0]][1], 0, "+".join(group), f"Android {language} combined line breaks differ"))
     return issues
 
 
@@ -430,9 +460,11 @@ def format_issues(root: Path) -> list[Issue]:
             if not entry.get("shouldTranslate", True):
                 continue
             localizations = entry.get("localizations", {})
-            for language in LANGUAGES:
-                for path in catalog_format_mismatches(localizations.get("ko", {}), localizations.get(language, {}), key):
-                    issues.append(Issue(relative, 0, key, f"{language} format argument indices/types/count differ ({'/'.join(path) or 'string'})"))
+            languages = (*LANGUAGES, "ko") if HANGUL.search(key) and "ko" in localizations else LANGUAGES
+            for language in languages:
+                source = {} if language == "ko" else localizations.get("ko", {})
+                for path in catalog_format_mismatches(source, localizations.get(language, {}), key):
+                    issues.append(Issue(relative, 0, key, f"{language} format argument indices/types/count or line breaks differ ({'/'.join(path) or 'string'})"))
     return issues
 
 
@@ -445,6 +477,7 @@ def language_gate(source: str) -> bool:
 def audit(root: Path, rules: list[tuple[str, str, str, str]]) -> list[Issue]:
     sources = {str(p.relative_to(root)): p.read_text() for relative in SWIFT_ROOTS for p in (root / relative).rglob("*.swift")}
     declarations = Declarations(sources)
+    types = SwiftTypes(sources, lambda source: code_only(source, SwiftLexer(source).run()), delimiter_pairs)
     catalogs = {relative: json.loads((root / relative).read_text())["strings"] for relative in CATALOGS}
     issues = []
     for path, source in sources.items():
@@ -472,14 +505,18 @@ def audit(root: Path, rules: list[tuple[str, str, str, str]]) -> list[Issue]:
                 # The corresponding semantic key is audited as its own literal.
                 continue
             targets = CATALOGS if "/Shared/" in path else (CATALOGS[1] if "/AlarmTalkWidget/" in path else CATALOGS[0],)
-            pattern = key_pattern(literal)
+            try:
+                pattern = key_pattern(literal, lambda expression: types.infer(expression, path, literal["start"]))
+            except ValueError as error:
+                issues.append(Issue(path, literal["line"], value, f"interpolation type unknown; use an explicit primitive conversion: {error}"))
+                continue
             for target in targets:
                 matches = [(key, entry) for key, entry in catalogs[target].items() if pattern.fullmatch(key)]
                 # Language-neutral punctuation/brand strings need no translation.
                 if not matches:
                     issues.append(Issue(path, literal["line"], value, f"key missing from {target}"))
                 elif not any(not entry.get("shouldTranslate", True) or all(
-                    entry.get("localizations", {}).get(language, {}).get("stringUnit", {}).get("state") == "translated"
+                    translated_leaves(entry.get("localizations", {}).get(language, {}))
                     for language in LANGUAGES) for _, entry in matches):
                     issues.append(Issue(path, literal["line"], value, f"key has unfinished en/ja translations in {target}"))
         gate_source = code + "\n" + "\n".join(literal_value(l) for l in literals)
@@ -537,6 +574,111 @@ def main() -> int:
 
 
 class SelfTests(unittest.TestCase):
+    def test_explicit_korean_for_source_keys_must_be_valid(self):
+        root = self.fixture()
+        file = root / CATALOGS[0]
+        original = file.read_text()
+        for value, state in [("", "translated"), (" \n", "translated"), ("안녕", "new")]:
+            data = json.loads(original)
+            data["strings"]["안녕"]["localizations"]["ko"]["stringUnit"] = {"value": value, "state": state}
+            file.write_text(json.dumps(data))
+            self.assertTrue(any(i.reason.startswith("ko translation") for i in audit(root, [])))
+
+    def test_source_key_format_cannot_be_lost_in_all_languages(self):
+        root = self.fixture(source='', key='안녕 %@')
+        file = root / CATALOGS[0]
+        data = json.loads(file.read_text())
+        for language in (*LANGUAGES, 'ko'):
+            data['strings']['안녕 %@']['localizations'][language]['stringUnit']['value'] = 'Hello'
+        file.write_text(json.dumps(data))
+        self.assertTrue(any(i.reason.startswith('ko format argument') for i in format_issues(root)))
+
+    def test_call_sites_accept_translated_variations(self):
+        root = self.fixture()
+        file = root / CATALOGS[0]
+        original = json.loads(file.read_text())
+        for kind in ['plural', 'device']:
+            data = json.loads(json.dumps(original))
+            for language in LANGUAGES:
+                localization = data['strings']['안녕']['localizations'][language]
+                data['strings']['안녕']['localizations'][language] = {'variations': {kind: {'other': localization}}}
+            file.write_text(json.dumps(data))
+            self.assertEqual(audit(root, []), [])
+            data['strings']['안녕']['localizations']['en']['variations'][kind]['other']['stringUnit']['state'] = 'new'
+            file.write_text(json.dumps(data))
+            self.assertTrue(any('unfinished en/ja' in i.reason for i in audit(root, [])))
+
+    def test_interpolation_type_must_match_catalog_key(self):
+        for declaration, expression, correct, wrong in [
+            ('let count: Int = 3', 'count', 'lld', '@'),
+            ('let count = 3', 'count', 'lld', '@'),
+            ('let name: String = "Sam"', 'name', '@', 'lld'),
+            ('', 'Int(3)', 'lld', '@'), ('', 'String(3)', '@', 'lld'),
+            ('let count = 3', 'count + 1', 'lld', '@')]:
+            source = declaration + '\nString(localized: "알람 \\(' + expression + ')개")'
+            for conversion in (correct, wrong):
+                root = self.fixture(source=source, key='알람 %' + conversion + '개')
+                issues = audit(root, [])
+                self.assertEqual(any('key missing' in i.reason for i in issues), conversion == wrong, source)
+        root = self.fixture(source='String(localized: "알람 \\(unknown())개")', key='알람 %@개')
+        self.assertTrue(any('interpolation type unknown' in i.reason for i in audit(root, [])))
+
+    def test_interpolation_does_not_borrow_another_functions_parameter(self):
+        source = 'func first(count: Int) {}\nfunc second(count: String) { String(localized: "알람 \\(count)개") }'
+        root = self.fixture(source=source, key='알람 %lld개')
+        self.assertTrue(any('key missing' in i.reason for i in audit(root, [])))
+        source = 'func first(count: Int) {}\nfunc second() { String(localized: "알람 \\(count)개") }'
+        root = self.fixture(source=source, key='알람 %lld개')
+        self.assertTrue(any('interpolation type unknown' in i.reason for i in audit(root, [])))
+
+    def test_android_plural_requires_locale_quantities(self):
+        root = self.fixture(source='')
+        base = root / 'apps/android-native/app/src/main/res'
+        for language, quantities in [('', ['other']), ('-ja', ['other']), ('-en', ['one', 'other'])]:
+            items = ''.join('<item quantity="' + q + '">Hello</item>' for q in quantities)
+            (base / ('values' + language) / 'strings.xml').write_text('<resources><plurals name="hello">' + items + '</plurals></resources>')
+        self.assertEqual(catalog_issues(root), [])
+        for language in LANGUAGES:
+            file = base / ('values-' + language) / 'strings.xml'
+            original = file.read_text()
+            file.write_text(re.sub('<item quantity="' + ('one' if language == 'en' else 'other') + '">.*?</item>', '', original))
+            self.assertTrue(any(i.reason == f'Android {language} required plural quantities missing' for i in catalog_issues(root)))
+            file.write_text(original)
+
+    def test_line_break_contract_in_each_leaf(self):
+        from localization_formats import line_breaks
+        self.assertEqual(line_breaks(r'first\nsecond', 'android'), 1)
+        self.assertEqual(line_breaks(r'first\\nsecond', 'android'), 0)
+        self.assertEqual(line_breaks('first%%nsecond', 'android'), 0)
+        self.assertEqual(line_breaks('first%nsecond', 'android'), 1)
+        self.assertEqual(line_breaks('first%nsecond', 'android', formatted=False), 0)
+        self.assertEqual(line_breaks('first\r\nsecond'), 1)
+        def leaf(value):
+            return {'stringUnit': {'state': 'translated', 'value': value}}
+        for kind in ['plural', 'device']:
+            source = {'variations': {kind: {'other': leaf('첫 줄\n둘째 줄')}}}
+            self.assertTrue(catalog_format_mismatches(source, leaf('One line'), 'key'))
+            self.assertEqual(catalog_format_mismatches(source, leaf('First\nSecond'), 'key'), [])
+        for tag in ['string', 'string-array', 'plurals']:
+            wrap = (lambda text: text) if tag == 'string' else (lambda text: '<item quantity="other">' + text + '</item>')
+            source = ET.fromstring('<' + tag + ' name="value" formatted="false">' + wrap(r'First\nSecond') + '</' + tag + '>')
+            target = ET.fromstring('<' + tag + ' name="value">' + wrap('One line') + '</' + tag + '>')
+            self.assertTrue(android_format_mismatches(source, target))
+
+    def test_combined_landing_line_breaks(self):
+        root = self.fixture(source='')
+        base = root / 'apps/android-native/app/src/main/res'
+        group = ANDROID_LINE_BREAK_GROUPS[0]
+        for language, values in [('', ['First', 'word', r'\nlast']),
+                                 ('-en', [r'First\n', 'word', 'last']),
+                                 ('-ja', ['First', 'word', r'\nlast'])]:
+            xml = '<resources>' + ''.join('<string name="' + name + '">' + value + '</string>' for name, value in zip(group, values)) + '</resources>'
+            (base / ('values' + language) / 'strings.xml').write_text(xml)
+        self.assertEqual(catalog_issues(root), [])
+        file = base / 'values-en/strings.xml'
+        file.write_text(file.read_text().replace(r'\n', ''))
+        self.assertTrue(any('combined line breaks differ' in i.reason for i in catalog_issues(root)))
+
     def test_comments_raw_strings_and_interpolation(self):
         source = '// "주석"\nText(#"안녕 \#(name)"#) /* nested /* "제외" */ */'
         literals = SwiftLexer(source).run()
@@ -587,8 +729,8 @@ class SelfTests(unittest.TestCase):
 
     def test_percent_and_multiline_keys(self):
         literal = SwiftLexer('String(localized: "진행 \\(percent)%")').run()[0]
-        self.assertTrue(key_pattern(literal).fullmatch("진행 %lld%%"))
-        self.assertFalse(key_pattern(literal).fullmatch("진행 %lld%"))
+        self.assertTrue(key_pattern(literal, lambda _: "lld").fullmatch("진행 %lld%%"))
+        self.assertFalse(key_pattern(literal, lambda _: "lld").fullmatch("진행 %lld%"))
         literal = SwiftLexer('String(localized: """\n    첫 줄\n    둘째 줄\n    """)').run()[0]
         self.assertTrue(key_pattern(literal).fullmatch("첫 줄\n둘째 줄"))
 

@@ -94,7 +94,7 @@ struct PlanCard: View {
     /// 무료는 상품이 아니라 그냥 0원이다.
     private var priceLabel: String? {
         if tier == .free { return String(localized: "0원") }
-        return subscriptions.priceLabel(for: tier).map { String(localized: "월 \($0)") }
+        return subscriptions.priceLabel(for: tier).map { String(localized: "월 \(String($0))") }
     }
 
     var body: some View {
