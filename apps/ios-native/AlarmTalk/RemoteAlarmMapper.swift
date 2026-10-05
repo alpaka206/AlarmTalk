@@ -233,8 +233,6 @@ enum RemoteAlarmMapper {
     /// Android `receivedRemoteAlarmLabel(...)` 과 동일한 받은 알람 라벨.
     static func resolveLabel(_ remote: RemoteAlarm) -> String {
         let sender = [remote.senderName, remote.senderEmail].lazy.compactMap(\.nilIfBlank).first
-        guard let sender else { return "상대가 보낸 알람" }
-        let displayName = sender.hasSuffix("님") ? sender : "\(sender)님"
-        return "\(displayName)이 보낸 알람"
+        return receivedAlarmDisplayLabel(sender: sender)
     }
 }

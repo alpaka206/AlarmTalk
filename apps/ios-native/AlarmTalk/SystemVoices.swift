@@ -20,6 +20,21 @@ func bundledSystemVoiceProfiles() -> [VoiceProfile] {
     ]
 }
 
+/// 저장된 이름은 계약값이며 화면에서만 id에 대응하는 번역 이름을 쓴다.
+func systemVoiceDisplayName(id: String?, fallback: String, bundle: Bundle = .main) -> String {
+    switch id {
+    case systemVoiceIDPrefix + "000000000101": return String(localized: "시우", bundle: bundle)
+    case systemVoiceIDPrefix + "000000000102": return String(localized: "미나", bundle: bundle)
+    case systemVoiceIDPrefix + "000000000103": return String(localized: "도현", bundle: bundle)
+    case systemVoiceIDPrefix + "000000000104": return String(localized: "애니", bundle: bundle)
+    default: return fallback
+    }
+}
+
+extension VoiceProfile {
+    var displayName: String { systemVoiceDisplayName(id: id, fallback: name) }
+}
+
 /// 시스템 제공(스톡) 보이스 id 인지 — 무료 플랜에서도 사용할 수 있다.
 /// Android `SystemVoices.isSystemVoiceId` 동일.
 func isSystemVoiceId(_ id: String?) -> Bool {

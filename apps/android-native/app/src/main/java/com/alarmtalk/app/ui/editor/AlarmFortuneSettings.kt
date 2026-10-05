@@ -537,3 +537,11 @@ internal fun fortuneInfoSummary(gender: String, birthDate: String, birthTime: St
         .filter { it.isNotBlank() }
         .joinToString(" · ")
 
+
+/** 운세 계약값은 유지하고 화면에서만 번역한다. */
+internal fun fortuneValueLabel(context: android.content.Context, value: String): String = when (value) {
+    FortuneGenderMale -> context.getString(R.string.editorp_fortune_gender_male)
+    FortuneGenderFemale -> context.getString(R.string.editorp_fortune_gender_female)
+    FortuneBirthTimeUnknown -> context.getString(R.string.editor2_fortune_time_unknown)
+    else -> value
+}

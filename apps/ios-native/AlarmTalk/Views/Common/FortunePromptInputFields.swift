@@ -12,6 +12,27 @@ enum FortunePromptInputFormat {
     static let female = "여성"
     static let unknownTime = "시간 모름"
 
+    static func displayLabel(_ value: String, bundle: Bundle = .main) -> String {
+        switch value {
+        case male: return String(localized: "남성", bundle: bundle)
+        case female: return String(localized: "여성", bundle: bundle)
+        case unknownTime: return String(localized: "시간 모름", bundle: bundle)
+        default: return value
+        }
+    }
+
+    static func yearLabel(_ year: Int, bundle: Bundle = .main) -> String {
+        String(localized: "fortune.birth.year.value", defaultValue: "\(String(year))년", bundle: bundle)
+    }
+
+    static func monthLabel(_ month: Int, bundle: Bundle = .main) -> String {
+        String(localized: "fortune.birth.month.value", defaultValue: "\(month)월", bundle: bundle)
+    }
+
+    static func dayLabel(_ day: Int, bundle: Bundle = .main) -> String {
+        String(localized: "fortune.birth.day.value", defaultValue: "\(day)일", bundle: bundle)
+    }
+
     /// 태어난 시간 선택지 — **사주 시진 경계(한국 표준시 +30분 보정)** 그대로.
     ///
     /// ⚠ 계약의 단일 출처는 `packages/shared/src/schemas/fortune.ts` 의
@@ -25,8 +46,7 @@ enum FortunePromptInputFormat {
     /// "오전"(09:00)을 고른 사람은 안드로이드의 07:31~09:30 과 09:31~11:30 어느 쪽에도
     /// 정확히 대응하지 않는다.
     ///
-    /// ⚠ **라벨을 번역하지 말 것.** 이 문자열이 그대로 저장되고 프롬프트로 들어간다.
-    /// 안드로이드도 같은 이유로 구간 문자열을 그대로 보여준다.
+    /// ⚠ **저장값은 번역하지 말 것.** 프롬프트 계약은 그대로 두고 표시할 때만 displayLabel을 쓴다.
     static let timeChoices: [FortuneBirthTimeChoice] = [
         .init(value: unknownTime, label: unknownTime),
         .init(value: "00:00~01:30", label: "00:00~01:30"),
@@ -145,14 +165,14 @@ struct FortunePromptInputFields: View {
                     .foregroundStyle(AlarmTalkTheme.textSecondary)
             }
 
-            fieldSection(title: "성별", hasError: submitted && FortunePromptInputFormat.normalizedGender(gender).isEmpty) {
+            fieldSection(title: String(localized: "성별"), hasError: submitted && FortunePromptInputFormat.normalizedGender(gender).isEmpty) {
                 HStack(spacing: 8) {
-                    genderButton("남성", value: FortunePromptInputFormat.male)
-                    genderButton("여성", value: FortunePromptInputFormat.female)
+                    genderButton(String(localized: "남성"), value: FortunePromptInputFormat.male)
+                    genderButton(String(localized: "여성"), value: FortunePromptInputFormat.female)
                 }
             }
 
-            fieldSection(title: "생년월일", hasError: submitted && !FortunePromptInputFormat.isValidBirthDate(birthDate)) {
+            fieldSection(title: String(localized: "생년월일"), hasError: submitted && !FortunePromptInputFormat.isValidBirthDate(birthDate)) {
                 // ⚠ **그래픽 달력 시트로 되돌리지 말 것.** 안드로이드는 연·월·일 드롭다운
                 // 3개다(`ui/editor/AlarmFortuneSettings.kt`). 달력은 1990년처럼 먼 해로 가려면
                 // 여러 번 넘겨야 하고, 무엇보다 같은 입력이 두 앱에서 전혀 다른 화면이었다.
@@ -162,7 +182,7 @@ struct FortunePromptInputFields: View {
                 HStack(spacing: 8) {
                     dropdown(display: yearText, isPlaceholder: yearValue == nil) {
                         ForEach(Self.selectableYears, id: \.self) { year in
-                            Button("\(String(year))년") { setBirth(year: year) }
+                            Button(FortunePromptInputFormat.yearLabel(year)) { setBirth(year: year) }
                         }
                     }
                     dropdown(
@@ -171,7 +191,7 @@ struct FortunePromptInputFields: View {
                         enabled: yearValue != nil
                     ) {
                         ForEach(1...12, id: \.self) { month in
-                            Button("\(month)월") { setBirth(month: month) }
+                            Button(FortunePromptInputFormat.monthLabel(month)) { setBirth(month: month) }
                         }
                     }
                     dropdown(
@@ -180,14 +200,14 @@ struct FortunePromptInputFields: View {
                         enabled: yearValue != nil && monthValue != nil
                     ) {
                         ForEach(1...daysInSelectedMonth, id: \.self) { day in
-                            Button("\(day)일") { setBirth(day: day) }
+                            Button(FortunePromptInputFormat.dayLabel(day)) { setBirth(day: day) }
                         }
                     }
                 }
             }
 
             fieldSection(
-                title: "태어난 시간",
+                title: String(localized: "태어난 시간"),
                 hasError: submitted && !FortunePromptInputFormat.isValidBirthTime(birthTime)
             ) {
                 // ⚠ **14개를 펼치지 말 것.** 예전에는 시간대 버튼을 2열 그리드로 전부 펼치고
@@ -199,7 +219,7 @@ struct FortunePromptInputFields: View {
                     isPlaceholder: FortunePromptInputFormat.normalizedBirthTime(birthTime).isEmpty
                 ) {
                     ForEach(FortunePromptInputFormat.timeChoices) { choice in
-                        Button(choice.label) { birthTime = choice.value }
+                        Button(FortunePromptInputFormat.displayLabel(choice.label)) { birthTime = choice.value }
                     }
                 }
             }
@@ -227,13 +247,13 @@ struct FortunePromptInputFields: View {
     private var monthValue: Int? { birthParts?.month }
     private var dayValue: Int? { birthParts?.day }
 
-    private var yearText: String { yearValue.map { "\(String($0))년" } ?? "연도" }
-    private var monthText: String { monthValue.map { "\($0)월" } ?? "월" }
-    private var dayText: String { dayValue.map { "\($0)일" } ?? "일" }
+    private var yearText: String { yearValue.map { FortunePromptInputFormat.yearLabel($0) } ?? String(localized: "fortune.birth.year", defaultValue: "연도") }
+    private var monthText: String { monthValue.map { FortunePromptInputFormat.monthLabel($0) } ?? String(localized: "fortune.birth.month", defaultValue: "월") }
+    private var dayText: String { dayValue.map { FortunePromptInputFormat.dayLabel($0) } ?? String(localized: "fortune.birth.day", defaultValue: "일") }
 
     private var birthTimeText: String {
         let v = FortunePromptInputFormat.normalizedBirthTime(birthTime)
-        return v.isEmpty ? "선택" : v
+        return v.isEmpty ? String(localized: "선택") : FortunePromptInputFormat.displayLabel(v)
     }
 
     /// 고른 연·월에 실제로 있는 날 수. ⚠ 윤년을 직접 계산하지 말 것 — `Calendar` 가 안다.

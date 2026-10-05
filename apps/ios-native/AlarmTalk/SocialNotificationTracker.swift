@@ -40,9 +40,9 @@ enum SocialNotificationTracker {
     static func receivedAlarmRequest(alarmID: String, title: String, time: String) -> SocialNotificationRequest {
         SocialNotificationRequest(
             noteID: alarmID,
-            title: title.nilIfBlank ?? "상대가 보낸 알람",
+            title: title.nilIfBlank ?? String(localized: "상대가 보낸 알람"),
             // Android `SocialNotificationFactory.kt:35` 과 동일 문구(마침표 없음).
-            body: time.nilIfBlank.map { "\($0)에 울려요" } ?? "상대가 내 알람을 설정했어요"
+            body: time.nilIfBlank.map { String(localized: "\($0)에 울려요") } ?? String(localized: "상대가 내 알람을 설정했어요")
         )
     }
 

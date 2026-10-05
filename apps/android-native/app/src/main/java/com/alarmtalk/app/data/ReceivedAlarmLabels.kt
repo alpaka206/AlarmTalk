@@ -12,6 +12,6 @@ internal fun receivedRemoteAlarmLabel(
         .mapNotNull { it?.trim()?.takeIf(String::isNotBlank) }
         .firstOrNull()
         ?: return context.getString(R.string.r3data_received_alarm_from_other)
-    val displayName = if (sender.endsWith("님")) sender else context.getString(R.string.r3data_honorific_name, sender)
+    val displayName = if (sender.endsWith("님") || sender.endsWith("さん")) sender else context.getString(R.string.r3data_honorific_name, sender)
     return context.getString(R.string.r3data_received_alarm_from_sender, displayName)
 }

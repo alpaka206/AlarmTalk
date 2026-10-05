@@ -20,7 +20,7 @@ Swift 소스와 `Localizable.xcstrings`는 함께 고친다. 번역이 카탈로
 사용자가 직접 입력한 이름·관계·문구는 번역 대상이 아니다.
 
 기본 목소리 이름은 목소리 id로, 플랜 이름은 plan key로 표시 이름을 고른다. 서버가 보내는 한국어 이름을
-화면 번역 키로 삼지 않는다. 뜻이 다른 곳은 한국어 원문이 같아도 키를 나눈다(알람 탭과 재생 방식,
+화면 번역 키로 삼지 않는다. 목록에 없는 기본 목소리 id는 서버 이름을 그대로 표시한다. 뜻이 다른 곳은 한국어 원문이 같아도 키를 나눈다(알람 탭과 재생 방식,
 목소리 탭과 목소리 한 개, 요일과 생년월일, 문구 직접 입력과 관계 직접 입력).
 
 ## 3. 오류와 이름의 존칭
@@ -29,7 +29,7 @@ Swift 소스와 `Localizable.xcstrings`는 함께 고친다. 번역이 카탈로
 노출 여부를 가르지 않는다. 세부 계약은 [error-codes.md](error-codes.md) §4를 따른다.
 
 보낸 사람 이름의 존칭은 한 곳에서만 붙인다(한국어 님·일본어 さん·영어 없음). 존칭을 붙인 결과를 받는
-문장 틀에 존칭을 다시 넣지 않는다. 이름을 모르는 사람을 친구나 가족이라고 단정하지 않는다.
+문장 틀에 존칭을 다시 넣지 않는다. 이름 자체가 님·さん으로 끝나면 존칭을 더 붙이지 않는다. 이름을 모르는 사람을 친구나 가족이라고 단정하지 않는다.
 
 ## 4. 용어
 
@@ -51,6 +51,9 @@ Swift 소스와 `Localizable.xcstrings`는 함께 고친다. 번역이 카탈로
 영어·일본어 앱 화면의 브랜드는 `AlarmTalk`이다. 언어 선택지는 `한국어`·`English`·`日本語`처럼
 각 언어의 자기 이름으로 쓴다. 영어 문장 안의 플랜 이름도 대문자로 쓴다.
 
+약관·개인정보처리방침 웹 링크는 현재 앱 언어의 경로를 쓴다(ko·en·ja, 그 밖은 ko).
+동의 화면의 번들 문서와 동의 버전 계약은 그대로다.
+
 ## 5. 언어 변경과 검증
 
 이미 저장된 값도 표시할 때 현재 언어를 따른다. OS가 보관하는 알람 표시 문구는 언어가 바뀐 뒤
@@ -71,4 +74,6 @@ TTS 입력 문장은 구분한다. 카탈로그의 번역 유무와 호출부가
 | 공통 오류 코드 | `network/ApiErrorMessages.kt` | `APIErrorMessages.swift` |
 | 존칭 한 번 | `r3data_honorific_name` 리소스 | `%@님` 카탈로그 키 |
 | 언어 선택지 자기 이름 | `voices_lang_ko`·`voices_lang_en`·`voices_lang_ja` | 목소리 등록 화면의 언어 선택지(후속 연결) |
+| 저장값과 기본 목소리의 표시 | `fortuneValueLabel`·`systemVoiceDisplayName` | `FortunePromptInputFormat.displayLabel`·`systemVoiceDisplayName`·`VoiceRelationshipPreset.displayLabel` |
+| 약관 웹 링크의 앱 언어 | 설정 화면의 언어별 경로 | `LegalLinks`(후속 화면에서 채택) |
 | 화면의 문자열 조회 | `stringResource`·`Context.getString` | `String(localized:)`·SwiftUI의 정적 문자열 키 |
