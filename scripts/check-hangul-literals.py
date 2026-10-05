@@ -275,6 +275,19 @@ def apply_baseline(issues: list[Issue], baseline: dict[str, str]) -> list[Issue]
     return result
 
 
+def string_units(value):
+    """Yield translated leaves, including plural and device variations."""
+    if isinstance(value, dict):
+        for key, child in value.items():
+            if key == "stringUnit":
+                yield child if isinstance(child, dict) else {}
+            else:
+                yield from string_units(child)
+    elif isinstance(value, list):
+        for child in value:
+            yield from string_units(child)
+
+
 def catalog_issues(root: Path) -> list[Issue]:
     issues = []
     for relative in (*CATALOGS, "apps/ios-native/AlarmTalk/InfoPlist.xcstrings"):
@@ -284,10 +297,11 @@ def catalog_issues(root: Path) -> list[Issue]:
                 continue
             for language in LANGUAGES:
                 units = entry.get("localizations", {}).get(language, {})
-                # Includes plural/variation entries, if introduced later.
-                string_units = re.findall(r'"state"\s*:\s*"([^"]+)"', json.dumps(units))
-                if not string_units or any(state != "translated" for state in string_units):
-                    issues.append(Issue(relative, 0, key, f"{language} translation missing or unfinished"))
+                leaves = list(string_units(units))
+                if not leaves or any(leaf.get("state") != "translated"
+                                     or not isinstance(leaf.get("value"), str)
+                                     or not leaf["value"].strip() for leaf in leaves):
+                    issues.append(Issue(relative, 0, key, f"{language} translation missing, unfinished or empty"))
     resources = root / "apps/android-native/app/src/main/res"
     localized = {}
     for language in ("ko", *LANGUAGES):
@@ -537,6 +551,32 @@ class SelfTests(unittest.TestCase):
                                         and i.reason.startswith(language) for i in issues))
             file.write_text(json.dumps({"strings": {"CFBundleDisplayName": {"shouldTranslate": False}}}))
             self.assertFalse(any(i.path == relative for i in catalog_issues(root)))
+            file.write_text(original)
+
+    def test_translated_catalog_leaves_cannot_be_blank(self):
+        root = self.fixture()
+        for relative in (*CATALOGS, "apps/ios-native/AlarmTalk/InfoPlist.xcstrings"):
+            file = root / relative
+            original = file.read_text()
+            for language in LANGUAGES:
+                for value in [None, "", " \n\t "]:
+                    for variation in [False, True]:
+                        leaf = {"state": "translated"}
+                        if value is not None:
+                            leaf["value"] = value
+                        entry = {"localizations": {lang: {"stringUnit": {"state": "translated", "value": "Permission"}}
+                                                   for lang in LANGUAGES}}
+                        unit = {"stringUnit": leaf}
+                        if variation:
+                            unit = {"variations": {"plural": {
+                                "one": {"stringUnit": {"state": "translated", "value": "One"}}, "other": unit}}}
+                        entry["localizations"][language] = unit
+                        file.write_text(json.dumps({"strings": {"NSAlarmKitUsageDescription": entry}}))
+                        self.assertTrue(any(i.path == relative and i.reason.startswith(language)
+                                            and "empty" in i.reason for i in catalog_issues(root)))
+                        entry["shouldTranslate"] = False
+                        file.write_text(json.dumps({"strings": {"Brand": entry}}))
+                        self.assertFalse(any(i.path == relative for i in catalog_issues(root)))
             file.write_text(original)
 
     def test_semantic_default_and_comments(self):
