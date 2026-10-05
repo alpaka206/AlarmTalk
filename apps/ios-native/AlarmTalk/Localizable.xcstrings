@@ -981,7 +981,7 @@
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "かんたんログイン"
+            "value" : "簡単ログイン"
           }
         }
       }
@@ -1837,7 +1837,7 @@
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "国外移転への同意はサービスの利用に必須です。撤回するには「もっと見る」から退会してください。"
+            "value" : "国外移転への同意はサービスの利用に必須です。撤回するには「その他」から退会してください。"
           }
         }
       }
@@ -2727,9 +2727,6 @@
         }
       }
     },
-    "닉네임은 %@자 이내로 써 주세요" : {
-
-    },
     "닉네임은 %lld자 이내로 써 주세요" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3555,7 +3552,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Every morning, that voice wakes you with a brand-new message."
+            "value" : "Every morning, that voice wakes you with a new message."
           }
         },
         "ja" : {
@@ -3786,7 +3783,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Voice"
+            "value" : "Voices"
           }
         },
         "ja" : {
@@ -3990,7 +3987,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Create in the Voice tab"
+            "value" : "Create in the Voices tab"
           }
         },
         "ja" : {
@@ -6214,7 +6211,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "This is the name shown in the alarm list and the Voice tab. It can't be left empty."
+            "value" : "This is the name shown in the alarm list and the Voices tab. It can't be left empty."
           }
         },
         "ja" : {
@@ -6933,7 +6930,7 @@
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "例: ギュウォン"
+            "value" : "例：りん"
           }
         }
       }
@@ -7902,9 +7899,6 @@
         }
       }
     },
-    "이름은 %@자까지 쓸 수 있어요." : {
-
-    },
     "이름은 %lld자까지 쓸 수 있어요." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -7979,13 +7973,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "That email or password doesn't match. Please check and try again."
+            "value" : "Email or password doesn't match. Please check and try again."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "メールアドレスまたはパスワードが正しくありません。ご確認ください。"
+            "value" : "メールアドレスまたはパスワードが正しくありません。ご確認のうえ、もう一度お試しください。"
           }
         }
       }
@@ -9084,7 +9078,20 @@
       }
     },
     "좋아하는 %@로\n깨어나는 아침" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wake up to\na %@ you love"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "大好きな%@で\n目覚める朝"
+          }
+        }
+      }
     },
     "좋아하는 목소리 알람을 다시 불러올게요." : {
       "extractionState" : "manual",
@@ -10924,7 +10931,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "You can set alarms once the default voices finish downloading. (%lld%%)\nYou can check progress in the Voice tab."
+            "value" : "You can set alarms once the default voices finish downloading. (%lld%%)\nYou can check progress in the Voices tab."
           }
         },
         "ja" : {
@@ -11925,6 +11932,600 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "알람 끄기"
+          }
+        }
+      }
+    },
+    "[선택] 개인정보 처리방침 동의" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "[Optional] Agree to Privacy Policy"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "［任意］プライバシーポリシーに同意"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "[선택] 개인정보 처리방침 동의"
+          }
+        }
+      }
+    },
+    "[선택] 만 14세 이상입니다" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "[Optional] I am 14 or older"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "［任意］満14歳以上です"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "[선택] 만 14세 이상입니다"
+          }
+        }
+      }
+    },
+    "[선택] 음성 AI 처리를 위한 국외 이전 동의" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "[Optional] Agree to overseas transfer for voice AI processing"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "［任意］音声AI処理のための国外移転に同意"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "[선택] 음성 AI 처리를 위한 국외 이전 동의"
+          }
+        }
+      }
+    },
+    "[선택] 음성 생체정보 처리 동의" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "[Optional] Agree to voice biometric processing"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "［任意］音声生体情報の処理に同意"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "[선택] 음성 생체정보 처리 동의"
+          }
+        }
+      }
+    },
+    "[선택] 이용약관 동의" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "[Optional] Agree to Terms of Service"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "［任意］利用規約に同意"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "[선택] 이용약관 동의"
+          }
+        }
+      }
+    },
+    "[필수] 광고성 정보 수신 동의" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "[Required] Agree to receive marketing messages"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "［必須］広告・宣伝情報の受信に同意"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "[필수] 광고성 정보 수신 동의"
+          }
+        }
+      }
+    },
+    "[필수] 음성 AI 처리를 위한 국외 이전 동의" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "[Required] Agree to overseas transfer for voice AI processing"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "［必須］音声AI処理のための国外移転に同意"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "[필수] 음성 AI 처리를 위한 국외 이전 동의"
+          }
+        }
+      }
+    },
+    "[필수] 음성 생체정보 처리 동의" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "[Required] Agree to voice biometric processing"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "［必須］音声生体情報の処理に同意"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "[필수] 음성 생체정보 처리 동의"
+          }
+        }
+      }
+    },
+    "auth.landing.voiceKeyword" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "voice"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "声"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "목소리"
+          }
+        }
+      }
+    },
+    "내 목소리(생체정보)를 음성 프로필 생성·클론·TTS 생성에 사용하는 것에 동의합니다." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "I consent to my voice (biometric information) being used to create a voice profile, clone the voice, and generate speech."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自分の声(生体情報)を音声プロフィール作成・クローン・TTS生成に使用することに同意します。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "내 목소리(생체정보)를 음성 프로필 생성·클론·TTS 생성에 사용하는 것에 동의합니다."
+          }
+        }
+      }
+    },
+    "동의 기록에 실패했어요. 잠시 후 다시 시도해 주세요" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn't save your consent. Please try again in a moment."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "同意を記録できませんでした。しばらくしてからもう一度お試しください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "동의 기록에 실패했어요. 잠시 후 다시 시도해 주세요"
+          }
+        }
+      }
+    },
+    "동의를 철회하지 못했어요" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn't withdraw your consent."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "同意を撤回できませんでした。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "동의를 철회하지 못했어요"
+          }
+        }
+      }
+    },
+    "등록한 목소리는 음성 프로필 생성, 알람 문구 읽어주기, 알람 재생과 기기 캐싱에 쓰여요. 음성 클론과 읽어주기는 음성 AI 제공자 ElevenLabs를 통해 처리되고, 이 과정에서 목소리와 문구가 국외로 전송돼요. 알람톡은 목소리를 공개 검색·광고·데이터 판매에 쓰지 않고, 자체 범용 AI 모델 학습에도 쓰지 않아요. 음성 프로필은 언제든 삭제할 수 있어요." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A registered voice is used to create a voice profile, read alarm lines aloud, play alarms, and cache audio on this device. Voice cloning and text-to-speech run through our voice AI provider ElevenLabs, and your voice and text are sent overseas as part of that. AlarmTalk does not use your voice for public search, advertising, or data sales, and does not train its own general-purpose AI models on it. You can delete a voice profile at any time."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "登録した声は、音声プロフィールの作成、アラーム文言の読み上げ、アラーム再生と端末へのキャッシュに使われます。音声クローンと読み上げは音声AIプロバイダのElevenLabsを通じて処理され、その過程で声と文言が国外へ送信されます。AlarmTalkは声を公開検索・広告・データ販売に使わず、自社の汎用AIモデルの学習にも使いません。音声プロフィールはいつでも削除できます。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "등록한 목소리는 음성 프로필 생성, 알람 문구 읽어주기, 알람 재생과 기기 캐싱에 쓰여요. 음성 클론과 읽어주기는 음성 AI 제공자 ElevenLabs를 통해 처리되고, 이 과정에서 목소리와 문구가 국외로 전송돼요. 알람톡은 목소리를 공개 검색·광고·데이터 판매에 쓰지 않고, 자체 범용 AI 모델 학습에도 쓰지 않아요. 음성 프로필은 언제든 삭제할 수 있어요."
+          }
+        }
+      }
+    },
+    "무단 등록, 저작권·인격권 침해, 사칭으로 생기는 책임이 등록한 사람에게 있음을 확인합니다." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "I understand that responsibility for unauthorised registration, copyright or personality-rights infringement, and impersonation lies with the person who registers the voice."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無断登録、著作権・人格権の侵害、なりすましによる責任は登録した本人にあることを確認します。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "무단 등록, 저작권·인격권 침해, 사칭으로 생기는 책임이 등록한 사람에게 있음을 확인합니다."
+          }
+        }
+      }
+    },
+    "미동의" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not agreed"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未同意"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "미동의"
+          }
+        }
+      }
+    },
+    "본인 또는 권한과 동의를 받은 사람의 목소리만 등록합니다." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "I will only register my own voice, or a voice I have permission and consent to use."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "本人、または権限と同意を得た人の声のみを登録します。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "본인 또는 권한과 동의를 받은 사람의 목소리만 등록합니다."
+          }
+        }
+      }
+    },
+    "서비스 이용을 위해 약관에 동의해 주세요" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Please agree to the terms to use the service"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "サービスをご利用いただくために規約に同意してください"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "서비스 이용을 위해 약관에 동의해 주세요"
+          }
+        }
+      }
+    },
+    "선택 동의" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Optional consents"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "任意の同意"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "선택 동의"
+          }
+        }
+      }
+    },
+    "설명 접기" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Collapse item"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "項目を閉じる"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "설명 접기"
+          }
+        }
+      }
+    },
+    "설명 펼치기" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Expand item"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "項目を開く"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "설명 펼치기"
+          }
+        }
+      }
+    },
+    "알람 문구를 목소리로 만들 때, 문구와 목소리가 음성 AI 제공자(ElevenLabs)와 문구 생성(Google, 미국)을 거쳐 처리돼요. 이 과정에서 데이터가 국외로 전송됩니다. 동의하지 않아도 알람 자체는 쓸 수 있지만, 목소리로 읽어주는 알람은 만들 수 없어요." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "When an alarm line is turned into speech, the text and voice are processed by our voice AI provider (ElevenLabs) and by text generation (Google, United States). That means the data is sent overseas. You can keep using alarms without agreeing, but you will not be able to create spoken alarms."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "アラーム文言を音声にする際、文言と声は音声AIプロバイダ(ElevenLabs)と文言生成(Google、米国)を通じて処理されます。この過程でデータが国外へ送信されます。同意しなくてもアラーム自体は使えますが、読み上げアラームは作成できません。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "알람 문구를 목소리로 만들 때, 문구와 목소리가 음성 AI 제공자(ElevenLabs)와 문구 생성(Google, 미국)을 거쳐 처리돼요. 이 과정에서 데이터가 국외로 전송됩니다. 동의하지 않아도 알람 자체는 쓸 수 있지만, 목소리로 읽어주는 알람은 만들 수 없어요."
+          }
+        }
+      }
+    },
+    "앱을 업데이트해야 동의를 진행할 수 있어요." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Update the app to continue with consent."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "同意を進めるにはアプリの更新が必要です。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "앱을 업데이트해야 동의를 진행할 수 있어요."
+          }
+        }
+      }
+    },
+    "약관이 개정되어 다시 동의가 필요해요" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The terms have changed. Please review and agree again."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "規約が改定されたため、改めて同意が必要です。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "약관이 개정되어 다시 동의가 필요해요"
+          }
+        }
+      }
+    },
+    "음성 AI 처리를 위해 목소리와 문구가 국외(미국 등)로 이전·처리되는 것에 동의합니다." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "I consent to my voice and text being transferred and processed overseas (including the United States) for voice AI processing."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "音声AI処理のため、声と文言が国外(米国など)へ移転・処理されることに同意します。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "음성 AI 처리를 위해 목소리와 문구가 국외(미국 등)로 이전·처리되는 것에 동의합니다."
+          }
+        }
+      }
+    },
+    "음성 생체정보 처리 동의를 철회했어요." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your consent to voice biometric processing has been withdrawn."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "音声生体情報の処理への同意を撤回しました。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "음성 생체정보 처리 동의를 철회했어요."
+          }
+        }
+      }
+    },
+    "전체 동의" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Agree to all"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "すべて同意"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "전체 동의"
+          }
+        }
+      }
+    },
+    "필수 동의 내용" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Required consents"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "必須の同意内容"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "필수 동의 내용"
           }
         }
       }
