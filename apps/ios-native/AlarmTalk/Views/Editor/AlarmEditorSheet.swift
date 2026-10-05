@@ -377,7 +377,7 @@ struct AlarmEditorSheet: View {
     @ViewBuilder
     private var detailSettingsSection: some View {
         if draft.showsAlarmSoundControls {
-            EditorSectionTitle(text: String(localized: "세부 설정"))
+            EditorSectionTitle(text: "세부 설정")
             EditorCard(verticalPadding: 0) {
                 // ⚠ **이 기능의 이름은 앱 전체에서 '다시 울림' 하나다**(2026-08-16 통일).
                 // ⚠ **'다시 울림' 행을 되살리지 말 것**(2026-09-09 지시, 안드로이드와 같다).

@@ -101,7 +101,7 @@ struct AlarmSoundSettingsPane: View {
             // 클래식은 시계 앱처럼 **따로 묶는다.** 거긴 별도 화면(`클래식` 행)이지만,
             // 우리 pane 은 한 화면이라 구역 제목으로 나눈다 — 순서와 묶음은 같다.
             if !SystemRingtoneLibrary.classicEntries.isEmpty {
-                EditorSectionTitle(text: String(localized: "클래식"))
+                EditorSectionTitle(text: "클래식")
                 EditorCard(verticalPadding: 0) {
                     ForEach(Array(SystemRingtoneLibrary.classicEntries.enumerated()), id: \.element.id) { index, entry in
                         if index > 0 { AlarmSettingDivider() }

@@ -6,7 +6,7 @@ extension AlarmEditorSheet {
     var alarmModeSection: some View {
             // 제목은 **'재생 방식'** 이다 — 안드로이드 `editor_play_mode_title` 과 같은
             // 말로 맞춘다('알람 방식' 은 iOS 에만 있던 표현이었다).
-            EditorSectionTitle(text: String(localized: "재생 방식"))
+            EditorSectionTitle(text: "재생 방식")
             Group {
                 VoicePlayModePicker(
                     mode: $draft.playMode,
