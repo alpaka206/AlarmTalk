@@ -9,7 +9,6 @@ cannot prove; removed entries fail, so it cannot silently become a dump.
 from __future__ import annotations
 
 import argparse
-from collections import Counter
 from dataclasses import dataclass
 import fnmatch
 import hashlib
@@ -23,6 +22,7 @@ import unittest
 import xml.etree.ElementTree as ET
 
 from localization_lexers import HANGUL, SwiftLexer, kotlin_literals
+from localization_formats import android_format_mismatches, catalog_format_mismatches
 
 ROOT = Path(__file__).resolve().parents[1]
 LANGUAGES = ("en", "ja")
@@ -225,6 +225,28 @@ def string_in_key_parameter(path: str, source: str, literal: dict, declarations:
     return bool(argument and declarations.accepts(path, call, argument[1]))
 
 
+def swift_ui_context(source: str, code: str, literal: dict) -> bool:
+    """Plain String display arguments need lookup regardless of source language."""
+    for kind, opening in reversed(literal["stack"]):
+        if kind == "{":
+            break  # A UI callback's body is a separate context (e.g. a log).
+        if kind != "(":
+            continue
+        call = call_at(source, opening).split(".")[-1]
+        if call == "DispatchQueue":
+            return False  # Its label identifies a queue in diagnostics.
+        prefix = argument_prefix(code, literal, opening)
+        if re.search(r"(?:==|!=|>=|<=)\s*$", prefix):
+            return False  # Compared contract identifiers are not display copy.
+        parameter = re.match(r"(\w+)\s*:", prefix)
+        parameter = parameter[1] if parameter else None
+        if call in SWIFT_UI and parameter in {None, "verbatim", "title", "text"}:
+            return True
+        if parameter in {"title", "text", "message", "label", "subtitle", "placeholder", "accessibilityLabel", "accessibilityHint"}:
+            return True
+    return False
+
+
 @dataclass
 class Issue:
     path: str
@@ -343,6 +365,8 @@ def catalog_issues(root: Path) -> list[Issue]:
             leaves = [other] if other.tag == "string" else list(other)
             if (not leaves or any(android_text_is_blank("".join(leaf.itertext())) for leaf in leaves)) and (language, key) not in EMPTY_ANDROID_UNITS:
                 issues.append(Issue(target, 0, key, f"Android {language} resource contains an empty translation"))
+            for leaf in android_format_mismatches(entry, other):
+                issues.append(Issue(target, 0, key, f"Android {language} format argument indices/types/count differ ({leaf})"))
     return issues
 
 
@@ -400,31 +424,15 @@ def kotlin_ui_context(code: str, start: int, pairs: dict[int, int]) -> bool:
 
 def format_issues(root: Path) -> list[Issue]:
     """Catch dropped/type-changed arguments; positional reordering is allowed."""
-    def signature(value):
-        tokens = re.finditer(r"%%|%(?:(\d+)\$)?(?:\.\d+)?(lld|ld|d|lf|f|@)", value)
-        result = Counter()
-        next_index = 1
-        for match in tokens:
-            if not match[2]:
-                continue
-            index = int(match[1]) if match[1] else next_index
-            if not match[1]:
-                next_index += 1
-            result[(index, match[2])] += 1
-        return result
     issues = []
     for relative in CATALOGS:
         for key, entry in json.loads((root / relative).read_text())["strings"].items():
             if not entry.get("shouldTranslate", True):
                 continue
             localizations = entry.get("localizations", {})
-            source = localizations.get("ko", {}).get("stringUnit", {}).get("value", key)
-            if not HANGUL.search(source) and "%" not in source:
-                continue
             for language in LANGUAGES:
-                value = localizations.get(language, {}).get("stringUnit", {}).get("value")
-                if value is not None and signature(source) != signature(value):
-                    issues.append(Issue(relative, 0, key, f"{language} format argument indices/types/count differ"))
+                for path in catalog_format_mismatches(localizations.get("ko", {}), localizations.get(language, {}), key):
+                    issues.append(Issue(relative, 0, key, f"{language} format argument indices/types/count differ ({'/'.join(path) or 'string'})"))
     return issues
 
 
@@ -440,14 +448,17 @@ def audit(root: Path, rules: list[tuple[str, str, str, str]]) -> list[Issue]:
     catalogs = {relative: json.loads((root / relative).read_text())["strings"] for relative in CATALOGS}
     issues = []
     for path, source in sources.items():
-        for literal in SwiftLexer(source, path).run():
+        literals = SwiftLexer(source, path).run()
+        code = code_only(source, literals)
+        for literal in literals:
             value = literal_value(literal)
             localized, kind = localized_context(path, source, literal, declarations)
             if string_in_key_parameter(path, source, literal, declarations):
                 issues.append(Issue(path, literal["line"], value, "String(localized:) passed to a key/resource parameter; retain its literal key"))
-            if not HANGUL.search(value) and not localized:
-                continue
             if literal["debug"] or kind == "comment" or value == "" or allowed(path, value, rules):
+                continue
+            ui_copy = not HANGUL.search(value) and not localized and any(char.isalpha() for kind, part in literal["parts"] if kind == "lit" for char in part) and swift_ui_context(source, code, literal)
+            if not HANGUL.search(value) and not localized and not ui_copy:
                 continue
             calls = [call_at(source, pos) for token, pos in literal["stack"] if token == "("]
             if "#Preview" in calls:
@@ -471,8 +482,7 @@ def audit(root: Path, rules: list[tuple[str, str, str, str]]) -> list[Issue]:
                     entry.get("localizations", {}).get(language, {}).get("stringUnit", {}).get("state") == "translated"
                     for language in LANGUAGES) for _, entry in matches):
                     issues.append(Issue(path, literal["line"], value, f"key has unfinished en/ja translations in {target}"))
-        code = code_only(source, SwiftLexer(source, path).run())
-        gate_source = code + "\n" + "\n".join(literal_value(l) for l in SwiftLexer(source, path).run())
+        gate_source = code + "\n" + "\n".join(literal_value(l) for l in literals)
         if language_gate(gate_source) and not allowed(path, "language-gate", rules):
             issues.append(Issue(path, 0, "containsKorean", "language-based server-error filter is forbidden"))
     for file in (root / "apps/android-native/app/src/main/java").rglob("*.kt"):
@@ -708,6 +718,66 @@ class SelfTests(unittest.TestCase):
         self.assertTrue(any("Android en resource missing" in issue.reason for issue in audit(root, rules)))
         path.write_text('<resources><string name="hello">안녕</string></resources>')
         self.assertTrue(any("contains Hangul" in issue.reason for issue in audit(root, rules)))
+
+    def test_plain_swift_display_arguments_need_lookup_in_every_language(self):
+        for source in ['struct Plain { let title: String }\nPlain(title: "Try again")',
+                       'Plain(title: "再試行")', 'Text(verbatim: "Retry")',
+                       'Text(flag ? "Retry" : other)', 'Plain(message: "Please wait")']:
+            root = self.fixture(source=source)
+            self.assertTrue(any("not in a proven localization context" in i.reason for i in audit(root, [])), source)
+        for source in ['let route = "settings"', 'Image(systemName: "gear")',
+                       'DispatchQueue(label: "test.queue")',
+                       'Plain(title: mode == "custom" ? translated : other)',
+                       'Button("안녕") { print("Debug") }']:
+            root = self.fixture(source=source)
+            self.assertEqual(audit(root, []), [], source)
+
+    def test_android_format_positions_types_and_each_leaf(self):
+        cases = [('Hello %1$s: %2$d', '%2$d: %1$s', False),
+                 ('Hello %1$s', 'Hello', True), ('Hello %1$s', 'Hello %1$d', True),
+                 ('Hello %1$s %2$s', '%1$s %1$s', True),
+                 ('%1$s: %2$03d%%', '%2$03d%%: %1$s', False),
+                 ('%1$s %1$s', '%1$s %<s', False),
+                 ('%1$tY %2$s', '%2$s %1$tY', False),
+                 ('%1$tY', '%1$s', True)]
+        for source, translated, fails in cases:
+            for tag in ['string', 'string-array', 'plurals']:
+                if tag == 'string':
+                    a, b = source, translated
+                elif tag == 'string-array':
+                    a, b = '<item>Same</item><item>' + source + '</item>', '<item>Same</item><item>' + translated + '</item>'
+                else:
+                    a = '<item quantity="other">' + source + '</item>'
+                    b = '<item quantity="one">' + translated + '</item><item quantity="other">' + source + '</item>'
+                # Escape XML text while keeping the fixture's item elements.
+                a, b = re.sub(r'%<(?=[A-Za-z])', '%&lt;', a), re.sub(r'%<(?=[A-Za-z])', '%&lt;', b)
+                first = ET.fromstring('<' + tag + ' name="value">' + a + '</' + tag + '>')
+                second = ET.fromstring('<' + tag + ' name="value">' + b + '</' + tag + '>')
+                self.assertEqual(bool(android_format_mismatches(first, second)), fails, (tag, source, translated))
+        source = ET.fromstring('<string name="value" formatted="false">%1$s</string>')
+        target = ET.fromstring('<string name="value">Plain</string>')
+        self.assertEqual(android_format_mismatches(source, target), [])
+
+    def test_catalog_variation_format_contracts(self):
+        def leaf(value):
+            return {"stringUnit": {"state": "translated", "value": value}}
+        def variation(kind, values):
+            return {"variations": {kind: {key: leaf(value) for key, value in values.items()}}}
+        for kind in ['plural', 'device']:
+            variant = 'one' if kind == 'plural' else 'iphone'
+            source = variation(kind, {'other': '이름 %@ 수 %lld'})
+            for translated, fails in [('%2$lld: %1$@', False), ('%1$@', True),
+                                      ('%1$@ %1$@', True), ('%1$lld: %2$@', True)]:
+                target = variation(kind, {variant: translated, 'other': '%2$lld: %1$@'})
+                self.assertEqual(bool(catalog_format_mismatches(source, target, 'key')), fails)
+                self.assertEqual(bool(catalog_format_mismatches(leaf('이름 %@ 수 %lld'), target, 'key')), fails)
+                self.assertEqual(bool(catalog_format_mismatches(source, leaf(translated), 'key')), fails)
+            # Corresponding device leaves may legitimately have different signatures.
+            source = variation(kind, {variant: '이름 %@', 'other': '수 %lld'})
+            target = variation(kind, {variant: 'Name %@', 'other': 'Count %lld'})
+            self.assertEqual(catalog_format_mismatches(source, target, 'key'), [])
+            target = variation(kind, {variant: 'Name %lld', 'other': 'Count %@'})
+            self.assertEqual(len(catalog_format_mismatches(source, target, 'key')), 2)
 
     def test_kotlin_ui_literals_are_checked_in_every_language(self):
         root = self.fixture(source="")

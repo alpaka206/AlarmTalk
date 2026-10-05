@@ -379,7 +379,7 @@
     <string name="msg_remove_member_failed">Couldn\'t remove the member.</string>
     <string name="msg_remove_member_login_required">Please log in first to remove a member.</string>
     <plurals name="msg_received_alarm_arrived">
-        <item quantity="one">A new alarm set for you arrived.</item>
+        <item quantity="one">%1$d new alarm set for you arrived.</item>
         <item quantity="other">%1$d new alarms set for you arrived.</item>
     </plurals>
     <string name="msg_sync_login_required">Please log in first to sync.</string>

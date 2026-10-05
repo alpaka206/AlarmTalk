@@ -106,3 +106,5 @@ tts-content	apps/ios-native/AlarmTalk/Views/Voices/VoiceCloneUploadFlow.swift	"�
 tts-content	apps/ios-native/AlarmTalk/VoiceStudioViewModel.swift	"이 목소리로 깨워드릴까요?"	서버로 보내는 낭독 입력; 앱 화면 언어와 별도다.
 tts-content	apps/ios-native/AlarmTalk/VoiceStudioViewModel.swift	"좋은 아침이에요! 일어나세요! 오늘 하루도 힘내봐요!"	서버로 보내는 낭독 입력; 앱 화면 언어와 별도다.
 language-neutral	apps/android-native/app/src/main/java/com/alarmtalk/app/ui/auth/LandingScreen.kt	"AlarmTalk"	모든 언어에서 동일한 앱 브랜드 이름이다.
+data-contract	apps/ios-native/AlarmTalk/AudioCacheStore.swift	"tts-v2"	사용자에게 보이지 않는 TTS 캐시 키 버전 식별자다.
+data-contract	apps/ios-native/AlarmTalk/AudioCacheStore.swift	"tts-input-v1"	사용자에게 보이지 않는 TTS 입력 캐시 키 버전 식별자다.
