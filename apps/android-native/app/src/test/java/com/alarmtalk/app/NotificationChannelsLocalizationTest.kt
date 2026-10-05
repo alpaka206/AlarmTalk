@@ -55,6 +55,31 @@ class NotificationChannelsLocalizationTest {
     }
 
     @Test
+    fun `프로세스 재시작 없이 언어 구성 콜백만으로 모든 채널의 표시를 갱신한다`() {
+        val application = ApplicationProvider.getApplicationContext<AlarmTalkApplication>()
+        NotificationChannels.ensure(context("ko"))
+        val manager = application.getSystemService(NotificationManager::class.java)
+        val settings = manager.notificationChannels.associate { it.id to Triple(it.importance, it.sound, it.shouldVibrate()) }
+        for (language in listOf("en", "ja", "ko")) {
+            val localized = context(language)
+            application.onConfigurationChanged(localized.resources.configuration)
+            for ((id, name, description) in listOf(
+                Triple(NotificationChannels.RINGING_CHANNEL_ID, R.string.notification_ringing_name, R.string.notification_ringing_description),
+                Triple(NotificationChannels.RINGING_QUIET_CHANNEL_ID, R.string.notification_ringing_quiet_name, R.string.notification_ringing_quiet_description),
+                Triple(NotificationChannels.RINGING_FALLBACK_CHANNEL_ID, R.string.notification_ringing_fallback_name, R.string.notification_ringing_fallback_description),
+                Triple(NotificationChannels.SOCIAL_CHANNEL_ID, R.string.notification_social_name, R.string.notification_social_description),
+                Triple(NotificationChannels.CLIP_PREFETCH_CHANNEL_ID, R.string.notification_download_name, R.string.notification_download_description),
+            )) {
+                val channel = manager.getNotificationChannel(id)
+                assertEquals(localized.getString(name), channel.name.toString())
+                assertEquals(localized.getString(description), channel.description)
+                assertEquals(settings[id], Triple(channel.importance, channel.sound, channel.shouldVibrate()))
+            }
+            assertEquals(5, manager.notificationChannels.size)
+        }
+    }
+
+    @Test
     fun `설정의 법적 문서 링크는 화면 언어와 같고 운세 저장값은 표시만 번역한다`() {
         for (language in listOf("ko", "en", "ja")) {
             val context = context(language)

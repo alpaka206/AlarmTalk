@@ -38,6 +38,15 @@ extension VoiceRelationshipSelection {
     }
 }
 
+func voiceRelationshipSubtitle(_ stored: String?, isShared: Bool, bundle: Bundle = .main) -> String? {
+    var parts: [String] = []
+    if let relationship = stored?.trimmingCharacters(in: .whitespacesAndNewlines), !relationship.isEmpty {
+        parts.append(displayRelationshipLabel(relationship, bundle: bundle))
+    }
+    if isShared { parts.append(String(localized: "공유 중", bundle: bundle)) }
+    return parts.isEmpty ? nil : parts.joined(separator: " · ")
+}
+
 func personDisplayName(_ name: String, bundle: Bundle = .main) -> String {
     name.hasSuffix("님") || name.hasSuffix("さん")
         ? name : String(localized: "\(name)님", bundle: bundle)

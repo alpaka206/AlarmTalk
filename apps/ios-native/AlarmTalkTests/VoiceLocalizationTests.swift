@@ -19,6 +19,19 @@ struct VoiceLocalizationTests {
         #expect(personDisplayName("田中さん", bundle: bundle) == "田中さん")
     }
 
+    @Test("목소리 부제는 저장된 프리셋을 번역하고 사용자 관계와 공유 상태를 보존한다", arguments: ["en", "ja"])
+    func relationshipSubtitle(language: String) throws {
+        let path = try #require(Bundle.main.path(forResource: language, ofType: "lproj"))
+        let bundle = try #require(Bundle(path: path))
+        let sharing = bundle.localizedString(forKey: "공유 중", value: nil, table: nil)
+        let mom = language == "en" ? "Mom" : "母"
+        #expect(voiceRelationshipSubtitle("엄마", isShared: true, bundle: bundle) == "\(mom) · \(sharing)")
+        #expect(voiceRelationshipSubtitle("나의 소중한 친구", isShared: true, bundle: bundle) == "나의 소중한 친구 · \(sharing)")
+        #expect(voiceRelationshipSubtitle("엄마", isShared: false, bundle: bundle) == mom)
+        #expect(voiceRelationshipSubtitle("  ", isShared: true, bundle: bundle) == sharing)
+        #expect(voiceRelationshipSubtitle(nil, isShared: false, bundle: bundle) == nil)
+    }
+
     @Test("새 목소리 이름은 비워 시작하고 빈 이름으로 등록하지 않는다")
     func emptyNameIsRequired() async {
         let vm = VoiceStudioViewModel()
