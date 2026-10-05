@@ -295,7 +295,10 @@ def catalog_issues(root: Path) -> list[Issue]:
         for key, entry in data["strings"].items():
             if not entry.get("shouldTranslate", True):
                 continue
-            for language in LANGUAGES:
+            # A Korean source-text key can fall back to the key itself. An opaque
+            # identifier cannot: require an explicit Korean value as well.
+            required_languages = LANGUAGES if HANGUL.search(key) else (*LANGUAGES, "ko")
+            for language in required_languages:
                 units = entry.get("localizations", {}).get(language, {})
                 leaves = list(string_units(units))
                 if not leaves or any(leaf.get("state") != "translated"
@@ -509,8 +512,9 @@ class SelfTests(unittest.TestCase):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         root = Path(temporary.name)
-        entry = {"localizations": {language: {"stringUnit": {"state": "translated", "value": "Hello"}}
-                                    for language in LANGUAGES}}
+        korean_value = key if HANGUL.search(key) else "안녕"
+        entry = {"localizations": {language: {"stringUnit": {"state": "translated", "value": korean_value if language == "ko" else "Hello"}}
+                                    for language in (*LANGUAGES, "ko")}}
         for path in (*CATALOGS, "apps/ios-native/AlarmTalk/InfoPlist.xcstrings"):
             file = root / path
             file.parent.mkdir(parents=True, exist_ok=True)
@@ -578,6 +582,32 @@ class SelfTests(unittest.TestCase):
                         file.write_text(json.dumps({"strings": {"Brand": entry}}))
                         self.assertFalse(any(i.path == relative for i in catalog_issues(root)))
             file.write_text(original)
+
+    def test_semantic_keys_require_a_nonempty_korean_translation(self):
+        for key in ["group.plan.shared", "member.unnamed", "code.redeem.submit", "NSAlarmKitUsageDescription"]:
+            root = self.fixture(source="", key=key)
+            for relative in (*CATALOGS, "apps/ios-native/AlarmTalk/InfoPlist.xcstrings"):
+                file = root / relative
+                original = file.read_text()
+                for ko in [None, {"state": "new", "value": "공유"},
+                           {"state": "translated", "value": ""}, {"state": "translated", "value": "  "}]:
+                    data = json.loads(original)
+                    localizations = data["strings"][key]["localizations"]
+                    if ko is None:
+                        del localizations["ko"]
+                    else:
+                        localizations["ko"] = {"stringUnit": ko}
+                    file.write_text(json.dumps(data))
+                    self.assertTrue(any(i.path == relative and i.reason.startswith("ko ") for i in catalog_issues(root)))
+                file.write_text(original)
+            self.assertEqual(catalog_issues(root), [])
+        root = self.fixture()
+        for relative in (*CATALOGS, "apps/ios-native/AlarmTalk/InfoPlist.xcstrings"):
+            file = root / relative
+            data = json.loads(file.read_text())
+            del data["strings"]["안녕"]["localizations"]["ko"]
+            file.write_text(json.dumps(data))
+        self.assertEqual(catalog_issues(root), [])
 
     def test_semantic_default_and_comments(self):
         root = self.fixture('String(localized: "hello.title", defaultValue: "안녕", comment: "번역 설명")', "hello.title")

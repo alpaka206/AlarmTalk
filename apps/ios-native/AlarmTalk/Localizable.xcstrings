@@ -6711,7 +6711,8 @@
             "value" : "https://alarm-talk.com/ja/"
           }
         }
-      }
+      },
+      "shouldTranslate" : false
     },
     "알람톡 이용권을 보냈어요.\n\n이용권 코드: %1$@\n\n1. 알람톡 설치 %2$@\n2. 가입하고 로그인\n3. 더보기 → 코드 등록에 위 코드 입력" : {
       "extractionState" : "manual",
@@ -12604,7 +12605,8 @@
             "value" : "%1$@ · %2$@"
           }
         }
-      }
+      },
+      "shouldTranslate" : false
     },
     "%@ 반복" : {
       "extractionState" : "manual",
