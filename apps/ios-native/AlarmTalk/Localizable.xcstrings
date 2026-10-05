@@ -3895,7 +3895,7 @@
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "声を作る"
+            "value" : "声を作成"
           }
         }
       }
@@ -4337,7 +4337,7 @@
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "フレーズをまだ準備できていません。試聴を押してもう一度お試しください。"
+            "value" : "フレーズをまだ準備できていません。プレビューを押してもう一度お試しください。"
           }
         }
       }
@@ -12008,28 +12008,6 @@
         }
       }
     },
-    "%@님에게 공유받은 목소리" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Voice shared by %1$@"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%1$@さんから共有された声"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@님에게 공유받은 목소리"
-          }
-        }
-      }
-    },
     "기본 목소리" : {
       "localizations" : {
         "en" : {
@@ -12664,6 +12642,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "등록"
+          }
+        }
+      }
+    },
+    "%@에게 공유받은 목소리" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Voice shared by %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@から共有された声"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@에게 공유받은 목소리"
           }
         }
       }

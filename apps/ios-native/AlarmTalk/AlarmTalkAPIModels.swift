@@ -838,8 +838,14 @@ extension FamilyVoiceProfile {
     }
 
     var sharedFromLabel: String {
+        localizedSharedFromLabel()
+    }
+
+    func localizedSharedFromLabel(bundle: Bundle = .main) -> String {
         let owner = ownerName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return owner.isEmpty ? String(localized: "공유받은 목소리") : String(localized: "\(owner)님에게 공유받은 목소리")
+        guard !owner.isEmpty else { return String(localized: "공유받은 목소리", bundle: bundle) }
+        let name = personDisplayName(owner, bundle: bundle)
+        return String(localized: "\(name)에게 공유받은 목소리", bundle: bundle)
     }
 }
 

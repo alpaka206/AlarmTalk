@@ -4,6 +4,21 @@ import Testing
 
 @MainActor
 struct VoiceLocalizationTests {
+    @Test("직접 입력한 관계는 프리셋과 같아도 보존하고 공유자의 존칭은 한 번만 붙인다", arguments: ["en", "ja", "ko"])
+    func preservesUserInput(language: String) throws {
+        let path = try #require(Bundle.main.path(forResource: language, ofType: "lproj"))
+        let bundle = try #require(Bundle(path: path))
+        #expect(VoiceRelationshipSelection(preset: .custom, customLabel: "엄마").localizedDisplayLabel(bundle: bundle) == "엄마")
+        #expect(VoiceRelationshipSelection(preset: .mom).localizedDisplayLabel(bundle: bundle)
+                == (language == "en" ? "Mom" : language == "ja" ? "母" : "엄마"))
+        let owner = language == "ja" ? "田中さん" : language == "ko" ? "민수님" : "Alex"
+        let voice = FamilyVoiceProfile(id: "shared", name: "Voice", ownerName: owner)
+        #expect(voice.localizedSharedFromLabel(bundle: bundle)
+                == (language == "ja" ? "田中さんから共有された声" : language == "ko" ? "민수님에게 공유받은 목소리" : "Voice shared by Alex"))
+        #expect(personDisplayName("민수님", bundle: bundle) == "민수님")
+        #expect(personDisplayName("田中さん", bundle: bundle) == "田中さん")
+    }
+
     @Test("새 목소리 이름은 비워 시작하고 빈 이름으로 등록하지 않는다")
     func emptyNameIsRequired() async {
         let vm = VoiceStudioViewModel()

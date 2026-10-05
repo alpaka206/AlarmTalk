@@ -96,7 +96,7 @@ struct SharedVoiceViewerInfoDialog: View {
 
             VoiceListenerPreviewCard(
                 listenerTitle: listenerTitle,
-                relationshipLabel: trimmedRelationship
+                relationshipSelection: relationshipSelection
             )
 
             VStack(spacing: 8) {
