@@ -145,6 +145,13 @@ jobs:
       - name: Check Android modals register with OpenModalRegistry
         run: python3 scripts/check-open-modal-tracking.py
 
+      # 카탈로그는 manual 추출이라 새 키 누락이 빌드를 통과한다. 번역 유무뿐 아니라
+      # Swift 호출부가 키를 실제 조회하는지와 Kotlin의 생 UI 문구를 함께 검사한다.
+      - name: Check user-visible Hangul literals
+        run: |
+          python3 scripts/check-hangul-literals.py --self-test
+          python3 scripts/check-hangul-literals.py
+
   typecheck:
     runs-on: ubuntu-latest
     strategy:

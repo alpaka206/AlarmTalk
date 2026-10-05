@@ -127,8 +127,7 @@ class SwiftLexer:
 
 
 def kotlin_literals(src):
-    """Yield (start_offset, end_offset, literal_text) for every top-level string
-    literal AND nested template strings."""
+    """Return (start, end, decoded text, raw) for strings and nested templates."""
     i = 0
     n = len(src)
     results = []
@@ -166,6 +165,11 @@ def kotlin_literals(src):
             else:
                 c = src[i]
                 if c == "\\":
+                    unicode_escape = re.match(r"\\u([0-9a-fA-F]{4})", src[i:])
+                    if unicode_escape:
+                        buf.append(chr(int(unicode_escape[1], 16)))
+                        i += unicode_escape.end()
+                        continue
                     buf.append(src[i:i + 2])
                     i += 2
                     continue
@@ -236,5 +240,4 @@ def kotlin_literals(src):
             continue
         i += 1
     return results
-
 

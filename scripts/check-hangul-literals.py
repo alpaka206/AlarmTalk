@@ -17,6 +17,7 @@ import json
 from pathlib import Path
 import re
 import sys
+import tempfile
 import textwrap
 import unittest
 import xml.etree.ElementTree as ET
@@ -102,7 +103,9 @@ class Declarations:
                 end = pairs.get(start, start)
                 arguments = code[start + 1:end]
                 names = re.findall(r"(?:^|,)\s*(\w+)(?:\s+\w+)?\s*:\s*" + LOCALIZED_TYPE, arguments)
-                self.parameters[(path, match[1])] = set(names)
+                key = (path, match[1])
+                names = set(names)
+                self.parameters[key] = self.parameters[key] & names if key in self.parameters else names
             spans = []
             pattern = r"(?:\b(?:var|let)\s+\w+\s*:\s*" + LOCALIZED_TYPE + r"\??|->\s*" + LOCALIZED_TYPE + r")\s*"
             for match in re.finditer(pattern, code):
@@ -193,6 +196,9 @@ def localized_context(path: str, source: str, literal: dict, declarations: Decla
             return True, None
     for start, end in declarations.returns.get(path, []):
         if start < literal["start"] < end:
+            if stack and stack[-1][1] > start:
+                # An inner String helper does not inherit its caller's return type.
+                continue
             previous = source[max(start, source.rfind("\n", start, literal["start"]) + 1):literal["start"]].strip()
             if previous in {"{", "=", "return"} or re.search(r"\breturn(?:\s+[^;{}]*)?$", previous) or previous.endswith(":"):
                 return True, None
@@ -238,15 +244,16 @@ def read_baseline(path: Path) -> dict[str, str]:
         if not line.strip() or line.startswith("#"):
             continue
         file, digest, reason = line.split("\t", 2)
-        if not reason.strip():
+        if not reason.strip() or reason == "REVIEW REQUIRED":
             raise ValueError("Baseline entry needs a reason")
         entries[file + "\t" + digest] = reason
     return entries
 
 
 def apply_baseline(issues: list[Issue], baseline: dict[str, str]) -> list[Issue]:
-    seen = {issue.identity for issue in issues}
-    result = [issue for issue in issues if issue.identity not in baseline]
+    eligible = "literal is not in a proven localization context"
+    seen = {issue.identity for issue in issues if issue.reason == eligible}
+    result = [issue for issue in issues if issue.reason != eligible or issue.identity not in baseline]
     result += [Issue(key.split("\t")[0], 0, key, "stale baseline entry; remove it") for key in baseline.keys() - seen]
     return result
 
@@ -289,6 +296,33 @@ def catalog_issues(root: Path) -> list[Issue]:
     return issues
 
 
+def format_issues(root: Path) -> list[Issue]:
+    """Catch dropped/type-changed arguments; positional reordering is allowed."""
+    def signature(value):
+        tokens = re.finditer(r"%%|%(?:\d+\$)?(?:\.\d+)?(lld|ld|d|lf|f|@)", value)
+        return Counter(match[1] for match in tokens if match[1])
+    issues = []
+    for relative in CATALOGS:
+        for key, entry in json.loads((root / relative).read_text())["strings"].items():
+            if not entry.get("shouldTranslate", True):
+                continue
+            localizations = entry.get("localizations", {})
+            source = localizations.get("ko", {}).get("stringUnit", {}).get("value", key)
+            if not HANGUL.search(source) and "%" not in source:
+                continue
+            for language in LANGUAGES:
+                value = localizations.get(language, {}).get("stringUnit", {}).get("value")
+                if value is not None and signature(source) != signature(value):
+                    issues.append(Issue(relative, 0, key, f"{language} format argument types/count differ"))
+    return issues
+
+
+def language_gate(source: str) -> bool:
+    # Include Swift scalar ranges and Kotlin character/regex ranges. Comments
+    # are removed by callers, but string contents matter for Regex("[가-힣]").
+    return bool(re.search(r"\bcontainsKorean\b|0x[Aa][Cc]00|\\u\{?[Aa][Cc]00|가(?:-|\.{2,3})힣", source))
+
+
 def audit(root: Path, rules: list[tuple[str, str, str, str]]) -> list[Issue]:
     sources = {str(p.relative_to(root)): p.read_text() for relative in SWIFT_ROOTS for p in (root / relative).rglob("*.swift")}
     declarations = Declarations(sources)
@@ -323,14 +357,23 @@ def audit(root: Path, rules: list[tuple[str, str, str, str]]) -> list[Issue]:
                     for language in LANGUAGES) for _, entry in matches):
                     issues.append(Issue(path, literal["line"], value, f"key has unfinished en/ja translations in {target}"))
         code = code_only(source, SwiftLexer(source, path).run())
-        if re.search(r"\bcontainsKorean\b|0x[Aa][Cc]00\s*\.\.\.", code):
+        gate_source = code + "\n" + "\n".join(literal_value(l) for l in SwiftLexer(source, path).run())
+        if language_gate(gate_source) and not allowed(path, "language-gate", rules):
             issues.append(Issue(path, 0, "containsKorean", "language-based server-error filter is forbidden"))
     for file in (root / "apps/android-native/app/src/main/java").rglob("*.kt"):
         path, source = str(file.relative_to(root)), file.read_text()
-        for start, _, value, _ in kotlin_literals(source):
+        literals = kotlin_literals(source)
+        for start, _, value, _ in literals:
             if HANGUL.search(value) and not allowed(path, value, rules):
                 issues.append(Issue(path, source.count("\n", 0, start) + 1, value, "Kotlin UI text must use resources or a documented exception"))
+        masked = list(source)
+        for start, end, _, _ in literals:
+            masked[start:end] = [" " for _ in source[start:end]]
+        gate_source = blank_comments("".join(masked)) + "\n" + "\n".join(value for _, _, value, _ in literals)
+        if language_gate(gate_source) and not allowed(path, "language-gate", rules):
+            issues.append(Issue(path, 0, "containsKorean", "language-based server-error filter is forbidden"))
     issues.extend(issue for issue in catalog_issues(root) if not allowed(issue.path, issue.value, rules))
+    issues.extend(format_issues(root))
     return issues
 
 
@@ -348,7 +391,7 @@ def main() -> int:
     found = audit(root, rules)
     baseline_path = root / "scripts/hangul-literal-baseline.txt"
     if args.write_baseline:
-        entries = sorted({issue.identity for issue in found})
+        entries = sorted({issue.identity for issue in found if issue.reason == "literal is not in a proven localization context"})
         baseline_path.write_text("# Review every candidate; user-visible untranslated text is not an exception.\n" + "".join(key + "\tREVIEW REQUIRED\n" for key in entries))
         print(f"Wrote {len(entries)} candidates. Review and replace each reason before committing.")
         return 1 if entries else 0
@@ -378,17 +421,123 @@ class SelfTests(unittest.TestCase):
             literal = SwiftLexer(source).run()[0]
             self.assertEqual(localized_context("sample.swift", source, literal, declarations)[0], expected, source)
 
+    def test_typed_returns_do_not_certify_nested_string_helpers(self):
+        for expression, expected in [('return "안녕"', True), ('if flag { return "안녕" }; return other', True),
+                                     ('return flag ? "안녕" : other', True), ('return helper(title: "안녕")', False)]:
+            source = 'var title: LocalizedStringKey { ' + expression + ' }'
+            literal = SwiftLexer(source).run()[0]
+            self.assertEqual(localized_context("a.swift", source, literal, Declarations({"a.swift": source}))[0], expected)
+
+    def test_typed_ternary_condition_is_not_a_key(self):
+        source = 'struct Row { let title: LocalizedStringKey }\nRow(title: plan == "couple" ? "엄마" : "아빠")'
+        declarations = Declarations({"a.swift": source})
+        actual = [localized_context("a.swift", source, l, declarations)[0] for l in SwiftLexer(source).run()]
+        self.assertEqual(actual, [False, True, True])
+
+    def test_overloads_are_conservative_and_private_declarations_are_local(self):
+        sources = {"a.swift": 'struct Row { let title: String }', "b.swift": 'struct Row { let title: LocalizedStringKey }'}
+        declarations = Declarations(sources)
+        self.assertFalse(declarations.accepts("a.swift", "Row", "title"))
+        self.assertTrue(declarations.accepts("b.swift", "Row", "title"))
+        self.assertFalse(declarations.accepts("c.swift", "Row", "title"))
+        declarations = Declarations({"a.swift": 'func row(title: String) {}\nfunc row(title: LocalizedStringKey) {}'})
+        self.assertFalse(declarations.accepts("a.swift", "row", "title"))
+
+    def test_percent_and_multiline_keys(self):
+        literal = SwiftLexer('String(localized: "진행 \\(percent)%")').run()[0]
+        self.assertTrue(key_pattern(literal).fullmatch("진행 %lld%%"))
+        self.assertFalse(key_pattern(literal).fullmatch("진행 %lld%"))
+        literal = SwiftLexer('String(localized: """\n    첫 줄\n    둘째 줄\n    """)').run()[0]
+        self.assertTrue(key_pattern(literal).fullmatch("첫 줄\n둘째 줄"))
+
+    def fixture(self, source='String(localized: "안녕")', key="안녕"):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        root = Path(temporary.name)
+        entry = {"localizations": {language: {"stringUnit": {"state": "translated", "value": "Hello"}}
+                                    for language in LANGUAGES}}
+        for path in (*CATALOGS, "apps/ios-native/AlarmTalk/InfoPlist.xcstrings"):
+            file = root / path
+            file.parent.mkdir(parents=True, exist_ok=True)
+            file.write_text(json.dumps({"strings": {key: entry}}))
+        file = root / SWIFT_ROOTS[0] / "Screen.swift"
+        file.write_text(source)
+        for language in ("", "-en", "-ja"):
+            directory = root / ("apps/android-native/app/src/main/res/values" + language)
+            directory.mkdir(parents=True)
+            (directory / "strings.xml").write_text('<resources><string name="hello">Hello</string></resources>')
+        return root
+
+    def test_missing_catalog_key_and_translation_fail(self):
+        root = self.fixture()
+        self.assertEqual(audit(root, []), [])
+        file = root / CATALOGS[0]
+        file.write_text('{"strings": {}}')
+        self.assertTrue(any("key missing" in issue.reason for issue in audit(root, [])))
+        file.write_text(json.dumps({"strings": {"안녕": {"localizations": {"en": {"stringUnit": {"state": "new", "value": "Hello"}}}}}}))
+        self.assertTrue(any("unfinished" in issue.reason for issue in audit(root, [])))
+
+    def test_semantic_default_and_comments(self):
+        root = self.fixture('String(localized: "hello.title", defaultValue: "안녕", comment: "번역 설명")', "hello.title")
+        self.assertEqual(audit(root, []), [])
+
+    def test_shared_keys_are_required_in_both_targets(self):
+        root = self.fixture(source="")
+        file = root / SWIFT_ROOTS[2] / "Intents.swift"
+        file.parent.mkdir(parents=True)
+        file.write_text('let title: LocalizedStringResource = "안녕"')
+        (root / CATALOGS[1]).write_text('{"strings": {}}')
+        self.assertTrue(any(CATALOGS[1] in issue.reason for issue in audit(root, [])))
+
+    def test_android_literals_resources_and_hangul_translations(self):
+        root = self.fixture()
+        file = root / "apps/android-native/app/src/main/java/example/Screen.kt"
+        file.parent.mkdir(parents=True)
+        file.write_text('Text("안녕")')
+        self.assertTrue(any("Kotlin UI" in issue.reason for issue in audit(root, [])))
+        rules = [("data-contract", str(file.relative_to(root)), "안녕", "fixture contract")]
+        self.assertEqual(audit(root, rules), [])
+        path = root / "apps/android-native/app/src/main/res/values-en/strings.xml"
+        path.write_text('<resources/>')
+        self.assertTrue(any("Android en resource missing" in issue.reason for issue in audit(root, rules)))
+        path.write_text('<resources><string name="hello">안녕</string></resources>')
+        self.assertTrue(any("contains Hangul" in issue.reason for issue in audit(root, rules)))
+
+    def test_language_gate_is_forbidden_even_with_no_korean_ui_literals(self):
+        for source in ['var containsKorean = true', 'let range = 0xAC00...0xD7A3', 'let pattern = "[가-힣]"']:
+            root = self.fixture(source=source)
+            self.assertTrue(any("filter is forbidden" in issue.reason for issue in audit(root, [])))
+        root = self.fixture()
+        file = root / "apps/android-native/app/src/main/java/example/Errors.kt"
+        file.parent.mkdir(parents=True)
+        file.write_text('fun containsKorean(text: String) = text.any { it in \'가\'..\'힣\' }')
+        self.assertTrue(any("filter is forbidden" in issue.reason for issue in audit(root, [])))
+
     def test_baseline_ratchets(self):
-        issue = Issue("a.swift", 2, "안녕", "unproved")
+        issue = Issue("a.swift", 2, "안녕", "literal is not in a proven localization context")
         self.assertEqual(apply_baseline([issue], {}), [issue])
         self.assertEqual(apply_baseline([issue], {issue.identity: "reviewed"}), [])
         self.assertEqual(len(apply_baseline([], {issue.identity: "reviewed"})), 1)
+        forbidden = Issue("a.swift", 2, "안녕", "language-based server-error filter is forbidden")
+        self.assertIn(forbidden, apply_baseline([forbidden], {forbidden.identity: "reviewed"}))
 
     def test_kotlin_nested_literals(self):
         source = '/* "제외" */ val text = "${get("내부")} 한글"'
         self.assertEqual(len(kotlin_literals(source)), 2)
         self.assertTrue(allowed("a.kt", "내부", [("data-contract", "a.kt", "내부", "stored value")]))
         self.assertFalse(allowed("b.kt", "내부", [("data-contract", "a.kt", "내부", "stored value")]))
+        self.assertEqual(kotlin_literals('val text = "\\uD55C\\uAE00"')[0][2], "한글")
+
+    def test_debug_branch_and_inner_interpolation(self):
+        source = '#if DEBUG\nText("디버그")\n#else\nText("실제")\n#endif\nText("이름 \\(raw ?? "폴백")")'
+        literals = SwiftLexer(source).run()
+        self.assertEqual([literal["debug"] for literal in literals[:2]], [True, False])
+        inner = next(l for l in literals if literal_value(l) == "폴백")
+        self.assertFalse(localized_context("a.swift", source, inner, Declarations({"a.swift": source}))[0])
+
+    def test_translation_format_arguments_cannot_disappear(self):
+        root = self.fixture(source='String(localized: "알람 %lld개")', key="알람 %lld개")
+        self.assertTrue(any("format argument" in issue.reason for issue in audit(root, [])))
 
 
 if __name__ == "__main__":
