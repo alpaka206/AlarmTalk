@@ -45,7 +45,7 @@ struct StockReplacementView: View {
                             .progressViewStyle(.circular)
                             .tint(.white)
                     }
-                    Text(working ? "받는 중…" : "다시 시도")
+                    Text(working ? String(localized: "받는 중…") : String(localized: "다시 시도"))
                         .fontWeight(.semibold)
                 }
                 .frame(maxWidth: .infinity, minHeight: 50)

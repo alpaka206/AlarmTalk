@@ -1,0 +1,107 @@
+# category	path or glob	JSON literal (* = whole file)	reason
+# UI 번역 누락을 숨기는 데 사용하지 않는다. 저장값·시드·TTS는 화면 언어와 별개다.
+data-contract	apps/android-native/app/src/main/java/com/alarmtalk/app/alarm/SocialNotificationFactory.kt	"님"	기본 알람 라벨 또는 이전 저장값·존칭 판정; 표시 문구와 구분한다.
+data-contract	apps/android-native/app/src/main/java/com/alarmtalk/app/data/ReceivedAlarmLabels.kt	"님"	기본 알람 라벨 또는 이전 저장값·존칭 판정; 표시 문구와 구분한다.
+data-contract	apps/android-native/app/src/main/java/com/alarmtalk/app/data/ReceivedAlarmLabels.kt	"알람"	기본 알람 라벨 또는 이전 저장값·존칭 판정; 표시 문구와 구분한다.
+data-contract	apps/android-native/app/src/main/java/com/alarmtalk/app/data/SystemVoices.kt	"도현"	목소리 이름 또는 운세 정보의 저장·전송값; 표시 변환은 별도 헬퍼를 쓴다.
+data-contract	apps/android-native/app/src/main/java/com/alarmtalk/app/data/SystemVoices.kt	"미나"	목소리 이름 또는 운세 정보의 저장·전송값; 표시 변환은 별도 헬퍼를 쓴다.
+data-contract	apps/android-native/app/src/main/java/com/alarmtalk/app/data/SystemVoices.kt	"시우"	목소리 이름 또는 운세 정보의 저장·전송값; 표시 변환은 별도 헬퍼를 쓴다.
+data-contract	apps/android-native/app/src/main/java/com/alarmtalk/app/data/SystemVoices.kt	"애니"	목소리 이름 또는 운세 정보의 저장·전송값; 표시 변환은 별도 헬퍼를 쓴다.
+data-contract	apps/android-native/app/src/main/java/com/alarmtalk/app/ui/editor/AlarmFortuneSettings.kt	"남"	목소리 이름 또는 운세 정보의 저장·전송값; 표시 변환은 별도 헬퍼를 쓴다.
+data-contract	apps/android-native/app/src/main/java/com/alarmtalk/app/ui/editor/AlarmFortuneSettings.kt	"남성"	목소리 이름 또는 운세 정보의 저장·전송값; 표시 변환은 별도 헬퍼를 쓴다.
+data-contract	apps/android-native/app/src/main/java/com/alarmtalk/app/ui/editor/AlarmFortuneSettings.kt	"남자"	목소리 이름 또는 운세 정보의 저장·전송값; 표시 변환은 별도 헬퍼를 쓴다.
+data-contract	apps/android-native/app/src/main/java/com/alarmtalk/app/ui/editor/AlarmFortuneSettings.kt	"모름"	목소리 이름 또는 운세 정보의 저장·전송값; 표시 변환은 별도 헬퍼를 쓴다.
+data-contract	apps/android-native/app/src/main/java/com/alarmtalk/app/ui/editor/AlarmFortuneSettings.kt	"시간 모름"	목소리 이름 또는 운세 정보의 저장·전송값; 표시 변환은 별도 헬퍼를 쓴다.
+data-contract	apps/android-native/app/src/main/java/com/alarmtalk/app/ui/editor/AlarmFortuneSettings.kt	"알 수 없음"	목소리 이름 또는 운세 정보의 저장·전송값; 표시 변환은 별도 헬퍼를 쓴다.
+data-contract	apps/android-native/app/src/main/java/com/alarmtalk/app/ui/editor/AlarmFortuneSettings.kt	"여"	목소리 이름 또는 운세 정보의 저장·전송값; 표시 변환은 별도 헬퍼를 쓴다.
+data-contract	apps/android-native/app/src/main/java/com/alarmtalk/app/ui/editor/AlarmFortuneSettings.kt	"여성"	목소리 이름 또는 운세 정보의 저장·전송값; 표시 변환은 별도 헬퍼를 쓴다.
+data-contract	apps/android-native/app/src/main/java/com/alarmtalk/app/ui/editor/AlarmFortuneSettings.kt	"여자"	목소리 이름 또는 운세 정보의 저장·전송값; 표시 변환은 별도 헬퍼를 쓴다.
+data-contract	apps/android-native/app/src/main/java/com/alarmtalk/app/ui/voices/VoiceProfileRowComponents.kt	"남자친구"	관계 프리셋 저장·전송값; 표시할 때 프리셋의 번역 리소스를 조회한다.
+data-contract	apps/android-native/app/src/main/java/com/alarmtalk/app/ui/voices/VoiceProfileRowComponents.kt	"남편"	관계 프리셋 저장·전송값; 표시할 때 프리셋의 번역 리소스를 조회한다.
+data-contract	apps/android-native/app/src/main/java/com/alarmtalk/app/ui/voices/VoiceProfileRowComponents.kt	"딸"	관계 프리셋 저장·전송값; 표시할 때 프리셋의 번역 리소스를 조회한다.
+data-contract	apps/android-native/app/src/main/java/com/alarmtalk/app/ui/voices/VoiceProfileRowComponents.kt	"손녀"	관계 프리셋 저장·전송값; 표시할 때 프리셋의 번역 리소스를 조회한다.
+data-contract	apps/android-native/app/src/main/java/com/alarmtalk/app/ui/voices/VoiceProfileRowComponents.kt	"손주"	관계 프리셋 저장·전송값; 표시할 때 프리셋의 번역 리소스를 조회한다.
+data-contract	apps/android-native/app/src/main/java/com/alarmtalk/app/ui/voices/VoiceProfileRowComponents.kt	"아내"	관계 프리셋 저장·전송값; 표시할 때 프리셋의 번역 리소스를 조회한다.
+data-contract	apps/android-native/app/src/main/java/com/alarmtalk/app/ui/voices/VoiceProfileRowComponents.kt	"아들"	관계 프리셋 저장·전송값; 표시할 때 프리셋의 번역 리소스를 조회한다.
+data-contract	apps/android-native/app/src/main/java/com/alarmtalk/app/ui/voices/VoiceProfileRowComponents.kt	"아빠"	관계 프리셋 저장·전송값; 표시할 때 프리셋의 번역 리소스를 조회한다.
+data-contract	apps/android-native/app/src/main/java/com/alarmtalk/app/ui/voices/VoiceProfileRowComponents.kt	"엄마"	관계 프리셋 저장·전송값; 표시할 때 프리셋의 번역 리소스를 조회한다.
+data-contract	apps/android-native/app/src/main/java/com/alarmtalk/app/ui/voices/VoiceProfileRowComponents.kt	"여자친구"	관계 프리셋 저장·전송값; 표시할 때 프리셋의 번역 리소스를 조회한다.
+data-contract	apps/android-native/app/src/main/java/com/alarmtalk/app/ui/voices/VoiceProfileRowComponents.kt	"연예인"	관계 프리셋 저장·전송값; 표시할 때 프리셋의 번역 리소스를 조회한다.
+data-contract	apps/android-native/app/src/main/java/com/alarmtalk/app/ui/voices/VoiceProfileRowComponents.kt	"직접 입력"	관계 프리셋 저장·전송값; 표시할 때 프리셋의 번역 리소스를 조회한다.
+data-contract	apps/android-native/app/src/main/java/com/alarmtalk/app/ui/voices/VoiceProfileRowComponents.kt	"친구"	관계 프리셋 저장·전송값; 표시할 때 프리셋의 번역 리소스를 조회한다.
+data-contract	apps/android-native/app/src/main/java/com/alarmtalk/app/ui/voices/VoiceProfileRowComponents.kt	"할머니"	관계 프리셋 저장·전송값; 표시할 때 프리셋의 번역 리소스를 조회한다.
+data-contract	apps/android-native/app/src/main/java/com/alarmtalk/app/ui/voices/VoiceProfileRowComponents.kt	"할아버지"	관계 프리셋 저장·전송값; 표시할 때 프리셋의 번역 리소스를 조회한다.
+data-contract	apps/android-native/app/src/main/java/com/alarmtalk/app/ui/voices/VoiceProfileRowComponents.kt	"형제·자매"	관계 프리셋 저장·전송값; 표시할 때 프리셋의 번역 리소스를 조회한다.
+data-contract	apps/android-native/app/src/main/res/values-en/strings.xml	"snackbar_error_markers"	스낵바 색상 판정용 단어 집합; 언어마다 단어 수가 다르며 위치로 대응하지 않는다.
+data-contract	apps/android-native/app/src/main/res/values-en/strings.xml	"snackbar_success_markers"	스낵바 색상 판정용 단어 집합; 언어마다 단어 수가 다르며 위치로 대응하지 않는다.
+data-contract	apps/ios-native/AlarmTalk/LocalAlarmRecord.swift	"알람"	기본 알람 라벨 또는 이전 저장값·존칭 판정; 표시 문구와 구분한다.
+data-contract	apps/ios-native/AlarmTalk/LocalizedDisplay.swift	"님"	이미 저장된 한국어 존칭을 판별하는 접미사.
+data-contract	apps/ios-native/AlarmTalk/ReceivedAlarmLabelDisplay.swift	"님"	이미 저장된 한국어 존칭을 판별하는 접미사.
+data-contract	apps/ios-native/AlarmTalk/RemoteAlarmPullSync.swift	"알람"	기본 알람 라벨 또는 이전 저장값·존칭 판정; 표시 문구와 구분한다.
+data-contract	apps/ios-native/AlarmTalk/SystemVoices.swift	"도현"	목소리 이름 또는 운세 정보의 저장·전송값; 표시 변환은 별도 헬퍼를 쓴다.
+data-contract	apps/ios-native/AlarmTalk/SystemVoices.swift	"미나"	목소리 이름 또는 운세 정보의 저장·전송값; 표시 변환은 별도 헬퍼를 쓴다.
+data-contract	apps/ios-native/AlarmTalk/SystemVoices.swift	"시우"	목소리 이름 또는 운세 정보의 저장·전송값; 표시 변환은 별도 헬퍼를 쓴다.
+data-contract	apps/ios-native/AlarmTalk/SystemVoices.swift	"애니"	목소리 이름 또는 운세 정보의 저장·전송값; 표시 변환은 별도 헬퍼를 쓴다.
+data-contract	apps/ios-native/AlarmTalk/Views/Common/FortunePromptInputFields.swift	"남"	목소리 이름 또는 운세 정보의 저장·전송값; 표시 변환은 별도 헬퍼를 쓴다.
+data-contract	apps/ios-native/AlarmTalk/Views/Common/FortunePromptInputFields.swift	"남성"	목소리 이름 또는 운세 정보의 저장·전송값; 표시 변환은 별도 헬퍼를 쓴다.
+data-contract	apps/ios-native/AlarmTalk/Views/Common/FortunePromptInputFields.swift	"남자"	목소리 이름 또는 운세 정보의 저장·전송값; 표시 변환은 별도 헬퍼를 쓴다.
+data-contract	apps/ios-native/AlarmTalk/Views/Common/FortunePromptInputFields.swift	"모름"	목소리 이름 또는 운세 정보의 저장·전송값; 표시 변환은 별도 헬퍼를 쓴다.
+data-contract	apps/ios-native/AlarmTalk/Views/Common/FortunePromptInputFields.swift	"시간 모름"	목소리 이름 또는 운세 정보의 저장·전송값; 표시 변환은 별도 헬퍼를 쓴다.
+data-contract	apps/ios-native/AlarmTalk/Views/Common/FortunePromptInputFields.swift	"알 수 없음"	목소리 이름 또는 운세 정보의 저장·전송값; 표시 변환은 별도 헬퍼를 쓴다.
+data-contract	apps/ios-native/AlarmTalk/Views/Common/FortunePromptInputFields.swift	"여"	목소리 이름 또는 운세 정보의 저장·전송값; 표시 변환은 별도 헬퍼를 쓴다.
+data-contract	apps/ios-native/AlarmTalk/Views/Common/FortunePromptInputFields.swift	"여성"	목소리 이름 또는 운세 정보의 저장·전송값; 표시 변환은 별도 헬퍼를 쓴다.
+data-contract	apps/ios-native/AlarmTalk/Views/Common/FortunePromptInputFields.swift	"여자"	목소리 이름 또는 운세 정보의 저장·전송값; 표시 변환은 별도 헬퍼를 쓴다.
+data-contract	apps/ios-native/AlarmTalk/Views/Common/VoiceRelationshipInputField.swift	"남자친구"	관계 프리셋 저장·전송값; 표시할 때 프리셋의 번역 리소스를 조회한다.
+data-contract	apps/ios-native/AlarmTalk/Views/Common/VoiceRelationshipInputField.swift	"남편"	관계 프리셋 저장·전송값; 표시할 때 프리셋의 번역 리소스를 조회한다.
+data-contract	apps/ios-native/AlarmTalk/Views/Common/VoiceRelationshipInputField.swift	"딸"	관계 프리셋 저장·전송값; 표시할 때 프리셋의 번역 리소스를 조회한다.
+data-contract	apps/ios-native/AlarmTalk/Views/Common/VoiceRelationshipInputField.swift	"손녀"	관계 프리셋 저장·전송값; 표시할 때 프리셋의 번역 리소스를 조회한다.
+data-contract	apps/ios-native/AlarmTalk/Views/Common/VoiceRelationshipInputField.swift	"손주"	관계 프리셋 저장·전송값; 표시할 때 프리셋의 번역 리소스를 조회한다.
+data-contract	apps/ios-native/AlarmTalk/Views/Common/VoiceRelationshipInputField.swift	"아내"	관계 프리셋 저장·전송값; 표시할 때 프리셋의 번역 리소스를 조회한다.
+data-contract	apps/ios-native/AlarmTalk/Views/Common/VoiceRelationshipInputField.swift	"아들"	관계 프리셋 저장·전송값; 표시할 때 프리셋의 번역 리소스를 조회한다.
+data-contract	apps/ios-native/AlarmTalk/Views/Common/VoiceRelationshipInputField.swift	"아빠"	관계 프리셋 저장·전송값; 표시할 때 프리셋의 번역 리소스를 조회한다.
+data-contract	apps/ios-native/AlarmTalk/Views/Common/VoiceRelationshipInputField.swift	"엄마"	관계 프리셋 저장·전송값; 표시할 때 프리셋의 번역 리소스를 조회한다.
+data-contract	apps/ios-native/AlarmTalk/Views/Common/VoiceRelationshipInputField.swift	"여자친구"	관계 프리셋 저장·전송값; 표시할 때 프리셋의 번역 리소스를 조회한다.
+data-contract	apps/ios-native/AlarmTalk/Views/Common/VoiceRelationshipInputField.swift	"연예인"	관계 프리셋 저장·전송값; 표시할 때 프리셋의 번역 리소스를 조회한다.
+data-contract	apps/ios-native/AlarmTalk/Views/Common/VoiceRelationshipInputField.swift	"직접 입력"	관계 프리셋 저장·전송값; 표시할 때 프리셋의 번역 리소스를 조회한다.
+data-contract	apps/ios-native/AlarmTalk/Views/Common/VoiceRelationshipInputField.swift	"친구"	관계 프리셋 저장·전송값; 표시할 때 프리셋의 번역 리소스를 조회한다.
+data-contract	apps/ios-native/AlarmTalk/Views/Common/VoiceRelationshipInputField.swift	"할머니"	관계 프리셋 저장·전송값; 표시할 때 프리셋의 번역 리소스를 조회한다.
+data-contract	apps/ios-native/AlarmTalk/Views/Common/VoiceRelationshipInputField.swift	"할아버지"	관계 프리셋 저장·전송값; 표시할 때 프리셋의 번역 리소스를 조회한다.
+data-contract	apps/ios-native/AlarmTalk/Views/Common/VoiceRelationshipInputField.swift	"형제·자매"	관계 프리셋 저장·전송값; 표시할 때 프리셋의 번역 리소스를 조회한다.
+data-contract	apps/ios-native/AlarmTalk/Views/Editor/AlarmEditDraft.swift	"알람"	기본 알람 라벨 또는 이전 저장값·존칭 판정; 표시 문구와 구분한다.
+data-contract	apps/ios-native/AlarmTalk/Views/Editor/AlarmEditorSheet.swift	"가족이 보낸 음성"	받은 녹음의 저장 이름; 화면 기본 라벨이 아니다.
+data-contract	apps/ios-native/Shared/AlarmDefaultLabel.swift	"알람"	기본 알람 라벨 또는 이전 저장값·존칭 판정; 표시 문구와 구분한다.
+endonym	apps/ios-native/AlarmTalk/Views/Settings/MenuView.swift	"한국어"	언어 선택지는 해당 언어의 자기 이름으로 표시한다.
+endonym	apps/ios-native/AlarmTalk/Views/Voices/VoiceCloneUploadFlow.swift	"한국어"	언어 선택지는 해당 언어의 자기 이름으로 표시한다.
+generated	apps/android-native/app/src/main/java/com/alarmtalk/app/data/WeatherRegions.kt	"*"	공유 날씨 지역 원본에서 생성하는 계약값; 표시 번역은 별도 리소스로 조회한다.
+generated	apps/ios-native/AlarmTalk/Generated/WeatherRegions.generated.swift	"*"	공유 날씨 지역 원본에서 생성하는 계약값; 표시 번역은 별도 리소스로 조회한다.
+log	apps/ios-native/AlarmTalk/UsageEventUploader.swift	"사용 기록 전송 실패 — 큐에 남겨 둔다"	AppObservability에 전달하는 진단 로그; 화면 오류는 별도 매퍼를 쓴다.
+not-rendered	apps/android-native/app/src/main/java/com/alarmtalk/app/data/AlarmRepository.kt	"이미 ${\"%02d:%02d\".format(hour, minute)} 에 알람이 있어요."	DuplicateAlarmTimeException의 진단 메시지; 화면은 시간 기반 번역 리소스로 별도 표시한다.
+seed-data	apps/android-native/app/src/main/java/com/alarmtalk/app/data/AlarmConstants.kt	"개천절"	공휴일 달력 시드 이름; 사용자에게 표시하는 UI 문구가 아니다.
+seed-data	apps/android-native/app/src/main/java/com/alarmtalk/app/data/AlarmConstants.kt	"광복절"	공휴일 달력 시드 이름; 사용자에게 표시하는 UI 문구가 아니다.
+seed-data	apps/android-native/app/src/main/java/com/alarmtalk/app/data/AlarmConstants.kt	"기독탄신일"	공휴일 달력 시드 이름; 사용자에게 표시하는 UI 문구가 아니다.
+seed-data	apps/android-native/app/src/main/java/com/alarmtalk/app/data/AlarmConstants.kt	"대체공휴일"	공휴일 달력 시드 이름; 사용자에게 표시하는 UI 문구가 아니다.
+seed-data	apps/android-native/app/src/main/java/com/alarmtalk/app/data/AlarmConstants.kt	"대체공휴일(개천절)"	공휴일 달력 시드 이름; 사용자에게 표시하는 UI 문구가 아니다.
+seed-data	apps/android-native/app/src/main/java/com/alarmtalk/app/data/AlarmConstants.kt	"대체공휴일(광복절)"	공휴일 달력 시드 이름; 사용자에게 표시하는 UI 문구가 아니다.
+seed-data	apps/android-native/app/src/main/java/com/alarmtalk/app/data/AlarmConstants.kt	"대체공휴일(부처님오신날)"	공휴일 달력 시드 이름; 사용자에게 표시하는 UI 문구가 아니다.
+seed-data	apps/android-native/app/src/main/java/com/alarmtalk/app/data/AlarmConstants.kt	"대체공휴일(설날)"	공휴일 달력 시드 이름; 사용자에게 표시하는 UI 문구가 아니다.
+seed-data	apps/android-native/app/src/main/java/com/alarmtalk/app/data/AlarmConstants.kt	"대체공휴일(성탄절)"	공휴일 달력 시드 이름; 사용자에게 표시하는 UI 문구가 아니다.
+seed-data	apps/android-native/app/src/main/java/com/alarmtalk/app/data/AlarmConstants.kt	"대체공휴일(어린이날)"	공휴일 달력 시드 이름; 사용자에게 표시하는 UI 문구가 아니다.
+seed-data	apps/android-native/app/src/main/java/com/alarmtalk/app/data/AlarmConstants.kt	"대체공휴일(추석)"	공휴일 달력 시드 이름; 사용자에게 표시하는 UI 문구가 아니다.
+seed-data	apps/android-native/app/src/main/java/com/alarmtalk/app/data/AlarmConstants.kt	"대체공휴일(한글날)"	공휴일 달력 시드 이름; 사용자에게 표시하는 UI 문구가 아니다.
+seed-data	apps/android-native/app/src/main/java/com/alarmtalk/app/data/AlarmConstants.kt	"부처님오신날"	공휴일 달력 시드 이름; 사용자에게 표시하는 UI 문구가 아니다.
+seed-data	apps/android-native/app/src/main/java/com/alarmtalk/app/data/AlarmConstants.kt	"삼일절"	공휴일 달력 시드 이름; 사용자에게 표시하는 UI 문구가 아니다.
+seed-data	apps/android-native/app/src/main/java/com/alarmtalk/app/data/AlarmConstants.kt	"설날"	공휴일 달력 시드 이름; 사용자에게 표시하는 UI 문구가 아니다.
+seed-data	apps/android-native/app/src/main/java/com/alarmtalk/app/data/AlarmConstants.kt	"설날 연휴"	공휴일 달력 시드 이름; 사용자에게 표시하는 UI 문구가 아니다.
+seed-data	apps/android-native/app/src/main/java/com/alarmtalk/app/data/AlarmConstants.kt	"성탄절"	공휴일 달력 시드 이름; 사용자에게 표시하는 UI 문구가 아니다.
+seed-data	apps/android-native/app/src/main/java/com/alarmtalk/app/data/AlarmConstants.kt	"신정"	공휴일 달력 시드 이름; 사용자에게 표시하는 UI 문구가 아니다.
+seed-data	apps/android-native/app/src/main/java/com/alarmtalk/app/data/AlarmConstants.kt	"어린이날"	공휴일 달력 시드 이름; 사용자에게 표시하는 UI 문구가 아니다.
+seed-data	apps/android-native/app/src/main/java/com/alarmtalk/app/data/AlarmConstants.kt	"전국동시지방선거"	공휴일 달력 시드 이름; 사용자에게 표시하는 UI 문구가 아니다.
+seed-data	apps/android-native/app/src/main/java/com/alarmtalk/app/data/AlarmConstants.kt	"추석"	공휴일 달력 시드 이름; 사용자에게 표시하는 UI 문구가 아니다.
+seed-data	apps/android-native/app/src/main/java/com/alarmtalk/app/data/AlarmConstants.kt	"추석 연휴"	공휴일 달력 시드 이름; 사용자에게 표시하는 UI 문구가 아니다.
+seed-data	apps/android-native/app/src/main/java/com/alarmtalk/app/data/AlarmConstants.kt	"추석/개천절"	공휴일 달력 시드 이름; 사용자에게 표시하는 UI 문구가 아니다.
+seed-data	apps/android-native/app/src/main/java/com/alarmtalk/app/data/AlarmConstants.kt	"한글날"	공휴일 달력 시드 이름; 사용자에게 표시하는 UI 문구가 아니다.
+seed-data	apps/android-native/app/src/main/java/com/alarmtalk/app/data/AlarmConstants.kt	"현충일"	공휴일 달력 시드 이름; 사용자에게 표시하는 UI 문구가 아니다.
+seed-data	apps/ios-native/AlarmTalk/HolidayStore.swift	"*"	공휴일 달력 시드 이름; 화면 UI 문구가 아니다.
+tts-content	apps/ios-native/AlarmTalk/Views/Voices/VoiceCloneUploadFlow.swift	"안녕하세요, 지금부터 알람톡에서 쓸 목소리를 함께 만들어 볼게요.\n매일 아침 이 목소리가 좋아하는 사람을 깨워 준다니, 설레지 않나요?\n\n오늘은 하늘도 맑고 바람도 부드러운, 걷기 좋은 날이에요.\n이런 날엔 따뜻한 커피 한 잔을 들고 동네를 한 바퀴 돌고 싶어지는 것 같아요.\n\n이번에는 숫자도 읽어 볼까요?\n하나, 둘, 셋, 넷, 다섯, 여섯, 일곱, 여덟, 아홉, 열.\n\n기쁜 날에는 마음껏 웃고, 지친 날에는 \"오늘도 수고했어\" 하고 말해 주세요.\n아침에 창문을 활짝 열고 시원한 공기를 들이마시면, 하루가 한결 가볍게 시작되거든요.\n\n벌써 마지막 문장이에요. 여기까지 또렷하게 읽어 주셔서 고마워요.\n내일 아침에는 이 목소리가 가장 다정한 알람이 되어 줄 거예요."	한국어 녹음 대본; 음성 생성용으로 유지한다.
+tts-content	apps/ios-native/AlarmTalk/VoiceStudioViewModel.swift	"이 목소리로 깨워드릴까요?"	서버로 보내는 낭독 입력; 앱 화면 언어와 별도다.
+tts-content	apps/ios-native/AlarmTalk/VoiceStudioViewModel.swift	"좋은 아침이에요! 일어나세요! 오늘 하루도 힘내봐요!"	서버로 보내는 낭독 입력; 앱 화면 언어와 별도다.

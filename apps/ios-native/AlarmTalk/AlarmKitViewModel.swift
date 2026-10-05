@@ -1437,8 +1437,8 @@ final class AlarmKitViewModel: ObservableObject {
             title: Self.countdownTitle(label: record.localizedDisplayLabel)
         )
         let paused = AlarmPresentation.Paused(
-            title: "일시정지됨",
-            resumeButton: AlarmButton(text: "다시 시작", textColor: .white, systemImageName: "play.fill")
+            title: LocalizedStringResource("일시정지됨"),
+            resumeButton: AlarmButton(text: LocalizedStringResource("다시 시작"), textColor: .white, systemImageName: "play.fill")
         )
         let presentation = AlarmPresentation(alert: alert, countdown: countdown, paused: paused)
         // Phase 2-B4: 메타데이터에 playMode + voiceCacheKey 를 실어 LiveActivity /

@@ -81,7 +81,7 @@ struct VoiceCatalogRow<Below: View>: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(!enabled)
-                .accessibilityLabel(isPlaying ? "정지" : "듣기")
+                .accessibilityLabel(isPlaying ? String(localized: "정지") : String(localized: "듣기"))
             }
             .frame(minHeight: Self.contentHeight)
 
@@ -158,7 +158,7 @@ struct VoiceSectionCard<Content: View>: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(Text("\(title) 섹션"))
-                .accessibilityHint(Text(expanded ? "접기" : "펼치기"))
+                .accessibilityHint(Text(expanded ? String(localized: "접기") : String(localized: "펼치기")))
 
                 Spacer(minLength: 8)
                 trailing

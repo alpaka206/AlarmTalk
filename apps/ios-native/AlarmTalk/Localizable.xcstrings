@@ -2,7 +2,7 @@
   "sourceLanguage" : "ko",
   "strings" : {
     ":" : {
-
+      "shouldTranslate" : false
     },
     "Google Play 에서 결제 중이에요" : {
       "extractionState" : "manual",
@@ -22,7 +22,7 @@
       }
     },
     "·" : {
-
+      "shouldTranslate" : false
     },
     "'%@' 가 내게 어떻게 말할지 알려주세요." : {
       "extractionState" : "manual",
@@ -194,7 +194,8 @@
             "value" : "%1$@ / %2$@"
           }
         }
-      }
+      },
+      "shouldTranslate" : false
     },
     "%@ %@" : {
       "localizations" : {
@@ -308,7 +309,7 @@
       }
     },
     "%@%%" : {
-
+      "shouldTranslate" : false
     },
     "%@까지 개인 플랜을 무료로 쓸 수 있어요. %@부터는 무료 플랜으로 돌아가고, 등록한 목소리는 3일 보관 후 삭제돼요." : {
       "extractionState" : "manual",
@@ -481,7 +482,7 @@
       }
     },
     "~" : {
-
+      "shouldTranslate" : false
     },
     "0원" : {
       "extractionState" : "manual",
@@ -722,7 +723,7 @@
       }
     },
     "AlarmTalk" : {
-
+      "shouldTranslate" : false
     },
     "Apple ID 로그인이 더 이상 유효하지 않아요. 다시 로그인해 주세요." : {
       "extractionState" : "manual",
@@ -827,7 +828,7 @@
       }
     },
     "English" : {
-
+      "shouldTranslate" : false
     },
     "가격 불러오는 중" : {
       "extractionState" : "manual",
@@ -6086,7 +6087,6 @@
       }
     },
     "알람 ID" : {
-      "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -6097,7 +6097,13 @@
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "アラームID"
+            "value" : "アラーム ID"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "알람 ID"
           }
         }
       }
@@ -6206,18 +6212,23 @@
       }
     },
     "알람 다시 울리기" : {
-      "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Snooze the alarm"
+            "value" : "Snooze alarm"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "アラームを再通知"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "알람 다시 울리기"
           }
         }
       }
@@ -10607,7 +10618,7 @@
       }
     },
     "日本語" : {
-
+      "shouldTranslate" : false
     },
     "등록할 수 있는 목소리를 다 채웠어요. 쓰지 않는 목소리를 지워 주세요." : {
       "extractionState" : "manual",
@@ -15818,6 +15829,12 @@
           }
         }
       }
+    },
+    "EULA" : {
+      "shouldTranslate" : false
+    },
+    "%lld%%" : {
+      "shouldTranslate" : false
     }
   },
   "version" : "1.0"
