@@ -10956,6 +10956,40 @@
         }
       }
     },
+    "결제에 실패했어요. 잠시 후 다시 시도해 주세요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Payment failed. Please try again in a moment."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "お支払いに失敗しました。しばらくしてからもう一度お試しください。"
+          }
+        }
+      }
+    },
+    "이전 구매를 복원하지 못했어요. 잠시 후 다시 시도해 주세요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn't restore your previous purchases. Please try again in a moment."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "以前の購入を復元できませんでした。しばらくしてからもう一度お試しください。"
+          }
+        }
+      }
+    },
     "%@님" : {
       "extractionState" : "manual",
       "localizations" : {

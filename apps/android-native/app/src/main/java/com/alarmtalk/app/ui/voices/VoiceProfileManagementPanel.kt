@@ -794,7 +794,7 @@ internal fun VoiceProfileManagementPanel(
         scope.launch {
             runCatching {
                 withContext(Dispatchers.IO) { audioStore.readDurationMillis(uri) }
-                    ?: throw IllegalArgumentException(context.getString(R.string.voices_file_duration_unknown))
+                    ?: throw UserFacingException(context.getString(R.string.voices_file_duration_unknown))
             }.onSuccess { durationMillis ->
                 selectedAudio = null
                 selectedFileUri = uri
@@ -1211,7 +1211,7 @@ internal fun VoiceProfileManagementPanel(
     }
 
     suspend fun croppedFileAudio(): CachedAlarmAudio {
-        val uri = selectedFileUri ?: throw IllegalStateException(context.getString(R.string.voices_select_file_first))
+        val uri = selectedFileUri ?: throw UserFacingException(context.getString(R.string.voices_select_file_first))
         val cropDurationMillis = (cropEndMillis - cropStartMillis)
             .coerceIn(1_000L, VoiceProfileAudioLimits.MAX_DURATION_MILLIS)
         return withContext(Dispatchers.IO) {

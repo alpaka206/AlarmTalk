@@ -132,18 +132,17 @@ final class VoiceStudioViewModelTests: XCTestCase {
         XCTAssertEqual(vm.mapVoiceError(err), "처리 중 오류가 발생했어요.")
     }
 
-    func test_mapVoiceError_koreanServerMessageIsPreserved() {
+    func test_mapVoiceError_koreanServerMessageUsesFallback() {
         let vm = VoiceStudioViewModel()
         let err = APIError.server(status: 400, message: "음성 길이를 확인하지 못했어요.", errorCode: nil)
-        XCTAssertEqual(vm.mapVoiceError(err), "음성 길이를 확인하지 못했어요.")
+        XCTAssertEqual(vm.mapVoiceError(err), "처리 중 오류가 발생했어요.")
     }
 
-    func test_mapVoiceError_koreanForbiddenServerMessageIsPreserved() {
+    func test_mapVoiceError_koreanForbiddenServerMessageUsesFallback() {
         let vm = VoiceStudioViewModel()
-        // 여기는 **서버가 준 한국어를 그대로 보여준다**는 규칙을 지키는 테스트라
-        // `PaidGateCopy.message` 로 바꾸면 안 된다 — 넣은 문자열이 그대로 나와야 한다.
+        // 코드가 없으면 상태별 화면 폴백을 쓴다.
         let err = APIError.server(status: 403, message: "유료 이용권에서 사용할 수 있어요.", errorCode: nil)
-        XCTAssertEqual(vm.mapVoiceError(err), "유료 이용권에서 사용할 수 있어요.")
+        XCTAssertEqual(vm.mapVoiceError(err), "권한이 없어요. 로그인 상태를 확인해 주세요.")
     }
 
     func test_mapVoiceError_unauthorized() {
