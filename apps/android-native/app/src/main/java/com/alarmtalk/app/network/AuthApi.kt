@@ -304,6 +304,11 @@ data class AppVersionResponse(
     @SerializedName("min_supported_version") val minSupportedVersion: Int = 1,
     @SerializedName("latest_version") val latestVersion: Int = 1,
     @SerializedName("store_url") val storeUrl: String = "",
+    /**
+     * 지역 시트의 날씨 출처 줄을 켜는 서버 신호(불투명 토큰). 정확히 `"kma_jma_nws"` 일 때만 줄을 그린다
+     * (`showsWeatherAttribution`, `ui/editor/AlarmRandomPromptSettings.kt`). 필드가 없는 옛 서버는 null 이다.
+     */
+    @SerializedName("weather_attribution") val weatherAttribution: String? = null,
 )
 
 interface AuthApi {
