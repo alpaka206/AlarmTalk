@@ -1229,7 +1229,28 @@ def language_gate(source: str) -> bool:
     return bool(re.search(r"\bcontainsKorean\b|0x[Aa][Cc]00|\\u\{?[Aa][Cc]00|가(?:-|\.{2,3})힣", source))
 
 
+def stale_rules(rules: list[tuple[str, str, str, str]], literals: dict[str, set[str]], gated: set[str]) -> list[Issue]:
+    """Allowlist entries that no longer match any literal in their path.
+
+    Like the baseline, the allowlist must shrink when code moves: a stale entry
+    would silently excuse the same literal if it came back as UI copy.
+    """
+    issues = []
+    for _, pattern, literal, _ in rules:
+        if literal == "language-gate":
+            paths = gated
+        elif literal == "*":
+            paths = {path for values in literals.values() for path in values}
+        else:
+            paths = literals.get(literal, set())
+        if not any(fnmatch.fnmatchcase(path, pattern) for path in paths):
+            issues.append(Issue("scripts/hangul-literal-allowlist.txt", 0, pattern + "\t" + literal, "stale allowlist entry; remove it"))
+    return issues
+
+
 def audit(root: Path, rules: list[tuple[str, str, str, str]]) -> list[Issue]:
+    seen: dict[str, set[str]] = {}  # literal -> paths, for stale allowlist entries
+    gated: set[str] = set()
     sources = {str(p.relative_to(root)): p.read_text(encoding="utf-8") for relative in SWIFT_ROOTS for p in (root / relative).rglob("*.swift")}
     declarations = Declarations(sources)
     types = SwiftTypes(sources, lambda source: code_only(source, SwiftLexer(source).run()), delimiter_pairs)
@@ -1241,6 +1262,7 @@ def audit(root: Path, rules: list[tuple[str, str, str, str]]) -> list[Issue]:
         marked = mark_literals(code, literals)
         for literal in literals:
             value = literal_value(literal)
+            seen.setdefault(value, set()).add(path)
             localized, kind = localized_context(path, source, literal, declarations)
             if string_in_key_parameter(path, source, literal, declarations):
                 issues.append(Issue(path, literal["line"], value, "String(localized:) passed to a key/resource parameter; retain its literal key"))
@@ -1296,6 +1318,8 @@ def audit(root: Path, rules: list[tuple[str, str, str, str]]) -> list[Issue]:
                     for language in LANGUAGES) for _, entry in matches):
                     issues.append(Issue(path, literal["line"], value, f"key has unfinished en/ja translations in {target}"))
         gate_source = code + "\n" + "\n".join(literal_value(l) for l in literals)
+        if language_gate(gate_source):
+            gated.add(path)
         if language_gate(gate_source) and not allowed(path, "language-gate", rules):
             issues.append(Issue(path, 0, "containsKorean", "language-based server-error filter is forbidden"))
     kotlin = {}
@@ -1314,6 +1338,7 @@ def audit(root: Path, rules: list[tuple[str, str, str, str]]) -> list[Issue]:
         pairs, closers = tree.pairs, tree.closers
         static = {start: value for start, _, value, _ in kotlin_literals(source, static_text=True)}
         for start, _, value, _ in literals:
+            seen.setdefault(value, set()).add(path)
             if allowed(path, value, rules):
                 continue  # Kotlin has no literal lookups; resources are ids.
             # Letters outside format placeholders: `"%02d:%02d"` is not copy.
@@ -1321,10 +1346,13 @@ def audit(root: Path, rules: list[tuple[str, str, str, str]]) -> list[Issue]:
             if HANGUL.search(value) or ui_copy:
                 issues.append(Issue(path, source.count("\n", 0, start) + 1, value, "Kotlin UI text must use resources or a documented exception"))
         gate_source = code + "\n" + "\n".join(value for _, _, value, _ in literals)
+        if language_gate(gate_source):
+            gated.add(path)
         if language_gate(gate_source) and not allowed(path, "language-gate", rules):
             issues.append(Issue(path, 0, "containsKorean", "language-based server-error filter is forbidden"))
     issues.extend(catalog_issues(root))
     issues.extend(format_issues(root))
+    issues.extend(stale_rules(rules, seen, gated))
     return issues
 
 
@@ -2227,6 +2255,16 @@ class SelfTests(unittest.TestCase):
         file.parent.mkdir(parents=True)
         file.write_text('fun containsKorean(text: String) = text.any { it in \'가\'..\'힣\' }', encoding="utf-8")
         self.assertTrue(any("filter is forbidden" in issue.reason for issue in audit(root, [])))
+
+    def test_stale_allowlist_entries_fail(self):
+        root = self.fixture(source='let stored = "남성"')
+        path = SWIFT_ROOTS[0] + "/Screen.swift"
+        rules = [("data-contract", path, "남성", "stored value")]
+        self.assertEqual(audit(root, rules), [])
+        for rule in [("data-contract", path, "여성", "moved away"), ("data-contract", "other/*.swift", "남성", "wrong path"),
+                     ("generated", "other/Generated.swift", "*", "deleted file"), ("log", path, "language-gate", "no gate")]:
+            self.assertTrue(any(i.reason == "stale allowlist entry; remove it" for i in audit(root, rules + [rule])), rule)
+        self.assertFalse(any("stale" in i.reason for i in audit(root, [("generated", SWIFT_ROOTS[0] + "/*.swift", "*", "all")])))
 
     def test_baseline_ratchets(self):
         issue = Issue("a.swift", 2, "안녕", "literal is not in a proven localization context")
