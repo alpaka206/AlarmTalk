@@ -9,6 +9,8 @@ import { WeatherRegions, type WeatherSource } from '@alarmtalk/shared';
 import {
   fetchKmaDays,
   KMA_NUM_OF_ROWS,
+  KMA_TODAY_TMN_LAST_RUN_HOUR,
+  KMA_TODAY_TMX_LAST_RUN_HOUR,
   kmaDaysFromItems,
   kmaRequestUrl,
   latestKmaRun,
@@ -255,6 +257,41 @@ describe('날짜별 집계 — 실측 응답', () => {
       i.category === 'TMP' && i.fcstDate === '20261001' ? { ...i, fcstValue: '12' } : i,
     );
     expect(classify(chilly)).toBe(idx('cold'));
+  });
+
+  it('근사값은 그 회차에 **원래 없는** 오늘 극값만 — 원래 오는 회차에서 빠진 극값은 결측이라 미해결이다(코덱스 #865)', () => {
+    // 2026-10-06 실측(서울): TMN 은 0200 에만, TMX 는 0200~1100 에만 온다.
+    expect([KMA_TODAY_TMN_LAST_RUN_HOUR, KMA_TODAY_TMX_LAST_RUN_HOUR]).toEqual([2, 11]);
+    const now = new Date('2026-09-30T21:10:00Z');
+    const finalizeToday = (items: KmaItem[]) => {
+      const today = kmaDaysFromItems(items, '2026-10-01').get('2026-10-01');
+      return { today, input: finalizeSourceDay(today, { isToday: true, now, source: 'kma' }) };
+    };
+    const without = (run: '0200' | '0500', category: 'TMX' | 'TMN') =>
+      itemsOf(run).filter((i) => !(i.category === category && i.fcstDate === '20261001'));
+    // 0200 회차의 TMN 이 빠졌다 → 근사하지 않는다.
+    const noTmn = finalizeToday(without('0200', 'TMN'));
+    expect(noTmn.today).toMatchObject({ minTemp: null, maxTemp: 22 });
+    expect(noTmn.today).not.toHaveProperty('approxMinTemp');
+    expect(noTmn.input).toBeNull();
+    // 0500 회차의 TMX 가 빠졌다 → 근사하지 않는다(TMN 은 원래 없으니 근사한다).
+    const noTmx = finalizeToday(without('0500', 'TMX'));
+    expect(noTmx.today).toMatchObject({ maxTemp: null, minTemp: null, approxMinTemp: 13 });
+    expect(noTmx.today).not.toHaveProperty('approxMaxTemp');
+    expect(noTmx.input).toBeNull();
+  });
+
+  it('1400 회차(실측 — 오늘 TMX 도 없다): 15~23시 TMP 의 최대·최소를 둘 다 근사값으로', () => {
+    // 0500 회차 원본을 1400 회차 모양으로 줄인다 — 오늘은 15~23시 칸만, TMX 없음(값은 그대로).
+    const items = itemsOf('0500')
+      .filter((i) => !(i.fcstDate === '20261001' && (Number(i.fcstTime) < 1500 || i.category === 'TMX')))
+      .map((i) => ({ ...i, baseTime: '1400' }));
+    const today = kmaDaysFromItems(items, '2026-10-01', { baseDate: '20261001', baseTime: '1400' }).get('2026-10-01');
+    // 15~23시 TMP = 20·20·20·19·18·17·16·15·15.
+    expect(today).toMatchObject({ maxTemp: null, minTemp: null, approxMaxTemp: 20, approxMinTemp: 15 });
+    expect(
+      finalizeSourceDay(today, { isToday: true, now: new Date('2026-10-01T05:30:00Z'), source: 'kma' }),
+    ).toMatchObject({ maxTemp: 20, minTemp: 15, approximated: true });
   });
 
   it('TMX·TMN 이 없으면 TMP 가 24시간 다 있을 때만 그 최대·최소 — 3시간 간격 날은 대신하지 않는다', () => {

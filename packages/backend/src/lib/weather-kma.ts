@@ -14,7 +14,10 @@
  * | 0500 | 06~23시, TMX 있음·**TMN 없음** | 24시간 | 3시간 간격 8칸 |
  * | 0200 | 03~23시, TMX·TMN 둘 다 | | |
  *
- * 오늘의 빈 TMX·TMN 은 남은 시각의 TMP 로 근사값을 따로 둔다(`kmaDaysFromItems`) — 쓰는지는 `finalizeSourceDay`.
+ * 2026-10-06 실측(서울, 회차마다 오늘 칸): TMN 은 0200 에만, TMX 는 0200·0500·0800·1100 에만 온다 — **1400 회차부터
+ * TMX 도 없다**(15~23시 칸만), 2300 회차에는 오늘 칸이 아예 없다. 이렇게 **구조적으로 빠지는** 오늘 극값만 남은
+ * 시각의 TMP 로 근사값을 따로 둔다(`kmaDaysFromItems`) — 쓰는지는 `finalizeSourceDay`. 오는 회차에서 빠진 극값은
+ * 근사하지 않는다(반쪽 값 금지 — 그 날짜는 미해결).
  *
  * 규칙 전문은 `docs/spec/voice-and-message.md` 5-1 「서버가 미리 계산해 둔다」.
  */
@@ -255,6 +258,13 @@ export function parseKmaPrecipAmount(value: unknown): number | null {
 
 // ── 날짜별 집계 ───────────────────────────────────────────────────────────────────────────
 
+/**
+ * 오늘(발표일)의 TMN·TMX 가 오는 마지막 회차의 시(KST). 그 뒤 회차에는 **구조적으로 없다** — 2026-10-06 실측(서울):
+ * TMN 은 0200 에만, TMX 는 0200~1100 에만 왔다. 근사값은 이 뒤 회차에서만 둔다(그 앞에서 빠진 것은 결측이다).
+ */
+export const KMA_TODAY_TMN_LAST_RUN_HOUR = 2;
+export const KMA_TODAY_TMX_LAST_RUN_HOUR = 11;
+
 /** 시각마다 하나씩 오는 범주. 날짜 D 의 칸이 이 다섯 다 같은 시각에 있어야 한다. */
 const KMA_SLOT_CATEGORIES = ['SKY', 'PTY', 'POP', 'PCP', 'SNO'] as const;
 const HOURLY_DAY = Array.from({ length: 24 }, (_, h) => h);
@@ -292,9 +302,10 @@ function warnValue(category: string, value: unknown): void {
  * - 강수확률 = POP 최댓값, 강수량 = PCP 합(진단용 근사값 — 분류는 0 보다 큰지만 본다).
  * - 최고·최저 = TMX(15시)·TMN(06시). 없으면 TMP 가 **24시간 다 있을 때만** 그 최대·최소. 그것도 없으면 null
  *   (오늘이면 공통 규칙의 이어받기·근사값, 아니면 미해결 — `finalizeSourceDay`).
- * - 오늘(발표 회차의 날 — 발표 다음 시각 ~ 23시만 온다)의 TMX·TMN 이 없으면 그 **남은 시각의 TMP** 최대·최소를
- *   근사값(`approxMaxTemp`·`approxMinTemp`)으로 따로 둔다 — 0500 회차 뒤의 TMN, 1700 회차 뒤의 TMX·TMN. 남은
- *   칸의 TMP 가 하나라도 빠지거나 못 읽으면 근사값도 없다.
+ * - 오늘(발표 회차의 날 — 발표 다음 시각 ~ 23시만 온다)의 TMX·TMN 이 **그 회차에 원래 없으면**(TMN 은 0500 회차부터,
+ *   TMX 는 1400 회차부터 — `KMA_TODAY_TMN_LAST_RUN_HOUR`·`KMA_TODAY_TMX_LAST_RUN_HOUR`) 그 **남은 시각의 TMP**
+ *   최대·최소를 근사값(`approxMaxTemp`·`approxMinTemp`)으로 따로 둔다. 원래 오는 회차에서 빠졌거나 못 읽은 극값은
+ *   근사하지 않는다. 남은 칸의 TMP 가 하나라도 빠지거나 못 읽으면 근사값도 없다.
  * - 안개 요소는 없다 — KR 에서는 안개 클립(5)이 나오지 않는다.
  */
 export function kmaDaysFromItems(items: readonly KmaItem[], today: string, run?: KmaRun): Map<string, SourceDay> {
@@ -406,19 +417,21 @@ export function kmaDaysFromItems(items: readonly KmaItem[], today: string, run?:
         }
       }
     }
-    // 오늘은 발표 다음 시각부터의 칸뿐이다 — 일 극값이 없으면 그 남은 칸의 TMP 로 근사값을 따로 둔다.
-    const approx =
-      date === isoDate(baseDate) && (maxTemp === null || minTemp === null)
-        ? tmpRange(categories.get('TMP'), hours)
-        : null;
+    // 오늘은 발표 다음 시각부터의 칸뿐이다 — 이 회차에 **원래 없는** 극값만 그 남은 칸의 TMP 로 근사값을 따로 둔다.
+    // 원래 오는 회차에서 빠진 극값은 결측이라 근사하지 않는다(그 날짜는 미해결).
+    const runHour = Number(baseTime.slice(0, 2));
+    const isRunDay = date === isoDate(baseDate);
+    const approxMax = isRunDay && maxTemp === null && runHour > KMA_TODAY_TMX_LAST_RUN_HOUR;
+    const approxMin = isRunDay && minTemp === null && runHour > KMA_TODAY_TMN_LAST_RUN_HOUR;
+    const approx = approxMax || approxMin ? tmpRange(categories.get('TMP'), hours) : null;
     days.set(date, {
       code,
       maxTemp,
       minTemp,
       rainProbability: popMax,
       precipitation: Math.round(pcpSum * 10) / 10,
-      ...(approx && maxTemp === null ? { approxMaxTemp: approx.max } : {}),
-      ...(approx && minTemp === null ? { approxMinTemp: approx.min } : {}),
+      ...(approx && approxMax ? { approxMaxTemp: approx.max } : {}),
+      ...(approx && approxMin ? { approxMinTemp: approx.min } : {}),
     });
   }
   return days;
