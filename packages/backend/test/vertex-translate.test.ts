@@ -3056,3 +3056,118 @@ describe('일본어 서술어 꼬리 — CodeQL 되짚기 회귀', () => {
     }
   });
 });
+
+// 제시 대본(세 언어 모두 존댓말)을 읽은 녹음의 어체는 화자의 것이 아니다(스펙 §4-2). 그 어체가 사전렌더 프롬프트에 실리고
+// 일본어 가족 です・ます 검사까지 꺼서, 대본을 읽은 엄마 목소리가 딸에게 존댓말 알람을 읽었다. 판정은 서버의 글자 대조다
+// (`isEnrollmentScriptReading`) — 모델이 어체를 내도 버린다.
+describe('analyzeSpeechStyleWithVertex — 제시 대본을 읽은 녹음은 어체를 버린다', () => {
+  const styleJson = (fields: Record<string, unknown>) =>
+    JSON.stringify({
+      dialect: '',
+      strength: '',
+      register: '',
+      markers: [],
+      persona: '',
+      childlike: false,
+      energy: '',
+      confidence: 0.9,
+      ...fields,
+    });
+  // 받아쓰기가 가나를 한자·가타카나로, 숫자를 아라비아 숫자로 바꾼 일본어 대본 낭독.
+  const JA_SCRIPT_READ =
+    'こんにちは。これからアラームトークで使う声を一緒に作っていきましょう。毎朝この声が大切な人を起こしてくれるなんてワクワクしませんか？今日は空も晴れて風も柔らかい、散歩にぴったりの日です。こんな日は温かいコーヒーを片手に近所を一回りしたくなりますよね。次は数字も読んでみましょうか？1、2、3、4、5、6、7、8、9、10。';
+  const KO_SCRIPT_READ =
+    '안녕하세요. 지금부터 알람 톡에서 쓸 목소리를 함께 만들어 볼게요. 매일 아침 이 목소리가 좋아하는 사람을 깨워준다니 설레이지 않나요? 오늘은 하늘도 맑고 바람도 부드러운 걷기 좋은 날이에요. 이런 날엔 따뜻한 커피 한잔을 들고 동네를 한바퀴 돌고 싶어지는 것 같아요.';
+  const JA_FREE_POLITE = 'おはようございます。今日はとてもいい天気ですね。朝ごはんをしっかり食べて、気をつけて行ってきてください。';
+  const KO_FREE_POLITE = '안녕하세요. 오늘은 날씨가 맑고 기온도 적당해서 산책하기 좋은 날이에요. 아침은 꼭 챙겨 드시고 좋은 하루 보내세요.';
+  const KO_FREE_BANMAL = '야 오늘 날씨 진짜 좋다. 밥은 먹었어? 나 어제 시장 갔는데 사람 엄청 많더라. 너도 밥 잘 챙겨 먹고 다녀.';
+  const MOM = { relationshipLabel: '母', listenerTitle: 'ゆい' };
+  const POLITE_FAMILY_LINE = 'ゆい、起きる時間ですよ。今日も元気に過ごしましょう。';
+  const GREETING_SEED = '다정하게 아침 인사를 하며 잘 잤는지 안부를 묻고, 오늘 하루도 기분 좋게 시작하자고 따뜻하게 깨워 준다.';
+
+  it('대본 낭독이면 모델이 낸 정중체를 버리고 사투리·말버릇·페르소나·결 판정은 그대로 둔다', async () => {
+    queueContent(
+      geminiText(
+        styleJson({ register: 'polite', markers: ['〜ましょう'], persona: '落ち着いた語り口', energy: 'calm' }),
+      ),
+    );
+    const style = await analyzeSpeechStyleWithVertex(ENV, JA_SCRIPT_READ, 'ja');
+    expect(style).toEqual({
+      dialect: '',
+      strength: '',
+      register: '',
+      markers: ['〜ましょう'],
+      persona: '落ち着いた語り口',
+      childlike: false,
+      energy: 'calm',
+    });
+  });
+
+  it('사투리로 읽은 대본도 어체만 버린다 — 사투리는 남는다', async () => {
+    queueContent(geminiText(styleJson({ dialect: '경상', strength: 'medium', register: 'jondaemal', markers: ['~예'] })));
+    const style = await analyzeSpeechStyleWithVertex(
+      ENV,
+      '안녕하십니꺼, 지금부터 알람톡에서 쓸 목소리를 함께 만들어 볼게예. 매일 아침 이 목소리가 좋아하는 사람을 깨워 준다카니, 설레지 않나예? 오늘은 하늘도 맑고 바람도 부드러운, 걷기 좋은 날이라예.',
+      'ko',
+    );
+    expect(style?.register).toBe('');
+    expect(style?.dialect).toBe('경상');
+    expect(style?.strength).toBe('medium');
+    expect(style?.markers).toEqual(['~예']);
+  });
+
+  // null 이면 'failed' 로 기록돼 재시도 버튼이 뜨고, 같은 녹음이라 다시 눌러도 같은 답이다.
+  it('어체만 있던 분석도 실패(null)가 아니라 빈 말투로 끝난다', async () => {
+    queueContent(geminiText(styleJson({ register: 'jondaemal' })));
+    const style = await analyzeSpeechStyleWithVertex(ENV, KO_SCRIPT_READ, 'ko');
+    expect(style).toEqual({
+      dialect: '',
+      strength: '',
+      register: '',
+      markers: [],
+      persona: '',
+      childlike: false,
+      energy: '',
+    });
+  });
+
+  it('자유 발화의 어체는 그대로 남는다 — 정중체·반말 모두', async () => {
+    queueContent(geminiText(styleJson({ register: 'jondaemal' })));
+    expect((await analyzeSpeechStyleWithVertex(ENV, KO_FREE_POLITE, 'ko'))?.register).toBe('jondaemal');
+    queueContent(geminiText(styleJson({ register: 'banmal' })));
+    expect((await analyzeSpeechStyleWithVertex(ENV, KO_FREE_BANMAL, 'ko'))?.register).toBe('banmal');
+    queueContent(geminiText(styleJson({ register: 'polite' })));
+    expect((await analyzeSpeechStyleWithVertex(ENV, JA_FREE_POLITE, 'ja'))?.register).toBe('polite');
+  });
+
+  it('대본 낭독 분석은 프롬프트에 어체를 싣지 않고 일본어 가족 です・ます 검사를 끄지 않는다', async () => {
+    queueContent(geminiText(styleJson({ register: 'polite', markers: ['〜ましょう'] })));
+    const scriptStyle = await analyzeSpeechStyleWithVertex(ENV, JA_SCRIPT_READ, 'ja');
+    expect(scriptStyle).not.toBeNull();
+
+    mockFetch.mockClear();
+    queueContent(geminiText('{"text":"ゆい、おはよう。よく眠れた？今日も元気にいこうね。"}'));
+    await generatePrerenderClipText(ENV, { seed: GREETING_SEED, ...MOM, targetLanguage: 'ja', speechStyle: scriptStyle });
+    const prompt = sentPromptText();
+    // 말버릇은 남아 말투 블록은 실리되, 어체는 없다 — 관계(母→ゆい = タメ口)가 어체를 정한다.
+    expect(prompt).toContain('SPEAKER DIALECT/STYLE');
+    expect(prompt).not.toContain('register: polite');
+    expect(prompt).not.toMatch(/, register: /);
+
+    expect(hasJapanesePoliteEnding(POLITE_FAMILY_LINE, { ...MOM, speechStyle: scriptStyle })).toBe(true);
+    expect(prerenderRejectionReason(POLITE_FAMILY_LINE, 'ja', { ...MOM, speechStyle: scriptStyle })).toBe('register_mixed');
+  });
+
+  it('자유 발화의 정중체는 지금처럼 프롬프트에 싣고 검사를 면제한다(대조군)', async () => {
+    queueContent(geminiText(styleJson({ register: 'polite' })));
+    const freeStyle = await analyzeSpeechStyleWithVertex(ENV, JA_FREE_POLITE, 'ja');
+
+    mockFetch.mockClear();
+    queueContent(geminiText('{"text":"ゆい、おはようございます。今日も一日がんばりましょうね。"}'));
+    await generatePrerenderClipText(ENV, { seed: GREETING_SEED, ...MOM, targetLanguage: 'ja', speechStyle: freeStyle });
+    expect(sentPromptText()).toContain('register: polite');
+
+    expect(hasJapanesePoliteEnding(POLITE_FAMILY_LINE, { ...MOM, speechStyle: freeStyle })).toBe(false);
+    expect(prerenderRejectionReason(POLITE_FAMILY_LINE, 'ja', { ...MOM, speechStyle: freeStyle })).toBeNull();
+  });
+});
