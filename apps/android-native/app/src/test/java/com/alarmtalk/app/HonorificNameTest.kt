@@ -59,10 +59,18 @@ class HonorificNameTest {
         assertEquals("민수님에게 알람을 설정했어요", familyAlarmCompletionMessage(context("ko"), "민수"))
         assertEquals("민수님에게 알람을 설정했어요", familyAlarmCompletionMessage(context("ko"), "민수님"))
         assertEquals("Set an alarm for Alex.", familyAlarmCompletionMessage(context("en"), "Alex"))
-        // 이름도 이메일도 없는 멤버 — 화면용 대체 이름(メンバー)에 さん 을 붙이지 않는다.
+        // 이름이 없는 멤버 — 화면용 대체 이름(メンバー)이나 이메일에 さん 을 붙여 문장에 넣지 않는다.
         val unnamed = FamilyGroupMember(id = "m", userId = "u", role = "member", joinedAt = "2026-01-01")
-        assertNull(familyMemberNameOrNull(unnamed))
-        assertEquals("相手にアラームを設定しました。", familyAlarmCompletionMessage(ja, familyMemberNameOrNull(unnamed)))
+        val emailOnly = unnamed.copy(email = "user@example.com")
+        for (member in listOf(unnamed, emailOnly)) {
+            assertNull(familyMemberNameOrNull(member))
+            assertEquals("相手にアラームを設定しました。", familyAlarmCompletionMessage(ja, familyMemberNameOrNull(member)))
+            assertEquals("상대에게 알람을 설정했어요", familyAlarmCompletionMessage(context("ko"), familyMemberNameOrNull(member)))
+        }
+        // 목록·저장 버튼은 누구인지 가려야 하므로 이메일·대체 이름을 계속 쓴다.
+        assertEquals("user@example.com", familyMemberLabel(ja, emailOnly))
+        assertEquals("メンバー", familyMemberLabel(ja, unnamed))
+        assertEquals("田中", familyMemberNameOrNull(unnamed.copy(name = " 田中 ", email = "user@example.com")))
     }
 
     @Test
