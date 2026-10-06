@@ -37,7 +37,6 @@ from pathlib import Path
 import re
 import sys
 import tempfile
-import textwrap
 import unittest
 import xml.etree.ElementTree as ET
 
@@ -476,13 +475,21 @@ def argument_index(source: str, opening: int, position: int) -> int:
     return len(split_top_level(code_only(fragment, SwiftLexer(fragment).run()), ",")) - 1
 
 
+def swift_multiline(value: str) -> str:
+    """Swift multiline content: drop the opening line break, then remove exactly
+    the closing delimiter's indentation from each line (deeper indentation
+    stays) and the line break before the closing delimiter."""
+    head, _, indent = value.removeprefix("\n").rpartition("\n")
+    if indent.strip():
+        return value  # Not a well-formed multiline literal; keep it verbatim.
+    return "\n".join(line[len(indent):] if line.startswith(indent) else ("" if not line.strip() else line)
+                     for line in head.split("\n"))
+
+
 def literal_value(literal: dict) -> str:
     # Keep interpolation expressions for a stable, reviewable allowlist identity.
     value = "".join(value if kind == "lit" else "\\(" + value + ")" for kind, value in literal["parts"])
-    if literal["multiline"]:
-        value = textwrap.dedent(value.removeprefix("\n")).rstrip(" \t")
-        value = value.removesuffix("\n")
-    return value
+    return swift_multiline(value) if literal["multiline"] else value
 
 
 def format_template(literal: dict, infer=lambda expression: None) -> str:
@@ -502,9 +509,7 @@ def format_template(literal: dict, infer=lambda expression: None) -> str:
                 raise ValueError(value)
             parts.append("%" + conversion)
     value = "".join(parts)
-    if literal["multiline"]:
-        value = textwrap.dedent(value.removeprefix("\n")).rstrip(" \t").removesuffix("\n")
-    return value
+    return swift_multiline(value) if literal["multiline"] else value
 
 
 def key_pattern(literal: dict, infer=lambda expression: None) -> re.Pattern:
@@ -1056,7 +1061,10 @@ def catalog_issues(root: Path) -> list[Issue]:
         locale = (locales[0][2:].split("+")[0] if locales[0].startswith("b+") else locales[0]) if locales else "ko"
         if locale not in variants:
             continue
-        config = tuple(q for q in qualifiers if q not in locales and not re.fullmatch(r"r[A-Z]{2}", q))
+        # The region stays in the configuration: `values-en-rUS` pairs with `values-ko-rUS`.
+        regions = ["r" + part for q in locales if q.startswith("b+") for part in q.split("+")[2:]
+                   if re.fullmatch(r"[A-Z]{2}|\d{3}", part)]
+        config = tuple(q for q in qualifiers if q not in locales) + tuple(regions)
         for file in directory.glob("*.xml"):
             for entry in ET.parse(file).getroot():
                 if entry.tag in {"string", "string-array", "plurals"}:
@@ -1125,7 +1133,8 @@ KOTLIN_FIRST_ARGUMENT_SINKS = {"setContentTitle", "setContentText", "setSubText"
                                "setPositiveButton", "setNegativeButton", "setNeutralButton"}
 KOTLIN_SECOND_ARGUMENT_SINKS = {"makeText", "addAction", "Action.Builder", "NotificationChannel", "NotificationChannelGroup",
                                 # Positional contentDescription / snackbar action label.
-                                "Icon", "Image", "AsyncImage", "showSnackbar"}
+                                "Icon", "Image", "AsyncImage", "showSnackbar",
+                                "NotificationCompat.Action", "Notification.Action"}
 KOTLIN_NAMED_SINKS = {"text", "title", "message", "contentDescription", "label"}
 # `append("…")` inside these lambdas becomes the builder's result, which is
 # then checked at the call that receives it (e.g. `Text(buildAnnotatedString {…})`).
@@ -1666,7 +1675,8 @@ def audit(root: Path, rules: list[tuple[str, str, str, str]]) -> list[Issue]:
         if language_gate(gate_source) and not allowed(path, "language-gate", rules):
             issues.append(Issue(path, 0, "containsKorean", "language-based server-error filter is forbidden"))
     kotlin = {}
-    for file in (root / "apps/android-native/app/src/main/java").rglob("*.kt"):
+    # Both conventional Kotlin source roots of the main source set.
+    for file in (file for source_root in ("java", "kotlin") for file in (root / "apps/android-native/app/src/main" / source_root).rglob("*.kt")):
         path, source = str(file.relative_to(root)), file.read_text(encoding="utf-8")
         chars = []
         literals = kotlin_literals(source, chars=chars)
@@ -2343,7 +2353,8 @@ class SelfTests(unittest.TestCase):
                        'builder.setStyle(NotificationCompat.BigTextStyle().bigText("Ready"))',
                        'Icon(Icons.Default.Add, "Add alarm")', 'Image(painter, "Profile photo")',
                        'AsyncImage(model, "Cover")', 'state.showSnackbar(message, "Undo")',
-                       'channel.setDescription("Alarm notifications")', 'AlertDialog.Builder(context).setMessage("Delete?")']:
+                       'channel.setDescription("Alarm notifications")', 'AlertDialog.Builder(context).setMessage("Delete?")',
+                       'NotificationCompat.Action(0, "Snooze", intent)', 'Notification.Action(icon, "Dismiss", intent)']:
             file.write_text(source, encoding="utf-8")
             self.assertTrue(any("Kotlin UI" in issue.reason for issue in audit(root, [])), source)
         for source in ['Log.d(TAG, buildString { append("Debug") })',
@@ -2769,6 +2780,30 @@ class SelfTests(unittest.TestCase):
             data["strings"]["alarm.count"]["localizations"].update({"ko": korean, "en": english})
             file.write_text(json.dumps(data), encoding="utf-8")
             self.assertEqual("en must vary by plural like the Korean source" in [i.reason for i in catalog_issues(root)], fails, english)
+
+    def test_regional_android_variants_pair_with_the_same_region(self):
+        root = self.fixture(source="")
+        base = root / "apps/android-native/app/src/main/res"
+        for directory, text in [("values", "%1$d개"), ("values-en", "%1$d items"), ("values-ja", "%1$d件"),
+                                ("values-ko-rUS", "%1$s개"), ("values-en-rUS", "%1$d units"), ("values-ja-rUS", "%1$s件")]:
+            (base / directory).mkdir(exist_ok=True)
+            (base / directory / "strings.xml").write_text('<resources><string name="hello">' + text + '</string></resources>', encoding="utf-8")
+        reasons = {(i.path.split("/")[-2], i.reason.split(" (")[0]) for i in catalog_issues(root)}
+        self.assertIn(("values-en-rUS", "Android en format argument indices/types/count or line breaks differ"), reasons)
+        self.assertNotIn(("values-ja-rUS", "Android ja format argument indices/types/count or line breaks differ"), reasons)
+
+    def test_kotlin_main_source_root_is_audited(self):
+        root = self.fixture(source="")
+        file = root / "apps/android-native/app/src/main/kotlin/example/Screen.kt"
+        file.parent.mkdir(parents=True)
+        file.write_text('Text("Try again")', encoding="utf-8")
+        self.assertTrue(any("Kotlin UI" in i.reason for i in audit(root, [])))
+
+    def test_multiline_keys_keep_indentation_past_the_closing_delimiter(self):
+        source = 'String(localized: """\n        첫 줄\n          둘째 줄\n    """)'
+        for key, missing in [("    첫 줄\n      둘째 줄", False), ("첫 줄\n  둘째 줄", True)]:
+            root = self.fixture(source=source, key=key)
+            self.assertEqual(any("key missing" in i.reason for i in audit(root, [])), missing, repr(key))
 
     def test_catalog_target_languages_reject_hangul_in_every_leaf(self):
         root = self.fixture(source="")
