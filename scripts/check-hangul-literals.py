@@ -133,9 +133,24 @@ class Declarations:
         return bool(candidates) and all(argument in v for v in candidates)
 
 
+def call_span(source: str, opening: int) -> tuple[int, int]:
+    """Span of the callee token (`[#\\w.]+`) before an opening delimiter.
+
+    Scans backwards from the delimiter only as far as that token reaches;
+    a `$`-anchored regex over `source[:opening]` was quadratic per file.
+    """
+    end = opening
+    while end > 0 and source[end - 1].isspace():
+        end -= 1
+    start = end
+    while start > 0 and (source[start - 1].isalnum() or source[start - 1] in "_#."):
+        start -= 1
+    return start, end
+
+
 def call_at(source: str, opening: int) -> str:
-    match = re.search(r"([#\w.]+)\s*$", source[:opening])
-    return match[1] if match else ""
+    start, end = call_span(source, opening)
+    return source[start:end]
 
 
 def argument_prefix(source: str, literal: dict, opening: int) -> str:
@@ -229,7 +244,7 @@ def string_in_key_parameter(path: str, source: str, literal: dict, declarations:
     # The outer Text interpolation contains a String expression, not a key arg.
     if any(kind == "interp" and pos > stack[-2] for kind, pos in literal["stack"]):
         return False
-    start = re.search(r"\bString\s*$", source[:stack[-1]]).start()
+    start = call_span(source, stack[-1])[0]
     prefix = argument_prefix(source, {"start": start}, stack[-2])
     argument = re.match(r"(\w+)\s*:", prefix)
     call = call_at(source, stack[-2]).split(".")[-1]
@@ -274,7 +289,7 @@ def read_allowlist(path: Path) -> list[tuple[str, str, str, str]]:
     rules = []
     if not path.exists():
         return rules
-    for line in path.read_text().splitlines():
+    for line in path.read_text(encoding="utf-8").splitlines():
         if not line.strip() or line.startswith("#"):
             continue
         category, pattern, literal, reason = line.split("\t", 3)
@@ -293,7 +308,7 @@ def read_baseline(path: Path) -> dict[str, str]:
     if not path.exists():
         return {}
     entries = {}
-    for line in path.read_text().splitlines():
+    for line in path.read_text(encoding="utf-8").splitlines():
         if not line.strip() or line.startswith("#"):
             continue
         file, digest, reason = line.split("\t", 2)
@@ -342,7 +357,7 @@ def translated_leaves(node) -> bool:
 def catalog_issues(root: Path) -> list[Issue]:
     issues = []
     for relative in (*CATALOGS, "apps/ios-native/AlarmTalk/InfoPlist.xcstrings"):
-        data = json.loads((root / relative).read_text())
+        data = json.loads((root / relative).read_text(encoding="utf-8"))
         for key, entry in data["strings"].items():
             if not entry.get("shouldTranslate", True):
                 continue
@@ -407,19 +422,26 @@ def kotlin_ui_context(code: str, start: int, pairs: dict[int, int]) -> bool:
     a new context: an onClick log is not a title merely because it is inside UI.
     This is a call-site check, not Kotlin data-flow/type analysis.
     """
+    closers = {end: opening for opening, end in pairs.items()}
+
     def expression_branch(opening):
-        before = code[:opening].rstrip()
-        if re.search(r"\belse$|->$", before):
+        # Look back only over the token before the brace, not the whole file.
+        end = opening
+        while end > 0 and code[end - 1].isspace():
+            end -= 1
+        if code.endswith("->", 0, end):
             return True
-        if before.endswith(")"):
-            condition = next((a for a, b in pairs.items() if b == len(before) - 1), None)
+        if code.endswith("else", 0, end) and (end == 4 or not (code[end - 5].isalnum() or code[end - 5] == "_")):
+            return True
+        if end and code[end - 1] == ")":
+            condition = closers.get(end - 1)
             return condition is not None and call_at(code, condition) in {"if", "when"}
         return False
 
-    block = max((opening for opening, end in pairs.items() if code[opening] == "{" and opening < start < end
-                 and not expression_branch(opening)), default=-1)
-    for opening, end in sorted(pairs.items(), reverse=True):
-        if code[opening] != "(" or not block < opening < start < end:
+    enclosing = sorted(opening for opening, end in pairs.items() if opening < start < end)
+    block = max((opening for opening in enclosing if code[opening] == "{" and not expression_branch(opening)), default=-1)
+    for opening in reversed(enclosing):
+        if code[opening] != "(" or not block < opening:
             continue
         call = call_at(code, opening).split(".")[-1]
         if call in {"if", "when", "while"}:
@@ -456,7 +478,7 @@ def format_issues(root: Path) -> list[Issue]:
     """Catch dropped/type-changed arguments; positional reordering is allowed."""
     issues = []
     for relative in CATALOGS:
-        for key, entry in json.loads((root / relative).read_text())["strings"].items():
+        for key, entry in json.loads((root / relative).read_text(encoding="utf-8"))["strings"].items():
             if not entry.get("shouldTranslate", True):
                 continue
             localizations = entry.get("localizations", {})
@@ -475,10 +497,10 @@ def language_gate(source: str) -> bool:
 
 
 def audit(root: Path, rules: list[tuple[str, str, str, str]]) -> list[Issue]:
-    sources = {str(p.relative_to(root)): p.read_text() for relative in SWIFT_ROOTS for p in (root / relative).rglob("*.swift")}
+    sources = {str(p.relative_to(root)): p.read_text(encoding="utf-8") for relative in SWIFT_ROOTS for p in (root / relative).rglob("*.swift")}
     declarations = Declarations(sources)
     types = SwiftTypes(sources, lambda source: code_only(source, SwiftLexer(source).run()), delimiter_pairs)
-    catalogs = {relative: json.loads((root / relative).read_text())["strings"] for relative in CATALOGS}
+    catalogs = {relative: json.loads((root / relative).read_text(encoding="utf-8"))["strings"] for relative in CATALOGS}
     issues = []
     for path, source in sources.items():
         literals = SwiftLexer(source, path).run()
@@ -523,7 +545,7 @@ def audit(root: Path, rules: list[tuple[str, str, str, str]]) -> list[Issue]:
         if language_gate(gate_source) and not allowed(path, "language-gate", rules):
             issues.append(Issue(path, 0, "containsKorean", "language-based server-error filter is forbidden"))
     for file in (root / "apps/android-native/app/src/main/java").rglob("*.kt"):
-        path, source = str(file.relative_to(root)), file.read_text()
+        path, source = str(file.relative_to(root)), file.read_text(encoding="utf-8")
         literals = kotlin_literals(source)
         masked = list(source)
         for start, end, _, _ in literals:
@@ -560,7 +582,7 @@ def main() -> int:
     baseline_path = root / "scripts/hangul-literal-baseline.txt"
     if args.write_baseline:
         entries = sorted({issue.identity for issue in found if issue.reason == "literal is not in a proven localization context"})
-        baseline_path.write_text("# Review every candidate; user-visible untranslated text is not an exception.\n" + "".join(key + "\tREVIEW REQUIRED\n" for key in entries))
+        baseline_path.write_text("# Review every candidate; user-visible untranslated text is not an exception.\n" + "".join(key + "\tREVIEW REQUIRED\n" for key in entries), encoding="utf-8")
         print(f"Wrote {len(entries)} candidates. Review and replace each reason before committing.")
         return 1 if entries else 0
     issues = apply_baseline(found, read_baseline(baseline_path))
@@ -577,35 +599,35 @@ class SelfTests(unittest.TestCase):
     def test_explicit_korean_for_source_keys_must_be_valid(self):
         root = self.fixture()
         file = root / CATALOGS[0]
-        original = file.read_text()
+        original = file.read_text(encoding="utf-8")
         for value, state in [("", "translated"), (" \n", "translated"), ("안녕", "new")]:
             data = json.loads(original)
             data["strings"]["안녕"]["localizations"]["ko"]["stringUnit"] = {"value": value, "state": state}
-            file.write_text(json.dumps(data))
+            file.write_text(json.dumps(data), encoding="utf-8")
             self.assertTrue(any(i.reason.startswith("ko translation") for i in audit(root, [])))
 
     def test_source_key_format_cannot_be_lost_in_all_languages(self):
         root = self.fixture(source='', key='안녕 %@')
         file = root / CATALOGS[0]
-        data = json.loads(file.read_text())
+        data = json.loads(file.read_text(encoding="utf-8"))
         for language in (*LANGUAGES, 'ko'):
             data['strings']['안녕 %@']['localizations'][language]['stringUnit']['value'] = 'Hello'
-        file.write_text(json.dumps(data))
+        file.write_text(json.dumps(data), encoding="utf-8")
         self.assertTrue(any(i.reason.startswith('ko format argument') for i in format_issues(root)))
 
     def test_call_sites_accept_translated_variations(self):
         root = self.fixture()
         file = root / CATALOGS[0]
-        original = json.loads(file.read_text())
+        original = json.loads(file.read_text(encoding="utf-8"))
         for kind in ['plural', 'device']:
             data = json.loads(json.dumps(original))
             for language in LANGUAGES:
                 localization = data['strings']['안녕']['localizations'][language]
                 data['strings']['안녕']['localizations'][language] = {'variations': {kind: {'other': localization}}}
-            file.write_text(json.dumps(data))
+            file.write_text(json.dumps(data), encoding="utf-8")
             self.assertEqual(audit(root, []), [])
             data['strings']['안녕']['localizations']['en']['variations'][kind]['other']['stringUnit']['state'] = 'new'
-            file.write_text(json.dumps(data))
+            file.write_text(json.dumps(data), encoding="utf-8")
             self.assertTrue(any('unfinished en/ja' in i.reason for i in audit(root, [])))
 
     def test_interpolation_type_must_match_catalog_key(self):
@@ -636,14 +658,14 @@ class SelfTests(unittest.TestCase):
         base = root / 'apps/android-native/app/src/main/res'
         for language, quantities in [('', ['other']), ('-ja', ['other']), ('-en', ['one', 'other'])]:
             items = ''.join('<item quantity="' + q + '">Hello</item>' for q in quantities)
-            (base / ('values' + language) / 'strings.xml').write_text('<resources><plurals name="hello">' + items + '</plurals></resources>')
+            (base / ('values' + language) / 'strings.xml').write_text('<resources><plurals name="hello">' + items + '</plurals></resources>', encoding="utf-8")
         self.assertEqual(catalog_issues(root), [])
         for language in LANGUAGES:
             file = base / ('values-' + language) / 'strings.xml'
-            original = file.read_text()
-            file.write_text(re.sub('<item quantity="' + ('one' if language == 'en' else 'other') + '">.*?</item>', '', original))
+            original = file.read_text(encoding="utf-8")
+            file.write_text(re.sub('<item quantity="' + ('one' if language == 'en' else 'other') + '">.*?</item>', '', original), encoding="utf-8")
             self.assertTrue(any(i.reason == f'Android {language} required plural quantities missing' for i in catalog_issues(root)))
-            file.write_text(original)
+            file.write_text(original, encoding="utf-8")
 
     def test_line_break_contract_in_each_leaf(self):
         from localization_formats import line_breaks
@@ -673,14 +695,14 @@ class SelfTests(unittest.TestCase):
                                  ('-en', [r'First\n', 'word', 'last']),
                                  ('-ja', ['First', 'word', r'\nlast'])]:
             xml = '<resources>' + ''.join('<string name="' + name + '">' + value + '</string>' for name, value in zip(group, values)) + '</resources>'
-            (base / ('values' + language) / 'strings.xml').write_text(xml)
+            (base / ('values' + language) / 'strings.xml').write_text(xml, encoding="utf-8")
         self.assertEqual(catalog_issues(root), [])
         file = base / 'values-en/strings.xml'
-        file.write_text(file.read_text().replace(r'\n', ''))
+        file.write_text(file.read_text(encoding="utf-8").replace(r'\n', ''), encoding="utf-8")
         self.assertTrue(any('combined line breaks differ' in i.reason for i in catalog_issues(root)))
 
     def test_comments_raw_strings_and_interpolation(self):
-        source = '// "주석"\nText(#"안녕 \#(name)"#) /* nested /* "제외" */ */'
+        source = r'// "주석"' + '\n' + r'Text(#"안녕 \#(name)"#) /* nested /* "제외" */ */'
         literals = SwiftLexer(source).run()
         self.assertEqual(len(literals), 1)
         self.assertEqual(literals[0]["parts"], [("lit", "안녕 "), ("interp", "name")])
@@ -744,29 +766,29 @@ class SelfTests(unittest.TestCase):
         for path in (*CATALOGS, "apps/ios-native/AlarmTalk/InfoPlist.xcstrings"):
             file = root / path
             file.parent.mkdir(parents=True, exist_ok=True)
-            file.write_text(json.dumps({"strings": {key: entry}}))
+            file.write_text(json.dumps({"strings": {key: entry}}), encoding="utf-8")
         file = root / SWIFT_ROOTS[0] / "Screen.swift"
-        file.write_text(source)
+        file.write_text(source, encoding="utf-8")
         for language in ("", "-en", "-ja"):
             directory = root / ("apps/android-native/app/src/main/res/values" + language)
             directory.mkdir(parents=True)
-            (directory / "strings.xml").write_text('<resources><string name="hello">Hello</string></resources>')
+            (directory / "strings.xml").write_text('<resources><string name="hello">Hello</string></resources>', encoding="utf-8")
         return root
 
     def test_missing_catalog_key_and_translation_fail(self):
         root = self.fixture()
         self.assertEqual(audit(root, []), [])
         file = root / CATALOGS[0]
-        file.write_text('{"strings": {}}')
+        file.write_text('{"strings": {}}', encoding="utf-8")
         self.assertTrue(any("key missing" in issue.reason for issue in audit(root, [])))
-        file.write_text(json.dumps({"strings": {"안녕": {"localizations": {"en": {"stringUnit": {"state": "new", "value": "Hello"}}}}}}))
+        file.write_text(json.dumps({"strings": {"안녕": {"localizations": {"en": {"stringUnit": {"state": "new", "value": "Hello"}}}}}}), encoding="utf-8")
         self.assertTrue(any("unfinished" in issue.reason for issue in audit(root, [])))
 
     def test_permission_and_semantic_keys_require_all_translations(self):
         root = self.fixture()
         for relative in (*CATALOGS, "apps/ios-native/AlarmTalk/InfoPlist.xcstrings"):
             file = root / relative
-            original = file.read_text()
+            original = file.read_text(encoding="utf-8")
             for language in LANGUAGES:
                 for state in [None, "new"]:
                     entry = {"localizations": {lang: {"stringUnit": {"state": "translated", "value": "Permission"}}
@@ -775,19 +797,19 @@ class SelfTests(unittest.TestCase):
                         del entry["localizations"][language]
                     else:
                         entry["localizations"][language]["stringUnit"]["state"] = state
-                    file.write_text(json.dumps({"strings": {"NSAlarmKitUsageDescription": entry}}))
+                    file.write_text(json.dumps({"strings": {"NSAlarmKitUsageDescription": entry}}), encoding="utf-8")
                     issues = catalog_issues(root)
                     self.assertTrue(any(i.path == relative and i.value == "NSAlarmKitUsageDescription"
                                         and i.reason.startswith(language) for i in issues))
-            file.write_text(json.dumps({"strings": {"CFBundleDisplayName": {"shouldTranslate": False}}}))
+            file.write_text(json.dumps({"strings": {"CFBundleDisplayName": {"shouldTranslate": False}}}), encoding="utf-8")
             self.assertFalse(any(i.path == relative for i in catalog_issues(root)))
-            file.write_text(original)
+            file.write_text(original, encoding="utf-8")
 
     def test_translated_catalog_leaves_cannot_be_blank(self):
         root = self.fixture()
         for relative in (*CATALOGS, "apps/ios-native/AlarmTalk/InfoPlist.xcstrings"):
             file = root / relative
-            original = file.read_text()
+            original = file.read_text(encoding="utf-8")
             for language in LANGUAGES:
                 for value in [None, "", " \n\t "]:
                     for variation in [False, True]:
@@ -801,20 +823,20 @@ class SelfTests(unittest.TestCase):
                             unit = {"variations": {"plural": {
                                 "one": {"stringUnit": {"state": "translated", "value": "One"}}, "other": unit}}}
                         entry["localizations"][language] = unit
-                        file.write_text(json.dumps({"strings": {"NSAlarmKitUsageDescription": entry}}))
+                        file.write_text(json.dumps({"strings": {"NSAlarmKitUsageDescription": entry}}), encoding="utf-8")
                         self.assertTrue(any(i.path == relative and i.reason.startswith(language)
                                             and "empty" in i.reason for i in catalog_issues(root)))
                         entry["shouldTranslate"] = False
-                        file.write_text(json.dumps({"strings": {"Brand": entry}}))
+                        file.write_text(json.dumps({"strings": {"Brand": entry}}), encoding="utf-8")
                         self.assertFalse(any(i.path == relative for i in catalog_issues(root)))
-            file.write_text(original)
+            file.write_text(original, encoding="utf-8")
 
     def test_semantic_keys_require_a_nonempty_korean_translation(self):
         for key in ["group.plan.shared", "member.unnamed", "code.redeem.submit", "NSAlarmKitUsageDescription"]:
             root = self.fixture(source="", key=key)
             for relative in (*CATALOGS, "apps/ios-native/AlarmTalk/InfoPlist.xcstrings"):
                 file = root / relative
-                original = file.read_text()
+                original = file.read_text(encoding="utf-8")
                 for ko in [None, {"state": "new", "value": "공유"},
                            {"state": "translated", "value": ""}, {"state": "translated", "value": "  "}]:
                     data = json.loads(original)
@@ -823,16 +845,16 @@ class SelfTests(unittest.TestCase):
                         del localizations["ko"]
                     else:
                         localizations["ko"] = {"stringUnit": ko}
-                    file.write_text(json.dumps(data))
+                    file.write_text(json.dumps(data), encoding="utf-8")
                     self.assertTrue(any(i.path == relative and i.reason.startswith("ko ") for i in catalog_issues(root)))
-                file.write_text(original)
+                file.write_text(original, encoding="utf-8")
             self.assertEqual(catalog_issues(root), [])
         root = self.fixture()
         for relative in (*CATALOGS, "apps/ios-native/AlarmTalk/InfoPlist.xcstrings"):
             file = root / relative
-            data = json.loads(file.read_text())
+            data = json.loads(file.read_text(encoding="utf-8"))
             del data["strings"]["안녕"]["localizations"]["ko"]
-            file.write_text(json.dumps(data))
+            file.write_text(json.dumps(data), encoding="utf-8")
         self.assertEqual(catalog_issues(root), [])
 
     def test_semantic_default_and_comments(self):
@@ -843,22 +865,22 @@ class SelfTests(unittest.TestCase):
         root = self.fixture(source="")
         file = root / SWIFT_ROOTS[2] / "Intents.swift"
         file.parent.mkdir(parents=True)
-        file.write_text('let title: LocalizedStringResource = "안녕"')
-        (root / CATALOGS[1]).write_text('{"strings": {}}')
+        file.write_text('let title: LocalizedStringResource = "안녕"', encoding="utf-8")
+        (root / CATALOGS[1]).write_text('{"strings": {}}', encoding="utf-8")
         self.assertTrue(any(CATALOGS[1] in issue.reason for issue in audit(root, [])))
 
     def test_android_literals_resources_and_hangul_translations(self):
         root = self.fixture()
         file = root / "apps/android-native/app/src/main/java/example/Screen.kt"
         file.parent.mkdir(parents=True)
-        file.write_text('Text("안녕")')
+        file.write_text('Text("안녕")', encoding="utf-8")
         self.assertTrue(any("Kotlin UI" in issue.reason for issue in audit(root, [])))
         rules = [("data-contract", str(file.relative_to(root)), "안녕", "fixture contract")]
         self.assertEqual(audit(root, rules), [])
         path = root / "apps/android-native/app/src/main/res/values-en/strings.xml"
-        path.write_text('<resources/>')
+        path.write_text('<resources/>', encoding="utf-8")
         self.assertTrue(any("Android en resource missing" in issue.reason for issue in audit(root, rules)))
-        path.write_text('<resources><string name="hello">안녕</string></resources>')
+        path.write_text('<resources><string name="hello">안녕</string></resources>', encoding="utf-8")
         self.assertTrue(any("contains Hangul" in issue.reason for issue in audit(root, rules)))
 
     def test_plain_swift_display_arguments_need_lookup_in_every_language(self):
@@ -932,7 +954,7 @@ class SelfTests(unittest.TestCase):
                        'Card(title = "Settings")', 'builder.setContentText("Ready")',
                        'Toast.makeText(context, "Ready", 0)', 'state.showSnackbar("Failed")',
                        'Text(format("Count: %d", count))', 'Text("Retry $count")']:
-            file.write_text(source)
+            file.write_text(source, encoding="utf-8")
             self.assertTrue(any("Kotlin UI" in issue.reason for issue in audit(root, [])), source)
         for source in ['val route = "settings"', 'Text(stringResource(R.string.title))',
                        'Text("$count%")', 'Text("${format(count)}%")',
@@ -940,14 +962,14 @@ class SelfTests(unittest.TestCase):
                        'Button(onClick = { Log.d("Tag", "Clicked") }) {}',
                        'animateFloatAsState(targetValue = value, label = "progress")',
                        '// Text("Retry")\n/* Text("Again") */']:
-            file.write_text(source)
+            file.write_text(source, encoding="utf-8")
             self.assertEqual(audit(root, []), [], source)
 
     def test_catalog_target_languages_reject_hangul_in_every_leaf(self):
         root = self.fixture(source="")
         for relative in (*CATALOGS, "apps/ios-native/AlarmTalk/InfoPlist.xcstrings"):
             file = root / relative
-            original = file.read_text()
+            original = file.read_text(encoding="utf-8")
             for language in LANGUAGES:
                 for variation in [False, True]:
                     data = json.loads(original)
@@ -955,10 +977,10 @@ class SelfTests(unittest.TestCase):
                     if variation:
                         unit = {"variations": {"plural": {"other": unit}}}
                     data["strings"]["안녕"]["localizations"][language] = unit
-                    file.write_text(json.dumps(data))
+                    file.write_text(json.dumps(data), encoding="utf-8")
                     self.assertTrue(any(i.path == relative and i.reason.startswith(language)
                                         and "contains Hangul" in i.reason for i in catalog_issues(root)))
-            file.write_text(original)
+            file.write_text(original, encoding="utf-8")
 
     def test_android_translations_cannot_have_blank_leaves(self):
         root = self.fixture(source="")
@@ -969,19 +991,19 @@ class SelfTests(unittest.TestCase):
             for language in LANGUAGES:
                 for value in ["", " \n\t ", r"\n\t", '""', '" "']:
                     xml = '<resources><' + tag + ' name="hello">' + contents + '</' + tag + '></resources>'
-                    (base / "values/strings.xml").write_text(xml.format(value="Hello"))
-                    (base / f"values-{language}/strings.xml").write_text(xml.format(value=value))
+                    (base / "values/strings.xml").write_text(xml.format(value="Hello"), encoding="utf-8")
+                    (base / f"values-{language}/strings.xml").write_text(xml.format(value=value), encoding="utf-8")
                     self.assertTrue(any(i.reason == f"Android {language} resource contains an empty translation"
                                         for i in catalog_issues(root)))
         # Documented English date units may be empty, but not missing or Korean.
         key = "editorp_fortune_unit_year"
-        (base / "values/strings.xml").write_text(f'<resources><string name="{key}">년</string></resources>')
+        (base / "values/strings.xml").write_text(f'<resources><string name="{key}">년</string></resources>', encoding="utf-8")
         file = base / "values-en/strings.xml"
-        file.write_text(f'<resources><string name="{key}"></string></resources>')
+        file.write_text(f'<resources><string name="{key}"></string></resources>', encoding="utf-8")
         self.assertFalse(any("Android en" in i.reason for i in catalog_issues(root)))
-        file.write_text('<resources/>')
+        file.write_text('<resources/>', encoding="utf-8")
         self.assertTrue(any(i.reason == "Android en resource missing" for i in catalog_issues(root)))
-        file.write_text(f'<resources><string name="{key}">년</string></resources>')
+        file.write_text(f'<resources><string name="{key}">년</string></resources>', encoding="utf-8")
         self.assertTrue(any(i.reason == "Android en resource contains Hangul" for i in catalog_issues(root)))
 
     def test_language_gate_is_forbidden_even_with_no_korean_ui_literals(self):
@@ -991,7 +1013,7 @@ class SelfTests(unittest.TestCase):
         root = self.fixture()
         file = root / "apps/android-native/app/src/main/java/example/Errors.kt"
         file.parent.mkdir(parents=True)
-        file.write_text('fun containsKorean(text: String) = text.any { it in \'가\'..\'힣\' }')
+        file.write_text('fun containsKorean(text: String) = text.any { it in \'가\'..\'힣\' }', encoding="utf-8")
         self.assertTrue(any("filter is forbidden" in issue.reason for issue in audit(root, [])))
 
     def test_baseline_ratchets(self):
@@ -1033,7 +1055,7 @@ class SelfTests(unittest.TestCase):
             root = self.fixture(source="")
             entry = {"localizations": {lang: {"stringUnit": {"state": "translated", "value": translated}}
                                        for lang in LANGUAGES}}
-            (root / CATALOGS[0]).write_text(json.dumps({"strings": {source: entry}}))
+            (root / CATALOGS[0]).write_text(json.dumps({"strings": {source: entry}}), encoding="utf-8")
             self.assertEqual(bool(format_issues(root)), fails, (source, translated))
 
 
