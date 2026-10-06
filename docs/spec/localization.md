@@ -99,9 +99,14 @@ iOS는 계정별 마지막 표시 언어와 알람별 예약 언어를 로컬에
 예약을 반복하지 않는다. 건너뛴 알람을 포함해 대상이 하나라도 남으면 계정의 언어 기록을 바꾸지
 않는다. 알람을 지우면 그 알람별 기록도 지운다.
 
-이 기능의 첫 실행에는 기존 받은 알람의 자동 라벨이나 가족 알람 녹음의 기본 라벨(§2)의 표시가 현재 언어와 다른 경우만 고친다. 받은 알람의
+이 기능의 첫 실행에는 기존 받은 알람의 자동 라벨이 현재 언어와 다른 경우만 고친다. 받은 알람의
 자동 라벨은 세 언어의 정확한 문장 틀과 일치할 때만 표시를 다시 만들고, 직접 고친 라벨과 저장값은
 보존한다.
+
+받은 알람의 녹음 문구(가족 알람 녹음 기본 라벨, §2)는 예약할 때 실은 표시를 알람별로 기록하고, 지금
+표시와 다르면 **언어 기록과 무관하게** 다시 건다. 이 규칙 이전에 같은 언어로 걸린 예약은 언어 기록이
+지금과 같아 그대로 두면 원문을 실은 채 남기 때문이다. 기록이 없으면 원문을 실었다고 본다. 다시 거는
+조건(AlarmKit 대기 상태만)은 위와 같다.
 
 번역 누락 검사는 사용자에게 보이는 문자열을 대상으로 한다. 로그·테스트·사용자 입력·데이터 계약값·
 TTS 입력 문장은 구분한다. 카탈로그의 번역 유무와 호출부가 실제로 번역을 조회하는지를 모두 본다.
@@ -126,4 +131,4 @@ TTS 입력 문장은 구분한다. 카탈로그의 번역 유무와 호출부가
 | 저장값과 기본 목소리의 표시 | `fortuneValueLabel`·`systemVoiceDisplayName` | `FortunePromptInputFormat.displayLabel`·`systemVoiceDisplayName`·`VoiceRelationshipPreset.displayLabel` |
 | 약관 웹 링크의 앱 언어 | 설정 화면의 언어별 경로 | `LegalLinks`(후속 화면에서 채택) |
 | 화면의 문자열 조회 | `stringResource`·`Context.getString` | `String(localized:)`·SwiftUI의 정적 문자열 키 |
-| OS가 보관하는 알람 표시 문구의 언어 재예약(§5) | 해당 없음 — 울릴 때 표시를 만든다(`RingingActivity`) | 대상 `AlarmPresentationLanguage.pending`(알람별 기록 우선) → `AlarmScheduleReconciler.reconcile`(AlarmKit 대기 상태만 — `AlarmKitViewModel.idleScheduledHandles`) · 완료 `AlarmPresentationLanguage.finishIfComplete` · 지울 때 `LocalAlarmStore.delete` → `AlarmPresentationLanguage.forget` — 회귀 `AlarmKitLocalizationTests` |
+| OS가 보관하는 알람 표시 문구의 언어 재예약(§5) | 해당 없음 — 울릴 때 표시를 만든다(`RingingActivity`) | 대상 `AlarmPresentationLanguage.pending`(녹음 문구 표시 `voiceCaptionOutdated` → 알람별 기록 우선) → `AlarmScheduleReconciler.reconcile`(AlarmKit 대기 상태만 — `AlarmKitViewModel.idleScheduledHandles`) · 완료 `AlarmPresentationLanguage.finishIfComplete` · 지울 때 `LocalAlarmStore.delete` → `AlarmPresentationLanguage.forget` — 회귀 `AlarmKitLocalizationTests` |

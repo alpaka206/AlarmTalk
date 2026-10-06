@@ -23,7 +23,35 @@ struct AlarmKitLocalizationTests {
         #expect(AlarmPresentationLanguage.rearmTargets(stamp: nil, current: "ko", alarms: all) == ["received"])
     }
 
-    @Test("첫 실행은 받은 알람의 기본 녹음 라벨이 이 기기 언어와 다를 때도 다시 건다")
+    @Test("같은 언어로 걸린 옛 예약도 받은 알람의 녹음 기본 라벨 표시가 바뀌었으면 한 번 다시 건다")
+    func outdatedVoiceCaptionIsRearmedOnceEvenWithSameLanguageStamp() throws {
+        let suite = "AlarmKitLocalizationTests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let current = AlarmPresentationLanguage.current
+        var family = alarm("family-\(UUID().uuidString)", label: "직접 정한 이름", received: true)
+        family.voiceText = ReceivedVoiceTextDisplay.familyVoiceDefault
+        var typed = alarm("typed-\(UUID().uuidString)", label: "직접 정한 이름", received: true)
+        typed.voiceText = "엄마가 깨워 줄게"
+        var own = alarm("own-\(UUID().uuidString)")
+        own.voiceText = ReceivedVoiceTextDisplay.familyVoiceDefault
+        // 이 규칙 이전 릴리스가 지금 언어로 건 예약 — 알람별·계정 언어 기록이 모두 지금과 같다.
+        defaults.set(current, forKey: "alarm.presentation.owner.owner")
+        for record in [family, typed, own] {
+            defaults.set(current, forKey: "alarm.presentation.record.\(record.id)")
+        }
+        #expect(AlarmPresentationLanguage.pending(owner: "owner", alarms: [family, typed, own], defaults: defaults)
+                == [family.id])
+
+        // 다시 걸면 실은 표시를 적으므로 되풀이되지 않는다.
+        AlarmPresentationLanguage.didSchedule(family, defaults: defaults)
+        #expect(AlarmPresentationLanguage.pending(owner: "owner", alarms: [family, typed, own], defaults: defaults).isEmpty)
+        // 지우면 그 기록도 지운다.
+        AlarmPresentationLanguage.forget(family.id, defaults: defaults)
+        #expect(defaults.string(forKey: "alarm.presentation.caption.\(family.id)") == nil)
+    }
+
+    @Test("첫 실행(기록 없음)도 받은 알람의 녹음 기본 라벨 표시가 다르면 다시 건다")
     func firstRunRearmsReceivedFamilyVoiceText() {
         var family = alarm("family", label: "직접 정한 이름", received: true)
         family.voiceText = ReceivedVoiceTextDisplay.familyVoiceDefault
@@ -62,10 +90,10 @@ struct AlarmKitLocalizationTests {
         defer { defaults.removePersistentDomain(forName: suite) }
         let a = alarm("a", label: "Alarm from Alex", received: true)
         let b = alarm("b", label: "Alarm from Sam", received: true)
-        AlarmPresentationLanguage.didSchedule(a.id, defaults: defaults)
+        AlarmPresentationLanguage.didSchedule(a, defaults: defaults)
         AlarmPresentationLanguage.finishIfComplete(owner: "owner", alarms: [a, b], defaults: defaults)
         #expect(AlarmPresentationLanguage.pending(owner: "owner", alarms: [a, b], defaults: defaults) == [b.id])
-        AlarmPresentationLanguage.didSchedule(b.id, defaults: defaults)
+        AlarmPresentationLanguage.didSchedule(b, defaults: defaults)
         AlarmPresentationLanguage.finishIfComplete(owner: "owner", alarms: [a, b], defaults: defaults)
         #expect(AlarmPresentationLanguage.pending(owner: "owner", alarms: [a, b], defaults: defaults).isEmpty)
     }
@@ -121,7 +149,7 @@ struct AlarmKitLocalizationTests {
             scheduleAlarm: { record in
                 calls.scheduled.append(record.id)
                 store.markScheduled(localID: record.id, alarmKitID: UUID().uuidString)
-                AlarmPresentationLanguage.didSchedule(record.id)
+                AlarmPresentationLanguage.didSchedule(record)
                 return true
             },
             cancelAlarm: { record in calls.cancelledHandles.append(record.alarmKitID ?? "") }
@@ -237,7 +265,7 @@ struct AlarmKitLocalizationTests {
     func deletingAlarmForgetsItsPresentationStamp() {
         let store = makeStore()
         let record = store.upsert(alarm("deleted-\(UUID().uuidString)"))
-        AlarmPresentationLanguage.didSchedule(record.id)
+        AlarmPresentationLanguage.didSchedule(record)
         defer { UserDefaults.standard.removeObject(forKey: recordKey(record.id)) }
         #expect(UserDefaults.standard.string(forKey: recordKey(record.id)) != nil)
         store.delete(record)

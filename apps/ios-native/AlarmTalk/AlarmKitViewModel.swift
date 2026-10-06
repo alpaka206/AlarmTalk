@@ -1137,7 +1137,8 @@ final class AlarmKitViewModel: ObservableObject {
                     resolution: resolution
                 )
             )
-            AlarmPresentationLanguage.didSchedule(record.id)
+            // 언어와 함께 녹음 문구 표시도 적는다 — 비교는 저장된 행 기준이다(`voiceCaptionOutdated`).
+            AlarmPresentationLanguage.didSchedule(record)
             statusMessage = Self.describeScheduleStatus(record: record, resolution: resolution)
             return true
         } catch {
