@@ -319,7 +319,7 @@
     <string name="msg_family_alarm_login_required">相手のアラームを設定するには、まずログインしてください。</string>
     <string name="msg_family_alarm_set_failed">相手のアラーム設定に失敗しました。</string>
     <string name="msg_family_alarm_set_for_target_other">相手にアラームを設定しました。</string>
-    <string name="msg_family_alarm_set_for_target">%1$sさんにアラームを設定しました。</string>
+    <string name="msg_family_alarm_set_for_target">%1$sにアラームを設定しました。</string>
     <string name="msg_family_alarm_settings_save_failed">相手のアラーム設定を保存できませんでした。</string>
     <string name="msg_family_alarm_settings_saved">相手のアラーム設定を保存しました。</string>
     <string name="msg_gb_code_input_required_period">コードを入力してください。</string>
@@ -565,7 +565,7 @@
     <string name="voicesr_required_field">必ず入力してください。</string>
     <string name="voicesr_save">保存</string>
     <string name="voicesr_share_voice">声を共有</string>
-    <string name="voicesr_shared_from_owner">%1$sさんから共有された声</string>
+    <string name="voicesr_shared_from_owner">%1$sから共有された声</string>
     <string name="voicesr_shared_voice">共有された声</string>
     <string name="voicesr_sharing_badge">共有中</string>
     <string name="voicesr_speech_style_failed">話し方の分析に失敗しました</string>
@@ -609,7 +609,7 @@
     <string name="editor2_weekday_fri">金</string>
     <string name="editor2_weekday_sat">土</string>
     <string name="editor2_voice_detail_shared">共有された声</string>
-    <string name="editor2_voice_detail_shared_from">%1$sさんから共有された声</string>
+    <string name="editor2_voice_detail_shared_from">%1$sから共有された声</string>
     <string name="editor2_voice_detail_default">基本の声</string>
     <string name="editor2_voice_detail_mine_sharing">自分の声 · 共有中</string>
     <string name="editor2_voice_detail_mine">自分の声</string>

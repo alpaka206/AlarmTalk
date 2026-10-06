@@ -98,7 +98,7 @@ TTS 입력 문장은 구분한다. 카탈로그의 번역 유무와 호출부가
 | --- | --- | --- |
 | 번역 원문·용어 | `app/src/main/res/values{,-en,-ja}/strings.xml` | `AlarmTalk/Localizable.xcstrings` |
 | 공통 오류 코드 | `network/ApiErrorMessages.kt` | `APIErrorMessages.swift` |
-| 존칭 한 번 | `r3data_honorific_name` 리소스 | `%@님` 카탈로그 키 |
+| 존칭 한 번(이름이 님·さん으로 끝나면 그대로, 이름을 모르면 '상대') | `data/ReceivedAlarmLabels.kt`의 `honoredPersonName`(`r3data_honorific_name`) — 받은 알람 라벨·알림 제목·가족 알람 완료·공유받은 목소리 · `HonorificNameTest` | `personDisplayName`(`%@님` 카탈로그 키) |
 | 스낵바 색은 문구 종류로 | `ui/app/SnackbarSeverity.kt`의 `SnackbarSeverities` · `SnackbarSeverityTest` | (스낵바 색 구분 없음) |
 | 언어 선택지 자기 이름 | `voices_lang_ko`·`voices_lang_en`·`voices_lang_ja` | 목소리 등록 화면의 언어 선택지(후속 연결) |
 | 가족 알람 녹음 기본 라벨(전송은 계약값, 표시는 받는 기기 언어) | `data/ReceivedAlarmLabels.kt`의 `FAMILY_VOICE_DEFAULT_LABEL`·`localizedReceivedVoiceText` → `RingingActivity` | `ReceivedVoiceTextDisplay`·`LocalAlarmRecord.localizedVoiceText` → `AlarmKitViewModel`의 Live Activity 문구 |

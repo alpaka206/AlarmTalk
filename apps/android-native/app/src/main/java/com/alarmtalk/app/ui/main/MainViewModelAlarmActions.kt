@@ -11,6 +11,7 @@ import com.alarmtalk.app.data.AlarmOrigins
 import com.alarmtalk.app.data.AlarmPlayModes
 import com.alarmtalk.app.data.DuplicateAlarmTimeException
 import com.alarmtalk.app.data.FAMILY_VOICE_DEFAULT_LABEL
+import com.alarmtalk.app.data.honoredPersonName
 import com.alarmtalk.app.data.CachedAlarmAudio
 import com.alarmtalk.app.data.VoiceSources
 import com.alarmtalk.app.data.usesFreeSystemVoiceAlarm
@@ -361,7 +362,11 @@ internal fun MainViewModel.deleteAlarm(alarmId: String) {
 }
 
 
+/**
+ * 가족 알람을 보낸 뒤의 완료 문구. 이름을 모르면 '상대' 로 말한다 — 화면용 대체 이름('멤버')에
+ * 존칭을 붙이지 않는다. 존칭은 [honoredPersonName] 한 곳에서 붙인다.
+ */
 internal fun familyAlarmCompletionMessage(context: android.content.Context, targetName: String?): String =
-    targetName?.takeIf { it.isNotBlank() }?.let {
-        context.getString(R.string.msg_family_alarm_set_for_target, it)
+    targetName?.trim()?.takeIf { it.isNotBlank() }?.let {
+        context.getString(R.string.msg_family_alarm_set_for_target, honoredPersonName(context, it))
     } ?: context.getString(R.string.msg_family_alarm_set_for_target_other)

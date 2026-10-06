@@ -704,7 +704,8 @@ internal fun AlarmEditorScreen(
         onSave(
             draft.copy(
                 targetUserId = recipient.userId,
-                targetUserName = familyMemberLabel(context, recipient),
+                // 화면용 대체 이름('멤버')이 아니라 실제 이름 — 모르면 완료 문구가 '상대' 로 말한다.
+                targetUserName = familyMemberNameOrNull(recipient),
             ),
         )
     }

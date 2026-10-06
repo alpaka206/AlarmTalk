@@ -5,6 +5,14 @@ import android.content.res.Configuration
 import com.alarmtalk.app.R
 import java.util.Locale
 
+/**
+ * 사람 이름에 존칭을 **한 번만** 붙인다(한국어 님·일본어 さん·영어 없음 — `r3data_honorific_name`).
+ * 이름이 이미 님·さん 으로 끝나면 그대로 둔다. 존칭이 필요한 문장은 전부 이 결과를 받고, 문장 틀에는
+ * 존칭을 다시 넣지 않는다(`docs/spec/localization.md` §3).
+ */
+internal fun honoredPersonName(context: Context, name: String): String =
+    if (name.endsWith("님") || name.endsWith("さん")) name else context.getString(R.string.r3data_honorific_name, name)
+
 internal fun receivedRemoteAlarmLabel(
     context: Context,
     senderNameOrEmail: String?,
@@ -14,8 +22,7 @@ internal fun receivedRemoteAlarmLabel(
         .mapNotNull { it?.trim()?.takeIf(String::isNotBlank) }
         .firstOrNull()
         ?: return context.getString(R.string.r3data_received_alarm_from_other)
-    val displayName = if (sender.endsWith("님") || sender.endsWith("さん")) sender else context.getString(R.string.r3data_honorific_name, sender)
-    return context.getString(R.string.r3data_received_alarm_from_sender, displayName)
+    return context.getString(R.string.r3data_received_alarm_from_sender, honoredPersonName(context, sender))
 }
 
 internal fun localizedReceivedAlarmLabel(context: Context, stored: String): String {

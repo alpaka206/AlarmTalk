@@ -52,7 +52,10 @@ class UserFacingErrorTest {
             val context = context(language)
             assertEquals(message, familyAlarmCompletionMessage(context, null))
             assertEquals(message, familyAlarmCompletionMessage(context, "  "))
-            assertEquals(context.getString(R.string.msg_family_alarm_set_for_target, "Alex"), familyAlarmCompletionMessage(context, "Alex"))
+            assertEquals(
+                context.getString(R.string.msg_family_alarm_set_for_target, com.alarmtalk.app.data.honoredPersonName(context, "Alex")),
+                familyAlarmCompletionMessage(context, "Alex"),
+            )
         }
     }
 

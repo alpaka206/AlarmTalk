@@ -99,10 +99,13 @@ internal fun isDefaultAlarmSoundUri(uri: Uri): Boolean {
     ).any { defaultUri -> defaultUri != null && uriText == defaultUri.toString() }
 }
 
-internal fun familyMemberLabel(context: Context, member: FamilyGroupMember): String =
+/** 멤버의 실제 이름(없으면 이메일). 둘 다 없으면 null — 문장에 넣을 이름이 없다는 뜻이다. */
+internal fun familyMemberNameOrNull(member: FamilyGroupMember): String? =
     member.name?.takeIf { it.isNotBlank() }
         ?: member.email?.takeIf { it.isNotBlank() }
-        ?: context.getString(R.string.editor2_family_member_fallback)
+
+internal fun familyMemberLabel(context: Context, member: FamilyGroupMember): String =
+    familyMemberNameOrNull(member) ?: context.getString(R.string.editor2_family_member_fallback)
 
 internal fun familyAlarmQuietScheduleLabel(context: Context, member: FamilyGroupMember): String {
     val windows = familyAlarmQuietWindows(member)

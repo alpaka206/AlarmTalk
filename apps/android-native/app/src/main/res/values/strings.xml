@@ -599,7 +599,7 @@
     <string name="voicesr_required_field">꼭 입력해 주세요.</string>
     <string name="voicesr_save">저장</string>
     <string name="voicesr_share_voice">목소리 공유</string>
-    <string name="voicesr_shared_from_owner">%1$s님에게 공유받은 목소리</string>
+    <string name="voicesr_shared_from_owner">%1$s에게 공유받은 목소리</string>
     <string name="voicesr_shared_voice">공유받은 목소리</string>
     <string name="voicesr_sharing_badge">공유 중</string>
     <string name="voicesr_speech_style_failed">말투 분석에 실패했어요</string>
@@ -643,7 +643,7 @@
     <string name="editor2_weekday_fri">금</string>
     <string name="editor2_weekday_sat">토</string>
     <string name="editor2_voice_detail_shared">공유받은 목소리</string>
-    <string name="editor2_voice_detail_shared_from">%1$s님에게 공유받은 목소리</string>
+    <string name="editor2_voice_detail_shared_from">%1$s에게 공유받은 목소리</string>
     <string name="editor2_voice_detail_default">기본 목소리</string>
     <string name="editor2_voice_detail_mine_sharing">내 목소리 · 공유 중</string>
     <string name="editor2_voice_detail_mine">내 목소리</string>
