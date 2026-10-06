@@ -63,13 +63,22 @@ class SnackbarSeverityTest {
 
     /**
      * 뷰모델이 스낵바(`message`)에 싣는 문구와 공용 오류 표의 문구는 전부 분류돼 있어야 한다 —
-     * 빠지면 그 문구는 말없이 '안내' 색으로 뜬다. 스낵바가 아닌 자리에서 쓰는 문구만 아래에 적는다.
+     * 빠지면 그 문구는 말없이 '안내' 색으로 뜬다. 뷰모델 밖에서 스낵바로만 가는 문구를 만드는
+     * 파일(오디오 오류·결제 실패·구글 로그인 오류)도 함께 본다. 스낵바가 아닌 문구만 아래에 적는다.
      */
     @Test
     fun `뷰모델과 공용 오류 표가 쓰는 문구는 빠짐없이 분류돼 있다`() {
         val sources = File(SOURCE_ROOT, "ui/main").listFiles { file -> file.name.startsWith("MainViewModel") }!!.toList() +
-            File(SOURCE_ROOT, "network/ApiErrorMessages.kt")
-        assertTrue(sources.size > 2)
+            listOf(
+                "network/ApiErrorMessages.kt",
+                // UserFacingException 으로 뷰모델의 userFacingError 를 거쳐 스낵바에 뜬다.
+                "data/AlarmAudioStore.kt",
+                // onPurchaseFailed → MainViewModel.message
+                "billing/PlayBillingManager.kt",
+                // googleSignInErrorMessage → showGoogleSignInFailed
+                "ui/editor/AlarmEditorState.kt",
+            ).map { File(SOURCE_ROOT, it) }
+        assertTrue(sources.all(File::exists))
         val classified = (SnackbarSeverities.success + SnackbarSeverities.error + SnackbarSeverities.info)
             .map(::resourceName).toSet() +
             SnackbarSeverities.successPlurals.map(::resourceName)
