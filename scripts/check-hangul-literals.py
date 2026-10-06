@@ -37,7 +37,10 @@ SWIFT_UI = {"Text", "Button", "Label", "Toggle", "TextField", "SecureField", "Se
             "NavigationLink", "DisclosureGroup", "Menu", "ProgressView", "Stepper", "DatePicker", "MultiDatePicker",
             "ColorPicker", "ShareLink", "LabeledContent", "GroupBox", "ControlGroup", "ContentUnavailableView", "Tab",
             "navigationTitle", "navigationBarTitle", "navigationSubtitle", "alert", "confirmationDialog",
-            "accessibilityLabel", "accessibilityHint", "accessibilityValue", "help", "badge"}
+            "accessibilityLabel", "accessibilityHint", "accessibilityValue", "accessibilityRotor",
+            "accessibilityCustomContent", "help", "badge"}
+# Labeled LocalizedStringKey parameters of SwiftUI modifiers.
+SWIFT_UI_LABELED = {("searchable", "prompt:"), ("accessibilityAction", "named:")}
 LOCALIZED_TYPE = r"LocalizedString(?:Key|Resource)"
 # English date pickers use bare numbers; Korean/Japanese append year/month/day.
 # Only emptiness is exempted. Missing resources or copied Korean still fail.
@@ -489,7 +492,7 @@ def localized_context(path: str, source: str, literal: dict, declarations: Decla
             return True, None  # `String.LocalizationValue("key")` is looked up by String(localized:).
         # A ternary or ?? at an overloaded SwiftUI call often produces String.
         # Only a lone first argument is certified here.
-        if call in SWIFT_UI and prefix == "":
+        if (call in SWIFT_UI and prefix == "") or (call, prefix) in SWIFT_UI_LABELED:
             tail = source[literal["end"]:].lstrip()
             return tail.startswith((",", ")")), None
         argument = re.match(r"(\w+)\s*:", prefix)
@@ -939,6 +942,25 @@ class KotlinTree:
         return chain[::-1]
 
 
+def bound_uses(code: str, tree: "KotlinTree", start: int, end: int, declaration: str) -> list[int]:
+    """Uses of a name bound to the literal at [start, end) as its whole value.
+
+    `val title = "Try again"` (Kotlin) / `let title = "Try again"` (Swift):
+    the uses that follow in the same block (or file, at top level).
+    """
+    head = re.search(declaration + r"\s*=\s*$", code[max(0, start - 200):start])
+    if not head or not re.compile(r"[ \t]*(?:$|[;\n})])", re.M).match(code, end):
+        return []
+    braces = [opening for opening in tree.enclosing(start) if code[opening] == "{"]
+    limit = tree.pairs[braces[-1]] if braces else len(code)
+    use = re.compile(r"(?<![\w.$])" + re.escape(head[1]) + r"\b(?!\s*=(?!=))(?!\s*:)")
+    return [match.start() for match in use.finditer(code, end, limit)]
+
+
+KOTLIN_BINDING = r"\b(?:val|var)\s+(\w+)\s*(?::\s*(?:String|CharSequence)\??\s*)?"
+SWIFT_BINDING = r"\b(?:let|var)\s+(\w+)\s*(?::\s*String\??\s*)?"
+
+
 KOTLIN_TEXT_TYPE = re.compile(r"(?:String|CharSequence|AnnotatedString)\??")
 
 
@@ -1226,7 +1248,9 @@ def format_issues(root: Path) -> list[Issue]:
 def language_gate(source: str) -> bool:
     # Include Swift scalar ranges and Kotlin character/regex ranges. Comments
     # are removed by callers, but string contents matter for Regex("[가-힣]").
-    return bool(re.search(r"\bcontainsKorean\b|0x[Aa][Cc]00|\\u\{?[Aa][Cc]00|가(?:-|\.{2,3})힣", source))
+    return bool(re.search(r"\b(?:contains|has|is)(?:Korean|Hangul)\b|0x[Aa][Cc]00|\\u\{?[Aa][Cc]00|가(?:-|\.{2,3})힣"
+                          r"|p\{(?:Is|In|Script=|sc=)?Hangul|UnicodeBlock\.HANGUL|UnicodeScript\.HANGUL"
+                          r"|Hangul_Syllables|\.hangul\b", source, re.IGNORECASE))
 
 
 def stale_rules(rules: list[tuple[str, str, str, str]], literals: dict[str, set[str]], gated: set[str]) -> list[Issue]:
@@ -1260,10 +1284,13 @@ def audit(root: Path, rules: list[tuple[str, str, str, str]]) -> list[Issue]:
         literals = SwiftLexer(source, path).run()
         code = code_only(source, literals)
         marked = mark_literals(code, literals)
+        swift_tree = KotlinTree(code)
         for literal in literals:
             value = literal_value(literal)
-            seen.setdefault(value, set()).add(path)
             localized, kind = localized_context(path, source, literal, declarations)
+            if not localized:
+                # Only occurrences an exception can excuse keep it alive.
+                seen.setdefault(value, set()).add(path)
             if string_in_key_parameter(path, source, literal, declarations):
                 issues.append(Issue(path, literal["line"], value, "String(localized:) passed to a key/resource parameter; retain its literal key"))
             if literal["debug"] or kind == "comment" or value == "":
@@ -1271,7 +1298,11 @@ def audit(root: Path, rules: list[tuple[str, str, str, str]]) -> list[Issue]:
             if not localized and allowed(path, value, rules):
                 continue
             words = has_words("".join(part for kind, part in literal["parts"] if kind == "lit"))
-            ui_copy = not HANGUL.search(value) and not localized and words and swift_ui_context(source, code, literal, marked)
+            ui_copy = not HANGUL.search(value) and not localized and words and (
+                swift_ui_context(source, code, literal, marked)
+                # `let title = "Try again"` shown later as `Text(title)`.
+                or any(swift_ui_context(source, code, {"start": use, "end": use, "stack": [(code[o], o) for o in swift_tree.enclosing(use)]}, marked)
+                       for use in bound_uses(code, swift_tree, literal["start"], literal["end"], SWIFT_BINDING)))
             if not HANGUL.search(value) and not localized and not ui_copy:
                 continue
             calls = [call_at(source, pos) for token, pos in literal["stack"] if token == "("]
@@ -1337,12 +1368,16 @@ def audit(root: Path, rules: list[tuple[str, str, str, str]]) -> list[Issue]:
     for path, (source, literals, code, tree) in kotlin.items():
         pairs, closers = tree.pairs, tree.closers
         static = {start: value for start, _, value, _ in kotlin_literals(source, static_text=True)}
-        for start, _, value, _ in literals:
+        for start, end, value, _ in literals:
             seen.setdefault(value, set()).add(path)
             if allowed(path, value, rules):
                 continue  # Kotlin has no literal lookups; resources are ids.
             # Letters outside format placeholders: `"%02d:%02d"` is not copy.
-            ui_copy = has_words(static[start]) and kotlin_ui_context(code, start, pairs, closers, wrappers, tree)
+            ui_copy = has_words(static[start]) and (
+                kotlin_ui_context(code, start, pairs, closers, wrappers, tree)
+                # `val title = "Try again"` shown later as `Text(title)`.
+                or any(kotlin_ui_context(code, use, pairs, closers, wrappers, tree)
+                       for use in bound_uses(code, tree, start, end, KOTLIN_BINDING)))
             if HANGUL.search(value) or ui_copy:
                 issues.append(Issue(path, source.count("\n", 0, start) + 1, value, "Kotlin UI text must use resources or a documented exception"))
         gate_source = code + "\n" + "\n".join(value for _, _, value, _ in literals)
@@ -2179,6 +2214,42 @@ class SelfTests(unittest.TestCase):
                 "ko": leaf("첫 줄\n둘째 줄"), "en": leaf(english), "ja": leaf("一行目\n二行目")}}}}), encoding="utf-8")
             self.assertEqual(any(i.path.endswith("InfoPlist.xcstrings") and "line breaks" in i.reason for i in format_issues(root)), fails, english)
 
+    def test_local_string_bindings_flow_into_display_sinks(self):
+        root = self.fixture(source="")
+        file = root / "apps/android-native/app/src/main/java/example/Screen.kt"
+        file.parent.mkdir(parents=True)
+        for source, flagged in [('val title = "Try again"\nText(title)', {"Try again"}),
+                                ('fun f() {\n    val title: String = "Try again"\n    Text(text = title)\n}', {"Try again"}),
+                                ('private const val ROUTE = "settings"\nfun f() = navigate(ROUTE)', set()),
+                                ('fun a() { val title = "Try again" }\nfun b() { Text(title) }', set()),
+                                ('val title = "Try again" + suffix\nText(title)', set()),
+                                ('val tag = "Screen"\nfun f() { Log.d(tag, message) }', set())]:
+            file.write_text(source, encoding="utf-8")
+            self.assertEqual({i.value for i in audit(root, []) if "Kotlin UI" in i.reason}, flagged, source)
+        file.unlink()
+        for source, flagged in [('let title = "Try again"\nText(title)', {"Try again"}),
+                                ('struct V: View {\n    let title = "Try again"\n    var body: some View { Text(title) }\n}', {"Try again"}),
+                                ('let route = "settings"\nopen(route)', set()),
+                                ('func a() { let title = "Try again" }\nfunc b() { Text(title) }', set())]:
+            root = self.fixture(source=source)
+            self.assertEqual({i.value for i in audit(root, []) if "not in a proven" in i.reason}, flagged, source)
+
+    def test_searchable_prompts_and_unicode_hangul_gates(self):
+        for source in ['view.searchable(text: $query, prompt: "Search alarms")',
+                       'view.accessibilityAction(named: "Delete") { delete() }']:
+            root = self.fixture(source=source)
+            self.assertTrue(any("key missing" in i.reason for i in audit(root, [])), source)
+        root = self.fixture(source="")
+        file = root / "apps/android-native/app/src/main/java/example/Errors.kt"
+        file.parent.mkdir(parents=True)
+        for source in ['val hangul = Regex("\\\\p{IsHangul}")', 'val script = Character.UnicodeScript.HANGUL',
+                       'val block = Character.UnicodeBlock.HANGUL_SYLLABLES', 'fun hasHangul(text: String) = false']:
+            file.write_text(source, encoding="utf-8")
+            self.assertTrue(any("filter is forbidden" in i.reason for i in audit(root, [])), source)
+        for source in ['let pattern = /\\p{Script=Hangul}/', 'var isKorean = true']:
+            root = self.fixture(source=source)
+            self.assertTrue(any("filter is forbidden" in i.reason for i in audit(root, [])), source)
+
     def test_catalog_target_languages_reject_hangul_in_every_leaf(self):
         root = self.fixture(source="")
         for relative in (*CATALOGS, "apps/ios-native/AlarmTalk/InfoPlist.xcstrings"):
@@ -2265,6 +2336,8 @@ class SelfTests(unittest.TestCase):
                      ("generated", "other/Generated.swift", "*", "deleted file"), ("log", path, "language-gate", "no gate")]:
             self.assertTrue(any(i.reason == "stale allowlist entry; remove it" for i in audit(root, rules + [rule])), rule)
         self.assertFalse(any("stale" in i.reason for i in audit(root, [("generated", SWIFT_ROOTS[0] + "/*.swift", "*", "all")])))
+        root = self.fixture(source='let label = String(localized: "남성")', key="남성")
+        self.assertTrue(any(i.reason == "stale allowlist entry; remove it" for i in audit(root, rules)))
 
     def test_baseline_ratchets(self):
         issue = Issue("a.swift", 2, "안녕", "literal is not in a proven localization context")
