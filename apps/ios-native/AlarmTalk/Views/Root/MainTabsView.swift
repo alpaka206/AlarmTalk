@@ -72,7 +72,7 @@ struct MainTabsView: View {
 
     private var voicesNotReadyMessage: String {
         if let progress = voicesNotReadyProgress, progress.total > 0 {
-            let percent = min(progress.done * 100 / progress.total, 99)
+            let percent: Int = min(progress.done * 100 / progress.total, 99)
             return String(localized: "알람에 쓸 기본 목소리를 다 받아야 알람을 설정할 수 있어요. (\(percent)%)\n목소리 탭에서 진행 상황을 볼 수 있어요.")
         }
         return String(localized: "알람에 쓸 기본 목소리를 다 받아야 알람을 설정할 수 있어요.\n인터넷에 연결된 상태에서 잠시 기다려 주세요.")

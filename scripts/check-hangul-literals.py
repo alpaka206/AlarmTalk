@@ -545,13 +545,18 @@ def kotlin_ui_context(code: str, start: int, pairs: dict[int, int], closers: dic
         return assignment[1] if assignment else None
 
     enclosing = sorted(opening for opening, end in pairs.items() if opening < start < end)
+    builders = [code[opening] == "{" and lambda_call(opening).split(".")[-1] in KOTLIN_TEXT_BUILDERS
+                for opening in enclosing]
     appended = False
-    for opening in reversed(enclosing):
+    for index in range(len(enclosing) - 1, -1, -1):
+        opening = enclosing[index]
         if code[opening] == "{":
             if expression_branch(opening):
                 continue
             call = lambda_call(opening).split(".")[-1]
-            if appended and call in KOTLIN_TEXT_BUILDERS:
+            # Appended text stays builder content through nested lambdas
+            # (`forEach { append(…) }`) up to the outermost builder.
+            if appended and any(builders[:index + 1]):
                 continue
             if call in KOTLIN_SEMANTICS_BLOCKS:
                 return assigned_property(opening) in KOTLIN_SEMANTICS_PROPERTIES
@@ -828,6 +833,11 @@ class SelfTests(unittest.TestCase):
                 ('struct A { let value: String }\nstruct B { var value = Double(3) }', None),
                 ('struct A { let value: String }\nstruct B { let value = helper() }', None),
                 ('struct A { let value: Int }\nstruct B { static let value = 3 }', 'lld'),
+                # A non-primitive annotation is also a same-named declaration.
+                ('struct A { let value: Date }\nstruct B { let value: Int }', None),
+                ('struct A { let value: [Int] }\nstruct B { let value = 3 }', None),
+                ('struct A { let value: (Item) -> Label }\nstruct B { let value: Int }', None),
+                ('struct A { var value: Int? }\nstruct B { let value = 3 }', 'lld'),
                 # A function-local inference is not a member of any type.
                 ('struct B { let value: String }\nfunc local() { let value = 3 }', '@'),
                 ('class B { class var other: Int { 1 }\n let value = "x" }', '@')]:
@@ -1188,6 +1198,7 @@ class SelfTests(unittest.TestCase):
         for source in ['Text(text = buildAnnotatedString { append("Try again") })',
                        'Text(buildAnnotatedString {\n    append(stringResource(R.string.a))\n    withStyle(style) { append("Retry") }\n})',
                        'Text(text = buildAnnotatedString { withStyle(SpanStyle(color = c)) { appendLine("Retry $n") } })',
+                       'Text(buildAnnotatedString { items.forEach { item -> append(item); append(" and more") } })',
                        'Card(title = buildString { append("Settings") })',
                        'builder.addAction(R.drawable.ic_alarm_24, "Snooze", pendingIntent)',
                        'NotificationCompat.Action.Builder(icon, "Dismiss", pendingIntent).build()',
@@ -1206,6 +1217,8 @@ class SelfTests(unittest.TestCase):
                        'Text(buildAnnotatedString { pushStringAnnotation(tag = "URL", annotation = url); append(label) })',
                        'Text(buildAnnotatedString { withStyle(SpanStyle(fontFeatureSettings = "tnum")) { append(time) } })',
                        'fun breakBlock() { append("Debug") }', 'builder.append("Debug").toString()',
+                       'Text(buildAnnotatedString { append(x) }, modifier = Modifier.clickable { log.append("Clicked") })',
+                       'Text(buildAnnotatedString { items.forEach { Log.d(TAG, "Item") } })',
                        'NotificationChannel("alarm_channel", name, importance)',
                        'NotificationChannel(id, name, importance).apply { setShowBadge(false); group = "family" }',
                        'Settings(id).apply { description = "debug" }',

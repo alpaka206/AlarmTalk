@@ -85,10 +85,17 @@ class SwiftTypes:
                            if not NOT_TYPE_HEADER.search(match[0][:-1])}
             braces = sorted((a, b) for a, b in delimiters.items() if code[a] == "{")
             inferred = [(name, pos, value) for name, pos, typename, value in entries if not typename]
-            enclosing = innermost_braces(braces, [pos for _, pos, _ in inferred])
+            # Members annotated with a non-primitive type (`let value: Date`) are
+            # same-named declarations too; they make the bare name ambiguous.
+            opaque = [(match[1], match.start()) for match in re.finditer(r"\b(?:let|var)\s+(\w+)\s*:\s*([^=\n{};,)]+)", code)
+                      if re.sub(r"[?!\s]+$", "", match[2]) not in FORMATS]
+            enclosing = innermost_braces(braces, [pos for _, pos, _ in inferred] + [pos for _, pos in opaque])
             for name, pos, value in inferred:
                 if enclosing[pos] in type_bodies:
                     self.member_values.setdefault(name, []).append((path, pos, value))
+            for name, pos in opaque:
+                if enclosing[pos] in type_bodies:
+                    self.members.setdefault(name, set()).add(None)
             for match in re.finditer(r"\bfunc\s+(\w+)\s*\([^{}]*?\)\s*(?:async\s*)?(?:throws\s*)?->\s*(\w+)", code):
                 self.functions.setdefault(match[1], set()).add(FORMATS.get(match[2]))
 
