@@ -189,9 +189,12 @@ def literal_value(literal: dict) -> str:
     return value
 
 
-def key_pattern(literal: dict, infer=lambda expression: None) -> re.Pattern:
-    # Preserve the actual primitive interpolation type. Unknown expressions
-    # require an explicit typed expression instead of matching every format.
+def format_template(literal: dict, infer=lambda expression: None) -> str:
+    """The format string Swift builds from a LocalizationValue literal.
+
+    Preserve the actual primitive interpolation type. Unknown expressions
+    require an explicit typed expression instead of matching every format.
+    """
     interpolated = any(kind == "interp" for kind, _ in literal["parts"])
     parts = []
     for kind, value in literal["parts"]:
@@ -205,7 +208,24 @@ def key_pattern(literal: dict, infer=lambda expression: None) -> re.Pattern:
     value = "".join(parts)
     if literal["multiline"]:
         value = textwrap.dedent(value.removeprefix("\n")).rstrip(" \t").removesuffix("\n")
-    return re.compile("^" + re.escape(value) + "$")
+    return value
+
+
+def key_pattern(literal: dict, infer=lambda expression: None) -> re.Pattern:
+    return re.compile("^" + re.escape(format_template(literal, infer)) + "$")
+
+
+def semantic_key(source: str, literals: list[dict], default: dict) -> str | None:
+    """The static key literal of the call that owns a `defaultValue:` literal."""
+    openings = [pos for kind, pos in default["stack"] if kind == "("]
+    for literal in literals:
+        if literal["start"] >= default["start"]:
+            continue  # Interpolated literals are listed before their outer string.
+        own = [pos for kind, pos in literal["stack"] if kind == "("]
+        if own and own[-1] == openings[-1] and argument_prefix(source, literal, own[-1]) in {"localized:", ""}:
+            interpolated = any(kind == "interp" for kind, _ in literal["parts"])
+            return None if interpolated else literal_value(literal)
+    return None
 
 
 def localized_context(path: str, source: str, literal: dict, declarations: Declarations) -> tuple[bool, str | None]:
@@ -553,10 +573,27 @@ def audit(root: Path, rules: list[tuple[str, str, str, str]]) -> list[Issue]:
             if not localized:
                 issues.append(Issue(path, literal["line"], value, "literal is not in a proven localization context"))
                 continue
-            if kind == "default":
-                # The corresponding semantic key is audited as its own literal.
-                continue
             targets = CATALOGS if "/Shared/" in path else (CATALOGS[1] if "/AlarmTalkWidget/" in path else CATALOGS[0],)
+            if kind == "default":
+                # The semantic key is looked up as its own literal; the default
+                # value supplies the format arguments for every translation, so
+                # its signature and line breaks must match the Korean value.
+                key = semantic_key(source, literals, literal)
+                if key is None:
+                    continue
+                try:
+                    template = format_template(literal, lambda expression: types.infer(expression, path, literal["start"]))
+                except ValueError as error:
+                    issues.append(Issue(path, literal["line"], value, f"interpolation type unknown; use an explicit primitive conversion: {error}"))
+                    continue
+                for target in targets:
+                    entry = catalogs[target].get(key)
+                    if entry is None or not entry.get("shouldTranslate", True):
+                        continue  # A missing key is reported by its own literal.
+                    korean = entry.get("localizations", {}).get("ko", {})
+                    if catalog_format_mismatches(korean, {"stringUnit": {"state": "translated", "value": template}}, key):
+                        issues.append(Issue(path, literal["line"], value, f"defaultValue format arguments or line breaks differ from the ko value of {key!r} in {target}"))
+                continue
             try:
                 pattern = key_pattern(literal, lambda expression: types.infer(expression, path, literal["start"]))
             except ValueError as error:
@@ -943,6 +980,30 @@ class SelfTests(unittest.TestCase):
     def test_semantic_default_and_comments(self):
         root = self.fixture('String(localized: "hello.title", defaultValue: "안녕", comment: "번역 설명")', "hello.title")
         self.assertEqual(audit(root, []), [])
+
+    def test_semantic_default_values_match_korean_format(self):
+        def check(source, korean):
+            root = self.fixture(source=source, key="item.count")
+            for relative in CATALOGS:
+                file = root / relative
+                data = json.loads(file.read_text(encoding="utf-8"))
+                data["strings"]["item.count"]["localizations"]["ko"]["stringUnit"]["value"] = korean
+                file.write_text(json.dumps(data), encoding="utf-8")
+            return [i.reason for i in audit(root, []) if i.path.endswith(".swift")]
+        declaration = 'func label(count: Int, name: String) -> String { '
+        for call in ['String(localized: "item.count", defaultValue: {value})',
+                     'String(localized: "item.count", defaultValue: {value}, bundle: bundle)',
+                     'LocalizedStringResource("item.count", defaultValue: {value})']:
+            for value, korean, fails in [('"\\(count)개"', '%lld개', False), ('"\\(count)개"', '%@개', True),
+                                         ('"\\(count)개"', '개', True), ('"\\(name) \\(count)개"', '%1$@ %2$lld개', False),
+                                         ('"\\(name) \\(count)개"', '%2$lld %1$@', False), ('"\\(name) \\(count)개"', '%1$lld %2$@', True),
+                                         ('"첫 줄\\n둘째 줄"', '첫 줄\n둘째 줄', False), ('"첫 줄\\n둘째 줄"', '첫 줄 둘째 줄', True),
+                                         ('"진행 \\(count)%"', '진행 %lld%%', False)]:
+                source = declaration + call.format(value=value) + ' }'
+                reasons = check(source, korean)
+                self.assertEqual(any('defaultValue format' in r for r in reasons), fails, (source, korean))
+        reasons = check(declaration + 'String(localized: "item.count", defaultValue: "\\(mystery())개") }', '%lld개')
+        self.assertTrue(any('interpolation type unknown' in r for r in reasons))
 
     def test_shared_keys_are_required_in_both_targets(self):
         root = self.fixture(source="")
