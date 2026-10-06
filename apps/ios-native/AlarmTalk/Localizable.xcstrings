@@ -2436,6 +2436,29 @@
         }
       }
     },
+    "내 목소리 · 공유 중" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "My voice · Sharing"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自分の声 · 共有中"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "내 목소리 · 공유 중"
+          }
+        }
+      }
+    },
     "내 목소리 만들기는 유료 기능이에요" : {
       "extractionState" : "manual",
       "localizations" : {

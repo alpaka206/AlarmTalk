@@ -32,13 +32,27 @@ extension VoiceRelationshipSelection {
     }
 }
 
-func voiceRelationshipSubtitle(_ stored: String?, isShared: Bool, bundle: Bundle = .main) -> String? {
-    var parts: [String] = []
-    if let relationship = stored?.trimmingCharacters(in: .whitespacesAndNewlines), !relationship.isEmpty {
-        parts.append(relationship)
-    }
-    if isShared { parts.append(String(localized: "공유 중", bundle: bundle)) }
-    return parts.isEmpty ? nil : parts.joined(separator: " · ")
+// ⚠ **목소리의 관계(`relationshipLabel`)는 목록에 보이지 않는다** — 저장·전송만 한다(두 앱 같다,
+// `docs/spec/localization.md` §2). 관계는 출처를 모르는 저장 문자열이라 번역할 수 없어, en·ja
+// 사용자가 「Mom」을 골라도 목록에는 저장된 「엄마」가 떴다. 안드로이드는 처음부터 목록에 그리지 않는다.
+// 등록·수정 폼의 관계 입력(`VoiceRelationshipInputField`)은 그대로다.
+
+/// 내 목소리 행 둘째 줄 — 공유 중이면 「공유 중」, 아니면 없음
+/// (안드로이드 `ui/voices/VoiceProfileRowComponents.kt` 의 `VoiceCatalogRow` subtitle).
+func ownVoiceRowSubtitle(isShared: Bool, bundle: Bundle = .main) -> String? {
+    isShared ? String(localized: "공유 중", bundle: bundle) : nil
+}
+
+/// 편집기 목소리 선택 시트의 내 목소리 보조 줄(안드로이드 `ui/editor/VoiceAudioCard.kt` 의 `ownedVoiceDetail`).
+func ownVoiceOptionDetail(isShared: Bool, bundle: Bundle = .main) -> String {
+    isShared ? String(localized: "내 목소리 · 공유 중", bundle: bundle) : String(localized: "내 목소리", bundle: bundle)
+}
+
+/// 알람 행 둘째 줄의 목소리 이름 — 이름만 쓴다(안드로이드 `ui/alarms/AlarmListScreen.kt` 의 `voiceName`).
+/// 내 목소리·기본 목소리를 먼저 찾고, 없으면 공유받은 목소리에서 찾는다.
+func alarmRowVoiceName(voiceProfileID id: String, profiles: [VoiceProfile], familyVoices: [FamilyVoiceProfile]) -> String? {
+    if let profile = profiles.first(where: { $0.id == id }) { return profile.displayName }
+    return familyVoices.first(where: { $0.id == id })?.name
 }
 
 func personDisplayName(_ name: String, bundle: Bundle = .main) -> String {

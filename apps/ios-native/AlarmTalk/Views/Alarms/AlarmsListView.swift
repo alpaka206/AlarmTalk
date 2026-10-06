@@ -256,8 +256,8 @@ struct AlarmsListView: View {
         .buttonStyle(.plain)
     }
 
-    /// 알람 행 둘째 줄에 붙일 목소리 이름. 공유받은 목소리는 관계 라벨(엄마·할머니)이
-    /// 있으면 그걸 우선한다 — 목록에서 "엄마 목소리" 로 읽히는 게 사람 이름보다 낫다.
+    /// 알람 행 둘째 줄에 붙일 목소리 이름. 관계 라벨(엄마·할머니)은 쓰지 않는다 — 저장된
+    /// 한국어 그대로라 en·ja 화면에 「엄마」가 섞였다. 안드로이드도 이름만 쓴다(`alarmRowVoiceName`).
     private func voiceName(for alarm: LocalAlarmRecord) -> String? {
         guard let id = alarm.voiceProfileId, !id.isEmpty else { return nil }
         // ⚠ **옛 모양으로 잠긴 알람에는 목소리 이름을 보여주지 않는다.** 2026-09-29 전의 무료
@@ -267,20 +267,10 @@ struct AlarmsListView: View {
         // 그 기본 목소리 이름이 보여야 한다 — 보관본(`preLockVoice`)이 있으면 막지 않는다.
         guard alarm.preLockPlayMode == nil || alarm.preLockVoice != nil else { return nil }
 
-        func label(_ name: String, _ relationship: String?) -> String {
-            let trimmed = relationship?.trimmingCharacters(in: .whitespaces) ?? ""
-            return trimmed.isEmpty ? name : trimmed
-        }
-        if let profile = voiceStudio.profiles.first(where: { $0.id == id }) {
-            return label(profile.displayName, profile.relationshipLabel)
-        }
         // ⚠ **공유받은 목소리 폴백.** `GET /voice-profile` 은 내 것과 시스템 것만 주므로,
-        // 가족이 공유한 목소리로 만든 알람은 위에서 못 찾고 이름이 통째로 사라졌다.
-        // 그 목록은 `familyVoices` 에 따로 온다.
-        if let shared = voiceStudio.familyVoices.first(where: { $0.id == id }) {
-            return label(shared.name, shared.relationshipLabel)
-        }
-        return nil
+        // 가족이 공유한 목소리로 만든 알람은 내 목록에서 못 찾고 이름이 통째로 사라졌다.
+        // 그 목록은 `familyVoices` 에 따로 온다 — `alarmRowVoiceName` 이 둘 다 본다.
+        return alarmRowVoiceName(voiceProfileID: id, profiles: voiceStudio.profiles, familyVoices: voiceStudio.familyVoices)
     }
 
     /// 빈 상태 카드 — 안드로이드 `ui/home/HomeCards.kt:28-91`.

@@ -1136,7 +1136,8 @@ struct AlarmEditorSheet: View {
                 VoiceSelectionSheet.Option(
                     id: $0.id,
                     name: $0.displayName,
-                    detail: $0.relationshipLabel?.nilIfBlank,
+                    // 관계 라벨이 아니라 '내 목소리(· 공유 중)' — 안드로이드 `ownedVoiceDetail`.
+                    detail: ownVoiceOptionDetail(isShared: $0.isShared == true),
                     // 무료 등급은 시스템 목소리만 쓸 수 있다(서버 `tts.ts:684-693`).
                     locked: freeVoiceTier,
                     // 교체 정리가 끝나지 않은 목소리는 **자리에 두되 못 고른다** — 감추면

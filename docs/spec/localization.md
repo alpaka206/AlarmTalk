@@ -26,6 +26,10 @@ Swift 소스와 `Localizable.xcstrings`는 함께 고친다. 번역이 카탈로
 관계 프리셋은 선택 상태에 프리셋 종류가 명시된 동안만 번역한다. 기존 저장 계약은 관계 문자열만
 보존해 직접 입력 여부를 복원할 수 없다. 따라서 저장된 관계는 프리셋과 글자가 같아도 원문으로 표시하고,
 재편집할 때는 직접 입력으로 복원한다. 문자열 일치만으로 프리셋을 추측하지 않는다.
+저장된 관계(`relationship_label`)는 두 앱 모두 **목록에 표시하지 않는다** — 목소리 탭의 행, 알람 행의
+목소리 이름, 편집기의 목소리 선택 모두 그렇다. 번역할 수 없는 저장 문자열이라 영어·일본어 화면에
+「엄마」가 섞였다. 목소리 탭 행은 공유 여부(「공유 중」)만, 알람 행은 목소리 이름만, 편집기 선택 시트는
+「내 목소리」(공유 중이면 「내 목소리 · 공유 중」)를 쓴다. 관계의 저장·전송과 등록·수정 폼의 입력은 그대로다.
 
 기본 목소리 이름은 목소리 id로, 플랜 이름은 plan key로 표시 이름을 고른다. 서버가 보내는 한국어 이름을
 화면 번역 키로 삼지 않는다. 목록에 없는 기본 목소리 id는 서버 이름을 그대로 표시한다. 뜻이 다른 곳은 한국어 원문이 같아도 키를 나눈다(알람 탭과 재생 방식,
@@ -102,6 +106,7 @@ TTS 입력 문장은 구분한다. 카탈로그의 번역 유무와 호출부가
 | 스낵바 색은 문구 종류로 | `ui/app/SnackbarSeverity.kt`의 `SnackbarSeverities` · `SnackbarSeverityTest` | (스낵바 색 구분 없음) |
 | 언어 선택지 자기 이름 | `voices_lang_ko`·`voices_lang_en`·`voices_lang_ja` | 목소리 등록 화면의 언어 선택지(후속 연결) |
 | 가족 알람 녹음 기본 라벨(전송은 계약값, 표시는 받는 기기 언어) | `data/ReceivedAlarmLabels.kt`의 `FAMILY_VOICE_DEFAULT_LABEL`·`localizedReceivedVoiceText` → `RingingActivity` | `ReceivedVoiceTextDisplay`·`LocalAlarmRecord.localizedVoiceText` → `AlarmKitViewModel`의 Live Activity 문구 |
+| 관계는 목록에 표시하지 않는다(입력·저장·전송만) | 목소리 탭 `VoiceProfileRowComponents.kt`의 `voicesr_sharing_badge`·편집기 `VoiceAudioCard.kt`의 `ownedVoiceDetail`·알람 행 `AlarmListScreen.kt`의 `voiceName` | `ownVoiceRowSubtitle`·`ownVoiceOptionDetail`·`alarmRowVoiceName`(`LocalizedDisplay.swift`) · `VoiceLocalizationTests` |
 | 저장값과 기본 목소리의 표시 | `fortuneValueLabel`·`systemVoiceDisplayName` | `FortunePromptInputFormat.displayLabel`·`systemVoiceDisplayName`·`VoiceRelationshipPreset.displayLabel` |
 | 약관 웹 링크의 앱 언어 | 설정 화면의 언어별 경로 | `LegalLinks`(후속 화면에서 채택) |
 | 화면의 문자열 조회 | `stringResource`·`Context.getString` | `String(localized:)`·SwiftUI의 정적 문자열 키 |
