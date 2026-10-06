@@ -733,12 +733,12 @@ private fun VoiceVolumeSelector(
 private fun voiceOptionLabelRes(options: List<Pair<String, Int>>, value: String): Int? =
     options.firstOrNull { it.first == value }?.second ?: options.firstOrNull()?.second
 
-private fun sharedVoiceDetail(context: android.content.Context, profile: FamilyVoiceProfile): String {
-    val owner = profile.ownerName?.takeIf { it.isNotBlank() }
+internal fun sharedVoiceDetail(context: android.content.Context, profile: FamilyVoiceProfile): String {
+    val owner = profile.ownerName?.trim()?.takeIf { it.isNotBlank() }
     return if (owner == null) {
         context.getString(R.string.editor2_voice_detail_shared)
     } else {
-        context.getString(R.string.editor2_voice_detail_shared_from, owner)
+        context.getString(R.string.editor2_voice_detail_shared_from, com.alarmtalk.app.data.honoredPersonName(context, owner))
     }
 }
 

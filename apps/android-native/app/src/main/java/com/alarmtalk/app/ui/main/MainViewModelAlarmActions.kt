@@ -10,10 +10,13 @@ import com.alarmtalk.app.data.AlarmDraft
 import com.alarmtalk.app.data.AlarmOrigins
 import com.alarmtalk.app.data.AlarmPlayModes
 import com.alarmtalk.app.data.DuplicateAlarmTimeException
+import com.alarmtalk.app.data.FAMILY_VOICE_DEFAULT_LABEL
+import com.alarmtalk.app.data.honoredPersonName
 import com.alarmtalk.app.data.CachedAlarmAudio
 import com.alarmtalk.app.data.VoiceSources
 import com.alarmtalk.app.data.usesFreeSystemVoiceAlarm
 import com.alarmtalk.app.network.apiErrorCode
+import com.alarmtalk.app.network.apiErrorMessage
 import com.alarmtalk.app.network.FamilyAlarmTalkRequest
 import com.alarmtalk.app.network.RemoteAlarmMapper
 import com.alarmtalk.app.network.RemoteAlarmWriteRequest
@@ -164,8 +167,7 @@ private suspend fun MainViewModel.createFamilyTargetAlarm(draft: AlarmDraft, onD
                         recipientUserId = requireNotNull(draft.targetUserId.trimmedOrNull()),
                         wakeAt = String.format(java.util.Locale.US, "%02d:%02d", draft.hour, draft.minute),
                         voiceUploadId = upload.id,
-                        label = draft.label.trimmedOrNull()
-                            ?: getApplication<Application>().getString(R.string.msg_family_voice_default_label),
+                        label = draft.familyVoiceAlarmLabel(),
                         repeatDays = RemoteAlarmMapper.repeatMaskToDays(draft.repeatDaysMask),
                     ),
                 ).alarm
@@ -181,9 +183,24 @@ private suspend fun MainViewModel.createFamilyTargetAlarm(draft: AlarmDraft, onD
         onDone()
     }.onFailure { error ->
         AlarmTalkLog.reportError("Failed to create family target alarm target=${draft.targetUserId}", error)
-        message = userFacingError(error, getApplication<Application>().getString(R.string.msg_family_alarm_set_failed))
+        message = familyAlarmFailureMessage(getApplication(), error)
     }
 }
+
+/**
+ * 가족 알람 보내기 실패 문구 — 공용 표(`ApiErrorMessages`)가 서버의 거절 이유(받지 않음·리드타임·
+ * 설정 불가능 시간)를 말하고, 표에 없으면 화면 폴백이다. iOS `APIErrorMessages.message(for:fallback:)`.
+ */
+internal fun familyAlarmFailureMessage(context: Context, error: Throwable): String =
+    apiErrorMessage(context, apiErrorCode(error))
+        ?: userFacingError(error, context.getString(R.string.msg_family_alarm_set_failed))
+
+/**
+ * 가족 녹음 알람으로 보낼 라벨. 비었으면 **계약값(한국어) 그대로** 보낸다 — 받는 사람의 문구로
+ * 저장되고 받는 기기가 자기 언어로 바꿔 보여 준다(`localizedReceivedVoiceText`). 앱 언어로 번역해
+ * 보내면 받는 사람 화면에 보낸 사람의 언어가 그대로 남는다.
+ */
+internal fun AlarmDraft.familyVoiceAlarmLabel(): String = label.trimmedOrNull() ?: FAMILY_VOICE_DEFAULT_LABEL
 
 private fun AlarmDraft.shouldUploadLocalVoiceForFamilyAlarm(): Boolean =
     playMode != AlarmPlayModes.ALARM_ONLY &&
@@ -354,7 +371,11 @@ internal fun MainViewModel.deleteAlarm(alarmId: String) {
 }
 
 
+/**
+ * 가족 알람을 보낸 뒤의 완료 문구. 이름을 모르면 '상대' 로 말한다 — 화면용 대체 이름('멤버')에
+ * 존칭을 붙이지 않는다. 존칭은 [honoredPersonName] 한 곳에서 붙인다.
+ */
 internal fun familyAlarmCompletionMessage(context: android.content.Context, targetName: String?): String =
-    targetName?.takeIf { it.isNotBlank() }?.let {
-        context.getString(R.string.msg_family_alarm_set_for_target, it)
+    targetName?.trim()?.takeIf { it.isNotBlank() }?.let {
+        context.getString(R.string.msg_family_alarm_set_for_target, honoredPersonName(context, it))
     } ?: context.getString(R.string.msg_family_alarm_set_for_target_other)

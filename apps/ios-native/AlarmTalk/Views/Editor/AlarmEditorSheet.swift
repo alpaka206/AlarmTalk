@@ -1136,7 +1136,8 @@ struct AlarmEditorSheet: View {
                 VoiceSelectionSheet.Option(
                     id: $0.id,
                     name: $0.displayName,
-                    detail: $0.relationshipLabel?.nilIfBlank,
+                    // 관계 라벨이 아니라 '내 목소리(· 공유 중)' — 안드로이드 `ownedVoiceDetail`.
+                    detail: ownVoiceOptionDetail(isShared: $0.isShared == true),
                     // 무료 등급은 시스템 목소리만 쓸 수 있다(서버 `tts.ts:684-693`).
                     locked: freeVoiceTier,
                     // 교체 정리가 끝나지 않은 목소리는 **자리에 두되 못 고른다** — 감추면
@@ -3087,7 +3088,8 @@ struct AlarmEditorSheet: View {
                     recipientUserId: recipient.userId,
                     wakeAt: String(format: "%02d:%02d", draft.hour, draft.minute),
                     voiceUploadId: upload.id,
-                    label: (draft.label).nilIfBlank ?? "가족이 보낸 음성",
+                    // 기본 라벨은 계약값 그대로 — 받는 기기가 자기 언어로 바꿔 보여 준다.
+                    label: (draft.label).nilIfBlank ?? ReceivedVoiceTextDisplay.familyVoiceDefault,
                     dubTargetLanguage: nil,
                     repeatDays: RemoteAlarmMapper.repeatDays(fromMask: draft.repeatDaysMask)
                 )
@@ -3125,10 +3127,11 @@ struct AlarmEditorSheet: View {
             UINotificationFeedbackGenerator().notificationOccurred(.success)
             onSchedulingDidFinish()
         } catch {
+            // 서버의 거절 이유(받지 않음·리드타임·설정 불가능 시간)는 공용 표가 말한다.
             validationAlert = ValidationAlertContent(
                 title: String(localized: "상대 알람 설정에 실패했어요"),
-                message: userFacingErrorMessage(
-                    error,
+                message: APIErrorMessages.message(
+                    for: error,
                     fallback: String(localized: "상대 알람 설정에 실패했어요.")
                 )
             )

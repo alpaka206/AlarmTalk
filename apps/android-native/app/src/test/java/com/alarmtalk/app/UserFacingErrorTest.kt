@@ -52,7 +52,10 @@ class UserFacingErrorTest {
             val context = context(language)
             assertEquals(message, familyAlarmCompletionMessage(context, null))
             assertEquals(message, familyAlarmCompletionMessage(context, "  "))
-            assertEquals(context.getString(R.string.msg_family_alarm_set_for_target, "Alex"), familyAlarmCompletionMessage(context, "Alex"))
+            assertEquals(
+                context.getString(R.string.msg_family_alarm_set_for_target, com.alarmtalk.app.data.honoredPersonName(context, "Alex")),
+                familyAlarmCompletionMessage(context, "Alex"),
+            )
         }
     }
 
@@ -60,11 +63,9 @@ class UserFacingErrorTest {
     fun `오류와 완료 스낵바는 세 언어에서 같은 색상 의미를 유지한다`() {
         for (language in listOf("ko", "en", "ja")) {
             val context = context(language)
-            val errors = context.resources.getStringArray(R.array.snackbar_error_markers)
-            val successes = context.resources.getStringArray(R.array.snackbar_success_markers)
-            assertEquals(language, MessageSeverity.Error, messageSeverity(context.getString(R.string.msg_alarm_save_failed), errors, successes))
-            assertEquals(language, MessageSeverity.Success, messageSeverity(familyAlarmCompletionMessage(context, null), errors, successes))
-            assertEquals(language, MessageSeverity.Info, messageSeverity("12345", errors, successes))
+            assertEquals(language, MessageSeverity.Error, snackbarSeverity(context, context.getString(R.string.msg_alarm_save_failed)))
+            assertEquals(language, MessageSeverity.Success, snackbarSeverity(context, familyAlarmCompletionMessage(context, null)))
+            assertEquals(language, MessageSeverity.Info, snackbarSeverity(context, "12345"))
         }
     }
     @Test
@@ -74,13 +75,11 @@ class UserFacingErrorTest {
         }
         for (language in listOf("ko", "en", "ja")) {
             val context = context(language)
-            val errors = context.resources.getStringArray(R.array.snackbar_error_markers)
-            val successes = context.resources.getStringArray(R.array.snackbar_success_markers)
             for (field in failureResources) {
                 val text = context.getString(field.getInt(null))
-                org.junit.Assert.assertNotEquals("$language: ${field.name}: $text", MessageSeverity.Success, messageSeverity(text, errors, successes))
+                org.junit.Assert.assertNotEquals("$language: ${field.name}: $text", MessageSeverity.Success, snackbarSeverity(context, text))
             }
-            assertEquals(language, MessageSeverity.Error, messageSeverity(context.getString(R.string.api_error_server), errors, successes))
+            assertEquals(language, MessageSeverity.Error, snackbarSeverity(context, context.getString(R.string.api_error_server)))
         }
     }
 

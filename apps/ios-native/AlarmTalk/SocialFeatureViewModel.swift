@@ -744,7 +744,8 @@ final class SocialFeatureViewModel: ObservableObject {
             // 실패만 알린다(아래 catch) — 그건 화면에 안 나타나는 사실이다.
             await refreshAllAfterMutation(session: session, successMessage: nil)
         } catch {
-            statusMessage = userFacingErrorMessage(error, fallback: String(localized: "이용권에서 나가지 못했어요"))
+            // 관리자가 나가려 하면 서버가 `OWNER_CANNOT_LEAVE` 로 거절한다 — 공용 표가 이유를 말한다.
+            statusMessage = APIErrorMessages.message(for: error, fallback: String(localized: "이용권에서 나가지 못했어요"))
         }
     }
 

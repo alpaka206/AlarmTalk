@@ -472,14 +472,15 @@ struct VoiceProfileManagementPanel: View {
         }
     }
 
-    /// 행 둘째 줄 — 관계 라벨이 있으면 그걸, 없으면 상태를 보여준다.
+    /// 행 둘째 줄 — 만드는 중·실패면 그 상태를, 아니면 공유 여부만 보여준다.
+    /// 관계(`relationshipLabel`)는 목록에 보이지 않는다(`ownVoiceRowSubtitle` 주석).
     private func ownSubtitle(_ profile: VoiceProfile) -> String? {
         switch normalizedStatus(profile.status) {
         case "processing": return String(localized: "만드는 중")
         case "failed": return String(localized: "만들지 못했어요")
         default: break
         }
-        return voiceRelationshipSubtitle(profile.relationshipLabel, isShared: profile.isShared == true)
+        return ownVoiceRowSubtitle(isShared: profile.isShared == true)
     }
 
     @ViewBuilder

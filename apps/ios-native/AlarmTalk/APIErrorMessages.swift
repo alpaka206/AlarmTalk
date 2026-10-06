@@ -112,8 +112,31 @@ enum APIErrorMessages {
         case "TTS_GENERATION_FAILED":
             return String(localized: "음성을 만들지 못했어요. 잠시 후 다시 시도해 주세요.")
 
+        // ── 가족 알람 보내기(`routes/alarm-helpers.ts` 의 `evaluateFamilyAlarmTimingGuard`) ──
+        // 편집기가 먼저 막지만 그 판정은 받는 사람의 **캐시된** 설정과 이 기기 시계로 한 것이다.
+        // 서버가 다시 거절하면 이유를 말해야 한다 — 예전에는 셋 다 "상대 알람 설정에 실패했어요"
+        // 로 뭉개져 다시 눌러도 똑같이 실패했다(`docs/spec/family-alarm.md` §3).
+        case "FAMILY_ALARM_DISABLED":
+            return String(localized: "상대가 알람을 받지 않도록 설정해 뒀어요.")
+        // 숫자(5분)를 문구에 넣지 않는다 — 그 값은 서버·두 앱 세 곳에만 둔다(§3 표).
+        case "FAMILY_ALARM_LEAD_TIME":
+            return String(localized: "상대 알람은 조금 더 뒤로 맞춰 주세요. 상대 기기에 전달될 시간이 조금 필요해요.")
+        case "FAMILY_ALARM_QUIET_TIME":
+            return String(localized: "상대가 받을 수 없는 시간이에요.")
+
+        // ── 이용권 그룹 ───────────────────────────────────────────────────
+        case "OWNER_CANNOT_LEAVE":
+            return String(localized: "관리자는 이용권에서 나갈 수 없어요.")
+
         default:
             return nil
         }
+    }
+
+    /// 화면 전용 문구가 없는 자리의 층 순서 — **공용 표 → 화면 폴백**. 안드로이드는
+    /// `apiErrorMessage(context, apiErrorCode(error)) ?: userFacingError(error, fallback)` 이다
+    /// (`familyAlarmFailureMessage`·`leaveGroupFailureMessage`).
+    static func message(for error: Error, fallback: String) -> String {
+        message(for: (error as? APIError)?.serverErrorCode) ?? userFacingErrorMessage(error, fallback: fallback)
     }
 }
