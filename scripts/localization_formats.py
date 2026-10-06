@@ -27,6 +27,29 @@ def format_signature(value, platform="swift"):
     return result
 
 
+SUBSTITUTION = re.compile(r"%(?:\d+\$)?#@(\w+)@")
+
+
+def render_substitutions(value, substitutions, path):
+    """Expand `%#@name@` into each variation leaf, `%arg` into its argument.
+
+    The rendered strings carry the substitution's `argNum` and
+    `formatSpecifier`, so changing either (or dropping `%arg`) changes the
+    signature. A token without metadata is left as is and fails to match.
+    """
+    rendered = {path: value}
+    for name in dict.fromkeys(SUBSTITUTION.findall(value)):
+        meta = substitutions.get(name) if isinstance(substitutions, dict) else None
+        if not isinstance(meta, dict):
+            continue
+        argument = "%{}${}".format(meta.get("argNum"), meta.get("formatSpecifier"))
+        token = re.compile(r"%(?:\d+\$)?#@" + re.escape(name) + "@")
+        choices = catalog_values({key: child for key, child in meta.items() if key == "variations"})
+        rendered = {base + ("substitutions", name) + leaf_path: token.sub(lambda _: leaf.replace("%arg", argument), text)
+                    for base, text in rendered.items() for leaf_path, leaf in choices.items()}
+    return rendered
+
+
 def catalog_values(node, path=()):
     """Keep the variation path so device/plural leaves compare to their peers."""
     if not isinstance(node, dict):
@@ -34,8 +57,8 @@ def catalog_values(node, path=()):
     values = {}
     for key, child in node.items():
         if key == "stringUnit" and isinstance(child, dict) and isinstance(child.get("value"), str):
-            values[path] = child["value"]
-        elif isinstance(child, dict):
+            values.update(render_substitutions(child["value"], node.get("substitutions"), path))
+        elif key != "substitutions" and isinstance(child, dict):
             values.update(catalog_values(child, path + (key,)))
     return values
 

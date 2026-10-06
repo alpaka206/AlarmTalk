@@ -30,8 +30,13 @@ LANGUAGES = ("en", "ja")
 SWIFT_ROOTS = ("apps/ios-native/AlarmTalk", "apps/ios-native/AlarmTalkWidget", "apps/ios-native/Shared")
 CATALOGS = ("apps/ios-native/AlarmTalk/Localizable.xcstrings", "apps/ios-native/AlarmTalkWidget/Localizable.xcstrings")
 CATEGORIES = {"generated", "seed-data", "data-contract", "debug-preview", "log", "endonym", "tts-content", "not-rendered", "language-neutral"}
+# SwiftUI views and modifiers whose first unlabeled String literal is a
+# LocalizedStringKey (`NavigationLink("Settings", destination:)`, `.help("…")`).
 SWIFT_UI = {"Text", "Button", "Label", "Toggle", "TextField", "SecureField", "Section", "Picker", "Link",
-            "navigationTitle", "alert", "confirmationDialog", "accessibilityLabel", "accessibilityHint"}
+            "NavigationLink", "DisclosureGroup", "Menu", "ProgressView", "Stepper", "DatePicker", "MultiDatePicker",
+            "ColorPicker", "ShareLink", "LabeledContent", "GroupBox", "ControlGroup", "ContentUnavailableView", "Tab",
+            "navigationTitle", "navigationBarTitle", "navigationSubtitle", "alert", "confirmationDialog",
+            "accessibilityLabel", "accessibilityHint", "accessibilityValue", "help", "badge"}
 LOCALIZED_TYPE = r"LocalizedString(?:Key|Resource)"
 # English date pickers use bare numbers; Korean/Japanese append year/month/day.
 # Only emptiness is exempted. Missing resources or copied Korean still fail.
@@ -380,6 +385,13 @@ def android_text_is_blank(value: str) -> bool:
     return not value.strip()
 
 
+def has_plural_variation(node) -> bool:
+    if isinstance(node, dict):
+        return any((key == "variations" and isinstance(child, dict) and "plural" in child) or has_plural_variation(child)
+                   for key, child in node.items())
+    return isinstance(node, list) and any(has_plural_variation(child) for child in node)
+
+
 def plural_categories_missing(node, required: set[str]) -> bool:
     """True if any plural variation (including substitutions) lacks a category."""
     if isinstance(node, dict):
@@ -420,6 +432,11 @@ def catalog_issues(root: Path) -> list[Issue]:
                     issues.append(Issue(relative, 0, key, f"{language} translation missing, unfinished or empty"))
                 if plural_categories_missing(units, PLURAL_CATEGORIES[language]):
                     issues.append(Issue(relative, 0, key, f"{language} required plural variations missing"))
+                # A plain leaf is the `other` sentence for every count. That is
+                # only equivalent where `other` is the sole category.
+                if (language != "ko" and PLURAL_CATEGORIES[language] != {"other"} and units
+                        and has_plural_variation(localizations.get("ko", {})) and not has_plural_variation(units)):
+                    issues.append(Issue(relative, 0, key, f"{language} must vary by plural like the Korean source"))
                 if language in LANGUAGES and any(HANGUL.search(str(leaf.get("value", ""))) for leaf in leaves):
                     issues.append(Issue(relative, 0, key, f"{language} translation contains Hangul"))
     resources = root / "apps/android-native/app/src/main/res"
@@ -476,6 +493,15 @@ KOTLIN_NAMED_SINKS = {"text", "title", "message", "contentDescription", "label"}
 # then checked at the call that receives it (e.g. `Text(buildAnnotatedString {…})`).
 KOTLIN_TEXT_BUILDERS = {"buildAnnotatedString", "buildString", "withStyle", "withLink", "withAnnotation"}
 KOTLIN_APPENDS = {"append", "appendLine"}
+# Lambdas whose last expression is the call's value (`Text(remember { "…" })`).
+# Callbacks (onClick, LaunchedEffect, apply/also) are statements and stop here.
+KOTLIN_VALUE_LAMBDAS = {"remember", "rememberSaveable", "derivedStateOf", "run", "let", "with",
+                        "getOrElse", "ifEmpty", "ifBlank"}
+# A line starting with one of these continues the previous expression.
+# Inside a `when` body `else`/`in`/`is` start a new branch; only operators
+# (and an if-expression's `else` without `->`) continue the previous line.
+KOTLIN_WHEN_CONTINUATION = re.compile(r"\?[.:]|\.|&&|\|\||[-+*/%]|[=!]=|[<>]=?|as\b|else\b(?!\s*->)")
+KOTLIN_CONTINUATION = re.compile(r"else\b|\?[.:]|\.|&&|\|\||[-+*/%]|[=!]=|[<>]=?|as\b|!?is\b|!?in\b")
 # Assignment sinks in small receiver lambdas.
 KOTLIN_SEMANTICS_BLOCKS = {"semantics", "clearAndSetSemantics"}
 KOTLIN_SEMANTICS_PROPERTIES = {"contentDescription", "stateDescription", "paneTitle"}
@@ -499,17 +525,48 @@ def kotlin_ui_context(code: str, start: int, pairs: dict[int, int], closers: dic
             position -= 1
         return position
 
+    def keyword_before(end, word):
+        return code.endswith(word, 0, end) and (end == len(word) or not (code[end - len(word) - 1].isalnum()
+                                                                         or code[end - len(word) - 1] == "_"))
+
     def expression_branch(opening):
         # Look back only over the token before the brace, not the whole file.
         end = before(opening)
-        if code.endswith("->", 0, end):
-            return True
-        if code.endswith("else", 0, end) and (end == 4 or not (code[end - 5].isalnum() or code[end - 5] == "_")):
+        if code.endswith("->", 0, end) or keyword_before(end, "else"):
             return True
         if end and code[end - 1] == ")":
             condition = closers.get(end - 1)
-            return condition is not None and call_at(code, condition) in {"if", "when"}
+            return condition is not None and call_at(code, condition) == "if"
         return False
+
+    def when_body(opening):
+        end = before(opening)
+        if keyword_before(end, "when"):
+            return True
+        return bool(end) and code[end - 1] == ")" and end - 1 in closers and call_at(code, closers[end - 1]) == "when"
+
+    def when_branch_value(opening):
+        """True after a branch's `->`; a literal before it is a compared condition."""
+        depth, value, i = 0, False, opening + 1
+        while i < start:
+            char = code[i]
+            if char in "([{":
+                depth += 1
+            elif char in ")]}":
+                depth -= 1
+            elif depth == 0 and code.startswith("->", i):
+                value, i = True, i + 2
+                continue
+            elif depth == 0 and char in "\n;":
+                previous = before(i)
+                following = i + 1
+                while following < start and code[following].isspace():
+                    following += 1
+                joined = code.endswith("->", 0, previous) or (previous and code[previous - 1] in ",=(")
+                if char == ";" or not (joined or (following < start and KOTLIN_WHEN_CONTINUATION.match(code, following))):
+                    value = False
+            i += 1
+        return value
 
     def lambda_call(opening):
         """`withStyle(style) {` -> withStyle; `channel.apply {` -> channel.apply."""
@@ -525,6 +582,28 @@ def kotlin_ui_context(code: str, start: int, pairs: dict[int, int], closers: dic
             return ""
         end = before(token)
         return call_at(code, closers[end - 1]) if end and code[end - 1] == ")" and end - 1 in closers else ""
+
+    def lambda_result(opening, depth):
+        """True if the literal is in the lambda's last statement, i.e. its value."""
+        close, i = pairs[opening], start
+        while i < close:
+            char = code[i]
+            if char in "([{":
+                depth += 1
+            elif char in ")]}":
+                depth -= 1
+            elif depth == 0 and char in "\n;":
+                following = i + 1
+                while following < close and code[following].isspace():
+                    following += 1
+                if following >= close:
+                    return True
+                if char == ";" or not KOTLIN_CONTINUATION.match(code, following):
+                    return False
+                i = following
+                continue
+            i += 1
+        return True
 
     def assigned_property(opening):
         """Property assigned by the statement that holds the literal."""
@@ -551,12 +630,18 @@ def kotlin_ui_context(code: str, start: int, pairs: dict[int, int], closers: dic
     for index in range(len(enclosing) - 1, -1, -1):
         opening = enclosing[index]
         if code[opening] == "{":
+            if when_body(opening):
+                if not when_branch_value(opening):
+                    return False  # A compared condition, not the branch's value.
+                continue
             if expression_branch(opening):
                 continue
             call = lambda_call(opening).split(".")[-1]
             # Appended text stays builder content through nested lambdas
             # (`forEach { append(…) }`) up to the outermost builder.
             if appended and any(builders[:index + 1]):
+                continue
+            if call in KOTLIN_VALUE_LAMBDAS and lambda_result(opening, len(enclosing) - 1 - index):
                 continue
             if call in KOTLIN_SEMANTICS_BLOCKS:
                 return assigned_property(opening) in KOTLIN_SEMANTICS_PROPERTIES
@@ -692,7 +777,9 @@ def audit(root: Path, rules: list[tuple[str, str, str, str]]) -> list[Issue]:
         literals = kotlin_literals(source)
         masked = list(source)
         for start, end, _, _ in literals:
-            masked[start:end] = [" " for _ in source[start:end]]
+            # A visible placeholder, not spaces: statement/line analysis must
+            # not mistake `x = "…"\n` for a line that ends with `=`.
+            masked[start:end] = ['"' for _ in source[start:end]]
         code = blank_comments("".join(masked))
         pairs = delimiter_pairs(code)
         closers = {end: opening for opening, end in pairs.items()}
@@ -1226,6 +1313,98 @@ class SelfTests(unittest.TestCase):
                        'builder.addAction(action)']:
             file.write_text(source, encoding="utf-8")
             self.assertEqual(audit(root, []), [], source)
+
+    def test_catalog_substitutions_keep_argument_and_specifier(self):
+        def leaf(value):
+            return {"stringUnit": {"state": "translated", "value": value}}
+        def substitution(top, spec, argument, leaves):
+            return {"stringUnit": {"state": "translated", "value": top}, "substitutions": {"count": {
+                "argNum": argument, "formatSpecifier": spec,
+                "variations": {"plural": {category: leaf(text) for category, text in leaves.items()}}}}}
+        english = {"one": "%arg alarm", "other": "%arg alarms"}
+        for source in [leaf("알람 %lld개"), substitution("알람 %#@count@", "lld", 1, {"other": "%arg개"})]:
+            for target, fails in [(substitution("%#@count@", "lld", 1, english), False),
+                                  (substitution("%1$#@count@", "lld", 1, english), False),
+                                  (substitution("%#@count@", "@", 1, english), True),
+                                  (substitution("%#@count@", "lld", 2, english), True),
+                                  (substitution("%#@count@", "lld", 1, {"one": "One alarm", "other": "%arg alarms"}), True),
+                                  (substitution("%#@count@", "lld", 1, {"one": "%arg alarm", "other": "%arg\nalarms"}), True),
+                                  (leaf("%#@count@"), True)]:
+                self.assertEqual(bool(catalog_format_mismatches(source, target, "key")), fails, (source, target))
+        two = substitution("%@ has %#@count@", "lld", 2, english)
+        self.assertEqual(catalog_format_mismatches(leaf("%@의 알람 %lld개"), two, "key"), [])
+        two["substitutions"]["count"]["argNum"] = 1
+        self.assertTrue(catalog_format_mismatches(leaf("%@의 알람 %lld개"), two, "key"))
+
+    def test_english_keeps_plural_variations_of_the_korean_source(self):
+        def leaf(value):
+            return {"stringUnit": {"state": "translated", "value": value}}
+        def plural(values):
+            return {"variations": {"plural": {category: leaf(value) for category, value in values.items()}}}
+        korean_sources = [plural({"other": "알람 %lld개"}),
+                          {"stringUnit": {"state": "translated", "value": "%#@count@"}, "substitutions": {"count": {
+                              "argNum": 1, "formatSpecifier": "lld", "variations": {"plural": {"other": leaf("%arg개")}}}}}]
+        for korean in korean_sources:
+            for english, japanese, fails in [(leaf("%lld alarms"), leaf("%lld件"), True),
+                                             (plural({"one": "%lld alarm", "other": "%lld alarms"}), leaf("%lld件"), False)]:
+                root = self.fixture(source="", key="alarm.count")
+                file = root / CATALOGS[0]
+                data = json.loads(file.read_text(encoding="utf-8"))
+                data["strings"]["alarm.count"]["localizations"] = {"ko": korean, "en": english, "ja": japanese}
+                file.write_text(json.dumps(data), encoding="utf-8")
+                issues = [i.reason for i in catalog_issues(root) if i.path == CATALOGS[0]]
+                self.assertEqual("en must vary by plural like the Korean source" in issues, fails, (korean, english))
+                self.assertNotIn("ja must vary by plural like the Korean source", issues)
+        # A plain Korean source does not force plural structure.
+        root = self.fixture(source="", key="alarm.count")
+        self.assertEqual(catalog_issues(root), [])
+
+    def test_kotlin_value_lambdas_flow_into_display_sinks(self):
+        root = self.fixture(source="")
+        file = root / "apps/android-native/app/src/main/java/example/Screen.kt"
+        file.parent.mkdir(parents=True)
+        for source in ['Text(text = remember { "Try again" })',
+                       'Text(remember(busy) {\n    if (busy) "Wait"\n    else "Retry"\n})',
+                       'Text(text = with(state) { if (busy) { "Wait" } else { "Retry" } })',
+                       'Text(name?.let { "Hi $it" } ?: other)',
+                       'Text(items.getOrElse(0) { "None" })',
+                       'Text(remember { derivedStateOf { "Ready" } }.value)',
+                       'Text(text = remember {\n    val count = load()\n    format("Count: %d", count)\n})',
+                       'Text(when { busy -> "Wait"; else -> "Retry" })',
+                       'Text(text = when (mode) {\n    A -> "Alpha"\n    else ->\n        "Retry"\n})',
+                       'Text(when (mode) { A -> if (x) "One" else "Two"; else -> b })']:
+            file.write_text(source, encoding="utf-8")
+            self.assertTrue(any("Kotlin UI" in issue.reason for issue in audit(root, [])), source)
+        for source, flagged in [('Text(text = remember {\n    log("Shown")\n    "Retry"\n})', {"Retry"}),
+                                ('Text(when (mode) {\n    A -> "Alpha"\n    "custom" -> b\n})', {"Alpha"}),
+                                ('Text(when {\n    busy -> "Wait"\n    mode == "custom" -> b\n    else -> "Retry"\n})', {"Wait", "Retry"}),
+                                ('Modifier.semantics {\n    testTag = "row"\n    contentDescription = "Delete"\n}', {"Delete"})]:
+            file.write_text(source, encoding="utf-8")
+            self.assertEqual({i.value for i in audit(root, []) if "Kotlin UI" in i.reason}, flagged, source)
+        for source in ['Text(text = remember { Log.d(TAG, "Debug"); label })',
+                       'Text(text = remember {\n    analytics.log("Shown")\n    label\n})',
+                       'Text(text = remember {\n    val raw = prefs.getString("saved_key", null)\n    raw.orEmpty()\n})',
+                       'val title = remember { "Saved" }',
+                       'Button(onClick = { scope.launch { run { "Ignored" } } }) {}',
+                       'Text(text = label.also { Log.d(TAG, "Shown") })',
+                       'Text(when (mode) { "custom" -> stringResource(R.string.a); else -> b })',
+                       'Text(when {\n    mode == "custom" -> a\n    else -> b\n})',
+                       'Card(title = when (plan) {\n    "couple",\n    "family" -> group\n    else -> other\n})']:
+            file.write_text(source, encoding="utf-8")
+            self.assertEqual(audit(root, []), [], source)
+
+    def test_standard_swiftui_initializers_are_key_lookups(self):
+        for call in ['NavigationLink("Settings", destination: Detail())', 'DisclosureGroup("Advanced") { Detail() }',
+                     'Menu("Options") { Detail() }', 'ProgressView("Loading")', 'Stepper("Count", value: $count)',
+                     'DatePicker("Date", selection: $date)', 'ShareLink("Share", item: url)',
+                     'LabeledContent("Version", value: version)', 'GroupBox("Account") { Detail() }',
+                     'ContentUnavailableView("No alarms", systemImage: "alarm")',
+                     'Tab("Alarms", systemImage: "alarm") { Detail() }', 'view.help("Tooltip")', 'view.badge("New")',
+                     'view.accessibilityValue("Selected")']:
+            root = self.fixture(source=call)
+            self.assertTrue(any("key missing" in i.reason for i in audit(root, [])), call)
+            root = self.fixture(source=call.replace(call[call.index('"') + 1:call.index('"', call.index('"') + 1)], "안녕", 1))
+            self.assertFalse(any(i.path.endswith(".swift") for i in audit(root, [])), call)
 
     def test_catalog_target_languages_reject_hangul_in_every_leaf(self):
         root = self.fixture(source="")
