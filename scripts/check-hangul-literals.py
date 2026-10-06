@@ -561,9 +561,12 @@ def localized_context(path: str, source: str, literal: dict, declarations: Decla
         argument = re.match(r"(\w+)\s*:", prefix)
         if argument and prefix.endswith((":", "?")) and declarations.accepts(path, call, argument[1]):
             return True, None
-        if (prefix == "" and source[literal["end"]:].lstrip().startswith((",", ")"))
+        # `func row(_ title: LocalizedStringKey)` called as `row("Settings")` or with a
+        # result branch (`row(flag ? "Settings" : "Alarms")`, `row(custom ?? "Default")`).
+        unlabeled = not re.match(r"\w+\s*:(?!:)", prefix) and (prefix == "" or re.search(r"(?:\?\??|(?<!:):)\s*$", prefix))
+        if (unlabeled and source[literal["end"]:].lstrip().startswith((",", ")", ":", "??"))
                 and declarations.unlabeled_shape(path, call, argument_index(source, opening, literal["start"])) == ("key",)):
-            return True, None  # `func row(_ title: LocalizedStringKey)` called as `row("Settings")`.
+            return True, None
     if declarations.collection_element(path, source, literal):
         return True, None
     for start, end in declarations.returns.get(path, []):
@@ -611,22 +614,24 @@ def mark_literals(code: str, literals: list[dict]) -> str:
     return "".join(out)
 
 
-def swift_closure_value(marked: str, opening: int, literal: dict) -> bool:
+def swift_closure_value(marked: str, opening: int, literal: dict, pairs: dict[int, int] | None = None) -> bool:
     """True if the literal is the result of a value-producing closure.
 
     Single-expression closures return their expression; otherwise only a
     `return` statement does. Callbacks (Button actions, onTapGesture) are not
     value closures and stop the display-context search.
     """
-    depth, close = 0, None
-    for i in range(opening, len(marked)):
-        if marked[i] in "([{":
-            depth += 1
-        elif marked[i] in ")]}":
-            depth -= 1
-            if not depth:
-                close = i
-                break
+    close = pairs.get(opening) if pairs is not None else None
+    if close is None:
+        depth = 0
+        for i in range(opening, len(marked)):
+            if marked[i] in "([{":
+                depth += 1
+            elif marked[i] in ")]}":
+                depth -= 1
+                if not depth:
+                    close = i
+                    break
     if close is None:
         return False
     callee = call_at(marked, opening)
@@ -680,7 +685,7 @@ def swift_ui_context(source: str, code: str, literal: dict, marked: str | None =
     through = False
     for kind, opening in reversed(literal["stack"]):
         if kind == "{":
-            if marked is not None and swift_closure_value(marked, opening, literal):
+            if marked is not None and swift_closure_value(marked, opening, literal, tree.pairs if tree else None):
                 continue  # The closure's result is the enclosing argument.
             break  # A UI callback's body is a separate context (e.g. a log).
         if kind != "(":
@@ -837,14 +842,20 @@ def read_allowlist(path: Path) -> list[tuple[str, str, str, str]]:
     return rules
 
 
-def allowed(path: str, value: str, rules: list[tuple[str, str, str, str]]) -> bool:
+# Categories that are shown as is (brand, endonyms); every other category claims
+# the value is not UI copy, so it cannot excuse an occurrence at a display sink.
+DISPLAYED_CATEGORIES = {"language-neutral", "endonym"}
+
+
+def allowed(path: str, value: str, rules: list[tuple[str, str, str, str]], displayed: bool = False) -> bool:
     """An exception names a path and literal. Callers apply it only to
     occurrences that are not localization lookups: a stored contract value
     (`"남성"`) may also appear in `String(localized:)`, and that lookup must
     still find its catalog key. A `*` rule covers the file's literals only;
     the language gate needs its own explicit `language-gate` entry."""
     return any(fnmatch.fnmatchcase(path, pattern) and (literal == value or (literal == "*" and value != "language-gate"))
-               for _, pattern, literal, _ in rules)
+               and (not displayed or category in DISPLAYED_CATEGORIES)
+               for category, pattern, literal, _ in rules)
 
 
 def read_baseline(path: Path) -> dict[str, str]:
@@ -1078,6 +1089,16 @@ def catalog_issues(root: Path) -> list[Issue]:
 
     def texts(element):
         return {"".join(leaf.itertext()) for leaf in ([element] if element.tag == "string" else element)}
+
+    # A resource only in values-en*/values-ja* has no default: other locales
+    # crash or fall back to nothing, and it skips every comparison below.
+    for language in LANGUAGES:
+        for key, found in variants[language].items():
+            if key not in variants["ko"]:
+                for other, target, _ in found:
+                    issues.append(Issue(target, 0, key, "Android default (ko) resource missing"))
+                    if HANGUL.search("".join(other.itertext())):
+                        issues.append(Issue(target, 0, key, f"Android {language} resource contains Hangul"))
 
     for key, found in variants["ko"].items():
         entry, relative = localized["ko"][key]
@@ -1626,7 +1647,10 @@ def audit(root: Path, rules: list[tuple[str, str, str, str]]) -> list[Issue]:
                 issues.append(Issue(path, literal["line"], value, "String(localized:) passed to a key/resource parameter; retain its literal key"))
             if literal["debug"] or kind == "comment" or value == "":
                 continue
-            if not localized and allowed(path, value, rules):
+            # An exception never excuses a lookup, nor (unless the category is shown
+            # as is) a value placed straight into a display sink.
+            if not localized and allowed(path, value, rules) and (allowed(path, value, rules, True) or not swift_ui_context(
+                    source, code, literal, marked, wrappers, swift_tree, strict=True)):
                 continue
             words = has_words("".join(part for kind, part in literal["parts"] if kind == "lit"))
             ui_copy = not HANGUL.search(value) and not localized and words and swift_ui_context(
@@ -1702,7 +1726,8 @@ def audit(root: Path, rules: list[tuple[str, str, str, str]]) -> list[Issue]:
         static = {start: value for start, _, value, _ in kotlin_literals(source, static_text=True)}
         for start, end, value, _ in literals:
             seen.setdefault(value, set()).add(path)
-            if allowed(path, value, rules):
+            if allowed(path, value, rules) and (allowed(path, value, rules, True) or not (has_words(static[start]) and kotlin_ui_context(
+                    code, start, pairs, closers, wrappers, tree, strict=True))):
                 continue  # Kotlin has no literal lookups; resources are ids.
             # Letters outside format placeholders: `"%02d:%02d"` is not copy.
             ui_copy = has_words(static[start]) and kotlin_ui_context(code, start, pairs, closers, wrappers, tree)
@@ -1710,7 +1735,7 @@ def audit(root: Path, rules: list[tuple[str, str, str, str]]) -> list[Issue]:
                 issues.append(Issue(path, source.count("\n", 0, start) + 1, value, "Kotlin UI text must use resources or a documented exception"))
         for start, _, value in chars:
             # `Text('월'.toString())`: a letter shown as text needs a resource.
-            if has_words(value) and not allowed(path, value, rules) and kotlin_ui_context(code, start, pairs, closers, wrappers, tree):
+            if has_words(value) and kotlin_ui_context(code, start, pairs, closers, wrappers, tree) and not allowed(path, value, rules, True):
                 issues.append(Issue(path, source.count("\n", 0, start) + 1, value, "Kotlin UI text must use resources or a documented exception"))
         # Character ranges (`'가'..'힣'`) are masked in code; keep them for the gate.
         ranges = [first[2] + ".." + second[2] for first, second in zip(chars, chars[1:])
@@ -2212,7 +2237,11 @@ class SelfTests(unittest.TestCase):
         file.write_text('Text("안녕")', encoding="utf-8")
         self.assertTrue(any("Kotlin UI" in issue.reason for issue in audit(root, [])))
         rules = [("data-contract", str(file.relative_to(root)), "안녕", "fixture contract")]
+        # A contract exception covers stored values, not the same text placed in a display sink.
+        self.assertTrue(any("Kotlin UI" in issue.reason for issue in audit(root, rules)))
+        file.write_text('val stored = "안녕"', encoding="utf-8")
         self.assertEqual(audit(root, rules), [])
+        self.assertEqual(audit(root, [("endonym", str(file.relative_to(root)), "안녕", "shown as is")]), [])
         path = root / "apps/android-native/app/src/main/res/values-en/strings.xml"
         path.write_text('<resources/>', encoding="utf-8")
         self.assertTrue(any("Android en resource missing" in issue.reason for issue in audit(root, rules)))
@@ -2520,6 +2549,8 @@ class SelfTests(unittest.TestCase):
         self.assertEqual([i for i in audit(root, rules) if i.path.endswith(".swift")], [])
         root = self.fixture(source='let stored = "남성"')
         self.assertEqual(audit(root, rules), [])
+        root = self.fixture(source='let stored = "남성"\nText(verbatim: "남성")')
+        self.assertTrue(any(i.value == "남성" and "not in a proven" in i.reason for i in audit(root, rules)))
 
     def test_string_literal_initializers_are_lookups(self):
         for source in ['let title = LocalizedStringResource(stringLiteral: "Try again")',
@@ -2555,7 +2586,9 @@ class SelfTests(unittest.TestCase):
                              ('struct Row: View {\n    init(_ title: LocalizedStringKey) {}\n    var body: some View { EmptyView() }\n}\nRow("Settings")', {"Settings"}),
                              ('func rows(_ titles: [LocalizedStringKey]) {}\nrows(["Settings", "Alarms"])', {"Settings", "Alarms"}),
                              ('func row(_ title: LocalizedStringKey) {}\nfunc row(_ title: String) {}\nrow("Settings")', set()),
-                             ('func row(_ title: LocalizedStringKey) {}\nrow(flag ? "Settings" : "Alarms")', set()),
+                             ('func row(_ title: LocalizedStringKey) {}\nrow(flag ? "Settings" : "Alarms")', {"Settings", "Alarms"}),
+                             ('func row(_ title: LocalizedStringKey) {}\nrow(custom ?? "Default")', {"Default"}),
+                             ('func row(_ title: LocalizedStringKey) {}\nrow(mode == "a" ? first : second)', set()),
                              ('func row(title: LocalizedStringKey) {}\nfunc row(_ id: String) {}\nrow("settings")', set())]:
             root = self.fixture(source=source)
             self.assertEqual({i.value for i in audit(root, []) if "key missing" in i.reason}, keys, source)
@@ -2823,6 +2856,14 @@ class SelfTests(unittest.TestCase):
         (base / "values-en/strings.xml").write_text('<resources><string name="retry">Retry</string></resources>', encoding="utf-8")
         (base / "values-ja/strings.xml").write_text('<resources><item type="string" name="retry">再試行</item></resources>', encoding="utf-8")
         self.assertEqual(catalog_issues(root), [])
+
+    def test_translated_only_android_resources_need_a_default(self):
+        root = self.fixture(source="")
+        base = root / "apps/android-native/app/src/main/res"
+        (base / "values-en/strings.xml").write_text('<resources><string name="hello">Hello</string><string name="english_only">한국어</string></resources>', encoding="utf-8")
+        reasons = {(i.value, i.reason) for i in catalog_issues(root)}
+        self.assertIn(("english_only", "Android default (ko) resource missing"), reasons)
+        self.assertIn(("english_only", "Android en resource contains Hangul"), reasons)
 
     def test_catalog_target_languages_reject_hangul_in_every_leaf(self):
         root = self.fixture(source="")
