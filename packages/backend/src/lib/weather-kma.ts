@@ -14,6 +14,8 @@
  * | 0500 | 06~23시, TMX 있음·**TMN 없음** | 24시간 | 3시간 간격 8칸 |
  * | 0200 | 03~23시, TMX·TMN 둘 다 | | |
  *
+ * 오늘의 빈 TMX·TMN 은 남은 시각의 TMP 로 근사값을 따로 둔다(`kmaDaysFromItems`) — 쓰는지는 `finalizeSourceDay`.
+ *
  * 규칙 전문은 `docs/spec/voice-and-message.md` 5-1 「서버가 미리 계산해 둔다」.
  */
 import type { WeatherRegion, WeatherSource } from '@alarmtalk/shared';
@@ -289,7 +291,10 @@ function warnValue(category: string, value: unknown): void {
  * - 흐림(3): 06~18시 칸 가운데 절반 이상이 SKY ≥ 3(구름많음·흐림). 오늘 그 칸이 다 지났으면 남은 칸으로 본다.
  * - 강수확률 = POP 최댓값, 강수량 = PCP 합(진단용 근사값 — 분류는 0 보다 큰지만 본다).
  * - 최고·최저 = TMX(15시)·TMN(06시). 없으면 TMP 가 **24시간 다 있을 때만** 그 최대·최소. 그것도 없으면 null
- *   (오늘이면 공통 규칙의 이어받기, 아니면 미해결 — `finalizeSourceDay`).
+ *   (오늘이면 공통 규칙의 이어받기·근사값, 아니면 미해결 — `finalizeSourceDay`).
+ * - 오늘(발표 회차의 날 — 발표 다음 시각 ~ 23시만 온다)의 TMX·TMN 이 없으면 그 **남은 시각의 TMP** 최대·최소를
+ *   근사값(`approxMaxTemp`·`approxMinTemp`)으로 따로 둔다 — 0500 회차 뒤의 TMN, 1700 회차 뒤의 TMX·TMN. 남은
+ *   칸의 TMP 가 하나라도 빠지거나 못 읽으면 근사값도 없다.
  * - 안개 요소는 없다 — KR 에서는 안개 클립(5)이 나오지 않는다.
  */
 export function kmaDaysFromItems(items: readonly KmaItem[], today: string, run?: KmaRun): Map<string, SourceDay> {
@@ -401,15 +406,33 @@ export function kmaDaysFromItems(items: readonly KmaItem[], today: string, run?:
         }
       }
     }
+    // 오늘은 발표 다음 시각부터의 칸뿐이다 — 일 극값이 없으면 그 남은 칸의 TMP 로 근사값을 따로 둔다.
+    const approx =
+      date === isoDate(baseDate) && (maxTemp === null || minTemp === null)
+        ? tmpRange(categories.get('TMP'), hours)
+        : null;
     days.set(date, {
       code,
       maxTemp,
       minTemp,
       rainProbability: popMax,
       precipitation: Math.round(pcpSum * 10) / 10,
+      ...(approx && maxTemp === null ? { approxMaxTemp: approx.max } : {}),
+      ...(approx && minTemp === null ? { approxMinTemp: approx.min } : {}),
     });
   }
   return days;
+}
+
+/** 그 칸들의 TMP 최소·최대. 칸 하나라도 빠지거나 못 읽으면 null(근사값도 내지 않는다). */
+function tmpRange(
+  tmp: Map<number, unknown> | undefined,
+  hours: readonly number[],
+): { min: number; max: number } | null {
+  if (!tmp || hours.length === 0) return null;
+  const temps = hours.map((h) => (tmp.has(h) ? readNumber(tmp.get(h)) : null));
+  if (!temps.every((v) => v !== null)) return null;
+  return { min: Math.min(...(temps as number[])), max: Math.max(...(temps as number[])) };
 }
 
 // ── 호출 ─────────────────────────────────────────────────────────────────────────────────

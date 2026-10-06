@@ -1,7 +1,8 @@
 // 気象庁 bosai 예보(JP) 어댑터 — `lib/weather-jma.ts`. 규칙: `docs/spec/voice-and-message.md` 5-1 「서버가 미리 계산해 둔다」.
 //
 // 픽스처는 2026-10-01 17:00 발표 원본 4개(東京·埼玉·滋賀·青森)다. 05시 발표는 같은 문서에서 모양만 바꿔 만든다
-// (2026-09-24~10-01 XML 1,056개로 확인한 구조: 05~10시대 발표는 날씨 2일, 강수확률 7칸, 기온 4칸).
+// (`fixtures/weather/jma/morning-bulletin.ts` — 2026-09-24~10-01 XML 1,056개로 확인한 구조: 05~10시대 발표는 날씨
+// 2일, 강수확률 7칸, 기온 4칸).
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -14,6 +15,7 @@ import {
   jmaForecastUrl,
 } from '../src/lib/weather-jma';
 import { finalizeSourceDay, fixedFetchBudget } from '../src/lib/weather-source';
+import { toMorningBulletin } from './fixtures/weather/jma/morning-bulletin';
 import { resolvePrerenderWeatherIndex } from '../src/lib/weather-signal';
 import { CLONE_WEATHER_CONDITIONS } from '../src/lib/stock-clips';
 
@@ -37,37 +39,8 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-/** 東京 17시 문서를 다음 날 05시 발표 모양으로 바꾼다. 주간은 전날 17시 그대로(05시에는 주간 발표가 없다). */
-function tokyo0500() {
-  const d = doc('130000');
-  const short = d[0];
-  short.reportDatetime = '2026-10-02T05:00:00+09:00';
-  short.timeSeries[0].timeDefines = ['2026-10-02T05:00:00+09:00', '2026-10-03T00:00:00+09:00'];
-  for (const area of short.timeSeries[0].areas) {
-    area.weatherCodes = ['202', '101'];
-    area.weathers = area.weathers.slice(0, 2);
-    area.winds = area.winds.slice(0, 2);
-    area.waves = area.waves.slice(0, 2);
-  }
-  short.timeSeries[1].timeDefines = [
-    '2026-10-02T06:00:00+09:00',
-    '2026-10-02T12:00:00+09:00',
-    '2026-10-02T18:00:00+09:00',
-    '2026-10-03T00:00:00+09:00',
-    '2026-10-03T06:00:00+09:00',
-    '2026-10-03T12:00:00+09:00',
-    '2026-10-03T18:00:00+09:00',
-  ];
-  for (const area of short.timeSeries[1].areas) area.pops = ['50', '30', '20', '10', '20', '20', '10'];
-  short.timeSeries[2].timeDefines = [
-    '2026-10-02T09:00:00+09:00',
-    '2026-10-02T00:00:00+09:00',
-    '2026-10-03T00:00:00+09:00',
-    '2026-10-03T09:00:00+09:00',
-  ];
-  for (const area of short.timeSeries[2].areas) area.temps = ['22', '22', '17', '24'];
-  return d;
-}
+/** 東京 17시 문서를 다음 날 05시 발표 모양으로 바꾼다(`fixtures/weather/jma/morning-bulletin.ts`). */
+const tokyo0500 = () => toMorningBulletin(doc('130000'));
 
 describe('날씨 코드 → 대리 코드(현행 공식 66개)', () => {
   it('66개 전부 분류된다 — 雪 → 눈, 雨 → 비, くもり → 흐림, 晴 → 맑음', () => {
@@ -107,6 +80,13 @@ describe('17시 발표 — 실측 원본', () => {
     expect(days.get('2026-10-04')).toMatchObject({ code: 3, rainProbability: 30, minTemp: 16, maxTemp: 24 });
     // 강수량 합은 気象庁 예보에 없다 — 재지 않음(NaN).
     expect(Number.isNaN(days.get('2026-10-02')!.precipitation)).toBe(true);
+  });
+
+  it('17시 발표 뒤의 오늘은 근사해도 미해결 — 최저는 내일 아침 최저로 메우지만 오늘 최고를 대신할 값이 없다', () => {
+    const today = jmaDaysFromDocument(doc('130000'), sourceOf('jp-tokyo'), AFTER_1700).get('2026-10-01');
+    expect(today).toMatchObject({ maxTemp: null, minTemp: null, approxMinTemp: 20 });
+    expect(today).not.toHaveProperty('approxMaxTemp');
+    expect(finalizeSourceDay(today, { isToday: true, now: AFTER_1700, source: 'jma' })).toBeNull();
   });
 
   it('埼玉: 주간 기온 지점이 현청(さいたま)이 아니라 짝지은 지점(熊谷)이다', () => {
@@ -162,16 +142,25 @@ describe('05시 발표 — 합성본(17시 원본의 모양만 바꿈)', () => {
     expect(days.get('2026-10-04')).toMatchObject({ code: 3, rainProbability: 30, minTemp: 16, maxTemp: 24 });
   });
 
-  it('05시 발표에는 오늘 최저가 없어 이어받는다 — 36시간 안의 저장 행에서(자정 ~ 05시 발표 전은 weather-sources-dry-run)', () => {
+  it('05시 발표에는 오늘 최저가 없다 — 36시간 안의 저장 행이 먼저, 없으면 내일 아침 최저(17)를 근사값으로(자정 ~ 05시 발표 전은 weather-sources-dry-run)', () => {
     const today = jmaDaysFromDocument(tokyo0500(), sourceOf('jp-tokyo'), MORNING).get('2026-10-02');
-    expect(finalizeSourceDay(today, { isToday: true, now: MORNING, source: 'jma' })).toBeNull();
-    const stored = { tempMin: 20, tempMax: 22, computedAt: '2026-10-01T12:05:00.000Z' };
-    expect(finalizeSourceDay(today, { isToday: true, stored, now: MORNING, source: 'jma' })).toMatchObject({
+    // 원천의 최저 칸은 비워 둔다 — 근사값은 따로 둔다(오늘 밤이 이어지는 내일 0~9시 최저).
+    expect(today).toMatchObject({ minTemp: null, approxMinTemp: 17, maxTemp: 22 });
+    // 회귀(전환 당일 — 표가 비었다): 예전에는 null 이라 읽기 경로가 하루 내내 '못 봤어요' 였다.
+    expect(finalizeSourceDay(today, { isToday: true, now: MORNING, source: 'jma' })).toMatchObject({
       code: 61,
-      minTemp: 20,
+      minTemp: 17,
       maxTemp: 22,
       rainProbability: 50,
+      approximated: true,
     });
+    // 저장 행이 있으면 그것이 근사값을 이긴다.
+    const stored = { tempMin: 20, tempMax: 22, computedAt: '2026-10-01T12:05:00.000Z' };
+    const inherited = finalizeSourceDay(today, { isToday: true, stored, now: MORNING, source: 'jma' });
+    expect(inherited).toMatchObject({ code: 61, minTemp: 20, maxTemp: 22, rainProbability: 50 });
+    expect(inherited).not.toHaveProperty('approximated');
+    // 오늘이 아니면 근사값을 쓰지 않는다.
+    expect(finalizeSourceDay(today, { isToday: false, now: MORNING, source: 'jma' })).toBeNull();
   });
 
   it.each([6, 12, 18])('발표 당일의 %i시 timeDefines가 통째로 빠져도 부분 최댓값을 쓰지 않는다', (hour) => {

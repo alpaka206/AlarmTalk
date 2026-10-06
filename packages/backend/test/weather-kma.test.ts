@@ -158,14 +158,17 @@ describe('날짜별 집계 — 실측 응답', () => {
     }
   });
 
-  it('1700 회차: 오늘은 18~23시뿐이고 TMX·TMN 이 없다 → 극값은 비워 둔다(이어받기 대상)', () => {
+  it('1700 회차: 오늘은 18~23시뿐이고 TMX·TMN 이 없다 → 극값 칸은 비우고, 남은 시각 TMP 의 최대·최소를 근사값으로 따로 둔다', () => {
     const days = kmaDaysFromItems(itemsOf('1700'), '2026-10-01');
+    // 18~23시 TMP = 19·18·17·17·16·15.
     expect(days.get('2026-10-01')).toEqual({
       code: 0,
       maxTemp: null,
       minTemp: null,
       rainProbability: 0,
       precipitation: 0,
+      approxMaxTemp: 19,
+      approxMinTemp: 15,
     });
   });
 
@@ -180,9 +183,17 @@ describe('날짜별 집계 — 실측 응답', () => {
     expect(days.has('2026-10-06')).toBe(false);
   });
 
-  it('0500 회차: 오늘은 06~23시, TMX 는 있고 TMN 은 없다 · +3 은 3시간 간격(TMX·TMN 있음)', () => {
+  it('0500 회차: 오늘은 06~23시, TMX 는 있고 TMN 은 없다(근사 최저 = 06~23시 TMP 최소) · +3 은 3시간 간격(TMX·TMN 있음)', () => {
     const days = kmaDaysFromItems(itemsOf('0500'), '2026-10-01');
-    expect(days.get('2026-10-01')).toEqual({ code: 0, maxTemp: 20, minTemp: null, rainProbability: 30, precipitation: 0 });
+    // 근사값은 빈 칸(최저)만 — 원천에 있는 TMX 의 근사값은 두지 않는다. 0200 회차의 실제 TMN 도 13 이었다.
+    expect(days.get('2026-10-01')).toEqual({
+      code: 0,
+      maxTemp: 20,
+      minTemp: null,
+      rainProbability: 30,
+      precipitation: 0,
+      approxMinTemp: 13,
+    });
     expect(days.get('2026-10-04')).toEqual({ code: 3, maxTemp: 23, minTemp: 14, rainProbability: 20, precipitation: 0 });
   });
 
@@ -191,26 +202,59 @@ describe('날짜별 집계 — 실측 응답', () => {
     expect(days.get('2026-10-01')).toEqual({ code: 0, maxTemp: 22, minTemp: 13, rainProbability: 0, precipitation: 0 });
   });
 
-  it('0500 의 오늘 TMN 은 36시간 안의 저장 행에서만 이어받는다 — 상태·강수확률은 이어받지 않는다', () => {
+  it('0500 의 오늘 TMN — 36시간 안의 저장 행이 먼저, 없으면 근사값(06~23시 TMP 최소) · 상태·강수확률은 메우지 않는다', () => {
     const today = kmaDaysFromItems(itemsOf('0500'), '2026-10-01').get('2026-10-01');
     const now = new Date('2026-09-30T21:10:00Z');
     const source = 'kma';
-    expect(finalizeSourceDay(today, { isToday: true, stored: null, now, source })).toBeNull();
+    const approximated = {
+      code: 0,
+      maxTemp: 20,
+      minTemp: 13,
+      rainProbability: 30,
+      precipitation: 0,
+      hasDust: false,
+      rainProbabilityThreshold: 60,
+      approximated: true,
+    };
+    // 회귀(전환 당일 — 표가 비었다): 예전에는 null 이라 읽기 경로가 하루 내내 '못 봤어요' 였다.
+    expect(finalizeSourceDay(today, { isToday: true, stored: null, now, source })).toEqual(approximated);
     const stored = { tempMin: 12, tempMax: 99, computedAt: '2026-09-30T12:05:00.000Z' };
     expect(finalizeSourceDay(today, { isToday: true, stored, now, source })).toEqual({
       code: 0,
       maxTemp: 20, // 원천에 있는 값이 이긴다.
-      minTemp: 12,
+      minTemp: 12, // 저장 행이 근사값(13)을 이긴다.
       rainProbability: 30,
       precipitation: 0,
       hasDust: false,
       rainProbabilityThreshold: 60, // 결정 D7 — 기상청은 강수 형태가 1차다.
     });
-    // 오늘이 아니면 이어받지 않는다.
+    // 오늘이 아니면 이어받지도 근사하지도 않는다.
     expect(finalizeSourceDay(today, { isToday: false, stored, now, source })).toBeNull();
-    // 36시간을 넘긴 행은 쓰지 않는다.
+    // 36시간을 넘긴 행은 쓰지 않는다 — 근사값으로 메운다.
     const old = { ...stored, computedAt: '2026-09-29T08:00:00.000Z' };
-    expect(finalizeSourceDay(today, { isToday: true, stored: old, now, source })).toBeNull();
+    expect(finalizeSourceDay(today, { isToday: true, stored: old, now, source })).toEqual(approximated);
+  });
+
+  it('1700 회차의 오늘 — 저장 행이 없어도 남은 시각(18~23시) TMP 로 근사해 분류한다. 남은 칸의 TMP 가 하나라도 빠지면 근사하지 않는다', () => {
+    const now = new Date('2026-10-01T08:30:00Z'); // 17:30 KST
+    const classify = (items: KmaItem[]) => {
+      const input = finalizeSourceDay(kmaDaysFromItems(items, '2026-10-01').get('2026-10-01'), {
+        isToday: true,
+        now,
+        source: 'kma',
+      });
+      return input ? resolvePrerenderWeatherIndex(input) : null;
+    };
+    // 근사 최고 19 · 최저 15, 맑음 → 맑음. 실제 일 극값(0200 회차 22·13)으로도 맑음이다.
+    expect(classify(itemsOf('1700'))).toBe(idx('nice'));
+    expect(
+      classify(itemsOf('1700').filter((i) => !(i.category === 'TMP' && i.fcstDate === '20261001' && i.fcstTime === '2100'))),
+    ).toBeNull();
+    // 남은 시각이 12도 이하면 근사 최고가 12 이하라 추위다 — 근사값은 '남은 시각' 의 값이다(스펙 5-1).
+    const chilly = itemsOf('1700').map((i) =>
+      i.category === 'TMP' && i.fcstDate === '20261001' ? { ...i, fcstValue: '12' } : i,
+    );
+    expect(classify(chilly)).toBe(idx('cold'));
   });
 
   it('TMX·TMN 이 없으면 TMP 가 24시간 다 있을 때만 그 최대·최소 — 3시간 간격 날은 대신하지 않는다', () => {

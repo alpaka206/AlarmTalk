@@ -106,20 +106,27 @@ describe('원시 격자 → 날짜(지역 시간대 [00, 24))', () => {
     expect(days.get('2026-10-03')!.minTemp).toBe(5);
   });
 
-  it('아침이 지나 오늘 최저가 격자에서 빠지면 비워 둔다 — 36시간 안의 저장 행에서만 이어받는다', () => {
+  it('아침이 지나 오늘 최저가 격자에서 빠지면 최저 칸은 비우고, 오늘과 겹치는 최저 구간(오늘 밤)을 근사값으로 — 저장 행이 먼저다', () => {
     const g = grid('us-new-york');
     g.properties.minTemperature.values = g.properties.minTemperature.values.slice(1);
     const today = nwsDaysFromGrid(g, region('us-new-york').tz, NOW).get('2026-10-01');
-    expect(today!.minTemp).toBeNull();
-    expect(finalizeSourceDay(today, { isToday: true, now: NOW, source: 'nws' })).toBeNull();
-    expect(
-      finalizeSourceDay(today, {
-        isToday: true,
-        now: NOW,
-        source: 'nws',
-        stored: { tempMin: 18, tempMax: 30, computedAt: '2026-10-01T01:05:00.000Z' },
-      }),
-    ).toMatchObject({ minTemp: 18, maxTemp: 24.4, code: 3 });
+    // 오늘 밤 구간(10-01 20:00 ~ 10-02 10:00 EDT, 중점 10-02)이 오늘의 20~24시와 겹친다 — 그 값 20.6(실제 오늘 최저 18.3).
+    expect(today).toMatchObject({ minTemp: null, approxMinTemp: 20.6, maxTemp: 24.4 });
+    expect(today).not.toHaveProperty('approxMaxTemp');
+    // 회귀(전환 당일 — 표가 비었다): 예전에는 null 이었다. 분류는 실제 최저로 했을 때와 같은 흐림이다.
+    const approximated = finalizeSourceDay(today, { isToday: true, now: NOW, source: 'nws' });
+    expect(approximated).toMatchObject({ minTemp: 20.6, maxTemp: 24.4, code: 3, approximated: true });
+    expect(resolvePrerenderWeatherIndex(approximated!)).toBe(idx('cloud'));
+    const inherited = finalizeSourceDay(today, {
+      isToday: true,
+      now: NOW,
+      source: 'nws',
+      stored: { tempMin: 18, tempMax: 30, computedAt: '2026-10-01T01:05:00.000Z' },
+    });
+    expect(inherited).toMatchObject({ minTemp: 18, maxTemp: 24.4, code: 3 });
+    expect(inherited).not.toHaveProperty('approximated');
+    // 내일 이후에는 근사값을 두지 않는다 — 실제 구간이 있다.
+    expect(nwsDaysFromGrid(g, region('us-new-york').tz, NOW).get('2026-10-02')).not.toHaveProperty('approxMinTemp');
   });
 
   it('강수확률이 그날을 다 덮지 못하면(구간이 빠짐) 그 날짜는 미해결 — 다른 날짜는 그대로', () => {

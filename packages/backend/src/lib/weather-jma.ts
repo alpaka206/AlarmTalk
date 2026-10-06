@@ -14,9 +14,10 @@
  *  - 기온(`[0].timeSeries[2]`, 기온 지점): 17시 발표는 [내일 최저, 내일 최고], 05·11시 발표는 [오늘 최고, 오늘 최고
  *    (24시간), 내일 최저, 내일 최고] — JMA 페이지 스크립트와 같은 인덱스 규칙이고, 날짜가 어긋나면 쓰지 않는다.
  *    D+2·D+3 은 주간 `tempsMin`/`tempsMax`(주간 구역에 짝지은 기온 지점). **발표일의 최저는 어떤 발표에도 없다**
- *    — 05시 발표부터 그날이 끝날 때까지 지역의 오늘 최저(17시 발표 뒤에는 최고도)는 이어받기로 채운다
- *    (`finalizeSourceDay`). ⚠ 자정 ~ 05시 발표 전에는 다르다 — 그때 믿는 발표는 전날 17시 발표(13시간)이고 그
- *    [내일 최저, 내일 최고] 가 곧 지역의 오늘 값이다(회귀 `test/weather-sources-dry-run.test.ts`).
+ *    — 05시 발표부터 그날이 끝날 때까지 지역의 오늘 최저(17시 발표 뒤에는 최고도)는 이어받기로 채우고, 이어받을
+ *    행이 없으면 오늘 최저만 근사값(내일 아침 최저 — `approxMinTemp`)으로 채운다(`finalizeSourceDay`). 17시 발표
+ *    뒤의 오늘 최고는 대신할 값이 없다. ⚠ 자정 ~ 05시 발표 전에는 다르다 — 그때 믿는 발표는 전날 17시 발표(13시간)
+ *    이고 그 [내일 최저, 내일 최고] 가 곧 지역의 오늘 값이다(회귀 `test/weather-sources-dry-run.test.ts`).
  *  - 강수량 합이 없다 — '재지 않음'(NaN → DB NULL). 안개 코드도 없다(현행 66개에 없다) — JP 에서 안개 클립은 안 나온다.
  */
 import type { WeatherRegion, WeatherSource } from '@alarmtalk/shared';
@@ -253,19 +254,26 @@ export function jmaDaysFromDocument(doc: unknown, source: JmaSource, now: Date):
     });
   }
 
+  // 5) 발표일(지역의 오늘)의 최저는 어떤 발표에도 없고 시간별 기온도 없다 — 오늘 밤이 이어지는 **내일 아침 최저**
+  //    (0~9시)를 근사값으로 따로 둔다. 오늘의 남은 시각은 그 밤으로 이어지므로 가장 가까운 공식 값이다(대개 남은
+  //    시각의 최저보다 조금 낮다 — 스펙 5-1). 최고는 대신할 값이 없다(17시 발표 뒤의 오늘은 그대로 미해결).
+  const tonightLow = drafts.get(addDaysToDate(reportDate, 1))?.min ?? null;
+
   const days = new Map<string, SourceDay>();
   for (const [date, d] of drafts) {
     const code = d.code === undefined ? null : jmaCodeToProxy(d.code);
     if (d.code !== undefined && code === null) {
       logStructured('warn', { at: 'weather.jma_code', code: d.code.slice(0, 8) });
     }
+    const minTemp = d.min ?? null;
     days.set(date, {
       code,
       maxTemp: d.max ?? null,
-      minTemp: d.min ?? null,
+      minTemp,
       rainProbability: d.pop ?? null,
       // 気象庁 예보에는 강수량 합이 없다 — 재지 않음.
       precipitation: Number.NaN,
+      ...(date === reportDate && minTemp === null && tonightLow !== null ? { approxMinTemp: tonightLow } : {}),
     });
   }
   return days;

@@ -37,6 +37,7 @@ import {
   type WeatherSlotAlert,
 } from '../src/lib/weather-region-daily';
 import { CLONE_WEATHER_CONDITIONS } from '../src/lib/stock-clips';
+import { toMorningBulletin } from './fixtures/weather/jma/morning-bulletin';
 
 const FIX = join(__dirname, 'fixtures/weather');
 const read = (path: string) => readFileSync(join(FIX, path), 'utf8');
@@ -78,6 +79,9 @@ function kmaBody(url: URL): string {
   });
 }
 
+/** 東京 원본(다음 날 05시 발표 모양 — 10-02 의 오늘 최저가 없다)을 그 office 의 코드로. */
+const jmaMorningBody = (url: URL) => JSON.stringify(toMorningBulletin(JSON.parse(jmaBody(url))));
+
 /** 東京 원본을 그 office 의 구역·지점 코드로 바꿔 돌려준다(값은 東京 것 그대로). */
 function jmaBody(url: URL): string {
   const office = url.pathname.split('/').pop()!.replace('.json', '');
@@ -94,6 +98,8 @@ function jmaBody(url: URL): string {
 
 type StubOptions = {
   fail?: Partial<Record<Host, (url: URL) => Response | Error | null>>;
+  /** 원천별 본문을 바꾼다(기본은 위 픽스처). */
+  body?: Partial<Record<Host, (url: URL) => string>>;
 };
 
 function stubSources(options: StubOptions = {}) {
@@ -105,7 +111,8 @@ function stubSources(options: StubOptions = {}) {
     const failure = options.fail?.[host]?.(url) ?? null;
     if (failure instanceof Error) throw failure;
     if (failure) return failure;
-    const body = host === 'kma' ? kmaBody(url) : host === 'jma' ? jmaBody(url) : NWS_NY;
+    const body =
+      options.body?.[host]?.(url) ?? (host === 'kma' ? kmaBody(url) : host === 'jma' ? jmaBody(url) : NWS_NY);
     return new Response(body, { status: 200, headers: { 'content-type': 'application/json' } });
   });
   vi.stubGlobal('fetch', fetchMock);
@@ -421,12 +428,12 @@ describe('refreshWeatherRegionDaily — 실제 libSQL', () => {
     db.close();
   });
 
-  it('오늘 극값 이어받기 — KR 아침(0500 회차)의 오늘 TMN 을 36시간 안의 저장 행에서', async () => {
+  it('오늘 극값 이어받기 — KR 아침(0500 회차)의 오늘 TMN 을 36시간 안의 저장 행에서, 행이 없는 곳은 근사값으로', async () => {
     const db = await freshDb();
     const morning = new Date('2026-09-30T21:05:00Z'); // 06:05 KST 10-01 → 0500 회차
     // 어제 저녁 슬롯이 '내일'로 계산해 둔 오늘 행.
     await insertRow(db, 'kr-seoul', '2026-10-01', '2026-09-30T12:05:00.000Z', { min: 12, max: 30 });
-    // 이어받을 행이 없는 곳(부산)은 오늘을 못 만든다 — 그래도 [내일, +3] 은 적고 due 가 아니다.
+    // 이어받을 행이 없는 곳(부산 — 표가 빈 첫날·새 지역)은 남은 시각(06~23시) TMP 최소로 오늘을 만든다.
     const calls = stubSources();
     const result = await refreshWeatherRegionDaily(asExecutor(db), morning, {
       kmaServiceKey: KEY,
@@ -434,23 +441,39 @@ describe('refreshWeatherRegionDaily — 실제 libSQL', () => {
     });
     expect(calls.map((c) => c.url.searchParams.get('base_time'))).toEqual(['0500', '0500']);
     const seoulToday = (await rowsOf(db, 'kr-seoul')).find((r) => r.target_date === '2026-10-01')!;
-    // TMX 는 원천(20), TMN 만 이어받는다(12). 상태·강수확률은 원천의 것(맑음·30).
+    // TMX 는 원천(20), TMN 만 이어받는다(12 — 근사값 13 보다 먼저). 상태·강수확률은 원천의 것(맑음·30).
     expect([seoulToday.temp_max, seoulToday.temp_min, seoulToday.precip_prob, seoulToday.weather_code]).toEqual([20, 12, 30, 0]);
     expect(seoulToday.computed_at).toBe(morning.toISOString());
     const busan = await rowsOf(db, 'kr-busan');
-    expect(busan.map((r) => r.target_date)).toEqual(['2026-10-02', '2026-10-03', '2026-10-04']);
-    expect(result.stored).toBe(4 + 3);
+    expect(busan.map((r) => r.target_date)).toEqual(['2026-10-01', '2026-10-02', '2026-10-03', '2026-10-04']);
+    expect([busan[0]!.temp_max, busan[0]!.temp_min, busan[0]!.variant_index]).toEqual([20, 13, idx('nice')]);
+    expect(result.stored).toBe(4 + 4);
+    expect(result.approximated).toBe(1);
     db.close();
   });
 
-  it('36시간을 넘긴 행에서는 이어받지 않는다', async () => {
+  it('36시간을 넘긴 행에서는 이어받지 않는다 — 근사값으로 다시 만든다', async () => {
     const db = await freshDb();
     const morning = new Date('2026-09-30T21:05:00Z');
     await insertRow(db, 'kr-seoul', '2026-10-01', '2026-09-29T08:00:00.000Z', { min: 12 });
     stubSources();
     await refreshWeatherRegionDaily(asExecutor(db), morning, { kmaServiceKey: KEY, regions: [region('kr-seoul')] });
     const today = (await rowsOf(db, 'kr-seoul')).find((r) => r.target_date === '2026-10-01')!;
-    expect(today.computed_at).toBe('2026-09-29T08:00:00.000Z'); // 그대로(덮지 않았다)
+    // 옛 행의 12 가 아니라 0500 회차의 남은 시각 TMP 최소(13).
+    expect([today.computed_at, today.temp_max, today.temp_min]).toEqual([morning.toISOString(), 20, 13]);
+    db.close();
+  });
+
+  it('전환 당일(표가 비었다) 일본 아침 — 05시 발표에 오늘 최저가 없어도 내일 아침 최저로 오늘 행을 적는다', async () => {
+    const db = await freshDb();
+    const morning = new Date('2026-10-01T21:05:00Z'); // 06:05 JST 10-02
+    stubSources({ body: { jma: jmaMorningBody } });
+    const result = await refreshWeatherRegionDaily(asExecutor(db), morning, { regions: [region('jp-tokyo')] });
+    const rows = await rowsOf(db, 'jp-tokyo');
+    expect(rows.map((r) => r.target_date)).toEqual(['2026-10-02', '2026-10-03', '2026-10-04', '2026-10-05']);
+    // 오늘: 최고 22(원천) · 최저 17(근사 — 내일 아침 최저) · 비(くもり一時雨).
+    expect([rows[0]!.temp_max, rows[0]!.temp_min, rows[0]!.variant_index]).toEqual([22, 17, idx('rain')]);
+    expect([result.stored, result.approximated]).toEqual([4, 1]);
     db.close();
   });
 
@@ -787,17 +810,50 @@ describe('읽기 경로 — resolveRegionVariantIndex', () => {
     db.close();
   });
 
-  it('오늘 극값이 원천에 없고 이어받을 행도 없으면 null(추측 금지) — 슬롯이 적어 둔 오늘 행이 있으면 그것을 읽는다', async () => {
+  it('오늘 극값이 원천에 없고 이어받을 행도 없으면(표가 빈 첫날) 남은 시각의 근사값으로 계산해 적는다 — 다음 요청은 DB 한 번', async () => {
     const db = await freshDb();
     const calls = stubSources();
-    // 17:30 KST 의 1700 회차 — 오늘은 TMX·TMN 이 없다.
-    expect(await resolveRegionVariantIndex(() => asExecutor(db), region('kr-seoul'), '2026-10-01', { now: AFTER_1700, kmaServiceKey: KEY })).toBeNull();
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const read = () =>
+      resolveRegionVariantIndex(() => asExecutor(db), region('kr-seoul'), '2026-10-01', { now: AFTER_1700, kmaServiceKey: KEY });
+    // 17:30 KST 의 1700 회차 — 오늘은 TMX·TMN 이 없다. 회귀: 예전에는 null 이고 적지도 않아 요청마다 원천을 다시 불렀다.
+    expect(await read()).toBe(idx('nice'));
     expect(calls).toHaveLength(1);
+    const row = (await rowsOf(db, 'kr-seoul'))[0]!;
+    // 18~23시 TMP 의 최대·최소(19·15) — 근사값임을 로그로 남긴다.
+    expect([row.target_date, row.temp_max, row.temp_min, row.computed_at]).toEqual(['2026-10-01', 19, 15, AFTER_1700.toISOString()]);
+    const approxLines = log.mock.calls.map(([l]) => String(l)).filter((l) => l.includes('"today_approx"'));
+    expect(approxLines.map((l) => JSON.parse(l))).toEqual([
+      expect.objectContaining({ at: 'weather.region_daily', op: 'today_approx', source: 'kma' }),
+    ]);
+    expect(await read()).toBe(idx('nice'));
+    expect(calls).toHaveLength(1);
+    db.close();
+  });
+
+  it('아침 슬롯이 적어 둔 오늘 행이 있으면 원천을 부르지 않고 그것을 읽는다 — 근사값보다 먼저다', async () => {
+    const db = await freshDb();
+    const calls = stubSources();
     // 아침 슬롯이 적어 둔 오늘 행(11시간 전) — 그대로 읽힌다. 읽기 경로의 행 나이(36h)와 이어받기 나이(36h)가
-    // 같아서, 오늘 행은 언제나 슬롯이 이어받기로 만들어 둔 것을 읽는다.
+    // 같아서, 36시간 안의 행이 있으면 여기서 끝나고 근사값까지 가지 않는다.
     await insertRow(db, 'kr-seoul', '2026-10-01', '2026-09-30T21:05:00.000Z', { variant: 2, min: 1, max: 9 });
     expect(await resolveRegionVariantIndex(() => asExecutor(db), region('kr-seoul'), '2026-10-01', { now: AFTER_1700, kmaServiceKey: KEY })).toBe(2);
-    expect(calls).toHaveLength(1);
+    expect(calls).toHaveLength(0);
+    db.close();
+  });
+
+  it('일본 오늘 — 05시 발표 뒤면 근사한 최저로 해결, 17시 발표 뒤에는 오늘 기온이 하나도 없어 그대로 null', async () => {
+    const db = await freshDb();
+    stubSources({ body: { jma: jmaMorningBody } });
+    const morning = new Date('2026-10-01T21:10:00Z'); // 06:10 JST 10-02 — 05시 발표
+    expect(await resolveRegionVariantIndex(() => asExecutor(db), region('jp-tokyo'), '2026-10-02', { now: morning })).toBe(
+      idx('rain'),
+    );
+    expect((await rowsOf(db, 'jp-tokyo')).map((r) => [r.target_date, r.temp_max, r.temp_min])).toEqual([['2026-10-02', 22, 17]]);
+    // 17:30 JST 10-01 — 17시 발표에는 오늘 최고를 대신할 값이 없다(최저만 근사한다). 적지도 않는다.
+    stubSources();
+    expect(await resolveRegionVariantIndex(() => asExecutor(db), region('jp-tokyo'), '2026-10-01', { now: AFTER_1700 })).toBeNull();
+    expect((await rowsOf(db, 'jp-tokyo')).map((r) => r.target_date)).toEqual(['2026-10-02']);
     db.close();
   });
 

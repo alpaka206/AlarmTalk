@@ -16,6 +16,9 @@
  * - **읽기**(`resolveRegionVariantIndex`): 행이 36시간 안에 계산한 것이면 그대로. 아니면 대상 날짜가 지역의
  *   [오늘, +3] 안일 때만 원천을 **한 번** 부르고(밖이면 네트워크 없이 null, 호출 전체의 마감 5초), 계산되면 적고
  *   돌려준다. ⚠ 표가 없으면(배포 → 마이그레이션 창) 저장 없이 계산만 한다.
+ * - **오늘의 빈 극값**: 원천이 오늘 최저·최고를 주지 않으면 36시간 안의 저장 행에서 이어받고, 그런 행이 없으면
+ *   어댑터의 근사값(그날 남은 시각의 값)으로 메운다(`finalizeSourceDay`). 읽기 경로는 36시간 안의 행이면 위에서
+ *   이미 돌려주므로 사실상 언제나 근사값 쪽이다 — 표가 빈 첫날·새 지역·두 슬롯이 연달아 실패한 뒤에도 오늘이 나온다.
  */
 import { WeatherRegions, type WeatherCountryCode, type WeatherRegion } from '@alarmtalk/shared';
 import type { InStatement } from '@libsql/client';
@@ -219,6 +222,10 @@ export async function resolveRegionVariantIndex(
   });
   if (!input) return null;
   const variantIndex = resolvePrerenderWeatherIndex(input);
+  if (input.approximated) {
+    // 오늘 극값을 근사값으로 메웠다(스펙 5-1 「오늘 행의 극값을 메운다」) — 첫날·새 지역에서 몇 번인지 보려고 남긴다.
+    logStructured('info', { at: 'weather.region_daily', op: 'today_approx', source: region.source.kind });
+  }
 
   if (db && isStorableDate(today, targetDate)) {
     try {
@@ -253,8 +260,9 @@ export type OpenWeatherSlot = {
   /** 계산해 적는 날짜 — 저녁: 내일~+3, 아침: 오늘~+3. */
   dates: string[];
   /**
-   * due 판정 날짜 = `dates` ∩ [내일, +3]. **오늘은 뺀다** — 이어받을 값이 없어 오늘을 구조적으로 못 만드는
-   * 경우(KR 0500 의 TMN, JP 05시 발표의 오늘 최저) 무한 재시도를 막는다. 오늘은 아침 슬롯에 가져올 때 함께 쓴다.
+   * due 판정 날짜 = `dates` ∩ [내일, +3]. **오늘은 뺀다** — 오늘 행은 전날 저녁 슬롯이 '내일' 로 적어 두고, 오늘
+   * 극값이 원천에 없으면 이어받기·근사값으로 메우지만, 그래도 못 만드는 날(근사할 칸마저 빠진 응답)에 슬롯 내내 다시
+   * 부르지 않게 한다. 오늘은 아침 슬롯에 가져올 때 함께 쓴다.
    */
   dueDates: string[];
   /** 이 틱이 슬롯의 마지막 틱(현지 분 ≥ 55)인가. */
@@ -335,6 +343,8 @@ export type WeatherRegionRefreshResult = {
   attempted: number;
   /** upsert 한 (지역, 날짜) 수. */
   stored: number;
+  /** 그 가운데 오늘 극값을 근사값으로 메운 행 수(`finalizeSourceDay` 의 `approximated`). 적지 못했으면 0. */
+  approximated: number;
   /** 원천 실패(일시·설정). 예산 소진은 넣지 않는다. */
   failures: WeatherRegionFailure[];
   /** 예산(이 틱의 fetch 상한·워커 subrequest 한도)이 다해 남은 지역을 다음 틱에 넘겼다. */
@@ -381,6 +391,7 @@ export async function refreshWeatherRegionDaily(
     due: 0,
     attempted: 0,
     stored: 0,
+    approximated: 0,
     failures: [],
     deferred: 0,
     budgetExhausted: false,
@@ -443,6 +454,7 @@ export async function refreshWeatherRegionDaily(
   const disabled = new Set<WeatherSourceKind>();
   const computedAt = now.toISOString();
   const statements: InStatement[] = [];
+  let approximated = 0;
   const failedReasons = new Map<string, WeatherRegionFailure>();
   let next = 0;
   const worker = async () => {
@@ -504,6 +516,7 @@ export async function refreshWeatherRegionDaily(
           });
           if (!input) continue;
           statements.push(upsertStatement(slot.region.key, date, input, resolvePrerenderWeatherIndex(input), computedAt));
+          if (input.approximated) approximated += 1;
           written.add(key);
         }
         if (!isDone(slot)) {
@@ -534,6 +547,7 @@ export async function refreshWeatherRegionDaily(
         ...statements,
       ]);
       result.stored = statements.length;
+      result.approximated = approximated;
     } catch (err) {
       if (!isSubrequestLimitError(err)) throw err;
       result.budgetExhausted = true;
