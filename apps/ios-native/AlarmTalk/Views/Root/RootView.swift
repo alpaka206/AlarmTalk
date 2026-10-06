@@ -243,9 +243,9 @@ struct RootView: View {
                 // ⚠ 삭제 문장은 **서버가 대상이라고 할 때만** 싣는다(`deletes_voices_at_end`).
                 // 보류 중인 구독 행이 남은 계정은 종료 전환 대상이 아니라 목소리가 지워지지 않는다.
                 if shown.promo.deletesVoicesAtEnd {
-                    Text("\(days.lastDay)까지 개인 플랜을 무료로 쓸 수 있어요. \(days.firstFreeDay)부터는 무료 플랜으로 돌아가고, 등록한 목소리는 3일 보관 후 삭제돼요.")
+                    Text("\(String(days.lastDay))까지 개인 플랜을 무료로 쓸 수 있어요. \(String(days.firstFreeDay))부터는 무료 플랜으로 돌아가고, 등록한 목소리는 3일 보관 후 삭제돼요.")
                 } else {
-                    Text("\(days.lastDay)까지 개인 플랜을 무료로 쓸 수 있어요. \(days.firstFreeDay)부터는 무료 플랜으로 돌아가요.")
+                    Text("\(String(days.lastDay))까지 개인 플랜을 무료로 쓸 수 있어요. \(String(days.firstFreeDay))부터는 무료 플랜으로 돌아가요.")
                 }
             }
         }

@@ -23,7 +23,7 @@ import xml.etree.ElementTree as ET
 
 from localization_lexers import HANGUL, SwiftLexer, kotlin_literals
 from localization_formats import android_format_mismatches, catalog_format_mismatches, line_breaks
-from localization_swift_types import SwiftTypes
+from localization_swift_types import SwiftTypes, innermost_delimiters
 
 ROOT = Path(__file__).resolve().parents[1]
 LANGUAGES = ("en", "ja")
@@ -107,20 +107,141 @@ def delimiter_pairs(code: str) -> dict[int, int]:
     return pairs
 
 
+def split_top_level(text: str, separator: str, brackets: str = "([{") -> list[str]:
+    """Split at separators outside nested brackets (types also nest `<>`)."""
+    openers, closers = brackets, {"(": ")", "[": "]", "{": "}", "<": ">"}
+    closing = "".join(closers[b] for b in openers)
+    parts, depth, last, i = [], 0, 0, 0
+    while i < len(text):
+        if text.startswith("->", i):
+            i += 2  # A function type arrow is not a closing `>`.
+            continue
+        char = text[i]
+        if char in openers:
+            depth += 1
+        elif char in closing:
+            depth -= 1
+        elif char == separator and depth == 0:
+            parts.append(text[last:i])
+            last = i + 1
+        i += 1
+    parts.append(text[last:])
+    return parts
+
+
+def parse_type(text: str) -> tuple:
+    """A declared type's shape: key, array, dict(key, value), tuple(...) or other."""
+    text = text.strip()
+    while text.endswith(("?", "!")):
+        text = text[:-1].rstrip()
+    if "->" in text:
+        return ("other",)
+    if re.fullmatch(LOCALIZED_TYPE, text):
+        return ("key",)
+    generic = re.fullmatch(r"(?:Swift\.)?(Array|ContiguousArray|Set|Dictionary)\s*<(.*)>", text, re.S)
+    if generic:
+        arguments = split_top_level(generic[2], ",", "([<")
+        if generic[1] == "Dictionary":
+            return ("dict", parse_type(arguments[0]), parse_type(arguments[1])) if len(arguments) == 2 else ("other",)
+        return ("array", parse_type(arguments[0])) if len(arguments) == 1 else ("other",)
+    if text.startswith("[") and text.endswith("]"):
+        halves = split_top_level(text[1:-1], ":", "([<")
+        return ("dict", parse_type(halves[0]), parse_type(halves[1])) if len(halves) == 2 else ("array", parse_type(text[1:-1]))
+    if text.startswith("(") and text.endswith(")"):
+        elements = [re.sub(r"^\s*\w+\s*:", "", element) for element in split_top_level(text[1:-1], ",", "([<")]
+        return parse_type(elements[0]) if len(elements) == 1 else ("tuple", tuple(parse_type(e) for e in elements))
+    return ("other",)
+
+
+def holds_key(shape: tuple) -> bool:
+    if shape[0] == "key":
+        return True
+    children = shape[1] if shape[0] == "tuple" else shape[1:]
+    return any(holds_key(child) for child in children)
+
+
+def read_type(code: str, start: int, stops: str) -> int:
+    """End of a type annotation that begins at start."""
+    depth, i = 0, start
+    while i < len(code):
+        if code.startswith("->", i):
+            i += 2
+            continue
+        char = code[i]
+        if char in "([<":
+            depth += 1
+        elif char in ")]>":
+            if not depth:
+                break
+            depth -= 1
+        elif not depth and char in stops:
+            break
+        i += 1
+    return i
+
+
+def key_element(source: str, literal: dict, value_start: int, shape: tuple) -> bool:
+    """True if the literal is a direct element at a key-typed position of the
+    collection/tuple value that starts at value_start, e.g. `["Settings"]`."""
+    containers = [(kind, pos) for kind, pos in literal["stack"] if pos >= value_start]
+    if not containers or containers[0][1] != value_start or any(kind not in "([" for kind, _ in containers):
+        return False
+    text = source[value_start:literal["start"]]
+    code = code_only(text, SwiftLexer(text).run())
+    for index, (kind, pos) in enumerate(containers):
+        end = containers[index + 1][1] - value_start if index + 1 < len(containers) else len(code)
+        elements = split_top_level(code[pos - value_start + 1:end], ",")
+        element = elements[-1]
+        if kind == "[" and shape[0] == "array":
+            shape = shape[1]
+        elif kind == "[" and shape[0] == "dict":
+            halves = split_top_level(element, ":")
+            shape, element = (shape[2], halves[1]) if len(halves) == 2 else (shape[1], element)
+        elif kind == "(" and shape[0] == "tuple" and len(elements) <= len(shape[1]):
+            shape, element = shape[1][len(elements) - 1], re.sub(r"^\s*\w+\s*:", "", element)
+        else:
+            return False
+        if element.strip():
+            return False  # The literal is only part of this element's expression.
+    return shape == ("key",) and source[literal["end"]:].lstrip()[:1] in {",", "]", ")", ":"}
+
+
 class Declarations:
     """File-scoped lookup wins for private types with the same name."""
     def __init__(self, sources: dict[str, str]):
         self.parameters: dict[tuple[str, str], set[str]] = {}
         self.returns: dict[str, list[tuple[int, int]]] = {}
+        # Collection/tuple shapes holding a key: `[LocalizedStringKey]`,
+        # `[String: LocalizedStringKey]`, `(LocalizedStringKey, Int)`.
+        self.collection_parameters: dict[tuple[str, str], dict[str, tuple]] = {}
+        self.collection_values: dict[str, list[tuple[int, int, tuple]]] = {}
         for path, source in sources.items():
             literals = SwiftLexer(source, path).run()
             code = code_only(source, literals)
             pairs = delimiter_pairs(code)
+
+            def collection_shape(start: int, stops: str) -> tuple[tuple | None, int]:
+                end = read_type(code, start, stops)
+                shape = parse_type(code[start:end])
+                return (shape if shape[0] != "key" and holds_key(shape) else None), end
+
+            spans = sorted(pairs.items())
             for match in re.finditer(r"\b(?:struct|class)\s+(\w+)[^\n{]*\{", code):
                 start = match.end() - 1
                 end = pairs.get(start, start)
-                properties = set(re.findall(r"\b(?:let|var)\s+(\w+)\s*:\s*" + LOCALIZED_TYPE, code[start:end]))
-                self.parameters[(path, match[1])] = properties
+                # Only stored properties declared directly in the body become
+                # memberwise parameters; a method's local `let title` does not.
+                members = [member for member in re.finditer(r"\b(?:let|var)\s+(\w+)\s*:\s*", code[start:end])]
+                owner = innermost_delimiters(spans, [start + member.start() for member in members])
+                members = [member for member in members if owner[start + member.start()] == start]
+                self.parameters[(path, match[1])] = {member[1] for member in members
+                                                     if re.compile(LOCALIZED_TYPE + r"\b").match(code, start + member.end())}
+                shapes = {}
+                for member in members:
+                    shape, _ = collection_shape(start + member.end(), "={}\n;,")
+                    if shape:
+                        shapes[member[1]] = shape
+                self.collection_parameters[(path, match[1])] = shapes
             for match in re.finditer(r"\bfunc\s+(\w+)\s*\(", code):
                 start = match.end() - 1
                 end = pairs.get(start, start)
@@ -129,6 +250,39 @@ class Declarations:
                 key = (path, match[1])
                 names = set(names)
                 self.parameters[key] = self.parameters[key] & names if key in self.parameters else names
+                shapes = {}
+                offset = start + 1
+                for part in split_top_level(arguments, ","):
+                    label = re.match(r"\s*(\w+)(?:\s+\w+)?\s*:\s*", part)
+                    if label:
+                        shape, _ = collection_shape(offset + label.end(), "=,")
+                        if shape:
+                            shapes[label[1]] = shape
+                    offset += len(part) + 1
+                # Overloads must agree, as for scalar parameters.
+                previous = self.collection_parameters.get(key)
+                self.collection_parameters[key] = {k: v for k, v in shapes.items() if previous is None or previous.get(k) == v}
+            values = []
+            for match in re.finditer(r"\b(?:let|var)\s+\w+\s*:\s*|->\s*", code):
+                shape, end = collection_shape(match.end(), "={}\n;,")
+                if not shape:
+                    continue
+                following = end
+                while following < len(code) and code[following] in " \t":
+                    following += 1
+                if code.startswith("=", following) and not code.startswith("==", following):
+                    starts = [following + 1]
+                elif code.startswith("{", following) and following in pairs:
+                    body = code[following:pairs[following]]
+                    starts = [following + 1] + [following + m.end() for m in re.finditer(r"\breturn\b", body)]
+                else:
+                    continue
+                for value in starts:
+                    while value < len(code) and code[value].isspace():
+                        value += 1
+                    if value < len(code) and code[value] in "[(" and value in pairs:
+                        values.append((value, pairs[value] + 1, shape))
+            self.collection_values[path] = values
             spans = []
             pattern = r"(?:\b(?:var|let)\s+\w+\s*:\s*" + LOCALIZED_TYPE + r"\??|->\s*" + LOCALIZED_TYPE + r")\s*"
             for match in re.finditer(pattern, code):
@@ -139,6 +293,32 @@ class Declarations:
                     end = code.find("\n", pos)
                     spans.append((pos, end if end >= 0 else len(code)))
             self.returns[path] = spans
+
+    def collection_shape(self, path: str, call: str, argument: str) -> tuple | None:
+        declared = [key for key in self.parameters.keys() | self.collection_parameters.keys() if key[1] == call]
+        if (path, call) in declared:
+            declared = [(path, call)]
+        shapes = {self.collection_parameters.get(key, {}).get(argument) for key in declared}
+        return next(iter(shapes)) if len(shapes) == 1 else None
+
+    def collection_element(self, path: str, source: str, literal: dict) -> bool:
+        """A literal element of a value typed `[LocalizedStringKey]` and the like."""
+        for start, end, shape in self.collection_values.get(path, ()):
+            if start <= literal["start"] < end and key_element(source, literal, start, shape):
+                return True
+        frames = literal["stack"]
+        for index in range(len(frames) - 1, -1, -1):
+            kind, opening = frames[index]
+            call = call_at(source, opening) if kind == "(" else ""
+            if not call or not (call[-1].isalnum() or call[-1] == "_"):
+                continue  # A tuple or collection, not the call that receives the value.
+            if index + 1 == len(frames):
+                return False  # A direct scalar argument; the scalar rules apply.
+            value_start = frames[index + 1][1]
+            label = re.fullmatch(r"(\w+)\s*:", argument_prefix(source, {"start": value_start}, opening))
+            shape = label and self.collection_shape(path, call.split(".")[-1], label[1])
+            return bool(shape) and key_element(source, literal, value_start, shape)
+        return False
 
     def accepts(self, path: str, call: str, argument: str) -> bool:
         local = self.parameters.get((path, call))
@@ -259,6 +439,8 @@ def localized_context(path: str, source: str, literal: dict, declarations: Decla
         argument = re.match(r"(\w+)\s*:", prefix)
         if argument and prefix.endswith((":", "?")) and declarations.accepts(path, call, argument[1]):
             return True, None
+    if declarations.collection_element(path, source, literal):
+        return True, None
     for start, end in declarations.returns.get(path, []):
         if start < literal["start"] < end:
             if stack and stack[-1][1] > start:
@@ -287,10 +469,81 @@ def string_in_key_parameter(path: str, source: str, literal: dict, declarations:
     return bool(argument and declarations.accepts(path, call, argument[1]))
 
 
-def swift_ui_context(source: str, code: str, literal: dict) -> bool:
+# Closures whose result is the call's value (`value.map { _ in "On" } ?? …`).
+SWIFT_VALUE_CLOSURES = {"map", "flatMap", "compactMap"}
+# A line starting with one of these continues the previous expression.
+SWIFT_CONTINUATION = re.compile(r"\?\?|[?:.]|&&|\|\||[-+*/%]|[=!]=|[<>]=?|else\b|as\b|is\b")
+
+
+def mark_literals(source: str, literals: list[dict]) -> str:
+    """Code with literals as visible placeholders (not spaces) for line analysis."""
+    out = list(source)
+    for literal in literals:
+        out[literal["start"]:literal["end"]] = '"' * (literal["end"] - literal["start"])
+    return blank_comments("".join(out))
+
+
+def swift_closure_value(marked: str, opening: int, literal: dict) -> bool:
+    """True if the literal is the result of a value-producing closure.
+
+    Single-expression closures return their expression; otherwise only a
+    `return` statement does. Callbacks (Button actions, onTapGesture) are not
+    value closures and stop the display-context search.
+    """
+    depth, close = 0, None
+    for i in range(opening, len(marked)):
+        if marked[i] in "([{":
+            depth += 1
+        elif marked[i] in ")]}":
+            depth -= 1
+            if not depth:
+                close = i
+                break
+    if close is None:
+        return False
+    callee = call_at(marked, opening)
+    end = opening
+    while end > 0 and marked[end - 1].isspace():
+        end -= 1
+    if not callee and end and marked[end - 1] == "(":
+        callee = call_at(marked, end - 1)  # `value.map({ … })`
+    if callee.split(".")[-1] not in SWIFT_VALUE_CLOSURES and not marked.startswith("(", close + 1):
+        return False  # Neither a value closure nor an immediately invoked one.
+    body = opening + 1
+    header = re.match(r"\s*(?!(?:for|if|guard|switch|while|let|var|return)\b)(?:\[[^\]\n]*\]\s*)?(?:\([^)\n]*\)|[\w\s,]*?)\s*\bin\b",
+                      marked[body:close])
+    if header:
+        body += header.end()
+
+    def next_code(i):
+        while i < close and marked[i].isspace():
+            i += 1
+        return i
+
+    starts, depth, i = [next_code(body)], 0, next_code(body)
+    while i < close:
+        char = marked[i]
+        if char in "([{":
+            depth += 1
+        elif char in ")]}":
+            depth -= 1
+        elif not depth and char in "\n;":
+            following = next_code(i + 1)
+            if following < close and (char == ";" or not SWIFT_CONTINUATION.match(marked, following)):
+                starts.append(following)
+            i = following
+            continue
+        i += 1
+    own = max(start for start in starts if start <= literal["start"])
+    return bool(re.match(r"return\b", marked[own:])) or len(starts) == 1
+
+
+def swift_ui_context(source: str, code: str, literal: dict, marked: str | None = None) -> bool:
     """Plain String display arguments need lookup regardless of source language."""
     for kind, opening in reversed(literal["stack"]):
         if kind == "{":
+            if marked is not None and swift_closure_value(marked, opening, literal):
+                continue  # The closure's result is the enclosing argument.
             break  # A UI callback's body is a separate context (e.g. a log).
         if kind != "(":
             continue
@@ -407,11 +660,37 @@ def plural_categories_missing(node, required: set[str]) -> bool:
     return False
 
 
+def empty_variation_branch(node) -> bool:
+    """A declared variation, category or substitution with no translated leaf.
+
+    Leaves alone cannot show this: `"other": {}` next to a valid top-level unit
+    has nothing to yield, yet that category renders nothing at runtime.
+    """
+    if isinstance(node, dict):
+        for key, child in node.items():
+            if key == "variations":
+                if not isinstance(child, dict) or not child or any(
+                        not isinstance(branches, dict) or not branches
+                        or any(not list(string_units(branch)) for branch in branches.values())
+                        for branches in child.values()):
+                    return True
+            elif key == "substitutions":
+                if not isinstance(child, dict) or not child or any(
+                        not isinstance(meta, dict) or not isinstance(meta.get("variations"), dict)
+                        for meta in child.values()):
+                    return True
+            if empty_variation_branch(child):
+                return True
+    elif isinstance(node, list):
+        return any(empty_variation_branch(child) for child in node)
+    return False
+
+
 def translated_leaves(node) -> bool:
     leaves = list(string_units(node))
-    return bool(leaves) and all(leaf.get("state") == "translated"
-                                and isinstance(leaf.get("value"), str)
-                                and leaf["value"].strip() for leaf in leaves)
+    return bool(leaves) and not empty_variation_branch(node) and all(
+        leaf.get("state") == "translated" and isinstance(leaf.get("value"), str) and leaf["value"].strip()
+        for leaf in leaves)
 
 
 def catalog_issues(root: Path) -> list[Issue]:
@@ -716,6 +995,7 @@ def audit(root: Path, rules: list[tuple[str, str, str, str]]) -> list[Issue]:
     for path, source in sources.items():
         literals = SwiftLexer(source, path).run()
         code = code_only(source, literals)
+        marked = mark_literals(source, literals)
         for literal in literals:
             value = literal_value(literal)
             localized, kind = localized_context(path, source, literal, declarations)
@@ -723,7 +1003,7 @@ def audit(root: Path, rules: list[tuple[str, str, str, str]]) -> list[Issue]:
                 issues.append(Issue(path, literal["line"], value, "String(localized:) passed to a key/resource parameter; retain its literal key"))
             if literal["debug"] or kind == "comment" or value == "" or allowed(path, value, rules):
                 continue
-            ui_copy = not HANGUL.search(value) and not localized and any(char.isalpha() for kind, part in literal["parts"] if kind == "lit" for char in part) and swift_ui_context(source, code, literal)
+            ui_copy = not HANGUL.search(value) and not localized and any(char.isalpha() for kind, part in literal["parts"] if kind == "lit" for char in part) and swift_ui_context(source, code, literal, marked)
             if not HANGUL.search(value) and not localized and not ui_copy:
                 continue
             calls = [call_at(source, pos) for token, pos in literal["stack"] if token == "("]
@@ -925,6 +1205,11 @@ class SelfTests(unittest.TestCase):
                 ('struct A { let value: [Int] }\nstruct B { let value = 3 }', None),
                 ('struct A { let value: (Item) -> Label }\nstruct B { let value: Int }', None),
                 ('struct A { var value: Int? }\nstruct B { let value = 3 }', 'lld'),
+                # Parameters, locals and tuple labels are not members of any type.
+                ('func f(value: String) {}', None),
+                ('struct A { func f() { let value: String = name } }', None),
+                ('func days() -> (value: String, other: Int)? { nil }', None),
+                ('struct B { let value: Int }\nfunc f(value: String) {}\nfunc g() { var value: String = "" }', 'lld'),
                 # A function-local inference is not a member of any type.
                 ('struct B { let value: String }\nfunc local() { let value = 3 }', '@'),
                 ('class B { class var other: Int { 1 }\n let value = "x" }', '@')]:
@@ -1029,6 +1314,14 @@ class SelfTests(unittest.TestCase):
         literal = SwiftLexer(source).run()[0]
         self.assertFalse(string_in_key_parameter("a.swift", source, literal, Declarations({"a.swift": source})))
 
+    def test_memberwise_parameters_are_direct_stored_properties(self):
+        source = 'struct Row {\n    let title: String\n    func f() { let title: LocalizedStringKey = "x" }\n}'
+        self.assertFalse(Declarations({"a.swift": source}).accepts("a.swift", "Row", "title"))
+        source = 'struct Row {\n    let title: LocalizedStringKey\n    func f(title: String) {}\n}'
+        self.assertTrue(Declarations({"a.swift": source}).accepts("a.swift", "Row", "title"))
+        source = 'struct Row {\n    let titles: [String]\n    func f() { let titles: [LocalizedStringKey] = [] }\n}'
+        self.assertIsNone(Declarations({"a.swift": source}).collection_shape("a.swift", "Row", "titles"))
+
     def test_overloads_are_conservative_and_private_declarations_are_local(self):
         sources = {"a.swift": 'struct Row { let title: String }', "b.swift": 'struct Row { let title: LocalizedStringKey }'}
         declarations = Declarations(sources)
@@ -1092,6 +1385,36 @@ class SelfTests(unittest.TestCase):
                                         and i.reason.startswith(language) for i in issues))
             file.write_text(json.dumps({"strings": {"CFBundleDisplayName": {"shouldTranslate": False}}}), encoding="utf-8")
             self.assertFalse(any(i.path == relative for i in catalog_issues(root)))
+            file.write_text(original, encoding="utf-8")
+
+    def test_declared_variation_branches_need_a_translated_leaf(self):
+        def leaf(value):
+            return {"stringUnit": {"state": "translated", "value": value}}
+        def substitution(variations):
+            meta = {"argNum": 1, "formatSpecifier": "lld"}
+            if variations is not None:
+                meta["variations"] = variations
+            return {"stringUnit": {"state": "translated", "value": "%#@count@"}, "substitutions": {"count": meta}}
+        english = {"one": leaf("%arg alarm"), "other": leaf("%arg alarms")}
+        valid = [substitution({"plural": english}), {"variations": {"plural": english}},
+                 {"variations": {"device": {"iphone": leaf("%lld alarms"), "other": leaf("%lld alarms")}}}]
+        broken = [substitution({"plural": {"one": leaf("%arg alarm"), "other": {}}}),
+                  substitution({"plural": {"one": leaf("%arg alarm"), "other": {"variations": {"device": {}}}}}),
+                  substitution({"plural": {}}), substitution({}), substitution(None),
+                  {"stringUnit": {"state": "translated", "value": "%#@count@"}, "substitutions": {}},
+                  {"variations": {"plural": {"one": leaf("%lld alarm"), "other": {}}}},
+                  {"variations": {"plural": {}}}, {"variations": {}},
+                  {"variations": {"device": {"iphone": leaf("%lld alarms"), "other": {"stringUnit": "x"}}}}]
+        root = self.fixture(source="", key="alarm.count")
+        for relative in (*CATALOGS, "apps/ios-native/AlarmTalk/InfoPlist.xcstrings"):
+            file = root / relative
+            original = file.read_text(encoding="utf-8")
+            for english_unit, fails in [(unit, False) for unit in valid] + [(unit, True) for unit in broken]:
+                data = json.loads(original)
+                data["strings"]["alarm.count"]["localizations"]["en"] = english_unit
+                file.write_text(json.dumps(data), encoding="utf-8")
+                issues = [i for i in catalog_issues(root) if i.path == relative and i.reason == "en translation missing, unfinished or empty"]
+                self.assertEqual(bool(issues), fails, (relative, english_unit))
             file.write_text(original, encoding="utf-8")
 
     def test_translated_catalog_leaves_cannot_be_blank(self):
@@ -1208,6 +1531,44 @@ class SelfTests(unittest.TestCase):
                        'Button("안녕") { print("Debug") }']:
             root = self.fixture(source=source)
             self.assertEqual(audit(root, []), [], source)
+
+    def test_swift_value_closures_flow_into_display_sinks(self):
+        declarations = 'struct Plain { let title: String }\n'
+        for source, flagged in [
+                ('Text(verbatim: value.map { _ in "Enabled" } ?? "Disabled")', {"Enabled", "Disabled"}),
+                ('Text(verbatim: items.map { "Item \\($0)" }.joined())', {"Item \\($0)"}),
+                ('Plain(title: value.map({ _ in "Enabled" }) ?? other)', {"Enabled"}),
+                ('Text(verbatim: { "Ready" }())', {"Ready"}),
+                ('Text(verbatim: value.flatMap { item in\n    item.isEmpty\n        ? nil\n        : "Some"\n} ?? other)', {"Some"}),
+                ('Text(verbatim: value.map { item -> String in\n    log("Debug")\n    return "Shown"\n} ?? other)', {"Shown"}),
+                ('Text(verbatim: value.map { _ in log("Debug"); return label } ?? other)', set()),
+                ('Text(verbatim: items.filter { $0 == "x" }.joined())', set()),
+                ('Button(action: { save("Debug") }) { Text("안녕") }', set()),
+                ('Text(verbatim: value.map { item in\n    log("Debug")\n    item\n} ?? other)', set())]:
+            root = self.fixture(source=declarations + source)
+            values = {i.value for i in audit(root, []) if "not in a proven localization context" in i.reason}
+            self.assertEqual(values, flagged, source)
+
+    def test_collection_key_declarations_are_lookups(self):
+        declarations = ('struct Row { let titles: [LocalizedStringKey] }\n'
+                        'func row(titles: [LocalizedStringKey], ids: [String]) {}\n')
+        for source, keys in [
+                ('let tabs: [LocalizedStringKey] = ["Settings", "Alarms"]', {"Settings", "Alarms"}),
+                ('let tabs: [LocalizedStringKey]? = [\n    "Settings",\n    "Alarms",\n]', {"Settings", "Alarms"}),
+                ('let tabs: Array<LocalizedStringResource> = ["Settings"]', {"Settings"}),
+                ('let names: [String: LocalizedStringKey] = ["home": "Home"]', {"Home"}),
+                ('let names: [LocalizedStringKey: String] = ["Home": "home"]', {"Home"}),
+                ('let rows: [(LocalizedStringKey, Int)] = [("Title", 1), ("Other", 2)]', {"Title", "Other"}),
+                ('let row: (title: LocalizedStringKey, id: String) = (title: "Title", id: "row")', {"Title"}),
+                ('var tabs: [LocalizedStringKey] { ["Settings"] }', {"Settings"}),
+                ('func tabs() -> [LocalizedStringResource] {\n    if flag { return ["Settings"] }\n    return ["Alarms"]\n}', {"Settings", "Alarms"}),
+                ('Row(titles: ["Settings"])', {"Settings"}),
+                ('row(titles: ["Settings"], ids: ["settings"])', {"Settings"}),
+                ('let ids: [String] = ["settings"]', set()),
+                ('let tabs: [LocalizedStringKey] = flag ? first : second', set())]:
+            root = self.fixture(source=declarations + source)
+            missing = {i.value for i in audit(root, []) if "key missing" in i.reason}
+            self.assertEqual(missing, keys, source)
 
     def test_android_format_positions_types_and_each_leaf(self):
         cases = [('Hello %1$s: %2$d', '%2$d: %1$s', False),

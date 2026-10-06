@@ -45,6 +45,8 @@ def render_substitutions(value, substitutions, path):
         argument = "%{}${}".format(meta.get("argNum"), meta.get("formatSpecifier"))
         token = re.compile(r"%(?:\d+\$)?#@" + re.escape(name) + "@")
         choices = catalog_values({key: child for key, child in meta.items() if key == "variations"})
+        if not choices:
+            continue  # Leave the token; it then fails to match the source.
         rendered = {base + ("substitutions", name) + leaf_path: token.sub(lambda _: leaf.replace("%arg", argument), text)
                     for base, text in rendered.items() for leaf_path, leaf in choices.items()}
     return rendered

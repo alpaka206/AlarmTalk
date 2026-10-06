@@ -13,12 +13,12 @@ TYPE_BODY = re.compile(r"\b(?:struct|class|enum|extension|actor|protocol)\s+[^{}
 NOT_TYPE_HEADER = re.compile(r"\b(?:func|var|let|init|subscript|case)\b|\(")
 
 
-def innermost_braces(braces, positions):
-    """Map each position to the opening of its innermost enclosing brace."""
+def innermost_delimiters(spans, positions):
+    """Map each position to the opening of its innermost enclosing span."""
     result, stack, index = {}, [], 0
     for position in sorted(positions):
-        while index < len(braces) and braces[index][0] < position:
-            opening, closing = braces[index]
+        while index < len(spans) and spans[index][0] < position:
+            opening, closing = spans[index]
             while stack and stack[-1][1] < opening:
                 stack.pop()
             stack.append((opening, closing))
@@ -75,27 +75,25 @@ class SwiftTypes:
                     value = re.split(r"\s+else\s*\{|\s+\{", source[match.start(2):end], maxsplit=1)[0].strip()
                     entries.append((match[1], match.start(), None, value))
             self.entries[path] = entries
-            for name, pos, typename, value in entries:
-                if typename:
-                    self.members.setdefault(name, set()).add(FORMATS.get(typename))
-            # Inferred stored members (`let value = 3` in a type body) can be read
-            # as `b.value` too; without them an unrelated `A.value: String` would
-            # decide the type of `B.value`.
+            # The member index holds only stored/computed properties declared
+            # directly in a type body. Parameters and locals (`func f(value:
+            # String)`, `let value: Int` in a method) are not reachable as
+            # `b.value` and must not decide its type. Annotated members record
+            # their primitive format, or None for any other type (`Date`,
+            # `[Int]`); inferred members (`let value = 3`) are inferred lazily.
             type_bodies = {match.end() - 1 for match in TYPE_BODY.finditer(code)
                            if not NOT_TYPE_HEADER.search(match[0][:-1])}
-            braces = sorted((a, b) for a, b in delimiters.items() if code[a] == "{")
+            spans = sorted(delimiters.items())
+            annotated = [(match[1], match.start(), FORMATS.get(re.sub(r"[?!\s]+$", "", match[2])))
+                         for match in re.finditer(r"\b(?:let|var)\s+(\w+)\s*:\s*([^=\n{};,)]+)", code)]
             inferred = [(name, pos, value) for name, pos, typename, value in entries if not typename]
-            # Members annotated with a non-primitive type (`let value: Date`) are
-            # same-named declarations too; they make the bare name ambiguous.
-            opaque = [(match[1], match.start()) for match in re.finditer(r"\b(?:let|var)\s+(\w+)\s*:\s*([^=\n{};,)]+)", code)
-                      if re.sub(r"[?!\s]+$", "", match[2]) not in FORMATS]
-            enclosing = innermost_braces(braces, [pos for _, pos, _ in inferred] + [pos for _, pos in opaque])
+            enclosing = innermost_delimiters(spans, [pos for _, pos, _ in annotated] + [pos for _, pos, _ in inferred])
+            for name, pos, conversion in annotated:
+                if enclosing[pos] in type_bodies:
+                    self.members.setdefault(name, set()).add(conversion)
             for name, pos, value in inferred:
                 if enclosing[pos] in type_bodies:
                     self.member_values.setdefault(name, []).append((path, pos, value))
-            for name, pos in opaque:
-                if enclosing[pos] in type_bodies:
-                    self.members.setdefault(name, set()).add(None)
             for match in re.finditer(r"\bfunc\s+(\w+)\s*\([^{}]*?\)\s*(?:async\s*)?(?:throws\s*)?->\s*(\w+)", code):
                 self.functions.setdefault(match[1], set()).add(FORMATS.get(match[2]))
 
