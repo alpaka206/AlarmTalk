@@ -120,7 +120,8 @@ TTS 입력 문장은 구분한다. 카탈로그의 번역 유무와 호출부가
 `python3 scripts/check-hangul-literals.py`는 iOS 앱·위젯·Shared의 Swift 리터럴과 두 카탈로그,
 InfoPlist 카탈로그, Android main의 Kotlin·언어별 XML 리소스를 검사한다. Swift는 정적 SwiftUI 키,
 명시적 번역 조회, 선언에서 확인한 `LocalizedStringKey`·`LocalizedStringResource` 인자와 반환을
-구분한다(`stringLiteral:`·`String.LocalizationValue(…)` 초기화도 키 조회다). 라벨 없는 매개변수
+구분한다(`stringLiteral:`·`String.LocalizationValue(…)` 초기화와 `NSLocalizedString`·`Bundle.localizedString(forKey:)`도
+키 조회다). 키 타입으로 선언한 값의 삼항·`??`·`case` 결과 분기는 모두 키다(비교하는 피연산자는 아니다). 라벨 없는 매개변수
 (`func row(_ title: LocalizedStringKey)`, `init(_ title: …)`)는 위치로 대응한다. 삼항·nil 병합 등으로 일반 `String`이 되는 호출은 각 분기에서 명시적으로 번역한다.
 `NavigationLink`·`Menu`·`DisclosureGroup`·`ProgressView`·`.help`·`.badge`처럼 첫 문자열 인자가 키인 표준 SwiftUI
 초기화·수정자(`.searchable(prompt:)`·`.accessibilityAction(named:)` 포함)도 키 조회로 본다. `[LocalizedStringKey]`·`[String: LocalizedStringKey]`·`(LocalizedStringKey, …)`처럼
@@ -162,7 +163,8 @@ Shared의 키는 두 타깃에 있어야 한다. 한글이 포함됐는지를 �
 `--self-test`를 함께 고친다. `scripts/hangul-literal-allowlist.txt`는 저장값·시드·생성 데이터·로그·
 미리보기·언어의 자기 이름·언어와 무관한 브랜드·TTS 입력·비노출 진단에만 사유를 붙여 허용한다. 허용은 경로와
 리터럴로 정하므로, 같은 값이 `String(localized:)` 같은 번역 조회에 쓰인 자리에는 적용하지 않는다(그 조회는 키를 찾아야 한다).
-코드에서 사라진 허용 항목은 검사가 실패하므로 함께 지운다. 사용자 화면 문구를
+코드에서 사라진 허용 항목은 검사가 실패하므로 함께 지운다. `*` 항목은 그 파일의 리터럴만 허용하고,
+언어 게이트는 별도의 `language-gate` 항목 없이는 허용하지 않는다. 사용자 화면 문구를
 미번역 상태로 허용하지 않는다. 번역 리소스(XML)와 카탈로그는 허용목록에 올릴 수 없다 — 키 단위 예외는
 빈 값·한글·서식 검사까지 함께 끄므로, 예외는 검사 코드에 그 항목만 좁혀 둔다. `scripts/hangul-literal-baseline.txt`는 수동 검토한 분석 예외의
 경로와 리터럴 해시를 기록하는 기준선이다. 새 항목을 추가하지 않으며, 코드에서 사라진 항목도

@@ -121,6 +121,28 @@ def delimiter_pairs(code: str) -> dict[int, int]:
     return pairs
 
 
+def statement_end(code: str, pairs: dict[int, int], start: int) -> int:
+    """End of the Swift expression that starts at start: the first top-level
+    line break whose next line does not continue it (`? "A"`, `: "B"`)."""
+    i = start
+    while i < len(code):
+        if code[i] in "([{" and i in pairs:
+            i = pairs[i] + 1
+            continue
+        if code[i] in ")]};":
+            return i
+        if code[i] == "\n":
+            following = i + 1
+            while following < len(code) and code[following].isspace():
+                following += 1
+            if not SWIFT_CONTINUATION.match(code, following):
+                return i
+            i = following
+            continue
+        i += 1
+    return i
+
+
 def split_top_level(text: str, separator: str, brackets: str = "([{") -> list[str]:
     """Split at separators outside nested brackets (types also nest `<>`)."""
     openers, closers = brackets, {"(": ")", "[": "]", "{": "}", "<": ">"}
@@ -324,8 +346,7 @@ class Declarations:
                 if pos < len(code) and code[pos] == "{":
                     spans.append((pos, pairs.get(pos, pos)))
                 elif pos < len(code) and code[pos] == "=":
-                    end = code.find("\n", pos)
-                    spans.append((pos, end if end >= 0 else len(code)))
+                    spans.append((pos, statement_end(code, pairs, pos + 1)))
             self.returns[path] = spans
 
     def unlabeled_shape(self, path: str, call: str, index: int) -> tuple | None:
@@ -478,8 +499,10 @@ def localized_context(path: str, source: str, literal: dict, declarations: Decla
         prefix = argument_prefix(source, literal, opening)
         if call == "String" and prefix in {"localized:", "defaultValue:"}:
             return True, "default" if prefix == "defaultValue:" else None
-        if call == "localizedString" and prefix == "forKey:":
+        if (call == "localizedString" and prefix == "forKey:") or (call == "NSLocalizedString" and prefix == ""):
             return True, None
+        if call in {"localizedString", "NSLocalizedString"} and prefix in {"value:", "comment:", "tableName:"}:
+            return False, "comment"  # Fallback text, translator note or table name; not a key.
         if call in {"String", "LocalizedStringKey", "LocalizedStringResource"} and prefix == "comment:":
             return False, "comment"
         if call in {"LocalizedStringKey", "LocalizedStringResource"} and prefix in {"", "stringLiteral:", "defaultValue:"}:
@@ -505,7 +528,9 @@ def localized_context(path: str, source: str, literal: dict, declarations: Decla
                 # An inner String helper does not inherit its caller's return type.
                 continue
             previous = source[max(start, source.rfind("\n", start, literal["start"]) + 1):literal["start"]].strip()
-            if previous in {"{", "=", "return"} or re.search(r"\breturn(?:\s+[^;{}]*)?$", previous) or previous.endswith(":"):
+            # The whole value or a result branch (`flag ? "A" : "B"`, `x ?? "A"`,
+            # `case .a: "A"`); not an operand such as `x == "a"`.
+            if previous in {"{", "="} or re.search(r"(?:^|\W)return$", previous) or previous.endswith(("?", ":")):
                 return True, None
     return False, None
 
@@ -653,8 +678,9 @@ def allowed(path: str, value: str, rules: list[tuple[str, str, str, str]]) -> bo
     """An exception names a path and literal. Callers apply it only to
     occurrences that are not localization lookups: a stored contract value
     (`"남성"`) may also appear in `String(localized:)`, and that lookup must
-    still find its catalog key."""
-    return any(fnmatch.fnmatchcase(path, pattern) and (literal == "*" or literal == value)
+    still find its catalog key. A `*` rule covers the file's literals only;
+    the language gate needs its own explicit `language-gate` entry."""
+    return any(fnmatch.fnmatchcase(path, pattern) and (literal == value or (literal == "*" and value != "language-gate"))
                for _, pattern, literal, _ in rules)
 
 
@@ -2244,6 +2270,27 @@ class SelfTests(unittest.TestCase):
         for source in ['let pattern = /\\p{Script=Hangul}/', 'var isKorean = true']:
             root = self.fixture(source=source)
             self.assertTrue(any("filter is forbidden" in i.reason for i in audit(root, [])), source)
+
+    def test_typed_key_branches_and_foundation_lookups(self):
+        for source, keys in [('let title: LocalizedStringKey = flag ? "Settings" : "Alarms"', {"Settings", "Alarms"}),
+                             ('let title: LocalizedStringKey = flag\n    ? "Settings"\n    : "Alarms"', {"Settings", "Alarms"}),
+                             ('let title: LocalizedStringResource = plan == "couple" ? "Settings" : "Alarms"', {"Settings", "Alarms"}),
+                             ('let title: LocalizedStringKey = custom ?? "Default"', {"Default"}),
+                             ('var title: LocalizedStringKey {\n    return mode == "a" ? "Settings" : "Alarms"\n}', {"Settings", "Alarms"}),
+                             ('var title: LocalizedStringKey {\n    switch mode {\n    case .a: return "Settings"\n    case .b: "Alarms"\n    }\n}', {"Settings", "Alarms"}),
+                             ('let title = NSLocalizedString("Settings", comment: "Shown on the tab")', {"Settings"}),
+                             ('let title = NSLocalizedString("Settings", tableName: nil, bundle: .main, value: "Settings fallback", comment: "")', {"Settings"}),
+                             ('let title = Bundle.main.localizedString(forKey: "Settings", value: "Fallback", table: nil)', {"Settings"})]:
+            root = self.fixture(source=source)
+            self.assertEqual({i.value for i in audit(root, []) if "key missing" in i.reason}, keys, source)
+
+    def test_wildcard_rules_do_not_exempt_language_gates(self):
+        root = self.fixture(source='let seed = ["설날"]\nvar containsKorean = true')
+        path = SWIFT_ROOTS[0] + "/Screen.swift"
+        wildcard = [("seed-data", path, "*", "seed names")]
+        self.assertTrue(any("filter is forbidden" in i.reason for i in audit(root, wildcard)))
+        explicit = wildcard + [("log", path, "language-gate", "documented gate")]
+        self.assertFalse(any("filter is forbidden" in i.reason for i in audit(root, explicit)))
 
     def test_catalog_target_languages_reject_hangul_in_every_leaf(self):
         root = self.fixture(source="")
