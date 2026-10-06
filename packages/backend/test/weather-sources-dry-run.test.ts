@@ -62,19 +62,22 @@ describe('dryRunVariants — 점검 스크립트의 드라이런은 운영과 �
     ]);
   });
 
-  it('지역의 오늘부터 +3 까지 날짜 순서 — 원천에 없는 날짜와 오늘의 빈 극값은 미해결(DB 를 보지 않아 이어받지 않는다)', () => {
+  it('지역의 오늘부터 +3 까지 날짜 순서 — 원천에 없는 날짜와 근사값도 없는 오늘의 빈 극값은 미해결(DB 를 보지 않아 이어받지 않는다)', () => {
     const region = WeatherRegions.byKey('kr-seoul')!;
     const days = clearDays(region.source.kind, [10, 10, 10]); // +3 이 없다
     days.set(TODAY, { ...days.get(TODAY)!, minTemp: null });
     expect(dryRunVariants(region, days, NOW)).toEqual([null, idx('nice'), idx('nice'), null]);
+    // 어댑터가 근사값을 두었으면 운영처럼 오늘도 메운다(표가 빈 첫날과 같다).
+    days.set(TODAY, { ...days.get(TODAY)!, approxMinTemp: 13 });
+    expect(dryRunVariants(region, days, NOW)).toEqual([idx('nice'), idx('nice'), idx('nice'), null]);
   });
 });
 
 describe('dryRunVariants — JP 의 오늘 미해결은 돌린 시각에 달렸다(「검증 방법」의 기대값)', () => {
   // 2026-10-01 17시 발표 실측 원본 4곳. 17시 발표는 13시간(다음 날 06시 JST)까지 믿는다(`JMA_SHORT_MAX_AGE_MS`).
   // ⚠ '발표일의 오늘 최저는 어떤 발표에도 없으니 JP 의 오늘은 언제나 전부 미해결' 이 아니다 — 자정이 지나면 전날
-  // 17시 발표의 '내일' 이 곧 오늘이다. 05시 발표 뒤의 오늘(최저 없음 → 미해결)은 `weather-jma.test.ts` 「05시 발표」가
-  // 지킨다.
+  // 17시 발표의 '내일' 이 곧 오늘이다. 05시 발표 뒤의 오늘(최저 없음 → 내일 아침 최저로 근사해 해결)은
+  // `weather-jma.test.ts` 「05시 발표」가 지킨다.
   const OFFICES = { 'jp-tokyo': '130000', 'jp-saitama': '110000', 'jp-shiga': '250000', 'jp-aomori': '020000' };
   const dryRunAt = (now: Date) =>
     Object.entries(OFFICES).map(([key, office]) => {
@@ -86,7 +89,7 @@ describe('dryRunVariants — JP 의 오늘 미해결은 돌린 시각에 달렸�
       return [key, dryRunVariants(region, jmaDaysFromDocument(doc, region.source, now), now)] as const;
     });
 
-  it('17시 발표가 나온 그날(17:30 JST)에는 오늘이 미해결 — 17시 발표에는 오늘 극값이 없다. 내일~+3 은 해결', () => {
+  it('17시 발표가 나온 그날(17:30 JST)에는 오늘이 미해결 — 17시 발표에는 오늘 극값이 없고 최고는 근사할 값도 없다. 내일~+3 은 해결', () => {
     for (const [key, variants] of dryRunAt(new Date('2026-10-01T08:30:00Z'))) {
       expect(variants[0], key).toBeNull();
       expect(variants.slice(1), key).not.toContain(null);
