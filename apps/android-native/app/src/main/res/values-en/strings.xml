@@ -856,6 +856,9 @@
     <string name="api_error_voice_not_ready">This voice is still being created. Please try again in a moment.</string>
     <string name="api_error_voice_cloning_failed">We could not create that voice. Please record again somewhere quiet.</string>
     <string name="api_error_alarm_not_found">This alarm no longer exists.</string>
+    <string name="api_error_family_alarm_disabled">The other person has turned off alarms from others.</string>
+    <string name="api_error_family_alarm_lead_time">Set alarms for others a little later. It takes a moment to reach their phone.</string>
+    <string name="api_error_owner_cannot_leave">The admin can\'t leave the plan.</string>
     <string name="api_error_tts_generation_failed">We could not create the audio. Please try again in a moment.</string>
     <string name="voices_not_ready_title">Still downloading voices</string>
     <string name="voices_not_ready_message_progress">You can set alarms once the default voices finish downloading. (%1$d%%)\nYou can check progress in the Voices tab.</string>

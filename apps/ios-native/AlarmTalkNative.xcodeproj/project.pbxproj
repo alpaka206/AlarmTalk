@@ -24,6 +24,7 @@
 		0CA57323774BA469F4DE6795 /* AlarmTalkTypography.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAD5F56821B87C0A0466A321 /* AlarmTalkTypography.swift */; };
 		0CB3B09DD2AB5D099D268FE9 /* PersonalPromoTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1FD492185CE063ADF17C6CF4 /* PersonalPromoTests.swift */; };
 		0CF827BE8A681B76673BBE99 /* UserFacingErrorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22CBB5AEC61506D5E9A1B5C7 /* UserFacingErrorTests.swift */; };
+		0D62A246EAC64C4A3F8EF07E /* FamilyAlarmFailureMessageTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D680E1EBE7B557CF9AC9A4E /* FamilyAlarmFailureMessageTests.swift */; };
 		0D6DE12A148737B55879EBFC /* DynamicPromptPreferenceStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C84FBD5267145436CD8B0F93 /* DynamicPromptPreferenceStoreTests.swift */; };
 		0E5B76527C4E572E042DC557 /* KeychainStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A70196163DEB277ED30F5976 /* KeychainStore.swift */; };
 		0F95A7B5A7D70D76F64A1DF6 /* InputSanitizerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5BC3CAD414D42352F98B1FE /* InputSanitizerTests.swift */; };
@@ -680,6 +681,7 @@
 		9A837BD3F8D319A53856D516 /* SessionExpiryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionExpiryStore.swift; sourceTree = "<group>"; };
 		9B04396E3B476332CDB49EE8 /* PretendardFontTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PretendardFontTests.swift; sourceTree = "<group>"; };
 		9D1EF46FAF8334E543D1A159 /* TimeWheelSettle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimeWheelSettle.swift; sourceTree = "<group>"; };
+		9D680E1EBE7B557CF9AC9A4E /* FamilyAlarmFailureMessageTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FamilyAlarmFailureMessageTests.swift; sourceTree = "<group>"; };
 		9D9D718046B0F0BECA023287 /* KeyboardDismissGesture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardDismissGesture.swift; sourceTree = "<group>"; };
 		9E2B14EE9BAB9C6BB376B3FB /* PersonalPromo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersonalPromo.swift; sourceTree = "<group>"; };
 		9E3E636EE972FA7B3F1B794B /* BillingScreenshotUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BillingScreenshotUITests.swift; sourceTree = "<group>"; };
@@ -1198,6 +1200,7 @@
 				C84FBD5267145436CD8B0F93 /* DynamicPromptPreferenceStoreTests.swift */,
 				B7F41137892438F0CB642340 /* EditorPromptPreferenceUpdateTests.swift */,
 				A4843EEDBACE08AE27F5F8DD /* EntryRefreshFreshnessTests.swift */,
+				9D680E1EBE7B557CF9AC9A4E /* FamilyAlarmFailureMessageTests.swift */,
 				1A565E1FA348483063072D64 /* FortuneBirthDateEditTests.swift */,
 				92C56157192A2B5CBADB2977 /* FortunePromptInputFormatTests.swift */,
 				49EFA49237024C6A06804BA5 /* FreePlanVoiceLockTests.swift */,
@@ -1948,6 +1951,7 @@
 				0D6DE12A148737B55879EBFC /* DynamicPromptPreferenceStoreTests.swift in Sources */,
 				ABA75892A6D29B0D0D5632DC /* EditorPromptPreferenceUpdateTests.swift in Sources */,
 				53289664AD6C8783B454760D /* EntryRefreshFreshnessTests.swift in Sources */,
+				0D62A246EAC64C4A3F8EF07E /* FamilyAlarmFailureMessageTests.swift in Sources */,
 				59DBB9915C0BE83812284186 /* FortuneBirthDateEditTests.swift in Sources */,
 				DF01070F5A7680AF08057F3C /* FortunePromptInputFormatTests.swift in Sources */,
 				622BF9FEE49772584B889551 /* FreePlanVoiceLockTests.swift in Sources */,

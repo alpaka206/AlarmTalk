@@ -3126,10 +3126,11 @@ struct AlarmEditorSheet: View {
             UINotificationFeedbackGenerator().notificationOccurred(.success)
             onSchedulingDidFinish()
         } catch {
+            // 서버의 거절 이유(받지 않음·리드타임·설정 불가능 시간)는 공용 표가 말한다.
             validationAlert = ValidationAlertContent(
                 title: String(localized: "상대 알람 설정에 실패했어요"),
-                message: userFacingErrorMessage(
-                    error,
+                message: APIErrorMessages.message(
+                    for: error,
                     fallback: String(localized: "상대 알람 설정에 실패했어요.")
                 )
             )

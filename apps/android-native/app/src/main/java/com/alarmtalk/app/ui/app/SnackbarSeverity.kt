@@ -169,6 +169,10 @@ internal object SnackbarSeverities {
         R.string.api_error_voice_cloning_failed,
         R.string.api_error_alarm_not_found,
         R.string.api_error_tts_generation_failed,
+        R.string.api_error_family_alarm_disabled,
+        R.string.api_error_family_alarm_lead_time,
+        R.string.editor_error_family_alarm_time_unavailable,
+        R.string.api_error_owner_cannot_leave,
     )
 
     val info: Set<Int> = setOf(

@@ -16,6 +16,7 @@ import com.alarmtalk.app.data.CachedAlarmAudio
 import com.alarmtalk.app.data.VoiceSources
 import com.alarmtalk.app.data.usesFreeSystemVoiceAlarm
 import com.alarmtalk.app.network.apiErrorCode
+import com.alarmtalk.app.network.apiErrorMessage
 import com.alarmtalk.app.network.FamilyAlarmTalkRequest
 import com.alarmtalk.app.network.RemoteAlarmMapper
 import com.alarmtalk.app.network.RemoteAlarmWriteRequest
@@ -182,9 +183,17 @@ private suspend fun MainViewModel.createFamilyTargetAlarm(draft: AlarmDraft, onD
         onDone()
     }.onFailure { error ->
         AlarmTalkLog.reportError("Failed to create family target alarm target=${draft.targetUserId}", error)
-        message = userFacingError(error, getApplication<Application>().getString(R.string.msg_family_alarm_set_failed))
+        message = familyAlarmFailureMessage(getApplication(), error)
     }
 }
+
+/**
+ * 가족 알람 보내기 실패 문구 — 공용 표(`ApiErrorMessages`)가 서버의 거절 이유(받지 않음·리드타임·
+ * 설정 불가능 시간)를 말하고, 표에 없으면 화면 폴백이다. iOS `APIErrorMessages.message(for:fallback:)`.
+ */
+internal fun familyAlarmFailureMessage(context: Context, error: Throwable): String =
+    apiErrorMessage(context, apiErrorCode(error))
+        ?: userFacingError(error, context.getString(R.string.msg_family_alarm_set_failed))
 
 /**
  * 가족 녹음 알람으로 보낼 라벨. 비었으면 **계약값(한국어) 그대로** 보낸다 — 받는 사람의 문구로

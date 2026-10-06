@@ -352,8 +352,11 @@ OS 예약까지 성공시킨 뒤 현재 버전을 로컬에 기록하고 ack한�
 5분 그대로고, 추가 1분은 앱 안내·선택에만 쓰는 전송 여유다.
 
 ⚠ **값은 세 곳에 있고 반드시 같아야 한다.** 하나만 내리면 앱은 통과시키는데 서버가
-400 `FAMILY_ALARM_LEAD_TIME` 으로 거절해, 사용자에게는 이유를 알 수 없는 "상대 알람
-설정에 실패했어요" 만 보인다(2026-08-21 실기기에서 실제로 그랬다).
+400 `FAMILY_ALARM_LEAD_TIME` 으로 거절한다. 예전에는 그 거절이 이유를 알 수 없는 "상대 알람
+설정에 실패했어요" 로만 보였다(2026-08-21 실기기에서 실제로 그랬다). 지금은 두 앱의 공용
+오류 표가 「조금 더 뒤로 맞춰 주세요」로 말하고, 받지 않음(`FAMILY_ALARM_DISABLED`)·설정 불가능
+시간(`FAMILY_ALARM_QUIET_TIME`)도 그 이유를 말한다. 문구에는 분 수를 넣지 않는다 — 값은 아래
+세 곳에만 둔다.
 
 | 서버 | Android | iOS |
 | --- | --- | --- |
@@ -468,6 +471,7 @@ offset은 동시 삭제·재정렬에서 누락을 완전히 막을 수 없으�
 | 녹음 기본 라벨은 계약값으로 보내고 받는 기기 언어로 표시 | `familyVoiceAlarmLabel` · `localizedReceivedVoiceText` | `ReceivedVoiceTextDisplay` | `family-alarm.ts` 의 `DEFAULT_VOICE_LABEL` |
 | 저장 버튼 라벨 | `editor_save_for`(`저장 · %1$s`) | `AlarmEditorSheet.saveButtonTitle` | — |
 | 방해금지 판정 | — | — | `lib/family-alarm-settings.ts` `isBlockedByFamilyAlarmQuietTime` |
+| 서버 거절 이유를 말한다(받지 않음·리드타임·설정 불가능 시간) | `familyAlarmFailureMessage` → `network/ApiErrorMessages.kt` | `APIErrorMessages.message(for:fallback:)` | `routes/alarm-helpers.ts` 의 `evaluateFamilyAlarmTimingGuard`·`routes/family-alarm.ts` |
 | 방해금지 기본값 없음 | `MainViewModelAuthActions`(다 지우면 그대로) | `AuthViewModel.updateProfile`(같음) | `normalizeQuietWindows` 폴백 `[]` + 가입 응답 |
 | 기존 계정 정리 | — | — | 마이그레이션 98 |
 | 리드타임(**세 값이 같아야 한다**) | `AlarmEditorScreenComponents.kt` 의 `FAMILY_ALARM_MIN_LEAD_MILLIS`·`earliestSelectableFamilyAlarmMillis`·`isFamilyAlarmLeadTooSoon` | `AlarmEditorSheet.familyAlarmMinLeadMillis`·`earliestSelectableFamilyAlarmMillis` | `routes/alarm-helpers.ts` 의 `FAMILY_ALARM_MIN_LEAD_MINUTES` |

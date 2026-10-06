@@ -82,6 +82,18 @@ private val API_ERROR_MESSAGES: Map<String, Int> = mapOf(
     // ── 알람·문구 ─────────────────────────────────────────────────────────
     "ALARM_NOT_FOUND" to R.string.api_error_alarm_not_found,
     "TTS_GENERATION_FAILED" to R.string.api_error_tts_generation_failed,
+
+    // ── 가족 알람 보내기(`routes/alarm-helpers.ts` 의 `evaluateFamilyAlarmTimingGuard`) ──
+    // 편집기가 먼저 막지만 그 판정은 받는 사람의 **캐시된** 설정과 이 기기 시계로 한 것이다.
+    // 서버가 다시 거절하면 이유를 말해야 한다 — 예전에는 셋 다 "상대 알람 설정에 실패했어요"
+    // 로 뭉개져 다시 눌러도 똑같이 실패했다(`docs/spec/family-alarm.md` §3).
+    "FAMILY_ALARM_DISABLED" to R.string.api_error_family_alarm_disabled,
+    // 숫자(5분)를 문구에 넣지 않는다 — 그 값은 서버·두 앱 세 곳에만 둔다(§3 표).
+    "FAMILY_ALARM_LEAD_TIME" to R.string.api_error_family_alarm_lead_time,
+    "FAMILY_ALARM_QUIET_TIME" to R.string.editor_error_family_alarm_time_unavailable,
+
+    // ── 이용권 그룹 ───────────────────────────────────────────────────────
+    "OWNER_CANNOT_LEAVE" to R.string.api_error_owner_cannot_leave,
 )
 
 /** 이 코드에 정해 둔 문구가 있으면 돌려준다. 없으면 null — 부르는 쪽이 폴백을 쓴다. */
