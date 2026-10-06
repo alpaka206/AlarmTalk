@@ -46,6 +46,10 @@ UNALIGNED_ANDROID_ARRAYS = {"snackbar_error_markers", "snackbar_success_markers"
 # Resource and catalog checks are never allowlisted by key: a key-level rule
 # would also hide empty, Hangul and format failures. Scope exceptions above.
 RESOURCE_SUFFIXES = (".xml", ".xcstrings")
+# CLDR plural categories every translation must provide, on both platforms.
+# Korean and Japanese use only `other`; English also needs `one`, otherwise a
+# count of one falls back to the plural sentence.
+PLURAL_CATEGORIES = {"en": {"one", "other"}, "ja": {"other"}, "ko": {"other"}}
 
 
 def fingerprint(value: str) -> str:
@@ -356,6 +360,21 @@ def android_text_is_blank(value: str) -> bool:
     return not value.strip()
 
 
+def plural_categories_missing(node, required: set[str]) -> bool:
+    """True if any plural variation (including substitutions) lacks a category."""
+    if isinstance(node, dict):
+        for key, child in node.items():
+            if key == "variations" and isinstance(child, dict) and "plural" in child:
+                plural = child["plural"]
+                if not isinstance(plural, dict) or not required <= plural.keys():
+                    return True
+            if plural_categories_missing(child, required):
+                return True
+    elif isinstance(node, list):
+        return any(plural_categories_missing(child, required) for child in node)
+    return False
+
+
 def translated_leaves(node) -> bool:
     leaves = list(string_units(node))
     return bool(leaves) and all(leaf.get("state") == "translated"
@@ -379,6 +398,8 @@ def catalog_issues(root: Path) -> list[Issue]:
                 leaves = list(string_units(units))
                 if not translated_leaves(units):
                     issues.append(Issue(relative, 0, key, f"{language} translation missing, unfinished or empty"))
+                if plural_categories_missing(units, PLURAL_CATEGORIES[language]):
+                    issues.append(Issue(relative, 0, key, f"{language} required plural variations missing"))
                 if language in LANGUAGES and any(HANGUL.search(str(leaf.get("value", ""))) for leaf in leaves):
                     issues.append(Issue(relative, 0, key, f"{language} translation contains Hangul"))
     resources = root / "apps/android-native/app/src/main/res"
@@ -403,8 +424,7 @@ def catalog_issues(root: Path) -> list[Issue]:
                                           and key not in UNALIGNED_ANDROID_ARRAYS):
                 issues.append(Issue(target, 0, key, "resource type/array length differs"))
             if other.tag == "plurals":
-                required = {"one", "other"} if language == "en" else {"other"}
-                if not required.issubset({item.get("quantity") for item in other}):
+                if not PLURAL_CATEGORIES[language] <= {item.get("quantity") for item in other}:
                     issues.append(Issue(target, 0, key, f"Android {language} required plural quantities missing"))
             if HANGUL.search("".join(other.itertext())):
                 issues.append(Issue(target, 0, key, f"Android {language} resource contains Hangul"))
@@ -633,12 +653,40 @@ class SelfTests(unittest.TestCase):
             data = json.loads(json.dumps(original))
             for language in LANGUAGES:
                 localization = data['strings']['안녕']['localizations'][language]
-                data['strings']['안녕']['localizations'][language] = {'variations': {kind: {'other': localization}}}
+                # English plurals need `one` as well; see test_catalog_plurals_require_locale_categories.
+                variants = ['one', 'other'] if kind == 'plural' and language == 'en' else ['other']
+                data['strings']['안녕']['localizations'][language] = {'variations': {kind: {
+                    variant: json.loads(json.dumps(localization)) for variant in variants}}}
             file.write_text(json.dumps(data), encoding="utf-8")
             self.assertEqual(audit(root, []), [])
             data['strings']['안녕']['localizations']['en']['variations'][kind]['other']['stringUnit']['state'] = 'new'
             file.write_text(json.dumps(data), encoding="utf-8")
             self.assertTrue(any('unfinished en/ja' in i.reason for i in audit(root, [])))
+
+    def test_catalog_plurals_require_locale_categories(self):
+        def leaf(value):
+            return {"stringUnit": {"state": "translated", "value": value}}
+        def plural(categories):
+            return {"variations": {"plural": {category: leaf("%lld") for category in categories}}}
+        def substitution(categories):
+            return {"stringUnit": {"state": "translated", "value": "%#@count@"}, "substitutions": {"count": {
+                "argNum": 1, "formatSpecifier": "lld", "variations": {"plural": {c: leaf("%arg") for c in categories}}}}}
+        root = self.fixture(source="", key="alarm.count")
+        for relative in (*CATALOGS, "apps/ios-native/AlarmTalk/InfoPlist.xcstrings"):
+            file = root / relative
+            original = file.read_text(encoding="utf-8")
+            for language, valid, invalid in [("en", ["one", "other"], ["other"]), ("ja", ["other"], ["one"]),
+                                             ("ko", ["other"], ["one"])]:
+                for shape in (plural, substitution):
+                    for categories, fails in [(valid, False), (invalid, True)]:
+                        data = json.loads(original)
+                        localizations = {lang: plural(PLURAL_CATEGORIES[lang]) for lang in (*LANGUAGES, "ko")}
+                        localizations[language] = shape(categories)
+                        data["strings"]["alarm.count"]["localizations"] = localizations
+                        file.write_text(json.dumps(data), encoding="utf-8")
+                        issues = [i for i in catalog_issues(root) if i.reason == f"{language} required plural variations missing"]
+                        self.assertEqual(bool(issues), fails, (relative, language, shape.__name__, categories))
+            file.write_text(original, encoding="utf-8")
 
     def test_interpolation_type_must_match_catalog_key(self):
         for declaration, expression, correct, wrong in [
