@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { VOICE_ENROLLMENT_SCRIPTS } from '@alarmtalk/shared';
 import {
+  ENROLLMENT_SCRIPT_NUMBER_LINES,
   ENROLLMENT_SCRIPT_READ_THRESHOLD,
   enrollmentScriptCoverage,
   isEnrollmentScriptReading,
@@ -122,5 +123,62 @@ describe('isEnrollmentScriptReading — 제시 대본을 읽은 전사인가', (
   it('빈 전사·글자가 없는 전사는 대본이 아니다', () => {
     expect(isEnrollmentScriptReading('')).toBe(false);
     expect(isEnrollmentScriptReading('… ?! ♪')).toBe(false);
+  });
+
+  // Codex #864 — 대본에 있는 짧은 말을 되풀이한 자유 발화는 포함률만 보면 대본처럼 보였다(되풀이를 따로 셌다).
+  it('대본에 있는 짧은 말을 되풀이한 자유 발화는 대본이 아니다 — 되풀이는 세지 않고 대본 분량을 요구한다', () => {
+    expect(isEnrollmentScriptReading('안녕하세요. 안녕하세요. 안녕하세요. 안녕하세요.')).toBe(
+      false,
+    );
+    expect(isEnrollmentScriptReading('こんにちは。こんにちは。こんにちは。こんにちは。')).toBe(
+      false,
+    );
+    expect(isEnrollmentScriptReading('Hello! Hello! Hello! Hello! Hello! Hello!')).toBe(false);
+  });
+
+  // Codex #864 — 받아쓰기가 숫자 줄을 아라비아 숫자로 적으면 그 부분이 통째로 대본 밖으로 세어졌다.
+  it('숫자 줄을 아라비아 숫자·한자 숫자로 받아써도 대본이다', () => {
+    expect(
+      isEnrollmentScriptReading('이번에는 숫자도 읽어 볼까요? 1, 2, 3, 4, 5, 6, 7, 8, 9, 10.'),
+    ).toBe(true);
+    expect(
+      isEnrollmentScriptReading(
+        '이번에는 숫자도 읽어 볼까요? 하나, 둘, 셋, 넷, 다섯, 여섯, 일곱, 여덟, 아홉, 열.',
+      ),
+    ).toBe(true);
+    expect(
+      isEnrollmentScriptReading(
+        'つぎは、数字も読んでみましょうか？1、2、3、4、5、6、7、8、9、10。',
+      ),
+    ).toBe(true);
+    expect(
+      isEnrollmentScriptReading(
+        '次は数字も読んでみましょうか？一、二、三、四、五、六、七、八、九、十。',
+      ),
+    ).toBe(true);
+    expect(
+      isEnrollmentScriptReading(
+        'Now, shall we read some numbers together? 1, 2, 3, 4, 5, 6, 7, 8, 9, 10.',
+      ),
+    ).toBe(true);
+    // 대본 전체를 숫자로 받아쓴 것도 그대로 1 이다.
+    for (const [language, { spoken, written }] of Object.entries(ENROLLMENT_SCRIPT_NUMBER_LINES)) {
+      for (const form of written) {
+        const script = VOICE_ENROLLMENT_SCRIPTS[language as keyof typeof VOICE_ENROLLMENT_SCRIPTS];
+        expect(enrollmentScriptCoverage(script.replace(spoken, form)), `${language} ${form}`).toBe(
+          1,
+        );
+      }
+    }
+  });
+
+  // 숫자 줄의 다른 꼴은 대본 글을 바꿔 끼워 만든다 — 대본의 숫자 줄이 바뀌면 바꿔 끼울 자리가 없어 그 꼴이 조용히 사라진다.
+  it('숫자 줄(spoken)은 대본에 그대로 있다', () => {
+    for (const [language, { spoken }] of Object.entries(ENROLLMENT_SCRIPT_NUMBER_LINES)) {
+      expect(
+        VOICE_ENROLLMENT_SCRIPTS[language as keyof typeof VOICE_ENROLLMENT_SCRIPTS],
+        language,
+      ).toContain(spoken);
+    }
   });
 });
