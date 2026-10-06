@@ -42,7 +42,7 @@ import unittest
 import xml.etree.ElementTree as ET
 
 from localization_lexers import HANGUL, SwiftLexer, kotlin_literals
-from localization_formats import android_format_mismatches, catalog_format_mismatches, line_breaks
+from localization_formats import android_format_mismatches, catalog_format_mismatches, catalog_values, line_breaks
 from localization_swift_types import SwiftTypes, innermost_delimiters
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -883,37 +883,42 @@ def android_text_is_blank(value: str) -> bool:
     return not value.strip()
 
 
-def has_plural_variation(node) -> bool:
+def plural_paths(node, path: tuple = ()) -> set[str]:
+    """Where plural variations sit: '' (whole sentence), 'device/iphone'
+    (nested under a branch) or '@count' (in a substitution)."""
+    found = set()
     if isinstance(node, dict):
-        return any((key == "variations" and isinstance(child, dict) and "plural" in child) or has_plural_variation(child)
-                   for key, child in node.items())
-    return isinstance(node, list) and any(has_plural_variation(child) for child in node)
+        variations = node.get("variations")
+        if isinstance(variations, dict):
+            for kind, branches in variations.items():
+                if kind == "plural":
+                    found.add("/".join(path))
+                if isinstance(branches, dict):
+                    for name, branch in branches.items():
+                        found |= plural_paths(branch, path + (kind, name))
+        substitutions = node.get("substitutions")
+        if isinstance(substitutions, dict):
+            for name, meta in substitutions.items():
+                found |= plural_paths(meta, path + ("@" + name,))
+    return found
 
 
 def plural_missing(source, target) -> bool:
-    """The target drops a plural variation the source has, in the same scope.
+    """The target drops a plural variation the source has at the same place.
 
-    A substitution that varies by plural in the source must vary in the
-    target's substitution of the same name; a top-level plural may move into a
-    substitution (translations restructure sentences), but must exist somewhere.
+    Each source plural must exist at the same structural path in the target.
+    One exception: a single varying argument may move between the whole
+    sentence and a substitution (translations restructure sentences).
     """
-    def substitutions(node):
-        return node.get("substitutions") if isinstance(node, dict) and isinstance(node.get("substitutions"), dict) else {}
-
-    def scopes(node):
-        """'' for a plural outside substitutions, plus substitutions that vary by plural."""
-        found = {name for name, meta in substitutions(node).items() if has_plural_variation(meta)}
-        if isinstance(node, dict) and has_plural_variation({k: v for k, v in node.items() if k != "substitutions"}):
-            found.add("")
-        return found
-    expected, present = scopes(source), scopes(target)
-    if not expected:
-        return False
-    if not substitutions(target):
-        # A whole-sentence plural can stand in for one varying argument only.
-        return not present or len(expected) > 1
-    # Every varying substitution keeps varying under its own name.
-    return any(scope not in present if scope else not present for scope in expected)
+    expected, present = plural_paths(source), plural_paths(target)
+    missing = expected - present
+    if len(expected) == 1 and len(missing) == 1:
+        (scope,) = missing
+        if scope == "" and any(p.startswith("@") and "/" not in p for p in present):
+            return False
+        if scope.startswith("@") and "/" not in scope and "" in present:
+            return False
+    return bool(missing)
 
 
 def plural_categories_missing(node, required: set[str]) -> bool:
@@ -989,7 +994,9 @@ def leaf_values(node) -> list[str]:
 
 def translated_leaves(node) -> bool:
     leaves = list(string_units(node))
-    return bool(leaves) and not empty_variation_branch(node) and all(
+    # A localization needs a sentence to render (a top-level unit or variation);
+    # substitution leaves alone have nothing that references them.
+    return bool(leaves) and bool(catalog_values(node)) and not empty_variation_branch(node) and all(
         leaf.get("state") == "translated" and isinstance(leaf.get("value"), str) and leaf["value"].strip()
         for leaf in leaves)
 
@@ -1037,56 +1044,66 @@ def catalog_issues(root: Path) -> list[Issue]:
                     has_words(value) and value in english for value in leaf_values(localizations.get("ja", {}))):
                 issues.append(Issue(relative, 0, key, "ja translation is copied from English"))
     resources = root / "apps/android-native/app/src/main/res"
-    localized = {language: {} for language in ("ko", *LANGUAGES)}
-    # `values-night`, `values-v27`… have no locale and fall back like `values/`
-    # (Korean); `values-en-v27` belongs to English. The plain directory wins.
+    # Every configuration variant is checked: `values-night`, `values-v27`… have
+    # no locale and are Korean (they fall back like `values/`); `values-en-night`
+    # is English. Each variant is compared with the Korean variant of the same
+    # configuration, or with the Korean base when there is none.
+    variants = {language: {} for language in ("ko", *LANGUAGES)}
     directories = sorted((d for d in resources.glob("values*") if d.is_dir()), key=lambda d: (len(d.name), d.name))
     for directory in directories:
         qualifiers = directory.name.split("-")[1:]
-        locale = next((q[2:].split("+")[0] if q.startswith("b+") else q for q in qualifiers
-                       if re.fullmatch(r"[a-z]{2,3}|b\+[a-z]+(?:\+.*)?", q) and q not in {"car"}), "ko")
-        if locale not in localized:
+        locales = [q for q in qualifiers if re.fullmatch(r"[a-z]{2,3}|b\+[a-z]+(?:\+.*)?", q) and q not in {"car"}]
+        locale = (locales[0][2:].split("+")[0] if locales[0].startswith("b+") else locales[0]) if locales else "ko"
+        if locale not in variants:
             continue
+        config = tuple(q for q in qualifiers if q not in locales and not re.fullmatch(r"r[A-Z]{2}", q))
         for file in directory.glob("*.xml"):
             for entry in ET.parse(file).getroot():
                 if entry.tag in {"string", "string-array", "plurals"}:
-                    localized[locale].setdefault(entry.attrib["name"], (entry, str(file.relative_to(root))))
-    for key, (entry, relative) in localized["ko"].items():
+                    variants[locale].setdefault(entry.attrib["name"], []).append((entry, str(file.relative_to(root)), config))
+    # The base resource (plain directory first) for whole-key checks.
+    localized = {language: {name: found[0][:2] for name, found in names.items()} for language, names in variants.items()}
+
+    def texts(element):
+        return {"".join(leaf.itertext()) for leaf in ([element] if element.tag == "string" else element)}
+
+    for key, found in variants["ko"].items():
+        entry, relative = localized["ko"][key]
         if entry.get("translatable") == "false":
             if key not in LANGUAGE_NEUTRAL_ANDROID_RESOURCES and has_words("".join(entry.itertext())):
                 issues.append(Issue(relative, 0, key, 'translatable="false" is only for language-neutral resources'))
             continue
-        # The Korean default resource is what Korean users see; it cannot be blank either.
-        sources = [entry] if entry.tag == "string" else list(entry)
-        if not sources or any(android_text_is_blank("".join(leaf.itertext())) for leaf in sources):
-            issues.append(Issue(relative, 0, key, "Android ko resource contains an empty value"))
-        if entry.tag == "plurals" and not PLURAL_CATEGORIES["ko"] <= {item.get("quantity") for item in entry}:
-            issues.append(Issue(relative, 0, key, "Android ko required plural quantities missing"))
+        for variant, where, _ in found:
+            # The Korean resources are what Korean users see; they cannot be blank either.
+            sources = [variant] if variant.tag == "string" else list(variant)
+            if not sources or any(android_text_is_blank("".join(leaf.itertext())) for leaf in sources):
+                issues.append(Issue(where, 0, key, "Android ko resource contains an empty value"))
+            if variant.tag == "plurals" and not PLURAL_CATEGORIES["ko"] <= {item.get("quantity") for item in variant}:
+                issues.append(Issue(where, 0, key, "Android ko required plural quantities missing"))
         for language in LANGUAGES:
-            match = localized[language].get(key)
-            if match is None:
+            if key not in variants[language]:
                 issues.append(Issue(relative, 0, key, f"Android {language} resource missing"))
                 continue
-            other, target = match
-            if entry.tag != other.tag or (entry.tag == "string-array" and len(entry) != len(other)):
-                issues.append(Issue(target, 0, key, "resource type/array length differs"))
-            if other.tag == "plurals":
-                if not PLURAL_CATEGORIES[language] <= {item.get("quantity") for item in other}:
-                    issues.append(Issue(target, 0, key, f"Android {language} required plural quantities missing"))
-            if HANGUL.search("".join(other.itertext())):
-                issues.append(Issue(target, 0, key, f"Android {language} resource contains Hangul"))
-            leaves = [other] if other.tag == "string" else list(other)
-            if (not leaves or any(android_text_is_blank("".join(leaf.itertext())) for leaf in leaves)) and (language, key) not in EMPTY_ANDROID_UNITS:
-                issues.append(Issue(target, 0, key, f"Android {language} resource contains an empty translation"))
-            grouped = any(key in group for group in ANDROID_LINE_BREAK_GROUPS)
-            for leaf in android_format_mismatches(entry, other, check_line_breaks=not grouped):
-                issues.append(Issue(target, 0, key, f"Android {language} format argument indices/types/count or line breaks differ ({leaf})"))
-        if key not in LANGUAGE_NEUTRAL_ANDROID_RESOURCES and all(key in localized[language] for language in LANGUAGES):
-            def texts(element):
-                return {"".join(leaf.itertext()) for leaf in ([element] if element.tag == "string" else element)}
-            english, japanese = texts(localized["en"][key][0]), texts(localized["ja"][key][0])
-            if any(has_words(text) for text in english & japanese):
-                issues.append(Issue(localized["ja"][key][1], 0, key, "Android ja resource is copied from English"))
+            for other, target, config in variants[language][key]:
+                source = next((variant for variant, _, own in found if own == config), entry)
+                if source.tag != other.tag or (source.tag == "string-array" and len(source) != len(other)):
+                    issues.append(Issue(target, 0, key, "resource type/array length differs"))
+                if other.tag == "plurals":
+                    if not PLURAL_CATEGORIES[language] <= {item.get("quantity") for item in other}:
+                        issues.append(Issue(target, 0, key, f"Android {language} required plural quantities missing"))
+                if HANGUL.search("".join(other.itertext())):
+                    issues.append(Issue(target, 0, key, f"Android {language} resource contains Hangul"))
+                leaves = [other] if other.tag == "string" else list(other)
+                if (not leaves or any(android_text_is_blank("".join(leaf.itertext())) for leaf in leaves)) and (language, key) not in EMPTY_ANDROID_UNITS:
+                    issues.append(Issue(target, 0, key, f"Android {language} resource contains an empty translation"))
+                grouped = any(key in group for group in ANDROID_LINE_BREAK_GROUPS)
+                for leaf in android_format_mismatches(source, other, check_line_breaks=not grouped):
+                    issues.append(Issue(target, 0, key, f"Android {language} format argument indices/types/count or line breaks differ ({leaf})"))
+        if key not in LANGUAGE_NEUTRAL_ANDROID_RESOURCES and all(key in variants[language] for language in LANGUAGES):
+            for japanese, target, config in variants["ja"][key]:
+                english = next((variant for variant, _, own in variants["en"][key] if own == config), localized["en"][key][0])
+                if any(has_words(text) for text in texts(english) & texts(japanese)):
+                    issues.append(Issue(target, 0, key, "Android ja resource is copied from English"))
     for group in ANDROID_LINE_BREAK_GROUPS:
         for language in LANGUAGES:
             if not all(key in localized[locale] for locale in ("ko", language) for key in group):
@@ -2715,6 +2732,43 @@ class SelfTests(unittest.TestCase):
             else:
                 (target / "night.xml").write_text('<resources><string name="night_only">夜だけ</string></resources>', encoding="utf-8")
         self.assertEqual(catalog_issues(root), [])
+
+    def test_every_android_configuration_variant_is_validated(self):
+        root = self.fixture(source="")
+        base = root / "apps/android-native/app/src/main/res"
+        for directory, text, reason in [("values-night", "", "Android ko resource contains an empty value"),
+                                        ("values-en-night", "밤", "Android en resource contains Hangul")]:
+            (base / directory).mkdir()
+            (base / directory / "strings.xml").write_text('<resources><string name="hello">' + text + '</string></resources>', encoding="utf-8")
+            self.assertTrue(any(i.reason == reason for i in catalog_issues(root)), directory)
+            (base / directory / "strings.xml").unlink()
+
+    def test_catalog_localizations_need_a_renderable_root(self):
+        def leaf(value):
+            return {"stringUnit": {"state": "translated", "value": value}}
+        root = self.fixture(source="", key="alarm.count")
+        file = root / CATALOGS[0]
+        data = json.loads(file.read_text(encoding="utf-8"))
+        data["strings"]["alarm.count"]["localizations"]["en"] = {"substitutions": {"count": {
+            "argNum": 1, "formatSpecifier": "lld", "variations": {"plural": {"one": leaf("%arg alarm"), "other": leaf("%arg alarms")}}}}}
+        file.write_text(json.dumps(data), encoding="utf-8")
+        self.assertTrue(any(i.reason == "en translation missing, unfinished or empty" for i in catalog_issues(root)))
+
+    def test_plurals_are_compared_at_their_structural_path(self):
+        def leaf(value):
+            return {"stringUnit": {"state": "translated", "value": value}}
+        root = self.fixture(source="", key="alarm.count")
+        file = root / CATALOGS[0]
+        def device(iphone_plural):
+            plural = {"variations": {"plural": {"one": leaf("%lld alarm"), "other": leaf("%lld alarms")}}}
+            plain = leaf("%lld alarms")
+            return {"variations": {"device": {"iphone": plural if iphone_plural else plain, "other": plain if iphone_plural else plural}}}
+        korean = {"variations": {"device": {"iphone": {"variations": {"plural": {"other": leaf("알람 %lld개")}}}, "other": leaf("알람 %lld개")}}}
+        for english, fails in [(device(True), False), (device(False), True)]:
+            data = json.loads(file.read_text(encoding="utf-8"))
+            data["strings"]["alarm.count"]["localizations"].update({"ko": korean, "en": english})
+            file.write_text(json.dumps(data), encoding="utf-8")
+            self.assertEqual("en must vary by plural like the Korean source" in [i.reason for i in catalog_issues(root)], fails, english)
 
     def test_catalog_target_languages_reject_hangul_in_every_leaf(self):
         root = self.fixture(source="")
