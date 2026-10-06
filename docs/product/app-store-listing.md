@@ -354,7 +354,8 @@ Apple 標準使用許諾契約 (EULA): https://www.apple.com/legal/internet-serv
 ## 설명 — INTERIM (W 전에 다음 버전을 낼 때)
 
 (B) 에서 날씨를 말하는 줄만 바꾼다(`-` 줄을 `+` 줄로, `+` 가 없으면 그 줄을 지운다). 나머지는 (B) 와 한 글자도
-다르지 않다. Play 의 INTERIM 과 같은 줄이다.
+다르지 않다. 날씨 줄은 Play 의 INTERIM 과 같다 — Play INTERIM 은 번역이 들어간 Android 버전보다 먼저 올리므로 앱
+화면 언어 문장도 빼지만, 여기 설명은 다음 버전과 함께 게재되므로 그 문장을 둔다.
 
 **ko** (결과 2723/4000)
 
