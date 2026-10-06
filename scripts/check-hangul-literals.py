@@ -5,6 +5,25 @@ Swift is checked by literal context and a declaration index, not by searching
 for Text() alone. Stored Korean values, generated data and TTS inputs require
 documented exceptions. The baseline identifies reviewed contexts the index
 cannot prove; removed entries fail, so it cannot silently become a dump.
+
+Known limitations — what this static guard intentionally does not prove:
+- It is not a type checker or data-flow analysis. A literal is UI copy when it
+  reaches a display sink through call arguments, result branches (if/else,
+  when, ternary, ??, ?:), value lambdas/closures, text builders, a direct
+  `val/let` binding in the same block, or an app function/view whose String
+  parameter it derives as displayed. Text that travels further (stored in a
+  field, returned from a helper, passed through a collection, built across
+  files) is not traced; review it by hand.
+- Display sinks are a curated list of SwiftUI/Compose/notification APIs plus
+  derived app wrappers. Parameter-name heuristics (`title:`, `text =`) apply at
+  call sites only, never when deriving wrappers.
+- Interpolation types come from declarations, not inference: unknown or
+  conflicting types fail and need an explicit conversion (`Int(x)`).
+- Catalog/resource checks compare structure (keys, plural/device branches,
+  placeholders, line breaks, empty or copied values) — not translation quality,
+  grammar, truncation on screen, or whether a sentence reads naturally.
+- Runtime-only facts (the device's locale, AlarmKit or notification rendering,
+  server-provided text) need tests on devices.
 """
 from __future__ import annotations
 
@@ -141,6 +160,27 @@ def statement_end(code: str, pairs: dict[int, int], start: int) -> int:
             continue
         i += 1
     return i
+
+
+def result_groups(code: str, pairs: dict[int, int], start: int, end: int) -> list[int]:
+    """Collection/tuple literals that are a result of the expression [start, end)
+    — first in it or after a result token (`?`, `:`, `??`, `=`, `return`) —
+    never a call's argument list."""
+    found, i = [], start
+    while i < end:
+        if code[i] in "[(" and i in pairs:
+            previous = i
+            while previous > start and code[previous - 1].isspace():
+                previous -= 1
+            if previous == start or SWIFT_BINDING.before.search(code[max(0, previous - 16):previous]):
+                found.append(i)
+            i = pairs[i] + 1
+            continue
+        if code[i] == "{" and i in pairs:
+            i = pairs[i] + 1
+            continue
+        i += 1
+    return found
 
 
 def split_top_level(text: str, separator: str, brackets: str = "([{") -> list[str]:
@@ -329,8 +369,9 @@ class Declarations:
                 for value in starts:
                     while value < len(code) and code[value].isspace():
                         value += 1
-                    if value < len(code) and code[value] in "[(" and value in pairs:
-                        values.append((value, pairs[value] + 1, shape))
+                    # Every result of the expression: `["A"]`, `flag ? ["A"] : ["B"]`, `x ?? ["A"]`.
+                    for group in result_groups(code, pairs, value, statement_end(code, pairs, value)):
+                        values.append((group, pairs[group] + 1, shape))
             self.collection_values[path] = values
             spans = []
             pattern = r"(?:\b(?:var|let)\s+\w+\s*:\s*" + LOCALIZED_TYPE + r"\??|->\s*" + LOCALIZED_TYPE + r")\s*"
@@ -616,14 +657,25 @@ def swift_closure_value(marked: str, opening: int, literal: dict) -> bool:
     return bool(re.match(r"return\b", marked[own:])) or len(starts) == 1
 
 
-def swift_ui_context(source: str, code: str, literal: dict, marked: str | None = None) -> bool:
-    """Plain String display arguments need lookup regardless of source language."""
+SWIFT_DISPLAY_PARAMETERS = {"title", "text", "message", "label", "subtitle", "placeholder", "accessibilityLabel", "accessibilityHint"}
+
+
+def swift_ui_context(source: str, code: str, literal: dict, marked: str | None = None,
+                     wrappers: dict[str, list[list[tuple[str, bool]]]] | None = None,
+                     tree: "KotlinTree | None" = None, depth: int = 0, strict: bool = False) -> bool:
+    """Plain String display arguments need lookup regardless of source language.
+
+    `strict` drops the parameter-name heuristic (`text:`, `title:` on any call):
+    wrapper inference must not turn `computeCacheKey(text:)` into a view.
+    """
+    through = False
     for kind, opening in reversed(literal["stack"]):
         if kind == "{":
             if marked is not None and swift_closure_value(marked, opening, literal):
                 continue  # The closure's result is the enclosing argument.
             break  # A UI callback's body is a separate context (e.g. a log).
         if kind != "(":
+            through = through or kind == "["
             continue
         call = call_at(source, opening).split(".")[-1]
         if call == "DispatchQueue":
@@ -635,9 +687,117 @@ def swift_ui_context(source: str, code: str, literal: dict, marked: str | None =
         parameter = parameter[1] if parameter else None
         if call in SWIFT_UI and parameter in {None, "verbatim", "title", "text"}:
             return True
-        if parameter in {"title", "text", "message", "label", "subtitle", "placeholder", "accessibilityLabel", "accessibilityHint"}:
+        if parameter in SWIFT_DISPLAY_PARAMETERS and not strict:
             return True
-    return False
+        if wrappers and call in wrappers:
+            # App views/functions whose plain-String parameter reaches a sink.
+            index = None if parameter else argument_index(code, opening, literal["start"])
+            if any(any(label == (parameter or "_") and shown for label, shown in
+                       (overload if parameter else overload[index:index + 1]))
+                   for overload in wrappers[call]):
+                return True
+        through = True  # Past a call, the token is an argument, not the value.
+    if through or marked is None or tree is None or depth >= 3:
+        return False
+    # A result of `let title = …` is shown wherever `title` is shown.
+    return any(swift_ui_context(source, code, {"start": use, "end": use, "stack": [(code[o], o) for o in tree.enclosing(use)]},
+                                marked, wrappers, tree, depth + 1, strict)
+               for use in binding_uses(marked, tree, literal["start"], SWIFT_BINDING))
+
+
+SWIFT_TEXT_TYPE = re.compile(r"(?:String|Substring)[?!]?")
+
+
+def swift_wrappers(files: dict[str, tuple[str, str, str, "KotlinTree"]]) -> dict[str, list[list[tuple[str, bool]]]]:
+    """App views and functions whose plain-String parameters reach a display sink.
+
+    Like `kotlin_wrappers`: a stored property shown in the type's body makes its
+    memberwise label a sink (`PromptDetailCard(value: "…")`); an initializer or
+    function parameter is a sink when its body shows it or stores it in such a
+    property (`self.value = value`). Resolved to a fixed point.
+    """
+    names = []  # (path, name, [(label, internal, is_text)], span, owner)
+    properties = {}  # (path, type) -> {name: (span, is_text)}
+    for path, (source, code, marked, tree) in files.items():
+        spans = sorted(tree.pairs.items())
+
+        def parameters(opening):
+            result, close = [], tree.pairs.get(opening, opening)
+            for part in split_top_level(code[opening + 1:close], ","):
+                match = re.match(r"\s*(\w+)(?:\s+(\w+))?\s*:\s*(?:@\w+\s+)*(?:inout\s+)?([^=]+)", part)
+                if match:
+                    result.append((match[1], match[2] or match[1], bool(SWIFT_TEXT_TYPE.fullmatch(match[3].strip()))))
+            return result
+
+        def body(close):
+            match = re.compile(r"[^{};=]*?\{").match(code, close + 1)
+            return (match.end() - 1, tree.pairs.get(match.end() - 1)) if match else None
+
+        for match in re.finditer(r"\b(struct|class|extension)\s+(\w+)[^\n{]*\{", code):
+            start = match.end() - 1
+            end = tree.pairs.get(start, start)
+            members = list(re.finditer(r"\b(?:let|var)\s+(\w+)\s*:\s*([^=\n{};,)]+)", code[start:end]))
+            inits = list(re.finditer(r"\binit[?!]?\s*(?:<[^>]*>)?\s*\(", code[start:end]))
+            owner = innermost_delimiters(spans, [start + m.start() for m in members + inits])
+            table = properties.setdefault((path, match[2]), {})
+            ordered = []
+            for member in members:
+                if owner[start + member.start()] == start and not code.startswith("{", read_type(code, start + member.end(), "={}\n;,")):
+                    table[member[1]] = ((start, end), bool(SWIFT_TEXT_TYPE.fullmatch(member[2].strip())))
+                    ordered.append((member[1], member[1], table[member[1]][1]))
+            own_inits = [init for init in inits if owner[start + init.start()] == start]
+            for init in own_inits:
+                opening = start + init.end() - 1
+                span = body(tree.pairs.get(opening, opening))
+                if span and span[1]:
+                    names.append((path, match[2], parameters(opening), span, (path, match[2])))
+            if match[1] == "struct" and not own_inits:
+                names.append((path, match[2], ordered, None, (path, match[2])))  # memberwise
+        for match in re.finditer(r"\bfunc\s+(\w+)\s*(?:<[^>]*>)?\s*\(", code):
+            opening = match.end() - 1
+            span = body(tree.pairs.get(opening, opening))
+            if span and span[1]:
+                names.append((path, match[1], parameters(opening), span, None))
+    shown_properties: set[tuple] = set()
+    shown: dict[int, set[str]] = {}
+    wrappers: dict[str, list[list[tuple[str, bool]]]] = {}
+
+    def uses(path, name, span):
+        source, code, marked, tree = files[path]
+        pattern = re.compile(r"(?:(?<=self\.)|(?<![\w.$]))" + re.escape(name) + r"\b(?!\s*=(?!=))(?!:)")
+        return any(swift_ui_context(source, code, {"start": use.start(), "end": use.end(),
+                                                    "stack": [(code[o], o) for o in tree.enclosing(use.start())]},
+                                    marked, wrappers, tree, strict=True)
+                   for use in pattern.finditer(code, span[0], span[1]))
+
+    changed = True
+    while changed:
+        changed = False
+        for (path, owner), table in properties.items():
+            for name, (span, text) in table.items():
+                if text and (path, owner, name) not in shown_properties and uses(path, name, span):
+                    shown_properties.add((path, owner, name))
+                    changed = True
+        for index, (path, name, params, span, owner) in enumerate(names):
+            found = shown.setdefault(index, set())
+            code = files[path][1]
+            for label, internal, text in params:
+                if not text or internal in found:
+                    continue
+                if span is None:
+                    hit = (path, name, internal) in shown_properties
+                else:
+                    stored = owner and any((path, owner[1], m[1]) in shown_properties for m in re.finditer(
+                        r"\bself\.(\w+)\s*=\s*" + re.escape(internal) + r"\b", code[span[0]:span[1]]))
+                    hit = bool(stored) or uses(path, internal, span)
+                if hit:
+                    found.add(internal)
+                    changed = True
+        wrappers = {}
+        for index, (path, name, params, span, owner) in enumerate(names):
+            wrappers.setdefault(name, []).append([(label, internal in shown.get(index, set())) for label, internal, _ in params])
+        wrappers = {name: overloads for name, overloads in wrappers.items() if any(shown for o in overloads for _, shown in o)}
+    return wrappers
 
 
 @dataclass
@@ -864,6 +1024,10 @@ def catalog_issues(root: Path) -> list[Issue]:
             if key not in LANGUAGE_NEUTRAL_ANDROID_RESOURCES and has_words("".join(entry.itertext())):
                 issues.append(Issue(relative, 0, key, 'translatable="false" is only for language-neutral resources'))
             continue
+        # The Korean default resource is what Korean users see; it cannot be blank either.
+        sources = [entry] if entry.tag == "string" else list(entry)
+        if not sources or any(android_text_is_blank("".join(leaf.itertext())) for leaf in sources):
+            issues.append(Issue(relative, 0, key, "Android ko resource contains an empty value"))
         for language in LANGUAGES:
             match = localized[language].get(key)
             if match is None:
@@ -957,23 +1121,92 @@ class KotlinTree:
         return chain[::-1]
 
 
-def bound_uses(code: str, tree: "KotlinTree", start: int, end: int, declaration: str) -> list[int]:
-    """Uses of a name bound to the literal at [start, end) as its whole value.
+class BindingRules:
+    """How a language binds a name to an expression and continues lines."""
+    def __init__(self, head: str, before: str, after: str, continuation: re.Pattern, conditions: set[str]):
+        self.head = re.compile(head)            # `val name =` / `let name =`
+        self.before = re.compile(before)        # token before a result of the expression
+        self.after = re.compile(after)          # token after a result of the expression
+        self.continuation = continuation        # a next line that continues the expression
+        self.conditions = conditions            # `if (…)` before a branch result
 
-    `val title = "Try again"` (Kotlin) / `let title = "Try again"` (Swift):
-    the uses that follow in the same block (or file, at top level).
+
+def token_end(code: str, start: int) -> int:
+    """End of the masked literal or identifier at start."""
+    end = start
+    if code[start] in "\"'":
+        while end < len(code) and code[end] == code[start]:
+            end += 1
+        return end
+    while end < len(code) and (code[end].isalnum() or code[end] == "_"):
+        end += 1
+    return end
+
+
+def binding_uses(code: str, tree: "KotlinTree", start: int, rules: BindingRules) -> list[int]:
+    """Uses of a name whose initializer has the token at start as a result.
+
+    `val title = "Try again"`, `val title = if (on) "On" else "Off"`,
+    `let title = flag ? "A" : "B"`, `x ?: "Guest"`: the token is a result when
+    it stands alone between result tokens, never an operand (`a == "b"`,
+    `"a" + b`). Callers only ask after the token passed no call or collection.
+    Uses are the name's later occurrences in the binding's block (or file).
     """
-    head = re.search(declaration + r"\s*=\s*$", code[max(0, start - 200):start])
-    if not head or not re.compile(r"[ \t]*(?:$|[;\n})])", re.M).match(code, end):
+    end = token_end(code, start)
+    previous = start
+    while previous > 0 and code[previous - 1].isspace():
+        previous -= 1
+    condition = previous and code[previous - 1] == ")" and previous - 1 in tree.closers and \
+        call_at(code, tree.closers[previous - 1]) in rules.conditions
+    if not rules.after.match(code, end) or not (condition or rules.before.search(code[max(0, previous - 16):previous])):
         return []
-    braces = [opening for opening in tree.enclosing(start) if code[opening] == "{"]
+    window = max(0, start - 2000)
+    heads = [match for match in rules.head.finditer(code, window, start)]
+    if not heads:
+        return []
+    binding = heads[-1]
+    depth, i = 0, binding.end()
+    while i < start:
+        char = code[i]
+        if char in "([{":
+            depth += 1
+        elif char in ")]}":
+            depth -= 1
+            if depth < 0:
+                return []  # The binding's block closed before the token.
+        elif not depth and char in "\n;":
+            previous = i
+            while previous > binding.end() and code[previous - 1].isspace():
+                previous -= 1
+            following = i + 1
+            while following < start and code[following].isspace():
+                following += 1
+            joined = code.endswith(("=", "(", ",", ".", "+", "-", "*", "/", "&&", "||", "?", ":", "->", "else"), 0, previous) \
+                or (previous and code[previous - 1] == ")" and previous - 1 in tree.closers
+                    and call_at(code, tree.closers[previous - 1]) in rules.conditions)
+            if char == ";" or not (joined or rules.continuation.match(code, following) or following >= start):
+                return []
+        i += 1
+    if re.search(r"(?:\b(?:if|guard|while|case|for)\s*|,\s*)$", code[max(0, binding.start() - 12):binding.start()]):
+        return []  # `if let x = …` binds inside a condition, not a value.
+    braces = [opening for opening in tree.enclosing(binding.start()) if code[opening] == "{"]
     limit = tree.pairs[braces[-1]] if braces else len(code)
-    use = re.compile(r"(?<![\w.$])" + re.escape(head[1]) + r"\b(?!\s*=(?!=))(?!\s*:)")
+    use = re.compile(r"(?:(?<=self\.)|(?<![\w.$]))" + re.escape(binding[1]) + r"\b(?!\s*=(?!=))(?!:)")
     return [match.start() for match in use.finditer(code, end, limit)]
 
 
-KOTLIN_BINDING = r"\b(?:val|var)\s+(\w+)\s*(?::\s*(?:String|CharSequence)\??\s*)?"
-SWIFT_BINDING = r"\b(?:let|var)\s+(\w+)\s*(?::\s*String\??\s*)?"
+KOTLIN_BINDING = BindingRules(
+    r"\b(?:val|var)\s+(\w+)\s*(?::\s*[^=\n]+?)?\s*=(?!=)",
+    r"(?:(?<![=!<>])=|\belse|->|\?:|\{)$",
+    r"[ \t]*(?:$|[\n;})]|else\b|\?:)",
+    re.compile(r"else\b|\?[.:]|\.|&&|\|\||[-+*/%]|[=!]=|[<>]=?|as\b|!?is\b|!?in\b"),
+    {"if", "while", "for"})
+SWIFT_BINDING = BindingRules(
+    r"\b(?:let|var)\s+(\w+)\s*(?::\s*[^=\n]+?)?\s*=(?!=)",
+    r"(?:(?<![=!<>])=|(?<![?.])\?|(?<!:):|\?\?|\breturn|\bin|\belse|\{)$",
+    r"[ \t]*(?:$|[\n;})]|:|\?\?)",
+    re.compile(r"\?\?|[?:.]|&&|\|\||[-+*/%]|[=!]=|[<>]=?|else\b|as\b|is\b"),
+    set())
 
 
 KOTLIN_TEXT_TYPE = re.compile(r"(?:String|CharSequence|AnnotatedString)\??")
@@ -1046,7 +1279,7 @@ def kotlin_wrappers(files: dict[str, tuple[str, KotlinTree]]) -> dict[str, dict]
                     continue
                 # A use, not a named-argument label (`title = …`) or a declaration.
                 use = re.compile(r"(?<![\w.$])" + re.escape(parameter) + r"\b(?!\s*=(?!=))(?!\s*:)")
-                if any(kotlin_ui_context(code, occurrence.start(), tree.pairs, tree.closers, wrappers, tree)
+                if any(kotlin_ui_context(code, occurrence.start(), tree.pairs, tree.closers, wrappers, tree, strict=True)
                        for occurrence in use.finditer(code, start, end)):
                     wrappers[name]["display"].add(parameter)
                     changed = True
@@ -1054,7 +1287,8 @@ def kotlin_wrappers(files: dict[str, tuple[str, KotlinTree]]) -> dict[str, dict]
 
 
 def kotlin_ui_context(code: str, start: int, pairs: dict[int, int], closers: dict[int, int] | None = None,
-                      wrappers: dict[str, dict] | None = None, tree: KotlinTree | None = None) -> bool:
+                      wrappers: dict[str, dict] | None = None, tree: KotlinTree | None = None, depth: int = 0,
+                      strict: bool = False) -> bool:
     """Recognize literal arguments at text/notification sinks, in any language.
 
     Code has strings/comments blanked, preserving offsets. A lambda body starts
@@ -1176,10 +1410,17 @@ def kotlin_ui_context(code: str, start: int, pairs: dict[int, int], closers: dic
         return assignment[1] if assignment else None
 
     enclosing = tree.enclosing(start) if tree else sorted(opening for opening, end in pairs.items() if opening < start < end)
+    def bound():
+        """A result of `val name = …` shown wherever the name is shown."""
+        if through or tree is None or depth >= 3:
+            return False
+        return any(kotlin_ui_context(code, use, pairs, closers, wrappers, tree, depth + 1, strict)
+                   for use in binding_uses(code, tree, start, KOTLIN_BINDING))
+
     outers = [None] + enclosing[:-1]
     builders = [code[opening] == "{" and lambda_call(opening, outer)[0].split(".")[-1] in KOTLIN_TEXT_BUILDERS
                 for opening, outer in zip(enclosing, outers)]
-    appended = False
+    appended = through = False
     for index in range(len(enclosing) - 1, -1, -1):
         opening = enclosing[index]
         if code[opening] == "{":
@@ -1200,7 +1441,8 @@ def kotlin_ui_context(code: str, start: int, pairs: dict[int, int], closers: dic
                 return assigned_property(opening) in KOTLIN_SEMANTICS_PROPERTIES
             if call in {"apply", "also"} and receiver_call(opening).split(".")[-1] in KOTLIN_CHANNELS:
                 return assigned_property(opening) in KOTLIN_CHANNEL_PROPERTIES
-            return False
+            return bound()
+        through = True  # Past a call or collection, the token is an argument, not the value.
         if code[opening] != "(":
             continue
         qualified = call_at(code, opening)
@@ -1228,7 +1470,7 @@ def kotlin_ui_context(code: str, start: int, pairs: dict[int, int], closers: dic
         if not parameter and argument_index == 1 and (call in KOTLIN_SECOND_ARGUMENT_SINKS
                                                        or ".".join(qualified.split(".")[-2:]) in KOTLIN_SECOND_ARGUMENT_SINKS):
             return True
-        if parameter in KOTLIN_NAMED_SINKS:
+        if parameter in KOTLIN_NAMED_SINKS and (not strict or parameter == "contentDescription"):
             # Compose animation labels are debugger identifiers, not UI copy.
             if parameter == "label" and (call.startswith("animate") or call in {"rememberInfiniteTransition", "updateTransition"}):
                 continue
@@ -1240,7 +1482,7 @@ def kotlin_ui_context(code: str, start: int, pairs: dict[int, int], closers: dic
                 return True
         if call in KOTLIN_APPENDS and not parameter and argument_index == 0:
             appended = True
-    return False
+    return bound()
 
 
 def format_issues(root: Path) -> list[Issue]:
@@ -1295,11 +1537,13 @@ def audit(root: Path, rules: list[tuple[str, str, str, str]]) -> list[Issue]:
     types = SwiftTypes(sources, lambda source: code_only(source, SwiftLexer(source).run()), delimiter_pairs)
     catalogs = {relative: json.loads((root / relative).read_text(encoding="utf-8"))["strings"] for relative in CATALOGS}
     issues = []
+    swift_files = {}
     for path, source in sources.items():
         literals = SwiftLexer(source, path).run()
         code = code_only(source, literals)
-        marked = mark_literals(code, literals)
-        swift_tree = KotlinTree(code)
+        swift_files[path] = (source, code, mark_literals(code, literals), KotlinTree(code), literals)
+    wrappers = swift_wrappers({path: entry[:4] for path, entry in swift_files.items()})
+    for path, (source, code, marked, swift_tree, literals) in swift_files.items():
         for literal in literals:
             value = literal_value(literal)
             localized, kind = localized_context(path, source, literal, declarations)
@@ -1313,11 +1557,8 @@ def audit(root: Path, rules: list[tuple[str, str, str, str]]) -> list[Issue]:
             if not localized and allowed(path, value, rules):
                 continue
             words = has_words("".join(part for kind, part in literal["parts"] if kind == "lit"))
-            ui_copy = not HANGUL.search(value) and not localized and words and (
-                swift_ui_context(source, code, literal, marked)
-                # `let title = "Try again"` shown later as `Text(title)`.
-                or any(swift_ui_context(source, code, {"start": use, "end": use, "stack": [(code[o], o) for o in swift_tree.enclosing(use)]}, marked)
-                       for use in bound_uses(code, swift_tree, literal["start"], literal["end"], SWIFT_BINDING)))
+            ui_copy = not HANGUL.search(value) and not localized and words and swift_ui_context(
+                source, code, literal, marked, wrappers, swift_tree)
             if not HANGUL.search(value) and not localized and not ui_copy:
                 continue
             calls = [call_at(source, pos) for token, pos in literal["stack"] if token == "("]
@@ -1391,11 +1632,7 @@ def audit(root: Path, rules: list[tuple[str, str, str, str]]) -> list[Issue]:
             if allowed(path, value, rules):
                 continue  # Kotlin has no literal lookups; resources are ids.
             # Letters outside format placeholders: `"%02d:%02d"` is not copy.
-            ui_copy = has_words(static[start]) and (
-                kotlin_ui_context(code, start, pairs, closers, wrappers, tree)
-                # `val title = "Try again"` shown later as `Text(title)`.
-                or any(kotlin_ui_context(code, use, pairs, closers, wrappers, tree)
-                       for use in bound_uses(code, tree, start, end, KOTLIN_BINDING)))
+            ui_copy = has_words(static[start]) and kotlin_ui_context(code, start, pairs, closers, wrappers, tree)
             if HANGUL.search(value) or ui_copy:
                 issues.append(Issue(path, source.count("\n", 0, start) + 1, value, "Kotlin UI text must use resources or a documented exception"))
         for start, _, value in chars:
@@ -2318,6 +2555,69 @@ class SelfTests(unittest.TestCase):
             self.assertEqual({i.value for i in audit(root, []) if "Kotlin UI" in i.reason}, flagged, source)
         file.write_text("fun f(text: String) = text.any { it in '가'..'힣' }", encoding="utf-8")
         self.assertTrue(any("filter is forbidden" in i.reason for i in audit(root, [])))
+
+    def test_conditional_bindings_flow_into_display_sinks(self):
+        root = self.fixture(source="")
+        file = root / "apps/android-native/app/src/main/java/example/Screen.kt"
+        file.parent.mkdir(parents=True)
+        for source, flagged in [('val title = if (enabled) "Enabled" else "Disabled"\nText(title)', {"Enabled", "Disabled"}),
+                                ('fun f() {\n    val title = if (busy)\n        "Wait"\n    else\n        "Retry"\n    Text(text = title)\n}', {"Wait", "Retry"}),
+                                ('val title = when (mode) {\n    A -> "Alpha"\n    else -> "Beta"\n}\nText(title)', {"Alpha", "Beta"}),
+                                ('val name = custom ?: "Guest"\nText(name)', {"Guest"}),
+                                ('val t = if (x) { "Yes" } else { "No" }\nText(t)', {"Yes", "No"}),
+                                ('val key = prefs.getString("saved", null)\nText(key)', set()),
+                                ('val title = "Try" + suffix\nText(title)', set()),
+                                ('val ok = mode == "custom"\nif (ok) Text(label)', set()),
+                                ('fun f() { val t = if (x) "Yes" else "No" }\nfun g() { Text(t) }', set())]:
+            file.write_text(source, encoding="utf-8")
+            self.assertEqual({i.value for i in audit(root, []) if "Kotlin UI" in i.reason}, flagged, source)
+        file.unlink()
+        for source, flagged in [('let title = flag ? "Enabled" : "Disabled"\nText(verbatim: title)', {"Enabled", "Disabled"}),
+                                ('let title = custom ?? "Guest"\nText(verbatim: title)', {"Guest"}),
+                                ('let title = switch mode {\ncase .a: "Alpha"\ndefault: "Beta"\n}\nText(verbatim: title)', {"Alpha", "Beta"}),
+                                ('func f() -> String {\n    guard let value = x else { return "fallback" }\n    Text(verbatim: value)\n}', set()),
+                                ('let ok = mode == "custom" ? first : second\nText(verbatim: ok)', set())]:
+            root = self.fixture(source=source)
+            self.assertEqual({i.value for i in audit(root, []) if "not in a proven" in i.reason}, flagged, source)
+
+    def test_ternary_key_collections_are_lookups(self):
+        for source, keys in [('let tabs: [LocalizedStringKey] = flag ? ["Settings"] : ["Alarms"]', {"Settings", "Alarms"}),
+                             ('let tabs: [LocalizedStringKey] = custom ?? ["Default"]', {"Default"}),
+                             ('var tabs: [LocalizedStringKey] {\n    flag ? ["Settings"] : ["Alarms"]\n}', {"Settings", "Alarms"}),
+                             ('let tabs: [LocalizedStringKey] = make(["notakey"])', set())]:
+            root = self.fixture(source=source)
+            self.assertEqual({i.value for i in audit(root, []) if "key missing" in i.reason}, keys, source)
+
+    def test_korean_android_values_cannot_be_empty(self):
+        root = self.fixture(source="")
+        base = root / "apps/android-native/app/src/main/res"
+        for tag, korean, fails in [("string", "", True), ("string", "안녕", False),
+                                   ("string-array", "<item>하나</item><item> </item>", True),
+                                   ("plurals", '<item quantity="other"></item>', True)]:
+            texts = {"": korean, "-en": "Hello", "-ja": "こんにちは"}
+            for language, text in texts.items():
+                if tag == "string-array":
+                    text = korean if not language else "<item>" + text + "</item><item>" + text + "!</item>"
+                elif tag == "plurals":
+                    text = korean if not language else ('<item quantity="one">' + text + '</item>' if language == "-en" else "") + '<item quantity="other">' + text + '</item>'
+                (base / ("values" + language) / "strings.xml").write_text(
+                    '<resources><' + tag + ' name="hello">' + text + '</' + tag + '></resources>', encoding="utf-8")
+            self.assertEqual(any(i.reason == "Android ko resource contains an empty value" for i in catalog_issues(root)), fails, (tag, korean))
+
+    def test_swift_app_wrappers_are_display_sinks(self):
+        declarations = ('struct PromptDetailCard: View {\n    let title: String\n    let value: String\n    let note: String?\n'
+                        '    var body: some View { VStack { Text(title); Text(value); if let note { Text(note) } } }\n}\n'
+                        'struct Row: View {\n    private let caption: String\n    init(caption: String) { self.caption = caption }\n'
+                        '    var body: some View { Text(caption) }\n}\n'
+                        'func pill(_ text: String) -> some View { Text(text) }\n'
+                        'func cacheKey(category: String) -> String { compute(text: category) }\n'
+                        'struct Key { let id: String }\n')
+        for call, flagged in [('PromptDetailCard(title: label, value: "Try again", note: nil)', {"Try again"}),
+                              ('PromptDetailCard(title: label, value: other, note: "Optional")', {"Optional"}),
+                              ('Row(caption: "Tap here")', {"Tap here"}), ('pill("New")', {"New"}),
+                              ('cacheKey(category: "custom")', set()), ('Key(id: "row")', set())]:
+            root = self.fixture(source=declarations + call)
+            self.assertEqual({i.value for i in audit(root, []) if "not in a proven" in i.reason}, flagged, call)
 
     def test_catalog_target_languages_reject_hangul_in_every_leaf(self):
         root = self.fixture(source="")

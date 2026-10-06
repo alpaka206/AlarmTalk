@@ -126,19 +126,21 @@ InfoPlist 카탈로그, Android main의 Kotlin·언어별 XML 리소스를 검�
 memberwise 속성, 함수의 라벨 있는 매개변수는 같은 라벨을 받는 모든 오버로드가 키 타입일 때만 키 자리다. 삼항·nil 병합 등으로 일반 `String`이 되는 호출은 각 분기에서 명시적으로 번역한다.
 `NavigationLink`·`Menu`·`DisclosureGroup`·`ProgressView`·`.help`·`.badge`처럼 첫 문자열 인자가 키인 표준 SwiftUI
 초기화·수정자(`.searchable(prompt:)`·`.accessibilityAction(named:)` 포함)도 키 조회로 본다. `[LocalizedStringKey]`·`[String: LocalizedStringKey]`·`(LocalizedStringKey, …)`처럼
-키를 담는 컬렉션·튜플로 선언된 값·반환·매개변수의 원소 리터럴도 키 조회로 본다. 표시 인자 안의
+키를 담는 컬렉션·튜플로 선언된 값·반환·매개변수의 원소 리터럴도 키 조회로 본다(삼항·`??` 결과 컬렉션 포함). 표시 인자 안의
 `map`·`flatMap`·`compactMap`·즉시 실행 클로저가 돌려주는 리터럴은 그 표시 인자의 문구로 본다.
 Kotlin의 Text·BasicText·알림 문구(제목·본문·액션 버튼·채널 이름과 설명)와 title/text/contentDescription 등 표시 인자,
 `semantics { contentDescription = … }` 같은 접근성 속성은 원문 언어와 관계없이 리소스를 쓴다.
 `buildAnnotatedString`·`buildString` 안에서 `append` 한 문구, `remember { … }`·`let { … }`처럼 값을 돌려주는 람다의
 마지막 식, `when` 분기의 `->` 뒤 값은 그 결과를 받는 표시 인자의 문구로 본다(`when` 조건에서 비교하는 값은 제외).
-앱이 정의한 함수의 `String` 매개변수가 본문(블록·식 본문 모두)에서 표시 자리로 가면(`WakerSheetOptionRow`의
+앱이 정의한 함수의 `String` 매개변수가 본문(블록·식 본문 모두)에서 표시 자리로 가면(Swift는 함수·`init`
+매개변수와, 본문에서 표시되는 저장 속성의 memberwise 라벨도 같다 — `PromptDetailCard(value:)` 등)(`WakerSheetOptionRow`의
 `description` 등) 그 함수의 호출 인자도 표시 문구로 본다(감싼 함수의 감싼 함수까지). 값 람다는 괄호 안에
-`calculation = { … }`처럼 넘겨도 같다. 리터럴 하나를 값으로 둔 지역·속성 바인딩(`val title = "…"`,
-`let title = "…"`)은 같은 블록 안의 표시 자리 사용까지 따라간다(Swift도 같다). `"%02d:%02d"`처럼 서식 자리표시자뿐인 문자열은 문구가 아니다. 문자 리터럴(`'월'`)도 표시 자리에 쓰이면 같다.
+`calculation = { … }`처럼 넘겨도 같다. 바인딩 초깃값의 결과로 쓰인 리터럴(`val title = "…"`,
+`val title = if (on) "A" else "B"`, `?:`·`when` 분기, Swift의 삼항·`??`·`switch` 결과)은 같은 블록 안의 표시 자리
+사용까지 따라간다. 호출 인자나 비교 피연산자로 쓰인 리터럴은 따라가지 않는다. `"%02d:%02d"`처럼 서식 자리표시자뿐인 문자열은 문구가 아니다. 문자 리터럴(`'월'`)도 표시 자리에 쓰이면 같다.
 카탈로그의 영어·일본어에는 한글을 남기지 않고, Android 번역은 배열·복수형의 각 항목까지 비어 있으면 안 된다.
 영어 날짜 선택기의 년·월·일 접미사 세 리소스만 빈 값을 허용한다(숫자만 표시); 키 누락이나 한글 잔존은 허용하지 않는다.
-문자열 배열은 언어마다 항목 수가 같아야 한다(면제 없음).
+문자열 배열은 언어마다 항목 수가 같아야 한다(면제 없음). 한국어 기본 리소스(`values/`)도 비어 있으면 안 된다.
 Swift의 일반 String 표시 인자도 원문 언어와 관계없이 명시적으로 번역한다. 두 플랫폼의 자리표시자는
 위치·변환 타입·사용 횟수를 유지하며 순서 변경만 허용한다. 배열·복수형·기기별 변형의 각 값까지 대조한다.
 명시된 한국어 번역도 빈 값과 서식을 확인한다. 한글 원문 키의 서식은 한국어 값과도 대조한다.
@@ -162,7 +164,7 @@ InfoPlist 카탈로그(권한 설명)도 서식·줄바꿈을 한국어 값과 �
 Shared의 키는 두 타깃에 있어야 한다. 한글이 포함됐는지를 오류 노출 기준으로 삼는 게이트도 금지한다
 (`containsKorean`·`가-힣` 범위·`AC00`뿐 아니라 `\p{IsHangul}`·`UnicodeBlock.HANGUL_SYLLABLES` 같은 표기도).
 
-컴파일러를 대체하는 검사가 아니다. 새 래퍼나 복잡한 표현식은 실제 렌더 경로를 확인하고 분석 규칙과
+컴파일러를 대체하는 검사가 아니다 — 증명하지 않는 범위는 스크립트 머리말의 「Known limitations」에 적었다. 새 래퍼나 복잡한 표현식은 실제 렌더 경로를 확인하고 분석 규칙과
 `--self-test`를 함께 고친다. `scripts/hangul-literal-allowlist.txt`는 저장값·시드·생성 데이터·로그·
 미리보기·언어의 자기 이름·언어와 무관한 브랜드·TTS 입력·비노출 진단에만 사유를 붙여 허용한다. 허용은 경로와
 리터럴로 정하므로, 같은 값이 `String(localized:)` 같은 번역 조회에 쓰인 자리에는 적용하지 않는다(그 조회는 키를 찾아야 한다).
