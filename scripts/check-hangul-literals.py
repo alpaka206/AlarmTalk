@@ -55,6 +55,7 @@ CATEGORIES = {"generated", "seed-data", "data-contract", "debug-preview", "log",
 SWIFT_UI = {"Text", "Button", "Label", "Toggle", "TextField", "SecureField", "Section", "Picker", "Link",
             "NavigationLink", "DisclosureGroup", "Menu", "ProgressView", "Stepper", "DatePicker", "MultiDatePicker",
             "ColorPicker", "ShareLink", "LabeledContent", "GroupBox", "ControlGroup", "ContentUnavailableView", "Tab",
+            "TableColumn", "WindowGroup", "Window", "MenuBarExtra", "CommandMenu", "PasteButton",
             "navigationTitle", "navigationBarTitle", "navigationSubtitle", "alert", "confirmationDialog",
             "accessibilityLabel", "accessibilityHint", "accessibilityValue", "accessibilityRotor",
             "accessibilityCustomContent", "help", "badge"}
@@ -1090,7 +1091,9 @@ def catalog_issues(root: Path) -> list[Issue]:
 KOTLIN_TEXT_CALLS = {"Text", "BasicText", "AnnotatedString"}
 KOTLIN_FIRST_ARGUMENT_SINKS = {"setContentTitle", "setContentText", "setSubText", "setTicker", "setBigContentTitle",
                                "setSummaryText", "bigText", "showSnackbar"}
-KOTLIN_SECOND_ARGUMENT_SINKS = {"makeText", "addAction", "Action.Builder", "NotificationChannel", "NotificationChannelGroup"}
+KOTLIN_SECOND_ARGUMENT_SINKS = {"makeText", "addAction", "Action.Builder", "NotificationChannel", "NotificationChannelGroup",
+                                # Positional contentDescription / snackbar action label.
+                                "Icon", "Image", "AsyncImage", "showSnackbar"}
 KOTLIN_NAMED_SINKS = {"text", "title", "message", "contentDescription", "label"}
 # `append("…")` inside these lambdas becomes the builder's result, which is
 # then checked at the call that receives it (e.g. `Text(buildAnnotatedString {…})`).
@@ -2305,7 +2308,9 @@ class SelfTests(unittest.TestCase):
                        'Modifier.semantics { contentDescription = "Delete" }',
                        'Modifier.clearAndSetSemantics { stateDescription = if (on) "On" else "Off" }',
                        'Modifier.semantics(mergeDescendants = true) {\n    role = Role.Button\n    this.contentDescription = "Play"\n}',
-                       'builder.setStyle(NotificationCompat.BigTextStyle().bigText("Ready"))']:
+                       'builder.setStyle(NotificationCompat.BigTextStyle().bigText("Ready"))',
+                       'Icon(Icons.Default.Add, "Add alarm")', 'Image(painter, "Profile photo")',
+                       'AsyncImage(model, "Cover")', 'state.showSnackbar(message, "Undo")']:
             file.write_text(source, encoding="utf-8")
             self.assertTrue(any("Kotlin UI" in issue.reason for issue in audit(root, [])), source)
         for source in ['Log.d(TAG, buildString { append("Debug") })',
@@ -2418,7 +2423,7 @@ class SelfTests(unittest.TestCase):
             self.assertEqual(audit(root, []), [], source)
 
     def test_standard_swiftui_initializers_are_key_lookups(self):
-        for call in ['NavigationLink("Settings", destination: Detail())', 'DisclosureGroup("Advanced") { Detail() }',
+        for call in ['TableColumn("Name", value: \\.name)', 'WindowGroup("Main") { Detail() }', 'NavigationLink("Settings", destination: Detail())', 'DisclosureGroup("Advanced") { Detail() }',
                      'Menu("Options") { Detail() }', 'ProgressView("Loading")', 'Stepper("Count", value: $count)',
                      'DatePicker("Date", selection: $date)', 'ShareLink("Share", item: url)',
                      'LabeledContent("Version", value: version)', 'GroupBox("Account") { Detail() }',

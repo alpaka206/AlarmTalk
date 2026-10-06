@@ -124,12 +124,12 @@ InfoPlist 카탈로그, Android main의 Kotlin·언어별 XML 리소스를 검�
 키 조회다). 키 타입으로 선언한 값의 삼항·`??`·`case` 결과 분기는 모두 키다(비교하는 피연산자는 아니다). 라벨 없는 매개변수
 (`func row(_ title: LocalizedStringKey)`, `init(_ title: …)`)는 위치로 대응한다. 사용자 타입의 `init`(본문·확장)과
 memberwise 속성, 함수의 라벨 있는 매개변수는 같은 라벨을 받는 모든 오버로드가 키 타입일 때만 키 자리다. 삼항·nil 병합 등으로 일반 `String`이 되는 호출은 각 분기에서 명시적으로 번역한다.
-`NavigationLink`·`Menu`·`DisclosureGroup`·`ProgressView`·`.help`·`.badge`처럼 첫 문자열 인자가 키인 표준 SwiftUI
+`NavigationLink`·`Menu`·`DisclosureGroup`·`ProgressView`·`TableColumn`·`.help`·`.badge`처럼 첫 문자열 인자가 키인 표준 SwiftUI
 초기화·수정자(`.searchable(prompt:)`·`.accessibilityAction(named:)` 포함)도 키 조회로 본다. `[LocalizedStringKey]`·`[String: LocalizedStringKey]`·`(LocalizedStringKey, …)`처럼
 키를 담는 컬렉션·튜플로 선언된 값·반환·매개변수의 원소 리터럴도 키 조회로 본다(삼항·`??` 결과 컬렉션 포함). 표시 인자 안의
 `map`·`flatMap`·`compactMap`·즉시 실행 클로저가 돌려주는 리터럴은 그 표시 인자의 문구로 본다.
 Kotlin의 Text·BasicText·알림 문구(제목·본문·액션 버튼·채널 이름과 설명)와 title/text/contentDescription 등 표시 인자,
-`semantics { contentDescription = … }` 같은 접근성 속성은 원문 언어와 관계없이 리소스를 쓴다.
+`semantics { contentDescription = … }`·`Icon(icon, "…")`의 위치 인자 같은 접근성 문구는 원문 언어와 관계없이 리소스를 쓴다.
 `buildAnnotatedString`·`buildString` 안에서 `append` 한 문구, `remember { … }`·`let { … }`처럼 값을 돌려주는 람다의
 마지막 식, `when` 분기의 `->` 뒤 값은 그 결과를 받는 표시 인자의 문구로 본다(`when` 조건에서 비교하는 값은 제외).
 앱이 정의한 함수의 `String` 매개변수가 본문(블록·식 본문 모두)에서 표시 자리로 가면(Swift는 함수·`init`
