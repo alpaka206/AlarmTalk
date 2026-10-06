@@ -465,20 +465,43 @@ def catalog_issues(root: Path) -> list[Issue]:
     return issues
 
 
-def kotlin_ui_context(code: str, start: int, pairs: dict[int, int]) -> bool:
+# Kotlin display sinks, matched by callee name and argument position. Second
+# positional argument: Toast text, notification action title, channel name.
+KOTLIN_TEXT_CALLS = {"Text", "BasicText", "AnnotatedString"}
+KOTLIN_FIRST_ARGUMENT_SINKS = {"setContentTitle", "setContentText", "setSubText", "setTicker", "setBigContentTitle",
+                               "setSummaryText", "bigText", "showSnackbar"}
+KOTLIN_SECOND_ARGUMENT_SINKS = {"makeText", "addAction", "Action.Builder", "NotificationChannel", "NotificationChannelGroup"}
+KOTLIN_NAMED_SINKS = {"text", "title", "message", "contentDescription", "label"}
+# `append("…")` inside these lambdas becomes the builder's result, which is
+# then checked at the call that receives it (e.g. `Text(buildAnnotatedString {…})`).
+KOTLIN_TEXT_BUILDERS = {"buildAnnotatedString", "buildString", "withStyle", "withLink", "withAnnotation"}
+KOTLIN_APPENDS = {"append", "appendLine"}
+# Assignment sinks in small receiver lambdas.
+KOTLIN_SEMANTICS_BLOCKS = {"semantics", "clearAndSetSemantics"}
+KOTLIN_SEMANTICS_PROPERTIES = {"contentDescription", "stateDescription", "paneTitle"}
+KOTLIN_CHANNELS = {"NotificationChannel", "NotificationChannelGroup"}
+KOTLIN_CHANNEL_PROPERTIES = {"name", "description"}
+
+
+def kotlin_ui_context(code: str, start: int, pairs: dict[int, int], closers: dict[int, int] | None = None) -> bool:
     """Recognize literal arguments at text/notification sinks, in any language.
 
     Code has strings/comments blanked, preserving offsets. A lambda body starts
     a new context: an onClick log is not a title merely because it is inside UI.
+    Text builders are the exception: appended text flows to the enclosing call.
     This is a call-site check, not Kotlin data-flow/type analysis.
     """
-    closers = {end: opening for opening, end in pairs.items()}
+    if closers is None:
+        closers = {end: opening for opening, end in pairs.items()}
+
+    def before(position):
+        while position > 0 and code[position - 1].isspace():
+            position -= 1
+        return position
 
     def expression_branch(opening):
         # Look back only over the token before the brace, not the whole file.
-        end = opening
-        while end > 0 and code[end - 1].isspace():
-            end -= 1
+        end = before(opening)
         if code.endswith("->", 0, end):
             return True
         if code.endswith("else", 0, end) and (end == 4 or not (code[end - 5].isalnum() or code[end - 5] == "_")):
@@ -488,12 +511,57 @@ def kotlin_ui_context(code: str, start: int, pairs: dict[int, int]) -> bool:
             return condition is not None and call_at(code, condition) in {"if", "when"}
         return False
 
+    def lambda_call(opening):
+        """`withStyle(style) {` -> withStyle; `channel.apply {` -> channel.apply."""
+        end = before(opening)
+        if end and code[end - 1] == ")" and end - 1 in closers:
+            return call_at(code, closers[end - 1])
+        return call_at(code, opening)
+
+    def receiver_call(opening):
+        """`NotificationChannel(…).apply {` -> NotificationChannel."""
+        token = call_span(code, opening)[0]
+        if not code.startswith(".", token):
+            return ""
+        end = before(token)
+        return call_at(code, closers[end - 1]) if end and code[end - 1] == ")" and end - 1 in closers else ""
+
+    def assigned_property(opening):
+        """Property assigned by the statement that holds the literal."""
+        depth, begin = 0, opening + 1
+        for i in range(opening + 1, start):
+            char = code[i]
+            if char in "([{":
+                depth += 1
+            elif char in ")]}":
+                depth -= 1
+            elif depth == 0 and char in "\n;":
+                previous = i - 1
+                while previous > opening and code[previous] in " \t\r":
+                    previous -= 1
+                if code[previous] != "=":  # `x =` continues on the next line.
+                    begin = i + 1
+        assignment = re.match(r"\s*(?:(?:this|it)\.)?(\w+)\s*=(?!=)", code[begin:start])
+        return assignment[1] if assignment else None
+
     enclosing = sorted(opening for opening, end in pairs.items() if opening < start < end)
-    block = max((opening for opening in enclosing if code[opening] == "{" and not expression_branch(opening)), default=-1)
+    appended = False
     for opening in reversed(enclosing):
-        if code[opening] != "(" or not block < opening:
+        if code[opening] == "{":
+            if expression_branch(opening):
+                continue
+            call = lambda_call(opening).split(".")[-1]
+            if appended and call in KOTLIN_TEXT_BUILDERS:
+                continue
+            if call in KOTLIN_SEMANTICS_BLOCKS:
+                return assigned_property(opening) in KOTLIN_SEMANTICS_PROPERTIES
+            if call in {"apply", "also"} and receiver_call(opening).split(".")[-1] in KOTLIN_CHANNELS:
+                return assigned_property(opening) in KOTLIN_CHANNEL_PROPERTIES
+            return False
+        if code[opening] != "(":
             continue
-        call = call_at(code, opening).split(".")[-1]
+        qualified = call_at(code, opening)
+        call = qualified.split(".")[-1]
         if call in {"if", "when", "while"}:
             # A compared contract value does not become UI copy merely because
             # the enclosing expression supplies a title.
@@ -510,17 +578,20 @@ def kotlin_ui_context(code: str, start: int, pairs: dict[int, int]) -> bool:
         argument = fragment[last:].strip()
         named = re.match(r"(\w+)\s*=\s*(?!=)", argument)
         parameter = named[1] if named else None
-        if call in {"Text", "BasicText", "AnnotatedString"} and (parameter == "text" or (not parameter and argument_index == 0)):
+        if call in KOTLIN_TEXT_CALLS and (parameter == "text" or (not parameter and argument_index == 0)):
             return True
-        if call in {"setContentTitle", "setContentText", "setSubText", "showSnackbar"} and argument_index == 0:
+        if call in KOTLIN_FIRST_ARGUMENT_SINKS and argument_index == 0:
             return True
-        if call == "makeText" and argument_index == 1:
+        if not parameter and argument_index == 1 and (call in KOTLIN_SECOND_ARGUMENT_SINKS
+                                                       or ".".join(qualified.split(".")[-2:]) in KOTLIN_SECOND_ARGUMENT_SINKS):
             return True
-        if parameter in {"text", "title", "message", "contentDescription", "label"}:
+        if parameter in KOTLIN_NAMED_SINKS:
             # Compose animation labels are debugger identifiers, not UI copy.
             if parameter == "label" and (call.startswith("animate") or call in {"rememberInfiniteTransition", "updateTransition"}):
                 continue
             return True
+        if call in KOTLIN_APPENDS and not parameter and argument_index == 0:
+            appended = True
     return False
 
 
@@ -619,11 +690,12 @@ def audit(root: Path, rules: list[tuple[str, str, str, str]]) -> list[Issue]:
             masked[start:end] = [" " for _ in source[start:end]]
         code = blank_comments("".join(masked))
         pairs = delimiter_pairs(code)
+        closers = {end: opening for opening, end in pairs.items()}
         static = {start: value for start, _, value, _ in kotlin_literals(source, static_text=True)}
         for start, _, value, _ in literals:
             if allowed(path, value, rules):
                 continue
-            ui_copy = any(char.isalpha() for char in static[start]) and kotlin_ui_context(code, start, pairs)
+            ui_copy = any(char.isalpha() for char in static[start]) and kotlin_ui_context(code, start, pairs, closers)
             if HANGUL.search(value) or ui_copy:
                 issues.append(Issue(path, source.count("\n", 0, start) + 1, value, "Kotlin UI text must use resources or a documented exception"))
         gate_source = code + "\n" + "\n".join(value for _, _, value, _ in literals)
@@ -1106,6 +1178,39 @@ class SelfTests(unittest.TestCase):
                        'Button(onClick = { Log.d("Tag", "Clicked") }) {}',
                        'animateFloatAsState(targetValue = value, label = "progress")',
                        '// Text("Retry")\n/* Text("Again") */']:
+            file.write_text(source, encoding="utf-8")
+            self.assertEqual(audit(root, []), [], source)
+
+    def test_kotlin_builders_notifications_and_semantics_are_sinks(self):
+        root = self.fixture(source="")
+        file = root / "apps/android-native/app/src/main/java/example/Screen.kt"
+        file.parent.mkdir(parents=True)
+        for source in ['Text(text = buildAnnotatedString { append("Try again") })',
+                       'Text(buildAnnotatedString {\n    append(stringResource(R.string.a))\n    withStyle(style) { append("Retry") }\n})',
+                       'Text(text = buildAnnotatedString { withStyle(SpanStyle(color = c)) { appendLine("Retry $n") } })',
+                       'Card(title = buildString { append("Settings") })',
+                       'builder.addAction(R.drawable.ic_alarm_24, "Snooze", pendingIntent)',
+                       'NotificationCompat.Action.Builder(icon, "Dismiss", pendingIntent).build()',
+                       'NotificationChannel(CHANNEL_ID, "Alarms", NotificationManager.IMPORTANCE_HIGH)',
+                       'NotificationChannelGroup(GROUP_ID, "Family")',
+                       'NotificationChannel(id, name, importance).apply {\n    description = "Rings alarms"\n}',
+                       'NotificationChannel(id, name, importance)\n    .apply { this.description =\n        "Rings alarms" }',
+                       'Modifier.semantics { contentDescription = "Delete" }',
+                       'Modifier.clearAndSetSemantics { stateDescription = if (on) "On" else "Off" }',
+                       'Modifier.semantics(mergeDescendants = true) {\n    role = Role.Button\n    this.contentDescription = "Play"\n}',
+                       'builder.setStyle(NotificationCompat.BigTextStyle().bigText("Ready"))']:
+            file.write_text(source, encoding="utf-8")
+            self.assertTrue(any("Kotlin UI" in issue.reason for issue in audit(root, [])), source)
+        for source in ['Log.d(TAG, buildString { append("Debug") })',
+                       'val key = buildString { append("prefix") }',
+                       'Text(buildAnnotatedString { pushStringAnnotation(tag = "URL", annotation = url); append(label) })',
+                       'Text(buildAnnotatedString { withStyle(SpanStyle(fontFeatureSettings = "tnum")) { append(time) } })',
+                       'fun breakBlock() { append("Debug") }', 'builder.append("Debug").toString()',
+                       'NotificationChannel("alarm_channel", name, importance)',
+                       'NotificationChannel(id, name, importance).apply { setShowBadge(false); group = "family" }',
+                       'Settings(id).apply { description = "debug" }',
+                       'Modifier.semantics { testTag = "row" }',
+                       'builder.addAction(action)']:
             file.write_text(source, encoding="utf-8")
             self.assertEqual(audit(root, []), [], source)
 

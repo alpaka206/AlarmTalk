@@ -88,7 +88,9 @@ TTS 입력 문장은 구분한다. 카탈로그의 번역 유무와 호출부가
 InfoPlist 카탈로그, Android main의 Kotlin·언어별 XML 리소스를 검사한다. Swift는 정적 SwiftUI 키,
 명시적 번역 조회, 선언에서 확인한 `LocalizedStringKey`·`LocalizedStringResource` 인자와 반환을
 구분한다. 삼항·nil 병합 등으로 일반 `String`이 되는 호출은 각 분기에서 명시적으로 번역한다.
-Kotlin의 Text·BasicText·알림 문구와 title/text/contentDescription 등 표시 인자는 원문 언어와 관계없이 리소스를 쓴다.
+Kotlin의 Text·BasicText·알림 문구(제목·본문·액션 버튼·채널 이름과 설명)와 title/text/contentDescription 등 표시 인자,
+`semantics { contentDescription = … }` 같은 접근성 속성은 원문 언어와 관계없이 리소스를 쓴다.
+`buildAnnotatedString`·`buildString` 안에서 `append` 한 문구는 그 결과를 받는 표시 인자의 문구로 본다.
 카탈로그의 영어·일본어에는 한글을 남기지 않고, Android 번역은 배열·복수형의 각 항목까지 비어 있으면 안 된다.
 영어 날짜 선택기의 년·월·일 접미사 세 리소스만 빈 값을 허용한다(숫자만 표시); 키 누락이나 한글 잔존은 허용하지 않는다.
 스낵바 색상 판정 표시어 배열(`snackbar_error_markers`·`snackbar_success_markers`)은 위치로 대응하지 않는 단어 집합이라
