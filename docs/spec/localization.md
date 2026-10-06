@@ -19,6 +19,10 @@ Swift 소스와 `Localizable.xcstrings`는 함께 고친다. 번역이 카탈로
 전송 라벨, 옛 날씨 지역 값, 공휴일 시드는 계약값이다. 화면 표시만 현재 앱 언어로 바꾼다.
 운세의 옛 성별·시간 모름 별칭은 기존 정규화 규칙으로 뜻을 확인한 뒤 표시만 번역한다.
 사용자가 직접 입력한 이름·관계·문구는 번역 대상이 아니다.
+가족 알람 녹음의 기본 라벨은 계약값 「가족이 보낸 음성」을 앱 언어와 무관하게 그대로 보낸다(서버 기본값과
+같다). 받는 기기는 저장된 문구가 그 값과 정확히 같을 때만 울림 화면에 현재 언어의 「상대가 보낸 음성」을
+보여 준다. 보낸 사람은 커플 상대일 수도 있으므로 가족이라고 단정하지 않는다. 번역문을 보내던 옛 Android
+빌드의 「Voice from family」·「家族からの音声」도 같은 값으로 읽고, 보낸 사람이 친 라벨은 그대로 둔다.
 관계 프리셋은 선택 상태에 프리셋 종류가 명시된 동안만 번역한다. 기존 저장 계약은 관계 문자열만
 보존해 직접 입력 여부를 복원할 수 없다. 따라서 저장된 관계는 프리셋과 글자가 같아도 원문으로 표시하고,
 재편집할 때는 직접 입력으로 복원한다. 문자열 일치만으로 프리셋을 추측하지 않는다.
@@ -97,6 +101,7 @@ TTS 입력 문장은 구분한다. 카탈로그의 번역 유무와 호출부가
 | 존칭 한 번 | `r3data_honorific_name` 리소스 | `%@님` 카탈로그 키 |
 | 스낵바 색은 문구 종류로 | `ui/app/SnackbarSeverity.kt`의 `SnackbarSeverities` · `SnackbarSeverityTest` | (스낵바 색 구분 없음) |
 | 언어 선택지 자기 이름 | `voices_lang_ko`·`voices_lang_en`·`voices_lang_ja` | 목소리 등록 화면의 언어 선택지(후속 연결) |
+| 가족 알람 녹음 기본 라벨(전송은 계약값, 표시는 받는 기기 언어) | `data/ReceivedAlarmLabels.kt`의 `FAMILY_VOICE_DEFAULT_LABEL`·`localizedReceivedVoiceText` → `RingingActivity` | `ReceivedVoiceTextDisplay`·`LocalAlarmRecord.localizedVoiceText` → `AlarmKitViewModel`의 Live Activity 문구 |
 | 저장값과 기본 목소리의 표시 | `fortuneValueLabel`·`systemVoiceDisplayName` | `FortunePromptInputFormat.displayLabel`·`systemVoiceDisplayName`·`VoiceRelationshipPreset.displayLabel` |
 | 약관 웹 링크의 앱 언어 | 설정 화면의 언어별 경로 | `LegalLinks`(후속 화면에서 채택) |
 | 화면의 문자열 조회 | `stringResource`·`Context.getString` | `String(localized:)`·SwiftUI의 정적 문자열 키 |

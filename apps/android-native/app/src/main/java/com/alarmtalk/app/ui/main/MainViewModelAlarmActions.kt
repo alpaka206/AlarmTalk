@@ -10,6 +10,7 @@ import com.alarmtalk.app.data.AlarmDraft
 import com.alarmtalk.app.data.AlarmOrigins
 import com.alarmtalk.app.data.AlarmPlayModes
 import com.alarmtalk.app.data.DuplicateAlarmTimeException
+import com.alarmtalk.app.data.FAMILY_VOICE_DEFAULT_LABEL
 import com.alarmtalk.app.data.CachedAlarmAudio
 import com.alarmtalk.app.data.VoiceSources
 import com.alarmtalk.app.data.usesFreeSystemVoiceAlarm
@@ -164,8 +165,7 @@ private suspend fun MainViewModel.createFamilyTargetAlarm(draft: AlarmDraft, onD
                         recipientUserId = requireNotNull(draft.targetUserId.trimmedOrNull()),
                         wakeAt = String.format(java.util.Locale.US, "%02d:%02d", draft.hour, draft.minute),
                         voiceUploadId = upload.id,
-                        label = draft.label.trimmedOrNull()
-                            ?: getApplication<Application>().getString(R.string.msg_family_voice_default_label),
+                        label = draft.familyVoiceAlarmLabel(),
                         repeatDays = RemoteAlarmMapper.repeatMaskToDays(draft.repeatDaysMask),
                     ),
                 ).alarm
@@ -184,6 +184,13 @@ private suspend fun MainViewModel.createFamilyTargetAlarm(draft: AlarmDraft, onD
         message = userFacingError(error, getApplication<Application>().getString(R.string.msg_family_alarm_set_failed))
     }
 }
+
+/**
+ * 가족 녹음 알람으로 보낼 라벨. 비었으면 **계약값(한국어) 그대로** 보낸다 — 받는 사람의 문구로
+ * 저장되고 받는 기기가 자기 언어로 바꿔 보여 준다(`localizedReceivedVoiceText`). 앱 언어로 번역해
+ * 보내면 받는 사람 화면에 보낸 사람의 언어가 그대로 남는다.
+ */
+internal fun AlarmDraft.familyVoiceAlarmLabel(): String = label.trimmedOrNull() ?: FAMILY_VOICE_DEFAULT_LABEL
 
 private fun AlarmDraft.shouldUploadLocalVoiceForFamilyAlarm(): Boolean =
     playMode != AlarmPlayModes.ALARM_ONLY &&

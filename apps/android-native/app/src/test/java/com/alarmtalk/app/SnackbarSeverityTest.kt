@@ -121,8 +121,6 @@ class SnackbarSeverityTest {
 
         /** 뷰모델 소스에 있지만 스낵바에 실리지 않는 문구 — 다른 문구의 인자이거나 화면 안 글이다. */
         val NOT_SNACKBAR = setOf(
-            // 가족 알람 전송 라벨(서버에 저장되는 값).
-            "msg_family_voice_default_label",
             // 공유 코드 문구의 %1$s 인자.
             "msg_gb_plan_label_couple",
             "msg_gb_plan_label_family",

@@ -9,7 +9,8 @@ enum AlarmPresentationLanguage {
         Set(alarms.filter { record in
             guard record.enabled, record.alarmKitID != nil else { return false }
             if let stamp { return stamp != current }
-            return record.originEnum == .receivedRemote && record.localizedDisplayLabel != record.label
+            return record.originEnum == .receivedRemote
+                && (record.localizedDisplayLabel != record.label || record.localizedVoiceText != record.voiceText)
         }.map(\.id))
     }
 

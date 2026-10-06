@@ -22,6 +22,38 @@ struct AlarmKitLocalizationTests {
         #expect(AlarmPresentationLanguage.rearmTargets(stamp: nil, current: "ko", alarms: all) == ["received"])
     }
 
+    @Test("첫 실행은 받은 알람의 기본 녹음 라벨이 이 기기 언어와 다를 때도 다시 건다")
+    func firstRunRearmsReceivedFamilyVoiceText() {
+        var family = alarm("family", label: "직접 정한 이름", received: true)
+        family.voiceText = ReceivedVoiceTextDisplay.familyVoiceDefault
+        var typed = alarm("typed", label: "직접 정한 이름", received: true)
+        typed.voiceText = "엄마가 깨워 줄게"
+        #expect(AlarmPresentationLanguage.rearmTargets(stamp: nil, current: "ko", alarms: [family, typed]) == ["family"])
+    }
+
+    @Test("가족 알람의 기본 녹음 라벨은 계약값으로 보내고 받는 기기 언어로 보여 준다", arguments: ["ko", "en", "ja"])
+    func familyVoiceText(language: String) throws {
+        #expect(ReceivedVoiceTextDisplay.familyVoiceDefault == "가족이 보낸 음성")
+        let path = try #require(Bundle.main.path(forResource: language, ofType: "lproj"))
+        let bundle = try #require(Bundle(path: path))
+        let expected = ["ko": "상대가 보낸 음성", "en": "Voice from someone", "ja": "相手から届いた音声"][language]
+        // 계약값과, 번역문을 보내던 옛 안드로이드 빌드가 남긴 값.
+        for stored in ["가족이 보낸 음성", " 가족이 보낸 음성 ", "Voice from family", "家族からの音声"] {
+            #expect(ReceivedVoiceTextDisplay.text(stored, bundle: bundle) == expected)
+        }
+        #expect(ReceivedVoiceTextDisplay.text("엄마가 깨워 줄게", bundle: bundle) == "엄마가 깨워 줄게")
+    }
+
+    @Test("자기 알람의 녹음 문구는 기본 라벨과 글자가 같아도 바꾸지 않는다")
+    func ownVoiceTextIsNotRewritten() {
+        var own = alarm("own")
+        own.voiceText = ReceivedVoiceTextDisplay.familyVoiceDefault
+        #expect(own.localizedVoiceText == ReceivedVoiceTextDisplay.familyVoiceDefault)
+        var received = alarm("received", received: true)
+        received.voiceText = ReceivedVoiceTextDisplay.familyVoiceDefault
+        #expect(received.localizedVoiceText == String(localized: "상대가 보낸 음성"))
+    }
+
     @Test("부분 성공한 예약은 반복하지 않고 남은 대상만 이어간다")
     func partialCompletion() throws {
         let suite = "AlarmKitLocalizationTests.\(UUID().uuidString)"

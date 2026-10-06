@@ -322,7 +322,6 @@
     <string name="msg_family_alarm_set_for_target">%1$sさんにアラームを設定しました。</string>
     <string name="msg_family_alarm_settings_save_failed">相手のアラーム設定を保存できませんでした。</string>
     <string name="msg_family_alarm_settings_saved">相手のアラーム設定を保存しました。</string>
-    <string name="msg_family_voice_default_label">家族からの音声</string>
     <string name="msg_gb_code_input_required_period">コードを入力してください。</string>
     <string name="msg_gb_code_register_failed">コードの登録に失敗しました。</string>
     <string name="msg_gb_code_registered">コードを登録しました</string>
@@ -747,6 +746,7 @@
     <string name="r3ed_google_signin_error_failed_status">Googleログインに失敗しました。status=%1$d</string>
     <string name="r3ed_ampm_wheel_am">午前</string>
     <string name="r3ed_ampm_wheel_pm">午後</string>
+    <string name="r3data_received_family_voice_text">相手から届いた音声</string>
     <string name="r3data_received_alarm_from_other">相手から届いたアラーム</string>
     <string name="r3data_honorific_name">%1$sさん</string>
     <string name="r3data_received_alarm_from_sender">%1$sから届いたアラーム</string>

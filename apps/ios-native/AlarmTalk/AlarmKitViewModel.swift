@@ -1448,7 +1448,8 @@ final class AlarmKitViewModel: ObservableObject {
         // 비어있지 않을 때만 실어 LA 가 ring-moment 인용 문구를 보여 줄 수 있게 한다.
         let quotedVoiceText: String? = {
             guard record.playModeEnum != .alarmOnly else { return nil }
-            let trimmed = record.voiceText?.trimmingCharacters(in: .whitespacesAndNewlines)
+            // 받은 알람의 기본 녹음 라벨(계약값)은 이 기기 언어로 바꿔 싣는다.
+            let trimmed = record.localizedVoiceText?.trimmingCharacters(in: .whitespacesAndNewlines)
             guard let trimmed, !trimmed.isEmpty else { return nil }
             // ⚠ **delivery 태그를 벗겨서 싣는다.** 이 문구는 잠금화면 alert 과 Live Activity
             // 인용문으로 그대로 보인다 — 태그가 섞이면 대괄호가 화면에 뜬다.

@@ -3087,7 +3087,8 @@ struct AlarmEditorSheet: View {
                     recipientUserId: recipient.userId,
                     wakeAt: String(format: "%02d:%02d", draft.hour, draft.minute),
                     voiceUploadId: upload.id,
-                    label: (draft.label).nilIfBlank ?? "가족이 보낸 음성",
+                    // 기본 라벨은 계약값 그대로 — 받는 기기가 자기 언어로 바꿔 보여 준다.
+                    label: (draft.label).nilIfBlank ?? ReceivedVoiceTextDisplay.familyVoiceDefault,
                     dubTargetLanguage: nil,
                     repeatDays: RemoteAlarmMapper.repeatDays(fromMask: draft.repeatDaysMask)
                 )

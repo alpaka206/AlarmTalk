@@ -981,23 +981,6 @@
         }
       }
     },
-    "가족이 보낸 음성" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Voice from family"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "家族からの音声"
-          }
-        }
-      }
-    },
     "간편 로그인" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -11414,6 +11397,29 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "상대가 보낸 알람"
+          }
+        }
+      }
+    },
+    "상대가 보낸 음성" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Voice from someone"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "相手から届いた音声"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "상대가 보낸 음성"
           }
         }
       }

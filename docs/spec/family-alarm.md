@@ -465,6 +465,7 @@ offset은 동시 삭제·재정렬에서 누락을 완전히 막을 수 없으�
 | 보내기(로컬 행 없음 · 성공하면 새로고침 없이 닫는다) | `MainViewModelAlarmActions.createFamilyTargetAlarm` | `AlarmEditorSheet.createFamilyTargetAlarm` | `routes/family-alarm.ts` |
 | 음성 업로드 발신자의 유료 권한 | 기존 API 소비 | 기존 API 소비 | `family-alarm.ts` 쓰기 트랜잭션 → `isPaidVoicePlan` |
 | 받는 사람 고르기 | 「누구를 깨울까요?」 시트 | `WakeTargetSheet` | — |
+| 녹음 기본 라벨은 계약값으로 보내고 받는 기기 언어로 표시 | `familyVoiceAlarmLabel` · `localizedReceivedVoiceText` | `ReceivedVoiceTextDisplay` | `family-alarm.ts` 의 `DEFAULT_VOICE_LABEL` |
 | 저장 버튼 라벨 | `editor_save_for`(`저장 · %1$s`) | `AlarmEditorSheet.saveButtonTitle` | — |
 | 방해금지 판정 | — | — | `lib/family-alarm-settings.ts` `isBlockedByFamilyAlarmQuietTime` |
 | 방해금지 기본값 없음 | `MainViewModelAuthActions`(다 지우면 그대로) | `AuthViewModel.updateProfile`(같음) | `normalizeQuietWindows` 폴백 `[]` + 가입 응답 |
