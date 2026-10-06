@@ -9,6 +9,7 @@ cannot prove; removed entries fail, so it cannot silently become a dump.
 from __future__ import annotations
 
 import argparse
+import bisect
 from dataclasses import dataclass
 import fnmatch
 import hashlib
@@ -51,6 +52,20 @@ UNALIGNED_ANDROID_ARRAYS = {"snackbar_error_markers", "snackbar_success_markers"
 # Resource and catalog checks are never allowlisted by key: a key-level rule
 # would also hide empty, Hangul and format failures. Scope exceptions above.
 RESOURCE_SUFFIXES = (".xml", ".xcstrings")
+# Deliberately identical in every language (brand, endonyms, document names).
+# Only these may opt out of translation (`shouldTranslate: false`,
+# `translatable="false"`) or keep the same English and Japanese text; keys with
+# no letters (punctuation, format-only) need no entry.
+LANGUAGE_NEUTRAL_CATALOG_KEYS = {"AlarmTalk", "English", "日本語", "EULA", "CFBundleDisplayName", "CFBundleName"}
+LANGUAGE_NEUTRAL_ANDROID_RESOURCES = {"app_name", "label_vibration_sos", "voices_lang_ko", "voices_lang_en", "voices_lang_ja"}
+FORMAT_TOKEN = re.compile(r"%(?:\d+\$)?(?:#@\w+@|arg\b|[-+ #0,(<]*\d*(?:\.\d+)?(?:hh|h|ll|l|L|q|[tT])?[A-Za-z@%])")
+
+
+def has_words(text: str) -> bool:
+    """True if text has letters once format placeholders are removed."""
+    return bool(re.search(r"[^\W\d_]", FORMAT_TOKEN.sub("", text)))
+
+
 # CLDR plural categories every translation must provide, on both platforms.
 # Korean and Japanese use only `other`; English also needs `one`, otherwise a
 # count of one falls back to the plural sentence.
@@ -429,8 +444,10 @@ def localized_context(path: str, source: str, literal: dict, declarations: Decla
             return True, None
         if call in {"String", "LocalizedStringKey", "LocalizedStringResource"} and prefix == "comment:":
             return False, "comment"
-        if call in {"LocalizedStringKey", "LocalizedStringResource"} and prefix in {"", "defaultValue:"}:
+        if call in {"LocalizedStringKey", "LocalizedStringResource"} and prefix in {"", "stringLiteral:", "defaultValue:"}:
             return True, "default" if prefix == "defaultValue:" else None
+        if call == "LocalizationValue" and prefix in {"", "stringLiteral:"}:
+            return True, None  # `String.LocalizationValue("key")` is looked up by String(localized:).
         # A ternary or ?? at an overloaded SwiftUI call often produces String.
         # Only a lone first argument is certified here.
         if call in SWIFT_UI and prefix == "":
@@ -475,12 +492,13 @@ SWIFT_VALUE_CLOSURES = {"map", "flatMap", "compactMap"}
 SWIFT_CONTINUATION = re.compile(r"\?\?|[?:.]|&&|\|\||[-+*/%]|[=!]=|[<>]=?|else\b|as\b|is\b")
 
 
-def mark_literals(source: str, literals: list[dict]) -> str:
-    """Code with literals as visible placeholders (not spaces) for line analysis."""
-    out = list(source)
+def mark_literals(code: str, literals: list[dict]) -> str:
+    """`code_only` output with literals as visible placeholders, not spaces,
+    so line analysis does not read `x = "…"` as a line ending in `=`."""
+    out = list(code)
     for literal in literals:
         out[literal["start"]:literal["end"]] = '"' * (literal["end"] - literal["start"])
-    return blank_comments("".join(out))
+    return "".join(out)
 
 
 def swift_closure_value(marked: str, opening: int, literal: dict) -> bool:
@@ -591,6 +609,10 @@ def read_allowlist(path: Path) -> list[tuple[str, str, str, str]]:
 
 
 def allowed(path: str, value: str, rules: list[tuple[str, str, str, str]]) -> bool:
+    """An exception names a path and literal. Callers apply it only to
+    occurrences that are not localization lookups: a stored contract value
+    (`"남성"`) may also appear in `String(localized:)`, and that lookup must
+    still find its catalog key."""
     return any(fnmatch.fnmatchcase(path, pattern) and (literal == "*" or literal == value)
                for _, pattern, literal, _ in rules)
 
@@ -686,6 +708,24 @@ def empty_variation_branch(node) -> bool:
     return False
 
 
+def device_fallback_missing(node) -> bool:
+    """A device variation without `other`: other devices get no usable branch."""
+    if isinstance(node, dict):
+        for key, child in node.items():
+            if key == "variations" and isinstance(child, dict) and isinstance(child.get("device"), dict) \
+                    and "other" not in child["device"]:
+                return True
+            if device_fallback_missing(child):
+                return True
+    elif isinstance(node, list):
+        return any(device_fallback_missing(child) for child in node)
+    return False
+
+
+def leaf_values(node) -> list[str]:
+    return [leaf["value"] for leaf in string_units(node) if isinstance(leaf.get("value"), str)]
+
+
 def translated_leaves(node) -> bool:
     leaves = list(string_units(node))
     return bool(leaves) and not empty_variation_branch(node) and all(
@@ -699,6 +739,10 @@ def catalog_issues(root: Path) -> list[Issue]:
         data = json.loads((root / relative).read_text(encoding="utf-8"))
         for key, entry in data["strings"].items():
             if not entry.get("shouldTranslate", True):
+                # Not an escape hatch: an opted-out key shows its source text in
+                # every language, so only language-neutral keys may opt out.
+                if has_words(key) and key not in LANGUAGE_NEUTRAL_CATALOG_KEYS:
+                    issues.append(Issue(relative, 0, key, "shouldTranslate=false is only for language-neutral keys"))
                 continue
             # A Korean source-text key can fall back to the key itself. An opaque
             # identifier cannot: require an explicit Korean value as well.
@@ -718,6 +762,14 @@ def catalog_issues(root: Path) -> list[Issue]:
                     issues.append(Issue(relative, 0, key, f"{language} must vary by plural like the Korean source"))
                 if language in LANGUAGES and any(HANGUL.search(str(leaf.get("value", ""))) for leaf in leaves):
                     issues.append(Issue(relative, 0, key, f"{language} translation contains Hangul"))
+                if device_fallback_missing(units):
+                    issues.append(Issue(relative, 0, key, f"{language} device variations need an other fallback"))
+            # A Japanese leaf equal to the English one (or to an English source
+            # key) was copied, not translated; Hangul copies are caught above.
+            english = set(leaf_values(localizations.get("en", {}))) | ({key} if not HANGUL.search(key) else set())
+            if key not in LANGUAGE_NEUTRAL_CATALOG_KEYS and any(
+                    has_words(value) and value in english for value in leaf_values(localizations.get("ja", {}))):
+                issues.append(Issue(relative, 0, key, "ja translation is copied from English"))
     resources = root / "apps/android-native/app/src/main/res"
     localized = {}
     for language in ("ko", *LANGUAGES):
@@ -729,6 +781,8 @@ def catalog_issues(root: Path) -> list[Issue]:
         localized[language] = entries
     for key, (entry, relative) in localized["ko"].items():
         if entry.get("translatable") == "false":
+            if key not in LANGUAGE_NEUTRAL_ANDROID_RESOURCES and has_words("".join(entry.itertext())):
+                issues.append(Issue(relative, 0, key, 'translatable="false" is only for language-neutral resources'))
             continue
         for language in LANGUAGES:
             match = localized[language].get(key)
@@ -750,6 +804,12 @@ def catalog_issues(root: Path) -> list[Issue]:
             grouped = any(key in group for group in ANDROID_LINE_BREAK_GROUPS)
             for leaf in android_format_mismatches(entry, other, check_line_breaks=not grouped):
                 issues.append(Issue(target, 0, key, f"Android {language} format argument indices/types/count or line breaks differ ({leaf})"))
+        if key not in LANGUAGE_NEUTRAL_ANDROID_RESOURCES and all(key in localized[language] for language in LANGUAGES):
+            def texts(element):
+                return {"".join(leaf.itertext()) for leaf in ([element] if element.tag == "string" else element)}
+            english, japanese = texts(localized["en"][key][0]), texts(localized["ja"][key][0])
+            if any(has_words(text) for text in english & japanese):
+                issues.append(Issue(localized["ja"][key][1], 0, key, "Android ja resource is copied from English"))
     for group in ANDROID_LINE_BREAK_GROUPS:
         for language in LANGUAGES:
             if not all(key in localized[locale] for locale in ("ko", language) for key in group):
@@ -788,7 +848,81 @@ KOTLIN_CHANNELS = {"NotificationChannel", "NotificationChannelGroup"}
 KOTLIN_CHANNEL_PROPERTIES = {"name", "description"}
 
 
-def kotlin_ui_context(code: str, start: int, pairs: dict[int, int], closers: dict[int, int] | None = None) -> bool:
+class KotlinTree:
+    """Delimiter nesting of masked Kotlin code for fast enclosing lookups."""
+    def __init__(self, code: str):
+        self.pairs = delimiter_pairs(code)
+        self.closers = {end: opening for opening, end in self.pairs.items()}
+        self.openers = sorted(self.pairs)
+        self.parent, stack = {}, []
+        for opening in self.openers:
+            while stack and self.pairs[stack[-1]] < opening:
+                stack.pop()
+            self.parent[opening] = stack[-1] if stack else None
+            stack.append(opening)
+
+    def enclosing(self, position: int) -> list[int]:
+        """Openers containing position, outermost first."""
+        index = bisect.bisect_left(self.openers, position) - 1
+        opening = self.openers[index] if index >= 0 else None
+        while opening is not None and self.pairs[opening] < position:
+            opening = self.parent[opening]
+        chain = []
+        while opening is not None:
+            chain.append(opening)
+            opening = self.parent[opening]
+        return chain[::-1]
+
+
+KOTLIN_TEXT_TYPE = re.compile(r"(?:String|CharSequence|AnnotatedString)\??")
+
+
+def kotlin_wrappers(files: dict[str, tuple[str, KotlinTree]]) -> dict[str, dict]:
+    """App functions whose String parameters reach a display sink.
+
+    `fun WakerSheetOptionRow(title: String, description: String?)` that passes
+    `description` to `Text` makes `description = "…"` at its call sites a sink.
+    Wrappers of wrappers resolve by iterating to a fixed point.
+    """
+    declarations = []
+    for path, (code, tree) in files.items():
+        for match in re.finditer(r"\bfun\s+(?:<[^>]*>\s*)?(?:[\w.]+\.)?(\w+)\s*\(", code):
+            opening = match.end() - 1
+            close = tree.pairs.get(opening)
+            if close is None:
+                continue
+            order, texts = [], []
+            for part in split_top_level(code[opening + 1:close], ","):
+                parameter = re.match(r"\s*(?:@[\w.]+(?:\([^)]*\))?\s*)*(?:(?:vararg|noinline|crossinline)\s+)?(\w+)\s*:\s*([^=]+)", part)
+                if parameter:
+                    order.append(parameter[1])
+                    if KOTLIN_TEXT_TYPE.fullmatch(parameter[2].strip()):
+                        texts.append(parameter[1])
+            body = re.compile(r"\s*(?::\s*[^{=]+?)?\s*\{").match(code, close + 1)
+            if texts and body and body.end() - 1 in tree.pairs:
+                declarations.append((path, match[1], order, texts, body.end() - 1, tree.pairs[body.end() - 1]))
+    wrappers = {}
+    for _, name, order, _, _, _ in declarations:
+        wrappers.setdefault(name, {"display": set(), "orders": []})["orders"].append(order)
+    changed = True
+    while changed:
+        changed = False
+        for path, name, _, texts, start, end in declarations:
+            code, tree = files[path]
+            for parameter in texts:
+                if parameter in wrappers[name]["display"]:
+                    continue
+                # A use, not a named-argument label (`title = …`) or a declaration.
+                use = re.compile(r"(?<![\w.$])" + re.escape(parameter) + r"\b(?!\s*=(?!=))(?!\s*:)")
+                if any(kotlin_ui_context(code, occurrence.start(), tree.pairs, tree.closers, wrappers, tree)
+                       for occurrence in use.finditer(code, start, end)):
+                    wrappers[name]["display"].add(parameter)
+                    changed = True
+    return {name: info for name, info in wrappers.items() if info["display"]}
+
+
+def kotlin_ui_context(code: str, start: int, pairs: dict[int, int], closers: dict[int, int] | None = None,
+                      wrappers: dict[str, dict] | None = None, tree: KotlinTree | None = None) -> bool:
     """Recognize literal arguments at text/notification sinks, in any language.
 
     Code has strings/comments blanked, preserving offsets. A lambda body starts
@@ -902,7 +1036,7 @@ def kotlin_ui_context(code: str, start: int, pairs: dict[int, int], closers: dic
         assignment = re.match(r"\s*(?:(?:this|it)\.)?(\w+)\s*=(?!=)", code[begin:start])
         return assignment[1] if assignment else None
 
-    enclosing = sorted(opening for opening, end in pairs.items() if opening < start < end)
+    enclosing = tree.enclosing(start) if tree else sorted(opening for opening, end in pairs.items() if opening < start < end)
     builders = [code[opening] == "{" and lambda_call(opening).split(".")[-1] in KOTLIN_TEXT_BUILDERS
                 for opening in enclosing]
     appended = False
@@ -959,6 +1093,11 @@ def kotlin_ui_context(code: str, start: int, pairs: dict[int, int], closers: dic
             if parameter == "label" and (call.startswith("animate") or call in {"rememberInfiniteTransition", "updateTransition"}):
                 continue
             return True
+        if wrappers and call in wrappers:
+            info = wrappers[call]
+            if parameter in info["display"] if parameter else any(
+                    argument_index < len(order) and order[argument_index] in info["display"] for order in info["orders"]):
+                return True
         if call in KOTLIN_APPENDS and not parameter and argument_index == 0:
             appended = True
     return False
@@ -995,15 +1134,18 @@ def audit(root: Path, rules: list[tuple[str, str, str, str]]) -> list[Issue]:
     for path, source in sources.items():
         literals = SwiftLexer(source, path).run()
         code = code_only(source, literals)
-        marked = mark_literals(source, literals)
+        marked = mark_literals(code, literals)
         for literal in literals:
             value = literal_value(literal)
             localized, kind = localized_context(path, source, literal, declarations)
             if string_in_key_parameter(path, source, literal, declarations):
                 issues.append(Issue(path, literal["line"], value, "String(localized:) passed to a key/resource parameter; retain its literal key"))
-            if literal["debug"] or kind == "comment" or value == "" or allowed(path, value, rules):
+            if literal["debug"] or kind == "comment" or value == "":
                 continue
-            ui_copy = not HANGUL.search(value) and not localized and any(char.isalpha() for kind, part in literal["parts"] if kind == "lit" for char in part) and swift_ui_context(source, code, literal, marked)
+            if not localized and allowed(path, value, rules):
+                continue
+            words = has_words("".join(part for kind, part in literal["parts"] if kind == "lit"))
+            ui_copy = not HANGUL.search(value) and not localized and words and swift_ui_context(source, code, literal, marked)
             if not HANGUL.search(value) and not localized and not ui_copy:
                 continue
             calls = [call_at(source, pos) for token, pos in literal["stack"] if token == "("]
@@ -1052,6 +1194,7 @@ def audit(root: Path, rules: list[tuple[str, str, str, str]]) -> list[Issue]:
         gate_source = code + "\n" + "\n".join(literal_value(l) for l in literals)
         if language_gate(gate_source) and not allowed(path, "language-gate", rules):
             issues.append(Issue(path, 0, "containsKorean", "language-based server-error filter is forbidden"))
+    kotlin = {}
     for file in (root / "apps/android-native/app/src/main/java").rglob("*.kt"):
         path, source = str(file.relative_to(root)), file.read_text(encoding="utf-8")
         literals = kotlin_literals(source)
@@ -1061,13 +1204,16 @@ def audit(root: Path, rules: list[tuple[str, str, str, str]]) -> list[Issue]:
             # not mistake `x = "…"\n` for a line that ends with `=`.
             masked[start:end] = ['"' for _ in source[start:end]]
         code = blank_comments("".join(masked))
-        pairs = delimiter_pairs(code)
-        closers = {end: opening for opening, end in pairs.items()}
+        kotlin[path] = (source, literals, code, KotlinTree(code))
+    wrappers = kotlin_wrappers({path: (code, tree) for path, (_, _, code, tree) in kotlin.items()})
+    for path, (source, literals, code, tree) in kotlin.items():
+        pairs, closers = tree.pairs, tree.closers
         static = {start: value for start, _, value, _ in kotlin_literals(source, static_text=True)}
         for start, _, value, _ in literals:
             if allowed(path, value, rules):
-                continue
-            ui_copy = any(char.isalpha() for char in static[start]) and kotlin_ui_context(code, start, pairs, closers)
+                continue  # Kotlin has no literal lookups; resources are ids.
+            # Letters outside format placeholders: `"%02d:%02d"` is not copy.
+            ui_copy = has_words(static[start]) and kotlin_ui_context(code, start, pairs, closers, wrappers, tree)
             if HANGUL.search(value) or ui_copy:
                 issues.append(Issue(path, source.count("\n", 0, start) + 1, value, "Kotlin UI text must use resources or a documented exception"))
         gate_source = code + "\n" + "\n".join(value for _, _, value, _ in literals)
@@ -1230,8 +1376,8 @@ class SelfTests(unittest.TestCase):
     def test_android_plural_requires_locale_quantities(self):
         root = self.fixture(source='')
         base = root / 'apps/android-native/app/src/main/res'
-        for language, quantities in [('', ['other']), ('-ja', ['other']), ('-en', ['one', 'other'])]:
-            items = ''.join('<item quantity="' + q + '">Hello</item>' for q in quantities)
+        for language, quantities, text in [('', ['other'], '안녕'), ('-ja', ['other'], 'こんにちは'), ('-en', ['one', 'other'], 'Hello')]:
+            items = ''.join('<item quantity="' + q + '">' + text + '</item>' for q in quantities)
             (base / ('values' + language) / 'strings.xml').write_text('<resources><plurals name="hello">' + items + '</plurals></resources>', encoding="utf-8")
         self.assertEqual(catalog_issues(root), [])
         for language in LANGUAGES:
@@ -1267,7 +1413,7 @@ class SelfTests(unittest.TestCase):
         group = ANDROID_LINE_BREAK_GROUPS[0]
         for language, values in [('', ['First', 'word', r'\nlast']),
                                  ('-en', [r'First\n', 'word', 'last']),
-                                 ('-ja', ['First', 'word', r'\nlast'])]:
+                                 ('-ja', ['最初', '単語', r'\n最後'])]:
             xml = '<resources>' + ''.join('<string name="' + name + '">' + value + '</string>' for name, value in zip(group, values)) + '</resources>'
             (base / ('values' + language) / 'strings.xml').write_text(xml, encoding="utf-8")
         self.assertEqual(catalog_issues(root), [])
@@ -1343,7 +1489,8 @@ class SelfTests(unittest.TestCase):
         self.addCleanup(temporary.cleanup)
         root = Path(temporary.name)
         korean_value = key if HANGUL.search(key) else "안녕"
-        entry = {"localizations": {language: {"stringUnit": {"state": "translated", "value": korean_value if language == "ko" else "Hello"}}
+        values = {"ko": korean_value, "en": "Hello", "ja": "こんにちは"}
+        entry = {"localizations": {language: {"stringUnit": {"state": "translated", "value": values[language]}}
                                     for language in (*LANGUAGES, "ko")}}
         for path in (*CATALOGS, "apps/ios-native/AlarmTalk/InfoPlist.xcstrings"):
             file = root / path
@@ -1351,10 +1498,10 @@ class SelfTests(unittest.TestCase):
             file.write_text(json.dumps({"strings": {key: entry}}), encoding="utf-8")
         file = root / SWIFT_ROOTS[0] / "Screen.swift"
         file.write_text(source, encoding="utf-8")
-        for language in ("", "-en", "-ja"):
+        for language, text in (("", "안녕"), ("-en", "Hello"), ("-ja", "こんにちは")):
             directory = root / ("apps/android-native/app/src/main/res/values" + language)
             directory.mkdir(parents=True)
-            (directory / "strings.xml").write_text('<resources><string name="hello">Hello</string></resources>', encoding="utf-8")
+            (directory / "strings.xml").write_text('<resources><string name="hello">' + text + '</string></resources>', encoding="utf-8")
         return root
 
     def test_missing_catalog_key_and_translation_fail(self):
@@ -1417,6 +1564,51 @@ class SelfTests(unittest.TestCase):
                 self.assertEqual(bool(issues), fails, (relative, english_unit))
             file.write_text(original, encoding="utf-8")
 
+    def test_opt_outs_and_copies_are_limited_to_language_neutral_text(self):
+        root = self.fixture(source="")
+        file = root / CATALOGS[0]
+        for key, fails in [("Try again", True), ("plan.name.free", True), ("AlarmTalk", False), ("%@ · %@", False), ("·", False)]:
+            file.write_text(json.dumps({"strings": {key: {"shouldTranslate": False}}}), encoding="utf-8")
+            self.assertEqual(any("shouldTranslate=false" in i.reason for i in catalog_issues(root)), fails, key)
+        def leaf(value):
+            return {"stringUnit": {"state": "translated", "value": value}}
+        for key, english, japanese, fails in [
+                ("Try again", "Try again", "Try again", True), ("Try again", "Retry", "Try again", True),
+                ("retry.title", "Retry", "Retry", True), ("다시 시도", "Retry", "Retry", True),
+                ("다시 시도", "Retry", "再試行", False), ("%lld%%", "%lld%%", "%lld%%", False),
+                ("AlarmTalk", "AlarmTalk", "AlarmTalk", False),
+                ("alarm.count", {"variations": {"plural": {"one": leaf("1 alarm"), "other": leaf("%lld alarms")}}}, "%lld alarms", True)]:
+            localizations = {"ko": leaf("다시 시도"), "en": english if isinstance(english, dict) else leaf(english), "ja": leaf(japanese)}
+            file.write_text(json.dumps({"strings": {key: {"localizations": localizations}}}), encoding="utf-8")
+            self.assertEqual(any(i.reason == "ja translation is copied from English" for i in catalog_issues(root)), fails, (key, japanese))
+        base = root / "apps/android-native/app/src/main/res"
+        file.write_text(json.dumps({"strings": {}}), encoding="utf-8")
+        for name, texts, fails in [("retry", ["다시 시도", "Retry", "Retry"], True), ("retry", ["다시 시도", "Retry", "再試行"], False),
+                                   ("app_name", ["AlarmTalk", "AlarmTalk", "AlarmTalk"], False)]:
+            for language, text in zip(("", "-en", "-ja"), texts):
+                (base / ("values" + language) / "strings.xml").write_text(
+                    '<resources><string name="' + name + '">' + text + '</string></resources>', encoding="utf-8")
+            self.assertEqual(any(i.reason == "Android ja resource is copied from English" for i in catalog_issues(root)), fails, (name, texts))
+        for name, text, fails in [("retry", "Retry", True), ("voices_lang_en", "English", False), ("separator", " · ", False)]:
+            (base / "values/strings.xml").write_text('<resources><string name="' + name + '" translatable="false">' + text + '</string></resources>', encoding="utf-8")
+            self.assertEqual(any('translatable="false"' in i.reason for i in catalog_issues(root)), fails, name)
+
+    def test_device_variations_need_an_other_fallback(self):
+        def leaf(value):
+            return {"stringUnit": {"state": "translated", "value": value}}
+        root = self.fixture(source="", key="alarm.count")
+        file = root / CATALOGS[0]
+        original = file.read_text(encoding="utf-8")
+        for english, fails in [({"variations": {"device": {"iphone": leaf("Tap"), "other": leaf("Click")}}}, False),
+                               ({"variations": {"device": {"iphone": leaf("Tap")}}}, True),
+                               ({"stringUnit": {"state": "translated", "value": "%#@count@"}, "substitutions": {"count": {
+                                   "argNum": 1, "formatSpecifier": "lld",
+                                   "variations": {"device": {"iphone": leaf("%arg taps")}}}}}, True)]:
+            data = json.loads(original)
+            data["strings"]["alarm.count"]["localizations"]["en"] = english
+            file.write_text(json.dumps(data), encoding="utf-8")
+            self.assertEqual(any(i.reason == "en device variations need an other fallback" for i in catalog_issues(root)), fails, english)
+
     def test_translated_catalog_leaves_cannot_be_blank(self):
         root = self.fixture()
         for relative in (*CATALOGS, "apps/ios-native/AlarmTalk/InfoPlist.xcstrings"):
@@ -1439,7 +1631,7 @@ class SelfTests(unittest.TestCase):
                         self.assertTrue(any(i.path == relative and i.reason.startswith(language)
                                             and "empty" in i.reason for i in catalog_issues(root)))
                         entry["shouldTranslate"] = False
-                        file.write_text(json.dumps({"strings": {"Brand": entry}}), encoding="utf-8")
+                        file.write_text(json.dumps({"strings": {"AlarmTalk": entry}}), encoding="utf-8")
                         self.assertFalse(any(i.path == relative for i in catalog_issues(root)))
             file.write_text(original, encoding="utf-8")
 
@@ -1766,6 +1958,44 @@ class SelfTests(unittest.TestCase):
             self.assertTrue(any("key missing" in i.reason for i in audit(root, [])), call)
             root = self.fixture(source=call.replace(call[call.index('"') + 1:call.index('"', call.index('"') + 1)], "안녕", 1))
             self.assertFalse(any(i.path.endswith(".swift") for i in audit(root, [])), call)
+
+    def test_kotlin_app_wrappers_are_display_sinks(self):
+        root = self.fixture(source="")
+        file = root / "apps/android-native/app/src/main/java/example/Screen.kt"
+        file.parent.mkdir(parents=True)
+        declarations = ('@Composable\nfun WakerSheetOptionRow(id: String, title: String, description: String? = null) {\n'
+                        '    Text(title)\n    description?.let { Text(text = description) }\n}\n'
+                        'fun Inner(caption: String) { Text(caption) }\n'
+                        'fun Outer(hint: String, onClick: () -> Unit) { Inner(caption = hint) }\n'
+                        'fun track(event: String) { Log.d(TAG, event) }\n')
+        for call, flagged in [('WakerSheetOptionRow("row_id", "Title", description = "Unavailable")', {"Title", "Unavailable"}),
+                              ('WakerSheetOptionRow(id = "row_id", title = "Title")', {"Title"}),
+                              ('Outer(hint = "Tap here", onClick = {})', {"Tap here"}),
+                              ('Outer("Tap here") {}', {"Tap here"}),
+                              ('track(event = "opened")', set()),
+                              ('Text("%02d:%02d".format(hour, minute))', set())]:
+            file.write_text(declarations + call, encoding="utf-8")
+            self.assertEqual({i.value for i in audit(root, []) if "Kotlin UI" in i.reason}, flagged, call)
+
+    def test_allowlisted_values_are_still_validated_as_lookups(self):
+        source = 'let stored = "남성"\nlet label = String(localized: "남성")'
+        rules = [("data-contract", SWIFT_ROOTS[0] + "/Screen.swift", "남성", "stored value")]
+        root = self.fixture(source=source)
+        self.assertTrue(any("key missing" in i.reason and i.value == "남성" for i in audit(root, rules)))
+        root = self.fixture(source=source, key="남성")
+        self.assertEqual([i for i in audit(root, rules) if i.path.endswith(".swift")], [])
+        root = self.fixture(source='let stored = "남성"')
+        self.assertEqual(audit(root, rules), [])
+
+    def test_string_literal_initializers_are_lookups(self):
+        for source in ['let title = LocalizedStringResource(stringLiteral: "Try again")',
+                       'let title = LocalizedStringKey(stringLiteral: "Try again")',
+                       'let title = String(localized: String.LocalizationValue("Try again"))',
+                       'let title = String(localized: String.LocalizationValue(stringLiteral: "Try again"))']:
+            root = self.fixture(source=source)
+            self.assertTrue(any("key missing" in i.reason and i.value == "Try again" for i in audit(root, [])), source)
+            root = self.fixture(source=source.replace("Try again", "안녕"))
+            self.assertEqual([i for i in audit(root, []) if i.path.endswith(".swift")], [], source)
 
     def test_catalog_target_languages_reject_hangul_in_every_leaf(self):
         root = self.fixture(source="")
