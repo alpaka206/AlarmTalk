@@ -327,6 +327,8 @@ final class LocalAlarmStore: ObservableObject {
         let releasedAudioCacheKey = alarms[index].audioCacheKey.nilIfBlank
         alarms.remove(at: index)
         persist()
+        // 지운 알람의 표시 언어 기록도 지운다 — 남겨 두면 알람을 지울 때마다 키가 쌓인다.
+        AlarmPresentationLanguage.forget(alarm.id)
         guard let releasedAudioCacheKey,
               countByAudioCacheKey(releasedAudioCacheKey) == 0 else {
             return nil
