@@ -1,4 +1,5 @@
 import type { Env } from '../types';
+import { isEnrollmentScriptReading } from './enrollment-script';
 import { logStructured } from './logger';
 import { LAUGH_TAG, typedLaughterToTags } from './typed-laughter';
 
@@ -2277,7 +2278,10 @@ export interface SpeechStyle {
   dialect: string;
   /** 사투리 강도. 표준어면 ''. */
   strength: '' | 'low' | 'medium' | 'high';
-  /** 말단 격식. 예: 'banmal'(반말), 'jondaemal'(존댓말), 'casual', 'polite'. */
+  /**
+   * 말단 격식. 예: 'banmal'(반말), 'jondaemal'(존댓말), 'casual', 'polite'. 모르면 '' — 관계가 어체를 정한다.
+   * 전사가 **제시 대본을 읽은 것**이면 언제나 ''(`isEnrollmentScriptReading` — 대본의 존댓말은 화자의 것이 아니다).
+   */
   register: string;
   /** 화자가 실제로 쓴 특징 어미/말버릇/캐치프레이즈(최대 5개, 원문 그대로). */
   markers: string[];
@@ -2337,6 +2341,10 @@ const SPEECH_STYLE_RESPONSE_SCHEMA = {
   required: ['dialect', 'strength', 'register', 'markers', 'persona', 'childlike', 'energy', 'confidence'],
 } as const;
 
+/** 말투 분석이 모델에게 보내는 전사 길이. 대본 읽기 판정(`isEnrollmentScriptReading`)도 모델이 본 이 부분으로 한다. */
+const SPEECH_STYLE_TRANSCRIPT_LIMIT = 2000;
+
+/** `transcript` 는 이미 `SPEECH_STYLE_TRANSCRIPT_LIMIT` 로 자른 글이다(`analyzeSpeechStyleWithVertex`). */
 function speechStylePrompt(transcript: string, language: string): string {
   const dialectGuide =
     language === 'ja'
@@ -2352,7 +2360,7 @@ function speechStylePrompt(transcript: string, language: string): string {
     'Return STRICT JSON: {"dialect":"region name in its own language, or empty string for standard","strength":"low|medium|high or empty when standard","register":"banmal|jondaemal for Korean, casual|polite otherwise","markers":["up to 5 verbatim endings/expressions/catchphrases the speaker actually used"],"persona":"one short line describing the speaker\'s verbal identity (tone, first-person pronoun, ending habits), or empty string when unremarkable","childlike":true or false,"energy":"lively|calm or empty","confidence":0.0-1.0}.',
     'Be conservative: when unsure, dialect="" and confidence low. markers must be copied from the transcript, not invented. persona describes only what the transcript shows — no guessed names or identities.',
     `TRANSCRIPT (${language}):`,
-    transcript.slice(0, 2000),
+    transcript,
   ].join('\n');
 }
 
@@ -2398,7 +2406,9 @@ export async function analyzeSpeechStyleWithVertex(
   if (trimmed.length < 20) return null;
   const deadlineAt = options.deadlineAt ?? Date.now() + SPEECH_STYLE_ANALYSIS_BUDGET_MS;
   const sleep = options.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
-  const prompt = speechStylePrompt(trimmed, language);
+  // 모델이 보는 부분과 대본 읽기 판정이 보는 부분을 같게 둔다 — 어체는 모델이 본 글에서 나왔다.
+  const analyzedText = trimmed.slice(0, SPEECH_STYLE_TRANSCRIPT_LIMIT);
+  const prompt = speechStylePrompt(analyzedText, language);
   let raw: string;
   for (let attempt = 0; ; attempt += 1) {
     try {
@@ -2439,7 +2449,7 @@ export async function analyzeSpeechStyleWithVertex(
       | 'low'
       | 'medium'
       | 'high';
-    const register = typeof parsed.register === 'string' ? parsed.register.trim().slice(0, 20) : '';
+    const analyzedRegister = typeof parsed.register === 'string' ? parsed.register.trim().slice(0, 20) : '';
     const markers = Array.isArray(parsed.markers)
       ? parsed.markers
           .filter((m): m is string => typeof m === 'string')
@@ -2454,7 +2464,18 @@ export async function analyzeSpeechStyleWithVertex(
     const childlike = (parsed as { childlike?: unknown }).childlike === true;
     const energyRaw = String((parsed as { energy?: unknown }).energy ?? '').trim();
     const energy = (energyRaw === 'lively' || energyRaw === 'calm' ? energyRaw : '') as SpeechStyle['energy'];
-    if (!dialect && !register && markers.length === 0 && !persona && !childlike && !energy) return null;
+    if (!dialect && !analyzedRegister && markers.length === 0 && !persona && !childlike && !energy) return null;
+    // ⚠ **제시 대본을 읽은 녹음의 어체는 버린다**(스펙 §4-2). 대본은 세 언어 모두 존댓말이라 읽은 사람은 누구든 정중체로
+    //   분석되고, 그 어체가 사전렌더 프롬프트(`speechStyleInstruction`)에 실리고 일본어 가족 です・ます 검사
+    //   (`hasJapanesePoliteEnding`)까지 꺼서 엄마 목소리가 딸에게 존댓말로 알람을 읽었다. 비워 두면 관계가 어체를 정한다.
+    //   모델 지시가 아니라 글자 대조로 가린다(`isEnrollmentScriptReading`) — 따를지 말지가 모델에 달리지 않게.
+    //   사투리·말버릇·페르소나·아이·결 판정은 그대로 둔다. 어체만 있던 분석도 null 로 돌리지 않는다 — null 이면 'failed'
+    //   로 기록돼 재시도 버튼이 뜨고, 다시 눌러도 같은 녹음이라 같은 답이다.
+    const scriptRead = analyzedRegister !== '' && isEnrollmentScriptReading(analyzedText);
+    if (scriptRead) {
+      logStructured('info', { at: 'vertex.speech_style_script_read', droppedRegister: analyzedRegister });
+    }
+    const register = scriptRead ? '' : analyzedRegister;
     // 표준어인데 사투리 강도만 있는 모순 정리.
     return { dialect, strength: dialect ? strength : '', register, markers, persona, childlike, energy };
   } catch {

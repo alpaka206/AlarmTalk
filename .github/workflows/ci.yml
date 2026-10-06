@@ -118,6 +118,12 @@ jobs:
       - name: Check generated weather region files match the catalog
         run: python3 scripts/gen-weather-regions.py --check
 
+      # 서버는 등록 녹음 전사가 제시 대본을 읽은 것인지 글자로 가려 말투 분석의 어체를 버린다(대본은
+      # 존댓말이라 읽은 사람은 누구든 정중체로 분석됐다). 대조 원본은 `packages/shared` 의 JSON 이고 두 앱은
+      # 같은 글을 손으로 둔다 — 앱만 고치면 서버가 새 대본을 못 알아봐 아무 경보 없이 예전 사고로 돌아간다.
+      - name: Check voice enrollment script matches across shared/Android/iOS
+        run: python3 scripts/check-voice-enrollment-script.py
+
       # 유닛 테스트가 호스트 앱 프로세스에서 도는 탓에, 저장 위치를 손으로 조립하면
       # **사용자가 쓰는 그 파일**을 잡는다. 실제로 기기에서 테스트를 돌릴 때마다
       # 로그인·알람·기본 목소리 클립이 지워지고 있었다(2026-08-19). 테스트는 초록으로
