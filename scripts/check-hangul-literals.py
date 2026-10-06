@@ -48,10 +48,6 @@ EMPTY_ANDROID_UNITS = {("en", "editorp_fortune_unit_" + unit) for unit in ("year
 # LandingScreen concatenates these fragments around the highlighted word. The
 # English sentence moves the break to the prefix; compare the rendered whole.
 ANDROID_LINE_BREAK_GROUPS = (("auth_landing_headline_pre", "auth_landing_headline_keyword", "auth_landing_headline_post"),)
-# Snackbar colour markers are word sets matched with `contains`, not positional
-# translations, so each language may have a different number of items. Only the
-# length comparison is exempted: an empty item would match every message.
-UNALIGNED_ANDROID_ARRAYS = {"snackbar_error_markers", "snackbar_success_markers"}
 # Resource and catalog checks are never allowlisted by key: a key-level rule
 # would also hide empty, Hangul and format failures. Scope exceptions above.
 RESOURCE_SUFFIXES = (".xml", ".xcstrings")
@@ -854,8 +850,7 @@ def catalog_issues(root: Path) -> list[Issue]:
                 issues.append(Issue(relative, 0, key, f"Android {language} resource missing"))
                 continue
             other, target = match
-            if entry.tag != other.tag or (entry.tag == "string-array" and len(entry) != len(other)
-                                          and key not in UNALIGNED_ANDROID_ARRAYS):
+            if entry.tag != other.tag or (entry.tag == "string-array" and len(entry) != len(other)):
                 issues.append(Issue(target, 0, key, "resource type/array length differs"))
             if other.tag == "plurals":
                 if not PLURAL_CATEGORIES[language] <= {item.get("quantity") for item in other}:
@@ -2291,29 +2286,24 @@ class SelfTests(unittest.TestCase):
         file.write_text(f'<resources><string name="{key}">년</string></resources>', encoding="utf-8")
         self.assertTrue(any(i.reason == "Android en resource contains Hangul" for i in catalog_issues(root)))
 
-    def test_unaligned_marker_arrays_only_skip_the_length_check(self):
+    def test_array_lengths_match_and_resources_cannot_be_allowlisted(self):
         root = self.fixture(source="")
         base = root / "apps/android-native/app/src/main/res"
-        def write(language, name, items):
-            xml = '<resources><string-array name="' + name + '">' + "".join("<item>" + item + "</item>" for item in items) + "</string-array></resources>"
+        def write(language, items):
+            xml = '<resources><string-array name="choices">' + "".join("<item>" + item + "</item>" for item in items) + "</string-array></resources>"
             (base / ("values" + language) / "strings.xml").write_text(xml, encoding="utf-8")
-        name = "snackbar_error_markers"
-        write("", name, ["실패", "오류"])
-        write("-ja", name, ["失敗", "エラー"])
-        write("-en", name, ["failed", "error", "unable"])
+        write("", ["하나", "둘"])
+        write("-ja", ["一つ", "二つ"])
+        write("-en", ["One", "Two"])
         self.assertEqual(catalog_issues(root), [])
-        for items in (["failed", "", "unable"], ["failed", " ", "unable"]):
-            write("-en", name, items)
-            self.assertTrue(any(i.reason == "Android en resource contains an empty translation" for i in catalog_issues(root)))
-        write("-en", name, ["failed", "오류", "unable"])
-        self.assertTrue(any(i.reason == "Android en resource contains Hangul" for i in catalog_issues(root)))
-        for language in ("", "-ja"):
-            write(language, "other_array", ["하나", "둘"])
-        write("-en", "other_array", ["One", "Two", "Three"])
+        write("-en", ["One", "Two", "Three"])
         self.assertTrue(any(i.reason == "resource type/array length differs" for i in catalog_issues(root)))
+        for items in (["One", ""], ["One", " "]):
+            write("-en", items)
+            self.assertTrue(any(i.reason == "Android en resource contains an empty translation" for i in catalog_issues(root)))
         # A key-level allowlist rule for a resource would hide all of the above.
         file = root / "allowlist.txt"
-        file.write_text("data-contract\tapps/android-native/app/src/main/res/values-en/strings.xml\t\"" + name + "\"\treason\n", encoding="utf-8")
+        file.write_text("data-contract\tapps/android-native/app/src/main/res/values-en/strings.xml\t\"choices\"\treason\n", encoding="utf-8")
         with self.assertRaises(ValueError):
             read_allowlist(file)
 

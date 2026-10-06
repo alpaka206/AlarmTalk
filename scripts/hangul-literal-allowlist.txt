@@ -1,8 +1,8 @@
 # category	path or glob	JSON literal (* = whole file)	reason
 # UI 번역 누락을 숨기는 데 사용하지 않는다. 저장값·시드·TTS는 화면 언어와 별개다.
-data-contract	apps/android-native/app/src/main/java/com/alarmtalk/app/alarm/SocialNotificationFactory.kt	"님"	기본 알람 라벨 또는 이전 저장값·존칭 판정; 표시 문구와 구분한다.
 data-contract	apps/android-native/app/src/main/java/com/alarmtalk/app/data/ReceivedAlarmLabels.kt	"님"	기본 알람 라벨 또는 이전 저장값·존칭 판정; 표시 문구와 구분한다.
 data-contract	apps/android-native/app/src/main/java/com/alarmtalk/app/data/ReceivedAlarmLabels.kt	"알람"	기본 알람 라벨 또는 이전 저장값·존칭 판정; 표시 문구와 구분한다.
+data-contract	apps/android-native/app/src/main/java/com/alarmtalk/app/data/ReceivedAlarmLabels.kt	"가족이 보낸 음성"	가족 알람 녹음 기본 라벨의 저장·전송 계약값(서버 DEFAULT_VOICE_LABEL과 같은 글자); 표시는 번역 리소스로 바꾼다.
 data-contract	apps/android-native/app/src/main/java/com/alarmtalk/app/data/SystemVoices.kt	"도현"	목소리 이름 또는 운세 정보의 저장·전송값; 표시 변환은 별도 헬퍼를 쓴다.
 data-contract	apps/android-native/app/src/main/java/com/alarmtalk/app/data/SystemVoices.kt	"미나"	목소리 이름 또는 운세 정보의 저장·전송값; 표시 변환은 별도 헬퍼를 쓴다.
 data-contract	apps/android-native/app/src/main/java/com/alarmtalk/app/data/SystemVoices.kt	"시우"	목소리 이름 또는 운세 정보의 저장·전송값; 표시 변환은 별도 헬퍼를 쓴다.
@@ -35,6 +35,7 @@ data-contract	apps/android-native/app/src/main/java/com/alarmtalk/app/ui/voices/
 data-contract	apps/ios-native/AlarmTalk/LocalAlarmRecord.swift	"알람"	기본 알람 라벨 또는 이전 저장값·존칭 판정; 표시 문구와 구분한다.
 data-contract	apps/ios-native/AlarmTalk/LocalizedDisplay.swift	"님"	이미 저장된 한국어 존칭을 판별하는 접미사.
 data-contract	apps/ios-native/AlarmTalk/ReceivedAlarmLabelDisplay.swift	"님"	이미 저장된 한국어 존칭을 판별하는 접미사.
+data-contract	apps/ios-native/AlarmTalk/ReceivedAlarmLabelDisplay.swift	"가족이 보낸 음성"	가족 알람 녹음 기본 라벨의 저장·전송 계약값(서버 DEFAULT_VOICE_LABEL과 같은 글자); 표시는 번역 카탈로그로 바꾼다.
 data-contract	apps/ios-native/AlarmTalk/RemoteAlarmPullSync.swift	"알람"	기본 알람 라벨 또는 이전 저장값·존칭 판정; 표시 문구와 구분한다.
 data-contract	apps/ios-native/AlarmTalk/SystemVoices.swift	"도현"	목소리 이름 또는 운세 정보의 저장·전송값; 표시 변환은 별도 헬퍼를 쓴다.
 data-contract	apps/ios-native/AlarmTalk/SystemVoices.swift	"미나"	목소리 이름 또는 운세 정보의 저장·전송값; 표시 변환은 별도 헬퍼를 쓴다.
@@ -66,7 +67,6 @@ data-contract	apps/ios-native/AlarmTalk/Views/Common/VoiceRelationshipInputField
 data-contract	apps/ios-native/AlarmTalk/Views/Common/VoiceRelationshipInputField.swift	"할아버지"	관계 프리셋 저장·전송값; 표시할 때 프리셋의 번역 리소스를 조회한다.
 data-contract	apps/ios-native/AlarmTalk/Views/Common/VoiceRelationshipInputField.swift	"형제·자매"	관계 프리셋 저장·전송값; 표시할 때 프리셋의 번역 리소스를 조회한다.
 data-contract	apps/ios-native/AlarmTalk/Views/Editor/AlarmEditDraft.swift	"알람"	기본 알람 라벨 또는 이전 저장값·존칭 판정; 표시 문구와 구분한다.
-data-contract	apps/ios-native/AlarmTalk/Views/Editor/AlarmEditorSheet.swift	"가족이 보낸 음성"	받은 녹음의 저장 이름; 화면 기본 라벨이 아니다.
 data-contract	apps/ios-native/Shared/AlarmDefaultLabel.swift	"알람"	기본 알람 라벨 또는 이전 저장값·존칭 판정; 표시 문구와 구분한다.
 endonym	apps/ios-native/AlarmTalk/Views/Settings/MenuView.swift	"한국어"	언어 선택지는 해당 언어의 자기 이름으로 표시한다.
 endonym	apps/ios-native/AlarmTalk/Views/Voices/VoiceCloneUploadFlow.swift	"한국어"	언어 선택지는 해당 언어의 자기 이름으로 표시한다.
