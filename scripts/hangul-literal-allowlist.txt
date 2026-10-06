@@ -32,8 +32,6 @@ data-contract	apps/android-native/app/src/main/java/com/alarmtalk/app/ui/voices/
 data-contract	apps/android-native/app/src/main/java/com/alarmtalk/app/ui/voices/VoiceProfileRowComponents.kt	"할머니"	관계 프리셋 저장·전송값; 표시할 때 프리셋의 번역 리소스를 조회한다.
 data-contract	apps/android-native/app/src/main/java/com/alarmtalk/app/ui/voices/VoiceProfileRowComponents.kt	"할아버지"	관계 프리셋 저장·전송값; 표시할 때 프리셋의 번역 리소스를 조회한다.
 data-contract	apps/android-native/app/src/main/java/com/alarmtalk/app/ui/voices/VoiceProfileRowComponents.kt	"형제·자매"	관계 프리셋 저장·전송값; 표시할 때 프리셋의 번역 리소스를 조회한다.
-data-contract	apps/android-native/app/src/main/res/values-en/strings.xml	"snackbar_error_markers"	스낵바 색상 판정용 단어 집합; 언어마다 단어 수가 다르며 위치로 대응하지 않는다.
-data-contract	apps/android-native/app/src/main/res/values-en/strings.xml	"snackbar_success_markers"	스낵바 색상 판정용 단어 집합; 언어마다 단어 수가 다르며 위치로 대응하지 않는다.
 data-contract	apps/ios-native/AlarmTalk/LocalAlarmRecord.swift	"알람"	기본 알람 라벨 또는 이전 저장값·존칭 판정; 표시 문구와 구분한다.
 data-contract	apps/ios-native/AlarmTalk/LocalizedDisplay.swift	"님"	이미 저장된 한국어 존칭을 판별하는 접미사.
 data-contract	apps/ios-native/AlarmTalk/ReceivedAlarmLabelDisplay.swift	"님"	이미 저장된 한국어 존칭을 판별하는 접미사.
