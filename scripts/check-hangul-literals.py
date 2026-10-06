@@ -229,6 +229,9 @@ class Declarations:
         # Collection/tuple shapes holding a key: `[LocalizedStringKey]`,
         # `[String: LocalizedStringKey]`, `(LocalizedStringKey, Int)`.
         self.collection_parameters: dict[tuple[str, str], dict[str, tuple]] = {}
+        # Overload signatures by position: the shape of each unlabeled (`_`)
+        # parameter, None where the parameter needs a label.
+        self.unlabeled: dict[tuple[str, str], list[list[tuple | None]]] = {}
         self.collection_values: dict[str, list[tuple[int, int, tuple]]] = {}
         for path, source in sources.items():
             literals = SwiftLexer(source, path).run()
@@ -239,6 +242,16 @@ class Declarations:
                 end = read_type(code, start, stops)
                 shape = parse_type(code[start:end])
                 return (shape if shape[0] != "key" and holds_key(shape) else None), end
+
+            def signature(opening: int) -> list[tuple | None]:
+                close, positions, offset = pairs.get(opening, opening), [], opening + 1
+                for part in split_top_level(code[opening + 1:close], ","):
+                    label = re.match(r"\s*(\w+)(?:\s+\w+)?\s*:\s*", part)
+                    if label:
+                        end = read_type(code, offset + label.end(), "=,")
+                        positions.append(parse_type(code[offset + label.end():end]) if label[1] == "_" else None)
+                    offset += len(part) + 1
+                return positions
 
             spans = sorted(pairs.items())
             for match in re.finditer(r"\b(?:struct|class)\s+(\w+)[^\n{]*\{", code):
@@ -257,6 +270,12 @@ class Declarations:
                     if shape:
                         shapes[member[1]] = shape
                 self.collection_parameters[(path, match[1])] = shapes
+                # `init(_ title: LocalizedStringKey)` makes `Row("Settings")` a lookup.
+                inits = list(re.finditer(r"\binit\??\s*\(", code[start:end]))
+                owner = innermost_delimiters(spans, [start + init.start() for init in inits])
+                for init in inits:
+                    if owner[start + init.start()] == start:
+                        self.unlabeled.setdefault((path, match[1]), []).append(signature(start + init.end() - 1))
             for match in re.finditer(r"\bfunc\s+(\w+)\s*\(", code):
                 start = match.end() - 1
                 end = pairs.get(start, start)
@@ -265,6 +284,7 @@ class Declarations:
                 key = (path, match[1])
                 names = set(names)
                 self.parameters[key] = self.parameters[key] & names if key in self.parameters else names
+                self.unlabeled.setdefault(key, []).append(signature(start))
                 shapes = {}
                 offset = start + 1
                 for part in split_top_level(arguments, ","):
@@ -309,6 +329,15 @@ class Declarations:
                     spans.append((pos, end if end >= 0 else len(code)))
             self.returns[path] = spans
 
+    def unlabeled_shape(self, path: str, call: str, index: int) -> tuple | None:
+        """The agreed shape of an unlabeled argument at index, across overloads."""
+        declared = [key for key in self.unlabeled if key[1] == call]
+        if (path, call) in declared:
+            declared = [(path, call)]
+        shapes = {signature[index] for key in declared for signature in self.unlabeled[key]
+                  if index < len(signature) and signature[index] is not None}
+        return next(iter(shapes)) if len(shapes) == 1 else None
+
     def collection_shape(self, path: str, call: str, argument: str) -> tuple | None:
         declared = [key for key in self.parameters.keys() | self.collection_parameters.keys() if key[1] == call]
         if (path, call) in declared:
@@ -330,8 +359,12 @@ class Declarations:
             if index + 1 == len(frames):
                 return False  # A direct scalar argument; the scalar rules apply.
             value_start = frames[index + 1][1]
-            label = re.fullmatch(r"(\w+)\s*:", argument_prefix(source, {"start": value_start}, opening))
-            shape = label and self.collection_shape(path, call.split(".")[-1], label[1])
+            prefix = argument_prefix(source, {"start": value_start}, opening)
+            label = re.fullmatch(r"(\w+)\s*:", prefix)
+            if label:
+                shape = self.collection_shape(path, call.split(".")[-1], label[1])
+            else:
+                shape = not prefix and self.unlabeled_shape(path, call.split(".")[-1], argument_index(source, opening, value_start))
             return bool(shape) and key_element(source, literal, value_start, shape)
         return False
 
@@ -378,6 +411,12 @@ def argument_prefix(source: str, literal: dict, opening: int) -> str:
         elif c == "," and depth == 0:
             last = i + 1
     return blank_comments(fragment[last:]).strip()
+
+
+def argument_index(source: str, opening: int, position: int) -> int:
+    """Index of the call argument that contains position."""
+    fragment = source[opening + 1:position]
+    return len(split_top_level(code_only(fragment, SwiftLexer(fragment).run()), ",")) - 1
 
 
 def literal_value(literal: dict) -> str:
@@ -456,6 +495,9 @@ def localized_context(path: str, source: str, literal: dict, declarations: Decla
         argument = re.match(r"(\w+)\s*:", prefix)
         if argument and prefix.endswith((":", "?")) and declarations.accepts(path, call, argument[1]):
             return True, None
+        if (prefix == "" and source[literal["end"]:].lstrip().startswith((",", ")"))
+                and declarations.unlabeled_shape(path, call, argument_index(source, opening, literal["start"])) == ("key",)):
+            return True, None  # `func row(_ title: LocalizedStringKey)` called as `row("Settings")`.
     if declarations.collection_element(path, source, literal):
         return True, None
     for start, end in declarations.returns.get(path, []):
@@ -722,6 +764,20 @@ def device_fallback_missing(node) -> bool:
     return False
 
 
+def device_categories(node) -> set[str]:
+    """Device names declared anywhere under a localization (`iphone`, `other`, …)."""
+    found = set()
+    if isinstance(node, dict):
+        for key, child in node.items():
+            if key == "variations" and isinstance(child, dict) and isinstance(child.get("device"), dict):
+                found |= set(child["device"])
+            found |= device_categories(child)
+    elif isinstance(node, list):
+        for child in node:
+            found |= device_categories(child)
+    return found
+
+
 def leaf_values(node) -> list[str]:
     return [leaf["value"] for leaf in string_units(node) if isinstance(leaf.get("value"), str)]
 
@@ -764,6 +820,11 @@ def catalog_issues(root: Path) -> list[Issue]:
                     issues.append(Issue(relative, 0, key, f"{language} translation contains Hangul"))
                 if device_fallback_missing(units):
                     issues.append(Issue(relative, 0, key, f"{language} device variations need an other fallback"))
+                # Without the source's device branch, that device gets the
+                # generic fallback instead of its own sentence.
+                missing = device_categories(localizations.get("ko", {})) - device_categories(units) if language != "ko" else set()
+                if units and missing:
+                    issues.append(Issue(relative, 0, key, f"{language} device variations missing: {', '.join(sorted(missing))}"))
             # A Japanese leaf equal to the English one (or to an English source
             # key) was copied, not translated; Hangul copies are caught above.
             english = set(leaf_values(localizations.get("en", {}))) | ({key} if not HANGUL.search(key) else set())
@@ -836,6 +897,10 @@ KOTLIN_APPENDS = {"append", "appendLine"}
 # Callbacks (onClick, LaunchedEffect, apply/also) are statements and stop here.
 KOTLIN_VALUE_LAMBDAS = {"remember", "rememberSaveable", "derivedStateOf", "run", "let", "with",
                         "getOrElse", "ifEmpty", "ifBlank"}
+# A lambda passed inside the parentheses is the same lambda when it is named
+# by one of these (`remember(key, calculation = { … })`); other named lambdas
+# (`onClick = { … }`) are callbacks.
+KOTLIN_LAMBDA_VALUE_PARAMETERS = {"calculation", "init", "block", "defaultValue", "builder"}
 # A line starting with one of these continues the previous expression.
 # Inside a `when` body `else`/`in`/`is` start a new branch; only operators
 # (and an if-expression's `else` without `->`) continue the previous line.
@@ -877,6 +942,29 @@ class KotlinTree:
 KOTLIN_TEXT_TYPE = re.compile(r"(?:String|CharSequence|AnnotatedString)\??")
 
 
+def kotlin_expression_end(code: str, tree: KotlinTree, start: int) -> int:
+    """End of an expression body: the first top-level newline not continued."""
+    i = start
+    while i < len(code) and code[i].isspace():
+        i += 1
+    while i < len(code):
+        if code[i] in "([{" and i in tree.pairs:
+            i = tree.pairs[i] + 1
+            continue
+        if code[i] in ")]}" or code[i] == ";":
+            return i
+        if code[i] == "\n":
+            following = i + 1
+            while following < len(code) and code[following].isspace():
+                following += 1
+            if not KOTLIN_CONTINUATION.match(code, following):
+                return i
+            i = following
+            continue
+        i += 1
+    return i
+
+
 def kotlin_wrappers(files: dict[str, tuple[str, KotlinTree]]) -> dict[str, dict]:
     """App functions whose String parameters reach a display sink.
 
@@ -898,9 +986,16 @@ def kotlin_wrappers(files: dict[str, tuple[str, KotlinTree]]) -> dict[str, dict]
                     order.append(parameter[1])
                     if KOTLIN_TEXT_TYPE.fullmatch(parameter[2].strip()):
                         texts.append(parameter[1])
-            body = re.compile(r"\s*(?::\s*[^{=]+?)?\s*\{").match(code, close + 1)
-            if texts and body and body.end() - 1 in tree.pairs:
-                declarations.append((path, match[1], order, texts, body.end() - 1, tree.pairs[body.end() - 1]))
+            body = re.compile(r"\s*(?::\s*[^{=]+?)?\s*([{=])").match(code, close + 1)
+            if not texts or not body:
+                continue
+            start = body.start(1)
+            if body[1] == "{" and start in tree.pairs:
+                declarations.append((path, match[1], order, texts, start, tree.pairs[start]))
+            elif body[1] == "=" and not code.startswith("==", start):
+                # `fun Card(title: String) = Text(title)`: the expression runs to
+                # the next top-level line that does not continue it.
+                declarations.append((path, match[1], order, texts, start, kotlin_expression_end(code, tree, start + 1)))
     wrappers = {}
     for _, name, order, _, _, _ in declarations:
         wrappers.setdefault(name, {"display": set(), "orders": []})["orders"].append(order)
@@ -981,12 +1076,19 @@ def kotlin_ui_context(code: str, start: int, pairs: dict[int, int], closers: dic
             i += 1
         return value
 
-    def lambda_call(opening):
-        """`withStyle(style) {` -> withStyle; `channel.apply {` -> channel.apply."""
+    def lambda_call(opening, outer=None):
+        """The call a lambda belongs to: `withStyle(style) {` -> withStyle,
+        `channel.apply {` -> channel.apply, and inside parentheses
+        `remember(key, calculation = { … })` -> remember (with its label)."""
         end = before(opening)
         if end and code[end - 1] == ")" and end - 1 in closers:
-            return call_at(code, closers[end - 1])
-        return call_at(code, opening)
+            return call_at(code, closers[end - 1]), None
+        if outer is not None and code[outer] == "(" and end and code[end - 1] in "=(,":
+            label = re.search(r"(\w+)\s*=$", code[outer + 1:end]) if code[end - 1] == "=" else None
+            if label is None or label[1] in KOTLIN_LAMBDA_VALUE_PARAMETERS:
+                return call_at(code, outer), label and label[1]
+            return "", label[1]
+        return call_at(code, opening), None
 
     def receiver_call(opening):
         """`NotificationChannel(…).apply {` -> NotificationChannel."""
@@ -1037,8 +1139,9 @@ def kotlin_ui_context(code: str, start: int, pairs: dict[int, int], closers: dic
         return assignment[1] if assignment else None
 
     enclosing = tree.enclosing(start) if tree else sorted(opening for opening, end in pairs.items() if opening < start < end)
-    builders = [code[opening] == "{" and lambda_call(opening).split(".")[-1] in KOTLIN_TEXT_BUILDERS
-                for opening in enclosing]
+    outers = [None] + enclosing[:-1]
+    builders = [code[opening] == "{" and lambda_call(opening, outer)[0].split(".")[-1] in KOTLIN_TEXT_BUILDERS
+                for opening, outer in zip(enclosing, outers)]
     appended = False
     for index in range(len(enclosing) - 1, -1, -1):
         opening = enclosing[index]
@@ -1049,7 +1152,7 @@ def kotlin_ui_context(code: str, start: int, pairs: dict[int, int], closers: dic
                 continue
             if expression_branch(opening):
                 continue
-            call = lambda_call(opening).split(".")[-1]
+            call = lambda_call(opening, outers[index])[0].split(".")[-1]
             # Appended text stays builder content through nested lambdas
             # (`forEach { append(…) }`) up to the outermost builder.
             if appended and any(builders[:index + 1]):
@@ -1106,7 +1209,8 @@ def kotlin_ui_context(code: str, start: int, pairs: dict[int, int], closers: dic
 def format_issues(root: Path) -> list[Issue]:
     """Catch dropped/type-changed arguments; positional reordering is allowed."""
     issues = []
-    for relative in CATALOGS:
+    # The permission catalog keeps the same argument and line-break contract.
+    for relative in (*CATALOGS, "apps/ios-native/AlarmTalk/InfoPlist.xcstrings"):
         for key, entry in json.loads((root / relative).read_text(encoding="utf-8"))["strings"].items():
             if not entry.get("shouldTranslate", True):
                 continue
@@ -1996,6 +2100,56 @@ class SelfTests(unittest.TestCase):
             self.assertTrue(any("key missing" in i.reason and i.value == "Try again" for i in audit(root, [])), source)
             root = self.fixture(source=source.replace("Try again", "안녕"))
             self.assertEqual([i for i in audit(root, []) if i.path.endswith(".swift")], [], source)
+
+    def test_kotlin_expression_wrappers_and_named_value_lambdas(self):
+        root = self.fixture(source="")
+        file = root / "apps/android-native/app/src/main/java/example/Screen.kt"
+        file.parent.mkdir(parents=True)
+        declarations = ('@Composable\nfun Card(title: String) = Text(title)\n'
+                        'fun Banner(caption: String) =\n    Text(\n        text = caption,\n    )\n'
+                        'fun track(event: String) = Log.d(TAG, event)\n')
+        for call, flagged in [('Card("Try again")', {"Try again"}), ('Banner(caption = "Offline")', {"Offline"}),
+                              ('track("opened")', set()),
+                              ('Text(text = remember(key1 = key, calculation = { "Try again" }))', {"Try again"}),
+                              ('Text(text = remember(key, { "Try again" }))', {"Try again"}),
+                              ('Text(buildAnnotatedString(builder = { append("Retry") }))', {"Retry"}),
+                              ('Text(text = remember(key1 = key, calculation = { log("Debug"); label }))', set()),
+                              ('Button(onClick = { log("Clicked") }) { Icon(icon, null) }', set()),
+                              ('Text(text = label, modifier = Modifier.clickable(onClick = { log("Clicked") }))', set())]:
+            file.write_text(declarations + call, encoding="utf-8")
+            self.assertEqual({i.value for i in audit(root, []) if "Kotlin UI" in i.reason}, flagged, call)
+
+    def test_unlabeled_key_parameters_are_lookups(self):
+        for source, keys in [('func row(_ title: LocalizedStringKey) {}\nrow("Settings")', {"Settings"}),
+                             ('func row(_ id: String, _ title: LocalizedStringKey) {}\nrow("row", "Settings")', {"Settings"}),
+                             ('struct Row: View {\n    init(_ title: LocalizedStringKey) {}\n    var body: some View { EmptyView() }\n}\nRow("Settings")', {"Settings"}),
+                             ('func rows(_ titles: [LocalizedStringKey]) {}\nrows(["Settings", "Alarms"])', {"Settings", "Alarms"}),
+                             ('func row(_ title: LocalizedStringKey) {}\nfunc row(_ title: String) {}\nrow("Settings")', set()),
+                             ('func row(_ title: LocalizedStringKey) {}\nrow(flag ? "Settings" : "Alarms")', set()),
+                             ('func row(title: LocalizedStringKey) {}\nfunc row(_ id: String) {}\nrow("settings")', set())]:
+            root = self.fixture(source=source)
+            self.assertEqual({i.value for i in audit(root, []) if "key missing" in i.reason}, keys, source)
+
+    def test_target_keeps_the_source_device_branches_and_infoplist_formats(self):
+        def leaf(value):
+            return {"stringUnit": {"state": "translated", "value": value}}
+        root = self.fixture(source="", key="alarm.tap")
+        file = root / CATALOGS[0]
+        original = file.read_text(encoding="utf-8")
+        korean = {"variations": {"device": {"iphone": leaf("탭하세요"), "other": leaf("누르세요")}}}
+        for english, fails in [({"variations": {"device": {"iphone": leaf("Tap"), "other": leaf("Press")}}}, False),
+                               ({"variations": {"device": {"other": leaf("Press")}}}, True), (leaf("Press"), True)]:
+            data = json.loads(original)
+            data["strings"]["alarm.tap"]["localizations"].update({"ko": korean, "en": english})
+            file.write_text(json.dumps(data), encoding="utf-8")
+            self.assertEqual(any(i.reason.startswith("en device variations missing:") and "iphone" in i.reason
+                                 for i in catalog_issues(root)), fails, english)
+        file.write_text(original, encoding="utf-8")
+        plist = root / "apps/ios-native/AlarmTalk/InfoPlist.xcstrings"
+        for english, fails in [("First line\nSecond line", False), ("One line", True)]:
+            plist.write_text(json.dumps({"strings": {"NSAlarmKitUsageDescription": {"localizations": {
+                "ko": leaf("첫 줄\n둘째 줄"), "en": leaf(english), "ja": leaf("一行目\n二行目")}}}}), encoding="utf-8")
+            self.assertEqual(any(i.path.endswith("InfoPlist.xcstrings") and "line breaks" in i.reason for i in format_issues(root)), fails, english)
 
     def test_catalog_target_languages_reject_hangul_in_every_leaf(self):
         root = self.fixture(source="")

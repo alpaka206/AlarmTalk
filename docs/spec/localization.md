@@ -100,7 +100,8 @@ TTS 입력 문장은 구분한다. 카탈로그의 번역 유무와 호출부가
 `python3 scripts/check-hangul-literals.py`는 iOS 앱·위젯·Shared의 Swift 리터럴과 두 카탈로그,
 InfoPlist 카탈로그, Android main의 Kotlin·언어별 XML 리소스를 검사한다. Swift는 정적 SwiftUI 키,
 명시적 번역 조회, 선언에서 확인한 `LocalizedStringKey`·`LocalizedStringResource` 인자와 반환을
-구분한다(`stringLiteral:`·`String.LocalizationValue(…)` 초기화도 키 조회다). 삼항·nil 병합 등으로 일반 `String`이 되는 호출은 각 분기에서 명시적으로 번역한다.
+구분한다(`stringLiteral:`·`String.LocalizationValue(…)` 초기화도 키 조회다). 라벨 없는 매개변수
+(`func row(_ title: LocalizedStringKey)`, `init(_ title: …)`)는 위치로 대응한다. 삼항·nil 병합 등으로 일반 `String`이 되는 호출은 각 분기에서 명시적으로 번역한다.
 `NavigationLink`·`Menu`·`DisclosureGroup`·`ProgressView`·`.help`·`.badge`처럼 첫 문자열 인자가 키인 표준 SwiftUI
 초기화·수정자도 키 조회로 본다. `[LocalizedStringKey]`·`[String: LocalizedStringKey]`·`(LocalizedStringKey, …)`처럼
 키를 담는 컬렉션·튜플로 선언된 값·반환·매개변수의 원소 리터럴도 키 조회로 본다. 표시 인자 안의
@@ -109,8 +110,9 @@ Kotlin의 Text·BasicText·알림 문구(제목·본문·액션 버튼·채널 �
 `semantics { contentDescription = … }` 같은 접근성 속성은 원문 언어와 관계없이 리소스를 쓴다.
 `buildAnnotatedString`·`buildString` 안에서 `append` 한 문구, `remember { … }`·`let { … }`처럼 값을 돌려주는 람다의
 마지막 식, `when` 분기의 `->` 뒤 값은 그 결과를 받는 표시 인자의 문구로 본다(`when` 조건에서 비교하는 값은 제외).
-앱이 정의한 함수의 `String` 매개변수가 본문에서 표시 자리로 가면(`WakerSheetOptionRow`의 `description` 등) 그 함수의
-호출 인자도 표시 문구로 본다(감싼 함수의 감싼 함수까지). `"%02d:%02d"`처럼 서식 자리표시자뿐인 문자열은 문구가 아니다.
+앱이 정의한 함수의 `String` 매개변수가 본문(블록·식 본문 모두)에서 표시 자리로 가면(`WakerSheetOptionRow`의
+`description` 등) 그 함수의 호출 인자도 표시 문구로 본다(감싼 함수의 감싼 함수까지). 값 람다는 괄호 안에
+`calculation = { … }`처럼 넘겨도 같다. `"%02d:%02d"`처럼 서식 자리표시자뿐인 문자열은 문구가 아니다.
 카탈로그의 영어·일본어에는 한글을 남기지 않고, Android 번역은 배열·복수형의 각 항목까지 비어 있으면 안 된다.
 영어 날짜 선택기의 년·월·일 접미사 세 리소스만 빈 값을 허용한다(숫자만 표시); 키 누락이나 한글 잔존은 허용하지 않는다.
 스낵바 색상 판정 표시어 배열(`snackbar_error_markers`·`snackbar_success_markers`)은 위치로 대응하지 않는 단어 집합이라
@@ -128,7 +130,8 @@ Swift 보간은 확인 가능한 기본 타입으로 키를 만들며, 타입을
 한국어 원문이 복수형으로 나뉘면 영어도 복수형 변형을 유지한다(단일 문장이면 1개일 때도 복수형 문장이 나온다).
 카탈로그 대체 변수(`%#@name@`)는 `argNum`·`formatSpecifier`와 `%arg`를 펼친 문장으로 대조한다.
 선언된 변형·범주·대체 변수에는 번역된 값이 하나 이상 있어야 한다(`"other": {}`는 비어 있는 번역이다).
-기기별 변형에는 다른 기기가 쓸 `other`가 있어야 한다. 일본어 값이 영어 값(또는 영어 원문 키)과 같으면 번역하지 않고
+기기별 변형에는 다른 기기가 쓸 `other`가 있어야 하고, 한국어 원문이 나눈 기기 분기는 번역에도 있어야 한다.
+InfoPlist 카탈로그(권한 설명)도 서식·줄바꿈을 한국어 값과 대조한다. 일본어 값이 영어 값(또는 영어 원문 키)과 같으면 번역하지 않고
 복사한 것으로 본다. 번역 제외(`shouldTranslate: false`, Android `translatable="false"`)와 영어·일본어 동일 값은
 글자가 없는 문자열과 검사 코드에 적은 언어 중립 키(브랜드·언어 자기 이름·문서 이름)만 허용한다. 각 번역의 줄바꿈 수를 유지한다.
 시작 화면처럼 강조 단어 앞뒤를 이어 붙이는 문장은 조각 전체의 줄바꿈 수를 비교한다(언어별 어순에 따라 위치는 달라질 수 있다).
