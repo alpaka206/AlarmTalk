@@ -292,6 +292,14 @@ version 규칙을 유지한다.
   고아 예약**이 남는다. 그래서 예약을 끊을 때는 핸들도 같이 비운다.
 - `AlarmManager.shared.alarms` 가 **권위**다. 캐시된 스냅샷으로 "아직 예약돼 있는가" 를
   판단하지 말 것 — emit 이 늦는 창에서 잘못 답한다.
+- **행의 켜짐·상태는 AlarmKit 보다 늦을 수 있다.** 앱이 꺼진 채 잠금 화면에서 끄거나 다시
+  울림을 누르면 인텐트는 AlarmKit 만 움직이고 행은 못 고친다(`AlarmAppContext.shared` 가 없다).
+  행은 켜진 채 옛 핸들을 들고, 전경의 관찰자(`alarmUpdates`)가 다음에 볼 때까지 그대로다 —
+  백그라운드 새로고침은 관찰자 없이 재조정을 돈다. 그 사이 "켜져 있고 핸들이 있다" 만 보고
+  다시 걸면 **끈 1회성 알람이 되살아나고, 다시 울림 카운트다운이 취소돼 다시 울리지 않는다.**
+  그래서 언어 재예약은 AlarmKit 이 그 핸들을 **대기(`scheduled`) 상태로 들고 있을 때만**
+  건다([localization.md](localization.md) §5). 소리 지문·강제 재예약 갈래는 아직 행의
+  상태(`isInFlight`)만 본다 — 같은 창이 남아 있어 따로 다룬다.
 
 ### 안드로이드 (AlarmManager)
 
@@ -437,4 +445,5 @@ OR로 합치면 평일 알람을 건너뛸 수 있으므로 계산 폴백 자체
 | 1-3 못 끊은 예약 회수 | — | (해당 없음 — `AlarmManager.cancel` 은 실패를 알리지 않는다) | `AlarmKitViewModel.retryPendingCancellations` + `PendingAlarmCancellationStore` |
 | 1-4 예약 중 계정 변경 | — | (해당 없음 — 발화 시 Room 을 다시 읽는다) | `AlarmKitViewModel.accountEpoch` |
 | iOS 소리 지문 | — | (해당 없음) | `AlarmScheduleReconciler.scheduledFingerprint` |
+| iOS 언어 재예약은 AlarmKit 대기 상태만(행 상태가 늦는 창) | — | (해당 없음 — 울릴 때 표시를 만든다) | `AlarmScheduleReconciler.reconcile` 의 `readIdleHandles` ← `AlarmKitViewModel.idleScheduledHandles` — 회귀 `AlarmKitLocalizationTests` |
 | 회귀 테스트 | — | — | `AlarmTalkTests/InaccessibleVoiceReconcileTests.swift`(`LeaveAccountAlarmTests`) |

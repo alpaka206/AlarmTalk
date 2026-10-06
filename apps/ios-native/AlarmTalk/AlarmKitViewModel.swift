@@ -139,6 +139,25 @@ final class AlarmKitViewModel: ObservableObject {
     /// `AlarmScheduleReconciler` 가 이 값을 보고 겹침을 피한다.
     func isRearmInFlight(_ recordID: String) -> Bool { rearmInFlight.contains(recordID) }
 
+    /// AlarmKit 이 지금 **대기(`.scheduled`) 상태로** 들고 있는 예약 핸들. 목록을 못 읽으면 nil.
+    ///
+    /// 울리는 중(`.alerting`)·다시 울림 카운트다운(`.countdown`·`.paused`)·이미 사라진 예약은
+    /// 빠진다. 행의 `enabled`·`state` 는 이 값보다 늦을 수 있다 — 앱이 꺼진 채 잠금 화면에서
+    /// 끄거나 다시 울림을 누르면 인텐트가 행을 못 고친다(`StopAlarmIntent`·`SnoozeAlarmIntent`).
+    /// 그 행을 "켜져 있고 핸들이 있다" 만 보고 다시 걸면 끈 1회성 알람이 되살아나고 카운트다운이
+    /// 취소된다. 언어 재예약이 이 값으로 대상을 거른다(`AlarmScheduleReconciler.reconcile`).
+    /// 권한이 없으면 묻지 않고 nil 이다 — 어차피 다시 걸 수 없고, 권한은 알람을 만들 때 묻는다.
+    func idleScheduledHandles() -> Set<String>? {
+        guard AlarmManager.shared.authorizationState == .authorized,
+              let alarms = try? AlarmManager.shared.alarms else { return nil }
+        return Self.idleHandles(alarms.map { (id: $0.id, state: $0.state) })
+    }
+
+    /// [idleScheduledHandles] 의 판정 — 상태만 받아 테스트가 직접 넣을 수 있게 뺐다.
+    nonisolated static func idleHandles(_ alarms: [(id: UUID, state: Alarm.State)]) -> Set<String> {
+        Set(alarms.filter { $0.state == .scheduled }.map(\.id.uuidString))
+    }
+
     /// AlarmSoundResolver / AlarmVoicePlayer 가 사용하는 캐시.
     /// `AudioCacheStore.shared` 를 의도적으로 instance 로 잡아 두어 테스트 가능성 유지.
     let audioCache: AudioCacheStore = .shared
