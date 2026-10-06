@@ -72,7 +72,12 @@ enum AlarmScheduleReconciler {
         audioCache: AudioCacheStore = .shared,
         ownerUserId: String?,
         /// 지문이 없어도 반드시 다시 걸 행(교체가 소리를 갈아 끼운 것들).
-        forceRearmIds: Set<String> = []
+        forceRearmIds: Set<String> = [],
+        /// OS(AlarmKit) 접점 — 테스트가 갈아 끼운다(`retryPendingCancellations` 와 같은 방식).
+        /// 비우면 `alarmKit` 의 진짜 경로를 쓴다.
+        readIdleHandles: (@MainActor () -> Set<String>?)? = nil,
+        scheduleAlarm: (@MainActor (LocalAlarmRecord) async -> Bool)? = nil,
+        cancelAlarm: (@MainActor (LocalAlarmRecord) async -> Void)? = nil
     ) async -> Int {
         await serialGate.acquire()
         defer { serialGate.release() }
@@ -100,9 +105,23 @@ enum AlarmScheduleReconciler {
             // 같은 위험을 아는 다른 경로들(recoverScheduledAlarms·WeatherVariantRefreshService·
             // RemoteAlarmPullSync)은 전부 이렇게 다시 읽는다.
             guard let current = store.record(id: snapshot.id) else { continue }
+            // ⚠ **언어 때문에 다시 거는 행은 AlarmKit 이 그 핸들을 대기(`.scheduled`) 상태로
+            // 들고 있을 때만 넣는다.** 행의 켜짐·상태는 AlarmKit 보다 늦을 수 있다 — 앱이 꺼진
+            // 채 잠금 화면에서 끄거나 다시 울림을 누르면 인텐트가 행을 못 고쳐, 행은 켜진 채
+            // 옛 핸들을 든다(전경의 관찰자가 다음에 고친다). 아래 `isInFlight` 는 그 행을 못
+            // 거른다. 그대로 다시 걸면 끈 1회성 알람이 다음 회차에 되살아나고, 다시 울림
+            // 카운트다운이 취소돼 **다시 울리지 않는다.** 핸들이 없거나 울리는 중·카운트다운이거나
+            // 목록을 못 읽으면 건너뛴다 — 남은 대상이라 계정 기록도 끝나지 않고 다음 회차에
+            // 다시 본다(`AlarmPresentationLanguage.finishIfComplete`).
+            // 행마다 다시 읽는다 — 앞 행의 `await` 사이에 AlarmKit 상태가 바뀐다.
+            var presentationRearmIds: Set<String> = []
+            if presentationIds.contains(current.id), let handle = current.alarmKitID {
+                let idle = if let readIdleHandles { readIdleHandles() } else { alarmKit.idleScheduledHandles() }
+                if idle?.contains(handle) == true { presentationRearmIds = [current.id] }
+            }
             guard needsReschedule(
                 current, alarmKit: alarmKit, audioCache: audioCache, forceRearmIds: forceRearmIds,
-                presentationRearmIds: presentationIds,
+                presentationRearmIds: presentationRearmIds,
             ) else { continue }
             // 울리는 중·스누즈 중에는 건드리지 않는다 — 재예약이 지금 울리는 알람을
             // 취소하거나 카운트다운을 날린다.
@@ -114,13 +133,21 @@ enum AlarmScheduleReconciler {
             let previous = current
             // **새로 예약해 성공한 뒤에** 옛 핸들을 푼다. 순서를 뒤집으면 실패했을 때
             // 알람이 무예약 상태로 남는다 — 안 울리는 방향이라 가장 나쁘다.
-            let scheduled = await alarmKit.schedule(record: current, store: store)
+            let scheduled = if let scheduleAlarm {
+                await scheduleAlarm(current)
+            } else {
+                await alarmKit.schedule(record: current, store: store)
+            }
             guard scheduled else { continue }
             if let previousHandle = previous.alarmKitID,
                store.record(id: previous.id)?.alarmKitID != previousHandle {
                 // 새 핸들이 정상적으로 행에 새겨졌을 때만 옛것을 푼다. 같아졌다면
                 // 그 사이 다른 경로가 개입한 것이므로 건드리지 않는다.
-                await alarmKit.cancelScheduledAlarm(record: previous)
+                if let cancelAlarm {
+                    await cancelAlarm(previous)
+                } else {
+                    await alarmKit.cancelScheduledAlarm(record: previous)
+                }
             }
             repaired += 1
             Self.logger.info("Rescheduled stale alarm sound (id: \(previous.id, privacy: .public))")
@@ -212,6 +239,7 @@ enum AlarmScheduleReconciler {
         ///   행**은 다르다 — AlarmKit 은 예약 시점 사운드를 그대로 울리므로 다시 걸지
         ///   않으면 **은퇴한 목소리로 운다**(2026-09-03 리뷰 20차).
         forceRearmIds: Set<String> = [],
+        /// 표시 언어 때문에 다시 걸 행 — `reconcile` 이 AlarmKit 대기 상태로 거른 것만 넘긴다.
         presentationRearmIds: Set<String> = []
     ) -> Bool {
         guard record.enabled, record.alarmKitID != nil else { return false }
