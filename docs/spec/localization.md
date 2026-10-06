@@ -115,6 +115,74 @@ TTS 입력 문장은 구분한다. 카탈로그의 번역 유무와 호출부가
 운세 입력 카드와 시트의 이름은 「운세 정보」로 맞춘다.
 스토어의 앱 화면 언어 지원 문장은 전체 화면의 번역 누락을 처리한 뒤 복원한다.
 
+## 6. 번역 누락 CI 검사
+
+`python3 scripts/check-hangul-literals.py`는 iOS 앱·위젯·Shared의 Swift 리터럴과 두 카탈로그,
+InfoPlist 카탈로그, Android main의 Kotlin·언어별 XML 리소스를 검사한다. Swift는 정적 SwiftUI 키,
+명시적 번역 조회, 선언에서 확인한 `LocalizedStringKey`·`LocalizedStringResource` 인자와 반환을
+구분한다(`stringLiteral:`·`String.LocalizationValue(…)` 초기화와 `NSLocalizedString`·`Bundle.localizedString(forKey:)`도
+키 조회다). 키 타입으로 선언한 값의 삼항·`??`·`case` 결과 분기는 모두 키다(비교하는 피연산자는 아니다). 라벨 없는 매개변수
+(`func row(_ title: LocalizedStringKey)`, `init(_ title: …)`)는 위치로 대응한다(삼항·`??` 결과 분기 포함). 사용자 타입의 `init`(본문·확장)과
+memberwise 속성, 함수의 라벨 있는 매개변수는 같은 라벨을 받는 모든 오버로드가 키 타입일 때만 키 자리다. 삼항·nil 병합 등으로 일반 `String`이 되는 호출은 각 분기에서 명시적으로 번역한다.
+`NavigationLink`·`Menu`·`DisclosureGroup`·`ProgressView`·`TableColumn`·`Gauge`·`.help`·`.badge`처럼 첫 문자열 인자가 키인 표준 SwiftUI
+초기화·수정자(`.searchable(prompt:)`·`.accessibilityAction(named:)`·`.accessibilityInputLabels([…])` 포함)도 키 조회로 본다. `[LocalizedStringKey]`·`[String: LocalizedStringKey]`·`(LocalizedStringKey, …)`처럼
+키를 담는 컬렉션·튜플로 선언된 값·반환·매개변수의 원소 리터럴도 키 조회로 본다(삼항·`??` 결과 컬렉션 포함). 표시 인자 안의
+`map`·`flatMap`·`compactMap`·즉시 실행 클로저가 돌려주는 리터럴은 그 표시 인자의 문구로 본다.
+Kotlin의 Text·BasicText·알림 문구(제목·본문·액션 버튼·채널 이름과 설명)와 title/text/contentDescription 등 표시 인자,
+`semantics { contentDescription = … }`·`Icon(icon, "…")`의 위치 인자 같은 접근성 문구, 채널·View·다이얼로그의
+`setDescription`·`setTitle`·`setMessage` 등 세터와 대화형 알림(`MessagingStyle.Message`·`addMessage`·`setConversationTitle`)은 원문 언어와 관계없이 리소스를 쓴다.
+`buildAnnotatedString`·`buildString` 안에서 `append` 한 문구, `remember { … }`·`let { … }`처럼 값을 돌려주는 람다의
+마지막 식, `when` 분기의 `->` 뒤 값은 그 결과를 받는 표시 인자의 문구로 본다(`when` 조건에서 비교하는 값은 제외).
+앱이 정의한 함수의 `String` 매개변수가 본문(블록·식 본문 모두)에서 표시 자리로 가면(Swift는 함수·`init`
+매개변수와, 본문에서 표시되는 저장 속성의 memberwise 라벨도 같다 — `PromptDetailCard(value:)` 등)(`WakerSheetOptionRow`의
+`description` 등) 그 함수의 호출 인자도 표시 문구로 본다(감싼 함수의 감싼 함수까지). 값 람다는 괄호 안에
+`calculation = { … }`처럼 넘겨도 같다. 바인딩 초깃값의 결과로 쓰인 리터럴(`val title = "…"`,
+`val title = if (on) "A" else "B"`, `?:`·`when` 분기, Swift의 삼항·`??`·`switch` 결과)은 같은 블록 안의 표시 자리
+사용까지 따라간다. 호출 인자나 비교 피연산자로 쓰인 리터럴은 따라가지 않는다. `"%02d:%02d"`처럼 서식 자리표시자뿐인 문자열은 문구가 아니다. 문자 리터럴(`'월'`)도 표시 자리에 쓰이면 같다.
+카탈로그의 영어·일본어에는 한글을 남기지 않고, Android 번역은 배열·복수형의 각 항목까지 비어 있으면 안 된다.
+영어 날짜 선택기의 년·월·일 접미사 세 리소스만 빈 값을 허용한다(숫자만 표시); 키 누락이나 한글 잔존은 허용하지 않는다.
+문자열 배열은 언어마다 항목 수가 같아야 한다(면제 없음). 한국어 기본 리소스(`values/`)도 비어 있으면 안 되고, 복수형에는 `other`가 있어야 한다. 언어 한정자 없는
+`values-night`·`values-v27` 같은 디렉터리의 문자열도 한국어 원문으로 보고 영어·일본어 번역을 요구하며, 모든 구성 변형
+(`values-night`, `values-en-night`, 지역 `values-en-rUS` …)을 같은 구성·지역의 한국어 변형(없으면 기본값)과 대조한다.
+Kotlin은 `src/main/java`와 `src/main/kotlin`을 모두 본다. `values-en*`·`values-ja*`에만 있고 기본(`values*`)에 없는 리소스는 실패한다. `<item type="string">`도 문자열 리소스로 본다.
+Swift의 일반 String 표시 인자도 원문 언어와 관계없이 명시적으로 번역한다. 두 플랫폼의 자리표시자는
+위치·변환 타입·사용 횟수를 유지하며 순서 변경만 허용한다. 배열·복수형·기기별 변형의 각 값까지 대조한다.
+명시된 한국어 번역도 빈 값과 서식을 확인한다. 한글 원문 키의 서식은 한국어 값과도 대조한다.
+Swift 여러 줄 문자열 키는 닫는 `"""`의 들여쓰기만 지운 값이다(더 깊은 들여쓰기는 남는다). Swift 보간은 확인 가능한 기본 타입으로 키를 만들며, 타입을 판단할 수 없는 표현식에는 명시적 타입이나 변환을 쓴다.
+멤버 접근(`b.value`)은 수신자 타입을 풀지 않으므로, 같은 이름의 모든 멤버 선언(타입 표기·초깃값 추론 모두)이
+같은 타입일 때만 그 타입으로 본다. 다르거나 알 수 없으면 명시적 변환을 요구한다. 멤버는 타입 본문에 바로 선언된
+속성뿐이다 — 매개변수·지역 선언·튜플 라벨은 `b.value`의 타입을 정하지 않는다. 이름만 쓴 보간도 실제 선언
+(`let/var`, 함수·`init` 매개변수)만 보고, 호출 인자 라벨(`consume(count: Int(3))`)이나 패턴 바인딩
+(`case .restored(let count)`)으로는 타입을 정하지 않는다 — 그런 자리는 `Int(count)`처럼 명시한다.
+의미 키(`String(localized: "plan.name.free", defaultValue: ...)`)의 기본값은 모든 번역에 서식 인자를
+공급하므로, 기본값의 보간 타입·자리표시자·줄바꿈을 그 키의 한국어 값과 대조한다.
+영어 복수형에는 one·other, 일본어·한국어에는 other가 필요하다(Android 복수형과 iOS 카탈로그의 plural 변형·대체 변수 모두).
+한국어 원문이 복수형으로 나뉘면 영어도 복수형 변형을 유지한다(단일 문장이면 1개일 때도 복수형 문장이 나온다).
+복수형 변형은 번역의 같은 자리(같은 기기 분기·같은 이름 대체 변수)에서도 나뉘어야 한다(나뉘는 인자가 하나뿐이면 문장 전체와
+대체 변수 사이로 옮겨도 된다). 각 localization에는 렌더할 문장(최상위 문자열이나 변형)이 있어야 한다.
+카탈로그 대체 변수(`%#@name@`)는 `argNum`·`formatSpecifier`와 `%arg`를 펼친 문장으로 대조한다.
+선언된 변형·범주·대체 변수에는 번역된 값이 하나 이상 있어야 한다(`"other": {}`는 비어 있는 번역이다).
+기기별 변형에는 다른 기기가 쓸 `other`가 있어야 하고, 한국어 원문이 나눈 기기 분기는 번역의 같은 자리(같은 대체 변수 안)에도 있어야 한다.
+InfoPlist 카탈로그(권한 설명)도 서식·줄바꿈을 한국어 값과 대조한다. 일본어 값이 영어 값(또는 영어 원문 키)과 같으면 번역하지 않고
+복사한 것으로 본다. 번역 제외(`shouldTranslate: false`, Android `translatable="false"`)와 영어·일본어 동일 값은
+글자가 없는 문자열과 검사 코드에 적은 언어 중립 키(브랜드·언어 자기 이름·문서 이름)만 허용한다. 각 번역의 줄바꿈 수를 유지한다.
+시작 화면처럼 강조 단어 앞뒤를 이어 붙이는 문장은 조각 전체의 줄바꿈 수를 비교한다(언어별 어순에 따라 위치는 달라질 수 있다).
+Shared의 키는 두 타깃에 있어야 한다. 한글이 포함됐는지를 오류 노출 기준으로 삼는 게이트도 금지한다
+(`containsKorean`·`가-힣` 범위·`AC00`뿐 아니라 `\p{IsHangul}`·`UnicodeBlock.HANGUL_SYLLABLES` 같은 표기도).
+
+컴파일러를 대체하는 검사가 아니다 — 증명하지 않는 범위는 스크립트 머리말의 「Known limitations」에 적었다. 새 래퍼나 복잡한 표현식은 실제 렌더 경로를 확인하고 분석 규칙과
+`--self-test`를 함께 고친다. `scripts/hangul-literal-allowlist.txt`는 저장값·시드·생성 데이터·로그·
+미리보기·언어의 자기 이름·언어와 무관한 브랜드·TTS 입력·비노출 진단에만 사유를 붙여 허용한다. 허용은 경로와
+리터럴로 정하므로, 같은 값이 `String(localized:)` 같은 번역 조회에 쓰인 자리에는 적용하지 않는다(그 조회는 키를 찾아야 한다).
+표시 자리(`Text(verbatim:)`·`Text(…)` 등 확정 싱크)에 바로 놓인 값에도 적용하지 않는다 — 브랜드·언어 자기 이름처럼
+그대로 보여 주는 분류(`language-neutral`·`endonym`)만 예외다.
+코드에서 사라진 허용 항목은 검사가 실패하므로 함께 지운다. `*` 항목은 그 파일의 리터럴만 허용하고,
+언어 게이트는 별도의 `language-gate` 항목 없이는 허용하지 않는다. 사용자 화면 문구를
+미번역 상태로 허용하지 않는다. 번역 리소스(XML)와 카탈로그는 허용목록에 올릴 수 없다 — 키 단위 예외는
+빈 값·한글·서식 검사까지 함께 끄므로, 예외는 검사 코드에 그 항목만 좁혀 둔다. `scripts/hangul-literal-baseline.txt`는 수동 검토한 분석 예외의
+경로와 리터럴 해시를 기록하는 기준선이다. 새 항목을 추가하지 않으며, 코드에서 사라진 항목도
+검사가 실패하므로 함께 지운다. 초기 기준선은 비어 있다.
+
 ## 구현 지도
 
 화면 호출부 연결은 영역별로 진행한다. 이 문서가 생겼다는 것만으로 번역 완료를 뜻하지 않는다.

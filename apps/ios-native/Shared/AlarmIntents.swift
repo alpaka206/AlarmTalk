@@ -43,7 +43,7 @@ struct StopAlarmIntent: LiveActivityIntent {
 
     static let title = LocalizedStringResource("alarm.action.dismiss", defaultValue: "알람 끄기")
 
-    @Parameter(title: "알람 ID")
+    @Parameter(title: LocalizedStringResource("알람 ID"))
     var alarmID: String
 
     init() {
@@ -126,7 +126,7 @@ struct SnoozeAlarmIntent: LiveActivityIntent {
 
     static let title: LocalizedStringResource = "알람 다시 울리기"
 
-    @Parameter(title: "알람 ID")
+    @Parameter(title: LocalizedStringResource("알람 ID"))
     var alarmID: String
 
     init() {

@@ -2,7 +2,7 @@
   "sourceLanguage" : "ko",
   "strings" : {
     ":" : {
-
+      "shouldTranslate" : false
     },
     "Google Play 에서 결제 중이에요" : {
       "extractionState" : "manual",
@@ -22,7 +22,7 @@
       }
     },
     "·" : {
-
+      "shouldTranslate" : false
     },
     "'%@' 가 내게 어떻게 말할지 알려주세요." : {
       "extractionState" : "manual",
@@ -184,7 +184,8 @@
             "value" : "%1$@ · %2$@ · %3$@/%4$@"
           }
         }
-      }
+      },
+      "shouldTranslate" : false
     },
     "%@ / %@" : {
       "localizations" : {
@@ -194,7 +195,8 @@
             "value" : "%1$@ / %2$@"
           }
         }
-      }
+      },
+      "shouldTranslate" : false
     },
     "%@ %@" : {
       "localizations" : {
@@ -204,7 +206,8 @@
             "value" : "%1$@ %2$@"
           }
         }
-      }
+      },
+      "shouldTranslate" : false
     },
     "%@ 날씨" : {
       "extractionState" : "manual",
@@ -308,7 +311,7 @@
       }
     },
     "%@%%" : {
-
+      "shouldTranslate" : false
     },
     "%@까지 개인 플랜을 무료로 쓸 수 있어요. %@부터는 무료 플랜으로 돌아가고, 등록한 목소리는 3일 보관 후 삭제돼요." : {
       "extractionState" : "manual",
@@ -481,7 +484,7 @@
       }
     },
     "~" : {
-
+      "shouldTranslate" : false
     },
     "0원" : {
       "extractionState" : "manual",
@@ -722,7 +725,7 @@
       }
     },
     "AlarmTalk" : {
-
+      "shouldTranslate" : false
     },
     "Apple ID 로그인이 더 이상 유효하지 않아요. 다시 로그인해 주세요." : {
       "extractionState" : "manual",
@@ -827,7 +830,7 @@
       }
     },
     "English" : {
-
+      "shouldTranslate" : false
     },
     "가격 불러오는 중" : {
       "extractionState" : "manual",
@@ -6702,6 +6705,12 @@
       "comment" : "공유 문구의 설치 안내 주소. 언어별 랜딩 페이지로 번역한다(en → https://alarm-talk.com/en/, ja → https://alarm-talk.com/ja/).",
       "extractionState" : "manual",
       "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "https://alarm-talk.com"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10636,7 +10645,7 @@
       }
     },
     "日本語" : {
-
+      "shouldTranslate" : false
     },
     "등록할 수 있는 목소리를 다 채웠어요. 쓰지 않는 목소리를 지워 주세요." : {
       "extractionState" : "manual",
@@ -12722,7 +12731,8 @@
             "value" : "%1$@ · %2$@"
           }
         }
-      }
+      },
+      "shouldTranslate" : false
     },
     "%@ 반복" : {
       "extractionState" : "manual",
@@ -14091,28 +14101,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ (필수)"
-          }
-        }
-      }
-    },
-    "%@에게 공유받은 목소리" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Voice shared by %@"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@から共有された声"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@에게 공유받은 목소리"
           }
         }
       }
@@ -15983,6 +15971,12 @@
           }
         }
       }
+    },
+    "EULA" : {
+      "shouldTranslate" : false
+    },
+    "%lld%%" : {
+      "shouldTranslate" : false
     }
   },
   "version" : "1.0"

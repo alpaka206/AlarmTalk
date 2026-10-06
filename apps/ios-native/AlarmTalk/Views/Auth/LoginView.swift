@@ -108,15 +108,15 @@ struct LoginView: View {
                     // 안드로이드는 세그먼트 피커가 없다(AuthScreen.kt:212-229) — 화면 안에
                     // 제목을 두고, 로그인↔가입은 **맨 아래 전환 행**에서 고른다. 피커를
                     // 위에 두면 아직 계정이 있는지도 모르는 사람에게 먼저 답을 강요하게 된다.
-                    Text(mode == .login ? "로그인" : "회원가입")
+                    Text(mode == .login ? String(localized: "로그인") : String(localized: "회원가입"))
                         .font(theme.typography.headlineSmall)
                         .fontWeight(.bold)
                         .foregroundStyle(AuthSceneColors.text)
                         .padding(.top, 6)
 
                     Text(mode == .login
-                         ? "좋아하는 목소리 알람을 다시 불러올게요."
-                         : "목소리 알람을 만들 계정을 준비해요.")
+                         ? String(localized: "좋아하는 목소리 알람을 다시 불러올게요.")
+                         : String(localized: "목소리 알람을 만들 계정을 준비해요."))
                         .font(theme.typography.bodyMedium)
                         .foregroundStyle(AuthSceneColors.textDim)
 
@@ -460,10 +460,10 @@ struct LoginView: View {
     private var modeSwitchRow: some View {
         HStack(spacing: 2) {
             Spacer(minLength: 0)
-            Text(mode == .login ? "처음 사용하시나요?" : "이미 계정이 있나요?")
+            Text(mode == .login ? String(localized: "처음 사용하시나요?") : String(localized: "이미 계정이 있나요?"))
                 .font(theme.typography.bodyMedium)
                 .foregroundStyle(AuthSceneColors.textMuted)
-            Button(mode == .login ? "회원가입" : "로그인") {
+            Button(mode == .login ? String(localized: "회원가입") : String(localized: "로그인")) {
                 handleModeChange(mode == .login ? .register : .login)
             }
             .font(theme.typography.bodyMedium)
@@ -638,7 +638,7 @@ struct VocaSecureField: View {
                         .foregroundStyle(AuthSceneColors.textMuted)
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel(isVisible ? "비밀번호 숨기기" : "비밀번호 보기")
+                .accessibilityLabel(isVisible ? String(localized: "비밀번호 숨기기") : String(localized: "비밀번호 보기"))
             }
             .padding(.vertical, 12)
             .padding(.horizontal, 14)

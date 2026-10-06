@@ -1,7 +1,45 @@
-# Dev 테스트 핸드오프 (갱신 2026-09-29)
+# Dev 테스트 핸드오프 (갱신 2026-10-06)
 
 > 세션 재개용 라이브 문서. 상태가 바뀌면 이 파일을 갱신/정리한다. (다른 컴퓨터에서도 `git pull` 후 이 문서만 읽으면 이어서 진행 가능.)
 > 끝난 검증은 여기 남기지 않는다 — 남은 것과 다음에 또 쓸 방법만 둔다.
+
+## 2026-10-06 재개 — 다음 검증과 출시 조건
+
+이 절이 아래의 9월 상태 기록보다 최신이다. 이번 작업 범위는 develop까지이며, main·스토어·운영 데이터는 변경하지 않았다.
+
+- 프로필 저장 [#847](https://github.com/alpaka206/AlarmTalk/pull/847), Gemini 후속
+  [#844](https://github.com/alpaka206/AlarmTalk/pull/844), 앱 날씨 출처
+  [#845](https://github.com/alpaka206/AlarmTalk/pull/845), 공식 날씨 원천
+  [#846](https://github.com/alpaka206/AlarmTalk/pull/846)은 develop에 반영됐다.
+- 번역 작업의 PR별 커밋·리뷰·CI 기록은
+  [#848](https://github.com/alpaka206/AlarmTalk/pull/848)부터
+  [#858](https://github.com/alpaka206/AlarmTalk/pull/858)의 연결된 PR에서 확인한다.
+  번역 회귀 검사는 `python3 scripts/check-hangul-literals.py --self-test`와
+  `python3 scripts/check-hangul-literals.py`이며 CI lint에도 연결했다.
+  CI 재개 시 PR 최신 head뿐 아니라 이전 head의 실행 ID와 병합 뒤 develop push 실행도 종료까지 확인한다.
+  Actions 목록은 서버측 상태/브랜치 필터 결과에만 의존하지 않고 전체 목록과 개별 실행을 대조한다.
+- [ ] 영어·일본어 실기기 화면: 긴 본문, 버튼·시간 휠, VoiceOver/TalkBack과 큰 글씨 배율을 확인한다.
+  iOS 언어 변경 후 AlarmKit 재예약은 잠금·앱 종료·스누즈 중·실패 후 재시도까지 확인한다.
+  단위 테스트와 Release 빌드 성공만으로 실기기 알람 검증을 완료 처리하지 않는다.
+- [ ] 공식 날씨 dev **24시간 관측**: #846 자동 배포의 마이그레이션 127 성공 시각은
+  2026-10-05 09:34:23 UTC(18:34:23 KST),
+  [실행 기록](https://github.com/alpaka206/AlarmTalk/actions/runs/37290769212).
+  `cpuTime`·`slot_failed`·원천별 200과 슬롯 캐시를 관측한다. 당일 원천 읽기 검사는
+  KR 17·JP 47·US 69개 지역, 내일~3일 뒤 unresolved 0이었다. 이는 24시간 관측을 대신하지 않는다.
+  10월 5일 Workers Logs 조회는 OAuth 401로 실패해 런타임 관측 완료로 기록하지 않았다.
+- [ ] **main 전환 전**: #845의 출처 표시를 포함한 앱이 **양쪽 스토어에 게재**돼야 한다.
+  #846이 develop에 있으므로 develop 전체를 main으로 바로 합치면 서버 전환도 함께 나간다.
+  앱 출시용 커밋 범위와 서버 전환 순서를 먼저 정한다. 운영 KMA 키·운영 시크릿 정리는 그 릴리스 작업에서 한다.
+- dev 기본 목소리 240개 v4 Turbo 교체와 마이그레이션 125는 10월 1일 완료 기록이 있다.
+  dev 재게시·재합성은 반복하지 않는다. `GOOGLE_VERTEX_MODEL` dev 시크릿 제거와 KMA 키 설정도
+  이전 세션에서 완료했다. prod 스톡 교체는 아래의 main 출시 순서를 따른다.
+- [ ] v4 Turbo 음량 보정과 iOS 반복 사이 0.9초 쉼은 사람의 청취 결정이 남아 있다.
+  Vertex 위치는 처리방침의 미국 계약에 맞춰 `us`를 유지한다. 위치 변경은 이번 수정에 포함하지 않았다.
+- [ ] 스토어 원고의 앱 화면 3개 언어 문장은 **번역을 포함한 앱 버전 게재 뒤** 사용한다.
+  Play 원고는 다음 버전 기준 (B) 에만 그 문장이 있고, 지금 올리는 INTERIM 과 Android 30 기준 (A) 에는 없다.
+  원고 복원은 스토어 게시가 아니다. 실게재 상태는 이번 세션에서 다시 확인하지 않았으며 아래 날짜를 따른다.
+- 10월 5일 기기 연결 조회: Android A32 연결, iPhone 14 Pro Wi-Fi 페어링 available, S23 미연결.
+  앱을 새로 빌드·설치하거나 실기기 검증한 결과는 아니다.
 
 ## 스토어 상태 — 2026-09-29
 

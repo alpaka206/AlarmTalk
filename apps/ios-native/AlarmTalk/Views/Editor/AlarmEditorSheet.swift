@@ -326,7 +326,7 @@ struct AlarmEditorSheet: View {
                     .foregroundStyle(theme.palette.onSurfaceVariant)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.top, 10)
-                    .accessibilityLabel(Text(String(localized: "반복 \(repeatSummary)")))
+                    .accessibilityLabel(Text(String(localized: "반복 \(String(repeatSummary))")))
                 RepeatWeekdayChips(mask: $draft.repeatDaysMask)
                     .padding(.vertical, 10)
                 // Android `ScheduleDetailsCard` 와 동일: 반복 요일이 하나라도 선택됐을 때만
@@ -775,7 +775,7 @@ struct AlarmEditorSheet: View {
     var saveButtonTitle: String {
         if target.familyAlarmMode, let name = (selectedFamilyRecipient?.name).nilIfBlank {
             // 받는 사람 이름은 사용자 데이터다 — 동사만 번역해서 붙인다.
-            return String(localized: "\(String(localized: "저장")) · \(name)")
+            return String(localized: "\(String(localized: "저장")) · \(String(name))")
         }
         // ⚠ **'수정 저장' 으로 되돌리지 말 것**(2026-08-18 지시). 새 알람이든 편집이든
         // 버튼이 하는 일은 같다 — 지금 화면의 값을 저장한다. 편집일 때만 말이 길어지면
@@ -889,7 +889,7 @@ struct AlarmEditorSheet: View {
         let mask = draft.repeatDaysMask
         if mask == 0x7f { return String(localized: "매일") }
         if mask != 0 {
-            let days = mask.repeatDays.map(\.shortLabel).joined(separator: " ")
+            let days: String = mask.repeatDays.map(\.shortLabel).joined(separator: " ")
             return String(localized: "매주: \(days)")
         }
         // mask == 0 : 한 번만 — 다음 발화 날짜를 보여준다(공휴일 OFF 는 의미 없지만 계산은 동일).

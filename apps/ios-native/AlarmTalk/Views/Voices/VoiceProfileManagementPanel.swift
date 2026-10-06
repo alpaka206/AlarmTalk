@@ -536,7 +536,7 @@ struct VoiceProfileManagementPanel: View {
                 ProgressView()
                     .controlSize(.mini)
                     .tint(theme.palette.primary)
-                Text(String(localized: "받는 중 \(min(done * 100 / total, 99))%"))
+                Text(String(localized: "받는 중 \(Int(min(done * 100 / total, 99)))%"))
                     .font(theme.typography.labelMedium)
                     .foregroundStyle(theme.palette.onSurfaceVariant)
                     .monospacedDigit()

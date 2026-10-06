@@ -87,7 +87,7 @@ struct AlarmLiveActivity: Widget {
 
                 HStack(spacing: 6) {
                     timingText(context)
-                    Text("·")
+                    Text(verbatim: "·")
                     subtitleText(context)
                 }
                 .font(.subheadline)
@@ -104,7 +104,7 @@ struct AlarmLiveActivity: Widget {
 
             // 인용 보이스 문구 (있을 때만).
             if let voiceText = quotedVoiceText(context) {
-                Text("\u{201C}\(voiceText)\u{201D}")
+                Text(verbatim: "\u{201C}\(voiceText)\u{201D}")
                     .font(.body)
                     .foregroundStyle(AlarmTalkBrand.activitySecondaryText)
                     .lineLimit(3)

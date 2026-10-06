@@ -30,7 +30,7 @@ struct HolidayOffToggle: View {
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(Text("공휴일에는 알람 끄기"))
-        .accessibilityValue(Text(isOn ? "켜짐" : "꺼짐"))
+        .accessibilityValue(Text(isOn ? String(localized: "켜짐") : String(localized: "꺼짐")))
     }
 }
 

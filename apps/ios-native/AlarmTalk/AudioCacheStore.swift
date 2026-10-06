@@ -68,7 +68,7 @@ enum AudioCacheError: LocalizedError {
         case .invalidBase64:
             return String(localized: "음성 오디오를 해석하지 못했어요.")
         case .durationExceedsLimit(let limit):
-            return String(localized: "음성은 최대 \(limit / 1000)초까지 사용할 수 있어요.")
+            return String(localized: "음성은 최대 \(Int64(limit) / 1000)초까지 사용할 수 있어요.")
         case .appGroupContainerUnavailable:
             return String(localized: "오디오 저장 공간을 사용할 수 없어요.")
         case .writeFailed(let error):

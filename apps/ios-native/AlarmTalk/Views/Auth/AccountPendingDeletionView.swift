@@ -17,7 +17,7 @@ struct AccountPendingDeletionView: View {
             message: "신청일로부터 30일 뒤에 계정과 데이터가 완전히 삭제돼요.\n그 전에 탈퇴를 취소하면 계정을 그대로 복구할 수 있어요."
         ) {
             Button(action: onRecover) {
-                Text(busy ? "처리 중…" : "탈퇴 취소하고 계속 사용하기")
+                Text(busy ? String(localized: "처리 중…") : String(localized: "탈퇴 취소하고 계속 사용하기"))
                     .fontWeight(.semibold)
                     .frame(maxWidth: .infinity, minHeight: 50)
             }
