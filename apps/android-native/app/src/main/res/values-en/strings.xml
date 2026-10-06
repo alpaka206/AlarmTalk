@@ -870,29 +870,6 @@
     <string name="system_voice_name_mina">Mina</string>
     <string name="system_voice_name_dohyun">Dohyun</string>
     <string name="system_voice_name_aeni">Aeni</string>
-    <string-array name="snackbar_error_markers">
-        <item>couldn</item>
-        <item>still being</item>
-        <item>went wrong</item>
-        <item>could not</item>
-        <item>failed</item>
-        <item>error</item>
-        <item>unable</item>
-    </string-array>
-    <string-array name="snackbar_success_markers">
-        <item>saved</item>
-        <item>updated</item>
-        <item>created</item>
-        <item>deleted</item>
-        <item>removed</item>
-        <item>registered</item>
-        <item>sent</item>
-        <item>set an alarm</item>
-        <item>copied</item>
-        <item>canceled</item>
-        <item>restored</item>
-        <item>completed</item>
-    </string-array>
     <string name="notification_ringing_name">Ringing alarms</string>
     <string name="notification_ringing_description">Shows the ringing alarm on the lock screen.</string>
     <string name="notification_ringing_quiet_name">Alarms on screen</string>

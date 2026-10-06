@@ -903,17 +903,6 @@
     <string name="system_voice_name_mina">미나</string>
     <string name="system_voice_name_dohyun">도현</string>
     <string name="system_voice_name_aeni">애니</string>
-    <string-array name="snackbar_error_markers">
-        <item>실패</item>
-        <item>못했어요</item>
-        <item>오류</item>
-        <item>문제가</item>
-    </string-array>
-    <string-array name="snackbar_success_markers">
-        <item>했어요</item>
-        <item>었어요</item>
-        <item>완료</item>
-    </string-array>
     <string name="notification_ringing_name">알람 울림</string>
     <string name="notification_ringing_description">알람이 울릴 때 잠금 화면에 울림 화면을 표시해요.</string>
     <string name="notification_ringing_quiet_name">알람 울림 화면</string>

@@ -869,17 +869,6 @@
     <string name="system_voice_name_mina">ミナ</string>
     <string name="system_voice_name_dohyun">ドヒョン</string>
     <string name="system_voice_name_aeni">エニ</string>
-    <string-array name="snackbar_error_markers">
-        <item>ません</item>
-        <item>問題が発生</item>
-        <item>失敗</item>
-        <item>エラー</item>
-    </string-array>
-    <string-array name="snackbar_success_markers">
-        <item>しました</item>
-        <item>されました</item>
-        <item>完了</item>
-    </string-array>
     <string name="notification_ringing_name">アラームの鳴動</string>
     <string name="notification_ringing_description">アラームが鳴るときにロック画面にアラーム画面を表示します。</string>
     <string name="notification_ringing_quiet_name">表示中のアラーム</string>

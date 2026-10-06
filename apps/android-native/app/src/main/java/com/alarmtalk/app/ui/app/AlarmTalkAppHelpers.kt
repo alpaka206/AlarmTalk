@@ -22,10 +22,11 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.stringArrayResource
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -185,13 +186,8 @@ internal sealed interface AuthRoute {
     data class Auth(val mode: AuthMode) : AuthRoute
 }
 
+/** 스낵바의 색·아이콘. 문구에서 고르는 규칙은 `SnackbarSeverity.kt` 한 곳이다. */
 internal enum class MessageSeverity { Success, Error, Info }
-
-internal fun messageSeverity(text: String, errorMarkers: Array<String>, successMarkers: Array<String>): MessageSeverity = when {
-    errorMarkers.any { text.contains(it, ignoreCase = true) } -> MessageSeverity.Error
-    successMarkers.any { text.contains(it, ignoreCase = true) } -> MessageSeverity.Success
-    else -> MessageSeverity.Info
-}
 
 @Composable
 internal fun PrettySnackbar(
@@ -199,11 +195,8 @@ internal fun PrettySnackbar(
     actionLabel: String? = null,
     onAction: () -> Unit = {},
 ) {
-    val severity = messageSeverity(
-        message,
-        stringArrayResource(R.array.snackbar_error_markers),
-        stringArrayResource(R.array.snackbar_success_markers),
-    )
+    val context = LocalContext.current
+    val severity = remember(message) { snackbarSeverity(context, message) }
     val scheme = MaterialTheme.colorScheme
     val containerColor = when (severity) {
         MessageSeverity.Error -> scheme.error

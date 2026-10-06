@@ -35,6 +35,10 @@ Swift 소스와 `Localizable.xcstrings`는 함께 고친다. 번역이 카탈로
 보낸 사람 이름의 존칭은 한 곳에서만 붙인다(한국어 님·일본어 さん·영어 없음). 존칭을 붙인 결과를 받는
 문장 틀에 존칭을 다시 넣지 않는다. 이름 자체가 님·さん으로 끝나면 존칭을 더 붙이지 않는다. 이름을 모르는 사람을 친구나 가족이라고 단정하지 않는다.
 
+Android 스낵바의 색(성공·오류·안내)은 문구의 글자가 아니라 **문구 종류**로 고른다. 낱말 표지는
+언어마다 뜻이 갈린다(일본어 「ません」이 성공 문구를, 영어 "sent"가 "consent"를 잡았다). 스낵바로 가는
+문구는 한 표에 종류를 적고, 화면의 글을 세 언어로 펼친 그 문구와 맞춰 본다. 표에 없는 글은 안내다.
+
 코드 등록 실패는 그 등록 시도에서 나온 문구만 입력창 아래에 표시한다. 다른 작업이 진행 중이라
 등록을 시작하지 못한 경우에도 이전 성공·강등 안내를 등록 오류로 재사용하지 않는다.
 
@@ -91,6 +95,7 @@ TTS 입력 문장은 구분한다. 카탈로그의 번역 유무와 호출부가
 | 번역 원문·용어 | `app/src/main/res/values{,-en,-ja}/strings.xml` | `AlarmTalk/Localizable.xcstrings` |
 | 공통 오류 코드 | `network/ApiErrorMessages.kt` | `APIErrorMessages.swift` |
 | 존칭 한 번 | `r3data_honorific_name` 리소스 | `%@님` 카탈로그 키 |
+| 스낵바 색은 문구 종류로 | `ui/app/SnackbarSeverity.kt`의 `SnackbarSeverities` · `SnackbarSeverityTest` | (스낵바 색 구분 없음) |
 | 언어 선택지 자기 이름 | `voices_lang_ko`·`voices_lang_en`·`voices_lang_ja` | 목소리 등록 화면의 언어 선택지(후속 연결) |
 | 저장값과 기본 목소리의 표시 | `fortuneValueLabel`·`systemVoiceDisplayName` | `FortunePromptInputFormat.displayLabel`·`systemVoiceDisplayName`·`VoiceRelationshipPreset.displayLabel` |
 | 약관 웹 링크의 앱 언어 | 설정 화면의 언어별 경로 | `LegalLinks`(후속 화면에서 채택) |
