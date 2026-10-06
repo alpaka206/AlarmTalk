@@ -1028,6 +1028,8 @@ def catalog_issues(root: Path) -> list[Issue]:
         sources = [entry] if entry.tag == "string" else list(entry)
         if not sources or any(android_text_is_blank("".join(leaf.itertext())) for leaf in sources):
             issues.append(Issue(relative, 0, key, "Android ko resource contains an empty value"))
+        if entry.tag == "plurals" and not PLURAL_CATEGORIES["ko"] <= {item.get("quantity") for item in entry}:
+            issues.append(Issue(relative, 0, key, "Android ko required plural quantities missing"))
         for language in LANGUAGES:
             match = localized[language].get(key)
             if match is None:
@@ -1809,6 +1811,12 @@ class SelfTests(unittest.TestCase):
             items = ''.join('<item quantity="' + q + '">' + text + '</item>' for q in quantities)
             (base / ('values' + language) / 'strings.xml').write_text('<resources><plurals name="hello">' + items + '</plurals></resources>', encoding="utf-8")
         self.assertEqual(catalog_issues(root), [])
+        # Korean resolves every count through `other`; the source needs it too.
+        source = base / 'values' / 'strings.xml'
+        original = source.read_text(encoding="utf-8")
+        source.write_text(original.replace('quantity="other"', 'quantity="one"'), encoding="utf-8")
+        self.assertTrue(any(i.reason == 'Android ko required plural quantities missing' for i in catalog_issues(root)))
+        source.write_text(original, encoding="utf-8")
         for language in LANGUAGES:
             file = base / ('values-' + language) / 'strings.xml'
             original = file.read_text(encoding="utf-8")
