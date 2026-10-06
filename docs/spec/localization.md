@@ -124,12 +124,13 @@ InfoPlist 카탈로그, Android main의 Kotlin·언어별 XML 리소스를 검�
 키 조회다). 키 타입으로 선언한 값의 삼항·`??`·`case` 결과 분기는 모두 키다(비교하는 피연산자는 아니다). 라벨 없는 매개변수
 (`func row(_ title: LocalizedStringKey)`, `init(_ title: …)`)는 위치로 대응한다. 사용자 타입의 `init`(본문·확장)과
 memberwise 속성, 함수의 라벨 있는 매개변수는 같은 라벨을 받는 모든 오버로드가 키 타입일 때만 키 자리다. 삼항·nil 병합 등으로 일반 `String`이 되는 호출은 각 분기에서 명시적으로 번역한다.
-`NavigationLink`·`Menu`·`DisclosureGroup`·`ProgressView`·`TableColumn`·`.help`·`.badge`처럼 첫 문자열 인자가 키인 표준 SwiftUI
+`NavigationLink`·`Menu`·`DisclosureGroup`·`ProgressView`·`TableColumn`·`Gauge`·`.help`·`.badge`처럼 첫 문자열 인자가 키인 표준 SwiftUI
 초기화·수정자(`.searchable(prompt:)`·`.accessibilityAction(named:)` 포함)도 키 조회로 본다. `[LocalizedStringKey]`·`[String: LocalizedStringKey]`·`(LocalizedStringKey, …)`처럼
 키를 담는 컬렉션·튜플로 선언된 값·반환·매개변수의 원소 리터럴도 키 조회로 본다(삼항·`??` 결과 컬렉션 포함). 표시 인자 안의
 `map`·`flatMap`·`compactMap`·즉시 실행 클로저가 돌려주는 리터럴은 그 표시 인자의 문구로 본다.
 Kotlin의 Text·BasicText·알림 문구(제목·본문·액션 버튼·채널 이름과 설명)와 title/text/contentDescription 등 표시 인자,
-`semantics { contentDescription = … }`·`Icon(icon, "…")`의 위치 인자 같은 접근성 문구는 원문 언어와 관계없이 리소스를 쓴다.
+`semantics { contentDescription = … }`·`Icon(icon, "…")`의 위치 인자 같은 접근성 문구, 채널·View·다이얼로그의
+`setDescription`·`setTitle`·`setMessage` 등 세터는 원문 언어와 관계없이 리소스를 쓴다.
 `buildAnnotatedString`·`buildString` 안에서 `append` 한 문구, `remember { … }`·`let { … }`처럼 값을 돌려주는 람다의
 마지막 식, `when` 분기의 `->` 뒤 값은 그 결과를 받는 표시 인자의 문구로 본다(`when` 조건에서 비교하는 값은 제외).
 앱이 정의한 함수의 `String` 매개변수가 본문(블록·식 본문 모두)에서 표시 자리로 가면(Swift는 함수·`init`
@@ -140,7 +141,8 @@ Kotlin의 Text·BasicText·알림 문구(제목·본문·액션 버튼·채널 �
 사용까지 따라간다. 호출 인자나 비교 피연산자로 쓰인 리터럴은 따라가지 않는다. `"%02d:%02d"`처럼 서식 자리표시자뿐인 문자열은 문구가 아니다. 문자 리터럴(`'월'`)도 표시 자리에 쓰이면 같다.
 카탈로그의 영어·일본어에는 한글을 남기지 않고, Android 번역은 배열·복수형의 각 항목까지 비어 있으면 안 된다.
 영어 날짜 선택기의 년·월·일 접미사 세 리소스만 빈 값을 허용한다(숫자만 표시); 키 누락이나 한글 잔존은 허용하지 않는다.
-문자열 배열은 언어마다 항목 수가 같아야 한다(면제 없음). 한국어 기본 리소스(`values/`)도 비어 있으면 안 되고, 복수형에는 `other`가 있어야 한다.
+문자열 배열은 언어마다 항목 수가 같아야 한다(면제 없음). 한국어 기본 리소스(`values/`)도 비어 있으면 안 되고, 복수형에는 `other`가 있어야 한다. 언어 한정자 없는
+`values-night`·`values-v27` 같은 디렉터리의 문자열도 한국어 원문으로 보고 영어·일본어 번역을 요구한다.
 Swift의 일반 String 표시 인자도 원문 언어와 관계없이 명시적으로 번역한다. 두 플랫폼의 자리표시자는
 위치·변환 타입·사용 횟수를 유지하며 순서 변경만 허용한다. 배열·복수형·기기별 변형의 각 값까지 대조한다.
 명시된 한국어 번역도 빈 값과 서식을 확인한다. 한글 원문 키의 서식은 한국어 값과도 대조한다.
@@ -154,7 +156,8 @@ Swift 보간은 확인 가능한 기본 타입으로 키를 만들며, 타입을
 공급하므로, 기본값의 보간 타입·자리표시자·줄바꿈을 그 키의 한국어 값과 대조한다.
 영어 복수형에는 one·other, 일본어·한국어에는 other가 필요하다(Android 복수형과 iOS 카탈로그의 plural 변형·대체 변수 모두).
 한국어 원문이 복수형으로 나뉘면 영어도 복수형 변형을 유지한다(단일 문장이면 1개일 때도 복수형 문장이 나온다).
-복수형으로 나뉜 대체 변수는 번역의 같은 이름 대체 변수에서도 나뉘어야 한다.
+복수형으로 나뉜 대체 변수는 번역의 같은 이름 대체 변수에서도 나뉘어야 한다(번역이 대체 변수 없이 문장 전체를 나누는 것은
+나뉘는 인자가 하나일 때만 같다).
 카탈로그 대체 변수(`%#@name@`)는 `argNum`·`formatSpecifier`와 `%arg`를 펼친 문장으로 대조한다.
 선언된 변형·범주·대체 변수에는 번역된 값이 하나 이상 있어야 한다(`"other": {}`는 비어 있는 번역이다).
 기기별 변형에는 다른 기기가 쓸 `other`가 있어야 하고, 한국어 원문이 나눈 기기 분기는 번역의 같은 자리(같은 대체 변수 안)에도 있어야 한다.

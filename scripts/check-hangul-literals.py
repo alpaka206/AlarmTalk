@@ -55,7 +55,8 @@ CATEGORIES = {"generated", "seed-data", "data-contract", "debug-preview", "log",
 SWIFT_UI = {"Text", "Button", "Label", "Toggle", "TextField", "SecureField", "Section", "Picker", "Link",
             "NavigationLink", "DisclosureGroup", "Menu", "ProgressView", "Stepper", "DatePicker", "MultiDatePicker",
             "ColorPicker", "ShareLink", "LabeledContent", "GroupBox", "ControlGroup", "ContentUnavailableView", "Tab",
-            "TableColumn", "WindowGroup", "Window", "MenuBarExtra", "CommandMenu", "PasteButton",
+            "TableColumn", "WindowGroup", "Window", "MenuBarExtra", "CommandMenu", "PasteButton", "Gauge",
+            "PhotosPicker",
             "navigationTitle", "navigationBarTitle", "navigationSubtitle", "alert", "confirmationDialog",
             "accessibilityLabel", "accessibilityHint", "accessibilityValue", "accessibilityRotor",
             "accessibilityCustomContent", "help", "badge"}
@@ -906,8 +907,13 @@ def plural_missing(source, target) -> bool:
             found.add("")
         return found
     expected, present = scopes(source), scopes(target)
-    names = set(substitutions(target))
-    return any((scope in names and scope not in present) or (scope not in names and not present) for scope in expected)
+    if not expected:
+        return False
+    if not substitutions(target):
+        # A whole-sentence plural can stand in for one varying argument only.
+        return not present or len(expected) > 1
+    # Every varying substitution keeps varying under its own name.
+    return any(scope not in present if scope else not present for scope in expected)
 
 
 def plural_categories_missing(node, required: set[str]) -> bool:
@@ -1031,14 +1037,20 @@ def catalog_issues(root: Path) -> list[Issue]:
                     has_words(value) and value in english for value in leaf_values(localizations.get("ja", {}))):
                 issues.append(Issue(relative, 0, key, "ja translation is copied from English"))
     resources = root / "apps/android-native/app/src/main/res"
-    localized = {}
-    for language in ("ko", *LANGUAGES):
-        entries = {}
-        for file in (resources / ("values" if language == "ko" else "values-" + language)).glob("*.xml"):
+    localized = {language: {} for language in ("ko", *LANGUAGES)}
+    # `values-night`, `values-v27`… have no locale and fall back like `values/`
+    # (Korean); `values-en-v27` belongs to English. The plain directory wins.
+    directories = sorted((d for d in resources.glob("values*") if d.is_dir()), key=lambda d: (len(d.name), d.name))
+    for directory in directories:
+        qualifiers = directory.name.split("-")[1:]
+        locale = next((q[2:].split("+")[0] if q.startswith("b+") else q for q in qualifiers
+                       if re.fullmatch(r"[a-z]{2,3}|b\+[a-z]+(?:\+.*)?", q) and q not in {"car"}), "ko")
+        if locale not in localized:
+            continue
+        for file in directory.glob("*.xml"):
             for entry in ET.parse(file).getroot():
                 if entry.tag in {"string", "string-array", "plurals"}:
-                    entries[entry.attrib["name"]] = (entry, str(file.relative_to(root)))
-        localized[language] = entries
+                    localized[locale].setdefault(entry.attrib["name"], (entry, str(file.relative_to(root))))
     for key, (entry, relative) in localized["ko"].items():
         if entry.get("translatable") == "false":
             if key not in LANGUAGE_NEUTRAL_ANDROID_RESOURCES and has_words("".join(entry.itertext())):
@@ -1090,7 +1102,10 @@ def catalog_issues(root: Path) -> list[Issue]:
 # positional argument: Toast text, notification action title, channel name.
 KOTLIN_TEXT_CALLS = {"Text", "BasicText", "AnnotatedString"}
 KOTLIN_FIRST_ARGUMENT_SINKS = {"setContentTitle", "setContentText", "setSubText", "setTicker", "setBigContentTitle",
-                               "setSummaryText", "bigText", "showSnackbar"}
+                               "setSummaryText", "bigText", "showSnackbar",
+                               # Channel/View/dialog setters that show their text.
+                               "setDescription", "setContentDescription", "setTitle", "setHint", "setMessage",
+                               "setPositiveButton", "setNegativeButton", "setNeutralButton"}
 KOTLIN_SECOND_ARGUMENT_SINKS = {"makeText", "addAction", "Action.Builder", "NotificationChannel", "NotificationChannelGroup",
                                 # Positional contentDescription / snackbar action label.
                                 "Icon", "Image", "AsyncImage", "showSnackbar"}
@@ -2310,7 +2325,8 @@ class SelfTests(unittest.TestCase):
                        'Modifier.semantics(mergeDescendants = true) {\n    role = Role.Button\n    this.contentDescription = "Play"\n}',
                        'builder.setStyle(NotificationCompat.BigTextStyle().bigText("Ready"))',
                        'Icon(Icons.Default.Add, "Add alarm")', 'Image(painter, "Profile photo")',
-                       'AsyncImage(model, "Cover")', 'state.showSnackbar(message, "Undo")']:
+                       'AsyncImage(model, "Cover")', 'state.showSnackbar(message, "Undo")',
+                       'channel.setDescription("Alarm notifications")', 'AlertDialog.Builder(context).setMessage("Delete?")']:
             file.write_text(source, encoding="utf-8")
             self.assertTrue(any("Kotlin UI" in issue.reason for issue in audit(root, [])), source)
         for source in ['Log.d(TAG, buildString { append("Debug") })',
@@ -2376,11 +2392,16 @@ class SelfTests(unittest.TestCase):
                 return {"argNum": index, "formatSpecifier": "lld", "variations": variations}
             return {"stringUnit": {"state": "translated", "value": "%#@a@ %#@b@"},
                     "substitutions": {"a": meta(1, a_plural), "b": meta(2, b_plural)}}
-        for english, fails in [(two(True, False), False), (two(False, True), True)]:
+        only_b = two(True, True)
+        del only_b["substitutions"]["a"]
+        only_b["stringUnit"]["value"] = "%1$lld %#@b@"  # `a` folded into the sentence, no longer varying
+        for korean, english, fails in [(two(True, False), two(True, False), False), (two(True, False), two(False, True), True),
+                                       (two(True, True), two(True, True), False), (two(True, True), two(False, True), True),
+                                       (two(True, True), only_b, True)]:
             root = self.fixture(source="", key="alarm.count")
             file = root / CATALOGS[0]
             data = json.loads(file.read_text(encoding="utf-8"))
-            data["strings"]["alarm.count"]["localizations"] = {"ko": two(True, False), "en": english, "ja": two(True, False)}
+            data["strings"]["alarm.count"]["localizations"] = {"ko": korean, "en": english, "ja": korean}
             file.write_text(json.dumps(data), encoding="utf-8")
             issues = [i.reason for i in catalog_issues(root)]
             self.assertEqual("en must vary by plural like the Korean source" in issues, fails, english)
@@ -2423,7 +2444,7 @@ class SelfTests(unittest.TestCase):
             self.assertEqual(audit(root, []), [], source)
 
     def test_standard_swiftui_initializers_are_key_lookups(self):
-        for call in ['TableColumn("Name", value: \\.name)', 'WindowGroup("Main") { Detail() }', 'NavigationLink("Settings", destination: Detail())', 'DisclosureGroup("Advanced") { Detail() }',
+        for call in ['Gauge("Battery level", value: 0.5)', 'TableColumn("Name", value: \\.name)', 'WindowGroup("Main") { Detail() }', 'NavigationLink("Settings", destination: Detail())', 'DisclosureGroup("Advanced") { Detail() }',
                      'Menu("Options") { Detail() }', 'ProgressView("Loading")', 'Stepper("Count", value: $count)',
                      'DatePicker("Date", selection: $date)', 'ShareLink("Share", item: url)',
                      'LabeledContent("Version", value: version)', 'GroupBox("Account") { Detail() }',
@@ -2676,6 +2697,24 @@ class SelfTests(unittest.TestCase):
                               ('cacheKey(category: "custom")', set()), ('Key(id: "row")', set())]:
             root = self.fixture(source=declarations + call)
             self.assertEqual({i.value for i in audit(root, []) if "not in a proven" in i.reason}, flagged, call)
+
+    def test_qualified_android_value_directories_need_translations(self):
+        root = self.fixture(source="")
+        base = root / "apps/android-native/app/src/main/res"
+        night = base / "values-night"
+        night.mkdir()
+        (night / "strings.xml").write_text('<resources><string name="night_only">밤에만</string></resources>', encoding="utf-8")
+        reasons = {(i.value, i.reason) for i in catalog_issues(root)}
+        self.assertIn(("night_only", "Android en resource missing"), reasons)
+        self.assertIn(("night_only", "Android ja resource missing"), reasons)
+        for directory, text in [("values-en-night", "Night only"), ("values-ja", None)]:
+            target = base / directory
+            target.mkdir(exist_ok=True)
+            if text:
+                (target / "strings.xml").write_text('<resources><string name="night_only">' + text + '</string></resources>', encoding="utf-8")
+            else:
+                (target / "night.xml").write_text('<resources><string name="night_only">夜だけ</string></resources>', encoding="utf-8")
+        self.assertEqual(catalog_issues(root), [])
 
     def test_catalog_target_languages_reject_hangul_in_every_leaf(self):
         root = self.fixture(source="")
