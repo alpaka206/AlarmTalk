@@ -48,7 +48,7 @@ class SwiftTypes:
             blocks = [(a, b) for a, b in delimiters.items() if code[a] == "{"]
             # Function parameters are visible only in their own body. Their
             # declaration precedes the brace and needs an explicit scope span.
-            for match in re.finditer(r"\b(?:func\s+\w+|init)\s*\(", code):
+            for match in re.finditer(r"\b(?:func\s+\w+\s*(?:<[^>]*>)?|init[?!]?|subscript)\s*\(", code):
                 opening = match.end() - 1
                 closing = delimiters.get(opening, opening)
                 body = code.find("{", closing)
@@ -56,9 +56,18 @@ class SwiftTypes:
                     blocks.append((opening, delimiters[body]))
             self.scopes[path] = blocks
             entries = []
-            # Parameters and explicit property/local declarations.
-            for match in re.finditer(r"\b(\w+)\s*:\s*(String|Substring|U?Int(?:8|16|32|64)?|Double|Float)\b", code):
-                entries.append((match[1], match.start(), match[2], None))
+            # Parameters and explicit property/local declarations only: a call
+            # argument (`consume(count: Int(3))`) or tuple label is not a binding.
+            parameter_lists = {match.end() - 1 for match in
+                               re.finditer(r"\b(?:func\s+\w+\s*(?:<[^>]*>)?|init[?!]?|subscript)\s*\(", code)}
+            typed = list(re.finditer(r"\b(\w+)\s*:\s*(String|Substring|U?Int(?:8|16|32|64)?|Double|Float)\b", code))
+            inside = innermost_delimiters(sorted(delimiters.items()), [match.start() for match in typed])
+            for match in typed:
+                opening = inside[match.start()]
+                declared = re.search(r"\b(?:let|var)\s+$", code[max(0, match.start() - 16):match.start()])
+                parameter = opening in parameter_lists and re.search(r"[(,]\s*(?:\w+\s+)?$", code[opening:match.start()])
+                if declared or parameter:
+                    entries.append((match[1], match.start(), match[2], None))
             for match in re.finditer(r"\b(?:let|var)\s+(\w+)\s*=\s*([^\n;]+)", source):
                 if code[match.start():match.start() + 3] in {"let", "var"}:
                     # Stop at the brace/paren that closes the enclosing scope, so

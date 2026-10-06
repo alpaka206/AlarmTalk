@@ -245,14 +245,15 @@ def key_element(source: str, literal: dict, value_start: int, shape: tuple) -> b
 class Declarations:
     """File-scoped lookup wins for private types with the same name."""
     def __init__(self, sources: dict[str, str]):
-        self.parameters: dict[tuple[str, str], set[str]] = {}
+        # Callable name -> external label -> declared type shapes of every
+        # overload (functions, initializers, memberwise properties).
+        self.labeled: dict[tuple[str, str], dict[str, set[tuple]]] = {}
         self.returns: dict[str, list[tuple[int, int]]] = {}
-        # Collection/tuple shapes holding a key: `[LocalizedStringKey]`,
-        # `[String: LocalizedStringKey]`, `(LocalizedStringKey, Int)`.
-        self.collection_parameters: dict[tuple[str, str], dict[str, tuple]] = {}
         # Overload signatures by position: the shape of each unlabeled (`_`)
         # parameter, None where the parameter needs a label.
         self.unlabeled: dict[tuple[str, str], list[list[tuple | None]]] = {}
+        # Collection/tuple values holding a key: `[LocalizedStringKey]`,
+        # `[String: LocalizedStringKey]`, `(LocalizedStringKey, Int)`.
         self.collection_values: dict[str, list[tuple[int, int, tuple]]] = {}
         for path, source in sources.items():
             literals = SwiftLexer(source, path).run()
@@ -264,60 +265,52 @@ class Declarations:
                 shape = parse_type(code[start:end])
                 return (shape if shape[0] != "key" and holds_key(shape) else None), end
 
-            def signature(opening: int) -> list[tuple | None]:
-                close, positions, offset = pairs.get(opening, opening), [], opening + 1
+            def parameters(opening: int) -> tuple[dict[str, tuple], list[tuple | None]]:
+                """Labeled parameter shapes and the positional signature of a list."""
+                close, labels, positions, offset = pairs.get(opening, opening), {}, [], opening + 1
                 for part in split_top_level(code[opening + 1:close], ","):
                     label = re.match(r"\s*(\w+)(?:\s+\w+)?\s*:\s*", part)
                     if label:
                         end = read_type(code, offset + label.end(), "=,")
-                        positions.append(parse_type(code[offset + label.end():end]) if label[1] == "_" else None)
+                        shape = parse_type(code[offset + label.end():end])
+                        positions.append(shape if label[1] == "_" else None)
+                        if label[1] != "_":
+                            labels[label[1]] = shape
                     offset += len(part) + 1
-                return positions
+                return labels, positions
+
+            def declare(name: str, opening: int) -> None:
+                labels, positions = parameters(opening)
+                table = self.labeled.setdefault((path, name), {})
+                for label, shape in labels.items():
+                    table.setdefault(label, set()).add(shape)
+                self.unlabeled.setdefault((path, name), []).append(positions)
 
             spans = sorted(pairs.items())
-            for match in re.finditer(r"\b(?:struct|class)\s+(\w+)[^\n{]*\{", code):
+            for match in re.finditer(r"\b(struct|class|extension)\s+(\w+)[^\n{]*\{", code):
                 start = match.end() - 1
                 end = pairs.get(start, start)
-                # Only stored properties declared directly in the body become
-                # memberwise parameters; a method's local `let title` does not.
-                members = [member for member in re.finditer(r"\b(?:let|var)\s+(\w+)\s*:\s*", code[start:end])]
-                owner = innermost_delimiters(spans, [start + member.start() for member in members])
-                members = [member for member in members if owner[start + member.start()] == start]
-                self.parameters[(path, match[1])] = {member[1] for member in members
-                                                     if re.compile(LOCALIZED_TYPE + r"\b").match(code, start + member.end())}
-                shapes = {}
-                for member in members:
-                    shape, _ = collection_shape(start + member.end(), "={}\n;,")
-                    if shape:
-                        shapes[member[1]] = shape
-                self.collection_parameters[(path, match[1])] = shapes
-                # `init(_ title: LocalizedStringKey)` makes `Row("Settings")` a lookup.
-                inits = list(re.finditer(r"\binit\??\s*\(", code[start:end]))
+                # Initializers declared in the body (or an extension) are the
+                # type's callables; `init(heading: LocalizedStringKey)` makes
+                # `Row(heading: "Settings")` a lookup.
+                inits = list(re.finditer(r"\binit[?!]?\s*(?:<[^>]*>)?\s*\(", code[start:end]))
                 owner = innermost_delimiters(spans, [start + init.start() for init in inits])
+                inits = [init for init in inits if owner[start + init.start()] == start]
                 for init in inits:
-                    if owner[start + init.start()] == start:
-                        self.unlabeled.setdefault((path, match[1]), []).append(signature(start + init.end() - 1))
-            for match in re.finditer(r"\bfunc\s+(\w+)\s*\(", code):
-                start = match.end() - 1
-                end = pairs.get(start, start)
-                arguments = code[start + 1:end]
-                names = re.findall(r"(?:^|,)\s*(\w+)(?:\s+\w+)?\s*:\s*" + LOCALIZED_TYPE, arguments)
-                key = (path, match[1])
-                names = set(names)
-                self.parameters[key] = self.parameters[key] & names if key in self.parameters else names
-                self.unlabeled.setdefault(key, []).append(signature(start))
-                shapes = {}
-                offset = start + 1
-                for part in split_top_level(arguments, ","):
-                    label = re.match(r"\s*(\w+)(?:\s+\w+)?\s*:\s*", part)
-                    if label:
-                        shape, _ = collection_shape(offset + label.end(), "=,")
-                        if shape:
-                            shapes[label[1]] = shape
-                    offset += len(part) + 1
-                # Overloads must agree, as for scalar parameters.
-                previous = self.collection_parameters.get(key)
-                self.collection_parameters[key] = {k: v for k, v in shapes.items() if previous is None or previous.get(k) == v}
+                    declare(match[2], start + init.end() - 1)
+                if match[1] == "extension" or inits:
+                    continue
+                # Otherwise the memberwise initializer: stored properties declared
+                # directly in the body (not a method's local `let title`).
+                members = list(re.finditer(r"\b(?:let|var)\s+(\w+)\s*:\s*", code[start:end]))
+                owner = innermost_delimiters(spans, [start + member.start() for member in members])
+                table = self.labeled.setdefault((path, match[2]), {})
+                for member in members:
+                    if owner[start + member.start()] == start:
+                        type_end = read_type(code, start + member.end(), "={}\n;,")
+                        table.setdefault(member[1], set()).add(parse_type(code[start + member.end():type_end]))
+            for match in re.finditer(r"\bfunc\s+(\w+)\s*(?:<[^>]*>)?\s*\(", code):
+                declare(match[1], match.end() - 1)
             values = []
             for match in re.finditer(r"\b(?:let|var)\s+\w+\s*:\s*|->\s*", code):
                 shape, end = collection_shape(match.end(), "={}\n;,")
@@ -349,6 +342,12 @@ class Declarations:
                     spans.append((pos, statement_end(code, pairs, pos + 1)))
             self.returns[path] = spans
 
+    def label_shapes(self, path: str, call: str, label: str) -> set[tuple]:
+        declared = [key for key in self.labeled if key[1] == call]
+        if (path, call) in declared:
+            declared = [(path, call)]
+        return set().union(*(self.labeled[key].get(label, set()) for key in declared))
+
     def unlabeled_shape(self, path: str, call: str, index: int) -> tuple | None:
         """The agreed shape of an unlabeled argument at index, across overloads."""
         declared = [key for key in self.unlabeled if key[1] == call]
@@ -359,11 +358,9 @@ class Declarations:
         return next(iter(shapes)) if len(shapes) == 1 else None
 
     def collection_shape(self, path: str, call: str, argument: str) -> tuple | None:
-        declared = [key for key in self.parameters.keys() | self.collection_parameters.keys() if key[1] == call]
-        if (path, call) in declared:
-            declared = [(path, call)]
-        shapes = {self.collection_parameters.get(key, {}).get(argument) for key in declared}
-        return next(iter(shapes)) if len(shapes) == 1 else None
+        shapes = self.label_shapes(path, call, argument)
+        shape = next(iter(shapes)) if len(shapes) == 1 else None
+        return shape if shape and shape[0] != "key" and holds_key(shape) else None
 
     def collection_element(self, path: str, source: str, literal: dict) -> bool:
         """A literal element of a value typed `[LocalizedStringKey]` and the like."""
@@ -389,12 +386,9 @@ class Declarations:
         return False
 
     def accepts(self, path: str, call: str, argument: str) -> bool:
-        local = self.parameters.get((path, call))
-        if local is not None:
-            return argument in local
-        candidates = [v for (_, name), v in self.parameters.items() if name == call]
-        # Ambiguous declarations must all agree; a String overload cannot certify a call.
-        return bool(candidates) and all(argument in v for v in candidates)
+        # Every overload that takes this label must agree; a String overload
+        # cannot certify a call.
+        return self.label_shapes(path, call, argument) == {("key",)}
 
 
 def call_span(source: str, opening: int) -> tuple[int, int]:
@@ -1377,16 +1371,19 @@ def audit(root: Path, rules: list[tuple[str, str, str, str]]) -> list[Issue]:
     kotlin = {}
     for file in (root / "apps/android-native/app/src/main/java").rglob("*.kt"):
         path, source = str(file.relative_to(root)), file.read_text(encoding="utf-8")
-        literals = kotlin_literals(source)
+        chars = []
+        literals = kotlin_literals(source, chars=chars)
         masked = list(source)
         for start, end, _, _ in literals:
             # A visible placeholder, not spaces: statement/line analysis must
             # not mistake `x = "…"\n` for a line that ends with `=`.
             masked[start:end] = ['"' for _ in source[start:end]]
+        for start, end, _ in chars:
+            masked[start:end] = ["'" for _ in source[start:end]]  # `'('` is not a delimiter.
         code = blank_comments("".join(masked))
-        kotlin[path] = (source, literals, code, KotlinTree(code))
-    wrappers = kotlin_wrappers({path: (code, tree) for path, (_, _, code, tree) in kotlin.items()})
-    for path, (source, literals, code, tree) in kotlin.items():
+        kotlin[path] = (source, literals, code, KotlinTree(code), chars)
+    wrappers = kotlin_wrappers({path: (code, tree) for path, (_, _, code, tree, _) in kotlin.items()})
+    for path, (source, literals, code, tree, chars) in kotlin.items():
         pairs, closers = tree.pairs, tree.closers
         static = {start: value for start, _, value, _ in kotlin_literals(source, static_text=True)}
         for start, end, value, _ in literals:
@@ -1401,7 +1398,14 @@ def audit(root: Path, rules: list[tuple[str, str, str, str]]) -> list[Issue]:
                        for use in bound_uses(code, tree, start, end, KOTLIN_BINDING)))
             if HANGUL.search(value) or ui_copy:
                 issues.append(Issue(path, source.count("\n", 0, start) + 1, value, "Kotlin UI text must use resources or a documented exception"))
-        gate_source = code + "\n" + "\n".join(value for _, _, value, _ in literals)
+        for start, _, value in chars:
+            # `Text('월'.toString())`: a letter shown as text needs a resource.
+            if has_words(value) and not allowed(path, value, rules) and kotlin_ui_context(code, start, pairs, closers, wrappers, tree):
+                issues.append(Issue(path, source.count("\n", 0, start) + 1, value, "Kotlin UI text must use resources or a documented exception"))
+        # Character ranges (`'가'..'힣'`) are masked in code; keep them for the gate.
+        ranges = [first[2] + ".." + second[2] for first, second in zip(chars, chars[1:])
+                  if re.fullmatch(r"\s*\.\.[.<]?\s*", source[first[1]:second[0]])]
+        gate_source = code + "\n" + "\n".join(value for _, _, value, _ in literals) + "\n" + "\n".join(ranges)
         if language_gate(gate_source):
             gated.add(path)
         if language_gate(gate_source) and not allowed(path, "language-gate", rules):
@@ -2291,6 +2295,29 @@ class SelfTests(unittest.TestCase):
         self.assertTrue(any("filter is forbidden" in i.reason for i in audit(root, wildcard)))
         explicit = wildcard + [("log", path, "language-gate", "documented gate")]
         self.assertFalse(any("filter is forbidden" in i.reason for i in audit(root, explicit)))
+
+    def test_labeled_initializers_kotlin_characters_and_declared_types(self):
+        view = 'struct Row: View {\n    init(heading: LocalizedStringKey, rows: [LocalizedStringKey] = []) {}\n    var body: some View { EmptyView() }\n}\n'
+        for source, keys in [(view + 'Row(heading: "Settings")', {"Settings"}),
+                             (view + 'Row(heading: "Settings", rows: ["Alarms"])', {"Settings", "Alarms"}),
+                             ('struct Row { let id: String }\nextension Row {\n    init(heading: LocalizedStringKey) { id = "" }\n}\nRow(heading: "Settings")', {"Settings"}),
+                             (view.replace('init(heading: LocalizedStringKey,', 'init(heading: String) {}\n    init(heading: LocalizedStringKey,') + 'Row(heading: "Settings")', set())]:
+            root = self.fixture(source=source)
+            self.assertEqual({i.value for i in audit(root, []) if "key missing" in i.reason}, keys, source)
+        source = 'let count: String = "x"\nfunc f() {\n    consume(count: Int(3))\n    _ = String(localized: "알람 \\(count)개")\n}'
+        for conversion, missing in [("@", False), ("lld", True)]:
+            root = self.fixture(source=source, key="알람 %" + conversion + "개")
+            self.assertEqual(any("key missing" in i.reason for i in audit(root, [])), missing, conversion)
+        root = self.fixture(source="")
+        file = root / "apps/android-native/app/src/main/java/example/Screen.kt"
+        file.parent.mkdir(parents=True)
+        for source, flagged in [("Text('월'.toString())", {"월"}), ("Text(text = 'A'.toString())", {"A"}),
+                                ("Text(':'.toString())", set()), ("val unit = '월'", set()),
+                                ("Text(text = if (c == '(') label else other)", set())]:
+            file.write_text(source, encoding="utf-8")
+            self.assertEqual({i.value for i in audit(root, []) if "Kotlin UI" in i.reason}, flagged, source)
+        file.write_text("fun f(text: String) = text.any { it in '가'..'힣' }", encoding="utf-8")
+        self.assertTrue(any("filter is forbidden" in i.reason for i in audit(root, [])))
 
     def test_catalog_target_languages_reject_hangul_in_every_leaf(self):
         root = self.fixture(source="")

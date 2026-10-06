@@ -126,8 +126,12 @@ class SwiftLexer:
         return self.lits
 
 
-def kotlin_literals(src, static_text=False):
-    """Return (start, end, decoded text, raw) for strings and nested templates."""
+def kotlin_literals(src, static_text=False, chars=None):
+    """Return (start, end, decoded text, raw) for strings and nested templates.
+
+    When `chars` is a list, character literals outside strings are appended to
+    it as (start, end, decoded character).
+    """
     i = 0
     n = len(src)
     results = []
@@ -243,7 +247,13 @@ def kotlin_literals(src, static_text=False):
             i = read_string(i)
             continue
         if c == "'":
-            i = read_char(i)
+            end = read_char(i)
+            if chars is not None and end > i + 2:
+                body = src[i + 1:end - 1]
+                escape = re.fullmatch(r"\\u([0-9a-fA-F]{4})", body)
+                text = chr(int(escape[1], 16)) if escape else {r"\n": "\n", r"\t": "\t", r"\r": "\r"}.get(body, body.lstrip("\\"))
+                chars.append((i, end, text))
+            i = end
             continue
         i += 1
     return results

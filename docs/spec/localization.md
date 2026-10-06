@@ -122,7 +122,8 @@ InfoPlist 카탈로그, Android main의 Kotlin·언어별 XML 리소스를 검�
 명시적 번역 조회, 선언에서 확인한 `LocalizedStringKey`·`LocalizedStringResource` 인자와 반환을
 구분한다(`stringLiteral:`·`String.LocalizationValue(…)` 초기화와 `NSLocalizedString`·`Bundle.localizedString(forKey:)`도
 키 조회다). 키 타입으로 선언한 값의 삼항·`??`·`case` 결과 분기는 모두 키다(비교하는 피연산자는 아니다). 라벨 없는 매개변수
-(`func row(_ title: LocalizedStringKey)`, `init(_ title: …)`)는 위치로 대응한다. 삼항·nil 병합 등으로 일반 `String`이 되는 호출은 각 분기에서 명시적으로 번역한다.
+(`func row(_ title: LocalizedStringKey)`, `init(_ title: …)`)는 위치로 대응한다. 사용자 타입의 `init`(본문·확장)과
+memberwise 속성, 함수의 라벨 있는 매개변수는 같은 라벨을 받는 모든 오버로드가 키 타입일 때만 키 자리다. 삼항·nil 병합 등으로 일반 `String`이 되는 호출은 각 분기에서 명시적으로 번역한다.
 `NavigationLink`·`Menu`·`DisclosureGroup`·`ProgressView`·`.help`·`.badge`처럼 첫 문자열 인자가 키인 표준 SwiftUI
 초기화·수정자(`.searchable(prompt:)`·`.accessibilityAction(named:)` 포함)도 키 조회로 본다. `[LocalizedStringKey]`·`[String: LocalizedStringKey]`·`(LocalizedStringKey, …)`처럼
 키를 담는 컬렉션·튜플로 선언된 값·반환·매개변수의 원소 리터럴도 키 조회로 본다. 표시 인자 안의
@@ -134,7 +135,7 @@ Kotlin의 Text·BasicText·알림 문구(제목·본문·액션 버튼·채널 �
 앱이 정의한 함수의 `String` 매개변수가 본문(블록·식 본문 모두)에서 표시 자리로 가면(`WakerSheetOptionRow`의
 `description` 등) 그 함수의 호출 인자도 표시 문구로 본다(감싼 함수의 감싼 함수까지). 값 람다는 괄호 안에
 `calculation = { … }`처럼 넘겨도 같다. 리터럴 하나를 값으로 둔 지역·속성 바인딩(`val title = "…"`,
-`let title = "…"`)은 같은 블록 안의 표시 자리 사용까지 따라간다(Swift도 같다). `"%02d:%02d"`처럼 서식 자리표시자뿐인 문자열은 문구가 아니다.
+`let title = "…"`)은 같은 블록 안의 표시 자리 사용까지 따라간다(Swift도 같다). `"%02d:%02d"`처럼 서식 자리표시자뿐인 문자열은 문구가 아니다. 문자 리터럴(`'월'`)도 표시 자리에 쓰이면 같다.
 카탈로그의 영어·일본어에는 한글을 남기지 않고, Android 번역은 배열·복수형의 각 항목까지 비어 있으면 안 된다.
 영어 날짜 선택기의 년·월·일 접미사 세 리소스만 빈 값을 허용한다(숫자만 표시); 키 누락이나 한글 잔존은 허용하지 않는다.
 문자열 배열은 언어마다 항목 수가 같아야 한다(면제 없음).
@@ -144,7 +145,9 @@ Swift의 일반 String 표시 인자도 원문 언어와 관계없이 명시적�
 Swift 보간은 확인 가능한 기본 타입으로 키를 만들며, 타입을 판단할 수 없는 표현식에는 명시적 타입이나 변환을 쓴다.
 멤버 접근(`b.value`)은 수신자 타입을 풀지 않으므로, 같은 이름의 모든 멤버 선언(타입 표기·초깃값 추론 모두)이
 같은 타입일 때만 그 타입으로 본다. 다르거나 알 수 없으면 명시적 변환을 요구한다. 멤버는 타입 본문에 바로 선언된
-속성뿐이다 — 매개변수·지역 선언·튜플 라벨은 `b.value`의 타입을 정하지 않는다.
+속성뿐이다 — 매개변수·지역 선언·튜플 라벨은 `b.value`의 타입을 정하지 않는다. 이름만 쓴 보간도 실제 선언
+(`let/var`, 함수·`init` 매개변수)만 보고, 호출 인자 라벨(`consume(count: Int(3))`)이나 패턴 바인딩
+(`case .restored(let count)`)으로는 타입을 정하지 않는다 — 그런 자리는 `Int(count)`처럼 명시한다.
 의미 키(`String(localized: "plan.name.free", defaultValue: ...)`)의 기본값은 모든 번역에 서식 인자를
 공급하므로, 기본값의 보간 타입·자리표시자·줄바꿈을 그 키의 한국어 값과 대조한다.
 영어 복수형에는 one·other, 일본어·한국어에는 other가 필요하다(Android 복수형과 iOS 카탈로그의 plural 변형·대체 변수 모두).
