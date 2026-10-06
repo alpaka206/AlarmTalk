@@ -296,6 +296,8 @@ class Declarations:
         # Collection/tuple values holding a key: `[LocalizedStringKey]`,
         # `[String: LocalizedStringKey]`, `(LocalizedStringKey, Int)`.
         self.collection_values: dict[str, list[tuple[int, int, tuple]]] = {}
+        # SwiftUI APIs taking `[LocalizedStringKey]` without a label.
+        self.unlabeled[("<SwiftUI>", "accessibilityInputLabels")] = [[("array", ("key",))]]
         for path, source in sources.items():
             literals = SwiftLexer(source, path).run()
             code = code_only(source, literals)
@@ -1067,6 +1069,8 @@ def catalog_issues(root: Path) -> list[Issue]:
         config = tuple(q for q in qualifiers if q not in locales) + tuple(regions)
         for file in directory.glob("*.xml"):
             for entry in ET.parse(file).getroot():
+                if entry.tag == "item" and entry.get("type") == "string":
+                    entry.tag = "string"  # `<item type="string">` is an R.string resource too.
                 if entry.tag in {"string", "string-array", "plurals"}:
                     variants[locale].setdefault(entry.attrib["name"], []).append((entry, str(file.relative_to(root)), config))
     # The base resource (plain directory first) for whole-key checks.
@@ -1130,7 +1134,9 @@ KOTLIN_FIRST_ARGUMENT_SINKS = {"setContentTitle", "setContentText", "setSubText"
                                "setSummaryText", "bigText", "showSnackbar",
                                # Channel/View/dialog setters that show their text.
                                "setDescription", "setContentDescription", "setTitle", "setHint", "setMessage",
-                               "setPositiveButton", "setNegativeButton", "setNeutralButton"}
+                               "setPositiveButton", "setNegativeButton", "setNeutralButton",
+                               # Conversation notifications (message text, conversation title).
+                               "MessagingStyle.Message", "addMessage", "setConversationTitle"}
 KOTLIN_SECOND_ARGUMENT_SINKS = {"makeText", "addAction", "Action.Builder", "NotificationChannel", "NotificationChannelGroup",
                                 # Positional contentDescription / snackbar action label.
                                 "Icon", "Image", "AsyncImage", "showSnackbar",
@@ -1530,7 +1536,8 @@ def kotlin_ui_context(code: str, start: int, pairs: dict[int, int], closers: dic
         parameter = named[1] if named else None
         if call in KOTLIN_TEXT_CALLS and (parameter == "text" or (not parameter and argument_index == 0)):
             return True
-        if call in KOTLIN_FIRST_ARGUMENT_SINKS and argument_index == 0:
+        if argument_index == 0 and not parameter and (call in KOTLIN_FIRST_ARGUMENT_SINKS
+                                                      or ".".join(qualified.split(".")[-2:]) in KOTLIN_FIRST_ARGUMENT_SINKS):
             return True
         if not parameter and argument_index == 1 and (call in KOTLIN_SECOND_ARGUMENT_SINKS
                                                        or ".".join(qualified.split(".")[-2:]) in KOTLIN_SECOND_ARGUMENT_SINKS):
@@ -2354,7 +2361,9 @@ class SelfTests(unittest.TestCase):
                        'Icon(Icons.Default.Add, "Add alarm")', 'Image(painter, "Profile photo")',
                        'AsyncImage(model, "Cover")', 'state.showSnackbar(message, "Undo")',
                        'channel.setDescription("Alarm notifications")', 'AlertDialog.Builder(context).setMessage("Delete?")',
-                       'NotificationCompat.Action(0, "Snooze", intent)', 'Notification.Action(icon, "Dismiss", intent)']:
+                       'NotificationCompat.Action(0, "Snooze", intent)', 'Notification.Action(icon, "Dismiss", intent)',
+                       'NotificationCompat.MessagingStyle.Message("Try again", timestamp, person)',
+                       'style.setConversationTitle("Family")', 'style.addMessage("Wake up", now, person)']:
             file.write_text(source, encoding="utf-8")
             self.assertTrue(any("Kotlin UI" in issue.reason for issue in audit(root, [])), source)
         for source in ['Log.d(TAG, buildString { append("Debug") })',
@@ -2472,7 +2481,7 @@ class SelfTests(unittest.TestCase):
             self.assertEqual(audit(root, []), [], source)
 
     def test_standard_swiftui_initializers_are_key_lookups(self):
-        for call in ['Gauge("Battery level", value: 0.5)', 'TableColumn("Name", value: \\.name)', 'WindowGroup("Main") { Detail() }', 'NavigationLink("Settings", destination: Detail())', 'DisclosureGroup("Advanced") { Detail() }',
+        for call in ['view.accessibilityInputLabels(["Open alarm"])', 'Gauge("Battery level", value: 0.5)', 'TableColumn("Name", value: \\.name)', 'WindowGroup("Main") { Detail() }', 'NavigationLink("Settings", destination: Detail())', 'DisclosureGroup("Advanced") { Detail() }',
                      'Menu("Options") { Detail() }', 'ProgressView("Loading")', 'Stepper("Count", value: $count)',
                      'DatePicker("Date", selection: $date)', 'ShareLink("Share", item: url)',
                      'LabeledContent("Version", value: version)', 'GroupBox("Account") { Detail() }',
@@ -2804,6 +2813,16 @@ class SelfTests(unittest.TestCase):
         for key, missing in [("    첫 줄\n      둘째 줄", False), ("첫 줄\n  둘째 줄", True)]:
             root = self.fixture(source=source, key=key)
             self.assertEqual(any("key missing" in i.reason for i in audit(root, [])), missing, repr(key))
+
+    def test_typed_string_items_are_string_resources(self):
+        root = self.fixture(source="")
+        base = root / "apps/android-native/app/src/main/res"
+        (base / "values/strings.xml").write_text('<resources><item type="string" name="retry">다시 시도</item></resources>', encoding="utf-8")
+        reasons = {i.reason for i in catalog_issues(root)}
+        self.assertTrue({"Android en resource missing", "Android ja resource missing"} <= reasons)
+        (base / "values-en/strings.xml").write_text('<resources><string name="retry">Retry</string></resources>', encoding="utf-8")
+        (base / "values-ja/strings.xml").write_text('<resources><item type="string" name="retry">再試行</item></resources>', encoding="utf-8")
+        self.assertEqual(catalog_issues(root), [])
 
     def test_catalog_target_languages_reject_hangul_in_every_leaf(self):
         root = self.fixture(source="")
