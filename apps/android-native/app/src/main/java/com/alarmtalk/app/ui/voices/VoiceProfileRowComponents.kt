@@ -47,6 +47,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -592,8 +593,9 @@ internal fun SharedVoiceProfileRow(
     isPlaying: Boolean,
     onPlay: () -> Unit,
 ) {
-    val ownerText = profile.ownerName?.takeIf { it.isNotBlank() }
-        ?.let { stringResource(R.string.voicesr_shared_from_owner, it) }
+    val context = LocalContext.current
+    val ownerText = profile.ownerName?.trim()?.takeIf { it.isNotBlank() }
+        ?.let { stringResource(R.string.voicesr_shared_from_owner, com.alarmtalk.app.data.honoredPersonName(context, it)) }
         ?: stringResource(R.string.voicesr_shared_voice)
     VoiceCatalogRow(
         name = profile.name,

@@ -984,23 +984,6 @@
         }
       }
     },
-    "가족이 보낸 음성" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Voice from family"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "家族からの音声"
-          }
-        }
-      }
-    },
     "간편 로그인" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2452,6 +2435,29 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "自分の声"
+          }
+        }
+      }
+    },
+    "내 목소리 · 공유 중" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "My voice · Sharing"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自分の声 · 共有中"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "내 목소리 · 공유 중"
           }
         }
       }
@@ -8361,6 +8367,29 @@
         }
       }
     },
+    "관리자는 이용권에서 나갈 수 없어요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The admin can't leave the plan."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "管理者はプランから退出できません。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "관리자는 이용권에서 나갈 수 없어요."
+          }
+        }
+      }
+    },
     "이용권을 해지할까요?" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -11423,6 +11452,98 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "상대가 보낸 알람"
+          }
+        }
+      }
+    },
+    "상대가 보낸 음성" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Voice from someone"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "相手から届いた音声"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "상대가 보낸 음성"
+          }
+        }
+      }
+    },
+    "상대가 알람을 받지 않도록 설정해 뒀어요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The other person has turned off alarms from others."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "相手がアラームを受け取らない設定にしています。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "상대가 알람을 받지 않도록 설정해 뒀어요."
+          }
+        }
+      }
+    },
+    "상대 알람은 조금 더 뒤로 맞춰 주세요. 상대 기기에 전달될 시간이 조금 필요해요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Set alarms for others a little later. It takes a moment to reach their phone."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "相手のアラームはもう少し後に設定してください。相手の端末に届くまで少し時間がかかります。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "상대 알람은 조금 더 뒤로 맞춰 주세요. 상대 기기에 전달될 시간이 조금 필요해요."
+          }
+        }
+      }
+    },
+    "상대가 받을 수 없는 시간이에요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The other person can't receive alarms at this time."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "相手が受け取れない時間帯です。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "상대가 받을 수 없는 시간이에요."
           }
         }
       }

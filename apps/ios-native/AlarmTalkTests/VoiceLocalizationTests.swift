@@ -19,16 +19,30 @@ struct VoiceLocalizationTests {
         #expect(personDisplayName("田中さん", bundle: bundle) == "田中さん")
     }
 
-    @Test("목소리 부제는 출처를 모르는 저장 관계를 보존하고 공유 상태만 번역한다", arguments: ["en", "ja"])
-    func relationshipSubtitle(language: String) throws {
+    @Test("목록은 저장된 관계를 보여 주지 않고 공유 상태만 안드로이드와 같은 말로 보여 준다", arguments: ["en", "ja", "ko"])
+    func listsDoNotShowRelationship(language: String) throws {
         let path = try #require(Bundle.main.path(forResource: language, ofType: "lproj"))
         let bundle = try #require(Bundle(path: path))
-        let sharing = bundle.localizedString(forKey: "공유 중", value: nil, table: nil)
-        #expect(voiceRelationshipSubtitle("엄마", isShared: true, bundle: bundle) == "엄마 · \(sharing)")
-        #expect(voiceRelationshipSubtitle("나의 소중한 친구", isShared: true, bundle: bundle) == "나의 소중한 친구 · \(sharing)")
-        #expect(voiceRelationshipSubtitle("엄마", isShared: false, bundle: bundle) == "엄마")
-        #expect(voiceRelationshipSubtitle("  ", isShared: true, bundle: bundle) == sharing)
-        #expect(voiceRelationshipSubtitle(nil, isShared: false, bundle: bundle) == nil)
+        // 목소리 탭 행 — 안드로이드 `voicesr_sharing_badge`.
+        #expect(ownVoiceRowSubtitle(isShared: true, bundle: bundle)
+                == ["en": "Sharing", "ja": "共有中", "ko": "공유 중"][language])
+        #expect(ownVoiceRowSubtitle(isShared: false, bundle: bundle) == nil)
+        // 편집기 목소리 선택 — 안드로이드 `editor2_voice_detail_mine(_sharing)`.
+        #expect(ownVoiceOptionDetail(isShared: false, bundle: bundle)
+                == ["en": "My voice", "ja": "自分の声", "ko": "내 목소리"][language])
+        #expect(ownVoiceOptionDetail(isShared: true, bundle: bundle)
+                == ["en": "My voice · Sharing", "ja": "自分の声 · 共有中", "ko": "내 목소리 · 공유 중"][language])
+    }
+
+    @Test("알람 행의 목소리 이름은 관계 라벨이 아니라 이름이다")
+    func alarmRowUsesVoiceName() {
+        var own = VoiceProfile(id: "own", name: "우리 엄마 목소리", status: "ready")
+        own.relationshipLabel = "엄마"
+        var shared = FamilyVoiceProfile(id: "shared", name: "할머니 목소리", ownerName: "민수")
+        shared.relationshipLabel = "할머니"
+        #expect(alarmRowVoiceName(voiceProfileID: "own", profiles: [own], familyVoices: [shared]) == "우리 엄마 목소리")
+        #expect(alarmRowVoiceName(voiceProfileID: "shared", profiles: [own], familyVoices: [shared]) == "할머니 목소리")
+        #expect(alarmRowVoiceName(voiceProfileID: "missing", profiles: [own], familyVoices: [shared]) == nil)
     }
 
     @Test("새 목소리 이름은 비워 시작하고 빈 이름으로 등록하지 않는다")

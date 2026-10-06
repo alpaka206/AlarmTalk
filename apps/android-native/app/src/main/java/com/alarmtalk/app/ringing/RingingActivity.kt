@@ -78,6 +78,7 @@ import com.alarmtalk.app.R
 import com.alarmtalk.app.data.AlarmOrigins
 import com.alarmtalk.app.data.customRingingAlarmLabel
 import com.alarmtalk.app.data.localizedReceivedAlarmLabel
+import com.alarmtalk.app.data.localizedReceivedVoiceText
 import com.alarmtalk.app.stripDeliveryTags
 import com.alarmtalk.app.fitToWidthScale
 import com.alarmtalk.app.alarm.AlarmContract.EXTRA_ALARM_ID
@@ -1141,7 +1142,10 @@ private fun AlarmEntity.toRingingUiState(
     } else {
         null
     }
-    val displayedVoiceText = bucketText ?: voiceText
+    // 받은 알람의 기본 녹음 라벨(계약값)은 이 기기의 언어로 바꿔 보여 준다 — 저장값은 그대로다.
+    val displayedVoiceText = bucketText ?: voiceText?.let { stored ->
+        if (origin == AlarmOrigins.RECEIVED_REMOTE) localizedReceivedVoiceText(context, stored) else stored
+    }
     val voiceMessage = displayedVoiceText
         ?.let { raw -> raw.stripDeliveryTags(generated = bucketText != null || voiceRandomPrompt) }
         ?.takeIf { it.isNotBlank() && playMode != AlarmPlayModes.ALARM_ONLY }

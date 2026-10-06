@@ -335,7 +335,6 @@
     <string name="msg_family_alarm_set_for_target">%1$s에게 알람을 설정했어요</string>
     <string name="msg_family_alarm_settings_save_failed">상대 알람 설정을 저장하지 못했어요</string>
     <string name="msg_family_alarm_settings_saved">상대 알람 설정을 저장했어요</string>
-    <string name="msg_family_voice_default_label">가족이 보낸 음성</string>
     <string name="msg_gb_code_input_required_period">코드를 입력해 주세요.</string>
     <string name="msg_gb_code_register_failed">코드 등록에 실패했어요</string>
     <string name="msg_gb_code_registered">코드를 등록했어요</string>
@@ -600,7 +599,7 @@
     <string name="voicesr_required_field">꼭 입력해 주세요.</string>
     <string name="voicesr_save">저장</string>
     <string name="voicesr_share_voice">목소리 공유</string>
-    <string name="voicesr_shared_from_owner">%1$s님에게 공유받은 목소리</string>
+    <string name="voicesr_shared_from_owner">%1$s에게 공유받은 목소리</string>
     <string name="voicesr_shared_voice">공유받은 목소리</string>
     <string name="voicesr_sharing_badge">공유 중</string>
     <string name="voicesr_speech_style_failed">말투 분석에 실패했어요</string>
@@ -644,7 +643,7 @@
     <string name="editor2_weekday_fri">금</string>
     <string name="editor2_weekday_sat">토</string>
     <string name="editor2_voice_detail_shared">공유받은 목소리</string>
-    <string name="editor2_voice_detail_shared_from">%1$s님에게 공유받은 목소리</string>
+    <string name="editor2_voice_detail_shared_from">%1$s에게 공유받은 목소리</string>
     <string name="editor2_voice_detail_default">기본 목소리</string>
     <string name="editor2_voice_detail_mine_sharing">내 목소리 · 공유 중</string>
     <string name="editor2_voice_detail_mine">내 목소리</string>
@@ -786,6 +785,7 @@
     <string name="r3ed_google_signin_error_failed_status">Google 로그인에 실패했어요. status=%1$d</string>
     <string name="r3ed_ampm_wheel_am">오전</string>
     <string name="r3ed_ampm_wheel_pm">오후</string>
+    <string name="r3data_received_family_voice_text">상대가 보낸 음성</string>
     <string name="r3data_received_alarm_from_other">상대가 보낸 알람</string>
     <string name="r3data_honorific_name">%1$s님</string>
     <string name="r3data_received_alarm_from_sender">%1$s이 보낸 알람</string>
@@ -886,6 +886,9 @@
     <string name="api_error_voice_not_ready">목소리를 아직 만들고 있어요. 잠시 후 다시 시도해 주세요.</string>
     <string name="api_error_voice_cloning_failed">목소리를 만들지 못했어요. 조용한 곳에서 다시 녹음해 주세요.</string>
     <string name="api_error_alarm_not_found">이미 사라진 알람이에요.</string>
+    <string name="api_error_family_alarm_disabled">상대가 알람을 받지 않도록 설정해 뒀어요.</string>
+    <string name="api_error_family_alarm_lead_time">상대 알람은 조금 더 뒤로 맞춰 주세요. 상대 기기에 전달될 시간이 조금 필요해요.</string>
+    <string name="api_error_owner_cannot_leave">관리자는 이용권에서 나갈 수 없어요.</string>
     <string name="api_error_tts_generation_failed">음성을 만들지 못했어요. 잠시 후 다시 시도해 주세요.</string>
     <string name="voices_not_ready_title">목소리를 아직 받는 중이에요</string>
     <string name="voices_not_ready_message_progress">알람에 쓸 기본 목소리를 다 받아야 알람을 설정할 수 있어요. (%1$d%%)\n목소리 탭에서 진행 상황을 볼 수 있어요.</string>
@@ -903,17 +906,6 @@
     <string name="system_voice_name_mina">미나</string>
     <string name="system_voice_name_dohyun">도현</string>
     <string name="system_voice_name_aeni">애니</string>
-    <string-array name="snackbar_error_markers">
-        <item>실패</item>
-        <item>못했어요</item>
-        <item>오류</item>
-        <item>문제가</item>
-    </string-array>
-    <string-array name="snackbar_success_markers">
-        <item>했어요</item>
-        <item>었어요</item>
-        <item>완료</item>
-    </string-array>
     <string name="notification_ringing_name">알람 울림</string>
     <string name="notification_ringing_description">알람이 울릴 때 잠금 화면에 울림 화면을 표시해요.</string>
     <string name="notification_ringing_quiet_name">알람 울림 화면</string>

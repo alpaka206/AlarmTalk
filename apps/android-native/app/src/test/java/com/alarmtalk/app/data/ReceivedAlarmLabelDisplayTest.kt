@@ -34,6 +34,26 @@ class ReceivedAlarmLabelDisplayTest {
     }
 
     @Test
+    fun `가족 알람의 기본 녹음 라벨은 받는 기기의 언어로 보이고 직접 친 라벨은 그대로다`() {
+        val expected = mapOf("ko" to "상대가 보낸 음성", "en" to "Voice from someone", "ja" to "相手から届いた音声")
+        for ((language, text) in expected) {
+            val context = context(language)
+            // 계약값과, 번역문을 보내던 옛 안드로이드 빌드가 남긴 값.
+            for (stored in listOf("가족이 보낸 음성", " 가족이 보낸 음성 ", "Voice from family", "家族からの音声")) {
+                assertEquals(text, localizedReceivedVoiceText(context, stored))
+            }
+            assertEquals("엄마가 깨워 줄게", localizedReceivedVoiceText(context, "엄마가 깨워 줄게"))
+        }
+    }
+
+    @Test
+    fun `가족 알람의 기본 녹음 라벨은 서버와 같은 계약값이다`() {
+        assertEquals("가족이 보낸 음성", FAMILY_VOICE_DEFAULT_LABEL)
+        val server = java.io.File("../../../packages/backend/src/routes/family-alarm.ts").readText()
+        assert(server.contains("const DEFAULT_VOICE_LABEL = '$FAMILY_VOICE_DEFAULT_LABEL';")) { "server default label drifted" }
+    }
+
+    @Test
     fun `세 언어의 기본 이름은 제목에서 빼고 직접 지은 이름은 보존한다`() {
         for (label in listOf("알람", "Alarm", "アラーム", "", "  ")) assertNull(customRingingAlarmLabel(label))
         assertEquals("출근", customRingingAlarmLabel("  출근  "))

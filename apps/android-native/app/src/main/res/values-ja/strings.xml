@@ -319,10 +319,9 @@
     <string name="msg_family_alarm_login_required">相手のアラームを設定するには、まずログインしてください。</string>
     <string name="msg_family_alarm_set_failed">相手のアラーム設定に失敗しました。</string>
     <string name="msg_family_alarm_set_for_target_other">相手にアラームを設定しました。</string>
-    <string name="msg_family_alarm_set_for_target">%1$sさんにアラームを設定しました。</string>
+    <string name="msg_family_alarm_set_for_target">%1$sにアラームを設定しました。</string>
     <string name="msg_family_alarm_settings_save_failed">相手のアラーム設定を保存できませんでした。</string>
     <string name="msg_family_alarm_settings_saved">相手のアラーム設定を保存しました。</string>
-    <string name="msg_family_voice_default_label">家族からの音声</string>
     <string name="msg_gb_code_input_required_period">コードを入力してください。</string>
     <string name="msg_gb_code_register_failed">コードの登録に失敗しました。</string>
     <string name="msg_gb_code_registered">コードを登録しました</string>
@@ -566,7 +565,7 @@
     <string name="voicesr_required_field">必ず入力してください。</string>
     <string name="voicesr_save">保存</string>
     <string name="voicesr_share_voice">声を共有</string>
-    <string name="voicesr_shared_from_owner">%1$sさんから共有された声</string>
+    <string name="voicesr_shared_from_owner">%1$sから共有された声</string>
     <string name="voicesr_shared_voice">共有された声</string>
     <string name="voicesr_sharing_badge">共有中</string>
     <string name="voicesr_speech_style_failed">話し方の分析に失敗しました</string>
@@ -610,7 +609,7 @@
     <string name="editor2_weekday_fri">金</string>
     <string name="editor2_weekday_sat">土</string>
     <string name="editor2_voice_detail_shared">共有された声</string>
-    <string name="editor2_voice_detail_shared_from">%1$sさんから共有された声</string>
+    <string name="editor2_voice_detail_shared_from">%1$sから共有された声</string>
     <string name="editor2_voice_detail_default">基本の声</string>
     <string name="editor2_voice_detail_mine_sharing">自分の声 · 共有中</string>
     <string name="editor2_voice_detail_mine">自分の声</string>
@@ -747,6 +746,7 @@
     <string name="r3ed_google_signin_error_failed_status">Googleログインに失敗しました。status=%1$d</string>
     <string name="r3ed_ampm_wheel_am">午前</string>
     <string name="r3ed_ampm_wheel_pm">午後</string>
+    <string name="r3data_received_family_voice_text">相手から届いた音声</string>
     <string name="r3data_received_alarm_from_other">相手から届いたアラーム</string>
     <string name="r3data_honorific_name">%1$sさん</string>
     <string name="r3data_received_alarm_from_sender">%1$sから届いたアラーム</string>
@@ -855,6 +855,9 @@
     <string name="api_error_voice_not_ready">声をまだ作成しています。しばらくしてからもう一度お試しください。</string>
     <string name="api_error_voice_cloning_failed">声を作成できませんでした。静かな場所でもう一度録音してください。</string>
     <string name="api_error_alarm_not_found">このアラームはすでに削除されています。</string>
+    <string name="api_error_family_alarm_disabled">相手がアラームを受け取らない設定にしています。</string>
+    <string name="api_error_family_alarm_lead_time">相手のアラームはもう少し後に設定してください。相手の端末に届くまで少し時間がかかります。</string>
+    <string name="api_error_owner_cannot_leave">管理者はプランから退出できません。</string>
     <string name="api_error_tts_generation_failed">音声を作成できませんでした。しばらくしてからもう一度お試しください。</string>
     <string name="voices_not_ready_title">声をダウンロード中です</string>
     <string name="voices_not_ready_message_progress">アラームに使う基本の声のダウンロードが終わると、アラームを設定できます。(%1$d%%)\n進み具合は「声」タブで確認できます。</string>
@@ -869,17 +872,6 @@
     <string name="system_voice_name_mina">ミナ</string>
     <string name="system_voice_name_dohyun">ドヒョン</string>
     <string name="system_voice_name_aeni">エニ</string>
-    <string-array name="snackbar_error_markers">
-        <item>ません</item>
-        <item>問題が発生</item>
-        <item>失敗</item>
-        <item>エラー</item>
-    </string-array>
-    <string-array name="snackbar_success_markers">
-        <item>しました</item>
-        <item>されました</item>
-        <item>完了</item>
-    </string-array>
     <string name="notification_ringing_name">アラームの鳴動</string>
     <string name="notification_ringing_description">アラームが鳴るときにロック画面にアラーム画面を表示します。</string>
     <string name="notification_ringing_quiet_name">表示中のアラーム</string>

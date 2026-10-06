@@ -23,6 +23,66 @@ struct AlarmKitLocalizationTests {
         #expect(AlarmPresentationLanguage.rearmTargets(stamp: nil, current: "ko", alarms: all) == ["received"])
     }
 
+    @Test("같은 언어로 걸린 옛 예약도 받은 알람의 녹음 기본 라벨 표시가 바뀌었으면 한 번 다시 건다")
+    func outdatedVoiceCaptionIsRearmedOnceEvenWithSameLanguageStamp() throws {
+        let suite = "AlarmKitLocalizationTests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let current = AlarmPresentationLanguage.current
+        var family = alarm("family-\(UUID().uuidString)", label: "직접 정한 이름", received: true)
+        family.voiceText = ReceivedVoiceTextDisplay.familyVoiceDefault
+        var typed = alarm("typed-\(UUID().uuidString)", label: "직접 정한 이름", received: true)
+        typed.voiceText = "엄마가 깨워 줄게"
+        var own = alarm("own-\(UUID().uuidString)")
+        own.voiceText = ReceivedVoiceTextDisplay.familyVoiceDefault
+        // 이 규칙 이전 릴리스가 지금 언어로 건 예약 — 알람별·계정 언어 기록이 모두 지금과 같다.
+        defaults.set(current, forKey: "alarm.presentation.owner.owner")
+        for record in [family, typed, own] {
+            defaults.set(current, forKey: "alarm.presentation.record.\(record.id)")
+        }
+        #expect(AlarmPresentationLanguage.pending(owner: "owner", alarms: [family, typed, own], defaults: defaults)
+                == [family.id])
+
+        // 다시 걸면 실은 표시를 적으므로 되풀이되지 않는다.
+        AlarmPresentationLanguage.didSchedule(family, defaults: defaults)
+        #expect(AlarmPresentationLanguage.pending(owner: "owner", alarms: [family, typed, own], defaults: defaults).isEmpty)
+        // 지우면 그 기록도 지운다.
+        AlarmPresentationLanguage.forget(family.id, defaults: defaults)
+        #expect(defaults.string(forKey: "alarm.presentation.caption.\(family.id)") == nil)
+    }
+
+    @Test("첫 실행(기록 없음)도 받은 알람의 녹음 기본 라벨 표시가 다르면 다시 건다")
+    func firstRunRearmsReceivedFamilyVoiceText() {
+        var family = alarm("family", label: "직접 정한 이름", received: true)
+        family.voiceText = ReceivedVoiceTextDisplay.familyVoiceDefault
+        var typed = alarm("typed", label: "직접 정한 이름", received: true)
+        typed.voiceText = "엄마가 깨워 줄게"
+        #expect(AlarmPresentationLanguage.rearmTargets(stamp: nil, current: "ko", alarms: [family, typed]) == ["family"])
+    }
+
+    @Test("가족 알람의 기본 녹음 라벨은 계약값으로 보내고 받는 기기 언어로 보여 준다", arguments: ["ko", "en", "ja"])
+    func familyVoiceText(language: String) throws {
+        #expect(ReceivedVoiceTextDisplay.familyVoiceDefault == "가족이 보낸 음성")
+        let path = try #require(Bundle.main.path(forResource: language, ofType: "lproj"))
+        let bundle = try #require(Bundle(path: path))
+        let expected = ["ko": "상대가 보낸 음성", "en": "Voice from someone", "ja": "相手から届いた音声"][language]
+        // 계약값과, 번역문을 보내던 옛 안드로이드 빌드가 남긴 값.
+        for stored in ["가족이 보낸 음성", " 가족이 보낸 음성 ", "Voice from family", "家族からの音声"] {
+            #expect(ReceivedVoiceTextDisplay.text(stored, bundle: bundle) == expected)
+        }
+        #expect(ReceivedVoiceTextDisplay.text("엄마가 깨워 줄게", bundle: bundle) == "엄마가 깨워 줄게")
+    }
+
+    @Test("자기 알람의 녹음 문구는 기본 라벨과 글자가 같아도 바꾸지 않는다")
+    func ownVoiceTextIsNotRewritten() {
+        var own = alarm("own")
+        own.voiceText = ReceivedVoiceTextDisplay.familyVoiceDefault
+        #expect(own.localizedVoiceText == ReceivedVoiceTextDisplay.familyVoiceDefault)
+        var received = alarm("received", received: true)
+        received.voiceText = ReceivedVoiceTextDisplay.familyVoiceDefault
+        #expect(received.localizedVoiceText == String(localized: "상대가 보낸 음성"))
+    }
+
     @Test("부분 성공한 예약은 반복하지 않고 남은 대상만 이어간다")
     func partialCompletion() throws {
         let suite = "AlarmKitLocalizationTests.\(UUID().uuidString)"
@@ -30,10 +90,10 @@ struct AlarmKitLocalizationTests {
         defer { defaults.removePersistentDomain(forName: suite) }
         let a = alarm("a", label: "Alarm from Alex", received: true)
         let b = alarm("b", label: "Alarm from Sam", received: true)
-        AlarmPresentationLanguage.didSchedule(a.id, defaults: defaults)
+        AlarmPresentationLanguage.didSchedule(a, defaults: defaults)
         AlarmPresentationLanguage.finishIfComplete(owner: "owner", alarms: [a, b], defaults: defaults)
         #expect(AlarmPresentationLanguage.pending(owner: "owner", alarms: [a, b], defaults: defaults) == [b.id])
-        AlarmPresentationLanguage.didSchedule(b.id, defaults: defaults)
+        AlarmPresentationLanguage.didSchedule(b, defaults: defaults)
         AlarmPresentationLanguage.finishIfComplete(owner: "owner", alarms: [a, b], defaults: defaults)
         #expect(AlarmPresentationLanguage.pending(owner: "owner", alarms: [a, b], defaults: defaults).isEmpty)
     }
@@ -89,7 +149,7 @@ struct AlarmKitLocalizationTests {
             scheduleAlarm: { record in
                 calls.scheduled.append(record.id)
                 store.markScheduled(localID: record.id, alarmKitID: UUID().uuidString)
-                AlarmPresentationLanguage.didSchedule(record.id)
+                AlarmPresentationLanguage.didSchedule(record)
                 return true
             },
             cancelAlarm: { record in calls.cancelledHandles.append(record.alarmKitID ?? "") }
@@ -205,7 +265,7 @@ struct AlarmKitLocalizationTests {
     func deletingAlarmForgetsItsPresentationStamp() {
         let store = makeStore()
         let record = store.upsert(alarm("deleted-\(UUID().uuidString)"))
-        AlarmPresentationLanguage.didSchedule(record.id)
+        AlarmPresentationLanguage.didSchedule(record)
         defer { UserDefaults.standard.removeObject(forKey: recordKey(record.id)) }
         #expect(UserDefaults.standard.string(forKey: recordKey(record.id)) != nil)
         store.delete(record)

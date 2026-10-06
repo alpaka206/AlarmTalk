@@ -203,6 +203,14 @@ internal fun MainViewModel.reconcileInaccessibleVoiceAlarms(listOwner: String?) 
     }
 }
 
+/**
+ * 이용권(그룹)에서 나가기 실패 문구 — 관리자가 나가려 하면 서버가 `OWNER_CANNOT_LEAVE` 로 거절한다.
+ * 공용 표가 그 이유를 말하고, 표에 없으면 화면 폴백이다.
+ */
+internal fun leaveGroupFailureMessage(context: android.content.Context, error: Throwable): String =
+    com.alarmtalk.app.network.apiErrorMessage(context, com.alarmtalk.app.network.apiErrorCode(error))
+        ?: userFacingError(error, context.getString(R.string.msg_leave_group_failed))
+
 internal fun MainViewModel.leaveFamilyGroup(groupId: String) {
     val authorization = bearerOrMessage(
         getApplication<android.app.Application>().getString(R.string.msg_leave_group_login_required),
@@ -225,7 +233,7 @@ internal fun MainViewModel.leaveFamilyGroup(groupId: String) {
             refreshAppSession()
         }.onFailure { error ->
             AlarmTalkLog.reportError("Failed to leave family group id=$groupId", error)
-            message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_leave_group_failed))
+            message = leaveGroupFailureMessage(getApplication(), error)
             // 실패 시에만 여기서 busy 를 리셋(성공 시엔 refreshSocial 이 소유).
             socialBusy = false
         }
