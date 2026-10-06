@@ -378,6 +378,7 @@ async function weatherRegionDailyTick(
         due: result.due,
         attempted: result.attempted,
         stored: result.stored,
+        approximated: result.approximated,
         failed: result.failures.length,
         deferred: result.deferred,
         budgetExhausted: result.budgetExhausted,

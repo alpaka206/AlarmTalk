@@ -14,12 +14,15 @@
  *   없는 표본은 '재지 않음'(NaN → DB NULL)으로 두고 분류에서 뺀다 — 먼지 전부, JP 강수량, KR·JP 안개.
  *   필수 표본: KR = 코드·최고·최저·강수확률·강수량 / JP = 코드·최고·최저·강수확률 / US = 코드·최고·최저·
  *   강수확률·강수량(단 NWS 의 강수량은 발표 뒤 약 72시간까지만 온다 — 그 너머는 재지 않음).
- * - **오늘 행의 극값만 이어받는다**(`finalizeSourceDay`): 대상 날짜가 지역의 오늘이고 최저·최고가 비었을 때만,
- *   같은 (지역, 날짜)의 저장 행이 36시간 안에 계산된 것이면 그 값으로 메운다. 상태·강수확률·강수량은 절대
- *   이어받지 않는다. 쓰는 곳: KR 0500 회차의 오늘 TMN, JP 05시 발표 뒤의 오늘 최저(발표일의 최저는 어떤 발표에도
- *   없다 — 17시 발표 뒤에는 최고도), NWS 아침이 지난 오늘 최저.
+ * - **오늘 행의 극값만 메운다**(`finalizeSourceDay`): 대상 날짜가 지역의 오늘이고 최저·최고가 비었을 때만, 칸마다
+ *   ① 같은 (지역, 날짜)의 저장 행이 36시간 안에 계산된 것이면 그 값(이어받기), ② 없으면 어댑터가 따로 둔
+ *   **근사값**(`approxMinTemp`·`approxMaxTemp` — 그날 남은 시각을 덮는 같은 원천의 값)으로 메운다. 상태·강수확률·
+ *   강수량은 절대 메우지 않는다. 비는 곳: KR 0500 회차부터의 오늘 TMN(1400 회차부터는 TMX 도), JP 05시 발표 뒤의
+ *   오늘 최저(발표일의 최저는 어떤 발표에도 없다 — 17시 발표 뒤에는 최고도), NWS 아침이 지난 오늘 최저. 근사값은
+ *   이렇게 **구조적으로** 비는 칸에만 있다 — 원래 오는 칸이 빠진 것은 결측이다(그 날짜는 미해결).
  * - **먼지는 끈다**: `hasDust` 는 언제나 false, DB 는 NULL. 자리 3(미세먼지)은 나오지 않는다.
- * - **추측하지 않는다**: 값을 지어내지 않는다. 일본 예보를 끝내 못 받아도 다른 원천으로 대신하지 않는다
+ * - **추측하지 않는다**: 원천에 없는 값을 지어내지 않는다. 근사값도 같은 원천이 낸 값(남은 시각의 시간별 기온·그
+ *   밤의 최저 구간)을 고른 것이다. 일본 예보를 끝내 못 받아도 다른 원천으로 대신하지 않는다
  *   (気象業務法 FAQ 의 '독자 예보' 우려) — null → 클립 8('못 봤어요').
  */
 import type { WeatherRegion } from '@alarmtalk/shared';
@@ -51,6 +54,15 @@ export type SourceDay = {
   minTemp: number | null;
   rainProbability: number | null;
   precipitation: number | null;
+  /**
+   * **근사값** — 원천이 그날의 최저·최고(일 극값)를 **구조적으로** 주지 않을 때만 어댑터가 채운다(원래 오는 응답에서
+   * 빠진 것은 결측이라 채우지 않는다 — 반쪽 값 금지). 그날 **남은 시각**을 덮는 같은 원천의 값에서 만든다(KR: 남은
+   * 시각의 시간별 TMP 최소·최대 / JP: 오늘 밤이 이어지는 내일 아침 최저 / US: 오늘과 겹치는 최저 구간).
+   * `maxTemp`·`minTemp` 에는 섞지 않는다 — 쓸지는 `finalizeSourceDay` 가 정한다(오늘이고 이어받을 저장 극값이 없을
+   * 때만). 실제 일 극값과 기준이 다르다 — 스펙 5-1 「오늘 행의 극값을 메운다」.
+   */
+  approxMaxTemp?: number | null;
+  approxMinTemp?: number | null;
 };
 
 /**
@@ -174,11 +186,18 @@ export function httpFailure(status: number): WeatherSourceError | null {
 /** 이어받기에 쓰는 저장 행 — 같은 (지역, 날짜)의 극값과 계산 시각. */
 export type StoredExtremes = { tempMin: number | null; tempMax: number | null; computedAt: string | null };
 
+/** `finalizeSourceDay` 의 결과. `approximated` 는 로그·집계용 표시다 — 분류·저장에는 쓰지 않는다. */
+export type FinalizedSourceDay = WeatherSignalInput & {
+  /** 오늘의 최저·최고 가운데 하나라도 근사값(`SourceDay.approxMinTemp`·`approxMaxTemp`)으로 메웠다. */
+  approximated?: true;
+};
+
 /**
  * 원천 표본 → 분류기 입력. 하나라도 빠졌으면 null(미해결).
  *
- * 오늘(`isToday`)이고 최저·최고가 비었으면 **그 둘만** `stored` 에서 이어받는다 — 36시간 안에 계산한 행이고
- * 값이 숫자일 때. 상태·강수확률·강수량은 이어받지 않는다.
+ * 오늘(`isToday`)이고 최저·최고가 비었으면 **그 둘만** 칸마다 메운다 — ① `stored`(36시간 안에 계산한 행이고 값이
+ * 숫자일 때) ② 없으면 어댑터의 근사값(`approxMinTemp`·`approxMaxTemp`). 원천의 일 극값이 있으면 언제나 그것이
+ * 이긴다. 오늘이 아니면 둘 다 쓰지 않는다. 상태·강수확률·강수량은 메우지 않는다.
  *
  * ⚠ `source` 는 **필수**다 — 강수확률만으로 비라고 보는 하한이 원천마다 다르다(결정 D7). 빼면 KR·JP 가 조용히 NWS
  * 하한(30)으로 분류된다: 점검 스크립트가 그렇게 빠뜨려 운영과 다른 분포를 냈다(코덱스 #846).
@@ -186,11 +205,13 @@ export type StoredExtremes = { tempMin: number | null; tempMax: number | null; c
 export function finalizeSourceDay(
   day: SourceDay | undefined,
   context: { isToday: boolean; stored?: StoredExtremes | null; now: Date; source: WeatherSourceKind },
-): WeatherSignalInput | null {
+): FinalizedSourceDay | null {
   if (!day) return null;
   const inherit = context.isToday ? usableStored(context.stored, context.now) : null;
-  const maxTemp = day.maxTemp ?? inherit?.tempMax ?? null;
-  const minTemp = day.minTemp ?? inherit?.tempMin ?? null;
+  const max = fillToday(day.maxTemp, inherit?.tempMax, day.approxMaxTemp, context.isToday);
+  const min = fillToday(day.minTemp, inherit?.tempMin, day.approxMinTemp, context.isToday);
+  const maxTemp = max.value;
+  const minTemp = min.value;
   const { code, rainProbability, precipitation } = day;
   if (code === null || !Number.isFinite(code)) return null;
   if (maxTemp === null || !Number.isFinite(maxTemp)) return null;
@@ -208,7 +229,22 @@ export function finalizeSourceDay(
     precipitation,
     hasDust: false,
     ...(coded ? { rainProbabilityThreshold: CODED_SOURCE_RAIN_PROBABILITY_THRESHOLD } : {}),
+    ...(max.approximated || min.approximated ? { approximated: true as const } : {}),
   };
+}
+
+/** 극값 한 칸 — 원천의 일 극값 → (오늘만) 저장 행 → (오늘만) 근사값. 숫자가 아닌 것은 건너뛴다. */
+function fillToday(
+  source: number | null,
+  stored: number | null | undefined,
+  approx: number | null | undefined,
+  isToday: boolean,
+): { value: number | null; approximated: boolean } {
+  if (source !== null) return { value: source, approximated: false };
+  if (!isToday) return { value: null, approximated: false };
+  if (stored !== null && stored !== undefined) return { value: stored, approximated: false };
+  if (approx !== null && approx !== undefined && Number.isFinite(approx)) return { value: approx, approximated: true };
+  return { value: null, approximated: false };
 }
 
 function usableStored(

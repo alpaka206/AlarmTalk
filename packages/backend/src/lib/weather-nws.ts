@@ -5,7 +5,11 @@
  * `validTime` 이 ISO 8601 구간(`2026-10-01T12:00:00+00:00/PT13H`)인 값의 목록이다. 날짜 D 는 **지역 시간대의
  * [00시, 24시)** 다. 규칙 전문은 `docs/spec/voice-and-message.md` 5-1 「서버가 미리 계산해 둔다」.
  *
- *  - 최고·최저: `maxTemperature`·`minTemperature` 가운데 구간 **중점**의 현지 날짜가 D 인 값.
+ *  - 최고·최저: `maxTemperature`·`minTemperature` 가운데 구간 **중점**의 현지 날짜가 D 인 값. 오늘 최저 구간이
+ *    **구조적으로** 빠졌으면(격자가 오늘 0시 뒤부터 시작한다 — 아침이 지나 그 구간이 격자에서 나갔다) 오늘과 겹치는
+ *    최저 구간(대개 오늘 밤)의 값을 근사값(`approxMinTemp`)으로 따로 둔다 — 쓰는지는 `finalizeSourceDay`(이어받을
+ *    저장 극값이 없을 때만). 격자가 오늘 0시를 덮는데 오늘 최저가 없으면 결측이다(근사하지 않는다). 최고는 근사하지
+ *    않는다.
  *  - 강수확률: D 와 겹치는 `probabilityOfPrecipitation` 의 최댓값. ⚠ `/forecast` 의 12시간 PoP 는 쓰지 않는다 —
  *    밤 구간이 자정을 걸쳐 276건 중 76건이 날짜가 어긋났다.
  *  - 강수량: `quantitativePrecipitation` 을 D 와 겹친 비율만큼 나눠 더한 값(mm).
@@ -230,12 +234,21 @@ export function nwsDaysFromGrid(doc: unknown, timeZone: string, now: Date): Map<
       else code = WEATHER_PROXY_CODE.clear;
     }
 
+    // 오늘 최저 구간이 **구조적으로** 빠졌으면 — 격자가 오늘 0시 뒤부터 시작한다(아침이 지나 그 구간이 격자에서
+    // 나갔다) — 오늘과 **겹치는** 최저 구간의 값을 근사값으로 따로 둔다. 대개 오늘 밤 구간(오늘 저녁 ~ 내일 아침)이라
+    // 남은 시각의 최저보다 조금 낮다(스펙 5-1). 격자가 오늘 0시를 덮는데 없으면 결측이다 — 근사하지 않는다.
+    const approxMins =
+      i === 0 && mins.length === 0 && valid.start > dayStart
+        ? minT.filter((s) => overlapMs(s, window) > 0).map((s) => s.value)
+        : [];
+
     days.set(date, {
       code,
       maxTemp: maxes.length > 0 ? round1(Math.max(...maxes)) : null,
       minTemp: mins.length > 0 ? round1(Math.min(...mins)) : null,
       rainProbability: popMax,
       precipitation: qpfSum === null ? null : round1(qpfSum),
+      ...(approxMins.length > 0 ? { approxMinTemp: round1(Math.min(...approxMins)) } : {}),
     });
   }
   return days;
