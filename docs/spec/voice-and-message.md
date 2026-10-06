@@ -690,7 +690,9 @@
 
   예전 정의(Open-Meteo 시절)는 '다섯 값이 다 유한해야 한다' 였다 — 일본에는 강수량이 없어 그대로 두면 일본은
   영영 미해결이다. 서울 폴백·먼지 없음 폴백(`'fallback'`)은 라이브 생성 문장과 함께 지웠다(2026-10-01). 판정은
-  `lib/weather-source.ts` 의 `finalizeSourceDay` 한 곳.
+  `lib/weather-source.ts` 의 `finalizeSourceDay` 한 곳. **예외는 오늘의 최고·최저 하나다** — 원천이 그날 중간부터
+  오늘 극값을 주지 않으므로(KR 0500 회차 뒤의 TMN 등) 저장 행에서 이어받고, 없으면 같은 원천의 남은 시각 값으로
+  근사한다(아래 「오늘 행의 극값을 메운다」). 상태·강수확률·강수량은 언제나 원천의 것이다.
 - **저장이 날씨 응답을 기다리는 시간에는 상한이 있다 — 8초, 양 앱 같은 값**(2026-09-22).
   이 조회가 저장 버튼을 붙잡는 유일한 네트워크라, 인터넷이 느리면 그만큼 저장이 멈췄다
   (안드로이드는 OkHttp 읽기 타임아웃 60초까지). 8초인 이유: 서버는 (미리 계산한 값이 없을 때)
@@ -1001,18 +1003,21 @@ Open-Meteo 무료 엔드포인트는 비상업용이고 유료 키는 사지 않
   미해결 + warn. 날짜 D 는 그날의 칸 전체(24칸 또는 3시간 간격 8칸,
   오늘은 발표 다음 시각부터 23시까지). 눈 = PTY 3 또는 SNO > 0, 비 = PTY 1·4, 흐림 = 06~18시 칸의 절반 이상이 SKY ≥ 3,
   강수확률 = POP 최댓값, 강수량 = PCP 합(진단용 근사), 최고·최저 = TMX·TMN(없으면 TMP 가 24시간 다 있을 때만 그
-  최대·최소).
+  최대·최소). 오늘(발표 다음 시각 ~ 23시만 온다)의 빈 TMX·TMN 은 그 남은 칸의 TMP 최대·최소를 근사값으로 따로 둔다
+  (아래 「오늘 행의 극값을 메운다」).
 - **JP**(`lib/weather-jma.ts`): 공식 API 가 아니고 200 을 주면서 갱신이 멈춘 전례가 있어 **발표 시각을 잰다** —
   단기 `[0].reportDatetime` 13시간, 주간 `[1]` 20시간을 넘으면 못 받은 것이다. 값은 **위치가 아니라
   `timeDefines` 의 날짜로** 맞춘다. 날씨 = 1차 세분 구역의 `weatherCodes`(없으면 주간), 강수확률 = 그날 6시간
   `pops` 최댓값(없으면 주간 하루 값). 발표 당일도 발표 시각 뒤에 남은 6시간 칸(05시: 06·12·18, 11시: 12·18, 17시: 18)이 모두 있어야 한다. 기온 = 17시 발표 [내일 최저, 내일 최고] / 05·11시 발표 [오늘 최고, …, 내일
   최저, 내일 최고](JMA 페이지 스크립트와 같은 인덱스 규칙, 날짜가 어긋나면 미해결), +2·+3 은 주간. 코드는 현행 공식
   66개 표(이름에 雪 → 눈, 雨 → 비, くもり로 시작 → 흐림, 晴 → 맑음)이고 모르는 코드는 미해결. **발표일의 최저는
-  어떤 발표에도 없다** — 05시 발표부터 그날이 끝날 때까지 오늘 최저(17시 발표 뒤에는 최고도)는 이어받기로 채운다
-  (아래). ⚠ 자정 ~ 05시 발표 전에는 다르다 — 그때 믿는 발표는 전날 17시 발표(13시간)이고 그 [내일 최저, 내일 최고]
+  어떤 발표에도 없다** — 05시 발표부터 그날이 끝날 때까지 오늘 최저(17시 발표 뒤에는 최고도)는 이어받기로 채우고,
+  이어받을 행이 없으면 오늘 최저만 근사값(내일 아침 최저)으로 채운다(아래). 시간별 기온이 없어 17시 발표 뒤의 오늘
+  최고는 대신할 값이 없다. ⚠ 자정 ~ 05시 발표 전에는 다르다 — 그때 믿는 발표는 전날 17시 발표(13시간)이고 그 [내일 최저, 내일 최고]
   가 곧 지역의 오늘 값이다(이어받지 않아도 오늘이 만들어진다).
 - **US**(`lib/weather-nws.ts`): `updateTime` 이 18시간을 넘으면 못 받은 것이다. 날짜 D 는 지역 시간대 [00, 24).
-  최고·최저 = 구간 **중점**의 현지 날짜가 D 인 값, 강수확률 = D 와 겹치는 PoP 최댓값(⚠ `/forecast` 의 12시간 PoP 는
+  최고·최저 = 구간 **중점**의 현지 날짜가 D 인 값(오늘에 그런 구간이 없으면 오늘과 겹치는 구간의 값을 근사값으로 —
+  아래), 강수확률 = D 와 겹치는 PoP 최댓값(⚠ `/forecast` 의 12시간 PoP 는
   밤 구간이 자정을 걸쳐 276건 중 76건이 어긋났다 — 쓰지 않는다), 강수량 = QPF 를 겹친 비율만큼 나눠 더한 값.
   눈 = 눈 계열 `weather` + (적설 > 0 또는 PoP ≥ 30), 비 = PoP ≥ 30 또는 QPF > 0(**coverage 만 보고 비를 만들지
   않는다** — NYC 'chance rain_showers' 인데 PoP 7), 안개 = fog 계열이고 patchy 가 아님, 흐림 = 07~19시 하늘 평균
@@ -1045,8 +1050,9 @@ Open-Meteo 무료 엔드포인트는 비상업용이고 유료 키는 사지 않
 - **슬롯 밖이면 DB 도 네트워크도 부르지 않는다** — 슬롯이 열렸는지는 시간대 계산만으로 안다
   (`hasOpenWeatherSlot`). 서머타임 경계에서도 현지 21시·06시는 하루에 한 번씩이다.
 - **due**: 슬롯이 열린 지역 가운데 [내일, +3] 의 어느 날짜에 `computed_at ≥ 슬롯 시작` 인 행이 없으면 due 다.
-  **오늘은 판정에서 뺀다** — 이어받을 값이 없어 오늘을 구조적으로 못 만드는 경우(무한 재시도)를 막는다. 오늘은 아침
-  슬롯에 가져올 때 함께 쓴다.
+  **오늘은 판정에서 뺀다** — 오늘 행은 전날 저녁 슬롯이 '내일' 로 적어 두고, 빈 극값은 이어받기·근사값으로 메우지만,
+  그래도 못 만드는 날(근사할 칸마저 빠진 응답)에 슬롯 내내 다시 부르지 않게 한다. 오늘은 아침 슬롯에 가져올 때 함께
+  쓴다.
 - **한 틱**: SELECT 1회(열린 지역들의 행 — 이어받기용 극값·계산 시각 포함, IN 플레이스홀더 생성기) → fetch 최대
   12회(원천별 상한 KMA 6 · JMA 8 · NWS 4, 원천을 번갈아, 동시 4 — KMA 지역은 한 곳씩 순서대로 처리하고, KMA가 남아 있으면 미사용 KMA 몫을 전체 예산에서도 남겨 다음 페이지·이전 회차 요청이 다른 지역에 밀리지 않게 한다. 첫 fetch 몫은 시작할 때 잡는다) → `db.batch`
   1회(upsert + `DELETE target_date < UTC 오늘 − 3`). 합계 최대 14 subrequest. 클론 드레인보다 앞자리다 — **슬롯
@@ -1093,19 +1099,54 @@ Open-Meteo 무료 엔드포인트는 비상업용이고 유료 키는 사지 않
 - **`KMA_SERVICE_KEY` 가 없으면** KR 은 네트워크를 부르지 않는다 — 운영은 KR 슬롯마다 경보(`missing_key`), dev
   (`ENVIRONMENT=development`)는 info 로그(`slot_skipped`)만.
 
-##### 오늘 행의 극값만 **이어받는다**
+##### 오늘 행의 극값을 **메운다** — 이어받기, 없으면 근사값 (2026-10-06 근사값 추가)
 
-대상 날짜가 지역의 오늘이고 원천이 구조적으로 더는 주지 않는 최저·최고에 한해, 같은 (지역, 날짜)의 저장 행이
-**36시간 안에** 계산된 것이면 그 `temp_min`·`temp_max` 로 메운다(`finalizeSourceDay`). **상태·강수확률·강수량은 절대
-이어받지 않는다.** 메울 값이 없으면 그 날짜는 쓰지 않는다(기존 행 유지). 쓰는 곳: KR 0500 회차의 오늘 TMN, JP 05시
-발표 뒤의 오늘 최저(17시 발표 뒤에는 최고도), NWS 아침이 지난 오늘 최저. 첫 아침 슬롯(전환 당일)에는 그 원천이
-Open-Meteo 시절의 행일 수 있다(결정 D6).
+대상 날짜가 지역의 오늘이고 원천이 그날 중간부터 더는 주지 않는 최저·최고에 한해, **칸마다** 이 순서로 메운다
+(`finalizeSourceDay`):
+
+1. 원천의 일 극값이 있으면 언제나 그것.
+2. 같은 (지역, 날짜)의 저장 행이 **36시간 안에** 계산된 것이면 그 `temp_min`·`temp_max`(이어받기).
+3. 그것도 없으면 어댑터가 따로 둔 **근사값**(`SourceDay.approxMinTemp`·`approxMaxTemp`) — 그날 **남은 시각**을 덮는
+   같은 원천의 값이다. 어댑터는 근사값을 최저·최고 칸에 섞지 않는다 — 쓰는지는 이 판정 한 곳이 정한다.
+
+**상태·강수확률·강수량은 절대 메우지 않는다.** 오늘이 아니면 2·3 모두 쓰지 않는다. 셋 다 없으면 그 날짜는 쓰지 않는다
+(기존 행 유지).
+
+| 나라 | 비는 칸 | 근사값 |
+| --- | --- | --- |
+| KR | 0500 회차 뒤의 TMN, 1700·2000 회차 뒤의 TMX·TMN | 그 회차가 주는 오늘 칸(발표 다음 시각 ~ 23시)의 **TMP 최소·최대**. 칸 하나라도 빠지거나 못 읽으면 근사값도 없다. 2300 회차(23:10~24:00)에는 오늘 칸이 아예 없다 |
+| JP | 05시 발표 뒤의 오늘 최저(17시 발표 뒤에는 최고도) | 최저만 — 오늘 밤이 이어지는 **내일 아침 최저**(0~9시). 시간별 기온이 없어서 가장 가까운 공식 값이다. 최고는 대신할 값이 없다 |
+| US | 아침이 지나 격자에서 빠진 오늘 최저 구간(늦은 밤에는 최고 구간도) | 오늘과 **겹치는** `minTemperature`·`maxTemperature` 구간의 값 — 최저는 대개 오늘 밤 구간(오늘 저녁 ~ 내일 아침) |
+
+- **왜 근사값이 필요한가**: 읽기 경로는 36시간 안의 행이면 원천을 부르기 전에 그 행을 돌려주므로, 이어받기(36시간)가
+  쓰일 자리가 사실상 없다 — 행이 없거나 36시간을 넘긴 때만 원천에 가는데, 그때는 이어받을 행도 없다. 그래서 행이
+  없는 날(표가 빈 **전환 당일**·새로 더한 지역·저녁·아침 슬롯이 연달아 실패한 뒤) KR·JP 의 오늘은 원천으로는
+  영영 계산되지 않았다 — 읽기 경로가 하루 내내 `null`(클립 8 '못 봤어요')을 내고 적지도 않아 요청마다 원천을 다시
+  불렀다. 아침 슬롯도 저장 행 없이는 오늘을 못 만들었다. 이제 그 경우 근사값으로 오늘을 계산해 **적는다**(다음
+  요청은 DB 한 번). 새 네트워크 호출은 없다 — 이미 받은 응답 안의 값이다.
+- **그래도 남는 미해결**: JP 17시 발표 뒤(오늘 최고를 대신할 값이 없다), KR 23:10~24:00(오늘 칸이 없다), US 오늘
+  최고 구간까지 빠진 늦은 밤 — 셋 다 그날 앞서 적힌 행(아침 슬롯·읽기 경로)이 없을 때만이다.
+- **분류 임계값은 그대로 둔다**(`resolvePrerenderWeatherIndex` — 더위 최고 ≥ 30, 추위 최저 ≤ 0 또는 최고 ≤ 12).
+  근사값은 하루 전체가 아니라 **남은 시각**의 값이라 치우침이 정해져 있고, 그 치우침이 그날 남은 시각에 울릴 알람에
+  맞는 쪽이라서다:
+  - 근사 최고(대개 KR 1700 회차 뒤)는 저녁 칸의 최대라 실제 최고보다 낮다 → **더위는 덜 잡고 거짓으로 잡지 않는다**(낮의
+    더위는 이미 지났다). 최고 ≤ 12 의 **추위는 더 잡는다** — 남은 저녁이 12도 이하면 그 저녁은 춥다.
+  - 근사 최저 — KR 은 06시 뒤 칸의 최소라 실제 TMN(새벽)보다 조금 높을 수 있다(실측 2026-10-01 서울: 0500 회차 근사
+    13 = 0200 회차의 실제 TMN 13). JP·US 는 오늘 밤의 최저라 남은 시각의 최저보다 조금 낮다 → 오늘 밤이 영하로
+    내려가면 추위로 본다. 반대로 새벽만 영하이고 밤이 영상인 날의 추위는 놓칠 수 있다.
+  - 실측 픽스처에서는 근사로 바꿔도 자리가 같았다 — 서울 1700 회차의 오늘은 근사 19·15 로 맑음(0200 회차의 실제
+    일 극값 22·13 으로도 맑음), 뉴욕 오늘은 근사 최저 20.6 으로 흐림(실제 18.3 으로도 흐림). 회귀 `weather-kma`·`weather-nws.test.ts`.
+- **표시**: 근사값을 쓴 계산은 `finalizeSourceDay` 결과의 `approximated` 로 드러난다 — 읽기 경로는 info 로그
+  `at:"weather.region_daily", op:"today_approx"`(source 만, 지역 키 없음), cron 은 `at:"scheduled.weather_region_daily"`
+  줄의 `approximated`(그 틱에 적은 근사 행 수). DB 행에는 표시가 없다(새 컬럼 없음) — 근사로 적은 오늘 행을 이어받는 것은 같은
+  날 오늘을 다시 계산할 때뿐이고, 그 행은 그보다 이르거나 같은 발표의 더 넓은 남은 시각에서 만든 값이라 해가 없다.
+- 전환 당일에도 옛 Open-Meteo 행은 이어받지 않는다 — 새 표(#127)는 비어서 시작하고 서로의 행을 읽지 않는다(결정 D6).
 
 ##### `GET /tts/prerender-variant`
 
 1. `region` 이 알맞은 키 → `(region, target_date)` 행. **36시간 안에** 계산했으면 그대로(슬롯 두 번이 연달아 실패해도
-   버틴다). 아니면 대상 날짜가 지역의 **[오늘, +3] 안일 때만** 그 지역 원천을 **한 번** 부르고(같은 이어받기 규칙)
-   계산되면 적고 돌려준다. **밖이면 네트워크 없이 `null`** — 쿼터를 지키고 아무 날짜나 물어 원천을 태우는 요청을
+   버틴다). 아니면 대상 날짜가 지역의 **[오늘, +3] 안일 때만** 그 지역 원천을 **한 번** 부르고(같은 메우기 규칙 —
+   36시간 안의 행이면 이미 돌려줬으므로 오늘의 빈 극값은 사실상 근사값으로 메운다) 계산되면 적고 돌려준다. **밖이면 네트워크 없이 `null`** — 쿼터를 지키고 아무 날짜나 물어 원천을 태우는 요청을
    막는다. 표에 적는 날짜는 지역의 어제 ~ +3 이다.
    - ⚠ **원천 호출 전체의 마감은 5초다**(`WEATHER_READ_DEADLINE_MS`, 코덱스 #846). KMA 의 한 회차 물러서기·다음
      페이지도 그 안에서만 하고, fetch 하나의 타임아웃은 min(5초, 남은 시간)이다 — 남은 시간이 없으면 부르지 않는다
@@ -1135,7 +1176,8 @@ Open-Meteo 시절의 행일 수 있다(결정 D6).
 
 ##### 추측하지 않는다 · 출처 표기 · 개인정보
 
-- 위 어느 경우에도 값을 지어내지 않는다. **일본 예보를 끝내 못 받아도 다른 원천으로 대신하지 않는다** — 気象業務法
+- 위 어느 경우에도 값을 지어내지 않는다. 오늘 극값의 근사값도 같은 원천이 낸 값(남은 시각의 시간별 기온·그 밤의
+  최저 구간)을 고른 것이다. **일본 예보를 끝내 못 받아도 다른 원천으로 대신하지 않는다** — 気象業務法
   FAQ 의 '독자 예보'(허가 없이 예보를 만드는 것) 우려 때문이다. `null` → 클립 8.
 - ⚠ **날씨 숫자의 원천을 LLM(Gemini) 으로 바꾸지 말 것.** 모델은 관측·예보 값을 가진 곳이 아니다 — 그럴듯한
   숫자를 지어낸다.
@@ -1156,8 +1198,11 @@ Open-Meteo 시절의 행일 수 있다(결정 D6).
   - dev 하루 관측: 슬롯 4개, `weather.fetch` 의 source 별 200/00, `cpuTime`, Sentry 0건.
   - 키: `KMA_SERVICE_KEY` 를 dev·prod 워커에 넣는다([docs/ops/environments.md](../ops/environments.md)
     「기상청 단기예보 키」).
-- **전환 당일**: 옛 Open-Meteo 행을 새 원천의 결과나 극값으로 쓰지 않는다. 첫 아침 슬롯에 공식 원천의
-  오늘 극값이 없으면 미해결로 둔다. 공식 예보의 다음 슬롯이나 읽기 경로가 채운다.
+- **전환 당일**: 옛 Open-Meteo 행을 새 원천의 결과나 극값으로 쓰지 않는다 — 새 표는 비어서 시작한다. 그래서 오늘
+  극값은 이어받을 행이 없고 근사값으로 메운다(위 「오늘 행의 극값을 메운다」) — 아침 슬롯과 읽기 경로가 오늘 행을
+  적는다. ⚠ '다음 슬롯이 채운다' 가 아니다: 저녁 슬롯은 내일~+3 만 계산하고, 예전에는 읽기 경로도 오늘을 못 만들어
+  그날 하루 KR·JP 의 오늘이 전부 '못 봤어요' 였다. 그날 앞서 적힌 행이 없으면 JP 17시 발표 뒤·KR 23:10 뒤는 그대로
+  미해결이다.
 - **롤백**은 PR B 되돌리기다. 옛 서버는 그대로 남긴 `weather_region_daily`만 읽고 쓰므로 공식 원천의
   행이 섞이지 않는다. 출처 토큰도 `null`로 돌아가 두 앱의 출처 줄이 다음 버전 확인부터 숨는다.
 
@@ -1172,6 +1217,7 @@ Open-Meteo 시절의 행일 수 있다(결정 D6).
 | D5 | 순서 | 출처 줄을 그리는 앱이 두 스토어에 모두 게재된 뒤에 백엔드를 prod 로 | 배포 |
 | D6 | 전환 | 원천별 캐시를 분리해 전환·롤백 모두 출처가 섞이지 않게 한다 | 마이그레이션 #127 |
 | D7 | 강수확률만으로 비라고 보는 하한 | 강수 **형태**를 주는 원천(KR PTY·PCP, JP 날씨 코드)은 형태가 1차이고 강수확률은 **60** 부터, NWS 는 **30**('Chance') 그대로. 예전 공통 30 은 원천이 '강수 없음'이라고 한 날도 비로 만들었다(2026-10-01 실측: KR 비 판정 34건 중 33건이 PTY 전 시간 0, JP 54건 중 33건이 晴·くもり) | `CODED_SOURCE_RAIN_PROBABILITY_THRESHOLD`(`lib/weather-signal.ts`) ← `finalizeSourceDay` 의 `source` |
+| D8 | 오늘의 빈 극값(이어받을 행도 없을 때) | **근사값으로 메운다**(2026-10-06 오너 결정) — 남은 시각의 같은 원천 값(KR TMP 최소·최대, JP 내일 아침 최저, US 겹치는 구간). 분류 임계값은 그대로(위 「오늘 행의 극값을 메운다」의 치우침). 예전에는 미해결로 둬 행이 없는 날 KR·JP 의 오늘이 하루 내내 '못 봤어요' 였다 | `finalizeSourceDay`(`lib/weather-source.ts`) · 어댑터의 `approxMinTemp`·`approxMaxTemp` |
 
 ### 미리 받아 둔다
 
@@ -1937,6 +1983,7 @@ R2 파일·ElevenLabs 클론은 DB 트랜잭션 안에서 지울 수 없으므�
 | 운세 온디바이스 계산 | `fortuneThemeIndex` (`data/AlarmEntity.kt`) | `BucketVariantResolver.fortuneThemeIndex` | — |
 | 날씨 조건 조회 | `AlarmRepository.resolveWeatherVariantForDraft`(저장 시) | `AlarmEditorSheet.applyWeatherVariant`(저장 시) | `GET /tts/prerender-variant` (`resolvePrerenderWeatherIndex`) — 지역이면 미리 계산한 행(아래 '서버 미리 계산' 행) |
 | 날씨 반쪽 값 금지(원천이 주는 표본이 하나라도 빠지면 `null` · 원천에 없는 표본은 재지 않음 · NWS 빈 QPF 층은 지평이 없어 빠짐) | — (받은 값을 해결로 저장, `weatherVariantNeedsRefresh`) | — (`BucketVariantResolver`) | `finalizeSourceDay`(`lib/weather-source.ts` — 원천 종류 `source` 는 필수, 결정 D7 의 하한이 원천마다 다르다) · `qpfBeyondHorizon`(`lib/weather-nws.ts`), 회귀 `weather-kma`·`weather-jma`·`weather-nws.test.ts` |
+| 오늘 극값 메우기(원천 → 36시간 안의 저장 행 → 남은 시각 근사값 · 오늘만 · 상태·강수는 메우지 않음 · 근사는 로그로만 표시, 분류 임계값은 그대로) | — | — | `finalizeSourceDay`(`fillToday`, 결과의 `approximated` — `lib/weather-source.ts`) ← 근사값 `SourceDay.approxMinTemp`·`approxMaxTemp`: `kmaDaysFromItems`(`tmpRange` — 오늘 남은 칸 TMP)·`jmaDaysFromDocument`(내일 아침 최저)·`nwsDaysFromGrid`(오늘과 겹치는 구간) · 표시 `resolveRegionVariantIndex`(`op:"today_approx"`)·`refreshWeatherRegionDaily`(`approximated`) → `weatherRegionDailyTick`(`src/index.ts`), 회귀 `weather-kma`·`weather-jma`·`weather-nws`·`weather-region-daily`(표가 빈 첫날의 cron·읽기 경로)·`weather-sources-dry-run.test.ts`, 05시 발표 모양 `test/fixtures/weather/jma/morning-bulletin.ts` |
 | 날씨 조회 대기 상한(8초) | `WEATHER_RESOLVE_TIMEOUT_MILLIS` + `withTimeoutOrNull`(`data/AlarmRepository.kt`, 회귀 `WeatherResolveTimeoutTest`) | `WeatherVariantSaveLookup.timeoutSeconds`(8초) + `withTimeout`(`AsyncTimeout.swift`) — `AlarmEditorSheet.applyWeatherVariant` 가 부른다, 회귀 `WeatherVariantSaveTimeoutTests` | 읽기 경로의 원천 호출 전체 마감 `WEATHER_READ_DEADLINE_MS`(5초 — KMA 물러서기·다음 페이지 포함, `lib/weather-region-daily.ts`) → `deadlineAt` → `fetchWeatherSource`(fetch 하나 min(`WEATHER_FETCH_TIMEOUT_MS` 5초, 남은 시간), `lib/weather-fetch.ts`), 회귀 `weather-kma.test.ts`·`weather-region-daily.test.ts` |
 | 날씨 지역 목록(유일 출처 = JSON · 좌표 박제 · 직접 입력 없음) | 생성 `data/WeatherRegions.kt`(`WeatherRegions`·`WeatherRegion`·`WeatherCountry`) + `res/values{,-en,-ja}/weather_regions.xml` | 생성 `Generated/WeatherRegions.generated.swift`(`WeatherRegions`·`WeatherRegion`·`WeatherCountry`) | `packages/shared/src/weather-regions.json` + `weather-regions.ts`(`WeatherRegions`). 생성·검사 `scripts/gen-weather-regions.py`(`--check` 는 CI lint), 회귀 `packages/shared/test/weather-regions.test.ts` |
 | 옛 글자 되짚기(네 구현이 같은 규칙) | `WeatherRegions.resolveAlias`(생성) ← `weatherRegionFor`(`data/WeatherRegionSettings.kt`) — 회귀 `WeatherRegionsAliasTest`(shared 의 표를 그대로 옮김) | `WeatherRegions.resolveAlias`(생성) ← `WeatherRegions.region(key:country:city:)`(`WeatherRegionSupport.swift`) — 회귀 `WeatherRegionCatalogTests` | `WeatherRegions.resolveAlias`(shared) = 스크립트의 `resolve` ← `weatherRegionFor`(`lib/weather-signal.ts`) |
@@ -1948,7 +1995,7 @@ R2 파일·ElevenLabs 클론은 DB 트랜잭션 안에서 지울 수 없으므�
 | 지역 시트 날씨 출처 줄(목록 아래 고정 · ko·en·ja 같은 문장) — **서버 토큰이 정확히 `"kma_jma_nws"` 일 때만**, 그 밖·확인 실패·응답 전은 숨김 | `WeatherLocationDialog` 의 `if (showsAttribution)` ← 판정 `showsWeatherAttribution` ← `LocalWeatherAttribution`(`ui/editor/AlarmRandomPromptSettings.kt`, `MainActivity` 가 내려 준다) · 문장 `region_picker_weather_attribution`(`res/values{,-en,-ja}/strings.xml`, 그리는 자리는 이 하나) — 회귀 `WeatherAttributionTest` | `WeatherRegionPickerSheet` 의 `showsAttribution`(그릴 때만 `attributionHeight` 를 `reservedListHeight` 에서 뺀다) ← 판정 `WeatherAttribution.showsLine` · `Localizable.xcstrings` — 회귀 `WeatherAttributionTests` | — |
 | 날씨 출처 토큰 계약 — `GET /api/app/version` 의 `weather_attribution`(불투명 토큰 · 지금 `"kma_jma_nws"` — 원천 교체(#846)가 올렸다, 되돌리면 `null`) · 저장하지 않고 새로 묻지 않는다 · 확인이 실패하면 지운다 | `AppVersionResponse.weatherAttribution`(`network/AuthApi.kt`) → `MainViewModel.weatherAttribution` ← `checkAppVersion`(실패면 null) — 회귀 `WeatherAttributionTest` | `AppVersionResponse.weatherAttribution`(`AlarmTalkAPIModels.swift`) → `AppVersionGate.weatherAttribution` ← `checkAppVersion`(실패면 nil) — 회귀 `AppVersionGateTests`·`WeatherAttributionTests` | `WEATHER_ATTRIBUTION`(`lib/weather-attribution.ts`) → `GET /api/app/version`(`index.ts`) — 회귀 `app-version.test.ts`(필드가 실리고 `"kma_jma_nws"` · Open-Meteo 를 부르는 코드가 남아 있으면 `null` · 이 토큰을 말하는 동안 세 원천을 부르는 코드가 있다) |
 | 새 알람: 행에 옛 앱용 글자 + 요청에 `region` | 고를 때 `region.legacyCountry`/`legacyCity` 를 적고, 요청은 `weatherRegionFor(…)?.key` ← `AlarmRepository.resolveWeatherVariantForDraft`·`resolveDueCloneBucketVariants` — 회귀 `WeatherRegionRequestTest` | `WeatherRegions.storageLabels` ← `AlarmEditorSheet`, 요청은 `resolveAlias(…)?.key` ← `WeatherVariantSaveLookup`·`WeatherVariantRefreshService` — 회귀 `WeatherVariantOwnerScopeTests` | `GET /tts/prerender-variant` 의 `region` |
-| 서버 미리 계산 · 현지 슬롯(21시 내일~+3 / 06시 오늘~+3) · due([내일, +3]) · 틱 예산(SELECT 1 + fetch 12(KMA 6·JMA 8·NWS 4) + batch 1) · 실패 세 갈래(설정 실패는 원천 전체 / 그 지역의 칸 — 지역의 칸이면 원천을 끄지 않는다 · 예산 소진은 틱 상한이면 그 지역만 넘기고 워커 한도면 멈춘다) · 슬롯 끝 경보(마지막 틱은 날씨를 5분 틱의 맨 앞에서 — 경보도 subrequest 라 새 예산으로 · 그래도 한도면 DB 에 있는 행만 센다) · 오늘 극값 이어받기(36h) · 읽기 36h·지평 가드([오늘, +3] 밖은 네트워크 없이 null) · 표가 없으면 저장 없이 즉석 계산 | — | — | 마이그레이션 #127 `weather_region_daily_official`(옛 캐시와 분리) · `hasOpenWeatherSlot`·`hasWeatherSlotLastTick`·`openWeatherSlot`·`refreshWeatherRegionDaily`(`evaluateSlotEnds`) · 읽기 `resolveRegionVariantIndex` — `lib/weather-region-daily.ts` · 마지막 틱의 순서 `scheduled`(`isWeatherSlotLastTick` → `weatherRegionDailyTick`, `src/index.ts`) · 원천 디스패치·실패 분류(`SourceFailureScope`)·이어받기 `lib/weather-source.ts` · 어댑터 `lib/weather-kma.ts`·`weather-jma.ts`·`weather-nws.ts`(지역의 칸 404 는 `scope: 'region'`), 회귀 `weather-region-daily.test.ts`(실제 libSQL)·`weather-kma`·`weather-jma`·`weather-nws.test.ts`(2026-10-01 실측 픽스처)·`scheduled-weather-last-tick.test.ts`(실행 하나의 subrequest 모형) |
+| 서버 미리 계산 · 현지 슬롯(21시 내일~+3 / 06시 오늘~+3) · due([내일, +3]) · 틱 예산(SELECT 1 + fetch 12(KMA 6·JMA 8·NWS 4) + batch 1) · 실패 세 갈래(설정 실패는 원천 전체 / 그 지역의 칸 — 지역의 칸이면 원천을 끄지 않는다 · 예산 소진은 틱 상한이면 그 지역만 넘기고 워커 한도면 멈춘다) · 슬롯 끝 경보(마지막 틱은 날씨를 5분 틱의 맨 앞에서 — 경보도 subrequest 라 새 예산으로 · 그래도 한도면 DB 에 있는 행만 센다) · 오늘 극값 메우기(원천 → 36h 저장 행 → 남은 시각 근사값) · 읽기 36h·지평 가드([오늘, +3] 밖은 네트워크 없이 null) · 표가 없으면 저장 없이 즉석 계산 | — | — | 마이그레이션 #127 `weather_region_daily_official`(옛 캐시와 분리) · `hasOpenWeatherSlot`·`hasWeatherSlotLastTick`·`openWeatherSlot`·`refreshWeatherRegionDaily`(`evaluateSlotEnds`) · 읽기 `resolveRegionVariantIndex` — `lib/weather-region-daily.ts` · 마지막 틱의 순서 `scheduled`(`isWeatherSlotLastTick` → `weatherRegionDailyTick`, `src/index.ts`) · 원천 디스패치·실패 분류(`SourceFailureScope`)·이어받기·근사값 `lib/weather-source.ts`(`finalizeSourceDay`) · 어댑터 `lib/weather-kma.ts`·`weather-jma.ts`·`weather-nws.ts`(지역의 칸 404 는 `scope: 'region'`), 회귀 `weather-region-daily.test.ts`(실제 libSQL)·`weather-kma`·`weather-jma`·`weather-nws.test.ts`(2026-10-01 실측 픽스처)·`scheduled-weather-last-tick.test.ts`(실행 하나의 subrequest 모형) |
 | 지역마다 원천의 칸 고정(`source` — KR 격자 = LCC(lat,lon), JP office·class10·지점·주간 후보, US NWS 격자) | — (앱으로 내보내지 않는다) | — | `WeatherSourceSchema`(`packages/shared/src/weather-regions.ts`, 필수·나라↔원천 검사), 회귀 `packages/shared/test/weather-regions.test.ts` · 수동 점검 `npm run check:weather`(`scripts/weather-sources-check.ts` — NWS /points 재조회·JMA 상수 대조·133곳 드라이런, DB 무접촉) · 드라이런 분류 `dryRunVariants`(`scripts/weather-sources-dry-run.ts` — 운영과 같은 분류, `finalizeSourceDay` 에 원천 종류를 넘긴다), 회귀 `weather-sources-dry-run.test.ts`(스크립트가 부르는 그 함수를 거친다 · JP 오늘의 시각별 기대값 — 자정 ~ 05시 발표 전은 해결, 17시 발표 뒤는 미해결, 실측 원본) · `source` 가 필수라 빠뜨리면 `npm run typecheck`(`tsc -p scripts/tsconfig.json`)가 막는다 |
 | 되짚지 못한 옛 글자 → `null`(지오코딩 없음, 네트워크 없음) | — | — | `GET /tts/prerender-variant`(`routes/tts.ts`), 회귀 `prerender-variant.test.ts` |
 | KMA 키 · NWS User-Agent(로그에 키·URL 없음) | — | — | `KMA_SERVICE_KEY`(`types.ts` `Env`, `scripts/worker-secret-keys.ts`, `kmaServiceKey` — `lib/weather-source.ts`) · `NWS_USER_AGENT`(`lib/weather-nws.ts`) · 로그 `logWeatherFetch`(`lib/weather-fetch.ts`) |
@@ -1997,18 +2044,21 @@ R2 파일·ElevenLabs 클론은 DB 트랜잭션 안에서 지울 수 없으므�
   (`scripts/weather-sources-dry-run.ts`)에 있다 — 위 유닛의 `weather-sources-dry-run` 이 그 함수를 그대로 거치고,
   `finalizeSourceDay` 의 `source` 가 필수라 빠뜨리면 `npm run typecheck`(`tsc -p scripts/tsconfig.json`)가 막는다.
   미해결은 **내일~+3 과 오늘을 따로** 센다. 원천 호출 실패와 내일~+3 미해결은 점검 실패(종료 코드 1)로 센다. 오늘 미해결은 실패 수에서 뺀다. 내일~+3 은 cron 의 due 날짜라 **0 이어야 한다**(남으면 슬롯 내내 다시
-  부른다). 오늘은 이어받기 없이 세므로 **돌린 시각에 달렸다** — KR(0500 회차 이후 — 오늘 TMN 이 없다)·JP(05시 발표
-  이후 — 오늘 최저가 없다)·NWS(아침 이후)의 오늘이 미해결로 나오는 것은 정상이다. JP 는 05시 발표 뒤에 돌리면 원천이
-  성공한 곳의 오늘이 전부 미해결이다(47곳이면 47 — 05·11시 발표에는 오늘 최저가, 17시 발표에는 오늘 극값이 아예
-  없다, `lib/weather-jma.ts`). ⚠ 자정 ~ 05시 발표 전(JST)에 돌리면 JP 의 오늘은 대개 0 이다 — 그때 믿는 발표는 전날
-  17시 발표(13시간)이고 그 [내일 최저, 내일 최고] 가 곧 오늘 값이다. 둘 다 고장이 아니다(`weather-sources-dry-run`
-  이 실측 원본으로 두 시각을 고정한다). 오늘을 합쳐 세면 그 수에 묻혀 내일~+3 이 0 인지 읽을 수 없어 2026-10-05 에
-  나눴다.
+  부른다). 오늘은 이어받기 없이(표가 빈 전환 당일과 같이) 원천의 빈 극값을 근사값으로 메워 세므로 **돌린 시각에
+  달렸다** — JP 17시 발표 뒤(오늘 최고를 대신할 값이 없다 — 원천이 성공한 곳 전부, 47곳이면 47)·KR 23:10~24:00(2300
+  회차에는 오늘 칸이 없다)·NWS 오늘 최고 구간이 빠진 늦은 밤의 오늘이 미해결로 나오는 것은 정상이다. 그 밖의 시각에는
+  대개 0 이다 — KR 0500 회차 뒤(오늘 TMN 없음)·JP 05·11시 발표 뒤(오늘 최저 없음)·NWS 아침 뒤도 근사값으로 해결된다
+  (2026-10-06 전에는 이 셋이 미해결이었다). ⚠ JP 자정 ~ 05시 발표 전(JST)에는 근사 없이 해결된다 — 그때 믿는 발표는
+  전날 17시 발표(13시간)이고 그 [내일 최저, 내일 최고] 가 곧 오늘 값이다(`weather-sources-dry-run` 이 실측 원본으로
+  시각별 기대값을 고정한다). 오늘을 합쳐 세면 그 수에 묻혀 내일~+3 이 0 인지 읽을 수 없어 2026-10-05 에 나눴다.
   2026-10-01 19:20 KST 결과: KR 17/17 · JP 47/47 · US 69/69, /points 69곳·JMA 47곳 모두 일치. 2026-10-05 05:10 KST
   결과(JP·US, 원천 종류를 넘긴 뒤 — JP 는 05시 발표 뒤): JP 47/47 · US 69/69, 미해결 내일~+3 은 둘 다 0 · 오늘은
-  JP 47 · US 0, /points 69곳·JMA 47곳 모두 일치.
+  JP 47 · US 0, /points 69곳·JMA 47곳 모두 일치. 2026-10-06 11:15 KST 결과(KR·JP, 오늘 극값 근사값 뒤 — KR 1100
+  회차·JP 11시 발표라 오늘 TMN·오늘 최저가 없다): KR 17/17 · JP 47/47, 미해결 내일~+3 0 · 오늘 **0**. 같은 시각 근사값
+  전 코드로는 오늘 KR 17 · JP 47 이었다(표가 빈 전환 당일이면 그날 KR·JP 의 오늘이 전부 '못 봤어요' 였다는 뜻이다).
 - **dev 하루 관측**(PR B 머지 뒤): `wrangler tail --env dev` 에서 슬롯 4개(KR·JP 저녁 12Z·아침 21Z, 미 동부·중부 등)의
-  `at:"scheduled.weather_region_daily"`(open·due·attempted·stored·failed), `at:"weather.fetch"` 의 source 별
+  `at:"scheduled.weather_region_daily"`(open·due·attempted·stored·approximated·failed — 전환 당일 아침 슬롯은
+  KR·JP 의 오늘이 `approximated` 로 세어진다), 읽기 경로의 `op:"today_approx"`, `at:"weather.fetch"` 의 source 별
   `status:200`·`resultCode:"00"`(KMA), 실행의 `cpuTime`, 그리고 Sentry `scheduled.weather_region_daily.slot_failed` 0건.
   ⚠ Sentry 0건만으로는 모자라다 — 마지막 틱이 워커 한도에 걸리면 그 경보는 Sentry 에 닿지 못한다(「실패」). 그래서
   슬롯 마지막 틱(현지 분 55)의 `at:"scheduled.weather_region_daily"` 줄에 `budgetExhausted: true` 가 **없는지**도 본다.
