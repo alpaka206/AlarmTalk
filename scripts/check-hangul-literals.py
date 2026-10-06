@@ -711,6 +711,31 @@ class SelfTests(unittest.TestCase):
         root = self.fixture(source=source, key='알람 %lld개')
         self.assertTrue(any('interpolation type unknown' in i.reason for i in audit(root, [])))
 
+    def test_member_types_are_not_borrowed_by_name(self):
+        use = '\nfunc show(b: B) -> String { String(localized: "알람 \\(b.value)개") }'
+        for declarations, expected in [
+                # An inferred member conflicts with another type's annotation.
+                ('struct A { let value: String }\nstruct B { let value = 3 }', None),
+                ('struct A { let value: String }\nstruct B { var value = Double(3) }', None),
+                ('struct A { let value: String }\nstruct B { let value = helper() }', None),
+                ('struct A { let value: Int }\nstruct B { static let value = 3 }', 'lld'),
+                # A function-local inference is not a member of any type.
+                ('struct B { let value: String }\nfunc local() { let value = 3 }', '@'),
+                ('class B { class var other: Int { 1 }\n let value = "x" }', '@')]:
+            for conversion in ('@', 'lld'):
+                root = self.fixture(source=declarations + use, key='알람 %' + conversion + '개')
+                issues = audit(root, [])
+                if expected is None:
+                    self.assertTrue(any('interpolation type unknown' in i.reason for i in issues), declarations)
+                else:
+                    self.assertEqual(any('key missing' in i.reason for i in issues), conversion != expected, declarations)
+        # `.count` is Int unless a custom `count` member says otherwise.
+        use = '\nfunc show(items: [Int]) -> String { String(localized: "알람 \\(items.count)개") }'
+        root = self.fixture(source='struct A { let count: Int }' + use, key='알람 %lld개')
+        self.assertFalse(any(i.path.endswith('.swift') for i in audit(root, [])))
+        root = self.fixture(source='struct A { let count = "many" }' + use, key='알람 %lld개')
+        self.assertTrue(any('interpolation type unknown' in i.reason for i in audit(root, [])))
+
     def test_android_plural_requires_locale_quantities(self):
         root = self.fixture(source='')
         base = root / 'apps/android-native/app/src/main/res'
