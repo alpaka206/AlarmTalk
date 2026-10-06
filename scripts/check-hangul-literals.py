@@ -888,6 +888,27 @@ def has_plural_variation(node) -> bool:
     return isinstance(node, list) and any(has_plural_variation(child) for child in node)
 
 
+def plural_missing(source, target) -> bool:
+    """The target drops a plural variation the source has, in the same scope.
+
+    A substitution that varies by plural in the source must vary in the
+    target's substitution of the same name; a top-level plural may move into a
+    substitution (translations restructure sentences), but must exist somewhere.
+    """
+    def substitutions(node):
+        return node.get("substitutions") if isinstance(node, dict) and isinstance(node.get("substitutions"), dict) else {}
+
+    def scopes(node):
+        """'' for a plural outside substitutions, plus substitutions that vary by plural."""
+        found = {name for name, meta in substitutions(node).items() if has_plural_variation(meta)}
+        if isinstance(node, dict) and has_plural_variation({k: v for k, v in node.items() if k != "substitutions"}):
+            found.add("")
+        return found
+    expected, present = scopes(source), scopes(target)
+    names = set(substitutions(target))
+    return any((scope in names and scope not in present) or (scope not in names and not present) for scope in expected)
+
+
 def plural_categories_missing(node, required: set[str]) -> bool:
     """True if any plural variation (including substitutions) lacks a category."""
     if isinstance(node, dict):
@@ -943,17 +964,15 @@ def device_fallback_missing(node) -> bool:
     return False
 
 
-def device_categories(node) -> set[str]:
-    """Device names declared anywhere under a localization (`iphone`, `other`, …)."""
+def device_categories(node, path: tuple = ()) -> set[str]:
+    """Device branches with their structural path (`substitutions/a/…/iphone`),
+    so a branch under one substitution is not satisfied by another's."""
     found = set()
     if isinstance(node, dict):
         for key, child in node.items():
             if key == "variations" and isinstance(child, dict) and isinstance(child.get("device"), dict):
-                found |= set(child["device"])
-            found |= device_categories(child)
-    elif isinstance(node, list):
-        for child in node:
-            found |= device_categories(child)
+                found |= {"/".join(path + ("device", name)) for name in child["device"]}
+            found |= device_categories(child, path + (key,))
     return found
 
 
@@ -993,7 +1012,7 @@ def catalog_issues(root: Path) -> list[Issue]:
                 # A plain leaf is the `other` sentence for every count. That is
                 # only equivalent where `other` is the sole category.
                 if (language != "ko" and PLURAL_CATEGORIES[language] != {"other"} and units
-                        and has_plural_variation(localizations.get("ko", {})) and not has_plural_variation(units)):
+                        and plural_missing(localizations.get("ko", {}), units)):
                     issues.append(Issue(relative, 0, key, f"{language} must vary by plural like the Korean source"))
                 if language in LANGUAGES and any(HANGUL.search(str(leaf.get("value", ""))) for leaf in leaves):
                     issues.append(Issue(relative, 0, key, f"{language} translation contains Hangul"))
@@ -2345,6 +2364,21 @@ class SelfTests(unittest.TestCase):
                 issues = [i.reason for i in catalog_issues(root) if i.path == CATALOGS[0]]
                 self.assertEqual("en must vary by plural like the Korean source" in issues, fails, (korean, english))
                 self.assertNotIn("ja must vary by plural like the Korean source", issues)
+        # Scoped: a substitution that varies in Korean must vary in the same substitution.
+        def two(a_plural, b_plural):
+            def meta(index, plural):
+                variations = {"plural": {"one": leaf("%arg"), "other": leaf("%arg")}} if plural else {"device": {"other": leaf("%arg")}}
+                return {"argNum": index, "formatSpecifier": "lld", "variations": variations}
+            return {"stringUnit": {"state": "translated", "value": "%#@a@ %#@b@"},
+                    "substitutions": {"a": meta(1, a_plural), "b": meta(2, b_plural)}}
+        for english, fails in [(two(True, False), False), (two(False, True), True)]:
+            root = self.fixture(source="", key="alarm.count")
+            file = root / CATALOGS[0]
+            data = json.loads(file.read_text(encoding="utf-8"))
+            data["strings"]["alarm.count"]["localizations"] = {"ko": two(True, False), "en": english, "ja": two(True, False)}
+            file.write_text(json.dumps(data), encoding="utf-8")
+            issues = [i.reason for i in catalog_issues(root)]
+            self.assertEqual("en must vary by plural like the Korean source" in issues, fails, english)
         # A plain Korean source does not force plural structure.
         root = self.fixture(source="", key="alarm.count")
         self.assertEqual(catalog_issues(root), [])
@@ -2477,6 +2511,17 @@ class SelfTests(unittest.TestCase):
             file.write_text(json.dumps(data), encoding="utf-8")
             self.assertEqual(any(i.reason.startswith("en device variations missing:") and "iphone" in i.reason
                                  for i in catalog_issues(root)), fails, english)
+        # The branch must be at the same place: under substitution `a`, not `b`.
+        def substitutions(a_devices, b_devices):
+            return {"stringUnit": {"state": "translated", "value": "%#@a@ %#@b@"}, "substitutions": {
+                name: {"argNum": index, "formatSpecifier": "@", "variations": {"device": {d: leaf("%arg") for d in devices}}}
+                for index, (name, devices) in enumerate([("a", a_devices), ("b", b_devices)], 1)}}
+        for english, fails in [(substitutions(["iphone", "other"], ["other"]), False),
+                               (substitutions(["other"], ["iphone", "other"]), True)]:
+            data = json.loads(original)
+            data["strings"]["alarm.tap"]["localizations"].update({"ko": substitutions(["iphone", "other"], ["other"]), "en": english})
+            file.write_text(json.dumps(data), encoding="utf-8")
+            self.assertEqual(any(i.reason.startswith("en device variations missing:") for i in catalog_issues(root)), fails, english)
         file.write_text(original, encoding="utf-8")
         plist = root / "apps/ios-native/AlarmTalk/InfoPlist.xcstrings"
         for english, fails in [("First line\nSecond line", False), ("One line", True)]:
