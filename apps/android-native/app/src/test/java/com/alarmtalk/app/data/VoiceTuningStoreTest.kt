@@ -92,9 +92,13 @@ class VoiceTuningStoreTest {
         val tuning = VoiceTuningStore(context)
         val markers = VoiceReplacementMarkerStore(context)
         tuning.write("user-m", "voice-m", VoiceTuning(pitchSemitones = -3f, generation = "2026-10-01 00:00:00"))
+        copies.mkdirs()
+        File(copies, "old_m3_0.wav").writeBytes(ByteArray(64))
 
+        // 내릴 알람이 하나도 없어도(강등 0) 옛 목소리의 사본까지 지운다(Codex #870).
         markers.applyIfNotApplied("user-m", "voice-m", "2026-10-07 00:00:00") { 0 }
         assertNull(tuning.read("user-m", "voice-m"))
+        assertFalse(copies.exists())
 
         // 이 기기에서 교체하며 고른 값(같은 세대)은 뒤늦은 같은 세대 신호가 지우지 않는다.
         tuning.write("user-m", "voice-m", VoiceTuning(pitchSemitones = -1f, generation = "2026-10-08 00:00:00"))

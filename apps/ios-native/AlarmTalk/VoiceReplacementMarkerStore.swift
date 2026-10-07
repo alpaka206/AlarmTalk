@@ -89,6 +89,7 @@ struct VoiceReplacementMarkerStore {
         }
         // 교체된 목소리의 높이 보정값(옛 녹음 기준)도 새 세대를 반영할 때 지운다(스펙 voice-and-message §4-3).
         VoiceTuningStore(defaults: defaults).forgetIfReplaced(userID: userID, voiceProfileID: profileID, generation: generation)
+        VoiceTuningRenderer.clearPreviewFiles()
         guard let degraded = degrade() else {
             markRetryLocked(userID, profileID, invalidatedAt)
             return .failure(profileID: profileID)
@@ -130,6 +131,7 @@ struct VoiceReplacementMarkerStore {
         let generation = invalidatedAt?.nilIfBlank
         if let generation, hasAppliedLocked(userID, profileID, generation) { return .nothing }
         VoiceTuningStore(defaults: defaults).forgetIfReplaced(userID: userID, voiceProfileID: profileID, generation: generation)
+        VoiceTuningRenderer.clearPreviewFiles()
         guard let degraded = degrade() else {
             markRetryLocked(userID, profileID, invalidatedAt)
             return .failure(profileID: profileID)

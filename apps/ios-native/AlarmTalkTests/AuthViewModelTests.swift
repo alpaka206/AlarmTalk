@@ -1584,6 +1584,34 @@ final class AuthViewModelTests: XCTestCase {
         XCTAssertEqual(snapshotStore.read(userID: "user-2").subscriptionResponse?.plan?.key, "personal")
     }
 
+    /// 높이를 구워 넣은 알람 소리 파일은 **예약을 내린 뒤에만** 지운다 — 내리지 못했으면 남긴다(스펙 §4-3, Codex #870).
+    func test_deleteAccount_removesTunedAlarmSoundsOnlyAfterAlarmsStop() async throws {
+        let sounds = try FileManager.default
+            .url(for: .libraryDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
+            .appendingPathComponent("Sounds", isDirectory: true)
+        try FileManager.default.createDirectory(at: sounds, withIntermediateDirectories: true)
+
+        for stops in [false, true] {
+            let tuned = sounds.appendingPathComponent("voice-logout-\(UUID().uuidString.lowercased())-ts-15.caf")
+            try Data(count: 64).write(to: tuned)
+            defer { try? FileManager.default.removeItem(at: tuned) }
+            let api = MockAuthAPI()
+            api.deleteAccountResult = .success(DeleteAccountResponse(success: true))
+            let vm = AuthViewModel(api: api, appleCredentialProvider: MockAppleCredentialProvider())
+            vm._setSessionForTesting(makeEmailSession())
+            var tunedFileWhenStopping: Bool?
+            vm.onLeaveAccountStopAlarms = { _ in
+                tunedFileWhenStopping = FileManager.default.fileExists(atPath: tuned.path)
+                return stops
+            }
+
+            await vm.deleteAccount()
+
+            XCTAssertEqual(tunedFileWhenStopping, true, "예약을 내리기 전에 지우면 그 사이 울리는 알람이 목소리를 잃는다")
+            XCTAssertEqual(FileManager.default.fileExists(atPath: tuned.path), !stops, "stops=\(stops)")
+        }
+    }
+
     func test_requestAccountDeletion_signsOutAndClearsSnapshot() async {
         let suiteName = "AuthViewModelTests-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
