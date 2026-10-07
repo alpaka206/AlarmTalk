@@ -432,11 +432,13 @@ final class VoiceStudioViewModel: ObservableObject {
                 // (화면 이탈 등) 청취를 기록하지 않는다.
                 guard tuningPlayerFailed else { return .interrupted }
                 onPlayingOriginalInstead?()
-                await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-                    previewPlayer.onFinish = { continuation.resume() }
-                    if (try? previewPlayer.play(url: url)) == nil { continuation.resume() }
+                // ⚠ 원본도 못 틀면 **실패**다 — 아무것도 안 들렸는데 청취를 기록하면 저장이 열린다(Codex #870).
+                let fallbackStarted = await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
+                    previewPlayer.onFinish = { continuation.resume(returning: true) }
+                    if (try? previewPlayer.play(url: url)) == nil { continuation.resume(returning: false) }
                 }
                 previewPlayer.onFinish = nil
+                guard fallbackStarted else { return .failed(String(localized: "미리듣기를 재생하지 못했어요.")) }
             }
 
             if let playbackToken = response.previewPlaybackToken {
@@ -1495,6 +1497,11 @@ final class VoiceStudioViewModel: ObservableObject {
         #if DEBUG
         if let testAccessibleVoiceIDsOverride { accessible = testAccessibleVoiceIDsOverride }
         #endif
+        // 접근을 잃은 목소리의 높이 보정값도 지운다 — 그 목소리를 쓰는 알람이 없어도(Codex #870). 판정은 아래 강등과 같은
+        // 권위 목록이다(알람용 사본은 강등이 그 클립의 스테이징 파일과 함께 지운다).
+        if VoiceTuningStore().retainOnly(userID: owner, voiceProfileIDs: accessible) {
+            VoiceTuningRenderer.clearPreviewFiles()
+        }
         // ⚠ **id 가 아니라 '행' 을 고른다.** 예전에는 잃은 profileId 를 모아
         // `degradeAlarms(usingVoiceProfileIDs:)` 에 넘겼는데, 그 경로는 id 로 다시 훑어
         // **모든 origin·모든 소유자**를 잡는다 — 같은 공유 목소리를 쓰는 **받은 알람까지**

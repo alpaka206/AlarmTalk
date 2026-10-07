@@ -58,6 +58,21 @@ class VoiceTuningStore(context: Context) {
         prefs.edit().apply { keys.forEach(::remove) }.apply()
     }
 
+    /**
+     * 그 계정의 값 중 [accessibleVoiceIds] 에 없는 목소리의 것을 지운다 — 권위 있는 목록으로 접근을 잃은 목소리가
+     * 확인됐을 때(삭제·공유 해제·제공자 취소, 다른 기기에서 일어난 것 포함). 그 목소리를 쓰는 알람이 없어도 지운다
+     * (Codex #870). 무엇이든 지웠으면 true.
+     */
+    fun retainOnly(userId: String?, accessibleVoiceIds: Set<String>): Boolean {
+        val user = userId?.trim().orEmpty()
+        if (user.isEmpty()) return false
+        val prefix = "${KEY_PREFIX}${user}_"
+        val lost = prefs.all.keys.filter { it.startsWith(prefix) && it.removePrefix(prefix) !in accessibleVoiceIds }
+        if (lost.isEmpty()) return false
+        prefs.edit().apply { lost.forEach(::remove) }.apply()
+        return true
+    }
+
     /** 그 계정의 값을 모두 지운다 — 명시적 로그아웃·탈퇴. */
     fun clearUser(userId: String?) {
         val user = userId?.trim().orEmpty()

@@ -477,7 +477,11 @@ final class AlarmKitViewModel: ObservableObject {
         // OS만 취소하고 pending을 지워 디스크 행에 죽은 핸들이 남으므로 전부 보류한다.
         guard store.hasLoadedFromDisk else { return 0 }
         let pending = PendingAlarmCancellationStore.all
-        guard !pending.isEmpty else { return 0 }
+        guard !pending.isEmpty else {
+            // 남은 취소가 없다 — 로그아웃 때 미뤄 둔 '높이를 구운 파일' 정리가 있으면 마친다(Codex #870).
+            AlarmSoundStaging.finishDeferredTunedCleanup()
+            return 0
+        }
         // `AlarmManager.shared.alarms` 가 권위다 — 이미 사라진 예약을 취소하려 들지 않는다.
         // 목록을 못 읽으면(권한 회수 등) 이번 회차는 건너뛴다. 목록은 그대로 남아 다음 기회에.
         // OS 접점만 주입 가능하게 두어 로드 전후의 실제 재처리/행 정리를 회귀 사례로 쓴다.
@@ -529,6 +533,10 @@ final class AlarmKitViewModel: ObservableObject {
         // 안전판은 `enabled` 가 아니라 **UUID 일치**다: 그 사이 새 UUID 로 다시 예약된
         // 행이라면 값이 달라 여기 걸리지 않는다.
         applyResolvedCancellations(resolved, origins: resolvedOrigins, store: store)
+        // 로그아웃 때 남은 예약 때문에 미뤄 둔 '높이를 구운 파일' 정리를 — 남은 취소가 모두 끝났으면 — 마친다(Codex #870).
+        if PendingAlarmCancellationStore.all.isEmpty {
+            AlarmSoundStaging.finishDeferredTunedCleanup()
+        }
         return cleared
     }
 

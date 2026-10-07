@@ -68,6 +68,21 @@ class VoiceTuningStoreTest {
         assertEquals(1f, store.read("user-a", "voice-kept")!!.pitchSemitones, 0f)
     }
 
+    /** 권위 있는 목록으로 접근을 잃은 목소리의 값은 — 알람이 없어도 — 지운다(Codex #870). */
+    @Test
+    fun `접근을 잃은 목소리 값은 그 계정에서만 지운다`() {
+        val store = VoiceTuningStore(context)
+        store.write("user-a", "kept", VoiceTuning(pitchSemitones = -2f))
+        store.write("user-a", "lost", VoiceTuning(pitchSemitones = -1f))
+        store.write("user-b", "lost", VoiceTuning(pitchSemitones = -3f))
+
+        assertTrue(store.retainOnly("user-a", setOf("kept")))
+        assertEquals(-2f, store.read("user-a", "kept")!!.pitchSemitones, 0f)
+        assertNull(store.read("user-a", "lost"))
+        assertEquals("다른 계정은 그 계정의 목록으로만 판정한다", -3f, store.read("user-b", "lost")!!.pitchSemitones, 0f)
+        assertFalse(store.retainOnly("user-a", setOf("kept")))
+    }
+
     @Test
     fun `로그아웃하면 그 계정 값만 모두 사라진다`() {
         val store = VoiceTuningStore(context)

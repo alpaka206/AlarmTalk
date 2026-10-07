@@ -24,6 +24,8 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
 class AlarmRepository(
@@ -890,14 +892,22 @@ class AlarmRepository(
     suspend fun degradeAlarmsWithInaccessibleVoice(
         accessibleVoiceIds: Set<String>,
         expectedOwnerUserId: String?,
-    ): Int =
-        degradeMatchingLocalOwnedVoiceAlarms(expectedOwnerUserId) { alarm ->
+    ): Int {
+        // 접근을 잃은 목소리의 높이 보정값·사본도 지운다 — 그 목소리를 쓰는 알람이 없어 아래 강등이 아무것도 안 해도
+        // (Codex #870). 판정은 강등과 같은 권위 목록이다. 사본은 캐시라 통째로 지운다.
+        withContext(Dispatchers.IO) {
+            if (VoiceTuningStore(context).retainOnly(expectedOwnerUserId, accessibleVoiceIds)) {
+                VoiceTuningRenderer.clearAll(context)
+            }
+        }
+        return degradeMatchingLocalOwnedVoiceAlarms(expectedOwnerUserId) { alarm ->
             !alarm.voiceProfileId.isNullOrBlank() &&
                 // 시스템 스톡 버킷/보이스는 영구라 보존. 클론(비-system) 보이스는 단일클립·버킷 모두
                 // 접근권 상실(공유해제·제공자취소·삭제) 시 강등 대상.
                 !isSystemVoiceId(alarm.voiceProfileId) &&
                 alarm.voiceProfileId !in accessibleVoiceIds
         }
+    }
 
     // 방금 삭제한 특정 목소리를 쓰는 내 알람만 즉시 강등한다 — 소셜 목록 신선도(reconcile 가드)와
     // 무관하게 삭제 확정 정보로 바로 기본 목소리(미나) 알람으로 바꾼다.

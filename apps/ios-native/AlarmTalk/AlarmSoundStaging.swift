@@ -56,6 +56,40 @@ private final class TunedStagingEpoch: @unchecked Sendable {
     func bump() { lock.withLock { value += 1 } }
 }
 
+/// 로그아웃·탈퇴 때 **취소에 실패해 남은 예약** 때문에 못 지운 '높이를 구운 스테이징 파일' 이름들(Codex #870).
+/// 그 예약이 파일을 쓰므로 그때는 남기고, 취소 재시도(`AlarmKitViewModel.retryPendingCancellations`)가 남은 취소를 모두
+/// 끝내면 지운다. 같은 계정이 다시 로그인해 그 파일을 다시 예약에 쓰면 목록에서 뺀다 — 쓰는 파일을 지우지 않게.
+private enum DeferredTunedCleanup {
+    private static let lock = NSLock()
+    private static var key: String { "voice_tuning.deferred_staged_cleanup\(TestIsolation.storageSuffix)" }
+
+    static func add(_ names: [String]) {
+        guard !names.isEmpty else { return }
+        lock.withLock {
+            let current = Set(UserDefaults.standard.stringArray(forKey: key) ?? [])
+            UserDefaults.standard.set(Array(current.union(names)).sorted(), forKey: key)
+        }
+    }
+
+    static func remove(_ name: String) {
+        lock.withLock {
+            guard var current = UserDefaults.standard.stringArray(forKey: key), let index = current.firstIndex(of: name) else { return }
+            current.remove(at: index)
+            UserDefaults.standard.set(current, forKey: key)
+        }
+    }
+
+    static func takeAll() -> [String] {
+        lock.withLock {
+            let names = UserDefaults.standard.stringArray(forKey: key) ?? []
+            UserDefaults.standard.removeObject(forKey: key)
+            return names
+        }
+    }
+
+    static var pending: [String] { lock.withLock { UserDefaults.standard.stringArray(forKey: key) ?? [] } }
+}
+
 @MainActor
 enum AlarmSoundStaging {
 
@@ -118,6 +152,8 @@ enum AlarmSoundStaging {
             baseName += "-t\(tag)"
             let stagedURL = soundsDir.appendingPathComponent("\(baseName).caf")
             // 대개 `prestageTuned` 가 메인 밖에서 이미 만들어 두었다 — 없을 때만 여기서 굽는다.
+            // 다시 예약에 쓰는 파일이다 — 로그아웃 때 미뤄 둔 정리 목록에 있었으면 뺀다.
+            DeferredTunedCleanup.remove("\(baseName).caf")
             if !isUsableStagedFile(stagedURL) {
                 try? fm.removeItem(at: stagedURL)
                 try writeAtomically(into: stagedURL) { tmp in
@@ -288,6 +324,7 @@ enum AlarmSoundStaging {
             // 그 사이 지나가며 스테이징 파일을 지운 **뒤에** 옛 바이트로 구운 파일을 게시하고, `stage` 가 그걸 재사용한다
             // — 은퇴한 목소리로 우는 경주(#703)가 되살아난다.
             AudioCacheStore.withCacheKeyLock(key) {
+                DeferredTunedCleanup.remove(stagedURL.lastPathComponent)
                 if isUsableStagedFile(stagedURL) { return }
                 try? writeAtomically(into: stagedURL) { tmp in
                     try writeTunedCAF(from: sourceURL, to: tmp, gain: Float(gainPercent) / 100, tuning: tuning)
@@ -303,6 +340,7 @@ enum AlarmSoundStaging {
     /// 다듬지 않은 파일은 건드리지 않는다(이 기능 이전과 같다).
     nonisolated static func clearTunedStagedSoundFiles() {
         TunedStagingEpoch.shared.bump()
+        _ = DeferredTunedCleanup.takeAll()   // 전부 지우므로 미뤄 둔 목록도 끝났다
         let fm = FileManager.default
         guard let soundsDir = try? ensureSoundsDirectory() else { return }
         let entries = (try? fm.contentsOfDirectory(atPath: soundsDir.path)) ?? []
@@ -310,6 +348,24 @@ enum AlarmSoundStaging {
             try? fm.removeItem(at: soundsDir.appendingPathComponent(name))
         }
     }
+
+    /// 지금 있는 높이 구운 스테이징 파일을 '미뤄 둔 정리' 로 적는다 — 로그아웃 때 취소에 실패한 예약이 남아 지금은 못 지울 때.
+    nonisolated static func deferTunedStagedSoundFiles() {
+        guard let soundsDir = try? ensureSoundsDirectory() else { return }
+        let entries = (try? FileManager.default.contentsOfDirectory(atPath: soundsDir.path)) ?? []
+        DeferredTunedCleanup.add(entries.filter(isTunedStagedFileName))
+    }
+
+    /// 미뤄 둔 정리를 마친다 — 취소 재시도가 남은 취소를 모두 끝냈을 때(`AlarmKitViewModel.retryPendingCancellations`).
+    nonisolated static func finishDeferredTunedCleanup() {
+        guard let soundsDir = try? ensureSoundsDirectory() else { return }
+        for name in DeferredTunedCleanup.takeAll() {
+            try? FileManager.default.removeItem(at: soundsDir.appendingPathComponent(name))
+        }
+    }
+
+    /// 미뤄 둔 정리 목록(테스트용).
+    nonisolated static var deferredTunedCleanupNames: [String] { DeferredTunedCleanup.pending }
 
     /// 굽는 사이 정리(`clearTunedStagedSoundFiles`)가 지나갔으면 방금 게시한 파일을 지운다.
     nonisolated static func discardIfCleanedSince(_ epoch: Int, _ stagedURL: URL) {

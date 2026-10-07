@@ -443,6 +443,8 @@ struct AlarmTalkApp: App {
                                 // 실패해 손잡이가 남은 예약이 있으면 그 예약이 쓰므로 남긴다.
                                 if !alarmStore.alarms.contains(where: { $0.alarmKitID?.nilIfBlank != nil }) {
                                     AlarmSoundStaging.clearTunedStagedSoundFiles()
+                                } else {
+                                    AlarmSoundStaging.deferTunedStagedSoundFiles()
                                 }
                                 // ⚠ **다시 확인한다 — 그 사이 탈퇴가 철회됐을 수 있다.**
                                 // 위 호출은 await 이라, 그동안 사용자가 철회하면 표시가

@@ -120,6 +120,22 @@ struct VoiceTuningStore {
         }
     }
 
+    /// 그 계정의 값 중 `accessible` 에 없는 목소리의 것을 지운다 — 권위 있는 목록으로 접근을 잃은 목소리가 확인됐을 때
+    /// (삭제·공유 해제, 다른 기기에서 일어난 것 포함). 그 목소리를 쓰는 알람이 없어도 지운다(Codex #870). 지웠으면 true.
+    @discardableResult
+    func retainOnly(userID: String?, voiceProfileIDs accessible: Set<String>) -> Bool {
+        guard let userID = userID?.trimmingCharacters(in: .whitespacesAndNewlines), !userID.isEmpty else { return false }
+        let prefix = "\(Self.keyPrefix)\(userID)_"
+        var removed = false
+        for key in defaults.dictionaryRepresentation().keys where key.hasPrefix(prefix) {
+            if !accessible.contains(String(key.dropFirst(prefix.count))) {
+                defaults.removeObject(forKey: key)
+                removed = true
+            }
+        }
+        return removed
+    }
+
     /// 그 계정의 값을 모두 지운다 — 명시적 로그아웃·탈퇴(`AuthViewModel.clearAccountPreferences`).
     func clear(userID: String?) {
         guard let userID = userID?.trimmingCharacters(in: .whitespacesAndNewlines), !userID.isEmpty else { return }

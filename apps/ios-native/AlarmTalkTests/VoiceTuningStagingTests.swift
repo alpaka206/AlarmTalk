@@ -63,6 +63,33 @@ final class VoiceTuningStagingTests: XCTestCase {
 
     // MARK: -
 
+    /// 로그아웃 때 취소에 실패한 예약이 남아 못 지운 파일은 '미뤄 둔 정리' 로 적었다가, 남은 취소가 끝나면 지운다 —
+    /// 그 사이 같은 계정이 다시 예약에 쓴 파일은 빼고(Codex #870).
+    func test_deferredTunedCleanup_sparesFilesReusedByANewReservation() throws {
+        AlarmSoundStaging.finishDeferredTunedCleanup()
+        let source = try makeSineWAV(hz: 140, seconds: 1, amplitude: 0.3)
+        let key = uniqueKey("deferred")
+        let tuning = VoiceTuning(pitchSt: -2, source: .user)
+        let reusedName = try AlarmSoundStaging.stage(url: source, key: key, tuning: tuning)
+        let sounds = try XCTUnwrap(FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first)
+            .appendingPathComponent("Sounds", isDirectory: true)
+        let orphan = sounds.appendingPathComponent("voice-deferred-orphan-\(UUID().uuidString.lowercased())-ts-15.caf")
+        try Data(count: 64).write(to: orphan)
+        addTeardownBlock { try? FileManager.default.removeItem(at: orphan) }
+
+        AlarmSoundStaging.deferTunedStagedSoundFiles()
+        XCTAssertTrue(AlarmSoundStaging.deferredTunedCleanupNames.contains(orphan.lastPathComponent))
+        // 같은 계정이 다시 로그인해 그 파일을 다시 예약에 쓴다.
+        XCTAssertEqual(try AlarmSoundStaging.stage(url: source, key: key, tuning: tuning), reusedName)
+        let reused = try stagedURL(named: reusedName)
+        XCTAssertFalse(AlarmSoundStaging.deferredTunedCleanupNames.contains(reused.lastPathComponent))
+
+        AlarmSoundStaging.finishDeferredTunedCleanup()
+        XCTAssertFalse(FileManager.default.fileExists(atPath: orphan.path), "남은 취소가 끝났으니 지운다")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: reused.path), "다시 쓰는 파일은 지우지 않는다")
+        XCTAssertTrue(AlarmSoundStaging.deferredTunedCleanupNames.isEmpty)
+    }
+
     func test_neutralTuning_keepsTheLegacyName() throws {
         let source = try makeSineWAV(hz: 220, seconds: 1, amplitude: 0.3)
         let key = uniqueKey("neutral")

@@ -252,6 +252,23 @@ final class VoiceTuningAnalyzerTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: late.path), "정리가 없었으면 그대로 둔다")
     }
 
+    /// 권위 있는 목록으로 접근을 잃은 목소리의 값은 — 그 목소리를 쓰는 알람이 없어도 — 지운다(Codex #870).
+    func test_store_retainOnly_dropsLostVoicesOfThatAccount() throws {
+        let suite = "voice-tuning-test-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = VoiceTuningStore(defaults: defaults)
+        store.save(VoiceTuning(pitchSt: -2, source: .user), userID: "u1", voiceProfileID: "kept")
+        store.save(VoiceTuning(pitchSt: -1, source: .user), userID: "u1", voiceProfileID: "lost")
+        store.save(VoiceTuning(pitchSt: -3, source: .user), userID: "u2", voiceProfileID: "lost")
+
+        XCTAssertTrue(store.retainOnly(userID: "u1", voiceProfileIDs: ["kept"]))
+        XCTAssertNotNil(store.tuning(userID: "u1", voiceProfileID: "kept"))
+        XCTAssertNil(store.tuning(userID: "u1", voiceProfileID: "lost"))
+        XCTAssertNotNil(store.tuning(userID: "u2", voiceProfileID: "lost"), "다른 계정은 그 계정의 목록으로만 판정한다")
+        XCTAssertFalse(store.retainOnly(userID: "u1", voiceProfileIDs: ["kept"]))
+    }
+
     func test_clearTunedStagedSoundFiles_keepsUntunedFiles() throws {
         let sounds = try FileManager.default
             .url(for: .libraryDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
