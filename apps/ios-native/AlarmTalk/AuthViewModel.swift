@@ -2088,6 +2088,7 @@ final class AuthViewModel: ObservableObject {
         // 목소리 높이 보정값과 등록 미리듣기 사본(목소리의 복사본)도 명시적으로 끝낼 때만 지운다(스펙 §4-3).
         VoiceTuningStore().clear(userID: userID)
         VoiceTuningRenderer.clearPreviewFiles()
+        AlarmSoundStaging.clearTunedStagedSoundFiles()
     }
 
     func signOutExplicitly() {

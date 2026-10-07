@@ -258,6 +258,25 @@ enum AlarmSoundStaging {
         }
     }
 
+    /// 목소리 높이를 구워 넣은 스테이징 파일(`voice-<키>[-v<크기>]-ts<값>.caf`)을 **모두** 지운다 — 명시적
+    /// 로그아웃·탈퇴(`AuthViewModel.clearAccountPreferences`). 사본도 목소리의 복사본이다(스펙 §4-3). 그 계정의
+    /// 알람은 이미 예약이 내려가 있고(`stopAllScheduledAlarms`), 다시 필요하면 다음 예약이 새로 굽는다.
+    /// 다듬지 않은 파일은 건드리지 않는다(이 기능 이전과 같다).
+    nonisolated static func clearTunedStagedSoundFiles() {
+        let fm = FileManager.default
+        guard let soundsDir = try? ensureSoundsDirectory() else { return }
+        let entries = (try? fm.contentsOfDirectory(atPath: soundsDir.path)) ?? []
+        for name in entries where isTunedStagedFileName(name) {
+            try? fm.removeItem(at: soundsDir.appendingPathComponent(name))
+        }
+    }
+
+    /// 높이 꼬리표(`-t` + `VoiceTuning.soundTag`)가 붙은 스테이징 파일 이름인가.
+    nonisolated static func isTunedStagedFileName(_ name: String) -> Bool {
+        name.hasPrefix(stagedNamePrefix)
+            && name.range(of: #"-ts-?[0-9]+\.caf$"#, options: .regularExpression) != nil
+    }
+
     // MARK: - Internal helpers
 
     private nonisolated static func ensureSoundsDirectory() throws -> URL {

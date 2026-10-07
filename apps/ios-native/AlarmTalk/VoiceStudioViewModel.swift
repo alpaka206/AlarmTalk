@@ -78,12 +78,12 @@ final class VoiceStudioViewModel: ObservableObject {
     /// 방금 만든 **초안**. 목록 새로고침이 아직 안 끝났어도 확인 스텝이 이걸로 그린다.
     /// 승격하거나 지우면 nil 로 되돌린다.
     @Published var pendingDraft: VoiceProfile?
-    /// 방금 만든 초안을 **어떤 오디오로 만들었는가**(녹음 파일 또는 가져온 파일).
+    /// 방금 만든 초안의 **등록 녹음 높이**(F0) — 등록 미리듣기의 다듬기 자동 추천이 쓴다.
     ///
-    /// 등록 미리듣기의 다듬기 자동 추천이 원래 목소리 높이를 재는 데 쓴다.
-    /// 초안 id 와 짝으로 둔다 — 다른 초안의 녹음을 재면 엉뚱한 높이를 추천한다.
-    /// 파일이 이미 지워졌으면 추천은 0(그대로)이다.
-    @Published var pendingDraftSource: (draftID: String, url: URL)?
+    /// 녹음은 **올리는 동안** 재고 숫자만 남긴다 — 녹음 파일 경로를 붙들지 않는다(목소리 원본을
+    /// 화면 수명 너머로 들고 있지 않게, 스펙 §4-3 · Codex #870). 초안 id 와 짝으로 둔다 — 다른
+    /// 초안의 높이를 쓰면 엉뚱한 값을 추천한다. 재지 못했으면 추천은 0(그대로)이다.
+    @Published var pendingDraftSourceMeasurement: (draftID: String, measurement: VoiceTuningAnalyzer.Measurement?)?
     @Published var ttsText = "좋은 아침이에요! 일어나세요! 오늘 하루도 힘내봐요!"
     @Published var ttsCategory = "morning"
     @Published var ttsLanguage = "ko"
@@ -188,7 +188,7 @@ final class VoiceStudioViewModel: ObservableObject {
         previewPlayer.stop()
         tuningPreviewPlayer.stop()
         VoiceTuningRenderer.clearPreviewFiles()
-        pendingDraftSource = nil
+        pendingDraftSourceMeasurement = nil
         recorder.clearLatest()
         profiles = bundledSystemVoiceProfiles()
         familyVoices = []
@@ -271,7 +271,9 @@ final class VoiceStudioViewModel: ObservableObject {
     /// 거슬린다). 안 듣고 있으면 그때 튼다. 행의 재생 버튼은 예전대로 토글
     /// ([previewGreeting])을 쓴다 — 누르면 멈춰야 하니까.
     /// 안드로이드 `ensureAlarmVolumePreview` 미러.
-    func ensureGreetingPreview(voiceId: String, session: AuthSession?, volumePercent: Int) async {
+    /// - Parameter tuning: 이 알람에 실릴 목소리 높이(`AlarmEditorSheet.editorVoiceTuning`) — 울릴 때와 같은
+    ///   소리를 들려준다(스펙 §4-3). 받은 알람·가족에게 보내는 알람·기본 목소리는 nil.
+    func ensureGreetingPreview(voiceId: String, session: AuthSession?, volumePercent: Int, tuning: VoiceTuning? = nil) async {
         if previewingGreetingVoiceId == voiceId {
             if previewPlayer.isPlaying {
                 previewPlayer.setVolume(percent: volumePercent)
@@ -280,13 +282,13 @@ final class VoiceStudioViewModel: ObservableObject {
             // 끝까지 재생돼 멎었는데 표식만 남은 경우 — 그대로 부르면 토글이 '정지'로 읽힌다.
             previewingGreetingVoiceId = nil
         }
-        await previewGreeting(voiceId: voiceId, session: session, volumePercent: volumePercent)
+        await previewGreeting(voiceId: voiceId, session: session, volumePercent: volumePercent, tuning: tuning)
     }
 
     /// - Parameter volumePercent: 목소리 크기 화면에서 부를 때의 게인(0~100). `nil` 이면
     ///   원래대로 기본 크기 — 목소리를 고르는 자리에서는 '어떤 목소리인가' 를 듣는 것이라
     ///   크기를 건드리지 않는다.
-    func previewGreeting(voiceId: String, session: AuthSession?, volumePercent: Int? = nil) async {
+    func previewGreeting(voiceId: String, session: AuthSession?, volumePercent: Int? = nil, tuning: VoiceTuning? = nil) async {
         if previewingGreetingVoiceId == voiceId {
             greetingPreviewRequestId += 1
             previewPlayer.stop()
@@ -331,6 +333,24 @@ final class VoiceStudioViewModel: ObservableObject {
         previewingGreetingVoiceId = voiceId
         if await prepareStockClip(clip, session: session) != nil {
             guard requestId == greetingPreviewRequestId, previewingGreetingVoiceId == voiceId else { return }
+            if let tuning, !tuning.isNeutral, let prepared = preparedAlarm,
+               let source = try? AudioCacheStore.url(for: prepared.localAudioFileName) {
+                // 높이를 바꾼 사본을 튼다 — 울릴 때(스테이징)와 같은 처리다.
+                let tuned = await Task.detached(priority: .userInitiated) {
+                    (try? VoiceTuningRenderer.previewFile(for: source, tuning: tuning)) ?? source
+                }.value
+                guard requestId == greetingPreviewRequestId, previewingGreetingVoiceId == voiceId else { return }
+                do {
+                    if let volumePercent {
+                        try previewPlayer.play(url: tuned, volumePercent: volumePercent)
+                    } else {
+                        try previewPlayer.play(url: tuned)
+                    }
+                } catch {
+                    statusMessage = mapVoiceError(error)
+                }
+                return
+            }
             playPreparedAudio(volumePercent: volumePercent)
         } else {
             if requestId == greetingPreviewRequestId {
@@ -1026,6 +1046,10 @@ final class VoiceStudioViewModel: ObservableObject {
         guard !isBusy else { return nil }
         isBusy = true
         defer { isBusy = false }
+        // 등록 녹음의 높이를 **올리는 동안** 잰다(다듬기 추천용 — 숫자만 남긴다).
+        let measuring = Task.detached(priority: .utility) {
+            VoiceTuningAnalyzer.measure(url: audioFileURL, maxSeconds: 30)
+        }
         do {
             let profile = try await api.cloneVoice(
                 audioFileURL: audioFileURL,
@@ -1039,8 +1063,8 @@ final class VoiceStudioViewModel: ObservableObject {
                 language: language
             )
             selectedProfileID = profile.id
-            // 다듬기 추천이 원래 목소리 높이를 재도록 소스를 초안과 짝지어 둔다.
-            pendingDraftSource = (profile.id, audioFileURL)
+            // 다듬기 추천이 쓸 원래 목소리 높이를 초안과 짝지어 둔다(파일이 아니라 숫자).
+            pendingDraftSourceMeasurement = (profile.id, await measuring.value)
             // ⚠ **'등록했어요' 같은 안내를 두지 말 것**(2026-09-21 지시). 이 문구는 다음
             //   화면(미리듣기 → 진행률)이 이미 말하는 것을 한 번 더 말하는 데다, 아무도
             //   지우지 않아 **목소리 탭 맨 위에 그대로 남았다.** 안드로이드도 성공 갈래에서

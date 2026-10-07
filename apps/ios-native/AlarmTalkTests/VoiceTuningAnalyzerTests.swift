@@ -200,6 +200,37 @@ final class VoiceTuningAnalyzerTests: XCTestCase {
         XCTAssertEqual(store.tuning(userID: "u12", voiceProfileID: "v3")?.pitchSt, -4)
     }
 
+    /// 명시적 로그아웃 때 지우는 것은 **높이를 구워 넣은** 스테이징 파일뿐이다(Codex #870).
+    func test_tunedStagedFileName_matchesOnlyTunedCopies() {
+        XCTAssertTrue(AlarmSoundStaging.isTunedStagedFileName("voice-abc-ts-15.caf"))
+        XCTAssertTrue(AlarmSoundStaging.isTunedStagedFileName("voice-abc-v80-ts20.caf"))
+        XCTAssertFalse(AlarmSoundStaging.isTunedStagedFileName("voice-abc.caf"))
+        XCTAssertFalse(AlarmSoundStaging.isTunedStagedFileName("voice-abc-v80.caf"))
+        XCTAssertFalse(AlarmSoundStaging.isTunedStagedFileName("voice-abc.m4a"))
+        XCTAssertFalse(AlarmSoundStaging.isTunedStagedFileName("ringtone-ts-15.caf"))
+    }
+
+    func test_clearTunedStagedSoundFiles_keepsUntunedFiles() throws {
+        let sounds = try FileManager.default
+            .url(for: .libraryDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
+            .appendingPathComponent("Sounds", isDirectory: true)
+        try FileManager.default.createDirectory(at: sounds, withIntermediateDirectories: true)
+        let key = "tuning-logout-\(UUID().uuidString.lowercased())"
+        let tuned = sounds.appendingPathComponent("voice-\(key)-ts-15.caf")
+        let untuned = sounds.appendingPathComponent("voice-\(key).caf")
+        try Data(count: 64).write(to: tuned)
+        try Data(count: 64).write(to: untuned)
+        defer {
+            try? FileManager.default.removeItem(at: tuned)
+            try? FileManager.default.removeItem(at: untuned)
+        }
+
+        AlarmSoundStaging.clearTunedStagedSoundFiles()
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: tuned.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: untuned.path))
+    }
+
     /// 등록 미리듣기 사본은 통째로 지울 수 있다.
     func test_clearPreviewFiles_removesTheFolder() throws {
         let dir = VoiceTuningRenderer.previewDirectory

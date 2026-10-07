@@ -2034,13 +2034,20 @@ internal fun AlarmEditorScreen(
                             voiceProfileId = profileId,
                             stockClips = stockClips,
                             volumePercent = editor.voiceVolumePercent,
-                            // 등록 때 맞춘 목소리 보정 — 울릴 때와 같은 소리를 들려준다. 가족에게
-                            // 보내는 알람은 받는 기기에 이 값이 없으므로(기기 저장) 걸지 않는다.
-                            tuning = if (familyAlarmMode) {
+                            // 등록 때 맞춘 목소리 높이 — 울릴 때(`RingingService.voiceTuningFor`)와 같은 판정으로
+                            // 같은 소리를 들려준다. 가족에게 보내는 알람(받는 기기에 이 값이 없다)·받은 알람
+                            // 편집에는 걸지 않는다(스펙 voice-and-message §4-3).
+                            tuning = if (familyAlarmMode ||
+                                !com.alarmtalk.app.data.VoiceTuning.appliesTo(
+                                    origin = alarm?.origin ?: com.alarmtalk.app.data.AlarmOrigins.LOCAL_OWNED,
+                                    voiceSource = com.alarmtalk.app.data.VoiceSources.TTS_PROFILE,
+                                    voiceProfileId = profileId,
+                                )
+                            ) {
                                 null
                             } else {
                                 com.alarmtalk.app.data.VoiceTuningStore(context)
-                                    .read(authSession?.user?.id, profileId)
+                                    .read(alarm?.ownerUserId?.takeIf { it.isNotBlank() } ?: authSession?.user?.id, profileId)
                             },
                         )
                     }

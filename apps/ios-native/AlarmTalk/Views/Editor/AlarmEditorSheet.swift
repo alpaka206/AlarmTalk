@@ -834,13 +834,24 @@ struct AlarmEditorSheet: View {
 
     /// 슬라이더에서 손을 뗐을 때 — 듣고 있으면 크기만 맞추고, 아니면 튼다.
     func ensureVoicePreviewAtVolume(voiceId: String, volumePercent: Int) {
+        let tuning = editorVoiceTuning(voiceId: voiceId)
         Task {
             await voiceStudio.ensureGreetingPreview(
                 voiceId: voiceId,
                 session: auth.session,
-                volumePercent: volumePercent
+                volumePercent: volumePercent,
+                tuning: tuning
             )
         }
+    }
+
+    /// 목소리 크기 미리듣기에 실을 목소리 높이 — 울릴 때(`AlarmSoundResolver.voiceTuning(for:)`)와 같은 판정이다.
+    /// 가족에게 보내는 알람(받는 기기에 이 값이 없다)·받은 알람 편집·기본 목소리에는 싣지 않는다(스펙 §4-3).
+    private func editorVoiceTuning(voiceId: String) -> VoiceTuning? {
+        guard !target.familyAlarmMode, !isSystemVoiceId(voiceId) else { return nil }
+        if let editing = editingAlarm, editing.originEnum != .localOwned { return nil }
+        let owner = editingAlarm?.ownerUserId?.nilIfBlank ?? auth.session?.user.id
+        return VoiceTuningStore().tuning(userID: owner, voiceProfileID: voiceId)
     }
 
     func previewAlarmSound(_ url: URL?, restart: Bool = false) {

@@ -509,8 +509,9 @@ internal fun VoiceProfileManagementPanel(
     // 업로드 성공 직후 지워지므로(`purgeVoiceCloneSourceRecordings`) 미리듣기 단계에는 없다.
     // 숫자 하나만 메모리에 두고 어디에도 저장하지 않는다.
     var sourceF0Job by remember { mutableStateOf<Deferred<Double?>?>(null) }
-    // 등록 확정을 누른 순간의 (저장할 목소리 id, 값). 승격이 성공해 초안이 사라질 때 기록한다.
-    var pendingTuningCommit by remember { mutableStateOf<Pair<String, VoiceTuning>?>(null) }
+    // 등록 확정을 누른 순간의 (계정, 저장할 목소리 id, 값). 승격이 성공해 초안이 사라질 때 기록한다.
+    // 계정을 함께 잡는다 — 응답을 기다리는 사이 세션이 바뀌면 다른 계정에 적게 된다(Codex #870).
+    var pendingTuningCommit by remember { mutableStateOf<Triple<String?, String, VoiceTuning>?>(null) }
     // 시스템 스톡 보이스는 "내 목소리" 수 제한·관리 액션에서 제외한다.
     // 매 리컴포지션마다 재계산하지 않도록 voiceProfiles 가 바뀔 때만 다시 분류한다.
     val systemVoices = remember(voiceProfiles) { voiceProfiles.filter { it.isSystem == true } }
@@ -1192,8 +1193,11 @@ internal fun VoiceProfileManagementPanel(
                 // 목소리 다듬기 값 기록 — 저장(승격)을 눌렀고 초안이 사라졌다 = 승격 성공. 교체면 옛
                 // 프로필 행이 그대로 쓰이므로(같은 id) 그 id 로 적는다(누를 때 정해 둔 값).
                 if (promotedForPrerenderId != null && promotedForPrerenderId == confirmNewVoice?.id) {
-                    pendingTuningCommit?.let { (targetId, tuning) ->
-                        voiceTuningStore.write(authSession?.user?.id, targetId, tuning)
+                    pendingTuningCommit?.let { (userId, targetId, tuning) ->
+                        // 세션이 그대로일 때만 — 그 사이 로그아웃했으면 그 계정 값은 이미 지워졌어야 한다.
+                        if (userId != null && authSession?.user?.id == userId) {
+                            voiceTuningStore.write(userId, targetId, tuning)
+                        }
                     }
                 }
                 pendingTuningCommit = null
@@ -2540,7 +2544,11 @@ internal fun VoiceProfileManagementPanel(
                                             promotedForPrerenderId = it.id
                                             val tuningTargetId = replaceTargetVoice
                                                 ?.takeIf { replaceExistingChecked }?.id ?: it.id
-                                            pendingTuningCommit = tuningTargetId to previewTuning.normalized()
+                                            pendingTuningCommit = Triple(
+                                                authSession?.user?.id,
+                                                tuningTargetId,
+                                                previewTuning.normalized(),
+                                            )
                                             onPromoteVoiceDraft(
                                                 it.id,
                                                 replaceExistingChecked,

@@ -60,7 +60,7 @@ struct VoicePreviewConfirmView: View {
     /// 마지막으로 받은 미리듣기 클립 — 슬라이더를 놓으면 **서버 왕복 없이** 이걸 다시 굽고 튼다.
     @State private var previewAudioURL: URL?
     /// 등록 녹음 측정(원래 목소리 높이). 화면에 들어오자마자 시작해 합성 대기와 겹친다.
-    @State private var sourceMeasurement: Task<VoiceTuningAnalyzer.Measurement?, Never>?
+    @State private var sourceMeasurement: VoiceTuningAnalyzer.Measurement?
     /// 높이를 바꾼 클립을 굽는 중인가(재생 버튼이 진행 표시로 바뀐다).
     @State private var renderingTuning = false
     /// 굽기 요청 세대 — 늦게 끝난 옛 굽기가 새 값의 재생을 덮지 않게.
@@ -394,15 +394,12 @@ struct VoicePreviewConfirmView: View {
         }.value
     }
 
-    /// 등록 녹음을 백그라운드에서 잰다(원래 목소리 높이). 초안과 짝이 맞을 때만.
+    /// 업로드하는 동안 잰 등록 녹음 높이(원래 목소리)를 가져온다. 초안과 짝이 맞을 때만.
     private func startSourceMeasurement() {
         guard sourceMeasurement == nil,
-              let source = voice.pendingDraftSource,
+              let source = voice.pendingDraftSourceMeasurement,
               source.draftID == draft.id else { return }
-        let url = source.url
-        sourceMeasurement = Task.detached(priority: .userInitiated) {
-            VoiceTuningAnalyzer.measure(url: url, maxSeconds: 30)
-        }
+        sourceMeasurement = source.measurement
     }
 
     /// 새 미리듣기 클립이 도착했다 — 재생 **전에** 재서 추천값을 정하고, 그 높이로 구운 파일을
@@ -413,8 +410,7 @@ struct VoicePreviewConfirmView: View {
         let preview = await Task.detached(priority: .userInitiated) {
             VoiceTuningAnalyzer.measure(url: url, maxSeconds: 30)
         }.value
-        let source = await sourceMeasurement?.value ?? nil
-        let suggestion = VoiceTuningAnalyzer.suggest(preview: preview, source: source)
+        let suggestion = VoiceTuningAnalyzer.suggest(preview: preview, source: sourceMeasurement)
         suggestedTuning = suggestion
         if tuning.source == .suggested {
             tuning = suggestion
@@ -637,7 +633,11 @@ struct VoicePreviewConfirmView: View {
     }
 
     private func promote() async {
-        guard let token = auth.session?.token else { return }
+        // 토큰과 **같은 세션의** 계정을 함께 잡는다 — 응답을 기다리는 사이 세션이 바뀌면 다른 계정에
+        // 값을 적거나 아무것도 안 적게 된다(Codex #870).
+        guard let session = auth.session else { return }
+        let token = session.token
+        let userID = session.user.id
         saving = true
         busy = true
         defer { saving = false; busy = false }
@@ -653,11 +653,9 @@ struct VoicePreviewConfirmView: View {
             // 기존 프로필 id 를 돌려준다(그 id 를 쓰던 알람이 그대로 새 목소리로 운다).
             // 중립이면 키를 지운다 — 교체 전 목소리의 값이 새 목소리에 남지 않게.
             // 아래 리컨사일이 바뀐 지문을 보고 그 목소리의 알람을 새 파일로 다시 예약한다.
-            let tuningChanged = VoiceTuningStore().save(
-                tuning,
-                userID: auth.session?.user.id,
-                voiceProfileID: promoted.id
-            )
+            // 세션이 그대로일 때만 적는다 — 그 사이 로그아웃했으면 그 계정 값은 이미 지워졌어야 한다.
+            let tuningChanged = auth.session?.user.id == userID
+                && VoiceTuningStore().save(tuning, userID: userID, voiceProfileID: promoted.id)
             // ⚠ **교체한 기기에서 곧바로 내린다.** 교체는 옛 프로필 행을 그대로 재사용하므로
             // (id 가 같다) 어떤 접근권 재확인으로도 이 알람들은 잡히지 않는다 — 놔두면 바로
             // 위에서 "직접 입력으로 해둔 알람들도 기본 알람으로 설정됩니다" 를 읽고 체크한
