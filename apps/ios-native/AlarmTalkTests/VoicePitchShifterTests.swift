@@ -69,6 +69,23 @@ final class VoicePitchShifterTests: XCTestCase {
         XCTAssertEqual(voiced[voiced.count / 2], 200, accuracy: 2)
     }
 
+    /// 표본률 바꾸기는 **두 앱이 같은 값**을 낸다 — 기대값은 안드로이드 `VoicePitchShifterTest` 와 같은 숫자다
+    /// (같은 식을 파이썬으로 따로 셈한 값, Codex #870). 9 kHz 성분은 새 나이퀴스트(8 kHz) 위라 걸러져야 한다.
+    func test_resample_matchesTheAndroidImplementation() {
+        let sr = 44_100.0
+        let x: [Float] = (0..<4_410).map { i in
+            let t = Double(i) / sr
+            return Float(0.5 * sin(2 * .pi * 220 * t) + 0.25 * sin(2 * .pi * 3_100 * t) + 0.1 * sin(2 * .pi * 9_000 * t))
+        }
+        let y = VoicePitchShifter.resample(x, from: 44_100, to: 16_000)
+        XCTAssertEqual(y.count, 1_600)
+        XCTAssertEqual(y[1], 0.08122162520885468, accuracy: 1e-5)
+        XCTAssertEqual(y[100], 0.5854929089546204, accuracy: 1e-5)
+        XCTAssertEqual(y[777], -0.24569550156593323, accuracy: 1e-5)
+        XCTAssertEqual(y[1_599], -0.26356241106987, accuracy: 1e-5)
+        XCTAssertEqual(y.reduce(0.0) { $0 + Double(abs($1)) }, 539.0014692312106, accuracy: 1e-2)
+    }
+
     func test_resampleKeepsDurationAndPitch() throws {
         let tone = harmonicTone(hz: 180, seconds: 1, sampleRate: 44_100)
         let down = VoicePitchShifter.resample(tone, from: 44_100, to: 16_000)

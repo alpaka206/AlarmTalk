@@ -110,6 +110,19 @@ final class VoiceTuningStagingTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: url), Data([1, 2, 3]), "새 굽기의 사본은 그대로")
     }
 
+    /// 캐시가 같은 이름으로 원본을 제자리에서 갈아끼우면 미리듣기 사본 이름도 바뀐다 — 옛 바이트로 구운 사본을 다시
+    /// 쓰지 않게(Codex #870).
+    func test_previewFileName_changesWhenTheSourceIsReplacedInPlace() throws {
+        let source = FileManager.default.temporaryDirectory.appendingPathComponent("preview-src-\(UUID().uuidString).mp3")
+        addTeardownBlock { try? FileManager.default.removeItem(at: source) }
+        try Data(count: 128).write(to: source, options: .atomic)
+        let before = VoiceTuningRenderer.previewFileURL(for: source, tag: "s-15")
+        XCTAssertEqual(before, VoiceTuningRenderer.previewFileURL(for: source, tag: "s-15"), "같은 원본이면 같은 사본")
+
+        try Data(count: 128).write(to: source, options: .atomic)   // 같은 이름·같은 크기로 갈아끼웠다
+        XCTAssertNotEqual(before, VoiceTuningRenderer.previewFileURL(for: source, tag: "s-15"))
+    }
+
     func test_neutralTuning_keepsTheLegacyName() throws {
         let source = try makeSineWAV(hz: 220, seconds: 1, amplitude: 0.3)
         let key = uniqueKey("neutral")

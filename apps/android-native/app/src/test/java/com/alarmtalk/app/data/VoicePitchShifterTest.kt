@@ -16,6 +16,23 @@ import kotlin.math.sin
  */
 class VoicePitchShifterTest {
 
+    /** 표본률 바꾸기는 **두 앱이 같은 값**을 낸다 — 기대값은 iOS `VoicePitchShifterTests` 와 같은 숫자다(같은 식을 파이썬으로 따로 셈한 값, Codex #870). */
+    @Test
+    fun resampleMatchesTheIosImplementation() {
+        val sr = 44_100.0
+        val x = FloatArray(4_410) { i ->
+            val t = i / sr
+            (0.5 * sin(2 * PI * 220 * t) + 0.25 * sin(2 * PI * 3_100 * t) + 0.1 * sin(2 * PI * 9_000 * t)).toFloat()
+        }
+        val y = VoicePitchShifter.resample(x, 44_100, 16_000)
+        assertEquals(1_600, y.size)
+        assertEquals(0.08122162520885468f, y[1], 1e-5f)
+        assertEquals(0.5854929089546204f, y[100], 1e-5f)
+        assertEquals(-0.24569550156593323f, y[777], 1e-5f)
+        assertEquals(-0.26356241106987f, y[1_599], 1e-5f)
+        assertEquals(539.0014692312106, y.sumOf { abs(it).toDouble() }, 1e-2)
+    }
+
     private val rate = 44_100
 
     /** 기본 주파수 [f0] 에 배음 8개(1/k 세기), 0.4초 소리·0.1초 쉼을 되풀이하는 1.5초 신호. */

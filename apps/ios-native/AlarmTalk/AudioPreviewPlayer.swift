@@ -62,7 +62,13 @@ final class AudioPreviewPlayer: NSObject, ObservableObject, AVAudioPlayerDelegat
         if let volumePercent {
             player.volume = Self.gain(volumePercent)
         }
-        player.play()
+        // `play()` 가 false 면 소리가 나지 않았고 끝 알림도 오지 않는다 — 시작한 것으로 치면 끝을 기다리는 쪽(등록 첫
+        // 미리듣기의 대체 재생)이 영영 멈춘다(Codex #870). 던져서 호출자의 '못 틀었다' 갈래로 보낸다.
+        guard player.play() else {
+            isPreparing = false
+            try? session.setActive(false, options: [.notifyOthersOnDeactivation])
+            throw PlaybackError.didNotStart
+        }
         self.player = player
         isPreparing = false
         isPlaying = true
@@ -117,6 +123,8 @@ final class AudioPreviewPlayer: NSObject, ObservableObject, AVAudioPlayerDelegat
         autoStopTask?.cancel()
         autoStopTask = nil
     }
+
+    enum PlaybackError: Error { case didNotStart }
 
     nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
         Task { @MainActor [weak self] in

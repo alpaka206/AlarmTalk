@@ -1031,16 +1031,6 @@ final class AlarmKitViewModel: ObservableObject {
                     return false
                 }
             }
-            // 높이를 구워 넣을 소리는 **메인 밖에서** 미리 만든다 — 아래 `resolve` 는 메인에서 동기로 돌아, 거기서
-            // PSOLA 를 돌리면 여러 알람을 다시 걸 때 화면이 멎는다(Codex #870). 계정 변경은 아래 예약 뒤의 확인이 그대로 막는다.
-            await AlarmSoundResolver.prestageTunedSound(for: effectiveRecordForScheduling(record), audioCache: audioCache)
-            // 미리 굽는 사이 계정이 바뀌거나 떠나는 중이면 여기서 멈춘다 — 아래 `resolve` 가 그 계정의 목소리를 **정리 뒤에**
-            // 다시 구워 남긴다(Codex #870). 예약 뒤의 같은 확인과 같은 조건이고, 아직 OS 예약이 없어 되돌릴 것도 없다.
-            if accountEpoch != epochAtStart || isLeavingAccount || !mayScheduleRecord(record) {
-                return false
-            }
-            let id = UUID()
-            let schedule = makeSchedule(record)
             // Phase 2-B4: playMode + 캐시 상태에 따라 AlarmKit sound 전략 결정.
             // 유료 목소리 권한을 **예약 시점에** 재확인한다.
             //
@@ -1054,9 +1044,19 @@ final class AlarmKitViewModel: ObservableObject {
                     "Free plan at schedule time — scheduling a default voice instead of the paid voice (id: \(record.id, privacy: .public))"
                 )
             }
-            // 계획은 한 번만 정한다 — 아래 지문도 이 계획으로 새긴다(예약을 기다리는 사이 다듬기 값이 바뀌어도
-            // OS 에 실린 소리와 행의 지문이 갈라지지 않게, Codex #870).
+            // 계획은 **한 번만** 정한다 — 미리 굽기·스테이징·지문이 모두 이 계획을 쓴다. 기다리는 사이 다듬기 값이 바뀌어도
+            // 미리 구운 것과 예약이 쓰는 것, OS 에 실린 소리와 행의 지문이 갈라지지 않게(Codex #870).
             let soundPlan = AlarmSoundResolver.plan(for: effectiveRecord, audioCache: audioCache)
+            // 높이를 구워 넣을 소리는 **메인 밖에서** 미리 만든다 — 아래 `resolve` 는 메인에서 동기로 돌아, 거기서
+            // PSOLA 를 돌리면 여러 알람을 다시 걸 때 화면이 멎는다(Codex #870).
+            await AlarmSoundResolver.prestageTunedSound(plan: soundPlan)
+            // 미리 굽는 사이 계정이 바뀌거나 떠나는 중이면 여기서 멈춘다 — 아래 `resolve` 가 그 계정의 목소리를 **정리 뒤에**
+            // 다시 구워 남긴다(Codex #870). 예약 뒤의 같은 확인과 같은 조건이고, 아직 OS 예약이 없어 되돌릴 것도 없다.
+            if accountEpoch != epochAtStart || isLeavingAccount || !mayScheduleRecord(record) {
+                return false
+            }
+            let id = UUID()
+            let schedule = makeSchedule(record)
             let resolution = AlarmSoundResolver.resolve(plan: soundPlan)
             let configuration = makeConfiguration(
                 record: effectiveRecord,

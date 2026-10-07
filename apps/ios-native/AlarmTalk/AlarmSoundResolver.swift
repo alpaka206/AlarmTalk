@@ -140,10 +140,10 @@ enum AlarmSoundResolver {
 
     /// 이 알람이 높이를 구워 넣은 목소리로 울린다면 그 파일을 **메인 밖에서** 미리 만든다(`AlarmSoundStaging.prestageTuned`).
     /// 예약 직전(`AlarmKitViewModel.schedule`)에 기다린다 — 그 뒤의 동기 `resolve` 는 만들어 둔 파일을 쓴다.
-    static func prestageTunedSound(for record: LocalAlarmRecord, audioCache: AudioCacheStore) async {
-        guard case .voiceClip(let key, let url, _, let volumePercent, _, let tuning?) = plan(for: record, audioCache: audioCache) else {
-            return
-        }
+    /// 계획은 예약이 **한 번** 정해 넘긴다 — 여기서 다시 정하면 기다리는 사이 다듬기 값이 바뀌었을 때 미리 구운 것과
+    /// 예약이 쓰는 것이 갈라져, 예약이 메인에서 다시 굽는다(Codex #870).
+    static func prestageTunedSound(plan: AlarmSoundPlan) async {
+        guard case .voiceClip(let key, let url, _, let volumePercent, _, let tuning?) = plan else { return }
         await AlarmSoundStaging.prestageTuned(url: url, key: key, volumePercent: volumePercent, tuning: tuning)
     }
 

@@ -288,62 +288,43 @@ enum VoicePitchShifter {
     /// `.5` 를 +∞ 쪽으로 올리는 반올림 — 안드로이드 `Math.round` 와 같은 표시 자리를 고른다.
     static func jsRound(_ value: Double) -> Int { Int(floor(value + 0.5)) }
 
-    /// 표본률 바꾸기(`AVAudioConverter`, 최고 품질). 실패하면 선형 보간으로라도 돌려준다.
+    /// 표본률 바꾸기 — 안드로이드 `VoicePitchShifter.resample` 과 **같은 식**이다. 예전에는 시스템 표본률 변환기를 써서
+    /// 분석(YIN·표시)에 들어가는 표본이 두 앱에서 달랐다 — 같은 목소리·같은 값이 두 앱에서 다르게 구워질 수 있었다
+    /// (Codex #870). 내릴 때는 먼저 새 나이퀴스트 아래(0.45 × 목표)로 RBJ 저역통과(Q 1/√2)를 두 번 거르고(Direct
+    /// Form I, Double 로 누산해 단마다 Float 로), `i × 원본/목표` 자리를 선형 보간한다. 길이는 `⌊n × 목표 / 원본⌋`.
     static func resample(_ x: [Float], from source: Double, to target: Double) -> [Float] {
-        guard source != target, !x.isEmpty else { return x }
-        if let converted = convert(x, from: source, to: target) { return converted }
-        let count = max(1, Int(Double(x.count) * target / source))
+        guard source != target, !x.isEmpty, source > 0, target > 0 else { return x }
+        let src: [Float]
+        if target < source {
+            let filter = Biquad.lowpass(cutoff: 0.45 * target, sampleRate: source)
+            src = directFormI(directFormI(x, filter), filter)
+        } else {
+            src = x
+        }
+        let count = max(1, Int(Int64(x.count) * Int64(target.rounded()) / Int64(source.rounded())))
         let step = source / target
         return (0..<count).map { index in
             let position = Double(index) * step
-            let i0 = min(x.count - 1, Int(position))
-            let i1 = min(x.count - 1, i0 + 1)
+            let i0 = min(src.count - 1, Int(position))
+            let i1 = min(src.count - 1, i0 + 1)
             let fraction = Float(position - Double(i0))
-            return x[i0] + (x[i1] - x[i0]) * fraction
+            return src[i0] + (src[i1] - src[i0]) * fraction
         }
     }
 
-    private static func convert(_ x: [Float], from source: Double, to target: Double) -> [Float]? {
-        guard let inFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: source, channels: 1, interleaved: false),
-              let outFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: target, channels: 1, interleaved: false),
-              let converter = AVAudioConverter(from: inFormat, to: outFormat),
-              let input = AVAudioPCMBuffer(pcmFormat: inFormat, frameCapacity: AVAudioFrameCount(x.count)),
-              let inData = input.floatChannelData?[0] else { return nil }
-        converter.sampleRateConverterQuality = AVAudioQuality.max.rawValue
-        x.withUnsafeBufferPointer { inData.update(from: $0.baseAddress!, count: x.count) }
-        input.frameLength = AVAudioFrameCount(x.count)
-        let capacity = AVAudioFrameCount(Double(x.count) * target / source) + 4_096
-        guard let output = AVAudioPCMBuffer(pcmFormat: outFormat, frameCapacity: capacity) else { return nil }
-
-        // 입력 블록은 `@Sendable` 이다 — 한 번만 넘길 버퍼와 그 표시를 상자에 담아 넘긴다
-        // (변환은 이 함수 안에서 동기로 끝나 동시 접근이 없다).
-        final class Feed: @unchecked Sendable {
-            let buffer: AVAudioPCMBuffer
-            var done = false
-            init(_ buffer: AVAudioPCMBuffer) { self.buffer = buffer }
+    /// 안드로이드 `VoicePitchShifter.biquad` 와 같은 순서의 셈 — 결과를 맞추려고 따로 둔다.
+    private static func directFormI(_ x: [Float], _ c: Biquad) -> [Float] {
+        var y = [Float](repeating: 0, count: x.count)
+        var x1 = 0.0, x2 = 0.0, y1 = 0.0, y2 = 0.0
+        for i in x.indices {
+            let x0 = Double(x[i])
+            let v = c.b0 * x0 + c.b1 * x1 + c.b2 * x2 - c.a1 * y1 - c.a2 * y2
+            x2 = x1
+            x1 = x0
+            y2 = y1
+            y1 = v
+            y[i] = Float(v)
         }
-        let feed = Feed(input)
-        var result: [Float] = []
-        result.reserveCapacity(Int(capacity))
-        while true {
-            output.frameLength = 0
-            var error: NSError?
-            let status = converter.convert(to: output, error: &error) { _, outStatus in
-                if feed.done {
-                    outStatus.pointee = .endOfStream
-                    return nil
-                }
-                feed.done = true
-                outStatus.pointee = .haveData
-                return feed.buffer
-            }
-            if status == .error || error != nil { return nil }
-            if let data = output.floatChannelData?[0], output.frameLength > 0 {
-                result.append(contentsOf: UnsafeBufferPointer(start: data, count: Int(output.frameLength)))
-            }
-            if status == .endOfStream || status == .inputRanDry { break }
-            if output.frameLength == 0 { break }
-        }
-        return result.isEmpty ? nil : result
+        return y
     }
 }

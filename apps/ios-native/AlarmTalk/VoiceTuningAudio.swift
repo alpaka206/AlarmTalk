@@ -1,5 +1,6 @@
 import AVFoundation
 import AudioToolbox
+import CryptoKit
 import Foundation
 
 enum VoiceTuningRenderError: Error, LocalizedError {
@@ -127,17 +128,30 @@ enum VoiceTuningRenderer {
         try previewEpoch.publish(tmp, to: url, ifEpoch: epoch)
     }
 
+    /// 미리듣기 사본 경로 — 이름에 원본의 **정체**(파일 번호·크기·수정 시각)를 넣는다. 캐시가 같은 키(같은 파일
+    /// 이름)로 원본을 제자리에서 갈아끼우면(목소리 교체·개정 갱신) 이름이 같아 옛 바이트로 구운 사본을 다시 썼다 —
+    /// 은퇴한 목소리가 미리듣기에 남는다(Codex #870, 안드로이드 `VoiceTuningRenderer.cacheKey` 와 같은 생각).
+    static func previewFileURL(for source: URL, tag: String) -> URL {
+        let attributes = (try? FileManager.default.attributesOfItem(atPath: source.path)) ?? [:]
+        let fileNumber = (attributes[.systemFileNumber] as? NSNumber)?.int64Value ?? 0
+        let size = (attributes[.size] as? NSNumber)?.int64Value ?? 0
+        let modified = (attributes[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0
+        let identity = "\(source.path)|\(fileNumber)|\(size)|\(modified)"
+        let digest = SHA256.hash(data: Data(identity.utf8)).prefix(6).map { String(format: "%02x", $0) }.joined()
+        return previewDirectory
+            .appendingPathComponent("\(source.deletingPathExtension().lastPathComponent)-\(digest)-t\(tag).caf")
+    }
+
     /// 등록 미리듣기용 — 받은 클립을 이 높이로 구운 파일. 중립이면 원본을 그대로 돌려준다.
     /// 같은 클립·같은 높이는 한 번만 굽는다(임시 폴더, 이름에 높이 꼬리표).
     static func previewFile(for source: URL, tuning: VoiceTuning) throws -> URL {
         guard let tag = tuning.soundTag else { return source }
         let epoch = previewEpoch.current
-        let dir = previewDirectory
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        let url = dir.appendingPathComponent("\(source.deletingPathExtension().lastPathComponent)-t\(tag).caf")
+        try FileManager.default.createDirectory(at: previewDirectory, withIntermediateDirectories: true)
+        let url = previewFileURL(for: source, tag: tag)
         if FileManager.default.fileExists(atPath: url.path) { return url }
         let rendered = try render(url: source, tuning: tuning, maxSeconds: 60)
-        let tmp = dir.appendingPathComponent("\(UUID().uuidString).caf")
+        let tmp = previewDirectory.appendingPathComponent("\(UUID().uuidString).caf")
         try writeMonoCAF(rendered.samples, sampleRate: rendered.sampleRate, to: tmp)
         // 굽는 사이 지워졌으면(화면을 떠남·세션 변경·목소리 삭제 …) 게시하지 않는다.
         guard try publishPreview(tmp, to: url, ifEpoch: epoch) else { throw CancellationError() }
