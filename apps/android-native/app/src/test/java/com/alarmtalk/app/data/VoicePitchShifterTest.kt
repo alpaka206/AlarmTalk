@@ -72,6 +72,25 @@ class VoicePitchShifterTest {
         assertTrue(output.all { abs(it) <= VoicePitchShifter.PEAK_LIMIT + 1e-6f })
     }
 
+    /** 높이 분석은 원본 표본률과 상관없이 **정확히 16 kHz** 에서 한다 — iOS 와 같은 규칙(Codex #870). */
+    @Test
+    fun analysisRunsAtExactlySixteenKilohertz() {
+        assertEquals(16_000, VoicePitchShifter.resample(FloatArray(44_100), 44_100, 16_000).size)
+        assertEquals(16_000, VoicePitchShifter.resample(FloatArray(48_000), 48_000, 16_000).size)
+        assertEquals(16_000, VoicePitchShifter.resample(FloatArray(8_000), 8_000, 16_000).size)
+        // 48 kHz 원본도 같은 높이로 옮긴다.
+        val rate48 = 48_000
+        val input = FloatArray((rate48 * 1.5).toInt()) { i ->
+            val t = i.toDouble() / rate48
+            if ((t % 0.5) >= 0.4) return@FloatArray 0f
+            var v = 0.0
+            for (k in 1..8) v += sin(2.0 * PI * 120.0 * k * t) / k
+            (0.25 * v).toFloat()
+        }
+        val measured = VoiceTuningAnalysis.medianF0(VoicePitchShifter.shift(input, rate48, -3f), rate48)!!
+        assertTrue("48 kHz −3 반음 → ${semitones(measured, 120.0)}", abs(semitones(measured, 120.0) + 3) <= 0.5)
+    }
+
     @Test
     fun silenceStaysSilent() {
         val output = VoicePitchShifter.shift(FloatArray(rate), rate, -3f)

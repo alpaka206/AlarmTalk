@@ -58,7 +58,9 @@ object VoiceTuningRenderer {
             val decoded = VoiceAudioDecoder.decodeMono(context, source, maxDurationMillis = MAX_DURATION_MILLIS)
                 ?: error("decode failed")
             val shifted = VoicePitchShifter.shift(decoded.samples, decoded.sampleRate, pitch)
-            val tmp = File(dir, "${out.name}.tmp")
+            // 임시 파일 이름은 굽기마다 다르다 — 미리듣기와 울림이 같은 사본을 동시에 구워도 서로의 반쪽 파일을
+            // 덮지 않는다. 이름 바꾸기는 원자적이라 먼저 끝난 쪽이 놓고, 뒤에 끝난 쪽이 같은 내용으로 덮는다.
+            val tmp = File(dir, "${out.name}.${java.util.UUID.randomUUID()}.tmp")
             writeWav(tmp, shifted, decoded.sampleRate)
             if (!tmp.renameTo(out)) {
                 tmp.delete()

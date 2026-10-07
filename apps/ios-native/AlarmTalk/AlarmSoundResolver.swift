@@ -118,6 +118,26 @@ enum AlarmSoundResolver {
         return url
     }
 
+    /// 이 알람에 실을 목소리 높이 값(스펙 voice-and-message §4-3). **이 기기에서 만든**(받은 것이 아닌)
+    /// 등록 목소리 알람만 — 안드로이드 `VoiceTuning.appliesTo` 와 같은 판정이다.
+    ///
+    /// - ⚠ **받은 알람은 출처로 거른다.** 가족이 내가 공유한 목소리로 보낸 알람은 내 목소리 id·내 계정을
+    ///   그대로 달고 오므로, 출처를 안 보면 보낸 사람이 들려주려던 클립의 높이를 내 값으로 바꾼다.
+    /// - 소유자가 아직 새겨지지 않은 옛 행(`ownerUserId == nil` — 세션이 끝날 때 `claimUnownedAlarms` 가
+    ///   새긴다)은 지금 로그인한 계정의 것으로 본다. 안 그러면 방금 저장한 값이 기존 알람에 안 실린다.
+    static func voiceTuning(
+        for record: LocalAlarmRecord,
+        store: VoiceTuningStore = VoiceTuningStore(),
+        currentUserID: () -> String? = { KeychainStore.readSession()?.user.id }
+    ) -> VoiceTuning? {
+        guard record.originEnum == .localOwned,
+              record.voiceSourceEnum != .localAudio,
+              let voiceID = record.voiceProfileId?.nilIfBlank,
+              !isSystemVoiceId(voiceID) else { return nil }
+        let owner = record.ownerUserId?.nilIfBlank ?? currentUserID()
+        return store.tuning(userID: owner, voiceProfileID: voiceID)
+    }
+
     /// **무엇을 울릴지** 만 정한다 — 파일을 만들지 않는다(순수 조회).
     ///
     /// [resolve] 는 이 결정에 스테이징(트랜스코드·복사)을 얹은 것이다. 둘을 나눠 둔 이유는
@@ -142,10 +162,7 @@ enum AlarmSoundResolver {
                 volumePercent: record.voiceVolumePercent,
                 revision: revision,
                 // 그 목소리(계정 × 프로필)의 다듬기 값. 클립이 그 목소리의 것이라 함께 실린다.
-                tuning: VoiceTuningStore().tuning(
-                    userID: record.ownerUserId,
-                    voiceProfileID: record.voiceProfileId
-                )
+                tuning: voiceTuning(for: record)
             )
         }
 

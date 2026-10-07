@@ -493,6 +493,8 @@ internal fun VoiceProfileManagementPanel(
     // 자동 추천값과 그 목소리 id. null 이면 아직 계산 전.
     var tuningSuggestion by remember { mutableStateOf<VoiceTuning?>(null) }
     var tuningSuggestionVoiceId by remember { mutableStateOf<String?>(null) }
+    // 그 추천값을 잰 미리듣기 클립 — 문구를 고쳐 새 클립이 오면 다시 잰다.
+    var tuningSuggestionClipUri by remember { mutableStateOf<String?>(null) }
     var tuningAnalyzing by remember { mutableStateOf(false) }
     // 서버가 만든 미리듣기 오디오(기기 캐시). 끝까지 한 번 들은 뒤에는 이걸 기기에서 다시 튼다 —
     // 슬라이더를 움직일 때마다 서버를 부르지 않는다.
@@ -828,9 +830,10 @@ internal fun VoiceProfileManagementPanel(
         }
     }
 
-    // 미리듣기 오디오로 추천값을 만든다(목소리마다 한 번). 사용자가 아직 손대지 않았으면 그 값으로 맞춘다.
+    // 미리듣기 오디오로 추천값을 만든다(**클립마다** 한 번 — 문구를 고치면 새 클립이 오고 높이도 달라질 수 있다).
+    // 사용자가 아직 손대지 않았으면 그 값으로 맞춘다.
     suspend fun ensureTuningSuggestion(voiceId: String, previewUri: String) {
-        if (tuningSuggestionVoiceId == voiceId && tuningSuggestion != null) return
+        if (tuningSuggestionVoiceId == voiceId && tuningSuggestionClipUri == previewUri && tuningSuggestion != null) return
         tuningAnalyzing = true
         try {
             val sourceF0 = sourceF0Job?.let { job ->
@@ -854,6 +857,7 @@ internal fun VoiceProfileManagementPanel(
             )
             tuningSuggestion = suggestion
             tuningSuggestionVoiceId = voiceId
+            tuningSuggestionClipUri = previewUri
             if (previewTuning.source != VoiceTuning.SOURCE_MANUAL) previewTuning = suggestion
         } finally {
             tuningAnalyzing = false
@@ -1119,6 +1123,7 @@ internal fun VoiceProfileManagementPanel(
         previewTuning = VoiceTuning.NEUTRAL
         tuningSuggestion = null
         tuningSuggestionVoiceId = null
+        tuningSuggestionClipUri = null
         tuningAnalyzing = false
         tunedReplayJob?.cancel()
         tunedReplayJob = null
@@ -1161,6 +1166,7 @@ internal fun VoiceProfileManagementPanel(
                     previewTuning = VoiceTuning.NEUTRAL
                     tuningSuggestion = null
                     tuningSuggestionVoiceId = null
+                    tuningSuggestionClipUri = null
                 }
                 confirmNewVoice = draft
                 showCreateForm = true

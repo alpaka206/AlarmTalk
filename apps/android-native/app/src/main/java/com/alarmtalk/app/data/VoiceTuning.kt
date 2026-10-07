@@ -51,6 +51,18 @@ data class VoiceTuning(
             return VoiceTuning(pitch, parts[1]).normalized()
         }
 
+        /**
+         * 이 알람에 높이 보정을 걸 수 있는가 — **이 기기에서 만든**(받은 것이 아닌) 등록 목소리 알람뿐이다.
+         * 가족이 내가 공유한 목소리로 보낸 알람은 내 목소리 id 를 달고 오므로 출처로 거른다(스펙 §4-3).
+         * 직접 녹음·기본(시스템) 목소리·목소리 없음도 제외.
+         */
+        fun appliesTo(origin: String?, voiceSource: String?, voiceProfileId: String?): Boolean {
+            if (origin != AlarmOrigins.LOCAL_OWNED) return false
+            if (voiceSource == VoiceSources.LOCAL_AUDIO) return false
+            val voiceId = voiceProfileId?.takeIf { it.isNotBlank() } ?: return false
+            return !isSystemVoiceId(voiceId)
+        }
+
         /** 0.5 눈금으로 반올림(0 을 기준으로 대칭) 후 범위로 자른다. −0 은 0 으로 둔다. */
         fun snapToStep(value: Float, range: ClosedFloatingPointRange<Float>): Float {
             if (!value.isFinite()) return 0f.coerceIn(range.start, range.endInclusive)

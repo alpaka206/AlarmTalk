@@ -1,6 +1,7 @@
 package com.alarmtalk.app.data
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -91,6 +92,10 @@ class VoiceTuningAnalysisTest {
         assertEquals(-1.5f, VoiceTuningAnalysis.suggestedPitchSemitones(220.0, 200.0), 0f)
         // 0.43 반음 차 → 데드밴드 안 → 0.
         assertEquals(0f, VoiceTuningAnalysis.suggestedPitchSemitones(205.0, 200.0), 0f)
+        // 1.3 반음 차 → **먼저** 1.5 로 반올림 → 데드밴드 밖 → 1.5 내린다(iOS 와 같은 순서 — Codex #870).
+        assertEquals(-1.5f, VoiceTuningAnalysis.suggestedPitchSemitones(200.0 * Math.pow(2.0, 1.3 / 12), 200.0), 0f)
+        // 1.2 반음 차 → 1.0 으로 반올림 → 데드밴드 안 → 0.
+        assertEquals(0f, VoiceTuningAnalysis.suggestedPitchSemitones(200.0 * Math.pow(2.0, 1.2 / 12), 200.0), 0f)
         // 7 반음 높다 → −7 → −6 으로 자른다.
         assertEquals(-6f, VoiceTuningAnalysis.suggestedPitchSemitones(300.0, 200.0), 0f)
         // 5 반음 낮다 → +5 → +3 으로 자른다.
@@ -127,6 +132,18 @@ class VoiceTuningAnalysisTest {
         assertEquals(0.0, VoiceTuning.roundToHalf(-0.24), 0.0)
         // −0.0 을 남기지 않는다(표시가 "-0.0" 이 되지 않게).
         assertEquals(0.0.toBits(), VoiceTuning.roundToHalf(-0.2).toBits())
+    }
+
+    /** 받은 알람·직접 녹음·기본 목소리에는 걸지 않는다(스펙 §4-3 — Codex #870). */
+    @Test
+    fun tuningAppliesOnlyToLocallyOwnedRegisteredVoiceAlarms() {
+        assertTrue(VoiceTuning.appliesTo(AlarmOrigins.LOCAL_OWNED, VoiceSources.TTS_PROFILE, "voice-1"))
+        // 가족이 내가 공유한 목소리로 보낸 알람 — 내 목소리 id 를 달고 와도 걸지 않는다.
+        assertFalse(VoiceTuning.appliesTo(AlarmOrigins.RECEIVED_REMOTE, VoiceSources.TTS_PROFILE, "voice-1"))
+        assertFalse(VoiceTuning.appliesTo(null, VoiceSources.TTS_PROFILE, "voice-1"))
+        assertFalse(VoiceTuning.appliesTo(AlarmOrigins.LOCAL_OWNED, VoiceSources.LOCAL_AUDIO, "voice-1"))
+        assertFalse(VoiceTuning.appliesTo(AlarmOrigins.LOCAL_OWNED, VoiceSources.TTS_PROFILE, " "))
+        assertFalse(VoiceTuning.appliesTo(AlarmOrigins.LOCAL_OWNED, VoiceSources.TTS_PROFILE, null))
     }
 
     @Test

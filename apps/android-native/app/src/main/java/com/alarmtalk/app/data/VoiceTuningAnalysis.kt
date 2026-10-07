@@ -166,9 +166,12 @@ object VoiceTuningAnalysis {
         if (previewF0Hz == null || sourceF0Hz == null) return 0f
         if (previewF0Hz <= 0.0 || sourceF0Hz <= 0.0) return 0f
         val difference = 12.0 * ln(previewF0Hz / sourceF0Hz) / ln(2.0)
-        if (!difference.isFinite() || abs(difference) < PITCH_DEADBAND_SEMITONES) return 0f
-        val correction = -VoiceTuning.roundToHalf(difference)
-        return VoiceTuning.snapToStep(correction.toFloat(), VoiceTuning.PITCH_RANGE)
+        if (!difference.isFinite()) return 0f
+        // 0.5 단위로 **먼저** 반올림하고 그 크기로 데드밴드를 본다(iOS `VoiceTuningAnalyzer.suggestedPitch` 와 같은
+        // 순서) — 거꾸로 하면 1.25~1.5 반음 차가 한쪽 앱에서만 1.5 로 고쳐진다.
+        val rounded = VoiceTuning.roundToHalf(difference)
+        if (abs(rounded) < PITCH_DEADBAND_SEMITONES) return 0f
+        return VoiceTuning.snapToStep((-rounded).toFloat(), VoiceTuning.PITCH_RANGE)
     }
 
     // ── 필터 ──

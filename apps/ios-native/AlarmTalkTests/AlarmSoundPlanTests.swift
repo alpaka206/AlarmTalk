@@ -281,6 +281,50 @@ final class AlarmSoundPlanTests: XCTestCase {
         XCTAssertEqual(AlarmSoundResolver.plan(for: record, audioCache: store).fingerprint, untuned)
     }
 
+    /// 받은 알람·직접 녹음에는 다듬기를 싣지 않는다 — 가족이 내가 공유한 목소리로 보낸 알람은 내 목소리 id 를
+    /// 달고 와도 보낸 사람이 들려주려던 소리 그대로다(스펙 §4-3, Codex #870).
+    func test_voiceTuning_skipsReceivedAndRecordedAlarms() throws {
+        let (_, keys) = try seedBucket(clipCount: 1)
+        var record = makeBucketRecord(bucketId: "medication", keys: keys)
+        let owner = "tuning-owner-\(UUID().uuidString)"
+        let voiceID = "tuning-voice-\(UUID().uuidString)"
+        record.ownerUserId = owner
+        record.voiceProfileId = voiceID
+        let suite = "voice-tuning-plan-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let tuningStore = VoiceTuningStore(defaults: defaults)
+        tuningStore.save(VoiceTuning(pitchSt: -1.5, source: .user), userID: owner, voiceProfileID: voiceID)
+
+        XCTAssertEqual(AlarmSoundResolver.voiceTuning(for: record, store: tuningStore, currentUserID: { nil })?.pitchSt, -1.5)
+        var received = record
+        received.origin = AlarmOrigin.receivedRemote.rawValue
+        XCTAssertNil(AlarmSoundResolver.voiceTuning(for: received, store: tuningStore, currentUserID: { nil }))
+        var recorded = record
+        recorded.voiceSource = VoiceSource.localAudio.rawValue
+        XCTAssertNil(AlarmSoundResolver.voiceTuning(for: recorded, store: tuningStore, currentUserID: { nil }))
+    }
+
+    /// 소유자가 아직 새겨지지 않은 옛 행(`ownerUserId == nil`)은 지금 로그인한 계정의 값을 쓴다 — 안 그러면 방금
+    /// 저장한 값이 기존 알람에 실리지 않는다(Codex #870).
+    func test_voiceTuning_legacyUnownedRowUsesTheSignedInAccount() throws {
+        let (_, keys) = try seedBucket(clipCount: 1)
+        var record = makeBucketRecord(bucketId: "medication", keys: keys)
+        let owner = "tuning-owner-\(UUID().uuidString)"
+        let voiceID = "tuning-voice-\(UUID().uuidString)"
+        record.ownerUserId = nil
+        record.voiceProfileId = voiceID
+        let suite = "voice-tuning-plan-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let tuningStore = VoiceTuningStore(defaults: defaults)
+        tuningStore.save(VoiceTuning(pitchSt: 2, source: .user), userID: owner, voiceProfileID: voiceID)
+
+        XCTAssertEqual(AlarmSoundResolver.voiceTuning(for: record, store: tuningStore, currentUserID: { owner })?.pitchSt, 2)
+        XCTAssertNil(AlarmSoundResolver.voiceTuning(for: record, store: tuningStore, currentUserID: { nil }))
+        XCTAssertNil(AlarmSoundResolver.voiceTuning(for: record, store: tuningStore, currentUserID: { "someone-else" }))
+    }
+
     /// 다듬기 값이 실제 예약 소리(스테이징 파일)까지 내려가는가.
     func test_resolve_stagesTheTunedFile() throws {
         let (store, keys) = try seedBucket(clipCount: 1)

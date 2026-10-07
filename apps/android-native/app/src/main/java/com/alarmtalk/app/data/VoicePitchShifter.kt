@@ -71,14 +71,15 @@ object VoicePitchShifter {
     internal class PitchTrack(val f0: DoubleArray, val firstFrameSeconds: Double)
 
     /**
-     * 40 Hz~1.2 kHz 로 거른 뒤 ~16 kHz 로 솎아 25 ms 프레임 YIN(문턱 0.2). 큰 소리 대비 −35 dB 아래와
-     * 주변보다 7 반음 넘게 튄 프레임은 무성으로 돌린다(앞에서부터 차례로 — 웹과 같은 순서).
+     * **정확히 16 kHz 로 바꾼 뒤**([resample]) 그 위에서 40 Hz~1.2 kHz 로 걸러 25 ms 프레임 YIN(문턱 0.2).
+     * 큰 소리 대비 −35 dB 아래와 주변보다 7 반음 넘게 튄 프레임은 무성으로 돌린다(앞에서부터 차례로).
+     * ⚠ 표본률을 원본에 따라 정하지 말 것(예전: 정수 배 솎기 — 44.1 kHz 면 22.05 kHz) — 이 트랙이 모든
+     * 표시 자리를 정하므로 iOS(`analysisRate` 16 kHz)와 규칙이 갈리면 같은 클립이 두 앱에서 다르게 들린다.
      */
     internal fun pitchTrack(samples: FloatArray, sampleRate: Int): PitchTrack {
-        val factor = max(1, sampleRate / ANALYSIS_RATE_HZ)
-        val band = biquad(biquad(samples, highpass(TRACK_HIGHPASS_HZ, sampleRate)), lowpass(TRACK_LOWPASS_HZ, sampleRate))
-        val x = if (factor == 1) band else FloatArray(band.size / factor) { band[it * factor] }
-        val rate = sampleRate / factor
+        val rate = ANALYSIS_RATE_HZ
+        val resampled = resample(samples, sampleRate, rate)
+        val x = biquad(biquad(resampled, highpass(TRACK_HIGHPASS_HZ, rate)), lowpass(TRACK_LOWPASS_HZ, rate))
         val hop = Math.round(rate * HOP_SECONDS).toInt().coerceAtLeast(1)
         val window = Math.round(rate * WINDOW_SECONDS).toInt()
         val tauMax = ceil(rate / VoiceTuningAnalysis.MIN_F0_HZ).toInt()
@@ -232,6 +233,29 @@ object VoicePitchShifter {
             ts += if (markVoiced[k]) period / factor else unvoicedHop.toDouble()
         }
         return y
+    }
+
+    /**
+     * 표본률 바꾸기 — 내릴 때는 먼저 새 나이퀴스트 아래(0.45 × 목표)로 두 단 거른 뒤 선형 보간한다.
+     * 짚는 자리(`i × 원본/목표`)와 길이(`⌊n × 목표/원본⌋`)는 iOS `VoicePitchShifter.resample` 과 같다.
+     */
+    internal fun resample(x: FloatArray, from: Int, to: Int): FloatArray {
+        if (from == to || x.isEmpty() || from <= 0 || to <= 0) return x
+        val src = if (to < from) {
+            val c = lowpass(0.45 * to, from)
+            biquad(biquad(x, c), c)
+        } else {
+            x
+        }
+        val count = max(1, (x.size.toLong() * to / from).toInt())
+        val step = from.toDouble() / to
+        return FloatArray(count) { index ->
+            val position = index * step
+            val i0 = min(src.size - 1, position.toInt())
+            val i1 = min(src.size - 1, i0 + 1)
+            val fraction = (position - i0).toFloat()
+            src[i0] + (src[i1] - src[i0]) * fraction
+        }
     }
 
     // ── 한 단 RBJ 필터(Q 0.707) ──

@@ -37,11 +37,9 @@ import com.alarmtalk.app.data.AlarmPlayModes
 import com.alarmtalk.app.data.DefaultVoiceClipSource
 import com.alarmtalk.app.data.VibrationPatternLibrary
 import com.alarmtalk.app.data.VibrationPatterns
-import com.alarmtalk.app.data.VoiceSources
 import com.alarmtalk.app.data.VoiceTuning
 import com.alarmtalk.app.data.VoiceTuningRenderer
 import com.alarmtalk.app.data.VoiceTuningStore
-import com.alarmtalk.app.data.isSystemVoiceId
 import com.alarmtalk.app.data.decodeBucketClipKeys
 import com.alarmtalk.app.isEntitledOptimistic
 import com.alarmtalk.app.resolvePaidVoiceAccess
@@ -354,13 +352,16 @@ class RingingService : Service() {
     }
 
     /**
-     * 이 알람 목소리의 보정값(등록 미리듣기에서 맞춘 값). 직접 녹음·기본 목소리·값 없음·중립이면 null —
-     * 그때 울림은 예전과 똑같이 돈다. 기기 저장소만 읽는다(네트워크 없음). 절대 던지지 않는다.
+     * 이 알람 목소리의 보정값(등록 미리듣기에서 맞춘 값). 받은 알람·직접 녹음·기본 목소리·값 없음·중립이면
+     * null — 그때 울림은 예전과 똑같이 돈다. 기기 저장소만 읽는다(네트워크 없음). 절대 던지지 않는다.
+     * ⚠ **받은 알람은 출처로 거른다.** 가족이 **내가 공유한 목소리**로 보낸 알람은 내 목소리 id·내 계정을
+     * 그대로 달고 오므로, 출처를 안 보면 보낸 사람이 들려주려던 클립의 높이를 내 값으로 바꾼다(스펙 §4-3).
      */
     private fun voiceTuningFor(alarm: AlarmEntity?): VoiceTuning? = runCatching {
-        if (alarm == null || alarm.voiceSource == VoiceSources.LOCAL_AUDIO) return@runCatching null
-        val voiceId = alarm.voiceProfileId?.takeIf { it.isNotBlank() && !isSystemVoiceId(it) }
-            ?: return@runCatching null
+        if (alarm == null || !VoiceTuning.appliesTo(alarm.origin, alarm.voiceSource, alarm.voiceProfileId)) {
+            return@runCatching null
+        }
+        val voiceId = alarm.voiceProfileId
         val userId = alarm.ownerUserId?.takeIf { it.isNotBlank() }
             ?: AuthSessionStore(applicationContext).read()?.user?.id
         VoiceTuningStore(applicationContext).read(userId, voiceId)?.takeUnless { it.isNeutral }
