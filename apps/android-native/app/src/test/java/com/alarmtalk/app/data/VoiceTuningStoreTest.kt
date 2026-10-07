@@ -138,6 +138,26 @@ class VoiceTuningStoreTest {
         source.delete()
     }
 
+    /** 지운 **뒤에** 끝난 굽기는 게시하지 않는다 — 원본 하나를 지우면 그 원본의 굽기만, 전부 지우면 모두(Codex #870). */
+    @Test
+    fun `지운 뒤에 끝난 굽기는 버린다`() {
+        val a = File(context.filesDir, "draft_a.mp3").apply { writeBytes(ByteArray(128)) }
+        val b = File(context.filesDir, "clip_b.mp3").apply { writeBytes(ByteArray(256)) }
+        val uriA = android.net.Uri.fromFile(a)
+        val uriB = android.net.Uri.fromFile(b)
+        val ticketA = VoiceTuningRenderer.ticketFor(uriA)
+        val ticketB = VoiceTuningRenderer.ticketFor(uriB)
+
+        VoiceTuningRenderer.deleteCopiesOf(context, uriA)
+        assertFalse("초안을 버렸다 — 그 굽기는 버린다", ticketA.isCurrent())
+        assertTrue("그 순간 울리는 다른 알람의 굽기는 그대로", ticketB.isCurrent())
+
+        VoiceTuningRenderer.clearAll(context)
+        assertFalse(ticketB.isCurrent())
+        assertTrue(VoiceTuningRenderer.ticketFor(uriB).isCurrent())
+        a.delete(); b.delete()
+    }
+
     @Test
     fun `사본은 통째로 지울 수 있다`() {
         copies.mkdirs()

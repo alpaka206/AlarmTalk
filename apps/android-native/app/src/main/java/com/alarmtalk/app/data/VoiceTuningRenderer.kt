@@ -8,6 +8,8 @@ import java.io.FileOutputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.security.MessageDigest
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * 목소리 높이 보정(`VoiceTuning`)을 건 **사본 파일**(16-bit 모노 WAV)을 만든다.
@@ -43,6 +45,24 @@ object VoiceTuningRenderer {
     private const val MAX_DURATION_MILLIS = 120_000L
     private const val WAV_HEADER_BYTES = 44
 
+    /**
+     * 지우기 세대 — 굽기는 오래 걸리고 중간에 멈출 수 없어, 지운 **뒤에** 끝나 사본을 다시 게시할 수 있다(Codex #870).
+     * [clearAll] 은 전체 세대를, [deleteCopiesOf] 는 그 원본의 세대만 올린다 — 초안 하나를 버렸다고 그 순간 울리는
+     * 다른 알람의 굽기까지 버리지 않게. 굽기는 시작할 때 세대를 잡아 두고, 게시한 뒤 달라졌으면 제가 쓴 것을 지운다.
+     */
+    private val globalEpoch = AtomicLong()
+    private val sourceEpochs = ConcurrentHashMap<String, Long>()
+
+    /** 한 번의 굽기가 시작할 때 잡은 세대. [isCurrent] 가 false 면 그 사이 지워졌다. */
+    internal class RenderTicket(private val key: String, private val global: Long, private val source: Long) {
+        fun isCurrent(): Boolean = globalEpoch.get() == global && (sourceEpochs[key] ?: 0L) == source
+    }
+
+    internal fun ticketFor(source: Uri): RenderTicket {
+        val key = cacheKey(source)
+        return RenderTicket(key, globalEpoch.get(), sourceEpochs[key] ?: 0L)
+    }
+
     /** [source] 에 [tuning] 을 건 사본의 `file://` Uri. 중립이거나 실패하면 null. */
     fun render(context: Context, source: Uri, tuning: VoiceTuning?): Uri? {
         val pitch = tuning?.normalized()?.pitchSemitones ?: return null
@@ -55,6 +75,7 @@ object VoiceTuningRenderer {
                 return@runCatching Uri.fromFile(out)
             }
             val started = System.nanoTime()
+            val ticket = ticketFor(source)
             val decoded = VoiceAudioDecoder.decodeMono(context, source, maxDurationMillis = MAX_DURATION_MILLIS)
                 ?: error("decode failed")
             val shifted = VoicePitchShifter.shift(decoded.samples, decoded.sampleRate, pitch)
@@ -65,6 +86,12 @@ object VoiceTuningRenderer {
             if (!tmp.renameTo(out)) {
                 tmp.delete()
                 error("rename failed")
+            }
+            // 굽는 사이 지워졌으면(초안 버림·목소리를 잃음·로그아웃) 방금 게시한 사본을 남기지 않는다.
+            if (!ticket.isCurrent()) {
+                out.delete()
+                Log.i(TAG, "Discarded a render that finished after its copies were cleared")
+                return@runCatching null
             }
             Log.i(
                 TAG,
@@ -81,13 +108,16 @@ object VoiceTuningRenderer {
     /** [source] 로 구운 사본(모든 높이)만 지운다 — 버린 초안의 미리듣기 클립처럼 원본이 아직 있을 때. */
     fun deleteCopiesOf(context: Context, source: Uri) {
         runCatching {
-            val prefix = "${cacheKey(source)}_"
+            val key = cacheKey(source)
+            sourceEpochs.merge(key, 1L, Long::plus)
+            val prefix = "${key}_"
             File(context.noBackupFilesDir, DIR).listFiles { f -> f.name.startsWith(prefix) }?.forEach { it.delete() }
         }.onFailure { Log.w(TAG, "Failed to delete voice tuning copies", it) }
     }
 
     /** 사본을 모두 지운다. 다시 필요하면 울릴 때·미리듣기 때 새로 굽는다. 메인 스레드에서 부르지 말 것. */
     fun clearAll(context: Context) {
+        globalEpoch.incrementAndGet()
         runCatching { File(context.noBackupFilesDir, DIR).deleteRecursively() }
             .onFailure { Log.w(TAG, "Failed to clear voice tuning copies", it) }
     }

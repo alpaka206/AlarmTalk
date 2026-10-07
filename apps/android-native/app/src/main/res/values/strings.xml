@@ -926,11 +926,9 @@
     <string name="voices_clip_prep_rendering_body">목소리를 만들고 있어요. 몇 분 걸릴 수 있어요.</string>
     <string name="voices_clip_prep_downloading_body">목소리를 받고 있어요. 앱을 닫아도 계속 받아요.</string>
     <string name="voices_clip_prep_retry">다시 시도하기</string>
-    <string name="voices_tuning_title">목소리 다듬기</string>
-    <string name="voices_tuning_desc">높이를 맞춰 보세요. 목소리 몸집은 그대로 두고 높이만 바꿔요. 이 목소리로 울리는 모든 알람에 그대로 적용돼요.</string>
+    <string name="voices_tuning_desc">목소리 몸집은 그대로 두고 높이만 바꿔요. 크기는 미리듣기와 같게 맞춰요. 저장하면 이 목소리로 울리는 모든 알람에 적용돼요.</string>
     <string name="voices_tuning_pitch">목소리 높이</string>
-    <string name="voices_tuning_auto">자동으로 맞추기</string>
-    <string name="voices_tuning_auto_applied">추천값</string>
+    <string name="voices_tuning_suggested">추천값</string>
     <string name="voices_tuning_reset">0으로</string>
     <string name="voices_tuning_analyzing">추천값을 계산하고 있어요…</string>
     <string name="voices_tuning_rendering">높이를 바꾸는 중이에요…</string>

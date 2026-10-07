@@ -45,6 +45,17 @@ enum AlarmSoundStagingError: Error, LocalizedError {
     }
 }
 
+/// 높이를 구워 넣은 스테이징 파일의 **정리 세대**(Codex #870) — `AlarmSoundStaging.clearTunedStagedSoundFiles` 가 올린다.
+/// 메인 밖 미리 굽기(`prestageTuned`)는 시작할 때 잡아 두고, 게시한 뒤 달라졌으면 제가 쓴 파일을 지운다 — 로그아웃 정리
+/// 뒤에 끝난 굽기가 목소리의 복사본을 남기지 않게.
+private final class TunedStagingEpoch: @unchecked Sendable {
+    static let shared = TunedStagingEpoch()
+    private let lock = NSLock()
+    private var value = 0
+    var current: Int { lock.withLock { value } }
+    func bump() { lock.withLock { value += 1 } }
+}
+
 @MainActor
 enum AlarmSoundStaging {
 
@@ -271,6 +282,7 @@ enum AlarmSoundStaging {
             ? "\(stagedNamePrefix)\(safeKey)-t\(tag)"
             : "\(stagedNamePrefix)\(safeKey)-v\(gainPercent)-t\(tag)"
         let stagedURL = soundsDir.appendingPathComponent("\(baseName).caf")
+        let epoch = TunedStagingEpoch.shared.current
         await Task.detached(priority: .userInitiated) {
             // ⚠ **`stage` 와 같은 캐시 키 잠금 안에서** 확인·굽기·게시를 한다(Codex #870). 밖에서 하면 캐시 교체가
             // 그 사이 지나가며 스테이징 파일을 지운 **뒤에** 옛 바이트로 구운 파일을 게시하고, `stage` 가 그걸 재사용한다
@@ -280,6 +292,7 @@ enum AlarmSoundStaging {
                 try? writeAtomically(into: stagedURL) { tmp in
                     try writeTunedCAF(from: sourceURL, to: tmp, gain: Float(gainPercent) / 100, tuning: tuning)
                 }
+                discardIfCleanedSince(epoch, stagedURL)
             }
         }.value
     }
@@ -289,6 +302,7 @@ enum AlarmSoundStaging {
     /// 알람은 이미 예약이 내려가 있고(`stopAllScheduledAlarms`), 다시 필요하면 다음 예약이 새로 굽는다.
     /// 다듬지 않은 파일은 건드리지 않는다(이 기능 이전과 같다).
     nonisolated static func clearTunedStagedSoundFiles() {
+        TunedStagingEpoch.shared.bump()
         let fm = FileManager.default
         guard let soundsDir = try? ensureSoundsDirectory() else { return }
         let entries = (try? fm.contentsOfDirectory(atPath: soundsDir.path)) ?? []
@@ -296,6 +310,15 @@ enum AlarmSoundStaging {
             try? fm.removeItem(at: soundsDir.appendingPathComponent(name))
         }
     }
+
+    /// 굽는 사이 정리(`clearTunedStagedSoundFiles`)가 지나갔으면 방금 게시한 파일을 지운다.
+    nonisolated static func discardIfCleanedSince(_ epoch: Int, _ stagedURL: URL) {
+        guard TunedStagingEpoch.shared.current != epoch else { return }
+        try? FileManager.default.removeItem(at: stagedURL)
+    }
+
+    /// 지금 정리 세대 — 테스트가 '굽는 사이 정리' 를 재현할 때 쓴다.
+    nonisolated static var tunedCleanupEpoch: Int { TunedStagingEpoch.shared.current }
 
     /// 높이 꼬리표(`-t` + `VoiceTuning.soundTag`)가 붙은 스테이징 파일 이름인가.
     nonisolated static func isTunedStagedFileName(_ name: String) -> Bool {

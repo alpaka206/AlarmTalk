@@ -232,6 +232,26 @@ final class VoiceTuningAnalyzerTests: XCTestCase {
         XCTAssertFalse(AlarmSoundStaging.isTunedStagedFileName("ringtone-ts-15.caf"))
     }
 
+    /// 로그아웃 정리 **뒤에** 끝난 미리 굽기는 제가 게시한 파일을 지운다(Codex #870).
+    func test_prestagePublishedAfterCleanup_isDiscarded() throws {
+        let sounds = try FileManager.default
+            .url(for: .libraryDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
+            .appendingPathComponent("Sounds", isDirectory: true)
+        try FileManager.default.createDirectory(at: sounds, withIntermediateDirectories: true)
+        let late = sounds.appendingPathComponent("voice-late-\(UUID().uuidString.lowercased())-ts-15.caf")
+        defer { try? FileManager.default.removeItem(at: late) }
+
+        let epoch = AlarmSoundStaging.tunedCleanupEpoch
+        AlarmSoundStaging.clearTunedStagedSoundFiles()          // 굽는 사이 로그아웃 정리가 지나갔다
+        try Data(count: 64).write(to: late)                      // 그 뒤에 굽기가 게시했다
+        AlarmSoundStaging.discardIfCleanedSince(epoch, late)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: late.path))
+
+        try Data(count: 64).write(to: late)
+        AlarmSoundStaging.discardIfCleanedSince(AlarmSoundStaging.tunedCleanupEpoch, late)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: late.path), "정리가 없었으면 그대로 둔다")
+    }
+
     func test_clearTunedStagedSoundFiles_keepsUntunedFiles() throws {
         let sounds = try FileManager.default
             .url(for: .libraryDirectory, in: .userDomainMask, appropriateFor: nil, create: true)

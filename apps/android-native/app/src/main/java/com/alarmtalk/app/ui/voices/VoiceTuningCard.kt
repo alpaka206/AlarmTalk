@@ -22,11 +22,12 @@ import java.util.Locale
 import kotlin.math.abs
 
 /**
- * 등록 미리듣기의 **목소리 다듬기** 카드 — 목소리 높이 슬라이더 하나(0.5 반음 눈금)와
- * '자동으로 맞추기'(추천값으로 되돌리기). 음량·굵기는 2026-10-07 에 뺐다(`VoiceTuning` 주석).
+ * 등록 미리듣기의 **목소리 높이** 카드 — 제목 줄(목소리 높이 · 값), 설명, 막대(0.5 반음 눈금), '추천값'·'0으로'.
+ * 구성은 iOS `VoicePreviewConfirmView.tuningCard` 와 같다(2026-10-07 사용자: 이 카드는 아이폰 구성에 맞춘다).
+ * 음량·굵기는 같은 날 뺐다(`VoiceTuning` 주석).
  *
- * 높이는 몸집을 두고 바꾸는 처리라 재생 중에 걸 수 없다 — 손을 떼면 [onAdjustFinished] 가 그 높이로
- * 사본을 굽고([rendering] 동안 진행 표시) 처음부터 다시 튼다. 저장은 등록 확정 때 한 번이다.
+ * 높이는 몸집을 두고 바꾸는 처리라 재생 중에 걸 수 없다 — 손을 떼면 [onAdjustFinished] 가 그 높이로 사본을
+ * 굽고([rendering] 동안 진행 표시) 처음부터 다시 튼다. 저장은 등록 확정 때 한 번이다.
  *
  * @param suggestion 자동 추천값. null 이면 아직 계산 중이다([analyzing]).
  */
@@ -49,114 +50,75 @@ internal fun VoiceTuningCard(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Text(
-                    text = stringResource(R.string.voices_tuning_title),
+                    text = stringResource(R.string.voices_tuning_pitch),
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.weight(1f),
                 )
-                val atSuggestion = suggestion != null && tuning.sameValuesAs(suggestion)
                 if (analyzing || rendering) {
                     CircularProgressIndicator(
                         modifier = Modifier.size(16.dp),
                         strokeWidth = 2.dp,
                     )
-                } else {
-                    TextButton(
-                        onClick = onAutoAdjust,
-                        enabled = enabled && suggestion != null && !atSuggestion,
-                    ) {
-                        Text(
-                            text = if (atSuggestion) {
-                                stringResource(R.string.voices_tuning_auto_applied)
-                            } else {
-                                stringResource(R.string.voices_tuning_auto)
-                            },
-                            style = MaterialTheme.typography.labelLarge,
-                        )
-                    }
                 }
+                Text(
+                    text = stringResource(R.string.voices_tuning_pitch_value, signedTuningValue(tuning.pitchSemitones)),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.SemiBold,
+                )
             }
             Text(
-                text = if (analyzing) {
-                    stringResource(R.string.voices_tuning_analyzing)
-                } else if (rendering) {
-                    stringResource(R.string.voices_tuning_rendering)
-                } else {
-                    stringResource(R.string.voices_tuning_desc)
+                text = when {
+                    analyzing -> stringResource(R.string.voices_tuning_analyzing)
+                    rendering -> stringResource(R.string.voices_tuning_rendering)
+                    else -> stringResource(R.string.voices_tuning_desc)
                 },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            VoiceTuningSliderRow(
-                label = stringResource(R.string.voices_tuning_pitch),
-                valueText = stringResource(R.string.voices_tuning_pitch_value, signedTuningValue(tuning.pitchSemitones)),
-                value = tuning.pitchSemitones,
-                range = VoiceTuning.PITCH_RANGE,
-                enabled = enabled,
+            WakerStepSlider(
+                value = tuning.pitchSemitones.coerceIn(VoiceTuning.PITCH_RANGE.start, VoiceTuning.PITCH_RANGE.endInclusive),
                 onValueChange = {
-                    onTuningChange(tuning.copy(pitchSemitones = it, source = VoiceTuning.SOURCE_MANUAL))
+                    val snapped = VoiceTuning.snapToStep(it, VoiceTuning.PITCH_RANGE)
+                    onTuningChange(tuning.copy(pitchSemitones = snapped, source = VoiceTuning.SOURCE_MANUAL))
                 },
                 onValueChangeFinished = { onAdjustFinished() },
+                valueRange = VoiceTuning.PITCH_RANGE,
+                stepSize = VoiceTuning.STEP,
+                enabled = enabled,
             )
-            // 0 으로 되돌리기 — 슬라이더를 정확히 0 에 맞추기 어렵다(iOS '0으로' 와 같다).
-            TextButton(
-                onClick = onReset,
-                enabled = enabled && !tuning.isNeutral,
-                modifier = Modifier.align(Alignment.End),
-            ) {
-                Text(
-                    text = stringResource(R.string.voices_tuning_reset),
-                    style = MaterialTheme.typography.labelLarge,
-                )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(
+                    onClick = onAutoAdjust,
+                    enabled = enabled && suggestion != null && !tuning.sameValuesAs(suggestion),
+                ) {
+                    Text(
+                        text = stringResource(R.string.voices_tuning_suggested),
+                        style = MaterialTheme.typography.labelLarge,
+                    )
+                }
+                // 0 으로 되돌리기 — 막대를 정확히 0 에 맞추기 어렵다.
+                TextButton(
+                    onClick = onReset,
+                    enabled = enabled && !tuning.isNeutral,
+                ) {
+                    Text(
+                        text = stringResource(R.string.voices_tuning_reset),
+                        style = MaterialTheme.typography.labelLarge,
+                    )
+                }
             }
         }
-    }
-}
-
-@Composable
-private fun VoiceTuningSliderRow(
-    label: String,
-    valueText: String,
-    value: Float,
-    range: ClosedFloatingPointRange<Float>,
-    enabled: Boolean,
-    onValueChange: (Float) -> Unit,
-    onValueChangeFinished: () -> Unit,
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = label,
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.SemiBold,
-                modifier = Modifier.weight(1f),
-            )
-            Text(
-                text = valueText,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontWeight = FontWeight.SemiBold,
-            )
-        }
-        WakerStepSlider(
-            value = value.coerceIn(range.start, range.endInclusive),
-            onValueChange = { onValueChange(VoiceTuning.snapToStep(it, range)) },
-            onValueChangeFinished = { onValueChangeFinished() },
-            valueRange = range,
-            stepSize = VoiceTuning.STEP,
-            enabled = enabled,
-        )
     }
 }
 
