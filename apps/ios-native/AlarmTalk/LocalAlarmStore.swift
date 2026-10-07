@@ -368,6 +368,25 @@ final class LocalAlarmStore: ObservableObject {
         persist()
     }
 
+    /// 지문이 없는 옛 예약에 붙이는 '낡음' 표시 — 어떤 소리 계획의 지문과도 같지 않다.
+    static let staleSoundFingerprint = "stale"
+
+    /// 지문이 없는 옛 예약을 **낡았다고 적어 둔다** — 리컨사일러는 지문이 없으면 일부러 건드리지 않으므로(옛 예약을
+    /// 전부 흔들지 않으려는 가드), 소리가 바뀐 행을 한 번만 강제로 다시 걸면 그 시도가 실패했을 때 옛 소리로 영영 남는다
+    /// (Codex #870). 표시를 남기면 다음 회차가 지문 불일치로 보고 다시 걸고, 성공하면 `markScheduled` 가 진짜 지문으로
+    /// 바꾼다. 지문이 이미 있는 행은 건드리지 않는다(지문 비교가 알아서 잡는다).
+    func markSoundFingerprintStale(ids: Set<String>) {
+        var changed = false
+        for index in alarms.indices
+        where ids.contains(alarms[index].id)
+            && alarms[index].alarmKitID != nil
+            && alarms[index].scheduledSoundFingerprint == nil {
+            alarms[index].scheduledSoundFingerprint = Self.staleSoundFingerprint
+            changed = true
+        }
+        if changed { persist() }
+    }
+
     /// OS 예약 핸들만 지운다. **`enabled` 과 상태는 건드리지 않는다.**
     ///
     /// 로그아웃·탈퇴에서 예약을 끊은 뒤 부른다 — 핸들이 남아 있으면

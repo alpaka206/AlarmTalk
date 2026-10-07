@@ -13,6 +13,22 @@ final class VoiceTuningAnalyzerTests: XCTestCase {
 
     // MARK: - F0
 
+    /// 높이 측정은 **두 앱이 같은 값**을 낸다 — 기대값은 안드로이드 `VoiceTuningAnalysisTest` 와 같은 숫자다(같은 식을
+    /// 파이썬으로 따로 셈한 값, Codex #870). 앞 0.2초 무음 + 떨림(160±15 Hz) 있는 배음 소리.
+    func test_medianF0_matchesAndroid() throws {
+        let sr = 44_100
+        var phase = 0.0
+        let x: [Float] = (0..<sr).map { i in
+            let t = Double(i) / Double(sr)
+            if t < 0.2 { return 0 }
+            let f = 160 + 15 * sin(2 * .pi * 1.3 * t)
+            phase += 2 * .pi * f / Double(sr)
+            return Float(0.4 * (sin(phase) + 0.5 * sin(2 * phase) + 0.25 * sin(3 * phase)))
+        }
+        let f0 = try XCTUnwrap(VoiceTuningAnalyzer.medianF0(samples: x, sampleRate: Double(sr)))
+        XCTAssertEqual(f0, 160.19798146036143, accuracy: 1e-4)
+    }
+
     /// 유성 프레임 하한은 두 앱이 같다 — 안드로이드 `VoiceTuningAnalysis.MIN_VOICED_FRAMES`(Codex #870).
     func test_minVoicedFrames_matchesAndroid() {
         XCTAssertEqual(VoiceTuningAnalyzer.minVoicedFrames, 5)

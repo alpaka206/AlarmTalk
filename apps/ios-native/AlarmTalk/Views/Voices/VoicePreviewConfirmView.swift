@@ -397,25 +397,32 @@ struct VoicePreviewConfirmView: View {
             let (url, applied) = await Self.tunedFile(for: source, tuning: target)
             guard generation == tuningGeneration else { return }
             renderingTuning = false
-            @MainActor func start(_ file: URL, heard: VoiceTuning) throws {
-                try voice.tuningPreviewPlayer.play(url: file) { finished in
-                    if finished { heardTuning = heard }
-                }
-            }
-            do {
-                try start(url, heard: applied)
-            } catch {
-                // 구운 사본을 못 열면(그 사이 지워짐·손상) 원본으로 한 번 더 — 그때 들은 높이는 0 이다. 원본도 못 틀면
-                // 조용히 넘기지 않고 알린다(Codex #870).
-                do {
-                    guard url != source else { throw error }
-                    try start(source, heard: .neutral)
-                } catch {
-                    errorMessage = String(localized: "미리듣기를 재생하지 못했어요.")
-                }
-            }
+            startReplay(url, heard: applied, original: url != source ? source : nil)
         }
         return true
+    }
+
+    /// 다시 듣기 재생. 구운 사본이 **열리지 않거나 재생 도중 깨지면** 원본으로 처음부터 한 번 더 틀고(그때 들은 높이는
+    /// 0), 원본도 안 되면 알린다 — 조용히 넘기면 버튼만 돌아오고 저장이 잠긴 채 남는다(Codex #870).
+    private func startReplay(_ file: URL, heard: VoiceTuning, original: URL?) {
+        let fallBack = {
+            if let original {
+                startReplay(original, heard: .neutral, original: nil)
+            } else {
+                errorMessage = String(localized: "미리듣기를 재생하지 못했어요.")
+            }
+        }
+        do {
+            try voice.tuningPreviewPlayer.play(url: file) { end in
+                switch end {
+                case .finished: heardTuning = heard
+                case .stopped: break
+                case .failed: fallBack()
+                }
+            }
+        } catch {
+            fallBack()
+        }
     }
 
     /// 클립을 그 높이로 구운 파일(백그라운드)과 **실제로 걸린 높이**. 중립이면 원본, 굽기에 실패해도 원본이고
@@ -783,15 +790,16 @@ struct VoicePreviewConfirmView: View {
             if tuningChanged {
                 // 그 목소리를 쓰는 이 기기의 알람을 새 높이로 다시 건다. 지문 비교만으로는 **지문이 없는 옛 예약**
                 // (`scheduledSoundFingerprint` 이전 — 교체에서 살아남은 프리셋 알람 등)이 안 잡혀 옛 소리로 남으므로
-                // 그 행들을 강제로 다시 건다(Codex #870).
+                // 그 행들에 '낡음' 표시를 **저장해 두고** 다시 건다 — 한 번의 강제 재예약이 실패해도 표시가 남아 다음
+                // 회차가 다시 건다(Codex #870).
                 let rearm = Set(alarmStore.alarms.filter {
                     $0.enabled && $0.originEnum == .localOwned && $0.voiceProfileId == promoted.id
                 }.map(\.id))
+                alarmStore.markSoundFingerprintStale(ids: rearm)
                 _ = await AlarmScheduleReconciler.reconcile(
                     store: alarmStore,
                     alarmKit: BackgroundDependencies.shared.alarmKit,
-                    ownerUserId: auth.session?.user.id,
-                    forceRearmIds: rearm
+                    ownerUserId: auth.session?.user.id
                 )
             }
             await voice.refresh(session: auth.session, force: true)

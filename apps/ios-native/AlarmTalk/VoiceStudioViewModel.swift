@@ -455,20 +455,18 @@ final class VoiceStudioViewModel: ObservableObject {
 
             // 재생이 끝날 때까지 기다린다. 화면의 '정지' 가 멈출 수 있게 `tuningPreviewPlayer` 로 튼다.
             previewPlayer.stop()
-            var tuningPlayerFailed = false
-            let completed = await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
+            let end = await withCheckedContinuation { (continuation: CheckedContinuation<VoiceTuningPreviewPlayer.PlaybackEnd, Never>) in
                 do {
                     try tuningPreviewPlayer.play(url: playbackURL) { continuation.resume(returning: $0) }
                 } catch {
-                    tuningPlayerFailed = true
-                    continuation.resume(returning: false)
+                    continuation.resume(returning: .failed)
                 }
             }
-            if !completed {
-                // 못 틀었으면 예전 플레이어로라도 원본을 들려준다(다듬기 없이) — 들어야 저장이
-                // 열리는 화면이라, 여기서 막히면 등록 자체를 못 끝낸다. 중간에 멈춘 것이면
-                // (화면 이탈 등) 청취를 기록하지 않는다.
-                guard tuningPlayerFailed else { return .interrupted }
+            if end != .finished {
+                // 못 틀었거나 **재생 도중 깨졌으면** 예전 플레이어로라도 원본을 들려준다(다듬기 없이) — 들어야 저장이
+                // 열리는 화면이라, 여기서 막히면 등록 자체를 못 끝낸다. 멈춘 것이면(화면 이탈 등) 청취를 기록하지
+                // 않는다(Codex #870 — 예전에는 도중에 깨진 것도 '멈춤' 으로 읽어 다시 틀지도 알리지도 않았다).
+                guard end == .failed else { return .interrupted }
                 onPlayingOriginalInstead?()
                 // ⚠ 원본도 못 틀면 **실패**다 — 아무것도 안 들렸는데 청취를 기록하면 저장이 열린다(Codex #870).
                 let fallback = await withCheckedContinuation { (continuation: CheckedContinuation<DraftFallbackResult, Never>) in
@@ -1101,7 +1099,8 @@ final class VoiceStudioViewModel: ObservableObject {
         defer { isBusy = false }
         // 등록 녹음의 높이를 **올리는 동안** 잰다(다듬기 추천용 — 숫자만 남긴다).
         let measuring = Task.detached(priority: .utility) {
-            VoiceTuningAnalyzer.measure(url: audioFileURL, maxSeconds: 30)
+            // 안드로이드 `SourcePitchAnalysisMaxMillis`(45초)와 같은 길이 — 다르면 같은 녹음의 추천이 갈린다(Codex #870).
+            VoiceTuningAnalyzer.measure(url: audioFileURL, maxSeconds: VoiceTuningAnalyzer.sourceAnalysisMaxSeconds)
         }
         do {
             let profile = try await api.cloneVoice(

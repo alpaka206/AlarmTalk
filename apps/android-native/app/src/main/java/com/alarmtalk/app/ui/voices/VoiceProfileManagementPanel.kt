@@ -734,43 +734,60 @@ internal fun VoiceProfileManagementPanel(
         return player
     }
 
-    // 구운 사본을 못 열면(그 사이 지워짐·손상) 원본으로 한 번 더 연다 — 그때 들은 높이는 0 이다(울림과 같은 규칙,
-    // 스펙 §4-3 — Codex #870). 원본도 못 열면 그 오류를 그대로 던진다.
-    fun createPreviewPlayerOrOriginal(
-        playUri: String,
-        originalUri: String,
-        applied: VoiceTuning,
-    ): Pair<MediaPlayer, VoiceTuning> =
-        try {
-            createTunedPreviewPlayer(playUri) to applied
-        } catch (error: Throwable) {
-            if (playUri == originalUri) throw error
-            AlarmTalkLog.reportError("Tuned preview copy could not be opened; playing the original", error)
-            createTunedPreviewPlayer(originalUri) to VoiceTuning.NEUTRAL
-        }
-
-    // 재생 도중 디코딩·입출력 오류가 나면 **끝까지 들은 것이 아니다.** 오류를 처리하지 않으면 MediaPlayer 가 이어서
-    // 완료 콜백을 부르고, 그게 청취 확인·'들은 높이' 로 이어져 저장이 열린다(Codex #870). 오류를 삼켜(true) 완료를
-    // 막고 멈춘다 — 다시 들으면 된다.
-    fun stopOnPlaybackError(player: MediaPlayer) {
-        player.setOnErrorListener { failed, what, extra ->
-            if (mediaPlayer === failed) {
-                AlarmTalkLog.reportError("Voice preview playback error what=$what extra=$extra")
-                stopMediaPreview(invalidateGreetingPreview = false)
-                confirmPreviewPlaying = false
-                localMessage = context.getString(R.string.voices_preview_play_failed)
-            } else {
-                failed.release()
-            }
-            true
-        }
-    }
-
     // 스트림은 시작하는 이 자리에서만 올린다(짝은 `releasePreviewTuning`).
     fun startTunedPreview(player: MediaPlayer) {
         AlarmStreamVolume.applyForRinging(context, TuningPreviewStreamPercent, AlarmStreamVolume.Owner.PREVIEW)
         previewStreamRaised = true
         player.start()
+    }
+
+    // 등록 미리듣기 재생을 시작한다. 구운 사본이 **열리지 않거나 재생 도중 깨지면** 원본으로 처음부터 한 번 더
+    // 틀고(그때 들은 높이는 0), 원본도 안 되면 멈추고 알린다 — 실패를 완료로 읽지 않게 오류는 언제나 삼킨다
+    // (오류를 처리하지 않으면 MediaPlayer 가 이어서 완료 콜백을 불러 청취 확인·'들은 높이' 로 이어진다).
+    // [onPlayer] 는 실제로 트는 플레이어와 그 재생에 실린 높이로 완료 처리를 건다(스펙 §4-3, Codex #870).
+    fun startPreviewWithFallback(
+        playUri: String,
+        originalUri: String,
+        applied: VoiceTuning,
+        onPlayer: (MediaPlayer, VoiceTuning) -> Unit,
+    ) {
+        fun failPlayback() {
+            stopMediaPreview(invalidateGreetingPreview = false)
+            confirmPreviewPlaying = false
+            localMessage = context.getString(R.string.voices_preview_play_failed)
+        }
+        fun open(uri: String, heard: VoiceTuning, canFallBack: Boolean) {
+            val player = try {
+                createTunedPreviewPlayer(uri)
+            } catch (error: Throwable) {
+                if (!canFallBack) throw error
+                AlarmTalkLog.reportError("Tuned preview copy could not be opened; playing the original", error)
+                return open(originalUri, VoiceTuning.NEUTRAL, canFallBack = false)
+            }
+            player.setOnErrorListener { failed, what, extra ->
+                if (mediaPlayer !== failed) {
+                    failed.release()
+                    return@setOnErrorListener true
+                }
+                AlarmTalkLog.reportError("Voice preview playback error what=$what extra=$extra")
+                if (canFallBack) {
+                    stopMediaPreview(invalidateGreetingPreview = false)
+                    runCatching { open(originalUri, VoiceTuning.NEUTRAL, canFallBack = false) }
+                        .onFailure { error ->
+                            AlarmTalkLog.reportError("Original preview could not be played either", error)
+                            failPlayback()
+                        }
+                } else {
+                    failPlayback()
+                }
+                true
+            }
+            onPlayer(player, heard)
+            mediaPlayer = player
+            startTunedPreview(player)
+            confirmPreviewPlaying = true
+        }
+        open(playUri, applied, canFallBack = playUri != originalUri)
     }
 
     // 높이를 바꾼 사본의 Uri(울림과 같은 파일 — `VoiceTuningRenderer`)와 **실제로 걸린 높이**. 0 이거나 굽기에
@@ -805,24 +822,21 @@ internal fun VoiceProfileManagementPanel(
         tunedReplayJob = scope.launch {
             runCatching {
                 val (playUri, rendered) = tunedPreviewUri(uri, tuning)
-                val (player, applied) = createPreviewPlayerOrOriginal(playUri, uri, rendered)
-                stopOnPlaybackError(player)
-                mediaPlayer = player
-                player.setOnCompletionListener { completed ->
-                    if (mediaPlayer !== completed) return@setOnCompletionListener
-                    heardTuning = applied
-                    scope.launch {
-                        delay(TuningPreviewRepeatGapMs)
-                        if (mediaPlayer === completed && confirmPreviewPlaying) {
-                            runCatching {
-                                completed.seekTo(0)
-                                completed.start()
+                startPreviewWithFallback(playUri, uri, rendered) { player, applied ->
+                    player.setOnCompletionListener { completed ->
+                        if (mediaPlayer !== completed) return@setOnCompletionListener
+                        heardTuning = applied
+                        scope.launch {
+                            delay(TuningPreviewRepeatGapMs)
+                            if (mediaPlayer === completed && confirmPreviewPlaying) {
+                                runCatching {
+                                    completed.seekTo(0)
+                                    completed.start()
+                                }
                             }
                         }
                     }
                 }
-                startTunedPreview(player)
-                confirmPreviewPlaying = true
             }.onFailure { error ->
                 if (error is kotlin.coroutines.cancellation.CancellationException) throw error
                 AlarmTalkLog.reportError("Failed to replay tuned voice preview", error)
@@ -956,45 +970,43 @@ internal fun VoiceProfileManagementPanel(
                 // 추천값을 **첫 재생 전에** 정한다 — 첫 소리부터 보정된 목소리다(짧은 클립이라 금방이다).
                 ensureTuningSuggestion(voice.id, cached.localAudioUri)
                 val (playUri, renderedTuning) = tunedPreviewUri(cached.localAudioUri, previewTuning)
-                val (player, playedTuning) = createPreviewPlayerOrOriginal(playUri, cached.localAudioUri, renderedTuning)
-                stopOnPlaybackError(player)
                 // 이 재생에 실은 높이는 **이 요청의 지역 값**으로 완료 콜백에 넘긴다 — 화면 상태에 두면 확인을 기다리는 사이
                 // 시작한 다른 미리듣기가 덮어써, 듣지 않은 높이를 '들었다' 로 적는다(Codex #870).
-                mediaPlayer = player.apply {
-                    setOnCompletionListener {
-                        if (mediaPlayer === it) releasePreviewTuning()
-                        it.release()
-                        if (mediaPlayer === it) {
-                            mediaPlayer = null
-                            confirmPreviewPlaying = false
-                            scope.launch {
-                                runCatching {
-                                    val token = response.previewPlaybackToken
-                                    if (token != null) {
-                                        onConfirmVoicePreviewPlayed(voice.id, token)
-                                    } else if (!response.previewPlaybackConfirmed) {
-                                        error("Preview playback confirmation token missing")
+                startPreviewWithFallback(playUri, cached.localAudioUri, renderedTuning) { player, playedTuning ->
+                    player.apply {
+                        setOnCompletionListener {
+                            if (mediaPlayer === it) releasePreviewTuning()
+                            it.release()
+                            if (mediaPlayer === it) {
+                                mediaPlayer = null
+                                confirmPreviewPlaying = false
+                                scope.launch {
+                                    runCatching {
+                                        val token = response.previewPlaybackToken
+                                        if (token != null) {
+                                            onConfirmVoicePreviewPlayed(voice.id, token)
+                                        } else if (!response.previewPlaybackConfirmed) {
+                                            error("Preview playback confirmation token missing")
+                                        }
+                                    }.onSuccess {
+                                        confirmPreviewCompleted = true
+                                        heardTuning = playedTuning
+                                        // 첫 재생 도중에 높이를 바꿨으면 이제 새 높이로 들려준다.
+                                        if (!previewTuning.sameValuesAs(playedTuning)) {
+                                            replayTunedPreviewIfReady()
+                                        }
+                                    }.onFailure { error ->
+                                        AlarmTalkLog.reportError("Failed to confirm preview playback", error)
+                                        localMessage = userFacingError(
+                                            error,
+                                            context.getString(R.string.voices_preview_play_failed),
+                                        )
                                     }
-                                }.onSuccess {
-                                    confirmPreviewCompleted = true
-                                    heardTuning = playedTuning
-                                    // 첫 재생 도중에 높이를 바꿨으면 이제 새 높이로 들려준다.
-                                    if (!previewTuning.sameValuesAs(playedTuning)) {
-                                        replayTunedPreviewIfReady()
-                                    }
-                                }.onFailure { error ->
-                                    AlarmTalkLog.reportError("Failed to confirm preview playback", error)
-                                    localMessage = userFacingError(
-                                        error,
-                                        context.getString(R.string.voices_preview_play_failed),
-                                    )
                                 }
                             }
                         }
                     }
                 }
-                startTunedPreview(player)
-                confirmPreviewPlaying = true
             }.onFailure { error ->
                 // 다이얼로그를 닫아 코루틴이 취소된 경우는 오류가 아니다 — 취소는 되던져
                 // 허위 "미리듣기 실패" 메시지가 뜨지 않게 한다.

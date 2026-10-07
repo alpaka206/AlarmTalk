@@ -150,7 +150,8 @@ enum VoiceTuningRenderer {
         try FileManager.default.createDirectory(at: previewDirectory, withIntermediateDirectories: true)
         let url = previewFileURL(for: source, tag: tag)
         if FileManager.default.fileExists(atPath: url.path) { return url }
-        let rendered = try render(url: source, tuning: tuning, maxSeconds: 60)
+        // 안드로이드 `VoiceTuningRenderer` 의 `MAX_DURATION_MILLIS`(120초)와 같다.
+        let rendered = try render(url: source, tuning: tuning, maxSeconds: 120)
         let tmp = previewDirectory.appendingPathComponent("\(UUID().uuidString).caf")
         try writeMonoCAF(rendered.samples, sampleRate: rendered.sampleRate, to: tmp)
         // 굽는 사이 지워졌으면(화면을 떠남·세션 변경·목소리 삭제 …) 게시하지 않는다.
@@ -167,11 +168,15 @@ enum VoiceTuningRenderer {
 final class VoiceTuningPreviewPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
     @Published private(set) var isPlaying = false
 
-    private var player: AVAudioPlayer?
-    /// 끝까지 재생하면 `true`, 중간에 멈추면 `false` 로 한 번 불린다.
-    private var onFinish: ((Bool) -> Void)?
+    /// 재생이 어떻게 끝났는가. **멈춘 것(`stopped`)과 깨진 것(`failed`)을 가른다** — 둘을 한데 모으면 재생 도중 깨진
+    /// 사본이 '사용자가 멈췄다' 로 읽혀 원본으로 다시 틀지도, 알리지도 않는다(Codex #870).
+    enum PlaybackEnd: Sendable { case finished, stopped, failed }
 
-    func play(url: URL, onFinish: ((Bool) -> Void)? = nil) throws {
+    private var player: AVAudioPlayer?
+    /// 재생이 끝나면 한 번 불린다.
+    private var onFinish: ((PlaybackEnd) -> Void)?
+
+    func play(url: URL, onFinish: ((PlaybackEnd) -> Void)? = nil) throws {
         stop()
         let session = AVAudioSession.sharedInstance()
         try session.setCategory(.playback, mode: .spokenAudio)
@@ -189,7 +194,7 @@ final class VoiceTuningPreviewPlayer: NSObject, ObservableObject, AVAudioPlayerD
         let pending = onFinish
         onFinish = nil
         teardown()
-        pending?(false)
+        pending?(.stopped)
     }
 
     nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
@@ -199,7 +204,7 @@ final class VoiceTuningPreviewPlayer: NSObject, ObservableObject, AVAudioPlayerD
             let pending = self.onFinish
             self.onFinish = nil
             self.teardown()
-            pending?(flag)
+            pending?(flag ? .finished : .failed)
         }
     }
 

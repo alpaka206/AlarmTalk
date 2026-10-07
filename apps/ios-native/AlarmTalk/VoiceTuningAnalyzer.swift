@@ -20,6 +20,10 @@ enum VoiceTuningAnalyzer {
     static let pitchDeadZoneSt: Double = 1.5
     /// 이보다 유성 프레임이 적으면 못 잰 것이다(안드로이드 `VoiceTuningAnalysis.MIN_VOICED_FRAMES`).
     static let minVoicedFrames = 5
+    /// 프레임 문턱 — 가장 큰 프레임 RMS 보다 이만큼(dB) 작으면 무성으로 본다(안드로이드 `FRAME_GATE_DB`).
+    static let frameGateDb: Double = 30
+    /// 등록 녹음을 재는 길이(초) — 안드로이드 `SourcePitchAnalysisMaxMillis`(45초)와 같다.
+    static let sourceAnalysisMaxSeconds: Double = 45
     static let yinThreshold: Double = 0.2
     static let frameSeconds: Double = 0.025
     static let hopSeconds: Double = 0.010
@@ -101,87 +105,124 @@ enum VoiceTuningAnalyzer {
 
     // MARK: F0 (YIN)
 
-    /// 유성 프레임 F0 의 중앙값(Hz). 유성 프레임이 셋 미만이면 nil.
+    /// 유성 프레임 F0 의 중앙값(Hz). 유성 프레임이 모자라면 nil.
+    ///
+    /// ⚠ 안드로이드 `VoiceTuningAnalysis.medianF0` 와 **같은 식·같은 순서의 셈**이다(Codex #870) — 저역통과(RBJ 두 번,
+    /// Direct Form I, 단마다 Float) → 정수 배 솎기(⌊n/배⌋ 개) → 프레임 RMS 문턱(가장 큰 프레임보다 30dB 아래, 하한 1e-4)
+    /// → 프레임마다 YIN → 중앙값. 예전 iOS 는 문턱(에너지 비)·프레임 수·보간 자르기·하한이 조금씩 달라 같은 녹음의 추천이
+    /// 두 앱에서 갈릴 수 있었다. 회귀 테스트가 두 앱에 **같은 기대값**을 둔다.
     static func medianF0(samples: [Float], sampleRate: Double) -> Double? {
-        guard sampleRate > 0, !samples.isEmpty else { return nil }
-        let lowpass = Biquad.lowpass(cutoff: lowpassHz, sampleRate: sampleRate)
-        let filtered = Biquad.apply([lowpass, lowpass], to: samples)
+        let sr = Int(sampleRate.rounded())
+        guard sr > 0, !samples.isEmpty else { return nil }
+        let filtered = lowpassTwice(samples, sampleRate: sr, cutoff: lowpassHz)
+        let factor = max(1, sr / Int(analysisRateHz))
+        let signal = factor <= 1 ? filtered : (0..<(filtered.count / factor)).map { filtered[$0 * factor] }
+        let rate = sr / factor
+        let window = VoicePitchShifter.jsRound(frameSeconds * Double(rate))
+        let hop = max(1, VoicePitchShifter.jsRound(hopSeconds * Double(rate)))
+        let tauMax = Int((Double(rate) / minF0).rounded(.up))
+        let span = window + tauMax + 2
+        guard window > 0, signal.count >= span else { return nil }
 
-        let factor = max(1, Int(sampleRate / analysisRateHz))
-        let rate = sampleRate / Double(factor)
-        let x: [Double] = stride(from: 0, to: filtered.count, by: factor).map { Double(filtered[$0]) }
-
-        let window = max(1, Int((frameSeconds * rate).rounded()))
-        let hop = max(1, Int((hopSeconds * rate).rounded()))
-        let tauMin = max(2, Int(rate / maxF0))
-        let tauMax = Int((rate / minF0).rounded(.up))
-        let span = window + tauMax + 1
-        guard x.count >= span else { return nil }
-
-        // 무음·잡음 프레임은 YIN 이 아무 주기나 집는다 — 가장 큰 프레임보다 30dB 아래는 버린다.
         var starts: [Int] = []
-        var energies: [Double] = []
-        var start = 0
-        x.withUnsafeBufferPointer { p in
-            while start + span <= p.count {
-                var energy = 0.0
-                for j in 0..<window { energy += p[start + j] * p[start + j] }
-                starts.append(start)
-                energies.append(energy / Double(window))
-                start += hop
-            }
+        var position = 0
+        while position + span <= signal.count {
+            starts.append(position)
+            position += hop
         }
-        guard let maxEnergy = energies.max(), maxEnergy > 1e-12 else { return nil }
-        let energyGate = maxEnergy * 1e-3  // −30 dB
-
-        var diff = [Double](repeating: 0, count: tauMax + 2)
-        var cmnd = [Double](repeating: 1, count: tauMax + 2)
-        var f0s: [Double] = []
-        x.withUnsafeBufferPointer { p in
-            for (frame, begin) in starts.enumerated() where energies[frame] >= energyGate {
-                // 차이 함수 d(τ) = Σ (x_j − x_{j+τ})²
-                for tau in 1...(tauMax + 1) {
-                    var sum = 0.0
-                    for j in 0..<window {
-                        let delta = p[begin + j] - p[begin + j + tau]
-                        sum += delta * delta
-                    }
-                    diff[tau] = sum
-                }
-                // 누적 평균 정규화 d'(τ)
-                var running = 0.0
-                cmnd[0] = 1
-                for tau in 1...(tauMax + 1) {
-                    running += diff[tau]
-                    cmnd[tau] = running > 0 ? diff[tau] * Double(tau) / running : 1
-                }
-                // 문턱 아래로 처음 내려간 골의 바닥
-                var estimate = -1
-                var tau = tauMin
-                while tau <= tauMax {
-                    if cmnd[tau] < yinThreshold {
-                        while tau + 1 <= tauMax, cmnd[tau + 1] < cmnd[tau] { tau += 1 }
-                        estimate = tau
-                        break
-                    }
-                    tau += 1
-                }
-                guard estimate > 0 else { continue }
-                // 포물선 보간으로 τ 를 소수점까지
-                let s0 = cmnd[estimate - 1], s1 = cmnd[estimate], s2 = cmnd[estimate + 1]
-                let denominator = s0 + s2 - 2 * s1
-                let shift = denominator != 0 ? 0.5 * (s0 - s2) / denominator : 0
-                let refined = Double(estimate) + min(max(shift, -1), 1)
-                let f0 = rate / refined
-                if f0 >= minF0, f0 <= maxF0 { f0s.append(f0) }
+        let rms = starts.map { start -> Double in
+            var sum = 0.0
+            for i in start..<(start + window) {
+                let value = Double(signal[i])
+                sum += value * value
             }
+            return (sum / Double(window)).squareRoot()
+        }
+        guard let loudest = rms.max(), loudest > 1e-6 else { return nil }
+        let gate = max(1e-4, loudest * pow(10, -frameGateDb / 20))
+
+        var voiced: [Double] = []
+        for (index, start) in starts.enumerated() where rms[index] >= gate {
+            if let f0 = yinFrequency(signal, start: start, window: window, sampleRate: rate) { voiced.append(f0) }
         }
         // 유성 프레임이 이보다 적으면 못 잰 것으로 본다 — 안드로이드 `VoiceTuningAnalysis.MIN_VOICED_FRAMES` 와 같은 수
         // (다르면 같은 녹음에서 한 앱만 추천을 낸다, Codex #870).
-        guard f0s.count >= Self.minVoicedFrames else { return nil }
-        let sorted = f0s.sorted()
-        let mid = sorted.count / 2
-        return sorted.count % 2 == 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid]
+        guard voiced.count >= minVoicedFrames else { return nil }
+        voiced.sort()
+        let mid = voiced.count / 2
+        return voiced.count % 2 == 1 ? voiced[mid] : (voiced[mid - 1] + voiced[mid]) / 2
+    }
+
+    /// 한 프레임의 YIN 추정(Hz) — 안드로이드 `VoiceTuningAnalysis.yinFrequency` 와 같다. 문턱 아래로 내려가는 첫 지연을
+    /// 찾아 그 골짜기 바닥까지 따라가고, 포물선 보간으로 소수 지연을 구한다. 문턱 아래가 없으면 무성(nil).
+    static func yinFrequency(_ signal: [Float], start: Int, window: Int, sampleRate: Int) -> Double? {
+        let rate = Double(sampleRate)
+        let tauMin = max(2, Int((rate / maxF0).rounded(.down)))
+        let tauMax = Int((rate / minF0).rounded(.up))
+        guard start >= 0, start + window + tauMax + 1 <= signal.count else { return nil }
+        var difference = [Double](repeating: 0, count: tauMax + 2)
+        for tau in 1...(tauMax + 1) {
+            var sum = 0.0
+            for j in 0..<window {
+                let delta = Double(signal[start + j]) - Double(signal[start + j + tau])
+                sum += delta * delta
+            }
+            difference[tau] = sum
+        }
+        var normalized = [Double](repeating: 0, count: tauMax + 2)
+        normalized[0] = 1
+        var running = 0.0
+        for tau in 1...(tauMax + 1) {
+            running += difference[tau]
+            normalized[tau] = running <= 0 ? 1 : difference[tau] * Double(tau) / running
+        }
+        var tau = tauMin
+        var found = -1
+        while tau <= tauMax {
+            if normalized[tau] < yinThreshold {
+                while tau + 1 <= tauMax, normalized[tau + 1] < normalized[tau] { tau += 1 }
+                found = tau
+                break
+            }
+            tau += 1
+        }
+        guard found >= 0 else { return nil }
+        var refined = Double(found)
+        if found >= 1, found < tauMax + 1 {
+            let s0 = normalized[found - 1]
+            let s1 = normalized[found]
+            let s2 = normalized[found + 1]
+            let denominator = s0 + s2 - 2 * s1
+            if abs(denominator) > 1e-12 { refined = Double(found) + (s0 - s2) / (2 * denominator) }
+        }
+        guard refined > 0 else { return nil }
+        return rate / refined
+    }
+
+    /// 안드로이드 `VoiceTuningAnalysis.lowpass` 와 같다 — 차단이 나이퀴스트의 95% 이상이면 그대로, 아니면 RBJ 저역통과를
+    /// 두 번(Direct Form I, Double 로 누산해 단마다 Float 로).
+    private static func lowpassTwice(_ samples: [Float], sampleRate: Int, cutoff: Double) -> [Float] {
+        if cutoff >= Double(sampleRate) / 2 * 0.95 { return samples }
+        let w0 = 2 * Double.pi * cutoff / Double(sampleRate)
+        let alpha = sin(w0) / (2 * 0.7071067811865476)
+        let cosW = cos(w0)
+        let a0 = 1 + alpha
+        let c = (b0: (1 - cosW) / 2 / a0, b1: (1 - cosW) / a0, b2: (1 - cosW) / 2 / a0, a1: -2 * cosW / a0, a2: (1 - alpha) / a0)
+        func pass(_ input: [Float]) -> [Float] {
+            var output = [Float](repeating: 0, count: input.count)
+            var x1 = 0.0, x2 = 0.0, y1 = 0.0, y2 = 0.0
+            for i in input.indices {
+                let x0 = Double(input[i])
+                let y0 = c.b0 * x0 + c.b1 * x1 + c.b2 * x2 - c.a1 * y1 - c.a2 * y2
+                x2 = x1
+                x1 = x0
+                y2 = y1
+                y1 = y0
+                output[i] = Float(y0)
+            }
+            return output
+        }
+        return pass(pass(samples))
     }
 
     // MARK: 라우드니스 (BS.1770 근사)

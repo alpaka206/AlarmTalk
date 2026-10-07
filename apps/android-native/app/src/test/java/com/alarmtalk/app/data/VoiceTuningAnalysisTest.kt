@@ -26,6 +26,27 @@ class VoiceTuningAnalysisTest {
         assertTrue("expected $expected got $actual (${"%.2f".format(error)}%)", error <= percent)
     }
 
+    /**
+     * 높이 측정은 **두 앱이 같은 값**을 낸다 — 기대값은 iOS `VoiceTuningAnalyzerTests` 와 같은 숫자다(같은 식을 파이썬으로
+     * 따로 셈한 값, Codex #870). 앞 0.2초 무음 + 떨림(160±15 Hz) 있는 배음 소리.
+     */
+    @Test
+    fun medianF0MatchesIos() {
+        val sr = 44_100
+        var phase = 0.0
+        val x = FloatArray(sr) { i ->
+            val t = i.toDouble() / sr
+            if (t < 0.2) {
+                0f
+            } else {
+                val f = 160 + 15 * kotlin.math.sin(2 * PI * 1.3 * t)
+                phase += 2 * PI * f / sr
+                (0.4 * (kotlin.math.sin(phase) + 0.5 * kotlin.math.sin(2 * phase) + 0.25 * kotlin.math.sin(3 * phase))).toFloat()
+            }
+        }
+        assertEquals(160.19798146036143, VoiceTuningAnalysis.medianF0(x, sr)!!, 1e-4)
+    }
+
     /** 유성 프레임 하한은 두 앱이 같다 — iOS `VoiceTuningAnalyzer.minVoicedFrames`(Codex #870). */
     @Test
     fun minVoicedFramesMatchesIos() {

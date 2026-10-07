@@ -311,6 +311,28 @@ final class AlarmSoundPlanTests: XCTestCase {
         )
     }
 
+    /// 지문이 없는 옛 예약에 '낡음' 표시를 저장하면 — 강제 재예약 한 번이 실패해도 — 리컨사일러가 계속 다시 건다(Codex #870).
+    func test_staleMarker_makesALegacyReservationRearmUntilItSucceeds() throws {
+        let (cache, keys) = try seedBucket(clipCount: 1)
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("stale-\(UUID().uuidString).json")
+        addTeardownBlock { try? FileManager.default.removeItem(at: url) }
+        let store = LocalAlarmStore(storageURL: url, loadFromDisk: false)
+        var record = makeBucketRecord(bucketId: "medication", keys: keys)
+        record.alarmKitID = UUID().uuidString
+        record.scheduledSoundFingerprint = nil
+        _ = store.upsert(record)
+        let legacy = try XCTUnwrap(store.record(id: record.id))
+        XCTAssertFalse(
+            AlarmScheduleReconciler.needsReschedule(legacy, alarmKit: AlarmKitViewModel(), audioCache: cache),
+            "지문 없는 옛 예약은 평소에는 건드리지 않는다"
+        )
+
+        store.markSoundFingerprintStale(ids: [record.id])
+        let marked = try XCTUnwrap(store.record(id: record.id))
+        XCTAssertEqual(marked.scheduledSoundFingerprint, LocalAlarmStore.staleSoundFingerprint)
+        XCTAssertTrue(AlarmScheduleReconciler.needsReschedule(marked, alarmKit: AlarmKitViewModel(), audioCache: cache))
+    }
+
     /// 받은 알람·직접 녹음에는 다듬기를 싣지 않는다 — 가족이 내가 공유한 목소리로 보낸 알람은 내 목소리 id 를
     /// 달고 와도 보낸 사람이 들려주려던 소리 그대로다(스펙 §4-3, Codex #870).
     func test_voiceTuning_skipsReceivedAndRecordedAlarms() throws {
