@@ -378,6 +378,10 @@ enum AlarmSoundStaging {
 
     /// 지금 있는 높이 구운 스테이징 파일을 '미뤄 둔 정리' 로 적는다 — 로그아웃 때 취소에 실패한 예약이 남아 지금은 못 지울 때.
     nonisolated static func deferTunedStagedSoundFiles() {
+        // 목록을 적기 **전에** 세대를 올린다 — 그 전에 시작한 미리 굽기가 목록을 적은 뒤에 파일을 게시하면 어디에도
+        // 적히지 않아 영영 남는다. 세대가 바뀌었으니 그 굽기는 게시한 파일을 스스로 지운다(Codex #870). 이미 있는
+        // 파일(남은 예약이 쓰는 것)은 미리 굽기가 다시 쓰지 않으므로 건드려지지 않는다.
+        TunedStagingEpoch.shared.bump()
         guard let soundsDir = try? ensureSoundsDirectory() else { return }
         let entries = (try? FileManager.default.contentsOfDirectory(atPath: soundsDir.path)) ?? []
         DeferredTunedCleanup.add(entries.filter(isTunedStagedFileName))

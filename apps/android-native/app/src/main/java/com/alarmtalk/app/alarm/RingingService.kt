@@ -471,34 +471,53 @@ class RingingService : Service() {
         // 수백 ms) 이후는 기기 캐시다. 이 함수는 serviceScope(IO)에서만 불린다. 실패하면 원래 소리.
         val playUri = tuning?.let { VoiceTuningRenderer.render(applicationContext, voiceUri, it) } ?: voiceUri
         if (tuning != null) Log.i(TAG, "Voice pitch tuning ${tuning.pitchSemitones} st applied=${playUri != voiceUri}")
-        // 구운 사본을 못 열면(손상·그 사이 지워짐) 알람음으로 떨어지기 전에 원래 목소리를 한 번 더 시도한다 —
-        // 그 목소리는 멀쩡할 수 있다(Codex #870, 스펙 §4-3 "실패하면 원래 소리").
-        val player = createVoicePlayer(playUri)
-            ?: if (playUri != voiceUri) createVoicePlayer(voiceUri) else null
+        // 플레이어에 반복 처리를 걸고 시작한다. 시작이 실패하면(오디오 서버·플레이어 상태) 놓고 null — 예외가 여기서
+        // 빠져나가면 뒤따르는 진동까지 건너뛰어 **소리도 진동도 없는 알람**이 된다(Codex #870).
+        fun startPlayer(candidate: MediaPlayer): MediaPlayer? = runCatching {
+            candidate.apply {
+                applyVoiceVolume(this, alarm)
+                isLooping = false
+                setOnCompletionListener { completed ->
+                    if (repeatVoice && voiceLoopActive) {
+                        if (mediaPlayer === completed) {
+                            scheduleVoiceRepeat(completed, alarm)
+                        } else {
+                            completed.release()
+                        }
+                    } else {
+                        completed.release()
+                        if (mediaPlayer === completed) {
+                            mediaPlayer = null
+                        }
+                    }
+                }
+                start()
+            }
+        }.onFailure { error ->
+            AlarmTalkLog.reportError("Failed to start voice audio", error)
+            candidate.release()
+        }.getOrNull()
         // 준비 도중 dismiss/snooze/파괴로 현재 알람이 바뀌었으면 좀비 루프 플레이어를 남기지 않는다.
-        if (destroyed || (alarm != null && ringingAlarmId != alarm.id)) {
+        fun superseded(): Boolean = destroyed || (alarm != null && ringingAlarmId != alarm.id)
+
+        // 구운 사본을 못 열거나 **시작하지 못하면** 알람음으로 떨어지기 전에 원래 목소리를 한 번 더 시도한다 —
+        // 그 목소리는 멀쩡할 수 있다(Codex #870, 스펙 §4-3 "실패하면 원래 소리").
+        val tunedPlayer = if (playUri != voiceUri) createVoicePlayer(playUri) else null
+        val player = tunedPlayer ?: createVoicePlayer(voiceUri)
+        if (superseded()) {
             player?.release()
             mediaPlayer = null
             return
         }
-        mediaPlayer = player?.apply {
-            applyVoiceVolume(this, alarm)
-            isLooping = false
-            setOnCompletionListener { completed ->
-                if (repeatVoice && voiceLoopActive) {
-                    if (mediaPlayer === completed) {
-                        scheduleVoiceRepeat(completed, alarm)
-                    } else {
-                        completed.release()
-                    }
-                } else {
-                    completed.release()
-                    if (mediaPlayer === completed) {
-                        mediaPlayer = null
-                    }
-                }
+        mediaPlayer = player?.let(::startPlayer)
+        if (mediaPlayer == null && tunedPlayer != null) {
+            val original = createVoicePlayer(voiceUri)
+            if (superseded()) {
+                original?.release()
+                mediaPlayer = null
+                return
             }
-            start()
+            mediaPlayer = original?.let(::startPlayer)
         }
         if (mediaPlayer == null) {
             AlarmTalkLog.reportError("Failed to create voice MediaPlayer")

@@ -102,11 +102,7 @@ enum VoicePitchShifter {
         // 분석 표시
         let count = x.count
         let unvoicedHop = jsRound(sr * 0.005)
-        var squares = [Double](repeating: 0, count: count + 1)
-        for k in 0..<count { squares[k + 1] = squares[k] + Double(xl[k]) * Double(xl[k]) }
         var marks: [(n: Int, period: Int, voiced: Bool)] = []
-        var template: [Float] = []
-        var correlation: [Float] = []
         var n = 0
         var prevVoiced = false
         while n < count {
@@ -127,37 +123,31 @@ enum VoicePitchShifter {
                     best = k
                 }
             } else if let previous = marks.last?.n {
-                // 직전 표시 주변 한 주기 파형과 가장 닮은 자리(정규화 상호상관)를 다음 표시로.
+                // 직전 표시 주변 한 주기 파형과 가장 닮은 자리(정규화 상호상관)를 다음 표시로. 안드로이드 `psola` 와
+                // **같은 셈**이다 — 후보마다 Double 로 sxy·sxx·syy 를 같은 순서로 더한다. 예전에는 빠른 합성곱(Float)과
+                // 누적합 빼기를 써서, 닮음이 비슷한 후보들 사이에서 다른 자리가 뽑힐 수 있었다(Codex #870).
                 let h = jsRound(Double(period) / 2)
-                let lo = max(h, n - jsRound(0.15 * Double(period)))
-                let hi = min(count - 1 - h, n + jsRound(0.15 * Double(period)))
-                if lo <= hi, h > 0 {
-                    template = (0..<(2 * h)).map { j in
-                        let index = previous - h + j
-                        return index >= 0 && index < count ? xl[index] : 0
-                    }
-                    var templateEnergy: Float = 0
-                    vDSP_svesq(template, 1, &templateEnergy, vDSP_Length(template.count))
-                    let candidates = hi - lo + 1
-                    if correlation.count < candidates { correlation = [Float](repeating: 0, count: candidates) }
-                    xl.withUnsafeBufferPointer { signal in
-                        correlation.withUnsafeMutableBufferPointer { out in
-                            vDSP_conv(
-                                signal.baseAddress! + (lo - h), 1,
-                                template, 1,
-                                out.baseAddress!, 1,
-                                vDSP_Length(candidates), vDSP_Length(2 * h)
-                            )
-                        }
-                    }
+                let reach = jsRound(0.15 * Double(period))
+                let lo = max(h, n - reach)
+                let hi = min(count - 1 - h, n + reach)
+                if lo <= hi {
                     var bestScore = -Double.infinity
-                    for offset in 0..<candidates {
-                        let k = lo + offset
-                        let windowEnergy = squares[k + h] - squares[k - h]
-                        let score = Double(correlation[offset]) / sqrt(Double(templateEnergy) * windowEnergy + 1e-12)
-                        if score > bestScore {
-                            bestScore = score
-                            best = k
+                    xl.withUnsafeBufferPointer { p in
+                        for k in lo...hi {
+                            var sxy = 0.0, sxx = 0.0, syy = 0.0
+                            for j in -h..<h {
+                                let ai = previous + j
+                                let a = ai >= 0 && ai < count ? Double(p[ai]) : 0
+                                let b = Double(p[k + j])
+                                sxy += a * b
+                                sxx += a * a
+                                syy += b * b
+                            }
+                            let r = sxy / sqrt(sxx * syy + 1e-12)
+                            if r > bestScore {
+                                bestScore = r
+                                best = k
+                            }
                         }
                     }
                 }
