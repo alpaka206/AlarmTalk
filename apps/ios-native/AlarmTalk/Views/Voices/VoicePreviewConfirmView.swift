@@ -397,8 +397,22 @@ struct VoicePreviewConfirmView: View {
             let (url, applied) = await Self.tunedFile(for: source, tuning: target)
             guard generation == tuningGeneration else { return }
             renderingTuning = false
-            try? voice.tuningPreviewPlayer.play(url: url) { finished in
-                if finished { heardTuning = applied }
+            @MainActor func start(_ file: URL, heard: VoiceTuning) throws {
+                try voice.tuningPreviewPlayer.play(url: file) { finished in
+                    if finished { heardTuning = heard }
+                }
+            }
+            do {
+                try start(url, heard: applied)
+            } catch {
+                // 구운 사본을 못 열면(그 사이 지워짐·손상) 원본으로 한 번 더 — 그때 들은 높이는 0 이다. 원본도 못 틀면
+                // 조용히 넘기지 않고 알린다(Codex #870).
+                do {
+                    guard url != source else { throw error }
+                    try start(source, heard: .neutral)
+                } catch {
+                    errorMessage = String(localized: "미리듣기를 재생하지 못했어요.")
+                }
             }
         }
         return true
