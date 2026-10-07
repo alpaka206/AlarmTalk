@@ -155,8 +155,8 @@ internal class VoiceOnboardingPreviewController(
                     restoreAlarmStreamIfRaised()
                     true
                 }
-                start()
             }
+            startOrRelease(player)
             return
         }
         val clip = com.alarmtalk.app.data.greetingStockClipFor(stockClips, voiceProfileId, appLanguage)
@@ -210,8 +210,8 @@ internal class VoiceOnboardingPreviewController(
                         restoreAlarmStreamIfRaised()
                         true
                     }
-                    start()
                 }
+                startOrRelease(player)
             }.onFailure {
                 if (previewRequestId == requestId) {
                     preparingVoiceId = null
@@ -258,6 +258,18 @@ internal class VoiceOnboardingPreviewController(
      * ⚠ 짝은 [restoreAlarmStreamIfRaised] 다. 올린 뒤 나가는 길이 넷이라(완료·에러·
      * 요청 취소·dispose) 하나만 빠져도 사용자의 알람 볼륨이 최대로 굳는다.
      */
+    // 시작이 실패하면(오디오 서버·플레이어 상태) 플레이어를 놓고 올린 알람 스트림을 되돌린다 — 안 그러면 사용자의 알람
+    // 음량이 미리듣기 값으로 남는다(Codex #870).
+    private fun startOrRelease(player: MediaPlayer) {
+        runCatching { player.start() }.onFailure { error ->
+            com.alarmtalk.app.core.AlarmTalkLog.reportError("Preview player failed to start", error)
+            player.release()
+            if (mediaPlayer === player) mediaPlayer = null
+            playingVoiceId = null
+            restoreAlarmStreamIfRaised()
+        }
+    }
+
     private fun raiseAlarmStreamForPreview() {
         alarmVolumePreview = true
         AlarmStreamVolume.applyForRinging(context, RINGING_STREAM_PERCENT, AlarmStreamVolume.Owner.PREVIEW)

@@ -61,6 +61,35 @@ final class VoicePitchShifterTests: XCTestCase {
         XCTAssertEqual(VoicePitchShifter.render(samples: [], sampleRate: rate, semitones: -3), [])
     }
 
+    /// 높이 추적과 변환 결과는 **두 앱이 같다** — 기대값은 안드로이드 `VoicePitchShifterTest` 와 같은 숫자다(같은 입력을
+    /// 두 앱에서 돌려 맞춘 값, Codex #870). 앞 0.2초 무음 + 떨림(160±15 Hz) 있는 배음 소리를 −2 반음.
+    func test_pitchTrackAndShift_matchAndroid() {
+        let sr = 44_100
+        var phase = 0.0
+        let x: [Float] = (0..<sr).map { i in
+            let t = Double(i) / Double(sr)
+            if t < 0.2 { return 0 }
+            let f = 160 + 15 * sin(2 * .pi * 1.3 * t)
+            phase += 2 * .pi * f / Double(sr)
+            return Float(0.4 * (sin(phase) + 0.5 * sin(2 * phase) + 0.25 * sin(3 * phase)))
+        }
+        let analysis = VoicePitchShifter.resample(x, from: 44_100, to: 16_000)
+        let filtered = Biquad.apply(
+            [Biquad.highpass(cutoff: 40, sampleRate: 16_000), Biquad.lowpass(cutoff: 1_200, sampleRate: 16_000)],
+            to: analysis
+        )
+        let frames = VoicePitchShifter.yinTrack(filtered, sampleRate: 16_000)
+        XCTAssertEqual(frames.count, 96)
+        XCTAssertEqual(frames.filter { $0.f0 > 0 }.count, 77)
+        XCTAssertEqual(frames.reduce(0.0) { $0 + $1.f0 }, 12322.340158236248, accuracy: 1e-6)
+
+        let y = VoicePitchShifter.render(samples: x, sampleRate: 44_100, semitones: -2)
+        XCTAssertEqual(y.count, 44_100)
+        XCTAssertEqual(y.reduce(0.0) { $0 + Double(abs($1)) }, 9739.548, accuracy: 1e-3)
+        XCTAssertEqual(y[30_000], 0.32448906, accuracy: 1e-6)
+        XCTAssertEqual(y[40_000], 0.546782, accuracy: 1e-6)
+    }
+
     func test_yinTrack_findsTheFundamental() {
         let rate = VoicePitchShifter.analysisRate
         let frames = VoicePitchShifter.yinTrack(harmonicTone(hz: 200, seconds: 0.6, sampleRate: rate), sampleRate: rate)

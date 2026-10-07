@@ -47,20 +47,18 @@ enum VoicePitchShifter {
 
     /// 높이를 내리면 떨림 수가 줄어 소리가 작아진다 — 원래 크기(`target`, LUFS)로 되맞춘다.
     /// 봉우리는 [peakCeiling] 아래로 둔다(그 때문에 덜 맞을 수 있다). 잴 수 없으면 그대로 둔다.
+    ///
+    /// 안드로이드 `VoicePitchShifter.matchLoudness` 와 같은 셈이다 — 잴 수 없으면(목표·현재 중 하나가 없으면) 크기는
+    /// 그대로 두되 **봉우리 제한은 건다**(예전 iOS 는 그때 아무것도 안 했다, Codex #870).
     static func matchLoudness(_ samples: inout [Float], target: Double?, sampleRate: Double) {
-        guard let target, target.isFinite, !samples.isEmpty,
-              let current = VoiceTuningAnalyzer.integratedLoudness(samples: samples, sampleRate: sampleRate),
-              current.isFinite else { return }
         var peak: Float = 0
-        vDSP_maxmgv(samples, 1, &peak, vDSP_Length(samples.count))
-        let wanted = Float(pow(10, (target - current) / 20))
-        var gain = peak > 0 ? min(wanted, peakCeiling / peak) : wanted
-        guard gain.isFinite, gain > 0 else { return }
-        let count = vDSP_Length(samples.count)
-        samples.withUnsafeMutableBufferPointer { p in
-            guard let base = p.baseAddress else { return }
-            vDSP_vsmul(base, 1, &gain, base, 1, count)
-        }
+        for value in samples { peak = max(peak, abs(value)) }
+        guard peak > 0 else { return }
+        let current = VoiceTuningAnalyzer.integratedLoudness(samples: samples, sampleRate: sampleRate)
+        let wanted: Double = if let target, let current { pow(10, (target - current) / 20) } else { 1 }
+        let gain = Float(min(wanted, Double(peakCeiling) / Double(peak)))
+        guard gain != 1 else { return }
+        for index in samples.indices { samples[index] *= gain }
     }
 
     // MARK: - TD-PSOLA
@@ -76,7 +74,7 @@ enum VoicePitchShifter {
             [Biquad.highpass(cutoff: 40, sampleRate: analysisRate), Biquad.lowpass(cutoff: 1_200, sampleRate: analysisRate)],
             to: x16
         )
-        let frames = yinTrack(xa, sampleRate: analysisRate, threshold: 0.2, winMs: 25)
+        let frames = yinTrack(xa, sampleRate: analysisRate)
         guard let firstT = frames.first?.t else { return x }
 
         // 5프레임 중앙값으로 매끈하게 + 30ms 이하 무성 틈 메우기.
@@ -200,76 +198,29 @@ enum VoicePitchShifter {
 
     // MARK: - YIN 높이 추적
 
-    /// 10ms 간격 프레임마다 F0(Hz, 무성이면 0). 안드로이드 `VoicePitchShifter.pitchTrack` 과 같은 규칙:
-    /// 문턱 아래 첫 골 → 포물선 보간, 가장 큰 프레임(95분위)보다 35dB 작으면 무성,
-    /// 앞뒤 5프레임 중앙값에서 7반음 넘게 튄 프레임(옥타브 오류)은 버린다.
-    static func yinTrack(
-        _ x: [Float],
-        sampleRate sr: Double,
-        fmin: Double = 50,
-        fmax: Double = 500,
-        hopMs: Double = 10,
-        threshold: Double = 0.2,
-        winMs: Double = 25
-    ) -> [Frame] {
-        let hop = max(1, jsRound(sr * hopMs / 1_000))
-        let window = jsRound(sr * winMs / 1_000)
-        let tauMin = Int(floor(sr / fmax))
-        let tauMax = Int(ceil(sr / fmin))
-        guard window > 0, x.count > window + tauMax else { return [] }
-
-        var squares = [Double](repeating: 0, count: x.count + 1)
-        for k in 0..<x.count { squares[k + 1] = squares[k] + Double(x[k]) * Double(x[k]) }
-        var lagged = [Float](repeating: 0, count: tauMax + 1)
-        var cmnd = [Double](repeating: 1, count: tauMax + 2)
+    /// 10ms 간격 프레임마다 F0(Hz, 무성이면 0). 안드로이드 `VoicePitchShifter.pitchTrack` 과 **같은 셈**이다 — 프레임마다
+    /// `VoiceTuningAnalyzer.yinFrequency`(안드로이드 `VoiceTuningAnalysis.yinFrequency` 이식), 가장 큰 프레임(95분위)보다
+    /// 35dB 작으면 무성, 앞뒤 5프레임 중앙값에서 7반음 넘게 튄 프레임(옥타브 오류)은 버린다(앞에서부터 차례로).
+    /// 예전 iOS 는 빠른 합성곱(Float)으로 차이 함수를 구하고 경계(τmax)에서 보간을 건너뛰어 표시 자리가 갈렸다(Codex #870).
+    static func yinTrack(_ x: [Float], sampleRate sr: Double) -> [Frame] {
+        let rate = Int(sr.rounded())
+        let hop = max(1, jsRound(sr * 0.010))
+        let window = jsRound(sr * 0.025)
+        let tauMax = Int((sr / VoiceTuningAnalyzer.minF0).rounded(.up))
+        guard window > 0 else { return [] }
         var frames: [Frame] = []
-
-        x.withUnsafeBufferPointer { p in
-            var start = 0
-            while start + window + tauMax < x.count {
-                let head = squares[start + window] - squares[start]
-                let rmsDb = 20 * log10(sqrt(max(0, head) / Double(window)) + 1e-12)
-                // Σ_j x[s+j]·x[s+j+τ] (τ = 0…τmax) 를 한 번에.
-                lagged.withUnsafeMutableBufferPointer { out in
-                    vDSP_conv(p.baseAddress! + start, 1, p.baseAddress! + start, 1, out.baseAddress!, 1,
-                              vDSP_Length(tauMax + 1), vDSP_Length(window))
-                }
-                // d(τ) = Σ(x_j − x_{j+τ})² = Σx_j² + Σx_{j+τ}² − 2Σx_j·x_{j+τ}, 누적 평균 정규화.
-                var running = 0.0
-                cmnd[0] = 1
-                for tau in 1...tauMax {
-                    let tail = squares[start + tau + window] - squares[start + tau]
-                    let d = max(0, head + tail - 2 * Double(lagged[tau]))
-                    running += d
-                    cmnd[tau] = running > 0 ? d * Double(tau) / running : 1
-                }
-                var best = -1
-                var tau = tauMin
-                while tau <= tauMax {
-                    if cmnd[tau] < threshold {
-                        while tau + 1 <= tauMax, cmnd[tau + 1] < cmnd[tau] { tau += 1 }
-                        best = tau
-                        break
-                    }
-                    tau += 1
-                }
-                var f0 = 0.0
-                if best > 0 {
-                    var t = Double(best)
-                    if best > 1, best < tauMax {
-                        let a = cmnd[best - 1], b = cmnd[best], c = cmnd[best + 1]
-                        let den = a - 2 * b + c
-                        if abs(den) > 1e-12 { t = Double(best) + 0.5 * (a - c) / den }
-                    }
-                    f0 = sr / t
-                }
-                frames.append(Frame(t: (Double(start) + Double(window) / 2) / sr, f0: f0, rmsDb: rmsDb))
-                start += hop
-            }
+        var start = 0
+        while start + window + tauMax < x.count {
+            var energy = 0.0
+            for j in 0..<window { energy += Double(x[start + j]) * Double(x[start + j]) }
+            let rmsDb = 20 * log10(sqrt(energy / Double(window)) + 1e-12)
+            let f0 = VoiceTuningAnalyzer.yinFrequency(x, start: start, window: window, sampleRate: rate) ?? 0
+            frames.append(Frame(t: (Double(start) + Double(window) / 2) / sr, f0: f0, rmsDb: rmsDb))
+            start += hop
         }
-
+        guard !frames.isEmpty else { return frames }
         let sorted = frames.map(\.rmsDb).sorted()
-        let loud = sorted.isEmpty ? 0 : sorted[min(sorted.count - 1, Int(floor(Double(sorted.count) * 0.95)))]
+        let loud = sorted[min(sorted.count - 1, Int(Double(sorted.count) * 0.95))]
         for index in frames.indices where frames[index].rmsDb < loud - 35 { frames[index].f0 = 0 }
         for index in frames.indices where frames[index].f0 > 0 {
             var neighbours: [Double] = []
@@ -278,7 +229,7 @@ enum VoicePitchShifter {
             }
             guard neighbours.count >= 3 else { frames[index].f0 = 0; continue }
             neighbours.sort()
-            if abs(12 * log2(frames[index].f0 / neighbours[neighbours.count / 2])) > 7 { frames[index].f0 = 0 }
+            if abs(12 * log(frames[index].f0 / neighbours[neighbours.count / 2]) / log(2)) > 7 { frames[index].f0 = 0 }
         }
         return frames
     }

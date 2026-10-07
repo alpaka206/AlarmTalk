@@ -784,7 +784,14 @@ internal fun VoiceProfileManagementPanel(
             }
             onPlayer(player, heard)
             mediaPlayer = player
-            startTunedPreview(player)
+            try {
+                startTunedPreview(player)
+            } catch (error: Throwable) {
+                // 시작이 실패하면(오디오 서버·플레이어 상태) 올린 알람 스트림을 되돌리고 플레이어를 놓는다 — 안 그러면
+                // 사용자의 알람 음량이 미리듣기 값으로 남는다(Codex #870).
+                stopMediaPreview(invalidateGreetingPreview = false)
+                throw error
+            }
             confirmPreviewPlaying = true
         }
         open(playUri, applied, canFallBack = playUri != originalUri)

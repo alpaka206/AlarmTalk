@@ -16,6 +16,36 @@ import kotlin.math.sin
  */
 class VoicePitchShifterTest {
 
+    /**
+     * 높이 추적과 변환 결과는 **두 앱이 같다** — 기대값은 iOS `VoicePitchShifterTests` 와 같은 숫자다(같은 입력을 두 앱에서
+     * 돌려 맞춘 값, Codex #870). 앞 0.2초 무음 + 떨림(160±15 Hz) 있는 배음 소리를 −2 반음.
+     */
+    @Test
+    fun pitchTrackAndShiftMatchIos() {
+        val sr = 44_100
+        var phase = 0.0
+        val x = FloatArray(sr) { i ->
+            val t = i.toDouble() / sr
+            if (t < 0.2) {
+                0f
+            } else {
+                val f = 160 + 15 * sin(2 * PI * 1.3 * t)
+                phase += 2 * PI * f / sr
+                (0.4 * (sin(phase) + 0.5 * sin(2 * phase) + 0.25 * sin(3 * phase))).toFloat()
+            }
+        }
+        val track = VoicePitchShifter.pitchTrack(x, sr)
+        assertEquals(96, track.f0.size)
+        assertEquals(77, track.f0.count { it > 0.0 })
+        assertEquals(12322.340158236248, track.f0.sum(), 1e-6)
+
+        val y = VoicePitchShifter.shift(x.copyOf(), sr, -2f)
+        assertEquals(44_100, y.size)
+        assertEquals(9739.548, y.sumOf { abs(it).toDouble() }, 1e-3)
+        assertEquals(0.32448906f, y[30_000], 1e-6f)
+        assertEquals(0.546782f, y[40_000], 1e-6f)
+    }
+
     /** 표본률 바꾸기는 **두 앱이 같은 값**을 낸다 — 기대값은 iOS `VoicePitchShifterTests` 와 같은 숫자다(같은 식을 파이썬으로 따로 셈한 값, Codex #870). */
     @Test
     fun resampleMatchesTheIosImplementation() {

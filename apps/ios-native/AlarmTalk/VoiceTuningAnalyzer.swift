@@ -161,13 +161,18 @@ enum VoiceTuningAnalyzer {
         let tauMax = Int((rate / minF0).rounded(.up))
         guard start >= 0, start + window + tauMax + 1 <= signal.count else { return nil }
         var difference = [Double](repeating: 0, count: tauMax + 2)
-        for tau in 1...(tauMax + 1) {
-            var sum = 0.0
-            for j in 0..<window {
-                let delta = Double(signal[start + j]) - Double(signal[start + j + tau])
-                sum += delta * delta
+        // 셈의 순서는 안드로이드와 같다(같은 결과) — 범위 검사만 뺀다. 울림 스테이징이 30초 클립을 이걸로 훑는다.
+        signal.withUnsafeBufferPointer { p in
+            difference.withUnsafeMutableBufferPointer { d in
+                for tau in 1...(tauMax + 1) {
+                    var sum = 0.0
+                    for j in 0..<window {
+                        let delta = Double(p[start + j]) - Double(p[start + j + tau])
+                        sum += delta * delta
+                    }
+                    d[tau] = sum
+                }
             }
-            difference[tau] = sum
         }
         var normalized = [Double](repeating: 0, count: tauMax + 2)
         normalized[0] = 1
@@ -230,23 +235,27 @@ enum VoiceTuningAnalyzer {
     /// 통합 라우드니스(LUFS). 게이트를 넘는 블록이 없으면 nil.
     static func integratedLoudness(samples: [Float], sampleRate: Double) -> Double? {
         guard sampleRate > 0, !samples.isEmpty else { return nil }
+        // 안드로이드 `VoiceTuningAnalysis.integratedLoudness` 와 같은 셈 — 블록 400ms·간격 100ms(반올림), 블록마다 직접 제곱합.
         let weighted = Biquad.apply(Biquad.kWeighting(sampleRate: sampleRate), to: samples)
-        // 누적 제곱합 — 블록 에너지를 O(1) 로 꺼낸다.
-        var prefix = [Double](repeating: 0, count: weighted.count + 1)
-        for index in 0..<weighted.count {
-            let value = Double(weighted[index])
-            prefix[index + 1] = prefix[index] + value * value
+        func meanSquare(_ start: Int, _ length: Int) -> Double {
+            guard length > 0 else { return 0 }
+            var sum = 0.0
+            for index in start..<(start + length) {
+                let value = Double(weighted[index])
+                sum += value * value
+            }
+            return sum / Double(length)
         }
-        let block = Int(0.4 * sampleRate)
-        let step = max(1, Int(0.1 * sampleRate))  // 75% 겹침
+        let block = VoicePitchShifter.jsRound(0.4 * sampleRate)
+        let step = max(1, VoicePitchShifter.jsRound(0.1 * sampleRate))  // 75% 겹침
         var energies: [Double] = []
-        if weighted.count < block {
+        if weighted.count <= block {
             // 400ms 보다 짧으면 통째로 한 블록.
-            energies.append(prefix[weighted.count] / Double(weighted.count))
+            energies.append(meanSquare(0, weighted.count))
         } else {
             var start = 0
             while start + block <= weighted.count {
-                energies.append((prefix[start + block] - prefix[start]) / Double(block))
+                energies.append(meanSquare(start, block))
                 start += step
             }
         }
@@ -328,17 +337,21 @@ struct Biquad: Equatable, Sendable {
         return [shelf, highpass]
     }
 
+    /// 단을 차례로 건다 — 안드로이드 `Biquad.process` 와 **같은 셈**(Direct Form I, Double 로 누산해 단마다 Float 로).
+    /// 예전에는 Direct Form II(전치)여서 두 앱의 결과가 마지막 자리에서 갈렸다(Codex #870).
     static func apply(_ sections: [Biquad], to input: [Float]) -> [Float] {
         var signal = input
-        for section in sections {
-            var z1 = 0.0, z2 = 0.0
+        for c in sections {
+            var x1 = 0.0, x2 = 0.0, y1 = 0.0, y2 = 0.0
             signal.withUnsafeMutableBufferPointer { p in
                 for index in 0..<p.count {
-                    let x = Double(p[index])
-                    let y = section.b0 * x + z1
-                    z1 = section.b1 * x - section.a1 * y + z2
-                    z2 = section.b2 * x - section.a2 * y
-                    p[index] = Float(y)
+                    let x0 = Double(p[index])
+                    let y0 = c.b0 * x0 + c.b1 * x1 + c.b2 * x2 - c.a1 * y1 - c.a2 * y2
+                    x2 = x1
+                    x1 = x0
+                    y2 = y1
+                    y1 = y0
+                    p[index] = Float(y0)
                 }
             }
         }
