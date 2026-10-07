@@ -183,12 +183,28 @@ internal class VoiceOnboardingPreviewController(
                 } else {
                     sourceUri
                 }
-                // 구운 사본을 못 열면(그 사이 지워짐·손상) 원본으로 한 번 더 — 울림·등록 미리듣기와 같은 규칙(Codex #870).
-                val player = createPlayer(
-                    resId = null,
-                    uri = playUri,
-                    alarmVolumePercent = alarmVolumePercent,
-                ) ?: (if (playUri != sourceUri) createPlayer(resId = null, uri = sourceUri, alarmVolumePercent = alarmVolumePercent) else null)
+                // 구운 사본을 못 열거나 **시작하지 못하면** 원본으로 한 번 더 — 울림·등록 미리듣기와 같은 규칙(Codex #870).
+                fun attach(p: MediaPlayer): MediaPlayer = p.apply {
+                    setOnCompletionListener {
+                        it.release()
+                        if (mediaPlayer === it) mediaPlayer = null
+                        if (playingVoiceId == voiceProfileId) playingVoiceId = null
+                        restoreAlarmStreamIfRaised()
+                    }
+                    setOnErrorListener { failed, _, _ ->
+                        failed.release()
+                        if (mediaPlayer === failed) mediaPlayer = null
+                        restoreAlarmStreamIfRaised()
+                        true
+                    }
+                }
+                val tunedPlayer = if (playUri != sourceUri) {
+                    createPlayer(resId = null, uri = playUri, alarmVolumePercent = alarmVolumePercent)
+                } else {
+                    null
+                }
+                val player = tunedPlayer
+                    ?: createPlayer(resId = null, uri = sourceUri, alarmVolumePercent = alarmVolumePercent)
                     ?: error("Failed to create greeting preview player.")
                 if (previewRequestId != requestId) {
                     player.release()
@@ -197,21 +213,15 @@ internal class VoiceOnboardingPreviewController(
                 preparingVoiceId = null
                 playingVoiceId = voiceProfileId
                 if (alarmVolumePercent != null) raiseAlarmStreamForPreview()
-                mediaPlayer = player.apply {
-                    setOnCompletionListener {
-                        it.release()
-                        if (mediaPlayer === it) mediaPlayer = null
-                        if (playingVoiceId == voiceProfileId) playingVoiceId = null
-                        restoreAlarmStreamIfRaised()
-                    }
-                    setOnErrorListener { p, _, _ ->
-                        p.release()
-                        if (mediaPlayer === p) mediaPlayer = null
-                        restoreAlarmStreamIfRaised()
-                        true
-                    }
+                mediaPlayer = attach(player)
+                if (!startOrRelease(player) && tunedPlayer != null) {
+                    val original = createPlayer(resId = null, uri = sourceUri, alarmVolumePercent = alarmVolumePercent)
+                        ?: return@runCatching
+                    playingVoiceId = voiceProfileId
+                    if (alarmVolumePercent != null) raiseAlarmStreamForPreview()
+                    mediaPlayer = attach(original)
+                    startOrRelease(original)
                 }
-                startOrRelease(player)
             }.onFailure {
                 if (previewRequestId == requestId) {
                     preparingVoiceId = null
@@ -260,15 +270,15 @@ internal class VoiceOnboardingPreviewController(
      */
     // 시작이 실패하면(오디오 서버·플레이어 상태) 플레이어를 놓고 올린 알람 스트림을 되돌린다 — 안 그러면 사용자의 알람
     // 음량이 미리듣기 값으로 남는다(Codex #870).
-    private fun startOrRelease(player: MediaPlayer) {
+    /** 시작했으면 true. */
+    private fun startOrRelease(player: MediaPlayer): Boolean =
         runCatching { player.start() }.onFailure { error ->
             com.alarmtalk.app.core.AlarmTalkLog.reportError("Preview player failed to start", error)
             player.release()
             if (mediaPlayer === player) mediaPlayer = null
             playingVoiceId = null
             restoreAlarmStreamIfRaised()
-        }
-    }
+        }.isSuccess
 
     private fun raiseAlarmStreamForPreview() {
         alarmVolumePreview = true
