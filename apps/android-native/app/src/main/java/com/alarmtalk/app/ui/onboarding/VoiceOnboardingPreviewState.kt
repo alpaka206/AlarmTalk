@@ -183,11 +183,13 @@ internal class VoiceOnboardingPreviewController(
                 } else {
                     sourceUri
                 }
+                // 구운 사본을 못 열면(그 사이 지워짐·손상) 원본으로 한 번 더 — 울림·등록 미리듣기와 같은 규칙(Codex #870).
                 val player = createPlayer(
                     resId = null,
                     uri = playUri,
                     alarmVolumePercent = alarmVolumePercent,
-                ) ?: error("Failed to create greeting preview player.")
+                ) ?: (if (playUri != sourceUri) createPlayer(resId = null, uri = sourceUri, alarmVolumePercent = alarmVolumePercent) else null)
+                    ?: error("Failed to create greeting preview player.")
                 if (previewRequestId != requestId) {
                     player.release()
                     return@runCatching

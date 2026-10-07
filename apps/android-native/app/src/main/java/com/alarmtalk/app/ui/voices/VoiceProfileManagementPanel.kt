@@ -750,6 +750,23 @@ internal fun VoiceProfileManagementPanel(
             createTunedPreviewPlayer(originalUri) to VoiceTuning.NEUTRAL
         }
 
+    // 재생 도중 디코딩·입출력 오류가 나면 **끝까지 들은 것이 아니다.** 오류를 처리하지 않으면 MediaPlayer 가 이어서
+    // 완료 콜백을 부르고, 그게 청취 확인·'들은 높이' 로 이어져 저장이 열린다(Codex #870). 오류를 삼켜(true) 완료를
+    // 막고 멈춘다 — 다시 들으면 된다.
+    fun stopOnPlaybackError(player: MediaPlayer) {
+        player.setOnErrorListener { failed, what, extra ->
+            if (mediaPlayer === failed) {
+                AlarmTalkLog.reportError("Voice preview playback error what=$what extra=$extra")
+                stopMediaPreview(invalidateGreetingPreview = false)
+                confirmPreviewPlaying = false
+                localMessage = context.getString(R.string.voices_preview_play_failed)
+            } else {
+                failed.release()
+            }
+            true
+        }
+    }
+
     // 스트림은 시작하는 이 자리에서만 올린다(짝은 `releasePreviewTuning`).
     fun startTunedPreview(player: MediaPlayer) {
         AlarmStreamVolume.applyForRinging(context, TuningPreviewStreamPercent, AlarmStreamVolume.Owner.PREVIEW)
@@ -790,6 +807,7 @@ internal fun VoiceProfileManagementPanel(
             runCatching {
                 val (playUri, rendered) = tunedPreviewUri(uri, tuning)
                 val (player, applied) = createPreviewPlayerOrOriginal(playUri, uri, rendered)
+                stopOnPlaybackError(player)
                 mediaPlayer = player
                 player.setOnCompletionListener { completed ->
                     if (mediaPlayer !== completed) return@setOnCompletionListener
@@ -940,6 +958,7 @@ internal fun VoiceProfileManagementPanel(
                 ensureTuningSuggestion(voice.id, cached.localAudioUri)
                 val (playUri, renderedTuning) = tunedPreviewUri(cached.localAudioUri, previewTuning)
                 val (player, playedTuning) = createPreviewPlayerOrOriginal(playUri, cached.localAudioUri, renderedTuning)
+                stopOnPlaybackError(player)
                 firstPlayTuning = playedTuning
                 mediaPlayer = player.apply {
                     setOnCompletionListener {
