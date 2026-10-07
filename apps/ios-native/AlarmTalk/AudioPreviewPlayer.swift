@@ -56,7 +56,15 @@ final class AudioPreviewPlayer: NSObject, ObservableObject, AVAudioPlayerDelegat
         let session = AVAudioSession.sharedInstance()
         try session.setCategory(.playback, mode: .spokenAudio)
         try session.setActive(true)
-        let player = try AVAudioPlayer(contentsOf: url)
+        let player: AVAudioPlayer
+        do {
+            player = try AVAudioPlayer(contentsOf: url)
+        } catch {
+            // 세션을 켠 뒤 실패하면 놓는다 — 안 그러면 다른 앱의 소리가 계속 끊긴 채 남는다(Codex #870).
+            isPreparing = false
+            try? session.setActive(false, options: [.notifyOthersOnDeactivation])
+            throw error
+        }
         player.delegate = self
         player.prepareToPlay()
         if startMs > 0 {

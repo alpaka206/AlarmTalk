@@ -275,11 +275,15 @@ final class VoiceStudioViewModel: ObservableObject {
     ///   소리를 들려준다(스펙 §4-3). 받은 알람·가족에게 보내는 알람·기본 목소리는 nil.
     func ensureGreetingPreview(voiceId: String, session: AuthSession?, volumePercent: Int, tuning: VoiceTuning? = nil) async {
         if previewingGreetingVoiceId == voiceId {
-            if previewPlayer.isPlaying {
+            // 같은 목소리를 **같은 높이로** 듣던 중일 때만 크기만 맞춘다. 목소리 고르기 시트에서 원래 소리로 듣던 채로
+            // 크기 화면에서 손을 떼면 높이가 다르다 — 멈추고 그 높이로 다시 튼다(울림과 같은 소리, Codex #870).
+            if previewPlayer.isPlaying, previewingGreetingTuningTag == tuning?.soundTag {
                 previewPlayer.setVolume(percent: volumePercent)
                 return
             }
-            // 끝까지 재생돼 멎었는데 표식만 남은 경우 — 그대로 부르면 토글이 '정지'로 읽힌다.
+            // 끝까지 재생돼 멎었거나 높이가 다르다 — 그대로 부르면 토글이 '정지'로 읽힌다.
+            greetingPreviewRequestId += 1
+            previewPlayer.stop()
             previewingGreetingVoiceId = nil
         }
         await previewGreeting(voiceId: voiceId, session: session, volumePercent: volumePercent, tuning: tuning)
@@ -295,6 +299,8 @@ final class VoiceStudioViewModel: ObservableObject {
             previewingGreetingVoiceId = nil
             return
         }
+        // 이 미리듣기에 실은 높이 — 아래 굽기 갈래에서 실제로 구운 파일을 틀 때만 남는다.
+        previewingGreetingTuningTag = nil
         // 기본 목소리는 **번들 클립**이 먼저다 — 서버 왕복 없이, 네트워크가 없어도 들린다.
         // (안드로이드 `playGreeting` 의 `bundledSystemGreetingRes` 분기와 같은 순서.)
         if let resource = bundledSystemGreetingResource(
@@ -349,6 +355,7 @@ final class VoiceStudioViewModel: ObservableObject {
                 }
                 do {
                     try play(tuned)
+                    if tuned != source { previewingGreetingTuningTag = tuning.soundTag }
                 } catch {
                     // 구운 사본을 못 열면(그 사이 지워짐·손상) 원본으로 한 번 더 — 울림·등록 미리듣기와 같은 규칙(Codex #870).
                     do {
@@ -393,6 +400,10 @@ final class VoiceStudioViewModel: ObservableObject {
     /// 화면을 떠나면 [stopDraftPreviewPlayback] 이 '중단' 으로 끝낸다 — 안 그러면 소리가 화면 밖에서 계속 나고,
     /// 끝까지 들은 것으로 흐름이 이어진다(Codex #870).
     private var pendingDraftFallback: CheckedContinuation<DraftFallbackResult, Never>?
+
+    /// 지금 편집기 미리듣기에 실린 높이 꼬리표(`VoiceTuning.soundTag`) — 원래 소리면 nil. 같은 목소리라도 높이가 다르면
+    /// 크기만 맞추지 않고 다시 튼다(`ensureGreetingPreview`).
+    private var previewingGreetingTuningTag: String?
 
     private enum DraftFallbackResult { case finished, failed, interrupted }
 

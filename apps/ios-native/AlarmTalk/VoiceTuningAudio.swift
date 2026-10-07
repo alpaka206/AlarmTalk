@@ -181,10 +181,17 @@ final class VoiceTuningPreviewPlayer: NSObject, ObservableObject, AVAudioPlayerD
         let session = AVAudioSession.sharedInstance()
         try session.setCategory(.playback, mode: .spokenAudio)
         try session.setActive(true)
-        let player = try AVAudioPlayer(contentsOf: url)
-        player.delegate = self
-        player.prepareToPlay()
-        guard player.play() else { throw VoiceTuningRenderError.renderFailed("play") }
+        let player: AVAudioPlayer
+        do {
+            player = try AVAudioPlayer(contentsOf: url)
+            player.delegate = self
+            player.prepareToPlay()
+            guard player.play() else { throw VoiceTuningRenderError.renderFailed("play") }
+        } catch {
+            // 세션을 켠 뒤 실패하면 놓는다 — 안 그러면 다른 앱의 소리가 계속 끊긴 채 남는다(Codex #870).
+            try? session.setActive(false, options: [.notifyOthersOnDeactivation])
+            throw error
+        }
         self.player = player
         self.onFinish = onFinish
         isPlaying = true

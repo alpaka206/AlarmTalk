@@ -9,6 +9,7 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
+import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicLong
 
 /**
@@ -134,6 +135,19 @@ object VoiceTuningRenderer {
             }
         }.onFailure { Log.w(TAG, "Failed to delete voice tuning copies", it) }
     }
+
+    /**
+     * [deleteCopiesOf] 를 화면과 무관한 백그라운드에서 — 부른 화면이 곧 사라져도(등록 패널이 컴포지션을 떠남) 끝까지
+     * 지운다. 화면의 코루틴 범위에서 돌리면 그 범위가 취소되며 정리도 함께 사라진다(Codex #870).
+     */
+    fun deleteCopiesOfInBackground(context: Context, source: Uri) {
+        val appContext = context.applicationContext
+        cleanupScope.launch { deleteCopiesOf(appContext, source) }
+    }
+
+    private val cleanupScope = kotlinx.coroutines.CoroutineScope(
+        kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO,
+    )
 
     /** 사본을 모두 지운다. 다시 필요하면 울릴 때·미리듣기 때 새로 굽는다. 메인 스레드에서 부르지 말 것. */
     fun clearAll(context: Context) {

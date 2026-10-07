@@ -816,7 +816,7 @@ internal fun VoiceProfileManagementPanel(
     // Codex #870). 버린 초안을 쓰는 알람이 없어 오디오 정리를 지나지 않는다.
     fun discardTunedPreviewCopies() {
         val uri = confirmPreviewAudioUri ?: return
-        scope.launch(Dispatchers.IO) { VoiceTuningRenderer.deleteCopiesOf(appContext, Uri.parse(uri)) }
+        VoiceTuningRenderer.deleteCopiesOfInBackground(appContext, Uri.parse(uri))
     }
 
     // 이미 받은 미리듣기를 지금 높이로 기기에서 다시 튼다 — 알람처럼 쉼을 두고 반복하므로 들으며 맞출
@@ -1361,6 +1361,9 @@ internal fun VoiceProfileManagementPanel(
         onDispose {
             if (recorder.isRecording) recorder.cancel()
             stopMediaPreview()
+            // 등록 화면이 끝났다(세션 만료·화면 교체 포함) — 미리듣기 사본은 목소리의 복사본이라 남기지 않는다(스펙 §4-3,
+            // Codex #870). 이 화면의 범위는 곧 취소되므로 화면과 무관한 정리로 넘긴다.
+            discardTunedPreviewCopies()
         }
     }
 
