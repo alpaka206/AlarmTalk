@@ -742,14 +742,16 @@ internal fun VoiceProfileManagementPanel(
         player.start()
     }
 
-    // 높이를 바꾼 사본의 Uri(울림과 같은 파일 — `VoiceTuningRenderer`). 0 이거나 실패하면 원본.
-    suspend fun tunedPreviewUri(uri: String, tuning: VoiceTuning): String {
-        if (tuning.isNeutral) return uri
+    // 높이를 바꾼 사본의 Uri(울림과 같은 파일 — `VoiceTuningRenderer`)와 **실제로 걸린 높이**. 0 이거나 굽기에
+    // 실패하면 원본과 0 — 원본을 들려줘 놓고 그 높이를 '들었다' 로 적으면 듣지 않은 값이 저장된다(Codex #870).
+    suspend fun tunedPreviewUri(uri: String, tuning: VoiceTuning): Pair<String, VoiceTuning> {
+        if (tuning.isNeutral) return uri to tuning
         tuningRendering = true
         try {
-            return withContext(Dispatchers.Default) {
+            val rendered = withContext(Dispatchers.Default) {
                 VoiceTuningRenderer.render(appContext, Uri.parse(uri), tuning)?.toString()
-            } ?: uri
+            }
+            return if (rendered != null) rendered to tuning else uri to VoiceTuning.NEUTRAL
         } finally {
             tuningRendering = false
         }
@@ -771,11 +773,12 @@ internal fun VoiceProfileManagementPanel(
         val tuning = previewTuning
         tunedReplayJob = scope.launch {
             runCatching {
-                val player = createTunedPreviewPlayer(tunedPreviewUri(uri, tuning))
+                val (playUri, applied) = tunedPreviewUri(uri, tuning)
+                val player = createTunedPreviewPlayer(playUri)
                 mediaPlayer = player
                 player.setOnCompletionListener { completed ->
                     if (mediaPlayer !== completed) return@setOnCompletionListener
-                    heardTuning = tuning
+                    heardTuning = applied
                     scope.launch {
                         delay(TuningPreviewRepeatGapMs)
                         if (mediaPlayer === completed && confirmPreviewPlaying) {
@@ -858,9 +861,10 @@ internal fun VoiceProfileManagementPanel(
                     }
                 }.getOrDefault(VoiceTuning.NEUTRAL)
             }
+            // ⚠ 측정값(F0)을 로그에 남기지 말 것 — 등록 녹음에서 잰 생체 정보다(Codex #870). 쟀는지만 남긴다.
             android.util.Log.i(
                 "VoiceTuning",
-                "Suggested pitch=${suggestion.pitchSemitones} previewF0=$previewF0 sourceF0=$sourceF0",
+                "Suggestion ready preview=${previewF0 != null} source=${sourceF0 != null}",
             )
             tuningSuggestion = suggestion
             tuningSuggestionVoiceId = voiceId
@@ -914,12 +918,14 @@ internal fun VoiceProfileManagementPanel(
                         messageId = response.messageId,
                     )
                 }
+                // 문구를 고쳐 새 클립이 왔으면 옛 클립으로 구운 사본을 먼저 지운다 — 참조를 덮으면 지울 길이 없다(Codex #870).
+                if (confirmPreviewAudioUri != cached.localAudioUri) discardTunedPreviewCopies()
                 confirmPreviewAudioUri = cached.localAudioUri
                 // 추천값을 **첫 재생 전에** 정한다 — 첫 소리부터 보정된 목소리다(짧은 클립이라 금방이다).
                 ensureTuningSuggestion(voice.id, cached.localAudioUri)
-                val playedTuning = previewTuning
+                val (playUri, playedTuning) = tunedPreviewUri(cached.localAudioUri, previewTuning)
                 firstPlayTuning = playedTuning
-                val player = createTunedPreviewPlayer(tunedPreviewUri(cached.localAudioUri, playedTuning))
+                val player = createTunedPreviewPlayer(playUri)
                 mediaPlayer = player.apply {
                     setOnCompletionListener {
                         if (mediaPlayer === it) releasePreviewTuning()

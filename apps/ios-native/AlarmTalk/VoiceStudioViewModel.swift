@@ -1642,6 +1642,8 @@ final class VoiceStudioViewModel: ObservableObject {
         var releasedKeys: Set<String> = []
         for record in locked {
             releasedKeys.formUnion(record.preLockVoice?.referencedCacheKeys.compactMap(\.nilIfBlank) ?? [])
+            // 원래 목소리가 사라졌다 — 그 목소리의 높이 보정값도 지운다(스펙 voice-and-message §4-3, Codex #870).
+            VoiceTuningStore().remove(voiceProfileID: record.preLockVoice?.voiceProfileId)
             _ = alarmStore.upsert(DefaultVoiceSubstitute.finalized(record, nowMillis: now))
         }
         if let audioCache, !releasedKeys.isEmpty {

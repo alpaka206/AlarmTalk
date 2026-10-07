@@ -49,6 +49,15 @@ class VoiceTuningStore(context: Context) {
         if (stored.generation != generation?.takeIf { it.isNotBlank() }) remove(userId, voiceProfileId)
     }
 
+    /** 그 목소리의 값을 **모든 계정에서** 지운다 — 잠근 유료 목소리를 확정할 때(원래 목소리가 사라졌다). */
+    fun removeVoice(voiceProfileId: String?) {
+        val voice = voiceProfileId?.trim().orEmpty()
+        if (voice.isEmpty()) return
+        val keys = prefs.all.keys.filter { it.startsWith(KEY_PREFIX) && it.endsWith("_$voice") }
+        if (keys.isEmpty()) return
+        prefs.edit().apply { keys.forEach(::remove) }.apply()
+    }
+
     /** 그 계정의 값을 모두 지운다 — 명시적 로그아웃·탈퇴. */
     fun clearUser(userId: String?) {
         val user = userId?.trim().orEmpty()

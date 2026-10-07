@@ -1044,6 +1044,8 @@ class AlarmRepository(
                 if (snapshot.audioCacheKey.isNullOrBlank()) {
                     snapshot.localAudioUri?.takeIf { it.isNotBlank() }?.let(releasedKeylessUris::add)
                 }
+                // 원래 목소리가 사라졌다 — 그 목소리의 높이 보정값도 지운다(스펙 voice-and-message §4-3, Codex #870).
+                VoiceTuningStore(context).removeVoice(snapshot.voiceProfileId)
             }
             alarmDao.upsertPreservingServerSyncFields(locked.finalizedLock(lockCheckedAt))
             Log.i(TAG, "Finalized a default-voice lock id=${locked.id}: the original voice is no longer accessible")

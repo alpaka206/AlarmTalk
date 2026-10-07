@@ -272,9 +272,14 @@ enum AlarmSoundStaging {
             : "\(stagedNamePrefix)\(safeKey)-v\(gainPercent)-t\(tag)"
         let stagedURL = soundsDir.appendingPathComponent("\(baseName).caf")
         await Task.detached(priority: .userInitiated) {
-            if isUsableStagedFile(stagedURL) { return }
-            try? writeAtomically(into: stagedURL) { tmp in
-                try writeTunedCAF(from: sourceURL, to: tmp, gain: Float(gainPercent) / 100, tuning: tuning)
+            // ⚠ **`stage` 와 같은 캐시 키 잠금 안에서** 확인·굽기·게시를 한다(Codex #870). 밖에서 하면 캐시 교체가
+            // 그 사이 지나가며 스테이징 파일을 지운 **뒤에** 옛 바이트로 구운 파일을 게시하고, `stage` 가 그걸 재사용한다
+            // — 은퇴한 목소리로 우는 경주(#703)가 되살아난다.
+            AudioCacheStore.withCacheKeyLock(key) {
+                if isUsableStagedFile(stagedURL) { return }
+                try? writeAtomically(into: stagedURL) { tmp in
+                    try writeTunedCAF(from: sourceURL, to: tmp, gain: Float(gainPercent) / 100, tuning: tuning)
+                }
             }
         }.value
     }

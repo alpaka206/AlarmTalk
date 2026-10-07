@@ -382,20 +382,23 @@ struct VoicePreviewConfirmView: View {
         let target = tuning
         renderingTuning = true
         Task {
-            let url = await Self.tunedFile(for: source, tuning: target)
+            let (url, applied) = await Self.tunedFile(for: source, tuning: target)
             guard generation == tuningGeneration else { return }
             renderingTuning = false
             try? voice.tuningPreviewPlayer.play(url: url) { finished in
-                if finished { heardTuning = target }
+                if finished { heardTuning = applied }
             }
         }
         return true
     }
 
-    /// 클립을 그 높이로 구운 파일(백그라운드). 중립이면 원본, 굽기에 실패해도 원본이다.
-    private static func tunedFile(for source: URL, tuning: VoiceTuning) async -> URL {
+    /// 클립을 그 높이로 구운 파일(백그라운드)과 **실제로 걸린 높이**. 중립이면 원본, 굽기에 실패해도 원본이고
+    /// 그때 걸린 높이는 0 이다 — 원본을 들려줘 놓고 그 높이를 '들었다' 로 적으면 듣지 않은 값이 저장된다(Codex #870).
+    private static func tunedFile(for source: URL, tuning: VoiceTuning) async -> (URL, VoiceTuning) {
         await Task.detached(priority: .userInitiated) {
-            (try? VoiceTuningRenderer.previewFile(for: source, tuning: tuning)) ?? source
+            if tuning.isNeutral { return (source, tuning) }
+            if let url = try? VoiceTuningRenderer.previewFile(for: source, tuning: tuning) { return (url, tuning) }
+            return (source, VoiceTuning.neutral)
         }.value
     }
 
@@ -420,9 +423,10 @@ struct VoicePreviewConfirmView: View {
         if tuning.source == .suggested {
             tuning = suggestion
         }
-        // 이 재생에 실은 값 — 재생 도중 슬라이더를 바꾸면 끝난 뒤 새 높이로 다시 튼다(`play`).
-        servedTuning = tuning
-        return await Self.tunedFile(for: url, tuning: tuning)
+        // 이 재생에 **실제로 실은** 값 — 재생 도중 슬라이더를 바꾸면 끝난 뒤 새 높이로 다시 튼다(`play`).
+        let (playURL, applied) = await Self.tunedFile(for: url, tuning: tuning)
+        servedTuning = applied
+        return playURL
     }
 
     private var previewDisplayText: String {

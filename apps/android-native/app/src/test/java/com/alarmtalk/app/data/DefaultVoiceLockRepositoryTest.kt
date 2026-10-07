@@ -249,6 +249,8 @@ class DefaultVoiceLockRepositoryTest {
             store.cacheGeneratedAudio(byteArrayOf(1, 2, 3), "mp3", rawAudioUri = null, cacheKey = key)
         }
         dao.upsert(rehearsalCloneAlarm(bucketClipKeysJson = encodeBucketClipKeys(cloneKeys)))
+        val tuning = VoiceTuningStore(context)
+        tuning.write("user-a", TEST_CLONE_VOICE_ID, VoiceTuning(pitchSemitones = -2f))
         repository.lockPaidAlarmTalks()
         // 잠금 뒤에 생긴, 다른(접근 가능한) 목소리의 알람이 세트의 마지막 키를 회전에 쓴다.
         dao.upsert(
@@ -266,6 +268,7 @@ class DefaultVoiceLockRepositoryTest {
         assertNull("대표 클립", store.getCachedAudio(cloneKeys[0]))
         assertNull("대표가 아닌 세트 클립도 지운다", store.getCachedAudio(cloneKeys[1]))
         assertNotNull("목소리로 우는 다른 알람이 쓰는 클립은 남긴다", store.getCachedAudio(cloneKeys[2]))
+        assertNull("사라진 원래 목소리의 높이 값도 지운다(Codex #870)", tuning.read("user-a", TEST_CLONE_VOICE_ID))
     }
 
     /**

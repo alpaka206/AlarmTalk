@@ -55,6 +55,20 @@ class VoiceTuningStoreTest {
     }
 
     @Test
+    fun `원래 목소리가 사라지면 모든 계정의 그 목소리 값만 지운다`() {
+        val store = VoiceTuningStore(context)
+        store.write("user-a", "voice-gone", VoiceTuning(pitchSemitones = -2f))
+        store.write("user-b", "voice-gone", VoiceTuning(pitchSemitones = -1f))
+        store.write("user-a", "voice-kept", VoiceTuning(pitchSemitones = 1f))
+
+        store.removeVoice("voice-gone")
+
+        assertNull(store.read("user-a", "voice-gone"))
+        assertNull(store.read("user-b", "voice-gone"))
+        assertEquals(1f, store.read("user-a", "voice-kept")!!.pitchSemitones, 0f)
+    }
+
+    @Test
     fun `로그아웃하면 그 계정 값만 모두 사라진다`() {
         val store = VoiceTuningStore(context)
         store.write("user-a", "voice-1", VoiceTuning(pitchSemitones = -2f))
