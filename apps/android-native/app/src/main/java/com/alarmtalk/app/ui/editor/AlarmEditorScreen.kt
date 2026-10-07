@@ -2034,6 +2034,14 @@ internal fun AlarmEditorScreen(
                             voiceProfileId = profileId,
                             stockClips = stockClips,
                             volumePercent = editor.voiceVolumePercent,
+                            // 등록 때 맞춘 목소리 보정 — 울릴 때와 같은 소리를 들려준다. 가족에게
+                            // 보내는 알람은 받는 기기에 이 값이 없으므로(기기 저장) 걸지 않는다.
+                            tuning = if (familyAlarmMode) {
+                                null
+                            } else {
+                                com.alarmtalk.app.data.VoiceTuningStore(context)
+                                    .read(authSession?.user?.id, profileId)
+                            },
                         )
                     }
                 },

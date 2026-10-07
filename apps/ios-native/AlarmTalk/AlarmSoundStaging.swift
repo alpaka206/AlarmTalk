@@ -65,27 +65,55 @@ enum AlarmSoundStaging {
     ///   목소리 크기 슬라이더가 **잠금화면 알람에 아무 영향이 없었다**(스테이징이 원본을
     ///   그대로 복사했다). in-app 폴백 플레이어에만 게인이 걸렸는데, 그 폴백은 스테이징이
     ///   **실패했을 때만** 도는 경로라 정상 상황에서는 한 번도 쓰이지 않는다.
+    /// - Parameter tuning: 목소리 다듬기(목소리 높이). 중립이거나 nil 이면 예전과 **같은 바이트**다.
+    ///   값이 있으면 `VoiceTuningRenderer`(PSOLA)로 **파일에 구워 넣는다** — 음량과 같은 이유로,
+    ///   AlarmKit 에 소리를 바꿀 자리가 이 파일 말고는 없다.
     @discardableResult
-    static func stage(url sourceURL: URL, key: String, volumePercent: Int = 100) throws -> String {
+    static func stage(
+        url sourceURL: URL,
+        key: String,
+        volumePercent: Int = 100,
+        tuning: VoiceTuning? = nil
+    ) throws -> String {
         // ⚠ **굽는 동안 캐시가 갈아끼워지지 않게 한다**(Codex #703 P1). 이걸 열어 두면
         // 옛 바이트를 읽어 굽는 사이에 교체가 지나가고, 그 무효화가 **굽기 전에** 끝나
         // 옛 목소리가 구워진 채로 남는다. 잠금은 `AudioCacheStore` 의 교체 경로와 같은 것이다.
         try AudioCacheStore.withCacheKeyLock(key) {
-            try stageLocked(url: sourceURL, key: key, volumePercent: volumePercent)
+            try stageLocked(url: sourceURL, key: key, volumePercent: volumePercent, tuning: tuning)
         }
     }
 
-    private static func stageLocked(url sourceURL: URL, key: String, volumePercent: Int) throws -> String {
+    private static func stageLocked(
+        url sourceURL: URL,
+        key: String,
+        volumePercent: Int,
+        tuning: VoiceTuning?
+    ) throws -> String {
         let fm = FileManager.default
         let soundsDir = try ensureSoundsDirectory()
         let safeKey = AudioCacheStore.safeCacheKey(key)
         let gainPercent = max(0, min(100, volumePercent))
         // ⚠ **음량을 이름에 넣는다.** 재사용 판정이 파일 존재 하나뿐이라, 이름이 같으면
         // 슬라이더를 내려도 예전에 구워 둔 큰 소리 파일이 그대로 다시 쓰인다.
-        let baseName = gainPercent == 100
+        var baseName = gainPercent == 100
             ? "\(stagedNamePrefix)\(safeKey)"
             : "\(stagedNamePrefix)\(safeKey)-v\(gainPercent)"
         let sourceExt = sourceURL.pathExtension.lowercased()
+
+        // ⚠ **다듬기 값도 이름에 넣는다**(같은 이유). 중립이면 꼬리표가 없어 이름이 예전과
+        // 같다 — 다듬지 않은 목소리는 이미 구워 둔 파일을 그대로 다시 쓴다.
+        // 접두사(`voice-<safeKey>`)는 그대로라 `clearStagedSoundFiles` 가 함께 지운다.
+        if let tuning, let tag = tuning.soundTag {
+            baseName += "-t\(tag)"
+            let stagedURL = soundsDir.appendingPathComponent("\(baseName).caf")
+            if !isUsableStagedFile(stagedURL) {
+                try? fm.removeItem(at: stagedURL)
+                try writeAtomically(into: stagedURL) { tmp in
+                    try writeTunedCAF(from: sourceURL, to: tmp, gain: Float(gainPercent) / 100, tuning: tuning)
+                }
+            }
+            return baseName
+        }
 
         // 음량이 100 이 아니면 **원본을 그대로 복사할 수 없다** — 샘플값을 줄여야 하므로
         // 포맷과 무관하게 LPCM 으로 다시 쓴다.
@@ -455,6 +483,27 @@ enum AlarmSoundStaging {
             try output.write(from: buffer)
         } catch {
             throw AlarmSoundStagingError.writeFailed("write: \(error.localizedDescription)")
+        }
+    }
+
+    /// 소스에 **목소리 높이를 구워** CAF(16-bit LPCM, 모노)로 쓴다.
+    ///
+    /// 처리는 미리듣기와 같은 `VoiceTuningRenderer.render`(TD-PSOLA — 몸집은 두고 높이만,
+    /// 크기는 원래대로 되맞춤)다. 소스를 30초(AlarmKit 한도)까지만 읽고, PSOLA 는 길이를
+    /// 바꾸지 않으므로 결과도 그 안이다. 음량 퍼센트(`gain`, ≤ 1)는 쓰기 직전에 곱한다.
+    ///
+    /// ⚠ `AVAssetExportSession` 을 쓰지 않는다(위 `transcodeToCAF` 주석) — `AVAudioFile`
+    /// 로 읽고 쓴다. 채널 레이아웃(`AVChannelLayoutKey`)을 함께 적는다(`writeMonoCAF`).
+    private static func writeTunedCAF(from src: URL, to dst: URL, gain: Float, tuning: VoiceTuning) throws {
+        do {
+            let rendered = try VoiceTuningRenderer.render(
+                url: src,
+                tuning: tuning,
+                maxSeconds: Double(AlarmAudioLimits.maxDurationMillis) / 1000
+            )
+            try VoiceTuningRenderer.writeMonoCAF(rendered.samples, sampleRate: rendered.sampleRate, to: dst, gain: gain)
+        } catch {
+            throw AlarmSoundStagingError.writeFailed("tune: \(error.localizedDescription)")
         }
     }
 }

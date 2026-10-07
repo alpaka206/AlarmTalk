@@ -665,6 +665,48 @@
     '나중에 약을 챙겨 먹으려면'처럼 동작이 여러 낱말이어도 같은 절 안에서 검사한다. 문장부호를 넘어 다른 절을 합치지 않는다.
     잊는다는 **긍정** 꼴만 본다 — '나중에 먹으려면 잊지 않게 메모해 둬'·'깜빡하지 않도록' 같은 부정·목적절은 바른 말이다.
 
+## 4-3. 등록 미리듣기에서 **목소리 높이**를 맞춘다 (2026-10-07)
+
+v4 Turbo(§10)는 클론 목소리를 원래보다 **높게** 낸다 — 협력사 남성 저음 샘플(원본 72 Hz)은 +5.5 반음, 기본 목소리
+도현은 라이브러리 원본 대비 +8.6 반음이었다(multilingual v2 는 같은 샘플이 +0.2 반음). 모델에는 높이를 넘길 칸이
+없다(stability·similarity_boost 둘뿐). 그래서 **앱이 받은 소리의 높이를 되돌린다.** 등록 미리듣기·확정 단계(§4-1)의
+'목소리 다듬기' 카드에서 들으며 맞추고, 저장하면 그 목소리로 울리는 알람에 같은 값이 걸린다.
+
+- **막대는 '목소리 높이' 하나다** — −6…+3 반음, 0.5 눈금(두 앱 같은 숫자). 음량·굵기 막대는 두지 않는다
+  (2026-10-07 사용자: "목소리 높이만 하면 될 것 같다"). 카드에는 막대와 '자동으로 맞추기'(iOS '추천값')·되돌리기뿐이다.
+- **몸집(포먼트)은 그대로 두고 높이만 바꾼다 — TD-PSOLA.** 성대 떨림 한 번마다 조각을 잘라 간격만 바꿔 겹친다.
+  ⚠ **폰 내장 높이 변환으로 되돌리지 말 것**(`PlaybackParams.setPitch`·`AVAudioUnitTimePitch`) — 파형을 늘이고 줄여
+  몸집까지 움직여서 "너무 변조된 목소리라 거부감" 이 든다고 사용자가 거절했다. 위상 보코더 계열(Signalsmith Stretch,
+  포먼트 보정 포함)도 같은 날 같은 문구로 나란히 들려줬고 "절대 안 됨" 이었다. 한계: 크게 바꿀수록(5 반음 넘게)
+  조금 거칠어진다. 두 앱의 구현은 **같은 알고리즘·같은 숫자**다 — 한쪽만 고치면 같은 목소리가 기기마다 다르게 운다.
+- **바꾼 소리는 원래 클립과 같은 크기로 되맞춘다**(통합 음량, 봉우리 −0.2 dBFS 아래). 높이를 내리면 떨림 수가 줄어
+  작아진다 — 크기를 사용자에게 따로 고르게 하지 않는다.
+- **자동 추천**: 등록 녹음과 미리듣기의 평균 높이(유성 프레임 F0 중앙값)를 비교해 벌어진 만큼 반대로 — 0.5 단위로
+  반올림, 1.5 반음 미만이면 0, 범위로 자른다. 사용자가 막대를 움직이기 전까지는 추천값으로 들린다. 등록 녹음을 잴 수
+  없으면(파일이 이미 지워짐) 0 이다. 높이는 등록 녹음을 **올리기 전에** 잰다 — 업로드가 끝나면 원본 녹음을 지운다.
+- **미리듣기와 울림은 같은 파일이다.** 높이를 바꾼 사본을 한 번 구워(안드로이드 16-bit WAV, iOS CAF) 등록 미리듣기·
+  편집기 미리듣기·울림이 모두 그것을 튼다. 막대에서 손을 떼면 다시 굽고 처음부터 튼다(굽는 동안 진행 표시).
+  - ⚠ **첫 미리듣기는 끊지 않는다.** 서버가 '끝까지 들었다' 를 확인해야 저장이 열린다(§4-1). 그 사이 바꾼 값은 첫
+    재생이 끝난 직후 새 높이로 들려준다.
+  - 안드로이드는 울릴 때(서비스의 IO 스레드) 사본이 없으면 그 자리에서 굽는다 — 12초 클립 기준 수백 ms. 굽기에
+    실패하면 **원래 소리로 운다**(높이 보정이 알람을 막으면 안 된다). iOS 는 AlarmKit 에 넘길 파일에 구워 넣는다 —
+    값이 바뀌면 예약 지문이 바뀌어 그 목소리의 알람이 다시 예약된다. 0 이면 두 앱 모두 이 기능 이전과 같은 경로다.
+- **거는 곳은 저장한 그 목소리의 알람뿐이다** — 직접 입력·클론 사전렌더 클립 모두. 기본 목소리(대신 트는 것 포함)·
+  직접 녹음 알람·받은(가족) 알람에는 걸지 않는다.
+- **값은 기기에만 둔다**(계정 × 목소리). 서버에 올리지 않는다 — 다른 기기·재설치·그 목소리를 공유받은 사람의
+  알람에는 걸리지 않는다. 값은 저장(승격)이 성공한 뒤 한 번 적고, 교체 저장이면 옛 프로필 id(제자리 교체로 재사용)로
+  적는다. 0 은 적지 않는다(키를 지운다).
+- **높이를 바꾼 사본과 값은 원본을 지우는 때 같이 지운다** — 사본도 사용자 목소리의 복사본이다. 사본은 캐시라
+  통째로 지워도 잃는 것이 없다(다음 울림·미리듣기에서 다시 굽는다).
+  - 목소리를 잃을 때(삭제·민감 동의 철회·접근 회수·교체·잠금 확정): 사본 전부 + 그 목소리 값. 안드로이드는 목소리를
+    잃는 경로가 모두 지나는 오디오 정리(`deleteAudioNoAlarmUses`)에서, iOS 는 알람용 사본이 그 클립의 스테이징
+    파일과 함께 지워지고(같은 파일 이름 접두) 미리듣기 사본은 따로 지운다.
+  - 명시적 로그아웃·탈퇴: 사본 전부 + 그 계정 값 전부. 자동 만료(401)에서는 지우지 않는다 — 알람은 그대로 울린다.
+  - iOS 등록 미리듣기 사본은 그 화면을 떠날 때·세션이 바뀔 때도 지운다. 안드로이드는 30일 넘게 쓰이지 않은 사본을
+    앱 시작 때 지운다(음성 캐시 정리와 같은 30일 — 원본이 정리되면 그 사본도 더는 쓰이지 않는다).
+  - iOS 민감 동의 철회도 이제 캐시를 넘겨, 철회한 목소리의 클립·스테이징 파일을 지운다(안드로이드·목소리 삭제와 같다 —
+    예전에는 캐시 없이 알람만 강등해 클립이 남았다).
+
 ## 5. 무료 버킷은 **울릴 때마다 다음 클립으로 넘어간다**
 
 테마 하나에 클립이 여럿이고, 알람이 울릴 때마다 순서대로 넘어간다. 같은 테마라도
@@ -1953,6 +1995,10 @@ R2 파일·ElevenLabs 클론은 DB 트랜잭션 안에서 지울 수 없으므�
 | 확정 미리듣기 문구가 사투리 지시를 이긴다 | — (서버가 만든다) | — (서버가 만든다) | `prerenderClipPrompt` 의 `styleReference` 갈래(`dialectFollowsReference` → `speechStyleInstruction`·`humanReferenceInstruction`·끝의 `DIALECT` 줄) ← `stock-clips.ts` 가 `preview_text` 를 넘긴다. 회귀 `vertex-translate.test.ts`「확정 문구(STYLE REFERENCE)가 있으면 사투리 지시가 그것을 따른다」· 평가 `scripts/eval-gemini-prompts.ts`(프로필마다 `styleReference`, `*-stdref` 프로필) |
 | 제시 대본을 읽은 녹음은 어체를 버린다(사투리·말버릇·페르소나·아이·결은 그대로) | 대본 글만 둔다 — `voices2_record_script`(`res/values{,-en,-ja}/strings.xml`) | 대본 글만 둔다 — `Views/Voices/VoiceCloneUploadFlow.swift` `recordingScript` | `analyzeSpeechStyleWithVertex`(판정 `isEnrollmentScriptReading` — 포함률 `ENROLLMENT_SCRIPT_READ_THRESHOLD`·대본 분량 `ENROLLMENT_SCRIPT_MIN_MATCHED_UNITS`·숫자 줄의 다른 꼴 `ENROLLMENT_SCRIPT_NUMBER_LINES`, `lib/enrollment-script.ts` — 모델이 본 앞부분 `SPEECH_STYLE_TRANSCRIPT_LIMIT`) ← 원본 `VOICE_ENROLLMENT_SCRIPTS`(`packages/shared/src/voice-enrollment-script.json`) · 세 벌 대조 `scripts/check-voice-enrollment-script.py`(CI lint). 회귀 `enrollment-script.test.ts`·`vertex-translate.test.ts`「제시 대본을 읽은 녹음은 어체를 버린다」 |
 | 말투 분석 재시도(전송 실패만·`waitUntil` 마감 안) | — | — | `analyzeSpeechStyleWithVertex`(`SPEECH_STYLE_RETRY_DELAYS_MS`·`SPEECH_STYLE_ANALYSIS_BUDGET_MS`, 판정 `isVertexTransportFailure` ← `markTransportFailure`·`VertexHttpError`, 요청마다 직전에 재는 상한 `GenerateContentConfig.deadlineAt` → `deadlineBoundedTimeoutMs`(토큰 `createAccessToken`·생성 `generateContentAtEndpoint`), `lib/vertex-translate.ts`) · 마감은 `runSpeechStyleAnalysis`(`routes/voice-profile.ts`)가 전사 전부터 세고 `ElevenLabsClient.speechToText(deadlineAt)`도 따른다. 회귀 `elevenlabs.test.ts`(마감 전 요청·본문 읽기 중단, 만료 뒤 요청 금지). 회귀 `vertex-translate.test.ts`「전송 실패만 마감 안에서 다시 묻는다」(「어느 회차도 마감을 넘기지 않는다(가짜 시계)」 — 토큰 발급 8초)·`voice-profile-speech-style.test.ts`(마감 전달) |
+| 목소리 높이 막대·자동 추천(§4-3) — 높이 하나, −6…+3·0.5, 데드밴드 1.5 | `ui/voices/VoiceTuningCard.kt` ← `VoiceProfileManagementPanel`(`startSourcePitchAnalysis` — 업로드 전 등록 녹음 · `ensureTuningSuggestion` · 저장 성공 뒤 기록 `pendingTuningCommit`) · `data/VoiceTuning.kt` · `VoiceTuningAnalysis.suggest`; 회귀 `VoiceTuningAnalysisTest` | `Views/Voices/VoicePreviewConfirmView.swift`(막대·`promote` 에서 기록) · `VoiceStudioViewModel.pendingDraftSource`(등록 녹음) · `VoiceTuning.swift` · `VoiceTuningAnalyzer.suggest`; 회귀 `VoiceTuningAnalyzerTests` | — |
+| 몸집 유지 높이 변환(TD-PSOLA)·원래 크기로 되맞춤 — 두 앱 같은 숫자 | `data/VoicePitchShifter.kt`(`shift`·`matchLoudness`); 회귀 `VoicePitchShifterTest` | `VoicePitchShifter.swift`; 회귀 `VoicePitchShifterTests` | — |
+| 미리듣기·울림이 같은 사본 — 손 떼면 다시 굽기, 첫 미리듣기는 끊지 않음, 실패하면 원래 소리 | `data/VoiceTuningRenderer.render` ← `RingingService.startVoiceLoop`(`voiceTuningFor` — 자기 목소리만) · `VoiceOnboardingPreviewController.previewVoice`(편집기) · `VoiceProfileManagementPanel`(`tunedPreviewUri`·`playLocalTunedPreview`·`replayTunedPreviewIfReady`) | 알람: `AlarmSoundResolver.plan`(`voiceClip` 의 `tuning` → 지문 `:t<꼬리표>`) → `AlarmSoundStaging.stage`(`writeTunedCAF`); 미리듣기: `VoiceTuningRenderer.previewFile` ← `VoicePreviewConfirmView`(`prepareTuning`·`replayLocally`); 회귀 `VoiceTuningStagingTests`·`AlarmSoundPlanTests` | — |
+| 사본·값 지우기 — 목소리를 잃을 때·명시적 로그아웃/탈퇴(자동 401 제외)·오래된 사본 | `VoiceTuningRenderer.clearAll` ← `AlarmRepository.deleteAudioNoAlarmUses` · `MainViewModel.forgetVoiceTuning`(목소리 삭제 `deleteVoiceProfile`·철회 `withdrawVoiceBiometricConsent`) · `clearSignedInSession`(+ `VoiceTuningStore.clearUser`); `pruneStale` ← `AlarmTalkApplication.onCreate`; 회귀 `VoiceTuningStoreTest` | 값: `VoiceTuningStore.remove(voiceProfileID:)` ← `VoiceStudioViewModel.handleDeletedVoiceProfile`·`AuthViewModel.withdrawVoiceBiometricConsent`, `clear(userID:)` ← `clearAccountPreferences`; 미리듣기 사본 `VoiceTuningRenderer.clearPreviewFiles` ← 같은 자리 + `clearUserScopedRemoteState`·`VoicePreviewConfirmView.onDisappear`; 알람용 사본은 `AlarmSoundStaging.clearStagedSoundFiles`(접두) · 철회도 캐시를 넘긴다(`ConsentHistoryView.withdraw`); 회귀 `VoiceTuningAnalyzerTests`(지우기) | — |
 | 재생 방식 2택 | `PlayModeCard` (`ui/editor/AlarmEditorControls.kt`) | `VoicePlayModePicker` | `wake_mode` (`voice_only` / `sound_then_voice`) |
 | 옛 값 정규화 | `AlarmPlayModes.normalize` | `AlarmPlayMode.decode` | — |
 | 문구 목록(하나) | `EditorMessageContexts` → `FreeBucketOrder` (`ui/editor/AlarmEditorControls.kt`) | `MessageSettingsPane.options` → `FreeBucket.order` | `STOCK_CLIP_PRESETS` → `FREE_BUCKET_CATEGORIES` |

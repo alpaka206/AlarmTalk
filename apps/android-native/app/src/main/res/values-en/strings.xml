@@ -893,4 +893,12 @@
     <string name="voices_clip_prep_rendering_body">Creating your voice. This may take a few minutes.</string>
     <string name="voices_clip_prep_downloading_body">Downloading your voice. The download continues even if you close the app.</string>
     <string name="voices_clip_prep_retry">Try again</string>
+    <string name="voices_tuning_title">Fine-tune the voice</string>
+    <string name="voices_tuning_desc">Adjust the pitch while you listen. Only the pitch changes; the character of the voice stays the same. Every alarm that rings with this voice will use this setting.</string>
+    <string name="voices_tuning_pitch">Pitch</string>
+    <string name="voices_tuning_auto">Auto-adjust</string>
+    <string name="voices_tuning_auto_applied">Suggested</string>
+    <string name="voices_tuning_analyzing">Calculating suggested values…</string>
+    <string name="voices_tuning_rendering">Changing the pitch…</string>
+    <string name="voices_tuning_pitch_value">%1$s semitones</string>
 </resources>

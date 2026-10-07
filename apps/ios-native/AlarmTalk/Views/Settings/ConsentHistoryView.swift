@@ -138,10 +138,12 @@ struct ConsentHistoryView: View {
 
     private func withdraw() async {
         withdrawBusy = true
+        // 캐시를 넘겨야 철회한 목소리의 클립과 알람용으로 구운 파일(높이를 바꾼 사본 포함)이 지워진다 —
+        // 목소리 삭제(`VoiceProfileManagementPanel`)·안드로이드 철회 경로와 같다.
         let ok = await auth.withdrawVoiceBiometricConsent(
             voiceStudio: voiceStudio,
             alarmStore: alarmStore,
-            audioCache: nil
+            audioCache: AudioCacheStore.shared
         )
         withdrawBusy = false
         // 성공했으면 기록을 다시 읽어 '미동의' 로 바뀐 것을 그 자리에서 보여준다.

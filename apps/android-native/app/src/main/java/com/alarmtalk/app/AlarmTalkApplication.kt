@@ -94,6 +94,8 @@ class AlarmTalkApplication : Application() {
         applicationScope.launch {
             runCatching { AlarmAppContainer.repository(this@AlarmTalkApplication).sweepStaleAudioCache() }
                 .onFailure { AlarmTalkLog.reportError("Stale audio cache sweep failed", it) }
+            // 높이를 바꾼 사본 — 원본이 정리되면 그 사본도 더는 쓰이지 않아 같은 30일 뒤 지워진다.
+            com.alarmtalk.app.data.VoiceTuningRenderer.pruneStale(this@AlarmTalkApplication)
         }
         Log.i(TAG, "Voice Alarm native application started")
     }

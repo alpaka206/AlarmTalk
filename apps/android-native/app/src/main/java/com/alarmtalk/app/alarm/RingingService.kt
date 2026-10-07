@@ -37,6 +37,11 @@ import com.alarmtalk.app.data.AlarmPlayModes
 import com.alarmtalk.app.data.DefaultVoiceClipSource
 import com.alarmtalk.app.data.VibrationPatternLibrary
 import com.alarmtalk.app.data.VibrationPatterns
+import com.alarmtalk.app.data.VoiceSources
+import com.alarmtalk.app.data.VoiceTuning
+import com.alarmtalk.app.data.VoiceTuningRenderer
+import com.alarmtalk.app.data.VoiceTuningStore
+import com.alarmtalk.app.data.isSystemVoiceId
 import com.alarmtalk.app.data.decodeBucketClipKeys
 import com.alarmtalk.app.isEntitledOptimistic
 import com.alarmtalk.app.resolvePaidVoiceAccess
@@ -333,7 +338,8 @@ class RingingService : Service() {
                 "voiceVolume=${alarm?.voiceVolumePercent} id=${alarm?.id}",
         )
         when (sound) {
-            is RingSound.OwnVoice -> startVoiceLoop(Uri.parse(sound.uri), alarm)
+            // 목소리 보정은 **그 알람 자신의 목소리**에만 건다 — 대신 트는 기본 목소리에는 걸지 않는다.
+            is RingSound.OwnVoice -> startVoiceLoop(Uri.parse(sound.uri), alarm, voiceTuningFor(alarm))
             is RingSound.DefaultVoice -> startVoiceLoop(Uri.parse(sound.uri), alarm)
             is RingSound.Tone -> startAlarmToneLoop(alarm, forced = sound.forced)
             RingSound.Silent -> {
@@ -346,6 +352,21 @@ class RingingService : Service() {
             }
         }
     }
+
+    /**
+     * 이 알람 목소리의 보정값(등록 미리듣기에서 맞춘 값). 직접 녹음·기본 목소리·값 없음·중립이면 null —
+     * 그때 울림은 예전과 똑같이 돈다. 기기 저장소만 읽는다(네트워크 없음). 절대 던지지 않는다.
+     */
+    private fun voiceTuningFor(alarm: AlarmEntity?): VoiceTuning? = runCatching {
+        if (alarm == null || alarm.voiceSource == VoiceSources.LOCAL_AUDIO) return@runCatching null
+        val voiceId = alarm.voiceProfileId?.takeIf { it.isNotBlank() && !isSystemVoiceId(it) }
+            ?: return@runCatching null
+        val userId = alarm.ownerUserId?.takeIf { it.isNotBlank() }
+            ?: AuthSessionStore(applicationContext).read()?.user?.id
+        VoiceTuningStore(applicationContext).read(userId, voiceId)?.takeUnless { it.isNeutral }
+    }.onFailure { error ->
+        Log.w(TAG, "Failed to read voice tuning id=${alarm?.id}", error)
+    }.getOrNull()
 
     /**
      * 이 알람 대신 틀 **기본 목소리** 소리 — 기기 안의 클립·내장 인사말만 본다(네트워크 없음).
@@ -438,14 +459,18 @@ class RingingService : Service() {
         }
     }
 
-    private fun startVoiceLoop(voiceUri: Uri, alarm: AlarmEntity?) {
+    private fun startVoiceLoop(voiceUri: Uri, alarm: AlarmEntity?, tuning: VoiceTuning? = null) {
         voiceLoopActive = true
         cancelVoiceRepeatJob()
         mediaPlayer?.release()
         // ⚠ **목소리는 항상 반복한다**(2026-08-27 지시 — 편집기에서 선택지를 없앴다).
         // 옛 행에 false 가 남아 있을 수 있으므로 여기서도 값을 보지 않는다.
         val repeatVoice = true
-        val player = createVoicePlayer(voiceUri)
+        // 목소리 높이 보정 — 높이만 옮긴 사본(WAV)을 튼다. 처음 울릴 때 한 번 만들고(짧은 클립이라
+        // 수백 ms) 이후는 기기 캐시다. 이 함수는 serviceScope(IO)에서만 불린다. 실패하면 원래 소리.
+        val playUri = tuning?.let { VoiceTuningRenderer.render(applicationContext, voiceUri, it) } ?: voiceUri
+        if (tuning != null) Log.i(TAG, "Voice pitch tuning ${tuning.pitchSemitones} st applied=${playUri != voiceUri}")
+        val player = createVoicePlayer(playUri)
         // 준비 도중 dismiss/snooze/파괴로 현재 알람이 바뀌었으면 좀비 루프 플레이어를 남기지 않는다.
         if (destroyed || (alarm != null && ringingAlarmId != alarm.id)) {
             player?.release()

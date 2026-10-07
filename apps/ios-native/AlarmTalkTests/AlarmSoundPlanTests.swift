@@ -237,6 +237,70 @@ final class AlarmSoundPlanTests: XCTestCase {
         XCTAssertFalse(AlarmScheduleReconciler.isInFlight(record))
     }
 
+    // MARK: - 목소리 다듬기
+
+    /// 다듬기 값을 바꾸면 **그 목소리의 알람 지문이 움직여** 리컨사일러가 다시 건다.
+    func test_fingerprint_movesWhenTheVoiceTuningChanges() throws {
+        let (store, keys) = try seedBucket(clipCount: 1)
+        var record = makeBucketRecord(bucketId: "medication", keys: keys)
+        let owner = "tuning-owner-\(UUID().uuidString)"
+        let voiceID = "tuning-voice-\(UUID().uuidString)"
+        record.ownerUserId = owner
+        record.voiceProfileId = voiceID
+        let tuningStore = VoiceTuningStore()
+        addTeardownBlock { tuningStore.save(.neutral, userID: owner, voiceProfileID: voiceID) }
+
+        let untuned = AlarmSoundResolver.plan(for: record, audioCache: store).fingerprint
+        XCTAssertFalse(untuned.contains(":t"), "다듬지 않은 목소리의 지문은 예전과 같아야 한다")
+
+        record.alarmKitID = UUID().uuidString
+        record.scheduledSoundFingerprint = untuned
+        XCTAssertFalse(AlarmScheduleReconciler.needsReschedule(record, alarmKit: AlarmKitViewModel(), audioCache: store))
+
+        tuningStore.save(VoiceTuning(pitchSt: -1.5, source: .user), userID: owner, voiceProfileID: voiceID)
+        let tuned = AlarmSoundResolver.plan(for: record, audioCache: store).fingerprint
+        XCTAssertNotEqual(untuned, tuned)
+        XCTAssertTrue(
+            AlarmScheduleReconciler.needsReschedule(record, alarmKit: AlarmKitViewModel(), audioCache: store),
+            "다듬기를 바꿨는데 옛 파일로 예약된 채 남는다"
+        )
+
+        tuningStore.save(VoiceTuning(pitchSt: -2, source: .user), userID: owner, voiceProfileID: voiceID)
+        XCTAssertNotEqual(tuned, AlarmSoundResolver.plan(for: record, audioCache: store).fingerprint)
+
+        // 다른 목소리·다른 계정의 알람은 움직이지 않는다.
+        var other = record
+        other.voiceProfileId = "another-voice"
+        XCTAssertEqual(AlarmSoundResolver.plan(for: other, audioCache: store).fingerprint, untuned)
+        other = record
+        other.ownerUserId = "another-owner"
+        XCTAssertEqual(AlarmSoundResolver.plan(for: other, audioCache: store).fingerprint, untuned)
+
+        // 중립으로 되돌리면 예전 지문으로 돌아온다.
+        tuningStore.save(.neutral, userID: owner, voiceProfileID: voiceID)
+        XCTAssertEqual(AlarmSoundResolver.plan(for: record, audioCache: store).fingerprint, untuned)
+    }
+
+    /// 다듬기 값이 실제 예약 소리(스테이징 파일)까지 내려가는가.
+    func test_resolve_stagesTheTunedFile() throws {
+        let (store, keys) = try seedBucket(clipCount: 1)
+        var record = makeBucketRecord(bucketId: "medication", keys: keys)
+        let owner = "tuning-owner-\(UUID().uuidString)"
+        let voiceID = "tuning-voice-\(UUID().uuidString)"
+        record.ownerUserId = owner
+        record.voiceProfileId = voiceID
+        let tuningStore = VoiceTuningStore()
+        addTeardownBlock { tuningStore.save(.neutral, userID: owner, voiceProfileID: voiceID) }
+        let tuning = VoiceTuning(pitchSt: 2, source: .user)
+        tuningStore.save(tuning, userID: owner, voiceProfileID: voiceID)
+
+        guard case .bundledNamed(let name) = AlarmSoundResolver.resolve(for: record, audioCache: store) else {
+            return XCTFail("다듬은 목소리가 스테이징에 실패했다")
+        }
+        XCTAssertTrue(name.contains("-t\(try XCTUnwrap(tuning.soundTag))"), name)
+        XCTAssertTrue(name.hasSuffix(".caf"), name)
+    }
+
     // MARK: - Helpers
 
     /// 진짜 오디오로 캐시를 채운다 — 가짜 바이트는 캐시 조회를 통과하지 못해

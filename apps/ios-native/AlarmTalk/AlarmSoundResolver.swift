@@ -28,17 +28,24 @@ enum AlarmSoundResolution: Equatable {
 /// 재예약 누락 다섯 건을 만든 원인이다(`fireAtMillis` 는 운세 클립을 고르는 씨앗인데
 /// 아무도 그걸 '소리 필드' 로 분류하지 않았다).
 enum AlarmSoundPlan: Equatable {
-    case voiceClip(cacheKey: String, url: URL, durationMs: Int64, volumePercent: Int, revision: String?)
+    /// - tuning: 그 목소리의 다듬기 값(`VoiceTuningStore`). 없거나 중립이면 nil.
+    case voiceClip(cacheKey: String, url: URL, durationMs: Int64, volumePercent: Int, revision: String?, tuning: VoiceTuning?)
     case alarmSoundFile(url: URL, stagingKey: String, volumePercent: Int)
     case systemDefault
 
     /// 예약된 소리와 지금 울려야 할 소리가 같은지 비교하는 값.
     /// 파일 경로·길이는 넣지 않되 원격 주소 세대는 넣는다. 같은 message ID 아래 음원이
     /// 교체되면 AlarmKit 예약도 새 바이트로 다시 만들어야 한다.
+    ///
+    /// 다듬기 값은 **소리를 바꾸므로** 꼬리표로 들어간다 — 값을 바꾸면 지문이 달라져
+    /// 리컨사일러가 그 목소리의 알람을 새 파일로 다시 예약한다. 중립이면 꼬리표가 없어
+    /// 이 기능 이전의 지문과 같다(앱을 올렸다고 전 알람이 재예약되지 않는다).
     var fingerprint: String {
         switch self {
-        case .voiceClip(let key, _, _, let volume, let revision):
-            return "voice:\(key):r\(revision ?? "-"):v\(volume)"
+        case .voiceClip(let key, _, _, let volume, let revision, let tuning):
+            let base = "voice:\(key):r\(revision ?? "-"):v\(volume)"
+            guard let tag = tuning?.soundTag else { return base }
+            return base + ":t\(tag)"
         case .alarmSoundFile(let url, _, let volume): return "sound:\(url.path):v\(volume)"
         case .systemDefault: return "default"
         }
@@ -133,7 +140,12 @@ enum AlarmSoundResolver {
                 url: url,
                 durationMs: duration,
                 volumePercent: record.voiceVolumePercent,
-                revision: revision
+                revision: revision,
+                // 그 목소리(계정 × 프로필)의 다듬기 값. 클립이 그 목소리의 것이라 함께 실린다.
+                tuning: VoiceTuningStore().tuning(
+                    userID: record.ownerUserId,
+                    voiceProfileID: record.voiceProfileId
+                )
             )
         }
 
@@ -157,7 +169,9 @@ enum AlarmSoundResolver {
                     url: fallback.url,
                     durationMs: audioCache.readMetadata(cacheKey: fallback.key)?.durationMs ?? 0,
                     volumePercent: record.voiceVolumePercent,
-                    revision: nil
+                    revision: nil,
+                    // 기본(시스템) 목소리 클립 — 등록 목소리의 다듬기는 싣지 않는다.
+                    tuning: nil
                 )
             }
         }
@@ -177,11 +191,13 @@ enum AlarmSoundResolver {
         audioCache: AudioCacheStore
     ) -> AlarmSoundResolution {
         switch plan(for: record, audioCache: audioCache) {
-        case .voiceClip(let key, let url, let duration, let volumePercent, _):
+        case .voiceClip(let key, let url, let duration, let volumePercent, _, let tuning):
             // 길이 초과·측정 불가여도 staging 을 한 번 시도한다 — AlarmSoundStaging 이 첫
             // 30초로 캡하므로 성공하면 `.bundledNamed`(잠금화면에서도 울림)로 승격된다.
             // 트림/transcode 가 진짜로 실패할 때만 in-app 폴백으로 떨어진다.
-            if let bundled = try? AlarmSoundStaging.stage(url: url, key: key, volumePercent: volumePercent) {
+            if let bundled = try? AlarmSoundStaging.stage(
+                url: url, key: key, volumePercent: volumePercent, tuning: tuning
+            ) {
                 return .bundledNamed(stagedAlertName(bundled))
             }
             return .cachedAudio(url, duration)

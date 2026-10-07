@@ -65,6 +65,8 @@ internal class VoiceOnboardingPreviewController(
         voiceProfileId: String,
         stockClips: List<StockClip>,
         volumePercent: Int,
+        /** 그 목소리의 보정값(있으면). 울릴 때와 같은 소리를 들려준다. */
+        tuning: com.alarmtalk.app.data.VoiceTuning? = null,
     ) {
         if (playingVoiceId == voiceProfileId) {
             if (alarmVolumePreview) {
@@ -80,7 +82,7 @@ internal class VoiceOnboardingPreviewController(
             //   (`VoiceStudioViewModel.ensureGreetingPreview`).
             stopPreview()
         }
-        previewVoice(voiceProfileId, stockClips, alarmVolumePercent = volumePercent)
+        previewVoice(voiceProfileId, stockClips, alarmVolumePercent = volumePercent, tuning = tuning)
     }
 
     fun stopPreview(invalidateRequest: Boolean = true) {
@@ -113,6 +115,8 @@ internal class VoiceOnboardingPreviewController(
          * (CLAUDE.md 「미리듣기는 울림과 같은 스트림이어야 한다」).
          */
         alarmVolumePercent: Int? = null,
+        /** 알람 크기 미리듣기일 때만 쓴다([alarmVolumePercent] 가 있을 때) — 목소리 보정값. */
+        tuning: com.alarmtalk.app.data.VoiceTuning? = null,
     ) {
         // ⚠ **표식은 정리(`stopPreview`) 뒤에 세운다**(2026-09-07 리뷰 32차). 여기서 먼저
         //   세우면 아래 두 갈래가 곧바로 부르는 `stopPreview` 가 그걸 지워, **재생 중인데
@@ -170,9 +174,18 @@ internal class VoiceOnboardingPreviewController(
                     val ext = response.audioFormat.ifBlank { "mp3" }
                     File(context.cacheDir, "voice_onboarding_preview.$ext").apply { writeBytes(bytes) }
                 }
+                // 등록 때 맞춘 목소리 높이 — 울림과 **같은 사본 파일**을 튼다(`VoiceTuningRenderer`).
+                val sourceUri = Uri.fromFile(file)
+                val playUri = if (alarmVolumePercent != null && tuning != null && !tuning.isNeutral) {
+                    withContext(Dispatchers.Default) {
+                        com.alarmtalk.app.data.VoiceTuningRenderer.render(context, sourceUri, tuning)
+                    } ?: sourceUri
+                } else {
+                    sourceUri
+                }
                 val player = createPlayer(
                     resId = null,
-                    uri = Uri.fromFile(file),
+                    uri = playUri,
                     alarmVolumePercent = alarmVolumePercent,
                 ) ?: error("Failed to create greeting preview player.")
                 if (previewRequestId != requestId) {

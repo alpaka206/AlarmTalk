@@ -1911,6 +1911,12 @@ final class AuthViewModel: ObservableObject {
                 audioCache: audioCache
             )
         }
+        // 높이 보정값·등록 미리듣기 사본도 같은 자리에서 — 이 계정 자신의 목소리라 새 세션에 영향이 없다.
+        // (알람용으로 구운 사본은 위 강등이 그 클립의 스테이징 파일과 함께 지운다.)
+        for voiceID in revokedVoiceIDs {
+            VoiceTuningStore().remove(voiceProfileID: voiceID)
+        }
+        VoiceTuningRenderer.clearPreviewFiles()
         // 2) 여기부터는 **이 계정 화면의 상태**라 세션이 바뀌었으면 건드리지 않는다.
         guard session?.user.id == userID else { return true }
         if !consentSensitiveMissing.contains("voice_biometric") {
@@ -2079,6 +2085,9 @@ final class AuthViewModel: ObservableObject {
         DefaultVoicePreferenceStore().clear(userID: userID)
         DynamicPromptPreferenceStore().clear(userID: userID)
         DynamicPromptPreferences.clear(userID: userID)
+        // 목소리 높이 보정값과 등록 미리듣기 사본(목소리의 복사본)도 명시적으로 끝낼 때만 지운다(스펙 §4-3).
+        VoiceTuningStore().clear(userID: userID)
+        VoiceTuningRenderer.clearPreviewFiles()
     }
 
     func signOutExplicitly() {

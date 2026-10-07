@@ -892,4 +892,12 @@
     <string name="voices_clip_prep_rendering_body">声を作成しています。数分かかる場合があります。</string>
     <string name="voices_clip_prep_downloading_body">声をダウンロードしています。アプリを閉じても続きます。</string>
     <string name="voices_clip_prep_retry">もう一度試す</string>
+    <string name="voices_tuning_title">声の調整</string>
+    <string name="voices_tuning_desc">聞きながら高さを調整してください。声の質感はそのままで、高さだけが変わります。この声で鳴るすべてのアラームに適用されます。</string>
+    <string name="voices_tuning_pitch">声の高さ</string>
+    <string name="voices_tuning_auto">自動で調整</string>
+    <string name="voices_tuning_auto_applied">おすすめ値</string>
+    <string name="voices_tuning_analyzing">おすすめ値を計算しています…</string>
+    <string name="voices_tuning_rendering">高さを変えています…</string>
+    <string name="voices_tuning_pitch_value">%1$s 半音</string>
 </resources>

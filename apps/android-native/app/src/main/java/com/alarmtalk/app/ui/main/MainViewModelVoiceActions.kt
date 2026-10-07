@@ -595,6 +595,7 @@ internal fun MainViewModel.deleteVoiceProfile(profileId: String) {
             )
         }.onSuccess {
             voiceProfiles = voiceProfiles.filterNot { it.id == profileId }
+            forgetVoiceTuning(session.user.id, listOf(profileId))
             // 삭제된 목소리를 쓰던 내 알람을 즉시 기본 알람으로 변환한다(공유해제·무료강등과 동일 결과).
             // 서버는 sound-only 로 바꾸지만 본인 LOCAL_OWNED 알람은 pull 로 안 돌아오므로 로컬에서 강등.
             // 삭제된 id 만 대상으로 하는 타깃 강등이라 소셜 목록 신선도(reconcile 가드)에 막히지 않는다.
@@ -602,6 +603,7 @@ internal fun MainViewModel.deleteVoiceProfile(profileId: String) {
         }.onFailure { error ->
             if (error is retrofit2.HttpException && error.code() == 404) {
                 voiceProfiles = voiceProfiles.filterNot { it.id == profileId }
+                forgetVoiceTuning(session.user.id, listOf(profileId))
                 viewModelScope.launch { runCatching { repository.degradeAlarmsUsingVoiceProfile(profileId) } }
             } else {
                 if (originalProfile != null) {

@@ -1111,6 +1111,9 @@ class AlarmRepository(
      */
     private suspend fun deleteAudioNoAlarmUses(keys: Set<String>, keylessUris: Set<String> = emptySet()) {
         if (keys.isEmpty() && keylessUris.isEmpty()) return
+        // 높이를 바꾼 사본도 목소리의 복사본이다 — 목소리를 잃는 경로는 모두 여기를 지나므로 같이 지운다.
+        // 사본은 캐시라 남은 목소리의 것까지 지워도 다음 울림에서 다시 굽는다(`VoiceTuningRenderer`).
+        VoiceTuningRenderer.clearAll(context)
         val stillReferenced = HashSet<String>()
         // 키 없는 파일은 파일 이름(확장자 제외)으로 센다 — `sweepStaleAudioCache` 와 같은 단위.
         val stillReferencedFiles = HashSet<String>()
