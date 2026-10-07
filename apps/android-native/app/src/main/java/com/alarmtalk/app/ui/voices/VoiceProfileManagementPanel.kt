@@ -475,6 +475,9 @@ internal fun VoiceProfileManagementPanel(
     var confirmPreviewBusy by remember { mutableStateOf(false) }
     var confirmPreviewPlaying by remember { mutableStateOf(false) }
     var confirmPreviewCompleted by remember { mutableStateOf(false) }
+    // 첫 미리듣기의 세대 — 문구를 고치면 오른다. 확인 요청이 그 사이 늦게 돌아오면 옛 클립의 '들었다' 로 새 클립의
+    // 저장을 열지 않게 버린다(Codex #870).
+    var confirmPreviewGeneration by remember { mutableIntStateOf(0) }
     // 미리듣기 생성 코루틴 — 다이얼로그를 닫으면 취소해 늦은 재생/오디오 유출을 막는다.
     var confirmPreviewJob by remember { mutableStateOf<Job?>(null) }
     // 미리듣기 문구(서버가 관계·호칭 톤으로 생성/사용자가 수정) — Preview 스텝에 표시하고
@@ -943,6 +946,7 @@ internal fun VoiceProfileManagementPanel(
             playLocalTunedPreview(localPreviewUri)
             return
         }
+        val previewGeneration = confirmPreviewGeneration
         confirmPreviewJob = scope.launch {
             stopMediaPreview(invalidateGreetingPreview = false)
             confirmPreviewBusy = true
@@ -996,6 +1000,8 @@ internal fun VoiceProfileManagementPanel(
                                             error("Preview playback confirmation token missing")
                                         }
                                     }.onSuccess {
+                                        // 그 사이 문구를 고쳤으면 옛 클립의 확인이다 — 새 클립의 저장을 열지 않는다.
+                                        if (previewGeneration != confirmPreviewGeneration) return@onSuccess
                                         confirmPreviewCompleted = true
                                         heardTuning = playedTuning
                                         // 첫 재생 도중에 높이를 바꿨으면 이제 새 높이로 들려준다.
@@ -1041,7 +1047,9 @@ internal fun VoiceProfileManagementPanel(
         scope.launch {
             confirmPreviewSaving = true
             localMessage = null
-            // 진행 중 재생/합성을 멈춘다 — 이후 재생은 수정본 기준이어야 한다.
+            // 진행 중 재생/합성을 멈춘다 — 이후 재생은 수정본 기준이어야 한다. 이미 끝나 확인을 기다리는 옛 재생도
+            // 세대를 올려 무효로 한다.
+            confirmPreviewGeneration += 1
             confirmPreviewJob?.cancel()
             confirmPreviewJob = null
             stopMediaPreview(invalidateGreetingPreview = false)

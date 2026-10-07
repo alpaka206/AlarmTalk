@@ -106,11 +106,16 @@ object VoiceTuningRenderer {
             // 임시 파일 이름은 굽기마다 다르다 — 미리듣기와 울림이 같은 사본을 동시에 구워도 서로의 반쪽 파일을
             // 덮지 않는다. 이름 바꾸기는 원자적이라 먼저 끝난 쪽이 놓고, 뒤에 끝난 쪽이 같은 내용으로 덮는다.
             val tmp = File(dir, "${out.name}.${java.util.UUID.randomUUID()}.tmp")
-            writeWav(tmp, shifted, decoded.sampleRate)
-            // 굽는 사이 지워졌으면(초안 버림·목소리를 잃음·로그아웃) 게시하지 않는다.
-            if (!publish(tmp, out, ticket)) {
-                Log.i(TAG, "Discarded a render that finished after its copies were cleared")
-                return@runCatching null
+            try {
+                writeWav(tmp, shifted, decoded.sampleRate)
+                // 굽는 사이 지워졌으면(초안 버림·목소리를 잃음·로그아웃) 게시하지 않는다.
+                if (!publish(tmp, out, ticket)) {
+                    Log.i(TAG, "Discarded a render that finished after its copies were cleared")
+                    return@runCatching null
+                }
+            } finally {
+                // 쓰다 실패한(저장 공간 부족 등) 반쪽 파일도 목소리의 복사본이다 — 게시되지 않았으면 지운다(Codex #870).
+                tmp.delete()
             }
             Log.i(
                 TAG,

@@ -153,6 +153,8 @@ enum VoiceTuningRenderer {
         // 안드로이드 `VoiceTuningRenderer` 의 `MAX_DURATION_MILLIS`(120초)와 같다.
         let rendered = try render(url: source, tuning: tuning, maxSeconds: 120)
         let tmp = previewDirectory.appendingPathComponent("\(UUID().uuidString).caf")
+        // 쓰다 실패한 반쪽 파일·게시하지 않은 파일도 목소리의 복사본이다 — 게시되면 옮겨져 없으니 언제나 지운다(Codex #870).
+        defer { try? FileManager.default.removeItem(at: tmp) }
         try writeMonoCAF(rendered.samples, sampleRate: rendered.sampleRate, to: tmp)
         // 굽는 사이 지워졌으면(화면을 떠남·세션 변경·목소리 삭제 …) 게시하지 않는다.
         guard try publishPreview(tmp, to: url, ifEpoch: epoch) else { throw CancellationError() }
