@@ -90,6 +90,26 @@ final class VoiceTuningStagingTests: XCTestCase {
         XCTAssertTrue(AlarmSoundStaging.deferredTunedCleanupNames.isEmpty)
     }
 
+    /// 늦은 미리듣기 굽기는 제 임시 파일만 버린다 — 그 사이 같은 이름으로 게시된 새 굽기의 사본은 그대로(Codex #870).
+    func test_latePreviewRender_doesNotDeleteTheNewerCopy() throws {
+        let dir = VoiceTuningRenderer.previewDirectory
+        let stale = VoiceTuningRenderer.currentPreviewEpoch
+        VoiceTuningRenderer.clearPreviewFiles()
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let url = dir.appendingPathComponent("late-\(UUID().uuidString)-ts-15.caf")
+        addTeardownBlock { try? FileManager.default.removeItem(at: url) }
+
+        let fresh = dir.appendingPathComponent("\(UUID().uuidString).caf")
+        try Data([1, 2, 3]).write(to: fresh)
+        XCTAssertTrue(try VoiceTuningRenderer.publishPreview(fresh, to: url, ifEpoch: VoiceTuningRenderer.currentPreviewEpoch))
+        let staleTmp = dir.appendingPathComponent("\(UUID().uuidString).caf")
+        try Data([9]).write(to: staleTmp)
+        XCTAssertFalse(try VoiceTuningRenderer.publishPreview(staleTmp, to: url, ifEpoch: stale))
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: staleTmp.path), "늦은 굽기의 임시 파일은 버린다")
+        XCTAssertEqual(try Data(contentsOf: url), Data([1, 2, 3]), "새 굽기의 사본은 그대로")
+    }
+
     func test_neutralTuning_keepsTheLegacyName() throws {
         let source = try makeSineWAV(hz: 220, seconds: 1, amplitude: 0.3)
         let key = uniqueKey("neutral")

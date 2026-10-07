@@ -58,6 +58,27 @@ object VoiceTuningRenderer {
         fun isCurrent(): Boolean = globalEpoch.get() == global && (sourceEpochs[key] ?: 0L) == source
     }
 
+    /**
+     * 게시와 지우기를 한 줄로 세운다 — 세대 확인과 이름 바꾸기 사이에 지우기가 끼면, 늦은 굽기가 지운 뒤에 사본을
+     * 남긴다. 예전에는 게시한 **뒤에** 세대를 보고 `out` 을 지웠는데, 그 사이 새 굽기가 같은 이름으로 게시했으면
+     * **새 굽기의 사본**을 지웠다 — 새 굽기는 사라질 경로를 돌려준 셈이다(Codex #870). 이제 늦은 굽기는 제 임시
+     * 파일만 지우고, 게시된 이름은 건드리지 않는다.
+     */
+    private val publishLock = Any()
+
+    /** [tmp] 를 [out] 으로 게시한다 — [ticket] 이 아직 유효할 때만. 게시했으면 true, 버렸으면 false. */
+    internal fun publish(tmp: File, out: File, ticket: RenderTicket): Boolean = synchronized(publishLock) {
+        if (!ticket.isCurrent()) {
+            tmp.delete()
+            return@synchronized false
+        }
+        if (!tmp.renameTo(out)) {
+            tmp.delete()
+            error("rename failed")
+        }
+        true
+    }
+
     internal fun ticketFor(source: Uri): RenderTicket {
         val key = cacheKey(source)
         return RenderTicket(key, globalEpoch.get(), sourceEpochs[key] ?: 0L)
@@ -83,13 +104,8 @@ object VoiceTuningRenderer {
             // 덮지 않는다. 이름 바꾸기는 원자적이라 먼저 끝난 쪽이 놓고, 뒤에 끝난 쪽이 같은 내용으로 덮는다.
             val tmp = File(dir, "${out.name}.${java.util.UUID.randomUUID()}.tmp")
             writeWav(tmp, shifted, decoded.sampleRate)
-            if (!tmp.renameTo(out)) {
-                tmp.delete()
-                error("rename failed")
-            }
-            // 굽는 사이 지워졌으면(초안 버림·목소리를 잃음·로그아웃) 방금 게시한 사본을 남기지 않는다.
-            if (!ticket.isCurrent()) {
-                out.delete()
+            // 굽는 사이 지워졌으면(초안 버림·목소리를 잃음·로그아웃) 게시하지 않는다.
+            if (!publish(tmp, out, ticket)) {
                 Log.i(TAG, "Discarded a render that finished after its copies were cleared")
                 return@runCatching null
             }
@@ -109,17 +125,21 @@ object VoiceTuningRenderer {
     fun deleteCopiesOf(context: Context, source: Uri) {
         runCatching {
             val key = cacheKey(source)
-            sourceEpochs.merge(key, 1L, Long::plus)
             val prefix = "${key}_"
-            File(context.noBackupFilesDir, DIR).listFiles { f -> f.name.startsWith(prefix) }?.forEach { it.delete() }
+            synchronized(publishLock) {
+                sourceEpochs.merge(key, 1L, Long::plus)
+                File(context.noBackupFilesDir, DIR).listFiles { f -> f.name.startsWith(prefix) }?.forEach { it.delete() }
+            }
         }.onFailure { Log.w(TAG, "Failed to delete voice tuning copies", it) }
     }
 
     /** 사본을 모두 지운다. 다시 필요하면 울릴 때·미리듣기 때 새로 굽는다. 메인 스레드에서 부르지 말 것. */
     fun clearAll(context: Context) {
-        globalEpoch.incrementAndGet()
-        runCatching { File(context.noBackupFilesDir, DIR).deleteRecursively() }
-            .onFailure { Log.w(TAG, "Failed to clear voice tuning copies", it) }
+        synchronized(publishLock) {
+            globalEpoch.incrementAndGet()
+            runCatching { File(context.noBackupFilesDir, DIR).deleteRecursively() }
+                .onFailure { Log.w(TAG, "Failed to clear voice tuning copies", it) }
+        }
     }
 
     /** 오래 쓰이지 않은 사본과 남은 임시 파일을 지운다(앱 시작 — `AlarmTalkApplication`). */

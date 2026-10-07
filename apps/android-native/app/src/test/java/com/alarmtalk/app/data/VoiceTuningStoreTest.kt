@@ -173,6 +173,26 @@ class VoiceTuningStoreTest {
         a.delete(); b.delete()
     }
 
+    /** 늦은 굽기는 제 임시 파일만 버린다 — 그 사이 같은 이름으로 게시된 새 굽기의 사본은 그대로(Codex #870). */
+    @Test
+    fun `늦은 굽기는 새 굽기의 사본을 지우지 않는다`() {
+        val src = File(context.filesDir, "late.mp3").apply { writeBytes(ByteArray(64)) }
+        val uri = android.net.Uri.fromFile(src)
+        val stale = VoiceTuningRenderer.ticketFor(uri)
+        VoiceTuningRenderer.deleteCopiesOf(context, uri)
+        val dir = File(context.noBackupFilesDir, "voice_tuning").apply { mkdirs() }
+        val out = File(dir, "${VoiceTuningRenderer.cacheKey(uri)}_m20.wav")
+
+        val fresh = File(dir, "fresh.tmp").apply { writeBytes(byteArrayOf(1, 2, 3)) }
+        assertTrue(VoiceTuningRenderer.publish(fresh, out, VoiceTuningRenderer.ticketFor(uri)))
+        val staleTmp = File(dir, "stale.tmp").apply { writeBytes(byteArrayOf(9)) }
+        assertFalse(VoiceTuningRenderer.publish(staleTmp, out, stale))
+
+        assertFalse("늦은 굽기의 임시 파일은 버린다", staleTmp.exists())
+        assertEquals("새 굽기의 사본은 그대로", listOf<Byte>(1, 2, 3), out.readBytes().toList())
+        src.delete()
+    }
+
     @Test
     fun `사본은 통째로 지울 수 있다`() {
         copies.mkdirs()

@@ -79,18 +79,52 @@ enum VoiceTuningRenderer {
     /// ⚠ **세대를 올린다.** 굽기는 백그라운드라 지운 **뒤에** 끝날 수 있다 — 그러면 폴더를 다시 만들고
     /// 사본을 남긴다(Codex #870). [previewFile] 이 끝에서 세대를 보고, 그 사이 지워졌으면 제가 쓴 것을 지운다.
     static func clearPreviewFiles() {
-        previewEpoch.bump()
-        try? FileManager.default.removeItem(at: previewDirectory)
+        let dir = previewDirectory
+        previewEpoch.bump { try? FileManager.default.removeItem(at: dir) }
     }
 
     /// 미리듣기 사본 세대 — [clearPreviewFiles] 가 올린다.
     private static let previewEpoch = PreviewEpoch()
 
+    /// 지금 세대 — 테스트가 '굽는 사이 지워짐' 을 재현할 때 쓴다.
+    static var currentPreviewEpoch: Int { previewEpoch.current }
+
+    /// 게시와 지우기를 **한 잠금 안에서** 한다 — 세대 확인과 이름 바꾸기 사이에 지우기가 끼지 못하게.
+    /// 예전에는 게시한 **뒤에** 세대를 보고 대상을 지웠는데, 그 사이 새 굽기가 같은 이름으로 게시했으면 **새 굽기의
+    /// 사본**을 지웠다(Codex #870). 이제 늦은 굽기는 제 임시 파일만 지우고 게시된 이름은 건드리지 않는다.
     private final class PreviewEpoch: @unchecked Sendable {
         private let lock = NSLock()
         private var value = 0
         var current: Int { lock.withLock { value } }
-        func bump() { lock.withLock { value += 1 } }
+
+        func bump(then clear: () -> Void) {
+            lock.withLock {
+                value += 1
+                clear()
+            }
+        }
+
+        /// `tmp` 를 `url` 로 게시한다 — 세대가 그대로일 때만. 같은 클립·같은 높이를 다른 굽기가 먼저 게시했으면 그것을
+        /// 그대로 쓴다(내용이 같다). 게시했거나 이미 있으면 true, 그 사이 지워졌으면 false.
+        func publish(_ tmp: URL, to url: URL, ifEpoch epoch: Int) throws -> Bool {
+            try lock.withLock {
+                guard value == epoch else {
+                    try? FileManager.default.removeItem(at: tmp)
+                    return false
+                }
+                if FileManager.default.fileExists(atPath: url.path) {
+                    try? FileManager.default.removeItem(at: tmp)
+                    return true
+                }
+                try FileManager.default.moveItem(at: tmp, to: url)
+                return true
+            }
+        }
+    }
+
+    /// [previewFile] 의 게시 단계(테스트용으로 따로 둔다).
+    static func publishPreview(_ tmp: URL, to url: URL, ifEpoch epoch: Int) throws -> Bool {
+        try previewEpoch.publish(tmp, to: url, ifEpoch: epoch)
     }
 
     /// 등록 미리듣기용 — 받은 클립을 이 높이로 구운 파일. 중립이면 원본을 그대로 돌려준다.
@@ -105,13 +139,8 @@ enum VoiceTuningRenderer {
         let rendered = try render(url: source, tuning: tuning, maxSeconds: 60)
         let tmp = dir.appendingPathComponent("\(UUID().uuidString).caf")
         try writeMonoCAF(rendered.samples, sampleRate: rendered.sampleRate, to: tmp)
-        try? FileManager.default.removeItem(at: url)
-        try FileManager.default.moveItem(at: tmp, to: url)
-        // 굽는 사이 지워졌으면(화면을 떠남·세션 변경·목소리 삭제 …) 방금 쓴 사본을 남기지 않는다.
-        guard previewEpoch.current == epoch else {
-            try? FileManager.default.removeItem(at: url)
-            throw CancellationError()
-        }
+        // 굽는 사이 지워졌으면(화면을 떠남·세션 변경·목소리 삭제 …) 게시하지 않는다.
+        guard try publishPreview(tmp, to: url, ifEpoch: epoch) else { throw CancellationError() }
         return url
     }
 }
