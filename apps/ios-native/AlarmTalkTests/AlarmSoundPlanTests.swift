@@ -281,6 +281,36 @@ final class AlarmSoundPlanTests: XCTestCase {
         XCTAssertEqual(AlarmSoundResolver.plan(for: record, audioCache: store).fingerprint, untuned)
     }
 
+    /// 예약은 계획을 **한 번** 정해 그 계획으로 굽고 지문을 새긴다 — 예약을 기다리는 사이 다듬기 값이 바뀌어도
+    /// 지문은 OS 에 실린 소리(잡아 둔 계획)를 말한다. 다시 계산하면 새 값의 지문이 옛 소리 위에 붙는다(Codex #870).
+    func test_scheduledFingerprint_usesThePlanThatWasScheduled() throws {
+        let (store, keys) = try seedBucket(clipCount: 1)
+        var record = makeBucketRecord(bucketId: "medication", keys: keys)
+        let owner = "tuning-owner-\(UUID().uuidString)"
+        let voiceID = "tuning-voice-\(UUID().uuidString)"
+        record.ownerUserId = owner
+        record.voiceProfileId = voiceID
+        let tuningStore = VoiceTuningStore()
+        addTeardownBlock { tuningStore.save(.neutral, userID: owner, voiceProfileID: voiceID) }
+        tuningStore.save(VoiceTuning(pitchSt: -1.5, source: .user), userID: owner, voiceProfileID: voiceID)
+
+        let scheduledPlan = AlarmSoundResolver.plan(for: record, audioCache: store)
+        let resolution = AlarmSoundResolver.resolve(plan: scheduledPlan)
+        // 예약을 기다리는 사이 다듬기를 되돌렸다.
+        tuningStore.save(.neutral, userID: owner, voiceProfileID: voiceID)
+
+        let stamped = AlarmScheduleReconciler.scheduledFingerprint(plan: scheduledPlan, resolution: resolution)
+        XCTAssertTrue(stamped.contains(":t"), "OS 에 실린 것은 다듬은 소리다")
+        XCTAssertNotEqual(
+            stamped,
+            AlarmScheduleReconciler.scheduledFingerprint(
+                plan: AlarmSoundResolver.plan(for: record, audioCache: store),
+                resolution: resolution
+            ),
+            "지금 값으로 다시 계산하면 리컨사일러가 옛 소리를 맞는 것으로 본다"
+        )
+    }
+
     /// 받은 알람·직접 녹음에는 다듬기를 싣지 않는다 — 가족이 내가 공유한 목소리로 보낸 알람은 내 목소리 id 를
     /// 달고 와도 보낸 사람이 들려주려던 소리 그대로다(스펙 §4-3, Codex #870).
     func test_voiceTuning_skipsReceivedAndRecordedAlarms() throws {

@@ -216,7 +216,14 @@ enum AlarmSoundResolver {
         for record: LocalAlarmRecord,
         audioCache: AudioCacheStore
     ) -> AlarmSoundResolution {
-        switch plan(for: record, audioCache: audioCache) {
+        resolve(plan: plan(for: record, audioCache: audioCache))
+    }
+
+    /// 이미 정한 계획([plan])을 스테이징한다. 예약은 계획을 **한 번** 정해 이걸로 굽고, 같은 계획으로 지문을 새긴다 —
+    /// 예약을 기다리는 사이 계획이 바뀌면(다듬기 값 저장·삭제 — 계획이 행 밖의 `VoiceTuningStore` 를 읽는다) OS 에는
+    /// 옛 소리가, 행에는 새 지문이 실려 리컨사일러가 맞는 것으로 본다(Codex #870).
+    static func resolve(plan: AlarmSoundPlan) -> AlarmSoundResolution {
+        switch plan {
         case .voiceClip(let key, let url, let duration, let volumePercent, _, let tuning):
             // 길이 초과·측정 불가여도 staging 을 한 번 시도한다 — AlarmSoundStaging 이 첫
             // 30초로 캡하므로 성공하면 `.bundledNamed`(잠금화면에서도 울림)로 승격된다.

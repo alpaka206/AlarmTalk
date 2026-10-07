@@ -380,6 +380,29 @@ final class VoiceStudioViewModel: ObservableObject {
     ///   이 클립을 재서 높이 추천값을 정하고, 그 높이로 **구운 파일**을 돌려준다 — 재생이
     ///   처음부터 그 소리로 나간다. 같은 클립을 서버 왕복 없이 다시 굽고 틀 수 있게 경로를
     ///   들고 있는다. nil 을 넘기면(또는 원본을 돌려주면) 원본을 그대로 튼다.
+    /// 첫 미리듣기의 **대체 재생**(구운 파일을 못 틀어 원본을 `previewPlayer` 로 트는 중)이 끝나기를 기다리는 자리.
+    /// 화면을 떠나면 [stopDraftPreviewPlayback] 이 '중단' 으로 끝낸다 — 안 그러면 소리가 화면 밖에서 계속 나고,
+    /// 끝까지 들은 것으로 흐름이 이어진다(Codex #870).
+    private var pendingDraftFallback: CheckedContinuation<DraftFallbackResult, Never>?
+
+    private enum DraftFallbackResult { case finished, failedToStart, interrupted }
+
+    private func resumeDraftFallback(_ result: DraftFallbackResult) {
+        guard let continuation = pendingDraftFallback else { return }
+        pendingDraftFallback = nil
+        continuation.resume(returning: result)
+    }
+
+    /// 등록 미리듣기 재생을 멈춘다 — 높이를 구운 파일이든, 그걸 못 틀어 대신 트는 원본이든. 멈춘 재생은 '중단' 이라
+    /// 청취로 치지 않는다.
+    func stopDraftPreviewPlayback() {
+        tuningPreviewPlayer.stop()
+        guard pendingDraftFallback != nil else { return }
+        previewPlayer.onFinish = nil
+        previewPlayer.stop()
+        resumeDraftFallback(.interrupted)
+    }
+
     func playDraftPreview(
         draft: VoiceProfile,
         session: AuthSession?,
@@ -433,12 +456,17 @@ final class VoiceStudioViewModel: ObservableObject {
                 guard tuningPlayerFailed else { return .interrupted }
                 onPlayingOriginalInstead?()
                 // ⚠ 원본도 못 틀면 **실패**다 — 아무것도 안 들렸는데 청취를 기록하면 저장이 열린다(Codex #870).
-                let fallbackStarted = await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
-                    previewPlayer.onFinish = { continuation.resume(returning: true) }
-                    if (try? previewPlayer.play(url: url)) == nil { continuation.resume(returning: false) }
+                let fallback = await withCheckedContinuation { (continuation: CheckedContinuation<DraftFallbackResult, Never>) in
+                    pendingDraftFallback = continuation
+                    previewPlayer.onFinish = { [weak self] in self?.resumeDraftFallback(.finished) }
+                    if (try? previewPlayer.play(url: url)) == nil { resumeDraftFallback(.failedToStart) }
                 }
                 previewPlayer.onFinish = nil
-                guard fallbackStarted else { return .failed(String(localized: "미리듣기를 재생하지 못했어요.")) }
+                switch fallback {
+                case .finished: break
+                case .failedToStart: return .failed(String(localized: "미리듣기를 재생하지 못했어요."))
+                case .interrupted: return .interrupted
+                }
             }
 
             if let playbackToken = response.previewPlaybackToken {

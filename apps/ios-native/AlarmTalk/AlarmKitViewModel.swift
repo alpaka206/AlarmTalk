@@ -1054,7 +1054,10 @@ final class AlarmKitViewModel: ObservableObject {
                     "Free plan at schedule time — scheduling a default voice instead of the paid voice (id: \(record.id, privacy: .public))"
                 )
             }
-            let resolution = AlarmSoundResolver.resolve(for: effectiveRecord, audioCache: audioCache)
+            // 계획은 한 번만 정한다 — 아래 지문도 이 계획으로 새긴다(예약을 기다리는 사이 다듬기 값이 바뀌어도
+            // OS 에 실린 소리와 행의 지문이 갈라지지 않게, Codex #870).
+            let soundPlan = AlarmSoundResolver.plan(for: effectiveRecord, audioCache: audioCache)
+            let resolution = AlarmSoundResolver.resolve(plan: soundPlan)
             let configuration = makeConfiguration(
                 record: effectiveRecord,
                 alarmKitID: id,
@@ -1149,7 +1152,7 @@ final class AlarmKitViewModel: ObservableObject {
                 localID: record.id,
                 alarmKitID: id.uuidString,
                 soundFingerprint: AlarmScheduleReconciler.scheduledFingerprint(
-                    plan: AlarmSoundResolver.plan(for: effectiveRecord, audioCache: audioCache),
+                    plan: soundPlan,
                     resolution: resolution
                 )
             )

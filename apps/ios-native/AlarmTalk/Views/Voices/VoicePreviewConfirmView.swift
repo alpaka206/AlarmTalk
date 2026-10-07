@@ -137,7 +137,7 @@ struct VoicePreviewConfirmView: View {
         .onDisappear {
             tuningGeneration += 1
             renderingTuning = false
-            voice.tuningPreviewPlayer.stop()
+            voice.stopDraftPreviewPlayback()
             // 높이를 바꾼 미리듣기 사본은 이 화면에서만 쓴다 — 목소리의 복사본이라 남기지 않는다.
             VoiceTuningRenderer.clearPreviewFiles()
         }
@@ -375,8 +375,8 @@ struct VoicePreviewConfirmView: View {
         guard !busy, !saving,
               let source = previewAudioURL,
               FileManager.default.fileExists(atPath: source.path) else { return false }
+        voice.stopDraftPreviewPlayback()
         voice.previewPlayer.stop()
-        voice.tuningPreviewPlayer.stop()
         tuningGeneration += 1
         let generation = tuningGeneration
         let target = tuning
@@ -665,7 +665,7 @@ struct VoicePreviewConfirmView: View {
                 replaceExisting: replaceExisting,
                 isShared: isShared && canShareVoice
             )
-            voice.tuningPreviewPlayer.stop()
+            voice.stopDraftPreviewPlayback()
             // ⚠ **다듬기 값은 승격된 프로필 id 로 저장한다** — 교체 갈래는 초안 id 가 아니라
             // 기존 프로필 id 를 돌려준다(그 id 를 쓰던 알람이 그대로 새 목소리로 운다).
             // 중립이면 키를 지운다 — 교체 전 목소리의 값이 새 목소리에 남지 않게.
@@ -774,7 +774,7 @@ struct VoicePreviewConfirmView: View {
 
     private func discard() async {
         guard let token = auth.session?.token else { return }
-        voice.tuningPreviewPlayer.stop()
+        voice.stopDraftPreviewPlayback()
         busy = true
         defer { busy = false }
         // 실패해도 되돌아간다 — 초안은 서버가 정리하고, 여기 갇히는 게 더 나쁘다.
