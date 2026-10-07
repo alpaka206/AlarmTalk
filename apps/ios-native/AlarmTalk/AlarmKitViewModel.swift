@@ -1047,6 +1047,12 @@ final class AlarmKitViewModel: ObservableObject {
             // 계획은 **한 번만** 정한다 — 미리 굽기·스테이징·지문이 모두 이 계획을 쓴다. 기다리는 사이 다듬기 값이 바뀌어도
             // 미리 구운 것과 예약이 쓰는 것, OS 에 실린 소리와 행의 지문이 갈라지지 않게(Codex #870).
             let soundPlan = AlarmSoundResolver.plan(for: effectiveRecord, audioCache: audioCache)
+            // 로그아웃 때 미뤄 둔 정리 목록에 이 파일이 있으면 — 예약이 끝날 때까지 지우지 않고, **성공한 뒤에** 목록에서
+            // 뺀다(실패하면 표시가 남아 나중에 지워진다, Codex #870).
+            let tunedStagedName = AlarmSoundStaging.tunedStagedFileName(for: soundPlan)
+            var reserved = false
+            AlarmSoundStaging.beginTunedReservation(tunedStagedName)
+            defer { AlarmSoundStaging.endTunedReservation(tunedStagedName, succeeded: reserved) }
             // 높이를 구워 넣을 소리는 **메인 밖에서** 미리 만든다 — 아래 `resolve` 는 메인에서 동기로 돌아, 거기서
             // PSOLA 를 돌리면 여러 알람을 다시 걸 때 화면이 멎는다(Codex #870).
             await AlarmSoundResolver.prestageTunedSound(plan: soundPlan)
@@ -1159,6 +1165,8 @@ final class AlarmKitViewModel: ObservableObject {
             // 언어와 함께 녹음 문구 표시도 적는다 — 비교는 저장된 행 기준이다(`voiceCaptionOutdated`).
             AlarmPresentationLanguage.didSchedule(record)
             statusMessage = Self.describeScheduleStatus(record: record, resolution: resolution)
+            // 그 파일이 실제로 예약에 실렸을 때만 '쓰는 중' 이다 — 스테이징이 실패해 다른 소리로 걸렸으면 표시를 남긴다.
+            if case .bundledNamed = resolution { reserved = true }
             return true
         } catch {
             statusMessage = String(localized: "알람 예약에 실패했어요. 잠시 후 다시 시도해 주세요.")

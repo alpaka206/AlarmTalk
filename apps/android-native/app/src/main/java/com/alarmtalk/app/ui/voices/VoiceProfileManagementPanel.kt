@@ -735,6 +735,21 @@ internal fun VoiceProfileManagementPanel(
         return player
     }
 
+    // 구운 사본을 못 열면(그 사이 지워짐·손상) 원본으로 한 번 더 연다 — 그때 들은 높이는 0 이다(울림과 같은 규칙,
+    // 스펙 §4-3 — Codex #870). 원본도 못 열면 그 오류를 그대로 던진다.
+    fun createPreviewPlayerOrOriginal(
+        playUri: String,
+        originalUri: String,
+        applied: VoiceTuning,
+    ): Pair<MediaPlayer, VoiceTuning> =
+        try {
+            createTunedPreviewPlayer(playUri) to applied
+        } catch (error: Throwable) {
+            if (playUri == originalUri) throw error
+            AlarmTalkLog.reportError("Tuned preview copy could not be opened; playing the original", error)
+            createTunedPreviewPlayer(originalUri) to VoiceTuning.NEUTRAL
+        }
+
     // 스트림은 시작하는 이 자리에서만 올린다(짝은 `releasePreviewTuning`).
     fun startTunedPreview(player: MediaPlayer) {
         AlarmStreamVolume.applyForRinging(context, TuningPreviewStreamPercent, AlarmStreamVolume.Owner.PREVIEW)
@@ -773,8 +788,8 @@ internal fun VoiceProfileManagementPanel(
         val tuning = previewTuning
         tunedReplayJob = scope.launch {
             runCatching {
-                val (playUri, applied) = tunedPreviewUri(uri, tuning)
-                val player = createTunedPreviewPlayer(playUri)
+                val (playUri, rendered) = tunedPreviewUri(uri, tuning)
+                val (player, applied) = createPreviewPlayerOrOriginal(playUri, uri, rendered)
                 mediaPlayer = player
                 player.setOnCompletionListener { completed ->
                     if (mediaPlayer !== completed) return@setOnCompletionListener
@@ -923,9 +938,9 @@ internal fun VoiceProfileManagementPanel(
                 confirmPreviewAudioUri = cached.localAudioUri
                 // 추천값을 **첫 재생 전에** 정한다 — 첫 소리부터 보정된 목소리다(짧은 클립이라 금방이다).
                 ensureTuningSuggestion(voice.id, cached.localAudioUri)
-                val (playUri, playedTuning) = tunedPreviewUri(cached.localAudioUri, previewTuning)
+                val (playUri, renderedTuning) = tunedPreviewUri(cached.localAudioUri, previewTuning)
+                val (player, playedTuning) = createPreviewPlayerOrOriginal(playUri, cached.localAudioUri, renderedTuning)
                 firstPlayTuning = playedTuning
-                val player = createTunedPreviewPlayer(playUri)
                 mediaPlayer = player.apply {
                     setOnCompletionListener {
                         if (mediaPlayer === it) releasePreviewTuning()

@@ -68,6 +68,8 @@ struct VoicePreviewConfirmView: View {
     @State private var renderingTuning = false
     /// 굽기 요청 세대 — 늦게 끝난 옛 굽기가 새 값의 재생을 덮지 않게.
     @State private var tuningGeneration = 0
+    /// 이 화면이 떠났는가 — 떠난 뒤 끝난 준비(분석·굽기)가 소리를 내지 않게(`prepareTuning`).
+    @State private var viewGone = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -134,7 +136,9 @@ struct VoicePreviewConfirmView: View {
             await play()
         }
         // 화면을 떠나면 미리듣기를 끈다 — 끝까지 듣지 않은 재생은 청취로 기록되지 않는다.
+        .onAppear { viewGone = false }
         .onDisappear {
+            viewGone = true
             tuningGeneration += 1
             renderingTuning = false
             voice.stopDraftPreviewPlayback()
@@ -413,11 +417,15 @@ struct VoicePreviewConfirmView: View {
     /// 새 미리듣기 클립이 도착했다 — 재생 **전에** 재서 추천값을 정하고, 그 높이로 구운 파일을
     /// 돌려준다(재생이 처음부터 그 소리로 나간다). 사용자가 이미 슬라이더를 만졌으면 그 값을
     /// 덮지 않는다(추천값만 갱신).
-    private func prepareTuning(for url: URL) async -> URL {
+    /// 화면을 떠났으면 nil — 분석은 떼어 낸 작업이라 화면을 떠나도 끝까지 돌고, 그 뒤에 굽고 틀면 지운 사본이
+    /// 되살아나고 화면 밖에서 소리가 난다(Codex #870). 판정은 `viewGone`(떠날 때 켜지고 돌아오면 꺼진다).
+    private func prepareTuning(for url: URL) async -> URL? {
+        guard !viewGone else { return nil }
         previewAudioURL = url
         let preview = await Task.detached(priority: .userInitiated) {
             VoiceTuningAnalyzer.measure(url: url, maxSeconds: 30)
         }.value
+        guard !viewGone else { return nil }
         let suggestion = VoiceTuningAnalyzer.suggest(preview: preview, source: sourceMeasurement)
         suggestedTuning = suggestion
         if tuning.source == .suggested {
@@ -425,6 +433,7 @@ struct VoicePreviewConfirmView: View {
         }
         // 이 재생에 **실제로 실은** 값 — 재생 도중 슬라이더를 바꾸면 끝난 뒤 새 높이로 다시 튼다(`play`).
         let (playURL, applied) = await Self.tunedFile(for: url, tuning: tuning)
+        guard !viewGone else { return nil }
         servedTuning = applied
         return playURL
     }

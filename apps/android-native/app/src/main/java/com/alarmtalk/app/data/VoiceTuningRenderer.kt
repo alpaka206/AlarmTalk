@@ -88,6 +88,9 @@ object VoiceTuningRenderer {
     fun render(context: Context, source: Uri, tuning: VoiceTuning?): Uri? {
         val pitch = tuning?.normalized()?.pitchSemitones ?: return null
         if (pitch == 0f) return null
+        // 세대는 **맨 먼저** 잡는다 — 아래 '이미 있나' 확인 뒤에 잡으면, 그 사이 지운 것을 기준으로 삼아 지운 뒤에
+        // 게시한다(Codex #870).
+        val ticket = ticketFor(source)
         return runCatching {
             val dir = File(context.noBackupFilesDir, DIR).apply { mkdirs() }
             val out = File(dir, "${cacheKey(source)}_${pitchTag(pitch)}.wav")
@@ -96,7 +99,6 @@ object VoiceTuningRenderer {
                 return@runCatching Uri.fromFile(out)
             }
             val started = System.nanoTime()
-            val ticket = ticketFor(source)
             val decoded = VoiceAudioDecoder.decodeMono(context, source, maxDurationMillis = MAX_DURATION_MILLIS)
                 ?: error("decode failed")
             val shifted = VoicePitchShifter.shift(decoded.samples, decoded.sampleRate, pitch)

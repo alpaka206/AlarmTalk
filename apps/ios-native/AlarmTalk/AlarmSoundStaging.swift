@@ -58,10 +58,29 @@ private final class TunedStagingEpoch: @unchecked Sendable {
 
 /// 로그아웃·탈퇴 때 **취소에 실패해 남은 예약** 때문에 못 지운 '높이를 구운 스테이징 파일' 이름들(Codex #870).
 /// 그 예약이 파일을 쓰므로 그때는 남기고, 취소 재시도(`AlarmKitViewModel.retryPendingCancellations`)가 남은 취소를 모두
-/// 끝내면 지운다. 같은 계정이 다시 로그인해 그 파일을 다시 예약에 쓰면 목록에서 뺀다 — 쓰는 파일을 지우지 않게.
+/// 끝내면 지운다. 같은 계정이 다시 로그인해 그 파일을 새 예약에 쓰면, **예약이 성공한 뒤에** 목록에서 뺀다 — 예약이
+/// 실패하면 표시가 그대로 남아 나중에 지워진다. 예약하는 동안(`beginReservation`~`endReservation`)은 지우지 않는다.
 private enum DeferredTunedCleanup {
     private static let lock = NSLock()
     private static var key: String { "voice_tuning.deferred_staged_cleanup\(TestIsolation.storageSuffix)" }
+    /// 지금 예약에 쓰이는 중인 이름(같은 파일을 여러 알람이 동시에 걸 수 있어 수를 센다). 메모리에만 — 프로세스가 죽으면
+    /// 예약 자체가 끝난 것이다.
+    nonisolated(unsafe) private static var reserving: [String: Int] = [:]   // `lock` 안에서만 만진다
+
+    static func beginReservation(_ name: String) {
+        lock.withLock { reserving[name, default: 0] += 1 }
+    }
+
+    static func endReservation(_ name: String, succeeded: Bool) {
+        lock.withLock {
+            let left = (reserving[name] ?? 1) - 1
+            reserving[name] = left > 0 ? left : nil
+            guard succeeded, var current = UserDefaults.standard.stringArray(forKey: key),
+                  let index = current.firstIndex(of: name) else { return }
+            current.remove(at: index)
+            UserDefaults.standard.set(current, forKey: key)
+        }
+    }
 
     static func add(_ names: [String]) {
         guard !names.isEmpty else { return }
@@ -71,11 +90,17 @@ private enum DeferredTunedCleanup {
         }
     }
 
-    static func remove(_ name: String) {
+    /// 지울 이름을 꺼낸다 — 예약하는 중인 이름은 목록에 남겨 둔다(예약이 성공하면 빠지고, 실패하면 다음에 지운다).
+    static func takeAllNotReserving() -> [String] {
         lock.withLock {
-            guard var current = UserDefaults.standard.stringArray(forKey: key), let index = current.firstIndex(of: name) else { return }
-            current.remove(at: index)
-            UserDefaults.standard.set(current, forKey: key)
+            let names = UserDefaults.standard.stringArray(forKey: key) ?? []
+            let kept = names.filter { reserving[$0] != nil }
+            if kept.isEmpty {
+                UserDefaults.standard.removeObject(forKey: key)
+            } else {
+                UserDefaults.standard.set(kept, forKey: key)
+            }
+            return names.filter { reserving[$0] == nil }
         }
     }
 
@@ -152,8 +177,6 @@ enum AlarmSoundStaging {
             baseName += "-t\(tag)"
             let stagedURL = soundsDir.appendingPathComponent("\(baseName).caf")
             // 대개 `prestageTuned` 가 메인 밖에서 이미 만들어 두었다 — 없을 때만 여기서 굽는다.
-            // 다시 예약에 쓰는 파일이다 — 로그아웃 때 미뤄 둔 정리 목록에 있었으면 뺀다.
-            DeferredTunedCleanup.remove("\(baseName).caf")
             if !isUsableStagedFile(stagedURL) {
                 try? fm.removeItem(at: stagedURL)
                 try writeAtomically(into: stagedURL) { tmp in
@@ -324,7 +347,6 @@ enum AlarmSoundStaging {
             // 그 사이 지나가며 스테이징 파일을 지운 **뒤에** 옛 바이트로 구운 파일을 게시하고, `stage` 가 그걸 재사용한다
             // — 은퇴한 목소리로 우는 경주(#703)가 되살아난다.
             AudioCacheStore.withCacheKeyLock(key) {
-                DeferredTunedCleanup.remove(stagedURL.lastPathComponent)
                 if isUsableStagedFile(stagedURL) { return }
                 try? writeAtomically(into: stagedURL) { tmp in
                     try writeTunedCAF(from: sourceURL, to: tmp, gain: Float(gainPercent) / 100, tuning: tuning)
@@ -359,9 +381,36 @@ enum AlarmSoundStaging {
     /// 미뤄 둔 정리를 마친다 — 취소 재시도가 남은 취소를 모두 끝냈을 때(`AlarmKitViewModel.retryPendingCancellations`).
     nonisolated static func finishDeferredTunedCleanup() {
         guard let soundsDir = try? ensureSoundsDirectory() else { return }
-        for name in DeferredTunedCleanup.takeAll() {
+        for name in DeferredTunedCleanup.takeAllNotReserving() {
             try? FileManager.default.removeItem(at: soundsDir.appendingPathComponent(name))
         }
+    }
+
+    /// 이 계획이 높이를 구워 넣은 목소리로 울린다면 그 스테이징 파일 이름(`stageLocked` 의 높이 갈래와 같은 이름).
+    nonisolated static func tunedStagedFileName(for plan: AlarmSoundPlan) -> String? {
+        guard case .voiceClip(let key, _, _, let volumePercent, _, let tuning?) = plan else { return nil }
+        return tunedStagedFileName(key: key, volumePercent: volumePercent, tuning: tuning)
+    }
+
+    nonisolated static func tunedStagedFileName(key: String, volumePercent: Int, tuning: VoiceTuning) -> String? {
+        guard let tag = tuning.soundTag else { return nil }
+        let gainPercent = max(0, min(100, volumePercent))
+        let safeKey = AudioCacheStore.safeCacheKey(key)
+        let baseName = gainPercent == 100
+            ? "\(stagedNamePrefix)\(safeKey)-t\(tag)"
+            : "\(stagedNamePrefix)\(safeKey)-v\(gainPercent)-t\(tag)"
+        return "\(baseName).caf"
+    }
+
+    /// 새 예약이 이 파일을 쓰기 시작한다 — 끝날 때까지 미뤄 둔 정리가 지우지 않는다. 짝은 [endTunedReservation].
+    nonisolated static func beginTunedReservation(_ name: String?) {
+        if let name { DeferredTunedCleanup.beginReservation(name) }
+    }
+
+    /// 예약이 끝났다. 성공했으면 미뤄 둔 정리 목록에서 뺀다(이제 그 예약이 쓰는 파일이다). 실패했으면 표시를 남긴다 —
+    /// 먼저 빼 두면 예약이 실패했을 때 그 파일을 지울 길이 없다(Codex #870).
+    nonisolated static func endTunedReservation(_ name: String?, succeeded: Bool) {
+        if let name { DeferredTunedCleanup.endReservation(name, succeeded: succeeded) }
     }
 
     /// 미뤄 둔 정리 목록(테스트용).

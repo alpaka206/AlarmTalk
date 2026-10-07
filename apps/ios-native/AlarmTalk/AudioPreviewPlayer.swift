@@ -10,6 +10,9 @@ final class AudioPreviewPlayer: NSObject, ObservableObject, AVAudioPlayerDelegat
     @Published private(set) var isPreparing = false
 
     var onFinish: (() -> Void)?
+    /// 마지막 재생이 **끝까지 제대로** 끝났는가(`audioPlayerDidFinishPlaying` 의 `successfully`). `onFinish` 직전에 적는다 —
+    /// 중간에 디코딩이 깨져 끝난 것을 끝까지 들은 것으로 치지 않게(Codex #870).
+    private(set) var lastFinishSucceeded = true
 
     private var player: AVAudioPlayer?
     /// stopAfterMs 윈도우를 위한 예약 정지 작업. AVAudioPlayer 는 종료 시각 지정을
@@ -134,6 +137,7 @@ final class AudioPreviewPlayer: NSObject, ObservableObject, AVAudioPlayerDelegat
             self.isPreparing = false
             self.player = nil
             try? AVAudioSession.sharedInstance().setActive(false, options: [.notifyOthersOnDeactivation])
+            self.lastFinishSucceeded = flag
             self.onFinish?()
         }
     }
