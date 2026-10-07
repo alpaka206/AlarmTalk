@@ -931,6 +931,7 @@
     <string name="voices_tuning_pitch">목소리 높이</string>
     <string name="voices_tuning_auto">자동으로 맞추기</string>
     <string name="voices_tuning_auto_applied">추천값</string>
+    <string name="voices_tuning_reset">0으로</string>
     <string name="voices_tuning_analyzing">추천값을 계산하고 있어요…</string>
     <string name="voices_tuning_rendering">높이를 바꾸는 중이에요…</string>
     <string name="voices_tuning_pitch_value">%1$s 반음</string>

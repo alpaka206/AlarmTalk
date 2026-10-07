@@ -78,6 +78,14 @@ object VoiceTuningRenderer {
         }.getOrNull()
     }
 
+    /** [source] 로 구운 사본(모든 높이)만 지운다 — 버린 초안의 미리듣기 클립처럼 원본이 아직 있을 때. */
+    fun deleteCopiesOf(context: Context, source: Uri) {
+        runCatching {
+            val prefix = "${cacheKey(source)}_"
+            File(context.noBackupFilesDir, DIR).listFiles { f -> f.name.startsWith(prefix) }?.forEach { it.delete() }
+        }.onFailure { Log.w(TAG, "Failed to delete voice tuning copies", it) }
+    }
+
     /** 사본을 모두 지운다. 다시 필요하면 울릴 때·미리듣기 때 새로 굽는다. 메인 스레드에서 부르지 말 것. */
     fun clearAll(context: Context) {
         runCatching { File(context.noBackupFilesDir, DIR).deleteRecursively() }
@@ -93,7 +101,7 @@ object VoiceTuningRenderer {
         }.forEach { it.delete() }
     }
 
-    private fun cacheKey(source: Uri): String {
+    internal fun cacheKey(source: Uri): String {
         val file = source.takeIf { it.scheme == "file" || it.scheme == null }?.path?.let(::File)
         val identity = buildString {
             append(VERSION).append('|').append(source.toString())

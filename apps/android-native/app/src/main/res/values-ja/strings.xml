@@ -897,6 +897,7 @@
     <string name="voices_tuning_pitch">声の高さ</string>
     <string name="voices_tuning_auto">自動で調整</string>
     <string name="voices_tuning_auto_applied">おすすめ値</string>
+    <string name="voices_tuning_reset">0に戻す</string>
     <string name="voices_tuning_analyzing">おすすめ値を計算しています…</string>
     <string name="voices_tuning_rendering">高さを変えています…</string>
     <string name="voices_tuning_pitch_value">%1$s 半音</string>

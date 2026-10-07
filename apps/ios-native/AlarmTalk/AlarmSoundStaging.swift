@@ -106,6 +106,7 @@ enum AlarmSoundStaging {
         if let tuning, let tag = tuning.soundTag {
             baseName += "-t\(tag)"
             let stagedURL = soundsDir.appendingPathComponent("\(baseName).caf")
+            // 대개 `prestageTuned` 가 메인 밖에서 이미 만들어 두었다 — 없을 때만 여기서 굽는다.
             if !isUsableStagedFile(stagedURL) {
                 try? fm.removeItem(at: stagedURL)
                 try writeAtomically(into: stagedURL) { tmp in
@@ -169,7 +170,7 @@ enum AlarmSoundStaging {
     /// 영원히 쓰였고, `.bundledNamed` 는 인앱 재생 대상이 아니라(`.cachedAudio` 만 인앱으로 튼다)
     /// 인앱 폴백조차 돌지 않는다 — 결과는 **알람이 뜨는데 소리가 안 나는** 것이고 스스로 복구되지 않는다.
     /// 같은 디렉터리 안의 rename 은 원자적이라, 이제 최종 이름이 보이면 완성된 파일이다.
-    private static func writeAtomically(into finalURL: URL, _ body: (URL) throws -> Void) throws {
+    private nonisolated static func writeAtomically(into finalURL: URL, _ body: (URL) throws -> Void) throws {
         let fm = FileManager.default
         let tmpURL = finalURL.deletingLastPathComponent()
             .appendingPathComponent(".staging-\(UUID().uuidString).\(finalURL.pathExtension)")
@@ -199,7 +200,7 @@ enum AlarmSoundStaging {
     /// (2) 오디오로 열려서 길이가 0보다 큰가. (2)가 필요한 이유는 트랜스코드가
     /// **정상 종료로 보이면서 빈 파일**을 낼 수 있어서다 — 소스에 샘플이 없으면
     /// `copyNextSampleBuffer()` 가 곧바로 nil 을 주고 writer 는 `.completed` 로 끝난다.
-    private static func isUsableStagedFile(_ url: URL) -> Bool {
+    private nonisolated static func isUsableStagedFile(_ url: URL) -> Bool {
         let fm = FileManager.default
         guard fm.fileExists(atPath: url.path) else { return false }
         let size = (try? fm.attributesOfItem(atPath: url.path))?[.size] as? Int64 ?? 0
@@ -212,7 +213,7 @@ enum AlarmSoundStaging {
     }
 
     /// 헤더만 있고 오디오가 없는 파일을 거르는 하한. CAF/WAV 헤더는 수십 바이트다.
-    private static let minimumUsableBytes: Int64 = 512
+    private nonisolated static let minimumUsableBytes: Int64 = 512
 
     /// 소스가 30초(+tolerance)를 넘는지. 측정 불가/AVFoundation 미가용 시 false 로 보아
     /// passthrough 를 막지 않는다(트림은 cacheBytes 단계에서 이미 시도됐을 수 있음).
@@ -256,6 +257,26 @@ enum AlarmSoundStaging {
             let url = soundsDir.appendingPathComponent(name)
             try? fm.removeItem(at: url)
         }
+    }
+
+    /// 높이를 구워 넣을 알람 소리를 **메인 밖에서** 미리 만든다(Codex #870) — PSOLA 는 30초까지 디코드·변환해 무겁고,
+    /// `stage` 는 예약 경로(`AlarmKitViewModel.schedule`)에서 메인 액터로 동기 실행된다. 여러 알람을 다시 걸 때 화면이
+    /// 멎고 백그라운드 회차의 실행 시간을 먹지 않게, 예약 직전에 이걸 기다린 뒤 `stage` 가 만들어 둔 파일을 그대로 쓴다.
+    /// 이름·내용은 `stageLocked` 의 높이 갈래와 같다(같은 원자적 쓰기). 실패하면 조용히 넘어간다 — `stage` 가 다시 굽는다.
+    static func prestageTuned(url sourceURL: URL, key: String, volumePercent: Int, tuning: VoiceTuning) async {
+        guard let tag = tuning.soundTag, let soundsDir = try? ensureSoundsDirectory() else { return }
+        let gainPercent = max(0, min(100, volumePercent))
+        let safeKey = AudioCacheStore.safeCacheKey(key)
+        let baseName = gainPercent == 100
+            ? "\(stagedNamePrefix)\(safeKey)-t\(tag)"
+            : "\(stagedNamePrefix)\(safeKey)-v\(gainPercent)-t\(tag)"
+        let stagedURL = soundsDir.appendingPathComponent("\(baseName).caf")
+        await Task.detached(priority: .userInitiated) {
+            if isUsableStagedFile(stagedURL) { return }
+            try? writeAtomically(into: stagedURL) { tmp in
+                try writeTunedCAF(from: sourceURL, to: tmp, gain: Float(gainPercent) / 100, tuning: tuning)
+            }
+        }.value
     }
 
     /// 목소리 높이를 구워 넣은 스테이징 파일(`voice-<키>[-v<크기>]-ts<값>.caf`)을 **모두** 지운다 — 명시적
@@ -513,7 +534,7 @@ enum AlarmSoundStaging {
     ///
     /// ⚠ `AVAssetExportSession` 을 쓰지 않는다(위 `transcodeToCAF` 주석) — `AVAudioFile`
     /// 로 읽고 쓴다. 채널 레이아웃(`AVChannelLayoutKey`)을 함께 적는다(`writeMonoCAF`).
-    private static func writeTunedCAF(from src: URL, to dst: URL, gain: Float, tuning: VoiceTuning) throws {
+    private nonisolated static func writeTunedCAF(from src: URL, to dst: URL, gain: Float, tuning: VoiceTuning) throws {
         do {
             let rendered = try VoiceTuningRenderer.render(
                 url: src,

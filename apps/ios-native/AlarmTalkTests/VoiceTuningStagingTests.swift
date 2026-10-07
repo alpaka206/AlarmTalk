@@ -89,6 +89,23 @@ final class VoiceTuningStagingTests: XCTestCase {
         XCTAssertEqual(file.fileFormat.settings[AVLinearPCMBitDepthKey] as? Int, 16)
     }
 
+    /// 높이를 구워 넣을 파일은 예약 직전에 **메인 밖에서** 미리 만들고, `stage` 는 그 파일을 그대로 쓴다(Codex #870).
+    func test_prestageTuned_makesTheFileStageReuses() async throws {
+        let source = try makeSineWAV(hz: 150, seconds: 1.5, amplitude: 0.3)
+        let key = uniqueKey("prestage")
+        let tuning = VoiceTuning(pitchSt: -2, source: .user)
+        await AlarmSoundStaging.prestageTuned(url: source, key: key, volumePercent: 80, tuning: tuning)
+        let expected = "voice-\(AudioCacheStore.safeCacheKey(key))-v80-t\(try XCTUnwrap(tuning.soundTag))"
+        let prestaged = try stagedURL(named: expected)
+        let before = try FileManager.default.attributesOfItem(atPath: prestaged.path)[.modificationDate] as? Date
+
+        let staged = try AlarmSoundStaging.stage(url: source, key: key, volumePercent: 80, tuning: tuning)
+
+        XCTAssertEqual(staged, expected, "미리 만든 이름과 예약 이름이 같아야 다시 굽지 않는다")
+        let after = try FileManager.default.attributesOfItem(atPath: prestaged.path)[.modificationDate] as? Date
+        XCTAssertEqual(before, after, "stage 가 다시 구우면 메인에서 PSOLA 가 돈다")
+    }
+
     func test_pitch_isBakedIntoTheFile() throws {
         let source = try makeSineWAV(hz: 220, seconds: 1.5, amplitude: 0.3, sampleRate: 24_000)
         let staged = try AlarmSoundStaging.stage(

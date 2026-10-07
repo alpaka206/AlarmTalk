@@ -100,7 +100,6 @@ import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
-import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -756,6 +755,13 @@ internal fun VoiceProfileManagementPanel(
         }
     }
 
+    // 이 미리듣기 클립으로 구운 사본(목소리의 복사본)을 지운다 — 초안을 버리거나 등록 화면이 정리될 때(스펙 §4-3,
+    // Codex #870). 버린 초안을 쓰는 알람이 없어 오디오 정리를 지나지 않는다.
+    fun discardTunedPreviewCopies() {
+        val uri = confirmPreviewAudioUri ?: return
+        scope.launch(Dispatchers.IO) { VoiceTuningRenderer.deleteCopiesOf(appContext, Uri.parse(uri)) }
+    }
+
     // 이미 받은 미리듣기를 지금 높이로 기기에서 다시 튼다 — 알람처럼 쉼을 두고 반복하므로 들으며 맞출
     // 수 있다. 높이를 바꿀 때마다 새로 굽고 처음부터 튼다. 멈추는 길은 재생 버튼(토글) 하나다.
     fun playLocalTunedPreview(uri: String) {
@@ -837,9 +843,9 @@ internal fun VoiceProfileManagementPanel(
         if (tuningSuggestionVoiceId == voiceId && tuningSuggestionClipUri == previewUri && tuningSuggestion != null) return
         tuningAnalyzing = true
         try {
-            val sourceF0 = sourceF0Job?.let { job ->
-                withTimeoutOrNull(2_000L) { runCatching { job.await() }.getOrNull() }
-            }
+            // 이미 도는 분석을 **끝까지** 기다린다 — 느린 기기에서 시간 제한으로 끊으면 '못 쟀다' 로 읽혀 추천이 0 으로
+            // 굳는다(Codex #870). 업로드 전에 시작해 대개 미리듣기가 오기 전에 끝나 있다.
+            val sourceF0 = sourceF0Job?.let { job -> runCatching { job.await() }.getOrNull() }
             var previewF0: Double? = null
             val suggestion = withContext(Dispatchers.Default) {
                 runCatching {
@@ -1122,6 +1128,7 @@ internal fun VoiceProfileManagementPanel(
         confirmPreviewEditing = false
         confirmPreviewEditText = ""
         confirmPreviewSaving = false
+        discardTunedPreviewCopies()
         confirmPreviewAudioUri = null
         previewTuning = VoiceTuning.NEUTRAL
         tuningSuggestion = null
@@ -1166,6 +1173,7 @@ internal fun VoiceProfileManagementPanel(
                     confirmPreviewText = null
                     confirmPreviewEditing = false
                     confirmPreviewEditText = ""
+                    discardTunedPreviewCopies()
                     confirmPreviewAudioUri = null
                     previewTuning = VoiceTuning.NEUTRAL
                     tuningSuggestion = null
@@ -1193,6 +1201,8 @@ internal fun VoiceProfileManagementPanel(
             // draft 소멸(삭제/승격) → 미리듣기 상태 정리. 승격이면 플로우를 닫는 대신
             // '목소리 생성 중' 스텝으로 이어 알람 문구 생성·다운로드까지 끝낸다.
             draft == null && confirmNewVoice?.isDraft == true -> {
+                // 승격·삭제 모두 이 초안의 미리듣기 사본은 더 쓰이지 않는다.
+                discardTunedPreviewCopies()
                 val promotedId = promotedForPrerenderId
                     ?.takeIf { requested -> requested == confirmNewVoice?.id }
                     ?.takeIf { requested -> voiceProfiles.any { it.id == requested } }
@@ -2332,6 +2342,10 @@ internal fun VoiceProfileManagementPanel(
                                                 previewTuning = suggestion
                                                 replayTunedPreviewIfReady()
                                             }
+                                        },
+                                        onReset = {
+                                            previewTuning = VoiceTuning(source = VoiceTuning.SOURCE_MANUAL)
+                                            replayTunedPreviewIfReady()
                                         },
                                     )
 

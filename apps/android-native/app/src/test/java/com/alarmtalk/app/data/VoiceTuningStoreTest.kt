@@ -106,6 +106,24 @@ class VoiceTuningStoreTest {
         assertEquals(-1f, tuning.read("user-m", "voice-m")!!.pitchSemitones, 0f)
     }
 
+    /** 버린 초안의 미리듣기 클립처럼 **그 원본으로 구운 사본만** 지울 수 있다(Codex #870). */
+    @Test
+    fun `원본 하나의 사본만 지운다`() {
+        val source = File(context.filesDir, "draft_preview.mp3").apply { writeBytes(ByteArray(128)) }
+        val sourceUri = android.net.Uri.fromFile(source)
+        copies.mkdirs()
+        val prefix = VoiceTuningRenderer.cacheKey(sourceUri)
+        val mine = listOf(File(copies, "${prefix}_m3_0.wav"), File(copies, "${prefix}_p1_5.wav"))
+        val other = File(copies, "otherkey000_m3_0.wav")
+        (mine + other).forEach { it.writeBytes(ByteArray(64)) }
+
+        VoiceTuningRenderer.deleteCopiesOf(context, sourceUri)
+
+        assertTrue(mine.none { it.exists() })
+        assertTrue(other.exists())
+        source.delete()
+    }
+
     @Test
     fun `사본은 통째로 지울 수 있다`() {
         copies.mkdirs()

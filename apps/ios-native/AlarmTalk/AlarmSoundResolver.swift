@@ -138,6 +138,15 @@ enum AlarmSoundResolver {
         return store.tuning(userID: owner, voiceProfileID: voiceID)
     }
 
+    /// 이 알람이 높이를 구워 넣은 목소리로 울린다면 그 파일을 **메인 밖에서** 미리 만든다(`AlarmSoundStaging.prestageTuned`).
+    /// 예약 직전(`AlarmKitViewModel.schedule`)에 기다린다 — 그 뒤의 동기 `resolve` 는 만들어 둔 파일을 쓴다.
+    static func prestageTunedSound(for record: LocalAlarmRecord, audioCache: AudioCacheStore) async {
+        guard case .voiceClip(let key, let url, _, let volumePercent, _, let tuning?) = plan(for: record, audioCache: audioCache) else {
+            return
+        }
+        await AlarmSoundStaging.prestageTuned(url: url, key: key, volumePercent: volumePercent, tuning: tuning)
+    }
+
     /// **무엇을 울릴지** 만 정한다 — 파일을 만들지 않는다(순수 조회).
     ///
     /// [resolve] 는 이 결정에 스테이징(트랜스코드·복사)을 얹은 것이다. 둘을 나눠 둔 이유는

@@ -1023,6 +1023,9 @@ final class AlarmKitViewModel: ObservableObject {
                     return false
                 }
             }
+            // 높이를 구워 넣을 소리는 **메인 밖에서** 미리 만든다 — 아래 `resolve` 는 메인에서 동기로 돌아, 거기서
+            // PSOLA 를 돌리면 여러 알람을 다시 걸 때 화면이 멎는다(Codex #870). 계정 변경은 아래 예약 뒤의 확인이 그대로 막는다.
+            await AlarmSoundResolver.prestageTunedSound(for: effectiveRecordForScheduling(record), audioCache: audioCache)
             let id = UUID()
             let schedule = makeSchedule(record)
             // Phase 2-B4: playMode + 캐시 상태에 따라 AlarmKit sound 전략 결정.

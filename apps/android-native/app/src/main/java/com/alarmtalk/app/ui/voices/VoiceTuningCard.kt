@@ -40,6 +40,7 @@ internal fun VoiceTuningCard(
     onTuningChange: (VoiceTuning) -> Unit,
     onAdjustFinished: () -> Unit,
     onAutoAdjust: () -> Unit,
+    onReset: () -> Unit,
 ) {
     OutlinedCard(
         shape = WakerPanelShape,
@@ -105,6 +106,17 @@ internal fun VoiceTuningCard(
                 },
                 onValueChangeFinished = { onAdjustFinished() },
             )
+            // 0 으로 되돌리기 — 슬라이더를 정확히 0 에 맞추기 어렵다(iOS '0으로' 와 같다).
+            TextButton(
+                onClick = onReset,
+                enabled = enabled && !tuning.isNeutral,
+                modifier = Modifier.align(Alignment.End),
+            ) {
+                Text(
+                    text = stringResource(R.string.voices_tuning_reset),
+                    style = MaterialTheme.typography.labelLarge,
+                )
+            }
         }
     }
 }
