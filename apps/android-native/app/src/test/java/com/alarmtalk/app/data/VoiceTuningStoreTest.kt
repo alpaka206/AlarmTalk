@@ -69,6 +69,39 @@ class VoiceTuningStoreTest {
         assertEquals(-4f, store.read("user-ab", "voice-3")!!.pitchSemitones, 0f)
     }
 
+    /** 다른 기기의 제자리 교체(새 세대)는 옛 녹음 기준 값을 지우고, 같은 세대로 고른 값은 남긴다(Codex #870). */
+    @Test
+    fun `새 교체 세대를 보면 옛 값만 지운다`() {
+        val store = VoiceTuningStore(context)
+        store.write("user-a", "voice-1", VoiceTuning(pitchSemitones = -2f, generation = "g1"))
+
+        store.forgetIfReplaced("user-a", "voice-1", "g1")
+        assertEquals("같은 세대 — 이 기기에서 교체하며 고른 값", -2f, store.read("user-a", "voice-1")!!.pitchSemitones, 0f)
+
+        store.forgetIfReplaced("user-a", "voice-1", "g2")
+        assertNull("다른 기기에서 다시 교체했다 — 옛 녹음 기준 값", store.read("user-a", "voice-1"))
+
+        store.write("user-a", "voice-2", VoiceTuning(pitchSemitones = 1f))
+        store.forgetIfReplaced("user-a", "voice-2", "g1")
+        assertNull("교체 전에 처음 등록하며 저장한 값도 첫 교체에서 지운다", store.read("user-a", "voice-2"))
+    }
+
+    /** 표식 저장소가 새 세대를 반영할 때 함께 지운다 — 이미 반영한 세대(늦게 온 푸시)는 건드리지 않는다. */
+    @Test
+    fun `교체 표식이 새 세대를 반영하면 높이 값이 지워진다`() = kotlinx.coroutines.runBlocking {
+        val tuning = VoiceTuningStore(context)
+        val markers = VoiceReplacementMarkerStore(context)
+        tuning.write("user-m", "voice-m", VoiceTuning(pitchSemitones = -3f, generation = "2026-10-01 00:00:00"))
+
+        markers.applyIfNotApplied("user-m", "voice-m", "2026-10-07 00:00:00") { 0 }
+        assertNull(tuning.read("user-m", "voice-m"))
+
+        // 이 기기에서 교체하며 고른 값(같은 세대)은 뒤늦은 같은 세대 신호가 지우지 않는다.
+        tuning.write("user-m", "voice-m", VoiceTuning(pitchSemitones = -1f, generation = "2026-10-08 00:00:00"))
+        markers.applyIfNotApplied("user-m", "voice-m", "2026-10-08 00:00:00") { 0 }
+        assertEquals(-1f, tuning.read("user-m", "voice-m")!!.pitchSemitones, 0f)
+    }
+
     @Test
     fun `사본은 통째로 지울 수 있다`() {
         copies.mkdirs()

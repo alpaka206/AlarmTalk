@@ -1196,7 +1196,9 @@ internal fun VoiceProfileManagementPanel(
                     pendingTuningCommit?.let { (userId, targetId, tuning) ->
                         // 세션이 그대로일 때만 — 그 사이 로그아웃했으면 그 계정 값은 이미 지워졌어야 한다.
                         if (userId != null && authSession?.user?.id == userId) {
-                            voiceTuningStore.write(userId, targetId, tuning)
+                            // 그 목소리의 지금 교체 세대를 함께 적는다 — 다른 기기의 다음 교체만 이 값을 지운다.
+                            val generation = voiceProfiles.firstOrNull { it.id == targetId }?.customAudioInvalidatedAt
+                            voiceTuningStore.write(userId, targetId, tuning.copy(generation = generation))
                         }
                     }
                 }

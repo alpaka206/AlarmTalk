@@ -18,6 +18,12 @@ data class VoiceTuning(
     val pitchSemitones: Float = 0f,
     /** [SOURCE_AUTO] = 자동 추천 그대로, [SOURCE_MANUAL] = 사용자가 슬라이더를 움직였다. */
     val source: String = SOURCE_AUTO,
+    /**
+     * 저장할 때 그 목소리의 **교체 세대**(`VoiceProfile.customAudioInvalidatedAt`, 없으면 null).
+     * 다른 기기에서 같은 목소리를 제자리 교체하면 프로필 id 는 그대로라, 이 세대가 달라진 것으로
+     * 옛 녹음 기준 값을 알아보고 지운다(`VoiceTuningStore.forgetIfReplaced`, Codex #870).
+     */
+    val generation: String? = null,
 ) {
     /** 아무 처리도 하지 않는 값인가 — 이때 울림 경로는 예전과 **한 줄도 다르지 않게** 돈다. */
     val isNeutral: Boolean get() = pitchSemitones == 0f
@@ -31,8 +37,8 @@ data class VoiceTuning(
         source = if (source == SOURCE_MANUAL) SOURCE_MANUAL else SOURCE_AUTO,
     )
 
-    /** 저장 문자열 — `pitch;source`. org.json 없이 JVM 테스트에서 그대로 검증한다. */
-    fun encode(): String = "$pitchSemitones;$source"
+    /** 저장 문자열 — `pitch;source;generation`. org.json 없이 JVM 테스트에서 그대로 검증한다. */
+    fun encode(): String = "$pitchSemitones;$source;${generation.orEmpty()}"
 
     companion object {
         const val SOURCE_AUTO = "auto"
@@ -43,12 +49,12 @@ data class VoiceTuning(
 
         val NEUTRAL = VoiceTuning()
 
-        /** 저장 문자열(`pitch;source`)을 푼다. 모양이 다르면 null — 그때는 보정 없이 운다. */
+        /** 저장 문자열(`pitch;source;generation`)을 푼다. 모양이 다르면 null — 그때는 보정 없이 운다. */
         fun decode(raw: String?): VoiceTuning? {
             val parts = raw?.split(';') ?: return null
-            if (parts.size != 2) return null
+            if (parts.size != 3) return null
             val pitch = parts[0].toFloatOrNull()?.takeIf { it.isFinite() } ?: return null
-            return VoiceTuning(pitch, parts[1]).normalized()
+            return VoiceTuning(pitch, parts[1], parts[2].takeIf { it.isNotBlank() }).normalized()
         }
 
         /**

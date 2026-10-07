@@ -24,6 +24,10 @@ struct VoiceTuning: Codable, Equatable, Sendable {
     /// 목소리 높이(반음). 길이는 바꾸지 않는다.
     var pitchSt: Double
     var source: Source
+    /// 저장할 때 그 목소리의 **교체 세대**(`VoiceProfile.customAudioInvalidatedAt`). 다른 기기에서 같은 목소리를
+    /// 제자리 교체하면 프로필 id 는 그대로라, 이 세대가 달라진 것으로 옛 녹음 기준 값을 알아보고 지운다
+    /// (`VoiceTuningStore.forgetIfReplaced`, Codex #870). 소리와 무관하다 — 꼬리표·지문에 넣지 않는다.
+    var generation: String? = nil
 
     static let pitchRange: ClosedRange<Double> = -6...3
     static let step: Double = 0.5
@@ -33,7 +37,7 @@ struct VoiceTuning: Codable, Equatable, Sendable {
     /// 범위 안으로 자르고 눈금(0.5)에 맞춘다. 저장·굽기·지문 전에 언제나 거친다 —
     /// 0.49999 같은 값이 파일 이름을 하나 더 만들지 않게.
     func normalized() -> VoiceTuning {
-        VoiceTuning(pitchSt: Self.snap(pitchSt, to: Self.pitchRange), source: source)
+        VoiceTuning(pitchSt: Self.snap(pitchSt, to: Self.pitchRange), source: source, generation: generation)
     }
 
     /// **소리를 바꾸는 값만으로 만든 꼬리표** — 스테이징 파일 이름과 예약 지문에 들어간다.
@@ -102,6 +106,18 @@ struct VoiceTuningStore {
             defaults.set(data, forKey: key)
         }
         return !previous.soundsSame(as: next)
+    }
+
+    /// 그 목소리가 **새 교체 세대**로 바뀌었으면 옛 녹음 기준 값을 지운다 — `VoiceReplacementMarkerStore` 가 새
+    /// 세대를 반영할 때 부른다. 같은 세대로 저장한 값(이 기기에서 교체하며 고른 값)은 남긴다 — 그래서 늦게 온
+    /// 푸시·재시도의 순서와 상관없이 맞다.
+    func forgetIfReplaced(userID: String?, voiceProfileID: String?, generation: String?) {
+        guard let key = Self.key(userID: userID, voiceProfileID: voiceProfileID),
+              let data = defaults.data(forKey: key),
+              let stored = try? JSONDecoder().decode(VoiceTuning.self, from: data) else { return }
+        if stored.generation?.nilIfBlank != generation?.nilIfBlank {
+            defaults.removeObject(forKey: key)
+        }
     }
 
     /// 그 계정의 값을 모두 지운다 — 명시적 로그아웃·탈퇴(`AuthViewModel.clearAccountPreferences`).

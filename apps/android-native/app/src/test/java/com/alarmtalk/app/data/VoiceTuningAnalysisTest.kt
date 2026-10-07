@@ -150,12 +150,14 @@ class VoiceTuningAnalysisTest {
     fun tuningCodecRoundTripsAndRejectsGarbage() {
         val tuning = VoiceTuning(pitchSemitones = -1.5f, source = VoiceTuning.SOURCE_MANUAL)
         assertEquals(tuning, VoiceTuning.decode(tuning.encode()))
+        val withGeneration = tuning.copy(generation = "2026-10-07 03:00:00")
+        assertEquals(withGeneration, VoiceTuning.decode(withGeneration.encode()))
         assertNull(VoiceTuning.decode(null))
-        assertNull(VoiceTuning.decode("1;2;3"))
+        assertNull(VoiceTuning.decode("1;auto"))
         assertNull(VoiceTuning.decode("7.5;-5.5;2.0;manual"))
-        assertNull(VoiceTuning.decode("a;auto"))
-        assertNull(VoiceTuning.decode("NaN;auto"))
+        assertNull(VoiceTuning.decode("a;auto;"))
+        assertNull(VoiceTuning.decode("NaN;auto;"))
         // 범위 밖·눈금 밖 값은 읽을 때 맞춘다. 모르는 출처는 auto.
-        assertEquals(VoiceTuning(pitchSemitones = -6f, source = VoiceTuning.SOURCE_AUTO), VoiceTuning.decode("-9;weird"))
+        assertEquals(VoiceTuning(pitchSemitones = -6f, source = VoiceTuning.SOURCE_AUTO), VoiceTuning.decode("-9;weird;"))
     }
 }

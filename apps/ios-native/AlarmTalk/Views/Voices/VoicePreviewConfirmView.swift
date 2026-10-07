@@ -654,8 +654,11 @@ struct VoicePreviewConfirmView: View {
             // 중립이면 키를 지운다 — 교체 전 목소리의 값이 새 목소리에 남지 않게.
             // 아래 리컨사일이 바뀐 지문을 보고 그 목소리의 알람을 새 파일로 다시 예약한다.
             // 세션이 그대로일 때만 적는다 — 그 사이 로그아웃했으면 그 계정 값은 이미 지워졌어야 한다.
+            // 그 목소리의 지금 교체 세대를 함께 적는다 — 다른 기기의 다음 교체만 이 값을 지운다.
+            var saved = tuning
+            saved.generation = promoted.customAudioInvalidatedAt
             let tuningChanged = auth.session?.user.id == userID
-                && VoiceTuningStore().save(tuning, userID: userID, voiceProfileID: promoted.id)
+                && VoiceTuningStore().save(saved, userID: userID, voiceProfileID: promoted.id)
             // ⚠ **교체한 기기에서 곧바로 내린다.** 교체는 옛 프로필 행을 그대로 재사용하므로
             // (id 가 같다) 어떤 접근권 재확인으로도 이 알람들은 잡히지 않는다 — 놔두면 바로
             // 위에서 "직접 입력으로 해둔 알람들도 기본 알람으로 설정됩니다" 를 읽고 체크한

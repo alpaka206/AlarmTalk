@@ -13,7 +13,8 @@ import android.content.Context
  * 키를 지운다 — '없음' 과 '0' 을 한 상태로 둔다.
  *
  * 지우는 곳: 목소리 삭제·민감 동의 철회는 그 목소리 값([remove]), 명시적 로그아웃·탈퇴는 그 계정 값 전부
- * ([clearUser]). 자동 401 에서는 지우지 않는다 — 같은 사람이 다시 로그인하는 경우가 대부분이다.
+ * ([clearUser]), 다른 기기에서의 제자리 교체는 [forgetIfReplaced]. 자동 401 에서는 지우지 않는다 — 같은
+ * 사람이 다시 로그인하는 경우가 대부분이다.
  */
 class VoiceTuningStore(context: Context) {
     private val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -36,6 +37,16 @@ class VoiceTuningStore(context: Context) {
     fun remove(userId: String?, voiceProfileId: String?) {
         val key = keyFor(userId, voiceProfileId) ?: return
         prefs.edit().remove(key).apply()
+    }
+
+    /**
+     * 그 목소리가 **새 교체 세대**로 바뀌었으면 옛 녹음 기준 값을 지운다 — `VoiceReplacementMarkerStore` 가
+     * 새 세대를 반영할 때 부른다. 같은 세대로 저장한 값(이 기기에서 교체하며 고른 값)은 남긴다 — 그래서
+     * 늦게 온 푸시·재시도의 순서와 상관없이 맞다.
+     */
+    fun forgetIfReplaced(userId: String?, voiceProfileId: String?, generation: String?) {
+        val stored = read(userId, voiceProfileId) ?: return
+        if (stored.generation != generation?.takeIf { it.isNotBlank() }) remove(userId, voiceProfileId)
     }
 
     /** 그 계정의 값을 모두 지운다 — 명시적 로그아웃·탈퇴. */

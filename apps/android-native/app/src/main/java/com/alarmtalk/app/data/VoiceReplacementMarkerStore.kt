@@ -60,6 +60,9 @@ class VoiceReplacementMarkerStore(context: Context) {
     private val prefs = context.applicationContext
         .getSharedPreferences("voice_replacement_marker", Context.MODE_PRIVATE)
 
+    /** 교체된 목소리의 높이 보정값(옛 녹음 기준)을 새 세대를 반영할 때 함께 지운다(스펙 voice-and-message §4-3). */
+    private val voiceTuningStore = VoiceTuningStore(context)
+
     /**
      * **목록에서 새 세대를 봤으면** 강등하고 확정한다(판정→강등→확정이 한 임계구역).
      *
@@ -82,6 +85,7 @@ class VoiceReplacementMarkerStore(context: Context) {
         // 세대를 '처음 봤다' 로 다시 적어 그 사이의 교체를 영영 놓친다. 실패를 알린다.
         val seen = seenLocked(userId, profileId, invalidatedAt)
         if (!seen.changed) return@withLock Result(0, seen.persisted, changed = false)
+        voiceTuningStore.forgetIfReplaced(userId, profileId, invalidatedAt)
         val degraded = degrade() ?: run {
             markRetryLocked(userId, profileId, invalidatedAt)
             return@withLock Result(0, persisted = false, changed = true)
@@ -112,6 +116,7 @@ class VoiceReplacementMarkerStore(context: Context) {
         if (userId.isNullOrBlank() || profileId.isBlank()) return@withLock Result.SKIPPED
         val generation = invalidatedAt?.takeIf { it.isNotBlank() }
         if (generation != null && hasAppliedLocked(userId, profileId, generation)) return@withLock Result.SKIPPED
+        voiceTuningStore.forgetIfReplaced(userId, profileId, generation)
         val degraded = degrade() ?: run {
             markRetryLocked(userId, profileId, generation)
             return@withLock Result(0, persisted = false, changed = true)

@@ -200,6 +200,28 @@ final class VoiceTuningAnalyzerTests: XCTestCase {
         XCTAssertEqual(store.tuning(userID: "u12", voiceProfileID: "v3")?.pitchSt, -4)
     }
 
+    /// 다른 기기의 제자리 교체(새 세대)는 옛 녹음 기준 값을 지우고, 같은 세대로 고른 값은 남긴다(Codex #870).
+    func test_store_forgetIfReplaced_keepsTheSameGeneration() throws {
+        let suite = "voice-tuning-test-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = VoiceTuningStore(defaults: defaults)
+        store.save(VoiceTuning(pitchSt: -2, source: .user, generation: "g1"), userID: "u1", voiceProfileID: "v1")
+
+        store.forgetIfReplaced(userID: "u1", voiceProfileID: "v1", generation: "g1")
+        XCTAssertEqual(store.tuning(userID: "u1", voiceProfileID: "v1")?.pitchSt, -2, "같은 세대 — 이 기기에서 교체하며 고른 값")
+
+        store.forgetIfReplaced(userID: "u1", voiceProfileID: "v1", generation: "g2")
+        XCTAssertNil(store.tuning(userID: "u1", voiceProfileID: "v1"), "다른 기기에서 다시 교체했다")
+
+        // 교체 표식이 새 세대를 반영할 때 함께 지운다(같은 저장 공간).
+        store.save(VoiceTuning(pitchSt: -3, source: .user, generation: "2026-10-01 00:00:00"), userID: "u1", voiceProfileID: "vp1")
+        _ = VoiceReplacementMarkerStore(defaults: defaults).applyIfNotApplied(
+            userID: "u1", profileID: "vp1", invalidatedAt: "2026-10-07 00:00:00"
+        ) { [] }.confirm()
+        XCTAssertNil(store.tuning(userID: "u1", voiceProfileID: "vp1"))
+    }
+
     /// 명시적 로그아웃 때 지우는 것은 **높이를 구워 넣은** 스테이징 파일뿐이다(Codex #870).
     func test_tunedStagedFileName_matchesOnlyTunedCopies() {
         XCTAssertTrue(AlarmSoundStaging.isTunedStagedFileName("voice-abc-ts-15.caf"))
