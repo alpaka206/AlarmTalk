@@ -791,9 +791,12 @@ internal fun VoiceProfileManagementPanel(
                 startTunedPreview(player)
             } catch (error: Throwable) {
                 // 시작이 실패하면(오디오 서버·플레이어 상태) 올린 알람 스트림을 되돌리고 플레이어를 놓는다 — 안 그러면
-                // 사용자의 알람 음량이 미리듣기 값으로 남는다(Codex #870).
+                // 사용자의 알람 음량이 미리듣기 값으로 남는다. 구운 사본이었으면 원본으로 한 번 더 — 열기·재생 도중
+                // 실패와 같은 규칙이다(Codex #870).
                 stopMediaPreview(invalidateGreetingPreview = false)
-                throw error
+                if (!canFallBack) throw error
+                AlarmTalkLog.reportError("Tuned preview copy could not start; playing the original", error)
+                return open(originalUri, VoiceTuning.NEUTRAL, canFallBack = false)
             }
             confirmPreviewPlaying = true
         }
@@ -1186,7 +1189,9 @@ internal fun VoiceProfileManagementPanel(
         mediaPlayer = null
         showCreateForm = false
         localMessage = null
-        // 미리듣기 스텝 상태 정리 — 진행 중 합성 코루틴을 취소해 늦은 재생을 막는다.
+        // 미리듣기 스텝 상태 정리 — 진행 중 합성 코루틴을 취소해 늦은 재생을 막는다. 확인을 기다리던 옛 재생도
+        // 세대를 올려 무효로 한다(Codex #870).
+        confirmPreviewGeneration += 1
         confirmPreviewJob?.cancel()
         confirmPreviewJob = null
         confirmPreviewBusy = false
@@ -1234,6 +1239,8 @@ internal fun VoiceProfileManagementPanel(
             // ready draft 가 남아 있으면 이 스텝으로 바로 복귀한다(결정 전 이탈 방지).
             draft != null && (draft.status == null || draft.status == "ready") -> {
                 if (confirmNewVoice?.id != draft.id) {
+                    // 초안이 바뀌었다 — 옛 초안의 늦은 청취 확인이 새 초안의 저장을 열지 않게(Codex #870).
+                    confirmPreviewGeneration += 1
                     confirmPreviewCompleted = false
                     heardTuning = null
                     confirmPreviewText = null
