@@ -44,7 +44,12 @@ enum AlarmScheduleReconciler {
         switch (plan, resolution) {
         case (.systemDefault, _):
             return intended
-        case (_, .bundledNamed):
+        case (_, .bundledNamed(let name)):
+            // 높이를 굽지 못해 **원래 목소리**를 실었다 — 실린 것은 계획한 소리가 아니다. 폴백으로 적어 다음 회차가
+            // 다시 굽게 한다(안 그러면 지문이 맞아 영영 다듬지 않은 소리로 운다, Codex #870).
+            if let tuned = AlarmSoundStaging.tunedStagedFileName(for: plan), name != tuned {
+                return intended + fallbackMarker
+            }
             return intended
         default:
             // 목소리·알람음을 실으려 했는데 `.cachedAudio`(인앱 폴백)나 `.systemDefault` 로

@@ -140,6 +140,29 @@ final class VoiceTuningStagingTests: XCTestCase {
         XCTAssertEqual(VoicePreviewConfirmView.tuningValueText(0), "0 반음")
     }
 
+    /// 높이를 굽지 못해도 원래 목소리는 OS 에 싣는다 — 시스템 톤으로 떨어지지 않게. 지문에는 폴백 표시가 붙어 다음
+    /// 회차가 다시 굽는다(Codex #870).
+    func test_tunedStagingFailure_stillStagesTheOriginalVoice() throws {
+        let source = try makeSineWAV(hz: 180, seconds: 1, amplitude: 0.3)
+        AlarmSoundStaging.failTunedRenderingForTesting = true
+        addTeardownBlock { AlarmSoundStaging.failTunedRenderingForTesting = false }
+        let key = uniqueKey("tuned-fallback")
+        let tuning = VoiceTuning(pitchSt: -2, source: .user)
+        let plan = AlarmSoundPlan.voiceClip(
+            cacheKey: key, url: source, durationMs: 1_000, volumePercent: 100, revision: nil, tuning: tuning
+        )
+
+        let resolution = AlarmSoundResolver.resolve(plan: plan)
+        guard case .bundledNamed(let name) = resolution else {
+            return XCTFail("원래 목소리라도 실려야 한다 — got \(resolution)")
+        }
+        XCTAssertNotEqual(name, AlarmSoundStaging.tunedStagedFileName(for: plan))
+        XCTAssertTrue(
+            AlarmScheduleReconciler.scheduledFingerprint(plan: plan, resolution: resolution).hasSuffix("!fallback"),
+            "다음 회차가 다시 굽도록 폴백으로 적는다"
+        )
+    }
+
     func test_neutralTuning_keepsTheLegacyName() throws {
         let source = try makeSineWAV(hz: 220, seconds: 1, amplitude: 0.3)
         let key = uniqueKey("neutral")

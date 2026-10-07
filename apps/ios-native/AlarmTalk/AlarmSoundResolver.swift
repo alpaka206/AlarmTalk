@@ -233,6 +233,12 @@ enum AlarmSoundResolver {
             ) {
                 return .bundledNamed(stagedAlertName(bundled))
             }
+            // 높이를 굽지 못했으면 **원래 목소리라도** OS 에 싣는다 — `.cachedAudio` 로 떨어지면 잠긴 화면에서는 시스템
+            // 톤이 운다(스펙 §4-3 "실패하면 원래 소리", Codex #870). 지문에는 폴백 표시가 붙어 다음 회차가 다시 굽는다.
+            if tuning?.soundTag != nil,
+               let bundled = try? AlarmSoundStaging.stage(url: url, key: key, volumePercent: volumePercent) {
+                return .bundledNamed(stagedAlertName(bundled))
+            }
             return .cachedAudio(url, duration)
 
         case .alarmSoundFile(let url, let stagingKey, let volumePercent):

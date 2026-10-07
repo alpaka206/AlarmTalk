@@ -1165,8 +1165,8 @@ final class AlarmKitViewModel: ObservableObject {
             // 언어와 함께 녹음 문구 표시도 적는다 — 비교는 저장된 행 기준이다(`voiceCaptionOutdated`).
             AlarmPresentationLanguage.didSchedule(record)
             statusMessage = Self.describeScheduleStatus(record: record, resolution: resolution)
-            // 그 파일이 실제로 예약에 실렸을 때만 '쓰는 중' 이다 — 스테이징이 실패해 다른 소리로 걸렸으면 표시를 남긴다.
-            if case .bundledNamed = resolution { reserved = true }
+            // **그 파일이** 실제로 예약에 실렸을 때만 '쓰는 중' 이다 — 굽기가 실패해 원래 목소리·톤으로 걸렸으면 표시를 남긴다.
+            if case .bundledNamed(let name) = resolution, name == tunedStagedName { reserved = true }
             return true
         } catch {
             statusMessage = String(localized: "알람 예약에 실패했어요. 잠시 후 다시 시도해 주세요.")

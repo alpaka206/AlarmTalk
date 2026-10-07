@@ -667,7 +667,16 @@ enum AlarmSoundStaging {
     ///
     /// ⚠ `AVAssetExportSession` 을 쓰지 않는다(위 `transcodeToCAF` 주석) — `AVAudioFile`
     /// 로 읽고 쓴다. 채널 레이아웃(`AVChannelLayoutKey`)을 함께 적는다(`writeMonoCAF`).
+    #if DEBUG
+    /// 테스트용 — 높이 굽기만 실패하게 한다(원본 그대로 싣기는 그대로). 디코드는 되는데 굽기만 실패하는 파일을 만들 수
+    /// 없어서 둔다.
+    nonisolated(unsafe) static var failTunedRenderingForTesting = false
+    #endif
+
     private nonisolated static func writeTunedCAF(from src: URL, to dst: URL, gain: Float, tuning: VoiceTuning) throws {
+        #if DEBUG
+        if failTunedRenderingForTesting { throw AlarmSoundStagingError.writeFailed("tuned rendering disabled for testing") }
+        #endif
         do {
             let rendered = try VoiceTuningRenderer.render(
                 url: src,
