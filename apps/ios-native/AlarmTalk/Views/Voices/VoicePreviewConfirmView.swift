@@ -384,7 +384,7 @@ struct VoicePreviewConfirmView: View {
     /// 열리는 화면이다. 그때 바꾼 값은 다음 재생에 실린다.
     @discardableResult
     private func replayLocally() -> Bool {
-        guard !busy, !saving,
+        guard !viewGone, !busy, !saving,
               let source = previewAudioURL,
               FileManager.default.fileExists(atPath: source.path) else { return false }
         voice.stopDraftPreviewPlayback()
@@ -654,7 +654,8 @@ struct VoicePreviewConfirmView: View {
             heardTuning = servedTuning
             // 서버 미리듣기 도중(끊지 않는다) 높이를 바꿨으면 이제 새 높이로 들려준다 — 안 그러면 들어 보지
             // 않은 값을 저장하게 된다(안드로이드 `replayTunedPreviewIfReady` 와 같다, Codex #870).
-            if let served = servedTuning, !tuning.soundsSame(as: served) {
+            // 확인을 기다리는 사이 화면을 떠났으면 다시 틀지 않는다 — 사본을 되살리고 화면 밖에서 소리가 난다(Codex #870).
+            if !viewGone, let served = servedTuning, !tuning.soundsSame(as: served) {
                 replayLocally()
             }
         case .failed(let message):

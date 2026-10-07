@@ -1055,7 +1055,7 @@ final class AlarmKitViewModel: ObservableObject {
             defer { AlarmSoundStaging.endTunedReservation(tunedStagedName, succeeded: reserved) }
             // 높이를 구워 넣을 소리는 **메인 밖에서** 미리 만든다 — 아래 `resolve` 는 메인에서 동기로 돌아, 거기서
             // PSOLA 를 돌리면 여러 알람을 다시 걸 때 화면이 멎는다(Codex #870).
-            await AlarmSoundResolver.prestageTunedSound(plan: soundPlan)
+            let tunedReady = await AlarmSoundResolver.prestageTunedSound(plan: soundPlan)
             // 미리 굽는 사이 계정이 바뀌거나 떠나는 중이면 여기서 멈춘다 — 아래 `resolve` 가 그 계정의 목소리를 **정리 뒤에**
             // 다시 구워 남긴다(Codex #870). 예약 뒤의 같은 확인과 같은 조건이고, 아직 OS 예약이 없어 되돌릴 것도 없다.
             if accountEpoch != epochAtStart || isLeavingAccount || !mayScheduleRecord(record) {
@@ -1063,7 +1063,8 @@ final class AlarmKitViewModel: ObservableObject {
             }
             let id = UUID()
             let schedule = makeSchedule(record)
-            let resolution = AlarmSoundResolver.resolve(plan: soundPlan)
+            // 미리 굽기가 실패했으면 메인에서 다시 굽지 않는다(원래 목소리를 싣고 다음 회차에 다시, Codex #870).
+            let resolution = AlarmSoundResolver.resolve(plan: soundPlan, renderTunedIfMissing: tunedReady)
             let configuration = makeConfiguration(
                 record: effectiveRecord,
                 alarmKitID: id,

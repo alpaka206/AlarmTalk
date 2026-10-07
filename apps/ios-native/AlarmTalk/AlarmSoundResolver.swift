@@ -142,9 +142,14 @@ enum AlarmSoundResolver {
     /// 예약 직전(`AlarmKitViewModel.schedule`)에 기다린다 — 그 뒤의 동기 `resolve` 는 만들어 둔 파일을 쓴다.
     /// 계획은 예약이 **한 번** 정해 넘긴다 — 여기서 다시 정하면 기다리는 사이 다듬기 값이 바뀌었을 때 미리 구운 것과
     /// 예약이 쓰는 것이 갈라져, 예약이 메인에서 다시 굽는다(Codex #870).
-    static func prestageTunedSound(plan: AlarmSoundPlan) async {
-        guard case .voiceClip(let key, let url, _, let volumePercent, _, let tuning?) = plan else { return }
-        await AlarmSoundStaging.prestageTuned(url: url, key: key, volumePercent: volumePercent, tuning: tuning)
+    /// - Returns: 그대로 `resolve(plan:renderTunedIfMissing:)` 에 넘긴다 — 높이를 실을 것이 없으면 true(굽기와 무관),
+    ///   있는데 굽지 못했으면 false(메인에서 다시 굽지 않는다).
+    @discardableResult
+    static func prestageTunedSound(plan: AlarmSoundPlan) async -> Bool {
+        guard case .voiceClip(let key, let url, _, let volumePercent, _, let tuning?) = plan, tuning.soundTag != nil else {
+            return true
+        }
+        return await AlarmSoundStaging.prestageTuned(url: url, key: key, volumePercent: volumePercent, tuning: tuning)
     }
 
     /// **무엇을 울릴지** 만 정한다 — 파일을 만들지 않는다(순수 조회).
@@ -222,15 +227,20 @@ enum AlarmSoundResolver {
     /// 이미 정한 계획([plan])을 스테이징한다. 예약은 계획을 **한 번** 정해 이걸로 굽고, 같은 계획으로 지문을 새긴다 —
     /// 예약을 기다리는 사이 계획이 바뀌면(다듬기 값 저장·삭제 — 계획이 행 밖의 `VoiceTuningStore` 를 읽는다) OS 에는
     /// 옛 소리가, 행에는 새 지문이 실려 리컨사일러가 맞는 것으로 본다(Codex #870).
-    static func resolve(plan: AlarmSoundPlan) -> AlarmSoundResolution {
+    ///
+    /// - Parameter renderTunedIfMissing: false 면 높이를 구운 파일이 없을 때 **여기서(메인) 굽지 않고** 원래 목소리를
+    ///   싣는다 — 메인 밖 미리 굽기가 이미 실패한 경우다(`prestageTunedSound`). 지문에는 폴백 표시가 붙어 다음 회차가
+    ///   다시 시도한다.
+    static func resolve(plan: AlarmSoundPlan, renderTunedIfMissing: Bool = true) -> AlarmSoundResolution {
         switch plan {
         case .voiceClip(let key, let url, let duration, let volumePercent, _, let tuning):
             // 길이 초과·측정 불가여도 staging 을 한 번 시도한다 — AlarmSoundStaging 이 첫
             // 30초로 캡하므로 성공하면 `.bundledNamed`(잠금화면에서도 울림)로 승격된다.
             // 트림/transcode 가 진짜로 실패할 때만 in-app 폴백으로 떨어진다.
-            if let bundled = try? AlarmSoundStaging.stage(
-                url: url, key: key, volumePercent: volumePercent, tuning: tuning
-            ) {
+            if renderTunedIfMissing || tuning?.soundTag == nil,
+               let bundled = try? AlarmSoundStaging.stage(
+                   url: url, key: key, volumePercent: volumePercent, tuning: tuning
+               ) {
                 return .bundledNamed(stagedAlertName(bundled))
             }
             // 높이를 굽지 못했으면 **원래 목소리라도** OS 에 싣는다 — `.cachedAudio` 로 떨어지면 잠긴 화면에서는 시스템

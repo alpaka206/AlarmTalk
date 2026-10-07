@@ -407,6 +407,10 @@ final class VoiceStudioViewModel: ObservableObject {
 
     private enum DraftFallbackResult { case finished, failed, interrupted }
 
+    /// 대체 재생이 잠시 빌려 쓰는 동안 맡아 둔 `previewPlayer` 의 원래 끝 콜백(`init` 이 단 것) — 끝나면 되돌린다. 비워 두면
+    /// 다른 미리듣기의 '재생 중' 표시가 끝나도 지워지지 않는다(Codex #870).
+    private var draftFallbackSavedOnFinish: (() -> Void)?
+
     private func resumeDraftFallback(_ result: DraftFallbackResult) {
         guard let continuation = pendingDraftFallback else { return }
         pendingDraftFallback = nil
@@ -418,7 +422,8 @@ final class VoiceStudioViewModel: ObservableObject {
     func stopDraftPreviewPlayback() {
         tuningPreviewPlayer.stop()
         guard pendingDraftFallback != nil else { return }
-        previewPlayer.onFinish = nil
+        previewPlayer.onFinish = draftFallbackSavedOnFinish
+        draftFallbackSavedOnFinish = nil
         previewPlayer.stop()
         resumeDraftFallback(.interrupted)
     }
@@ -482,6 +487,7 @@ final class VoiceStudioViewModel: ObservableObject {
                 // ⚠ 원본도 못 틀면 **실패**다 — 아무것도 안 들렸는데 청취를 기록하면 저장이 열린다(Codex #870).
                 let fallback = await withCheckedContinuation { (continuation: CheckedContinuation<DraftFallbackResult, Never>) in
                     pendingDraftFallback = continuation
+                    draftFallbackSavedOnFinish = previewPlayer.onFinish
                     // 중간에 깨져 끝난 것(`successfully: false`)은 끝까지 들은 것이 아니다(Codex #870).
                     previewPlayer.onFinish = { [weak self] in
                         guard let self else { return }
@@ -489,7 +495,10 @@ final class VoiceStudioViewModel: ObservableObject {
                     }
                     if (try? previewPlayer.play(url: url)) == nil { resumeDraftFallback(.failed) }
                 }
-                previewPlayer.onFinish = nil
+                if let saved = draftFallbackSavedOnFinish {
+                    previewPlayer.onFinish = saved
+                    draftFallbackSavedOnFinish = nil
+                }
                 switch fallback {
                 case .finished: break
                 case .failed: return .failed(String(localized: "미리듣기를 재생하지 못했어요."))

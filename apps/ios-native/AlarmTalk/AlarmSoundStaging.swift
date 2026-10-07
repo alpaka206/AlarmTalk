@@ -333,8 +333,12 @@ enum AlarmSoundStaging {
     /// `stage` 는 예약 경로(`AlarmKitViewModel.schedule`)에서 메인 액터로 동기 실행된다. 여러 알람을 다시 걸 때 화면이
     /// 멎고 백그라운드 회차의 실행 시간을 먹지 않게, 예약 직전에 이걸 기다린 뒤 `stage` 가 만들어 둔 파일을 그대로 쓴다.
     /// 이름·내용은 `stageLocked` 의 높이 갈래와 같다(같은 원자적 쓰기). 실패하면 조용히 넘어간다 — `stage` 가 다시 굽는다.
-    static func prestageTuned(url sourceURL: URL, key: String, volumePercent: Int, tuning: VoiceTuning) async {
-        guard let tag = tuning.soundTag, let soundsDir = try? ensureSoundsDirectory() else { return }
+    /// - Returns: 높이를 구운 파일이 쓸 수 있게 놓였는가. false 면 예약(`AlarmSoundResolver.resolve(plan:renderTunedIfMissing:)`)이
+    ///   메인에서 **다시 굽지 않고** 곧바로 원래 목소리를 싣는다 — 실패한 무거운 굽기를 메인에서 되풀이하면 여러 알람을 다시
+    ///   걸 때 화면이 멎는다(Codex #870).
+    @discardableResult
+    static func prestageTuned(url sourceURL: URL, key: String, volumePercent: Int, tuning: VoiceTuning) async -> Bool {
+        guard let tag = tuning.soundTag, let soundsDir = try? ensureSoundsDirectory() else { return false }
         let gainPercent = max(0, min(100, volumePercent))
         let safeKey = AudioCacheStore.safeCacheKey(key)
         let baseName = gainPercent == 100
@@ -342,16 +346,17 @@ enum AlarmSoundStaging {
             : "\(stagedNamePrefix)\(safeKey)-v\(gainPercent)-t\(tag)"
         let stagedURL = soundsDir.appendingPathComponent("\(baseName).caf")
         let epoch = TunedStagingEpoch.shared.current
-        await Task.detached(priority: .userInitiated) {
+        return await Task.detached(priority: .userInitiated) { () -> Bool in
             // ⚠ **`stage` 와 같은 캐시 키 잠금 안에서** 확인·굽기·게시를 한다(Codex #870). 밖에서 하면 캐시 교체가
             // 그 사이 지나가며 스테이징 파일을 지운 **뒤에** 옛 바이트로 구운 파일을 게시하고, `stage` 가 그걸 재사용한다
             // — 은퇴한 목소리로 우는 경주(#703)가 되살아난다.
-            AudioCacheStore.withCacheKeyLock(key) {
-                if isUsableStagedFile(stagedURL) { return }
+            AudioCacheStore.withCacheKeyLock(key) { () -> Bool in
+                if isUsableStagedFile(stagedURL) { return true }
                 try? writeAtomically(into: stagedURL) { tmp in
                     try writeTunedCAF(from: sourceURL, to: tmp, gain: Float(gainPercent) / 100, tuning: tuning)
                 }
                 discardIfCleanedSince(epoch, stagedURL)
+                return isUsableStagedFile(stagedURL)
             }
         }.value
     }

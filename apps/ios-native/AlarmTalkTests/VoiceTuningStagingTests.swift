@@ -163,6 +163,34 @@ final class VoiceTuningStagingTests: XCTestCase {
         )
     }
 
+    /// 메인 밖 미리 굽기가 실패하면 그 결과를 알려 주고, 예약은 메인에서 **다시 굽지 않고** 원래 목소리를 싣는다(Codex #870).
+    func test_failedPrestage_skipsTheMainActorRender() async throws {
+        let source = try makeSineWAV(hz: 180, seconds: 1, amplitude: 0.3)
+        let key = uniqueKey("prestage-failed")
+        let tuning = VoiceTuning(pitchSt: -2, source: .user)
+        let plan = AlarmSoundPlan.voiceClip(
+            cacheKey: key, url: source, durationMs: 1_000, volumePercent: 100, revision: nil, tuning: tuning
+        )
+        AlarmSoundStaging.failTunedRenderingForTesting = true
+        let ready = await AlarmSoundResolver.prestageTunedSound(plan: plan)
+        AlarmSoundStaging.failTunedRenderingForTesting = false
+        XCTAssertFalse(ready)
+
+        // 굽기를 다시 허용해도, 미리 굽기가 실패했다고 넘기면 메인에서 굽지 않는다.
+        let resolution = AlarmSoundResolver.resolve(plan: plan, renderTunedIfMissing: ready)
+        guard case .bundledNamed(let name) = resolution else { return XCTFail("원래 목소리가 실려야 한다 — got \(resolution)") }
+        XCTAssertNotEqual(name, AlarmSoundStaging.tunedStagedFileName(for: plan))
+        XCTAssertTrue(AlarmScheduleReconciler.scheduledFingerprint(plan: plan, resolution: resolution).hasSuffix("!fallback"))
+
+        // 성공하면 true 이고 그 파일을 싣는다.
+        let readyNow = await AlarmSoundResolver.prestageTunedSound(plan: plan)
+        XCTAssertTrue(readyNow)
+        guard case .bundledNamed(let tunedName) = AlarmSoundResolver.resolve(plan: plan, renderTunedIfMissing: readyNow) else {
+            return XCTFail("구운 파일이 실려야 한다")
+        }
+        XCTAssertEqual(tunedName, AlarmSoundStaging.tunedStagedFileName(for: plan))
+    }
+
     func test_neutralTuning_keepsTheLegacyName() throws {
         let source = try makeSineWAV(hz: 220, seconds: 1, amplitude: 0.3)
         let key = uniqueKey("neutral")
