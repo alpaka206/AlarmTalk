@@ -87,7 +87,6 @@ import com.alarmtalk.app.data.VoiceAudioDecoder
 import com.alarmtalk.app.data.VoiceTuning
 import com.alarmtalk.app.data.VoiceTuningAnalysis
 import com.alarmtalk.app.data.VoiceTuningRenderer
-import com.alarmtalk.app.data.VoiceTuningStore
 import com.alarmtalk.app.alarm.AlarmStreamVolume
 import com.alarmtalk.app.network.AuthSession
 import com.alarmtalk.app.network.BillingSubscriptionResponse
@@ -367,7 +366,8 @@ internal fun VoiceProfileManagementPanel(
     onDeleteVoiceProfile: (String) -> Unit,
     onConfirmVoicePreviewPlayed: suspend (String, String) -> Unit,
     onUpdateVoicePreviewText: suspend (String, String) -> String,
-    onPromoteVoiceDraft: (String, Boolean, Boolean) -> Unit,
+    /** (초안 id, 교체, 공유, 목소리 높이) — 높이는 승격이 끝난 뒤 그 응답의 id·교체 세대로 적힌다. */
+    onPromoteVoiceDraft: (String, Boolean, Boolean, VoiceTuning) -> Unit,
     onDeleteVoiceDraft: (String) -> Unit,
     onOpenBilling: () -> Unit,
     // 이번 달 목소리 생성 쿼터 — 추가 버튼 옆에 '남은/전체'로 보여준다.
@@ -487,8 +487,7 @@ internal fun VoiceProfileManagementPanel(
     // 등록 확정의 **교체 체크**. 이미 등록된 목소리가 있을 때만 낸다.
     var replaceExistingChecked by remember { mutableStateOf(false) }
     // ── 목소리 다듬기(높이 — 스펙 voice-and-message §4-3) ──
-    // 미리듣기에서 들으며 맞추는 보정값. 저장은 등록 확정이 성공한 뒤 한 번([pendingTuningCommit]).
-    val voiceTuningStore = remember(appContext) { VoiceTuningStore(appContext) }
+    // 미리듣기에서 들으며 맞추는 보정값. 저장은 승격이 성공한 뒤 ViewModel 이 한 번(`MainViewModel.promoteVoiceDraft`).
     var previewTuning by remember { mutableStateOf(VoiceTuning.NEUTRAL) }
     // 자동 추천값과 그 목소리 id. null 이면 아직 계산 전.
     var tuningSuggestion by remember { mutableStateOf<VoiceTuning?>(null) }
@@ -509,9 +508,9 @@ internal fun VoiceProfileManagementPanel(
     // 업로드 성공 직후 지워지므로(`purgeVoiceCloneSourceRecordings`) 미리듣기 단계에는 없다.
     // 숫자 하나만 메모리에 두고 어디에도 저장하지 않는다.
     var sourceF0Job by remember { mutableStateOf<Deferred<Double?>?>(null) }
-    // 등록 확정을 누른 순간의 (계정, 저장할 목소리 id, 값). 승격이 성공해 초안이 사라질 때 기록한다.
-    // 계정을 함께 잡는다 — 응답을 기다리는 사이 세션이 바뀌면 다른 계정에 적게 된다(Codex #870).
-    var pendingTuningCommit by remember { mutableStateOf<Triple<String?, String, VoiceTuning>?>(null) }
+    // 지금 슬라이더 값을 **끝까지 들었는가** — 저장은 그때만 열린다(듣지 않은 높이를 저장하지 않게, 첫 미리듣기의
+    // '끝까지 들어야 저장' 과 같은 규칙 — Codex #870). iOS `VoicePreviewConfirmView.heardTuning` 과 같다.
+    var heardTuning by remember { mutableStateOf<VoiceTuning?>(null) }
     // 시스템 스톡 보이스는 "내 목소리" 수 제한·관리 액션에서 제외한다.
     // 매 리컴포지션마다 재계산하지 않도록 voiceProfiles 가 바뀔 때만 다시 분류한다.
     val systemVoices = remember(voiceProfiles) { voiceProfiles.filter { it.isSystem == true } }
@@ -770,6 +769,7 @@ internal fun VoiceProfileManagementPanel(
                 mediaPlayer = player
                 player.setOnCompletionListener { completed ->
                     if (mediaPlayer !== completed) return@setOnCompletionListener
+                    heardTuning = tuning
                     scope.launch {
                         delay(TuningPreviewRepeatGapMs)
                         if (mediaPlayer === completed && confirmPreviewPlaying) {
@@ -931,6 +931,7 @@ internal fun VoiceProfileManagementPanel(
                                     }
                                 }.onSuccess {
                                     confirmPreviewCompleted = true
+                                    heardTuning = firstPlayTuning
                                     // 첫 재생 도중에 높이를 바꿨으면 이제 새 높이로 들려준다.
                                     if (!previewTuning.sameValuesAs(firstPlayTuning ?: previewTuning)) {
                                         replayTunedPreviewIfReady()
@@ -986,6 +987,7 @@ internal fun VoiceProfileManagementPanel(
             }.onSuccess { normalized ->
                 confirmPreviewText = normalized
                 confirmPreviewCompleted = false
+                heardTuning = null
                 confirmPreviewEditing = false
                 confirmPreviewEditText = ""
                 // 수정본을 바로 들려준다(끝까지 들으면 keep 버튼이 다시 열린다).
@@ -1132,7 +1134,7 @@ internal fun VoiceProfileManagementPanel(
         firstPlayTuning = null
         sourceF0Job?.cancel()
         sourceF0Job = null
-        pendingTuningCommit = null
+        heardTuning = null
     }
 
     // 등록 요청을 보낸 뒤에도 다이얼로그를 닫지 않고 '만드는 중' 스텝으로 전환한다 —
@@ -1160,6 +1162,7 @@ internal fun VoiceProfileManagementPanel(
             draft != null && (draft.status == null || draft.status == "ready") -> {
                 if (confirmNewVoice?.id != draft.id) {
                     confirmPreviewCompleted = false
+                    heardTuning = null
                     confirmPreviewText = null
                     confirmPreviewEditing = false
                     confirmPreviewEditText = ""
@@ -1190,19 +1193,6 @@ internal fun VoiceProfileManagementPanel(
             // draft 소멸(삭제/승격) → 미리듣기 상태 정리. 승격이면 플로우를 닫는 대신
             // '목소리 생성 중' 스텝으로 이어 알람 문구 생성·다운로드까지 끝낸다.
             draft == null && confirmNewVoice?.isDraft == true -> {
-                // 목소리 다듬기 값 기록 — 저장(승격)을 눌렀고 초안이 사라졌다 = 승격 성공. 교체면 옛
-                // 프로필 행이 그대로 쓰이므로(같은 id) 그 id 로 적는다(누를 때 정해 둔 값).
-                if (promotedForPrerenderId != null && promotedForPrerenderId == confirmNewVoice?.id) {
-                    pendingTuningCommit?.let { (userId, targetId, tuning) ->
-                        // 세션이 그대로일 때만 — 그 사이 로그아웃했으면 그 계정 값은 이미 지워졌어야 한다.
-                        if (userId != null && authSession?.user?.id == userId) {
-                            // 그 목소리의 지금 교체 세대를 함께 적는다 — 다른 기기의 다음 교체만 이 값을 지운다.
-                            val generation = voiceProfiles.firstOrNull { it.id == targetId }?.customAudioInvalidatedAt
-                            voiceTuningStore.write(userId, targetId, tuning.copy(generation = generation))
-                        }
-                    }
-                }
-                pendingTuningCommit = null
                 val promotedId = promotedForPrerenderId
                     ?.takeIf { requested -> requested == confirmNewVoice?.id }
                     ?.takeIf { requested -> voiceProfiles.any { it.id == requested } }
@@ -2520,7 +2510,6 @@ internal fun VoiceProfileManagementPanel(
                             VoiceRegistrationStep.Preview -> {
                                 TextButton(
                                     onClick = {
-                                        pendingTuningCommit = null
                                         confirmNewVoice?.let { onDeleteVoiceDraft(it.id) }
                                     },
                                     enabled = !voiceProfileBusy && !confirmPreviewSaving,
@@ -2544,24 +2533,23 @@ internal fun VoiceProfileManagementPanel(
                                     onClick = {
                                         confirmNewVoice?.let {
                                             promotedForPrerenderId = it.id
-                                            val tuningTargetId = replaceTargetVoice
-                                                ?.takeIf { replaceExistingChecked }?.id ?: it.id
-                                            pendingTuningCommit = Triple(
-                                                authSession?.user?.id,
-                                                tuningTargetId,
-                                                previewTuning.normalized(),
-                                            )
+                                            // 높이 값은 승격이 끝난 뒤 ViewModel 이 승격 응답의 id·교체 세대로 적는다
+                                            // (`MainViewModel.promoteVoiceDraft`) — 화면이 목록을 보고 적으면 아직 옛 세대다.
                                             onPromoteVoiceDraft(
                                                 it.id,
                                                 replaceExistingChecked,
                                                 shareVoice && canShareVoice,
+                                                previewTuning.normalized(),
                                             )
                                         }
                                     },
                                     // ⚠ 이미 등록된 목소리가 있으면 **교체에 동의해야** 저장이 열린다.
                                     // 서버가 어차피 VOICE_LIMIT_REACHED 로 막으므로, 열어 두면 눌러도
                                     // 실패하는 버튼이 된다 — 무엇을 해야 저장되는지도 알 수 없다.
+                                    // ⚠ **지금 높이를 끝까지 들어야** 저장이 열린다 — 굽거나 트는 중에 저장하면 듣지 않은
+                                    // 값이 알람에 실린다(Codex #870).
                                     enabled = confirmPreviewCompleted && !voiceProfileBusy &&
+                                        !tuningRendering && heardTuning?.sameValuesAs(previewTuning) == true &&
                                         !confirmPreviewEditing && !confirmPreviewSaving &&
                                         (replaceTargetVoice == null || replaceExistingChecked),
                                     modifier = Modifier.weight(1f),

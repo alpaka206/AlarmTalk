@@ -2095,9 +2095,15 @@ final class AuthViewModel: ObservableObject {
     /// 높이를 구워 넣은 알람 소리 파일(목소리의 복사본)을 지운다 — **예약을 내린 뒤에만**(스펙 §4-3, Codex #870).
     /// 내리기 전에 지우면 그 사이 울리는 알람이 제 목소리를 잃는다. 내리지 못했으면 남겨 두고, 다음 실행의
     /// 뒷정리(`AlarmTalkApp` 의 `PendingSignOutStore` 회차)가 예약을 내린 뒤 지운다.
+    ///
+    /// ⚠ 훅의 참은 "저장소를 불러와 훑었다" 일 뿐이다 — 개별 취소가 실패한 예약은 손잡이(`alarmKitID`)를 남긴 채
+    /// 살아 있다. 그 예약이 구워 둔 파일을 쓰므로 **남은 손잡이가 하나라도 있으면** 지우지 않는다(Codex #870).
     private func clearTunedAlarmSounds(afterStopping stopped: Bool) {
-        if stopped { AlarmSoundStaging.clearTunedStagedSoundFiles() }
+        if stopped, !hasLiveAlarmReservations() { AlarmSoundStaging.clearTunedStagedSoundFiles() }
     }
+
+    /// 아직 살아 있는 AlarmKit 예약이 있는가(취소 실패로 손잡이가 남은 행) — `PushNotificationCoordinator` 가 잇는다.
+    var hasLiveAlarmReservations: () -> Bool = { false }
 
     func signOutExplicitly() {
         let userID = session?.user.id

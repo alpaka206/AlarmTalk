@@ -307,6 +307,8 @@ internal fun MainViewModel.promoteVoiceDraft(
     profileId: String,
     replaceExisting: Boolean = false,
     isShared: Boolean = false,
+    /** 등록 미리듣기에서 맞춘 목소리 높이 — 승격이 끝난 뒤 승격 응답의 id·교체 세대로 적는다(스펙 §4-3). */
+    tuning: com.alarmtalk.app.data.VoiceTuning = com.alarmtalk.app.data.VoiceTuning.NEUTRAL,
 ) {
     val session = authSession ?: return
     viewModelScope.launch {
@@ -399,6 +401,12 @@ internal fun MainViewModel.promoteVoiceDraft(
                 settlingUnpersistedIds = settlingUnpersistedIds - official.id
                 settlingVoiceProfileIds = settlingVoiceProfileIds - official.id
                 voiceProfiles = listOf(official) + voiceProfiles.filterNot { it.id == official.id }
+            }
+            // 목소리 높이 — **교체 표식 정리와 목록 반영이 끝난 뒤**, 승격 응답의 id(교체면 기존 프로필 id)·교체 세대로
+            // 적는다(Codex #870). 화면이 목록을 보고 적으면 그때는 아직 옛 세대라, 이어서 도는 표식 정리가 새 값을
+            // '교체 전 값' 으로 읽고 지운다. 그 사이 계정이 바뀌었으면 적지 않는다.
+            if (authSession?.user?.id == session.user.id) {
+                forgetOrSaveVoiceTuning(session.user.id, official.id, tuning.copy(generation = official.customAudioInvalidatedAt))
             }
         } else {
             val error = result.exceptionOrNull() ?: IllegalStateException("promote failed")

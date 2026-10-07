@@ -439,8 +439,11 @@ struct AlarmTalkApp: App {
                             if safeToTouchAlarms {
                                 alarmStore.claimUnownedAlarms(for: pending)
                                 await alarmKit.stopAllScheduledAlarms(store: alarmStore, ownerUserId: pending)
-                                // 예약을 내린 **뒤에** 높이를 구워 넣은 알람 소리 파일을 지운다(스펙 §4-3).
-                                AlarmSoundStaging.clearTunedStagedSoundFiles()
+                                // 예약을 내린 **뒤에** 높이를 구워 넣은 알람 소리 파일을 지운다(스펙 §4-3) — 취소가
+                                // 실패해 손잡이가 남은 예약이 있으면 그 예약이 쓰므로 남긴다.
+                                if !alarmStore.alarms.contains(where: { $0.alarmKitID?.nilIfBlank != nil }) {
+                                    AlarmSoundStaging.clearTunedStagedSoundFiles()
+                                }
                                 // ⚠ **다시 확인한다 — 그 사이 탈퇴가 철회됐을 수 있다.**
                                 // 위 호출은 await 이라, 그동안 사용자가 철회하면 표시가
                                 // 지워진다. 그런데도 나아가면 **방금 계정을 되살린 사람을

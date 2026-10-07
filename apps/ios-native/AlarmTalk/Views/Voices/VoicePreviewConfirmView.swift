@@ -57,6 +57,9 @@ struct VoicePreviewConfirmView: View {
     @State private var suggestedTuning: VoiceTuning = .neutral
     /// 서버 미리듣기에 실어 보낸 값 — 그 재생이 끝났을 때 슬라이더 값과 다르면 다시 튼다.
     @State private var servedTuning: VoiceTuning?
+    /// **끝까지 들은** 높이 — 저장은 지금 슬라이더 값을 끝까지 들었을 때만 열린다(듣지 않은 값을 저장하지 않게,
+    /// 첫 미리듣기의 '끝까지 들어야 저장' 과 같은 규칙 — Codex #870). 안드로이드 `heardTuning` 과 같다.
+    @State private var heardTuning: VoiceTuning?
     /// 마지막으로 받은 미리듣기 클립 — 슬라이더를 놓으면 **서버 왕복 없이** 이걸 다시 굽고 튼다.
     @State private var previewAudioURL: URL?
     /// 등록 녹음 측정(원래 목소리 높이). 화면에 들어오자마자 시작해 합성 대기와 겹친다.
@@ -382,7 +385,9 @@ struct VoicePreviewConfirmView: View {
             let url = await Self.tunedFile(for: source, tuning: target)
             guard generation == tuningGeneration else { return }
             renderingTuning = false
-            try? voice.tuningPreviewPlayer.play(url: url)
+            try? voice.tuningPreviewPlayer.play(url: url) { finished in
+                if finished { heardTuning = target }
+            }
         }
         return true
     }
@@ -520,7 +525,11 @@ struct VoicePreviewConfirmView: View {
             // ⚠ 이미 등록된 목소리가 있으면 **교체에 동의해야** 저장이 열린다. 서버가
             // 어차피 `VOICE_LIMIT_REACHED` 로 막으므로, 열어 두면 눌러도 실패하는
             // 버튼이 된다 — 무엇을 해야 저장되는지도 알 수 없다.
-                let saveDisabled = busy || !listened || (registeredVoice != nil && !replaceExisting)
+                // ⚠ **지금 높이를 끝까지 들어야** 저장이 열린다 — 바꾼 높이를 굽거나 트는 중에 저장하면 듣지 않은
+                // 값이 알람에 실린다(Codex #870).
+                let heardCurrentTuning = heardTuning.map { tuning.soundsSame(as: $0) } ?? false
+                let saveDisabled = busy || !listened || renderingTuning || !heardCurrentTuning
+                    || (registeredVoice != nil && !replaceExisting)
                 actionButton(
                     title: saving ? "저장 중…" : "저장하기",
                     foreground: theme.palette.onPrimary,
@@ -598,6 +607,7 @@ struct VoicePreviewConfirmView: View {
         case .played(let text):
             if !text.isEmpty { previewText = text }
             listened = true
+            heardTuning = servedTuning
             // 서버 미리듣기 도중(끊지 않는다) 높이를 바꿨으면 이제 새 높이로 들려준다 — 안 그러면 들어 보지
             // 않은 값을 저장하게 된다(안드로이드 `replayTunedPreviewIfReady` 와 같다, Codex #870).
             if let served = servedTuning, !tuning.soundsSame(as: served) {
@@ -626,6 +636,7 @@ struct VoicePreviewConfirmView: View {
             editDraft = ""
             // 서버가 previewed_at 을 지웠다 — 새 문구는 안 들어본 문구다.
             listened = false
+            heardTuning = nil
             await play()
         } catch {
             errorMessage = voice.mapVoiceError(error)
@@ -731,13 +742,19 @@ struct VoicePreviewConfirmView: View {
                             String(localized: "목소리는 바뀌었지만 기존 알람 정리를 끝내지 못했어요. 목소리 탭을 새로고침해 주세요.")
                     }
                 }
-            } else if tuningChanged {
-                // 교체가 아니면 대개 새 목소리라 걸 알람이 없지만, 같은 id 를 쓰는 알람이
-                // 있으면 여기서 새 다듬기로 다시 건다(판정은 리컨사일러의 지문 비교).
+            }
+            if tuningChanged {
+                // 그 목소리를 쓰는 이 기기의 알람을 새 높이로 다시 건다. 지문 비교만으로는 **지문이 없는 옛 예약**
+                // (`scheduledSoundFingerprint` 이전 — 교체에서 살아남은 프리셋 알람 등)이 안 잡혀 옛 소리로 남으므로
+                // 그 행들을 강제로 다시 건다(Codex #870).
+                let rearm = Set(alarmStore.alarms.filter {
+                    $0.enabled && $0.originEnum == .localOwned && $0.voiceProfileId == promoted.id
+                }.map(\.id))
                 _ = await AlarmScheduleReconciler.reconcile(
                     store: alarmStore,
                     alarmKit: BackgroundDependencies.shared.alarmKit,
-                    ownerUserId: auth.session?.user.id
+                    ownerUserId: auth.session?.user.id,
+                    forceRearmIds: rearm
                 )
             }
             await voice.refresh(session: auth.session, force: true)

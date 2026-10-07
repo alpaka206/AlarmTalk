@@ -841,6 +841,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      * 사본은 캐시라 통째로 지운다(스펙 voice-and-message §4-3). 알람이 없어 `deleteAudioNoAlarmUses`
      * 를 지나지 않는 목소리도 등록 미리듣기 사본은 남을 수 있어 여기서도 지운다.
      */
+    /** 승격이 끝난 목소리의 높이 값을 적는다(0 이면 지운다) — `promoteVoiceDraft`. */
+    internal fun forgetOrSaveVoiceTuning(userId: String, voiceId: String, tuning: com.alarmtalk.app.data.VoiceTuning) {
+        voiceTuningStore.write(userId, voiceId, tuning)
+    }
+
     internal fun forgetVoiceTuning(userId: String?, voiceIds: Collection<String>) {
         voiceIds.forEach { voiceTuningStore.remove(userId, it) }
         val app = getApplication<android.app.Application>()

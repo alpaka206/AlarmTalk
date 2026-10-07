@@ -1591,7 +1591,8 @@ final class AuthViewModelTests: XCTestCase {
             .appendingPathComponent("Sounds", isDirectory: true)
         try FileManager.default.createDirectory(at: sounds, withIntermediateDirectories: true)
 
-        for stops in [false, true] {
+        // (훑기 성공, 취소 실패로 남은 예약) → 지우는가. 남은 예약이 있으면 그 예약이 파일을 쓴다(Codex #870).
+        for (stops, liveReservation) in [(false, false), (true, true), (true, false)] {
             let tuned = sounds.appendingPathComponent("voice-logout-\(UUID().uuidString.lowercased())-ts-15.caf")
             try Data(count: 64).write(to: tuned)
             defer { try? FileManager.default.removeItem(at: tuned) }
@@ -1604,11 +1605,16 @@ final class AuthViewModelTests: XCTestCase {
                 tunedFileWhenStopping = FileManager.default.fileExists(atPath: tuned.path)
                 return stops
             }
+            vm.hasLiveAlarmReservations = { liveReservation }
 
             await vm.deleteAccount()
 
             XCTAssertEqual(tunedFileWhenStopping, true, "예약을 내리기 전에 지우면 그 사이 울리는 알람이 목소리를 잃는다")
-            XCTAssertEqual(FileManager.default.fileExists(atPath: tuned.path), !stops, "stops=\(stops)")
+            XCTAssertEqual(
+                FileManager.default.fileExists(atPath: tuned.path),
+                !(stops && !liveReservation),
+                "stops=\(stops) live=\(liveReservation)"
+            )
         }
     }
 

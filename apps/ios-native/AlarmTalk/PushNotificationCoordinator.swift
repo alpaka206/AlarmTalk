@@ -686,6 +686,9 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
             deps.alarmStore.claimUnownedAlarms(for: departingUserID)
             return true
         }
+        deps.auth.hasLiveAlarmReservations = {
+            deps.alarmStore.alarms.contains { $0.alarmKitID?.nilIfBlank != nil }
+        }
         deps.auth.onLeaveAccountStopAlarms = { departingUserID in
             await deps.alarmStore.waitUntilLoadedFromDisk()
             // 못 기다렸으면 **끝내지 못했다고 알린다** — 호출부가 복구 표시를 붙들어 둔다.
