@@ -384,7 +384,10 @@ final class VoiceStudioViewModel: ObservableObject {
         draft: VoiceProfile,
         session: AuthSession?,
         onTextReady: ((String) -> Void)? = nil,
-        onAudioReady: ((URL) async -> URL)? = nil
+        onAudioReady: ((URL) async -> URL)? = nil,
+        /// 높이를 구운 파일을 못 틀어 **원본으로** 대신 틀 때 불린다 — 등록 화면이 '들은 높이' 를 0 으로 고친다
+        /// (원본을 들려줘 놓고 고른 높이를 들었다고 적으면 듣지 않은 값이 저장된다 — Codex #870).
+        onPlayingOriginalInstead: (() -> Void)? = nil
     ) async -> DraftPreviewOutcome {
         guard let token = session?.token else { return .failed(String(localized: "로그인이 필요해요.")) }
         do {
@@ -428,6 +431,7 @@ final class VoiceStudioViewModel: ObservableObject {
                 // 열리는 화면이라, 여기서 막히면 등록 자체를 못 끝낸다. 중간에 멈춘 것이면
                 // (화면 이탈 등) 청취를 기록하지 않는다.
                 guard tuningPlayerFailed else { return .interrupted }
+                onPlayingOriginalInstead?()
                 await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
                     previewPlayer.onFinish = { continuation.resume() }
                     if (try? previewPlayer.play(url: url)) == nil { continuation.resume() }

@@ -603,7 +603,9 @@ struct VoicePreviewConfirmView: View {
             session: auth.session,
             // 소리가 나기 시작할 때 글자도 같이 보인다(2026-09-19 지시).
             onTextReady: { text in previewText = text },
-            onAudioReady: { url in await prepareTuning(for: url) }
+            onAudioReady: { url in await prepareTuning(for: url) },
+            // 높이를 구운 파일을 못 틀어 원본을 틀었다 — 들은 것은 0 이다(Codex #870).
+            onPlayingOriginalInstead: { servedTuning = .neutral }
         )
         busy = false
         previewAttempted = true
