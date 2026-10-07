@@ -499,10 +499,9 @@ internal fun VoiceProfileManagementPanel(
     var confirmPreviewAudioUri by remember { mutableStateOf<String?>(null) }
     // 다듬기 미리듣기가 기기 알람 스트림을 올렸는지(짝은 `releasePreviewTuning`).
     var previewStreamRaised by remember { mutableStateOf(false) }
-    // 높이를 바꾼 사본을 굽는 중인가(카드에 진행 표시), 그 작업, 첫 재생에 걸었던 값.
+    // 높이를 바꾼 사본을 굽는 중인가(카드에 진행 표시), 그 작업.
     var tuningRendering by remember { mutableStateOf(false) }
     var tunedReplayJob by remember { mutableStateOf<Job?>(null) }
-    var firstPlayTuning by remember { mutableStateOf<VoiceTuning?>(null) }
     // 등록 녹음의 기본 주파수(Hz) — **업로드 전에** 세부 정보 단계로 넘어갈 때 잰다. 녹음 파일은
     // 업로드 성공 직후 지워지므로(`purgeVoiceCloneSourceRecordings`) 미리듣기 단계에는 없다.
     // 숫자 하나만 메모리에 두고 어디에도 저장하지 않는다.
@@ -959,7 +958,8 @@ internal fun VoiceProfileManagementPanel(
                 val (playUri, renderedTuning) = tunedPreviewUri(cached.localAudioUri, previewTuning)
                 val (player, playedTuning) = createPreviewPlayerOrOriginal(playUri, cached.localAudioUri, renderedTuning)
                 stopOnPlaybackError(player)
-                firstPlayTuning = playedTuning
+                // 이 재생에 실은 높이는 **이 요청의 지역 값**으로 완료 콜백에 넘긴다 — 화면 상태에 두면 확인을 기다리는 사이
+                // 시작한 다른 미리듣기가 덮어써, 듣지 않은 높이를 '들었다' 로 적는다(Codex #870).
                 mediaPlayer = player.apply {
                     setOnCompletionListener {
                         if (mediaPlayer === it) releasePreviewTuning()
@@ -977,9 +977,9 @@ internal fun VoiceProfileManagementPanel(
                                     }
                                 }.onSuccess {
                                     confirmPreviewCompleted = true
-                                    heardTuning = firstPlayTuning
+                                    heardTuning = playedTuning
                                     // 첫 재생 도중에 높이를 바꿨으면 이제 새 높이로 들려준다.
-                                    if (!previewTuning.sameValuesAs(firstPlayTuning ?: previewTuning)) {
+                                    if (!previewTuning.sameValuesAs(playedTuning)) {
                                         replayTunedPreviewIfReady()
                                     }
                                 }.onFailure { error ->
@@ -1178,7 +1178,6 @@ internal fun VoiceProfileManagementPanel(
         tunedReplayJob?.cancel()
         tunedReplayJob = null
         tuningRendering = false
-        firstPlayTuning = null
         sourceF0Job?.cancel()
         sourceF0Job = null
         heardTuning = null

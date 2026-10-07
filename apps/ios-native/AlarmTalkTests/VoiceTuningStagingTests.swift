@@ -133,6 +133,13 @@ final class VoiceTuningStagingTests: XCTestCase {
         XCTAssertNotEqual(before, VoiceTuningRenderer.previewFileURL(for: source, tag: "s-15"))
     }
 
+    /// 값에는 단위를 붙인다 — 안드로이드 `voices_tuning_pitch_value` 와 같은 글자(빼기는 U+2212, Codex #870).
+    func test_tuningValueText_carriesTheSemitoneUnit() {
+        XCTAssertEqual(VoicePreviewConfirmView.tuningValueText(-1.5), "\u{2212}1.5 반음")
+        XCTAssertEqual(VoicePreviewConfirmView.tuningValueText(3), "+3.0 반음")
+        XCTAssertEqual(VoicePreviewConfirmView.tuningValueText(0), "0 반음")
+    }
+
     func test_neutralTuning_keepsTheLegacyName() throws {
         let source = try makeSineWAV(hz: 220, seconds: 1, amplitude: 0.3)
         let key = uniqueKey("neutral")

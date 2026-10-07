@@ -26,6 +26,12 @@ class VoiceTuningAnalysisTest {
         assertTrue("expected $expected got $actual (${"%.2f".format(error)}%)", error <= percent)
     }
 
+    /** 유성 프레임 하한은 두 앱이 같다 — iOS `VoiceTuningAnalyzer.minVoicedFrames`(Codex #870). */
+    @Test
+    fun minVoicedFramesMatchesIos() {
+        assertEquals(5, VoiceTuningAnalysis.MIN_VOICED_FRAMES)
+    }
+
     @Test
     fun yinFindsSineFundamentalAt16k() {
         assertWithinPercent(150.0, VoiceTuningAnalysis.medianF0(sine(150.0, 16_000, 2.0), 16_000), 1.0)

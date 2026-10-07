@@ -18,6 +18,8 @@ enum VoiceTuningAnalyzer {
     }
 
     static let pitchDeadZoneSt: Double = 1.5
+    /// 이보다 유성 프레임이 적으면 못 잰 것이다(안드로이드 `VoiceTuningAnalysis.MIN_VOICED_FRAMES`).
+    static let minVoicedFrames = 5
     static let yinThreshold: Double = 0.2
     static let frameSeconds: Double = 0.025
     static let hopSeconds: Double = 0.010
@@ -174,7 +176,9 @@ enum VoiceTuningAnalyzer {
                 if f0 >= minF0, f0 <= maxF0 { f0s.append(f0) }
             }
         }
-        guard f0s.count >= 3 else { return nil }
+        // 유성 프레임이 이보다 적으면 못 잰 것으로 본다 — 안드로이드 `VoiceTuningAnalysis.MIN_VOICED_FRAMES` 와 같은 수
+        // (다르면 같은 녹음에서 한 앱만 추천을 낸다, Codex #870).
+        guard f0s.count >= Self.minVoicedFrames else { return nil }
         let sorted = f0s.sorted()
         let mid = sorted.count / 2
         return sorted.count % 2 == 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid]

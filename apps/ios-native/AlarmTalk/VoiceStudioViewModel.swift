@@ -340,14 +340,23 @@ final class VoiceStudioViewModel: ObservableObject {
                     (try? VoiceTuningRenderer.previewFile(for: source, tuning: tuning)) ?? source
                 }.value
                 guard requestId == greetingPreviewRequestId, previewingGreetingVoiceId == voiceId else { return }
-                do {
+                func play(_ url: URL) throws {
                     if let volumePercent {
-                        try previewPlayer.play(url: tuned, volumePercent: volumePercent)
+                        try previewPlayer.play(url: url, volumePercent: volumePercent)
                     } else {
-                        try previewPlayer.play(url: tuned)
+                        try previewPlayer.play(url: url)
                     }
+                }
+                do {
+                    try play(tuned)
                 } catch {
-                    statusMessage = mapVoiceError(error)
+                    // 구운 사본을 못 열면(그 사이 지워짐·손상) 원본으로 한 번 더 — 울림·등록 미리듣기와 같은 규칙(Codex #870).
+                    do {
+                        guard tuned != source else { throw error }
+                        try play(source)
+                    } catch {
+                        statusMessage = mapVoiceError(error)
+                    }
                 }
                 return
             }

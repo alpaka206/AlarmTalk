@@ -1,6 +1,23 @@
 {
   "sourceLanguage" : "ko",
   "strings" : {
+    "%@ 반음" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ semitones"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 半音"
+          }
+        }
+      }
+    },
     ":" : {
       "shouldTranslate" : false
     },

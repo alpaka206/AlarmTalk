@@ -299,7 +299,7 @@ struct VoicePreviewConfirmView: View {
     /// (`VoiceTuning.pitchRange`). 손을 떼면 그 높이로 구워(PSOLA — 몸집은 그대로) 다시 튼다.
     /// 음량·굵기는 2026-10-07 에 뺐다 — 크기는 굽는 쪽이 원래 미리듣기와 같게 되맞춘다.
     private var tuningCard: some View {
-        let label = Self.tuningValueLabel(tuning.pitchSt)
+        let label = Self.tuningValueText(tuning.pitchSt)
         return VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .firstTextBaseline) {
                 Text(String(localized: "목소리 높이"))
@@ -361,8 +361,16 @@ struct VoicePreviewConfirmView: View {
     }
 
     /// `+1.5` / `0` / `-2.0`(반음). 숫자뿐이라 번역 대상이 아니다.
+    /// "+3.5" / "−1.5" / "0" — 부호를 늘 보인다(안드로이드 `signedTuningValue` 와 같은 글자, 빼기는 U+2212).
     static func tuningValueLabel(_ value: Double) -> String {
-        value == 0 ? "0" : String(format: "%+.1f", value)
+        guard value != 0 else { return "0" }
+        return (value > 0 ? "+" : "\u{2212}") + String(format: "%.1f", abs(value))
+    }
+
+    /// 단위까지 붙인 값 — "−1.5 반음"(안드로이드 `voices_tuning_pitch_value`, 스펙 §4-3 제목 줄). 숫자만 두면 무슨 눈금인지
+    /// 알 수 없다(Codex #870).
+    static func tuningValueText(_ value: Double) -> String {
+        String(localized: "\(tuningValueLabel(value)) 반음")
     }
 
     /// 버튼으로 값을 바꾼다 — 바로 그 높이로 다시 들려준다.

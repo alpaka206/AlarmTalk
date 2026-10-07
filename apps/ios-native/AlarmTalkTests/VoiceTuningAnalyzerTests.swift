@@ -13,6 +13,11 @@ final class VoiceTuningAnalyzerTests: XCTestCase {
 
     // MARK: - F0
 
+    /// 유성 프레임 하한은 두 앱이 같다 — 안드로이드 `VoiceTuningAnalysis.MIN_VOICED_FRAMES`(Codex #870).
+    func test_minVoicedFrames_matchesAndroid() {
+        XCTAssertEqual(VoiceTuningAnalyzer.minVoicedFrames, 5)
+    }
+
     func test_medianF0_findsSinePitchWithinOnePercent() throws {
         for sampleRate in [44_100.0, 24_000.0, 16_000.0] {
             for hz in [90.0, 120.0, 220.0, 330.0, 450.0] {
