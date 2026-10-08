@@ -78,11 +78,12 @@ final class VoiceStudioViewModel: ObservableObject {
     /// 방금 만든 **초안**. 목록 새로고침이 아직 안 끝났어도 확인 스텝이 이걸로 그린다.
     /// 승격하거나 지우면 nil 로 되돌린다.
     @Published var pendingDraft: VoiceProfile?
-    /// 방금 만든 초안의 **등록 녹음 높이**(F0) — 등록 미리듣기의 다듬기 자동 추천이 쓴다.
+    /// 방금 만든 초안의 **등록 녹음 높이**(F0) — 등록 미리듣기의 목소리 높이 자동 추천이 쓴다.
     ///
     /// 녹음은 **올리는 동안** 재고 숫자만 남긴다 — 녹음 파일 경로를 붙들지 않는다(목소리 원본을
-    /// 화면 수명 너머로 들고 있지 않게, 스펙 §4-3 · Codex #870). 초안 id 와 짝으로 둔다 — 다른
-    /// 초안의 높이를 쓰면 엉뚱한 값을 추천한다. 재지 못했으면 추천은 0(그대로)이다.
+    /// 화면 수명 너머로 들고 있지 않게, 스펙 §4-3 · Codex #870). F0 는 생체 정보라 로그에 남기지도 서버에
+    /// 보내지도 않는다. 초안 id 와 짝으로 둔다 — 다른 초안의 높이를 쓰면 엉뚱한 값을 추천한다. 재지 못했으면
+    /// 추천은 0(그대로)이다.
     @Published var pendingDraftSourceMeasurement: (draftID: String, measurement: VoiceTuningAnalyzer.Measurement?)?
     @Published var ttsText = "좋은 아침이에요! 일어나세요! 오늘 하루도 힘내봐요!"
     @Published var ttsCategory = "morning"
@@ -119,7 +120,7 @@ final class VoiceStudioViewModel: ObservableObject {
 
     let recorder = VoiceRecorder()
     let previewPlayer = AudioPreviewPlayer()
-    /// 등록 미리듣기 전용 — 목소리 높이를 구운 파일(또는 원본)을 틀고, 끝까지 들었는지 알려 준다.
+    /// 등록 미리듣기 전용 — 목소리 높이를 메모리에서 구운 소리(또는 받은 원본)를 틀고, 끝까지 들었는지 알려 준다.
     let tuningPreviewPlayer = VoiceTuningPreviewPlayer()
 
     private let api: AlarmTalkAPI
@@ -187,7 +188,6 @@ final class VoiceStudioViewModel: ObservableObject {
         greetingPreviewRequestId += 1
         previewPlayer.stop()
         tuningPreviewPlayer.stop()
-        VoiceTuningRenderer.clearPreviewFiles()
         pendingDraftSourceMeasurement = nil
         recorder.clearLatest()
         profiles = bundledSystemVoiceProfiles()
@@ -271,36 +271,28 @@ final class VoiceStudioViewModel: ObservableObject {
     /// 거슬린다). 안 듣고 있으면 그때 튼다. 행의 재생 버튼은 예전대로 토글
     /// ([previewGreeting])을 쓴다 — 누르면 멈춰야 하니까.
     /// 안드로이드 `ensureAlarmVolumePreview` 미러.
-    /// - Parameter tuning: 이 알람에 실릴 목소리 높이(`AlarmEditorSheet.editorVoiceTuning`) — 울릴 때와 같은
-    ///   소리를 들려준다(스펙 §4-3). 받은 알람·가족에게 보내는 알람·기본 목소리는 nil.
-    func ensureGreetingPreview(voiceId: String, session: AuthSession?, volumePercent: Int, tuning: VoiceTuning? = nil) async {
+    func ensureGreetingPreview(voiceId: String, session: AuthSession?, volumePercent: Int) async {
         if previewingGreetingVoiceId == voiceId {
-            // 같은 목소리를 **같은 높이로** 듣던 중일 때만 크기만 맞춘다. 목소리 고르기 시트에서 원래 소리로 듣던 채로
-            // 크기 화면에서 손을 떼면 높이가 다르다 — 멈추고 그 높이로 다시 튼다(울림과 같은 소리, Codex #870).
-            if previewPlayer.isPlaying, previewingGreetingTuningTag == tuning?.soundTag {
+            if previewPlayer.isPlaying {
                 previewPlayer.setVolume(percent: volumePercent)
                 return
             }
-            // 끝까지 재생돼 멎었거나 높이가 다르다 — 그대로 부르면 토글이 '정지'로 읽힌다.
-            greetingPreviewRequestId += 1
-            previewPlayer.stop()
+            // 끝까지 재생돼 멎었는데 표식만 남은 경우 — 그대로 부르면 토글이 '정지'로 읽힌다.
             previewingGreetingVoiceId = nil
         }
-        await previewGreeting(voiceId: voiceId, session: session, volumePercent: volumePercent, tuning: tuning)
+        await previewGreeting(voiceId: voiceId, session: session, volumePercent: volumePercent)
     }
 
     /// - Parameter volumePercent: 목소리 크기 화면에서 부를 때의 게인(0~100). `nil` 이면
     ///   원래대로 기본 크기 — 목소리를 고르는 자리에서는 '어떤 목소리인가' 를 듣는 것이라
     ///   크기를 건드리지 않는다.
-    func previewGreeting(voiceId: String, session: AuthSession?, volumePercent: Int? = nil, tuning: VoiceTuning? = nil) async {
+    func previewGreeting(voiceId: String, session: AuthSession?, volumePercent: Int? = nil) async {
         if previewingGreetingVoiceId == voiceId {
             greetingPreviewRequestId += 1
             previewPlayer.stop()
             previewingGreetingVoiceId = nil
             return
         }
-        // 이 미리듣기에 실은 높이 — 아래 굽기 갈래에서 실제로 구운 파일을 틀 때만 남는다.
-        previewingGreetingTuningTag = nil
         // 기본 목소리는 **번들 클립**이 먼저다 — 서버 왕복 없이, 네트워크가 없어도 들린다.
         // (안드로이드 `playGreeting` 의 `bundledSystemGreetingRes` 분기와 같은 순서.)
         if let resource = bundledSystemGreetingResource(
@@ -339,34 +331,6 @@ final class VoiceStudioViewModel: ObservableObject {
         previewingGreetingVoiceId = voiceId
         if await prepareStockClip(clip, session: session) != nil {
             guard requestId == greetingPreviewRequestId, previewingGreetingVoiceId == voiceId else { return }
-            if let tuning, !tuning.isNeutral, let prepared = preparedAlarm,
-               let source = try? AudioCacheStore.url(for: prepared.localAudioFileName) {
-                // 높이를 바꾼 사본을 튼다 — 울릴 때(스테이징)와 같은 처리다.
-                let tuned = await Task.detached(priority: .userInitiated) {
-                    (try? VoiceTuningRenderer.previewFile(for: source, tuning: tuning)) ?? source
-                }.value
-                guard requestId == greetingPreviewRequestId, previewingGreetingVoiceId == voiceId else { return }
-                func play(_ url: URL) throws {
-                    if let volumePercent {
-                        try previewPlayer.play(url: url, volumePercent: volumePercent)
-                    } else {
-                        try previewPlayer.play(url: url)
-                    }
-                }
-                do {
-                    try play(tuned)
-                    if tuned != source { previewingGreetingTuningTag = tuning.soundTag }
-                } catch {
-                    // 구운 사본을 못 열면(그 사이 지워짐·손상) 원본으로 한 번 더 — 울림·등록 미리듣기와 같은 규칙(Codex #870).
-                    do {
-                        guard tuned != source else { throw error }
-                        try play(source)
-                    } catch {
-                        statusMessage = mapVoiceError(error)
-                    }
-                }
-                return
-            }
             playPreparedAudio(volumePercent: volumePercent)
         } else {
             if requestId == greetingPreviewRequestId {
@@ -384,6 +348,16 @@ final class VoiceStudioViewModel: ObservableObject {
         case interrupted
     }
 
+    /// 받은 미리듣기 클립으로 무엇을 틀지 — 등록 화면이 정한다(`playDraftPreview` 의 `prepareAudio`).
+    enum DraftPreviewAudio {
+        /// 받은 클립 그대로(높이 0, 또는 굽지 못했다).
+        case original
+        /// 목소리 높이를 메모리에서 구운 소리(WAV — `VoiceTuningRenderer.previewWAV`).
+        case tuned(Data)
+        /// 준비하는 사이 화면을 떠났다 — 틀지 않는다.
+        case cancelled
+    }
+
     /// 등록 확인 스텝의 미리듣기 — 합성 → 끝까지 재생 → 서버에 청취 기록.
     ///
     /// ⚠ **재생이 끝난 뒤에야 `preview-played` 를 부른다.** 시작하자마자 부르면 사용자가
@@ -392,50 +366,16 @@ final class VoiceStudioViewModel: ObservableObject {
     /// - Parameter onTextReady: 합성 응답이 오는 **즉시**(재생 시작 전) 문구를 알려 준다.
     ///   화면은 소리와 글자를 같이 보여 줘야 한다 — 다 듣고 나서야 글자가 뜨면 무슨 말을
     ///   들었는지 확인할 방법이 없다(2026-09-19 지시).
-    /// - Parameter onAudioReady: 클립을 파일로 받은 **직후, 재생 전에** 불린다. 등록 화면이
-    ///   이 클립을 재서 높이 추천값을 정하고, 그 높이로 **구운 파일**을 돌려준다 — 재생이
-    ///   처음부터 그 소리로 나간다. 같은 클립을 서버 왕복 없이 다시 굽고 틀 수 있게 경로를
-    ///   들고 있는다. nil 을 넘기면(또는 원본을 돌려주면) 원본을 그대로 튼다.
-    /// 첫 미리듣기의 **대체 재생**(구운 파일을 못 틀어 원본을 `previewPlayer` 로 트는 중)이 끝나기를 기다리는 자리.
-    /// 화면을 떠나면 [stopDraftPreviewPlayback] 이 '중단' 으로 끝낸다 — 안 그러면 소리가 화면 밖에서 계속 나고,
-    /// 끝까지 들은 것으로 흐름이 이어진다(Codex #870).
-    private var pendingDraftFallback: CheckedContinuation<DraftFallbackResult, Never>?
-
-    /// 지금 편집기 미리듣기에 실린 높이 꼬리표(`VoiceTuning.soundTag`) — 원래 소리면 nil. 같은 목소리라도 높이가 다르면
-    /// 크기만 맞추지 않고 다시 튼다(`ensureGreetingPreview`).
-    private var previewingGreetingTuningTag: String?
-
-    private enum DraftFallbackResult { case finished, failed, interrupted }
-
-    /// 대체 재생이 잠시 빌려 쓰는 동안 맡아 둔 `previewPlayer` 의 원래 끝 콜백(`init` 이 단 것) — 끝나면 되돌린다. 비워 두면
-    /// 다른 미리듣기의 '재생 중' 표시가 끝나도 지워지지 않는다(Codex #870).
-    private var draftFallbackSavedOnFinish: (() -> Void)?
-
-    private func resumeDraftFallback(_ result: DraftFallbackResult) {
-        guard let continuation = pendingDraftFallback else { return }
-        pendingDraftFallback = nil
-        continuation.resume(returning: result)
-    }
-
-    /// 등록 미리듣기 재생을 멈춘다 — 높이를 구운 파일이든, 그걸 못 틀어 대신 트는 원본이든. 멈춘 재생은 '중단' 이라
-    /// 청취로 치지 않는다.
-    func stopDraftPreviewPlayback() {
-        tuningPreviewPlayer.stop()
-        guard pendingDraftFallback != nil else { return }
-        previewPlayer.onFinish = draftFallbackSavedOnFinish
-        draftFallbackSavedOnFinish = nil
-        previewPlayer.stop()
-        resumeDraftFallback(.interrupted)
-    }
-
+    /// - Parameter prepareAudio: 클립을 받은 **직후, 재생 전에** 불린다. 등록 화면이 이 클립을 재서 높이 추천값을
+    ///   정하고, 그 높이로 **메모리에서 구운** 소리를 돌려준다 — 재생이 처음부터 그 소리로 나간다(파일로 남기지
+    ///   않는다, 스펙 §4-3). nil 이면 원본을 그대로 튼다.
+    /// - Parameter onPlayingOriginalInstead: 구운 소리를 못 틀어 **원본으로** 대신 틀 때 불린다 — 등록 화면이
+    ///   '들은 높이' 를 0 으로 고친다(Codex #870).
     func playDraftPreview(
         draft: VoiceProfile,
         session: AuthSession?,
         onTextReady: ((String) -> Void)? = nil,
-        /// 받은 클립을 재생할 파일로 바꾼다(높이 굽기). nil 이면 그 사이 화면을 떠났다 — 재생하지 않고 '중단' 으로 끝낸다.
-        onAudioReady: ((URL) async -> URL?)? = nil,
-        /// 높이를 구운 파일을 못 틀어 **원본으로** 대신 틀 때 불린다 — 등록 화면이 '들은 높이' 를 0 으로 고친다
-        /// (원본을 들려줘 놓고 고른 높이를 들었다고 적으면 듣지 않은 값이 저장된다 — Codex #870).
+        prepareAudio: ((URL) async -> DraftPreviewAudio)? = nil,
         onPlayingOriginalInstead: (() -> Void)? = nil
     ) async -> DraftPreviewOutcome {
         guard let token = session?.token else { return .failed(String(localized: "로그인이 필요해요.")) }
@@ -462,48 +402,29 @@ final class VoiceStudioViewModel: ObservableObject {
                 .appendingPathComponent("draft_preview_\(response.messageId)")
                 .appendingPathExtension(response.audioFormat.isEmpty ? "mp3" : response.audioFormat)
             try data.write(to: url, options: .atomic)
-            var playbackURL = url
-            if let onAudioReady {
-                // 준비(분석·굽기)를 기다리는 사이 화면을 떠났으면 여기서 멈춘다 — 화면 밖에서 소리가 나지 않게(Codex #870).
-                guard let prepared = await onAudioReady(url) else { return .interrupted }
-                playbackURL = prepared
+            var tuned: Data?
+            switch await prepareAudio?(url) ?? .original {
+            case .original: tuned = nil
+            case .tuned(let baked): tuned = baked
+            // 준비(분석·굽기)를 기다리는 사이 화면을 떠났다 — 화면 밖에서 소리가 나지 않게(Codex #870).
+            case .cancelled: return .interrupted
             }
 
-            // 재생이 끝날 때까지 기다린다. 화면의 '정지' 가 멈출 수 있게 `tuningPreviewPlayer` 로 튼다.
+            // 재생이 끝날 때까지 기다린다. 화면의 '정지'·화면 이탈이 멈출 수 있게 `tuningPreviewPlayer` 로 튼다.
             previewPlayer.stop()
-            let end = await withCheckedContinuation { (continuation: CheckedContinuation<VoiceTuningPreviewPlayer.PlaybackEnd, Never>) in
-                do {
-                    try tuningPreviewPlayer.play(url: playbackURL) { continuation.resume(returning: $0) }
-                } catch {
-                    continuation.resume(returning: .failed)
-                }
-            }
-            if end != .finished {
-                // 못 틀었거나 **재생 도중 깨졌으면** 예전 플레이어로라도 원본을 들려준다(다듬기 없이) — 들어야 저장이
-                // 열리는 화면이라, 여기서 막히면 등록 자체를 못 끝낸다. 멈춘 것이면(화면 이탈 등) 청취를 기록하지
-                // 않는다(Codex #870 — 예전에는 도중에 깨진 것도 '멈춤' 으로 읽어 다시 틀지도 알리지도 않았다).
-                guard end == .failed else { return .interrupted }
-                onPlayingOriginalInstead?()
-                // ⚠ 원본도 못 틀면 **실패**다 — 아무것도 안 들렸는데 청취를 기록하면 저장이 열린다(Codex #870).
-                let fallback = await withCheckedContinuation { (continuation: CheckedContinuation<DraftFallbackResult, Never>) in
-                    pendingDraftFallback = continuation
-                    draftFallbackSavedOnFinish = previewPlayer.onFinish
-                    // 중간에 깨져 끝난 것(`successfully: false`)은 끝까지 들은 것이 아니다(Codex #870).
-                    previewPlayer.onFinish = { [weak self] in
-                        guard let self else { return }
-                        self.resumeDraftFallback(self.previewPlayer.lastFinishSucceeded ? .finished : .failed)
-                    }
-                    if (try? previewPlayer.play(url: url)) == nil { resumeDraftFallback(.failed) }
-                }
-                if let saved = draftFallbackSavedOnFinish {
-                    previewPlayer.onFinish = saved
-                    draftFallbackSavedOnFinish = nil
-                }
-                switch fallback {
-                case .finished: break
-                case .failed: return .failed(String(localized: "미리듣기를 재생하지 못했어요."))
-                case .interrupted: return .interrupted
-                }
+            switch await tuningPreviewPlayer.play(
+                tuned: tuned,
+                original: url,
+                onPlayingOriginalInstead: onPlayingOriginalInstead
+            ) {
+            case .finished:
+                break
+            // 멈춘 것(화면 이탈 등)은 청취가 아니다.
+            case .stopped:
+                return .interrupted
+            // ⚠ 원본도 못 틀었으면 **실패**다 — 아무것도 안 들렸는데 청취를 기록하면 저장이 열린다(Codex #870).
+            case .failed:
+                return .failed(String(localized: "미리듣기를 재생하지 못했어요."))
             }
 
             if let playbackToken = response.previewPlaybackToken {
@@ -1117,7 +1038,7 @@ final class VoiceStudioViewModel: ObservableObject {
         guard !isBusy else { return nil }
         isBusy = true
         defer { isBusy = false }
-        // 등록 녹음의 높이를 **올리는 동안** 잰다(다듬기 추천용 — 숫자만 남긴다).
+        // 등록 녹음의 높이를 **올리는 동안** 잰다(목소리 높이 추천용 — 숫자만 남긴다).
         let measuring = Task.detached(priority: .utility) {
             // 안드로이드 `SourcePitchAnalysisMaxMillis`(45초)와 같은 길이 — 다르면 같은 녹음의 추천이 갈린다(Codex #870).
             VoiceTuningAnalyzer.measure(url: audioFileURL, maxSeconds: VoiceTuningAnalyzer.sourceAnalysisMaxSeconds)
@@ -1135,7 +1056,7 @@ final class VoiceStudioViewModel: ObservableObject {
                 language: language
             )
             selectedProfileID = profile.id
-            // 다듬기 추천이 쓸 원래 목소리 높이를 초안과 짝지어 둔다(파일이 아니라 숫자).
+            // 높이 추천이 쓸 원래 목소리 높이를 초안과 짝지어 둔다(파일이 아니라 숫자).
             pendingDraftSourceMeasurement = (profile.id, await measuring.value)
             // ⚠ **'등록했어요' 같은 안내를 두지 말 것**(2026-09-21 지시). 이 문구는 다음
             //   화면(미리듣기 → 진행률)이 이미 말하는 것을 한 번 더 말하는 데다, 아무도
@@ -1425,10 +1346,6 @@ final class VoiceStudioViewModel: ObservableObject {
         if selectedProfileID == profile.id {
             selectedProfileID = nil
         }
-        // 높이 보정값과 등록 미리듣기 사본(목소리의 복사본)도 지운다(스펙 §4-3). 알람용으로 구운 사본은
-        // 아래 강등이 그 클립의 스테이징 파일과 함께 지운다.
-        VoiceTuningStore().remove(voiceProfileID: profile.id)
-        VoiceTuningRenderer.clearPreviewFiles()
         if let alarmStore {
             cascadeAlarmsAfterVoiceDeletion(
                 profileID: profile.id,
@@ -1563,11 +1480,6 @@ final class VoiceStudioViewModel: ObservableObject {
         #if DEBUG
         if let testAccessibleVoiceIDsOverride { accessible = testAccessibleVoiceIDsOverride }
         #endif
-        // 접근을 잃은 목소리의 높이 보정값도 지운다 — 그 목소리를 쓰는 알람이 없어도(Codex #870). 판정은 아래 강등과 같은
-        // 권위 목록이다(알람용 사본은 강등이 그 클립의 스테이징 파일과 함께 지운다).
-        if VoiceTuningStore().retainOnly(userID: owner, voiceProfileIDs: accessible) {
-            VoiceTuningRenderer.clearPreviewFiles()
-        }
         // ⚠ **id 가 아니라 '행' 을 고른다.** 예전에는 잃은 profileId 를 모아
         // `degradeAlarms(usingVoiceProfileIDs:)` 에 넘겼는데, 그 경로는 id 로 다시 훑어
         // **모든 origin·모든 소유자**를 잡는다 — 같은 공유 목소리를 쓰는 **받은 알람까지**
@@ -1719,8 +1631,6 @@ final class VoiceStudioViewModel: ObservableObject {
         var releasedKeys: Set<String> = []
         for record in locked {
             releasedKeys.formUnion(record.preLockVoice?.referencedCacheKeys.compactMap(\.nilIfBlank) ?? [])
-            // 원래 목소리가 사라졌다 — 그 목소리의 높이 보정값도 지운다(스펙 voice-and-message §4-3, Codex #870).
-            VoiceTuningStore().remove(voiceProfileID: record.preLockVoice?.voiceProfileId)
             _ = alarmStore.upsert(DefaultVoiceSubstitute.finalized(record, nowMillis: now))
         }
         if let audioCache, !releasedKeys.isEmpty {

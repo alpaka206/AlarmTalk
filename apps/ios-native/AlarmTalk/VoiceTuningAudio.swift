@@ -1,194 +1,121 @@
 import AVFoundation
-import AudioToolbox
-import CryptoKit
 import Foundation
 
-enum VoiceTuningRenderError: Error, LocalizedError {
-    case renderFailed(String)
-
-    var errorDescription: String? {
-        switch self {
-        case .renderFailed(let reason): return "Voice tuning render failed (\(reason))."
-        }
-    }
-}
-
-/// 다듬기(목소리 높이)를 **파일로 구워 내는** 곳 — 등록 미리듣기와 알람 스테이징이 같은 것을 쓴다.
+/// 등록 미리듣기를 고른 높이로 **메모리 안에서** 굽는다(스펙 voice-and-message §4-3 — 파일로 남기지 않는다).
 ///
-/// ⚠ 둘을 따로 만들지 말 것. 미리듣기에서 들은 소리와 알람이 실제로 우는 소리가 갈라지면
-/// 이 화면을 둔 이유(들으면서 고르기)가 사라진다. 처리는 `VoicePitchShifter.render` 하나다.
+/// 서버가 준 초안 미리듣기(원래 소리 — 초안 행에는 높이가 없다)를 디코드해 `VoicePitchShifter` 로 높이를 바꾸고,
+/// WAV `Data` 로 감싸 `VoiceTuningPreviewPlayer` 가 메모리에서 튼다. 막대를 놓을 때마다 서버를 부르면 합성 비용과
+/// 대기가 생긴다. 알람 소리는 등록을 확정한 뒤 서버가 같은 셈으로 굽는다 — 셈은 `VoicePitchShifter` 하나다.
 enum VoiceTuningRenderer {
+    /// 굽는 길이의 상한(초). 초안 미리듣기는 한 문장이라 한참 짧다 — 이상한 입력이 메모리를 붙들지 않게 자른다.
+    static let maxPreviewSeconds: Double = 120
 
-    /// 파일을 읽어(앞 `maxSeconds` 만) 높이를 바꾼 **모노** 샘플을 원래 표본률로 돌려준다.
-    static func render(url: URL, tuning: VoiceTuning, maxSeconds: Double) throws -> (samples: [Float], sampleRate: Double) {
-        let decoded: (samples: [Float], sampleRate: Double)
-        do {
-            decoded = try VoiceTuningAnalyzer.decodeMono(url: url, maxSeconds: maxSeconds)
-        } catch {
-            throw VoiceTuningRenderError.renderFailed("decode: \(error.localizedDescription)")
-        }
-        guard !decoded.samples.isEmpty else { throw VoiceTuningRenderError.renderFailed("empty input") }
+    /// `source`(받은 미리듣기 파일)를 `tuning` 높이로 구운 WAV. 원래 소리(0)거나 굽지 못하면 nil — 그때는 원본을
+    /// 그대로 튼다(그때 들은 높이는 0 이다). 무거우니 메인 밖에서 부른다.
+    static func previewWAV(source: URL, tuning: VoiceTuning) -> Data? {
+        let semitones = tuning.normalized().pitchSt
+        guard semitones != 0,
+              let decoded = try? VoiceTuningAnalyzer.decodeMono(url: source, maxSeconds: maxPreviewSeconds),
+              !decoded.samples.isEmpty, decoded.sampleRate > 0 else { return nil }
         let shifted = VoicePitchShifter.render(
             samples: decoded.samples,
             sampleRate: decoded.sampleRate,
-            semitones: tuning.normalized().pitchSt
+            semitones: semitones
         )
-        return (shifted, decoded.sampleRate)
+        return wavData(shifted, sampleRate: decoded.sampleRate)
     }
 
-    /// 16-bit LPCM **모노** CAF 로 쓴다. 채널 레이아웃(`AVChannelLayoutKey`)을 함께 적는다 —
-    /// 없으면 파일은 생기는데 열리지 않는다(CLAUDE.md 「오디오 스테이징」).
-    /// `gain`(알람의 목소리 크기, ≤ 1)은 쓰기 직전에 곱한다.
-    static func writeMonoCAF(_ samples: [Float], sampleRate: Double, to url: URL, gain: Float = 1) throws {
-        guard !samples.isEmpty,
-              let format = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: sampleRate, channels: 1, interleaved: false),
-              let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(samples.count)),
-              let data = buffer.floatChannelData?[0] else {
-            throw VoiceTuningRenderError.renderFailed("buffer allocation")
+    /// 16-bit PCM **모노** WAV(머리말 44바이트 + 표본, 리틀 엔디언). 범위(−1…1) 밖 표본은 자른다.
+    static func wavData(_ samples: [Float], sampleRate: Double) -> Data {
+        let rate = UInt32(sampleRate.rounded())
+        let pcmBytes = UInt32(samples.count * MemoryLayout<Int16>.size)
+        var data = Data(capacity: 44 + Int(pcmBytes))
+        func append<T: FixedWidthInteger>(_ value: T) {
+            withUnsafeBytes(of: value.littleEndian) { data.append(contentsOf: $0) }
         }
-        for index in samples.indices { data[index] = max(-1, min(1, samples[index] * gain)) }
-        buffer.frameLength = AVAudioFrameCount(samples.count)
-
-        var monoLayout = AudioChannelLayout()
-        monoLayout.mChannelLayoutTag = kAudioChannelLayoutTag_Mono
-        let layoutData = Data(bytes: &monoLayout, count: MemoryLayout<AudioChannelLayout>.size)
-        let settings: [String: Any] = [
-            AVFormatIDKey: kAudioFormatLinearPCM,
-            AVSampleRateKey: sampleRate,
-            AVNumberOfChannelsKey: 1,
-            AVLinearPCMBitDepthKey: 16,
-            AVLinearPCMIsFloatKey: false,
-            AVLinearPCMIsBigEndianKey: false,
-            AVChannelLayoutKey: layoutData,
-        ]
-        do {
-            let output = try AVAudioFile(forWriting: url, settings: settings)
-            try output.write(from: buffer)
-        } catch {
-            throw VoiceTuningRenderError.renderFailed("write: \(error.localizedDescription)")
-        }
-    }
-
-    /// 등록 미리듣기 사본을 두는 임시 폴더.
-    static var previewDirectory: URL {
-        FileManager.default.temporaryDirectory.appendingPathComponent("voice_tuning_preview", isDirectory: true)
-    }
-
-    /// 미리듣기 사본(등록·편집기)을 모두 지운다. 사본도 사용자 목소리의 복사본이다(스펙 §4-3) — 등록 화면을
-    /// 떠날 때·세션이 바뀔 때·목소리 삭제/민감 동의 철회/명시적 로그아웃 때 부른다. 다시 필요하면 새로 굽는다.
-    ///
-    /// ⚠ **세대를 올린다.** 굽기는 백그라운드라 지운 **뒤에** 끝날 수 있다 — 그러면 폴더를 다시 만들고
-    /// 사본을 남긴다(Codex #870). [previewFile] 이 끝에서 세대를 보고, 그 사이 지워졌으면 제가 쓴 것을 지운다.
-    static func clearPreviewFiles() {
-        let dir = previewDirectory
-        previewEpoch.bump { try? FileManager.default.removeItem(at: dir) }
-    }
-
-    /// 미리듣기 사본 세대 — [clearPreviewFiles] 가 올린다.
-    private static let previewEpoch = PreviewEpoch()
-
-    /// 지금 세대 — 테스트가 '굽는 사이 지워짐' 을 재현할 때 쓴다.
-    static var currentPreviewEpoch: Int { previewEpoch.current }
-
-    /// 게시와 지우기를 **한 잠금 안에서** 한다 — 세대 확인과 이름 바꾸기 사이에 지우기가 끼지 못하게.
-    /// 예전에는 게시한 **뒤에** 세대를 보고 대상을 지웠는데, 그 사이 새 굽기가 같은 이름으로 게시했으면 **새 굽기의
-    /// 사본**을 지웠다(Codex #870). 이제 늦은 굽기는 제 임시 파일만 지우고 게시된 이름은 건드리지 않는다.
-    private final class PreviewEpoch: @unchecked Sendable {
-        private let lock = NSLock()
-        private var value = 0
-        var current: Int { lock.withLock { value } }
-
-        func bump(then clear: () -> Void) {
-            lock.withLock {
-                value += 1
-                clear()
-            }
-        }
-
-        /// `tmp` 를 `url` 로 게시한다 — 세대가 그대로일 때만. 같은 클립·같은 높이를 다른 굽기가 먼저 게시했으면 그것을
-        /// 그대로 쓴다(내용이 같다). 게시했거나 이미 있으면 true, 그 사이 지워졌으면 false.
-        func publish(_ tmp: URL, to url: URL, ifEpoch epoch: Int) throws -> Bool {
-            try lock.withLock {
-                guard value == epoch else {
-                    try? FileManager.default.removeItem(at: tmp)
-                    return false
-                }
-                if FileManager.default.fileExists(atPath: url.path) {
-                    try? FileManager.default.removeItem(at: tmp)
-                    return true
-                }
-                try FileManager.default.moveItem(at: tmp, to: url)
-                return true
-            }
-        }
-    }
-
-    /// [previewFile] 의 게시 단계(테스트용으로 따로 둔다).
-    static func publishPreview(_ tmp: URL, to url: URL, ifEpoch epoch: Int) throws -> Bool {
-        try previewEpoch.publish(tmp, to: url, ifEpoch: epoch)
-    }
-
-    /// 미리듣기 사본 경로 — 이름에 원본의 **정체**(파일 번호·크기·수정 시각)를 넣는다. 캐시가 같은 키(같은 파일
-    /// 이름)로 원본을 제자리에서 갈아끼우면(목소리 교체·개정 갱신) 이름이 같아 옛 바이트로 구운 사본을 다시 썼다 —
-    /// 은퇴한 목소리가 미리듣기에 남는다(Codex #870, 안드로이드 `VoiceTuningRenderer.cacheKey` 와 같은 생각).
-    static func previewFileURL(for source: URL, tag: String) -> URL {
-        let attributes = (try? FileManager.default.attributesOfItem(atPath: source.path)) ?? [:]
-        let fileNumber = (attributes[.systemFileNumber] as? NSNumber)?.int64Value ?? 0
-        let size = (attributes[.size] as? NSNumber)?.int64Value ?? 0
-        let modified = (attributes[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0
-        let identity = "\(source.path)|\(fileNumber)|\(size)|\(modified)"
-        let digest = SHA256.hash(data: Data(identity.utf8)).prefix(6).map { String(format: "%02x", $0) }.joined()
-        return previewDirectory
-            .appendingPathComponent("\(source.deletingPathExtension().lastPathComponent)-\(digest)-t\(tag).caf")
-    }
-
-    /// 등록 미리듣기용 — 받은 클립을 이 높이로 구운 파일. 중립이면 원본을 그대로 돌려준다.
-    /// 같은 클립·같은 높이는 한 번만 굽는다(임시 폴더, 이름에 높이 꼬리표).
-    static func previewFile(for source: URL, tuning: VoiceTuning) throws -> URL {
-        guard let tag = tuning.soundTag else { return source }
-        let epoch = previewEpoch.current
-        try FileManager.default.createDirectory(at: previewDirectory, withIntermediateDirectories: true)
-        let url = previewFileURL(for: source, tag: tag)
-        if FileManager.default.fileExists(atPath: url.path) { return url }
-        // 안드로이드 `VoiceTuningRenderer` 의 `MAX_DURATION_MILLIS`(120초)와 같다.
-        let rendered = try render(url: source, tuning: tuning, maxSeconds: 120)
-        let tmp = previewDirectory.appendingPathComponent("\(UUID().uuidString).caf")
-        // 쓰다 실패한 반쪽 파일·게시하지 않은 파일도 목소리의 복사본이다 — 게시되면 옮겨져 없으니 언제나 지운다(Codex #870).
-        defer { try? FileManager.default.removeItem(at: tmp) }
-        try writeMonoCAF(rendered.samples, sampleRate: rendered.sampleRate, to: tmp)
-        // 굽는 사이 지워졌으면(화면을 떠남·세션 변경·목소리 삭제 …) 게시하지 않는다.
-        guard try publishPreview(tmp, to: url, ifEpoch: epoch) else { throw CancellationError() }
-        return url
+        data.append(contentsOf: Array("RIFF".utf8))
+        append(36 + pcmBytes)
+        data.append(contentsOf: Array("WAVEfmt ".utf8))
+        append(UInt32(16))      // fmt 덩이 길이
+        append(UInt16(1))       // PCM
+        append(UInt16(1))       // 모노
+        append(rate)
+        append(rate * 2)        // 초당 바이트
+        append(UInt16(2))       // 표본 하나의 바이트
+        append(UInt16(16))      // 표본 비트
+        data.append(contentsOf: Array("data".utf8))
+        append(pcmBytes)
+        let pcm = samples.map { Int16((max(-1, min(1, $0)) * 32_767).rounded()).littleEndian }
+        pcm.withUnsafeBytes { data.append(contentsOf: $0) }
+        return data
     }
 }
 
-/// 등록 미리듣기 플레이어 — 구워 둔 파일(또는 원본)을 튼다. 끝까지 들었는지를 알려 준다.
+/// 등록 미리듣기 플레이어 — 메모리에서 구운 소리나 받은 원본 파일을 **한 번** 틀고, 어떻게 끝났는지 알려 준다
+/// (첫 미리듣기와 다시 듣기가 함께 쓴다).
 ///
-/// 오디오 세션은 `AudioPreviewPlayer` 와 같다(`.playback` / `.spokenAudio`). 모노 파일도
+/// 오디오 세션은 `AudioPreviewPlayer` 와 같다(`.playback` / `.spokenAudio`). 모노 소리도
 /// `AVAudioPlayer` 는 원래 크기로 낸다 — 엔진 믹서처럼 −3dB 팬이 걸리지 않는다.
 @MainActor
 final class VoiceTuningPreviewPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
     @Published private(set) var isPlaying = false
 
     /// 재생이 어떻게 끝났는가. **멈춘 것(`stopped`)과 깨진 것(`failed`)을 가른다** — 둘을 한데 모으면 재생 도중 깨진
-    /// 사본이 '사용자가 멈췄다' 로 읽혀 원본으로 다시 틀지도, 알리지도 않는다(Codex #870).
+    /// 소리가 '사용자가 멈췄다' 로 읽혀 원본으로 다시 틀지도, 알리지도 않는다(Codex #870). 틀지 못한 것도 `failed` 다.
     enum PlaybackEnd: Sendable { case finished, stopped, failed }
+
+    enum PlaybackError: Error { case didNotStart }
 
     private var player: AVAudioPlayer?
     /// 재생이 끝나면 한 번 불린다.
     private var onFinish: ((PlaybackEnd) -> Void)?
+    /// [play]·[stop] 을 부를 때마다 오른다 — 구운 소리가 깨져 원본으로 넘어가는 사이에 멈추라고 했거나 새 재생이
+    /// 시작됐으면 원본을 틀지 않는다(화면 밖에서 소리가 나거나 새 재생을 끊는다).
+    private var generation = 0
 
-    func play(url: URL, onFinish: ((PlaybackEnd) -> Void)? = nil) throws {
-        stop()
+    /// 끝날 때까지 튼다 — 구운 소리(`tuned`)가 있으면 그것을, 없으면 원본을. 구운 소리를 **못 틀거나 도중에 깨지면**
+    /// 원본으로 처음부터 한 번 더 틀고 `onPlayingOriginalInstead` 를 부른다 — 그때 들은 높이는 0 이다(원본을 들려줘 놓고
+    /// 고른 높이를 들었다고 적으면 듣지 않은 값이 등록된다, Codex #870). 멈춘 것(`stopped`)은 다시 틀지 않는다.
+    func play(tuned: Data?, original: URL, onPlayingOriginalInstead: (() -> Void)? = nil) async -> PlaybackEnd {
+        generation &+= 1
+        let mine = generation
+        if let tuned {
+            let end = await playToEnd { try AVAudioPlayer(data: tuned, fileTypeHint: AVFileType.wav.rawValue) }
+            guard end == .failed else { return end }
+            guard mine == generation else { return .stopped }
+            onPlayingOriginalInstead?()
+        }
+        return await playToEnd { try AVAudioPlayer(contentsOf: original) }
+    }
+
+    func stop() {
+        generation &+= 1
+        finish(.stopped)
+    }
+
+    private func playToEnd(_ makePlayer: () throws -> AVAudioPlayer) async -> PlaybackEnd {
+        await withCheckedContinuation { (continuation: CheckedContinuation<PlaybackEnd, Never>) in
+            do {
+                try start(makePlayer) { continuation.resume(returning: $0) }
+            } catch {
+                continuation.resume(returning: .failed)
+            }
+        }
+    }
+
+    private func start(_ makePlayer: () throws -> AVAudioPlayer, onFinish: @escaping (PlaybackEnd) -> Void) throws {
+        finish(.stopped)
         let session = AVAudioSession.sharedInstance()
         try session.setCategory(.playback, mode: .spokenAudio)
         try session.setActive(true)
         let player: AVAudioPlayer
         do {
-            player = try AVAudioPlayer(contentsOf: url)
+            player = try makePlayer()
             player.delegate = self
             player.prepareToPlay()
-            guard player.play() else { throw VoiceTuningRenderError.renderFailed("play") }
+            // `play()` 가 false 면 소리가 나지 않았고 끝 알림도 오지 않는다 — 시작한 것으로 치면 끝을 기다리는 쪽이 영영
+            // 멈춘다(Codex #870).
+            guard player.play() else { throw PlaybackError.didNotStart }
         } catch {
             // 세션을 켠 뒤 실패하면 놓는다 — 안 그러면 다른 앱의 소리가 계속 끊긴 채 남는다(Codex #870).
             try? session.setActive(false, options: [.notifyOthersOnDeactivation])
@@ -199,21 +126,20 @@ final class VoiceTuningPreviewPlayer: NSObject, ObservableObject, AVAudioPlayerD
         isPlaying = true
     }
 
-    func stop() {
+    /// 지금 재생을 내리고 기다리던 쪽에 끝을 알린다.
+    private func finish(_ end: PlaybackEnd) {
         let pending = onFinish
         onFinish = nil
         teardown()
-        pending?(.stopped)
+        pending?(end)
     }
 
     nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
         let finished = ObjectIdentifier(player)
         Task { @MainActor [weak self] in
             guard let self, let current = self.player, ObjectIdentifier(current) == finished else { return }
-            let pending = self.onFinish
-            self.onFinish = nil
-            self.teardown()
-            pending?(flag ? .finished : .failed)
+            // 중간에 디코딩이 깨져 끝난 것(`successfully: false`)은 끝까지 들은 것이 아니다(Codex #870).
+            self.finish(flag ? .finished : .failed)
         }
     }
 

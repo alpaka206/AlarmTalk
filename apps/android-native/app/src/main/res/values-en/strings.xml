@@ -855,6 +855,8 @@
     <string name="api_error_voice_limit_reached">You\'ve used all your voice slots. Delete a voice you no longer need.</string>
     <string name="api_error_voice_not_ready">This voice is still being created. Please try again in a moment.</string>
     <string name="api_error_voice_cloning_failed">We could not create that voice. Please record again somewhere quiet.</string>
+    <string name="api_error_invalid_voice_pitch">The voice pitch value isn\'t valid. Please adjust it and try again.</string>
+    <string name="api_error_voice_pitch_locked">Voice pitch can only be set when you register a voice.</string>
     <string name="api_error_alarm_not_found">This alarm no longer exists.</string>
     <string name="api_error_family_alarm_disabled">The other person has turned off alarms from others.</string>
     <string name="api_error_family_alarm_lead_time">Set alarms for others a little later. It takes a moment to reach their phone.</string>

@@ -94,11 +94,6 @@ class AlarmTalkApplication : Application() {
         applicationScope.launch {
             runCatching { AlarmAppContainer.repository(this@AlarmTalkApplication).sweepStaleAudioCache() }
                 .onFailure { AlarmTalkLog.reportError("Stale audio cache sweep failed", it) }
-            // 높이를 바꾼 사본 — 원본이 정리되면 그 사본도 더는 쓰이지 않아 같은 30일 뒤 지워진다.
-            com.alarmtalk.app.data.VoiceTuningRenderer.pruneStale(this@AlarmTalkApplication)
-            // 그다음 높이를 맞춘 알람의 다음 울림 클립을 미리 굽는다 — 울리는 순간에는 굽지 않는다(Codex #870).
-            runCatching { AlarmAppContainer.repository(this@AlarmTalkApplication).prewarmTunedAlarmAudio() }
-                .onFailure { AlarmTalkLog.reportError("Tuned alarm audio prewarm failed", it) }
         }
         Log.i(TAG, "Voice Alarm native application started")
     }

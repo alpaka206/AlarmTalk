@@ -1,12 +1,13 @@
 import AVFoundation
 import Foundation
 
-/// 다듬기 **자동 추천값** — 기기 안에서 계산하는 순수 함수만 둔다(격리 없음).
+/// 목소리 높이 **자동 추천값** — 기기 안에서 계산하는 순수 함수만 둔다(격리 없음).
 ///
-/// 두 소리를 잰다: (a) 등록 녹음(기기에 남아 있으면), (b) 미리듣기 클립.
+/// 두 소리를 잰다: (a) 등록 녹음(올리는 동안 재고 숫자만 남긴다), (b) 서버가 준 미리듣기 클립.
 /// 높이 = 두 소리의 중앙 기본주파수(F0) 차이를 반음으로 바꿔 **되돌리는** 값.
 ///   pitchSt = −round_to_0.5(12·log2(previewF0 / sourceF0)), |값| < 1.5 이면 0, −6…+3 로 자른다.
-/// 녹음이 없으면 추천은 0 이다.
+/// 녹음을 재지 못했으면 추천은 0 이다. ⚠ F0 는 생체 정보라 로그에 남기지도 서버에 보내지도 않는다 — 서버가 받는
+/// 것은 사용자가 고른 반음 하나다(스펙 §4-3).
 ///
 /// 측정은 근사다: F0 는 YIN(문턱 0.2, 25ms 프레임, 50–500Hz, 앞에 ~1.2kHz 저역통과).
 /// 라우드니스(BS.1770 K-가중 + 400ms 블록, 절대 게이트 −70 LUFS)는 추천에 쓰지 않고, 높이를
@@ -161,7 +162,7 @@ enum VoiceTuningAnalyzer {
         let tauMax = Int((rate / minF0).rounded(.up))
         guard start >= 0, start + window + tauMax + 1 <= signal.count else { return nil }
         var difference = [Double](repeating: 0, count: tauMax + 2)
-        // 셈의 순서는 안드로이드와 같다(같은 결과) — 범위 검사만 뺀다. 울림 스테이징이 30초 클립을 이걸로 훑는다.
+        // 셈의 순서는 안드로이드와 같다(같은 결과) — 범위 검사만 뺀다. 등록 녹음(45초)·미리듣기 굽기가 이걸로 훑는다.
         signal.withUnsafeBufferPointer { p in
             difference.withUnsafeMutableBufferPointer { d in
                 for tau in 1...(tauMax + 1) {

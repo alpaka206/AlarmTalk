@@ -1233,8 +1233,6 @@ internal suspend fun MainViewModel.withdrawVoiceBiometricConsent(): Boolean {
                         AlarmTalkLog.reportError("Failed to degrade alarms after consent withdrawal", error)
                     }
             }
-            // 높이 보정값·높이를 바꾼 사본도 같은 자리에서 — 이 계정 자신의 목소리라 새 세션에 영향이 없다.
-            forgetVoiceTuning(userId, revokedVoiceIds)
             // 2) 여기부터는 **이 계정 화면의 상태**라 세션이 바뀌었으면 건드리지 않는다.
             if (authSession?.user?.id != userId) return@fold true
             if ("voice_biometric" !in sensitiveConsentMissing) {

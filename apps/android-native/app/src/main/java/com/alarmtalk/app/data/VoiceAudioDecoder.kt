@@ -12,8 +12,9 @@ import java.nio.ByteOrder
 class DecodedAudio(val samples: FloatArray, val sampleRate: Int)
 
 /**
- * 오디오 파일(녹음 m4a·TTS mp3 등)을 **모노 float PCM** 으로 푼다 — 목소리 보정 추천의 입력.
- * 메모리를 묶어 두려고 [maxDurationMillis] 까지만 읽는다. 실패하면 null(추천은 그 입력 없이 간다).
+ * 오디오 파일(녹음 m4a·TTS mp3 등)을 **모노 float PCM** 으로 푼다 — 목소리 높이 추천과 등록 미리듣기 굽기
+ * (`VoiceTuningRenderer`)의 입력. 메모리를 묶어 두려고 [maxDurationMillis] 까지만 읽는다. 실패하면 null(추천은 그
+ * 입력 없이 가고, 미리듣기는 원래 소리를 튼다).
  */
 object VoiceAudioDecoder {
 

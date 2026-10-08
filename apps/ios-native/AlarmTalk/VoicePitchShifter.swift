@@ -1,5 +1,3 @@
-import Accelerate
-import AVFoundation
 import Foundation
 
 /// 목소리 **몸집은 그대로 두고 높이만** 바꾼다 — TD-PSOLA.
@@ -9,10 +7,11 @@ import Foundation
 /// 포먼트)은 그대로라 목소리 몸집이 유지되고, 떨림 간격(= 높이)만 바뀐다. 길이도 그대로다.
 /// `AVAudioUnitTimePitch` 는 몸집까지 같이 움직여 변조된 목소리로 들렸다(2026-10-07 사용자 판단).
 ///
-/// 안드로이드(`data/VoicePitchShifter.kt`)와 **같은 알고리즘·같은 숫자**다 — 2026-10-07 사용자가
-/// 귀로 고른 소리를 두 앱에서 똑같이 내기 위해서다. 숫자를 바꾸면 양쪽을 같이 바꾼다(스펙 §4-3).
-/// 무거운 두 곳(YIN 의 지연 상관, 표시 찾기의 정규화 상관)만 vDSP 로 계산한다 — Debug 빌드
-/// (최적화 없음)에서 순수 Swift 루프로 돌면 몇 초씩 걸린다. 수식은 같다.
+/// iOS 에서 이 셈을 쓰는 곳은 **등록 미리듣기**(`VoiceTuningRenderer`)뿐이다 — 알람 소리는 서버가 같은 셈
+/// (`packages/voice/src/pitch-shift.ts` 의 `shiftVoicePitch`)으로 굽는다. 그래서 안드로이드(`data/VoicePitchShifter.kt`)·
+/// 서버와 **같은 알고리즘·같은 숫자·같은 반올림 자리**여야 한다 — 갈리면 미리듣기에서 들은 소리와 알람이 우는 소리가
+/// 달라진다. 숫자를 바꾸면 셋을 같이 바꾼다(스펙 §4-3). 셈은 모두 순수 Swift 루프다(가속 라이브러리를 쓰면 더하는
+/// 순서가 달라져 결과가 갈린다).
 ///
 /// 한계: 크게 내리면(−5반음 이하) 조각 사이가 벌어져 거칠어질 수 있다. 무성음(ㅅ·ㅎ)은 그대로다.
 enum VoicePitchShifter {
@@ -100,8 +99,10 @@ enum VoicePitchShifter {
         }
 
         // 분석 표시
+        // ⚠ 두 간격(무성 5ms·유성 한 주기) 모두 1 표본 아래로 내려가지 않게 둔다 — 0 이면 n 이 나아가지 않아 끝나지
+        //   않는다. 서버(`shiftVoicePitch`)와 같은 하한이고, 닿을 수 있는 입력에서는 결과가 그대로다.
         let count = x.count
-        let unvoicedHop = jsRound(sr * 0.005)
+        let unvoicedHop = max(1, jsRound(sr * 0.005))
         var marks: [(n: Int, period: Int, voiced: Bool)] = []
         var n = 0
         var prevVoiced = false
@@ -113,7 +114,7 @@ enum VoicePitchShifter {
                 prevVoiced = false
                 continue
             }
-            let period = jsRound(sr / f)
+            let period = max(1, jsRound(sr / f))
             var best = n
             if !prevVoiced {
                 // 유성 첫 표시는 한 주기 안의 가장 큰 봉우리.
@@ -177,7 +178,9 @@ enum VoicePitchShifter {
                         let w = j < 0
                             ? 0.5 * (1 + cos(Double.pi * Double(j) / Double(left)))
                             : 0.5 * (1 + cos(Double.pi * Double(j) / Double(right)))
-                        out[d] += src[s] * Float(w)
+                        // 곱은 Double 로 하고 **한 번만** Float 로 내린다 — 안드로이드 `y[dst] += (x[src] * w).toFloat()`
+                        // 와 같은 자리의 반올림이다. 창 값을 먼저 Float 로 내리면 표본의 일부가 마지막 자리에서 갈린다.
+                        out[d] += Float(Double(src[s]) * w)
                     }
                     ts += mark.voiced ? p / factor : Double(unvoicedHop)
                 }

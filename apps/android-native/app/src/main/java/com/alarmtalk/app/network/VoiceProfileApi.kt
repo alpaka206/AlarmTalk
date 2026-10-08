@@ -20,6 +20,11 @@ data class VoiceProfileListResponse(
 
 data class VoiceProfileResponse(
     val profile: VoiceProfile,
+    /**
+     * 등록 확정(교체 포함) 응답에만 실리는, 서버가 적은 목소리 높이(반음). 높이를 모르는 옛 서버는 이 칸이 없다 —
+     * 그때 보낸 높이는 알람 소리에 실리지 않는다(스펙 voice-and-message §4-3). 화면에는 쓰지 않는다.
+     */
+    @SerializedName("pitch_semitones") val pitchSemitones: Float? = null,
 )
 
 data class VoiceProfileDraftResponse(
@@ -59,6 +64,13 @@ data class VoiceProfileUpdateRequest(
      * null 이면 키가 아예 안 나가서 서버는 지금까지처럼 한도로 막는다.
      */
     @SerializedName("replace_existing") val replaceExisting: Boolean? = null,
+    /**
+     * 등록 미리듣기에서 **끝까지 들은** 목소리 높이(반음, −6…+3·0.5 눈금) — 등록 확정(`is_draft: false`, 교체 포함)
+     * 때만 싣는다. 서버가 그 목소리로 만드는 모든 알람 소리에 굽는다(스펙 voice-and-message §4-3).
+     * null 이면 키가 아예 안 나가서(0 = 원래 소리) 높이 이전과 같은 요청이다. 등록 확정이 아닌 요청에 실으면
+     * 서버가 409 `VOICE_PITCH_LOCKED`, 범위·눈금 밖이면 400 `INVALID_VOICE_PITCH` 로 거절한다.
+     */
+    @SerializedName("pitch_semitones") val pitchSemitones: Float? = null,
 )
 
 data class VoicePreviewPlayedRequest(

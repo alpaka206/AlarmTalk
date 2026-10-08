@@ -26,8 +26,9 @@ import kotlin.math.abs
  * 구성은 iOS `VoicePreviewConfirmView.tuningCard` 와 같다(2026-10-07 사용자: 이 카드는 아이폰 구성에 맞춘다).
  * 음량·굵기는 같은 날 뺐다(`VoiceTuning` 주석).
  *
- * 높이는 몸집을 두고 바꾸는 처리라 재생 중에 걸 수 없다 — 손을 떼면 [onAdjustFinished] 가 그 높이로 사본을
- * 굽고([rendering] 동안 진행 표시) 처음부터 다시 튼다. 저장은 등록 확정 때 한 번이다.
+ * 높이는 몸집을 두고 바꾸는 처리라 재생 중에 걸 수 없다 — 손을 떼면 [onAdjustFinished] 가 그 높이로 미리듣기를
+ * 메모리에서 굽고([rendering] 동안 진행 표시) 처음부터 다시 튼다. 고른 값은 등록 확정 때 서버에 한 번 보내고,
+ * 서버가 이 목소리로 만드는 알람 소리에 굽는다(스펙 voice-and-message §4-3).
  *
  * @param suggestion 자동 추천값. null 이면 아직 계산 중이다([analyzing]).
  */

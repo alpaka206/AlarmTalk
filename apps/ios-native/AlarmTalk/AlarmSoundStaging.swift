@@ -45,76 +45,6 @@ enum AlarmSoundStagingError: Error, LocalizedError {
     }
 }
 
-/// 높이를 구워 넣은 스테이징 파일의 **정리 세대**(Codex #870) — `AlarmSoundStaging.clearTunedStagedSoundFiles` 가 올린다.
-/// 메인 밖 미리 굽기(`prestageTuned`)는 시작할 때 잡아 두고, 게시한 뒤 달라졌으면 제가 쓴 파일을 지운다 — 로그아웃 정리
-/// 뒤에 끝난 굽기가 목소리의 복사본을 남기지 않게.
-private final class TunedStagingEpoch: @unchecked Sendable {
-    static let shared = TunedStagingEpoch()
-    private let lock = NSLock()
-    private var value = 0
-    var current: Int { lock.withLock { value } }
-    func bump() { lock.withLock { value += 1 } }
-}
-
-/// 로그아웃·탈퇴 때 **취소에 실패해 남은 예약** 때문에 못 지운 '높이를 구운 스테이징 파일' 이름들(Codex #870).
-/// 그 예약이 파일을 쓰므로 그때는 남기고, 취소 재시도(`AlarmKitViewModel.retryPendingCancellations`)가 남은 취소를 모두
-/// 끝내면 지운다. 같은 계정이 다시 로그인해 그 파일을 새 예약에 쓰면, **예약이 성공한 뒤에** 목록에서 뺀다 — 예약이
-/// 실패하면 표시가 그대로 남아 나중에 지워진다. 예약하는 동안(`beginReservation`~`endReservation`)은 지우지 않는다.
-private enum DeferredTunedCleanup {
-    private static let lock = NSLock()
-    private static var key: String { "voice_tuning.deferred_staged_cleanup\(TestIsolation.storageSuffix)" }
-    /// 지금 예약에 쓰이는 중인 이름(같은 파일을 여러 알람이 동시에 걸 수 있어 수를 센다). 메모리에만 — 프로세스가 죽으면
-    /// 예약 자체가 끝난 것이다.
-    nonisolated(unsafe) private static var reserving: [String: Int] = [:]   // `lock` 안에서만 만진다
-
-    static func beginReservation(_ name: String) {
-        lock.withLock { reserving[name, default: 0] += 1 }
-    }
-
-    static func endReservation(_ name: String, succeeded: Bool) {
-        lock.withLock {
-            let left = (reserving[name] ?? 1) - 1
-            reserving[name] = left > 0 ? left : nil
-            guard succeeded, var current = UserDefaults.standard.stringArray(forKey: key),
-                  let index = current.firstIndex(of: name) else { return }
-            current.remove(at: index)
-            UserDefaults.standard.set(current, forKey: key)
-        }
-    }
-
-    static func add(_ names: [String]) {
-        guard !names.isEmpty else { return }
-        lock.withLock {
-            let current = Set(UserDefaults.standard.stringArray(forKey: key) ?? [])
-            UserDefaults.standard.set(Array(current.union(names)).sorted(), forKey: key)
-        }
-    }
-
-    /// 지울 이름을 꺼낸다 — 예약하는 중인 이름은 목록에 남겨 둔다(예약이 성공하면 빠지고, 실패하면 다음에 지운다).
-    static func takeAllNotReserving() -> [String] {
-        lock.withLock {
-            let names = UserDefaults.standard.stringArray(forKey: key) ?? []
-            let kept = names.filter { reserving[$0] != nil }
-            if kept.isEmpty {
-                UserDefaults.standard.removeObject(forKey: key)
-            } else {
-                UserDefaults.standard.set(kept, forKey: key)
-            }
-            return names.filter { reserving[$0] == nil }
-        }
-    }
-
-    static func takeAll() -> [String] {
-        lock.withLock {
-            let names = UserDefaults.standard.stringArray(forKey: key) ?? []
-            UserDefaults.standard.removeObject(forKey: key)
-            return names
-        }
-    }
-
-    static var pending: [String] { lock.withLock { UserDefaults.standard.stringArray(forKey: key) ?? [] } }
-}
-
 @MainActor
 enum AlarmSoundStaging {
 
@@ -135,56 +65,27 @@ enum AlarmSoundStaging {
     ///   목소리 크기 슬라이더가 **잠금화면 알람에 아무 영향이 없었다**(스테이징이 원본을
     ///   그대로 복사했다). in-app 폴백 플레이어에만 게인이 걸렸는데, 그 폴백은 스테이징이
     ///   **실패했을 때만** 도는 경로라 정상 상황에서는 한 번도 쓰이지 않는다.
-    /// - Parameter tuning: 목소리 다듬기(목소리 높이). 중립이거나 nil 이면 예전과 **같은 바이트**다.
-    ///   값이 있으면 `VoiceTuningRenderer`(PSOLA)로 **파일에 구워 넣는다** — 음량과 같은 이유로,
-    ///   AlarmKit 에 소리를 바꿀 자리가 이 파일 말고는 없다.
     @discardableResult
-    static func stage(
-        url sourceURL: URL,
-        key: String,
-        volumePercent: Int = 100,
-        tuning: VoiceTuning? = nil
-    ) throws -> String {
+    static func stage(url sourceURL: URL, key: String, volumePercent: Int = 100) throws -> String {
         // ⚠ **굽는 동안 캐시가 갈아끼워지지 않게 한다**(Codex #703 P1). 이걸 열어 두면
         // 옛 바이트를 읽어 굽는 사이에 교체가 지나가고, 그 무효화가 **굽기 전에** 끝나
         // 옛 목소리가 구워진 채로 남는다. 잠금은 `AudioCacheStore` 의 교체 경로와 같은 것이다.
         try AudioCacheStore.withCacheKeyLock(key) {
-            try stageLocked(url: sourceURL, key: key, volumePercent: volumePercent, tuning: tuning)
+            try stageLocked(url: sourceURL, key: key, volumePercent: volumePercent)
         }
     }
 
-    private static func stageLocked(
-        url sourceURL: URL,
-        key: String,
-        volumePercent: Int,
-        tuning: VoiceTuning?
-    ) throws -> String {
+    private static func stageLocked(url sourceURL: URL, key: String, volumePercent: Int) throws -> String {
         let fm = FileManager.default
         let soundsDir = try ensureSoundsDirectory()
         let safeKey = AudioCacheStore.safeCacheKey(key)
         let gainPercent = max(0, min(100, volumePercent))
         // ⚠ **음량을 이름에 넣는다.** 재사용 판정이 파일 존재 하나뿐이라, 이름이 같으면
         // 슬라이더를 내려도 예전에 구워 둔 큰 소리 파일이 그대로 다시 쓰인다.
-        var baseName = gainPercent == 100
+        let baseName = gainPercent == 100
             ? "\(stagedNamePrefix)\(safeKey)"
             : "\(stagedNamePrefix)\(safeKey)-v\(gainPercent)"
         let sourceExt = sourceURL.pathExtension.lowercased()
-
-        // ⚠ **다듬기 값도 이름에 넣는다**(같은 이유). 중립이면 꼬리표가 없어 이름이 예전과
-        // 같다 — 다듬지 않은 목소리는 이미 구워 둔 파일을 그대로 다시 쓴다.
-        // 접두사(`voice-<safeKey>`)는 그대로라 `clearStagedSoundFiles` 가 함께 지운다.
-        if let tuning, let tag = tuning.soundTag {
-            baseName += "-t\(tag)"
-            let stagedURL = soundsDir.appendingPathComponent("\(baseName).caf")
-            // 대개 `prestageTuned` 가 메인 밖에서 이미 만들어 두었다 — 없을 때만 여기서 굽는다.
-            if !isUsableStagedFile(stagedURL) {
-                try? fm.removeItem(at: stagedURL)
-                try writeAtomically(into: stagedURL) { tmp in
-                    try writeTunedCAF(from: sourceURL, to: tmp, gain: Float(gainPercent) / 100, tuning: tuning)
-                }
-            }
-            return baseName
-        }
 
         // 음량이 100 이 아니면 **원본을 그대로 복사할 수 없다** — 샘플값을 줄여야 하므로
         // 포맷과 무관하게 LPCM 으로 다시 쓴다.
@@ -240,7 +141,7 @@ enum AlarmSoundStaging {
     /// 영원히 쓰였고, `.bundledNamed` 는 인앱 재생 대상이 아니라(`.cachedAudio` 만 인앱으로 튼다)
     /// 인앱 폴백조차 돌지 않는다 — 결과는 **알람이 뜨는데 소리가 안 나는** 것이고 스스로 복구되지 않는다.
     /// 같은 디렉터리 안의 rename 은 원자적이라, 이제 최종 이름이 보이면 완성된 파일이다.
-    private nonisolated static func writeAtomically(into finalURL: URL, _ body: (URL) throws -> Void) throws {
+    private static func writeAtomically(into finalURL: URL, _ body: (URL) throws -> Void) throws {
         let fm = FileManager.default
         let tmpURL = finalURL.deletingLastPathComponent()
             .appendingPathComponent(".staging-\(UUID().uuidString).\(finalURL.pathExtension)")
@@ -270,7 +171,7 @@ enum AlarmSoundStaging {
     /// (2) 오디오로 열려서 길이가 0보다 큰가. (2)가 필요한 이유는 트랜스코드가
     /// **정상 종료로 보이면서 빈 파일**을 낼 수 있어서다 — 소스에 샘플이 없으면
     /// `copyNextSampleBuffer()` 가 곧바로 nil 을 주고 writer 는 `.completed` 로 끝난다.
-    private nonisolated static func isUsableStagedFile(_ url: URL) -> Bool {
+    private static func isUsableStagedFile(_ url: URL) -> Bool {
         let fm = FileManager.default
         guard fm.fileExists(atPath: url.path) else { return false }
         let size = (try? fm.attributesOfItem(atPath: url.path))?[.size] as? Int64 ?? 0
@@ -283,7 +184,7 @@ enum AlarmSoundStaging {
     }
 
     /// 헤더만 있고 오디오가 없는 파일을 거르는 하한. CAF/WAV 헤더는 수십 바이트다.
-    private nonisolated static let minimumUsableBytes: Int64 = 512
+    private static let minimumUsableBytes: Int64 = 512
 
     /// 소스가 30초(+tolerance)를 넘는지. 측정 불가/AVFoundation 미가용 시 false 로 보아
     /// passthrough 를 막지 않는다(트림은 cacheBytes 단계에서 이미 시도됐을 수 있음).
@@ -327,129 +228,6 @@ enum AlarmSoundStaging {
             let url = soundsDir.appendingPathComponent(name)
             try? fm.removeItem(at: url)
         }
-    }
-
-    /// 높이를 구워 넣을 알람 소리를 **메인 밖에서** 미리 만든다(Codex #870) — PSOLA 는 30초까지 디코드·변환해 무겁고,
-    /// `stage` 는 예약 경로(`AlarmKitViewModel.schedule`)에서 메인 액터로 동기 실행된다. 여러 알람을 다시 걸 때 화면이
-    /// 멎고 백그라운드 회차의 실행 시간을 먹지 않게, 예약 직전에 이걸 기다린 뒤 `stage` 가 만들어 둔 파일을 그대로 쓴다.
-    /// 이름·내용은 `stageLocked` 의 높이 갈래와 같다(같은 원자적 쓰기). 실패하면 조용히 넘어간다 — `stage` 가 다시 굽는다.
-    /// - Returns: 높이를 구운 파일이 쓸 수 있게 놓였는가. false 면 예약(`AlarmSoundResolver.resolve(plan:renderTunedIfMissing:)`)이
-    ///   메인에서 **다시 굽지 않고** 곧바로 원래 목소리를 싣는다 — 실패한 무거운 굽기를 메인에서 되풀이하면 여러 알람을 다시
-    ///   걸 때 화면이 멎는다(Codex #870).
-    @discardableResult
-    static func prestageTuned(url sourceURL: URL, key: String, volumePercent: Int, tuning: VoiceTuning) async -> Bool {
-        guard let tag = tuning.soundTag, let soundsDir = try? ensureSoundsDirectory() else { return false }
-        let gainPercent = max(0, min(100, volumePercent))
-        let safeKey = AudioCacheStore.safeCacheKey(key)
-        let baseName = gainPercent == 100
-            ? "\(stagedNamePrefix)\(safeKey)-t\(tag)"
-            : "\(stagedNamePrefix)\(safeKey)-v\(gainPercent)-t\(tag)"
-        let stagedURL = soundsDir.appendingPathComponent("\(baseName).caf")
-        let epoch = TunedStagingEpoch.shared.current
-        return await Task.detached(priority: .userInitiated) { () -> Bool in
-            // ⚠ **`stage` 와 같은 캐시 키 잠금 안에서** 확인·굽기·게시를 한다(Codex #870). 밖에서 하면 캐시 교체가
-            // 그 사이 지나가며 스테이징 파일을 지운 **뒤에** 옛 바이트로 구운 파일을 게시하고, `stage` 가 그걸 재사용한다
-            // — 은퇴한 목소리로 우는 경주(#703)가 되살아난다.
-            AudioCacheStore.withCacheKeyLock(key) { () -> Bool in
-                if isUsableStagedFile(stagedURL) { return true }
-                try? writeAtomically(into: stagedURL) { tmp in
-                    try writeTunedCAF(from: sourceURL, to: tmp, gain: Float(gainPercent) / 100, tuning: tuning)
-                }
-                discardIfCleanedSince(epoch, stagedURL)
-                return isUsableStagedFile(stagedURL)
-            }
-        }.value
-    }
-
-    /// 목소리 높이를 구워 넣은 스테이징 파일(`voice-<키>[-v<크기>]-ts<값>.caf`)을 **모두** 지운다 — 명시적
-    /// 로그아웃·탈퇴(`AuthViewModel.clearAccountPreferences`). 사본도 목소리의 복사본이다(스펙 §4-3). 그 계정의
-    /// 알람은 이미 예약이 내려가 있고(`stopAllScheduledAlarms`), 다시 필요하면 다음 예약이 새로 굽는다.
-    /// 다듬지 않은 파일은 건드리지 않는다(이 기능 이전과 같다).
-    nonisolated static func clearTunedStagedSoundFiles() {
-        TunedStagingEpoch.shared.bump()
-        // 폴더를 못 열면 미뤄 둔 목록도 그대로 둔다 — 지운 것이 없다.
-        guard let soundsDir = try? ensureSoundsDirectory() else { return }
-        _ = DeferredTunedCleanup.takeAll()   // 아래에서 전부 지우므로 미뤄 둔 목록도 끝났다
-        let entries = (try? FileManager.default.contentsOfDirectory(atPath: soundsDir.path)) ?? []
-        // 지우지 못한 것(기기가 잠겨 보호된 파일을 못 여는 때 등)은 미뤄 둔 정리로 넘긴다 — 다음 취소 재시도(앱 시작·전경
-        // 복귀·백그라운드 동기화)가 다시 지운다. 기록 없이 버리면 다시 지울 길이 없다(Codex #870).
-        let failed = entries.filter(isTunedStagedFileName).filter { !removeIfPresent(soundsDir.appendingPathComponent($0)) }
-        DeferredTunedCleanup.add(failed)
-    }
-
-    /// 지웠거나 이미 없으면 true. 지우지 못했으면(파일이 남아 있으면) false.
-    private nonisolated static func removeIfPresent(_ url: URL) -> Bool {
-        do {
-            try FileManager.default.removeItem(at: url)
-            return true
-        } catch {
-            return !FileManager.default.fileExists(atPath: url.path)
-        }
-    }
-
-    /// 지금 있는 높이 구운 스테이징 파일을 '미뤄 둔 정리' 로 적는다 — 로그아웃 때 취소에 실패한 예약이 남아 지금은 못 지울 때.
-    nonisolated static func deferTunedStagedSoundFiles() {
-        // 목록을 적기 **전에** 세대를 올린다 — 그 전에 시작한 미리 굽기가 목록을 적은 뒤에 파일을 게시하면 어디에도
-        // 적히지 않아 영영 남는다. 세대가 바뀌었으니 그 굽기는 게시한 파일을 스스로 지운다(Codex #870). 이미 있는
-        // 파일(남은 예약이 쓰는 것)은 미리 굽기가 다시 쓰지 않으므로 건드려지지 않는다.
-        TunedStagingEpoch.shared.bump()
-        guard let soundsDir = try? ensureSoundsDirectory() else { return }
-        let entries = (try? FileManager.default.contentsOfDirectory(atPath: soundsDir.path)) ?? []
-        DeferredTunedCleanup.add(entries.filter(isTunedStagedFileName))
-    }
-
-    /// 미뤄 둔 정리를 마친다 — 취소 재시도가 남은 취소를 모두 끝냈을 때(`AlarmKitViewModel.retryPendingCancellations`).
-    nonisolated static func finishDeferredTunedCleanup() {
-        guard let soundsDir = try? ensureSoundsDirectory() else { return }
-        // 지우지 못한 이름은 목록에 되돌린다 — 꺼내 놓고 실패를 버리면 그 파일은 다시 지울 길이 없다(Codex #870).
-        let failed = DeferredTunedCleanup.takeAllNotReserving()
-            .filter { !removeIfPresent(soundsDir.appendingPathComponent($0)) }
-        DeferredTunedCleanup.add(failed)
-    }
-
-    /// 이 계획이 높이를 구워 넣은 목소리로 울린다면 그 스테이징 파일 이름(`stageLocked` 의 높이 갈래와 같은 이름).
-    nonisolated static func tunedStagedFileName(for plan: AlarmSoundPlan) -> String? {
-        guard case .voiceClip(let key, _, _, let volumePercent, _, let tuning?) = plan else { return nil }
-        return tunedStagedFileName(key: key, volumePercent: volumePercent, tuning: tuning)
-    }
-
-    nonisolated static func tunedStagedFileName(key: String, volumePercent: Int, tuning: VoiceTuning) -> String? {
-        guard let tag = tuning.soundTag else { return nil }
-        let gainPercent = max(0, min(100, volumePercent))
-        let safeKey = AudioCacheStore.safeCacheKey(key)
-        let baseName = gainPercent == 100
-            ? "\(stagedNamePrefix)\(safeKey)-t\(tag)"
-            : "\(stagedNamePrefix)\(safeKey)-v\(gainPercent)-t\(tag)"
-        return "\(baseName).caf"
-    }
-
-    /// 새 예약이 이 파일을 쓰기 시작한다 — 끝날 때까지 미뤄 둔 정리가 지우지 않는다. 짝은 [endTunedReservation].
-    nonisolated static func beginTunedReservation(_ name: String?) {
-        if let name { DeferredTunedCleanup.beginReservation(name) }
-    }
-
-    /// 예약이 끝났다. 성공했으면 미뤄 둔 정리 목록에서 뺀다(이제 그 예약이 쓰는 파일이다). 실패했으면 표시를 남긴다 —
-    /// 먼저 빼 두면 예약이 실패했을 때 그 파일을 지울 길이 없다(Codex #870).
-    nonisolated static func endTunedReservation(_ name: String?, succeeded: Bool) {
-        if let name { DeferredTunedCleanup.endReservation(name, succeeded: succeeded) }
-    }
-
-    /// 미뤄 둔 정리 목록(테스트용).
-    nonisolated static var deferredTunedCleanupNames: [String] { DeferredTunedCleanup.pending }
-
-    /// 굽는 사이 정리(`clearTunedStagedSoundFiles`)가 지나갔으면 방금 게시한 파일을 지운다.
-    nonisolated static func discardIfCleanedSince(_ epoch: Int, _ stagedURL: URL) {
-        guard TunedStagingEpoch.shared.current != epoch else { return }
-        try? FileManager.default.removeItem(at: stagedURL)
-    }
-
-    /// 지금 정리 세대 — 테스트가 '굽는 사이 정리' 를 재현할 때 쓴다.
-    nonisolated static var tunedCleanupEpoch: Int { TunedStagingEpoch.shared.current }
-
-    /// 높이 꼬리표(`-t` + `VoiceTuning.soundTag`)가 붙은 스테이징 파일 이름인가.
-    nonisolated static func isTunedStagedFileName(_ name: String) -> Bool {
-        name.hasPrefix(stagedNamePrefix)
-            && name.range(of: #"-ts-?[0-9]+\.caf$"#, options: .regularExpression) != nil
     }
 
     // MARK: - Internal helpers
@@ -677,36 +455,6 @@ enum AlarmSoundStaging {
             try output.write(from: buffer)
         } catch {
             throw AlarmSoundStagingError.writeFailed("write: \(error.localizedDescription)")
-        }
-    }
-
-    /// 소스에 **목소리 높이를 구워** CAF(16-bit LPCM, 모노)로 쓴다.
-    ///
-    /// 처리는 미리듣기와 같은 `VoiceTuningRenderer.render`(TD-PSOLA — 몸집은 두고 높이만,
-    /// 크기는 원래대로 되맞춤)다. 소스를 30초(AlarmKit 한도)까지만 읽고, PSOLA 는 길이를
-    /// 바꾸지 않으므로 결과도 그 안이다. 음량 퍼센트(`gain`, ≤ 1)는 쓰기 직전에 곱한다.
-    ///
-    /// ⚠ `AVAssetExportSession` 을 쓰지 않는다(위 `transcodeToCAF` 주석) — `AVAudioFile`
-    /// 로 읽고 쓴다. 채널 레이아웃(`AVChannelLayoutKey`)을 함께 적는다(`writeMonoCAF`).
-    #if DEBUG
-    /// 테스트용 — 높이 굽기만 실패하게 한다(원본 그대로 싣기는 그대로). 디코드는 되는데 굽기만 실패하는 파일을 만들 수
-    /// 없어서 둔다.
-    nonisolated(unsafe) static var failTunedRenderingForTesting = false
-    #endif
-
-    private nonisolated static func writeTunedCAF(from src: URL, to dst: URL, gain: Float, tuning: VoiceTuning) throws {
-        #if DEBUG
-        if failTunedRenderingForTesting { throw AlarmSoundStagingError.writeFailed("tuned rendering disabled for testing") }
-        #endif
-        do {
-            let rendered = try VoiceTuningRenderer.render(
-                url: src,
-                tuning: tuning,
-                maxSeconds: Double(AlarmAudioLimits.maxDurationMillis) / 1000
-            )
-            try VoiceTuningRenderer.writeMonoCAF(rendered.samples, sampleRate: rendered.sampleRate, to: dst, gain: gain)
-        } catch {
-            throw AlarmSoundStagingError.writeFailed("tune: \(error.localizedDescription)")
         }
     }
 }

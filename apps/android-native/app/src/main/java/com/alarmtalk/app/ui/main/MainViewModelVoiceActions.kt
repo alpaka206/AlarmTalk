@@ -307,10 +307,15 @@ internal fun MainViewModel.promoteVoiceDraft(
     profileId: String,
     replaceExisting: Boolean = false,
     isShared: Boolean = false,
-    /** 등록 미리듣기에서 맞춘 목소리 높이 — 승격이 끝난 뒤 승격 응답의 id·교체 세대로 적는다(스펙 §4-3). */
-    tuning: com.alarmtalk.app.data.VoiceTuning = com.alarmtalk.app.data.VoiceTuning.NEUTRAL,
+    /**
+     * 등록 미리듣기에서 **끝까지 들은** 목소리 높이(반음). 등록 확정 요청에 한 번 싣고(교체 등록도 같다), 서버가 그
+     * 목소리로 만드는 알람 소리에 굽는다 — 기기에는 남기지 않는다(스펙 voice-and-message §4-3). 0 이면 보내지 않는다.
+     */
+    pitchSemitones: Float = 0f,
 ) {
     val session = authSession ?: return
+    // 0 은 원래 소리다 — 키를 아예 보내지 않아 높이 이전과 같은 요청이 된다.
+    val sentPitch = pitchSemitones.takeIf { it != 0f }
     viewModelScope.launch {
         if (voiceProfileBusy) return@launch
         voiceProfileBusy = true
@@ -325,11 +330,17 @@ internal fun MainViewModel.promoteVoiceDraft(
                     isDraft = false,
                     language = deviceAppVoiceLanguage(),
                     replaceExisting = if (replaceExisting) true else null,
+                    pitchSemitones = sentPitch,
                 ),
-            ).profile
+            )
         }
-        val profile = result.getOrNull()
+        val profile = result.getOrNull()?.profile
         if (profile != null) {
+            // 높이를 모르는 옛 서버는 높이를 무시하고 원래 소리로 등록한다 — 응답에 높이가 없다. 실패로 보이지 않으므로
+            // 화면에는 알리지 않고 기록만 남긴다(서버가 먼저 나가야 한다 — 스펙 §4-3).
+            if (sentPitch != null && result.getOrNull()?.pitchSemitones != sentPitch) {
+                Log.w(TAG, "Server did not record the voice pitch on promotion id=$profileId")
+            }
             val draft = pendingVoiceDraft
             // 서버 PATCH 응답은 변경된 필드만 돌려준다 — 승격은 is_draft 만 보내므로 name 이 빠진다.
             // Gson 은 누락 필드에 (기본값 "" 을 무시하고) null 을 주입할 수 있어, non-null 로 선언된
@@ -401,14 +412,6 @@ internal fun MainViewModel.promoteVoiceDraft(
                 settlingUnpersistedIds = settlingUnpersistedIds - official.id
                 settlingVoiceProfileIds = settlingVoiceProfileIds - official.id
                 voiceProfiles = listOf(official) + voiceProfiles.filterNot { it.id == official.id }
-            }
-            // 목소리 높이 — **교체 표식 정리와 목록 반영이 끝난 뒤**, 승격 응답의 id(교체면 기존 프로필 id)·교체 세대로
-            // 적는다(Codex #870). 화면이 목록을 보고 적으면 그때는 아직 옛 세대라, 이어서 도는 표식 정리가 새 값을
-            // '교체 전 값' 으로 읽고 지운다. 그 사이 계정이 바뀌었으면 적지 않는다.
-            if (authSession?.user?.id == session.user.id) {
-                forgetOrSaveVoiceTuning(session.user.id, official.id, tuning.copy(generation = official.customAudioInvalidatedAt))
-                // 그 목소리를 쓰던 알람(교체 등록)의 다음 울림 클립을 새 높이로 미리 굽는다(Codex #870).
-                viewModelScope.launch { repository.prewarmTunedAlarmAudio() }
             }
         } else {
             val error = result.exceptionOrNull() ?: IllegalStateException("promote failed")
@@ -605,7 +608,6 @@ internal fun MainViewModel.deleteVoiceProfile(profileId: String) {
             )
         }.onSuccess {
             voiceProfiles = voiceProfiles.filterNot { it.id == profileId }
-            forgetVoiceTuning(session.user.id, listOf(profileId))
             // 삭제된 목소리를 쓰던 내 알람을 즉시 기본 알람으로 변환한다(공유해제·무료강등과 동일 결과).
             // 서버는 sound-only 로 바꾸지만 본인 LOCAL_OWNED 알람은 pull 로 안 돌아오므로 로컬에서 강등.
             // 삭제된 id 만 대상으로 하는 타깃 강등이라 소셜 목록 신선도(reconcile 가드)에 막히지 않는다.
@@ -613,7 +615,6 @@ internal fun MainViewModel.deleteVoiceProfile(profileId: String) {
         }.onFailure { error ->
             if (error is retrofit2.HttpException && error.code() == 404) {
                 voiceProfiles = voiceProfiles.filterNot { it.id == profileId }
-                forgetVoiceTuning(session.user.id, listOf(profileId))
                 viewModelScope.launch { runCatching { repository.degradeAlarmsUsingVoiceProfile(profileId) } }
             } else {
                 if (originalProfile != null) {

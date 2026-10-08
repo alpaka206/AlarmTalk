@@ -349,11 +349,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             // 편집기가 쓰던 목소리를 잊고 기본 목소리 다운로드 안내를 다시 밟게 한다.
             // (저장소가 계정별 키라 남겨 둬도 다음 계정에 새지 않는다.)
             clearCurrentDefaultVoicePreferences()
-            // 목소리 높이 보정값과 높이를 바꾼 사본(목소리의 복사본)도 명시적으로 끝낼 때만 지운다 — 위와 같은 이유.
-            voiceTuningStore.clearUser(signedOutUserId)
-            kotlinx.coroutines.withContext(Dispatchers.IO) {
-                com.alarmtalk.app.data.VoiceTuningRenderer.clearAll(getApplication())
-            }
             // 매니페스트 디스크 사본도 여기서만 지운다. 안에 **그 계정의 클론 클립**이 들어
             // 있어 계정이 바뀌면 남의 목록을 시드하게 된다. 위와 같은 이유로 자동 401 에서는
             // 지우지 않는다 — 같은 사람이 다시 로그인하는 경우가 대부분이고, 지우면 그 사람이
@@ -834,23 +829,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         internal set
 
     private val defaultVoiceStore = com.alarmtalk.app.data.DefaultVoicePreferenceStore(application)
-    private val voiceTuningStore = com.alarmtalk.app.data.VoiceTuningStore(application)
-
-    /**
-     * 목소리를 잃었을 때(삭제·민감 동의 철회) 그 목소리의 높이 보정값과 높이를 바꾼 사본을 지운다.
-     * 사본은 캐시라 통째로 지운다(스펙 voice-and-message §4-3). 알람이 없어 `deleteAudioNoAlarmUses`
-     * 를 지나지 않는 목소리도 등록 미리듣기 사본은 남을 수 있어 여기서도 지운다.
-     */
-    /** 승격이 끝난 목소리의 높이 값을 적는다(0 이면 지운다) — `promoteVoiceDraft`. */
-    internal fun forgetOrSaveVoiceTuning(userId: String, voiceId: String, tuning: com.alarmtalk.app.data.VoiceTuning) {
-        voiceTuningStore.write(userId, voiceId, tuning)
-    }
-
-    internal fun forgetVoiceTuning(userId: String?, voiceIds: Collection<String>) {
-        voiceIds.forEach { voiceTuningStore.remove(userId, it) }
-        val app = getApplication<android.app.Application>()
-        viewModelScope.launch(Dispatchers.IO) { com.alarmtalk.app.data.VoiceTuningRenderer.clearAll(app) }
-    }
     internal val dynamicPromptStore = com.alarmtalk.app.data.DynamicPromptPreferenceStore(application)
 
     /** 계정 설정(지역·사주) 올리기를 한 번에 하나씩 — `updateDynamicPromptSettings`. */

@@ -20,8 +20,10 @@ import kotlin.math.sqrt
  * 그대로라 목소리 몸집이 유지되고, 떨림 간격(= 높이)만 바뀐다. 폰 내장 높이 변환(`PlaybackParams.setPitch`)
  * 은 파형 자체를 늘이거나 줄여 몸집까지 움직인다 — 2026-10-07 사용자가 "변조된 목소리" 라며 거부했다.
  *
- * iOS(`VoicePitchShifter.swift`)와 **같은 알고리즘·같은 숫자**다 — 2026-10-07 사용자가 귀로 고른 소리를 두
- * 앱에서 똑같이 내기 위해서다. 숫자를 바꾸면 양쪽을 같이 바꾼다(스펙 §4-3).
+ * 앱은 이걸로 **등록 미리듣기만** 굽는다(메모리 — `VoiceTuningRenderer`). 알람 소리는 서버가 같은 셈
+ * (`packages/voice/src/pitch-shift.ts` 의 `shiftVoicePitch`)으로 굽고, iOS(`VoicePitchShifter.swift`)도 **같은
+ * 알고리즘·같은 숫자**다 — 셋이 갈리면 미리듣기에서 고른 소리와 알람이 우는 소리가 달라진다. 숫자를 바꾸면 셋을
+ * 같이 바꾼다(스펙 §4-3).
  *
  * 한계: 크게 내리면(−5 반음 이하) 조각 사이가 벌어져 '웅웅' 거리고, 표시가 어긋난 구간은 거칠어진다.
  * 무성음(ㅅ·ㅎ)은 옮기지 않는다. 높이를 내리면 떨림 수가 줄어 소리가 작아지므로, 결과를 원래 클립과
@@ -148,7 +150,9 @@ object VoicePitchShifter {
         }
 
         // 분석 표시 — 유성이면 한 주기마다, 무성이면 5 ms 마다.
-        val unvoicedHop = Math.round(sr * UNVOICED_HOP_SECONDS).toInt()
+        // ⚠ 두 간격 모두 1 아래로 내려가지 않게 둔다 — 0 이면 n 이 나아가지 않아 끝나지 않는다(서버 `pitch-shift.ts` 와
+        //   같은 하한). 닿을 수 있는 입력(표본률 100 Hz 이상, 높이 추적은 500 Hz 안팎까지)에서는 결과가 그대로다.
+        val unvoicedHop = maxOf(1, Math.round(sr * UNVOICED_HOP_SECONDS).toInt())
         val markAt = IntArrayList()
         val markPeriod = IntArrayList()
         val markVoiced = ArrayList<Boolean>()
@@ -157,7 +161,7 @@ object VoicePitchShifter {
         while (n < x.size) {
             val f = f0At(n)
             if (f > 0.0) {
-                val period = Math.round(sr / f).toInt()
+                val period = maxOf(1, Math.round(sr / f).toInt())
                 var best: Int
                 var bestValue = Double.NEGATIVE_INFINITY
                 if (!prevVoiced) {

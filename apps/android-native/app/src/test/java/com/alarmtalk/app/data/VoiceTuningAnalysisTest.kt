@@ -1,7 +1,6 @@
 package com.alarmtalk.app.data
 
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -161,30 +160,20 @@ class VoiceTuningAnalysisTest {
         assertEquals(0.0.toBits(), VoiceTuning.roundToHalf(-0.2).toBits())
     }
 
-    /** 받은 알람·직접 녹음·기본 목소리에는 걸지 않는다(스펙 §4-3 — Codex #870). */
+    /**
+     * 서버로 가는 높이는 범위·0.5 눈금 안이다 — 밖이면 서버가 400 `INVALID_VOICE_PITCH` 로 거절한다(스펙 §4-3).
+     * 모르는 출처는 auto 로 둔다.
+     */
     @Test
-    fun tuningAppliesOnlyToLocallyOwnedRegisteredVoiceAlarms() {
-        assertTrue(VoiceTuning.appliesTo(AlarmOrigins.LOCAL_OWNED, VoiceSources.TTS_PROFILE, "voice-1"))
-        // 가족이 내가 공유한 목소리로 보낸 알람 — 내 목소리 id 를 달고 와도 걸지 않는다.
-        assertFalse(VoiceTuning.appliesTo(AlarmOrigins.RECEIVED_REMOTE, VoiceSources.TTS_PROFILE, "voice-1"))
-        assertFalse(VoiceTuning.appliesTo(null, VoiceSources.TTS_PROFILE, "voice-1"))
-        assertFalse(VoiceTuning.appliesTo(AlarmOrigins.LOCAL_OWNED, VoiceSources.LOCAL_AUDIO, "voice-1"))
-        assertFalse(VoiceTuning.appliesTo(AlarmOrigins.LOCAL_OWNED, VoiceSources.TTS_PROFILE, " "))
-        assertFalse(VoiceTuning.appliesTo(AlarmOrigins.LOCAL_OWNED, VoiceSources.TTS_PROFILE, null))
-    }
-
-    @Test
-    fun tuningCodecRoundTripsAndRejectsGarbage() {
-        val tuning = VoiceTuning(pitchSemitones = -1.5f, source = VoiceTuning.SOURCE_MANUAL)
-        assertEquals(tuning, VoiceTuning.decode(tuning.encode()))
-        val withGeneration = tuning.copy(generation = "2026-10-07 03:00:00")
-        assertEquals(withGeneration, VoiceTuning.decode(withGeneration.encode()))
-        assertNull(VoiceTuning.decode(null))
-        assertNull(VoiceTuning.decode("1;auto"))
-        assertNull(VoiceTuning.decode("7.5;-5.5;2.0;manual"))
-        assertNull(VoiceTuning.decode("a;auto;"))
-        assertNull(VoiceTuning.decode("NaN;auto;"))
-        // 범위 밖·눈금 밖 값은 읽을 때 맞춘다. 모르는 출처는 auto.
-        assertEquals(VoiceTuning(pitchSemitones = -6f, source = VoiceTuning.SOURCE_AUTO), VoiceTuning.decode("-9;weird;"))
+    fun normalizedSnapsToTheServerGrid() {
+        assertEquals(VoiceTuning(pitchSemitones = -6f), VoiceTuning(pitchSemitones = -9f).normalized())
+        assertEquals(
+            VoiceTuning(pitchSemitones = 3f, source = VoiceTuning.SOURCE_MANUAL),
+            VoiceTuning(pitchSemitones = 4.2f, source = VoiceTuning.SOURCE_MANUAL).normalized(),
+        )
+        assertEquals(-1.5f, VoiceTuning(pitchSemitones = -1.3f).normalized().pitchSemitones, 0f)
+        assertEquals(0f.toBits(), VoiceTuning(pitchSemitones = -0.2f).normalized().pitchSemitones.toBits())
+        assertEquals(0f, VoiceTuning(pitchSemitones = Float.NaN).normalized().pitchSemitones, 0f)
+        assertEquals(VoiceTuning.SOURCE_AUTO, VoiceTuning(source = "weird").normalized().source)
     }
 }

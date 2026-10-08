@@ -226,7 +226,7 @@ final class DefaultVoiceSubstituteTests: XCTestCase {
 
         let plan = AlarmSoundResolver.plan(for: record, audioCache: AudioCacheStore())
 
-        guard case .voiceClip(let key, let url, _, let volume, _, _) = plan else {
+        guard case .voiceClip(let key, let url, _, let volume, _) = plan else {
             return XCTFail("기본 목소리 알람이 알람음으로 떨어졌다: \(plan)")
         }
         XCTAssertTrue(key.hasPrefix("greeting-voice_greeting_"), key)

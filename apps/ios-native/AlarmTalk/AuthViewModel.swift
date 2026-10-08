@@ -1426,7 +1426,6 @@ final class AuthViewModel: ObservableObject {
             }
             // ⚠ 탈퇴도 로그아웃과 같다 — 계정을 떠났는데 알람이 울리면 안 된다.
             let cleaned = await onLeaveAccountStopAlarms(currentUserID)
-            clearTunedAlarmSounds(afterStopping: cleaned)
             signOut(message: String(localized: "회원 탈퇴가 완료됐어요."))
             // 세션을 비운 뒤 한 번 더 — 알람 정리를 기다리는 사이 받아 적힌 값을 지운다(`signOutExplicitly` 주석).
             if let currentUserID, !currentUserID.isEmpty { clearAccountPreferences(currentUserID) }
@@ -1479,7 +1478,6 @@ final class AuthViewModel: ObservableObject {
             }
             // ⚠ 탈퇴도 로그아웃과 같다 — 계정을 떠났는데 알람이 울리면 안 된다.
             let cleaned = await onLeaveAccountStopAlarms(currentUserID)
-            clearTunedAlarmSounds(afterStopping: cleaned)
             // ⚠ **재시도용 토큰을 남겼으면 폐기하지 않는다**(Codex #699 P2).
             // `signOut` 의 기본값은 `revokeOnServer: true` 라 `/auth/logout` 으로 그 토큰을
             // 죽인다 — 다음 실행의 `/push/unregister` 재시도가 **401 로 영원히** 실패하고
@@ -1913,12 +1911,6 @@ final class AuthViewModel: ObservableObject {
                 audioCache: audioCache
             )
         }
-        // 높이 보정값·등록 미리듣기 사본도 같은 자리에서 — 이 계정 자신의 목소리라 새 세션에 영향이 없다.
-        // (알람용으로 구운 사본은 위 강등이 그 클립의 스테이징 파일과 함께 지운다.)
-        for voiceID in revokedVoiceIDs {
-            VoiceTuningStore().remove(voiceProfileID: voiceID)
-        }
-        VoiceTuningRenderer.clearPreviewFiles()
         // 2) 여기부터는 **이 계정 화면의 상태**라 세션이 바뀌었으면 건드리지 않는다.
         guard session?.user.id == userID else { return true }
         if !consentSensitiveMissing.contains("voice_biometric") {
@@ -2087,29 +2079,7 @@ final class AuthViewModel: ObservableObject {
         DefaultVoicePreferenceStore().clear(userID: userID)
         DynamicPromptPreferenceStore().clear(userID: userID)
         DynamicPromptPreferences.clear(userID: userID)
-        // 목소리 높이 보정값과 등록 미리듣기 사본(목소리의 복사본)도 명시적으로 끝낼 때만 지운다(스펙 §4-3).
-        VoiceTuningStore().clear(userID: userID)
-        VoiceTuningRenderer.clearPreviewFiles()
     }
-
-    /// 높이를 구워 넣은 알람 소리 파일(목소리의 복사본)을 지운다 — **예약을 내린 뒤에만**(스펙 §4-3, Codex #870).
-    /// 내리기 전에 지우면 그 사이 울리는 알람이 제 목소리를 잃는다. 내리지 못했으면 남겨 두고, 다음 실행의
-    /// 뒷정리(`AlarmTalkApp` 의 `PendingSignOutStore` 회차)가 예약을 내린 뒤 지운다.
-    ///
-    /// ⚠ 훅의 참은 "저장소를 불러와 훑었다" 일 뿐이다 — 개별 취소가 실패한 예약은 손잡이(`alarmKitID`)를 남긴 채
-    /// 살아 있다. 그 예약이 구워 둔 파일을 쓰므로 **남은 손잡이가 하나라도 있으면** 지우지 않는다(Codex #870).
-    private func clearTunedAlarmSounds(afterStopping stopped: Bool) {
-        guard stopped else { return }   // 저장소도 못 읽었다 — 다음 실행의 뒷정리(`PendingSignOutStore`)가 맡는다
-        if hasLiveAlarmReservations() {
-            // 취소에 실패한 예약이 그 파일을 쓴다 — 지금은 남기고, 취소 재시도가 끝나면 지운다(Codex #870).
-            AlarmSoundStaging.deferTunedStagedSoundFiles()
-        } else {
-            AlarmSoundStaging.clearTunedStagedSoundFiles()
-        }
-    }
-
-    /// 아직 살아 있는 AlarmKit 예약이 있는가(취소 실패로 손잡이가 남은 행) — `PushNotificationCoordinator` 가 잇는다.
-    var hasLiveAlarmReservations: () -> Bool = { false }
 
     func signOutExplicitly() {
         let userID = session?.user.id
@@ -2155,8 +2125,7 @@ final class AuthViewModel: ObservableObject {
             // ⚠ **끄기 전에 소유자를 새긴다.** 아래 `stopAlarms` 가 소유자 미기록 행을
             // '떠나는 계정 것' 으로 보고 끄는데, 그 판단이 맞으려면 지금 확정해 둬야 한다.
             await claimAlarms(departingUserID)
-            let stopped = await stopAlarms(departingUserID)
-            clearTunedAlarmSounds(afterStopping: stopped)
+            await stopAlarms(departingUserID)
             isBusy = false
             signOut(revokeOnServer: false)
             // ⚠ **세션을 비운 뒤 한 번 더 지운다**(멱등, Codex #837 검증). 위 알람 정리를 기다리는 동안에도 세션은

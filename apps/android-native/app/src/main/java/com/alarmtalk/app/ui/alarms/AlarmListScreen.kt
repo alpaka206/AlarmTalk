@@ -119,7 +119,7 @@ internal fun AlarmListScreen(
     onDeleteVoiceProfile: (String) -> Unit,
     onConfirmVoicePreviewPlayed: suspend (String, String) -> Unit,
     onUpdateVoicePreviewText: suspend (String, String) -> String,
-    onPromoteVoiceDraft: (String, Boolean, Boolean, com.alarmtalk.app.data.VoiceTuning) -> Unit,
+    onPromoteVoiceDraft: (String, Boolean, Boolean, Float) -> Unit,
     onDeleteVoiceDraft: (String) -> Unit,
     onLeaveFamilyGroup: (String) -> Unit,
     onRegisterCode: (String) -> Unit,

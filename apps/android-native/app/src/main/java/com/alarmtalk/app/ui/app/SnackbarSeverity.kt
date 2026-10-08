@@ -167,6 +167,8 @@ internal object SnackbarSeverities {
         R.string.api_error_voice_limit_reached,
         R.string.api_error_voice_not_ready,
         R.string.api_error_voice_cloning_failed,
+        R.string.api_error_invalid_voice_pitch,
+        R.string.api_error_voice_pitch_locked,
         R.string.api_error_alarm_not_found,
         R.string.api_error_tts_generation_failed,
         R.string.api_error_family_alarm_disabled,

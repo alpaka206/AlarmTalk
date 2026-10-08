@@ -83,6 +83,7 @@ import com.alarmtalk.app.data.AlarmVoiceRecorder
 import com.alarmtalk.app.data.CachedAlarmAudio
 import com.alarmtalk.app.data.VoiceProfileAudioLimits
 import com.alarmtalk.app.data.VoiceProfileCreationDraft
+import com.alarmtalk.app.data.InMemoryAudioDataSource
 import com.alarmtalk.app.data.VoiceAudioDecoder
 import com.alarmtalk.app.data.VoiceTuning
 import com.alarmtalk.app.data.VoiceTuningAnalysis
@@ -362,8 +363,8 @@ internal fun VoiceProfileManagementPanel(
     onDeleteVoiceProfile: (String) -> Unit,
     onConfirmVoicePreviewPlayed: suspend (String, String) -> Unit,
     onUpdateVoicePreviewText: suspend (String, String) -> String,
-    /** (초안 id, 교체, 공유, 목소리 높이) — 높이는 승격이 끝난 뒤 그 응답의 id·교체 세대로 적힌다. */
-    onPromoteVoiceDraft: (String, Boolean, Boolean, VoiceTuning) -> Unit,
+    /** (초안 id, 교체, 공유, 목소리 높이 반음) — 높이는 끝까지 들은 값이고, 0 이면 서버에 보내지 않는다. */
+    onPromoteVoiceDraft: (String, Boolean, Boolean, Float) -> Unit,
     onDeleteVoiceDraft: (String) -> Unit,
     onOpenBilling: () -> Unit,
     // 이번 달 목소리 생성 쿼터 — 추가 버튼 옆에 '남은/전체'로 보여준다.
@@ -486,7 +487,8 @@ internal fun VoiceProfileManagementPanel(
     // 등록 확정의 **교체 체크**. 이미 등록된 목소리가 있을 때만 낸다.
     var replaceExistingChecked by remember { mutableStateOf(false) }
     // ── 목소리 다듬기(높이 — 스펙 voice-and-message §4-3) ──
-    // 미리듣기에서 들으며 맞추는 보정값. 저장은 승격이 성공한 뒤 ViewModel 이 한 번(`MainViewModel.promoteVoiceDraft`).
+    // 미리듣기에서 들으며 고르는 높이. 기기에 저장하지 않는다 — 등록 확정 요청에 실어 서버에 한 번 보내고
+    // (`MainViewModel.promoteVoiceDraft`), 서버가 이 목소리로 만드는 알람 소리에 굽는다.
     var previewTuning by remember { mutableStateOf(VoiceTuning.NEUTRAL) }
     // 자동 추천값과 그 목소리 id. null 이면 아직 계산 전.
     var tuningSuggestion by remember { mutableStateOf<VoiceTuning?>(null) }
@@ -494,14 +496,15 @@ internal fun VoiceProfileManagementPanel(
     // 그 추천값을 잰 미리듣기 클립 — 문구를 고쳐 새 클립이 오면 다시 잰다.
     var tuningSuggestionClipUri by remember { mutableStateOf<String?>(null) }
     var tuningAnalyzing by remember { mutableStateOf(false) }
-    // 서버가 만든 미리듣기 오디오(기기 캐시). 끝까지 한 번 들은 뒤에는 이걸 기기에서 다시 튼다 —
-    // 슬라이더를 움직일 때마다 서버를 부르지 않는다.
+    // 서버가 만든 미리듣기 오디오(기기 캐시 — 원래 소리). 끝까지 한 번 들은 뒤에는 이걸 기기에서 다시 튼다 —
+    // 슬라이더를 움직일 때마다 서버를 부르지 않고, 이걸 메모리에서 그 높이로 굽는다.
     var confirmPreviewAudioUri by remember { mutableStateOf<String?>(null) }
     // 다듬기 미리듣기가 기기 알람 스트림을 올렸는지(짝은 `releasePreviewTuning`).
     var previewStreamRaised by remember { mutableStateOf(false) }
-    // 높이를 바꾼 사본을 굽는 중인가(카드에 진행 표시), 그 작업.
+    // 높이를 바꾼 소리를 메모리에서 굽는 중인가(카드에 진행 표시), 그 작업, 마지막 굽기 요청 번호.
     var tuningRendering by remember { mutableStateOf(false) }
     var tunedReplayJob by remember { mutableStateOf<Job?>(null) }
+    var tuningRenderRequest by remember { mutableIntStateOf(0) }
     // 등록 녹음의 기본 주파수(Hz) — **업로드 전에** 세부 정보 단계로 넘어갈 때 잰다. 녹음 파일은
     // 업로드 성공 직후 지워지므로(`purgeVoiceCloneSourceRecordings`) 미리듣기 단계에는 없다.
     // 숫자 하나만 메모리에 두고 어디에도 저장하지 않는다.
@@ -716,7 +719,9 @@ internal fun VoiceProfileManagementPanel(
 
     // ⚠ **미리듣기는 울림과 같은 스트림(USAGE_ALARM)·같은 스트림 크기로 낸다** — 그래야 여기서
     // 맞춘 음량이 실제 알람과 같다(편집기 미리듣기와 같은 규약, `AlarmEditorScreen.startPreparedPreview`).
-    fun createTunedPreviewPlayer(uri: String): MediaPlayer {
+    // [tunedWav] 가 있으면 높이를 바꾼 소리를 **메모리에서** 튼다(파일을 남기지 않는다 — `VoiceTuningRenderer`),
+    // 없으면 원래 클립 파일을 그대로 튼다.
+    fun createPreviewPlayer(originalUri: String, tunedWav: ByteArray?): MediaPlayer {
         val player = MediaPlayer()
         try {
             player.setAudioAttributes(
@@ -725,7 +730,11 @@ internal fun VoiceProfileManagementPanel(
                     .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SPEECH)
                     .build(),
             )
-            player.setDataSource(context, Uri.parse(uri))
+            if (tunedWav != null) {
+                player.setDataSource(InMemoryAudioDataSource(tunedWav))
+            } else {
+                player.setDataSource(context, Uri.parse(originalUri))
+            }
             player.prepare()
         } catch (error: Throwable) {
             player.release()
@@ -741,13 +750,13 @@ internal fun VoiceProfileManagementPanel(
         player.start()
     }
 
-    // 등록 미리듣기 재생을 시작한다. 구운 사본이 **열리지 않거나 재생 도중 깨지면** 원본으로 처음부터 한 번 더
+    // 등록 미리듣기 재생을 시작한다. 높이를 바꾼 소리가 **열리지 않거나 재생 도중 깨지면** 원본으로 처음부터 한 번 더
     // 틀고(그때 들은 높이는 0), 원본도 안 되면 멈추고 알린다 — 실패를 완료로 읽지 않게 오류는 언제나 삼킨다
     // (오류를 처리하지 않으면 MediaPlayer 가 이어서 완료 콜백을 불러 청취 확인·'들은 높이' 로 이어진다).
     // [onPlayer] 는 실제로 트는 플레이어와 그 재생에 실린 높이로 완료 처리를 건다(스펙 §4-3, Codex #870).
     fun startPreviewWithFallback(
-        playUri: String,
         originalUri: String,
+        tunedWav: ByteArray?,
         applied: VoiceTuning,
         onPlayer: (MediaPlayer, VoiceTuning) -> Unit,
     ) {
@@ -756,13 +765,14 @@ internal fun VoiceProfileManagementPanel(
             confirmPreviewPlaying = false
             localMessage = context.getString(R.string.voices_preview_play_failed)
         }
-        fun open(uri: String, heard: VoiceTuning, canFallBack: Boolean) {
+        fun open(wav: ByteArray?, heard: VoiceTuning) {
+            val canFallBack = wav != null
             val player = try {
-                createTunedPreviewPlayer(uri)
+                createPreviewPlayer(originalUri, wav)
             } catch (error: Throwable) {
                 if (!canFallBack) throw error
-                AlarmTalkLog.reportError("Tuned preview copy could not be opened; playing the original", error)
-                return open(originalUri, VoiceTuning.NEUTRAL, canFallBack = false)
+                AlarmTalkLog.reportError("Tuned preview could not be opened; playing the original", error)
+                return open(null, VoiceTuning.NEUTRAL)
             }
             player.setOnErrorListener { failed, what, extra ->
                 if (mediaPlayer !== failed) {
@@ -772,7 +782,7 @@ internal fun VoiceProfileManagementPanel(
                 AlarmTalkLog.reportError("Voice preview playback error what=$what extra=$extra")
                 if (canFallBack) {
                     stopMediaPreview(invalidateGreetingPreview = false)
-                    runCatching { open(originalUri, VoiceTuning.NEUTRAL, canFallBack = false) }
+                    runCatching { open(null, VoiceTuning.NEUTRAL) }
                         .onFailure { error ->
                             AlarmTalkLog.reportError("Original preview could not be played either", error)
                             failPlayback()
@@ -788,38 +798,34 @@ internal fun VoiceProfileManagementPanel(
                 startTunedPreview(player)
             } catch (error: Throwable) {
                 // 시작이 실패하면(오디오 서버·플레이어 상태) 올린 알람 스트림을 되돌리고 플레이어를 놓는다 — 안 그러면
-                // 사용자의 알람 음량이 미리듣기 값으로 남는다. 구운 사본이었으면 원본으로 한 번 더 — 열기·재생 도중
+                // 사용자의 알람 음량이 미리듣기 값으로 남는다. 높이를 바꾼 소리였으면 원본으로 한 번 더 — 열기·재생 도중
                 // 실패와 같은 규칙이다(Codex #870).
                 stopMediaPreview(invalidateGreetingPreview = false)
                 if (!canFallBack) throw error
-                AlarmTalkLog.reportError("Tuned preview copy could not start; playing the original", error)
-                return open(originalUri, VoiceTuning.NEUTRAL, canFallBack = false)
+                AlarmTalkLog.reportError("Tuned preview could not start; playing the original", error)
+                return open(null, VoiceTuning.NEUTRAL)
             }
             confirmPreviewPlaying = true
         }
-        open(playUri, applied, canFallBack = playUri != originalUri)
+        open(tunedWav, applied)
     }
 
-    // 높이를 바꾼 사본의 Uri(울림과 같은 파일 — `VoiceTuningRenderer`)와 **실제로 걸린 높이**. 0 이거나 굽기에
-    // 실패하면 원본과 0 — 원본을 들려줘 놓고 그 높이를 '들었다' 로 적으면 듣지 않은 값이 저장된다(Codex #870).
-    suspend fun tunedPreviewUri(uri: String, tuning: VoiceTuning): Pair<String, VoiceTuning> {
-        if (tuning.isNeutral) return uri to tuning
+    // 높이를 바꾼 소리(메모리 안의 WAV — `VoiceTuningRenderer`)와 **실제로 걸린 높이**. 0 이면 굽지 않고(원래 클립을
+    // 그대로 튼다) 그 높이, 굽기에 실패하면 null 과 0 — 원본을 들려줘 놓고 그 높이를 '들었다' 로 적으면 듣지 않은 값이
+    // 서버에 간다(Codex #870).
+    suspend fun bakeTunedPreview(uri: String, tuning: VoiceTuning): Pair<ByteArray?, VoiceTuning> {
+        if (tuning.isNeutral) return null to tuning
+        // 손을 연달아 떼면 앞 굽기가 취소된 채 끝나는데, 그 정리가 뒤 굽기의 진행 표시를 끄지 않게 마지막 요청만 끈다.
+        val request = ++tuningRenderRequest
         tuningRendering = true
         try {
-            val rendered = withContext(Dispatchers.Default) {
-                VoiceTuningRenderer.render(appContext, Uri.parse(uri), tuning)?.toString()
+            val wav = withContext(Dispatchers.Default) {
+                VoiceTuningRenderer.render(appContext, Uri.parse(uri), tuning.pitchSemitones)
             }
-            return if (rendered != null) rendered to tuning else uri to VoiceTuning.NEUTRAL
+            return if (wav != null) wav to tuning else null to VoiceTuning.NEUTRAL
         } finally {
-            tuningRendering = false
+            if (tuningRenderRequest == request) tuningRendering = false
         }
-    }
-
-    // 이 미리듣기 클립으로 구운 사본(목소리의 복사본)을 지운다 — 초안을 버리거나 등록 화면이 정리될 때(스펙 §4-3,
-    // Codex #870). 버린 초안을 쓰는 알람이 없어 오디오 정리를 지나지 않는다.
-    fun discardTunedPreviewCopies() {
-        val uri = confirmPreviewAudioUri ?: return
-        VoiceTuningRenderer.deleteCopiesOfInBackground(appContext, Uri.parse(uri))
     }
 
     // 이미 받은 미리듣기를 지금 높이로 기기에서 다시 **한 번** 튼다(iOS 와 같다 — 반복은 울릴 때의 일이다, 2026-10-08
@@ -831,8 +837,8 @@ internal fun VoiceProfileManagementPanel(
         val tuning = previewTuning
         tunedReplayJob = scope.launch {
             runCatching {
-                val (playUri, rendered) = tunedPreviewUri(uri, tuning)
-                startPreviewWithFallback(playUri, uri, rendered) { player, applied ->
+                val (tunedWav, baked) = bakeTunedPreview(uri, tuning)
+                startPreviewWithFallback(uri, tunedWav, baked) { player, applied ->
                     // **한 번만 튼다**(iOS 와 같다) — 반복은 울릴 때의 일이다(2026-10-08 사용자).
                     player.setOnCompletionListener { completed ->
                         if (mediaPlayer !== completed) {
@@ -972,15 +978,13 @@ internal fun VoiceProfileManagementPanel(
                         messageId = response.messageId,
                     )
                 }
-                // 문구를 고쳐 새 클립이 왔으면 옛 클립으로 구운 사본을 먼저 지운다 — 참조를 덮으면 지울 길이 없다(Codex #870).
-                if (confirmPreviewAudioUri != cached.localAudioUri) discardTunedPreviewCopies()
                 confirmPreviewAudioUri = cached.localAudioUri
                 // 추천값을 **첫 재생 전에** 정한다 — 첫 소리부터 보정된 목소리다(짧은 클립이라 금방이다).
                 ensureTuningSuggestion(voice.id, cached.localAudioUri)
-                val (playUri, renderedTuning) = tunedPreviewUri(cached.localAudioUri, previewTuning)
+                val (tunedWav, bakedTuning) = bakeTunedPreview(cached.localAudioUri, previewTuning)
                 // 이 재생에 실은 높이는 **이 요청의 지역 값**으로 완료 콜백에 넘긴다 — 화면 상태에 두면 확인을 기다리는 사이
                 // 시작한 다른 미리듣기가 덮어써, 듣지 않은 높이를 '들었다' 로 적는다(Codex #870).
-                startPreviewWithFallback(playUri, cached.localAudioUri, renderedTuning) { player, playedTuning ->
+                startPreviewWithFallback(cached.localAudioUri, tunedWav, bakedTuning) { player, playedTuning ->
                     player.apply {
                         setOnCompletionListener {
                             if (mediaPlayer === it) releasePreviewTuning()
@@ -1194,7 +1198,6 @@ internal fun VoiceProfileManagementPanel(
         confirmPreviewEditing = false
         confirmPreviewEditText = ""
         confirmPreviewSaving = false
-        discardTunedPreviewCopies()
         confirmPreviewAudioUri = null
         previewTuning = VoiceTuning.NEUTRAL
         tuningSuggestion = null
@@ -1240,7 +1243,6 @@ internal fun VoiceProfileManagementPanel(
                     confirmPreviewText = null
                     confirmPreviewEditing = false
                     confirmPreviewEditText = ""
-                    discardTunedPreviewCopies()
                     confirmPreviewAudioUri = null
                     previewTuning = VoiceTuning.NEUTRAL
                     tuningSuggestion = null
@@ -1268,8 +1270,6 @@ internal fun VoiceProfileManagementPanel(
             // draft 소멸(삭제/승격) → 미리듣기 상태 정리. 승격이면 플로우를 닫는 대신
             // '목소리 생성 중' 스텝으로 이어 알람 문구 생성·다운로드까지 끝낸다.
             draft == null && confirmNewVoice?.isDraft == true -> {
-                // 승격·삭제 모두 이 초안의 미리듣기 사본은 더 쓰이지 않는다.
-                discardTunedPreviewCopies()
                 val promotedId = promotedForPrerenderId
                     ?.takeIf { requested -> requested == confirmNewVoice?.id }
                     ?.takeIf { requested -> voiceProfiles.any { it.id == requested } }
@@ -1370,9 +1370,6 @@ internal fun VoiceProfileManagementPanel(
         onDispose {
             if (recorder.isRecording) recorder.cancel()
             stopMediaPreview()
-            // 등록 화면이 끝났다(세션 만료·화면 교체 포함) — 미리듣기 사본은 목소리의 복사본이라 남기지 않는다(스펙 §4-3,
-            // Codex #870). 이 화면의 범위는 곧 취소되므로 화면과 무관한 정리로 넘긴다.
-            discardTunedPreviewCopies()
         }
     }
 
@@ -2394,7 +2391,7 @@ internal fun VoiceProfileManagementPanel(
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
 
-                                    // 목소리 다듬기 — 손을 떼면 그 높이로 사본을 굽고 처음부터 다시 튼다
+                                    // 목소리 다듬기 — 손을 떼면 그 높이로 메모리에서 굽고 처음부터 다시 튼다
                                     // (첫 재생 도중이면 그게 끝난 뒤 — `replayTunedPreviewIfReady`).
                                     VoiceTuningCard(
                                         tuning = previewTuning,
@@ -2593,9 +2590,7 @@ internal fun VoiceProfileManagementPanel(
 
                             VoiceRegistrationStep.Preview -> {
                                 TextButton(
-                                    onClick = {
-                                        confirmNewVoice?.let { onDeleteVoiceDraft(it.id) }
-                                    },
+                                    onClick = { confirmNewVoice?.let { onDeleteVoiceDraft(it.id) } },
                                     enabled = !voiceProfileBusy && !confirmPreviewSaving,
                                 ) {
                                     // 지우는 동안은 **이 버튼**이 진행을 말한다 — 옆의 저장 버튼이
@@ -2617,13 +2612,14 @@ internal fun VoiceProfileManagementPanel(
                                     onClick = {
                                         confirmNewVoice?.let {
                                             promotedForPrerenderId = it.id
-                                            // 높이 값은 승격이 끝난 뒤 ViewModel 이 승격 응답의 id·교체 세대로 적는다
-                                            // (`MainViewModel.promoteVoiceDraft`) — 화면이 목록을 보고 적으면 아직 옛 세대다.
+                                            // **끝까지 들은** 높이를 등록 확정 요청에 실어 보낸다(교체 등록도 같다) —
+                                            // 서버가 이 목소리로 만드는 알람 소리에 굽는다(스펙 §4-3). 아래 저장 조건이
+                                            // 들은 높이와 지금 높이가 같을 때만 열리므로 둘은 같은 값이다.
                                             onPromoteVoiceDraft(
                                                 it.id,
                                                 replaceExistingChecked,
                                                 shareVoice && canShareVoice,
-                                                previewTuning.normalized(),
+                                                heardTuning?.normalized()?.pitchSemitones ?: 0f,
                                             )
                                         }
                                     },

@@ -854,6 +854,8 @@
     <string name="api_error_voice_limit_reached">登録できる声をすべて使いました。使わない声を削除してください。</string>
     <string name="api_error_voice_not_ready">声をまだ作成しています。しばらくしてからもう一度お試しください。</string>
     <string name="api_error_voice_cloning_failed">声を作成できませんでした。静かな場所でもう一度録音してください。</string>
+    <string name="api_error_invalid_voice_pitch">声の高さの値が正しくありません。調整し直してください。</string>
+    <string name="api_error_voice_pitch_locked">声の高さは声を登録するときにだけ設定できます。</string>
     <string name="api_error_alarm_not_found">このアラームはすでに削除されています。</string>
     <string name="api_error_family_alarm_disabled">相手がアラームを受け取らない設定にしています。</string>
     <string name="api_error_family_alarm_lead_time">相手のアラームはもう少し後に設定してください。相手の端末に届くまで少し時間がかかります。</string>

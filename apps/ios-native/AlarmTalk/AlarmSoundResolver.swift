@@ -28,24 +28,17 @@ enum AlarmSoundResolution: Equatable {
 /// 재예약 누락 다섯 건을 만든 원인이다(`fireAtMillis` 는 운세 클립을 고르는 씨앗인데
 /// 아무도 그걸 '소리 필드' 로 분류하지 않았다).
 enum AlarmSoundPlan: Equatable {
-    /// - tuning: 그 목소리의 다듬기 값(`VoiceTuningStore`). 없거나 중립이면 nil.
-    case voiceClip(cacheKey: String, url: URL, durationMs: Int64, volumePercent: Int, revision: String?, tuning: VoiceTuning?)
+    case voiceClip(cacheKey: String, url: URL, durationMs: Int64, volumePercent: Int, revision: String?)
     case alarmSoundFile(url: URL, stagingKey: String, volumePercent: Int)
     case systemDefault
 
     /// 예약된 소리와 지금 울려야 할 소리가 같은지 비교하는 값.
     /// 파일 경로·길이는 넣지 않되 원격 주소 세대는 넣는다. 같은 message ID 아래 음원이
     /// 교체되면 AlarmKit 예약도 새 바이트로 다시 만들어야 한다.
-    ///
-    /// 다듬기 값은 **소리를 바꾸므로** 꼬리표로 들어간다 — 값을 바꾸면 지문이 달라져
-    /// 리컨사일러가 그 목소리의 알람을 새 파일로 다시 예약한다. 중립이면 꼬리표가 없어
-    /// 이 기능 이전의 지문과 같다(앱을 올렸다고 전 알람이 재예약되지 않는다).
     var fingerprint: String {
         switch self {
-        case .voiceClip(let key, _, _, let volume, let revision, let tuning):
-            let base = "voice:\(key):r\(revision ?? "-"):v\(volume)"
-            guard let tag = tuning?.soundTag else { return base }
-            return base + ":t\(tag)"
+        case .voiceClip(let key, _, _, let volume, let revision):
+            return "voice:\(key):r\(revision ?? "-"):v\(volume)"
         case .alarmSoundFile(let url, _, let volume): return "sound:\(url.path):v\(volume)"
         case .systemDefault: return "default"
         }
@@ -118,40 +111,6 @@ enum AlarmSoundResolver {
         return url
     }
 
-    /// 이 알람에 실을 목소리 높이 값(스펙 voice-and-message §4-3). **이 기기에서 만든**(받은 것이 아닌)
-    /// 등록 목소리 알람만 — 안드로이드 `VoiceTuning.appliesTo` 와 같은 판정이다.
-    ///
-    /// - ⚠ **받은 알람은 출처로 거른다.** 가족이 내가 공유한 목소리로 보낸 알람은 내 목소리 id·내 계정을
-    ///   그대로 달고 오므로, 출처를 안 보면 보낸 사람이 들려주려던 클립의 높이를 내 값으로 바꾼다.
-    /// - 소유자가 아직 새겨지지 않은 옛 행(`ownerUserId == nil` — 세션이 끝날 때 `claimUnownedAlarms` 가
-    ///   새긴다)은 지금 로그인한 계정의 것으로 본다. 안 그러면 방금 저장한 값이 기존 알람에 안 실린다.
-    static func voiceTuning(
-        for record: LocalAlarmRecord,
-        store: VoiceTuningStore = VoiceTuningStore(),
-        currentUserID: () -> String? = { KeychainStore.readSession()?.user.id }
-    ) -> VoiceTuning? {
-        guard record.originEnum == .localOwned,
-              record.voiceSourceEnum != .localAudio,
-              let voiceID = record.voiceProfileId?.nilIfBlank,
-              !isSystemVoiceId(voiceID) else { return nil }
-        let owner = record.ownerUserId?.nilIfBlank ?? currentUserID()
-        return store.tuning(userID: owner, voiceProfileID: voiceID)
-    }
-
-    /// 이 알람이 높이를 구워 넣은 목소리로 울린다면 그 파일을 **메인 밖에서** 미리 만든다(`AlarmSoundStaging.prestageTuned`).
-    /// 예약 직전(`AlarmKitViewModel.schedule`)에 기다린다 — 그 뒤의 동기 `resolve` 는 만들어 둔 파일을 쓴다.
-    /// 계획은 예약이 **한 번** 정해 넘긴다 — 여기서 다시 정하면 기다리는 사이 다듬기 값이 바뀌었을 때 미리 구운 것과
-    /// 예약이 쓰는 것이 갈라져, 예약이 메인에서 다시 굽는다(Codex #870).
-    /// - Returns: 그대로 `resolve(plan:renderTunedIfMissing:)` 에 넘긴다 — 높이를 실을 것이 없으면 true(굽기와 무관),
-    ///   있는데 굽지 못했으면 false(메인에서 다시 굽지 않는다).
-    @discardableResult
-    static func prestageTunedSound(plan: AlarmSoundPlan) async -> Bool {
-        guard case .voiceClip(let key, let url, _, let volumePercent, _, let tuning?) = plan, tuning.soundTag != nil else {
-            return true
-        }
-        return await AlarmSoundStaging.prestageTuned(url: url, key: key, volumePercent: volumePercent, tuning: tuning)
-    }
-
     /// **무엇을 울릴지** 만 정한다 — 파일을 만들지 않는다(순수 조회).
     ///
     /// [resolve] 는 이 결정에 스테이징(트랜스코드·복사)을 얹은 것이다. 둘을 나눠 둔 이유는
@@ -174,9 +133,7 @@ enum AlarmSoundResolver {
                 url: url,
                 durationMs: duration,
                 volumePercent: record.voiceVolumePercent,
-                revision: revision,
-                // 그 목소리(계정 × 프로필)의 다듬기 값. 클립이 그 목소리의 것이라 함께 실린다.
-                tuning: voiceTuning(for: record)
+                revision: revision
             )
         }
 
@@ -200,9 +157,7 @@ enum AlarmSoundResolver {
                     url: fallback.url,
                     durationMs: audioCache.readMetadata(cacheKey: fallback.key)?.durationMs ?? 0,
                     volumePercent: record.voiceVolumePercent,
-                    revision: nil,
-                    // 기본(시스템) 목소리 클립 — 등록 목소리의 다듬기는 싣지 않는다.
-                    tuning: nil
+                    revision: nil
                 )
             }
         }
@@ -221,32 +176,12 @@ enum AlarmSoundResolver {
         for record: LocalAlarmRecord,
         audioCache: AudioCacheStore
     ) -> AlarmSoundResolution {
-        resolve(plan: plan(for: record, audioCache: audioCache))
-    }
-
-    /// 이미 정한 계획([plan])을 스테이징한다. 예약은 계획을 **한 번** 정해 이걸로 굽고, 같은 계획으로 지문을 새긴다 —
-    /// 예약을 기다리는 사이 계획이 바뀌면(다듬기 값 저장·삭제 — 계획이 행 밖의 `VoiceTuningStore` 를 읽는다) OS 에는
-    /// 옛 소리가, 행에는 새 지문이 실려 리컨사일러가 맞는 것으로 본다(Codex #870).
-    ///
-    /// - Parameter renderTunedIfMissing: false 면 높이를 구운 파일이 없을 때 **여기서(메인) 굽지 않고** 원래 목소리를
-    ///   싣는다 — 메인 밖 미리 굽기가 이미 실패한 경우다(`prestageTunedSound`). 지문에는 폴백 표시가 붙어 다음 회차가
-    ///   다시 시도한다.
-    static func resolve(plan: AlarmSoundPlan, renderTunedIfMissing: Bool = true) -> AlarmSoundResolution {
-        switch plan {
-        case .voiceClip(let key, let url, let duration, let volumePercent, _, let tuning):
+        switch plan(for: record, audioCache: audioCache) {
+        case .voiceClip(let key, let url, let duration, let volumePercent, _):
             // 길이 초과·측정 불가여도 staging 을 한 번 시도한다 — AlarmSoundStaging 이 첫
             // 30초로 캡하므로 성공하면 `.bundledNamed`(잠금화면에서도 울림)로 승격된다.
             // 트림/transcode 가 진짜로 실패할 때만 in-app 폴백으로 떨어진다.
-            if renderTunedIfMissing || tuning?.soundTag == nil,
-               let bundled = try? AlarmSoundStaging.stage(
-                   url: url, key: key, volumePercent: volumePercent, tuning: tuning
-               ) {
-                return .bundledNamed(stagedAlertName(bundled))
-            }
-            // 높이를 굽지 못했으면 **원래 목소리라도** OS 에 싣는다 — `.cachedAudio` 로 떨어지면 잠긴 화면에서는 시스템
-            // 톤이 운다(스펙 §4-3 "실패하면 원래 소리", Codex #870). 지문에는 폴백 표시가 붙어 다음 회차가 다시 굽는다.
-            if tuning?.soundTag != nil,
-               let bundled = try? AlarmSoundStaging.stage(url: url, key: key, volumePercent: volumePercent) {
+            if let bundled = try? AlarmSoundStaging.stage(url: url, key: key, volumePercent: volumePercent) {
                 return .bundledNamed(stagedAlertName(bundled))
             }
             return .cachedAudio(url, duration)

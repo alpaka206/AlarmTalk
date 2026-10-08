@@ -37,9 +37,6 @@ import com.alarmtalk.app.data.AlarmPlayModes
 import com.alarmtalk.app.data.DefaultVoiceClipSource
 import com.alarmtalk.app.data.VibrationPatternLibrary
 import com.alarmtalk.app.data.VibrationPatterns
-import com.alarmtalk.app.data.VoiceTuning
-import com.alarmtalk.app.data.VoiceTuningRenderer
-import com.alarmtalk.app.data.VoiceTuningStore
 import com.alarmtalk.app.data.decodeBucketClipKeys
 import com.alarmtalk.app.isEntitledOptimistic
 import com.alarmtalk.app.resolvePaidVoiceAccess
@@ -336,13 +333,7 @@ class RingingService : Service() {
                 "voiceVolume=${alarm?.voiceVolumePercent} id=${alarm?.id}",
         )
         when (sound) {
-            // 목소리 보정은 **그 알람 자신의 목소리**에만 건다 — 대신 트는 기본 목소리에는 걸지 않는다.
-            is RingSound.OwnVoice -> {
-                val uri = Uri.parse(sound.uri)
-                // 굽기 세대는 높이 값을 **읽기 전에** 잡는다 — 그 사이 로그아웃이 지나가면 뒤에서 굽기가 버려진다(Codex #870).
-                val ticket = VoiceTuningRenderer.ticketFor(uri)
-                startVoiceLoop(uri, alarm, voiceTuningFor(alarm), ticket)
-            }
+            is RingSound.OwnVoice -> startVoiceLoop(Uri.parse(sound.uri), alarm)
             is RingSound.DefaultVoice -> startVoiceLoop(Uri.parse(sound.uri), alarm)
             is RingSound.Tone -> startAlarmToneLoop(alarm, forced = sound.forced)
             RingSound.Silent -> {
@@ -355,19 +346,6 @@ class RingingService : Service() {
             }
         }
     }
-
-    /**
-     * 이 알람 목소리의 보정값(등록 미리듣기에서 맞춘 값). 받은 알람·직접 녹음·기본 목소리·값 없음·중립이면
-     * null — 그때 울림은 예전과 똑같이 돈다. 기기 저장소만 읽는다(네트워크 없음). 절대 던지지 않는다.
-     * ⚠ **받은 알람은 출처로 거른다.** 가족이 **내가 공유한 목소리**로 보낸 알람은 내 목소리 id·내 계정을
-     * 그대로 달고 오므로, 출처를 안 보면 보낸 사람이 들려주려던 클립의 높이를 내 값으로 바꾼다(스펙 §4-3).
-     */
-    private fun voiceTuningFor(alarm: AlarmEntity?): VoiceTuning? = runCatching {
-        if (alarm == null) return@runCatching null
-        VoiceTuningStore(applicationContext).readForAlarm(alarm, AuthSessionStore(applicationContext).read()?.user?.id)
-    }.onFailure { error ->
-        Log.w(TAG, "Failed to read voice tuning id=${alarm?.id}", error)
-    }.getOrNull()
 
     /**
      * 이 알람 대신 틀 **기본 목소리** 소리 — 기기 안의 클립·내장 인사말만 본다(네트워크 없음).
@@ -460,82 +438,38 @@ class RingingService : Service() {
         }
     }
 
-    private fun startVoiceLoop(
-        voiceUri: Uri,
-        alarm: AlarmEntity?,
-        tuning: VoiceTuning? = null,
-        renderTicket: VoiceTuningRenderer.RenderTicket? = null,
-    ) {
+    private fun startVoiceLoop(voiceUri: Uri, alarm: AlarmEntity?) {
         voiceLoopActive = true
         cancelVoiceRepeatJob()
         mediaPlayer?.release()
         // ⚠ **목소리는 항상 반복한다**(2026-08-27 지시 — 편집기에서 선택지를 없앴다).
         // 옛 행에 false 가 남아 있을 수 있으므로 여기서도 값을 보지 않는다.
         val repeatVoice = true
-        // 목소리 높이 보정 — 높이만 옮긴 사본(WAV)을 튼다. ⚠ **울리는 순간에는 굽지 않는다**(Codex #870) — 굽기는
-        // 수백 ms~수 초라 그동안 소리도 진동도 없다. 미리 구워 둔 사본(알람 저장·높이 저장·앱 시작·직전 울림이 끝날 때
-        // `AlarmRepository.prewarmTunedAlarmAudio`)이 있으면 그걸, 없으면 원래 목소리로 곧바로 울리고 다음 울림을 위해
-        // 뒤에서 굽는다.
-        val playUri = tuning?.let { t ->
-            VoiceTuningRenderer.cachedCopy(applicationContext, voiceUri, t)
-                ?: run {
-                    VoiceTuningRenderer.renderInBackground(
-                        applicationContext,
-                        voiceUri,
-                        t,
-                        renderTicket ?: VoiceTuningRenderer.ticketFor(voiceUri),
-                    )
-                    null
-                }
-        } ?: voiceUri
-        if (tuning != null) Log.i(TAG, "Voice pitch tuning ${tuning.pitchSemitones} st applied=${playUri != voiceUri}")
-        // 플레이어에 반복 처리를 걸고 시작한다. 시작이 실패하면(오디오 서버·플레이어 상태) 놓고 null — 예외가 여기서
-        // 빠져나가면 뒤따르는 진동까지 건너뛰어 **소리도 진동도 없는 알람**이 된다(Codex #870).
-        fun startPlayer(candidate: MediaPlayer): MediaPlayer? = runCatching {
-            candidate.apply {
-                applyVoiceVolume(this, alarm)
-                isLooping = false
-                setOnCompletionListener { completed ->
-                    if (repeatVoice && voiceLoopActive) {
-                        if (mediaPlayer === completed) {
-                            scheduleVoiceRepeat(completed, alarm)
-                        } else {
-                            completed.release()
-                        }
-                    } else {
-                        completed.release()
-                        if (mediaPlayer === completed) {
-                            mediaPlayer = null
-                        }
-                    }
-                }
-                start()
-            }
-        }.onFailure { error ->
-            AlarmTalkLog.reportError("Failed to start voice audio", error)
-            candidate.release()
-        }.getOrNull()
+        val player = createVoicePlayer(voiceUri)
         // 준비 도중 dismiss/snooze/파괴로 현재 알람이 바뀌었으면 좀비 루프 플레이어를 남기지 않는다.
-        fun superseded(): Boolean = destroyed || (alarm != null && ringingAlarmId != alarm.id)
-
-        // 구운 사본을 못 열거나 **시작하지 못하면** 알람음으로 떨어지기 전에 원래 목소리를 한 번 더 시도한다 —
-        // 그 목소리는 멀쩡할 수 있다(Codex #870, 스펙 §4-3 "실패하면 원래 소리").
-        val tunedPlayer = if (playUri != voiceUri) createVoicePlayer(playUri) else null
-        val player = tunedPlayer ?: createVoicePlayer(voiceUri)
-        if (superseded()) {
+        if (destroyed || (alarm != null && ringingAlarmId != alarm.id)) {
             player?.release()
             mediaPlayer = null
             return
         }
-        mediaPlayer = player?.let(::startPlayer)
-        if (mediaPlayer == null && tunedPlayer != null) {
-            val original = createVoicePlayer(voiceUri)
-            if (superseded()) {
-                original?.release()
-                mediaPlayer = null
-                return
+        mediaPlayer = player?.apply {
+            applyVoiceVolume(this, alarm)
+            isLooping = false
+            setOnCompletionListener { completed ->
+                if (repeatVoice && voiceLoopActive) {
+                    if (mediaPlayer === completed) {
+                        scheduleVoiceRepeat(completed, alarm)
+                    } else {
+                        completed.release()
+                    }
+                } else {
+                    completed.release()
+                    if (mediaPlayer === completed) {
+                        mediaPlayer = null
+                    }
+                }
             }
-            mediaPlayer = original?.let(::startPlayer)
+            start()
         }
         if (mediaPlayer == null) {
             AlarmTalkLog.reportError("Failed to create voice MediaPlayer")

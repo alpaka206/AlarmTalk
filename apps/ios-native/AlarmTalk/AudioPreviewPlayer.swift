@@ -10,9 +10,6 @@ final class AudioPreviewPlayer: NSObject, ObservableObject, AVAudioPlayerDelegat
     @Published private(set) var isPreparing = false
 
     var onFinish: (() -> Void)?
-    /// 마지막 재생이 **끝까지 제대로** 끝났는가(`audioPlayerDidFinishPlaying` 의 `successfully`). `onFinish` 직전에 적는다 —
-    /// 중간에 디코딩이 깨져 끝난 것을 끝까지 들은 것으로 치지 않게(Codex #870).
-    private(set) var lastFinishSucceeded = true
 
     private var player: AVAudioPlayer?
     /// stopAfterMs 윈도우를 위한 예약 정지 작업. AVAudioPlayer 는 종료 시각 지정을
@@ -56,15 +53,7 @@ final class AudioPreviewPlayer: NSObject, ObservableObject, AVAudioPlayerDelegat
         let session = AVAudioSession.sharedInstance()
         try session.setCategory(.playback, mode: .spokenAudio)
         try session.setActive(true)
-        let player: AVAudioPlayer
-        do {
-            player = try AVAudioPlayer(contentsOf: url)
-        } catch {
-            // 세션을 켠 뒤 실패하면 놓는다 — 안 그러면 다른 앱의 소리가 계속 끊긴 채 남는다(Codex #870).
-            isPreparing = false
-            try? session.setActive(false, options: [.notifyOthersOnDeactivation])
-            throw error
-        }
+        let player = try AVAudioPlayer(contentsOf: url)
         player.delegate = self
         player.prepareToPlay()
         if startMs > 0 {
@@ -73,13 +62,7 @@ final class AudioPreviewPlayer: NSObject, ObservableObject, AVAudioPlayerDelegat
         if let volumePercent {
             player.volume = Self.gain(volumePercent)
         }
-        // `play()` 가 false 면 소리가 나지 않았고 끝 알림도 오지 않는다 — 시작한 것으로 치면 끝을 기다리는 쪽(등록 첫
-        // 미리듣기의 대체 재생)이 영영 멈춘다(Codex #870). 던져서 호출자의 '못 틀었다' 갈래로 보낸다.
-        guard player.play() else {
-            isPreparing = false
-            try? session.setActive(false, options: [.notifyOthersOnDeactivation])
-            throw PlaybackError.didNotStart
-        }
+        player.play()
         self.player = player
         isPreparing = false
         isPlaying = true
@@ -135,8 +118,6 @@ final class AudioPreviewPlayer: NSObject, ObservableObject, AVAudioPlayerDelegat
         autoStopTask = nil
     }
 
-    enum PlaybackError: Error { case didNotStart }
-
     nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
         Task { @MainActor [weak self] in
             guard let self else { return }
@@ -145,7 +126,6 @@ final class AudioPreviewPlayer: NSObject, ObservableObject, AVAudioPlayerDelegat
             self.isPreparing = false
             self.player = nil
             try? AVAudioSession.sharedInstance().setActive(false, options: [.notifyOthersOnDeactivation])
-            self.lastFinishSucceeded = flag
             self.onFinish?()
         }
     }

@@ -477,11 +477,7 @@ final class AlarmKitViewModel: ObservableObject {
         // OS만 취소하고 pending을 지워 디스크 행에 죽은 핸들이 남으므로 전부 보류한다.
         guard store.hasLoadedFromDisk else { return 0 }
         let pending = PendingAlarmCancellationStore.all
-        guard !pending.isEmpty else {
-            // 남은 취소가 없다 — 로그아웃 때 미뤄 둔 '높이를 구운 파일' 정리가 있으면 마친다(Codex #870).
-            AlarmSoundStaging.finishDeferredTunedCleanup()
-            return 0
-        }
+        guard !pending.isEmpty else { return 0 }
         // `AlarmManager.shared.alarms` 가 권위다 — 이미 사라진 예약을 취소하려 들지 않는다.
         // 목록을 못 읽으면(권한 회수 등) 이번 회차는 건너뛴다. 목록은 그대로 남아 다음 기회에.
         // OS 접점만 주입 가능하게 두어 로드 전후의 실제 재처리/행 정리를 회귀 사례로 쓴다.
@@ -533,10 +529,6 @@ final class AlarmKitViewModel: ObservableObject {
         // 안전판은 `enabled` 가 아니라 **UUID 일치**다: 그 사이 새 UUID 로 다시 예약된
         // 행이라면 값이 달라 여기 걸리지 않는다.
         applyResolvedCancellations(resolved, origins: resolvedOrigins, store: store)
-        // 로그아웃 때 남은 예약 때문에 미뤄 둔 '높이를 구운 파일' 정리를 — 남은 취소가 모두 끝났으면 — 마친다(Codex #870).
-        if PendingAlarmCancellationStore.all.isEmpty {
-            AlarmSoundStaging.finishDeferredTunedCleanup()
-        }
         return cleared
     }
 
@@ -1031,6 +1023,8 @@ final class AlarmKitViewModel: ObservableObject {
                     return false
                 }
             }
+            let id = UUID()
+            let schedule = makeSchedule(record)
             // Phase 2-B4: playMode + 캐시 상태에 따라 AlarmKit sound 전략 결정.
             // 유료 목소리 권한을 **예약 시점에** 재확인한다.
             //
@@ -1044,27 +1038,7 @@ final class AlarmKitViewModel: ObservableObject {
                     "Free plan at schedule time — scheduling a default voice instead of the paid voice (id: \(record.id, privacy: .public))"
                 )
             }
-            // 계획은 **한 번만** 정한다 — 미리 굽기·스테이징·지문이 모두 이 계획을 쓴다. 기다리는 사이 다듬기 값이 바뀌어도
-            // 미리 구운 것과 예약이 쓰는 것, OS 에 실린 소리와 행의 지문이 갈라지지 않게(Codex #870).
-            let soundPlan = AlarmSoundResolver.plan(for: effectiveRecord, audioCache: audioCache)
-            // 로그아웃 때 미뤄 둔 정리 목록에 이 파일이 있으면 — 예약이 끝날 때까지 지우지 않고, **성공한 뒤에** 목록에서
-            // 뺀다(실패하면 표시가 남아 나중에 지워진다, Codex #870).
-            let tunedStagedName = AlarmSoundStaging.tunedStagedFileName(for: soundPlan)
-            var reserved = false
-            AlarmSoundStaging.beginTunedReservation(tunedStagedName)
-            defer { AlarmSoundStaging.endTunedReservation(tunedStagedName, succeeded: reserved) }
-            // 높이를 구워 넣을 소리는 **메인 밖에서** 미리 만든다 — 아래 `resolve` 는 메인에서 동기로 돌아, 거기서
-            // PSOLA 를 돌리면 여러 알람을 다시 걸 때 화면이 멎는다(Codex #870).
-            let tunedReady = await AlarmSoundResolver.prestageTunedSound(plan: soundPlan)
-            // 미리 굽는 사이 계정이 바뀌거나 떠나는 중이면 여기서 멈춘다 — 아래 `resolve` 가 그 계정의 목소리를 **정리 뒤에**
-            // 다시 구워 남긴다(Codex #870). 예약 뒤의 같은 확인과 같은 조건이고, 아직 OS 예약이 없어 되돌릴 것도 없다.
-            if accountEpoch != epochAtStart || isLeavingAccount || !mayScheduleRecord(record) {
-                return false
-            }
-            let id = UUID()
-            let schedule = makeSchedule(record)
-            // 미리 굽기가 실패했으면 메인에서 다시 굽지 않는다(원래 목소리를 싣고 다음 회차에 다시, Codex #870).
-            let resolution = AlarmSoundResolver.resolve(plan: soundPlan, renderTunedIfMissing: tunedReady)
+            let resolution = AlarmSoundResolver.resolve(for: effectiveRecord, audioCache: audioCache)
             let configuration = makeConfiguration(
                 record: effectiveRecord,
                 alarmKitID: id,
@@ -1159,15 +1133,13 @@ final class AlarmKitViewModel: ObservableObject {
                 localID: record.id,
                 alarmKitID: id.uuidString,
                 soundFingerprint: AlarmScheduleReconciler.scheduledFingerprint(
-                    plan: soundPlan,
+                    plan: AlarmSoundResolver.plan(for: effectiveRecord, audioCache: audioCache),
                     resolution: resolution
                 )
             )
             // 언어와 함께 녹음 문구 표시도 적는다 — 비교는 저장된 행 기준이다(`voiceCaptionOutdated`).
             AlarmPresentationLanguage.didSchedule(record)
             statusMessage = Self.describeScheduleStatus(record: record, resolution: resolution)
-            // **그 파일이** 실제로 예약에 실렸을 때만 '쓰는 중' 이다 — 굽기가 실패해 원래 목소리·톤으로 걸렸으면 표시를 남긴다.
-            if case .bundledNamed(let name) = resolution, name == tunedStagedName { reserved = true }
             return true
         } catch {
             statusMessage = String(localized: "알람 예약에 실패했어요. 잠시 후 다시 시도해 주세요.")

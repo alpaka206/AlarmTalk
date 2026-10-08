@@ -224,16 +224,8 @@ final class VoiceReplacementCascadeTests: XCTestCase {
         var other = alarm(id: "other", voiceProfileId: "clone-2", bucketId: "weather", cacheKey: "stock_other-\(tag)")
         other.bucketClipKeys = ["stock_other-\(tag)", cloneKeys[2]]
         store.upsert(other)
-        let tuningStore = VoiceTuningStore()
-        let tuningUser = "lock-\(tag)"
-        tuningStore.save(VoiceTuning(pitchSt: -2, source: .user), userID: tuningUser, voiceProfileID: "clone-1")
-        defer { tuningStore.save(.neutral, userID: tuningUser, voiceProfileID: "clone-1") }
 
         VoiceStudioViewModel().degradeAlarms(usingVoiceProfileIDs: ["clone-1"], alarmStore: store, audioCache: cache)
-        XCTAssertNil(
-            tuningStore.tuning(userID: tuningUser, voiceProfileID: "clone-1"),
-            "사라진 원래 목소리의 높이 값도 지운다(Codex #870)"
-        )
 
         XCTAssertNil(store.record(id: "locked")?.preLockVoice)
         XCTAssertNil(cache.cachedURL(for: cloneKeys[0]), "대표 클립")

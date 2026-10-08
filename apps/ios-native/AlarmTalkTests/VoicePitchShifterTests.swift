@@ -1,3 +1,4 @@
+import AVFoundation
 import XCTest
 @testable import AlarmTalk
 
@@ -113,6 +114,26 @@ final class VoicePitchShifterTests: XCTestCase {
         XCTAssertEqual(y[777], -0.24569550156593323, accuracy: 1e-5)
         XCTAssertEqual(y[1_599], -0.26356241106987, accuracy: 1e-5)
         XCTAssertEqual(y.reduce(0.0) { $0 + Double(abs($1)) }, 539.0014692312106, accuracy: 1e-2)
+    }
+
+    /// 등록 미리듣기는 **메모리에서** 굽는다(스펙 §4-3 — 파일로 남기지 않는다). 구운 WAV 는 `AVAudioPlayer(data:)` 로
+    /// 열리고 길이는 원본과 같다. 원래 소리(0)면 굽지 않는다(nil — 원본을 그대로 튼다).
+    func test_previewWAV_bakesInMemoryAndKeepsLength() throws {
+        let rate = 44_100.0
+        let input = harmonicTone(hz: 140, seconds: 1, sampleRate: rate)
+        // 받은 미리듣기 파일 대신 — 테스트가 만든 임시 파일이다.
+        let source = FileManager.default.temporaryDirectory.appendingPathComponent("pitch-preview-\(UUID().uuidString).wav")
+        try VoiceTuningRenderer.wavData(input, sampleRate: rate).write(to: source)
+        defer { try? FileManager.default.removeItem(at: source) }
+
+        XCTAssertNil(VoiceTuningRenderer.previewWAV(source: source, tuning: .neutral))
+        XCTAssertNil(VoiceTuningRenderer.previewWAV(source: source, tuning: VoiceTuning(pitchSt: 0.2, source: .user)))
+
+        let data = try XCTUnwrap(VoiceTuningRenderer.previewWAV(source: source, tuning: VoiceTuning(pitchSt: -2, source: .user)))
+        XCTAssertEqual(data.count, 44 + input.count * 2, "16-bit 모노 — 길이는 그대로")
+        let player = try AVAudioPlayer(data: data, fileTypeHint: AVFileType.wav.rawValue)
+        XCTAssertEqual(player.duration, 1, accuracy: 0.01)
+        XCTAssertEqual(player.numberOfChannels, 1)
     }
 
     func test_resampleKeepsDurationAndPitch() throws {

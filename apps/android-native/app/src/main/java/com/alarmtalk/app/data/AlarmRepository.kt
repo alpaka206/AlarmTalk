@@ -24,8 +24,6 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
 class AlarmRepository(
@@ -892,22 +890,14 @@ class AlarmRepository(
     suspend fun degradeAlarmsWithInaccessibleVoice(
         accessibleVoiceIds: Set<String>,
         expectedOwnerUserId: String?,
-    ): Int {
-        // 접근을 잃은 목소리의 높이 보정값·사본도 지운다 — 그 목소리를 쓰는 알람이 없어 아래 강등이 아무것도 안 해도
-        // (Codex #870). 판정은 강등과 같은 권위 목록이다. 사본은 캐시라 통째로 지운다.
-        withContext(Dispatchers.IO) {
-            if (VoiceTuningStore(context).retainOnly(expectedOwnerUserId, accessibleVoiceIds)) {
-                VoiceTuningRenderer.clearAll(context)
-            }
-        }
-        return degradeMatchingLocalOwnedVoiceAlarms(expectedOwnerUserId) { alarm ->
+    ): Int =
+        degradeMatchingLocalOwnedVoiceAlarms(expectedOwnerUserId) { alarm ->
             !alarm.voiceProfileId.isNullOrBlank() &&
                 // 시스템 스톡 버킷/보이스는 영구라 보존. 클론(비-system) 보이스는 단일클립·버킷 모두
                 // 접근권 상실(공유해제·제공자취소·삭제) 시 강등 대상.
                 !isSystemVoiceId(alarm.voiceProfileId) &&
                 alarm.voiceProfileId !in accessibleVoiceIds
         }
-    }
 
     // 방금 삭제한 특정 목소리를 쓰는 내 알람만 즉시 강등한다 — 소셜 목록 신선도(reconcile 가드)와
     // 무관하게 삭제 확정 정보로 바로 기본 목소리(미나) 알람으로 바꾼다.
@@ -1054,8 +1044,6 @@ class AlarmRepository(
                 if (snapshot.audioCacheKey.isNullOrBlank()) {
                     snapshot.localAudioUri?.takeIf { it.isNotBlank() }?.let(releasedKeylessUris::add)
                 }
-                // 원래 목소리가 사라졌다 — 그 목소리의 높이 보정값도 지운다(스펙 voice-and-message §4-3, Codex #870).
-                VoiceTuningStore(context).removeVoice(snapshot.voiceProfileId)
             }
             alarmDao.upsertPreservingServerSyncFields(locked.finalizedLock(lockCheckedAt))
             Log.i(TAG, "Finalized a default-voice lock id=${locked.id}: the original voice is no longer accessible")
@@ -1123,9 +1111,6 @@ class AlarmRepository(
      */
     private suspend fun deleteAudioNoAlarmUses(keys: Set<String>, keylessUris: Set<String> = emptySet()) {
         if (keys.isEmpty() && keylessUris.isEmpty()) return
-        // 높이를 바꾼 사본도 목소리의 복사본이다 — 목소리를 잃는 경로는 모두 여기를 지나므로 같이 지운다.
-        // 사본은 캐시라 남은 목소리의 것까지 지워도 다음 울림에서 다시 굽는다(`VoiceTuningRenderer`).
-        VoiceTuningRenderer.clearAll(context)
         val stillReferenced = HashSet<String>()
         // 키 없는 파일은 파일 이름(확장자 제외)으로 센다 — `sweepStaleAudioCache` 와 같은 단위.
         val stillReferencedFiles = HashSet<String>()
@@ -1391,12 +1376,6 @@ class AlarmRepository(
             )
             alarmDao.upsert(next)
             alarmScheduler.schedule(next)
-            // 다음 회전 클립을 미리 굽는다 — 다음 울림이 그 자리에서 굽지 않게.
-            prewarmTunedAudio(
-                next,
-                VoiceTuningStore(context),
-                runCatching { com.alarmtalk.app.network.AuthSessionStore(context).read()?.user?.id }.getOrNull(),
-            )
         } else {
             alarmScheduler.cancel(alarmId)
             alarmDao.setState(
@@ -1523,30 +1502,6 @@ class AlarmRepository(
 
     fun resolveBucketClipLocalUri(alarm: AlarmEntity): String? =
         resolveBucketClipSelection(alarm)?.localAudioUri
-
-    /**
-     * 높이를 맞춘 목소리로 울릴 알람의 **다음 울림 클립**을 미리 굽는다(뒤에서, 한 번에 하나씩) — 울리는 순간에는 굽지
-     * 않으므로(`RingingService.startVoiceLoop`, Codex #870) 여기서 데워 두지 않으면 첫 울림이 원래 목소리다. 앱 시작·알람
-     * 저장·높이 저장·울림이 끝난 뒤(다음 회전 클립) 부른다. 이미 구운 클립은 파일 확인만 하고 넘어간다.
-     */
-    suspend fun prewarmTunedAlarmAudio() {
-        val signedInUserId = runCatching { com.alarmtalk.app.network.AuthSessionStore(context).read()?.user?.id }.getOrNull()
-        val store = VoiceTuningStore(context)
-        runCatching { alarmDao.getAllAlarms() }.getOrDefault(emptyList())
-            .filter { it.enabled }
-            .forEach { alarm -> prewarmTunedAudio(alarm, store, signedInUserId) }
-    }
-
-    private fun prewarmTunedAudio(alarm: AlarmEntity, store: VoiceTuningStore, signedInUserId: String?) {
-        runCatching {
-            val clip = resolveBucketClipLocalUri(alarm) ?: alarm.localAudioUri?.takeIf { it.isNotBlank() } ?: return
-            val source = android.net.Uri.parse(clip)
-            // 세대는 높이 값을 **읽기 전에** 잡는다 — 그 사이 로그아웃·목소리 상실이 지나가면 이 굽기는 버려진다(Codex #870).
-            val ticket = VoiceTuningRenderer.ticketFor(source)
-            val tuning = store.readForAlarm(alarm, signedInUserId) ?: return
-            VoiceTuningRenderer.renderInBackground(context, source, tuning, ticket)
-        }.onFailure { Log.w(TAG, "Failed to prewarm tuned alarm audio id=${alarm.id}", it) }
-    }
 
     /**
      * dismiss(에피소드 종료) 시 다음 회전 인덱스. 버킷이 아니거나 클립 1개 이하면 그대로.

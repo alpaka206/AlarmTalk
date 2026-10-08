@@ -125,6 +125,8 @@ extension VoiceStudioViewModel {
         "VOICE_CLONING_FAILED",
         "VOICE_MONTHLY_CHANGE_LIMIT_REACHED",
         "VOICE_PREVIEW_REQUIRED",
+        "INVALID_VOICE_PITCH",
+        "VOICE_PITCH_LOCKED",
         "CONSENT_REQUIRED",
         "ALARM_NOT_FOUND",
         "TTS_GENERATION_FAILED",

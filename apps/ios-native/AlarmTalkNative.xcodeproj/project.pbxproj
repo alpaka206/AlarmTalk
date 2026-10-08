@@ -339,7 +339,6 @@
 		D3817E0B7FAFEE9522D0F67F /* AlarmSoundPlanTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4061A001D00A305855EE9206 /* AlarmSoundPlanTests.swift */; };
 		D46D09E78B1AEE5C9E99BB38 /* AlarmVoiceStopOwnershipTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE244676814E7183470594C3 /* AlarmVoiceStopOwnershipTests.swift */; };
 		D4BC7CAADCECBC3A7610C2FA /* APIErrorMessages.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF3E03716A45AD4CC387DBEE /* APIErrorMessages.swift */; };
-		D54CDEAB08FABF3564864034 /* VoiceTuningStagingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 950295F7DB6EBF46DA2A0699 /* VoiceTuningStagingTests.swift */; };
 		D615F733188A5CF3F5939A63 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 01C2A27A65AD8383E3A92C54 /* Localizable.xcstrings */; };
 		D61E2402A6A6C7569C172B7F /* LegalDocumentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 318294BCA312AB4B0D42EBCB /* LegalDocumentView.swift */; };
 		D627C8977052E9D7CD56A916 /* EntitlementWriter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0175911A2374269E498617FF /* EntitlementWriter.swift */; };
@@ -676,7 +675,6 @@
 		920F8A0EE7DA7744FBDA1206 /* AuthViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthViewModel.swift; sourceTree = "<group>"; };
 		92C56157192A2B5CBADB2977 /* FortunePromptInputFormatTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FortunePromptInputFormatTests.swift; sourceTree = "<group>"; };
 		93D3185391F74B11FC854CB5 /* UserFacingError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserFacingError.swift; sourceTree = "<group>"; };
-		950295F7DB6EBF46DA2A0699 /* VoiceTuningStagingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceTuningStagingTests.swift; sourceTree = "<group>"; };
 		956BC28B0AE290CC6A39878E /* RepeatWeekdayChips.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RepeatWeekdayChips.swift; sourceTree = "<group>"; };
 		95B28A584FFD00AD1BF0633C /* BillingPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BillingPanel.swift; sourceTree = "<group>"; };
 		9641A64BF7F32B31E960BA67 /* VoiceStudioViewModel+ErrorMapping.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "VoiceStudioViewModel+ErrorMapping.swift"; sourceTree = "<group>"; };
@@ -1282,7 +1280,6 @@
 				4D6B9AB322B789829ECCE211 /* VoiceStudioLoadStockClipsSupersededTests.swift */,
 				6BB3292333BDA9F421AC0D0A /* VoiceStudioViewModelTests.swift */,
 				FE320511894AEFB88B1B01A4 /* VoiceTuningAnalyzerTests.swift */,
-				950295F7DB6EBF46DA2A0699 /* VoiceTuningStagingTests.swift */,
 				68623B8C742341D6D3C7DF72 /* WeatherAttributionTests.swift */,
 				B7D8EAC6D0EFB8B88C7CA40E /* WeatherRegionCatalogTests.swift */,
 				F184596631F66837EF36205A /* WeatherVariantOwnerScopeTests.swift */,
@@ -2044,7 +2041,6 @@
 				8DE17EE557F652A0477D46E6 /* VoiceStudioLoadStockClipsSupersededTests.swift in Sources */,
 				00B56BDA058D957CBAA95386 /* VoiceStudioViewModelTests.swift in Sources */,
 				E495F9AFFFFB46B35C1C441E /* VoiceTuningAnalyzerTests.swift in Sources */,
-				D54CDEAB08FABF3564864034 /* VoiceTuningStagingTests.swift in Sources */,
 				567E773BE244A680AF7B1BCC /* WeatherAttributionTests.swift in Sources */,
 				F7AE5B9A2F35323387FE7BA5 /* WeatherRegionCatalogTests.swift in Sources */,
 				4CE5F30A54535517CEDDC44A /* WeatherVariantOwnerScopeTests.swift in Sources */,
