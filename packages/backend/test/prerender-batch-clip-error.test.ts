@@ -81,6 +81,7 @@ async function prerenderDb(): Promise<{ db: Client; path: string }> {
       status TEXT DEFAULT 'ready', is_system INTEGER DEFAULT 0, is_draft INTEGER DEFAULT 0,
       relationship_label TEXT DEFAULT '', listener_title TEXT DEFAULT '',
       preview_text TEXT, speech_style TEXT, voice_energy TEXT, speech_style_status TEXT,
+      pitch_semitones REAL, pitch_model_id TEXT,
       updated_at TEXT, deleted_at TEXT
     );
     CREATE TABLE messages (

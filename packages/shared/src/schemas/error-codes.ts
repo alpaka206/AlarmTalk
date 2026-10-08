@@ -36,6 +36,8 @@ export const ERROR_CODES = [
   'INVALID_RELATIONSHIP_LABEL',
   /** 목소리의 결(voice_energy)이 '' · 'lively' · 'calm' 이 아니다. */
   'INVALID_VOICE_ENERGY',
+  /** 목소리 높이(`pitch_semitones`)가 −6…+3 반음·0.5 눈금이 아니다(`VoicePitchSemitonesSchema`). */
+  'INVALID_VOICE_PITCH',
   'INVALID_VOICE_TRANSITION',
   'JSON_BODY_REQUIRED',
   'NAME_TOO_LONG',
@@ -51,6 +53,8 @@ export const ERROR_CODES = [
   'VOICE_MONTHLY_CHANGE_LIMIT_REACHED',
   'VOICE_NOT_READY',
   'VOICE_PERSONA_LOCKED',
+  /** 목소리 높이는 등록 확정(초안 → 정식) 때만 정한다 — 그 뒤에는 바꿀 수 없다. */
+  'VOICE_PITCH_LOCKED',
   'VOICE_PREVIEW_CONFIRMATION_CONFLICT',
   'VOICE_PREVIEW_REQUIRED',
   'VOICE_PREVIEW_TEXT_INVALID',

@@ -3096,6 +3096,18 @@ export const migrations: Migration[] = [
       )`,
     ],
   },
+  {
+    // 목소리 높이(반음) — 등록 미리듣기에서 사용자가 고르고, 서버가 그 목소리로 만드는 모든 알람 소리(프리셋·
+    // 직접 입력)에 굽는다(`lib/voice-pitch.ts`, 스펙 voice-and-message §4-3). NULL·0 = 원래 소리 — 이 기능 이전에
+    // 등록한 목소리는 그대로다(채우지 않는다, 2026-10-07 사용자). `pitch_model_id` 는 그 높이를 고른 합성 모델이다 —
+    // 높이는 그 모델이 낸 높이를 바로잡는 상대값이라 모델이 바뀌면 굽지 않는다.
+    id: 128,
+    name: 'voice-profile-pitch',
+    statements: [
+      `ALTER TABLE voice_profiles ADD COLUMN pitch_semitones REAL`,
+      `ALTER TABLE voice_profiles ADD COLUMN pitch_model_id TEXT`,
+    ],
+  },
 ];
 // Errors that mean the statement was already applied — safe to ignore so
 // we can recover databases whose `_migrations` ledger is out of sync with

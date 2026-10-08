@@ -1,6 +1,13 @@
+import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
+  resolve: {
+    alias: {
+      // 워커는 `.wasm` 을 정적 import 하지만 Node 는 못 한다 — 같은 파일을 컴파일해 넘기는 대역으로 바꾼다.
+      'wasm-media-encoders/wasm/mp3': fileURLToPath(new URL('./test/support/mp3-encoder-wasm.ts', import.meta.url)),
+    },
+  },
   test: {
     globals: true,
     environment: 'node',

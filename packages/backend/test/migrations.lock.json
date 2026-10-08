@@ -486,5 +486,9 @@
   "127": {
     "name": "weather-region-daily-official",
     "sha": "39a092899d31462d"
+  },
+  "128": {
+    "name": "voice-profile-pitch",
+    "sha": "09c0cab151add4bd"
   }
 }

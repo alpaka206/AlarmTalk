@@ -18,6 +18,12 @@ export interface TtsCacheInput {
    *   둘 다 뺀 뒤로는 사용자가 스톡 문장을 그대로 치거나 두 사람이 같은 글을 치면 키가 같아진다.
    */
   scope?: string;
+  /**
+   * 그 합성에 구운 목소리 높이(반음 — `VoiceProviderAttempt.pitchSemitones`). 0 이거나 비우면 키에서 빠져 예전 키
+   * 그대로다. 높이는 등록 확정 때 한 번 정하고 교체 등록은 provider voice id 를 바꾸므로 지금 규칙으로는 높이만 다른
+   * 두 소리가 같은 키를 쓸 일이 없지만, 높이를 구운 소리와 원래 소리가 한 키를 나눠 쓰지 않게 넣어 둔다.
+   */
+  pitchSemitones?: number;
 }
 
 /**
@@ -49,6 +55,8 @@ export async function computeTtsCacheKey(input: TtsCacheInput): Promise<string> 
     text: normalizeTtsText(input.text),
     outputFormat: input.outputFormat,
     scope: input.scope,
+    // 0·undefined 는 빼서(`JSON.stringify` 가 undefined 를 버린다) 높이 없는 목소리의 키를 바꾸지 않는다.
+    pitchSemitones: input.pitchSemitones ? input.pitchSemitones : undefined,
   };
   return sha256Hex(JSON.stringify(normalized));
 }

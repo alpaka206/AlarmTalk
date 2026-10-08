@@ -4,6 +4,8 @@ import { R2VoiceStorage } from './r2-storage';
 import { sendVoiceShareChangedPush } from './fcm';
 import { computeTtsCacheKey, generatedTtsObjectKey, STOCK_TTS_CACHE_SCOPE } from './audio-cache';
 import { createSynthesisAttempts, normalizeSynthesisLanguage } from './voice-provider';
+import { appliedPitchSemitones, voicePitchFromRow, type VoicePitch } from './voice-pitch';
+import { TTS_MODEL_ID } from './tts-model';
 import {
   parseSpeechStyle,
   withVoiceEnergy,
@@ -365,6 +367,8 @@ export interface StockClipTarget {
   styleReference?: string | null;
   /** 등록 녹음 전사에서 분석한 화자 말투(사투리 등, 클론만). */
   speechStyle?: SpeechStyle | null;
+  /** 그 목소리의 등록 높이(클론만, `PrerenderVoice.pitch`). */
+  pitch?: VoicePitch | null;
   claimToken?: string;
   /**
    * **목소리 교체 회차인가.** true 면 같은 (voice·category·language·variant) preset 이
@@ -402,6 +406,8 @@ export interface PrerenderVoice {
   styleReference?: string | null;
   /** 등록 녹음 전사에서 분석한 화자 말투(사투리 등, 클론만). */
   speechStyle?: SpeechStyle | null;
+  /** 등록 미리듣기에서 고른 목소리 높이(클론만) — 모든 클립에 굽는다(스펙 §4-3). */
+  pitch?: VoicePitch | null;
   claimToken?: string;
 }
 
@@ -470,7 +476,12 @@ export async function listReadyCloneVoices(
     // ⚠ voice_energy 는 마이그레이션 #122 의 새 컬럼이다. 배포 직후 마이그레이션 전 창에는 이 조회가
     //   실패해 그 회차가 건너뛰어지고 cron 이 다음 주기에 다시 잡는다(fail-closed — 결 없이 만든
     //   클립을 영구 저장하지 않는다). 그러려면 호출자가 **잡은 임대를 풀고** 던져야 한다(drain·advance).
-    sql: `SELECT id, name, elevenlabs_voice_id, relationship_label, listener_title, preview_text, speech_style, voice_energy
+    // ⚠ pitch_semitones·pitch_model_id 도 마이그레이션 #128 의 새 컬럼이라 같은 규칙으로 fail-closed 다(새 컬럼을 참조하는
+    //   경로). 그 창에는 높이를 가진 목소리가 아직 있을 수 없어 잃는 것은 그동안의 사전렌더 진행뿐이다 — 크론·전진이
+    //   다음 차례에 다시 잡는다. 이 목록에서 높이를 빼 '견디게' 만들지 말 것: 마이그레이션 뒤 높이를 굽지 않은 클립이
+    //   영구히 게시된다(클립은 한 번 게시되면 다시 굽지 않는다).
+    sql: `SELECT id, name, elevenlabs_voice_id, relationship_label, listener_title, preview_text, speech_style, voice_energy,
+                 pitch_semitones, pitch_model_id
           FROM voice_profiles
           WHERE COALESCE(is_system, 0) = 0
             AND deleted_at IS NULL
@@ -502,6 +513,7 @@ export async function listReadyCloneVoices(
       listenerTitle,
       styleReference,
       speechStyle,
+      pitch: voicePitchFromRow(row as Record<string, unknown>),
       claimToken: req.claimToken,
     });
   }
@@ -622,6 +634,7 @@ export async function findMissingStockTargets(
             listenerTitle: voice.listenerTitle ?? null,
             styleReference: voice.styleReference ?? null,
             speechStyle: voice.speechStyle ?? null,
+            pitch: voice.pitch ?? null,
             refreshExisting,
             claimToken: voice.claimToken,
           });
@@ -773,16 +786,30 @@ export async function claimPendingPrerenderVoices(
           )
             AND status = 'pending'
             AND (claimed_at IS NULL OR claimed_at <= datetime('now', '-15 minutes'))
-          RETURNING voice_profile_id, owner_user_id, language, claim_token, refresh_existing`,
+          RETURNING voice_profile_id, owner_user_id, language, claim_token, refresh_existing,
+                    julianday(requested_at) AS requested_order`,
     args: [claimToken, SPEECH_STYLE_ANALYSIS_WAIT_SQL, Math.max(1, Math.min(Math.trunc(limit), 50))],
   });
-  return res.rows.map((row) => ({
-    voiceProfileId: String(row.voice_profile_id),
-    ownerUserId: String(row.owner_user_id),
-    language: String(row.language),
-    claimToken: String(row.claim_token),
-    refreshExisting: Number(row.refresh_existing ?? 0) === 1,
-  }));
+  // ⚠ RETURNING 의 순서는 정해져 있지 않다(위 ORDER BY 는 **무엇을** 잡을지만 정한다). 배치는 이 순서로 몫을 쓰므로
+  //   잡은 기준(새 등록 먼저, 같은 갈래는 요청 순서)으로 다시 세운다 — 안 그러면 id 가 작은 다시 굽는 회차가 한 틱의
+  //   몫을 다 쓰고 새 등록은 진전 없이 반납된다.
+  const order = (row: (typeof res.rows)[number]) => {
+    const requested = Number(row.requested_order);
+    return [Number(row.refresh_existing ?? 0), Number.isFinite(requested) ? requested : Number.MAX_VALUE] as const;
+  };
+  return [...res.rows]
+    .sort((a, b) => {
+      const [refreshA, requestedA] = order(a);
+      const [refreshB, requestedB] = order(b);
+      return refreshA - refreshB || requestedA - requestedB;
+    })
+    .map((row) => ({
+      voiceProfileId: String(row.voice_profile_id),
+      ownerUserId: String(row.owner_user_id),
+      language: String(row.language),
+      claimToken: String(row.claim_token),
+      refreshExisting: Number(row.refresh_existing ?? 0) === 1,
+    }));
 }
 
 export type PrerenderClaim = {
@@ -931,7 +958,6 @@ export async function runPrerenderBatch(
     }
     throw lookupError;
   }
-  const claimByVoiceId = new Map(claimed.map((request) => [request.voiceProfileId, request]));
   // 큐엔 있으나 ready 클론이 아닌 항목(삭제/실패/draft 등)은 실패 처리해 무한 pending 을 막는다.
   const readyIds = new Set(cloneVoices.map((v) => v.id));
   for (const req of claimed) {
@@ -941,16 +967,21 @@ export async function runPrerenderBatch(
   }
 
   let rendered = 0;
+  /** 이번 틱에 쓴 몫 — 클립 수와 같되, 높이를 굽는 클립은 둘로 센다(아래 `clipCost`). */
+  let budgetUsed = 0;
   let subrequestExhausted = false;
-  for (const voice of cloneVoices) {
+  // ⚠ **잡은 순서로** 돈다(`claimPendingPrerenderVoices` — 새 등록 먼저). `cloneVoices` 는 조회 순서(id 순)라 그대로
+  //   돌면 다시 굽는 회차가 새 등록보다 먼저 몫을 쓴다.
+  const voiceById = new Map(cloneVoices.map((voice) => [voice.id, voice]));
+  for (const claim of claimed) {
     if (subrequestExhausted) break;
-    const claim = claimByVoiceId.get(voice.id);
-    if (!claim) continue;
+    const voice = voiceById.get(claim.voiceProfileId);
+    if (!voice) continue;
     if (await missingConsentType(db, claim.ownerUserId, SENSITIVE_REQUIRED_CONSENTS)) {
       await markPrerenderFailed(db, voice.id, claim.claimToken);
       continue;
     }
-    if (rendered >= maxClips) {
+    if (budgetUsed >= maxClips) {
       await releasePrerenderClaim(db, voice.id, claim.claimToken);
       continue;
     }
@@ -967,8 +998,13 @@ export async function runPrerenderBatch(
     let voiceRendered = 0;
     let voiceError = false;
     let superseded = false;
+    // 높이를 굽는 목소리는 클립 하나가 **둘로 센다** — 굽기(PSOLA + MP3)가 합성보다 무겁다. 한 틱이 크론의 CPU
+    // 한도(30초)를 다른 일과 나눠 쓰므로, 굽는 클립은 한 틱에 maxClips 의 절반까지만 만든다(나머지는 다음 틱).
+    // 실제로 굽는가로 센다 — 등록 때와 모델이 다르면 굽지 않는다(`appliedPitchSemitones`).
+    const clipCost = appliedPitchSemitones(voice.pitch, TTS_MODEL_ID) !== 0 ? 2 : 1;
     for (const target of targets) {
-      if (rendered >= maxClips) break;
+      if (budgetUsed >= maxClips) break;
+      budgetUsed += clipCost;
       rendered += 1;
       try {
         await generateStockClip(db, env, target);
@@ -1340,6 +1376,9 @@ export async function generateStockClip(
     profile: { elevenlabs_voice_id: target.elevenlabsVoiceId },
     text: synthesisText,
     language,
+    // 클론의 등록 높이를 굽는다(시스템 스톡은 값이 없다). 실패하면 던진다 — 원래 소리로 게시하면 '완료' 로 남아
+    // 다시 굽지 않는다(`bakePitchMp3`).
+    pitch: target.pitch ?? null,
   });
   if (attempts.length === 0) {
     throw new Error('No synthesis provider available (ELEVENLABS_API_KEY missing?)');
@@ -1359,6 +1398,7 @@ export async function generateStockClip(
     // 않는다(Codex #840). 겹치면 원장 해시(전역 UNIQUE)를 먼저 쥔 쪽의 행이 이 클립 행이 되고, 그 행이 프리셋이
     // 아니라 보관 정리가 30일 뒤 오브젝트를 지우며 프리셋의 `audio_url` 까지 비운다. 게시 스크립트도 같은 값.
     scope: STOCK_TTS_CACHE_SCOPE,
+    pitchSemitones: attempt.pitchSemitones,
   });
 
   const generated = await attempt.synthesize();
