@@ -358,13 +358,8 @@ class RingingService : Service() {
      * 그대로 달고 오므로, 출처를 안 보면 보낸 사람이 들려주려던 클립의 높이를 내 값으로 바꾼다(스펙 §4-3).
      */
     private fun voiceTuningFor(alarm: AlarmEntity?): VoiceTuning? = runCatching {
-        if (alarm == null || !VoiceTuning.appliesTo(alarm.origin, alarm.voiceSource, alarm.voiceProfileId)) {
-            return@runCatching null
-        }
-        val voiceId = alarm.voiceProfileId
-        val userId = alarm.ownerUserId?.takeIf { it.isNotBlank() }
-            ?: AuthSessionStore(applicationContext).read()?.user?.id
-        VoiceTuningStore(applicationContext).read(userId, voiceId)?.takeUnless { it.isNeutral }
+        if (alarm == null) return@runCatching null
+        VoiceTuningStore(applicationContext).readForAlarm(alarm, AuthSessionStore(applicationContext).read()?.user?.id)
     }.onFailure { error ->
         Log.w(TAG, "Failed to read voice tuning id=${alarm?.id}", error)
     }.getOrNull()
@@ -467,9 +462,17 @@ class RingingService : Service() {
         // ⚠ **목소리는 항상 반복한다**(2026-08-27 지시 — 편집기에서 선택지를 없앴다).
         // 옛 행에 false 가 남아 있을 수 있으므로 여기서도 값을 보지 않는다.
         val repeatVoice = true
-        // 목소리 높이 보정 — 높이만 옮긴 사본(WAV)을 튼다. 처음 울릴 때 한 번 만들고(짧은 클립이라
-        // 수백 ms) 이후는 기기 캐시다. 이 함수는 serviceScope(IO)에서만 불린다. 실패하면 원래 소리.
-        val playUri = tuning?.let { VoiceTuningRenderer.render(applicationContext, voiceUri, it) } ?: voiceUri
+        // 목소리 높이 보정 — 높이만 옮긴 사본(WAV)을 튼다. ⚠ **울리는 순간에는 굽지 않는다**(Codex #870) — 굽기는
+        // 수백 ms~수 초라 그동안 소리도 진동도 없다. 미리 구워 둔 사본(알람 저장·높이 저장·앱 시작·직전 울림이 끝날 때
+        // `AlarmRepository.prewarmTunedAlarmAudio`)이 있으면 그걸, 없으면 원래 목소리로 곧바로 울리고 다음 울림을 위해
+        // 뒤에서 굽는다.
+        val playUri = tuning?.let { t ->
+            VoiceTuningRenderer.cachedCopy(applicationContext, voiceUri, t)
+                ?: run {
+                    VoiceTuningRenderer.renderInBackground(applicationContext, voiceUri, t)
+                    null
+                }
+        } ?: voiceUri
         if (tuning != null) Log.i(TAG, "Voice pitch tuning ${tuning.pitchSemitones} st applied=${playUri != voiceUri}")
         // 플레이어에 반복 처리를 걸고 시작한다. 시작이 실패하면(오디오 서버·플레이어 상태) 놓고 null — 예외가 여기서
         // 빠져나가면 뒤따르는 진동까지 건너뛰어 **소리도 진동도 없는 알람**이 된다(Codex #870).

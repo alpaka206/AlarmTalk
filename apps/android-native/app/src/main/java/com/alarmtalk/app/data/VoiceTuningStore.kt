@@ -73,6 +73,17 @@ class VoiceTuningStore(context: Context) {
         return true
     }
 
+    /**
+     * 그 알람이 울릴 때 실을 높이 — 이 기기에서 만든 알람의 등록 목소리만(`VoiceTuning.appliesTo`), 0 이면 null.
+     * 소유자가 아직 새겨지지 않은 옛 행은 지금 로그인한 계정([signedInUserId])의 것으로 본다. 울림(`RingingService`)과
+     * 미리 굽기(`AlarmRepository.prewarmTunedAlarmAudio`)가 같은 판정을 쓴다.
+     */
+    fun readForAlarm(alarm: AlarmEntity, signedInUserId: String?): VoiceTuning? {
+        if (!VoiceTuning.appliesTo(alarm.origin, alarm.voiceSource, alarm.voiceProfileId)) return null
+        val userId = alarm.ownerUserId?.takeIf { it.isNotBlank() } ?: signedInUserId
+        return read(userId, alarm.voiceProfileId)?.takeUnless { it.isNeutral }
+    }
+
     /** 그 계정의 값을 모두 지운다 — 명시적 로그아웃·탈퇴. */
     fun clearUser(userId: String?) {
         val user = userId?.trim().orEmpty()

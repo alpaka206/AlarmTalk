@@ -407,6 +407,8 @@ internal fun MainViewModel.promoteVoiceDraft(
             // '교체 전 값' 으로 읽고 지운다. 그 사이 계정이 바뀌었으면 적지 않는다.
             if (authSession?.user?.id == session.user.id) {
                 forgetOrSaveVoiceTuning(session.user.id, official.id, tuning.copy(generation = official.customAudioInvalidatedAt))
+                // 그 목소리를 쓰던 알람(교체 등록)의 다음 울림 클립을 새 높이로 미리 굽는다(Codex #870).
+                viewModelScope.launch { repository.prewarmTunedAlarmAudio() }
             }
         } else {
             val error = result.exceptionOrNull() ?: IllegalStateException("promote failed")

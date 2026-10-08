@@ -147,11 +147,36 @@ object VoiceTuningRenderer {
      */
     fun deleteCopiesOfInBackground(context: Context, source: Uri) {
         val appContext = context.applicationContext
-        cleanupScope.launch { deleteCopiesOf(appContext, source) }
+        backgroundScope.launch { deleteCopiesOf(appContext, source) }
     }
 
-    private val cleanupScope = kotlinx.coroutines.CoroutineScope(
-        kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO,
+    /**
+     * 이미 구워 둔 사본만 찾는다 — **굽지 않는다.** 울리는 순간(`RingingService`)이 쓴다: 그 자리에서 굽으면 수백 ms~수 초
+     * 동안 소리도 진동도 없다(Codex #870). 없으면 null — 호출자는 원래 목소리로 곧바로 울리고 [renderInBackground] 한다.
+     */
+    fun cachedCopy(context: Context, source: Uri, tuning: VoiceTuning?): Uri? {
+        val pitch = tuning?.normalized()?.pitchSemitones ?: return null
+        if (pitch == 0f) return null
+        return runCatching {
+            val out = File(File(context.noBackupFilesDir, DIR), "${cacheKey(source)}_${pitchTag(pitch)}.wav")
+            if (out.length() > WAV_HEADER_BYTES) {
+                out.setLastModified(System.currentTimeMillis())
+                Uri.fromFile(out)
+            } else {
+                null
+            }
+        }.getOrNull()
+    }
+
+    /** [render] 를 화면·울림과 무관한 백그라운드에서 — 다음 울림을 위해 미리 굽는다. 한 번에 하나씩 굽는다(CPU 를 몰아 쓰지 않게). */
+    fun renderInBackground(context: Context, source: Uri, tuning: VoiceTuning) {
+        val appContext = context.applicationContext
+        backgroundScope.launch { render(appContext, source, tuning) }
+    }
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    private val backgroundScope = kotlinx.coroutines.CoroutineScope(
+        kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO.limitedParallelism(1),
     )
 
     /** 사본을 모두 지운다. 다시 필요하면 울릴 때·미리듣기 때 새로 굽는다. 메인 스레드에서 부르지 말 것. */
@@ -183,7 +208,7 @@ object VoiceTuningRenderer {
     }
 
     /** −3.5 → "m3_5", 2.0 → "p2_0" — 파일 이름에 점·부호를 넣지 않는다. */
-    private fun pitchTag(pitch: Float): String {
+    internal fun pitchTag(pitch: Float): String {
         val sign = if (pitch < 0f) "m" else "p"
         val tenths = Math.round(kotlin.math.abs(pitch) * 10f)
         return "$sign${tenths / 10}_${tenths % 10}"

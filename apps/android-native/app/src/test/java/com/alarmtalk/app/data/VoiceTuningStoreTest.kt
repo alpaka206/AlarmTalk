@@ -193,6 +193,22 @@ class VoiceTuningStoreTest {
         src.delete()
     }
 
+    /** 울리는 순간에는 굽지 않는다 — 구워 둔 사본만 찾고, 없으면 null(원래 목소리로 곧바로 운다, Codex #870). */
+    @Test
+    fun `울림은 구워 둔 사본만 찾는다`() {
+        val src = File(context.filesDir, "ring.mp3").apply { writeBytes(ByteArray(64)) }
+        val uri = android.net.Uri.fromFile(src)
+        val tuning = VoiceTuning(pitchSemitones = -2f)
+        assertNull("구운 적 없으면 굽지 않고 null", VoiceTuningRenderer.cachedCopy(context, uri, tuning))
+        assertNull("0 이면 사본이 없다", VoiceTuningRenderer.cachedCopy(context, uri, VoiceTuning.NEUTRAL))
+
+        val dir = File(context.noBackupFilesDir, "voice_tuning").apply { mkdirs() }
+        val out = File(dir, "${VoiceTuningRenderer.cacheKey(uri)}_${VoiceTuningRenderer.pitchTag(-2f)}.wav")
+        out.writeBytes(ByteArray(256))
+        assertEquals(android.net.Uri.fromFile(out), VoiceTuningRenderer.cachedCopy(context, uri, tuning))
+        src.delete()
+    }
+
     @Test
     fun `사본은 통째로 지울 수 있다`() {
         copies.mkdirs()

@@ -845,6 +845,13 @@ internal fun VoiceProfileManagementPanel(
                                 runCatching {
                                     completed.seekTo(0)
                                     completed.start()
+                                }.onFailure { error ->
+                                    // 반복 시작이 실패하면(오디오 서버·플레이어 상태) 처음 시작 실패와 같이 정리한다 — 올린
+                                    // 알람 스트림을 되돌리고 멈춘 것을 알린다(Codex #870).
+                                    AlarmTalkLog.reportError("Tuned preview repeat could not start", error)
+                                    stopMediaPreview(invalidateGreetingPreview = false)
+                                    confirmPreviewPlaying = false
+                                    localMessage = context.getString(R.string.voices_preview_play_failed)
                                 }
                             }
                         }

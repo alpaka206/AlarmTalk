@@ -1391,6 +1391,12 @@ class AlarmRepository(
             )
             alarmDao.upsert(next)
             alarmScheduler.schedule(next)
+            // 다음 회전 클립을 미리 굽는다 — 다음 울림이 그 자리에서 굽지 않게.
+            prewarmTunedAudio(
+                next,
+                VoiceTuningStore(context),
+                runCatching { com.alarmtalk.app.network.AuthSessionStore(context).read()?.user?.id }.getOrNull(),
+            )
         } else {
             alarmScheduler.cancel(alarmId)
             alarmDao.setState(
@@ -1517,6 +1523,27 @@ class AlarmRepository(
 
     fun resolveBucketClipLocalUri(alarm: AlarmEntity): String? =
         resolveBucketClipSelection(alarm)?.localAudioUri
+
+    /**
+     * 높이를 맞춘 목소리로 울릴 알람의 **다음 울림 클립**을 미리 굽는다(뒤에서, 한 번에 하나씩) — 울리는 순간에는 굽지
+     * 않으므로(`RingingService.startVoiceLoop`, Codex #870) 여기서 데워 두지 않으면 첫 울림이 원래 목소리다. 앱 시작·알람
+     * 저장·높이 저장·울림이 끝난 뒤(다음 회전 클립) 부른다. 이미 구운 클립은 파일 확인만 하고 넘어간다.
+     */
+    suspend fun prewarmTunedAlarmAudio() {
+        val signedInUserId = runCatching { com.alarmtalk.app.network.AuthSessionStore(context).read()?.user?.id }.getOrNull()
+        val store = VoiceTuningStore(context)
+        runCatching { alarmDao.getAllAlarms() }.getOrDefault(emptyList())
+            .filter { it.enabled }
+            .forEach { alarm -> prewarmTunedAudio(alarm, store, signedInUserId) }
+    }
+
+    private fun prewarmTunedAudio(alarm: AlarmEntity, store: VoiceTuningStore, signedInUserId: String?) {
+        runCatching {
+            val tuning = store.readForAlarm(alarm, signedInUserId) ?: return
+            val clip = resolveBucketClipLocalUri(alarm) ?: alarm.localAudioUri?.takeIf { it.isNotBlank() } ?: return
+            VoiceTuningRenderer.renderInBackground(context, android.net.Uri.parse(clip), tuning)
+        }.onFailure { Log.w(TAG, "Failed to prewarm tuned alarm audio id=${alarm.id}", it) }
+    }
 
     /**
      * dismiss(에피소드 종료) 시 다음 회전 인덱스. 버킷이 아니거나 클립 1개 이하면 그대로.
