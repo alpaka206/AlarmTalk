@@ -529,13 +529,13 @@ struct VoiceProfile: Decodable, Identifiable, Equatable {
 /// 서버가 409 `VOICE_PERSONA_LOCKED` 로 거절한다(`voice-profile.ts:733-741`).
 struct VoiceDraftPromoteRequest: Encodable {
     var isDraft: Bool
-    /// 등록 확정 화면의 **교체 체크**. 이미 등록된 목소리가 있어 한도에 걸릴 때,
-    /// 막는 대신 **그 목소리 자리에 이 목소리를 앉힌다**(서버가 프로필 행을 재사용한다).
-    /// nil 이면 키가 아예 안 나가서 서버는 지금까지처럼 한도로 막는다.
+    /// **교체 등록**. 이미 등록된 목소리가 있으면 등록 확정 화면이 언제나 true 로 보낸다 — 체크는 없고, 그 화면의
+    /// 저장이 곧 교체다(2026-10-08 사용자). 막는 대신 **그 목소리 자리에 이 목소리를 앉힌다**(서버가 프로필 행을
+    /// 재사용한다). nil 이면 키가 아예 안 나가서 서버는 지금까지처럼 한도로 막는다.
     var replaceExisting: Bool?
     /// 공유는 초안 입력이 아니라 실제 등록을 확정하는 화면에서 고른다.
     var isShared: Bool
-    /// 등록 미리듣기에서 **끝까지 들은 목소리 높이**(반음, −6…+3·0.5 눈금). 서버가 적어 두고 그 목소리로 만드는
+    /// 등록 미리듣기에서 **끝까지 들은 목소리 높이**(반음, −10…+6·0.5 눈금). 서버가 적어 두고 그 목소리로 만드는
     /// 모든 알람 소리에 굽는다(스펙 voice-and-message §4-3). nil 이면 키가 아예 안 나가서(원래 소리) 높이 이전과
     /// 같은 바디다. 등록 확정 때만 받는다 — 다른 요청에 실으면 409 `VOICE_PITCH_LOCKED`.
     var pitchSemitones: Double? = nil

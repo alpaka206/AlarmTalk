@@ -36,7 +36,7 @@ export const ERROR_CODES = [
   'INVALID_RELATIONSHIP_LABEL',
   /** 목소리의 결(voice_energy)이 '' · 'lively' · 'calm' 이 아니다. */
   'INVALID_VOICE_ENERGY',
-  /** 목소리 높이(`pitch_semitones`)가 −6…+3 반음·0.5 눈금이 아니다(`VoicePitchSemitonesSchema`). */
+  /** 목소리 높이(`pitch_semitones`)가 −10…+6 반음·0.5 눈금이 아니다(`VoicePitchSemitonesSchema`). */
   'INVALID_VOICE_PITCH',
   'INVALID_VOICE_TRANSITION',
   'JSON_BODY_REQUIRED',

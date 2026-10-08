@@ -261,16 +261,16 @@ describe('DisplayNameSchema — 양방향 표식', () => {
 describe('VoicePitchSemitonesSchema', () => {
   // 앱 막대와 같은 범위·눈금이다(안드로이드 `VoiceTuning.PITCH_RANGE`·`STEP`, iOS `VoiceTuning.pitchRange`·`step`).
   it('범위와 눈금은 앱 막대와 같다', () => {
-    expect(VOICE_PITCH_MIN_SEMITONES).toBe(-6);
-    expect(VOICE_PITCH_MAX_SEMITONES).toBe(3);
+    expect(VOICE_PITCH_MIN_SEMITONES).toBe(-10);
+    expect(VOICE_PITCH_MAX_SEMITONES).toBe(6);
     expect(VOICE_PITCH_STEP_SEMITONES).toBe(0.5);
   });
 
-  it('−6…+3 의 0.5 눈금만 받는다', () => {
-    for (const value of [-6, -5.5, -1.5, 0, 0.5, 2.5, 3]) {
+  it('−10…+6 의 0.5 눈금만 받는다', () => {
+    for (const value of [-10, -8.5, -6.5, -1.5, 0, 0.5, 3.5, 6]) {
       expect(VoicePitchSemitonesSchema.safeParse(value).success, String(value)).toBe(true);
     }
-    for (const value of [-6.5, 3.5, -1.25, 0.1, Number.NaN, Number.POSITIVE_INFINITY]) {
+    for (const value of [-10.5, 6.5, -1.25, 0.1, Number.NaN, Number.POSITIVE_INFINITY]) {
       expect(VoicePitchSemitonesSchema.safeParse(value).success, String(value)).toBe(false);
     }
     for (const value of ['-1.5', null, undefined, {}]) {

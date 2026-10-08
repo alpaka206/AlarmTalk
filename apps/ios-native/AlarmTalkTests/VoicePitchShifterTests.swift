@@ -53,6 +53,23 @@ final class VoicePitchShifterTests: XCTestCase {
         }
     }
 
+    /// 2026-10-08 에 넓힌 막대 범위의 끝(−10·+6)에서도 길이·높이·크기 약속을 지킨다 — 서버 `shiftVoicePitch` 테스트와
+    /// 같은 끝값·같은 크기 허용치다(크게 바꿀수록 조금 거칠어지는 것은 TD-PSOLA 의 한계다, 스펙 §4-3).
+    func test_rangeEndsKeepLengthPitchAndLoudness() throws {
+        let rate = 44_100.0
+        let input = harmonicTone(hz: 150, seconds: 1.5, sampleRate: rate, amplitude: 0.25)
+        let before = try XCTUnwrap(VoiceTuningAnalyzer.integratedLoudness(samples: input, sampleRate: rate))
+        for st in [VoiceTuning.pitchRange.lowerBound, VoiceTuning.pitchRange.upperBound] {
+            let output = VoicePitchShifter.render(samples: input, sampleRate: rate, semitones: st)
+            XCTAssertEqual(output.count, input.count, "길이가 바뀌었다(\(st)반음)")
+            let f0 = try XCTUnwrap(VoiceTuningAnalyzer.medianF0(samples: output, sampleRate: rate), "\(st)반음 결과에서 높이를 못 쟀다")
+            XCTAssertEqual(semitones(f0, from: 150), st, accuracy: 0.5, "\(st)반음인데 \(f0)Hz")
+            let after = try XCTUnwrap(VoiceTuningAnalyzer.integratedLoudness(samples: output, sampleRate: rate))
+            XCTAssertEqual(after, before, accuracy: 1.5, "\(st)반음: \(before) → \(after) LUFS")
+            XCTAssertLessThanOrEqual(output.map { abs($0) }.max() ?? 0, VoicePitchShifter.peakCeiling + 1e-4)
+        }
+    }
+
     func test_silenceAndUnvoicedInputPassThroughSafely() {
         let rate = 16_000.0
         let silence = [Float](repeating: 0, count: Int(rate))

@@ -52,7 +52,7 @@ enum VoiceTuningRenderer {
 }
 
 /// 등록 미리듣기 플레이어 — 메모리에서 구운 소리나 받은 원본 파일을 **한 번** 틀고, 어떻게 끝났는지 알려 준다
-/// (첫 미리듣기와 다시 듣기가 함께 쓴다).
+/// (톤 카드의 `원본 듣기`·`현재 톤 듣기` 가 함께 쓴다 — 한 번에 하나만 소리 난다).
 ///
 /// 오디오 세션은 `AudioPreviewPlayer` 와 같다(`.playback` / `.spokenAudio`). 모노 소리도
 /// `AVAudioPlayer` 는 원래 크기로 낸다 — 엔진 믹서처럼 −3dB 팬이 걸리지 않는다.
@@ -150,6 +150,92 @@ final class VoiceTuningPreviewPlayer: NSObject, ObservableObject, AVAudioPlayerD
         if isPlaying {
             isPlaying = false
             try? AVAudioSession.sharedInstance().setActive(false, options: [.notifyOthersOnDeactivation])
+        }
+    }
+}
+
+/// 등록 확정 화면 톤 카드의 **두 재생 버튼**(`원본 듣기`·`현재 톤 듣기`) 규칙 — 화면 상태와 떼어 낸 순수 셈이다(스펙
+/// voice-and-message §4-3 「누가 어디서 바꾸는가」). 재생 자체는 `VoiceTuningPreviewPlayer` 가 한다.
+///
+/// - 둘 다 **한 번** 튼다(반복은 울릴 때의 일이다). 트는 중인 버튼을 다시 누르면 멈추고, 다른 버튼을 누르면 지금 것을
+///   멈추고 그것을 처음부터 튼다. 서버에서 받는 동안에도 두 버튼은 살아 있다 — 받는 중의 진행 표시도 '트는 중' 이라
+///   그 버튼을 누르면 받은 뒤에 틀지 않고, 다른 버튼을 누르면 받은 뒤에 그것을 튼다(안드로이드 `TuningListenAction` 과
+///   같은 셈).
+/// - 저장은 **지금 막대 값**을 끝까지 들었을 때만 열린다. '들었다' 는 실제로 걸린 높이로 센다 — 원본 듣기는 0 이다.
+enum VoiceTonePreview {
+    /// 어느 버튼의 소리인가.
+    enum Kind: Equatable, Sendable {
+        /// `원본 듣기` — 받은 클립 그대로(높이 0).
+        case original
+        /// `현재 톤 듣기` — 막대 값으로 메모리에서 구운 소리.
+        case current
+    }
+
+    /// 버튼을 눌렀을 때 할 일.
+    enum Press: Equatable, Sendable {
+        /// 트는(굽는) 중인 그 버튼을 다시 눌렀다 — 멈춘다.
+        case stop
+        /// 지금 것을 멈추고 이것을 처음부터 튼다.
+        case play(Kind)
+    }
+
+    /// `active` 는 지금 트는(굽는·받는) 버튼이다. 아무것도 안 틀고 있으면 nil.
+    static func press(_ kind: Kind, active: Kind?) -> Press {
+        active == kind ? .stop : .play(kind)
+    }
+
+    /// 그 버튼이 실을 높이 — 원본은 언제나 0, 현재 톤은 막대 값(눈금에 맞춘 값).
+    static func target(of kind: Kind, slider: VoiceTuning) -> VoiceTuning {
+        switch kind {
+        case .original: return .neutral
+        case .current: return slider.normalized()
+        }
+    }
+
+    /// 끝까지 튼 재생에 **실제로 걸린** 높이. 현재 톤은 구운 소리를 끝까지 틀었을 때만 그 높이다 — 굽지 못했거나
+    /// (0 이라 굽지 않은 것 포함) 구운 소리가 깨져 원본을 대신 틀었으면 0 이다. 원본을 들려줘 놓고 고른 높이를
+    /// 들었다고 적으면 듣지 않은 값이 등록된다(Codex #870).
+    static func applied(_ kind: Kind, target: VoiceTuning, baked: Bool, playedOriginalInstead: Bool) -> VoiceTuning {
+        guard kind == .current, baked, !playedOriginalInstead else { return .neutral }
+        return target.normalized()
+    }
+
+    /// 막대에서 손을 뗐을 때 할 일.
+    enum SliderRelease: Equatable, Sendable {
+        /// 받은 클립이 아직 없다 — 막대는 서버를 부르지 않는다(받으면 그때의 막대 값으로 튼다).
+        case ignore
+        /// 서버가 청취를 확인하기 전(첫 재생)에 소리가 나고 있다 — 끊지 않고, 그 재생이 끝난 직후 새 높이로 다시 튼다.
+        case afterCurrentPlayback
+        /// 곧바로 현재 톤을 다시 굽고 처음부터 한 번 튼다.
+        case replayNow
+    }
+
+    /// `audible` 은 실제로 소리가 나는 중인가다 — 굽는 중(아직 소리 전)이면 거짓이라 새 값으로 다시 굽는다.
+    static func sliderReleased(hasClip: Bool, listenConfirmed: Bool, audible: Bool) -> SliderRelease {
+        guard hasClip else { return .ignore }
+        return !listenConfirmed && audible ? .afterCurrentPlayback : .replayNow
+    }
+
+    /// 저장(등록 확정)을 열어도 되는가 — 서버가 청취를 확인했고, 새 높이를 굽는 중이 아니고, **지금 막대 값**을 이
+    /// 클립으로 끝까지 들었을 때만. 등록 뒤에는 높이를 바꿀 수 없고 그 값이 이 목소리의 모든 알람 소리에 구워진다.
+    static func canSave(listenConfirmed: Bool, rendering: Bool, hearing: Hearing, slider: VoiceTuning) -> Bool {
+        listenConfirmed && !rendering && hearing.hasHeard(slider)
+    }
+
+    /// 한 클립으로 **끝까지 들은 높이들**. 클립이 바뀌면(문구를 고쳐 새로 받으면) 새로 센다.
+    ///
+    /// 하나가 아니라 모아 두는 까닭: 두 버튼은 번갈아 들으라고 둔 것이다(2026-10-08 사용자). 마지막 하나만 기억하면
+    /// `현재 톤 듣기` 를 끝까지 들은 뒤 `원본 듣기` 로 비교하는 순간 저장이 다시 잠긴다 — 막대 값은 이미 들었는데도.
+    struct Hearing: Equatable, Sendable {
+        private(set) var pitches: Set<Double> = []
+
+        /// 재생 하나가 끝까지 갔다 — `applied` 는 그 재생에 실제로 걸린 높이다(`VoiceTonePreview.applied`).
+        mutating func record(_ applied: VoiceTuning) {
+            pitches.insert(applied.normalized().pitchSt)
+        }
+
+        func hasHeard(_ tuning: VoiceTuning) -> Bool {
+            pitches.contains(tuning.normalized().pitchSt)
         }
     }
 }

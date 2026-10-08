@@ -508,16 +508,16 @@
     <string name="voices_preparing">準備中</string>
     <string name="voices_preparing_audio">音声を準備しています。</string>
     <string name="voices_preview_play_failed">プレビューを再生できませんでした。</string>
+    <string name="voices_preview_confirm_failed">プレビューを確認できませんでした。もう一度お聞きください。</string>
     <string name="voices_confirm_new_title">この声で保存しますか?</string>
-    <string name="voices_confirm_replace_body">保存すると以前の声は削除されます。</string>
-    <string name="voices_confirm_new_preview">もう一度聞く</string>
+    <string name="voices_confirm_replace_body">保存した声は削除して、この声で登録します。</string>
     <string name="voices_confirm_new_keep">保存する</string>
     <string name="voices_confirm_new_keep_saving">保存中…</string>
     <string name="voices_confirm_new_delete">作り直す</string>
     <string name="voices_creating_title">声を作成しています</string>
     <string name="voices_creating_body">少々お待ちください。\n完成したらすぐお聞かせします。</string>
     <string name="voices_preview_text_loading">フレーズを準備しています…</string>
-    <string name="voices_preview_text_retry_hint">フレーズをまだ準備できていません。プレビューを押してもう一度お試しください。</string>
+    <string name="voices_preview_text_retry_hint">フレーズをまだ準備できていません。再生ボタンを押してもう一度お試しください。</string>
     <string name="voices_preview_edit_hint">話し方は自由に変えられます。</string>
     <string name="voices_preview_edit_action">フレーズを編集</string>
     <string name="voices_preview_edit_save">再生成</string>
@@ -818,8 +818,6 @@
     <string name="consent_overseas_withdraw_notice">国外移転への同意はサービスの利用に必須です。撤回するには「その他」から退会してください。</string>
     <string name="msg_voice_consent_withdrawn">音声生体情報の同意を撤回しました。登録した声は削除されました。</string>
     <string name="msg_voice_consent_withdraw_failed">同意の撤回に失敗しました。もう一度お試しください。</string>
-    <string name="voices_replace_existing_title">「%1$s」をこの声に置き換えます</string>
-    <string name="voices_replace_existing_desc">以前に保存した声は削除されます。直接入力で設定したアラームも基本の声になります。</string>
     <string name="misc2_theme_mode_system_short">システム</string>
     <string name="misc2_theme_mode_light_short">ライト</string>
     <string name="misc2_theme_mode_dark_short">ダーク</string>
@@ -854,8 +852,8 @@
     <string name="api_error_voice_limit_reached">登録できる声をすべて使いました。使わない声を削除してください。</string>
     <string name="api_error_voice_not_ready">声をまだ作成しています。しばらくしてからもう一度お試しください。</string>
     <string name="api_error_voice_cloning_failed">声を作成できませんでした。静かな場所でもう一度録音してください。</string>
-    <string name="api_error_invalid_voice_pitch">声の高さの値が正しくありません。調整し直してください。</string>
-    <string name="api_error_voice_pitch_locked">声の高さは声を登録するときにだけ設定できます。</string>
+    <string name="api_error_invalid_voice_pitch">トーンの値が正しくありません。調整し直してください。</string>
+    <string name="api_error_voice_pitch_locked">トーンは声を登録するときにだけ設定できます。</string>
     <string name="api_error_alarm_not_found">このアラームはすでに削除されています。</string>
     <string name="api_error_family_alarm_disabled">相手がアラームを受け取らない設定にしています。</string>
     <string name="api_error_family_alarm_lead_time">相手のアラームはもう少し後に設定してください。相手の端末に届くまで少し時間がかかります。</string>
@@ -894,11 +892,8 @@
     <string name="voices_clip_prep_rendering_body">声を作成しています。数分かかる場合があります。</string>
     <string name="voices_clip_prep_downloading_body">声をダウンロードしています。アプリを閉じても続きます。</string>
     <string name="voices_clip_prep_retry">もう一度試す</string>
-    <string name="voices_tuning_desc">声の質感はそのままに、高さだけを変えます。音量はプレビューと同じにそろえます。保存すると、この声で鳴るすべてのアラームに適用されます。</string>
-    <string name="voices_tuning_pitch">声の高さ</string>
-    <string name="voices_tuning_suggested">おすすめ値</string>
-    <string name="voices_tuning_reset">0に戻す</string>
-    <string name="voices_tuning_analyzing">おすすめ値を計算しています…</string>
-    <string name="voices_tuning_rendering">高さを変えています…</string>
+    <string name="voices_tuning_title">トーン調整</string>
+    <string name="voices_tuning_listen_original">元の声を聞く</string>
+    <string name="voices_tuning_listen_current">今のトーンで聞く</string>
     <string name="voices_tuning_pitch_value">%1$s 半音</string>
 </resources>

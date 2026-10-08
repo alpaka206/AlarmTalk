@@ -241,14 +241,17 @@
   돌아간다 — "다 됐어요" 팝업도, 등록 직후의 '등록했어요' 안내도 두지 않는다. 그 문구는
   다음 화면이 이미 말하는 것을 한 번 더 말하는 데다, 아무도 지우지 않아 목소리 탭 맨 위에
   그대로 남아 있었다. (안드로이드도 성공 갈래에서 배너를 비운다.)
-- **확정 화면의 본문은 교체일 때만 한 줄이다**(2026-09-29 지시). 제목 `이 목소리로 저장할까요?`
-  아래에는 이미 등록된 목소리가 있어 이 저장이 **교체**일 때만 `저장하면 이전 목소리는 삭제돼요.`
-  를 둔다. 그 경우 저장은 교체 체크를 켜야 열리므로 이 화면의 저장은 곧 교체다 — 체크 여부로
-  가르지 않는다(체크할 때마다 맨 위 줄이 생겼다 사라지면 화면이 밀린다). 교체가 아니면 본문
-  없이 곧바로 미리듣기 카드다. **월 등록 한도 경고**("이번 달에 만들 수 있는 목소리를 다 쓰게
-  돼요…")는 사용자 승인으로 뺐다 — 남은 횟수는 목소리 탭 머리의 `생성 가능 n/m회` 가 말한다.
-- **미리듣기 카드 아래 안내는 `말투를 원하는 대로 바꿔 보세요.` 한 문장이다**(2026-09-29 지시).
-  "매일 아침 문구가 이 말투로 만들어져요." 는 뺐다.
+- **확정 화면은 위에서부터 제목 · 안내 한 문장 · 문구 카드 · 톤 카드 · (교체면) 교체 한 줄이다**(2026-10-08 사용자).
+  - 제목 `이 목소리로 저장할까요?` 바로 아래에 `말투를 원하는 대로 바꿔 보세요.` 한 문장을 둔다(언제나). 예전에 그
+    자리에 있던 `저장하면 이전 목소리는 삭제돼요.` 는 뺐고, 미리듣기 카드 아래에 있던 같은 안내도 이리로 옮겼다(두 번
+    말하지 않는다). "매일 아침 문구가 이 말투로 만들어져요." 는 2026-09-29 에 이미 뺐다.
+  - 문구 카드는 문구와 고치기(연필)뿐이다 — 재생 버튼은 톤 카드의 `원본 듣기`·`현재 톤 듣기` 로 옮겼다(§4-3).
+  - **교체는 체크하지 않는다.** 이미 등록된 목소리가 있으면 이 화면의 저장은 곧 교체다 — 톤 카드 아래에 **제목과 같은
+    글자 크기로** `이전에 저장한 목소리는 삭제하고 이 목소리로 등록할게요.` 한 줄만 두고(체크 상자·설명 없음), 저장하면
+    교체로 보낸다(`replace_existing`). 교체가 아니면 그 줄이 없다. (''○○' 대신 이 목소리를 써요' 체크와 그 설명은
+    2026-10-08 사용자 지시로 뺐다.)
+  - **월 등록 한도 경고**("이번 달에 만들 수 있는 목소리를 다 쓰게 돼요…")는 사용자 승인으로 뺐다 — 남은 횟수는 목소리
+    탭 머리의 `생성 가능 n/m회` 가 말한다.
 - **공유 설정은 확정 단계에서 고른다.** 아직 버릴 수 있는 초안의 입력 폼에서 묻지 않는다.
   승격 요청은 그 선택을 함께 저장하며, 기존 목소리를 제자리 교체하는 갈래에서도 동일하다.
   일반 공유 on/off는 커밋 직후 알린다. 단 제자리 교체로 공유 목소리의 실체가 바뀌면 모든
@@ -290,8 +293,8 @@
   음원·OS 예약에는 닿지 않는다. 교체는 프로필 **id 를 그대로 재사용**하므로 클라의 '접근 가능
   목록 대조' 로도 영원히 안 걸린다. 그래서 두 경로로 알린다:
   - **등록한 기기**는 교체 성공(`replaced: true`) 즉시 그 프로필의 직접 입력 알람을 내리고 예약을
-    다시 맞춘다. 그 화면이 이미 "직접 입력 문구로 만든 알람도 기본 목소리로 바뀌어요" 라고
-    약속하고 동의를 받았으므로 별도 안내는 띄우지 않는다. '내린다' 는 알람음이 아니라 **기본
+    다시 맞춘다. 확정 화면이 `이전에 저장한 목소리는 삭제하고 이 목소리로 등록할게요.` 로 교체를 알리므로 별도 안내는
+    띄우지 않는다(직접 입력 알람이 기본 목소리로 바뀐다는 설명은 2026-10-08 사용자 지시로 화면에서 뺐다). '내린다' 는 알람음이 아니라 **기본
     목소리**다 — 교체된 목소리가 기본 목소리면 그 목소리 그대로 낡은 오디오만 버리고, 클론이면 미나로
     바꾼다(billing-lifecycle.md 「목소리를 잃은 알람」).
   - **다른 기기**는 `voice_access_revoked` 에 `voiceProfileId` 와 `scope=custom_messages` 를 실어
@@ -665,7 +668,7 @@
     '나중에 약을 챙겨 먹으려면'처럼 동작이 여러 낱말이어도 같은 절 안에서 검사한다. 문장부호를 넘어 다른 절을 합치지 않는다.
     잊는다는 **긍정** 꼴만 본다 — '나중에 먹으려면 잊지 않게 메모해 둬'·'깜빡하지 않도록' 같은 부정·목적절은 바른 말이다.
 
-## 4-3. 목소리 높이 — 등록 미리듣기에서 고르고 **서버가 굽는다** (2026-10-07·08)
+## 4-3. 목소리 톤(높이) — 등록 미리듣기에서 고르고 **서버가 굽는다** (2026-10-07·08)
 
 v4 Turbo(§10)는 클론 목소리를 원래보다 **높게** 낸다 — 협력사 남성 저음 샘플(원본 72 Hz)은 +5.5 반음, 기본 목소리
 도현은 라이브러리 원본 대비 +8.6 반음이었다(multilingual v2 는 같은 샘플이 +0.2 반음). 모델에는 높이를 넘길 칸이
@@ -676,8 +679,11 @@ v4 Turbo(§10)는 클론 목소리를 원래보다 **높게** 낸다 — 협력�
   이 기능 이전 목소리는 값이 없고(NULL = 0) 이전과 똑같이 운다. 이전 목소리에 값을 매기거나 고치는 화면·이전(移轉)은 두지 않는다.
 - **교체 등록은 새 목소리다**(같은 날 사용자). 제자리 교체(§5-2)는 프로필 id 를 그대로 두지만 높이는 옛 목소리의 것을
   물려받지 않는다 — **새로 고른 값으로 언제나 덮어쓰고**, 안 골랐으면 비운다. 교체 회차가 다시 굽는 프리셋이 새 높이로 나온다.
-- **막대는 '목소리 높이' 하나다** — −6…+3 반음, 0.5 눈금(`VOICE_PITCH_MIN_SEMITONES`·`VOICE_PITCH_MAX_SEMITONES`·
-  `VOICE_PITCH_STEP_SEMITONES`, `@alarmtalk/shared`). 음량·굵기 막대는 두지 않는다(2026-10-07 사용자: "목소리 높이만 하면 될 것 같다").
+- **막대는 높이 하나다 — 화면 이름은 `톤 조절`**(2026-10-08 사용자, 그전 이름 '목소리 높이'). 값은 반음, **−10…+6**, 0.5
+  눈금(`VOICE_PITCH_MIN_SEMITONES`·`VOICE_PITCH_MAX_SEMITONES`·`VOICE_PITCH_STEP_SEMITONES`, `@alarmtalk/shared` — 두 앱의
+  막대도 같은 숫자). 범위는 2026-10-08 에 −6…+3 에서 넓혔다 — v4 Turbo 가 저음을 8반음 넘게 올리는 경우가 있었다(사용자).
+  크게 바꿀수록 거칠어진다(아래 TD-PSOLA 의 한계). 음량·굵기 막대는 두지 않는다(2026-10-07 사용자: "목소리 높이만 하면 될
+  것 같다").
 - **몸집(포먼트)은 그대로 두고 높이만 바꾼다 — TD-PSOLA.** 성대 떨림 한 번마다 조각을 잘라 간격만 바꿔 겹친다.
   ⚠ **폰 내장 높이 변환으로 되돌리지 말 것**(`PlaybackParams.setPitch`·`AVAudioUnitTimePitch`) — 파형을 늘이고 줄여 몸집까지
   움직여서 "너무 변조된 목소리라 거부감" 이 든다고 사용자가 거절했다. 위상 보코더 계열(Signalsmith Stretch, 포먼트 보정
@@ -699,13 +705,32 @@ v4 Turbo(§10)는 클론 목소리를 원래보다 **높게** 낸다 — 협력�
   (원래 소리 — 초안 행에는 높이가 없다)를 **메모리에서** 구워 튼다 — ⚠ 파일로 남기지 않는다(안드로이드는
   `MediaDataSource`, iOS 는 `AVAudioPlayer(data:)`). 사본 파일을 쓰면 사용자 목소리의 복사본이 하나 더 생겨 목소리 삭제·
   동의 철회·로그아웃마다 따라 지워야 한다. 막대를 움직일 때마다 서버를 부르면 합성 비용과 대기가 생긴다.
-  - 막대에서 손을 떼면 다시 굽고 처음부터 **한 번** 튼다(굽는 동안 진행 표시). 반복은 울릴 때의 일이다(2026-10-08 사용자).
-  - 첫 미리듣기는 서버가 만든 클립을 추천값으로 구워 튼다. 첫 재생을 끝까지 들으면 서버가 청취를 확인하고(§4-1), 그 뒤의
-    다시 듣기는 받아 둔 클립을 기기에서 다시 굽는다(서버 왕복 없음). 첫 재생 도중 막대를 움직이면 끊지 않고, 끝난 직후
-    새 높이로 다시 튼다.
+  - **재생 버튼은 톤 카드 안 하단의 둘이다 — `원본 듣기`·`현재 톤 듣기`**(2026-10-08 사용자: 번갈아 들을 수 있게). 문구
+    카드 옆에는 재생 버튼을 두지 않는다(문구 고치기 연필만). `원본 듣기` 는 받은 클립을 그대로(0), `현재 톤 듣기` 는 막대 값으로
+    구워 튼다. 둘 다 **한 번** 튼다 — 반복은 울릴 때의 일이다(2026-10-08 사용자). 트는 중인 버튼을 다시 누르면 멈추고, 다른
+    버튼을 누르면 지금 것을 멈추고 그것을 처음부터 튼다. 트는 쪽 버튼은 트는 중임을 보인다(굽는 동안은 진행 표시).
+  - 막대에서 손을 떼면 현재 톤을 다시 굽고 처음부터 한 번 튼다(그대로).
+  - 첫 미리듣기는 서버가 문구를 만들면 곧바로 **현재 톤(추천값)** 으로 저절로 튼다(문구는 소리가 날 때 함께 보인다 —
+    2026-09-19 지시). 첫 재생을 끝까지 들으면(어느 버튼으로 들었든) 서버가 청취를 확인하고(§4-1), 그 뒤의 다시 듣기는 받아
+    둔 클립을 기기에서 다시 굽는다(서버 왕복 없음). 첫 재생 도중 막대를 움직이면 끊지 않고, 끝난 직후 새 높이로 다시 튼다.
+  - `추천값`·`0으로` 버튼은 두지 않는다(2026-10-08 사용자). 막대는 추천값에서 시작하고, 원본과 비교는 `원본 듣기` 가 한다.
+    0 은 0.5 눈금이라 막대로 맞출 수 있다.
+  - **문구를 준비하는 동안에도 두 버튼은 눌린다.** 도는(저절로 틀 예정인) 버튼을 누르면 저절로 틀기를 취소하고(받기는
+    계속한다), 다른 버튼을 누르면 클립이 오는 대로 그것을 튼다. 클립이 오기 전의 막대 움직임은 무시한다. 첫 재생이 실제로
+    소리를 내는 동안만 막대 값을 미뤄 두었다가 끝난 뒤 튼다.
+  - **문구를 고치는 동안(연필)은 톤 카드가 잠긴다** — 연필을 누르면 트는 소리·굽기를 멈춘다(멈춘 재생은 들은 것이 아니다).
+  - **잠금은 두 앱이 같은 표 하나다**(안드로이드 `confirmStepLocks`, iOS `VoicePreviewConfirmView.locks`). 서버 일(문구 받기·
+    청취 확인·문구 저장·등록·버리기)이 도는 동안 뒤로·다시 만들기·저장하기·공유 스위치·연필·재생성이 잠기고, 톤 카드(막대·
+    두 버튼)는 편집·문구 저장·등록·버리기 동안만 잠긴다. 저장하기는 거기에 더해 편집이 닫혀 있고, 청취가 확인됐고, 굽는
+    중이 아니고, 지금 막대 값을 끝까지 들었을 때만 열린다.
+  - 오류 줄은 교체 한 줄 바로 아래(공유 위)에 오류 색으로 둔다(두 앱). 받아 둔 클립을 다시 틀기 시작하면 앞선 재생
+    실패 안내는 걷는다. 첫 문구를 못 받았을 때의 안내는 `문구를 아직 준비하지 못했어요. 듣기 버튼을 눌러 다시 시도해
+    주세요.` 다(예전 '미리듣기를 눌러' — 그 버튼이 없어졌다).
+  - 카드에는 설명 글을 두지 않는다(2026-10-08 사용자) — 제목 줄 `톤 조절` 과 지금 값(`−1.5 반음`), 막대, 두 버튼뿐이다.
   - ⚠ **저장(등록 확정)은 지금 막대 값을 끝까지 들었을 때만 열린다.** 등록 뒤에는 높이를 바꿀 수 없고(아래) 그 값이 이
     목소리의 모든 알람 소리에 구워지므로, 듣지 않은 값을 보내면 되돌릴 길이 없다. '들었다' 는 **실제로 걸린 높이**로
-    센다 — 굽거나 틀지 못해 원본을 틀었으면 0 을 들은 것이고, 원본마저 못 틀었으면 들은 것이 없다(실패로 알린다).
+    센다 — `원본 듣기` 를 끝까지 들었으면 0 을, 굽거나 틀지 못해 원본을 대신 틀었으면 0 을 들은 것이고, 원본마저 못
+    틀었으면 들은 것이 없다(실패로 알린다).
     재생이 끝난 모양은 셋으로 가른다 — 끝까지 들음 / 멈춤(화면 이탈·다른 재생 — 청취 아님, 알리지 않음) / 깨짐.
 - **자동 추천도 앱의 일이다** — 등록 녹음과 미리듣기의 높이(유성 프레임 F0 의 중앙값)를 비교해 벌어진 만큼 반대로:
   0.5 단위로 **먼저** 반올림하고, 1.5 반음 미만이면 0, 범위로 자른다. ⚠ F0 는 생체 정보라 **로그에 남기지도 서버에
@@ -2068,16 +2093,16 @@ R2 파일·ElevenLabs 클론은 DB 트랜잭션 안에서 지울 수 없으므�
 | 확정 미리듣기 문구가 사투리 지시를 이긴다 | — (서버가 만든다) | — (서버가 만든다) | `prerenderClipPrompt` 의 `styleReference` 갈래(`dialectFollowsReference` → `speechStyleInstruction`·`humanReferenceInstruction`·끝의 `DIALECT` 줄) ← `stock-clips.ts` 가 `preview_text` 를 넘긴다. 회귀 `vertex-translate.test.ts`「확정 문구(STYLE REFERENCE)가 있으면 사투리 지시가 그것을 따른다」· 평가 `scripts/eval-gemini-prompts.ts`(프로필마다 `styleReference`, `*-stdref` 프로필) |
 | 제시 대본을 읽은 녹음은 어체를 버린다(사투리·말버릇·페르소나·아이·결은 그대로) | 대본 글만 둔다 — `voices2_record_script`(`res/values{,-en,-ja}/strings.xml`) | 대본 글만 둔다 — `Views/Voices/VoiceCloneUploadFlow.swift` `recordingScript` | `analyzeSpeechStyleWithVertex`(판정 `isEnrollmentScriptReading` — 포함률 `ENROLLMENT_SCRIPT_READ_THRESHOLD`·대본 분량 `ENROLLMENT_SCRIPT_MIN_MATCHED_UNITS`·숫자 줄의 다른 꼴 `ENROLLMENT_SCRIPT_NUMBER_LINES`, `lib/enrollment-script.ts` — 모델이 본 앞부분 `SPEECH_STYLE_TRANSCRIPT_LIMIT`) ← 원본 `VOICE_ENROLLMENT_SCRIPTS`(`packages/shared/src/voice-enrollment-script.json`) · 세 벌 대조 `scripts/check-voice-enrollment-script.py`(CI lint). 회귀 `enrollment-script.test.ts`·`vertex-translate.test.ts`「제시 대본을 읽은 녹음은 어체를 버린다」 |
 | 말투 분석 재시도(전송 실패만·`waitUntil` 마감 안) | — | — | `analyzeSpeechStyleWithVertex`(`SPEECH_STYLE_RETRY_DELAYS_MS`·`SPEECH_STYLE_ANALYSIS_BUDGET_MS`, 판정 `isVertexTransportFailure` ← `markTransportFailure`·`VertexHttpError`, 요청마다 직전에 재는 상한 `GenerateContentConfig.deadlineAt` → `deadlineBoundedTimeoutMs`(토큰 `createAccessToken`·생성 `generateContentAtEndpoint`), `lib/vertex-translate.ts`) · 마감은 `runSpeechStyleAnalysis`(`routes/voice-profile.ts`)가 전사 전부터 세고 `ElevenLabsClient.speechToText(deadlineAt)`도 따른다. 회귀 `elevenlabs.test.ts`(마감 전 요청·본문 읽기 중단, 만료 뒤 요청 금지). 회귀 `vertex-translate.test.ts`「전송 실패만 마감 안에서 다시 묻는다」(「어느 회차도 마감을 넘기지 않는다(가짜 시계)」 — 토큰 발급 8초)·`voice-profile-speech-style.test.ts`(마감 전달) |
-| 목소리 높이 막대·자동 추천(§4-3) — 높이 하나, −6…+3·0.5, 반올림 뒤 데드밴드 1.5, 클립마다 다시 잼 · 카드 구성은 iOS 기준 | `ui/voices/VoiceTuningCard.kt`(iOS `tuningCard` 와 같은 구성) ← `VoiceProfileManagementPanel`(`startSourcePitchAnalysis` — 업로드 전 등록 녹음 · `ensureTuningSuggestion`(`tuningSuggestionClipUri`)) · `data/VoiceTuning.kt` · `VoiceTuningAnalysis.suggest`(`suggestedPitchSemitones`); 회귀 `VoiceTuningAnalysisTest` | `Views/Voices/VoicePreviewConfirmView.swift`(`tuningCard`·`prepareTuning` 이 클립마다 잼) · `VoiceStudioViewModel.pendingDraftSourceMeasurement`(업로드하는 동안 잰 등록 녹음 — 숫자만) · `VoiceTuning.swift` · `VoiceTuningAnalyzer.suggest`; 회귀 `VoiceTuningAnalyzerTests` | — |
+| 톤 조절 막대·자동 추천(§4-3) — 높이 하나, −10…+6·0.5, 반올림 뒤 데드밴드 1.5, 클립마다 다시 잼 · 카드는 제목 줄·막대·`원본 듣기`/`현재 톤 듣기` 뿐(설명·추천값·0으로 없음) | `ui/voices/VoiceTuningCard.kt`(`TuningListenButton`) ← `VoiceProfileManagementPanel`(`startSourcePitchAnalysis` — 업로드 전 등록 녹음 · `ensureTuningSuggestion`(`tuningSuggestionClipUri`)) · `data/VoiceTuning.kt`(`PITCH_RANGE`) · `VoiceTuningAnalysis.suggest`(`suggestedPitchSemitones`); 회귀 `VoiceTuningAnalysisTest`(범위가 서버 `VOICE_PITCH_*` 와 같은가 포함) | `Views/Voices/VoicePreviewConfirmView.swift`(`tuningCard`·`prepareTuning` 이 클립마다 잼) · `VoiceStudioViewModel.pendingDraftSourceMeasurement`(업로드하는 동안 잰 등록 녹음 — 숫자만) · `VoiceTuning.swift` · `VoiceTuningAnalyzer.suggest`; 회귀 `VoiceTuningAnalyzerTests` | `VoicePitchSemitonesSchema`(`VOICE_PITCH_MIN/MAX/STEP_SEMITONES`, `packages/shared/src/schemas/voice.ts`) |
 | 몸집 유지 높이 변환(TD-PSOLA)·원래 크기로 되맞춤·분석은 정확히 16 kHz — 세 구현 같은 숫자·같은 반올림 자리 | `data/VoicePitchShifter.kt`(`shift`·`pitchTrack`·`resample`·`matchLoudness`); 회귀 `VoicePitchShifterTest` | `VoicePitchShifter.swift`(`render`·`analysisRate`·`resample`); 회귀 `VoicePitchShifterTests` | `shiftVoicePitch`(`packages/voice/src/pitch-shift.ts`); 회귀 `packages/voice/test/pitch-shift.test.ts`(두 앱과 같은 기대값) |
-| 등록 미리듣기는 메모리에서 구워 **한 번** 튼다(파일 없음) · 손 떼면 다시 굽기 · 첫 미리듣기는 끊지 않고 끝난 뒤 새 높이 · 실패하면 원래 소리(들은 높이 0) · 지금 값을 끝까지 들어야 저장 | `data/VoiceTuningRenderer.render`(WAV 바이트)·`InMemoryAudioDataSource` ← `VoiceProfileManagementPanel`(`bakeTunedPreview`·`startPreviewWithFallback`·`playLocalTunedPreview`·`replayTunedPreviewIfReady`·저장 잠금 `heardTuning`); 회귀 `VoiceTuningRendererTest` | `VoiceTuningRenderer.previewWAV`·`VoiceTuningPreviewPlayer.play`(`VoiceTuningAudio.swift`) ← `VoicePreviewConfirmView`(`prepareTuning`·`replayLocally`·첫 재생 뒤 `servedTuning` 비교·저장 잠금 `heardTuning`) · `VoiceStudioViewModel.tuningPreviewPlayer`; 회귀 `VoicePitchShifterTests.test_previewWAV_bakesInMemoryAndKeepsLength` | — (초안 미리듣기는 원래 소리 — 초안 행에 높이가 없다) |
+| 등록 미리듣기는 메모리에서 구워 **한 번** 튼다(파일 없음) · `원본 듣기`/`현재 톤 듣기` 번갈아(트는 버튼 다시 누르면 멈춤, 다른 버튼은 바꿔 틂) · 손 떼면 다시 굽기 · 첫 미리듣기는 끊지 않고 끝난 뒤 새 높이 · 실패하면 원래 소리(들은 높이 0) · 지금 값을 끝까지 들어야 저장 | `data/VoiceTuningRenderer.render`(WAV 바이트)·`InMemoryAudioDataSource` ← `VoiceProfileManagementPanel`(`onTuningListen`·`bakeTunedPreview`·`startPreviewWithFallback`·`playLocalTunedPreview`·`replayTunedPreviewIfReady`·들은 높이 `heardTunings`) · 판정 `ui/voices/VoicePreviewConfirmRules.kt`(`tuningListenAction`·`tuningReleaseAction`·`tuningHeardToEnd`·잠금 `confirmStepLocks`); 회귀 `VoicePreviewConfirmRulesTest`·`VoiceTuningRendererTest` | `VoiceTuningRenderer.previewWAV`·`VoiceTuningPreviewPlayer.play`(`VoiceTuningAudio.swift`) ← `VoicePreviewConfirmView`(`startPreview`·`playbackEnded`·`replayAfterPlayback`) · 판정 `VoiceTonePreview`(`press`·`applied`·`sliderReleased`·`canSave`)·잠금 `VoicePreviewConfirmView.locks` · `VoiceStudioViewModel.fetchDraftPreview`·`confirmDraftPreviewListened`·`tuningPreviewPlayer`; 회귀 `VoiceTonePreviewTests`·`VoicePitchShifterTests.test_previewWAV_bakesInMemoryAndKeepsLength` | — (초안 미리듣기는 원래 소리 — 초안 행에 높이가 없다) |
 | 재생 방식 2택 | `PlayModeCard` (`ui/editor/AlarmEditorControls.kt`) | `VoicePlayModePicker` | `wake_mode` (`voice_only` / `sound_then_voice`) |
 | 옛 값 정규화 | `AlarmPlayModes.normalize` | `AlarmPlayMode.decode` | — |
 | 문구 목록(하나) | `EditorMessageContexts` → `FreeBucketOrder` (`ui/editor/AlarmEditorControls.kt`) | `MessageSettingsPane.options` → `FreeBucket.order` | `STOCK_CLIP_PRESETS` → `FREE_BUCKET_CATEGORIES` |
 | 목록 자르기(클립 유무) | `freeBucketsFor` + `availableContexts` | `availableFreeBuckets` + `availableContexts` | `GET /tts/stock-clips` |
 | 직접 입력 잠금(등급) | `manualLocked = freeVoiceTier` | `manualLocked: freeVoiceTier` | `tts.ts` manual-tts-quota |
 | 이용권 카드 문구 — 문구 종류를 유료 혜택으로 적지 않는다(§2) | `billing_plan_*feature*` (`ui/billing/BillingPanels.kt`), 회귀 `PlanCardCopyTest` | `PlanCard.features(for:)` (`Views/Settings/BillingPanelComponents.swift`) + `Localizable.xcstrings`, 회귀 `PlanCardCopyTests` | — |
-| 라이브 랜덤 생성 없음 — 서버가 거절(목소리 등록 미리듣기만 예외) | `AlarmEditorScreen` 의 `/tts/generate` 요청 `random = false` 고정 · 등록 미리듣기(`VoiceProfileManagementPanel`)는 random 을 싣지 않는다 | `AlarmEditorSheet.saveFlow` 의 `randomPrompt` 가드(클립에 묶거나 준비 화면) · 예외 `VoiceStudioViewModel.playDraftPreview`(random:true + draftPreview:true) | `routes/tts.ts` `randomRequested`(= `!draftPreviewRequested && body.random === true`) → 400 `RANDOM_TTS_RETIRED` |
+| 라이브 랜덤 생성 없음 — 서버가 거절(목소리 등록 미리듣기만 예외) | `AlarmEditorScreen` 의 `/tts/generate` 요청 `random = false` 고정 · 등록 미리듣기(`VoiceProfileManagementPanel`)는 random 을 싣지 않는다 | `AlarmEditorSheet.saveFlow` 의 `randomPrompt` 가드(클립에 묶거나 준비 화면) · 예외 `VoiceStudioViewModel.fetchDraftPreview`(random:true + draftPreview:true) | `routes/tts.ts` `randomRequested`(= `!draftPreviewRequested && body.random === true`) → 400 `RANDOM_TTS_RETIRED` |
 | 스톡 클립 사용(OR) | `usesStockClips` (`ui/editor/AlarmEditorScreen.kt`) | `usesStockClips` (`Views/Editor/AlarmEditorSheet.swift`) | `tts.ts` 무료 등급 게이트 |
 | 상태 강제 | `LaunchedEffect(usesStockClips, …)` | `coerceFreeVoiceTierConstraints` | — |
 | 문구 변경 강제 | — | — | `STOCK_INVALIDATION_NAME`·`STOCK_FINGERPRINT_IN_NAME` (`lib/migrations.ts`, 지문은 **마이그레이션 이름 안에** 있다) |
@@ -2106,12 +2131,12 @@ R2 파일·ElevenLabs 클론은 DB 트랜잭션 안에서 지울 수 없으므�
 | 편집기 목소리 프리셀렉트 | `AlarmEditorScreen` 화면 스코프 | `AlarmEditorSheet.selectDefaultVoiceProfileIfNeeded` | — |
 | 목소리 등록 5단계 | `VoiceProfileManagementPanel.VoiceRegistrationStep` | `VoicesRoute` + `VoiceCloneUploadFlow.RegistrationStep` | 초안 생성·승격·사전렌더 큐 |
 | 등록 언어·선택 페르소나 | `VoiceProfileManagementPanel` Details | `VoiceCloneUploadFlow.detailsSection` | `POST /voice/clone` |
-| 확정 본문 = 교체일 때만 한 줄 · 월 한도 경고 없음 · 말투 안내 한 문장 | `VoiceProfileManagementPanel` Preview(`replaceTargetVoice` → `voices_confirm_replace_body`, `voices_preview_edit_hint`); `VoiceRegistrationCopyTest` | `VoicePreviewConfirmView`(`registeredVoice`) · `Localizable.xcstrings` | — |
+| 확정 화면 = 제목 아래 말투 안내 한 문장 · 문구 카드에 재생 버튼 없음 · 교체는 체크 없이 제목 크기 한 줄 · 월 한도 경고 없음 | `VoiceProfileManagementPanel` Preview(`replaceTargetVoice` → `voices_confirm_replace_body`, `voices_preview_edit_hint`); `VoiceRegistrationCopyTest` | `VoicePreviewConfirmView`(`registeredVoice`) · `Localizable.xcstrings` | — |
 | 오프라인 준비 배치 — 제목 없음 · 블록 가운데 · '백그라운드에서 계속' 맨 아래 | `VoiceProfileManagementPanel.kt` `VoiceClipPreparationStep` | `ClipPreparationView.registrationPreparation`; `AlarmTalkUITests/VoicePreparationScreenshotUITests` | — |
 | 확정 단계 공유 | `VoiceProfileManagementPanel` Preview | `VoicePreviewConfirmView` | 일반 승격은 `scheduleVoiceShareChangedPush`, 제자리 교체는 `notifySharedVoicePrerenderComplete`(공유 해제만 즉시) |
 | 제자리 교체 원자성·원본 승계 | — | — | `replaceVoiceInPlace` + `voice_uploads` + `voice_prerender_queue` |
 | 교체도 같은 등록 게이트 | — | — | `replaceVoiceInPlace`(플랜·동의·`voice_profile_change_ledger`) |
-| 목소리 높이 — 등록 확정에서만 받는다(새 등록부터 · 0/null/미전송 = 원래 소리 · 범위 밖 400 · 등록 뒤 409, 같은 값의 재시도는 200 · 응답에 적은 값) | 끝까지 들은 높이를 싣는다 — `MainViewModel.promoteVoiceDraft`(`pitchSemitones`, 0 이면 키 없음) → `VoiceProfileUpdateRequest.pitchSemitones` ← `VoiceProfileManagementPanel`(`heardTuning`); 문구 `network/ApiErrorMessages.kt`; 회귀 `VoiceProfileUpdateRequestTest` | 끝까지 들은 높이를 싣는다 — `AlarmTalkAPI.promoteVoiceDraft(pitchSemitones:)`·`voiceDraftPromoteBody`(0 이면 키 없음) ← `VoicePreviewConfirmView.promote`(`heardTuning`); 문구 `APIErrorMessages.swift`; 회귀 `VoiceStudioViewModelTests.test_voiceDraftPromotionBody_carriesPitchOnlyWhenNotZero` | `PATCH /voice/:id`(`pitch_semitones`·`pitchSemitones` → `VoicePitchSemitonesSchema`, `INVALID_VOICE_PITCH`·`VOICE_PITCH_LOCKED`·재시도 판정 `pitchRetryOfRegistration`, `routes/voice-profile.ts`) → `voice_profiles.pitch_semitones`·`pitch_model_id`(#128). 회귀 `voice-pitch-promote.test.ts`·배포 창 `voice-pitch-deploy-window.test.ts` |
+| 목소리 높이 — 등록 확정에서만 받는다(새 등록부터 · 0/null/미전송 = 원래 소리 · 범위 밖 400 · 등록 뒤 409, 같은 값의 재시도는 200 · 응답에 적은 값) | 끝까지 들은 높이를 싣는다 — `MainViewModel.promoteVoiceDraft`(`pitchSemitones`, 0 이면 키 없음) → `VoiceProfileUpdateRequest.pitchSemitones` ← `VoiceProfileManagementPanel`(`heardTunings`) · 바디 `voiceDraftPromotionRequest`(교체는 기존 목소리가 있으면 언제나 — `registrationReplaceTarget`); 문구 `network/ApiErrorMessages.kt`; 회귀 `VoiceProfileUpdateRequestTest` | 끝까지 들은 높이를 싣는다 — `AlarmTalkAPI.promoteVoiceDraft(pitchSemitones:)`·`voiceDraftPromoteBody`(0 이면 키 없음) ← `VoicePreviewConfirmView.promote`(`VoiceTonePreview.canSave` · 교체 `replacementTarget`); 회귀 `VoiceStudioViewModelTests.test_promotionReplacesWheneverAnOfficialVoiceExists`; 문구 `APIErrorMessages.swift`; 회귀 `VoiceStudioViewModelTests.test_voiceDraftPromotionBody_carriesPitchOnlyWhenNotZero` | `PATCH /voice/:id`(`pitch_semitones`·`pitchSemitones` → `VoicePitchSemitonesSchema`, `INVALID_VOICE_PITCH`·`VOICE_PITCH_LOCKED`·재시도 판정 `pitchRetryOfRegistration`, `routes/voice-profile.ts`) → `voice_profiles.pitch_semitones`·`pitch_model_id`(#128). 회귀 `voice-pitch-promote.test.ts`·배포 창 `voice-pitch-deploy-window.test.ts` |
 | 목소리 높이 — 교체 등록은 새로 고른 값으로 덮어쓴다(안 고르면 비운다) | — | — | `replaceVoiceInPlace`(`pitchSemitones`) ← `PATCH /voice/:id`. 회귀 `voice-replace-in-place.test.ts`「교체는 새로 고른 높이와 지금 모델을 적고…」·`voice-pitch-promote.test.ts`「교체 등록은 고른 높이를…」 |
 | 목소리 높이 — 서버가 굽는다(사전렌더·`/tts/generate` · PCM → TD-PSOLA → 크기 되맞춤 → MP3 128 · 실패·형식 이상·60초 초과는 던진다 · 모델이 바뀌면 굽지 않는다 · 인코더는 isolate 당 하나) | 받은 파일을 그대로 튼다 | 받은 파일을 그대로 튼다 | 굽는 곳 `createSynthesisAttempts`(`lib/voice-provider.ts`) ← `voicePitchFromRow`·`appliedPitchSemitones`·`bakePitchMp3`·`shiftPcmPitch`·`encodeMp3`(`lib/voice-pitch.ts`) ← 셈 `shiftVoicePitch`(`packages/voice/src/pitch-shift.ts`) · PCM 응답 형식 검사 `ElevenLabsClient.textToSpeech` · 행 읽기 `findUsableVoiceProfile`(`SELECT *`·`vp.*` — 공유 목소리는 주인의 값, `routes/tts.ts`) · 사전렌더 `listReadyCloneVoices` → `findMissingStockTargets` → `generateStockClip`(`lib/stock-clips.ts`) · 인코더 묶기 `src/index.ts`(`registerMp3EncoderModule`)·`wrangler.toml` 의 `[[rules]]`. 회귀 `voice-pitch.test.ts`·`prerender-pitch.test.ts`·`tts.test.ts`「높이가 있는 목소리의 직접 입력은…」·`elevenlabs.test.ts`「PCM 을 달라고 하면…」·`worker-wasm-bundle.test.ts`·`packages/voice/test/pitch-shift.test.ts`(두 앱과 같은 기대값) |
 | 목소리 높이 — 캐시 키는 0 이 아닐 때만 높이를 넣는다 | — | — | `computeTtsCacheKey`(`pitchSemitones`, `lib/audio-cache.ts`) ← `routes/tts.ts`·`generateStockClip`. 회귀 `voice-pitch.test.ts`「캐시 키」 |

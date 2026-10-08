@@ -75,22 +75,6 @@
         }
       }
     },
-    "‘%@’ 대신 이 목소리를 써요" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Replace ‘%1$@’ with this voice"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "「%1$@」をこの声に置き換えます"
-          }
-        }
-      }
-    },
     "‘%@’은(는) 목록에 없어요. 다시 골라 주세요." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2875,23 +2859,6 @@
         }
       }
     },
-    "다시 듣기" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Replay"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "もう一度聞く"
-          }
-        }
-      }
-    },
     "다시 만들기" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4354,19 +4321,19 @@
         }
       }
     },
-    "문구를 아직 준비하지 못했어요. 미리듣기를 눌러 다시 시도해 주세요." : {
+    "문구를 아직 준비하지 못했어요. 듣기 버튼을 눌러 다시 시도해 주세요." : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "The line isn't ready yet. Tap Preview to try again."
+            "value" : "The line isn't ready yet. Tap a play button to try again."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "フレーズをまだ準備できていません。プレビューを押してもう一度お試しください。"
+            "value" : "フレーズをまだ準備できていません。再生ボタンを押してもう一度お試しください。"
           }
         }
       }
@@ -8492,22 +8459,6 @@
         }
       }
     },
-    "이전에 저장한 목소리는 삭제돼요. 직접 입력 문구로 만든 알람도 기본 목소리로 바뀌어요." : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Your previously saved voice will be deleted. Alarms you set with your own typed message will switch to a default voice."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "以前に保存した声は削除されます。直接入力で設定したアラームも基本の声になります。"
-          }
-        }
-      }
-    },
     "인증 코드" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -8997,23 +8948,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "保存する"
-          }
-        }
-      }
-    },
-    "저장하면 이전 목소리는 삭제돼요." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Saving will delete your previous voice."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "保存すると以前の声は削除されます。"
           }
         }
       }
@@ -10800,36 +10734,36 @@
         }
       }
     },
-    "목소리 높이 값이 올바르지 않아요. 다시 맞춰 주세요." : {
+    "톤 값이 올바르지 않아요. 다시 맞춰 주세요." : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "The voice pitch value isn't valid. Please adjust it and try again."
+            "value" : "The tone value isn't valid. Please adjust it and try again."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "声の高さの値が正しくありません。調整し直してください。"
+            "value" : "トーンの値が正しくありません。調整し直してください。"
           }
         }
       }
     },
-    "목소리 높이는 목소리를 등록할 때만 정할 수 있어요." : {
+    "톤은 목소리를 등록할 때만 정할 수 있어요." : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Voice pitch can only be set when you register a voice."
+            "value" : "Tone can only be set when you register a voice."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "声の高さは声を登録するときにだけ設定できます。"
+            "value" : "トーンは声を登録するときにだけ設定できます。"
           }
         }
       }
@@ -16029,70 +15963,70 @@
     "%lld%%" : {
       "shouldTranslate" : false
     },
-    "추천값" : {
+    "톤 조절" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Recommended"
+            "value" : "Tone"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "おすすめ値"
+            "value" : "トーン調整"
           }
         }
       }
     },
-    "0으로" : {
+    "원본 듣기" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Reset to 0"
+            "value" : "Play original"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "0に戻す"
+            "value" : "元の声を聞く"
           }
         }
       }
     },
-    "목소리 몸집은 그대로 두고 높이만 바꿔요. 크기는 미리듣기와 같게 맞춰요. 저장하면 이 목소리로 울리는 모든 알람에 적용돼요." : {
+    "현재 톤 듣기" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Changes only the pitch and keeps the character of the voice. Loudness stays the same as the preview. Once saved, it applies to every alarm that uses this voice."
+            "value" : "Play current tone"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "声の質感はそのままに、高さだけを変えます。音量はプレビューと同じにそろえます。保存すると、この声で鳴るすべてのアラームに適用されます。"
+            "value" : "今のトーンで聞く"
           }
         }
       }
     },
-    "목소리 높이" : {
+    "이전에 저장한 목소리는 삭제하고 이 목소리로 등록할게요." : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pitch"
+            "value" : "Your saved voice will be deleted and this voice will be registered instead."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "声の高さ"
+            "value" : "保存した声は削除して、この声で登録します。"
           }
         }
       }

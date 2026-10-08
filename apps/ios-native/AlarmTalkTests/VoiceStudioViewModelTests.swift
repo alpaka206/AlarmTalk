@@ -68,18 +68,18 @@ final class VoiceStudioViewModelTests: XCTestCase {
     }
 
     /// 목소리 높이 두 코드(등록 확정 — 스펙 voice-and-message §4-3)는 공용 표가 받는다. 본문에만 코드가 실린 응답도
-    /// 찾는다(`knownErrorCodes`).
+    /// 찾는다(`knownErrorCodes`). 문구는 화면 이름(`톤 조절`)을 따라 '톤' 이다.
     func test_localizedVoiceMessage_voicePitchCodes() {
         XCTAssertEqual(
             VoiceStudioViewModel.localizedVoiceMessage(forCode: "INVALID_VOICE_PITCH"),
-            "목소리 높이 값이 올바르지 않아요. 다시 맞춰 주세요."
+            "톤 값이 올바르지 않아요. 다시 맞춰 주세요."
         )
         XCTAssertEqual(
             VoiceStudioViewModel.localizedVoiceMessage(forCode: "VOICE_PITCH_LOCKED"),
-            "목소리 높이는 목소리를 등록할 때만 정할 수 있어요."
+            "톤은 목소리를 등록할 때만 정할 수 있어요."
         )
         let err = APIError.server(status: 409, message: "VOICE_PITCH_LOCKED: pitch is fixed", errorCode: nil)
-        XCTAssertEqual(VoiceStudioViewModel().mapVoiceError(err), "목소리 높이는 목소리를 등록할 때만 정할 수 있어요.")
+        XCTAssertEqual(VoiceStudioViewModel().mapVoiceError(err), "톤은 목소리를 등록할 때만 정할 수 있어요.")
     }
 
     /// 공용 표는 **모르는 코드에 문구를 지어내지 않는다** — nil 을 주고 화면이 폴백을 쓴다.
@@ -336,6 +336,36 @@ final class VoiceStudioViewModelTests: XCTestCase {
 
         XCTAssertEqual(try json(0).keys.sorted(), ["is_draft", "is_shared"])
         XCTAssertEqual(try json(nil).keys.sorted(), ["is_draft", "is_shared"])
+    }
+
+    /// 교체는 체크하지 않는다(2026-10-08 사용자 — 스펙 voice-and-message §4-1). 이미 등록된 목소리가 있으면 등록 확정
+    /// 화면의 저장은 **언제나** `replace_existing: true` 를 싣고, 없으면 키가 아예 없다. 이 초안·다른 초안·시스템
+    /// 목소리·실패한 목소리는 교체 대상이 아니다.
+    func test_promotionReplacesWheneverAnOfficialVoiceExists() throws {
+        func body(_ profiles: [VoiceProfile]) throws -> [String: Any] {
+            let replacing = VoicePreviewConfirmView.replacementTarget(among: profiles, draftID: "draft") != nil
+            let request = AlarmTalkAPI.voiceDraftPromoteBody(replaceExisting: replacing, isShared: false, pitchSemitones: -1.5)
+            let data = try AlarmTalkAPI.makeJSONEncoder().encode(request)
+            return try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        }
+        let draft = VoiceProfile(id: "draft", name: "새 목소리", status: "ready", isDraft: true)
+        let system = VoiceProfile(id: "system-mina", name: "미나", status: "ready", isSystem: true)
+        let otherDraft = VoiceProfile(id: "draft-2", name: "다른 초안", status: "ready", isDraft: true)
+        let failed = VoiceProfile(id: "failed", name: "실패", status: " Failed ")
+        let official = VoiceProfile(id: "mom", name: "엄마", status: "ready", isDraft: false)
+
+        XCTAssertEqual(
+            VoicePreviewConfirmView.replacementTarget(among: [draft, system, official], draftID: "draft")?.id,
+            "mom"
+        )
+        XCTAssertEqual(try body([draft, system, official])["replace_existing"] as? Bool, true)
+        // 상태를 모르는 옛 응답(키 없음)도 등록된 목소리다.
+        let legacy = VoiceProfile(id: "legacy", name: "옛 목소리")
+        XCTAssertEqual(try body([draft, legacy])["replace_existing"] as? Bool, true)
+
+        XCTAssertNil(VoicePreviewConfirmView.replacementTarget(among: [draft, system, otherDraft, failed], draftID: "draft"))
+        XCTAssertNil(try body([draft, system, otherDraft, failed])["replace_existing"])
+        XCTAssertNil(try body([])["replace_existing"])
     }
 
     func test_multipartUploadFileName_prefersTrimmedSelectedFileName() {

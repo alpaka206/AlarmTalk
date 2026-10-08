@@ -314,6 +314,7 @@
 		C02D06F303B085569D4C4F48 /* ReceivedAlarmLabelDisplay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 909E28352A791F3D540828F7 /* ReceivedAlarmLabelDisplay.swift */; };
 		C0B29A74768E8C83C680E74E /* RecipientConditionHydrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAAB337BB0E5A35DE416C328 /* RecipientConditionHydrationTests.swift */; };
 		C1CDA686E18BCAC6D1AE147F /* LeaveAccountDeviceUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76D2AD743E97CECC91C501F2 /* LeaveAccountDeviceUITests.swift */; };
+		C2ED9C0B3B7DDC08AFDB5830 /* VoiceTonePreviewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3E20B6AB355663C233E5F4C /* VoiceTonePreviewTests.swift */; };
 		C30F8BAE2A9D81D92D2BC65B /* VoiceRelationshipInputField.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F687F1C7FA0B73B24DA338D /* VoiceRelationshipInputField.swift */; };
 		C31924A23A606844E18A10B1 /* RemoteAlarmPushCommitTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E178989F24B77D671E086FF /* RemoteAlarmPushCommitTests.swift */; };
 		C3D6BD92355A2E98E6D23762 /* AlarmSoundStaging.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47D034E124A17E717E9835F2 /* AlarmSoundStaging.swift */; };
@@ -764,6 +765,7 @@
 		D168CB442A2ED0C8153B0785 /* ForegroundModalState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ForegroundModalState.swift; sourceTree = "<group>"; };
 		D27AF1639158440548C96717 /* VoiceSetupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceSetupView.swift; sourceTree = "<group>"; };
 		D312421EFADBCC201A632B63 /* voice_greeting_dohyun_ko.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = voice_greeting_dohyun_ko.mp3; sourceTree = "<group>"; };
+		D3E20B6AB355663C233E5F4C /* VoiceTonePreviewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceTonePreviewTests.swift; sourceTree = "<group>"; };
 		D4DDC997AA7D7D7BA47AC3C8 /* landing_voice_preview.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = landing_voice_preview.mp3; sourceTree = "<group>"; };
 		D504942BB90B00284C276541 /* LocalizedDisplayTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalizedDisplayTests.swift; sourceTree = "<group>"; };
 		D508DD8CC6CDA986BF91DBA0 /* AlarmSoundVolumeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlarmSoundVolumeTests.swift; sourceTree = "<group>"; };
@@ -1279,6 +1281,7 @@
 				DD88376E4686A1C79C01C265 /* VoiceShareAccessTests.swift */,
 				4D6B9AB322B789829ECCE211 /* VoiceStudioLoadStockClipsSupersededTests.swift */,
 				6BB3292333BDA9F421AC0D0A /* VoiceStudioViewModelTests.swift */,
+				D3E20B6AB355663C233E5F4C /* VoiceTonePreviewTests.swift */,
 				FE320511894AEFB88B1B01A4 /* VoiceTuningAnalyzerTests.swift */,
 				68623B8C742341D6D3C7DF72 /* WeatherAttributionTests.swift */,
 				B7D8EAC6D0EFB8B88C7CA40E /* WeatherRegionCatalogTests.swift */,
@@ -2040,6 +2043,7 @@
 				F4592AC12059D8F4652C2BD7 /* VoiceShareAccessTests.swift in Sources */,
 				8DE17EE557F652A0477D46E6 /* VoiceStudioLoadStockClipsSupersededTests.swift in Sources */,
 				00B56BDA058D957CBAA95386 /* VoiceStudioViewModelTests.swift in Sources */,
+				C2ED9C0B3B7DDC08AFDB5830 /* VoiceTonePreviewTests.swift in Sources */,
 				E495F9AFFFFB46B35C1C441E /* VoiceTuningAnalyzerTests.swift in Sources */,
 				567E773BE244A680AF7B1BCC /* WeatherAttributionTests.swift in Sources */,
 				F7AE5B9A2F35323387FE7BA5 /* WeatherRegionCatalogTests.swift in Sources */,

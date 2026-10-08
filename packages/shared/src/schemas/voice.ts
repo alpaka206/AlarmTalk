@@ -32,8 +32,9 @@ export type VoicePreviewTextUpdate = z.infer<typeof VoicePreviewTextUpdateSchema
  * (`@alarmtalk/voice` 의 `shiftVoicePitch`, 두 앱과 같은 셈). 0 은 원래 소리이고, 이 기능 이전에 등록한 목소리와
  * 값을 보내지 않는 앱(1.2.10)은 0 이다.
  */
-export const VOICE_PITCH_MIN_SEMITONES = -6;
-export const VOICE_PITCH_MAX_SEMITONES = 3;
+// 2026-10-08 −6…+3 에서 넓혔다 — v4 Turbo 가 저음을 8반음 넘게 올리는 경우가 있었다(스펙 §4-3).
+export const VOICE_PITCH_MIN_SEMITONES = -10;
+export const VOICE_PITCH_MAX_SEMITONES = 6;
 /** 막대 눈금 — 앱 막대와 같아야 한다. */
 export const VOICE_PITCH_STEP_SEMITONES = 0.5;
 
