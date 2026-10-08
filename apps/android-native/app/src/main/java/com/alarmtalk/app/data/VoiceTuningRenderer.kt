@@ -86,12 +86,15 @@ object VoiceTuningRenderer {
     }
 
     /** [source] 에 [tuning] 을 건 사본의 `file://` Uri. 중립이거나 실패하면 null. */
-    fun render(context: Context, source: Uri, tuning: VoiceTuning?): Uri? {
-        val pitch = tuning?.normalized()?.pitchSemitones ?: return null
-        if (pitch == 0f) return null
+    fun render(context: Context, source: Uri, tuning: VoiceTuning?): Uri? =
         // 세대는 **맨 먼저** 잡는다 — 아래 '이미 있나' 확인 뒤에 잡으면, 그 사이 지운 것을 기준으로 삼아 지운 뒤에
         // 게시한다(Codex #870).
-        val ticket = ticketFor(source)
+        render(context, source, tuning, ticketFor(source))
+
+    /** [ticket] — 굽기를 **요청한** 때의 세대. 뒤에서 굽기([renderInBackground])는 줄을 서 있으므로 요청할 때 잡아 넘긴다. */
+    internal fun render(context: Context, source: Uri, tuning: VoiceTuning?, ticket: RenderTicket): Uri? {
+        val pitch = tuning?.normalized()?.pitchSemitones ?: return null
+        if (pitch == 0f) return null
         return runCatching {
             val dir = File(context.noBackupFilesDir, DIR).apply { mkdirs() }
             val out = File(dir, "${cacheKey(source)}_${pitchTag(pitch)}.wav")
@@ -168,10 +171,16 @@ object VoiceTuningRenderer {
         }.getOrNull()
     }
 
-    /** [render] 를 화면·울림과 무관한 백그라운드에서 — 다음 울림을 위해 미리 굽는다. 한 번에 하나씩 굽는다(CPU 를 몰아 쓰지 않게). */
-    fun renderInBackground(context: Context, source: Uri, tuning: VoiceTuning) {
+    /**
+     * [render] 를 화면·울림과 무관한 백그라운드에서 — 다음 울림을 위해 미리 굽는다. 한 번에 하나씩 굽는다(CPU 를 몰아 쓰지 않게).
+     *
+     * ⚠ 세대([ticket])는 **요청할 때** 잡는다 — 줄을 서 있는 사이 로그아웃·목소리 상실로 지우기가 지나가면, 시작할 때 잡은
+     * 세대로는 그 뒤에 지운 목소리를 다시 굽는다(Codex #870). 높이 값을 **읽기 전에** 잡아 넘기는 것이 가장 안전하다 —
+     * 지우는 쪽은 언제나 값을 먼저 지우고 사본을 지운다(그러면 값을 읽고 나서 지우기가 끼어도 세대가 바뀌어 버려진다).
+     */
+    internal fun renderInBackground(context: Context, source: Uri, tuning: VoiceTuning, ticket: RenderTicket = ticketFor(source)) {
         val appContext = context.applicationContext
-        backgroundScope.launch { render(appContext, source, tuning) }
+        backgroundScope.launch { render(appContext, source, tuning, ticket) }
     }
 
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)

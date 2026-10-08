@@ -337,7 +337,12 @@ class RingingService : Service() {
         )
         when (sound) {
             // 목소리 보정은 **그 알람 자신의 목소리**에만 건다 — 대신 트는 기본 목소리에는 걸지 않는다.
-            is RingSound.OwnVoice -> startVoiceLoop(Uri.parse(sound.uri), alarm, voiceTuningFor(alarm))
+            is RingSound.OwnVoice -> {
+                val uri = Uri.parse(sound.uri)
+                // 굽기 세대는 높이 값을 **읽기 전에** 잡는다 — 그 사이 로그아웃이 지나가면 뒤에서 굽기가 버려진다(Codex #870).
+                val ticket = VoiceTuningRenderer.ticketFor(uri)
+                startVoiceLoop(uri, alarm, voiceTuningFor(alarm), ticket)
+            }
             is RingSound.DefaultVoice -> startVoiceLoop(Uri.parse(sound.uri), alarm)
             is RingSound.Tone -> startAlarmToneLoop(alarm, forced = sound.forced)
             RingSound.Silent -> {
@@ -455,7 +460,12 @@ class RingingService : Service() {
         }
     }
 
-    private fun startVoiceLoop(voiceUri: Uri, alarm: AlarmEntity?, tuning: VoiceTuning? = null) {
+    private fun startVoiceLoop(
+        voiceUri: Uri,
+        alarm: AlarmEntity?,
+        tuning: VoiceTuning? = null,
+        renderTicket: VoiceTuningRenderer.RenderTicket? = null,
+    ) {
         voiceLoopActive = true
         cancelVoiceRepeatJob()
         mediaPlayer?.release()
@@ -469,7 +479,12 @@ class RingingService : Service() {
         val playUri = tuning?.let { t ->
             VoiceTuningRenderer.cachedCopy(applicationContext, voiceUri, t)
                 ?: run {
-                    VoiceTuningRenderer.renderInBackground(applicationContext, voiceUri, t)
+                    VoiceTuningRenderer.renderInBackground(
+                        applicationContext,
+                        voiceUri,
+                        t,
+                        renderTicket ?: VoiceTuningRenderer.ticketFor(voiceUri),
+                    )
                     null
                 }
         } ?: voiceUri

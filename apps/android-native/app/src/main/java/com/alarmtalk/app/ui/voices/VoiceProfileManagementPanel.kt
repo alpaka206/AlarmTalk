@@ -113,9 +113,6 @@ private val AndroidEdgeToEdgeNavigationExtraPadding = 24.dp
  */
 private const val TuningPreviewStreamPercent = 100
 
-/** 다듬기 미리듣기를 다시 틀 때의 쉼 — 울림의 반복 간격(`VOICE_REPEAT_GAP_MS`)과 같다. */
-private const val TuningPreviewRepeatGapMs = 900L
-
 /** 등록 녹음 높이 측정에 쓰는 최대 길이 — 앞 45초면 중앙값이 충분히 안정된다. */
 private const val SourcePitchAnalysisMaxMillis = 45_000L
 
@@ -825,8 +822,8 @@ internal fun VoiceProfileManagementPanel(
         VoiceTuningRenderer.deleteCopiesOfInBackground(appContext, Uri.parse(uri))
     }
 
-    // 이미 받은 미리듣기를 지금 높이로 기기에서 다시 튼다 — 알람처럼 쉼을 두고 반복하므로 들으며 맞출
-    // 수 있다. 높이를 바꿀 때마다 새로 굽고 처음부터 튼다. 멈추는 길은 재생 버튼(토글) 하나다.
+    // 이미 받은 미리듣기를 지금 높이로 기기에서 다시 **한 번** 튼다(iOS 와 같다 — 반복은 울릴 때의 일이다, 2026-10-08
+    // 사용자). 높이를 바꿀 때마다 새로 굽고 처음부터 튼다. 재생 버튼(토글)으로 멈출 수 있다.
     fun playLocalTunedPreview(uri: String) {
         tunedReplayJob?.cancel()
         stopMediaPreview(invalidateGreetingPreview = false)
@@ -836,25 +833,15 @@ internal fun VoiceProfileManagementPanel(
             runCatching {
                 val (playUri, rendered) = tunedPreviewUri(uri, tuning)
                 startPreviewWithFallback(playUri, uri, rendered) { player, applied ->
+                    // **한 번만 튼다**(iOS 와 같다) — 반복은 울릴 때의 일이다(2026-10-08 사용자).
                     player.setOnCompletionListener { completed ->
-                        if (mediaPlayer !== completed) return@setOnCompletionListener
-                        heardTuning = applied
-                        scope.launch {
-                            delay(TuningPreviewRepeatGapMs)
-                            if (mediaPlayer === completed && confirmPreviewPlaying) {
-                                runCatching {
-                                    completed.seekTo(0)
-                                    completed.start()
-                                }.onFailure { error ->
-                                    // 반복 시작이 실패하면(오디오 서버·플레이어 상태) 처음 시작 실패와 같이 정리한다 — 올린
-                                    // 알람 스트림을 되돌리고 멈춘 것을 알린다(Codex #870).
-                                    AlarmTalkLog.reportError("Tuned preview repeat could not start", error)
-                                    stopMediaPreview(invalidateGreetingPreview = false)
-                                    confirmPreviewPlaying = false
-                                    localMessage = context.getString(R.string.voices_preview_play_failed)
-                                }
-                            }
+                        if (mediaPlayer !== completed) {
+                            completed.release()
+                            return@setOnCompletionListener
                         }
+                        heardTuning = applied
+                        stopMediaPreview(invalidateGreetingPreview = false)
+                        confirmPreviewPlaying = false
                     }
                 }
             }.onFailure { error ->

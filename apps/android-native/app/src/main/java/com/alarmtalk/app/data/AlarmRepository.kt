@@ -1539,9 +1539,12 @@ class AlarmRepository(
 
     private fun prewarmTunedAudio(alarm: AlarmEntity, store: VoiceTuningStore, signedInUserId: String?) {
         runCatching {
-            val tuning = store.readForAlarm(alarm, signedInUserId) ?: return
             val clip = resolveBucketClipLocalUri(alarm) ?: alarm.localAudioUri?.takeIf { it.isNotBlank() } ?: return
-            VoiceTuningRenderer.renderInBackground(context, android.net.Uri.parse(clip), tuning)
+            val source = android.net.Uri.parse(clip)
+            // 세대는 높이 값을 **읽기 전에** 잡는다 — 그 사이 로그아웃·목소리 상실이 지나가면 이 굽기는 버려진다(Codex #870).
+            val ticket = VoiceTuningRenderer.ticketFor(source)
+            val tuning = store.readForAlarm(alarm, signedInUserId) ?: return
+            VoiceTuningRenderer.renderInBackground(context, source, tuning, ticket)
         }.onFailure { Log.w(TAG, "Failed to prewarm tuned alarm audio id=${alarm.id}", it) }
     }
 

@@ -367,12 +367,23 @@ enum AlarmSoundStaging {
     /// 다듬지 않은 파일은 건드리지 않는다(이 기능 이전과 같다).
     nonisolated static func clearTunedStagedSoundFiles() {
         TunedStagingEpoch.shared.bump()
-        _ = DeferredTunedCleanup.takeAll()   // 전부 지우므로 미뤄 둔 목록도 끝났다
-        let fm = FileManager.default
+        // 폴더를 못 열면 미뤄 둔 목록도 그대로 둔다 — 지운 것이 없다.
         guard let soundsDir = try? ensureSoundsDirectory() else { return }
-        let entries = (try? fm.contentsOfDirectory(atPath: soundsDir.path)) ?? []
-        for name in entries where isTunedStagedFileName(name) {
-            try? fm.removeItem(at: soundsDir.appendingPathComponent(name))
+        _ = DeferredTunedCleanup.takeAll()   // 아래에서 전부 지우므로 미뤄 둔 목록도 끝났다
+        let entries = (try? FileManager.default.contentsOfDirectory(atPath: soundsDir.path)) ?? []
+        // 지우지 못한 것(기기가 잠겨 보호된 파일을 못 여는 때 등)은 미뤄 둔 정리로 넘긴다 — 다음 취소 재시도(앱 시작·전경
+        // 복귀·백그라운드 동기화)가 다시 지운다. 기록 없이 버리면 다시 지울 길이 없다(Codex #870).
+        let failed = entries.filter(isTunedStagedFileName).filter { !removeIfPresent(soundsDir.appendingPathComponent($0)) }
+        DeferredTunedCleanup.add(failed)
+    }
+
+    /// 지웠거나 이미 없으면 true. 지우지 못했으면(파일이 남아 있으면) false.
+    private nonisolated static func removeIfPresent(_ url: URL) -> Bool {
+        do {
+            try FileManager.default.removeItem(at: url)
+            return true
+        } catch {
+            return !FileManager.default.fileExists(atPath: url.path)
         }
     }
 
@@ -390,9 +401,10 @@ enum AlarmSoundStaging {
     /// 미뤄 둔 정리를 마친다 — 취소 재시도가 남은 취소를 모두 끝냈을 때(`AlarmKitViewModel.retryPendingCancellations`).
     nonisolated static func finishDeferredTunedCleanup() {
         guard let soundsDir = try? ensureSoundsDirectory() else { return }
-        for name in DeferredTunedCleanup.takeAllNotReserving() {
-            try? FileManager.default.removeItem(at: soundsDir.appendingPathComponent(name))
-        }
+        // 지우지 못한 이름은 목록에 되돌린다 — 꺼내 놓고 실패를 버리면 그 파일은 다시 지울 길이 없다(Codex #870).
+        let failed = DeferredTunedCleanup.takeAllNotReserving()
+            .filter { !removeIfPresent(soundsDir.appendingPathComponent($0)) }
+        DeferredTunedCleanup.add(failed)
     }
 
     /// 이 계획이 높이를 구워 넣은 목소리로 울린다면 그 스테이징 파일 이름(`stageLocked` 의 높이 갈래와 같은 이름).
