@@ -68,6 +68,10 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      # sharp 의 high 권고(CVE-2026-96889)는 wrangler → miniflare 가 0.35.4 로 못 박아 둬서, 루트 package.json 의
+      # `overrides.wrangler.sharp` 로 0.35.5 를 쓴다(2026-10-08). ⚠ `sharp` 를 맨 위 규칙으로 두면 npm 11 이 무시한다 —
+      # 워크스페이스 안으로는 그 워크스페이스가 직접 쓰는 패키지 이름(wrangler)으로 건 규칙만 넘긴다. miniflare 가 0.35.5
+      # 이상을 쓰게 되면 그 규칙을 지운다.
       - name: Audit dependencies for high severity vulnerabilities
         run: npm audit --audit-level=high
 
