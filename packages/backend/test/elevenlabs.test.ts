@@ -96,7 +96,8 @@ describe('ElevenLabsClient', () => {
       await expect(client.textToSpeech('v1', 'test')).rejects.toThrow('ElevenLabs API error 429');
     });
 
-    // 목소리 높이를 굽는 목소리만 머리말 없는 PCM 을 받는다(스펙 voice-and-message §4-3).
+    // 굽는 합성은 머리말 없는 PCM 을 받는다 — 높이(스펙 voice-and-message §4-3)와 음량(§10). 음량을 올리는 동안은
+    // 모든 서버 합성이 그렇다. 형식을 넘기지 않으면 기본은 MP3 다(위 첫 테스트).
     it('PCM 을 달라고 하면 output_format 을 바꾸고, 다른 형식이 오면 던진다', async () => {
       mockFetch.mockResolvedValueOnce(
         new Response(new ArrayBuffer(100), { status: 200, headers: { 'Content-Type': 'application/octet-stream' } }),

@@ -985,7 +985,8 @@ tts.post('/generate', async (c) => {
         : `${synthesisText}\n[display] ${encodeURIComponent(messageText)}`;
     // 그 목소리의 등록 높이 — 서버가 굽는다(스펙 §4-3). `vp` 는 `SELECT *`·`vp.*` 라 공유 목소리면 **주인의** 값이고,
     // 배포 창(#128 전)에는 컬럼이 없어 null 이다(그때는 아무 목소리도 높이를 가질 수 없다). 초안·시스템 목소리는
-    // 값이 없어 원래 소리다 — 초안 미리듣기는 원래 소리여야 한다(앱이 그 위에서 높이를 고른다).
+    // 값이 없어 원래 높이다 — 초안 미리듣기는 원래 높이여야 한다(앱이 그 위에서 높이를 고른다). 음량은 높이와 상관없이
+    // 모든 합성에 같은 만큼 올린다(§10) — 초안 미리듣기도 올린 크기라, 앱이 그 위에서 구운 미리듣기가 알람과 같은 크기다.
     const voicePitch = voicePitchFromRow(vp);
     const buildPreparedAttempts = async (voiceIdForSynthesis: string | null | undefined) => {
       const attempts = createSynthesisAttempts({
@@ -1015,6 +1016,8 @@ tts.post('/generate', async (c) => {
             //   그 사람 것뿐이고, 스톡 키는 `STOCK_TTS_CACHE_SCOPE` 로 갈려 있다).
             scope: isManualGeneration ? manualTtsCacheScope(userPk) : undefined,
             pitchSemitones: attempt.pitchSemitones,
+            // 올린 음량도 키에 든다 — 올리기 전에 만든 소리를 캐시가 다시 내주지 않는다(스펙 §10).
+            loudnessBoostDb: attempt.loudnessBoostDb,
           });
           return { attempt, cacheKey };
         }),

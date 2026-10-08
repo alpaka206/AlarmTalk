@@ -12,7 +12,8 @@
  * 하나라도 달라지면(대사·목소리·모델·voice_settings·출력 형식·후처리 파이프라인)
  * 지문이 갈라져 다시 굽는다.
  *
- * 게시 스크립트도 같은 지문을 본다 — **들어 본 것과 다른 바이트를 올리지 않기 위해서다.**
+ * 게시 스크립트도 같은 지문을 본다 — **들어 본 것과 다른 소리를 올리지 않기 위해서다.** 게시본은 그 바이트를
+ * 음량만 올린 사본이다(아래 `PIPELINE_VERSION` 의 ⚠).
  */
 
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
@@ -25,6 +26,12 @@ import { resolve } from 'node:path';
  *
  * - `closing-breath+mp3-silence@1`: eleven_v3 — 문장 끝 ` ...` + mp3 끝 무음 0.366초.
  * - `plain@2`(2026-09-30): eleven_v4_turbo — 둘 다 뺐다. 받은 바이트를 그대로 쓴다.
+ *
+ * ⚠ **게시 때 거는 음량 올리기(`TTS_LOUDNESS_BOOST_DB`, 2026-10-08)는 여기 들어가지 않는다 — 일부러다.** 지문은 시청본
+ *   (사람이 들은 그 바이트)이 지금 카탈로그로 합성됐는가를 묻는다. 올리기는 그 바이트를 고치지 않고, 게시가 시청본에서
+ *   결정론적으로 만든 사본에 건다(`publish-stock-clips.ts` — `mp3-loudness-boost.ts`). 여기 넣으면 240개가 전부 '낡음' 이
+ *   되어 사람이 들어 본 연기를 버리고 다시 합성한다 — 그건 오너가 막은 일이다. 올린 값은 대신 캐시 키에 들어가
+ *   (`loudnessBoostDb`) 값을 바꾸면 게시본이 제자리에서 교체되고, 올린 사본에는 표지가 붙어 두 번 올라가지 않는다.
  */
 const PIPELINE_VERSION = 'plain@2';
 

@@ -1,7 +1,7 @@
 /**
  * **미리 구워 둔 스톡 클립을 R2 와 DB 에 게시한다.**
  *
- * `scripts/prerender-stock-preview.ts` 가 만든 `voice-preview/` 의 바이트를 그대로 올린다 —
+ * `scripts/prerender-stock-preview.ts` 가 만든 `voice-preview/` 의 바이트 — 사람이 들어 본 소리 — 를 올린다.
  * **배포 때 서버가 다시 합성하지 않는다.** 그게 이 스크립트의 존재 이유다:
  *
  *  - 예전에는 배포 직후 cron 이 240개를 5분에 6개씩 구웠다. **3시간 20분** 동안 기본
@@ -11,7 +11,7 @@
  *  - 미리 올려 두면 **동시에 굽는 렌더가 없다.** 경합이 성립하지 않는다.
  *
  * ⚠ **키는 서버가 계산하는 것과 한 글자도 달라선 안 된다.** 그래서 `computeTtsCacheKey`·
- *   `generatedTtsObjectKey`·`TTS_MODEL_ID` 를 **서버 소스에서 그대로 가져다 쓴다**
+ *   `generatedTtsObjectKey`·`TTS_MODEL_ID`·`TTS_LOUDNESS_BOOST_DB` 를 **서버 소스에서 그대로 가져다 쓴다**
  *   (베끼지 않는다). 어긋나면 `findMissingStockTargets` 가 이 클립을 '없다' 로 세어
  *   cron 이 같은 자리를 다시 굽고, 그때부터 옛 경합이 되살아난다.
  *
@@ -22,6 +22,14 @@
  * 소리만 갈아 끼운다**(`replaceStockClipInPlace`). 합성 모델을 바꾼 회차(eleven_v3 → eleven_v4_turbo)가 이 길로
  * 간다 — 행을 은퇴시키지 않으므로 앱에 차단 화면이 뜨지 않고, 앱은 바뀐 `audio_url` 을 보고 다시 받는다.
  * ⚠ `POST /api/admin/seed-stock-clips?reset=` 은 쓰지 말 것 — 행을 지우고 알람을 sound-only 로 뗀다.
+ *
+ * **음량**(2026-10-08): 서버는 모든 합성을 `TTS_LOUDNESS_BOOST_DB` 만큼 올려 묶는다. 게시본도 같아야 해서, 들어 본
+ * 바이트를 **같은 셈·같은 인코더로 올린 사본**(`mp3-loudness-boost.ts` — 다시 합성하지 않는다)을 만들어 그걸 올린다.
+ * 시청본은 손대지 않는다. 다시 묶어도 커지지 않는 클립(봉우리가 높은 시우 거의 전부)은 들어 본 소리를 그대로 두고
+ * 표지만 단 사본이다 — 다시 묶으면 약 0.45 dB 작아져서 올리기가 오히려 소리를 줄인다(`boostMp3` 의 `reencoded`).
+ * 올린 값은 캐시 키에도 들어가므로(`loudnessBoostDb` — 서버 `generateStockClip` 과 같은 값; 그대로 둔 클립도 같다)
+ * 올리기 전에 게시한 클립은 키가 달라 위 교체 갈래로 간다 — dev 의 올리기 전 v4 클립도, prod 의 v3 클립도.
+ * ⚠ 풀기에 macOS 내장 `afconvert` 를 쓴다 — 이 스크립트는 macOS 에서 돌린다.
  *
  * 사용 (packages/backend 에서):
  *   npm run publish:stock -- --env dev --dry-run   # 무엇을 올릴지·바꿀지만 본다([예정]·[교체])
@@ -45,7 +53,7 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 
 import { createClient, type Client } from '@libsql/client';
@@ -58,7 +66,8 @@ import {
 import { computeTtsCacheKey, generatedTtsObjectKey, STOCK_TTS_CACHE_SCOPE } from '../src/lib/audio-cache.ts';
 import { ledgerAudioUrlFor, replaceStockClipInPlace } from '../src/lib/stock-clip-replace.ts';
 import { ELEVENLABS_TTS_OUTPUT_FORMAT } from '../src/lib/elevenlabs.ts';
-import { TTS_MODEL_ID, TTS_VOICE_SETTINGS } from '../src/lib/tts-model.ts';
+import { TTS_LOUDNESS_BOOST_DB, TTS_MODEL_ID, TTS_VOICE_SETTINGS } from '../src/lib/tts-model.ts';
+import { afconvertDecoder, AlreadyBoostedError, boostMp3 } from './mp3-loudness-boost.ts';
 import {
   computeFingerprint,
   fingerprintKey,
@@ -108,6 +117,11 @@ function findRepoRoot(): string {
 const REPO_ROOT = findRepoRoot();
 const BACKEND_DIR = resolve(REPO_ROOT, 'packages/backend');
 const PREVIEW_ROOT = resolve(REPO_ROOT, 'voice-preview');
+/**
+ * 음량을 올린 게시본 사본을 두는 곳(`<언어>/<목소리>/<파일>`). 실행마다 다시 만든다 — 시청본에서 결정론적으로
+ * 나오므로 남은 사본을 믿지 않는다. 올리기 전에 들어 보고 싶으면 `--dry-run` 뒤 여기서 듣는다.
+ */
+const STAGING_ROOT = resolve(BACKEND_DIR, 'node_modules/.cache/publish-stock-clips');
 
 function argValue(name: string): string | undefined {
   const argv = process.argv.slice(2);
@@ -154,7 +168,10 @@ interface Target {
   category: string;
   variant: number;
   baseText: string;
+  /** 사람이 들어 본 시청본 — 읽기만 한다. */
   filePath: string;
+  /** 그 시청본의 음량을 올린 사본 — **이걸 올린다**(`stageBoostedClips`). */
+  stagedPath: string;
 }
 
 function collectTargets(): Target[] {
@@ -179,6 +196,7 @@ function collectTargets(): Target[] {
             variant,
             baseText,
             filePath: previewPath(language, voice.name, fileName),
+            stagedPath: resolve(STAGING_ROOT, 'boosted', language, voice.name, fileName),
           });
         });
       }
@@ -265,6 +283,72 @@ function uploadToR2(bucket: string, key: string, filePath: string, env: Record<s
   );
 }
 
+/**
+ * **들어 본 시청본을 서버와 같은 만큼 올린 게시본 사본을 만든다**(`mp3-loudness-boost.ts`).
+ *
+ * DB 에 손대기 전에 대상 전부를 만든다 — 하나라도 못 만들면(afconvert 없음·깨진 파일·이미 올린 파일) 아무것도
+ * 게시하지 않고 멈춘다. 그래야 '일부만 올린 크기' 로 섞이지 않는다.
+ * ⚠ 시청본에 표지가 있으면(누가 올린 사본을 `voice-preview/` 에 넣었다) 멈춘다 — 그대로 올리면 두 번 올라간다.
+ * 끝에 몇 개를 다 올렸고·덜 올렸고·그대로 뒀는지, 다시 묶은 것이 실제로 얼마나 커졌는지(순 변화 — 다시 묶는 손실까지
+ * 친 값)를 한 줄로 보여 준다.
+ */
+async function stageBoostedClips(targets: Target[]): Promise<boolean> {
+  const decode = afconvertDecoder(resolve(STAGING_ROOT, 'decode'));
+  const fullGainDb = TTS_LOUDNESS_BOOST_DB;
+  let limited = 0;
+  let kept = 0;
+  const netDbs: number[] = [];
+  for (const target of targets) {
+    const label = `${target.language}/${target.voiceName}/${target.category}_${String(target.variant).padStart(2, '0')}`;
+    if (!(fullGainDb > 0)) {
+      // 0 이면 서버도 굽지 않고 제공자 MP3 를 그대로 쓴다(`needsVoiceBake`) — 들어 본 바이트를 그대로 올린다.
+      // 키에서도 음량이 빠지므로 올리기 전의 키·바이트로 돌아간다.
+      mkdirSync(dirname(target.stagedPath), { recursive: true });
+      writeFileSync(target.stagedPath, readFileSync(target.filePath));
+      continue;
+    }
+    try {
+      const boosted = await boostMp3(readFileSync(target.filePath), decode);
+      mkdirSync(dirname(target.stagedPath), { recursive: true });
+      writeFileSync(target.stagedPath, boosted.bytes);
+      if (!boosted.reencoded) {
+        // 다시 묶으면 들어 본 것보다 작아지는 클립 — 소리는 그대로, 표지만 달았다.
+        kept += 1;
+        continue;
+      }
+      netDbs.push(boosted.netDb!);
+      // 봉우리(−0.2 dBFS)에 닿아 덜 올린 클립 — 정해진 동작이지만 몇 개인지는 보여 준다.
+      if (20 * Math.log10(boosted.gain) < fullGainDb - 0.005) limited += 1;
+    } catch (error) {
+      const message =
+        error instanceof AlreadyBoostedError
+          ? `시청본에 음량 표지(${error.markerDb} dB)가 있다 — voice-preview/ 에는 받은 원본만 둔다(올린 사본을 넣지 말 것)`
+          : (error as Error).message;
+      console.error(`⚠ 게시본을 만들지 못했다 — ${label}: ${message}`);
+      return false;
+    }
+  }
+  console.log(
+    fullGainDb > 0
+      ? `음량 +${fullGainDb} dB(TTS_LOUDNESS_BOOST_DB) 게시본 ${targets.length}개 — ` +
+          `다 올린 것 ${targets.length - limited - kept}개, 봉우리 때문에 덜 올린 것 ${limited}개, ` +
+          `다시 묶어도 커지지 않아 소리를 그대로 둔 것 ${kept}개${netChangeSummary(netDbs)} · ` +
+          resolve(STAGING_ROOT, 'boosted')
+      : `음량 값이 0 이다 — 들어 본 바이트 ${targets.length}개를 그대로 올린다`,
+  );
+  return true;
+}
+
+/** 다시 묶은 클립들의 순 변화(dB) — 가장 작은 것~가장 큰 것과 중앙. 없으면 빈 글자. */
+function netChangeSummary(netDbs: number[]): string {
+  if (netDbs.length === 0) return '';
+  const sorted = [...netDbs].sort((a, b) => a - b);
+  const signed = (value: number) => `${value > 0 ? '+' : ''}${value.toFixed(2)}`;
+  const mid = Math.floor(sorted.length / 2);
+  const median = sorted.length % 2 === 1 ? sorted[mid]! : (sorted[mid - 1]! + sorted[mid]!) / 2;
+  return ` · 다시 묶은 ${sorted.length}개의 순 변화 ${signed(sorted[0]!)}~${signed(sorted[sorted.length - 1]!)} dB(중앙 ${signed(median)})`;
+}
+
 async function main(): Promise<void> {
   const envName = argValue('--env') ?? 'dev';
   const bucket = BUCKETS[envName];
@@ -313,6 +397,11 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (!(await stageBoostedClips(targets))) {
+    process.exitCode = 1;
+    return;
+  }
+
   const db = createClient({ url: env.TURSO_DATABASE_URL!, authToken: env.TURSO_AUTH_TOKEN });
 
   // ⚠ **`retired_at` 이 없으면 아직 #110 이 안 돌았다.** 그 상태로 진행하면 같은 자리에
@@ -350,10 +439,13 @@ async function main(): Promise<void> {
         text: synthesisText,
         outputFormat: OUTPUT_FORMAT,
         scope: STOCK_TTS_CACHE_SCOPE, // 서버 `generateStockClip` 과 같은 범위 — 사용자 생성과 키가 겹치지 않는다.
+        // 올린 음량도 키에 든다 — 서버 `generateStockClip` 의 `loudnessBoostDb` 와 같은 값이고, 올리는 바이트(사본)도
+        // 같은 값으로 올렸다. 그래서 올리기 전에 게시한 클립(dev 의 v4)은 키가 달라 아래 교체 갈래로 간다.
+        loudnessBoostDb: TTS_LOUDNESS_BOOST_DB,
       });
       const objectKey = generatedTtsObjectKey(SYSTEM_VOICE_LIBRARY_USER_ID, cacheKey, OUTPUT_FORMAT);
       const audioUrl = `r2://${objectKey}`;
-      const size = statSync(target.filePath).size;
+      const size = statSync(target.stagedPath).size;
 
       const existing = await publishedMessage(db, target);
       // 이미 지금 문구·모델로 게시됐다(키가 결정론적이라 audio_url 이 같으면 request_hash 도 같다).
@@ -395,8 +487,8 @@ async function main(): Promise<void> {
           replaced += 1;
           continue;
         }
-        // 올린 뒤에 행을 바꾼다 — 행이 없는 오브젝트를 가리키는 순간이 없게.
-        uploadToR2(bucket, objectKey, target.filePath, env);
+        // 올린 뒤에 행을 바꾼다 — 행이 없는 오브젝트를 가리키는 순간이 없게. 올리는 것은 음량을 올린 사본이다.
+        uploadToR2(bucket, objectKey, target.stagedPath, env);
         const outcome = await replaceStockClipInPlace(db, {
           messageId: existing.id,
           previousAudioUrl: existing.audioUrl,
@@ -435,7 +527,7 @@ async function main(): Promise<void> {
         continue;
       }
 
-      uploadToR2(bucket, objectKey, target.filePath, env);
+      uploadToR2(bucket, objectKey, target.stagedPath, env);
 
       const messageId = crypto.randomUUID();
       // ⚠ **두 행을 한 트랜잭션에 넣는다**(리뷰 15차). 나눠 쓰면 message 만 남고 원장이

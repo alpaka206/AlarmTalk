@@ -100,8 +100,8 @@ export class ElevenLabsClient {
   /**
    * TTS - 텍스트를 음성으로 변환(`TTS_MODEL_ID`·`TTS_VOICE_SETTINGS`).
    *
-   * `output_format` 은 기본이 `ELEVENLABS_TTS_OUTPUT_FORMAT`(MP3)이다. 높이를 굽는 목소리만 압축하지 않은 PCM
-   * (`PITCH_PCM_OUTPUT_FORMAT`)을 받는다 — 구운 뒤 MP3 로 만든다(`voice-pitch.ts`).
+   * `output_format` 은 기본이 `ELEVENLABS_TTS_OUTPUT_FORMAT`(MP3)이다. 굽는 합성(높이·음량 — 음량을 올리는 동안은 모든
+   * 서버 합성)은 압축하지 않은 PCM(`SYNTHESIS_PCM_OUTPUT_FORMAT`)을 받는다 — 구운 뒤 MP3 로 만든다(`voice-pitch.ts`).
    */
   async textToSpeech(
     voiceId: string,
@@ -131,7 +131,7 @@ export class ElevenLabsClient {
     );
 
     if (outputFormat.startsWith('pcm_')) {
-      // 높이를 굽는 PCM 은 머리말 없는 표본이어야 한다 — 다른 형식(MP3·WAV)을 표본으로 읽으면 잡음을 구워 게시한다.
+      // 굽는 PCM 은 머리말 없는 표본이어야 한다 — 다른 형식(MP3·WAV)을 표본으로 읽으면 잡음을 구워 게시한다.
       const contentType = (res.headers.get('content-type') ?? '').toLowerCase();
       if (/mpeg|mp3|wav|json|text/.test(contentType)) {
         throw new Error(`ElevenLabs returned ${contentType} for ${outputFormat}`);

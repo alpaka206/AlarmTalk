@@ -12,6 +12,8 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     include: ['test/**/*.test.ts'],
+    // 워커 진입점처럼 MP3 인코더를 먼저 등록한다 — 음량을 올리는 동안은 모든 합성이 MP3 로 굽는다.
+    setupFiles: ['./test/support/register-mp3-encoder.ts'],
     // 일부 스위트(alarm-guard/family-alarm-guard/promo-welcome-group 등)는 beforeAll 에서
     // 전체 마이그레이션 체인(72+개)을 파일 기반 libSQL DB 에 실행한다. 느린 CI 러너에서 이게
     // vitest 기본 훅 타임아웃(10s)을 간헐적으로 넘겨 "Hook timed out" 으로 스위트가 로드
