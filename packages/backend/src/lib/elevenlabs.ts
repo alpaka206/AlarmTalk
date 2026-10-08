@@ -97,11 +97,16 @@ export class ElevenLabsClient {
     return res.json();
   }
 
-  /** TTS - 텍스트를 음성으로 변환(`TTS_MODEL_ID`·`TTS_VOICE_SETTINGS`). */
+  /**
+   * TTS - 텍스트를 음성으로 변환(`TTS_MODEL_ID`·`TTS_VOICE_SETTINGS`).
+   *
+   * `output_format` 은 기본이 `ELEVENLABS_TTS_OUTPUT_FORMAT`(MP3)이다. 높이를 굽는 목소리만 압축하지 않은 PCM
+   * (`PITCH_PCM_OUTPUT_FORMAT`)을 받는다 — 구운 뒤 MP3 로 만든다(`voice-pitch.ts`).
+   */
   async textToSpeech(
     voiceId: string,
     text: string,
-    options?: { language_code?: string },
+    options?: { language_code?: string; output_format?: string },
   ): Promise<ArrayBuffer> {
     const body: Record<string, unknown> = {
       text,
@@ -112,18 +117,26 @@ export class ElevenLabsClient {
       body.language_code = options.language_code;
     }
 
+    const outputFormat = options?.output_format ?? ELEVENLABS_TTS_OUTPUT_FORMAT;
     const res = await this.request(
-      `/v1/text-to-speech/${voiceId}?output_format=${ELEVENLABS_TTS_OUTPUT_FORMAT}`,
+      `/v1/text-to-speech/${voiceId}?output_format=${encodeURIComponent(outputFormat)}`,
       {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Accept: 'audio/mpeg',
+          Accept: outputFormat.startsWith('mp3') ? 'audio/mpeg' : '*/*',
         },
         body: JSON.stringify(body),
       },
     );
 
+    if (outputFormat.startsWith('pcm_')) {
+      // 높이를 굽는 PCM 은 머리말 없는 표본이어야 한다 — 다른 형식(MP3·WAV)을 표본으로 읽으면 잡음을 구워 게시한다.
+      const contentType = (res.headers.get('content-type') ?? '').toLowerCase();
+      if (/mpeg|mp3|wav|json|text/.test(contentType)) {
+        throw new Error(`ElevenLabs returned ${contentType} for ${outputFormat}`);
+      }
+    }
     return res.arrayBuffer();
   }
 

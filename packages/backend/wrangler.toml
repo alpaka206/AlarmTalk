@@ -7,6 +7,16 @@ account_id = "34cf9e5d676b15021704b5b3d247887c"
 #   wrangler deploy --env dev
 #   wrangler deploy --env production
 
+# 목소리 높이를 굽는 MP3 인코더(LAME → WASM, `wasm-media-encoders`)를 **미리 컴파일된 모듈**로 묶는다 — 워커는
+# 실행 중에 WASM 을 컴파일할 수 없다(`src/lib/voice-pitch.ts`). wrangler 의 기본 규칙(`**/*.wasm`)은 import
+# **문자열**에 맞추므로, 확장자가 없는 패키지 경로(`wasm-media-encoders/wasm/mp3`)는 이 규칙이 있어야 잡힌다
+# (없으면 "No loader is configured for .wasm"). 패키지의 `./wasm/mp3.wasm` 내보내기는 경로가 틀려 있어 쓰지
+# 않는다. `rules` 는 [env.*] 로 상속된다.
+[[rules]]
+type = "CompiledWasm"
+globs = ["wasm-media-encoders/wasm/mp3"]
+fallthrough = true
+
 # Workers Logs — 나가는 4xx/5xx 한 줄(`at: "api_error"`)과 `logStructured` 의 JSON 을 대시보드에
 # **보존**한다. 2026-09-15 전에는 이 블록이 없어 과거 로그가 아예 없었고, 401 거절 같은 4xx 를
 # Sentry 에서 내리자(#749) 그 기록이 실시간 `wrangler tail` 에만 남게 됐다.

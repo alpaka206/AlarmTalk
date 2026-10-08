@@ -57,6 +57,8 @@ async function queueRow(voiceId: string) {
 
 beforeAll(async () => {
   await runMigrationsRange(db, 1, 122);
+  // 사전렌더 조회(`listReadyCloneVoices`)가 읽는 목소리 높이 칸(#128).
+  await runMigrationsRange(db, 128, 128);
   await db.execute({
     sql: `INSERT OR IGNORE INTO users (id, google_id, email) VALUES (?, ?, 'v4t@test')`,
     args: [USER, USER],

@@ -33,6 +33,8 @@ async function setupDb() {
       preview_text TEXT,
       speech_style TEXT,
       voice_energy TEXT,
+      pitch_semitones REAL,
+      pitch_model_id TEXT,
       speech_style_status TEXT,
       updated_at TEXT,
       deleted_at TEXT
@@ -355,6 +357,29 @@ describe('findMissingStockTargets (클론 톤 적응 스코프)', () => {
     const targets = await findMissingStockTargets(db, voices);
     expect(targets.every((t) => t.speechStyle?.energy === 'calm')).toBe(true);
   });
+  // 목소리 높이(#128) — 클론의 등록 높이가 모든 클립에 구워져야 한다(스펙 voice-and-message §4-3).
+  it('등록 때 고른 목소리 높이가 그 모델과 함께 모든 대상에 실린다', async () => {
+    const db = await setupDb();
+    await db.execute({
+      sql: `INSERT INTO voice_profiles (id, user_id, name, elevenlabs_voice_id, status, is_system, is_draft, pitch_semitones, pitch_model_id)
+            VALUES ('clone-low', 'owner-1', 'clone-low', 'el_low', 'ready', 0, 0, -1.5, 'eleven_v4_turbo'),
+                   ('clone-plain', 'owner-1', 'clone-plain', 'el_plain', 'ready', 0, 0, NULL, NULL)`,
+      args: [],
+    });
+    const voices = await listReadyCloneVoices(db, [
+      { voiceProfileId: 'clone-low', ownerUserId: 'owner-1', language: 'ko', claimToken: 'c4' },
+      { voiceProfileId: 'clone-plain', ownerUserId: 'owner-1', language: 'ko', claimToken: 'c5' },
+    ]);
+    const low = voices.find((v) => v.id === 'clone-low')!;
+    const plain = voices.find((v) => v.id === 'clone-plain')!;
+    expect(low.pitch).toEqual({ semitones: -1.5, modelId: 'eleven_v4_turbo' });
+    expect(plain.pitch).toBeNull();
+    const targets = await findMissingStockTargets(db, voices);
+    const lowTargets = targets.filter((t) => t.voiceProfileId === 'clone-low');
+    expect(lowTargets.length).toBe(CLONE_TOTAL_SEEDS);
+    expect(lowTargets.every((t) => t.pitch?.semitones === -1.5 && t.pitch.modelId === 'eleven_v4_turbo')).toBe(true);
+    expect(targets.filter((t) => t.voiceProfileId === 'clone-plain').every((t) => t.pitch === null)).toBe(true);
+  });
 });
 
 describe('사전렌더 큐 헬퍼', () => {
@@ -441,6 +466,19 @@ describe('사전렌더 큐 헬퍼', () => {
       order.push(claim!.voiceProfileId);
     }
     expect(order).toEqual(['new-early', 'new-late', 'bulk-1', 'bulk-2']);
+  });
+
+  // 한 번에 여럿을 잡으면 배치는 **돌려준 순서**로 몫을 쓴다 — RETURNING 의 순서는 정해져 있지 않으므로(id 순으로
+  // 나오곤 한다) 잡은 기준으로 다시 세워 돌려줘야 새 등록이 다시 굽는 회차보다 먼저 몫을 쓴다.
+  it('여럿을 한 번에 잡아도 새 등록 먼저, 같은 갈래는 요청 순서로 돌려준다', async () => {
+    const db = await setupDb();
+    await db.execute(`INSERT INTO voice_prerender_queue (voice_profile_id, owner_user_id, refresh_existing, requested_at)
+                      VALUES ('a-bulk', 'owner-1', 1, '2026-09-30 00:00:00'),
+                             ('b-new-late', 'owner-2', 0, '2026-09-30 05:00:00'),
+                             ('c-new-early', 'owner-3', 0, '2026-09-30 04:00:00.500'),
+                             ('d-bulk-late', 'owner-4', 1, '2026-09-30 01:00:00')`);
+    const claimed = await claimPendingPrerenderVoices(db, 4);
+    expect(claimed.map((c) => c.voiceProfileId)).toEqual(['c-new-early', 'b-new-late', 'a-bulk', 'd-bulk-late']);
   });
 
   it('rejects stale claim tokens after a lease is reclaimed', async () => {

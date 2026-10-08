@@ -21,6 +21,11 @@
 ⚠ **`POST /api/admin/seed-stock-clips?reset` 을 쓰지 말 것** — 시스템 프리셋 행을 지우고 그 클립을 물고 있던 알람을
 sound-only 로 떼어 낸다.
 
+⚠ **목소리 높이 보정이 꺼진다**(2026-10-08 — 스펙 §4-3). 등록 때 고른 높이(`voice_profiles.pitch_semitones`)는 **그때의
+모델**(`pitch_model_id`)이 낸 높이를 바로잡는 값이라, `TTS_MODEL_ID` 가 바뀌면 서버가 굽지 않는다(`appliedPitchSemitones`).
+그래서 이 회차에 다시 굽는 클론 클립은 **원래 높이**로 나온다 — 새 모델에서 다시 맞추려면 사용자가 교체 등록을 해야 한다.
+모델을 바꾸기 전에 이 동작을 그대로 둘지(값을 새 모델 기준으로 옮길 방법이 있는지) 먼저 판단한다.
+
 ## 순서 (v4 Turbo 전환 기준)
 
 1. **develop 머지** → dev 배포 + 마이그레이션 #124. dev 에서 새 직접 입력·새 클론이 v4 Turbo 가 되고, dev 클론
