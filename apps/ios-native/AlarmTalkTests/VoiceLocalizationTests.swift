@@ -60,6 +60,38 @@ struct VoiceLocalizationTests {
         #expect(vm.statusMessage == String(localized: "목소리 이름을 입력해 주세요."))
     }
 
+    /// 등록 확정 화면 문구(스펙 voice-and-message §4-1·§4-3) — 안드로이드 `VoiceRegistrationCopyTest` 가 지키는 값과 같다.
+    /// 재시도 안내는 톤 카드의 듣기 버튼을, 높이 오류는 화면 이름 `톤` 을 말한다(문구 옆 재생 버튼·'목소리 높이' 는 없다).
+    @Test("등록 확정 화면 문구는 안드로이드와 같은 번역이다", arguments: ["en", "ja"])
+    func confirmStepCopy(language: String) throws {
+        let path = try #require(Bundle.main.path(forResource: language, ofType: "lproj"))
+        let bundle = try #require(Bundle(path: path))
+        let expected: [String: [String: String]] = [
+            "톤 조절": ["en": "Tone", "ja": "トーン調整"],
+            "원본 듣기": ["en": "Play original", "ja": "元の声を聞く"],
+            "현재 톤 듣기": ["en": "Play current tone", "ja": "今のトーンで聞く"],
+            "이전에 저장한 목소리는 삭제하고 이 목소리로 등록할게요.": [
+                "en": "Your saved voice will be deleted and this voice will be registered instead.",
+                "ja": "保存した声は削除して、この声で登録します。",
+            ],
+            "문구를 아직 준비하지 못했어요. 듣기 버튼을 눌러 다시 시도해 주세요.": [
+                "en": "The line isn't ready yet. Tap a play button to try again.",
+                "ja": "フレーズをまだ準備できていません。再生ボタンを押してもう一度お試しください。",
+            ],
+            "톤 값이 올바르지 않아요. 다시 맞춰 주세요.": [
+                "en": "The tone value isn't valid. Please adjust it and try again.",
+                "ja": "トーンの値が正しくありません。調整し直してください。",
+            ],
+            "톤은 목소리를 등록할 때만 정할 수 있어요.": [
+                "en": "Tone can only be set when you register a voice.",
+                "ja": "トーンは声を登録するときにだけ設定できます。",
+            ],
+        ]
+        for (key, values) in expected {
+            #expect(bundle.localizedString(forKey: key, value: nil, table: nil) == values[language], "\(language): \(key)")
+        }
+    }
+
     @Test("준비 상태·등록·오디오 오류는 영어와 일본어로 조회된다", arguments: ["en", "ja"])
     func translatedVoiceFlow(language: String) throws {
         let path = try #require(Bundle.main.path(forResource: language, ofType: "lproj"))

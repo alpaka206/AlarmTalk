@@ -109,7 +109,7 @@ describe('등록 확정 — 목소리 높이', () => {
   });
 
   it('범위·눈금 밖이면 거절하고 등록하지 않는다', async () => {
-    for (const value of [-6.5, 3.5, -1.25, '-1', true]) {
+    for (const value of [-10.5, 6.5, -1.25, '-1', true]) {
       const res = await patch({ is_draft: false, pitch_semitones: value });
       expect(res.status, String(value)).toBe(400);
       expect(((await res.json()) as { error_code?: string }).error_code).toBe('INVALID_VOICE_PITCH');

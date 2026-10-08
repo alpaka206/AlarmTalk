@@ -273,7 +273,7 @@
 | `VOICE_PROMOTION_FIELDS_NOT_ALLOWED` | 등록(승격) 중 페르소나 필드 변경 불가 | 409 | `routes/voice-profile.ts` |
 | `VOICE_PERSONA_LOCKED` | 등록 후 관계·호칭 변경 불가 | 409 | `routes/voice-profile.ts` |
 | `VOICE_PITCH_LOCKED` | 목소리 높이는 등록 확정(초안 → 정식) 요청에서만 정한다 — 등록 후·다른 요청에는 불가 | 409 | `routes/voice-profile.ts` |
-| `INVALID_VOICE_PITCH` | 목소리 높이가 −6…+3 반음·0.5 눈금 밖 | 400 | `routes/voice-profile.ts` |
+| `INVALID_VOICE_PITCH` | 목소리 높이(톤)가 −10…+6 반음·0.5 눈금 밖 | 400 | `routes/voice-profile.ts` |
 | `INVALID_VOICE_TRANSITION` | 정식 목소리를 초안으로 되돌릴 수 없음 | 409 | `routes/voice-profile.ts` |
 | `VOICE_TRANSITION_CONFLICT` | 목소리 상태가 바뀜(새로고침 후 재시도) | 409 | `routes/voice-profile.ts` |
 | `VOICE_NOT_READY` | 사전렌더를 걸 수 있는 상태가 아님 | 409 | `routes/voice-profile.ts` |

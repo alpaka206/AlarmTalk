@@ -344,8 +344,8 @@ final class AlarmTalkAPI: @unchecked Sendable {
 
     /// 초안(draft)을 정식 프로필로 승격한다. 미리듣기를 확인한 뒤에만 부른다.
     /// 서버는 이 시점에 페르소나(관계·호칭)를 잠그고 사전렌더 큐를 적재한다.
-    /// - Parameter replaceExisting: 등록 확정 화면의 교체 체크. true 면 한도에 걸려도
-    ///   막지 않고 **기존 목소리 자리에 이 목소리를 앉힌다**(알람은 그대로 살아 있다).
+    /// - Parameter replaceExisting: 교체 등록 — 이미 등록된 목소리가 있으면 등록 확정 화면이 언제나 true 로 보낸다
+    ///   (체크 없음). true 면 한도에 걸려도 막지 않고 **기존 목소리 자리에 이 목소리를 앉힌다**(알람은 그대로 살아 있다).
     /// - Parameter pitchSemitones: 등록 미리듣기에서 들은 목소리 높이(반음). nil·0 이면 보내지 않는다(원래 소리).
     func promoteVoiceDraft(
         id: String,

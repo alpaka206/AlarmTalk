@@ -1,6 +1,6 @@
 import Foundation
 
-/// 목소리를 등록할 때 고르는 **목소리 높이**(반음). 규칙은 `docs/spec/voice-and-message.md` §4-3.
+/// 목소리를 등록할 때 고르는 **목소리 높이**(반음 — 화면 이름은 `톤 조절`). 규칙은 `docs/spec/voice-and-message.md` §4-3.
 ///
 /// 등록 미리듣기 화면(`VoicePreviewConfirmView`)에서 들으면서 고르고, 등록을 확정하는 요청에 **한 번** 싣는다
 /// (`VoiceDraftPromoteRequest.pitchSemitones`). 서버가 그 값을 목소리에 적어 두고, 그 목소리로 만드는 **모든 알람
@@ -28,7 +28,9 @@ struct VoiceTuning: Equatable, Sendable {
     var pitchSt: Double
     var source: Source
 
-    static let pitchRange: ClosedRange<Double> = -6...3
+    /// 2026-10-08 에 −6…+3 에서 넓혔다 — v4 Turbo 가 저음을 8반음 넘게 올리는 경우가 있었다(사용자). 서버
+    /// `VOICE_PITCH_MIN_SEMITONES`·`VOICE_PITCH_MAX_SEMITONES` 와 같은 숫자다.
+    static let pitchRange: ClosedRange<Double> = -10...6
     static let step: Double = 0.5
 
     static let neutral = VoiceTuning(pitchSt: 0, source: .suggested)

@@ -339,45 +339,31 @@ final class VoiceStudioViewModel: ObservableObject {
         }
     }
 
-    /// 초안 미리듣기 재생 결과.
-    enum DraftPreviewOutcome {
-        /// 끝까지 재생하고 서버에 청취를 기록했다. 딸린 값은 실제 합성된 문구.
-        case played(String)
+    /// 서버가 만든 **초안 미리듣기 클립**(원래 소리 — 초안 행에는 높이가 없다). 등록 확정 화면이 받아 두고 톤 카드의
+    /// 두 버튼(`원본 듣기`·`현재 톤 듣기`)이 서버 왕복 없이 번갈아 튼다(스펙 voice-and-message §4-3).
+    struct DraftPreviewClip: Equatable, Sendable {
+        /// 받은 클립 파일.
+        let url: URL
+        /// 서버가 확정한 실제 문구.
+        let text: String
+        /// 처음 끝까지 들은 뒤 `preview-played` 로 돌려줄 재생 토큰.
+        let playbackToken: String?
+        /// 서버가 이 초안의 청취를 이미 기록해 두었는가(토큰 없이 온다).
+        let alreadyConfirmed: Bool
+    }
+
+    /// 초안 미리듣기를 받은 결과.
+    enum DraftPreviewFetch {
+        case ready(DraftPreviewClip)
         case failed(String)
-        /// 재생이 중간에 멈췄다(화면을 떠나는 등). 청취를 기록하지 않는다 — 실패 문구도 없다.
-        case interrupted
     }
 
-    /// 받은 미리듣기 클립으로 무엇을 틀지 — 등록 화면이 정한다(`playDraftPreview` 의 `prepareAudio`).
-    enum DraftPreviewAudio {
-        /// 받은 클립 그대로(높이 0, 또는 굽지 못했다).
-        case original
-        /// 목소리 높이를 메모리에서 구운 소리(WAV — `VoiceTuningRenderer.previewWAV`).
-        case tuned(Data)
-        /// 준비하는 사이 화면을 떠났다 — 틀지 않는다.
-        case cancelled
-    }
-
-    /// 등록 확인 스텝의 미리듣기 — 합성 → 끝까지 재생 → 서버에 청취 기록.
+    /// 등록 확인 스텝의 미리듣기 클립을 받는다(합성 → 파일). 트는 일과 청취 기록은 등록 화면이 한다 — 어느 버튼으로
+    /// 들었든 **처음 끝까지 들었을 때** `confirmDraftPreviewListened` 를 부른다.
     ///
-    /// ⚠ **재생이 끝난 뒤에야 `preview-played` 를 부른다.** 시작하자마자 부르면 사용자가
-    /// 안 듣고 넘어가도 저장이 열려, 이 스텝을 둔 이유(결과를 듣고 결정하게 하기)가
-    /// 사라진다. 안드로이드도 `setOnCompletionListener` 안에서 부른다.
-    /// - Parameter onTextReady: 합성 응답이 오는 **즉시**(재생 시작 전) 문구를 알려 준다.
-    ///   화면은 소리와 글자를 같이 보여 줘야 한다 — 다 듣고 나서야 글자가 뜨면 무슨 말을
-    ///   들었는지 확인할 방법이 없다(2026-09-19 지시).
-    /// - Parameter prepareAudio: 클립을 받은 **직후, 재생 전에** 불린다. 등록 화면이 이 클립을 재서 높이 추천값을
-    ///   정하고, 그 높이로 **메모리에서 구운** 소리를 돌려준다 — 재생이 처음부터 그 소리로 나간다(파일로 남기지
-    ///   않는다, 스펙 §4-3). nil 이면 원본을 그대로 튼다.
-    /// - Parameter onPlayingOriginalInstead: 구운 소리를 못 틀어 **원본으로** 대신 틀 때 불린다 — 등록 화면이
-    ///   '들은 높이' 를 0 으로 고친다(Codex #870).
-    func playDraftPreview(
-        draft: VoiceProfile,
-        session: AuthSession?,
-        onTextReady: ((String) -> Void)? = nil,
-        prepareAudio: ((URL) async -> DraftPreviewAudio)? = nil,
-        onPlayingOriginalInstead: (() -> Void)? = nil
-    ) async -> DraftPreviewOutcome {
+    /// 문구는 결과에 실려 온다 — 화면은 소리와 글자를 같이 보여 줘야 한다(2026-09-19 지시). 받은 직후 재고 구워
+    /// 곧바로 트므로 글자가 먼저 뜨는 틈은 짧다.
+    func fetchDraftPreview(draft: VoiceProfile, session: AuthSession?) async -> DraftPreviewFetch {
         guard let token = session?.token else { return .failed(String(localized: "로그인이 필요해요.")) }
         do {
             let response = try await api.generateTTS(
@@ -393,8 +379,6 @@ final class VoiceStudioViewModel: ObservableObject {
                 ),
                 token: token
             )
-            // 재생보다 **먼저** 글자를 띄운다(위 파라미터 주석).
-            if !response.text.isEmpty { onTextReady?(response.text) }
             guard let data = Data(base64Encoded: response.audioBase64), !data.isEmpty else {
                 return .failed(String(localized: "미리듣기를 재생하지 못했어요."))
             }
@@ -402,43 +386,33 @@ final class VoiceStudioViewModel: ObservableObject {
                 .appendingPathComponent("draft_preview_\(response.messageId)")
                 .appendingPathExtension(response.audioFormat.isEmpty ? "mp3" : response.audioFormat)
             try data.write(to: url, options: .atomic)
-            var tuned: Data?
-            switch await prepareAudio?(url) ?? .original {
-            case .original: tuned = nil
-            case .tuned(let baked): tuned = baked
-            // 준비(분석·굽기)를 기다리는 사이 화면을 떠났다 — 화면 밖에서 소리가 나지 않게(Codex #870).
-            case .cancelled: return .interrupted
-            }
-
-            // 재생이 끝날 때까지 기다린다. 화면의 '정지'·화면 이탈이 멈출 수 있게 `tuningPreviewPlayer` 로 튼다.
-            previewPlayer.stop()
-            switch await tuningPreviewPlayer.play(
-                tuned: tuned,
-                original: url,
-                onPlayingOriginalInstead: onPlayingOriginalInstead
-            ) {
-            case .finished:
-                break
-            // 멈춘 것(화면 이탈 등)은 청취가 아니다.
-            case .stopped:
-                return .interrupted
-            // ⚠ 원본도 못 틀었으면 **실패**다 — 아무것도 안 들렸는데 청취를 기록하면 저장이 열린다(Codex #870).
-            case .failed:
-                return .failed(String(localized: "미리듣기를 재생하지 못했어요."))
-            }
-
-            if let playbackToken = response.previewPlaybackToken {
-                _ = try await api.confirmVoicePreviewPlayed(
-                    id: draft.id,
-                    playbackToken: playbackToken,
-                    token: token
-                )
-            } else if response.previewPlaybackConfirmed != true {
-                return .failed(String(localized: "미리듣기 확인에 실패했어요. 다시 들어 주세요."))
-            }
-            return .played(response.text)
+            return .ready(DraftPreviewClip(
+                url: url,
+                text: response.text,
+                playbackToken: response.previewPlaybackToken,
+                alreadyConfirmed: response.previewPlaybackConfirmed == true
+            ))
         } catch {
             return .failed(mapVoiceError(error))
+        }
+    }
+
+    /// 받은 클립을 **처음 끝까지 들었다**고 서버에 알린다 — 원본이든 현재 톤이든 들은 버튼은 따지지 않는다. nil 이면
+    /// 기록됐다(또는 이미 기록돼 있었다), 아니면 보여 줄 문구다.
+    ///
+    /// ⚠ **재생이 끝난 뒤에만 부른다.** 시작하자마자 부르면 사용자가 안 듣고 넘어가도 저장이 열려, 이 스텝을 둔
+    /// 이유(결과를 듣고 결정하게 하기)가 사라진다. 안드로이드도 재생 완료 콜백 안에서 부른다.
+    func confirmDraftPreviewListened(draft: VoiceProfile, clip: DraftPreviewClip, session: AuthSession?) async -> String? {
+        guard let playbackToken = clip.playbackToken else {
+            // 토큰 없이 왔으면 서버가 이미 기록해 둔 경우뿐이다 — 아니면 저장이 열리지 않으니 다시 받게 한다.
+            return clip.alreadyConfirmed ? nil : String(localized: "미리듣기 확인에 실패했어요. 다시 들어 주세요.")
+        }
+        guard let token = session?.token else { return String(localized: "로그인이 필요해요.") }
+        do {
+            _ = try await api.confirmVoicePreviewPlayed(id: draft.id, playbackToken: playbackToken, token: token)
+            return nil
+        } catch {
+            return mapVoiceError(error)
         }
     }
 

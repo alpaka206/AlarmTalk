@@ -37,8 +37,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.Edit
-import androidx.compose.material.icons.rounded.PlayArrow
-import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CardDefaults
@@ -484,9 +482,7 @@ internal fun VoiceProfileManagementPanel(
     var confirmPreviewEditing by remember { mutableStateOf(false) }
     var confirmPreviewEditText by remember { mutableStateOf("") }
     var confirmPreviewSaving by remember { mutableStateOf(false) }
-    // 등록 확정의 **교체 체크**. 이미 등록된 목소리가 있을 때만 낸다.
-    var replaceExistingChecked by remember { mutableStateOf(false) }
-    // ── 목소리 다듬기(높이 — 스펙 voice-and-message §4-3) ──
+    // ── 톤 조절(높이 — 스펙 voice-and-message §4-3) ──
     // 미리듣기에서 들으며 고르는 높이. 기기에 저장하지 않는다 — 등록 확정 요청에 실어 서버에 한 번 보내고
     // (`MainViewModel.promoteVoiceDraft`), 서버가 이 목소리로 만드는 알람 소리에 굽는다.
     var previewTuning by remember { mutableStateOf(VoiceTuning.NEUTRAL) }
@@ -495,13 +491,22 @@ internal fun VoiceProfileManagementPanel(
     var tuningSuggestionVoiceId by remember { mutableStateOf<String?>(null) }
     // 그 추천값을 잰 미리듣기 클립 — 문구를 고쳐 새 클립이 오면 다시 잰다.
     var tuningSuggestionClipUri by remember { mutableStateOf<String?>(null) }
-    var tuningAnalyzing by remember { mutableStateOf(false) }
-    // 서버가 만든 미리듣기 오디오(기기 캐시 — 원래 소리). 끝까지 한 번 들은 뒤에는 이걸 기기에서 다시 튼다 —
-    // 슬라이더를 움직일 때마다 서버를 부르지 않고, 이걸 메모리에서 그 높이로 굽는다.
+    // 서버가 만든 미리듣기 오디오(기기 캐시 — 원래 소리). 받은 뒤에는 두 듣기 버튼·막대가 이걸 기기에서 다시 튼다 —
+    // 누를 때마다 서버를 부르지 않고, 이걸 메모리에서 그 높이로 굽는다. null 이면 듣기 버튼이 서버에서 받는다.
     var confirmPreviewAudioUri by remember { mutableStateOf<String?>(null) }
+    // 그 클립과 함께 온 청취 확인 토큰·'이미 확인됨' — 클립을 처음 끝까지 들었을 때(어느 버튼이든) 서버에 보낸다.
+    var confirmPreviewToken by remember { mutableStateOf<String?>(null) }
+    var confirmPreviewAlreadyConfirmed by remember { mutableStateOf(false) }
+    // 청취 확인 요청이 나가 있는 세대 — 같은 클립의 확인을 두 번 보내지 않는다(두 번째는 낡은 토큰이라 409 다).
+    var confirmingGeneration by remember { mutableStateOf<Int?>(null) }
+    // 톤 카드의 두 듣기 버튼 중 지금 트는(또는 받는·굽는) 쪽. null 이면 아무것도 틀지 않는다(`stopMediaPreview` 가 비운다).
+    var tuningListenTarget by remember { mutableStateOf<TuningListenTarget?>(null) }
+    // 첫 청취 확인 전 재생 도중에 막대에서 손을 뗐는가 — 끊지 않고, 그 재생이 끝난 직후 현재 톤으로 다시 튼다.
+    var tunedReplayDeferred by remember { mutableStateOf(false) }
     // 다듬기 미리듣기가 기기 알람 스트림을 올렸는지(짝은 `releasePreviewTuning`).
     var previewStreamRaised by remember { mutableStateOf(false) }
-    // 높이를 바꾼 소리를 메모리에서 굽는 중인가(카드에 진행 표시), 그 작업, 마지막 굽기 요청 번호.
+    // 높이를 바꾼 소리를 메모리에서 굽는 중인가(그동안 저장을 잠근다 — 진행 표시는 트는 쪽 듣기 버튼이 한다), 기기에서
+    // 다시 트는 작업, 마지막 굽기 요청 번호.
     var tuningRendering by remember { mutableStateOf(false) }
     var tunedReplayJob by remember { mutableStateOf<Job?>(null) }
     var tuningRenderRequest by remember { mutableIntStateOf(0) }
@@ -509,9 +514,10 @@ internal fun VoiceProfileManagementPanel(
     // 업로드 성공 직후 지워지므로(`purgeVoiceCloneSourceRecordings`) 미리듣기 단계에는 없다.
     // 숫자 하나만 메모리에 두고 어디에도 저장하지 않는다.
     var sourceF0Job by remember { mutableStateOf<Deferred<Double?>?>(null) }
-    // 지금 슬라이더 값을 **끝까지 들었는가** — 저장은 그때만 열린다(듣지 않은 높이를 저장하지 않게, 첫 미리듣기의
-    // '끝까지 들어야 저장' 과 같은 규칙 — Codex #870). iOS `VoicePreviewConfirmView.heardTuning` 과 같다.
-    var heardTuning by remember { mutableStateOf<VoiceTuning?>(null) }
+    // 이 클립에서 **끝까지 들은** 높이들(`heardKey`) — 저장은 지금 막대 값이 여기 있을 때만 열린다(듣지 않은 높이를
+    // 저장하지 않게, 첫 미리듣기의 '끝까지 들어야 저장' 과 같은 규칙 — Codex #870). 실제로 걸린 높이로 적는다(원본은 0).
+    // 마지막 하나만 두지 않는 이유는 `tuningHeardToEnd` 주석 — 원본과 번갈아 들어도 저장이 다시 잠기지 않는다.
+    var heardTunings by remember { mutableStateOf<Set<Float>>(emptySet()) }
     // 시스템 스톡 보이스는 "내 목소리" 수 제한·관리 액션에서 제외한다.
     // 매 리컴포지션마다 재계산하지 않도록 voiceProfiles 가 바뀔 때만 다시 분류한다.
     val systemVoices = remember(voiceProfiles) { voiceProfiles.filter { it.isSystem == true } }
@@ -550,17 +556,14 @@ internal fun VoiceProfileManagementPanel(
         if (canCreateVoice) voiceProfiles.filter { it.isSystem != true } else emptyList()
     }
     // 등록 확정에서 교체 대상이 되는 **이미 등록된** 목소리(초안·실패 제외).
-    // 있으면 저장이 한도에 걸리므로 교체 체크를 낸다.
+    // 있으면 저장이 한도에 걸리므로 이 화면의 저장은 언제나 교체다(`registrationReplaceTarget`).
     val replaceTargetVoice = remember(ownVoices, confirmNewVoice) {
-        ownVoices.firstOrNull {
-            it.id != confirmNewVoice?.id && it.isDraft != true &&
-                it.status?.trim()?.lowercase() != "failed"
-        }
+        registrationReplaceTarget(ownVoices, confirmNewVoice?.id)
     }
     // ⚠ **슬롯이 찼다고 폼을 막지 않는다**(2026-08-12 확정).
-    // 이미 목소리가 있으면 등록을 끝까지 진행시키고, **마지막 확정 화면**에서
-    // "기존 목소리를 교체할까요"(`replaceExistingChecked`)를 묻는다. 예전에는 여기서
-    // 막아 그 체크에 도달할 수 없었고, 교체 갈래가 **죽은 코드**였다.
+    // 이미 목소리가 있으면 등록을 끝까지 진행시키고, **마지막 확정 화면**의 저장이 그 목소리를
+    // 교체한다(2026-10-08 부터는 체크 없이 교체 한 줄만 보인다 — 스펙 §4-1). 예전에는 여기서
+    // 막아 확정 화면에 도달할 수 없었고, 교체 갈래가 **죽은 코드**였다.
     //
     // 막는 기준은 **월 등록 한도 하나**다(아래 `monthlyExhausted`) — 그건 교체해도 풀리지
     // 않으므로, 녹음을 다 시킨 뒤 거절하지 않도록 입구에서 알린다.
@@ -579,6 +582,15 @@ internal fun VoiceProfileManagementPanel(
     // promote 직후 사전렌더 진행 화면 — 등록이 끝나도 다이얼로그를 유지해야
     // 진행 UI·'백그라운드에서 계속'이 보인다(닫기는 자유 — 드라이브는 ViewModel 에서 계속된다).
     val inPrerenderingFlow = currentStep == VoiceRegistrationStep.Prerendering
+    // 확정 화면의 잠금표 — 서버 일(받기·청취 확인·문구 저장·등록 확정·초안 삭제)이 도는 동안 무엇을 잠그는지는 한 곳에서
+    // 정한다(`confirmStepLocks`). 컨트롤마다 따로 고르면 뒤로가기는 열려 있는데 다시 만들기는 잠기는 식으로 갈라진다.
+    val confirmLocks = confirmStepLocks(
+        fetching = confirmPreviewBusy,
+        confirming = confirmingGeneration != null,
+        savingText = confirmPreviewSaving,
+        profileBusy = voiceProfileBusy,
+        editing = confirmPreviewEditing,
+    )
     val canShareVoice = canShareVoiceWithOthers(subscriptionResponse, familyGroup, authSession, personalPromoTierHold)
     val paidVoiceRequiredMessage = stringResource(R.string.plan_gate_paid_message)
 
@@ -599,6 +611,8 @@ internal fun VoiceProfileManagementPanel(
         filePreviewPlaying = false
         recordPreviewPlaying = false
         playingGreetingVoiceId = null
+        // 소리가 멈췄으니 톤 카드의 어느 버튼도 '트는 중' 이 아니다. 새로 트는 쪽이 멈춘 뒤에 다시 적는다.
+        tuningListenTarget = null
     }
 
     // greeting 은 3개 언어가 있으므로 앱 언어로 골라야 한다(무필터 firstOrNull 이면 항상 en).
@@ -754,10 +768,12 @@ internal fun VoiceProfileManagementPanel(
     // 틀고(그때 들은 높이는 0), 원본도 안 되면 멈추고 알린다 — 실패를 완료로 읽지 않게 오류는 언제나 삼킨다
     // (오류를 처리하지 않으면 MediaPlayer 가 이어서 완료 콜백을 불러 청취 확인·'들은 높이' 로 이어진다).
     // [onPlayer] 는 실제로 트는 플레이어와 그 재생에 실린 높이로 완료 처리를 건다(스펙 §4-3, Codex #870).
+    // [target] 은 이 재생을 낸 톤 카드 버튼이다 — 소리가 나기 시작할 때(원본으로 대신 틀 때도) 그 버튼을 '트는 중' 으로 적는다.
     fun startPreviewWithFallback(
         originalUri: String,
         tunedWav: ByteArray?,
         applied: VoiceTuning,
+        target: TuningListenTarget,
         onPlayer: (MediaPlayer, VoiceTuning) -> Unit,
     ) {
         fun failPlayback() {
@@ -806,6 +822,7 @@ internal fun VoiceProfileManagementPanel(
                 return open(null, VoiceTuning.NEUTRAL)
             }
             confirmPreviewPlaying = true
+            tuningListenTarget = target
         }
         open(tunedWav, applied)
     }
@@ -828,26 +845,111 @@ internal fun VoiceProfileManagementPanel(
         }
     }
 
-    // 이미 받은 미리듣기를 지금 높이로 기기에서 다시 **한 번** 튼다(iOS 와 같다 — 반복은 울릴 때의 일이다, 2026-10-08
-    // 사용자). 높이를 바꿀 때마다 새로 굽고 처음부터 튼다. 재생 버튼(토글)으로 멈출 수 있다.
-    fun playLocalTunedPreview(uri: String) {
-        tunedReplayJob?.cancel()
+    // 이 클립을 **처음 끝까지 들었다** — 어느 버튼으로 들었든 서버에 청취를 알린다(스펙 §4-1·§4-3). 확인되면 저장 잠금의
+    // 첫 조건이 풀리고, 그 재생 도중 막대에서 손을 뗐는데(미뤘다) 그 값을 아직 끝까지 듣지 못했으면 곧바로 현재 톤으로
+    // 다시 튼다([replayCurrentTone] — `replaysCurrentToneAfterFirstListen`). 확인 요청이 늦게 돌아왔는데 그 사이 문구를
+    // 고쳤으면(세대가 올랐으면) 옛 클립의 확인이다 — 새 클립의 저장을 열지 않는다(Codex #870).
+    fun confirmFirstListen(
+        voiceId: String,
+        generation: Int,
+        replayCurrentTone: () -> Unit,
+    ) {
+        if (confirmingGeneration == generation) return
+        confirmingGeneration = generation
+        val token = confirmPreviewToken
+        val alreadyConfirmed = confirmPreviewAlreadyConfirmed
+        scope.launch {
+            runCatching {
+                if (token != null) {
+                    onConfirmVoicePreviewPlayed(voiceId, token)
+                } else if (!alreadyConfirmed) {
+                    error("Preview playback confirmation token missing")
+                }
+            }.onSuccess {
+                if (generation != confirmPreviewGeneration) return@onSuccess
+                confirmPreviewCompleted = true
+                confirmPreviewToken = null
+                val replay = replaysCurrentToneAfterFirstListen(
+                    releasedDuringPlay = tunedReplayDeferred,
+                    current = previewTuning,
+                    heard = heardTunings,
+                )
+                tunedReplayDeferred = false
+                // 확인을 기다리는 사이 다른 버튼으로 이미 틀고 있으면 그걸 끊지 않는다.
+                if (replay && tuningListenTarget == null && !confirmPreviewBusy) replayCurrentTone()
+            }.onFailure { error ->
+                if (error is kotlin.coroutines.cancellation.CancellationException) throw error
+                AlarmTalkLog.reportError("Failed to confirm preview playback", error)
+                if (generation != confirmPreviewGeneration) return@onFailure
+                // 서버가 청취를 받지 않았다(낡은 토큰 등) — 이 클립으로는 다시 확인할 수 없다. 클립을 비워 다음 듣기 버튼이
+                // 서버에서 새로 받게 한다(새 토큰 — 예전 재생 버튼도 확인 전에는 늘 서버로 갔다). 그 클립으로 트는 중이던
+                // 소리도 멈춘다 — 끝까지 들어도 확인할 수 없는 소리다.
+                stopMediaPreview(invalidateGreetingPreview = false)
+                confirmPreviewPlaying = false
+                confirmPreviewAudioUri = null
+                confirmPreviewToken = null
+                confirmPreviewAlreadyConfirmed = false
+                heardTunings = emptySet()
+                tunedReplayDeferred = false
+                // 소리는 끝까지 났다 — '재생하지 못했어요' 가 아니라 **확인**이 안 된 것이다. 코드에 정해 둔 문구가 없으면
+                // (토큰 없음·네트워크) 다시 들어 달라고 말한다(iOS `VoiceStudioViewModel.confirmDraftPreviewListened` 와 같은 문구).
+                localMessage = com.alarmtalk.app.network.apiErrorMessage(
+                    context,
+                    com.alarmtalk.app.network.apiErrorCode(error),
+                ) ?: userFacingError(error, context.getString(R.string.voices_preview_confirm_failed))
+            }
+            if (confirmingGeneration == generation) confirmingGeneration = null
+        }
+    }
+
+    // 확정 미리듣기 한 번이 **끝까지** 났다(서버에서 받아 처음 튼 것이든 기기에서 다시 튼 것이든 같은 길이다). **한 번만
+    // 튼다** — 반복은 울릴 때의 일이다(2026-10-08 사용자). 실제로 걸린 높이([applied] — 원본은 0)를 '끝까지 들은 높이' 로
+    // 적고, 이 클립의 첫 끝까지 듣기면 청취 확인을 보낸다.
+    fun onConfirmPreviewListenedToEnd(
+        completed: MediaPlayer,
+        voiceId: String,
+        applied: VoiceTuning,
+        generation: Int,
+        replayCurrentTone: () -> Unit,
+    ) {
+        if (mediaPlayer !== completed) {
+            completed.release()
+            return
+        }
         stopMediaPreview(invalidateGreetingPreview = false)
         confirmPreviewPlaying = false
+        if (generation != confirmPreviewGeneration) return
+        heardTunings = heardTunings + applied.heardKey()
+        if (!confirmPreviewCompleted) confirmFirstListen(voiceId, generation, replayCurrentTone)
+    }
+
+    // 받아 둔 미리듣기 클립을 기기에서 처음부터 **한 번** 튼다(서버 왕복 없음) — `원본 듣기` 는 그대로(0), `현재 톤 듣기` 는
+    // 지금 막대 값으로 메모리에서 구워서. 트는 중이던 것(다른 버튼·굽는 중)은 멈춘다. 첫 청취 확인 전이어도 여기서 튼다 —
+    // 끝까지 들으면 그게 첫 청취다(토큰은 클립과 함께 받아 두었다).
+    fun playLocalTunedPreview(target: TuningListenTarget) {
+        val uri = confirmPreviewAudioUri ?: return
+        val voiceId = confirmNewVoice?.id ?: return
+        stopMediaPreview(invalidateGreetingPreview = false)
+        confirmPreviewPlaying = false
+        // 받아 둔 클립을 다시 틀기 시작하면 앞선 재생 실패 안내를 걷는다 — 다시 들어 성공했는데 실패 문구가 남지
+        // 않게(iOS `VoicePreviewConfirmView.startPreview` 와 같다).
+        localMessage = null
+        tuningListenTarget = target
+        tunedReplayDeferred = false
         val tuning = previewTuning
+        val generation = confirmPreviewGeneration
         tunedReplayJob = scope.launch {
             runCatching {
-                val (tunedWav, baked) = bakeTunedPreview(uri, tuning)
-                startPreviewWithFallback(uri, tunedWav, baked) { player, applied ->
-                    // **한 번만 튼다**(iOS 와 같다) — 반복은 울릴 때의 일이다(2026-10-08 사용자).
+                val (tunedWav, baked) = if (target == TuningListenTarget.Current) {
+                    bakeTunedPreview(uri, tuning)
+                } else {
+                    null to VoiceTuning.NEUTRAL
+                }
+                startPreviewWithFallback(uri, tunedWav, baked, target) { player, applied ->
                     player.setOnCompletionListener { completed ->
-                        if (mediaPlayer !== completed) {
-                            completed.release()
-                            return@setOnCompletionListener
+                        onConfirmPreviewListenedToEnd(completed, voiceId, applied, generation) {
+                            playLocalTunedPreview(TuningListenTarget.Current)
                         }
-                        heardTuning = applied
-                        stopMediaPreview(invalidateGreetingPreview = false)
-                        confirmPreviewPlaying = false
                     }
                 }
             }.onFailure { error ->
@@ -860,12 +962,23 @@ internal fun VoiceProfileManagementPanel(
         }
     }
 
-    // 높이를 바꾼 뒤 — 첫 재생을 끝까지 들었으면 곧바로 새 높이로 다시 튼다. 첫 재생 도중이면 끊지 않는다
-    // (끝까지 들어야 저장이 열린다 — 서버 확인). 그때는 첫 재생이 끝난 직후 새 높이로 튼다.
+    // 막대에서 손을 뗐다 — 현재 톤을 다시 굽고 처음부터 한 번 튼다(트는 중이던 원본도, 굽던 소리도 멈춘다 — 첫 미리듣기를
+    // 굽는 중이어도 새 값으로 다시 굽는다). 단 첫 청취 확인 전의 재생이 **소리 나는 중**이면 끊지 않는다 — 끝까지 들어야
+    // 저장이 열리는 화면이다. 그때는 그 재생이 끝난 직후 새 높이로 튼다(`confirmFirstListen`). 받은 클립이 없으면 할 일이
+    // 없다 — 받는 중이면 받은 뒤 그때의 막대 값으로 굽고, 아니면 듣기 버튼이 서버에서 받는다.
     fun replayTunedPreviewIfReady() {
-        val uri = confirmPreviewAudioUri ?: return
-        if (!confirmPreviewCompleted || confirmPreviewBusy) return
-        playLocalTunedPreview(uri)
+        when (
+            tuningReleaseAction(
+                clipReady = confirmPreviewAudioUri != null,
+                firstListenConfirmed = confirmPreviewCompleted,
+                // 소리가 나는 중일 때만 참이다 — 받는 중·굽는 중에는 거짓이다(`startPreviewWithFallback` 이 소리를 낸 뒤 켠다).
+                audible = confirmPreviewPlaying,
+            )
+        ) {
+            TuningReleaseAction.Defer -> tunedReplayDeferred = true
+            TuningReleaseAction.PlayCurrent -> playLocalTunedPreview(TuningListenTarget.Current)
+            TuningReleaseAction.None -> Unit
+        }
     }
 
     // 등록 녹음의 높이를 잰다(업로드 전 — 위 [sourceF0Job] 주석). 실패하면 null 이고, 그러면 추천은
@@ -901,59 +1014,56 @@ internal fun VoiceProfileManagementPanel(
 
     // 미리듣기 오디오로 추천값을 만든다(**클립마다** 한 번 — 문구를 고치면 새 클립이 오고 높이도 달라질 수 있다).
     // 사용자가 아직 손대지 않았으면 그 값으로 맞춘다.
+    // 막대가 추천값에서 시작한다 — '추천값' 버튼은 없다(2026-10-08 사용자). 분석하는 동안은 받는 요청(`confirmPreviewBusy`)
+    // 안이라 받은 뒤에 틀 듣기 버튼(있으면)에 진행 표시가 돈다.
     suspend fun ensureTuningSuggestion(voiceId: String, previewUri: String) {
         if (tuningSuggestionVoiceId == voiceId && tuningSuggestionClipUri == previewUri && tuningSuggestion != null) return
-        tuningAnalyzing = true
-        try {
-            // 이미 도는 분석을 **끝까지** 기다린다 — 느린 기기에서 시간 제한으로 끊으면 '못 쟀다' 로 읽혀 추천이 0 으로
-            // 굳는다(Codex #870). 업로드 전에 시작해 대개 미리듣기가 오기 전에 끝나 있다.
-            val sourceF0 = sourceF0Job?.let { job -> runCatching { job.await() }.getOrNull() }
-            var previewF0: Double? = null
-            val suggestion = withContext(Dispatchers.Default) {
-                runCatching {
-                    val decoded = VoiceAudioDecoder.decodeMono(appContext, Uri.parse(previewUri), maxDurationMillis = 30_000L)
-                    if (decoded == null) {
-                        VoiceTuning.NEUTRAL
-                    } else {
-                        previewF0 = VoiceTuningAnalysis.medianF0(decoded.samples, decoded.sampleRate)
-                        VoiceTuningAnalysis.suggest(previewF0Hz = previewF0, sourceF0Hz = sourceF0)
-                    }
-                }.getOrDefault(VoiceTuning.NEUTRAL)
-            }
-            // ⚠ 측정값(F0)을 로그에 남기지 말 것 — 등록 녹음에서 잰 생체 정보다(Codex #870). 쟀는지만 남긴다.
-            android.util.Log.i(
-                "VoiceTuning",
-                "Suggestion ready preview=${previewF0 != null} source=${sourceF0 != null}",
-            )
-            tuningSuggestion = suggestion
-            tuningSuggestionVoiceId = voiceId
-            tuningSuggestionClipUri = previewUri
-            if (previewTuning.source != VoiceTuning.SOURCE_MANUAL) previewTuning = suggestion
-        } finally {
-            tuningAnalyzing = false
+        // 이미 도는 분석을 **끝까지** 기다린다 — 느린 기기에서 시간 제한으로 끊으면 '못 쟀다' 로 읽혀 추천이 0 으로
+        // 굳는다(Codex #870). 업로드 전에 시작해 대개 미리듣기가 오기 전에 끝나 있다.
+        val sourceF0 = sourceF0Job?.let { job -> runCatching { job.await() }.getOrNull() }
+        var previewF0: Double? = null
+        val suggestion = withContext(Dispatchers.Default) {
+            runCatching {
+                val decoded = VoiceAudioDecoder.decodeMono(appContext, Uri.parse(previewUri), maxDurationMillis = 30_000L)
+                if (decoded == null) {
+                    VoiceTuning.NEUTRAL
+                } else {
+                    previewF0 = VoiceTuningAnalysis.medianF0(decoded.samples, decoded.sampleRate)
+                    VoiceTuningAnalysis.suggest(previewF0Hz = previewF0, sourceF0Hz = sourceF0)
+                }
+            }.getOrDefault(VoiceTuning.NEUTRAL)
         }
+        // ⚠ 측정값(F0)을 로그에 남기지 말 것 — 등록 녹음에서 잰 생체 정보다(Codex #870). 쟀는지만 남긴다.
+        android.util.Log.i(
+            "VoiceTuning",
+            "Suggestion ready preview=${previewF0 != null} source=${sourceF0 != null}",
+        )
+        tuningSuggestion = suggestion
+        tuningSuggestionVoiceId = voiceId
+        tuningSuggestionClipUri = previewUri
+        if (previewTuning.source != VoiceTuning.SOURCE_MANUAL) previewTuning = suggestion
     }
 
-    // 방금 등록한 목소리로 기본 모닝콜(고정 프리셋)을 즉석 생성해 들려준다. 다시 누르면 정지.
-    // random preset 이라 직접 입력 미터링을 소비하지 않고 서버 캐시로 재생성도 저렴하다.
-    fun previewRegisteredVoice(voice: VoiceProfile) {
-        if (confirmPreviewPlaying) {
-            stopMediaPreview(invalidateGreetingPreview = false)
-            confirmPreviewPlaying = false
-            return
-        }
-        if (confirmPreviewBusy) return
-        // 끝까지 한 번 들었으면 받은 오디오를 기기에서 다시 튼다(서버 왕복 없음 — 다듬기 미리듣기).
-        val localPreviewUri = confirmPreviewAudioUri
-        if (localPreviewUri != null && confirmPreviewCompleted) {
-            playLocalTunedPreview(localPreviewUri)
+    // 방금 등록한 목소리로 기본 모닝콜(고정 프리셋)을 서버에서 받아 [target] 버튼대로 튼다 — 받은 클립이 아직 없을 때만
+    // 오는 길이다(화면에 들어올 때·문구를 고친 뒤 저절로, 또는 받기 실패 뒤 듣기 버튼). 저절로 트는 첫 미리듣기는
+    // `현재 톤 듣기`(추천값)다. random preset 이라 직접 입력 미터링을 소비하지 않고 서버 캐시로 재생성도 저렴하다.
+    // 받는 동안 [tuningListenTarget] 은 '받은 뒤에 틀 버튼' 이다 — 그 버튼에 진행 표시가 돌고, 받는 사이 누른 버튼이
+    // 그것을 바꾸거나 비운다(`tuningListenAction`). 굽기는 받은 뒤 `playLocalTunedPreview` 가 한다 — 굽는 동안 막대를
+    // 놓으면 새 값으로 다시 구울 수 있게(`tuningReleaseAction`).
+    fun fetchConfirmPreview(voice: VoiceProfile, target: TuningListenTarget) {
+        if (confirmPreviewBusy) {
+            // 이미 받는 중이다 — 새로 받지 않고 받은 뒤에 틀 버튼만 바꾼다.
+            tuningListenTarget = target
             return
         }
         val previewGeneration = confirmPreviewGeneration
         confirmPreviewJob = scope.launch {
             stopMediaPreview(invalidateGreetingPreview = false)
+            confirmPreviewPlaying = false
+            tuningListenTarget = target
+            tunedReplayDeferred = false
             confirmPreviewBusy = true
-            runCatching {
+            val ready = runCatching {
                 val response = onGenerateTts(
                     TtsGenerateRequest(
                         voiceProfileId = voice.id,
@@ -963,6 +1073,8 @@ internal fun VoiceProfileManagementPanel(
                         listenerTitle = voice.listenerTitle,
                     ),
                 )
+                // 받는 사이 초안이 바뀌었다 — 옛 초안의 문구·클립을 새 초안의 화면에 두지 않는다(Codex #870).
+                if (previewGeneration != confirmPreviewGeneration) return@runCatching false
                 // 합성된 실제 문구 — Preview 스텝에 표시하고 수정의 기준이 된다.
                 if (response.text.isNotBlank()) confirmPreviewText = response.text
                 // 이전 시도의 실패 메시지가 성공한 화면에 남지 않게 지운다.
@@ -979,57 +1091,62 @@ internal fun VoiceProfileManagementPanel(
                     )
                 }
                 confirmPreviewAudioUri = cached.localAudioUri
-                // 추천값을 **첫 재생 전에** 정한다 — 첫 소리부터 보정된 목소리다(짧은 클립이라 금방이다).
+                // 청취 확인은 이 클립을 처음 끝까지 들었을 때 보낸다 — 어느 버튼으로 들었든(`confirmFirstListen`).
+                confirmPreviewToken = response.previewPlaybackToken
+                confirmPreviewAlreadyConfirmed = response.previewPlaybackConfirmed
+                // 추천값을 **첫 재생 전에** 정한다 — 첫 소리부터 보정된 목소리다(짧은 클립이라 금방이다). `원본 듣기` 로
+                // 받았어도 잰다 — 막대가 추천값에서 시작한다.
                 ensureTuningSuggestion(voice.id, cached.localAudioUri)
-                val (tunedWav, bakedTuning) = bakeTunedPreview(cached.localAudioUri, previewTuning)
-                // 이 재생에 실은 높이는 **이 요청의 지역 값**으로 완료 콜백에 넘긴다 — 화면 상태에 두면 확인을 기다리는 사이
-                // 시작한 다른 미리듣기가 덮어써, 듣지 않은 높이를 '들었다' 로 적는다(Codex #870).
-                startPreviewWithFallback(cached.localAudioUri, tunedWav, bakedTuning) { player, playedTuning ->
-                    player.apply {
-                        setOnCompletionListener {
-                            if (mediaPlayer === it) releasePreviewTuning()
-                            it.release()
-                            if (mediaPlayer === it) {
-                                mediaPlayer = null
-                                confirmPreviewPlaying = false
-                                scope.launch {
-                                    runCatching {
-                                        val token = response.previewPlaybackToken
-                                        if (token != null) {
-                                            onConfirmVoicePreviewPlayed(voice.id, token)
-                                        } else if (!response.previewPlaybackConfirmed) {
-                                            error("Preview playback confirmation token missing")
-                                        }
-                                    }.onSuccess {
-                                        // 그 사이 문구를 고쳤으면 옛 클립의 확인이다 — 새 클립의 저장을 열지 않는다.
-                                        if (previewGeneration != confirmPreviewGeneration) return@onSuccess
-                                        confirmPreviewCompleted = true
-                                        heardTuning = playedTuning
-                                        // 첫 재생 도중에 높이를 바꿨으면 이제 새 높이로 들려준다.
-                                        if (!previewTuning.sameValuesAs(playedTuning)) {
-                                            replayTunedPreviewIfReady()
-                                        }
-                                    }.onFailure { error ->
-                                        AlarmTalkLog.reportError("Failed to confirm preview playback", error)
-                                        localMessage = userFacingError(
-                                            error,
-                                            context.getString(R.string.voices_preview_play_failed),
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
+                true
             }.onFailure { error ->
                 // 다이얼로그를 닫아 코루틴이 취소된 경우는 오류가 아니다 — 취소는 되던져
                 // 허위 "미리듣기 실패" 메시지가 뜨지 않게 한다.
                 if (error is kotlin.coroutines.cancellation.CancellationException) throw error
                 AlarmTalkLog.reportError("Failed to preview registered voice", error)
                 localMessage = userFacingError(error, context.getString(R.string.voices_preview_play_failed))
-            }
+            }.getOrDefault(false)
             confirmPreviewBusy = false
+            // 받는 사이 누른 버튼(진행 표시가 도는 버튼을 눌러 비웠으면 받기만 한다)의 소리를 처음부터 튼다 — 굽기·재생·
+            // 끝까지 들은 뒤의 청취 확인은 기기에서 다시 트는 길과 같다. 실패했으면 아무것도 틀지 않는다 — 누른 버튼이
+            // '준비 중' 으로 남지 않게 비운다.
+            val next = tuningListenTarget
+            tuningListenTarget = null
+            if (ready && next != null) playLocalTunedPreview(next)
         }
+    }
+
+    // 톤 카드의 듣기 버튼(스펙 §4-3) — 트는(준비하는) 중인 버튼이면 멈추고, 받은 클립이 없으면 서버에서 받아 그 버튼대로 틀고,
+    // 있으면 기기에서 처음부터 튼다(다른 버튼이 틀던 것은 멈춘다). 판정은 `tuningListenAction`. 서버에서 받는 동안에도
+    // 누를 수 있다 — 받은 뒤에 틀 버튼을 바꾸거나(`fetchConfirmPreview`) 비운다(멈춤).
+    fun onTuningListen(voice: VoiceProfile, target: TuningListenTarget) {
+        when (
+            tuningListenAction(
+                pressed = target,
+                active = tuningListenTarget,
+                clipReady = confirmPreviewAudioUri != null,
+            )
+        ) {
+            TuningListenAction.Stop -> {
+                // 끝까지 듣지 않았으니 청취가 아니다 — 알리지 않는다(스펙 §4-3 '멈춤'). 서버에서 받는 중이었으면 받기는
+                // 그대로 두고, 받은 뒤에 틀 버튼만 비운다(`stopMediaPreview`) — 받은 뒤에는 아무것도 틀지 않는다.
+                stopMediaPreview(invalidateGreetingPreview = false)
+                confirmPreviewPlaying = false
+                tunedReplayDeferred = false
+            }
+            TuningListenAction.FetchFromServer -> fetchConfirmPreview(voice, target)
+            TuningListenAction.PlayLocally -> playLocalTunedPreview(target)
+        }
+    }
+
+    // 연필 — 문구 입력칸을 연다. 입력칸이 열려 있는 동안 톤 카드(막대·두 듣기 버튼)는 잠기므로(`confirmStepLocks`) 트는
+    // 소리·굽기를 여기서 멈춘다 — 안 멈추면 잠긴 버튼으로는 그 소리를 끝날 때까지 멈출 수 없다. 멈춘 재생은 청취가 아니고,
+    // 입력을 취소하면 듣기 버튼으로 다시 듣는다.
+    fun openPreviewTextEditor() {
+        stopMediaPreview(invalidateGreetingPreview = false)
+        confirmPreviewPlaying = false
+        tunedReplayDeferred = false
+        confirmPreviewEditText = confirmPreviewText.orEmpty()
+        confirmPreviewEditing = true
     }
 
     // 미리듣기 문구 수정 저장: 서버에 반영(재청취 게이트 리셋) 후 수정본으로 즉시 재합성·재생.
@@ -1056,16 +1173,22 @@ internal fun VoiceProfileManagementPanel(
             stopMediaPreview(invalidateGreetingPreview = false)
             confirmPreviewPlaying = false
             confirmPreviewBusy = false
+            tunedReplayDeferred = false
             runCatching {
                 onUpdateVoicePreviewText(voice.id, newText)
             }.onSuccess { normalized ->
                 confirmPreviewText = normalized
                 confirmPreviewCompleted = false
-                heardTuning = null
+                // 옛 문구의 클립·토큰·들은 높이는 이제 아무것도 증명하지 않는다 — 서버가 청취 기록을 지웠다. 비워 두어야
+                // 새 클립을 받기 전에 듣기 버튼이 옛 클립을 틀지 않는다.
+                confirmPreviewAudioUri = null
+                confirmPreviewToken = null
+                confirmPreviewAlreadyConfirmed = false
+                heardTunings = emptySet()
                 confirmPreviewEditing = false
                 confirmPreviewEditText = ""
-                // 수정본을 바로 들려준다(끝까지 들으면 keep 버튼이 다시 열린다).
-                previewRegisteredVoice(voice)
+                // 수정본을 바로 들려준다(현재 톤 — 끝까지 들으면 저장이 다시 열린다).
+                fetchConfirmPreview(voice, TuningListenTarget.Current)
             }.onFailure { error ->
                 if (error is kotlin.coroutines.cancellation.CancellationException) throw error
                 AlarmTalkLog.reportError("Failed to update voice preview text", error)
@@ -1199,17 +1322,21 @@ internal fun VoiceProfileManagementPanel(
         confirmPreviewEditText = ""
         confirmPreviewSaving = false
         confirmPreviewAudioUri = null
+        confirmPreviewToken = null
+        confirmPreviewAlreadyConfirmed = false
+        confirmingGeneration = null
         previewTuning = VoiceTuning.NEUTRAL
         tuningSuggestion = null
         tuningSuggestionVoiceId = null
         tuningSuggestionClipUri = null
-        tuningAnalyzing = false
         tunedReplayJob?.cancel()
         tunedReplayJob = null
         tuningRendering = false
+        tuningListenTarget = null
+        tunedReplayDeferred = false
         sourceF0Job?.cancel()
         sourceF0Job = null
-        heardTuning = null
+        heardTunings = emptySet()
     }
 
     // 등록 요청을 보낸 뒤에도 다이얼로그를 닫지 않고 '만드는 중' 스텝으로 전환한다 —
@@ -1239,11 +1366,14 @@ internal fun VoiceProfileManagementPanel(
                     // 초안이 바뀌었다 — 옛 초안의 늦은 청취 확인이 새 초안의 저장을 열지 않게(Codex #870).
                     confirmPreviewGeneration += 1
                     confirmPreviewCompleted = false
-                    heardTuning = null
+                    heardTunings = emptySet()
                     confirmPreviewText = null
                     confirmPreviewEditing = false
                     confirmPreviewEditText = ""
                     confirmPreviewAudioUri = null
+                    confirmPreviewToken = null
+                    confirmPreviewAlreadyConfirmed = false
+                    tunedReplayDeferred = false
                     previewTuning = VoiceTuning.NEUTRAL
                     tuningSuggestion = null
                     tuningSuggestionVoiceId = null
@@ -1303,14 +1433,14 @@ internal fun VoiceProfileManagementPanel(
         }
     }
 
-    // 미리듣기 스텝 진입 시 문구·오디오를 자동 준비(합성+재생) — 문구가 화면에 뜨고
-    // 끝까지 들으면 '이 목소리로 할게요' 가 열린다.
+    // 미리듣기 스텝 진입 시 문구·오디오를 자동 준비(합성+재생) — 문구가 화면에 뜨고 **현재 톤(추천값)** 으로 저절로
+    // 튼다(톤 카드의 `현재 톤 듣기` 가 트는 중으로 보인다). 끝까지 들으면 '저장하기' 가 열린다.
     LaunchedEffect(currentStep, confirmNewVoice?.id) {
         val voice = confirmNewVoice
         if (currentStep == VoiceRegistrationStep.Preview && voice != null &&
             confirmPreviewText == null && !confirmPreviewBusy && !confirmPreviewSaving
         ) {
-            previewRegisteredVoice(voice)
+            fetchConfirmPreview(voice, TuningListenTarget.Current)
         }
     }
 
@@ -1933,6 +2063,8 @@ internal fun VoiceProfileManagementPanel(
                 when {
                     // 업로드/클론 생성 등 API 호출이 나가는 순간만 잠시 차단(통신 무결성).
                     voiceProfileBusy -> Unit
+                    // 확정 화면에서 서버 일이 도는 동안은 상단바 뒤로가기와 함께 잠근다(`confirmStepLocks`).
+                    currentStep == VoiceRegistrationStep.Preview && confirmLocks.working -> Unit
                     // 결정 구간(만드는 중/미리듣기) — 그냥 닫지 않고 '임시 목소리 삭제' 경고를 띄운다.
                     inDraftDecisionFlow -> draftExitWarningOpen = true
                     else -> closeCreateDialog()
@@ -1989,7 +2121,12 @@ internal fun VoiceProfileManagementPanel(
                             VoiceRegistrationStep.Creating,
                             VoiceRegistrationStep.Prerendering -> null
                         },
-                        backEnabled = !voiceProfileBusy,
+                        // 확정 화면은 잠금표를 따른다(`confirmStepLocks` — 시스템 뒤로가기도 같다).
+                        backEnabled = if (currentStep == VoiceRegistrationStep.Preview) {
+                            !confirmLocks.working
+                        } else {
+                            !voiceProfileBusy
+                        },
                         modifier = Modifier.padding(top = 18.dp),
                     )
 
@@ -2242,21 +2379,22 @@ internal fun VoiceProfileManagementPanel(
                             VoiceRegistrationStep.Preview -> {
                                 val previewVoice = confirmNewVoice
                                 if (previewVoice != null) {
-                                    Text(
-                                        text = stringResource(R.string.voices_confirm_new_title),
-                                        style = MaterialTheme.typography.titleMedium,
-                                        fontWeight = FontWeight.SemiBold,
-                                    )
-                                    // 본문은 **교체일 때만** 한 줄이다(2026-09-29 지시). 이미 등록된
-                                    // 목소리가 있으면 저장은 교체 체크를 켜야만 열리므로(아래 저장
-                                    // 버튼의 `enabled`), 이 화면에서의 저장은 곧 교체다 — 체크 여부로
-                                    // 가르지 않는다(체크할 때마다 맨 위 줄이 생겼다 사라지며 화면이
-                                    // 밀린다). 교체가 아니면 본문 없이 곧바로 미리듣기 카드다.
-                                    // 월 등록 한도 경고는 사용자 승인으로 뺐다 — 남은 횟수는 목소리
-                                    // 탭 머리의 '생성 가능 n/m회' 가 말한다.
-                                    if (replaceTargetVoice != null) {
+                                    // 확정 화면은 위에서부터 제목 · 안내 한 문장 · 문구 카드 · 톤 카드 · (교체면)
+                                    // 교체 한 줄이다(2026-10-08 사용자 — 스펙 voice-and-message §4-1). 공유 설정은
+                                    // 그 아래다.
+                                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                         Text(
-                                            text = stringResource(R.string.voices_confirm_replace_body),
+                                            text = stringResource(R.string.voices_confirm_new_title),
+                                            style = MaterialTheme.typography.titleMedium,
+                                            fontWeight = FontWeight.SemiBold,
+                                        )
+                                        // 제목 바로 아래 안내는 언제나 이 한 문장이다. 예전 이 자리의 '저장하면 이전
+                                        // 목소리는 삭제돼요.' 는 뺐고(교체는 톤 카드 아래 한 줄이 말한다), 문구 카드
+                                        // 아래에 있던 이 안내를 이리로 옮겼다(두 번 말하지 않는다). 월 등록 한도
+                                        // 경고는 사용자 승인으로 뺐다 — 남은 횟수는 목소리 탭 머리의 '생성 가능
+                                        // n/m회' 가 말한다.
+                                        Text(
+                                            text = stringResource(R.string.voices_preview_edit_hint),
                                             style = MaterialTheme.typography.bodyMedium,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         )
@@ -2302,10 +2440,11 @@ internal fun VoiceProfileManagementPanel(
                                                     ) {
                                                         Text(stringResource(R.string.voices_preview_edit_cancel))
                                                     }
-                                                    // 재생성 — 수정한 문구로 저장하고 바로 다시 합성해 들려준다.
+                                                    // 재생성 — 수정한 문구로 저장하고 바로 다시 합성해 들려준다. 서버 일이
+                                                    // 도는 동안(이 저장 포함)은 잠근다(`confirmStepLocks`).
                                                     Button(
                                                         onClick = { savePreviewTextEdit(previewVoice) },
-                                                        enabled = !confirmPreviewSaving && confirmPreviewEditText.isNotBlank(),
+                                                        enabled = !confirmLocks.working && confirmPreviewEditText.isNotBlank(),
                                                         colors = wakerButtonColors(),
                                                         modifier = Modifier.weight(1f),
                                                         shape = WakerButtonShape,
@@ -2329,7 +2468,8 @@ internal fun VoiceProfileManagementPanel(
                                                             confirmPreviewText != null -> "“$confirmPreviewText”"
                                                             confirmPreviewBusy -> stringResource(R.string.voices_preview_text_loading)
                                                             // 자동 준비 실패(잠시 후 재시도 가능한 409 등) — 준비 중이라고
-                                                            // 속이지 않고 다시 듣기로 재시도하게 안내한다.
+                                                            // 속이지 않고 듣기 버튼으로 재시도하게 안내한다(받은 클립이
+                                                            // 없으면 톤 카드의 두 버튼이 서버에서 다시 받는다).
                                                             else -> stringResource(R.string.voices_preview_text_retry_hint)
                                                         },
                                                         modifier = Modifier.weight(1f),
@@ -2341,13 +2481,12 @@ internal fun VoiceProfileManagementPanel(
                                                         },
                                                     )
                                                     Spacer(modifier = Modifier.width(8.dp))
-                                                    // 연필 — 문구 수정 모드로 전환.
+                                                    // 연필 — 문구 수정 모드로 전환. 문구 카드에는 이것뿐이다 — 재생은
+                                                    // 톤 카드의 `원본 듣기`·`현재 톤 듣기` 가 한다(스펙 §4-1). 서버 일이
+                                                    // 도는 동안은 잠근다(`confirmStepLocks`).
                                                     IconButton(
-                                                        onClick = {
-                                                            confirmPreviewEditText = confirmPreviewText.orEmpty()
-                                                            confirmPreviewEditing = true
-                                                        },
-                                                        enabled = confirmPreviewText != null && !confirmPreviewBusy && !confirmPreviewSaving,
+                                                        onClick = { openPreviewTextEditor() },
+                                                        enabled = confirmPreviewText != null && !confirmLocks.working,
                                                         modifier = Modifier.size(36.dp),
                                                     ) {
                                                         Icon(
@@ -2357,64 +2496,49 @@ internal fun VoiceProfileManagementPanel(
                                                             modifier = Modifier.size(20.dp),
                                                         )
                                                     }
-                                                    // 다시 듣기 — 준비된 문구를 다시 재생(합성 실패 시 재시도 겸용).
-                                                    IconButton(
-                                                        onClick = { previewRegisteredVoice(previewVoice) },
-                                                        enabled = !confirmPreviewBusy && !confirmPreviewSaving,
-                                                        modifier = Modifier.size(36.dp),
-                                                    ) {
-                                                        if (confirmPreviewBusy) {
-                                                            CircularProgressIndicator(
-                                                                modifier = Modifier.size(18.dp),
-                                                                strokeWidth = 2.dp,
-                                                            )
-                                                        } else {
-                                                            Icon(
-                                                                imageVector = if (confirmPreviewPlaying) {
-                                                                    Icons.Rounded.Stop
-                                                                } else {
-                                                                    Icons.Rounded.PlayArrow
-                                                                },
-                                                                contentDescription = stringResource(R.string.voices_confirm_new_preview),
-                                                                tint = MaterialTheme.colorScheme.primary,
-                                                                modifier = Modifier.size(22.dp),
-                                                            )
-                                                        }
-                                                    }
                                                 }
                                             }
                                         }
                                     }
-                                    Text(
-                                        text = stringResource(R.string.voices_preview_edit_hint),
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
 
-                                    // 목소리 다듬기 — 손을 떼면 그 높이로 메모리에서 굽고 처음부터 다시 튼다
-                                    // (첫 재생 도중이면 그게 끝난 뒤 — `replayTunedPreviewIfReady`).
+                                    // 톤 조절 — 손을 떼면 그 높이로 메모리에서 굽고 처음부터 다시 튼다(첫 청취 확인
+                                    // 전 재생 도중이면 그게 끝난 뒤 — `replayTunedPreviewIfReady`). 카드 안 하단의
+                                    // `원본 듣기`·`현재 톤 듣기` 가 이 화면의 재생 버튼이다(`onTuningListen`).
                                     VoiceTuningCard(
                                         tuning = previewTuning,
-                                        suggestion = tuningSuggestion?.takeIf {
-                                            tuningSuggestionVoiceId == previewVoice.id
-                                        },
-                                        analyzing = tuningAnalyzing,
-                                        rendering = tuningRendering,
-                                        enabled = !confirmPreviewSaving && !confirmPreviewEditing &&
-                                            !voiceProfileBusy,
+                                        // 서버에서 받는 동안·청취 확인 중에는 잠그지 않는다 — 받는 동안 누른 버튼이 받은
+                                        // 뒤에 튼다. 문구를 고치는 동안과 등록 확정·초안 삭제 중에만 잠근다(잠금표).
+                                        enabled = confirmLocks.toneEnabled,
+                                        listenTarget = tuningListenTarget,
+                                        listenPreparing = !confirmPreviewPlaying,
                                         onTuningChange = { updated -> previewTuning = updated },
                                         onAdjustFinished = { replayTunedPreviewIfReady() },
-                                        onAutoAdjust = {
-                                            tuningSuggestion?.let { suggestion ->
-                                                previewTuning = suggestion
-                                                replayTunedPreviewIfReady()
-                                            }
-                                        },
-                                        onReset = {
-                                            previewTuning = VoiceTuning(source = VoiceTuning.SOURCE_MANUAL)
-                                            replayTunedPreviewIfReady()
-                                        },
+                                        onListen = { target -> onTuningListen(previewVoice, target) },
                                     )
+
+                                    // 교체 한 줄 — 톤 카드 바로 아래. **이미 등록된 목소리가 있을 때만** 낸다 — 그때 이
+                                    // 화면의 저장은 언제나 교체다(2026-10-08 사용자: 체크 상자·설명 없이 제목 크기의 이
+                                    // 한 줄만). 저장하면 `replace_existing` 을 보낸다(아래 저장 버튼). 교체가 실제로 하는
+                                    // 일(서버가 그 프로필 행을 **재사용**해 다른 알람은 새 목소리로 울고, 직접 입력 문구로
+                                    // 만든 알람만 기본 목소리로 바뀐다)은 `MainViewModel.promoteVoiceDraft` 가 맡는다.
+                                    if (replaceTargetVoice != null) {
+                                        Text(
+                                            text = stringResource(R.string.voices_confirm_replace_body),
+                                            style = MaterialTheme.typography.titleMedium,
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                        )
+                                    }
+
+                                    // 이 화면의 오류(재생·청취 확인·문구 저장 실패)는 여기 — 교체 줄 바로 아래, 공유 설정
+                                    // 위에 오류 색으로 둔다(iOS `VoicePreviewConfirmView` 와 같은 자리·색). 다른 단계처럼
+                                    // 본문 맨 아래에 흐린 글자로 두면 공유 설정 아래로 밀려 눈에 띄지 않는다.
+                                    localMessage?.let { message ->
+                                        Text(
+                                            text = message,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.error,
+                                        )
+                                    }
 
                                     // ⚠ **공유 설정은 여기(확정 단계)에 둔다**(2026-08-13 지시).
                                     // 앞 단계에서 물으면 아직 **초안**일 뿐인 것에 공유 여부를
@@ -2434,58 +2558,13 @@ internal fun VoiceProfileManagementPanel(
                                             modifier = Modifier.padding(top = 4.dp),
                                         )
                                         ShareVoiceToggleCard(
-                                            enabled = true,
+                                            // 서버 일이 도는 동안은 잠근다(잠금표) — 등록 확정에는 이 값이 실려 나간다.
+                                            enabled = !confirmLocks.working,
                                             checked = shareVoice,
                                             title = stringResource(R.string.voices_sharing_shared_title),
                                             description = stringResource(R.string.voices_sharing_shared_desc_enabled),
                                             onCheckedChange = { shareVoice = it },
                                         )
-                                    }
-
-                                    // 교체 안내 + 체크. **이미 등록된 목소리가 있을 때만** 낸다 —
-                                    // 없으면 그냥 저장되므로 체크를 보여 줄 이유가 없다.
-                                    //
-                                    // ⚠ 문구가 곧 계약이다. 체크하면 실제로 이 두 가지가 일어난다:
-                                    //  - 이전 목소리는 목록에서 사라진다(서버는 그 행을 지우지 않고
-                                    //    **재사용**한다 — 지우면 그 목소리를 쓰던 알람이 전부 기본
-                                    //    목소리(미나)로 바뀐다).
-                                    //  - 직접 입력 문구로 만든 알람만 기본 목소리(미나)로 바뀐다. 나머지
-                                    //    알람은 그대로 살아 새 목소리로 운다.
-                                    replaceTargetVoice?.let { targetVoice ->
-                                        OutlinedCard(
-                                            onClick = { replaceExistingChecked = !replaceExistingChecked },
-                                            enabled = !voiceProfileBusy && !confirmPreviewSaving,
-                                            shape = WakerPanelShape,
-                                            border = wakerCardBorder(),
-                                        ) {
-                                            Row(
-                                                modifier = Modifier
-                                                    .fillMaxWidth()
-                                                    .padding(14.dp),
-                                                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                                            ) {
-                                                AlarmTalkCheckbox(
-                                                    checked = replaceExistingChecked,
-                                                    onCheckedChange = { checked -> replaceExistingChecked = checked },
-                                                    enabled = !voiceProfileBusy && !confirmPreviewSaving,
-                                                )
-                                                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                                    Text(
-                                                        text = stringResource(
-                                                            R.string.voices_replace_existing_title,
-                                                            targetVoice.name,
-                                                        ),
-                                                        style = MaterialTheme.typography.bodyMedium,
-                                                        fontWeight = FontWeight.SemiBold,
-                                                    )
-                                                    Text(
-                                                        text = stringResource(R.string.voices_replace_existing_desc),
-                                                        style = MaterialTheme.typography.bodySmall,
-                                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                    )
-                                                }
-                                            }
-                                        }
                                     }
                                 }
                             }
@@ -2494,7 +2573,9 @@ internal fun VoiceProfileManagementPanel(
                         if (createPreparing) {
                             VoiceProgressMessage(stringResource(R.string.voices_preparing_audio))
                         }
-                        if (localMessage != null) {
+                        // 확정 화면은 자기 자리(교체 줄 아래)에 오류를 그린다 — 여기서 한 번 더 그리지 않는다.
+                        val previewShowsOwnMessage = currentStep == VoiceRegistrationStep.Preview && confirmNewVoice != null
+                        if (localMessage != null && !previewShowsOwnMessage) {
                             MutedText(localMessage.orEmpty())
                         }
                         Spacer(modifier = Modifier.height(4.dp))
@@ -2591,7 +2672,8 @@ internal fun VoiceProfileManagementPanel(
                             VoiceRegistrationStep.Preview -> {
                                 TextButton(
                                     onClick = { confirmNewVoice?.let { onDeleteVoiceDraft(it.id) } },
-                                    enabled = !voiceProfileBusy && !confirmPreviewSaving,
+                                    // 뒤로가기와 같은 일(초안 삭제)이라 같은 잠금을 쓴다(`confirmStepLocks`).
+                                    enabled = !confirmLocks.working,
                                 ) {
                                     // 지우는 동안은 **이 버튼**이 진행을 말한다 — 옆의 저장 버튼이
                                     // 아니라(위 주석 참조).
@@ -2611,27 +2693,28 @@ internal fun VoiceProfileManagementPanel(
                                 Button(
                                     onClick = {
                                         confirmNewVoice?.let {
+                                            // **끝까지 들은** 높이만 등록 확정 요청에 싣는다(교체 등록도 같다) — 서버가 이
+                                            // 목소리로 만드는 알람 소리에 굽는다(스펙 §4-3). 저장은 지금 막대 값을 끝까지
+                                            // 들었을 때만 열리지만, 누르는 순간 값이 바뀌었으면 듣지 않은 값이니 보내지 않는다.
+                                            val pitch = previewTuning.heardKey()
+                                            if (pitch !in heardTunings) return@let
                                             promotedForPrerenderId = it.id
-                                            // **끝까지 들은** 높이를 등록 확정 요청에 실어 보낸다(교체 등록도 같다) —
-                                            // 서버가 이 목소리로 만드는 알람 소리에 굽는다(스펙 §4-3). 아래 저장 조건이
-                                            // 들은 높이와 지금 높이가 같을 때만 열리므로 둘은 같은 값이다.
                                             onPromoteVoiceDraft(
                                                 it.id,
-                                                replaceExistingChecked,
+                                                // 이미 등록된 목소리가 있으면 이 저장은 **언제나 교체**다 — 체크가 없다
+                                                // (2026-10-08 사용자, 화면에는 교체 한 줄이 보인다). 없으면 보내지 않는다.
+                                                replaceTargetVoice != null,
                                                 shareVoice && canShareVoice,
-                                                heardTuning?.normalized()?.pitchSemitones ?: 0f,
+                                                pitch,
                                             )
                                         }
                                     },
-                                    // ⚠ 이미 등록된 목소리가 있으면 **교체에 동의해야** 저장이 열린다.
-                                    // 서버가 어차피 VOICE_LIMIT_REACHED 로 막으므로, 열어 두면 눌러도
-                                    // 실패하는 버튼이 된다 — 무엇을 해야 저장되는지도 알 수 없다.
                                     // ⚠ **지금 높이를 끝까지 들어야** 저장이 열린다 — 굽거나 트는 중에 저장하면 듣지 않은
-                                    // 값이 알람에 실린다(Codex #870).
-                                    enabled = confirmPreviewCompleted && !voiceProfileBusy &&
-                                        !tuningRendering && heardTuning?.sameValuesAs(previewTuning) == true &&
-                                        !confirmPreviewEditing && !confirmPreviewSaving &&
-                                        (replaceTargetVoice == null || replaceExistingChecked),
+                                    // 값이 알람에 실린다(Codex #870). `원본 듣기` 를 끝까지 들었으면 0 을 들은 것이다.
+                                    // 서버 일이 도는 동안·문구를 고치는 동안은 잠근다(`confirmStepLocks`).
+                                    enabled = !confirmLocks.working && !confirmPreviewEditing &&
+                                        confirmPreviewCompleted && !tuningRendering &&
+                                        tuningHeardToEnd(previewTuning, heardTunings),
                                     modifier = Modifier.weight(1f),
                                     shape = WakerButtonShape,
                                 ) {

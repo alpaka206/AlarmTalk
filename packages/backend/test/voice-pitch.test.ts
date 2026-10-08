@@ -56,8 +56,11 @@ describe('행에서 높이 읽기(voicePitchFromRow)', () => {
     expect(voicePitchFromRow({})).toBeNull(); // 배포 창 — 컬럼이 아직 없다
     expect(voicePitchFromRow({ pitch_semitones: null })).toBeNull();
     expect(voicePitchFromRow({ pitch_semitones: 0 })).toBeNull();
-    expect(voicePitchFromRow({ pitch_semitones: -6.5 })).toBeNull();
-    expect(voicePitchFromRow({ pitch_semitones: 3.5 })).toBeNull();
+    expect(voicePitchFromRow({ pitch_semitones: -10.5 })).toBeNull();
+    expect(voicePitchFromRow({ pitch_semitones: 6.5 })).toBeNull();
+    // 2026-10-08 에 넓힌 범위의 끝값은 읽는다.
+    expect(voicePitchFromRow({ pitch_semitones: -10, pitch_model_id: 'm' })).toEqual({ semitones: -10, modelId: 'm' });
+    expect(voicePitchFromRow({ pitch_semitones: 6, pitch_model_id: 'm' })).toEqual({ semitones: 6, modelId: 'm' });
     expect(voicePitchFromRow({ pitch_semitones: -1.25 })).toBeNull();
   });
 

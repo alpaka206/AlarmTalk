@@ -171,7 +171,7 @@ internal fun MainViewModel.createVoiceProfiles(
     //
     // ⚠ **이미 목소리가 있다고 막지 않는다**(2026-08-12 확정).
     // 슬롯이 찼으면 **교체**로 간다 — 초안을 만들어 들어보고, 마음에 들 때 등록 확정
-    // 화면에서 "기존 목소리를 교체할까요" 를 묻는다(`replaceExistingChecked`).
+    // 화면에서 저장하면 그 목소리를 교체한다(화면은 교체 한 줄로 알린다 — `registrationReplaceTarget`).
     // 여기서 막으면 그 화면에 도달할 수 없어 교체가 죽은 코드가 된다.
     //
     // ⚠ **남은 초안으로도 막지 않는다**(2026-08-25 지시. 그전에는 `pendingVoiceDraft != null`
@@ -303,6 +303,27 @@ internal fun MainViewModel.createVoiceProfiles(
     return true
 }
 
+/**
+ * 등록 확정(`PATCH /voice/:id` 의 `is_draft: false`) 바디. 교체면 `replace_existing: true` 를, 0 이 아닌 높이면
+ * `pitch_semitones` 를 싣고 — 아니면 키를 아예 보내지 않아 그 기능 이전과 같은 바디다.
+ *
+ * 교체 여부는 확정 화면이 정한다: 이미 등록된 목소리가 있으면 그 화면의 저장은 **언제나 교체**다(2026-10-08 — 체크가
+ * 없다, `registrationReplaceTarget`). 회귀 테스트 `VoicePreviewConfirmRulesTest`.
+ */
+internal fun voiceDraftPromotionRequest(
+    replaceExisting: Boolean,
+    isShared: Boolean,
+    language: String,
+    pitchSemitones: Float,
+): VoiceProfileUpdateRequest = VoiceProfileUpdateRequest(
+    isShared = isShared,
+    isDraft = false,
+    language = language,
+    replaceExisting = if (replaceExisting) true else null,
+    // 0 은 원래 소리다 — 키를 아예 보내지 않아 높이 이전과 같은 요청이 된다.
+    pitchSemitones = pitchSemitones.takeIf { it != 0f },
+)
+
 internal fun MainViewModel.promoteVoiceDraft(
     profileId: String,
     replaceExisting: Boolean = false,
@@ -314,24 +335,23 @@ internal fun MainViewModel.promoteVoiceDraft(
     pitchSemitones: Float = 0f,
 ) {
     val session = authSession ?: return
-    // 0 은 원래 소리다 — 키를 아예 보내지 않아 높이 이전과 같은 요청이 된다.
-    val sentPitch = pitchSemitones.takeIf { it != 0f }
     viewModelScope.launch {
         if (voiceProfileBusy) return@launch
         voiceProfileBusy = true
+        val request = voiceDraftPromotionRequest(
+            replaceExisting = replaceExisting,
+            isShared = isShared,
+            language = deviceAppVoiceLanguage(),
+            pitchSemitones = pitchSemitones,
+        )
+        val sentPitch = request.pitchSemitones
         // ⚠ `.onSuccess { }` 로 감싸지 않는다 — 아래 강등은 **정지 함수**이고, 성공 갈래를
         // 그대로 코루틴 본문에 두는 편이 순서를 읽기도 쉽다.
         val result = runCatching {
             api.updateVoiceProfile(
                 authorization = AlarmTalkApiClient.bearer(session.token),
                 id = profileId,
-                request = VoiceProfileUpdateRequest(
-                    isShared = isShared,
-                    isDraft = false,
-                    language = deviceAppVoiceLanguage(),
-                    replaceExisting = if (replaceExisting) true else null,
-                    pitchSemitones = sentPitch,
-                ),
+                request = request,
             )
         }
         val profile = result.getOrNull()?.profile
@@ -358,8 +378,9 @@ internal fun MainViewModel.promoteVoiceDraft(
             pendingVoiceDraft = null
             // ⚠ **교체한 기기에서 곧바로 내린다 — 목록에 올리기 전에.** 교체는 옛 프로필 행을
             // 그대로 재사용하므로(id 가 같다) 어떤 접근권 재확인으로도 이 알람들은 잡히지
-            // 않는다 — 놔두면 화면이 "직접 입력으로 해둔 알람들도 기본 알람으로 설정됩니다"
-            // 라고 약속하고 동의까지 받은 바로 그 기기에서 **지운 목소리가 계속 울린다**.
+            // 않는다 — 놔두면 확정 화면이 "이전에 저장한 목소리는 삭제하고 이 목소리로 등록할게요"
+            // 라고 알리고 저장한 바로 그 기기에서 **지운 목소리가 계속 울린다**. 별도 안내는 띄우지
+            // 않는다(스펙 voice-and-message §4-1).
             //
             // ⚠ **순서가 중요하다.** 목록에 먼저 올리면 그 순간부터 새 목소리를 고를 수 있는데,
             // 강등은 프로필 id 로만 대상을 고르므로 그 사이에 만든 **새 목소리 알람까지**
