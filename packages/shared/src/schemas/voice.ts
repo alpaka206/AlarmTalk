@@ -24,6 +24,30 @@ export const VoicePreviewTextUpdateSchema = z.object({
 export type VoicePreviewTextUpdate = z.infer<typeof VoicePreviewTextUpdateSchema>;
 
 /**
+ * 목소리 높이(반음) — 등록 미리듣기에서 사용자가 막대로 고른 값이다(`docs/spec/voice-and-message.md` §4-3).
+ *
+ * 클론이 실제 목소리보다 높거나 낮게 나올 때 바로잡는 값이라, **등록 확정 때 한 번** 정하고(`PATCH /voice/:id` 의
+ * `pitch_semitones`, 초안 → 정식일 때만) 서버가 그 목소리로 만드는 모든 알람 소리(프리셋·직접 입력)에 굽는다 —
+ * 공유받은 가족·가족 알람 수신자·다른 기기도 같은 소리를 듣는다. 높이만 바꾸는 몸집 유지 TD-PSOLA 다
+ * (`@alarmtalk/voice` 의 `shiftVoicePitch`, 두 앱과 같은 셈). 0 은 원래 소리이고, 이 기능 이전에 등록한 목소리와
+ * 값을 보내지 않는 앱(1.2.10)은 0 이다.
+ */
+export const VOICE_PITCH_MIN_SEMITONES = -6;
+export const VOICE_PITCH_MAX_SEMITONES = 3;
+/** 막대 눈금 — 앱 막대와 같아야 한다. */
+export const VOICE_PITCH_STEP_SEMITONES = 0.5;
+
+export const VoicePitchSemitonesSchema = z
+  .number()
+  .finite()
+  .min(VOICE_PITCH_MIN_SEMITONES)
+  .max(VOICE_PITCH_MAX_SEMITONES)
+  .refine((value) => Number.isInteger(value / VOICE_PITCH_STEP_SEMITONES), {
+    message: `Pitch must be a multiple of ${VOICE_PITCH_STEP_SEMITONES} semitones`,
+  });
+export type VoicePitchSemitones = z.infer<typeof VoicePitchSemitonesSchema>;
+
+/**
  * 목소리의 결(경쾌/차분) — ⚠ **1.2.10 앱 호환용으로만 남은 계약이다.**
  * 1.2.10 만 등록 '세부 정보' 단계에서 '목소리 느낌'(자동/경쾌/차분)을 고르게 하고 이 값을 보낸다
  * (`POST voice/clone` 의 `voiceEnergy`, `PATCH voice/:id/relationship` 의 `voice_energy`, '' = 자동).

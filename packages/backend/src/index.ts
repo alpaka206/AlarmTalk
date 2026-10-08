@@ -21,6 +21,11 @@ import { securityHeadersMiddleware } from './middleware/securityHeaders';
 import { sentryMiddleware } from './middleware/sentry';
 import { errorCodeMiddleware } from './middleware/errorCode';
 import { Toucan } from 'toucan-js';
+// MP3 인코더(LAME → WASM). 워커는 **미리 컴파일된 모듈만** 쓸 수 있어(실행 중 컴파일 금지) `.wasm` 을 정적으로
+// import 해 넘긴다 — wrangler 가 `WebAssembly.Module` 로 묶는다. 목소리 높이를 구운 소리를 MP3 로 만든다(`lib/voice-pitch.ts`).
+// 테스트(Node)는 `vitest.config.ts` 의 alias 가 같은 파일을 컴파일해 넘긴다.
+import mp3EncoderWasm from 'wasm-media-encoders/wasm/mp3';
+import { registerMp3EncoderModule } from './lib/voice-pitch';
 import { getDB, initDB } from './lib/db';
 import { PERSONAL_PROMO_END_CRON } from './lib/personal-promo';
 import { timingSafeEqualStr } from './lib/timing-safe-equal';
@@ -48,6 +53,8 @@ import adminRoutes from './routes/admin';
 const USAGE_EVENT_RETENTION_DAYS = 365;
 /** cron 한 회차가 길어지지 않게 묶어 지운다. 남으면 다음 회차가 이어서 지운다. */
 const USAGE_EVENT_PRUNE_BATCH = 500;
+
+registerMp3EncoderModule(mp3EncoderWasm);
 
 const app = new Hono<AppEnv>();
 

@@ -18,6 +18,7 @@ import {
   UnsupportedVoiceProviderError,
 } from '../lib/voice-provider';
 import { recloneEvictedVoiceProfile } from '../lib/voice-recover';
+import { voicePitchFromRow } from '../lib/voice-pitch';
 import {
   AlarmTextPreparationInvalidError,
   AlarmTextTranslationUnavailableError,
@@ -297,6 +298,9 @@ async function findUsableVoiceProfile(
   userPk: string,
   voiceProfileId: string,
 ): Promise<Record<string, unknown> | null> {
+  // ⚠ 세 갈래 모두 행 전체(`*`·`vp.*`)를 읽는다 — 목소리 높이(#128, `voicePitchFromRow`)·결(#122)처럼 합성에 쓰는
+  //   새 컬럼을 배포 창에도 안전하게 넘긴다. 열을 골라 적지 말 것: 공유 갈래에서 높이가 빠지면 가족이 주인이 고른
+  //   높이 대신 원래 소리를 듣는다(실패로 보이지도 않는다).
   const owned = await db.execute({
     sql: 'SELECT * FROM voice_profiles WHERE id = ? AND user_id IN (?, ?) AND deleted_at IS NULL',
     args: [voiceProfileId, userPk, userLoginId],
@@ -979,6 +983,10 @@ tts.post('/generate', async (c) => {
       messageText === normalizeAlarmTextWithoutTags(synthesisText)
         ? synthesisText
         : `${synthesisText}\n[display] ${encodeURIComponent(messageText)}`;
+    // 그 목소리의 등록 높이 — 서버가 굽는다(스펙 §4-3). `vp` 는 `SELECT *`·`vp.*` 라 공유 목소리면 **주인의** 값이고,
+    // 배포 창(#128 전)에는 컬럼이 없어 null 이다(그때는 아무 목소리도 높이를 가질 수 없다). 초안·시스템 목소리는
+    // 값이 없어 원래 소리다 — 초안 미리듣기는 원래 소리여야 한다(앱이 그 위에서 높이를 고른다).
+    const voicePitch = voicePitchFromRow(vp);
     const buildPreparedAttempts = async (voiceIdForSynthesis: string | null | undefined) => {
       const attempts = createSynthesisAttempts({
         env: c.env,
@@ -987,6 +995,7 @@ tts.post('/generate', async (c) => {
         },
         text: synthesisText,
         language: synthesisLanguage,
+        pitch: voicePitch,
       });
       return Promise.all(
         attempts.map(async (attempt) => {
@@ -1005,6 +1014,7 @@ tts.post('/generate', async (c) => {
             //   나누지 않으므로(`anyUser` 가 false) 잃는 적중이 없다. 초안 미리듣기는 범위 없이 둔다(초안 목소리는
             //   그 사람 것뿐이고, 스톡 키는 `STOCK_TTS_CACHE_SCOPE` 로 갈려 있다).
             scope: isManualGeneration ? manualTtsCacheScope(userPk) : undefined,
+            pitchSemitones: attempt.pitchSemitones,
           });
           return { attempt, cacheKey };
         }),

@@ -23,6 +23,7 @@ import {
   speechStyleResultTargetArgs,
 } from '../src/routes/voice-profile';
 import { resolvePersonalPromo } from '../src/lib/personal-promo';
+import { TTS_MODEL_ID } from '../src/lib/tts-model';
 
 // 기간 한정 개인 플랜 꺼짐 — 이 파일은 평상 규칙(원시 plan)을 본다.
 const PROMO_OFF = resolvePersonalPromo({});
@@ -207,6 +208,40 @@ describe('목소리 교체 — 제자리 덮어쓰기', () => {
     } finally {
       db.close();
       for (const suffix of ['', '-shm', '-wal']) rmSync(`${path}${suffix}`, { force: true });
+    }
+  });
+
+  // **교체는 새 목소리다**(2026-10-07 사용자) — 옛 목소리의 높이를 물려받지 않고, 새로 고른 높이로 언제나 덮어쓴다.
+  // 그대로 두면 새 목소리의 프리셋 21개가 **옛 목소리에 맞춰 고른 높이**로 다시 구워진다(스펙 voice-and-message §4-3).
+  it('교체는 새로 고른 높이와 지금 모델을 적고, 안 고르면 옛 높이를 비운다', async () => {
+    for (const [chosen, expected] of [[-1.5, -1.5], [undefined, null], [0, null]] as const) {
+      const { db, path } = await replacementDb();
+      try {
+        await db.execute(
+          "UPDATE voice_profiles SET pitch_semitones = -3, pitch_model_id = 'eleven_v4_turbo' WHERE id = 'vp1'",
+        );
+        const result = await replaceVoiceInPlace(db as never, {
+          targetUserIds: ['u1'],
+          draftProfileId: 'vp2',
+          language: 'ko',
+          ownerPk: 'u1',
+          loginId: 'g1',
+          promo: PROMO_OFF,
+          ...(chosen === undefined ? {} : { pitchSemitones: chosen }),
+        });
+        expect(result.ok, String(chosen)).toBe(true);
+        const row = await db.execute("SELECT pitch_semitones, pitch_model_id FROM voice_profiles WHERE id = 'vp1'");
+        if (expected === null) {
+          expect(row.rows[0]!.pitch_semitones, String(chosen)).toBeNull();
+          expect(row.rows[0]!.pitch_model_id, String(chosen)).toBeNull();
+        } else {
+          expect(Number(row.rows[0]!.pitch_semitones)).toBe(expected);
+          expect(String(row.rows[0]!.pitch_model_id)).toBe(TTS_MODEL_ID);
+        }
+      } finally {
+        db.close();
+        for (const suffix of ['', '-shm', '-wal']) rmSync(`${path}${suffix}`, { force: true });
+      }
     }
   });
 

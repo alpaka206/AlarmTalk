@@ -9,6 +9,10 @@ import {
   clampDisplayName,
   isValidEmailFormat,
   normalizeEmail,
+  VoicePitchSemitonesSchema,
+  VOICE_PITCH_MIN_SEMITONES,
+  VOICE_PITCH_MAX_SEMITONES,
+  VOICE_PITCH_STEP_SEMITONES,
 } from '../src/index.js';
 
 /**
@@ -251,5 +255,26 @@ describe('DisplayNameSchema — 양방향 표식', () => {
   it('삽입·격리뿐 아니라 방향 표식(ALM/LRM/RLM)도 거른다', () => {
     // U+202A~ 만 막으면 표식만으로 같은 스푸핑이 된다(Codex #672 P2).
     expect(DisplayNameSchema.parse('a\u061Cb\u200Ec\u200Fd')).toBe('abcd');
+  });
+});
+
+describe('VoicePitchSemitonesSchema', () => {
+  // 앱 막대와 같은 범위·눈금이다(안드로이드 `VoiceTuning.PITCH_RANGE`·`STEP`, iOS `VoiceTuning.pitchRange`·`step`).
+  it('범위와 눈금은 앱 막대와 같다', () => {
+    expect(VOICE_PITCH_MIN_SEMITONES).toBe(-6);
+    expect(VOICE_PITCH_MAX_SEMITONES).toBe(3);
+    expect(VOICE_PITCH_STEP_SEMITONES).toBe(0.5);
+  });
+
+  it('−6…+3 의 0.5 눈금만 받는다', () => {
+    for (const value of [-6, -5.5, -1.5, 0, 0.5, 2.5, 3]) {
+      expect(VoicePitchSemitonesSchema.safeParse(value).success, String(value)).toBe(true);
+    }
+    for (const value of [-6.5, 3.5, -1.25, 0.1, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(VoicePitchSemitonesSchema.safeParse(value).success, String(value)).toBe(false);
+    }
+    for (const value of ['-1.5', null, undefined, {}]) {
+      expect(VoicePitchSemitonesSchema.safeParse(value).success, String(value)).toBe(false);
+    }
   });
 });

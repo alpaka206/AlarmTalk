@@ -1103,6 +1103,56 @@ describe('POST /tts/generate — edge cases', () => {
     expect(cacheInsert!.args).toContain(body.cache_key);
   });
 
+  // 목소리 높이(스펙 voice-and-message §4-3) — 등록 때 고른 높이가 있는 목소리는 직접 입력도 서버가 굽는다.
+  // PCM 을 받아(손실 압축을 한 번만 거친다) 높이를 바꾸고 MP3 로 돌려준다 — 앱은 받은 파일을 그대로 튼다.
+  it('높이가 있는 목소리의 직접 입력은 PCM 을 받아 굽고 MP3 로 돌려주며, 캐시 키가 원래 소리와 다르다', async () => {
+    const { registerMp3EncoderModule, PITCH_PCM_OUTPUT_FORMAT } = await import('../src/lib/voice-pitch');
+    const { default: mp3EncoderWasm } = await import('wasm-media-encoders/wasm/mp3');
+    registerMp3EncoderModule(mp3EncoderWasm);
+    const pcm = new Uint8Array(44_100); // 0.5초 16-bit PCM
+    const view = new DataView(pcm.buffer);
+    for (let i = 0; i < pcm.length / 2; i++) {
+      view.setInt16(i * 2, Math.round(12_000 * Math.sin((2 * Math.PI * 170 * i) / 44_100)), true);
+    }
+
+    async function generate(voiceRow: Record<string, unknown>, providerAudio: ArrayBuffer) {
+      mockDB.reset();
+      mockTextToSpeech.mockReset();
+      mockTextToSpeech.mockResolvedValue(providerAudio);
+      mockDB.pushResult([{ plan: 'plus' }]);
+      mockDB.pushResult([voiceRow]);
+      mockDB.pushResult([]); // cache lookup (miss)
+      pushManualQuotaFlow();
+      pushPublicationVoice();
+      mockDB.pushResult([], 1);
+      mockDB.pushResult([], 1);
+      const res = await reqWithEnv(
+        buildApp(),
+        jsonReq('POST', '/tts/generate', { voice_profile_id: V1, text: '일어날 시간이야' }),
+      );
+      expect(res.status).toBe(201);
+      return res.json();
+    }
+
+    const baseRow = { id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' };
+    const { TTS_MODEL_ID } = await import('../src/lib/tts-model');
+    const tuned = await generate({ ...baseRow, pitch_semitones: -1.5, pitch_model_id: TTS_MODEL_ID }, pcm.buffer);
+    expect(mockTextToSpeech).toHaveBeenCalledWith('el-voice-1', expect.any(String), expect.objectContaining({
+      output_format: PITCH_PCM_OUTPUT_FORMAT,
+    }));
+    const bytes = Uint8Array.from(atob(tuned.audio_base64 as string), (ch) => ch.charCodeAt(0));
+    expect(bytes[0]).toBe(0xff); // MPEG 프레임 동기
+    expect(bytes[1]! & 0xe0).toBe(0xe0);
+    expect(tuned.audio_format).toBe('mp3');
+
+    const plain = await generate(baseRow, new Uint8Array([72, 101]).buffer);
+    // 높이 없는 목소리는 예전 호출 그대로다(기본 MP3).
+    expect(mockTextToSpeech).toHaveBeenCalledWith('el-voice-1', expect.any(String), { language_code: 'ko' });
+    expect(tuned.cache_key).toBeDefined();
+    expect(plain.cache_key).toBeDefined();
+    expect(tuned.cache_key).not.toBe(plain.cache_key);
+  });
+
   it('generated audio cache hit skips provider calls', async () => {
     const objectKey = 'generated-tts/user-1/cached.mp3';
     const r2 = createMockR2Bucket({ [objectKey]: new Uint8Array([67, 72]) });
