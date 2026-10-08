@@ -58,14 +58,15 @@ data class VoiceProfileUpdateRequest(
     // draft→official 승격 시 사전렌더할 앱 언어(서버는 promote 시점에만 사용, 미전송 시 'ko').
     val language: String? = null,
     /**
-     * 등록 확정 화면의 **교체 체크**. 이미 등록된 목소리가 있어 한도에 걸릴 때, 막는 대신
+     * 등록 확정의 **교체**. 이미 등록된 목소리가 있어 한도에 걸릴 때, 막는 대신
      * **그 목소리 자리에 이 목소리를 앉힌다**(서버가 프로필 행을 지우지 않고 재사용한다 —
-     * 지우면 그 목소리를 쓰던 알람이 전부 기본 목소리(미나)로 바뀐다).
+     * 지우면 그 목소리를 쓰던 알람이 전부 기본 목소리(미나)로 바뀐다). 확정 화면은 묻지 않는다 —
+     * 이미 등록된 목소리가 있으면 그 화면의 저장은 언제나 교체다(`voiceDraftPromotionRequest`).
      * null 이면 키가 아예 안 나가서 서버는 지금까지처럼 한도로 막는다.
      */
     @SerializedName("replace_existing") val replaceExisting: Boolean? = null,
     /**
-     * 등록 미리듣기에서 **끝까지 들은** 목소리 높이(반음, −6…+3·0.5 눈금) — 등록 확정(`is_draft: false`, 교체 포함)
+     * 등록 미리듣기에서 **끝까지 들은** 목소리 높이(반음, −10…+6·0.5 눈금) — 등록 확정(`is_draft: false`, 교체 포함)
      * 때만 싣는다. 서버가 그 목소리로 만드는 모든 알람 소리에 굽는다(스펙 voice-and-message §4-3).
      * null 이면 키가 아예 안 나가서(0 = 원래 소리) 높이 이전과 같은 요청이다. 등록 확정이 아닌 요청에 실으면
      * 서버가 409 `VOICE_PITCH_LOCKED`, 범위·눈금 밖이면 400 `INVALID_VOICE_PITCH` 로 거절한다.

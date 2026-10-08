@@ -76,7 +76,8 @@ describe('목소리 높이 바꾸기(TD-PSOLA)', () => {
   it('바꾼 소리의 크기를 원래 소리와 맞추고 봉우리는 −0.2 dBFS 아래로 둔다', () => {
     const x = vibratoTone();
     const original = integratedLoudness(x, 44_100)!;
-    for (const semitones of [-6, -1.5, 3]) {
+    // 범위 끝(−10·+6 — 2026-10-08 에 넓혔다)까지 같은 약속을 지킨다.
+    for (const semitones of [-10, -6, -1.5, 3, 6]) {
       const y = shiftVoicePitch(x, 44_100, semitones);
       const loud = integratedLoudness(y, 44_100)!;
       let peak = 0;

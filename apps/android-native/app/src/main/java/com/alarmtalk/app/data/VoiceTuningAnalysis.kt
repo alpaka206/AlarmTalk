@@ -20,7 +20,7 @@ import kotlin.math.tan
  *  - 음량: ITU-R BS.1770 K-가중(셸프 + RLB 고역 통과) → 400 ms 블록(100 ms 간격)의 평균 제곱 →
  *    절대 게이트 −70 LUFS 만 건 **근사** 통합 음량. 상대 게이트(−10 LU)는 두지 않는다.
  *  - 추천: 높이 = −(미리듣기 F0 / 등록 녹음 F0 의 반음 차, 0.5 단위), 1.5 반음 미만이면 0,
- *    −6…+3 으로 자름.
+ *    막대 범위(`VoiceTuning.PITCH_RANGE`, −10…+6)로 자름.
  *  - 음량은 추천하지 않는다 — 높이를 바꾼 소리를 원래 클립 크기로 되맞출 때만 쓴다(`VoicePitchShifter`).
  */
 object VoiceTuningAnalysis {

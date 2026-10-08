@@ -122,10 +122,14 @@ class VoiceTuningAnalysisTest {
         assertEquals(-1.5f, VoiceTuningAnalysis.suggestedPitchSemitones(200.0 * Math.pow(2.0, 1.3 / 12), 200.0), 0f)
         // 1.2 반음 차 → 1.0 으로 반올림 → 데드밴드 안 → 0.
         assertEquals(0f, VoiceTuningAnalysis.suggestedPitchSemitones(200.0 * Math.pow(2.0, 1.2 / 12), 200.0), 0f)
-        // 7 반음 높다 → −7 → −6 으로 자른다.
-        assertEquals(-6f, VoiceTuningAnalysis.suggestedPitchSemitones(300.0, 200.0), 0f)
-        // 5 반음 낮다 → +5 → +3 으로 자른다.
-        assertEquals(3f, VoiceTuningAnalysis.suggestedPitchSemitones(150.0, 200.0), 0f)
+        // 7 반음 높다 → −7. 2026-10-08 전(−6…+3)에는 −6 으로 잘렸다 — v4 Turbo 가 8반음 넘게 올리는 경우가 있어 넓혔다.
+        assertEquals(-7f, VoiceTuningAnalysis.suggestedPitchSemitones(300.0, 200.0), 0f)
+        // 12 반음(한 옥타브) 높다 → −12 → −10 으로 자른다.
+        assertEquals(-10f, VoiceTuningAnalysis.suggestedPitchSemitones(400.0, 200.0), 0f)
+        // 5 반음 낮다 → +5(예전에는 +3 으로 잘렸다).
+        assertEquals(5f, VoiceTuningAnalysis.suggestedPitchSemitones(150.0, 200.0), 0f)
+        // 12 반음 낮다 → +12 → +6 으로 자른다.
+        assertEquals(6f, VoiceTuningAnalysis.suggestedPitchSemitones(100.0, 200.0), 0f)
         // 2 반음 낮다 → +2.
         assertEquals(2f, VoiceTuningAnalysis.suggestedPitchSemitones(200.0 / Math.pow(2.0, 2.0 / 12), 200.0), 0f)
         // 등록 녹음이 없으면 높이는 건드리지 않는다.
@@ -166,14 +170,40 @@ class VoiceTuningAnalysisTest {
      */
     @Test
     fun normalizedSnapsToTheServerGrid() {
-        assertEquals(VoiceTuning(pitchSemitones = -6f), VoiceTuning(pitchSemitones = -9f).normalized())
+        assertEquals(VoiceTuning(pitchSemitones = -10f), VoiceTuning(pitchSemitones = -12f).normalized())
+        // 범위 안 — 예전(−6…+3)에는 잘렸던 값이 그대로 남는다.
+        assertEquals(VoiceTuning(pitchSemitones = -9f), VoiceTuning(pitchSemitones = -9f).normalized())
         assertEquals(
-            VoiceTuning(pitchSemitones = 3f, source = VoiceTuning.SOURCE_MANUAL),
+            VoiceTuning(pitchSemitones = 4f, source = VoiceTuning.SOURCE_MANUAL),
             VoiceTuning(pitchSemitones = 4.2f, source = VoiceTuning.SOURCE_MANUAL).normalized(),
+        )
+        assertEquals(
+            VoiceTuning(pitchSemitones = 6f, source = VoiceTuning.SOURCE_MANUAL),
+            VoiceTuning(pitchSemitones = 7.2f, source = VoiceTuning.SOURCE_MANUAL).normalized(),
         )
         assertEquals(-1.5f, VoiceTuning(pitchSemitones = -1.3f).normalized().pitchSemitones, 0f)
         assertEquals(0f.toBits(), VoiceTuning(pitchSemitones = -0.2f).normalized().pitchSemitones.toBits())
         assertEquals(0f, VoiceTuning(pitchSemitones = Float.NaN).normalized().pitchSemitones, 0f)
         assertEquals(VoiceTuning.SOURCE_AUTO, VoiceTuning(source = "weird").normalized().source)
+    }
+
+    /**
+     * 막대 범위·눈금은 서버와 **같은 숫자**다 — 넓으면 고른 값이 400 `INVALID_VOICE_PITCH` 로 거절되고, 좁으면 서버가 받는 높이를
+     * 이 앱에서만 못 고른다(스펙 §4-3). 원본은 `@alarmtalk/shared` 의 `VOICE_PITCH_*_SEMITONES` 다(소스를 읽어 대조한다).
+     */
+    @Test
+    fun pitchRangeMatchesSharedSchema() {
+        assertEquals(-10f, VoiceTuning.PITCH_RANGE.start, 0f)
+        assertEquals(6f, VoiceTuning.PITCH_RANGE.endInclusive, 0f)
+        assertEquals(0.5f, VoiceTuning.STEP, 0f)
+
+        // 테스트는 app/ 에서 돈다 — 저장소 루트까지 세 단계(`FamilyAlarmFailureMessageTest` 와 같은 형태).
+        val schema = java.io.File("../../../packages/shared/src/schemas/voice.ts").readText()
+        fun constant(name: String): Float =
+            Regex("""export const $name = (-?[0-9.]+);""").find(schema)?.groupValues?.get(1)?.toFloat()
+                ?: error("$name not found in packages/shared/src/schemas/voice.ts")
+        assertEquals(constant("VOICE_PITCH_MIN_SEMITONES"), VoiceTuning.PITCH_RANGE.start, 0f)
+        assertEquals(constant("VOICE_PITCH_MAX_SEMITONES"), VoiceTuning.PITCH_RANGE.endInclusive, 0f)
+        assertEquals(constant("VOICE_PITCH_STEP_SEMITONES"), VoiceTuning.STEP, 0f)
     }
 }

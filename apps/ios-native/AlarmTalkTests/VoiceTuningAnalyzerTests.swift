@@ -117,10 +117,19 @@ final class VoiceTuningAnalyzerTests: XCTestCase {
     }
 
     func test_suggestedPitch_clampsToRange() {
-        // 미리듣기가 한 옥타브 높다 → −12 → −6 으로 자른다.
-        XCTAssertEqual(VoiceTuningAnalyzer.suggestedPitch(previewF0: 400, sourceF0: 200), -6)
-        // 한 옥타브 낮다 → +12 → +3 으로 자른다.
-        XCTAssertEqual(VoiceTuningAnalyzer.suggestedPitch(previewF0: 100, sourceF0: 200), 3)
+        // 미리듣기가 한 옥타브 높다 → −12 → −10 으로 자른다.
+        XCTAssertEqual(VoiceTuningAnalyzer.suggestedPitch(previewF0: 400, sourceF0: 200), -10)
+        // 한 옥타브 낮다 → +12 → +6 으로 자른다.
+        XCTAssertEqual(VoiceTuningAnalyzer.suggestedPitch(previewF0: 100, sourceF0: 200), 6)
+    }
+
+    /// 2026-10-08 에 범위를 −6…+3 에서 −10…+6 으로 넓혔다 — v4 Turbo 가 저음을 8반음 넘게 올리는 경우가 있었다(스펙
+    /// §4-3). 예전 범위였으면 −6 에서 잘려 반쯤만 되돌렸을 차이를 이제 그대로 되돌린다.
+    func test_suggestedPitch_undoesAnEightSemitoneRiseWithinTheWiderRange() {
+        let raised = 120 * pow(2, 8.4 / 12)
+        XCTAssertEqual(VoiceTuningAnalyzer.suggestedPitch(previewF0: raised, sourceF0: 120), -8.5)
+        let lowered = 120 * pow(2, -5.2 / 12)
+        XCTAssertEqual(VoiceTuningAnalyzer.suggestedPitch(previewF0: lowered, sourceF0: 120), 5)
     }
 
     func test_suggestedPitch_isZeroWithoutTheRecording() {
@@ -149,9 +158,21 @@ final class VoiceTuningAnalyzerTests: XCTestCase {
 
     func test_tuning_normalizesToStepAndRange() {
         XCTAssertEqual(VoiceTuning(pitchSt: -1.26, source: .user).normalized().pitchSt, -1.5)
-        XCTAssertEqual(VoiceTuning(pitchSt: 4.2, source: .user).normalized().pitchSt, 3)
-        XCTAssertEqual(VoiceTuning(pitchSt: -9, source: .user).normalized().pitchSt, -6)
+        XCTAssertEqual(VoiceTuning(pitchSt: 4.2, source: .user).normalized().pitchSt, 4)
+        XCTAssertEqual(VoiceTuning(pitchSt: -9, source: .user).normalized().pitchSt, -9)
+        XCTAssertEqual(VoiceTuning(pitchSt: -12, source: .user).normalized().pitchSt, -10)
+        XCTAssertEqual(VoiceTuning(pitchSt: 7.3, source: .user).normalized().pitchSt, 6)
         XCTAssertEqual(VoiceTuning(pitchSt: .nan, source: .user).normalized().pitchSt, 0)
+    }
+
+    /// 막대 범위는 서버(`VOICE_PITCH_MIN_SEMITONES`·`VOICE_PITCH_MAX_SEMITONES`)·안드로이드 막대와 **같은 숫자**다 —
+    /// 서버보다 넓으면 고른 값이 400 `INVALID_VOICE_PITCH` 로 거절되고, 좁으면 한쪽에서만 고를 수 있는 높이가 생긴다.
+    func test_pitchRange_matchesTheServerContract() {
+        XCTAssertEqual(VoiceTuning.pitchRange, -10...6)
+        XCTAssertEqual(VoiceTuning.step, 0.5)
+        // 끝값은 그대로 고를 수 있다.
+        XCTAssertEqual(VoiceTuning(pitchSt: -10, source: .user).normalized().pitchSt, -10)
+        XCTAssertEqual(VoiceTuning(pitchSt: 6, source: .user).normalized().pitchSt, 6)
     }
 
     /// 들리는 소리는 높이 하나로 가른다 — 출처(추천·사용자)는 보지 않는다. 눈금 아래 값은 원래 소리(0)다.

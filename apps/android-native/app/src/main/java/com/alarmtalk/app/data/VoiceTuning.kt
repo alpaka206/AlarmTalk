@@ -12,9 +12,10 @@ import kotlin.math.floor
  *   서버가 그 목소리로 만드는 모든 알람 소리에 굽고, 앱은 받은 파일을 그대로 튼다 — 공유받은 가족·다른
  *   기기도 같은 소리를 듣는다. ⚠ 앱에서 알람 소리를 다시 굽지 말 것(서버가 구운 파일에 한 번 더 걸린다).
  *
- * - [pitchSemitones] 목소리 높이 −6…+3 반음(0.5 눈금 — 서버 `VOICE_PITCH_*_SEMITONES` 와 같은 숫자). **목소리
- *   몸집(포먼트)은 그대로 두고 높이만** 바꾼다(`VoicePitchShifter` — TD-PSOLA). 2026-10-07 사용자 판정: 폰 내장
- *   높이 변환(`PlaybackParams.setPitch`)은 몸집까지 움직여 "변조된 목소리" 로 들려 거부감이 든다.
+ * - [pitchSemitones] 목소리 높이 −10…+6 반음(0.5 눈금 — 서버 `VOICE_PITCH_*_SEMITONES` 와 같은 숫자). 화면 이름은
+ *   `톤 조절`이다(2026-10-08 사용자). 범위는 같은 날 −6…+3 에서 넓혔다 — v4 Turbo 가 저음을 8반음 넘게 올리는 경우가
+ *   있었다. **목소리 몸집(포먼트)은 그대로 두고 높이만** 바꾼다(`VoicePitchShifter` — TD-PSOLA). 2026-10-07 사용자
+ *   판정: 폰 내장 높이 변환(`PlaybackParams.setPitch`)은 몸집까지 움직여 "변조된 목소리" 로 들려 거부감이 든다.
  * - 음량·굵기 보정은 같은 날 뺐다(사용자: "목소리 높이만 하면 될 것 같다"). 높이를 바꾼 소리는
  *   원래 클립과 **같은 크기**로 되맞춘다 — 음량을 따로 고르게 하지 않는다.
  */
@@ -25,9 +26,6 @@ data class VoiceTuning(
 ) {
     /** 높이를 바꾸지 않는 값인가 — 이때 미리듣기는 원래 클립을 그대로 틀고, 서버에도 보내지 않는다. */
     val isNeutral: Boolean get() = pitchSemitones == 0f
-
-    /** 값이 같은가(출처는 보지 않는다) — '추천값' 버튼을 끄고, 들은 높이와 지금 높이를 견줄 때 쓴다. */
-    fun sameValuesAs(other: VoiceTuning): Boolean = pitchSemitones == other.pitchSemitones
 
     /** 범위·눈금(0.5)에 맞춘 값. 굽기·전송 전에 한 번 거친다. */
     fun normalized(): VoiceTuning = copy(
@@ -40,7 +38,8 @@ data class VoiceTuning(
         const val SOURCE_MANUAL = "manual"
 
         const val STEP = 0.5f
-        val PITCH_RANGE: ClosedFloatingPointRange<Float> = -6f..3f
+        /** 서버 `VOICE_PITCH_MIN_SEMITONES`·`VOICE_PITCH_MAX_SEMITONES`(`@alarmtalk/shared`)와 같은 숫자 — 넓으면 고른 값이 400 으로 거절된다. */
+        val PITCH_RANGE: ClosedFloatingPointRange<Float> = -10f..6f
 
         val NEUTRAL = VoiceTuning()
 

@@ -424,7 +424,7 @@ struct VoiceProfileManagementPanel: View {
                 } else {
                     // ⚠ **슬롯이 찼다고 막지 않는다**(2026-08-12 확정).
                     // 이미 목소리가 있으면 등록을 끝까지 진행시키고, **마지막 확정 화면**
-                    // (`VoicePreviewConfirmView`)에서 "기존 목소리를 교체할까요" 를 묻는다.
+                    // (`VoicePreviewConfirmView`)의 저장이 곧 교체다(그 화면이 한 줄로 알린다).
                     // 예전에는 여기서 막아 그 화면에 도달할 수 없었고, 승격의
                     // `replace_existing` 갈래가 **죽은 코드**였다.
                     //

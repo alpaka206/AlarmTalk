@@ -542,16 +542,16 @@
     <string name="voices_preparing">준비 중</string>
     <string name="voices_preparing_audio">음성을 준비하고 있어요.</string>
     <string name="voices_preview_play_failed">미리듣기를 재생하지 못했어요.</string>
+    <string name="voices_preview_confirm_failed">미리듣기 확인에 실패했어요. 다시 들어 주세요.</string>
     <string name="voices_confirm_new_title">이 목소리로 저장할까요?</string>
-    <string name="voices_confirm_replace_body">저장하면 이전 목소리는 삭제돼요.</string>
-    <string name="voices_confirm_new_preview">다시 듣기</string>
+    <string name="voices_confirm_replace_body">이전에 저장한 목소리는 삭제하고 이 목소리로 등록할게요.</string>
     <string name="voices_confirm_new_keep">저장하기</string>
     <string name="voices_confirm_new_keep_saving">저장 중…</string>
     <string name="voices_confirm_new_delete">다시 만들기</string>
     <string name="voices_creating_title">목소리를 만드는 중이에요</string>
     <string name="voices_creating_body">잠시만 기다려 주세요.\n완성되면 바로 들려드릴게요.</string>
     <string name="voices_preview_text_loading">문구를 준비하고 있어요…</string>
-    <string name="voices_preview_text_retry_hint">문구를 아직 준비하지 못했어요. 미리듣기를 눌러 다시 시도해 주세요.</string>
+    <string name="voices_preview_text_retry_hint">문구를 아직 준비하지 못했어요. 듣기 버튼을 눌러 다시 시도해 주세요.</string>
     <string name="voices_preview_edit_hint">말투를 원하는 대로 바꿔 보세요.</string>
     <string name="voices_preview_edit_action">문구 수정</string>
     <string name="voices_preview_edit_save">재생성</string>
@@ -857,8 +857,6 @@
     <string name="consent_overseas_withdraw_notice">국외 이전 동의는 서비스 이용에 반드시 필요해요. 철회하려면 더보기에서 회원 탈퇴를 진행해 주세요.</string>
     <string name="msg_voice_consent_withdrawn">음성 생체정보 동의를 철회했어요. 등록한 목소리가 삭제됐어요.</string>
     <string name="msg_voice_consent_withdraw_failed">동의 철회에 실패했어요. 다시 시도해 주세요.</string>
-    <string name="voices_replace_existing_title">‘%1$s’ 대신 이 목소리를 써요</string>
-    <string name="voices_replace_existing_desc">이전에 저장한 목소리는 삭제돼요. 직접 입력 문구로 만든 알람도 기본 목소리로 바뀌어요.</string>
     <string name="misc2_theme_mode_system_short">시스템</string>
     <string name="misc2_theme_mode_light_short">밝게</string>
     <string name="misc2_theme_mode_dark_short">어둡게</string>
@@ -885,8 +883,8 @@
     <string name="api_error_voice_limit_reached">등록할 수 있는 목소리를 다 채웠어요. 쓰지 않는 목소리를 지워 주세요.</string>
     <string name="api_error_voice_not_ready">목소리를 아직 만들고 있어요. 잠시 후 다시 시도해 주세요.</string>
     <string name="api_error_voice_cloning_failed">목소리를 만들지 못했어요. 조용한 곳에서 다시 녹음해 주세요.</string>
-    <string name="api_error_invalid_voice_pitch">목소리 높이 값이 올바르지 않아요. 다시 맞춰 주세요.</string>
-    <string name="api_error_voice_pitch_locked">목소리 높이는 목소리를 등록할 때만 정할 수 있어요.</string>
+    <string name="api_error_invalid_voice_pitch">톤 값이 올바르지 않아요. 다시 맞춰 주세요.</string>
+    <string name="api_error_voice_pitch_locked">톤은 목소리를 등록할 때만 정할 수 있어요.</string>
     <string name="api_error_alarm_not_found">이미 사라진 알람이에요.</string>
     <string name="api_error_family_alarm_disabled">상대가 알람을 받지 않도록 설정해 뒀어요.</string>
     <string name="api_error_family_alarm_lead_time">상대 알람은 조금 더 뒤로 맞춰 주세요. 상대 기기에 전달될 시간이 조금 필요해요.</string>
@@ -928,11 +926,8 @@
     <string name="voices_clip_prep_rendering_body">목소리를 만들고 있어요. 몇 분 걸릴 수 있어요.</string>
     <string name="voices_clip_prep_downloading_body">목소리를 받고 있어요. 앱을 닫아도 계속 받아요.</string>
     <string name="voices_clip_prep_retry">다시 시도하기</string>
-    <string name="voices_tuning_desc">목소리 몸집은 그대로 두고 높이만 바꿔요. 크기는 미리듣기와 같게 맞춰요. 저장하면 이 목소리로 울리는 모든 알람에 적용돼요.</string>
-    <string name="voices_tuning_pitch">목소리 높이</string>
-    <string name="voices_tuning_suggested">추천값</string>
-    <string name="voices_tuning_reset">0으로</string>
-    <string name="voices_tuning_analyzing">추천값을 계산하고 있어요…</string>
-    <string name="voices_tuning_rendering">높이를 바꾸는 중이에요…</string>
+    <string name="voices_tuning_title">톤 조절</string>
+    <string name="voices_tuning_listen_original">원본 듣기</string>
+    <string name="voices_tuning_listen_current">현재 톤 듣기</string>
     <string name="voices_tuning_pitch_value">%1$s 반음</string>
 </resources>

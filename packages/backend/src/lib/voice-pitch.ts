@@ -36,7 +36,7 @@ const ENCODE_CHUNK_SAMPLES = SYNTHESIS_PCM_SAMPLE_RATE;
 const MAX_BAKE_SECONDS = 60;
 
 export interface VoicePitch {
-  /** 반음(−6…+3, 0.5 눈금). 0 은 저장하지 않는다(행에는 NULL). */
+  /** 반음(−10…+6, 0.5 눈금). 0 은 저장하지 않는다(행에는 NULL). */
   semitones: number;
   /**
    * 등록할 때의 합성 모델(`TTS_MODEL_ID`). 높이는 **그 모델이 낸 높이를 바로잡는 상대값**이라, 모델이 바뀐 뒤에는
