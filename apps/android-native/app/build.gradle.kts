@@ -161,8 +161,11 @@ android {
         // ⚠ 이 빌드는 **강제 업데이트 하한**이다(`app-version.ts` 의 Android `minSupported`).
         // 하한이 되는 빌드는 **Play 게재를 확인하기 전에** 서버를 올리면 안 된다 — 받을 것이 없는
         // 강제 업데이트로 앱이 벽돌이 된다. iOS 하한은 App Store 게재로 **따로** 간다.
-        versionCode = 30
-        versionName = "1.2.10"
+        // 31 = 1.2.11. 목소리 등록의 '톤 조절'(높이 −10…+6반음 — 서버가 구워 알람까지 같은 높이),
+        // 무음 알람 수정(유료 목소리를 못 쓰면 기본 목소리로 운다), 영어·일본어 화면, 날씨 출처 줄
+        // 릴리스. 서버(develop→main)와 **동시에** 낸다 — 심사를 통과한 앱을 대기시켜 두고 머지 뒤 출시한다.
+        versionCode = 31
+        versionName = "1.2.11"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
