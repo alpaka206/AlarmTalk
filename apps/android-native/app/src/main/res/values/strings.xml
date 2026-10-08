@@ -885,6 +885,8 @@
     <string name="api_error_voice_limit_reached">등록할 수 있는 목소리를 다 채웠어요. 쓰지 않는 목소리를 지워 주세요.</string>
     <string name="api_error_voice_not_ready">목소리를 아직 만들고 있어요. 잠시 후 다시 시도해 주세요.</string>
     <string name="api_error_voice_cloning_failed">목소리를 만들지 못했어요. 조용한 곳에서 다시 녹음해 주세요.</string>
+    <string name="api_error_invalid_voice_pitch">목소리 높이 값이 올바르지 않아요. 다시 맞춰 주세요.</string>
+    <string name="api_error_voice_pitch_locked">목소리 높이는 목소리를 등록할 때만 정할 수 있어요.</string>
     <string name="api_error_alarm_not_found">이미 사라진 알람이에요.</string>
     <string name="api_error_family_alarm_disabled">상대가 알람을 받지 않도록 설정해 뒀어요.</string>
     <string name="api_error_family_alarm_lead_time">상대 알람은 조금 더 뒤로 맞춰 주세요. 상대 기기에 전달될 시간이 조금 필요해요.</string>
@@ -926,4 +928,11 @@
     <string name="voices_clip_prep_rendering_body">목소리를 만들고 있어요. 몇 분 걸릴 수 있어요.</string>
     <string name="voices_clip_prep_downloading_body">목소리를 받고 있어요. 앱을 닫아도 계속 받아요.</string>
     <string name="voices_clip_prep_retry">다시 시도하기</string>
+    <string name="voices_tuning_desc">목소리 몸집은 그대로 두고 높이만 바꿔요. 크기는 미리듣기와 같게 맞춰요. 저장하면 이 목소리로 울리는 모든 알람에 적용돼요.</string>
+    <string name="voices_tuning_pitch">목소리 높이</string>
+    <string name="voices_tuning_suggested">추천값</string>
+    <string name="voices_tuning_reset">0으로</string>
+    <string name="voices_tuning_analyzing">추천값을 계산하고 있어요…</string>
+    <string name="voices_tuning_rendering">높이를 바꾸는 중이에요…</string>
+    <string name="voices_tuning_pitch_value">%1$s 반음</string>
 </resources>

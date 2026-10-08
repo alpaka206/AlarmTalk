@@ -103,6 +103,12 @@ enum APIErrorMessages {
             return String(localized: "문구가 바뀌었어요. 새 문구를 끝까지 들어본 뒤 저장해 주세요.")
         // `INVALID_VOICE_ENERGY` 는 두지 않는다 — 이 앱은 목소리의 결을 보내지 않아(2026-09-29
         // '목소리 느낌' 선택 제거) 그 코드를 받을 길이 없다. 서버는 1.2.10 앱 때문에 아직 낸다.
+        // 목소리 높이는 등록 확정 요청에만 싣는다(스펙 voice-and-message §4-3). 앱이 범위·눈금을 먼저 맞추므로
+        // 범위 밖(400)은 서버의 범위가 앱과 갈렸을 때뿐이고, 409 는 등록이 끝난 목소리에 다른 높이를 실었을 때다.
+        case "INVALID_VOICE_PITCH":
+            return String(localized: "목소리 높이 값이 올바르지 않아요. 다시 맞춰 주세요.")
+        case "VOICE_PITCH_LOCKED":
+            return String(localized: "목소리 높이는 목소리를 등록할 때만 정할 수 있어요.")
         case "CONSENT_REQUIRED":
             return String(localized: "목소리를 만들려면 음성 정보 활용 동의가 필요해요. 더보기 → 약관 및 동의에서 다시 동의해 주세요.")
 

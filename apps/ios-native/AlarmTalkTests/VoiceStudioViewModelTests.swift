@@ -67,6 +67,21 @@ final class VoiceStudioViewModelTests: XCTestCase {
         )
     }
 
+    /// 목소리 높이 두 코드(등록 확정 — 스펙 voice-and-message §4-3)는 공용 표가 받는다. 본문에만 코드가 실린 응답도
+    /// 찾는다(`knownErrorCodes`).
+    func test_localizedVoiceMessage_voicePitchCodes() {
+        XCTAssertEqual(
+            VoiceStudioViewModel.localizedVoiceMessage(forCode: "INVALID_VOICE_PITCH"),
+            "목소리 높이 값이 올바르지 않아요. 다시 맞춰 주세요."
+        )
+        XCTAssertEqual(
+            VoiceStudioViewModel.localizedVoiceMessage(forCode: "VOICE_PITCH_LOCKED"),
+            "목소리 높이는 목소리를 등록할 때만 정할 수 있어요."
+        )
+        let err = APIError.server(status: 409, message: "VOICE_PITCH_LOCKED: pitch is fixed", errorCode: nil)
+        XCTAssertEqual(VoiceStudioViewModel().mapVoiceError(err), "목소리 높이는 목소리를 등록할 때만 정할 수 있어요.")
+    }
+
     /// 공용 표는 **모르는 코드에 문구를 지어내지 않는다** — nil 을 주고 화면이 폴백을 쓴다.
     func test_apiErrorMessages_unknownCodeIsNil() {
         XCTAssertNil(APIErrorMessages.message(for: "MYSTERY_CODE"))
@@ -302,6 +317,25 @@ final class VoiceStudioViewModelTests: XCTestCase {
         XCTAssertEqual(body["isDraft"] as? Bool, false)
         XCTAssertEqual(body["replaceExisting"] as? Bool, true)
         XCTAssertEqual(body["isShared"] as? Bool, true)
+    }
+
+    /// 등록 확정 바디 — 들은 목소리 높이는 `pitch_semitones` 로 실리고(교체 등록도 같다), 원래 소리(0·nil)면 키가
+    /// 아예 없다(높이 이전과 같은 바디, 스펙 voice-and-message §4-3). 실제 요청과 같은 인코더(snake_case)로 본다.
+    func test_voiceDraftPromotionBody_carriesPitchOnlyWhenNotZero() throws {
+        func json(_ pitch: Double?, replace: Bool = false) throws -> [String: Any] {
+            let body = AlarmTalkAPI.voiceDraftPromoteBody(replaceExisting: replace, isShared: false, pitchSemitones: pitch)
+            let data = try AlarmTalkAPI.makeJSONEncoder().encode(body)
+            return try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        }
+
+        let tuned = try json(-1.5, replace: true)
+        XCTAssertEqual(tuned["pitch_semitones"] as? Double, -1.5)
+        XCTAssertEqual(tuned["is_draft"] as? Bool, false)
+        XCTAssertEqual(tuned["replace_existing"] as? Bool, true)
+        XCTAssertEqual(try json(3)["pitch_semitones"] as? Double, 3)
+
+        XCTAssertEqual(try json(0).keys.sorted(), ["is_draft", "is_shared"])
+        XCTAssertEqual(try json(nil).keys.sorted(), ["is_draft", "is_shared"])
     }
 
     func test_multipartUploadFileName_prefersTrimmedSelectedFileName() {

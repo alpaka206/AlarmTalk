@@ -3,7 +3,7 @@ import { integratedLoudness, pitchTrack, resample, shiftVoicePitch } from '../sr
 
 /**
  * 기대값은 **두 앱 테스트와 같은 숫자**다 — 안드로이드 `VoicePitchShifterTest`·iOS `VoicePitchShifterTests`
- * (PR #870 — 아직 develop 에 없다. 앱이 들어오면 세 테스트의 숫자를 함께 고친다).
+ * (셈을 바꾸면 세 테스트의 숫자를 함께 고친다).
  * 같은 입력을 세 구현이 같은 셈으로 굽는다는 것을 고정한다(앱은 미리듣기를, 서버는 알람 소리를 굽는다 —
  * 갈리면 들은 소리와 우는 소리가 달라진다).
  */

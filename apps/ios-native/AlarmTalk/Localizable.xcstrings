@@ -1,6 +1,23 @@
 {
   "sourceLanguage" : "ko",
   "strings" : {
+    "%@ 반음" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ semitones"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 半音"
+          }
+        }
+      }
+    },
     ":" : {
       "shouldTranslate" : false
     },
@@ -10783,6 +10800,40 @@
         }
       }
     },
+    "목소리 높이 값이 올바르지 않아요. 다시 맞춰 주세요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The voice pitch value isn't valid. Please adjust it and try again."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "声の高さの値が正しくありません。調整し直してください。"
+          }
+        }
+      }
+    },
+    "목소리 높이는 목소리를 등록할 때만 정할 수 있어요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Voice pitch can only be set when you register a voice."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "声の高さは声を登録するときにだけ設定できます。"
+          }
+        }
+      }
+    },
     "보내려는 파일이 너무 커요. 더 짧게 녹음해 주세요." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -15977,6 +16028,74 @@
     },
     "%lld%%" : {
       "shouldTranslate" : false
+    },
+    "추천값" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recommended"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "おすすめ値"
+          }
+        }
+      }
+    },
+    "0으로" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reset to 0"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "0に戻す"
+          }
+        }
+      }
+    },
+    "목소리 몸집은 그대로 두고 높이만 바꿔요. 크기는 미리듣기와 같게 맞춰요. 저장하면 이 목소리로 울리는 모든 알람에 적용돼요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Changes only the pitch and keeps the character of the voice. Loudness stays the same as the preview. Once saved, it applies to every alarm that uses this voice."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "声の質感はそのままに、高さだけを変えます。音量はプレビューと同じにそろえます。保存すると、この声で鳴るすべてのアラームに適用されます。"
+          }
+        }
+      }
+    },
+    "목소리 높이" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pitch"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "声の高さ"
+          }
+        }
+      }
     }
   },
   "version" : "1.0"

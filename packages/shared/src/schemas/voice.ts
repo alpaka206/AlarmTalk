@@ -29,12 +29,12 @@ export type VoicePreviewTextUpdate = z.infer<typeof VoicePreviewTextUpdateSchema
  * 클론이 실제 목소리보다 높거나 낮게 나올 때 바로잡는 값이라, **등록 확정 때 한 번** 정하고(`PATCH /voice/:id` 의
  * `pitch_semitones`, 초안 → 정식일 때만) 서버가 그 목소리로 만드는 모든 알람 소리(프리셋·직접 입력)에 굽는다 —
  * 공유받은 가족·가족 알람 수신자·다른 기기도 같은 소리를 듣는다. 높이만 바꾸는 몸집 유지 TD-PSOLA 다
- * (`@alarmtalk/voice` 의 `shiftVoicePitch`, 두 앱과 같은 셈 — 앱 쪽은 PR #870). 0 은 원래 소리이고, 이 기능 이전에 등록한 목소리와
+ * (`@alarmtalk/voice` 의 `shiftVoicePitch`, 두 앱과 같은 셈). 0 은 원래 소리이고, 이 기능 이전에 등록한 목소리와
  * 값을 보내지 않는 앱(1.2.10)은 0 이다.
  */
 export const VOICE_PITCH_MIN_SEMITONES = -6;
 export const VOICE_PITCH_MAX_SEMITONES = 3;
-/** 막대 눈금 — 앱 막대와 같아야 한다(PR #870). */
+/** 막대 눈금 — 앱 막대와 같아야 한다. */
 export const VOICE_PITCH_STEP_SEMITONES = 0.5;
 
 export const VoicePitchSemitonesSchema = z

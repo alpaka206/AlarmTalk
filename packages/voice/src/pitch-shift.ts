@@ -2,10 +2,9 @@
  * 목소리 높이 바꾸기 — **몸집(포먼트) 유지 TD-PSOLA**(2026-10-07 사용자 결정: 높이만, 몸집 유지 방식).
  *
  * ⚠ **두 앱과 같은 셈이다** — 안드로이드 `VoicePitchShifter.kt`·`VoiceTuningAnalysis.kt` 를 한 줄씩 옮겼고,
- * iOS `VoicePitchShifter.swift`·`VoiceTuningAnalyzer.swift` 도 같은 셈으로 맞춰 두었다(앱 쪽은 PR #870 — 아직
- * develop 에 없다). 앱은 등록 미리듣기를 기기에서 굽고(파일 없이), 서버는 그 목소리로 만드는 모든 알람 소리를
- * 이걸로 굽는다 — 셈이 갈리면 미리듣기에서 들은 소리와 알람 소리가 달라진다. 회귀 테스트(`test/pitch-shift.test.ts`)가
- * 두 앱 테스트와 **같은 기대값**을 둔다.
+ * iOS `VoicePitchShifter.swift`·`VoiceTuningAnalyzer.swift` 도 같은 셈으로 맞춰 두었다. 앱은 등록 미리듣기를 기기에서
+ * 굽고(파일 없이), 서버는 그 목소리로 만드는 모든 알람 소리를 이걸로 굽는다 — 셈이 갈리면 미리듣기에서 들은 소리와
+ * 알람 소리가 달라진다. 회귀 테스트(`test/pitch-shift.test.ts`)가 두 앱 테스트와 **같은 기대값**을 둔다.
  *
  * Kotlin 의 `Float` 지점은 `Float32Array` 에 담거나 `Math.fround` 로 흉내 낸다(같은 자리에서 반올림해야 같은
  * 결과가 나온다). 숫자 상수도 Kotlin 과 같다.

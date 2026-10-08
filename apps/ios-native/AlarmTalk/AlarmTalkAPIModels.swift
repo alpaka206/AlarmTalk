@@ -535,6 +535,10 @@ struct VoiceDraftPromoteRequest: Encodable {
     var replaceExisting: Bool?
     /// 공유는 초안 입력이 아니라 실제 등록을 확정하는 화면에서 고른다.
     var isShared: Bool
+    /// 등록 미리듣기에서 **끝까지 들은 목소리 높이**(반음, −6…+3·0.5 눈금). 서버가 적어 두고 그 목소리로 만드는
+    /// 모든 알람 소리에 굽는다(스펙 voice-and-message §4-3). nil 이면 키가 아예 안 나가서(원래 소리) 높이 이전과
+    /// 같은 바디다. 등록 확정 때만 받는다 — 다른 요청에 실으면 409 `VOICE_PITCH_LOCKED`.
+    var pitchSemitones: Double? = nil
 }
 
 struct VoicePreviewPlayedRequest: Encodable {

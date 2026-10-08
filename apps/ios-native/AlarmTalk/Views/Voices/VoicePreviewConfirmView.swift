@@ -16,6 +16,8 @@ import SwiftUI
 ///    다시 들어야 한다(고친 문구는 안 들어본 문구다).
 /// 3. **'다시 만들기' 는 초안을 지운다.** 정식 프로필이 아니라 draft 라 지워도 이번 달
 ///    등록 횟수가 차감되지 않는다 — 그래서 마음에 들 때까지 다시 만들 수 있다.
+/// 4. **목소리 높이는 지금 값을 끝까지 들어야 저장이 열린다.** 미리듣기는 이 기기가 메모리에서 굽고, 저장(등록
+///    확정)하면 들은 높이가 요청에 한 번 실려 서버가 그 목소리의 알람 소리에 굽는다(스펙 voice-and-message §4-3).
 struct VoicePreviewConfirmView: View {
     @Environment(\.voiceAlarmTheme) private var theme
     @EnvironmentObject private var auth: AuthViewModel
@@ -48,6 +50,28 @@ struct VoicePreviewConfirmView: View {
     /// 뒤로 나가려 할 때 뜨는 경고. 이 화면을 벗어나면 초안이 삭제된다
     /// (안드로이드 `VoiceProfileManagementPanel.kt:2133` `draftExitWarningOpen`).
     @State private var exitWarningOpen = false
+
+    // MARK: 목소리 높이(스펙 voice-and-message §4-3)
+    /// 지금 슬라이더 값(목소리 높이) — 손을 떼면 그 높이로 구워 다시 들려주고, 저장하면 등록 확정 요청에
+    /// 실린다(서버가 그 목소리로 만드는 모든 알람 소리에 굽는다).
+    @State private var tuning: VoiceTuning = .neutral
+    /// 자동 추천값. '추천값' 버튼이 이 값으로 되돌린다.
+    @State private var suggestedTuning: VoiceTuning = .neutral
+    /// 서버 미리듣기 재생에 실은 값 — 그 재생이 끝났을 때 슬라이더 값과 다르면 다시 튼다.
+    @State private var servedTuning: VoiceTuning?
+    /// **끝까지 들은** 높이 — 저장은 지금 슬라이더 값을 끝까지 들었을 때만 열리고, 이 값이 요청에 실린다(듣지 않은
+    /// 값을 등록하지 않게, 첫 미리듣기의 '끝까지 들어야 저장' 과 같은 규칙 — Codex #870). 안드로이드 `heardTuning` 과 같다.
+    @State private var heardTuning: VoiceTuning?
+    /// 마지막으로 받은 미리듣기 클립(원래 소리) — 슬라이더를 놓으면 **서버 왕복 없이** 이걸 다시 굽고 튼다.
+    @State private var previewAudioURL: URL?
+    /// 등록 녹음 측정(원래 목소리 높이). 업로드하는 동안 잰 숫자다(`VoiceStudioViewModel.pendingDraftSourceMeasurement`).
+    @State private var sourceMeasurement: VoiceTuningAnalyzer.Measurement?
+    /// 높이를 바꾼 소리를 굽는 중인가(재생 버튼이 진행 표시로 바뀐다).
+    @State private var renderingTuning = false
+    /// 굽기 요청 세대 — 늦게 끝난 옛 굽기가 새 값의 재생을 덮지 않게.
+    @State private var tuningGeneration = 0
+    /// 이 화면이 떠났는가 — 떠난 뒤 끝난 준비(분석·굽기)가 소리를 내지 않게(`prepareTuning`).
+    @State private var viewGone = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -82,6 +106,8 @@ struct VoicePreviewConfirmView: View {
                         .font(theme.typography.bodySmall)
                         .foregroundStyle(theme.palette.onSurfaceVariant)
 
+                    tuningCard
+
                     if let errorMessage {
                         Text(errorMessage)
                             .font(theme.typography.bodySmall)
@@ -106,9 +132,18 @@ struct VoicePreviewConfirmView: View {
         .homeGradientBackground()
         .task {
             isShared = draft.isShared == true && canShareVoice
+            startSourceMeasurement()
             // 문구는 합성 응답이 알려 준다(서버가 그때 확정한다) — 여기선 비워 두고
             // 첫 재생이 채운다. 들어보라고 만든 화면이니 들어오자마자 한 번 들려준다.
             await play()
+        }
+        // 화면을 떠나면 미리듣기를 끈다 — 끝까지 듣지 않은 재생은 청취로 기록되지 않는다.
+        .onAppear { viewGone = false }
+        .onDisappear {
+            viewGone = true
+            tuningGeneration += 1
+            renderingTuning = false
+            voice.tuningPreviewPlayer.stop()
         }
         .alert(String(localized: "나가면 임시 목소리가 삭제돼요"), isPresented: $exitWarningOpen) {
             Button(String(localized: "나가고 삭제"), role: .destructive) {
@@ -219,19 +254,25 @@ struct VoicePreviewConfirmView: View {
                     .accessibilityLabel(String(localized: "문구 수정"))
 
                     Button {
-                        Task { await play() }
+                        if localReplayPlaying {
+                            voice.tuningPreviewPlayer.stop()
+                        } else {
+                            Task { await play() }
+                        }
                     } label: {
-                        if busy {
+                        if busy || renderingTuning {
                             ProgressView().frame(width: 36, height: 36)
                         } else {
-                            Image(systemName: "play.fill")
+                            Image(systemName: localReplayPlaying ? "stop.fill" : "play.fill")
                                 .frame(width: 36, height: 36)
                         }
                     }
                     .buttonStyle(.plain)
                     .foregroundStyle(theme.palette.primary)
-                    .disabled(busy)
-                    .accessibilityLabel(String(localized: "다시 듣기"))
+                    .disabled(busy || renderingTuning)
+                    .accessibilityLabel(
+                        localReplayPlaying ? String(localized: "정지") : String(localized: "다시 듣기")
+                    )
                 }
             }
         }
@@ -245,6 +286,168 @@ struct VoicePreviewConfirmView: View {
             RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous)
                 .stroke(theme.palette.outlineVariant, lineWidth: 1)
         )
+    }
+
+    // MARK: - 목소리 높이
+
+    /// 받아 둔 클립을 다시 트는 중인가(서버 미리듣기 재생 중은 `busy`).
+    private var localReplayPlaying: Bool {
+        !busy && voice.tuningPreviewPlayer.isPlaying
+    }
+
+    /// 목소리 높이 슬라이더 + '추천값'·'0으로'. 범위·눈금은 서버·안드로이드와 같다
+    /// (`VoiceTuning.pitchRange`). 손을 떼면 그 높이로 구워(PSOLA — 몸집은 그대로) 처음부터 한 번 다시 튼다.
+    /// 음량·굵기는 2026-10-07 에 뺐다 — 크기는 굽는 쪽이 원래 미리듣기와 같게 되맞춘다.
+    private var tuningCard: some View {
+        let label = Self.tuningValueText(tuning.pitchSt)
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(String(localized: "목소리 높이"))
+                    .font(theme.typography.titleSmall)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(theme.palette.onSurface)
+                Spacer(minLength: 8)
+                Text(verbatim: label)
+                    .font(theme.typography.bodyMedium)
+                    .foregroundStyle(theme.palette.primary)
+                    .monospacedDigit()
+            }
+            Text(String(localized: "목소리 몸집은 그대로 두고 높이만 바꿔요. 크기는 미리듣기와 같게 맞춰요. 저장하면 이 목소리로 울리는 모든 알람에 적용돼요."))
+                .font(theme.typography.bodySmall)
+                .foregroundStyle(theme.palette.onSurfaceVariant)
+            Slider(
+                value: Binding(
+                    get: { tuning.pitchSt },
+                    set: { tuning = VoiceTuning(pitchSt: $0, source: .user).normalized() }
+                ),
+                in: VoiceTuning.pitchRange,
+                step: VoiceTuning.step,
+                onEditingChanged: { editing in
+                    if !editing { replayLocally() }
+                }
+            )
+            .tint(theme.palette.primary)
+            .accessibilityLabel(String(localized: "목소리 높이"))
+            .accessibilityValue(label)
+            HStack(spacing: 20) {
+                tuningButton(String(localized: "추천값"), disabled: tuning.soundsSame(as: suggestedTuning)) {
+                    applyTuning(suggestedTuning)
+                }
+                tuningButton(String(localized: "0으로"), disabled: tuning.isNeutral) {
+                    applyTuning(VoiceTuning(pitchSt: 0, source: .user))
+                }
+                Spacer(minLength: 0)
+            }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            theme.palette.surface,
+            in: RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous)
+                .stroke(theme.palette.outlineVariant, lineWidth: 1)
+        )
+        .disabled(saving)
+    }
+
+    private func tuningButton(_ title: String, disabled: Bool, action: @escaping () -> Void) -> some View {
+        Button(title, action: action)
+            .font(theme.typography.labelLarge.weight(.semibold))
+            .foregroundStyle(disabled ? theme.palette.onSurfaceVariant : theme.palette.primary)
+            .buttonStyle(.plain)
+            .disabled(saving || disabled)
+    }
+
+    /// "+3.5" / "−1.5" / "0" — 부호를 늘 보인다(안드로이드 `signedTuningValue` 와 같은 글자, 빼기는 U+2212).
+    /// 숫자뿐이라 번역 대상이 아니다.
+    static func tuningValueLabel(_ value: Double) -> String {
+        guard value != 0 else { return "0" }
+        return (value > 0 ? "+" : "\u{2212}") + String(format: "%.1f", abs(value))
+    }
+
+    /// 단위까지 붙인 값 — "−1.5 반음"(안드로이드 `voices_tuning_pitch_value`, 스펙 §4-3 제목 줄). 숫자만 두면 무슨 눈금인지
+    /// 알 수 없다(Codex #870).
+    static func tuningValueText(_ value: Double) -> String {
+        String(localized: "\(tuningValueLabel(value)) 반음")
+    }
+
+    /// 버튼으로 값을 바꾼다 — 바로 그 높이로 다시 들려준다.
+    private func applyTuning(_ next: VoiceTuning) {
+        tuning = next
+        replayLocally()
+    }
+
+    /// 받아 둔 미리듣기 클립을 **지금 높이로 메모리에서 구워** 서버 왕복 없이 처음부터 한 번 다시 튼다. 청취 기록(서버)과는
+    /// 무관하다 — 끝까지 들으면 그 높이가 '들은 높이' 가 된다. 서버 미리듣기를 트는 중(`busy`)이면 끊지 않는다 — 끝까지
+    /// 들어야 저장이 열리는 화면이다. 그때 바꾼 값은 그 재생이 끝난 뒤 다시 들려준다(`play`).
+    @discardableResult
+    private func replayLocally() -> Bool {
+        guard !viewGone, !busy, !saving,
+              let source = previewAudioURL,
+              FileManager.default.fileExists(atPath: source.path) else { return false }
+        voice.tuningPreviewPlayer.stop()
+        voice.previewPlayer.stop()
+        tuningGeneration += 1
+        let generation = tuningGeneration
+        let target = tuning
+        renderingTuning = true
+        Task {
+            let tuned = await Self.bake(source, tuning: target)
+            guard generation == tuningGeneration else { return }
+            renderingTuning = false
+            // 실제로 들려준 높이 — 굽지 못했거나 구운 소리를 못 틀어 원본을 틀었으면 0 이다(Codex #870).
+            var heard = tuned == nil ? VoiceTuning.neutral : target
+            let end = await voice.tuningPreviewPlayer.play(tuned: tuned, original: source) { heard = .neutral }
+            switch end {
+            case .finished: heardTuning = heard
+            case .stopped: break
+            // 원본도 못 틀었다 — 조용히 넘기면 버튼만 돌아오고 저장이 잠긴 채 남는다(Codex #870).
+            case .failed: errorMessage = String(localized: "미리듣기를 재생하지 못했어요.")
+            }
+        }
+        return true
+    }
+
+    /// 클립을 그 높이로 **메모리에서** 구운 소리(메인 밖). 원래 소리(0)거나 굽지 못하면 nil — 그때는 원본을 튼다.
+    private static func bake(_ source: URL, tuning: VoiceTuning) async -> Data? {
+        guard !tuning.isNeutral else { return nil }
+        return await Task.detached(priority: .userInitiated) {
+            VoiceTuningRenderer.previewWAV(source: source, tuning: tuning)
+        }.value
+    }
+
+    /// 업로드하는 동안 잰 등록 녹음 높이(원래 목소리)를 가져온다. 초안과 짝이 맞을 때만.
+    private func startSourceMeasurement() {
+        guard sourceMeasurement == nil,
+              let source = voice.pendingDraftSourceMeasurement,
+              source.draftID == draft.id else { return }
+        sourceMeasurement = source.measurement
+    }
+
+    /// 새 미리듣기 클립이 도착했다 — 재생 **전에** 재서 추천값을 정하고, 그 높이로 메모리에서 구운 소리를
+    /// 돌려준다(재생이 처음부터 그 소리로 나간다). 사용자가 이미 슬라이더를 만졌으면 그 값을 덮지 않는다(추천값만 갱신).
+    /// 화면을 떠났으면 `.cancelled` — 분석·굽기는 떼어 낸 작업이라 화면을 떠나도 끝까지 돌고, 그 뒤에 틀면 화면 밖에서
+    /// 소리가 난다(Codex #870). 판정은 `viewGone`(떠날 때 켜지고 돌아오면 꺼진다).
+    private func prepareTuning(for url: URL) async -> VoiceStudioViewModel.DraftPreviewAudio {
+        guard !viewGone else { return .cancelled }
+        previewAudioURL = url
+        let preview = await Task.detached(priority: .userInitiated) {
+            VoiceTuningAnalyzer.measure(url: url, maxSeconds: 30)
+        }.value
+        guard !viewGone else { return .cancelled }
+        let suggestion = VoiceTuningAnalyzer.suggest(preview: preview, source: sourceMeasurement)
+        suggestedTuning = suggestion
+        if tuning.source == .suggested {
+            tuning = suggestion
+        }
+        let target = tuning
+        let tuned = await Self.bake(url, tuning: target)
+        guard !viewGone else { return .cancelled }
+        // 이 재생에 **실제로 실은** 값 — 재생 도중 슬라이더를 바꾸면 끝난 뒤 새 높이로 다시 튼다(`play`).
+        servedTuning = tuned == nil ? .neutral : target
+        return tuned.map { .tuned($0) } ?? .original
     }
 
     private var previewDisplayText: String {
@@ -347,7 +550,11 @@ struct VoicePreviewConfirmView: View {
             // ⚠ 이미 등록된 목소리가 있으면 **교체에 동의해야** 저장이 열린다. 서버가
             // 어차피 `VOICE_LIMIT_REACHED` 로 막으므로, 열어 두면 눌러도 실패하는
             // 버튼이 된다 — 무엇을 해야 저장되는지도 알 수 없다.
-                let saveDisabled = busy || !listened || (registeredVoice != nil && !replaceExisting)
+                // ⚠ **지금 높이를 끝까지 들어야** 저장이 열린다 — 바꾼 높이를 굽거나 트는 중에 저장하면 듣지 않은
+                // 값이 등록되어 그 목소리의 모든 알람에 구워진다(Codex #870).
+                let heardCurrentTuning = heardTuning.map { tuning.soundsSame(as: $0) } ?? false
+                let saveDisabled = busy || !listened || renderingTuning || !heardCurrentTuning
+                    || (registeredVoice != nil && !replaceExisting)
                 actionButton(
                     title: saving ? "저장 중…" : "저장하기",
                     foreground: theme.palette.onPrimary,
@@ -406,22 +613,37 @@ struct VoicePreviewConfirmView: View {
 
     private func play() async {
         guard !busy else { return }
+        // 이미 끝까지 들은 문구면 **받아 둔 클립을 다시 튼다** — 높이를 바꿔 가며 비교하는 자리라
+        // 누를 때마다 합성을 기다리게 하지 않는다. 문구를 고치면 `listened` 가 풀려 아래 서버 경로로
+        // 새 클립을 받는다.
+        if listened, replayLocally() { return }
         busy = true
-        defer { busy = false }
         errorMessage = nil
         let outcome = await voice.playDraftPreview(
             draft: draft,
             session: auth.session,
             // 소리가 나기 시작할 때 글자도 같이 보인다(2026-09-19 지시).
-            onTextReady: { text in previewText = text }
+            onTextReady: { text in previewText = text },
+            prepareAudio: { url in await prepareTuning(for: url) },
+            // 구운 소리를 못 틀어 원본을 틀었다 — 들은 것은 0 이다(Codex #870).
+            onPlayingOriginalInstead: { servedTuning = .neutral }
         )
+        busy = false
         previewAttempted = true
         switch outcome {
         case .played(let text):
             if !text.isEmpty { previewText = text }
             listened = true
+            heardTuning = servedTuning
+            // 서버 미리듣기 도중(끊지 않는다) 높이를 바꿨으면 이제 새 높이로 들려준다 — 안 그러면 들어 보지
+            // 않은 값을 저장하게 된다(Codex #870). 확인을 기다리는 사이 화면을 떠났으면 다시 틀지 않는다.
+            if !viewGone, let served = servedTuning, !tuning.soundsSame(as: served) {
+                replayLocally()
+            }
         case .failed(let message):
             errorMessage = message
+        case .interrupted:
+            break
         }
     }
 
@@ -441,6 +663,7 @@ struct VoicePreviewConfirmView: View {
             editDraft = ""
             // 서버가 previewed_at 을 지웠다 — 새 문구는 안 들어본 문구다.
             listened = false
+            heardTuning = nil
             await play()
         } catch {
             errorMessage = voice.mapVoiceError(error)
@@ -457,8 +680,12 @@ struct VoicePreviewConfirmView: View {
                 id: draft.id,
                 token: token,
                 replaceExisting: replaceExisting,
-                isShared: isShared && canShareVoice
+                isShared: isShared && canShareVoice,
+                // **끝까지 들은** 높이를 한 번 싣는다(저장은 지금 값을 들었을 때만 열린다). 교체 등록도 같다 — 서버는
+                // 옛 목소리의 높이를 물려주지 않고 이 값으로 덮어쓴다(스펙 §4-3). 0 이면 키가 나가지 않는다.
+                pitchSemitones: heardTuning?.normalized().pitchSt
             )
+            voice.tuningPreviewPlayer.stop()
             // ⚠ **교체한 기기에서 곧바로 내린다.** 교체는 옛 프로필 행을 그대로 재사용하므로
             // (id 가 같다) 어떤 접근권 재확인으로도 이 알람들은 잡히지 않는다 — 놔두면 바로
             // 위에서 "직접 입력으로 해둔 알람들도 기본 알람으로 설정됩니다" 를 읽고 체크한
@@ -543,6 +770,7 @@ struct VoicePreviewConfirmView: View {
 
     private func discard() async {
         guard let token = auth.session?.token else { return }
+        voice.tuningPreviewPlayer.stop()
         busy = true
         defer { busy = false }
         // 실패해도 되돌아간다 — 초안은 서버가 정리하고, 여기 갇히는 게 더 나쁘다.

@@ -346,23 +346,39 @@ final class AlarmTalkAPI: @unchecked Sendable {
     /// 서버는 이 시점에 페르소나(관계·호칭)를 잠그고 사전렌더 큐를 적재한다.
     /// - Parameter replaceExisting: 등록 확정 화면의 교체 체크. true 면 한도에 걸려도
     ///   막지 않고 **기존 목소리 자리에 이 목소리를 앉힌다**(알람은 그대로 살아 있다).
+    /// - Parameter pitchSemitones: 등록 미리듣기에서 들은 목소리 높이(반음). nil·0 이면 보내지 않는다(원래 소리).
     func promoteVoiceDraft(
         id: String,
         token: String,
         replaceExisting: Bool = false,
-        isShared: Bool = false
+        isShared: Bool = false,
+        pitchSemitones: Double? = nil
     ) async throws -> VoiceProfile {
         let response: VoiceProfileResponse = try await request(
             "voice/\(id)",
             method: "PATCH",
             token: token,
-            body: VoiceDraftPromoteRequest(
-                isDraft: false,
-                replaceExisting: replaceExisting ? true : nil,
-                isShared: isShared
+            body: Self.voiceDraftPromoteBody(
+                replaceExisting: replaceExisting,
+                isShared: isShared,
+                pitchSemitones: pitchSemitones
             )
         )
         return response.profile
+    }
+
+    /// 등록 확정 바디. 테스트가 실제로 나가는 모양을 같은 인코더로 볼 수 있게 따로 둔다.
+    static func voiceDraftPromoteBody(
+        replaceExisting: Bool,
+        isShared: Bool,
+        pitchSemitones: Double?
+    ) -> VoiceDraftPromoteRequest {
+        VoiceDraftPromoteRequest(
+            isDraft: false,
+            replaceExisting: replaceExisting ? true : nil,
+            isShared: isShared,
+            pitchSemitones: pitchSemitones.flatMap { $0 == 0 ? nil : $0 }
+        )
     }
 
     /// 미리듣기를 **끝까지 들었다**고 서버에 알린다. 서버가 준 재생 토큰을 그대로 돌려준다.

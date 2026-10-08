@@ -259,8 +259,7 @@ describe('DisplayNameSchema — 양방향 표식', () => {
 });
 
 describe('VoicePitchSemitonesSchema', () => {
-  // 앱 막대와 같은 범위·눈금이다(안드로이드 `VoiceTuning.PITCH_RANGE`·`STEP`, iOS `VoiceTuning.pitchRange`·`step` —
-  // PR #870, 아직 develop 에 없다).
+  // 앱 막대와 같은 범위·눈금이다(안드로이드 `VoiceTuning.PITCH_RANGE`·`STEP`, iOS `VoiceTuning.pitchRange`·`step`).
   it('범위와 눈금은 앱 막대와 같다', () => {
     expect(VOICE_PITCH_MIN_SEMITONES).toBe(-6);
     expect(VOICE_PITCH_MAX_SEMITONES).toBe(3);

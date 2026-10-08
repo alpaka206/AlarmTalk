@@ -307,8 +307,15 @@ internal fun MainViewModel.promoteVoiceDraft(
     profileId: String,
     replaceExisting: Boolean = false,
     isShared: Boolean = false,
+    /**
+     * 등록 미리듣기에서 **끝까지 들은** 목소리 높이(반음). 등록 확정 요청에 한 번 싣고(교체 등록도 같다), 서버가 그
+     * 목소리로 만드는 알람 소리에 굽는다 — 기기에는 남기지 않는다(스펙 voice-and-message §4-3). 0 이면 보내지 않는다.
+     */
+    pitchSemitones: Float = 0f,
 ) {
     val session = authSession ?: return
+    // 0 은 원래 소리다 — 키를 아예 보내지 않아 높이 이전과 같은 요청이 된다.
+    val sentPitch = pitchSemitones.takeIf { it != 0f }
     viewModelScope.launch {
         if (voiceProfileBusy) return@launch
         voiceProfileBusy = true
@@ -323,11 +330,17 @@ internal fun MainViewModel.promoteVoiceDraft(
                     isDraft = false,
                     language = deviceAppVoiceLanguage(),
                     replaceExisting = if (replaceExisting) true else null,
+                    pitchSemitones = sentPitch,
                 ),
-            ).profile
+            )
         }
-        val profile = result.getOrNull()
+        val profile = result.getOrNull()?.profile
         if (profile != null) {
+            // 높이를 모르는 옛 서버는 높이를 무시하고 원래 소리로 등록한다 — 응답에 높이가 없다. 실패로 보이지 않으므로
+            // 화면에는 알리지 않고 기록만 남긴다(서버가 먼저 나가야 한다 — 스펙 §4-3).
+            if (sentPitch != null && result.getOrNull()?.pitchSemitones != sentPitch) {
+                Log.w(TAG, "Server did not record the voice pitch on promotion id=$profileId")
+            }
             val draft = pendingVoiceDraft
             // 서버 PATCH 응답은 변경된 필드만 돌려준다 — 승격은 is_draft 만 보내므로 name 이 빠진다.
             // Gson 은 누락 필드에 (기본값 "" 을 무시하고) null 을 주입할 수 있어, non-null 로 선언된
