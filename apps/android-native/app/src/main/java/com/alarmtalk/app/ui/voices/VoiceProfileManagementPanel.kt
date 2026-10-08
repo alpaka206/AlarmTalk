@@ -1090,13 +1090,18 @@ internal fun VoiceProfileManagementPanel(
                         messageId = response.messageId,
                     )
                 }
+                // 추천값을 **첫 재생 전에** 정한다 — 첫 소리부터 보정된 목소리다(짧은 클립이라 금방이다). `원본 듣기` 로
+                // 받았어도 잰다 — 막대가 추천값에서 시작한다.
+                ensureTuningSuggestion(voice.id, cached.localAudioUri)
+                // 재는 사이 초안이 바뀌었으면 이 클립을 두지 않는다.
+                if (previewGeneration != confirmPreviewGeneration) return@runCatching false
+                // ⚠ 클립은 추천값을 잰 **뒤에** 준비됨으로 둔다(`clipReady` = 이 값이 있음). 먼저 두면 재는 사이 누른 버튼이
+                //   옛(대개 0) 톤으로 기기에서 틀고, 다 재면 막대가 추천값으로 튀거나 받기 끝의 재생이 그 소리를 끊는다
+                //   (Codex #872). 그 사이 누른 버튼은 '받는 중' 으로 읽혀 받은 뒤 틀 버튼만 바꾼다 — iOS 와 같다.
                 confirmPreviewAudioUri = cached.localAudioUri
                 // 청취 확인은 이 클립을 처음 끝까지 들었을 때 보낸다 — 어느 버튼으로 들었든(`confirmFirstListen`).
                 confirmPreviewToken = response.previewPlaybackToken
                 confirmPreviewAlreadyConfirmed = response.previewPlaybackConfirmed
-                // 추천값을 **첫 재생 전에** 정한다 — 첫 소리부터 보정된 목소리다(짧은 클립이라 금방이다). `원본 듣기` 로
-                // 받았어도 잰다 — 막대가 추천값에서 시작한다.
-                ensureTuningSuggestion(voice.id, cached.localAudioUri)
                 true
             }.onFailure { error ->
                 // 다이얼로그를 닫아 코루틴이 취소된 경우는 오류가 아니다 — 취소는 되던져
