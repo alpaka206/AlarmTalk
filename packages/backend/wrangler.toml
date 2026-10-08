@@ -7,11 +7,14 @@ account_id = "34cf9e5d676b15021704b5b3d247887c"
 #   wrangler deploy --env dev
 #   wrangler deploy --env production
 
-# 목소리 높이를 굽는 MP3 인코더(LAME → WASM, `wasm-media-encoders`)를 **미리 컴파일된 모듈**로 묶는다 — 워커는
-# 실행 중에 WASM 을 컴파일할 수 없다(`src/lib/voice-pitch.ts`). wrangler 의 기본 규칙(`**/*.wasm`)은 import
-# **문자열**에 맞추므로, 확장자가 없는 패키지 경로(`wasm-media-encoders/wasm/mp3`)는 이 규칙이 있어야 잡힌다
-# (없으면 "No loader is configured for .wasm"). 패키지의 `./wasm/mp3.wasm` 내보내기는 경로가 틀려 있어 쓰지
-# 않는다. `rules` 는 [env.*] 로 상속된다.
+# 서버 합성이 구운 소리(높이·음량)를 MP3 로 만드는 인코더(LAME → WASM, `wasm-media-encoders`)를 **미리 컴파일된
+# 모듈**로 묶는다 — 워커는 실행 중에 WASM 을 컴파일할 수 없다(`src/lib/voice-pitch.ts`).
+# ⚠ 음량을 올리는 동안(`TTS_LOUDNESS_BOOST_DB` > 0 — `src/lib/tts-model.ts`)은 높이와 상관없이 **모든 합성**이 이
+# 인코더로 굽는다. 이 규칙이나 진입점의 등록(`src/index.ts`)이 어긋나면 배포 빌드가 죽거나, 높이 있는 목소리만이
+# 아니라 TTS 가 전부 실패한다(세 자리 import·등록·규칙은 `test/worker-wasm-bundle.test.ts` 가 글자로 고정한다).
+# wrangler 의 기본 규칙(`**/*.wasm`)은 import **문자열**에 맞추므로, 확장자가 없는 패키지 경로
+# (`wasm-media-encoders/wasm/mp3`)는 이 규칙이 있어야 잡힌다(없으면 "No loader is configured for .wasm").
+# 패키지의 `./wasm/mp3.wasm` 내보내기는 경로가 틀려 있어 쓰지 않는다. `rules` 는 [env.*] 로 상속된다.
 [[rules]]
 type = "CompiledWasm"
 globs = ["wasm-media-encoders/wasm/mp3"]

@@ -12,7 +12,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { createSynthesisAttempts } from '../src/lib/voice-provider';
-import { TTS_MODEL_ID } from '../src/lib/tts-model';
+import { TTS_LOUDNESS_BOOST_DB, TTS_MODEL_ID } from '../src/lib/tts-model';
 import {
   computeTtsCacheKey,
   generatedTtsObjectKey,
@@ -105,6 +105,25 @@ describe('publish-stock-clips 가 의존하는 서버 계약', () => {
     expect(new Set(keys).size).toBe(4);
     // 범위를 비우면 예전 키 그대로다(초안 미리듣기).
     expect(await computeTtsCacheKey({ ...base, scope: undefined })).toBe(keys[0]);
+  });
+
+  // 음량(스펙 voice-and-message §10) — 서버는 모든 합성을 `TTS_LOUDNESS_BOOST_DB` 만큼 올리고 그 값을 키에 넣는다
+  // (0 이 아닐 때만). 게시 스크립트가 같은 값을 안 넣으면 같은 클립의 키가 갈려, 게시본을 '옛 소리' 로 읽고 다시 교체하거나
+  // 서버가 구운 클립과 원장 해시가 어긋난다.
+  it('게시 스크립트는 서버 합성 갈래와 같은 음량 값을 키에 넣는다', () => {
+    const attempt = createSynthesisAttempts({
+      env: { ELEVENLABS_API_KEY: 'test-key' } as never,
+      profile: { elevenlabs_voice_id: 'voice-1' } as never,
+      text: '테스트',
+      language: 'ko',
+    })[0]!;
+    expect(attempt.loudnessBoostDb).toBe(TTS_LOUDNESS_BOOST_DB);
+
+    const server = readFileSync(join(__dirname, '..', 'src', 'lib', 'stock-clips.ts'), 'utf-8');
+    const script = readFileSync(join(__dirname, '..', 'scripts', 'publish-stock-clips.ts'), 'utf-8');
+    expect(server).toMatch(/loudnessBoostDb: attempt\.loudnessBoostDb/);
+    // 스크립트는 값을 베끼지 않고 서버 상수를 가져다 쓴다.
+    expect(script).toMatch(/loudnessBoostDb: TTS_LOUDNESS_BOOST_DB/);
   });
 
   it('시스템 스톡의 오브젝트 키는 시스템 라이브러리 계정 아래에 놓인다', () => {

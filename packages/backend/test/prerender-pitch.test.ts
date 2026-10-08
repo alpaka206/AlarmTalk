@@ -1,6 +1,7 @@
-// 사전렌더가 **클론의 등록 높이를 모든 클립에 굽는다**(스펙 voice-and-message §4-3) — 그리고 굽는 클립은 한 틱의
-// 몫을 둘로 센다. 굽기(PSOLA + MP3)는 합성보다 무겁고, 크론 한 틱의 CPU 한도(30초)를 다른 일과 나눠 쓴다. 한도를
-// 넘기면 워커가 통째로 죽어(1102) 실패 기록조차 남지 않는다.
+// 사전렌더가 **클론의 등록 높이를 모든 클립에 굽는다**(스펙 voice-and-message §4-3) — 그리고 높이를 굽는 클립은 한
+// 틱의 몫을 둘로 센다. 높이 바꾸기(PSOLA)는 합성보다 무겁고, 크론 한 틱의 CPU 한도(30초)를 다른 일과 나눠 쓴다. 한도를
+// 넘기면 워커가 통째로 죽어(1102) 실패 기록조차 남지 않는다. 음량 올리기(§10)·MP3 만들기는 모든 클립이 거치지만
+// 가벼워(오디오 1초당 ≈4 ms — 잰 값과 몫 셈은 §4-3 「굽는 길」) 높이 없는 클립은 몫 1 그대로다.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createClient, type Client } from '@libsql/client';
 import { rmSync } from 'node:fs';
@@ -144,7 +145,7 @@ describe('사전렌더 — 목소리 높이', () => {
     }
   });
 
-  it('높이가 없는 목소리는 예전처럼 몫만큼 굽는다', async () => {
+  it('높이가 없는 목소리는 예전처럼 몫만큼 만든다(음량만 굽는 클립은 몫 1)', async () => {
     const { db, path } = await prerenderDb(null);
     try {
       const result = await runPrerenderBatch(db as never, ENV, { maxClips: 4, maxVoices: 1 });

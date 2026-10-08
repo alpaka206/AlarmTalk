@@ -9,7 +9,9 @@
  *   R2 에 올릴 것이므로, 모델·voice_settings·output_format·합성 글자가 다르면
  *   시청한 소리와 실제로 울리는 소리가 달라진다. 그래서 `TTS_MODEL_ID`·`TTS_VOICE_SETTINGS`·
  *   `STOCK_CLIP_PRESETS` 를 **서버 소스에서 그대로 가져다 쓴다**(베끼지 않는다). 받은 바이트는 가공하지
- *   않는다 — 서버(`generateStockClip`)도 그대로 올린다.
+ *   않는다 — 사람이 듣는 원본이다. 서버가 모든 합성에 거는 음량 올리기(`TTS_LOUDNESS_BOOST_DB`)는 게시할 때
+ *   `publish-stock-clips.ts` 가 같은 셈으로 건다(`mp3-loudness-boost.ts`) — 여기서 올려 두면 게시 때 두 번
+ *   올라간다(그래서 게시는 표지가 있는 시청본을 받지 않는다).
  *
  * 멱등하다 — 이미 있는 파일은 건너뛴다. 중간에 끊기면 다시 돌리면 이어서 받는다.
  *

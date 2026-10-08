@@ -732,33 +732,40 @@ v4 Turbo(§10)는 클론 목소리를 원래보다 **높게** 낸다 — 협력�
 
 ### 굽는 길
 
-- 높이가 있는 목소리만 ElevenLabs 에 **압축하지 않은 PCM**(`pcm_44100`, 16-bit 모노)을 받는다 — MP3 를 풀어 다시 묶지
-  않으므로 손실 압축을 한 번만 거친다. 높이를 바꾸고 크기를 되맞춘 뒤 **높이 없는 목소리와 같은 MP3 128 kbps**(LAME →
-  WASM, `wasm-media-encoders`)로 만든다. 높이 없는 목소리는 이 기능 이전과 같은 요청·같은 파일이다.
-- ⚠ **굽기에 실패하면 실패다 — 원래 소리로 대신 올리지 않는다**(`bakePitchMp3` 가 던진다). 게시된 클립은 '완료' 로 남아
-  다시 굽지 않으므로, 한 번의 대체가 그 문구를 영구히 높이 없는 소리로 만든다. 사전렌더는 실패로 세어 다시 시도하고,
-  직접 입력은 실패를 알린다(재시도하면 된다).
-- **캐시 키에 높이를 넣는다 — 0 이 아닐 때만**(`computeTtsCacheKey` 의 `pitchSemitones`). 높이 없는 목소리의 키는 예전
-  그대로라 이미 만든 소리를 다시 만들지 않는다.
+- **모든 서버 합성이** ElevenLabs 에 **압축하지 않은 PCM**(`pcm_44100`, 16-bit 모노 — `SYNTHESIS_PCM_OUTPUT_FORMAT`)을
+  받는다 — MP3 를 풀어 다시 묶지 않으므로 손실 압축을 한 번만 거친다. 처음(2026-10-07)에는 높이가 있는 목소리만 받았는데,
+  2026-10-08 부터 모든 소리의 음량을 올리느라(§10) 높이 없는 목소리도 받는다.
+- **높이 → 음량 차례로 굽는다**(`bakeVoiceMp3` ← `bakeVoiceSamples`). 높이가 있으면 바꾸고 크기를 원래대로 되맞춘 뒤,
+  음량을 `TTS_LOUDNESS_BOOST_DB` 만큼 올려(`boostLoudness`) **제공자 MP3(`mp3_44100_128`)와 같은 MP3 128 kbps**(LAME →
+  WASM, `wasm-media-encoders`)로 만든다. 음량을 마지막에 올리므로 높이가 있든 없든 결과는 받은 소리보다 같은 만큼 크다.
+  높이도 음량도 0 이면(음량을 0 으로 되돌린 경우) 굽지 않고 제공자 MP3 를 그대로 쓴다(`needsVoiceBake`).
+- ⚠ **굽기에 실패하면 실패다 — 받은 소리로 대신 올리지 않는다**(`bakeVoiceMp3` 가 던진다). 게시된 클립은 '완료' 로 남아
+  다시 굽지 않으므로, 한 번의 대체가 그 문구를 영구히 높이 없는(또는 작은) 소리로 만든다. 사전렌더는 실패로 세어 다시
+  시도하고, 직접 입력은 실패를 알린다(재시도하면 된다).
+- **캐시 키에 높이를 넣는다 — 0 이 아닐 때만**(`computeTtsCacheKey` 의 `pitchSemitones`). 높이 없는 목소리의 키에는 높이가
+  빠진다. 음량은 따로 들어간다(`loudnessBoostDb` — §10).
 - **모델이 바뀌면 굽지 않는다** — 높이는 **그 모델이 낸 높이를 바로잡는 상대값**이다(`appliedPitchSemitones`: 적힌 모델 ≠
   지금 `TTS_MODEL_ID` 면 0). 그래서 모델을 바꾸는 회차(§10)에 다시 굽는 클론 클립은 원래 소리로 나온다 — 새 모델에서
   다시 맞추려면 교체 등록이다. 모델을 바꿀 때 이 동작을 다시 판단한다.
 - ⚠ **워커가 잡을 수 없게 죽는 일(CPU·메모리 한도 초과)을 만들지 않는다.** 그렇게 죽으면 실패 기록(`markPrerenderFailed`)
   까지 가지 못하고 임대만 남아 15분 뒤 같은 회차가 다시 잡힌다 — 죽는 원인이 그대로면 그때마다 같은 클립을 다시 합성한다
   (ElevenLabs 키는 dev·prod 공용이다). 그래서 굽기 쪽에서 미리 막는다:
-  - **CPU** — 이 맥(Node)에서 오디오 1초당 14~22 ms(14초 클립 ≈0.3초)였다. 워커는 더 느릴 수 있어 dev 의 Workers Logs 로
-    다시 잰다(2026-10-08 아직 못 쟀다). 크론 한 틱은 CPU 30초(유료 요금제, 2026-10-08 결제)를 다른 일과 나눠 쓰므로 **굽는
-    클립 하나를 몫 2로 센다**(`runPrerenderBatch` — 실제로 굽는가로 센다, 모델이 바뀌어 굽지 않으면 1). 앱이 미는
-    전진(`POST /voice/:id/prerender/advance`)은 호출당 2클립 그대로다.
+  - **CPU** — 높이 바꾸기(PSOLA)가 이 맥(Node)에서 오디오 1초당 14~22 ms(14초 클립 ≈0.3초)였다. 음량 올리기와 MP3
+    만들기는 1초당 ≈4 ms 다(2026-10-08 — 8초 32 ms·14초 51 ms, 그중 올리기는 1 ms 남짓). 워커는 더 느릴 수 있어 dev 의
+    Workers Logs 로 다시 잰다(2026-10-08 아직 못 쟀다). 크론 한 틱은 CPU 30초(유료 요금제, 2026-10-08 결제)를 다른 일과
+    나눠 쓰므로 **높이를 굽는 클립 하나를 몫 2로 센다**(`runPrerenderBatch` — 실제로 높이를 굽는가로 센다, 모델이 바뀌어
+    굽지 않으면 1). 음량만 굽는 클립은 가벼워 1 그대로다. 앱이 미는 전진(`POST /voice/:id/prerender/advance`)은 호출당
+    2클립 그대로다.
   - **메모리** — 워커 한도 128 MB 에 WASM 메모리가 들어간다. MP3 인코더는 isolate 하나에 하나만 만들어 다시 쓴다(만들
-    때마다 16 MiB 를 새로 잡는다). 굽는 동안은 표본 수의 약 16배가 살아 있으므로 **60초를 넘는 소리는 굽지 않고 던진다**
-    (직접 입력 200자·프리셋 문구는 한참 짧다 — 넘으면 합성이 잘못된 것이다).
+    때마다 16 MiB 를 새로 잡는다 — 음량을 올리면서 모든 합성이 이 인코더를 지난다). 굽는 동안은 표본 수의 약 16배(높이)·
+    약 10배(음량만)가 살아 있으므로 **60초를 넘는 소리는 굽지 않고 던진다**(직접 입력 200자·프리셋 문구는 한참 짧다 —
+    넘으면 합성이 잘못된 것이다). 높이 없는 목소리에도 이 상한이 걸린다.
   - **형식** — 머리말 없는 16-bit 표본만 굽는다. 응답이 MP3·WAV 이거나(`Content-Type`·`RIFF`·`ID3`) 바이트 수가 홀수면
-    던진다 — 표본으로 읽으면 잡음을 구워 '완료' 로 게시한다.
+    던진다 — 표본으로 읽으면 잡음을 구워 '완료' 로 게시한다. 높이 없는 목소리도 같은 검사를 지난다.
   - 표시 간격이 0 이 되는 입력(닿을 수 없는 높이)에서 끝나지 않는 일이 없게 간격의 하한을 1 표본으로 둔다(결과는 앱과 같다).
 - **한 틱에 여럿을 잡으면 새 등록 먼저 몫을 쓴다**(`claimPendingPrerenderVoices` 가 잡은 기준으로 다시 세워 돌려주고,
   `runPrerenderBatch` 가 그 순서로 돈다). 예전에는 조회 순서(id 순)로 돌아, id 가 작은 다시 굽는 회차가 몫을 다 쓰고 새
-  등록은 진전 없이 반납되곤 했다 — 굽는 클립이 몫 2가 되면서 더 길어지므로 함께 고쳤다.
+  등록은 진전 없이 반납되곤 했다 — 높이를 굽는 클립이 몫 2가 되면서 더 길어지므로 함께 고쳤다.
 
 ### 배포 창(#128)
 
@@ -778,6 +785,8 @@ v4 Turbo(§10)는 클론 목소리를 원래보다 **높게** 낸다 — 협력�
 - dev 에서 ElevenLabs `pcm_44100` 응답(상태·`Content-Type`·길이가 같은 문장의 MP3 와 맞는가)과 실제 CPU 를 잰다(공용 키라
   최소 사용량으로). ElevenLabs 는 44.1 kHz PCM 을 Pro 이상 요금제에만 준다 — 이 키는 엔터프라이즈 서비스 계정이라 될
   것으로 보지만 확인 전이다. 안 되면 `pcm_24000` 으로 받아 44.1 kHz 로 올려 묶는다.
+  ⚠ 2026-10-08 부터는 **모든 합성**이 이 형식을 받는다(§10 음량) — 안 되면 높이 있는 목소리만이 아니라 서버 합성이 전부
+  실패한다(받은 소리로 대신 올리지 않으므로). prod 에 올리기 전에 dev 에서 확인한다.
 - 모델을 바꾸는 회차의 절차(`docs/ops/tts-model-rerender.md`)에 '높이 보정이 꺼진다' 를 적어 두었다 — 그때 다시 판단한다.
 
 ## 5. 무료 버킷은 **울릴 때마다 다음 클립으로 넘어간다**
@@ -1935,7 +1944,7 @@ TTS 는 웃음 글자를 **글자로 읽는다**(2026-09-29 v3·v4·v4 Turbo 비
 - 예전 규칙(모델 웃음 `[laughs]` 한 번·차분이면 없음·약·사과·조심 시드는 금지 `cloneClipAllowsLaughter`)은 웃음을
   넣지 않게 되면서 통째로 없어졌다.
 
-## 10. 합성 모델 — **`eleven_v4_turbo`**, 태그 없이 문장으로 (2026-09-30)
+## 10. 합성 모델 — **`eleven_v4_turbo`**, 태그 없이 문장으로 (2026-09-30) · 음량 +4 dB (2026-10-08)
 
 - **운영 모델은 `eleven_v4_turbo` 다.** 코드 상수 하나(`lib/tts-model.ts` 의 `TTS_MODEL_ID`)가 정하고, 서버와 스톡
   스크립트(시청본·게시)가 **같은 상수**를 가져다 쓴다. 워커 변수 `ELEVENLABS_TTS_MODEL_ID` 로 바꾸던 길은 없앴다 —
@@ -1961,6 +1970,39 @@ TTS 는 웃음 글자를 **글자로 읽는다**(2026-09-29 v3·v4·v4 Turbo 비
   가장 센 끝(도현 한국어 상승조 의문문 0.44)도 30dB 를 50ms 에 걸쳐 잦아든다 — 계단이 아니다. 꼬리는 끝 무음을
   0.1초쯤 늘릴 뿐 결과가 같아 둘 다 뺐다. 반복 재생 사이 간격은 안드로이드가 따로 둔다(`VOICE_REPEAT_GAP_MS`).
   시청본 지문의 파이프라인 세대를 `plain@2` 로 올렸다 — 옛 시청본은 전부 낡음으로 읽혀 다시 굽는다.
+- **모든 소리를 +4 dB 올린다**(2026-10-08 오너 결정 — `TTS_LOUDNESS_BOOST_DB`, `lib/tts-model.ts`). v4 Turbo 는 같은
+  목소리·같은 문장을 v3 보다 작게 낸다 — 기본 목소리 중앙 −4.1 dB, 번들 인사말 −0.3~−8.4 dB(아래 「위험」의 측정). 들리는
+  인상과 상관없이 소리 자체가 작으므로 고정 값으로 올린다(오너: "4db 정도만 크게").
+  - **셈은 하나다** — `@alarmtalk/voice` 의 `boostLoudness`: 표본에 10^(dB/20) 을 곱하되, 봉우리가 −0.2 dBFS(0.977)를
+    넘지 않는 데까지만 올린다(넘기면 잘려 찌그러진다). 그래서 원래 봉우리가 높은 클립은 덜 올라간다. 줄이지는 않는다 —
+    봉우리가 이미 그 위인 소리는 그대로 둔다.
+  - **서버 합성은 전부 한 곳에서 건다** — 합성 갈래(`createSynthesisAttempts` → `bakeVoiceMp3`)가 PCM 을 받아 (높이 →)
+    음량 → MP3 128 kbps 로 굽는다(§4-3 「굽는 길」). 클론 사전렌더·직접 입력·등록 미리듣기가 모두 지나간다 — 등록
+    미리듣기도 올린 크기라, 앱이 그 위에서 높이를 구워 들려주는 미리듣기가 알람과 같은 크기다. 실패하면 던진다 — 올리지
+    않은 소리로 대신 올리지 않는다.
+  - **미리 구운 소리도 같은 셈·같은 값·같은 인코더다** — 기본 목소리 게시본(`publish:stock`)과 앱 번들 인사말·랜딩
+    미리듣기는 사람이 들어 본 MP3 를 **다시 합성하지 않고** 풀어서 `boostLoudness` → `encodeMp3` 로 올린 사본을 쓴다
+    (`scripts/mp3-loudness-boost.ts`). 셈이 하나라도 갈리면 미리듣기와 알람의 크기가 달라진다.
+    - **다만 순 변화는 서버보다 약 0.45 dB 작다.** 풀어서 다시 묶으면(MP3 128 kbps) 크기가 그만큼 준다(LAME 128 kbps 의
+      성질 — 시청본 240개 실측 −0.58~−0.40). 서버는 PCM 을 받아 한 번만 묶으므로, 미리 구운 소리의 순 변화는 **배율 −
+      0.45 dB 쯤**이다. 보정하지 않는다 — 셈과 값을 서버와 하나로 둔다. 기본 목소리의 미리듣기(번들 인사말)와 알람(게시본)은
+      둘 다 이 길이라 서로는 같은 규칙이다.
+    - ⚠ **다시 묶어도 커지지 않으면 다시 묶지 않는다** — 들어 본 MP3 의 오디오 프레임을 그대로 두고 표지만 단다. 봉우리 때문에
+      배율이 그 손실보다 작은 클립은 다시 묶으면 들어 본 것보다 **작아진다**(시우 번들 인사말 3개가 −0.24~−0.38 dB 였다). 그래서
+      묶은 결과를 같은 디코더로 다시 풀어 통합 음량을 원본과 견주고, 커졌을 때만 쓴다(`boostMp3` 의 `reencoded`) — 음량 올리기가
+      들어 본 소리를 줄이는 일은 없다.
+    - 2026-10-08 시청본 240개의 결과: 배율 중앙 +3.21 dB(164개가 봉우리에 닿아 덜 오른다) → 다시 묶은 188개의 순 변화
+      +0.01~+3.56 dB(중앙 +3.29), 그대로 둔 52개(시우 51·애니 1)는 0. 목소리별 중앙 도현 +3.2·미나 +3.1·애니 +3.5·시우 0.
+      번들은 시우 인사말 3개가 그대로, 나머지 10개가 +0.98~+3.55 dB. 그래서 **기본 목소리는 +4 dB 를 다 받지 못한다** — 시우처럼
+      봉우리가 높은 목소리까지 4 dB 올리려면 순수 배율이 아니라 리미터(봉우리를 눌러 담는 처리)가 필요하다. 정하지 않았다
+      (실측·절차는 `docs/ops/tts-model-rerender.md`).
+  - **캐시 키에 들어간다 — 0 이 아닐 때만**(`computeTtsCacheKey` 의 `loudnessBoostDb` — 합성 갈래가 실은 값). 올리기 전에
+    만든 소리를 캐시가 다시 내주지 않는다(대가는 아래 「위험」). 게시 스크립트도 같은 값을 넣는다 — 서버
+    `generateStockClip` 과 키가 같고, 올리기 전에 게시한 클립은 키가 달라 제자리 교체 갈래로 간다(§5-3).
+  - '커지게 만들지 말 것'(CLAUDE.md 「재생 방식은 둘뿐」)과는 별개다 — 그 규칙은 울리는 동안 키우는 램프·반복 증폭을
+    막는다. 이건 처음부터 고정된 크기 보정이고, 사용자의 음량 슬라이더는 그대로 그 위에 걸린다.
+  - 모델을 바꾸면 새 모델의 크기를 다시 재서 이 값을 다시 정한다. 0 으로 두면 옛 갈래로 돌아간다 — 높이 없는 목소리는
+    제공자 MP3 를 그대로 쓰고 키도 예전 그대로다.
 - **캐시 키에 범위를 넣는다**(Codex #840). 원장 해시(`generated_audio_assets.request_hash`)는 전역 UNIQUE 인데
   오브젝트는 주인 아래에 놓인다(`generated-tts/<주인>/<키>`). 키가 겹치면 두 번째 렌더의 원장 행이 조용히 빠지고,
   그 오브젝트는 계정 삭제·보관 정리가 못 찾는다(원장이 R2 키의 유일한 출처다). v3 에서는 태그와 스톡의 여운 꼬리가
@@ -1996,9 +2038,9 @@ TTS 는 웃음 글자를 **글자로 읽는다**(2026-09-29 v3·v4·v4 Turbo 비
 - **남자 목소리가 높아지고, 모든 목소리가 작아진다.** 기본 목소리(같은 문장, v4 Turbo − v3): 도현 +8.7반음·
   시우 +6.4반음, 음량 중앙 −4.1dB(애니 −6.1·도현 −4.9). 번들 인사말을 다시 구웠을 때(2026-09-30, 12개)도
   음량 −0.3~−8.4dB(애니 −6~−8·도현 −5~−6), 도현 +3.6~+6.2반음·시우 +2.6~+4.7반음이었다. 남성 클론(8문장)은
-  원녹음 대비 v3 −3반음 → v4 Turbo +4~5반음, 음량 약 −5.5dB, 화자 유사도 0.78 → 0.91. 워커에서는 음량을 맞출
-  수단이 없다 — 폰 스피커에서 작게 들리면 클라 쪽 고정 보정 게인을 따로 정해야 한다('커지게 만들지 말 것' 은
-  램프·반복 증폭을 막는 규칙이고 고정 보정과는 별개다).
+  원녹음 대비 v3 −3반음 → v4 Turbo +4~5반음, 음량 약 −5.5dB, 화자 유사도 0.78 → 0.91. 높이는 등록 미리듣기에서
+  고르고(§4-3), 음량은 2026-10-08 부터 만들 때 +4 dB 올린다(위 — 서버가 PCM 을 받아 굽는 길이 생겨 워커에서도 크기를
+  맞출 수 있게 됐다). 앱이 울릴 때 또 올리지 않는다 — 두 곳에서 올리면 곱해진다.
 - **클론 문구가 바뀐다.** #124 가 다시 굽는 클론 클립은 Gemini 가 태그 없이 **새로 쓴다** — 잠금화면 문구도 바뀐다.
   시스템 스톡의 화면 문구는 그대로다.
 - **다시 굽는 동안 목소리 관리 화면이 '준비 중' 이다.** 진행률(`GET /voice/:id/prerender-status`)은 교체 회차에서
@@ -2011,6 +2053,15 @@ TTS 는 웃음 글자를 **글자로 읽는다**(2026-09-29 v3·v4·v4 Turbo 비
 - **확정만 하고 정식 등록 전이던 초안 미리듣기**는 배포 뒤 다시 들으려 하면 `VOICE_PREVIEW_UNAVAILABLE` 이 된다(모델 id 가
   캐시 키에 들어간다). 등록은 그대로 할 수 있고, 문구나 관계·호칭을 고치면 새로 만든다.
 - 밀려난 클론(`elevenlabs_voice_id` NULL)은 #124 가 건너뛴다 — 복구 때 새 보이스로 다시 굽힌다.
+- **음량을 올리는 배포(2026-10-08)도 서버 캐시를 한 번 빗나가게 한다** — 올린 값이 캐시 키에 들어간다. 직접 입력은 같은
+  문구도 새로 합성하고(한도는 §8 대로 달라지지 않는다), 확정만 하고 정식 등록 전이던 초안 미리듣기는
+  `VOICE_PREVIEW_UNAVAILABLE` 이 된다(모델을 바꿀 때와 같은 모양 — 위 두 항목).
+- **이미 만든 소리는 다시 굽지 않는다** — 그 배포 전에 서버가 구운 클론 프리셋 클립(사전렌더)·직접 입력 파일, 기기에 받아
+  둔 파일은 올리기 전 크기 그대로다. 배포 뒤 새로 등록·교체한 목소리의 클립과 새로 만든 직접 입력부터 올린 크기다. 클론
+  프리셋을 올리려면 다시 합성해야 한다(#124 처럼 큐를 다시 채우면 Gemini 가 문구도 새로 쓴다) — 2026-10-08 아직 정하지
+  않았다. 기본 목소리 게시본·번들 인사말은 다시 합성하지 않고 올린 사본으로 바꾼다(아래 표).
+- **모든 서버 합성이 `pcm_44100` 을 받는다**(§4-3 「남은 일」) — 이 키에서 그 형식이 안 되면 높이 있는 목소리만이 아니라
+  서버 합성이 전부 실패한다. prod 전에 dev 에서 확인한다.
 
 ### 다시 굽기 — 은퇴 없이 제자리 교체(§5-3)
 
@@ -2020,6 +2071,14 @@ TTS 는 웃음 글자를 **글자로 읽는다**(2026-09-29 v3·v4·v4 Turbo 비
 | 클론 사전렌더(목소리당 21개) | 마이그레이션 #124 → 서버 cron 이 같은 message_id 에 덮어쓴다(시간당 ≈120클립) | 클립 ≈110자 × 21 ≈ 2.3천 자 ≈ 목소리당 650 크레딧 + Gemini 21회 |
 | 번들 인사말(안드로이드·랜딩 12개 + 안드로이드 랜딩 미리듣기) | 이 PR 에서 다시 구웠다(`preview:stock -- --category greeting`) | — |
 | 직접 입력 | 다시 굽지 않는다(위) | — |
+
+음량을 올릴 때(2026-10-08 — 다시 합성하지 않는다, 크기만 바꾼다):
+
+| 대상 | 방법 |
+| --- | --- |
+| 서버 합성(클론 사전렌더·직접 입력·등록 미리듣기) | 배포 뒤 만드는 것부터 합성 갈래가 올려 굽는다. 이미 만든 것은 그대로다(위 「위험」) |
+| 시스템 스톡 240개 | `publish:stock` 이 들어 본 시청본을 같은 셈으로 올린 사본을 올리고(다시 묶어도 커지지 않는 52개는 소리 그대로 — 위), 키가 달라진 자리는 같은 message_id 에 교체한다(교체 갈래 — §5-3). 시청본은 손대지 않는다 |
+| 번들 인사말·랜딩 미리듣기 | `boost:greetings` 가 같은 셈으로 올린 사본으로 바꾼다(시우 인사말 3개는 소리 그대로 — 위) |
 
 절차·완료 확인 쿼리는 `docs/ops/tts-model-rerender.md`.
 
@@ -2113,9 +2172,10 @@ R2 파일·ElevenLabs 클론은 DB 트랜잭션 안에서 지울 수 없으므�
 | 교체도 같은 등록 게이트 | — | — | `replaceVoiceInPlace`(플랜·동의·`voice_profile_change_ledger`) |
 | 목소리 높이 — 등록 확정에서만 받는다(새 등록부터 · 0/null/미전송 = 원래 소리 · 범위 밖 400 · 등록 뒤 409, 같은 값의 재시도는 200 · 응답에 적은 값) | 끝까지 들은 높이를 싣는다 — `MainViewModel.promoteVoiceDraft`(`pitchSemitones`, 0 이면 키 없음) → `VoiceProfileUpdateRequest.pitchSemitones` ← `VoiceProfileManagementPanel`(`heardTuning`); 문구 `network/ApiErrorMessages.kt`; 회귀 `VoiceProfileUpdateRequestTest` | 끝까지 들은 높이를 싣는다 — `AlarmTalkAPI.promoteVoiceDraft(pitchSemitones:)`·`voiceDraftPromoteBody`(0 이면 키 없음) ← `VoicePreviewConfirmView.promote`(`heardTuning`); 문구 `APIErrorMessages.swift`; 회귀 `VoiceStudioViewModelTests.test_voiceDraftPromotionBody_carriesPitchOnlyWhenNotZero` | `PATCH /voice/:id`(`pitch_semitones`·`pitchSemitones` → `VoicePitchSemitonesSchema`, `INVALID_VOICE_PITCH`·`VOICE_PITCH_LOCKED`·재시도 판정 `pitchRetryOfRegistration`, `routes/voice-profile.ts`) → `voice_profiles.pitch_semitones`·`pitch_model_id`(#128). 회귀 `voice-pitch-promote.test.ts`·배포 창 `voice-pitch-deploy-window.test.ts` |
 | 목소리 높이 — 교체 등록은 새로 고른 값으로 덮어쓴다(안 고르면 비운다) | — | — | `replaceVoiceInPlace`(`pitchSemitones`) ← `PATCH /voice/:id`. 회귀 `voice-replace-in-place.test.ts`「교체는 새로 고른 높이와 지금 모델을 적고…」·`voice-pitch-promote.test.ts`「교체 등록은 고른 높이를…」 |
-| 목소리 높이 — 서버가 굽는다(사전렌더·`/tts/generate` · PCM → TD-PSOLA → 크기 되맞춤 → MP3 128 · 실패·형식 이상·60초 초과는 던진다 · 모델이 바뀌면 굽지 않는다 · 인코더는 isolate 당 하나) | 받은 파일을 그대로 튼다 | 받은 파일을 그대로 튼다 | 굽는 곳 `createSynthesisAttempts`(`lib/voice-provider.ts`) ← `voicePitchFromRow`·`appliedPitchSemitones`·`bakePitchMp3`·`shiftPcmPitch`·`encodeMp3`(`lib/voice-pitch.ts`) ← 셈 `shiftVoicePitch`(`packages/voice/src/pitch-shift.ts`) · PCM 응답 형식 검사 `ElevenLabsClient.textToSpeech` · 행 읽기 `findUsableVoiceProfile`(`SELECT *`·`vp.*` — 공유 목소리는 주인의 값, `routes/tts.ts`) · 사전렌더 `listReadyCloneVoices` → `findMissingStockTargets` → `generateStockClip`(`lib/stock-clips.ts`) · 인코더 묶기 `src/index.ts`(`registerMp3EncoderModule`)·`wrangler.toml` 의 `[[rules]]`. 회귀 `voice-pitch.test.ts`·`prerender-pitch.test.ts`·`tts.test.ts`「높이가 있는 목소리의 직접 입력은…」·`elevenlabs.test.ts`「PCM 을 달라고 하면…」·`worker-wasm-bundle.test.ts`·`packages/voice/test/pitch-shift.test.ts`(두 앱과 같은 기대값) |
+| 목소리 높이 — 서버가 굽는다(사전렌더·`/tts/generate` · PCM → TD-PSOLA → 크기 되맞춤 → 음량 → MP3 128 · 실패·형식 이상·60초 초과는 던진다 · 모델이 바뀌면 굽지 않는다 · 인코더는 isolate 당 하나) | 받은 파일을 그대로 튼다 | 받은 파일을 그대로 튼다 | 굽는 곳 `createSynthesisAttempts`(`lib/voice-provider.ts`) ← `voicePitchFromRow`·`appliedPitchSemitones`·`bakeVoiceMp3`·`bakeVoiceSamples`·`encodeMp3`(`lib/voice-pitch.ts`) ← 셈 `shiftVoicePitch`(`packages/voice/src/pitch-shift.ts`) · PCM 응답 형식 검사 `ElevenLabsClient.textToSpeech` · 행 읽기 `findUsableVoiceProfile`(`SELECT *`·`vp.*` — 공유 목소리는 주인의 값, `routes/tts.ts`) · 사전렌더 `listReadyCloneVoices` → `findMissingStockTargets` → `generateStockClip`(`lib/stock-clips.ts`) · 인코더 묶기 `src/index.ts`(`registerMp3EncoderModule`)·`wrangler.toml` 의 `[[rules]]`(테스트는 `test/support/register-mp3-encoder.ts` — `vitest.config.ts` 의 `setupFiles`). 회귀 `voice-pitch.test.ts`·`prerender-pitch.test.ts`·`tts.test.ts`「높이가 있는 목소리의 직접 입력은…」·`elevenlabs.test.ts`「PCM 을 달라고 하면…」·`worker-wasm-bundle.test.ts`·`packages/voice/test/pitch-shift.test.ts`(두 앱과 같은 기대값) |
 | 목소리 높이 — 캐시 키는 0 이 아닐 때만 높이를 넣는다 | — | — | `computeTtsCacheKey`(`pitchSemitones`, `lib/audio-cache.ts`) ← `routes/tts.ts`·`generateStockClip`. 회귀 `voice-pitch.test.ts`「캐시 키」 |
-| 사전렌더 — 굽는 클립 하나는 몫 2 · 잡은 순서(새 등록 먼저)로 돈다 | — | — | `runPrerenderBatch`(`clipCost`·`claimed` 순서)·`claimPendingPrerenderVoices`(`requested_order` 로 다시 세움, `lib/stock-clips.ts`). 회귀 `prerender-pitch.test.ts`·`stock-clips-prerender.test.ts`「여럿을 한 번에 잡아도…」 |
+| 음량 +4 dB(§10) — 모든 서버 합성이 PCM 을 받아 높이 → 음량 차례로 굽는다 · 봉우리 −0.2 dBFS 상한(줄이지는 않는다) · 실패는 던진다(올리지 않은 소리로 대신하지 않는다) · 캐시 키는 0 이 아닐 때만 · 0 이면 옛 갈래(제공자 MP3 그대로) · 미리 구운 소리(게시본·번들)는 풀어 다시 묶어 서버보다 ≈0.45 dB 작고, 다시 묶어도 커지지 않으면 들어 본 소리 그대로(표지만) | 받은 파일을 그대로 튼다 · 번들 인사말·랜딩 미리듣기는 올린 사본(`res/raw` — `scripts/boost-bundled-greetings.ts`) | 받은 파일을 그대로 튼다 · 번들 인사말은 안드로이드 `res/raw` 를 그대로 싣는다 | 값 `TTS_LOUDNESS_BOOST_DB`(`lib/tts-model.ts`) · 셈 `boostLoudness`(`packages/voice/src/loudness-boost.ts`) ← `bakeVoiceSamples`·`bakeVoiceMp3`·`needsVoiceBake`(`lib/voice-pitch.ts`) ← `createSynthesisAttempts`(`loudnessBoostDb`, `lib/voice-provider.ts`) · 키 `computeTtsCacheKey`(`loudnessBoostDb`, `lib/audio-cache.ts`) ← `routes/tts.ts`·`generateStockClip` · 게시본 `scripts/publish-stock-clips.ts`·번들 `scripts/boost-bundled-greetings.ts`(올린 사본 — `scripts/mp3-loudness-boost.ts` 의 `boostMp3`: 커지지 않으면 그대로, 키에 같은 값). 회귀 `voice-loudness.test.ts`·`voice-loudness-off.test.ts`·`tts.test.ts`「직접 입력은 받은 PCM 의 음량을…」·`stock-clip-provider-text.test.ts`·`publish-stock-clips-contract.test.ts`「게시 스크립트는 서버 합성 갈래와 같은 음량 값을…」·`mp3-loudness-boost-script.test.ts`「다시 묶어도 커지지 않으면…」·`bundled-voice-clips-loudness.test.ts`·`packages/voice/test/loudness-boost.test.ts` |
+| 사전렌더 — 높이를 굽는 클립 하나는 몫 2(음량만 굽는 클립은 1) · 잡은 순서(새 등록 먼저)로 돈다 | — | — | `runPrerenderBatch`(`clipCost`·`claimed` 순서)·`claimPendingPrerenderVoices`(`requested_order` 로 다시 세움, `lib/stock-clips.ts`). 회귀 `prerender-pitch.test.ts`·`stock-clips-prerender.test.ts`「여럿을 한 번에 잡아도…」 |
 | 교체 시 전달 custom 철회 | `withVoiceRevoked` | `RemoteAlarmPullSync.withVoiceRevoked` | `alarm_recipient_state.custom_voice` + `replaceVoiceInPlace` |
 | 교체 시 **본인** custom 철회 | `AlarmRepository.degradeCustomMessageAlarmsUsingVoiceProfile` + `VoiceAccessSyncWorker` | `VoiceStudioViewModel.degradeCustomMessageAlarms` + `PushNotificationCoordinator.onVoiceReplaced` | `voice_access_revoked` payload(`voiceProfileId`·`scope`) |
 | 확정 못 한 회차는 풀지 않는다 | — | `PendingApply.confirm()` — `commit` 이 없으면 **항상 false**(세대를 못 올렸다) | — |

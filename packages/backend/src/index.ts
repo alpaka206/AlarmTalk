@@ -22,7 +22,8 @@ import { sentryMiddleware } from './middleware/sentry';
 import { errorCodeMiddleware } from './middleware/errorCode';
 import { Toucan } from 'toucan-js';
 // MP3 인코더(LAME → WASM). 워커는 **미리 컴파일된 모듈만** 쓸 수 있어(실행 중 컴파일 금지) `.wasm` 을 정적으로
-// import 해 넘긴다 — wrangler 가 `WebAssembly.Module` 로 묶는다. 목소리 높이를 구운 소리를 MP3 로 만든다(`lib/voice-pitch.ts`).
+// import 해 넘긴다 — wrangler 가 `WebAssembly.Module` 로 묶는다. 구운 소리(높이·음량)를 MP3 로 만든다(`lib/voice-pitch.ts`).
+// ⚠ 음량을 올리는 동안은 **모든 합성**이 굽는다 — 등록이 빠지면 TTS 가 전부 실패한다.
 // 테스트(Node)는 `vitest.config.ts` 의 alias 가 같은 파일을 컴파일해 넘긴다.
 import mp3EncoderWasm from 'wasm-media-encoders/wasm/mp3';
 import { registerMp3EncoderModule } from './lib/voice-pitch';

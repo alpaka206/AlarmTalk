@@ -3,6 +3,9 @@ import { Hono } from 'hono';
 import type { AppEnv, Env } from '../src/types';
 import { createMockDB, fakeAuthMiddleware, jsonReq } from './helpers';
 import { CURRENT_POLICY_VERSION } from '../src/lib/consent';
+import { TTS_LOUDNESS_BOOST_DB, TTS_MODEL_ID } from '../src/lib/tts-model';
+import { bakeVoiceMp3, SYNTHESIS_PCM_OUTPUT_FORMAT } from '../src/lib/voice-pitch';
+import { looksLikeMp3, tonePcm } from './support/provider-pcm';
 
 const V1 = '40000000-0000-4000-8000-000000000001';
 const M1 = '10000000-0000-4000-8000-000000000001';
@@ -20,6 +23,18 @@ vi.mock('../src/lib/elevenlabs', () => ({
     this.textToSpeech = mockTextToSpeech;
   }),
 }));
+
+/**
+ * ElevenLabs 가 주는 PCM 모양의 가짜 응답 — 음량을 올리느라 모든 합성이 PCM 을 받아 굽는다(스펙 voice-and-message §10).
+ * 1바이트 같은 값은 홀수 길이라 굽기가 던져 500 이 된다.
+ */
+function providerPcm(): ArrayBuffer {
+  return tonePcm(0.05, 0.1).buffer as ArrayBuffer;
+}
+
+function base64Bytes(base64: string): Uint8Array {
+  return Uint8Array.from(atob(base64), (ch) => ch.charCodeAt(0));
+}
 
 const ENV: Env = {
   ELEVENLABS_API_KEY: 'test-key',
@@ -210,7 +225,7 @@ describe('POST /tts/generate — TTS 생성', () => {
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
-    mockTextToSpeech.mockResolvedValue(new Uint8Array([1, 2]).buffer);
+    mockTextToSpeech.mockResolvedValue(providerPcm());
 
     const res = await reqWithEnv(
       buildApp(),
@@ -274,7 +289,7 @@ describe('POST /tts/generate — TTS 생성', () => {
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
-    mockTextToSpeech.mockResolvedValue(new Uint8Array([1, 2]).buffer);
+    mockTextToSpeech.mockResolvedValue(providerPcm());
 
     const res = await reqWithEnv(
       buildApp(),
@@ -336,7 +351,7 @@ describe('POST /tts/generate — TTS 생성', () => {
       mockDB.pushResult([], 1);
       mockDB.pushResult([], 1);
       mockDB.pushResult([], 1);
-      mockTextToSpeech.mockResolvedValue(new Uint8Array([1, 2]).buffer);
+      mockTextToSpeech.mockResolvedValue(providerPcm());
 
       const res = await buildApp().request(
         jsonReq('POST', '/tts/generate', {
@@ -413,7 +428,7 @@ describe('POST /tts/generate — TTS 생성', () => {
       mockDB.pushResult([], 1);
       mockDB.pushResult([], 1);
       mockDB.pushResult([], 1);
-      mockTextToSpeech.mockResolvedValue(new Uint8Array([1, 2]).buffer);
+      mockTextToSpeech.mockResolvedValue(providerPcm());
 
       const res = await buildApp().request(
         jsonReq('POST', '/tts/generate', { voice_profile_id: V1, language: 'ko', draft_preview: true }),
@@ -457,7 +472,7 @@ describe('POST /tts/generate — TTS 생성', () => {
       mockDB.pushResult([], 1);
       mockDB.pushResult([], 1);
       mockDB.pushResult([], 1);
-      mockTextToSpeech.mockResolvedValue(new Uint8Array([1, 2]).buffer);
+      mockTextToSpeech.mockResolvedValue(providerPcm());
 
       const res = await buildApp().request(
         jsonReq('POST', '/tts/generate', { voice_profile_id: V1, language: 'ko', draft_preview: true }),
@@ -499,7 +514,7 @@ describe('POST /tts/generate — TTS 생성', () => {
       mockDB.pushResult([], 1);
       mockDB.pushResult([], 1);
       mockDB.pushResult([], 1);
-      mockTextToSpeech.mockResolvedValue(new Uint8Array([1, 2]).buffer);
+      mockTextToSpeech.mockResolvedValue(providerPcm());
 
       const pending = buildApp().request(
         jsonReq('POST', '/tts/generate', { voice_profile_id: V1, language: 'ko', draft_preview: true }),
@@ -561,7 +576,7 @@ describe('POST /tts/generate — TTS 생성', () => {
       mockDB.pushResult([], 1);
       mockDB.pushResult([], 1);
       mockDB.pushResult([], 1);
-      mockTextToSpeech.mockResolvedValue(new Uint8Array([1, 2]).buffer);
+      mockTextToSpeech.mockResolvedValue(providerPcm());
 
       const res = await buildApp().request(
         jsonReq('POST', '/tts/generate', {
@@ -707,7 +722,7 @@ describe('POST /tts/generate — TTS 생성', () => {
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
-    mockTextToSpeech.mockResolvedValue(new Uint8Array([1, 2]).buffer);
+    mockTextToSpeech.mockResolvedValue(providerPcm());
 
     const res = await reqWithEnv(
       buildApp(),
@@ -756,7 +771,7 @@ describe('POST /tts/generate — TTS 생성', () => {
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
-    mockTextToSpeech.mockResolvedValue(new Uint8Array([1, 2]).buffer);
+    mockTextToSpeech.mockResolvedValue(providerPcm());
 
     const res = await reqWithEnv(
       buildApp(),
@@ -800,7 +815,7 @@ describe('POST /tts/generate — TTS 생성', () => {
       listener_title: '우리 아들',
     });
     mockDB.pushResult([]);
-    mockTextToSpeech.mockResolvedValue(new Uint8Array([1, 2]).buffer);
+    mockTextToSpeech.mockResolvedValue(providerPcm());
 
     const res = await reqWithEnv(
       buildApp(),
@@ -1051,7 +1066,7 @@ describe('POST /tts/generate — edge cases', () => {
     mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]);
     mockDB.pushResult([]);
     pushManualQuotaFlow(); // userIdPK 가 채워져 직접 입력 쿼터 예약이 실제로 실행된다
-    mockTextToSpeech.mockResolvedValue(new Uint8Array([72, 101]).buffer);
+    mockTextToSpeech.mockResolvedValue(providerPcm());
     pushPublicationVoice();
     mockDB.pushResult([], 1); // INSERT messages
     mockDB.pushResult([], 1); // INSERT message_library
@@ -1077,7 +1092,7 @@ describe('POST /tts/generate — edge cases', () => {
     mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]);
     mockDB.pushResult([]); // cache lookup (miss)
     pushManualQuotaFlow(); // userIdPK 가 채워져 직접 입력 쿼터 예약이 실제로 실행된다
-    mockTextToSpeech.mockResolvedValue(new Uint8Array([72, 101]).buffer);
+    mockTextToSpeech.mockResolvedValue(providerPcm());
     pushPublicationVoice();
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
@@ -1104,21 +1119,14 @@ describe('POST /tts/generate — edge cases', () => {
   });
 
   // 목소리 높이(스펙 voice-and-message §4-3) — 등록 때 고른 높이가 있는 목소리는 직접 입력도 서버가 굽는다.
-  // PCM 을 받아(손실 압축을 한 번만 거친다) 높이를 바꾸고 MP3 로 돌려준다 — 앱은 받은 파일을 그대로 튼다.
-  it('높이가 있는 목소리의 직접 입력은 PCM 을 받아 굽고 MP3 로 돌려주며, 캐시 키가 원래 소리와 다르다', async () => {
-    const { registerMp3EncoderModule, PITCH_PCM_OUTPUT_FORMAT } = await import('../src/lib/voice-pitch');
-    const { default: mp3EncoderWasm } = await import('wasm-media-encoders/wasm/mp3');
-    registerMp3EncoderModule(mp3EncoderWasm);
-    const pcm = new Uint8Array(44_100); // 0.5초 16-bit PCM
-    const view = new DataView(pcm.buffer);
-    for (let i = 0; i < pcm.length / 2; i++) {
-      view.setInt16(i * 2, Math.round(12_000 * Math.sin((2 * Math.PI * 170 * i) / 44_100)), true);
-    }
+  // PCM 을 받아(손실 압축을 한 번만 거친다) 높이를 바꾸고 음량을 올려 MP3 로 돌려준다 — 앱은 받은 파일을 그대로 튼다.
+  it('높이가 있는 목소리의 직접 입력은 높이와 음량을 구운 MP3 를 돌려주며, 캐시 키가 높이 없는 소리와 다르다', async () => {
+    const pcm = tonePcm(0.5, 0.3);
 
-    async function generate(voiceRow: Record<string, unknown>, providerAudio: ArrayBuffer) {
+    async function generate(voiceRow: Record<string, unknown>) {
       mockDB.reset();
       mockTextToSpeech.mockReset();
-      mockTextToSpeech.mockResolvedValue(providerAudio);
+      mockTextToSpeech.mockResolvedValue(pcm.buffer);
       mockDB.pushResult([{ plan: 'plus' }]);
       mockDB.pushResult([voiceRow]);
       mockDB.pushResult([]); // cache lookup (miss)
@@ -1135,22 +1143,78 @@ describe('POST /tts/generate — edge cases', () => {
     }
 
     const baseRow = { id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' };
-    const { TTS_MODEL_ID } = await import('../src/lib/tts-model');
-    const tuned = await generate({ ...baseRow, pitch_semitones: -1.5, pitch_model_id: TTS_MODEL_ID }, pcm.buffer);
-    expect(mockTextToSpeech).toHaveBeenCalledWith('el-voice-1', expect.any(String), expect.objectContaining({
-      output_format: PITCH_PCM_OUTPUT_FORMAT,
-    }));
-    const bytes = Uint8Array.from(atob(tuned.audio_base64 as string), (ch) => ch.charCodeAt(0));
-    expect(bytes[0]).toBe(0xff); // MPEG 프레임 동기
-    expect(bytes[1]! & 0xe0).toBe(0xe0);
+    const tuned = await generate({ ...baseRow, pitch_semitones: -1.5, pitch_model_id: TTS_MODEL_ID });
+    expect(mockTextToSpeech).toHaveBeenCalledWith('el-voice-1', expect.any(String), {
+      language_code: 'ko',
+      output_format: SYNTHESIS_PCM_OUTPUT_FORMAT,
+    });
+    const tunedBytes = base64Bytes(tuned.audio_base64 as string);
+    expect(looksLikeMp3(tunedBytes)).toBe(true);
     expect(tuned.audio_format).toBe('mp3');
+    // 서버가 굽는 그 값(그 목소리의 높이 · 지금 음량)으로 구운 바이트 그대로다.
+    expect(Array.from(tunedBytes)).toEqual(
+      Array.from(await bakeVoiceMp3(pcm, { pitchSemitones: -1.5, loudnessBoostDb: TTS_LOUDNESS_BOOST_DB })),
+    );
 
-    const plain = await generate(baseRow, new Uint8Array([72, 101]).buffer);
-    // 높이 없는 목소리는 예전 호출 그대로다(기본 MP3).
-    expect(mockTextToSpeech).toHaveBeenCalledWith('el-voice-1', expect.any(String), { language_code: 'ko' });
+    const plain = await generate(baseRow);
+    // 높이 없는 목소리도 PCM 을 받아 음량만 굽는다(§10) — 예전처럼 output_format 을 빼고 MP3 를 받지 않는다.
+    expect(mockTextToSpeech).toHaveBeenCalledWith('el-voice-1', expect.any(String), {
+      language_code: 'ko',
+      output_format: SYNTHESIS_PCM_OUTPUT_FORMAT,
+    });
+    expect(Array.from(base64Bytes(plain.audio_base64 as string))).toEqual(
+      Array.from(await bakeVoiceMp3(pcm, { pitchSemitones: 0, loudnessBoostDb: TTS_LOUDNESS_BOOST_DB })),
+    );
     expect(tuned.cache_key).toBeDefined();
     expect(plain.cache_key).toBeDefined();
     expect(tuned.cache_key).not.toBe(plain.cache_key);
+  });
+
+  // 음량(스펙 voice-and-message §10) — eleven_v4_turbo 는 v3 보다 작게 내므로 서버가 **모든 합성**을
+  // `TTS_LOUDNESS_BOOST_DB` 만큼 올린다. 저장(R2)·응답 모두 올린 소리이고, 캐시 키에 그 값이 들어가 올리기 전에
+  // 만든 소리(같은 모델·같은 글자)를 캐시가 다시 내주지 않는다.
+  it('직접 입력은 받은 PCM 의 음량을 올린 MP3 를 저장·응답하고, 캐시 키에 그 값이 들어간다', async () => {
+    const r2 = createMockR2Bucket();
+    const pcm = tonePcm(0.3, 0.05);
+    mockTextToSpeech.mockResolvedValue(pcm.buffer);
+    mockDB.pushResult([{ plan: 'plus' }]);
+    mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]);
+    mockDB.pushResult([]); // cache lookup (miss)
+    pushManualQuotaFlow();
+    pushPublicationVoice();
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
+    const res = await buildApp().request(
+      jsonReq('POST', '/tts/generate', { voice_profile_id: V1, text: '일어날 시간이야' }),
+      undefined,
+      { ...ENV, VOICE_BUCKET: r2.bucket },
+    );
+    expect(res.status).toBe(201);
+    const body = await res.json();
+
+    const boosted = await bakeVoiceMp3(pcm, { pitchSemitones: 0, loudnessBoostDb: TTS_LOUDNESS_BOOST_DB });
+    const unboosted = await bakeVoiceMp3(pcm, { pitchSemitones: 0, loudnessBoostDb: 0 });
+    expect(Array.from(boosted)).not.toEqual(Array.from(unboosted));
+    expect(Array.from(base64Bytes(body.audio_base64 as string))).toEqual(Array.from(boosted));
+    const stored = r2.store.get(body.audio_object_key as string);
+    expect(stored).toBeDefined();
+    expect(Array.from(new Uint8Array(stored!.body))).toEqual(Array.from(boosted));
+
+    const { computeTtsCacheKey } = await import('../src/lib/audio-cache');
+    const keyInput = {
+      provider: 'elevenlabs',
+      providerVoiceId: 'el-voice-1',
+      voiceProfileId: V1,
+      modelId: TTS_MODEL_ID,
+      language: 'ko',
+      languageCode: 'ko',
+      text: body.synthesis_text as string,
+      outputFormat: 'mp3',
+      scope: 'manual:user-1',
+    };
+    expect(body.cache_key).toBe(await computeTtsCacheKey({ ...keyInput, loudnessBoostDb: TTS_LOUDNESS_BOOST_DB }));
+    // 올리지 않은 키(이 변경 전에 만든 소리의 키)와 갈린다.
+    expect(body.cache_key).not.toBe(await computeTtsCacheKey(keyInput));
   });
 
   it('generated audio cache hit skips provider calls', async () => {
@@ -1280,7 +1344,7 @@ describe('POST /tts/generate — edge cases', () => {
     mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]);
     mockDB.pushResult([]);
     pushManualQuotaFlow(); // 캐시 미스 후 직접 입력 쿼터 예약이 실제로 실행된다
-    mockTextToSpeech.mockResolvedValue(new Uint8Array([1]).buffer);
+    mockTextToSpeech.mockResolvedValue(providerPcm());
     pushPublicationVoice();
     mockDB.pushResult([], 1);
     const app = buildApp();
@@ -1302,7 +1366,7 @@ describe('POST /tts/generate — edge cases', () => {
     mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]);
     mockDB.pushResult([]);
     pushManualQuotaFlow(); // 캐시 미스 후 직접 입력 쿼터 예약이 실제로 실행된다
-    mockTextToSpeech.mockResolvedValue(new Uint8Array([2]).buffer);
+    mockTextToSpeech.mockResolvedValue(providerPcm());
     pushPublicationVoice();
     mockDB.pushResult([], 1);
     const app = buildApp();
@@ -1325,7 +1389,8 @@ describe('POST /tts/generate — edge cases', () => {
       'el-voice-1',
       taggedText,
       // 모델·합성 설정은 호출부가 고르지 않는다 — `textToSpeech` 가 `TTS_MODEL_ID`·`TTS_VOICE_SETTINGS` 로 보낸다.
-      { language_code: 'ko' },
+      // 형식은 PCM 이다 — 받아서 음량을 올려 굽는다(스펙 §10).
+      { language_code: 'ko', output_format: SYNTHESIS_PCM_OUTPUT_FORMAT },
     );
     const ttsOptions = mockTextToSpeech.mock.calls[0][2];
     expect(ttsOptions).not.toHaveProperty('stability');
@@ -1343,7 +1408,7 @@ describe('POST /tts/generate — edge cases', () => {
     mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]);
     mockDB.pushResult([]);
     pushManualQuotaFlow();
-    mockTextToSpeech.mockResolvedValue(new Uint8Array([4]).buffer);
+    mockTextToSpeech.mockResolvedValue(providerPcm());
     pushPublicationVoice();
     mockDB.pushResult([], 1);
     const app = buildApp();
@@ -1379,7 +1444,7 @@ describe('POST /tts/generate — edge cases', () => {
       mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]);
       mockDB.pushResult([]);
       pushManualQuotaFlow();
-      mockTextToSpeech.mockResolvedValue(new Uint8Array([5]).buffer);
+      mockTextToSpeech.mockResolvedValue(providerPcm());
       pushPublicationVoice();
       mockDB.pushResult([], 1);
       const res = await reqWithEnv(
@@ -1413,8 +1478,13 @@ describe('POST /tts/generate — edge cases', () => {
       languageCode: 'ko',
       text: plain.synthesis_text,
       outputFormat: 'mp3',
+      // 올린 음량도 키에 든다(스펙 §10) — 올리기 전에 만든 소리를 다시 내주지 않는다.
+      loudnessBoostDb: TTS_LOUDNESS_BOOST_DB,
     };
     expect(plain.cache_key).toBe(await computeTtsCacheKey({ ...keyInput, scope: 'manual:user-1' }));
+    expect(plain.cache_key).not.toBe(
+      await computeTtsCacheKey({ ...keyInput, scope: 'manual:user-1', loudnessBoostDb: undefined }),
+    );
 
     // ⚠ 직접 입력 키는 그 사람 범위다(Codex #840) — 원장 해시는 전역 UNIQUE 인데 오브젝트는 주인 아래에 놓여,
     //   두 사람이 같은 글을 치거나 스톡 문장을 그대로 치면 두 번째 원장 행이 조용히 빠진다(계정 삭제에도 못 찾는다).
@@ -1437,7 +1507,7 @@ describe('POST /tts/generate — edge cases', () => {
       ]);
       mockDB.pushResult([]);
       pushManualQuotaFlow();
-      mockTextToSpeech.mockResolvedValue(new Uint8Array([6]).buffer);
+      mockTextToSpeech.mockResolvedValue(providerPcm());
       pushPublicationVoice();
       mockDB.pushResult([], 1);
       const res = await buildApp().request(
@@ -1466,7 +1536,7 @@ describe('POST /tts/generate — edge cases', () => {
     mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]);
     mockDB.pushResult([]);
     pushManualQuotaFlow(); // 캐시 미스 후 직접 입력 쿼터 예약이 실제로 실행된다
-    mockTextToSpeech.mockResolvedValue(new Uint8Array([3]).buffer);
+    mockTextToSpeech.mockResolvedValue(providerPcm());
     pushPublicationVoice();
     mockDB.pushResult([], 1);
     const app = buildApp();
@@ -1589,7 +1659,7 @@ describe('POST /tts/generate — edge cases', () => {
     mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]);
     mockDB.pushResult([]);
     pushManualQuotaFlow(); // 캐시 미스 후 직접 입력 쿼터 예약이 실제로 실행된다
-    mockTextToSpeech.mockResolvedValue(new Uint8Array([0]).buffer);
+    mockTextToSpeech.mockResolvedValue(providerPcm());
     pushPublicationVoice();
     mockDB.pushResult([], 1);
     const app = buildApp();

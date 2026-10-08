@@ -1,6 +1,7 @@
 // 워커 묶음 — MP3 인코더(`wasm-media-encoders` 의 `.wasm`)는 wrangler 규칙이 import **문자열**에 맞아야 미리 컴파일된
-// 모듈로 묶인다. 어긋나면 배포 빌드가 "No loader is configured for .wasm" 로 죽거나, 묶여도 등록이 빠져 높이가 있는
-// 목소리의 합성이 전부 실패한다. CI 는 배포 빌드를 돌리지 않으므로 세 자리(import·등록·규칙)가 맞는지를 글자로 고정한다.
+// 모듈로 묶인다. 어긋나면 배포 빌드가 "No loader is configured for .wasm" 로 죽거나, 묶여도 등록이 빠져 **모든 합성이
+// 실패한다**(음량을 올리는 동안은 모든 합성이 PCM 을 받아 MP3 로 굽는다 — 스펙 voice-and-message §10). CI 는 배포 빌드를
+// 돌리지 않으므로 세 자리(import·등록·규칙)가 맞는지를 글자로 고정한다.
 // (실제 묶음 확인: `npx wrangler deploy --env dev --dry-run --outdir <임시 폴더>` — 업로드하지 않는다.)
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';

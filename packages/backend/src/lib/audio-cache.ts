@@ -24,6 +24,15 @@ export interface TtsCacheInput {
    * 두 소리가 같은 키를 쓸 일이 없지만, 높이를 구운 소리와 원래 소리가 한 키를 나눠 쓰지 않게 넣어 둔다.
    */
   pitchSemitones?: number;
+  /**
+   * 그 합성에 올린 음량(dB — `VoiceProviderAttempt.loudnessBoostDb`, 곧 `TTS_LOUDNESS_BOOST_DB`). 0 이거나 비우면 키에서
+   * 빠져 예전 키 그대로다. 넣는 이유: 같은 모델·같은 글자라도 올리기 전에 만든 소리는 작다 — 키를 갈라 캐시가 그 소리를
+   * 다시 내주지 않게 한다(값을 바꾸면 또 갈린다). 높이와는 따로 들어간다.
+   *
+   * ⚠ 스톡 게시 스크립트(`scripts/publish-stock-clips.ts`)도 **올린 바이트를 올릴 때** 같은 값을 넣어야 서버
+   *   (`generateStockClip`)와 키가 맞는다 — 범위(`STOCK_TTS_CACHE_SCOPE`)와 같은 규칙이다.
+   */
+  loudnessBoostDb?: number;
 }
 
 /**
@@ -57,6 +66,8 @@ export async function computeTtsCacheKey(input: TtsCacheInput): Promise<string> 
     scope: input.scope,
     // 0·undefined 는 빼서(`JSON.stringify` 가 undefined 를 버린다) 높이 없는 목소리의 키를 바꾸지 않는다.
     pitchSemitones: input.pitchSemitones ? input.pitchSemitones : undefined,
+    // 음량도 같다 — 0·undefined 면 빠져, 올리지 않은 소리의 키는 예전 그대로다.
+    loudnessBoostDb: input.loudnessBoostDb ? input.loudnessBoostDb : undefined,
   };
   return sha256Hex(JSON.stringify(normalized));
 }

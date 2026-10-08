@@ -23,3 +23,13 @@ export const TTS_MODEL_ID = 'eleven_v4_turbo';
  *   서빙된다. 시청본 지문(`scripts/stock-preview-fingerprint.ts`)에는 들어간다.
  */
 export const TTS_VOICE_SETTINGS = { stability: 0.5, similarity_boost: 0.8 } as const;
+
+/**
+ * 합성한 소리를 올리는 음량(dB) — **v4 Turbo 가 v3 보다 작게 나와서** 올린다(2026-10-08 사용자: "4db 정도만 크게").
+ * 서버가 만드는 모든 소리(`voice-provider.ts` 의 합성 갈래)와 기본 목소리 게시본·앱 번들 인사말이 같은 값·같은 셈
+ * (`@alarmtalk/voice` 의 `boostLoudness`)을 쓴다. 봉우리가 −0.2 dBFS 에 닿으면 그 직전까지만 올린다.
+ *
+ * ⚠ 캐시 키에 들어간다(0 이 아닐 때만) — 바꾸면 옛 크기로 만든 소리를 다시 쓰지 않는다. 모델을 바꾸면 새 모델의
+ *   크기를 재서 이 값을 다시 정한다.
+ */
+export const TTS_LOUDNESS_BOOST_DB = 4;

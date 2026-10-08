@@ -1,9 +1,11 @@
-// **스톡 클립은 저장하는 글자 그대로 합성하고, 받은 바이트를 그대로 올린다**(2026-09-30, eleven_v4_turbo).
+// **스톡 클립은 저장하는 글자 그대로 합성하고, 합성 갈래가 돌려준 바이트를 그대로 올린다**(2026-09-30, eleven_v4_turbo).
 //
 // v3 시절에는 제공자에게 보내는 글자 끝에 ` ...`(여운 꼬리)를 붙이고 mp3 끝에 무음 0.366초를 덧댔다 — v3 가
 // 마지막 음절 직후 뚝 끊었기 때문이다. v4 Turbo 는 꼬리 없이도 말끝을 스스로 놓아(끝 무음 0.14~0.29초,
 // 끝/평균 세기 0.44 이하 — 스펙 §10) 둘 다 뺐다. 되살리면 합성 글자·캐시 키가 시청본 지문
 // (`scripts/prerender-stock-preview.ts`)·게시 스크립트(`scripts/publish-stock-clips.ts`)와 갈라진다.
+// 음량은 합성 갈래(`createSynthesisAttempts`)가 이미 올려 돌려준다(2026-10-08) — 여기서 다시 손대지 않고, 그 값은
+// 캐시 키에 든다.
 import { describe, it, expect, vi } from 'vitest';
 import { createClient } from '@libsql/client';
 import { rmSync } from 'node:fs';
@@ -33,6 +35,8 @@ vi.mock('../src/lib/voice-provider', async (importOriginal) => ({
         providerVoiceId: profile.elevenlabs_voice_id,
         modelId: 'eleven_v4_turbo',
         outputFormat: 'mp3',
+        pitchSemitones: 0,
+        loudnessBoostDb: TTS_LOUDNESS_BOOST_DB,
         synthesize: async () => ({
           bytes: SYNTH_BYTES,
           mimeType: 'audio/mpeg',
@@ -48,6 +52,7 @@ vi.mock('../src/lib/voice-provider', async (importOriginal) => ({
 
 import { generateStockClip } from '../src/lib/stock-clips';
 import { computeTtsCacheKey } from '../src/lib/audio-cache';
+import { TTS_LOUDNESS_BOOST_DB } from '../src/lib/tts-model';
 
 describe('generateStockClip — 합성 글자와 바이트를 가공하지 않는다', () => {
   it('시스템 스톡 문구를 trim 한 글자 그대로 합성하고, 그 글자로 키를 만들며, 바이트를 그대로 올린다', async () => {
@@ -106,20 +111,22 @@ describe('generateStockClip — 합성 글자와 바이트를 가공하지 않�
       expect(row.synthesis_text).toBe(text);
       const ledger = (await db.execute('SELECT request_hash, model_id FROM generated_audio_assets')).rows[0]!;
       expect(ledger.model_id).toBe('eleven_v4_turbo');
-      // 키는 합성한 그 글자로 — 게시 스크립트가 같은 식으로 계산한다.
+      // 키는 합성한 그 글자와 합성 갈래가 올린 음량으로 — 게시 스크립트가 같은 식으로 계산한다.
+      const keyInput = {
+        provider: 'elevenlabs',
+        providerVoiceId: 'el-mina',
+        voiceProfileId: 'sys-1',
+        modelId: 'eleven_v4_turbo',
+        language: 'ko',
+        languageCode: 'ko',
+        text,
+        outputFormat: 'mp3',
+        scope: 'stock',
+      };
       expect(ledger.request_hash).toBe(
-        await computeTtsCacheKey({
-          provider: 'elevenlabs',
-          providerVoiceId: 'el-mina',
-          voiceProfileId: 'sys-1',
-          modelId: 'eleven_v4_turbo',
-          language: 'ko',
-          languageCode: 'ko',
-          text,
-          outputFormat: 'mp3',
-          scope: 'stock',
-        }),
+        await computeTtsCacheKey({ ...keyInput, loudnessBoostDb: TTS_LOUDNESS_BOOST_DB }),
       );
+      expect(ledger.request_hash).not.toBe(await computeTtsCacheKey(keyInput));
     } finally {
       db.close();
       for (const suffix of ['', '-shm', '-wal']) rmSync(`${path}${suffix}`, { force: true });

@@ -1,8 +1,8 @@
 // 목소리 높이 — **서버가 굽는다**(스펙 voice-and-message §4-3). 등록 확정 때 적은 높이를 그 목소리로 만드는 모든
 // 알람 소리(프리셋·직접 입력)에 굽고, 앱은 받은 파일을 그대로 튼다. 이 파일은 굽는 부품을 고정한다:
-// 행에서 읽기·모델 확인·PCM 변환·MP3 만들기·합성 갈래·캐시 키.
-import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import mp3EncoderWasm from 'wasm-media-encoders/wasm/mp3';
+// 행에서 읽기·모델 확인·PCM 변환·MP3 만들기·합성 갈래·캐시 키. 음량 올리기(§10 — 모든 합성)는 `voice-loudness.test.ts`.
+// MP3 인코더는 `vitest.config.ts` 의 `setupFiles` 가 등록한다(워커 진입점과 같다).
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mockTextToSpeech = vi.fn();
 vi.mock('../src/lib/elevenlabs', () => ({
@@ -14,41 +14,23 @@ vi.mock('../src/lib/elevenlabs', () => ({
 import { pitchTrack } from '@alarmtalk/voice';
 import {
   appliedPitchSemitones,
-  bakePitchMp3,
+  bakeVoiceMp3,
+  bakeVoiceSamples,
   encodeMp3,
   pcm16ToFloat32,
-  PITCH_PCM_OUTPUT_FORMAT,
-  PITCH_PCM_SAMPLE_RATE,
-  registerMp3EncoderModule,
-  shiftPcmPitch,
+  SYNTHESIS_PCM_OUTPUT_FORMAT,
+  SYNTHESIS_PCM_SAMPLE_RATE,
   voicePitchFromRow,
 } from '../src/lib/voice-pitch';
 import { createSynthesisAttempts } from '../src/lib/voice-provider';
 import { computeTtsCacheKey } from '../src/lib/audio-cache';
-import { TTS_MODEL_ID } from '../src/lib/tts-model';
+import { TTS_LOUDNESS_BOOST_DB, TTS_MODEL_ID } from '../src/lib/tts-model';
+import { looksLikeMp3, tonePcm } from './support/provider-pcm';
 
-/** 160 Hz 배음 소리(44.1 kHz, 16-bit 리틀엔디언 PCM) — ElevenLabs `pcm_44100` 이 주는 모양. */
-function tonePcm(seconds = 1): Uint8Array {
-  const sr = 44_100;
-  const count = Math.round(sr * seconds);
-  const out = new Uint8Array(count * 2);
-  const view = new DataView(out.buffer);
-  for (let i = 0; i < count; i++) {
-    const t = i / sr;
-    const v = 0.4 * (Math.sin(2 * Math.PI * 160 * t) + 0.5 * Math.sin(2 * Math.PI * 320 * t));
-    view.setInt16(i * 2, Math.round(Math.max(-1, Math.min(1, v)) * 32767), true);
-  }
-  return out;
-}
-
-/** MPEG 오디오 프레임 동기(11비트 1) — LAME 출력은 프레임으로 바로 시작한다. */
-function looksLikeMp3(bytes: Uint8Array): boolean {
-  return bytes.length > 4 && bytes[0] === 0xff && (bytes[1]! & 0xe0) === 0xe0;
-}
-
-beforeAll(() => {
-  registerMp3EncoderModule(mp3EncoderWasm);
-});
+/** 높이만 굽는다(음량은 그대로) — 높이 셈을 따로 재는 테스트용. */
+const pitchOnly = (pitchSemitones: number) => ({ pitchSemitones, loudnessBoostDb: 0 });
+/** 서버가 실제로 굽는 값 — 높이와 지금 음량. */
+const served = (pitchSemitones: number) => ({ pitchSemitones, loudnessBoostDb: TTS_LOUDNESS_BOOST_DB });
 
 describe('행에서 높이 읽기(voicePitchFromRow)', () => {
   it('값이 없거나·0 이거나·범위 밖이면 굽지 않는다', () => {
@@ -102,7 +84,7 @@ describe('PCM → MP3', () => {
   // 머리말(MP3 프레임)만 보면 부호가 뒤집히거나 표본률을 잘못 넘겨도 통과한다 — 실제 높이를 잰다.
   it('PCM 의 높이를 그 반음만큼 실제로 바꾼다(부호·표본률)', () => {
     const median = (samples: Float32Array) => {
-      const voiced = Array.from(pitchTrack(samples, PITCH_PCM_SAMPLE_RATE).f0).filter((f) => f > 0).sort((a, b) => a - b);
+      const voiced = Array.from(pitchTrack(samples, SYNTHESIS_PCM_SAMPLE_RATE).f0).filter((f) => f > 0).sort((a, b) => a - b);
       expect(voiced.length).toBeGreaterThan(20);
       return voiced[Math.floor(voiced.length / 2)]!;
     };
@@ -111,32 +93,43 @@ describe('PCM → MP3', () => {
     expect(original).toBeGreaterThan(155);
     expect(original).toBeLessThan(165);
     for (const semitones of [-2, 2]) {
-      const shifted = median(shiftPcmPitch(pcm, semitones));
-      const expected = original * Math.pow(2, semitones / 12);
-      expect(Math.abs(shifted / expected - 1), `${semitones} 반음`).toBeLessThan(0.03);
+      // 음량을 함께 올려도 높이는 같다 — 높이 셈만 보려고 두 갈래 다 잰다.
+      for (const recipe of [pitchOnly(semitones), served(semitones)]) {
+        const shifted = median(bakeVoiceSamples(pcm, recipe));
+        const expected = original * Math.pow(2, semitones / 12);
+        expect(Math.abs(shifted / expected - 1), `${semitones} 반음 · ${recipe.loudnessBoostDb} dB`).toBeLessThan(0.03);
+      }
     }
   });
 
   it('PCM 을 그 높이로 구워 MP3 로 돌려준다', async () => {
-    const mp3 = await bakePitchMp3(tonePcm(1), -2);
+    const mp3 = await bakeVoiceMp3(tonePcm(1), served(-2));
     expect(looksLikeMp3(mp3)).toBe(true);
   });
 
-  it('빈 PCM 은 던진다 — 원래 소리로 대신 올리지 않는다', async () => {
-    await expect(bakePitchMp3(new Uint8Array(0), -2)).rejects.toThrow();
+  it('빈 PCM 은 던진다 — 받은 소리로 대신 올리지 않는다', async () => {
+    for (const recipe of [served(-2), served(0)]) {
+      await expect(bakeVoiceMp3(new Uint8Array(0), recipe)).rejects.toThrow('empty PCM');
+    }
   });
 
-  it('머리말 없는 16-bit 표본이 아니거나 지나치게 길면 던진다', () => {
+  // 음량을 올리면서 높이 없는 목소리도 PCM 을 받아 굽는다 — 같은 검사를 지난다.
+  it('머리말 없는 16-bit 표본이 아니거나 지나치게 길면 던진다(높이가 없어도)', () => {
     const pcm = tonePcm(0.2);
-    expect(() => shiftPcmPitch(pcm.subarray(0, pcm.length - 1), -2)).toThrow('odd byte length');
-    for (const header of ['RIFF', 'ID3']) {
-      const wrapped = new Uint8Array(pcm.length);
-      wrapped.set(pcm);
-      wrapped.set(Array.from(header, (ch) => ch.charCodeAt(0)));
-      expect(() => shiftPcmPitch(wrapped, -2), header).toThrow('container format');
+    for (const recipe of [served(-2), served(0)]) {
+      const label = `${recipe.pitchSemitones} 반음`;
+      expect(() => bakeVoiceSamples(pcm.subarray(0, pcm.length - 1), recipe), label).toThrow('odd byte length');
+      for (const header of ['RIFF', 'ID3']) {
+        const wrapped = new Uint8Array(pcm.length);
+        wrapped.set(pcm);
+        wrapped.set(Array.from(header, (ch) => ch.charCodeAt(0)));
+        expect(() => bakeVoiceSamples(wrapped, recipe), `${label} ${header}`).toThrow('container format');
+      }
+      // 60초를 넘는 소리는 합성이 잘못된 것이고, 굽는 메모리가 워커 한도에 다가간다.
+      expect(() => bakeVoiceSamples(new Uint8Array(SYNTHESIS_PCM_SAMPLE_RATE * 2 * 61), recipe), label).toThrow(
+        'longer than',
+      );
     }
-    // 60초를 넘는 소리는 합성이 잘못된 것이고, 굽는 메모리가 워커 한도에 다가간다.
-    expect(() => shiftPcmPitch(new Uint8Array(PITCH_PCM_SAMPLE_RATE * 2 * 61), -2)).toThrow('longer than');
   });
 
   it('인코더를 다시 써도(동시에 굽더라도) 같은 소리는 같은 MP3 다', async () => {
@@ -167,7 +160,7 @@ describe('합성 갈래(createSynthesisAttempts)', () => {
     return { attempt: attempts[0]!, bake };
   }
 
-  it('높이가 있으면 PCM 을 받아 굽고, 결과는 MP3 다', async () => {
+  it('높이가 있으면 PCM 을 받아 높이와 음량을 굽고, 결과는 MP3 다', async () => {
     const pcm = tonePcm(0.5);
     mockTextToSpeech.mockResolvedValue(pcm.buffer);
     const baked = new Uint8Array([0xff, 0xfb, 1, 2, 3]);
@@ -175,41 +168,48 @@ describe('합성 갈래(createSynthesisAttempts)', () => {
       { semitones: -1.5, modelId: TTS_MODEL_ID },
       vi.fn().mockResolvedValue(baked),
     );
+    // 굽는 값이 attempt 에 실린다 — 호출부가 이 값으로 캐시 키를 만든다.
     expect(attempt.pitchSemitones).toBe(-1.5);
+    expect(attempt.loudnessBoostDb).toBe(TTS_LOUDNESS_BOOST_DB);
 
     const result = await attempt.synthesize();
     expect(mockTextToSpeech).toHaveBeenCalledWith('el-1', '일어날 시간이야', {
       language_code: 'ko',
-      output_format: PITCH_PCM_OUTPUT_FORMAT,
+      output_format: SYNTHESIS_PCM_OUTPUT_FORMAT,
     });
-    expect(bake).toHaveBeenCalledWith(new Uint8Array(pcm.buffer), -1.5);
+    expect(bake).toHaveBeenCalledWith(new Uint8Array(pcm.buffer), served(-1.5));
     expect(result.bytes).toBe(baked);
     expect(result.outputFormat).toBe('mp3');
     expect(result.mimeType).toBe('audio/mpeg');
   });
 
-  it('높이가 없거나 모델이 다르면 예전처럼 MP3 를 받아 그대로 쓴다', async () => {
+  // 2026-10-08 전에는 높이 없는 목소리가 제공자 MP3 를 그대로 받았다 — 음량을 올리려면 모든 합성이 PCM 을 받아 굽는다.
+  it('높이가 없거나 모델이 달라도 PCM 을 받아 음량을 굽는다 — 높이는 0', async () => {
     for (const pitch of [null, { semitones: -1.5, modelId: 'eleven_v3' }]) {
       mockTextToSpeech.mockReset();
-      const mp3 = new Uint8Array([0xff, 0xfb, 9, 9]);
-      mockTextToSpeech.mockResolvedValue(mp3.buffer);
-      const { attempt, bake } = attemptWith(pitch);
+      const pcm = tonePcm(0.2);
+      mockTextToSpeech.mockResolvedValue(pcm.buffer);
+      const baked = new Uint8Array([0xff, 0xfb, 9, 9]);
+      const { attempt, bake } = attemptWith(pitch, vi.fn().mockResolvedValue(baked));
       expect(attempt.pitchSemitones).toBe(0);
+      expect(attempt.loudnessBoostDb).toBe(TTS_LOUDNESS_BOOST_DB);
       const result = await attempt.synthesize();
-      // 예전 호출과 **같은 모양** — output_format 을 붙이지 않는다(기본 MP3).
-      expect(mockTextToSpeech).toHaveBeenCalledWith('el-1', '일어날 시간이야', { language_code: 'ko' });
-      expect(bake).not.toHaveBeenCalled();
-      expect(Array.from(result.bytes)).toEqual(Array.from(mp3));
+      expect(mockTextToSpeech).toHaveBeenCalledWith('el-1', '일어날 시간이야', {
+        language_code: 'ko',
+        output_format: SYNTHESIS_PCM_OUTPUT_FORMAT,
+      });
+      expect(bake).toHaveBeenCalledWith(new Uint8Array(pcm.buffer), served(0));
+      expect(result.bytes).toBe(baked);
     }
   });
 
-  it('굽기가 실패하면 던진다 — 원래 소리로 대신 돌려주지 않는다', async () => {
-    mockTextToSpeech.mockResolvedValue(tonePcm(0.2).buffer);
-    const { attempt } = attemptWith(
-      { semitones: 2, modelId: TTS_MODEL_ID },
-      vi.fn().mockRejectedValue(new Error('encoder failed')),
-    );
-    await expect(attempt.synthesize()).rejects.toThrow('encoder failed');
+  it('굽기가 실패하면 던진다 — 받은 소리로 대신 돌려주지 않는다(높이가 없어도)', async () => {
+    for (const pitch of [{ semitones: 2, modelId: TTS_MODEL_ID }, null]) {
+      mockTextToSpeech.mockReset();
+      mockTextToSpeech.mockResolvedValue(tonePcm(0.2).buffer);
+      const { attempt } = attemptWith(pitch, vi.fn().mockRejectedValue(new Error('encoder failed')));
+      await expect(attempt.synthesize()).rejects.toThrow('encoder failed');
+    }
   });
 });
 

@@ -998,9 +998,11 @@ export async function runPrerenderBatch(
     let voiceRendered = 0;
     let voiceError = false;
     let superseded = false;
-    // 높이를 굽는 목소리는 클립 하나가 **둘로 센다** — 굽기(PSOLA + MP3)가 합성보다 무겁다. 한 틱이 크론의 CPU
-    // 한도(30초)를 다른 일과 나눠 쓰므로, 굽는 클립은 한 틱에 maxClips 의 절반까지만 만든다(나머지는 다음 틱).
-    // 실제로 굽는가로 센다 — 등록 때와 모델이 다르면 굽지 않는다(`appliedPitchSemitones`).
+    // 높이를 굽는 목소리는 클립 하나가 **둘로 센다** — 높이 바꾸기(PSOLA)가 합성보다 무겁다. 한 틱이 크론의 CPU
+    // 한도(30초)를 다른 일과 나눠 쓰므로, 높이를 굽는 클립은 한 틱에 maxClips 의 절반까지만 만든다(나머지는 다음 틱).
+    // 실제로 높이를 굽는가로 센다 — 등록 때와 모델이 다르면 굽지 않는다(`appliedPitchSemitones`).
+    // 음량 올리기와 MP3 만들기는 모든 클립이 거치지만 가벼워서(이 맥 Node 에서 오디오 1초당 ≈4 ms — PSOLA 는 14~22 ms)
+    // 높이 없는 클립은 1 그대로다(스펙 §4-3 「굽는 길」).
     const clipCost = appliedPitchSemitones(voice.pitch, TTS_MODEL_ID) !== 0 ? 2 : 1;
     for (const target of targets) {
       if (budgetUsed >= maxClips) break;
@@ -1376,8 +1378,8 @@ export async function generateStockClip(
     profile: { elevenlabs_voice_id: target.elevenlabsVoiceId },
     text: synthesisText,
     language,
-    // 클론의 등록 높이를 굽는다(시스템 스톡은 값이 없다). 실패하면 던진다 — 원래 소리로 게시하면 '완료' 로 남아
-    // 다시 굽지 않는다(`bakePitchMp3`).
+    // 클론의 등록 높이를 굽는다(시스템 스톡은 값이 없다). 음량은 모든 클립에 같은 만큼 올린다(스펙 §10). 굽기가
+    // 실패하면 던진다 — 받은 소리로 게시하면 '완료' 로 남아 다시 굽지 않는다(`bakeVoiceMp3`).
     pitch: target.pitch ?? null,
   });
   if (attempts.length === 0) {
@@ -1399,6 +1401,8 @@ export async function generateStockClip(
     // 아니라 보관 정리가 30일 뒤 오브젝트를 지우며 프리셋의 `audio_url` 까지 비운다. 게시 스크립트도 같은 값.
     scope: STOCK_TTS_CACHE_SCOPE,
     pitchSemitones: attempt.pitchSemitones,
+    // 올린 음량도 키에 든다(스펙 §10). ⚠ 게시 스크립트도 같은 셈으로 올린 바이트에 같은 값을 넣는다 — 다르면 키가 갈린다.
+    loudnessBoostDb: attempt.loudnessBoostDb,
   });
 
   const generated = await attempt.synthesize();
