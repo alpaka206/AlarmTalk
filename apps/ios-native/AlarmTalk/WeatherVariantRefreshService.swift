@@ -4,6 +4,7 @@ import os
 protocol PrerenderVariantResolving: Sendable {
     func getPrerenderVariant(
         context: String,
+        region: String?,
         country: String?,
         city: String?,
         targetDate: String,
@@ -62,14 +63,14 @@ final class WeatherVariantRefreshService {
             .filter { BucketVariantResolver.weatherVariantNeedsRefresh($0, nowMillis: nowMillis) }
         guard !due.isEmpty else { return 0 }
 
-        // 같은 (도시, 날짜)는 한 번만 물어본다 — 같은 답을 받으려고 open-meteo 를 여러 번
+        // 같은 (도시, 날짜)는 한 번만 물어본다 — 같은 답을 받으려고 서버를 여러 번
         // 두드리면 배터리와 쿼터만 쓴다.
         let timezone = TimeZone.current.identifier
         var groups: [GroupKey: [LocalAlarmRecord]] = [:]
         for alarm in due {
             let key = GroupKey(
-                country: alarm.voiceWeatherCountry?.trimmed ?? "",
-                city: alarm.voiceWeatherCity?.trimmed ?? "",
+                country: alarm.voiceWeatherCountry.nilIfBlank ?? "",
+                city: alarm.voiceWeatherCity.nilIfBlank ?? "",
                 targetDate: BucketVariantResolver.localDateString(millis: alarm.fireAtMillis)
             )
             groups[key, default: []].append(alarm)
@@ -84,6 +85,9 @@ final class WeatherVariantRefreshService {
             if Task.isCancelled { break }
             let index = try? await api.getPrerenderVariant(
                 context: "wake_weather",
+                // 지역 키는 행의 글자에서 되짚는다 — 목록에서 고른 값은 표준 글자로 적혀 있어
+                // 언제나 되짚히고, 못 되짚는 옛 글자는 키 없이 글자만 간다(서버의 엄격한 옛 경로).
+                region: WeatherRegions.resolveAlias(country: key.country, city: key.city)?.key,
                 country: key.country.nilIfBlank,
                 city: key.city.nilIfBlank,
                 targetDate: key.targetDate,
@@ -107,8 +111,8 @@ final class WeatherVariantRefreshService {
                 guard let current = store.record(id: alarm.id),
                       current.ownerUserId == nil || current.ownerUserId == owner,
                       current.bucketId == "weather",
-                      (current.voiceWeatherCountry?.trimmed ?? "") == key.country,
-                      (current.voiceWeatherCity?.trimmed ?? "") == key.city,
+                      (current.voiceWeatherCountry.nilIfBlank ?? "") == key.country,
+                      (current.voiceWeatherCity.nilIfBlank ?? "") == key.city,
                       BucketVariantResolver.localDateString(millis: current.fireAtMillis) == key.targetDate
                 else { continue }
                 let didChange = current.contextVariantIndex != index
@@ -153,8 +157,4 @@ final class WeatherVariantRefreshService {
         var city: String
         var targetDate: String
     }
-}
-
-private extension String {
-    var trimmed: String { trimmingCharacters(in: .whitespacesAndNewlines) }
 }

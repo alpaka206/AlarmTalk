@@ -27,7 +27,7 @@ import com.alarmtalk.app.data.ClipReadiness
  * iOS `ClipPreparationView.swift` 와 같은 화면이고 같은 문구를 쓴다.
  *
  * ⚠ **이 화면이 알람 만들기를 막지 않는다.** (알람 설정 관문은 따로 있다 — 기본 목소리를 다
- * 받기 전에는 `AlarmTalkApp.defaultVoicesReadyOrExplain` 이 막는다, 2026-09-17.) 여기서 나가도 알람은 만들 수 있어야 한다 —
+ * 받기 전에는 `AlarmTalkApp.whenDefaultVoicesReady` 가 막는다, 2026-09-17.) 여기서 나가도 알람은 만들 수 있어야 한다 —
  * 새벽에 전파가 나빠 내일 알람을 못 맞추는 일이 있어서는 안 된다. 못 받은 목소리만
  * 고를 수 없을 뿐이다.
  */
@@ -56,8 +56,8 @@ fun ClipPreparationScreen(
     ) {
         Text(
             text = when {
-                awaitingOwner -> "준비 중이에요"
-                ready -> "준비됐어요"
+                awaitingOwner -> stringResource(R.string.voices_clip_prep_waiting)
+                ready -> stringResource(R.string.voices_clip_prep_ready)
                 else -> "$percent%"
             },
             style = MaterialTheme.typography.displaySmall,
@@ -77,11 +77,11 @@ fun ClipPreparationScreen(
             // 특히 서버 렌더 구간은 다운로드와 달리 몇 분이 걸릴 수 있다.
             text = when {
                 // 받는 사람이 할 수 있는 일이 없다 — '다시 시도' 도 소유자 큐라 못 누른다.
-                awaitingOwner -> "보낸 사람 쪽에서 이 목소리를 만들고 있어요. 다 되면 알람에서 고를 수 있어요."
-                ready -> "이제 오프라인에서도 목소리로 울려요."
-                hasFailure -> "목소리를 만들다 실패했어요. 다시 시도해 주세요."
-                rendering -> "목소리를 만들고 있어요. 몇 분 걸릴 수 있어요."
-                else -> "목소리를 받고 있어요. 앱을 닫아도 계속 받아요."
+                awaitingOwner -> stringResource(R.string.voices_clip_prep_owner_wait)
+                ready -> stringResource(R.string.voices_clip_prep_ready_body)
+                hasFailure -> stringResource(R.string.voices_clip_prep_failed_body)
+                rendering -> stringResource(R.string.voices_clip_prep_rendering_body)
+                else -> stringResource(R.string.voices_clip_prep_downloading_body)
             },
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -92,7 +92,7 @@ fun ClipPreparationScreen(
             Spacer(Modifier.padding(top = 24.dp))
             // 서버가 만들다 실패한 목소리만 다시 큐에 올린다. 다운로드 실패는 선다운로드가
             // 다음 회차에 부족분만 다시 받으므로 버튼이 필요 없다.
-            Button(onClick = onRetry) { Text("다시 시도하기") }
+            Button(onClick = onRetry) { Text(stringResource(R.string.voices_clip_prep_retry)) }
         }
 
         if (onDismiss != null) {

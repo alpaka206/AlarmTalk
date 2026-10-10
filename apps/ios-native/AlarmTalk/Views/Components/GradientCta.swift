@@ -60,7 +60,7 @@ struct GradientCta: View {
 }
 
 /// 인증 화면군의 **보조 버튼**(이메일 인증, 코드 확인) — 씬 위 외곽선 버튼.
-/// 안드로이드 `AuthScreen.kt:132-138` `authOutlinedButtonColors`/`authOutlinedButtonBorder`.
+/// 안드로이드 `AuthScreen.kt:129-135` `authOutlinedButtonColors`/`authOutlinedButtonBorder`.
 struct AuthOutlinedButton: View {
     @Environment(\.voiceAlarmTheme) private var theme
 

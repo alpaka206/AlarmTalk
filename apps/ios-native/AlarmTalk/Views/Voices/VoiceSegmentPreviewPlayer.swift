@@ -25,7 +25,7 @@ struct VoiceSegmentPreviewPlayer: View {
                     if controller.isPlaying {
                         controller.stop()
                     } else {
-                        let errorMessage = "미리듣기를 재생하지 못했어요."
+                        let errorMessage = String(localized: "미리듣기를 재생하지 못했어요.")
                         if controller.play(url: audioURL, startMs: startMs, endMs: endMs) {
                             localError = nil
                         } else {
@@ -67,11 +67,8 @@ struct VoiceSegmentPreviewPlayer: View {
     }
 
     private var timeLabel: String {
-        let total = max(0, endMs - startMs) / 1000
-        let played = Int(controller.elapsedSec)
-        return String(format: "%d:%02d / %d:%02d",
-                      played / 60, played % 60,
-                      total / 60, total % 60)
+        let played = HelperFormatters.audioTimeLabel(Int(controller.elapsedSec * 1000))
+        return "\(played) / \(HelperFormatters.audioTimeLabel(endMs - startMs))"
     }
 }
 
@@ -157,20 +154,3 @@ final class SegmentPlayerController: ObservableObject {
         if progress >= 1.0 { stop() }
     }
 }
-
-#if DEBUG
-#Preview("Segment player") {
-    if let url = Bundle.main.url(forResource: "preview", withExtension: "m4a") {
-        VoiceSegmentPreviewPlayer(
-            title: "목소리 1",
-            subtitle: "0:00 – 0:20 · 미리듣기",
-            audioURL: url,
-            startMs: 0,
-            endMs: 20_000
-        )
-        .padding()
-    } else {
-        Text("Preview audio missing")
-    }
-}
-#endif

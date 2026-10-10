@@ -20,6 +20,21 @@ func bundledSystemVoiceProfiles() -> [VoiceProfile] {
     ]
 }
 
+/// 저장된 이름은 계약값이며 화면에서만 id에 대응하는 번역 이름을 쓴다.
+func systemVoiceDisplayName(id: String?, fallback: String, bundle: Bundle = .main) -> String {
+    switch id {
+    case systemVoiceIDPrefix + "000000000101": return String(localized: "시우", bundle: bundle)
+    case systemVoiceIDPrefix + "000000000102": return String(localized: "미나", bundle: bundle)
+    case systemVoiceIDPrefix + "000000000103": return String(localized: "도현", bundle: bundle)
+    case systemVoiceIDPrefix + "000000000104": return String(localized: "애니", bundle: bundle)
+    default: return fallback
+    }
+}
+
+extension VoiceProfile {
+    var displayName: String { systemVoiceDisplayName(id: id, fallback: name) }
+}
+
 /// 시스템 제공(스톡) 보이스 id 인지 — 무료 플랜에서도 사용할 수 있다.
 /// Android `SystemVoices.isSystemVoiceId` 동일.
 func isSystemVoiceId(_ id: String?) -> Bool {
@@ -29,6 +44,16 @@ func isSystemVoiceId(_ id: String?) -> Bool {
 func isSystemVoice(_ profile: VoiceProfile) -> Bool {
     profile.isSystem == true || isSystemVoiceId(profile.id)
 }
+
+/// 유료 목소리를 못 쓰게 된 알람이 넘어갈 **대체 기본 목소리 — 미나**. 대체는 전부 이 하나다:
+/// 무료 잠금 · 예약 때 대체 · 목소리를 **잃은** 알람(삭제 · 공유 해제 · 발신자 철회 · 제자리 교체된
+/// 직접 입력). 알람이 이미 기본 목소리면 그 목소리를 그대로 둔다(`DefaultVoiceSubstitute.pickVoiceID`).
+///
+/// 2026-09-29 사용자 결정 — "삭제했거나 공유가 해제된 알람은 기본 목소리로, 미나로 해 그냥", 이어서
+/// "미나로 통일도 해". 그전 무료 잠금은 **마지막에 쓴 기본 목소리**를 골라, 같은 계정의 알람이 경로마다
+/// 다른 목소리로 바뀌었다. 기억값을 보지 말 것 — 한 목소리로 정해 둔다.
+/// 규칙: `docs/spec/billing-lifecycle.md` 「목소리를 못 쓰게 되면」. 안드로이드 `SUBSTITUTE_SYSTEM_VOICE_ID`.
+let substituteSystemVoiceID = systemVoiceIDPrefix + "000000000102"
 
 /// 기본(시스템) 목소리의 **번들 인사말 클립** 이름. 없으면 nil.
 ///

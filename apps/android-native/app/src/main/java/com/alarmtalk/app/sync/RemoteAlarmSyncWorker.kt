@@ -4,7 +4,6 @@ import android.content.Context
 import android.util.Log
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
-import com.alarmtalk.app.AccessSnapshotStore
 import com.alarmtalk.app.AccessTicket
 import com.alarmtalk.app.EntitlementWrite
 import com.alarmtalk.app.EntitlementWriter

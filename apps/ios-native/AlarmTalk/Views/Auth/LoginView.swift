@@ -4,7 +4,7 @@ import UIKit
 
 /// `LandingView` -> `LoginView` 흐름에서 로그인/회원가입 단일 화면.
 ///
-/// Android `apps/android-native/.../ui/auth/AuthScreen.kt:48-323` 의 2-mode UI 를
+/// Android `apps/android-native/.../ui/auth/AuthScreen.kt` 의 `AuthScreen`(2-mode UI)을
 /// 1:1 포팅했다. mode segmented control + 폼 + 인증코드 + Apple 버튼을 한 화면에
 /// 담아 마찰을 최소화한다.
 ///
@@ -57,12 +57,12 @@ struct LoginView: View {
         AuthEmailFormat.normalize(email)
     }
 
-    private var passwordAtLeastMin: Bool { password.count >= 8 }
-    private var passwordUnderMax: Bool { password.count <= 128 }
+    // 규칙은 `PasswordPolicy` 한 벌이다. 화면은 체크리스트를 그리려고 조각으로 나눠 본다.
+    private var passwordAtLeastMin: Bool { password.count >= PasswordPolicy.lengthRange.lowerBound }
+    private var passwordUnderMax: Bool { password.count <= PasswordPolicy.lengthRange.upperBound }
     private var passwordLengthValid: Bool { passwordAtLeastMin && passwordUnderMax }
-    // 서버 정책(@alarmtalk/shared PasswordSchema)·Android 와 동일: 영문·숫자 각 1자 이상.
-    private var passwordHasLetter: Bool { password.contains(where: { $0.isLetter }) }
-    private var passwordHasDigit: Bool { password.contains(where: { $0.isNumber }) }
+    private var passwordHasLetter: Bool { PasswordPolicy.hasLetter(password) }
+    private var passwordHasDigit: Bool { PasswordPolicy.hasDigit(password) }
     private var passwordHasLetterAndDigit: Bool { passwordHasLetter && passwordHasDigit }
     private var passwordMatches: Bool { !password.isEmpty && password == confirmPassword }
 
@@ -105,18 +105,18 @@ struct LoginView: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
-                    // 안드로이드는 세그먼트 피커가 없다(AuthScreen.kt:215-232) — 화면 안에
+                    // 안드로이드는 세그먼트 피커가 없다(AuthScreen.kt:212-229) — 화면 안에
                     // 제목을 두고, 로그인↔가입은 **맨 아래 전환 행**에서 고른다. 피커를
                     // 위에 두면 아직 계정이 있는지도 모르는 사람에게 먼저 답을 강요하게 된다.
-                    Text(mode == .login ? "로그인" : "회원가입")
+                    Text(mode == .login ? String(localized: "로그인") : String(localized: "회원가입"))
                         .font(theme.typography.headlineSmall)
                         .fontWeight(.bold)
                         .foregroundStyle(AuthSceneColors.text)
                         .padding(.top, 6)
 
                     Text(mode == .login
-                         ? "좋아하는 목소리 알람을 다시 불러올게요."
-                         : "목소리 알람을 만들 계정을 준비해요.")
+                         ? String(localized: "좋아하는 목소리 알람을 다시 불러올게요.")
+                         : String(localized: "목소리 알람을 만들 계정을 준비해요."))
                         .font(theme.typography.bodyMedium)
                         .foregroundStyle(AuthSceneColors.textDim)
 
@@ -144,7 +144,7 @@ struct LoginView: View {
 
                     submitButton
 
-                    // SSO·비밀번호 찾기는 로그인 모드에서만 노출(Android AuthScreen.kt:314-355).
+                    // SSO·비밀번호 찾기는 로그인 모드에서만 노출(Android AuthScreen.kt:311-352).
                     if mode == .login {
                         findPasswordRow
                         appleSignInRow
@@ -247,11 +247,7 @@ struct LoginView: View {
             .onChange(of: email) { _, _ in
                 // 고쳐 치기 시작하면 형식 경고를 지운다(안드로이드의 `onValueChange` 와 같은 시점).
                 emailFormatError = false
-                // ⚠ **서버가 준 같은 경고도 함께 지운다.** 이 칸 아래에 떠 있는 말인데
-                // 고쳐 쳐도 안 사라지면, 사용자는 방금 고친 주소가 또 틀렸다고 읽는다.
-                // 지우는 것은 **이 칸이 맡은 갈래 하나**다 — 자격증명 실패는 비밀번호
-                // 칸의 말이라 건드리지 않는다(안드로이드는 `onClearLoginError`).
-                if loginErrorIsEmailFormat { auth.clearLoginError() }
+                // 서버가 준 로그인 오류는 화면 바깥 `.onChange(of: email)` 이 지운다.
                 // 이메일이 바뀌면 인증 상태를 초기화.
                 verificationSent = false
                 verificationCompleted = false
@@ -460,14 +456,14 @@ struct LoginView: View {
         .padding(.top, 4)
     }
 
-    /// 로그인 ↔ 회원가입 전환 — 안드로이드 `AuthScreen.kt:533-553` 의 하단 행.
+    /// 로그인 ↔ 회원가입 전환 — 안드로이드 `AuthScreen.kt:530-550` 의 하단 행.
     private var modeSwitchRow: some View {
         HStack(spacing: 2) {
             Spacer(minLength: 0)
-            Text(mode == .login ? "처음 사용하시나요?" : "이미 계정이 있나요?")
+            Text(mode == .login ? String(localized: "처음 사용하시나요?") : String(localized: "이미 계정이 있나요?"))
                 .font(theme.typography.bodyMedium)
                 .foregroundStyle(AuthSceneColors.textMuted)
-            Button(mode == .login ? "회원가입" : "로그인") {
+            Button(mode == .login ? String(localized: "회원가입") : String(localized: "로그인")) {
                 handleModeChange(mode == .login ? .register : .login)
             }
             .font(theme.typography.bodyMedium)
@@ -478,7 +474,7 @@ struct LoginView: View {
         .padding(.top, 6)
     }
 
-    /// 비밀번호 찾기 진입 — 로그인 모드에서만 노출. Android `AuthScreen.kt:314-328`.
+    /// 비밀번호 찾기 진입 — 로그인 모드에서만 노출. Android `AuthScreen.kt:311-325`.
     private var findPasswordRow: some View {
         HStack(spacing: 4) {
             Text("비밀번호를 잊으셨나요?")
@@ -594,7 +590,7 @@ struct VocaTextField: View {
                 .padding(.horizontal, 14)
                 // ⚠ 인증 화면은 고정 다크라 테마 `outline` 만 두면 남색 배경에서 테두리가
                 // 거의 안 보이고 입력칸이 어디부터인지 모른다. 안드로이드는 글라스 채움
-                // (`AuthFieldGlass`) + `AuthLine` 테두리다(`AuthScreen.kt:61-64`).
+                // (`AuthFieldGlass`) + `AuthLine` 테두리다(`AuthScreen.kt:58-61`).
                 .background(
                     RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous)
                         .fill(AuthSceneColors.fieldGlass)
@@ -642,7 +638,7 @@ struct VocaSecureField: View {
                         .foregroundStyle(AuthSceneColors.textMuted)
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel(isVisible ? "비밀번호 숨기기" : "비밀번호 보기")
+                .accessibilityLabel(isVisible ? String(localized: "비밀번호 숨기기") : String(localized: "비밀번호 보기"))
             }
             .padding(.vertical, 12)
             .padding(.horizontal, 14)
@@ -695,7 +691,7 @@ enum LoginValidator {
 
     /// 비밀번호 길이 정책. 본 함수는 LoginViewModelTests 가 사용한다.
     static func isValidPasswordLength(_ value: String) -> Bool {
-        (8...128).contains(value.count)
+        PasswordPolicy.lengthRange.contains(value.count)
     }
 
     /// 인증코드 = 정확히 6자리 숫자.

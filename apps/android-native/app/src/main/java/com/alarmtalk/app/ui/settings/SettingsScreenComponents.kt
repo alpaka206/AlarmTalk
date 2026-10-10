@@ -3,24 +3,18 @@ package com.alarmtalk.app
 import android.content.Context
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.Delete
-import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
@@ -29,7 +23,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedCard
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -42,16 +35,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.alarmtalk.app.R
 import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
+import java.time.LocalTime
 import java.util.Locale
 import com.alarmtalk.app.network.FamilyAlarmQuietWindow
 
@@ -87,56 +77,77 @@ internal fun SettingsRow(
     label: String,
     value: String?,
     onClick: () -> Unit,
-    /// 되돌리기 어려운 행(로그아웃 등)은 라벨을 빨강으로 — iOS 와 같은 신호다.
+    /**
+     * 행 아래 작은 안내 한 줄(예: 목록에 없는 옛 지역 — "목록에서 다시 골라 주세요").
+     * 값 칸에 붙이지 않는 이유: 값은 한 줄로 잘리는 자리라 안내가 먼저 잘려 사라진다.
+     */
+    supportingText: String? = null,
 ) {
-    Row(
+    Column(
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(min = 52.dp)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+            .clickable(onClick = onClick),
     ) {
-        // 라벨은 제 너비를 그대로 갖고, **남는 폭을 값이 가져간다.** 반대로(라벨에 weight)
-        // 두면 값이 길 때 라벨이 밀려 "운세 / 정보" 처럼 두 줄로 접혔다 — 접혀야 할 쪽은
-        // 항상 값이다. 값이 없는 행(로그아웃 등)은 Spacer 가 그 자리를 대신 채워
-        // 오른쪽 셰브론이 늘 같은 자리에 온다.
-        Text(
-            text = label,
-            style = MaterialTheme.typography.bodyLarge,
-            fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.onSurface,
-            maxLines = 1,
-        )
-        if (value != null) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 52.dp)
+                .padding(horizontal = 12.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            // 라벨은 제 너비를 그대로 갖고, **남는 폭을 값이 가져간다.** 반대로(라벨에 weight)
+            // 두면 값이 길 때 라벨이 밀려 "운세 / 정보" 처럼 두 줄로 접혔다 — 접혀야 할 쪽은
+            // 항상 값이다. 값이 없는 행(로그아웃 등)은 Spacer 가 그 자리를 대신 채워
+            // 오른쪽 셰브론이 늘 같은 자리에 온다.
             Text(
-                text = value,
-                style = MaterialTheme.typography.bodyMedium,
+                text = label,
+                style = MaterialTheme.typography.bodyLarge,
                 fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.primary,
-                textAlign = TextAlign.End,
+                color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f),
             )
-        } else {
-            Spacer(modifier = Modifier.weight(1f))
+            if (value != null) {
+                Text(
+                    text = value,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.primary,
+                    textAlign = TextAlign.End,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+            } else {
+                Spacer(modifier = Modifier.weight(1f))
+            }
+            Icon(
+                imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+                contentDescription = null,
+                modifier = Modifier.size(20.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
-        Icon(
-            imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
-            contentDescription = null,
-            modifier = Modifier.size(20.dp),
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        if (supportingText != null) {
+            // ⚠ **왼쪽 정렬, 라벨과 같은 시작선**(행 안쪽 12dp)이다. 오른쪽 정렬은 이 앱에서
+            // **값**만의 자리다 — 보조 문장(동의 내역의 국외 이전 안내 `consent_overseas_withdraw_notice`,
+            // 더보기 프로필의 부제 `menu_profile_subtitle`)은 전부 시작선에 붙는다. 값 밑에 오른쪽으로
+            // 붙이면 값의 일부처럼 읽힌다. iOS `SettingsValueButton` 의 `note` 도 `.leading` 이다.
+            Text(
+                text = supportingText,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Start,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 12.dp, end = 12.dp, bottom = 8.dp),
+            )
+        }
     }
 }
 
-// 날씨 지역 다이얼로그는 편집기 문구 pane 의 WeatherLocationDialog(AlarmRandomPromptSettings.kt)
-// 를 공유한다 — 설정 전용 사본(저장 아이콘 포함)은 중복이라 제거했다.
-
-// 지역 선택 UI 는 WeatherLocationDialog(AlarmRandomPromptSettings.kt)의 바텀시트로 통합 —
-// 이전 칩 그리드/드롭다운 구현은 제거했다.
+// 지역 고르기는 편집기 문구 pane 의 WeatherLocationDialog(AlarmRandomPromptSettings.kt)를
+// 공유한다 — 나라 → 지역 목록, 직접 입력 없음(2026-09-30).
 
 // 방해금지 요일 프리셋(평일/주말/매일) — 백엔드 family-alarm-settings.ts PRESET_QUIET_DAY_SETS와 동일.
 private data class QuietDayPreset(val days: Set<Int>, val labelRes: Int)
@@ -239,11 +250,10 @@ internal fun FamilyAlarmQuietTimeDialog(
 
     timePickerTarget?.let { target ->
         val draft = drafts.getOrNull(target.index) ?: return@let
-        val initialHour = (if (target.isStart) draft.startHour else draft.endHour).toIntOrNull()?.coerceIn(0, 23) ?: 9
-        val initialMinute = (if (target.isStart) draft.startMinute else draft.endMinute).toIntOrNull()?.coerceIn(0, 59) ?: 0
+        val initial = if (target.isStart) draft.start else draft.end
         val state = rememberTimePickerState(
-            initialHour = initialHour,
-            initialMinute = initialMinute,
+            initialHour = initial.hour,
+            initialMinute = initial.minute,
             is24Hour = true,
         )
         // 자기 창을 여는 모달 — 진입 안내가 이 위에 겹치지 않게 적어 둔다(`OpenModalRegistry`).
@@ -271,11 +281,9 @@ internal fun FamilyAlarmQuietTimeDialog(
                     ) {
                         TextButton(
                             onClick = {
-                                val hh = String.format(Locale.US, "%02d", state.hour)
-                                val mm = String.format(Locale.US, "%02d", state.minute)
+                                val picked = LocalTime.of(state.hour, state.minute)
                                 updateDraft(target.index) {
-                                    if (target.isStart) it.copy(startHour = hh, startMinute = mm)
-                                    else it.copy(endHour = hh, endMinute = mm)
+                                    if (target.isStart) it.copy(start = picked) else it.copy(end = picked)
                                 }
                                 timePickerTarget = null
                             },
@@ -356,7 +364,7 @@ internal fun QuietWindowCard(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 QuietTimeChip(
-                    label = quietTimeLabel(draft.startHour, draft.startMinute),
+                    label = formatQuietTime(draft.start.toString()),
                     onClick = onPickStart,
                     modifier = Modifier.weight(1f),
                 )
@@ -367,7 +375,7 @@ internal fun QuietWindowCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 QuietTimeChip(
-                    label = quietTimeLabel(draft.endHour, draft.endMinute),
+                    label = formatQuietTime(draft.end.toString()),
                     onClick = onPickEnd,
                     modifier = Modifier.weight(1f),
                 )
@@ -405,54 +413,36 @@ internal fun QuietTimeChip(
     }
 }
 
-internal fun quietTimeLabel(hour: String, minute: String): String {
-    val h = hour.toIntOrNull() ?: 0
-    val m = minute.toIntOrNull() ?: 0
-    return String.format(Locale.US, "%d:%02d", h, m)
-}
-
+/**
+ * 방해금지 구간 편집 초안. 시각은 TimePicker 로만 바뀌므로 언제나 유효한 [LocalTime] 이다 —
+ * 글자 입력 시절의 시·분 문자열 검증은 필요 없다.
+ */
 internal data class QuietWindowDraft(
     val days: Set<Int>,
-    val startHour: String,
-    val startMinute: String,
-    val endHour: String,
-    val endMinute: String,
+    val start: LocalTime,
+    val end: LocalTime,
 )
 
-internal fun FamilyAlarmQuietWindow.toDraft(): QuietWindowDraft {
-    val startParts = splitTime(start)
-    val endParts = splitTime(end)
-    return QuietWindowDraft(
+internal fun FamilyAlarmQuietWindow.toDraft(): QuietWindowDraft =
+    QuietWindowDraft(
         days = days.filter { it in 0..6 }.toSet().ifEmpty { setOf(1, 2, 3, 4, 5) },
-        startHour = startParts.first,
-        startMinute = startParts.second,
-        endHour = endParts.first,
-        endMinute = endParts.second,
+        start = quietTimeOrDefault(start),
+        end = quietTimeOrDefault(end),
     )
-}
 
+// LocalTime 은 초가 0 이면 "HH:mm" 으로 적힌다 — 서버 TIME_RE 형식 그대로다.
 internal fun QuietWindowDraft.toWindow(): FamilyAlarmQuietWindow =
-    FamilyAlarmQuietWindow(
-        days = days.sorted(),
-        start = "${twoDigit(startHour)}:${twoDigit(startMinute)}",
-        end = "${twoDigit(endHour)}:${twoDigit(endMinute)}",
-    )
+    FamilyAlarmQuietWindow(days = days.sorted(), start = start.toString(), end = end.toString())
 
-internal fun QuietWindowDraft.isValid(): Boolean =
-    days.isNotEmpty() &&
-        isHourText(startHour) &&
-        isMinuteText(startMinute) &&
-        isHourText(endHour) &&
-        isMinuteText(endMinute)
+internal fun QuietWindowDraft.isValid(): Boolean = days.isNotEmpty()
 
-internal fun splitTime(value: String): Pair<String, String> {
+/** "HH:mm" 을 읽는다. 시·분이 범위를 벗어나거나 숫자가 아니면 **각각** 9시·0분으로 채운다. */
+internal fun quietTimeOrDefault(value: String): LocalTime {
     val parts = value.split(":")
-    return (parts.getOrNull(0)?.takeIf { isHourText(it) } ?: "09") to
-        (parts.getOrNull(1)?.takeIf { isMinuteText(it) } ?: "00")
+    val hour = parts.getOrNull(0)?.toIntOrNull()?.takeIf { it in 0..23 } ?: 9
+    val minute = parts.getOrNull(1)?.toIntOrNull()?.takeIf { it in 0..59 } ?: 0
+    return LocalTime.of(hour, minute)
 }
-
-internal fun twoDigit(value: String): String =
-    value.toIntOrNull()?.coerceIn(0, 99)?.toString()?.padStart(2, '0') ?: "00"
 
 internal fun quietScheduleLabel(context: Context, windows: List<FamilyAlarmQuietWindow>): String {
     if (windows.isEmpty()) return context.getString(R.string.misc2_quiet_none)
@@ -462,16 +452,16 @@ internal fun quietScheduleLabel(context: Context, windows: List<FamilyAlarmQuiet
 }
 
 /**
- * 설정 행에 보이는 날씨 지역 — **도시만** 쓴다.
+ * 설정 '지역' 행에 보이는 값 — **지역 이름만** 쓴다(판정은 `weatherRegionDisplay` 한 곳).
  *
- * ⚠ **나라를 붙이지 말 것**(2026-08-17 통일). 저장은 나라+도시 둘 다 한다(서버가 동명
- * 도시를 가르는 유일한 단서다 — `routes/tts.ts` 의 `resolveWeatherLocation`). 하지만
- * **보여줄 때는 도시뿐**이다: 앱의 다른 자리가 전부 도시로 말한다(문구 요약 행의
- * `날씨 · 서울`, 알람이 읽는 문장). 설정에서만 "대한민국 인천" 이면 같은 값이 두 이름을
- * 갖는다. iOS `weatherLocationLabel` 도 같다.
+ * ⚠ **나라를 붙이지 말 것**(2026-08-17 통일). 저장은 나라+지역 글자 둘 다 하지만, 앱의 다른
+ * 자리가 전부 지역 이름으로 말한다(문구 요약 행의 `날씨 · 서울`). 설정에서만 "대한민국 인천" 이면
+ * 같은 값이 두 이름을 갖는다. iOS `weatherLocationLabel` 도 같다.
+ * 목록의 지역이면 앱 언어의 이름, 되짚지 못한 옛 값이면 적힌 글자 그대로다(행 아래 안내가 붙는다).
  */
 internal fun weatherLocationSettingsLabel(context: Context, country: String, city: String): String =
-    city.trim().ifBlank { context.getString(R.string.misc2_settings_not_set) }
+    weatherRegionDisplay(context, country, city).label
+        .ifBlank { context.getString(R.string.misc2_settings_not_set) }
 
 /**
  * 설정 행에 보이는 운세 정보 — **성별 · 생년월일**까지다.
@@ -488,7 +478,7 @@ internal fun fortuneInfoSettingsLabel(
     gender: String,
     birthDate: String,
 ): String {
-    val value = listOf(gender, birthDate)
+    val value = listOf(fortuneValueLabel(context, gender.trim()), birthDate)
         .map { it.trim() }
         .filter { it.isNotBlank() }
         .joinToString(" · ")
@@ -525,9 +515,3 @@ internal fun dayLabels(context: Context): List<String> = listOf(
     context.getString(R.string.misc2_day_fri),
     context.getString(R.string.misc2_day_sat),
 )
-
-internal fun isHourText(value: String): Boolean =
-    value.toIntOrNull()?.let { it in 0..23 } == true
-
-internal fun isMinuteText(value: String): Boolean =
-    value.toIntOrNull()?.let { it in 0..59 } == true

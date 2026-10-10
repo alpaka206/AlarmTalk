@@ -16,11 +16,9 @@ import SwiftUI
 /// ⚠ **인라인 컨트롤로 되돌리지 말 것.** iOS 편집기는 스누즈 간격·반복 횟수를 전부 본문에
 /// 펼쳐 두고 있었다. 그러면 한 번 정하고 다시 안 볼 값들이 시간 설정·목소리 선택과 같은
 /// 무게로 화면을 차지해, 정작 매번 바꾸는 것(시각·목소리)이 밀려난다.
-enum AlarmSettingsPane: String, Identifiable, Hashable {
+enum AlarmSettingsPane: Hashable {
     case alarmSound
     case voiceOutput
-
-    var id: String { rawValue }
 
     var title: String {
         switch self {
@@ -28,12 +26,12 @@ enum AlarmSettingsPane: String, Identifiable, Hashable {
         // notification** 이 굳은 뜻이다(알림 권한, "알람 알림이 뜨지 않아요") — 스누즈는
         // 알림이 다시 뜨는 게 아니라 **알람이 다시 울리는** 것이다. 앱의 다른 어휘도
         // 울림이다(울림 화면, `docs/spec/alarm-ringing.md`).
-        case .alarmSound: return "알람음"
+        case .alarmSound: return String(localized: "알람음")
         // ⚠ **상세 화면 제목은 그 화면을 연 행과 같은 말이다**(2026-08-16 통일) —
         // 다시 울림·진동·알람음·문구가 모두 그렇다. 여기만 행은 '목소리 크기' 인데
         // 제목이 '음성 출력' 이었고(안드로이드는 '목소리'), 같은 화면에 이름이 셋이었다.
         // '음성' 이 아니라 '목소리' 다 — 사용자에게 보이는 말은 앱 전체가 목소리다.
-        case .voiceOutput: return "목소리 크기"
+        case .voiceOutput: return String(localized: "목소리 크기")
         }
     }
 }
@@ -85,7 +83,7 @@ struct AlarmSoundSettingsPane: View {
         PaneScaffold(title: AlarmSettingsPane.alarmSound.title) {
             EditorCard(verticalPadding: 0) {
                 soundRow(
-                    title: "기본 알람음",
+                    title: String(localized: "기본 알람음"),
                     selected: soundUri.nilIfBlank == nil,
                     previewURL: nil
                 ) {
@@ -121,7 +119,7 @@ struct AlarmSoundSettingsPane: View {
             // 자리를 쓰는 문장이다 — 여기서 할 수 있는 일(알람음 고르기)과 상관이 없다.
             // 목록을 못 읽는 기기에서만, **무엇이 울릴지**를 알려 준다.
             if entries.isEmpty {
-                Text("이 기기에서는 알람음을 고를 수 없어 기본 알람음으로 울려요.")
+                Text(String(localized: "이 기기에서는 알람음을 고를 수 없어 기본 알람음으로 울려요."))
                     .font(theme.typography.bodySmall)
                     .foregroundStyle(theme.palette.onSurfaceVariant)
                     .fixedSize(horizontal: false, vertical: true)
@@ -183,7 +181,7 @@ struct AlarmSoundSettingsPane: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel(Text(previewingPath == previewURL.path ? "정지" : "들어보기"))
+                .accessibilityLabel(Text(previewingPath == previewURL.path ? String(localized: "정지") : String(localized: "들어보기")))
             } else {
                 // 기본 알람음은 우리가 가진 파일이 없어 미리듣기가 불가능하다.
                 // 자리만 비워 이름 끝선을 맞춘다.
@@ -229,7 +227,7 @@ struct VoiceOutputSettingsPane: View {
             EditorCard {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
-                        Text("목소리 크기")
+                        Text(String(localized: "목소리 크기"))
                             .font(theme.typography.bodyLarge)
                             .fontWeight(.semibold)
                         Spacer()
@@ -266,7 +264,7 @@ struct VoiceOutputSettingsPane: View {
                 // ⚠ **무엇이 들리는지 미리 말한다.** 손을 떼면 곧바로 소리가 나는데
                 // 자기가 쓴 문구가 아니면 고장으로 읽힌다. 날씨·운세처럼 조건으로 고르는
                 // 문구는 울릴 때에야 정해지므로 여기서 들려줄 수 없다.
-                Text("실제 알람 문구가 아니라 인사말로 들려드려요.")
+                Text(String(localized: "실제 알람 문구가 아니라 인사말로 들려드려요."))
                     .font(theme.typography.bodySmall)
                     .foregroundStyle(theme.palette.onSurfaceVariant)
                     .frame(maxWidth: .infinity, alignment: .leading)

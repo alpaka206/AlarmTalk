@@ -254,6 +254,151 @@ struct AlarmEditDraft: Equatable {
             expectedText == (record.voiceText).nilIfBlank
     }
 
+    // MARK: - 문구가 없던 알람을 목소리 문구로 옮길 때
+
+    /// 문구가 **하나도 정해지지 않았는가** — 생성형 종류도, 테마도, 친 문구도 없다.
+    ///
+    /// 판정식이 '직접 입력'(`currentMessageContext` 의 `!randomPrompt && !isActiveStockClipAlarm`)
+    /// 과 같은 모양이라 화면은 이 상태를 **빈 직접 입력**으로 그린다. 두 가지로 읽힌다:
+    ///  - 알람 전용·직접 녹음 알람에는 문구 개념이 없다(`toRecord` 가 문구 필드를 비워
+    ///    저장한다). 그 알람을 목소리 문구로 옮긴 직후가 이 상태다 → `lastMessageChoice` 를 잇는다.
+    ///  - 등록(클론) 목소리에서 이 상태로 저장을 누르면 **직접 입력인데 문구가 비었다** →
+    ///    서버를 부르기 전에 막는다(`AlarmEditorSheet.manualTextMissing`).
+    ///
+    /// 안드로이드 `AlarmEditorState.hasNoMessageChoice` 짝이다.
+    static func hasNoMessageChoice(randomPrompt: Bool, selectedBucket: FreeBucket?, ttsText: String) -> Bool {
+        !randomPrompt
+            && selectedBucket == nil
+            && ttsText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    /// **직접 입력인데 문구가 비었는가** — 저장하면 만들 문장이 없다.
+    ///
+    /// `AlarmEditorSheet.saveFlow` 가 **권한 확인·한도 조회·생성 요청보다 먼저** 이걸 보고
+    /// 알럿으로 막는다 — 서버를 부르지 않으니 월 한도도 깎이지 않는다. 알람 전용·직접 녹음은
+    /// 문구가 필요 없고, 스톡 클립 목소리의 빈 문구는 테마가 붙기 전 과도기라 '직접 입력' 이
+    /// 아니다. 안드로이드 `emptyMessageBlockReason` 과 같은 판정이다.
+    ///
+    /// 뷰 밖에 두는 것은 테스트에서 입력별로 부르기 위해서다(`MessageContextMemoryTests`).
+    static func manualTextMissing(
+        playMode: AlarmPlayMode,
+        voiceSource: VoiceSource,
+        usesStockClips: Bool,
+        randomPrompt: Bool,
+        selectedBucket: FreeBucket?,
+        ttsText: String
+    ) -> Bool {
+        playMode != .alarmOnly
+            && voiceSource == .ttsProfile
+            && !usesStockClips
+            && hasNoMessageChoice(randomPrompt: randomPrompt, selectedBucket: selectedBucket, ttsText: ttsText)
+    }
+
+    /// **고른 목소리를 지금 쓸 수 없는가** — 목록에서 사라졌거나(삭제·공유 해제·미준비)
+    /// 무료 플랜이라 잠긴 목소리로 저장하려는 경우. 안드로이드 `SaveBlockReason.VOICE_UNAVAILABLE` 짝.
+    ///
+    /// ⚠ **이걸로 저장 버튼을 죽이지 않는다**(2026-09-29). 편집기의 '삭제된 목소리' 배너를
+    /// 걷어낸 뒤로는 이 사유를 말하는 자리가 **저장을 누를 때 뜨는 알럿** 하나다
+    /// (`AlarmEditorSheet.saveFlow` 첫머리). 죽은 버튼은 이유를 말하지 않아 고장으로 읽힌다.
+    ///
+    /// - 목소리를 아직 안 골랐으면 여기 갈래가 아니다(목소리 행이 "고르기" 로 말한다).
+    /// - **정리 중인 교체 목소리**도 아니다 — 곧 풀리는 상태라 "아직 준비 중" 으로 따로 말한다.
+    /// - ⚠ **테마를 골랐어도 막는다.** 테마 클립은 그 목소리의 클립이라 목소리가 사라지면
+    ///   받을 수 없다(서버 오디오 라우트가 삭제·접근 불가 목소리를 거절한다). 예외로 두면
+    ///   저장을 눌러 클립 받기 실패를 기다리게 될 뿐이다. 안드로이드 `editorSaveBlockReason`
+    ///   도 테마 갈래보다 **먼저** `usableTtsProfileIds` 를 본다(Codex #826).
+    /// - 기존 알람의 음원을 그대로 쓸 수 있으면 막지 않는다 — 시각만 고치는 재저장이 그렇다.
+    ///   (삭제·미준비 목소리에만 해당한다. 무료 플랜 잠금은 음원이 있어도 막는다 — 아래 주석.)
+    ///
+    /// 뷰 밖에 두는 것은 테스트에서 입력별로 부르기 위해서다(`MessageContextMemoryTests`).
+    static func selectedVoiceUnusable(
+        playMode: AlarmPlayMode,
+        voiceSource: VoiceSource,
+        profileID: String?,
+        settling: Bool,
+        lockedByPlan: Bool,
+        profileReady: Bool,
+        hasUsableAudio: @autoclosure () -> Bool
+    ) -> Bool {
+        guard playMode != .alarmOnly, voiceSource == .ttsProfile else { return false }
+        guard profileID.nilIfBlank != nil, !settling else { return false }
+        // ⚠ **플랜 잠금은 음원 재사용으로 풀리지 않는다** — 시각만 고치는 재저장도 막는다.
+        // 서버 `PATCH /alarm` 이 저장된 값 그대로의 유료 목소리도 403
+        // `VOICE_FEATURE_REQUIRES_PAID_PLAN` 으로 거절하고, 안드로이드도 `voiceAlarmAllowed` 가
+        // 편집기 판정 뒤에서 막는다. 여기서 통과시키면 저장을 눌러 서버 실패를 기다리게 될 뿐이다.
+        if lockedByPlan { return true }
+        return !profileReady && !hasUsableAudio()
+    }
+
+    /// 계정의 **직전 문구 선택** 하나. 새 알람을 열 때와, 문구가 없던 알람을 목소리 문구로
+    /// 옮길 때 같은 규칙으로 잇는다(`CLAUDE.md` 「알람 편집기 기본값 = 직전 선택 유지」).
+    enum LastMessageChoice: Equatable {
+        /// 마지막이 직접 입력이었다 — **문구까지** 잇는다. 글자가 같아 기기에 있는 음성을
+        /// 재사용하므로 서버 호출도 월 한도 차감도 없다.
+        case manual(String)
+        /// 생성형 종류(`RandomPromptContext` rawValue). 기록이 없으면 '기본 인사말'.
+        case generated(String)
+    }
+
+    /// 저장소 두 값(`DynamicPromptPreferenceStore`)에서 직전 선택을 고른다.
+    ///
+    /// **마지막 선택은 하나다** — 직접 입력 기록이 차 있으면 그게 마지막이었다(생성형을
+    /// 저장하면 저장소가 그 기록을 지운다). 둘 다 없으면 **기본 인사말**(preset)이다 —
+    /// ⚠ 빈 직접 입력으로 떨어뜨리지 말 것(2026-09-29 실기기 보고: 알람 전용 알람을 목소리로
+    /// 바꾸면 빈 직접 입력으로 보였고, 그대로는 저장도 못 했다).
+    ///
+    /// 안드로이드 `AlarmEditorState.adoptLastMessageChoiceIfUnset` 의 갈래와 같다.
+    static func lastMessageChoice(lastMessageContext: String?, lastManualText: String?) -> LastMessageChoice {
+        if let manual = lastManualText.nilIfBlank {
+            return .manual(manual)
+        }
+        return .generated(RandomPromptContext.normalized(lastMessageContext.nilIfBlank).rawValue)
+    }
+
+    /// 문구가 비어 있을 때 직전 선택을 이으면 켜질 **랜덤 종류** — 잇지 않거나(문구가 이미
+    /// 있다) 직접 입력 문구를 이으면 nil.
+    ///
+    /// 직접 녹음 → 목소리(TTS) 선택은 목소리 선택 관문(클립 준비)을 **바꾸기 전에** 통과해야
+    /// 한다(`AlarmEditorSheet.recordingExitNeedsClipPreparation`). 그때 지금 값(녹음 알람이라
+    /// 랜덤 꺼짐)으로 물으면 관문을 통과한 직후 잇기가 랜덤을 켜 **클립이 필요한 상태**가 되므로,
+    /// 이을 값을 따로 내준다. 안드로이드 `AlarmEditorState.randomContextAdoptedByTtsPick` 짝.
+    static func randomContextAdoptedByTtsPick(
+        randomPrompt: Bool,
+        selectedBucket: FreeBucket?,
+        ttsText: String,
+        lastMessageContext: String?,
+        lastManualText: String?
+    ) -> String? {
+        guard hasNoMessageChoice(randomPrompt: randomPrompt, selectedBucket: selectedBucket, ttsText: ttsText) else {
+            return nil
+        }
+        switch lastMessageChoice(lastMessageContext: lastMessageContext, lastManualText: lastManualText) {
+        case .manual: return nil
+        case .generated(let context): return context
+        }
+    }
+
+    /// **유료 사용자가 직접 입력 문구를 쳐 둔 상태인가** — 스톡 클립 목소리(기본 목소리)의
+    /// 강제가 이 상태를 건드리지 않는다: 테마 이어받기(`applyPendingFreeBucketIfNeeded`)와
+    /// 4-값 고정(`coerceFreeVoiceTierConstraints`) 둘 다.
+    ///
+    /// ⚠ 테마 이어받기에 이 가드가 없으면, 직전 선택으로 **직접 입력 문구를 이은** 알람
+    /// (새 알람·알람 전용 → 목소리·직접 녹음 → 목소리)에 기본 목소리가 골라져 있을 때 옛
+    /// 테마가 붙어 이은 문구를 **말없이 대신한다**(2026-09-29 리뷰). 안드로이드
+    /// `AlarmEditorScreen` 의 `if (!freeVoiceTier && manualChosen) return@LaunchedEffect` 짝 —
+    /// 잠긴 등급(무료)에서는 예전 그대로 강제가 돈다.
+    static func keepsPaidTypedManualText(
+        freeVoiceTier: Bool,
+        randomPrompt: Bool,
+        selectedBucket: FreeBucket?,
+        ttsText: String
+    ) -> Bool {
+        !freeVoiceTier
+            && !randomPrompt
+            && selectedBucket == nil
+            && ttsText.nilIfBlank != nil
+    }
+
     // MARK: - Convert to record
 
     /// Draft → record 변환. 기존 record 가 있다면 *시트 외부* 에서만 의미 있는
@@ -356,6 +501,17 @@ struct AlarmEditDraft: Equatable {
     ) {
         guard let existing else { return }
         record.preLockPlayMode = existing.preLockPlayMode
+        // 무료 잠금 보관본(원래 유료 목소리)은 **목소리를 그대로 둔 저장**(시각·이름만 고침)에서만
+        // 이어받는다. 목소리·문구를 바꿔 저장했으면 그 편집이 이긴다 — 이어받으면 재결제 때 복원이
+        // 사용자의 편집을 옛 유료 목소리로 덮는다(안드로이드 `lockSurvivesSave` 와 같은 규칙 —
+        // `docs/spec/billing-lifecycle.md` 「목소리를 못 쓰게 되면」).
+        if existing.preLockVoice != nil {
+            if DefaultVoiceSubstitute.saveKeepsLock(saved: record, editing: existing) {
+                record.preLockVoice = existing.preLockVoice
+            } else {
+                record.preLockPlayMode = nil
+            }
+        }
         record.ownerUserId = existing.ownerUserId
         record.bucketId = existing.bucketId
         record.bucketClipKeys = existing.bucketClipKeys

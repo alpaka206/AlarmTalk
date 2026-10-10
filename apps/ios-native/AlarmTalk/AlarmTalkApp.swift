@@ -1,8 +1,6 @@
 import SwiftUI
 
-#if canImport(UIKit)
 import UIKit
-#endif
 
 @main
 struct AlarmTalkApp: App {
@@ -59,14 +57,10 @@ struct AlarmTalkApp: App {
         authProvider: { KeychainStore.readSession() }
     )
 
-    /// `BackgroundSyncTask.register` 는 앱 launch 단계에서 1 회만 호출해야 한다.
-    /// SwiftUI App 의 view init 은 여러 번 호출될 수 있으므로 boostrap helper 가
-    /// 단 한 번만 BGTaskScheduler 에 핸들러를 꽂는다.
-
     var body: some Scene {
         WindowGroup {
             AlarmTalkThemeProvider {
-                ContentView()
+                RootView()
                     // ⚠ **상한을 두는 이유**(2026-08-17). 글자가 사용자 설정을 따라가게
                     // 만들면(`Font.pretendard` 의 `relativeTo:`) 접근성 최대치에서 본문이
                     // **3배**까지 커진다. 그 크기를 견디려면 화면마다 레이아웃을 다시
@@ -183,20 +177,8 @@ struct AlarmTalkApp: App {
                         // AlarmAppContext.holidayPredicate·timezone 재무장과 동일한 공휴일
                         // 집합을 본다 (Android 단일 holidayCalendarStore parity).
                         alarmKit.configure(holidayStore: holidayStore)
-                        // Phase 2: 공휴일 국가가 바뀌면 활성 공휴일off 알람을 재계산+재무장한다.
-                        // (선택 국가의 공휴일 집합 기준으로 다음 발화 시각이 달라질 수 있으므로
-                        // timezone 변경과 동일하게 forceHolidayOffRecompute 로 강제.)
-                        holidayStore.onCountryChanged = { [weak alarmKit, weak alarmStore] in
-                            guard let alarmKit, let alarmStore else { return }
-                            Task { @MainActor in
-                                guard alarmStore.hasLoadedFromDisk else { return }
-                                await alarmKit.recoverScheduledAlarms(
-                                    store: alarmStore,
-                                    ownerUserId: BackgroundDependencies.shared.auth.session?.user.id,
-                                    forceHolidayOffRecompute: true
-                                )
-                            }
-                        }
+                        // 공휴일 달력이 바뀌면 공휴일off 알람을 다시 거는 일은 아래
+                        // `.onChange(of: holidayOffRescheduleKey)` 가 한다(`HolidayOffRescheduler`).
                         await auth.restoreSession()
                         await alarmKit.startObserving(store: alarmStore)
 
@@ -204,12 +186,12 @@ struct AlarmTalkApp: App {
                         // 이후 viewModel.refresh() 는 RemoteAlarmPullSync 를 위임 호출한다.
                         remoteSync.configure(store: alarmStore, alarmKit: alarmKit, auth: auth)
 
-
-                        // 로그인되어 있으면 즉시 한 사이클.
-                        if auth.session != nil {
-                            await remoteSync.runFullSync()
-                            await refreshWeatherVariantsAndReconcile()
-                        }
+                        // ⚠ **여기서 동기화 사이클을 돌리지 않는다**(2026-09-29). 로그인된 채 켜지면
+                        //   아래 계정 키 `.task(id: auth.session?.user.id)` 가 `runFullSync()` 와
+                        //   날씨 갱신을 이미 돈다 — 세션이 복원되는 순간 그 키가 바뀌거나(nil → id)
+                        //   처음부터 id 로 시작한다. 예전에는 여기서도 한 번 더 돌아, 콜드 스타트에
+                        //   `/alarm` 쌍이 3~4번 나갔고 그동안 토글의 단건 push 가 `isBusy` 가드에 걸려
+                        //   건너뛰어졌다. 가족 푸시의 호출별 회차 보장은 `runFullSync` 안에 그대로다.
 
                         // 최초 BGAppRefreshTask 예약. 다음 사이클은 백그라운드 진입/
                         // task 종료 시 재예약.
@@ -225,8 +207,17 @@ struct AlarmTalkApp: App {
                     }
                     // 위와 같은 이유로 user.id 로 건다(토큰은 갱신마다 바뀐다).
                     .task(id: auth.session?.user.id) {
-                        // 로그인 직후 또는 토큰 갱신 시 즉시 sync.
+                        // 콜드 스타트(세션 복원)·로그인 직후 즉시 sync. 앱 시작의 사이클은 여기서만
+                        // 돈다 — 위 `.task` 에서 또 돌리지 않는다(전경 복귀·알람 탭 진입은 각자 돈다).
                         guard auth.session != nil else { return }
+                        // ⚠ **동기화 의존성은 이 태스크가 스스로, 맨 먼저 꽂는다**(코덱스 #823 4차).
+                        //   키체인에 세션이 있으면 `AuthViewModel.init` 이 이미 읽어 두어 이 태스크는
+                        //   **위 `.task` 의 `restoreSession()`·`configure` 를 기다리지 않고** 첫 화면에서
+                        //   곧바로 돈다. `runFullSync()` 는 의존성이 없으면 조용히 돌아가므로, 여기서
+                        //   꽂지 않으면 앱 시작의 유일한 사이클이 빈손으로 끝날 수 있다. `configure` 는
+                        //   멱등이다(이미 꽂혀 있으면 그대로). 알람 탭 진입의 동기화도 이 덕에 대개
+                        //   꽂힌 뒤에 돈다.
+                        remoteSync.configure(store: alarmStore, alarmKit: alarmKit, auth: auth)
                         // ⚠ **계정이 바뀌면 StoreKit 을 다시 읽는다**(2026-08-31 리뷰).
                         // 로그아웃 상태에서는 등급을 아예 세지 않으므로(계정 토큰을 모른다),
                         // 여기서 다시 읽지 않으면 새 계정이 다음 전경 진입 전까지 '모름' 으로
@@ -242,9 +233,15 @@ struct AlarmTalkApp: App {
                         //   않으므로, **앱을 껐다 켜기 전까지 결제만 되고 선물이 안 나간다.**
                         // 로그아웃 중에 받아 둔 환불 통보를 먼저 민다(적어 둔 이유가
                         // "그때 로그인돼 있지 않아서" 라, 로그인하는 순간이 그 자리다).
-                        await subscriptions.flushPendingRevocations()
-                        await subscriptions.replayUnfinishedTransactions()
-                        await subscriptions.refreshPurchasedProducts()
+                        //
+                        // ⚠ **알람 동기화는 이 복구를 기다리지 않는다**(코덱스 #823 5차). 재전송은
+                        //   미완료 트랜잭션마다 서버 확정을 **차례로** 부를 수 있어 느리거나 오프라인이면
+                        //   오래 걸린다 — 그 뒤에 동기화를 두면 앱 시작의 사이클이 가족 알람의 최소 여유
+                        //   (5분)를 넘겨 밀릴 수 있다. 예전에는 부트스트랩 `.task` 가 따로 한 번 돌아
+                        //   가려져 있었다. 둘은 서로 기다릴 이유가 없어 나란히 돌리고, 이 태스크가 끝나기
+                        //   전에 복구도 끝낸다(계정이 바뀌어 태스크가 접히면 함께 취소된다).
+                        let subscriptionManager = subscriptions
+                        async let storeRecovery: Void = Self.recoverStoreKitForAccount(subscriptionManager)
                         // ⚠ **알림 권한은 여기서 묻지 않는다**(2026-09-17 실기기). 로그인 직후라
                         // 약관 동의·목소리 받기보다 **먼저** 팝업이 떴다. 메인 화면이 처음 뜰 때
                         // 묻는다(`MainTabsView`) — 그 전에는 동의 전이라 서버가 동기화를 막으므로
@@ -272,8 +269,10 @@ struct AlarmTalkApp: App {
                             }
                         }
                         push.onPlanChanged = {
-                            await socialFeatures.refreshAll(session: auth.session, force: true)
-                            await auth.refreshUser()
+                            // 사용자 새로고침은 이용권 새로고침이 **끝까지 못 갔을 때만** 부른다 —
+                            // 끝까지 갔으면 그 `/auth/me` 가 plan·프로모·토큰을 이미 넣었다
+                            // (`refreshAllThenUserIfIncomplete`, 스펙 plan-gates §4).
+                            await socialFeatures.refreshAllThenUserIfIncomplete(auth: auth)
                             // StoreKit 도 다시 읽는다 — 환불·회수는 캐시된 만료 시각을
                             // 무효로 만드는데 그 신호가 판정 1단이다(배경 경로와 같은 이유).
                             await subscriptions.refreshPurchasedProducts()
@@ -282,9 +281,16 @@ struct AlarmTalkApp: App {
                         // 여기서 꽂으면 알림 권한 팝업을 기다리는 동안 '끊긴 로그아웃
                         // 이어서 끝내기' 가 기본값(아무것도 안 함)을 부를 수 있다.
                         push.start()
-                        remoteSync.configure(store: alarmStore, alarmKit: alarmKit, auth: auth)
+                        // ⚠ **알람 저장소가 다 읽힐 때까지 기다린 뒤 돈다**(코덱스 #823 6차). 이
+                        //   태스크는 콜드 스타트 첫 화면에서 곧바로 돌아 디스크 로드보다 앞설 수 있다 —
+                        //   pull 의 준비 대기(3초, `RemoteAlarmPullSync.requireLoadedStore`)를 넘기면
+                        //   `storeNotReady` 로 빈손이 되고, 앱 시작의 사이클은 이것 하나라 놓친 가족
+                        //   알람 푸시를 다음 전경 복귀·탭 진입까지 못 받는다. 기다려도 막히는 것은 이
+                        //   태스크뿐이다(계정이 바뀌어 접히면 대기도 곧바로 물러선다).
+                        await alarmStore.waitUntilLoadedFromDisk(timeout: 30)
                         await remoteSync.runFullSync()
                         await refreshWeatherVariantsAndReconcile()
+                        await storeRecovery
                         BackgroundSyncTask.scheduleNext()
                     }
                     // ⚠ **언어를 키에 넣는다.** 예전에는 선다운로드가 온보딩
@@ -326,6 +332,40 @@ struct AlarmTalkApp: App {
                     .onChange(of: voiceStudio.ownedVoiceProfileIDs) { _, owned in
                         guard auth.session != nil, !owned.isEmpty else { return }
                         stockClipPrefetcher.start(session: auth.session, ownedVoiceProfileIDs: owned)
+                    }
+                    // **계정 설정(지역·사주)을 이 기기에 받아 적는다**(2026-09-30, 스펙 voice-and-message.md
+                    // 「계정의 지역·사주는 기기에 받아 적는다」). 로그인·`/auth/me`·설정 저장 응답이 모두 여기로
+                    // 온다(콜드 스타트의 세션 복원은 `initial`). 규칙은 `DynamicPromptPreferences.adoptAccount`
+                    // 한 곳이고, 안드로이드 `AlarmTalkApp` 의 `LaunchedEffect` → `onAccountPromptSettingsReceived`
+                    // 와 같다:
+                    //  - 받아들였으면 공휴일 국가를 계정 지역의 나라로 맞춘다(스펙 alarm-lifecycle.md 「공휴일
+                    //    국가는 지역의 나라다」 — 업데이트 직후 옛 '공휴일 달력' 행에서 직접 고른 나라는 지역이
+                    //    바뀌기 전까지 둔다, `HolidayStore.countryForAccountRegion`).
+                    //  - 이 기기에 아직 안 올라간 변경이 있으면 덮지 않고 **다시 올린다.** 공휴일 국가도 서버의
+                    //    옛 지역을 따르지 않는다 — 화면의 지역과 달력의 나라가 갈라진다.
+                    .onChange(of: accountPromptSettingsKey, initial: true) { _, key in
+                        guard let userID = key.userID, let settings = key.settings else { return }
+                        let adoption = DynamicPromptPreferences.adoptAccount(userID: userID, server: settings)
+                        // 날씨 묶음을 받아들였으면(사주만 밀렸어도) 공휴일 국가도 따른다 — **받아 적은 뒤의 이 기기
+                        // 지역**으로(서버의 날씨가 비어 이 기기 값을 뒀을 수 있다, `acceptsWeather` 주석). 기기에 못
+                        // 적었으면(`.localWriteFailed`) 달력도 옮기지 않는다 — 다음 계정 응답에 다시 받아 적는다.
+                        if adoption.acceptsWeather {
+                            holidayStore.adoptCountry(
+                                ofAccountWeatherRegion: DynamicPromptPreferences.load(userID: userID).weatherRegion?.key,
+                                userID: userID
+                            )
+                        }
+                        if case .localPending(let local, _) = adoption {
+                            Task { await auth.updateProfile(dynamicPromptSettings: local) }
+                        }
+                    }
+                    // **공휴일 달력이 바뀌면 공휴일off 알람을 다시 건다**(`HolidayOffRescheduler`).
+                    // 나라가 바뀌었을 때(위 계정 지역·설정·편집기에서 고른 지역)와 JP·US 공휴일을 서버에서
+                    // 받아 왔을 때 표지가 바뀐다. 알람 저장소를 읽기 전·로그인 전에는 판단을 미루고, 그것이
+                    // 갖춰지면 키가 바뀌어 다시 온다 — 예전 콜백(`onCountryChanged`)은 그 두 경우에 조용히
+                    // 버려져 다음 한 번이 옛 달력으로 울렸다. 멱등이라 몇 번 불려도 달력 하나에 한 번만 돈다.
+                    .onChange(of: holidayOffRescheduleKey, initial: true) { _, _ in
+                        Task { @MainActor in await runHolidayOffRescheduleIfNeeded() }
                     }
                     // 목소리를 지우면 그 목소리로 걸어 둔 예약도 곧바로 걷어낸다 —
                     // 파기 대상 생체정보가 알람에 남아 있으면 안 된다.
@@ -428,9 +468,12 @@ struct AlarmTalkApp: App {
                         // 모으면 테마 알람이 물고 있는 클립들이 '미참조' 로 보여 지워진다 —
                         // 안드로이드 `AlarmRepository.sweepStaleAudioCache` 는 `bucketClipKeys()`
                         // 를 in-use 에 넣는다. iOS 만 빠져 있었다(2026-08-11).
+                        // 무료 잠금 보관본이 붙든 원래 목소리 오디오도 보존한다 — 지우면 재결제 때
+                        // 복원한 알람이 들을 소리가 없다(billing-lifecycle.md 「목소리를 못 쓰게 되면」).
                         let activeKeys = Set(
                             alarmStore.alarms.compactMap(\.audioCacheKey)
                                 + alarmStore.alarms.flatMap { $0.bucketClipKeys ?? [] }
+                                + alarmStore.alarms.flatMap { $0.preLockVoice?.referencedCacheKeys ?? [] }
                         )
                         let audioCache = AudioCacheStore.shared
                         Task.detached(priority: .utility) {
@@ -468,19 +511,24 @@ struct AlarmTalkApp: App {
                     // 전경 복귀에서도 한 번 — 로그아웃 직후 실패한 취소를 여기서 만회한다.
                     await alarmKit.retryPendingCancellations(store: alarmStore)
                     await alarmKit.recoverScheduledAlarms(store: alarmStore, ownerUserId: auth.session?.user.id)
+                    // 공휴일off 다시 걸기가 지난번에 다 못 했으면(다른 복구와 겹쳐 건너뛰었거나 계정을 떠나는 중이었다)
+                    // 여기서 다시 본다 — 표지가 같으면 곧바로 돌아간다(Codex #837). 위 복구가 끝난 **뒤**라 겹치지 않는다.
+                    await runHolidayOffRescheduleIfNeeded()
                 }
                 // 밀린 사용 기록을 올려 본다 — 앱을 열 때가 유일하게 확실한 기회다
                 // (울림 경로에서는 네트워크를 부르지 않으므로).
                 Task { await UsageEventUploader.shared.flush(session: auth.session) }
+                // 지역의 나라(JP·US) 공휴일을 아직 못 받았으면 여기서 다시 받아 본다(Codex #837). 받으면 달력
+                // 표지가 `:pending` 에서 바뀌어 공휴일off 알람을 다시 건다(`HolidayOffRescheduler`). 콜드 스타트·
+                // 나라 변경 때만 받으면, 그때 오프라인이던 기기는 앱을 다시 띄울 때까지 빈 달력으로 잡힌 예약에
+                // 남는다. 이미 받았으면 곧바로 돌아간다(`ensureSynced`). 안드로이드는 `MainViewModel` 이 진입마다
+                // `refreshHolidayOffAlarms` 를 다시 부른다.
+                Task { await holidayStore.ensureSynced(countryCode: holidayStore.selectedCountryCode) }
                 // 빠진 테마 클립을 보충한다. 이미 캐시된 것은 건너뛰므로 값이 싸고,
                 // 콜드 스타트에서 실패했거나 캐시가 정리된 경우를 여기서 메운다.
                 // 안드로이드는 앱 시작마다 `prefetchStockClips()` 로 같은 일을 한다.
                 Task {
                     guard auth.session != nil else { return }
-                    stockClipPrefetcher.start(
-                            session: auth.session,
-                            ownedVoiceProfileIDs: voiceStudio.ownedVoiceProfileIDs
-                        )
                     // ⚠ **재바인딩도 여기서 한 번 더 돈다**(2026-09-03).
                     //   예전에는 트리거가 콜드 스타트(`.task(id: stockClipLanguageKey)`)
                     //   **하나뿐**이었다. 그런데 프리셋 교체는 서버가 틱마다 조금씩 굽는
@@ -490,6 +538,17 @@ struct AlarmTalkApp: App {
                     //   안드로이드는 WorkManager 재큐잉·백오프로 여러 번 시도한다 —
                     //   iOS 만 한 번이었다. 전부 멱등이라 여기서 또 돌아도 안전하다.
                     await rebindStockClipsIfNeeded()
+                    guard auth.session != nil else { return }
+                    // ⚠ **보충은 재바인딩 뒤에 시작한다**(2026-09-29 효율 감사 M1 — iOS). 재바인딩은
+                    //   매니페스트를 **강제로** 받아 공개하므로(의도), 그 뒤에 도는 선다운로드는
+                    //   신선도 창(`StockClipPrefetcher.manifestFreshnessWindow`)으로 그 공개본을 쓴다.
+                    //   예전처럼 나란히 시작하면 둘이 같은 매니페스트를 한 번씩 — 전경 복귀마다 두 번 —
+                    //   받았다. 재바인딩이 먼저 끝나야 하는 일은 없다: 재바인딩은 묶을 클립을 스스로
+                    //   받고, 교체 판정도 선다운로드를 기다리지 않는다(`hasPendingReplacement`).
+                    stockClipPrefetcher.start(
+                        session: auth.session,
+                        ownedVoiceProfileIDs: voiceStudio.ownedVoiceProfileIDs
+                    )
                 }
                 // Phase 4-D2: 포그라운드 진입 시 세션 정합성을 직렬로 점검.
                 //  1) Apple credentialState — revoke/notFound 이면 즉시 signOut
@@ -532,6 +591,14 @@ struct AlarmTalkApp: App {
         }
     }
 
+    /// 계정이 정해졌을 때의 StoreKit 복구 — 로그아웃 중 받아 둔 환불 통보 → 미완료 트랜잭션
+    /// 재전송 → 등급 다시 읽기, 이 순서다. 계정 키 `.task` 가 알람 동기화와 **나란히** 돌린다.
+    private static func recoverStoreKitForAccount(_ subscriptions: SubscriptionManager) async {
+        await subscriptions.flushPendingRevocations()
+        await subscriptions.replayUnfinishedTransactions()
+        await subscriptions.refreshPurchasedProducts()
+    }
+
     /// **새 스톡 클립으로 갈아타고, 다 끝났으면 옛 파일을 지운다.**
     ///
     /// ⚠ **부르는 곳이 둘이다 — 콜드 스타트와 전경 복귀.** 예전에는 콜드 스타트 하나뿐이라,
@@ -550,8 +617,19 @@ struct AlarmTalkApp: App {
         //   A 의 회차가 **B 를 `checkedUserId` 에 적어** B 의 판정이 오기도 전에 B 의
         //   1회성 오버레이를 소진시킨다. 아래 보고 직전에 다시 대조한다.
         guard let startAccount = auth.session?.user.id else { return }
-        StockReplacementStatus.shared.setWorking(true)
-        defer { StockReplacementStatus.shared.setWorking(false) }
+        // ⚠ **같은 계정·언어의 회차가 돌고 있으면 물러난다**(2026-09-29 효율 감사 M1 — iOS).
+        //   부르는 두 곳(언어 키 `.task`·전경 복귀)이 콜드 스타트에 거의 동시에 부른다 — 가드가
+        //   없으면 매니페스트 강제 조회가 두 번 나가고 같은 행을 두 회차가 나란히 고친다.
+        //   규칙은 `StockReplacementStatus.beginRebind`. 도는 회차 **안의** 강제 조회는 그대로다.
+        //   물러날 때는 **그 회차가 끝날 때까지 기다린다**(합류, 코덱스 #827) — 전경 복귀는 이 함수 뒤에
+        //   보충을 시작하는데, 곧바로 돌아오면 도는 회차의 강제 조회가 공개되기 전에 보충이 같은
+        //   매니페스트를 한 번 더 받는다.
+        let rebindKey = "\(startAccount)|\(VoiceStudioViewModel.appVoiceLanguage())"
+        guard StockReplacementStatus.shared.beginRebind(key: rebindKey) else {
+            await StockReplacementStatus.shared.waitForRebind(key: rebindKey)
+            return
+        }
+        defer { StockReplacementStatus.shared.endRebind(key: rebindKey) }
         // ⚠ **알람이 다 올라온 뒤에 시작한다**(2026-09-03 리뷰 10차). 저장소는 콜드 스타트에
         //   빈 배열로 시작해 비동기로 채우는데, 이 경로는 세션 복원만 끝나면 곧바로 들어올
         //   수 있다. 빈 목록으로 돌면 재바인딩은 그냥 0건이지만 **정리는 전부를 지운다.**
@@ -818,9 +896,7 @@ struct AlarmTalkApp: App {
         let kit = alarmKit
 
         var names: [Notification.Name] = [.NSSystemTimeZoneDidChange]
-        #if canImport(UIKit)
         names.append(UIApplication.significantTimeChangeNotification)
-        #endif
 
         // 루프 본문을 `@MainActor` 메서드로 빼 둔다. 인라인 `group.addTask { @MainActor in ... }`
         // 로 쓰면 Swift 6.3 의 region-based isolation checker 가
@@ -853,6 +929,51 @@ struct AlarmTalkApp: App {
                 forceHolidayOffRecompute: true
             )
         }
+    }
+
+    /// 공휴일 달력이 바뀌었으면 공휴일off 알람을 다시 건다(`HolidayOffRescheduler` — 멱등, 계정별 표지).
+    /// 표지 축이 바뀔 때(`holidayOffRescheduleKey`)와 전경 복귀 때 부른다 — 뒤의 것은 지난번에 다 못 한 경우의 재시도다.
+    @MainActor
+    private func runHolidayOffRescheduleIfNeeded() async {
+        await HolidayOffRescheduler.shared.runIfNeeded(
+            currentMarker: {
+                guard alarmStore.hasLoadedFromDisk,
+                      let owner = auth.session?.user.id,
+                      let calendar = holidayStore.holidayCalendarMarker else { return nil }
+                return HolidayOffRescheduler.ownerScopedMarker(ownerUserID: owner, calendarMarker: calendar)
+            },
+            recompute: {
+                await alarmKit.recomputeHolidayOffAlarms(store: alarmStore, ownerUserId: auth.session?.user.id)
+            }
+        )
+    }
+
+    /// 계정 설정을 받아 적을 때 — 계정과 그 계정의 설정, 그리고 **계정 응답**이 축이다(계정이 바뀌면 설정이
+    /// 같아도 다시 본다). ⚠ 응답 순번(`AuthViewModel.accountAnswerRevision`)을 빼지 말 것 — 올리기가 실패한 뒤
+    /// 서버가 같은 옛 값을 다시 주면 값만으로는 다시 돌지 않아, 밀린 변경이 앱을 다시 띄울 때까지 안 올라간다
+    /// (Codex #837). 받아 적기는 멱등이다.
+    private struct AccountPromptSettingsKey: Equatable {
+        var userID: String?
+        var settings: DynamicPromptSettings?
+        var answerRevision: Int
+    }
+
+    private var accountPromptSettingsKey: AccountPromptSettingsKey {
+        AccountPromptSettingsKey(
+            userID: auth.session?.user.id,
+            settings: auth.session?.user.dynamicPromptSettings,
+            answerRevision: auth.accountAnswerRevision
+        )
+    }
+
+    /// 공휴일off 알람을 다시 걸지 볼 때 — 달력 표지(나라·JP·US 공휴일 도착), 알람 저장소 로드, 계정이 축이다.
+    /// 뒤 둘이 갖춰지기 전의 판단은 미뤄지므로(`HolidayOffRescheduler`) 갖춰지는 순간 다시 와야 한다.
+    private var holidayOffRescheduleKey: String {
+        [
+            holidayStore.holidayCalendarMarker ?? "-",
+            alarmStore.hasLoadedFromDisk ? "loaded" : "loading",
+            auth.session?.user.id ?? "-",
+        ].joined(separator: "|")
     }
 
     /// 선다운로드·재바인딩을 다시 돌려야 하는 시점. 계정과 **기기 언어**가 축이다.
@@ -994,14 +1115,6 @@ struct AlarmTalkApp: App {
         DowngradeNoticeStore().record(userID: ownerID, cause: .freePlan, count: locked)
     }
 }
-
-// MARK: - Bootstrap
-
-/// `BackgroundSyncTask.register` 는 BGTaskScheduler 에 핸들러를 꽂는 호출로
-/// process 당 1 회만 허용된다. 두 번 호출하면 crash 한다. `@State` 박스로
-/// 인스턴스 수명을 view 와 동기화해 한 번만 등록한다.
-@MainActor
-
 
 /// `nil` 이면 **아무것도 붙이지 않는** `preferredColorScheme`.
 ///

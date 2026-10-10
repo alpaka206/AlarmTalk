@@ -80,23 +80,20 @@ final class PushNotificationCoordinator: NSObject, ObservableObject {
     /// 남는다. 그러면 로그아웃한 기기가 그 계정의 알림을 계속 받는다.
     private var lastRegisteredToken: String? {
         get { defaults.string(forKey: Self.lastTokenKey) }
-        set {
-            if let newValue, !newValue.isEmpty {
-                defaults.set(newValue, forKey: Self.lastTokenKey)
-            } else {
-                defaults.removeObject(forKey: Self.lastTokenKey)
-            }
-        }
+        set { setOrRemove(newValue, forKey: Self.lastTokenKey) }
     }
 
     private var lastRegisteredUserID: String? {
         get { defaults.string(forKey: Self.lastUserKey) }
-        set {
-            if let newValue, !newValue.isEmpty {
-                defaults.set(newValue, forKey: Self.lastUserKey)
-            } else {
-                defaults.removeObject(forKey: Self.lastUserKey)
-            }
+        set { setOrRemove(newValue, forKey: Self.lastUserKey) }
+    }
+
+    /// 비었으면(nil·빈 문자열) 지우고, 아니면 적는다.
+    private func setOrRemove(_ value: String?, forKey key: String) {
+        if let value, !value.isEmpty {
+            defaults.set(value, forKey: key)
+        } else {
+            defaults.removeObject(forKey: key)
         }
     }
 
@@ -577,7 +574,7 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
             }
             // ⚠ **조용히 바꾸지 말 것.** 이 경로는 화면이 없을 때 도는 일이 많다(주기
             // 사이클·백그라운드 푸시). 알려 주지 않으면 사용자는 어느 날 알람이 기본
-            // 알람음으로 바뀐 것만 발견한다. 대기표에 적어 두면 `RootView` 가 보여줄 수
+            // 목소리로 바뀐 것만 발견한다. 대기표에 적어 두면 `RootView` 가 보여줄 수
             // 있을 때 모달로 말한다 — 안드로이드 `VoiceAccessSyncWorker` 도 같은 자리에서
             // `SHARED_RELEASED` 를 기록한다(2026-08-18 Codex #697 P2).
             // 원인이 **공유 해제**인 이유: 이 판정은 목록에 없는 목소리를 걸러낸 것이라
@@ -703,12 +700,9 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
         }
 
         BackgroundSyncTask.register(
-            pull: RemoteAlarmPullSync(
-                store: deps.alarmStore,
-                alarmKit: deps.alarmKit,
-                audioCache: .shared,
-                auth: deps.auth
-            ),
+            // 같은 인자로 만든 위 인스턴스를 그대로 쓴다 — 상태가 없고(`let` 뿐), 회차 직렬화는
+            // 타입 전역(`serialGate`)이다.
+            pull: launchPull,
             push: RemoteAlarmPushSync(store: deps.alarmStore, auth: deps.auth),
             socialFeatures: deps.socialFeatures,
             store: deps.alarmStore,
@@ -728,12 +722,8 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
         }
     }
 
-    func application(
-        _ application: UIApplication,
-        didFailToRegisterForRemoteNotificationsWithError error: Error
-    ) {
-        // 시뮬레이터·프로비저닝 미비에서 흔하다. 조용히 넘어간다 — 주기 동기화가 그물이다.
-    }
+    // 등록 실패(`didFailToRegisterForRemoteNotificationsWithError`)는 구현하지 않는다 —
+    // 시뮬레이터·프로비저닝 미비에서 흔하고, 조용히 넘어간다. 주기 동기화가 그물이다.
 
     /// background push 진입점. **이게 없으면 조용한 푸시가 앱을 깨우지 못한다.**
     func application(

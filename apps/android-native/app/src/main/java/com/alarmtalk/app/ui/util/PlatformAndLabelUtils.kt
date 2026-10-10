@@ -2,7 +2,6 @@ package com.alarmtalk.app
 
 import android.app.AlarmManager
 import android.app.Activity
-import android.app.Application
 import android.app.NotificationManager
 import android.content.ActivityNotFoundException
 import android.content.Context
@@ -10,10 +9,7 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
-import android.util.Log
-import com.alarmtalk.app.R
 import com.alarmtalk.app.core.AlarmTalkLog
-import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import com.alarmtalk.app.data.CachedAlarmAudio
 import com.alarmtalk.app.data.VibrationPatterns
 import com.alarmtalk.app.network.AuthSession
@@ -99,11 +95,11 @@ internal fun audioFileLabel(context: Context, localAudioUri: String): String =
         ?.ifBlank { null }
         ?: context.getString(R.string.label_audio_file)
 
-internal fun voiceUploadPart(audio: CachedAlarmAudio): MultipartBody.Part {
+internal fun voiceUploadPart(context: Context, audio: CachedAlarmAudio): MultipartBody.Part {
     val uri = Uri.parse(audio.localAudioUri)
-    require(uri.scheme == "file") { "로컬에 저장된 오디오만 업로드할 수 있어요." }
-    val file = File(requireNotNull(uri.path) { "오디오 파일 경로를 찾을 수 없어요." })
-    require(file.exists()) { "오디오 파일을 찾을 수 없어요." }
+    if (uri.scheme != "file") throw UserFacingException(context.getString(R.string.rd_audio_upload_local_only))
+    val file = File(uri.path ?: throw UserFacingException(context.getString(R.string.rd_audio_upload_path_missing)))
+    if (!file.exists()) throw UserFacingException(context.getString(R.string.rd_audio_upload_file_missing))
     // 확장자→MIME 매핑 단일 출처는 AlarmAudioStore.UPLOAD_AUDIO_MIME_BY_EXTENSION.
     // 목록 밖 컨테이너는 cacheFromUri 가 미리 m4a 로 트랜스코드하므로 여기 octet-stream 폴백은
     // 사실상 도달하지 않지만, 방어적으로 남겨 둔다.
@@ -143,8 +139,18 @@ internal fun vibrationLabel(context: Context, pattern: String): String = when (p
     else -> context.getString(R.string.label_vibration_basic_call)
 }
 
-internal fun userFacingError(error: Throwable, fallback: String): String =
-    error.message?.takeIf { it.any { char -> char in '\uAC00'..'\uD7A3' } } ?: fallback
+/** 리소스로 만든 사용자 문구만 표시한다. IAE 분류를 유지해 오디오 영구 실패 정책을 보존한다. */
+internal class UserFacingException(message: String, cause: Throwable? = null) : IllegalArgumentException(message, cause)
+
+internal fun userFacingError(error: Throwable, fallback: String): String {
+    val seen = java.util.Collections.newSetFromMap(java.util.IdentityHashMap<Throwable, Boolean>())
+    var current: Throwable? = error
+    while (current != null && seen.add(current)) {
+        if (current is UserFacingException) return current.message ?: fallback
+        current = current.cause
+    }
+    return fallback
+}
 
 /**
  * 기간 한정 개인 플랜 중의 **보류 규칙**(D2·D9) — 커플·가족 기능을 무엇이 열 수 있는가.

@@ -4,7 +4,7 @@ import UIKit
 /// 최상위 라우터. 인증 + 온보딩 상태만 게이팅한다.
 ///
 /// 분기 모델 (Android `App.kt` 의 진입 흐름과 동등)
-///   1. 세션 없음 → `AuthGateView()` (Landing → Login)
+///   1. 세션 없음 → `NavigationStack { LandingView() }` (Landing → Login)
 ///   2. 세션 있고 온보딩 미완료 → `OnboardingView` 단독 노출.
 ///      완료 여부는 Android 처럼 사용자 ID별로 저장한다.
 ///   3. 온보딩 완료 → `MainTabsView()`.
@@ -20,7 +20,7 @@ struct RootView: View {
     /// 강등 안내가 **가리킬 알람이 아직 있는지** 확인하는 데만 쓴다(`evaluateDowngradeNotice`).
     @EnvironmentObject private var alarmStore: LocalAlarmStore
     /// 온보딩 완료 후 기본 목소리를 한 번이라도 골랐는지. 안 골랐으면 `VoiceSetupView` 노출.
-    /// Android `MainViewModel.showVoiceSetup`(= !hasChosen) 게이팅 미러.
+    /// Android `MainViewModel.showVoiceSetup` 게이팅 미러(판정은 `refreshOnboardingCompletion`).
     @State private var voiceSetupDone: Bool?
     /// 동의 화면에서 띄우는 인앱 약관 뷰어.
     @State private var bundledLegalDocument: BundledLegalDocument?
@@ -82,7 +82,9 @@ struct RootView: View {
                 // 예전 iOS 는 이 값을 세우기만 하고 **읽는 뷰가 하나도 없었다**(2026-08-07 수정).
                 UpdateRequiredView(onUpdate: { openURL(versionGate.storeURL) })
             } else if !auth.isAuthenticated {
-                AuthGateView()
+                NavigationStack {
+                    LandingView()
+                }
             } else if auth.pendingDeletion {
                 // 탈퇴 유예 상태 — 복구하거나 로그아웃하기 전까지 앱 진입을 막는다.
                 // Android `AccountPendingDeletionScreen` 게이팅과 동등.
@@ -241,9 +243,9 @@ struct RootView: View {
                 // ⚠ 삭제 문장은 **서버가 대상이라고 할 때만** 싣는다(`deletes_voices_at_end`).
                 // 보류 중인 구독 행이 남은 계정은 종료 전환 대상이 아니라 목소리가 지워지지 않는다.
                 if shown.promo.deletesVoicesAtEnd {
-                    Text("\(days.lastDay)까지 개인 플랜을 무료로 쓸 수 있어요. \(days.firstFreeDay)부터는 무료 플랜으로 돌아가고, 등록한 목소리는 3일 보관 후 삭제돼요.")
+                    Text("\(String(days.lastDay))까지 개인 플랜을 무료로 쓸 수 있어요. \(String(days.firstFreeDay))부터는 무료 플랜으로 돌아가고, 등록한 목소리는 3일 보관 후 삭제돼요.")
                 } else {
-                    Text("\(days.lastDay)까지 개인 플랜을 무료로 쓸 수 있어요. \(days.firstFreeDay)부터는 무료 플랜으로 돌아가요.")
+                    Text("\(String(days.lastDay))까지 개인 플랜을 무료로 쓸 수 있어요. \(String(days.firstFreeDay))부터는 무료 플랜으로 돌아가요.")
                 }
             }
         }
@@ -490,11 +492,11 @@ struct RootView: View {
     private func downgradeNoticeMessage(_ notice: DowngradeNoticeStore.Notice) -> LocalizedStringKey {
         switch notice.cause {
         case .freePlan:
-            return "목소리 알람 \(notice.count)개가 기본 알람음으로 바뀌었어요. 3일 안에 이용권을 다시 등록하면 목소리가 돌아오고, 지나면 영구 삭제돼요."
+            return "목소리 알람 \(notice.count)개가 기본 목소리로 바뀌었어요. 3일 안에 이용권을 다시 등록하면 내 목소리가 돌아오고, 지나면 영구 삭제돼요."
         case .voiceReplaced:
-            return "목소리를 새로 등록하면서 직접 입력한 문구로 만든 알람 \(notice.count)개가 기본 알람음으로 바뀌었어요. 새 목소리로 문구를 다시 만들어 주세요."
+            return "목소리를 새로 등록하면서 직접 입력한 문구로 만든 알람 \(notice.count)개가 기본 목소리로 바뀌었어요. 새 목소리로 문구를 다시 만들어 주세요."
         case .sharedReleased:
-            return "공유받던 목소리가 끊겨서 알람 \(notice.count)개가 기본 알람음으로 바뀌었어요. 다시 쓰려면 이용권을 등록하거나 새 초대 코드를 받아야 해요."
+            return "공유받던 목소리가 끊겨서 알람 \(notice.count)개가 기본 목소리로 바뀌었어요. 다시 쓰려면 이용권을 등록하거나 새 초대 코드를 받아야 해요."
         }
     }
 
@@ -516,8 +518,8 @@ struct RootView: View {
         // 남는다 — 못 보고 잃는 것을 막으려는 의도다. 그런데 그 사이 대상 알람이 지워지면
         // 대기표만 남아, 사용자는 **존재한 적 없는 알람**에 대한 안내를 받는다.
         //
-        // 판정은 **알람이 하나도 없을 때**로 좁힌다. 강등은 알람을 지우지 않고 알람음으로
-        // 바꿔 두므로(`withVoiceRevoked` 등) 대상은 여전히 목록에 있다 — 하나라도 있으면
+        // 판정은 **알람이 하나도 없을 때**로 좁힌다. 강등은 알람을 지우지 않고 기본 목소리로
+        // 바꿔 두므로(`DefaultVoiceSubstitute.replacedLostVoice` 등) 대상은 여전히 목록에 있다 — 하나라도 있으면
         // 그중 하나가 그 알람일 수 있어 함부로 지우면 안 된다.
         // ⚠ **'내가 만든' 알람만 센다.** 강등 대상은 `localOwned` 뿐이라(받은 알람은
         // 보낸 사람의 구독으로 성립한다) 받은 알람 하나가 남아 있으면 이 가드가 영영

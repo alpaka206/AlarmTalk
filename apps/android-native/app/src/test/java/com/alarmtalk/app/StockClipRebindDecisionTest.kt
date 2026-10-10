@@ -11,6 +11,7 @@ import com.alarmtalk.app.data.VibrationPatterns
 import com.alarmtalk.app.data.VoiceSources
 import com.alarmtalk.app.data.encodeBucketClipKeys
 import com.alarmtalk.app.data.nextLocalSyncState
+import com.alarmtalk.app.data.toPromptPreferences
 import com.alarmtalk.app.network.ExpectedVariantCounts
 import com.alarmtalk.app.network.StockClip
 import com.alarmtalk.app.sync.StockClipLanguageRebinder
@@ -394,6 +395,30 @@ class StockClipRebindDecisionTest {
         val medication = StockClipLanguageRebinder.withRecipientConditions(received, "medication", prefs)
         assertNull(medication.voiceWeatherCity)
         assertNull(medication.voiceFortuneBirthDate)
+    }
+
+    /**
+     * **받는 사람의 지역 키가 받은 알람까지 간다**(2026-09-30). 서버는 계정 설정에 `region`
+     * 키와 옛 앱용 글자를 함께 둔다 — 받는 쪽은 그 글자를 알람 행에 적고, 요청의 `region` 은
+     * 그 글자에서 되짚는다. 규칙(받는 사람 기준)은 그대로다(docs/spec/family-alarm.md 4절).
+     */
+    @Test
+    fun 받는_사람의_지역_키가_받은_알람의_글자로_채워진다() {
+        val server = com.alarmtalk.app.network.DynamicPromptSettings(
+            weather = com.alarmtalk.app.network.DynamicPromptWeatherSettings(region = "jp-aichi"),
+        )
+        val received = alarmWith(bucketId = "weather", clipKeys = emptyList(), ttsMessageId = "old-0")
+        val filled = StockClipLanguageRebinder.withRecipientConditions(
+            received,
+            "weather",
+            server.toPromptPreferences(),
+        )
+        assertEquals("일본", filled.voiceWeatherCountry)
+        assertEquals("아이치", filled.voiceWeatherCity)
+        assertEquals(
+            "jp-aichi",
+            com.alarmtalk.app.data.weatherRegionFor(filled.voiceWeatherCountry, filled.voiceWeatherCity)?.key,
+        )
     }
 
     /** ⚠ **사용자가 그 알람에 넣어 둔 값이 이긴다** — 덮어쓰면 남의 도시로 바뀐다. */

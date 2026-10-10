@@ -26,7 +26,7 @@
     <string name="auth_email_verify">이메일 인증</string>
     <string name="auth_email_verify_done">이메일 인증 완료</string>
     <string name="auth_email_verify_resend">인증 코드 다시 받기</string>    <string name="auth_find_password">비밀번호 찾기</string>
-    <string name="auth_forgot_password">비밀번호를 잊으셨나요?</string>    <string name="auth_or">또는</string>
+    <string name="auth_forgot_password">비밀번호를 잊으셨나요?</string>
     <string name="auth_social_divider">간편 로그인</string>
     <string name="auth_label_confirm_password">비밀번호 확인</string>
     <string name="auth_label_email">이메일</string>
@@ -97,7 +97,10 @@
     <string name="billing_plan_free_name">무료</string>
     <string name="billing_plan_free_price">0원</string>
     <string name="billing_plan_monthly_price_fallback">월 %1$,d원</string>
-    <string name="billing_plan_personal_feature_daily_prompt">날씨·운세 등 매일 다른 문구</string>
+    <!-- ⚠ 날씨·운세·응원·약 문구는 기본 목소리로 **무료**다(docs/spec/voice-and-message.md §2 — 목록은 등급으로 자르지 않는다).
+         개인 이용권이 더하는 것은 문구 종류가 아니라 **등록한 목소리로 듣는 것**이다 — 종류를 유료 기능처럼 적지 말 것.
+         클립은 준비된 것을 돌려 쓰므로 "매일 새 문구" 도 사실이 아니다. iOS PlanCard.features(for:) 와 글자까지 같다. -->
+    <string name="billing_plan_personal_feature_messages_in_voice">등록한 목소리로 듣는 날씨·운세 문구</string>
     <string name="billing_plan_personal_feature_voice">원하는 목소리 1개 등록</string>
     <string name="billing_plan_personal_name">개인</string>
     <string name="billing_play_manage_description">앱에서 해지를 완료하지 못했어요. Google Play 구독 관리에서 직접 해지할 수 있어요. 구독 상태는 바뀌지 않았어요.</string>
@@ -138,20 +141,11 @@
     <string name="common_alarm_warning_reschedule_failed">알람을 다시 예약하지 못했어요. 시간을 확인하고 다시 저장해 주세요.</string>
     <string name="common_google_continue">Google로 계속하기</string>
     <string name="common_google_login">Google로 로그인</string>
-    <string name="common_permission_allow_action">허용하기</string>
-    <string name="common_permission_allow_all">필요 권한 모두 허용</string>
-    <string name="common_permission_exact_alarm_label">정확한 알람</string>
-    <string name="common_permission_full_screen_label">전체 화면 알람</string>
     <string name="common_permission_gate_allow_action">허용하기</string>
     <string name="common_permission_gate_exact_alarm_title">정확한 알람 권한을 허용해야 알람을 설정할 수 있어요</string>
     <string name="common_permission_gate_full_screen_title">잠금 화면 알람 권한을 허용해야 알람을 설정할 수 있어요</string>
     <string name="common_permission_gate_mic_title">마이크 권한이 필요해요</string>
     <string name="common_permission_gate_notifications_title">알림 권한을 허용해야 알람을 설정할 수 있어요</string>
-    <string name="common_permission_granted">허용됨</string>
-    <string name="common_permission_mic_label">마이크</string>
-    <string name="common_permission_notifications_label">알림</string>
-    <string name="common_permission_required">필요함</string>
-    <string name="common_permission_title">권한</string>
     <string name="common_tab_billing">이용권</string>
     <string name="common_tab_code_register">코드 등록</string>
     <string name="common_voice_capture_mode_file">파일</string>
@@ -170,9 +164,9 @@
     <string name="editor_block_voice_title">목소리를 골라주세요</string>
     <string name="editor_block_voice_message">알람을 읽어 줄 목소리를 먼저 골라 주세요.</string>
     <string name="editor_block_voice_unavailable_message">고른 목소리를 지금은 쓸 수 없어요. 다른 목소리를 골라 주세요.</string>
-    <string name="editor_block_weather_title">날씨 지역이 없어요</string>
+    <string name="editor_block_weather_title">지역이 없어요</string>
     <string name="editor_block_weather_message">날씨 문구를 쓰려면 지역이 필요해요. 문구 화면에서 지역을 골라 주세요.</string>
-    <string name="editor_block_weather_family_message">상대가 아직 날씨 지역을 설정하지 않았어요. 다른 문구를 골라 주세요.</string>
+    <string name="editor_block_weather_family_message">상대가 아직 지역을 설정하지 않았어요. 다른 문구를 골라 주세요.</string>
     <string name="editor_block_fortune_title">운세 정보가 없어요</string>
     <string name="editor_block_fortune_message">운세 문구를 쓰려면 성별과 생년월일, 태어난 시간이 필요해요. 문구 화면에서 입력해 주세요.</string>
     <string name="editor_block_fortune_family_message">상대가 아직 운세 정보를 설정하지 않았어요. 다른 문구를 골라 주세요.</string>
@@ -182,6 +176,8 @@
     <string name="editor_block_offline_message">이 문구의 음성이 아직 이 기기에 없어요. 연결되면 다시 저장해 주세요.</string>
     <string name="editor_block_preparing_title">문구를 준비하고 있어요</string>
     <string name="editor_block_preparing_message">목소리 파일을 아직 받는 중이에요. 잠시 뒤에 다시 저장해 주세요.</string>
+    <string name="editor_block_manual_text_title">직접 입력 문구가 비어 있어요</string>
+    <string name="editor_block_manual_text_message">알람이 읽어 줄 문구를 입력하거나, 문구 화면에서 다른 종류를 골라 주세요.</string>
     <string name="editor_error_family_alarm_lead_title">조금 더 뒤로 설정해 주세요</string>
     <string name="editor_error_family_alarm_unavailable_title">받을 수 없는 시간이에요</string>
     <string name="editor_error_family_alarm_lead_too_soon">상대 알람은 %1$s 이후로 맞춰 주세요. 상대 기기에 전달될 시간이 조금 필요해요.</string>
@@ -198,15 +194,11 @@
     <string name="editor_error_voice_generation_failed">음성 생성에 실패했어요.</string>
     <string name="editor_error_manual_tts_quota">이번 달 직접 입력 문구 만들기 횟수를 다 썼어요. 다음 달에 다시 채워져요.</string>
     <string name="editor_error_voice_message_login_required">음성 알람은 로그인 후 사용할 수 있어요.</string>
-    <string name="editor_error_weather_location_required">날씨가 들어간 문구는 도시를 입력해 주세요.</string>
+    <string name="editor_error_weather_location_required">날씨가 들어간 문구는 지역을 골라 주세요.</string>
     <string name="editor_existing_voice_cache_used">기존 음성 캐시를 사용했어요.</string>
     <string name="editor_holiday_off_subtitle">대체 공휴일 및 임시 공휴일 포함</string>
     <string name="editor_holiday_off_title">공휴일에는 끄기</string>
-    <string name="editor_holiday_show_title">다가오는 공휴일</string>
-    <string name="editor_holiday_cold_cache">불러오는 중…</string>
     <string name="editor_manual_input_placeholder">알람에서 들려줄 문구를 입력해 주세요</string>
-    <string name="editor_minute_label">분</string>
-    <string name="editor_minutes">%1$d분</string>
     <string name="editor_no_voice_profile">아직 사용할 목소리가 없어요.</string>
     <string name="editor_off">꺼짐</string>
     <string name="editor_plan_gate_login_title">로그인이 필요해요</string>
@@ -234,8 +226,6 @@
     <string name="editor_vibration_pattern">패턴</string>
     <string name="editor_vibration_use">진동 사용</string>
     <string name="editor_vibration_title">진동</string>
-    <string name="editor_voice_deleted_desc">이 알람에 저장된 목소리는 그대로 울리지만, 문구를 바꾸려면 다른 목소리를 선택해 주세요.</string>
-    <string name="editor_voice_deleted_title">삭제된 목소리</string>
     <string name="editor_voice_generation_canceled_time_changed">알람 시각이 바뀌어 음성 생성을 중단했어요.</string>
     <string name="editor_voice_loading">목소리를 불러오는 중이에요.</string>
     <string name="editor_voice_output_title">목소리 크기</string>
@@ -273,9 +263,8 @@
     <string name="editorp_random_save_button">저장</string>
     <string name="editorp_random_title">문구</string>
     <string name="editorp_random_weather_region_required">아직 고르지 않았어요</string>
-    <string name="editorp_random_weather_region_saved">상대가 저장한 날씨 지역을 사용해요.</string>
-    <string name="editorp_random_weather_region_title">날씨 지역</string>
-    <string name="editorp_weather_save_button">저장</string>
+    <string name="editorp_random_weather_region_saved">상대가 저장한 지역을 사용해요.</string>
+    <string name="editorp_random_weather_region_title">지역</string>
     <string name="alarms_target_sheet_title">누구를 깨울까요?</string>
     <string name="alarms_target_self_title">내 알람 맞추기</string>
     <string name="hs_delete_account_title">정말 탈퇴할까요?</string>
@@ -305,13 +294,15 @@
     <string name="hs_settings_no_name">이름 없음</string>
     <string name="hs_settings_privacy_policy">개인정보 처리방침</string>
     <string name="hs_settings_section_account">계정</string>
-    <string name="hs_settings_section_display">화면</string>
     <string name="hs_settings_section_random_phrase">문구 정보</string>
     <string name="hs_settings_terms_of_service">서비스 이용약관</string>
     <string name="hs_settings_theme">화면 테마</string>
     <string name="hs_settings_title">설정</string>
-    <string name="hs_settings_weather_region">날씨 지역</string>
-    <string name="settings_holiday_country_title">공휴일 달력</string>
+    <string name="hs_settings_weather_region">지역</string>
+    <string name="region_picker_legacy_hint">목록에서 다시 골라 주세요</string>
+    <string name="region_picker_legacy_value_hint">‘%1$s’은(는) 목록에 없어요. 다시 골라 주세요.</string>
+    <string name="region_picker_seat_description">%1$s 날씨</string>
+    <string name="region_picker_weather_attribution">날씨 정보: 기상청 · 気象庁 · 미국 기상청(NWS)의 예보를 바탕으로 AlarmTalk가 가공</string>
     <string name="settings_logout_confirm_title">로그아웃할까요?</string>
     <string name="settings_marketing_load_failed">불러오지 못했어요 · 다시 시도</string>
     <string name="hs_empty_card_helper">듣고 싶은 목소리가 깨워줘요.</string>
@@ -322,21 +313,6 @@
     <string name="hs_perm_banner_exact_alarm">정확한 알람 권한을 허용하지 않으면 제때 울리지 않을 수 있어요</string>
     <string name="hs_perm_banner_full_screen">잠금 화면 알람 권한을 허용하지 않으면 잠금 화면에 뜨지 않아요</string>
     <string name="hs_alarm_row_date_voice">%1$s · %2$s 목소리</string>
-    <string name="hs_weather_city_label">도시</string>
-    <string name="hs_weather_city_placeholder">예: 서울</string>
-    <string name="hs_weather_default_country">대한민국</string>
-    <string name="hs_weather_city_custom">직접 입력</string>
-    <string-array name="hs_weather_preset_cities">
-        <item>서울</item>
-        <item>부산</item>
-        <item>인천</item>
-        <item>대구</item>
-        <item>대전</item>
-        <item>광주</item>
-        <item>울산</item>
-        <item>수원</item>
-        <item>제주</item>
-    </string-array>
     <string name="msg_account_delete_failed">회원 탈퇴에 실패했어요</string>
     <string name="msg_account_deleted">회원 탈퇴가 완료되었어요</string>
     <string name="msg_account_deleted_google_unlink_failed">회원 탈퇴는 완료되었지만 Google 연결 해제에 실패했어요</string>
@@ -355,30 +331,31 @@
     <string name="msg_family_alarm_couple_family_only">상대 알람은 커플/가족 이용권에서 사용할 수 있어요</string>
     <string name="msg_family_alarm_login_required">상대 알람을 설정하려면 먼저 로그인해 주세요</string>
     <string name="msg_family_alarm_set_failed">상대 알람 설정에 실패했어요</string>
+    <string name="msg_family_alarm_set_for_target_other">상대에게 알람을 설정했어요</string>
     <string name="msg_family_alarm_set_for_target">%1$s에게 알람을 설정했어요</string>
     <string name="msg_family_alarm_settings_save_failed">상대 알람 설정을 저장하지 못했어요</string>
     <string name="msg_family_alarm_settings_saved">상대 알람 설정을 저장했어요</string>
-    <string name="msg_family_alarm_target_fallback">상대</string>
-    <string name="msg_family_voice_default_label">가족이 보낸 음성</string>
     <string name="msg_gb_code_input_required_period">코드를 입력해 주세요.</string>
     <string name="msg_gb_code_register_failed">코드 등록에 실패했어요</string>
     <string name="msg_gb_code_registered">코드를 등록했어요</string>
     <string name="msg_gb_promo_redeemed">프로모 코드를 적용했어요</string>
-    <string name="msg_gb_free_plan_voice_alarms_locked">무료 이용권으로 전환되어 목소리 알람이 잠겼어요. 3일 안에 다시 등록하면 복구되고, 지나면 목소리가 영구 삭제돼요.</string>
-    <!-- 강등 안내 모달. 알람 행 배지를 대신한다 — 알람은 **정상 작동 중**(기본 알람음으로
-         울린다)이라 행마다 경고를 붙이면 고장난 앱처럼 읽힌다. 한 번만 말하고 끝낸다. -->
+    <!-- 강등 안내 모달. 알람 행 배지를 대신한다 — 알람은 **정상 작동 중**이라 행마다 경고를
+         붙이면 고장난 앱처럼 읽힌다. 한 번만 말하고 끝낸다.
+         ⚠ 무료 잠금은 2026-09-29 부터 **기본 목소리**로 바꾼다(알람음이 아니다 —
+         docs/spec/billing-lifecycle.md 「목소리를 못 쓰게 되면」). 목소리를 잃은 알람(삭제·공유 해제·
+         제자리 교체된 직접 입력)도 같은 날부터 기본 목소리(미나)로 바뀐다 — 셋 다 "기본 목소리로". -->
     <!-- ⚠ **"돌아와요" 만 말하지 말 것.** 보관은 3일뿐이고 지나면 서버가 목소리 프로필·
          원본·생성 음성을 **영구 삭제**한다(`sweepPaidVoiceRetention` →
          `deleteSensitiveVoiceDataForUser`). 기한을 빼면 기다리면 되는 줄 알고 잃는다.
          숫자 3은 백엔드 `PAID_VOICE_RETENTION_DAYS` 와 짝이다 — 거기를 바꾸면 여기도. -->
     <string name="downgrade_notice_free_title">무료 이용권으로 바뀌었어요</string>
-    <string name="downgrade_notice_free_message">목소리 알람 %1$d개가 기본 알람음으로 바뀌었어요. 3일 안에 이용권을 다시 등록하면 목소리가 돌아오고, 지나면 영구 삭제돼요.</string>
+    <string name="downgrade_notice_free_message">목소리 알람 %1$d개가 기본 목소리로 바뀌었어요. 3일 안에 이용권을 다시 등록하면 내 목소리가 돌아오고, 지나면 영구 삭제돼요.</string>
     <string name="downgrade_notice_shared_title">공유 이용권에서 나가게 됐어요</string>
     <string name="downgrade_notice_replaced_title">새 목소리로 바뀌었어요</string>
-    <string name="downgrade_notice_replaced_message">목소리를 새로 등록하면서 직접 입력한 문구로 만든 알람 %1$d개가 기본 알람음으로 바뀌었어요. 새 목소리로 문구를 다시 만들어 주세요.</string>
+    <string name="downgrade_notice_replaced_message">목소리를 새로 등록하면서 직접 입력한 문구로 만든 알람 %1$d개가 기본 목소리로 바뀌었어요. 새 목소리로 문구를 다시 만들어 주세요.</string>
     <!-- ⚠ 이쪽은 **복원되지 않는다** — 공유가 끊긴 목소리는 다시 공유받아야 한다.
          무료 강등처럼 "돌아와요" 라고 하면 기다리면 될 줄 안다. -->
-    <string name="downgrade_notice_shared_message">공유받던 목소리가 끊겨서 알람 %1$d개가 기본 알람음으로 바뀌었어요. 다시 쓰려면 이용권을 등록하거나 새 초대 코드를 받아야 해요.</string>
+    <string name="downgrade_notice_shared_message">공유받던 목소리가 끊겨서 알람 %1$d개가 기본 목소리로 바뀌었어요. 다시 쓰려면 이용권을 등록하거나 새 초대 코드를 받아야 해요.</string>
     <string name="downgrade_notice_open_billing">이용권 보기</string>
     <string name="msg_gb_google_play_start_failed">Google Play 결제를 시작하지 못했어요. 잠시 후 다시 시도해 주세요.</string>
     <string name="msg_gb_billing_info_load_failed">이용권 정보를 불러오지 못했어요</string>
@@ -464,14 +441,15 @@
     <string name="msg_voice_slot_exhausted">지금은 목소리 생성 요청이 많아요. 잠시 후 다시 시도해 주세요.</string>
     <string name="msg_voice_tts_audio_load_login_required">저장된 음성 오디오를 불러오려면 먼저 로그인해 주세요</string>
     <string name="msg_voice_tts_generate_login_required">음성 오디오를 만들려면 먼저 로그인해 주세요</string>
+    <string name="rd_audio_upload_local_only">로컬에 저장된 오디오만 업로드할 수 있어요.</string>
+    <string name="rd_audio_upload_path_missing">오디오 파일 경로를 찾을 수 없어요.</string>
+    <string name="rd_audio_upload_file_missing">오디오 파일을 찾을 수 없어요.</string>
     <string name="rd_audio_duration_unreadable">오디오 길이를 확인할 수 없는 파일은 사용할 수 없어요.</string>
     <string name="rd_audio_extract_failed">선택한 파일에서 오디오를 추출하지 못했어요. 다른 파일로 시도해 주세요.</string>
     <string name="rd_audio_mp3_trim_failed">MP3 구간을 저장하지 못했어요. 다른 파일을 선택해 주세요.</string>
     <string name="rd_audio_open_failed">선택한 오디오 파일을 열 수 없어요.</string>
     <string name="rd_audio_over_limit_trim_failed">%1$d초 초과 파일을 자동으로 자르지 못했어요. m4a/aac/mp4 형식으로 다시 선택해 주세요.</string>
     <string name="rd_audio_trim_failed">선택한 구간을 오디오 파일로 자르지 못했어요. 시작점을 조금 조정하거나 다른 파일로 다시 시도해 주세요.</string>
-    <string name="rd_copied_alarm_label">복사한 알람</string>
-    <string name="rd_copied_alarm_label_suffix">%1$s 복사본</string>
     <string name="rd_default_alarm_label">알람</string>
     <string name="rd_duplicate_alarm_time_message">이미 같은 시간에 알람이 있어요. 다른 시간을 선택해 주세요.</string>
     <string name="rd_slide_to_dismiss">밀어서 끄기</string>
@@ -553,11 +531,6 @@
     <string name="voices_name_label">목소리 이름</string>
     <string name="voices_prerender_ready_title">이 목소리로 알람 문구를 만들고 있어요</string>
     <string name="voices_prerender_ready_body">준비되는 대로 알람에서 쓸 수 있어요.</string>
-    <string name="voices_energy_label">목소리 느낌</string>
-    <string name="voices_energy_auto">자동</string>
-    <string name="voices_energy_lively">경쾌</string>
-    <string name="voices_energy_calm">차분</string>
-    <string name="voices_energy_hint">알람 문구의 말투와 톤을 이 느낌에 맞춰요.</string>
     <string name="voices_language_label">알람을 읽어줄 언어</string>
     <string name="voices_lang_ko" translatable="false">한국어</string>
     <string name="voices_lang_en" translatable="false">English</string>
@@ -569,18 +542,17 @@
     <string name="voices_preparing">준비 중</string>
     <string name="voices_preparing_audio">음성을 준비하고 있어요.</string>
     <string name="voices_preview_play_failed">미리듣기를 재생하지 못했어요.</string>
+    <string name="voices_preview_confirm_failed">미리듣기 확인에 실패했어요. 다시 들어 주세요.</string>
     <string name="voices_confirm_new_title">이 목소리로 저장할까요?</string>
-    <string name="voices_confirm_new_body">저장하면 이번 달에 만들 수 있는 목소리를 다 쓰게 돼요. 지워도 다음 달까지는 새로 만들 수 없으니, 마음에 들지 않으면 저장하기 전에 다시 만들어 보세요.</string>
-    <string name="voices_confirm_new_preview">다시 듣기</string>
+    <string name="voices_confirm_replace_body">이전에 저장한 목소리는 삭제하고 이 목소리로 등록할게요.</string>
     <string name="voices_confirm_new_keep">저장하기</string>
     <string name="voices_confirm_new_keep_saving">저장 중…</string>
     <string name="voices_confirm_new_delete">다시 만들기</string>
     <string name="voices_creating_title">목소리를 만드는 중이에요</string>
-    <string name="voices_creating_body">잠시만 기다려 주세요.
-완성되면 바로 들려드릴게요.</string>
+    <string name="voices_creating_body">잠시만 기다려 주세요.\n완성되면 바로 들려드릴게요.</string>
     <string name="voices_preview_text_loading">문구를 준비하고 있어요…</string>
-    <string name="voices_preview_text_retry_hint">문구를 아직 준비하지 못했어요. 미리듣기를 눌러 다시 시도해 주세요.</string>
-    <string name="voices_preview_edit_hint">말투를 원하는 대로 바꿔 보세요.\n매일 아침 문구가 이 말투로 만들어져요.</string>
+    <string name="voices_preview_text_retry_hint">문구를 아직 준비하지 못했어요. 듣기 버튼을 눌러 다시 시도해 주세요.</string>
+    <string name="voices_preview_edit_hint">말투를 원하는 대로 바꿔 보세요.</string>
     <string name="voices_preview_edit_action">문구 수정</string>
     <string name="voices_preview_edit_save">재생성</string>
     <string name="voices_preview_edit_saving">재생성 중…</string>
@@ -601,7 +573,6 @@
     <string name="voices_reupload">재업로드</string>
     <string name="voices_select_file_first">파일을 선택해 주세요.</string>
     <string name="voices_selected_audio_unusable">선택한 오디오를 사용할 수 없어요.</string>
-    <string name="voices_sharing_shared_desc_disabled">공유는 커플/가족 이용권에서 사용할 수 있어요.</string>
     <string name="voices_sharing_shared_desc_enabled">등록한 목소리를 가족·연인도 함께 사용할 수 있어요.</string>
     <string name="voices_sharing_shared_title">가족·연인에게 공유 허용</string>
     <string name="voices_step_sharing">공유 설정</string>
@@ -610,10 +581,10 @@
     <string name="voicesr_close">닫기</string>
     <string name="voicesr_delete">삭제</string>
     <string name="voices_delete_quota_title">정말 삭제할까요?</string>
-    <string name="voices_delete_quota_message">이 목소리로 만든 알람은 기본 알람음으로 바뀌고, 저장된 음성도 함께 지워져요. 되돌릴 수 없어요. 이번 달에는 새 목소리를 만들 수 없고, 다음 달부터 다시 만들 수 있어요.</string>
+    <string name="voices_delete_quota_message">이 목소리로 만든 알람은 기본 목소리로 바뀌고, 저장된 음성도 함께 지워져요. 되돌릴 수 없어요. 이번 달에는 새 목소리를 만들 수 없고, 다음 달부터 다시 만들 수 있어요.</string>
     <string name="voicesr_delete_dialog_confirm">\'%1$s\' 목소리를 삭제할까요?</string>
     <string name="voicesr_delete_dialog_title">목소리 삭제</string>
-    <string name="voicesr_delete_dialog_warning">이 목소리를 쓰는 알람은 기본 알람음으로 바뀌어요. 저장된 음원 파일도 함께 삭제돼요.</string>
+    <string name="voicesr_delete_dialog_warning">이 목소리를 쓰는 알람은 기본 목소리로 바뀌어요. 저장된 음원 파일도 함께 삭제돼요.</string>
     <string name="voicesr_edit_name">이름 수정</string>
     <string name="voicesr_more">더보기</string>
     <string name="voicesr_pause">일시정지</string>
@@ -628,7 +599,7 @@
     <string name="voicesr_required_field">꼭 입력해 주세요.</string>
     <string name="voicesr_save">저장</string>
     <string name="voicesr_share_voice">목소리 공유</string>
-    <string name="voicesr_shared_from_owner">%1$s님에게 공유받은 목소리</string>
+    <string name="voicesr_shared_from_owner">%1$s에게 공유받은 목소리</string>
     <string name="voicesr_shared_voice">공유받은 목소리</string>
     <string name="voicesr_sharing_badge">공유 중</string>
     <string name="voicesr_speech_style_failed">말투 분석에 실패했어요</string>
@@ -655,9 +626,6 @@
     <string name="label_vibration_sos">SOS</string>
     <string name="label_vibration_off">꺼짐</string>
     <string name="label_vibration_basic_call">기본</string>
-    <string name="editor2_cat_morning">기상</string>
-    <string name="editor2_cat_love">사랑</string>
-    <string name="editor2_cat_medication">약</string>
     <string name="editor2_ctx_wake_weather">날씨</string>
     <string name="editor2_ctx_wake_fortune">운세</string>
     <string name="editor2_ctx_love">응원</string>
@@ -675,7 +643,7 @@
     <string name="editor2_weekday_fri">금</string>
     <string name="editor2_weekday_sat">토</string>
     <string name="editor2_voice_detail_shared">공유받은 목소리</string>
-    <string name="editor2_voice_detail_shared_from">%1$s님에게 공유받은 목소리</string>
+    <string name="editor2_voice_detail_shared_from">%1$s에게 공유받은 목소리</string>
     <string name="editor2_voice_detail_default">기본 목소리</string>
     <string name="editor2_voice_detail_mine_sharing">내 목소리 · 공유 중</string>
     <string name="editor2_voice_detail_mine">내 목소리</string>
@@ -688,8 +656,6 @@
     <string name="editor2_quiet_days_weekend">주말</string>
     <string name="editor2_quiet_days_everyday">매일</string>
     <string name="editor2_fortune_time_unknown">시간 모름</string>
-    <string name="editor2_weather_location_prompt">도시를 입력해 주세요.</string>
-    <string name="editor2_fortune_info_prompt">성별, 생년월일, 태어난 시간을 입력해 주세요.</string>
     <string name="voices2_audio_duration_unknown">오디오 길이를 확인할 수 없어요.</string>
     <string name="voices2_record_min_duration">12초 이상 녹음해 주세요.</string>
     <string name="voices2_register_under_two_minutes">2분 이하 음성으로 등록할 수 있어요.</string>
@@ -787,8 +753,7 @@
     <string name="consent_load_failed">동의 내역을 불러오지 못했어요. 눌러서 다시 시도해 주세요.</string>
     <string name="r3app_bottom_create_alarm_desc">알람 만들기</string>
     <string name="r3app_update_required_title">업데이트가 필요해요</string>
-    <string name="r3app_update_required_body">이 버전은 더 이상 쓸 수 없어요.
-최신 버전으로 업데이트해 주세요.</string>
+    <string name="r3app_update_required_body">이 버전은 더 이상 쓸 수 없어요.\n최신 버전으로 업데이트해 주세요.</string>
     <string name="r3app_update_required_button">업데이트하기</string>
     <string name="r3app_update_downloaded">업데이트를 다 받았어요. 재시작하면 적용돼요.</string>
     <string name="r3app_update_restart">재시작</string>
@@ -812,11 +777,6 @@
     <string name="r3dlg_pending_deletion_processing">처리 중…</string>
     <string name="r3dlg_pending_deletion_recover">탈퇴 취소하고 계속 사용하기</string>
     <string name="r3dlg_pending_deletion_logout">로그아웃</string>
-    <string name="r3ed_time_until_days">약 %1$d일 뒤에 울려요</string>
-    <string name="r3ed_time_until_days_hours">약 %1$d일 %2$d시간 뒤에 울려요</string>
-    <string name="r3ed_time_until_minutes">%1$d분 뒤에 울려요</string>
-    <string name="r3ed_time_until_hours">%1$d시간 뒤에 울려요</string>
-    <string name="r3ed_time_until_hours_minutes">%1$d시간 %2$d분 뒤에 울려요</string>
     <string name="r3ed_google_signin_error_config">Google 로그인 설정이 맞지 않아요. Android OAuth 클라이언트의 패키지 이름과 SHA-1을 확인해 주세요.</string>
     <string name="r3ed_google_signin_error_network">네트워크 연결을 확인한 뒤 다시 시도해 주세요.</string>
     <string name="r3ed_google_signin_error_failed">Google 로그인에 실패했어요.</string>
@@ -825,6 +785,7 @@
     <string name="r3ed_google_signin_error_failed_status">Google 로그인에 실패했어요. status=%1$d</string>
     <string name="r3ed_ampm_wheel_am">오전</string>
     <string name="r3ed_ampm_wheel_pm">오후</string>
+    <string name="r3data_received_family_voice_text">상대가 보낸 음성</string>
     <string name="r3data_received_alarm_from_other">상대가 보낸 알람</string>
     <string name="r3data_honorific_name">%1$s님</string>
     <string name="r3data_received_alarm_from_sender">%1$s이 보낸 알람</string>
@@ -833,7 +794,6 @@
     <string name="r3misc_consent_required">계속하려면 필수 동의가 필요해요.</string>
     <string name="r3misc_login_required_generic">로그인 후 사용할 수 있어요</string>
     <string name="r3misc_google_signin_unavailable">현재 Google 로그인을 사용할 수 없어요. 이메일로 로그인해 주세요.</string>
-    <string name="r3misc_google_signin_failed">Google 로그인에 실패했어요</string>
 
     <string name="r3misc_notif_received_alarm_sent">%1$s이 알람을 보냈어요.</string>
     <string name="r3misc_notif_received_alarm_sent_other">상대가 알람을 보냈어요.</string>
@@ -892,13 +852,11 @@
     <string name="msg_consent_update_required">앱을 업데이트해야 동의를 진행할 수 있어요.</string>
     <string name="consent_withdraw_action">동의 철회</string>
     <string name="consent_withdraw_voice_title">철회하면 등록한 목소리가 모두 삭제돼요</string>
-    <string name="consent_withdraw_voice_body">지금까지 만든 목소리와 녹음 원본, 생성된 음성 파일, 저장한 알람 문구가 즉시 삭제되고 되돌릴 수 없어요. 이 목소리로 울리던 알람은 가족에게 공유한 알람까지 기본 알람음으로 바뀌어요. 다시 쓰려면 처음부터 새로 녹음해야 해요.</string>
+    <string name="consent_withdraw_voice_body">지금까지 만든 목소리와 녹음 원본, 생성된 음성 파일, 저장한 알람 문구가 즉시 삭제되고 되돌릴 수 없어요. 이 목소리로 울리던 알람은 가족에게 공유한 알람까지 기본 목소리로 바뀌어요. 다시 쓰려면 처음부터 새로 녹음해야 해요.</string>
     <string name="consent_withdraw_voice_confirm">철회하고 삭제</string>
     <string name="consent_overseas_withdraw_notice">국외 이전 동의는 서비스 이용에 반드시 필요해요. 철회하려면 더보기에서 회원 탈퇴를 진행해 주세요.</string>
     <string name="msg_voice_consent_withdrawn">음성 생체정보 동의를 철회했어요. 등록한 목소리가 삭제됐어요.</string>
     <string name="msg_voice_consent_withdraw_failed">동의 철회에 실패했어요. 다시 시도해 주세요.</string>
-    <string name="voices_replace_existing_title">‘%1$s’ 대신 이 목소리를 써요</string>
-    <string name="voices_replace_existing_desc">이전에 저장한 목소리는 삭제돼요. 직접 입력 문구로 만든 알람도 기본 알람음으로 바뀌어요.</string>
     <string name="misc2_theme_mode_system_short">시스템</string>
     <string name="misc2_theme_mode_light_short">밝게</string>
     <string name="misc2_theme_mode_dark_short">어둡게</string>
@@ -925,8 +883,12 @@
     <string name="api_error_voice_limit_reached">등록할 수 있는 목소리를 다 채웠어요. 쓰지 않는 목소리를 지워 주세요.</string>
     <string name="api_error_voice_not_ready">목소리를 아직 만들고 있어요. 잠시 후 다시 시도해 주세요.</string>
     <string name="api_error_voice_cloning_failed">목소리를 만들지 못했어요. 조용한 곳에서 다시 녹음해 주세요.</string>
-    <string name="api_error_invalid_voice_energy">목소리 느낌을 확인하지 못했어요. 다시 골라 주세요.</string>
+    <string name="api_error_invalid_voice_pitch">톤 값이 올바르지 않아요. 다시 맞춰 주세요.</string>
+    <string name="api_error_voice_pitch_locked">톤은 목소리를 등록할 때만 정할 수 있어요.</string>
     <string name="api_error_alarm_not_found">이미 사라진 알람이에요.</string>
+    <string name="api_error_family_alarm_disabled">상대가 알람을 받지 않도록 설정해 뒀어요.</string>
+    <string name="api_error_family_alarm_lead_time">상대 알람은 조금 더 뒤로 맞춰 주세요. 상대 기기에 전달될 시간이 조금 필요해요.</string>
+    <string name="api_error_owner_cannot_leave">관리자는 이용권에서 나갈 수 없어요.</string>
     <string name="api_error_tts_generation_failed">음성을 만들지 못했어요. 잠시 후 다시 시도해 주세요.</string>
     <string name="voices_not_ready_title">목소리를 아직 받는 중이에요</string>
     <string name="voices_not_ready_message_progress">알람에 쓸 기본 목소리를 다 받아야 알람을 설정할 수 있어요. (%1$d%%)\n목소리 탭에서 진행 상황을 볼 수 있어요.</string>
@@ -940,4 +902,32 @@
     <!-- 종료 전환 대상이 아닌 계정(deletes_voices_at_end = false, 예: 결제 보류로 활성 구독 행이 남음). 삭제 문장만 뺀다. -->
     <string name="personal_promo_end_notice_message_keep_voices">%1$s까지 개인 플랜을 무료로 쓸 수 있어요. %2$s부터는 무료 플랜으로 돌아가요.</string>
     <string name="personal_promo_end_notice_dont_show_again">다시 보지 않기</string>
+    <string name="system_voice_name_siwoo">시우</string>
+    <string name="system_voice_name_mina">미나</string>
+    <string name="system_voice_name_dohyun">도현</string>
+    <string name="system_voice_name_aeni">애니</string>
+    <string name="notification_ringing_name">알람 울림</string>
+    <string name="notification_ringing_description">알람이 울릴 때 잠금 화면에 울림 화면을 표시해요.</string>
+    <string name="notification_ringing_quiet_name">알람 울림 화면</string>
+    <string name="notification_ringing_quiet_description">울림 화면을 보고 있을 때 알림창에 알람을 표시해요.</string>
+    <string name="notification_ringing_fallback_name">알람 울림 보조</string>
+    <string name="notification_ringing_fallback_description">기본 울림을 시작하지 못할 때 알림 소리와 진동으로 알람을 알려요.</string>
+    <string name="notification_social_name">공유 알람 소식</string>
+    <string name="notification_social_description">함께 쓰는 사람이 보낸 알람과 공유 상태 변경을 알려요.</string>
+    <string name="notification_download_name">목소리 다운로드</string>
+    <string name="notification_download_description">알람 목소리를 받는 진행 상황을 표시해요.</string>
+    <string name="legal_terms_url">https://alarm-talk.com/ko/terms</string>
+    <string name="legal_privacy_url">https://alarm-talk.com/ko/privacy</string>
+    <string name="voices_clip_prep_waiting">준비 중이에요</string>
+    <string name="voices_clip_prep_ready">준비됐어요</string>
+    <string name="voices_clip_prep_owner_wait">보낸 사람 쪽에서 이 목소리를 만들고 있어요. 다 되면 알람에서 고를 수 있어요.</string>
+    <string name="voices_clip_prep_ready_body">이제 오프라인에서도 목소리로 울려요.</string>
+    <string name="voices_clip_prep_failed_body">목소리를 만들다 실패했어요. 다시 시도해 주세요.</string>
+    <string name="voices_clip_prep_rendering_body">목소리를 만들고 있어요. 몇 분 걸릴 수 있어요.</string>
+    <string name="voices_clip_prep_downloading_body">목소리를 받고 있어요. 앱을 닫아도 계속 받아요.</string>
+    <string name="voices_clip_prep_retry">다시 시도하기</string>
+    <string name="voices_tuning_title">톤 조절</string>
+    <string name="voices_tuning_listen_original">원본 듣기</string>
+    <string name="voices_tuning_listen_current">현재 톤 듣기</string>
+    <string name="voices_tuning_pitch_value">%1$s 반음</string>
 </resources>

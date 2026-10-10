@@ -78,7 +78,7 @@ final class RemoteAlarmSyncViewModel: ObservableObject {
         } catch {
             // ⚠ 취소는 표시하지 않는다 — 우리가 스스로 접은 것이다(아래 주석 참조).
             guard !isCancellation(error) else { return }
-            statusMessage = userFacingErrorMessage(error, fallback: "알람 정보를 불러오지 못했어요")
+            statusMessage = userFacingErrorMessage(error, fallback: String(localized: "알람 정보를 불러오지 못했어요"))
         }
     }
 
@@ -87,7 +87,7 @@ final class RemoteAlarmSyncViewModel: ObservableObject {
     func push(record: LocalAlarmRecord, store: LocalAlarmStore, session: AuthSession?) async {
         guard !store.isServerSyncDeferred(id: record.id) else { return }
         guard let requestedOwner = session?.user.id else {
-            statusMessage = "로그인이 필요해요."
+            statusMessage = String(localized: "로그인이 필요해요.")
             return
         }
         guard !isBusy else { return }
@@ -121,7 +121,7 @@ final class RemoteAlarmSyncViewModel: ObservableObject {
         } catch {
             guard !isCancellation(error) else { return }
             store.markSyncFailed(id: record.id)
-            statusMessage = userFacingErrorMessage(error, fallback: "알람 변경사항을 저장하지 못했어요")
+            statusMessage = userFacingErrorMessage(error, fallback: String(localized: "알람 변경사항을 저장하지 못했어요"))
         }
     }
 
@@ -132,13 +132,19 @@ final class RemoteAlarmSyncViewModel: ObservableObject {
     /// 부분 실패(개별 행 push/pull 실패)는 push-failed / pull-failed / 둘 다로
     /// 나눠 안내한다. 사이클 전체가 throw 된 경우(네트워크 단절 등)는 기존
     /// generic fallback 으로 폴백한다.
-    func runFullSync() async {
-        guard let push, let pull else { return }
+    ///
+    /// - Returns: 회차가 **완결됐는가** — push·pull 이 던지지 않았고 행 단위 실패도 없었다.
+    ///   의존성 전(`configure` 전)·취소·사이클 실패·부분 실패는 false 다. 알람 탭의 60초
+    ///   스로틀(`AlarmTabSyncThrottle`)이 이걸 보고 완결되지 않은 회차의 칸을 지운다 —
+    ///   그래야 다음 진입이 곧바로 다시 돈다(코덱스 #823 7차).
+    @discardableResult
+    func runFullSync() async -> Bool {
+        guard let push, let pull else { return false }
         // 가족 푸시도 이 진입점을 쓴다. 표시용 busy 가드에서 버리면 하위 pull 큐에
         // 도달하지 못하므로, 앞 회차의 실패/취소 뒤에도 호출별로 차례를 넘긴다.
         await syncGate.acquire()
         defer { syncGate.release() }
-        guard !Task.isCancelled else { return }
+        guard !Task.isCancelled else { return false }
         busyOperations += 1
         defer { busyOperations -= 1 }
         do {
@@ -150,6 +156,7 @@ final class RemoteAlarmSyncViewModel: ObservableObject {
             )
             // 부분 실패만 알린다 — 성공은 위와 같은 이유로 침묵한다.
             statusMessage = failedMessage
+            return failedMessage == nil
         } catch {
             // ⚠ **사이클 전체 실패는 사용자에게 띄우지 않는다 — 로그만 남긴다.**
             // `runFullSync` 는 사용자가 누른 것이 아니라 앱 시작·세션 변경·전경 복귀·
@@ -171,6 +178,7 @@ final class RemoteAlarmSyncViewModel: ObservableObject {
             } else {
                 Self.syncLogger.error("자동 동기화 실패: \(String(describing: error), privacy: .public)")
             }
+            return false
         }
     }
 
@@ -181,11 +189,11 @@ final class RemoteAlarmSyncViewModel: ObservableObject {
     private func alarmSyncPartialFailureMessage(pushFailed: Int, pullFailed: Int) -> String? {
         switch (pushFailed > 0, pullFailed > 0) {
         case (true, true):
-            return "알람 변경사항 일부를 저장하지 못했고, 받은 알람 일부를 불러오지 못했어요."
+            return String(localized: "알람 변경사항 일부를 저장하지 못했고, 받은 알람 일부를 불러오지 못했어요.")
         case (true, false):
-            return "알람 변경사항 일부를 저장하지 못했어요. 이 기기의 알람은 그대로 울려요."
+            return String(localized: "알람 변경사항 일부를 저장하지 못했어요. 이 기기의 알람은 그대로 울려요.")
         case (false, true):
-            return "받은 알람 일부를 불러오지 못했어요. 잠시 후 다시 동기화해 주세요."
+            return String(localized: "받은 알람 일부를 불러오지 못했어요. 잠시 후 다시 동기화해 주세요.")
         case (false, false):
             return nil
         }
@@ -215,7 +223,7 @@ final class RemoteAlarmSyncViewModel: ObservableObject {
         // 서버에 사본이 없는 알람(로컬 전용)은 지울 것이 없으므로 성공으로 본다.
         guard let remoteID = record.remoteAlarmId else { return true }
         guard let token = session?.token else {
-            if announceFailure { statusMessage = "로그인이 필요해요." }
+            if announceFailure { statusMessage = String(localized: "로그인이 필요해요.") }
             return false
         }
         do {
@@ -236,7 +244,7 @@ final class RemoteAlarmSyncViewModel: ObservableObject {
                 return true
             }
             if announceFailure {
-                statusMessage = userFacingErrorMessage(error, fallback: "알람 삭제에 실패했어요")
+                statusMessage = userFacingErrorMessage(error, fallback: String(localized: "알람 삭제에 실패했어요"))
             }
             return false
         }

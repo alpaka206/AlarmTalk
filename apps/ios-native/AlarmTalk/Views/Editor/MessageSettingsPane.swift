@@ -9,7 +9,7 @@ import SwiftUI
 /// 두어 여섯 갈래가 같은 층위에 있다.
 ///
 /// 규칙 셋(CLAUDE.md 「알람 편집기 기본값」):
-/// 1. **이미 등록한 정보는 다시 묻지 않는다.** 날씨 지역·운세 사주·직접 입력 문구는
+/// 1. **이미 등록한 정보는 다시 묻지 않는다.** 지역·운세 사주·직접 입력 문구는
 ///    값이 **없을 때만** 고르는 순간 입력창이 뜬다. 있으면 선택만 되고, 고치는 길은
 ///    아래 상세 카드의 '변경하기' 하나다.
 /// 2. **모달은 자기만 닫는다.** 확인해도 이 목록을 닫지 않는다 — 예전 안드로이드는
@@ -85,14 +85,15 @@ struct MessageSettingsPane: View {
     /// 다이얼로그를 띄우기 **직전**의 문구 종류. 취소하면 여기로 되돌린다(`select(_:)` 주석).
     @State private var contextBeforeDialog: String?
 
-    /// 안드로이드 `EditorMessageContexts`(`AlarmEditorControls.kt:502-509`) 순서 그대로.
-    private static let options: [(id: String, label: String)] = [
-        ("preset", "기본 인사말"),
-        ("wake_weather", "날씨"),
-        ("wake_fortune", "운세"),
-        ("cheer", "응원"),
-        ("medication", "약"),
-        (MessageSettingsResult.manualContext, "직접 입력"),
+    /// 안드로이드 `EditorMessageContexts`(`AlarmEditorControls.kt:480-487`) 순서 그대로.
+    /// 요약 행(`MessageModeSummaryRow`)도 이 표에서 이름을 읽는다 — 표는 하나다.
+    fileprivate static let options: [(id: String, label: String)] = [
+        ("preset", String(localized: "기본 인사말")),
+        ("wake_weather", String(localized: "날씨")),
+        ("wake_fortune", String(localized: "운세")),
+        ("cheer", String(localized: "응원")),
+        ("medication", String(localized: "약")),
+        (MessageSettingsResult.manualContext, String(localized: "직접 입력")),
     ]
 
     /// 목록에 둘 수 있는 모든 종류의 id — [availableContexts] 의 기본값.
@@ -155,7 +156,7 @@ struct MessageSettingsPane: View {
 
         }
         .homeGradientBackground()
-        .navigationTitle("문구")
+        .navigationTitle(String(localized: "문구"))
         // ⚠ 부모(편집기)가 상단바를 숨기므로 여기서 명시적으로 켠다 —
         // 번지면 뒤로갈 길이 사라진다(`AlarmSettingsPanes.PaneScaffold` 주석 참조).
         .toolbar(.visible, for: .navigationBar)
@@ -179,11 +180,10 @@ struct MessageSettingsPane: View {
         // 안 된다. 최종 반영은 이 화면의 저장 버튼 한 곳이다.
         //
         // ⚠ **설정 화면과 같은 컴포넌트를 쓴다**(2026-08-12 지시). 예전에는 여기만
-        // `WeatherLocationInputFields`(국가·도시를 나란히 받는 폼 + '현재 위치 사용')를
-        // 썼고 설정은 `WeatherCityPickerSheet`(도시 목록 바텀시트)를 썼다 — **같은 값을
+        // 국가·도시를 나란히 받는 폼을 썼고 설정은 목록 바텀시트를 썼다 — **같은 값을
         // 고르는 화면이 앱 안에서 두 가지**였고, 한쪽을 고쳐도 다른 쪽은 그대로였다.
-        // 2026-08-10 에 설정만 목록형으로 고치면서 이쪽이 남았다.
-        // 도시는 목록에서 **고르는 순간 확정**이라 중간 draft 가 필요 없다(고르지 않고 닫으면
+        // 지금은 둘 다 `WeatherRegionPickerSheet`(나라 → 지역, 직접 입력 없음)다.
+        // 지역은 목록에서 **고르는 순간 확정**이라 중간 draft 가 필요 없다(고르지 않고 닫으면
         // 아무것도 쓰이지 않는다). 대신 고르지 않고 닫았으면 종류를 되돌린다.
         .bottomSheet(
             isPresented: $weatherDialogOpen,
@@ -192,11 +192,13 @@ struct MessageSettingsPane: View {
                 cancelContextSelection()
             }
         ) {
-            WeatherCityPickerSheet(
-                currentCity: draftWeatherCity,
-                onSelect: { country, city in
-                    draftWeatherCountry = country
-                    draftWeatherCity = city
+            WeatherRegionPickerSheet(
+                current: WeatherRegions.region(country: draftWeatherCountry, city: draftWeatherCity),
+                legacyLabel: WeatherRegions.unresolvedLegacyLabel(country: draftWeatherCountry, city: draftWeatherCity),
+                onSelect: { region in
+                    // 옛 앱이 읽는 표준 글자로 적는다 — 알람 행·요청의 지역 키는 이 글자에서 되짚힌다.
+                    draftWeatherCountry = region.legacyCountry
+                    draftWeatherCity = region.legacyCity
                     contextBeforeDialog = nil
                     weatherDialogOpen = false
                 }
@@ -217,14 +219,14 @@ struct MessageSettingsPane: View {
                     .padding(20)
                 }
                 .homeGradientBackground()
-                .navigationTitle("사주 정보")
+                .navigationTitle(String(localized: "운세 정보"))
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .topBarLeading) {
-                        Button("취소") { fortuneDialogOpen = false }
+                        Button(String(localized: "취소")) { fortuneDialogOpen = false }
                     }
                     ToolbarItem(placement: .topBarTrailing) {
-                        Button("확인") {
+                        Button(String(localized: "확인")) {
                             draftFortuneGender = fortuneSheetGender
                             draftFortuneBirthDate = fortuneSheetBirthDate
                             draftFortuneBirthTime = fortuneSheetBirthTime
@@ -249,10 +251,10 @@ struct MessageSettingsPane: View {
         // ⚠ **`$draftManualText` 에 직접 바인딩하지 말 것.** 그러면 타이핑이 곧바로
         // 화면 draft 에 반영돼 **'취소' 가 취소가 아니게 된다**(두 버튼 body 가 비어
         // 있어도 이미 값이 바뀐 뒤다). 알럿 전용 상태에 받아 '저장' 에서만 대입한다.
-        .alert("직접 입력", isPresented: $manualDialogOpen) {
-            TextField("알람에서 읽어 줄 문구", text: $manualAlertDraft)
-            Button("취소", role: .cancel) { cancelContextSelection() }
-            Button("저장") {
+        .alert(String(localized: "직접 입력"), isPresented: $manualDialogOpen) {
+            TextField(String(localized: "알람에서 읽어 줄 문구"), text: $manualAlertDraft)
+            Button(String(localized: "취소"), role: .cancel) { cancelContextSelection() }
+            Button(String(localized: "저장")) {
                 // 새니타이즈·길이 상한은 여기서 건다 — 서버도 막지만, 앱이 1차
                 // 방어선이라 제어문자·제로폭이 문구에 남으면 TTS 낭독이 망가진다.
                 draftManualText = InputSanitizer.clamp(
@@ -267,7 +269,7 @@ struct MessageSettingsPane: View {
                     .isEmpty
             )
         } message: {
-            Text("이 문구를 그대로 읽어 드려요.")
+            Text(String(localized: "이 문구를 그대로 읽어 드려요."))
         }
         .onChange(of: manualDialogOpen) { _, open in
             // 열 때만 현재 값으로 시드한다. 닫힐 때는 건드리지 않는다 —
@@ -286,8 +288,12 @@ struct MessageSettingsPane: View {
         switch draftContext {
         case "wake_weather":
             PromptDetailCard(
-                title: "날씨 지역",
+                title: String(localized: "지역"),
                 value: weatherSummary,
+                // 되짚지 못한 옛 값(직접 입력 시절의 글자)에만 — 고르게 강요하지는 않는다.
+                note: WeatherRegions.isUnresolvedLegacy(country: draftWeatherCountry, city: draftWeatherCity)
+                    ? String(localized: "목록에서 다시 골라 주세요")
+                    : nil,
                 onChange: {
                     contextBeforeDialog = nil
                     weatherDialogOpen = true
@@ -295,7 +301,7 @@ struct MessageSettingsPane: View {
             )
         case "wake_fortune":
             PromptDetailCard(
-                title: "사주 정보",
+                title: String(localized: "운세 정보"),
                 value: fortuneSummary,
                 onChange: {
                     contextBeforeDialog = nil
@@ -307,8 +313,8 @@ struct MessageSettingsPane: View {
             // 일이 없지만 직접 입력은 글자가 그대로다 — 안 보이면 어제 문구를 물고 온
             // 새 알람을 알아챌 방법이 없다.
             PromptDetailCard(
-                title: "문구",
-                value: draftManualText.isEmpty ? "아직 입력하지 않았어요" : draftManualText,
+                title: String(localized: "문구"),
+                value: draftManualText.isEmpty ? String(localized: "아직 입력하지 않았어요") : draftManualText,
                 onChange: {
                     contextBeforeDialog = nil
                     manualDialogOpen = true
@@ -361,12 +367,6 @@ struct MessageSettingsPane: View {
     /// 그전에는 **먼저 고르고 나중에 물어서**, 다이얼로그를 취소하면 **값 없는 종류**가 선택된
     /// 채로 남았다. 이 화면은 나갈 때 자동 반영(`onDisappear`)이라 그대로 편집기에 실리고,
     /// 사용자는 고른 적 없는 미완성 상태로 저장을 시도하게 된다.
-    ///
-    /// nil = 되돌릴 것이 없다(같은 종류를 다시 누른 경우, 또는 상세 카드 '변경하기').
-    private func rollbackTarget(from previous: String, to id: String) -> String? {
-        previous != id ? previous : nil
-    }
-
     private func select(_ id: String) {
         let previous = draftContext
         draftContext = id
@@ -376,7 +376,8 @@ struct MessageSettingsPane: View {
             contextBeforeDialog = nil
             return
         }
-        contextBeforeDialog = rollbackTarget(from: previous, to: id)
+        // nil = 되돌릴 것이 없다(같은 종류를 다시 누른 경우, 또는 상세 카드 '변경하기').
+        contextBeforeDialog = previous != id ? previous : nil
         switch id {
         case "wake_weather": weatherDialogOpen = true
         case "wake_fortune": openFortuneSheet()
@@ -409,26 +410,27 @@ struct MessageSettingsPane: View {
         return "\(option.label) (\(max(remaining, 0))/\(limit))"
     }
 
+    /// ⚠ **지역 이름만 보인다 — 나라를 붙이지 말 것**(저장은 나라+도시 둘 다, 화면은 지역 이름).
+    /// 여기만 "대한민국 · 서울" 이면 같은 값이 두 이름을 갖는다 — 설정 행
+    /// (`SettingsView.weatherLocationLabel`)과 문구 요약도 `WeatherRegions.displayName` 하나를 쓴다.
     private var weatherSummary: String {
-        let city = draftWeatherCity.trimmingCharacters(in: .whitespaces)
-        guard !city.isEmpty else { return "아직 정하지 않았어요" }
-        let country = draftWeatherCountry.trimmingCharacters(in: .whitespaces)
-        return country.isEmpty ? city : "\(country) · \(city)"
+        WeatherRegions.displayName(country: draftWeatherCountry, city: draftWeatherCity)
+            ?? String(localized: "아직 정하지 않았어요")
     }
 
     private var fortuneSummary: String {
         let date = draftFortuneBirthDate.trimmingCharacters(in: .whitespaces)
-        guard !date.isEmpty else { return "아직 정하지 않았어요" }
+        guard !date.isEmpty else { return String(localized: "아직 정하지 않았어요") }
         var parts = [date]
         let time = draftFortuneBirthTime.trimmingCharacters(in: .whitespaces)
-        if !time.isEmpty { parts.append(time) }
+        if !time.isEmpty { parts.append(FortunePromptInputFormat.displayLabel(time)) }
         let gender = draftFortuneGender.trimmingCharacters(in: .whitespaces)
         // ⚠ **`"male"` 과 비교하지 말 것 — 저장값은 `"남성"`/`"여성"` 이다.**
         // 그렇게 비교하던 시절에는 조건이 절대 참이 되지 않아 **남성을 고른 사람에게도
         // 요약이 "여성" 으로** 떴다. 값 계약의 단일 출처는 `FortunePromptInputFormat` 이고,
         // 정규화를 거치면 옛 표기("male"·"M"·"남" 등)도 올바르게 풀린다.
         let normalizedGender = FortunePromptInputFormat.normalizedGender(gender)
-        if !normalizedGender.isEmpty { parts.append(normalizedGender) }
+        if !normalizedGender.isEmpty { parts.append(FortunePromptInputFormat.displayLabel(normalizedGender)) }
         return parts.joined(separator: " · ")
     }
 
@@ -480,7 +482,9 @@ struct MessageSettingsResult: Equatable {
 /// 안드로이드 `VoiceAudioCard.MessageModeSummaryRow` 와 같은 규약이다.
 struct MessageModeSummaryRow: View {
     let context: String
-    /// 날씨를 골랐을 때 함께 보여줄 도시. 비면 종류 이름만 나온다.
+    /// 날씨를 골랐을 때 함께 보여줄 지역의 저장 글자(나라, 도시). 도시가 비면 종류 이름만 나온다.
+    /// 나라도 받는 이유: 같은 글자라도 나라에 따라 되짚는 지역이 다르다(`WeatherRegions.resolveAlias`).
+    var weatherCountry: String = ""
     var weatherCity: String = ""
     /// 아직 아무것도 정해지지 않았는가(고른 테마도 없고 문구도 없음).
     ///
@@ -496,24 +500,20 @@ struct MessageModeSummaryRow: View {
         // ⚠ **오프라인이면 '준비 중' 이라고 속이지 않는다.** 비행기모드에서는 영원히 오지
         // 않을 것을 기다린다고 말하는 셈이다(안드로이드도 두 문구를 나눠 갖는다).
         if nothingChosenYet {
-            return network.isOnline ? "문구를 준비하고 있어요" : "오프라인이라 문구를 불러오지 못했어요"
+            return network.isOnline ? String(localized: "문구를 준비하고 있어요") : String(localized: "오프라인이라 문구를 불러오지 못했어요")
         }
-        let label: String
-        switch context {
-        case "wake_weather": label = "날씨"
-        case "wake_fortune": label = "운세"
-        case "cheer", "love": label = "응원"
-        case "medication": label = "약"
-        case MessageSettingsResult.manualContext: label = "직접 입력"
-        default: label = "기본 인사말"
+        // 옛 이름 `love` 는 응원으로 읽는다(`RandomPromptContext.cheer` 주석). 모르는 값은 기본 인사말.
+        let id = context == "love" ? RandomPromptContext.cheer.rawValue : context
+        let label = MessageSettingsPane.options.first { $0.id == id }?.label ?? String(localized: "기본 인사말")
+        // 날씨는 어느 지역 기준인지 함께 보여준다(예: "날씨 · 서울").
+        if context == "wake_weather",
+           let region = WeatherRegions.displayName(country: weatherCountry, city: weatherCity) {
+            return "\(label) · \(region)"
         }
-        // 날씨는 어느 도시 기준인지 함께 보여준다(예: "날씨 · 서울").
-        let city = weatherCity.trimmingCharacters(in: .whitespaces)
-        if context == "wake_weather", !city.isEmpty { return "\(label) · \(city)" }
         return label
     }
 
     var body: some View {
-        AlarmSettingRow(title: "문구", subtitle: summary, onTap: onTap)
+        AlarmSettingRow(title: String(localized: "문구"), subtitle: summary, onTap: onTap)
     }
 }

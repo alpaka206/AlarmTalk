@@ -24,7 +24,7 @@ import org.robolectric.annotation.Config
  * 날씨 테마 알람을 저장할 때 조건 조회를 **얼마나 기다리는가**의 회귀 가드.
  *
  * 저장 버튼은 `AlarmRepository.resolveWeatherVariantForDraft` 의 응답을 동기로 기다린다
- * (`MainViewModelAlarmActions.withResolvedWeatherVariant`). 상한이 없던 때는 서버(Open-Meteo)
+ * (`MainViewModelAlarmActions.withResolvedWeatherVariant`). 상한이 없던 때는 서버(뒤의 날씨 원천)
  * 가 멈추면 OkHttp 읽기 타임아웃(60초)까지 저장이 통째로 붙잡혔다 — "인터넷이 느려도
  * 괜찮도록" 의 앱 쪽 몫이 [WEATHER_RESOLVE_TIMEOUT_MILLIS] 다.
  *
@@ -80,6 +80,7 @@ class WeatherResolveTimeoutTest {
             context: String,
             country: String?,
             city: String?,
+            region: String?,
             targetDate: String?,
             timezone: String?,
         ): PrerenderVariantResponse {
@@ -97,6 +98,7 @@ class WeatherResolveTimeoutTest {
             context: String,
             country: String?,
             city: String?,
+            region: String?,
             targetDate: String?,
             timezone: String?,
         ): PrerenderVariantResponse = PrerenderVariantResponse(context = context, variantIndex = index)

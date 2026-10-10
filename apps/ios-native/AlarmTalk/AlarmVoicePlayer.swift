@@ -1,8 +1,6 @@
 import Foundation
 
-#if canImport(AVFoundation)
 import AVFoundation
-#endif
 
 // MARK: - AlarmVoicePlayer
 //
@@ -36,7 +34,7 @@ import AVFoundation
 //   재생 — `AlarmKitViewModel.startObserving` 이 alarmUpdates 루프에서 `ringing` 진입을
 //   감지하면 `playIfNeeded(record:audioCache:)`.
 //
-//   정지 — **반드시 `AlarmAppContext.stopVoiceIfOwnedStatic(by:)` 을 거친다.**
+//   정지 — **반드시 `AlarmAppContext.stopVoiceIfOwned(by:)` 을 거친다.**
 //   `stop()` 을 직접 부르지 말 것: 지금 재생 중인 것이 **그 알람의 목소리인지** 확인해야
 //   한다. 다른 알람을 지우다가 울리고 있는 알람의 목소리를 끄면, 알람은 계속 울리는데
 //   목소리만 사라진다(안드로이드 `ringingTeardownBelongsToCurrentAlarm` 과 같은 규칙).
@@ -50,7 +48,6 @@ import AVFoundation
 //   목록에 남고, 주간 반복 알람은 정지해도 AlarmKit 이 recurrence 를 소유해 남는다** —
 //   두 경우 다 3번이 안 돌아 목소리가 계속 났다(2026-08-07 수정).
 
-#if canImport(AVFoundation)
 @MainActor
 final class AlarmVoicePlayer: NSObject, AVAudioPlayerDelegate {
     static let shared = AlarmVoicePlayer()
@@ -61,8 +58,10 @@ final class AlarmVoicePlayer: NSObject, AVAudioPlayerDelegate {
     private var activePlayerID: ObjectIdentifier?
     private var repeatTask: Task<Void, Never>?
     private var playbackGeneration = 0
+    /// 지금 이 회차에 반복할 목소리. 세워져 있으면 끝날 때마다 다시 튼다 —
+    /// ⚠ **목소리는 항상 반복한다**(2026-08-27 지시 — 편집기에서 선택지를 없앴다).
+    /// 옛 행에 `voiceRepeat == false` 가 남아 있을 수 있으므로 그 값을 보지 않는다.
     private var currentVoiceURL: URL?
-    private var currentRepeatVoice = false
     private var currentVoiceVolumePercent = 100
     private var voiceHasPlayedThisRing = false
     private(set) var currentRecordID: String?
@@ -92,16 +91,19 @@ final class AlarmVoicePlayer: NSObject, AVAudioPlayerDelegate {
     /// 인데 실제로는 목소리를 껐다 — 알람음만 끄고 목소리로 깨려던 사용자가 정확히 반대
     /// 결과(톤은 그대로, 목소리만 사라짐)를 얻었다.
     func playIfNeeded(for record: LocalAlarmRecord, audioCache: AudioCacheStore) {
-        guard record.playModeEnum != .alarmOnly,
-              let key = record.audioCacheKey,
-              record.voiceVolumePercent > 0 else {
-            return
-        }
+        guard let key = record.audioCacheKey, let url = audioCache.cachedURL(for: key) else { return }
+        playIfNeeded(for: record, url: url)
+    }
 
-        if let url = audioCache.cachedURL(for: key) {
-            beginPlayback(for: record, url: url)
-            return
-        }
+    /// 이미 고른 소리(`AlarmSoundResolution.cachedAudio` 의 URL)를 튼다 — 울림 관찰자가 쓴다.
+    ///
+    /// ⚠ **행의 `audioCacheKey` 로 다시 찾지 말 것**(Codex #820). 오디오 없이 기본 목소리로 대체된
+    /// 행(`DefaultVoiceSubstitute`)은 그 키가 nil 이고, 틀 소리(그 목소리의 클립·내장 인사말)는
+    /// `AlarmSoundResolver.plan` 이 고른 URL 에만 있다 — 키로 찾으면 in-app 폴백이 아무것도 안
+    /// 틀어 OS 기본음만 난다. 테마 알람도 회전·조건으로 고른 클립이 대표 키와 다를 수 있다.
+    func playIfNeeded(for record: LocalAlarmRecord, url: URL) {
+        guard record.playModeEnum != .alarmOnly, record.voiceVolumePercent > 0 else { return }
+        beginPlayback(for: record, url: url)
     }
 
     private func beginPlayback(for record: LocalAlarmRecord, url: URL) {
@@ -120,12 +122,10 @@ final class AlarmVoicePlayer: NSObject, AVAudioPlayerDelegate {
             stopPlayback(deactivateSession: false)
             currentRecordID = record.id
             currentVoiceURL = url
-            // ⚠ **목소리는 항상 반복한다**(2026-08-27 지시 — 편집기에서 선택지를 없앴다).
-            // 옛 행에 false 가 남아 있을 수 있으므로 값을 보지 않는다.
-            currentRepeatVoice = true
             // in-app 폴백 게인 = **목소리 음량만**. 알람 음량을 곱하지 않는 이유는
             // playIfNeeded 주석 참조(톤을 못 줄이는 경로에서 목소리만 줄이면 대비가 반대로 벌어진다).
-            currentVoiceVolumePercent = max(0, min(100, record.voiceVolumePercent))
+            // 범위 자르기는 `voiceVolume(forPercent:)` 한 곳에서 한다.
+            currentVoiceVolumePercent = record.voiceVolumePercent
             voiceHasPlayedThisRing = false
             startVoicePlayback(url: url)
         } catch {
@@ -135,7 +135,7 @@ final class AlarmVoicePlayer: NSObject, AVAudioPlayerDelegate {
     }
 
     private func startVoicePlayback(url: URL) {
-        guard let currentRecordID else { return }
+        guard currentRecordID != nil else { return }
 
         do {
             let p = try AVAudioPlayer(contentsOf: url)
@@ -152,7 +152,6 @@ final class AlarmVoicePlayer: NSObject, AVAudioPlayerDelegate {
             playbackGeneration += 1
             player = p
             activePlayerID = ObjectIdentifier(p)
-            self.currentRecordID = currentRecordID
         } catch {
             resetPlaybackState(deactivateSession: false)
         }
@@ -164,8 +163,7 @@ final class AlarmVoicePlayer: NSObject, AVAudioPlayerDelegate {
         player = nil
         activePlayerID = nil
 
-        guard currentRepeatVoice,
-              let url = currentVoiceURL,
+        guard let url = currentVoiceURL,
               let recordID = currentRecordID else {
             try? AVAudioSession.sharedInstance().setActive(false, options: [.notifyOthersOnDeactivation])
             return
@@ -202,7 +200,6 @@ final class AlarmVoicePlayer: NSObject, AVAudioPlayerDelegate {
         player = nil
         activePlayerID = nil
         currentVoiceURL = nil
-        currentRepeatVoice = false
         currentVoiceVolumePercent = 100
         voiceHasPlayedThisRing = false
         currentRecordID = nil
@@ -233,4 +230,3 @@ final class AlarmVoicePlayer: NSObject, AVAudioPlayerDelegate {
     }
 }
 
-#endif

@@ -139,12 +139,23 @@
 1. **화면별 문구** — 그 화면에서만 다르게 말해야 하는 것(목소리 등록 중의
    `VOICE_FEATURE_REQUIRES_PAID_PLAN`).
 2. **공용 표** — `ApiErrorMessages.kt` / `APIErrorMessages.swift`. 아무도 안 맡은 코드를 받는다.
-3. **폴백** — 서버 문장(한국어면) 또는 화면이 준 기본 문장.
+3. **폴백** — 화면이 준 번역된 기본 문장. 서버 문장은 언어와 무관하게 두 앱 모두 표시하지 않는다.
+
+일반 오류 헬퍼는 글에 한글이 있는지가 아니라 **사용자에게 보여줄 문구로 만든 출처**인지 본다.
+Android는 `UserFacingException`(원인 예외 안의 것도 포함), iOS는 `AppUserFacingError`의
+`userFacingDescription`만 언어와 무관하게 표시한다. iOS의 URL 오류는 `NSURLErrorDomain`에
+`NSLocalizedDescriptionKey`가 실제로 채워진 경우만, StoreKit 구매 오류는 시스템의 현지화된
+`Product.PurchaseError.errorDescription`을 쓴다. StoreKit 네트워크 오류는 앱의 네트워크 문구로,
+나머지 시스템·개발자 오류는 화면 폴백으로 바꾼다. 취소 여부는 문구 판정보다 먼저 확인한다.
 
 ⚠ **공용 표는 '아무 데서나' 가 아니라 정해진 자리에서 불린다.** 일반 오류 헬퍼
 (`userFacingError` / `userFacingErrorMessage`)는 코드를 보지 않는다 — 표를 부르는 자리는
-**로그인 · TTS 생성 · 목소리 등록 · 목소리 승격** 넷이고, 두 앱이 같은 넷이다. 여기를
-늘릴 때는 **양쪽을 같이** 늘린다(한쪽만 늘리면 같은 실패가 두 앱에서 다르게 읽힌다).
+**로그인 · TTS 생성 · 목소리 등록 · 목소리 승격 · 가족 알람 보내기 · 이용권 나가기** 여섯이고,
+두 앱이 같은 여섯이다. 여기를 늘릴 때는 **양쪽을 같이** 늘린다(한쪽만 늘리면 같은 실패가 두
+앱에서 다르게 읽힌다). 가족 알람 보내기는 2026-10-06 에 더했다 — 그전에는 서버의 거절 이유
+(`FAMILY_ALARM_DISABLED`·`FAMILY_ALARM_LEAD_TIME`·`FAMILY_ALARM_QUIET_TIME`)가 두 앱 모두
+"상대 알람 설정에 실패했어요" 로 뭉개져 다시 눌러도 같은 실패를 반복했다. 이용권 나가기의
+`OWNER_CANNOT_LEAVE` 도 같은 틈이었다.
 
 ⚠ **모든 코드에 문구를 둘 필요는 없다.** `INVALID_JSON` 처럼 사용자가 할 수 있는 게 없는
 것은 비워 두고 폴백에 맡긴다 — 억지로 채우면 알아들을 수 없는 말만 늘어난다.
@@ -154,10 +165,10 @@
 "이번 달 목소리 생성 한도를 모두 사용했어요" 로 말하고 있었고, **회귀 테스트가 그 틀린
 문구를 지키고 있었다**(2026-09-07 정정).
 
-⚠ **맞추는 범위는 '위 네 자리에 닿을 수 있는 코드' 다 — 목록 전체가 아니다.** 표를 부르지
+⚠ **맞추는 범위는 '위 여섯 자리에 닿을 수 있는 코드' 다 — 목록 전체가 아니다.** 표를 부르지
 않는 경로의 코드는 표에 있어도 아무도 읽지 않으므로, 한쪽에만 있다고 반대편에 베껴 넣지
 않는다. 지금 그런 것이 둘 있다: `AUTH_EMAIL_TAKEN`·`AUTH_EMAIL_SOCIAL`
-(`network/ApiErrorMessages.kt`)은 **가입** 경로의 409(`routes/auth.ts`)인데, 표를 부르는 네
+(`network/ApiErrorMessages.kt`)은 **가입** 경로의 409(`routes/auth.ts`)인데, 표를 부르는 여섯
 자리에 가입이 없다. 두 앱 모두 가입 실패는 **화면이 직접** 가른다 — 안드로이드
 `duplicateEmailMessage`(`ui/main/MainViewModelAuthActions.kt`), iOS
 `AuthViewModel.requestEmailVerification` 의 `userFacingErrorMessage` 폴백.
@@ -203,5 +214,7 @@
 | 파기된 계정의 404 는 401 과 **같은 갈래**(코드 없는 404 는 **세션 유지**) | `ui/main/MainViewModelAuthActions.kt` 의 `isDestroyedAccountFailure` → `MainViewModel.handleUnauthorized` · `DestroyedAccountSessionTest` | `AuthViewModel.refreshUserApplyingToken` 의 `status == 404 && errorCode == "AUTH_USER_NOT_FOUND"` · `AlarmTalkTests/UnauthorizedSessionHandlingTests` 의 `SessionHealthCheckDestroyedAccountTests` | `routes/auth.ts` 의 `GET /auth/me`(그 밖의 라우트는 `middleware/auth.ts` 가 401) |
 | 응답에서 코드 꺼내기 | `network/ApiErrors.kt` 의 `apiErrorCode` | `APIError.serverErrorCode` | — |
 | 코드 → 문구(공용) | `network/ApiErrorMessages.kt` | `APIErrorMessages.swift` | — |
+| 일반 오류 문구의 출처 | `ui/util/PlatformAndLabelUtils.kt`의 `UserFacingException`·`userFacingError` | `UserFacingError.swift`의 `AppUserFacingError`·`userFacingErrorMessage`, `AudioUserFacingError`도 위임 | 서버 문장은 앱에서 직접 표시하지 않음 |
+| 코드 → 문구(가족 알람 보내기·이용권 나가기) | `ui/main/MainViewModelAlarmActions.kt` 의 `familyAlarmFailureMessage` · `ui/main/MainViewModelSocialActions.kt` 의 `leaveGroupFailureMessage` · `FamilyAlarmFailureMessageTest` | `APIErrorMessages.message(for:fallback:)` ← `AlarmEditorSheet.createFamilyTargetAlarm`·`SocialFeatureViewModel.leaveFamilyGroup` · `AlarmTalkTests/FamilyAlarmFailureMessageTests` | `routes/alarm-helpers.ts` 의 `evaluateFamilyAlarmTimingGuard`·`routes/family-alarm.ts`·`routes/family-group.ts` |
 | 코드 → 문구(목소리 화면) | `ui/main/MainViewModelVoiceActions.kt` | `VoiceStudioViewModel+ErrorMapping.swift` | — |
 | 코드 → 문구(로그인 화면) | `ui/main/MainViewModelAuthActions.kt` 의 login 갈래 | `AuthViewModel.loginErrorMessage` | — |

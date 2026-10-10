@@ -102,7 +102,7 @@ If a permission is missing, the Alarm tab shows a banner above your alarm list s
 - **Personal**: your own voice profile plus custom alarm lines, within a monthly quota.
 - **Couple / Family**: everything in Personal, plus voice sharing across 2–5 members.
 
-Current prices and quotas are shown in the app under More → "Pass" (Android) / "Plan" (iPhone).
+Current prices and quotas are shown in the app under More → "Plan".
 
 ### Codes
 
@@ -112,11 +112,11 @@ Current prices and quotas are shown in the app under More → "Pass" (Android) /
 
 ### Cancel
 
-- Payments renew monthly. More → "Pass" (Android) / "Plan" (iPhone) → "Cancel pass". There is no pause.
+- Payments renew monthly. More → "Plan" → "Cancel plan". There is no pause.
 - **Paid through Google Play** — you choose when it ends:
   - **Cancel on the end date**: you keep everything until the next billing date, then drop to Free automatically.
   - **Cancel now**: the remaining period is refunded pro rata and the plan ends immediately. Your voices are kept for 3 days — re-register a plan within that window and they come back; after it they are deleted permanently.
-- **Paid through the App Store (iPhone)**: you cancel in Apple's subscription management — tapping "Cancel pass" on the iPhone opens it. You keep the period you already paid for; the app cannot "Cancel now" with a pro-rata refund.
+- **Paid through the App Store (iPhone)**: you cancel in Apple's subscription management — tapping "Cancel plan" on the iPhone opens it. You keep the period you already paid for; the app cannot "Cancel now" with a pro-rata refund.
 
 ## 8. FAQ
 

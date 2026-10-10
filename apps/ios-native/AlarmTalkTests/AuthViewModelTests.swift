@@ -164,6 +164,239 @@ final class AuthViewModelTests: XCTestCase {
         XCTAssertEqual(vm.accountEntryAnswer, AccountEntryAnswer(entry: 3, outcome: .failed))
     }
 
+    /// **계정 응답마다 받아 적기를 다시 깨운다 — 값이 같아도**(Codex #837). 이 기기의 지역 변경을 올리다
+    /// 실패하면 서버는 다음 `/auth/me` 에 **같은 옛 값**을 준다. 받아 적기(`AlarmTalkApp` 의
+    /// `accountPromptSettingsKey`)가 값만 보면 그때 다시 돌지 않아 밀린 변경이 앱을 다시 띄울 때까지 안 올라간다.
+    /// 실패한 조회는 응답이 아니다 — 깨우지 않는다(다시 올리기가 헛돌지 않게).
+    func testAccountAnswerRevisionAdvancesOnEveryAnswerEvenWhenSettingsAreUnchanged() async {
+        let api = MockAuthAPI()
+        let vm = AuthViewModel(api: api, appleCredentialProvider: MockAppleCredentialProvider())
+        let session = makeEmailSession()
+        vm._setSessionForTesting(session)
+        addTeardownBlock { KeychainStore.deleteSession() }
+        let before = vm.accountAnswerRevision
+
+        api.meResult = .success(session.user)
+        await vm.refreshUser()
+        let afterFirst = vm.accountAnswerRevision
+        XCTAssertGreaterThan(afterFirst, before)
+
+        // 같은 옛 값이 또 온다.
+        await vm.refreshUser()
+        XCTAssertGreaterThan(vm.accountAnswerRevision, afterFirst)
+        XCTAssertEqual(vm.session?.user.dynamicPromptSettings, session.user.dynamicPromptSettings)
+
+        // 오프라인 — 응답이 아니다.
+        let beforeFailure = vm.accountAnswerRevision
+        api.meResult = .failureRaw(URLError(.notConnectedToInternet))
+        await vm.refreshUser()
+        XCTAssertEqual(vm.accountAnswerRevision, beforeFailure)
+    }
+
+    /// **계정 설정을 올리기 전에 떠난 `/auth/me` 는 설정을 되돌리지 않는다**(Codex #837). 그 요청은 올리기 전의
+    /// 설정(서울)을 읽었는데, 올리기(도쿄)가 끝나 '안 올라간 변경' 표시를 내린 **뒤에** 도착한다. 그대로 쓰면 세션이
+    /// 서울로 돌아가고 받아 적기가 그 옛 값을 기기에 적는다. 울타리(`promptSettingsAnswerFence`) 이하의 응답은
+    /// 설정만 지금 세션의 값을 지킨다 — plan 등 나머지는 그대로 반영된다.
+    func testAccountAnswerSentBeforePromptSettingsUploadDoesNotRevertSettings() async {
+        let api = MockAuthAPI()
+        let vm = AuthViewModel(api: api, appleCredentialProvider: MockAppleCredentialProvider())
+        var session = makeEmailSession()
+        let seoul = DynamicPromptSettings(
+            weather: DynamicPromptWeatherSettings(country: "대한민국", city: "서울", region: "kr-seoul")
+        )
+        let tokyo = DynamicPromptSettings(
+            weather: DynamicPromptWeatherSettings(country: "일본", city: "도쿄", region: "jp-tokyo")
+        )
+        session.user.dynamicPromptSettings = seoul
+        vm._setSessionForTesting(session)
+        addTeardownBlock { KeychainStore.deleteSession() }
+
+        // 앞서 떠난 조회는 올리기 전의 서울을 읽었다.
+        api.meResult = .success(session.user)
+        api.beforeMeResponse = {
+            api.beforeMeResponse = nil
+            // 그 사이 도쿄를 올리고, 올리기 뒤의 확인 조회는 도쿄를 받는다.
+            var fresh = session.user
+            fresh.dynamicPromptSettings = tokyo
+            api.meResult = .success(fresh)
+            await vm.updateProfile(dynamicPromptSettings: tokyo)
+            XCTAssertEqual(vm.session?.user.dynamicPromptSettings?.weather.region, "jp-tokyo")
+        }
+        await vm.refreshUser()
+
+        XCTAssertEqual(api.updateProfileCallCount, 1)
+        XCTAssertEqual(
+            vm.session?.user.dynamicPromptSettings?.weather.region, "jp-tokyo",
+            "올리기 전에 떠난 조회가 서울로 되돌렸다"
+        )
+    }
+
+    /// **앞 올리기가 도는 사이 고친 계정 설정도 결국 올라간다**(Codex #837). 두 번째 `updateProfile` 은 `isBusy` 에
+    /// 막히는데, 예전에는 그대로 버려져 그 변경(사주)이 다음 계정 응답까지 기기에만 남았다. 앞 올리기가 끝나면 밀린
+    /// 표시를 보고 한 번 더 올린다 — 밀린 묶음은 이 기기 값, 나머지는 서버 값이다.
+    func testPromptSettingsEditedDuringABusyUploadIsUploadedAfterward() async throws {
+        let api = MockAuthAPI()
+        let vm = AuthViewModel(api: api, appleCredentialProvider: MockAppleCredentialProvider())
+        let session = makeEmailSession()
+        let userID = session.user.id
+        vm._setSessionForTesting(session)
+        addTeardownBlock {
+            KeychainStore.deleteSession()
+            DynamicPromptPreferences.clear(userID: userID)
+        }
+        let tokyoRegion = try XCTUnwrap(WeatherRegions.byKey("jp-tokyo"))
+        var tokyo = DynamicPromptPreferences()
+        tokyo.weatherCountry = tokyoRegion.legacyCountry
+        tokyo.weatherCity = tokyoRegion.legacyCity
+        XCTAssertTrue(tokyo.saveLocalEdit(userID: userID))
+        // 서버는 도쿄 올리기를 받아 확인 조회에 도쿄를 준다.
+        var confirmed = session.user
+        confirmed.dynamicPromptSettings = tokyo.toSettings()
+        api.meResult = .success(confirmed)
+        api.beforeMeResponse = {
+            api.beforeMeResponse = nil
+            // 확인 조회가 떠 있는 사이 사주를 고쳤다 — 이 올리기는 `isBusy` 에 막힌다.
+            var edited = DynamicPromptPreferences.load(userID: userID)
+            edited.fortuneGender = "여성"
+            edited.fortuneBirthDate = "1990-01-01"
+            edited.fortuneBirthTime = "07:31~09:30"
+            edited.saveLocalEdit(userID: userID)
+            await vm.updateProfile(dynamicPromptSettings: edited.toSettings())
+        }
+
+        await vm.updateProfile(dynamicPromptSettings: tokyo.toSettings())
+        for _ in 0..<100 where api.updateProfileCallCount < 2 {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+
+        XCTAssertEqual(api.updateProfileCallCount, 2, "막힌 사주 변경을 다시 올리지 않았다")
+        let resent = try XCTUnwrap(api.lastUpdateProfileRequest?.dynamicPromptSettings)
+        XCTAssertEqual(resent.fortune.birthDate, "1990-01-01")
+        XCTAssertEqual(resent.weather.region, "jp-tokyo")
+        XCTAssertFalse(DynamicPromptPreferences.hasUnsyncedChange(userID: userID))
+    }
+
+    /// 회귀(Codex #837 11차): **설정 화면은 같은 내용의 `/auth/me` 도 새 응답으로 보고 기기 값을 다시 읽는다.** 값만
+    /// 관찰하면 앞서 키체인 받아 적기가 실패했다가 같은 내용의 다음 응답에서 성공해도 화면이 옛 스냅샷에 남고, 그
+    /// 스냅샷에서 다른 묶음을 고치면 옛 값 전체가 올라간다. 화면이 쓰는 관찰 함수(`SettingsView.observation(of:)`)를
+    /// 실제 뷰모델로 돌린다.
+    func testSettingsScreenObservationChangesOnEveryAccountAnswerEvenWithSameSettings() async throws {
+        let api = MockAuthAPI()
+        let vm = AuthViewModel(api: api, appleCredentialProvider: MockAppleCredentialProvider())
+        var user = makeEmailSession().user
+        let seoul = try XCTUnwrap(WeatherRegions.canonicalLabels(key: "kr-seoul"))
+        user.dynamicPromptSettings = DynamicPromptSettings(
+            weather: DynamicPromptWeatherSettings(country: seoul.country, city: seoul.city, region: "kr-seoul")
+        )
+        vm._setSessionForTesting(AuthSession(token: "test-jwt", user: user))
+        addTeardownBlock { KeychainStore.deleteSession() }
+        api.meResult = .success(user)
+
+        await vm.refreshUser()
+        let first = SettingsView.observation(of: vm)
+        await vm.refreshUser()
+        let second = SettingsView.observation(of: vm)
+
+        XCTAssertEqual(first.settings, second.settings, "전제: 두 응답의 계정 설정은 같다")
+        XCTAssertNotEqual(first, second, "같은 내용의 응답에 설정 화면이 다시 읽지 않는다")
+    }
+
+    /// 회귀(Codex #837 11차): **로그아웃 전에 보낸 설정 PATCH 의 응답은, 같은 계정으로 다시 로그인한 새 세션에 적지 않는다.**
+    /// 계정 id 만 보면 통과한다 — 그러면 앞 세션의 응답이 새 세션의 설정을 옛 값으로 덮고(받아 적기가 그 옛 값을 기기에
+    /// 적는다), 새 세션에 떠 있는 조회를 울타리로 가리고, 확인 조회까지 한다. 세션 번호(`sessionRevision`)로 가른다 —
+    /// 안드로이드 `uploadDynamicPromptSettings` 의 세대 대조와 같다.
+    func testPromptSettingsAcknowledgementFromEndedSessionIsDroppedAfterSameAccountRelogin() async throws {
+        let api = MockAuthAPI()
+        let vm = AuthViewModel(api: api, appleCredentialProvider: MockAppleCredentialProvider())
+        let session = makeEmailSession()
+        let userID = session.user.id
+        vm._setSessionForTesting(session)
+        addTeardownBlock {
+            KeychainStore.deleteSession()
+            DynamicPromptPreferences.clear(userID: userID)
+        }
+        let seoulRegion = try XCTUnwrap(WeatherRegions.byKey("kr-seoul"))
+        var seoul = DynamicPromptPreferences()
+        seoul.weatherCountry = seoulRegion.legacyCountry
+        seoul.weatherCity = seoulRegion.legacyCity
+        XCTAssertTrue(seoul.saveLocalEdit(userID: userID))
+        let tokyoRegion = try XCTUnwrap(WeatherRegions.byKey("jp-tokyo"))
+        var tokyo = DynamicPromptPreferences()
+        tokyo.weatherCountry = tokyoRegion.legacyCountry
+        tokyo.weatherCity = tokyoRegion.legacyCity
+        // 새 세션의 로그인 응답이 실은 계정 설정(도쿄).
+        var reloggedUser = session.user
+        reloggedUser.dynamicPromptSettings = tokyo.toSettings()
+        // 확인 조회는 실패한다(오프라인) — 앞 세션의 응답이 적힌 옛 설정을 아무도 되돌리지 않는 경우다.
+        api.meResult = .failureRaw(URLError(.notConnectedToInternet))
+        api.beforeUpdateProfileResponse = {
+            api.beforeUpdateProfileResponse = nil
+            // PATCH(서울)가 떠 있는 사이 로그아웃했다가 같은 계정으로 다시 들어왔다.
+            vm.signOut(revokeOnServer: false)
+            vm._setSessionForTesting(AuthSession(token: "relogin-jwt", user: reloggedUser))
+        }
+        let answersBefore = vm.accountAnswerRevision
+
+        await vm.updateProfile(dynamicPromptSettings: seoul.toSettings())
+
+        XCTAssertEqual(api.updateProfileCallCount, 1)
+        XCTAssertEqual(
+            vm.session?.user.dynamicPromptSettings?.weather.region, "jp-tokyo",
+            "앞 세션의 응답이 새 세션의 설정을 옛 값으로 덮었다"
+        )
+        XCTAssertEqual(vm.session?.token, "relogin-jwt")
+        XCTAssertEqual(api.meCallCount, 0, "끝난 세션의 응답으로 확인 조회를 했다")
+        XCTAssertEqual(vm.accountAnswerRevision, answersBefore, "끝난 세션의 응답이 계정 응답으로 적혔다")
+        XCTAssertNil(vm.statusMessage)
+    }
+
+    /// 회귀(Codex #837 11차 검증): **명시적 로그아웃은 시작하는 순간 떠 있던 설정 올리기의 응답을 버리고, 세션을 비운
+    /// 뒤 기기 값을 한 번 더 지운다.** `signOut` 은 알람 정리를 기다린 뒤에야 불린다 — 그 사이 도착한 응답이 세션에
+    /// 적히고 확인 조회까지 하면, 앱 루트의 받아 적기가 떠나는 계정의 지역·사주를 기기에 다시 적어 로그아웃 뒤에도
+    /// 남는다(스펙 voice-and-message.md 4항 — 명시적 로그아웃은 값을 지운다).
+    func testExplicitSignOutDropsInFlightPromptSettingsAcknowledgementAndClearsRewrittenValues() async throws {
+        let api = MockAuthAPI()
+        let vm = AuthViewModel(api: api, appleCredentialProvider: MockAppleCredentialProvider())
+        let session = makeEmailSession()
+        let userID = session.user.id
+        vm._setSessionForTesting(session)
+        addTeardownBlock {
+            KeychainStore.deleteSession()
+            DynamicPromptPreferences.clear(userID: userID)
+            PendingSignOutStore.clear(userID)
+        }
+        let seoulRegion = try XCTUnwrap(WeatherRegions.byKey("kr-seoul"))
+        var seoul = DynamicPromptPreferences()
+        seoul.weatherCountry = seoulRegion.legacyCountry
+        seoul.weatherCity = seoulRegion.legacyCity
+        XCTAssertTrue(seoul.saveLocalEdit(userID: userID))
+        api.meResult = .success(session.user)
+        // 알람 정리를 기다리는 사이 앱 루트가 받아 적기를 돌려 떠나는 계정의 값을 다시 적었다고 친다.
+        let rewritten = seoul
+        vm.onLeaveAccountStopAlarms = { departing in
+            XCTAssertTrue(rewritten.save(userID: departing))
+            return true
+        }
+        api.beforeUpdateProfileResponse = {
+            api.beforeUpdateProfileResponse = nil
+            // PATCH 가 떠 있는 사이 로그아웃을 눌렀다.
+            vm.signOutExplicitly()
+        }
+
+        await vm.updateProfile(dynamicPromptSettings: seoul.toSettings())
+        for _ in 0..<200 where vm.session != nil || vm.isBusy {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+
+        XCTAssertNil(vm.session)
+        XCTAssertEqual(api.meCallCount, 0, "떠나는 계정의 응답으로 확인 조회를 했다")
+        XCTAssertEqual(
+            DynamicPromptPreferences.load(userID: userID), DynamicPromptPreferences(),
+            "로그아웃 뒤에도 떠나는 계정의 지역·사주가 기기에 남았다"
+        )
+        XCTAssertFalse(DynamicPromptPreferences.hasUnsyncedChange(userID: userID))
+    }
+
     /// 회귀(2026-09-27 리뷰 2차): **앞 진입에 보낸** `/auth/me` 가 백그라운드를 건너 복귀 뒤에
     /// 도착하면 이번 진입의 답이 아니다(안드로이드 `accountAnswerEntryFor`). 그 답으로 판정하면
     /// 나가 있는 동안 다른 기기에서 결제한 사람에게 "무료 이용이 곧 끝나요" 가 뜬다.
@@ -600,24 +833,16 @@ final class AuthViewModelTests: XCTestCase {
             subscription: BillingSubscription(
                 id: "subscription-\(planKey)",
                 planId: "plan-\(planKey)",
-                planGroupId: nil,
                 status: "active",
-                startsAt: "2026-01-01T00:00:00Z",
-                expiresAt: "2026-02-01T00:00:00Z",
-                cancelAtPeriodEnd: false,
-                canceledAt: nil,
-                nextPlanId: nil
+                expiresAt: "2026-02-01T00:00:00Z"
             ),
             plan: BillingPlan(
                 id: "plan-\(planKey)",
                 key: planKey,
                 name: planKey,
                 planType: planKey,
-                periodDays: 30,
-                maxMembers: planKey == "family" ? 4 : 2,
-                priceKrw: 9_900
-            ),
-            nextPlan: nil
+                maxMembers: planKey == "family" ? 4 : 2
+            )
         )
     }
 
@@ -846,12 +1071,12 @@ final class AuthViewModelTests: XCTestCase {
         )
     }
 
-    func test_userFacingErrorMessage_keepsKoreanServerMessageLikeAndroid() {
+    func test_userFacingErrorMessage_usesFallbackLikeAndroid() {
         let error = APIError.server(status: 400, message: "이미 가입된 이메일이에요", errorCode: nil)
 
         XCTAssertEqual(
             userFacingErrorMessage(error, fallback: "회원가입에 실패했어요"),
-            "이미 가입된 이메일이에요"
+            "회원가입에 실패했어요"
         )
     }
 
@@ -1128,6 +1353,195 @@ final class AuthViewModelTests: XCTestCase {
 
         XCTAssertEqual(api.updateProfileCallCount, 0)
         XCTAssertEqual(vm.statusMessage, "시간은 HH:mm 형식으로 입력해 주세요.")
+    }
+
+    /// **프로필 저장은 plan 답이 아니다 — 바꾼 칸만 응답을 기다린 뒤의 세션 위에 얹는다**(2026-10-05,
+    /// `docs/spec/session-and-auth.md` 「프로필 저장은 바꾼 칸만 세션에 적는다」). 저장이 떠 있는 사이 결제 전 조회·세션 밖
+    /// `/auth/me`(`applyFreshPlan` — 토큰을 굴리지 않는다)가 plus + 개인 프로모를 반영했으면 저장 뒤에도 그 짝이 남고,
+    /// 확인 조회가 실패해도 방금 저장한 이름은 곧바로 보인다(예전에는 확인 조회만 기다려 옛 이름이 보였다).
+    func testNicknameSaveKeepsThePlanAnsweredMeanwhileAndShowsTheNewNameWithoutConfirmation() async {
+        let api = MockAuthAPI()
+        let vm = AuthViewModel(api: api, appleCredentialProvider: MockAppleCredentialProvider())
+        let session = makeEmailSession()
+        vm._setSessionForTesting(session)
+        addTeardownBlock { KeychainStore.deleteSession() }
+        let promo = PersonalPromo(endsAt: "2026-10-31T15:00:00Z", noticeFrom: "2026-10-24T15:00:00Z", fetchedAt: Date())
+        api.beforeUpdateProfileResponse = {
+            vm.applyFreshPlan(
+                userID: session.user.id, from: session.token, plan: "plus", personalPromo: promo,
+                request: vm.beginAccountRequest()
+            )
+        }
+        // 확인 조회는 실패한다(저장 직후 연결이 끊겼다).
+        api.meResult = .failureRaw(URLError(.notConnectedToInternet))
+
+        await vm.updateProfile(name: "새 이름")
+
+        XCTAssertEqual(vm.session?.user.name, "새 이름", "확인 조회가 실패하자 저장한 이름이 안 보였다")
+        XCTAssertEqual(vm.session?.user.plan, "plus", "요청 전의 사본이 plus 를 되돌렸다")
+        XCTAssertEqual(vm.session?.user.personalPromo?.endsAt, promo.endsAt)
+        XCTAssertEqual(vm.session?.token, session.token)
+        XCTAssertEqual(KeychainStore.readSession()?.user.name, "새 이름")
+        XCTAssertEqual(KeychainStore.readSession()?.user.plan, "plus")
+    }
+
+    /// 가족 알람 설정도 같다 — 초대 코드 등록 직후 가족 plan 이 반영된 사람이 '내 알람 맞추기 허용' 을 켜면, 그 plan 은
+    /// 남고 허용·방해금지 창은 확인 조회 없이도 세션에 적힌다(안드로이드 `updateFamilyAlarmSettings` 와 같다).
+    func testFamilyAlarmSettingsSaveKeepsThePlanAnsweredMeanwhile() async {
+        let api = MockAuthAPI()
+        let vm = AuthViewModel(api: api, appleCredentialProvider: MockAppleCredentialProvider())
+        let session = makeEmailSession()
+        vm._setSessionForTesting(session)
+        addTeardownBlock { KeychainStore.deleteSession() }
+        api.beforeUpdateProfileResponse = {
+            vm.applyFreshPlan(
+                userID: session.user.id, from: session.token, plan: "family", personalPromo: nil,
+                request: vm.beginAccountRequest()
+            )
+        }
+        api.meResult = .failureRaw(URLError(.notConnectedToInternet))
+        let window = FamilyAlarmQuietWindow(days: [1, 3], start: "22:00", end: "07:00")
+
+        await vm.updateProfile(allowFamilyAlarms: true, quietWindows: [window])
+
+        XCTAssertEqual(vm.session?.user.plan, "family", "요청 전의 무료 사본이 가족 plan 을 되돌렸다")
+        XCTAssertEqual(vm.session?.user.allowFamilyAlarms, true)
+        XCTAssertEqual(vm.session?.user.familyAlarmQuietWindows, [window])
+        XCTAssertEqual(vm.session?.user.familyAlarmQuietDays, [1, 3])
+        XCTAssertEqual(vm.session?.user.name, session.user.name, "바꾸지 않은 칸은 그대로다")
+
+        // 창을 다 지우면 지운 대로 둔다 — 레거시 3칸은 자리값이다.
+        await vm.updateProfile(allowFamilyAlarms: true, quietWindows: [])
+        XCTAssertEqual(vm.session?.user.familyAlarmQuietWindows, [])
+        XCTAssertEqual(vm.session?.user.plan, "family")
+    }
+
+    /// 회귀(2026-10-05 리뷰): **저장 전에 떠난 조회가 먼저 와 토큰을 굴려도, 확인 조회가 저장한 이름을 남긴다.** 서버는
+    /// `/auth/me` 마다 토큰을 굴린다(`routes/auth.ts`). 그래서 옛 답(옛 이름)이 먼저 오면 세션 토큰이 바뀌어 있고, 확인
+    /// 조회의 답은 '토큰만 구른 같은 로그인' 갈래(`isTokenRolledWithinSignIn`)로 온다 — 예전에는 그 갈래가 plan·프로모만
+    /// 적어, 저장도 확인 조회도 성공했는데 세션·키체인에 옛 이름이 다음 `/auth/me` 까지 남았다. 확인 조회가 먼저 오면
+    /// 옛 답은 확인 조회가 굴린 토큰에 걸려 밀린 답이 된다. 안드로이드
+    /// `ProfileSaveKeepsAccountAnswerTest` 의 `저장_전에_떠난_조회가_늦게_와도_확인_조회가_새_이름을_남긴다` 와 같은 두 순서다.
+    func testConfirmationRefreshKeepsTheSavedNameWhicheverOrderTheOlderRefreshArrives() async throws {
+        for olderArrivesFirst in [true, false] {
+            let order = olderArrivesFirst ? "옛 답이 먼저" : "확인 조회가 먼저"
+            let vm = try await saveRacingAnOlderRefresh(olderArrivesFirst: olderArrivesFirst) { server in
+                server.name = "새 이름"
+            } save: { vm in
+                await vm.updateProfile(name: "새 이름")
+            }
+
+            XCTAssertEqual(vm.session?.user.name, "새 이름", "확인 조회가 성공했는데 옛 이름이 남았다(\(order))")
+            XCTAssertEqual(KeychainStore.readSession()?.user.name, "새 이름", order)
+            XCTAssertEqual(
+                vm.session?.token, olderArrivesFirst ? "rolled-by-older" : "rolled-by-confirm",
+                "토큰은 먼저 반영된 답이 굴린 것을 지킨다(\(order))"
+            )
+            XCTAssertEqual(KeychainStore.readSession()?.token, vm.session?.token, order)
+        }
+    }
+
+    /// 가족 알람 설정(허용·방해금지 창)도 같다 — 저장 전에 떠난 조회가 먼저 와 옛 설정과 굴린 토큰을 적어도, 확인 조회가
+    /// 저장한 설정을 남긴다.
+    func testConfirmationRefreshKeepsTheSavedFamilyAlarmSettingsWhicheverOrderTheOlderRefreshArrives() async throws {
+        let window = FamilyAlarmQuietWindow(days: [1, 3], start: "22:00", end: "07:00")
+        for olderArrivesFirst in [true, false] {
+            let order = olderArrivesFirst ? "옛 답이 먼저" : "확인 조회가 먼저"
+            let vm = try await saveRacingAnOlderRefresh(olderArrivesFirst: olderArrivesFirst) { server in
+                server.allowFamilyAlarms = true
+                server.familyAlarmQuietWindows = [window]
+                server.familyAlarmQuietDays = window.days
+                server.familyAlarmQuietStart = window.start
+                server.familyAlarmQuietEnd = window.end
+            } save: { vm in
+                await vm.updateProfile(allowFamilyAlarms: true, quietWindows: [window])
+            }
+
+            XCTAssertEqual(vm.session?.user.allowFamilyAlarms, true, "확인 조회가 성공했는데 옛 허용 설정이 남았다(\(order))")
+            XCTAssertEqual(vm.session?.user.familyAlarmQuietWindows, [window], order)
+            XCTAssertEqual(KeychainStore.readSession()?.user.allowFamilyAlarms, true, order)
+            XCTAssertEqual(KeychainStore.readSession()?.user.familyAlarmQuietWindows, [window], order)
+        }
+    }
+
+    /// 토큰만 구른 갈래는 프로필 칸을 적어도 **탈퇴 유예는 건드리지 않는다** — 복구는 토큰이 그대로인 갈래만
+    /// 마친다(`completeAccountRecovery` — 푸시 준비를 기다린 뒤 상태를 확정한다). 그 사이 다른 기기에서 복구된 계정이라도
+    /// 여기서 `active` 를 적으면 준비 없이 복구된 세션이 된다.
+    func testAnswerArrivingAfterAnExternalTokenRollDoesNotTouchPendingDeletion() async throws {
+        try await withPendingDeletion { vm, api in
+            let userID = try XCTUnwrap(vm.session?.user.id)
+            let token = try XCTUnwrap(vm.session?.token)
+            var recovered = try XCTUnwrap(vm.session?.user)
+            recovered.deletionStatus = "active"
+            recovered.name = "다른 기기 이름"
+            api.meResult = .success(recovered)
+            api.meRolledToken = "rolled-by-refresh-user"
+            var restarts = 0
+            vm.onAccountRecovered = { _ in restarts += 1 }
+            api.beforeMeResponse = {
+                vm.applyRolledToken(userID: userID, from: token, to: "rolled-elsewhere")
+            }
+
+            await vm.refreshUser()
+
+            XCTAssertEqual(vm.session?.user.name, "다른 기기 이름", "밀리지 않은 답의 프로필 칸은 적는다")
+            XCTAssertEqual(vm.session?.token, "rolled-elsewhere")
+            XCTAssertTrue(vm.pendingDeletion, "토큰만 구른 답이 탈퇴 유예를 풀었다")
+            XCTAssertEqual(vm.session?.user.deletionStatus, "pending_deletion")
+            XCTAssertEqual(KeychainStore.readSession()?.user.deletionStatus, "pending_deletion")
+            XCTAssertEqual(restarts, 0, "준비 없이 복구를 마쳤다")
+        }
+    }
+
+    /// 저장 **전에** 떠난 진입 갱신(옛 답)과 저장 뒤의 확인 조회(새 답)를 겹쳐 띄우고, 답이 도착하는 순서를 정해 돌린다.
+    /// 두 조회 모두 저장 전의 토큰으로 나가고, 서버는 저마다 토큰을 굴린다(옛 답 `rolled-by-older`, 확인 조회
+    /// `rolled-by-confirm`). 저장한 값을 서버가 받은 뒤의 사용자는 `serverAfterSave` 로 만든다.
+    private func saveRacingAnOlderRefresh(
+        olderArrivesFirst: Bool,
+        serverAfterSave: (inout AuthUser) -> Void,
+        save: @escaping @MainActor @Sendable (AuthViewModel) async -> Void
+    ) async throws -> AuthViewModel {
+        let api = MockAuthAPI()
+        let vm = AuthViewModel(api: api, appleCredentialProvider: MockAppleCredentialProvider())
+        let session = makeEmailSession()
+        vm._setSessionForTesting(session)
+        addTeardownBlock { KeychainStore.deleteSession() }
+        let sentToken = session.token
+        let older = session.user
+        var saved = session.user
+        serverAfterSave(&saved)
+        let confirmed = saved
+        let olderSent = expectation(description: "저장 전에 떠난 진입 갱신이 답을 기다린다")
+        let confirmSent = expectation(description: "저장 뒤의 확인 조회가 답을 기다린다")
+        let held = HeldMeResponses(arrivals: [1: olderSent, 2: confirmSent])
+        api.meResponder = { call, token in
+            XCTAssertEqual(token, sentToken, "두 조회 모두 저장 전의 토큰으로 나간다")
+            await held.hold(call)
+            let rolled: String? = call == 1 ? "rolled-by-older" : "rolled-by-confirm"
+            return (token: rolled, user: call == 1 ? older : confirmed)
+        }
+
+        let olderRefresh = Task { await vm.refreshUser() }
+        await fulfillment(of: [olderSent], timeout: 2)
+        let saving = Task { await save(vm) }
+        await fulfillment(of: [confirmSent], timeout: 2)
+        XCTAssertEqual(vm.session?.token, sentToken, "전제: 저장은 토큰을 바꾸지 않는다")
+
+        // 앞의 답이 세션에 다 반영된 **뒤에** 다음 답을 내보낸다.
+        if olderArrivesFirst {
+            held.release(1)
+            await olderRefresh.value
+            held.release(2)
+            await saving.value
+        } else {
+            held.release(2)
+            await saving.value
+            held.release(1)
+            await olderRefresh.value
+        }
+        XCTAssertEqual(api.meCallCount, 2)
+        XCTAssertEqual(api.updateProfileCallCount, 1)
+        return vm
     }
 
     // MARK: - signOut clears state
@@ -1612,6 +2026,41 @@ final class AuthViewModelTests: XCTestCase {
         }
     }
 
+    /// **탈퇴 복구 저장은 푸시 준비를 기다린 뒤의 세션 위에 만든다**(2026-10-05). 기다리는 사이 세션 밖 조회가 토큰을
+    /// 굴리지 않고 더 새 답(plus + 개인 프로모)을 반영했으면, 기다리기 전의 사본(취소 경로)이나 그때 다듬은 `/auth/me` 답
+    /// (조회 경로 — 복구를 확인한 답은 아직 무료를 읽었다)이 그 짝을 되돌리지 않는다. 탈퇴 상태만 `active` 로 바뀐다.
+    func test_recoveryKeepsPlanAnsweredWhilePreparingPush() async throws {
+        for throughRefresh in [false, true] {
+            try await withPendingDeletion { vm, api in
+                let userID = try XCTUnwrap(vm.session?.user.id)
+                let token = try XCTUnwrap(vm.session?.token)
+                var active = try XCTUnwrap(vm.session?.user)
+                active.deletionStatus = "active"
+                api.meResult = .success(active)
+                let promo = PersonalPromo(
+                    endsAt: "2026-10-31T15:00:00Z", noticeFrom: "2026-10-24T15:00:00Z", fetchedAt: Date()
+                )
+                vm.prepareAccountRecovery = { _ in
+                    vm.applyFreshPlan(
+                        userID: userID, from: token, plan: "plus", personalPromo: promo,
+                        request: vm.beginAccountRequest()
+                    )
+                }
+
+                if throughRefresh { await vm.refreshUser() }
+                else { await vm.cancelAccountDeletion() }
+
+                let path = throughRefresh ? "조회" : "취소"
+                XCTAssertFalse(vm.pendingDeletion, path)
+                XCTAssertEqual(vm.session?.user.deletionStatus, "active", path)
+                XCTAssertEqual(vm.session?.user.plan, "plus", "기다리기 전의 값이 plus 를 되돌렸다(\(path))")
+                XCTAssertEqual(vm.session?.user.personalPromo?.endsAt, promo.endsAt, path)
+                XCTAssertEqual(KeychainStore.readSession()?.user.plan, "plus", path)
+                XCTAssertEqual(KeychainStore.readSession()?.user.deletionStatus, "active", path)
+            }
+        }
+    }
+
     func test_checkConsentStatus_setsNeedsConsent() async {
         let api = MockAuthAPI()
         api.consentStatusResult = .success(ConsentStatusResponse(needsConsent: true, required: ["terms"], missing: ["terms"]))
@@ -1879,6 +2328,11 @@ private final class MockAuthAPI: AuthAPIProviding, @unchecked Sendable {
 
     var meResult: StubResult = .failure(.invalidResponse)
     var beforeMeResponse: (@MainActor @Sendable () async -> Void)?
+    /// 있으면 `meResult`·`meRolledToken`·`beforeMeResponse` 대신 **호출마다** 답을 정한다 — 인자는 몇 번째 호출(1부터)과
+    /// 보낸 토큰. 겹쳐 떠 있는 조회들의 답이 도착하는 순서를 테스트가 정할 때 쓴다(`HeldMeResponses`).
+    var meResponder: (@MainActor @Sendable (_ call: Int, _ token: String) async throws -> (token: String?, user: AuthUser))?
+    /// `updateProfile` 이 서버에 닿은 뒤 응답이 돌아오기 전 — 그 사이의 로그아웃·재로그인을 흉내 낸다.
+    var beforeUpdateProfileResponse: (@MainActor @Sendable () async -> Void)?
     var updateProfileResult: Result<UpdateProfileResponse, Error> = .success(
         UpdateProfileResponse(
             success: true,
@@ -1915,6 +2369,10 @@ private final class MockAuthAPI: AuthAPIProviding, @unchecked Sendable {
     func me(token: String) async throws -> (token: String?, user: AuthUser) {
         meCallCount += 1
         lastMeToken = token
+        if let meResponder {
+            let call = meCallCount
+            return try await meResponder(call, token)
+        }
         let result = meResult
         let rolledToken = meRolledToken
         await beforeMeResponse?()
@@ -1931,7 +2389,9 @@ private final class MockAuthAPI: AuthAPIProviding, @unchecked Sendable {
     func updateProfile(_ requestBody: UpdateProfileRequest, token: String) async throws -> UpdateProfileResponse {
         updateProfileCallCount += 1
         lastUpdateProfileRequest = requestBody
-        switch updateProfileResult {
+        let result = updateProfileResult
+        await beforeUpdateProfileResponse?()
+        switch result {
         case .success(let response):
             return response
         case .failure(let error):
@@ -2001,6 +2461,29 @@ private final class MockAuthAPI: AuthAPIProviding, @unchecked Sendable {
         if case .failure(let error) = logoutResult {
             throw error
         }
+    }
+}
+
+/// 겹쳐 떠 있는 `/auth/me` 의 답을 호출마다 붙잡아 두었다가 **테스트가 정한 순서로** 내보낸다(`MockAuthAPI.meResponder`).
+/// 붙잡는 순간 그 호출의 기대(`arrivals`)를 채운다 — 테스트는 그걸 기다려 '그 요청이 떠 있다' 를 확인한 뒤 다음 단계로 간다.
+@MainActor
+private final class HeldMeResponses {
+    private var continuations: [Int: CheckedContinuation<Void, Never>] = [:]
+    private let arrivals: [Int: XCTestExpectation]
+
+    init(arrivals: [Int: XCTestExpectation]) {
+        self.arrivals = arrivals
+    }
+
+    func hold(_ call: Int) async {
+        await withCheckedContinuation { continuation in
+            continuations[call] = continuation
+            arrivals[call]?.fulfill()
+        }
+    }
+
+    func release(_ call: Int) {
+        continuations.removeValue(forKey: call)?.resume()
     }
 }
 

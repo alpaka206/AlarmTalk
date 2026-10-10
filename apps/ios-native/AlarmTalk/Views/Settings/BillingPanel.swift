@@ -25,8 +25,10 @@ import UIKit
 /// 사는 것 자체가 StoreKit 업그레이드/다운그레이드이고, **시점은 Apple 이 정한다**
 /// (업그레이드 즉시+비례정산 / 다운그레이드는 갱신일). Apple 확인 시트가 그걸 문장으로
 /// 알려 주므로, 우리가 고르는 UI 를 얹으면 지킬 수 없는 약속이 된다.
-/// 지금 플랜 카드에는 **버튼이 아예 없고**(안드로이드와 같다), 나머지 카드는 그대로
+/// **산** 이용권의 현재 카드에는 **버튼이 아예 없고**(안드로이드와 같다), 나머지 카드는 그대로
 /// 눌리되 라벨이 '이용권 변경' 인 게 그 경로다 — 결제가 아니라 전환이라는 뜻이다.
+/// 단 기간 한정 개인 플랜만 쓰는 계정은 개인 카드가 '현재 이용권' 이어도 '결제하기' 가 남는다 —
+/// 프로모는 산 이용권이 아니다(`PlanScreenCurrent.showsPurchase`, 스펙 D4).
 /// (해지는 우리 백엔드가 처리하므로 '지금/종료일' 두 갈래가 그대로 있다.)
 struct BillingPanel: View {
     @EnvironmentObject private var auth: AuthViewModel
@@ -41,7 +43,11 @@ struct BillingPanel: View {
     @State private var showPersonalGiftSheet = false
     @State private var voucherShareTargets: [VoucherItem] = []
     /// 결제 확인 대기 중인 플랜. nil 이면 알럿이 닫혀 있다.
-    @State private var pendingPurchase: PendingPlanPurchase?
+    ///
+    /// 상품이 아니라 **등급**을 든다 — 상품 id 만으로는 **전환인지 신규인지**, **정원이
+    /// 줄어드는지**를 알 수 없고 그 판단이 알럿 문구를 통째로 바꾼다. 상품은 등급에서
+    /// 하나로 정해진다(`SubscriptionProduct.make(tier:)`).
+    @State private var pendingPurchase: PlanTier?
     /// 결제를 막은 이유. **버튼을 죽이지 않고 눌리면 이유를 말한다**(편집기의
     /// `SaveBlockReason` 과 같은 규약 — 죽은 버튼은 고장으로 읽힌다).
     @State private var purchaseBlock: PurchaseBlockReason?
@@ -56,12 +62,14 @@ struct BillingPanel: View {
 
     /// **산 이용권**의 등급 — 기간 한정 개인 플랜은 여기 들어가지 않는다(`purchasedPlan`).
     ///
-    /// ⚠ **`bestKnown(user:)` 로 바꾸지 말 것**(2026-09-27). 이 값은 '현재 이용권' 뱃지, 결제
-    /// 버튼의 '결제하기/이용권 변경', 전환 문구('남은 기간은 새 이용권 기준으로 환산돼요'),
-    /// 결제 차단 판정(`purchaseBlockReason`)이 쓴다. 프로모를 산 이용권으로 치면 개인 카드에서
-    /// 결제 버튼이 사라지고, 다른 카드는 환산할 기간도 없는데 환산한다고 말한다. 프로모는
-    /// 카드 위의 한 줄(`personalPromoLine`)로만 말한다 — 안드로이드도 구독 행으로만 현재 카드를
-    /// 고른다(`BillingPanels.kt`).
+    /// ⚠ **`bestKnown(user:)` 로 바꾸지 말 것**(2026-09-27). 이 값은 결제 버튼의 '결제하기/이용권
+    /// 변경', 전환 문구('남은 기간은 새 이용권 기준으로 환산돼요'), 결제 차단 판정
+    /// (`purchaseBlockReason`)이 쓴다. 프로모를 산 이용권으로 치면 개인 카드에서 결제 버튼이
+    /// 사라지고, 다른 카드는 환산할 기간도 없는데 환산한다고 말한다.
+    ///
+    /// '현재 이용권' **뱃지**는 이 값에서 한 번 더 간다(`planScreen` — 2026-09-29): 프로모만 쓰는
+    /// 계정은 개인 카드가 현재이고 문구가 그 카드에 앉는다. 산 이용권으로 치는 것은 아니다 —
+    /// 결제·전환은 계속 이 값으로만 가른다(안드로이드 `planScreenCurrentOf` 와 같은 규칙, 스펙 D4).
     private var currentTier: PlanTier {
         PlanTier.bestKnown(
             serverSubscription: socialFeatures.subscription,
@@ -87,6 +95,20 @@ struct BillingPanel: View {
         socialFeatures.familyGroup?.role == "member" && socialFeatures.familyGroup?.group != nil
     }
 
+    /// '현재 이용권' 카드와 프로모 문구의 자리 — 규칙은 `PlanScreenCurrent.resolve` 한 곳이다(스펙 D4).
+    /// 결제·전환은 이걸 보지 않는다 — `currentTier`(산 이용권)다.
+    ///
+    /// `promoActive` 는 부르는 쪽이 **같은 순간에 읽은** `personalPromoLastDay` 로 넘긴다 — 따로 읽으면
+    /// 끝 시각 경계에서 '개인 카드에 앉는다' 와 '문구가 없다' 가 한 프레임 어긋날 수 있다.
+    private func planScreen(promoActive: Bool) -> PlanScreenCurrent {
+        PlanScreenCurrent.resolve(
+            purchasedTier: currentTier,
+            isSharedMember: isSharedMember,
+            promoActive: promoActive,
+            hasHeldSubscriptionRow: auth.session?.user.personalPromo?.deletesVoicesAtEnd == false
+        )
+    }
+
     private var sharedGroupID: String? {
         socialFeatures.familyGroup?.group?.id
     }
@@ -100,18 +122,31 @@ struct BillingPanel: View {
             //
             // ⚠ '이용권 선택' 머리말도 뺐다 — 화면 제목이 이미 '이용권' 이다.
 
-            // 기간 한정 개인 플랜 — **한 줄만** 말한다. 가짜 구독 카드·해지 버튼을 만들지 않는다
+            // 기간 한정 개인 플랜 — **한 번만** 말한다. 가짜 구독 카드·해지 버튼을 만들지 않는다
             // (해지할 구독이 없다. 서버도 `subscription: null` 이다).
-            if let lastDay = personalPromoLastDay {
-                personalPromoLine(lastDay: lastDay)
+            // 프로모만 쓰는 계정은 개인 카드의 상태 문구로 말하고(`planScreen.promoOnPersonalCard`),
+            // 산 이용권·공유 멤버·보류 행이 있는 계정만 예전처럼 카드 위 한 줄이다.
+            let promoLastDay = personalPromoLastDay
+            let screen = planScreen(promoActive: promoLastDay != nil)
+            // 플랜 카드가 **그려지는가** — 첫 로딩(스켈레톤)과 가져오기 실패(다시 시도)에는 카드가
+            // 한 장도 없다. ⚠ 그때 개인 카드에 앉을 문구를 그냥 두면 **어디에도 안 보인다**(오프라인
+            // 첫 진입 등) — 카드가 없는 동안은 카드 위 한 줄로 되돌린다(`drawsPromoLineAboveList`).
+            let showsSkeleton = subscriptions.isLoadingProducts && subscriptions.products.isEmpty
+            let showsFetchError = subscriptions.products.isEmpty
+                && subscriptions.productFetchFailed
+                && subscriptions.hasAttemptedProductFetch
+            let cardsVisible = !showsSkeleton && !showsFetchError
+            if screen.drawsPromoLineAboveList(cardsVisible: cardsVisible), let promoLastDay {
+                personalPromoLine(lastDay: promoLastDay)
             }
+            let personalCardStatus: String? = screen.promoOnPersonalCard
+                ? promoLastDay.map { Self.personalPromoLineText(lastDay: $0) }
+                : nil
 
-            if subscriptions.isLoadingProducts && subscriptions.products.isEmpty {
+            if showsSkeleton {
                 // 첫 로딩 — 일시적 빈 상태가 망가진 화면처럼 보이지 않도록 스켈레톤.
                 BillingPlansSkeleton()
-            } else if subscriptions.products.isEmpty
-                && subscriptions.productFetchFailed
-                && subscriptions.hasAttemptedProductFetch {
+            } else if showsFetchError {
                 // 가져오기 실패(일시적 blip)로 제품이 비어버린 경우 — 영구 비활성
                 // 대신 "다시 시도" 로 재요청할 수 있게 한다.
                 BillingProductsErrorState(isRetrying: subscriptions.isLoadingProducts) {
@@ -125,11 +160,15 @@ struct BillingPanel: View {
                     )
                     PlanCard(
                         tier: tier,
-                        isCurrent: tier == currentTier,
+                        isCurrent: screen.isCurrent(tier),
+                        // ⚠ '현재' 와 따로 본다 — 프로모로 현재가 된 개인 카드에도 결제 버튼이 남는다.
+                        showsPurchase: screen.showsPurchase(tier),
+                        statusText: tier == .personal ? personalCardStatus : nil,
+                        // 버튼 라벨('결제하기'/'이용권 변경')은 **산 이용권**으로만 가른다.
                         hasActivePlan: currentTier != .free,
                         isBusy: socialFeatures.isBusy,
                         vouchers: shareableVouchers,
-                        onPurchase: { product in beginPurchase(product, tier: tier) },
+                        onPurchase: { beginPurchase(tier: tier) },
                         onGiftPersonal: {
                             showPersonalGiftSheet = true
                         },
@@ -153,7 +192,7 @@ struct BillingPanel: View {
                     // ⚠ **'이전 구매 복원' 과 같은 폭·같은 여백이다**(2026-08-24 지시).
                     // 글자 폭에 맞춘 작은 버튼으로 되돌리지 말 것 — 위아래 버튼이 전부
                     // 화면 폭인데 여기만 작으면 눌러야 할 것으로 보이지 않는다.
-                    Label("공유 이용권에서 나가기", systemImage: "rectangle.portrait.and.arrow.right")
+                    Label(String(localized: "공유 이용권에서 나가기"), systemImage: "rectangle.portrait.and.arrow.right")
                         .font(.subheadline.weight(.semibold))
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 6)
@@ -179,7 +218,7 @@ struct BillingPanel: View {
                     // 한 자리에서 갈리는 if/else 라 아이콘까지 다르면 다른 버튼처럼 보인다.
                     // 나가기와 **같은 자리·같은 규격**이다(if/else 로 갈리는 한 버튼이라
                     // 한쪽만 작으면 계정 종류에 따라 다른 화면처럼 보인다).
-                    Label("이용권 해지", systemImage: "rectangle.portrait.and.arrow.right")
+                    Label(String(localized: "이용권 해지"), systemImage: "rectangle.portrait.and.arrow.right")
                         .font(.subheadline.weight(.semibold))
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 6)
@@ -205,7 +244,7 @@ struct BillingPanel: View {
             }
 
             if !socialFeatures.vouchers.isEmpty {
-                Text("공유 코드")
+                Text(String(localized: "공유 코드"))
                     .font(.subheadline.weight(.semibold))
                 ForEach(socialFeatures.vouchers.prefix(5)) { voucher in
                     VoucherRow(voucher: voucher)
@@ -217,14 +256,18 @@ struct BillingPanel: View {
         // 실기에서 요금 상자들을 큰 상자가 다시 감싸고 있었다. 안드로이드는 플랜 카드만
         // 세로로 늘어놓는다.
         .task {
-            // 시트 진입 시 fresh 한 제품 정보 + entitlement 동기화 보장.
+            // 시트 진입 시 제품 정보 + 이용권 동기화.
             if subscriptions.products.isEmpty {
                 await subscriptions.fetchProducts()
             }
-            await socialFeatures.refreshAll(session: auth.session, force: true)
+            // 진입 갱신이다 — 같은 앱 진입 안에서 1분 안에 끝난 갱신이 있으면 다시 받지 않는다
+            // (`refreshOnEntry`, 스펙 plan-gates §4). 예전에는 `force` 라 더보기 탭이 막 받은
+            // 것을 또 받았고, 진행 중인 갱신과 겹쳐 두 벌이 나갔다. 결제 직전에는 창과 무관하게
+            // 권위 응답을 다시 받는다(`confirmAndPurchase` 의 결제 전 조회).
+            await socialFeatures.refreshOnEntry(session: auth.session)
         }
-        .alert("공유 이용권에서 나가기", isPresented: $showLeaveSharedPassConfirm) {
-            Button("나가기", role: .destructive) {
+        .alert(String(localized: "공유 이용권에서 나가기"), isPresented: $showLeaveSharedPassConfirm) {
+            Button(String(localized: "나가기"), role: .destructive) {
                 guard let groupID = sharedGroupID else { return }
                 Task {
                     await socialFeatures.leaveFamilyGroup(
@@ -234,9 +277,9 @@ struct BillingPanel: View {
                     await auth.refreshUser()
                 }
             }
-            Button("취소", role: .cancel) {}
+            Button(String(localized: "취소"), role: .cancel) {}
         } message: {
-            Text("나가면 무료 이용권으로 전환돼요. 다시 들어오려면 새 초대 코드가 필요해요.")
+            Text(String(localized: "나가면 무료 이용권으로 전환돼요. 다시 들어오려면 새 초대 코드가 필요해요."))
         }
         // ⚠ **해지는 2단이다**(안드로이드 `BillingPanels.kt` `CancelSubscriptionDialog`).
         // '지금 해지' 는 남은 기간 비례 환불 + 목소리 3일 뒤 영구 삭제라 되돌릴 수 없는데,
@@ -251,15 +294,15 @@ struct BillingPanel: View {
             switch reason {
             case .playOwnsRenewal:
                 return Alert(
-                    title: Text("Google Play 에서 결제 중이에요"),
-                    message: Text("지금 이용권은 Google Play 로 자동 갱신되고 있어요. 애플로 결제하면 두 곳에서 함께 청구돼요. Play 스토어 → 구독에서 먼저 해지하거나, 기간이 끝난 뒤에 다시 시도해 주세요."),
-                    dismissButton: .cancel(Text("확인"))
+                    title: Text(String(localized: "Google Play 에서 결제 중이에요")),
+                    message: Text(String(localized: "지금 이용권은 Google Play 로 자동 갱신되고 있어요. 애플로 결제하면 두 곳에서 함께 청구돼요. Play 스토어 → 구독에서 먼저 해지하거나, 기간이 끝난 뒤에 다시 시도해 주세요.")),
+                    dismissButton: .cancel(Text(String(localized: "확인")))
                 )
             case .renewalOwnerUnknown:
                 return Alert(
-                    title: Text("이용권 정보를 불러오는 중이에요"),
-                    message: Text("지금 이용권이 어느 스토어에서 갱신되는지 확인하고 있어요. 잠시 후 다시 시도해 주세요."),
-                    dismissButton: .cancel(Text("확인"))
+                    title: Text(String(localized: "이용권 정보를 불러오는 중이에요")),
+                    message: Text(String(localized: "지금 이용권이 어느 스토어에서 갱신되는지 확인하고 있어요. 잠시 후 다시 시도해 주세요.")),
+                    dismissButton: .cancel(Text(String(localized: "확인")))
                 )
             }
         }
@@ -271,23 +314,25 @@ struct BillingPanel: View {
             ),
             presenting: pendingPurchase
         ) { pending in
-            Button("결제하기") {
+            Button(String(localized: "billing.confirm.subscribe", defaultValue: "결제하기")) {
                 pendingPurchase = nil
-                Task { await confirmAndPurchase(pending.product) }
+                if let product = SubscriptionProduct.make(tier: pending) {
+                    Task { await confirmAndPurchase(product) }
+                }
             }
-            Button("취소", role: .cancel) { pendingPurchase = nil }
+            Button(String(localized: "취소"), role: .cancel) { pendingPurchase = nil }
         } message: { pending in
             Text(purchaseMessage(for: pending))
         }
-        .alert("이용권을 해지할까요?", isPresented: $showCancelSubscriptionSheet) {
+        .alert(String(localized: "이용권을 해지할까요?"), isPresented: $showCancelSubscriptionSheet) {
             Button(cancelPeriodEndTitle) {
                 Task {
                     await socialFeatures.cancelSubscription(mode: "at_period_end", session: auth.session)
                     await auth.refreshUser()
                 }
             }
-            Button("지금 해지", role: .destructive) { showCancelImmediateConfirm = true }
-            Button("취소", role: .cancel) {}
+            Button(String(localized: "지금 해지"), role: .destructive) { showCancelImmediateConfirm = true }
+            Button(String(localized: "취소"), role: .cancel) {}
         } message: {
             Text(cancelDescription)
         }
@@ -303,16 +348,16 @@ struct BillingPanel: View {
             socialFeatures.needsAppStoreSubscriptionManagement = false
             Task { await openAppStoreSubscriptionManagement() }
         }
-        .alert("지금 바로 해지할까요?", isPresented: $showCancelImmediateConfirm) {
-            Button("지금 해지하기", role: .destructive) {
+        .alert(String(localized: "지금 바로 해지할까요?"), isPresented: $showCancelImmediateConfirm) {
+            Button(String(localized: "지금 해지하기"), role: .destructive) {
                 Task {
                     await socialFeatures.cancelSubscription(mode: "immediate", session: auth.session)
                     await auth.refreshUser()
                 }
             }
-            Button("취소", role: .cancel) {}
+            Button(String(localized: "취소"), role: .cancel) {}
         } message: {
-            Text("남은 기간 요금은 비례 환불되고 이용권이 바로 종료돼요. 목소리는 3일간 보관돼요. 그 안에 이용권을 다시 등록하면 그대로 쓸 수 있고, 지나면 영구 삭제돼요.")
+            Text(String(localized: "남은 기간 요금은 비례 환불되고 이용권이 바로 종료돼요. 목소리는 3일간 보관돼요. 그 안에 이용권을 다시 등록하면 그대로 쓸 수 있고, 지나면 영구 삭제돼요."))
         }
         .personalGiftPassSheet(isPresented: $showPersonalGiftSheet) {
             showPersonalGiftSheet = false
@@ -321,10 +366,18 @@ struct BillingPanel: View {
         .voucherShareSelectionSheet(vouchers: $voucherShareTargets)
     }
 
+    /// "개인 플랜 무료 이용 중 · {lastDay}까지" — 카드 위 한 줄과 개인 카드의 상태 문구가 **같은 글자**를
+    /// 쓰도록 한 곳에서 만든다. 문구는 안드로이드 `personal_promo_plan_line` 이 원본이다(ko·en·ja).
+    nonisolated static func personalPromoLineText(lastDay: String) -> String {
+        String(localized: "개인 플랜 무료 이용 중 · \(lastDay)까지")
+    }
+
+    /// 카드 위 한 줄 — 산 이용권·공유 멤버·보류 행이 있는 계정, 그리고 프로모만 쓰는 계정이라도 플랜
+    /// 카드가 아직·끝내 그려지지 않은 동안(스켈레톤·가져오기 실패)이다
+    /// (`PlanScreenCurrent.drawsPromoLineAboveList(cardsVisible:)`).
     /// 글자만 둔다 — 안드로이드(`BillingPanels.kt` 의 `personal_promo_plan_line`)에 아이콘이 없다.
-    /// 문구도 그쪽이 원본이다(ko·en·ja).
     private func personalPromoLine(lastDay: String) -> some View {
-        Text("개인 플랜 무료 이용 중 · \(lastDay)까지")
+        Text(Self.personalPromoLineText(lastDay: lastDay))
             .font(.subheadline.weight(.semibold))
             .foregroundStyle(AlarmTalkTheme.primary)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -333,14 +386,8 @@ struct BillingPanel: View {
 
     // MARK: - App Store 구독 관리
 
-    /// 시스템 구독 관리 시트를 띄운다. 실패하면 App Store 링크로 폴백한다.
+    /// 이 이용권이 **App Store 결제인가.**
     ///
-    /// ⚠ **조용히 실패하게 두지 말 것.** 둘 다 실패하면 사용자는 해지 버튼을 눌렀는데
-    /// 아무 일도 일어나지 않는 걸 보게 된다 — 그때는 어디로 가야 하는지 글로 알려 준다.
-    @MainActor
-    /// 이 이용권이 **App Store 결제인가.** 서버가 provider 를 내려 주지 않으므로 StoreKit
-    /// 이 들고 있는 활성 권한으로 판정한다 — 이 기기에서 애플로 산 구독이면 여기 잡힌다.
-    /// (Play 로 산 구독은 iOS StoreKit 에 없으므로 false 가 되어 예전 흐름 그대로다.)
     /// ⚠ **서버의 활성 구독이 권위다 — 로컬 StoreKit entitlement 를 보지 말 것**
     /// (코덱스 #732 P1). 예전에는 `purchasedProductIDs` 에 구독이 하나라도 있으면
     /// 애플로 봤는데, 아이폰에서 산 옛 구독의 entitlement 가 기기에 남은 채 지금은
@@ -401,7 +448,7 @@ struct BillingPanel: View {
     /// **언제 바뀌는지**(업그레이드 즉시 / 다운그레이드는 다음 갱신일)와 **정원이 줄면
     /// 멤버가 나간다**는 사실. 안드로이드는 이미 확인 모달로 말하고 있었는데 iOS 만 곧장
     /// StoreKit 으로 갔다(2026-08-11 대조).
-    private func beginPurchase(_ product: SubscriptionProduct, tier: PlanTier) {
+    private func beginPurchase(tier: PlanTier) {
         if let block = purchaseBlockReason() {
             purchaseBlock = block
             // 모르는 상태였다면 곧바로 다시 읽어 본다 — 사용자가 아무것도 안 해도
@@ -411,7 +458,7 @@ struct BillingPanel: View {
             }
             return
         }
-        pendingPurchase = PendingPlanPurchase(product: product, tier: tier)
+        pendingPurchase = tier
     }
 
     /// **StoreKit 을 부르기 직전에 서버에 다시 묻는다.**
@@ -445,6 +492,10 @@ struct BillingPanel: View {
         await purchase(product)
     }
 
+    /// 시스템 구독 관리 시트를 띄운다. 실패하면 App Store 링크로 폴백한다.
+    ///
+    /// ⚠ **조용히 실패하게 두지 말 것.** 둘 다 실패하면 사용자는 해지 버튼을 눌렀는데
+    /// 아무 일도 일어나지 않는 걸 보게 된다 — 그때는 어디로 가야 하는지 글로 알려 준다.
     private func openAppStoreSubscriptionManagement() async {
         let scene = UIApplication.shared.connectedScenes
             .compactMap { $0 as? UIWindowScene }
@@ -453,9 +504,10 @@ struct BillingPanel: View {
             do {
                 try await AppStore.showManageSubscriptions(in: scene)
                 // 시트에서 해지했을 수 있다 — 닫히면 서버 상태를 다시 읽는다.
+                // 사용자 새로고침은 이용권 새로고침이 끝까지 못 갔을 때만 부른다 — 끝까지 갔으면
+                // 그 `/auth/me` 가 plan 을 이미 넣었다(`refreshAllThenUserIfIncomplete`, 스펙 plan-gates §4).
                 await subscriptions.resyncEntitlements()
-                await auth.refreshUser()
-                await socialFeatures.refreshAll(session: auth.session, force: true)
+                await socialFeatures.refreshAllThenUserIfIncomplete(auth: auth)
                 return
             } catch {
                 // 시트를 못 띄웠다 — 아래 URL 폴백으로 이어진다.
@@ -466,7 +518,7 @@ struct BillingPanel: View {
             await UIApplication.shared.open(url)
             return
         }
-        purchaseFeedback = "설정 앱 > Apple 계정 > 구독 에서 해지할 수 있어요."
+        purchaseFeedback = String(localized: "설정 앱 > Apple 계정 > 구독 에서 해지할 수 있어요.")
     }
 
     // MARK: - Restore
@@ -476,10 +528,10 @@ struct BillingPanel: View {
             Task {
                 let result = await subscriptions.restorePurchases()
                 // 복원이 성공한 경우에만 백엔드 entitlement 재동기화 + 상태 새로고침.
+                // 사용자 새로고침은 위 해지 시트 닫힘과 같은 규칙이다(`refreshAllThenUserIfIncomplete`).
                 if result.isSuccess {
                     await subscriptions.resyncEntitlements()
-                    await auth.refreshUser()
-                    await socialFeatures.refreshAll(session: auth.session, force: true)
+                    await socialFeatures.refreshAllThenUserIfIncomplete(auth: auth)
                 }
                 // 복원됨 N건 / 복원할 구매 없음 / 오류 를 구분해 안내한다.
                 purchaseFeedback = result.userMessage
@@ -490,7 +542,7 @@ struct BillingPanel: View {
                     ProgressView()
                         .controlSize(.small)
                 }
-                Label("이전 구매 복원", systemImage: "arrow.clockwise.circle")
+                Label(String(localized: "이전 구매 복원"), systemImage: "arrow.clockwise.circle")
             }
             // ⚠ **글자 폭에 맞춘 작은 버튼으로 되돌리지 말 것**(2026-08-17 지시).
             // 위쪽 결제·선물 버튼이 전부 화면 폭인데 여기만 작으면 **눌러야 할 것으로
@@ -507,10 +559,10 @@ struct BillingPanel: View {
 
     private var pendingPurchaseTitle: String {
         guard let pending = pendingPurchase else { return "" }
-        let name = pending.tier.displayLabel
-        return isPlanChange(to: pending.tier)
-            ? "\(name) 이용권으로 바꿀까요?"
-            : "\(name) 이용권을 시작할까요?"
+        let name = pending.displayLabel
+        return isPlanChange(to: pending)
+            ? String(localized: "\(name) 이용권으로 바꿀까요?")
+            : String(localized: "\(name) 이용권을 시작할까요?")
     }
 
     /// 이미 유료 이용권을 쓰는 중에 다른 플랜을 고른 것 = 전환.
@@ -520,27 +572,23 @@ struct BillingPanel: View {
 
     /// 시점은 **스토어가 정한다**(업그레이드 즉시+비례정산 / 다운그레이드는 다음 갱신일).
     /// 우리가 고르게 하지는 않되, 무엇이 언제 일어나는지는 말한다.
-    private func purchaseMessage(for pending: PendingPlanPurchase) -> String {
-        let name = pending.tier.displayLabel
-        guard isPlanChange(to: pending.tier) else {
-            // 카드에 쓰는 것과 **같은 가격**이다(StoreKit 값 우선, 없으면 폴백표).
-            let price = subscriptions.products
-                .first(where: { $0.id == pending.product.rawValue })?.displayPrice
-                ?? FallbackPlanPrice.label(for: pending.tier)
-                ?? ""
+    private func purchaseMessage(for pending: PlanTier) -> String {
+        let name = pending.displayLabel
+        guard isPlanChange(to: pending) else {
+            // 카드에 쓰는 것과 **같은 가격**이다(`SubscriptionManager.priceLabel(for:)`).
+            let price = subscriptions.priceLabel(for: pending) ?? ""
             return price.isEmpty
-                ? "\(name) 이용권을 App Store로 안전하게 결제해요. 가격은 결제 화면에서 확인할 수 있고, 언제든 해지할 수 있어요. 해지해도 남은 기간은 그대로 이용할 수 있어요."
-                : "\(name) 이용권은 \(price)이에요. App Store로 안전하게 결제되고 언제든 해지할 수 있어요. 해지해도 남은 기간은 그대로 이용할 수 있어요."
+                ? String(localized: "\(name) 이용권을 App Store로 안전하게 결제해요. 가격은 결제 화면에서 확인할 수 있고, 언제든 해지할 수 있어요. 해지해도 남은 기간은 그대로 이용할 수 있어요.")
+                : String(localized: "\(name) 이용권은 \(price)이에요. App Store로 안전하게 결제되고 언제든 해지할 수 있어요. 해지해도 남은 기간은 그대로 이용할 수 있어요.")
         }
-        let upgrade = pending.tier.meetsOrExceeds(currentTier) && pending.tier != currentTier
-        var text = upgrade
-            ? "지금 바로 \(name) 이용권으로 바뀌어요. 남은 기간은 새 이용권 기준으로 환산돼요."
-            : "지금은 결제되지 않아요. 지금 이용권을 기간 끝까지 쓰고, 다음 갱신일에 \(name) 이용권으로 바뀌어요."
-        // 정원이 줄면 사람이 빠진다 — 결제 뒤에 알면 늦다.
-        if !upgrade, pending.tier.sharedSeats < currentTier.sharedSeats {
-            text += " 함께 쓰는 인원이 줄어서, 정원을 넘는 멤버는 그룹에서 나가게 돼요."
+        let upgrade = pending.meetsOrExceeds(currentTier) && pending != currentTier
+        if upgrade {
+            return String(localized: "지금 바로 \(name) 이용권으로 바뀌어요. 남은 기간은 새 이용권 기준으로 환산돼요.")
         }
-        return text
+        if pending.sharedSeats < currentTier.sharedSeats {
+            return String(localized: "지금은 결제되지 않아요. 지금 이용권을 기간 끝까지 쓰고, 다음 갱신일에 \(name) 이용권으로 바뀌어요. 함께 쓰는 인원이 줄어서, 정원을 넘는 멤버는 그룹에서 나가게 돼요.")
+        }
+        return String(localized: "지금은 결제되지 않아요. 지금 이용권을 기간 끝까지 쓰고, 다음 갱신일에 \(name) 이용권으로 바뀌어요.")
     }
 
     private func purchase(_ product: SubscriptionProduct) async {
@@ -548,8 +596,9 @@ struct BillingPanel: View {
         purchaseFeedback = result.userMessage
         if result.isSuccess {
             // 백엔드 plan/구독 row 도 함께 새로고침해 UI 일관성 유지.
-            await auth.refreshUser()
-            await socialFeatures.refreshAll(session: auth.session, force: true)
+            // 사용자 새로고침은 이용권 새로고침이 끝까지 못 갔을 때만 부른다
+            // (`refreshAllThenUserIfIncomplete`, 스펙 plan-gates §4).
+            await socialFeatures.refreshAllThenUserIfIncomplete(auth: auth)
         }
     }
 
@@ -569,7 +618,7 @@ struct BillingPanel: View {
         case .userCancelled:
             return
         case .pending:
-            socialFeatures.statusMessage = "결제 승인을 기다리고 있어요. 완료되면 코드가 만들어져요."
+            socialFeatures.statusMessage = String(localized: "결제 승인을 기다리고 있어요. 완료되면 코드가 만들어져요.")
             return
         case .failure(let reason):
             socialFeatures.statusMessage = reason
@@ -597,7 +646,7 @@ struct BillingPanel: View {
             planKey: planKey
         )
         if refreshedTargets.isEmpty {
-            purchaseFeedback = "공유할 이용권 코드가 없어요."
+            purchaseFeedback = String(localized: "공유할 이용권 코드가 없어요.")
         } else {
             voucherShareTargets = refreshedTargets
         }
@@ -606,16 +655,16 @@ struct BillingPanel: View {
     /// 종료일이 있으면 날짜를 박는다 — '언제까지 쓰는지' 가 이 선택의 전부다.
     private var cancelPeriodEndTitle: String {
         if let end = formatPassDate(socialFeatures.subscription?.subscription?.expiresAt) {
-            return "\(end)에 해지"
+            return String(localized: "\(end)에 해지")
         }
-        return "종료일에 해지"
+        return String(localized: "종료일에 해지")
     }
 
     private var cancelDescription: String {
         if let end = formatPassDate(socialFeatures.subscription?.subscription?.expiresAt) {
-            return "종료일 해지는 \(end)까지 그대로 쓰고 끝나요. 지금 해지하면 남은 기간 요금은 비례 환불되고 이용권이 바로 종료돼요."
+            return String(localized: "종료일 해지는 \(end)까지 그대로 쓰고 끝나요. 지금 해지하면 남은 기간 요금은 비례 환불되고 이용권이 바로 종료돼요.")
         }
-        return "해지 시점을 선택해 주세요. 종료일 해지는 이번 이용 기간까지 그대로 쓸 수 있어요. 지금 해지하면 남은 기간 요금은 비례 환불돼요."
+        return String(localized: "해지 시점을 선택해 주세요. 종료일 해지는 이번 이용 기간까지 그대로 쓸 수 있어요. 지금 해지하면 남은 기간 요금은 비례 환불돼요.")
     }
 
 }

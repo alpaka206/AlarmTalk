@@ -730,19 +730,115 @@ final class RemoteAlarmPullSyncTests: XCTestCase {
         XCTAssertEqual(revoked.id, record.id)
         XCTAssertEqual(revoked.remoteAlarmId, record.remoteAlarmId)
 
-        // 목소리와 발신자 흔적은 전부 사라진다.
-        XCTAssertEqual(revoked.playMode, AlarmPlayMode.alarmOnly.rawValue)
+        // 목소리와 발신자 흔적은 전부 사라진다 — 알람음이 아니라 **기본 목소리(미나)** 로 운다(2026-09-29).
+        XCTAssertEqual(revoked.playMode, AlarmPlayMode.voiceOnly.rawValue)
         XCTAssertNil(revoked.audioCacheKey)
         XCTAssertNil(revoked.localAudioUri)
         XCTAssertNil(revoked.rawAudioUri)
-        XCTAssertNil(revoked.voiceProfileId)
+        XCTAssertEqual(revoked.voiceProfileId, substituteSystemVoiceID)
         XCTAssertNil(revoked.ttsMessageId)
         XCTAssertNil(revoked.voiceText)
         XCTAssertNil(revoked.voiceCategory)
         // 보낸 사람 이름이 든 라벨·호칭도 파기 대상이다.
         XCTAssertNil(revoked.voiceListenerTitle)
         XCTAssertEqual(revoked.label, "알람")
-        XCTAssertEqual(revoked.voiceSource, VoiceSource.localAudio.rawValue)
+        XCTAssertEqual(revoked.voiceSource, VoiceSource.ttsProfile.rawValue)
+    }
+
+    /// 재생 방식은 수신자가 둔 값 그대로다 — '알람' 모드로 둔 행은 목소리만 바뀌고 계속 알람음으로 운다.
+    /// 옛 버그로 '알람' 모드에 잠금 표시만 남은 행은 원래 목소리 모드로 돌린다(표시도 비운다).
+    /// 안드로이드 `RemoteAlarmPullSyncServiceTest.revocationRestoresTheVoiceModeOfAnOldBugLock` 짝.
+    func test_withVoiceRevoked_keepsTheRecipientsModeAndUndoesAnOldBugLock() {
+        var chosen = makeReceivedRemote(remoteID: "r7")
+        chosen.playMode = AlarmPlayMode.alarmOnly.rawValue
+        chosen.audioCacheKey = "remote-message-msg-7"
+        XCTAssertEqual(RemoteAlarmPullSync.withVoiceRevoked(chosen).playMode, AlarmPlayMode.alarmOnly.rawValue)
+
+        var oldBugLock = chosen
+        oldBugLock.preLockPlayMode = AlarmPlayMode.voiceOnly.rawValue
+        let revoked = RemoteAlarmPullSync.withVoiceRevoked(oldBugLock)
+        XCTAssertEqual(revoked.playMode, AlarmPlayMode.voiceOnly.rawValue)
+        XCTAssertNil(revoked.preLockPlayMode)
+        XCTAssertEqual(revoked.voiceProfileId, substituteSystemVoiceID)
+    }
+
+    // MARK: - 보낸 사람 목소리를 더는 받을 수 없는 전달은 미나로 (billing-lifecycle.md 「목소리를 잃은 알람」)
+
+    /// 수신 확인 전에 서버가 목소리를 걷어냈다(보낸 사람이 목소리를 지웠거나 공유가 끊겼다 —
+    /// `voice-revocation.ts` 가 살아 있는 행의 message_id·voice_profile_id 를 비운다). 목소리 알람이던 행은
+    /// **미나로** 운다 — 예전에는 '알람' 모드로 다시 지어 알람음이 울렸다(2026-09-29 사용자 결정).
+    /// 안드로이드 `RemoteAlarmPullSyncServiceTest.serverStrippedVoiceAlarmBecomesAMinaAlarm` 짝.
+    func test_serverStrippedVoiceAlarm_becomesAMinaAlarm() {
+        var previous = makeReceivedRemote(remoteID: "r10")
+        previous.playMode = AlarmPlayMode.voiceOnly.rawValue
+        previous.audioCacheKey = "remote-message-msg-10"
+        previous.localAudioUri = "remote-message-msg-10.m4a"
+        previous.voiceProfileId = "vp-mom"
+        previous.ttsMessageId = "msg-10"
+        previous.bucketId = "weather"
+
+        var stripped = makeRemote(targetUserID: "me", senderUserID: "mom")
+        stripped.messageId = nil
+        stripped.voiceProfileId = nil
+        stripped.messageAudioUrl = nil
+        // 매퍼가 만든 '음성 없는' 행을 그대로 merge 한 결과 — '알람' 모드다.
+        var mapped = previous
+        mapped.playMode = AlarmPlayMode.alarmOnly.rawValue
+        mapped.audioCacheKey = nil
+        mapped.ttsMessageId = nil
+        let merged = RemoteAlarmPullSync.merge(existing: previous, mapped: mapped)
+        XCTAssertEqual(merged.playMode, AlarmPlayMode.alarmOnly.rawValue, "전제 — 예전에는 알람음이었다")
+
+        let replaced = RemoteAlarmPullSync.replacingUnavailableSenderVoice(merged, remote: stripped, previous: previous)
+
+        XCTAssertEqual(replaced.playMode, AlarmPlayMode.voiceOnly.rawValue)
+        XCTAssertEqual(replaced.voiceSource, VoiceSource.ttsProfile.rawValue)
+        XCTAssertEqual(replaced.voiceProfileId, substituteSystemVoiceID)
+        XCTAssertNil(replaced.audioCacheKey)
+        XCTAssertNil(replaced.localAudioUri, "보낸 사람 음원 파일을 더는 가리키지 않는다")
+        XCTAssertNil(replaced.ttsMessageId)
+        XCTAssertNil(replaced.bucketId, "보낸 사람이 고른 테마는 받은 쪽이 다시 묶을 근거가 없다")
+        XCTAssertFalse(RemoteAlarmPullSync.hasSenderVoice(replaced))
+        XCTAssertEqual(replaced.updatedAtMillis, merged.updatedAtMillis, "'아직 안 고침' 표식을 건드리지 않는다")
+    }
+
+    /// 문구는 있는데 받을 음원이 없다(제자리 교체된 직접 입력 — 서버가 `messages.audio_url` 을 비운다).
+    /// 처음 받는 행이어도 미나로 운다.
+    func test_voiceMessageWithoutAudio_becomesAMinaAlarm() throws {
+        var remote = makeRemote(targetUserID: "me", senderUserID: "mom")
+        remote.isReceived = true
+        remote.messageAudioUrl = nil
+        XCTAssertFalse(RemoteAlarmMapper.shouldDownloadRemoteMessageAudio(remote), "전제 — 받을 음원이 없다")
+        let mapped = try XCTUnwrap(RemoteAlarmMapper.toLocalRecord(remote, currentUserID: "me"))
+        XCTAssertEqual(mapped.playMode, AlarmPlayMode.alarmOnly.rawValue, "전제 — 매퍼는 '알람' 으로 만든다")
+
+        let replaced = RemoteAlarmPullSync.replacingUnavailableSenderVoice(mapped, remote: remote, previous: nil)
+
+        XCTAssertEqual(replaced.playMode, AlarmPlayMode.voiceOnly.rawValue)
+        XCTAssertEqual(replaced.voiceProfileId, substituteSystemVoiceID)
+    }
+
+    /// 다운로드가 **실패**한 것은 다르다 — 수신 확인을 미뤄 다음 회차가 다시 받는다. 그 모양(`alarmOnly`
+    /// 자리표시)은 그대로 둔다(편집된 자리표시 행의 복구가 그 모양을 본다). 재전송도 새 알람이라, 새
+    /// 전달에 목소리가 없으면 앞 행이 목소리였어도 '알람' 이다.
+    func test_downloadFailureAndAlarmResend_areNotReplaced() {
+        var remote = makeRemote(targetUserID: "me", senderUserID: "mom")
+        remote.isReceived = true
+        let failed = RemoteAlarmPullSync.withoutUnavailableRemoteAudio(makeReceivedRemote(remoteID: "remote"))
+        XCTAssertEqual(
+            RemoteAlarmPullSync.replacingUnavailableSenderVoice(failed, remote: remote, previous: nil),
+            failed
+        )
+
+        var alarmResend = remote
+        alarmResend.messageId = nil
+        alarmResend.messageAudioUrl = nil
+        var mapped = makeReceivedRemote(remoteID: "remote")
+        mapped.playMode = AlarmPlayMode.alarmOnly.rawValue
+        XCTAssertEqual(
+            RemoteAlarmPullSync.replacingUnavailableSenderVoice(mapped, remote: alarmResend, previous: nil),
+            mapped
+        )
     }
 
     // MARK: - 서버가 표현하지 못하는 값은 merge 가 지킨다

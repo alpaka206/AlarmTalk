@@ -3,7 +3,7 @@ import SwiftUI
 
 /// 알람 리스트의 한 줄 — 독립 카드.
 ///
-/// Android `ui/components/ControlsAndPermissions.kt:215-386` 의 `AlarmRow` 미러.
+/// Android `ui/components/ControlsAndPermissions.kt` 의 `AlarmRow` 미러.
 /// 본문 탭은 알람 편집 진입, 토글·삭제 액션은 부모(AlarmsListView)에 위임해 본
 /// 컴포넌트는 순수 표시 + 콜백 호출만 책임진다. 표면은 surface + outlineVariant 테두리에
 /// WakerCardShape(22) 라운드, 18 패딩으로 그 자체가 한 장의 카드다.
@@ -127,7 +127,7 @@ struct AlarmRow: View {
     private var secondLine: String {
         let date = alarm.nextFireDateLabel()
         guard let voiceName, !voiceName.trimmingCharacters(in: .whitespaces).isEmpty else { return date }
-        return "\(date) · \(voiceName) 목소리"
+        return String(localized: "\(date) · \(voiceName) 목소리")
     }
 
     private var rowContent: some View {
@@ -185,7 +185,7 @@ struct AlarmRow: View {
                     // 그대로라 옅은 하늘색 트랙 위에서 바래 보인다. 공용 스타일이 트랙·
                     // 손잡이를 **둘 다** 안드로이드와 같은 규칙으로 정한다.
                     .alarmTalkSwitch()
-                    .accessibilityLabel(Text(alarm.enabled ? "알람 끄기" : "알람 켜기"))
+                    .accessibilityLabel(Text(alarm.enabled ? String(localized: "알람 끄기") : String(localized: "알람 켜기")))
                 }
             }
 
@@ -213,7 +213,7 @@ struct AlarmRow: View {
         .padding(18)
         // Android 길게 누르기 삭제 메뉴와 동치인 접근성 대체 경로(스와이프 외).
         .contextMenu {
-            Button("삭제", role: .destructive, action: onDelete)
+            Button(String(localized: "삭제"), role: .destructive, action: onDelete)
         }
     }
 
@@ -228,7 +228,7 @@ struct AlarmRow: View {
                 VStack(spacing: 4) {
                     Image(systemName: "trash")
                         .font(.title3)
-                    Text("삭제")
+                    Text(String(localized: "삭제"))
                         .font(.pretendard(.semibold, size: 12))
                 }
                 .foregroundStyle(theme.palette.onError)
@@ -238,7 +238,7 @@ struct AlarmRow: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(Text("알람 삭제"))
+            .accessibilityLabel(Text(String(localized: "알람 삭제")))
         }
         .background(theme.palette.error)
         .clipShape(RoundedRectangle(cornerRadius: theme.shapes.vocaCard, style: .continuous))
@@ -303,18 +303,18 @@ struct AlarmRow: View {
         if alarm.runtimeStateEnum == .failed {
             // 예약 자체가 실패해 **정말 안 울린다.** 다시 저장해 달라고 해야 한다.
             return RowNotice(
-                text: "알람을 다시 예약하지 못했어요. 시간을 확인하고 다시 저장해 주세요.",
+                text: String(localized: "알람을 다시 예약하지 못했어요. 시간을 확인하고 다시 저장해 주세요."),
                 isError: true
             )
         }
         // ⚠ **강등 안내를 여기에 되살리지 말 것**(2026-08-11 제거, 안드로이드와 같은 조치).
         // `preLockPlayMode` 는 **영구 마커**라(다시 유료가 되면 복원하려고 남긴다) 이 행에
         // 걸면 무료로 지내는 내내 **알람마다** 경고가 붙는다. 그런데 **알람은 정상 작동
-        // 중이다** — 기본 알람음으로 울린다. 고장난 앱처럼 읽힐 뿐이고, 상태는 이용권
+        // 중이다** — 기본 목소리로 운다. 고장난 앱처럼 읽힐 뿐이고, 상태는 이용권
         // 화면에서 언제든 확인된다.
         // 이제 `DowngradeNoticeStore` 대기표 → **1회성 모달**이 이 일을 맡는다.
         // ⚠ **동기화 실패(syncFailed)는 행에 띄우지 않는다.** 기준은 안드로이드
-        // `ControlsAndPermissions.kt:577-582` 그대로다 — "사용자가 할 일이 있는가.
+        // `ControlsAndPermissions.kt` 의 `alarmRowNotice` 위 주석 그대로다 — "사용자가 할 일이 있는가.
         // 없으면 넣지 않는다." 서버 저장 실패는 다음 sync 가 알아서 재시도하므로
         // 사용자가 할 일이 없는데, 빨간 경고 톤이라 멀쩡한 알람이 '고장' 으로 읽힌다.
         return nil
@@ -388,7 +388,7 @@ private extension LocalAlarmRecord {
 
 /// 선택 모드 상단 바 — 오른쪽에 [취소][삭제] 둘만.
 ///
-/// 안드로이드 `AlarmListScreen.kt:382-407`. 선택 개수는 행마다 체크 표시로 이미 보이므로
+/// 안드로이드 `AlarmListScreen.kt:377-402`. 선택 개수는 행마다 체크 표시로 이미 보이므로
 /// 숫자를 따로 쓰지 않고, 취소·삭제를 오른쪽에 나란히 둬 엄지 이동을 줄인다
 /// (되돌릴 수 없는 삭제가 바깥쪽).
 struct AlarmSelectionBar: View {
@@ -401,7 +401,7 @@ struct AlarmSelectionBar: View {
     var body: some View {
         HStack(spacing: 4) {
             Spacer(minLength: 0)
-            Button("취소", action: onCancel)
+            Button(String(localized: "취소"), action: onCancel)
                 .font(theme.typography.titleMedium)
                 .buttonStyle(.plain)
                 .foregroundStyle(theme.palette.onSurfaceVariant)
@@ -410,7 +410,7 @@ struct AlarmSelectionBar: View {
                 // ⚠ 없으면 글리프만 눌린다 — `frame`/`padding` 이 넓힌 자리는 투명해 히트테스트를 건너뛴다.
                 .contentShape(Rectangle())
 
-            Button("삭제", action: onDelete)
+            Button(String(localized: "삭제"), action: onDelete)
                 .font(theme.typography.titleMedium.weight(.semibold))
                 .buttonStyle(.plain)
                 .foregroundStyle(theme.palette.error)

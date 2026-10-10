@@ -2,7 +2,7 @@ import SwiftUI
 
 /// 알람 편집기에서 사용하는 7-일 요일 칩 행.
 ///
-/// Android `AlarmEditorControls.kt:74-201` 의 `RepeatSelector` + `DayTextChip`
+/// Android `AlarmEditorControls.kt:61-179` 의 `RepeatSelector` + `DayTextChip`
 /// 를 SwiftUI 로 포팅. 비트마스크(`RepeatDay` mask) 와 양방향 바인딩한다.
 ///
 /// 색상 규칙 (Android 와 동일):
@@ -19,7 +19,8 @@ struct RepeatWeekdayChips: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            ForEach(RepeatDay.displayOrder, id: \.self) { day in
+            // 일요일이 가장 왼쪽이다(안드로이드와 같다) — `allCases` 가 선언 순서 일→토다.
+            ForEach(RepeatDay.allCases, id: \.self) { day in
                 Button {
                     toggle(day)
                 } label: {
@@ -27,7 +28,7 @@ struct RepeatWeekdayChips: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(Text(accessibilityLabel(for: day)))
-                .accessibilityValue(Text(mask.hasRepeatDay(day) ? "선택됨" : "선택 안 됨"))
+                .accessibilityValue(Text(mask.hasRepeatDay(day) ? String(localized: "선택됨") : String(localized: "선택 안 됨")))
                 .accessibilityAddTraits(.isButton)
             }
         }
@@ -87,88 +88,50 @@ struct RepeatWeekdayChips: View {
         let border: Color
     }
 
+    /// 요일마다 갈리는 것은 강조색 넷뿐이고, 미선택 배경·테두리는 세 갈래가 같다.
     private func colorPalette(for day: RepeatDay, selected: Bool) -> ChipPalette {
         let p = theme.palette
-        switch day {
-        case .sunday:
-            if selected {
-                return ChipPalette(
-                    background: p.errorContainer,
-                    foreground: p.onErrorContainer,
-                    border: p.error.opacity(0.58)
-                )
-            } else {
-                return ChipPalette(
-                    background: p.surfaceVariant.opacity(0.46),
-                    foreground: p.error,
-                    border: p.outlineVariant
-                )
-            }
-        case .saturday:
-            if selected {
-                return ChipPalette(
-                    background: p.secondaryContainer,
-                    foreground: p.onSecondaryContainer,
-                    border: p.secondary.opacity(0.58)
-                )
-            } else {
-                return ChipPalette(
-                    background: p.surfaceVariant.opacity(0.46),
-                    foreground: p.secondary,
-                    border: p.outlineVariant
-                )
-            }
-        default:
-            if selected {
-                return ChipPalette(
-                    background: p.primaryContainer,
-                    foreground: p.onPrimaryContainer,
-                    border: p.primary.opacity(0.58)
-                )
-            } else {
-                return ChipPalette(
-                    background: p.surfaceVariant.opacity(0.46),
-                    foreground: p.onSurfaceVariant,
-                    border: p.outlineVariant
-                )
-            }
+        let (accent, container, onContainer, idleForeground) = switch day {
+        case .sunday: (p.error, p.errorContainer, p.onErrorContainer, p.error)
+        case .saturday: (p.secondary, p.secondaryContainer, p.onSecondaryContainer, p.secondary)
+        default: (p.primary, p.primaryContainer, p.onPrimaryContainer, p.onSurfaceVariant)
         }
+        return selected
+            ? ChipPalette(background: container, foreground: onContainer, border: accent.opacity(0.58))
+            : ChipPalette(background: p.surfaceVariant.opacity(0.46), foreground: idleForeground, border: p.outlineVariant)
     }
 
     private func accessibilityLabel(for day: RepeatDay) -> String {
-        "\(day.fullLabel) 반복"
+        String(localized: "\(day.fullLabel) 반복")
     }
 }
 
 // MARK: - RepeatDay helpers
 
 extension RepeatDay {
-    /// 한국 캘린더 표시 순서. 일요일을 가장 왼쪽에 두는 Android 와 동일.
-    static let displayOrder: [RepeatDay] = [.sunday, .monday, .tuesday, .wednesday, .thursday, .friday, .saturday]
-
     /// "일", "월", "화", "수", "목", "금", "토".
     var shortLabel: String {
         switch self {
-        case .sunday: return "일"
-        case .monday: return "월"
-        case .tuesday: return "화"
-        case .wednesday: return "수"
-        case .thursday: return "목"
-        case .friday: return "금"
-        case .saturday: return "토"
+        case .sunday: return String(localized: "일")
+        case .monday: return String(localized: "월")
+        case .tuesday: return String(localized: "화")
+        case .wednesday: return String(localized: "수")
+        case .thursday: return String(localized: "목")
+        case .friday: return String(localized: "금")
+        case .saturday: return String(localized: "토")
         }
     }
 
     /// 접근성 라벨용 풀 한국어.
     var fullLabel: String {
         switch self {
-        case .sunday: return "일요일"
-        case .monday: return "월요일"
-        case .tuesday: return "화요일"
-        case .wednesday: return "수요일"
-        case .thursday: return "목요일"
-        case .friday: return "금요일"
-        case .saturday: return "토요일"
+        case .sunday: return String(localized: "일요일")
+        case .monday: return String(localized: "월요일")
+        case .tuesday: return String(localized: "화요일")
+        case .wednesday: return String(localized: "수요일")
+        case .thursday: return String(localized: "목요일")
+        case .friday: return String(localized: "금요일")
+        case .saturday: return String(localized: "토요일")
         }
     }
 }

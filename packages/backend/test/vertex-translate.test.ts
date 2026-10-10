@@ -1,26 +1,30 @@
-import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Env } from '../src/types';
 import {
   AlarmTextPreparationInvalidError,
   GeminiIncompleteResponseError,
   analyzeSpeechStyleWithVertex,
   hasAssumedMorning,
+  hasJapanesePoliteEnding,
   hasMixedKoreanRegister,
+  isJapanesePoliteSentence,
   isUncontractedEnglish,
+  japaneseSentenceEnds,
   tidyEllipsis,
   withVoiceEnergy,
-  isWindDownText,
   buildGenerationConfig,
   deriveAlarmDisplayText,
   extractGeneratedText,
   generateDynamicAlarmTextWithVertex,
   generatePrerenderClipText,
-  dropWakeUnsafeTags,
-  fallbackTagForEnergy,
   modernizeKoreanHonorific,
-  isLegacyGeminiModel,
   prepareAlarmTextWithVertex,
+  prerenderRejectionReason,
+  speakTypedLaughter,
+  stripAllTags,
   vertexGenerateContentEndpoint,
+  SPEECH_STYLE_RETRY_DELAYS_MS,
+  VERTEX_MODEL,
 } from '../src/lib/vertex-translate';
 
 const mockFetch = vi.fn();
@@ -89,9 +93,10 @@ beforeAll(async () => {
 // Vertex synthesis runs two fetches per call: an OAuth token exchange, then the
 // generateContent request. The token endpoint is auto-answered; tests queue only
 // the content responses they care about.
-let contentResponses: Response[];
+// An Error queued here makes that generateContent fetch reject (timeout / network failure).
+let contentResponses: (Response | Error)[];
 
-function queueContent(response: Response) {
+function queueContent(response: Response | Error) {
   contentResponses.push(response);
 }
 
@@ -109,20 +114,19 @@ beforeEach(() => {
     }
     const next = contentResponses.shift();
     if (!next) throw new Error('no content response queued');
+    if (next instanceof Error) throw next;
     return next;
   });
   vi.stubGlobal('fetch', mockFetch);
 });
 
 /**
- * ⚠ **`gemini-2.5-flash` 는 2026-10-20 에 은퇴한다** — 대체는 `gemini-3.5-flash`(수명주기 표는 Flash-Lite 를
- * 권하지만 블라인드 판정에서 Lite 가 2.5 에 졌다 — `vertex-translate.ts` 의 `DEFAULT_VERTEX_MODEL` 주석).
- * 코드를 먼저 배포하고 워커 시크릿(`GOOGLE_VERTEX_MODEL`·`GOOGLE_VERTEX_LOCATION`)을 나중에 바꾸므로,
- * **같은 코드가 두 계열을 모두** 맞게 불러야 한다. 2.x 요청은 한 글자도 바뀌면 안 되고(시크릿을
- * 바꾸기 전까지 동작 변화 0), 3.x 에는 3.x 의 설정을 보낸다. 2.5 에 `thinkingLevel` 을 보내면 400
- * 이다(2026-09-23 실측) — 일괄 치환하면 전환 전에 운영이 깨진다.
+ * 모델은 코드 상수 `VERTEX_MODEL`(`gemini-3.8-flash`) 하나가 정한다 — 워커 시크릿 `GOOGLE_VERTEX_MODEL` 로
+ * 덮는 길은 없앴다(2026-09-30). dev·prod 워커에는 옛 값(`gemini-3.5-flash`)이 남아 있으므로, 그 값이
+ * 요청에 새어 나가면 안 된다. 3.8 Flash 는 `thinkingLevel: 'MINIMAL'` 을 400 으로 거절한다 — 호출부가
+ * 실패를 삼키고 폴백하므로 400 은 경보 없이 문구 품질만 떨어뜨린다. 보내는 요청 본문으로 잠근다.
  */
-describe('Gemini 모델 계열별 요청·응답(2.5 은퇴 대비)', () => {
+describe('Gemini 요청 — 모델·사고 설정은 코드가 정한다(3.8 Flash)', () => {
   function contentCall(): { url: string; body: { generationConfig: Record<string, unknown> } } {
     const call = mockFetch.mock.calls.find((c) => String(c[0]) !== TOKEN_URI);
     return { url: String(call?.[0]), body: JSON.parse(String(call?.[1]?.body)) };
@@ -132,89 +136,65 @@ describe('Gemini 모델 계열별 요청·응답(2.5 은퇴 대비)', () => {
     return okJson({ candidates: [candidate] });
   }
 
-  it('계열은 모델 문자열로 가른다', () => {
-    expect(isLegacyGeminiModel('gemini-2.5-flash')).toBe(true);
-    expect(isLegacyGeminiModel('gemini-2.0-flash')).toBe(true);
-    expect(isLegacyGeminiModel('gemini-1.5-pro-002')).toBe(true);
-    expect(isLegacyGeminiModel('gemini-3.5-flash-lite')).toBe(false);
-    expect(isLegacyGeminiModel('gemini-3.1-flash-lite')).toBe(false);
-  });
+  const SPEECH_STYLE_JSON =
+    '{"dialect":"경상","strength":"high","register":"banmal","markers":["~카이"],"persona":"","childlike":false,"energy":"bright","confidence":0.9}';
+  const SPEECH_TRANSCRIPT =
+    '아이고 오늘은 날씨가 참 좋네예. 밥은 묵었나? 니도 밥 잘 챙겨 묵고 댕기래이.';
 
   it('멀티리전 us·eu 는 전용 호스트, 그 밖은 전역 호스트다', () => {
-    expect(vertexGenerateContentEndpoint('p', 'us', 'gemini-3.5-flash-lite')).toBe(
-      'https://aiplatform.us.rep.googleapis.com/v1/projects/p/locations/us/publishers/google/models/gemini-3.5-flash-lite:generateContent',
+    expect(vertexGenerateContentEndpoint('p', 'us', 'gemini-3.8-flash')).toBe(
+      'https://aiplatform.us.rep.googleapis.com/v1/projects/p/locations/us/publishers/google/models/gemini-3.8-flash:generateContent',
     );
-    expect(vertexGenerateContentEndpoint('p', 'eu', 'gemini-3.5-flash-lite')).toBe(
-      'https://aiplatform.eu.rep.googleapis.com/v1/projects/p/locations/eu/publishers/google/models/gemini-3.5-flash-lite:generateContent',
+    expect(vertexGenerateContentEndpoint('p', 'eu', 'gemini-3.8-flash')).toBe(
+      'https://aiplatform.eu.rep.googleapis.com/v1/projects/p/locations/eu/publishers/google/models/gemini-3.8-flash:generateContent',
     );
-    expect(vertexGenerateContentEndpoint('p', 'us-central1', 'gemini-2.5-flash')).toBe(
-      'https://aiplatform.googleapis.com/v1/projects/p/locations/us-central1/publishers/google/models/gemini-2.5-flash:generateContent',
-    );
-    expect(vertexGenerateContentEndpoint('p', 'global', 'gemini-3.5-flash-lite')).toBe(
-      'https://aiplatform.googleapis.com/v1/projects/p/locations/global/publishers/google/models/gemini-3.5-flash-lite:generateContent',
+    expect(vertexGenerateContentEndpoint('p', 'global', 'gemini-3.8-flash')).toBe(
+      'https://aiplatform.googleapis.com/v1/projects/p/locations/global/publishers/google/models/gemini-3.8-flash:generateContent',
     );
   });
 
-  it('2.x 설정은 지금까지와 똑같다 — temperature·호출부 상한·thinkingBudget 0', () => {
-    expect(buildGenerationConfig('gemini-2.5-flash', { temperature: 0.15, maxOutputTokens: 256 })).toEqual({
-      temperature: 0.15,
-      maxOutputTokens: 256,
-      responseMimeType: 'application/json',
-      thinkingConfig: { thinkingBudget: 0 },
-    });
+  it('모델은 3.8 Flash 다', () => {
+    expect(VERTEX_MODEL).toBe('gemini-3.8-flash');
   });
 
-  it('3.x 설정은 thinkingLevel MINIMAL · 상한 최소 1024 · temperature 없음', () => {
-    const config = buildGenerationConfig('gemini-3.5-flash-lite', {
-      temperature: 0.15,
-      maxOutputTokens: 256,
-      responseSchema: { type: 'object' },
-    });
+  it('설정은 thinkingLevel LOW · 상한 4096 · temperature·thinkingBudget 없음', () => {
+    const config = buildGenerationConfig({ responseSchema: { type: 'object' } });
     expect(config).toEqual({
-      maxOutputTokens: 1024,
+      maxOutputTokens: 4096,
       responseMimeType: 'application/json',
-      thinkingConfig: { thinkingLevel: 'MINIMAL' },
+      thinkingConfig: { thinkingLevel: 'LOW' },
       responseSchema: { type: 'object' },
     });
     expect(config).not.toHaveProperty('temperature');
+    expect(buildGenerationConfig({})).not.toHaveProperty('responseSchema');
   });
 
-  // 2.x 의 **계열별 설정**(temperature · 호출부 상한 · thinkingBudget 0)과 주소는 그대로다. 응답
-  // 스키마는 프롬프트 개선(2026-09-23)으로 두 계열에 같이 붙었다 — 그건 모델과 무관한 변경이다.
-  it('워커가 2.5 · us-central1 이면 2.x 설정과 지금의 주소로 부른다', async () => {
-    queueContent(geminiText('{"text":"[cheerfully] 오늘도 화이팅","tags":["cheerfully"]}'));
-    await prepareAlarmTextWithVertex(
-      { ...ENV, GOOGLE_VERTEX_MODEL: 'gemini-2.5-flash', GOOGLE_VERTEX_LOCATION: 'us-central1' },
-      '오늘도 화이팅',
-      { targetLanguage: 'ko', sourceLanguage: 'ko', translate: false, autoTag: true },
-    );
+  it('요청은 3.8 Flash · us 주소와 LOW 사고로 나간다 — MINIMAL·temperature 를 싣지 않는다', async () => {
+    queueContent(geminiText(SPEECH_STYLE_JSON));
+    const style = await analyzeSpeechStyleWithVertex(ENV, SPEECH_TRANSCRIPT, 'ko');
+    expect(style?.dialect).toBe('경상');
     const { url, body } = contentCall();
     expect(url).toBe(
-      'https://aiplatform.googleapis.com/v1/projects/test-project/locations/us-central1/publishers/google/models/gemini-2.5-flash:generateContent',
+      'https://aiplatform.us.rep.googleapis.com/v1/projects/test-project/locations/us/publishers/google/models/gemini-3.8-flash:generateContent',
     );
-    expect(body.generationConfig).toEqual({
-      temperature: 0.15,
-      maxOutputTokens: 256,
-      responseMimeType: 'application/json',
-      thinkingConfig: { thinkingBudget: 0 },
-      responseSchema: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] },
-    });
-  });
-
-  it('시크릿이 비면 기본값 3.5 Flash · us 로 부른다', async () => {
-    queueContent(geminiText('{"text":"[cheerfully] 오늘도 화이팅","tags":["cheerfully"]}'));
-    await prepareAlarmTextWithVertex(ENV, '오늘도 화이팅', {
-      targetLanguage: 'ko',
-      sourceLanguage: 'ko',
-      translate: false,
-      autoTag: true,
-    });
-    const { url, body } = contentCall();
-    expect(url).toBe(
-      'https://aiplatform.us.rep.googleapis.com/v1/projects/test-project/locations/us/publishers/google/models/gemini-3.5-flash:generateContent',
-    );
-    expect(body.generationConfig.thinkingConfig).toEqual({ thinkingLevel: 'MINIMAL' });
+    expect(body.generationConfig.thinkingConfig).toEqual({ thinkingLevel: 'LOW' });
+    expect(body.generationConfig.maxOutputTokens).toBe(4096);
     expect(body.generationConfig).not.toHaveProperty('temperature');
+  });
+
+  it('워커에 옛 GOOGLE_VERTEX_MODEL 시크릿이 남아 있어도 코드의 3.8 Flash 로 부른다', async () => {
+    queueContent(geminiText(SPEECH_STYLE_JSON));
+    // dev·prod 워커가 아직 들고 있는 값이다. Env 타입에서는 뺐으므로 캐스팅해서 넣는다.
+    const staleEnv = {
+      ...ENV,
+      GOOGLE_VERTEX_MODEL: 'gemini-3.5-flash',
+      GOOGLE_VERTEX_LOCATION: 'us',
+    } as Env;
+    await analyzeSpeechStyleWithVertex(staleEnv, SPEECH_TRANSCRIPT, 'ko');
+    const { url, body } = contentCall();
+    expect(url).toContain('/models/gemini-3.8-flash:generateContent');
+    expect(url).not.toContain('gemini-3.5-flash');
+    expect(body.generationConfig.thinkingConfig).toEqual({ thinkingLevel: 'LOW' });
   });
 
   it('답을 꺼낼 때 사고 part 는 버리고 나머지 텍스트 part 를 잇는다', () => {
@@ -254,36 +234,29 @@ describe('Gemini 모델 계열별 요청·응답(2.5 은퇴 대비)', () => {
     expect((caught as Error).message).not.toContain('엄마');
   });
 
-  it('직접 입력 태깅은 잘린 응답을 받으면 로컬 태깅으로 폴백한다 — `{"text":` 가 문구에 새지 않는다', async () => {
+  // 같은 언어 직접 입력은 Gemini 를 부르지 않는다(2026-09-30) — 호출 로그는 번역으로 확인한다.
+  const TRANSLATE_KO_EN = { targetLanguage: 'en', sourceLanguage: 'ko', translate: true } as const;
+
+  it('번역은 잘린 응답을 받으면 upstream_unavailable 로 던진다 — `{"text":` 가 문구에 새지 않는다', async () => {
     queueContent(
       candidateResponse({
         finishReason: 'MAX_TOKENS',
-        content: { parts: [{ text: '{"text": "[cheerful] 엄마, 일', thoughtSignature: 'sig' }] },
+        content: { parts: [{ text: '{"text": "Mom, it is ti', thoughtSignature: 'sig' }] },
       }),
     );
-    const prepared = await prepareAlarmTextWithVertex(ENV, '엄마, 일어날 시간이야.', {
-      targetLanguage: 'ko',
-      sourceLanguage: 'ko',
-      translate: false,
-      autoTag: true,
-    });
-    expect(prepared.text).not.toContain('{');
-    expect(prepared.text).toContain('엄마, 일어날 시간이야.');
+    await expect(
+      prepareAlarmTextWithVertex(ENV, '엄마, 일어날 시간이야.', TRANSLATE_KO_EN),
+    ).rejects.toMatchObject({ reason: 'upstream_unavailable' });
   });
 
   it('호출 로그 수준은 생성이 끝났는가로 고른다 — HTTP 200 이어도 잘렸으면 warn', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const info = vi.spyOn(console, 'log').mockImplementation(() => {});
     try {
-      queueContent(candidateResponse({ finishReason: 'MAX_TOKENS', content: { parts: [{ text: '{"text": "엄마' }] } }));
-      queueContent(geminiText('{"text":"[cheerfully] 엄마, 일어날 시간이야."}'));
+      queueContent(candidateResponse({ finishReason: 'MAX_TOKENS', content: { parts: [{ text: '{"text": "Mom' }] } }));
+      queueContent(geminiText('{"text":"Mom, time to get up."}'));
       for (let i = 0; i < 2; i += 1) {
-        await prepareAlarmTextWithVertex(ENV, '엄마, 일어날 시간이야.', {
-          targetLanguage: 'ko',
-          sourceLanguage: 'ko',
-          translate: false,
-          autoTag: true,
-        });
+        await prepareAlarmTextWithVertex(ENV, '엄마, 일어날 시간이야.', TRANSLATE_KO_EN).catch(() => undefined);
       }
       const lines = (spy: typeof warn) =>
         spy.mock.calls.map((c) => String(c[0])).filter((l) => l.includes('"vertex.generate"'));
@@ -300,13 +273,9 @@ describe('Gemini 모델 계열별 요청·응답(2.5 은퇴 대비)', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     try {
       const env = { ...ENV, GOOGLE_VERTEX_CREDENTIALS_JSON: '{"private_key":"SECRET-KEY-BODY", broken' } as Env;
-      const prepared = await prepareAlarmTextWithVertex(env, '엄마, 일어날 시간이야.', {
-        targetLanguage: 'ko',
-        sourceLanguage: 'ko',
-        translate: false,
-        autoTag: true,
+      await expect(prepareAlarmTextWithVertex(env, '엄마, 일어날 시간이야.', TRANSLATE_KO_EN)).rejects.toMatchObject({
+        reason: 'upstream_unavailable',
       });
-      expect(prepared.provider).toBe('local');
       const line = warn.mock.calls.map((c) => String(c[0])).find((l) => l.includes('"vertex.generate"'));
       expect(line).toContain('"stage":"auth"');
       expect(line).toContain('must be valid service account JSON');
@@ -320,13 +289,9 @@ describe('Gemini 모델 계열별 요청·응답(2.5 은퇴 대비)', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     mockFetch.mockImplementation(async () => new Response('{"error":"invalid_grant"}', { status: 400 }));
     try {
-      const prepared = await prepareAlarmTextWithVertex(ENV, '엄마, 일어날 시간이야.', {
-        targetLanguage: 'ko',
-        sourceLanguage: 'ko',
-        translate: false,
-        autoTag: true,
+      await expect(prepareAlarmTextWithVertex(ENV, '엄마, 일어날 시간이야.', TRANSLATE_KO_EN)).rejects.toMatchObject({
+        reason: 'upstream_unavailable',
       });
-      expect(prepared.provider).toBe('local');
       const line = warn.mock.calls.map((c) => String(c[0])).find((l) => l.includes('"vertex.generate"'));
       expect(line).toContain('"stage":"auth"');
       expect(line).toContain('invalid_grant');
@@ -340,13 +305,9 @@ describe('Gemini 모델 계열별 요청·응답(2.5 은퇴 대비)', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     try {
       // 큐가 비어 있으면 목 fetch 가 던진다 — 응답 없는 실패와 같은 경로다.
-      const prepared = await prepareAlarmTextWithVertex(ENV, '엄마, 일어날 시간이야.', {
-        targetLanguage: 'ko',
-        sourceLanguage: 'ko',
-        translate: false,
-        autoTag: true,
+      await expect(prepareAlarmTextWithVertex(ENV, '엄마, 일어날 시간이야.', TRANSLATE_KO_EN)).rejects.toMatchObject({
+        reason: 'upstream_unavailable',
       });
-      expect(prepared.provider).toBe('local');
       const line = warn.mock.calls.map((c) => String(c[0])).find((l) => l.includes('"vertex.generate"'));
       expect(line).toContain('"status":null');
       expect(line).toContain('"elapsed_ms"');
@@ -415,61 +376,6 @@ describe('Gemini 모델 계열별 요청·응답(2.5 은퇴 대비)', () => {
     expect(style?.strength).toBe('');
   });
 
-  // --- 2026-09-23 비교 평가(`scripts/eval-gemini-prompts.ts`)에서 나온 것 ---
-  it('직접 입력: 깨우는 문구에 모델이 붙인 졸린 태그는 버린다', async () => {
-    queueContent(geminiText('{"text":"[gently] 약 먹을 시간이야. [cheerfully] 까먹지 말고!"}'));
-    const prepared = await prepareAlarmTextWithVertex(ENV, '약 먹을 시간이야. 까먹지 말고!', {
-      targetLanguage: 'ko',
-      sourceLanguage: 'ko',
-      translate: false,
-      autoTag: true,
-    });
-    expect(prepared.text).toBe('약 먹을 시간이야. [cheerfully] 까먹지 말고!');
-    expect(prepared.tags).toEqual(['cheerfully']);
-  });
-
-  it('직접 입력: 졸린 태그만 있었으면 로컬 태깅(cheerfully)으로 — calm 으로 돌아가지 않는다', async () => {
-    queueContent(geminiText('{"text":"[calm] 약 먹을 시간이야."}'));
-    const prepared = await prepareAlarmTextWithVertex(ENV, '약 먹을 시간이야.', {
-      targetLanguage: 'ko',
-      sourceLanguage: 'ko',
-      translate: false,
-      autoTag: true,
-    });
-    expect(prepared.text).toBe('[cheerfully] 약 먹을 시간이야.');
-  });
-
-  it('직접 입력: 잠들기 전·마무리 문구는 calm 을 그대로 둔다', async () => {
-    expect(isWindDownText('오늘도 수고했어, 잘 자')).toBe(true);
-    expect(isWindDownText('약 먹을 시간이야')).toBe(false);
-    queueContent(geminiText('{"text":"[calm] 오늘도 수고했어. 잘 자."}'));
-    const prepared = await prepareAlarmTextWithVertex(ENV, '오늘도 수고했어. 잘 자.', {
-      targetLanguage: 'ko',
-      sourceLanguage: 'ko',
-      translate: false,
-      autoTag: true,
-    });
-    expect(prepared.text).toContain('[calm]');
-  });
-
-  it('영어 마무리 판정은 낱말로 본다 — sleepyhead·oversleep·tonight 은 깨우는 문구다', () => {
-    expect(isWindDownText('Good night, sleep tight.')).toBe(true);
-    expect(isWindDownText('Time for bed, sweet dreams.')).toBe(true);
-    expect(isWindDownText("Hey sleepyhead, you've got a dentist appointment at 9.")).toBe(false);
-    expect(isWindDownText("Don't oversleep!")).toBe(false);
-    expect(isWindDownText('Take your meds tonight.')).toBe(false);
-    // 합성 언어 전부 — 프랑스어·이탈리아어 잠들기 전 문구도 calm 을 지키게.
-    expect(isWindDownText('Bonne nuit, dors bien.')).toBe(true);
-    expect(isWindDownText('Buonanotte, sogni d’oro.')).toBe(true);
-    expect(isWindDownText('Réveille-toi, il est temps de se lever.')).toBe(false);
-    expect(isWindDownText('Svegliati, è ora di alzarsi.')).toBe(false);
-    // '침대' 가 들어가도 깨우는 말이면 마무리가 아니다.
-    expect(isWindDownText('Ne reste pas au lit, lève-toi.')).toBe(false);
-    expect(isWindDownText('Non restare a letto, alzati.')).toBe(false);
-    expect(isWindDownText('Allez, va au lit.')).toBe(true);
-    expect(isWindDownText('Vai a letto, è tardi.')).toBe(true);
-  });
-
   it('번역문이 태그뿐이면(태그를 지우면 말이 없으면) 번역 실패로 던진다', async () => {
     queueContent(geminiText('{"text":"[softly]"}'));
     await expect(
@@ -477,24 +383,35 @@ describe('Gemini 모델 계열별 요청·응답(2.5 은퇴 대비)', () => {
         targetLanguage: 'en',
         sourceLanguage: 'ko',
         translate: true,
-        autoTag: true,
       }),
     ).rejects.toMatchObject({ reason: 'empty_spoken' });
   });
 
-  it('번역 중 졸린 태그만 왔으면 원문이 아니라 번역문에 태그를 붙인다', async () => {
-    queueContent(geminiText('{"text":"[softly] Wake up, it is time for school."}'));
+  // 우리는 태그를 붙이지 않는다(2026-09-30). 번역 모델이 지시를 어기고 톤 태그를 넣으면 벗긴다 — 사용자가 친
+  // 대괄호는 그대로 둔다.
+  it('번역문에 모델이 붙인 톤 태그는 벗기고, 사용자가 친 대괄호는 남긴다', async () => {
+    queueContent(geminiText('{"text":"[softly] Wake up, [cheerfully] it is time for school."}'));
     const prepared = await prepareAlarmTextWithVertex(ENV, '일어나, 학교 갈 시간이야.', {
       targetLanguage: 'en',
       sourceLanguage: 'ko',
       translate: true,
-      autoTag: true,
     });
     expect(prepared.translated).toBe(true);
-    expect(prepared.text).toBe('[cheerfully] Wake up, it is time for school.');
+    expect(prepared.text).toBe('Wake up, it is time for school.');
+    expect(prepared.tags).toEqual([]);
+
+    queueContent(geminiText('{"text":"[excited] Wake up, [cheerfully] it is time for school."}'));
+    const typed = await prepareAlarmTextWithVertex(ENV, '[excited] 일어나, 학교 갈 시간이야.', {
+      targetLanguage: 'en',
+      sourceLanguage: 'ko',
+      translate: true,
+    });
+    expect(typed.text).toBe('[excited] Wake up, it is time for school.');
+    // 번역 지시는 대괄호를 새로 넣지 말라고 한다.
+    expect(sentPromptText()).toContain('never add new square brackets');
   });
 
-  it('사전렌더: 졸린 태그는 거절하지 않고 지운다 — 문장은 살린다', async () => {
+  it('사전렌더: 모델이 낸 태그는 거절하지 않고 벗긴다 — 문장은 살리고 다시 묻지 않는다', async () => {
     queueContent(geminiText('{"text":"[caring] 우리 딸, 약 먹을 시간이야. [gently] 알람 끄기 전에 얼른 먹자."}'));
     const out = await generatePrerenderClipText(ENV, {
       seed: '약 먹을 시간이라고 알린다.',
@@ -502,11 +419,7 @@ describe('Gemini 모델 계열별 요청·응답(2.5 은퇴 대비)', () => {
       listenerTitle: '우리 딸',
       targetLanguage: 'ko',
     });
-    // 지우고 나면 선두 태그 하나만 남으므로, 기존 규칙대로 문장마다 다시 앞세운다(뒤 문장에서
-    // 톤이 풀리는 것을 막는 장치 — `applyDeliveryTagPerSentence`).
-    expect(out.text).toBe('[caring] 우리 딸, 약 먹을 시간이야. [caring] 알람 끄기 전에 얼른 먹자.');
-    expect(out.text).not.toContain('gently');
-    // 한 번에 끝난다 — 예전에는 여기서 다시 물었다.
+    expect(out).toEqual({ text: '우리 딸, 약 먹을 시간이야. 알람 끄기 전에 얼른 먹자.' });
     expect(mockFetch.mock.calls.filter((c) => String(c[0]) !== TOKEN_URI)).toHaveLength(1);
   });
 
@@ -697,6 +610,35 @@ describe('Gemini 모델 계열별 요청·응답(2.5 은퇴 대비)', () => {
     expect(prompts).toHaveLength(1);
   });
 
+  // 리뷰 수정(Codex #844 3차 재검토 3 — 일본어와 같은 질문) — 마디 끝에서 걷는 글자가 짧은 목록뿐이라 확정 문구가 이모지·♡·
+  // ^^·ㅎㅎ·ㅠㅠ·글자 웃음으로 끝나면 어체를 읽지 못했다. 그러면 관계·분석으로 돌아가, 연인에게 해요체로 고쳐 확정한 목소리의
+  // 해요체 클립이 거절되고(영구 실패), 반말로 분석된 화자가 해요체로 확정한 문구를 분석이 이겼다.
+  it('확정 문구 끝의 이모지·기호·글자 웃음은 걷고 어체를 읽는다 — 그 어체가 관계·분석을 이긴다(Codex #844)', () => {
+    for (const reference of [
+      '오빠, 일어나요😊', '오빠, 일어나요♡', '오빠, 일어나요^^', '오빠, 일어나요ㅎㅎ', '오빠, 일어나요ㅠㅠ', '오빠, 일어나요 haha',
+      '오빠, 일어나요~♪', '오빠, 일어나요 :)', '오빠, 일어나요 XD', '오빠, 일어나요(웃음)',
+    ]) {
+      expect(
+        prerenderRejectionReason('오빠, 비 온대요. 우산 챙겨요.', 'ko', {
+          relationshipLabel: '여자친구',
+          listenerTitle: '오빠',
+          styleReference: reference,
+        }),
+        reference,
+      ).toBeNull();
+    }
+    const casualSpeaker = { dialect: '', strength: '' as const, register: 'banmal', markers: [], persona: '', childlike: false };
+    for (const reference of ['일어나세요😊', '일어나세요♡', '일어나세요ㅎㅎ']) {
+      expect(
+        prerenderRejectionReason('비 온대. 우산 챙겨.', 'ko', { speechStyle: casualSpeaker, styleReference: reference }),
+        reference,
+      ).toBe('register_mixed');
+    }
+    // 생성 문구도 같은 끝으로 읽는다 — 이모지로 끝난 해요체가 연인 클립으로 새지 않고, 반말 끝은 그대로 받는다.
+    expect(hasMixedKoreanRegister('자기야, 비 온대요😊', { relationshipLabel: '남자친구', listenerTitle: '자기' })).toBe(true);
+    expect(hasMixedKoreanRegister('자기야, 비 온대♡ 우산 챙겨😊', { relationshipLabel: '남자친구', listenerTitle: '자기' })).toBe(false);
+  });
+
   it('목소리의 결: 사용자가 고른 값이 분석값보다 앞서고, 고르지 않으면 분석값을 둔다', () => {
     const analyzed = { dialect: '경상', strength: 'low' as const, register: 'banmal', markers: ['~카이'], persona: '', childlike: false, energy: 'lively' as const };
     expect(withVoiceEnergy(analyzed, 'calm')).toEqual({ ...analyzed, energy: 'calm' });
@@ -706,7 +648,7 @@ describe('Gemini 모델 계열별 요청·응답(2.5 은퇴 대비)', () => {
     expect(withVoiceEnergy(null, 'weird')).toBeNull();
   });
 
-  it('사전렌더 프롬프트: 결과 사람이 쓴 본보기를 싣는다 — 진중한 결은 들뜬 태그를 금지한다', async () => {
+  it('사전렌더 프롬프트: 결과 사람이 쓴 본보기를 싣는다 — 진중한 결은 문장 모양으로 말한다', async () => {
     queueContent(geminiText('{"text":"[warmly] 자기야, 약 먹을 시간이야. [sincerely] 지금 바로 챙겨 먹자."}'));
     await generatePrerenderClipText(ENV, {
       seed: '약 먹을 시간이라고 알리고 지금 바로 챙겨 먹으라고 당부한다.',
@@ -721,61 +663,6 @@ describe('Gemini 모델 계열별 요청·응답(2.5 은퇴 대비)', () => {
     expect(body).toContain('CALM');
     expect(body).toContain('HUMAN-WRITTEN REFERENCE');
     expect(body).toContain('REWRITE EVERY ENDING');
-  });
-
-  // ⚠ **차분은 프롬프트만으로 지켜지지 않는다**(Codex #802). 모델이 들뜬 태그를 붙이거나 태그를 아예
-  // 안 붙여 카테고리 기본값(`cheerfully`·`playfully`)이 입혀지면, 차분을 고른 목소리가 영구히
-  // 밝게 튀는 클립을 문다. 서버가 지우고, 기본값은 `warmly` 로 바꾼다.
-  it('사전렌더: 차분한 목소리는 들뜬 태그를 지우고 기본 태그도 차분하게 입힌다', async () => {
-    const calm = { dialect: '', strength: '' as const, register: 'banmal', markers: [], persona: '', childlike: false, energy: 'calm' as const };
-    queueContent(geminiText('{"text":"[playfully] 자기야, 약 먹을 시간이야. [laughs] 지금 바로 [excited] 챙겨 먹자."}'));
-    const tagged = await generatePrerenderClipText(ENV, {
-      seed: '약 먹을 시간이라고 알리고 지금 바로 챙겨 먹으라고 당부한다.',
-      relationshipLabel: '남자친구',
-      listenerTitle: '자기',
-      targetLanguage: 'ko',
-      defaultTag: 'cheerfully',
-      speechStyle: calm,
-    });
-    expect(tagged.text).not.toMatch(/playful|laugh|excite|cheerful/);
-    expect(tagged.text).toContain('[warmly]');
-    expect(tagged.tag).toBe('warmly');
-
-    queueContent(geminiText('{"text":"자기야, 약 먹을 시간이야. 지금 바로 챙겨 먹자.","tag":"cheerfully"}'));
-    const untagged = await generatePrerenderClipText(ENV, {
-      seed: '약 먹을 시간이라고 알리고 지금 바로 챙겨 먹으라고 당부한다.',
-      relationshipLabel: '남자친구',
-      listenerTitle: '자기',
-      targetLanguage: 'ko',
-      defaultTag: 'cheerfully',
-      speechStyle: calm,
-    });
-    expect(untagged.text).toBe('[warmly] 자기야, 약 먹을 시간이야. [warmly] 지금 바로 챙겨 먹자.');
-
-    // 경쾌·자동 목소리는 그대로 — 들뜬 태그가 그 결의 요점이다.
-    queueContent(geminiText('{"text":"[playfully] 자기야, 약 먹을 시간이야! [laughs] 지금 바로 챙겨 먹자."}'));
-    const lively = await generatePrerenderClipText(ENV, {
-      seed: '약 먹을 시간이라고 알리고 지금 바로 챙겨 먹으라고 당부한다.',
-      relationshipLabel: '남자친구',
-      listenerTitle: '자기',
-      targetLanguage: 'ko',
-      defaultTag: 'cheerfully',
-      speechStyle: { ...calm, energy: 'lively' },
-    });
-    expect(lively.text).toContain('[playfully]');
-    expect(lively.text).toContain('[laughs]');
-  });
-
-  it('차분한 목소리의 기본 태그·인라인 태그 거르기', () => {
-    expect(fallbackTagForEnergy('cheerfully', 'calm')).toBe('warmly');
-    expect(fallbackTagForEnergy('playfully', 'calm')).toBe('warmly');
-    expect(fallbackTagForEnergy('encouraging', 'calm')).toBe('encouraging');
-    expect(fallbackTagForEnergy('cheerfully', 'lively')).toBe('cheerfully');
-    expect(fallbackTagForEnergy('cheerfully', '')).toBe('cheerfully');
-    expect(dropWakeUnsafeTags('[giggles] 일어나![warmly] 가자.', { calmVoice: true })).toBe('일어나![warmly] 가자.');
-    expect(dropWakeUnsafeTags('[giggles] 일어나!', {})).toBe('[giggles] 일어나!');
-    // 밝은 태그도 차분에서는 모델 출력·기본값 어느 경로든 똑같이 막힌다.
-    expect(dropWakeUnsafeTags('[cheerfully] 일어나![warmly] 가자.', { calmVoice: true })).toBe('일어나![warmly] 가자.');
   });
 
   it('사전렌더: 예스러운 -셔요 는 -세요 로 고쳐 저장한다', async () => {
@@ -885,7 +772,7 @@ describe('Gemini 모델 계열별 요청·응답(2.5 은퇴 대비)', () => {
       seed: '인터넷이 안 돼 오늘 날씨를 확인하지 못했다고 미안한 듯 알린다.',
       targetLanguage: 'ko',
     });
-    expect(out.text).toContain('못 봤어요… [caring]');
+    expect(out.text).toBe('미안해요, 날씨를 못 봤어요… 나가기 전에 창밖 한번 봐 주세요.');
     expect(out.text).not.toContain('….');
   });
 
@@ -893,144 +780,51 @@ describe('Gemini 모델 계열별 요청·응답(2.5 은퇴 대비)', () => {
     queueContent(
       candidateResponse({
         finishReason: 'STOP',
-        content: {
-          parts: [{ text: '{"text":"[cheerfully] 오늘도 화이팅","tags":["cheerfully"]}', thoughtSignature: 'sig' }],
-        },
+        content: { parts: [{ text: '{"text":"Keep it up today"}', thoughtSignature: 'sig' }] },
       }),
     );
     const prepared = await prepareAlarmTextWithVertex(ENV, '오늘도 화이팅', {
-      targetLanguage: 'ko',
+      targetLanguage: 'en',
       sourceLanguage: 'ko',
-      translate: false,
-      autoTag: true,
+      translate: true,
     });
-    expect(prepared.text).toBe('[cheerfully] 오늘도 화이팅');
-    expect(prepared.provider).not.toBe('local');
+    expect(prepared.text).toBe('Keep it up today');
+    expect(prepared.provider).toBe('vertex');
   });
 });
 
 describe('prepareAlarmTextWithVertex', () => {
-  it('falls back to local tagging when Gemini returns only JSON helper text', async () => {
-    queueContent(geminiText('Here Is the json requested:'));
-
-    const prepared = await prepareAlarmTextWithVertex(ENV, 'Good morning. Wake up.', {
-      targetLanguage: 'en',
-      sourceLanguage: 'en',
-      translate: false,
-      autoTag: true,
-    });
-
-    // 문장마다 태그를 다시 앞세운다(끝까지 톤 유지) — 태그 제거 시 원문과 동일해야 한다.
-    expect(prepared.text).toContain('[cheerfully] Good morning. [cheerfully] Wake up.');
-    expect(prepared.text).not.toContain('json requested');
-    // 신 allowlist 기준 로컬 기본 태그(구 [warmly] 폐기).
-    expect(prepared.tags).toEqual(['cheerfully']);
-  });
-
-  it('parses JSON even when Gemini adds a short preamble', async () => {
-    queueContent(
-      geminiText('Here is the JSON requested:\n{"text":"[cheerfully] Hello","tags":["cheerfully"]}'),
-    );
-
-    const prepared = await prepareAlarmTextWithVertex(ENV, 'Hello', {
-      targetLanguage: 'en',
-      sourceLanguage: 'en',
-      translate: false,
-      autoTag: true,
-    });
-
-    // 큐레이트 세트에 있는 태그는 그대로 선두에 유지된다.
-    expect(prepared.text).toBe('[cheerfully] Hello');
-    expect(prepared.tags).toEqual(['cheerfully']);
-  });
-
-  it('keeps same-language auto-tagging to one leading tag without changing the text', async () => {
-    const text = 'Today is your stage. Wake up with confidence.';
-    queueContent(
-      geminiText(
-        '{"text":"[cheerfully] Today is your stage. [excited] Wake up with confidence.","tags":["cheerfully","excited"]}',
-      ),
-    );
-
-    const prepared = await prepareAlarmTextWithVertex(ENV, text, {
-      targetLanguage: 'en',
-      sourceLanguage: 'en',
-      translate: false,
-      autoTag: true,
-    });
-
-    // ⚠ **모델이 넣은 태그를 그대로 둔다**(2026-08-13 — C안).
-    // 예전에는 첫 태그 하나만 채택해 원문을 재조립했다 — 그래서 프롬프트를 아무리 고쳐도
-    // 결과는 언제나 '원문 앞에 태그 하나' 였다. 여러 개·중간 배치가 요점이다.
-    expect(prepared.text).toBe('[cheerfully] Today is your stage. [excited] Wake up with confidence.');
-    expect(prepared.tags).toEqual(['cheerfully', 'excited']);
-  });
-
-  // ⚠ **C안(2026-08-13) 회귀 방지.** 오디오 태그는 여러 개·문장 중간·자유 어휘를 쓴다.
-  // 예전에는 (1) 프롬프트가 "정확히 하나, 맨 앞에" 로 못 박고 (2) 허용 목록이 감정 형용사
-  // 10개뿐이라 목록 밖 태그가 조용히 무태그로 강등되고 (3) 최종 문자열이 '원문 + 태그 하나'
-  // 로 재조립돼, 셋 중 하나만 고쳐도 변화가 관측되지 않았다.
-  it('허용 목록에 없던 어휘(비언어 소리·발성 방식·태도)도 태그로 살아남는다', async () => {
-    const text = '일어나! 오늘도 힘내자.';
-    queueContent(
-      geminiText(
-        '{"text":"[shouting] 일어나! [laughs] 오늘도 힘내자.","tags":["shouting","laughs"]}',
-      ),
-    );
-
-    const prepared = await prepareAlarmTextWithVertex(ENV, text, {
+  // 2026-09-30: 같은 언어 직접 입력마다 태그를 달려고 Gemini 를 부르던 길을 없앴다 — 사용자가 친 글 그대로다.
+  it('같은 언어 직접 입력은 Gemini 를 부르지 않고 친 글 그대로 합성한다 — 태그를 붙이지 않는다', async () => {
+    const prepared = await prepareAlarmTextWithVertex(ENV, '  오늘도 화이팅!  ', {
       targetLanguage: 'ko',
       sourceLanguage: 'ko',
       translate: false,
-      autoTag: true,
     });
+    expect(prepared).toEqual({ text: '오늘도 화이팅!', translated: false, tags: [], provider: 'local' });
+    expect(mockFetch).not.toHaveBeenCalled();
 
-    expect(prepared.text).toBe('[shouting] 일어나! [laughs] 오늘도 힘내자.');
-    expect(prepared.tags).toEqual(['shouting', 'laughs']);
-  });
-
-  // 쉼표가 든 두 마디 지시는 정규식에서 **태그로 인식조차 되지 않아** 통째로 폐기됐다.
-  it('쉼표가 든 태그도 인식한다', async () => {
-    const text = 'I am ready.';
-    queueContent(
-      geminiText('{"text":"[measured, deliberate] I am ready.","tags":["measured, deliberate"]}'),
-    );
-
-    const prepared = await prepareAlarmTextWithVertex(ENV, text, {
+    // 번역을 요청해도 언어가 같으면 번역이 아니다.
+    const same = await prepareAlarmTextWithVertex(ENV, 'Good morning. Wake up.', {
       targetLanguage: 'en',
       sourceLanguage: 'en',
-      translate: false,
-      autoTag: true,
+      translate: true,
+    });
+    expect(same.text).toBe('Good morning. Wake up.');
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it('parses JSON even when Gemini adds a short preamble', async () => {
+    queueContent(geminiText('Here is the JSON requested:\n{"text":"Hello"}'));
+
+    const prepared = await prepareAlarmTextWithVertex(ENV, '안녕', {
+      targetLanguage: 'en',
+      sourceLanguage: 'ko',
+      translate: true,
     });
 
-    expect(prepared.text).toContain('[measured, deliberate]');
-  });
-
-  // ⚠ **저각성 차단은 유지한다**(C안의 단서). 천천히 말하는 것과 졸리게 말하는 것은 다르다.
-  it('속도 지시는 허용하고 저각성 지시는 깨우는 경로에서 막는다', async () => {
-    expect(dropWakeUnsafeTags('[measured, deliberate] 일어나!')).toBe(
-      '[measured, deliberate] 일어나!',
-    );
-    expect(dropWakeUnsafeTags('[quietly] 일어나!')).toBe('일어나!');
-    expect(dropWakeUnsafeTags('[shouting] 일어나! [whispers] 지금.')).toBe(
-      '[shouting] 일어나! 지금.',
-    );
-  });
-
-  it('공포 태그는 언제나 지우고, 저각성 태그는 마무리 문구에서만 남긴다', () => {
-    expect(dropWakeUnsafeTags('[urgent] 일어나! [panicked] 늦었어!')).toBe('[urgent] 일어나! 늦었어!');
-    expect(dropWakeUnsafeTags('[scared] 지각이야')).toBe('지각이야');
-    expect(dropWakeUnsafeTags('[calm] 오늘도 수고했어. [terrified] 잘 자.', { allowLowArousal: true })).toBe(
-      '[calm] 오늘도 수고했어. 잘 자.',
-    );
-    // 낱말 사이에 붙은 태그를 지워도 낱말이 붙지 않는다 — 일본어는 띄어 쓰지 않으므로 그대로.
-    expect(dropWakeUnsafeTags('[warmly] Good[softly]morning')).toBe('[warmly] Good morning');
-    expect(dropWakeUnsafeTags('할머니 [softly]일어나세요')).toBe('할머니 일어나세요');
-    expect(dropWakeUnsafeTags('할머니,[softly]일어나세요')).toBe('할머니, 일어나세요');
-    expect(dropWakeUnsafeTags('おばあちゃん、[softly]起きて')).toBe('おばあちゃん、起きて');
-    // 문장부호 앞에는 공백을 남기지 않는다.
-    expect(dropWakeUnsafeTags('Wake up[softly]!')).toBe('Wake up!');
-    expect(dropWakeUnsafeTags('おばあちゃん[softly]起きて')).toBe('おばあちゃん起きて');
+    expect(prepared.text).toBe('Hello');
+    expect(prepared.tags).toEqual([]);
   });
 
   it('직접 입력: 사용자가 직접 쓴 태그는 공포 태그여도 그대로 둔다', async () => {
@@ -1038,41 +832,10 @@ describe('prepareAlarmTextWithVertex', () => {
       targetLanguage: 'ko',
       sourceLanguage: 'ko',
       translate: false,
-      autoTag: true,
     });
     expect(prepared.text).toBe('[panicked] 지각이다!! 일어나!!');
+    expect(prepared.tags).toEqual(['panicked']);
     expect(mockFetch).not.toHaveBeenCalled();
-  });
-
-  it('직접 입력: 모델이 공포 태그를 붙이면 지운다 — 다 지워지면 로컬 태깅', async () => {
-    queueContent(geminiText('{"text":"[panicked] 야 일어나 지각한다!!"}'));
-    const prepared = await prepareAlarmTextWithVertex(ENV, '야 일어나 지각한다!!', {
-      targetLanguage: 'ko',
-      sourceLanguage: 'ko',
-      translate: false,
-      autoTag: true,
-    });
-    expect(prepared.text).toBe('[cheerfully] 야 일어나 지각한다!!');
-  });
-
-  it('falls back to local tagging when same-language auto-tagging rewrites the text', async () => {
-    const text = 'Today is your stage. Wake up with confidence.';
-    queueContent(
-      geminiText(
-        '{"text":"[brightly] Today is your stage. Fans are waiting, so hurry out.","tags":["brightly"]}',
-      ),
-    );
-
-    const prepared = await prepareAlarmTextWithVertex(ENV, text, {
-      targetLanguage: 'en',
-      sourceLanguage: 'en',
-      translate: false,
-      autoTag: true,
-    });
-
-    // 텍스트가 변형돼 로컬 폴백 → 신 기본 태그 cheerfully.
-    expect(prepared.text).toBe(`[cheerfully] ${text}`);
-    expect(prepared.tags).toEqual(['cheerfully']);
   });
 
   it('does not synthesize malformed translation output', async () => {
@@ -1083,57 +846,36 @@ describe('prepareAlarmTextWithVertex', () => {
         targetLanguage: 'en',
         sourceLanguage: 'ko',
         translate: true,
-        autoTag: true,
       }),
     ).rejects.toBeInstanceOf(AlarmTextPreparationInvalidError);
   });
 
-  it('tags plain user-typed Korean text when autoTag is true', async () => {
-    queueContent(
-      geminiText('{"text":"[cheerfully] 오늘도 화이팅","tags":["cheerfully"]}'),
-    );
-
-    const prepared = await prepareAlarmTextWithVertex(ENV, '오늘도 화이팅', {
+  it('Vertex 설정이 없으면 번역은 던지고, 같은 언어는 그대로 나간다', async () => {
+    const noVertex = { ...ENV, GOOGLE_VERTEX_CREDENTIALS_JSON: '' };
+    await expect(
+      prepareAlarmTextWithVertex(noVertex, '좋은 아침이에요', { targetLanguage: 'en', sourceLanguage: 'ko', translate: true }),
+    ).rejects.toThrow('Alarm text translation is not configured.');
+    const same = await prepareAlarmTextWithVertex(noVertex, '좋은 아침이에요', {
       targetLanguage: 'ko',
       sourceLanguage: 'ko',
       translate: false,
-      autoTag: true,
     });
-
-    expect(prepared.text).toBe('[cheerfully] 오늘도 화이팅');
-    expect(prepared.tags).toEqual(['cheerfully']);
-    expect(prepared.provider).not.toBe('local');
+    expect(same.text).toBe('좋은 아침이에요');
   });
 
-  it('skips Gemini when user already typed a delivery tag', async () => {
-    const prepared = await prepareAlarmTextWithVertex(ENV, '[warmly] 좋은 아침', {
-      targetLanguage: 'ko',
-      sourceLanguage: 'ko',
-      translate: false,
-      autoTag: true,
-    });
-
-    expect(prepared.text).toBe('[warmly] 좋은 아침');
-    expect(prepared.tags).toEqual(['warmly']);
-    expect(prepared.provider).toBe('local');
-    expect(mockFetch).not.toHaveBeenCalled();
-  });
-
-  it('tags translated output when both translate and autoTag are true', async () => {
-    queueContent(
-      geminiText('{"text":"[brightly] Good morning!","tags":["brightly"]}'),
-    );
+  it('translates without adding delivery tags', async () => {
+    queueContent(geminiText('{"text":"Good morning!"}'));
 
     const prepared = await prepareAlarmTextWithVertex(ENV, '좋은 아침이에요', {
       targetLanguage: 'en',
       sourceLanguage: 'ko',
       translate: true,
-      autoTag: true,
     });
 
-    expect(prepared.text).toBe('[brightly] Good morning!');
+    expect(prepared.text).toBe('Good morning!');
     expect(prepared.translated).toBe(true);
-    expect(prepared.tags).toEqual(['brightly']);
+    expect(prepared.tags).toEqual([]);
+    expect(sentPromptText()).not.toContain('delivery tag');
   });
 });
 
@@ -1451,12 +1193,10 @@ describe('generateDynamicAlarmTextWithVertex', () => {
     expect(generated.text).not.toContain('[');
   });
 
-  // ⚠ 인라인 태그가 **화면 문구로 새면 안 된다**(Codex #701 P2). 표시용(`text`)은 태그를
-  // 벗긴 본문, 합성용(`synthesisText`)은 모델이 배치한 그대로, `tags` 에는 전부 담긴다.
-  it('splits inline delivery tags into synthesis text, display text and tag metadata', async () => {
-    queueContent(
-      geminiText('{"text":"[warmly] 좋은 아침이에요. [brightly] 오늘도 힘내요!","tag":""}'),
-    );
+  // ⚠ 태그가 **화면 문구로 새면 안 된다**(Codex #701 P2). 이제는 합성에도 싣지 않는다(2026-09-30) —
+  // 모델이 태그를 내도 벗긴 글 하나를 화면·합성에 같이 쓴다.
+  it('모델이 낸 태그를 벗긴 글 하나를 화면·합성에 쓴다 — tags 는 비운다', async () => {
+    queueContent(geminiText('{"text":"[warmly] 좋은 아침이에요. [brightly] 오늘도 힘내요!"}'));
 
     const generated = await generateDynamicAlarmTextWithVertex(ENV, {
       mode: 'wake_weather',
@@ -1465,12 +1205,11 @@ describe('generateDynamicAlarmTextWithVertex', () => {
       dateLabel: '5월 20일 수요일',
     });
 
-    expect(generated.provider).toBe('vertex');
-    expect(generated.text).not.toContain('[');
-    expect(generated.text).toContain('좋은 아침이에요');
-    expect(generated.synthesisText).toContain('[warmly]');
-    expect(generated.synthesisText).toContain('[brightly]');
-    expect(generated.tags).toEqual(['warmly', 'brightly']);
+    expect(generated).toEqual({ text: '좋은 아침이에요. 오늘도 힘내요!', translated: false, tags: [], provider: 'vertex' });
+    expect(generated).not.toHaveProperty('synthesisText');
+    // 프롬프트도 태그를 쓰게 하지 않는다.
+    expect(sentPromptText()).toContain('WORDS ONLY');
+    expect(sentPromptText()).not.toContain('DELIVERY TAGS');
   });
 
   // ⚠ 관계에서 유도한 호칭은 **호칭이 비었을 때만** 쓰는 보완책이다(Codex #701 P1).
@@ -1746,24 +1485,26 @@ describe('generateDynamicAlarmTextWithVertex', () => {
     }
   });
 
-  // ⚠ **대괄호 태그는 이제 정상이다**(2026-08-13 — C안). 막는 것은 소괄호·전각괄호 지문과
-  // 저각성 지시뿐이다. 여기서는 저각성(`[quietly]`)으로 실패를 확인한다.
-  it('falls back when Gemini includes stage directions or low-arousal tags', async () => {
-    queueContent(
-      geminiText('{"text":"[quietly] 일어나실 시간이에요. 오늘도 화이팅!"}'),
-    );
-
-    const generated = await generateDynamicAlarmTextWithVertex(ENV, {
-      mode: 'wake_weather',
+  // 소괄호 지문은 낭독돼 버려 HARD 로 막는다. 대괄호 태그(저각성 포함)는 벗기고 통과시킨다(2026-09-30).
+  it('falls back when Gemini includes a parenthesized stage direction; strips bracket tags instead', async () => {
+    queueContent(geminiText('{"text":"(다정하게) 일어나실 시간이에요. 오늘도 화이팅!"}'));
+    queueContent(geminiText('{"text":"(다정하게) 일어나실 시간이에요. 오늘도 화이팅!"}'));
+    const context = {
+      mode: 'wake_weather' as const,
       category: 'morning',
       targetLanguage: 'ko',
       dateLabel: '5월 20일 수요일',
       relationshipLabel: '손녀',
-      weatherSignal: { conditions: [{ kind: 'rain', action: 'umbrella' }] },
-    });
+      weatherSignal: { conditions: [{ kind: 'rain' as const, action: 'umbrella' as const }] },
+    };
+    const fallback = await generateDynamicAlarmTextWithVertex(ENV, context);
+    expect(fallback.provider).toBe('local');
+    expect(fallback.tags).toEqual([]);
 
-    expect(generated.provider).toBe('local');
-    expect(generated.text).not.toContain('[warmly]');
+    queueContent(geminiText('{"text":"[quietly] 할머니, 일어나실 시간이에요. 오늘 비 온대요, 우산 챙기세요!"}'));
+    const stripped = await generateDynamicAlarmTextWithVertex(ENV, { ...context, listenerTitle: '할머니' });
+    expect(stripped.provider).toBe('vertex');
+    expect(stripped.text).not.toContain('[');
   });
 
   it('falls back when Gemini mentions the internal alarm time or date', async () => {
@@ -1868,6 +1609,16 @@ describe('deriveAlarmDisplayText', () => {
     expect(deriveAlarmDisplayText('[calm]', '[calm]')).toBe('[calm]');
   });
 
+  // Codex #830: 사용자가 대괄호를 친 번역에는 서버가 ㅋㅋ 를 바꿔 넣은 [laughs] 가 섞인다 — 화면에는 싣지 않는다.
+  it('사용자가 대괄호를 친 번역문에서 서버가 넣은 웃음은 벗기고, 사용자가 친 웃음 태그는 친 수만큼 남긴다', () => {
+    expect(deriveAlarmDisplayText('[excited] Wake up [laughs], it is 8.', '[excited] 일어나 ㅋㅋ 벌써 8시야')).toBe(
+      '[excited] Wake up, it is 8.',
+    );
+    expect(deriveAlarmDisplayText('[chuckles] Wake up [laughs]', '[chuckles] 일어나 ㅋㅋ')).toBe('[chuckles] Wake up');
+    // 같은 언어(친 글 그대로)는 한 글자도 안 바뀐다 — 공백까지.
+    expect(deriveAlarmDisplayText('[excited]  일어나  ㅋㅋ', '[excited]  일어나  ㅋㅋ')).toBe('[excited]  일어나  ㅋㅋ');
+  });
+
   it('사용자가 승인 태그와 겹치는 대괄호를 쳐도 삭제하지 않는다', () => {
     expect(deriveAlarmDisplayText('오늘도 [happy]', '오늘도 [happy]')).toBe('오늘도 [happy]');
   });
@@ -1876,9 +1627,7 @@ describe('deriveAlarmDisplayText', () => {
 describe('generatePrerenderClipText (사전렌더 톤 적응)', () => {
   it('영문 문구의 정확한 비영문 호칭은 언어 불일치에서 제외한다', async () => {
     queueContent(
-      geminiText(
-        JSON.stringify({ text: '할아버지, it is time for your medicine. Please take care.', tag: 'cheerfully' }),
-      ),
+      geminiText(JSON.stringify({ text: '할아버지, it is time for your medicine. Please take care.' })),
     );
 
     const out = await generatePrerenderClipText(ENV, {
@@ -1886,57 +1635,1539 @@ describe('generatePrerenderClipText (사전렌더 톤 적응)', () => {
       relationshipLabel: 'grandchild',
       listenerTitle: '할아버지',
       targetLanguage: 'en',
-      defaultTag: 'cheerfully',
     });
 
     expect(out.text).toContain('할아버지');
   });
 
-  it('seed·관계·호칭으로 톤 적응 문구를 만들고 승인 태그를 돌려준다', async () => {
-    queueContent(
-      geminiText(
-        JSON.stringify({ text: '규원아, 약 먹을 시간이야. 물이랑 같이 꼭 챙겨 먹어.', tag: 'cheerfully' }),
-      ),
-    );
+  it('seed·관계·호칭으로 톤 적응 문구를 만든다 — 돌려주는 것은 글 하나다', async () => {
+    queueContent(geminiText(JSON.stringify({ text: '규원아, 약 먹을 시간이야. 물이랑 같이 꼭 챙겨 먹어.' })));
     const out = await generatePrerenderClipText(ENV, {
       seed: '약 먹을 시간이라고 다정하게 알린다.',
       relationshipLabel: '할머니',
       listenerTitle: '규원아',
       targetLanguage: 'ko',
-      defaultTag: 'cheerfully',
     });
-    expect(out.text).toContain('약 먹을 시간');
-    expect(out.tag).toBe('cheerfully');
+    expect(out).toEqual({ text: '규원아, 약 먹을 시간이야. 물이랑 같이 꼭 챙겨 먹어.' });
     // 프롬프트에 seed 와 호칭이 실린다.
     const body = JSON.stringify(contentRequestBody());
     expect(body).toContain('약 먹을 시간이라고');
     expect(body).toContain('규원아');
   });
 
-  it('모델이 태그를 비우면 카테고리 기본 태그로 채운다', async () => {
-    // 관계를 모르는 목소리는 해요체다(반말이면 `register_mixed` 로 다시 묻는다).
-    queueContent(geminiText(JSON.stringify({ text: '오늘 비 온대요. 나갈 때 우산 꼭 챙기세요.', tag: '' })));
-    const out = await generatePrerenderClipText(ENV, {
-      seed: '비 온다고 알리고 우산 챙기라고.',
-      targetLanguage: 'ko',
-      defaultTag: 'cheerfully',
-    });
-    expect(out.tag).toBe('cheerfully');
-  });
-
-  // ⚠ 대괄호 태그는 이제 정상이다(C안). 막는 것은 **낭독돼 버리는 소괄호 지문**과
-  // 저각성 지시뿐이다 — `（다정하게）` 는 ElevenLabs 가 태그로 안 읽고 글자로 읽는다.
-  it('문구 안에 소괄호 지문이나 저각성 지시가 새면 throw 해서 나쁜 클립을 저장하지 않는다', async () => {
+  // 대괄호 태그는 벗긴다. 막는 것은 **낭독돼 버리는 소괄호 지문**이다 — `（다정하게）` 는 ElevenLabs 가
+  // 태그로 안 읽고 글자로 읽는다.
+  it('문구 안에 소괄호 지문이 새면 throw 해서 나쁜 클립을 저장하지 않는다', async () => {
     // ⚠ **세 회차 모두 답을 줘야 한다**(2026-09-21). 이 함수는 3회 재시도한다 — 한 개만
     //   큐에 넣으면 2·3회차는 목이 "큐가 비었다" 로 **던져서**, 마지막 실패가 내용 위반이
     //   아니라 전송 실패가 된다. 예전에는 마지막에 무조건 `AlarmTextPreparationInvalidError`
     //   로 덮어써서 그 어긋남이 가려졌다(ALARMTALK-BACKEND-9 — 이제 원본을 그대로 올린다).
     //   즉 이 테스트는 내내 **엉뚱한 실패**를 검사하고 있었다.
     for (let i = 0; i < 3; i += 1) {
-      queueContent(geminiText(JSON.stringify({ text: '(다정하게) 일어나!', tag: '' })));
+      queueContent(geminiText(JSON.stringify({ text: '(다정하게) 일어나!' })));
     }
     await expect(
       generatePrerenderClipText(ENV, { seed: '깨운다', targetLanguage: 'ko' }),
     ).rejects.toBeInstanceOf(AlarmTextPreparationInvalidError);
+  });
+});
+
+function sentPromptText(): string {
+  return contentRequestBody().contents[0]!.parts[0]!.text;
+}
+
+// 직접 입력의 글자 웃음(ㅋㅋ·haha·www)은 합성 글자에서만 `[laughs]` 로 바뀐다(스펙 §9). v4 도 'ㅋㅋㅋ' 를 '크크크' 로
+// 읽는다. 우리는 태그를 붙이지 않으므로(2026-09-30) 같은 언어는 Gemini 를 부르지 않고, 웃음은 번역에서만 센다.
+describe('직접 입력의 글자 웃음 → [laughs] (§9)', () => {
+  const LAUGH_OPTIONS = {
+    targetLanguage: 'ko',
+    sourceLanguage: 'ko',
+    translate: false,
+    speakTypedLaughter: true,
+  } as const;
+  const TO_EN = { ...LAUGH_OPTIONS, targetLanguage: 'en', translate: true } as const;
+
+  it('같은 언어: ㅋㅋ 를 [laughs] 로 바꾸고 Gemini 를 부르지 않는다 — 톤 태그를 붙이지 않는다', async () => {
+    const prepared = await prepareAlarmTextWithVertex(ENV, '일어나 ㅋㅋㅋ 벌써 8시야', LAUGH_OPTIONS);
+    expect(prepared.text).toBe('일어나 [laughs] 벌써 8시야');
+    expect(prepared.tags).toEqual(['laughs']);
+    expect(prepared.provider).toBe('local');
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it('사용자가 대괄호로 친 태그는 그대로 두고 웃음만 바꾼다', async () => {
+    expect((await prepareAlarmTextWithVertex(ENV, '[chuckles] 일어나 ㅋㅋ', LAUGH_OPTIONS)).text).toBe(
+      '[chuckles] 일어나 [laughs]',
+    );
+    expect((await prepareAlarmTextWithVertex(ENV, '[excited] 일어나 ㅋㅋㅋ', LAUGH_OPTIONS)).text).toBe(
+      '[excited] 일어나 [laughs]',
+    );
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it('Vertex 설정이 없어도 웃음은 소리로 바뀐다', async () => {
+    const prepared = await prepareAlarmTextWithVertex(
+      { ...ENV, GOOGLE_VERTEX_CREDENTIALS_JSON: '' },
+      'おはよう www もう8時だよ',
+      { ...LAUGH_OPTIONS, targetLanguage: 'ja', sourceLanguage: 'ja' },
+    );
+    expect(prepared.text).toBe('おはよう [laughs] もう8時だよ');
+  });
+
+  it('웃음만 있는 문구는 바꾸지 않는다 — 태그뿐인 합성 요청이 된다', async () => {
+    const prepared = await prepareAlarmTextWithVertex(ENV, 'ㅋㅋㅋ', LAUGH_OPTIONS);
+    expect(prepared.text).toBe('ㅋㅋㅋ');
+  });
+
+  // Codex #830: 문장부호만 남는 것도 '낭독할 말이 없다' 다.
+  it('웃음과 문장부호뿐인 문구도 바꾸지 않는다', () => {
+    expect(speakTypedLaughter('ㅋㅋㅋ!')).toBe('ㅋㅋㅋ!');
+    expect(speakTypedLaughter('haha…')).toBe('haha…');
+    expect(speakTypedLaughter('ㅋㅋ 8시!')).toBe('[laughs] 8시!');
+  });
+
+  it('옵션을 켜지 않으면(스톡 문구) 글자를 그대로 둔다', async () => {
+    const prepared = await prepareAlarmTextWithVertex(ENV, '[brightly] 하하, 일어나요 ㅋㅋ', {
+      targetLanguage: 'ko',
+      sourceLanguage: 'ko',
+      translate: false,
+    });
+    expect(prepared.text).toBe('[brightly] 하하, 일어나요 ㅋㅋ');
+  });
+
+  it('번역: 모델에게 [laughs] 를 지키라고 하고, 옮겨 쓴 글자 웃음도 소리로 바꾼다', async () => {
+    queueContent(geminiText(`{"text":"Wake up haha, it's already 8."}`));
+    const prepared = await prepareAlarmTextWithVertex(ENV, '일어나 ㅋㅋ 벌써 8시야', TO_EN);
+    const prompt = sentPromptText();
+    expect(prompt).toContain('일어나 [laughs] 벌써 8시야');
+    expect(prompt).not.toContain('일어나 ㅋㅋ');
+    expect(prompt).toContain("every [laughs] already in the message is the user's own laughter");
+    expect(prompt).toContain('where it belongs in the translation');
+    expect(prepared.translated).toBe(true);
+    expect(prepared.text).toBe("Wake up [laughs], it's already 8.");
+  });
+
+  it('번역: 사용자가 웃지 않았으면 모델이 넣은 웃음은 지운다 — 우리는 웃음을 더하지 않는다', async () => {
+    queueContent(geminiText('{"text":"Wake up, [laughs] you are late haha."}'));
+    const prepared = await prepareAlarmTextWithVertex(ENV, '일어나, 늦었어', TO_EN);
+    expect(prepared.text).toBe('Wake up, you are late.');
+    expect(sentPromptText()).not.toContain("user's own laughter");
+  });
+
+  it('번역: 사용자가 여러 번 웃었으면 그 수만큼 남기고 넘치는 웃음은 지운다', async () => {
+    queueContent(geminiText('{"text":"Wake up [laughs], it is 8. You are late [laughs]. Hurry [chuckles]!"}'));
+    const prepared = await prepareAlarmTextWithVertex(ENV, '일어나 ㅋㅋ 벌써 8시야. 늦었어 ㅎㅎ 서둘러!', TO_EN);
+    expect(prepared.text).toBe('Wake up [laughs], it is 8. You are late [laughs]. Hurry!');
+  });
+
+  // Codex #830: 번역은 원문 자리를 맞춰 볼 수 없다 — 빠뜨리면 '웃었다' 는 것만이라도 되살린다.
+  it('번역이 사용자의 웃음을 빠뜨리면 앞에 한 번 되살린다', async () => {
+    queueContent(geminiText('{"text":"Wake up, it is already 8."}'));
+    const prepared = await prepareAlarmTextWithVertex(ENV, '일어나 ㅋㅋ 벌써 8시야', TO_EN);
+    expect(prepared.text).toBe('[laughs] Wake up, it is already 8.');
+  });
+
+  // Codex #830: 모델이 사용자의 웃음 태그를 바꿀 수 있다.
+  it('번역: 모델이 바꾼 웃음 태그는 [laughs] 로 맞추고, 사용자가 친 태그는 그대로다', async () => {
+    queueContent(geminiText('{"text":"[excited] Wake up [chuckles], it is already 8."}'));
+    const prepared = await prepareAlarmTextWithVertex(ENV, '[excited] 일어나 ㅋㅋ 벌써 8시야', TO_EN);
+    expect(prepared.text).toBe('[excited] Wake up [laughs], it is already 8.');
+
+    queueContent(geminiText('{"text":"[chuckles] Wake up, it is already 8."}'));
+    const own = await prepareAlarmTextWithVertex(ENV, '[chuckles] 일어나 벌써 8시야', TO_EN);
+    expect(own.text).toBe('[chuckles] Wake up, it is already 8.');
+  });
+
+  // Codex #830: 사용자가 대괄호로 친 웃음 태그는 그대로다 — 되살릴 때도 그 철자로.
+  it('번역이 사용자가 대괄호로 친 웃음 태그를 빠뜨리면 그 태그를 그대로 되살린다', async () => {
+    queueContent(geminiText('{"text":"Wake up, it is already 8."}'));
+    const prepared = await prepareAlarmTextWithVertex(ENV, '[chuckles] 일어나 벌써 8시야', TO_EN);
+    expect(prepared.text).toBe('[chuckles] Wake up, it is already 8.');
+  });
+
+  // Codex #830: 수만 맞추면 사용자가 친 [chuckles] 가 모델의 [laughs] 로 조용히 바뀐다.
+  it('번역이 사용자가 친 웃음 태그를 다른 철자로 바꾸면 그 철자로 되돌린다', async () => {
+    queueContent(geminiText('{"text":"[laughs] Wake up, it is already 8."}'));
+    const prepared = await prepareAlarmTextWithVertex(ENV, '[chuckles] 일어나 벌써 8시야', TO_EN);
+    expect(prepared.text).toBe('[chuckles] Wake up, it is already 8.');
+  });
+
+  // Codex #830: 웃음뿐인 번역은 글자로 남아('haha') 그걸 읽는 클립이 '번역 성공' 이 됐다.
+  it('원문에 말이 있는데 번역이 웃음뿐이면 empty_spoken 으로 거절한다 — 원문도 웃음뿐이면 그대로 둔다', async () => {
+    queueContent(geminiText('{"text":"[cheerfully] haha!"}'));
+    await expect(prepareAlarmTextWithVertex(ENV, '일어나 벌써 8시야', TO_EN)).rejects.toMatchObject({
+      reason: 'empty_spoken',
+    });
+
+    queueContent(geminiText('{"text":"[cheerfully] haha!"}'));
+    await expect(prepareAlarmTextWithVertex(ENV, '일어나 ㅋㅋ', TO_EN)).rejects.toMatchObject({
+      reason: 'empty_spoken',
+    });
+
+    // 원문이 웃음뿐이면 글자 그대로 둔다(태그뿐인 합성 요청을 만들지 않는다). 모델이 붙인 톤은 벗긴다.
+    queueContent(geminiText('{"text":"[cheerfully] haha"}'));
+    const laughOnly = await prepareAlarmTextWithVertex(ENV, 'ㅋㅋㅋ', TO_EN);
+    expect(laughOnly.text).toBe('haha');
+  });
+
+  // Codex #830: 사용자의 태그 이름을 통째로 빼 주면 모델이 같은 이름으로 더한 웃음도 빠져 두 번 웃는다.
+  it('사용자가 친 웃음 태그는 친 수만큼만 사용자 것이다 — 모델이 같은 이름으로 더한 웃음은 지운다', async () => {
+    queueContent(geminiText('{"text":"[chuckles] Wake up, it is already 8 [chuckles]."}'));
+    const extra = await prepareAlarmTextWithVertex(ENV, '[chuckles] 일어나 벌써 8시야', TO_EN);
+    expect(extra.text).toBe('[chuckles] Wake up, it is already 8.');
+
+    // 사용자가 두 번 쳤으면 두 번까지는 사용자 것이다.
+    queueContent(geminiText('{"text":"[chuckles] Wake up. [chuckles] It is already 8 [chuckles]."}'));
+    const twice = await prepareAlarmTextWithVertex(ENV, '[chuckles] 일어나. [chuckles] 벌써 8시야', TO_EN);
+    expect(twice.text).toBe('[chuckles] Wake up. [chuckles] It is already 8.');
+  });
+
+  // Codex #830: 지운 웃음 자리에 공백을 남기면 'Wake up .'·'Hello , now' 가 합성·저장된다.
+  it('넘치는 웃음을 지운 자리에는 문장부호 앞 공백을 남기지 않는다', async () => {
+    queueContent(geminiText('{"text":"Wake up [laughs], it is already 8 [chuckles]."}'));
+    const prepared = await prepareAlarmTextWithVertex(ENV, '일어나 ㅋㅋ 벌써 8시야', TO_EN);
+    expect(prepared.text).toBe('Wake up [laughs], it is already 8.');
+
+    queueContent(geminiText('{"text":"Hello [laughs], now go [chuckles]!"}'));
+    const own = await prepareAlarmTextWithVertex(ENV, '안녕 이제 가자', TO_EN);
+    expect(own.text).toBe('Hello, now go!');
+  });
+});
+
+// 사전렌더(클론 클립·등록 미리듣기)는 태그 없는 글을 합성한다(2026-09-30). 모델이 태그나 글자 웃음을 내도 벗긴다 —
+// 웃음도 태그도 우리가 넣지 않는다. 결은 문장 모양으로만 전한다(스펙 §4-2·§10).
+describe('사전렌더 — 태그·웃음 없이 문장만 (§9·§10)', () => {
+  const style = { dialect: '', strength: '' as const, register: 'banmal', markers: [], persona: '', childlike: false };
+  const fortune = {
+    seed: '오늘 운세가 좋다고 가볍게 알리고 일어나자고 한다.',
+    relationshipLabel: '남자친구',
+    listenerTitle: '자기',
+    targetLanguage: 'ko',
+  };
+
+  it('모델이 낸 태그·웃음 태그를 전부 벗긴다 — 문장부호 앞에 공백을 남기지 않는다', async () => {
+    queueContent(geminiText('{"text":"[playfully] 자기야 [laughs], 오늘 운세 좋대. [cheerfully] 얼른 일어나 보자 [chuckles]!"}'));
+    const out = await generatePrerenderClipText(ENV, { ...fortune, speechStyle: { ...style, energy: 'lively' } });
+    expect(out).toEqual({ text: '자기야, 오늘 운세 좋대. 얼른 일어나 보자!' });
+
+    // 대괄호에 넣은 글자 웃음·꾸밈말이 붙은 웃음도 태그다.
+    queueContent(geminiText('{"text":"[haha loudly] 자기야, [lol] 오늘 운세 좋대. 얼른 일어나 보자."}'));
+    const bracketed = await generatePrerenderClipText(ENV, fortune);
+    expect(bracketed.text).toBe('자기야, 오늘 운세 좋대. 얼른 일어나 보자.');
+  });
+
+  it('모델이 웃음을 글자로 쓰면(ㅋㅋ·haha) 지운다 — TTS 가 글자로 읽는다', async () => {
+    queueContent(geminiText('{"text":"자기야 ㅋㅋ 오늘 운세 좋대. 얼른 일어나 보자 haha."}'));
+    const out = await generatePrerenderClipText(ENV, fortune);
+    expect(out.text).toBe('자기야 오늘 운세 좋대. 얼른 일어나 보자.');
+  });
+
+  // Codex #830: 웃음만 남는 줄은 낭독할 말이 없으니 다시 묻는다.
+  it('웃음만 있는 줄([playfully] haha!)은 낭독할 말이 없어 거절한다', async () => {
+    for (let i = 0; i < 3; i += 1) {
+      queueContent(geminiText('{"text":"[playfully] haha!"}'));
+    }
+    await expect(
+      generatePrerenderClipText(ENV, { seed: '가볍게 웃으며 깨운다.', targetLanguage: 'en' }),
+    ).rejects.toMatchObject({ reason: 'empty_spoken' });
+  });
+
+  it('프롬프트는 태그·웃음을 쓰게 하지 않고, 결은 문장 모양으로 말한다', async () => {
+    queueContent(geminiText('{"text":"자기야, 오늘 운세 좋대. 얼른 일어나 보자!"}'));
+    await generatePrerenderClipText(ENV, { ...fortune, speechStyle: { ...style, energy: 'lively' } });
+    const lively = sentPromptText();
+    expect(lively).toContain('WORDS ONLY');
+    expect(lively).toContain('short upbeat sentences');
+    expect(lively).not.toContain('LAUGHTER:');
+    expect(lively).not.toContain('DELIVERY TAGS');
+    expect(lively).not.toMatch(/\[(cheerfully|playfully|laughs|warmly|excited)\]/);
+
+    mockFetch.mockClear();
+    queueContent(geminiText('{"text":"자기야, 약 먹을 시간이야. 지금 바로 챙겨 먹자."}'));
+    await generatePrerenderClipText(ENV, {
+      seed: '약 먹을 시간이라고 알리고 지금 바로 챙겨 먹으라고 당부한다.',
+      relationshipLabel: '남자친구',
+      listenerTitle: '자기',
+      targetLanguage: 'ko',
+      speechStyle: { ...style, energy: 'calm' },
+    });
+    const calm = sentPromptText();
+    expect(calm).toContain('CALM');
+    expect(calm).toContain('few or no exclamation marks');
+    expect(calm).toContain('clear, firm nudge');
+    expect(calm).not.toMatch(/\[(cheerfully|playfully|laughs|warmly|sincerely|excited)\]/);
+    // 시스템 지시도 태그를 요구하지 않는다.
+    const system = JSON.stringify((JSON.parse(String(mockFetch.mock.calls.find((c) => String(c[0]) !== TOKEN_URI)?.[1]?.body)) as { systemInstruction?: unknown }).systemInstruction ?? '');
+    expect(system).toContain('Write NO');
+    expect(system).not.toContain('DELIVERY TAG (ElevenLabs v3)');
+  });
+});
+
+describe('stripAllTags — 모델이 쓴 글의 태그를 벗긴다', () => {
+  it('쉼표가 든 태그·여러 개·문장 가운데 태그를 모두 벗긴다', () => {
+    expect(stripAllTags('[measured, deliberate] I am ready.')).toBe('I am ready.');
+    expect(stripAllTags('[shouting] 일어나! [laughs] 오늘도 힘내자.')).toBe('일어나! 오늘도 힘내자.');
+    expect(stripAllTags('[happy] [excited] Good morning')).toBe('Good morning');
+  });
+
+  it('지운 자리에 낱말이 붙거나 문장부호 앞에 공백이 남지 않는다 — 일본어는 붙인다', () => {
+    expect(stripAllTags('[warmly] Good[softly]morning')).toBe('Good morning');
+    expect(stripAllTags('할머니 [softly]일어나세요')).toBe('할머니 일어나세요');
+    expect(stripAllTags('할머니,[softly]일어나세요')).toBe('할머니, 일어나세요');
+    expect(stripAllTags('おばあちゃん、[softly]起きて')).toBe('おばあちゃん、起きて');
+    expect(stripAllTags('おばあちゃん[softly]起きて')).toBe('おばあちゃん起きて');
+    expect(stripAllTags('Wake up[softly]!')).toBe('Wake up!');
+    expect(stripAllTags('좋아 [laughs].')).toBe('좋아.');
+    expect(stripAllTags('Hello [laughs], now')).toBe('Hello, now');
+  });
+
+  it('태그 모양이 아닌 대괄호(한글 지문)는 벗기지 않는다 — 검사가 거절한다', () => {
+    expect(stripAllTags('[다정하게] 일어나')).toBe('[다정하게] 일어나');
+    expect(stripAllTags('태그 없는 글  그대로')).toBe('태그 없는 글  그대로');
+  });
+});
+
+// 2026-10-01 3.8 평가로 고친 프롬프트·검사 — 모델은 바꾸지 않았다(3.8 하나만 쓴다).
+describe('사전렌더 — 3.8 튜닝(2026-10-01)', () => {
+  const GYEONGSANG = { dialect: '경상', strength: 'high' as const, register: 'banmal', markers: ['~카이'], persona: '', childlike: false };
+  const promptsSent = () =>
+    mockFetch.mock.calls
+      .filter((c) => String(c[0]) !== TOKEN_URI)
+      .map((c) => JSON.parse(String(c[1]?.body)).contents[0].parts[0].text as string);
+
+  it('일본어 가족·친구 문구의 です・ます 문장을 잡는다 — 모르는·먼 관계·정중체 화자는 두고', () => {
+    const mom = { relationshipLabel: '母' };
+    // 평가에서 실제로 나온 줄(엄마→ゆい 약 클립).
+    expect(hasJapanesePoliteEnding('ゆい、お薬の時間だよ。今日も元気いっぱい過ごせますように。', mom)).toBe(true);
+    expect(hasJapanesePoliteEnding('ゆい、お薬の時間ですよ…忘れないでね。', mom)).toBe(true);
+    expect(hasJapanesePoliteEnding('ゆい、起きてくださいね！', mom)).toBe(true);
+    expect(hasJapanesePoliteEnding('ゆい、お薬の時間だよ。今日も元気でいてね。', mom)).toBe(false);
+    // 한국어·영어 라벨도 가족·친구면 본다(앱 언어가 한국어인 사람이 일본어 목소리를 만든다).
+    expect(hasJapanesePoliteEnding('起きる時間ですよ。', { relationshipLabel: '엄마' })).toBe(true);
+    expect(hasJapanesePoliteEnding('起きる時間ですよ。', { relationshipLabel: 'friend' })).toBe(true);
+    // 모르는 라벨·관계 없음·먼 사이·사돈은 프롬프트가 です・ます 를 허용한다 — 거절하면 영구 실패한다.
+    expect(hasJapanesePoliteEnding('起きる時間ですよ。', { relationshipLabel: '家庭教師' })).toBe(false);
+    expect(hasJapanesePoliteEnding('起きる時間ですよ。', {})).toBe(false);
+    expect(hasJapanesePoliteEnding('起きる時間ですよ。', { relationshipLabel: '先生' })).toBe(false);
+    expect(hasJapanesePoliteEnding('起きる時間ですよ。', { relationshipLabel: '義母' })).toBe(false);
+    expect(hasJapanesePoliteEnding('起きる時間ですよ。', { relationshipLabel: '며느리' })).toBe(false);
+    expect(hasJapanesePoliteEnding('起きる時間ですよ。', { relationshipLabel: '동료' })).toBe(false);
+    // 화자 녹음이 정중체였거나 사용자가 정중체 문구를 확정했으면 그 말투를 따른다.
+    expect(
+      hasJapanesePoliteEnding('起きる時間ですよ。', {
+        relationshipLabel: '母',
+        speechStyle: { ...GYEONGSANG, dialect: '', strength: '', register: 'polite' },
+      }),
+    ).toBe(false);
+    expect(hasJapanesePoliteEnding('起きる時間ですよ。', { relationshipLabel: '母', styleReference: 'おはようございます。' })).toBe(false);
+    // 아이 목소리는 라벨이 없어도 タメ口 다.
+    expect(
+      hasJapanesePoliteEnding('パパ、おきる時間です！', {
+        speechStyle: { ...GYEONGSANG, dialect: '', strength: '', register: 'casual', childlike: true },
+      }),
+    ).toBe(true);
+    // 문장 끝만 본다 — 문장 가운데 'ます' 는 세지 않는다.
+    expect(hasJapanesePoliteEnding('ますます元気にいこうね。', mom)).toBe(false);
+  });
+
+  it('일본어 です・ます 는 register_mixed 로 다시 묻고, 다음 회차에 일본어 힌트를 준다', async () => {
+    expect(prerenderRejectionReason('ゆい、今日も元気に過ごせますように。', 'ja', { relationshipLabel: '母', listenerTitle: 'ゆい' })).toBe(
+      'register_mixed',
+    );
+    queueContent(geminiText('{"text":"ゆい、お薬の時間だよ。今日も元気いっぱい過ごせますように。"}'));
+    queueContent(geminiText('{"text":"ゆい、お薬の時間だよ。今日も元気でいてね。"}'));
+    const out = await generatePrerenderClipText(ENV, {
+      seed: '약 드실 시간이라고 알리며 건강하게 잘 보내라고 응원한다.',
+      relationshipLabel: '母',
+      listenerTitle: 'ゆい',
+      targetLanguage: 'ja',
+    });
+    expect(out.text).toBe('ゆい、お薬の時間だよ。今日も元気でいてね。');
+    const prompts = promptsSent();
+    expect(prompts).toHaveLength(2);
+    expect(prompts[1]).toContain('plain casual Japanese');
+    // 한국어 어체 힌트(반말/해요체 낱말 짚기)를 일본어에 주지 않는다.
+    expect(prompts[1]).not.toContain('WRONG speech level');
+  });
+
+  it('인사가 아닌 시드에만 끝에서 TIME OF DAY 를 다시 말한다', async () => {
+    queueContent(geminiText('{"text":"Sweetie, time for your meds. Take them now, okay?"}'));
+    await generatePrerenderClipText(ENV, {
+      seed: '약 먹을 시간이라고 알리고 지금 바로 챙겨 먹으라고 당부한다.',
+      relationshipLabel: 'mom',
+      listenerTitle: 'sweetie',
+      targetLanguage: 'en',
+    });
+    const medication = sentPromptText();
+    expect(medication).toContain("TIME OF DAY: this intent is not a greeting");
+    expect(medication).toContain("a bare 'Morning,'");
+    // 끝(JSON 지시 바로 앞)에 둔다 — 앞쪽 OPENER 만으로는 'Morning, sweetie…' 가 남았다.
+    expect(medication.indexOf('TIME OF DAY')).toBeGreaterThan(medication.indexOf('Few-shot examples'));
+
+    mockFetch.mockClear();
+    queueContent(geminiText('{"text":"Good morning, sweetie… did you sleep well?"}'));
+    await generatePrerenderClipText(ENV, {
+      seed: '다정하게 아침 인사를 하며 잘 잤는지 안부를 묻는다.',
+      relationshipLabel: 'mom',
+      listenerTitle: 'sweetie',
+      targetLanguage: 'en',
+    });
+    expect(sentPromptText()).not.toContain('TIME OF DAY');
+  });
+
+  it('아이 목소리에는 이유를 빼는 완결성 규칙을 준다 — 어른 목소리는 그대로', async () => {
+    queueContent(geminiText('{"text":"아빠아, 약 먹을 시간이야! 지금 빨리빨리 먹어어."}'));
+    await generatePrerenderClipText(ENV, {
+      seed: '약 먹을 시간이라고 알리고, 미뤄 두면 금방 잊어버리기 쉽다고 일러 준 뒤, 지금 바로 챙겨 먹으라고 당부한다.',
+      relationshipLabel: '딸',
+      listenerTitle: '아빠',
+      targetLanguage: 'ko',
+      speechStyle: { ...GYEONGSANG, dialect: '', strength: '', childlike: true },
+    });
+    const child = sentPromptText();
+    expect(child).toContain('COMPLETENESS (child speaker)');
+    expect(child).toContain('leave out its reasons');
+    expect(child).not.toContain('COMPLETENESS FIRST');
+
+    mockFetch.mockClear();
+    queueContent(geminiText('{"text":"우리 딸, 약 먹을 시간이야. 미루면 잊기 쉬우니까 지금 먹자."}'));
+    await generatePrerenderClipText(ENV, {
+      seed: '약 먹을 시간이라고 알리고 지금 바로 챙겨 먹으라고 당부한다.',
+      relationshipLabel: '엄마',
+      listenerTitle: '우리 딸',
+      targetLanguage: 'ko',
+    });
+    expect(sentPromptText()).toContain('COMPLETENESS FIRST');
+  });
+
+  it('사투리 화자에게만 주제마다 같은 강도·그 지역 것만·본보기도 사투리로 다시 쓰라고 한다', async () => {
+    queueContent(geminiText('{"text":"우리 아들, 인터넷이 안 돼가 날씨를 못 봤데이. 나가기 전에 창밖 단디 보고, 퍼뜩 일어나래이."}'));
+    await generatePrerenderClipText(ENV, {
+      seed: '인터넷이 안 돼 오늘 날씨를 확인하지 못했다고 미안한 듯 알린다.',
+      relationshipLabel: '엄마',
+      listenerTitle: '우리 아들',
+      targetLanguage: 'ko',
+      speechStyle: GYEONGSANG,
+      humanReference: '미안해요, 오늘 날씨를 못 봤어요. 나가기 전에 창밖 한번 봐 주세요.',
+    });
+    const dialect = sentPromptText();
+    expect(dialect).toContain('same strength on every topic');
+    expect(dialect).toContain("전라 '~응께'");
+    expect(dialect).toContain('re-voice its wording into that dialect too');
+    // 끝(JSON 지시 바로 앞)에서 한 번 더 — 앞쪽 블록만으로는 경상 응원 줄이 '없응께' 를 썼다.
+    expect(dialect).toContain('DIALECT: every sentence');
+    expect(dialect.indexOf('DIALECT: every sentence')).toBeGreaterThan(dialect.indexOf('TIME OF DAY'));
+    expect(dialect).toContain("a 경상 speaker never says 전라 '~응께'");
+    // 사과·주의 줄도 어조만 바꾼다 — 사투리·어체는 그대로(모든 목소리에 들어간다).
+    expect(dialect).toContain('Care changes the tone only');
+
+    mockFetch.mockClear();
+    queueContent(geminiText('{"text":"우리 아들, 날씨를 못 봤어. 나가기 전에 창밖 한번 봐."}'));
+    await generatePrerenderClipText(ENV, {
+      seed: '인터넷이 안 돼 오늘 날씨를 확인하지 못했다고 미안한 듯 알린다.',
+      relationshipLabel: '아빠',
+      listenerTitle: '우리 아들',
+      targetLanguage: 'ko',
+      humanReference: '미안해요, 오늘 날씨를 못 봤어요. 나가기 전에 창밖 한번 봐 주세요.',
+    });
+    const standard = sentPromptText();
+    expect(standard).not.toContain('same strength on every topic');
+    expect(standard).not.toContain('re-voice its wording into that dialect');
+    expect(standard).not.toContain('DIALECT: every sentence');
+    expect(standard).toContain('Care changes the tone only');
+
+    // 경상 전용 예시('~응께')는 다른 사투리에 싣지 않는다.
+    mockFetch.mockClear();
+    queueContent(geminiText('{"text":"たろう、お薬の時間やで。今すぐ飲んでしまい。"}'));
+    await generatePrerenderClipText(ENV, {
+      seed: '약 먹을 시간이라고 알리고 지금 바로 챙겨 먹으라고 당부한다.',
+      relationshipLabel: 'おかん',
+      listenerTitle: 'たろう',
+      targetLanguage: 'ja',
+      speechStyle: { ...GYEONGSANG, dialect: '関西', strength: 'medium', register: 'casual', markers: ['ほな'] },
+    });
+    const kansai = sentPromptText();
+    expect(kansai).toContain('stays in 関西 dialect');
+    expect(kansai).not.toContain("a 경상 speaker never says");
+  });
+
+  it('운세는 시드의 가능성 표현을 지키고 새 인연·연애운을 말하지 않게 한다(언어·관계 무관)', async () => {
+    queueContent(geminiText('{"text":"けんた、今日は周りの人と楽しく過ごせそうだよ。"}'));
+    await generatePrerenderClipText(ENV, {
+      seed: '오늘은 사람들과 기분 좋은 일이 있을 수 있다고 전한다.',
+      relationshipLabel: '妻',
+      listenerTitle: 'けんた',
+      targetLanguage: 'ja',
+    });
+    const prompt = sentPromptText();
+    expect(prompt).toContain('keep every hedge the intent has');
+    expect(prompt).toContain('never a new encounter or love luck');
+  });
+
+  it('말투 분석의 사투리 이름은 40자까지 남긴다 — Southern American English 가 잘리지 않는다', async () => {
+    queueContent(
+      geminiText(
+        '{"dialect":"Southern American English","strength":"medium","register":"casual","markers":["y\'all"],"persona":"","childlike":false,"energy":"","confidence":0.8}',
+      ),
+    );
+    const style = await analyzeSpeechStyleWithVertex(ENV, "Mornin', sugar. Y'all better get up now, ya hear? Don't be late, darlin'.", 'en');
+    expect(style?.dialect).toBe('Southern American English');
+  });
+
+  it('한→영 번역에만 우리·힘내 지시를 싣고, 채팅식 입력은 문장부호를 넣게 한다', async () => {
+    queueContent(geminiText('{"text":"It\'s my girl\'s birthday today! Happy birthday, I love you."}'));
+    await prepareAlarmTextWithVertex(ENV, '오늘은 우리 딸 생일! 축하해 사랑해', {
+      targetLanguage: 'en',
+      sourceLanguage: 'ko',
+      translate: true,
+    });
+    const koEn = sentPromptText();
+    expect(koEn).toContain("Korean '우리' before a family word is an affectionate 'my' only when that word is the person hearing the alarm");
+    // 받는 사람이 아닌 가족·무리를 부를 때는 진짜 'our' 다(Codex #844 — '여보, 우리 아들 깨워 줘').
+    expect(koEn).toContain('wake our son up');
+    expect(koEn).toContain('our family trip');
+    expect(koEn).toContain("it is not 'Have a great day'");
+    expect(koEn).toContain('typed like a chat with little or no punctuation');
+    // 웃음 뒤에 부호를 또 찍지 않게 한다('You've got this! [laughs].' 가 나왔다).
+    expect(koEn).toContain('gets no mark of its own');
+
+    mockFetch.mockClear();
+    queueContent(geminiText('{"text":"좋은 아침이야. 오늘도 하루 힘내자."}'));
+    await prepareAlarmTextWithVertex(ENV, 'おはよう。今日も一日がんばろうね。', {
+      targetLanguage: 'ko',
+      sourceLanguage: 'ja',
+      translate: true,
+    });
+    const jaKo = sentPromptText();
+    expect(jaKo).not.toContain("Korean '우리'");
+    expect(jaKo).toContain('typed like a chat with little or no punctuation');
+  });
+});
+
+// 리뷰 수정(2026-10-01) — 사용자가 확정한 문구(STYLE REFERENCE)가 사투리 지시를 이긴다. 운영 크론은 거의 모든 클론에
+// 확정 문구(`preview_text`)를 넘기는데, 끝의 DIALECT 줄과 본보기의 사투리 지시가 무조건 '사투리로' 라서 표준어로 확정한
+// 문구를 덮었다.
+describe('사전렌더 — 확정 문구(STYLE REFERENCE)가 있으면 사투리 지시가 그것을 따른다', () => {
+  const GYEONGSANG = { dialect: '경상', strength: 'high' as const, register: 'banmal', markers: ['~카이'], persona: '', childlike: false };
+  const base = {
+    seed: '인터넷이 안 돼 오늘 날씨를 확인하지 못했다고 미안한 듯 알린다.',
+    relationshipLabel: '엄마',
+    listenerTitle: '우리 아들',
+    targetLanguage: 'ko',
+    speechStyle: GYEONGSANG,
+    humanReference: '미안해요, 오늘 날씨를 못 봤어요. 나가기 전에 창밖 한번 봐 주세요.',
+  };
+
+  it('표준어 확정 문구 + 사투리 분석 → 사투리를 강요하지 않고 확정 문구를 따르라고 한다', async () => {
+    queueContent(geminiText('{"text":"우리 아들, 오늘 날씨를 못 봤어. 나가기 전에 창밖 한번 봐."}'));
+    await generatePrerenderClipText(ENV, {
+      ...base,
+      styleReference: '우리 아들, 좋은 아침이야… 잘 잤어? 얼른 일어나서 오늘도 기분 좋게 시작해 보자.',
+    });
+    const prompt = sentPromptText();
+    // 끝의 DIALECT 줄은 무조건 '사투리로' 가 아니라 확정 문구가 정한다 — 표준어 갈래를 먼저 말한다.
+    expect(prompt).not.toContain('DIALECT: every sentence');
+    expect(prompt).toContain('DIALECT — the approved STYLE REFERENCE line decides, not the analysis.');
+    expect(prompt).toContain('If that line is in standard language, every sentence is standard language: no 경상 endings or words at all.');
+    expect(prompt.indexOf('DIALECT — the approved')).toBeGreaterThan(prompt.indexOf('TIME OF DAY'));
+    // 본보기(사람이 쓴 대사)도 사투리로 다시 쓰라고 못 박지 않는다.
+    expect(prompt).not.toContain('this speaker talks in 경상 dialect — re-voice its wording into that dialect too');
+    expect(prompt).toContain('if the STYLE REFERENCE is in standard language, keep standard language like it');
+    // 말투 분석 블록부터 조건부다 — '약 알림도 사투리로, 표준어는 절대 안 된다' 를 무조건 말하지 않는다(그 문장이
+    // 표준어 확정 문구를 이겨 경상 약 줄이 사투리였다).
+    expect(prompt).not.toContain('never in standard language');
+    expect(prompt).not.toContain('instead of standard textbook language');
+    expect(prompt).toContain('This dialect applies ONLY if the approved STYLE REFERENCE line below is itself in 경상 dialect.');
+    expect(prompt).toContain('ignore the dialect, the markers and any dialect in the verbal identity');
+    expect(prompt).toContain('The approved STYLE REFERENCE line given below wins over this analysis.');
+    // 확정 문구는 말투 블록 **뒤에** 온다 — 'present above' 는 위치가 틀린 옛 문장이다.
+    expect(prompt).not.toContain('present above');
+    expect(prompt.indexOf('STYLE REFERENCE (tone only)')).toBeGreaterThan(prompt.indexOf('SPEAKER DIALECT/STYLE'));
+  });
+
+  it('확정 문구가 없으면 예전대로 끝까지 사투리로 쓰라고 한다', async () => {
+    queueContent(geminiText('{"text":"우리 아들, 날씨를 못 봤데이. 창밖 단디 보고 가래이."}'));
+    await generatePrerenderClipText(ENV, base);
+    const prompt = sentPromptText();
+    expect(prompt).toContain("DIALECT: every sentence — apologies and cautions included — stays in 경상 dialect");
+    expect(prompt).toContain('this speaker talks in 경상 dialect — re-voice its wording into that dialect too, in every sentence');
+    expect(prompt).toContain('never in standard language');
+    expect(prompt).not.toContain('STYLE REFERENCE');
+  });
+
+  it('사투리가 아닌 화자는 확정 문구가 있어도 DIALECT 줄이 없고, 말투 블록은 확정 문구가 이긴다고만 한다', async () => {
+    queueContent(geminiText('{"text":"우리 아들, 날씨를 못 봤어. 창밖 한번 봐."}'));
+    await generatePrerenderClipText(ENV, {
+      ...base,
+      speechStyle: { ...GYEONGSANG, dialect: '', strength: '' as const, markers: ['~거든'] },
+      styleReference: '우리 아들, 좋은 아침이야. 얼른 일어나자.',
+    });
+    const prompt = sentPromptText();
+    // 끝의 DIALECT 줄이 없다(앞의 'SPEAKER DIALECT/STYLE' 머리는 다른 것이다).
+    expect(prompt).not.toContain('DIALECT:');
+    expect(prompt).not.toContain('DIALECT —');
+    expect(prompt).toContain('The approved STYLE REFERENCE line given below wins over this analysis.');
+    expect(prompt).not.toContain('This dialect applies ONLY');
+  });
+});
+
+// 마지막 튜닝 회차(2026-10-01) — 규칙끼리 부딪히던 자리를 하나씩 고쳤다. 고친 것마다 무엇을 깰 수 있는지도 함께 본다.
+describe('사전렌더 — 마지막 튜닝 회차(2026-10-01)', () => {
+  const GYEONGSANG = { dialect: '경상', strength: 'high' as const, register: 'banmal', markers: ['~카이'], persona: '', childlike: false };
+  const CHILD = { dialect: '', strength: '' as const, register: 'banmal', markers: [], persona: '', childlike: true };
+  const GREETING_SEED = '다정하게 아침 인사를 하며 잘 잤는지 안부를 묻고, 오늘 하루도 기분 좋게 시작하자고 따뜻하게 깨워 준다.';
+  const WEATHER_FAIL_SEED = '인터넷이 안 돼 오늘 날씨를 확인하지 못했다고 미안한 듯 알린다.';
+  const KO_REF = '우리 아들, 좋은 아침이다… 밤새 잘 잤나? 얼른 일어나가 오늘도 기분 좋게 시작해 보자카이.';
+  const OLD_CARE = "Care changes the tone only — these sentences keep the speaker's own dialect and speech level.";
+  const promptFor = async (params: Parameters<typeof generatePrerenderClipText>[1], reply = '{"text":"우리 아들, 창밖 한번 봐."}') => {
+    mockFetch.mockClear();
+    queueContent(geminiText(reply));
+    await generatePrerenderClipText(ENV, params);
+    return sentPromptText();
+  };
+
+  it('어체만 있는 말투 분석(사투리 없는 정중체)도 프롬프트에 싣는다(Codex #844)', async () => {
+    const politeOnly = { dialect: '', strength: '' as const, register: 'polite', markers: [], persona: '', childlike: false };
+    const prompt = await promptFor(
+      { seed: GREETING_SEED, relationshipLabel: 'お母さん', listenerTitle: 'ゆい', targetLanguage: 'ja', speechStyle: politeOnly },
+      '{"text":"ゆい、おはようございます。今日も一日がんばりましょうね。"}',
+    );
+    expect(prompt).toContain('SPEAKER DIALECT/STYLE');
+    expect(prompt).toContain('register: polite');
+  });
+
+  it("'나중에 ~려면' 뒤의 부정·목적절(잊지 않게·깜빡하지 않도록)은 korean_collocation 이 아니다(Codex #844)", () => {
+    const mom = { relationshipLabel: '엄마', listenerTitle: '우리 딸' };
+    expect(prerenderRejectionReason('우리 딸, 나중에 약을 먹으려면 잊지 않게 메모해 둬.', 'ko', mom)).toBeNull();
+    expect(prerenderRejectionReason('우리 딸, 나중에 챙기려면 깜빡하지 않도록 알람 하나 더 맞춰 둬.', 'ko', mom)).toBeNull();
+    expect(prerenderRejectionReason('우리 딸, 나중에 먹으려면 까먹지 말고 지금 챙겨.', 'ko', mom)).toBeNull();
+    // 긍정 꼴은 그대로 잡는다.
+    expect(prerenderRejectionReason('우리 딸, 나중에 먹으려면 깜빡하기 쉬우니까 지금 먹자.', 'ko', mom)).toBe('korean_collocation');
+  });
+
+  it('조심스러운 문장의 사투리·어체도 확정 문구가 있으면 그 문구를 따른다(사투리 지시 네 자리와 같은 규칙)', async () => {
+    const withRef = await promptFor({
+      seed: WEATHER_FAIL_SEED, relationshipLabel: '엄마', listenerTitle: '우리 아들', targetLanguage: 'ko',
+      speechStyle: GYEONGSANG, styleReference: '우리 아들, 좋은 아침이야. 얼른 일어나서 시작해 보자.',
+    });
+    expect(withRef).not.toContain(OLD_CARE);
+    expect(withRef).not.toContain("keep the speaker's own dialect");
+    // 확정 문구가 있으면 '줄의 나머지와 같은 말씨' 만 말한다 — 사투리냐 표준어냐는 확정 문구 갈래(끝의 DIALECT 줄)가 정한다.
+    expect(withRef).toContain('these sentences keep the same speech level and way of speaking as the rest of the line');
+    // 확정 문구가 없으면 예전 그대로 — 화자 자신의 사투리를 지킨다.
+    const noRef = await promptFor({
+      seed: WEATHER_FAIL_SEED, relationshipLabel: '엄마', listenerTitle: '우리 아들', targetLanguage: 'ko', speechStyle: GYEONGSANG,
+    });
+    expect(noRef).toContain(OLD_CARE);
+  });
+
+  it('인사 시드에만 표준 인사말(おはよう·좋은 아침 등)은 확정 문구와 같아도 된다고 한다', async () => {
+    const greeting = await promptFor(
+      { seed: GREETING_SEED, relationshipLabel: '母', listenerTitle: 'ゆい', targetLanguage: 'ja', styleReference: 'ゆい、おはよう…よく眠れた？' },
+      '{"text":"ゆい、おはよう。ぐっすり眠れた？"}',
+    );
+    expect(greeting).toContain('open with the same plain greeting word the reference uses');
+    expect(greeting).toContain('おはようさん');
+    expect(greeting).toContain('reusing that word is not copying; only the rest of the line must be new');
+    // 복제 금지는 그대로다 — 인사말 낱말만 풀어 준다.
+    expect(greeting).toContain('never copy or lightly rephrase the reference line itself');
+    const weather = await promptFor({
+      seed: WEATHER_FAIL_SEED, relationshipLabel: '엄마', listenerTitle: '우리 아들', targetLanguage: 'ko', styleReference: KO_REF,
+    });
+    expect(weather).not.toContain('reusing that word is not copying');
+  });
+
+  it("확정 문구의 끝 어미를 모든 줄의 끝으로 쓰지 말라고 한다('…보자카이')", async () => {
+    const withRef = await promptFor({
+      seed: WEATHER_FAIL_SEED, relationshipLabel: '엄마', listenerTitle: '우리 아들', targetLanguage: 'ko',
+      speechStyle: GYEONGSANG, styleReference: KO_REF,
+    });
+    expect(withRef).toContain('Keep its register and energy, but vary your sentence endings');
+    // 피할 끝말은 코드가 집어 준다 — 확정 문구의 마지막 말.
+    expect(withRef).toContain('do not end your line the way the reference ends ("보자카이").');
+    const ja = await promptFor(
+      { seed: WEATHER_FAIL_SEED, relationshipLabel: 'おかん', listenerTitle: 'たろう', targetLanguage: 'ja', styleReference: 'たろう、おはようさん…今日もええ一日にしよな、ほな起きよか。' },
+      '{"text":"たろう、窓の外見てな。"}',
+    );
+    expect(ja).toContain('do not end your line the way the reference ends ("ほな起きよか").');
+    const noRef = await promptFor({
+      seed: WEATHER_FAIL_SEED, relationshipLabel: '엄마', listenerTitle: '우리 아들', targetLanguage: 'ko', speechStyle: GYEONGSANG,
+    });
+    expect(noRef).not.toContain('vary your sentence endings');
+  });
+
+  it("영어 'money luck'·'financial luck' 은 literal_translation 으로 다시 묻고, 다음 회차에 자연스러운 말을 준다", async () => {
+    const en = { relationshipLabel: 'mom', listenerTitle: 'sweetie' };
+    expect(prerenderRejectionReason('Sweetie, your money luck looks good today!', 'en', en)).toBe('literal_translation');
+    expect(prerenderRejectionReason('Sweetie, a bit of Financial Luck might find you today.', 'en', en)).toBe('literal_translation');
+    // 자연스러운 말·다른 언어는 막지 않는다.
+    expect(prerenderRejectionReason('Sweetie, a little extra money might come your way today.', 'en', en)).toBeNull();
+    expect(prerenderRejectionReason("Sweetie, you might have some luck with money today.", 'en', en)).toBeNull();
+    expect(prerenderRejectionReason('우리 딸, 오늘 money luck 이 있대.', 'ko', { relationshipLabel: '엄마', listenerTitle: '우리 딸' })).not.toBe(
+      'literal_translation',
+    );
+
+    mockFetch.mockClear();
+    queueContent(geminiText('{"text":"Sweetie, your money luck is up today, so keep an eye out!"}'));
+    queueContent(geminiText('{"text":"Sweetie, a little extra money might come your way today, so keep an eye out!"}'));
+    const out = await generatePrerenderClipText(ENV, {
+      seed: '오늘은 재물운이 조금 따른다고 재미로 전한다.', relationshipLabel: 'mom', listenerTitle: 'sweetie', targetLanguage: 'en',
+    });
+    expect(out.text).toContain('a little extra money');
+    const prompts = mockFetch.mock.calls
+      .filter((c) => String(c[0]) !== TOKEN_URI)
+      .map((c) => JSON.parse(String(c[1]?.body)).contents[0].parts[0].text as string);
+    expect(prompts).toHaveLength(2);
+    expect(prompts[0]).toContain("never 'money luck' or 'financial luck'");
+    expect(prompts[1]).toContain("The previous line said 'money luck' or 'financial luck'");
+  });
+
+  it("한국어 '운이 술술'·'나중에 챙기려면 잊기 쉬우니까' 는 korean_collocation 으로 다시 묻는다", async () => {
+    const grand = { relationshipLabel: '손자', listenerTitle: '할아버지' };
+    // 2026-10-01 마지막 회차 평가에서 되풀이된 실제 출력.
+    expect(
+      prerenderRejectionReason('할아버지, 오늘은 운이 술술 따라주는 날이래요. 미뤄 두셨던 일이 있다면 오늘 가볍게 한번 해보세요.', 'ko', grand),
+    ).toBe('korean_collocation');
+    expect(
+      prerenderRejectionReason('할머니, 약 드실 시간이에요… 나중에 챙기려면 잊기 쉬우니까, 알람 끄시기 전에 지금 바로 드세요.', 'ko', {
+        relationshipLabel: '손녀',
+        listenerTitle: '할머니',
+      }),
+    ).toBe('korean_collocation');
+    expect(prerenderRejectionReason('우리 딸, 나중에 먹으려면 금방 까먹으니까 지금 먹자.', 'ko', { relationshipLabel: '엄마', listenerTitle: '우리 딸' })).toBe(
+      'korean_collocation',
+    );
+    expect(
+      prerenderRejectionReason('할아버지, 약 드실 시간이에요. 나중에 챙기려 하시면 잊기 쉬우니까, 알람 끄시기 전에 지금 꼭 챙겨 드세요.', 'ko', grand),
+    ).toBe('korean_collocation');
+    for (const action of ['약을 챙겨 먹으려면', '약을 잊지 않고 챙겨 드시려 하시면']) {
+      expect(prerenderRejectionReason(`할아버지, 나중에 ${action} 잊기 쉬우니까 지금 드세요.`, 'ko', grand)).toBe('korean_collocation');
+      expect(prerenderRejectionReason(`할아버지, 나중에 ${action} 잊지 않게 메모해 두세요.`, 'ko', grand)).toBeNull();
+    }
+    expect(prerenderRejectionReason('할아버지, 나중에 약을 챙겨 드세요. 먹으려면 잊기 쉬운 것부터 확인하세요.', 'ko', grand)).toBeNull();
+    // 바른 짝·다른 뜻의 '나중에 ~려면' 은 막지 않는다.
+    expect(prerenderRejectionReason('할아버지, 오늘은 운이 따라주는 날이래요. 일이 생각보다 술술 풀릴 수도 있대요.', 'ko', grand)).toBeNull();
+    expect(prerenderRejectionReason('할머니, 약 드실 시간이에요. 미뤄 두면 잊기 쉬우니까 지금 바로 드세요.', 'ko', { relationshipLabel: '손녀', listenerTitle: '할머니' })).toBeNull();
+    expect(prerenderRejectionReason('우리 딸, 나중에 편하게 쉬려면 지금 일어나서 준비하자.', 'ko', { relationshipLabel: '엄마', listenerTitle: '우리 딸' })).toBeNull();
+    // 영어·일본어에는 걸지 않는다.
+    expect(prerenderRejectionReason('Grandpa, things might go smoothly today.', 'en', { relationshipLabel: 'grandson', listenerTitle: 'Grandpa' })).toBeNull();
+
+    mockFetch.mockClear();
+    queueContent(geminiText('{"text":"할아버지, 오늘은 운이 술술 따라주는 날이래요. 미뤄 두셨던 일 한번 해보세요."}'));
+    queueContent(geminiText('{"text":"할아버지, 오늘은 운이 따라주는 날이래요. 일이 생각보다 술술 풀릴 수도 있으니 미뤄 두셨던 일 한번 해보세요."}'));
+    const out = await generatePrerenderClipText(ENV, {
+      seed: '오늘은 운이 따라주는 날이라 일이 생각보다 술술 풀릴 수도 있다고 전한다.', relationshipLabel: '손자', listenerTitle: '할아버지', targetLanguage: 'ko',
+    });
+    expect(out.text).toContain('술술 풀릴 수도');
+    const prompts = mockFetch.mock.calls
+      .filter((c) => String(c[0]) !== TOKEN_URI)
+      .map((c) => JSON.parse(String(c[1]?.body)).contents[0].parts[0].text as string);
+    expect(prompts).toHaveLength(2);
+    expect(prompts[1]).toContain("'술술' goes only with 일이 '풀리다'");
+  });
+
+  it('어른 목소리의 영어 완결성 규칙은 시드의 모든 절(가능성 절 포함)을 남기라고 한다', async () => {
+    const prompt = await promptFor(
+      { seed: '오늘은 운이 따라주는 날이라고 전한다.', relationshipLabel: 'mom', listenerTitle: 'sweetie', targetLanguage: 'en' },
+      '{"text":"Sweetie, luck\'s on your side today."}',
+    );
+    expect(prompt).toContain('every clause of the intent must survive in your line');
+    expect(prompt).toContain("'things might go more smoothly than you think'");
+    expect(prompt).toContain('Shorten a clause rather than drop it.');
+    // 영어에만 준다 — 한국어·일본어는 예전 문장 그대로다(누락이 없었고, 모든 언어에 실으면 표준어 関西 화자의 누출이 늘었다).
+    const ja = await promptFor(
+      { seed: '오늘은 운이 따라주는 날이라고 전한다.', relationshipLabel: '母', listenerTitle: 'ゆい', targetLanguage: 'ja' },
+      '{"text":"ゆい、今日はツイてる日かもね。"}',
+    );
+    expect(ja).not.toContain('every clause of the intent must survive');
+    expect(ja).toContain('COMPLETENESS FIRST: say every part of the intent');
+  });
+
+  it('아이 목소리 규칙이 서로 부딪히지 않는다 — 아이 철자는 요점 아닌 낱말에만, 운세는 아이 말 추측으로', async () => {
+    for (const [lang, title] of [['ko', '아빠'], ['ja', 'パパ'], ['en', 'Daddy']] as const) {
+      const child = await promptFor(
+        { seed: '오늘은 운이 따라주는 날이라고 가볍게 재미로 전한다.', relationshipLabel: '딸', listenerTitle: title, targetLanguage: lang, speechStyle: CHILD },
+        lang === 'ko' ? '{"text":"아빠, 오늘 조은 일 생길지도 몰라!"}' : lang === 'ja' ? '{"text":"パパ、きょういいことあるかもね！"}' : '{"text":"Daddy, maybe something good happens today!"}',
+      );
+      // 깨우는 낱말을 늘이거나 바꾼 예가 없어야 한다 — 예와 규칙이 반대를 말하던 자리다.
+      for (const broken of ['이러나아', '일어나아!', 'おきてー', 'wake uuup']) expect(child, `${lang} ${broken}`).not.toContain(broken);
+      expect(child).toContain('stay correctly spelled and unstretched');
+      expect(child).toContain('"일어나" never becomes "이러나" or "일어나아"');
+      // 운세의 추측은 아이 말로 지킨다 — '~ㄹ지도' 를 통째로 막던 문장은 없다.
+      expect(child).not.toContain('no reported-speech hedging');
+      expect(child).toContain('A fortune is still only a maybe');
+      expect(child).toContain('"~할지도 몰라!"');
+      expect(child).toContain('not as passed-on talk');
+      // 막는 것은 어른·존대 추측뿐이다.
+      expect(child).toContain('no polite or adult hedging ("~ㄹ지도 몰라요"');
+    }
+  });
+
+  it('일본어 です・ます 검사 — 사전형이 ます 인 동사·인사말·でしょう 는 아니고, でした 는 정중체다', () => {
+    const mom = { relationshipLabel: '母' };
+    for (const casual of [
+      'ゆい、冷たい水で目を覚ます！', 'ゆい、スープは少し冷ます。', 'みんなでゆいを励ます！', 'ゆい、朝ごはんは軽く済ます。',
+      'ゆい、耳を澄ます。', 'ゆい、そろそろ目をさます！', '友達をはげます！',
+      'ゆい、いただきます！', 'ゆい、いってきます！', '行ってきます！', 'ごちそうさまでした。',
+      'ゆい、そんなに寝てたらだめでしょう？', '外は寒いでしょう。',
+    ]) {
+      expect(hasJapanesePoliteEnding(casual, mom), casual).toBe(false);
+    }
+    for (const polite of [
+      'ゆい、昨日は雨でした。', 'ゆい、目を覚まします。', 'ゆい、テレビを見ます。', 'ゆい、おはようございます。',
+      'ゆい、起きる時間ですよ。', 'ゆい、行きましょう！', '今日も元気に過ごせますように。',
+    ]) {
+      expect(hasJapanesePoliteEnding(polite, mom), polite).toBe(true);
+      expect(isJapanesePoliteSentence(polite.split('、').at(-1)!), polite).toBe(true);
+    }
+  });
+});
+
+// 리뷰 수정(2026-10-01) — 일본어 です・ます 검사는 가족·친구·연인으로 **확인된** 라벨만 본다. 부분 일치였을 때는
+// '이웃 할머니'(할머니)·'형수'(형)·'息子の嫁'(息子)가 가족으로 잡혀, 정중체가 맞을 수 있는 클립을 거절했다(세 회차 다
+// 거절되면 그 클립은 영구 실패).
+describe('hasJapanesePoliteEnding — 엄격한 허용 목록', () => {
+  const polite = '起きる時間ですよ。';
+
+  it('가족 낱말이 들어 있기만 한 라벨·사돈·이웃·아는 사람은 검사하지 않는다', () => {
+    for (const label of [
+      '이웃 할머니', '옆집 언니', '동네 오빠', '교회 오빠', '아는 형',
+      '형수', '형부', '매형', '처형', '올케', '시누', '시누이', '처제', '동서', '사돈', '이모', '삼촌',
+      '息子の嫁', '娘婿', '嫁', '婿', '義母', '義父', 'ママ友', '寮母', '近所のおばあちゃん',
+      "mom's friend", 'partner',
+    ]) {
+      expect(hasJapanesePoliteEnding(polite, { relationshipLabel: label }), label).toBe(false);
+    }
+  });
+
+  it('확인된 가족·친구·연인은 예전처럼 본다 — 앞의 우리·my·うちの 와 띄어쓰기·장식은 무시한다', () => {
+    for (const label of [
+      '엄마', 'ママ', '彼氏', '母', '친구', 'friend', '손녀', '孫',
+      '우리 엄마', '울엄마', '내 동생', 'my mom', 'Mom', 'うちの母', '친한 친구', '큰언니', '엄마♥',
+    ]) {
+      expect(hasJapanesePoliteEnding(polite, { relationshipLabel: label }), label).toBe(true);
+    }
+  });
+
+  it('확정 문구의 정중체는 문장 끝으로 가린다 — 사전형 동사의 ます 가 든 반말 문구는 검사를 끄지 않는다(Codex #844)', () => {
+    expect(hasJapanesePoliteEnding(polite, { relationshipLabel: '엄마', styleReference: 'ゆい、そろそろ目を覚ます時間だよ。' })).toBe(true);
+    expect(hasJapanesePoliteEnding(polite, { relationshipLabel: '엄마', styleReference: 'ゆい、目を覚ます' })).toBe(true);
+    // 진짜 정중체로 확정했으면 그 말투를 따르므로 검사하지 않는다.
+    expect(hasJapanesePoliteEnding(polite, { relationshipLabel: '엄마', styleReference: 'おはようございます。起きる時間ですよ。' })).toBe(false);
+  });
+
+  // 리뷰 수정(Codex #844 3차) — 분석의 정중체가 확정 문구를 보기도 전에 검사를 껐다. 반말로 고쳐 확정한 가족 목소리의
+  // です・ます 클립이 그대로 저장됐다(스펙 §4-2 '확정 문구가 말투 분석을 이긴다').
+  const POLITE_SPEAKER = { dialect: '', strength: '' as const, register: 'polite', markers: [], persona: '', childlike: false };
+
+  it('확정 문구가 반말이면 말투 분석이 정중체여도 검사한다 — 확정 문구가 분석을 이긴다(Codex #844)', () => {
+    const mom = { relationshipLabel: '母', listenerTitle: 'ゆい', speechStyle: POLITE_SPEAKER };
+    expect(hasJapanesePoliteEnding(polite, { ...mom, styleReference: 'おはよう。起きてね。' })).toBe(true);
+    // 운영 확정 문구 모양(인사 시드로 만든 첫 미리듣기 — 평가 프로필 그대로)도 반말로 읽는다. 関西 의 'か' 끝도.
+    expect(
+      hasJapanesePoliteEnding(polite, {
+        ...mom,
+        styleReference: 'ゆい、おはよう…よく眠れた？今日も気持ちのいい一日にしようね、さあ起きよ。',
+      }),
+    ).toBe(true);
+    expect(
+      hasJapanesePoliteEnding(polite, {
+        relationshipLabel: 'おかん',
+        listenerTitle: 'たろう',
+        speechStyle: POLITE_SPEAKER,
+        styleReference: 'たろう、おはようさん…ぐっすり眠れたか？今日もええ一日にしよな、ほな起きよか。',
+      }),
+    ).toBe(true);
+    expect(
+      prerenderRejectionReason('ゆい、お薬の時間ですよ。', 'ja', { ...mom, styleReference: 'ゆい、おはよう。起きてね。' }),
+    ).toBe('register_mixed');
+    // 확정 문구가 정중체면 그 말투를, 확정 문구가 없으면 분석의 정중체를 따른다(예전 그대로).
+    expect(hasJapanesePoliteEnding(polite, { ...mom, styleReference: 'おはようございます。起きる時間ですよ。' })).toBe(false);
+    expect(hasJapanesePoliteEnding(polite, mom)).toBe(false);
+    // 반말 확정 문구라도 라벨 규칙은 넓히지 않는다 — 허용 목록 밖은 그대로 검사하지 않는다.
+    expect(
+      hasJapanesePoliteEnding(polite, { relationshipLabel: '先生', speechStyle: POLITE_SPEAKER, styleReference: 'おはよう。起きてね。' }),
+    ).toBe(false);
+  });
+
+  it('확정 문구가 어체를 세우지 않을 때만 분석을 따른다 — 모르는 끝은 반말로 세지 않고, 청자 호칭은 지우고 가린다', () => {
+    const mom = { relationshipLabel: '母', speechStyle: POLITE_SPEAKER };
+    // 호칭·명사·'〜を' 로만 끝난다 — 어느 쪽도 아니라 분석(정중체)을 따른다.
+    expect(hasJapanesePoliteEnding(polite, { ...mom, listenerTitle: 'ゆい', styleReference: 'ゆい！' })).toBe(false);
+    expect(hasJapanesePoliteEnding(polite, { ...mom, styleReference: '今日もいい一日を。' })).toBe(false);
+    expect(hasJapanesePoliteEnding(polite, { ...mom, styleReference: 'いってらっしゃい。' })).toBe(false);
+    // 종조사가 붙어도 앞이 정중체면 반말이 아니다('ですわ'·'くださいな' 는 정중체, 'でしょうね' 는 어느 쪽도 아니다).
+    expect(hasJapanesePoliteEnding(polite, { ...mom, styleReference: '明日は雨でしょうね。' })).toBe(false);
+    expect(hasJapanesePoliteEnding(polite, { ...mom, styleReference: 'お薬の時間ですわ。' })).toBe(false);
+    expect(hasJapanesePoliteEnding(polite, { ...mom, styleReference: '起きてくださいな。' })).toBe(false);
+    // 'た' 로 끝나는 이름은 반말이 아니다 — 호칭을 지우면 어체가 없다.
+    expect(hasJapanesePoliteEnding(polite, { ...mom, listenerTitle: 'ゆうた', styleReference: '今日もいい一日を、ゆうた。' })).toBe(false);
+    // 끝 호칭이 정중체를 가리지도 않는다 — 분석이 없어도 정중체 확정 문구를 따른다.
+    expect(
+      hasJapanesePoliteEnding(polite, { relationshipLabel: '母', listenerTitle: 'ひな', styleReference: '起きる時間ですよ、ひな。' }),
+    ).toBe(false);
+    // 사전형 동사의 'ます'(目を覚ます)에 종조사가 붙은 반말도 반말로 센다.
+    expect(hasJapanesePoliteEnding(polite, { ...mom, listenerTitle: 'ゆい', styleReference: 'ゆい、目を覚ますよ。' })).toBe(true);
+  });
+
+  it('반말 확정 문구 + 정중체 분석이면 です・ます 줄은 다시 묻고 반말 줄을 받는다(Codex #844)', async () => {
+    queueContent(geminiText('{"text":"ゆい、お薬の時間ですよ。忘れずに飲んでくださいね。"}'));
+    queueContent(geminiText('{"text":"ゆい、お薬の時間だよ。忘れずに飲んでね。"}'));
+    const out = await generatePrerenderClipText(ENV, {
+      seed: '약 드실 시간이라고 알리며 건강하게 잘 보내라고 응원한다.',
+      relationshipLabel: '母',
+      listenerTitle: 'ゆい',
+      targetLanguage: 'ja',
+      speechStyle: POLITE_SPEAKER,
+      styleReference: 'ゆい、おはよう。起きてね。',
+    });
+    expect(out.text).toBe('ゆい、お薬の時間だよ。忘れずに飲んでね。');
+  });
+
+  // 리뷰 수정(Codex #844 3차 재검토) — 확정 문구의 반말 판정이 정중형 뒤에 붙은 접속·인용 조사('ですからね'·'ですので'·
+  // 'ですって'·'ですもの')를 반말로 읽어, 정중체로 분석된 화자의 です・ます 클립을 거절했다(d3d2194b 대비 회귀). 같은
+  // 질문을 하는 생성 문구 검사는 청자 호칭을 지우지 않아 'お薬の時間ですよ、ひな。' 가 그대로 저장됐다.
+  it('문장 판정은 꼬리(종조사·접속조사)를 걷은 서술어로 한다 — 정중형 + 꼬리는 정중체, 覚ました·覚まして 는 아니다', () => {
+    for (const s of [
+      '雨ですからね。', '雨ですので。', '雨ですって。', 'もう朝ですもの。', '時間ですけどね。', '時間ですしね。', '何曜日でしたっけ？',
+      '起きますからね。', 'お薬の時間ですわ。', '起きてくださいな。', '忘れませんように。', '元気でいられますよう。',
+    ]) {
+      expect(isJapanesePoliteSentence(s), s).toBe(true);
+    }
+    for (const s of [
+      '雨だからね。', '雨だって。', '目を覚ました？', 'やっと目を覚ましたね。', '目ぇ覚まして。', '目を覚ませ！', 'だめでしょう？',
+      '雨でしょうからね。', '遅くなりまして。', 'こちらでして。', 'お待ちくださいませ。',
+    ]) {
+      expect(isJapanesePoliteSentence(s), s).toBe(false);
+    }
+    // 문장 끊기 — 태그·청자 호칭·끝 문장부호를 걷는다(확정 문구·생성 문구 공용).
+    expect(japaneseSentenceEnds('[warmly] お薬の時間ですよ、ひな。起きてね！', 'ひな')).toEqual(['お薬の時間ですよ', '起きてね']);
+  });
+
+  it('정중형 뒤에 꼬리가 붙은 확정 문구는 반말이 아니다 — 정중체 분석 화자의 です・ます 클립을 받는다(Codex #844)', () => {
+    const politeClip = 'ゆい、お薬の時間ですよ。忘れずに飲んでくださいね。';
+    const politeSpeaker = (styleReference: string) => ({
+      relationshipLabel: '母',
+      listenerTitle: 'ゆい',
+      speechStyle: POLITE_SPEAKER,
+      styleReference,
+    });
+    for (const reference of [
+      'ゆいさん、そろそろ起きる時間ですからね。', 'ゆいさん、今日も寒いですからね。', 'ゆいさん、お薬の時間ですので。',
+      'ゆいさん、今日は雨ですって。', 'ゆいさん、もう朝ですもの。', 'ゆいさん、起きる時間ですけどね。', 'ゆいさん、起きる時間ですしね。',
+      'ゆいさん、今日は何曜日でしたっけ？', 'ゆいさん、起きますからね。',
+    ]) {
+      expect(prerenderRejectionReason(politeClip, 'ja', politeSpeaker(reference)), reference).toBeNull();
+      // 분석이 없어도 그 확정 문구가 정중체를 세운다 — 승인한 말투를 따른다.
+      expect(
+        hasJapanesePoliteEnding(politeClip, { relationshipLabel: '母', listenerTitle: 'ゆい', styleReference: reference }),
+        reference,
+      ).toBe(false);
+    }
+    // 정중체에 가깝지만 목록 밖인 끝(でしょう·まして·でして·ませ)과 이음말로 끝난 'ので' 는 반말로 읽지 않는다 — 분석을 따른다.
+    for (const reference of [
+      'ゆいさん、明日は雨でしょうからね。', 'ゆいさん、遅くなりまして。', 'ゆいさん、こちらでして。', 'ゆいさん、お待ちくださいませね。',
+      'ゆい、今日は雨なので。',
+    ]) {
+      expect(prerenderRejectionReason(politeClip, 'ja', politeSpeaker(reference)), reference).toBeNull();
+    }
+    // 반말 서술어에 붙은 꼬리는 그대로 반말이다 — 분석의 정중체를 덮고 검사한다.
+    for (const reference of ['ゆい、起きる時間だからね。', 'ゆい、今日は雨だって。', 'ゆい、目ぇ覚まして。', 'ゆい、やっと目を覚ましたね。']) {
+      expect(prerenderRejectionReason(politeClip, 'ja', politeSpeaker(reference)), reference).toBe('register_mixed');
+    }
+  });
+
+  it('생성 문구도 확정 문구와 같이 청자 호칭을 지우고 본다 — 끝 호칭이 です・ます 를 가리지 않는다(Codex #844)', async () => {
+    const casualMom = { relationshipLabel: '母', listenerTitle: 'ひな', styleReference: 'ひな、おはよう。起きてね。' };
+    for (const line of ['お薬の時間ですよ、ひな。', '今日も元気に過ごしてくださいね、ひな。', 'ひな、今日は雨ですからね。']) {
+      expect(prerenderRejectionReason(line, 'ja', casualMom), line).toBe('register_mixed');
+    }
+    // 같은 문장을 확정 문구로 쓰면 정중체를 세운다 — 두 자리가 같은 답을 낸다.
+    expect(
+      hasJapanesePoliteEnding('お薬の時間ですよ。', { relationshipLabel: '母', listenerTitle: 'ひな', styleReference: 'お薬の時間ですよ、ひな。' }),
+    ).toBe(false);
+    // 반말 끝은 호칭이 붙어도 그대로 받는다 — 사전형이 'ます' 인 동사의 과거·て형도 반말이다.
+    for (const line of ['お薬の時間だよ、ひな。', 'ひな、やっと目を覚ましたね。', 'ひな、そろそろ目ぇ覚ましてね。']) {
+      expect(prerenderRejectionReason(line, 'ja', casualMom), line).toBeNull();
+    }
+    queueContent(geminiText('{"text":"お薬の時間ですよ、ひな。"}'));
+    queueContent(geminiText('{"text":"お薬の時間だよ、ひな。"}'));
+    const out = await generatePrerenderClipText(ENV, {
+      seed: '약 드실 시간이라고 알리며 건강하게 잘 보내라고 응원한다.',
+      ...casualMom,
+      targetLanguage: 'ja',
+    });
+    expect(out.text).toBe('お薬の時間だよ、ひな。');
+  });
+
+  // 리뷰 수정(Codex #844 3차 재검토 2) — 호칭을 낱말 안에서도 지워('split(title)'), 'しょう'(翔)·'よう'(陽)를 부르는 목소리의
+  // 'がんばりましょう'·'過ごせますように' 가 'がんばりま'·'過ごせます に' 로 깨졌다. 생성 문구의 です・ます 를 못 봤고(d3d2194b 는
+  // 거절했다), 정중체 확정 문구를 반말이나 '어체 없음' 으로 읽어 정중체 클립을 거절했다.
+  it('호칭은 부름말 자리에서만 지운다 — 낱말 안의 같은 글자(ましょう 의 しょう·ますように 의 よう)는 그대로 본다(Codex #844)', () => {
+    const momTo = (listenerTitle: string, styleReference?: string) => ({ relationshipLabel: '母', listenerTitle, styleReference });
+    // 생성 문구 — 이 호칭들에서도 가족 클립의 です・ます 를 다시 묻는다(확정 문구가 없을 때, 반말 확정 문구가 정중체 분석을 이길 때).
+    for (const [line, title] of [
+      ['しょう、今日も一緒にがんばりましょう！', 'しょう'],
+      ['しょう、お薬の時間だよ。忘れずに飲みましょう。', 'しょう'],
+      ['よう、お薬の時間だよ。今日も元気に過ごせますように。', 'よう'],
+    ] as const) {
+      expect(prerenderRejectionReason(line, 'ja', momTo(title)), line).toBe('register_mixed');
+    }
+    expect(
+      prerenderRejectionReason('しょう、お薬の時間だよ。忘れずに飲みましょう。', 'ja', {
+        ...momTo('しょう', 'しょう、おはよう。起きてね。'),
+        speechStyle: POLITE_SPEAKER,
+      }),
+    ).toBe('register_mixed');
+    // 반말 끝은 그대로 받는다 — 'おはよう'·'がんばろう' 의 'よう'·'ろう' 도 호칭이 아니다.
+    for (const [line, title] of [
+      ['しょう、お薬の時間だよ。忘れずに飲もうね。', 'しょう'],
+      ['よう、おはよう！今日も一日がんばろう。', 'よう'],
+    ] as const) {
+      expect(prerenderRejectionReason(line, 'ja', momTo(title)), line).toBeNull();
+    }
+    // 확정 문구 — 정중체를 세운다. 분석이 정중체여도, 분석이 없어도 정중체 클립을 받는다.
+    const politeClip = 'お薬の時間ですよ。忘れずに飲んでくださいね。';
+    for (const [reference, title] of [
+      ['しょう、おはよう！今日も一緒にがんばりましょう。', 'しょう'],
+      ['しょう、今日も一日がんばりましょう。', 'しょう'],
+      ['よう、今日もいい一日になりますように。', 'よう'],
+    ] as const) {
+      expect(hasJapanesePoliteEnding(politeClip, { ...momTo(title, reference), speechStyle: POLITE_SPEAKER }), reference).toBe(false);
+      expect(hasJapanesePoliteEnding(politeClip, momTo(title, reference)), reference).toBe(false);
+    }
+    // 반말 확정 문구는 그대로 반말이다 — 'おはよう' 의 'よう' 를 지우면 어체가 사라져 분석의 정중체가 검사를 껐다.
+    expect(hasJapanesePoliteEnding(politeClip, { ...momTo('よう', 'よう、おはよう！'), speechStyle: POLITE_SPEAKER })).toBe(true);
+    // 끊기 자체 — 부름말만 지우고 낱말 안은 남긴다.
+    expect(japaneseSentenceEnds('しょう、今日も一緒にがんばりましょう！', 'しょう')).toEqual(['、今日も一緒にがんばりましょう']);
+    expect(japaneseSentenceEnds('今日も元気に過ごせますように、よう。', 'よう')).toEqual(['今日も元気に過ごせますように']);
+    expect(japaneseSentenceEnds('ゆうた！お薬の時間ですよ ゆうた〜', 'ゆうた')).toEqual(['お薬の時間ですよ']);
+  });
+
+  it('띄어쓰기·쉼표 없이 붙여 쓴 끝 호칭은 떼어 낸 앞이 정중체일 때만 뗀다 — 반말 쪽으로는 떼지 않는다(Codex #844)', () => {
+    // 붙여 쓴 끝 호칭이 です・ます 를 가리지 않는다 — 생성 문구는 다시 묻고, 확정 문구는 정중체를 세운다('た'·'な' 로 반말이 되지 않는다).
+    for (const [line, title] of [
+      ['お薬の時間ですよゆうた。', 'ゆうた'],
+      ['おはようございますひな。', 'ひな'],
+    ] as const) {
+      expect(prerenderRejectionReason(line, 'ja', { relationshipLabel: '母', listenerTitle: title }), line).toBe('register_mixed');
+      expect(
+        hasJapanesePoliteEnding(polite, { relationshipLabel: '母', listenerTitle: title, speechStyle: POLITE_SPEAKER, styleReference: line }),
+        line,
+      ).toBe(false);
+      expect(hasJapanesePoliteEnding(polite, { relationshipLabel: '母', listenerTitle: title, styleReference: line }), line).toBe(false);
+    }
+    expect(japaneseSentenceEnds('お薬の時間ですよゆうた。', 'ゆうた')).toEqual(['お薬の時間ですよ']);
+    // 떼면 어미가 깨지거나(ましょう) 없던 반말이 생기면(でしょう → で) 떼지 않는다.
+    expect(japaneseSentenceEnds('がんばりましょう。', 'しょう')).toEqual(['がんばりましょう']);
+    expect(japaneseSentenceEnds('だめでしょう？', 'しょう')).toEqual(['だめでしょう']);
+    expect(
+      hasJapanesePoliteEnding(polite, { relationshipLabel: '母', listenerTitle: 'しょう', speechStyle: POLITE_SPEAKER, styleReference: 'だめでしょう？' }),
+    ).toBe(false);
+  });
+
+  // 리뷰 수정(Codex #844 3차 재검토 3) — 확정 문구가 이기는지는 그 문구의 어체를 읽어 내느냐에 달렸는데, 문장을 。！？!?… 로만
+  // 끊고 끝에서 걷는 글자도 짧은 목록뿐이었다. 전각 마침표 '．'(IME 의 '，．' 설정)·'.'·'~'·'・・・'·'‥'·'♪'·이모지로 끝나게
+  // 고쳐 확정한 반말 문구는 '어체 없음' 이 되어 분석의 정중체가 다시 검사를 껐다. 같은 끊기를 쓰는 생성 문구도
+  // 'ゆい、お薬の時間ですよ．' 를 가족 클립으로 받았다.
+  it('문장 끝에 붙인 마침표 변형·기호·이모지·글자 웃음은 걷고 읽는다 — 그렇게 끝난 반말 확정 문구도 분석의 정중체를 이긴다(Codex #844)', () => {
+    const politeClip = 'ゆい、お薬の時間ですよ。忘れずに飲んでくださいね。';
+    for (const reference of [
+      'ゆい、起きてね．', 'ゆい，おはよう．起きてね．', 'ゆい、起きてね.', 'ゆい、起きてね｡', 'ゆい、起きてね・・・', 'ゆい、起きてね･･･',
+      'ゆい、起きてね‥', 'ゆい、起きてね⋯', 'ゆい、起きてね、、、', 'ゆい、起きてね~', 'ゆい、おはよう♪起きてね♪', 'ゆい、起きてね☆',
+      'ゆい、起きてね😊', 'ゆい、起きてね❤️', 'ゆい、起きてね👍🏻', 'ゆい、起きてね（＾＾）', 'ゆい、起きてね(*´ω`*)', 'ゆい、起きてねXD',
+      'ゆい、起きてね(笑)', 'ゆい、起きてね(泣)', 'ゆい、起きてねw',
+    ]) {
+      expect(
+        prerenderRejectionReason(politeClip, 'ja', {
+          relationshipLabel: '母',
+          listenerTitle: 'ゆい',
+          speechStyle: POLITE_SPEAKER,
+          styleReference: reference,
+        }),
+        reference,
+      ).toBe('register_mixed');
+    }
+    // 정중체 확정 문구도 그렇게 끝나면 정중체를 세운다 — 승인한 말투를 따라 です・ます 클립을 받는다.
+    for (const reference of [
+      'ゆいさん、起きる時間ですよ．', 'ゆいさん、おはようございます😊', 'ゆいさん、今日もがんばりましょう♪', 'ゆいさん、起きる時間ですよ(笑)',
+      'ゆいさん、今日もよろしくお願いしますm(_ _)m',
+    ]) {
+      expect(hasJapanesePoliteEnding(politeClip, { relationshipLabel: '母', listenerTitle: 'ゆい', styleReference: reference }), reference).toBe(false);
+    }
+    // 걷고 나도 어체가 없으면 그대로 분석을 따른다 — 'た' 로 끝나는 이름 뒤에 장식이 붙어도 반말로 세지 않는다.
+    expect(
+      hasJapanesePoliteEnding(politeClip, {
+        relationshipLabel: '母',
+        listenerTitle: 'ゆうた',
+        speechStyle: POLITE_SPEAKER,
+        styleReference: '今日もいい一日を、ゆうたXD',
+      }),
+    ).toBe(false);
+    // 괄호가 든 호칭도 덧말보다 먼저 지운다.
+    expect(japaneseSentenceEnds('お薬の時間ですよ、ゆい(娘)', 'ゆい(娘)')).toEqual(['お薬の時間ですよ']);
+    // 생성 문구 — 끝이든 가운데든 그 표시 앞의 です・ます 를 본다.
+    for (const line of [
+      'ゆい、お薬の時間ですよ．', 'ゆい、お薬の時間ですよ.', 'ゆい、お薬の時間ですよ♪', 'ゆい、お薬の時間ですよ😊', 'ゆい、お薬の時間ですよ・・・',
+      'ゆい、お薬の時間です．忘れずにね．', 'ゆい、お薬の時間です♪忘れずにね。', 'ゆい、お薬の時間です、、、忘れずにね。',
+    ]) {
+      expect(prerenderRejectionReason(line, 'ja', { relationshipLabel: '母', listenerTitle: 'ゆい' }), line).toBe('register_mixed');
+    }
+    // 반말 생성 문구는 그대로 받는다 — 낱말 사이 가운뎃점 하나와 'PM2.5' 의 점은 어체를 만들지 않는다.
+    for (const line of [
+      'ゆい、お薬の時間だよ♪忘れずにね😊', 'ゆい、今日はPM2.5が多いみたい．マスクしてね．', 'ゆい、今日はマリー・アントワネットみたいにおしゃれしてね〜',
+    ]) {
+      expect(prerenderRejectionReason(line, 'ja', { relationshipLabel: '母', listenerTitle: 'ゆい' }), line).toBeNull();
+    }
+    expect(japaneseSentenceEnds('ゆい，おはよう．起きてね．', 'ゆい')).toEqual(['，おはよう', '起きてね']);
+    expect(japaneseSentenceEnds('ゆい、お薬の時間ですよ♪忘れずにね😊', 'ゆい')).toEqual(['、お薬の時間ですよ', '忘れずにね']);
+    expect(japaneseSentenceEnds('ゆい、起きてねw', 'ゆい')).toEqual(['、起きてね']);
+    expect(japaneseSentenceEnds('ゆい、起きてね(泣)XD', 'ゆい')).toEqual(['、起きてね']);
+  });
+
+  // 같은 회차 — 낱말 안의 늘임('で〜す'·'起きて〜ね'·'おはよ〜う')이 서술어를 끊어 정중체도 반말도 아닌 것으로 읽혔다(반말 확정
+  // 문구가 '어체 없음' 이 되어 분석의 정중체가 검사를 껐다). 늘임에서 문장을 끊으면 'で〜す' 가 'で'(반말)로 읽히므로, 끊지 않고
+  // 히라가나 사이의 늘임을 지우고 읽는다.
+  it('낱말 안의 늘임은 지우고 읽는다 — 늘임에서 문장을 끊지 않는다(Codex #844)', () => {
+    const politeClip = 'ゆい、お薬の時間ですよ。忘れずに飲んでくださいね。';
+    // 반말 확정 문구 — 정중체 분석을 이긴다.
+    for (const reference of ['ゆい、起きて〜ね', 'ゆい、おはよ〜う', 'ゆい、今日もがんばろ〜う', 'ゆい、起きる時間だよ〜ね']) {
+      expect(
+        prerenderRejectionReason(politeClip, 'ja', {
+          relationshipLabel: '母',
+          listenerTitle: 'ゆい',
+          speechStyle: POLITE_SPEAKER,
+          styleReference: reference,
+        }),
+        reference,
+      ).toBe('register_mixed');
+    }
+    // 정중체 확정 문구 — 분석이 없어도 정중체를 세운다('で' 를 반말로 읽지 않는다).
+    for (const reference of ['ゆいさん、お薬の時間で〜す', 'ゆいさん、よろしくお願いしま〜す♪', 'ゆいさん、起きる時間でーす', 'ゆいさん、今日もがんばりましょ〜う']) {
+      expect(hasJapanesePoliteEnding(politeClip, { relationshipLabel: '母', listenerTitle: 'ゆい', styleReference: reference }), reference).toBe(false);
+    }
+    // 생성 문구 — 늘인 です・ます 도 가족 클립이면 다시 묻고, 늘인 반말과 가타카나 장음은 그대로 받는다.
+    for (const line of ['ゆい、お薬の時間で〜す', 'ゆい、お薬の時間でーす！', 'ゆい、忘れずに飲みま〜す']) {
+      expect(prerenderRejectionReason(line, 'ja', { relationshipLabel: '母', listenerTitle: 'ゆい' }), line).toBe('register_mixed');
+    }
+    for (const line of ['ゆい、すご〜い！今日もがんばろ〜ね', 'ゆい、コーヒー飲んで起きてね〜']) {
+      expect(prerenderRejectionReason(line, 'ja', { relationshipLabel: '母', listenerTitle: 'ゆい' }), line).toBeNull();
+    }
+    expect(japaneseSentenceEnds('ゆい、起きて〜ね♪お薬で〜す', 'ゆい')).toEqual(['、起きてね', 'お薬です']);
+  });
+
+  // 같은 회차 — 늘임 작은 글자('ねぇ'·'ねっ'·'ですぅ')와 얼굴 문자의 가나 팔('(^^)ノ')은 가나라서 끝 장식으로 걷히지 않았다. 그렇게
+  // 끝난 반말 확정 문구는 '어체 없음' 이 되어 분석의 정중체가 검사를 껐고, 정중체 확정 문구는 분석이 없으면 정중체 클립을 거절했다.
+  // 얼굴 문자·글자 웃음·띄어 쓴 늘임을 마침표 자리에 두면 앞뒤가 한 문장이 되어, 끝 문장이 물음이면 앞 문장의 어체를 못 읽었다.
+  it('늘임 작은 글자·얼굴 문자의 팔은 걷고, 마침표 자리의 얼굴 문자·웃음·띄어 쓴 늘임은 문장 끝으로 읽는다(Codex #844)', () => {
+    const politeClip = 'ゆい、お薬の時間ですよ。忘れずに飲んでくださいね。';
+    for (const reference of [
+      'ゆい、起きてねぇ', 'ゆい、起きてねっ', 'ゆい、おはよぉ', 'ゆい、時間だよぉ〜', 'ゆい、起きる時間だぞっ', 'ゆい、起きてねっ♪',
+      'おはよう、ゆいっ！', 'ゆい、起きてね(^^)ノ', 'ゆい、起きてね(^^)ノシ', 'ゆい、起きてねヽ(・∀・)ノ', 'ゆい、起きてね(*^^*)ゞ',
+      // 장식이 마침표 자리에 있고 끝 문장은 물음이라 어체가 없다 — 앞 문장의 반말을 읽어야 한다.
+      'ゆい、おはよう(^^)ノ朝ごはん、何にする？', 'ゆい、おはようw 朝ごはん、何にする？', 'ゆい、おはよう(笑)朝ごはん、何にする？',
+      'ゆい、おはよう〜 朝ごはん、何にする？',
+    ]) {
+      expect(
+        prerenderRejectionReason(politeClip, 'ja', {
+          relationshipLabel: '母',
+          listenerTitle: 'ゆい',
+          speechStyle: POLITE_SPEAKER,
+          styleReference: reference,
+        }),
+        reference,
+      ).toBe('register_mixed');
+    }
+    // 정중체 확정 문구도 그렇게 끝나면 정중체를 세운다 — 분석이 없어도 승인한 말투를 따라 です・ます 클립을 받는다.
+    for (const reference of [
+      'ゆいさん、起きてくださいねぇ', 'ゆいさん、起きる時間ですぅ', 'ゆいさん、起きる時間ですっ！', 'ゆいさん、起きる時間です(^^)ノ',
+      'ゆいさん、おはようございます(^^)ノ朝ごはん、何にする？',
+    ]) {
+      expect(hasJapanesePoliteEnding(politeClip, { relationshipLabel: '母', listenerTitle: 'ゆい', styleReference: reference }), reference).toBe(false);
+    }
+    // 생성 문구도 같은 방법으로 읽는다 — 늘인 です・ます 와 얼굴 문자·띄어 쓴 늘임 앞의 です・ます 는 가족 클립이면 다시 묻는다.
+    for (const line of [
+      'ゆい、お薬の時間ですぅ', 'ゆい、お薬の時間ですっ！', 'ゆい、お薬の時間です(^^)ノ忘れずにね', 'ゆい、お薬の時間です〜 忘れずにね',
+      'お薬の時間ですよゆうたっ',
+    ]) {
+      expect(prerenderRejectionReason(line, 'ja', { relationshipLabel: '母', listenerTitle: line.includes('ゆうた') ? 'ゆうた' : 'ゆい' }), line).toBe(
+        'register_mixed',
+      );
+    }
+    for (const line of ['ゆい、お薬の時間だよぉ', 'ゆい、お薬の時間だよ(^^)ノ忘れずにね', 'ゆい、お薬の時間だよ〜 忘れずにね']) {
+      expect(prerenderRejectionReason(line, 'ja', { relationshipLabel: '母', listenerTitle: 'ゆい' }), line).toBeNull();
+    }
+    // 작은 글자는 히라가나만 걷는다 — 가타카나 이름 끝('ケイティ')을 걷으면 붙여 쓴 끝 호칭을 못 찾는다.
+    expect(japaneseSentenceEnds('お薬の時間ですよケイティ', 'ケイティ')).toEqual(['お薬の時間ですよ']);
+    // 호칭 뒤의 작은 글자는 그 뒤가 가장자리·끝일 때만 부름말이다 — 'きっと' 의 'き' 는 낱말이다.
+    expect(japaneseSentenceEnds('きっと大丈夫だよ。', 'き')).toEqual(['きっと大丈夫だよ']);
+    // 얼굴 문자의 오른팔은 그 뒤가 가장자리·끝일 때만 — '(株)シャープ' 의 'シ' 는 낱말이다.
+    expect(japaneseSentenceEnds('(株)シャープです。', null)).toEqual(['シャープです']);
+  });
+
+  it('두 앱의 관계 프리셋(한·영·일, 연예인·직접 입력 제외)은 모두 가까운 관계로 본다(Codex #844 — 형제·자매)', () => {
+    for (const label of [
+      '엄마', '아빠', '할머니', '할아버지', '아들', '딸', '손녀', '손주', '형제·자매', '남자친구', '여자친구', '남편', '아내', '친구',
+      'Mom', 'Dad', 'Grandma', 'Grandpa', 'Son', 'Daughter', 'Granddaughter', 'Grandson', 'Sibling', 'Boyfriend', 'Girlfriend',
+      'Husband', 'Wife', 'Friend',
+      'お母さん', 'お父さん', 'おばあちゃん', 'おじいちゃん', '息子', '娘', '孫娘', '孫息子', '兄弟・姉妹', '彼氏', '彼女', '夫', '妻', '友だち',
+    ]) {
+      expect(hasJapanesePoliteEnding(polite, { relationshipLabel: label }), label).toBe(true);
+    }
+    for (const label of ['연예인', 'Celebrity', '芸能人', '직접 입력']) {
+      expect(hasJapanesePoliteEnding(polite, { relationshipLabel: label }), label).toBe(false);
+    }
+  });
+
+  it('아이 목소리는 라벨이 없어도, 확인되지 않은 라벨이어도 본다', () => {
+    const child = { dialect: '', strength: '' as const, register: 'casual', markers: [], persona: '', childlike: true };
+    expect(hasJapanesePoliteEnding('パパ、おきる時間です！', { speechStyle: child })).toBe(true);
+    expect(hasJapanesePoliteEnding('おきる時間です！', { relationshipLabel: '이웃 할머니', speechStyle: child })).toBe(true);
+  });
+});
+
+// 리뷰 수정(2026-10-01) — 말투 분석은 상류 시간 초과 한 번이면 'failed' 였고, 사전렌더는 'pending' 만 기다리므로 그
+// 목소리의 클립이 사투리 없이 구워졌다. 전송 실패(시간 초과·네트워크·429/5xx)만 마감 안에서 다시 묻는다.
+describe('analyzeSpeechStyleWithVertex — 전송 실패만 마감 안에서 다시 묻는다', () => {
+  const STYLE_JSON =
+    '{"dialect":"경상","strength":"high","register":"banmal","markers":["~카이"],"persona":"","childlike":false,"energy":"","confidence":0.9}';
+  const TRANSCRIPT = '아이고 오늘은 날씨가 참 좋네예. 밥은 묵었나? 니도 밥 잘 챙겨 묵고 댕기래이.';
+  const timeout = () => new DOMException('The operation was aborted due to timeout', 'TimeoutError');
+  const contentCalls = () => mockFetch.mock.calls.filter((c) => String(c[0]) !== TOKEN_URI).length;
+  let slept: number[];
+  const sleep = async (ms: number) => {
+    slept.push(ms);
+  };
+  beforeEach(() => {
+    slept = [];
+  });
+
+  it('시간 초과 한 번 뒤 다시 물어 결과를 낸다', async () => {
+    queueContent(timeout());
+    queueContent(geminiText(STYLE_JSON));
+    const style = await analyzeSpeechStyleWithVertex(ENV, TRANSCRIPT, 'ko', { sleep });
+    expect(style?.dialect).toBe('경상');
+    expect(contentCalls()).toBe(2);
+    expect(slept).toEqual([SPEECH_STYLE_RETRY_DELAYS_MS[0]]);
+  });
+
+  it('네트워크 실패·503·429 도 다시 묻는다 — 최대 2번 더', async () => {
+    queueContent(new TypeError('fetch failed'));
+    queueContent(new Response(JSON.stringify({ error: { message: 'overloaded' } }), { status: 503 }));
+    queueContent(geminiText(STYLE_JSON));
+    expect((await analyzeSpeechStyleWithVertex(ENV, TRANSCRIPT, 'ko', { sleep }))?.dialect).toBe('경상');
+    expect(contentCalls()).toBe(3);
+    expect(slept).toEqual([...SPEECH_STYLE_RETRY_DELAYS_MS]);
+
+    mockFetch.mockClear();
+    queueContent(new Response('{}', { status: 429 }));
+    queueContent(geminiText(STYLE_JSON));
+    expect((await analyzeSpeechStyleWithVertex(ENV, TRANSCRIPT, 'ko', { sleep }))?.dialect).toBe('경상');
+    expect(contentCalls()).toBe(2);
+  });
+
+  it('토큰 발급이 시간 초과로 끝나도 다시 묻는다', async () => {
+    mockFetch.mockImplementationOnce(async () => {
+      throw timeout();
+    });
+    queueContent(geminiText(STYLE_JSON));
+    expect((await analyzeSpeechStyleWithVertex(ENV, TRANSCRIPT, 'ko', { sleep }))?.dialect).toBe('경상');
+    expect(contentCalls()).toBe(1);
+    expect(slept).toEqual([SPEECH_STYLE_RETRY_DELAYS_MS[0]]);
+  });
+
+  it('토큰 발급이 429·5xx 로 답해도 다시 묻고, 400 은 다시 묻지 않는다(Codex #844)', async () => {
+    mockFetch.mockImplementationOnce(async () => new Response(JSON.stringify({ error: 'rate_limited' }), { status: 429 }));
+    queueContent(geminiText(STYLE_JSON));
+    expect((await analyzeSpeechStyleWithVertex(ENV, TRANSCRIPT, 'ko', { sleep }))?.dialect).toBe('경상');
+    expect(contentCalls()).toBe(1);
+    expect(slept).toEqual([SPEECH_STYLE_RETRY_DELAYS_MS[0]]);
+
+    mockFetch.mockClear();
+    slept.length = 0;
+    mockFetch.mockImplementationOnce(async () => new Response(JSON.stringify({ error: 'invalid_grant' }), { status: 400 }));
+    expect(await analyzeSpeechStyleWithVertex(ENV, TRANSCRIPT, 'ko', { sleep })).toBeNull();
+    expect(contentCalls()).toBe(0);
+    expect(slept).toEqual([]);
+  });
+
+  it('머리는 받았는데 본문을 읽다 끊겨도 전송 실패로 다시 묻는다 — 생성 응답·토큰 응답 모두(Codex #844)', async () => {
+    const brokenBody = () =>
+      new Response(
+        new ReadableStream({
+          start(controller) {
+            controller.error(timeout());
+          },
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      );
+    queueContent(brokenBody());
+    queueContent(geminiText(STYLE_JSON));
+    expect((await analyzeSpeechStyleWithVertex(ENV, TRANSCRIPT, 'ko', { sleep }))?.dialect).toBe('경상');
+    expect(contentCalls()).toBe(2);
+    expect(slept).toEqual([SPEECH_STYLE_RETRY_DELAYS_MS[0]]);
+
+    mockFetch.mockClear();
+    slept.length = 0;
+    mockFetch.mockImplementationOnce(async () => brokenBody());
+    queueContent(geminiText(STYLE_JSON));
+    expect((await analyzeSpeechStyleWithVertex(ENV, TRANSCRIPT, 'ko', { sleep }))?.dialect).toBe('경상');
+    expect(contentCalls()).toBe(1);
+    expect(slept).toEqual([SPEECH_STYLE_RETRY_DELAYS_MS[0]]);
+  });
+
+  it('세 번 다 전송 실패면 null — 네 번째는 없다', async () => {
+    queueContent(timeout());
+    queueContent(timeout());
+    queueContent(timeout());
+    expect(await analyzeSpeechStyleWithVertex(ENV, TRANSCRIPT, 'ko', { sleep })).toBeNull();
+    expect(contentCalls()).toBe(3);
+  });
+
+  it('내용 실패(400·형식 오류·잘린 답·낮은 확신)는 다시 묻지 않는다', async () => {
+    const cases: Response[] = [
+      new Response(JSON.stringify({ error: { message: 'bad schema' } }), { status: 400 }),
+      geminiText('not json'),
+      okJson({ candidates: [{ finishReason: 'MAX_TOKENS', content: { parts: [{ text: '{"dialect":"경' }] } }] }),
+      geminiText(STYLE_JSON.replace('"confidence":0.9', '"confidence":0.3')),
+    ];
+    for (const response of cases) {
+      mockFetch.mockClear();
+      queueContent(response);
+      expect(await analyzeSpeechStyleWithVertex(ENV, TRANSCRIPT, 'ko', { sleep })).toBeNull();
+      expect(contentCalls()).toBe(1);
+    }
+    expect(slept).toEqual([]);
+  });
+
+  it('마감까지 남은 시간이 모자라면 다시 묻지 않는다', async () => {
+    queueContent(timeout());
+    queueContent(geminiText(STYLE_JSON));
+    const style = await analyzeSpeechStyleWithVertex(ENV, TRANSCRIPT, 'ko', { sleep, deadlineAt: Date.now() + 3_000 });
+    expect(style).toBeNull();
+    expect(contentCalls()).toBe(1);
+    expect(slept).toEqual([]);
+  });
+
+  // 리뷰 수정(2026-10-01 마지막 회차) — 다시 묻는 회차의 생성 상한을 **토큰 발급 앞에서** 미리 쟀다. 그 사이 토큰
+  // 발급이 8초 걸리면 생성 요청이 마감을 8초 넘겨 `waitUntil`(30초)에 잘리고 상태가 'pending' 에 갇힌다. 이제 두
+  // 요청 모두 보내기 직전에 마감에서 잰다. 시계는 가짜다 — fetch·sleep 이 걸린 시간만큼 앞으로 민다.
+  describe('어느 회차도 마감을 넘기지 않는다(가짜 시계)', () => {
+    let clock: number;
+    let seen: { kind: 'token' | 'generate'; timeoutMs: number; at: number }[];
+    let timeoutSpy: ReturnType<typeof vi.spyOn<typeof AbortSignal, 'timeout'>>;
+    let nowSpy: ReturnType<typeof vi.spyOn<DateConstructor, 'now'>>;
+    const clockSleep = async (ms: number) => {
+      slept.push(ms);
+      clock += ms;
+    };
+    /** fetch 를 갈아 끼운다 — 요청마다 그 순간의 상한(`AbortSignal.timeout` 인자)과 시각을 남기고 `respond` 에 맡긴다. */
+    const stubFetch = (respond: (kind: 'token' | 'generate', n: number, timeoutMs: number) => Promise<Response>) => {
+      mockFetch.mockImplementation(async (url: unknown) => {
+        const kind = String(url) === TOKEN_URI ? 'token' : 'generate';
+        const timeoutMs = timeoutSpy.mock.calls.at(-1)![0] as number;
+        seen.push({ kind, timeoutMs, at: clock });
+        return respond(kind, seen.filter((s) => s.kind === kind).length, timeoutMs);
+      });
+    };
+    const timeoutsOf = (kind: 'token' | 'generate') => seen.filter((s) => s.kind === kind).map((s) => s.timeoutMs);
+    beforeEach(() => {
+      clock = 1_700_000_000_000;
+      seen = [];
+      nowSpy = vi.spyOn(Date, 'now').mockImplementation(() => clock);
+      timeoutSpy = vi.spyOn(AbortSignal, 'timeout');
+    });
+    afterEach(() => {
+      nowSpy.mockRestore();
+      timeoutSpy.mockRestore();
+    });
+
+    it('다시 묻는 회차의 토큰 발급이 8초 걸려도 생성 요청은 그 뒤 남은 시간만 기다린다', async () => {
+      const deadlineAt = clock + 26_000;
+      stubFetch(async (kind, n, timeoutMs) => {
+        if (kind === 'token') {
+          if (n === 2) clock += 8_000; // 다시 묻는 회차의 토큰 발급이 8초 걸린다
+          return okJson({ access_token: 'test-access-token' });
+        }
+        clock += timeoutMs; // 생성 요청은 상한까지 기다렸다 시간 초과
+        throw timeout();
+      });
+      expect(await analyzeSpeechStyleWithVertex(ENV, TRANSCRIPT, 'ko', { sleep: clockSleep, deadlineAt })).toBeNull();
+      // 1회차 15초 → 0.5초 쉼 → 2회차: 토큰 8초(남은 10.5초 중) → 생성은 남은 2.5초만. 예전에는 토큰 앞에서 잰
+      // 10.5초를 그대로 써서 마감을 8초 넘겼다.
+      expect(timeoutsOf('token')).toEqual([8_000, 8_000]);
+      expect(timeoutsOf('generate')).toEqual([15_000, 2_500]);
+      for (const s of seen) expect(s.at + s.timeoutMs).toBeLessThanOrEqual(deadlineAt);
+      expect(clock).toBeLessThanOrEqual(deadlineAt);
+      expect(slept).toEqual([SPEECH_STYLE_RETRY_DELAYS_MS[0]]);
+    });
+
+    it('다시 묻는 회차의 토큰 발급도 min(8초, 남은 시간)이다', async () => {
+      const deadlineAt = clock + 10_000;
+      stubFetch(async (kind, n, timeoutMs) => {
+        if (kind === 'token') {
+          if (n === 1) return okJson({ access_token: 'test-access-token' });
+          clock += timeoutMs; // 2회차 토큰 발급은 상한까지 기다렸다 시간 초과
+          throw timeout();
+        }
+        clock += 3_000;
+        return new Response(JSON.stringify({ error: { message: 'overloaded' } }), { status: 503 });
+      });
+      expect(await analyzeSpeechStyleWithVertex(ENV, TRANSCRIPT, 'ko', { sleep: clockSleep, deadlineAt })).toBeNull();
+      // 1회차: 토큰 8초·생성 10초(마감까지) → 3초 뒤 503 → 0.5초 쉼 → 2회차 토큰은 남은 6.5초.
+      expect(timeoutsOf('token')).toEqual([8_000, 6_500]);
+      expect(timeoutsOf('generate')).toEqual([10_000]);
+      for (const s of seen) expect(s.at + s.timeoutMs).toBeLessThanOrEqual(deadlineAt);
+      expect(clock).toBeLessThanOrEqual(deadlineAt);
+    });
+
+    it('마감이 넉넉하면 첫 회차는 예전 그대로(토큰 8초·생성 15초)', async () => {
+      stubFetch(async (kind) => (kind === 'token' ? okJson({ access_token: 'test-access-token' }) : geminiText(STYLE_JSON)));
+      expect((await analyzeSpeechStyleWithVertex(ENV, TRANSCRIPT, 'ko', { sleep: clockSleep }))?.dialect).toBe('경상');
+      expect(timeoutsOf('token')).toEqual([8_000]);
+      expect(timeoutsOf('generate')).toEqual([15_000]);
+    });
+
+    it('마감이 이미 지났으면 요청을 보내지 않는다', async () => {
+      stubFetch(async () => okJson({ access_token: 'test-access-token' }));
+      expect(
+        await analyzeSpeechStyleWithVertex(ENV, TRANSCRIPT, 'ko', { sleep: clockSleep, deadlineAt: clock - 1 }),
+      ).toBeNull();
+      expect(mockFetch).not.toHaveBeenCalled();
+      expect(slept).toEqual([]);
+    });
+  });
+});
+
+
+describe('일본어 서술어 꼬리 — CodeQL 되짚기 회귀', () => {
+  it('겹치는 꼬리를 길게 이어도 한 번에 걷고 실패 접미부는 그대로 둔다', () => {
+    const tail = 'けれどもの'.repeat(10_000);
+    const started = performance.now();
+    expect(isJapanesePoliteSentence(`朝です${tail}`)).toBe(true);
+    expect(isJapanesePoliteSentence(`朝です${tail}べ`)).toBe(false);
+    expect(performance.now() - started).toBeLessThan(1_000);
+  });
+
+  it('짧은 겹침과 종조사 조합은 기존 접미부 제거 의미를 유지한다', () => {
+    for (const tail of ['からね', 'けれどものに', 'けれどももの', 'けれどのに', 'ものの', 'ってよね', 'しがか']) {
+      expect(isJapanesePoliteSentence(`朝です${tail}`), tail).toBe(true);
+      expect(isJapanesePoliteSentence(`朝だ${tail}`), tail).toBe(false);
+    }
+  });
+});
+
+// 제시 대본(세 언어 모두 존댓말)을 읽은 녹음의 어체는 화자의 것이 아니다(스펙 §4-2). 그 어체가 사전렌더 프롬프트에 실리고
+// 일본어 가족 です・ます 검사까지 꺼서, 대본을 읽은 엄마 목소리가 딸에게 존댓말 알람을 읽었다. 판정은 서버의 글자 대조다
+// (`isEnrollmentScriptReading`) — 모델이 어체를 내도 버린다.
+describe('analyzeSpeechStyleWithVertex — 제시 대본을 읽은 녹음은 어체를 버린다', () => {
+  const styleJson = (fields: Record<string, unknown>) =>
+    JSON.stringify({
+      dialect: '',
+      strength: '',
+      register: '',
+      markers: [],
+      persona: '',
+      childlike: false,
+      energy: '',
+      confidence: 0.9,
+      ...fields,
+    });
+  // 받아쓰기가 가나를 한자·가타카나로, 숫자를 아라비아 숫자로 바꾼 일본어 대본 낭독.
+  const JA_SCRIPT_READ =
+    'こんにちは。これからアラームトークで使う声を一緒に作っていきましょう。毎朝この声が大切な人を起こしてくれるなんてワクワクしませんか？今日は空も晴れて風も柔らかい、散歩にぴったりの日です。こんな日は温かいコーヒーを片手に近所を一回りしたくなりますよね。次は数字も読んでみましょうか？1、2、3、4、5、6、7、8、9、10。';
+  const KO_SCRIPT_READ =
+    '안녕하세요. 지금부터 알람 톡에서 쓸 목소리를 함께 만들어 볼게요. 매일 아침 이 목소리가 좋아하는 사람을 깨워준다니 설레이지 않나요? 오늘은 하늘도 맑고 바람도 부드러운 걷기 좋은 날이에요. 이런 날엔 따뜻한 커피 한잔을 들고 동네를 한바퀴 돌고 싶어지는 것 같아요.';
+  const JA_FREE_POLITE = 'おはようございます。今日はとてもいい天気ですね。朝ごはんをしっかり食べて、気をつけて行ってきてください。';
+  const KO_FREE_POLITE = '안녕하세요. 오늘은 날씨가 맑고 기온도 적당해서 산책하기 좋은 날이에요. 아침은 꼭 챙겨 드시고 좋은 하루 보내세요.';
+  const KO_FREE_BANMAL = '야 오늘 날씨 진짜 좋다. 밥은 먹었어? 나 어제 시장 갔는데 사람 엄청 많더라. 너도 밥 잘 챙겨 먹고 다녀.';
+  const MOM = { relationshipLabel: '母', listenerTitle: 'ゆい' };
+  const POLITE_FAMILY_LINE = 'ゆい、起きる時間ですよ。今日も元気に過ごしましょう。';
+  const GREETING_SEED = '다정하게 아침 인사를 하며 잘 잤는지 안부를 묻고, 오늘 하루도 기분 좋게 시작하자고 따뜻하게 깨워 준다.';
+
+  it('대본 낭독이면 모델이 낸 정중체를 버리고 사투리·말버릇·페르소나·결 판정은 그대로 둔다', async () => {
+    queueContent(
+      geminiText(
+        styleJson({ register: 'polite', markers: ['〜ましょう'], persona: '落ち着いた語り口', energy: 'calm' }),
+      ),
+    );
+    const style = await analyzeSpeechStyleWithVertex(ENV, JA_SCRIPT_READ, 'ja');
+    expect(style).toEqual({
+      dialect: '',
+      strength: '',
+      register: '',
+      markers: ['〜ましょう'],
+      persona: '落ち着いた語り口',
+      childlike: false,
+      energy: 'calm',
+    });
+  });
+
+  it('사투리로 읽은 대본도 어체만 버린다 — 사투리는 남는다', async () => {
+    queueContent(geminiText(styleJson({ dialect: '경상', strength: 'medium', register: 'jondaemal', markers: ['~예'] })));
+    const style = await analyzeSpeechStyleWithVertex(
+      ENV,
+      '안녕하십니꺼, 지금부터 알람톡에서 쓸 목소리를 함께 만들어 볼게예. 매일 아침 이 목소리가 좋아하는 사람을 깨워 준다카니, 설레지 않나예? 오늘은 하늘도 맑고 바람도 부드러운, 걷기 좋은 날이라예.',
+      'ko',
+    );
+    expect(style?.register).toBe('');
+    expect(style?.dialect).toBe('경상');
+    expect(style?.strength).toBe('medium');
+    expect(style?.markers).toEqual(['~예']);
+  });
+
+  // null 이면 'failed' 로 기록돼 재시도 버튼이 뜨고, 같은 녹음이라 다시 눌러도 같은 답이다.
+  it('어체만 있던 분석도 실패(null)가 아니라 빈 말투로 끝난다', async () => {
+    queueContent(geminiText(styleJson({ register: 'jondaemal' })));
+    const style = await analyzeSpeechStyleWithVertex(ENV, KO_SCRIPT_READ, 'ko');
+    expect(style).toEqual({
+      dialect: '',
+      strength: '',
+      register: '',
+      markers: [],
+      persona: '',
+      childlike: false,
+      energy: '',
+    });
+  });
+
+  it('자유 발화의 어체는 그대로 남는다 — 정중체·반말 모두', async () => {
+    queueContent(geminiText(styleJson({ register: 'jondaemal' })));
+    expect((await analyzeSpeechStyleWithVertex(ENV, KO_FREE_POLITE, 'ko'))?.register).toBe('jondaemal');
+    queueContent(geminiText(styleJson({ register: 'banmal' })));
+    expect((await analyzeSpeechStyleWithVertex(ENV, KO_FREE_BANMAL, 'ko'))?.register).toBe('banmal');
+    queueContent(geminiText(styleJson({ register: 'polite' })));
+    expect((await analyzeSpeechStyleWithVertex(ENV, JA_FREE_POLITE, 'ja'))?.register).toBe('polite');
+  });
+
+  it('대본 낭독 분석은 프롬프트에 어체를 싣지 않고 일본어 가족 です・ます 검사를 끄지 않는다', async () => {
+    queueContent(geminiText(styleJson({ register: 'polite', markers: ['〜ましょう'] })));
+    const scriptStyle = await analyzeSpeechStyleWithVertex(ENV, JA_SCRIPT_READ, 'ja');
+    expect(scriptStyle).not.toBeNull();
+
+    mockFetch.mockClear();
+    queueContent(geminiText('{"text":"ゆい、おはよう。よく眠れた？今日も元気にいこうね。"}'));
+    await generatePrerenderClipText(ENV, { seed: GREETING_SEED, ...MOM, targetLanguage: 'ja', speechStyle: scriptStyle });
+    const prompt = sentPromptText();
+    // 말버릇은 남아 말투 블록은 실리되, 어체는 없다 — 관계(母→ゆい = タメ口)가 어체를 정한다.
+    expect(prompt).toContain('SPEAKER DIALECT/STYLE');
+    expect(prompt).not.toContain('register: polite');
+    expect(prompt).not.toMatch(/, register: /);
+
+    expect(hasJapanesePoliteEnding(POLITE_FAMILY_LINE, { ...MOM, speechStyle: scriptStyle })).toBe(true);
+    expect(prerenderRejectionReason(POLITE_FAMILY_LINE, 'ja', { ...MOM, speechStyle: scriptStyle })).toBe('register_mixed');
+  });
+
+  it('자유 발화의 정중체는 지금처럼 프롬프트에 싣고 검사를 면제한다(대조군)', async () => {
+    queueContent(geminiText(styleJson({ register: 'polite' })));
+    const freeStyle = await analyzeSpeechStyleWithVertex(ENV, JA_FREE_POLITE, 'ja');
+
+    mockFetch.mockClear();
+    queueContent(geminiText('{"text":"ゆい、おはようございます。今日も一日がんばりましょうね。"}'));
+    await generatePrerenderClipText(ENV, { seed: GREETING_SEED, ...MOM, targetLanguage: 'ja', speechStyle: freeStyle });
+    expect(sentPromptText()).toContain('register: polite');
+
+    expect(hasJapanesePoliteEnding(POLITE_FAMILY_LINE, { ...MOM, speechStyle: freeStyle })).toBe(false);
+    expect(prerenderRejectionReason(POLITE_FAMILY_LINE, 'ja', { ...MOM, speechStyle: freeStyle })).toBeNull();
   });
 });

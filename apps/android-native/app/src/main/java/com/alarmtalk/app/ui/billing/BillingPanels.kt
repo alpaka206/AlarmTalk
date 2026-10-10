@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -27,14 +26,11 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedCard
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
@@ -51,13 +47,7 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
-import com.alarmtalk.app.R
-import com.alarmtalk.app.WakerPillShape
 import com.alarmtalk.app.billing.PlayBillingProducts
-import com.alarmtalk.app.network.BillingPlan
-import com.alarmtalk.app.network.BillingPlanSummary
 import com.alarmtalk.app.network.BillingSubscriptionResponse
 import com.alarmtalk.app.network.BillingSubscription
 import com.alarmtalk.app.network.FamilyGroupCurrentResponse
@@ -83,11 +73,15 @@ internal fun SubscriptionPanel(
     onRestorePurchases: () -> Unit,
     /**
      * 지금 살아 있는 기간 한정 개인 플랜 — 계정 응답과 구독 응답 중 **나중에 받은 답**의 것
-     * (`planScreenPersonalPromoOf`). 있으면 맨 위에 한 줄만 보인다.
+     * (`planScreenPersonalPromoOf`). 날짜는 서버 `ends_at − 1초` 의 기기 날짜다.
+     *
+     * 어디에 보이는지는 [planScreenCurrentOf] 가 정한다: 프로모만 쓰는 계정은 **개인 카드가
+     * '현재 이용권'** 이고 문구는 그 카드의 상태 한 줄이다. 산 이용권·공유 멤버·보류 행이 있는
+     * 계정은 예전처럼 카드 목록 위의 한 줄이다.
      *
      * ⚠ **구독처럼 그리지 말 것.** 서버가 구독 객체를 만들지 않으므로(`subscription` 은 null)
-     * 해지 버튼도 '현재' 표시도 바꾸지 않는다 — 원시 plan 은 여전히 무료이고, 개인 결제도
-     * 그대로 열려 있다. 날짜는 서버 `ends_at − 1초` 의 기기 날짜다.
+     * 해지 버튼·결제 알럿의 전환 문구·버튼 라벨은 산 이용권으로만 가른다 — 원시 plan 은 여전히
+     * 무료이고, 개인 결제도 그대로 열려 있다(개인 카드의 결제 버튼이 남는다).
      */
     personalPromo: PersonalPromo? = null,
 ) {
@@ -108,11 +102,12 @@ internal fun SubscriptionPanel(
     val scope = rememberCoroutineScope()
     val options = listOf(
         // 감성 설명문 없이 핵심 혜택만 짧게 — 목소리 개수·인원처럼 판단에 필요한 사실 위주로 적는다.
+        // ⚠ 무료에도 있는 것을 유료 혜택처럼 적지 말 것. 날씨·운세 문구는 기본 목소리로 무료다
+        // (docs/spec/voice-and-message.md §2) — 개인 카드가 파는 것은 그 문구를 **등록한 목소리로** 듣는 것이다.
         SubscriptionPlanOption(
             key = "free",
             name = stringResource(R.string.billing_plan_free_name),
             price = stringResource(R.string.billing_plan_free_price),
-            description = "",
             features = listOf(
                 stringResource(R.string.billing_plan_free_feature_basic_alarm),
                 stringResource(R.string.billing_plan_free_feature_stock_voice),
@@ -122,17 +117,15 @@ internal fun SubscriptionPanel(
             key = "personal",
             name = stringResource(R.string.billing_plan_personal_name),
             price = planPriceLabel(context, planPrices, "personal"),
-            description = "",
             features = listOf(
                 stringResource(R.string.billing_plan_personal_feature_voice),
-                stringResource(R.string.billing_plan_personal_feature_daily_prompt),
+                stringResource(R.string.billing_plan_personal_feature_messages_in_voice),
             ),
         ),
         SubscriptionPlanOption(
             key = "couple",
             name = stringResource(R.string.billing_plan_couple_name),
             price = planPriceLabel(context, planPrices, "couple"),
-            description = "",
             features = listOf(
                 stringResource(R.string.billing_plan_feature_includes_personal),
                 stringResource(R.string.billing_plan_couple_feature_voice_share),
@@ -144,7 +137,6 @@ internal fun SubscriptionPanel(
             key = "family",
             name = stringResource(R.string.billing_plan_family_name),
             price = planPriceLabel(context, planPrices, "family"),
-            description = "",
             features = listOf(
                 stringResource(R.string.billing_plan_feature_includes_personal),
                 stringResource(R.string.billing_plan_family_feature_voice_share),
@@ -189,17 +181,28 @@ internal fun SubscriptionPanel(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        // 기간 한정 개인 플랜 — "개인 플랜 무료 이용 중 · 10월 31일까지" 한 줄. 날짜는 서버 값.
-        // 글자 결은 현재 카드의 상태 문구(`currentStatusText`)와 같다 — 같은 종류의 정보다.
+        // 기간 한정 개인 플랜 — "개인 플랜 무료 이용 중 · 10월 31일까지". 날짜는 서버 값.
         val promoLastDay = personalPromoLastDay(personalPromo, java.time.ZoneId.systemDefault())
-        if (promoLastDay != null) {
+        val promoLineText = promoLastDay?.let { lastDay ->
             val locale = LocalConfiguration.current.locales[0]
                 ?: java.util.Locale.getDefault()
+            stringResource(R.string.personal_promo_plan_line, formatPersonalPromoDay(lastDay, locale))
+        }
+        // '현재 이용권' 카드와 프로모 문구의 자리 — 규칙은 [planScreenCurrentOf] 한 곳이다(스펙 D4).
+        // ⚠ 산 이용권(`currentPlan`·`hasActive`)은 그대로 둔다 — 결제 알럿의 전환 문구·버튼 라벨·
+        //   해지 버튼은 그 값으로만 가른다. 프로모는 산 이용권이 아니다.
+        val planScreen = planScreenCurrentOf(
+            purchasedPlanKey = currentPlan?.key,
+            isSharedMember = isSharedMember,
+            promoActive = promoLineText != null,
+            hasHeldSubscriptionRow = personalPromo?.deletesVoicesAtEnd == false,
+        )
+        // 산 이용권·공유 멤버·보류 행이 있는 계정은 예전처럼 카드 위 한 줄이다. 프로모만 쓰는
+        // 계정은 이 줄 대신 개인 카드의 상태 문구로 말한다 — 같은 말을 두 번 하지 않는다.
+        // 글자 결은 현재 카드의 상태 문구(`currentStatusText`)와 같다 — 같은 종류의 정보다.
+        if (planScreen.promoLineAboveList && promoLineText != null) {
             Text(
-                text = stringResource(
-                    R.string.personal_promo_plan_line,
-                    formatPersonalPromoDay(promoLastDay, locale),
-                ),
+                text = promoLineText,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.primary,
                 fontWeight = FontWeight.SemiBold,
@@ -211,6 +214,9 @@ internal fun SubscriptionPanel(
         val currentExpiresAt = formatPass(subscription?.expiresAt, PassDateFormatter)
         val sharedMemberExpiresAt = formatPass(familyGroup?.group?.expiresAt, PassDateFormatter)
         val currentStatusText = when {
+            // 프로모만 쓰는 계정 — 개인 카드가 현재이고, 그 카드의 상태 문구가 프로모 한 줄이다
+            // (카드 위 한 줄은 그리지 않는다). 공유 멤버·산 이용권이 있으면 이 갈래에 오지 않는다.
+            planScreen.promoOnPersonalCard -> promoLineText
             isSharedMember && sharedMemberExpiresAt != null ->
                 stringResource(R.string.billing_status_shared_member_until, sharedMemberExpiresAt)
             isSharedMember -> stringResource(R.string.billing_status_shared_member)
@@ -236,12 +242,13 @@ internal fun SubscriptionPanel(
 
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             options.forEach { option ->
-                val currentKey = currentPlan?.key ?: "free"
-                val isCurrent = currentKey == option.key
+                val isCurrent = planScreen.isCurrent(option.key)
                 val vouchersForPlan = shareableVouchersForPlan(vouchers, option.key)
                 SubscriptionPlanCard(
                     option = option,
                     isCurrent = isCurrent,
+                    showsPurchase = planScreen.showsPurchase(option.key),
+                    sharesVouchers = planScreen.sharesVouchers(option.key),
                     currentStatusText = currentStatusText.takeIf { isCurrent },
                     hasActiveSubscription = hasActive,
                     busy = billingBusy || shareBusy,
@@ -372,6 +379,8 @@ internal fun SubscriptionPanel(
         PlayPurchaseDialog(
             target = option,
             // 이미 이용권이 있으면 이건 '시작' 이 아니라 '전환' 이다.
+            // ⚠ **산 이용권으로만** 가른다 — `planScreen.isCurrent` 가 아니다. 프로모로 현재가 된
+            //   개인 카드를 사는 것은 신규 구매라 '이용권 변경'·'남은 기간 환산' 을 말하면 안 된다.
             currentPlanKey = currentPlan?.key.takeIf { hasActive },
             busy = billingBusy,
             onDismiss = { purchaseTarget = null },
@@ -529,6 +538,80 @@ private fun PlayPurchaseDialog(
 }
 
 /**
+ * 이용권 화면의 **'현재 이용권' 카드**와 기간 한정 개인 플랜 문구의 자리 — [planScreenCurrentOf] 의 답.
+ * 규칙은 `docs/spec/billing-lifecycle.md` 「기간 한정 개인 플랜」 D4 「이용권 화면의 프로모 문구」 이고,
+ * iOS `PlanScreenCurrent.resolve`(`Views/Common/PlanTier.swift`)가 같은 입력에 같은 답을 낸다.
+ */
+internal data class PlanScreenCurrent(
+    /** '현재 이용권' 뱃지·강조를 다는 카드의 key(`free`·`personal`·`couple`·`family`). */
+    val currentKey: String,
+    /**
+     * 프로모가 이 계정의 **유일한** 이용권이라 개인 카드가 현재가 됐다 — 그 카드의 상태 문구가
+     * 프로모 한 줄이고, 결제 버튼은 남는다(산 이용권이 아니다).
+     */
+    val promoOnPersonalCard: Boolean,
+    /**
+     * 프로모 한 줄을 카드 목록 **위에** 그린다 — 프로모가 있는데 개인 카드에 앉지 않는 계정
+     * (산 이용권·공유 멤버·보류 행). 예전 그대로다. [promoOnPersonalCard] 와 동시에 참이 되지 않는다.
+     */
+    val promoLineAboveList: Boolean,
+) {
+    fun isCurrent(planKey: String): Boolean = planKey == currentKey
+
+    /**
+     * 결제 버튼 — 무료 카드엔 없고, **산** 현재 이용권 카드에도 없다(다시 살 것이 없다).
+     * 프로모로 현재가 된 개인 카드에는 **있다** — '현재' 와 '결제 버튼 숨김' 은 다른 질문이다.
+     */
+    fun showsPurchase(planKey: String): Boolean =
+        planKey != FREE_PLAN_KEY && (!isCurrent(planKey) || promoOnPersonalCard)
+
+    /** 코드 공유 — **산** 현재 이용권 카드에서만(예전 그대로). 프로모 카드는 산 것이 아니다. */
+    fun sharesVouchers(planKey: String): Boolean = isCurrent(planKey) && !promoOnPersonalCard
+
+    companion object {
+        const val FREE_PLAN_KEY = "free"
+        const val PERSONAL_PLAN_KEY = "personal"
+    }
+}
+
+/**
+ * 이용권 화면에서 어느 카드가 **'현재 이용권'** 인가, 기간 한정 개인 플랜 문구는 **어디에** 앉나.
+ *
+ * 프로모가 이 계정의 **유일한 이용권**일 때만 개인 카드가 현재가 된다 — 산 이용권이 없고
+ * ([purchasedPlanKey] 가 없거나 free), 공유 멤버가 아니고, 보류 행도 없다. 그 밖(산 이용권·공유 멤버·
+ * 보류 행·프로모 없음/끝남)은 예전 그대로다 — 현재 카드는 산 이용권, 프로모는 카드 위 한 줄.
+ *
+ * ⚠ **여기 답으로 결제·전환을 가르지 말 것.** 버튼 라벨('결제하기'/'이용권 변경')·결제 알럿의 전환·
+ *   환산 문구·해지 버튼은 산 이용권(구독 응답)으로만 가른다 — 프로모는 산 이용권이 아니다.
+ *
+ * @param purchasedPlanKey 산 이용권의 key — 구독 응답의 `plan.key`(없으면 null = 무료). 예전에 현재
+ *   카드를 고르던 값 그대로다.
+ * @param isSharedMember 가족·커플 그룹의 멤버(`familyGroup.role = member`, 그룹 있음).
+ * @param promoActive 이용권 화면에 보일 프로모가 **지금** 살아 있다(`planScreenPersonalPromoOf` 가
+ *   끝난 것을 이미 걸렀고, 마지막 날을 읽을 수 있다).
+ * @param hasHeldSubscriptionRow 그 프로모의 `deletes_voices_at_end == false` — 원시 free 인데 `active`
+ *   구독 행이 남은 계정(결제 보류 등). 보류 행은 구독 응답에 실리지 않아(`strongestPaidSubscription`)
+ *   이 값이 아니면 프로모 계정과 구별되지 않는다. 키를 모르는 서버(null)는 보류가 아닌 것으로 읽는다.
+ */
+internal fun planScreenCurrentOf(
+    purchasedPlanKey: String?,
+    isSharedMember: Boolean,
+    promoActive: Boolean,
+    hasHeldSubscriptionRow: Boolean,
+): PlanScreenCurrent {
+    val purchasedKey = purchasedPlanKey ?: PlanScreenCurrent.FREE_PLAN_KEY
+    val promoIsOnlyPlan = promoActive &&
+        purchasedKey == PlanScreenCurrent.FREE_PLAN_KEY &&
+        !isSharedMember &&
+        !hasHeldSubscriptionRow
+    return PlanScreenCurrent(
+        currentKey = if (promoIsOnlyPlan) PlanScreenCurrent.PERSONAL_PLAN_KEY else purchasedKey,
+        promoOnPersonalCard = promoIsOnlyPlan,
+        promoLineAboveList = promoActive && !promoIsOnlyPlan,
+    )
+}
+
+/**
  * 그 플랜이 **함께 쓸 수 있는 인원**. 백엔드 `plans.max_members` 와 같은 값이다.
  * 정원이 줄어드는 전환인지 판단하는 데만 쓴다.
  */
@@ -567,7 +650,15 @@ private fun PlanFeatureRow(text: String) {
 @Composable
 internal fun SubscriptionPlanCard(
     option: SubscriptionPlanOption,
+    /** '현재 이용권' 뱃지·강조·상태 문구. 결제 버튼과는 **따로** 정한다([showsPurchase]). */
     isCurrent: Boolean,
+    /**
+     * 결제 버튼을 그리는가([PlanScreenCurrent.showsPurchase]). 산 이용권의 현재 카드엔 없고,
+     * 프로모로 현재가 된 개인 카드엔 있다 — [isCurrent] 로 대신하지 말 것.
+     */
+    showsPurchase: Boolean,
+    /** 코드 공유 버튼을 그리는가([PlanScreenCurrent.sharesVouchers]) — 산 현재 카드에서만. */
+    sharesVouchers: Boolean,
     hasActiveSubscription: Boolean,
     busy: Boolean,
     vouchers: List<VoucherItem>,
@@ -656,9 +747,6 @@ internal fun SubscriptionPlanCard(
                     fontWeight = FontWeight.SemiBold,
                 )
             }
-            if (option.description.isNotBlank()) {
-                MutedText(option.description)
-            }
             Column(
                 modifier = Modifier.padding(bottom = 6.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -675,7 +763,11 @@ internal fun SubscriptionPlanCard(
             // 시점은 Play 가 정한다: 업그레이드는 즉시+비례정산, 다운그레이드는 다음 갱신일
             // (`PlayBillingManager` 가 방향을 보고 교체 모드를 고른다). 그래서 우리가
             // '지금/종료일' 을 묻는 모달을 두지 않는다 — `docs/spec/billing-lifecycle.md`.
-            if (option.key != "free" && !isCurrent) {
+            //
+            // ⚠ **`!isCurrent` 로 되돌리지 말 것**(2026-09-29). 프로모만 쓰는 계정은 개인 카드가
+            //   '현재' 인데 산 이용권이 아니라 결제 버튼이 남아야 한다 — 끝난 뒤 이어 쓰려면 사야
+            //   하고, 버튼을 숨기면 살 길이 사라진다([PlanScreenCurrent.showsPurchase]).
+            if (showsPurchase) {
                 Button(
                     onClick = onPurchase,
                     enabled = !busy,
@@ -695,9 +787,10 @@ internal fun SubscriptionPlanCard(
             // 결제 버튼 **바로 아래** 부가 액션(개인 이용권 선물하기 등).
             extraAction?.invoke(this)
 
-            // 코드 공유는 '현재 이용권' 카드에서만 — 해지/강등 후 옛 코드가 남아 있어도
+            // 코드 공유는 **산** '현재 이용권' 카드에서만 — 해지/강등 후 옛 코드가 남아 있어도
             // (서버가 만료 처리하지만 우회 데이터 방어) 무료 사용자에게 공유 버튼이 뜨지 않게.
-            if (isCurrent && vouchers.isNotEmpty()) {
+            // 프로모로 현재가 된 개인 카드는 산 이용권이 아니라 여기 들지 않는다([sharesVouchers]).
+            if (sharesVouchers && vouchers.isNotEmpty()) {
                 OutlinedButton(
                     onClick = onShareVouchers,
                     enabled = !busy,

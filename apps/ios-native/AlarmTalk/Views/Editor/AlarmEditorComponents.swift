@@ -1,6 +1,4 @@
-import AVFoundation
 import SwiftUI
-import UniformTypeIdentifiers
 
 // AlarmEditorSheet 에서 분리한 에디터 하위 컴포넌트/헬퍼 모음.
 // 동작/디자인 변경 없음 — 동일 모듈 내 internal 로 가시성만 조정해 파일만 분리.
@@ -20,46 +18,26 @@ enum LocalAlarmAudioError: LocalizedError {
     case missingSource
     case tooShort
     case tooLong
-    case invalidDuration
 
     var errorDescription: String? {
         switch self {
         case .missingSource:
-            return "녹음하거나 파일을 선택해 주세요."
+            return String(localized: "녹음하거나 파일을 선택해 주세요.")
         case .tooShort:
-            return "1초 이상 들리는 음성이 필요해요."
+            return String(localized: "1초 이상 들리는 음성이 필요해요.")
         case .tooLong:
-            return "알람 음성은 최대 \(AlarmAudioLimits.maxDurationMillis / 1000)초까지 사용할 수 있어요."
-        case .invalidDuration:
-            return "오디오 길이를 확인하지 못했어요."
+            return String(localized: "알람 음성은 최대 \(AlarmAudioLimits.maxDurationMillis / 1000)초까지 사용할 수 있어요.")
         }
     }
 }
 
-/// 알람에 붙일 오디오의 입력 방식.
-///
-/// ⚠ **`file` 을 되살리지 말 것** — 알람 편집기에는 파일 업로드가 없다(위 주석 참조).
-/// 값이 하나뿐이지만 열거형을 남겨 두는 이유는 저장된 옛 값(`"file"`)을 읽을 때
-/// 조용히 깨지지 않게 하기 위해서다.
-enum AlarmLocalAudioInputMode: String, CaseIterable, Hashable, Identifiable {
-    case record
-
-    var id: String { rawValue }
-}
-
 struct LocalAlarmAudioEditor: View {
-    @Binding var mode: AlarmLocalAudioInputMode
     let isRecording: Bool
     let elapsedMs: Int
     let hasRecording: Bool
     let existingAudioLabel: String?
-    let fileName: String?
-    let fileDurationMs: Int?
-    @Binding var cropStartMs: Int
-    @Binding var cropEndMs: Int
     let isPreviewing: Bool
     let message: String?
-    let onModeChange: (AlarmLocalAudioInputMode) -> Void
     let onRecord: () -> Void
     let onPreview: () -> Void
     let onClear: () -> Void
@@ -67,33 +45,30 @@ struct LocalAlarmAudioEditor: View {
     private var sourceReady: Bool { hasRecording || existingAudioLabel != nil }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            // ⚠ **알람 편집기에는 파일 업로드가 없다 — 녹음뿐이다**(2026-08-11 정리).
-            // 안드로이드 알람 편집기에는 처음부터 파일 선택 런처가 없고, iOS 에만
-            // '녹음/파일' 세그먼트가 남아 있었다.
-            //
-            // ⚠ **녹음 카드를 여기서 다시 그리지 말 것** — `RecordingCard` 하나를
-            // 목소리 등록 화면과 함께 쓴다(2026-08-16 정리).
-            RecordingCard(
-                isRecording: isRecording,
-                elapsedMs: elapsedMs,
-                maxDurationMs: Int(AlarmAudioLimits.maxDurationMillis),
-                hasRecording: sourceReady,
-                isPreviewing: isPreviewing,
-                // 카드 제목이 이미 상태를 말한다 — 남기는 건 아직 아무것도 없고 녹음 중도
-                // 아닐 때뿐이다(마이크 권한 거부처럼 달리 나타나지 않는 사실).
-                note: (isRecording || sourceReady) ? existingNote : (message ?? existingNote),
-                onRecord: onRecord,
-                onPreview: onPreview,
-                onRedo: onClear
-            )
-        }
+        // ⚠ **알람 편집기에는 파일 업로드가 없다 — 녹음뿐이다**(2026-08-11 정리).
+        // 안드로이드 알람 편집기에는 처음부터 파일 선택 런처가 없고, iOS 에만
+        // '녹음/파일' 세그먼트가 남아 있었다. 입력 방식·파일·크롭 상태도 그때 함께 걷어냈다.
+        //
+        // ⚠ **녹음 카드를 여기서 다시 그리지 말 것** — `RecordingCard` 하나를
+        // 목소리 등록 화면과 함께 쓴다(2026-08-16 정리).
+        RecordingCard(
+            isRecording: isRecording,
+            elapsedMs: elapsedMs,
+            maxDurationMs: Int(AlarmAudioLimits.maxDurationMillis),
+            hasRecording: sourceReady,
+            isPreviewing: isPreviewing,
+            // 카드 제목이 이미 상태를 말한다 — 남기는 건 아직 아무것도 없고 녹음 중도
+            // 아닐 때뿐이다(마이크 권한 거부처럼 달리 나타나지 않는 사실).
+            note: (isRecording || sourceReady) ? existingNote : (message ?? existingNote),
+            onRecord: onRecord,
+            onPreview: onPreview,
+            onRedo: onClear
+        )
     }
 
     /// 알람에 이미 붙어 있는 오디오 이름 — 방금 녹음한 것이 없을 때만 알린다.
     private var existingNote: String? {
-        guard !hasRecording, let existingAudioLabel else { return nil }
-        return existingAudioLabel
+        hasRecording ? nil : existingAudioLabel
     }
 }
 
@@ -109,9 +84,9 @@ struct LocalAlarmAudioEditor: View {
 // `FAMILY_ALARM_MIN_LEAD_MINUTES` 와 **같아야 한다**. 죽은 사본이 옛 값을 들고 있으면
 // 그걸 고치고 고쳤다고 믿게 된다(실제로 오늘 리드타임을 내릴 때 그럴 뻔했다).
 enum FamilyAlarmScheduleRules {
-    static func quietScheduleLabel(_ member: FamilyGroupMember) -> String {
+    static func quietScheduleLabel(_ member: FamilyGroupMember, bundle: Bundle = .main) -> String {
         quietWindows(member).map { window in
-            "\(HelperFormatters.quietDaysLabel(window.days)) \(window.start)-\(window.end)"
+            "\(HelperFormatters.quietDaysLabel(window.days, bundle: bundle)) \(window.start)-\(window.end)"
         }.joined(separator: " · ")
     }
 
@@ -145,7 +120,7 @@ enum FamilyAlarmScheduleRules {
 
     private static func targetDayIndices(hour: Int, minute: Int, repeatDaysMask: Int, nowMillis: Int64) -> [Int] {
         if repeatDaysMask != 0 {
-            return (0...6).filter { repeatDaysMask & (1 << $0) != 0 }
+            return RemoteAlarmMapper.repeatDays(fromMask: repeatDaysMask)
         }
         let fireAt = (try? AlarmTimeCalculator.nextFireAtMillis(
             hour: hour,
@@ -159,8 +134,8 @@ enum FamilyAlarmScheduleRules {
 
     private static func blocks(window: FamilyAlarmQuietWindow, dayIndex: Int, hour: Int, minute: Int) -> Bool {
         guard safeQuietDays(window.days).contains(dayIndex),
-              let start = parseQuietTime(window.start),
-              let end = parseQuietTime(window.end) else {
+              let start = minuteOfDay(window.start),
+              let end = minuteOfDay(window.end) else {
             return false
         }
         let target = hour * 60 + minute
@@ -170,16 +145,9 @@ enum FamilyAlarmScheduleRules {
         return target >= start || target < end
     }
 
-    private static func parseQuietTime(_ value: String) -> Int? {
-        let parts = value.split(separator: ":")
-        guard parts.count >= 2,
-              let hour = Int(parts[0]),
-              let minute = Int(parts[1]),
-              (0...23).contains(hour),
-              (0...59).contains(minute) else {
-            return nil
-        }
-        return hour * 60 + minute
+    /// "HH:mm" → 자정부터 몇 분째인가. 형식은 서버 알람 시각과 같은 파서가 본다.
+    private static func minuteOfDay(_ value: String) -> Int? {
+        RemoteAlarmMapper.parseTime(value).map { $0.0 * 60 + $0.1 }
     }
 
     private static func safeQuietDays(_ days: [Int]?) -> [Int] {
@@ -235,9 +203,9 @@ struct SharedVoiceSelectionSetupSheet: View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("공유받은 목소리 설정")
+                    Text(String(localized: "공유받은 목소리 설정"))
                         .font(.title3.weight(.bold))
-                    Text("알람에서 이 목소리가 나를 어떻게 부를지 정해요.")
+                    Text(String(localized: "알람에서 이 목소리가 나를 어떻게 부를지 정해요."))
                         .font(.subheadline)
                         .foregroundStyle(AlarmTalkTheme.textSecondary)
                 }
@@ -274,24 +242,24 @@ struct SharedVoiceSelectionSetupSheet: View {
                 submitted: submitted
             )
             field(
-                title: "이 목소리가 나를 부를 이름",
-                placeholder: "예: 지호야, 여보",
+                title: String(localized: "이 목소리가 나를 부를 이름"),
+                placeholder: String(localized: "예: 지호야, 여보"),
                 text: $listenerTitle,
                 showError: submitted && trimmedListener.isEmpty
             )
             VoiceListenerPreviewCard(
                 listenerTitle: listenerTitle,
-                relationshipLabel: trimmedRelationship
+                relationshipSelection: relationshipSelection
             )
 
             Button(action: onPreview) {
-                Label("미리듣기", systemImage: "play.fill")
+                Label(String(localized: "미리듣기"), systemImage: "play.fill")
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.bordered)
             .disabled(isWorking)
 
-            Button("저장하고 선택") {
+            Button(String(localized: "저장하고 선택")) {
                 submitted = true
                 if !trimmedRelationship.isEmpty && !trimmedListener.isEmpty {
                     onConfirm(trimmedRelationship, trimmedListener)
@@ -328,7 +296,7 @@ struct SharedVoiceSelectionSetupSheet: View {
                 }
                 .alarmTalkFieldStyle()
             if showError {
-                Text("꼭 입력해 주세요.")
+                Text(String(localized: "꼭 입력해 주세요."))
                     .font(.caption2.weight(.semibold))
                     .foregroundStyle(AlarmTalkTheme.error)
             }

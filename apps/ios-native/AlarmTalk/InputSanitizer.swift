@@ -18,7 +18,7 @@ enum InputSanitizer {
 
     /// 표시 이름 상한. 서버 `DISPLAY_NAME_MAX_LENGTH`(30) 와 같아야 한다.
     /// 앱이 더 느슨하면 서버에서 거절당하고, 더 빡빡하면 서버가 허용하는 이름을 못 쓴다.
-    static let displayNameMaxLength = 30
+    static let displayNameMaxLength: Int = 30
 
     /// 목소리 프로필 이름 상한. 서버 `VOICE_NAME_MAX_LENGTH`(50) 와 같아야 한다.
     /// 계정 닉네임보다 긴 건 **의도다** — 사람 이름이 아니라 라벨이라

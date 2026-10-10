@@ -30,8 +30,6 @@ final class ClonePrerenderDrive: ObservableObject {
     @Published private(set) var phase: Phase = .generating
     /// 0~100. 생성과 다운로드를 이어 붙인 **하나의** 값.
     @Published private(set) var percent: Int = 0
-    /// 아직 전체 개수를 모른다(첫 조회 전). 막대를 미확정으로 그릴지 정한다.
-    @Published private(set) var totalKnown = false
 
     private let api: AlarmTalkAPI
     private var task: Task<Void, Never>?
@@ -133,7 +131,6 @@ final class ClonePrerenderDrive: ObservableObject {
                         // ⚠ **무진전으로 세지 않는다.** 서버가 클레임을 못 놓은 회차라, 리스가
                         //   끝나기 전에는 몇 번을 물어도 같은 개수가 온다(모델 주석 참조).
                         //   말한 만큼 기다렸다가 같은 자리에서 다시 민다.
-                        if generationTotal > 0 { totalKnown = true }
                         percent = Self.mergedPercent(
                             generated: generated,
                             generationTotal: generationTotal,
@@ -166,7 +163,6 @@ final class ClonePrerenderDrive: ObservableObject {
                 }
             }
 
-            if generationTotal > 0 { totalKnown = true }
             phase = .generating
             percent = Self.mergedPercent(
                 generated: generated,
@@ -203,13 +199,27 @@ final class ClonePrerenderDrive: ObservableObject {
         // 받는 것은 프리페처가 한다. **이 목소리를 대상에 넣어** 다시 돌린다 —
         // 앱 레벨 프리페처의 `.task(id:)` 는 계정·언어로만 키가 걸려 있어, 이번 세션에 새로
         // 등록한 목소리로는 스스로 다시 돌지 않는다.
+        // ⚠ **생성이 끝난 뒤에 출발한 매니페스트만 쓴다**('신호 뒤' — `StockClipPrefetcher.
+        //   manifestFreshnessWindow`). 창 안의 공개본이라도 끝나기 전에 출발했으면 이 목소리의
+        //   클립을 (다) 모른다 — 그걸로 받으면 진행률이 그 목록 기준으로 100% 가 되거나 45초를 논다.
+        let generationFinishedAt = Date()
         var targets = ownedVoiceProfileIDs
         targets.insert(voiceProfileID)
-        prefetcher.start(session: session, ownedVoiceProfileIDs: targets)
+        prefetcher.start(
+            session: session,
+            ownedVoiceProfileIDs: targets,
+            manifestDepartedAfter: generationFinishedAt
+        )
 
         while !Task.isCancelled {
-            if let progress = await StockClipPrefetcher.progressOffMain(voiceProfileID: voiceProfileID) {
-                totalKnown = true
+            // ⚠ **세는 것도 '신호 뒤' 의 목록으로 한다**(코덱스 #827). 위 `start` 는 조회를 걸어 둘
+            //   뿐이라, 디스크에는 아직 생성이 끝나기 전에 출발한 부분 목록이 있을 수 있다 — 그 부분이
+            //   다 받아져 있으면 첫 회차에 '다 받았다' 로 끝나고 뒤늦게 만들어진 클립은 안 받아진다.
+            //   신호 뒤의 공개본이 아직 없으면 nil 이라 기다린다.
+            if let progress = await StockClipPrefetcher.progressOffMain(
+                voiceProfileID: voiceProfileID,
+                manifestDepartedAfter: generationFinishedAt
+            ) {
                 percent = Self.mergedPercent(
                     generated: generationTotal,
                     generationTotal: generationTotal,
@@ -224,8 +234,13 @@ final class ClonePrerenderDrive: ObservableObject {
                 }
             }
             try? await Task.sleep(nanoseconds: 1_500_000_000)
-            // 매니페스트가 아직 이 목소리를 모르면(방금 만들어졌다) 프리페처가 다시 받아 온다.
-            prefetcher.start(session: session, ownedVoiceProfileIDs: targets)
+            // 매니페스트가 아직 이 목소리를 모르면(방금 만들어졌다) 프리페처가 다시 받아 온다 —
+            // 생성이 끝난 뒤에 출발한 것만 쓰므로, 그 뒤 창 안에 공개된 목록은 다시 받지 않는다.
+            prefetcher.start(
+                session: session,
+                ownedVoiceProfileIDs: targets,
+                manifestDepartedAfter: generationFinishedAt
+            )
         }
     }
 }

@@ -311,8 +311,8 @@ describe('PATCH /:id/preview-text — 미리듣기 문구 수정 (voice-profile)
     expect(body.preview_text).toBe('좋은 아침이야, 오늘도 힘내자');
     const sql = mockDB.calls[0]!.sql;
     expect(sql).toContain('preview_text = ?');
-    // 이전 문구 기준으로 고른 delivery 태그가 수정본에 남지 않게 함께 리셋된다.
-    expect(sql).toContain('preview_tag = NULL');
+    // 미리듣기는 태그 없이 합성한다(2026-09-30) — `preview_tag` 는 읽지도 쓰지도 않는다(마이그레이션 125 가 DROP).
+    expect(sql).not.toContain('preview_tag');
     expect(sql).toContain('previewed_at = NULL');
     expect(sql).toContain('preview_claimed_at = NULL');
     expect(sql).toContain('preview_claim_token = NULL');
@@ -999,7 +999,7 @@ describe('POST /clone — 음성 클론 (voice-profile)', () => {
       // 원본 보관은 best-effort — 클론 자체는 성공(201).
       expect(res.status).toBe(201);
       const enqueueCall = mockDB.calls.find((call) =>
-        call.sql.includes('INSERT OR IGNORE INTO pending_external_deletions'),
+        call.sql.includes('INSERT INTO pending_external_deletions'),
       );
       expect(enqueueCall).toBeDefined();
       expect(enqueueCall!.args[1]).toBe('r2_object'); // kind
@@ -1354,7 +1354,7 @@ describe('PATCH /:id — 교체(replace_existing) 시 알람 처리 (voice-profi
     expect(
       mockDB.calls.some(
         (call) =>
-          call.sql.includes('INSERT OR IGNORE INTO pending_external_deletions') &&
+          call.sql.includes('INSERT INTO pending_external_deletions') &&
           call.args.includes('uploads/old.wav'),
       ),
       '교체 전 원본 녹음이 보존 큐 없이 사라진다',

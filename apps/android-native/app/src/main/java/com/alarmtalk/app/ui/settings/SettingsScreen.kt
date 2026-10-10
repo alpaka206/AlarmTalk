@@ -1,36 +1,28 @@
 package com.alarmtalk.app
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.rememberCoroutineScope
-import com.alarmtalk.app.R
 import com.alarmtalk.app.data.DynamicPromptPreferenceStore
 import com.alarmtalk.app.data.HolidayCountryPreferenceStore
-import com.alarmtalk.app.data.holidayCountryDisplayName
-import com.alarmtalk.app.data.holidayCountryFlagEmoji
+import com.alarmtalk.app.data.WeatherRegionHolidaySync
 import com.alarmtalk.app.data.toDynamicPromptSettings
 import com.alarmtalk.app.network.AuthSession
 import com.alarmtalk.app.network.DynamicPromptSettings
@@ -55,11 +47,24 @@ internal fun SettingsScreen(
     var promptPreferences by remember(context, promptOwnerUserId) {
         mutableStateOf(promptPreferenceStore.read(promptOwnerUserId))
     }
+    // 계정 설정을 새로 받으면(다른 기기에서 지역을 바꿨다 등) 화면에도 반영한다 — iOS 설정의
+    // `.onChange(of: promptObservation)`(응답 순번 `accountAnswerRevision` 이 축)와 같은 자리다. 받아 적는 규칙은 저장소 한 곳
+    // (`adoptAccountSettings`, 멱등)이고, 이 기기에 안 올라간 변경이 있으면 덮지 않는다.
+    // 다시 올리는 일은 뷰모델(`onAccountPromptSettingsReceived`)이 한다 — 여기서는 읽기만 맞춘다.
+    // ⚠ **축은 값이 아니라 응답이다**(`AccountSettingsReceipt`, Codex #837 11차) — 앱 루트의 받아 적기와 같은 축.
+    //   값만 보면 같은 내용의 응답이 기기 값을 바꿔도(밀린 표시가 풀려 서버 값을 받아들였다 등) 화면은 옛 스냅샷에 남는다.
+    val accountSettingsReceipt = com.alarmtalk.app.data.accountSettingsReceipt(authSession)
+    LaunchedEffect(promptOwnerUserId, accountSettingsReceipt) {
+        val receipt = accountSettingsReceipt ?: return@LaunchedEffect
+        if (promptOwnerUserId != receipt.userId) return@LaunchedEffect
+        promptPreferenceStore.adoptAccountSettings(receipt.userId, receipt.settings)
+        promptPreferences = promptPreferenceStore.read(receipt.userId)
+    }
+    // 공휴일 국가는 **지역의 나라**다 — 고르는 행은 없고, 지역을 저장할 때 맞춘다
+    // (docs/spec/alarm-lifecycle.md 「공휴일 국가는 지역의 나라다」).
     val holidayCountryStore = remember(context) { HolidayCountryPreferenceStore(context) }
-    var holidayCountryCode by remember(context) { mutableStateOf(holidayCountryStore.read()) }
     var showWeatherLocationDialog by remember { mutableStateOf(false) }
     var showFortuneInfoDialog by remember { mutableStateOf(false) }
-    var showHolidayCountryDialog by remember { mutableStateOf(false) }
     var showLogoutConfirm by remember { mutableStateOf(false) }
 
     Column(
@@ -83,19 +88,12 @@ internal fun SettingsScreen(
         contentPadding = PaddingValues(start = 20.dp, end = 20.dp, bottom = 12.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        item {
-            // 테마·앱 언어는 전체 탭에서 관리한다(토스 패턴). 여기엔 알람 동작에 걸리는 설정만 남긴다.
-            SettingsCard(title = stringResource(R.string.hs_settings_section_display)) {
-                SettingsRow(
-                    label = stringResource(R.string.settings_holiday_country_title),
-                    value = holidayCountryDisplayLabel(holidayCountryCode),
-                    onClick = { showHolidayCountryDialog = true },
-                )
-            }
-        }
-
+        // ⚠ **'화면' 카드('공휴일 달력' 행)는 없앴다**(2026-09-30). 그 행 하나뿐이던 카드다 —
+        // 공휴일 국가는 아래 '지역' 의 나라를 따른다(옛 `HolidayCountryPickerDialog`).
+        // 테마·앱 언어는 전체 탭에서 관리한다(토스 패턴). 여기엔 알람 동작에 걸리는 설정만 남긴다.
         item {
             SettingsCard(title = stringResource(R.string.hs_settings_section_random_phrase)) {
+                // '날씨 지역' 이 아니라 **'지역'** 이다 — 날씨 문구와 공휴일 국가가 함께 쓴다.
                 SettingsRow(
                     label = stringResource(R.string.hs_settings_weather_region),
                     value = weatherLocationSettingsLabel(
@@ -104,6 +102,17 @@ internal fun SettingsScreen(
                         promptPreferences.weatherCity,
                     ),
                     onClick = { showWeatherLocationDialog = true },
+                    supportingText = if (
+                        weatherRegionDisplay(
+                            context,
+                            promptPreferences.weatherCountry,
+                            promptPreferences.weatherCity,
+                        ).needsRepick
+                    ) {
+                        stringResource(R.string.region_picker_legacy_hint)
+                    } else {
+                        null
+                    },
                 )
                 HorizontalDivider()
                 SettingsRow(
@@ -191,15 +200,17 @@ internal fun SettingsScreen(
     }
 
     if (showWeatherLocationDialog) {
-        // 편집기 문구 pane 과 같은 다이얼로그를 공유한다(제목·필드·저장 버튼 동일).
+        // 편집기 문구 pane 과 같은 지역 고르기를 공유한다(나라 → 지역, 직접 입력 없음).
         WeatherLocationDialog(
             country = promptPreferences.weatherCountry,
             city = promptPreferences.weatherCity,
             onDismissWithoutSave = { showWeatherLocationDialog = false },
-            onConfirm = { country, city ->
-                promptPreferenceStore.saveWeatherLocation(promptOwnerUserId, country, city)
+            onConfirm = { region ->
+                // 계정에는 옛 앱이 읽는 글자를 적고, 서버로는 키도 함께 간다(`toDynamicPromptSettings`).
+                promptPreferenceStore.saveWeatherLocation(promptOwnerUserId, region.legacyCountry, region.legacyCity)
                 promptPreferences = promptPreferenceStore.read(promptOwnerUserId)
                 onUpdateDynamicPromptSettings(promptPreferences.toDynamicPromptSettings())
+                scope.launch { WeatherRegionHolidaySync.onRegionSaved(holidayCountryStore, region) }
                 showWeatherLocationDialog = false
             },
         )
@@ -219,50 +230,4 @@ internal fun SettingsScreen(
             },
         )
     }
-
-    if (showHolidayCountryDialog) {
-        HolidayCountryPickerDialog(
-            current = holidayCountryCode,
-            onDismiss = { showHolidayCountryDialog = false },
-            onSelect = { code ->
-                scope.launch {
-                    holidayCountryStore.setCountry(code)
-                    holidayCountryCode = holidayCountryStore.read()
-                }
-            },
-        )
-    }
 }
-
-private fun holidayCountryDisplayLabel(countryCode: String): String {
-    val flag = holidayCountryFlagEmoji(countryCode)
-    val name = holidayCountryDisplayName(countryCode)
-    return listOf(flag, name).filter { it.isNotBlank() }.joinToString(" ")
-}
-
-@Composable
-private fun HolidayCountryPickerDialog(
-    current: String,
-    onDismiss: () -> Unit,
-    onSelect: (String) -> Unit,
-) {
-    WakerSelectionSheet(
-        title = stringResource(R.string.settings_holiday_country_title),
-        onDismiss = onDismiss,
-    ) { dismiss ->
-        WakerSheetOptionGroup {
-            HolidayCountryPreferenceStore.SUPPORTED.forEachIndexed { index, code ->
-                WakerSheetOptionRow(
-                    title = holidayCountryDisplayLabel(code),
-                    selected = code == current,
-                    onClick = {
-                        onSelect(code)
-                        dismiss()
-                    },
-                    divider = index != HolidayCountryPreferenceStore.SUPPORTED.lastIndex,
-                )
-            }
-        }
-    }
-}
-

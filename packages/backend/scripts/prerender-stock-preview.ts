@@ -6,9 +6,12 @@
  * 확정되면 같은 바이트를 R2 에 올려 **배포 때 재합성하지 않는다**.
  *
  * ⚠ **백엔드와 파라미터가 한 글자도 달라지면 안 된다.** 여기서 만든 바이트를 그대로
- *   R2 에 올릴 것이므로, 모델·voice_settings·output_format·무음 패딩이 다르면
- *   시청한 소리와 실제로 울리는 소리가 달라진다. 그래서 `appendMp3TrailingSilence`
- *   와 `STOCK_CLIP_PRESETS` 를 **서버 소스에서 그대로 가져다 쓴다**(베끼지 않는다).
+ *   R2 에 올릴 것이므로, 모델·voice_settings·output_format·합성 글자가 다르면
+ *   시청한 소리와 실제로 울리는 소리가 달라진다. 그래서 `TTS_MODEL_ID`·`TTS_VOICE_SETTINGS`·
+ *   `STOCK_CLIP_PRESETS` 를 **서버 소스에서 그대로 가져다 쓴다**(베끼지 않는다). 받은 바이트는 가공하지
+ *   않는다 — 사람이 듣는 원본이다. 서버가 모든 합성에 거는 음량 올리기(`TTS_LOUDNESS_BOOST_DB`)는 게시할 때
+ *   `publish-stock-clips.ts` 가 같은 셈으로 건다(`mp3-loudness-boost.ts`) — 여기서 올려 두면 게시 때 두 번
+ *   올라간다(그래서 게시는 표지가 있는 시청본을 받지 않는다).
  *
  * 멱등하다 — 이미 있는 파일은 건너뛴다. 중간에 끊기면 다시 돌리면 이어서 받는다.
  *
@@ -16,6 +19,7 @@
  *   npm run preview:stock -- --dry-run     # 무엇이 빠졌는지만 본다
  *   npm run preview:stock                  # 빠진 것 전부 굽는다
  *   npm run preview:stock -- --lang ja --voice 미나
+ *   npm run preview:stock -- --category greeting   # 인사말만(앱·랜딩 번들 인사말을 새로 만들 때)
  *   옵션: --force  이미 있어도 다시 굽는다 / --dry-run  무엇을 구울지만 출력
  *
  * ⚠ **`node --experimental-strip-types` 로는 못 돌린다.** 이 스크립트가 가져다 쓰는
@@ -27,9 +31,9 @@
 import { mkdirSync, existsSync, writeFileSync, readFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 
-import { STOCK_CLIP_PRESETS, withClosingBreath } from '../src/lib/stock-clips.ts';
-import { appendMp3TrailingSilence } from '../src/lib/mp3-silence.ts';
+import { STOCK_CLIP_PRESETS, systemStockTexts } from '../src/lib/stock-clips.ts';
 import { ELEVENLABS_TTS_OUTPUT_FORMAT } from '../src/lib/elevenlabs.ts';
+import { TTS_MODEL_ID, TTS_VOICE_SETTINGS } from '../src/lib/tts-model.ts';
 import {
   computeFingerprint,
   fingerprintKey,
@@ -74,23 +78,12 @@ const VOICES: { name: string; providerVoiceId: string }[] = [
 const LANGUAGES = ['ko', 'en', 'ja'] as const;
 type Language = (typeof LANGUAGES)[number];
 
-/** `elevenlabs.ts` 의 `textToSpeech` 기본값과 동일. 바꾸면 소리가 갈라진다. */
-const MODEL_ID = 'eleven_v3';
-const VOICE_SETTINGS = {
-  stability: 0.5,
-  similarity_boost: 0.8,
-  style: 0.4,
-  // ⚠ 1.0 으로 올리지 말 것 — 알람은 막 깬 사람이 듣는다(elevenlabs.ts 주석 참조).
-  speed: 0.9,
-  use_speaker_boost: true,
-} as const;
-
 /**
- * 제공자에게 실제로 보내는 글자. 서버(`generateStockClip`)와 **같은 순서**여야 한다 —
- * `prepareAlarmTextWithVertex` 가 trim 한 글자에 `withClosingBreath` 를 붙인다.
+ * 제공자에게 실제로 보내는 글자. 서버(`generateStockClip`)와 **같은 함수**(`systemStockTexts`)로 만든다 —
+ * 서버는 그 글자로 합성하고 캐시 키를 만든다(v3 시절의 여운 꼬리 ` ...` 는 v4 Turbo 에서 뺐다).
  */
 function providerTextFor(text: string): string {
-  return withClosingBreath(text.trim());
+  return systemStockTexts(text).synthesisText;
 }
 
 function argValue(name: string): string | undefined {
@@ -158,6 +151,7 @@ interface Target {
 function collectTargets(): Target[] {
   const onlyLang = argValue('--lang');
   const onlyVoice = argValue('--voice');
+  const onlyCategory = argValue('--category');
   const targets: Target[] = [];
   for (const language of LANGUAGES) {
     if (onlyLang && onlyLang !== language) continue;
@@ -165,6 +159,7 @@ function collectTargets(): Target[] {
       if (onlyVoice && onlyVoice !== voice.name) continue;
       const dir = outputDir(language, voice.name);
       for (const preset of STOCK_CLIP_PRESETS) {
+        if (onlyCategory && onlyCategory !== preset.category) continue;
         const texts = preset.texts[language] as readonly string[] | undefined;
         if (!texts) continue;
         texts.forEach((text, variant) => {
@@ -180,9 +175,9 @@ function collectTargets(): Target[] {
             filePath: resolve(dir, fileName),
             fingerprint: computeFingerprint({
               providerVoiceId: voice.providerVoiceId,
-              modelId: MODEL_ID,
+              modelId: TTS_MODEL_ID,
               outputFormat: ELEVENLABS_TTS_OUTPUT_FORMAT,
-              voiceSettings: { ...VOICE_SETTINGS },
+              voiceSettings: { ...TTS_VOICE_SETTINGS },
               providerText: providerTextFor(text),
             }),
             fingerprintKey: fingerprintKey(language, voice.name, fileName),
@@ -200,15 +195,12 @@ async function synthesize(apiKey: string, target: Target): Promise<Uint8Array> {
   // 확정 리터럴이라 언어 힌트가 없어도 발음이 갈리지 않는다.
   for (const withLanguage of [true, false]) {
     const body: Record<string, unknown> = {
-      // ⚠ **서버가 제공자에게 보내는 그 글자여야 한다.** `generateStockClip` 은
-      //   `withClosingBreath(synthesisText)` 를 보낸다 — 문장 끝 ` ...` 가 v3 의
-      //   급마감을 막는다. 여기서 빼면 시청본과 실제 알람의 **말끝이 달라진다.**
-      //   ⚠ `trim()` 도 서버를 따른다 — `prepareAlarmTextWithVertex` 가 trim 한 글자로
-      //     합성하고 캐시 키를 만든다. 여기서 안 다듬으면 앞뒤 공백이 있는 프리셋에서
-      //     **소리와 키가 어긋난다.**
+      // ⚠ **서버가 제공자에게 보내는 그 글자여야 한다**(`providerTextFor`). 서버는 trim 한 글자로
+      //   합성하고 캐시 키를 만든다 — 여기서 안 다듬으면 앞뒤 공백이 있는 프리셋에서 **소리와 키가 어긋난다.**
       text: providerTextFor(target.text),
-      model_id: MODEL_ID,
-      voice_settings: VOICE_SETTINGS,
+      // 모델·설정은 서버(`textToSpeech`)가 쓰는 그 상수다 — 여기서 따로 적으면 시청한 소리와 실제 알람이 갈라진다.
+      model_id: TTS_MODEL_ID,
+      voice_settings: TTS_VOICE_SETTINGS,
     };
     if (withLanguage) body.language_code = target.language;
     const res = await fetch(url, {
@@ -220,7 +212,7 @@ async function synthesize(apiKey: string, target: Target): Promise<Uint8Array> {
       },
       body: JSON.stringify(body),
     });
-    if (res.ok) return appendMp3TrailingSilence(new Uint8Array(await res.arrayBuffer()));
+    if (res.ok) return new Uint8Array(await res.arrayBuffer());
     const detail = await res.text().catch(() => '');
     const languageRejected =
       withLanguage && res.status === 422 && detail.toLowerCase().includes('language');
@@ -295,7 +287,8 @@ async function main(): Promise<void> {
   }
 
   // 문구 대조표는 그 세트가 온전할 때만 새로 쓴다(부분 실패 상태를 완성본처럼 남기지 않는다).
-  for (const key of bySet.keys()) {
+  // 카테고리를 골라 구웠으면 쓰지 않는다 — 그 카테고리만 적힌 대조표가 전체 대조표를 덮는다.
+  for (const key of argValue('--category') ? [] : bySet.keys()) {
     const [language, voiceName] = key.split('/') as [Language, string];
     const setTargets = targets.filter((t) => t.language === language && t.voiceName === voiceName);
     if (setTargets.every((t) => existsSync(t.filePath))) {

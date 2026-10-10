@@ -140,7 +140,7 @@ describe('사전렌더 문구 생성 실패 — 전송 실패', () => {
   });
 
   it('앞 회차가 내용 위반이어도 마지막이 전송 실패면 전송 실패로 올린다', async () => {
-    queueContent(geminiText(JSON.stringify({ text: '(다정하게) 일어나!', tag: '' })));
+    queueContent(geminiText(JSON.stringify({ text: '(다정하게) 일어나!' })));
     queueContent(new Error('Vertex upstream unreachable (503)'));
     queueContent(new Error('Vertex upstream unreachable (503)'));
 
@@ -155,7 +155,7 @@ describe('사전렌더 문구 생성 실패 — 전송 실패', () => {
 
 describe('사전렌더 문구 생성 실패 — 거절 사유', () => {
   it('소괄호 지문은 stage_direction 으로 구분된다', async () => {
-    queueContentThrice(() => geminiText(JSON.stringify({ text: '(다정하게) 일어나!', tag: '' })));
+    queueContentThrice(() => geminiText(JSON.stringify({ text: '(다정하게) 일어나!' })));
 
     const err = await caught(
       generatePrerenderClipText(ENV, { seed: '깨운다', targetLanguage: 'ko' }),
@@ -169,7 +169,7 @@ describe('사전렌더 문구 생성 실패 — 거절 사유', () => {
     // 200자를 넘기는 한 줄(태그를 벗긴 본문 기준).
     const tooLong = '좋은 아침이에요. '.repeat(30).trim();
     expect(tooLong.length).toBeGreaterThan(200);
-    queueContentThrice(() => geminiText(JSON.stringify({ text: tooLong, tag: '' })));
+    queueContentThrice(() => geminiText(JSON.stringify({ text: tooLong })));
 
     const err = await caught(
       generatePrerenderClipText(ENV, { seed: '깨운다', targetLanguage: 'ko' }),
@@ -180,7 +180,7 @@ describe('사전렌더 문구 생성 실패 — 거절 사유', () => {
 
   it('타깃 언어와 다른 글자는 language_mismatch 로 구분된다', async () => {
     queueContentThrice(() =>
-      geminiText(JSON.stringify({ text: '좋은 아침이에요, 일어나세요.', tag: '' })),
+      geminiText(JSON.stringify({ text: '좋은 아침이에요, 일어나세요.' })),
     );
 
     const err = await caught(
@@ -191,7 +191,7 @@ describe('사전렌더 문구 생성 실패 — 거절 사유', () => {
   });
 
   it('태그만 오면 empty_spoken 으로 구분된다', async () => {
-    queueContentThrice(() => geminiText(JSON.stringify({ text: '[happy] [excited]', tag: '' })));
+    queueContentThrice(() => geminiText(JSON.stringify({ text: '[happy] [excited]' })));
 
     const err = await caught(
       generatePrerenderClipText(ENV, { seed: '깨운다', targetLanguage: 'ko' }),
@@ -213,7 +213,7 @@ describe('사전렌더 문구 생성 실패 — 거절 사유', () => {
 
   it('⚠ 낭독 문구 원문은 에러에 실리지 않는다 — 개인 목소리 콘텐츠다', async () => {
     const spoken = '(다정하게) 규원아, 약 먹을 시간이야.';
-    queueContentThrice(() => geminiText(JSON.stringify({ text: spoken, tag: '' })));
+    queueContentThrice(() => geminiText(JSON.stringify({ text: spoken })));
 
     const err = await caught(
       generatePrerenderClipText(ENV, {
@@ -227,5 +227,68 @@ describe('사전렌더 문구 생성 실패 — 거절 사유', () => {
     expect(alarmTextRejectionReasonOf(err)).toBe('stage_direction');
     expect(String(err)).not.toContain('규원아');
     expect(String(err)).not.toContain('약 먹을 시간');
+  });
+});
+
+// 재시도 힌트는 회차 번호가 아니라 **내용 거절 횟수**로 고른다(2026-10-01 3.8 평가). 회차로 고르던 때는 시간 초과
+// 뒤 회차가 거절된 적도 없이 '앞 시도가 거절됐다' 를 받았고, 시간 초과 두 번 뒤 3회차는 '관계 낱말 없이 짧게' 를
+// 받아 자기 지칭과 시드 절을 버렸다. 호출 수(3회)와 최종 에러 전파는 그대로다.
+describe('사전렌더 재시도 힌트 — 내용 거절 횟수로 고른다', () => {
+  const prompts = () =>
+    mockFetch.mock.calls
+      .filter((c) => String(c[0]) !== TOKEN_URI)
+      .map((c) => JSON.parse(String(c[1]?.body)).contents[0].parts[0].text as string);
+  const ok = () => geminiText(JSON.stringify({ text: '우리 딸, 약 먹을 시간이야. 지금 챙겨 먹자.' }));
+  const params = { seed: '약 먹을 시간이라고 알린다.', relationshipLabel: '엄마', listenerTitle: '우리 딸', targetLanguage: 'ko' };
+
+  it('시간 초과 뒤에는 같은 프롬프트를 그대로 다시 보낸다', async () => {
+    queueContent(new Error('The operation was aborted due to timeout'));
+    queueContent(ok());
+
+    await generatePrerenderClipText(ENV, params);
+
+    const sent = prompts();
+    expect(sent).toHaveLength(2);
+    expect(sent[1]).toBe(sent[0]);
+    expect(sent[1]).not.toContain('RETRY');
+  });
+
+  it('시간 초과 두 번 뒤 3회차도 관계 낱말 금지(final) 힌트를 받지 않는다', async () => {
+    queueContent(new Error('The operation was aborted due to timeout'));
+    queueContent(new Error('The operation was aborted due to timeout'));
+    queueContent(ok());
+
+    await generatePrerenderClipText(ENV, params);
+
+    const sent = prompts();
+    expect(sent).toHaveLength(3);
+    expect(sent[2]).not.toContain('RETRY');
+    expect(sent[2]).not.toContain('WITHOUT using the word');
+  });
+
+  it('거절 한 번 + 시간 초과 한 번이면 3회차는 일반 RETRY 힌트다', async () => {
+    queueContent(geminiText(JSON.stringify({ text: '(다정하게) 우리 딸, 약 먹을 시간이야.' })));
+    queueContent(new Error('The operation was aborted due to timeout'));
+    queueContent(ok());
+
+    await generatePrerenderClipText(ENV, params);
+
+    const sent = prompts();
+    expect(sent[1]).toContain('RETRY: the previous attempt was rejected');
+    expect(sent[2]).toContain('RETRY: the previous attempt was rejected');
+    expect(sent[2]).not.toContain('RETRY (final)');
+  });
+
+  it('두 번 거절된 뒤에만 관계 낱말 금지(final) 힌트를 준다', async () => {
+    queueContentThrice(() => geminiText(JSON.stringify({ text: '(다정하게) 우리 딸, 약 먹을 시간이야.' })));
+
+    const err = await caught(generatePrerenderClipText(ENV, params));
+
+    expect(alarmTextRejectionReasonOf(err)).toBe('stage_direction');
+    const sent = prompts();
+    expect(sent).toHaveLength(3);
+    expect(sent[1]).toContain('RETRY: the previous attempt was rejected');
+    expect(sent[2]).toContain('RETRY (final)');
+    expect(sent[2]).toContain('WITHOUT using the word "엄마"');
   });
 });

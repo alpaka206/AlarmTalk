@@ -6,7 +6,7 @@ import SwiftUI
 ///
 /// ⚠ **인증 배경은 두 종류다. 섞지 말 것.** 랜딩만 이 일출 씬이고, 로그인·가입·비밀번호
 /// 재설정·약관 동의는 [AuthBackdrop] (네이비 그라데이션 + 상단 브랜드 글로우)을 쓴다 —
-/// 안드로이드가 그렇게 갈라 뒀다(`AuthScreen.kt:73`). 일출 씬을 폼 화면 뒤에 깔면 태양·
+/// 안드로이드가 그렇게 갈라 뒀다(`AuthScreen.kt:70`). 일출 씬을 폼 화면 뒤에 깔면 태양·
 /// 윤슬이 입력 필드를 지나가 글자가 안 읽힌다.
 ///
 /// ⚠ **여기서만 raw hex 를 쓴다.** CLAUDE.md 의 「생 Color 금지」 규약은 문서화된 예외로
@@ -336,7 +336,7 @@ struct SunriseScene: View {
 
 /// 씬 위에 얹는 글자 색 — 안드로이드 `TextOnScene` / `BrandAccentOnScene` 과 같은 값.
 /// 씬이 고정 일러스트라 이 둘도 테마로 갈리지 않는다.
-/// 인증 화면군 전용 고정 색 토큰. 안드로이드 `AuthScreen.kt:61-71` · `LandingScreen.kt:119-129`.
+/// 인증 화면군 전용 고정 색 토큰. 안드로이드 `AuthScreen.kt:58-68` · `LandingScreen.kt:119-129`.
 ///
 /// ⚠ **여기만 `MaterialTheme.colorScheme` 대응 없이 고정값이다.** CLAUDE.md 의 문서화된
 /// 예외('랜딩/로그인 브랜드 비주얼') — 배경이 라이트/다크와 무관하게 항상 어두우므로
@@ -376,7 +376,7 @@ enum AuthSceneColors {
 }
 
 /// 인증 폼 화면(로그인·가입·비밀번호 재설정·약관 동의) 공통 배경 —
-/// 은은한 네이비 그라데이션 + 상단 브랜드 글로우. 안드로이드 `AuthScreen.kt:73-103`.
+/// 은은한 네이비 그라데이션 + 상단 브랜드 글로우. 안드로이드 `AuthScreen.kt:70-100`.
 struct AuthBackdrop<Content: View>: View {
     @ViewBuilder var content: () -> Content
 

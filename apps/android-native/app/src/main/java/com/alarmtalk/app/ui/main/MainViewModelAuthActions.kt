@@ -2,12 +2,13 @@ package com.alarmtalk.app
 
 import android.app.Application
 import android.util.Log
+import androidx.annotation.StringRes
 import androidx.lifecycle.viewModelScope
-import com.alarmtalk.app.R
 import com.alarmtalk.app.core.AlarmTalkLog
 import com.alarmtalk.app.core.AlarmTalkLog.TAG
-import com.alarmtalk.app.network.AuthTokenResponse
+import com.alarmtalk.app.network.AuthSession
 import com.alarmtalk.app.network.AuthSessionStore
+import com.alarmtalk.app.network.AuthUser
 import com.alarmtalk.app.network.DynamicPromptSettings
 import com.alarmtalk.app.network.FamilyAlarmQuietWindow
 import com.alarmtalk.app.network.EmailVerificationConfirmRequest
@@ -19,9 +20,7 @@ import com.alarmtalk.app.network.PasswordResetRequest
 import com.alarmtalk.app.network.RegisterRequest
 import com.alarmtalk.app.network.AlarmTalkApiClient
 import com.alarmtalk.app.sync.RemoteAlarmSyncScheduler
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 
 internal fun MainViewModel.login(email: String, password: String) {
@@ -416,11 +415,7 @@ internal fun MainViewModel.logout(signOutGoogle: suspend () -> Unit = {}) {
 // 회원 탈퇴(유예) 신청 — 즉시 삭제 대신 POST /me/deletion 으로 30일 유예 상태로 둔다.
 // 유예 기간 내 다시 로그인해 철회하면 복구된다. 신청 후에는 로그아웃 처리한다(구글 revoke 안 함).
 internal fun MainViewModel.requestAccountDeletion(signOutGoogle: suspend () -> Unit = {}) {
-    val session = authSession
-    if (session == null) {
-        message = getApplication<android.app.Application>().getString(R.string.msg_login_required_to_use)
-        return
-    }
+    val session = sessionOrMessage(R.string.msg_login_required_to_use) ?: return
     val authorization = com.alarmtalk.app.network.AlarmTalkApiClient.bearer(session.token)
     val shouldSignOutGoogle = session.provider == AuthSessionStore.PROVIDER_GOOGLE
     viewModelScope.launch {
@@ -498,11 +493,7 @@ internal fun MainViewModel.checkAccountStatus() {
 
 // 유예 기간 내 탈퇴 철회 → 계정 복구. 성공 시 복구 화면을 닫고 정상 진입한다.
 internal fun MainViewModel.cancelAccountDeletion() {
-    val session = authSession
-    if (session == null) {
-        message = getApplication<android.app.Application>().getString(R.string.msg_login_required_to_use)
-        return
-    }
+    val session = sessionOrMessage(R.string.msg_login_required_to_use) ?: return
     val authorization = com.alarmtalk.app.network.AlarmTalkApiClient.bearer(session.token)
     viewModelScope.launch {
         authBusy = true
@@ -524,11 +515,7 @@ internal fun MainViewModel.cancelAccountDeletion() {
 }
 
 internal fun MainViewModel.updateNickname(name: String) {
-    val session = authSession
-    if (session == null) {
-        message = getApplication<android.app.Application>().getString(R.string.msg_login_required_to_use)
-        return
-    }
+    val session = sessionOrMessage(R.string.msg_login_required_to_use) ?: return
     val trimmed = name.trim()
     if (trimmed.isEmpty() || trimmed.length > 30) {
         message = getApplication<android.app.Application>().getString(R.string.msg_nickname_length_invalid)
@@ -542,8 +529,13 @@ internal fun MainViewModel.updateNickname(name: String) {
         runCatching {
             api.updateProfile(authorization, com.alarmtalk.app.network.UpdateProfileRequest(name = trimmed))
         }.onSuccess {
-            val updated = session.copy(user = session.user.copy(name = trimmed))
-            saveSessionPreservingCurrentToken(updated, startGeneration)?.let { authSession = it }
+            // 바꾼 칸(이름)만 **지금 세션** 위에 — 요청 전의 `session` 사본을 되쓰면 그 사이 `/auth/me` 가 적은
+            // plan·프로모·받은 시각을 되돌린다([saveProfileEdit]).
+            saveProfileEdit(session.user.id, startGeneration) { it.copy(name = trimmed) }?.let { saved ->
+                authSession = saved
+                // 확인 조회 — 저장 전에 떠나 옛 이름을 읽은 `/auth/me` 가 늦게 와도 바로잡는다([saveProfileEdit]).
+                refreshAppSession(rollToken = false)
+            }
             dismissEditNickname()
         }.onFailure { error ->
             AlarmTalkLog.reportError("Failed to update nickname", error)
@@ -557,11 +549,7 @@ internal fun MainViewModel.updateFamilyAlarmSettings(
     allowFamilyAlarms: Boolean,
     quietWindows: List<FamilyAlarmQuietWindow>,
 ) {
-    val session = authSession
-    if (session == null) {
-        message = getApplication<android.app.Application>().getString(R.string.msg_login_required_to_use)
-        return
-    }
+    val session = sessionOrMessage(R.string.msg_login_required_to_use) ?: return
     val normalizedWindows = quietWindows
         .map { window -> window.copy(days = window.days.distinct().filter { it in 0..6 }.sorted()) }
         .filter { it.days.isNotEmpty() }
@@ -591,8 +579,10 @@ internal fun MainViewModel.updateFamilyAlarmSettings(
                 ),
             )
         }.onSuccess {
-            val updated = session.copy(
-                user = session.user.copy(
+            // 바꾼 칸(가족 설정 다섯)만 **지금 세션** 위에 — 초대 코드 등록 직후라면 그 사이 `/auth/me` 가 적은
+            // 가족 plan 을 요청 전의 무료 사본이 되돌린다([saveProfileEdit]).
+            saveProfileEdit(session.user.id, startGeneration) { user ->
+                user.copy(
                     allowFamilyAlarms = allowFamilyAlarms,
                     familyAlarmQuietDays = firstWindow?.days ?: emptyList(),
                     // 세션 캐시의 레거시 3필드는 non-null 이라 표시용 자리값을 둔다.
@@ -600,9 +590,12 @@ internal fun MainViewModel.updateFamilyAlarmSettings(
                     familyAlarmQuietStart = firstWindow?.start ?: "09:00",
                     familyAlarmQuietEnd = firstWindow?.end ?: "18:30",
                     familyAlarmQuietWindows = normalizedWindows,
-                ),
-            )
-            saveSessionPreservingCurrentToken(updated, startGeneration)?.let { authSession = it }
+                )
+            }?.let { saved ->
+                authSession = saved
+                // 확인 조회 — 저장 전에 떠나 옛 가족 설정을 읽은 `/auth/me` 가 늦게 와도 바로잡는다([saveProfileEdit]).
+                refreshAppSession(rollToken = false)
+            }
             refreshSocial()
             message = getApplication<android.app.Application>().getString(R.string.msg_family_alarm_settings_saved)
         }.onFailure { error ->
@@ -613,26 +606,100 @@ internal fun MainViewModel.updateFamilyAlarmSettings(
     }
 }
 
+/**
+ * 계정 설정(지역·사주)을 올린다. 부르는 쪽은 먼저 이 기기에 적고 '안 올라간 변경' 표시를 남긴다
+ * (`saveWeatherLocation`·`saveFortuneInfo`) — 올릴 값은 [settings] 가 아니라 **차례가 온 뒤의 이 기기 값**이다
+ * (`DynamicPromptPreferenceStore.pendingUploadSnapshot`). [settings] 는 부르는 쪽 모양을 맞추려고 받을 뿐이다.
+ */
+@Suppress("UNUSED_PARAMETER")
 internal fun MainViewModel.updateDynamicPromptSettings(settings: DynamicPromptSettings) {
-    val session = authSession ?: return
+    val userId = authSession?.user?.id ?: return
+    viewModelScope.launch {
+        // ⚠ **한 번에 하나씩, 부른 순서대로**(`PromptSettingsUploadQueue`). 요청마다 설정 전체를 싣으므로
+        // 겹쳐 돌면 늦게 끝난 옛 요청이 서버·세션을 옛 값으로 되돌린다(Codex #837).
+        promptSettingsUploads.enqueue { uploadDynamicPromptSettings(userId) }
+    }
+}
+
+private suspend fun MainViewModel.uploadDynamicPromptSettings(userId: String) {
+    // 차례를 기다리는 사이 계정이 바뀌었으면 남의 설정을 올리지 않는다. 세션·세대는 **차례가 온 뒤에** 읽는다 —
+    // 앞 요청이 세션을 갈아 끼웠을 수 있다.
+    val session = authSession?.takeIf { it.user.id == userId } ?: return
+    // ⚠ **올릴 값도 차례가 온 뒤에 정한다**(Codex #837). 줄에 설 때 찍은 사본은 그 사이 앞 요청이 같은 값을 올려
+    //   표시를 내렸거나(→ 올릴 것이 없다) 다른 기기의 값을 받아 적은 것을 모른다 — 그대로 올리면 같은 값을 두 번
+    //   올리고, 그 사이 다른 기기가 쓴 값을 옛 사본으로 덮는다.
+    val settings = dynamicPromptStore.pendingUploadSnapshot(userId) ?: return
     // 요청 시작 시점의 세션 세대 — 응답을 저장하기 전에 대조한다.
     val startGeneration = authSessionStore.sessionGeneration()
     val authorization = com.alarmtalk.app.network.AlarmTalkApiClient.bearer(session.token)
+    runCatching {
+        api.updateProfile(
+            authorization,
+            com.alarmtalk.app.network.UpdateProfileRequest(
+                dynamicPromptSettings = settings,
+            ),
+        )
+    }.onSuccess { response ->
+        // ⚠ **보낸 세션이 그대로일 때만 받는다**(Codex #837 11차) — 세대는 세션이 끝날 때만 오르므로, 로그아웃 뒤
+        //   **같은 계정**으로 다시 들어온 새 세션도 가른다. 세션이 바뀌었으면 아무것도 적지 않는다: 울타리는 새 세션에
+        //   떠 있는 조회를 캐시로 가리고, 표시 내리기는 새 세션의 '안 올라간 변경' 을 지우고(남은 표시는 다음 받아
+        //   적기가 다시 올린다), 세션 저장은 어차피 버려진다. iOS `updateProfile` 의 `sessionRevision` 대조와 같다.
+        if (authSession?.user?.id != session.user.id || authSessionStore.sessionGeneration() != startGeneration) {
+            Log.i(TAG, "Dropping prompt settings upload result: session ended or switched")
+            return@onSuccess
+        }
+        // ⚠ **표시를 내리기 전에 울타리를 세운다**(Codex #837). 지금 떠 있는 `/auth/me` 는 이 올리기 **전의** 설정을
+        // 읽었을 수 있다 — 표시를 내린 뒤 그 응답이 오면 받아 적기가 옛 설정을 이 기기에 적는다. 그 응답들은
+        // 설정만 지금 세션의 값(아래에서 올린 값으로 갈아 끼운다)을 지킨다(`refreshAppSessionNow`). 울타리 안의
+        // 응답이 올리기 **뒤의** 다른 기기 변경을 싣고 있었을 수도 있으므로, 끝에서 울타리 뒤의 조회를 한 번 더 한다.
+        promptSettingsAnswerFence = personalPromoLedger.latestRequestSeq()
+        // ⚠ **세션을 갈아 끼우기 전에** 표시를 내린다. 새 세션이 곧바로
+        // [onAccountPromptSettingsReceived] 를 부르는데, 그때 표시가 남아 있으면 방금 올린 값을
+        // '아직 안 올라간 변경' 으로 보고 한 번 더 올린다.
+        dynamicPromptStore.markPushed(session.user.id, settings)
+        val updatedSettings = response.dynamicPromptSettings ?: settings
+        // 올린 값(계정 설정)만 **지금 세션** 위에 — 차례가 온 뒤 잡은 `session` 도 요청 전의 사본이라, 그대로 되쓰면 그 사이
+        // `/auth/me` 가 적은 plan·프로모·받은 시각과 다른 칸을 되돌린다([saveProfileEdit]).
+        val saved = saveProfileEdit(session.user.id, startGeneration) { it.copy(dynamicPromptSettings = updatedSettings) }
+            ?.also { authSession = it }
+        refreshSocial()
+        // **울타리 뒤의 조회로 확인한다**(Codex #837) — 울타리는 올리기 전에 떠난 조회를 모두 가리므로, 그중 올리기
+        // **뒤**에 다른 기기가 고친 값을 읽은 응답도 버려진다. 새로 보낸 조회는 울타리 밖이라 서버의 지금 값을 받아
+        // 적는다(iOS `updateProfile` 뒤의 `refreshUser` 와 같다). 토큰은 굴리지 않는다 — 토큰을 키로 쓰는 효과가
+        // 다시 돌 이유가 없다.
+        if (saved != null) {
+            runCatching { refreshAppSessionNow(rollToken = false) }
+                .onFailure { error -> Log.w(TAG, "Account refresh after prompt settings upload failed", error) }
+        }
+    }.onFailure { error ->
+        // 로컬에는 '안 올라간 변경' 표시가 남는다 — 다음에 계정 설정을 받을 때
+        // ([onAccountPromptSettingsReceived]) 서버의 옛 값으로 덮지 않고 다시 올린다.
+        AlarmTalkLog.reportError("Failed to update dynamic prompt settings", error)
+    }
+}
+
+/**
+ * 서버의 계정 설정(`dynamic_prompt_settings`)을 받았다 — 로그인·`/auth/me`·설정 저장 응답.
+ *
+ * 이 기기의 지역·사주와 공휴일 국가를 맞추는 규칙은 `adoptAccountPromptSettings`
+ * (data/WeatherRegionSettings.kt) 한 곳이다. 여기서 더하는 것은 둘뿐이다:
+ *  - 이 기기에 아직 안 올라간 변경이 있으면(저장이 실패했던 지역·사주) **그걸 다시 올린다.**
+ *    안 올리면 서버는 옛 값에 머물고, 이 기기는 다른 기기의 변경을 영영 받지 않는다.
+ *  - 공휴일 국가가 바뀌어 알람을 다시 잡는 일은 여기서 하지 않는다 — 국가 흐름 수집기
+ *    (`MainViewModel` init → `AlarmRepository.refreshHolidayOffAlarms`)가 한다.
+ */
+internal fun MainViewModel.onAccountPromptSettingsReceived(userId: String, settings: DynamicPromptSettings) {
     viewModelScope.launch {
-        runCatching {
-            api.updateProfile(
-                authorization,
-                com.alarmtalk.app.network.UpdateProfileRequest(
-                    dynamicPromptSettings = settings,
-                ),
-            )
-        }.onSuccess { response ->
-            val updatedSettings = response.dynamicPromptSettings ?: settings
-            val updated = session.copy(user = session.user.copy(dynamicPromptSettings = updatedSettings))
-            saveSessionPreservingCurrentToken(updated, startGeneration)?.let { authSession = it }
-            refreshSocial()
-        }.onFailure { error ->
-            AlarmTalkLog.reportError("Failed to update dynamic prompt settings", error)
+        // 응답이 오는 사이 계정이 바뀌었으면 남의 설정을 이 계정에 적지 않는다.
+        if (authSession?.user?.id != userId) return@launch
+        val adoption = com.alarmtalk.app.data.adoptAccountPromptSettings(
+            promptStore = dynamicPromptStore,
+            holidayStore = holidayCountryStore,
+            userId = userId,
+            settings = settings,
+        )
+        if (adoption is com.alarmtalk.app.data.AccountSettingsAdoption.LocalPending) {
+            updateDynamicPromptSettings(adoption.settings)
         }
     }
 }
@@ -641,11 +708,7 @@ private fun isValidTimeText(value: String): Boolean =
     Regex("""^([01]\d|2[0-3]):[0-5]\d$""").matches(value)
 
 internal fun MainViewModel.deleteAccount(revokeGoogleAccess: suspend () -> Unit = {}) {
-    val session = authSession
-    if (session == null) {
-        message = getApplication<android.app.Application>().getString(R.string.msg_login_required_to_use)
-        return
-    }
+    val session = sessionOrMessage(R.string.msg_login_required_to_use) ?: return
     val authorization = com.alarmtalk.app.network.AlarmTalkApiClient.bearer(session.token)
     val shouldRevokeGoogle = session.provider == AuthSessionStore.PROVIDER_GOOGLE
     viewModelScope.launch {
@@ -696,10 +759,15 @@ internal fun MainViewModel.checkAppVersion() {
             // 이 판정 결과를 InAppUpdateManager 가 그대로 소비한다(버전 비교 중복 구현 금지).
             updateRequired = appVersionCode in 1 until policy.minSupportedVersion
             updateRecommended = appVersionCode in 1 until policy.latestVersion
+            // 지역 시트의 날씨 출처 줄 — 서버가 지금 쓰는 원천을 말할 때만 그린다(`showsWeatherAttribution`).
+            weatherAttribution = policy.weatherAttribution
         }.onFailure { error ->
             Log.w(TAG, "Failed to check app version", error)
             updateRequired = false
             updateRecommended = false
+            // 원천을 확인하지 못했으면 출처를 말하지 않는다 — 앞 응답의 값을 남기면 그 사이 원천을 되돌린
+            // 서버에서도 옛 원천을 출처로 적는다.
+            weatherAttribution = null
         }
         // 성공·실패 모두 '확인은 끝났다'. 네트워크 실패로 영영 false 면 1회성 오버레이가
         // 영영 안 뜬다 — 버전을 못 물어본 것이 앱을 못 쓰게 할 이유는 아니다.
@@ -719,10 +787,12 @@ internal fun MainViewModel.checkConsentStatus() {
         needsConsent = false
         consentChecked = true
     } else if (!consentStatusChecked) {
-        // **한 번 통과시킨 화면을 다시 로딩으로 덮지 않는다.** 이 함수는 토큰이 바뀔 때마다
-        // 다시 도는데(AlarmTalkApp 의 LaunchedEffect(authSession?.token)), 그때마다 false 로
-        // 되돌리면 이미 홈을 쓰고 있던 사용자의 화면이 스피너로 덮인다. 그 화면은
-        // GateBackGuard 가 뒤로가기를 통째로 삼키므로 **그 동안 앱이 안 닫힌다.**
+        // **한 번 통과시킨 화면을 다시 로딩으로 덮지 않는다.** 이 함수는 세션마다 한 번 돈다
+        // (AlarmTalkApp 의 `LaunchedEffect(sessionEffectKey)` — 계정 + 세션 세대가 키다).
+        // 예전에는 키가 토큰이라 rolling refresh 로 토큰이 굴러갈 때마다(콜드 스타트에만 2~3번)
+        // 다시 돌았다 — 키는 고쳤지만(효율 감사 H3) 이 가드는 남긴다. 같은 세션 안에서 다시
+        // 불리는 날 false 로 되돌리면 이미 홈을 쓰고 있던 사용자의 화면이 스피너로 덮이고, 그
+        // 화면은 GateBackGuard 가 뒤로가기를 통째로 삼키므로 **그 동안 앱이 안 닫힌다.**
         //
         // 캐시(isConsentCachedDone)가 아니라 consentStatusChecked 를 보는 이유: 받을 게 남은
         // 계정(선택 동의 재수집 등)은 완료 캐시가 아예 안 만들어져서, 캐시로 판단하면 매번
@@ -821,11 +891,7 @@ private fun MainViewModel.handleConsentVersionMismatch(error: Throwable): Boolea
 }
 
 internal fun MainViewModel.submitConsents(agreedOptional: Set<String>) {
-    val session = authSession
-    if (session == null) {
-        message = getApplication<android.app.Application>().getString(R.string.msg_login_required_to_use)
-        return
-    }
+    val session = sessionOrMessage(R.string.msg_login_required_to_use) ?: return
     val authorization = com.alarmtalk.app.network.AlarmTalkApiClient.bearer(session.token)
     // 서버에 "현재 정책 버전"으로 기록되도록 직전 checkConsentStatus 가 저장한 버전을 함께 보낸다.
     // version 을 비우면 백엔드가 "1" 로 기록해, 정책이 개정된 뒤엔 옛 버전으로 저장되어
@@ -909,11 +975,7 @@ internal fun MainViewModel.submitConsents(agreedOptional: Set<String>) {
  * 다시 찾아 누르게 만들지 않는다. 실패하면 시트를 닫지 않아 재시도할 수 있게 둔다.
  */
 internal fun MainViewModel.submitVoiceConsents() {
-    val session = authSession
-    if (session == null) {
-        message = getApplication<android.app.Application>().getString(R.string.msg_login_required_to_use)
-        return
-    }
+    val session = sessionOrMessage(R.string.msg_login_required_to_use) ?: return
     val request = pendingSensitiveConsent ?: return
     val authorization = com.alarmtalk.app.network.AlarmTalkApiClient.bearer(session.token)
     val policyVersion = cachedPolicyVersion()
@@ -1018,11 +1080,7 @@ internal fun MainViewModel.loadMarketingConsent() {
 // 설정의 '광고성 정보 수신' 토글 변경. marketing 동의를 현재 정책 버전으로 재기록한다(누적 저장,
 // 최신값이 현재 상태). 낙관적으로 즉시 반영하고, 실패하면 직전 값으로 되돌린다.
 internal fun MainViewModel.updateMarketingConsent(agreed: Boolean) {
-    val session = authSession
-    if (session == null) {
-        message = getApplication<android.app.Application>().getString(R.string.msg_login_required_to_use)
-        return
-    }
+    val session = sessionOrMessage(R.string.msg_login_required_to_use) ?: return
     // ⚠ **진행 중인 쓰기가 있으면 버리지 말고 '마지막 값' 으로 예약한다.**
     // 예전에는 그냥 `return` 이라, 스위치가 상시 활성이 된 지금은 연속으로 토글하면
     // **화면은 켜져 있는데 서버는 꺼진 채**로 끝날 수 있다. 낙관적 표시는 아래에서
@@ -1097,8 +1155,8 @@ internal fun MainViewModel.updateMarketingConsent(agreed: Boolean) {
  * 음성 생체정보(`voice_biometric`) 동의를 철회한다.
  *
  * 마케팅 토글과 달리 **파괴적**이다. 서버는 이 값을 false 로 받는 즉시 등록한 목소리 프로필·
- * 업로드 원본·생성된 음성·저장한 문구를 삭제하고, 그 목소리로 울리던 알람을 기본 알람음으로
- * 강등한다(가족에게 공유한 알람 포함). 되돌리는 경로는 없다.
+ * 업로드 원본·생성된 음성·저장한 문구를 삭제하고, 그 목소리로 울리던 알람은 기본 목소리(미나)로
+ * 바뀐다(가족에게 공유한 알람 포함). 되돌리는 경로는 없다.
  *
  * 그래서 마케팅 선례와 두 가지가 다르다:
  *  - **낙관적 즉시 반영을 하지 않는다.** 서버가 200 을 준 뒤에만 화면을 바꾼다.
@@ -1132,9 +1190,7 @@ internal suspend fun MainViewModel.withdrawVoiceBiometricConsent(): Boolean {
     // 안전하다 — 반대로 지운 뒤에 실패하면 되돌릴 방법이 없다. POST 를 보낼 수 있는 상황이면
     // 이 조회도 되므로 실사용에서 막히지 않는다.
     val revokedVoiceIds = runCatching {
-        withContext(Dispatchers.IO) {
-            api.listVoiceProfiles(authorization).profiles
-        }
+        api.listVoiceProfiles(authorization).profiles
     }.getOrElse { error ->
         AlarmTalkLog.reportError("Failed to resolve owned voices before consent withdrawal", error)
         message = userFacingError(
@@ -1231,8 +1287,8 @@ internal fun MainViewModel.syncNow() {
         // 이번 회차가 시작될 때 표시를 내린다. 도는 도중에 다시 켜지면 한 번 더 돈다.
         syncRequestedWhileBusy = false
         // ⚠ **세션은 회차마다 다시 읽는다.** 미뤄 둔 회차는 앞 회차의 네트워크 왕복이 끝난
-        // 뒤에 도는데, 그 사이 토큰이 바뀔 수 있다(로그인·롤링 갱신 — 알람 탭 효과 자체가
-        // authSession?.token 을 키로 쓴다). 처음 잡아 둔 토큰을 계속 쓰면 옛 자격증명으로
+        // 뒤에 도는데, 그 사이 토큰이 바뀔 수 있다(로그인·롤링 갱신 — 알람 탭 효과는 계정·세션
+        // 세대가 바뀔 때 다시 돈다). 처음 잡아 둔 토큰을 계속 쓰면 옛 자격증명으로
         // 나가고, 더 나쁘게는 repository.syncWithBackend 가 **소유자를 지금 세션 저장소에서**
         // 가져오므로 재로그인 직후엔 새 계정의 로컬 행이 옛 계정 토큰으로 올라간다(Codex #686).
         // 로그아웃됐으면 이번 회차는 돌리지 않고 끝낸다.
@@ -1290,8 +1346,8 @@ internal fun MainViewModel.showGoogleSetupRequired() {
     message = getApplication<android.app.Application>().getString(R.string.r3misc_google_signin_unavailable)
 }
 
-internal fun MainViewModel.showGoogleSignInFailed(reason: String? = null) {
-    message = reason ?: getApplication<android.app.Application>().getString(R.string.r3misc_google_signin_failed)
+internal fun MainViewModel.showGoogleSignInFailed(reason: String) {
+    message = reason
 }
 
 internal fun MainViewModel.clearMessage() {
@@ -1299,34 +1355,29 @@ internal fun MainViewModel.clearMessage() {
 }
 
 /**
- * 프로필 일부만 바꿔 세션을 다시 저장할 때 쓴다.
+ * 프로필 저장(`PATCH /user/me` — 닉네임·가족 알람 설정·계정 설정)이 성공한 뒤 **바꾼 칸만** 세션에 적는다.
+ * 저장소가 지금 세션을 같은 락 안에서 읽어 [change] 만 얹는다(`AuthSessionStore.updateUserIfAlive`).
  *
- * **토큰은 잡아 둔 것이 아니라 지금 저장소에 있는 것**을 쓴다. 요청이 도는 사이 `GET /auth/me`
- * 의 rolling refresh 가 토큰을 굴렸을 수 있는데, 그때 옛 토큰을 그대로 다시 저장하면 새 토큰이
- * 사라진다 — 하필 옛 토큰의 만료가 임박한 상황(=갱신이 필요했던 바로 그 상황)이면 다음 요청이
- * 401 로 사용자를 로그아웃시킨다(Codex #665 P2).
+ * ⚠ **요청 전에 잡은 세션의 사본을 다시 저장하지 말 것**(2026-10-05). 예전에는 `session.copy(user = …)` 를 통째로
+ * 저장해, 요청이 도는 사이 `/auth/me`(쿠폰·초대 등록 뒤의 갱신, `plan_changed`, 복귀 갱신)가 적은 plan·프로모·받은
+ * 시각과 다른 칸(다른 기기에서 바꾼 이름·가족 설정)을 다음 `/auth/me` 까지 되돌렸다. 판정 스냅샷은 그대로였지만
+ * 세션 plan 을 직접 읽는 편집기(`freeVoiceTier`)·목소리 관리(`paidVoiceAccess`)가 방금 가족이 된 사람을 무료로
+ * 그렸다. 계정 설정 한 칸만 지키던 것(Codex #837 검증)을 안 바꾼 칸 전부로 넓혔다.
+ *
+ * 토큰도 저장소의 것을 지킨다 — 요청이 도는 사이 rolling refresh 가 굴린 토큰을 옛 것으로 덮으면, 하필 옛 토큰의
+ * 만료가 임박했을 때 다음 요청이 401 로 사용자를 로그아웃시킨다(Codex #665 P2). 세션이 그 사이 끝났거나 다른 계정이
+ * 됐으면 아무것도 적지 않는다 — A 의 유저 정보에 B 의 토큰이 붙은 잡종 세션이 된다(Codex #665 P1).
+ *
+ * 저장이 끝나면 부르는 쪽이 **확인 조회**를 한다(토큰은 굴리지 않는다) — 저장 **전에** 떠나 옛 이름·가족 설정을 읽은
+ * `/auth/me` 가 늦게 와도, 확인 조회가 뒤에 덮거나 그 옛 답이 확인 조회의 순번에 밀려 버려진다
+ * (`PersonalPromoLedger.claimPlanAnswer`). iOS `updateProfile` 뒤의 `refreshUser` 와 같다.
  */
-internal fun MainViewModel.saveSessionPreservingCurrentToken(
-    updated: com.alarmtalk.app.network.AuthSession,
+internal fun MainViewModel.saveProfileEdit(
+    userId: String,
     expectedGeneration: Long,
-): com.alarmtalk.app.network.AuthSession? {
-    // **세션이 그 사이 끝났거나 다른 계정이 되었으면 버린다.** 토큰만 지금 것으로 갈아 끼우면
-    // A 의 유저 정보에 B 의 토큰이 붙은 잡종 세션이 저장된다 — 목록은 A 로 걸러지는데 서버
-    // 호출은 B 로 나가고, 이어지는 재예약이 A 의 알람을 되살리고 B 의 것을 취소한다
-    // (Codex #665 P1). refreshAppSession 과 같은 기준으로 본다.
-    //
-    // 그 판정과 저장을 **저장소가 한 덩어리로** 한다. 여기서 읽고·병합하고·쓰면 그 사이에
-    // 워커가 굴러간 토큰을 저장할 수 있고, 그러면 이 저장이 옛 토큰을 되써서 **방금 갱신된
-    // 토큰을 버린다**(Codex #665 P2).
-    val saved = authSessionStore.saveSessionIfAlive(
-        expectedGeneration = expectedGeneration,
-        user = updated.user,
-        provider = updated.provider,
-        // 프로필 갱신은 토큰을 건드리지 않는다 — 저장소의 현재 토큰을 그대로 지킨다.
-        rolledToken = null,
-        // plan·프로모는 들고 있던 세션의 것을 그대로 복사했다 — 받은 시각도 그 답의 것이다.
-        userFetchedAtMillis = updated.userFetchedAtMillis,
-    )
+    change: (AuthUser) -> AuthUser,
+): AuthSession? {
+    val saved = authSessionStore.updateUserIfAlive(expectedGeneration, userId, change)
     if (saved == null) {
         Log.i(TAG, "Dropping stale profile save: session ended or switched")
     }
@@ -1340,9 +1391,10 @@ internal fun MainViewModel.refreshAppSession(rollToken: Boolean = true) {
 /**
  * `/auth/me` 응답으로 **저장할 토큰** — 저장소의 `saveSessionIfAlive` 에 넘길 `rolledToken`.
  *
- * - 굴리지 않는 갱신(`rollToken = false` — 백그라운드에서 돌아올 때마다의 갱신)이면 null 이다.
- *   저장소는 null 을 받으면 **지금 들고 있는 토큰을 지킨다.** 토큰이 바뀌면 토큰을 키로 쓰는
- *   효과가 전부 다시 돌아 복귀할 때마다 앱 전체를 다시 불러오게 된다.
+ * - 굴리지 않는 갱신(`rollToken = false` — 백그라운드에서 돌아올 때마다의 갱신, Play 자동
+ *   정합화 뒤의 갱신)이면 null 이다. 저장소는 null 을 받으면 **지금 들고 있는 토큰을 지킨다.**
+ *   토큰은 콜드 스타트 한 번과 워커(`SessionTokenRenewal`)면 충분하다 — 365일짜리라 복귀마다
+ *   굴려도 얻는 것이 없고, 굴릴 때마다 세션 쓰기·관찰 방출·재구성만 는다.
  * - 굴리는 갱신이어도 서버가 새 토큰을 주지 않으면(구버전 서버·재발급 실패) null 이다 — 시작할 때
  *   잡아 둔 토큰으로 되돌리면 그 사이 워커가 굴린 토큰을 옛 것으로 덮는다.
  */
@@ -1384,10 +1436,13 @@ internal fun isDestroyedAccountFailure(error: Throwable): Boolean {
  * 캐시된 유료 plan 이 남아 `resolvePaidVoiceAccess` 가 계속 유료로 답한다.
  *
  * @param rollToken 서버가 굴려 준 새 토큰으로 갈아 끼우는가. **백그라운드에서 돌아올 때마다**
- *   부르는 갱신(`MainViewModel` init 의 진입 구독)은 false 다 — 토큰이 바뀌면 토큰을 키로 쓰는
- *   효과가 전부 다시 돈다(동의·계정·목소리 준비 확인과 목소리·클립·구독 선로드). 복귀할 때마다
- *   앱 전체를 다시 불러오게 되므로, 토큰은 예전처럼 콜드 스타트·워커(`SessionTokenRenewal`)가
- *   굴리고 복귀 때는 plan·프로모만 새로 받는다. 서버 토큰은 무상태 JWT 라 버려도 잃는 것이 없다.
+ *   부르는 갱신(`MainViewModel` init 의 진입 구독)과 **Play 자동 정합화 뒤의 갱신**
+ *   (`confirmGooglePurchase` 의 `AutoReconcile`)은 false 다. 토큰은 예전처럼 콜드 스타트·
+ *   워커(`SessionTokenRenewal`)가 굴리고 그 밖에는 plan·프로모만 새로 받는다. 서버 토큰은
+ *   무상태 JWT 라 버려도 잃는 것이 없다.
+ *   (예전에는 앱 루트의 세션 효과가 **토큰을 키로** 써서, 굴릴 때마다 동의·계정·목소리 준비
+ *   확인과 목소리·클립·구독 선로드가 전부 다시 돌았다. 키는 계정 + 세션 세대로 바꿨다 —
+ *   `SessionEffectKey`, 효율 감사 H3. 그래도 굴릴 이유가 없는 자리에서 굴리지 않는 규칙은 둔다.)
  * @return plan 까지 실제로 반영했으면 true. 네트워크 실패·세션 종료·문 거절이면 false.
  */
 internal suspend fun MainViewModel.refreshAppSessionNow(rollToken: Boolean = true): Boolean {
@@ -1427,6 +1482,13 @@ internal suspend fun MainViewModel.refreshAppSessionNow(rollToken: Boolean = tru
             //   다른 응답이 끼어들지 못한다.
             if (!personalPromoLedger.claimPlanAnswer(accountRequest)) {
                 Log.i(TAG, "Dropping superseded /auth/me result: a later request's answer is already applied")
+                // ⚠ **받아 적기는 다시 돌린다** — 이 답은 버려도 '응답이 왔다' 는 같다(Codex #837 검증, 스펙
+                //   「경계는 다섯이다」의 응답 경계). 더 새 답이 반영된 **뒤에** 올리기가 실패했으면, 그 뒤 처음 온 응답이
+                //   이 밀린 답일 수 있다 — 여기서 안 돌리면 밀린 변경이 다음 저장되는 응답까지 안 올라간다. 값은 지금
+                //   세션의 것(더 새 답)이다. iOS 는 밀린 답도 `recordAccountAnswer` 로 세어 같은 일이 난다.
+                com.alarmtalk.app.data.accountSettingsReceipt(authSession)?.let { receipt ->
+                    onAccountPromptSettingsReceived(receipt.userId, receipt.settings)
+                }
                 return@onSuccess
             }
             // 서버가 새 토큰을 주면 갈아 끼운다(rolling refresh) — 앱을 열 때마다 만료가
@@ -1440,9 +1502,18 @@ internal suspend fun MainViewModel.refreshAppSessionNow(rollToken: Boolean = tru
             // 차단은 '종료 전에 받은 답' 만 자른다(`AuthSession.userFetchedAtMillis`).
             // 응답이 계산 시각(`computed_at`)을 실었으면 저장소가 그것으로 바꿔 적는다(D7).
             val receivedAt = System.currentTimeMillis()
+            // 계정 설정 올리기가 끝나기 전에 보낸 요청이면 **설정만** 지금 세션의 값을 지킨다(Codex #837) —
+            // 올리기 전의 설정을 읽었을 수 있고, 올리기가 끝나 '안 올라간 변경' 표시를 내린 뒤라 받아 적기가 그
+            // 옛 값을 이 기기에 적는다. 나머지(plan·프로모·토큰)는 그대로 이 응답의 것이다.
+            val fencedSettings = com.alarmtalk.app.data.fencedAccountSettings(
+                requestSeq = accountRequest.seq,
+                fenceSeq = promptSettingsAnswerFence,
+                current = authSession?.user?.dynamicPromptSettings,
+            )
             val saved = authSessionStore.saveSessionIfAlive(
                 expectedGeneration = startGeneration,
                 user = me.user,
+                dynamicPromptSettingsOverride = fencedSettings,
                 provider = session.provider,
                 rolledToken = sessionTokenToSave(rollToken, me.token),
                 userFetchedAtMillis = receivedAt,
@@ -1528,6 +1599,13 @@ internal fun MainViewModel.responseStillBelongsToRequester(
 ): Boolean = !signingOut &&
     authSession?.user?.id == requestOwner &&
     authSessionStore.sessionGeneration() == startGeneration
+
+/** 로그인 세션이 없으면 [messageRes] 를 띄우고 null — 액션 함수 첫 줄의 `?: return` 가드다. */
+internal fun MainViewModel.sessionOrMessage(@StringRes messageRes: Int): AuthSession? =
+    authSession ?: run {
+        message = getApplication<Application>().getString(messageRes)
+        null
+    }
 
 internal fun MainViewModel.bearerOrMessage(fallbackMessage: String): String? {
     val session = authSession

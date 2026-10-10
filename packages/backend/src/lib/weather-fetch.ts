@@ -1,104 +1,97 @@
 /**
- * Open-Meteo 호출 한 곳 — 타임아웃·엣지 캐시·관측 로그를 세 fetch(지오코딩·예보·미세먼지)가
- * 똑같이 받게 한다. 호출부는 `routes/tts.ts` 의 `resolveWeatherLocation` /
- * `loadWeatherSignalInput` / `loadDustSignal` 셋뿐이다.
+ * 날씨 원천 호출 한 곳 — 기상청(KMA)·気象庁(JMA)·미국 국립기상청(NWS) 세 원천이 타임아웃·엣지 캐시·관측
+ * 로그를 똑같이 받게 한다. 호출부는 각 원천의 어댑터(`lib/weather-kma.ts`·`weather-jma.ts`·`weather-nws.ts`)다.
  *
- * 이 세 호출은 `GET /api/tts/prerender-variant` 안에서 **순차로** 돌고, 앱은 날씨 테마 알람을
- * 저장하기 전에 그 응답을 동기로 기다린다(Android `MainViewModelAlarmActions.withResolvedWeatherVariant`,
- * iOS `AlarmEditorSheet.applyWeatherVariant`). 그래서 여기서 느려지면 저장 버튼이 그만큼 붙잡힌다.
+ * 규칙 전문은 `docs/spec/voice-and-message.md` 5-1 「서버가 미리 계산해 둔다」.
+ *
+ * - 여기서는 **받기만** 한다(상태·본문·걸린 시간). 본문이 정상인지(KMA `resultCode`, 개수, 발표 시각)는
+ *   어댑터가 읽고, 읽은 결과를 `logWeatherFetch` 로 **한 줄** 남긴다 — 그래야 `resultCode`·`items` 까지 한 줄에
+ *   실린다. 네트워크에서 실패하면(타임아웃·불통) 여기서 그 한 줄을 남기고 다시 던진다.
+ * - ⚠ **URL·본문은 로그에 싣지 않는다.** KMA 의 URL 에는 서비스 키가 들어 있다(`serviceKey=`). 오류 메시지도
+ *   URL 을 담을 수 있어 이름만 남긴다.
  */
 import { logStructured } from './logger';
 
 /**
- * Open-Meteo 한 번 호출의 상한. 세 번 순차라 최악 15초지만, 정상 응답은 수백 ms 다.
+ * fetch **하나**의 상한 — cron 은 fetch 마다 이 값을 쓴다.
  *
- * 5초인 이유: 저장 버튼이 이 응답을 **동기로** 기다리는데, 실패의 대가는 작다 — 서버는
- * `variant_index: null` 을 돌려주고(`routes/tts.ts` 의 `/prerender-variant`), 앱은 기존 값을
- * 유지한 채 저장하고 뒤에서 다시 받는다(Android `DynamicVoiceRefreshWorker` +
- * `DynamicVoiceRefreshScheduler.scheduleRetryUntilFire`, iOS `WeatherVariantRefreshService.refreshDue`).
- * 즉 오래 기다려 얻을 게 없다. 반대로 상한이 없으면 Open-Meteo 가 멈춘 동안 저장이 통째로
- * 멈춘다 — "인터넷이 느려도 괜찮도록" 의 서버 쪽 몫이 이 숫자다.
+ * ⚠ 앱이 저장에서 기다리는 상한(8초 — 스펙 5-1 「대기 상한」)의 근거는 이 값이 **아니라** 읽기 경로의 원천 호출
+ * 전체 마감(`WEATHER_READ_DEADLINE_MS`, `lib/weather-region-daily.ts`)이다. 한 번의 원천 호출이 fetch 를 둘 할 수
+ * 있어서(KMA 의 한 회차 물러서기·다음 페이지) fetch 마다 5초를 새로 주면 10초가 된다. 읽기 경로에서는 그 마감이
+ * `deadlineAt` 으로 내려와 fetch 하나의 타임아웃이 min(이 값, 남은 시간)이 된다.
+ *
+ * 5초인 이유: 실패의 대가가 작다 — 읽기 경로는 `variant_index: null` 을 돌려주고 앱은 미해결로 저장한 뒤 뒤에서
+ * 다시 받는다(Android `DynamicVoiceRefreshWorker`, iOS `WeatherVariantRefreshService.refreshDue`). cron 은 같은
+ * 슬롯의 다음 틱이 다시 한다. 정상 응답은 1초 안팎(KMA 1.3초)이라 오래 기다려 얻을 게 없다.
  */
 export const WEATHER_FETCH_TIMEOUT_MS = 5_000;
 
 /**
- * 지오코딩(도시명 → 좌표) 엣지 캐시 TTL. 도시의 좌표는 바뀌지 않으므로 길게 둔다.
- * 캐시 키는 URL 이고 URL 이 도시명·언어를 담으므로 별도 키가 필요 없다.
+ * 즉석 계산(읽기 경로)의 엣지 캐시 TTL — JMA·NWS 만. 같은 지역의 같은 응답을 짧은 사이에 여러 사람이
+ * 물으면 원천에 한 번만 닿게 한다. 원천의 발표 주기(JMA 하루 3회, NWS 수 시간)보다 훨씬 짧다.
+ *
+ * ⚠ **KMA 는 캐시하지 않는다**: 200 본문에 `NODATA`(03) 같은 오류가 실려 올 수 있어 그 응답이 캐시에 박히면
+ *   TTL 동안 독이 되고, URL(= 캐시 키)에 서비스 키가 들어 있다.
+ * ⚠ **cron 은 캐시를 쓰지 않는다** — 미리 계산의 목적이 새 발표다.
  */
-export const WEATHER_GEOCODE_CACHE_TTL_SECONDS = 7 * 24 * 60 * 60;
+export const WEATHER_SOURCE_CACHE_TTL_SECONDS = 600;
+
+export type WeatherSourceKind = 'kma' | 'jma' | 'nws';
+
+export type WeatherFetchResult = {
+  status: number;
+  body: string;
+  /** 응답의 `content-type`(소문자). HTML 오류 봉투를 가를 때 쓴다. */
+  contentType: string;
+  ms: number;
+};
 
 /**
- * 예보·미세먼지 엣지 캐시 TTL.
+ * 원천 하나를 타임아웃·(선택) 엣지 캐시를 걸어 부르고 본문까지 읽는다.
  *
- * 6시간인 이유: 앱은 "발사 24시간 이내에 받은 값" 만 이 발사분의 조건으로 인정한다
- * (Android `AlarmRepository.kt` 의 `WEATHER_RESOLVE_VALID_WINDOW_MILLIS`, iOS
- * `BucketVariantResolver.resolveValidWindowMillis`). 캐시 TTL 이 그 창에 가까우면 앱이
- * "24시간 안에 받았다" 고 믿는 값이 실은 그보다 오래된 예보가 된다. 6시간이면 최악에도
- * 발사 30시간 전 예보이고, 같은 도시·같은 날짜의 요청이 하루 네 번만 Open-Meteo 에 닿는다.
- * URL 이 좌표·날짜·타임존을 담고 있어 그대로 캐시 키가 된다 — 다른 날짜의 예보끼리 섞이지 않는다.
+ * - 타임아웃: `AbortSignal.timeout` 이 만료되면 `fetch`(또는 본문 읽기)가 거부된다. **여기서 잡지 않고
+ *   다시 던진다** — 어댑터가 '일시 실패' 로 분류한다.
+ * - 엣지 캐시: `cacheTtlSeconds` 가 있으면 `cf.cacheTtl` + `cacheEverything`. Cloudflare 기본 규칙상 실패
+ *   응답(429·5xx)은 캐시되지 않는다. 한계: 캐시는 데이터센터 단위다.
+ * - 마감: `deadlineAt`(epoch ms)이 있으면 타임아웃은 min(5초, 남은 시간)이다. 남은 시간이 없으면 **부르지 않고**
+ *   `TimeoutError` 로 거부한다 — 어댑터가 타임아웃(일시 실패)으로 분류한다.
  */
-export const WEATHER_FORECAST_CACHE_TTL_SECONDS = 6 * 60 * 60;
-
-export type WeatherFetchKind = 'geocode' | 'forecast' | 'air';
-
-/**
- * Open-Meteo 를 타임아웃·엣지 캐시를 걸어 부르고, 결과를 구조화 로그 한 줄로 남긴다.
- *
- * - 타임아웃: `AbortSignal.timeout` 이 만료되면 `fetch` 가 거부된다(`lib/perso.ts` ·
- *   `lib/elevenlabs.ts` 와 같은 방식). **여기서 잡지 않고 다시 던진다** — 세 호출부가 각자
- *   try/catch 로 '못 받음'(null)을 돌려주고, 그걸 폴백할지는 `routes/tts.ts` 의
- *   `WeatherFetchFailurePolicy` 한 곳이 정한다(사전렌더 인덱스는 미해결, 라이브 문장은 폴백).
- *   삼키면 그 규약이 두 겹이 된다.
- * - 엣지 캐시: `cf.cacheTtl` 은 오리진의 캐시 헤더와 무관하게 응답을 TTL 만큼 캐시하고,
- *   `cacheEverything` 은 확장자 없는 JSON 응답도 캐시 대상에 넣는다(둘 다 workers-types 의
- *   `RequestInitCfProperties` 주석). Workers 의 `fetch` 는 남의 오리진이라도 자기 존의 캐시를
- *   거친다 — 이 워커는 `api(-dev).alarm-talk.com` 커스텀 도메인에 붙어 있다(`wrangler.toml` 의
- *   `routes`). 캐시 대상 상태코드는 Cloudflare 기본 규칙(200/206/301/302/303/404/410)이고
- *   `cacheTtl` 은 그 집합을 넓히지 않으므로 **실패 응답(400·429·5xx)은 캐시되지 않는다.**
- *   ⚠ 캐시 키는 URL 이다 — 날짜가 URL 에 없는 호출은 캐시하지 않는다(`cacheTtlSeconds: null`).
- *   한계: 캐시는 요청을 처리한 **데이터센터 단위**다 — 다른 PoP 로 들어온 첫 요청은 MISS 다.
- *   (출처: developers.cloudflare.com/workers/reference/how-the-cache-works,
- *   developers.cloudflare.com/cache/how-to/configure-cache-status-code)
- * - 로그: `cf-cache-status`(HIT/MISS/EXPIRED…)와 소요 ms 를 남겨 배포 뒤 `wrangler tail` 로
- *   히트율을 잴 수 있게 한다. ⚠ 도시명·좌표 같은 사용자 값은 넣지 않는다 — `kind` 로만 가른다.
- */
-export async function fetchOpenMeteo(
-  kind: WeatherFetchKind,
+export async function fetchWeatherSource(
+  source: WeatherSourceKind,
+  kind: string,
   url: URL,
-  /**
-   * 엣지 캐시 TTL. **`null` 이면 캐시를 걸지 않는다** — URL 에 날짜가 없는 호출(라이브 생성
-   * `/generate` 의 `forecast_days=1`)이 그렇다. 그 URL 은 "오늘" 을 담지 않아 자정을 넘긴
-   * 어제 응답이 TTL 동안 오늘 것으로 나간다. 날짜가 URL 에 있을 때만(`start_date=end_date=`)
-   * 다른 날짜끼리 섞이지 않는다.
-   */
-  cacheTtlSeconds: number | null,
-): Promise<Response> {
+  options: { headers?: Record<string, string>; cacheTtlSeconds?: number | null; deadlineAt?: number | null } = {},
+): Promise<WeatherFetchResult> {
   const startedAt = Date.now();
+  const ttl = options.cacheTtlSeconds ?? null;
+  const deadlineAt = options.deadlineAt ?? null;
+  const timeoutMs =
+    deadlineAt === null ? WEATHER_FETCH_TIMEOUT_MS : Math.min(WEATHER_FETCH_TIMEOUT_MS, deadlineAt - startedAt);
+  if (timeoutMs <= 0) throw new DOMException('weather source deadline passed', 'TimeoutError');
   try {
     const response = await fetch(url.toString(), {
-      headers: { accept: 'application/json' },
-      signal: AbortSignal.timeout(WEATHER_FETCH_TIMEOUT_MS),
-      ...(cacheTtlSeconds === null ? {} : { cf: { cacheTtl: cacheTtlSeconds, cacheEverything: true } }),
+      headers: options.headers ?? { accept: 'application/json' },
+      signal: AbortSignal.timeout(timeoutMs),
+      ...(ttl === null ? {} : { cf: { cacheTtl: ttl, cacheEverything: true } }),
     });
-    logStructured('info', {
-      at: 'weather.fetch',
-      kind,
+    const body = await response.text();
+    return {
       status: response.status,
-      cacheStatus: response.headers.get('cf-cache-status'),
+      body,
+      contentType: (response.headers.get('content-type') ?? '').toLowerCase(),
       ms: Date.now() - startedAt,
-      timedOut: false,
-    });
-    return response;
+    };
   } catch (err) {
     const timedOut = isTimeoutError(err);
-    logStructured('warn', {
-      at: 'weather.fetch',
+    logWeatherFetch('warn', {
+      source,
       kind,
       status: null,
-      cacheStatus: null,
+      resultCode: null,
       ms: Date.now() - startedAt,
       timedOut,
-      // 타임아웃이 아닌 실패(DNS·연결 거부 등)만 이름을 남긴다. 메시지는 URL(=좌표·도시)을 담을 수 있어 뺀다.
+      items: null,
+      // 타임아웃이 아닌 실패(DNS·연결 거부·subrequest 한도)만 이름을 남긴다 — 메시지는 URL(키)을 담을 수 있다.
       ...(timedOut ? {} : { error: errorName(err) }),
     });
     throw err;
@@ -106,12 +99,40 @@ export async function fetchOpenMeteo(
 }
 
 /**
+ * `at: "weather.fetch"` 한 줄. 실리는 칸은 정해져 있다 — {source, kind, status, resultCode, ms, timedOut, items}
+ * (+ 네트워크 실패면 `error` 이름). ⚠ URL·본문·지역 키·좌표를 더하지 말 것.
+ */
+export function logWeatherFetch(
+  level: 'info' | 'warn',
+  fields: {
+    source: WeatherSourceKind;
+    kind: string;
+    status: number | null;
+    resultCode: string | null;
+    ms: number;
+    timedOut: boolean;
+    items: number | null;
+    error?: string;
+  },
+): void {
+  logStructured(level, { at: 'weather.fetch', ...fields });
+}
+
+/**
  * `AbortSignal.timeout` 만료로 거부된 fetch 인가. 표준은 `TimeoutError` DOMException 이지만,
  * 런타임에 따라 `AbortError` 로도 오므로 둘 다 타임아웃으로 센다.
  */
-function isTimeoutError(err: unknown): boolean {
+export function isTimeoutError(err: unknown): boolean {
   const name = errorName(err);
   return name === 'TimeoutError' || name === 'AbortError';
+}
+
+/**
+ * 워커 실행 하나의 subrequest 한도에 걸렸는가(`Too many subrequests`). 실패가 아니라 **예산 소진**이다 —
+ * 그 틱의 날씨 작업을 멈추고 다음 틱이 잇는다(`lib/stock-clips.ts` 의 드레인과 같은 판정).
+ */
+export function isSubrequestLimitError(err: unknown): boolean {
+  return /too many subrequests/i.test(err instanceof Error ? err.message : String(err));
 }
 
 function errorName(err: unknown): string {

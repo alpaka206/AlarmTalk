@@ -9,9 +9,7 @@ import android.content.pm.PackageManager
 import android.media.MediaPlayer
 import android.media.RingtoneManager
 import android.net.Uri
-import android.os.Build
 import android.util.Base64
-import android.util.Log
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -35,18 +33,15 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
-import com.alarmtalk.app.clearFocusOnOutsideTap
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -54,9 +49,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
-import com.alarmtalk.app.R
 import com.alarmtalk.app.core.AlarmTalkLog
-import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import com.alarmtalk.app.data.AlarmAudioLimits
 import com.alarmtalk.app.data.toPromptPreferences
 import com.alarmtalk.app.data.AlarmAudioStore
@@ -65,11 +58,8 @@ import com.alarmtalk.app.data.AlarmEntity
 import com.alarmtalk.app.data.AlarmPlayModes
 import com.alarmtalk.app.data.AlarmVoiceRecorder
 import com.alarmtalk.app.data.CachedAlarmAudio
-import com.alarmtalk.app.data.AlarmAppContainer
 import com.alarmtalk.app.data.DynamicPromptPreferenceStore
 import com.alarmtalk.app.data.DynamicPromptPreferences
-import com.alarmtalk.app.data.HolidayCountryPreferenceStore
-import com.alarmtalk.app.data.HolidayDate
 import com.alarmtalk.app.data.isSystemVoiceId
 import com.alarmtalk.app.data.toDynamicPromptSettings
 import com.alarmtalk.app.data.VibrationPatterns
@@ -103,7 +93,6 @@ private const val RingingStreamPercent = 100
 
 private enum class AudioPreviewTarget {
     CachedAudio,
-    StockClip,
 }
 
 // 세부 설정 pane 슬라이드용 emphasized 이징(타임휠 세틀과 같은 계열의 감속 곡선).
@@ -129,12 +118,61 @@ internal enum class SaveBlockReason {
     MESSAGE_PREPARING,
 
     /**
+     * **직접 입력인데 문구가 비었다**(등록 목소리). 만들 문장이 없으니 서버를 부르지 않고
+     * 막는다 — 한도도 깎이지 않는다.
+     *
+     * ⚠ [MESSAGE_PREPARING] 으로 뭉개지 말 것. 그건 스톡 클립이 아직 안 붙은 **과도기**라
+     * "받는 중이에요, 잠시 뒤 다시" 라고 말하는데, 빈 직접 입력은 기다려도 풀리지 않는다 —
+     * 그 말을 믿고 계속 다시 누르게 된다(2026-09-29 이전에는 그렇게 말했다).
+     */
+    MANUAL_TEXT_MISSING,
+
+    /**
      * 오프라인인데 그 직접 입력 문구의 오디오가 **폰에 없다.**
      *
      * 서버에 있든 없든 지금은 가져올 수 없으므로 **요청을 보내 보지 않고** 막는다 —
      * 실패를 기다렸다 에러를 보여 주는 것보다, 누른 즉시 이유를 말하는 편이 낫다.
      */
     OFFLINE_NEW_MESSAGE,
+}
+
+/**
+ * 문구가 비어 저장을 막아야 하는가 — `editorSaveBlockReason` 의 마지막 갈래다.
+ * 저장 버튼이 `saveEditor()`(= 한도 확인·생성 요청) **전에** 이걸 본다.
+ *
+ * 테스트에서 부를 수 있게 컴포저블 밖에 둔다(`AlarmEditorStateTest`).
+ */
+internal fun emptyMessageBlockReason(editor: AlarmEditorState, usesStockClips: Boolean): SaveBlockReason? = when {
+    // 말할 문장이 있다 — 생성형이거나, 친 문구·붙은 클립 문장.
+    editor.voiceRandomPrompt || editor.voiceText.isNotBlank() -> null
+    // 문구가 하나도 없다 = 빈 직접 입력. 등록(클론) 목소리는 테마가 저장 시점에 붙으므로
+    // 편집 중에 '클립을 기다리는' 상태가 없다 — 기다려도 안 풀린다.
+    editor.hasNoMessageChoice() && !usesStockClips -> SaveBlockReason.MANUAL_TEXT_MISSING
+    // 스톡 클립 목소리의 빈 문구, 또는 테마를 골랐는데 클립이 아직 안 붙은 과도기.
+    else -> SaveBlockReason.MESSAGE_PREPARING
+}
+
+/**
+ * 관문 **1/3**(목소리 선택) — [ClipGate.needsClipPreparation] 을 **바뀔 값**으로 부른다.
+ *
+ * 관문은 목소리를 바꾸기 **전에** 돈다. 직접 녹음에서 오면 [AlarmEditorState.selectTtsVoice]
+ * 가 곧 직전 문구 종류를 이어 랜덤을 켜는데, 지금 값(랜덤 꺼짐)으로 물으면 "클립이 필요 없다"
+ * 며 통과시킨 직후 클립이 필요한 상태로 바뀐다(iOS `wasThemeAlarm` 과 같은 이유 — iOS 는
+ * 잇기 뒤의 `.onChange` 에서 판정한다). 테스트에서 부를 수 있게 컴포저블 밖에 둔다.
+ */
+internal fun needsClipPreparationForVoicePick(
+    gate: ClipGate,
+    editor: AlarmEditorState,
+    profileId: String,
+    lastMessageContext: String?,
+    lastManualText: String?,
+): Boolean {
+    val adopted = editor.randomContextAdoptedByTtsPick(lastMessageContext, lastManualText)
+    return gate.needsClipPreparation(
+        profileId = profileId,
+        randomPrompt = editor.voiceRandomPrompt || adopted != null,
+        randomContext = adopted ?: editor.voiceRandomContext,
+    )
 }
 
 @Composable
@@ -172,7 +210,9 @@ internal fun AlarmEditorScreen(
     onPrepareClipsFor: (String) -> Unit = {},
     // 새 알람이 이어받을 '직전 선택' 세 축. 셋 다 계정별로 저장되고, 저장에 성공한 알람에서만
     // 기록된다(MainViewModel.rememberVoiceUsed / rememberMessageChoiceUsed).
-    // 기존 알람을 열 때는 어느 것도 쓰지 않는다 — 열기만 해도 설정이 바뀌면 안 된다.
+    // 기존 알람을 **열 때는** 어느 것도 쓰지 않는다 — 열기만 해도 설정이 바뀌면 안 된다.
+    // 예외는 하나: 문구가 없던 알람(알람 전용·직접 녹음)을 목소리 문구로 옮기는 순간,
+    // 문구가 비어 있으면 잇는다(`AlarmEditorState.adoptLastMessageChoiceIfUnset`).
     lastUsedVoiceId: String? = null,
     lastMessageContext: String? = null,
     lastFreeBucket: String? = null,
@@ -277,17 +317,6 @@ internal fun AlarmEditorScreen(
     var dynamicPromptPreferences by remember(appContext, promptOwnerUserId) {
         mutableStateOf(dynamicPromptPreferenceStore.read(promptOwnerUserId))
     }
-    // 앱 전역 공휴일 달력 국가 + 그 국가의 다가오는 공휴일 목록(토글 아래 표시용).
-    val holidayCountryStore = remember(appContext) { HolidayCountryPreferenceStore(appContext) }
-    val alarmRepository = remember(appContext) { AlarmAppContainer.repository(appContext) }
-    val initialHolidayCountry = remember(appContext) { holidayCountryStore.read() }
-    val holidayCountryCode by holidayCountryStore.countryCode.collectAsState(initial = initialHolidayCountry)
-    var upcomingHolidays by remember { mutableStateOf<List<HolidayDate>>(emptyList()) }
-    LaunchedEffect(holidayCountryCode) {
-        upcomingHolidays = runCatching {
-            alarmRepository.upcomingHolidays(countryCode = holidayCountryCode)
-        }.getOrDefault(emptyList())
-    }
     val editorListState = rememberLazyListState()
     val recorder = remember(appContext) { AlarmVoiceRecorder(appContext, audioStore) }
     val scope = rememberCoroutineScope()
@@ -326,7 +355,6 @@ internal fun AlarmEditorScreen(
     // 버렸고, 공유받은 목소리가 준비 대상에서 빠져 "준비됐어요 100%" 만 보였다 —
     // 돌아가면 관문이 또 막아 **빠져나갈 수 없는 고리**였다(2026-08-18).
     var preparationVoiceId by remember { mutableStateOf<String?>(null) }
-    var previewStopJob by remember { mutableStateOf<Job?>(null) }
     var voicePlanGateOpen by remember { mutableStateOf(false) }
     // 목소리 선택 시트의 '들어보기' — 온보딩/목소리 탭과 같은 재생기를 그대로 쓴다
     // (기본 목소리는 내장 인사말이라 네트워크 없이도 즉시 난다).
@@ -386,6 +414,11 @@ internal fun AlarmEditorScreen(
      * (원래 아래쪽에 있었으나 테마를 처음 붙이는 자리에서도 같은 판정이 필요해 올렸다.
      *  코틀린 지역 함수는 선언보다 앞에서 부를 수 없다. **조건을 다시 쓰지 말 것** —
      *  판정이 두 벌이 되면 저장 게이트와 폴백이 어긋난다.)
+     *
+     * ⚠ 예전에는 판정식이 두 벌이었고 한쪽에만 `targetProvidesWeather` 탈출구가 있었다.
+     * 그래서 **수신자가 날씨를 설정해 뒀는데도**(`weather_ready=true`) 기본 목소리를 고르면
+     * 저장이 영구히 막혔다(2026-08-24 실기기). 가족 알람에서 지역 칸이 비어 있는 것은
+     * **정상**이다 — 서버가 프라이버시 때문에 남의 값을 숨기고 준비 여부만 내려준다.
      */
     fun weatherLocationReady(): Boolean =
         editor.voiceWeatherCity.isNotBlank() || targetProvidesWeather
@@ -459,8 +492,6 @@ internal fun AlarmEditorScreen(
     }
 
     fun stopPreview() {
-        previewStopJob?.cancel()
-        previewStopJob = null
         val wasPlaying = mediaPlayer != null
         mediaPlayer?.release()
         mediaPlayer = null
@@ -474,8 +505,6 @@ internal fun AlarmEditorScreen(
     fun startPreparedPreview(
         uri: Uri,
         target: AudioPreviewTarget,
-        startMillis: Long = 0L,
-        stopAfterMillis: Long? = null,
     ) {
         if (previewTarget == target && mediaPlayer != null) {
             stopPreview()
@@ -507,15 +536,6 @@ internal fun AlarmEditorScreen(
                     return@setOnPreparedListener
                 }
                 runCatching {
-                    fun scheduleAutoStop() {
-                        val duration = stopAfterMillis ?: return
-                        previewStopJob?.cancel()
-                        previewStopJob = scope.launch {
-                            delay(duration.coerceAtLeast(1L))
-                            if (mediaPlayer === preparedPlayer) stopPreview()
-                        }
-                    }
-
                     fun startFromPreparedPosition() {
                         if (mediaPlayer !== preparedPlayer) return
                         previewPreparing = false
@@ -532,24 +552,9 @@ internal fun AlarmEditorScreen(
                         val previewVolume = VoiceVolumeRamp.targetVolume(editor.voiceVolumePercent)
                         preparedPlayer.setVolume(previewVolume, previewVolume)
                         preparedPlayer.start()
-                        scheduleAutoStop()
                     }
 
-                    if (startMillis > 0L) {
-                        preparedPlayer.setOnSeekCompleteListener { seekedPlayer ->
-                            seekedPlayer.setOnSeekCompleteListener(null)
-                            if (mediaPlayer === seekedPlayer) {
-                                startFromPreparedPosition()
-                            }
-                        }
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                            preparedPlayer.seekTo(startMillis, MediaPlayer.SEEK_CLOSEST)
-                        } else {
-                            preparedPlayer.seekTo(startMillis.coerceAtMost(Int.MAX_VALUE.toLong()).toInt())
-                        }
-                    } else {
-                        startFromPreparedPosition()
-                    }
+                    startFromPreparedPosition()
                 }.onFailure { error ->
                     AlarmTalkLog.reportError("Failed to start alarm audio preview", error)
                     stopPreview()
@@ -619,28 +624,41 @@ internal fun AlarmEditorScreen(
         if (clips.isEmpty()) return false
         val keys = mutableListOf<String>()
         val texts = mutableListOf<String>()
-        val cachedClips = ArrayList<CachedAlarmAudio>(clips.size)
-        clips.forEach { clip ->
-            val cacheKey = "stock_${clip.messageId}"
-            val cached = audioStore.getCachedAudio(cacheKey, clip.audioUrl) ?: run {
-                val response = onDownloadStockAudio(clip.messageId)
-                withContext(Dispatchers.IO) {
-                    audioStore.cacheGeneratedAudio(
-                        bytes = Base64.decode(response.audioBase64, Base64.DEFAULT),
-                        format = response.audioFormat,
-                        rawAudioUri = response.audioUrl,
-                        displayName = cacheKey,
-                        cacheKey = cacheKey,
-                        messageId = clip.messageId,
-                    )
-                }
+        var representativeAudio: CachedAlarmAudio? = null
+        suspend fun download(clip: StockClip, cacheKey: String): CachedAlarmAudio {
+            val response = onDownloadStockAudio(clip.messageId)
+            return withContext(Dispatchers.IO) {
+                audioStore.cacheGeneratedAudio(
+                    bytes = Base64.decode(response.audioBase64, Base64.DEFAULT),
+                    format = response.audioFormat,
+                    rawAudioUri = response.audioUrl,
+                    displayName = cacheKey,
+                    cacheKey = cacheKey,
+                    messageId = clip.messageId,
+                )
             }
-            keys.add(cached.cacheKey ?: cacheKey)
+        }
+        clips.forEachIndexed { index, clip ->
+            val cacheKey = "stock_${clip.messageId}"
+            // ⚠ **캐시 확인은 IO 에서 한다**(2026-09-29). 이 함수는 테마를 누르는 순간 메인에서
+            //   불린다 — 클립마다 파일을 뒤지면 그동안 화면이 멎는다.
+            // 길이는 **대표(첫 클립)만** 잰다 — 편집기에 박히는 오디오는 대표 하나이고, 나머지는
+            // 회전용 **키**만 쓴다. 길이 측정은 파일마다 수십 ms 다.
+            val cacheKeyUsed = if (index == 0) {
+                val audio = withContext(Dispatchers.IO) { audioStore.getCachedAudio(cacheKey, clip.audioUrl) }
+                    ?: download(clip, cacheKey)
+                representativeAudio = audio
+                audio.cacheKey
+            } else if (withContext(Dispatchers.IO) { audioStore.hasCachedAudio(cacheKey, clip.audioUrl) }) {
+                cacheKey
+            } else {
+                download(clip, cacheKey).cacheKey
+            }
+            keys.add(cacheKeyUsed ?: cacheKey)
             // 잠금화면이 발사 variant 의 문구를 보여줄 수 있도록 keys 와 같은 순서로 텍스트도 저장.
             texts.add(clip.text)
-            cachedClips.add(cached)
         }
-        val representative = cachedClips.firstOrNull() ?: return false
+        val representative = representativeAudio ?: return false
         val first = clips.first()
         editor.setBucketAudio(
             audio = representative,
@@ -686,7 +704,8 @@ internal fun AlarmEditorScreen(
         onSave(
             draft.copy(
                 targetUserId = recipient.userId,
-                targetUserName = familyMemberLabel(context, recipient),
+                // 화면용 대체 이름('멤버')이 아니라 실제 이름 — 모르면 완료 문구가 '상대' 로 말한다.
+                targetUserName = familyMemberNameOrNull(recipient),
             ),
         )
     }
@@ -731,29 +750,16 @@ internal fun AlarmEditorScreen(
     // 알람음/목소리 두 토글 → 내부 저장(playMode + alarmSoundEnabled) 매핑.
     //  둘 다 켬 = 알람+목소리 / 목소리만 = 목소리만 / 알람음만 = 알람만 / 둘 다 끔 = 알람만+무음(진동/화면만)
     // 목소리를 켤 때 voiceSource 를 초기화하던 기존 PlayModeCard onSelect 동작을 보존한다.
+    // 상태 변경은 `AlarmEditorState.applyAlarmOutput` 에 있다 — '알람' → '목소리' 에서 직전
+    // 문구 선택을 잇는 연결을 테스트가 거기서 본다(`AlarmEditorStateTest`).
     fun applyAlarmOutput(voice: Boolean, sound: Boolean) {
-        val wasAlarmOnly = editor.playMode == AlarmPlayModes.ALARM_ONLY
-        editor.playMode = when {
-            voice -> AlarmPlayModes.VOICE_ONLY
-            else -> AlarmPlayModes.ALARM_ONLY
-        }
-        // ⚠ **'목소리만' 에서는 alarmSoundEnabled 를 끄지 않는다.**
-        // 톤을 안 트는 것은 playMode 가 이미 표현한다(표시도 파생값이라 화면은 그대로다).
-        // 여기서 0 으로 박으면, 나중에 유료 만료·목소리 삭제로 그 알람이 강등됐을 때
-        // 톤 폴백까지 함께 막혀 **소리가 하나도 안 나는 알람**이 된다 — 폴백이 가장 필요한
-        // 바로 그 상황에서만 꺼진다. 그 값은 '알람음을 쓸 때의 설정' 으로만 둔다.
-        if (sound) {
-            editor.alarmSoundEnabled = true
-        } else if (!voice) {
-            editor.alarmSoundEnabled = false
-        }
-        if (voice && authSession == null) {
-            editor.voiceSource = VoiceSources.LOCAL_AUDIO
-            editor.clearTtsMeta()
-        } else if (voice && wasAlarmOnly) {
-            editor.voiceSource = VoiceSources.TTS_PROFILE
-            editor.clearTtsMeta()
-        }
+        editor.applyAlarmOutput(
+            voice = voice,
+            sound = sound,
+            signedIn = authSession != null,
+            lastMessageContext = lastMessageContext,
+            lastManualText = lastManualText,
+        )
     }
 
     /**
@@ -1232,8 +1238,11 @@ internal fun AlarmEditorScreen(
                     // 있어야 조건 매칭이 되고 없으면 저장이 막히므로, 저장된 도시가 없으면 안 잇는다.
                     // 조건형 테마는 **필요한 값이 있을 때만** 잇는다 — 없으면 저장이 막힌다.
                     // 판정은 저장 게이트와 같은 함수 하나를 본다(위 hoist 주석).
+                    // '새 알람인가' 는 `followsLastMessageChoice` 로 본다 — 문구가 없던 기존
+                    // 알람(알람 전용·직접 녹음)을 목소리 문구로 옮겨 직전 선택을 이어받은 경우도
+                    // 포함한다. `alarm == null` 로 가르면 그때 직전 테마 대신 목록 첫 테마가 붙는다.
                     val remembered = lastFreeBucket?.takeIf {
-                        alarm == null && it in buckets &&
+                        editor.followsLastMessageChoice && it in buckets &&
                             (it != "weather" || weatherLocationReady()) &&
                             (it != "fortune" || fortuneInfoReady())
                     }
@@ -1323,20 +1332,10 @@ internal fun AlarmEditorScreen(
                 familyVoiceIds = readyFamilyVoiceIds,
                 systemVoiceIds = readySystemVoiceIds,
                 profileLoadFinished = voiceProfileLoadFinished,
-            )?.let(editor::selectVoiceProfile)
+            // 자동 선택은 쳐 둔(이어받은) 직접 입력 문구를 비우지 않는다 — `preselectVoiceProfile` 주석.
+            )?.let { editor.preselectVoiceProfile(it) }
         }
     }
-
-    /**
-     * 날씨 문구에 필요한 **지역이 확보돼 있는가** — 두 곳(`randomPromptSettingsComplete`,
-     * `editorSaveBlocked` 의 무료 버킷 갈래)이 **반드시 이 함수 하나를 본다.**
-     *
-     * ⚠ 예전에는 판정식이 두 벌이었고 한쪽에만 `targetProvidesWeather` 탈출구가 있었다.
-     * 그래서 **수신자가 날씨를 설정해 뒀는데도**(`weather_ready=true`) 기본 목소리를 고르면
-     * 저장이 영구히 막혔다(2026-08-24 실기기). 가족 알람에서 지역 칸이 비어 있는 것은
-     * **정상**이다 — 서버가 프라이버시 때문에 남의 값을 숨기고 준비 여부만 내려준다.
-     */
-
 
     fun randomPromptSettingsComplete(): Boolean {
         if (!editor.voiceRandomPrompt) return false
@@ -1356,6 +1355,8 @@ internal fun AlarmEditorScreen(
      * 판정은 저장 경로와 **같은 두 단계**다(`saveEditor` 의 `resolveTtsInput` → `getCachedAudio`):
      * 입력 별칭이 있어도 **파일이 없으면 없는 것**이다. 별칭 파일은 오디오와 이름이 달라
      * 함께 지워지지 않으므로, 별칭만 보고 판단하면 "있다" 고 착각한다.
+     * 두 번째 단계는 `getCachedAudio != null` 과 답이 같은 `hasCachedAudio` 로 묻는다 — 이 함수는
+     * 저장 사유(`editorSaveBlockReason`)를 셀 때 **콤포지션마다** 불리므로 길이를 재지 않는다.
      *
      * 가족 알람은 제외한다 — 서버가 수신자별로 만들어야 해서 내 캐시로는 대신할 수 없다.
      */
@@ -1374,13 +1375,14 @@ internal fun AlarmEditorScreen(
                 listenerTitle = resolvedVoiceListenerTitle(profileId, text),
             ),
         ) ?: return false
-        return audioStore.getCachedAudio(alias.cacheKey, rawAudioUri = editor.rawAudioUri) != null
+        return audioStore.hasCachedAudio(alias.cacheKey, rawAudioUri = editor.rawAudioUri)
     }
 
     // 저장이 막혔는가. ⚠ **사유 문구는 두지 않는다**(2026-08-18 변경. 그전에는 하단 바에
     // 한 줄씩 떴다). 이유를 말하는 자리는 **그 값이 사는 곳**이다:
     //  - 목소리 → 목소리 카드의 `NoUsableVoiceProfileCallout`("아직 사용할 목소리가 없어요."
-    //    + [목소리 만들기])와 '삭제된 목소리' 배너. 둘 다 해결 액션까지 갖고 있다.
+    //    + [목소리 만들기]). 해결 액션까지 갖고 있다. ('삭제된 목소리' 배너는 2026-09-29 에
+    //    걷어냈다 — 그 사유는 저장을 누를 때 `VOICE_UNAVAILABLE` 알럿이 말한다.)
     //  - 문구 → 문구 요약 행(`MessageModeSummaryRow`)과 문구 화면의 상세 행.
     //
     // 바에 사유를 또 쓰면 같은 순간 **두 문장이 서로 다른 얘기를 했다** — 배너는 "저장된
@@ -1440,10 +1442,8 @@ internal fun AlarmEditorScreen(
                 // 질문이라, 누른 즉시 이유를 말하는 편이 낫다(그리고 서버도 안 부른다).
                 editor.isManualForSave() && text.isNotBlank() && !isOnline &&
                     !manualAudioReadyLocally(profileId, text) -> SaveBlockReason.OFFLINE_NEW_MESSAGE
-                // 빈 문구는 클립이 아직 안 붙은 과도기다.
-                !editor.voiceRandomPrompt && editor.voiceText.trim().isBlank() ->
-                    SaveBlockReason.MESSAGE_PREPARING
-                else -> null
+                // 빈 문구 — 등록 목소리면 '빈 직접 입력', 스톡 클립 목소리면 클립 과도기.
+                else -> emptyMessageBlockReason(editor, usesStockClips)
             }
         }
     }
@@ -1534,9 +1534,31 @@ internal fun AlarmEditorScreen(
             randomContextUsesWeather(result.randomContext) &&
             result.weatherCity.isNotBlank()
         ) {
-            dynamicPromptPreferenceStore.saveWeatherLocation(promptOwnerUserId, result.weatherCountry, result.weatherCity)
+            val previousRegion = dynamicPromptPreferences.weatherRegion
+            // 목록으로 되짚히는 값이면 **옛 앱이 읽는 표준 글자**로 적는다(설정 '지역' 행과 같다 — 알람에서
+            // 이어받은 옛 별칭 "South Korea"/"Seoul" 도 `대한민국`/`서울` 이 된다). 되짚지 못한 옛 글자는 그대로다.
+            // iOS `WeatherRegions.storageLabels` ← `DynamicPromptPreferences.editorUpdate` 와 같다.
+            val pickedRegion = com.alarmtalk.app.data.weatherRegionFor(result.weatherCountry, result.weatherCity)
+            dynamicPromptPreferenceStore.saveWeatherLocation(
+                promptOwnerUserId,
+                pickedRegion?.legacyCountry ?: result.weatherCountry,
+                pickedRegion?.legacyCity ?: result.weatherCity,
+            )
             dynamicPromptPreferences = dynamicPromptPreferenceStore.read(promptOwnerUserId)
             shouldSyncOwnDynamicPromptSettings = true
+            // 공휴일 국가 = 내 지역의 나라(docs/spec/alarm-lifecycle.md) — **지역이 바뀌었을 때만**
+            // 적는다. 이 자리는 날씨 종류를 고르기만 해도 지나므로(지역은 그대로), 매번 적으면
+            // 지역을 건드리지도 않았는데 달력이 바뀐다. 되짚지 못한 옛 글자면 null 이라 건드리지 않는다.
+            // **가족 알람은 여기 오지 않는다**(위 `!familyAlarmMode`) — 받는 사람의 지역이다.
+            val savedRegion = dynamicPromptPreferences.weatherRegion
+            if (savedRegion != null && savedRegion.key != previousRegion?.key) {
+                scope.launch {
+                    com.alarmtalk.app.data.WeatherRegionHolidaySync.onRegionSaved(
+                        com.alarmtalk.app.data.HolidayCountryPreferenceStore(appContext),
+                        savedRegion,
+                    )
+                }
+            }
         }
         if (
             !familyAlarmMode &&
@@ -1555,7 +1577,16 @@ internal fun AlarmEditorScreen(
             shouldSyncOwnDynamicPromptSettings = true
         }
         if (shouldSyncOwnDynamicPromptSettings) {
-            onUpdateDynamicPromptSettings(dynamicPromptPreferences.toDynamicPromptSettings())
+            // 계정에 올리는 것은 **서버 값과 다를 때만**이다 — 날씨 종류만 다시 골라도 이 자리를 지나므로,
+            // 매번 올리면 문구 화면을 나올 때마다 같은 값으로 PATCH 한다. iOS `DynamicPromptPreferences.editorUpdate`
+            // 의 `needsUpload` 와 같다.
+            // ⚠ 같을 때 **'안 올라간 변경' 표시를 내리지 말 것**(Codex #837). 세션의 서버 값은 아직 끝나지 않은 앞
+            // 요청(A→B 의 B)을 모른다 — B 를 올리는 사이 A 로 되돌리면 여기서는 '같다' 로 보이는데, 표시를 내리면
+            // B 가 끝나 세션이 B 가 된 뒤 받아 적기가 표시 없이 B 를 이 기기에 적어 A 가 사라진다. 표시를 두면
+            // 받아 적기가 A 를 다시 올리고, 정말 같았으면 다음 응답에서 표시만 내린다(`adoptAccountSettings`).
+            if (dynamicPromptPreferences != authSession?.user?.dynamicPromptSettings?.toPromptPreferences()) {
+                onUpdateDynamicPromptSettings(dynamicPromptPreferences.toDynamicPromptSettings())
+            }
         }
         // 방금 비운 버킷을 다시 붙이라고 스톡 클립 효과를 깨운다(위 `stockClipRebindTick` 주석).
         stockClipRebindTick++
@@ -1693,17 +1724,6 @@ internal fun AlarmEditorScreen(
                             onHolidayOffChange = { enabled ->
                                 if (editor.repeatDaysMask != 0) editor.holidayOff = enabled
                             },
-                            holidayCountryCode = holidayCountryCode,
-                            upcomingHolidays = upcomingHolidays,
-                            onHolidayColdCache = {
-                                // 비-KR 캐시가 비었을 때 한 번 서버 동기화 후 목록을 다시 읽는다.
-                                scope.launch {
-                                    alarmRepository.ensureHolidaysSynced(holidayCountryCode)
-                                    upcomingHolidays = runCatching {
-                                        alarmRepository.upcomingHolidays(countryCode = holidayCountryCode)
-                                    }.getOrDefault(emptyList())
-                                }
-                            },
                         )
                     }
                 }
@@ -1716,7 +1736,6 @@ internal fun AlarmEditorScreen(
                     androidx.compose.foundation.layout.Column(
                         modifier = Modifier.padding(horizontal = editorHorizontalPadding),
                     ) {
-                        val alarmSoundOn = editor.playMode != AlarmPlayModes.VOICE_ONLY && editor.alarmSoundEnabled
                         // ⚠ **재생 방식은 2택 세그먼트로 고른다** — 목소리 / 알람.
                         // `PlayModeCard` 는 있는데 아무도 부르지 않아 **화면에 안 나오고**
                         // 있었다(목소리 카드 안 스위치가 대신하고 있었다). 그러면 iOS 와
@@ -1755,19 +1774,17 @@ internal fun AlarmEditorScreen(
                             // ⚠ **아직 못 받은 목소리는 고를 수 없다** — 관문 **1/3**.
                             // 판정은 `needsClipPreparation` 한 곳에만 있다(거기 주석 참조).
                             // 여기는 "**고른 목소리**를 지금 기준으로 본다" 는 자리다.
+                            // 직접 녹음에서 오면 곧 직전 문구 종류를 이으므로 **바뀔 값**으로 판정한다.
                             onNeedsClipPreparation = { profileId ->
-                                clipGate.needsClipPreparation(
+                                needsClipPreparationForVoicePick(
+                                    gate = clipGate,
+                                    editor = editor,
                                     profileId = profileId,
-                                    randomPrompt = editor.voiceRandomPrompt,
-                                    randomContext = editor.voiceRandomContext,
+                                    lastMessageContext = lastMessageContext,
+                                    lastManualText = lastManualText,
                                 )
                             },
                             onOpenClipPreparation = { profileId -> openClipPreparation(profileId) },
-                            voiceEnabled = true,
-                            onVoiceEnabledChange = { on ->
-                                if (voicePlanLocked) showVoicePlanGate()
-                                else applyAlarmOutput(voice = on, sound = alarmSoundOn)
-                            },
                             editor = editor,
                                 voiceProfiles = visibleVoiceProfiles,
                                 familyVoices = familyVoices,
@@ -1782,7 +1799,6 @@ internal fun AlarmEditorScreen(
                                 previewPreparingVoiceId = voicePreview.preparingVoiceId,
                                 voiceProfileBusy = voiceProfileBusy,
                                 voiceProfileLoadFinished = voiceProfileLoadFinished,
-                                stockClips = stockClips,
                                 audioMessage = audioMessage,
                                 isRecording = isRecording,
                                 recordingElapsedMillis = recordingElapsedMillis,
@@ -1810,6 +1826,10 @@ internal fun AlarmEditorScreen(
                                 usesStockClips = usesStockClips,
                                 onOpenRandomPromptSettings = ::openRandomPromptSettings,
                                 onOpenVoiceOutputSettings = { settingsDetailPanel = "voice_output" },
+                                // 직접 녹음 → 목소리로 옮겼는데 문구가 비어 있으면 직전 선택을 잇는다
+                                // (알람 전용 → 목소리와 같은 규칙, `AlarmEditorState.selectTtsVoice`).
+                                lastMessageContext = lastMessageContext,
+                                lastManualText = lastManualText,
                             )
                         }
                         }
@@ -1830,8 +1850,6 @@ internal fun AlarmEditorScreen(
                             onVibrationEnabledChange = {
                                 editor.vibrationPattern = if (it) VibrationPatterns.DEFAULT else VibrationPatterns.NONE
                             },
-                            onVibrationSelect = { editor.vibrationPattern = it },
-                            onAlarmVolumeChange = { editor.alarmVolumePercent = it },
                             onAlarmSoundEnabledChange = { on -> applyAlarmOutput(voice = voiceOn, sound = on) },
                             onOpenVibrationSettings = { settingsDetailPanel = "vibration" },
                             onOpenAlarmSoundSettings = { settingsDetailPanel = "sound" },
@@ -1864,8 +1882,6 @@ internal fun AlarmEditorScreen(
                     ) {
                         EditorActionButtons(
                             isSaving = busy,
-                            // ⚠ **항상 활성화다.** 막힘은 누른 뒤 알럿으로 말한다.
-                            canSave = true,
                             // ⚠ **사유 판정은 여기서 한다.** `saveEditor` 안이 아니다 —
                             // 그 함수는 `editorSaveBlockReason` 보다 **먼저** 선언돼 있어
                             // 지역 val 을 볼 수 없다(코틀린 지역 선언 순서).
@@ -1883,6 +1899,7 @@ internal fun AlarmEditorScreen(
                                         SaveBlockReason.FORTUNE_INFO_MISSING -> R.string.editor_block_fortune_title
                                         SaveBlockReason.OFFLINE_NEW_MESSAGE -> R.string.editor_block_offline_title
                                         SaveBlockReason.MESSAGE_PREPARING -> R.string.editor_block_preparing_title
+                                        SaveBlockReason.MANUAL_TEXT_MISSING -> R.string.editor_block_manual_text_title
                                     }
                                     val messageRes = when (reason) {
                                         SaveBlockReason.RECORDING_MISSING -> R.string.editor_block_recording_message
@@ -1897,17 +1914,12 @@ internal fun AlarmEditorScreen(
                                             else R.string.editor_block_fortune_message
                                         SaveBlockReason.OFFLINE_NEW_MESSAGE -> R.string.editor_block_offline_message
                                         SaveBlockReason.MESSAGE_PREPARING -> R.string.editor_block_preparing_message
+                                        SaveBlockReason.MANUAL_TEXT_MISSING -> R.string.editor_block_manual_text_message
                                     }
                                     familyBlockAlert = context.getString(titleRes) to context.getString(messageRes)
                                 }
                             },
                             onCancel = onCancel,
-                            recipientName = if (familyAlarmMode) {
-                                selectedFamilyRecipientValue?.name?.trimmedOrNull()
-                                    ?: selectedFamilyRecipientValue?.email?.trimmedOrNull()
-                            } else {
-                                null
-                            },
                         )
                     }
                 }

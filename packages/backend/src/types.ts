@@ -1,5 +1,6 @@
 export interface Env {
   ELEVENLABS_API_KEY: string;
+  // 합성 모델은 워커 변수가 아니라 `lib/tts-model.ts` 의 `TTS_MODEL_ID` 상수다(2026-09-30, `ELEVENLABS_TTS_MODEL_ID` 제거).
   TURSO_DATABASE_URL: string;
   TURSO_AUTH_TOKEN: string;
   GOOGLE_CLIENT_ID: string;
@@ -55,7 +56,6 @@ export interface Env {
   GOOGLE_VERTEX_CREDENTIALS_JSON?: string;
   GOOGLE_VERTEX_DYNAMIC_TEXT_ENABLED?: string;
   GOOGLE_VERTEX_LOCATION?: string;
-  GOOGLE_VERTEX_MODEL?: string;
   RESEND_API_KEY?: string;
   AUTH_EMAIL_FROM?: string;
   AUTH_EMAIL_REPLY_TO?: string;
@@ -83,6 +83,13 @@ export interface Env {
    *  SERVICE_KEY_IS_NOT_REGISTERED_ERROR 가 난다.)
    */
   KASI_SERVICE_KEY?: string;
+  /**
+   * 기상청 단기예보(data.go.kr `VilageFcstInfoService_2.0`) 서비스 키 — **일반 인증키(Decoding)**. 한국 지역의
+   * 날씨(`lib/weather-kma.ts`)에 쓴다. 없으면 KR 날씨는 부르지 않고 미해결이다 — 운영에서는 KR 슬롯마다 경보가
+   * 오른다(`lib/weather-region-daily.ts`). `URLSearchParams` 로 한 번만 인코딩하므로 Encoding 키를 넣으면 이중
+   * 인코딩되어 `SERVICE_KEY_IS_NOT_REGISTERED_ERROR`(30)가 난다. ⚠ 요청 URL 에 키가 실리므로 URL 을 로그에 남기지 않는다.
+   */
+  KMA_SERVICE_KEY?: string;
   JWT_SECRET: string;
   PASSWORD_PEPPER: string;
   ENVIRONMENT: string;

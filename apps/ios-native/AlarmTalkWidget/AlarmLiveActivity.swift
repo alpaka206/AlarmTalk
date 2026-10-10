@@ -26,7 +26,7 @@ struct AlarmLiveActivity: Widget {
         } dynamicIsland: { context in
             DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
-                    Label(alarmLabel(context), systemImage: "alarm.fill")
+                    alarmLabel(context)
                         .font(.headline)
                         .foregroundStyle(AlarmTalkBrand.primaryDark)
                 }
@@ -67,7 +67,7 @@ struct AlarmLiveActivity: Widget {
     ) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline) {
-                Label(alarmLabel(context), systemImage: "alarm.fill")
+                alarmLabel(context)
                     .font(.headline)
                     .foregroundStyle(AlarmTalkBrand.primaryDark)
                 Spacer(minLength: 8)
@@ -76,7 +76,7 @@ struct AlarmLiveActivity: Widget {
                     .foregroundStyle(AlarmTalkBrand.activitySecondaryText)
             }
 
-            // ⚠ **시각이 가장 크다.** 안드로이드 울림 화면(`RingingActivity.kt:266-290`)이
+            // ⚠ **시각이 가장 크다.** 안드로이드 울림 화면(`RingingActivity.kt:265-289`)이
             // 104sp 시계를 첫 요소로 두는 것과 같은 이유 — 잠결에 보는 화면이라
             // "지금 울리는 중" 보다 "오전 7:30" 이 먼저 읽혀야 한다. 옛 레코드(시각 필드
             // 없음)는 종전대로 모드 라벨을 크게 그린다.
@@ -87,7 +87,7 @@ struct AlarmLiveActivity: Widget {
 
                 HStack(spacing: 6) {
                     timingText(context)
-                    Text("·")
+                    Text(verbatim: "·")
                     subtitleText(context)
                 }
                 .font(.subheadline)
@@ -104,7 +104,7 @@ struct AlarmLiveActivity: Widget {
 
             // 인용 보이스 문구 (있을 때만).
             if let voiceText = quotedVoiceText(context) {
-                Text("\u{201C}\(voiceText)\u{201D}")
+                Text(verbatim: "\u{201C}\(voiceText)\u{201D}")
                     .font(.body)
                     .foregroundStyle(AlarmTalkBrand.activitySecondaryText)
                     .lineLimit(3)
@@ -201,12 +201,16 @@ struct AlarmLiveActivity: Widget {
     /// Android `RingingActivity.ringingModeLabel` 의 parity.
     /// voiceText 가 있으면 "음성 알람", 아니면 playMode 별 문구.
     ///
+    /// ⚠ **`String` 으로 돌려주지 말 것.** `Text(String)` 은 번역하지 않고 그대로 그려, 영어·일본어
+    /// 기기에서도 한국어가 뜬다(코덱스 #836). `LocalizedStringKey` 는 위젯 번들의
+    /// `Localizable.xcstrings` 에서 찾는다.
+    ///
     /// NOTE: `AlarmPlayMode` enum 은 앱 타겟 전용(`AlarmEnums.swift`)이라 위젯에서
     /// 참조할 수 없다. 따라서 metadata.playMode 의 raw 문자열을 직접 비교한다
     /// (raw 값은 `AlarmPlayMode` / Android `AlarmPlayModes` 와 동일하게 고정).
     private func subtitle(
         _ context: ActivityViewContext<AlarmAttributes<AlarmTalkMetadata>>
-    ) -> String {
+    ) -> LocalizedStringKey {
         if quotedVoiceText(context) != nil {
             return "음성 알람"
         }
@@ -230,9 +234,17 @@ struct AlarmLiveActivity: Widget {
         return trimmed.isEmpty ? nil : trimmed
     }
 
+    /// 알람 이름. 사용자가 붙인 이름은 그대로(`Label(String)` — 번역하지 않는다), 비었거나
+    /// 기본 이름이면 번역되는 "알람" 이다(`AlarmDefaultLabel` — 편집기는 기기 언어와 무관하게
+    /// 한국어 "알람" 을 저장한다).
+    @ViewBuilder
     private func alarmLabel(
         _ context: ActivityViewContext<AlarmAttributes<AlarmTalkMetadata>>
-    ) -> String {
-        context.attributes.metadata?.label ?? "알람"
+    ) -> some View {
+        if let custom = AlarmDefaultLabel.custom(context.attributes.metadata?.label) {
+            Label(custom, systemImage: "alarm.fill")
+        } else {
+            Label("알람", systemImage: "alarm.fill")
+        }
     }
 }

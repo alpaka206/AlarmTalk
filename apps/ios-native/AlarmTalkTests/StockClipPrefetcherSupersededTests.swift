@@ -30,7 +30,8 @@ final class StockClipPrefetcherSupersededTests: XCTestCase {
         AuthSession(token: "token-superseded", user: AuthUser(id: ownerID, email: "test@example.test"))
     }
 
-    private var prefetcher: StockClipPrefetcher?
+    private var prefetchers: [StockClipPrefetcher] = []
+    private var sessions: [URLSession] = []
 
     override func setUpWithError() throws {
         // 전역 저장소는 프로세스에 하나다 — 앞 테스트가 남긴 표·격리 표시를 지운다.
@@ -43,12 +44,18 @@ final class StockClipPrefetcherSupersededTests: XCTestCase {
         SupersededManifestURLProtocol.reset()
     }
 
-    override func tearDownWithError() throws {
-        // 실패 회차는 30초를 자므로, 남겨 두면 다음 테스트까지 산다.
-        prefetcher?.cancel()
-        prefetcher = nil
+    override func tearDown() async throws {
+        // 한 테스트가 여러 회차를 만든다. 마지막 것만 취소하면 앞 회차가 유출된다.
+        // 취소 신호만 보낸 뒤 기록을 비우지 않고 파일 처리·요청이 끝날 때까지 기다린다.
+        for prefetcher in prefetchers {
+            await prefetcher.cancelAndWait()
+        }
+        prefetchers.removeAll()
+        sessions.forEach { $0.invalidateAndCancel() }
+        sessions.removeAll()
         SupersededManifestURLProtocol.reset()
         StockClipManifestStore.clear()
+        try await super.tearDown()
     }
 
     // MARK: - 재료
@@ -62,7 +69,7 @@ final class StockClipPrefetcherSupersededTests: XCTestCase {
             category: "weather",
             language: "ko",
             text: "오늘은 맑아요",
-            audioUrl: "https://r2.example/\(messageID).mp3",
+            audioUrl: "https://r2.example/\(messageID).wav",
             variant: nil,
             renderedForCurrentVoice: nil
         )
@@ -75,12 +82,14 @@ final class StockClipPrefetcherSupersededTests: XCTestCase {
     private func makePrefetcher() -> StockClipPrefetcher {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [SupersededManifestURLProtocol.self]
+        let urlSession = URLSession(configuration: configuration)
+        sessions.append(urlSession)
         let api = AlarmTalkAPI(
             baseURL: URL(string: "https://\(Self.host)/api/")!,
-            session: URLSession(configuration: configuration)
+            session: urlSession
         )
         let prefetcher = StockClipPrefetcher(api: api)
-        self.prefetcher = prefetcher
+        prefetchers.append(prefetcher)
         return prefetcher
     }
 
@@ -177,16 +186,169 @@ final class StockClipPrefetcherSupersededTests: XCTestCase {
     }
 }
 
+extension StockClipPrefetcherSupersededTests {
+    // MARK: - 신선도 창(2026-09-29 효율 감사 M1 — iOS)
+
+    /// 캐시 디렉터리를 비운다 — 두 번째 회차에도 '받을 것' 이 있어야 그 회차가 실제로 돌았는지 보인다.
+    private func emptyAudioCache() throws {
+        let directory = try AudioCacheStore.audioDirectory()
+        for name in (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? [] {
+            try? FileManager.default.removeItem(at: directory.appendingPathComponent(name))
+        }
+    }
+
+    /// 창 안에 공개된 매니페스트가 있으면 **다시 받지 않고** 그 공개본으로 받는다. 예전에는 `start`
+    /// 마다 약 168KB 를 새로 받았다(콜드 스타트 3~5번, 전경 복귀마다 재바인딩과 겹쳐 2번).
+    func test_창_안에_공개된_매니페스트가_있으면_다시_받지_않고_그걸로_받는다() async throws {
+        let fetched = manifest(["fresh-1", "fresh-2"])
+        SupersededManifestURLProtocol.configure(manifestResponse: fetched, beforeManifestResponse: nil)
+
+        let first = makePrefetcher()
+        first.start(session: session, language: "ko")
+        let firstState = await waitForTerminalState(first)
+        XCTAssertEqual(firstState, .finished)
+        XCTAssertEqual(SupersededManifestURLProtocol.manifestRequestCount, 1)
+
+        // 받아 둔 것이 사라졌다(캐시 정리) — 다음 회차가 실제로 도는지 보려고 받을 것을 만든다.
+        try emptyAudioCache()
+        let second = makePrefetcher()
+        second.start(session: session, language: "ko")
+        let secondState = await waitForTerminalState(second)
+
+        XCTAssertEqual(secondState, .finished)
+        XCTAssertEqual(SupersededManifestURLProtocol.manifestRequestCount, 1, "창 안이면 매니페스트를 다시 받지 않는다")
+        XCTAssertEqual(
+            SupersededManifestURLProtocol.requestedAudioMessageIDs.sorted(),
+            (fetched.clips.map(\.messageId) + fetched.clips.map(\.messageId)).sorted(),
+            "빠진 클립은 창 안의 공개본으로 다시 받는다 — 창은 목록 조회만 줄인다"
+        )
+        XCTAssertTrue(StockClipPrefetcher.missingClips(fetched.clips).isEmpty)
+    }
+
+    /// '신호 뒤'(클론 생성이 끝난 뒤·준비 화면의 부족분) — 창 안이라도 그 **뒤에 출발한** 매니페스트만 쓴다.
+    func test_신호_뒤_시작은_창_안이라도_다시_받는다() async throws {
+        let fetched = manifest(["signal-1"])
+        SupersededManifestURLProtocol.configure(manifestResponse: fetched, beforeManifestResponse: nil)
+
+        let first = makePrefetcher()
+        first.start(session: session, language: "ko")
+        let firstState = await waitForTerminalState(first)
+        XCTAssertEqual(firstState, .finished)
+        XCTAssertEqual(SupersededManifestURLProtocol.manifestRequestCount, 1)
+
+        let second = makePrefetcher()
+        second.start(session: session, language: "ko", manifestDepartedAfter: Date())
+        let state = await waitForTerminalState(second)
+
+        XCTAssertEqual(state, .finished)
+        XCTAssertEqual(SupersededManifestURLProtocol.manifestRequestCount, 2, "서버가 바뀐 것을 아는 자리는 창을 쓰지 않는다")
+    }
+
+    /// 클론 등록 진행률(`ClonePrerenderDrive`)은 **신호 뒤의 공개본으로만** 센다(코덱스 #827). 디스크에는
+    /// 생성이 끝나기 전에 출발한 부분 목록이 있을 수 있다 — 그걸로 세면 그 부분만 받은 채 '다 받았다' 가 된다.
+    func test_신호_뒤_진행률은_신호_전에_출발한_부분_목록으로_세지_않는다() async throws {
+        let previous = KeychainStore.readSession()
+        try KeychainStore.saveSession(session)
+        defer {
+            if let previous { try? KeychainStore.saveSession(previous) } else { KeychainStore.deleteSession() }
+        }
+        let clone = "clone-progress-signal"
+        func cloneClip(_ id: String) -> StockClip {
+            StockClip(
+                messageId: id, voiceProfileId: clone, voiceName: nil, category: "weather", language: "ko",
+                text: "오늘은 맑아요", audioUrl: "https://r2.example/\(id).mp3", variant: nil, renderedForCurrentVoice: nil
+            )
+        }
+        let partial = StockClipManifestStore.beginFetch(session: session)
+        XCTAssertEqual(
+            StockClipManifestStore.save(
+                StockClipListResponse(clips: [cloneClip("partial-1")], expectedVariants: nil, legacyBucketHints: nil),
+                ticket: partial
+            ),
+            .published
+        )
+        let signal = partial.departedAt.addingTimeInterval(0.001)
+
+        let fromDisk = await StockClipPrefetcher.progressOffMain(voiceProfileID: clone)
+        XCTAssertEqual(fromDisk?.total, 1, "신호 없이 세면 디스크의 부분 목록으로 센다")
+        let beforeSignal = await StockClipPrefetcher.progressOffMain(voiceProfileID: clone, manifestDepartedAfter: signal)
+        XCTAssertNil(beforeSignal, "신호 뒤의 공개본이 아직 없으면 모른다 — 끝났다고 하지 않는다")
+
+        try await Task.sleep(nanoseconds: 5_000_000)
+        let full = StockClipManifestStore.beginFetch(session: session)
+        XCTAssertGreaterThanOrEqual(full.departedAt, signal)
+        XCTAssertEqual(
+            StockClipManifestStore.save(
+                StockClipListResponse(clips: [cloneClip("partial-1"), cloneClip("late-2")], expectedVariants: nil, legacyBucketHints: nil),
+                ticket: full
+            ),
+            .published
+        )
+        let afterSignal = await StockClipPrefetcher.progressOffMain(voiceProfileID: clone, manifestDepartedAfter: signal)
+        XCTAssertEqual(afterSignal?.total, 2, "뒤늦게 만들어진 클립까지 센다")
+    }
+
+    /// 로그아웃·계정 전환(`clear`) 뒤에는 창이 닫힌다 — 같은 계정으로 다시 들어와도 다시 받는다.
+    func test_clear_뒤에는_창이_닫혀_다시_받는다() async throws {
+        let fetched = manifest(["cleared-1"])
+        SupersededManifestURLProtocol.configure(manifestResponse: fetched, beforeManifestResponse: nil)
+
+        let first = makePrefetcher()
+        first.start(session: session, language: "ko")
+        let firstState = await waitForTerminalState(first)
+        XCTAssertEqual(firstState, .finished)
+        StockClipManifestStore.clear(preservingOwnerUserID: ownerID)
+
+        let second = makePrefetcher()
+        second.start(session: session, language: "ko")
+        let secondState = await waitForTerminalState(second)
+        XCTAssertEqual(secondState, .finished)
+        XCTAssertEqual(SupersededManifestURLProtocol.manifestRequestCount, 2)
+    }
+}
+
 /// `tts/stock-clips` 와 `tts/messages/:id/audio` 만 흉내 낸다.
 ///
 /// 매니페스트 응답을 돌려주기 **직전에** `beforeManifestResponse` 를 돌린다 — 그 자리에서
 /// 경합 상대가 더 새 표로 먼저 공개하면, 요청 중이던 프리페처의 표는 반드시 밀린다.
 private final class SupersededManifestURLProtocol: URLProtocol, @unchecked Sendable {
+    /// 8kHz 모노 PCM 50ms. 가짜 문자열을 MP3라고 보내면 AVFoundation의 길이 조회가
+    /// 손상 파일 파싱에 매달려 CI에서 정상 다운로드 회차도 15초 상한을 넘길 수 있다.
+    private static let audioFixture: Data = {
+        let pcm = Data(repeating: 0, count: 800)
+        var data = Data("RIFF".utf8)
+        func append<T: FixedWidthInteger>(_ value: T) {
+            var littleEndian = value.littleEndian
+            withUnsafeBytes(of: &littleEndian) { data.append(contentsOf: $0) }
+        }
+        append(UInt32(36 + pcm.count))
+        data.append(Data("WAVEfmt ".utf8))
+        append(UInt32(16))
+        append(UInt16(1)) // PCM
+        append(UInt16(1)) // mono
+        append(UInt32(8_000))
+        append(UInt32(16_000))
+        append(UInt16(2))
+        append(UInt16(16))
+        data.append(Data("data".utf8))
+        append(UInt32(pcm.count))
+        data.append(pcm)
+        return data
+    }()
+
     private static let lock = NSLock()
     private nonisolated(unsafe) static var manifestJSON = Data()
     private nonisolated(unsafe) static var beforeManifestResponse: (@Sendable () -> Void)?
     private nonisolated(unsafe) static var audioRequests: [String] = []
     private nonisolated(unsafe) static var racePublish: StockClipManifestStorage.PublishResult?
+    private nonisolated(unsafe) static var manifestRequests = 0
+
+    /// 매니페스트(`tts/stock-clips`)를 몇 번 받았는가 — 신선도 창 회귀가 센다.
+    static var manifestRequestCount: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return manifestRequests
+    }
 
     static var requestedAudioMessageIDs: [String] {
         lock.lock()
@@ -214,6 +376,7 @@ private final class SupersededManifestURLProtocol: URLProtocol, @unchecked Senda
         self.beforeManifestResponse = beforeManifestResponse
         audioRequests = []
         racePublish = nil
+        manifestRequests = 0
     }
 
     static func recordRacePublish(_ result: StockClipManifestStorage.PublishResult) {
@@ -229,6 +392,7 @@ private final class SupersededManifestURLProtocol: URLProtocol, @unchecked Senda
         beforeManifestResponse = nil
         audioRequests = []
         racePublish = nil
+        manifestRequests = 0
     }
 
     override class func canInit(with request: URLRequest) -> Bool {
@@ -244,6 +408,7 @@ private final class SupersededManifestURLProtocol: URLProtocol, @unchecked Senda
             Self.lock.lock()
             let hook = Self.beforeManifestResponse
             let json = Self.manifestJSON
+            Self.manifestRequests += 1
             Self.lock.unlock()
             // 응답을 돌려주기 전에 경합 상대를 먼저 보낸다(같은 스레드에서 끝난다).
             hook?()
@@ -257,10 +422,10 @@ private final class SupersededManifestURLProtocol: URLProtocol, @unchecked Senda
             Self.lock.unlock()
             // 매니페스트가 가리키는 주소와 **같은** 주소를 싣는다 — 다르면 캐시가 '지나간
             // 응답' 으로 보고 쓰지 않는다(`AudioCacheStore.incomingIsSupersededByManifest`).
-            let audio = Data("audio-\(messageID)".utf8).base64EncodedString()
+            let audio = Self.audioFixture.base64EncodedString()
             body = Data("""
-            {"message_id":"\(messageID)","audio_base64":"\(audio)","audio_format":"mp3",\
-            "audio_url":"https://r2.example/\(messageID).mp3"}
+            {"message_id":"\(messageID)","audio_base64":"\(audio)","audio_format":"wav",\
+            "audio_url":"https://r2.example/\(messageID).wav"}
             """.utf8)
         } else {
             client?.urlProtocol(self, didFailWithError: URLError(.unsupportedURL))

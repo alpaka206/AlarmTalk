@@ -7,6 +7,19 @@ account_id = "34cf9e5d676b15021704b5b3d247887c"
 #   wrangler deploy --env dev
 #   wrangler deploy --env production
 
+# 서버 합성이 구운 소리(높이·음량)를 MP3 로 만드는 인코더(LAME → WASM, `wasm-media-encoders`)를 **미리 컴파일된
+# 모듈**로 묶는다 — 워커는 실행 중에 WASM 을 컴파일할 수 없다(`src/lib/voice-pitch.ts`).
+# ⚠ 음량을 올리는 동안(`TTS_LOUDNESS_BOOST_DB` > 0 — `src/lib/tts-model.ts`)은 높이와 상관없이 **모든 합성**이 이
+# 인코더로 굽는다. 이 규칙이나 진입점의 등록(`src/index.ts`)이 어긋나면 배포 빌드가 죽거나, 높이 있는 목소리만이
+# 아니라 TTS 가 전부 실패한다(세 자리 import·등록·규칙은 `test/worker-wasm-bundle.test.ts` 가 글자로 고정한다).
+# wrangler 의 기본 규칙(`**/*.wasm`)은 import **문자열**에 맞추므로, 확장자가 없는 패키지 경로
+# (`wasm-media-encoders/wasm/mp3`)는 이 규칙이 있어야 잡힌다(없으면 "No loader is configured for .wasm").
+# 패키지의 `./wasm/mp3.wasm` 내보내기는 경로가 틀려 있어 쓰지 않는다. `rules` 는 [env.*] 로 상속된다.
+[[rules]]
+type = "CompiledWasm"
+globs = ["wasm-media-encoders/wasm/mp3"]
+fallthrough = true
+
 # Workers Logs — 나가는 4xx/5xx 한 줄(`at: "api_error"`)과 `logStructured` 의 JSON 을 대시보드에
 # **보존**한다. 2026-09-15 전에는 이 블록이 없어 과거 로그가 아예 없었고, 401 거절 같은 4xx 를
 # Sentry 에서 내리자(#749) 그 기록이 실시간 `wrangler tail` 에만 남게 됐다.
@@ -30,10 +43,14 @@ binding = "VOICE_BUCKET"
 bucket_name = "voice-alarm-voices"
 
 [env.dev.triggers]
-# 5분 틱이 본체다. "* * * * *" 는 기간 한정 개인 플랜 종료(전환·보관 스윕) 전용 —
-# src/lib/personal-promo.ts 의 PERSONAL_PROMO_END_CRON 과 같은 문자열이어야 한다.
-# 끝 시각 전에는 DB 를 부르지 않는다. 끝부터는 삭제가 다 끝난 뒤에도 **분당 존재 확인 조회 하나**를
-# 돌린다(D15 — 고정 꼬리 없이 끝까지 비운다). 정리 PR 에서 PERSONAL_PROMO_STARTS_AT 과 함께 뺀다.
+# 5분 틱이 본체다. "* * * * *" 는 실행마다 예산(subrequest)을 통째로 받는 전용 크론이다 —
+# src/lib/personal-promo.ts 의 PERSONAL_PROMO_END_CRON 과 같은 문자열이어야 한다. 두 일을 나눠 쓴다:
+#  - 홀수 분: 탈퇴 등급 통지 대기열(pending_plan_notifications) — 대기 행이 있을 때만 그 분을 통째로 쓴다.
+#    비어 있으면 조회 하나만 하고 아래 일에 넘긴다(그래서 끝 시각 전에도 홀수 분마다 조회 하나가 돈다).
+#  - 기간 한정 개인 플랜 종료(전환·보관 스윕). 끝부터는 삭제가 다 끝난 뒤에도 분당 존재 확인 조회 하나를
+#    돌린다(D15 — 고정 꼬리 없이 끝까지 비운다).
+# ⚠ 정리 PR 에서 개인 플랜 종료 분기는 빼도 **이 크론은 지우지 말 것** — 탈퇴 등급 통지를 비우는 곳이
+#   여기뿐이다(지우면 유예 파기로 해체된 멤버가 등급 변경·목소리 삭제 예고를 영영 못 받는다).
 crons = ["*/5 * * * *", "* * * * *"]
 
 [env.production]
@@ -52,7 +69,8 @@ binding = "VOICE_BUCKET"
 bucket_name = "voice-alarm-voices-prod"
 
 [env.production.triggers]
-# dev 와 같다 — "* * * * *" 는 기간 한정 개인 플랜 종료 전용(PERSONAL_PROMO_END_CRON).
+# dev 와 같다 — "* * * * *" 는 전용 크론(PERSONAL_PROMO_END_CRON): 탈퇴 등급 통지 대기열(홀수 분) +
+# 기간 한정 개인 플랜 종료. 정리 PR 에서도 이 크론은 지우지 말 것(위 dev 주석).
 crons = ["*/5 * * * *", "* * * * *"]
 
 # Set real values with `wrangler secret put <KEY> --env <dev|production>`
@@ -69,7 +87,6 @@ crons = ["*/5 * * * *", "* * * * *"]
 # INIT_DB_SECRET
 # GOOGLE_VERTEX_CREDENTIALS_JSON
 # GOOGLE_VERTEX_LOCATION
-# GOOGLE_VERTEX_MODEL
 # RESEND_API_KEY
 # AUTH_EMAIL_FROM
 # AUTH_EMAIL_REPLY_TO
@@ -99,6 +116,11 @@ crons = ["*/5 * * * *", "* * * * *"]
 #                                  Encoding 키를 넣으면 이중 인코딩 → SERVICE_KEY_IS_NOT_REGISTERED_ERROR.
 #                                  dev 전용으로만 설정: `wrangler secret put KASI_SERVICE_KEY --env dev`,
 #                                  로컬은 .dev.vars.dev 에 추가. prod 에는 넣지 말 것.)
+#
+# 날씨(KR) — 미설정 시 한국 지역 날씨만 미해결(운영은 KR 슬롯마다 경보):
+# KMA_SERVICE_KEY                 (data.go.kr 기상청 단기예보 VilageFcstInfoService_2.0, **일반 인증키(Decoding)**.
+#                                  KASI 와 같은 규약 — Encoding 키는 이중 인코딩. dev·prod 둘 다 넣는다.
+#                                  일본 気象庁·미국 NWS 는 키가 없다. docs/ops/environments.md 「기상청 단기예보 키」.)
 #
 # 랜딩 이벤트 메시지 클립 (POST /api/event/:id/clips) — 없으면 그 라우트만 503:
 # PERSO_API_KEY                   (pk_live_… — 프로젝트·문장 슬롯은 src/lib/event-voices.ts)

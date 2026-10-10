@@ -76,14 +76,28 @@ private val API_ERROR_MESSAGES: Map<String, Int> = mapOf(
     "VOICE_MONTHLY_CHANGE_LIMIT_REACHED" to R.string.msg_voice_monthly_change_limit,
     "VOICE_PREVIEW_REQUIRED" to R.string.msg_voice_preview_required,
     "CONSENT_REQUIRED" to R.string.msg_voice_consent_required,
-    // 목소리 느낌(결)이 '' · lively · calm 밖이다. 화면은 그 셋만 고를 수 있어 정상 경로에서는
-    // 나지 않는다 — 그래도 폴백의 "목소리를 만들지 못했어요" 로 떨어지면 녹음을 탓하게 되니,
-    // 무엇을 다시 하면 되는지(느낌을 다시 고르기)만 차분히 말한다.
-    "INVALID_VOICE_ENERGY" to R.string.api_error_invalid_voice_energy,
+    // 목소리 높이(스펙 voice-and-message §4-3) — 등록 확정 요청에 싣는 `pitch_semitones` 의 거절. iOS
+    // `APIErrorMessages.swift` 와 짝이다.
+    "INVALID_VOICE_PITCH" to R.string.api_error_invalid_voice_pitch,
+    "VOICE_PITCH_LOCKED" to R.string.api_error_voice_pitch_locked,
+    // `INVALID_VOICE_ENERGY` 는 표에 두지 않는다 — 이 앱은 목소리의 결을 보내지 않아(2026-09-29
+    // '목소리 느낌' 선택 제거) 그 코드를 받을 길이 없다. 서버는 1.2.10 앱 때문에 아직 낸다.
 
     // ── 알람·문구 ─────────────────────────────────────────────────────────
     "ALARM_NOT_FOUND" to R.string.api_error_alarm_not_found,
     "TTS_GENERATION_FAILED" to R.string.api_error_tts_generation_failed,
+
+    // ── 가족 알람 보내기(`routes/alarm-helpers.ts` 의 `evaluateFamilyAlarmTimingGuard`) ──
+    // 편집기가 먼저 막지만 그 판정은 받는 사람의 **캐시된** 설정과 이 기기 시계로 한 것이다.
+    // 서버가 다시 거절하면 이유를 말해야 한다 — 예전에는 셋 다 "상대 알람 설정에 실패했어요"
+    // 로 뭉개져 다시 눌러도 똑같이 실패했다(`docs/spec/family-alarm.md` §3).
+    "FAMILY_ALARM_DISABLED" to R.string.api_error_family_alarm_disabled,
+    // 숫자(5분)를 문구에 넣지 않는다 — 그 값은 서버·두 앱 세 곳에만 둔다(§3 표).
+    "FAMILY_ALARM_LEAD_TIME" to R.string.api_error_family_alarm_lead_time,
+    "FAMILY_ALARM_QUIET_TIME" to R.string.editor_error_family_alarm_time_unavailable,
+
+    // ── 이용권 그룹 ───────────────────────────────────────────────────────
+    "OWNER_CANNOT_LEAVE" to R.string.api_error_owner_cannot_leave,
 )
 
 /** 이 코드에 정해 둔 문구가 있으면 돌려준다. 없으면 null — 부르는 쪽이 폴백을 쓴다. */

@@ -1,7 +1,45 @@
-# Dev 테스트 핸드오프 (갱신 2026-09-29)
+# Dev 테스트 핸드오프 (갱신 2026-10-06)
 
 > 세션 재개용 라이브 문서. 상태가 바뀌면 이 파일을 갱신/정리한다. (다른 컴퓨터에서도 `git pull` 후 이 문서만 읽으면 이어서 진행 가능.)
 > 끝난 검증은 여기 남기지 않는다 — 남은 것과 다음에 또 쓸 방법만 둔다.
+
+## 2026-10-06 재개 — 다음 검증과 출시 조건
+
+이 절이 아래의 9월 상태 기록보다 최신이다. 이번 작업 범위는 develop까지이며, main·스토어·운영 데이터는 변경하지 않았다.
+
+- 프로필 저장 [#847](https://github.com/alpaka206/AlarmTalk/pull/847), Gemini 후속
+  [#844](https://github.com/alpaka206/AlarmTalk/pull/844), 앱 날씨 출처
+  [#845](https://github.com/alpaka206/AlarmTalk/pull/845), 공식 날씨 원천
+  [#846](https://github.com/alpaka206/AlarmTalk/pull/846)은 develop에 반영됐다.
+- 번역 작업의 PR별 커밋·리뷰·CI 기록은
+  [#848](https://github.com/alpaka206/AlarmTalk/pull/848)부터
+  [#858](https://github.com/alpaka206/AlarmTalk/pull/858)의 연결된 PR에서 확인한다.
+  번역 회귀 검사는 `python3 scripts/check-hangul-literals.py --self-test`와
+  `python3 scripts/check-hangul-literals.py`이며 CI lint에도 연결했다.
+  CI 재개 시 PR 최신 head뿐 아니라 이전 head의 실행 ID와 병합 뒤 develop push 실행도 종료까지 확인한다.
+  Actions 목록은 서버측 상태/브랜치 필터 결과에만 의존하지 않고 전체 목록과 개별 실행을 대조한다.
+- [ ] 영어·일본어 실기기 화면: 긴 본문, 버튼·시간 휠, VoiceOver/TalkBack과 큰 글씨 배율을 확인한다.
+  iOS 언어 변경 후 AlarmKit 재예약은 잠금·앱 종료·스누즈 중·실패 후 재시도까지 확인한다.
+  단위 테스트와 Release 빌드 성공만으로 실기기 알람 검증을 완료 처리하지 않는다.
+- [ ] 공식 날씨 dev **24시간 관측**: #846 자동 배포의 마이그레이션 127 성공 시각은
+  2026-10-05 09:34:23 UTC(18:34:23 KST),
+  [실행 기록](https://github.com/alpaka206/AlarmTalk/actions/runs/37290769212).
+  `cpuTime`·`slot_failed`·원천별 200과 슬롯 캐시를 관측한다. 당일 원천 읽기 검사는
+  KR 17·JP 47·US 69개 지역, 내일~3일 뒤 unresolved 0이었다. 이는 24시간 관측을 대신하지 않는다.
+  10월 5일 Workers Logs 조회는 OAuth 401로 실패해 런타임 관측 완료로 기록하지 않았다.
+- [ ] **main 전환 전**: #845의 출처 표시를 포함한 앱이 **양쪽 스토어에 게재**돼야 한다.
+  #846이 develop에 있으므로 develop 전체를 main으로 바로 합치면 서버 전환도 함께 나간다.
+  앱 출시용 커밋 범위와 서버 전환 순서를 먼저 정한다. 운영 KMA 키·운영 시크릿 정리는 그 릴리스 작업에서 한다.
+- dev 기본 목소리 240개 v4 Turbo 교체와 마이그레이션 125는 10월 1일 완료 기록이 있다.
+  dev 재게시·재합성은 반복하지 않는다. `GOOGLE_VERTEX_MODEL` dev 시크릿 제거와 KMA 키 설정도
+  이전 세션에서 완료했다. prod 스톡 교체는 아래의 main 출시 순서를 따른다.
+- [ ] v4 Turbo 음량 보정과 iOS 반복 사이 0.9초 쉼은 사람의 청취 결정이 남아 있다.
+  Vertex 위치는 처리방침의 미국 계약에 맞춰 `us`를 유지한다. 위치 변경은 이번 수정에 포함하지 않았다.
+- [ ] 스토어 원고의 앱 화면 3개 언어 문장은 **번역을 포함한 앱 버전 게재 뒤** 사용한다.
+  Play 원고는 다음 버전 기준 (B) 에만 그 문장이 있고, 지금 올리는 INTERIM 과 Android 30 기준 (A) 에는 없다.
+  원고 복원은 스토어 게시가 아니다. 실게재 상태는 이번 세션에서 다시 확인하지 않았으며 아래 날짜를 따른다.
+- 10월 5일 기기 연결 조회: Android A32 연결, iPhone 14 Pro Wi-Fi 페어링 available, S23 미연결.
+  앱을 새로 빌드·설치하거나 실기기 검증한 결과는 아니다.
 
 ## 스토어 상태 — 2026-09-29
 
@@ -11,7 +49,8 @@
   2026-09-28T04:57Z — 2026-09-27T15:04Z 제출, `AFTER_APPROVAL` 로 승인 즉시 게재). 심사 노트는 "WHAT'S NEW IN 1.2.10" 머리말로 새로 썼다(3,950자 — 목소리 느낌·자연스러운 문구·**서버가
   켜는 기간 한정 개인 플랜은 심사 중 꺼져 있음**·첫 실행 코드 안내 제거). 첨부 없음.
 - **prod 서버**: #797 머지(d604b08e)로 배포·마이그레이션 #121·#122 적용 확인(2026-09-27). prod Gemini 는
-  `gemini-3.5-flash`/`us` 로 전환했다(시크릿 동기화 — 2.5 은퇴 10/20 대응).
+  `gemini-3.5-flash`/`us` 로 전환했다(시크릿 동기화 — 2.5 은퇴 10/20 대응). 다음 모델 `gemini-3.8-flash` 는
+  시크릿이 아니라 **코드 머지로** 바뀐다 — 아래 「Gemini 3.8 Flash」.
 - **기간 한정 개인 플랜 스위치 켜짐** — prod `PERSONAL_PROMO_STARTS_AT=2026-09-28T11:05:00+09:00`
   (`secrets:sync:prod`). **운영자 결정으로 iOS 1.2.10 게재·dev 리허설 전에 켰다** — 스펙 「운영」 3 의 원래
   순서와 다르다. 켠 뒤 확인: 원시 free 계정(rec3) `/auth/me` 가 `plan: plus` + `personal_promo.ends_at`
@@ -37,8 +76,17 @@
   클래스패스로 돌린다) → Play Developer API edits(`GOOGLE_PLAY_SERVICE_ACCOUNT_JSON`) 로 업로드·트랙·
   validate·commit. iOS 는 xcodegen → archive(`Local.xcconfig`) → export(수동 서명 plist — 자동은
   'No Accounts') → `altool` 검증·업로드 → ASC API 로 버전·whatsNew·빌드 연결·심사 노트·reviewSubmissions.
+  **Copyright(`appStoreVersions` 의 `copyright`)는 이미 `© 2026 Vailen` 으로 게재돼 있다**(ASC 입력값
+  `2026 Vailen` — `©` 는 애플이 붙인다. 2026-09-30 KR 공개 페이지 확인). 판매자 이름은 개인 법적 이름 그대로
+  둔다 — 애플 계정이 개인(개인사업자) 계정이라 판매자 이름은 계정 명의를 따른다. 새 버전 레코드를 만들 때
+  copyright 가 이 값으로 따라왔는지 확인한다.
   서버를 먼저 내는 회차는 빌드 전에 main 의 Deploy Backend 실행이 **성공**했고 로그에 그 회차의
   마이그레이션이 적용으로 찍혔는지 눈으로 본다(가정하지 않는다 — 안 돌았으면 `workflow_dispatch`).
+- [ ] **스토어 등록정보 교체 대기**(2026-09-30 — 새 이름 `알람톡: 목소리 알람 시계` 등, 아직 아무것도 올리지
+      않았다). 원본과 순서·조건은 `docs/product/app-store-listing.md`·`docs/product/play-store-listing.md`:
+      Play 는 날씨 주장을 뺀 INTERIM 을 지금 올리고(옛 설명에 익명 후기·해시태그·개인 연락처가 있다), App Store 는
+      프로모션 문구만 지금(P), 이름·부제·검색어·설명은 다음 버전 레코드에서. 날씨가 맞는다고 말하는 문장은
+      **날씨 지역 서버 변경이 prod 에 배포되고 확인된 뒤에만**(W) — 확인하면 결과를 여기 적고 판을 바꾼다.
 - **1.2.10 순서**(2026-09-27 결정 — 서버 먼저): 버전 올림 → #797(develop→main) 머지로 prod 배포·
   마이그레이션 #121·#122 → main 에서 두 앱 빌드·제출 → prod Gemini 시크릿 전환(10/20 전) → iOS 1.2.10
   게재 뒤 iOS 강제 업데이트(하한 7). 실제로는 Android 강제 업데이트(30)를 Play 30 게재 뒤 먼저 냈고
@@ -49,6 +97,19 @@
 - 새 버전 레코드에는 **심사 첨부 영상이 따라오지 않는다**(`appStoreReviewAttachments` 빈 목록) —
   노트에 "영상이 첨부돼 있다" 를 적지 않거나 영상을 다시 올린다. 노트 상한은 4000자다. 1.2.9 노트는
   "유지보수·버그 수정만" 머리말이라 1.2.10(새 기능·서버가 켜는 프로모)에는 새로 쓴다.
+- **다음 릴리스(미정)에 실을 사용자 변화** — `docs/product/release-notes.md` 에는 아직 미출시 칸이 없어
+  여기 적어 두고, 그 회차의 출시 노트(ko/en/ja)를 쓸 때 옮긴다:
+  - 목소리 등록 '세부 정보' 의 **'목소리 느낌'(자동·경쾌·차분) 선택을 뺐다**(2026-09-29 사용자 결정,
+    `feat/remove-voice-feel`). 알람 문구의 말투·톤은 서버가 등록 녹음 **전사**로 추정한 말투를 따른다 —
+    Gemini 는 음성이 아니라 전사 글자만 본다(`docs/spec/voice-and-message.md` 4-2). 1.2.10 은 이 선택지를
+    "새 기능" 으로 광고했으니 출시 노트에 없어졌다고 한 줄 적는다(예: "목소리를 등록할 때 고르던 '목소리
+    느낌'을 없앴습니다. 알람 문구는 등록한 녹음의 말투를 따릅니다.").
+- [ ] **서버의 목소리 느낌 받는 처리 정리** — 선택지를 뺀 릴리스가 두 스토어에 게재되고 두 플랫폼의
+      `minSupported`(`app-version.ts`)가 그 릴리스로 오른 **뒤에만**: `POST voice/clone` 의
+      `voiceEnergy`/`voice_energy` 와 `PATCH voice/:id/relationship` 의 `voice_energy` 받는 처리, 400
+      `INVALID_VOICE_ENERGY` 를 지운다(에러 코드는 나간 코드라 목록에서 지우는 것도 그때다). 먼저 지우면
+      1.2.10 의 선택지가 아무것도 하지 않는 죽은 컨트롤이 된다. 이미 저장된 `voice_profiles.voice_energy` 를
+      계속 따를지(`withVoiceEnergy`)는 그때 정한다.
 
 ## 기간 한정 개인 플랜 + 웰컴 코드 안내 폐지 — 2026-09-27 (백엔드)
 
@@ -95,9 +156,26 @@
     `claimPlanAnswer`). iOS 는 예약할 때 울릴 시각으로 프로모를 본다(AlarmKit — `billing-lifecycle.md` D1).
   - [ ] iOS 실기기: 끝 직전에 다음날 한 번 울릴 클론 알람을 맞추면 기본 알람음으로 예약되는지, 반복 알람은
     끝 뒤 앱을 열거나 백그라운드 새로고침이 돈 뒤 기본 알람음으로 바뀌는지.
-  - 안드로이드 닉네임 수정(`updateNickname` → `saveSessionPreservingCurrentToken`)은 PATCH 를 시작할 때
-    잡은 세션 사용자(plan·`personal_promo`·받은 시각 포함)를 그대로 쓴다 — 그 사이 `/auth/me` 가 오면
-    세션의 plan·프로모가 다음 `/auth/me` 까지 되돌아간다(기존 문제, 판정 스냅샷은 영향 없음).
+  - (해결 — 2026-10-05 `fix/profile-save-keeps-plan`) 안드로이드 닉네임 수정(`updateNickname` →
+    `saveSessionPreservingCurrentToken`)이 PATCH 를 시작할 때 잡은 세션 사용자(plan·`personal_promo`·받은 시각
+    포함)를 그대로 저장해, 그 사이 `/auth/me` 가 오면 세션의 plan·프로모가 다음 `/auth/me` 까지 되돌아가던 것.
+    판정 스냅샷은 영향이 없었지만 **세션 plan 을 직접 읽는 편집기(`AlarmEditorScreen` 의 `freeVoiceTier`)·목소리
+    관리(`VoiceProfileManagementPanel` 의 `paidVoiceAccess`)는 그 사이 무료로 보였다**(클론 숨김·동적 문구 잠금·
+    목소리 등록 막힘). 가족 알람 설정 저장·계정 설정 올리기(안드로이드)와 탈퇴 복구 저장(iOS
+    `completeAccountRecovery` — 푸시 준비를 기다리기 전의 사본)도 같은 뿌리였다. 이제 바꾼 칸만 쓰는 순간의
+    세션 위에 얹고(안드로이드 `AuthSessionStore.updateUserIfAlive` ← `saveProfileEdit`; iOS `updateProfile` 은
+    응답을 기다린 뒤 `var updated = current` 에 바꾼 칸만 얹고 → `refreshUser`, `completeAccountRecovery` 는 준비를
+    기다린 뒤의 세션에 탈퇴 상태만 — `/auth/me` 경로는 → `reconcileAccountAnswer` 로 다시 다듬기), 저장 뒤 확인
+    조회를 한다(`session-and-auth.md` 「프로필 저장은 바꾼 칸만 세션에 적는다」). iOS 확인 조회는 저장 전에 떠난
+    조회(옛 이름)가 먼저 와 토큰을 굴려도 '토큰만 구른' 갈래에서 프로필 칸까지 다시 적는다
+    (`applyAccountAnswerOnRolledToken` — 리뷰: 그 갈래가 plan·프로모만 적어 이 순서에서 덮지 못했다). 회귀: 안드로이드
+    `ProfileSaveKeepsAccountAnswerTest`, iOS `AuthViewModelTests`(닉네임·가족 설정 × 두 도착 순서·탈퇴 복구 두 경로).
+  - [ ] 남은 것(낮음): 프로필 저장 뒤 확인 조회까지 실패하면, 저장 **전에** 떠나 옛 이름·가족 설정을 읽은
+    `/auth/me` 가 되돌린 칸이 다음 조회까지 남는다(계정 설정만 울타리가 막는다). 확인 조회보다 **뒤에 보낸** plan
+    답(안드로이드 결제 전 조회, iOS 세션 밖 `/auth/me`·결제 전 조회 — 프로필 칸은 쓰지 않는다)이 확인 조회의 답보다
+    먼저 반영돼도 같다 — 확인 조회의 답이 밀린 답이 된다(두 앱, 세 요청이 겹쳐야 한다). iOS 배경 갱신
+    (`BackgroundSyncTask.renewSessionTokenIfNeeded` → `EntitlementWriter.renewSession`)의 plan·프로모 패치는 토큰
+    CAS 만 보고 계정 요청 순번은 안 본다 — 그 사이 전경의 결제 전 조회가 더 새 plan 을 썼으면 덮을 수 있다(미검증).
   - Compose 배선은 단위 테스트가 없다 — 종료 안내 이펙트의 키(`accountEntryAnswer`·`anyModalOpen`·
     `activityResumed`·`systemPermissionPromptOpen`)와 `planAnsweredEntry` 재확인 이펙트의 호출 자리.
     iOS 도 `promoLapseLockWaitKey` 가 실제 콜드 스타트에서 잠금을 다시 돌리는지는 순수 함수 테스트뿐이다.
@@ -107,7 +185,8 @@
     인덱스가 없어 작은 표를 훑는다). 실행 전체가 잡히지 않은 예외로 죽는 경우(`captureCron(
     'scheduled.personal_promo_end', …)` — DB 장애 등)는 시간당 한 번으로 묶이지 않았다.
   - 그대로 남은 확인: 크론 트리거 한도·ElevenLabs 슬롯 500·외부 파일 삭제 드레인(아래 체크리스트),
-    정리 PR 의 1분 크론 제거.
+    정리 PR 의 개인 플랜 종료 분기 제거(⚠ **1분 크론 자체는 남긴다** — 탈퇴 등급 통지 대기열을 홀수 분에
+    비우는 곳이 거기뿐이다, `pending_plan_notifications`).
   - 의도적으로 두는 차이(후속 아님): iOS 알럿 버튼 순서는 플랫폼 표준 그대로, 푸시 문구의 자정은 "밤 12시".
     (로그인·가입 성공 응답은 이제 두 앱 모두 이번 진입의 계정 응답으로 적는다 — 안드로이드 `recordSignInAnswer`.)
 - [x] 배포 전: Cloudflare 계정의 **크론 트리거 한도**가 워커마다 하나 더(두 환경 합쳐 넷) 허용하는지
@@ -177,21 +256,100 @@
       새로고침이 떠 있는 동안 쿠폰으로 커플·가족이 된 뒤 늦게 온 옛 답이 공유·가족 알람을 다시 닫지
       않는지(순번 가드) — 느린 네트워크에서.
 - ⚠ 정리 PR(11월 중순) 전까지 `PERSONAL_PROMO_STARTS_AT` 을 지우지 말 것 — 지우면 종료 전환도
-  멈춘다(꺼짐 = 프로모가 없었던 것). 정리 PR 에서 1분 크론(`wrangler.toml`·`index.ts` 분기)도 뺀다.
+  멈춘다(꺼짐 = 프로모가 없었던 것). 정리 PR 에서 `index.ts` 의 개인 플랜 종료 분기는 빼되 **1분 크론
+  (`wrangler.toml`)과 홀수 분의 탈퇴 등급 통지 대기열 비우기(`planNotificationDrainTurn`)는 남긴다.**
 - 알려진 한계: 스윕이 삭제 큐에 넣은 **외부 파일**(R2 오디오 — 목소리당 사전렌더 21개 — 와
   ElevenLabs 보이스)은 5분 틱의 `drainExternalDeletions` 가 틱당 10건씩 지운다. 2,500명이면 큐가
   수만 건이라 DB 행이 끝 + 3일 뒤 몇 시간 안에 지워져도 파일 삭제는 며칠~몇 주 더 걸린다. `pending_external_deletions`
   를 지켜보고, 필요하면 드레인 용량을 따로 늘리는 PR.
 
-## Gemini 2.5 Flash 은퇴 대응 — **기한 2026-10-20**
+## ElevenLabs v4 Turbo + 태그 제거 — 코드는 develop, **다시 굽기는 사람이 듣고 나서** (2026-09-30)
 
-`gemini-2.5-flash` 는 Vertex 에서 **2026-10-20 에 은퇴**한다(「Model versions and lifecycle」, 2026-09-22
-갱신 — "retirement timelines may be extended, they won't be moved to an earlier date"). 대체는
-**`gemini-3.5-flash`(GA, 은퇴 2027-05-19 이후)**, 지역은 **`us`**(처리방침이 처리 국가를 '미국' 으로 적어
-`global` 은 쓰지 않는다). **2026-09-27 에 dev·prod 모두 `gemini-3.5-flash` / `us` 로 바꿨다**(아래 순서).
+합성 모델이 `eleven_v4_turbo` 다 — `packages/backend/src/lib/tts-model.ts` 의 `TTS_MODEL_ID` 상수 하나이고 서버와 스톡
+스크립트가 같이 쓴다. 워커 변수 `ELEVENLABS_TTS_MODEL_ID` 는 없앴다(원복도 코드). 설정은 stability 0.5·similarity 0.8
+둘뿐(v4 는 style·speed 를 조용히 무시한다). **Gemini 에게 오디오 태그를 쓰라고 하지 않는다** — 같은 언어 직접
+입력은 Gemini 를 아예 부르지 않고, 사전렌더·동적 생성·번역은 모델이 낸 태그를 벗긴다. 스톡 프리셋 60문장의 태그도
+뺐다(화면 문구는 그대로). 남은 대괄호는 사용자가 친 것과 글자 웃음(ㅋㅋ)을 바꾼 `[laughs]` 뿐이다. 근거와 측정은
+`docs/spec/voice-and-message.md` §10, 절차는 `docs/ops/tts-model-rerender.md`.
 
-**표가 권하는 Flash-Lite 가 아니라 Flash 로 가는 이유**(2026-09-23 블라인드 판정 — 원어민 판정자에게
-어느 쪽이 어느 모델인지 가리고, 튜닝에 쓰지 않은 관계·호칭 프로필로, 같은 프롬프트에서 모델만 바꿔 비교):
+- v3 말끝 보완(문장 끝 ` ...`·mp3 끝 무음 0.366초)을 뺐다. 2026-09-30 A/B(기본 목소리 4 × 태그 없는 2문장 × 꼬리
+  있음/없음, 16개): 꼬리 없이도 끝 무음 0.14~0.29초·끝/평균 세기 ≤0.44, 받아쓰기에 덧붙은 말 없음. 산출물은
+  세션 스크래치(`v4t-tail/`)에만 있다.
+- 번들 인사말 12개(안드로이드 `res/raw` = 랜딩 `public/audio`, iOS 는 안드로이드 파일을 참조)와 안드로이드 랜딩
+  미리듣기를 v4 Turbo 로 다시 구웠다. 옛 v3 대비 음량 −0.3~−8.4dB, 도현 +3.6~+6.2반음·시우 +2.6~+4.7반음(받아쓰기는
+  원문 그대로).
+- 클론 사전렌더는 마이그레이션 **#124**(`refresh-stock-clips-v4-turbo-…`)가 굽혀 있는 클론을 교체 회차로 큐에
+  다시 넣는다 — 배포 직후부터 cron 이 같은 message_id 에 덮어쓴다(문구도 Gemini 가 새로 쓴다). 새 등록은
+  대기열 앞에 선다.
+- 시스템 스톡은 **자동으로 바뀌지 않는다** — `publish:stock` 의 교체 갈래로 같은 message_id 에 소리만 바꾼다(은퇴
+  아님 → 차단 화면 없음).
+
+남은 일(이 순서로 — `docs/ops/tts-model-rerender.md`):
+- [ ] develop 머지 뒤 dev: 새 직접 입력·새 클론이 v4 Turbo 인지(`generated_audio_assets.model_id`), #124 로 dev 클론
+      재렌더가 도는지(큐 `pending`·`refresh_existing = 1` 이 줄어드는가).
+- [ ] `npm run preview:stock`(240개 — 약 31,300자 ≈ 8.8천 크레딧) → **사람이 듣는다**(남자 목소리 음높이·음량).
+- [ ] `npm run publish:stock -- --env dev`(`[교체]` 240) → dev 폰으로 기본 목소리·클론 알람 확인. 작게 들리면 클라
+      고정 보정 게인을 따로 정한다(스펙 §10 「위험」).
+- [ ] main 머지 → prod #124 → 곧바로 `npm run publish:stock -- --env prod` → 완료 확인 쿼리.
+- [ ] 번들 인사말을 실은 앱 릴리스.
+- [ ] 치우기(아무 때나 — 코드가 읽지 않는다): 워커에 `ELEVENLABS_TTS_MODEL_ID` 가 있으면
+      `npx wrangler secret delete ELEVENLABS_TTS_MODEL_ID --env dev`·`--env production`(없으면 할 일 없음).
+- [ ] 마이그레이션 #125(`drop-voice-profiles-preview-tag`): develop 머지 뒤 dev 에서 `PRAGMA table_info(voice_profiles)`
+      에 `preview_tag` 가 없는지 본다. 되돌릴 수 없는 DDL 이라 prod(`main`)는 dev 확인 뒤에 올린다. 코드는 #840 부터
+      그 칸을 읽지도 쓰지도 않아 배포→마이그레이션 창에 영향이 없다. 실패하면 워크플로가 빨간불로 죽는다
+      (그 칸에 손으로 건 인덱스가 있으면 `after drop column` — 원장에 기록되지 않으니 인덱스를 지우고 다시 돌린다).
+- 배포 순간 확정만 하고 정식 등록 전이던 초안은 다시 들으려 하면 `VOICE_PREVIEW_UNAVAILABLE` 이 된다(모델 id 가
+  캐시 키에 들어간다). 등록은 그대로 되고, 문구·관계·호칭을 고치면 새로 만든다.
+- 처리방침 메모(아래 Gemini 절 끝): 직접 입력 문구는 이제 **번역할 때만** Vertex 로 간다.
+
+## Gemini 3.8 Flash — 모델은 **코드 상수** 하나 (2026-09-30)
+
+모든 Gemini 호출은 `packages/backend/src/lib/vertex-translate.ts` 의 `VERTEX_MODEL`(`gemini-3.8-flash`, 지역 `us`)
+로 나간다. **워커 시크릿 `GOOGLE_VERTEX_MODEL` 로 덮는 길은 없앴다** — dev·prod 워커에 남은 옛 값
+(`gemini-3.5-flash`)이 새 코드를 옛 모델로 돌리지 못하게 하려는 것이다. 그래서 전환도 원복도 **코드**다.
+
+- **Pro 는 어디에서도 쓰지 않는다.** 이전 운영 모델은 `gemini-3.5-flash`(2026-09-27 시크릿 전환 — 그 전은
+  `gemini-2.5-flash`/`us-central1`, 2.5 는 2026-10-20 은퇴).
+- 3.8 Flash(GA 2026-09-02)는 사고 수준 `MINIMAL` 을 **400** 으로 거절한다 — 3.5 때 쓰던 값이라 모델 이름만
+  바꿨으면 모든 호출이 실패하고, 호출부가 실패를 삼켜 경보 없이 폴백만 늘었을 것이다. 그래서 `thinkingLevel:
+  LOW` 와 함께 바꿨다(`buildGenerationConfig`). 3.x 는 temperature 를 무시하므로 호출부의 temperature·상한 값도
+  지웠다. 출력 상한은 사고 토큰을 함께 세므로 1024 → 4096(요금은 만든 토큰만).
+- 단가(`us`, 100만 토큰 입력/출력): 3.8 Flash $0.825/$4.125(2026-12-31 까지 도입가, 그 뒤 $1.65/$8.25),
+  3.5 Flash $1.65/$9.90. 사고 토큰도 출력 단가라 실제 비용은 로그의 `thought_tokens` 로 본다.
+- 2026-09-30 실호출 1회(dev 자격 증명, 운영 요청 모양 — 사전렌더 프롬프트·응답 스키마·`LOW`·상한 4096):
+  HTTP 200 · `STOP` · `model_version gemini-3.8-flash` · 2.4초 · 입력 3,635 / 답 37 / 사고 0 토큰.
+- **3.8 은 단독으로 잰다**(2026-10-01 소유자 지시 — 3.5 와 나란히 비교하지 않는다. 아래 표는 3.5 로 넘어갈 때의
+  것이다): `npm run eval:gemini -- --models gemini-3.8-flash@us --suites A,D,F --dset all --reps 2`
+  (`scripts/eval-gemini-prompts.ts`. 한 조합만은 `--only 프로필/카테고리`). 프롬프트·검사를 고친 내용은
+  `docs/spec/voice-and-message.md` §4-2 「말투·내용 규칙」.
+  - ⚠ **2026-10-01 오전 수치는 운영 프롬프트의 측정값이 아니다.** 그때 평가 도구는 사용자가 확정한 미리듣기 문구
+    (`styleReference` — 운영 크론이 거의 모든 클론에 넘긴다)를 싣지 않았다. 그 조건에서 기준선 → 튜닝은 사전렌더
+    1회차 내용 통과 97%→100%(core)·100%→100%(holdout), 영어 'Morning, …' 거절 9→0, 일본어 가족 です・ます 1/53→0,
+    아이 클립이 이유를 옮김 5/12→2/12, 경상 클립의 전라 '~응께' 2/12→0 이었다 — **방향**의 근거로만 읽는다.
+  - **확정 문구를 싣고 다시 쟀다**(2026-10-01 오후, D·F, core+holdout, 2회, `.eval/gemini/…-fixes-38-final`,
+    리뷰 수정 반영 후): 사전렌더 306줄 최종 성공 100%, 응답 받은 1회차 내용 통과 100%(301/301), 거절 0건(영어
+    아침 인사 0·일본어 です・ます 0/90), 누출 0%, 호칭 100%, 한국어 존대·반말 프로필 어긋남 0. 사투리는 **확정
+    문구를 따른다** — 사투리 문구면 경상·関西 모두 사투리(눈으로 12/12씩. 어휘표가 못 잡는 어미가 있어 표지 수치는
+    100%·83%), 표준어 문구면 경상 12/12·関西 12/12 표준어(사투리 프로필만 3회 더 잰 것까지 합치면 경상 30/30·関西
+    28/30 — 남은 둘은 関西 '날씨 확인 실패' 사과 줄이다. 경상 사투리 줄의 전라 '없응께' 도 30줄 중 1번 남았다).
+    말투 분석(F) 44/44 결과·사투리·어체·아이 판정 정답 100%.
+  - 시간 초과: 전송 실패 호출 2%(7/313) — 전부 사전렌더의 다음 회차가 살렸다. 느린 호출도 사고 토큰 0·출력 길이
+    보통이라 모델이 오래 생각한 것이 아니라 **상류 대기**다(시간대에 따라 0~24%). 오전에 6/6 시간 초과였던
+    `en-no-relationship/medication` 은 단독 재실행 4/4(2~3초)·전체 실행 4/4(4~5초)가 1회차에 왔다 — 그 조합의 문제가 아니었다.
+    말투 분석의 새 재시도(전송 실패만, `waitUntil` 마감 안 — 스펙 §4-2)는 이 실행에서 전송 실패가 없어 **실호출로는
+    확인하지 못했다**(목 테스트로만 확인).
+  - **마지막 튜닝 회차**(2026-10-01, A·D·F, core+holdout, 3회, `.eval/gemini/2026-10-01T09-54-01-final-38`. 같은 라벨의
+    `…T09-33-00-final-38` 은 중간 프롬프트라 무시): 사전렌더 459줄 최종 성공 100%, 1회차 거절은 영어 `too_long` 3건뿐
+    (다음 회차가 살림), 누출 0%, 호칭 100%, 일본어 です・ます 0/135, 영어 'money/financial luck' 0/21, 영어 운세#0 의
+    '생각보다 술술' 절 9/9(전 4/6), 인사 줄은 일본어 おはよう 3/3·関西 おはようさん 3/3(전 0/2·0/2), 경상 확정 문구 끝
+    '…카이' 를 끝으로 쓴 줄 0/18(전 8/12, 사투리는 눈으로 18/18), 아이 목소리 '일어나' 깨짐 0/18(전 2/12), 말투 분석(F)
+    66/66 정답. 표준어 확정 문구의 関西 누출은 이 실행 2/18 이고 따로 60줄을 더 재면 8/60 — 고치기 전 10/120 과 통계적으로
+    갈리지 않는다(남는 것은 '날씨 확인 실패' 사과 줄과 'やらんでええ'). 경상 줄의 '~니께/~응께' 는 여전히 18줄 중 1줄
+    (평가 도구가 이제 '~니께' 도 센다). 말투 분석의 마감은 목 테스트(토큰 발급 8초)로만 확인했다.
+- 3.8 Flash 는 은퇴일이 정해지지 않은 '단기 제공' 모델이다(공지 뒤 최소 45일 안에 옮긴다).
+
+**Flash-Lite 로 내리지 말 것**(2026-09-23 블라인드 판정 — 원어민 판정자에게 어느 쪽이 어느 모델인지 가리고,
+튜닝에 쓰지 않은 관계·호칭 프로필로, 같은 프롬프트에서 모델만 바꿔 비교):
 
 | 비교(같은 프롬프트) | 합계 | 한국어 | 영어 | 일본어 |
 | --- | --- | --- | --- | --- |
@@ -200,44 +358,21 @@
 | 3.5 Flash vs 2.5 Flash (세트 3) | **72:47 (61%)** | 24:12 | 23:24 | 25:11 |
 
 - Lite 는 부자연·번역투가 2.5 의 세 배였다. 프롬프트를 여러 번 고쳐도 새 프로필에서 따라잡지 못했다.
-- 3.5 Flash 는 시드 누락·존대 실수가 2.5 보다 적은 대신 **20~30% 길다**(영어 중앙값 33단어).
-- 비용(목록가): 3.5 Flash $1.50/$9.00, 2.5 Flash·3.5 Flash-Lite $0.30/$2.50(입력/출력 100만 토큰).
-  실측 토큰으로 사전렌더 클립 한 개 약 $0.006(2.5 는 $0.0012), 유료 클론 한 목소리(22클립) 약 $0.13.
-  직접 입력 태깅 한 번 약 $0.0013.
-- 응답 시간: p50 1.4~1.6초(2.5 는 0.8~1.0초), **p90 7~8초**. 사전렌더는 cron 이라 괜찮지만 직접 입력
-  태깅은 저장 경로다 — dev 전환 뒤 체감 확인할 것.
 
-**프롬프트도 같이 바뀐다(2.5 에도 적용된다)** — 이 PR 을 머지하면 시크릿을 바꾸기 전에도 2.5 가 새 프롬프트로
-돈다. 같은 판정에서 새 프롬프트(v7)는 이전 커밋 프롬프트(v4)를 79:33(71%, 한국어 27:6)으로 이겼고,
-v4 는 그 전 운영 프롬프트를 2.5 에서 84:25 로 이겼다. 평가 도구: `packages/backend/scripts/eval-gemini-prompts.ts`
-(`npm run eval:gemini`, 결과는 gitignore 된 `.eval/`).
+**모델 이름만 바꾸면 깨지는 곳**(지금까지 실제로 난 것):
+- 3.8 의 `MINIMAL` 400(위). 계열마다 사고 설정 이름도 다르다 — 2.x 는 `thinkingBudget`, 3.x 는 `thinkingLevel`.
+- 응답 스키마 enum 에 빈 문자열이 있으면 Gemini 3 가 400 — 말투 분석이 경보 없이 꺼질 뻔했다(고쳤다).
+- 상한에 걸리면 **잘린 JSON 이 HTTP 200** 으로 온다(`finishReason: MAX_TOKENS`) — 던져서 기존 폴백으로 간다.
 
-**모델 이름만 바꾸면 깨지는 곳이 있었다**(2026-09-23 dev 자격 증명으로 실제 프롬프트 비교):
-- **등록 녹음 말투(사투리) 분석이 400** — 응답 스키마 enum 에 빈 문자열이 있으면 Gemini 3 가 거절한다.
-  그 함수는 실패를 삼키고 null 을 돌려주므로 **경보 없이 사투리 분석이 전부 꺼졌을** 것이다. 고쳤다.
-- 2.x 에 `thinkingLevel` 을 보내면 400, 3.x 문서는 `thinkingBudget` 을 더 이상 지원하지 않는다 →
-  **모델 문자열로 설정을 가른다**(`isLegacyGeminiModel`). 3.x 는 temperature 를 무시한다.
-- 상한에 걸리면 **잘린 JSON 이 HTTP 200** 으로 온다(`finishReason: MAX_TOKENS`) — 전에는 그대로 문구로
-  받았다(2.5 에도 있던 구멍). 이제 던져서 기존 폴백으로 간다.
-- 예비 후보 `gemini-3.1-flash-lite`(@`us`)도 호출은 정상이다(품질 판정은 하지 않았다).
-
-전환 순서(코드가 두 계열을 모두 부르므로 **시크릿만 바꾸면 전환·원복**된다):
-- [x] 코드 PR 을 develop 에 머지 → dev 배포(#801, 2026-09-27).
-- [x] dev 전환: `.dev.vars.dev` 에 `GOOGLE_VERTEX_MODEL=gemini-3.5-flash`, `GOOGLE_VERTEX_LOCATION=us`
-      → `npm run secrets:sync:dev --workspace=backend`(2026-09-27). ⚠ 동기화 스크립트는 빈 값을 건너뛴다 — 값을 지워 기본값으로
-      돌릴 수 없다.
-- [ ] dev 확인: `wrangler tail` 에서 `at:"vertex.generate"` 로그가 `status 200`·`finish_reason STOP` 인지,
-      직접 입력 태깅·등록 미리듣기·클론 사전렌더·말투 분석을 한 번씩 돌려 본다. **아직 워커 로그로는 못 봤다** —
-      같은 자격 증명·모델·지역의 호출은 평가 스크립트(`npm run eval:gemini`, 702건)로만 확인했다. 위 dev
-      리허설 때 함께 본다.
-- [x] develop → main 뒤 **prod 전환**: `.dev.vars.prod` 같은 두 값 → `npm run secrets:sync:prod --workspace=backend`
-      (#797 배포 뒤, 2026-09-27 — 이전 값 `gemini-2.5-flash`/`us-central1`).
-- [ ] prod 모니터링: 며칠 로그(`vertex.generate`)와 Sentry `clip_failure` 를 본다. 전환 직후는 새벽이라
-      호출이 없어 아직 한 건도 못 봤다.
-- 원복: 시크릿을 `gemini-2.5-flash` / `us-central1` 로 되돌리면 된다(10/20 전까지만). 그 뒤의 예비는
-  `gemini-3.5-flash-lite` / `us` — 품질이 떨어지는 것을 알고 쓰는 비상용이다(위 표).
-- 후속(막지 않음): 3.5 Flash 문구가 길다 — 영어 길이 상한 조정 검토. 판정이 짚은 나머지(문장 중간 태그,
-  내용과 안 맞는 태그 일부)는 v4·2.5 에도 같은 정도로 있었다.
+남은 일:
+- [ ] develop 머지 → dev 배포 즉시 3.8(시크릿 무관). `wrangler tail` 에서 `at:"vertex.generate"` 가 `status 200`·
+      `finish_reason STOP`·`model_version gemini-3.8-flash` 인지, 등록 미리듣기·클론 사전렌더·말투 분석(직접 입력
+      태깅이 남아 있으면 그것도)을 한 번씩 돌려 본다. 사고 토큰·지연도 같이 본다(저장 경로 타임아웃 15초).
+- [ ] develop → main 뒤 prod 도 코드로 바뀐다. 며칠 로그(`vertex.generate`)와 Sentry `clip_failure` 를 본다.
+- [ ] 치우기(배포 뒤 아무 때나 — 코드가 읽지 않는다): `npx wrangler secret delete GOOGLE_VERTEX_MODEL --env dev`,
+      `--env production`. `.dev.vars.dev`·`.dev.vars.prod` 의 `GOOGLE_VERTEX_MODEL` 줄도 지운다(동기화 목록에서
+      빠져 올라가지는 않는다).
+- 원복: 코드 되돌리기(revert)다. 3.5 로 돌아가려면 `VERTEX_MODEL` 과 사고 수준을 **같이** 되돌린다.
 
 ⚠ **법무 확인 필요(모델 교체와 별개)**: 개인정보 처리방침 71행은 "동적 문구·번역 기능을 사용하지 않으면
 이 전송은 발생하지 않습니다", 161행 표의 목적은 "동적 알람 문구 생성, 다국어 번역" 이다. 그런데 운영에서는
@@ -257,11 +392,32 @@ v4 는 그 전 운영 프롬프트를 2.5 에서 84:25 로 이겼다. 평가 도
 - [ ] iPhone 다운로드 화면의 Hangs/Time Profiler 측정. Watchdog는 원인 미확정 유지.
 - [ ] 새 서버와 새 앱 적용 후 Sentry·생성 재전송·이벤트 배치 지연·큐 대기 시간 관찰.
       운영 DB 변경/배포는 이번 작업에서 실행하지 않았다.
-- [ ] 랜딩 이벤트의 옛 종류 `comfort`(위로 한마디) 호환 제거 — 새 랜딩 번들(생일/추석)이 게재되고
-      **며칠** 지나 옛 번들이 다 밀려난 뒤, 백엔드 `lib/event-voices.ts` 의 `LEGACY_EVENT_MESSAGE_KINDS`
-      와 `EVENT_MESSAGES.comfort` 를 함께 지운다(회귀 테스트 `event-clips.test.ts` 의 comfort 케이스도).
-      배포 창에서는 옛 번들이 그 id 를 '위로 한마디' 라벨로 보내므로 400 도, 다른 문구로 바꿔 읽기도
-      안 된다(코덱스 #788 2차·4차).
+- [ ] ⚠ **prod 게재 순서 — 사랑 한마디(`love`)는 백엔드가 prod 에 먼저 떠 있어야 한다**(코드로 못 막는다 —
+      그래서 PR 을 **둘로 나눴다**: 백엔드 `feat/event-love-backend` / 랜딩 #815 `feat/landing-event-love`).
+      랜딩(Vercel)과 백엔드(Workers)는 `main` 머지 한 번으로 **함께** prod 에 나가고, 랜딩은 기본으로 prod API 를
+      부른다(`apps/landing/lib/site.ts` 의 `API_BASE`). Vercel 정적 빌드가 `deploy-backend.yml`(npm ci → typecheck →
+      wrangler → migrate)보다 먼저 끝나면 새 번들의 `kind: "love"` 를 옛 prod 서버가 **400 `INVALID_BODY`** 로
+      거절한다 — 두 번째 클립이 실패로 뜨고, '다시 시도' 도 워커가 올라오기 전에는 또 실패한다. 반대 순서(서버 먼저)는
+      옛 번들의 `chuseok` 을 `LEGACY_EVENT_MESSAGE_KINDS` 가 받으므로 안전하다. `main` 은 `develop` 에서만 받으니
+      **두 PR 을 두 번의 릴리스로** 올린다:
+      1. **백엔드 PR**(`feat/event-love-backend` — `packages/backend/src/lib/event-voices.ts`·
+         `packages/backend/test/event-clips.test.ts`)을 develop 에 머지하고 develop → main 으로 prod 에 올린다.
+         혼자 나가도 안전하다 — `love` 를 더할 뿐이고 `chuseok` 은 옛 종류로 계속 받는다.
+      2. Deploy Backend(main)가 초록인지 보고, prod 가 `love` 를 받는지 한 줄로 확인한다 — 없는 목소리 id 라
+         종류 검사 **다음**(목소리 조회)에서 멈추므로 Perso 를 부르지 않는다:
+         `curl -s -o /dev/null -w '%{http_code}\n' -X POST https://api.alarm-talk.com/api/event/1/clips -H 'content-type: application/json' -d '{"celebrity":"no-such-voice","locale":"ko","kind":"love","name":"확인"}'`
+         → 새 서버 **404**, 옛 서버 **400**(2026-09-29 dev 실측: 옛 서버에서 `love` 400 · `birthday` 404).
+      3. 그다음에야 **랜딩 PR #815**(`apps/landing/**`·`packages/shared/src/event-voices.json` — 백엔드는 카탈로그의
+         `portraits` 를 읽지 않으니 랜딩 쪽에 두었다)를 develop 에 머지하고 develop → main.
+         ⚠ #815 를 1단계 릴리스 **전에** develop 에 머지하면 다음 develop → main 한 번에 둘이 같이 나가 이 순서가
+         깨진다 — 2단계 확인 전에는 develop 에도 머지하지 않는다.
+- [ ] 랜딩 이벤트의 옛 종류 `comfort`(위로 한마디)·`chuseok`(추석 인사) 호환 제거 — 새 랜딩 번들
+      (생일/사랑, #815 `feat/landing-event-love`)이 게재되고 **며칠** 지나 옛 번들이 다 밀려난 뒤,
+      백엔드 `lib/event-voices.ts` 의 `LEGACY_EVENT_MESSAGE_KINDS` 와 `EVENT_MESSAGES.comfort`·
+      `EVENT_MESSAGES.chuseok` 을 함께 지운다(회귀 테스트 `event-clips.test.ts` 의 comfort·chuseok
+      케이스도). 추석 사진 `apps/landing/public/event/voice1.chuseok.jpg` 도 그때 지운다(카탈로그에서는
+      #815 가 빼고, 그 뒤로는 옛 번들만 그 경로를 부른다). 배포 창에서는 옛 번들이 그 id 를 옛 라벨로
+      보내므로 400 도, 다른 문구로 바꿔 읽기도 안 된다(코덱스 #788 2차·4차).
 
 
 ## iOS 첫 출시 — 2026-09-14
@@ -597,7 +753,7 @@ cron 의 시스템 스톡 드레인은 **껐다**(`index.ts` 의 `scheduled` —
 - **App Store 배지**: Google Play 옆에 같은 무게로 그린다. 기본으로 링크가 산다(2026-09-15 부터 —
   2026-09-22 게재로 실제로 열린다). 스토어에서 내려가면 **Vercel 환경변수 `NEXT_PUBLIC_APP_STORE_LIVE=0`**
   으로 '곧 출시' 로 되돌린다(`lib/site.ts`). FAQ 기기 답변·`llms.txt` 는 게재 전까지 'iOS 준비 중' 이었고, **2026-09-22 게재로 두 스토어 모두 '지금 받을 수 있다' 로 바꿨다**(세 언어 + `llms.txt`).
-- **이벤트 1 · 내 이름 음성 메시지 `/event/1/`**(2026-09-15 에 `/cheer/` 에서 개명·재기획, `/event/` 는 번호순 목록 — 옛 주소는 vercel.json 308): 이름 입력 → 메시지 종류(생일 축하 / 추석 인사 — 2026-09-22 에 위로 한마디를 갈아 끼움) → 인물 카드(윈터·나나미)에서 만들기 → 듣기·좋아요·다운로드(먼저 앱 권유 모달). 생성 경로는 `event-api.ts` 의
+- **이벤트 1 · 내 이름 음성 메시지 `/event/1/`**(2026-09-15 에 `/cheer/` 에서 개명·재기획, `/event/` 는 번호순 목록 — 옛 주소는 vercel.json 308): 이름 입력 → 메시지 종류(생일 축하 / 사랑 한마디 — 2026-09-22 에 위로 한마디를 추석 인사로, 2026-09-29 에 추석 인사를 사랑 한마디로 갈아 끼움) → 인물 카드(윈터·나나미)에서 만들기 → 듣기·좋아요·다운로드(먼저 앱 권유 모달). 생성 경로는 `event-api.ts` 의
   `generateVoiceMessage` **한 곳** — 지금은 브라우저 음성 합성으로 흐름만 흉내 내고(만드는 시간 1.1초 지연), Perso 로 인물 목소리를
   만드는 서버가 붙으면 그 함수만 `url` 을 돌려주게 바꾼다(그때 다운로드 버튼이 산다). 좋아요는 localStorage, 숫자는 서버가 줄 때만. 인물 목록·톤·사진 경로는 `event-catalog.ts`(사진은 `public/event/<id>.<kind>.jpg` — 종류별로 5초마다 갈리고 재생 중인 종류에 머문다; 없으면 이니셜 원. 미리듣기 샘플은 2026-09-22 에 **새 문안으로 다시 만들었다** — 문안을 바꾸면 샘플도 다시 만든다),
   이름·문장은 `messages/*.json` 의 `event.celebrities` / `event.studio.kinds`. 이름 정리는 앱 `sanitizeDisplayName`
@@ -1426,6 +1582,9 @@ dev 백엔드에는 클론 사전렌더 클립이 존재하지 않는다 → 클
 - **`unusableVoiceBanner` 의 판정이 안드로이드보다 한 갈래 넓다.** 안드로이드는 무료 등급에서
   `visibleVoiceProfiles` 가 클론을 통째로 걸러 내 "목록에 없다" 하나로 두 경우가 다 잡히는데,
   iOS 는 잠금 배지만 달아 목록에 남기므로 `locked` 도 함께 본다.
+- ⚠ **2026-09-29 에 이 배너는 양 앱에서 걷어냈다**(사용자 지시 — 모달이 이미 알린다). iOS 는
+  그 갈래로 버튼을 죽이지 않고 저장을 누를 때 알럿으로 말한다(`selectedVoiceUnusable`).
+  현재 규칙은 `docs/spec/alarm-editor.md` §5. 이 절의 나머지는 당시 기록이다.
 - 문구는 안드로이드 `editor_voice_deleted_title/_desc` 를 en·ja 까지 그대로 가져왔다.
   ⚠ **"저장된 목소리는 그대로 울린다" 고 말하는 게 핵심이다** — 막히는 건 문구를 바꾸는
   것뿐인데 "쓸 수 없어요" 로만 읽히면 울리지도 않는 줄 안다.

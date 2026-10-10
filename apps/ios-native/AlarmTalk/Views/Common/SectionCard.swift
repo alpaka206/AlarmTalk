@@ -20,6 +20,12 @@ extension View {
     func settingsCard(title: String?) -> some View {
         modifier(SettingsCardModifier(title: title))
     }
+
+    /// 버튼 반경(`vocaButton`, 18)으로 자르고 `outlineVariant` 1pt 테두리를 두른다.
+    /// 배경은 부르는 쪽이 **먼저** 칠한다 — 그래야 모서리까지 함께 잘린다.
+    func outlinedButtonShape() -> some View {
+        modifier(OutlinedButtonShapeModifier())
+    }
 }
 
 // MARK: - Modifiers
@@ -40,9 +46,22 @@ private struct SectionSurfaceModifier: ViewModifier {
     }
 }
 
+private struct OutlinedButtonShapeModifier: ViewModifier {
+    @Environment(\.voiceAlarmTheme) private var theme
+
+    func body(content: Content) -> some View {
+        content
+            .clipShape(RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous)
+                    .stroke(theme.palette.outlineVariant, lineWidth: 1)
+            )
+    }
+}
+
 /// 설정 카드 — **제목이 카드 안에 들어간다.**
 ///
-/// 안드로이드 `ui/settings/SettingsScreenComponents.kt:60-83` 의 `SettingsCard` 대응.
+/// 안드로이드 `ui/settings/SettingsScreenComponents.kt` 의 `SettingsCard` 대응.
 /// 그 주석이 이 컴포넌트의 존재 이유를 말한다: "화면마다 카드/행 간격이 달라 보이던
 /// 문제의 단일 출처".
 ///

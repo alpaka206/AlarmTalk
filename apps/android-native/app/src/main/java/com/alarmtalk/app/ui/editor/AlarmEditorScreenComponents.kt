@@ -9,10 +9,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
-import com.alarmtalk.app.R
 import com.alarmtalk.app.data.AlarmTimeCalculator
-import com.alarmtalk.app.data.DynamicPromptPreferences
-import com.alarmtalk.app.network.DynamicPromptSettings
 import com.alarmtalk.app.network.FamilyAlarmQuietWindow
 import com.alarmtalk.app.network.FamilyGroupMember
 import com.alarmtalk.app.network.FamilyVoiceProfile
@@ -101,6 +98,16 @@ internal fun isDefaultAlarmSoundUri(uri: Uri): Boolean {
         Settings.System.DEFAULT_ALARM_ALERT_URI,
     ).any { defaultUri -> defaultUri != null && uriText == defaultUri.toString() }
 }
+
+/**
+ * 존칭을 붙여 문장에 넣을 멤버의 **이름**. 없으면 null — 그 문장은 '상대' 로 말한다.
+ *
+ * ⚠ 이메일로 채우지 않는다. 보낸 사람은 방금 그 멤버를 골랐으니 이름이 없을 때 이메일까지
+ * 문장에 넣을 이유가 없고, 「user@example.com님에게…」가 된다. 행·버튼처럼 누구인지 가려야
+ * 하는 자리는 [familyMemberLabel] 이 이메일과 대체 이름까지 쓴다.
+ */
+internal fun familyMemberNameOrNull(member: FamilyGroupMember): String? =
+    member.name?.trim()?.takeIf { it.isNotBlank() }
 
 internal fun familyMemberLabel(context: Context, member: FamilyGroupMember): String =
     member.name?.takeIf { it.isNotBlank() }

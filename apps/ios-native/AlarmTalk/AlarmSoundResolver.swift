@@ -1,9 +1,7 @@
 import Foundation
 
-#if canImport(AlarmKit)
 import AlarmKit
 import ActivityKit
-#endif
 
 // MARK: - AlarmSoundResolution
 //
@@ -20,21 +18,6 @@ enum AlarmSoundResolution: Equatable {
     case systemDefault
     case bundledNamed(String)
     case cachedAudio(URL, Int64)
-
-    /// in-app fallback (AVAudioPlayer) 가 필요한지 여부.
-    var requiresInAppFallback: Bool {
-        if case .cachedAudio = self { return true }
-        return false
-    }
-
-    /// 상태 메시지용 디버그 라벨.
-    var debugLabel: String {
-        switch self {
-        case .systemDefault: return "systemDefault"
-        case .bundledNamed(let name): return "bundledNamed(\(name))"
-        case .cachedAudio(_, let ms): return "cachedAudio(\(ms)ms)"
-        }
-    }
 }
 
 /// "이 알람은 무엇을 울리는가" 의 **정체**. 파일을 만들기 전 단계라 값 비교가 싸다.
@@ -71,7 +54,7 @@ enum AlarmSoundPlan: Equatable {
 // 출력:
 //   - AlarmSoundResolution: AlarmKit 에 넘길 sound 전략
 //
-// 규칙 (Android `RingingService.kt:141-197` 의 alarm_only / voice_only /
+// 규칙 (Android `RingingService.startRingingAudio` 의 alarm_only / voice_only /
 // sound_then_voice 분기를 iOS 의 AlarmKit 제약 안에서 재현):
 //
 //   1. playMode != alarm_only 이고 audioCacheKey 가 있고 파일이 존재하면
@@ -154,6 +137,31 @@ enum AlarmSoundResolver {
             )
         }
 
+        // 1b) **기본 목소리 알람인데 받아 둔 오디오가 없다** — 그 목소리의 클립·내장 인사말.
+        //
+        // 알람음으로 떨어뜨리지 않는다(`docs/spec/billing-lifecycle.md` 「목소리를 못 쓰게 되면」).
+        // 무료 잠금·유료 목소리 대체(`DefaultVoiceSubstitute`)가 테마 없이 묶은 행이 이 갈래를 탄다.
+        // 안드로이드 `RingingService` 의 `decideRingSound`(기본 목소리 + 오디오 없음 → 기본 목소리)와
+        // 같은 결과다.
+        if record.playModeEnum != .alarmOnly, isSystemVoiceId(record.voiceProfileId) {
+            let loaded = StockClipManifestStore.load()
+            if let fallback = DefaultVoiceSubstitute.fallbackClip(
+                for: record,
+                manifest: loaded?.clips,
+                expectedVariants: loaded?.expectedVariants,
+                deviceLanguage: VoiceStudioViewModel.appVoiceLanguage(),
+                cachedURL: { audioCache.cachedURL(for: $0) }
+            ) {
+                return .voiceClip(
+                    cacheKey: fallback.key,
+                    url: fallback.url,
+                    durationMs: audioCache.readMetadata(cacheKey: fallback.key)?.durationMs ?? 0,
+                    volumePercent: record.voiceVolumePercent,
+                    revision: nil
+                )
+            }
+        }
+
         // 2) 사용자가 선택한 시스템/번들 사운드 URI
         if let url = fileURL(forStoredURI: record.alarmSoundUri),
            FileManager.default.fileExists(atPath: url.path) {
@@ -199,7 +207,6 @@ enum AlarmSoundResolver {
         AlarmSoundStaging.stagedFileName(forBaseName: baseName) ?? baseName
     }
 
-    #if canImport(AlarmKit)
     /// 결정된 resolution 을 AlarmKit 의 `AlertConfiguration.AlertSound` 로 변환한다.
     /// `.cachedAudio` 는 in-app 폴백 경로이므로 OS 알람음은 `.default` 로 둔다.
     /// `nonisolated` — 순수 변환 함수라서 enum 의 @MainActor 격리에 묶일 필요가 없고,
@@ -214,5 +221,4 @@ enum AlarmSoundResolver {
             return .default
         }
     }
-    #endif
 }

@@ -6,7 +6,8 @@ import SwiftUI
 /// 로그아웃 시 시트를 닫는 책임만 onSignOut 콜백으로 받는다.
 struct AccountPanel: View {
     @EnvironmentObject private var auth: AuthViewModel
-    @Binding var nicknameDraft: String
+    /// 닉네임 알럿의 입력값. 알럿을 여는 버튼이 그때마다 지금 이름으로 채운다.
+    @State private var nicknameDraft = ""
 
     /// 상한을 **넘겨 쳤을 때만** true. 정확히 상한이면 false 다 —
     /// 잘라 돌려준 값을 IME 가 되돌려 보내면 경고가 곧바로 꺼져 깜빡이기 때문이다.
@@ -26,11 +27,11 @@ struct AccountPanel: View {
                 nicknameDialogOpen = true
             } label: {
                 HStack {
-                    Text("닉네임")
+                    Text(String(localized: "닉네임"))
                         .fontWeight(.medium)
                         .foregroundStyle(AlarmTalkTheme.text)
                     Spacer()
-                    Text(user.name.isEmpty ? "이름 없음" : user.name)
+                    Text(user.name.isEmpty ? String(localized: "이름 없음") : user.name)
                         .font(.subheadline)
                         .foregroundStyle(AlarmTalkTheme.textSecondary)
                         .lineLimit(1)
@@ -49,11 +50,11 @@ struct AccountPanel: View {
             Divider()
             Button {
                 // ⚠ **즉시 로그아웃하지 않는다.** 누르는 순간 나가지면 잘못 눌렀을 때
-                // 되돌릴 수 없다(안드로이드 `SettingsScreen.kt:143-147` 도 확인을 먼저 띄운다).
+                // 되돌릴 수 없다(안드로이드 `SettingsScreen.kt:135-139` 도 확인을 먼저 띄운다).
                 logoutConfirming = true
             } label: {
                 HStack {
-                    Text("로그아웃")
+                    Text(String(localized: "로그아웃"))
                         .fontWeight(.medium)
                         // ⚠ **행을 빨갛게 칠하지 말 것**(2026-08-17 지시 "굳이 밖에서부터
                         // 강조를 해야 해?"). 이 행은 문일 뿐이고, 되돌릴 수 없는 일은
@@ -74,14 +75,14 @@ struct AccountPanel: View {
             }
             .buttonStyle(.plain)
         }
-        .settingsCard(title: "계정")
+        .settingsCard(title: String(localized: "계정"))
         // ⚠ **확인형 모달은 시스템 `.alert` 다.** 예전에는 커스텀 시트였고, 안드로이드에
         // 없는 부제·아이콘 카드에 **금지된 상시 카운터(N/30)** 까지 달려 있었다.
         // CLAUDE.md: "항상 켜진 카운터는 넘기 전까진 알려 줄 게 없어 두지 않는다."
-        .alert("닉네임 수정", isPresented: $nicknameDialogOpen) {
-            TextField("예: 규원", text: $nicknameDraft)
+        .alert(String(localized: "닉네임 수정"), isPresented: $nicknameDialogOpen) {
+            TextField(String(localized: "예: 규원"), text: $nicknameDraft)
                 .textInputAutocapitalization(.never)
-            Button("저장") {
+            Button(String(localized: "저장")) {
                 let name = InputSanitizer.clampDisplayName(
                     InputSanitizer.sanitizeDisplayName(nicknameDraft)
                 )
@@ -94,21 +95,18 @@ struct AccountPanel: View {
                         .trimmingCharacters(in: .whitespacesAndNewlines)
                         .isEmpty
             )
-            Button("닫기", role: .cancel) {}
+            Button(String(localized: "닫기"), role: .cancel) {}
         } message: {
             // ⚠ **말없이 자르지 않는다.** 넘겨 친 순간에만 이유를 말한다 —
             // 정확히 상한일 때는 켜지 않는다(잘라 돌려준 값을 IME 가 되돌려 보내면
             // 경고가 곧바로 꺼져 깜빡인다).
             if nicknameOverLimit {
-                Text("이름은 \(InputSanitizer.displayNameMaxLength)자까지 쓸 수 있어요.")
+                Text(String(localized: "이름은 \(InputSanitizer.displayNameMaxLength)자까지 쓸 수 있어요."))
             }
         }
-        .onChange(of: nicknameDialogOpen) { _, open in
-            if open { nicknameDraft = user.name }
-        }
-        .alert("로그아웃할까요?", isPresented: $logoutConfirming) {
-            Button("취소", role: .cancel) { }
-            Button("로그아웃", role: .destructive) {
+        .alert(String(localized: "로그아웃할까요?"), isPresented: $logoutConfirming) {
+            Button(String(localized: "취소"), role: .cancel) { }
+            Button(String(localized: "로그아웃"), role: .destructive) {
                 auth.signOutExplicitly()
                 onSignOut()
             }
@@ -118,11 +116,9 @@ struct AccountPanel: View {
 
 #if DEBUG
 private struct AccountPanelPreviewHost: View {
-    @State private var nickname = "AlarmTalk"
     var body: some View {
         VStack(spacing: 16) {
             AccountPanel(
-                nicknameDraft: $nickname,
                 user: AuthUser(
                     id: "u1",
                     email: "preview@alarmtalk.app",

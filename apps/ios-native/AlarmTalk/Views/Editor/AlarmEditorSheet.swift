@@ -22,12 +22,15 @@ struct AlarmEditorSheet: View {
     @EnvironmentObject var socialFeatures: SocialFeatureViewModel
     @EnvironmentObject var subscriptions: SubscriptionManager
 
-    @StateObject var holidayStore = HolidayStore()
+    /// 앱 전역 단일 공휴일 설정(`AlarmTalkApp` 이 주입한다). ⚠ **편집기가 따로 만들지 말 것** — 예전에는
+    /// 여기서 `HolidayStore()` 를 새로 만들어, 편집기에서 지역을 골라 공휴일 국가를 바꾸면 그 사본만 바뀌고
+    /// 앱의 달력(공휴일off 재예약·울림 뒤 재무장이 보는 것)은 옛 나라에 남았다.
+    @EnvironmentObject var holidayStore: HolidayStore
     @StateObject var localRecorder = VoiceRecorder()
     /// 에디터의 단일 미리듣기 플레이어(change 4). 기존의 두 플레이어
-    /// (voiceStudio.previewPlayer 사용분 + localPreviewPlayer)와 previewingStockMessageID
-    /// 를 이 하나 + previewTarget 으로 통합한다. voiceStudio.previewPlayer 는 에디터
-    /// 밖(VoiceProfileManagementPanel 등) VM 소유 미리듣기 전용으로 그대로 남는다.
+    /// (voiceStudio.previewPlayer 사용분 + localPreviewPlayer)를 이 하나로 통합한다.
+    /// voiceStudio.previewPlayer 는 에디터 밖(VoiceProfileManagementPanel 등) VM 소유
+    /// 미리듣기 전용으로 그대로 남는다.
     @StateObject var editorPreviewPlayer = AudioPreviewPlayer()
     /// 지금 미리듣는 알람음 파일 경로.
     @State var previewingAlarmSoundPath: String?
@@ -55,7 +58,8 @@ struct AlarmEditorSheet: View {
 
     /// 무료 테마(버킷) 선택 화면.
     /// 직전에 고른 무료 테마를 이어받으려는 의도. 스톡 매니페스트가 도착하면 집는다.
-    /// ⚠ 새 알람에서만 세운다 — 기존 알람은 자기 값을 써야 한다.
+    /// ⚠ 새 알람에서만 세운다 — 기존 알람은 자기 값을 써야 한다. 예외는 문구가 없던
+    /// 알람(알람 전용·직접 녹음)을 목소리 문구로 옮기는 순간이다(`adoptLastMessageChoiceIfUnset`).
     @State var pendingFreeBucket: FreeBucket?
 
     /// 목소리 고르기 시트.
@@ -74,20 +78,12 @@ struct AlarmEditorSheet: View {
     @State var sharedVoiceSetupTarget: FamilyVoiceProfile?
     /// 기본(시스템) 목소리로 바꾸면 직접 입력 문구를 쓸 수 없어 편집기가 문구를 비운다.
     /// 조용히 지우면 '문구가 사라졌다' 가 되므로 한 번 확인받는다
-    /// (안드로이드 `VoiceAudioCard.kt:194-201` 의 `pendingVoiceSwitch`).
+    /// (안드로이드 `VoiceAudioCard.kt:166-173` 의 `pendingVoiceSwitch`).
     @State var pendingVoiceSwitch: VoiceSelectionSheet.Option?
     @State var selectedFamilyRecipientID: String?
     @State var voiceSourceMode: VoiceSource = .ttsProfile
-    @State var localAudioMode: AlarmLocalAudioInputMode = .record
     @State var localAudioMessage: String?
-    @State var selectedLocalAudioURL: URL?
-    @State var selectedLocalAudioName: String?
-    @State var selectedLocalAudioDurationMs: Int?
-    @State var localAudioCropStartMs = 0
-    @State var localAudioCropEndMs = Int(AlarmAudioLimits.maxDurationMillis)
     @State var clearExistingLocalAudio = false
-    /// 선택/미리듣기 중인 스톡 클립의 messageId. StockClipPicker 의 선택 표시에 사용.
-    @State var stockSelectedMessageID: String?
 
     /// 준비 페이지를 띄울 목소리. 아직 클립을 다 못 받은 목소리를 고르면 여기 담긴다.
     @State var preparationVoiceID: String?
@@ -111,9 +107,9 @@ struct AlarmEditorSheet: View {
             // (위 둘과 같은 이유). 준비 화면이 프리페처를 깨울 수 있어야 한다.
             .environmentObject(prefetcher)
     }
-    /// 현재 활성 미리듣기 대상(단일 진실 공급원, change 4). 스톡 클립 미리듣기 id 는
-    /// `.stockClip(id)` 의 연관 값이 들고 있어 previewingStockMessageID 를 대체한다.
-    @State var previewTarget: AudioPreviewTarget?
+    /// 편집기 플레이어가 지금 녹음(방금 녹음한 것 또는 저장된 녹음)을 들려주는 중인가.
+    /// 그 밖의 미리듣기(목소리·알람음)와 녹음 박스의 재생 버튼 상태를 가른다.
+    @State var previewingLocalAudio = false
 
     @State var suppressProfileChangeInvalidation = false
     @State var ttsProfileChangedDuringEdit = false
@@ -128,7 +124,7 @@ struct AlarmEditorSheet: View {
     /// **직접 입력창이 영영 안 뜬다.** 대신 `selectedBucketDraft` 를 열 때 한 번 심고
     /// (`loadVoicePromptState`), 그 뒤로는 편집기가 소유한다 — 안드로이드
     /// `AlarmEditorState.selectedBucket` 과 같은 수명이다.
-    var isActiveStockClipAlarm: Bool { selectedFreeBucket != nil }
+    var isActiveStockClipAlarm: Bool { selectedBucketDraft != nil }
 
     /// 사용자가 고른 테마. **여기가 단일 출처다.**
     ///
@@ -143,6 +139,10 @@ struct AlarmEditorSheet: View {
     ///
     /// 기존 알람을 열면 `loadVoicePromptState` 가 저장된 `bucketId` 로 심는다. 그 뒤로는
     /// **편집기가 소유한다** — 사용자가 다른 문구 갈래를 고르면 비워진다.
+    ///
+    /// ⚠ **네트워크·캐시를 보지 않는다.** 예전에는 준비된 클립의 카테고리에서 읽어서,
+    /// 음원을 못 받으면 **고른 적 없는 것으로 표시**됐다(= "불러오는 중이에요").
+    /// 테마 선택은 값 하나이고, 음원은 저장할 때 받는다.
     @State var selectedBucketDraft: FreeBucket?
     /// 무료·기본목소리 문구 화면에서 여는 지역 시트·직접 입력 알럿.
 
@@ -182,14 +182,16 @@ struct AlarmEditorSheet: View {
 
     /// 준비된 음원이 스톡(테마) 클립이면 그 카테고리 = `bucket_id`.
     ///
-    /// 자기 알람이 `saveFlow` 에서 `merged.bucketId` 를 정하는 식과 **같은 계산**이다.
-    /// 가족 알람은 로컬 행이 없어 그 경로를 타지 않으므로 여기서 한 번 더 구한다 —
-    /// ⚠ 식을 바꾸면 **양쪽을 같이** 바꿀 것(안드로이드는 `AlarmEntity.bucketId` 하나를
-    /// 두 빌더가 나눠 쓴다).
+    /// 자기 알람(`saveFlow` 의 `merged.bucketId`)과 가족 알람이 같은 조회
+    /// (`stockCategory(messageID:)`)를 쓴다 — 안드로이드는 `AlarmEntity.bucketId` 하나를
+    /// 두 빌더가 나눠 쓴다.
     func bucketIdForSave(prepared: PreparedAlarmTalk?) -> String? {
-        guard let prepared else { return nil }
-        return voiceStudio.stockClips
-            .first { $0.messageId == prepared.messageID }?.category?.nilIfBlank
+        prepared.flatMap { stockCategory(messageID: $0.messageID) }
+    }
+
+    /// 스톡 클립 messageId → 그 클립의 테마(카테고리). 매니페스트에 없으면 nil.
+    private func stockCategory(messageID: String) -> String? {
+        voiceStudio.stockClips.first { $0.messageId == messageID }?.category?.nilIfBlank
     }
 
     /// 저장 중 음원 준비·생성이 실패했을 때. **조용히 `return` 하지 말 것** —
@@ -203,9 +205,9 @@ struct AlarmEditorSheet: View {
     @MainActor
     func showSaveFailureAlert() {
         validationAlert = ValidationAlertContent(
-            title: "저장할 수 없어요",
+            title: String(localized: "저장할 수 없어요"),
             message: (voiceStudio.statusMessage).nilIfBlank
-                ?? "목소리를 준비하지 못했어요. 잠시 뒤에 다시 시도해 주세요."
+                ?? String(localized: "목소리를 준비하지 못했어요. 잠시 뒤에 다시 시도해 주세요.")
         )
     }
 
@@ -324,16 +326,13 @@ struct AlarmEditorSheet: View {
                     .foregroundStyle(theme.palette.onSurfaceVariant)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.top, 10)
-                    .accessibilityLabel(Text("반복 \(repeatSummary)"))
+                    .accessibilityLabel(Text(String(localized: "반복 \(String(repeatSummary))")))
                 RepeatWeekdayChips(mask: $draft.repeatDaysMask)
                     .padding(.vertical, 10)
                 // Android `ScheduleDetailsCard` 와 동일: 반복 요일이 하나라도 선택됐을 때만
                 // 공휴일off 토글을 노출한다(미선택 시 dimmed 가 아니라 통째로 숨김).
                 if draft.repeatDaysMask != 0 {
-                    HolidayOffToggle(
-                        isOn: $draft.holidayOff,
-                        enabled: true
-                    )
+                    HolidayOffToggle(isOn: $draft.holidayOff)
                     // ⚠ **아래 여백을 빼지 말 것**(2026-08-15 지적 "여백이 너무 작아 어렵다").
                     // `EditorCard` 의 세로 패딩은 4 뿐이라, 이 행이 카드 바닥에 4pt 로 붙어
                     // 스위치를 누르기가 불편했다. 위쪽(4 + 요약줄 10 = 14)과 맞추고, 요일을
@@ -347,7 +346,7 @@ struct AlarmEditorSheet: View {
                 }
 
                 // ⚠ **알람 이름(라벨) 입력창을 되살리지 말 것.** 안드로이드
-                // `ScheduleDetailsCard`(`AlarmEditorControls.kt:47-77`)에는 라벨 입력이
+                // `ScheduleDetailsCard`(`AlarmEditorControls.kt`)에는 라벨 입력이
                 // 없다 — 있다고 적혀 있던 옛 주석은 사실이 아니었다(`editor_label_alarm_name`
                 // 문자열 자체가 존재하지 않는다). 알람 행 둘째 줄은 라벨이 아니라
                 // '다음 울릴 날짜 · 목소리' 라, 라벨을 채워도 어디에도 보이지 않는다.
@@ -394,7 +393,7 @@ struct AlarmEditorSheet: View {
                 // ⚠ 위에 아무 행도 없으므로 구분선을 앞에 두지 말 것 — 카드 맨 위에
                 //   금이 하나 그어진 것처럼 보인다.
                 AlarmSettingRow(
-                    title: "알람음",
+                    title: String(localized: "알람음"),
                     subtitle: alarmSoundDisplayLabel,
                     onTap: { settingsPane = .alarmSound }
                 )
@@ -409,7 +408,7 @@ struct AlarmEditorSheet: View {
 
     // ⚠ **여기에 상태 문구를 다시 넣지 말 것**(위 `editorSaveBlocked` 주석).
     // 이 슬롯(`saveBlockedNotice`)은 사유 한 줄이 계속 갈아치워지는 자리였고, 그 사유들은
-    // 전부 값이 사는 자리(목소리 배너·문구 행·녹음 카드)가 더 정확히 말한다.
+    // 전부 값이 사는 자리(문구 행·녹음 카드)나 저장을 누를 때의 알럿이 더 정확히 말한다.
     // 생성 실패는 `showSaveFailureAlert` 로 간다.
 
     // MARK: - Chrome (sheets · panes · alerts)
@@ -519,7 +518,7 @@ struct AlarmEditorSheet: View {
             Alert(
                 title: Text(content.title),
                 message: Text(content.message),
-                dismissButton: .default(Text("확인"))
+                dismissButton: .default(Text(String(localized: "확인")))
             )
         }
         .voicePlanGateAlert(
@@ -540,12 +539,12 @@ struct AlarmEditorSheet: View {
         }
         .alert(item: $duplicateAlarmConfirm) { content in
             Alert(
-                title: Text("같은 시각 알람이 있어요"),
+                title: Text(String(localized: "같은 시각 알람이 있어요")),
                 message: Text(duplicateAlarmMessage(content)),
-                primaryButton: .destructive(Text("교체하기")) {
+                primaryButton: .destructive(Text(String(localized: "교체하기"))) {
                     Task { await confirmReplaceDuplicate(content) }
                 },
-                secondaryButton: .cancel(Text("취소"))
+                secondaryButton: .cancel(Text(String(localized: "취소")))
             )
         }
         .onAppear {
@@ -559,32 +558,35 @@ struct AlarmEditorSheet: View {
             if freeVoiceTier || lastUsedVoiceID == nil || isSystemVoiceId(lastUsedVoiceID) {
                 selectDefaultVoiceProfileIfNeeded()
             }
+            // 진입 갱신이다 — 탭 진입·앞 편집기가 1분 안에 받아 둔 목록이 있으면 다시 받지
+            // 않는다(`refreshOnEntry`, 스펙 plan-gates §4). 예전에는 편집기를 열 때마다
+            // 목소리 목록(3건)과 가족 모드면 이용권(4건)까지 새로 받았다.
             Task {
-                await voiceStudio.refresh(session: auth.session)
+                await voiceStudio.refreshOnEntry(session: auth.session)
                 selectDefaultVoiceProfileIfNeeded()
                 if target.familyAlarmMode {
-                    await socialFeatures.refreshAll(session: auth.session)
+                    await socialFeatures.refreshOnEntry(session: auth.session)
                     selectDefaultFamilyRecipientIfNeeded()
                 }
             }
-            // 스톡 클립 카탈로그는 refresh 와 독립적으로 1회 로드한다(무료 등급 +
-            // 시스템 보이스 선택 시 StockClipPicker 가 사용). 실패는 비차단.
+            // 스톡 클립 카탈로그는 refresh 와 독립적으로 1회 로드한다(테마 클립 선택에
+            // 쓴다). 실패는 비차단.
             Task { await voiceStudio.loadStockClips(session: auth.session) }
         }
         .alert(
-            "기본 목소리로 바꿀까요?",
+            String(localized: "기본 목소리로 바꿀까요?"),
             isPresented: Binding(
                 get: { pendingVoiceSwitch != nil },
                 set: { if !$0 { pendingVoiceSwitch = nil } }
             )
         ) {
-            Button("바꾸기") {
+            Button(String(localized: "바꾸기")) {
                 if let pending = pendingVoiceSwitch { applyVoiceSelection(pending) }
                 pendingVoiceSwitch = nil
             }
-            Button("닫기", role: .cancel) { pendingVoiceSwitch = nil }
+            Button(String(localized: "닫기"), role: .cancel) { pendingVoiceSwitch = nil }
         } message: {
-            Text("기본 목소리는 준비된 문구로만 말할 수 있어서, 직접 입력한 문구는 사라져요.")
+            Text(String(localized: "기본 목소리는 준비된 문구로만 말할 수 있어서, 직접 입력한 문구는 사라져요."))
         }
         .sheet(item: $sharedVoiceSetupTarget) { profile in
             SharedVoiceSelectionSetupSheet(
@@ -610,8 +612,9 @@ struct AlarmEditorSheet: View {
                             listenerTitle: listener,
                             session: auth.session
                         )
-                        voiceStudio.selectedProfileID = target.id
-                        voiceStudio.preparedAlarm = nil
+                        // 직접 녹음에서 왔으면 소스 전환·직전 선택 잇기도 **여기서** 한다 —
+                        // 호칭 시트를 닫으면(취소) 아무것도 바뀌지 않아야 한다(`commitVoiceSelection`).
+                        commitVoiceSelection(target.id)
                         // 미리듣기가 재생 중일 수 있으므로 확정 시에도 정지한다.
                         voiceStudio.previewPlayer.stop()
                         sharedVoiceSetupTarget = nil
@@ -692,12 +695,11 @@ struct AlarmEditorSheet: View {
                 ttsProfileChangedDuringEdit = true
             }
             stopAllEditorPreviews()
-            // `wasThemeAlarm` 은 관문보다 위에서 구했다 — 이 두 줄이 스톡 선택을 지우기
+            // `wasThemeAlarm` 은 관문보다 위에서 구했다 — 아래 줄이 스톡 선택을 지우기
             // **전**의 값이어야 하고, 관문도 그 값으로 판정해야 하기 때문이다(위 주석).
-            stockSelectedMessageID = nil
             voiceStudio.preparedAlarm = nil
             // ⚠ **테마 알람이 목소리 변경으로 '직접 입력' 으로 뒤집히지 않게 한다.**
-            // 위 두 줄로 스톡 선택을 잃으면 `isActiveStockClipAlarm` 이 false 가 되는데,
+            // 위 줄로 스톡 선택을 잃으면 `isActiveStockClipAlarm` 이 false 가 되는데,
             // 테마 알람은 `randomPrompt` 도 false 로 저장돼 있어 판정식
             // (`!randomPrompt && !isActiveStockClipAlarm`)이 **직접 입력**으로 읽는다.
             // 그러면 서버가 준 스톡 문장이 사용자가 친 문구인 양 남고, 저장 시
@@ -724,9 +726,9 @@ struct AlarmEditorSheet: View {
         // 않도록 randomPrompt && 스톡 미스테이징 일 때만 비운다(RISK C).
         .onChange(of: draft.hour) { _, _ in invalidatePreparedRandomClipOnTimeChange() }
         .onChange(of: draft.minute) { _, _ in invalidatePreparedRandomClipOnTimeChange() }
-        // 반복 요일이 모두 꺼지면 공휴일 OFF 는 무의미해진다. 토글은 disable 만 되어
-        // (HolidayOffToggle.enabled=false) 켜진 값이 그대로 레코드에 남을 수 있으므로,
-        // mask 가 0 이 되는 순간 holidayOff 를 false 로 되돌려 stale true 를 막는다(PR6).
+        // 반복 요일이 모두 꺼지면 공휴일 OFF 는 무의미해진다. 토글은 숨겨질 뿐이라
+        // 켜진 값이 그대로 레코드에 남을 수 있으므로, mask 가 0 이 되는 순간 holidayOff 를
+        // false 로 되돌려 stale true 를 막는다(PR6).
         .onChange(of: draft.repeatDaysMask) { _, newMask in
             if newMask == 0, draft.holidayOff {
                 draft.holidayOff = false
@@ -736,7 +738,7 @@ struct AlarmEditorSheet: View {
             if seconds >= TimeInterval(AlarmAudioLimits.maxDurationMillis / 1000),
                localRecorder.isRecording {
                 localRecorder.stop()
-                localAudioMessage = "최대 \(AlarmAudioLimits.maxDurationMillis / 1000)초까지 녹음했어요."
+                localAudioMessage = String(localized: "최대 \(AlarmAudioLimits.maxDurationMillis / 1000)초까지 녹음했어요.")
             }
         }
         .onDisappear {
@@ -747,17 +749,17 @@ struct AlarmEditorSheet: View {
 
     /// 에디터의 모든 미리듣기를 끄는 단일 진입점(change 4). 흩어져 있던
     /// previewPlayer.stop()/localPreviewPlayer.stop()/previewingStockMessageID=nil 을 대체한다.
-    /// Android `stopPreview` (AlarmEditorScreen.kt:280-288) 미러.
+    /// Android `stopPreview` (AlarmEditorScreen.kt:269-277) 미러.
     func stopAllEditorPreviews() {
         editorPreviewPlayer.stop()
         // 공유 음성 미리듣기는 voiceStudio.previewPlayer 경로를 쓰므로 함께 정지해
         // 이중 재생/잔여 오디오를 막는다.
         voiceStudio.previewPlayer.stop()
-        previewTarget = nil
+        previewingLocalAudio = false
     }
 
     // ⚠ **사용 가이드 시트를 되살리지 말 것.** 안드로이드 편집기에는 없다
-    // (`AlarmEditorScreen.kt:1269` 주석: "상단바(제목·뒤로가기·가이드)는 제거하고,
+    // (`AlarmEditorScreen.kt:1223` 주석: "상단바(제목·뒤로가기·가이드)는 제거하고,
     // 취소·저장을 하단에 모았다"). 게다가 그 가이드의 2번 카드는 지금은 없는
     // '알람 + 음성' 모드를 설명하고 있었다 — 안내가 제품보다 오래 남으면 거짓말이 된다.
 
@@ -773,7 +775,7 @@ struct AlarmEditorSheet: View {
     var saveButtonTitle: String {
         if target.familyAlarmMode, let name = (selectedFamilyRecipient?.name).nilIfBlank {
             // 받는 사람 이름은 사용자 데이터다 — 동사만 번역해서 붙인다.
-            return "\(String(localized: "저장")) · \(name)"
+            return String(localized: "\(String(localized: "저장")) · \(String(name))")
         }
         // ⚠ **'수정 저장' 으로 되돌리지 말 것**(2026-08-18 지시). 새 알람이든 편집이든
         // 버튼이 하는 일은 같다 — 지금 화면의 값을 저장한다. 편집일 때만 말이 길어지면
@@ -784,7 +786,7 @@ struct AlarmEditorSheet: View {
     /// 알람음 종류 라벨. 고른 것이 있으면 그 이름, 없으면 '기본 알람음'.
     /// (Android `editor2_default_alarm_sound` 미러.)
     var alarmSoundDisplayLabel: String {
-        draft.alarmSoundLabel.nilIfBlank ?? "기본 알람음"
+        draft.alarmSoundLabel.nilIfBlank ?? String(localized: "기본 알람음")
     }
 
     /// 알람음 미리듣기 — 편집기의 단일 플레이어로 튼다(목소리 미리듣기와 같은 자리).
@@ -816,8 +818,8 @@ struct AlarmEditorSheet: View {
         manualQuota = quota
         guard quota.limit > 0, quota.remaining <= 0 else { return nil }
         return ValidationAlertContent(
-            title: "이번 달 만들기 횟수를 다 썼어요",
-            message: "직접 입력 문구는 한 달에 \(quota.limit)번까지 새로 만들 수 있어요. 이미 만들어 둔 문구는 그대로 쓸 수 있어요."
+            title: String(localized: "이번 달 만들기 횟수를 다 썼어요"),
+            message: String(localized: "직접 입력 문구는 한 달에 \(quota.limit)번까지 새로 만들 수 있어요. 이미 만들어 둔 문구는 그대로 쓸 수 있어요.")
         )
     }
 
@@ -864,24 +866,13 @@ struct AlarmEditorSheet: View {
         }
     }
 
-    /// 요일 칩 위에 보여줄 반복 요약(PR6). 0x7f=매일, 일부 요일=매주 목록, 0=다음 울릴 날짜.
-    /// Android `AlarmEditorControls.kt` RepeatSelector 상단 요약과 같은 의도.
-    var repeatSummary: String {
-        let mask = draft.repeatDaysMask
-        if mask == 0x7f { return "매일" }
-        if mask != 0 {
-            let days = RepeatDay.displayOrder
-                .filter { mask.hasRepeatDay($0) }
-                .map { $0.shortLabel }
-                .joined(separator: " ")
-            return "매주: \(days)"
-        }
-        // mask == 0 : 한 번만 — 다음 발화 날짜를 보여준다(공휴일 OFF 는 의미 없지만 계산은 동일).
-        let now = Int64(Date().timeIntervalSince1970 * 1000)
-        let fireAt = (try? AlarmTimeCalculator.nextFireAtMillis(
+    /// 지금 draft 로 계산한 다음 울림 시각. 계산이 실패하면(울릴 날이 없음) 오늘/내일
+    /// 그 시각으로 둔다. 가족 알람 검증은 공휴일을 보지 않으므로 이걸 쓰지 않는다.
+    private func draftFireAtMillis(now: Int64) -> Int64 {
+        (try? AlarmTimeCalculator.nextFireAtMillis(
             hour: draft.hour,
             minute: draft.minute,
-            repeatDaysMask: 0,
+            repeatDaysMask: draft.repeatDaysMask,
             holidayOff: draft.holidayOff,
             nowMillis: now,
             isHoliday: holidayStore.holidayPredicate()
@@ -890,6 +881,19 @@ struct AlarmEditorSheet: View {
             minute: draft.minute,
             referenceMillis: now
         )
+    }
+
+    /// 요일 칩 위에 보여줄 반복 요약(PR6). 0x7f=매일, 일부 요일=매주 목록, 0=다음 울릴 날짜.
+    /// Android `AlarmEditorControls.kt` RepeatSelector 상단 요약과 같은 의도.
+    var repeatSummary: String {
+        let mask = draft.repeatDaysMask
+        if mask == 0x7f { return String(localized: "매일") }
+        if mask != 0 {
+            let days: String = mask.repeatDays.map(\.shortLabel).joined(separator: " ")
+            return String(localized: "매주: \(days)")
+        }
+        // mask == 0 : 한 번만 — 다음 발화 날짜를 보여준다(공휴일 OFF 는 의미 없지만 계산은 동일).
+        let fireAt = draftFireAtMillis(now: Int64(Date().timeIntervalSince1970 * 1000))
         // ⚠ **'오늘'/'내일' 을 앞에 붙인다**(안드로이드 `editor2_repeat_today/tomorrow`).
         // 날짜만 있으면 "8월 7일" 이 오늘인지 내일인지 머릿속으로 계산해야 한다 —
         // 알람은 '언제 울리나' 가 전부라 그 한 단어가 실제로 정보를 준다.
@@ -916,12 +920,16 @@ struct AlarmEditorSheet: View {
     /// `editorSaveBlocked` 로 바꿨고, iOS 도 맞춘다.
     ///
     /// 이유를 말하는 자리는 **그 값이 사는 곳**이다. 갈래마다 짝이 있다:
-    ///  - 플랜 잠금·사용 불가 목소리 → 목소리 행 아래 `unusableVoiceBanner`("삭제된 목소리").
+    ///  - 플랜 잠금·사용 불가 목소리 → **버튼을 죽이지 않는다**(2026-09-29). 편집기의
+    ///    '삭제된 목소리' 배너를 걷어냈으므로 누르면 `saveFlow` 가 알럿으로 말한다
+    ///    (`selectedVoiceUnusable` — 안드로이드 `SaveBlockReason.VOICE_UNAVAILABLE`).
     ///  - 목소리 미선택 → 목소리 행이 "고르기" 로 비어 있음을 말하고, 목록이 없으면
     ///    '목소리 탭에서 만들기' 버튼이 해결 액션까지 갖고 있다.
     ///  - 녹음 미완료 → `RecordingCard` 자체가 CTA 다.
-    ///  - 날씨 테마 지역 없음 / 문구 정보 미완 / 빈 직접 입력 → 문구 행과 문구 화면의
+    ///  - 날씨 테마 지역 없음 / 문구 정보 미완 → 문구 행과 문구 화면의
     ///    상세 카드(`PromptDetailCard`)가 "아직 정하지 않았어요" 로 말한다.
+    ///  - 빈 직접 입력 → **버튼을 죽이지 않는다**(2026-09-29). 누르면 `saveFlow` 가 서버를
+    ///    부르기 전에 알럿으로 말한다(`manualTextMissing`).
     ///
     /// 한 줄로 또 쓰면 같은 순간 **두 문장이 서로 다른 얘기를 한다.** 실제로 그랬다 —
     /// 배너는 "저장된 목소리는 그대로 울리지만" 인데 아래 줄은 "쓸 수 없어요" 였다.
@@ -935,6 +943,9 @@ struct AlarmEditorSheet: View {
     /// 경로(randomPrompt=true, preset)는 false 여야 저장이 활성화돼 탭 시 생성이 돈다.
     var editorSaveBlocked: Bool {
         if draft.playMode == .alarmOnly { return false }
+        // ⚠ **쓸 수 없는 목소리로는 버튼을 죽이지 않는다**(2026-09-29). 누르면 `saveFlow`
+        // 첫머리가 알럿으로 이유를 말한다 — 그 사유를 말하던 배너가 이제 없다.
+        if selectedVoiceUnusable { return false }
 
         // ⚠ **무료 플랜의 유료 목소리 알람은 저장 전에 막는다.**
         // iOS 에는 이 게이트가 **아예 없어서**, 무료 사용자가 녹음 알람을 저장할 수 있었고
@@ -944,19 +955,20 @@ struct AlarmEditorSheet: View {
         // ⚠ **무료여도 기본(스톡) 프리셋 목소리 알람은 만들 수 있다** — 이건 유료 자산이
         // 아니다. 안드로이드 `MainViewModelAlarmActions.voiceAlarmAllowed` 와 같은 규칙이고,
         // 서버 `alarm-mutation.ts` 의 `usesOnlySystemStockVoice` 도 같은 선을 긋는다.
-        // 말하는 자리: `unusableVoiceBanner`(목소리 행 아래).
+        // 무료 플랜에서 목소리를 고른 경우는 위 `selectedVoiceUnusable` 가 먼저 잡는다 —
+        // 여기 남는 것은 로그아웃과 목소리를 아직 안 고른 경우다.
         if planAccess != .paid, !usesFreeSystemVoiceSelection { return true }
 
         if voiceSourceMode == .localAudio {
             // 말하는 자리: `RecordingCard` 자체가 CTA 다.
-            let hasNewSource = selectedLocalAudioURL != nil || localRecorder.latestRecordingURL != nil
+            let hasNewSource = localRecorder.latestRecordingURL != nil
             return !(hasNewSource || existingLocalAudioLabel != nil)
         }
 
         // tts_profile 분기. 테마를 골랐으면 곧바로 저장 가능 — 음원은 저장이 받는다
         // (`prepareSelectedBucketClipIfNeeded`). ⚠ 예전에는 음원이 준비됐는가
         // (`preparedAlarm` 의 `stock_` 키)를 봤는데, 그러면 아직 안 받은 테마 알람의 저장이 막혔다.
-        if let bucket = selectedFreeBucket {
+        if let bucket = selectedBucketDraft {
             // ⚠ **조건으로 클립을 고르는 테마는 그 조건값이 있어야 한다.**
             //  - 날씨: 도시가 없으면 서버가 조건을 못 맞춰 서울로 폴백한다 — 사용자는
             //    자기 지역 날씨를 들을 줄 알고 저장한다.
@@ -967,21 +979,18 @@ struct AlarmEditorSheet: View {
             //     봐도 충분했다. 문구 목록을 합치면서 이 갈래가 열렸다.
             //     안드로이드 `AlarmEditorScreen` 의 `SaveBlockReason.FORTUNE_INFO_MISSING` 짝.)
             // 말하는 자리: 문구 화면의 `PromptDetailCard`("아직 정하지 않았어요").
-            switch bucket {
-            case .weather: return (voiceStudio.weatherCity).nilIfBlank == nil
-            case .fortune: return !fortuneInfoReady
-            default: return false
-            }
+            return bucketNeedsMissingInput(bucket)
         }
 
         // 말하는 자리: 목소리 행("고르기") + 목록이 비면 '목소리 탭에서 만들기'.
         guard let profileID = (voiceStudio.selectedProfileID).nilIfBlank else { return true }
         // 선택된 목소리가 더 이상 alarm 선택 대상이 아니면(삭제/미준비 등) 사용 불가.
         // 단, 기존 알람의 음원이 그대로 재사용 가능한 경우엔 막지 않는다(아래 생성 경로가 흡수).
-        // 말하는 자리: `unusableVoiceBanner`.
+        // 그 갈래(정리 중이 아닌 사용 불가)는 위 `selectedVoiceUnusable` 가 먼저 잡아 버튼을
+        // 살려 둔다 — 여기 남는 것은 정리 중인 목소리뿐이다.
         // ⚠ 정리 중인 목소리는 **저장도 막는다**(Codex #703 P1) — 이미 선택돼 있던 경우가
         // 남기 때문이다(자동 선택을 막아도 편집기를 열기 전부터 골라져 있을 수 있다).
-        // 말하는 자리는 아래 배너다.
+        // 말하는 자리는 `saveFlow` 첫머리의 "아직 준비 중이에요" 알럿이다.
         let profileReady = (
             voiceStudio.profiles.contains { $0.id == profileID && $0.isReadyForAlarmSelection } ||
                 voiceStudio.familyVoices.contains { $0.id == profileID && $0.isReadyForAlarmSelection }
@@ -989,12 +998,57 @@ struct AlarmEditorSheet: View {
         let preparedForProfile = voiceStudio.preparedAlarm?.voiceProfileID == profileID
         // ⚠ **정리 중으로는 버튼을 죽이지 않는다**(Codex #703 P1 — CLAUDE.md 「잠그는 것은
         // '저장 중' 일 때뿐이다」). 곧 풀리는 상태라 죽은 버튼은 고장으로 읽힌다 —
-        // 누를 수 있게 두고 **누르면 이유를 말한다**(`saveFlow` 첫머리). 배너도 함께 뜬다.
+        // 누를 수 있게 두고 **누르면 이유를 말한다**(`saveFlow` 첫머리).
         if !profileReady, !preparedForProfile, !reuseExistingTtsForCurrentSelection { return true }
         // 말하는 자리: 문구 화면의 `PromptDetailCard`("아직 정하지 않았어요").
         if voiceStudio.randomPrompt { return !randomPromptSettingsComplete }
-        // 말하는 자리: 문구 화면의 '문구' 상세 카드("아직 입력하지 않았어요").
+        // ⚠ **빈 직접 입력으로는 버튼을 죽이지 않는다**(2026-09-29, CLAUDE.md 「잠그는 것은
+        // '저장 중' 일 때뿐이다」). 누르면 `saveFlow` 첫머리가 **서버를 부르기 전에** 알럿으로
+        // 이유를 말한다(`manualTextMissing` — 안드로이드 `SaveBlockReason.MANUAL_TEXT_MISSING`).
+        if manualTextMissing { return false }
+        // 스톡 클립 목소리의 빈 문구는 테마가 붙기 전 과도기다.
         return voiceStudio.ttsText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    /// 고른 목소리를 지금 쓸 수 없어 저장을 막아야 하는가(버튼은 살려 둔다).
+    /// 판정은 `AlarmEditDraft.selectedVoiceUnusable` 한 곳이다 — 안드로이드
+    /// `SaveBlockReason.VOICE_UNAVAILABLE` 짝.
+    var selectedVoiceUnusable: Bool {
+        let profileID = (voiceStudio.selectedProfileID).nilIfBlank
+        let profileReady = profileID.map { id in
+            voiceStudio.profiles.contains { $0.id == id && $0.isReadyForAlarmSelection } ||
+                voiceStudio.familyVoices.contains { $0.id == id && $0.isReadyForAlarmSelection }
+        } ?? false
+        return AlarmEditDraft.selectedVoiceUnusable(
+            playMode: draft.playMode,
+            voiceSource: voiceSourceMode,
+            profileID: profileID,
+            settling: profileID.map { voiceStudio.isReplacementSettling($0) } ?? false,
+            // ⚠ **잠금은 고른 목소리 자체로 판정한다** — `usesFreeSystemVoiceSelection` 을 쓰지
+            // 말 것. 그건 테마만 골라도 참이라, 무료 플랜에서 클론에 테마를 붙인 알람이 잠금을
+            // 빠져나가 서버 `PATCH /alarm` 의 403 으로 간다(Codex #826). 안드로이드
+            // `usesFreeSystemVoiceAlarm` 도 테마와 무관하게 `isSystemVoiceId` 부터 본다.
+            lockedByPlan: planAccess == .free && !voiceStudio.isSystemVoiceProfile(id: profileID),
+            profileReady: profileReady,
+            hasUsableAudio: (profileID != nil && voiceStudio.preparedAlarm?.voiceProfileID == profileID) ||
+                reuseExistingTtsForCurrentSelection
+        )
+    }
+
+    /// **직접 입력인데 문구가 비었는가** — 저장하면 만들 문장이 없다.
+    ///
+    /// `saveFlow` 가 **권한 확인·한도 조회·생성 요청보다 먼저** 이걸 보고 알럿으로 막는다 —
+    /// 서버를 부르지 않으니 월 한도도 깎이지 않는다. 판정은 `AlarmEditDraft.manualTextMissing`
+    /// 한 곳에 있다(테스트가 거기서 입력별로 본다). 안드로이드 `emptyMessageBlockReason` 짝.
+    var manualTextMissing: Bool {
+        AlarmEditDraft.manualTextMissing(
+            playMode: draft.playMode,
+            voiceSource: voiceSourceMode,
+            usesStockClips: usesStockClips,
+            randomPrompt: voiceStudio.randomPrompt,
+            selectedBucket: selectedBucketDraft,
+            ttsText: voiceStudio.ttsText
+        )
     }
 
     /// 랜덤 문구가 켜졌을 때 컨텍스트별 필수 정보가 채워졌는지. 가족 알람은 상대의 준비
@@ -1025,26 +1079,14 @@ struct AlarmEditorSheet: View {
     /// 쓰지 않는다. 유료인 것은 클론 목소리와 서버가 만든 클립이다.
     private var usesFreeSystemVoiceSelection: Bool {
         if voiceSourceMode == .localAudio { return true }
-        if selectedFreeBucket != nil { return true }
+        if selectedBucketDraft != nil { return true }
         return voiceStudio.isSystemVoiceProfile(id: voiceStudio.selectedProfileID)
     }
 
     /// editorSaveBlocked 전용 — 현재 선택으로 기존 알람의 TTS 음원을 그대로 재사용할 수
     /// 있는지. saveFlow 와 같은 방식으로 다음 발화 시각을 계산해 넘긴다(랜덤 문구일 때만 의미).
     private var reuseExistingTtsForCurrentSelection: Bool {
-        let now = Int64(Date().timeIntervalSince1970 * 1000)
-        let fireAt = (try? AlarmTimeCalculator.nextFireAtMillis(
-            hour: draft.hour,
-            minute: draft.minute,
-            repeatDaysMask: draft.repeatDaysMask,
-            holidayOff: draft.holidayOff,
-            nowMillis: now,
-            isHoliday: holidayStore.holidayPredicate()
-        )) ?? LocalAlarmRecord.fallbackFireAtMillis(
-            hour: draft.hour,
-            minute: draft.minute,
-            referenceMillis: now
-        )
+        let fireAt = draftFireAtMillis(now: Int64(Date().timeIntervalSince1970 * 1000))
         return AlarmEditDraft.canReuseExistingTtsAudio(
             existing: editingAlarm,
             selectedProfileID: voiceStudio.selectedProfileID,
@@ -1086,21 +1128,22 @@ struct AlarmEditorSheet: View {
     ///
     /// ⚠ **기본(시스템) 목소리 4종을 전부 노출한다.** 예전에는 '기본으로 설정해 둔 1개'
     /// 만 보여줬는데, 이제 4개를 미리 받아 두므로 알람마다 자유롭게 고를 수 있어야 한다
-    /// (안드로이드 `VoiceAudioCard.kt:130-133` 주석).
+    /// (안드로이드 `VoiceAudioCard.kt:104-107` 주석).
     var voiceProfileOptions: [VoiceSelectionSheet.Option] {
         let own = voiceStudio.profiles
             .filter { $0.isReadyForAlarmSelection && !isSystemVoice($0) }
             .map {
                 VoiceSelectionSheet.Option(
                     id: $0.id,
-                    name: $0.name,
-                    detail: $0.relationshipLabel?.nilIfBlank,
+                    name: $0.displayName,
+                    // 관계 라벨이 아니라 '내 목소리(· 공유 중)' — 안드로이드 `ownedVoiceDetail`.
+                    detail: ownVoiceOptionDetail(isShared: $0.isShared == true),
                     // 무료 등급은 시스템 목소리만 쓸 수 있다(서버 `tts.ts:684-693`).
                     locked: freeVoiceTier,
                     // 교체 정리가 끝나지 않은 목소리는 **자리에 두되 못 고른다** — 감추면
                     // 사라진 것으로 보여 고장으로 읽힌다.
                     unavailableReason: voiceStudio.isReplacementSettling($0.id)
-                        ? "목소리 정리 중이에요"
+                        ? String(localized: "목소리 정리 중이에요")
                         : nil
                 )
             }
@@ -1116,7 +1159,7 @@ struct AlarmEditorSheet: View {
             }
         let system = voiceStudio.profiles
             .filter { $0.isReadyForAlarmSelection && isSystemVoice($0) }
-            .map { VoiceSelectionSheet.Option(id: $0.id, name: $0.name, detail: "기본 목소리") }
+            .map { VoiceSelectionSheet.Option(id: $0.id, name: $0.displayName, detail: String(localized: "alarm.editor.defaultVoice", defaultValue: "기본 목소리")) }
         return own + shared + system
     }
 
@@ -1128,8 +1171,8 @@ struct AlarmEditorSheet: View {
         voiceProfileOptions + [
             VoiceSelectionSheet.Option(
                 id: Self.recordingOptionID,
-                name: "직접 녹음",
-                detail: "이 알람에만 쓸 소리를 직접 녹음하기",
+                name: String(localized: "직접 녹음"),
+                detail: String(localized: "이 알람에만 쓸 소리를 직접 녹음하기"),
                 // ⚠ **잠그지 말 것** — 직접 녹음은 유료 기능이 아니다(2026-08-12 확정).
                 // 예전 주석은 "안드로이드 `VoiceAudioCard.kt` 와 같은 판정" 이라고 했지만
                 // 안드로이드의 `VoiceProfileOption` 에는 `locked` 필드가 **아예 없다** —
@@ -1147,8 +1190,8 @@ struct AlarmEditorSheet: View {
 
     /// 목소리 행이 보여줄 값 — 녹음 갈래면 '직접 녹음', 아니면 고른 목소리 이름.
     var voiceRowSubtitle: String {
-        if voiceSourceMode == .localAudio { return "직접 녹음" }
-        return selectedVoiceName ?? "고르기"
+        if voiceSourceMode == .localAudio { return String(localized: "직접 녹음") }
+        return selectedVoiceName ?? String(localized: "고르기")
     }
 
     var selectedVoiceName: String? {
@@ -1164,8 +1207,8 @@ struct AlarmEditorSheet: View {
         // 없이 벗긴다. 이유를 말하고 물러선다(행은 목록에 그대로 있다).
         if option.unavailableReason != nil {
             voiceGateAlert = VoiceGateAlertContent(
-                title: "아직 준비 중이에요",
-                message: "바꾼 목소리를 정리하고 있어요. 잠시 후 다시 골라 주세요.",
+                title: String(localized: "아직 준비 중이에요"),
+                message: String(localized: "바꾼 목소리를 정리하고 있어요. 잠시 후 다시 골라 주세요."),
                 offersPlanActions: false
             )
             return
@@ -1177,8 +1220,16 @@ struct AlarmEditorSheet: View {
             switchVoiceSource(to: .localAudio)
             return
         }
-        if voiceSourceMode != .ttsProfile {
-            switchVoiceSource(to: .ttsProfile)
+        // ⚠ **잇기 전에** 구한다 — 확정할 때 이어받은 문구를 '잃을 문구' 로 읽어 확인 알럿을
+        // 띄우면 안 된다. (둘은 겹치지 않는다: 잇기는 문구가 비었을 때만, 경고는 문구가
+        // 있을 때만 돈다.)
+        let losesText = losesManualText(switchingTo: option)
+        // ⚠ **관문 1/3 을 무엇이든 묻기 _전에_ 본다**(2026-09-29 리뷰, 안드로이드 `VoiceAudioCard`
+        // 의 `applyVoiceSelection` 과 같은 순서) — 호칭을 다 받아 놓고 준비 화면으로 보내지 않게.
+        // 확정(`commitVoiceSelection`)도 같은 관문을 한 번 더 본다.
+        if voiceSourceMode != .ttsProfile, recordingExitNeedsClipPreparation(profileID: option.id) {
+            preparationVoiceID = option.id
+            return
         }
         // 공유받은 목소리는 '나를 부를 호칭' 이 없으면 먼저 받는다 — 없이 저장하면
         // 서버가 호칭 자리를 비운 문장을 만든다.
@@ -1187,7 +1238,7 @@ struct AlarmEditorSheet: View {
             return
         }
         // 기본 목소리는 준비된 문구로만 말할 수 있다 — 직접 입력한 문구가 있으면 묻는다.
-        if losesManualText(switchingTo: option) {
+        if losesText {
             pendingVoiceSwitch = option
             return
         }
@@ -1195,7 +1246,30 @@ struct AlarmEditorSheet: View {
     }
 
     func applyVoiceSelection(_ option: VoiceSelectionSheet.Option) {
-        voiceStudio.selectedProfileID = option.id
+        commitVoiceSelection(option.id)
+    }
+
+    /// 목소리(TTS) 선택을 **확정**한다 — 바로 고른 것, '기본 목소리로 바꿀까요?' 확인, 공유
+    /// 목소리 호칭 입력 확인이 모두 여기로 온다.
+    ///
+    /// ⚠ **직접 녹음에서 오면 소스 전환과 직전 선택 잇기도 여기서, 확정할 때만 한다**(2026-09-29
+    /// 리뷰). 예전에는 `selectVoiceOption` 이 묻기 전에 바꿔 두어서, 호칭 시트·확인 알럿·준비
+    /// 화면을 닫으면 고르지도 않은 목소리 갈래와 이은 문구가 녹음 카드를 걷어 낸 채 남았다.
+    /// 녹음 알람에는 문구가 없어 잇지 않으면 **빈 직접 입력**으로 보인다 — 알람 전용 → 목소리와
+    /// 같은 규칙(안드로이드 `AlarmEditorState.selectTtsVoice`).
+    ///
+    /// 관문 1/3 은 바꾸기 **전에** 이을 값으로 본다(`recordingExitNeedsClipPreparation`) —
+    /// 관문(`selectedProfileID` 의 `onChange`)이 거절하면 목소리 id 만 되돌리기 때문이다.
+    func commitVoiceSelection(_ profileID: String) {
+        if voiceSourceMode != .ttsProfile {
+            if recordingExitNeedsClipPreparation(profileID: profileID) {
+                preparationVoiceID = profileID
+                return
+            }
+            switchVoiceSource(to: .ttsProfile)
+            adoptLastMessageChoiceIfUnset()
+        }
+        voiceStudio.selectedProfileID = profileID
         voiceStudio.preparedAlarm = nil
     }
 
@@ -1225,7 +1299,7 @@ struct AlarmEditorSheet: View {
         isSystemVoiceId(option.id)
             && !voiceStudio.ttsText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && !voiceStudio.randomPrompt
-            && selectedFreeBucket == nil
+            && selectedBucketDraft == nil
     }
 
     /// 이 목소리로 쓸 수 있는 무료 테마. 서버가 내려준 스톡 클립의 카테고리에서 뽑되,
@@ -1264,29 +1338,16 @@ struct AlarmEditorSheet: View {
         }
     }
 
-    /// 지금 고른 테마.
-    ///
-    /// ⚠ **순서가 중요하다.** 편집기에서 방금 고른 값이 먼저고, 없을 때만 저장된
-    /// `bucketId` 로 되짚는다. 반대로 두면 편집기에서 테마를 바꿔도 저장된 옛 값이 이긴다.
-    ///
-    /// ⚠ **네트워크·캐시를 보지 않는다.** 예전에는 준비된 클립의 카테고리에서 읽어서,
-    /// 음원을 못 받으면 **고른 적 없는 것으로 표시**됐다(= "불러오는 중이에요").
-    /// 테마 선택은 값 하나이고, 음원은 저장할 때 받는다.
-    var selectedFreeBucket: FreeBucket? { selectedBucketDraft }
-
     /// 테마 이어받기를 시도할 시점을 알리는 합성 키.
     /// 스톡 매니페스트 도착과 제한 여부 확정이 각각 다른 때에 오므로 둘을 묶는다.
     var freeBucketReadinessKey: String {
         "\(voiceStudio.stockClips.count)|\(usesStockClips)|\(voiceStudio.selectedProfileID ?? "")"
     }
 
-    /// 이어받으려던 테마를 실제로 집는다. 목소리와 스톡 클립이 모두 준비된 뒤에 한 번만.
-    ///
-    /// ⚠ **이미 고른 게 있으면 덮지 않는다.** 사용자가 화면에서 고른 값이 우선이다.
     /// 이 테마가 **아직 없는 입력**을 요구하는가(날씨=지역, 운세=사주).
     ///
-    /// ⚠ 판정은 저장 게이트(`editorSaveBlocked` 의 `selectedFreeBucket` 갈래)와 **같아야
-    /// 한다** — 여기만 느슨하면 고를 수는 있는데 저장은 막히는 상태가 생긴다.
+    /// 저장 게이트(`editorSaveBlocked` 의 테마 갈래)도 이 함수 하나를 부른다 — 둘이
+    /// 갈라지면 고를 수는 있는데 저장은 막히는 상태가 생긴다.
     /// 안드로이드 `AlarmEditorScreen.kt` 의 `firstUsable` 과 같은 규칙.
     func bucketNeedsMissingInput(_ bucket: FreeBucket) -> Bool {
         switch bucket {
@@ -1296,10 +1357,25 @@ struct AlarmEditorSheet: View {
         }
     }
 
+    /// 이어받으려던 테마를 실제로 집는다. 목소리와 스톡 클립이 모두 준비된 뒤에 한 번만.
+    ///
+    /// ⚠ **이미 고른 게 있으면 덮지 않는다.** 사용자가 화면에서 고른 값이 우선이다.
     func applyPendingFreeBucketIfNeeded() {
         guard usesStockClips else { return }
         // 이미 고른 게 있으면 덮지 않는다 — 사용자가 화면에서 고른 값이 우선이다.
-        guard selectedFreeBucket == nil else { pendingFreeBucket = nil; return }
+        guard selectedBucketDraft == nil else { pendingFreeBucket = nil; return }
+        // ⚠ **직접 입력 문구를 쳐 둔(또는 이어받은) 유료 사용자는 건드리지 않는다**(2026-09-29
+        // 리뷰). 기본 목소리가 골라진 채 직전 선택으로 직접 입력을 이으면, 여기서 옛 테마가
+        // 붙어 이은 문구를 말없이 대신했다. 판정은 4-값 고정과 같은 함수 하나 — 안드로이드
+        // `AlarmEditorScreen` 의 `if (!freeVoiceTier && manualChosen) return@LaunchedEffect` 짝.
+        // 이 갈래는 **아무것도 바꾸지 않는다**(`pendingFreeBucket` 도 그대로) — 안드로이드도
+        // 이 갈래에서 곧바로 빠져나온다.
+        guard !AlarmEditDraft.keepsPaidTypedManualText(
+            freeVoiceTier: freeVoiceTier,
+            randomPrompt: voiceStudio.randomPrompt,
+            selectedBucket: selectedBucketDraft,
+            ttsText: voiceStudio.ttsText
+        ) else { return }
         guard !voiceStudio.stockClips.isEmpty, voiceStudio.selectedProfileID != nil else { return }
 
         let buckets = availableFreeBuckets
@@ -1349,7 +1425,6 @@ struct AlarmEditorSheet: View {
         }
         // 테마를 바꾸면 앞 테마로 준비해 둔 음원은 더 이상 맞지 않는다.
         voiceStudio.preparedAlarm = nil
-        stockSelectedMessageID = nil
     }
 
     /// **저장 시점에** 고른 테마의 음원을 준비한다. 성공하면 true.
@@ -1369,7 +1444,7 @@ struct AlarmEditorSheet: View {
     /// `bindStockBucketClips` 를 먼저 시도하고 라이브는 **폴백**이다. 그 순서를 맞춘다.
     func bucketCategoryForSave() -> String? {
         guard let profileID = (voiceStudio.selectedProfileID).nilIfBlank else { return nil }
-        // ⚠ **갈래는 하나다**(2026-09-02). 그전에는 기본 목소리면 `selectedFreeBucket`,
+        // ⚠ **갈래는 하나다**(2026-09-02). 그전에는 기본 목소리면 `selectedBucketDraft`,
         //   클론이면 문구 종류로 갈랐는데, 그 둘은 애초에 같은 값을 다른 이름으로 담고
         //   있었다(`RandomPromptContext.bucketCategory` ↔ `FreeBucket.rawValue`). 갈라 두면
         //   한쪽만 고치는 사고가 나고, 실제로 문구 목록이 두 벌로 벌어진 원인이었다.
@@ -1379,7 +1454,7 @@ struct AlarmEditorSheet: View {
         //   걸려 nil 이 나가면 `prepareSelectedBucketClipIfNeeded()` 가 클립을 **다시 받지
         //   않는다** — 캐시된 음원이 사라진 기기에서는 소리 없는 알람으로 저장된다.
         let category: String
-        if let bucket = selectedFreeBucket {
+        if let bucket = selectedBucketDraft {
             category = bucket.rawValue
         } else {
             guard voiceStudio.randomPrompt,
@@ -1447,11 +1522,36 @@ struct AlarmEditorSheet: View {
         return !hasCompleteBucket(category: context.bucketCategory, profileID: profileID)
     }
 
+    /// 관문 **1/3** 을 **직접 녹음 → 목소리(TTS) 전환 전에**, 바뀔 값으로 본다.
+    ///
+    /// `selectVoiceOption` 은 녹음에서 올 때 소스를 바꾸고 직전 선택을 잇는데
+    /// (`adoptLastMessageChoiceIfUnset`), 관문(`selectedProfileID` 의 `onChange`)은 그 **뒤에**
+    /// 돌고 거절하면 목소리 id 만 되돌린다. 그래서 바꾸기 전에 같은 판정을 **이을 값으로**
+    /// 먼저 본다 — `onChange` 가 쓰는 식(`randomPrompt || wasThemeAlarm`)을 그대로 따르므로
+    /// 여기를 통과하면 `onChange` 도 통과한다. 안드로이드 `needsClipPreparationForVoicePick` 짝.
+    func recordingExitNeedsClipPreparation(profileID: String) -> Bool {
+        let store = DynamicPromptPreferenceStore()
+        let userID = auth.session?.user.id
+        let adopted = AlarmEditDraft.randomContextAdoptedByTtsPick(
+            randomPrompt: voiceStudio.randomPrompt,
+            selectedBucket: selectedBucketDraft,
+            ttsText: voiceStudio.ttsText,
+            lastMessageContext: store.lastMessageContext(userID: userID),
+            lastManualText: store.lastManualText(userID: userID)
+        )
+        let wasThemeAlarm = isActiveStockClipAlarm || (editingAlarm?.bucketId).nilIfBlank != nil
+        return needsClipPreparation(
+            profileID: profileID,
+            randomPrompt: voiceStudio.randomPrompt || adopted != nil || wasThemeAlarm,
+            randomContext: adopted ?? voiceStudio.randomContext
+        )
+    }
+
     func prepareSelectedBucketClipIfNeeded() async -> Bool {
         guard let bucketCategory = bucketCategoryForSave() else { return true }
         let clips = stockClips(forCategory: bucketCategory)
         guard let firstClip = clips.first else {
-            voiceStudio.statusMessage = "이 테마의 문구를 아직 받지 못했어요. 잠시 뒤에 다시 시도해 주세요."
+            voiceStudio.statusMessage = String(localized: "이 테마의 문구를 아직 받지 못했어요. 잠시 뒤에 다시 시도해 주세요.")
             return false
         }
 
@@ -1470,7 +1570,7 @@ struct AlarmEditorSheet: View {
         // 없으면 첫 클립. **회전은 저장된 뒤 울릴 때** 일어난다.
         let boundClip: StockClip = {
             if let prepared = voiceStudio.preparedAlarm,
-               prepared.audioCacheKey.hasPrefix("stock_"),
+               prepared.audioCacheKey.hasPrefix(AudioCacheStore.stockCacheKeyPrefix),
                let match = clips.first(where: { $0.messageId == prepared.messageID }) {
                 return match
             }
@@ -1487,7 +1587,6 @@ struct AlarmEditorSheet: View {
         guard await voiceStudio.prepareStockClip(boundClip, session: auth.session) != nil else {
             return false
         }
-        stockSelectedMessageID = boundClip.id
         return true
     }
 
@@ -1531,7 +1630,7 @@ struct AlarmEditorSheet: View {
     /// 지역·발사날짜가 바뀌었으면 옛 값을 버린다(`shouldResetWeatherVariant`).
     ///
     /// ⚠ **기다리는 시간에 상한이 있다**(`WeatherVariantSaveLookup.timeoutSeconds`, 8초).
-    /// 서버가 open-meteo 를 세 번 순차로 부르는 동안 한 바이트도 오지 않으므로, 느린 망에서는
+    /// 서버가 (미리 계산한 값이 없을 때) 날씨 원천을 부르는 동안 한 바이트도 오지 않으므로, 느린 망에서는
     /// 세션의 60초 유휴 타임아웃까지 저장 버튼이 잠긴 채였다. 상한을 넘기면 위의 실패와
     /// **같은 경로**다 — 미해결로 저장·예약하고 `WeatherVariantRefreshService.refreshDue` 가
     /// 채운다. 늦게 온 응답이 값을 덮어쓰는 일은 없다: 조회는 한 번만 돌아오고, 그 뒤에는
@@ -1596,7 +1695,7 @@ struct AlarmEditorSheet: View {
         //   안드로이드 `setBucketAudio`). 여기는 **읽을 때도** 실제로 울릴 것을 말하게
         //   하는 이중 안전장치다 — 어긋난 행이 어디서 오든(옛 저장분·동기화) 화면은
         //   진실을 말한다.
-        if let bucket = selectedFreeBucket,
+        if let bucket = selectedBucketDraft,
            let fromBucket = RandomPromptContext.forBucket(bucket.rawValue) {
             return fromBucket.rawValue
         }
@@ -1629,7 +1728,6 @@ struct AlarmEditorSheet: View {
         // ⚠ **테마를 비운다.** 문구 갈래와 테마는 동시에 켜질 수 없다. 안 비우면
         // `isActiveStockClipAlarm` 이 계속 참이라 '직접 입력' 을 골라도 입력창이 안 뜬다.
         selectedBucketDraft = nil
-        stockSelectedMessageID = nil
         if result.isManual {
             voiceStudio.randomPrompt = false
             voiceStudio.ttsText = result.manualText
@@ -1637,7 +1735,7 @@ struct AlarmEditorSheet: View {
             voiceStudio.randomPrompt = true
             voiceStudio.randomContext = result.context
             // 스톡 클립을 쓰는 목소리는 **고른 종류가 곧 테마**다. 여기서 같이 세우지 않으면
-            // 요약 행·저장 갈래가 `selectedFreeBucket` 을 nil 로 읽어, 고른 것과 다르게 군다.
+            // 요약 행·저장 갈래가 `selectedBucketDraft` 를 nil 로 읽어, 고른 것과 다르게 군다.
             if usesStockClips,
                let bucket = RandomPromptContext(rawValue: result.context).map({ FreeBucket(rawValue: $0.bucketCategory) }) ?? nil {
                 selectedBucketDraft = bucket
@@ -1648,6 +1746,36 @@ struct AlarmEditorSheet: View {
         voiceStudio.fortuneGender = result.fortuneGender
         voiceStudio.fortuneBirthDate = result.fortuneBirthDate
         voiceStudio.fortuneBirthTime = result.fortuneBirthTime
+        syncOwnPromptPreferences(from: result)
+    }
+
+    /// 문구 화면에서 고른 지역·운세를 **내 계정 설정**에 반영한다 — 설정 '지역' 행과 같은 길이다
+    /// (기기 저장 + `PATCH /user/me` + 지역이 바뀌면 공휴일 국가). 판정은 `DynamicPromptPreferences.editorUpdate`
+    /// 한 곳이고, 안드로이드 `AlarmEditorScreen` 의 문구 결과 처리와 같다.
+    ///
+    /// 알람 저장을 기다리지 않는다 — 안드로이드도 문구 화면을 나오는 순간 올린다. 문구 종류의 '직전 선택'
+    /// 기억(저장 성공 시 한 곳)과는 다른 축이다: 이건 알람의 선택이 아니라 **내 정보**(지역·사주)다.
+    func syncOwnPromptPreferences(from result: MessageSettingsResult) {
+        guard let update = DynamicPromptPreferences.editorUpdate(
+            result: result,
+            familyAlarmMode: target.familyAlarmMode,
+            saved: savedPromptPreferences(),
+            server: DynamicPromptPreferences.from(settings: auth.session?.user.dynamicPromptSettings)
+        ) else { return }
+        let userID = auth.session?.user.id
+        // 올릴 값이면 '아직 안 올라간 변경' 표시와 함께 적는다 — 저장이 실패해도(오프라인) 다음에 받는
+        // 서버의 옛 값이 덮지 않고 앱이 다시 올린다(`AccountPromptSettingsAdoption.swift`).
+        // ⚠ 기기에 **적었을 때만** 뒤따르는 일을 한다(`commitLocalEdit`) — 못 적었는데 공휴일 국가·서버만 새
+        // 지역으로 가면 이 기기 값(다음 알람·설정 화면)과 갈라진다.
+        update.preferences.commitLocalEdit(userID: userID, markUnsynced: update.needsUpload) {
+            // 공휴일 국가 = 지역의 나라. 서버 저장이 실패해도(오프라인) 이 기기는 곧바로 맞춘다 — 설정 화면과 같다.
+            if let key = update.changedRegionKey {
+                holidayStore.adoptCountry(ofWeatherRegion: key)
+            }
+            guard update.needsUpload, userID != nil else { return }
+            let settings = update.preferences.toSettings()
+            Task { await auth.updateProfile(dynamicPromptSettings: settings) }
+        }
     }
 
     // MARK: - 같은 문구 재사용 (입력 캐시)
@@ -1699,7 +1827,7 @@ struct AlarmEditorSheet: View {
             language: "ko",
             listenerTitle: alias.displayText.isEmpty ? nil : voiceStudio.selectedListenerTitle
         )
-        voiceStudio.statusMessage = "전에 만든 음성을 그대로 사용했어요."
+        voiceStudio.statusMessage = String(localized: "전에 만든 음성을 그대로 사용했어요.")
         return true
     }
 
@@ -1731,8 +1859,8 @@ struct AlarmEditorSheet: View {
     }
 
     var navigationTitle: String {
-        if target.familyAlarmMode { return "상대 알람 맞추기" }
-        return target.editingAlarmID == nil ? "알람 만들기" : "알람 수정"
+        if target.familyAlarmMode { return String(localized: "상대 알람 맞추기") }
+        return target.editingAlarmID == nil ? String(localized: "알람 만들기") : String(localized: "알람 수정")
     }
 
     var activePromptContext: RandomPromptContext {
@@ -1747,7 +1875,7 @@ struct AlarmEditorSheet: View {
         target.familyAlarmMode && selectedFamilyRecipient?.dynamicPromptSettingsState?.fortuneReady == true
     }
 
-    /// 음성 기능 접근 등급 (Android `AlarmEditorScreen.kt:144-146` 미러).
+    /// 음성 기능 접근 등급 (Android `AlarmEditorScreen.kt:133-135` 미러).
     /// - loggedOut: 로그아웃. 음성 모드 자체가 잠긴다 (alarm_only 강제).
     /// - free: 로그인했으나 유료 음성 권한 없음. 음성은 쓰되 시스템 보이스 +
     ///   랜덤 preset 으로만 제한된다.
@@ -1817,15 +1945,14 @@ struct AlarmEditorSheet: View {
     }
 
     var existingLocalAudioLabel: String? {
-        guard selectedLocalAudioURL == nil,
-              localRecorder.latestRecordingURL == nil,
+        guard localRecorder.latestRecordingURL == nil,
               !clearExistingLocalAudio,
               let alarm = editingAlarm,
               alarm.voiceSourceEnum == .localAudio,
               alarm.audioCacheKey != nil else {
             return nil
         }
-        return "저장된 녹음/파일 음성을 사용 중이에요."
+        return String(localized: "저장된 녹음/파일 음성을 사용 중이에요.")
     }
 
     var familyRecipients: [FamilyGroupMember] {
@@ -1876,7 +2003,6 @@ struct AlarmEditorSheet: View {
         suppressProfileChangeInvalidation = true
         voiceStudio.selectedProfileID = alarm?.voiceProfileId
         voiceStudio.preparedAlarm = nil
-        stockSelectedMessageID = nil
         // 저장된 테마를 편집기 상태로 **한 번** 옮긴다. 이 뒤로는 편집기가 소유한다 —
         // 저장값을 계속 읽으면 사용자가 문구 갈래를 바꿔도 테마가 안 풀린다.
         selectedBucketDraft = FreeBucket.stored(alarm?.bucketId)
@@ -1896,27 +2022,12 @@ struct AlarmEditorSheet: View {
                 ?? .defaultContext
         ).rawValue
 
-        // **직전 선택 유지 — 새 알람에만 적용한다.**
+        // **직전 선택 유지 — 새 알람을 열 때 적용한다.**
         // 기존 알람을 열 때는 저장된 자기 값만 쓴다(열기만 해도 문구가 바뀌면 안 된다).
-        // 규약 전문은 CLAUDE.md 「알람 편집기 기본값 = 직전 선택 유지」.
+        // 예외는 문구가 없던 알람(알람 전용·직접 녹음)을 목소리 문구로 **옮기는 순간**이다 —
+        // `adoptLastMessageChoiceIfUnset`. 규약 전문은 CLAUDE.md 「알람 편집기 기본값 = 직전 선택 유지」.
         if alarm == nil {
-            let store = DynamicPromptPreferenceStore()
-            let userID = auth.session?.user.id
-            if let manual = store.lastManualText(userID: userID) {
-                // `last_manual_text` 가 차 있다 = 마지막 선택이 직접 입력이었다.
-                // 문구까지 함께 이어받는다 — 종류만 이어받으면 빈 직접입력으로 열려
-                // 저장이 막힌다(2026-08-06 규칙 변경의 근거).
-                voiceStudio.randomPrompt = false
-                voiceStudio.ttsText = manual
-            } else if let context = store.lastMessageContext(userID: userID) {
-                voiceStudio.randomPrompt = true
-                voiceStudio.randomContext = RandomPromptContext.normalized(context).rawValue
-            }
-            // 무료 테마는 **문구 종류·직접입력과 다른 축**이라 따로 이어받는다.
-            // 실제 클립 바인딩은 목소리·스톡 매니페스트가 준비된 뒤라야 하므로 여기서는
-            // 의도만 남기고, `applyPendingFreeBucketIfNeeded` 가 준비되면 집는다.
-            pendingFreeBucket = FreeBucket.stored(store.lastFreeBucket(userID: userID))
-            // 한 번도 고른 적 없으면 위에서 정한 폴백(랜덤 ON + preset)을 그대로 쓴다.
+            applyLastMessageChoice()
         }
 
         // ⚠ 여기서 번역 플래그를 세우던 자리다 — **번역을 없앴다**(2026-08-12).
@@ -1928,8 +2039,8 @@ struct AlarmEditorSheet: View {
         voiceStudio.fortuneBirthTime = alarm?.voiceFortuneBirthTime ?? saved.fortuneBirthTime
         // 기존 스톡 클립 알람은 선택/준비 상태로 복원해 저장 시 같은 캐시 음원을 재사용한다
         // (P2). selectedProfileID 가 위에서 먼저 설정되고 그 onChange 훅이
-        // stockSelectedMessageID 를 비우므로, 복원은 반드시 그 이후 — 즉 coerce 직전 —
-        // 에 수행한다. coerce 가 보기 전에 preparedAlarm/stockSelectedMessageID 가 채워져
+        // preparedAlarm 을 비우므로, 복원은 반드시 그 이후 — 즉 coerce 직전 —
+        // 에 수행한다. coerce 가 보기 전에 preparedAlarm 이 채워져
         // 있어야 803 라인 가드가 4-값 강제를 건너뛴다.
         restoreStockClipSelectionIfNeeded(from: alarm)
         coerceFreeVoiceTierConstraints()
@@ -1938,10 +2049,58 @@ struct AlarmEditorSheet: View {
         }
     }
 
+    /// 계정의 **직전 문구 선택**을 편집기 상태에 심는다. 새 알람을 열 때와, 문구가 없던
+    /// 알람을 목소리 문구로 옮길 때(`adoptLastMessageChoiceIfUnset`)가 **같은 규칙 하나**를 쓴다
+    /// — 갈래는 `AlarmEditDraft.lastMessageChoice` 한 곳에 있다.
+    private func applyLastMessageChoice() {
+        let store = DynamicPromptPreferenceStore()
+        let userID = auth.session?.user.id
+        switch AlarmEditDraft.lastMessageChoice(
+            lastMessageContext: store.lastMessageContext(userID: userID),
+            lastManualText: store.lastManualText(userID: userID)
+        ) {
+        case .manual(let text):
+            // `last_manual_text` 가 차 있다 = 마지막 선택이 직접 입력이었다.
+            // 문구까지 함께 이어받는다 — 종류만 이어받으면 빈 직접입력으로 열려
+            // 저장이 막힌다(2026-08-06 규칙 변경의 근거).
+            voiceStudio.randomPrompt = false
+            voiceStudio.ttsText = text
+        case .generated(let context):
+            // 한 번도 고른 적 없으면 '기본 인사말'(preset)이다.
+            voiceStudio.randomPrompt = true
+            voiceStudio.randomContext = context
+        }
+        // 무료 테마는 **문구 종류·직접입력과 다른 축**이라 따로 이어받는다.
+        // 실제 클립 바인딩은 목소리·스톡 매니페스트가 준비된 뒤라야 하므로 여기서는
+        // 의도만 남기고, `applyPendingFreeBucketIfNeeded` 가 준비되면 집는다.
+        pendingFreeBucket = FreeBucket.stored(store.lastFreeBucket(userID: userID))
+    }
+
+    /// 문구가 **하나도 없으면** 직전 선택을 잇는다. 이어받았으면 true.
+    ///
+    /// ⚠ **빈 '직접 입력' 으로 두지 말 것**(2026-09-29 실기기 보고). 알람 전용·직접 녹음
+    /// 알람은 저장할 때 문구 필드를 비우므로(`AlarmEditDraft.toRecord`), 그 알람을 목소리
+    /// 문구로 옮기면 판정식(`currentMessageContext`)이 **빈 직접 입력**으로 읽는다 — 저장도
+    /// 못 하고, 고치려면 한도가 걸린 직접 입력을 새로 쳐야 했다. 새 알람과 같은 규칙으로 잇는다.
+    ///
+    /// 문구가 이미 있으면 **아무것도 바꾸지 않는다** — 그 알람의 자기 값, 이 세션에서 고른
+    /// 값이 언제나 이긴다. 안드로이드 `AlarmEditorState.adoptLastMessageChoiceIfUnset` 짝.
+    @discardableResult
+    func adoptLastMessageChoiceIfUnset() -> Bool {
+        guard AlarmEditDraft.hasNoMessageChoice(
+            randomPrompt: voiceStudio.randomPrompt,
+            selectedBucket: selectedBucketDraft,
+            ttsText: voiceStudio.ttsText
+        ) else { return false }
+        applyLastMessageChoice()
+        voiceStudio.preparedAlarm = nil
+        return true
+    }
+
     /// 기존에 저장된 스톡 클립 알람을 다시 "선택/준비" 상태로 복원한다(P2).
     /// P1 과 동일한 신호(`audioCacheKey` 의 `stock_` prefix + 시스템 voiceProfileId)로
     /// 스톡 알람을 식별하고, 스테이징됐던 캐시 파일이 디스크에 그대로 있을 때만
-    /// `preparedAlarm` + `stockSelectedMessageID` 를 재구성한다. 이렇게 하면 saveFlow 의
+    /// `preparedAlarm` 을 재구성한다. 이렇게 하면 saveFlow 의
     /// 스톡 분기(`prepared.audioCacheKey` 의 `stock_` prefix 판정)가 동일 audioCacheKey 를
     /// 재사용한다. 캐시가 sweep 됐으면 복원하지 않아 saveFlow 가 정상 재생성 경로를
     /// 타게 둔다(dangling 파일 재사용 방지, risk 1).
@@ -1965,12 +2124,11 @@ struct AlarmEditorSheet: View {
             language: alarm.voiceLanguage ?? "ko",
             listenerTitle: alarm.voiceListenerTitle
         )
-        stockSelectedMessageID = messageID
         // 스톡 클립은 고정 음원이므로 랜덤 문구가 아니다(저장값 voiceRandomPrompt=false 미러).
         voiceStudio.randomPrompt = false
     }
 
-    /// 무료 등급 음성 제약을 강제한다 (Android `AlarmEditorScreen.kt:863-882` 미러).
+    /// 무료 등급 음성 제약을 강제한다 (Android `AlarmEditorScreen.kt:817-836` 미러).
     /// `freeVoiceTier && playMode != .alarmOnly` 일 때 음성을 다음 4-값으로 고정한다:
     /// tts_profile 소스 + randomPrompt=true + randomContext='preset' + translate=false.
     /// 값이 실제로 달라질 때만 재할당하고 preparedAlarm 을 무효화한다(무한 무효화 방지).
@@ -1994,7 +2152,7 @@ struct AlarmEditorSheet: View {
         // 을 함께 요구했는데, 음원 준비를 저장 시점으로 옮긴 뒤로 편집 중에는 그게 늘 nil
         // 이다 — 그대로 두면 테마를 골라도 `randomPrompt = true`, `randomContext = "preset"`
         // 로 되돌아가 고른 테마가 저장되지 않는다.
-        if selectedFreeBucket != nil { return false }
+        if selectedBucketDraft != nil { return false }
         // ⚠ **직접 입력을 고른 유료 사용자를 건드리지 않는다**(2026-09-02, 안드로이드
         // `AlarmEditorScreen` 의 `if (!freeVoiceTier && manualChosen) return@LaunchedEffect`
         // 미러). `usesStockClips` 는 `freeVoiceTier || 시스템보이스` 라 **유료가 기본
@@ -2002,8 +2160,13 @@ struct AlarmEditorSheet: View {
         // 않는다. 그대로 두면 저장 직전 이 강제가 `randomPrompt = true`·`preset` 으로
         // 되돌려, 방금 친 문구 대신 **목소리 자기소개 클립**이 알람으로 저장된다 —
         // 경고도 알럿도 없이. 잠긴 등급(무료)에서는 예전 그대로 돈다.
-        if !freeVoiceTier, !voiceStudio.randomPrompt,
-           (voiceStudio.ttsText).nilIfBlank != nil {
+        // 판정은 테마 이어받기(`applyPendingFreeBucketIfNeeded`)와 같은 함수 하나다.
+        if AlarmEditDraft.keepsPaidTypedManualText(
+            freeVoiceTier: freeVoiceTier,
+            randomPrompt: voiceStudio.randomPrompt,
+            selectedBucket: selectedBucketDraft,
+            ttsText: voiceStudio.ttsText
+        ) {
             return false
         }
         var changed = false
@@ -2039,49 +2202,21 @@ struct AlarmEditorSheet: View {
     /// 시각과 무관하므로 무효화하지 않는다(스크롤 중간값이 스톡 선택을 지우는 것 방지).
     func invalidatePreparedRandomClipOnTimeChange() {
         guard voiceStudio.randomPrompt else { return }
-        guard selectedFreeBucket == nil else { return }
+        guard selectedBucketDraft == nil else { return }
         voiceStudio.preparedAlarm = nil
     }
 
-    func savedPromptPreferences() -> DynamicPromptPreferences {
-        let server = DynamicPromptPreferences.from(settings: auth.session?.user.dynamicPromptSettings)
-        return server == DynamicPromptPreferences() ? .load(userID: auth.session?.user.id) : server
-    }
-
-    /// 저장 시 사용자가 입력한 날씨 지역·운세 정보를 계정 기본값에 보존해, 다음 알람을
-    /// 만들 때 매번 도시·생년월일을 다시 입력하지 않게 한다.
-    /// 안드로이드 `ui/editor/AlarmEditorScreen.kt` 의 `saveWeatherLocation`/`saveFortuneInfo`
-    /// 미러 — 가족(상대) 알람은 상대 정보라 내 기본값을 덮어쓰지 않는다.
+    /// 내 계정의 지역·사주 — 계정 설정을 이 기기에 받아 적은 **뒤의** 기기 값이다(`DynamicPromptPreferences.current`).
+    /// 새 알람의 프리필과 문구 화면 결과의 바탕(`syncOwnPromptPreferences`)이 이걸 본다. 안드로이드 편집기가
+    /// `DynamicPromptPreferenceStore.read` 를 보는 것과 같다.
     ///
-    /// ⚠ **테마(스톡) 알람도 여기 들어와야 한다.** 테마 알람은 `randomPrompt` 가 꺼지므로
-    /// 그것만 보고 걸러내면 '날씨' 테마로 도시를 넣어도 저장되지 않아, 다음 새 알람이
-    /// 날씨를 이어받지 못하고 매번 '약' 으로 돌아간다. 안드로이드 `weatherContextForSave()`·
-    /// `fortuneContextForSave()` 가 버킷 알람을 예외 처리하는 것과 같은 이유다.
-    func persistDynamicPromptPreferencesIfNeeded() {
-        guard !target.familyAlarmMode else { return }
-        guard voiceStudio.randomPrompt || isActiveStockClipAlarm else { return }
-        let context = activePromptContext
-        var prefs = DynamicPromptPreferences.load(userID: auth.session?.user.id)
-        var changed = false
-        if context.usesWeather,
-           let country = (voiceStudio.weatherCountry).nilIfBlank,
-           let city = (voiceStudio.weatherCity).nilIfBlank {
-            prefs.weatherCountry = country
-            prefs.weatherCity = city
-            changed = true
-        }
-        if context.usesFortune,
-           let gender = (voiceStudio.fortuneGender).nilIfBlank,
-           let birthDate = (voiceStudio.fortuneBirthDate).nilIfBlank,
-           let birthTime = (voiceStudio.fortuneBirthTime).nilIfBlank {
-            prefs.fortuneGender = gender
-            prefs.fortuneBirthDate = birthDate
-            prefs.fortuneBirthTime = birthTime
-            changed = true
-        }
-        if changed {
-            prefs.save(userID: auth.session?.user.id)
-        }
+    /// ⚠ **알람을 저장할 때 여기(키체인)에 따로 적지 않는다**(2026-09-30 삭제 — 옛
+    /// `persistDynamicPromptPreferencesIfNeeded`). 내 지역·사주가 바뀌는 자리는 문구 화면을 나올 때
+    /// (`syncOwnPromptPreferences`)와 설정 화면 둘뿐이다 — 안드로이드도 그 두 곳에서만 적는다. 저장 때 또
+    /// 적으면 **옛 알람을 열어 저장만 해도** 그 알람의 옛 지역이 '안 올라간 변경' 없이 기기 값이 되어,
+    /// 서버에 지역이 없는 계정은 다음 새 알람이 그 옛 지역으로 열린다.
+    func savedPromptPreferences() -> DynamicPromptPreferences {
+        .current(userID: auth.session?.user.id, server: auth.session?.user.dynamicPromptSettings)
     }
 
     func applyVoicePromptState(to record: inout LocalAlarmRecord) {
@@ -2089,8 +2224,15 @@ struct AlarmEditorSheet: View {
         let context = RandomPromptContext.normalized(voiceStudio.randomContext)
         record.voiceRandomPrompt = enabled
         record.voiceRandomContext = enabled ? context.rawValue : nil
-        record.voiceWeatherCountry = enabled && context.usesWeather ? (voiceStudio.weatherCountry).nilIfBlank : nil
-        record.voiceWeatherCity = enabled && context.usesWeather ? (voiceStudio.weatherCity).nilIfBlank : nil
+        // 지역은 **옛 앱이 읽는 표준 글자**로 적는다(목록으로 되짚히는 값이면). 알람 행에는 키 칸이
+        // 없다 — 요청의 `region` 은 이 글자에서 되짚는다(`WeatherVariantSaveLookup`·
+        // `WeatherVariantRefreshService`). 되짚지 못한 옛 글자는 적힌 그대로 둔다(서버의 엄격한 옛 경로).
+        let weatherLabels = WeatherRegions.storageLabels(
+            country: voiceStudio.weatherCountry,
+            city: voiceStudio.weatherCity
+        )
+        record.voiceWeatherCountry = enabled && context.usesWeather ? weatherLabels.country : nil
+        record.voiceWeatherCity = enabled && context.usesWeather ? weatherLabels.city : nil
         record.voiceFortuneGender = enabled && context.usesFortune ? (voiceStudio.fortuneGender).nilIfBlank : nil
         record.voiceFortuneBirthDate = enabled && context.usesFortune ? (voiceStudio.fortuneBirthDate).nilIfBlank : nil
         record.voiceFortuneBirthTime = enabled && context.usesFortune ? (voiceStudio.fortuneBirthTime).nilIfBlank : nil
@@ -2104,19 +2246,19 @@ struct AlarmEditorSheet: View {
         let message: String
         switch planAccess {
         case .loggedOut:
-            message = "음성 알람은 로그인 후 사용할 수 있어요."
+            message = String(localized: "음성 알람은 로그인 후 사용할 수 있어요.")
         case .free:
             // 유료 게이트 설명은 `PaidGateCopy` 한 곳에서만 정한다(안드 `plan_gate_paid_message`).
             message = PaidGateCopy.message
         case .paid:
             // 유료인데 막혔다 = 플랜이 아니라 **목소리 종류**의 문제다.
-            message = "기본 목소리는 준비된 문구로만 말할 수 있어요. 직접 입력한 문구로 깨우려면 내 목소리를 골라 주세요."
+            message = String(localized: "기본 목소리는 준비된 문구로만 말할 수 있어요. 직접 입력한 문구로 깨우려면 내 목소리를 골라 주세요.")
         }
         let title: String
         switch planAccess {
-        case .loggedOut: title = "로그인이 필요해요"
-        case .free: title = "유료 이용권이 필요해요"
-        case .paid: title = "기본 목소리로는 직접 입력을 쓸 수 없어요"
+        case .loggedOut: title = String(localized: "로그인이 필요해요")
+        case .free: title = String(localized: "유료 이용권이 필요해요")
+        case .paid: title = String(localized: "기본 목소리로는 직접 입력을 쓸 수 없어요")
         }
         voiceGateAlert = VoiceGateAlertContent(
             title: title,
@@ -2144,14 +2286,8 @@ struct AlarmEditorSheet: View {
     /// ⚠ **`isReplacementSettling` 을 키에 반영한다.** 교체 정리가 풀리는 순간이 곧 다시
     /// 골라야 하는 순간이다.
     var voicePreselectKey: String {
-        let own = voiceStudio.profiles
-            .filter { $0.isReadyForAlarmSelection && !voiceStudio.isReplacementSettling($0.id) }
-            .map(\.id)
-            .joined(separator: ",")
-        let shared = voiceStudio.familyVoices
-            .filter { $0.isReadyForAlarmSelection && !voiceStudio.isReplacementSettling($0.id) }
-            .map(\.id)
-            .joined(separator: ",")
+        let own = readySelectableOwnVoices.map(\.id).joined(separator: ",")
+        let shared = readySelectableSharedVoices.map(\.id).joined(separator: ",")
         return [
             draft.playMode.rawValue,
             voiceSourceMode.rawValue,
@@ -2160,6 +2296,20 @@ struct AlarmEditorSheet: View {
             own,
             shared,
         ].joined(separator: "|")
+    }
+
+    /// 자동으로 골라도 되는 내 목소리·공유받은 목소리 — 준비됐고 교체 정리 중이 아닌 것.
+    /// 프리셀렉트와 그 재실행 키가 같은 목록을 본다.
+    private var readySelectableOwnVoices: [VoiceProfile] {
+        voiceStudio.profiles.filter {
+            $0.isReadyForAlarmSelection && !voiceStudio.isReplacementSettling($0.id)
+        }
+    }
+
+    private var readySelectableSharedVoices: [FamilyVoiceProfile] {
+        voiceStudio.familyVoices.filter {
+            $0.isReadyForAlarmSelection && !voiceStudio.isReplacementSettling($0.id)
+        }
     }
 
     func selectDefaultVoiceProfileIfNeeded() {
@@ -2174,12 +2324,8 @@ struct AlarmEditorSheet: View {
         // 막아서는 부족하다 — 그 목소리가 **마지막에 쓴 것**이면 새 편집기가 스스로 그것을
         // 골라, 사용자는 아무것도 누르지 않았는데 그 목소리로 저장하게 된다. 뒤이은 정리가
         // 그 새 알람을 되돌릴 수 없이 벗긴다. 시트에는 그대로 보인다(흐리게).
-        let readyOwn = voiceStudio.profiles.filter {
-            $0.isReadyForAlarmSelection && !voiceStudio.isReplacementSettling($0.id)
-        }
-        let readyShared = voiceStudio.familyVoices.filter {
-            $0.isReadyForAlarmSelection && !voiceStudio.isReplacementSettling($0.id)
-        }
+        let readyOwn = readySelectableOwnVoices
+        let readyShared = readySelectableSharedVoices
 
         // 무료 등급은 서버가 시스템 보이스만 허용한다(tts.ts:684-693).
         // 비-시스템 프로필이 선택돼 있으면 시스템 보이스로 갈아끼워 403 을 예방한다.
@@ -2256,16 +2402,36 @@ struct AlarmEditorSheet: View {
            voiceSourceMode == .ttsProfile,
            voiceStudio.isReplacementSettling(profileID) {
             voiceGateAlert = VoiceGateAlertContent(
-                title: "아직 준비 중이에요",
-                message: "바꾼 목소리를 정리하고 있어요. 잠시 후 다시 저장해 주세요.",
+                title: String(localized: "아직 준비 중이에요"),
+                message: String(localized: "바꾼 목소리를 정리하고 있어요. 잠시 후 다시 저장해 주세요."),
                 offersPlanActions: false
+            )
+            return
+        }
+        // ⚠ **쓸 수 없는 목소리는 여기서 막는다**(버튼은 살려 둔다 — `editorSaveBlocked` 주석).
+        // 편집기의 '삭제된 목소리' 배너를 2026-09-29 에 걷어냈으므로 이 알럿이 유일한
+        // 설명이다. 문구는 안드로이드 `editor_block_voice_title`·`editor_block_voice_unavailable_message`.
+        if selectedVoiceUnusable {
+            validationAlert = ValidationAlertContent(
+                title: String(localized: "목소리를 골라주세요"),
+                message: String(localized: "고른 목소리를 지금은 쓸 수 없어요. 다른 목소리를 골라 주세요.")
+            )
+            return
+        }
+        // ⚠ **빈 직접 입력은 여기서 막는다 — 권한 확인·한도 조회·생성 요청보다 먼저다.**
+        // 만들 문장이 없으니 서버를 부를 이유가 없고, 불러서 실패를 기다리면 사용자는 한도가
+        // 깎였는지부터 걱정한다. 버튼은 살려 두고 이유를 말한다(`editorSaveBlocked` 주석).
+        if manualTextMissing {
+            validationAlert = ValidationAlertContent(
+                title: String(localized: "직접 입력 문구가 비어 있어요"),
+                message: String(localized: "알람이 읽어 줄 문구를 입력하거나, 문구 화면에서 다른 종류를 골라 주세요.")
             )
             return
         }
         let errors = draft.validate()
         if let first = errors.first {
             validationAlert = ValidationAlertContent(
-                title: "저장할 수 없어요",
+                title: String(localized: "저장할 수 없어요"),
                 message: errorMessage(first)
             )
             return
@@ -2281,10 +2447,10 @@ struct AlarmEditorSheet: View {
             alarmKit.refreshAuthorizationState()
             guard alarmKit.alarmAuthorized else {
                 validationAlert = ValidationAlertContent(
-                    title: "알람 권한이 필요해요",
+                    title: String(localized: "알람 권한이 필요해요"),
                     message: alarmKit.permissionRecoveryNeeded
                         ? AlarmKitViewModel.alarmRecoveryMessage
-                        : "알람 권한을 허용해야 알람을 저장할 수 있어요. \(AlarmKitViewModel.alarmDeniedConsequence)"
+                        : String(localized: "알람 권한을 허용해야 알람을 저장할 수 있어요. \(AlarmKitViewModel.alarmDeniedConsequence)")
                 )
                 return
             }
@@ -2302,8 +2468,8 @@ struct AlarmEditorSheet: View {
 
         if target.familyAlarmMode && familyAlarmLocked {
             validationAlert = ValidationAlertContent(
-                title: "이용권이 필요해요",
-                message: "상대 알람은 커플/가족 이용권에서 사용할 수 있어요."
+                title: String(localized: "이용권이 필요해요"),
+                message: String(localized: "상대 알람은 커플/가족 이용권에서 사용할 수 있어요.")
             )
             return
         }
@@ -2316,18 +2482,7 @@ struct AlarmEditorSheet: View {
         let existing = editingAlarm
 
         let now = Int64(Date().timeIntervalSince1970 * 1000)
-        let fireAt: Int64 = (try? AlarmTimeCalculator.nextFireAtMillis(
-            hour: draft.hour,
-            minute: draft.minute,
-            repeatDaysMask: draft.repeatDaysMask,
-            holidayOff: draft.holidayOff,
-            nowMillis: now,
-            isHoliday: holidayStore.holidayPredicate()
-        )) ?? LocalAlarmRecord.fallbackFireAtMillis(
-            hour: draft.hour,
-            minute: draft.minute,
-            referenceMillis: now
-        )
+        let fireAt = draftFireAtMillis(now: now)
 
         // 단일 저장 버튼 게이트(Android saveEditor 미러). 음성 알람인데 준비된 음원이 없고
         // 기존 음원도 재사용할 수 없으면 — 그냥 막지 않고 여기서 직접 생성한다. 생성이
@@ -2419,8 +2574,8 @@ struct AlarmEditorSheet: View {
                 // 네트워크를 부른다 — 순서가 뒤집히면 스펙이 "요청도 보내지 않는다" 라고
                 // 적은 상태에서 요청이 나가고, 소켓이 매달리면 저장 버튼이 멈춘 것처럼 보인다.
                 validationAlert = ValidationAlertContent(
-                    title: "연결이 필요해요",
-                    message: "이 문구의 음성이 아직 이 기기에 없어요. 연결되면 다시 저장해 주세요."
+                    title: String(localized: "연결이 필요해요"),
+                    message: String(localized: "이 문구의 음성이 아직 이 기기에 없어요. 연결되면 다시 저장해 주세요.")
                 )
                 return
             } else if let quotaBlock = await manualQuotaBlockIfExhausted() {
@@ -2467,10 +2622,11 @@ struct AlarmEditorSheet: View {
                 familyLocalVoiceSource = FamilyLocalVoiceUploadSource(
                     url: prepared.url,
                     durationMs: prepared.durationMs,
-                    displayName: localAudioUploadDisplayName(for: prepared.url)
+                    // 알람 오디오는 녹음뿐이다 — 이름도 하나다.
+                    displayName: "alarm-recording.m4a"
                 )
             } catch {
-                localAudioMessage = AudioUserFacingError.message(for: error, fallback: "선택한 알람 음성을 준비하지 못했어요.")
+                localAudioMessage = AudioUserFacingError.message(for: error, fallback: String(localized: "선택한 알람 음성을 준비하지 못했어요."))
                 return
             }
         } else {
@@ -2484,7 +2640,7 @@ struct AlarmEditorSheet: View {
             do {
                 cachedLocalAudio = try await cachedLocalAudioForSave(existing: existing)
             } catch {
-                localAudioMessage = AudioUserFacingError.message(for: error, fallback: "선택한 알람 음성을 준비하지 못했어요.")
+                localAudioMessage = AudioUserFacingError.message(for: error, fallback: String(localized: "선택한 알람 음성을 준비하지 못했어요."))
                 return
             }
         } else {
@@ -2509,11 +2665,8 @@ struct AlarmEditorSheet: View {
         // 예외로 남는다(안드로이드 `expectedOwnerUserId` 게이트와 같은 취지).
         merged.ownerUserId = auth.session?.user.id ?? existing?.ownerUserId
         applyVoicePromptState(to: &merged)
-        // 입력한 날씨 지역/운세 정보를 기기 기본값에 보존(다음 알람 입력 생략). 음성 비활성
-        // 알람은 randomPrompt 가 무시되므로 enabled 분기를 한 번 더 게이트한다.
-        if merged.playModeEnum != .alarmOnly {
-            persistDynamicPromptPreferencesIfNeeded()
-        }
+        // 지역·사주를 내 기본값에 적는 일은 여기서 하지 않는다 — 문구 화면을 나올 때 이미 했다
+        // (`syncOwnPromptPreferences`, `savedPromptPreferences` 주석).
         if let cachedLocalAudio, draft.playMode != .alarmOnly {
             merged.voiceSource = VoiceSource.localAudio.rawValue
             merged.localAudioUri = cachedLocalAudio.fileName
@@ -2539,7 +2692,7 @@ struct AlarmEditorSheet: View {
             // 한다 — 그 값이 참으로 남으면 편집기 판정과 옛 행 재바인딩
             // (`StockClipLanguageRebinder.rebindLiveGenerationRows`)이 이 알람을 아직
             // 안 옮긴 옛 행으로 오해한다.
-            let isStockClip = prepared.audioCacheKey.hasPrefix("stock_")
+            let isStockClip = prepared.audioCacheKey.hasPrefix(AudioCacheStore.stockCacheKeyPrefix)
             // ⚠ `server_tts` 로 쓰지 말 것. 안드로이드에서 그 값은 **'남에게서 받은 알람'**
             // 이라는 뜻이고, pull 경로(`RemoteAlarmMapper`)에서만 붙는다. 내가 편집기에서
             // 만든 것은 `tts_profile` 이다(2026-08-07 수정).
@@ -2566,8 +2719,7 @@ struct AlarmEditorSheet: View {
                 // !isActiveBucketAlarm())` 일 때만 null 로 두는 것과 같은 규약이다.
                 merged.voiceRandomContext = activePromptContext.rawValue
                 // 고른 테마를 **행에 적는다.** 캐시 파일이 사라져도 무엇을 골랐는지 남는다.
-                let category = voiceStudio.stockClips
-                    .first { $0.messageId == prepared.messageID }?.category?.nilIfBlank
+                let category = stockCategory(messageID: prepared.messageID)
                     ?? (editingAlarm?.bucketId).nilIfBlank
                 merged.bucketId = category
                 // ⚠ **그 테마의 클립을 전부 묶는다.** 하나만 들고 있으면 매일 같은 문구를
@@ -2616,12 +2768,24 @@ struct AlarmEditorSheet: View {
         // 안드로이드 `withResolvedWeatherVariant` 와 같은 자리다.
         await applyWeatherVariant(to: &merged, previous: editingAlarm)
 
+        // 무료 잠금 보관본(원래 유료 목소리)은 **목소리를 그대로 둔 저장**에서만 남긴다. 목소리·문구·
+        // 재생 방식을 바꿨으면 그 편집이 이긴다 — 남기면 재결제 때 복원이 사용자의 편집을 옛 유료
+        // 목소리로 덮는다(`AlarmEditDraft.carryOverNonEditableFields` 는 오디오를 준비하기 **전** 값으로
+        // 판정하므로 여기서 한 번 더 본다. billing-lifecycle.md 「목소리를 못 쓰게 되면」).
+        // 판정은 `DefaultVoiceSubstitute.saveKeepsLock` 하나 — 오디오 없이 잠긴 행에 같은 테마의 클립을
+        // 채운 것(방금 `prepareSelectedBucketClipIfNeeded` 가 한 일)은 편집으로 치지 않는다.
+        if let editingAlarm, editingAlarm.preLockVoice != nil,
+           !DefaultVoiceSubstitute.saveKeepsLock(saved: merged, editing: editingAlarm) {
+            merged.preLockVoice = nil
+            merged.preLockPlayMode = nil
+        }
+
         do {
             try LocalAlarmStore.validateDraft(merged)
         } catch {
             validationAlert = ValidationAlertContent(
-                title: "저장할 수 없어요",
-                message: AudioUserFacingError.message(for: error, fallback: "알람 설정을 확인해 주세요.")
+                title: String(localized: "저장할 수 없어요"),
+                message: AudioUserFacingError.message(for: error, fallback: String(localized: "알람 설정을 확인해 주세요."))
             )
             return
         }
@@ -2667,8 +2831,8 @@ struct AlarmEditorSheet: View {
         if let profileID = merged.voiceProfileId?.nilIfBlank,
            voiceStudio.isReplacementSettling(profileID) {
             voiceGateAlert = VoiceGateAlertContent(
-                title: "아직 준비 중이에요",
-                message: "바꾼 목소리를 정리하고 있어요. 잠시 후 다시 저장해 주세요.",
+                title: String(localized: "아직 준비 중이에요"),
+                message: String(localized: "바꾼 목소리를 정리하고 있어요. 잠시 후 다시 저장해 주세요."),
                 offersPlanActions: false
             )
             return false
@@ -2691,8 +2855,8 @@ struct AlarmEditorSheet: View {
                 store.deleteByID(merged.id)
             }
             validationAlert = ValidationAlertContent(
-                title: "예약할 수 없어요",
-                message: alarmKit.statusMessage ?? "알람 예약에 실패했어요."
+                title: String(localized: "예약할 수 없어요"),
+                message: alarmKit.statusMessage ?? String(localized: "알람 예약에 실패했어요.")
             )
             return false
         }
@@ -2705,8 +2869,8 @@ struct AlarmEditorSheet: View {
                 }
             }
             validationAlert = ValidationAlertContent(
-                title: "저장할 수 없어요",
-                message: remoteSync.statusMessage ?? "알람 삭제에 실패했어요"
+                title: String(localized: "저장할 수 없어요"),
+                message: remoteSync.statusMessage ?? String(localized: "알람 삭제에 실패했어요")
             )
             return false
         }
@@ -2823,9 +2987,9 @@ struct AlarmEditorSheet: View {
     /// `stock_<messageId>` 로 매니페스트를 되짚는다.
     private func selectedFreeBucketCategory(for record: LocalAlarmRecord) -> String? {
         if let saved = (record.bucketId).nilIfBlank { return saved }
-        guard let cacheKey = record.audioCacheKey, cacheKey.hasPrefix("stock_") else { return nil }
-        let messageID = String(cacheKey.dropFirst("stock_".count))
-        return voiceStudio.stockClips.first { $0.messageId == messageID }?.category?.nilIfBlank
+        let prefix = AudioCacheStore.stockCacheKeyPrefix
+        guard let cacheKey = record.audioCacheKey, cacheKey.hasPrefix(prefix) else { return nil }
+        return stockCategory(messageID: String(cacheKey.dropFirst(prefix.count)))
     }
 
     /// 중복 시각 교체 동의: 새 알람을 먼저 저장·예약한 뒤, 충돌 알람을 삭제한다.
@@ -2852,17 +3016,14 @@ struct AlarmEditorSheet: View {
     }
 
     private func duplicateAlarmMessage(_ content: DuplicateAlarmConfirmContent) -> String {
-        if let label = content.existingLabel, !label.isEmpty {
-            return "\(content.timeLabel)에 이미 '\(label)' 알람이 있어요.\n기존 알람을 새 알람으로 교체할까요?"
-        }
-        return "\(content.timeLabel)에 이미 알람이 있어요.\n기존 알람을 새 알람으로 교체할까요?"
+        return String(localized: "\(content.timeLabel) 알람을 새 알람으로 교체할까요?")
     }
 
     func validateFamilyAlarmTarget() -> FamilyGroupMember? {
         guard let recipient = selectedFamilyRecipient else {
             validationAlert = ValidationAlertContent(
-                title: "받을 사람이 없어요",
-                message: "상대가 내 알람 맞추기를 허용하면 여기에 표시돼요."
+                title: String(localized: "받을 사람이 없어요"),
+                message: String(localized: "상대가 내 알람 맞추기를 허용하면 여기에 표시돼요.")
             )
             return nil
         }
@@ -2886,8 +3047,8 @@ struct AlarmEditorSheet: View {
                 timeIntervalSince1970: Double(Self.earliestSelectableFamilyAlarmMillis(nowMillis: nowMillis)) / 1000
             )
             validationAlert = ValidationAlertContent(
-                title: "조금 더 뒤로 설정해 주세요",
-                message: "상대 알람은 \(Self.leadTimeFormatter.string(from: earliest)) 이후로 맞춰 주세요. 상대 기기에 전달될 시간이 조금 필요해요."
+                title: String(localized: "조금 더 뒤로 설정해 주세요"),
+                message: String(localized: "상대 알람은 \(Self.leadTimeFormatter.string(from: earliest)) 이후로 맞춰 주세요. 상대 기기에 전달될 시간이 조금 필요해요.")
             )
             return nil
         }
@@ -2899,8 +3060,8 @@ struct AlarmEditorSheet: View {
             nowMillis: nowMillis
         ) {
             validationAlert = ValidationAlertContent(
-                title: "받을 수 없는 시간이에요",
-                message: "상대가 이 시간에는 알람을 받지 않도록 해뒀어요."
+                title: String(localized: "받을 수 없는 시간이에요"),
+                message: String(localized: "상대가 이 시간에는 알람을 받지 않도록 해뒀어요.")
             )
             return nil
         }
@@ -2912,7 +3073,7 @@ struct AlarmEditorSheet: View {
         localVoiceSource: FamilyLocalVoiceUploadSource?
     ) async {
         guard let token = auth.session?.token else {
-            validationAlert = ValidationAlertContent(title: "로그인이 필요해요", message: "상대 알람은 로그인 후 사용할 수 있어요.")
+            validationAlert = ValidationAlertContent(title: String(localized: "로그인이 필요해요"), message: String(localized: "상대 알람은 로그인 후 사용할 수 있어요."))
             return
         }
         do {
@@ -2927,7 +3088,8 @@ struct AlarmEditorSheet: View {
                     recipientUserId: recipient.userId,
                     wakeAt: String(format: "%02d:%02d", draft.hour, draft.minute),
                     voiceUploadId: upload.id,
-                    label: (draft.label).nilIfBlank ?? "가족이 보낸 음성",
+                    // 기본 라벨은 계약값 그대로 — 받는 기기가 자기 언어로 바꿔 보여 준다.
+                    label: (draft.label).nilIfBlank ?? ReceivedVoiceTextDisplay.familyVoiceDefault,
                     dubTargetLanguage: nil,
                     repeatDays: RemoteAlarmMapper.repeatDays(fromMask: draft.repeatDaysMask)
                 )
@@ -2954,98 +3116,69 @@ struct AlarmEditorSheet: View {
                 )
                 _ = try await AlarmTalkAPI.shared.createAlarm(request, token: token)
             }
-            await remoteSync.refresh(session: auth.session, force: true)
-            await socialFeatures.refreshAll(session: auth.session, force: true)
+            // ⚠ **서버가 받았으면 곧바로 닫는다 — 새로고침을 기다리지 말 것**(2026-09-29,
+            //   `docs/spec/family-alarm.md` §1). 예전에는 여기서 알람 pull 과 이용권 새로고침을
+            //   **기다린 뒤에** 닫아, 저장을 누르고 편집기가 직렬 4~5 왕복 동안 멈춰 있었다.
+            //   보낸 알람은 이 기기에 행을 만들지 않으므로 pull 이 반영할 것이 없고, 보내기로
+            //   바뀌는 이용권 정보도 없다. 안드로이드는 처음부터 `onSuccess { onDone() }` 다.
             validationAlert = nil
             // 가족(상대) 알람 저장 성공 햅틱. self-alarm 경로의 finishScheduling 과 동일하게
             // 정확히 1회만 울리도록, 인라인 생성 호출은 triggerSuccessHaptic:false 로 둔다.
             UINotificationFeedbackGenerator().notificationOccurred(.success)
             onSchedulingDidFinish()
         } catch {
+            // 서버의 거절 이유(받지 않음·리드타임·설정 불가능 시간)는 공용 표가 말한다.
             validationAlert = ValidationAlertContent(
-                title: "상대 알람 설정에 실패했어요",
-                message: userFacingErrorMessage(
-                    error,
-                    fallback: "상대 알람 설정에 실패했어요."
+                title: String(localized: "상대 알람 설정에 실패했어요"),
+                message: APIErrorMessages.message(
+                    for: error,
+                    fallback: String(localized: "상대 알람 설정에 실패했어요.")
                 )
             )
         }
-    }
-
-    func handleLocalAudioModeChange(_ mode: AlarmLocalAudioInputMode) {
-        stopAllEditorPreviews()
-        // 알람 편집기에는 녹음뿐이다 — 파일 갈래는 없앴다(2026-08-11).
-        // 옛 행이 남긴 파일 선택 상태만 비운다.
-        do {
-            selectedLocalAudioURL = nil
-            selectedLocalAudioName = nil
-            selectedLocalAudioDurationMs = nil
-            localAudioCropStartMs = 0
-            localAudioCropEndMs = Int(AlarmAudioLimits.maxDurationMillis)
-        }
-        localAudioMode = mode
-        clearExistingLocalAudio = true
-        localAudioMessage = nil
     }
 
     func toggleLocalRecording() {
         stopAllEditorPreviews()
         if localRecorder.isRecording {
             localRecorder.stop()
-            localAudioMessage = "녹음을 저장했어요."
+            localAudioMessage = String(localized: "녹음을 저장했어요.")
             clearExistingLocalAudio = false
             return
         }
-        selectedLocalAudioURL = nil
-        selectedLocalAudioName = nil
-        selectedLocalAudioDurationMs = nil
         localRecorder.clearLatest()
         clearExistingLocalAudio = false
-        localAudioCropStartMs = 0
-        localAudioCropEndMs = Int(AlarmAudioLimits.maxDurationMillis)
         Task {
             do {
                 try await localRecorder.start()
-                localAudioMessage = "녹음 중…"
+                localAudioMessage = String(localized: "녹음 중…")
             } catch {
-                localAudioMessage = AudioUserFacingError.message(for: error, fallback: "녹음을 시작하지 못했어요.")
+                localAudioMessage = AudioUserFacingError.message(for: error, fallback: String(localized: "녹음을 시작하지 못했어요."))
             }
         }
     }
 
     func previewLocalAlarmAudio() {
-        if editorPreviewPlayer.isPlaying,
-           previewTarget == .selectedCrop || previewTarget == .cachedLocalAudio {
+        if editorPreviewPlayer.isPlaying, previewingLocalAudio {
             stopAllEditorPreviews()
             return
         }
-        // 항상 크롭 윈도우로 재생해 알람 구간만 들려준다(change 1). 녹음 클립은 start=0
-        // 이라 윈도우가 무해하다. file 모드는 preparedLocalAlarmAudioSource 가 이미
-        // 크롭 파일을 만들어 주므로 start=0, 전체 길이를 그대로 윈도우로 쓴다.
-        let startMs = localAudioCropStartMs
         Task {
             stopAllEditorPreviews()
             do {
-                if selectedLocalAudioURL == nil,
-                   localRecorder.latestRecordingURL == nil,
+                if localRecorder.latestRecordingURL == nil,
                    let url = existingLocalAudioURL() {
-                    // 기존 캐시 경로도 저장된 크롭 윈도우(start..start+limit)를 적용해
-                    // 알람과 동일 구간만 audition 한다.
-                    previewTarget = .cachedLocalAudio
-                    let stopAfter = max(0, localAudioCropEndMs - startMs)
-                    // 캐시 파일은 저장 시 이미 크롭 시작점부터 잘려 있으므로 파일 자체가
-                    // start 에서 시작한다. startMs 로 다시 seek 하면 이중 오프셋이 되어
-                    // (start 가 0 이 아닐 때) 구간이 밀리므로 startMs 를 0 으로 고정한다.
+                    // 저장된 녹음은 알람과 같은 구간(처음부터 최대 길이까지)만 들려준다.
+                    previewingLocalAudio = true
                     try editorPreviewPlayer.play(
                         url: url,
                         startMs: 0,
-                        stopAfterMs: stopAfter > 0 ? stopAfter : nil
+                        stopAfterMs: Int(AlarmAudioLimits.maxDurationMillis)
                     )
                 } else {
                     let prepared = try await preparedLocalAlarmAudioSource()
-                    previewTarget = .selectedCrop
-                    // preparedLocalAlarmAudioSource 가 크롭을 끝낸 파일을 주므로(또는 녹음
-                    // 전체) 0 부터 그 길이만큼만 재생한다.
+                    previewingLocalAudio = true
+                    // 방금 녹음한 것은 0 부터 알람에 쓸 길이만큼만 재생한다.
                     try editorPreviewPlayer.play(
                         url: prepared.url,
                         startMs: 0,
@@ -3054,7 +3187,7 @@ struct AlarmEditorSheet: View {
                 }
             } catch {
                 stopAllEditorPreviews()
-                localAudioMessage = AudioUserFacingError.message(for: error, fallback: "미리듣기를 재생하지 못했어요.")
+                localAudioMessage = AudioUserFacingError.message(for: error, fallback: String(localized: "미리듣기를 재생하지 못했어요."))
             }
         }
     }
@@ -3062,18 +3195,12 @@ struct AlarmEditorSheet: View {
     func clearLocalAlarmAudio() {
         stopAllEditorPreviews()
         localRecorder.clearLatest()
-        selectedLocalAudioURL = nil
-        selectedLocalAudioName = nil
-        selectedLocalAudioDurationMs = nil
         clearExistingLocalAudio = true
-        localAudioCropStartMs = 0
-        localAudioCropEndMs = Int(AlarmAudioLimits.maxDurationMillis)
-        localAudioMessage = "음성 오디오를 지웠어요."
+        localAudioMessage = String(localized: "음성 오디오를 지웠어요.")
     }
 
     func cachedLocalAudioForSave(existing: LocalAlarmRecord?) async throws -> CachedLocalAlarmAudio {
-        let hasNewSource = selectedLocalAudioURL != nil || localRecorder.latestRecordingURL != nil
-        if hasNewSource {
+        if localRecorder.latestRecordingURL != nil {
             let prepared = try await preparedLocalAlarmAudioSource()
             let data = try Data(contentsOf: prepared.url)
             let cacheKey = AudioCacheStore.computeCacheKey(data)
@@ -3110,24 +3237,15 @@ struct AlarmEditorSheet: View {
     }
 
     func preparedLocalAlarmAudioSource() async throws -> (url: URL, durationMs: Int) {
-        switch localAudioMode {
-        case .record:
-            guard let url = localRecorder.latestRecordingURL else {
-                throw LocalAlarmAudioError.missingSource
-            }
-            let durationMs = localRecorder.latestDurationMs ?? Int(localRecorder.elapsedSeconds * 1000)
-            guard durationMs >= 1_000 else { throw LocalAlarmAudioError.tooShort }
-            guard durationMs <= Int(AlarmAudioLimits.maxDurationMillis + AlarmAudioLimits.durationToleranceMillis) else {
-                throw LocalAlarmAudioError.tooLong
-            }
-            return (url, min(durationMs, Int(AlarmAudioLimits.maxDurationMillis)))
+        guard let url = localRecorder.latestRecordingURL else {
+            throw LocalAlarmAudioError.missingSource
         }
-    }
-
-    func localAudioUploadDisplayName(for url: URL) -> String {
-        // 알람 오디오는 녹음뿐이다 — 이름도 하나다.
-        _ = url
-        return "alarm-recording.m4a"
+        let durationMs = localRecorder.latestDurationMs ?? Int(localRecorder.elapsedSeconds * 1000)
+        guard durationMs >= 1_000 else { throw LocalAlarmAudioError.tooShort }
+        guard durationMs <= Int(AlarmAudioLimits.maxDurationMillis + AlarmAudioLimits.durationToleranceMillis) else {
+            throw LocalAlarmAudioError.tooLong
+        }
+        return (url, min(durationMs, Int(AlarmAudioLimits.maxDurationMillis)))
     }
 
     // MARK: - Error formatting
@@ -3135,17 +3253,17 @@ struct AlarmEditorSheet: View {
     func errorMessage(_ error: AlarmEditDraft.ValidationError) -> String {
         switch error {
         case .invalidHour:
-            return "시간 값이 올바르지 않아요. 0~23 사이여야 해요."
+            return String(localized: "시간 값이 올바르지 않아요. 0~23 사이여야 해요.")
         case .invalidMinute:
-            return "분 값이 올바르지 않아요. 0~59 사이여야 해요."
+            return String(localized: "분 값이 올바르지 않아요. 0~59 사이여야 해요.")
         case .invalidRepeatDaysMask:
-            return "반복 요일 값이 올바르지 않아요."
+            return String(localized: "반복 요일 값이 올바르지 않아요.")
         case .invalidSnoozeMinutes:
-            return "스누즈 간격은 1~30분 사이여야 해요."
+            return String(localized: "스누즈 간격은 1~30분 사이여야 해요.")
         case .invalidAlarmVolume:
-            return "알람 볼륨은 0~100% 사이여야 해요."
+            return String(localized: "알람 볼륨은 0~100% 사이여야 해요.")
         case .invalidVoiceVolume:
-            return "목소리 크기는 30~100% 사이여야 해요."
+            return String(localized: "목소리 크기는 30~100% 사이여야 해요.")
         }
     }
 }

@@ -2,7 +2,7 @@ import SwiftUI
 
 /// 알람이 쓸 목소리 하나를 고르는 시트.
 ///
-/// 안드로이드 `ui/editor/VoiceAudioCard.kt:525-547` 의 `WakerSelectionSheet`.
+/// 안드로이드 `ui/editor/VoiceAudioCard.kt:495-517` 의 `WakerSelectionSheet`.
 ///
 /// ⚠ **인라인 목록으로 되돌리지 말 것.** 편집기 본문에 목소리를 전부 펼치면, 목소리가
 /// 여럿인 사용자에게는 시간·반복보다 목소리 목록이 화면을 더 차지한다. 요약 행 하나가
@@ -51,7 +51,7 @@ struct VoiceSelectionSheet: View {
         // 껍데기(배경·모서리·드래그 핸들)는 `BottomSheetHost` 가 그린다.
         // 안쪽 구성은 `SelectionSheet` 와 같은 규칙 — 좌측 정렬 22pt Bold 제목 + 행 목록.
         VStack(alignment: .leading, spacing: BottomSheetTitle.titleToContentSpacing) {
-            BottomSheetTitle(text: "목소리 고르기")
+            BottomSheetTitle(text: String(localized: "목소리 고르기"))
 
             SheetScrollingContent {
                 // ⚠ **`LazyVStack` 으로 되돌리지 말 것.** 게으른 스택은 제안된 높이를 그대로 먹어서
@@ -134,7 +134,7 @@ struct VoiceSelectionSheet: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel(option.id == playingID ? "정지" : "들어보기")
+                .accessibilityLabel(option.id == playingID ? String(localized: "정지") : String(localized: "들어보기"))
             } else {
                 // 재생 버튼 자리를 비워도 폭을 유지해 다른 행과 제목 끝선이 어긋나지 않는다.
                 Color.clear.frame(width: 44, height: 44)

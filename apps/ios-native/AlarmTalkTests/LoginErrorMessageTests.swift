@@ -83,13 +83,13 @@ final class LoginErrorMessageTests: XCTestCase {
         XCTAssertEqual(message, APIErrorMessages.message(for: "RATE_LIMITED"))
     }
 
-    func test_표에_없는_코드는_한국어_서버문장을_쓴다() {
-        // 마지막 층은 그대로다 — 서버가 한국어로 말하면 그 말을 쓴다.
+    func test_표에_없는_코드는_화면_폴백을_쓴다() {
+        // 서버 문장은 언어와 무관하게 화면 폴백으로 바꾼다.
         let message = AuthViewModel.loginErrorMessage(
             for: APIError.server(status: 400, message: "요청을 확인해 주세요", errorCode: "AUTH_VALIDATION_FAILED")
         )
 
-        XCTAssertEqual(message, "요청을 확인해 주세요")
+        XCTAssertEqual(message, "로그인에 실패했어요")
     }
 
     func test_영어_서버메시지는_폴백으로_바꾼다() {

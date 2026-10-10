@@ -27,7 +27,6 @@ import StoreKit
 @MainActor
 final class SubscriptionManager: ObservableObject {
     @Published private(set) var products: [Product] = []
-    @Published private(set) var purchasedProductIDs: Set<String> = []
     @Published private(set) var currentTier: PlanTier = .free
 
     /// StoreKit 조회 세대. **나중에 시작한 조회가 이긴다**(2026-09-01 리뷰).
@@ -63,8 +62,7 @@ final class SubscriptionManager: ObservableObject {
                 //   문제를 못 고친다 — `routes/auth.ts` 의 기존 계정 갈래가 `userId = row.id`
                 //   로 **같은 비-UUID id 를 그대로 돌려주므로** 무한 루프로 보내는 안내가 된다.
                 //   고칠 수 있는 행동이 없으므로 사실만 말하고 문의로 보낸다.
-                return "이 계정은 결제 처리에 필요한 정보가 없어 결제를 시작할 수 없어요. "
-                    + "고객센터로 문의해 주시면 계정을 옮겨 드릴게요."
+                return String(localized: "이 계정은 결제 처리에 필요한 정보가 없어 결제를 시작할 수 없어요. 고객센터로 문의해 주시면 계정을 옮겨 드릴게요.")
             }
         }
     }
@@ -224,7 +222,7 @@ final class SubscriptionManager: ObservableObject {
             self.lastError = nil
             self.productFetchFailed = false
         } catch {
-            self.lastError = "제품 정보를 불러오지 못했어요. 잠시 후 다시 시도해 주세요."
+            self.lastError = String(localized: "제품 정보를 불러오지 못했어요. 잠시 후 다시 시도해 주세요.")
             self.productFetchFailed = true
         }
     }
@@ -238,10 +236,10 @@ final class SubscriptionManager: ObservableObject {
     /// 반환값으로 호출자가 UI 토스트/배너를 띄우면 된다.
     func purchase(_ plan: SubscriptionProduct) async -> PurchaseResult {
         guard let product = product(for: plan) else {
-            return .failure(reason: "제품 정보가 아직 준비되지 않았어요.")
+            return .failure(reason: String(localized: "제품 정보가 아직 준비되지 않았어요."))
         }
         guard !isPurchasing else {
-            return .failure(reason: "결제가 진행 중이에요.")
+            return .failure(reason: String(localized: "결제가 진행 중이에요."))
         }
         isPurchasing = true
         defer { isPurchasing = false }
@@ -301,7 +299,7 @@ final class SubscriptionManager: ObservableObject {
                     // 트랜잭션을 안 끝냈으므로 다음 실행에서 `Transaction.updates` 가
                     // 다시 물어다 주고 리스너가 재시도한다.
                     return .failure(
-                        reason: "결제는 완료됐지만 선물 코드 발급을 확인하지 못했어요. 앱을 다시 열면 자동으로 다시 시도해요."
+                        reason: String(localized: "결제는 완료됐지만 선물 코드 발급을 확인하지 못했어요. 앱을 다시 열면 자동으로 다시 시도해요.")
                     )
                 }
                 // ⚠ **구독도 서버가 확정해야 '완료' 다**(2026-09-19 운영 로그). 예전에는 확정이
@@ -312,7 +310,7 @@ final class SubscriptionManager: ObservableObject {
                 //   말하고, 복원으로 다시 붙일 길을 알려 준다.
                 guard outcome.confirmed else {
                     return .failure(
-                        reason: "결제는 됐지만 이용권을 아직 확인하지 못했어요. 잠시 후 '이전 구매 복원'을 눌러 주세요."
+                        reason: String(localized: "결제는 됐지만 이용권을 아직 확인하지 못했어요. 잠시 후 '이전 구매 복원'을 눌러 주세요.")
                     )
                 }
                 return .success(productID: plan.rawValue)
@@ -323,13 +321,13 @@ final class SubscriptionManager: ObservableObject {
                 // 결제는 나중에 `Transaction.updates` listener 로 들어온다.
                 return .pending
             @unknown default:
-                return .failure(reason: "결제 상태를 확인하지 못했어요. 잠시 후 다시 시도해 주세요.")
+                return .failure(reason: String(localized: "결제 상태를 확인하지 못했어요. 잠시 후 다시 시도해 주세요."))
             }
         } catch {
             return .failure(
                 reason: Self.userFacingPurchaseError(
                     error,
-                    fallback: "결제에 실패했어요. 잠시 후 다시 시도해 주세요."
+                    fallback: String(localized: "결제에 실패했어요. 잠시 후 다시 시도해 주세요.")
                 )
             )
         }
@@ -344,7 +342,7 @@ final class SubscriptionManager: ObservableObject {
     @discardableResult
     func restorePurchases() async -> RestoreResult {
         guard !isPurchasing else {
-            return .failure(reason: "결제가 진행 중이에요. 잠시 후 다시 시도해 주세요.")
+            return .failure(reason: String(localized: "결제가 진행 중이에요. 잠시 후 다시 시도해 주세요."))
         }
         isPurchasing = true
         defer { isPurchasing = false }
@@ -361,7 +359,7 @@ final class SubscriptionManager: ObservableObject {
             return .failure(
                 reason: Self.userFacingPurchaseError(
                     error,
-                    fallback: "이전 구매를 복원하지 못했어요. 잠시 후 다시 시도해 주세요."
+                    fallback: String(localized: "이전 구매를 복원하지 못했어요. 잠시 후 다시 시도해 주세요.")
                 )
             )
         }
@@ -386,8 +384,7 @@ final class SubscriptionManager: ObservableObject {
         return count
     }
 
-    /// `Transaction.currentEntitlements` 를 다시 읽어 `purchasedProductIDs` 와
-    /// `currentTier` 를 atomic 하게 갱신.
+    /// `Transaction.currentEntitlements` 를 다시 읽어 `currentTier` 를 atomic 하게 갱신.
     ///
     /// Apple 의 보장:
     ///   - 만료된 자동갱신 구독은 `currentEntitlements` 에서 제외된다.
@@ -407,7 +404,6 @@ final class SubscriptionManager: ObservableObject {
         // 모르는 것은 '무료' 도 '유료' 도 아니다 — 그냥 세지 않고, 로그인할 때 다시 읽는다.
         guard let currentAccount = authProvider()?.user.id.nilIfBlank.flatMap(UUID.init(uuidString:))
         else {
-            purchasedProductIDs = []
             currentTier = .free
             hasLoadedEntitlements = false
             entitlementOwner = nil
@@ -416,7 +412,6 @@ final class SubscriptionManager: ObservableObject {
         // ⚠ **주인이 바뀌었으면 순회 전에 비운다**(위 `entitlementOwner` 주석).
         // 비우는 방향은 안전하다 — 이 계정이 실제로 유료면 아래 순회가 곧 다시 채운다.
         if entitlementOwner != currentAccount {
-            purchasedProductIDs = []
             currentTier = .free
             hasLoadedEntitlements = false
             entitlementOwner = currentAccount
@@ -440,8 +435,8 @@ final class SubscriptionManager: ObservableObject {
         // ⚠ **같은 계정 안에서도 밀려난 조회는 버린다**(2026-09-01 리뷰 — 위 세대 주석).
         // ⚠ **공유 티켓으로 화면 상태까지 버리지 말 것**(2026-09-01 리뷰 2차 정정).
         // 배경 정적 경로는 **캐시만** 쓴다 — 그 티켓으로 여기까지 막으면, 콜드런치 폴백이
-        // 끼어든 것만으로 전경 순회가 `currentTier`·`purchasedProductIDs`·
-        // `hasLoadedEntitlements` 를 통째로 버려 화면이 옛 등급에 묶인다.
+        // 끼어든 것만으로 전경 순회가 `currentTier`·`hasLoadedEntitlements` 를 통째로 버려
+        // 화면이 옛 등급에 묶인다.
         // 인스턴스 세대는 화면 상태를, 공유 티켓은 캐시 쓰기만 가른다.
         guard generation == refreshGeneration else { return }
         // ⚠ **임자를 알 수 없는 활성 구매가 있고 내 것이 하나도 없으면 아무것도 확정하지
@@ -454,7 +449,6 @@ final class SubscriptionManager: ObservableObject {
             return
         }
         self.entitlementOwner = currentAccount
-        self.purchasedProductIDs = newSet
         self.currentTier = maxTier
         self.hasLoadedEntitlements = true
         // 캐시는 두 경로가 함께 쓰므로 여기만 공유 티켓으로 가른다(위 주석).
@@ -766,18 +760,14 @@ final class SubscriptionManager: ObservableObject {
             //   재설치·계정 갈아타기에서 실제로 나오고, 사용자가 할 수 있는 일이 있다:
             //   그 계정으로 로그인하면 된다. 안드로이드도 같은 코드에 같은 문구를 쓴다
             //   (`MainViewModelBillingActions.billingFailureMessage`).
-            let message = String(
-                localized: "이 결제는 다른 계정에 이미 연결돼 있어요. 그 계정으로 로그인해 주세요"
-            )
+            let message = String(localized: "이 결제는 다른 계정에 이미 연결돼 있어요. 그 계정으로 로그인해 주세요")
             if surfacesError { self.lastError = message }
             return ConfirmOutcome(confirmed: false, rejection: message)
         } catch APIError.server(let status, _, let code) where status == 403
             && code == "TRANSACTION_ACCOUNT_MISMATCH" {
             // 이 결제는 **살아 있는 다른 계정**이 산 것이다(서버가 주인 없는 표식은 이어받는다).
             // 재시도해도 결과가 같으니 무엇을 해야 하는지 말한다.
-            let message = String(
-                localized: "이 결제는 다른 계정으로 구매한 거예요. 그 계정으로 로그인해 주세요."
-            )
+            let message = String(localized: "이 결제는 다른 계정으로 구매한 거예요. 그 계정으로 로그인해 주세요.")
             if surfacesError { self.lastError = message }
             return ConfirmOutcome(confirmed: false, rejection: message)
         } catch APIError.server(let status, _, let code) where (400...499).contains(status)
@@ -790,7 +780,7 @@ final class SubscriptionManager: ObservableObject {
             return ConfirmOutcome(confirmed: false, rejection: message)
         } catch {
             if surfacesError {
-                self.lastError = "결제 확인 동기화에 실패했어요. 잠시 후 자동 재시도됩니다."
+                self.lastError = String(localized: "결제 확인 동기화에 실패했어요. 잠시 후 자동 재시도됩니다.")
             }
             return .notConfirmed
         }
@@ -815,9 +805,8 @@ final class SubscriptionManager: ObservableObject {
         return plan.isSubscription || serverConfirmed
     }
 
-    private static func userFacingPurchaseError(_ error: Error, fallback: String) -> String {
-        let message = error.localizedDescription.trimmingCharacters(in: .whitespacesAndNewlines)
-        return message.containsKorean ? message : fallback
+    nonisolated static func userFacingPurchaseError(_ error: Error, fallback: String) -> String {
+        userFacingErrorMessage(error, fallback: fallback)
     }
 }
 
@@ -839,9 +828,9 @@ enum PurchaseResult: Equatable {
     /// UI 토스트 메시지.
     var userMessage: String {
         switch self {
-        case .success:        return "결제가 완료되었어요."
-        case .userCancelled:  return "결제를 취소했어요."
-        case .pending:        return "결제 승인 대기 중이에요."
+        case .success:        return String(localized: "결제가 완료되었어요.")
+        case .userCancelled:  return String(localized: "결제를 취소했어요.")
+        case .pending:        return String(localized: "결제 승인 대기 중이에요.")
         case .failure(let r): return r
         }
     }
@@ -865,10 +854,13 @@ enum RestoreResult: Equatable {
     }
 
     /// UI 토스트 메시지 — 세 가지 결과를 명확히 구분해 안내한다.
-    var userMessage: String {
+    var userMessage: String { localizedUserMessage() }
+
+    func localizedUserMessage(bundle: Bundle = .main) -> String {
         switch self {
-        case .restored(let count): return "이전 구매 \(count)건을 복원했어요."
-        case .nothingToRestore:    return "복원할 구매 내역이 없어요."
+        case .restored(count: 1): return String(localized: "이전 구매 1건을 복원했어요.", bundle: bundle)
+        case .restored(let count): return String(localized: "이전 구매 \(Int(count))건을 복원했어요.", bundle: bundle)
+        case .nothingToRestore:    return String(localized: "복원할 구매 내역이 없어요.", bundle: bundle)
         case .failure(let r):      return r
         }
     }

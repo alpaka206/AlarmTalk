@@ -97,7 +97,7 @@ struct VoicePlayModePicker: View {
         }
         .buttonStyle(.plain)
         .opacity(locked && !selected ? 0.62 : 1)
-        .accessibilityLabel(Text("재생 방식 \(option.label)"))
+        .accessibilityLabel(Text("재생 방식 \(String(option.label))"))
         .accessibilityAddTraits(selected ? [.isSelected, .isButton] : .isButton)
     }
 

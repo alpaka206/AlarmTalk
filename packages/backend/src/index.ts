@@ -21,6 +21,12 @@ import { securityHeadersMiddleware } from './middleware/securityHeaders';
 import { sentryMiddleware } from './middleware/sentry';
 import { errorCodeMiddleware } from './middleware/errorCode';
 import { Toucan } from 'toucan-js';
+// MP3 인코더(LAME → WASM). 워커는 **미리 컴파일된 모듈만** 쓸 수 있어(실행 중 컴파일 금지) `.wasm` 을 정적으로
+// import 해 넘긴다 — wrangler 가 `WebAssembly.Module` 로 묶는다. 구운 소리(높이·음량)를 MP3 로 만든다(`lib/voice-pitch.ts`).
+// ⚠ 음량을 올리는 동안은 **모든 합성**이 굽는다 — 등록이 빠지면 TTS 가 전부 실패한다.
+// 테스트(Node)는 `vitest.config.ts` 의 alias 가 같은 파일을 컴파일해 넘긴다.
+import mp3EncoderWasm from 'wasm-media-encoders/wasm/mp3';
+import { registerMp3EncoderModule } from './lib/voice-pitch';
 import { getDB, initDB } from './lib/db';
 import { PERSONAL_PROMO_END_CRON } from './lib/personal-promo';
 import { timingSafeEqualStr } from './lib/timing-safe-equal';
@@ -48,6 +54,8 @@ import adminRoutes from './routes/admin';
 const USAGE_EVENT_RETENTION_DAYS = 365;
 /** cron 한 회차가 길어지지 않게 묶어 지운다. 남으면 다음 회차가 이어서 지운다. */
 const USAGE_EVENT_PRUNE_BATCH = 500;
+
+registerMp3EncoderModule(mp3EncoderWasm);
 
 const app = new Hono<AppEnv>();
 
@@ -205,8 +213,11 @@ app.post('/api/admin/seed-stock-clips', async (c) => {
 });
 
 // 앱 버전 정책 (인증 불필요) — 구버전 앱이 로그인 전에도 강제/권장 업데이트를 판단한다.
+// `weather_attribution` 은 지역 시트의 날씨 출처 줄을 켜는 신호다(`lib/weather-attribution.ts`) — 두 앱이 이미
+// 부르는 이 응답에 실어 새 요청 없이 받게 한다. 캐시하지 않으므로(noStore) 원천을 되돌리면 다음 확인부터 꺼진다.
 app.get('/api/app/version', noStore, async (c) => {
   const { appVersionPolicy } = await import('./lib/app-version');
+  const { WEATHER_ATTRIBUTION } = await import('./lib/weather-attribution');
   const platform = c.req.query('platform') || c.req.header('X-App-Platform') || 'android';
   const policy = appVersionPolicy(platform);
   return c.json({
@@ -214,6 +225,7 @@ app.get('/api/app/version', noStore, async (c) => {
     min_supported_version: policy.minSupported,
     latest_version: policy.latest,
     store_url: policy.storeUrl,
+    weather_attribution: WEATHER_ATTRIBUTION,
   });
 });
 
@@ -280,6 +292,112 @@ app.onError((err, c) => {
 
 // Cloudflare Workers Cron Trigger 진입점 — wrangler.toml [triggers] crons = ["*/5 * * * *", "* * * * *"].
 // 5분 틱이 본체이고, 1분 크론은 기간 한정 개인 플랜 종료 전용이다(아래 첫 분기).
+/**
+ * 1분 전용 크론의 **홀수 분**에 탈퇴 등급 통지 대기열을 비운다(`lib/pending-plan-notifications.ts`).
+ * 이 실행을 썼으면 `true` — 그 분의 개인 플랜 종료 작업은 건너뛴다(다음 짝수 분이 한다).
+ *
+ * - 실패도 `true` 다 — 이 실행의 예산을 얼마나 썼는지 모르므로 종료 작업에 넘기지 않는다. 잡은 행은
+ *   잠금 기한 뒤 다시 고른다. 단 **표가 없으면**(배포가 마이그레이션 126 보다 먼저 돈 창) 아무것도 안 썼으니
+ *   `false` 로 종료 작업에 넘긴다.
+ * - 경보는 **그 시각의 첫 비우기 분(UTC 1분)** 에만 올린다 — 1분마다 도는 실행이라 계속되는 실패를 매번
+ *   올리면 다른 사고가 묻힌다. ⚠ 종료 작업의 시간당 자리(`isPromoEndAlertSlot` — 0분)를 쓰지 말 것 —
+ *   비우기는 홀수 분에만 돌아 그 자리에 닿지 못하고, 경보가 **영영** 안 올라간다(리뷰).
+ * - 상한에서 버린 행(예고를 못 보낸 사람)은 드물고 되돌릴 수 없으니 **그때마다** 올린다.
+ */
+async function planNotificationDrainTurn(
+  db: ReturnType<typeof getDB>,
+  env: Env,
+  now: Date,
+  captureCron: (at: string, err: unknown) => void,
+): Promise<boolean> {
+  try {
+    const drain = await import('./lib/pending-plan-notifications');
+    if (!drain.isPlanNotificationDrainMinute(now)) return false;
+    return await drain.runPlanNotificationDrainTurn(db, env, {
+      onGaveUp: (users) =>
+        captureCron(
+          'scheduled.plan_notify_drain.gave_up',
+          new Error(`pending_plan_notifications: gave up on ${users} recipient(s)`),
+        ),
+    });
+  } catch (err) {
+    if (/no such table/i.test(String(err))) {
+      logStructured('error', { at: 'scheduled.plan_notify_drain', error: String(err) });
+      return false;
+    }
+    if (now.getUTCMinutes() === 1) captureCron('scheduled.plan_notify_drain', err);
+    else logStructured('error', { at: 'scheduled.plan_notify_drain', error: String(err) });
+    return true;
+  }
+}
+
+/**
+ * 이 틱이 어느 지역 날씨 슬롯의 **마지막 틱**인가(`hasWeatherSlotLastTick`) — 그러면 날씨 작업을 5분 틱의 맨 앞에서
+ * 돌린다(아래 `scheduled`). 모듈을 못 불렀으면 false — 원래 자리의 날씨 작업이 그 오류를 올린다.
+ */
+async function isWeatherSlotLastTick(now: Date): Promise<boolean> {
+  try {
+    const { hasWeatherSlotLastTick } = await import('./lib/weather-region-daily');
+    return hasWeatherSlotLastTick(now);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 지역별 날씨 미리 계산 한 차례(`lib/weather-region-daily.ts`, `docs/spec/voice-and-message.md` 5-1).
+ *
+ * 지역마다 **현지 슬롯**(21:00~21:59 저녁, 06:00~06:59 아침)에서만 일한다 — 슬롯이 열린 지역이 없으면 시간대 계산만
+ * 하고 DB·네트워크를 부르지 않는다. 도는 틱의 subrequest 는 조회 1 + 원천 fetch 최대 12(KMA 6·JMA 8·NWS 4) + 쓰기
+ * 1 = 최대 14 다(조회의 게이트웨이 재시도 2 와 경보는 따로). 오류는 여기서 올린다.
+ */
+async function weatherRegionDailyTick(
+  db: ReturnType<typeof getDB>,
+  env: Env,
+  now: Date,
+  captureCron: (at: string, err: unknown, tags?: Record<string, string>) => void,
+): Promise<void> {
+  try {
+    const { hasOpenWeatherSlot, refreshWeatherRegionDaily } = await import('./lib/weather-region-daily');
+    if (!hasOpenWeatherSlot(now)) return;
+    const { kmaServiceKey } = await import('./lib/weather-source');
+    const result = await refreshWeatherRegionDaily(db, now, {
+      kmaServiceKey: kmaServiceKey(env),
+      // 키가 없을 때 dev 는 info 로그만, 운영은 KR 슬롯마다 경보.
+      alertOnMissingKey: env.ENVIRONMENT !== 'development',
+      // ⚠ 경보는 **슬롯 마지막 틱**에 (나라, 시간대 묶음)마다 한 번 — 하루 슬롯 수만큼으로 묶인다.
+      onAlert: (alert) =>
+        captureCron(
+          'scheduled.weather_region_daily.slot_failed',
+          new Error(`weather slot failed: ${alert.country} ${alert.slot} ${alert.source} ${alert.reason}`),
+          {
+            country: alert.country,
+            slot: alert.slot,
+            source: alert.source,
+            reason: alert.reason,
+            done: `${alert.done}/${alert.total}`,
+          },
+        ),
+    });
+    if (result.due > 0 || result.alerts.length > 0) {
+      logStructured('info', {
+        at: 'scheduled.weather_region_daily',
+        open: result.open,
+        due: result.due,
+        attempted: result.attempted,
+        stored: result.stored,
+        approximated: result.approximated,
+        failed: result.failures.length,
+        deferred: result.deferred,
+        budgetExhausted: result.budgetExhausted,
+        missingTable: result.missingTable,
+      });
+    }
+  } catch (err) {
+    captureCron('scheduled.weather_region_daily', err);
+  }
+}
+
 async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
   // 읽기 재시도는 `getDB` 가 두른다(`withTransientReadRetry`) — 여기서 또 감싸면 3×3 회가 된다.
   // 실패한 유지보수 쓰기는 다음 틱에 재개되므로 그대로 둔다.
@@ -323,28 +441,46 @@ async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext)
   // 이 실행은 **이 일만** 한다 — 실행마다 subrequest(~50)를 따로 받는 것이 전용 크론을 둔 이유다
   // (`lib/personal-promo-end.ts`). 끝 전이거나 스위치가 꺼져 있으면 DB 를 부르지 않고 끝난다.
   if (event.cron === PERSONAL_PROMO_END_CRON) {
-    try {
-      const { runPersonalPromoEnd } = await import('./lib/personal-promo-end');
-      await runPersonalPromoEnd(db, env, now, {
-        role: 'dedicated',
-        hooks: {
-          onError: (stage, err, tags) =>
-            captureCron(`scheduled.personal_promo_end.${stage}`, err, tags),
-        },
-      });
-    } catch (err) {
-      // ⚠ **이 실행은 1분마다 돈다**(Codex #803) — DB 장애처럼 계속되는 실패를 매번 Sentry 로 올리면 하루
-      // 1,440건이 되어 다른 사고가 묻힌다. 로그는 매번 남기고, 경보는 단계별 경보와 같은 시간당 자리
-      // (`isPromoEndAlertSlot`)에서만 올린다. 모듈을 못 불렀으면(배포 사고) 그대로 올린다.
-      const alertSlot = await import('./lib/personal-promo-end')
-        .then((module) => module.isPromoEndAlertSlot(now))
-        .catch(() => true);
-      // `captureCron` 도 같은 줄을 로그로 남긴다 — 경보 자리가 아니면 로그만.
-      if (alertSlot) captureCron('scheduled.personal_promo_end', err);
-      else logStructured('error', { at: 'scheduled.personal_promo_end', error: String(err) });
+    // ── 탈퇴 등급 통지 대기열(홀수 분, 대기 행이 있을 때만 이 실행을 통째로 쓴다) ──────────────
+    // 비우기는 **자기 예산을 통째로 가진 실행**에서만 한다 — 5분 틱 끝에서 남은 예산을 나눠 쓰면
+    // 시도 횟수·재시도·처리량이 어떻게 짜도 어긋났다(코덱스 #841, `lib/pending-plan-notifications.ts`).
+    // 대기열이 비어 있으면(거의 언제나) 조회 한 번만 하고 아래 개인 플랜 종료 작업이 이어 쓴다 —
+    // 그 작업의 예산(45)은 그대로 들어간다(~50 중 여유 안). 짝수 분은 늘 종료 작업 차례다.
+    const tookDrainTurn = await planNotificationDrainTurn(db, env, now, captureCron);
+    if (!tookDrainTurn) {
+      try {
+        const { runPersonalPromoEnd } = await import('./lib/personal-promo-end');
+        await runPersonalPromoEnd(db, env, now, {
+          role: 'dedicated',
+          hooks: {
+            onError: (stage, err, tags) =>
+              captureCron(`scheduled.personal_promo_end.${stage}`, err, tags),
+          },
+        });
+      } catch (err) {
+        // ⚠ **이 실행은 1분마다 돈다**(Codex #803) — DB 장애처럼 계속되는 실패를 매번 Sentry 로 올리면 하루
+        // 1,440건이 되어 다른 사고가 묻힌다. 로그는 매번 남기고, 경보는 단계별 경보와 같은 시간당 자리
+        // (`isPromoEndAlertSlot`)에서만 올린다. 모듈을 못 불렀으면(배포 사고) 그대로 올린다.
+        const alertSlot = await import('./lib/personal-promo-end')
+          .then((module) => module.isPromoEndAlertSlot(now))
+          .catch(() => true);
+        // `captureCron` 도 같은 줄을 로그로 남긴다 — 경보 자리가 아니면 로그만.
+        if (alertSlot) captureCron('scheduled.personal_promo_end', err);
+        else logStructured('error', { at: 'scheduled.personal_promo_end', error: String(err) });
+      }
     }
     return;
   }
+
+  // ── 날씨 슬롯의 **마지막 틱**이면 날씨를 맨 앞에서 ───────────────────────────────────────────
+  // 마지막 틱(현지 분 ≥ 55) 뒤에는 그 슬롯의 틱이 없어 판정·경보(`slot_failed`)가 여기서만 나간다. 경보(Sentry)도
+  // subrequest 하나라, 아래 작업들이 이 실행의 한도(~50)를 먼저 다 쓰면 판정을 해도 **언제나** 닿지 않는다(코덱스
+  // #846). 맨 앞이면 날씨 작업의 최대(조회 1 + 게이트웨이 재시도 2 + fetch 12 + 쓰기 1 + 경보 몇 건)가 한도에 닿을 수
+  // 없다. 대가로 아래 작업들은 날씨가 쓴 만큼 적은 예산으로 돌고, 한도에 걸리면 각자의 원래 규칙대로다(대개 다음
+  // 틱이 잇는다 — 붐비는 틱이면 전부터 있던 위험이고, 이 순서가 되는 틱은 하루 13개다). 날씨 슬롯에는 마지막 틱
+  // 다음이 없다. 그 밖의 틱은 원래 자리(계정 파기 뒤, 클론 드레인 앞)다.
+  const weatherFirst = await isWeatherSlotLastTick(now);
+  if (weatherFirst) await weatherRegionDailyTick(db, env, now, captureCron);
 
   // 외부 자원(ElevenLabs 클론 / R2 오디오) 지연 삭제 큐 드레인 + TTL 정리.
   try {
@@ -456,6 +592,8 @@ async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext)
     });
     const revokedTargets: RevokedRecipientTarget[] = [];
     const voiceAccessRevokedUserIds: string[] = [];
+    // (파기된 주인의 그룹이 해체돼 등급이 바뀐 멤버들은 여기서 모으지 않는다 — 파기 트랜잭션이
+    //  통지 대기열에 직접 적고, 아래 finally 가 그 대기열을 비운다.)
     // **이미 커밋된 파기는 반드시 알린다.** 배치 뒤쪽 계정에서 던져도 앞 계정의 파기는
     // 이미 커밋돼 되돌아가지 않는다 — 그 수신자들에게 안 알리면 탈퇴자의 목소리를 폴백
     // 주기만큼 더 들고 있게 된다. 그래서 발송은 finally 에 둔다(모아 보내는 건 유지 —
@@ -502,9 +640,18 @@ async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext)
         logStructured('info', { at: 'scheduled.account_purge', purged: due.rows.length });
       }
     } finally {
+      // (해체로 등급이 바뀐 멤버들의 통지는 여기서 보내지 않는다 — 파기 트랜잭션이 대기열에 적고,
+      //  1분 전용 크론의 홀수 분이 자기 예산으로 비운다. 이 틱의 남은 예산을 나눠 쓰면 잘린다.)
+      // 기기가 없어 비우기가 꺼내지 않는 행 중 더는 소용없어진 것(지울 목소리도 없음)만 정리한다 —
+      // 한 줄이고 실패해도 다음 틱이 한다.
+      try {
+        const { prunePendingPlanNotifications } = await import('./lib/pending-plan-notifications');
+        await prunePendingPlanNotifications(db, now);
+      } catch (pruneErr) {
+        captureCron('scheduled.plan_notify_prune', pruneErr);
+      }
       // 파기된 계정의 목소리를 들고 있는 기기들에 알린다 — 받은 알람은 pull 신호로,
-      // 본인 알람·미동기화 알람은 접근권 재확인으로. **여기서 던지면 안 된다** —
-      // 원래 파기 실패를 이 실패가 덮어써 바깥 catch 가 엉뚱한 걸 기록한다.
+      // 본인 알람·미동기화 알람은 접근권 재확인으로.
       try {
         const { notifyDowngradedAlarms } = await import('./lib/fcm');
         await notifyDowngradedAlarms(db, env, revokedTargets, voiceAccessRevokedUserIds);
@@ -522,6 +669,11 @@ async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext)
   // 시점의 sendFamilyAlarmPush(data-only)로 처리하고, 발사 자체는 로컬에 맡긴다.
   // (push 제거 후 남아 있던 '발사 대상 스캔+로그' 블록도 정리 — 소비자 없는 알람 테이블 풀스캔이
   //  틱마다 Turso row-read 만 소모했다.)
+
+  // 지역별 날씨 미리 계산(`weatherRegionDailyTick`, 스펙 5-1). 클론 드레인(아래)**보다 먼저** 둔다: 그쪽은
+  // subrequest 가 모자라면 스스로 멈추고 다음 틱에 잇지만, 여기는 슬롯이 닫히면 다음 슬롯(12시간 뒤)까지 기다린다.
+  // 슬롯의 마지막 틱이면 이미 맨 앞에서 돌았다(위 `weatherFirst`).
+  if (!weatherFirst) await weatherRegionDailyTick(db, env, now, captureCron);
 
   // ⚠⚠ **기본(시스템) 목소리 스톡 클립 드레인은 껐다**(2026-09-03 리뷰 15차).
   //

@@ -22,23 +22,14 @@ protocol AuthAPIProviding: AnyObject, Sendable {
 extension AlarmTalkAPI: AuthAPIProviding {}
 
 /// Apple 자격 증명 상태를 조회하는 의존성. 단위 테스트에서 mock 가능.
-/// 실제 구현은 `ASAuthorizationAppleIDProvider.getCredentialState(forUserID:)` 를 호출.
+/// 실제 구현은 `ASAuthorizationAppleIDProvider.credentialState(forUserID:)`(SDK 의 async 판)를 호출.
 protocol AppleCredentialStateProviding: Sendable {
     func credentialState(forUserID userID: String) async throws -> ASAuthorizationAppleIDProvider.CredentialState
 }
 
 struct LiveAppleCredentialStateProvider: AppleCredentialStateProviding {
     func credentialState(forUserID userID: String) async throws -> ASAuthorizationAppleIDProvider.CredentialState {
-        let provider = ASAuthorizationAppleIDProvider()
-        return try await withCheckedThrowingContinuation { continuation in
-            provider.getCredentialState(forUserID: userID) { state, error in
-                if let error {
-                    continuation.resume(throwing: error)
-                } else {
-                    continuation.resume(returning: state)
-                }
-            }
-        }
+        try await ASAuthorizationAppleIDProvider().credentialState(forUserID: userID)
     }
 }
 
@@ -178,7 +169,7 @@ final class AuthViewModel: ObservableObject {
         }
         // 화면이 맡지 않은 코드는 **공용 표**가 받는다 — 안드로이드
         // `ui/main/MainViewModelAuthActions.kt` 의 로그인 갈래와 같은 층 순서다
-        // (화면 전용 → 공용 표 → 서버 문장/폴백). 로그인은 `authRateLimitMiddleware`
+        // (화면 전용 → 공용 표 → 화면 폴백). 로그인은 `authRateLimitMiddleware`
         // 뒤에 있어 `RATE_LIMITED` 가 실제로 온다 — 표가 없으면 그 429 가
         // "로그인에 실패했어요" 로 읽혀 사용자가 계속 다시 시도한다.
         return APIErrorMessages.message(for: code)
@@ -243,6 +234,42 @@ final class AuthViewModel: ObservableObject {
     /// 않게. 전경 무료 잠금의 오프라인 차단 갈래(`PaidVoiceGate.freePlanLockMayApply`)가 기다린다.
     @Published private(set) var planAnsweredEntry = 0
 
+    /// 계정 응답(`/auth/me`·로그인·가입)을 세션에 적을 때마다 하나씩 오른다 — **값이 같아도.**
+    ///
+    /// 계정 설정 받아 적기(`AlarmTalkApp` 의 `accountPromptSettingsKey`)의 축이다. 설정 값만 축으로 두면,
+    /// 이 기기의 변경을 올리다 실패한 뒤 서버가 **같은 옛 값**을 다시 줄 때 다시 돌지 않아 밀린 변경이 앱을
+    /// 다시 띄울 때까지 올라가지 않는다(Codex #837). 받아 적기는 멱등이라 몇 번 돌아도 된다.
+    /// 안드로이드는 세션 저장소의 응답 순번(`AuthSession.accountAnswerSeq` → `accountSettingsReceipt`)이 같은 일을 한다.
+    /// 설정 화면도 같은 축을 본다(`SettingsView.PromptObservation`).
+    @Published private(set) var accountAnswerRevision = 0
+
+    /// 계정 설정(지역·사주) 올리기가 **끝났을 때** 이미 떠 있던 계정 요청의 마지막 순번. 그 이하의 `/auth/me` 응답은
+    /// 올리기 전의 설정을 읽었을 수 있어 **설정만** 지금 세션의 값을 지킨다(Codex #837) — 올리기가 끝나 '안 올라간
+    /// 변경' 표시를 내린 뒤라, 그 옛 값을 쓰면 받아 적기가 방금 고른 지역을 되돌린다. 안드로이드
+    /// `MainViewModel.promptSettingsAnswerFence`·`fencedAccountSettings` 와 같다.
+    private var promptSettingsAnswerFence = 0
+
+    /// 앞 올리기가 도는 사이(`isBusy`) 들어와 받지 못한 계정 설정 올리기가 있었다(Codex #837). 앞 올리기가 끝나면
+    /// 밀린 표시를 보고 **한 번 더** 올린다(`retryPendingPromptSettings`) — 안 그러면 그 변경은 다음 계정 응답까지
+    /// 기기에만 남는다(그 사이 확인 조회가 부르는 재시도도 같은 `isBusy` 에 막힌다). 안드로이드는 올리기 줄
+    /// (`PromptSettingsUploadQueue`)이 같은 일을 한다.
+    private var promptSettingsRetryPending = false
+
+    /// **로그인 세션의 번호** — 세션이 끝나거나(`signOut`) 새로 시작될 때(`adoptSignedInSession`)만 오른다.
+    ///
+    /// 오래 걸린 요청이 응답을 적기 직전에 "내가 보낸 그 세션이 아직인가" 를 가른다(Codex #837 11차). 계정 id 로는
+    /// 로그아웃 뒤 **같은 계정**으로 다시 들어온 것을 못 가르고, 토큰으로는 같은 세션 안의 rolling refresh 를 세션
+    /// 전환으로 잘못 읽는다. 안드로이드 `AuthSessionStore.sessionGeneration` 과 같은 자리다.
+    private var sessionRevision: UInt = 0
+
+    /// **이 계정을 떠나기 시작했다**(명시적 로그아웃·탈퇴). 세션 번호를 곧바로 올려, 떠 있던 계정 설정 올리기의
+    /// 응답이 떠나는 계정의 세션·기기 값에 다시 적히지 않게 한다(`updateProfile` 의 `requestSessionRevision`).
+    /// ⚠ `signOut` 은 알람 정리를 기다린 **뒤에야** 불린다 — 거기서만 올리면 그 사이(최대 수 초) 도착한 응답이
+    /// 통과한다. 안드로이드는 세션을 먼저 비우고(`clear` → 세대) 기기 값을 나중에 지워 같은 창이 없다.
+    private func beginLeavingAccount() {
+        sessionRevision &+= 1
+    }
+
     /// 계정 요청 하나의 표 — `/auth/me`·로그인을 **보내기 직전에** 뜬다(`beginAccountRequest`).
     /// 안드로이드 `AccountRequest`(`ui/billing/PersonalPromoLedger.kt`)와 같은 모양이다.
     struct AccountRequest: Equatable {
@@ -303,6 +330,7 @@ final class AuthViewModel: ObservableObject {
     /// (도착한 진입이 보낸 진입과 같으면 그 사이 백그라운드를 거치지 않았다).
     private func recordAccountAnswer(_ request: AccountRequest) {
         if request.seq > accountAnswerSeq { accountAnswerSeq = request.seq }
+        accountAnswerRevision &+= 1
         noteEntryOutcome(request, .answered)
         if let entry = entryOfArrival(request) { planAnsweredEntry = entry }
     }
@@ -558,14 +586,14 @@ final class AuthViewModel: ObservableObject {
 
     func handleAppleAuthorization(_ authorization: ASAuthorization, rawNonce: String?) async {
         guard let credential = authorization.credential as? ASAuthorizationAppleIDCredential else {
-            statusMessage = "Apple 로그인 정보를 확인하지 못했어요."
+            statusMessage = String(localized: "Apple 로그인 정보를 확인하지 못했어요.")
             return
         }
         guard
             let tokenData = credential.identityToken,
             let idToken = String(data: tokenData, encoding: .utf8)
         else {
-            statusMessage = "Apple identity token을 받지 못했어요."
+            statusMessage = String(localized: "Apple identity token을 받지 못했어요.")
             return
         }
 
@@ -587,7 +615,7 @@ final class AuthViewModel: ObservableObject {
     }
 
     func handleAppleAuthorizationFailure(_ error: Error) {
-        failStatus(userFacingErrorMessage(error, fallback: "Apple 로그인에 실패했어요. 다시 시도해 주세요."))
+        failStatus(userFacingErrorMessage(error, fallback: String(localized: "Apple 로그인에 실패했어요. 다시 시도해 주세요.")))
     }
 
     private func performLoginWithApple(
@@ -615,37 +643,14 @@ final class AuthViewModel: ObservableObject {
                let hint = appleUserIdHint, !hint.isEmpty {
                 nextSession.user.appleUserId = hint
             }
-            // ⚠ **세션을 공개하기 전에 그 계정의 옛 행을 확정한다**(Codex #699 P2).
-            // `persistSession` 이 먼저 돌면 다른 화면 태스크(무료 플랜 목소리 잠금 등)가
-            // 곧바로 깨어나, A 의 **소유자 미기록** 행을 B 것으로 보고 강등·재예약한다.
-            // ⚠ **내리기 전에 그 계정의 옛 행을 확정한다**(Codex #699 P1). 콜드 스타트에서
-            // A 가 자동 401 로 끊긴 뒤 저장소가 로드되기 전에 B 가 로그인하면, 이 표시가
-            // **A 의 소유자 미기록 행이 A 것이라는 유일한 증거**다. 그냥 지우면 로드 완료
-            // 후의 재시도(`AlarmTalkApp`)가 "세션이 있으니 건너뛴다" 로 빠져, A 의 행이
-            // B 것으로 노출되고 **B 가 나중에 로그아웃할 때 영구히 꺼진다.**
-            // ⚠ **새기지 못했으면 표시를 남긴다**(Codex #699 P1). 저장소 로드가 상한(3초)을
-            // 넘기면 위 호출은 아무것도 못 새기고 돌아오는데, 그때 표시까지 지우면 로드 완료
-            // 후의 재시도는 "세션이 있으니 건너뛴다" 로 빠진다 — A 의 옛 행이 임자 없이 남아
-            // B 것으로 노출되고, **B 가 나중에 로그아웃할 때 영구히 꺼진다.**
-            // ⚠ **다시 로그인했으면 그 계정의 미완 로그아웃은 무효다**(Codex #699 P1).
-            // 남겨 두면 진행 중이던 뒷정리가 `/auth/logout` 으로 `token_epoch` 를 올려
-            // **방금 발급받은 세션까지 죽인다**(그 엔드포인트는 계정 전체에 걸린다).
-            PendingSignOutStore.clear(nextSession.user.id)
-            if await claimAlarmsForExpiredOwnerBeforeSignIn() {
-                // 로그인 확정 — 자동 만료 표시를 내린다(`SessionExpiryStore` 주석).
-                SessionExpiryStore.clear()
-            }
-            // 확정이 끝난 뒤에 세션을 공개한다.
-            persistSession(nextSession)
             // 로그인 응답의 user 도 계정 응답이다(plan·기간 한정 개인 플랜이 실려 온다).
-            recordAccountAnswer(accountRequest)
-            lastNetworkError = nil
+            await adoptSignedInSession(nextSession, accountRequest: accountRequest)
             // 탈퇴 유예 상태 점검 — 유예 중인 계정이 다시 로그인하면 복구 화면을 띄운다.
             await refreshUser()
             // 필수 약관 미동의면 동의 화면으로 게이팅.
             await checkConsentStatus()
         } catch {
-            failStatus(userFacingErrorMessage(error, fallback: "Apple 로그인에 실패했어요. 다시 시도해 주세요."))
+            failStatus(userFacingErrorMessage(error, fallback: String(localized: "Apple 로그인에 실패했어요. 다시 시도해 주세요.")))
         }
     }
 
@@ -686,13 +691,13 @@ final class AuthViewModel: ObservableObject {
         do {
             let response = try await AlarmTalkAPI.shared.verifyEmailCode(email: email, code: code)
             if response.verified == false {
-                statusMessage = "인증 코드가 일치하지 않아요."
+                statusMessage = String(localized: "인증 코드가 일치하지 않아요.")
                 return false
             }
-            statusMessage = "이메일 인증이 완료됐어요."
+            statusMessage = String(localized: "이메일 인증이 완료됐어요.")
             return true
         } catch {
-            failStatus(userFacingErrorMessage(error, fallback: "인증 코드가 맞지 않아요"))
+            failStatus(userFacingErrorMessage(error, fallback: String(localized: "인증 코드가 맞지 않아요")))
             return false
         }
     }
@@ -705,31 +710,8 @@ final class AuthViewModel: ObservableObject {
             // 보낸 진입·순번을 응답까지 들고 간다(`recordAccountAnswer`).
             let accountRequest = beginAccountRequest()
             let nextSession = try await AlarmTalkAPI.shared.loginWithEmail(email: email, password: password)
-            // ⚠ **세션을 공개하기 전에 그 계정의 옛 행을 확정한다**(Codex #699 P2).
-            // `persistSession` 이 먼저 돌면 다른 화면 태스크(무료 플랜 목소리 잠금 등)가
-            // 곧바로 깨어나, A 의 **소유자 미기록** 행을 B 것으로 보고 강등·재예약한다.
-            // ⚠ **내리기 전에 그 계정의 옛 행을 확정한다**(Codex #699 P1). 콜드 스타트에서
-            // A 가 자동 401 로 끊긴 뒤 저장소가 로드되기 전에 B 가 로그인하면, 이 표시가
-            // **A 의 소유자 미기록 행이 A 것이라는 유일한 증거**다. 그냥 지우면 로드 완료
-            // 후의 재시도(`AlarmTalkApp`)가 "세션이 있으니 건너뛴다" 로 빠져, A 의 행이
-            // B 것으로 노출되고 **B 가 나중에 로그아웃할 때 영구히 꺼진다.**
-            // ⚠ **새기지 못했으면 표시를 남긴다**(Codex #699 P1). 저장소 로드가 상한(3초)을
-            // 넘기면 위 호출은 아무것도 못 새기고 돌아오는데, 그때 표시까지 지우면 로드 완료
-            // 후의 재시도는 "세션이 있으니 건너뛴다" 로 빠진다 — A 의 옛 행이 임자 없이 남아
-            // B 것으로 노출되고, **B 가 나중에 로그아웃할 때 영구히 꺼진다.**
-            // ⚠ **다시 로그인했으면 그 계정의 미완 로그아웃은 무효다**(Codex #699 P1).
-            // 남겨 두면 진행 중이던 뒷정리가 `/auth/logout` 으로 `token_epoch` 를 올려
-            // **방금 발급받은 세션까지 죽인다**(그 엔드포인트는 계정 전체에 걸린다).
-            PendingSignOutStore.clear(nextSession.user.id)
-            if await claimAlarmsForExpiredOwnerBeforeSignIn() {
-                // 로그인 확정 — 자동 만료 표시를 내린다(`SessionExpiryStore` 주석).
-                SessionExpiryStore.clear()
-            }
-            // 확정이 끝난 뒤에 세션을 공개한다.
-            persistSession(nextSession)
             // 로그인 응답의 user 도 계정 응답이다(plan·기간 한정 개인 플랜이 실려 온다).
-            recordAccountAnswer(accountRequest)
-            lastNetworkError = nil
+            await adoptSignedInSession(nextSession, accountRequest: accountRequest)
             // 탈퇴 유예 상태 점검 — 유예 중인 계정이 다시 로그인하면 복구 화면을 띄운다.
             await refreshUser()
             // 필수 약관 미동의면 동의 화면으로 게이팅.
@@ -761,36 +743,13 @@ final class AuthViewModel: ObservableObject {
                 name: name,
                 verificationCode: verificationCode
             )
-            // ⚠ **세션을 공개하기 전에 그 계정의 옛 행을 확정한다**(Codex #699 P2).
-            // `persistSession` 이 먼저 돌면 다른 화면 태스크(무료 플랜 목소리 잠금 등)가
-            // 곧바로 깨어나, A 의 **소유자 미기록** 행을 B 것으로 보고 강등·재예약한다.
-            // ⚠ **내리기 전에 그 계정의 옛 행을 확정한다**(Codex #699 P1). 콜드 스타트에서
-            // A 가 자동 401 로 끊긴 뒤 저장소가 로드되기 전에 B 가 로그인하면, 이 표시가
-            // **A 의 소유자 미기록 행이 A 것이라는 유일한 증거**다. 그냥 지우면 로드 완료
-            // 후의 재시도(`AlarmTalkApp`)가 "세션이 있으니 건너뛴다" 로 빠져, A 의 행이
-            // B 것으로 노출되고 **B 가 나중에 로그아웃할 때 영구히 꺼진다.**
-            // ⚠ **새기지 못했으면 표시를 남긴다**(Codex #699 P1). 저장소 로드가 상한(3초)을
-            // 넘기면 위 호출은 아무것도 못 새기고 돌아오는데, 그때 표시까지 지우면 로드 완료
-            // 후의 재시도는 "세션이 있으니 건너뛴다" 로 빠진다 — A 의 옛 행이 임자 없이 남아
-            // B 것으로 노출되고, **B 가 나중에 로그아웃할 때 영구히 꺼진다.**
-            // ⚠ **다시 로그인했으면 그 계정의 미완 로그아웃은 무효다**(Codex #699 P1).
-            // 남겨 두면 진행 중이던 뒷정리가 `/auth/logout` 으로 `token_epoch` 를 올려
-            // **방금 발급받은 세션까지 죽인다**(그 엔드포인트는 계정 전체에 걸린다).
-            PendingSignOutStore.clear(nextSession.user.id)
-            if await claimAlarmsForExpiredOwnerBeforeSignIn() {
-                // 로그인 확정 — 자동 만료 표시를 내린다(`SessionExpiryStore` 주석).
-                SessionExpiryStore.clear()
-            }
-            // 확정이 끝난 뒤에 세션을 공개한다.
-            persistSession(nextSession)
             // 가입 응답이 곧 서버 값이다 — 가입 경로는 `/auth/me` 를 따로 부르지 않는다.
-            recordAccountAnswer(accountRequest)
-            statusMessage = "환영해요! 계정이 만들어졌어요."
-            lastNetworkError = nil
+            await adoptSignedInSession(nextSession, accountRequest: accountRequest)
+            statusMessage = String(localized: "환영해요! 계정이 만들어졌어요.")
             // 신규 가입자는 필수 약관 동의가 필요 — 동의 화면으로 게이팅.
             await checkConsentStatus()
         } catch {
-            failStatus(userFacingErrorMessage(error, fallback: "회원가입에 실패했어요"))
+            failStatus(userFacingErrorMessage(error, fallback: String(localized: "회원가입에 실패했어요")))
         }
     }
 
@@ -800,7 +759,7 @@ final class AuthViewModel: ObservableObject {
     /// 계정에만 발송) 응답은 항상 성공이다. 성공 시 `passwordResetCodeSentTo` 를 채워 UI 가
     /// 다음 단계(코드 + 새 비밀번호)를 노출한다. Android `MainViewModel.requestPasswordReset`.
     func requestPasswordReset(email: String) async {
-        let normalized = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let normalized = AuthEmailFormat.normalize(email)
         guard !isBusy, !normalized.isEmpty else { return }
         isBusy = true
         defer { isBusy = false }
@@ -808,9 +767,9 @@ final class AuthViewModel: ObservableObject {
         do {
             _ = try await AlarmTalkAPI.shared.requestPasswordReset(email: normalized)
             passwordResetCodeSentTo = normalized
-            statusMessage = "재설정 코드를 보냈어요. 메일을 확인해 주세요."
+            statusMessage = String(localized: "재설정 코드를 보냈어요. 메일을 확인해 주세요.")
         } catch {
-            failStatus(userFacingErrorMessage(error, fallback: "인증 코드를 보내지 못했어요"))
+            failStatus(userFacingErrorMessage(error, fallback: String(localized: "인증 코드를 보내지 못했어요")))
         }
     }
 
@@ -820,11 +779,11 @@ final class AuthViewModel: ObservableObject {
     /// Android `MainViewModel.confirmPasswordReset`.
     @discardableResult
     func confirmPasswordReset(email: String, code: String, newPassword: String) async -> Bool {
-        let normalized = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let normalized = AuthEmailFormat.normalize(email)
         let trimmedCode = code.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !isBusy else { return false }
         guard !normalized.isEmpty, trimmedCode.count == 6, !newPassword.isEmpty else {
-            statusMessage = "모든 항목을 입력해 주세요."
+            statusMessage = String(localized: "모든 항목을 입력해 주세요.")
             return false
         }
         isBusy = true
@@ -837,10 +796,10 @@ final class AuthViewModel: ObservableObject {
                 password: newPassword
             )
             passwordResetCodeSentTo = nil
-            statusMessage = "비밀번호를 변경했어요. 새 비밀번호로 로그인해 주세요."
+            statusMessage = String(localized: "비밀번호를 변경했어요. 새 비밀번호로 로그인해 주세요.")
             return true
         } catch {
-            failStatus(userFacingErrorMessage(error, fallback: "비밀번호 재설정에 실패했어요"))
+            failStatus(userFacingErrorMessage(error, fallback: String(localized: "비밀번호 재설정에 실패했어요")))
             return false
         }
     }
@@ -860,6 +819,37 @@ final class AuthViewModel: ObservableObject {
         subsystem: "com.alarmtalk.app",
         category: "AuthSessionPersistence"
     )
+
+    /// 로그인·가입 응답으로 받은 세션을 확정한다 — 애플·이메일 로그인과 가입이 같은 순서를 쓴다.
+    ///
+    /// ⚠ **세션을 공개하기 전에 그 계정의 옛 행을 확정한다**(Codex #699 P2).
+    /// `persistSession` 이 먼저 돌면 다른 화면 태스크(무료 플랜 목소리 잠금 등)가
+    /// 곧바로 깨어나, A 의 **소유자 미기록** 행을 B 것으로 보고 강등·재예약한다.
+    /// ⚠ **내리기 전에 그 계정의 옛 행을 확정한다**(Codex #699 P1). 콜드 스타트에서
+    /// A 가 자동 401 로 끊긴 뒤 저장소가 로드되기 전에 B 가 로그인하면, 이 표시가
+    /// **A 의 소유자 미기록 행이 A 것이라는 유일한 증거**다. 그냥 지우면 로드 완료
+    /// 후의 재시도(`AlarmTalkApp`)가 "세션이 있으니 건너뛴다" 로 빠져, A 의 행이
+    /// B 것으로 노출되고 **B 가 나중에 로그아웃할 때 영구히 꺼진다.**
+    /// ⚠ **새기지 못했으면 표시를 남긴다**(Codex #699 P1). 저장소 로드가 상한(3초)을
+    /// 넘기면 위 호출은 아무것도 못 새기고 돌아오는데, 그때 표시까지 지우면 로드 완료
+    /// 후의 재시도는 "세션이 있으니 건너뛴다" 로 빠진다 — A 의 옛 행이 임자 없이 남아
+    /// B 것으로 노출되고, **B 가 나중에 로그아웃할 때 영구히 꺼진다.**
+    /// ⚠ **다시 로그인했으면 그 계정의 미완 로그아웃은 무효다**(Codex #699 P1).
+    /// 남겨 두면 진행 중이던 뒷정리가 `/auth/logout` 으로 `token_epoch` 를 올려
+    /// **방금 발급받은 세션까지 죽인다**(그 엔드포인트는 계정 전체에 걸린다).
+    private func adoptSignedInSession(_ nextSession: AuthSession, accountRequest: AccountRequest) async {
+        PendingSignOutStore.clear(nextSession.user.id)
+        if await claimAlarmsForExpiredOwnerBeforeSignIn() {
+            // 로그인 확정 — 자동 만료 표시를 내린다(`SessionExpiryStore` 주석).
+            SessionExpiryStore.clear()
+        }
+        // 새 로그인 세션이다 — 앞 세션에 보낸 요청의 응답은 이 세션에 적지 않는다(`sessionRevision`).
+        sessionRevision &+= 1
+        // 확정이 끝난 뒤에 세션을 공개한다.
+        persistSession(nextSession)
+        recordAccountAnswer(accountRequest)
+        lastNetworkError = nil
+    }
 
     private func persistSession(_ nextSession: AuthSession) {
         do {
@@ -920,8 +910,8 @@ final class AuthViewModel: ObservableObject {
     }
 
     /// 계정 응답의 **plan·프로모 짝**을 지금 세션에 반영하고 이 진입의 답으로 적는다. 계정·토큰
-    /// 대조는 부르는 쪽이 끝냈다(`applyFreshPlan` 의 에폭 가드, `refreshUserApplyingToken` 의
-    /// `isTokenRolledWithinSignIn`).
+    /// 대조는 부르는 쪽(`applyFreshPlan` 의 에폭 가드)이 끝냈다. 토큰만 구른 `refreshUser` 의 답은 여기가
+    /// 아니라 프로필 칸까지 적는 `applyAccountAnswerOnRolledToken` 이다.
     ///
     /// - 끝난 로그인의 표면 아무것도 하지 않는다(`isFromEndedSignIn`).
     /// - 더 나중에 보낸 요청의 답이 이미 반영됐으면 **그 짝을 지킨다** — 그래도 이 진입의 응답이
@@ -947,6 +937,32 @@ final class AuthViewModel: ObservableObject {
         if let request { recordAccountAnswer(request) }
     }
 
+    /// **토큰만 구른 같은 로그인**의 `/auth/me` 답(`isTokenRolledWithinSignIn`)을 지금 세션에 반영하고 이 진입의 답으로
+    /// 적는다. 토큰과 탈퇴 유예는 지금 세션 것 그대로다 — 지금 토큰은 이미 살아 있고, 탈퇴 복구는 토큰이 그대로인
+    /// 갈래(`completeAccountRecovery`)만 마친다.
+    ///
+    /// - 더 나중에 보낸 요청의 답이 이미 반영됐으면 아무것도 쓰지 않는다 — 그래도 이 진입의 응답이 왔다는 사실은
+    ///   같다(`applyAccountPlanAnswer` 와 같은 순번 가드).
+    /// - 아니면 plan·프로모와 함께 **프로필 칸(이름·가족 설정·계정 설정)도** 적는다(2026-10-05 리뷰). 서버는 `/auth/me`
+    ///   마다 토큰을 굴리므로, 프로필 저장 뒤의 확인 조회(`updateProfile` → `refreshUser`)는 저장 **전에** 떠난 조회의
+    ///   답이 먼저 와 토큰을 굴리면 언제나 이 갈래로 온다. 그 옛 답이 방금 저장한 이름·가족 설정을 되돌렸으므로, 짝만
+    ///   적으면 확인 조회가 성공하고도 옛 값이 다음 `/auth/me` 까지 남는다. 안드로이드는 토큰이 아니라 세션 세대로
+    ///   가르므로(`saveSessionIfAlive`) 같은 경우에 응답 전체를 반영한다. 계정 설정은 울타리를 따른다(`reconcileAccountAnswer`).
+    private func applyAccountAnswerOnRolledToken(_ answer: AuthUser, request: AccountRequest) {
+        guard let current = session else { return }
+        guard !isSuperseded(request) else {
+            recordAccountAnswer(request)
+            return
+        }
+        var user = reconcileAccountAnswer(answer, request: request)
+        user.deletionStatus = current.user.deletionStatus
+        if user != current.user {
+            persistSession(AuthSession(token: current.token, user: user))
+        }
+        // 세션에 쓴 **뒤에** 적는다 — plan 반영(`planAnsweredEntry`)을 기다리던 잠금이 새 plan 으로 판정하게.
+        recordAccountAnswer(request)
+    }
+
     /// 세션 밖에서 표를 뜬 계정 요청(`SocialFeatureViewModel` 의 `/auth/me`·결제 전 조회)이
     /// **실패했다** — 그 진입의 첫 결과면 그 진입의 종료 안내 판정은 '띄울 것 없음' 으로 끝난다
     /// (D11, 안드로이드 `PersonalPromoLedger.recordAccountFailure`). 성공은 `applyFreshPlan` 이 적는다.
@@ -963,8 +979,8 @@ final class AuthViewModel: ObservableObject {
         noteEntryOutcome(request, .failed)
     }
 
-    /// 응답을 기다리는 사이 **같은 로그인 안에서 이 계정의 토큰만 굴렀는가** — 다른 경로의
-    /// `/auth/me`(`SocialFeatureViewModel` 의 갱신·배경 갱신)가 새 토큰으로 갈아 끼웠다.
+    /// 응답을 기다리는 사이 **같은 로그인 안에서 이 계정의 토큰만 굴렀는가** — 다른 `/auth/me`(먼저 도착한 다른
+    /// `refreshUser`·`SocialFeatureViewModel` 의 갱신·배경 갱신)가 새 토큰으로 갈아 끼웠다.
     ///
     /// 로그아웃(같은 계정 재로그인 포함)·계정 전환·탈퇴 철회 진행·취소면 false 다 — 그때의 답은
     /// 지금 세션의 것이 아니다. 로그아웃은 토큰이 아니라 표의 순번으로 가른다
@@ -1033,19 +1049,18 @@ final class AuthViewModel: ObservableObject {
                   session?.user.id == merged.id,
                   accountRecoveryRevision == recoveryRevision else {
                 // ⚠ **이 계정의 토큰만 굴렀으면 답을 통째로 버리지 않는다**(2026-09-27 리뷰 3차, D11).
-                //   세션 밖의 `/auth/me`(`SocialFeatureViewModel.refreshAll`)는 응답의 plan 을 반영하고
-                //   곧바로 토큰을 굴린다 — 서버는 `/auth/me` 마다 새 토큰을 준다. 그 사이 떠 있던
-                //   이 요청은 위 가드에 걸리는데, 여기서 아무것도 안 적으면 이 진입의 계정 응답이
-                //   '아직' 으로 남아 같은 진입의 뒤 응답(제어 센터를 닫을 때의 재조회·결제 신호)이
-                //   세션 한가운데서 종료 안내를 판정한다.
-                //   plan·프로모 짝은 지금 세션에 반영하고(순번 가드는 그대로 — 더 새 답이 반영됐으면
-                //   그 짝을 지킨다) 이 진입의 결과를 적는다. 토큰·프로필·탈퇴 유예는 건드리지 않는다 —
-                //   지금 세션의 토큰은 이미 살아 있다. 안드로이드는 토큰이 아니라 세션 세대로 가르므로
-                //   (`saveSessionIfAlive`) 같은 경우에 응답 전체를 반영한다.
+                //   서버는 `/auth/me` 마다 새 토큰을 준다 — 세션 밖의 `/auth/me`(`SocialFeatureViewModel.refreshAll`)도,
+                //   먼저 도착한 다른 `refreshUser` 도 그 사이 토큰을 굴린다. 그 사이 떠 있던 이 요청은 위 가드에
+                //   걸리는데, 여기서 아무것도 안 적으면 이 진입의 계정 응답이 '아직' 으로 남아 같은 진입의 뒤
+                //   응답(제어 센터를 닫을 때의 재조회·결제 신호)이 세션 한가운데서 종료 안내를 판정한다.
+                //   답은 **지금 토큰 위에** 반영하고(순번 가드는 그대로 — 더 새 답이 반영됐으면 아무것도 쓰지 않는다)
+                //   이 진입의 결과를 적는다. plan·프로모 짝만이 아니라 프로필 칸도 적는다(2026-10-05 리뷰) — 프로필
+                //   저장 뒤의 확인 조회가 이 갈래로 오기 때문이다(`applyAccountAnswerOnRolledToken`). 토큰·탈퇴 유예는
+                //   건드리지 않는다 — 지금 세션의 토큰은 이미 살아 있다.
                 if isTokenRolledWithinSignIn(
                     sentWith: token, userID: merged.id, request: accountRequest, recoveryRevision: recoveryRevision
                 ) {
-                    applyAccountPlanAnswer(plan: merged.plan, personalPromo: merged.personalPromo, request: accountRequest)
+                    applyAccountAnswerOnRolledToken(merged, request: accountRequest)
                 }
                 return nil
             }
@@ -1055,10 +1070,8 @@ final class AuthViewModel: ObservableObject {
             //   프로모를 옛 값으로 되돌린다(결제한 사람에게 "무료 이용이 곧 끝나요" 가 다시 뜬다).
             //   더 새 답이 이미 반영됐으면 **그 짝(plan·프로모)은 지킨다.** 나머지(굴린 토큰·탈퇴
             //   유예)는 예전처럼 반영한다 — 응답 전체를 버리면 그 갱신까지 한 회차 잃는다.
-            if isSuperseded(accountRequest), let current = session {
-                merged.plan = current.user.plan
-                merged.personalPromo = current.user.personalPromo
-            }
+            //   계정 설정 올리기가 끝나기 전에 보낸 요청이면 **설정만** 지금 세션의 값을 지킨다(`promptSettingsAnswerFence`).
+            merged = reconcileAccountAnswer(merged, request: accountRequest)
             let wasPendingDeletion = pendingDeletion || session?.user.isPendingDeletion == true
             if wasPendingDeletion, merged.deletionStatus != "active", !merged.isPendingDeletion {
                 throw APIError.invalidResponse
@@ -1071,7 +1084,10 @@ final class AuthViewModel: ObservableObject {
             // 탈퇴 유예 상태 반영 — pending_deletion 이면 RootView 가 복구 화면으로 게이팅.
             // Android `MainViewModel.checkAccountStatus()` 와 동등.
             if wasPendingDeletion, merged.deletionStatus == "active" {
-                guard await completeAccountRecovery(userID: merged.id, recoveredSession: nextSession) else { return nil }
+                guard await completeAccountRecovery(
+                    userID: merged.id,
+                    recoveredAnswer: (session: nextSession, request: accountRequest)
+                ) else { return nil }
             } else {
                 persistSession(nextSession)
                 pendingDeletion = merged.isPendingDeletion
@@ -1105,20 +1121,20 @@ final class AuthViewModel: ObservableObject {
                     // 화면 확인 모드는 서버 없이 도는 모드라 첫 /auth/me 가 401 이다.
                     // 여기서 로그아웃하면 랜딩으로 튕겨 아무 화면도 못 본다.
                     if !UIPreviewSeed.isEnabled {
-                        signOut(message: "세션이 만료됐어요. 다시 로그인해 주세요.")
+                        signOut(message: String(localized: "세션이 만료됐어요. 다시 로그인해 주세요."))
                     }
                 } else if status == 403 {
                     // 권한 박탈 — 세션은 유지하되 사용자에게 알림
-                    lastNetworkError = "이 계정으로는 접근할 수 없는 기능이 있어요."
+                    lastNetworkError = String(localized: "이 계정으로는 접근할 수 없는 기능이 있어요.")
                 } else {
                     // 5xx, 4xx 기타 오류는 세션을 유지하되 영어 서버 메시지를 그대로 노출하지 않는다.
                     lastNetworkError = userFacingErrorMessage(
                         apiError,
-                        fallback: "서버에 일시적으로 연결할 수 없어요."
+                        fallback: String(localized: "서버에 일시적으로 연결할 수 없어요.")
                     )
                 }
             case .invalidResponse:
-                lastNetworkError = "서버 응답을 해석하지 못했어요."
+                lastNetworkError = String(localized: "서버 응답을 해석하지 못했어요.")
             }
             // 세션이 끝났으면(401) 적지 않는다 — 그 진입의 안내는 이미 대상이 없다.
             if session?.token == token { noteEntryOutcome(accountRequest, .failed) }
@@ -1129,7 +1145,7 @@ final class AuthViewModel: ObservableObject {
                 return nil
             }
             // 네트워크 끊김, 타임아웃 등 — 세션 보존
-            lastNetworkError = "네트워크 연결을 확인해 주세요."
+            lastNetworkError = String(localized: "네트워크 연결을 확인해 주세요.")
             noteEntryOutcome(accountRequest, .failed)
         } catch {
             guard !Task.isCancelled, session?.token == token,
@@ -1138,10 +1154,31 @@ final class AuthViewModel: ObservableObject {
                 return nil
             }
             // 알 수 없는 에러 — 보수적으로 세션 보존
-            lastNetworkError = "잠시 후 다시 시도해 주세요."
+            lastNetworkError = String(localized: "잠시 후 다시 시도해 주세요.")
             noteEntryOutcome(accountRequest, .failed)
         }
         return nil
+    }
+
+    /// 계정 응답(`/auth/me`)의 사용자를 **지금 세션**에 맞춰 다듬는다 — 세션에 쓰기 **직전에** 부른다.
+    ///
+    /// - 더 나중에 보낸 요청의 답이 이미 반영됐으면(`isSuperseded`) plan·프로모 짝은 지금 세션의 것을 지킨다.
+    /// - 계정 설정 올리기가 끝나기 전에 보낸 요청이면(`promptSettingsAnswerFence`) 설정만 지금 세션의 값을 지킨다.
+    ///
+    /// ⚠ **응답을 받은 뒤 또 기다리면 그 뒤에 다시 부른다**(2026-10-05). 탈퇴 복구는 푸시 준비를 기다린 뒤에야
+    /// 저장하는데(`completeAccountRecovery`), 그 사이 더 새 답·올리기가 반영될 수 있다 — 기다리기 전에 다듬은 값을
+    /// 그대로 저장하면 그 답을 되돌린다. 순번·울타리는 줄지 않으므로 두 번 불러도 결과가 어긋나지 않는다.
+    private func reconcileAccountAnswer(_ user: AuthUser, request: AccountRequest) -> AuthUser {
+        guard let current = session else { return user }
+        var reconciled = user
+        if isSuperseded(request) {
+            reconciled.plan = current.user.plan
+            reconciled.personalPromo = current.user.personalPromo
+        }
+        if request.seq <= promptSettingsAnswerFence {
+            reconciled.dynamicPromptSettings = current.user.dynamicPromptSettings
+        }
+        return reconciled
     }
 
     /// 어떤 API 요청이든 401 을 받으면 호출 — 세션 만료로 보고 강제 로그아웃.
@@ -1161,7 +1198,7 @@ final class AuthViewModel: ObservableObject {
         // UI 미리보기 모드에서는 401 로 로그아웃하지 않는다 — 서버 없이 화면만 보는 모드라
         // 첫 요청이 실패하는 순간 로그인 화면으로 튕겨 아무것도 못 본다.
         if UIPreviewSeed.isEnabled { return }
-        signOut(message: "세션이 만료됐어요. 다시 로그인해 주세요.")
+        signOut(message: String(localized: "세션이 만료됐어요. 다시 로그인해 주세요."))
     }
 
     /// 데이터 라우트가 403 CONSENT_REQUIRED 를 받았을 때. 세션은 유지한다(로그아웃하지 않음).
@@ -1198,7 +1235,7 @@ final class AuthViewModel: ObservableObject {
     private func handleAppleCredentialRevoked() {
         // Apple 로그인 사용자가 아니라면 무시. (이메일/Google 사용자는 영향 없음.)
         guard session?.user.appleUserId.nilIfBlank != nil else { return }
-        signOut(message: "Apple ID 로그인이 해제되었어요.")
+        signOut(message: String(localized: "Apple ID 로그인이 해제되었어요."))
     }
 
     /// 앱 foreground 진입 시 호출 — Apple credentialState 점검. Apple 로그인 사용자만.
@@ -1216,16 +1253,16 @@ final class AuthViewModel: ObservableObject {
                 // OK — 정상 세션
                 return
             case .revoked, .notFound:
-                signOut(message: "Apple ID 로그인이 더 이상 유효하지 않아요. 다시 로그인해 주세요.")
+                signOut(message: String(localized: "Apple ID 로그인이 더 이상 유효하지 않아요. 다시 로그인해 주세요."))
             case .transferred:
                 // iCloud 가족 공유로 디바이스가 다른 사용자에게 이전 — 안내만, 세션 유지
-                lastNetworkError = "다른 기기로 이전된 Apple ID 입니다. 다시 로그인해 주세요."
+                lastNetworkError = String(localized: "다른 기기로 이전된 Apple ID 입니다. 다시 로그인해 주세요.")
             @unknown default:
                 return
             }
         } catch {
             // credentialState 조회 실패(드물게 시스템 오류) — 세션 보존
-            lastNetworkError = "Apple 로그인 상태를 확인하지 못했어요."
+            lastNetworkError = String(localized: "Apple 로그인 상태를 확인하지 못했어요.")
         }
     }
 
@@ -1236,25 +1273,40 @@ final class AuthViewModel: ObservableObject {
         dynamicPromptSettings: DynamicPromptSettings? = nil
     ) async {
         guard let token else {
-            statusMessage = "로그인이 필요해요."
+            statusMessage = String(localized: "로그인이 필요해요.")
             return
         }
         let normalizedQuietWindows = quietWindows.map(Self.normalizedQuietWindows)
         if let normalizedQuietWindows,
-           normalizedQuietWindows.contains(where: { !Self.isValidTimeText($0.start) || !Self.isValidTimeText($0.end) }) {
-            statusMessage = "시간은 HH:mm 형식으로 입력해 주세요."
+           normalizedQuietWindows.contains(where: {
+               !FamilyAlarmQuietWindow.isValidTime($0.start) || !FamilyAlarmQuietWindow.isValidTime($0.end)
+           }) {
+            statusMessage = String(localized: "시간은 HH:mm 형식으로 입력해 주세요.")
             return
         }
         // ⚠ **창을 다 지웠으면 지운 대로 둔다**(2026-08-08 변경). 예전에는 여기서
         // 평일 09:00-18:30 을 되살려, 사용자가 방해금지를 전부 없애도 서버에는 다시
         // 생겼다 — "껐는데 계속 막힌다" 가 된다. 레거시 3필드는 창이 없으면 nil 이다.
         let firstQuietWindow = normalizedQuietWindows?.first
-        guard !isBusy else { return }
+        guard !isBusy else {
+            // ⚠ 계정 설정(지역·사주)은 버리지 않는다 — 앞 올리기가 끝난 뒤 밀린 표시를 보고 다시 올린다.
+            if dynamicPromptSettings != nil { promptSettingsRetryPending = true }
+            return
+        }
         isBusy = true
-        defer { isBusy = false }
+        defer {
+            isBusy = false
+            if promptSettingsRetryPending {
+                promptSettingsRetryPending = false
+                Task { await self.retryPendingPromptSettings() }
+            }
+        }
 
+        let requestUserID = session?.user.id
+        // 보낸 세션 — 응답을 적기 전에 대조한다(`sessionRevision`).
+        let requestSessionRevision = sessionRevision
         do {
-            _ = try await api.updateProfile(
+            let response = try await api.updateProfile(
                 UpdateProfileRequest(
                     name: name,
                     allowFamilyAlarms: allowFamilyAlarms,
@@ -1266,41 +1318,82 @@ final class AuthViewModel: ObservableObject {
                 ),
                 token: token
             )
+            // ⚠ **세션을 갈아 끼우기(`refreshUser`) 전에** '아직 안 올라간 변경' 표시를 내린다 — 새 세션을
+            // 받는 순간 `AlarmTalkApp` 이 계정 설정을 받아 적는데(`DynamicPromptPreferences.adoptAccount`),
+            // 그때 표시가 남아 있으면 방금 올린 값을 한 번 더 올린다. 안드로이드 `updateDynamicPromptSettings` 와 같다.
+            // ⚠ **보낸 세션이 그대로일 때만 받는다**(Codex #837 11차). 계정 id 만 보면 로그아웃 뒤 같은 계정으로 다시
+            //   들어온 새 세션에 앞 세션의 응답이 적힌다 — 새 세션의 '안 올라간 변경' 표시를 내리고, 새 세션에 떠 있는
+            //   조회를 울타리로 가리고, 옛 설정을 세션에 적는다. 세션이 바뀌었으면 확인 조회도 하지 않는다 — 새 세션은
+            //   자기 로그인 응답으로 이미 받아 적었다. 안드로이드 `uploadDynamicPromptSettings` 의 세대 대조와 같다.
+            guard sessionRevision == requestSessionRevision else { return }
+            // ⚠ **바꾼 칸만, 응답을 기다린 뒤의 세션 위에 얹는다**(2026-10-05 — 안드로이드 `saveProfileEdit` 와 같은 규칙).
+            //   요청 전에 잡은 사본을 저장하면 그 사이 반영된 plan·프로모(결제 전 조회·세션 밖 `/auth/me`)와 다른 칸을
+            //   되돌린다 — 프로필 저장은 plan 답이 아니다. 이름·가족 설정도 곧바로 적는다: 확인 조회(`refreshUser`)가
+            //   실패해도 방금 저장한 값이 보이게(예전에는 확인 조회만 기다려, 실패하면 저장된 이름이 옛 이름으로 보였다).
+            if let current = session, current.user.id == requestUserID {
+                var updated = current
+                if let name { updated.user.name = name.trimmingCharacters(in: .whitespacesAndNewlines) }
+                if let allowFamilyAlarms { updated.user.allowFamilyAlarms = allowFamilyAlarms }
+                if let normalizedQuietWindows {
+                    updated.user.familyAlarmQuietWindows = normalizedQuietWindows
+                    // 레거시 3칸은 첫 창, 창이 없으면 자리값 — 판정은 언제나 창 목록이다(빈 목록 = 방해금지 없음).
+                    updated.user.familyAlarmQuietDays = firstQuietWindow?.days ?? [1, 2, 3, 4, 5]
+                    updated.user.familyAlarmQuietStart = firstQuietWindow?.start ?? "09:00"
+                    updated.user.familyAlarmQuietEnd = firstQuietWindow?.end ?? "18:30"
+                }
+                if let dynamicPromptSettings {
+                    // ⚠ **표시를 내리기 전에 울타리를 세운다**(Codex #837). 지금 떠 있는 `/auth/me` 는 올리기 **전의**
+                    // 설정을 읽었을 수 있다 — 그 응답이 아래 확인 조회보다 늦게 오면 옛 설정으로 세션을 되돌리고, 표시가
+                    // 없으니 받아 적기가 그 옛 값을 이 기기에 적는다. 울타리 이하의 응답은 설정만 지금 세션의 값을 지키고
+                    // (`refreshUserApplyingToken`), 그 값이 올린 값이 되도록 세션에도 곧바로 적는다(표시를 내린 뒤).
+                    promptSettingsAnswerFence = accountRequestSeq
+                    DynamicPromptPreferences.markPushed(userID: current.user.id, pushed: dynamicPromptSettings)
+                    updated.user.dynamicPromptSettings = response.dynamicPromptSettings ?? dynamicPromptSettings
+                }
+                persistSession(updated)
+            }
+            // 확인 조회 — 저장 **전에** 떠나 옛 이름·가족 설정을 읽은 `/auth/me` 가 늦게 와도 바로잡는다. 확인 조회가 먼저
+            // 오면 그 옛 답은 확인 조회가 굴린 토큰에 걸려 밀린 답이 되고(아무것도 쓰지 않는다), 옛 답이 먼저 와 토큰을
+            // 굴렸으면 확인 조회의 답이 토큰만 구른 갈래에서 프로필 칸까지 다시 적는다(`applyAccountAnswerOnRolledToken`).
             await refreshUser()
         } catch {
-            failStatus(userFacingErrorMessage(error, fallback: "프로필을 저장하지 못했어요"))
+            // 끝난 세션의 실패를 새 세션에 띄우지 않는다(위 `requestSessionRevision`).
+            guard sessionRevision == requestSessionRevision else { return }
+            failStatus(userFacingErrorMessage(error, fallback: String(localized: "프로필을 저장하지 못했어요")))
         }
+    }
+
+    /// 앞 올리기가 도는 사이 받지 못한 계정 설정을 다시 올린다 — **지금의** 밀린 표시와 기기 값으로 정한다
+    /// (밀린 묶음은 이 기기 값, 나머지는 세션의 서버 값 — `DynamicPromptPreferences.adoptAccount`). 밀린 것이 없으면
+    /// (앞 올리기가 같은 값을 이미 올렸다) 아무것도 하지 않는다.
+    private func retryPendingPromptSettings() async {
+        guard let session, DynamicPromptPreferences.hasUnsyncedChange(userID: session.user.id) else { return }
+        let settings: DynamicPromptSettings
+        if let server = session.user.dynamicPromptSettings {
+            guard case .localPending(let local, _) = DynamicPromptPreferences.adoptAccount(
+                userID: session.user.id,
+                server: server
+            ) else { return }
+            settings = local
+        } else {
+            settings = DynamicPromptPreferences.load(userID: session.user.id).toSettings()
+        }
+        await updateProfile(dynamicPromptSettings: settings)
     }
 
     // ⚠ **기본 방해금지 창을 되살리지 말 것**(2026-08-08 삭제). 방해금지는 사용자가
     // 명시적으로 켜는 기능이다 — 만들어 주면 아무도 설정한 적 없는 시간에 가족 알람이
     // 막히고, 받는 사람은 자기가 막아 둔 줄 모른다.
 
+    /// 보낼 창 — 요일이 없는 창만 버린다. 시각 형식은 호출부가 따로 보고 **거절한다**
+    /// (읽을 때처럼 조용히 버리면 사용자가 고친 창이 말없이 사라진다).
     private static func normalizedQuietWindows(_ windows: [FamilyAlarmQuietWindow]) -> [FamilyAlarmQuietWindow] {
-        Array(
-            windows
-                .map { window in
-                    FamilyAlarmQuietWindow(
-                        days: Array(Set(window.days.filter { (0...6).contains($0) })).sorted(),
-                        start: window.start,
-                        end: window.end
-                    )
-                }
-                .filter { !$0.days.isEmpty }
-                .prefix(8)
-        )
-    }
-
-    private static func isValidTimeText(_ value: String) -> Bool {
-        value.range(
-            of: #"^([01]\d|2[0-3]):[0-5]\d$"#,
-            options: .regularExpression
-        ) != nil
+        Array(windows.compactMap(\.withNormalizedDays).prefix(FamilyAlarmQuietWindow.maxCount))
     }
 
     func deleteAccount() async {
         guard let token else {
-            statusMessage = "로그인이 필요해요."
+            statusMessage = String(localized: "로그인이 필요해요.")
             return
         }
         let currentUserID = session?.user.id.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1326,19 +1419,16 @@ final class AuthViewModel: ObservableObject {
             // 오프라인·5xx 로 실패했을 때도 표시가 살아남아, **다음 실행이 계정이 멀쩡한
             // 사용자를 로그아웃시키고 알람까지 끈다.**
             PendingSignOutStore.mark(currentUserID)
+            beginLeavingAccount()
             if let currentUserID, !currentUserID.isEmpty {
                 accessSnapshotStore.clear(userID: currentUserID)
-                DefaultVoicePreferenceStore().clear(userID: currentUserID)
-                DynamicPromptPreferenceStore().clear(userID: currentUserID)
-                DynamicPromptPreferences.clear(userID: currentUserID)
-                // ⚠ **목소리 교체 표식(`VoiceReplacementMarkerStore`)은 지우지 않는다.**
-                // 취향은 계정과 함께 떠나도 되지만 그 표식은 **남아 있는 로컬 알람의 안전
-                // 기준**이다 — 로그아웃은 알람을 끄기만 하고 지우지 않으므로, 지우면 그 사이의
-                // 교체를 다시 로그인한 기기가 '처음 봤다' 로 읽어 영영 강등하지 않는다.
+                clearAccountPreferences(currentUserID)
             }
             // ⚠ 탈퇴도 로그아웃과 같다 — 계정을 떠났는데 알람이 울리면 안 된다.
             let cleaned = await onLeaveAccountStopAlarms(currentUserID)
-            signOut(message: "회원 탈퇴가 완료됐어요.")
+            signOut(message: String(localized: "회원 탈퇴가 완료됐어요."))
+            // 세션을 비운 뒤 한 번 더 — 알람 정리를 기다리는 사이 받아 적힌 값을 지운다(`signOutExplicitly` 주석).
+            if let currentUserID, !currentUserID.isEmpty { clearAccountPreferences(currentUserID) }
             // 탈퇴는 되살릴 계정 자체가 없다 — 자동 만료 표시를 남기지 않는다.
             SessionExpiryStore.clear()
             // ⚠ **뒷정리가 실제로 끝났을 때만** 표시를 내린다(Codex #699 P1). 콜드 스타트에서
@@ -1346,7 +1436,7 @@ final class AuthViewModel: ObservableObject {
             // 표시까지 지우면 **탈퇴한 계정의 OS 예약이 그대로 울면서** 되짚을 길이 없다.
             if cleaned { PendingSignOutStore.clear(currentUserID) }
         } catch {
-            failStatus(userFacingErrorMessage(error, fallback: "회원 탈퇴에 실패했어요"))
+            failStatus(userFacingErrorMessage(error, fallback: String(localized: "회원 탈퇴에 실패했어요")))
         }
     }
 
@@ -1355,7 +1445,7 @@ final class AuthViewModel: ObservableObject {
     /// Android `MainViewModel.requestAccountDeletion()`.
     func requestAccountDeletion() async {
         guard let token else {
-            statusMessage = "로그인이 필요해요."
+            statusMessage = String(localized: "로그인이 필요해요.")
             return
         }
         let currentUserID = session?.user.id.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1381,15 +1471,10 @@ final class AuthViewModel: ObservableObject {
                 // 토큰을 다시 등록하므로, 그때는 이 표시가 정리된다.
                 PendingSignOutStore.markServerCleanup(token: token, for: currentUserID)
             }
+            beginLeavingAccount()
             if let currentUserID, !currentUserID.isEmpty {
                 accessSnapshotStore.clear(userID: currentUserID)
-                DefaultVoicePreferenceStore().clear(userID: currentUserID)
-                DynamicPromptPreferenceStore().clear(userID: currentUserID)
-                DynamicPromptPreferences.clear(userID: currentUserID)
-                // ⚠ **목소리 교체 표식(`VoiceReplacementMarkerStore`)은 지우지 않는다.**
-                // 취향은 계정과 함께 떠나도 되지만 그 표식은 **남아 있는 로컬 알람의 안전
-                // 기준**이다 — 로그아웃은 알람을 끄기만 하고 지우지 않으므로, 지우면 그 사이의
-                // 교체를 다시 로그인한 기기가 '처음 봤다' 로 읽어 영영 강등하지 않는다.
+                clearAccountPreferences(currentUserID)
             }
             // ⚠ 탈퇴도 로그아웃과 같다 — 계정을 떠났는데 알람이 울리면 안 된다.
             let cleaned = await onLeaveAccountStopAlarms(currentUserID)
@@ -1401,15 +1486,17 @@ final class AuthViewModel: ObservableObject {
             // (`middleware/auth.ts` — 탈퇴 철회와 푸시 해제만 허용). 부르면 실패할 뿐이고,
             // 무엇보다 그 토큰은 **탈퇴를 철회할 때 필요하다.**
             signOut(
-                message: "회원 탈퇴가 접수됐어요. 30일 안에 다시 로그인하면 취소할 수 있어요.",
+                message: String(localized: "회원 탈퇴가 접수됐어요. 30일 안에 다시 로그인하면 취소할 수 있어요."),
                 revokeOnServer: false
             )
+            // 세션을 비운 뒤 한 번 더 — 알람 정리를 기다리는 사이 받아 적힌 값을 지운다(`signOutExplicitly` 주석).
+            if let currentUserID, !currentUserID.isEmpty { clearAccountPreferences(currentUserID) }
             // 탈퇴는 되살릴 계정 자체가 없다 — 자동 만료 표시를 남기지 않는다.
             SessionExpiryStore.clear()
             // 로컬 뒷정리와 푸시 해제가 **둘 다** 끝났을 때만 표시를 내린다.
             if cleaned && pushUnregistered { PendingSignOutStore.clear(currentUserID) }
         } catch {
-            failStatus(userFacingErrorMessage(error, fallback: "회원 탈퇴 신청에 실패했어요"))
+            failStatus(userFacingErrorMessage(error, fallback: String(localized: "회원 탈퇴 신청에 실패했어요")))
         }
     }
 
@@ -1417,7 +1504,7 @@ final class AuthViewModel: ObservableObject {
     /// Android `MainViewModel.cancelAccountDeletion()`.
     func cancelAccountDeletion() async {
         guard let token, let ownerUserID = session?.user.id else {
-            statusMessage = "로그인이 필요해요."
+            statusMessage = String(localized: "로그인이 필요해요.")
             return
         }
         guard !isBusy else { return }
@@ -1431,7 +1518,7 @@ final class AuthViewModel: ObservableObject {
                   accountRecoveryRevision == recoveryRevision else { return }
             guard response.success, response.status == "active" else { throw APIError.invalidResponse }
             guard await completeAccountRecovery(userID: ownerUserID) else { return }
-            statusMessage = "회원 탈퇴를 취소했어요. 계정이 복구됐어요."
+            statusMessage = String(localized: "회원 탈퇴를 취소했어요. 계정이 복구됐어요.")
         } catch {
             guard !Task.isCancelled, session?.user.id == ownerUserID, self.token == token,
                   accountRecoveryRevision == recoveryRevision else { return }
@@ -1443,7 +1530,7 @@ final class AuthViewModel: ObservableObject {
                       accountRecoveryRevision == recoveryRevision,
                       self.token == (confirmedToken ?? token) else { return }
             }
-            failStatus(userFacingErrorMessage(error, fallback: "탈퇴 취소에 실패했어요. 다시 시도해 주세요"))
+            failStatus(userFacingErrorMessage(error, fallback: String(localized: "탈퇴 취소에 실패했어요. 다시 시도해 주세요")))
         }
     }
 
@@ -1459,16 +1546,30 @@ final class AuthViewModel: ObservableObject {
     }
 
     /// 성공 응답과 이후의 권위 조회가 같은 복구 후처리를 사용한다.
-    private func completeAccountRecovery(userID: String, recoveredSession: AuthSession? = nil) async -> Bool {
+    ///
+    /// ⚠ **저장할 세션은 준비를 기다린 뒤에 만든다**(2026-10-05). 기다리기 전에 잡은 세션(또는 그때 다듬은 `/auth/me`
+    /// 답)을 그대로 저장하면, 준비를 기다리는 사이 반영된 plan·프로모(결제 전 조회·세션 밖 `/auth/me` 처럼 토큰을
+    /// 굴리지 않고 plan 을 쓰는 답)를 다음 조회까지 옛 값으로 되돌린다(드문 경로 — 복구 화면에서 준비를 기다리는 사이에만
+    /// 열린다). 탈퇴 상태만 바꾸고 나머지는 **그때의** 세션 것이다. `/auth/me` 로 복구를 확인한 경로(`recoveredAnswer`)는
+    /// 그 답을 기다린 뒤 다시 다듬는다(`reconcileAccountAnswer`). 안드로이드는 탈퇴 취소 뒤 세션을 다시 쓰지 않는다
+    /// (`cancelAccountDeletion` 은 `pendingDeletion` 만 내린다).
+    private func completeAccountRecovery(
+        userID: String,
+        recoveredAnswer: (session: AuthSession, request: AccountRequest)? = nil
+    ) async -> Bool {
         guard let userID = userID.nilIfBlank,
               let current = session, current.user.id == userID else { return false }
         let recoveryRevision = accountRecoveryRevision
         // 큐 앞의 네트워크 요청 때문에 준비가 지연돼도 저장된 pending은 남는다.
         // 앱이 이 await에서 중단되면 다음 실행의 pending→active 조회가 다시 준비한다.
         await prepareAccountRecovery(userID)
-        guard !Task.isCancelled, session?.user.id == userID, token == current.token,
+        guard !Task.isCancelled, let latest = session, latest.user.id == userID, latest.token == current.token,
               accountRecoveryRevision == recoveryRevision else { return false }
-        var recovered = recoveredSession ?? current
+        var recovered = latest
+        if let recoveredAnswer {
+            recovered = recoveredAnswer.session
+            recovered.user = reconcileAccountAnswer(recoveredAnswer.session.user, request: recoveredAnswer.request)
+        }
         recovered.user.deletionStatus = "active"
         accountRecoveryRevision &+= 1
         // active 저장보다 먼저 지운다. 반대 순서에서 중단되면 다음 실행이 복구된
@@ -1608,7 +1709,7 @@ final class AuthViewModel: ObservableObject {
         let bundled = Int(LegalPolicy.bundledVersion)
         let server = serverPolicyVersionHint.flatMap(Int.init)
         if let server, let bundled, server <= bundled {
-            statusMessage = "동의 기록에 실패했어요. 잠시 후 다시 시도해 주세요"
+            statusMessage = String(localized: "동의 기록에 실패했어요. 잠시 후 다시 시도해 주세요")
             return true
         }
         consentUnsupported = true
@@ -1621,7 +1722,7 @@ final class AuthViewModel: ObservableObject {
     /// 동의 화면 제출. 성공 시 `needsConsent` 를 내려 정상 진입. Android `MainViewModel.submitConsents()`.
     func submitConsents(agreedOptional: Set<String>) async {
         guard let token else {
-            statusMessage = "로그인이 필요해요."
+            statusMessage = String(localized: "로그인이 필요해요.")
             return
         }
         guard !isBusy else { return }
@@ -1638,7 +1739,7 @@ final class AuthViewModel: ObservableObject {
         )
         guard !request.consents.isEmpty else {
             // 이 앱이 그릴 수 있는 유형이 하나도 없다 = 서버가 앞서 있다. 업데이트가 답이다.
-            statusMessage = "앱을 업데이트해야 동의를 진행할 수 있어요."
+            statusMessage = String(localized: "앱을 업데이트해야 동의를 진행할 수 있어요.")
             return
         }
         isBusy = true
@@ -1665,10 +1766,10 @@ final class AuthViewModel: ObservableObject {
             if collect.contains("marketing") {
                 marketingConsentAgreed = agreedOptional.contains("marketing")
             }
-            statusMessage = "동의가 완료됐어요"
+            statusMessage = String(localized: "동의가 완료됐어요")
         } catch {
             if handleConsentVersionMismatch(error) { return }
-            failStatus(userFacingErrorMessage(error, fallback: "동의 기록에 실패했어요. 다시 시도해 주세요"))
+            failStatus(userFacingErrorMessage(error, fallback: String(localized: "동의 기록에 실패했어요. 다시 시도해 주세요")))
         }
     }
 
@@ -1679,13 +1780,13 @@ final class AuthViewModel: ObservableObject {
     @discardableResult
     func submitSensitiveConsents(types: [String]) async -> Bool {
         guard let token else {
-            statusMessage = "로그인이 필요해요."
+            statusMessage = String(localized: "로그인이 필요해요.")
             return false
         }
         let ownerUserID = session?.user.id
         let recordable = types.filter { Self.knownConsentTypes.contains($0) }
         guard !recordable.isEmpty else {
-            statusMessage = "앱을 업데이트해야 동의를 진행할 수 있어요."
+            statusMessage = String(localized: "앱을 업데이트해야 동의를 진행할 수 있어요.")
             return false
         }
         guard !isBusy else { return false }
@@ -1706,7 +1807,7 @@ final class AuthViewModel: ObservableObject {
             return true
         } catch {
             if handleConsentVersionMismatch(error) { return false }
-            failStatus(userFacingErrorMessage(error, fallback: "동의 기록에 실패했어요. 다시 시도해 주세요"))
+            failStatus(userFacingErrorMessage(error, fallback: String(localized: "동의 기록에 실패했어요. 다시 시도해 주세요")))
             return false
         }
     }
@@ -1735,7 +1836,7 @@ final class AuthViewModel: ObservableObject {
     /// 되돌린다. Android `MainViewModel.updateMarketingConsent`.
     func updateMarketingConsent(_ agreed: Bool) async {
         guard let token else {
-            statusMessage = "로그인이 필요해요."
+            statusMessage = String(localized: "로그인이 필요해요.")
             return
         }
         let previous = marketingConsentAgreed
@@ -1752,14 +1853,14 @@ final class AuthViewModel: ObservableObject {
         } catch {
             marketingConsentAgreed = previous
             if handleConsentVersionMismatch(error) { return }
-            failStatus(userFacingErrorMessage(error, fallback: "마케팅 수신 설정을 변경하지 못했어요"))
+            failStatus(userFacingErrorMessage(error, fallback: String(localized: "마케팅 수신 설정을 변경하지 못했어요")))
         }
     }
 
     // MARK: - 음성 생체정보 동의 철회
 
     /// 동의 내역 화면의 '동의 철회'. 등록한 목소리·녹음 원본·생성 음성이 서버에서
-    /// 영구 삭제되고, 그 목소리로 울리던 알람은 기본 알람음으로 강등된다.
+    /// 영구 삭제되고, 그 목소리로 울리던 알람은 기본 목소리(미나)로 바뀐다.
     ///
     /// ⚠ **철회로 사라질 목소리 id 를 POST 전에 서버에서 확정한다.** 화면 상태만 믿으면
     /// 프리로드가 아직 안 끝났거나 실패했을 때 대상이 0개가 되어, 철회한 목소리가 그
@@ -1774,7 +1875,7 @@ final class AuthViewModel: ObservableObject {
         audioCache: AudioCacheStore?
     ) async -> Bool {
         guard let token else {
-            statusMessage = "로그인이 필요해요."
+            statusMessage = String(localized: "로그인이 필요해요.")
             return false
         }
         let userID = session?.user.id
@@ -1785,7 +1886,7 @@ final class AuthViewModel: ObservableObject {
             // 시스템(기본) 목소리는 내 생체정보가 아니라 철회와 무관하다.
             revokedVoiceIDs = profiles.filter { $0.isSystem != true }.map(\.id).filter { !$0.isEmpty }
         } catch {
-            failStatus(userFacingErrorMessage(error, fallback: "동의를 철회하지 못했어요"))
+            failStatus(userFacingErrorMessage(error, fallback: String(localized: "동의를 철회하지 못했어요")))
             return false
         }
 
@@ -1798,7 +1899,7 @@ final class AuthViewModel: ObservableObject {
             )
         } catch {
             if handleConsentVersionMismatch(error) { return false }
-            failStatus(userFacingErrorMessage(error, fallback: "동의를 철회하지 못했어요"))
+            failStatus(userFacingErrorMessage(error, fallback: String(localized: "동의를 철회하지 못했어요")))
             return false
         }
 
@@ -1815,7 +1916,7 @@ final class AuthViewModel: ObservableObject {
         if !consentSensitiveMissing.contains("voice_biometric") {
             consentSensitiveMissing.append("voice_biometric")
         }
-        statusMessage = "음성 생체정보 처리 동의를 철회했어요."
+        statusMessage = String(localized: "음성 생체정보 처리 동의를 철회했어요.")
         return true
     }
 
@@ -1967,12 +2068,23 @@ final class AuthViewModel: ObservableObject {
         }
     }
 
-    func signOutExplicitly() {
-        let userID = session?.user.id
+    /// 계정을 떠날 때(명시적 로그아웃·탈퇴) 그 계정의 **취향**을 지운다 — 마지막에 쓴 목소리,
+    /// 문구 종류·테마·직접 입력 문구, 문구 설정.
+    ///
+    /// ⚠ **목소리 교체 표식(`VoiceReplacementMarkerStore`)은 지우지 않는다.**
+    /// 취향은 계정과 함께 떠나도 되지만 그 표식은 **남아 있는 로컬 알람의 안전
+    /// 기준**이다 — 로그아웃은 알람을 끄기만 하고 지우지 않으므로, 지우면 그 사이의
+    /// 교체를 다시 로그인한 기기가 '처음 봤다' 로 읽어 영영 강등하지 않는다.
+    private func clearAccountPreferences(_ userID: String?) {
         DefaultVoicePreferenceStore().clear(userID: userID)
         DynamicPromptPreferenceStore().clear(userID: userID)
         DynamicPromptPreferences.clear(userID: userID)
-        // 목소리 교체 표식은 남긴다 — 위 주석 참조(로그아웃은 로컬 알람을 지우지 않는다).
+    }
+
+    func signOutExplicitly() {
+        let userID = session?.user.id
+        beginLeavingAccount()
+        clearAccountPreferences(userID)
         // ⚠ **순서가 중요하다 — 시작만 해 놓으면 소용없다**(2026-08-18 Codex #697 P2).
         // 예전에는 `Task { }` 로 띄우기만 하고 곧바로 `signOut()` 을 불렀는데, 그 안의
         // `/auth/logout` 이 먼저 `token_epoch` 를 올려 버리면 `/push/unregister` 가 401 로
@@ -2016,6 +2128,10 @@ final class AuthViewModel: ObservableObject {
             await stopAlarms(departingUserID)
             isBusy = false
             signOut(revokeOnServer: false)
+            // ⚠ **세션을 비운 뒤 한 번 더 지운다**(멱등, Codex #837 검증). 위 알람 정리를 기다리는 동안에도 세션은
+            //   살아 있어, 그 사이 도착한 `/auth/me` 를 앱 루트가 받아 적으면(`AlarmTalkApp` 의 계정 설정 관찰) 떠나는
+            //   계정의 지역·사주가 기기에 다시 적힌다. 세션이 비면 더는 적히지 않는다.
+            clearAccountPreferences(departingUserID)
             // 서버 쪽까지 끝났을 때만 표시를 내린다 — 실패하면 남겨서 다음 실행이 재시도한다.
             // ⚠ 줄에 태운다 — 이 요청이 날아가는 동안 새 로그인이 끝나면 `token_epoch` 가
             // 올라가 **그 새 세션이 죽는다**(`authServerMutation` 주석).
@@ -2063,6 +2179,8 @@ final class AuthViewModel: ObservableObject {
         }
         KeychainStore.deleteSession()
         session = nil
+        // 세션이 끝났다 — 떠 있던 요청의 응답은 다음 세션에 적지 않는다(`sessionRevision`).
+        sessionRevision &+= 1
         pendingDeletion = false
         needsConsent = false
         // 동의 수집 상태도 계정별이다 — 앞 계정의 '받을 게 없음' 이 새 계정에 새면
@@ -2094,9 +2212,7 @@ final class AuthViewModel: ObservableObject {
     }
 
     private static func displayName(from components: PersonNameComponents) -> String? {
-        let value = PersonNameComponentsFormatter().string(from: components)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        return value.isEmpty ? nil : value
+        PersonNameComponentsFormatter().string(from: components).nilIfBlank
     }
 
 
@@ -2109,8 +2225,3 @@ final class AuthViewModel: ObservableObject {
         session = value
     }
 }
-
-// MARK: - Helper for blank-check on Optional<String>
-//
-// `AlarmTalkAPI.swift` 의 fileprivate `nilIfBlank` 와 동일 시맨틱을 내부 노출로
-// 재선언한다. 모듈 내 다른 파일이 import 없이 쓸 수 있도록 internal 가시성.

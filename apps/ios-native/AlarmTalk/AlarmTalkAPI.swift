@@ -21,7 +21,7 @@ final class AlarmTalkAPI: @unchecked Sendable {
         encoder = AlarmTalkAPI.makeJSONEncoder()
     }
 
-    /// 요청 바디 인코더. 키를 snake_case 로 바꾼다(`voiceEnergy` → `voice_energy`).
+    /// 요청 바디 인코더. 키를 snake_case 로 바꾼다(`relationshipLabel` → `relationship_label`).
     /// 테스트가 실제로 나가는 바디 모양을 같은 변환으로 검사할 수 있게 한 곳에서 만든다.
     static func makeJSONEncoder() -> JSONEncoder {
         let encoder = JSONEncoder()
@@ -231,8 +231,7 @@ final class AlarmTalkAPI: @unchecked Sendable {
         return response.profiles
     }
 
-    /// noiseRemoval 파라미터는 호출부 소스 호환을 위해 유지하지만 더 이상 multipart 로
-    /// 전송하지 않는다. Android 는 이 필드를 보내지 않고, 백엔드도 읽지 않는다(stale).
+    /// ⚠ `noiseRemoval` 은 보내지 않는다 — 안드로이드도 보내지 않고, 백엔드도 읽지 않는다.
     ///
     /// ⚠ `voiceGender`/`speechFormality` 는 **보내지 않는다.** 두 컬럼은 마이그레이션 #83 이
     /// DROP 했고, 대체재인 `speech_style` 은 등록 녹음 전사를 서버가 **자동 분석**해 채운다
@@ -242,23 +241,20 @@ final class AlarmTalkAPI: @unchecked Sendable {
         name: String,
         isShared: Bool,
         durationMs: Int,
-        noiseRemoval: Bool = false,
         relationshipLabel: String? = nil,
         listenerTitle: String? = nil,
-        voiceEnergy: VoiceEnergy = .defaultValue,
         isDraft: Bool = true,
         language: String = "ko"
     ) -> [String: String] {
-        _ = noiseRemoval // stale: 더 이상 전송하지 않음(backend 무시, Android 미전송).
         let fields: [String: String] = [
             "name": name.trimmingCharacters(in: .whitespacesAndNewlines),
             "isShared": isShared ? "true" : "false",
             "durationMs": String(durationMs),
             "relationshipLabel": relationshipLabel?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "",
             "listenerTitle": listenerTitle?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "",
-            // 목소리의 결 — 관계·호칭과 같이 초안을 만들 때 싣는다. **자동도 보낸다**(`""`):
-            // 서버는 빈 값을 '자동'(NULL)으로 저장하고, 고른 결은 사전렌더 문구의 말투를 정한다.
-            "voiceEnergy": voiceEnergy.rawValue,
+            // ⚠ 목소리의 결(`voiceEnergy`)은 **보내지 않는다**(2026-09-29 '목소리 느낌' 선택 제거).
+            //   서버는 필드가 없으면 등록 녹음 전사로 추정한 말투를 쓴다 — 예전의 '자동' 과 같다
+            //   (`docs/spec/voice-and-message.md` §4-2). 안드로이드 `createVoiceCloneDraft` 와 같다.
             // ⚠ **초안(draft)으로 만든다.** 서버는 draft → 미리듣기 확인 → 승격 흐름을
             // 전제한다(`voice-profile.ts:1080`). 이걸 안 보내면 등록이 곧바로 정식
             // 프로필이 되어, 사용자가 결과를 들어보기도 전에 페르소나가 잠기고
@@ -276,11 +272,9 @@ final class AlarmTalkAPI: @unchecked Sendable {
         isShared: Bool,
         durationMs: Int,
         token: String,
-        noiseRemoval: Bool = false,
         uploadFileName: String? = nil,
         relationshipLabel: String? = nil,
         listenerTitle: String? = nil,
-        voiceEnergy: VoiceEnergy = .defaultValue,
         isDraft: Bool = true,
         language: String = "ko"
     ) async throws -> VoiceProfile {
@@ -288,10 +282,8 @@ final class AlarmTalkAPI: @unchecked Sendable {
             name: name,
             isShared: isShared,
             durationMs: durationMs,
-            noiseRemoval: noiseRemoval,
             relationshipLabel: relationshipLabel,
             listenerTitle: listenerTitle,
-            voiceEnergy: voiceEnergy,
             isDraft: isDraft,
             language: language
         )
@@ -352,25 +344,41 @@ final class AlarmTalkAPI: @unchecked Sendable {
 
     /// 초안(draft)을 정식 프로필로 승격한다. 미리듣기를 확인한 뒤에만 부른다.
     /// 서버는 이 시점에 페르소나(관계·호칭)를 잠그고 사전렌더 큐를 적재한다.
-    /// - Parameter replaceExisting: 등록 확정 화면의 교체 체크. true 면 한도에 걸려도
-    ///   막지 않고 **기존 목소리 자리에 이 목소리를 앉힌다**(알람은 그대로 살아 있다).
+    /// - Parameter replaceExisting: 교체 등록 — 이미 등록된 목소리가 있으면 등록 확정 화면이 언제나 true 로 보낸다
+    ///   (체크 없음). true 면 한도에 걸려도 막지 않고 **기존 목소리 자리에 이 목소리를 앉힌다**(알람은 그대로 살아 있다).
+    /// - Parameter pitchSemitones: 등록 미리듣기에서 들은 목소리 높이(반음). nil·0 이면 보내지 않는다(원래 소리).
     func promoteVoiceDraft(
         id: String,
         token: String,
         replaceExisting: Bool = false,
-        isShared: Bool = false
+        isShared: Bool = false,
+        pitchSemitones: Double? = nil
     ) async throws -> VoiceProfile {
         let response: VoiceProfileResponse = try await request(
             "voice/\(id)",
             method: "PATCH",
             token: token,
-            body: VoiceDraftPromoteRequest(
-                isDraft: false,
-                replaceExisting: replaceExisting ? true : nil,
-                isShared: isShared
+            body: Self.voiceDraftPromoteBody(
+                replaceExisting: replaceExisting,
+                isShared: isShared,
+                pitchSemitones: pitchSemitones
             )
         )
         return response.profile
+    }
+
+    /// 등록 확정 바디. 테스트가 실제로 나가는 모양을 같은 인코더로 볼 수 있게 따로 둔다.
+    static func voiceDraftPromoteBody(
+        replaceExisting: Bool,
+        isShared: Bool,
+        pitchSemitones: Double?
+    ) -> VoiceDraftPromoteRequest {
+        VoiceDraftPromoteRequest(
+            isDraft: false,
+            replaceExisting: replaceExisting ? true : nil,
+            isShared: isShared,
+            pitchSemitones: pitchSemitones.flatMap { $0 == 0 ? nil : $0 }
+        )
     }
 
     /// 미리듣기를 **끝까지 들었다**고 서버에 알린다. 서버가 준 재생 토큰을 그대로 돌려준다.
@@ -516,16 +524,11 @@ final class AlarmTalkAPI: @unchecked Sendable {
 
     /// 관계/호칭 갱신 — `PATCH /voice/:id/relationship`. body 의 두 필드는 모두 필수.
     /// 공유받은 음성이면 viewer 자신의 관계/호칭을, 내 **초안**이면 그 초안의 페르소나를 고친다.
-    /// Android `VoiceProfileApi.kt:132-137`.
-    ///
-    /// - Parameter voiceEnergy: 내 초안의 목소리 결. nil 이면 보내지 않아 서버가 그 값을
-    ///   그대로 둔다 — viewer 경로는 nil 로 부른다(결은 목소리 주인이 정한다).
-    ///   초안에서 결이 바뀌면 서버가 관계·호칭처럼 미리듣기를 비워 새 결로 다시 만든다.
+    /// 목소리의 결(`voice_energy`)은 싣지 않는다 — 서버가 그 값을 건드리지 않는다.
     func updateVoiceProfileRelationship(
         profileId: String,
         relationshipLabel: String,
         listenerTitle: String,
-        voiceEnergy: VoiceEnergy? = nil,
         token: String
     ) async throws -> VoiceProfile {
         let response: VoiceProfileResponse = try await request(
@@ -534,8 +537,7 @@ final class AlarmTalkAPI: @unchecked Sendable {
             token: token,
             body: Self.voiceRelationshipUpdateBody(
                 relationshipLabel: relationshipLabel,
-                listenerTitle: listenerTitle,
-                voiceEnergy: voiceEnergy
+                listenerTitle: listenerTitle
             )
         )
         return response.profile
@@ -545,13 +547,11 @@ final class AlarmTalkAPI: @unchecked Sendable {
     /// 순수 함수로 뺐다(`voiceCloneMultipartFields` 와 같은 이유).
     static func voiceRelationshipUpdateBody(
         relationshipLabel: String,
-        listenerTitle: String,
-        voiceEnergy: VoiceEnergy? = nil
+        listenerTitle: String
     ) -> VoiceProfileRelationshipUpdateRequest {
         VoiceProfileRelationshipUpdateRequest(
             relationshipLabel: relationshipLabel.trimmingCharacters(in: .whitespacesAndNewlines),
-            listenerTitle: listenerTitle.trimmingCharacters(in: .whitespacesAndNewlines),
-            voiceEnergy: voiceEnergy?.rawValue
+            listenerTitle: listenerTitle.trimmingCharacters(in: .whitespacesAndNewlines)
         )
     }
 
@@ -564,16 +564,10 @@ final class AlarmTalkAPI: @unchecked Sendable {
         try await request("tts/generate", method: "POST", token: token, body: requestBody)
     }
 
-    /// 기본 제공(스톡) 알람 클립 카탈로그 조회. 서버는 모든 인증 사용자에게 동일한
-    /// 전역 목록을 주며, 쿼리 파라미터를 받지 않는다(tts.ts:1287-1313). 언어/카테고리
-    /// 필터·정렬은 클라이언트(StockClipPicker)가 담당한다. 미리듣기/선택 시 음원은
-    /// 기존 `getTTSMessageAudio` 로 받는다(신규 오디오 엔드포인트 없음).
-    func getStockClips(token: String) async throws -> [StockClip] {
-        try await getStockClipManifest(token: token).clips
-    }
-
-    /// 클립 목록 + **카테고리별 완전한 세트 크기**. 완전성 판정에 그 크기가 필요하다
+    /// 기본 제공(스톡) 알람 클립 카탈로그 조회 — 클립 목록 + **카테고리별 완전한 세트 크기**.
+    /// 완전성 판정에 그 크기가 필요하다
     /// (`ExpectedVariantCounts` 주석 참조 — 기본/등록 목소리의 개수가 다르다).
+    /// 음원은 기존 `getTTSMessageAudio` 로 받는다(신규 오디오 엔드포인트 없음).
     func getStockClipManifest(token: String) async throws -> StockClipListResponse {
         try await request("tts/stock-clips", token: token)
     }
@@ -584,7 +578,8 @@ final class AlarmTalkAPI: @unchecked Sendable {
 
     /// 사전렌더 테마(날씨)의 **어느 클립을 틀지**를 서버에 물어본다.
     ///
-    /// 서버가 그 도시·그 날짜의 실제 예보(open-meteo)를 조회해 조건 인덱스를 돌려준다.
+    /// 서버가 그 지역·그 날짜의 실제 예보(서버가 지역마다 미리 계산 — 원천은 서버가 정한다)로
+    /// 조건 인덱스를 돌려준다.
     /// 클라는 이 값을 알람에 스냅샷해 두고, **울릴 때는 오프라인 조회만** 한다
     /// (발사 순간 네트워크 0). 운세는 이 호출이 필요 없다 — 사주+날짜로 기기에서
     /// 결정적으로 계산한다(`BucketVariantResolver.fortuneThemeIndex`).
@@ -592,8 +587,13 @@ final class AlarmTalkAPI: @unchecked Sendable {
     /// ⚠ **날씨 조회 실패는 `nil` 이다.** '맑음(0)' 과 구분되어야 한다 — 못 받았는데
     /// 0 으로 저장하면 비 오는 날에 "하늘 한 번 올려다보세요" 가 나간다.
     /// 안드로이드 `AlarmTalkApi.getPrerenderVariant` 미러.
+    ///
+    /// - Parameter region: 날씨 지역 키(`WeatherRegions`). 있으면 서버는 그 지역의 **미리 계산해 둔**
+    ///   값을 준다(지오코딩 없음). `country`·`city` 는 **계속 함께 보낸다** — 새 서버가 배포되기
+    ///   전 창과 옛 서버는 그 글자로 찾는다(`docs/spec/voice-and-message.md` 「날씨 지역은 목록에서만 고른다」).
     func getPrerenderVariant(
         context: String,
+        region: String?,
         country: String?,
         city: String?,
         targetDate: String,
@@ -601,6 +601,7 @@ final class AlarmTalkAPI: @unchecked Sendable {
         token: String
     ) async throws -> Int? {
         var items = [URLQueryItem(name: "context", value: context)]
+        if let region = region?.nilIfBlank { items.append(URLQueryItem(name: "region", value: region)) }
         if let country = country?.nilIfBlank { items.append(URLQueryItem(name: "country", value: country)) }
         if let city = city?.nilIfBlank { items.append(URLQueryItem(name: "city", value: city)) }
         items.append(URLQueryItem(name: "target_date", value: targetDate))
@@ -632,7 +633,7 @@ final class AlarmTalkAPI: @unchecked Sendable {
     /// `RemoteAlarmPullSync` 가 신규 수신 알람의 음원을 캐싱할 때 호출.
     func getTtsAudio(messageId: String, token: String) async throws -> DecodedTtsAudio {
         let response = try await getTTSMessageAudio(id: messageId, token: token)
-        // 0바이트 방어 — `AudioCacheStore.cache(tts:)` 주석 참조.
+        // 0바이트 방어 — `AudioCacheStore.cache(tts:cacheKey:)` 주석 참조.
         guard let data = Data(base64Encoded: response.audioBase64), !data.isEmpty else {
             throw APIError.invalidResponse
         }
@@ -655,33 +656,33 @@ final class AlarmTalkAPI: @unchecked Sendable {
         try await request("user/me", method: "DELETE", token: token)
     }
 
-    /// 30일 유예 탈퇴 신청. 즉시 삭제 대신 유예 상태로 전환. Android `AuthApi.kt:197`.
+    /// 30일 유예 탈퇴 신청. 즉시 삭제 대신 유예 상태로 전환. Android `AuthApi.kt:196`.
     func requestAccountDeletion(token: String) async throws -> AccountDeletionResponse {
         try await request("user/me/deletion", method: "POST", token: token)
     }
 
-    /// 유예 기간 내 탈퇴 철회 → 계정 복구. Android `AuthApi.kt:202`.
+    /// 유예 기간 내 탈퇴 철회 → 계정 복구. Android `AuthApi.kt:201`.
     func cancelAccountDeletion(token: String) async throws -> CancelDeletionResponse {
         try await request("user/me/deletion", method: "DELETE", token: token)
     }
 
-    /// 필수 약관 동의 필요 여부 조회. Android `AuthApi.kt:206`.
+    /// 필수 약관 동의 필요 여부 조회. Android `AuthApi.kt:205`.
     func consentStatus(token: String) async throws -> ConsentStatusResponse {
         try await request("user/consents/status", token: token)
     }
 
-    /// 약관 동의 기록. Android `AuthApi.kt:248-252`.
+    /// 약관 동의 기록. Android `AuthApi.kt:247-251`.
     func recordConsents(_ requestBody: RecordConsentsRequest, token: String) async throws -> RecordConsentsResponse {
         try await request("user/consents", method: "POST", token: token, body: requestBody)
     }
 
     /// 유형별 최신 동의 기록 목록 조회. 설정 화면의 마케팅(광고성 정보 수신) 토글이
-    /// 현재 동의 상태를 읽을 때 사용. Android `AuthApi.kt:245-246`, 백엔드 user.ts:401.
+    /// 현재 동의 상태를 읽을 때 사용. Android `AuthApi.kt:244-245`, 백엔드 user.ts:401.
     func listConsents(token: String) async throws -> ConsentListResponse {
         try await request("user/consents", token: token)
     }
 
-    /// 앱 최소지원버전 정책 조회. 인증 불필요. Android `AuthApi.kt:215` (`platform` 만 ios).
+    /// 앱 최소지원버전 정책 조회. 인증 불필요. Android `AuthApi.kt:214` (`platform` 만 ios).
     func appVersion(platform: String = "ios") async throws -> AppVersionResponse {
         try await request("app/version?platform=\(platform)")
     }
@@ -855,7 +856,7 @@ final class AlarmTalkAPI: @unchecked Sendable {
     // MARK: - 비밀번호 재설정
 
     /// 비밀번호 재설정 코드 발송. 계정 존재 여부를 노출하지 않으므로(비번 계정에만 발송)
-    /// 응답은 항상 성공이다. Android `AuthApi.kt:200-201`, 백엔드 auth.ts:280.
+    /// 응답은 항상 성공이다. Android `AuthApi.kt:199-200`, 백엔드 auth.ts:280.
     func requestPasswordReset(email: String) async throws -> RequestEmailVerificationResponse {
         try await request(
             "auth/password-reset",
@@ -865,7 +866,7 @@ final class AlarmTalkAPI: @unchecked Sendable {
     }
 
     /// 비밀번호 재설정 확정 — 6자리 코드 검증 후 새 비밀번호로 교체. 성공 시 서버가
-    /// token_epoch 를 올려 기존 세션을 전부 폐기한다. Android `AuthApi.kt:203-206`,
+    /// token_epoch 를 올려 기존 세션을 전부 폐기한다. Android `AuthApi.kt:202-205`,
     /// 백엔드 auth.ts:359.
     func confirmPasswordReset(
         email: String,
@@ -960,6 +961,55 @@ final class AlarmTalkAPI: @unchecked Sendable {
         token: String? = nil,
         body: Body? = nil
     ) async throws -> Response {
+        var request = baseRequest(path, method: method, token: token)
+        if let body {
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = try encoder.encode(body)
+        }
+        return try await send(request, token: token)
+    }
+
+    private func request<Response: Decodable>(
+        _ path: String,
+        method: String = "GET",
+        token: String? = nil
+    ) async throws -> Response {
+        let body: EmptyBody? = nil
+        return try await request(path, method: method, token: token, body: body)
+    }
+
+    private func multipartRequest<Response: Decodable>(
+        _ path: String,
+        token: String,
+        fields: [String: String],
+        files: [MultipartFile]
+    ) async throws -> Response {
+        let boundary = "Boundary-\(UUID().uuidString)"
+        var request = baseRequest(path, method: "POST", token: token)
+        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+
+        var data = Data()
+        for (name, value) in fields {
+            data.appendMultipartLine("--\(boundary)")
+            data.appendMultipartLine("Content-Disposition: form-data; name=\"\(name)\"")
+            data.appendMultipartLine("")
+            data.appendMultipartLine(value)
+        }
+        for file in files {
+            data.appendMultipartLine("--\(boundary)")
+            data.appendMultipartLine("Content-Disposition: form-data; name=\"\(file.fieldName)\"; filename=\"\(file.fileName)\"")
+            data.appendMultipartLine("Content-Type: \(file.mimeType)")
+            data.appendMultipartLine("")
+            data.append(file.data)
+            data.appendMultipartLine("")
+        }
+        data.appendMultipartLine("--\(boundary)--")
+        request.httpBody = data
+        return try await send(request, token: token)
+    }
+
+    /// 공통 헤더(Accept·앱 메타·Bearer)를 실은 요청.
+    private func baseRequest(_ path: String, method: String, token: String?) -> URLRequest {
         var request = URLRequest(url: endpoint(path))
         request.httpMethod = method
         request.setValue("application/json", forHTTPHeaderField: "Accept")
@@ -967,11 +1017,13 @@ final class AlarmTalkAPI: @unchecked Sendable {
         if let token {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
-        if let body {
-            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            request.httpBody = try encoder.encode(body)
-        }
+        return request
+    }
 
+    /// 보내고 응답을 해석한다. JSON·multipart 요청이 **같은 규칙**을 쓴다 — 2xx 디코드,
+    /// 401 은 세션 만료 알림, 403 `CONSENT_REQUIRED` 는 동의 화면, 그 밖은 `APIError.server`.
+    /// 앱에서 `APIError.server` 를 만드는 곳은 여기 하나다.
+    private func send<Response: Decodable>(_ request: URLRequest, token: String?) async throws -> Response {
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else {
             throw APIError.invalidResponse
@@ -996,68 +1048,6 @@ final class AlarmTalkAPI: @unchecked Sendable {
         )
     }
 
-    private func request<Response: Decodable>(
-        _ path: String,
-        method: String = "GET",
-        token: String? = nil
-    ) async throws -> Response {
-        let body: EmptyBody? = nil
-        return try await request(path, method: method, token: token, body: body)
-    }
-
-    private func multipartRequest<Response: Decodable>(
-        _ path: String,
-        token: String,
-        fields: [String: String],
-        files: [MultipartFile]
-    ) async throws -> Response {
-        let boundary = "Boundary-\(UUID().uuidString)"
-        var request = URLRequest(url: endpoint(path))
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-        Self.applyAppMetadataHeaders(to: &request)
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
-
-        var data = Data()
-        for (name, value) in fields {
-            data.appendMultipartLine("--\(boundary)")
-            data.appendMultipartLine("Content-Disposition: form-data; name=\"\(name)\"")
-            data.appendMultipartLine("")
-            data.appendMultipartLine(value)
-        }
-        for file in files {
-            data.appendMultipartLine("--\(boundary)")
-            data.appendMultipartLine("Content-Disposition: form-data; name=\"\(file.fieldName)\"; filename=\"\(file.fileName)\"")
-            data.appendMultipartLine("Content-Type: \(file.mimeType)")
-            data.appendMultipartLine("")
-            data.append(file.data)
-            data.appendMultipartLine("")
-        }
-        data.appendMultipartLine("--\(boundary)--")
-        request.httpBody = data
-
-        let (responseData, response) = try await session.data(for: request)
-        guard let http = response as? HTTPURLResponse else {
-            throw APIError.invalidResponse
-        }
-        if (200..<300).contains(http.statusCode) {
-            return try decoder.decode(Response.self, from: responseData)
-        }
-        if http.statusCode == 401 {
-            Self.handleUnauthorized(token: token)
-        }
-        let serverError = try? decoder.decode(ServerError.self, from: responseData)
-        if http.statusCode == 403, serverError?.errorCode == Self.consentRequiredErrorCode {
-            Self.handleConsentRequired(consent: serverError?.consent)
-        }
-        throw APIError.server(
-            status: http.statusCode,
-            message: serverError?.error ?? HTTPURLResponse.localizedString(forStatusCode: http.statusCode),
-            errorCode: serverError?.errorCode
-        )
-    }
-
     // MARK: - 공통 헤더 / 401 중앙 처리
 
     /// 모든 요청에 플랫폼/버전 메타데이터를 싣는다. Android `AlarmTalkApiClient` 의
@@ -1066,17 +1056,13 @@ final class AlarmTalkAPI: @unchecked Sendable {
     /// - `X-App-Version`: 설치 빌드 번호(`CFBundleVersion`) 의 문자열. Android 는
     ///   `appVersionCode.toString()` 을 보내므로, marketing 버전(`CFBundleShortVersionString`)
     ///   이 아니라 정수 빌드 번호를 보내야 값 시맨틱이 일치한다.
-    ///   `AppVersionGate.installedVersionCode()` 와 동일한 키(`CFBundleVersion`)·변환을 쓰되,
-    ///   그쪽은 `@MainActor` 격리라 여기서 직접 읽어 actor 격리 위반을 피한다.
+    ///   값은 `AppVersionGate.installedVersionCode()` 하나에서 읽는다.
     private static func applyAppMetadataHeaders(to request: inout URLRequest) {
         request.setValue("ios", forHTTPHeaderField: "X-App-Platform")
         request.setValue(appVersionHeaderValue, forHTTPHeaderField: "X-App-Version")
     }
 
-    private static let appVersionHeaderValue: String = {
-        let raw = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "1"
-        return String(Int(raw) ?? 1)
-    }()
+    private static let appVersionHeaderValue = String(AppVersionGate.installedVersionCode())
 
     /// 401 응답을 받으면 한 번만 세션 만료 알림을 쏜다. Android `UnauthorizedAuthenticator`
     /// 가 응답 체인당 콜백을 한 번만 호출하는 동작과 동등.

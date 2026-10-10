@@ -21,12 +21,11 @@ struct MainTabsView: View {
     @State private var selectedTab: NativeTab = UIPreviewSeed.initialTab ?? .alarms
     @State private var receivedAlarmSeenAtMillis: Int64 = 0
 
-    /// 탭 전환 시 매번 네트워크 요청이 나가면 살짝 버벅인다. 탭+토큰별 마지막
-    /// 새로고침 시각을 기억해, 60초 안에 다시 들른 경우엔 재요청을 건너뛴다.
-    /// (토큰이 바뀌면 키가 달라져 자연히 새로 받는다.) Android `lastTabRefreshAt`
-    /// (`AlarmTalkApp.kt`) parity — 키는 "탭.token" 문자열.
-    @State private var lastRefreshAt: [String: Date] = [:]
-    private let tabRefreshThrottle: TimeInterval = 60
+    /// 알람 탭 동기화의 60초 스로틀 표 — 키는 탭 + 계정(`tabRefreshThrottleKey`, 토큰이 아니다).
+    /// 완결되지 않은 회차는 칸을 지워 다음 진입이 곧바로 다시 돈다(`AlarmTabSyncThrottle`).
+    /// Android `lastTabRefreshAt`(`ui/app/AlarmTalkApp.kt`) 대응. 목소리·더보기 탭은 이 표가 아니라
+    /// 뷰모델의 신선도 창(`refreshOnEntry`)으로 가른다.
+    @State private var alarmTabSyncThrottle = AlarmTabSyncThrottle()
 
     /// `editorTarget` 이 nil 이 아니면 알람 편집 시트가 뜬다.
     @State private var editorTarget: AlarmEditorTarget?
@@ -73,7 +72,7 @@ struct MainTabsView: View {
 
     private var voicesNotReadyMessage: String {
         if let progress = voicesNotReadyProgress, progress.total > 0 {
-            let percent = min(progress.done * 100 / progress.total, 99)
+            let percent: Int = min(progress.done * 100 / progress.total, 99)
             return String(localized: "알람에 쓸 기본 목소리를 다 받아야 알람을 설정할 수 있어요. (\(percent)%)\n목소리 탭에서 진행 상황을 볼 수 있어요.")
         }
         return String(localized: "알람에 쓸 기본 목소리를 다 받아야 알람을 설정할 수 있어요.\n인터넷에 연결된 상태에서 잠시 기다려 주세요.")
@@ -112,7 +111,7 @@ struct MainTabsView: View {
             }
             // ＋FAB — 알람 탭에서 **알람이 하나라도 있을 때만**. 비어 있을 때는 빈 상태
             // 카드의 '새 알람 만들기' 가 이미 그 일을 하고, 둘이 같이 뜨면 오른쪽 아래에서
-            // 손가락이 뭘 노리는지 애매해진다(안드로이드 `AlarmTalkApp.kt:855-873`).
+            // 손가락이 뭘 노리는지 애매해진다(안드로이드 `AlarmTalkApp.kt:852-870`).
             .overlay(alignment: .bottomTrailing) {
                 // 선택 모드에서는 숨긴다 — 삭제 바와 ＋가 함께 있으면 오른쪽 아래에서
                 // 손가락이 뭘 노리는지 애매해진다(안드로이드 `!alarmSelectionActive`).
@@ -139,7 +138,7 @@ struct MainTabsView: View {
                     .padding(.trailing, 20)
                     // 하단바(76) 위에 얹는다.
                     .padding(.bottom, 92)
-                    .accessibilityLabel("알람 만들기")
+                    .accessibilityLabel(String(localized: "알람 만들기"))
                     .transition(.scale(scale: 0.85).combined(with: .opacity))
                 }
             }
@@ -155,9 +154,9 @@ struct MainTabsView: View {
                 }
                 SystemPermissionPrompts.shared.markNotificationRequestSettled()
             }
-            .alert("목소리를 아직 받는 중이에요", isPresented: $voicesNotReadyAlert) {
+            .alert(String(localized: "목소리를 아직 받는 중이에요"), isPresented: $voicesNotReadyAlert) {
                 // 받기는 막는 순간 이미 다시 걸었다 — 누를 버튼을 따로 두지 않는다.
-                Button("확인", role: .cancel) {}
+                Button(String(localized: "확인"), role: .cancel) {}
             } message: {
                 Text(voicesNotReadyMessage)
             }
@@ -169,7 +168,7 @@ struct MainTabsView: View {
             }
             .background(theme.homeGradient)
             // ⚠ **상단 바를 두지 않는다.** 안드로이드에는 앱 전체에 TopAppBar 가 하나도
-            // 없다(`AlarmListScreen.kt:178-180`). large title 을 켜면 '알람' 대제목과
+            // 없다(`AlarmListScreen.kt:174-176`). large title 을 켜면 '알람' 대제목과
             // 네비바 머티리얼이 그라데이션 위에 얹혀 배경이 두 겹으로 갈린다.
             .toolbar(.hidden, for: .navigationBar)
             // ⚠ **상단 프로필 드롭다운을 되살리지 말 것.** 여기 있던 항목(코드 등록·
@@ -187,7 +186,7 @@ struct MainTabsView: View {
             // 이 `currentTab != null` 을 보므로 탭이 아닌 목적지에서는 크롬을 내린다.
             //
             // ⚠ 바텀시트로 남겨 둔 것들과 헷갈리지 말 것. 「누구를 깨울까요?」·목소리
-            // 고르기·화면 테마·공휴일 국가·날씨 지역은 **안드로이드도 바텀시트**
+            // 고르기·화면 테마·지역은 **안드로이드도 바텀시트**
             // (`WakerSelectionSheet`)라 그대로 둔다.
             .navigationDestination(item: $editorTarget) { target in
                 AlarmEditorSheet(
@@ -328,62 +327,73 @@ struct MainTabsView: View {
         }.count
     }
 
+    /// 계정이 정해졌을 때 한 번(콜드 스타트·로그인·계정 전환).
+    ///
+    /// ⚠ **알람 동기화는 여기서 부르지 않는다**(2026-09-29). 같은 순간 앱의 계정 키 `.task`
+    ///   (`AlarmTalkApp` — `remoteSync.runFullSync()`)와 알람 탭 진입(`refreshForSelectedTab`)이
+    ///   이미 push → pull 을 돈다. 예전에는 여기서 pull 을 한 번 더 돌려 콜드 스타트에 `/alarm`
+    ///   쌍이 3~4번 나갔고, 그 사이 토글의 단건 push 가 `isBusy` 가드에 걸려 건너뛰어졌다.
     private func refreshAll() async {
-        await remoteSync.refresh(session: auth.session)
-        await voiceStudio.refresh(session: auth.session)
-        await socialFeatures.refreshAll(session: auth.session)
+        await voiceStudio.refreshOnEntry(session: auth.session)
+        await socialFeatures.refreshOnEntry(session: auth.session)
         alarmKit.refreshAuthorizationState()
+    }
+
+    /// 알람 탭 동기화 스로틀의 키 — **탭 + 계정**이다.
+    ///
+    /// ⚠ **토큰을 넣지 말 것**(2026-09-29). `/auth/me` 는 부를 때마다 토큰을 굴리는데, 이용권
+    ///   새로고침(`SocialFeatureViewModel.refreshAll`)이 그걸 부른다 — 메뉴·목소리 탭에 한 번
+    ///   들르면 토큰이 바뀌어 **스로틀 표가 통째로 무효**가 됐다. 같은 계정의 재로그인은
+    ///   이 화면이 새로 만들어져(`RootView`) 표가 비워지므로 계정 id 로 충분하다.
+    static func tabRefreshThrottleKey(tab: NativeTab, userID: String) -> String {
+        "\(tab).\(userID)"
     }
 
     private func refreshForSelectedTab(_ tab: NativeTab) async {
         // 세션이 없으면 알람 탭은 로그인 안내를 띄우고(Android syncNow parity),
         // 나머지 탭은 조용히 빠진다. (각 refresh 는 session nil 이면 자체 no-op)
-        guard auth.session != nil else {
+        guard let userID = auth.session?.user.id else {
             if tab == .alarms {
-                remoteSync.statusMessage = "동기화하려면 먼저 로그인해 주세요"
+                remoteSync.statusMessage = String(localized: "동기화하려면 먼저 로그인해 주세요")
             }
             return
         }
-
-        // 알람 탭 진입 시 받은-알람 seen 기준선은 네트워크 새로고침과 무관하게 항상
-        // 갱신해야 한다. 60초 스로틀에 막혀 아래에서 일찍 return 되면 markReceivedAlarmsSeen
-        // 가 지연돼 배지가 늦게 사라지므로, 스로틀 판정 전에 먼저 갱신한다. 권한 상태
-        // 새로고침도 로컬-only 라 저렴해 함께 둔다.
-        if tab == .alarms {
-            alarmKit.refreshAuthorizationState()
-            markReceivedAlarmsSeen()
-        }
-
-        // 탭+토큰 키로 60초 스로틀. 탭에 필요한 데이터가 비어 있으면(예: 무료 플랜
-        // 정리로 목소리 목록이 비워진 직후) 스로틀을 무시하고 즉시 다시 불러와
-        // 빈 화면이 남지 않게 한다. (Android lastTabRefreshAt + tabDataEmpty parity)
-        let throttleKey = "\(tab).\(auth.session?.token ?? "")"
-        let now = Date()
-        let tabDataEmpty: Bool = {
-            switch tab {
-            case .voices: return voiceStudio.profiles.isEmpty
-            default: return false
-            }
-        }()
-        if !tabDataEmpty,
-           let last = lastRefreshAt[throttleKey],
-           now.timeIntervalSince(last) < tabRefreshThrottle {
-            return
-        }
-        lastRefreshAt[throttleKey] = now
 
         switch tab {
+        // ⚠ **목소리·더보기 탭은 탭 스로틀 표를 쓰지 않는다**(2026-09-29, 스펙 plan-gates §4).
+        //   건너뛸지는 뷰모델의 신선도 창(`refreshOnEntry`)이 가른다 — 그 창은 **끝까지 성공한**
+        //   갱신만 연다. 탭 표는 갱신 **전에** 적혀서, 여기 쓰면 실패한 뒤 60초 동안 이 탭에
+        //   다시 들어와도 재시도가 막힌다(목소리 패널의 중복 `.task` 가 있을 때는 그게 대신
+        //   다시 받았지만 이제 없다).
         case .menu:
-            await socialFeatures.refreshAll(session: auth.session)
+            await socialFeatures.refreshOnEntry(session: auth.session)
         case .voices:
-            await voiceStudio.refresh(session: auth.session)
-            await socialFeatures.refreshAll(session: auth.session)
+            // ⚠ **목소리 탭의 이용권 갱신은 빼지 말 것**(2026-08-24 실기기, 스펙 plan-gates §4).
+            //   목소리 탭이 앱 시작의 캐시 스냅샷에만 기대면, 다른 기기에서 플랜이 바뀐 가족
+            //   이용권 사용자가 '추가' 를 눌렀는데 이용권 안내 모달이 뜬다. 목소리 패널이 같은
+            //   갱신을 한 번 더 부르던 것은 걷어냈다 — 이 자리가 그 진입의 한 번이다.
+            await voiceStudio.refreshOnEntry(session: auth.session)
+            await socialFeatures.refreshOnEntry(session: auth.session)
         case .alarms:
+            // 받은-알람 seen 기준선은 네트워크 새로고침과 무관하게 항상 갱신해야 한다. 60초
+            // 스로틀에 막혀 아래에서 일찍 return 되면 markReceivedAlarmsSeen 가 지연돼 배지가
+            // 늦게 사라지므로, 스로틀 판정 전에 먼저 갱신한다. 권한 상태 새로고침도 로컬-only 라
+            // 저렴해 함께 둔다.
+            alarmKit.refreshAuthorizationState()
+            markReceivedAlarmsSeen()
+            // 탭+계정 키로 60초 스로틀(`tabRefreshThrottleKey` — 토큰이 아니다).
+            // (Android lastTabRefreshAt parity)
+            let throttleKey = Self.tabRefreshThrottleKey(tab: tab, userID: userID)
+            let admittedAt = Date()
+            guard alarmTabSyncThrottle.admit(key: throttleKey, now: admittedAt) else { return }
             // Android: NativeTab.Alarms -> viewModel.syncNow() (push → pull).
             // 기존 pull-only refresh 대신 전체 동기화로 로컬 변경을 먼저 밀어 올린다.
-            // 권한 상태는 스로틀 전에 이미 새로고침했다. seen 기준선은 풀로 새 받은-알람이
-            // 들어왔을 수 있으니 동기화 후 한 번 더 갱신한다.
-            await remoteSync.runFullSync()
+            // seen 기준선은 풀로 새 받은-알람이 들어왔을 수 있으니 동기화 후 한 번 더 갱신한다.
+            let completed = await remoteSync.runFullSync()
+            // ⚠ **완결되지 않은 회차(오프라인·저장소 로드 전·탭을 떠나 취소)는 칸을 지운다**
+            //   (코덱스 #823 7차) — 남기면 60초 동안 알람 탭에 다시 들어와도 재시도하지 않아,
+            //   놓친 가족 알람 푸시를 따라잡는 자리가 늦어진다.
+            alarmTabSyncThrottle.settle(key: throttleKey, admittedAt: admittedAt, completed: completed)
             markReceivedAlarmsSeen()
         }
     }

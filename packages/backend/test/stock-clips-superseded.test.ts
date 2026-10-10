@@ -59,7 +59,7 @@ vi.mock('../src/lib/voice-provider', async (importOriginal) => ({
 
 vi.mock('../src/lib/vertex-translate', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../src/lib/vertex-translate')>()),
-  generatePrerenderClipText: async () => ({ text: '옛 목소리 문구', tags: [] }),
+  generatePrerenderClipText: async () => ({ text: '옛 목소리 문구' }),
 }));
 
 import { generateStockClip, PrerenderSupersededError } from '../src/lib/stock-clips';
@@ -102,7 +102,8 @@ async function prerenderDb(): Promise<{ db: Client; path: string }> {
       created_at TEXT DEFAULT (datetime('now'))
     );
     CREATE TABLE pending_external_deletions (
-      id TEXT PRIMARY KEY, kind TEXT NOT NULL, ref TEXT NOT NULL, created_at TEXT
+      id TEXT PRIMARY KEY, kind TEXT NOT NULL, ref TEXT NOT NULL, created_at TEXT,
+      UNIQUE(kind, ref)
     );
     INSERT INTO voice_profiles (id, user_id, name, elevenlabs_voice_id)
       VALUES ('vp1', 'u1', '엄마 목소리', 'eleven-OLD');
@@ -241,7 +242,7 @@ describe('사전렌더 — 렌더 중에 교체가 한 번 더 일어나면', ()
     }
   });
 
-  it('아무것도 안 바뀌었으면 정상적으로 덮어쓰고 옛 오브젝트를 정리한다', async () => {
+  it('아무것도 안 바뀌었으면 정상적으로 덮어쓰고 옛 오브젝트는 삭제 큐에 넣는다', async () => {
     const { db, path } = await prerenderDb();
     try {
       const result = await generateStockClip(db as never, ENV, inFlightTarget);
@@ -249,7 +250,27 @@ describe('사전렌더 — 렌더 중에 교체가 한 번 더 일어나면', ()
       expect(result.message_id, '알람이 가리키는 message id 는 바뀌면 안 된다').toBe('m1');
       const message = await db.execute("SELECT audio_url FROM messages WHERE id = 'm1'");
       expect(String(message.rows[0]!.audio_url)).not.toBe('r2://old-object');
-      expect(deletedKeys, '밀려난 옛 오브젝트는 커밋 뒤에 정리한다').toEqual(['old-object']);
+      // ⚠ 바로 지우지 않는다(Codex #840) — 같은 오브젝트를 다른 프리셋이 나눠 쓸 수 있다. 드레인이 참조를 보고 지운다.
+      expect(deletedKeys, '밀려난 옛 오브젝트를 바로 지우지 않는다').toEqual([]);
+      const queued = await db.execute("SELECT ref FROM pending_external_deletions WHERE kind = 'r2_object'");
+      expect(queued.rows.map((r) => String(r.ref))).toEqual(['old-object']);
+    } finally {
+      cleanup(db, path);
+    }
+  });
+
+  // Codex #840: 같은 목소리의 두 프리셋이 우연히 같은 문장이면 한 오브젝트를 나눠 쓴다. #124 처럼 한 자리씩
+  // 다시 구울 때 먼저 교체된 자리가 옛 오브젝트를 지우면, 아직 교체되지 않은 자리가 없는 음원을 가리킨다.
+  it('옛 오브젝트를 나눠 쓰는 다른 프리셋이 있어도 그 음원은 남는다 — 삭제는 참조를 보는 드레인 몫', async () => {
+    const { db, path } = await prerenderDb();
+    try {
+      await db.execute(`INSERT INTO messages (id, user_id, voice_profile_id, text, category, language, variant, is_preset, audio_url)
+                        VALUES ('m2', 'u1', 'vp1', '옛 클립', 'weather', 'ko', 0, 1, 'r2://old-object')`);
+      await generateStockClip(db as never, ENV, inFlightTarget);
+
+      expect(deletedKeys).toEqual([]);
+      const shared = await db.execute("SELECT audio_url FROM messages WHERE id = 'm2'");
+      expect(String(shared.rows[0]!.audio_url), '아직 교체되지 않은 자리는 옛 음원을 그대로 가리킨다').toBe('r2://old-object');
     } finally {
       cleanup(db, path);
     }

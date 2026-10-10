@@ -124,11 +124,20 @@ final class PersonalPromoNoticeUITests: XCTestCase {
         XCTAssertFalse(app.alerts[title].waitForExistence(timeout: 5))
     }
 
-    /// 이용권 화면은 **한 줄만** 말한다 — 가짜 구독 카드·해지 버튼이 없고, 개인 카드에는
-    /// 결제 버튼이 남는다(프로모는 산 이용권이 아니다).
-    func test_이용권_화면에_무료_이용_중_한_줄() throws {
+    // MARK: - 이용권 화면(스펙 billing-lifecycle D4 「이용권 화면의 프로모 문구」)
+
+    /// 이용권 화면의 프로모 문구 앞머리.
+    /// ⚠ 술어(`NSPredicate`)를 저장 프로퍼티로 두지 말 것 — Sendable 이 아니라 Swift 6 동시성 검사가
+    /// "sending 'self.promoText' risks causing data races" 로 UI 테스트 타깃 컴파일을 막는다(그러면
+    /// 같은 스킴의 유닛 테스트까지 못 돈다). 문자열만 두고 술어는 쓰는 자리에서 새로 만든다
+    /// (`ScreenSweepUITests.test_sweep_menuSubscreens` 와 같은 이유).
+    private let promoPrefix = "개인 플랜 무료 이용 중"
+
+    /// 더보기 → 이용권. 프로모 문구가 **어딘가에** 보일 때까지 기다린다 — 카드가 아직 없어도
+    /// (스켈레톤·가져오기 실패) 문구는 카드 위 한 줄로 보여야 한다(`drawsPromoLineAboveList`).
+    private func openBilling(_ extra: [String] = []) throws -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchArguments = ["-UIPreviewSeed", "-UIPreviewPersonalPromo", "20", "-UIPreviewTab", "menu"]
+        app.launchArguments = ["-UIPreviewSeed", "-UIPreviewPersonalPromo", "20", "-UIPreviewTab", "menu"] + extra
         app.launch()
 
         let billing = app.buttons.containing(.staticText, identifier: "이용권").firstMatch
@@ -137,11 +146,73 @@ final class PersonalPromoNoticeUITests: XCTestCase {
         }
         billing.tap()
 
-        let line = app.staticTexts.matching(
-            NSPredicate(format: "label BEGINSWITH %@", "개인 플랜 무료 이용 중")
-        ).firstMatch
-        XCTAssertTrue(line.waitForExistence(timeout: 10), "이용권 화면에 프로모 한 줄이 없다")
+        XCTAssertTrue(
+            app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", promoPrefix)).firstMatch.waitForExistence(timeout: 10),
+            "이용권 화면에 프로모 문구가 없다"
+        )
         XCTAssertFalse(app.buttons["이용권 해지"].exists, "해지할 구독이 없는데 해지 버튼이 떴다")
+        return app
+    }
+
+    /// 플랜 카드 한 장(`PlanCard` 의 `planCard.<key>` 컨테이너). 카드가 끝내 안 그려지면(스토어 상품
+    /// 가져오기 실패 — 카드 대신 '다시 시도') 카드 안을 볼 수 없으니 건너뛴다. 그때도 문구가 카드 위에
+    /// **한 번** 보이는 것까지는 확인한다 — 예전에는 그 상태에서 문구가 통째로 사라졌다.
+    private func planCard(_ key: String, in app: XCUIApplication) throws -> XCUIElement {
+        let card = app.otherElements["planCard.\(key)"]
+        guard card.waitForExistence(timeout: 15) else {
+            XCTAssertEqual(
+                app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", promoPrefix)).count, 1,
+                "카드가 없는 동안 프로모 문구가 카드 위 한 줄로 보이지 않는다"
+            )
+            shot("03-이용권-카드-없음")
+            throw XCTSkip("플랜 카드가 그려지지 않았다(스토어 상품 조회 실패) — 카드 위 폴백만 확인했다")
+        }
+        return card
+    }
+
+    /// 프로모만 쓰는 계정(산 이용권·공유 멤버·보류 행 없음)은 **개인 카드가 '현재 이용권'** 이고,
+    /// 프로모 문구는 그 카드의 상태 한 줄이다 — 카드 위에 또 말하지 않는다. 개인 카드에는 결제
+    /// 버튼이 **남는다**(프로모는 산 이용권이 아니다 — 끝난 뒤 이어 쓰려면 사야 한다).
+    /// 가짜 구독 카드·해지 버튼은 없다.
+    func test_이용권_화면_프로모만_쓰면_개인_카드가_현재이고_결제_버튼이_남는다() throws {
+        let app = try openBilling()
+        let personal = try planCard("personal", in: app)
+        let free = app.otherElements["planCard.free"]
+
+        XCTAssertTrue(personal.staticTexts["현재 이용권"].exists, "'현재 이용권' 뱃지가 개인 카드에 없다")
+        XCTAssertFalse(free.staticTexts["현재 이용권"].exists, "무료 카드가 여전히 '현재 이용권' 이다")
+        XCTAssertTrue(
+            personal.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", promoPrefix)).firstMatch.exists,
+            "프로모 문구가 개인 카드의 상태 한 줄이 아니다"
+        )
+        XCTAssertEqual(
+            app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", promoPrefix)).count, 1,
+            "프로모 문구를 두 번 말했다 — 카드 위 한 줄이 남았다"
+        )
+        // 상품을 못 받아도 버튼은 비활성 '결제하기' 로 그려진다 — 있기만 하면 된다. 가격을 받는 동안의
+        // 자리표시는 버튼이 아니라서 기다린다.
+        XCTAssertTrue(
+            personal.buttons["결제하기"].waitForExistence(timeout: 15),
+            "프로모로 현재가 된 개인 카드에 결제 버튼이 없다 — `isCurrent` 로 버튼을 숨겼다"
+        )
+        XCTAssertFalse(personal.buttons["이용권 변경"].exists, "프로모는 산 이용권이 아니다 — 전환이 아니라 결제다")
         shot("03-이용권")
+    }
+
+    /// 보류 행이 남은 계정(`deletes_voices_at_end: false`)은 **예전 그대로다** — '현재 이용권' 은 무료
+    /// 카드이고, 프로모 문구는 카드 위 한 줄이다(개인 카드에 앉지 않는다).
+    func test_이용권_화면_보류_행이면_무료_카드가_현재이고_문구는_카드_위() throws {
+        let app = try openBilling(["-UIPreviewPromoKeepsVoices"])
+        let free = try planCard("free", in: app)
+        let personal = app.otherElements["planCard.personal"]
+
+        XCTAssertTrue(free.staticTexts["현재 이용권"].exists, "보류 행 계정인데 무료 카드가 '현재 이용권' 이 아니다")
+        XCTAssertFalse(personal.staticTexts["현재 이용권"].exists, "보류 행 계정인데 개인 카드가 '현재 이용권' 이다")
+        XCTAssertFalse(
+            personal.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", promoPrefix)).firstMatch.exists,
+            "보류 행 계정인데 프로모 문구가 개인 카드에 앉았다"
+        )
+        XCTAssertEqual(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", promoPrefix)).count, 1, "프로모 문구는 카드 위에 한 번만")
+        shot("07-이용권-보류-행")
     }
 }

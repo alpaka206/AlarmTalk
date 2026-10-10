@@ -30,6 +30,7 @@ import com.alarmtalk.app.isEntitledOptimistic
 import com.alarmtalk.app.resolvePaidVoiceAccess
 import com.alarmtalk.app.storeSignalStillValid
 import com.alarmtalk.app.network.AuthSessionStore
+import com.alarmtalk.app.network.SessionTokenRenewal
 import com.alarmtalk.app.freshPlanPromoStamp
 import com.alarmtalk.app.network.StockClip
 import java.util.concurrent.TimeUnit
@@ -62,6 +63,30 @@ import kotlinx.coroutines.withContext
  */
 internal fun tokenAfterRoll(previousToken: String, savedToken: String?): String =
     savedToken?.takeIf { it.isNotBlank() } ?: previousToken
+
+/**
+ * 이 워커가 `GET /auth/me` 로 받은 새 토큰을 **저장할 것인가** — 저장할 토큰, 아니면 null.
+ *
+ * **지금 쓰는 토큰의 만료가 가까울 때만**([SessionTokenRenewal.shouldRenew] — 남은 수명
+ * 90일 미만, `exp` 를 못 읽으면 갱신) 저장한다. 주기 동기화(`RemoteAlarmSyncWorker`)와 같은
+ * 판정이다.
+ *
+ * ⚠ **예전에는 받을 때마다 저장했다**(효율 감사 H3). 이 워커는 콜드 스타트마다 뷰모델의 진입
+ * 갱신과 함께 도는데, 그때 저장하면 방금 굴린 토큰을 또 굴려 세션이 한 번 더 바뀌었다 —
+ * 토큰을 키로 쓰던 화면 효과가 그만큼 다시 돌았다. 서버 토큰은 무상태 JWT(365일)라 버려도
+ * 지금 토큰이 그대로 유효하다.
+ * ⚠ **그렇다고 아예 버리지는 않는다**(2026-09-01 리뷰). 이 워커는 배경에서만 도는 일이 있어
+ * (`voice_changed` FCM) 그때는 이 요청이 **그 실행의 유일한 세션 갱신**일 수 있다 — 만료가
+ * 가까운데 버리면 앱이 전경으로 오기 전에 저장된 JWT 가 죽는다. 그래서 판정은 버림이 아니라
+ * 임계값이다.
+ *
+ * 저장하지 않으면 호출부는 헤더와 401 귀속(`usedToken`)을 **그대로** 둔다 — 저장소에 없는
+ * 토큰으로 옮기면 [tokenAfterRoll] 의 두 갈래 사고가 난다.
+ */
+internal fun workerRolledTokenToSave(currentToken: String, rolledToken: String?, nowMillis: Long): String? {
+    val rolled = rolledToken?.takeIf { it.isNotBlank() } ?: return null
+    return rolled.takeIf { SessionTokenRenewal.shouldRenew(currentToken, nowMillis) }
+}
 
 /**
  * 기본(시스템) 목소리 알람 클립을 기기에 내려받는 워커.
@@ -278,13 +303,16 @@ class StockClipPrefetchWorker(
                     // 돈 내는 사용자의 클론 클립을 하나도 안 받는다. 게다가 이 작업은
                     // `ExistingWorkPolicy.KEEP` 이라 뒤이은 재큐잉이 버려져 그 회차가 그대로 굳는다.
                     val plan = me.user.plan
-                    // ⚠ **굴러온 토큰을 버리지 않는다**(2026-09-01 리뷰). 이 워커는 배경에서
-                    // 도는 일이 있어(예: `voice_changed` FCM) 그때는 이 요청이 **그 실행의
-                    // 유일한 세션 갱신**이다. 버리면 앱이 전경으로 오기 전에 저장된 JWT 가
-                    // 죽고, 이후 프리페치·동기화가 그 옛 토큰으로 401 만 받는다.
+                    // ⚠ **만료가 가까우면 굴러온 토큰을 버리지 않는다**(2026-09-01 리뷰). 이
+                    // 워커는 배경에서 도는 일이 있어(예: `voice_changed` FCM) 그때는 이 요청이
+                    // **그 실행의 유일한 세션 갱신**이다. 버리면 앱이 전경으로 오기 전에 저장된
+                    // JWT 가 죽고, 이후 프리페치·동기화가 그 옛 토큰으로 401 만 받는다.
+                    // 만료가 멀면 저장하지 않는다(효율 감사 H3) — 콜드 스타트마다 진입 갱신이
+                    // 방금 굴린 토큰을 또 굴려 세션을 한 번 더 바꿨다. 판정은
+                    // [workerRolledTokenToSave](`SessionTokenRenewal.shouldRenew`).
                     // **검사와 저장을 한 덩어리로** 한다 — 따로 하면 그 사이 로그아웃이
                     // 끼어들어 비운 저장소에 세션을 되쓴다(`PlanChangeSyncWorker` 와 같은 이유).
-                    me.token?.takeIf { it.isNotBlank() }?.let { rolled ->
+                    workerRolledTokenToSave(usedToken, me.token, System.currentTimeMillis())?.let { rolled ->
                         // ⚠ **저장만 하고 끝내지 않는다**(2026-09-21 리뷰). 굴린 토큰으로
                         // 이후 요청(`listVoiceProfiles`·클립 다운로드·재바인딩)과 401 귀속을
                         // **함께** 옮긴다 — 둘이 갈라졌을 때의 두 갈래 사고는 [tokenAfterRoll].
@@ -337,6 +365,10 @@ class StockClipPrefetchWorker(
                         .toSet()
                 }
             }
+            // 캐시는 디렉터리를 **한 번** 읽어 아래 두 판정(`clips`·`missing`)이 같이 본다 —
+            // 클립 × 키마다 따로 물으면 그만큼 디렉터리를 다시 읽는다. 그 사이 이 회차는 아무것도
+            // 쓰지 않으므로 답은 한 키씩 물은 것과 같다(`AlarmAudioStore.snapshot`).
+            val cache = withContext(Dispatchers.IO) { audioStore.snapshot() }
             val clips = allClips.filter {
                 val isDefaultVoiceClip = it.targetsDefaultVoices(language)
                 // 클론 사전렌더는 '등록 때 고른 언어' 단일 세트라 기기 언어로 거르지 않는다 —
@@ -349,7 +381,7 @@ class StockClipPrefetchWorker(
                 // 시스템 클립을 다 받고도 그 하나 때문에 재시도를 소진하고 FAILED 로 끝난다.
                 val staleNeedsRefresh = (paidVoiceAccess || isDefaultVoiceClip) &&
                     AlarmAudioStore.messageCacheKeys(it.messageId).any { key ->
-                        audioStore.isCachedAudioStale(key, it.audioUrl)
+                        cache.isStale(key, it.audioUrl)
                     }
                 isDefaultVoiceClip || isOwnedCloneClip || staleNeedsRefresh
             }
@@ -487,9 +519,9 @@ class StockClipPrefetchWorker(
             val missing = clips.mapNotNull { clip ->
                 val prefetchStock = clip.targetsDefaultVoices(language) || clip.voiceProfileId in ownedProfileIds
                 val keys = AlarmAudioStore.messageCacheKeys(clip.messageId).filter { key ->
-                    audioStore.isCachedAudioStale(key, clip.audioUrl) ||
+                    cache.isStale(key, clip.audioUrl) ||
                         (prefetchStock && key == cacheKeyFor(clip) &&
-                            audioStore.getCachedAudio(key, clip.audioUrl) == null)
+                            cache.isMissingOrStale(key, clip.audioUrl))
                 }
                 keys.takeIf { it.isNotEmpty() }?.let { clip to it }
             }
@@ -703,14 +735,25 @@ class StockClipPrefetchWorker(
          * 기준은 서버 매니페스트에 **실제로 있는** 클립이다 — 기대 개수표로 세면 서버가 아직
          * 못 만든 몫 때문에 알람 설정 관문이 영영 안 열린다. iOS 짝은
          * `StockClipPrefetcher.defaultVoiceProgress`.
+         *
+         * ⚠ **디스크를 읽는다 — 메인 스레드에서 부르지 말 것.** 알람 관문은
+         * `ui/app/DefaultVoiceGate.kt` 가 IO 에서 부른다.
+         *
+         * ⚠ **클립마다 캐시를 따로 묻지 말 것**(2026-09-29 A32). 예전에는 클립마다
+         * `getCachedAudio` 를 불러 디렉터리를 두 번 통째로 읽고 **길이까지 쟀다** — 76개면 한 번
+         * 묻는 데 1.4~1.8초였고, 그걸 ＋ 한 번에 메인에서 두 번 불러 화면이 3.5초 멎었다.
+         * 디렉터리 한 번 + 메타만 본다(`AlarmAudioStore.missingOrStaleCacheKeys`, 답은 같다).
+         * 회귀 테스트 `AlarmAudioStoreProbeCountTest`.
          */
         fun defaultVoiceProgress(context: Context, userId: String?): Pair<Int, Int>? {
             val manifest = StockClipManifestStore.load(context, userId) ?: return null
             val locales = context.resources.configuration.locales
             val language = appVoiceLanguageOf((if (!locales.isEmpty) locales[0] else null)?.language)
-            val store = AlarmAudioStore(context)
             val targets = manifest.clips.filter { it.isDefaultVoiceTarget(language) }
-            val done = targets.count { store.getCachedAudio(cacheKeyFor(it), it.audioUrl) != null }
+            val missing = AlarmAudioStore(context).missingOrStaleCacheKeys(
+                targets.map { cacheKeyFor(it) to it.audioUrl },
+            )
+            val done = targets.count { cacheKeyFor(it) !in missing }
             return done to targets.size
         }
 
@@ -720,7 +763,14 @@ class StockClipPrefetchWorker(
          * 「기본 목소리를 다 받아야 알람을 설정한다」.
          */
         fun defaultVoicesReady(context: Context, userId: String?): Boolean =
-            defaultVoiceProgress(context, userId)?.let { (done, total) -> done >= total } ?: false
+            defaultVoicesReady(defaultVoiceProgress(context, userId))
+
+        /**
+         * 이미 센 진행률로 같은 판정을 한다 — 관문이 한 번 세서 판정과 알럿 퍼센트에 **함께**
+         * 쓰게 한다(예전에는 막힐 때 두 번 셌다). 모르면(null) 막는다.
+         */
+        fun defaultVoicesReady(progress: Pair<Int, Int>?): Boolean =
+            progress?.let { (done, total) -> done >= total } ?: false
 
         private fun cacheKeyFor(clip: StockClip): String =
             "${AlarmAudioStore.STOCK_CACHE_KEY_PREFIX}${clip.messageId}"

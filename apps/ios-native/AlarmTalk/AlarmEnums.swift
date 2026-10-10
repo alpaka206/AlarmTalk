@@ -35,8 +35,8 @@ enum AlarmPlayMode: String, Codable, CaseIterable, Identifiable {
 
     var label: String {
         switch self {
-        case .alarmOnly: return "알람"
-        case .voiceOnly: return "목소리"
+        case .alarmOnly: return String(localized: "alarm.playMode.alarm", defaultValue: "알람")
+        case .voiceOnly: return String(localized: "alarm.playMode.voice", defaultValue: "목소리")
         }
     }
 
@@ -151,15 +151,6 @@ enum RepeatDay: Int, CaseIterable, Sendable {
     case saturday = 6
 
     var mask: Int { 1 << rawValue }
-
-    /// `Calendar.current.weekday` 는 1=Sun..7=Sat 이므로 -1 변환.
-    static func fromCalendarWeekday(_ value: Int) -> RepeatDay? {
-        let index = value - 1
-        return RepeatDay(rawValue: index)
-    }
-
-    /// iOS `Locale.Weekday` (.sunday/.monday/...) 1..7 매핑.
-    var localeWeekdayInt: Int { rawValue + 1 }
 }
 
 extension Int {

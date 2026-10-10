@@ -7,12 +7,17 @@
 
 export const WORKER_SECRET_KEYS = [
   'ELEVENLABS_API_KEY',
+  // `ELEVENLABS_TTS_MODEL_ID` 는 없앴다(2026-09-30) — 합성 모델은 `lib/tts-model.ts` 의 `TTS_MODEL_ID` 상수가
+  // 정한다. 워커에 값이 남아 있어도 코드가 읽지 않는다(치울 거면 `wrangler secret delete ELEVENLABS_TTS_MODEL_ID
+  // --env <dev|production>`).
   'TURSO_DATABASE_URL',
   'TURSO_AUTH_TOKEN',
   'GOOGLE_CLIENT_ID',
   'GOOGLE_VERTEX_CREDENTIALS_JSON',
   'GOOGLE_VERTEX_LOCATION',
-  'GOOGLE_VERTEX_MODEL',
+  // `GOOGLE_VERTEX_MODEL` 은 없앴다(2026-09-30) — 모델은 `lib/vertex-translate.ts` 의 `VERTEX_MODEL` 상수가
+  // 정한다. 워커에 남은 옛 값은 코드가 읽지 않으니 `wrangler secret delete GOOGLE_VERTEX_MODEL --env
+  // <dev|production>` 로 치운다(`.dev.vars.*` 의 줄은 여기 없는 키라 올라가지 않는다).
   'RESEND_API_KEY',
   'AUTH_EMAIL_FROM',
   'AUTH_EMAIL_REPLY_TO',
@@ -29,6 +34,11 @@ export const WORKER_SECRET_KEYS = [
   'GOOGLE_RTDN_VERIFICATION_TOKEN',
   'ADMIN_SECRET',
   'KASI_SERVICE_KEY',
+  // 기상청 단기예보 서비스 키(일반 인증키 Decoding) — 한국 지역 날씨(`lib/weather-kma.ts`). 필수는 아니다
+  // (dev 에는 없을 수 있다 — 없으면 KR 날씨만 미해결, 운영은 슬롯마다 경보).
+  // `OPEN_METEO_API_KEY` 는 없앴다(2026-10-01 — 날씨 원천을 나라별 공식 예보로 바꿨다). 워커에 남은 값은 코드가
+  // 읽지 않으니 `wrangler secret delete OPEN_METEO_API_KEY --env <dev|production>` 로 치운다.
+  'KMA_SERVICE_KEY',
   // Apple — **세 갈래이고 키가 서로 다르다.** 빈 값은 자동 skip.
   //  1) 로그인 검증: APPLE_BUNDLE_ID 하나(애플 공개키 JWKS 검증이라 비밀키 불필요)
   //  2) 탈퇴 시 연결 해제: APPLE_TEAM_ID + APPLE_SIGNIN_* (Sign in with Apple 키)

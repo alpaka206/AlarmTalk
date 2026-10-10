@@ -23,7 +23,6 @@ internal data class SubscriptionPlanOption(
     val key: String,
     val name: String,
     val price: String,
-    val description: String,
     val features: List<String>,
 )
 

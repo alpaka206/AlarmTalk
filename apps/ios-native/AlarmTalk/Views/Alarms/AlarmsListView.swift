@@ -18,7 +18,7 @@ struct AlarmsListView: View {
     @State private var wakeTargetSheetOpen = false
 
     /// 다중 선택 삭제 — 길게 눌러 들어가고, 하나도 안 남으면 자동으로 빠져나온다.
-    /// 안드로이드 `AlarmListScreen.kt:138-152`.
+    /// 안드로이드 `AlarmListScreen.kt:135-148`.
     @State private var selectedAlarmIDs: Set<String> = []
 
     /// ＋FAB 의 만들기 요청. 값이 바뀌면 `openCreateAlarm()` 을 탄다 —
@@ -53,7 +53,7 @@ struct AlarmsListView: View {
                                 .contentShape(Rectangle())
                                 .onTapGesture { dismissDisplayedMessage() }
                                 .accessibilityAddTraits(.isButton)
-                                .accessibilityHint("탭하면 닫혀요")
+                                .accessibilityHint(String(localized: "탭하면 닫혀요"))
                         }
                         localAlarmSection
                     }
@@ -213,7 +213,7 @@ struct AlarmsListView: View {
     private var selectionMode: Bool { !selectedAlarmIDs.isEmpty }
 
     /// 목록에서 사라진 알람(삭제·동기화)은 선택에서도 뺀다 — 안 그러면 '3개 선택' 인데
-    /// 실제로는 2개만 지워진다. 안드로이드 `AlarmListScreen.kt:143-146`.
+    /// 실제로는 2개만 지워진다. 안드로이드 `AlarmListScreen.kt:140-142`.
     private func pruneSelection() {
         guard selectionMode else { return }
         let present = Set(visibleAlarms.map(\.id))
@@ -222,7 +222,7 @@ struct AlarmsListView: View {
     }
 
     /// 권한 한 줄 배너 — 탭하면 모달을 거치지 않고 곧바로 권한 요청으로 간다.
-    /// 안드로이드 `ControlsAndPermissions.kt:188-217` 의 슬림 배너.
+    /// 안드로이드 `ControlsAndPermissions.kt` 의 슬림 배너(`AlarmPermissionWarningBanner`).
     ///
     /// 문구는 **iOS 의 사실**을 말한다: AlarmKit 권한이 없으면 예약 자체가 안 되므로
     /// 정말로 울리지 않는다. (안드로이드는 권한 셋 중 무엇이 빠져도 울리기는 해서
@@ -235,7 +235,7 @@ struct AlarmsListView: View {
                 Image(systemName: "exclamationmark.circle")
                     .font(.system(size: 20))
                     .foregroundStyle(theme.palette.error)
-                Text("알람 권한이 없어 알람이 예약되지 않아요.")
+                Text(String(localized: "알람 권한이 없어 알람이 예약되지 않아요."))
                     .font(theme.typography.bodyMedium)
                     .foregroundStyle(theme.palette.onSurface)
                 Spacer(minLength: 0)
@@ -256,36 +256,27 @@ struct AlarmsListView: View {
         .buttonStyle(.plain)
     }
 
-    /// 알람 행 둘째 줄에 붙일 목소리 이름. 공유받은 목소리는 관계 라벨(엄마·할머니)이
-    /// 있으면 그걸 우선한다 — 목록에서 "엄마 목소리" 로 읽히는 게 사람 이름보다 낫다.
+    /// 알람 행 둘째 줄에 붙일 목소리 이름. 관계 라벨(엄마·할머니)은 쓰지 않는다 — 저장된
+    /// 한국어 그대로라 en·ja 화면에 「엄마」가 섞였다. 안드로이드도 이름만 쓴다(`alarmRowVoiceName`).
     private func voiceName(for alarm: LocalAlarmRecord) -> String? {
         guard let id = alarm.voiceProfileId, !id.isEmpty else { return nil }
-        // ⚠ **잠긴 알람에는 목소리 이름을 보여주지 않는다.** 무료 강등은 재생 방식만
-        // 알람음으로 바꾸고 `voiceProfileId` 는 남기므로, 이 게이트가 없으면 행에
-        // 목소리 이름이 그대로 보이는데 실제로는 알람음이 울린다 — 왜 목소리가 안
-        // 나오는지 알 방법이 없다. 대신 행 아래 안내(`AlarmRow.rowNotice`)가 이유를 말한다.
-        guard alarm.preLockPlayMode == nil else { return nil }
+        // ⚠ **옛 모양으로 잠긴 알람에는 목소리 이름을 보여주지 않는다.** 2026-09-29 전의 무료
+        // 강등은 재생 방식만 알람음으로 바꾸고 `voiceProfileId` 는 남겼으므로, 이 게이트가 없으면
+        // 행에 목소리 이름이 그대로 보이는데 실제로는 알람음이 울린다.
+        // 지금의 잠금은 행을 **기본 목소리 알람**으로 고쳐 쓰므로(`DefaultVoiceSubstitute.locked`)
+        // 그 기본 목소리 이름이 보여야 한다 — 보관본(`preLockVoice`)이 있으면 막지 않는다.
+        guard alarm.preLockPlayMode == nil || alarm.preLockVoice != nil else { return nil }
 
-        func label(_ name: String, _ relationship: String?) -> String {
-            let trimmed = relationship?.trimmingCharacters(in: .whitespaces) ?? ""
-            return trimmed.isEmpty ? name : trimmed
-        }
-        if let profile = voiceStudio.profiles.first(where: { $0.id == id }) {
-            return label(profile.name, profile.relationshipLabel)
-        }
         // ⚠ **공유받은 목소리 폴백.** `GET /voice-profile` 은 내 것과 시스템 것만 주므로,
-        // 가족이 공유한 목소리로 만든 알람은 위에서 못 찾고 이름이 통째로 사라졌다.
-        // 그 목록은 `familyVoices` 에 따로 온다.
-        if let shared = voiceStudio.familyVoices.first(where: { $0.id == id }) {
-            return label(shared.name, shared.relationshipLabel)
-        }
-        return nil
+        // 가족이 공유한 목소리로 만든 알람은 내 목록에서 못 찾고 이름이 통째로 사라졌다.
+        // 그 목록은 `familyVoices` 에 따로 온다 — `alarmRowVoiceName` 이 둘 다 본다.
+        return alarmRowVoiceName(voiceProfileID: id, profiles: voiceStudio.profiles, familyVoices: voiceStudio.familyVoices)
     }
 
-    /// 빈 상태 카드 — 안드로이드 `ui/home/HomeCards.kt:29-92`.
+    /// 빈 상태 카드 — 안드로이드 `ui/home/HomeCards.kt:28-91`.
     ///
     /// 좌우 2단(제목+보조문 / ＋버튼)이고 **카드 전체가 눌린다**.
-    /// ⚠ "아직 알람이 없어요." 같은 **상황 라벨은 두지 않는다**(HomeCards.kt:54-55 가 못
+    /// ⚠ "아직 알람이 없어요." 같은 **상황 라벨은 두지 않는다**(HomeCards.kt:53-54 가 못
     /// 박은 규칙). 빈 화면인 걸 이미 보고 있는 사람에게 비었다고 말하는 대신, 다음에 할
     /// 일과 그걸 하면 뭐가 좋은지를 말한다.
     private var emptyAlarmCard: some View {
@@ -294,10 +285,10 @@ struct AlarmsListView: View {
         } label: {
             HStack(alignment: .center, spacing: 16) {
                 VStack(alignment: .leading, spacing: 12) {
-                    Text("첫 알람 만들기")
+                    Text(String(localized: "첫 알람 만들기"))
                         .font(.pretendard(.bold, size: 24))
                         .foregroundStyle(theme.palette.onSurface)
-                    Text("듣고 싶은 목소리가 깨워줘요.")
+                    Text(String(localized: "듣고 싶은 목소리가 깨워줘요."))
                         .font(theme.typography.bodyMedium)
                         .foregroundStyle(theme.palette.onSurfaceVariant)
                 }
@@ -324,7 +315,7 @@ struct AlarmsListView: View {
             )
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("첫 알람 만들기")
+        .accessibilityLabel(String(localized: "첫 알람 만들기"))
     }
 
     /// 헤드라인이 셀 '다음 알람' — 켜져 있는 것 중 가장 먼저 울릴 것.
@@ -360,7 +351,7 @@ struct AlarmsListView: View {
             await alarmKit.requestAuthorization()
             alarmKit.refreshAuthorizationState()
             guard alarmKit.alarmAuthorized else {
-                actionMessage = "알람 권한을 허용해야 알람을 만들 수 있어요. \(AlarmKitViewModel.alarmDeniedConsequence)"
+                actionMessage = String(localized: "알람 권한을 허용해야 알람을 만들 수 있어요. \(AlarmKitViewModel.alarmDeniedConsequence)")
                 return
             }
             presentCreateEntry()
@@ -393,7 +384,7 @@ struct AlarmsListView: View {
                 guard alarmKit.alarmAuthorized else {
                     actionMessage = alarmKit.permissionRecoveryNeeded
                         ? AlarmKitViewModel.alarmRecoveryMessage
-                        : "알람 권한을 허용해야 알람을 켤 수 있어요. \(AlarmKitViewModel.alarmDeniedConsequence)"
+                        : String(localized: "알람 권한을 허용해야 알람을 켤 수 있어요. \(AlarmKitViewModel.alarmDeniedConsequence)")
                     return
                 }
             }
@@ -406,7 +397,7 @@ struct AlarmsListView: View {
                 // 자동으로 끄지 않는다. 권한을 되돌려도 꺼진 채라 더 위험하다.)
                 store.setEnabled(id: updated.id, enabled: false)
                 store.markFailed(id: updated.id)
-                actionMessage = alarmKit.statusMessage ?? "알람 상태 변경에 실패했어요."
+                actionMessage = alarmKit.statusMessage ?? String(localized: "알람 상태 변경에 실패했어요.")
                 return
             }
             if let synced = store.record(id: updated.id), shouldPushToServer(synced) {
@@ -417,7 +408,7 @@ struct AlarmsListView: View {
             let canceled = await alarmKit.cancelScheduledAlarm(record: alarm)
             guard canceled else {
                 store.markFailed(id: alarm.id)
-                actionMessage = alarmKit.statusMessage ?? "알람 상태 변경에 실패했어요."
+                actionMessage = alarmKit.statusMessage ?? String(localized: "알람 상태 변경에 실패했어요.")
                 return
             }
             store.setEnabled(id: alarm.id, enabled: false)
@@ -465,13 +456,13 @@ struct AlarmsListView: View {
     private func deleteAlarm(_ alarm: LocalAlarmRecord) async {
         if alarm.originEnum == .receivedRemote {
             guard await remoteSync.deleteRemote(record: alarm, session: auth.session) else {
-                actionMessage = remoteSync.statusMessage ?? "알람 삭제에 실패했어요."
+                actionMessage = remoteSync.statusMessage ?? String(localized: "알람 삭제에 실패했어요.")
                 return
             }
         }
         let deleted = await alarmKit.cancel(record: alarm, store: store)
         guard deleted else {
-            actionMessage = alarmKit.statusMessage ?? "알람 삭제에 실패했어요."
+            actionMessage = alarmKit.statusMessage ?? String(localized: "알람 삭제에 실패했어요.")
             return
         }
         if alarm.originEnum != .receivedRemote {

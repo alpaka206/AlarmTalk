@@ -3,7 +3,7 @@ import UIKit
 
 /// 비밀번호 재설정 — 가입한 이메일로 6자리 코드를 받고, 코드 + 새 비밀번호로 변경한다.
 ///
-/// Android `apps/android-native/.../ui/auth/PasswordResetScreen.kt:46-201` 를 1:1 포팅했다.
+/// Android `apps/android-native/.../ui/auth/PasswordResetScreen.kt` 의 `PasswordResetScreen` 을 1:1 포팅했다.
 /// 코드 발송 후(`auth.passwordResetCodeSentTo` == 입력 이메일) 코드·새 비밀번호 입력이
 /// 노출되며, 확정은 단일 호출(`confirmPasswordReset`)로 검증 + 변경을 한 번에 처리한다.
 ///
@@ -35,12 +35,9 @@ struct PasswordResetView: View {
         return sentTo == normalizedEmail
     }
 
-    // 서버 정책(@alarmtalk/shared PasswordSchema)·Android 와 동일: 8~128자 + 영문·숫자 각 1자 이상.
-    private var passwordPolicyValid: Bool {
-        (8...128).contains(password.count) &&
-            password.contains(where: { $0.isLetter }) &&
-            password.contains(where: { $0.isNumber })
-    }
+    // 서버 정책(@alarmtalk/shared PasswordSchema)과 같은 규칙이다.
+    // 판정은 가입 화면과 같은 한 벌(`PasswordPolicy`)을 쓴다.
+    private var passwordPolicyValid: Bool { PasswordPolicy.isValid(password) }
 
     private var canConfirm: Bool {
         !auth.isBusy && codeSent && code.count == 6 && passwordPolicyValid

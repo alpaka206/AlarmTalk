@@ -9,6 +9,9 @@
 음성 업로드로 보내는 가족 알람도 발신자의 서버 유료 권한이 필요하다. 결제 보류로 그룹
 구조만 남아 있는 것은 전송 권한이 아니다. 메시지·알람을 쓰는 트랜잭션에서 발신자 plan을
 재확인하며, 무료이면 기존 업로드가 있어도 생성·재전송·푸시 없이 거절한다.
+그룹 주인이 탈퇴해 그룹이 해체되면 멤버의 권한도 함께 바뀐다 — 멤버 기기는 커밋 뒤
+`plan_changed` 로 곧바로 다시 읽는다(주인의 클론 유무와 무관,
+[billing-lifecycle.md](billing-lifecycle.md) 「그룹 주인이 탈퇴하면」).
 
 | | 보낸 사람 | 받은 사람 |
 | --- | --- | --- |
@@ -26,6 +29,11 @@
 ⚠ **보낸 사람의 목록에 그 알람이 남지 않는다.** 양 앱 모두 가족 알람은 서버로만 보내고
 **로컬 행을 만들지 않는다**(`createFamilyTargetAlarm`). 그래서 보낸 사람에게는 고칠 화면
 자체가 없다 — 이게 위 표를 지키는 방식이다.
+
+⚠ **서버가 받았으면 곧바로 닫는다 — 새로고침을 기다리지 않는다**(2026-09-29). 안드로이드는
+처음부터 `onSuccess { onDone() }` 였다. 보낸 사람 기기에는 반영할 행이 없으니(바로 위) pull 이
+가져올 것이 없고, 보내기로 바뀌는 이용권 정보도 없다. iOS 는 예전에 알람 pull 과 이용권
+새로고침(직렬 4~5 왕복)을 **기다린 뒤에** 닫아, 저장을 누르고 편집기가 몇 초씩 멈춰 있었다.
 
 ### 1-1. 받은 뒤에는 **전부** 받은 사람 것이다
 
@@ -126,7 +134,13 @@ ack 한다. 로컬 행과 음원이 있어도 AlarmManager/AlarmKit 예약이 �
   (`upsertPreservingServerSyncFields`). 이 불변식이 깨지면 판정이 통째로 뒤집힌다.
 - `syncState` 로는 못 한다 — 받은 알람은 항상 `synced` 로 파생된다(`nextLocalSyncState`).
 - **예외는 목소리 철회뿐이다.** 발신자가 탈퇴하면 고친 행에서도 목소리를 걷어낸다
-  (생체정보 파기). 그건 재구성이 아니라 별도 경로다(`withVoiceRevoked`).
+  (생체정보 파기). 그건 재구성이 아니라 별도 경로다(`withVoiceRevoked`). 걷어낸 알람은 같은
+  시각에 **기본 목소리(미나)** 로 운다 — 재생 방식은 받은 사람이 둔 값 그대로다(2026-09-29 — 그전에는
+  '알람' 모드로 내렸다. [billing-lifecycle.md](billing-lifecycle.md) 「목소리를 잃은 알람」).
+- 재구성이 도는 행(아직 안 고친 행)도 같다 — 수신 확인 전에 서버가 목소리를 걷어냈거나 문구의 음원이
+  없어져 보낸 사람 목소리를 **더는 받을 수 없으면** '알람' 모드가 아니라 미나로 다시 짓는다(안드로이드
+  `buildReceivedAlarmRow` 의 `senderVoiceNoLongerAvailable`, iOS `RemoteAlarmPullSync.replacingUnavailableSenderVoice`).
+  음원 **다운로드 실패**는 다음 pull 이 다시 받으므로 그 사이만 알람음이다.
 
 ### ⚠ 보낸 알람은 **절대** 수정할 수 없다 (서버가 강제한다)
 
@@ -338,8 +352,11 @@ OS 예약까지 성공시킨 뒤 현재 버전을 로컬에 기록하고 ack한�
 5분 그대로고, 추가 1분은 앱 안내·선택에만 쓰는 전송 여유다.
 
 ⚠ **값은 세 곳에 있고 반드시 같아야 한다.** 하나만 내리면 앱은 통과시키는데 서버가
-400 `FAMILY_ALARM_LEAD_TIME` 으로 거절해, 사용자에게는 이유를 알 수 없는 "상대 알람
-설정에 실패했어요" 만 보인다(2026-08-21 실기기에서 실제로 그랬다).
+400 `FAMILY_ALARM_LEAD_TIME` 으로 거절한다. 예전에는 그 거절이 이유를 알 수 없는 "상대 알람
+설정에 실패했어요" 로만 보였다(2026-08-21 실기기에서 실제로 그랬다). 지금은 두 앱의 공용
+오류 표가 「조금 더 뒤로 맞춰 주세요」로 말하고, 받지 않음(`FAMILY_ALARM_DISABLED`)·설정 불가능
+시간(`FAMILY_ALARM_QUIET_TIME`)도 그 이유를 말한다. 문구에는 분 수를 넣지 않는다 — 값은 아래
+세 곳에만 둔다.
 
 | 서버 | Android | iOS |
 | --- | --- | --- |
@@ -439,16 +456,22 @@ offset은 동시 삭제·재정렬에서 누락을 완전히 막을 수 없으�
   보내는 쪽에서 미리 확정해 박으면 **그 순간의 발신자 날씨가 영원히 고정**된다.
 - ⚠ **받는 사람이 지역을 등록하지 않았으면 서버 폴백(서울)이 아니라 날씨가 아닌 테마로
   보내야 한다.** 폴백은 "내 날씨인 줄 알았는데 아니었다" 를 조용히 만든다.
+- 받는 사람의 지역은 **목록의 지역**(계정 설정 `weather.region`, 2026-09-30)이다 — 서버가 그 지역으로
+  미리 계산해 둔 날씨를 준다. 도시를 글자로 적던 시절의 옛 값은 서버가 목록으로 되짚고, 되짚지 못한
+  값은 옛 경로로 돈다([voice-and-message.md](voice-and-message.md) 「날씨 지역은 목록에서만 고른다」).
+  규칙(받는 사람 기준)은 그대로다.
 
 ## 구현 지도
 
 | 규칙 | Android | iOS | 백엔드 |
 | --- | --- | --- | --- |
-| 보내기(로컬 행 없음) | `MainViewModelAlarmActions.createFamilyTargetAlarm` | `AlarmEditorSheet.createFamilyTargetAlarm` | `routes/family-alarm.ts` |
+| 보내기(로컬 행 없음 · 성공하면 새로고침 없이 닫는다) | `MainViewModelAlarmActions.createFamilyTargetAlarm` | `AlarmEditorSheet.createFamilyTargetAlarm` | `routes/family-alarm.ts` |
 | 음성 업로드 발신자의 유료 권한 | 기존 API 소비 | 기존 API 소비 | `family-alarm.ts` 쓰기 트랜잭션 → `isPaidVoicePlan` |
 | 받는 사람 고르기 | 「누구를 깨울까요?」 시트 | `WakeTargetSheet` | — |
+| 녹음 기본 라벨은 계약값으로 보내고 받는 기기 언어로 표시 | `familyVoiceAlarmLabel` · `localizedReceivedVoiceText` | `ReceivedVoiceTextDisplay` | `family-alarm.ts` 의 `DEFAULT_VOICE_LABEL` |
 | 저장 버튼 라벨 | `editor_save_for`(`저장 · %1$s`) | `AlarmEditorSheet.saveButtonTitle` | — |
 | 방해금지 판정 | — | — | `lib/family-alarm-settings.ts` `isBlockedByFamilyAlarmQuietTime` |
+| 서버 거절 이유를 말한다(받지 않음·리드타임·설정 불가능 시간) | `familyAlarmFailureMessage` → `network/ApiErrorMessages.kt` | `APIErrorMessages.message(for:fallback:)` | `routes/alarm-helpers.ts` 의 `evaluateFamilyAlarmTimingGuard`·`routes/family-alarm.ts` |
 | 방해금지 기본값 없음 | `MainViewModelAuthActions`(다 지우면 그대로) | `AuthViewModel.updateProfile`(같음) | `normalizeQuietWindows` 폴백 `[]` + 가입 응답 |
 | 기존 계정 정리 | — | — | 마이그레이션 98 |
 | 리드타임(**세 값이 같아야 한다**) | `AlarmEditorScreenComponents.kt` 의 `FAMILY_ALARM_MIN_LEAD_MILLIS`·`earliestSelectableFamilyAlarmMillis`·`isFamilyAlarmLeadTooSoon` | `AlarmEditorSheet.familyAlarmMinLeadMillis`·`earliestSelectableFamilyAlarmMillis` | `routes/alarm-helpers.ts` 의 `FAMILY_ALARM_MIN_LEAD_MINUTES` |
@@ -468,6 +491,7 @@ offset은 동시 삭제·재정렬에서 누락을 완전히 막을 수 없으�
 | 수신자 편집을 서버에 안 올림 | `AlarmSyncService`(`origin == LOCAL_OWNED`) | `RemoteAlarmPushSync` + `AlarmsListView.shouldPushToServer` | `alarm-mutation.ts` PATCH 소유권 게이트 |
 | 그만받기(삭제) | `MainViewModelAlarmActions`(decline) | `RemoteAlarmSyncViewModel`(decline) | `POST /alarm/:id/decline`, `GET /alarm/declined` |
 | 목소리가 사라짐 → 목소리만 회수 | `withVoiceRevoked` | `RemoteAlarmPullSync.withVoiceRevoked` | `lib/voice-revocation.ts` → `GET /alarm/declined` 의 `revokedAlarmIds` |
+| 수신 확인 전 보낸 사람 목소리를 더는 받을 수 없음 → 미나로 다시 지음 | `buildReceivedAlarmRow`(`senderVoiceNoLongerAvailable`) | `RemoteAlarmPullSync.replacingUnavailableSenderVoice`(← `mergeRemote`) | `lib/voice-revocation.ts`(살아 있는 행의 `message_id`·`voice_profile_id` 를 비움) · 제자리 교체(`messages.audio_url` 을 비움) |
 | 회귀 테스트 | `RemoteAlarmPullSyncServiceTest` | `RemoteAlarmPullSyncTests` | — |
 
 ## 검증 방법

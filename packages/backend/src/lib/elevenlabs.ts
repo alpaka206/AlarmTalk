@@ -1,5 +1,6 @@
+import { TTS_MODEL_ID, TTS_VOICE_SETTINGS } from './tts-model';
+
 const ELEVENLABS_BASE_URL = 'https://api.elevenlabs.io';
-const DEFAULT_TTS_MODEL_ID = 'eleven_v3';
 const DEFAULT_AUDIO_MIME_TYPE = 'audio/wav';
 // TTS 출력 포맷을 명시 고정한다(미지정 시 제공자 기본값에 의존). mp3 44.1kHz 128kbps →
 // mimeType audio/mpeg, 파일 확장자 'mp3' 와 일치한다(voice-provider.ts 의 outputFormat 라벨/
@@ -38,7 +39,10 @@ export class ElevenLabsClient {
    * 실패해도 등록은 막지 않지만, 호출자는 speech_style_status 로 실패를 기록해야 한다.
    * scribe_v1 은 2026-07-09 ElevenLabs 에서 제거됨 — scribe_v2 사용(응답 {text} 동일).
    */
-  async speechToText(audioData: ArrayBuffer, options?: AudioUploadOptions): Promise<string> {
+  async speechToText(
+    audioData: ArrayBuffer,
+    options?: AudioUploadOptions & { deadlineAt?: number },
+  ): Promise<string> {
     const formData = new FormData();
     const mimeType = normalizeAudioMimeType(options?.mimeType);
     formData.append('model_id', 'scribe_v2');
@@ -47,11 +51,13 @@ export class ElevenLabsClient {
       new Blob([audioData], { type: mimeType }),
       normalizeAudioFileName(options?.fileName, 'sample', mimeType),
     );
+    const remaining = options?.deadlineAt === undefined ? 120_000 : Math.floor(options.deadlineAt - Date.now());
+    if (remaining <= 0) throw new DOMException('Speech transcription deadline exceeded', 'TimeoutError');
     const res = await this.request('/v1/speech-to-text', {
       method: 'POST',
       body: formData,
-      // 1~2분 녹음 전사는 클론 생성보다 오래 걸릴 수 있어 여유를 둔다.
-      signal: AbortSignal.timeout(120_000),
+      // waitUntil 분석은 전사·Vertex가 같은 마감을 쓴다. 이 signal은 응답 본문 읽기에도 적용된다.
+      signal: AbortSignal.timeout(Math.min(120_000, remaining)),
     });
     const json = (await res.json()) as { text?: string };
     return (json.text ?? '').trim();
@@ -91,63 +97,46 @@ export class ElevenLabsClient {
     return res.json();
   }
 
-  /** TTS - 텍스트를 음성으로 변환 */
+  /**
+   * TTS - 텍스트를 음성으로 변환(`TTS_MODEL_ID`·`TTS_VOICE_SETTINGS`).
+   *
+   * `output_format` 은 기본이 `ELEVENLABS_TTS_OUTPUT_FORMAT`(MP3)이다. 굽는 합성(높이·음량 — 음량을 올리는 동안은 모든
+   * 서버 합성)은 압축하지 않은 PCM(`SYNTHESIS_PCM_OUTPUT_FORMAT`)을 받는다 — 구운 뒤 MP3 로 만든다(`voice-pitch.ts`).
+   */
   async textToSpeech(
     voiceId: string,
     text: string,
-    options?: {
-      stability?: number;
-      similarity_boost?: number;
-      style?: number;
-      speed?: number;
-      use_speaker_boost?: boolean;
-      model_id?: string;
-      language_code?: string;
-    },
+    options?: { language_code?: string; output_format?: string },
   ): Promise<ArrayBuffer> {
-    const modelId = options?.model_id ?? DEFAULT_TTS_MODEL_ID;
     const body: Record<string, unknown> = {
       text,
-      model_id: modelId,
+      model_id: TTS_MODEL_ID,
+      voice_settings: TTS_VOICE_SETTINGS,
     };
     if (options?.language_code) {
       body.language_code = options.language_code;
     }
 
-    // v3(eleven_v3)는 우리의 유일한 운영 모델이다. 과거에는 `modelId !== DEFAULT_TTS_MODEL_ID`
-    // 라는 역조건 때문에 v3에는 voice_settings를 아예 보내지 않아 서버 디폴트가 적용됐고,
-    // 그 결과 delivery 태그가 약하게 실현됐다(검증된 버그). 이제 모델과 무관하게 항상 전송한다.
-    // 기본값: stability 0.5(Natural), similarity_boost 0.8, style 0.4, speed 1.0,
-    // use_speaker_boost true. Robust(0.7+) 안정도는 태그를 억제하므로 쓰지 않는다.
-    const voiceSettings: Record<string, number | boolean> = {
-      stability: options?.stability ?? 0.5,
-      similarity_boost: options?.similarity_boost ?? 0.8,
-      style: options?.style ?? 0.4,
-      // ⚠ **1.0 으로 되돌리지 말 것**(2026-08-13 사용자 지적 "말이 엄청 빠르다").
-      // 알람은 **막 깬 사람**이 듣는다 — 평상시 대화 속도로 읽으면 따라가지 못한다.
-      // 태그(`[measured, deliberate]`)로도 늦출 수 있지만 태그는 보이스·문맥에 따라
-      // 실현이 들쭉날쭉하고, 이 파라미터는 확정적이다. 둘을 같이 쓴다.
-      //
-      // ⚠ 이 값을 바꾸면 **캐시가 안 깨진다** — `computeTtsCacheKey` 는 voice_settings 를
-      // 해시하지 않는다. 이미 만들어 둔 오디오는 옛 속도 그대로 서빙되므로, 값을 바꿀 때는
-      // 캐시 무효화를 함께 생각할 것(태그가 텍스트에 있으면 텍스트 변화로 자동 무효화된다).
-      speed: options?.speed ?? 0.9,
-      use_speaker_boost: options?.use_speaker_boost ?? true,
-    };
-    body.voice_settings = voiceSettings;
-
+    const outputFormat = options?.output_format ?? ELEVENLABS_TTS_OUTPUT_FORMAT;
     const res = await this.request(
-      `/v1/text-to-speech/${voiceId}?output_format=${ELEVENLABS_TTS_OUTPUT_FORMAT}`,
+      `/v1/text-to-speech/${voiceId}?output_format=${encodeURIComponent(outputFormat)}`,
       {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Accept: 'audio/mpeg',
+          Accept: outputFormat.startsWith('mp3') ? 'audio/mpeg' : '*/*',
         },
         body: JSON.stringify(body),
       },
     );
 
+    if (outputFormat.startsWith('pcm_')) {
+      // 굽는 PCM 은 머리말 없는 표본이어야 한다 — 다른 형식(MP3·WAV)을 표본으로 읽으면 잡음을 구워 게시한다.
+      const contentType = (res.headers.get('content-type') ?? '').toLowerCase();
+      if (/mpeg|mp3|wav|json|text/.test(contentType)) {
+        throw new Error(`ElevenLabs returned ${contentType} for ${outputFormat}`);
+      }
+    }
     return res.arrayBuffer();
   }
 

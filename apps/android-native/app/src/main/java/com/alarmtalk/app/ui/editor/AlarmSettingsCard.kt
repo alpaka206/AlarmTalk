@@ -14,10 +14,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.Icons
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -28,12 +27,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.alarmtalk.app.R
-import com.alarmtalk.app.WakerPanelShape
 import com.alarmtalk.app.data.VibrationPatterns
 
 
@@ -85,8 +81,6 @@ internal fun AlarmSettingsCard(
     alarmSoundEnabled: Boolean,
     showAlarmSound: Boolean,
     onVibrationEnabledChange: (Boolean) -> Unit,
-    onVibrationSelect: (String) -> Unit,
-    onAlarmVolumeChange: (Int) -> Unit,
     onAlarmSoundEnabledChange: (Boolean) -> Unit,
     onOpenVibrationSettings: () -> Unit,
     onOpenAlarmSoundSettings: () -> Unit,
@@ -109,17 +103,10 @@ internal fun AlarmSettingsCard(
                 // ⚠ **'다시 울림' 행을 되살리지 말 것**(2026-09-09 지시). 미리 정해 두는 값이
                 //   아니라 **울릴 때 그 자리에서** 정하는 값으로 옮겼다 —
                 //   `ringing/RingingActivity.kt` 의 `RingingSnoozeRow` 가 ＋/− 로 간격을 바꾼다.
-                AlarmSettingRow(
-                    title = stringResource(R.string.editor_vibration_title),
-                    subtitle = vibrationLabel(context, vibrationPattern),
-                    onClick = onOpenVibrationSettings,
-                    trailing = {
-                        AlarmTalkSwitch(
-                            checked = vibrationPattern != VibrationPatterns.NONE,
-                            onCheckedChange = onVibrationEnabledChange,
-                        )
-                    },
-                )
+                // ⚠ **순서는 알람음 → 진동이다**(2026-09-29 지시. 그전에는 진동이 위였다).
+                //   알람음 행은 재생 방식이 '알람' 일 때만 있으므로, 구분선은 **알람음 행 아래**에
+                //   함께 붙여 같이 나타나고 사라지게 한다 — 진동 위에 두면 목소리 모드에서
+                //   카드 맨 위에 금만 남는다.
                 // 재생 방식을 바꿀 때 이 행도 함께 늘었다 줄었다 한다(위 목소리 카드와 같은 전환).
                 androidx.compose.animation.AnimatedVisibility(
                     visible = showAlarmSound,
@@ -127,7 +114,6 @@ internal fun AlarmSettingsCard(
                     exit = playModeExit(),
                 ) {
                 androidx.compose.foundation.layout.Column {
-                    AlarmSettingDivider()
                     // 알람음 on/off 토글을 이 행에 함께 둔다. 끄면 알람은 계속 울리되(화면·진동·음성)
                     // 톤만 재생하지 않는다. 켜졌을 때만 볼륨·벨소리(부제 요약, 탭 시 상세)를 노출.
                     AlarmSettingRow(
@@ -149,8 +135,21 @@ internal fun AlarmSettingsCard(
                             )
                         },
                     )
+                    // 세부 설정 카드는 카드 자체 패딩이 있어 인셋 없이 행 텍스트 시작선에 맞는다.
+                    HorizontalDivider()
                 }
                 }
+                AlarmSettingRow(
+                    title = stringResource(R.string.editor_vibration_title),
+                    subtitle = vibrationLabel(context, vibrationPattern),
+                    onClick = onOpenVibrationSettings,
+                    trailing = {
+                        AlarmTalkSwitch(
+                            checked = vibrationPattern != VibrationPatterns.NONE,
+                            onCheckedChange = onVibrationEnabledChange,
+                        )
+                    },
+                )
                 // ⚠ **'목소리' 행을 여기에 다시 넣지 말 것.** 음량·반복은 목소리 카드 안의
                 // '목소리 크기' 행(`VoiceVolumeSummaryRow`)이 소유한다. 예전에는 이곳에도
                 // 같은 행이 있었고, 호출부가 `showVoiceOutput = false` 로 꺼 둔 채로

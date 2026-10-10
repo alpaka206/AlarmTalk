@@ -340,7 +340,6 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
         pullOwnerUserID: String
     ) async throws -> MergeOutcome {
         var mapped = initialMapped
-        var audioSecured = false
         if let existing = store.alarms.first(where: { $0.remoteAlarmId == remote.id }) {
             // ── 1차 거르기(다운로드 전). 통과해도 **확정이 아니다.**
             // ⚠ **재전송은 편집을 보존하지 않는다**(2026-08-26 확정). 다른 세대가 왔다는 것은
@@ -374,7 +373,6 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
             // 여기가 유일한 서스펜션이다 — 음원을 통째로 내려받으므로 수 초가 걸린다.
             let prepared = try await recordWithCachedTTSIfNeeded(mapped, token: token)
             mapped = prepared.record
-            audioSecured = prepared.audioSecured
             // 위 신규 import 갈래와 같은 이유 — 떠난 뒤에 반영하면 그 계정 알람을 되살린다.
             guard auth.session?.user.id.nilIfBlank == pullOwnerUserID else { return .unchanged }
 
@@ -394,58 +392,17 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
                 Self.logger.info("Pull sync: row deleted during download; skipping (remoteId: \(remote.id, privacy: .public))")
                 return .unchanged
             }
-            // 대기 중 울리기 시작했거나 스누즈로 넘어갔으면 건드리지 않는다.
-            guard !Self.isInFlight(current) else { return .unchanged }
-            // 대기 중 로컬 편집이 붙었으면 로컬이 우선한다(그 dirty 를 여기서 처음 본다).
-            // ⚠ 판정은 **한 번만** 하고 아래 셋(편집 방패·적용 가드·병합 방식)이 같은 값을
-            // 쓴다 — 따로 계산하면 어긋난다(Codex #703 P1: 가드만 재전송을 몰라 되돌려보냈다).
-            let currentIsResend = Self.isResendOfDifferentDelivery(current, remote.deliveryVersion)
-            if Self.locallyEditedByRecipient(current), !currentIsResend {
-                return await outcomeForEditedDelivery(
-                    existing: current,
-                    prepared: prepared,
-                    deliveryVersion: remote.deliveryVersion
-                )
-            }
-            guard Self.shouldApplyRemote(
-                existing: current,
+            return await applyToExistingRow(
+                current,
                 mapped: mapped,
-                isResend: currentIsResend
-            ) else { return .unchanged }
-
-            // ⚠ **재전송이면 수신자 값을 물려받지 않는다**(docs/spec/family-alarm.md).
-            // `merge` 는 받은 알람의 시각·꺼짐 같은 수신자 편집을 지켜 주는데, 그대로 두면
-            // 새로 보낸 알람이 옛 시각에 **꺼진 채로** 앉는다 — 그 상태로 ACK 되면 서버 행까지
-            // 지워져 보낸 알람이 영영 울리지 않는다. 행의 정체(id·예약 핸들)만 잇는다.
-            let merged = currentIsResend
-                ? Self.rebuiltFromResend(existing: current, mapped: mapped)
-                : Self.merge(existing: current, mapped: mapped)
-            // `syncedNow` — 서버본을 그대로 쓴 행이므로 '수신자가 손대지 않았다' 로 남긴다.
-            // ([locallyEditedByRecipient] 가 두 시각의 등호로 판정한다.)
-            store.upsert(merged, syncedNow: true)
-
-            // receivedRemote 라면 일정 변경이 있을 수 있으므로 다시 스케줄.
-            let reschedule = merged.enabled
-                ? await rescheduleReceivedRemote(record: merged, existing: current)
-                : await releaseDisabledReceivedReservation(merged)
-            // ⚠ **여기서도 충돌 정리를 돌린다.** 첫 회차의 취소가 실패해 ACK 를 미루면
-            // 다음 회차는 이 갈래로 들어온다 — 여기에 없으면 재시도할 곳이 사라진다.
-            let conflictsCleared = await clearSameTimeConflicts(
-                with: merged,
-                remoteID: remote.id,
-                pullOwnerUserID: pullOwnerUserID
+                prepared: prepared,
+                remote: remote,
+                pullOwnerUserID: pullOwnerUserID,
+                requireApplicable: true
             )
-            return .updated(deliveryComplete: Self.receivedAlarmDeliveryComplete(
-                audioSecured: audioSecured,
-                enabled: merged.enabled,
-                scheduleSucceeded: reschedule.scheduled,
-                conflictsCleared: conflictsCleared && reschedule.previousReleased,
-                deliveryVersion: remote.deliveryVersion
-            ))
         } else {
             let prepared = try await recordWithCachedTTSIfNeeded(mapped, token: token)
             mapped = prepared.record
-            audioSecured = prepared.audioSecured
             // 위 신규 import 갈래와 같은 이유 — 떠난 뒤에 반영하면 그 계정 알람을 되살린다.
             guard auth.session?.user.id.nilIfBlank == pullOwnerUserID else { return .unchanged }
 
@@ -455,39 +412,16 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
             // 다운로드 사이에 다른 회차가 같은 remote 를 먼저 넣었을 수 있다. 그대로 upsert 하면
             // `RemoteAlarmMapper` 가 매번 새 UUID 를 만들기 때문에 **행이 둘 생기고 둘 다 울린다.**
             if let raced = store.alarms.first(where: { $0.remoteAlarmId == remote.id }) {
-                guard !Self.isInFlight(raced) else { return .unchanged }
-                // ⚠ **재전송을 먼저 가른다**(Codex #703 P1). 이 갈래만 순서가 반대여서,
-                // 다운로드 사이에 끼어든 행이 수신자 편집본이면 재전송인지 **묻기도 전에**
-                // `outcomeForEditedDelivery` 로 갔다 — 그 함수는 같은 세대 복구 전용이라
-                // 재전송을 `.unchanged` 로 돌려보낸다. 안드로이드와 같은 순서로 맞춘다.
-                let racedIsResend = Self.isResendOfDifferentDelivery(raced, remote.deliveryVersion)
-                if Self.locallyEditedByRecipient(raced), !racedIsResend {
-                    return await outcomeForEditedDelivery(
-                        existing: raced,
-                        prepared: prepared,
-                        deliveryVersion: remote.deliveryVersion
-                    )
-                }
-                let merged = racedIsResend
-                    ? Self.rebuiltFromResend(existing: raced, mapped: mapped)
-                    : Self.merge(existing: raced, mapped: mapped)
-                store.upsert(merged, syncedNow: true)
-                let reschedule = merged.enabled
-                    ? await rescheduleReceivedRemote(record: merged, existing: raced)
-                    : await releaseDisabledReceivedReservation(merged)
-                // 위 갈래와 같은 이유 — 재시도가 여기로 들어올 수 있다.
-                let conflictsCleared = await clearSameTimeConflicts(
-                    with: merged,
-                    remoteID: remote.id,
-                    pullOwnerUserID: pullOwnerUserID
+                // 반영은 위 갈래와 같다. 다른 것은 신선도 가드(`shouldApplyRemote`)를 거치지
+                // 않는다는 것 하나다(두 벌이던 때 그대로).
+                return await applyToExistingRow(
+                    raced,
+                    mapped: mapped,
+                    prepared: prepared,
+                    remote: remote,
+                    pullOwnerUserID: pullOwnerUserID,
+                    requireApplicable: false
                 )
-                return .updated(deliveryComplete: Self.receivedAlarmDeliveryComplete(
-                    audioSecured: audioSecured,
-                    enabled: merged.enabled,
-                    scheduleSucceeded: reschedule.scheduled,
-                    conflictsCleared: conflictsCleared && reschedule.previousReleased,
-                    deliveryVersion: remote.deliveryVersion
-                ))
             }
 
             // ⚠ **음원을 받는 사이에 계정이 떠났으면 심지 않는다**(Codex #699 P1).
@@ -497,7 +431,8 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
             // 종료 게이트(`isLeavingAccount`)는 sweep 가 도는 동안만 닫혀 있어 이걸 못 막는다.
             // 안드로이드 짝은 `RemoteAlarmPullSyncService` 의 `pullOwnerUserId` 대조다.
             guard auth.session?.user.id.nilIfBlank == pullOwnerUserID else { return .unchanged }
-            // 신규 import.
+            // 신규 import. 받을 음원이 없어진 목소리 전달이면 미나로(`replacingUnavailableSenderVoice`).
+            mapped = Self.replacingUnavailableSenderVoice(mapped, remote: remote, previous: nil)
             store.upsert(mapped, syncedNow: true)
 
             // ⚠ **받은 알람을 먼저 걸고, 성공한 뒤에 밀어낸다**(Codex #703 P1).
@@ -524,7 +459,7 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
                 time: String(format: "%02d:%02d", mapped.hour, mapped.minute)
             )
             return .imported(deliveryComplete: Self.receivedAlarmDeliveryComplete(
-                audioSecured: audioSecured,
+                audioSecured: prepared.audioSecured,
                 enabled: mapped.enabled,
                 scheduleSucceeded: scheduleSucceeded,
                 conflictsCleared: conflictsCleared,
@@ -611,6 +546,9 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
         //    알람이 안 돌아온다.
         //  - `ownerUserId` — 잠금이 다른 계정 알람을 건드리지 않게 막는 가드.
         merged.preLockPlayMode = existing.preLockPlayMode
+        //  - `preLockVoice` — 무료 잠금 보관본(원래 유료 목소리). 서버에 사본이 없다 — 잃으면
+        //    재결제해도 원래 목소리가 안 돌아온다(billing-lifecycle.md 「목소리를 못 쓰게 되면」).
+        merged.preLockVoice = existing.preLockVoice
         merged.ownerUserId = existing.ownerUserId
         // ⚠ `bucketId` 는 위 둘과 **다르다** — 서버에 사본이 있다(`alarms.bucket_id`).
         // 예전 주석은 "서버에 사본이 없다" 고 적고 무조건 로컬 값으로 덮었는데, 그러면
@@ -862,6 +800,22 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
         }
     }
 
+    /// 보낸 사람 목소리를 더는 받을 수 없어 **미나로 바꾼** 행(`replacingUnavailableSenderVoice`)이 놓은 음원을 —
+    /// 어떤 알람도 더 쓰지 않을 때만 — 지운다. 서버가 걷어낸 목소리(삭제·공유 해제·탈퇴)라 파기 대상이고,
+    /// 안 지우면 보낸 사람의 생체 음원이 캐시 정리 때까지 남는다(안드로이드 `pullReceivedAlarms` 의
+    /// `previousCacheKey` 정리 짝). 예약할 때 떠 둔 사본(`Library/Sounds/`)도 함께 지운다 — 철회 갈래
+    /// (`applyRecipientState`)와 같은 이유·같은 순서다.
+    ///
+    /// ⚠ **보통의 재구성(재전송 등)에는 부르지 않는다**(Codex #828). 이 정리는 새 예약보다 먼저 돈다 — 새 예약이
+    /// 실패하면 `rescheduleReceivedRemote` 는 일부러 옛 예약을 살려 두는데, 그 예약이 트는 사본을 먼저 지우면
+    /// 살려 둔 예약이 목소리를 잃는다. 미나로 바꾼 행은 옛 목소리를 틀면 안 되므로 그래도 된다.
+    private func releaseLostSenderAudio(previous: LocalAlarmRecord) {
+        guard let key = previous.audioCacheKey?.nilIfBlank,
+              store.countByAudioCacheKey(key) == 0 else { return }
+        try? audioCache.deleteCachedAudio(cacheKey: key)
+        AlarmSoundStaging.clearStagedSoundFiles(forKey: key)
+    }
+
     /// **꺼진 채로 반영된 받은 알람** — 새로 걸 것은 없지만 **옛 예약은 지워야 한다.**
     ///
     /// ⚠ 예전에는 이 갈래가 그냥 "할 일 없음" 이었다. 그런데 받은 알람은 서버가 끌 수 있고
@@ -991,6 +945,83 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
 
     /// #104 이전에 이미 편집된 행은 서버본으로 다시 만들지 않는다. 서버 음원을 캐시한 뒤
     /// 수신자가 고친 현재 행 그대로 예약까지 성공해야만 이 backfill 세대를 ACK할 수 있다.
+    /// 음원을 받은 뒤, 이미 있는 행(`row`)에 서버본을 반영한다 — 기존 행 갈래와 다운로드 중
+    /// 끼어든 행 갈래가 같은 순서를 쓴다.
+    ///
+    /// - requireApplicable: 신선도 가드(`shouldApplyRemote`)를 거칠지. 끼어든 행 갈래는 거치지
+    ///   않는다(예전 두 벌 그대로).
+    private func applyToExistingRow(
+        _ row: LocalAlarmRecord,
+        mapped: LocalAlarmRecord,
+        prepared: PreparedRecord,
+        remote: RemoteAlarm,
+        pullOwnerUserID: String,
+        requireApplicable: Bool
+    ) async -> MergeOutcome {
+        // 대기 중 울리기 시작했거나 스누즈로 넘어갔으면 건드리지 않는다.
+        guard !Self.isInFlight(row) else { return .unchanged }
+        // 대기 중 로컬 편집이 붙었으면 로컬이 우선한다(그 dirty 를 여기서 처음 본다).
+        // ⚠ 판정은 **한 번만** 하고 아래 셋(편집 방패·적용 가드·병합 방식)이 같은 값을
+        // 쓴다 — 따로 계산하면 어긋난다(Codex #703 P1: 가드만 재전송을 몰라 되돌려보냈다).
+        // ⚠ **재전송을 먼저 가른다**(Codex #703 P1). 끼어든 행 갈래만 순서가 반대여서,
+        // 그 행이 수신자 편집본이면 재전송인지 **묻기도 전에** `outcomeForEditedDelivery`
+        // 로 갔다 — 그 함수는 같은 세대 복구 전용이라 재전송을 `.unchanged` 로 돌려보낸다.
+        // 안드로이드와 같은 순서로 맞춘다.
+        let isResend = Self.isResendOfDifferentDelivery(row, remote.deliveryVersion)
+        if Self.locallyEditedByRecipient(row), !isResend {
+            return await outcomeForEditedDelivery(
+                existing: row,
+                prepared: prepared,
+                deliveryVersion: remote.deliveryVersion
+            )
+        }
+        if requireApplicable {
+            guard Self.shouldApplyRemote(
+                existing: row,
+                mapped: mapped,
+                isResend: isResend
+            ) else { return .unchanged }
+        }
+
+        // ⚠ **재전송이면 수신자 값을 물려받지 않는다**(docs/spec/family-alarm.md).
+        // `merge` 는 받은 알람의 시각·꺼짐 같은 수신자 편집을 지켜 주는데, 그대로 두면
+        // 새로 보낸 알람이 옛 시각에 **꺼진 채로** 앉는다 — 그 상태로 ACK 되면 서버 행까지
+        // 지워져 보낸 알람이 영영 울리지 않는다. 행의 정체(id·예약 핸들)만 잇는다.
+        let rebuilt = isResend
+            ? Self.rebuiltFromResend(existing: row, mapped: mapped)
+            : Self.merge(existing: row, mapped: mapped)
+        // 보낸 사람 목소리를 더는 받을 수 없으면 미나로(`replacingUnavailableSenderVoice`). 재전송은 새
+        // 알람이라 앞 행이 목소리 알람이었는지를 보지 않는다.
+        let merged = Self.replacingUnavailableSenderVoice(
+            rebuilt,
+            remote: remote,
+            previous: isResend ? nil : row
+        )
+        // `syncedNow` — 서버본을 그대로 쓴 행이므로 '수신자가 손대지 않았다' 로 남긴다.
+        // ([locallyEditedByRecipient] 가 두 시각의 등호로 판정한다.)
+        store.upsert(merged, syncedNow: true)
+        if merged != rebuilt { releaseLostSenderAudio(previous: row) }
+
+        // receivedRemote 라면 일정 변경이 있을 수 있으므로 다시 스케줄.
+        let reschedule = merged.enabled
+            ? await rescheduleReceivedRemote(record: merged, existing: row)
+            : await releaseDisabledReceivedReservation(merged)
+        // ⚠ **여기서도 충돌 정리를 돌린다.** 첫 회차의 취소가 실패해 ACK 를 미루면
+        // 다음 회차는 이 갈래로 들어온다 — 여기에 없으면 재시도할 곳이 사라진다.
+        let conflictsCleared = await clearSameTimeConflicts(
+            with: merged,
+            remoteID: remote.id,
+            pullOwnerUserID: pullOwnerUserID
+        )
+        return .updated(deliveryComplete: Self.receivedAlarmDeliveryComplete(
+            audioSecured: prepared.audioSecured,
+            enabled: merged.enabled,
+            scheduleSucceeded: reschedule.scheduled,
+            conflictsCleared: conflictsCleared && reschedule.previousReleased,
+            deliveryVersion: remote.deliveryVersion
+        ))
+    }
+
     private func outcomeForEditedDelivery(
         existing: LocalAlarmRecord,
         prepared: PreparedRecord,
@@ -1109,7 +1140,7 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
                 // ⚠ 캐시 파일만 지우면 부족하다. 예약할 때 `AlarmSoundStaging` 이
                 // `Library/Sounds/` 로 **사본**을 떠 두는데, 그건 별도 파일이라 그대로 남는다.
                 // 파기 대상인 생체정보(복제 음성)를 디스크에 남기면 안 된다.
-                AlarmSoundStaging.clearStagedSound(forKey: key)
+                AlarmSoundStaging.clearStagedSoundFiles(forKey: key)
             }
             // ⚠ **로컬 행만 고치면 알람은 여전히 그 목소리로 운다.**
             // 안드로이드는 RingingService 가 울릴 때 DB 를 다시 읽어서 행만 고쳐도 됐지만,
@@ -1270,25 +1301,79 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
 
     /// 발신자가 탈퇴해 목소리가 철회된 받은 알람 — 목소리만 걷어내고 알람은 남긴다.
     /// 보낸 사람 이름이 든 라벨도 파기 대상이라 기본 라벨로 되돌린다.
-    /// 알람음만 남긴 채(`alarmOnly`) 같은 시각에 그대로 울린다.
+    ///
+    /// 목소리는 **기본 목소리(미나 — `substituteSystemVoiceID`)** 로 바꿔 같은 시각에 그대로 울린다 —
+    /// 오디오 없는 기본 목소리 알람이라 예약 때 `AlarmSoundResolver.plan` 의 1b 갈래가 미나의 클립·내장
+    /// 인사말을 싣는다. 예전에는 '알람' 모드로 내렸다(2026-09-29 사용자 결정으로 바꿈 —
+    /// `docs/spec/billing-lifecycle.md` 「목소리를 못 쓰게 되면」). 재생 방식은 수신자가 둔 값 그대로다
+    /// (옛 버그의 잠금 표시면 그 원래 값) — '알람' 모드로 둔 행은 목소리만 바뀌고 계속 알람음으로 운다.
+    /// 안드로이드 `withVoiceRevoked` 미러.
     ///
     /// 음성 **파일**은 여기서 지우지 않는다 — 같은 캐시를 다른 알람이 쓸 수 있어,
     /// 호출한 쪽이 참조 수를 보고 지운다.
     static func withVoiceRevoked(_ record: LocalAlarmRecord) -> LocalAlarmRecord {
-        var next = record
+        var next = withSenderVoiceReplacedByMina(
+            record,
+            playMode: AlarmPlayMode.decode(record.preLockPlayMode?.nilIfBlank ?? record.playMode)
+        )
         next.label = "알람"
-        next.playMode = AlarmPlayMode.alarmOnly.rawValue
+        next.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1000)
+        return next
+    }
+
+    /// 받은 알람의 목소리를 **미나로** 바꾼다 — 오디오·문구·테마 없는 기본 목소리 알람이라 예약 때
+    /// `AlarmSoundResolver.plan` 의 1b 갈래가 미나의 내장 인사말을 싣는다. 보낸 사람이 고른 테마·클립은
+    /// 받은 쪽이 다시 묶을 근거가 없어 비운다. 라벨·시각·동기 필드는 건드리지 않는다(부르는 쪽이 정한다).
+    /// 무료 잠금 복원용 표시(받은 알람에서는 옛 버그의 잠금 표시)도 비운다 — 남겨 두면 재구독 때 없어진
+    /// 목소리로 되돌리려 한다. 안드로이드 `withSenderVoiceReplacedByMina` 미러.
+    static func withSenderVoiceReplacedByMina(
+        _ record: LocalAlarmRecord,
+        playMode: AlarmPlayMode
+    ) -> LocalAlarmRecord {
+        var next = record
+        next.playMode = playMode.rawValue
+        next.preLockPlayMode = nil
         next.localAudioUri = nil
         next.audioCacheKey = nil
         next.rawAudioUri = nil
-        next.voiceSource = VoiceSource.localAudio.rawValue
-        next.voiceProfileId = nil
+        next.voiceSource = VoiceSource.ttsProfile.rawValue
+        next.voiceProfileId = substituteSystemVoiceID
         next.voiceListenerTitle = nil
         next.voiceText = nil
         next.voiceCategory = nil
         next.ttsMessageId = nil
-        next.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1000)
+        next.bucketId = nil
+        next.bucketClipKeys = nil
         return next
+    }
+
+    /// 이 전달이 **보낸 사람 목소리를 더는 받을 수 없는 목소리 알람**이면 미나로 바꾼다 — 알람음이
+    /// 아니다(2026-09-29 사용자 결정 — `docs/spec/billing-lifecycle.md` 「목소리를 잃은 알람」).
+    /// 안드로이드 `senderVoiceNoLongerAvailable`(← `buildReceivedAlarmRow`) 미러.
+    ///
+    ///  - **서버가 걷어냈다**: 수신 확인 전에 보낸 사람이 목소리를 지웠거나 공유가 끊겼다 —
+    ///    `voice-revocation.ts` 가 살아 있는 행의 `message_id`·`voice_profile_id` 를 비운다. 이 기기의 행은
+    ///    목소리 알람이었다(`previous` — 재전송·새로 받는 행이면 nil).
+    ///  - **음원이 없어졌다**: 문구는 있는데 받을 주소가 없다(제자리 교체된 직접 입력 — 서버가
+    ///    `messages.audio_url` 을 비운다). 수신 확인이 바로 나가 다시 받을 길이 없다.
+    ///
+    /// ⚠ 다운로드가 **실패**한 것은 여기 들지 않는다 — 수신 확인을 미뤄 다음 회차가 다시 받는다
+    /// (`withoutUnavailableRemoteAudio`). 편집된 자리표시 행의 복구(`linkRecoveredLegacyRemoteAudio`)가 그
+    /// 모양을 본다.
+    static func replacingUnavailableSenderVoice(
+        _ record: LocalAlarmRecord,
+        remote: RemoteAlarm,
+        previous: LocalAlarmRecord?
+    ) -> LocalAlarmRecord {
+        guard record.originEnum == .receivedRemote,
+              record.audioCacheKey?.nilIfBlank == nil,
+              !RemoteAlarmMapper.shouldDownloadRemoteMessageAudio(remote) else { return record }
+        let previousWasVoiceAlarm = previous.map {
+            $0.originEnum == .receivedRemote
+                && AlarmPlayMode.decode($0.preLockPlayMode?.nilIfBlank ?? $0.playMode) != .alarmOnly
+        } ?? false
+        guard remote.messageId?.nilIfBlank != nil || previousWasVoiceAlarm else { return record }
+        return withSenderVoiceReplacedByMina(record, playMode: .voiceOnly)
     }
 
     // MARK: Audio fetch

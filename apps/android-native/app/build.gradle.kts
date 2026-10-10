@@ -161,8 +161,11 @@ android {
         // ⚠ 이 빌드는 **강제 업데이트 하한**이다(`app-version.ts` 의 Android `minSupported`).
         // 하한이 되는 빌드는 **Play 게재를 확인하기 전에** 서버를 올리면 안 된다 — 받을 것이 없는
         // 강제 업데이트로 앱이 벽돌이 된다. iOS 하한은 App Store 게재로 **따로** 간다.
-        versionCode = 30
-        versionName = "1.2.10"
+        // 31 = 1.2.11. 목소리 등록의 '톤 조절'(높이 −10…+6반음 — 서버가 구워 알람까지 같은 높이),
+        // 무음 알람 수정(유료 목소리를 못 쓰면 기본 목소리로 운다), 영어·일본어 화면, 날씨 출처 줄
+        // 릴리스. 서버(develop→main)와 **동시에** 낸다 — 심사를 통과한 앱을 대기시켜 두고 머지 뒤 출시한다.
+        versionCode = 31
+        versionName = "1.2.11"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -327,13 +330,11 @@ dependencies {
     val composeBom = platform("androidx.compose:compose-bom:2024.12.01")
 
     implementation(composeBom)
-    androidTestImplementation(composeBom)
 
     implementation("androidx.activity:activity-compose:1.9.3")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.compose.ui:ui")
-    implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
@@ -352,8 +353,10 @@ dependencies {
     // Google Play In-App Updates(신 Play SDK). Play 설치본에서만 실제 트리거되고
     // debug/사이드로드에선 no-op(콜백에서 예외 방어). 구 com.google.android.play:core 미사용.
     implementation("com.google.android.play:app-update:2.1.0")
-    implementation("com.google.android.play:app-update-ktx:2.1.0")
     implementation("com.google.android.gms:play-services-auth:21.2.0")
+    // ⚠ 앱 코드는 위치 API 를 쓰지 않지만 지우지 말 것 — billing 8.0.0 이 이걸 19.0.0 으로
+    // 끌어온다. 이 줄이 그 전이 의존을 21.3.0 으로 올려 두고 있어, 지우면 APK 에서 빠지는 게
+    // 아니라 19.0.0 으로 내려간다(2026-09-29 `:app:dependencies` 전후 비교로 확인).
     implementation("com.google.android.gms:play-services-location:21.3.0")
     implementation("io.sentry:sentry-android-core:8.43.0")
     implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
@@ -363,7 +366,6 @@ dependencies {
     ksp("androidx.room:room-compiler:2.6.1")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
-    debugImplementation("androidx.compose.ui:ui-test-manifest")
 
     testImplementation("junit:junit:4.13.2")
     // runTest 의 가상 시계 — 저장이 날씨 응답을 기다리는 상한(WeatherResolveTimeoutTest)을 8초

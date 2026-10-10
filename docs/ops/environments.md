@@ -56,12 +56,50 @@ OAuth client ID와 Sentry DSN은 일반적으로 앱에 포함될 수 있는 공
   `npm run migrate:{dev,prod}` 가 통과한다(`.github/workflows/deploy-backend.yml`).
   안 맞으면 404 로 죽는다.
 
+#### ElevenLabs 합성 모델
+
+- ⚠ **모델은 시크릿으로 정하지 않는다** — `packages/backend/src/lib/tts-model.ts` 의 `TTS_MODEL_ID` 상수(`eleven_v4_turbo`, 2026-09-30)
+  하나이고, 서버와 스톡 스크립트(`preview:stock`·`publish:stock`)가 같은 상수를 쓴다. 합성 설정도 상수(`TTS_VOICE_SETTINGS` —
+  stability·similarity 둘)다. 예전의 `ELEVENLABS_TTS_MODEL_ID` 는 없앴다 — 워커에 값이 남아 있어도 코드가 읽지 않는다
+  (치울 거면 `npx wrangler secret delete ELEVENLABS_TTS_MODEL_ID --env dev`, 운영은 `--env production`). 되돌릴 때도 시크릿이
+  아니라 코드를 되돌린다.
+- ⚠ **모델을 바꾸면 게시된 클립은 저절로 다시 굽히지 않는다.** 시스템 스톡은 `publish:stock` 의 교체 갈래로, 클론 사전렌더는
+  큐 재적재 마이그레이션으로 다시 굽는다(v4 Turbo 전환은 #124). 절차·완료 확인은 `docs/ops/tts-model-rerender.md`, 근거와 측정은
+  `docs/spec/voice-and-message.md` §10.
+
 #### Vertex / Gemini 동적 문구
 
-- `GOOGLE_VERTEX_CREDENTIALS_JSON`, `GOOGLE_VERTEX_LOCATION`, `GOOGLE_VERTEX_MODEL`은 선택 값이다. 운영에서 실제로 쓰는 경로는 직접 입력 문구 태깅·목소리 등록 미리듣기 문구·유료 클론 사전렌더 문구·등록 녹음 말투 분석이다(번역·동적 문구는 앱에서 쓰지 않는다).
-- ⚠ **`gemini-2.5-flash` 는 2026-10-20 에 은퇴한다**(Vertex 「Model versions and lifecycle」). 값은 `GOOGLE_VERTEX_MODEL=gemini-3.5-flash`, `GOOGLE_VERTEX_LOCATION=us` 다. 수명주기 표는 Flash-Lite 를 대체로 권하지만 **블라인드 판정에서 3.5 Flash-Lite 는 2.5 Flash 에 졌고(69:108, 한국어 36%) 3.5 Flash 는 대등하거나 나았다**(93:86·72:47) — 단가는 약 4~5배다. 경위는 `docs/qa/dev-test-handoff.md` 「Gemini 2.5 Flash 은퇴 대응」. 처리방침이 Vertex 처리 국가를 '미국' 으로 적으므로 `global` 대신 `us` 를 쓴다(3.5 Flash-Lite 는 `us-central1` 에 없고, 3.5 Flash 는 `us` 에서 실호출로 확인했다). 코드는 두 계열을 모두 부를 수 있어 **시크릿만 바꾸면 전환·원복된다**(`lib/vertex-translate.ts` 의 `isLegacyGeminiModel`). 호출마다 `at:"vertex.generate"` 로그(모델·HTTP·`finish_reason`·사고 토큰)가 남는다 — 대부분의 호출부가 실패를 삼키므로 전환 뒤에는 이 로그로 확인한다.
+- `GOOGLE_VERTEX_CREDENTIALS_JSON`, `GOOGLE_VERTEX_LOCATION`은 선택 값이다. 운영에서 실제로 쓰는 경로는 목소리 등록 미리듣기 문구·유료 클론 사전렌더 문구·등록 녹음 말투 분석이다(번역·동적 문구는 앱에서 쓰지 않는다). 같은 언어 직접 입력은 2026-09-30 부터 Gemini 를 부르지 않는다 — 태그를 붙이지 않는다(`docs/spec/voice-and-message.md` §10).
+- ⚠ **모델은 시크릿으로 정하지 않는다** — `lib/vertex-translate.ts` 의 `VERTEX_MODEL` 상수(`gemini-3.8-flash`) 하나이고, 모델마다 다른 요청 설정(`buildGenerationConfig` — 3.8 은 `thinkingLevel: LOW`, `MINIMAL` 은 400)과 **한 커밋에서 같이** 바꾼다. 예전의 `GOOGLE_VERTEX_MODEL` 은 2026-09-30 에 없앴다 — 워커에 남은 값은 코드가 읽지 않으니 `npx wrangler secret delete GOOGLE_VERTEX_MODEL --env dev`(운영은 `--env production`)로 치운다. 되돌릴 때도 시크릿이 아니라 코드를 되돌린다. **Flash-Lite 로 내리지 말 것** — 블라인드 판정에서 3.5 Flash-Lite 는 2.5 Flash 에 졌다(69:108, 한국어 36%). 경위는 `docs/qa/dev-test-handoff.md` 「Gemini 3.8 Flash」. 처리방침이 Vertex 처리 국가를 '미국' 으로 적으므로 지역은 `global` 대신 `us` 다(3.8 Flash 는 `global`·`us`·`eu` 에만 있고 `us-central1` 같은 단일 리전은 없다 — `GOOGLE_VERTEX_LOCATION` 을 그런 값으로 두면 전부 실패한다). 호출마다 `at:"vertex.generate"` 로그(모델·HTTP·`finish_reason`·사고 토큰)가 남는다 — 대부분의 호출부가 실패를 삼키므로 전환 뒤에는 이 로그로 확인한다.
 - `GOOGLE_VERTEX_DYNAMIC_TEXT_ENABLED`는 기본적으로 설정하지 않는다. Gemini 생성 알람 문구를 의도적으로 켤 때만 `true`로 둔다.
 - 기본 정책은 프리셋 우선이다. `GOOGLE_VERTEX_DYNAMIC_TEXT_ENABLED=true`가 아니면 동적 문구 컨텍스트는 로컬 폴백 문구를 쓴다(`lib/vertex-translate.ts`의 `generateDynamicAlarmTextWithVertex`).
+
+#### 기상청 단기예보 키(KMA_SERVICE_KEY)
+
+날씨는 나라별 공식 예보로 계산한다 — KR 기상청 단기예보, JP 気象庁 bosai JSON, US NWS(규칙 전문은
+`docs/spec/voice-and-message.md` 5-1 「서버가 미리 계산해 둔다」). **키가 필요한 것은 기상청 하나다.**
+
+- 공공데이터포털(data.go.kr) 「기상청_단기예보 ((구)_동네예보) 조회서비스」(15084084) 활용 신청으로 받은
+  **일반 인증키(Decoding)** 를 넣는다. 서버가 `URLSearchParams` 로 정확히 한 번 인코딩한다(KASI 와 같은 규약) —
+  Encoding 키를 넣으면 이중 인코딩되어 `SERVICE_KEY_IS_NOT_REGISTERED_ERROR`(30)가 난다.
+  - ⚠ 활용가이드 2609판의 예제 주소는 기상청 API허브(`apihub.kma.go.kr`, `authKey`)다 — 그건 **별도 회원 키**라
+    data.go.kr 키로는 쓸 수 없다. 서버는 `apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getVilageFcst` 를 부른다.
+- 넣기: `.dev.vars.{dev,prod}` 의 `KMA_SERVICE_KEY=` 에 적고 `npm run secrets:sync:{dev,prod}`(목록:
+  `scripts/worker-secret-keys.ts` — **필수 목록에는 없다**, dev 에는 없을 수 있다). 단건이면
+  `npx wrangler secret put KMA_SERVICE_KEY --env dev`(운영은 `--env production` — `--env` 를 빼지 말 것).
+- 없으면: KR 날씨는 원천을 부르지 않고 미해결(`null` → '못 봤어요' 클립). 운영은 KR 슬롯(현지 21시·06시)마다
+  `scheduled.weather_region_daily.slot_failed`(`reason: missing_key`) 경보가 오르고, dev(`ENVIRONMENT=development`)는
+  info 로그(`slot_skipped`)만 남긴다.
+- 확인(`wrangler tail --env <dev|production>`): KR 슬롯 틱(UTC 12시·21시)에 `at:"weather.fetch"` 줄이
+  `source:"kma"`·`status:200`·`resultCode:"00"`·`items`(1,000건 안팎)로 찍힌다. 키가 틀리면 `resultCode` 가
+  `kma_30`·`kma_20`·`http_401` 같은 값이고 슬롯 끝에 경보가 오른다. ⚠ **이 로그는 URL 을 싣지 않는다** — URL 에
+  키가 들어 있다. 진단에 URL 을 남기지 말 것.
+- **JP·NWS 는 키가 없다.** NWS 는 User-Agent 로 호출자를 식별한다 — 서버는
+  `AlarmTalkBackend (alarm-talk.com, support@alarm-talk.com)` 를 보낸다(`lib/weather-nws.ts` 의 `NWS_USER_AGENT`).
+  UA 가 막히면 403 HTML 이 오고 설정 실패로 경보가 오른다.
+- 읽기 전용 점검: `npm run check:weather -- --env-file .dev.vars.dev`(DB 무접촉, 키는 출력하지 않는다).
+- **`OPEN_METEO_API_KEY` 는 없앴다**(2026-10-01). 워커에 남은 값은 코드가 읽지 않는다 — 치울 거면
+  `npx wrangler secret delete OPEN_METEO_API_KEY --env <dev|production>`.
 
 ### iOS
 

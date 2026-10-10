@@ -15,9 +15,11 @@ final class WeatherVariantOwnerScopeTests: XCTestCase {
     /// 어떤 (도시, 날짜) 로 물었는지 세어 둔다 — 남의 계정 행은 **묻지도 말아야** 한다.
     private final class StubResolver: PrerenderVariantResolving, @unchecked Sendable {
         var cities: [String] = []
+        var regions: [String?] = []
         var index: Int? = 3
         func getPrerenderVariant(
             context: String,
+            region: String?,
             country: String?,
             city: String?,
             targetDate: String,
@@ -25,6 +27,7 @@ final class WeatherVariantOwnerScopeTests: XCTestCase {
             token: String
         ) async throws -> Int? {
             cities.append(city ?? "")
+            regions.append(region)
             return index
         }
     }
@@ -82,6 +85,28 @@ final class WeatherVariantOwnerScopeTests: XCTestCase {
 
         XCTAssertEqual(changed, 1)
         XCTAssertEqual(store.record(id: "옛행")?.contextVariantIndex, 3)
+    }
+
+    /// **지역 키를 글자와 함께 보낸다**(2026-09-30). 목록에서 고른 값은 표준 글자로 적혀 있어
+    /// 언제나 키로 되짚히고, 서버는 그 키로 미리 계산해 둔 값을 준다. 못 되짚는 옛 글자("속초")는
+    /// 키 없이 글자만 간다 — 서버의 엄격한 옛 경로가 맡는다.
+    func test_지역_키를_글자와_함께_보낸다() async {
+        let store = makeStore()
+        var mapped = weatherAlarm(id: "경기", owner: "B", city: "경기")
+        mapped.voiceWeatherCountry = "대한민국"
+        var legacy = weatherAlarm(id: "속초", owner: "B", city: "속초")
+        legacy.voiceWeatherCountry = "대한민국"
+        store.upsert(mapped)
+        store.upsert(legacy)
+        let api = StubResolver()
+        let service = WeatherVariantRefreshService(api: api, store: store)
+
+        await service.refreshDue(token: "t", ownerUserId: "B", nowMillis: now)
+
+        let sent = Dictionary(uniqueKeysWithValues: zip(api.cities, api.regions))
+        XCTAssertEqual(sent["경기"] ?? nil, "kr-gyeonggi")
+        XCTAssertEqual(sent.keys.contains("속초"), true, "되짚지 못한 옛 글자도 계속 물어야 한다")
+        XCTAssertNil(sent["속초"] ?? nil, "되짚지 못한 옛 글자에 지역 키를 지어내면 안 된다")
     }
 
     /// 계정을 못 가리면 아무것도 하지 않는다 — 이 경로는 살아 있는 토큰이 있어야 하므로
