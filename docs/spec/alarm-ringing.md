@@ -273,6 +273,11 @@ HOME 을 가로챌 수 없다 — 유일한 수단인 화면 고정(`startLockTa
 - **안드로이드는 울릴 때 기기 알람 볼륨을 맞추고, 끝나면 되돌린다.** 되돌리기가 그
   클래스의 존재 이유다 — 올리기 **전에** 원래 값을 적어 두고, 프로세스가 죽어도 다음
   실행이 되돌린다.
+- **울릴 때는 파일 자리만 찾는다 — 길이를 재지 않는다**(안드로이드, 2026-10-11). 울릴 클립을 고를 때
+  (테마 회전·조건 자리, 기본 목소리 대체 클립)와 잠금이 기본 목소리 클립을 묶을 때 필요한 것은 파일의
+  URI·캐시 키·원격 주소뿐이다. 예전에는 그 자리에서도 캐시 조회가 클립마다 `MediaMetadataRetriever` 로
+  길이를 재고 버렸다(2026-10-10 Sentry 조사). **낡음 판정은 그대로다** — 메타의 원격 주소가 들고 온
+  주소와 다르면 없는 것으로 본다(모르면 낡지 않았다).
 
 ## 5. 권한이 없으면 어떻게 되는가 — **안드로이드에서는 "안 울린다" 고 쓰지 말 것**
 
@@ -380,6 +385,7 @@ iOS 에서 그 문구를 지우면 안 울릴 알람을 울릴 것처럼 보여 
 | 예약 | `alarm/AlarmScheduler.kt` | `AlarmManager.shared.schedule` (`AlarmKitViewModel.swift`) | — |
 | 소리 끄기(소유권 확인) | `RingingService.ringingTeardownBelongsToCurrentAlarm` → `stopRingingOutputs` | `AlarmAppContext.stopVoiceIfOwned(by:)` (끄기·다시울림·사라짐 셋 다 여기로) | — |
 | 기기 볼륨 원복 | `alarm/AlarmStreamVolume.kt` | 해당 없음 | — |
+| 울릴 때는 파일 자리만 찾는다 — 길이를 재지 않는다 · 낡음 판정은 그대로(§4) | `data/AlarmAudioStore.kt` `getCachedAudioUnmeasured`(`getCachedAudio` 와 같은 메타 대조, `durationMillis` 는 null) ← `data/AlarmRepository.kt` `resolveBucketClipSelection`(← `resolveBucketClipLocalUri`) · `data/DefaultVoiceClipSource.kt` 의 보조 생성자(`ringUri` 의 `clipUriFor`·`lockBinding` 의 `defaultVoiceClipSet`) — 테스트 `data/AlarmAudioStoreProbeCountTest`(그 셋은 `durationReads` 0) | — (AlarmKit 소유) | — |
 | 조용한 알람은 사용자가 고른 것뿐 · 유료 목소리를 못 쓰면 기본 목소리(§4) | `alarm/RingSoundDecision.kt` `decideRingSound`·`ringSoundFactsFor`·`ringTimePaidVoiceUnusable`·`forcedTonePercent` → `RingingService.startRingingAudio`(`startAlarmToneLoop(forced)`) · 기본 목소리 소리 `data/DefaultVoiceClipSource.kt` `ringUri` · 받은 알람을 '알람' 모드로 바꿀 때(다운로드 실패) 알람음 켬 `data/RemoteAlarmPullSyncService.kt` `withToneForcedOn`(← `buildReceivedAlarmRow`) · 목소리를 걷어낸 받은 알람은 미나 `withVoiceRevoked` · 보낸 사람 목소리를 더는 받을 수 없는 전달은 미나 `senderVoiceNoLongerAvailable`(← `buildReceivedAlarmRow`) — 테스트 `RingSoundDecisionTest`·`RemoteAlarmPullSyncServiceTest` | 예약 때 `AlarmKitViewModel.effectiveRecordForScheduling` → `defaultVoiceSubstitute` · 오디오 없는 기본 목소리 알람은 `AlarmSoundResolver.plan`(1b) → `DefaultVoiceSubstitute.fallbackClip` · 목소리를 걷어낸 받은 알람은 미나 `RemoteAlarmPullSync.withVoiceRevoked` · 보낸 사람 목소리를 더는 받을 수 없는 전달은 미나 `RemoteAlarmPullSync.replacingUnavailableSenderVoice` — 테스트 `DefaultVoiceSubstituteTests`·`RemoteAlarmPullSyncTests` | — |
 | 재부팅/시간대 변경 재무장 | `alarm/BootCompletedReceiver.kt` | `observeTimeAndTimezoneChanges` (`AlarmTalkApp.swift`) | — |
 

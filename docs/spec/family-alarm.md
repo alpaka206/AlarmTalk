@@ -373,6 +373,21 @@ pull 을 돌린다(실측 3초). 그래서 근거가 사라진 값이다.
 서버의 topic/샌드박스 설정 불일치일 수도 있으므로 등록을 보존한다. 명시적인 `Unregistered`만
 자동 정리한다. 설정을 바로잡으면 같은 등록으로 다시 전송할 수 있어야 한다.
 
+**푸시 등록은 스스로 낫는다**(2026-10-11 — iOS 를 안드로이드에 맞췄다). 서버의 등록(`push_tokens`)은 앱 모르게
+사라지거나 생기지 못할 수 있다 — 등록 요청이 실패했거나(2026-09-28·10-07 `/push/register` 가 게이트웨이 525·520 을
+받아 500 이었다), 서버가 `Unregistered` 로 정리했거나. 앱이 "이미 올렸다" 는 기억만 믿으면 그 기기는 토큰이나 계정이
+바뀔 때까지 가족 알람 푸시를 못 받는다(주기 동기화만 남는다). 그래서:
+
+- **실행마다 한 번은 지금 토큰을 다시 올린다 — 같은 값이어도.** 안드로이드는 프로세스가 뜰 때마다(주기 워커가 깨운
+  실행 포함)·로그인·탈퇴 취소·토큰 회전 때 올린다. iOS 는 실행의 첫 토큰 콜백을 기억과 같아도 올린다. 같은 실행
+  안에서는 같은 값을 다시 올리지 않는다.
+- **iOS 는 확인될 때까지 전경으로 돌아올 때마다 다시 올린다.** 그 실행의 등록이 실패했거나, 토큰이 세션 없이 왔거나,
+  APNs 등록이 실패했으면 다음 전경 복귀가 토큰을 다시 받아 올린다. iOS 앱은 멈춘 채 며칠씩 살아 있어 '다음 실행' 을
+  기다리면 그동안 푸시가 끊긴다. 확인된 뒤에는 전경마다 올리지 않는다.
+- 해제(로그아웃·탈퇴 신청)를 보낸 뒤에는 같은 계정이라도 확인을 내린다 — 응답만 잃었을 수 있다.
+- **탈퇴 대기 중에는 전경에서 다시 올리지 않는다** — 서버가 등록을 403 으로 막는다. 복구가 스스로 다시 건다
+  ([session-and-auth.md](session-and-auth.md) 「탈퇴 예약을 취소해 복구할 때」).
+
 **콜드 실행의 가족 알람 pull도 로컬 저장소 로드를 기다린다.** 상한 내에 로드되지 않거나
 작업이 취소되면 새 행·예약·ACK를 만들지 않고 실패로 처리해 다음 수신/동기화에서 재시도한다.
 **겹쳐 들어온 pull은 성공으로 넘겨 버리지 않고 호출별로 순서대로 기다린다.** 앞 호출의
@@ -484,6 +499,7 @@ offset은 동시 삭제·재정렬에서 누락을 완전히 막을 수 없으�
 | 서버 수신 판별·origin 일치 | `RemoteAlarm.isReceivedForPull` → 받은 행 생성 | `RemoteAlarm.isReceivedForPull` → `RemoteAlarmPullSync`·`RemoteAlarmMapper` | `normalizeAlarmRow`의 UUID·로그인 식별자 판정 |
 | 전송 중 편집 보존·생성 성공 뒤 취소 | `AlarmSyncService`의 `NonCancellable` → `AlarmDao.setSyncStateIfUnchanged`·`markRemoteIdKeepDirty` | 일괄/단건 push → `LocalAlarmStore.markRemote(snapshot:)` → `saveNow` 후 취소 확인 | 기존 POST 생성·PATCH 수정 |
 | APNs 설정 오류는 등록 보존 | — | 기존 등록 캐시 유지 | `apns.ts` `isDeadApnsToken` → `fcm.ts` `pruneDeadApnsTokens` |
+| 푸시 등록은 스스로 낫는다(실행마다 한 번은 같은 값이어도 · iOS 는 확인될 때까지 전경마다 · 해제를 보내면 확인을 내린다 · 탈퇴 대기는 전경에서 올리지 않는다) | `AlarmTalkApplication.onCreate`(세션이 있으면)·`onSignedIn`·`cancelAccountDeletion` → `AlarmTalkMessagingService.registerCurrentToken`(기억 없이 매번 POST) · `onNewToken`(토큰 회전) | `PushNotificationCoordinator.registerToken`(실행의 첫 콜백은 영속 캐시와 같아도 올린다 — 메모리 값 `uploadConfirmedInThisProcess`, 실패·`unregisterCurrentToken`(해제를 보내기 직전)·`clearRegistrationCache` 가 내린다) · `resumeRegistrationIfNeeded(session:)`(`registrationConfirmedInThisProcess(userID:)` 가 아니면 `start` — 세션 없음·탈퇴 대기는 하지 않는다) ← `AlarmTalkApp` 의 `scenePhase == .active` · 회귀 `AlarmTalkTests/PushRegistrationRecoveryTests`(`test_실행마다_첫_등록은_캐시와_같아도_서버에_다시_올린다`·`test_실패한_등록은_같은_실행의_전경_복귀가_다시_올린다`·`test_전경_복귀는_세션이_있고_탈퇴_대기가_아닐_때만_확인되지_않은_등록을_다시_요청한다`·`test_해제를_보낸_뒤에는_같은_계정이어도_다시_올린다`·`test_전경_복귀가_확인되지_않은_푸시_등록을_다시_올린다`) | `routes/push.ts` 의 `/register`(같은 값을 다시 올려도 같은 한 행 — `pushRegisterStatements` 의 멱등 batch · 게이트웨이 실패는 `retryTransientTurso` 가 다시 보낸다) |
 | 보낸 뒤 수정 금지 | — | — | `alarm-mutation.ts` 타깃 PATCH → 409 |
 | 수신자 음원 접근권 | — | — | `routes/tts.ts` `GET /messages/:id/audio` 의 `target_user_id` 갈래 |
 | 받은 뒤 수정은 수신자 것 | `RemoteAlarmPullSyncService.locallyEditedByRecipient` | `RemoteAlarmPullSync.locallyEditedByRecipient` | — |

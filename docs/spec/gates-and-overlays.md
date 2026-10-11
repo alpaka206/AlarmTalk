@@ -22,6 +22,12 @@ PR #660 에서 **같은 모양의 버그가 네 번** 나왔다(동의 → 버�
 | `versionChecked` / `AppVersionGate.checked` | 최소지원버전 정책 | 되돌리지 않는다(앱·기기 단위) |
 | `stockReplacementChecked` / `stockReplacement.isChecked(for:)` | 기본 목소리 교체가 미완인지 판정 | **계정 id 를 들고 비교한다**(전역 Bool 이면 A 의 확인이 B 에 샌다). 실패한 시도도 '끝났다' 로 센다 |
 
+⚠ **안드로이드의 받기 화면 판정(`showVoiceSetup`)은 따로 신호를 두지 않고 순서로 지킨다**(2026-10-11). 그 판정이
+메인 밖에서 파일을 세느라 잠깐 걸리게 되어(`MainViewModel.checkVoiceSetupFor` — suspend, `VoiceSetupProbe`), 세션
+이펙트가 **그 판정을 마친 뒤에** 계정·동의 조회를 띄운다(`AlarmTalkApp.kt`). 1회성 오버레이는 계정·동의 응답을
+기다리므로, 그 응답이 왔을 때는 받기 화면 판정도 끝나 있다 — 응답 전 기본값(false)을 '받기 화면 없음' 으로 읽고
+소진 플래그를 태우는 틈이 없다. 이 순서를 바꾸면(조회를 판정과 나란히 띄우면) 그 틈이 다시 생긴다.
+
 ## 개인 플랜 종료 안내 — **들어올 때마다**, 준비가 끝난 뒤에만 (2026-09-27)
 
 기간 한정 개인 플랜([`billing-lifecycle.md`](billing-lifecycle.md) 「기간 한정 개인 플랜」)이
