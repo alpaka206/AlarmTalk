@@ -23,11 +23,20 @@ import {
   speakTypedLaughter,
   stripAllTags,
   vertexGenerateContentEndpoint,
+  MIN_SPEECH_TRANSCRIPT_CHARS,
   SPEECH_STYLE_RETRY_DELAYS_MS,
+  speechCharCount,
   VERTEX_MODEL,
+  type SpeechStyle,
+  type SpeechStyleAnalysis,
 } from '../src/lib/vertex-translate';
 
 const mockFetch = vi.fn();
+
+/** 말투를 찾았으면 그 말투, 아니면 null — 결과의 갈래(`kind`)는 따로 단언하는 자리에서 본다. */
+function styleOf(analysis: SpeechStyleAnalysis): SpeechStyle | null {
+  return analysis.kind === 'style' ? analysis.style : null;
+}
 
 const TOKEN_URI = 'https://oauth2.example.com/token';
 
@@ -171,7 +180,7 @@ describe('Gemini 요청 — 모델·사고 설정은 코드가 정한다(3.8 Fla
 
   it('요청은 3.8 Flash · us 주소와 LOW 사고로 나간다 — MINIMAL·temperature 를 싣지 않는다', async () => {
     queueContent(geminiText(SPEECH_STYLE_JSON));
-    const style = await analyzeSpeechStyleWithVertex(ENV, SPEECH_TRANSCRIPT, 'ko');
+    const style = styleOf(await analyzeSpeechStyleWithVertex(ENV, SPEECH_TRANSCRIPT, 'ko'));
     expect(style?.dialect).toBe('경상');
     const { url, body } = contentCall();
     expect(url).toBe(
@@ -337,10 +346,12 @@ describe('Gemini 요청 — 모델·사고 설정은 코드가 정한다(3.8 Fla
         '{"dialect":"경상","strength":"high","register":"banmal","markers":["~카이"],"persona":"","childlike":false,"confidence":0.9}',
       ),
     );
-    const style = await analyzeSpeechStyleWithVertex(
-      ENV,
-      '아이고 오늘은 날씨가 참 좋네예. 밥은 묵었나? 니도 밥 잘 챙겨 묵고 댕기래이.',
-      'ko',
+    const style = styleOf(
+      await analyzeSpeechStyleWithVertex(
+        ENV,
+        '아이고 오늘은 날씨가 참 좋네예. 밥은 묵었나? 니도 밥 잘 챙겨 묵고 댕기래이.',
+        'ko',
+      ),
     );
     expect(style?.dialect).toBe('경상');
     expect(style?.strength).toBe('high');
@@ -367,10 +378,12 @@ describe('Gemini 요청 — 모델·사고 설정은 코드가 정한다(3.8 Fla
         '{"dialect":"경상","strength":"very strong","register":"banmal","markers":["~카이"],"persona":"","childlike":false,"confidence":0.9}',
       ),
     );
-    const style = await analyzeSpeechStyleWithVertex(
-      ENV,
-      '아이고 오늘은 날씨가 참 좋네예. 밥은 묵었나? 니도 밥 잘 챙겨 묵고 댕기래이.',
-      'ko',
+    const style = styleOf(
+      await analyzeSpeechStyleWithVertex(
+        ENV,
+        '아이고 오늘은 날씨가 참 좋네예. 밥은 묵었나? 니도 밥 잘 챙겨 묵고 댕기래이.',
+        'ko',
+      ),
     );
     expect(style?.dialect).toBe('경상');
     expect(style?.strength).toBe('');
@@ -2110,7 +2123,7 @@ describe('사전렌더 — 3.8 튜닝(2026-10-01)', () => {
         '{"dialect":"Southern American English","strength":"medium","register":"casual","markers":["y\'all"],"persona":"","childlike":false,"energy":"","confidence":0.8}',
       ),
     );
-    const style = await analyzeSpeechStyleWithVertex(ENV, "Mornin', sugar. Y'all better get up now, ya hear? Don't be late, darlin'.", 'en');
+    const style = styleOf(await analyzeSpeechStyleWithVertex(ENV, "Mornin', sugar. Y'all better get up now, ya hear? Don't be late, darlin'.", 'en'));
     expect(style?.dialect).toBe('Southern American English');
   });
 
@@ -2845,7 +2858,7 @@ describe('analyzeSpeechStyleWithVertex — 전송 실패만 마감 안에서 다
   it('시간 초과 한 번 뒤 다시 물어 결과를 낸다', async () => {
     queueContent(timeout());
     queueContent(geminiText(STYLE_JSON));
-    const style = await analyzeSpeechStyleWithVertex(ENV, TRANSCRIPT, 'ko', { sleep });
+    const style = styleOf(await analyzeSpeechStyleWithVertex(ENV, TRANSCRIPT, 'ko', { sleep }));
     expect(style?.dialect).toBe('경상');
     expect(contentCalls()).toBe(2);
     expect(slept).toEqual([SPEECH_STYLE_RETRY_DELAYS_MS[0]]);
@@ -2855,14 +2868,14 @@ describe('analyzeSpeechStyleWithVertex — 전송 실패만 마감 안에서 다
     queueContent(new TypeError('fetch failed'));
     queueContent(new Response(JSON.stringify({ error: { message: 'overloaded' } }), { status: 503 }));
     queueContent(geminiText(STYLE_JSON));
-    expect((await analyzeSpeechStyleWithVertex(ENV, TRANSCRIPT, 'ko', { sleep }))?.dialect).toBe('경상');
+    expect(styleOf(await analyzeSpeechStyleWithVertex(ENV, TRANSCRIPT, 'ko', { sleep }))?.dialect).toBe('경상');
     expect(contentCalls()).toBe(3);
     expect(slept).toEqual([...SPEECH_STYLE_RETRY_DELAYS_MS]);
 
     mockFetch.mockClear();
     queueContent(new Response('{}', { status: 429 }));
     queueContent(geminiText(STYLE_JSON));
-    expect((await analyzeSpeechStyleWithVertex(ENV, TRANSCRIPT, 'ko', { sleep }))?.dialect).toBe('경상');
+    expect(styleOf(await analyzeSpeechStyleWithVertex(ENV, TRANSCRIPT, 'ko', { sleep }))?.dialect).toBe('경상');
     expect(contentCalls()).toBe(2);
   });
 
@@ -2871,7 +2884,7 @@ describe('analyzeSpeechStyleWithVertex — 전송 실패만 마감 안에서 다
       throw timeout();
     });
     queueContent(geminiText(STYLE_JSON));
-    expect((await analyzeSpeechStyleWithVertex(ENV, TRANSCRIPT, 'ko', { sleep }))?.dialect).toBe('경상');
+    expect(styleOf(await analyzeSpeechStyleWithVertex(ENV, TRANSCRIPT, 'ko', { sleep }))?.dialect).toBe('경상');
     expect(contentCalls()).toBe(1);
     expect(slept).toEqual([SPEECH_STYLE_RETRY_DELAYS_MS[0]]);
   });
@@ -2879,14 +2892,15 @@ describe('analyzeSpeechStyleWithVertex — 전송 실패만 마감 안에서 다
   it('토큰 발급이 429·5xx 로 답해도 다시 묻고, 400 은 다시 묻지 않는다(Codex #844)', async () => {
     mockFetch.mockImplementationOnce(async () => new Response(JSON.stringify({ error: 'rate_limited' }), { status: 429 }));
     queueContent(geminiText(STYLE_JSON));
-    expect((await analyzeSpeechStyleWithVertex(ENV, TRANSCRIPT, 'ko', { sleep }))?.dialect).toBe('경상');
+    expect(styleOf(await analyzeSpeechStyleWithVertex(ENV, TRANSCRIPT, 'ko', { sleep }))?.dialect).toBe('경상');
     expect(contentCalls()).toBe(1);
     expect(slept).toEqual([SPEECH_STYLE_RETRY_DELAYS_MS[0]]);
 
     mockFetch.mockClear();
     slept.length = 0;
     mockFetch.mockImplementationOnce(async () => new Response(JSON.stringify({ error: 'invalid_grant' }), { status: 400 }));
-    expect(await analyzeSpeechStyleWithVertex(ENV, TRANSCRIPT, 'ko', { sleep })).toBeNull();
+    // 다시 보내도 같은 거절이다 — 그래도 녹음의 답이 아니라 우리 쪽 실패라 '표준 말투' 로 덮지 않는다(재시도 버튼).
+    expect(await analyzeSpeechStyleWithVertex(ENV, TRANSCRIPT, 'ko', { sleep })).toEqual({ kind: 'failed', reason: 'rejected' });
     expect(contentCalls()).toBe(0);
     expect(slept).toEqual([]);
   });
@@ -2903,7 +2917,7 @@ describe('analyzeSpeechStyleWithVertex — 전송 실패만 마감 안에서 다
       );
     queueContent(brokenBody());
     queueContent(geminiText(STYLE_JSON));
-    expect((await analyzeSpeechStyleWithVertex(ENV, TRANSCRIPT, 'ko', { sleep }))?.dialect).toBe('경상');
+    expect(styleOf(await analyzeSpeechStyleWithVertex(ENV, TRANSCRIPT, 'ko', { sleep }))?.dialect).toBe('경상');
     expect(contentCalls()).toBe(2);
     expect(slept).toEqual([SPEECH_STYLE_RETRY_DELAYS_MS[0]]);
 
@@ -2911,30 +2925,41 @@ describe('analyzeSpeechStyleWithVertex — 전송 실패만 마감 안에서 다
     slept.length = 0;
     mockFetch.mockImplementationOnce(async () => brokenBody());
     queueContent(geminiText(STYLE_JSON));
-    expect((await analyzeSpeechStyleWithVertex(ENV, TRANSCRIPT, 'ko', { sleep }))?.dialect).toBe('경상');
+    expect(styleOf(await analyzeSpeechStyleWithVertex(ENV, TRANSCRIPT, 'ko', { sleep }))?.dialect).toBe('경상');
     expect(contentCalls()).toBe(1);
     expect(slept).toEqual([SPEECH_STYLE_RETRY_DELAYS_MS[0]]);
   });
 
-  it('세 번 다 전송 실패면 null — 네 번째는 없다', async () => {
+  it('세 번 다 전송 실패면 실패(transport) — 네 번째는 없다', async () => {
     queueContent(timeout());
     queueContent(timeout());
     queueContent(timeout());
-    expect(await analyzeSpeechStyleWithVertex(ENV, TRANSCRIPT, 'ko', { sleep })).toBeNull();
+    expect(await analyzeSpeechStyleWithVertex(ENV, TRANSCRIPT, 'ko', { sleep })).toEqual({ kind: 'failed', reason: 'transport' });
     expect(contentCalls()).toBe(3);
   });
 
-  it('내용 실패(400·형식 오류·잘린 답·낮은 확신)는 다시 묻지 않는다', async () => {
-    const cases: Response[] = [
-      new Response(JSON.stringify({ error: { message: 'bad schema' } }), { status: 400 }),
-      geminiText('not json'),
-      okJson({ candidates: [{ finishReason: 'MAX_TOKENS', content: { parts: [{ text: '{"dialect":"경' }] } }] }),
-      geminiText(STYLE_JSON.replace('"confidence":0.9', '"confidence":0.3')),
+  // 다시 묻지 않는 것과 '실패' 는 다른 질문이다(2026-10-11). 400·형식 오류·잘린 답은 **실패**로 남고(재시도 버튼),
+  // 낮은 확신만 녹음의 답 — 표준 말투다.
+  it('내용 실패(400·형식 오류·잘린 답·낮은 확신)는 다시 묻지 않는다 — 낮은 확신만 표준 말투, 나머지는 실패', async () => {
+    const cases: [Response, SpeechStyleAnalysis][] = [
+      [
+        new Response(JSON.stringify({ error: { message: 'bad schema' } }), { status: 400 }),
+        { kind: 'failed', reason: 'rejected' },
+      ],
+      [geminiText('not json'), { kind: 'failed', reason: 'unparseable' }],
+      [
+        okJson({ candidates: [{ finishReason: 'MAX_TOKENS', content: { parts: [{ text: '{"dialect":"경' }] } }] }),
+        { kind: 'failed', reason: 'incomplete' },
+      ],
+      [
+        geminiText(STYLE_JSON.replace('"confidence":0.9', '"confidence":0.3')),
+        { kind: 'standard', reason: 'low_confidence' },
+      ],
     ];
-    for (const response of cases) {
+    for (const [response, expected] of cases) {
       mockFetch.mockClear();
       queueContent(response);
-      expect(await analyzeSpeechStyleWithVertex(ENV, TRANSCRIPT, 'ko', { sleep })).toBeNull();
+      expect(await analyzeSpeechStyleWithVertex(ENV, TRANSCRIPT, 'ko', { sleep })).toEqual(expected);
       expect(contentCalls()).toBe(1);
     }
     expect(slept).toEqual([]);
@@ -2943,8 +2968,8 @@ describe('analyzeSpeechStyleWithVertex — 전송 실패만 마감 안에서 다
   it('마감까지 남은 시간이 모자라면 다시 묻지 않는다', async () => {
     queueContent(timeout());
     queueContent(geminiText(STYLE_JSON));
-    const style = await analyzeSpeechStyleWithVertex(ENV, TRANSCRIPT, 'ko', { sleep, deadlineAt: Date.now() + 3_000 });
-    expect(style).toBeNull();
+    const analysis = await analyzeSpeechStyleWithVertex(ENV, TRANSCRIPT, 'ko', { sleep, deadlineAt: Date.now() + 3_000 });
+    expect(analysis).toEqual({ kind: 'failed', reason: 'transport' });
     expect(contentCalls()).toBe(1);
     expect(slept).toEqual([]);
   });
@@ -2992,7 +3017,10 @@ describe('analyzeSpeechStyleWithVertex — 전송 실패만 마감 안에서 다
         clock += timeoutMs; // 생성 요청은 상한까지 기다렸다 시간 초과
         throw timeout();
       });
-      expect(await analyzeSpeechStyleWithVertex(ENV, TRANSCRIPT, 'ko', { sleep: clockSleep, deadlineAt })).toBeNull();
+      expect(await analyzeSpeechStyleWithVertex(ENV, TRANSCRIPT, 'ko', { sleep: clockSleep, deadlineAt })).toEqual({
+        kind: 'failed',
+        reason: 'transport',
+      });
       // 1회차 15초 → 0.5초 쉼 → 2회차: 토큰 8초(남은 10.5초 중) → 생성은 남은 2.5초만. 예전에는 토큰 앞에서 잰
       // 10.5초를 그대로 써서 마감을 8초 넘겼다.
       expect(timeoutsOf('token')).toEqual([8_000, 8_000]);
@@ -3013,7 +3041,10 @@ describe('analyzeSpeechStyleWithVertex — 전송 실패만 마감 안에서 다
         clock += 3_000;
         return new Response(JSON.stringify({ error: { message: 'overloaded' } }), { status: 503 });
       });
-      expect(await analyzeSpeechStyleWithVertex(ENV, TRANSCRIPT, 'ko', { sleep: clockSleep, deadlineAt })).toBeNull();
+      expect(await analyzeSpeechStyleWithVertex(ENV, TRANSCRIPT, 'ko', { sleep: clockSleep, deadlineAt })).toEqual({
+        kind: 'failed',
+        reason: 'transport',
+      });
       // 1회차: 토큰 8초·생성 10초(마감까지) → 3초 뒤 503 → 0.5초 쉼 → 2회차 토큰은 남은 6.5초.
       expect(timeoutsOf('token')).toEqual([8_000, 6_500]);
       expect(timeoutsOf('generate')).toEqual([10_000]);
@@ -3023,7 +3054,7 @@ describe('analyzeSpeechStyleWithVertex — 전송 실패만 마감 안에서 다
 
     it('마감이 넉넉하면 첫 회차는 예전 그대로(토큰 8초·생성 15초)', async () => {
       stubFetch(async (kind) => (kind === 'token' ? okJson({ access_token: 'test-access-token' }) : geminiText(STYLE_JSON)));
-      expect((await analyzeSpeechStyleWithVertex(ENV, TRANSCRIPT, 'ko', { sleep: clockSleep }))?.dialect).toBe('경상');
+      expect(styleOf(await analyzeSpeechStyleWithVertex(ENV, TRANSCRIPT, 'ko', { sleep: clockSleep }))?.dialect).toBe('경상');
       expect(timeoutsOf('token')).toEqual([8_000]);
       expect(timeoutsOf('generate')).toEqual([15_000]);
     });
@@ -3032,7 +3063,7 @@ describe('analyzeSpeechStyleWithVertex — 전송 실패만 마감 안에서 다
       stubFetch(async () => okJson({ access_token: 'test-access-token' }));
       expect(
         await analyzeSpeechStyleWithVertex(ENV, TRANSCRIPT, 'ko', { sleep: clockSleep, deadlineAt: clock - 1 }),
-      ).toBeNull();
+      ).toEqual({ kind: 'failed', reason: 'transport' });
       expect(mockFetch).not.toHaveBeenCalled();
       expect(slept).toEqual([]);
     });
@@ -3091,7 +3122,7 @@ describe('analyzeSpeechStyleWithVertex — 제시 대본을 읽은 녹음은 어
         styleJson({ register: 'polite', markers: ['〜ましょう'], persona: '落ち着いた語り口', energy: 'calm' }),
       ),
     );
-    const style = await analyzeSpeechStyleWithVertex(ENV, JA_SCRIPT_READ, 'ja');
+    const style = styleOf(await analyzeSpeechStyleWithVertex(ENV, JA_SCRIPT_READ, 'ja'));
     expect(style).toEqual({
       dialect: '',
       strength: '',
@@ -3105,10 +3136,12 @@ describe('analyzeSpeechStyleWithVertex — 제시 대본을 읽은 녹음은 어
 
   it('사투리로 읽은 대본도 어체만 버린다 — 사투리는 남는다', async () => {
     queueContent(geminiText(styleJson({ dialect: '경상', strength: 'medium', register: 'jondaemal', markers: ['~예'] })));
-    const style = await analyzeSpeechStyleWithVertex(
-      ENV,
-      '안녕하십니꺼, 지금부터 알람톡에서 쓸 목소리를 함께 만들어 볼게예. 매일 아침 이 목소리가 좋아하는 사람을 깨워 준다카니, 설레지 않나예? 오늘은 하늘도 맑고 바람도 부드러운, 걷기 좋은 날이라예.',
-      'ko',
+    const style = styleOf(
+      await analyzeSpeechStyleWithVertex(
+        ENV,
+        '안녕하십니꺼, 지금부터 알람톡에서 쓸 목소리를 함께 만들어 볼게예. 매일 아침 이 목소리가 좋아하는 사람을 깨워 준다카니, 설레지 않나예? 오늘은 하늘도 맑고 바람도 부드러운, 걷기 좋은 날이라예.',
+        'ko',
+      ),
     );
     expect(style?.register).toBe('');
     expect(style?.dialect).toBe('경상');
@@ -3116,33 +3149,28 @@ describe('analyzeSpeechStyleWithVertex — 제시 대본을 읽은 녹음은 어
     expect(style?.markers).toEqual(['~예']);
   });
 
-  // null 이면 'failed' 로 기록돼 재시도 버튼이 뜨고, 같은 녹음이라 다시 눌러도 같은 답이다.
-  it('어체만 있던 분석도 실패(null)가 아니라 빈 말투로 끝난다', async () => {
+  // 실패로 두면 재시도 버튼이 뜨는데, 같은 녹음이라 다시 눌러도 같은 답이다. 버리고 나면 찾은 것이 없다 — 표준 말투다
+  // (2026-10-11 — 예전에는 빈 말투 객체를 저장했고, 그 저장이 정식 목소리의 클립을 같은 소리로 다시 굽게 했다).
+  it('어체만 있던 분석은 실패가 아니라 표준 말투(찾은 것 없음)로 끝난다', async () => {
     queueContent(geminiText(styleJson({ register: 'jondaemal' })));
-    const style = await analyzeSpeechStyleWithVertex(ENV, KO_SCRIPT_READ, 'ko');
-    expect(style).toEqual({
-      dialect: '',
-      strength: '',
-      register: '',
-      markers: [],
-      persona: '',
-      childlike: false,
-      energy: '',
+    expect(await analyzeSpeechStyleWithVertex(ENV, KO_SCRIPT_READ, 'ko')).toEqual({
+      kind: 'standard',
+      reason: 'nothing_detected',
     });
   });
 
   it('자유 발화의 어체는 그대로 남는다 — 정중체·반말 모두', async () => {
     queueContent(geminiText(styleJson({ register: 'jondaemal' })));
-    expect((await analyzeSpeechStyleWithVertex(ENV, KO_FREE_POLITE, 'ko'))?.register).toBe('jondaemal');
+    expect(styleOf(await analyzeSpeechStyleWithVertex(ENV, KO_FREE_POLITE, 'ko'))?.register).toBe('jondaemal');
     queueContent(geminiText(styleJson({ register: 'banmal' })));
-    expect((await analyzeSpeechStyleWithVertex(ENV, KO_FREE_BANMAL, 'ko'))?.register).toBe('banmal');
+    expect(styleOf(await analyzeSpeechStyleWithVertex(ENV, KO_FREE_BANMAL, 'ko'))?.register).toBe('banmal');
     queueContent(geminiText(styleJson({ register: 'polite' })));
-    expect((await analyzeSpeechStyleWithVertex(ENV, JA_FREE_POLITE, 'ja'))?.register).toBe('polite');
+    expect(styleOf(await analyzeSpeechStyleWithVertex(ENV, JA_FREE_POLITE, 'ja'))?.register).toBe('polite');
   });
 
   it('대본 낭독 분석은 프롬프트에 어체를 싣지 않고 일본어 가족 です・ます 검사를 끄지 않는다', async () => {
     queueContent(geminiText(styleJson({ register: 'polite', markers: ['〜ましょう'] })));
-    const scriptStyle = await analyzeSpeechStyleWithVertex(ENV, JA_SCRIPT_READ, 'ja');
+    const scriptStyle = styleOf(await analyzeSpeechStyleWithVertex(ENV, JA_SCRIPT_READ, 'ja'));
     expect(scriptStyle).not.toBeNull();
 
     mockFetch.mockClear();
@@ -3160,7 +3188,7 @@ describe('analyzeSpeechStyleWithVertex — 제시 대본을 읽은 녹음은 어
 
   it('자유 발화의 정중체는 지금처럼 프롬프트에 싣고 검사를 면제한다(대조군)', async () => {
     queueContent(geminiText(styleJson({ register: 'polite' })));
-    const freeStyle = await analyzeSpeechStyleWithVertex(ENV, JA_FREE_POLITE, 'ja');
+    const freeStyle = styleOf(await analyzeSpeechStyleWithVertex(ENV, JA_FREE_POLITE, 'ja'));
 
     mockFetch.mockClear();
     queueContent(geminiText('{"text":"ゆい、おはようございます。今日も一日がんばりましょうね。"}'));
@@ -3169,5 +3197,100 @@ describe('analyzeSpeechStyleWithVertex — 제시 대본을 읽은 녹음은 어
 
     expect(hasJapanesePoliteEnding(POLITE_FAMILY_LINE, { ...MOM, speechStyle: freeStyle })).toBe(false);
     expect(prerenderRejectionReason(POLITE_FAMILY_LINE, 'ja', { ...MOM, speechStyle: freeStyle })).toBeNull();
+  });
+});
+
+// 2026-10-10 prod(ALARMTALK-BACKEND-F): 등록 녹음 세 건의 분석이 전부 '실패' 였다 — 둘은 전사가 20자 미만(말소리가
+// 거의 없는 녹음), 하나는 모델이 확신하지 못했다(200·STOP·출력 28토큰). 같은 녹음이라 다시 해도 같은 답인데 재시도 버튼이 뜨고 매번
+// Sentry 에 올라갔다. 녹음의 답(표준 말투)과 알아내지 못한 것(실패)을 가른다(스펙 voice-and-message §4-2).
+describe('analyzeSpeechStyleWithVertex — 녹음이 말투를 보여 주지 않은 것은 실패가 아니다', () => {
+  const styleJson = (fields: Record<string, unknown>) =>
+    JSON.stringify({
+      dialect: '',
+      strength: '',
+      register: '',
+      markers: [],
+      persona: '',
+      childlike: false,
+      energy: '',
+      confidence: 0.9,
+      ...fields,
+    });
+  const TRANSCRIPT = '아이고 오늘은 날씨가 참 좋네예. 밥은 묵었나? 니도 밥 잘 챙겨 묵고 댕기래이.';
+
+  it('전사가 MIN_SPEECH_TRANSCRIPT_CHARS 자보다 짧으면(앞뒤 공백은 세지 않는다) 모델에 묻지 않고 표준 말투다', async () => {
+    const short = `  ${'가'.repeat(MIN_SPEECH_TRANSCRIPT_CHARS - 1)}  `;
+    expect(await analyzeSpeechStyleWithVertex(ENV, short, 'ko')).toEqual({ kind: 'standard', reason: 'short_transcript' });
+    expect(await analyzeSpeechStyleWithVertex(ENV, '', 'ko')).toEqual({ kind: 'standard', reason: 'short_transcript' });
+    expect(mockFetch).not.toHaveBeenCalled();
+
+    // 딱 그 길이면 묻는다 — 등록의 말소리 확인과 같은 경계다(같은 상수).
+    queueContent(geminiText(styleJson({ dialect: '경상', strength: 'high' })));
+    const atLimit = await analyzeSpeechStyleWithVertex(ENV, '가'.repeat(MIN_SPEECH_TRANSCRIPT_CHARS), 'ko');
+    expect(styleOf(atLimit)?.dialect).toBe('경상');
+  });
+
+  // 2026-10-11 리뷰: Scribe 는 소리 표시(`tag_audio_events`, 기본 켜짐)를 붙인다. 그대로 세면 잡음만 든 녹음의 표시가
+  // 20자를 넘겨 말소리로 읽혔다. 등록의 말소리 확인과 같은 셈(`speechCharCount`)으로 센다.
+  it('소리 표시는 말소리로 세지 않는다 — 표시뿐인 전사는 모델에 묻지 않고 표준 말투다', async () => {
+    const tagsOnly = '(background noise) (footsteps) [music] (door closes)';
+    expect(tagsOnly.trim().length).toBeGreaterThanOrEqual(MIN_SPEECH_TRANSCRIPT_CHARS);
+    expect(await analyzeSpeechStyleWithVertex(ENV, tagsOnly, 'ko')).toEqual({ kind: 'standard', reason: 'short_transcript' });
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it('말소리가 충분하면 소리 표시까지 그대로 모델에 보낸다 — 표시는 세지 않을 뿐 지우지 않는다', async () => {
+    queueContent(geminiText(styleJson({ energy: 'lively' })));
+    const withLaugh = `(laughter) ${'가'.repeat(MIN_SPEECH_TRANSCRIPT_CHARS)} (laughter)`;
+    expect((await analyzeSpeechStyleWithVertex(ENV, withLaugh, 'ko')).kind).toBe('style');
+    expect(sentPromptText()).toContain(withLaugh);
+  });
+
+  it('speechCharCount — 괄호·대괄호(전각 포함) 속 표시를 빼고 앞뒤 공백을 걷어 센다', () => {
+    expect(speechCharCount('  안녕하세요  ')).toBe(5);
+    expect(speechCharCount('(laughter) 안녕하세요 [music]')).toBe(5);
+    expect(speechCharCount('（笑） おはよう ［音楽］')).toBe(4);
+    expect(speechCharCount('(background noise) (footsteps)')).toBe(0);
+    // 짝이 없는 괄호는 표시가 아니다 — 그대로 센다.
+    expect(speechCharCount('1) 첫째')).toBe(5);
+  });
+
+  it('자격 증명이 없으면 실패(not_configured)다 — 다만 짧은 전사의 답은 그래도 표준 말투다', async () => {
+    const unconfigured = { ...ENV, GOOGLE_VERTEX_CREDENTIALS_JSON: '' };
+    expect(await analyzeSpeechStyleWithVertex(unconfigured, TRANSCRIPT, 'ko')).toEqual({
+      kind: 'failed',
+      reason: 'not_configured',
+    });
+    expect(await analyzeSpeechStyleWithVertex(unconfigured, '짧은 전사', 'ko')).toEqual({
+      kind: 'standard',
+      reason: 'short_transcript',
+    });
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it('확신이 높아도 찾은 것이 하나도 없으면 표준 말투(nothing_detected)다', async () => {
+    queueContent(geminiText(styleJson({})));
+    expect(await analyzeSpeechStyleWithVertex(ENV, TRANSCRIPT, 'ko')).toEqual({ kind: 'standard', reason: 'nothing_detected' });
+  });
+
+  it('확신이 기준(0.6) 미만이면 표준 말투(low_confidence)다 — 기준값이면 말투를 쓴다', async () => {
+    queueContent(geminiText(styleJson({ dialect: '경상', confidence: 0.59 })));
+    expect(await analyzeSpeechStyleWithVertex(ENV, TRANSCRIPT, 'ko')).toEqual({ kind: 'standard', reason: 'low_confidence' });
+    queueContent(geminiText(styleJson({ dialect: '경상', confidence: 0.6 })));
+    expect(styleOf(await analyzeSpeechStyleWithVertex(ENV, TRANSCRIPT, 'ko'))?.dialect).toBe('경상');
+  });
+
+  it('확신이 없거나 숫자가 아니거나 답이 객체가 아니면 깨진 답이다 — 표준 말투로 덮지 않고 실패(unparseable)', async () => {
+    const broken = [
+      JSON.stringify({ dialect: '경상', strength: 'high', register: '', markers: [], persona: '', childlike: false, energy: '' }),
+      styleJson({ dialect: '경상', confidence: '0.9' }),
+      '[]',
+      'null',
+      '',
+    ];
+    for (const raw of broken) {
+      queueContent(geminiText(raw));
+      expect(await analyzeSpeechStyleWithVertex(ENV, TRANSCRIPT, 'ko'), raw).toEqual({ kind: 'failed', reason: 'unparseable' });
+    }
   });
 });

@@ -787,7 +787,9 @@ async function runF(m: (typeof MODELS)[number]) {
     let error: string | null = null;
     await callLog.run(calls, async () => {
       try {
-        style = await analyzeSpeechStyleWithVertex(envFor(m), c.transcript, c.lang);
+        // 표준 말투(내용)와 실패는 운영에서 갈리지만 이 채점은 말투를 찾았는가만 본다 — 둘 다 null 이다.
+        const analysis = await analyzeSpeechStyleWithVertex(envFor(m), c.transcript, c.lang);
+        style = analysis.kind === 'style' ? analysis.style : null;
       } catch (e) {
         error = (e as Error).message;
       }

@@ -456,7 +456,7 @@ gainMb=600`)로 확인했고, 사용자가 맞춘 음량이 첫 회만 지켜지
 | --- | --- |
 | [`docs/spec/alarm-ringing.md`](docs/spec/alarm-ringing.md) | **잠김=전체화면 / 앱 보임=전체화면 / 다른 앱=배너**(OS 가 가른다), **벗어나면=해제**, 스와이프=해제, 타임아웃 없음, 소리·음량, 권한별 사실 |
 | [`docs/spec/alarm-editor.md`](docs/spec/alarm-editor.md) | 편집기 — 타임휠(튕기면 굴러간다·숫자 탭은 **그 자리 입력**), 재생 방식 세그먼트, 모달 **세 형태** |
-| [`docs/spec/voice-and-message.md`](docs/spec/voice-and-message.md) | 재생 방식 2택, **문구 목록은 하나**(등급으로 안 자른다), 직전 선택 유지, 버킷 선다운로드, 월 등록 한도 — **다 썼으면 초안부터 만들지 않는다** |
+| [`docs/spec/voice-and-message.md`](docs/spec/voice-and-message.md) | 재생 방식 2택, **문구 목록은 하나**(등급으로 안 자른다), 직전 선택 유지, 버킷 선다운로드, 월 등록 한도 — **다 썼으면 초안부터 만들지 않는다**, 말소리가 거의 없는 녹음은 **등록하지 않는다**(다시 녹음은 횟수 제한 없음) |
 | [`docs/spec/plan-gates.md`](docs/spec/plan-gates.md) | 로그인·이용권 게이트 **3상태**와 상태별 액션 |
 | [`docs/spec/session-and-auth.md`](docs/spec/session-and-auth.md) | 로그인 유지 — TTL 365일 + **백그라운드 갱신**, 끊는 경우, 이메일 인증 코드 — **가장 최근 코드만**, 거절되면 칸을 비운다 |
 | [`docs/spec/billing-lifecycle.md`](docs/spec/billing-lifecycle.md) | 구독 해지·만료 — **스토어가 권위**, 애플은 서버가 못 끊는다 |

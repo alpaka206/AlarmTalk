@@ -66,6 +66,10 @@ private val API_ERROR_MESSAGES: Map<String, Int> = mapOf(
     // ── 목소리 ────────────────────────────────────────────────────────────
     "VOICE_CLONE_AUDIO_TOO_SHORT" to R.string.msg_voice_clone_audio_too_short,
     "VOICE_CLONE_AUDIO_TOO_LONG" to R.string.msg_voice_clone_audio_too_long,
+    // 녹음에 말소리가 거의 없다 — 서버가 받아 적어 본 글자가 너무 적어 등록을 받지 않았다(아무것도 쓰지 않았다 —
+    // 초안도, 횟수도). 등록 창이 그려져 있으면 처음 단계로 돌아가 녹음 카드 아래에 이 문장을 쓰고
+    // (`RegistrationFailureSurface.ReRecord`), 아니면 스낵바다. iOS `APIErrorMessages.swift` 와 짝이다 — 같은 문장이다.
+    "VOICE_CLONE_NO_SPEECH" to R.string.msg_voice_clone_no_speech,
     "INVALID_DURATION" to R.string.msg_voice_invalid_duration,
     "INVALID_AUDIO_MIME_TYPE" to R.string.msg_voice_invalid_audio_format,
     "VOICE_SLOT_EXHAUSTED" to R.string.msg_voice_slot_exhausted,

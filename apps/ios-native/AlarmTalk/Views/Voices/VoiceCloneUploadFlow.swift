@@ -3,7 +3,8 @@ import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
 
-private enum VoiceCloneSourceMode: String, CaseIterable, Identifiable {
+/// 등록 음원의 갈래 — 녹음 또는 고른 파일. 회귀 테스트가 `VoiceCloneUploadFlow.rerecordPlan` 을 부르도록 파일 밖에 연다.
+enum VoiceCloneSourceMode: String, CaseIterable, Identifiable {
     case record
     case file
 
@@ -17,10 +18,14 @@ private enum VoiceCloneSourceMode: String, CaseIterable, Identifiable {
     }
 }
 
-private enum RegistrationStep {
-    case source
-    case details
-    case creating
+extension VoiceCloneUploadFlow {
+    /// 등록 창의 단계. 회귀 테스트가 `rerecordPlan` 의 답을 보도록 연다 — 흔한 이름이라 모듈 맨 위가 아니라 이 화면
+    /// 안에 둔다.
+    enum RegistrationStep: Sendable {
+        case source
+        case details
+        case creating
+    }
 }
 
 /// 녹음/파일 선택 → 세부 정보 → 생성 중 워크플로우.
@@ -55,6 +60,12 @@ struct VoiceCloneUploadFlow: View {
     @State private var cropStartMs: Int = 0
     @State private var cropEndMs: Int = VoiceProfileLimits.maxDurationMs
     @State private var localError: String?
+    /// 말소리가 없다고 돌려받아 음원 준비로 돌아온 이유(`SubmitOutcome.rerecordForNoSpeech`) — 그 단계의 거절 줄
+    /// (`rerecordReasonLine`)이 그린다. 뷰모델의 안내 줄(`statusMessage`)이 아니라 **이 창의 상태**다 — 창과 함께
+    /// 사라져 목소리 탭 맨 위나 다음 창의 빈 녹음 카드 아래에 남지 않는다. 새로 녹음하기 시작하거나, 파일을 새로
+    /// 고르거나, 방식을 바꾸면 걷힌다 — 그 이유는 앞 소리의 이야기다.
+    /// 안드로이드 `VoiceProfileManagementPanel` 의 `rerecordReason` 과 같은 규칙이다.
+    @State private var rerecordReason: String?
     @State private var scriptExpanded = false
     /// 선제 동의 시트를 띄우느라 멈춘 등록이 있는가 — 동의가 기록되면 **그 자리에서 이어서**
     /// 등록한다. 안드로이드의 `SensitiveConsentRequest.resumeVoiceDrafts` 대응이다.
@@ -212,6 +223,8 @@ struct VoiceCloneUploadFlow: View {
             }
         }
         .onChange(of: sourceMode) { _, newValue in
+            // 거절당한 것은 앞 방식의 소리다 — 다른 방식으로 옮기면 그 이유(`rerecordReason`)는 맞지 않는다.
+            rerecordReason = nil
             voice.previewPlayer.stop()
             if newValue == .file, voice.recorder.isRecording {
                 voice.stopRecording()
@@ -305,7 +318,12 @@ struct VoiceCloneUploadFlow: View {
                     if hasRecording && !recordingIsLongEnough {
                         voice.recorder.clearLatest()
                     }
-                    Task { await voice.startRecording() }
+                    Task {
+                        await voice.startRecording()
+                        // 새로 녹음하기 시작했다 — 앞 녹음이 거절당한 이유(`rerecordReason`)를 걷는다. 남겨 두면 새 녹음도
+                        // 거절당한 것처럼 읽힌다. 마이크를 열지 못했으면 그 이유는 아직 맞다(시작했을 때만 걷는다).
+                        if voice.recorder.isRecording { rerecordReason = nil }
+                    }
                 }
             },
             onPreview: { voice.playRecording() },
@@ -316,11 +334,16 @@ struct VoiceCloneUploadFlow: View {
         )
     }
 
+    /// ⚠ **거절 이유 줄(`rerecordReasonLine`)은 녹음 카드·파일 고르기 바로 아래다 — 단계 맨 아래로 내리지 말 것.**
+    /// 말소리가 없다고 돌려받은 녹음은 버려지고 이 단계로 돌아와 그 이유를 여기서 말한다(`SubmitOutcome.rerecordForNoSpeech`).
+    /// 다음에 누를 것이 녹음 버튼(파일 고르기)이라 그 곁이 사용자가 보는 자리다 — 예시 대본을 펼쳐 둔 채면 맨 아래 줄은
+    /// 화면 밖이라, 녹음이 왜 사라졌는지 모른 채 다시 녹음하게 된다.
     @ViewBuilder
     private var sourceSection: some View {
         sourceModeSection
         if sourceMode == .record {
             recordingSection
+            rerecordReasonLine
             VStack(alignment: .leading, spacing: 4) {
                 Text(String(localized: "너무 짧으면 목소리가 다르게 나올 수 있어요."))
                 Text(String(localized: "원하는 목소리 파일이 없다면 영상을 틀고 녹음해도 돼요."))
@@ -330,6 +353,7 @@ struct VoiceCloneUploadFlow: View {
             scriptSection
         } else {
             fileSection
+            rerecordReasonLine
         }
     }
 
@@ -634,6 +658,18 @@ struct VoiceCloneUploadFlow: View {
         }
     }
 
+    /// 음원 준비로 돌려보낸 이유(`rerecordReason` — 말소리 없음). 글자·색은 오류 줄의 것이다(`bodySmall`·오류 색).
+    /// ⚠ 위의 안내 줄(`statusSection`)로 그리지 말 것 — 녹음 카드 아래 힌트 두 줄과 같은 흐린 글자라, 거절이 힌트 한
+    /// 줄로 읽혀 녹음이 왜 사라졌는지 모른다. 안드로이드 `RerecordReasonLine` 과 같은 글자·색이다.
+    @ViewBuilder
+    private var rerecordReasonLine: some View {
+        if let rerecordReason {
+            Text(rerecordReason)
+                .font(theme.typography.bodySmall)
+                .foregroundStyle(theme.palette.error)
+        }
+    }
+
     @ViewBuilder
     private var bottomActions: some View {
         switch registrationStep {
@@ -712,9 +748,13 @@ struct VoiceCloneUploadFlow: View {
         let trimmedRelationship = relationshipSelection.resolved.nilIfBlank
         let trimmedListener = listenerTitle.trimmingCharacters(in: .whitespacesAndNewlines).nilIfBlank
 
+        // 보낸 음원의 갈래와, 고른 파일이면 실제로 올린 파일(구간을 잘랐으면 잘라 낸 사본) — 말소리가 없다고 돌려받으면
+        // 이것들을 버린다(`rerecordPlan`).
+        let sentMode = sourceMode
+        var uploadedFileURL: URL?
         registrationStep = .creating
         let created: VoiceProfile?
-        switch sourceMode {
+        switch sentMode {
         case .record:
             guard voice.recorder.latestRecordingURL != nil,
                   voice.recorder.latestDurationMs != nil else {
@@ -733,6 +773,7 @@ struct VoiceCloneUploadFlow: View {
         case .file:
             do {
                 let prepared = try await preparedFileAudio()
+                uploadedFileURL = prepared.url
                 created = await voice.cloneAudioForProfile(
                     audioFileURL: prepared.url,
                     name: trimmedName,
@@ -753,7 +794,11 @@ struct VoiceCloneUploadFlow: View {
             }
         }
         // 갈 곳은 순수 셈이 정한다(`submitOutcome` — 가르는 규칙과 그 이유는 거기 있다).
-        switch Self.submitOutcome(created: created, monthlyLimitRejected: voice.monthlyLimitRejected) {
+        switch Self.submitOutcome(
+            created: created,
+            monthlyLimitRejected: voice.monthlyLimitRejected,
+            noSpeechRejected: voice.noSpeechRejected
+        ) {
         case .preview(let draftID):
             // 확인 스텝이 목록 새로고침을 기다리지 않고 그리게 초안을 넘겨 둔다.
             voice.pendingDraft = created
@@ -761,10 +806,82 @@ struct VoiceCloneUploadFlow: View {
         case .closeForMonthlyLimit:
             // 창을 닫는다 — 창이 다 내려간 뒤 목소리 탭이 알럿 하나로 이유를 말한다(`VoicesPanelView`).
             route = .management
+        case .rerecordForNoSpeech:
+            // 보낸 녹음(고른 파일)을 버리고 음원 준비로 돌아간다 — 남겨 두면 `등록` 이 같은 소리를 다시 보내 같은 답을
+            // 받는다. 무엇을 버리고 어디로 가는지는 순수 셈(`rerecordPlan`)이 정하고 여기서는 그대로 따른다. 이름·관계·
+            // 호칭·언어는 그대로 둔다.
+            let plan = Self.rerecordPlan(sentMode: sentMode, selectedFileURL: selectedFileURL, uploadedURL: uploadedFileURL)
+            discardSentSource(plan)
+            registrationStep = plan.step
+            submitted = false
+            // 이유(뷰모델이 안내 줄에 세운 문장)는 이 창의 거절 줄로 옮긴다 — 녹음 카드·파일 고르기 바로 아래, 오류 색
+            // (`rerecordReasonLine`). 안내 줄에 남기면 맨 아래 흐린 힌트처럼 읽히고, 창을 닫은 뒤에도 목소리 탭 맨 위에
+            // 남는다. 이 갈래에 닿을 때 창은 늘 떠 있다 — 만드는 중에는 닫을 수 없다(`topBarBackAction` 이 nil, 창은
+            // `interactiveDismissDisabled`).
+            rerecordReason = voice.statusMessage
+            voice.statusMessage = nil
         case .details:
             // 이유는 `statusSection` 이 이 창 안에서 말하고, 녹음(고른 파일)은 그대로라 `등록` 을 그대로
             // 다시 누를 수 있다.
             registrationStep = .details
+        }
+    }
+
+    /// 말소리가 없다고 돌려받은 음원을 계획(`rerecordPlan`)대로 버린다 — 다음 `등록` 이 같은 소리를 보내지 못하게
+    /// (`SubmitOutcome.rerecordForNoSpeech`). 계획을 **그대로** 따른다 — 무엇을 버릴지는 여기서 다시 셈하지 않는다.
+    private func discardSentSource(_ plan: RerecordPlan) {
+        if plan.clearsRecorder {
+            voice.previewPlayer.stop()
+            voice.recorder.clearLatest()
+        }
+        for url in plan.filesToDelete {
+            try? FileManager.default.removeItem(at: url)
+        }
+        if plan.clearsFileSelection {
+            selectedFileURL = nil
+            selectedFileName = nil
+            selectedFileDurationMs = nil
+            localError = nil
+        }
+    }
+
+    /// 말소리가 없다고 돌려받은 뒤(`SubmitOutcome.rerecordForNoSpeech`) 등록 창이 할 일 — 화면 상태와 떼어 낸 순수
+    /// 셈의 답이다(회귀 `VoiceStudioViewModelTests`). `submit` 이 이것을 그대로 따른다(`discardSentSource`).
+    struct RerecordPlan: Equatable, Sendable {
+        /// 녹음기를 비운다 — 녹음 파일도 함께 지워진다(`VoiceRecorder.clearLatest`).
+        let clearsRecorder: Bool
+        /// 지울 파일 — 앱이 만든 사본(가져온 파일·잘라 낸 구간)뿐이다. 사용자가 고른 원본은 가져올 때 사본을 떴으므로
+        /// (`copyImportedAudio`) 건드리지 않는다.
+        let filesToDelete: [URL]
+        /// 고른 파일을 놓는다 — 고르기 전으로 돌린다.
+        let clearsFileSelection: Bool
+        /// 돌아갈 단계.
+        let step: RegistrationStep
+    }
+
+    /// 위 계획을 셈한다. **보낸 갈래의 소리만** 버린다 — 녹음을 보냈으면 녹음을, 고른 파일을 보냈으면 그 파일을. 다른
+    /// 갈래에 준비해 둔 소리는 보내지 않았으니 그대로 둔다.
+    ///
+    /// - ⚠ **돌아갈 곳은 음원 준비다 — 세부 정보가 아니다.** 고칠 것은 이름이 아니라 소리다. 세부 정보로 돌리면 `등록` 이
+    ///   같은 소리를 다시 보내 같은 400 을 받고, 누를 때마다 공용·한도 있는 ElevenLabs 키로 전사 한 번을 치른다.
+    /// - ⚠ **고른 파일은 잘라 낸 사본까지 지운다.** 구간을 잘라 보냈으면 올린 것은 가져온 사본이 아니라 잘라 낸 사본
+    ///   (`uploadedURL` — 캐시의 `VoiceCrop`)이다. 등록 녹음은 음성 생체정보 평문이라 다시 보낼 일이 없는 사본을 남기지
+    ///   않는다. 안드로이드도 거절로 다 쓴 녹음은 올린 사본까지 지운다(`cloneRejectionSpendsRecording`).
+    /// - 녹음은 녹음기가 자기 파일을 지운다 — 지울 파일 목록에 다시 올리지 않는다.
+    nonisolated static func rerecordPlan(
+        sentMode: VoiceCloneSourceMode,
+        selectedFileURL: URL?,
+        uploadedURL: URL?
+    ) -> RerecordPlan {
+        switch sentMode {
+        case .record:
+            return RerecordPlan(clearsRecorder: true, filesToDelete: [], clearsFileSelection: false, step: .source)
+        case .file:
+            var files = selectedFileURL.map { [$0] } ?? []
+            if let uploadedURL, uploadedURL != selectedFileURL {
+                files.append(uploadedURL)
+            }
+            return RerecordPlan(clearsRecorder: false, filesToDelete: files, clearsFileSelection: true, step: .source)
         }
     }
 
@@ -774,11 +891,13 @@ struct VoiceCloneUploadFlow: View {
         case preview(String)
         /// 이번 달 등록을 다 썼다 — 창을 닫는다.
         case closeForMonthlyLimit
+        /// 녹음에 말소리가 거의 없다 — 그 녹음(고른 파일)을 버리고 음원 준비로 돌아간다.
+        case rerecordForNoSpeech
         /// 다시 시도할 수 있는 실패 — 세부 정보로 돌아간다.
         case details
     }
 
-    /// 위 셋을 가른다. 순서가 곧 규칙이다.
+    /// 위 넷을 가른다. 순서가 곧 규칙이다.
     ///
     /// 1. **성공은 반환된 프로필로만 가른다.** ⚠ `statusMessage.contains("등록")` 으로 가르지 말 것 — 실패
     ///    문구 "2분 이하 음성으로 등록할 수 있어요." 에도 '등록' 이 들어 있어, 2분을 넘긴 녹음이 실패 안내를
@@ -793,10 +912,19 @@ struct VoiceCloneUploadFlow: View {
     ///    창이 닫힐 줄 알고 안내 줄을 비운다 — 되돌리면 아무 말 없는 세부 정보에서 살아 있는 `등록` 을 눌러
     ///    같은 429 를 계속 받는다(2026-10-10 prod 의 안드로이드 사용자는 같은 거절을 일곱 번 받았다). 서버가
     ///    초안을 만들지 않았으니 지울 것도 없다.
-    /// 3. 그 밖의 실패는 다시 시도할 수 있다 — 세부 정보로 돌아간다.
-    nonisolated static func submitOutcome(created: VoiceProfile?, monthlyLimitRejected: Bool) -> SubmitOutcome {
+    /// 3. ⚠ **말소리가 거의 없다는 거절(`VOICE_CLONE_NO_SPEECH`)도 세부 정보로 되돌리지 않는다** — 녹음을 버리고 음원
+    ///    준비로 돌아간다(스펙 voice-and-message §4-1). 녹음은 그대로인데 `등록` 만 살아 있으면 같은 소리를 다시 보내 같은
+    ///    답을 받는다. 흐름은 끝내지 않는다 — 서버는 아무것도 쓰지 않았고 이번 달 등록도 그대로라 다시 녹음하는 데
+    ///    제한이 없다. 월 한도가 앞선다: 이번 달을 다 썼으면 다시 녹음해도 소용이 없다(서버도 한도를 먼저 본다).
+    /// 4. 그 밖의 실패는 다시 시도할 수 있다 — 세부 정보로 돌아간다.
+    nonisolated static func submitOutcome(
+        created: VoiceProfile?,
+        monthlyLimitRejected: Bool,
+        noSpeechRejected: Bool
+    ) -> SubmitOutcome {
         if let created { return .preview(created.id) }
-        return monthlyLimitRejected ? .closeForMonthlyLimit : .details
+        if monthlyLimitRejected { return .closeForMonthlyLimit }
+        return noSpeechRejected ? .rerecordForNoSpeech : .details
     }
 
     /// ⚠ **입구(`VoiceProfileManagementPanel.paidVoiceEntitledNow`)와 같은 판정기다 — 갈라 두지
@@ -833,6 +961,9 @@ struct VoiceCloneUploadFlow: View {
             localError = durationMs < VoiceProfileLimits.minDurationMs
                 ? String(localized: "12초 이상 파일을 선택해 주세요.")
                 : nil
+            // 새 파일이다 — 앞 파일(녹음)이 거절당한 이유(`rerecordReason`)는 이 파일의 이야기가 아니다. 남겨 두면 새
+            // 파일의 구간 카드 아래에 그 거절이 붙어, 새 파일이 거절당한 것처럼 읽힌다.
+            rerecordReason = nil
         } catch {
             localError = AudioUserFacingError.message(for: error, fallback: String(localized: "선택한 파일을 준비하지 못했어요."))
         }

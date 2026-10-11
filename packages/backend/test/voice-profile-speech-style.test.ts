@@ -67,11 +67,22 @@ const SAMPLE_STYLE = {
   persona: '',
 };
 
-function buildApp(userId = 'user-1') {
+function buildApp(userId = 'user-1', sentry?: ReturnType<typeof fakeSentry>) {
   const app = new Hono<AppEnv>();
   app.use('*', fakeAuthMiddleware(userId));
+  if (sentry) {
+    app.use('*', async (c, next) => {
+      c.set('sentry', sentry);
+      await next();
+    });
+  }
   app.route('/vp', voiceProfile);
   return app;
+}
+
+/** `logRouteError` 가 올리는 곳 — '오류를 보고했는가' 를 이걸로 본다. */
+function fakeSentry() {
+  return { captureException: vi.fn(), setTag: vi.fn(), setTags: vi.fn() };
 }
 
 function req(app: Hono<AppEnv>, r: Request) {
@@ -102,14 +113,19 @@ function cloneForm(name = '엄마'): Request {
 }
 
 /**
- * 예약 트랜잭션 맨 앞의 **월 등록 자격 확인**(이번 달 등록 원장 집계 — 남았으면 통과)에 답을 깐다.
- * 큐가 아니라 SQL 로 짝짓는다 — 큐에 넣으면 그 뒤의 결과가 전부 한 칸씩 밀린다
- * (`voice-profile.test.ts` 의 `pushPaidPlan` 과 같다). 거절(429) 쪽은 그 파일과
+ * **월 등록 자격 확인**(이번 달 등록 원장 집계 — 남았으면 통과)에 답을 깐다. 두 번 읽힌다 — 전사 전의 읽기 전용
+ * 선검사와 예약 트랜잭션 맨 앞(2026-10-11). 큐가 아니라 SQL 로 짝짓는다 — 큐에 넣으면 그 뒤의 결과가 전부 한 칸씩
+ * 밀린다(`voice-profile.test.ts` 의 `pushPaidPlan` 과 같다). 거절(429) 쪽은 그 파일과
  * `voice-clone-monthly-gate.test.ts` 가 지킨다.
  */
 function pushMonthlyRegistrationOpen() {
-  mockDB.pushResultFor('SELECT COUNT(*) AS used FROM voice_profile_change_ledger', [{ used: 0 }]);
+  for (let read = 0; read < 2; read += 1) {
+    mockDB.pushResultFor('SELECT COUNT(*) AS used FROM voice_profile_change_ledger', [{ used: 0 }]);
+  }
 }
+
+/** 말소리 확인을 통과하는 전사(`MIN_SPEECH_TRANSCRIPT_CHARS` 자 이상). */
+const SPEECH_TRANSCRIPT = '마 오늘 아침은 우째 이래 좋노, 퍼뜩 일어나라 마';
 
 /**
  * clone 성공 경로에 필요한 결과들
@@ -171,8 +187,8 @@ describe('POST /clone — 말투 분석 상태 기록 (speech_style_status)', ()
   it('분석 성공 시 pending → done + speech_style 저장', async () => {
     pushCloneSuccessResults();
     mockCreateInstantClone.mockResolvedValue({ voice_id: 'elv-ok' });
-    mockSpeechToText.mockResolvedValue('마 오늘 아침은 우째 이래 좋노, 퍼뜩 일어나라 마');
-    mockAnalyzeSpeechStyle.mockResolvedValue(SAMPLE_STYLE);
+    mockSpeechToText.mockResolvedValue(SPEECH_TRANSCRIPT);
+    mockAnalyzeSpeechStyle.mockResolvedValue({ kind: 'style', style: SAMPLE_STYLE });
 
     const { ctx, drain } = fakeExecutionCtx();
     const app = buildApp();
@@ -192,16 +208,17 @@ describe('POST /clone — 말투 분석 상태 기록 (speech_style_status)', ()
     // 현역 행에 써야 한다(Codex #802). 그 열쇠가 이 provider 보이스 id 다.
     expect(doneCall!.sql).toContain('elevenlabs_voice_id = ?');
     expect(doneCall!.args).toContain('elv-ok');
-    // 말투 분석의 재시도는 waitUntil(응답 뒤 30초에 잘린다) 안에서만 한다 — 전사 전부터 센 마감을 넘긴다.
+    // 말투 분석의 재시도는 waitUntil(응답 뒤 30초에 잘린다) 안에서만 한다 — 분석 시작부터 센 마감을 넘긴다.
     expect(mockAnalyzeSpeechStyle).toHaveBeenCalledWith(
       expect.anything(),
-      '마 오늘 아침은 우째 이래 좋노, 퍼뜩 일어나라 마',
+      SPEECH_TRANSCRIPT,
       'ko',
       expect.objectContaining({ deadlineAt: expect.any(Number) }),
     );
     const { deadlineAt } = mockAnalyzeSpeechStyle.mock.calls[0]![3] as { deadlineAt: number };
     expect(deadlineAt - Date.now()).toBeLessThanOrEqual(SPEECH_STYLE_ANALYSIS_BUDGET_MS);
-    expect(mockSpeechToText).toHaveBeenCalledWith(expect.any(ArrayBuffer), expect.objectContaining({ deadlineAt }));
+    // 전사는 **한 번**이다 — 등록의 말소리 확인이 받은 전사를 분석이 그대로 쓴다(2026-10-11).
+    expect(mockSpeechToText).toHaveBeenCalledTimes(1);
   });
 
   it('전사 시간 초과도 failed로 기록하고 Vertex 요청은 보내지 않는다', async () => {
@@ -237,24 +254,63 @@ describe('POST /clone — 말투 분석 상태 기록 (speech_style_status)', ()
     );
   });
 
-  it('Vertex 분석이 null 이면 failed 기록', async () => {
+  it('분석이 알아내지 못하면(전송·설정 실패) failed 기록 + 오류 보고', async () => {
     pushCloneSuccessResults();
     mockCreateInstantClone.mockResolvedValue({ voice_id: 'elv-ok' });
-    mockSpeechToText.mockResolvedValue('짧은 전사');
-    mockAnalyzeSpeechStyle.mockResolvedValue(null);
+    mockSpeechToText.mockResolvedValue(SPEECH_TRANSCRIPT);
+    mockAnalyzeSpeechStyle.mockResolvedValue({ kind: 'failed', reason: 'transport' });
+    const sentry = fakeSentry();
 
     const { ctx, drain } = fakeExecutionCtx();
-    const app = buildApp();
-    const res = await app.request(cloneForm(), undefined, ENV, ctx);
+    const res = await buildApp('user-1', sentry).request(cloneForm(), undefined, ENV, ctx);
     expect(res.status).toBe(201);
     await drain();
 
     expect(statusCalls('failed')).toHaveLength(1);
+    expect(sentry.captureException).toHaveBeenCalledOnce();
+    expect(String((sentry.captureException.mock.calls[0]![0] as Error).message)).toContain('transport');
   });
+
+  // 2026-10-10 prod(ALARMTALK-BACKEND-F): 녹음이 말투를 보여 주지 않은 분석이 전부 'failed' 였다 — 재시도 버튼이 뜨고
+  // Sentry 에 올라갔는데, 같은 녹음이라 다시 해도 같은 답이다. 표준 말투로 done 이다(스펙 §4-2).
+  it.each(['short_transcript', 'low_confidence', 'nothing_detected'] as const)(
+    '녹음이 말투를 보여 주지 않으면(%s) 실패가 아니다 — speech_style NULL·done, 오류 보고 없음, 다시 굽지 않음',
+    async (reason) => {
+      pushCloneSuccessResults();
+      mockCreateInstantClone.mockResolvedValue({ voice_id: 'elv-ok' });
+      mockSpeechToText.mockResolvedValue(SPEECH_TRANSCRIPT);
+      mockAnalyzeSpeechStyle.mockResolvedValue({ kind: 'standard', reason });
+      const sentry = fakeSentry();
+      const info = vi.spyOn(console, 'log');
+
+      const { ctx, drain } = fakeExecutionCtx();
+      const res = await buildApp('user-1', sentry).request(cloneForm(), undefined, ENV, ctx);
+      expect(res.status).toBe(201);
+      await drain();
+
+      const doneCall = mockDB.calls.find((call) => call.sql.includes("speech_style_status = 'done'"));
+      expect(doneCall, "표준 말투는 'done' 이다").toBeDefined();
+      expect(doneCall!.sql).toContain('speech_style = NULL');
+      // 결과는 목소리를 따라간다 — 성공과 같은 대상 조건이다.
+      expect(doneCall!.sql).toContain('elevenlabs_voice_id = ?');
+      expect(doneCall!.args).toContain('elv-ok');
+      expect(statusCalls('failed')).toHaveLength(0);
+      expect(sentry.captureException).not.toHaveBeenCalled();
+      expect(mockDB.calls.some((call) => call.sql.includes('voice_prerender_queue'))).toBe(false);
+      // info 한 줄 — 이유와 길이만, 전사 원문은 없다.
+      const lines = info.mock.calls.map((args) => String(args[0]));
+      const standardLines = lines.filter((line) => line.includes('"at":"voice.speech_style.standard"'));
+      expect(standardLines).toHaveLength(1);
+      expect(JSON.parse(standardLines[0]!)).toMatchObject({ level: 'info', reason, transcript_chars: SPEECH_TRANSCRIPT.length });
+      expect(lines.some((line) => line.includes(SPEECH_TRANSCRIPT))).toBe(false);
+      info.mockRestore();
+    },
+  );
 
   it('ExecutionContext 없어 분석을 태울 수 없으면 즉시 failed 기록', async () => {
     pushCloneSuccessResults();
     mockCreateInstantClone.mockResolvedValue({ voice_id: 'elv-ok' });
+    mockSpeechToText.mockResolvedValue(SPEECH_TRANSCRIPT);
 
     // executionCtx 미전달 → c.executionCtx getter throw → 분석 미시작.
     const res = await req(buildApp(), cloneForm());
@@ -262,14 +318,16 @@ describe('POST /clone — 말투 분석 상태 기록 (speech_style_status)', ()
 
     expect(statusCalls('pending')).toHaveLength(1);
     expect(statusCalls('failed')).toHaveLength(1);
-    expect(mockSpeechToText).not.toHaveBeenCalled();
+    // 전사는 등록의 말소리 확인 한 번뿐이다 — 분석은 시작조차 안 했다.
+    expect(mockSpeechToText).toHaveBeenCalledTimes(1);
+    expect(mockAnalyzeSpeechStyle).not.toHaveBeenCalled();
   });
 
   it('성공 시 등록 원본을 voice_uploads 에 프로필 연결(voice_profile_id)로 남긴다 (C10)', async () => {
     pushCloneSuccessResults();
     mockCreateInstantClone.mockResolvedValue({ voice_id: 'elv-ok' });
     mockSpeechToText.mockResolvedValue('오늘도 또박또박 말하는 전사 텍스트입니다');
-    mockAnalyzeSpeechStyle.mockResolvedValue(SAMPLE_STYLE);
+    mockAnalyzeSpeechStyle.mockResolvedValue({ kind: 'style', style: SAMPLE_STYLE });
 
     const { ctx, drain } = fakeExecutionCtx();
     const app = buildApp();
@@ -308,6 +366,8 @@ describe('POST /clone — 말투 분석 상태 기록 (speech_style_status)', ()
     mockDB.pushResult([]); // 8) 원본 보관 직전 재확인 — 철회됨(빈 결과)
     // 이후(상태 pending 기록, 분석 시작 동의 재확인)는 큐 소진 → 기본 빈 결과(=철회 유지).
     mockCreateInstantClone.mockResolvedValue({ voice_id: 'elv-ok' });
+    // 등록의 말소리 확인은 전사를 받지 못했다(그대로 통과시킨다) — 그러면 분석이 스스로 녹음을 전사해야 한다.
+    mockSpeechToText.mockRejectedValue(new Error('scribe unavailable'));
 
     const { ctx, drain } = fakeExecutionCtx();
     const app = buildApp();
@@ -317,8 +377,10 @@ describe('POST /clone — 말투 분석 상태 기록 (speech_style_status)', ()
 
     // 철회 후에는 원본을 R2/voice_uploads 에 새로 남기지 않는다.
     expect(mockDB.calls.some((call) => call.sql.includes('INSERT INTO voice_uploads'))).toBe(false);
-    // 분석 시작 재확인에도 걸려 외부 전사(ElevenLabs)로 원본을 보내지 않는다.
-    expect(mockSpeechToText).not.toHaveBeenCalled();
+    // 분석 시작 재확인에도 걸려 외부 전사(ElevenLabs)로 원본을 다시 보내지 않는다 — 전사는 철회 **전**, 등록의 말소리
+    // 확인 한 번뿐이고(동의가 있을 때), Vertex 에도 아무것도 가지 않는다.
+    expect(mockSpeechToText).toHaveBeenCalledTimes(1);
+    expect(mockAnalyzeSpeechStyle).not.toHaveBeenCalled();
     expect(statusCalls('pending')).toHaveLength(1);
     expect(statusCalls('failed')).toHaveLength(1);
   });
@@ -341,8 +403,8 @@ describe('POST /clone — 말투 분석 상태 기록 (speech_style_status)', ()
     mockDB.pushResult(sensitiveConsentRows()); // 11) 분석 시작 재확인 — 동의됨
     mockDB.pushResult([]); // 12) 저장 직전 재확인 — 철회됨
     mockCreateInstantClone.mockResolvedValue({ voice_id: 'elv-ok' });
-    mockSpeechToText.mockResolvedValue('마 오늘 아침은 우째 이래 좋노, 퍼뜩 일어나라 마');
-    mockAnalyzeSpeechStyle.mockResolvedValue(SAMPLE_STYLE);
+    mockSpeechToText.mockResolvedValue(SPEECH_TRANSCRIPT);
+    mockAnalyzeSpeechStyle.mockResolvedValue({ kind: 'style', style: SAMPLE_STYLE });
 
     const { ctx, drain } = fakeExecutionCtx();
     const app = buildApp();
@@ -350,8 +412,8 @@ describe('POST /clone — 말투 분석 상태 기록 (speech_style_status)', ()
     expect(res.status).toBe(201);
     await drain();
 
-    // 철회 전에 시작된 전사는 있었지만, 파생 결과(speech_style)는 저장하지 않는다.
-    expect(mockSpeechToText).toHaveBeenCalled();
+    // 철회 전에 시작된 전사(등록의 말소리 확인)는 있었지만, 파생 결과(speech_style)는 저장하지 않는다.
+    expect(mockSpeechToText).toHaveBeenCalledTimes(1);
     expect(mockDB.calls.some((call) => call.sql.includes("speech_style_status = 'done'"))).toBe(
       false,
     );
@@ -448,7 +510,7 @@ describe('POST /:id/speech-style/retry — 말투 분석 재시도', () => {
     mockDB.pushResult([], 1); // 말투 기록 — 이 녹음을 뜻하는 행 1개
     mockDB.pushResult([], 1); // 다시 굽기 요청
     mockSpeechToText.mockResolvedValue('오늘도 존댓말로 또박또박 말하는 전사 텍스트입니다');
-    mockAnalyzeSpeechStyle.mockResolvedValue(SAMPLE_STYLE);
+    mockAnalyzeSpeechStyle.mockResolvedValue({ kind: 'style', style: SAMPLE_STYLE });
 
     const res = await req(buildApp(), jsonReq('POST', `/vp/${V1}/speech-style/retry`));
 
@@ -503,7 +565,7 @@ describe('POST /:id/speech-style/retry — 말투 분석 재시도', () => {
     mockDB.pushResult([], 0); // 말투 기록 0행 — 그 사이 녹음이 바뀌었다
     mockDB.pushResult([], 0); // 다시 굽기 요청도 0행
     mockSpeechToText.mockResolvedValue('오늘도 존댓말로 또박또박 말하는 전사 텍스트입니다');
-    mockAnalyzeSpeechStyle.mockResolvedValue(SAMPLE_STYLE);
+    mockAnalyzeSpeechStyle.mockResolvedValue({ kind: 'style', style: SAMPLE_STYLE });
 
     const res = await req(buildApp(), jsonReq('POST', `/vp/${V1}/speech-style/retry`));
 
@@ -553,7 +615,7 @@ describe('POST /:id/speech-style/retry — 말투 분석 재시도', () => {
     mockDB.pushResult([], 1); // 말투 기록
     mockDB.pushResult([], 1); // 다시 굽기 요청
     mockSpeechToText.mockResolvedValue('関西弁でほんまに元気よく話す文字起こしテキストやで');
-    mockAnalyzeSpeechStyle.mockResolvedValue(SAMPLE_STYLE);
+    mockAnalyzeSpeechStyle.mockResolvedValue({ kind: 'style', style: SAMPLE_STYLE });
 
     const res = await req(buildApp(), jsonReq('POST', `/vp/${V1}/speech-style/retry`));
     expect(res.status).toBe(200);
@@ -563,6 +625,57 @@ describe('POST /:id/speech-style/retry — 말투 분석 재시도', () => {
       'ja',
       expect.objectContaining({ deadlineAt: expect.any(Number) }),
     );
+  });
+
+  // 녹음이 말투를 보여 주지 않은 재분석은 실패가 아니다(2026-10-11) — 같은 녹음이라 다시 눌러도 같은 답이므로 502 로
+  // 재시도를 권하지 않고, 정식 목소리의 클립을 같은 소리로 다시 굽지도 않는다.
+  it('재분석이 표준 말투면 200 done — speech_style NULL, 다시 굽기 없음, 오류 보고 없음', async () => {
+    const meta = await storeSourceUpload();
+    mockDB.pushResult([{ id: V1, preview_language: 'ko' }]);
+    mockDB.pushResult([
+      { object_key: meta.objectKey, mime_type: 'audio/wav', original_name: 'sample.wav' },
+    ]);
+    mockDB.pushResult([], 1); // 원자적 클레임(failed → pending) 성공
+    mockDB.pushResult([], 1); // 표준 말투 기록 — 이 녹음을 뜻하는 행 1개
+    mockSpeechToText.mockResolvedValue('오늘도 존댓말로 또박또박 말하는 전사 텍스트입니다');
+    mockAnalyzeSpeechStyle.mockResolvedValue({ kind: 'standard', reason: 'low_confidence' });
+    const sentry = fakeSentry();
+
+    const res = await req(buildApp('user-1', sentry), jsonReq('POST', `/vp/${V1}/speech-style/retry`));
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ success: true, status: 'done' });
+    // 재시도는 저장된 원본을 다시 전사한다(받아 둔 전사가 없다).
+    expect(mockSpeechToText).toHaveBeenCalledTimes(1);
+    const doneCall = mockDB.calls.find((call) => call.sql.includes("speech_style_status = 'done'"));
+    expect(doneCall).toBeDefined();
+    expect(doneCall!.sql).toContain('speech_style = NULL');
+    // 읽은 그 녹음을 아직 문 프로필에만 쓴다 — 성공과 같은 대상 조건(Codex #802).
+    expect(doneCall!.sql).toContain('su.object_key = ?');
+    expect(doneCall!.args).toContain(meta.objectKey);
+    expect(statusCalls('failed')).toHaveLength(0);
+    expect(mockDB.calls.some((call) => call.sql.includes('voice_prerender_queue'))).toBe(false);
+    expect(sentry.captureException).not.toHaveBeenCalled();
+  });
+
+  it('재분석이 알아내지 못하면(전송 실패) failed + 502 + 오류 보고', async () => {
+    const meta = await storeSourceUpload();
+    mockDB.pushResult([{ id: V1, preview_language: 'ko' }]);
+    mockDB.pushResult([
+      { object_key: meta.objectKey, mime_type: 'audio/wav', original_name: 'sample.wav' },
+    ]);
+    mockDB.pushResult([], 1); // 원자적 클레임 성공
+    mockSpeechToText.mockResolvedValue('오늘도 존댓말로 또박또박 말하는 전사 텍스트입니다');
+    mockAnalyzeSpeechStyle.mockResolvedValue({ kind: 'failed', reason: 'transport' });
+    const sentry = fakeSentry();
+
+    const res = await req(buildApp('user-1', sentry), jsonReq('POST', `/vp/${V1}/speech-style/retry`));
+
+    expect(res.status).toBe(502);
+    expect((await res.json()).error_code).toBe('SPEECH_STYLE_ANALYSIS_FAILED');
+    expect(statusCalls('failed')).toHaveLength(1);
+    expect(mockDB.calls.some((call) => call.sql.includes("speech_style_status = 'done'"))).toBe(false);
+    expect(sentry.captureException).toHaveBeenCalledOnce();
   });
 
   it('재분석 실패 시 failed 기록 + 502 SPEECH_STYLE_ANALYSIS_FAILED', async () => {

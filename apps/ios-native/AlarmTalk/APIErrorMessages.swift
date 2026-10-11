@@ -91,6 +91,11 @@ enum APIErrorMessages {
             return String(localized: "목소리를 만들 음성은 12초 이상이어야 해요.")
         case "VOICE_CLONE_AUDIO_TOO_LONG":
             return String(localized: "목소리를 만들 음성은 2분 이하로 준비해 주세요.")
+        // 녹음에 말소리가 거의 없다 — 서버가 목소리를 만들기 전에 받아쓰기로 보고 거절했다. 아무것도 쓰지 않았고 이번 달
+        // 등록도 그대로라, 할 일은 다시 녹음하는 것뿐이다. 등록 창은 이 거절에 음원 준비로 돌아가 그 녹음을 버린다
+        // (`VoiceCloneUploadFlow.submitOutcome`).
+        case "VOICE_CLONE_NO_SPEECH":
+            return String(localized: "녹음에서 말소리를 거의 찾지 못했어요. 조용한 곳에서 문장을 또렷하게 읽으며 다시 녹음해 주세요.")
         case "INVALID_DURATION":
             return String(localized: "음성 길이를 확인하지 못했어요. 파일을 다시 선택해 주세요.")
         case "INVALID_AUDIO_MIME_TYPE":

@@ -8,11 +8,13 @@
 // `voice-profile.test.ts` 의 순서 큐 목은 "무엇을 부르지 않는가" 만 본다(집계 결과를 테스트가
 // 지어 준다). **어떤 원장 줄이 세어지는가** — 이번 달의 실패하지 않은 줄만, 그 계정의 것만 — 는
 // SQL 이 정하므로 진짜 SQLite 로 돌린다. 지키는 것:
-//   1. 이번 달(KST)의 `succeeded`·`reserved` 줄 → 429. provider 호출 0, 한 줄도 쓰지 않는다
-//      (초안 행·초안 시도 집계·옛 초안 정리·삭제 큐).
+//   1. 이번 달(KST)의 `succeeded`·`reserved` 줄 → 429. provider 호출 0, 전사(Scribe) 호출 0, 한 줄도 쓰지
+//      않는다(초안 행·초안 시도 집계·옛 초안 정리·삭제 큐).
 //   2. `failed` 줄뿐 → 만든다(실패로 끝난 등록은 세지 않는다).
 //   3. 지난달 줄 → 만든다.
 //   4. 다른 계정의 줄 → 만든다.
+//   5. 전사 전의 읽기 전용 선검사를 지난 뒤(전사하는 사이) 다른 기기가 등록을 마치면 → 예약 트랜잭션 맨 앞의
+//      확인이 막는다(429, 한 줄도 쓰지 않음). 선검사는 전사 값을 아끼는 것일 뿐 이 확인을 대신하지 않는다.
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createClient } from '@libsql/client';
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -26,12 +28,14 @@ import { runMigrations } from '../src/lib/migrations';
 const directory = mkdtempSync(join(tmpdir(), 'alarmtalk-clone-monthly-gate-'));
 const db = createClient({ url: `file:${join(directory, 'test.db')}` });
 const mockCreateInstantClone = vi.fn();
+const mockSpeechToText = vi.fn();
 
 vi.mock('../src/lib/db', () => ({ getDB: () => db }));
 // provider 는 목이다 — 이 테스트는 외부를 부르지 않는다. "부르지 않았다" 가 단언의 절반이다.
 vi.mock('../src/lib/elevenlabs', () => ({
   ElevenLabsClient: vi.fn().mockImplementation(function (this: Record<string, unknown>) {
     this.createInstantClone = mockCreateInstantClone;
+    this.speechToText = mockSpeechToText;
     this.deleteVoice = vi.fn();
   }),
 }));
@@ -91,6 +95,9 @@ beforeAll(async () => {
 beforeEach(async () => {
   mockCreateInstantClone.mockReset();
   mockCreateInstantClone.mockResolvedValue({ voice_id: 'elv-new' });
+  // 말소리 확인을 통과하는 전사 — 막히는 쪽은 `voice-clone-speech-gate.test.ts`.
+  mockSpeechToText.mockReset();
+  mockSpeechToText.mockResolvedValue('오늘도 또박또박 소리 내어 읽은 등록 녹음의 전사입니다');
   for (const table of [
     'voice_profile_change_ledger',
     'voice_draft_attempt_usage',
@@ -146,6 +153,8 @@ describe('POST /voice/clone — 월 등록 자격 확인', () => {
         error_code: 'VOICE_MONTHLY_CHANGE_LIMIT_REACHED',
       });
       expect(mockCreateInstantClone).not.toHaveBeenCalled();
+      // 다 쓴 달은 전사 값도 치르지 않는다 — 읽기 전용 선검사가 말소리 확인보다 앞이다(2026-10-11).
+      expect(mockSpeechToText).not.toHaveBeenCalled();
       // 초안 행을 만들지 않았다 — 남아 있던 옛 초안 하나뿐이고, 그것도 그대로다.
       expect(await count('SELECT COUNT(*) AS n FROM voice_profiles')).toBe(1);
       const oldDraft = await db.execute({
@@ -198,6 +207,31 @@ describe('POST /voice/clone — 월 등록 자격 확인', () => {
 
     expect(res.status).toBe(201);
     expect(mockCreateInstantClone).toHaveBeenCalledOnce();
+  });
+
+  it('전사하는 사이 다른 기기가 등록을 마치면 예약 트랜잭션 맨 앞이 막는다 — 429, 한 줄도 쓰지 않는다', async () => {
+    // 선검사(원장 0줄)를 지난 뒤, 말소리 확인의 전사가 도는 동안 다른 기기의 확정이 원장에 들어온다.
+    mockSpeechToText.mockImplementation(async () => {
+      await addLedgerRow(USER, THIS_KST_MONTH, 'succeeded');
+      return '오늘도 또박또박 소리 내어 읽은 등록 녹음의 전사입니다';
+    });
+
+    const res = await clone();
+
+    expect(res.status).toBe(429);
+    expect((await res.json()).error_code).toBe('VOICE_MONTHLY_CHANGE_LIMIT_REACHED');
+    expect(mockSpeechToText).toHaveBeenCalledOnce();
+    expect(mockCreateInstantClone).not.toHaveBeenCalled();
+    expect(await count('SELECT COUNT(*) AS n FROM voice_profiles')).toBe(1);
+    const oldDraft = await db.execute({
+      sql: 'SELECT deleted_at FROM voice_profiles WHERE id = ?',
+      args: [OLD_DRAFT],
+    });
+    expect(oldDraft.rows[0]!.deleted_at).toBeNull();
+    expect(await count('SELECT COUNT(*) AS n FROM voice_draft_attempt_usage')).toBe(0);
+    expect(await count('SELECT COUNT(*) AS n FROM pending_external_deletions')).toBe(0);
+    // 다른 기기가 쓴 한 줄뿐이다.
+    expect(await count('SELECT COUNT(*) AS n FROM voice_profile_change_ledger')).toBe(1);
   });
 
   it('원장이 비어 있으면 만든다(첫 등록)', async () => {

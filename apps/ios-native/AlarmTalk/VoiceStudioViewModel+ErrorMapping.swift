@@ -70,6 +70,16 @@ extension VoiceStudioViewModel {
         extractServerErrorCode(from: error) == "VOICE_MONTHLY_CHANGE_LIMIT_REACHED"
     }
 
+    /// 서버가 등록 녹음에 **말소리가 거의 없다**고 거절한 것인가(`400 VOICE_CLONE_NO_SPEECH`).
+    ///
+    /// 등록 창 안의 다른 실패와 갈래가 다르다 — 같은 녹음을 다시 보내면 같은 답이라 세부 정보로 돌려 `등록` 을 다시
+    /// 누르게 두지 않고, **음원 준비로 돌아가 그 녹음을 버린다**(`VoiceCloneUploadFlow.submitOutcome`). 흐름은 끝내지
+    /// 않는다 — 서버는 아무것도 쓰지 않았고 이번 달 등록도 그대로라 다시 녹음하는 데 제한이 없다. 코드는 문구를 고를
+    /// 때와 같은 방법으로 읽는다.
+    nonisolated func isNoSpeechRejection(_ error: Error) -> Bool {
+        extractServerErrorCode(from: error) == "VOICE_CLONE_NO_SPEECH"
+    }
+
     private nonisolated func extractServerErrorCode(from error: Error) -> String? {
         // 1) 정상 경로 — APIError 가 errorCode 를 보존하고 있다.
         if let apiError = error as? APIError, let code = apiError.serverErrorCode {
@@ -126,6 +136,7 @@ extension VoiceStudioViewModel {
         "MANUAL_TTS_QUOTA_EXCEEDED",
         "VOICE_CLONE_AUDIO_TOO_SHORT",
         "VOICE_CLONE_AUDIO_TOO_LONG",
+        "VOICE_CLONE_NO_SPEECH",
         "INVALID_DURATION",
         "INVALID_AUDIO_MIME_TYPE",
         "VOICE_SLOT_EXHAUSTED",

@@ -420,6 +420,7 @@
     <string name="msg_verification_code_six_digits_required">6자리 인증 코드를 입력해 주세요</string>
     <string name="msg_voice_clone_audio_too_long">목소리를 만들 음성은 2분 이하로 준비해 주세요.</string>
     <string name="msg_voice_clone_audio_too_short">목소리를 만들 음성은 12초 이상이어야 해요.</string>
+    <string name="msg_voice_clone_no_speech">녹음에서 말소리를 거의 찾지 못했어요. 조용한 곳에서 문장을 또렷하게 읽으며 다시 녹음해 주세요.</string>
     <string name="msg_voice_create_failed">목소리를 만들지 못했어요</string>
     <string name="msg_voice_create_login_required">목소리를 만들려면 먼저 로그인해 주세요</string>
     <string name="msg_voice_delete_failed">목소리 삭제에 실패했어요</string>
