@@ -398,9 +398,9 @@
       부른다(`apps/landing/lib/site.ts` 의 `API_BASE`). Vercel 정적 빌드가 `deploy-backend.yml`(npm ci → typecheck →
       wrangler → migrate)보다 먼저 끝나면, 워커가 올라오기까지(수십 초~1분으로 추정) 옛 prod 워커가 새 번들의
       `kind: "love"` 를 **400 `INVALID_BODY`** 로 거절한다(릴리스 PR 의 코덱스 P2). 그 창은 이벤트 화면이 스스로
-      넘긴다 — 그 코드로 거절된 카드를 '생성 중' 으로 둔 채 3·6·12·24초 뒤에 다시 부르고(첫 거절부터 약 45초 —
+      넘긴다 — 그 코드로 거절된 카드를 '생성 중' 으로 둔 채 3·6·12·24·48초 뒤에 다시 부르고(첫 거절부터 약 93초 —
       `apps/landing/components/event/event-api.ts` 의 `DEPLOY_WINDOW_RETRY_DELAYS_MS`), 그래도 안 되면 실패 +
-      '다시 시도' 로 떨어진다('다시 시도' 는 45초를 새로 탄다). 그래서 릴리스를 다시 둘로 나누지 않는다 — #815 를
+      '다시 시도' 로 떨어진다('다시 시도' 는 93초를 새로 탄다). 그래서 릴리스를 다시 둘로 나누지 않는다 — #815 를
       develop 에서 되돌리거나 1.2.11 을 이 때문에 잡아 두지 않는다. 옛 번들의 `chuseok` 은 옛 워커도 새 워커도
       받는다(새 워커는 `LEGACY_EVENT_MESSAGE_KINDS`). 출시 뒤 확인:
       1. Deploy Backend(main)가 초록인지 본다.
@@ -410,10 +410,15 @@
          → 새 서버 **404**, 옛 서버 **400**(2026-09-29 dev 실측: 옛 서버에서 `love` 400 · `birthday` 404).
       3. 라이브 페이지(`https://alarm-talk.com/event/1/`)에서 이름을 넣고 '생성하기' 를 **한 번** 눌러 '사랑 한마디'
          카드가 소리로 채워지는지 본다. 이건 Perso 를 부른다 — 한 번에 종류 둘 × 언어 셋, 클립 여섯이다.
-      ⚠ 재시도는 `love` 한 번을 위한 안전망이지 순서를 뒤집어도 된다는 허락이 아니다 — 45초보다 긴 배포나 실패한
-      배포는 못 넘기고, 그동안 사용자는 도는 카드만 본다. **다음 새 종류는 서버 먼저다**: 서버 변경을 prod 에 올리고
-      위 2번 curl 을 그 종류로 보내 404 를 본 뒤에야 랜딩 변경을 develop 에 머지한다
-      (`apps/landing/components/event/event-catalog.ts` 의 `MESSAGE_KINDS` ⚠).
+      ⚠ 재시도는 `love` 한 번을 위한 안전망이지 순서를 뒤집어도 된다는 허락이 아니다 — 93초보다 긴 배포 창이나
+      실패한 배포는 못 넘기고, 그때 사용자는 1분 반 가까이 도는 카드를 보다가 실패를 본다.
+      **다음 새 종류는 서버 먼저다**: 서버 변경을 prod 에 올리고 위 2번 curl 을 그 종류로 보내 404 를 본 뒤에야
+      랜딩 변경을 develop 에 머지한다(`apps/landing/components/event/event-catalog.ts` 의 `MESSAGE_KINDS` ⚠).
+- [ ] 출시 뒤 `love` 재시도 걷어내기 — 위 항목의 1·2가 맞으면(모든 prod 워커가 `love` 를 안다) 재시도는 할 일을
+      다 했다. 코드는 `apps/landing/components/event/event-api.ts` 의 `DEPLOY_WINDOW_RETRY_DELAYS_MS` 주석에 적힌
+      목록대로 지우고, 그 재시도를 설명하는 글 — `event-catalog.ts` 의 `MESSAGE_KINDS` 주석 문단, 백엔드
+      `lib/event-voices.ts` 의 `EVENT_MESSAGE_KINDS` 주석, 위 항목의 재시도 문장 — 도 같이 고친다. 2번이 아직
+      400 이면 지우지 않는다.
 - [ ] 랜딩 이벤트의 옛 종류 `comfort`(위로 한마디)·`chuseok`(추석 인사) 호환 제거 — 새 랜딩 번들
       (생일/사랑, #815 `feat/landing-event-love`)이 게재되고 **며칠** 지나 옛 번들이 다 밀려난 뒤,
       백엔드 `lib/event-voices.ts` 의 `LEGACY_EVENT_MESSAGE_KINDS` 와 `EVENT_MESSAGES.comfort`·
