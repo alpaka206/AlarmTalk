@@ -38,6 +38,9 @@
   읽기 권한만 받아 본다: `npx -y cf@1.0.0-beta.14 auth login --scopes account:read user:read workers:read workers_observability:read offline`
   → `cf o11y telemetry query --body '<json>'`(넓은 시간창은 0건을 돌려줘 6시간 창으로 나눠 묻는다).
 - [ ] [#876](https://github.com/alpaka206/AlarmTalk/pull/876) 머지 뒤 #874 head 에서 두 앱 스토어 빌드·제출(방법은 아래 「스토어 상태」 의 '릴리스 방법').
+- [ ] 말소리 없음 거절([#876](https://github.com/alpaka206/AlarmTalk/pull/876)) 실기기 확인 — 두 앱에서 거의 무음으로 녹음해
+      등록하면 녹음 단계로 돌아가 이유가 녹음 칸 아래에 뜨는지, 다시 녹음해 바로 등록되는지(남은 횟수 그대로).
+      ElevenLabs 키가 dev·prod 공용이라 한두 번만 한다.
 - [ ] 출시 노트 1.2.11 초안은 [`release-notes.md`](../product/release-notes.md) 에 있다 — 오너가 문안을 확정한다.
       Play 와 App Store 문안이 두 줄 다르다(미나 줄·고친 문제 줄).
 - ⚠ **dev 테스터**: 이번 달 이미 목소리를 등록한 계정은 [#876](https://github.com/alpaka206/AlarmTalk/pull/876) 뒤 clone 단계에서 429 로 막힌다 —
@@ -46,7 +49,7 @@
   (문구는 창 뒤 스낵바). 전에는 마지막 단계에서 멈췄다 — 1.2.11 로 올리면 알럿이 뜨고 창이 닫힌다.
 - 미뤄 둔 것(따로 한다): 기본 목소리 받기를 받을 것이 있을 때만 전경 서비스로 올리기·1회 시간 예산·호출
   타임아웃·매니페스트 파싱 캐시, 저장 탭에 남은 메인 스레드 작업, 앞서 보낸 인증 코드도 받아 줄지(오너 결정 —
-  지금은 가장 최근 코드만), 시도 상한의 원자화, 말투 분석의 완료/실패 구분, iOS 푸시 등록 자가 복구, 경보에서
+  지금은 가장 최근 코드만), 시도 상한의 원자화, iOS 푸시 등록 자가 복구, 경보에서
   내릴 코드 목록, R8 매핑 업로드, Play 게재 뒤 안드로이드 `minSupported` 를 31 로 올릴지.
 
 ## 2026-10-06 재개 — 다음 검증과 출시 조건

@@ -25,7 +25,7 @@ node -e "const m=require('fs').readFileSync('docs/product/release-notes.md','utf
 
 #870·#871·#872(톤 조절) · #820·#828(못 쓰게 된 목소리 → 미나) · #817('목소리 느낌' 제거) · #837(날씨 지역 목록) ·
 #836(iOS 잠금 화면·Live Activity 번역)·#848~#858·#866·#868(영어·일본어 화면) · #821(＋ 멈춤) ·
-#876(Sentry 후속 — Android 15 크래시·인증 코드·월 등록 한도). 릴리스 PR #874, 버전 올림 #875.
+#876(Sentry 후속 — Android 15 크래시·인증 코드·월 등록 한도·말소리 없는 녹음 거절). 릴리스 PR #874, 버전 올림 #875.
 마이그레이션 #123~#128.
 
 제출: **아직 제출하지 않았다**(2026-10-10 초안 — 문안은 오너가 확정한다). 두 앱 모두 심사에 내고 승인 뒤
@@ -34,8 +34,8 @@ node -e "const m=require('fs').readFileSync('docs/product/release-notes.md','utf
 
 **두 스토어의 문안이 미나 줄과 고친 문제 줄이 다르다.** 1.2.10 안드로이드는 알람음 스위치가 꺼져 있으면 그 알람이
 소리 없이 울릴 수 있었고(#820), 그 사실은 Play 문안에만 적는다 — iOS 에는 그 무음 경로가 없다. ＋ 멈춤(#821)과
-Android 15 크래시(WorkManager 2.10)도 안드로이드에만 있던 문제라 Play 에만 적는다. 인증 코드·월 등록 한도 안내는
-두 앱 모두 고쳤다. 나머지 네 항목은 두 앱에 똑같이 들어갔다. 아래 첫 세 블록이 Play, 뒤 세 블록이 App Store 용이다.
+Android 15 크래시(WorkManager 2.10)도 안드로이드에만 있던 문제라 Play 에만 적는다. 인증 코드·월 등록 한도·말소리 없는
+녹음 안내는 두 앱 모두 고쳤다. 나머지 네 항목은 두 앱에 똑같이 들어갔다. 아래 첫 세 블록이 Play, 뒤 세 블록이 App Store 용이다.
 영어는 500자에 맞추려고 두 스토어 모두 미나 줄의 괄호(이용권 종료·삭제·공유 해제)와 번역 줄의 언어 이름을 뺐다.
 
 일부러 적지 않은 것:
@@ -46,7 +46,7 @@ Android 15 크래시(WorkManager 2.10)도 안드로이드에만 있던 문제라
 
 ### Play (Android 31)
 
-길이 ko 458 · en 470 · ja 418(CRLF 로 세면 464 · 475 · 424). 영어가 빠듯하다 — 줄을 더하지 말 것.
+길이 ko 485 · en 488 · ja 439(CRLF 로 세면 491 · 493 · 445). 영어가 빠듯하다 — 줄을 더하지 말 것.
 
 ### ko-KR
 
@@ -57,7 +57,7 @@ Android 15 크래시(WorkManager 2.10)도 안드로이드에만 있던 문제라
 • 날씨 지역 목록이 대한민국·일본·미국의 지역으로 넓어졌고, 직접 입력은 없어졌습니다.
 • 영어·일본어 화면에 한국어로 남아 있던 곳을 번역했습니다.
 • 알람 추가(＋)를 누르면 몇 초씩 멈추던 문제와 기본 목소리를 받는 중 앱이 꺼지던 문제(Android 15 이상)를 고쳤습니다.
-• 이메일 인증 코드가 거절되거나 이번 달 목소리 등록을 이미 마쳤을 때 그 이유를 바로 알려 줍니다.
+• 이메일 인증 코드가 거절되거나, 이번 달 목소리 등록을 이미 마쳤거나, 녹음에 말소리가 거의 없어 등록할 수 없을 때 그 이유를 바로 알려 줍니다.
 ```
 
 ### en-US
@@ -68,7 +68,7 @@ Android 15 크래시(WorkManager 2.10)도 안드로이드에만 있던 문제라
 • Voice feel is gone; messages follow your recording's style.
 • Weather regions now cover South Korea, Japan and the US; manual entry is gone.
 • Translated leftover Korean text.
-• Fixed a freeze on +, an Android 15+ crash, and unclear verification and voice-limit errors.
+• Fixed a freeze on +, an Android 15+ crash, and unclear verification, voice-limit and silent-recording errors.
 ```
 
 ### ja-JP
@@ -80,12 +80,12 @@ Android 15 크래시(WorkManager 2.10)도 안드로이드에만 있던 문제라
 • 天気の地域リストが韓国・日本・アメリカの地域に広がり、直接入力はなくなりました。
 • 英語・日本語の画面で韓国語のまま残っていた箇所を翻訳しました。
 • アラームの追加(＋)を押すと数秒止まる問題と、基本の声の受信中にアプリが終了する問題(Android 15以降)を修正しました。
-• 認証コードが受け付けられなかったときや、今月の声の登録が済んでいるときに、その理由をすぐにお知らせします。
+• 認証コードが受け付けられなかったとき、今月の声の登録が済んでいるとき、録音に話し声がほとんどなく登録できないときに、その理由をすぐにお知らせします。
 ```
 
 ### App Store (iOS 1.2.11 빌드 8)
 
-길이 ko 345 · en 459 · ja 317(CRLF 로 세면 350 · 464 · 322).
+길이 ko 372 · en 494 · ja 338(CRLF 로 세면 377 · 499 · 343).
 
 ### ko-KR
 
@@ -95,7 +95,7 @@ Android 15 크래시(WorkManager 2.10)도 안드로이드에만 있던 문제라
 • 목소리 등록의 '목소리 느낌' 선택을 없앴습니다. 알람 문구는 등록한 녹음의 말투를 따릅니다.
 • 날씨 지역 목록이 대한민국·일본·미국의 지역으로 넓어졌고, 직접 입력은 없어졌습니다.
 • 영어·일본어 화면에 한국어로 남아 있던 곳을 번역했습니다.
-• 이메일 인증 코드가 거절되거나 이번 달 목소리 등록을 이미 마쳤을 때 그 이유를 바로 알려 줍니다.
+• 이메일 인증 코드가 거절되거나, 이번 달 목소리 등록을 이미 마쳤거나, 녹음에 말소리가 거의 없어 등록할 수 없을 때 그 이유를 바로 알려 줍니다.
 ```
 
 ### en-US
@@ -106,7 +106,7 @@ Android 15 크래시(WorkManager 2.10)도 안드로이드에만 있던 문제라
 • Voice feel is gone; messages follow your recording's style.
 • Weather regions now cover South Korea, Japan and the US; manual entry is gone.
 • Translated leftover Korean text.
-• Clearer messages when a verification code is refused or the monthly voice limit is reached.
+• Clearer messages when a verification code is refused, the monthly voice limit is reached, or a recording has almost no speech.
 ```
 
 ### ja-JP
@@ -117,7 +117,7 @@ Android 15 크래시(WorkManager 2.10)도 안드로이드에만 있던 문제라
 • 声の登録時の「声の雰囲気」の選択をなくしました。アラーム文言は登録した録音の話し方に合わせます。
 • 天気の地域リストが韓国・日本・アメリカの地域に広がり、直接入力はなくなりました。
 • 英語・日本語の画面で韓国語のまま残っていた箇所を翻訳しました。
-• 認証コードが受け付けられなかったときや、今月の声の登録が済んでいるときに、その理由をすぐにお知らせします。
+• 認証コードが受け付けられなかったとき、今月の声の登録が済んでいるとき、録音に話し声がほとんどなく登録できないときに、その理由をすぐにお知らせします。
 ```
 
 ## 1.2.10 (versionCode 30 / iOS 빌드 7)
