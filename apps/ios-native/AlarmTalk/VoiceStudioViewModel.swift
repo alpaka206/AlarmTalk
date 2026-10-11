@@ -105,6 +105,10 @@ final class VoiceStudioViewModel: ObservableObject {
         cloneName = ""
         // 알리지 못한 채 남은 지난 거절이 새 등록의 창 닫힘에 딸려 나오지 않게 한다.
         monthlyLimitRejected = false
+        // 목소리 탭에 남은 안내(말투 분석 다시 시도 실패 등)를 새 창으로 들고 들어가지 않는다 — 창의 안내 줄
+        // (`VoiceCloneUploadFlow.statusSection`)은 이 등록의 이야기만 한다. 남겨 두면 아직 아무것도 녹음하지 않은
+        // 음원 준비 단계에 지난 문장이 먼저 떠 있다.
+        statusMessage = nil
     }
 
     /// 서버가 등록 창 안에서 **월 등록 한도로 거절했다** — 창이 닫힌 뒤 알럿 하나로 알릴 것이 있다.
@@ -137,6 +141,19 @@ final class VoiceStudioViewModel: ObservableObject {
         monthlyLimitRejected = true
         await refresh(session: session, force: true)
     }
+
+    /// **방금 보낸 등록**을 서버가 말소리가 거의 없는 녹음이라고 돌려보냈다(`400 VOICE_CLONE_NO_SPEECH` —
+    /// `isNoSpeechRejection`). 등록 창이 갈 곳을 가르는 재료다(`VoiceCloneUploadFlow.submitOutcome` — 음원 준비로
+    /// 돌아가 그 녹음을 버린다).
+    ///
+    /// [monthlyLimitRejected] 와 달리 흐름을 끝내지 않고 창이 닫힌 뒤 알릴 것도 없다 — 문장은 안내 줄(`statusMessage`)에
+    /// 세우고, 등록 창이 그것을 음원 준비 단계의 거절 줄로 옮긴다(`VoiceCloneUploadFlow` 의 `rerecordReason`). 그래서
+    /// 꺼내 쓰는 값이 아니라 **등록을 보낼 때마다 먼저 내린다**(`uploadRecordingForClone`·
+    /// `cloneAudioForProfile` 의 첫 줄). 남겨 두면 다시 녹음한 뒤의 다른 실패(네트워크 등)까지 이 갈래로 읽혀 멀쩡한 새
+    /// 녹음을 버린다. 제출이 등록을 기다린 뒤 읽기만 하는 값이라 발행하지 않는다 — 발행하면 이 뷰모델을 보는 화면이
+    /// 까닭 없이 다시 그려진다.
+    private(set) var noSpeechRejected = false
+
     /// **사용자가 시작한 쓰기**(등록·삭제·이름변경·공유 토글…) 전용. 화면이 버튼을 잠근다.
     @Published var isBusy = false
 
@@ -148,8 +165,18 @@ final class VoiceStudioViewModel: ObservableObject {
     @Published var statusMessage: String?
     @Published var preparedAlarm: PreparedAlarmTalk?
     /// 이번 달 목소리 쿼터. 조회 실패면 nil — 화면은 숫자를 감추고 평소대로 그린다
-    /// (못 물어본 것이 버튼을 끄는 이유가 되면 안 된다).
+    /// (못 물어본 것이 버튼을 끄는 이유가 되면 안 된다). 서버 답을 싣는 곳은 [applyDraftQuota] 하나다.
     @Published private(set) var draftQuota: VoiceDraftQuotaResponse?
+
+    /// [draftQuota] 를 묻는 요청의 번호 — 요청을 내기 **직전에** 오른다(`refresh(session:force:)`). 답은 그 번호가
+    /// 아직 가장 나중 것일 때만 싣는다([applyDraftQuota]). 안드로이드의 `voiceDraftQuotaRequestSeq` 와 같은 규칙이다.
+    ///
+    /// ⚠ 강제 갱신(확정 성공·월 한도 거절·초안 버리기·푸시)은 진행 중인 갱신을 기다리지 않아, 답이 낸 순서대로 오지
+    /// 않는다. 늦게 온 **옛 답**이 새 답을 덮으면 확정 직후의 `0/1` 위에 그 전의 `1/1` 이 다시 앉는다 — `추가` 가
+    /// 다시 켜지고 삭제 경고가 빠진다(스펙 voice-and-message §4-1 「월 등록 한도」 ②). 계정만 대조해서는 못 막는다.
+    /// ⚠ **되감지 않는다** — 계정 상태를 비울 때(`clearUserScopedRemoteState`)도 그대로 둔다. 되감으면 로그아웃 전에
+    /// 낸 요청의 번호가 다시 들어와 낸 요청의 번호와 같아져, 같은 계정이면 앞 요청의 늦은 답이 그대로 실린다.
+    private var draftQuotaRequestSeq: UInt64 = 0
 
     let recorder = VoiceRecorder()
     let previewPlayer = AudioPreviewPlayer()
@@ -536,6 +563,9 @@ final class VoiceStudioViewModel: ObservableObject {
         do {
             async let nextProfiles = api.listVoiceProfiles(token: token)
             // 목록·가족 목소리와 함께 시작한다. 뒤에서 시작하면 한도 숫자만 한 왕복 늦게 뜬다.
+            // 번호는 요청을 내기 직전에 뽑는다 — 답을 실을 때 이 요청이 아직 가장 나중 것인지 본다([applyDraftQuota]).
+            draftQuotaRequestSeq &+= 1
+            let quotaRequestSeq = draftQuotaRequestSeq
             async let nextQuota: VoiceDraftQuotaResponse? = try? api.voiceDraftQuota(token: token)
             // 가족 목소리는 plan 에 따라 403 이 날 수 있으므로 실패해도 무시.
             let familyResult: [FamilyVoiceProfile]
@@ -594,7 +624,7 @@ final class VoiceStudioViewModel: ObservableObject {
             // ⚠ **조회 실패로 기존 한도를 지우지 말 것.** `try?` 라 실패하면 nil 이
             // 오는데, 그대로 대입하면 이미 이번 달을 다 쓴 사용자에게 '추가' 버튼이
             // 다시 켜진다(한도 표시도 사라진다). 실패는 "모른다" 이지 "0 이다" 가 아니다.
-            if let quotaResult { draftQuota = quotaResult }
+            if let quotaResult { applyDraftQuota(quotaResult, requestSeq: quotaRequestSeq, userID: userID) }
             // 목록·공유 목소리·한도를 **다** 받았을 때만 창을 연다(반쪽이면 다음 진입이 다시 받는다).
             // 여는 것은 아래 강등 정합화가 끝난 **뒤**다.
             let freshnessRecordable = familyAuthoritative && quotaResult != nil
@@ -643,6 +673,15 @@ final class VoiceStudioViewModel: ObservableObject {
             guard activeUserID == userID else { return }
             statusMessage = mapVoiceError(error)
         }
+    }
+
+    /// 한도 조회의 답을 [draftQuota] 에 싣는다. 둘 다 맞을 때만 싣는다:
+    /// - `requestSeq` 가 **아직 가장 나중에 낸 요청**의 번호다([draftQuotaRequestSeq]). 그 뒤에 낸 요청이 있으면 이 답은
+    ///   늦었다 — 그 요청의 답이 먼저 왔든 아직 안 왔든 더 새 원장을 본다.
+    /// - 그 요청을 낸 **계정의 답**이다.
+    private func applyDraftQuota(_ quota: VoiceDraftQuotaResponse, requestSeq: UInt64, userID: String) {
+        guard requestSeq == draftQuotaRequestSeq, activeUserID == userID else { return }
+        draftQuota = quota
     }
 
     /// 기본 제공(스톡) 알람 클립 카탈로그를 1회 로드한다. Android
@@ -982,6 +1021,8 @@ final class VoiceStudioViewModel: ObservableObject {
         listenerTitle: String? = nil,
         language: String = VoiceStudioViewModel.appVoiceLanguage()
     ) async -> VoiceProfile? {
+        // 지난 등록의 말소리 거절을 이번 등록에 들고 가지 않는다([noSpeechRejected]) — 아래에서 일찍 돌아가도.
+        noSpeechRejected = false
         guard session?.token != nil else {
             statusMessage = String(localized: "로그인이 필요해요.")
             return nil
@@ -1026,6 +1067,8 @@ final class VoiceStudioViewModel: ObservableObject {
         language: String = VoiceStudioViewModel.appVoiceLanguage(),
         tooShortMessage: String = String(localized: "12초 이상 준비해 주세요.")
     ) async -> VoiceProfile? {
+        // 지난 등록의 말소리 거절을 이번 등록에 들고 가지 않는다([noSpeechRejected]) — 아래에서 일찍 돌아가도.
+        noSpeechRejected = false
         guard let token = session?.token else {
             statusMessage = String(localized: "로그인이 필요해요.")
             return nil
@@ -1083,6 +1126,11 @@ final class VoiceStudioViewModel: ObservableObject {
                 await handleMonthlyLimitRejection(session: session)
             } else {
                 // 다시 시도할 수 있는 실패다 — 녹음(고른 파일)은 그대로 두고 문구만 세운다.
+                // 말소리가 거의 없다는 거절도 여기서 문구를 세운다 — 다만 같은 녹음을 다시 보내면 같은 답이라, 등록 창이
+                // 그 녹음을 버리고 음원 준비로 돌아가며 이 문구를 그 단계의 거절 줄로 옮긴다([noSpeechRejected] →
+                // `VoiceCloneUploadFlow.submitOutcome`). 서버는 아무것도 쓰지 않았다 — 이번 달 등록이 그대로라 남은 횟수는
+                // 다시 읽지 않는다.
+                noSpeechRejected = isNoSpeechRejection(error)
                 statusMessage = mapVoiceError(error)
             }
             return nil

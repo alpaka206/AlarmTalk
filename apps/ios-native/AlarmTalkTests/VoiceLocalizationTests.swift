@@ -92,6 +92,20 @@ struct VoiceLocalizationTests {
         }
     }
 
+    /// 말소리가 거의 없는 등록 녹음의 거절(`VOICE_CLONE_NO_SPEECH` — 스펙 voice-and-message §4-1). 안드로이드 문자열과
+    /// 같은 세 언어의 문장이다 — 카탈로그에서 빠지면 영어·일본어 기기에 한국어가 그대로 뜬다.
+    @Test("말소리가 없는 녹음의 거절 문장은 영어와 일본어로 조회된다", arguments: ["en", "ja"])
+    func noSpeechRejectionCopy(language: String) throws {
+        let path = try #require(Bundle.main.path(forResource: language, ofType: "lproj"))
+        let bundle = try #require(Bundle(path: path))
+        let key = "녹음에서 말소리를 거의 찾지 못했어요. 조용한 곳에서 문장을 또렷하게 읽으며 다시 녹음해 주세요."
+        let expected = [
+            "en": "We couldn't find much speech in the recording. Please record again in a quiet place, reading the sentences clearly.",
+            "ja": "録音から話し声がほとんど見つかりませんでした。静かな場所で、文をはっきり読みながらもう一度録音してください。",
+        ]
+        #expect(bundle.localizedString(forKey: key, value: nil, table: nil) == expected[language])
+    }
+
     @Test("준비 상태·등록·오디오 오류는 영어와 일본어로 조회된다", arguments: ["en", "ja"])
     func translatedVoiceFlow(language: String) throws {
         let path = try #require(Bundle.main.path(forResource: language, ofType: "lproj"))

@@ -2690,6 +2690,23 @@
         }
       }
     },
+    "녹음에서 말소리를 거의 찾지 못했어요. 조용한 곳에서 문장을 또렷하게 읽으며 다시 녹음해 주세요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "We couldn't find much speech in the recording. Please record again in a quiet place, reading the sentences clearly."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "録音から話し声がほとんど見つかりませんでした。静かな場所で、文をはっきり読みながらもう一度録音してください。"
+          }
+        }
+      }
+    },
     "녹음을 시작하지 못했어요." : {
       "extractionState" : "manual",
       "localizations" : {

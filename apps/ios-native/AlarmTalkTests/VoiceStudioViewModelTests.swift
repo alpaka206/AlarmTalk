@@ -441,34 +441,51 @@ final class VoiceStudioViewModelTests: XCTestCase {
             XCTAssertEqual(vm.statusMessage, APIErrorMessages.message(for: "VOICE_CAPACITY_EXHAUSTED"))
             XCTAssertEqual(quotaCalls(), 0)
             XCTAssertTrue(FileManager.default.fileExists(atPath: audio.path), "다시 누를 녹음이 남아 있어야 한다")
+            XCTAssertFalse(vm.noSpeechRejected)
             XCTAssertEqual(
-                VoiceCloneUploadFlow.submitOutcome(created: created, monthlyLimitRejected: vm.monthlyLimitRejected),
+                VoiceCloneUploadFlow.submitOutcome(
+                    created: created, monthlyLimitRejected: vm.monthlyLimitRejected, noSpeechRejected: vm.noSpeechRejected
+                ),
                 .details,
-                "다시 시도할 수 있는 실패에 창을 닫는다"
+                "다시 시도할 수 있는 실패에 창을 닫거나 녹음을 버린다"
             )
             XCTAssertFalse(vm.consumeMonthlyLimitNotice(), "다시 시도할 수 있는 실패에 월 한도 알럿을 띄운다")
         }
     }
 
     /// 제출 뒤 등록 창이 갈 곳(`VoiceCloneUploadFlow.submitOutcome`) — 순서가 곧 규칙이다. 만든 초안이 있으면
-    /// 그것이 이기고(서버가 이번 등록을 받아들였다), 월 한도 거절이면 창을 닫고, 그 밖의 실패는 세부 정보로
-    /// 돌아가 다시 누른다. 월 한도 거절을 세부 정보로 되돌리면 안내 줄이 빈 채(거절을 받은 쪽이 창이 닫힐 줄
-    /// 알고 비운다) 살아 있는 `등록` 이 남아, 누를 때마다 같은 429 를 말없이 받는다.
-    func test_제출_뒤_갈_곳은_만든_초안_월_한도_거절_그_밖의_실패_순서로_가른다() {
+    /// 그것이 이기고(서버가 이번 등록을 받아들였다), 월 한도 거절이면 창을 닫고, 말소리가 없다는 거절이면 녹음을 버리고
+    /// 음원 준비로 돌아가고, 그 밖의 실패는 세부 정보로 돌아가 다시 누른다. 월 한도 거절을 세부 정보로 되돌리면 안내
+    /// 줄이 빈 채(거절을 받은 쪽이 창이 닫힐 줄 알고 비운다) 살아 있는 `등록` 이 남아, 누를 때마다 같은 429 를 말없이
+    /// 받는다. 말소리 거절을 세부 정보로 되돌리면 같은 녹음을 다시 보내 같은 400 을 받는다.
+    func test_제출_뒤_갈_곳은_만든_초안_월_한도_거절_말소리_거절_그_밖의_실패_순서로_가른다() {
         let draft = VoiceProfile(id: "draft-1", name: "새 목소리", status: "ready", isDraft: true)
+        func outcome(_ created: VoiceProfile?, monthlyLimit: Bool, noSpeech: Bool) -> VoiceCloneUploadFlow.SubmitOutcome {
+            VoiceCloneUploadFlow.submitOutcome(created: created, monthlyLimitRejected: monthlyLimit, noSpeechRejected: noSpeech)
+        }
 
+        XCTAssertEqual(outcome(draft, monthlyLimit: false, noSpeech: false), .preview("draft-1"))
         XCTAssertEqual(
-            VoiceCloneUploadFlow.submitOutcome(created: draft, monthlyLimitRejected: false), .preview("draft-1")
-        )
-        XCTAssertEqual(
-            VoiceCloneUploadFlow.submitOutcome(created: draft, monthlyLimitRejected: true), .preview("draft-1"),
+            outcome(draft, monthlyLimit: true, noSpeech: false), .preview("draft-1"),
             "서버가 받아들인 등록을 한도 표시 때문에 버린다"
         )
         XCTAssertEqual(
-            VoiceCloneUploadFlow.submitOutcome(created: nil, monthlyLimitRejected: true), .closeForMonthlyLimit,
+            outcome(draft, monthlyLimit: false, noSpeech: true), .preview("draft-1"),
+            "서버가 받아들인 등록을 말소리 표시 때문에 버린다"
+        )
+        XCTAssertEqual(
+            outcome(nil, monthlyLimit: true, noSpeech: false), .closeForMonthlyLimit,
             "월 한도 거절에 세부 정보로 돌아가 같은 버튼을 다시 누르게 둔다"
         )
-        XCTAssertEqual(VoiceCloneUploadFlow.submitOutcome(created: nil, monthlyLimitRejected: false), .details)
+        XCTAssertEqual(
+            outcome(nil, monthlyLimit: true, noSpeech: true), .closeForMonthlyLimit,
+            "이번 달을 다 썼는데 다시 녹음하라고 한다"
+        )
+        XCTAssertEqual(
+            outcome(nil, monthlyLimit: false, noSpeech: true), .rerecordForNoSpeech,
+            "말소리가 없는 녹음을 세부 정보로 돌려 같은 녹음을 다시 보내게 둔다"
+        )
+        XCTAssertEqual(outcome(nil, monthlyLimit: false, noSpeech: false), .details)
     }
 
     /// 등록이 월 한도로 거절되면 창을 닫고, 창이 다 내려간 뒤 목소리 탭이 알림을 **한 번만** 꺼낸다
@@ -484,8 +501,11 @@ final class VoiceStudioViewModelTests: XCTestCase {
                 audioFileURL: audio, name: "새 목소리", durationMs: 20_000, isShared: false, session: session
             )
 
+            XCTAssertFalse(vm.noSpeechRejected)
             XCTAssertEqual(
-                VoiceCloneUploadFlow.submitOutcome(created: created, monthlyLimitRejected: vm.monthlyLimitRejected),
+                VoiceCloneUploadFlow.submitOutcome(
+                    created: created, monthlyLimitRejected: vm.monthlyLimitRejected, noSpeechRejected: vm.noSpeechRejected
+                ),
                 .closeForMonthlyLimit,
                 "월 한도 거절인데 창을 닫지 않는다"
             )
@@ -495,30 +515,300 @@ final class VoiceStudioViewModelTests: XCTestCase {
         }
     }
 
-    /// `POST voice/clone` 의 답을 정한 서버와, 올릴 음원 파일 하나를 준비한다. 한도 조회는 **첫 번째만**
-    /// 1회 남음이고 그 뒤로는 0 이다(그 사이 등록이 소모됐다).
+    // MARK: - 말소리가 없는 녹음 — 음원 준비로 돌아가 녹음을 버린다
+
+    /// 서버가 정한 문장(스펙 voice-and-message §4-1) — 두 앱이 같은 말을 쓴다.
+    private static let noSpeechSentence =
+        "녹음에서 말소리를 거의 찾지 못했어요. 조용한 곳에서 문장을 또렷하게 읽으며 다시 녹음해 주세요."
+
+    private static let noSpeechBody =
+        #"{"error":"No speech was found in the recording","error_code":"VOICE_CLONE_NO_SPEECH"}"#
+
+    /// 말소리 거절만 다시 녹음으로 간다. 문구는 공용 표가 고르고(목소리 화면도 같은 문장), 본문에만 코드가 실린 응답도
+    /// 같은 갈래다 — 문구를 고를 때와 같은 방법으로 읽는다.
+    func test_isNoSpeechRejection_onlyForTheNoSpeechCode() {
+        let vm = VoiceStudioViewModel()
+        XCTAssertEqual(APIErrorMessages.message(for: "VOICE_CLONE_NO_SPEECH"), Self.noSpeechSentence)
+        XCTAssertEqual(VoiceStudioViewModel.localizedVoiceMessage(forCode: "VOICE_CLONE_NO_SPEECH"), Self.noSpeechSentence)
+
+        let rejection = APIError.server(status: 400, message: "No speech", errorCode: "VOICE_CLONE_NO_SPEECH")
+        XCTAssertTrue(vm.isNoSpeechRejection(rejection))
+        XCTAssertFalse(vm.isMonthlyLimitRejection(rejection), "다시 녹음하면 되는 거절에 흐름을 끝낸다")
+        XCTAssertEqual(vm.mapVoiceError(rejection), Self.noSpeechSentence)
+
+        let inBody = APIError.server(status: 400, message: "VOICE_CLONE_NO_SPEECH: transcript too short", errorCode: nil)
+        XCTAssertTrue(vm.isNoSpeechRejection(inBody))
+        XCTAssertEqual(vm.mapVoiceError(inBody), Self.noSpeechSentence)
+
+        let others: [Error] = [
+            // 같은 400 이라도 녹음을 버릴 이유가 아닌 것들.
+            APIError.server(status: 400, message: "short", errorCode: "VOICE_CLONE_AUDIO_TOO_SHORT"),
+            APIError.server(status: 400, message: "mime", errorCode: "INVALID_AUDIO_MIME_TYPE"),
+            APIError.server(status: 502, message: "cloning", errorCode: "VOICE_CLONING_FAILED"),
+            APIError.server(status: 429, message: "limit", errorCode: "VOICE_MONTHLY_CHANGE_LIMIT_REACHED"),
+            APIError.server(status: 400, message: "Bad Request", errorCode: nil),
+            APIError.invalidResponse,
+            URLError(.timedOut),
+        ]
+        for error in others {
+            XCTAssertFalse(vm.isNoSpeechRejection(error), "\(error)")
+        }
+    }
+
+    /// 말소리가 거의 없는 녹음(`400 VOICE_CLONE_NO_SPEECH`)은 흐름을 끝내지도, 세부 정보로 돌리지도 않는다 — 음원 준비로
+    /// 돌아가 그 녹음을 버리고 다시 녹음하게 한다(같은 녹음을 다시 보내면 같은 답이다). 서버는 아무것도 쓰지 않았고 이번 달
+    /// 등록도 그대로라 남은 횟수를 다시 읽지 않고, 창이 닫힌 뒤 띄울 월 한도 알럿도 없다. 문장은 뷰모델이 안내 줄에 세우고,
+    /// 등록 창이 그것을 음원 준비 단계의 거절 줄로 옮긴다(배선은
+    /// `test_말소리_거절의_이유는_녹음_카드_아래_오류_색_줄에_쓰고_새_소리를_준비하면_걷는다`).
+    func test_말소리가_없는_녹음은_음원_준비로_돌려보내고_월_한도는_건드리지_않는다() async throws {
+        try await withVoiceViewModel(clone: (400, Self.noSpeechBody)) { vm, session, audio, quotaCalls in
+            let created = await vm.cloneAudioForProfile(
+                audioFileURL: audio, name: "새 목소리", durationMs: 20_000, isShared: false, session: session
+            )
+
+            XCTAssertNil(created)
+            XCTAssertTrue(vm.noSpeechRejected, "말소리 거절이 적히지 않아 같은 녹음을 다시 보낼 세부 정보로 돌아간다")
+            XCTAssertEqual(
+                VoiceCloneUploadFlow.submitOutcome(
+                    created: created, monthlyLimitRejected: vm.monthlyLimitRejected, noSpeechRejected: vm.noSpeechRejected
+                ),
+                .rerecordForNoSpeech
+            )
+            XCTAssertEqual(vm.statusMessage, Self.noSpeechSentence, "다시 녹음할 이유를 말하지 않는다")
+            XCTAssertFalse(vm.monthlyLimitRejected, "다시 녹음하면 되는 거절에 흐름을 끝낸다")
+            XCTAssertFalse(vm.consumeMonthlyLimitNotice(), "창이 닫힌 뒤 월 한도 알럿이 뜬다")
+            XCTAssertEqual(quotaCalls(), 0, "이번 달 등록과 무관한 거절에 남은 횟수를 다시 읽는다")
+            XCTAssertFalse(vm.isBusy)
+        }
+    }
+
+    /// 말소리 거절은 **그 등록 한 번의 답**이다 — 다음 등록이 다른 이유로 실패하면 녹음을 버리지 않는다. 남아 있으면
+    /// 다시 녹음한 뒤의 네트워크·용량 실패까지 다시 녹음으로 읽어 멀쩡한 새 녹음을 버린다. 요청을 내기 전에 돌아가는
+    /// 등록(녹음 없음·너무 짧음)도 지난 거절을 들고 가지 않는다.
+    func test_말소리_거절은_다음_등록으로_넘어가지_않는다() async throws {
+        let capacity = #"{"error":"Voice capacity exhausted","error_code":"VOICE_CAPACITY_EXHAUSTED"}"#
+        try await withVoiceViewModel(
+            clone: (400, Self.noSpeechBody), (400, Self.noSpeechBody), (400, Self.noSpeechBody), (503, capacity)
+        ) { vm, session, audio, _ in
+            func clone(durationMs: Int = 20_000) async -> VoiceProfile? {
+                await vm.cloneAudioForProfile(
+                    audioFileURL: audio, name: "새 목소리", durationMs: durationMs, isShared: false, session: session
+                )
+            }
+
+            _ = await clone()
+            XCTAssertTrue(vm.noSpeechRejected)
+            // 녹음 없이 보낸 등록 — 요청을 내기 전에 돌아간다(녹음기가 비어 있다).
+            vm.cloneName = "새 목소리"
+            let unsent = await vm.uploadRecordingForClone(session: session)
+            XCTAssertNil(unsent)
+            XCTAssertFalse(vm.noSpeechRejected, "보내지도 않은 녹음 등록이 지난 말소리 거절을 들고 간다")
+
+            _ = await clone()
+            XCTAssertTrue(vm.noSpeechRejected)
+            // 12초가 안 되는 음원 — 역시 요청을 내기 전에 돌아간다.
+            let tooShort = await clone(durationMs: 5_000)
+            XCTAssertNil(tooShort)
+            XCTAssertFalse(vm.noSpeechRejected, "보내지도 않은 파일 등록이 지난 말소리 거절을 들고 간다")
+
+            _ = await clone()
+            XCTAssertTrue(vm.noSpeechRejected)
+            let created = await clone()
+            XCTAssertFalse(vm.noSpeechRejected, "다시 녹음한 뒤의 용량 실패를 말소리 거절로 읽어 새 녹음을 버린다")
+            XCTAssertEqual(
+                VoiceCloneUploadFlow.submitOutcome(
+                    created: created, monthlyLimitRejected: vm.monthlyLimitRejected, noSpeechRejected: vm.noSpeechRejected
+                ),
+                .details
+            )
+            XCTAssertEqual(vm.statusMessage, APIErrorMessages.message(for: "VOICE_CAPACITY_EXHAUSTED"))
+        }
+    }
+
+    /// 말소리 거절 뒤 등록 창이 할 일(`VoiceCloneUploadFlow.rerecordPlan` — `submit` 이 그대로 따른다). 보낸 소리를
+    /// 남기면 `다음`·`등록` 이 같은 소리를 다시 보내 같은 400 을 받고, 누를 때마다 공용·한도 있는 키로 전사 한 번을
+    /// 치른다. 버리는 것은 **보낸 갈래의 소리**뿐이다 — 다른 갈래에 준비해 둔 소리는 보내지 않았다.
+    func test_말소리_거절_뒤에는_보낸_소리를_버리고_음원_준비로_돌아간다() {
+        let imported = URL(fileURLWithPath: "/voice-clone-plan-test/VoiceImports/clone-import-a.m4a")
+        let cropped = URL(fileURLWithPath: "/voice-clone-plan-test/VoiceCrop/crop-b.m4a")
+
+        // 고른 파일의 구간을 잘라 보냈다 — 올린 것은 잘라 낸 사본이다. 가져온 사본과 함께 지우고 고르기 전으로 돌린다.
+        let croppedFile = VoiceCloneUploadFlow.rerecordPlan(sentMode: .file, selectedFileURL: imported, uploadedURL: cropped)
+        XCTAssertEqual(croppedFile.step, .source, "말소리가 없는 파일을 세부 정보로 돌려 같은 파일을 다시 보내게 둔다")
+        XCTAssertEqual(croppedFile.filesToDelete, [imported, cropped], "올린 소리(잘라 낸 사본)나 가져온 사본을 남긴다")
+        XCTAssertTrue(croppedFile.clearsFileSelection, "고른 파일을 놓지 않아 `다음` 이 같은 파일을 다시 보낸다")
+        XCTAssertFalse(croppedFile.clearsRecorder, "보내지 않은 녹음까지 버린다")
+
+        // 가져온 사본을 그대로 보냈다(자를 것이 없었다) — 지울 파일은 그 하나다.
+        let wholeFile = VoiceCloneUploadFlow.rerecordPlan(sentMode: .file, selectedFileURL: imported, uploadedURL: imported)
+        XCTAssertEqual(wholeFile.filesToDelete, [imported])
+        XCTAssertTrue(wholeFile.clearsFileSelection)
+        XCTAssertEqual(wholeFile.step, .source)
+
+        // 녹음을 보냈다 — 녹음기를 비운다(녹음 파일은 녹음기가 지운다). 고른 파일은 보내지 않았으니 그대로 둔다.
+        XCTAssertEqual(
+            VoiceCloneUploadFlow.rerecordPlan(sentMode: .record, selectedFileURL: imported, uploadedURL: nil),
+            VoiceCloneUploadFlow.RerecordPlan(clearsRecorder: true, filesToDelete: [], clearsFileSelection: false, step: .source),
+            "말소리가 없는 녹음을 남기거나, 보내지 않은 파일까지 버리거나, 세부 정보로 돌린다"
+        )
+    }
+
+    /// 말소리 거절의 화면 배선(`VoiceCloneUploadFlow`) — 창의 `@State` 라 유닛 테스트가 닿지 않아, 안드로이드
+    /// `VoiceRegistrationFailureWiringTest` 처럼 소스를 읽어 본다.
+    /// - 이유는 **녹음 카드(파일 고르기) 바로 아래의 오류 색 줄**에 쓴다. 맨 아래 안내 줄(`statusSection`)은 바로 위아래
+    ///   힌트와 같은 흐린 글자라 거절이 힌트 한 줄로 읽히고, 예시 대본을 펼쳐 두면 화면 밖이다.
+    /// - 그 줄은 **창의 상태**다 — 뷰모델의 안내 줄에 남기면 창을 닫은 뒤 목소리 탭 맨 위에, 다음 창의 빈 녹음 카드
+    ///   아래에 그대로 남는다.
+    /// - 새로 녹음하기 시작하거나, 파일을 새로 고르거나, 방식을 바꾸면 걷는다 — 남기면 새 소리도 거절당한 것처럼 읽힌다.
+    func test_말소리_거절의_이유는_녹음_카드_아래_오류_색_줄에_쓰고_새_소리를_준비하면_걷는다() throws {
+        let flow = try Self.appSource("Views/Voices/VoiceCloneUploadFlow.swift")
+
+        // 갈래 — 계획을 그대로 따르고, 문장은 뷰모델의 안내 줄에서 창의 줄로 옮긴다. 흐름은 끝내지 않는다.
+        XCTAssertTrue(flow.contains("@State private var rerecordReason: String?"), "이유가 창의 상태가 아니다")
+        let branch = try Self.region(of: flow, from: "case .rerecordForNoSpeech:", to: "case .details:")
+        for needle in [
+            "Self.rerecordPlan(sentMode: sentMode, selectedFileURL: selectedFileURL, uploadedURL: uploadedFileURL)",
+            "discardSentSource(plan)",
+            "registrationStep = plan.step",
+            "rerecordReason = voice.statusMessage",
+            "voice.statusMessage = nil",
+        ] {
+            XCTAssertTrue(branch.contains(needle), "말소리 거절 갈래에 없다: \(needle)")
+        }
+        XCTAssertFalse(branch.contains("route ="), "말소리 거절이 창을 닫는다 — 다시 녹음하는 데 제한이 없어야 한다")
+        // 고른 파일이면 올린 파일(잘라 낸 사본)을 계획에 넘긴다 — 안 넘기면 그 사본이 캐시에 남는다.
+        let fileUpload = try Self.region(of: flow, from: "let prepared = try await preparedFileAudio()", to: "created = await voice.cloneAudioForProfile(")
+        XCTAssertTrue(fileUpload.contains("uploadedFileURL = prepared.url"), "올린 파일을 계획에 넘기지 않는다")
+
+        // 자리 — 녹음 카드 **바로** 아래(힌트·예시 대본보다 앞), 파일 고르기 **바로** 아래.
+        let source = try Self.region(
+            of: flow, from: "private var sourceSection: some View {", to: "private var scriptSection: some View {"
+        )
+        func lineAfter(_ anchor: String) throws -> Substring {
+            let end = try XCTUnwrap(source.range(of: anchor), "음원 준비 단계에서 못 찾았다: \(anchor)").upperBound
+            return source[end...].drop { $0.isWhitespace }
+        }
+        XCTAssertTrue(try lineAfter("recordingSection").hasPrefix("rerecordReasonLine"), "녹음 카드 바로 아래에 이유 줄이 없다")
+        XCTAssertTrue(try lineAfter("fileSection").hasPrefix("rerecordReasonLine"), "파일 고르기 바로 아래에 이유 줄이 없다")
+
+        // 글자·색 — 오류 줄의 토큰이다(안드로이드 `RerecordReasonLine` 의 bodySmall·오류 색). 안내 줄의 흐린 글자가 아니다.
+        let styledLine = #"private var rerecordReasonLine: some View \{\s*if let rerecordReason \{\s*Text\(rerecordReason\)\s*"#
+            + #"\.font\(theme\.typography\.bodySmall\)\s*\.foregroundStyle\(theme\.palette\.error\)"#
+        XCTAssertNotNil(flow.range(of: styledLine, options: .regularExpression), "이유 줄이 오류 색의 bodySmall 이 아니다")
+
+        // 걷는 때 — 녹음이 실제로 시작됐을 때, 파일을 새로 가져왔을 때(성공한 때), 방식을 바꿨을 때. 창을 닫으면 상태째 사라진다.
+        let onRecord = try Self.region(of: flow, from: "onRecord: {", to: "onPreview:")
+        let started = try XCTUnwrap(onRecord.range(of: "await voice.startRecording()"), "녹음 버튼이 녹음을 시작하지 않는다")
+        let clearedOnRecord = try XCTUnwrap(onRecord.range(of: "rerecordReason = nil"), "녹음을 다시 시작해도 이유가 남는다")
+        XCTAssertLessThan(started.lowerBound, clearedOnRecord.lowerBound, "녹음을 시작하기도 전에 이유를 걷는다")
+        let imported = try Self.region(of: flow, from: "private func importAudioFile(", to: "} catch {")
+        XCTAssertTrue(imported.contains("rerecordReason = nil"), "파일을 새로 가져와도 이유가 남는다")
+        let modeChange = try Self.region(of: flow, from: ".onChange(of: sourceMode)", to: "private func goBack()")
+        XCTAssertTrue(modeChange.contains("rerecordReason = nil"), "녹음·파일 방식을 바꿔도 이유가 남는다")
+    }
+
+    /// 새 등록 창은 목소리 탭에 남은 안내를 들고 들어가지 않는다(`beginVoiceCreation`). 남기면 아직 아무것도 녹음하지
+    /// 않은 음원 준비 단계에 지난 문장(말투 분석 다시 시도 실패 등)이 먼저 떠 있다.
+    func test_새_등록_창은_목소리_탭에_남은_안내를_비우고_연다() {
+        let vm = VoiceStudioViewModel()
+        vm.statusMessage = "말투 분석을 다시 시도하지 못했어요. 잠시 뒤에 눌러 주세요."
+        vm.cloneName = "지난 이름"
+
+        vm.beginVoiceCreation()
+
+        XCTAssertNil(vm.statusMessage, "목소리 탭에 남은 안내가 새 창의 음원 준비 단계에 뜬다")
+        XCTAssertEqual(vm.cloneName, "")
+    }
+
+    /// 앱 소스 한 파일 — 창의 `@State` 배선처럼 유닛 테스트가 닿지 않는 규칙을 볼 때만 읽는다(안드로이드 배선 테스트와
+    /// 같은 방법). 소스 트리가 없는 곳(실기기)에서는 건너뛴다. 소스 트리가 있는데 그 파일이 없으면 **실패한다** — 파일을
+    /// 옮기고 이 테스트를 잊었을 때 조용히 건너뛰지 않게.
+    private static func appSource(_ relativePath: String, testFile: StaticString = #filePath) throws -> String {
+        let testURL = URL(fileURLWithPath: "\(testFile)")
+        guard FileManager.default.fileExists(atPath: testURL.path) else {
+            throw XCTSkip("소스 트리가 없는 기기다 — 소스 배선은 시뮬레이터에서 본다")
+        }
+        let appURL = testURL.deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("AlarmTalk", isDirectory: true)
+            .appendingPathComponent(relativePath)
+        return try String(contentsOf: appURL, encoding: .utf8)
+    }
+
+    /// `start` 부터 그 뒤 처음 나오는 `end` 앞까지. 못 찾으면 실패한다 — 소스 구조가 바뀌면 이 테스트도 함께 고친다.
+    private static func region(of text: String, from start: String, to end: String) throws -> Substring {
+        let head = try XCTUnwrap(text.range(of: start), "소스에서 못 찾았다: \(start)")
+        let tail = try XCTUnwrap(text.range(of: end, range: head.upperBound..<text.endIndex), "소스에서 못 찾았다: \(end)")
+        return text[head.lowerBound..<tail.lowerBound]
+    }
+
+    // MARK: - 남은 횟수 — 가장 나중에 낸 요청의 답만 적는다
+
+    /// 강제 갱신(확정 성공·월 한도 거절·초안 버리기)은 진행 중인 갱신을 기다리지 않는다 — 답이 낸 순서대로 오지 않는다.
+    /// 먼저 낸 한도 요청의 답(1회 남음)이 뒤에 낸 요청의 답(0)보다 **늦게** 와서 덮으면, 확정 직후의 `0/1` 위에 그 전의
+    /// `1/1` 이 다시 앉아 `추가` 가 켜지고 삭제 경고가 빠진다(스펙 voice-and-message §4-1 「월 등록 한도」 ②).
+    func test_겹친_새로고침에서_늦게_온_옛_한도_답은_새_답을_덮지_않는다() async throws {
+        try await withHeldFirstQuotaAnswer { vm, session, releaseFirstQuotaAnswer, quotaCalls in
+            // 먼저 낸 갱신 — 한도 답(1회 남음)이 서버에서 붙잡혀 있다.
+            let older = Task { await vm.refresh(session: session, force: true) }
+            try await waitUntil { quotaCalls() == 1 }
+
+            // 뒤에 낸 강제 갱신 — 답(0)이 곧바로 온다.
+            await vm.refresh(session: session, force: true)
+            XCTAssertEqual(quotaCalls(), 2)
+            XCTAssertEqual(vm.draftQuota?.registrationRemaining, 0)
+
+            // 이제 먼저 낸 요청의 옛 답이 마지막에 도착한다.
+            releaseFirstQuotaAnswer()
+            await older.value
+
+            XCTAssertEqual(vm.draftQuota?.registrationRemaining, 0, "늦게 온 옛 답(1회 남음)이 새 답(0)을 덮었다")
+        }
+    }
+
+    /// 요청 번호는 계정 상태를 비워도(로그아웃·계정 전환) **되감지 않는다.** 되감으면 로그아웃 전에 낸 요청과 다시 들어와
+    /// 낸 요청의 번호가 같아져, 같은 계정이면 앞 요청의 늦은 답이 그대로 실린다.
+    func test_한도_요청_번호는_계정_상태를_비워도_되감지_않는다() async throws {
+        try await withHeldFirstQuotaAnswer { vm, session, releaseFirstQuotaAnswer, quotaCalls in
+            let older = Task { await vm.refresh(session: session, force: true) }
+            try await waitUntil { quotaCalls() == 1 }
+
+            // 로그아웃했다가 같은 계정으로 다시 들어와 새로 읽는다 — 답(0)이 곧바로 온다.
+            vm.clearUserScopedRemoteState()
+            XCTAssertNil(vm.draftQuota)
+            await vm.refresh(session: session, force: true)
+            XCTAssertEqual(vm.draftQuota?.registrationRemaining, 0)
+
+            releaseFirstQuotaAnswer()
+            await older.value
+
+            XCTAssertEqual(
+                vm.draftQuota?.registrationRemaining, 0,
+                "로그아웃 전에 낸 요청의 늦은 답(1회 남음)이 다시 들어온 뒤의 답(0)을 덮었다"
+            )
+        }
+    }
+
+    /// `POST voice/clone` 의 답을 정한 서버와, 올릴 음원 파일 하나를 준비한다. 등록의 답은 n 번째 요청에 n 번째 것을
+    /// 주고, 모자라면 마지막 것을 되풀이한다. 한도 조회는 **첫 번째만** 1회 남음이고 그 뒤로는 0 이다(그 사이 등록이
+    /// 소모됐다).
     private func withVoiceViewModel(
-        clone: (status: Int, body: String),
-        _ body: (VoiceStudioViewModel, AuthSession, URL, @escaping @Sendable () -> Int) async throws -> Void
+        clone: (status: Int, body: String)...,
+        body: (VoiceStudioViewModel, AuthSession, URL, @escaping @Sendable () -> Int) async throws -> Void
     ) async throws {
         let host = "\(UUID().uuidString.lowercased()).voice-monthly-limit.example.test"
-        let cloneStatus = clone.status
-        let cloneBody = Data(clone.body.utf8)
+        let cloneAnswers = clone.map { ($0.status, Data($0.body.utf8)) }
         VoiceMonthlyLimitURLProtocol.configure(host: host) { path, ordinal in
             switch path {
             case "voice/clone":
-                return (cloneStatus, cloneBody)
+                return cloneAnswers[min(ordinal, cloneAnswers.count) - 1]
             case "voice/draft-quota":
-                let remaining = ordinal == 1 ? 1 : 0
-                return (200, Data(#"{"registration_limit":1,"registration_remaining":\#(remaining)}"#.utf8))
+                return Self.quotaAnswer(ordinal: ordinal)
             default:
                 // `voice`·`voice/family` — 등록된 목소리가 없다.
                 return (200, Data(#"{"profiles":[]}"#.utf8))
             }
         }
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [VoiceMonthlyLimitURLProtocol.self]
-        let urlSession = URLSession(configuration: configuration)
+        let (vm, session, urlSession) = stubbedViewModel(host: host)
         let audio = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID().uuidString).m4a")
         try Data(repeating: 0, count: 64).write(to: audio)
         defer {
@@ -526,13 +816,67 @@ final class VoiceStudioViewModelTests: XCTestCase {
             VoiceMonthlyLimitURLProtocol.configure(host: host, handler: nil)
             try? FileManager.default.removeItem(at: audio)
         }
+        try await body(vm, session, audio) {
+            VoiceMonthlyLimitURLProtocol.count(host: host, path: "voice/draft-quota")
+        }
+    }
+
+    /// 겹친 새로고침을 흉내 낸다 — 한도 조회의 **첫 번째 답(1회 남음)은 붙잡아 두었다가** 넘겨준 `releaseFirstQuotaAnswer`
+    /// 를 부를 때 내고, 그 뒤의 답(0)은 곧바로 낸다. 목록·공유 목소리는 비어 있다.
+    private func withHeldFirstQuotaAnswer(
+        _ body: (
+            VoiceStudioViewModel, AuthSession,
+            _ releaseFirstQuotaAnswer: @escaping @Sendable () -> Void,
+            _ quotaCalls: @escaping @Sendable () -> Int
+        ) async throws -> Void
+    ) async throws {
+        let host = "\(UUID().uuidString.lowercased()).voice-monthly-limit.example.test"
+        VoiceMonthlyLimitURLProtocol.configure(
+            host: host,
+            hold: { path, ordinal in path == "voice/draft-quota" && ordinal == 1 }
+        ) { path, ordinal in
+            path == "voice/draft-quota" ? Self.quotaAnswer(ordinal: ordinal) : (200, Data(#"{"profiles":[]}"#.utf8))
+        }
+        let (vm, session, urlSession) = stubbedViewModel(host: host)
+        defer {
+            // 실패로 빠져나가도 붙잡힌 요청을 남기지 않는다.
+            VoiceMonthlyLimitURLProtocol.release(host: host)
+            urlSession.invalidateAndCancel()
+            VoiceMonthlyLimitURLProtocol.configure(host: host, handler: nil)
+        }
+        try await body(vm, session, { VoiceMonthlyLimitURLProtocol.release(host: host) }) {
+            VoiceMonthlyLimitURLProtocol.count(host: host, path: "voice/draft-quota")
+        }
+    }
+
+    /// 한도 조회의 n 번째 답 — 첫 번째만 1회 남음, 그 뒤로는 0.
+    private nonisolated static func quotaAnswer(ordinal: Int) -> (Int, Data) {
+        let remaining = ordinal == 1 ? 1 : 0
+        return (200, Data(#"{"registration_limit":1,"registration_remaining":\#(remaining)}"#.utf8))
+    }
+
+    /// 스텁 서버(`host`)에 붙은 뷰모델과 로그인 세션. 돌려준 `URLSession` 은 부른 쪽이 닫는다.
+    private func stubbedViewModel(host: String) -> (VoiceStudioViewModel, AuthSession, URLSession) {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [VoiceMonthlyLimitURLProtocol.self]
+        let urlSession = URLSession(configuration: configuration)
         let vm = VoiceStudioViewModel(api: AlarmTalkAPI(baseURL: URL(string: "https://\(host)/api/")!, session: urlSession))
         let session = AuthSession(
             token: UUID().uuidString,
             user: AuthUser(id: UUID().uuidString, email: "voice-limit@example.test")
         )
-        try await body(vm, session, audio) {
-            VoiceMonthlyLimitURLProtocol.count(host: host, path: "voice/draft-quota")
+        return (vm, session, urlSession)
+    }
+
+    /// 조건이 설 때까지 짧게 기다린다 — 붙잡아 둘 요청이 스텁에 닿았는지 볼 때 쓴다.
+    private func waitUntil(timeout: TimeInterval = 5, _ condition: () -> Bool) async throws {
+        let deadline = Date().addingTimeInterval(timeout)
+        while !condition() {
+            guard Date() < deadline else {
+                XCTFail("기다리던 요청이 \(timeout)초 안에 오지 않았다")
+                return
+            }
+            try await Task.sleep(nanoseconds: 10_000_000)
         }
     }
 
@@ -557,17 +901,36 @@ final class VoiceStudioViewModelTests: XCTestCase {
 
 /// 호스트별로 경로 → (상태, 본문)을 정하고 **경로별 호출 수**를 센다. 경로는 `/api/` 뒤
 /// (`voice/clone`, `voice/draft-quota` …)이고, 핸들러는 그 경로의 몇 번째 호출인지(1부터)를 함께 받는다.
+///
+/// `hold` 가 참인 호출은 답을 **붙잡아 두었다가** `release(host:)` 때 낸다 — 먼저 낸 요청의 답을 나중에 도착시킨다.
+/// 붙잡은 답은 그 요청을 받은 런루프에서 낸다(`URLProtocol` 의 클라이언트는 `startLoading` 의 스레드에서 부른다).
 private final class VoiceMonthlyLimitURLProtocol: URLProtocol, @unchecked Sendable {
     typealias Handler = @Sendable (_ path: String, _ ordinal: Int) -> (Int, Data)
+    typealias Hold = @Sendable (_ path: String, _ ordinal: Int) -> Bool
     private static let lock = NSLock()
     nonisolated(unsafe) private static var handlers: [String: Handler] = [:]
+    nonisolated(unsafe) private static var holds: [String: Hold] = [:]
     nonisolated(unsafe) private static var counts: [String: [String: Int]] = [:]
+    nonisolated(unsafe) private static var held: [String: [() -> Void]] = [:]
 
-    static func configure(host: String, handler: Handler?) {
+    static func configure(host: String, hold: Hold? = nil, handler: Handler?) {
         lock.lock()
         defer { lock.unlock() }
         handlers[host] = handler
-        if handler == nil { counts[host] = nil }
+        holds[host] = handler == nil ? nil : hold
+        if handler == nil {
+            counts[host] = nil
+            held[host] = nil
+        }
+    }
+
+    /// 붙잡아 둔 답을 모두 낸다.
+    static func release(host: String) {
+        lock.lock()
+        let pending = held[host] ?? []
+        held[host] = nil
+        lock.unlock()
+        pending.forEach { $0() }
     }
 
     static func count(host: String, path: String) -> Int {
@@ -590,6 +953,7 @@ private final class VoiceMonthlyLimitURLProtocol: URLProtocol, @unchecked Sendab
         let path = url.path.components(separatedBy: "/api/").last ?? url.path
         Self.lock.lock()
         let handler = Self.handlers[host]
+        let hold = Self.holds[host]
         var ordinal = 0
         if handler != nil {
             ordinal = (Self.counts[host]?[path] ?? 0) + 1
@@ -601,12 +965,26 @@ private final class VoiceMonthlyLimitURLProtocol: URLProtocol, @unchecked Sendab
             return
         }
         let (status, data) = handler(path, ordinal)
-        client?.urlProtocol(self, didReceive: HTTPURLResponse(
+        let response = HTTPURLResponse(
             url: url, statusCode: status, httpVersion: nil,
             headerFields: ["Content-Type": "application/json"]
-        )!, cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: data)
-        client?.urlProtocolDidFinishLoading(self)
+        )!
+        let deliver = { [self] in
+            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocol(self, didLoad: data)
+            client?.urlProtocolDidFinishLoading(self)
+        }
+        guard hold?(path, ordinal) == true else {
+            deliver()
+            return
+        }
+        let runLoop = CFRunLoopGetCurrent()
+        Self.lock.lock()
+        Self.held[host, default: []].append {
+            CFRunLoopPerformBlock(runLoop, CFRunLoopMode.commonModes.rawValue, deliver)
+            CFRunLoopWakeUp(runLoop)
+        }
+        Self.lock.unlock()
     }
 
     override func stopLoading() {}
