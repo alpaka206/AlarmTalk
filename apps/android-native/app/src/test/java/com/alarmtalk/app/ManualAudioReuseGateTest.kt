@@ -244,7 +244,8 @@ class ManualAudioReuseGateTest {
         assertFalse("저장 버튼이 메인에서 별칭을 읽는다", body.contains("audioStore.resolveTtsInput("))
         assertFalse("저장 버튼이 메인에서 길이를 잰다", body.contains("audioStore.getCachedAudio("))
         // 오프라인 판정은 로컬 확인이 '없다' 고 답한 뒤(onMissing)에, 생성보다 먼저.
-        val onMissing = body.substringAfter("onMissing = {")
+        assertTrue(body.contains("onMissing = missing@{"))
+        val onMissing = body.substringAfter("onMissing = missing@{")
         val offline = onMissing.indexOf("SaveBlockReason.OFFLINE_NEW_MESSAGE")
         val generation = onMissing.indexOf("startGeneration()")
         assertTrue(offline >= 0 && generation > offline)
@@ -253,6 +254,24 @@ class ManualAudioReuseGateTest {
         assertTrue(
             startGeneration.indexOf("generating = true") in 0 until startGeneration.indexOf("scope.launch"),
         )
+    }
+
+    /**
+     * 찾는 동안 잠기는 것은 저장 버튼뿐이다 — 그 사이 시각·문구·목소리를 고치면, 결과는 누른 순간의 값으로 찾은
+     * 것인데 저장은 바뀐 상태로 나간다(Codex #879). 누른 순간의 초안을 잡고, 두 결과 모두 **맨 먼저** 그 초안과
+     * 지금 초안을 견줘 다르면 아무것도 하지 않아야 한다(이어 붙이거나 생성을 시작하기 전에).
+     */
+    @Test
+    fun aLookupResultIsDroppedWhenTheEditorChangedMeanwhile() {
+        val body = withoutLineComments(functionBody(editorSource, "    fun saveEditor()"))
+        val captured = body.indexOf("val draftAtTap = editor.toDraft()")
+        assertTrue("누른 순간의 초안을 잡지 않는다", captured >= 0)
+        assertTrue(captured < body.indexOf("manualAudioReuse.request("))
+        val guard = "if (editor.toDraft() != draftAtTap) return@"
+        val onFound = body.substringAfter("onFound = found@{ reusable ->")
+        assertTrue(onFound.trimStart().startsWith(guard + "found"))
+        val onMissing = body.substringAfter("onMissing = missing@{")
+        assertTrue(onMissing.trimStart().startsWith(guard + "missing"))
     }
 
     /** 저장 사유는 화면이 다시 그려질 때마다 계산된다 — 파일을 읽으면 안 된다. */

@@ -1172,10 +1172,16 @@ internal fun AlarmEditorScreen(
         //   `docs/spec/alarm-editor.md` §6). 예전에는 누르는 순간 메인에서 별칭을 읽고 파일을 찾고 길이까지
         //   쟀다. 찾는 동안은 '저장 중' 이라(`busy`) 그 사이의 탭은 버려진다 — 쌓이면 두 번 저장·두 번
         //   팝(검은 화면)이다. 편집기 상태는 IO 에서 읽지 않는다 — 누른 순간의 값을 잡아 넘긴다.
+        // ⚠ **찾는 동안 편집기가 바뀌었으면 이 저장은 버린다**(Codex #879). 찾는 동안 잠기는 것은 저장 버튼뿐이라
+        //   시각·문구·목소리는 그대로 고칠 수 있다 — 결과를 그대로 이으면 누른 순간의 목소리·문구로 찾은(또는 만들)
+        //   오디오가 바뀐 상태(`editor.toDraft()`)와 섞여 저장된다. 누른 순간의 초안과 같을 때만 잇고, 다르면
+        //   아무것도 하지 않는다 — 잠금이 풀리니 다시 누르면 지금 상태로 저장된다.
+        val draftAtTap = editor.toDraft()
         val rawAudioUriAtTap = editor.rawAudioUri
         manualAudioReuse.request(
             lookup = { ttsInputKey?.let { audioStore.findReusableTtsAudio(it, rawAudioUriAtTap) } },
-            onFound = { reusable ->
+            onFound = found@{ reusable ->
+                if (editor.toDraft() != draftAtTap) return@found
                 editor.setGeneratedTtsAudio(
                     audio = reusable.audio,
                     profileId = profileId,
@@ -1191,7 +1197,8 @@ internal fun AlarmEditorScreen(
                 editor.voiceListenerTitleOverride = listenerTitleForSave.orEmpty()
                 submitDraft(editor.toDraft())
             },
-            onMissing = {
+            onMissing = missing@{
+                if (editor.toDraft() != draftAtTap) return@missing
                 // ② **오프라인이면 여기서 막는다** — 요청을 보내 보지 않는다(voice-and-message §8). 아래 남은
                 //   횟수 조회부터 네트워크다. 판정식은 예전 저장 사유와 같다(직접 입력 + 오프라인 + 폰에 없음).
                 if (editor.isManualForSave() && !isOnline) {

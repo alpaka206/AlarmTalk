@@ -184,6 +184,10 @@ iOS 26 의 `UIAlertController` 를 시뮬레이터에서 재서 얻은 값이다
   쌓아 두면 같은 알람이 두 번 저장되고 완료 콜백이 두 번 팝해 검은 화면이 된다. 찾았으면 서버를 부르지
   않고 곧바로 저장하고(뷰모델의 '저장 중' 으로 이어진다 — 잠금이 풀리는 틈이 없다), 못 찾았으면 다음
   단계로 간다. 찾다 실패하면 '없다' 로 보고 다음 단계로 간다.
+- **찾는 동안 편집기가 바뀌었으면 그 저장은 버린다**(Codex #879). 잠기는 것은 저장 버튼뿐이라 그 사이 시각·
+  문구·목소리를 고칠 수 있다 — 결과를 그대로 이으면 누른 순간의 값으로 찾은 오디오가 바뀐 상태와 섞여 저장된다.
+  누른 순간의 초안과 지금 초안이 같을 때만 잇고(찾았으면 저장, 못 찾았으면 다음 단계), 다르면 아무것도 하지
+  않는다 — 잠금이 풀리니 다시 누르면 지금 상태로 저장된다.
 - **오프라인 판정(`OFFLINE_NEW_MESSAGE`)도 그 확인으로 한다** — §8 의 ②. 저장 사유를 세는 자리는 더 이상
   파일을 읽지 않는다. 예전에는 오프라인 + 직접 입력이면 화면이 다시 그려질 때마다 같은 파일을 읽었다.
   그래서 이 알럿은 이제 저장 흐름 안에서, 권한·가족 알람 확인 **뒤에** 뜬다 — 문구와 판정식(직접 입력 +
@@ -246,7 +250,7 @@ iOS 26 의 `UIAlertController` 를 시뮬레이터에서 재서 얻은 값이다
 | 스냅 방향(되돌아가지 않는가) | `AlarmTalkTests/TimeWheelSnapDirectionTests.swift` |
 | 재생 방식 세그먼트 존재 | `AlarmTalkUITests/FunctionalE2EUITests.swift` |
 | 알람 전용 → 목소리 = 직전 선택(없으면 기본 인사말), 빈 직접 입력은 요청 전 차단 | `AlarmEditorStateTest`(안드로이드) · `AlarmTalkTests/MessageContextMemoryTests.swift`(iOS) |
-| 저장 버튼의 로컬 확인은 IO 에서 한 번 · 도는 동안의 탭은 버림 · 찾으면 서버 없이 저장 · 저장 사유는 파일을 읽지 않는다(§6) | `ManualAudioReuseGateTest`(안드로이드) |
+| 저장 버튼의 로컬 확인은 IO 에서 한 번 · 도는 동안의 탭은 버림 · 찾으면 서버 없이 저장 · 그 사이 편집기가 바뀌었으면 버림 · 저장 사유는 파일을 읽지 않는다(§6) | `ManualAudioReuseGateTest`(안드로이드 — `aLookupResultIsDroppedWhenTheEditorChangedMeanwhile`) |
 | 선택 시트에 '닫기' 가 없는가 | `AlarmTalkUITests/VoiceSheetScreenshotUITests.swift` |
 
 ⚠ **계산부 테스트만으로는 부족하다.** 식이 맞는지만 보고 **연결돼 있는지**는 보지 못한다 —
