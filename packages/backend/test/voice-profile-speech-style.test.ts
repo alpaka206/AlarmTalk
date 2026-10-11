@@ -102,6 +102,16 @@ function cloneForm(name = '엄마'): Request {
 }
 
 /**
+ * 예약 트랜잭션 맨 앞의 **월 등록 자격 확인**(이번 달 등록 원장 집계 — 남았으면 통과)에 답을 깐다.
+ * 큐가 아니라 SQL 로 짝짓는다 — 큐에 넣으면 그 뒤의 결과가 전부 한 칸씩 밀린다
+ * (`voice-profile.test.ts` 의 `pushPaidPlan` 과 같다). 거절(429) 쪽은 그 파일과
+ * `voice-clone-monthly-gate.test.ts` 가 지킨다.
+ */
+function pushMonthlyRegistrationOpen() {
+  mockDB.pushResultFor('SELECT COUNT(*) AS used FROM voice_profile_change_ledger', [{ used: 0 }]);
+}
+
+/**
  * clone 성공 경로에 필요한 결과들
  * (플랜 → 프로필수 → 슬롯수 → attempt 예약 → INSERT → UPDATE ready).
  *
@@ -111,6 +121,7 @@ function cloneForm(name = '엄마'): Request {
  */
 function pushCloneSuccessResults() {
   mockDB.pushResult([{ plan: 'personal' }]); // 유료 플랜 게이트 통과
+  pushMonthlyRegistrationOpen();
   mockDB.pushResult([{ draft_count: 0, official_count: 0 }]);
   mockDB.pushResult([{ draft_count: 0, official_count: 0 }]);
   mockDB.pushResult([], 1);
@@ -286,6 +297,7 @@ describe('POST /clone — 말투 분석 상태 기록 (speech_style_status)', ()
     // userIdPK 가 채워지며 페이월 조회(SELECT plan FROM users)가 실제로 실행된다 —
     // 동의 확인보다 앞서 큐를 소비하므로 유료 플랜 행을 맨 앞에 넣어 준다.
     mockDB.pushResult([{ plan: 'personal' }]); // 0) 유료 플랜 게이트
+    pushMonthlyRegistrationOpen(); // 예약 tx 맨 앞의 월 등록 자격 확인 — 큐 밖(SQL 로 짝짓는다)
     mockDB.pushResult(sensitiveConsentRows()); // 1) 라우트 진입 동의 확인 — 동의됨
     mockDB.pushResult([{ draft_count: 0, official_count: 0 }]); // 2) 프로필 수
     mockDB.pushResult([{ draft_count: 0, official_count: 0 }]); // 3) 슬롯 수(tx)
@@ -315,6 +327,7 @@ describe('POST /clone — 말투 분석 상태 기록 (speech_style_status)', ()
     mockDB.setConsentMissing(true);
     // userIdPK 가 채워지며 페이월 조회(SELECT plan FROM users)가 실제로 실행된다 — 유료 플랜 행 선두 추가.
     mockDB.pushResult([{ plan: 'personal' }]); // 0) 유료 플랜 게이트
+    pushMonthlyRegistrationOpen(); // 예약 tx 맨 앞의 월 등록 자격 확인 — 큐 밖(SQL 로 짝짓는다)
     mockDB.pushResult(sensitiveConsentRows()); // 1) 라우트 진입
     mockDB.pushResult([{ draft_count: 0, official_count: 0 }]); // 2) 프로필 수
     mockDB.pushResult([{ draft_count: 0, official_count: 0 }]); // 3) 슬롯 수
