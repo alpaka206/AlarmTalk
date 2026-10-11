@@ -46,6 +46,9 @@ afterEach(() => {
 
 const EMAIL_CODE = '123456';
 
+/** 판정의 상한 문장 — 대조 뒤 상한 확인과 세기를 한 번에 한다(틀렸으면 +1, 맞았으면 +0). */
+const ATTEMPT_GATE_SQL = 'SET attempts = attempts + ?';
+
 async function pushValidEmailVerification(email: string) {
   mockDB.pushResult([
     {
@@ -55,6 +58,15 @@ async function pushValidEmailVerification(email: string) {
       expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
     },
   ]);
+  // 상한 문장은 SQL 로 짝지어 둔다 — 큐 자리를 차지하지 않으니 뒤에 넣어 둔 결과의 순서가 그대로다.
+  // 1행 = 상한 아래였다(0행이면 그 사이에 상한이 찬 것이라 맞는 코드도 429 — 진짜 SQLite 로는
+  // `auth-email-code-attempts.test.ts`).
+  mockDB.pushResultFor(ATTEMPT_GATE_SQL, [], 1);
+}
+
+/** 상한 문장이 센 값 — 틀렸으면 1, 맞았으면 0. 문장이 없었으면 undefined. */
+function countedIncrement(): unknown {
+  return mockDB.calls.find((c) => c.sql.includes(ATTEMPT_GATE_SQL))?.args[0];
 }
 
 function registerBody(email: string, password = 'superSecret1', name = '김규원') {
@@ -526,7 +538,37 @@ describe('POST /auth/email-code/verify', () => {
     expect(res.status).toBe(400);
     const body = await res.json();
     expect(body.error_code).toBe('AUTH_EMAIL_CODE_INVALID');
-    expect(mockDB.calls[1]?.sql).toContain('attempts = attempts + 1');
+    // 상한 확인과 세기는 한 문장이다 — 판정한 그 줄에, 상한 아래일 때만 +1.
+    const gate = mockDB.calls[1]!;
+    expect(gate.sql.replace(/\s+/g, ' ')).toContain(
+      'SET attempts = attempts + ? WHERE id = ? AND attempts < ?',
+    );
+    expect(gate.args).toEqual([1, 'email-code-1', EMAIL_VERIFICATION_MAX_ATTEMPTS]);
+  });
+
+  // 상한 문장이 0행이면 읽은 뒤 그 사이에 상한이 찬 것이다 — 맞는 숫자도 통과시키지 않는다.
+  it.each([
+    ['맞는 코드', EMAIL_CODE],
+    ['틀린 코드', '000000'],
+  ])('읽은 뒤 상한이 찼으면(상한 문장 0행) %s도 429 AUTH_EMAIL_CODE_ATTEMPTS_EXCEEDED', async (_label, code) => {
+    mockDB.pushResult([
+      {
+        id: 'email-code-1',
+        code_hash: await hashEmailVerificationCode('kim@test.com', EMAIL_CODE, ENV.PASSWORD_PEPPER),
+        attempts: EMAIL_VERIFICATION_MAX_ATTEMPTS - 1,
+        expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+      },
+    ]);
+    mockDB.pushResultFor(ATTEMPT_GATE_SQL, [], 0);
+
+    const res = await buildApp().request(
+      jsonReq('POST', '/auth/email-code/verify', { email: 'kim@test.com', code }),
+      undefined,
+      ENV,
+    );
+
+    expect(res.status).toBe(429);
+    expect((await res.json()).error_code).toBe('AUTH_EMAIL_CODE_ATTEMPTS_EXCEEDED');
   });
 
   // ── 서버 2차 정규화(스펙 session-and-auth 「코드는 ASCII 숫자 여섯 자다」) ──
@@ -549,8 +591,8 @@ describe('POST /auth/email-code/verify', () => {
 
     expect(res.status).toBe(200);
     expect((await res.json()).success).toBe(true);
-    // 맞는 코드다 — 틀린 횟수를 세지 않았다.
-    expect(mockDB.calls.some((c) => c.sql.includes('attempts = attempts + 1'))).toBe(false);
+    // 맞는 코드다 — 상한 문장은 지나되 틀린 횟수를 세지 않았다(+0).
+    expect(countedIncrement()).toBe(0);
   });
 
   it('아라비아-인도 숫자로 친 틀린 코드는 횟수를 센다 — 형식 오류로 빠져나가지 않는다', async () => {
@@ -568,7 +610,7 @@ describe('POST /auth/email-code/verify', () => {
 
     expect(res.status).toBe(400);
     expect((await res.json()).error_code).toBe('AUTH_EMAIL_CODE_INVALID');
-    expect(mockDB.calls[1]?.sql).toContain('attempts = attempts + 1');
+    expect(countedIncrement()).toBe(1);
   });
 
   it('가운데 공백이 낀 코드는 여전히 형식 오류다 — 판정까지 가지 않는다(횟수를 세지 않는다)', async () => {
@@ -625,7 +667,7 @@ describe('POST /auth/register', () => {
     );
 
     expect(res.status).toBe(201);
-    expect(mockDB.calls.some((c) => c.sql.includes('attempts = attempts + 1'))).toBe(false);
+    expect(countedIncrement()).toBe(0);
   });
 
   it('중복 이메일(비밀번호 계정)은 409 AUTH_EMAIL_TAKEN 으로 막는다', async () => {

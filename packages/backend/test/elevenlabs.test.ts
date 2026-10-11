@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { ElevenLabsClient } from '../src/lib/elevenlabs';
+import { ElevenLabsClient, SpeechToTextNoTextError } from '../src/lib/elevenlabs';
 
 const mockFetch = vi.fn();
 const origFetch = globalThis.fetch;
@@ -180,9 +180,11 @@ describe('ElevenLabsClient', () => {
       ['본문이 null', null],
     ])('%s → 빈 글로 바꾸지 않고 던진다', async (_label, body) => {
       mockFetch.mockResolvedValueOnce(okJson(body));
-      await expect(client.speechToText(new ArrayBuffer(10))).rejects.toThrow(
-        'ElevenLabs speech-to-text response has no text',
-      );
+      const thrown = client.speechToText(new ArrayBuffer(10));
+      await expect(thrown).rejects.toThrow('ElevenLabs speech-to-text response has no text');
+      // 이름이 따로 있다 — 말소리 확인의 warn 줄(오류 이름만)이 제공자 4xx/5xx(`Error`)와 가른다.
+      await expect(thrown).rejects.toBeInstanceOf(SpeechToTextNoTextError);
+      await expect(thrown).rejects.toMatchObject({ name: 'SpeechToTextNoTextError' });
     });
 
     it('글이 빈 답은 답이다 — 빈 문자열을 그대로 준다(말소리가 없는 녹음)', async () => {
@@ -199,9 +201,11 @@ describe('ElevenLabsClient', () => {
 
     it('API 에러 시 예외 (호출자가 failed 상태를 기록)', async () => {
       mockFetch.mockResolvedValueOnce(errorResponse(400, 'invalid_model_id'));
-      await expect(client.speechToText(new ArrayBuffer(10))).rejects.toThrow(
-        'ElevenLabs API error 400',
-      );
+      const thrown = client.speechToText(new ArrayBuffer(10));
+      await expect(thrown).rejects.toThrow('ElevenLabs API error 400');
+      // 글이 없는 답과 이름이 다르다(`SpeechToTextNoTextError`).
+      await expect(thrown).rejects.toMatchObject({ name: 'Error' });
+      await expect(thrown).rejects.not.toBeInstanceOf(SpeechToTextNoTextError);
     });
   });
 

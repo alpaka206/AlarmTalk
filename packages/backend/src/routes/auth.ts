@@ -83,6 +83,22 @@ type EmailVerificationCheck =
   // code 는 **목록에 있는 코드**여야 한다 — 그대로 응답에 실려 앱이 분기하는 값이다.
   | { ok: false; status: 400 | 429; code: ErrorCode; message: string };
 
+/**
+ * 그 주소·그 용도의 **가장 새 코드 하나**로 판정한다(`docs/spec/session-and-auth.md` 「이메일 인증 코드」).
+ * 순서는 없음 → 만료 → 상한 → 대조다.
+ *
+ * ⚠ **상한 확인과 세기는 한 문장이다**(2026-10-11). 줄을 읽고 숫자를 대조한 뒤
+ * `SET attempts = attempts + ? WHERE id = ? AND attempts < ?` 하나로 확정한다 — 틀렸으면 +1, 맞았으면 +0.
+ * 예전에는 읽은 횟수로 상한을 보고 틀리면 따로 +1 했다. 같은 순간에 온 요청은 모두 상한 아래를 읽으므로
+ * **보낸 수만큼 대조받았고**(맞는 숫자가 섞여 있으면 통과했다) 횟수는 상한을 넘어 올라갔다. 이 문장이 0행이면
+ * 읽은 뒤 그 사이에 상한이 찬 것이라 맞는 숫자도 429 다.
+ *  - 두 문장(확인 → +1)으로 나누지 말 것 — 그 사이가 다시 열린다.
+ *  - 맞는 코드도 이 문장을 지나게 둘 것 — 읽은 값만으로 통과시키면 같은 순간의 추측 가운데 맞는 하나는 상한과
+ *    상관없이 통과한다. +0 이라 맞는 코드는 횟수를 쓰지 않는다(인증 확인과 가입이 같은 코드를 두 번 판정한다).
+ *
+ * '가장 새 것' 은 발급 시각, 같은 초면 나중에 넣은 줄(`rowid`)이다 — 다시 받기 간격(`shouldSkipEmailCodeSend`)이
+ * 같은 순서로 고른다.
+ */
 async function checkEmailVerificationCode(
   db: Client,
   env: Env,
@@ -91,10 +107,11 @@ async function checkEmailVerificationCode(
   purpose: string = EMAIL_VERIFICATION_PURPOSE_REGISTER,
 ): Promise<EmailVerificationCheck> {
   const result = await db.execute({
+    // created_at 은 초 단위라 같은 순간에 보낸 두 코드가 동점이 된다. rowid(삽입 순서)를 보조 정렬로 둔다.
     sql: `SELECT id, code_hash, attempts, expires_at
           FROM email_verification_codes
           WHERE email = ? AND purpose = ? AND consumed_at IS NULL
-          ORDER BY created_at DESC
+          ORDER BY created_at DESC, rowid DESC
           LIMIT 1`,
     args: [email, purpose],
   });
@@ -118,24 +135,26 @@ async function checkEmailVerificationCode(
     };
   }
 
-  const attempts = Number(row.attempts ?? 0);
-  if (attempts >= EMAIL_VERIFICATION_MAX_ATTEMPTS) {
-    return {
-      ok: false,
-      status: 429,
-      code: 'AUTH_EMAIL_CODE_ATTEMPTS_EXCEEDED',
-      message: 'Too many email verification attempts',
-    };
-  }
+  const attemptsExceeded: EmailVerificationCheck = {
+    ok: false,
+    status: 429,
+    code: 'AUTH_EMAIL_CODE_ATTEMPTS_EXCEEDED',
+    message: 'Too many email verification attempts',
+  };
+  // 이미 찬 코드는 쓰지 않고 돌려보낸다. 권위 있는 확인은 아래 문장이다 — 이 값은 읽은 순간의 것이다.
+  if (Number(row.attempts ?? 0) >= EMAIL_VERIFICATION_MAX_ATTEMPTS) return attemptsExceeded;
 
   const expectedHash = await hashEmailVerificationCode(email, code, env.PASSWORD_PEPPER);
-  if (expectedHash !== row.code_hash) {
-    await db.execute({
-      sql: `UPDATE email_verification_codes
-            SET attempts = attempts + 1
-            WHERE id = ?`,
-      args: [row.id],
-    });
+  const matched = expectedHash === row.code_hash;
+  const counted = await db.execute({
+    sql: `UPDATE email_verification_codes
+          SET attempts = attempts + ?
+          WHERE id = ? AND attempts < ?`,
+    args: [matched ? 0 : 1, row.id, EMAIL_VERIFICATION_MAX_ATTEMPTS],
+  });
+  if ((counted.rowsAffected ?? 0) === 0) return attemptsExceeded;
+
+  if (!matched) {
     return {
       ok: false,
       status: 400,
@@ -184,11 +203,15 @@ type RecentEmailCodeRow = {
  * 이번 코드 요청을 **보내지 않는 성공**으로 넘길 것인가 — 가입(`/email-code`)·재설정(`/password-reset`)
  * 공용이다. 둘 중 하나면 넘긴다.
  *
- *  - **다시 받기 간격(60초)**: 간격 안에 보낸 코드가 **아직 쓸 수 있을 때만**이다 — 만료 전이고, 틀린
- *    횟수가 상한 아래이고, 쓰지 않은 코드. 상한에 닿은 코드는 맞는 숫자도 429 이고, 쓴 코드는 판정에서
- *    빠진다(`checkEmailVerificationCode`). 그런 코드가 간격을 붙잡으면 막다른 길이 된다 — 두 앱은 상한에서
- *    "다시 받아 주세요" 라고 하는데, 곧바로 누른 다시 받기가 '보냈어요' 로 끝나고 메일은 오지 않으며 든
- *    코드는 계속 429 다.
+ *  - **다시 받기 간격(60초)**: 간격 안에 보낸 **가장 새 코드**(판정에 쓰일 코드)가 **아직 쓸 수 있을 때만**이다
+ *    — 만료 전이고, 틀린 횟수가 상한 아래이고, 쓰지 않은 코드. 상한에 닿은 코드는 맞는 숫자도 429 이고, 쓴
+ *    코드는 판정에서 빠진다(`checkEmailVerificationCode`). 그런 코드가 간격을 붙잡으면 막다른 길이 된다 — 두
+ *    앱은 상한에서 "다시 받아 주세요" 라고 하는데, 곧바로 누른 다시 받기가 '보냈어요' 로 끝나고 메일은 오지
+ *    않으며 든 코드는 계속 429 다.
+ *    ⚠ **가장 새 코드보다 앞 코드는 보지 않는다**(2026-10-11). 다시 받기 두 번이 같은 순간에 오면 둘 다 이 확인을
+ *    지나 코드가 둘 생긴다. 판정은 가장 새 것만 보므로 앞 코드는 이미 쓸 수 없는데, 예전에는 그 앞 코드가 틀린
+ *    횟수 0 인 채로 간격을 붙잡아 — 가장 새 코드가 상한에 닿은 뒤 최대 60초 동안 위의 막다른 길이었다. 순서는
+ *    판정과 같다(`created_at DESC, rowid DESC`) — 다르면 판정에 쓰이지 않는 줄이 '가장 새 것' 이 된다.
  *  - **하루 상한(10번)**: 쓸 수 있든 없든 **발급한 수**를 센다. 간격이 풀린 만큼의 남용(메일 폭탄·추측)은
  *    이 상한과 인증 리미터(`authRateLimitMiddleware`)가 막는다 — 간격은 속도를 늦출 뿐 하루 총량은 이
  *    상한이 정한다.
@@ -209,23 +232,23 @@ async function shouldSkipEmailCodeSend(
           FROM email_verification_codes
           WHERE email = ? AND purpose = ?
             AND created_at >= datetime('now', '-1 day')
-          ORDER BY created_at DESC`,
+          ORDER BY created_at DESC, rowid DESC`,
     args: [email, purpose],
   });
   if (recent.rows.length >= EMAIL_VERIFICATION_DAILY_CAP) return true;
 
-  return recent.rows.some((r) => {
-    const row = typedRow<RecentEmailCodeRow>(r);
-    const created = Date.parse(String(row.created_at ?? ''));
-    const expires = Date.parse(String(row.expires_at ?? ''));
-    if (!Number.isFinite(created)) return false;
-    const withinCooldown =
-      nowMs - created < EMAIL_VERIFICATION_RESEND_COOLDOWN_SECONDS * 1000;
-    const stillValid = Number.isFinite(expires) ? expires > nowMs : false;
-    const stillUsable =
-      Number(row.attempts ?? 0) < EMAIL_VERIFICATION_MAX_ATTEMPTS && row.consumed_at == null;
-    return withinCooldown && stillValid && stillUsable;
-  });
+  // 판정에 쓰일 코드 = 쓰지 않은 줄 가운데 맨 앞(위 순서). 없으면 붙잡을 코드가 없다.
+  const judged = recent.rows
+    .map((r) => typedRow<RecentEmailCodeRow>(r))
+    .find((row) => row.consumed_at == null);
+  if (!judged) return false;
+  const created = Date.parse(String(judged.created_at ?? ''));
+  const expires = Date.parse(String(judged.expires_at ?? ''));
+  if (!Number.isFinite(created)) return false;
+  const withinCooldown = nowMs - created < EMAIL_VERIFICATION_RESEND_COOLDOWN_SECONDS * 1000;
+  const stillValid = Number.isFinite(expires) ? expires > nowMs : false;
+  const belowCap = Number(judged.attempts ?? 0) < EMAIL_VERIFICATION_MAX_ATTEMPTS;
+  return withinCooldown && stillValid && belowCap;
 }
 
 type ExistingAccount = { kind: 'password' } | { kind: 'social'; provider: 'google' };
