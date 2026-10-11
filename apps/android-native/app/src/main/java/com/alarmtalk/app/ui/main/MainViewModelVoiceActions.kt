@@ -33,9 +33,51 @@ internal fun MainViewModel.preloadVoiceProfiles() {
     // 번들 기본 목소리는 '첫 응답 전 화면 시드'일 뿐 서버 조회 성공을 뜻하지 않는다.
     if (voiceProfilesLoadedFresh) {
         voiceProfileLoadFinished = true
+        // 목록은 이미 받았지만 **'생성 가능 n/m회' 는 다시 읽는다**(스펙 voice-and-message §4-1
+        // 「월 등록 한도」 ②). 이 갈래가 목소리 탭 진입이다(`AlarmTalkApp` 의 탭 갱신 — 60초 창).
+        // 예전에는 여기서 그냥 돌아가 숫자를 프로세스가 끝날 때까지 들고 있었다 — 다른 기기에서
+        // 등록했거나 프로세스가 산 채로 달이 바뀌면 틀린 숫자가 `추가` 버튼과 삭제 경고를 연다.
+        loadVoiceDraftQuota()
         return
     }
     fetchVoiceProfiles(showMessage = false)
+}
+
+/**
+ * 등록 창(목소리 탭의 전체 화면 `Dialog`)이 열리고 닫히는 것을 패널이 알린다. 등록 흐름의 거절을
+ * 어디에 말할지([showVoiceRegistrationFailure])가 이 값을 본다.
+ *
+ * 닫히는 순간 **창이 아직 읽지 않은 거절**이 남아 있으면 스낵바로 넘긴다 — 창 안의 줄에 쓰려던 문구가
+ * 창과 함께 사라져 어디에도 안 보이는 일이 없게.
+ */
+internal fun MainViewModel.voiceRegistrationWindowChanged(open: Boolean) {
+    voiceRegistrationWindowOpen = open
+    if (open) return
+    voiceRegistrationFailure?.let { unread ->
+        voiceRegistrationFailure = null
+        message = unread.message
+    }
+}
+
+/** 등록 창이 거절을 자기 안에 그렸다(또는 흐름을 끝냈다) — 같은 거절을 두 번 처리하지 않게 비운다. */
+internal fun MainViewModel.consumeVoiceRegistrationFailure() {
+    voiceRegistrationFailure = null
+}
+
+/**
+ * 등록 흐름(등록·저장·다시 만들기)의 거절을 **보이는 곳에** 올린다 — 등록 창이 열려 있으면 그 창이
+ * 읽을 상태로, 닫혀 있으면 앱 스낵바로(`registrationFailureSurface`, 스펙 §4-1 「월 등록 한도」 ③).
+ *
+ * 창이 열려 있을 때 그 안의 줄에 쓸지(`InWindow`) 흐름을 끝낼지(`EndFlow`)는 창이 같은 규칙으로
+ * 가른다 — 알럿·초안 삭제·창 닫기가 전부 창의 일이다(`VoiceProfileManagementPanel`).
+ */
+private fun MainViewModel.showVoiceRegistrationFailure(errorCode: String?, text: String) {
+    when (registrationFailureSurface(errorCode, windowOpen = voiceRegistrationWindowOpen)) {
+        RegistrationFailureSurface.AppSnackbar -> message = text
+        RegistrationFailureSurface.InWindow,
+        RegistrationFailureSurface.EndFlow,
+        -> voiceRegistrationFailure = VoiceRegistrationFailure(code = errorCode, message = text)
+    }
 }
 
 internal fun MainViewModel.fetchVoiceProfiles(showMessage: Boolean) {
@@ -152,8 +194,14 @@ internal fun MainViewModel.createVoiceProfiles(
     consentAgreedInline: Boolean = false,
 ): Boolean {
     val session = sessionOrMessage(R.string.msg_voice_create_login_required) ?: return false
+    // 아래 두 거절도 등록 창에서 누른 `등록` 의 답이다 — 창이 열려 있으면 그 안에 쓴다
+    // ([showVoiceRegistrationFailure]). 화면이 같은 조건을 먼저 막지만, 두 판정이 어긋난 순간에
+    // 스낵바로만 말하면 사용자는 아무 반응 없는 버튼만 본다.
     if (!isPaidVoiceEntitledOptimistic()) {
-        message = getApplication<android.app.Application>().getString(R.string.plan_gate_paid_message)
+        showVoiceRegistrationFailure(
+            errorCode = null,
+            text = getApplication<android.app.Application>().getString(R.string.plan_gate_paid_message),
+        )
         return false
     }
     val drafts = items.map {
@@ -164,7 +212,10 @@ internal fun MainViewModel.createVoiceProfiles(
         )
     }
     if (drafts.isEmpty() || drafts.any { it.name.isBlank() }) {
-        message = getApplication<android.app.Application>().getString(R.string.msg_voice_name_required)
+        showVoiceRegistrationFailure(
+            errorCode = null,
+            text = getApplication<android.app.Application>().getString(R.string.msg_voice_name_required),
+        )
         return false
     }
     // 관계·호칭은 선택 입력 — 비어 있으면 파트를 보내지 않는다(백엔드 옵셔널).
@@ -217,6 +268,8 @@ internal fun MainViewModel.createVoiceProfiles(
     fun sessionChanged() = authSession?.user?.id != ownerUserId
     viewModelScope.launch {
         suspend fun purgeSourceRecordings() = purgeVoiceCloneSourceRecordings(drafts)
+        // 월 한도 거절로 끝났는가 — 그러면 busy 를 내린 **뒤에** 녹음을 지운다(아래 실패 갈래).
+        var refusedForMonth = false
         runCatching {
             // 순서 고정: 동의 기록 → 업로드. 같은 runCatching 안에 두어 기록이 실패하면
             // 녹음이 절대 나가지 않고, 실패 처리도 업로드 실패와 같은 경로를 탄다.
@@ -276,7 +329,7 @@ internal fun MainViewModel.createVoiceProfiles(
             AlarmTalkLog.reportError("Failed to create voice profile", error)
             val app = getApplication<android.app.Application>()
             val createErrorCode = apiErrorCode(error)
-            message = when (createErrorCode) {
+            val failureText = when (createErrorCode) {
                 "VOICE_CLONE_AUDIO_TOO_SHORT" -> app.getString(R.string.msg_voice_clone_audio_too_short)
                 "VOICE_CLONE_AUDIO_TOO_LONG" -> app.getString(R.string.msg_voice_clone_audio_too_long)
                 "INVALID_DURATION" -> app.getString(R.string.msg_voice_invalid_duration)
@@ -295,10 +348,26 @@ internal fun MainViewModel.createVoiceProfiles(
                 else -> com.alarmtalk.app.network.apiErrorMessage(app, createErrorCode)
                     ?: userFacingError(error, app.getString(R.string.msg_voice_create_failed))
             }
+            // ⚠ **전역 `message`(스낵바)에 곧바로 쓰지 않는다.** 이 요청은 등록 창에서 나가는데 그
+            // 창은 화면을 다 덮는 자기 창이라 스낵바가 그 뒤에 그려진다 — 실패한 사용자는 꺼진
+            // `등록` 버튼만 봤다. 창이 열려 있으면 그 창이 읽어 세부 정보 단계에 쓴다.
+            showVoiceRegistrationFailure(createErrorCode, failureText)
+            if (createErrorCode == VOICE_MONTHLY_LIMIT_ERROR_CODE) {
+                // 서버가 방금 "이번 달은 다 썼다" 고 말했다 — 화면의 '생성 가능 n/m회' 가 틀렸다는
+                // 뜻이다. 다시 읽어 `추가` 버튼과 삭제 경고를 맞춘다. 앱에서만 깎지 않는다(§4-1 ②).
+                loadVoiceDraftQuota()
+                refusedForMonth = true
+            }
         }
         // busy 는 세션과 무관하게 반드시 내린다 — 가드로 일찍 빠져나온 경우에도 남겨 두면
         // 등록 화면이 '만드는 중' 에서 못 빠져나온다.
         voiceProfileBusy = false
+        // 월 한도 거절은 '그대로 다시 시도' 가 없는 실패다 — 이번 달에는 몇 번을 눌러도 같은 답이고
+        // 등록 창도 닫힌다. 녹음을 남겨 둘 이유(재시도)가 없으니 평문 생체정보를 지운다
+        // ([purgeVoiceCloneSourceRecordings] 의 규칙 — 남기는 예외는 재시도할 수 있는 실패뿐이다).
+        // ⚠ busy 를 내린 **뒤에** 한다. 먼저 하면 지우는 동안 등록 창이 흐름을 끝내며 보내는 초안
+        // 삭제가 busy 에 걸려 버려진다.
+        if (refusedForMonth) purgeSourceRecordings()
     }
     return true
 }
@@ -434,6 +503,12 @@ internal fun MainViewModel.promoteVoiceDraft(
                 settlingVoiceProfileIds = settlingVoiceProfileIds - official.id
                 voiceProfiles = listOf(official) + voiceProfiles.filterNot { it.id == official.id }
             }
+            // ⚠ **방금 이번 달 등록 한 번을 썼다 — '생성 가능 n/m회' 를 다시 읽는다**(§4-1 ②).
+            // 안 읽으면 숫자가 프로세스가 끝날 때까지 `1/1` 로 남아 `추가` 가 눌리고, 삭제 경고
+            // ("이번 달에는 새 목소리를 만들 수 없어요")도 빠진다. 2026-10-10 prod 의 사용자가 그랬다:
+            // 등록을 마친 같은 프로세스에서 초안을 또 만들었고, 그 저장이 429 로 일곱 번 거절됐다.
+            // 앱에서 `n − 1` 로 깎아 두지 않는다 — 원장은 서버 것이고 다른 기기도 같이 쓴다.
+            loadVoiceDraftQuota()
         } else {
             val error = result.exceptionOrNull() ?: IllegalStateException("promote failed")
             AlarmTalkLog.reportError("Failed to promote voice draft id=$profileId", error)
@@ -441,7 +516,7 @@ internal fun MainViewModel.promoteVoiceDraft(
             // 확정(승격·제자리 교체)은 유료·동의·월 1회 게이트를 다시 통과해야 한다. 매핑이
             // 없으면 영어 본문이 일반 실패 문구로 뭉개져 **왜 막혔는지**가 사라진다.
             val promoteErrorCode = apiErrorCode(error)
-            message = when (promoteErrorCode) {
+            val failureText = when (promoteErrorCode) {
                 "VOICE_FEATURE_REQUIRES_PAID_PLAN" -> app.getString(R.string.plan_gate_paid_message)
                 "VOICE_MONTHLY_CHANGE_LIMIT_REACHED" -> app.getString(R.string.msg_voice_monthly_change_limit)
                 "CONSENT_REQUIRED" -> app.getString(R.string.msg_voice_consent_required)
@@ -451,6 +526,11 @@ internal fun MainViewModel.promoteVoiceDraft(
                 else -> com.alarmtalk.app.network.apiErrorMessage(app, promoteErrorCode)
                     ?: userFacingError(error, app.getString(R.string.msg_voice_create_failed))
             }
+            // 저장 버튼은 등록 창 안에 있다 — 거절도 그 창의 오류 줄에 쓴다([showVoiceRegistrationFailure]).
+            // 예전에는 전역 `message`(스낵바)에만 써서 창 뒤에 가려졌다.
+            showVoiceRegistrationFailure(promoteErrorCode, failureText)
+            // 월 한도 거절이면 숫자를 다시 읽는다(등록 단계의 같은 갈래와 같은 이유).
+            if (promoteErrorCode == VOICE_MONTHLY_LIMIT_ERROR_CODE) loadVoiceDraftQuota()
         }
         voiceProfileBusy = false
     }
@@ -493,7 +573,13 @@ internal fun MainViewModel.deleteVoiceDraft(profileId: String) {
             if (pendingVoiceDraft?.id == profileId) pendingVoiceDraft = null
         }.onFailure { error ->
             AlarmTalkLog.reportError("Failed to delete voice draft id=$profileId", error)
-            message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_voice_delete_failed))
+            // 확정 화면의 `다시 만들기` 가 실패했으면 그 화면에 머문다 — 그 화면의 오류 줄에 쓴다.
+            // 나가기 경고의 삭제는 창을 닫으면서 보낸 것이라 스낵바로 간다(창 안에 쓰면 안 보인다).
+            // 코드는 넘기지 않는다 — 삭제의 실패에는 흐름을 끝내는 갈래가 없다.
+            showVoiceRegistrationFailure(
+                errorCode = null,
+                text = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_voice_delete_failed)),
+            )
         }
         voiceProfileBusy = false
     }
@@ -672,14 +758,35 @@ internal suspend fun MainViewModel.downloadTtsMessageAudio(messageId: String): T
     return api.getTtsMessageAudio(AlarmTalkApiClient.bearer(session.token), messageId)
 }
 
-// 이번 달 목소리 초안 생성 쿼터 조회 → voiceDraftQuota 상태 갱신(삭제 전 재생성 가능 판정용).
-// 실패/미로그인은 조용히 무시(기존 값 유지). fire-and-forget.
+/**
+ * 이번 달 등록 한도('생성 가능 n/m회')를 서버에서 다시 읽어 `voiceDraftQuota` 에 싣는다. fire-and-forget.
+ *
+ * **이 숫자 하나가 두 곳을 연다** — `추가` 버튼(다 썼으면 끈다)과 삭제 경고(다 썼으면 "이번 달에는 새
+ * 목소리를 만들 수 없어요" 를 붙인다). 그래서 한 번 읽은 값을 들고 있지 않고 아래 때마다 다시 읽는다
+ * (스펙 voice-and-message §4-1 「월 등록 한도」 ②):
+ *  - 목록을 새로 받을 때([fetchVoiceProfiles] — 거기서는 목록·초안과 함께 병렬로 묻는다)
+ *  - **목소리 탭에 들어올 때**([preloadVoiceProfiles] 의 신선 갈래 — 탭 갱신의 60초 창을 따른다)
+ *  - 초안을 만든 직후([createVoiceProfiles] 성공)
+ *  - **정식 등록이 확정된 직후**([promoteVoiceDraft] 성공 — 방금 한 번을 썼다)
+ *  - **월 한도 거절을 받은 직후**(등록·저장 어느 단계든 — 서버가 방금 "0" 이라고 말했다)
+ *
+ * - 앱에서만 깎지 않는다. `n − 1` 을 계산해 두는 것으로 끝내지 않고 서버 값을 읽는다 — 원장의 예약은
+ *   확정이 실패하면 롤백되고, 다른 기기도 같은 원장을 쓴다.
+ * - 실패·미로그인은 조용히 넘긴다 — **앞 값을 지킨다.** 실패는 "모른다" 이지 "남았다" 가 아니다.
+ * - ⚠ **늦게 온 답은 요청한 계정의 것일 때만 적는다**([responseStillBelongsToRequester]). 읽는 자리가
+ *   늘면 그 틈도 넓어진다 — 로그아웃·계정 전환 뒤에 도착한 앞 계정의 답이 지금 계정의 `추가` 버튼을
+ *   끄거나(0), 다 쓴 계정에 켜 준다.
+ */
 internal fun MainViewModel.loadVoiceDraftQuota() {
     val session = authSession ?: return
+    val requestOwner = session.user.id
+    val startGeneration = authSessionStore.sessionGeneration()
     viewModelScope.launch {
         runCatching {
             api.getVoiceDraftQuota(AlarmTalkApiClient.bearer(session.token))
-        }.onSuccess { voiceDraftQuota = it }
+        }.onSuccess { quota ->
+            if (responseStillBelongsToRequester(requestOwner, startGeneration)) voiceDraftQuota = quota
+        }
     }
 }
 

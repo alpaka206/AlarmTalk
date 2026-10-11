@@ -1306,6 +1306,7 @@ internal fun AlarmTalkApp(
                   contentPadding = padding,
                   busy = authBusy,
                   codeSentTo = viewModel.passwordResetCodeSentTo,
+                  codeFieldClearTick = viewModel.emailCodeFieldClearTick,
                   onBack = { authBack() },
                   onRequestCode = viewModel::requestPasswordReset,
                   onConfirm = { resetEmail, resetCode, newPassword ->
@@ -1323,6 +1324,8 @@ internal fun AlarmTalkApp(
                   // 갈래 판정은 번역된 문구가 아니라 이 코드로 한다(`isEmailFormatErrorCode`).
                   loginErrorCode = viewModel.loginErrorCode,
                   registerError = viewModel.registerError,
+                  // 거절된 인증 코드·다시 받기 뒤에 코드 칸을 비우는 신호(문구가 아니라 코드로 판정한다).
+                  codeFieldClearTick = viewModel.emailCodeFieldClearTick,
                   authNotice = viewModel.authNotice,
                   onClearLoginError = {
                       viewModel.loginError = null
@@ -1580,8 +1583,8 @@ internal fun AlarmTalkApp(
                           // 삭제 경고('지금 지우면 이번 달엔 못 만들어요')는 초안 시도 쿼터가 아니라
                           // 정식 등록 쿼터로 판정해야 한다. 초안 쿼터의 remaining 은 제한 해제 후
                           // 호환용으로 0 고정이라, 그대로 쓰면 이번 달 등록이 남아 있어도 경고가 뜬다.
-                          voiceDraftQuotaExhausted =
-                              viewModel.voiceDraftQuota?.let { it.registrationRemaining <= 0 } == true,
+                          // 판정은 `추가` 버튼과 같은 함수다 — 두 곳이 같은 숫자로 같은 답을 낸다.
+                          voiceDraftQuotaExhausted = monthlyRegistrationUsedUp(viewModel.voiceDraftQuota),
                           voiceDraftQuota = viewModel.voiceDraftQuota,
                           vouchers = vouchers,
                           onCreateVoiceProfile = viewModel::createVoiceProfile,
@@ -1597,6 +1600,11 @@ internal fun AlarmTalkApp(
                           onUpdateVoicePreviewText = viewModel::updateVoicePreviewText,
                           onPromoteVoiceDraft = viewModel::promoteVoiceDraft,
                           onDeleteVoiceDraft = viewModel::deleteVoiceDraft,
+                          // 등록 흐름의 거절은 등록 창이 자기 안에 그린다 — 그 창은 화면을 다 덮는
+                          // 자기 창이라 아래 스낵바가 그 뒤에 가려진다(스펙 voice-and-message §4-1 ③).
+                          voiceRegistrationFailure = viewModel.voiceRegistrationFailure,
+                          onVoiceRegistrationFailureShown = { viewModel.consumeVoiceRegistrationFailure() },
+                          onRegistrationWindowOpenChange = { open -> viewModel.voiceRegistrationWindowChanged(open) },
                           lastUsedVoiceId = viewModel.lastUsedVoiceId,
                           // 워커(온보딩·앱 시작의 선다운로드)가 받는 중이면 그 진행을 먼저 보여 준다.
                           // '백그라운드에서 계속' 으로 받기 화면을 닫은 뒤 진행을 볼 곳이 여기다.

@@ -18,6 +18,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -40,6 +41,8 @@ internal fun PasswordResetScreen(
     contentPadding: PaddingValues,
     busy: Boolean,
     codeSentTo: String?,
+    // 인증 코드 칸을 비우라는 신호(`MainViewModel.emailCodeFieldClearTick`) — 값이 바뀌면 비운다.
+    codeFieldClearTick: Int = 0,
     onBack: () -> Unit,
     onRequestCode: (String) -> Unit,
     onConfirm: (email: String, code: String, newPassword: String) -> Unit,
@@ -63,7 +66,13 @@ internal fun PasswordResetScreen(
     val passwordUnderMax = password.length <= 128
     val passwordHasLetterAndDigit = password.any { it.isLetter() } && password.any { it.isDigit() }
     val passwordPolicyValid = passwordAtLeastMin && passwordUnderMax && passwordHasLetterAndDigit
-    val canConfirm = codeSent && code.length == 6 && passwordPolicyValid
+    val canConfirm = codeSent && code.length == VerificationCodeLength && passwordPolicyValid
+
+    // 거절된 인증 코드를 칸에 남기지 않는다 — 서버가 코드를 거절했을 때(틀림·만료·시도 상한)와 다시
+    // 받기가 성공했을 때 뷰모델이 신호를 올린다. 가입 화면(`AuthScreen`)과 같은 규칙이고 이유도 같다:
+    // 칸이 비면 거절된 숫자를 그대로 다시 보낼 수 없고, 꽉 찬 칸에 새 숫자가 안 들어가는 일도 없다.
+    // 새 비밀번호는 지우지 않는다 — 거절된 것은 코드다.
+    LaunchedEffect(codeFieldClearTick) { code = "" }
 
     AuthBackdrop {
         Column(
@@ -121,8 +130,14 @@ internal fun PasswordResetScreen(
             // ⚠ **형식으로 버튼을 죽이지 않는다**(CLAUDE.md) — 누를 수는 있고, 누르면 왜
             // 안 되는지 이메일 칸 아래에 말한다. 예전에는 `emailLooksValid` 로 잠가 놔서,
             // 주소를 잘못 친 사람은 눌리지 않는 버튼 앞에서 이유를 들을 길이 없었다.
-            // 잠그는 것은 **보낼 것이 없을 때**(빈 칸)와 이미 보낸 뒤뿐이다.
-            val requestEnabled = !busy && canRequestEmailCode(email) && !codeSent
+            // 잠그는 것은 **보낼 것이 없을 때**(빈 칸)뿐이다.
+            //
+            // ⚠ **보낸 뒤에도 눌린다**(2026-10-11). 예전에는 한 번 보내면 '코드를 보냈어요' 로 잠겨,
+            // 코드가 만료되거나 틀린 횟수를 다 써서 "다시 받아 주세요" 를 들은 사람이 다시 받으려면
+            // 화면을 나갔다 와야 했다 — 문장이 시키는 일을 화면이 막고 있었다. 가입 화면과 같은 말
+            // (`auth_email_verify_resend`)로 다시 받는다. 너무 잦은 요청은 서버가 걸러 낸다(60초 안의
+            // 요청은 보내지 않고 성공으로 답한다 — 스펙 session-and-auth 「이메일 인증 코드」).
+            val requestEnabled = !busy && canRequestEmailCode(email)
             OutlinedButton(
                 onClick = {
                     when (authEmailSubmitOutcome(email)) {
@@ -140,7 +155,7 @@ internal fun PasswordResetScreen(
             ) {
                 Text(
                     if (codeSent) {
-                        stringResource(R.string.auth_reset_code_sent)
+                        stringResource(R.string.auth_email_verify_resend)
                     } else {
                         stringResource(R.string.auth_reset_send_code)
                     },
@@ -151,7 +166,7 @@ internal fun PasswordResetScreen(
                 AuthTextField(
                     label = stringResource(R.string.auth_label_verification_code),
                     value = code,
-                    onValueChange = { code = it.filter(Char::isDigit).take(6) },
+                    onValueChange = { code = sanitizeVerificationCode(it) },
                     keyboardType = KeyboardType.NumberPassword,
                     imeAction = ImeAction.Next,
                     enabled = !busy,

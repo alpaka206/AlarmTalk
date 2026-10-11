@@ -2,6 +2,7 @@ package com.alarmtalk.app
 
 import android.app.Application
 import android.util.Log
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -467,6 +468,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var passwordResetCodeSentTo by mutableStateOf<String?>(null)
         internal set
 
+    /**
+     * **인증 코드 칸을 비우라는 신호** — 값이 바뀔 때마다 가입·비밀번호 재설정 화면이 코드 칸을 비운다
+     * (`AuthScreen`·`PasswordResetScreen` 의 `codeFieldClearTick`). 규칙은 스펙 session-and-auth
+     * 「거절된 숫자를 칸에 남기지 않는다」.
+     *
+     * 올리는 때는 둘이다: 서버가 **코드를 거절했을 때**(`isEmailCodeRefusal` — 틀림·만료·시도 상한)와
+     * **다시 받기가 성공했을 때**. 칸이 비면 확인 버튼이 눌리지 않아 방금 거절된 숫자를 그대로 다시
+     * 보낼 수 없고(2026-10-09 prod — 같은 여섯 자리를 3초에 다섯 번 보내 시도 상한을 태웠다), 꽉 찬
+     * 칸에 새 코드가 한 글자도 안 들어가는 일도 없다.
+     *
+     * ⚠ **오류 문장([registerError])에 얹지 말 것.** 그 상태는 쓰는 곳이 여럿이라(요청·확인·가입·
+     * 화면 전환) 함께 지워지지 않고, 화면이 번역된 문장을 비교해 갈래를 가르게 된다. 판정은 코드로
+     * 하고, 화면에는 이 신호 하나만 준다. iOS `AuthViewModel.emailCodeFieldClearTick` 과 짝이다.
+     */
+    var emailCodeFieldClearTick by mutableIntStateOf(0)
+        internal set
+
     // 가입 시도 이메일이 이미 가입돼 있을 때(AUTH_EMAIL_TAKEN) 로그인 화면으로 전환하라는 신호.
     var authRedirectToLogin by mutableStateOf(false)
         internal set
@@ -530,8 +548,28 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         internal set
 
     // 이번 달 목소리 초안 생성 쿼터(삭제 전 '이번 달 재생성 가능 여부' 판정용). null=미조회.
+    // ⚠ 한 번 읽은 값을 프로세스가 끝날 때까지 들고 있지 않는다 — 언제 다시 읽는지는
+    // `loadVoiceDraftQuota`(스펙 voice-and-message §4-1 「월 등록 한도」 ②).
     var voiceDraftQuota by mutableStateOf<VoiceDraftQuotaResponse?>(null)
         internal set
+
+    /**
+     * 등록 창(목소리 탭의 전체 화면 `Dialog`)이 **지금 열려 있는가.** 패널이 알린다
+     * (`voiceRegistrationWindowChanged`). 등록 흐름의 거절을 어디에 말할지 가르는 데만 쓴다
+     * (`registrationFailureSurface`) — 화면을 그리는 값이 아니라 관찰 상태로 두지 않는다.
+     */
+    internal var voiceRegistrationWindowOpen = false
+
+    /**
+     * 등록 창이 **자기 안에** 그려야 할 거절(등록·저장·다시 만들기의 실패). 창이 읽으면 비운다
+     * (`consumeVoiceRegistrationFailure`).
+     *
+     * ⚠ **등록 창이 열려 있는 동안의 거절을 [message](앱 스낵바)로 보내지 말 것.** 그 창은 화면을 다
+     * 덮는 자기 창이라 스낵바는 그 뒤에 그려진다 — 2026-10-10 prod 의 사용자는 같은 저장을 일곱 번
+     * 눌렀다. 반대로 창이 닫힌 뒤에 온 실패(나가기 경고의 초안 삭제)는 스낵바로 간다 — 창 안의
+     * 줄에만 쓰면 어디에도 안 보인다. 가르는 규칙은 `registrationFailureSurface` 하나다.
+     */
+    internal var voiceRegistrationFailure by mutableStateOf<VoiceRegistrationFailure?>(null)
 
     var voiceProfileBusy by mutableStateOf(false)
         internal set
@@ -1513,6 +1551,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         voiceProfiles = bundledSystemVoiceProfiles()
         pendingVoiceDraft = null
         voiceDraftQuota = null
+        // 앞 계정의 등록 거절이 다음 계정의 등록 창에 뜨지 않게 한다.
+        voiceRegistrationFailure = null
         voiceProfileLoadFinished = false
         voiceProfilesLoadedFresh = false
         showVoiceSetup = false

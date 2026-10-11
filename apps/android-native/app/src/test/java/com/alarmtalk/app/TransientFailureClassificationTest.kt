@@ -1,6 +1,10 @@
 package com.alarmtalk.app
 
 import com.alarmtalk.app.core.AlarmTalkLog
+import com.alarmtalk.app.network.ApiFailure
+import com.alarmtalk.app.network.apiError
+import com.alarmtalk.app.network.apiErrorCode
+import com.alarmtalk.app.network.apiFailureOf
 import com.alarmtalk.app.sync.SyncWorkerOutcome
 import com.alarmtalk.app.sync.syncWorkerOutcome
 import com.alarmtalk.app.sync.workerMayEndSession
@@ -124,7 +128,7 @@ class TransientFailureClassificationTest {
 
     @Test
     fun httpFailuresAreNotClassifiedHere() {
-        // 4xx 는 호출부가 error_code 를 보고 가른다 — errorBody 가 한 번만 읽히기 때문이다.
+        // 4xx 를 여기서 낮추지 않는다 — 그 4xx 가 무엇을 뜻하는지는 문맥을 아는 호출부가 error_code 로 가른다.
         assertFalse(AlarmTalkLog.isExpectedTransientFailure(httpException(403, """{"error_code":"CONSENT_REQUIRED"}""")))
         assertFalse(AlarmTalkLog.isExpectedTransientFailure(httpException(500, "")))
         // 401 도 여기서는 false 다 — 별개의 갈래([isHandledAuthFailure])로 센다.
@@ -168,8 +172,9 @@ class TransientFailureClassificationTest {
 
     @Test
     fun unauthorizedClassificationDoesNotConsumeTheErrorBody() {
-        // ⚠ 계약: 상태코드만 본다. `apiError`/`apiErrorCode` 를 부르면 errorBody 가 소진돼
-        // 호출부가 빈 본문을 받는다(그래서 여기서 가르고 나서도 코드를 읽을 수 있어야 한다).
+        // ⚠ 계약: 이 판정 뒤에도 호출부는 본문을 그대로 읽을 수 있다. 판정은 상태코드만 보고
+        // (401 은 코드를 볼 이유가 없다), 본다 해도 코드 읽기는 본문을 **소진하지 않는다**
+        // (`network/ApiErrors.kt` — 예전에는 읽으면 소진돼 "읽지 않는다" 가 곧 계약이었다).
         val error = httpException(401, """{"error_code":"TOKEN_REVOKED"}""")
         assertTrue(AlarmTalkLog.isHandledAuthFailure(error))
         assertEquals("""{"error_code":"TOKEN_REVOKED"}""", error.response()?.errorBody()?.string())
@@ -225,10 +230,67 @@ class TransientFailureClassificationTest {
     @Test
     fun breadcrumbClassificationDoesNotConsumeTheErrorBody() {
         // 같은 계약이 여기에도 걸린다 — 이 함수는 `reportError` 가 **모든** 실패에 대해
-        // 부르므로, 본문을 읽으면 그 뒤 코드를 보려던 호출부가 전부 빈 본문을 받는다.
+        // 부르므로, 본문을 소진하면 그 뒤 코드를 보려던 호출부가 전부 빈 본문을 받는다.
         val error = httpException(403, """{"error_code":"CONSENT_REQUIRED"}""")
         assertNull(AlarmTalkLog.breadcrumbCategoryFor(error))
         assertEquals("""{"error_code":"CONSENT_REQUIRED"}""", error.response()?.errorBody()?.string())
+    }
+
+    // ── 코드 읽기는 본문을 소진하지 않는다 ─────────────────────────────────
+
+    /**
+     * 2026-10-11 전의 `apiError` 는 `errorBody().string()` 으로 읽어 본문을 **소진**했다 — 두 번째
+     * 읽기는 빈손이었고, 먼저 읽은 쪽이 나중에 읽는 쪽의 몫을 빼앗았다(결제 경로는 보고 **전에**,
+     * 목소리 경로는 보고 **뒤에** 코드를 읽어 줄 순서가 곧 동작이었다). 보고 함수가 묶음 키를 만들려고
+     * 코드를 읽게 되면서(`AlarmTalkLog.apiFailureFingerprint`) 그 순서 의존이 그대로 버그가 된다.
+     * 이 테스트는 옛 구현에서 두 번째 `assertEquals` 부터 실패한다.
+     */
+    @Test
+    fun apiErrorCanBeReadTwice() {
+        val body = """{"error_code":"VOICE_MONTHLY_CHANGE_LIMIT_REACHED","message":"limit","manage_url":"https://example.com/m"}"""
+        val error = httpException(429, body)
+        assertEquals("VOICE_MONTHLY_CHANGE_LIMIT_REACHED", apiErrorCode(error))
+        assertEquals("VOICE_MONTHLY_CHANGE_LIMIT_REACHED", apiErrorCode(error))
+        // 필드를 함께 읽는 쪽([apiError])과 섞어 불러도 같다.
+        assertEquals("https://example.com/m", apiError(error).manageUrl)
+        assertEquals("VOICE_MONTHLY_CHANGE_LIMIT_REACHED", apiError(error).code)
+        // 그러고도 본문 전문이 호출부 몫으로 남아 있다.
+        assertEquals(body, error.response()?.errorBody()?.string())
+    }
+
+    @Test
+    fun apiFailureIsIndependentOfCallOrder() {
+        // 보고 함수가 호출부보다 **먼저** 읽든 **뒤에** 읽든 같은 답이어야 묶음 키가 줄 순서에
+        // 따라 달라지지 않는다.
+        val before = httpException(429, """{"error_code":"RATE_LIMITED"}""")
+        assertEquals(ApiFailure(429, "RATE_LIMITED"), apiFailureOf(before))
+        assertEquals("RATE_LIMITED", apiErrorCode(before))
+
+        val after = httpException(429, """{"error_code":"RATE_LIMITED"}""")
+        assertEquals("RATE_LIMITED", apiErrorCode(after))
+        assertEquals(ApiFailure(429, "RATE_LIMITED"), apiFailureOf(after))
+        assertEquals(ApiFailure(429, "RATE_LIMITED"), apiFailureOf(after))
+
+        // 저장소·리포지토리가 도메인 예외로 한 번 감싼 실패도 같은 실패다.
+        val wrapped = IllegalStateException("pull failed", httpException(403, """{"error_code":"CONSENT_REQUIRED"}"""))
+        assertEquals(ApiFailure(403, "CONSENT_REQUIRED"), apiFailureOf(wrapped))
+        // `apiError` 는 감싼 예외를 풀지 않는다(부르는 자리가 Retrofit 호출 바로 그 자리다).
+        assertNull(apiErrorCode(wrapped))
+    }
+
+    @Test
+    fun apiFailureWithoutACodeKeepsTheStatus() {
+        // 워커 앞단(게이트웨이)의 HTML·빈 본문 — 코드는 없고 상태코드만 남는다.
+        assertEquals(ApiFailure(504, null), apiFailureOf(httpException(504, "<html><body>504 Gateway Time-out</body></html>")))
+        assertEquals(ApiFailure(404, null), apiFailureOf(httpException(404, "")))
+        // HTTP 응답이 사슬에 없으면 API 실패가 아니다.
+        assertNull(apiFailureOf(IllegalStateException("bug")))
+        assertNull(apiFailureOf(UnknownHostException("api.alarm-talk.com")))
+        // 사슬이 순환해도 멈춘다.
+        val a = RuntimeException("a")
+        val b = RuntimeException("b", a)
+        a.initCause(b)
+        assertNull(apiFailureOf(a))
     }
 
     // ── 백그라운드 워커의 실패 마무리 ─────────────────────────────────────

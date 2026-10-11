@@ -257,6 +257,8 @@ internal fun AuthScreen(
     // (`isEmailFormatErrorCode`). iOS `AuthViewModel.loginErrorCode` 와 같은 짝이다.
     loginErrorCode: String? = null,
     registerError: String? = null,
+    // 인증 코드 칸을 비우라는 신호(`MainViewModel.emailCodeFieldClearTick`) — 값이 바뀌면 비운다.
+    codeFieldClearTick: Int = 0,
     // 회원가입 → 로그인 자동 전환(이미 가입된 이메일) 때 로그인 화면에 남는 이유 안내.
     authNotice: String? = null,
     onClearLoginError: () -> Unit = {},
@@ -312,6 +314,17 @@ internal fun AuthScreen(
     LaunchedEffect(loginError, loginErrorCode) {
         if (loginError != null && !isEmailFormatErrorCode(loginErrorCode)) password = ""
     }
+
+    // 거절된 인증 코드를 칸에 남기지 않는다(스펙 session-and-auth 「거절된 숫자를 칸에 남기지 않는다」).
+    // 뷰모델이 신호를 올리는 때는 서버가 코드를 거절했을 때(틀림·만료·시도 상한 — 인증 확인이든
+    // 가입이든)와 다시 받기가 성공했을 때다.
+    //  - 확인 버튼은 여섯 자리가 찼을 때만 눌린다 — 칸이 비면 **방금 거절된 숫자를 그대로 다시 보낼 수
+    //    없다**(2026-10-09 prod: 같은 여섯 자리를 3초에 다섯 번 보내 시도 상한을 태웠다).
+    //  - 칸은 여섯 자에서 자른다 — 안 비우면 다시 받은 뒤 치는 새 숫자가 **한 글자도 안 들어간다.**
+    // ⚠ **`registerError` 의 문장을 비교해 가르지 말 것.** 번역되는 문장이라 en·ja 에서 조용히
+    // 어긋난다. 판정은 뷰모델이 에러 코드로 하고(`isEmailCodeRefusal`), 화면은 이 신호만 본다.
+    // (첫 구성에서도 한 번 돈다 — 그때 칸은 어차피 비어 있다.)
+    LaunchedEffect(codeFieldClearTick) { emailCode = "" }
 
     // 상한을 넘겨 치려 했는지. 값 자체는 30자에서 잘리므로 값만으로는 알 수 없다.
     var nameTooLong by remember { mutableStateOf(false) }
@@ -496,7 +509,9 @@ internal fun AuthScreen(
                             OutlinedTextField(
                                 value = emailCode,
                                 onValueChange = {
-                                    emailCode = it.filter(Char::isDigit).take(6)
+                                    // ASCII 숫자 여섯 자로 맞춘다 — `isDigit` 필터는 ASCII 가 아닌
+                                    // 숫자를 그대로 통과시키고 서버는 그걸 형식에서 떨어뜨린다.
+                                    emailCode = sanitizeVerificationCode(it)
                                     onClearLoginError()
                                 },
                                 singleLine = true,
@@ -510,7 +525,7 @@ internal fun AuthScreen(
                                 modifier = Modifier.textInputTapTarget().then(Modifier.weight(1f)),
                             )
                         }
-                        val confirmEnabled = !busy && emailCode.length == 6
+                        val confirmEnabled = !busy && emailCode.length == VerificationCodeLength
                         OutlinedButton(
                             onClick = { onConfirmEmailVerification(email, emailCode) },
                             enabled = confirmEnabled,

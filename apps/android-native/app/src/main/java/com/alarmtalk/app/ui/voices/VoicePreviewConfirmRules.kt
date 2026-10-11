@@ -1,6 +1,7 @@
 package com.alarmtalk.app
 
 import com.alarmtalk.app.data.VoiceTuning
+import com.alarmtalk.app.network.VoiceDraftQuotaResponse
 import com.alarmtalk.app.network.VoiceProfile
 
 /**
@@ -140,3 +141,87 @@ internal fun registrationReplaceTarget(ownVoices: List<VoiceProfile>, draftId: S
     ownVoices.firstOrNull {
         it.id != draftId && it.isDraft != true && it.status?.trim()?.lowercase() != "failed"
     }
+
+// ── 월 등록 한도 — '생성 가능 n/m회' 가 여는 두 곳 ──────────────────────────
+
+/**
+ * 이번 달 등록을 **다 썼는가.** `생성 가능 n/m회` 한 값이 두 곳을 연다 — 목소리 탭의 `추가` 버튼(다 썼으면
+ * 끈다)과 삭제 경고(다 썼으면 "이번 달에는 새 목소리를 만들 수 없어요" 를 붙인다). 둘이 같은 판정을 쓴다
+ * (스펙 voice-and-message §4-1 「월 등록 한도」 ②).
+ *
+ * - **아직 모르면(null) 다 쓴 것이 아니다.** 조회가 안 끝났거나 실패한 것이라 막을 근거가 없다 — 그때의
+ *   안전판은 서버다(다 썼으면 초안을 만들기 전에 429 로 답한다, ①).
+ * - 남은 횟수는 **서버가 준 값**이다. 앱이 `n − 1` 로 깎아 두지 않는다 — 그래서 이 판정이 맞으려면 값이
+ *   제때 다시 읽혀야 한다(`MainViewModel.loadVoiceDraftQuota` 의 다시 읽는 때). 2026-10-10 prod 의 사용자는
+ *   등록을 마친 같은 프로세스에서 값이 `1/1` 로 남아 이 판정이 '남았다' 고 답했다.
+ *
+ * `추가` 쪽은 유료일 때만, 그리고 한도가 있는(`registrationLimit > 0`) 값만 넘긴다 — 무료에게는 숫자도
+ * 꺼진 버튼도 보이지 않는다(눌러서 이용권 안내를 듣는다).
+ */
+internal fun monthlyRegistrationUsedUp(quota: VoiceDraftQuotaResponse?): Boolean =
+    quota != null && quota.registrationRemaining <= 0
+
+// ── 등록 흐름의 거절 — 어디에 말하는가 ─────────────────────────────────────
+//
+// 스펙 voice-and-message §4-1 「월 등록 한도」 ③. 등록 창은 화면을 다 덮는 **자기 창**(`Dialog`)이라 앱
+// 본체의 스낵바는 그 **뒤**에 그려진다. 2026-10-10 prod 에서 한 사용자가 같은 저장을 약 2분 반 동안 일곱
+// 번 눌렀다 — 서버의 거절(429)을 옮긴 문구는 있었는데 창 뒤에 떠 있었던 것으로 읽는다(코드로 읽은
+// 것이다 — 스낵바가 정말 가려지는지는 실기기로 확인하지 못했다).
+
+/**
+ * 서버가 "이번 달 등록을 다 썼다" 고 답하는 코드. 등록(`POST /voice/clone`)과 확정(승격·교체)이 **같은
+ * 코드**를 낸다 — 이름은 '변경' 이지만 첫 등록도 이 한도에 든다. 이미 나간 코드라 이름을 바꾸지 않는다
+ * (`docs/spec/error-codes.md` §2).
+ */
+internal const val VOICE_MONTHLY_LIMIT_ERROR_CODE = "VOICE_MONTHLY_CHANGE_LIMIT_REACHED"
+
+/**
+ * 등록 흐름(등록·저장·다시 만들기)의 거절 한 건 — 서버의 에러 코드와 사용자에게 보일 문구.
+ * 뷰모델이 올리고(`MainViewModel.voiceRegistrationFailure`) 등록 창이 읽어 자기 안에 그린다.
+ *
+ * @param code 서버의 `error_code`. 네트워크 실패처럼 코드가 없으면 null.
+ */
+internal data class VoiceRegistrationFailure(val code: String?, val message: String)
+
+/** 등록 흐름의 거절을 **어디에** 말하는가. */
+internal enum class RegistrationFailureSurface {
+    /**
+     * 흐름을 끝낸다 — 알럿 하나로 이유를 말하고, 초안이 있으면 버리고, 등록 창을 닫는다. 이번 달에는 몇
+     * 번을 눌러도 같은 답이라 같은 버튼을 다시 누르게 두지 않는다.
+     */
+    EndFlow,
+
+    /** 지금 보이는 단계 안에 쓴다 — 세부 정보 단계의 안내 줄, 확정 화면의 오류 줄. 사용자가 고쳐 다시 누른다. */
+    InWindow,
+
+    /** 앱 본체의 스낵바. 등록 창이 없을 때만이다 — 창이 있으면 그 뒤에 가려 안 보인다. */
+    AppSnackbar,
+}
+
+/**
+ * 판정표:
+ *
+ * | 등록 창 | 코드 | 어디에 |
+ * | --- | --- | --- |
+ * | 닫혀 있다 | 무엇이든 | [RegistrationFailureSurface.AppSnackbar] |
+ * | 열려 있다 | 월 한도([VOICE_MONTHLY_LIMIT_ERROR_CODE]) | [RegistrationFailureSurface.EndFlow] |
+ * | 열려 있다 | 그 밖(유료·동의·미리듣기·용량·네트워크·5xx…) | [RegistrationFailureSurface.InWindow] |
+ *
+ * - 창이 닫혀 있는 경우는 **창을 닫으면서 보낸 요청**이다 — 나가기 경고의 '나가기' 가 초안 삭제를 보내고
+ *   곧바로 창을 닫는다. 그 실패를 창 안의 줄에만 쓰면 **어디에도 안 보인다.**
+ * - 월 한도는 등록 단계에서든 저장 단계에서든 같은 답이다. 서버가 초안을 만들기 전에 막으므로(§4-1 ①)
+ *   보통은 등록 단계에서 만나고, 저장 단계에서 만나려면 그사이 다른 기기가 먼저 등록해야 한다.
+ * - ⚠ **월 한도 말고는 흐름을 끝내지 않는다.** 유료·동의(403)와 `VOICE_PREVIEW_REQUIRED` 는 창 안에서
+ *   말하고 사용자가 고친다. 다시 시도할 수 있는 실패(네트워크·5xx·`VOICE_CAPACITY_EXHAUSTED`)에서
+ *   창을 닫으면 녹음을 처음부터 다시 해야 한다.
+ *
+ * iOS 는 창(`fullScreenCover`) 안에 이미 쓰고 있어 이 가르기가 없다 — 월 한도로 흐름을 끝내는 것만 같다
+ * (`VoiceStudioViewModel.isMonthlyLimitRejection`).
+ *
+ * @param windowOpen 등록 창이 지금 열려 있는가.
+ */
+internal fun registrationFailureSurface(errorCode: String?, windowOpen: Boolean): RegistrationFailureSurface = when {
+    !windowOpen -> RegistrationFailureSurface.AppSnackbar
+    errorCode == VOICE_MONTHLY_LIMIT_ERROR_CODE -> RegistrationFailureSurface.EndFlow
+    else -> RegistrationFailureSurface.InWindow
+}

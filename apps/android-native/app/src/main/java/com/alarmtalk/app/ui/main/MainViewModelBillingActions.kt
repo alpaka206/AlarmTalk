@@ -429,7 +429,8 @@ internal fun MainViewModel.registerCode(
             onResult?.invoke(null)
         }.onFailure { error ->
             if (authSession?.user?.id != ownerUserId) return@onFailure
-            // errorBody 는 한 번만 읽히므로 error_code 를 먼저 한 번만 추출해 재사용한다.
+            // error_code 는 한 번 뽑아 문구 판정에 쓴다. 보고보다 먼저 읽어도 되고 뒤에 읽어도 된다 —
+            // 코드를 읽어도 오류 본문은 소진되지 않는다(`network/ApiErrors.kt`).
             val errorCode = apiErrorCode(error)
             AlarmTalkLog.reportError("Failed to register code", error)
             val failure = codeRegistrationFailureMessage(
@@ -808,7 +809,7 @@ internal fun MainViewModel.cancelSubscription(atPeriodEnd: Boolean) {
             refreshSocial()
         }.onFailure { error ->
             AlarmTalkLog.reportError("Failed to cancel subscription mode=$mode", error)
-            // errorBody 는 한 번만 읽히므로 apiError 로 code·manage_url 을 함께 추출한다.
+            // code 와 manage_url 은 같은 응답의 짝이라 apiError 로 함께 뽑는다.
             val apiFailure = apiError(error)
             if (apiFailure.code in STORE_MANAGE_REQUIRED_CODES) {
                 // 서버·앱 상태 모두 무변경 — 스낵바 대신 Google Play 직접 관리 안내 다이얼로그.

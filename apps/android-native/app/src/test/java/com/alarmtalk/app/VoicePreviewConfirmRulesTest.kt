@@ -1,6 +1,7 @@
 package com.alarmtalk.app
 
 import com.alarmtalk.app.data.VoiceTuning
+import com.alarmtalk.app.network.VoiceDraftQuotaResponse
 import com.alarmtalk.app.network.VoiceProfile
 import com.google.gson.Gson
 import com.google.gson.JsonParser
@@ -21,8 +22,84 @@ import org.junit.Test
  *  - 잠금표: 서버 일이 돌면 뒤로가기·다시 만들기·저장·공유·고치기를 잠그고, 막대·두 버튼은 받기·청취 확인으로는 잠그지 않는다.
  *  - 저장 잠금은 **지금 막대 값을 끝까지 들었을 때만** 열리고(원본은 0), 원본과 번갈아 들어도 다시 잠기지 않는다.
  *  - 이미 등록된 목소리가 있으면 저장은 **언제나 교체**다 — `replace_existing: true` 가 나간다(체크 없음).
+ *  - 등록 흐름의 거절을 어디에 말하는가(2026-10-11, §4-1 「월 등록 한도」 ③): 월 한도는 흐름을 끝내고, 그 밖은 등록 창
+ *    안에, 창이 닫힌 뒤에 온 것은 스낵바로. 배선은 `VoiceRegistrationFailureWiringTest`.
  */
 class VoicePreviewConfirmRulesTest {
+
+    // ── 월 등록 한도 — '생성 가능 n/m회' 가 여는 두 곳 ───────────────────────
+
+    @Test
+    fun `이번 달 등록을 다 썼는지는 서버가 준 남은 횟수로 판정한다`() {
+        fun quota(remaining: Int, limit: Int = 1) =
+            VoiceDraftQuotaResponse(registrationLimit = limit, registrationRemaining = remaining)
+        // 2026-10-10 의 값 — 등록을 마쳤는데 다시 읽지 않아 `1/1` 로 남았다. 이 판정은 '남았다' 고
+        // 답하고 `추가` 가 눌린다. 그래서 값은 확정 직후 다시 읽어야 한다(`VoiceRegistrationQuotaWiringTest`).
+        assertFalse(monthlyRegistrationUsedUp(quota(remaining = 1)))
+        // 다시 읽은 값 — `추가` 가 꺼지고 삭제 경고가 붙는다.
+        assertTrue(monthlyRegistrationUsedUp(quota(remaining = 0)))
+        // 음수로 내려와도(원장이 한도를 넘긴 경우) 다 쓴 것이다.
+        assertTrue(monthlyRegistrationUsedUp(quota(remaining = -1)))
+        // ⚠ 아직 모르면(조회 전·실패) 다 쓴 것이 아니다 — 실패는 "모른다" 이지 "다 썼다" 가 아니다.
+        // 막는 것은 서버다(다 썼으면 초안을 만들기 전에 429).
+        assertFalse(monthlyRegistrationUsedUp(null))
+        // 초안 시도 쪽 숫자(`remaining`)는 보지 않는다 — 그건 호환용으로 0 고정이라, 그걸 보면 등록이
+        // 남아 있어도 다 쓴 것으로 읽힌다.
+        assertFalse(
+            monthlyRegistrationUsedUp(
+                VoiceDraftQuotaResponse(limit = 3, used = 3, remaining = 0, registrationLimit = 1, registrationRemaining = 1),
+            ),
+        )
+    }
+
+    // ── 등록 흐름의 거절 — 어디에 말하는가 ──────────────────────────────────
+    //
+    // 스펙 voice-and-message §4-1 「월 등록 한도」 ③. 등록 창은 화면을 다 덮는 자기 창이라 앱 스낵바는
+    // 그 뒤에 그려진다 — 2026-10-10 prod(1.2.10)의 한 사용자는 월 한도로 거절된 같은 저장을 일곱 번
+    // 눌렀다. 그때는 이 가르기가 없었고 모든 거절이 스낵바로 갔다.
+
+    @Test
+    fun `월 한도 거절은 등록 단계든 저장 단계든 흐름을 끝낸다`() {
+        // 두 단계가 같은 코드를 받는다 — 서버는 초안을 만들기 전에 막고(등록), 확정에서도 다시 본다(저장).
+        // 규칙에 단계가 없는 것이 곧 "어느 단계든" 이다: 창이 열려 있고 그 코드면 끝낸다.
+        assertEquals("VOICE_MONTHLY_CHANGE_LIMIT_REACHED", VOICE_MONTHLY_LIMIT_ERROR_CODE)
+        assertEquals(
+            RegistrationFailureSurface.EndFlow,
+            registrationFailureSurface(VOICE_MONTHLY_LIMIT_ERROR_CODE, windowOpen = true),
+        )
+    }
+
+    @Test
+    fun `그 밖의 거절과 네트워크 실패는 등록 창 안에서 말한다`() {
+        // ⚠ 월 한도 말고는 흐름을 끝내지 않는다 — 사용자가 고치거나 그대로 다시 누를 수 있는 실패다.
+        // 여기서 창을 닫으면 녹음을 처음부터 다시 해야 한다.
+        val recoverable = listOf(
+            "VOICE_FEATURE_REQUIRES_PAID_PLAN",
+            "CONSENT_REQUIRED",
+            "VOICE_PREVIEW_REQUIRED",
+            "VOICE_CAPACITY_EXHAUSTED",
+            "VOICE_SLOT_EXHAUSTED",
+            "VOICE_LIMIT_REACHED",
+            "VOICE_CLONE_AUDIO_TOO_SHORT",
+            "RATE_LIMITED",
+            "INTERNAL_ERROR",
+            "SOMETHING_NEW",
+            // 코드 없음 — 네트워크 실패·게이트웨이 5xx·초안 삭제(`다시 만들기`)의 실패.
+            null,
+        )
+        for (code in recoverable) {
+            assertEquals("$code", RegistrationFailureSurface.InWindow, registrationFailureSurface(code, windowOpen = true))
+        }
+    }
+
+    @Test
+    fun `등록 창이 닫힌 뒤에 온 실패는 스낵바로 간다`() {
+        // 나가기 경고의 '나가기' 는 초안 삭제를 보내고 곧바로 창을 닫는다 — 그 실패를 창 안의 줄에만
+        // 쓰면 어디에도 안 보인다. 월 한도 코드여도 같다: 닫을 창도, 그 위에 띄울 흐름도 없다.
+        for (code in listOf(null, "INTERNAL_ERROR", "VOICE_PREVIEW_REQUIRED", VOICE_MONTHLY_LIMIT_ERROR_CODE)) {
+            assertEquals("$code", RegistrationFailureSurface.AppSnackbar, registrationFailureSurface(code, windowOpen = false))
+        }
+    }
 
     // ── 듣기 버튼 ────────────────────────────────────────────────────────
 
