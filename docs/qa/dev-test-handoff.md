@@ -65,7 +65,16 @@
   가 AAB(`sentry-debug-meta.properties`)와 Sentry `alarmtalk-android` 의 디버그 파일 목록에 둘 다 있다. 프로젝트 이름은
   이걸로 확인됐다. 토큰(조직 토큰)은 이 맥의 `~/.alarmtalk-sentry.env`(저장소 밖, 권한 600)에 있다 — 다음 prod 빌드도
   `set -a; . ~/.alarmtalk-sentry.env; set +a` 를 한 셸에서 빌드한다. **저장소 안에 두지 않는다.**
-- [ ] 1.2.11 안드로이드의 첫 실기기 이벤트가 원래 클래스·메서드 이름으로 읽히는지(`docs/ops/environments.md` 4번).
+- 매핑이 실제로 먹는 것도 확인했다 — 1.2.11 의 첫 이벤트(ALARMTALK-ANDROID-11, 아래)의 스택이
+  `StockClipPrefetchWorker.kt:651`·`AlarmTalkLog.kt:348` 처럼 원래 이름·줄 번호로 보인다.
+- **ALARMTALK-ANDROID-11(10/11 08:57Z, HTTP 504 두 건)은 Play 사전 출시 로봇이다** — 1.2.11(31)을 올린 지 12분 뒤,
+  OnePlus8Pro·288×448·CPU 2개·x86_64. 결제 정보 읽기와 기본 목소리 클립 받기가 1분 안에 504 를 받았는데, prod 워커
+  로그(08:56~09:00Z)에는 5xx 가 한 줄도 없고 같은 클립 요청은 48초 뒤 200 으로 나갔다. backend Sentry 도 24시간 0건,
+  30일 동안 504 는 이 두 건뿐(실사용자 0). 오류 코드 없는 504 라 워커 앞단(로봇의 네트워크 경로)에서 난 것이다.
+  1.2.11 로봇 실행에서 크래시는 없었다.
+  - [ ] **로봇 판별이 빗나갔다** — 1.2.11 은 `firebase.test.lab` 설정이 `"true"` 인 기기만 `prelaunch` 로 찍는데
+        (`AlarmTalkApplication.sentryEnvironment`), 이 로봇(Android 11)은 `production` 으로 찍혀 알림 메일까지 갔다.
+        그 설정이 없는 사전 출시 기기를 가를 다른 신호가 필요하다(다음 안드로이드 버전).
 - 출시 뒤에 할 것: 1.2.10 이 1.2.11 로 바뀐 뒤 Sentry 이슈 정리(ANDROID-X·Z·10·S·T·V·W·Y, B·K·Q), Play 게재 뒤
   안드로이드 `minSupported` 를 31 로 올릴지.
 
