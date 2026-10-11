@@ -60,6 +60,49 @@ class VoiceRegistrationFailureWiringTest {
     }
 
     @Test
+    fun theMonthlyLimitDiscardOfTheDraftIsQuiet() {
+        // 월 한도로 흐름을 끝내며 등록 창이 치우는 초안 삭제는 사용자가 고른 삭제가 아니다. 그 삭제가 실패해 월 한도 알럿
+        // 뒤에 '목소리 삭제에 실패했어요' 가 뜨면, 등록된 목소리를 못 지운 것처럼 읽힌다(2026-10-11 리뷰). 흐름은 삭제가
+        // 실패해도 끝나고 남은 초안은 서버가 거둔다(스펙 §4-1 ③) — iOS 도 그 실패를 버린다(`try?`).
+        val delete = functionBody(voiceActions, "internal fun MainViewModel.deleteVoiceDraft(")
+        assertTrue(
+            "사용자가 누른 삭제의 기본값이 바뀌었다 — `다시 만들기`·나가기 경고의 실패가 안 보인다.",
+            delete.startsWith("internal fun MainViewModel.deleteVoiceDraft(profileId: String, surfaceFailure: Boolean = true)"),
+        )
+        val failure = delete.substring(delete.indexOf(".onFailure { error ->"))
+        val logged = failure.indexOf("AlarmTalkLog.reportError(")
+        val quiet = failure.indexOf("if (!surfaceFailure) return@onFailure")
+        val surfaced = failure.indexOf("showVoiceRegistrationFailure(")
+        assertTrue("조용한 삭제의 실패를 화면에 말한다 — 말하기 전에 빠지는 갈래가 없다.", quiet in 0 until surfaced)
+        assertTrue("조용한 삭제도 실패를 기록은 해야 한다 — 기록이 조용한 갈래보다 앞에 있어야 한다.", logged in 0 until quiet)
+
+        // 등록 창: 월 한도 갈래만 조용한 길을 쓴다. 사용자가 누른 두 삭제는 예전 길 그대로다.
+        val effect = functionBody(panel, "LaunchedEffect(voiceRegistrationFailure)")
+        val endFlow = effect.substring(
+            effect.indexOf("RegistrationFailureSurface.EndFlow ->"),
+            effect.indexOf("RegistrationFailureSurface.InWindow ->"),
+        )
+        assertTrue("월 한도 갈래가 초안을 조용히 버리지 않는다.", endFlow.contains("onDiscardVoiceDraftQuietly(draftId)"))
+        assertFalse("월 한도 갈래가 사용자 삭제 길로 초안을 버린다.", endFlow.contains("onDeleteVoiceDraft("))
+        assertEquals(
+            "조용한 길을 쓰는 자리가 월 한도 갈래 말고도 있다.",
+            1,
+            Regex("""onDiscardVoiceDraftQuietly\(""").findAll(panel).count(),
+        )
+        assertTrue(panel.contains("onClick = { confirmNewVoice?.let { onDeleteVoiceDraft(it.id) } }"))
+        assertTrue(functionBody(panel, "if (draftExitWarningOpen)").contains("exitDraftId?.let(onDeleteVoiceDraft)"))
+
+        // 앱이 조용한 길을 뷰모델의 조용한 삭제에 잇고, 목록 화면이 패널에 그대로 넘긴다.
+        val app = withoutLineComments(readSource("ui/app/AlarmTalkApp.kt"))
+        assertTrue(app.contains("onDeleteVoiceDraft = viewModel::deleteVoiceDraft,"))
+        assertTrue(
+            app.contains("onDiscardVoiceDraftQuietly = { draftId -> viewModel.deleteVoiceDraft(draftId, surfaceFailure = false) }"),
+        )
+        val list = withoutLineComments(readSource("ui/alarms/AlarmListScreen.kt"))
+        assertTrue(list.contains("onDiscardVoiceDraftQuietly = onDiscardVoiceDraftQuietly,"))
+    }
+
+    @Test
     fun theSurfaceRuleDecidesBetweenTheWindowAndTheSnackbar() {
         val show = functionBody(voiceActions, "private fun MainViewModel.showVoiceRegistrationFailure(")
         assertTrue(show.contains("registrationFailureSurface(errorCode, windowOpen = voiceRegistrationWindowOpen)"))
@@ -106,8 +149,8 @@ class VoiceRegistrationFailureWiringTest {
     fun theWindowDrawsTheFailureInsideItselfAndEndsTheFlowOnTheMonthlyLimit() {
         val effect = functionBody(panel, "LaunchedEffect(voiceRegistrationFailure)")
         assertTrue(
-            "등록 창이 판정표를 쓰지 않는다.",
-            effect.contains("registrationFailureSurface(failure.code, windowOpen = showCreateForm)"),
+            "등록 창이 판정표를 쓰지 않거나, '그려져 있는가' 가 아닌 값으로 가른다.",
+            effect.contains("registrationFailureSurface(failure.code, windowOpen = registrationWindowShown)"),
         )
         // 창 안의 줄 — 세부 정보 단계와 확정 화면이 둘 다 `localMessage` 를 그린다.
         val inWindow = effect.substring(effect.indexOf("RegistrationFailureSurface.InWindow ->"))
@@ -118,7 +161,7 @@ class VoiceRegistrationFailureWiringTest {
             effect.indexOf("RegistrationFailureSurface.InWindow ->"),
         )
         val notice = endFlow.indexOf("monthlyLimitNoticeOpen = true")
-        val discard = endFlow.indexOf("onDeleteVoiceDraft(draftId)")
+        val discard = endFlow.indexOf("onDiscardVoiceDraftQuietly(draftId)")
         val close = endFlow.indexOf("closeCreateDialog()")
         assertTrue("월 한도 알럿을 띄우지 않는다.", notice >= 0)
         assertTrue("초안을 버리지 않는다.", discard > notice)
@@ -150,10 +193,14 @@ class VoiceRegistrationFailureWiringTest {
         // 효과로 미루면 그 삭제의 실패가 '창이 열려 있다' 로 판정돼 닫힌 창 안으로 간다.
         val close = functionBody(panel, "fun closeCreateDialog()")
         assertTrue(close.indexOf("onRegistrationWindowOpenChange(false)") > close.indexOf("showCreateForm = false"))
+        // 열림·닫힘은 **그려져 있는가**로 알린다 — '열기로 했다'(`showCreateForm`)로 알리면 그려지지 않는 창이 열린
+        // 것으로 남아, 뷰모델이 그 사이의 거절을 보이지 않는 창에 올린다.
         assertTrue(
-            Regex("""LaunchedEffect\(showCreateForm\)\s*\{\s*if \(showCreateForm\) onRegistrationWindowOpenChange\(true\)""")
+            "등록 창의 열림·닫힘을 '그려져 있는가'(`registrationWindowShown`)로 알리지 않는다.",
+            Regex("""LaunchedEffect\(registrationWindowShown\)\s*\{\s*onRegistrationWindowOpenChange\(registrationWindowShown\)\s*\}""")
                 .containsMatchIn(panel),
         )
+        assertFalse(panel.contains("LaunchedEffect(showCreateForm)"))
         // 화면을 떠날 때도 닫힌 것이다.
         val dispose = functionBody(panel, "DisposableEffect(Unit)")
         assertTrue(dispose.contains("onRegistrationWindowOpenChange(false)"))
@@ -169,6 +216,47 @@ class VoiceRegistrationFailureWiringTest {
         assertTrue(app.contains("voiceRegistrationFailure = viewModel.voiceRegistrationFailure"))
         assertTrue(app.contains("onVoiceRegistrationFailureShown = { viewModel.consumeVoiceRegistrationFailure() }"))
         assertTrue(app.contains("onRegistrationWindowOpenChange = { open -> viewModel.voiceRegistrationWindowChanged(open) }"))
+    }
+
+    @Test
+    fun aWindowThatIsNotDrawnIsNotTreatedAsOpen() {
+        // 2026-10-11 리뷰: 만드는 중에 이용권이 끝나고(플랜·기간 한정 플랜 만료, plan_changed 푸시) 등록이 실패하면 창은
+        // 세부 정보로 돌아오는데, 그 단계는 이용권이 없으면 그려지지 않는다. 예전에는 '열기로 했다'(`showCreateForm`)로
+        // 갈라 그 거절을 그려지지 않는 창 안에 썼고, 목소리 탭의 안내 줄도 꺼져 있어 **어디에도 안 보였다**(1.2.10 은
+        // 그 실패를 스낵바에 띄웠다 — 보이던 것이 안 보이게 된 회귀다). 판정은 `shouldDrawRegistrationWindow`
+        // (`VoicePreviewConfirmRulesTest`)이고, 여기서는 그 값 **하나**를 세 자리가 보는지를 본다.
+
+        // 값 하나 — 그 순간의 값을 읽도록 파생 상태다(그냥 `val` 이면 효과가 시작된 화면의 값에 묶인다).
+        assertTrue(panel.contains("val latestCanOpenCreateForm by rememberUpdatedState(canOpenCreateForm)"))
+        assertTrue(
+            "등록 창이 '그려져 있는가' 를 파생 상태 하나로 두지 않는다.",
+            Regex(
+                """val registrationWindowShown by remember \{\s*derivedStateOf \{ """ +
+                    """shouldDrawRegistrationWindow\(showCreateForm, currentStep, latestCanOpenCreateForm\) \}\s*\}""",
+            ).containsMatchIn(panel),
+        )
+        // ① 그리는 조건이 그 값이다 — 따로 쓴 조건이 남아 있으면 '그려지지 않았는데 열려 있다' 가 다시 생긴다.
+        val drawn = functionBody(panel, "if (registrationWindowShown)")
+        assertTrue("등록 창(`Dialog`)을 그 값으로 그리지 않는다.", drawn.contains("TrackOpenModal()") && drawn.contains("Dialog("))
+        assertFalse(panel.contains("if (showCreateForm && (inDraftDecisionFlow"))
+        // ② 뷰모델에 알리는 열림과 ③ 거절 라우터는 위 두 테스트가 본다(`theWindowTellsTheViewModelWhenItOpensAndCloses`,
+        // `theWindowDrawsTheFailureInsideItselfAndEndsTheFlowOnTheMonthlyLimit`).
+
+        // 거절 라우터는 되돌리기 효과(만드는 중 → 세부 정보)가 단계를 바꿔 놓은 **뒤에** 돈다 — 실패와 busy 해제가 한
+        // 화면에 함께 오므로 둘이 같은 차례에 돌고, 선언 순서대로 돈다. 순서가 바뀌면 '만드는 중이라 그려져 있다' 를
+        // 읽어 그 거절을 곧 사라질 창 안에 쓴다.
+        val revert = panel.indexOf("LaunchedEffect(voiceProfileBusy, pendingVoiceDraft?.id, currentStep)")
+        val router = panel.indexOf("LaunchedEffect(voiceRegistrationFailure)")
+        assertTrue("되돌리기 효과를 못 찾았다.", revert >= 0)
+        assertTrue("거절 라우터가 되돌리기 효과보다 앞에 있다.", revert < router)
+
+        // 그려지지 않는 창은 닫는다 — 이용권이 끝났을 때의 닫기는 **단계가 바뀔 때도** 다시 본다. 단계를 키로 두지
+        // 않으면, 만드는 중에 이용권이 끝난 뒤 세부 정보로 돌아온 창이 '열기로 한' 채 그려지지 않고 남는다.
+        val entitlementClose = functionBody(panel, "LaunchedEffect(canCreateVoice, currentStep)")
+        assertTrue(entitlementClose.contains("closeCreateDialog()"))
+        assertTrue(entitlementClose.contains("currentStep != VoiceRegistrationStep.Creating"))
+        assertTrue(entitlementClose.contains("currentStep != VoiceRegistrationStep.Preview"))
+        assertFalse(panel.contains("LaunchedEffect(canCreateVoice) {"))
     }
 
     @Test

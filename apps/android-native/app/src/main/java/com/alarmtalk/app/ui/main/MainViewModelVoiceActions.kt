@@ -15,6 +15,7 @@ import com.alarmtalk.app.network.TtsGenerateResponse
 import com.alarmtalk.app.network.ManualQuotaResponse
 import com.alarmtalk.app.network.TtsMessageAudioResponse
 import com.alarmtalk.app.network.AlarmTalkApiClient
+import com.alarmtalk.app.network.VoiceDraftQuotaResponse
 import com.alarmtalk.app.network.VoiceProfileUpdateRequest
 import com.alarmtalk.app.network.createVoiceCloneDraft
 import kotlinx.coroutines.CancellationException
@@ -44,8 +45,9 @@ internal fun MainViewModel.preloadVoiceProfiles() {
 }
 
 /**
- * 등록 창(목소리 탭의 전체 화면 `Dialog`)이 열리고 닫히는 것을 패널이 알린다. 등록 흐름의 거절을
- * 어디에 말할지([showVoiceRegistrationFailure])가 이 값을 본다.
+ * 등록 창(목소리 탭의 전체 화면 `Dialog`)이 그려지고 사라지는 것을 패널이 알린다(열기로 했어도 그려지지 않으면
+ * 닫힌 것이다 — `shouldDrawRegistrationWindow`). 등록 흐름의 거절을 어디에 말할지([showVoiceRegistrationFailure])가
+ * 이 값을 본다.
  *
  * 닫히는 순간 **창이 아직 읽지 않은 거절**이 남아 있으면 스낵바로 넘긴다 — 창 안의 줄에 쓰려던 문구가
  * 창과 함께 사라져 어디에도 안 보이는 일이 없게.
@@ -100,6 +102,9 @@ internal fun MainViewModel.fetchVoiceProfiles(showMessage: Boolean) {
                 // 목록·초안·월 등록 한도는 서로 독립이다. 한도가 목록 뒤에 시작하면
                 // '생성 가능 n/m회'만 한 왕복 늦게 나타나므로 셋을 함께 시작한다.
                 val draftRequest = async { api.getVoiceDraft(authorization).profile }
+                // 한도 요청의 번호 — 이 답은 목록·초안·정리를 다 기다린 **뒤에** 싣는다. 그사이 다른 자리(초안 생성·
+                // 확정·탭 진입)가 한도를 또 물었으면 이 답은 늦은 것이다([applyVoiceDraftQuota]).
+                val quotaRequestSeq = nextVoiceDraftQuotaRequest()
                 val quotaRequest = async { api.getVoiceDraftQuota(authorization) }
                 val profiles = api.listVoiceProfiles(authorization).profiles
                 if (!responseStillBelongsToRequester(requestOwner, startGeneration)) {
@@ -142,9 +147,7 @@ internal fun MainViewModel.fetchVoiceProfiles(showMessage: Boolean) {
                 reconcileInaccessibleVoiceAlarms(requestOwner)
                 try {
                     val quota = quotaRequest.await()
-                    if (responseStillBelongsToRequester(requestOwner, startGeneration)) {
-                        voiceDraftQuota = quota
-                    }
+                    applyVoiceDraftQuota(quota, quotaRequestSeq, requestOwner, startGeneration)
                 } catch (error: CancellationException) {
                     throw error
                 } catch (error: Throwable) {
@@ -558,7 +561,16 @@ internal suspend fun MainViewModel.updateVoicePreviewText(profileId: String, tex
     ).previewText
 }
 
-internal fun MainViewModel.deleteVoiceDraft(profileId: String) {
+/**
+ * 등록 초안을 지운다(`draft_only`).
+ *
+ * @param surfaceFailure 실패를 사용자에게 말하는가. 사용자가 누른 삭제(확정 화면의 `다시 만들기`·나가기 경고)는 말한다
+ *   ([showVoiceRegistrationFailure] — 창 안의 줄 또는 스낵바). 월 한도로 흐름을 끝내며 등록 창이 치우는 삭제는 말하지
+ *   않는다(false) — 사용자가 고른 삭제가 아닌데 월 한도 알럿 뒤에 '목소리 삭제에 실패했어요' 가 뜨면 등록된 목소리를 못
+ *   지운 것처럼 읽힌다. 삭제가 실패해도 흐름은 끝나고 남은 초안은 서버가 거둔다(스펙 voice-and-message §4-1
+ *   「월 등록 한도」 ③ — iOS 도 그 실패를 버린다). 기록(`AlarmTalkLog`)은 어느 쪽이든 남긴다.
+ */
+internal fun MainViewModel.deleteVoiceDraft(profileId: String, surfaceFailure: Boolean = true) {
     val session = authSession ?: return
     viewModelScope.launch {
         if (voiceProfileBusy) return@launch
@@ -573,6 +585,7 @@ internal fun MainViewModel.deleteVoiceDraft(profileId: String) {
             if (pendingVoiceDraft?.id == profileId) pendingVoiceDraft = null
         }.onFailure { error ->
             AlarmTalkLog.reportError("Failed to delete voice draft id=$profileId", error)
+            if (!surfaceFailure) return@onFailure
             // 확정 화면의 `다시 만들기` 가 실패했으면 그 화면에 머문다 — 그 화면의 오류 줄에 쓴다.
             // 나가기 경고의 삭제는 창을 닫으면서 보낸 것이라 스낵바로 간다(창 안에 쓰면 안 보인다).
             // 코드는 넘기지 않는다 — 삭제의 실패에는 흐름을 끝내는 갈래가 없다.
@@ -773,21 +786,44 @@ internal suspend fun MainViewModel.downloadTtsMessageAudio(messageId: String): T
  * - 앱에서만 깎지 않는다. `n − 1` 을 계산해 두는 것으로 끝내지 않고 서버 값을 읽는다 — 원장의 예약은
  *   확정이 실패하면 롤백되고, 다른 기기도 같은 원장을 쓴다.
  * - 실패·미로그인은 조용히 넘긴다 — **앞 값을 지킨다.** 실패는 "모른다" 이지 "남았다" 가 아니다.
- * - ⚠ **늦게 온 답은 요청한 계정의 것일 때만 적는다**([responseStillBelongsToRequester]). 읽는 자리가
- *   늘면 그 틈도 넓어진다 — 로그아웃·계정 전환 뒤에 도착한 앞 계정의 답이 지금 계정의 `추가` 버튼을
- *   끄거나(0), 다 쓴 계정에 켜 준다.
+ * - ⚠ **늦게 온 답은 가장 나중에 낸 요청의 답이고, 요청한 계정의 것일 때만 적는다**([applyVoiceDraftQuota]).
+ *   읽는 자리가 늘면 그 틈도 넓어진다 — 확정 직후의 `0` 위에 먼저 낸 요청의 `1` 이 늦게 와 앉거나, 로그아웃·계정
+ *   전환 뒤에 도착한 앞 계정의 답이 지금 계정의 `추가` 버튼을 끄거나(0) 다 쓴 계정에 켜 준다.
  */
 internal fun MainViewModel.loadVoiceDraftQuota() {
     val session = authSession ?: return
     val requestOwner = session.user.id
     val startGeneration = authSessionStore.sessionGeneration()
+    val requestSeq = nextVoiceDraftQuotaRequest()
     viewModelScope.launch {
         runCatching {
             api.getVoiceDraftQuota(AlarmTalkApiClient.bearer(session.token))
-        }.onSuccess { quota ->
-            if (responseStillBelongsToRequester(requestOwner, startGeneration)) voiceDraftQuota = quota
-        }
+        }.onSuccess { quota -> applyVoiceDraftQuota(quota, requestSeq, requestOwner, startGeneration) }
     }
+}
+
+/** 한도 조회 한 번의 번호를 뽑는다 — **요청을 내기 직전에**([MainViewModel.voiceDraftQuotaRequestSeq]). */
+private fun MainViewModel.nextVoiceDraftQuotaRequest(): Long {
+    voiceDraftQuotaRequestSeq += 1
+    return voiceDraftQuotaRequestSeq
+}
+
+/**
+ * 한도 조회의 답을 `voiceDraftQuota` 에 싣는다 — 서버 답을 쓰는 곳은 **여기 하나**다(두 읽는 자리 —
+ * [loadVoiceDraftQuota]·[fetchVoiceProfiles] — 가 같은 문을 지난다). 둘 다 맞을 때만 싣는다:
+ *  - [requestSeq] 가 **아직 가장 나중에 낸 요청**이다. 그 뒤에 낸 요청이 있으면 이 답은 늦었다 — 먼저 왔든 나중에
+ *    오든 그 요청의 답이 더 새 원장을 본다.
+ *  - 그 요청을 낸 **계정·세션의 답**이다([responseStillBelongsToRequester]).
+ */
+private fun MainViewModel.applyVoiceDraftQuota(
+    quota: VoiceDraftQuotaResponse,
+    requestSeq: Long,
+    requestOwner: String?,
+    startGeneration: Long,
+) {
+    if (requestSeq != voiceDraftQuotaRequestSeq) return
+    if (!responseStillBelongsToRequester(requestOwner, startGeneration)) return
+    voiceDraftQuota = quota
 }
 
 // 직접 입력 문구 만들기 이번 달 사용 현황(선택기 '직접 입력 (남은/총)' 표시용).

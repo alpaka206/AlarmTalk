@@ -86,10 +86,10 @@ class VoiceRegistrationQuotaWiringTest {
             Regex("""\bvoiceDraftQuota\s*=\s*([^\n]+)""").findAll(code).map { "$path: ${it.groupValues[1].trim()}" }.toList()
         }
         assertEquals(
-            "`voiceDraftQuota` 를 쓰는 자리가 달라졌다 — 서버 응답이 아닌 값을 싣는지 볼 것.",
+            "`voiceDraftQuota` 를 쓰는 자리가 달라졌다 — 서버 응답이 아닌 값을 싣는지 볼 것. 서버 답은 " +
+                "`applyVoiceDraftQuota` 한 곳에서만 싣는다(두 읽는 자리가 같은 문을 지난다).",
             listOf(
                 "MainViewModel.kt: null",
-                "MainViewModelVoiceActions.kt: quota",
                 "MainViewModelVoiceActions.kt: quota",
             ),
             writes.sorted(),
@@ -106,19 +106,73 @@ class VoiceRegistrationQuotaWiringTest {
         val owner = load.indexOf("val requestOwner = session.user.id")
         val generation = load.indexOf("val startGeneration = authSessionStore.sessionGeneration()")
         val request = load.indexOf("api.getVoiceDraftQuota(")
-        val guard = load.indexOf("if (responseStillBelongsToRequester(requestOwner, startGeneration)) voiceDraftQuota = quota")
+        val guarded = load.indexOf("applyVoiceDraftQuota(quota, requestSeq, requestOwner, startGeneration)")
         assertTrue("요청한 계정·세대를 **요청 전에** 적지 않는다.", owner in 0 until request && generation in 0 until request)
-        assertTrue("늦게 온 답을 가드 없이 적는다.", guard > request)
-        assertEquals(
-            "가드를 거치지 않는 쓰기가 남아 있다.",
-            1,
-            Regex("""\bvoiceDraftQuota\s*=""").findAll(load).count(),
-        )
-        // 목록 조회 쪽의 쓰기도 같은 가드 안이다(예전부터).
+        assertTrue("늦게 온 답을 가드 없이 적는다.", guarded > request)
+        assertFalse("가드를 거치지 않는 쓰기가 남아 있다.", Regex("""\bvoiceDraftQuota\s*=""").containsMatchIn(load))
+        // 목록 조회 쪽의 답도 같은 문을 지난다(예전에는 거기에 같은 가드를 따로 썼다).
         val fetch = functionBody(voiceActions, "internal fun MainViewModel.fetchVoiceProfiles(")
+        assertTrue(fetch.contains("applyVoiceDraftQuota(quota, quotaRequestSeq, requestOwner, startGeneration)"))
+        assertFalse(Regex("""\bvoiceDraftQuota\s*=""").containsMatchIn(fetch))
+        // 그 문이 계정·세션을 본다.
+        val apply = functionBody(voiceActions, "private fun MainViewModel.applyVoiceDraftQuota(")
+        val belongs = apply.indexOf("if (!responseStillBelongsToRequester(requestOwner, startGeneration)) return")
+        assertTrue("싣는 문이 계정·세션을 보지 않는다.", belongs in 0 until apply.indexOf("voiceDraftQuota = quota"))
+    }
+
+    @Test
+    fun anOlderAnswerNeverOverwritesANewerOne() {
+        // 2026-10-11 리뷰: 읽는 자리가 여럿이라 답이 낸 순서대로 오지 않는다. 초안을 만든 직후의 조회(Q0)가 느리고,
+        // 그사이 미리듣기를 끝까지 듣고 저장한 직후의 조회(Q2)가 `0` 을 먼저 가져오면, 늦게 온 Q0 의 `1` 이 그 위에 앉아
+        // `추가` 가 다시 켜지고 삭제 경고가 빠진다 — 이번 수정이 없애려는 바로 그 낡은 숫자다. 계정·세션 가드는 둘을 다
+        // 통과시킨다(같은 계정·같은 세션의 답이다). 그래서 **가장 나중에 낸 요청의 답만** 싣는다.
+        val viewModel = withoutLineComments(readSource("ui/main/MainViewModel.kt"))
+        assertTrue("한도 요청의 번호가 없다.", viewModel.contains("internal var voiceDraftQuotaRequestSeq = 0L"))
+
+        // 번호는 한 곳에서만 오른다 — 되감거나 다른 곳에서 바꾸면 떠 있던 옛 요청의 번호가 새 요청의 번호와 같아질 수 있다.
+        val bumps = viewModelSources.flatMap { (path, code) ->
+            Regex("""\bvoiceDraftQuotaRequestSeq\s*(\+=|-=|=(?!=))[^\n]*""").findAll(code)
+                .map { "$path: ${it.value.trim()}" }.toList()
+        }
+        assertEquals(
+            listOf(
+                "MainViewModel.kt: voiceDraftQuotaRequestSeq = 0L",
+                "MainViewModelVoiceActions.kt: voiceDraftQuotaRequestSeq += 1",
+            ),
+            bumps.sorted(),
+        )
         assertTrue(
-            Regex("""if \(responseStillBelongsToRequester\(requestOwner, startGeneration\)\) \{\s*voiceDraftQuota = quota""")
-                .containsMatchIn(fetch),
+            functionBody(voiceActions, "private fun MainViewModel.nextVoiceDraftQuotaRequest(")
+                .contains("voiceDraftQuotaRequestSeq += 1"),
+        )
+
+        // 싣는 문: 가장 나중에 낸 요청의 답일 때만 싣는다. 서버 답을 쓰는 곳은 여기 하나다.
+        val apply = functionBody(voiceActions, "private fun MainViewModel.applyVoiceDraftQuota(")
+        val newest = apply.indexOf("if (requestSeq != voiceDraftQuotaRequestSeq) return")
+        assertTrue(
+            "가장 나중 요청의 답인지 보지 않고 싣는다 — 늦게 온 옛 답이 새 답을 덮는다.",
+            newest in 0 until apply.indexOf("voiceDraftQuota = quota"),
+        )
+        assertEquals(1, Regex("""\bvoiceDraftQuota\s*=""").findAll(apply).count())
+
+        // 두 읽는 자리 모두 **요청을 내기 전에** 번호를 뽑고, 그 번호로 싣는다.
+        val load = functionBody(voiceActions, "internal fun MainViewModel.loadVoiceDraftQuota(")
+        val loadSeq = load.indexOf("val requestSeq = nextVoiceDraftQuotaRequest()")
+        assertTrue(
+            "탭 진입·초안 생성·확정·거절 뒤의 조회가 요청 전에 번호를 뽑지 않는다.",
+            loadSeq in 0 until load.indexOf("api.getVoiceDraftQuota("),
+        )
+        val fetch = functionBody(voiceActions, "internal fun MainViewModel.fetchVoiceProfiles(")
+        val fetchSeq = fetch.indexOf("val quotaRequestSeq = nextVoiceDraftQuotaRequest()")
+        assertTrue(
+            "목록 조회와 함께 내는 한도 요청이 요청 전에 번호를 뽑지 않는다.",
+            fetchSeq in 0 until fetch.indexOf("api.getVoiceDraftQuota(authorization)"),
+        )
+        // ⚠ 번호는 **요청을 실제로 내는 자리에서** 뽑는다. 목록 조회는 busy 면 아무것도 내지 않고 돌아가는데, 그 전에
+        // 뽑으면 떠 있던 다른 조회의 답만 버리고 대신할 답은 없다.
+        assertTrue(
+            "목록 조회가 busy 로 돌아가기 전에 번호를 뽑는다.",
+            fetchSeq > fetch.indexOf("if (voiceProfileBusy) return@launch"),
         )
     }
 

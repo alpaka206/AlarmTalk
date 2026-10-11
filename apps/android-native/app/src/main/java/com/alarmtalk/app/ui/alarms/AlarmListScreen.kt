@@ -121,6 +121,8 @@ internal fun AlarmListScreen(
     onUpdateVoicePreviewText: suspend (String, String) -> String,
     onPromoteVoiceDraft: (String, Boolean, Boolean, Float) -> Unit,
     onDeleteVoiceDraft: (String) -> Unit,
+    // 월 한도로 등록 흐름을 끝내며 초안을 조용히 버린다(실패를 화면에 말하지 않는다) — 목소리 패널에 그대로 넘긴다.
+    onDiscardVoiceDraftQuietly: (String) -> Unit,
     // 등록 흐름의 거절을 등록 창 안에 그리기 위한 세 가지 — 목소리 패널에 그대로 넘긴다
     // (`VoiceProfileManagementPanel` 의 같은 이름 인자 참고).
     voiceRegistrationFailure: VoiceRegistrationFailure? = null,
@@ -306,6 +308,7 @@ internal fun AlarmListScreen(
                         onUpdateVoicePreviewText = onUpdateVoicePreviewText,
                         onPromoteVoiceDraft = onPromoteVoiceDraft,
                         onDeleteVoiceDraft = onDeleteVoiceDraft,
+                        onDiscardVoiceDraftQuietly = onDiscardVoiceDraftQuietly,
                         voiceRegistrationFailure = voiceRegistrationFailure,
                         onVoiceRegistrationFailureShown = onVoiceRegistrationFailureShown,
                         onRegistrationWindowOpenChange = onRegistrationWindowOpenChange,

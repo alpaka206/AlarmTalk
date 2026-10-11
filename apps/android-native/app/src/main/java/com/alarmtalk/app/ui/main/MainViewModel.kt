@@ -554,9 +554,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         internal set
 
     /**
-     * 등록 창(목소리 탭의 전체 화면 `Dialog`)이 **지금 열려 있는가.** 패널이 알린다
-     * (`voiceRegistrationWindowChanged`). 등록 흐름의 거절을 어디에 말할지 가르는 데만 쓴다
-     * (`registrationFailureSurface`) — 화면을 그리는 값이 아니라 관찰 상태로 두지 않는다.
+     * [voiceDraftQuota] 를 묻는 요청의 번호 — 요청을 낼 때마다 오른다(`nextVoiceDraftQuotaRequest`). 답은 그 번호가
+     * **아직 가장 나중 것일 때만** 싣는다(`applyVoiceDraftQuota`). 메인 스레드에서만 읽고 쓴다.
+     *
+     * ⚠ 읽는 자리가 여럿이라(목록·탭 진입·초안 생성·확정·월 한도 거절) 답이 낸 순서대로 오지 않는다. 늦게 온 **옛 답**이
+     * 새 답을 덮으면 확정 직후의 `0/1` 위에 그 전의 `1/1` 이 다시 앉는다 — `추가` 가 다시 눌리고 삭제 경고가 빠진다
+     * (2026-10-10 의 그 숫자다). 계정·세션이 같은지만 보는 가드(`responseStillBelongsToRequester`)로는 못 막는다.
+     * 되감지 않는다(계정이 바뀌어도) — 되감으면 떠 있던 옛 요청의 번호가 새 요청의 번호와 같아질 수 있다.
+     */
+    internal var voiceDraftQuotaRequestSeq = 0L
+
+    /**
+     * 등록 창(목소리 탭의 전체 화면 `Dialog`)이 **지금 그려져 있는가**(열기로 했는가가 아니다 — 패널의
+     * `registrationWindowShown`). 패널이 알린다(`voiceRegistrationWindowChanged`). 등록 흐름의 거절을 어디에 말할지
+     * 가르는 데만 쓴다(`registrationFailureSurface`) — 화면을 그리는 값이 아니라 관찰 상태로 두지 않는다.
      */
     internal var voiceRegistrationWindowOpen = false
 

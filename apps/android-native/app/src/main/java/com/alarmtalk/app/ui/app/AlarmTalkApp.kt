@@ -1600,6 +1600,9 @@ internal fun AlarmTalkApp(
                           onUpdateVoicePreviewText = viewModel::updateVoicePreviewText,
                           onPromoteVoiceDraft = viewModel::promoteVoiceDraft,
                           onDeleteVoiceDraft = viewModel::deleteVoiceDraft,
+                          // 월 한도로 흐름을 끝내며 버리는 초안 — 사용자가 고른 삭제가 아니라 실패를 말하지 않는다
+                          // (스펙 voice-and-message §4-1 「월 등록 한도」 ③ — 남은 초안은 서버가 거둔다).
+                          onDiscardVoiceDraftQuietly = { draftId -> viewModel.deleteVoiceDraft(draftId, surfaceFailure = false) },
                           // 등록 흐름의 거절은 등록 창이 자기 안에 그린다 — 그 창은 화면을 다 덮는
                           // 자기 창이라 아래 스낵바가 그 뒤에 가려진다(스펙 voice-and-message §4-1 ③).
                           voiceRegistrationFailure = viewModel.voiceRegistrationFailure,

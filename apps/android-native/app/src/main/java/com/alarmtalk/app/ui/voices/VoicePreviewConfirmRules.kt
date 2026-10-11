@@ -208,7 +208,8 @@ internal enum class RegistrationFailureSurface {
  * | 열려 있다 | 그 밖(유료·동의·미리듣기·용량·네트워크·5xx…) | [RegistrationFailureSurface.InWindow] |
  *
  * - 창이 닫혀 있는 경우는 **창을 닫으면서 보낸 요청**이다 — 나가기 경고의 '나가기' 가 초안 삭제를 보내고
- *   곧바로 창을 닫는다. 그 실패를 창 안의 줄에만 쓰면 **어디에도 안 보인다.**
+ *   곧바로 창을 닫는다. 그 실패를 창 안의 줄에만 쓰면 **어디에도 안 보인다.** 열기로 했어도 그려지지 않는 창도
+ *   닫힌 것이다([shouldDrawRegistrationWindow]).
  * - 월 한도는 등록 단계에서든 저장 단계에서든 같은 답이다. 서버가 초안을 만들기 전에 막으므로(§4-1 ①)
  *   보통은 등록 단계에서 만나고, 저장 단계에서 만나려면 그사이 다른 기기가 먼저 등록해야 한다.
  * - ⚠ **월 한도 말고는 흐름을 끝내지 않는다.** 유료·동의(403)와 `VOICE_PREVIEW_REQUIRED` 는 창 안에서
@@ -218,10 +219,37 @@ internal enum class RegistrationFailureSurface {
  * iOS 는 창(`fullScreenCover`) 안에 이미 쓰고 있어 이 가르기가 없다 — 월 한도로 흐름을 끝내는 것만 같다
  * (`VoiceStudioViewModel.isMonthlyLimitRejection`).
  *
- * @param windowOpen 등록 창이 지금 열려 있는가.
+ * @param windowOpen 등록 창이 지금 **그려져 있는가**([shouldDrawRegistrationWindow]) — 열기로 했는가가 아니다.
  */
 internal fun registrationFailureSurface(errorCode: String?, windowOpen: Boolean): RegistrationFailureSurface = when {
     !windowOpen -> RegistrationFailureSurface.AppSnackbar
     errorCode == VOICE_MONTHLY_LIMIT_ERROR_CODE -> RegistrationFailureSurface.EndFlow
     else -> RegistrationFailureSurface.InWindow
+}
+
+/**
+ * 등록 창을 **그리는가** — 패널의 `registrationWindowShown` 이 이 값이다. 그리는 조건(`Dialog`), 뷰모델에 알리는 열림
+ * (`voiceRegistrationWindowChanged`), 거절을 어디에 말할지([registrationFailureSurface] 의 `windowOpen`)가 **이 값
+ * 하나**를 본다.
+ *
+ * - 만드는 중·확정·준비 단계는 이용권이 흔들려도 그린다 — 결정(남길지 지울지)과 진행이 먼저다.
+ * - 음원 준비·세부 정보 단계는 등록을 열 수 있을 때([canOpenCreateForm] — 유료)만 그린다.
+ *
+ * ⚠ **'열기로 했다'([requested] — 패널의 `showCreateForm`)를 '보인다' 로 쓰지 말 것.** 만드는 중에 이용권이 끝나고
+ * 등록이 실패하면 세부 정보 단계로 돌아오는데, 그 단계는 그려지지 않는다. 그때 거절을 창 안의 줄에 쓰면 창도 없고
+ * 목소리 탭의 안내 줄도 꺼져 있어 **어디에도 안 보인다**(1.2.10 은 그 실패를 스낵바에 띄웠다 — 그보다 나빠진다).
+ * 그려지지 않은 창의 거절은 스낵바로 간다([RegistrationFailureSurface.AppSnackbar]).
+ */
+internal fun shouldDrawRegistrationWindow(
+    requested: Boolean,
+    step: VoiceRegistrationStep,
+    canOpenCreateForm: Boolean,
+): Boolean = requested && when (step) {
+    VoiceRegistrationStep.Creating,
+    VoiceRegistrationStep.Preview,
+    VoiceRegistrationStep.Prerendering,
+    -> true
+    VoiceRegistrationStep.Source,
+    VoiceRegistrationStep.Details,
+    -> canOpenCreateForm
 }

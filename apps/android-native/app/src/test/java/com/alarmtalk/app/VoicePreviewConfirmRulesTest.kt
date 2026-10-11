@@ -23,7 +23,8 @@ import org.junit.Test
  *  - 저장 잠금은 **지금 막대 값을 끝까지 들었을 때만** 열리고(원본은 0), 원본과 번갈아 들어도 다시 잠기지 않는다.
  *  - 이미 등록된 목소리가 있으면 저장은 **언제나 교체**다 — `replace_existing: true` 가 나간다(체크 없음).
  *  - 등록 흐름의 거절을 어디에 말하는가(2026-10-11, §4-1 「월 등록 한도」 ③): 월 한도는 흐름을 끝내고, 그 밖은 등록 창
- *    안에, 창이 닫힌 뒤에 온 것은 스낵바로. 배선은 `VoiceRegistrationFailureWiringTest`.
+ *    안에, 창이 닫힌 뒤에 온 것은 스낵바로. '창이 있다' 는 **그려져 있다** 는 뜻이다(열기로 한 것과 다르다).
+ *    배선은 `VoiceRegistrationFailureWiringTest`.
  */
 class VoicePreviewConfirmRulesTest {
 
@@ -99,6 +100,52 @@ class VoicePreviewConfirmRulesTest {
         for (code in listOf(null, "INTERNAL_ERROR", "VOICE_PREVIEW_REQUIRED", VOICE_MONTHLY_LIMIT_ERROR_CODE)) {
             assertEquals("$code", RegistrationFailureSurface.AppSnackbar, registrationFailureSurface(code, windowOpen = false))
         }
+    }
+
+    // ── 등록 창이 그려져 있는가 — '열기로 했다' 와 다르다 ─────────────────────
+    //
+    // 2026-10-11 리뷰: 거절을 어디에 말할지를 '열기로 했는가'(패널의 `showCreateForm`)로 갈랐더니, 그려지지 않는 창
+    // 안에 쓰는 경우가 생겼다. 배선(그리는 조건·뷰모델에 알리는 열림·거절 라우터가 이 값 하나를 본다)은
+    // `VoiceRegistrationFailureWiringTest`.
+
+    @Test
+    fun `만드는 중·확정·준비 단계는 이용권이 흔들려도 그린다`() {
+        // 결정(남길지 지울지)과 진행이 먼저다 — 구독 상태가 흔들렸다고 결정 화면을 치우지 않는다.
+        for (step in listOf(VoiceRegistrationStep.Creating, VoiceRegistrationStep.Preview, VoiceRegistrationStep.Prerendering)) {
+            assertTrue("$step", shouldDrawRegistrationWindow(requested = true, step = step, canOpenCreateForm = false))
+            assertTrue("$step", shouldDrawRegistrationWindow(requested = true, step = step, canOpenCreateForm = true))
+        }
+    }
+
+    @Test
+    fun `음원 준비·세부 정보 단계는 등록을 열 수 있을 때만 그린다`() {
+        for (step in listOf(VoiceRegistrationStep.Source, VoiceRegistrationStep.Details)) {
+            assertTrue("$step", shouldDrawRegistrationWindow(requested = true, step = step, canOpenCreateForm = true))
+            assertFalse("$step", shouldDrawRegistrationWindow(requested = true, step = step, canOpenCreateForm = false))
+        }
+    }
+
+    @Test
+    fun `열기로 하지 않았으면 어느 단계든 그리지 않는다`() {
+        for (step in VoiceRegistrationStep.entries) {
+            assertFalse("$step", shouldDrawRegistrationWindow(requested = false, step = step, canOpenCreateForm = true))
+        }
+    }
+
+    @Test
+    fun `만드는 중에 이용권이 끝나고 등록이 실패하면 그 거절은 스낵바로 간다`() {
+        // 등록을 보낸 동안(만드는 중)은 창이 그려져 있다 — 뷰모델은 거절을 창에 올린다.
+        assertTrue(shouldDrawRegistrationWindow(requested = true, step = VoiceRegistrationStep.Creating, canOpenCreateForm = false))
+        // 실패하면 창은 세부 정보 단계로 돌아온다. 이용권이 없으면 그 단계는 그려지지 않는다 — 창이 '열기로 한' 채라도
+        // 그 안에 쓰면 어디에도 안 보이므로(목소리 탭의 안내 줄도 창이 열린 동안은 꺼져 있다) 스낵바로 간다.
+        val afterRevert = shouldDrawRegistrationWindow(requested = true, step = VoiceRegistrationStep.Details, canOpenCreateForm = false)
+        assertFalse(afterRevert)
+        for (code in listOf("VOICE_FEATURE_REQUIRES_PAID_PLAN", null, VOICE_MONTHLY_LIMIT_ERROR_CODE)) {
+            assertEquals("$code", RegistrationFailureSurface.AppSnackbar, registrationFailureSurface(code, windowOpen = afterRevert))
+        }
+        // 이용권이 그대로면 같은 실패를 세부 정보 단계 안에 쓴다(예전 그대로).
+        val entitled = shouldDrawRegistrationWindow(requested = true, step = VoiceRegistrationStep.Details, canOpenCreateForm = true)
+        assertEquals(RegistrationFailureSurface.InWindow, registrationFailureSurface(null, windowOpen = entitled))
     }
 
     // ── 듣기 버튼 ────────────────────────────────────────────────────────

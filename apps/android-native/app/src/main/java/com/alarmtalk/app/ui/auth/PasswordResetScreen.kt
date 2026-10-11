@@ -135,8 +135,11 @@ internal fun PasswordResetScreen(
             // ⚠ **보낸 뒤에도 눌린다**(2026-10-11). 예전에는 한 번 보내면 '코드를 보냈어요' 로 잠겨,
             // 코드가 만료되거나 틀린 횟수를 다 써서 "다시 받아 주세요" 를 들은 사람이 다시 받으려면
             // 화면을 나갔다 와야 했다 — 문장이 시키는 일을 화면이 막고 있었다. 가입 화면과 같은 말
-            // (`auth_email_verify_resend`)로 다시 받는다. 너무 잦은 요청은 서버가 걸러 낸다(60초 안의
-            // 요청은 보내지 않고 성공으로 답한다 — 스펙 session-and-auth 「이메일 인증 코드」).
+            // (`auth_email_verify_resend`)로 다시 받는다. 너무 잦은 요청은 서버가 걸러 낸다 — 60초 안에 보낸
+            // 코드가 **아직 쓸 수 있으면**(만료 전·틀린 횟수가 상한 아래·쓰지 않음) 새로 보내지 않고 성공으로
+            // 답한다. 상한에 닿았거나 쓴 코드는 그 60초를 붙잡지 않으므로, "다시 받아 주세요" 를 듣고 곧바로 누른
+            // 다시 받기는 새 코드를 받는다. 하루 발급 상한을 넘긴 요청도 보내지 않는 성공이다(서버
+            // `shouldSkipEmailCodeSend` — 스펙 session-and-auth 「이메일 인증 코드」).
             val requestEnabled = !busy && canRequestEmailCode(email)
             OutlinedButton(
                 onClick = {
