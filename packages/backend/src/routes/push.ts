@@ -1,7 +1,8 @@
 import { Hono } from 'hono';
 import type { AppEnv } from '../types';
+import type { InStatement } from '@libsql/client';
 import { getDB } from '../lib/db';
-import { withWriteTransaction } from '../lib/transactions';
+import { retryTransientTurso } from '../lib/turso-retry';
 
 const push = new Hono<AppEnv>();
 
@@ -10,8 +11,51 @@ const push = new Hono<AppEnv>();
 // CHECK 에 걸려 INSERT 가 실패한다 — 의도된 fail-closed 다. 등록이 500 으로 떨어지고
 // 클라가 재시도하면 되며, 잘못된 행이 남지 않는다.
 const PUSH_PLATFORMS = ['ios', 'android', 'web'] as const;
-type PushPlatform = (typeof PUSH_PLATFORMS)[number];
+export type PushPlatform = (typeof PUSH_PLATFORMS)[number];
 const TOKEN_MAX = 4096;
+
+/**
+ * `/register` 가 **한 번의 원자적 쓰기 batch** 로 보내는 두 문장 — 이 기기 토큰을 호출자 전용으로
+ * 재배정한다(`DELETE 다른 소유자` → `UPSERT`).
+ *
+ * 같은 기기에서 A 로그아웃→B 로그인 시 Firebase 등록 토큰은 그대로라, 옛 소유자(A) 행이 남으면
+ * A 의 알람 push 가 이 기기로 잘못 배달된다(P1). 두 문장이 따로 나가면 빠른 계정 전환으로 두
+ * 세션의 등록이 동시에 도착했을 때 서로의 DELETE 가 상대 INSERT 앞에 실행돼 소유자 2행이 남는다
+ * (Codex #567 P1) — 그래서 **둘은 언제나 한 쓰기 단위**다(`db.batch(…, 'write')` = `BEGIN IMMEDIATE`
+ * 단일 writer 락, 전부 아니면 전무). 어떤 인터리빙에서도 마지막 커밋이 유일 승자다.
+ *
+ * ON CONFLICT 타깃은 #14 부터 존재하는 (user_id, token) 유니크를 유지한다 — deploy-backend.yml 이
+ * 배포 '후' 마이그레이션을 돌리므로, ON CONFLICT(token) 을 쓰면 #71(token 전역 UNIQUE) 적용 전
+ * 창에서 모든 등록이 500 난다(Codex #568 P2). #71 이후엔 token 전역 UNIQUE 가 DB 수준 이중 방어.
+ *
+ * ⚠ **두 문장 다 멱등이어야 한다 — 이 batch 는 게이트웨이 실패에서 다시 보내진다**(아래 라우트).
+ * DELETE 는 조건으로 지우고, UPSERT 는 (user_id, token) 충돌에서 `id` 를 건드리지 않는다 — 같은
+ * 인자로 두 번 실행해도 같은 한 행이 남는다. 멱등이 아닌 문장(카운터 증가·무조건 INSERT 등)을
+ * 여기에 더하면 응답을 잃은 재시도가 그것을 두 번 적용한다.
+ *
+ * 라우트와 실 DB 테스트(`test/push-token-unique.test.ts`)가 **같은 문장**을 돌리도록 내보낸다 —
+ * 테스트가 SQL 을 손으로 베끼면 라우트가 무엇으로 바뀌든 초록으로 남는다.
+ */
+export function pushRegisterStatements(
+  userPk: string,
+  token: string,
+  platform: PushPlatform,
+): InStatement[] {
+  return [
+    {
+      sql: 'DELETE FROM push_tokens WHERE token = ? AND user_id != ?',
+      args: [token, userPk],
+    },
+    {
+      sql: `INSERT INTO push_tokens (id, user_id, token, platform, created_at, updated_at)
+            VALUES (?, ?, ?, ?, datetime('now'), datetime('now'))
+            ON CONFLICT(user_id, token) DO UPDATE SET
+              platform = excluded.platform,
+              updated_at = datetime('now')`,
+      args: [crypto.randomUUID(), userPk, token, platform],
+    },
+  ];
+}
 
 // 클라가 FCM 등록 토큰을 서버에 저장한다(가족 알람 등 push 대상). 로그인·토큰 갱신(onNewToken) 시 호출.
 // push_tokens 에 INSERT 하는 유일한 경로 — 이게 없어서 테이블이 항상 비어 모든 push 가 no-op 이던 갭을 채운다.
@@ -42,28 +86,28 @@ push.post('/register', async (c) => {
     );
   }
 
-  // 이 기기 토큰을 현재 사용자 전용으로 재배정한다. 같은 기기에서 A 로그아웃→B 로그인 시 Firebase 등록
-  // 토큰은 그대로라, 옛 소유자(A) 행이 남으면 A 의 알람 push 가 이 기기로 잘못 배달된다(P1).
-  // 이전의 비트랜잭션 'DELETE 타소유자 → UPSERT' 2문장은 빠른 계정 전환으로 두 세션의 등록이 동시에
-  // 도착하면 서로의 DELETE 가 상대 INSERT 앞에 실행돼 소유자 2행이 남는 레이스가 있었다(Codex #567 P1).
-  // 쓰기 트랜잭션(단일 writer 락)으로 두 문장을 원자화해 어떤 인터리빙에서도 마지막 커밋이 유일 승자다.
-  // ON CONFLICT 타깃은 #14 부터 존재하는 (user_id, token) 유니크를 유지한다 — deploy-backend.yml 이
-  // 배포 '후' 마이그레이션을 돌리므로, ON CONFLICT(token) 을 쓰면 #71(token 전역 UNIQUE) 적용 전
-  // 창에서 모든 등록이 500 난다(Codex #568 P2). #71 이후엔 token 전역 UNIQUE 가 DB 수준 이중 방어.
-  await withWriteTransaction(db, async (tx) => {
-    await tx.execute({
-      sql: 'DELETE FROM push_tokens WHERE token = ? AND user_id != ?',
-      args: [token, userPk],
-    });
-    await tx.execute({
-      sql: `INSERT INTO push_tokens (id, user_id, token, platform, created_at, updated_at)
-            VALUES (?, ?, ?, ?, datetime('now'), datetime('now'))
-            ON CONFLICT(user_id, token) DO UPDATE SET
-              platform = excluded.platform,
-              updated_at = datetime('now')`,
-      args: [crypto.randomUUID(), userPk, token, platform],
-    });
-  });
+  // 두 문장을 **왕복 한 번**(원자적 쓰기 batch)으로 보내고, Turso 게이트웨이의 일시 실패
+  // (5xx·전송 실패)에서는 그 batch 를 통째로 다시 보낸다(150·450ms, 최대 3회).
+  //
+  // 2026-10-11 전에는 대화형 쓰기 트랜잭션이었다 — 왕복이 셋(`BEGIN+DELETE` / `INSERT` / `COMMIT`)
+  // 이고 쓰기라 아무도 재시도하지 않았다. 2026-09-28·10-07 prod 에서 그 트랜잭션이 게이트웨이
+  // 525·520 을 받아 그대로 500 이 됐다(BACKEND-E — 스택의 줄 위치로는 둘 다 첫 왕복이다).
+  // 안드로이드는 프로세스가 뜰 때마다 다시 등록하지만 iOS 는 바인딩이 없거나 바뀌었다고 볼 때만
+  // 올린다 — 실패한 한 번이 다음 올리기까지 그 기기의 푸시를 끊을 수 있다.
+  //
+  // ⚠ **쓰기 재시도는 좁은 예외다 — 조건 둘을 다 지킬 때만**(`docs/spec/error-codes.md` 구현 지도).
+  //  ① 모든 문장이 멱등이다(`pushRegisterStatements` 주석). 애매한 5xx 뒤에 첫 회차가 실은
+  //     커밋됐더라도 다시 보낸 결과가 같다.
+  //  ② 다시 도는 클로저 안에 **DB 밖의 일이 없다**. 외부 API 호출·푸시 발송·R2 쓰기를 이 안에
+  //     넣으면 재시도마다 그 일도 다시 일어난다. 문장도 클로저 **밖에서 한 번** 만든다.
+  // batch 라 왕복이 하나뿐이어서 재시도가 싸고, 왕복 사이에 열어 둔 스트림이 없다(대화형
+  // 트랜잭션은 그 스트림이 유휴로 롤백된 적이 있다 — 같은 라우트의 BACKEND-D, 2026-09-25).
+  // 일반 규칙으로 넓히지 말 것 — `withWriteTransaction`·`getDB` 프록시는 여전히 쓰기를 재시도하지 않는다.
+  //
+  // fail-closed 는 그대로다: 세 번 다 실패하면(또는 SQL 오류면 즉시) 예외가 올라가 500 이고,
+  // batch 는 전부 아니면 전무라 반쯤 적용된 상태가 남지 않는다.
+  const statements = pushRegisterStatements(userPk, token, platform as PushPlatform);
+  await retryTransientTurso(() => db.batch(statements, 'write'));
 
   return c.json({ success: true });
 });
@@ -93,10 +137,16 @@ push.post('/unregister', async (c) => {
     return c.json({ error: 'token is required', error_code: 'INVALID_PUSH_TOKEN' }, 400);
   }
 
-  await db.execute({
-    sql: 'DELETE FROM push_tokens WHERE token = ? AND user_id = ?',
-    args: [token, userPk],
-  });
+  // 문장 하나짜리 쓰기는 그 자체로 원자적이다. 조건으로 지우는 DELETE 라 멱등이고 DB 밖의 일이
+  // 없다 — `/register` 와 같은 좁은 예외로 게이트웨이 일시 실패에서 다시 보낸다. 실패한 해제는
+  // 로그아웃한 기기를 떠난 계정에 묶어 둔다(안드로이드의 `unregisterCurrentToken` 은 실패를
+  // 보고만 하고 다시 보내지 않는다).
+  await retryTransientTurso(() =>
+    db.execute({
+      sql: 'DELETE FROM push_tokens WHERE token = ? AND user_id = ?',
+      args: [token, userPk],
+    }),
+  );
 
   return c.json({ success: true });
 });

@@ -73,6 +73,78 @@ describe('retryTransientTurso', () => {
     const error = new LibsqlError('UNIQUE constraint failed', 'SQLITE_CONSTRAINT');
     await expect(retryTransientTurso(() => Promise.reject(error))).rejects.toBe(error);
   });
+
+  // 재시도가 성공하면 그 딸꾹질은 Sentry 에 올라가지 않는다 — 그러면 "이슈가 조용하다" 가 재시도가
+  // 살려서인지 애초에 딸꾹질이 없어서인지 가를 수 없다. 이 줄이 운영 로그에 남는 유일한 증거다.
+  describe('다시 시도할 때마다 warn 한 줄(at: "turso.retry")', () => {
+    function retryLines(warn: { mock: { calls: unknown[][] } }) {
+      return warn.mock.calls.map(([line]) => JSON.parse(String(line)) as Record<string, unknown>);
+    }
+
+    it('성공으로 끝난 재시도도 회차마다 남는다 — 방금 실패한 회차(1부터)와 그 오류', async () => {
+      vi.useFakeTimers();
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      try {
+        const operation = vi
+          .fn<() => Promise<string>>()
+          .mockRejectedValueOnce(gatewayError(525))
+          .mockRejectedValueOnce(gatewayError(520))
+          .mockResolvedValueOnce('ok');
+
+        const result = retryTransientTurso(operation);
+        await vi.runAllTimersAsync();
+
+        await expect(result).resolves.toBe('ok');
+        expect(retryLines(warn)).toEqual([
+          {
+            level: 'warn',
+            at: 'turso.retry',
+            attempt: 1,
+            error: 'LibsqlError: SERVER_ERROR: Server returned HTTP status 525',
+          },
+          {
+            level: 'warn',
+            at: 'turso.retry',
+            attempt: 2,
+            error: 'LibsqlError: SERVER_ERROR: Server returned HTTP status 520',
+          },
+        ]);
+      } finally {
+        warn.mockRestore();
+        vi.useRealTimers();
+      }
+    });
+
+    it('끝까지 실패하면 두 줄뿐이다 — 마지막 회차의 실패는 던져져 호출부가 기록한다', async () => {
+      vi.useFakeTimers();
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      try {
+        const operation = vi.fn<() => Promise<string>>().mockRejectedValue(gatewayError(525));
+        const result = retryTransientTurso(operation);
+        result.catch(() => {});
+        await vi.runAllTimersAsync();
+
+        await expect(result).rejects.toMatchObject({ code: 'SERVER_ERROR' });
+        expect(operation).toHaveBeenCalledTimes(3);
+        expect(retryLines(warn).map((line) => line.attempt)).toEqual([1, 2]);
+      } finally {
+        warn.mockRestore();
+        vi.useRealTimers();
+      }
+    });
+
+    it('재시도하지 않는 오류와 첫 회차의 성공은 아무것도 찍지 않는다', async () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      try {
+        const error = new LibsqlError('UNIQUE constraint failed', 'SQLITE_CONSTRAINT');
+        await expect(retryTransientTurso(() => Promise.reject(error))).rejects.toBe(error);
+        await expect(retryTransientTurso(() => Promise.resolve('ok'))).resolves.toBe('ok');
+        expect(warn).not.toHaveBeenCalled();
+      } finally {
+        warn.mockRestore();
+      }
+    });
+  });
 });
 
 describe('withTransientReadRetry', () => {
