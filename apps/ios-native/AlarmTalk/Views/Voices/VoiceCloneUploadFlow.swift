@@ -752,31 +752,51 @@ struct VoiceCloneUploadFlow: View {
                 return
             }
         }
-        // 성공 판정은 **반환된 프로필로만** 한다.
-        // ⚠ `statusMessage.contains("등록")` 으로 판정하지 말 것 — 실패 문구
-        // "2분 이하 음성으로 등록할 수 있어요." 에도 '등록' 이 들어 있어, 2분을 넘긴 녹음이
-        // 실패 안내를 띄운 채 목록으로 넘어가 방금 녹음한 음성이 사라졌다.
-        // 또 `guard !isBusy` 로 빠져나간 회차는 statusMessage 를 건드리지 않아
-        // 직전 성공 문구가 그대로 남는다 — 문자열로는 이번 시도의 결과를 알 수 없다.
-        if let created {
-            // ⚠ **목록으로 곧바로 돌아가지 말 것.** 서버는 클론을 초안(`is_draft=true`)으로
-            // 만들고 승격을 기다린다 — 여기서 목록으로 보내면 사용자는 자기 목소리를
-            // 한 번도 못 들어본 채 이번 달 등록 횟수를 쓰고, 초안은 승격되지 않아
-            // 알람에 쓸 수도 없다.
+        // 갈 곳은 순수 셈이 정한다(`submitOutcome` — 가르는 규칙과 그 이유는 거기 있다).
+        switch Self.submitOutcome(created: created, monthlyLimitRejected: voice.monthlyLimitRejected) {
+        case .preview(let draftID):
+            // 확인 스텝이 목록 새로고침을 기다리지 않고 그리게 초안을 넘겨 둔다.
             voice.pendingDraft = created
-            route = .preview(created.id)
-        } else if voice.monthlyLimitRejected {
-            // 서버가 **이번 달 등록을 다 썼다**고 거절했다(`VoiceStudioViewModel.cloneAudioForProfile`
-            // 이 적고 남은 횟수를 다시 읽었다). 이번 달에는 몇 번을 눌러도 같은 답이라 세부 정보로
-            // 되돌려 같은 버튼을 다시 누르게 두지 않는다 — 창을 닫고, 창이 다 내려간 뒤 목소리 탭이
-            // 알럿 하나로 이유를 말한다(`VoicesPanelView`). 서버가 초안을 만들지 않았으니 지울
-            // 것도 없다.
+            route = .preview(draftID)
+        case .closeForMonthlyLimit:
+            // 창을 닫는다 — 창이 다 내려간 뒤 목소리 탭이 알럿 하나로 이유를 말한다(`VoicesPanelView`).
             route = .management
-        } else {
-            // 다시 시도할 수 있는 실패 — 이유는 `statusSection` 이 이 창 안에서 말하고, 녹음(고른
-            // 파일)은 그대로라 `등록` 을 그대로 다시 누를 수 있다.
+        case .details:
+            // 이유는 `statusSection` 이 이 창 안에서 말하고, 녹음(고른 파일)은 그대로라 `등록` 을 그대로
+            // 다시 누를 수 있다.
             registrationStep = .details
         }
+    }
+
+    /// 제출(`submit`) 뒤 등록 창이 갈 곳 — 화면 상태와 떼어 낸 순수 셈이다(회귀 `VoiceStudioViewModelTests`).
+    enum SubmitOutcome: Equatable, Sendable {
+        /// 서버가 초안을 만들었다 — 그 초안의 확인 스텝(`VoicesRoute.preview`)으로 간다.
+        case preview(String)
+        /// 이번 달 등록을 다 썼다 — 창을 닫는다.
+        case closeForMonthlyLimit
+        /// 다시 시도할 수 있는 실패 — 세부 정보로 돌아간다.
+        case details
+    }
+
+    /// 위 셋을 가른다. 순서가 곧 규칙이다.
+    ///
+    /// 1. **성공은 반환된 프로필로만 가른다.** ⚠ `statusMessage.contains("등록")` 으로 가르지 말 것 — 실패
+    ///    문구 "2분 이하 음성으로 등록할 수 있어요." 에도 '등록' 이 들어 있어, 2분을 넘긴 녹음이 실패 안내를
+    ///    띄운 채 목록으로 넘어가 방금 녹음한 음성이 사라졌다. 또 `guard !isBusy` 로 빠져나간 회차는
+    ///    `statusMessage` 를 건드리지 않아 직전 성공 문구가 그대로 남는다 — 문자열로는 이번 시도의 결과를
+    ///    알 수 없다. 프로필이 있으면 한도 표시가 무엇이든 그것이 이긴다(서버가 이번 등록을 받아들였다).
+    ///    - ⚠ **만든 초안은 목록이 아니라 확인 스텝으로 간다.** 서버는 클론을 초안(`is_draft=true`)으로 만들고
+    ///      승격을 기다린다 — 목록으로 보내면 사용자는 자기 목소리를 한 번도 못 들어본 채 이번 달 등록 횟수를
+    ///      쓰고, 초안은 승격되지 않아 알람에 쓸 수도 없다.
+    /// 2. ⚠ **월 등록 한도 거절은 세부 정보로 되돌리지 않는다**(스펙 voice-and-message §4-1 「월 등록 한도」 ③).
+    ///    이번 달에는 몇 번을 눌러도 같은 답이고, 거절을 받은 쪽(`VoiceStudioViewModel.cloneAudioForProfile`)은
+    ///    창이 닫힐 줄 알고 안내 줄을 비운다 — 되돌리면 아무 말 없는 세부 정보에서 살아 있는 `등록` 을 눌러
+    ///    같은 429 를 계속 받는다(2026-10-10 prod 의 안드로이드 사용자는 같은 거절을 일곱 번 받았다). 서버가
+    ///    초안을 만들지 않았으니 지울 것도 없다.
+    /// 3. 그 밖의 실패는 다시 시도할 수 있다 — 세부 정보로 돌아간다.
+    nonisolated static func submitOutcome(created: VoiceProfile?, monthlyLimitRejected: Bool) -> SubmitOutcome {
+        if let created { return .preview(created.id) }
+        return monthlyLimitRejected ? .closeForMonthlyLimit : .details
     }
 
     /// ⚠ **입구(`VoiceProfileManagementPanel.paidVoiceEntitledNow`)와 같은 판정기다 — 갈라 두지

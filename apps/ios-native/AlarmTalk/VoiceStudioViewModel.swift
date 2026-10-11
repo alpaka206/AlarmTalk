@@ -109,11 +109,22 @@ final class VoiceStudioViewModel: ObservableObject {
 
     /// 서버가 등록 창 안에서 **월 등록 한도로 거절했다** — 창이 닫힌 뒤 알럿 하나로 알릴 것이 있다.
     ///
-    /// 세우는 곳은 `handleMonthlyLimitRejection(session:)` 하나이고, 목소리 탭이 등록 창이 **다
-    /// 내려간 뒤에** 읽어 알럿을 열며 내린다(`VoicesPanelView` → `VoiceProfileManagementPanel` 의
-    /// `monthlyLimitNoticeOpen`). 창이 내려가는 중에는 알럿을 띄울 수 없어 화면 상태가 아니라
-    /// 여기에 둔다.
-    @Published var monthlyLimitRejected = false
+    /// 세우는 곳은 `handleMonthlyLimitRejection(session:)` 하나이고, 내리는 곳은 목소리 탭이 등록 창이
+    /// **다 내려간 뒤에** 부르는 [consumeMonthlyLimitNotice] 다(`VoicesPanelView` → `VoiceProfileManagementPanel`
+    /// 의 `monthlyLimitNoticeOpen`). 창이 내려가는 중에는 알럿을 띄울 수 없어 화면 상태가 아니라 여기에
+    /// 둔다. 화면이 직접 쓰지 못하게 닫아 둔다 — 넘겨주는 자리가 뷰 코드에만 있으면 회귀 테스트가 그 고리를
+    /// 볼 수 없다.
+    @Published private(set) var monthlyLimitRejected = false
+
+    /// 등록 창이 **다 내려간 뒤** 목소리 탭이 부른다(`fullScreenCover` 의 `onDismiss`). 알릴 월 한도 거절이
+    /// 있었으면 내리고 true — 그때 탭이 알럿을 연다.
+    ///
+    /// ⚠ **꺼낼 때 내린다.** 남겨 두면 다음 창 닫힘(성공한 등록 포함)마다 같은 알럿이 다시 뜬다.
+    func consumeMonthlyLimitNotice() -> Bool {
+        guard monthlyLimitRejected else { return false }
+        monthlyLimitRejected = false
+        return true
+    }
 
     /// 월 등록 한도 거절을 받았을 때 — 등록(`POST /voice/clone`)이든 저장(승격·교체)이든 — 부른다.
     ///

@@ -49,10 +49,9 @@ struct VoicesPanelView: View {
         // ⚠ **알럿은 창이 다 내려간 뒤에 연다 — `onDismiss` 가 그 시점이다.** 창을 닫는 것과 같은
         // 순간에 열면 내려가는 창과 겹쳐, 알럿이 뜨지 않은 채 끝날 수 있다(목소리 탭의 액션시트 →
         // 알럿이 한 박자 늦게 여는 것과 같은 이유다). 못 보면 사용자는 창이 왜 닫혔는지 모른다.
+        // 꺼내고 내리는 것은 뷰모델이다(`VoiceStudioViewModel.consumeMonthlyLimitNotice`).
         .fullScreenCover(isPresented: subflowPresented, onDismiss: {
-            guard voice.monthlyLimitRejected else { return }
-            voice.monthlyLimitRejected = false
-            monthlyLimitNoticeOpen = true
+            if voice.consumeMonthlyLimitNotice() { monthlyLimitNoticeOpen = true }
         }) {
             NavigationStack {
                 subflow

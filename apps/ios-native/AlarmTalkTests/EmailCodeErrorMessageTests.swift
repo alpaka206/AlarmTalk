@@ -331,14 +331,133 @@ final class EmailCodeErrorMessageTests: XCTestCase {
         XCTAssertEqual(model.emailCodeFieldClearTick, before + 1)
     }
 
+    // MARK: - Sentry 보고 — 실패마다 한 번, 안드로이드와 같은 글자로
+
+    /// 인증 코드 다섯 갈래는 잡은 실패를 **빠짐없이** 올린다. 2026-10-11 전에는 iOS 가 하나도 올리지 않아
+    /// 1.2.10 의 막다른 길(시도 상한 뒤의 429)이 Sentry 에서 한쪽 앱으로만 보였다.
+    ///
+    /// 메시지는 안드로이드 `ui/main/MainViewModelAuthActions.kt` 의 보고와 **같은 글자**여야 한다 — 그 글자가
+    /// `log.key` 태그이자 묶음 키의 셋째 마디라, 한 글자만 달라도 같은 실패가 두 프로젝트에서 다른 이름이 된다.
+    /// 그래서 여기 글자를 그대로 적는다(상수를 따라가게 두면 상수를 고친 실수를 못 잡는다).
+    func test_인증_코드_다섯_갈래의_실패는_정해진_글자로_한_번씩_올린다() async {
+        let api = StubEmailCodeAPI()
+        let reported = ReportedFailures()
+        let model = makeModel(api, reported: reported)
+
+        // 성공은 올리지 않는다.
+        _ = await model.requestEmailVerification(email: "new@example.test")
+        _ = await model.verifyEmailCode(email: "new@example.test", code: "123456")
+        await model.requestPasswordReset(email: "old@example.test")
+        _ = await model.confirmPasswordReset(email: "old@example.test", code: "123456", newPassword: "abcd1234")
+        XCTAssertTrue(reported.entries.isEmpty, "성공을 올렸다: \(reported.messages)")
+
+        let sendFailed = APIError.server(
+            status: 503, message: "Failed to send email code", errorCode: "AUTH_EMAIL_CODE_SEND_FAILED"
+        )
+        api.requestError = sendFailed
+        _ = await model.requestEmailVerification(email: "new@example.test")
+        api.verifyError = refusal(429, "AUTH_EMAIL_CODE_ATTEMPTS_EXCEEDED")
+        _ = await model.verifyEmailCode(email: "new@example.test", code: "123456")
+        api.registerError = refusal(400, "AUTH_EMAIL_CODE_EXPIRED")
+        await model.registerWithEmail(
+            email: "new@example.test", password: "abcd1234", name: "새 사용자", verificationCode: "123456"
+        )
+        api.resetRequestError = sendFailed
+        await model.requestPasswordReset(email: "old@example.test")
+        api.resetConfirmError = refusal(429, "AUTH_EMAIL_CODE_ATTEMPTS_EXCEEDED")
+        _ = await model.confirmPasswordReset(email: "old@example.test", code: "123456", newPassword: "abcd1234")
+
+        XCTAssertEqual(reported.messages, [
+            "Email verification request failed",
+            "Email verification confirm failed",
+            "Email registration failed",
+            "Password reset request failed",
+            "Password reset confirm failed",
+        ])
+        // 받은 오류를 **그대로** 올린다 — 감싸거나 바꾸면 보고 함수가 상태·코드를 읽지 못해 묶음 키가 사라진다.
+        XCTAssertEqual(reported.entries.map { ($0.error as? APIError)?.serverErrorCode }, [
+            "AUTH_EMAIL_CODE_SEND_FAILED", "AUTH_EMAIL_CODE_ATTEMPTS_EXCEEDED", "AUTH_EMAIL_CODE_EXPIRED",
+            "AUTH_EMAIL_CODE_SEND_FAILED", "AUTH_EMAIL_CODE_ATTEMPTS_EXCEEDED",
+        ])
+        // 값 토큰(` key=value`)이 없는 글자라 `log.key` 는 메시지 그대로다 — 안드로이드 `logKeyOf` 와 같은 값이다.
+        for message in reported.messages {
+            XCTAssertEqual(AlarmTalkLog.logKey(of: message), message)
+        }
+    }
+
+    /// 호출부는 **거르지 않는다** — 이슈로 올릴지 브레드크럼으로 내릴지는 보고 함수 한 곳이 정한다
+    /// (`AlarmTalkLog.handledFailureCategory`, `docs/spec/error-codes.md` §3). 같은 자리에서 올린 네 실패가:
+    /// - 코드의 거절은 **이슈**이고 묶음 키는 `[api_error, 코드, 호출 자리]` 다(1.2.10 의 막다른 길이 이것으로 보인다).
+    /// - 코드 없는 5xx 는 이슈이고, 호출 자리를 빼고 묶는다(게이트웨이 장애를 화면 수만큼 쪼개지 않는다).
+    /// - 일시적 네트워크 실패는 브레드크럼(`transient`)이다.
+    /// - 401 은 브레드크럼(`auth`)이다. 이 라우트들은 401 을 내지 않지만(인증 미들웨어 밖이다), 오더라도
+    ///   안드로이드(상태코드 401 이면 브레드크럼)와 같은 갈래로 간다.
+    func test_올린_실패의_갈래와_묶음_키는_보고_함수가_정한다() async {
+        let api = StubEmailCodeAPI()
+        let reported = ReportedFailures()
+        let model = makeModel(api, reported: reported)
+        let failures: [Error] = [
+            refusal(429, "AUTH_EMAIL_CODE_ATTEMPTS_EXCEEDED"),
+            APIError.server(status: 503, message: "Service Unavailable", errorCode: nil),
+            URLError(.timedOut),
+            APIError.server(status: 401, message: "Unauthorized", errorCode: nil),
+        ]
+        for failure in failures {
+            api.verifyError = failure
+            _ = await model.verifyEmailCode(email: "new@example.test", code: "123456")
+        }
+
+        XCTAssertEqual(
+            reported.messages, Array(repeating: "Email verification confirm failed", count: failures.count),
+            "실패마다 한 번씩 올려야 한다 — 거르는 것은 보고 함수다"
+        )
+        guard reported.entries.count == failures.count else { return }
+        let refused = reported.entries[0]
+        let gateway = reported.entries[1]
+        let offline = reported.entries[2]
+        let unauthorized = reported.entries[3]
+
+        XCTAssertNil(AlarmTalkLog.handledFailureCategory(refused.error), "코드의 거절을 브레드크럼으로 내렸다")
+        XCTAssertEqual(
+            AlarmTalkLog.apiFailureFingerprint(for: refused.error, message: refused.message),
+            ["api_error", "AUTH_EMAIL_CODE_ATTEMPTS_EXCEEDED", "Email verification confirm failed"]
+        )
+        XCTAssertNil(AlarmTalkLog.handledFailureCategory(gateway.error))
+        XCTAssertEqual(
+            AlarmTalkLog.apiFailureFingerprint(for: gateway.error, message: gateway.message),
+            ["api_error", "HTTP_503"]
+        )
+        XCTAssertEqual(AlarmTalkLog.handledFailureCategory(offline.error), "transient")
+        XCTAssertEqual(AlarmTalkLog.handledFailureCategory(unauthorized.error), "auth")
+    }
+
     // MARK: - 준비
 
-    private func makeModel(_ emailCodeAPI: StubEmailCodeAPI) -> AuthViewModel {
+    /// `reported` 를 주지 않은 테스트의 보고도 여기서 받는다 — 테스트가 일부러 만든 실패를 진짜
+    /// 보고 경로(`AlarmTalkLog.reportError`)로 흘리지 않는다.
+    private func makeModel(
+        _ emailCodeAPI: StubEmailCodeAPI,
+        reported: ReportedFailures = ReportedFailures()
+    ) -> AuthViewModel {
         AuthViewModel(
             api: UnusedAuthAPI(),
             emailCodeAPI: emailCodeAPI,
-            appleCredentialProvider: UnusedAppleCredentialProvider()
+            appleCredentialProvider: UnusedAppleCredentialProvider(),
+            reportFailure: { reported.record($0, $1) }
         )
+    }
+}
+
+/// `AuthViewModel` 의 `reportFailure` 자리에 꽂아, 무엇이 Sentry 로 **올라갈 뻔했는지** 순서대로 적는다.
+/// 유닛 테스트는 Sentry 를 켜지 않으므로 SDK 로는 볼 수 없다(`AlarmTalkLog.shouldStartCrashReporting`).
+@MainActor
+private final class ReportedFailures {
+    private(set) var entries: [(message: String, error: Error)] = []
+
+    var messages: [String] { entries.map(\.message) }
+
+    func record(_ message: String, _ error: Error) {
+        entries.append((message, error))
     }
 }
 
@@ -347,6 +466,7 @@ private final class StubEmailCodeAPI: EmailCodeAPIProviding, @unchecked Sendable
     var requestError: Error?
     var verifyError: Error?
     var registerError: Error = APIError.invalidResponse
+    var resetRequestError: Error?
     var resetConfirmError: Error?
 
     func requestEmailVerification(email: String) async throws -> RequestEmailVerificationResponse {
@@ -364,7 +484,8 @@ private final class StubEmailCodeAPI: EmailCodeAPIProviding, @unchecked Sendable
     }
 
     func requestPasswordReset(email: String) async throws -> RequestEmailVerificationResponse {
-        RequestEmailVerificationResponse(success: true)
+        if let resetRequestError { throw resetRequestError }
+        return RequestEmailVerificationResponse(success: true)
     }
 
     func confirmPasswordReset(email: String, code: String, password: String) async throws -> PasswordResetConfirmResponse {

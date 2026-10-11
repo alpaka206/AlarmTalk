@@ -441,6 +441,57 @@ final class VoiceStudioViewModelTests: XCTestCase {
             XCTAssertEqual(vm.statusMessage, APIErrorMessages.message(for: "VOICE_CAPACITY_EXHAUSTED"))
             XCTAssertEqual(quotaCalls(), 0)
             XCTAssertTrue(FileManager.default.fileExists(atPath: audio.path), "다시 누를 녹음이 남아 있어야 한다")
+            XCTAssertEqual(
+                VoiceCloneUploadFlow.submitOutcome(created: created, monthlyLimitRejected: vm.monthlyLimitRejected),
+                .details,
+                "다시 시도할 수 있는 실패에 창을 닫는다"
+            )
+            XCTAssertFalse(vm.consumeMonthlyLimitNotice(), "다시 시도할 수 있는 실패에 월 한도 알럿을 띄운다")
+        }
+    }
+
+    /// 제출 뒤 등록 창이 갈 곳(`VoiceCloneUploadFlow.submitOutcome`) — 순서가 곧 규칙이다. 만든 초안이 있으면
+    /// 그것이 이기고(서버가 이번 등록을 받아들였다), 월 한도 거절이면 창을 닫고, 그 밖의 실패는 세부 정보로
+    /// 돌아가 다시 누른다. 월 한도 거절을 세부 정보로 되돌리면 안내 줄이 빈 채(거절을 받은 쪽이 창이 닫힐 줄
+    /// 알고 비운다) 살아 있는 `등록` 이 남아, 누를 때마다 같은 429 를 말없이 받는다.
+    func test_제출_뒤_갈_곳은_만든_초안_월_한도_거절_그_밖의_실패_순서로_가른다() {
+        let draft = VoiceProfile(id: "draft-1", name: "새 목소리", status: "ready", isDraft: true)
+
+        XCTAssertEqual(
+            VoiceCloneUploadFlow.submitOutcome(created: draft, monthlyLimitRejected: false), .preview("draft-1")
+        )
+        XCTAssertEqual(
+            VoiceCloneUploadFlow.submitOutcome(created: draft, monthlyLimitRejected: true), .preview("draft-1"),
+            "서버가 받아들인 등록을 한도 표시 때문에 버린다"
+        )
+        XCTAssertEqual(
+            VoiceCloneUploadFlow.submitOutcome(created: nil, monthlyLimitRejected: true), .closeForMonthlyLimit,
+            "월 한도 거절에 세부 정보로 돌아가 같은 버튼을 다시 누르게 둔다"
+        )
+        XCTAssertEqual(VoiceCloneUploadFlow.submitOutcome(created: nil, monthlyLimitRejected: false), .details)
+    }
+
+    /// 등록이 월 한도로 거절되면 창을 닫고, 창이 다 내려간 뒤 목소리 탭이 알림을 **한 번만** 꺼낸다
+    /// (`consumeMonthlyLimitNotice` — `VoicesPanelView` 의 `fullScreenCover(onDismiss:)` 가 부른다). 꺼내지 못하면
+    /// 사용자는 창이 왜 닫혔는지 모르고, 꺼낸 뒤에도 남으면 다음 창 닫힘(성공한 등록 포함)마다 같은 알럿이 뜬다.
+    func test_월_한도_거절은_창을_닫고_닫힌_뒤_알림을_한_번만_꺼낸다() async throws {
+        try await withVoiceViewModel(clone: (
+            429, #"{"error":"Voice can be changed once a month","error_code":"VOICE_MONTHLY_CHANGE_LIMIT_REACHED"}"#
+        )) { vm, session, audio, _ in
+            XCTAssertFalse(vm.consumeMonthlyLimitNotice(), "알릴 것이 없는데 알럿을 연다")
+
+            let created = await vm.cloneAudioForProfile(
+                audioFileURL: audio, name: "새 목소리", durationMs: 20_000, isShared: false, session: session
+            )
+
+            XCTAssertEqual(
+                VoiceCloneUploadFlow.submitOutcome(created: created, monthlyLimitRejected: vm.monthlyLimitRejected),
+                .closeForMonthlyLimit,
+                "월 한도 거절인데 창을 닫지 않는다"
+            )
+            XCTAssertTrue(vm.consumeMonthlyLimitNotice(), "창이 닫힌 뒤 이유를 말할 알럿이 뜨지 않는다")
+            XCTAssertFalse(vm.monthlyLimitRejected)
+            XCTAssertFalse(vm.consumeMonthlyLimitNotice(), "꺼낸 알림이 남아 다음 창 닫힘에 같은 알럿이 또 뜬다")
         }
     }
 
