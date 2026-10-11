@@ -506,6 +506,10 @@ struct AlarmTalkApp: App {
             AppEntrySignal.shared.observe(newPhase)
             switch newPhase {
             case .active:
+                // 이 실행에서 푸시 등록이 아직 확인되지 않았으면(첫 등록 실패·세션 없이 온 토큰·APNs 실패) 토큰을 다시
+                // 받아 올린다 — 확인됐으면 아무 일도 없다. iOS 앱은 멈춘 채 오래 살아 '다음 실행' 을 기다리면 그동안 가족
+                // 알람 푸시가 끊긴다(`PushNotificationCoordinator.resumeRegistrationIfNeeded`, 스펙 family-alarm §3).
+                push.resumeRegistrationIfNeeded(session: auth.session)
                 Task {
                     guard alarmStore.hasLoadedFromDisk else { return }
                     // 전경 복귀에서도 한 번 — 로그아웃 직후 실패한 취소를 여기서 만회한다.

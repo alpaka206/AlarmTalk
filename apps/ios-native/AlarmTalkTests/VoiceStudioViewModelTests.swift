@@ -625,31 +625,122 @@ final class VoiceStudioViewModelTests: XCTestCase {
         }
     }
 
-    /// 말소리 거절 뒤 등록 창이 할 일(`VoiceCloneUploadFlow.rerecordPlan` — `submit` 이 그대로 따른다). 보낸 소리를
-    /// 남기면 `다음`·`등록` 이 같은 소리를 다시 보내 같은 400 을 받고, 누를 때마다 공용·한도 있는 키로 전사 한 번을
-    /// 치른다. 버리는 것은 **보낸 갈래의 소리**뿐이다 — 다른 갈래에 준비해 둔 소리는 보내지 않았다.
+    /// 말소리 거절 뒤 등록 창이 버릴 것(`VoiceCloneUploadFlow.sentSourceCleanup` — `submit` 이 그대로 따른다). 보낸
+    /// 소리를 남기면 `다음`·`등록` 이 같은 소리를 다시 보내 같은 400 을 받고, 누를 때마다 공용·한도 있는 키로 전사 한
+    /// 번을 치른다. 버리는 것은 **보낸 갈래의 소리**뿐이다 — 다른 갈래에 준비해 둔 소리는 보내지 않았다. 돌아갈 단계
+    /// (음원 준비)는 화면 배선이 정한다(`test_말소리_거절의_이유는_녹음_카드_아래_오류_색_줄에_쓰고_새_소리를_준비하면_걷는다`).
     func test_말소리_거절_뒤에는_보낸_소리를_버리고_음원_준비로_돌아간다() {
         let imported = URL(fileURLWithPath: "/voice-clone-plan-test/VoiceImports/clone-import-a.m4a")
         let cropped = URL(fileURLWithPath: "/voice-clone-plan-test/VoiceCrop/crop-b.m4a")
+        func cleanup(_ mode: VoiceCloneSourceMode, uploaded: URL?) -> VoiceCloneUploadFlow.SentSourceCleanup {
+            VoiceCloneUploadFlow.sentSourceCleanup(
+                after: .rerecordForNoSpeech, sentMode: mode, selectedFileURL: imported, uploadedURL: uploaded
+            )
+        }
 
         // 고른 파일의 구간을 잘라 보냈다 — 올린 것은 잘라 낸 사본이다. 가져온 사본과 함께 지우고 고르기 전으로 돌린다.
-        let croppedFile = VoiceCloneUploadFlow.rerecordPlan(sentMode: .file, selectedFileURL: imported, uploadedURL: cropped)
-        XCTAssertEqual(croppedFile.step, .source, "말소리가 없는 파일을 세부 정보로 돌려 같은 파일을 다시 보내게 둔다")
+        let croppedFile = cleanup(.file, uploaded: cropped)
         XCTAssertEqual(croppedFile.filesToDelete, [imported, cropped], "올린 소리(잘라 낸 사본)나 가져온 사본을 남긴다")
         XCTAssertTrue(croppedFile.clearsFileSelection, "고른 파일을 놓지 않아 `다음` 이 같은 파일을 다시 보낸다")
         XCTAssertFalse(croppedFile.clearsRecorder, "보내지 않은 녹음까지 버린다")
 
         // 가져온 사본을 그대로 보냈다(자를 것이 없었다) — 지울 파일은 그 하나다.
-        let wholeFile = VoiceCloneUploadFlow.rerecordPlan(sentMode: .file, selectedFileURL: imported, uploadedURL: imported)
+        let wholeFile = cleanup(.file, uploaded: imported)
         XCTAssertEqual(wholeFile.filesToDelete, [imported])
         XCTAssertTrue(wholeFile.clearsFileSelection)
-        XCTAssertEqual(wholeFile.step, .source)
 
         // 녹음을 보냈다 — 녹음기를 비운다(녹음 파일은 녹음기가 지운다). 고른 파일은 보내지 않았으니 그대로 둔다.
         XCTAssertEqual(
-            VoiceCloneUploadFlow.rerecordPlan(sentMode: .record, selectedFileURL: imported, uploadedURL: nil),
-            VoiceCloneUploadFlow.RerecordPlan(clearsRecorder: true, filesToDelete: [], clearsFileSelection: false, step: .source),
-            "말소리가 없는 녹음을 남기거나, 보내지 않은 파일까지 버리거나, 세부 정보로 돌린다"
+            cleanup(.record, uploaded: nil),
+            VoiceCloneUploadFlow.SentSourceCleanup(clearsRecorder: true, filesToDelete: [], clearsFileSelection: false),
+            "말소리가 없는 녹음을 남기거나, 보내지 않은 파일까지 버린다"
+        )
+    }
+
+    // MARK: - 보낸 음원은 다 쓰면 곧바로 지운다(스펙 voice-and-message §4-1)
+
+    /// 등록 녹음은 음성 생체정보 **평문**이다 — 다시 보낼 일이 없으면 남기지 않는다. 고치기 전 iOS 는 말소리 거절에서만
+    /// 지웠고, 서버가 받아들인 뒤(초안이 만들어졌다)와 월 한도로 창을 닫은 뒤에도 녹음(`VoiceRecordings`)·가져온 사본
+    /// (`VoiceImports`)·잘라 낸 사본(`VoiceCrop`)이 남았다 — 안드로이드는 업로드가 성공하면, 거절로 다 쓰면 지운다.
+    /// 다시 시도할 수 있는 실패만 `등록` 이 다시 보낼 것(녹음·가져온 사본)을 남긴다.
+    func test_보낸_음원은_다_쓰면_지우고_다시_시도할_수_있는_실패에는_다시_보낼_것만_남긴다() {
+        let imported = URL(fileURLWithPath: "/voice-clone-plan-test/VoiceImports/clone-import-a.m4a")
+        let cropped = URL(fileURLWithPath: "/voice-clone-plan-test/VoiceCrop/crop-b.m4a")
+        let spent: [VoiceCloneUploadFlow.SubmitOutcome] = [.preview("draft-1"), .closeForMonthlyLimit, .rerecordForNoSpeech]
+
+        for outcome in spent {
+            XCTAssertEqual(
+                VoiceCloneUploadFlow.sentSourceCleanup(
+                    after: outcome, sentMode: .record, selectedFileURL: imported, uploadedURL: nil
+                ),
+                VoiceCloneUploadFlow.SentSourceCleanup(clearsRecorder: true, filesToDelete: [], clearsFileSelection: false),
+                "\(outcome): 다 쓴 녹음을 남기거나, 보내지 않은 파일까지 버린다"
+            )
+            XCTAssertEqual(
+                VoiceCloneUploadFlow.sentSourceCleanup(
+                    after: outcome, sentMode: .file, selectedFileURL: imported, uploadedURL: cropped
+                ),
+                VoiceCloneUploadFlow.SentSourceCleanup(clearsRecorder: false, filesToDelete: [imported, cropped], clearsFileSelection: true),
+                "\(outcome): 다 쓴 가져온 사본·잘라 낸 사본을 남기거나, 보내지 않은 녹음까지 버린다"
+            )
+        }
+
+        // 다시 시도할 수 있는 실패 — 녹음과 가져온 사본은 남는다(`등록` 이 그대로 다시 보낸다). 잘라 낸 사본은 다음 `등록` 이
+        // 다시 자르므로 남겨 봐야 쌓이기만 한다.
+        XCTAssertEqual(
+            VoiceCloneUploadFlow.sentSourceCleanup(after: .details, sentMode: .record, selectedFileURL: nil, uploadedURL: nil),
+            VoiceCloneUploadFlow.SentSourceCleanup(clearsRecorder: false, filesToDelete: [], clearsFileSelection: false),
+            "다시 시도할 수 있는 실패에 녹음을 버려 처음부터 다시 녹음하게 한다"
+        )
+        XCTAssertEqual(
+            VoiceCloneUploadFlow.sentSourceCleanup(
+                after: .details, sentMode: .file, selectedFileURL: imported, uploadedURL: cropped
+            ),
+            VoiceCloneUploadFlow.SentSourceCleanup(clearsRecorder: false, filesToDelete: [cropped], clearsFileSelection: false),
+            "가져온 사본을 버려 다시 고르게 하거나, 다시 쓰이지 않을 잘라 낸 사본을 남긴다"
+        )
+        XCTAssertEqual(
+            VoiceCloneUploadFlow.sentSourceCleanup(
+                after: .details, sentMode: .file, selectedFileURL: imported, uploadedURL: imported
+            ),
+            VoiceCloneUploadFlow.SentSourceCleanup(clearsRecorder: false, filesToDelete: [], clearsFileSelection: false),
+            "자르지 않고 보낸 가져온 사본을 다시 시도할 실패에 지운다"
+        )
+    }
+
+    /// ⚠ **알람이 아직 쓰는 파일은 지우지 않는다** — 지울 목록은 앱이 뜬 사본 폴더(가져온 사본·잘라 낸 사본) **바로 안의**
+    /// 파일로만 셈한다. 알람 음원은 다른 폴더라 섞일 일이 없지만, 다른 곳을 가리키는 주소가 들어와도 지우지 않는다 —
+    /// 선택만 놓는다. 사용자가 고른 원본(가져올 때 사본을 떴다)도 같은 이유로 지우지 않는다.
+    func test_앱이_뜬_사본_폴더_밖의_파일은_어떤_결말에도_지우지_않는다() {
+        let alarmAudio = URL(fileURLWithPath: "/voice-clone-plan-test/AlarmTalkAudio/alarm-7.m4a")
+        let picked = URL(fileURLWithPath: "/voice-clone-plan-test/Inbox/내 녹음.m4a")
+        let nested = URL(fileURLWithPath: "/voice-clone-plan-test/VoiceImports/old/clone-import-c.m4a")
+        let remote = URL(string: "https://r2.example/VoiceCrop/crop-d.m4a")!
+
+        for url in [alarmAudio, picked, nested, remote] {
+            XCTAssertFalse(VoiceCloneUploadFlow.isAppMadeSourceCopy(url), "\(url)")
+        }
+        XCTAssertTrue(VoiceCloneUploadFlow.isAppMadeSourceCopy(
+            URL(fileURLWithPath: "/voice-clone-plan-test/VoiceImports/clone-import-a.m4a")
+        ))
+        XCTAssertTrue(VoiceCloneUploadFlow.isAppMadeSourceCopy(
+            URL(fileURLWithPath: "/voice-clone-plan-test/VoiceCrop/crop-b.m4a")
+        ))
+
+        let outcomes: [VoiceCloneUploadFlow.SubmitOutcome] = [
+            .preview("draft-1"), .closeForMonthlyLimit, .rerecordForNoSpeech, .details,
+        ]
+        for outcome in outcomes {
+            let cleanup = VoiceCloneUploadFlow.sentSourceCleanup(
+                after: outcome, sentMode: .file, selectedFileURL: picked, uploadedURL: alarmAudio
+            )
+            XCTAssertEqual(cleanup.filesToDelete, [], "\(outcome): 앱이 뜬 사본이 아닌 파일을 지운다")
+        }
+        XCTAssertTrue(
+            VoiceCloneUploadFlow.sentSourceCleanup(
+                after: .preview("draft-1"), sentMode: .file, selectedFileURL: nested, uploadedURL: remote
+            ).clearsFileSelection,
+            "지우지 못하는 파일이어도 다 쓴 선택은 놓아야 한다"
         )
     }
 
@@ -660,28 +751,61 @@ final class VoiceStudioViewModelTests: XCTestCase {
     /// - 그 줄은 **창의 상태**다 — 뷰모델의 안내 줄에 남기면 창을 닫은 뒤 목소리 탭 맨 위에, 다음 창의 빈 녹음 카드
     ///   아래에 그대로 남는다.
     /// - 새로 녹음하기 시작하거나, 파일을 새로 고르거나, 방식을 바꾸면 걷는다 — 남기면 새 소리도 거절당한 것처럼 읽힌다.
+    /// - 이유가 생기면 본문을 맨 위로 올린다 — 그 줄은 본문 위쪽이다.
+    /// - 보낸 음원의 정리는 갈 곳이 정해진 뒤 한 자리에서 한다(`sentSourceCleanup` — 모든 결말이 지난다).
     func test_말소리_거절의_이유는_녹음_카드_아래_오류_색_줄에_쓰고_새_소리를_준비하면_걷는다() throws {
-        let flow = try Self.appSource("Views/Voices/VoiceCloneUploadFlow.swift")
+        let flow = try AppSourceText.read("Views/Voices/VoiceCloneUploadFlow.swift")
 
-        // 갈래 — 계획을 그대로 따르고, 문장은 뷰모델의 안내 줄에서 창의 줄로 옮긴다. 흐름은 끝내지 않는다.
+        // 갈래 — 음원 준비로 돌아가고, 문장은 뷰모델의 안내 줄에서 창의 줄로 옮긴다. 흐름은 끝내지 않는다.
         XCTAssertTrue(flow.contains("@State private var rerecordReason: String?"), "이유가 창의 상태가 아니다")
-        let branch = try Self.region(of: flow, from: "case .rerecordForNoSpeech:", to: "case .details:")
+        let branch = try AppSourceText.region(of: flow, from: "case .rerecordForNoSpeech:", to: "case .details:")
         for needle in [
-            "Self.rerecordPlan(sentMode: sentMode, selectedFileURL: selectedFileURL, uploadedURL: uploadedFileURL)",
-            "discardSentSource(plan)",
-            "registrationStep = plan.step",
+            "registrationStep = .source",
             "rerecordReason = voice.statusMessage",
             "voice.statusMessage = nil",
         ] {
             XCTAssertTrue(branch.contains(needle), "말소리 거절 갈래에 없다: \(needle)")
         }
         XCTAssertFalse(branch.contains("route ="), "말소리 거절이 창을 닫는다 — 다시 녹음하는 데 제한이 없어야 한다")
-        // 고른 파일이면 올린 파일(잘라 낸 사본)을 계획에 넘긴다 — 안 넘기면 그 사본이 캐시에 남는다.
-        let fileUpload = try Self.region(of: flow, from: "let prepared = try await preparedFileAudio()", to: "created = await voice.cloneAudioForProfile(")
+        // 고른 파일이면 올린 파일(잘라 낸 사본)을 정리 계획에 넘긴다 — 안 넘기면 그 사본이 캐시에 남는다.
+        let fileUpload = try AppSourceText.region(of: flow, from: "let prepared = try await preparedFileAudio()", to: "created = await voice.cloneAudioForProfile(")
         XCTAssertTrue(fileUpload.contains("uploadedFileURL = prepared.url"), "올린 파일을 계획에 넘기지 않는다")
 
+        // 정리 — 갈 곳이 정해진 뒤 **한 자리에서**, 순수 셈(`sentSourceCleanup`) 그대로. 말소리 거절만이 아니라 모든 결말이
+        // 지난다(초안이 만들어졌다·월 한도도 다 쓴 음원을 지운다 — 스펙 §4-1 「보낸 음원은 다 쓰면 곧바로 지운다」). 갈래마다
+        // 따로 지우면 한 결말이 빠진다 — 고치기 전에는 말소리 거절 갈래 하나만 지웠다.
+        let settle = try AppSourceText.region(of: flow, from: "let outcome = Self.submitOutcome(", to: "switch outcome {")
+        for needle in [
+            "discardSentSource(Self.sentSourceCleanup(",
+            "after: outcome",
+            "sentMode: sentMode",
+            "selectedFileURL: selectedFileURL",
+            "uploadedURL: uploadedFileURL",
+        ] {
+            XCTAssertTrue(settle.contains(needle), "갈 곳을 정한 뒤의 정리에 없다: \(needle)")
+        }
+        let submit = try AppSourceText.region(of: flow, from: "private func submit() async {", to: "private func discardSentSource(")
+        XCTAssertEqual(
+            submit.components(separatedBy: "discardSentSource(").count - 1, 1,
+            "보낸 음원을 갈래마다 따로 지운다 — 정리는 갈 곳이 정해진 뒤 한 번이다"
+        )
+        // 지울 목록이 고르는 폴더는 사본을 **만드는** 폴더와 같아야 한다 — 다르면 정리가 아무것도 지우지 못한다.
+        let copyImported = try AppSourceText.region(of: flow, from: "private func copyImportedAudio(", to: "return destination")
+        XCTAssertTrue(copyImported.contains(".appendingPathComponent(Self.importFolderName"), "가져온 사본을 다른 폴더에 뜬다")
+        let cropper = try AppSourceText.read("Views/Voices/AudioCropper.swift")
+        let cropOutput = try AppSourceText.region(of: cropper, from: "private static func makeOutputURL()", to: "return dir")
+        XCTAssertTrue(cropOutput.contains(".appendingPathComponent(outputFolderName"), "잘라 낸 사본을 다른 폴더에 쓴다")
+
+        // 본문을 맨 위로 — 이유 줄은 본문 위쪽이라, 세부 정보 단계에서 내려 둔 위치가 남으면 화면 밖이다. 안드로이드
+        // `LaunchedEffect(rerecordReason)` 의 `animateScrollTo(0)` 과 같다. 이유가 생길 때만 올린다(걷힐 때는 그대로).
+        XCTAssertTrue(flow.contains("ScrollViewReader { scroll in"), "본문을 올릴 스크롤 손잡이가 없다")
+        XCTAssertTrue(flow.contains(".id(Self.contentTopID)"), "본문 맨 위에 표지가 없다")
+        let scrollUp = try AppSourceText.region(of: flow, from: ".onChange(of: rerecordReason)", to: "bottomActions")
+        XCTAssertTrue(scrollUp.contains("guard reason != nil else { return }"), "이유를 걷을 때도 본문을 움직인다")
+        XCTAssertTrue(scrollUp.contains("scroll.scrollTo(Self.contentTopID, anchor: .top)"), "이유가 생겨도 본문을 맨 위로 올리지 않는다")
+
         // 자리 — 녹음 카드 **바로** 아래(힌트·예시 대본보다 앞), 파일 고르기 **바로** 아래.
-        let source = try Self.region(
+        let source = try AppSourceText.region(
             of: flow, from: "private var sourceSection: some View {", to: "private var scriptSection: some View {"
         )
         func lineAfter(_ anchor: String) throws -> Substring {
@@ -697,13 +821,13 @@ final class VoiceStudioViewModelTests: XCTestCase {
         XCTAssertNotNil(flow.range(of: styledLine, options: .regularExpression), "이유 줄이 오류 색의 bodySmall 이 아니다")
 
         // 걷는 때 — 녹음이 실제로 시작됐을 때, 파일을 새로 가져왔을 때(성공한 때), 방식을 바꿨을 때. 창을 닫으면 상태째 사라진다.
-        let onRecord = try Self.region(of: flow, from: "onRecord: {", to: "onPreview:")
+        let onRecord = try AppSourceText.region(of: flow, from: "onRecord: {", to: "onPreview:")
         let started = try XCTUnwrap(onRecord.range(of: "await voice.startRecording()"), "녹음 버튼이 녹음을 시작하지 않는다")
         let clearedOnRecord = try XCTUnwrap(onRecord.range(of: "rerecordReason = nil"), "녹음을 다시 시작해도 이유가 남는다")
         XCTAssertLessThan(started.lowerBound, clearedOnRecord.lowerBound, "녹음을 시작하기도 전에 이유를 걷는다")
-        let imported = try Self.region(of: flow, from: "private func importAudioFile(", to: "} catch {")
+        let imported = try AppSourceText.region(of: flow, from: "private func importAudioFile(", to: "} catch {")
         XCTAssertTrue(imported.contains("rerecordReason = nil"), "파일을 새로 가져와도 이유가 남는다")
-        let modeChange = try Self.region(of: flow, from: ".onChange(of: sourceMode)", to: "private func goBack()")
+        let modeChange = try AppSourceText.region(of: flow, from: ".onChange(of: sourceMode)", to: "private func goBack()")
         XCTAssertTrue(modeChange.contains("rerecordReason = nil"), "녹음·파일 방식을 바꿔도 이유가 남는다")
     }
 
@@ -718,27 +842,6 @@ final class VoiceStudioViewModelTests: XCTestCase {
 
         XCTAssertNil(vm.statusMessage, "목소리 탭에 남은 안내가 새 창의 음원 준비 단계에 뜬다")
         XCTAssertEqual(vm.cloneName, "")
-    }
-
-    /// 앱 소스 한 파일 — 창의 `@State` 배선처럼 유닛 테스트가 닿지 않는 규칙을 볼 때만 읽는다(안드로이드 배선 테스트와
-    /// 같은 방법). 소스 트리가 없는 곳(실기기)에서는 건너뛴다. 소스 트리가 있는데 그 파일이 없으면 **실패한다** — 파일을
-    /// 옮기고 이 테스트를 잊었을 때 조용히 건너뛰지 않게.
-    private static func appSource(_ relativePath: String, testFile: StaticString = #filePath) throws -> String {
-        let testURL = URL(fileURLWithPath: "\(testFile)")
-        guard FileManager.default.fileExists(atPath: testURL.path) else {
-            throw XCTSkip("소스 트리가 없는 기기다 — 소스 배선은 시뮬레이터에서 본다")
-        }
-        let appURL = testURL.deletingLastPathComponent().deletingLastPathComponent()
-            .appendingPathComponent("AlarmTalk", isDirectory: true)
-            .appendingPathComponent(relativePath)
-        return try String(contentsOf: appURL, encoding: .utf8)
-    }
-
-    /// `start` 부터 그 뒤 처음 나오는 `end` 앞까지. 못 찾으면 실패한다 — 소스 구조가 바뀌면 이 테스트도 함께 고친다.
-    private static func region(of text: String, from start: String, to end: String) throws -> Substring {
-        let head = try XCTUnwrap(text.range(of: start), "소스에서 못 찾았다: \(start)")
-        let tail = try XCTUnwrap(text.range(of: end, range: head.upperBound..<text.endIndex), "소스에서 못 찾았다: \(end)")
-        return text[head.lowerBound..<tail.lowerBound]
     }
 
     // MARK: - 남은 횟수 — 가장 나중에 낸 요청의 답만 적는다

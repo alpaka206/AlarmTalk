@@ -386,8 +386,9 @@ final class EmailCodeErrorMessageTests: XCTestCase {
     }
 
     /// 호출부는 **거르지 않는다** — 이슈로 올릴지 브레드크럼으로 내릴지는 보고 함수 한 곳이 정한다
-    /// (`AlarmTalkLog.handledFailureCategory`, `docs/spec/error-codes.md` §3). 같은 자리에서 올린 네 실패가:
-    /// - 코드의 거절은 **이슈**이고 묶음 키는 `[api_error, 코드, 호출 자리]` 다(1.2.10 의 막다른 길이 이것으로 보인다).
+    /// (`AlarmTalkLog.handledFailureCategory`, `docs/spec/error-codes.md` §3). 같은 자리에서 올린 다섯 실패가:
+    /// - 시도 상한의 거절은 **이슈**이고 묶음 키는 `[api_error, 코드, 호출 자리]` 다(1.2.10 의 막다른 길이 이것으로 보인다).
+    /// - 틀린 숫자(`AUTH_EMAIL_CODE_INVALID`)는 사용자가 고칠 예상된 거절이라 브레드크럼(`refusal`)이다.
     /// - 코드 없는 5xx 는 이슈이고, 호출 자리를 빼고 묶는다(게이트웨이 장애를 화면 수만큼 쪼개지 않는다).
     /// - 일시적 네트워크 실패는 브레드크럼(`transient`)이다.
     /// - 401 은 브레드크럼(`auth`)이다. 이 라우트들은 401 을 내지 않지만(인증 미들웨어 밖이다), 오더라도
@@ -401,6 +402,7 @@ final class EmailCodeErrorMessageTests: XCTestCase {
             APIError.server(status: 503, message: "Service Unavailable", errorCode: nil),
             URLError(.timedOut),
             APIError.server(status: 401, message: "Unauthorized", errorCode: nil),
+            refusal(400, "AUTH_EMAIL_CODE_INVALID"),
         ]
         for failure in failures {
             api.verifyError = failure
@@ -416,8 +418,9 @@ final class EmailCodeErrorMessageTests: XCTestCase {
         let gateway = reported.entries[1]
         let offline = reported.entries[2]
         let unauthorized = reported.entries[3]
+        let mistyped = reported.entries[4]
 
-        XCTAssertNil(AlarmTalkLog.handledFailureCategory(refused.error), "코드의 거절을 브레드크럼으로 내렸다")
+        XCTAssertNil(AlarmTalkLog.handledFailureCategory(refused.error), "시도 상한의 거절을 브레드크럼으로 내렸다")
         XCTAssertEqual(
             AlarmTalkLog.apiFailureFingerprint(for: refused.error, message: refused.message),
             ["api_error", "AUTH_EMAIL_CODE_ATTEMPTS_EXCEEDED", "Email verification confirm failed"]
@@ -429,6 +432,8 @@ final class EmailCodeErrorMessageTests: XCTestCase {
         )
         XCTAssertEqual(AlarmTalkLog.handledFailureCategory(offline.error), "transient")
         XCTAssertEqual(AlarmTalkLog.handledFailureCategory(unauthorized.error), "auth")
+        // 틀린 숫자는 사용자가 고칠 예상된 거절이다 — 호출부는 그대로 올리고, 브레드크럼으로 내리는 것은 보고 함수다.
+        XCTAssertEqual(AlarmTalkLog.handledFailureCategory(mistyped.error), "refusal")
     }
 
     // MARK: - 준비

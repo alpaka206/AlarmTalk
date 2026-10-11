@@ -104,6 +104,16 @@ final class PushNotificationCoordinator: NSObject, ObservableObject {
         set { defaults.set(newValue, forKey: Self.retryRegistrationKey) }
     }
 
+    /// **이 실행에서** 서버 등록이 확인됐는가 — 마지막 등록 POST 가 성공했고, 그 뒤 무엇도 그 확인을 무효로 만들지
+    /// 않았다(실패·해제 시도·캐시 비우기).
+    ///
+    /// ⚠ **메모리에만 둔다 — 일부러다.** 실행마다 false 로 시작하므로 실행의 첫 토큰 콜백은 영속 캐시와 같아도
+    /// POST 한다. 서버의 등록은 앱 모르게 사라질 수 있다 — 등록 POST 가 실패했거나(2026-09-28·10-07 게이트웨이
+    /// 525·520 이 500 으로 나갔다, BACKEND-E), 서버가 `Unregistered` 로 정리했거나. 영속 캐시만 보고 건너뛰면 그
+    /// 기기는 토큰이나 계정이 바뀔 때까지 푸시를 못 받는다. 안드로이드는 프로세스가 뜰 때마다 다시 등록한다
+    /// (`fcm/AlarmTalkMessagingService.kt` 의 `registerCurrentToken`). 같은 실행 안에서는 다시 올리지 않는다.
+    private var uploadConfirmedInThisProcess = false
+
     /// 등록/해제를 **한 줄로 세운다.**
     ///
     /// ⚠ 둘 다 네트워크 왕복이라 서로 끼어든다(Codex #699 P2). A 의 해제 요청이 날아가는
@@ -135,6 +145,29 @@ final class PushNotificationCoordinator: NSObject, ObservableObject {
         requestAPNsToken()
     }
 
+    /// **전경으로 돌아올 때** 부른다(`AlarmTalkApp` 의 `scenePhase == .active`). 이 실행에서 지금 계정의 서버 등록이
+    /// 아직 확인되지 않았으면 토큰을 다시 받아 올린다(`start` → `registerToken`). 확인됐으면 아무것도 하지 않는다 —
+    /// 전경마다 POST 하지 않는다.
+    ///
+    /// 확인되지 않은 때: 이 실행의 등록이 실패했다(게이트웨이 5xx·오프라인), 토큰이 세션 없이 왔다, APNs 등록 자체가
+    /// 실패했다, 탈퇴 복구가 다시 올리라고 표시했다(`prepareAccountRecovery`).
+    ///
+    /// ⚠ **'다음 실행' 을 기다리지 않는 이유.** iOS 앱은 멈춘 채 며칠씩 살아 있다 — 실행 첫 등록이 실패하면 그 실행이
+    /// 끝날 때까지 가족 알람 푸시가 끊긴다. 안드로이드는 프로세스가 자주 새로 떠서(주기 워커가 깨운 실행 포함) 그때마다
+    /// 다시 등록하므로 그 틈이 짧다.
+    /// ⚠ **탈퇴 대기 중에는 하지 않는다.** 서버가 등록을 403 으로 막는다 — 전경마다 거절만 받는다. 복구가 끝나면
+    /// 복구 흐름이 스스로 다시 건다(`prepareAccountRecovery` → `start`).
+    func resumeRegistrationIfNeeded(session: AuthSession?) {
+        guard let session, !session.user.isPendingDeletion else { return }
+        guard !registrationConfirmedInThisProcess(userID: session.user.id) else { return }
+        start()
+    }
+
+    /// 이 실행에서 그 계정의 서버 등록이 확인됐는가 — 마지막 POST 가 그 계정으로 성공했고 다시 올리라는 표시가 없다.
+    func registrationConfirmedInThisProcess(userID: String) -> Bool {
+        uploadConfirmedInThisProcess && !requiresRegistrationUpload && lastRegisteredUserID == userID
+    }
+
     /// 해제 응답 유실로 캐시에만 남은 바인딩도 복구한다. 앞선 등록이 늦게 캐시를
     /// 되쓰지 못하게 같은 큐에서 무효화한다. 토큰/소유자는 이후 해제의 계정 가드에 보존한다.
     /// 호출자는 이 준비를 await한 뒤 로컬 상태를 확정하고 start를 호출한다.
@@ -149,9 +182,12 @@ final class PushNotificationCoordinator: NSObject, ObservableObject {
 
     /// APNs 가 준 기기 토큰을 서버에 등록한다.
     ///
-    /// ⚠ **같은 값을 반복해서 올리지 않는다.** 토큰은 앱 실행마다 전달되는데, 매번 POST 하면
-    /// 앱을 열 때마다 불필요한 왕복이 생긴다. 계정이 바뀌면 다시 올린다 — 토큰은 같아도
-    /// **주인이 달라지면 서버가 다시 묶어야** 한다(그러지 않으면 앞 계정으로 푸시가 간다).
+    /// ⚠ **실행마다 한 번은 올린다 — 같은 값이어도.** 실행의 첫 콜백은 영속 캐시와 같아도 POST 한다
+    /// (`uploadConfirmedInThisProcess` — 서버의 등록은 앱 모르게 사라질 수 있다). 그 뒤 같은 실행 안에서는 **같은 값을
+    /// 반복해서 올리지 않는다** — 토큰은 한 실행에서도 여러 번 온다(계정 태스크·탈퇴 복구·확인 전의 전경 복귀가 `start`
+    /// 를 부른다). 매번 POST 하면 불필요한 왕복이 생긴다.
+    /// 계정이 바뀌면 다시 올린다 — 토큰은 같아도 **주인이 달라지면 서버가 다시 묶어야** 한다(그러지 않으면 앞 계정으로
+    /// 푸시가 간다). 실패하면 확인이 아니다 — 다음 전경 복귀가 다시 올린다(`resumeRegistrationIfNeeded`).
     func registerToken(_ deviceToken: Data, session: AuthSession?) async {
         guard let session else { return }
         let hex = deviceToken.map { String(format: "%02x", $0) }.joined()
@@ -161,7 +197,10 @@ final class PushNotificationCoordinator: NSObject, ObservableObject {
         // 그러면 **등록해 줄 사람이 아무도 없다**(다음 실행의 APNs 등록까지 푸시를 놓친다).
         await serializePushMutation { [weak self] in
             guard let self else { return }
-            guard self.requiresRegistrationUpload || hex != self.lastRegisteredToken || session.user.id != self.lastRegisteredUserID else { return }
+            guard !self.uploadConfirmedInThisProcess
+                || self.requiresRegistrationUpload
+                || hex != self.lastRegisteredToken
+                || session.user.id != self.lastRegisteredUserID else { return }
             do {
                 try await self.api.registerPushToken(
                     token: hex,
@@ -171,9 +210,12 @@ final class PushNotificationCoordinator: NSObject, ObservableObject {
                 self.lastRegisteredToken = hex
                 self.lastRegisteredUserID = session.user.id
                 self.requiresRegistrationUpload = false
+                self.uploadConfirmedInThisProcess = true
             } catch {
-                // 실패해도 앱 흐름을 깨지 않는다 — 다음 실행이 다시 시도한다.
-                // 잃는 것은 푸시의 즉시성뿐이고, 주기 동기화가 그물로 남아 있다.
+                // 실패해도 앱 흐름을 깨지 않는다 — 확인이 아니라고만 적는다. 다음 전경 복귀가 토큰을 다시 받아
+                // 올리고(`resumeRegistrationIfNeeded`), 다음 실행의 첫 콜백도 올린다. 그동안 잃는 것은 푸시의
+                // 즉시성뿐이고, 주기 동기화가 그물로 남아 있다.
+                self.uploadConfirmedInThisProcess = false
             }
         }
     }
@@ -228,6 +270,9 @@ final class PushNotificationCoordinator: NSObject, ObservableObject {
                 result = true
                 return
             }
+            // 해제를 보내는 순간부터 서버의 등록은 '없거나 모른다' 다(응답만 잃을 수 있다) — 이 실행의 확인을 내린다.
+            // 같은 계정이 이 실행 안에서 다시 들어오면 다음 토큰 콜백이 반드시 다시 올린다.
+            self.uploadConfirmedInThisProcess = false
             do {
                 try await self.api.unregisterPushToken(token: deviceToken, authToken: authToken)
                 self.clearRegistrationCache()
@@ -244,6 +289,7 @@ final class PushNotificationCoordinator: NSObject, ObservableObject {
         lastRegisteredToken = nil
         lastRegisteredUserID = nil
         requiresRegistrationUpload = false
+        uploadConfirmedInThisProcess = false
     }
 
     /// 푸시 payload 를 처리한다. background·alert 양쪽에서 불린다.
@@ -723,7 +769,8 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
     }
 
     // 등록 실패(`didFailToRegisterForRemoteNotificationsWithError`)는 구현하지 않는다 —
-    // 시뮬레이터·프로비저닝 미비에서 흔하고, 조용히 넘어간다. 주기 동기화가 그물이다.
+    // 시뮬레이터·프로비저닝 미비에서 흔하고, 조용히 넘어간다. 토큰이 오지 않았으니 이 실행의 서버 등록은
+    // 확인되지 않은 채로 남고, 다음 전경 복귀가 다시 요청한다(`resumeRegistrationIfNeeded`). 주기 동기화가 그물이다.
 
     /// background push 진입점. **이게 없으면 조용한 푸시가 앱을 깨우지 못한다.**
     func application(

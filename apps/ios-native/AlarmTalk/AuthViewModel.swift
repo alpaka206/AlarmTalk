@@ -540,8 +540,8 @@ final class AuthViewModel: ObservableObject {
     /// 묶인다. 2026-10-11 전에는 iOS 가 이 다섯 갈래를 아예 올리지 않았다 — 1.2.10 의 막다른 길(시도
     /// 상한 뒤의 429)은 Sentry 에서 한쪽 앱으로만 보였다.
     ///
-    /// ⚠ **호출부에서 거르지 말 것.** 취소·일시적 네트워크·401 을 브레드크럼으로 내리는 판정은 그 함수
-    /// 한 곳이다(`AlarmTalkLog.handledFailureCategory`, `docs/spec/error-codes.md` §3).
+    /// ⚠ **호출부에서 거르지 말 것.** 취소·일시적 네트워크·401·예상된 거절(틀린·만료된 코드 등)을 브레드크럼으로
+    /// 내리는 판정은 그 함수 한 곳이다(`AlarmTalkLog.handledFailureCategory`, `docs/spec/error-codes.md` §3).
     private let reportFailure: (String, Error) -> Void
     private let appleCredentialProvider: AppleCredentialStateProviding
     private let accessSnapshotStore: AccessSnapshotStore

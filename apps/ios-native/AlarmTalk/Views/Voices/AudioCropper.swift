@@ -75,9 +75,13 @@ enum AudioCropper {
         }
     }
 
+    /// 잘라 낸 사본을 두는 폴더(캐시 아래). 등록 음원 정리(`VoiceCloneUploadFlow.sentSourceCleanup`)는 이 폴더의
+    /// 파일을 앱이 뜬 사본으로 보고 지운다 — 다른 쓰임(캐시 트림)은 자기가 만든 사본을 스스로 지운다.
+    static let outputFolderName = "VoiceCrop"
+
     private static func makeOutputURL() -> URL {
         let dir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("VoiceCrop", isDirectory: true)
+            .appendingPathComponent(outputFolderName, isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir.appendingPathComponent("crop-\(UUID().uuidString).m4a")
     }
