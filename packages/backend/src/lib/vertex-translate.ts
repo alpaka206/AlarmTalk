@@ -2344,6 +2344,59 @@ const SPEECH_STYLE_RESPONSE_SCHEMA = {
 /** 말투 분석이 모델에게 보내는 전사 길이. 대본 읽기 판정(`isEnrollmentScriptReading`)도 모델이 본 이 부분으로 한다. */
 const SPEECH_STYLE_TRANSCRIPT_LIMIT = 2000;
 
+/**
+ * 등록 녹음에 **말소리가 있다**고 볼 최소 전사 길이 — `speechCharCount` 로 센 글자 수다.
+ *
+ * ⚠ **두 곳이 이 한 값과 그 한 셈을 쓴다** — 등록(`POST /voice/clone`)은 이보다 짧으면 목소리를 만들지 않고
+ * (`VOICE_CLONE_NO_SPEECH`), 말투 분석은 이보다 짧으면 모델에 묻지 않고 '표준 말투' 로 끝낸다. 갈라지면
+ * 등록은 통과시킨 녹음을 분석이 '말소리 없음' 으로 읽는다(또는 그 반대). 20자는 한두 마디다 — 등록 녹음은
+ * 12초 이상이라 읽어 내려간 녹음의 전사는 수십~수백 자다(`docs/spec/voice-and-message.md` §4-1).
+ */
+export const MIN_SPEECH_TRANSCRIPT_CHARS = 20;
+
+/** 전사 속 소리 표시 — 괄호·대괄호(전각 포함) 한 겹. 등록 대본(`voice-enrollment-script.json`)에는 이 글자가 없다. */
+const TRANSCRIPT_SOUND_TAG = /\([^()]*\)|\[[^[\]]*\]|（[^（）]*）|［[^［］]*］/g;
+
+/**
+ * 전사에서 **말소리로 셀 글자 수** — 소리 표시(`(laughter)`·`(footsteps)`·`[music]` 같은 괄호 속)를 빼고 앞뒤 공백을
+ * 걷은 글자 수(UTF-16 단위). `MIN_SPEECH_TRANSCRIPT_CHARS` 와 견주는 값은 언제나 이것이다.
+ *
+ * ⚠ **전사 길이를 그대로 세지 말 것**(2026-10-11). Scribe 는 소리 표시를 **기본으로** 붙인다(`tag_audio_events` 기본값
+ * true — `ElevenLabsClient.speechToText` 는 그 값을 보내지 않는다). 그대로 세면 TV·선풍기·발소리만 든 녹음이
+ * `(background noise) (footsteps) (door closes)` 로 20자를 넘겨 '말소리가 있다' 가 되고, 쓸 수 없는 목소리가 만들어진다
+ * (2026-10-10 prod ALARMTALK-BACKEND-F 가 막으려는 바로 그 등록). 요청에서 표시를 끄지 않은 것은 말투 분석이 그 글을
+ * 그대로 읽기 때문이다 — 결(energy) 판정이 웃음을 단서로 쓴다(`speechStylePrompt`). 세는 것만 말소리로 한다.
+ */
+export function speechCharCount(transcript: string): number {
+  return transcript.replace(TRANSCRIPT_SOUND_TAG, '').trim().length;
+}
+
+/**
+ * 말투 분석 한 번의 결과 — **내용**과 **실패**를 가른다.
+ *
+ * - `style`: 말투를 찾았다 → 저장한다.
+ * - `standard`: 녹음이 말투를 보여 주지 않았다(전사가 짧다·모델이 확신하지 못한다·찾은 것이 없다).
+ *   **실패가 아니다** — 표준 말투로 끝낸다(`speech_style` NULL · `done`). 같은 녹음을 다시 분석해도 같은
+ *   답이라, 실패로 두면 재시도 버튼만 뜨고 눌러도 소용이 없다(2026-10-10 prod ALARMTALK-BACKEND-F 세 건이 이랬다).
+ * - `failed`: 알아내지 못했다 — 다시 하면 될 수 있다(전송 실패·시간 초과·설정·인증·거절된 요청·깨진 답).
+ *   `failed` 로 남겨 재시도 버튼을 띄운다.
+ */
+export type SpeechStyleAnalysis =
+  | { kind: 'style'; style: SpeechStyle }
+  | { kind: 'standard'; reason: SpeechStyleStandardReason }
+  | { kind: 'failed'; reason: SpeechStyleFailureReason };
+
+/** 표준 말투로 끝난 이유 — 로그에만 쓴다. */
+export type SpeechStyleStandardReason = 'short_transcript' | 'low_confidence' | 'nothing_detected';
+
+/**
+ * 분석이 실패한 이유 — 로그·오류 메시지에만 쓴다.
+ * `not_configured`(Vertex 자격 증명 없음) · `transport`(시간 초과·네트워크·429/5xx — 마감 안에서 다시 묻고도 실패) ·
+ * `rejected`(그 밖의 거절 — 인증·자격 증명·400 등, 다시 보내도 같은 요청) · `incomplete`(답이 잘렸다 — MAX_TOKENS·SAFETY) ·
+ * `unparseable`(답이 JSON 이 아니거나 필수 값이 없다).
+ */
+export type SpeechStyleFailureReason = 'not_configured' | 'transport' | 'rejected' | 'incomplete' | 'unparseable';
+
 /** `transcript` 는 이미 `SPEECH_STYLE_TRANSCRIPT_LIMIT` 로 자른 글이다(`analyzeSpeechStyleWithVertex`). */
 function speechStylePrompt(transcript: string, language: string): string {
   const dialectGuide =
@@ -2385,25 +2438,32 @@ export const SPEECH_STYLE_RETRY_DELAYS_MS: readonly number[] = [500, 1_500];
 const SPEECH_STYLE_MIN_RETRY_WINDOW_MS = 4_000;
 
 /**
- * 전사 텍스트에서 화자 말투(사투리·격식·특징 어미)를 분석한다. confidence 가 낮거나
- * 실패하면 null — 호출자는 저장을 건너뛴다(표준어로 동작, 사용자 미리듣기 수정으로 교정 가능).
+ * 전사 텍스트에서 화자 말투(사투리·격식·특징 어미)를 분석한다. 결과는 세 갈래다(`SpeechStyleAnalysis`) —
+ * 말투를 찾았다 / 녹음이 말투를 보여 주지 않았다(표준 말투, **실패가 아니다**) / 알아내지 못했다(실패).
+ *
+ * ⚠ **내용과 실패를 null 하나로 뭉치지 말 것**(2026-10-11). 예전에는 전사가 짧은 것·확신이 낮은 것·찾은 것이 없는
+ *   것까지 전송 실패와 같은 null 이었고, 호출자는 그걸 전부 `speech_style_status='failed'` 로 적었다 — 사용자는 다시
+ *   눌러도 같은 녹음이라 같은 답인 재시도 버튼을 받았고, 서버는 그때마다 오류를 보고했다(2026-10-10 prod
+ *   ALARMTALK-BACKEND-F 세 건 — 둘은 전사가 20자 미만, 하나는 모델이 확신하지 못했다). 표준 말투도 분석의 **답**이다.
  *
  * ⚠ **전송 실패는 마감 안에서 다시 묻는다**(2026-10-01). 상류 시간 초과 한 번이 곧 `speech_style_status='failed'`
  *   였고, 사전렌더는 'pending' 만 기다리므로 그 목소리의 클립은 **사투리 없이** 구워졌다 — 되살리는 길은 사용자가
  *   재시도 버튼을 누르는 것뿐이었다. **어느 회차도 마감을 넘기지 않는다** — 토큰 발급은 min(8초, 남은 시간), 생성
  *   요청은 min(15초, 남은 시간)이고 둘 다 그 요청을 보내기 직전에 잰다(`GenerateContentConfig.deadlineAt`). 마감이
- *   넉넉한 첫 회차는 예전 그대로(8초·15초)다. `deadlineAt` 은 호출자가 준다(`runSpeechStyleAnalysis` — 전사 전부터
- *   센다). 안 주면 지금부터 예산만큼.
+ *   넉넉한 첫 회차는 예전 그대로(8초·15초)다. `deadlineAt` 은 호출자가 준다(`runSpeechStyleAnalysis` — 분석을 시작할
+ *   때부터 센다). 안 주면 지금부터 예산만큼.
  */
 export async function analyzeSpeechStyleWithVertex(
   env: Env,
   transcript: string,
   language: string,
   options: { deadlineAt?: number; sleep?: (ms: number) => Promise<void> } = {},
-): Promise<SpeechStyle | null> {
-  if (!hasGeminiConfiguration(env)) return null;
+): Promise<SpeechStyleAnalysis> {
   const trimmed = transcript.trim();
-  if (trimmed.length < 20) return null;
+  // 내용이 먼저다 — 자격 증명이 없어도 짧은 전사의 답은 같다(모델에 물을 것이 없다). 등록의 말소리 확인과 같은 값·같은
+  // 셈이다(소리 표시는 세지 않는다 — 모델에는 표시까지 그대로 보낸다).
+  if (speechCharCount(trimmed) < MIN_SPEECH_TRANSCRIPT_CHARS) return { kind: 'standard', reason: 'short_transcript' };
+  if (!hasGeminiConfiguration(env)) return { kind: 'failed', reason: 'not_configured' };
   const deadlineAt = options.deadlineAt ?? Date.now() + SPEECH_STYLE_ANALYSIS_BUDGET_MS;
   const sleep = options.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
   // 모델이 보는 부분과 대본 읽기 판정이 보는 부분을 같게 둔다 — 어체는 모델이 본 글에서 나왔다.
@@ -2420,8 +2480,10 @@ export async function analyzeSpeechStyleWithVertex(
       break;
     } catch (err) {
       const delay = SPEECH_STYLE_RETRY_DELAYS_MS[attempt];
-      if (delay === undefined || !isVertexTransportFailure(err)) return null;
-      if (deadlineAt - Date.now() - delay < SPEECH_STYLE_MIN_RETRY_WINDOW_MS) return null;
+      if (delay === undefined || !isVertexTransportFailure(err)) {
+        return { kind: 'failed', reason: speechStyleFailureReason(err) };
+      }
+      if (deadlineAt - Date.now() - delay < SPEECH_STYLE_MIN_RETRY_WINDOW_MS) return { kind: 'failed', reason: 'transport' };
       logStructured('warn', {
         at: 'vertex.speech_style_retry',
         attempt: attempt + 2,
@@ -2430,57 +2492,75 @@ export async function analyzeSpeechStyleWithVertex(
       await sleep(delay);
     }
   }
+  let json: unknown;
   try {
-    const parsed = JSON.parse(raw) as {
-      dialect?: unknown;
-      strength?: unknown;
-      register?: unknown;
-      markers?: unknown;
-      confidence?: unknown;
-    };
-    const confidence = typeof parsed.confidence === 'number' ? parsed.confidence : 0;
-    if (confidence < 0.6) return null;
-    // 40자 — 20자일 때 'Southern American English' 가 'Southern American En' 으로 잘려 저장되고 그대로 사전렌더
-    // 프롬프트에 들어갔다(2026-10-01 3.8 평가). dialect 는 프롬프트에만 쓰인다(클라 응답에 실리지 않는다).
-    const dialect = typeof parsed.dialect === 'string' ? parsed.dialect.trim().slice(0, 40) : '';
-    const strengthRaw = typeof parsed.strength === 'string' ? parsed.strength.trim() : '';
-    const strength = (['low', 'medium', 'high'].includes(strengthRaw) ? strengthRaw : '') as
-      | ''
-      | 'low'
-      | 'medium'
-      | 'high';
-    const analyzedRegister = typeof parsed.register === 'string' ? parsed.register.trim().slice(0, 20) : '';
-    const markers = Array.isArray(parsed.markers)
-      ? parsed.markers
-          .filter((m): m is string => typeof m === 'string')
-          .map((m) => m.trim())
-          .filter(Boolean)
-          .slice(0, 5)
-      : [];
-    const persona =
-      typeof (parsed as { persona?: unknown }).persona === 'string'
-        ? String((parsed as { persona?: unknown }).persona).trim().slice(0, 120)
-        : '';
-    const childlike = (parsed as { childlike?: unknown }).childlike === true;
-    const energyRaw = String((parsed as { energy?: unknown }).energy ?? '').trim();
-    const energy = (energyRaw === 'lively' || energyRaw === 'calm' ? energyRaw : '') as SpeechStyle['energy'];
-    if (!dialect && !analyzedRegister && markers.length === 0 && !persona && !childlike && !energy) return null;
-    // ⚠ **제시 대본을 읽은 녹음의 어체는 버린다**(스펙 §4-2). 대본은 세 언어 모두 존댓말이라 읽은 사람은 누구든 정중체로
-    //   분석되고, 그 어체가 사전렌더 프롬프트(`speechStyleInstruction`)에 실리고 일본어 가족 です・ます 검사
-    //   (`hasJapanesePoliteEnding`)까지 꺼서 엄마 목소리가 딸에게 존댓말로 알람을 읽었다. 비워 두면 관계가 어체를 정한다.
-    //   모델 지시가 아니라 글자 대조로 가린다(`isEnrollmentScriptReading`) — 따를지 말지가 모델에 달리지 않게.
-    //   사투리·말버릇·페르소나·아이·결 판정은 그대로 둔다. 어체만 있던 분석도 null 로 돌리지 않는다 — null 이면 'failed'
-    //   로 기록돼 재시도 버튼이 뜨고, 다시 눌러도 같은 녹음이라 같은 답이다.
-    const scriptRead = analyzedRegister !== '' && isEnrollmentScriptReading(analyzedText);
-    if (scriptRead) {
-      logStructured('info', { at: 'vertex.speech_style_script_read', droppedRegister: analyzedRegister });
-    }
-    const register = scriptRead ? '' : analyzedRegister;
-    // 표준어인데 사투리 강도만 있는 모순 정리.
-    return { dialect, strength: dialect ? strength : '', register, markers, persona, childlike, energy };
+    json = JSON.parse(raw);
   } catch {
-    return null;
+    return { kind: 'failed', reason: 'unparseable' };
   }
+  if (typeof json !== 'object' || json === null || Array.isArray(json)) return { kind: 'failed', reason: 'unparseable' };
+  const parsed = json as {
+    dialect?: unknown;
+    strength?: unknown;
+    register?: unknown;
+    markers?: unknown;
+    persona?: unknown;
+    childlike?: unknown;
+    energy?: unknown;
+    confidence?: unknown;
+  };
+  // 확신은 응답 스키마의 필수 값이다 — 없거나 숫자가 아니면 답이 깨진 것이지 '확신이 낮다' 가 아니다(실패로 남긴다).
+  if (typeof parsed.confidence !== 'number' || !Number.isFinite(parsed.confidence)) {
+    return { kind: 'failed', reason: 'unparseable' };
+  }
+  if (parsed.confidence < 0.6) return { kind: 'standard', reason: 'low_confidence' };
+  // 40자 — 20자일 때 'Southern American English' 가 'Southern American En' 으로 잘려 저장되고 그대로 사전렌더
+  // 프롬프트에 들어갔다(2026-10-01 3.8 평가). dialect 는 프롬프트에만 쓰인다(클라 응답에 실리지 않는다).
+  const dialect = typeof parsed.dialect === 'string' ? parsed.dialect.trim().slice(0, 40) : '';
+  const strengthRaw = typeof parsed.strength === 'string' ? parsed.strength.trim() : '';
+  const strength = (['low', 'medium', 'high'].includes(strengthRaw) ? strengthRaw : '') as
+    | ''
+    | 'low'
+    | 'medium'
+    | 'high';
+  const analyzedRegister = typeof parsed.register === 'string' ? parsed.register.trim().slice(0, 20) : '';
+  const markers = Array.isArray(parsed.markers)
+    ? parsed.markers
+        .filter((m): m is string => typeof m === 'string')
+        .map((m) => m.trim())
+        .filter(Boolean)
+        .slice(0, 5)
+    : [];
+  const persona = typeof parsed.persona === 'string' ? parsed.persona.trim().slice(0, 120) : '';
+  const childlike = parsed.childlike === true;
+  const energyRaw = String(parsed.energy ?? '').trim();
+  const energy = (energyRaw === 'lively' || energyRaw === 'calm' ? energyRaw : '') as SpeechStyle['energy'];
+  // ⚠ **제시 대본을 읽은 녹음의 어체는 버린다**(스펙 §4-2). 대본은 세 언어 모두 존댓말이라 읽은 사람은 누구든 정중체로
+  //   분석되고, 그 어체가 사전렌더 프롬프트(`speechStyleInstruction`)에 실리고 일본어 가족 です・ます 검사
+  //   (`hasJapanesePoliteEnding`)까지 꺼서 엄마 목소리가 딸에게 존댓말로 알람을 읽었다. 비워 두면 관계가 어체를 정한다.
+  //   모델 지시가 아니라 글자 대조로 가린다(`isEnrollmentScriptReading`) — 따를지 말지가 모델에 달리지 않게.
+  //   사투리·말버릇·페르소나·아이·결 판정은 그대로 둔다. 어체만 있던 분석은 버리고 나면 남는 것이 없다 — 아래 '찾은
+  //   것이 없다' 와 같은 표준 말투다(실패가 아니다 — 다시 눌러도 같은 녹음이라 같은 답이다).
+  const scriptRead = analyzedRegister !== '' && isEnrollmentScriptReading(analyzedText);
+  if (scriptRead) {
+    logStructured('info', { at: 'vertex.speech_style_script_read', droppedRegister: analyzedRegister });
+  }
+  const register = scriptRead ? '' : analyzedRegister;
+  if (!dialect && !register && markers.length === 0 && !persona && !childlike && !energy) {
+    return { kind: 'standard', reason: 'nothing_detected' };
+  }
+  // 표준어인데 사투리 강도만 있는 모순 정리.
+  return { kind: 'style', style: { dialect, strength: dialect ? strength : '', register, markers, persona, childlike, energy } };
+}
+
+/**
+ * 생성 요청이 던진 오류를 실패 이유로 옮긴다. 전송 실패(다시 묻고도 끝내 실패한 것)·잘린 답을 가르고, 나머지는
+ * 다시 보내도 같은 거절이다(인증·자격 증명·400 등).
+ */
+function speechStyleFailureReason(err: unknown): SpeechStyleFailureReason {
+  if (isVertexTransportFailure(err)) return 'transport';
+  if (err instanceof GeminiIncompleteResponseError) return 'incomplete';
+  return 'rejected';
 }
 
 /** voice_profiles.speech_style JSON 컬럼 → SpeechStyle (없거나 깨졌으면 null). */

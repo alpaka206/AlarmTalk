@@ -35,9 +35,13 @@ export class ElevenLabsClient {
   }
 
   /**
-   * 음성 → 텍스트 전사(Scribe). 클론 등록 녹음의 말투(사투리·존댓말) 분석 입력으로 쓴다.
-   * 실패해도 등록은 막지 않지만, 호출자는 speech_style_status 로 실패를 기록해야 한다.
+   * 음성 → 텍스트 전사(Scribe). 클론 등록 녹음에 쓴다 — 등록의 말소리 확인(`checkCloneSpeech` — 짧으면 등록을
+   * 거절한다)과 말투(사투리·존댓말) 분석의 입력이다. 등록 한 번에 한 번 부르고, 받은 전사를 분석이 이어 쓴다.
+   * 전사가 실패해도 등록은 막지 않지만(말소리 확인은 그대로 통과시킨다), 분석은 speech_style_status 로 실패를 기록해야 한다.
    * scribe_v1 은 2026-07-09 ElevenLabs 에서 제거됨 — scribe_v2 사용(응답 {text} 동일).
+   *
+   * 소리 표시(`tag_audio_events` — `(laughter)`·`(footsteps)` 같은 괄호 속)는 끄지 않는다(기본값 그대로 붙는다). 말투
+   * 분석이 그 글을 그대로 읽고(결 판정이 웃음을 단서로 쓴다), 말소리 길이는 표시를 빼고 센다(`speechCharCount`).
    */
   async speechToText(
     audioData: ArrayBuffer,
@@ -59,8 +63,12 @@ export class ElevenLabsClient {
       // waitUntil 분석은 전사·Vertex가 같은 마감을 쓴다. 이 signal은 응답 본문 읽기에도 적용된다.
       signal: AbortSignal.timeout(Math.min(120_000, remaining)),
     });
-    const json = (await res.json()) as { text?: string };
-    return (json.text ?? '').trim();
+    const text = ((await res.json()) as { text?: unknown } | null)?.text;
+    // ⚠ 글(`text`)이 없는 답은 **실패**다 — 빈 글('')로 바꾸지 말 것(2026-10-11). 빈 글은 등록의 말소리 확인에서 '말소리
+    //   없음'(400)이라, 응답 모양이 바뀌면(`{}`·`{"text":null}`·필드 이름 변경) 모든 등록이 막힌다. 던지면 말소리 확인은
+    //   통과시키고(fail-open) 말투 분석은 다시 할 수 있는 실패로 남는다. 글이 빈 것(`{"text":""}`)은 답이다 — 그대로 준다.
+    if (typeof text !== 'string') throw new Error('ElevenLabs speech-to-text response has no text');
+    return text.trim();
   }
 
   /** Instant Voice Clone - 짧은 샘플로 즉시 음성 클론 */

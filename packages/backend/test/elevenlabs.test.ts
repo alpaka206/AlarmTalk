@@ -171,10 +171,30 @@ describe('ElevenLabsClient', () => {
       expect(text).toBe('안녕하세요 반갑습니다');
     });
 
-    it('text 필드 없으면 빈 문자열', async () => {
-      mockFetch.mockResolvedValueOnce(okJson({}));
-      const text = await client.speechToText(new ArrayBuffer(10));
-      expect(text).toBe('');
+    // 2026-10-11: 예전에는 글이 없는 답을 빈 문자열로 바꿨다. 빈 글은 등록의 말소리 확인에서 '말소리 없음'(400)이라, 응답
+    // 모양이 바뀌면 모든 등록이 막혔다 — 실패로 던져야 말소리 확인이 막지 않고 통과시킨다(fail-open, 스펙 §4-1).
+    it.each([
+      ['text 필드 없음', {}],
+      ['text 가 null', { text: null }],
+      ['text 가 글이 아님', { text: 3 }],
+      ['본문이 null', null],
+    ])('%s → 빈 글로 바꾸지 않고 던진다', async (_label, body) => {
+      mockFetch.mockResolvedValueOnce(okJson(body));
+      await expect(client.speechToText(new ArrayBuffer(10))).rejects.toThrow(
+        'ElevenLabs speech-to-text response has no text',
+      );
+    });
+
+    it('글이 빈 답은 답이다 — 빈 문자열을 그대로 준다(말소리가 없는 녹음)', async () => {
+      mockFetch.mockResolvedValueOnce(okJson({ text: '  ' }));
+      expect(await client.speechToText(new ArrayBuffer(10))).toBe('');
+    });
+
+    it('소리 표시(tag_audio_events)는 끄지 않는다 — 말투 분석이 그 글을 그대로 읽는다', async () => {
+      mockFetch.mockResolvedValueOnce(okJson({ text: '(laughter) 안녕하세요' }));
+      expect(await client.speechToText(new ArrayBuffer(10))).toBe('(laughter) 안녕하세요');
+      const body = mockFetch.mock.calls[0][1].body as FormData;
+      expect(body.has('tag_audio_events')).toBe(false);
     });
 
     it('API 에러 시 예외 (호출자가 failed 상태를 기록)', async () => {

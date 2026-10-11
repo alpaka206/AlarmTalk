@@ -11,6 +11,9 @@ const V_BAD = 'not-a-uuid';
 const mockDB = createMockDB();
 const mockCreateInstantClone = vi.fn();
 const mockDeleteVoice = vi.fn();
+const mockSpeechToText = vi.fn();
+/** 등록의 말소리 확인을 통과하는 전사(`MIN_SPEECH_TRANSCRIPT_CHARS` 자 이상). 막히는 쪽은 `voice-clone-speech-gate.test.ts`. */
+const SPEECH_TRANSCRIPT = '오늘도 또박또박 소리 내어 읽은 등록 녹음의 전사입니다';
 const { mockNotifyDowngradedAlarms } = vi.hoisted(() => ({
   mockNotifyDowngradedAlarms: vi.fn().mockResolvedValue(undefined),
 }));
@@ -29,14 +32,16 @@ const MONTHLY_REGISTRATION_READ = 'SELECT COUNT(*) AS used FROM voice_profile_ch
  * 유료 플랜 행을 가장 먼저 넣어 줘야 이후 결과(한도 카운트·INSERT ...)가 한 칸씩
  * 밀리지 않는다. 무료 플랜이면 403 VOICE_FEATURE_REQUIRES_PAID_PLAN 으로 떨어진다.
  *
- * 예약 트랜잭션 맨 앞의 **월 등록 자격 확인**(이번 달 등록 원장 집계, 2026-10-11)도 여기서
- * 답을 깐다. 그 SELECT 는 큐가 아니라 **SQL 로 짝짓는다** — 큐에 넣으면 그 뒤의 결과
- * (슬롯 수·INSERT·ready 전환)가 전부 한 칸씩 밀린다. 인자는 이번 달에 이미 쓴 등록 횟수다
+ * **월 등록 자격 확인**(이번 달 등록 원장 집계, 2026-10-11)도 여기서 답을 깐다. 두 번 읽힌다 — 전사 전의
+ * 읽기 전용 선검사와 예약 트랜잭션 맨 앞. 그 SELECT 는 큐가 아니라 **SQL 로 짝짓는다** — 큐에 넣으면 그 뒤의
+ * 결과(슬롯 수·INSERT·ready 전환)가 전부 한 칸씩 밀린다. 인자는 이번 달에 이미 쓴 등록 횟수다
  * (기본 0 = 아직 남았다 → 통과, 1 이면 429 `VOICE_MONTHLY_CHANGE_LIMIT_REACHED`).
  */
 function pushPaidPlan(registrationsUsedThisMonth = 0) {
   mockDB.pushResult([{ plan: 'plus' }]);
-  mockDB.pushResultFor(MONTHLY_REGISTRATION_READ, [{ used: registrationsUsedThisMonth }]);
+  for (let read = 0; read < 2; read += 1) {
+    mockDB.pushResultFor(MONTHLY_REGISTRATION_READ, [{ used: registrationsUsedThisMonth }]);
+  }
 }
 
 vi.mock('../src/lib/db', () => ({
@@ -47,6 +52,7 @@ vi.mock('../src/lib/elevenlabs', () => ({
   ElevenLabsClient: vi.fn().mockImplementation(function (this: Record<string, unknown>) {
     this.createInstantClone = mockCreateInstantClone;
     this.deleteVoice = mockDeleteVoice;
+    this.speechToText = mockSpeechToText;
   }),
 }));
 
@@ -120,6 +126,8 @@ beforeEach(() => {
   mockDB.reset();
   mockCreateInstantClone.mockReset();
   mockDeleteVoice.mockReset();
+  mockSpeechToText.mockReset();
+  mockSpeechToText.mockResolvedValue(SPEECH_TRANSCRIPT);
   mockNotifyDowngradedAlarms.mockClear();
 });
 
@@ -750,13 +758,13 @@ describe('POST /clone — 음성 클론 (voice-profile)', () => {
     expect(mockDB.calls.some((call) => call.sql.includes('voice_draft_attempt_usage'))).toBe(true);
     // ⚠ 2026-10-11 에 **뒤집었다.** 예전에는 "초안 등록은 등록 원장을 아예 보지 않는다" 를
     // 단언했다 — 그래서 이번 달 등록을 다 쓴 사람도 초안을 만들 수 있었고, 그 초안의 저장이
-    // 429 로 막혔다. 이제 초안 등록은 원장을 **한 번 읽는다**(자격 확인). 여전히 **쓰지는
-    // 않는다** — 깎는 것은 확정(승격·교체)뿐이다.
+    // 429 로 막혔다. 이제 초안 등록은 원장을 **읽는다**(자격 확인 — 전사 전의 읽기 전용 선검사와
+    // 예약 트랜잭션 맨 앞, 두 번). 여전히 **쓰지는 않는다** — 깎는 것은 확정(승격·교체)뿐이다.
     const ledgerCalls = mockDB.calls.filter((call) =>
       call.sql.includes('voice_profile_change_ledger'),
     );
-    expect(ledgerCalls).toHaveLength(1);
-    expect(ledgerCalls[0]!.sql.trimStart().startsWith('SELECT')).toBe(true);
+    expect(ledgerCalls).toHaveLength(2);
+    for (const call of ledgerCalls) expect(call.sql.trimStart().startsWith('SELECT')).toBe(true);
   });
 
   // ── 월 등록 한도 — 다 썼으면 초안부터 만들지 않는다(스펙 voice-and-message §4-1 ①) ──
@@ -788,6 +796,8 @@ describe('POST /clone — 음성 클론 (voice-profile)', () => {
       error_code: 'VOICE_MONTHLY_CHANGE_LIMIT_REACHED',
     });
     expect(mockCreateInstantClone).not.toHaveBeenCalled();
+    // 다 쓴 달은 전사 값도 치르지 않는다 — 읽기 전용 선검사가 말소리 확인보다 앞이다(2026-10-11).
+    expect(mockSpeechToText).not.toHaveBeenCalled();
 
     const sqls = mockDB.calls.map((call) => call.sql);
     expect(sqls.some((sql) => sql.includes('INSERT INTO voice_profiles'))).toBe(false);
@@ -797,10 +807,31 @@ describe('POST /clone — 음성 클론 (voice-profile)', () => {
     expect(sqls.some((sql) => sql.includes('pending_external_deletions'))).toBe(false);
     // 위 넷을 포함해 — 거절은 **한 줄도 쓰지 않는다.**
     expect(sqls.filter((sql) => /^\s*(?:INSERT|UPDATE|DELETE|REPLACE)\b/i.test(sql))).toEqual([]);
-    // 자격 확인이 예약 트랜잭션의 **맨 앞**이다 — 트랜잭션 안의 슬롯 집계(`AS draft_count`)에도
+    // 거절은 예약 트랜잭션에 들어가기 **전**이다 — 트랜잭션 안의 슬롯 집계(`AS draft_count`)에도
     // 닿지 않았다(트랜잭션 밖 선검사는 소문자 `as draft_count` 라 구분된다).
     expect(sqls.some((sql) => sql.includes('AS draft_count'))).toBe(false);
     expect(mockDB.transactions.rollbacks).toBe(0);
+  });
+
+  // 읽기 전용 선검사는 전사 값을 아끼는 것일 뿐이다 — 권위 있는 확인은 예약 트랜잭션 맨 앞에 그대로다. 선검사와
+  // 트랜잭션 사이(전사가 몇 초 걸린다)에 다른 기기가 등록을 마칠 수 있다.
+  it('선검사를 지난 뒤 다른 기기가 등록을 마쳤으면 트랜잭션 맨 앞이 막는다 — 429, provider 호출도 쓰기도 없다', async () => {
+    mockDB.pushResult([{ plan: 'plus' }]);
+    mockDB.pushResultFor(MONTHLY_REGISTRATION_READ, [{ used: 0 }]); // 선검사 — 아직 남았다
+    mockDB.pushResultFor(MONTHLY_REGISTRATION_READ, [{ used: 1 }]); // 트랜잭션 맨 앞 — 그 사이 다른 기기가 썼다
+    mockDB.pushResultFor('as draft_count', [{ draft_count: 1, official_count: 1 }]);
+    mockCreateInstantClone.mockResolvedValue({ voice_id: 'elv-must-not-exist' });
+
+    const res = await req(buildApp(), cloneForm(new Uint8Array([1, 2, 3]), '두 번째 목소리'));
+
+    expect(res.status).toBe(429);
+    expect((await res.json()).error_code).toBe('VOICE_MONTHLY_CHANGE_LIMIT_REACHED');
+    expect(mockSpeechToText).toHaveBeenCalledOnce();
+    expect(mockCreateInstantClone).not.toHaveBeenCalled();
+    const sqls = mockDB.calls.map((call) => call.sql);
+    expect(sqls.filter((sql) => sql.includes(MONTHLY_REGISTRATION_READ))).toHaveLength(2);
+    expect(sqls.filter((sql) => /^\s*(?:INSERT|UPDATE|DELETE|REPLACE)\b/i.test(sql))).toEqual([]);
+    expect(sqls.some((sql) => sql.includes('AS draft_count'))).toBe(false);
   });
 
   it('자격 확인은 이번 달(KST)의 실패하지 않은 등록만 센다 — 남았으면 초안을 만든다', async () => {

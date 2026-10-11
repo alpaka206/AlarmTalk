@@ -36,7 +36,12 @@ import {
   evictLruClonesIfOverCapTx,
   hasCloneSlotCapacity,
 } from '../lib/voice-slots';
-import { analyzeSpeechStyleWithVertex, SPEECH_STYLE_ANALYSIS_BUDGET_MS } from '../lib/vertex-translate';
+import {
+  analyzeSpeechStyleWithVertex,
+  MIN_SPEECH_TRANSCRIPT_CHARS,
+  SPEECH_STYLE_ANALYSIS_BUDGET_MS,
+  speechCharCount,
+} from '../lib/vertex-translate';
 import { getSharedInMemoryVoiceStorage } from '@alarmtalk/voice';
 import {
   VoiceEnergySchema,
@@ -487,6 +492,12 @@ export function speechStyleResultTargetArgs(
  * 삼키면 클라가 알 길이 없다. 클론 등록의 waitUntil 경로와 재시도 엔드포인트(동기)가 공유한다.
  * 시작 시·저장 직전에 민감 동의(음성/국외이전)를 재확인한다 — 진행 중 철회되면 외부 전사/
  * 저장을 중단한다(stock-clips generateStockClip 의 assertCloneAuthorization 패턴).
+ *
+ * ⚠ **'failed' 는 다시 하면 될 수 있는 것만이다**(2026-10-11, 스펙 §4-2). 녹음이 말투를 보여 주지 않은 것
+ * (`analyzeSpeechStyleWithVertex` 의 `standard` — 전사가 짧다·확신이 낮다·찾은 것이 없다)은 실패가 아니라 **표준 말투**다 —
+ * `speech_style` 을 NULL 로, 상태를 'done' 으로 적고 info 한 줄만 남긴다(오류를 보고하지 않는다). 같은 녹음이라 다시 눌러도
+ * 같은 답인데 재시도 버튼을 띄우고 매번 Sentry 에 올렸다 — 2026-10-10 prod 세 건(ALARMTALK-BACKEND-F)이 그랬다. 표준 말투는
+ * 사전렌더를 다시 굽지 않는다 — 말투 없이 구운 클립이 이미 그 답이다.
  */
 async function runSpeechStyleAnalysis(
   env: Env,
@@ -506,6 +517,11 @@ async function runSpeechStyleAnalysis(
     providerVoiceId?: string | null;
     /** 재시도가 읽은 원본 녹음 키 — 결과를 그 녹음을 아직 문 프로필에만 쓴다(`SPEECH_STYLE_RESULT_TARGET_SQL`). */
     sourceObjectKey?: string | null;
+    /**
+     * 등록이 말소리 확인(`checkCloneSpeech`)에서 이미 받은 이 녹음의 전사. 있으면 다시 전사하지 않는다 — 등록 한 번에
+     * Scribe 는 한 번이다. 없으면(재시도·등록의 전사가 실패해 그대로 통과시킨 경우) 여기서 전사한다.
+     */
+    transcript?: string | null;
   },
 ): Promise<{ ok: true; written: boolean } | { ok: false; error: unknown }> {
   const db = getDB(env);
@@ -520,31 +536,52 @@ async function runSpeechStyleAnalysis(
   });
   try {
     // 동의 철회 경쟁(H): 시작 시 재확인 — 철회됐으면 원본을 외부 전사(ElevenLabs)로 보내지 않는다.
+    // 전사를 이미 받았어도 확인한다 — 다음 단계가 그 전사를 Vertex(국외)로 보낸다.
     const missingAtStart = await missingConsentType(db, options.ownerPk, SENSITIVE_REQUIRED_CONSENTS);
     if (missingAtStart) {
       throw new Error(`Speech style analysis aborted: consent withdrawn (${missingAtStart}).`);
     }
-    if (!env.ELEVENLABS_API_KEY) {
-      throw new Error('ELEVENLABS_API_KEY is not configured for speech style analysis.');
+    let transcript = options.transcript ?? null;
+    if (transcript === null) {
+      if (!env.ELEVENLABS_API_KEY) {
+        throw new Error('ELEVENLABS_API_KEY is not configured for speech style analysis.');
+      }
+      const client = new ElevenLabsClient(env.ELEVENLABS_API_KEY);
+      transcript = await client.speechToText(audioData, {
+        mimeType: options.mimeType,
+        fileName: options.fileName,
+        deadlineAt,
+      });
     }
-    const client = new ElevenLabsClient(env.ELEVENLABS_API_KEY);
-    const transcript = await client.speechToText(audioData, {
-      mimeType: options.mimeType,
-      fileName: options.fileName,
-      deadlineAt,
-    });
-    // null = Vertex 미설정/호출 실패/전사가 너무 짧음(전사 실패 의심) — 재시도로 복구 여지가
-    // 있으므로 'failed' 로 기록한다(성공 판단은 speech_style 저장 여부). 상류 시간 초과·5xx 는 함수 안에서
-    // 마감까지 다시 묻는다.
-    const style = await analyzeSpeechStyleWithVertex(env, transcript, options.language, { deadlineAt });
-    if (!style) {
-      throw new Error('Speech style analysis produced no result (empty transcript or Vertex failure).');
+    // 상류 시간 초과·5xx 는 함수 안에서 마감까지 다시 묻는다. 그래도 알아내지 못하면(전송·설정·인증·깨진 답) 실패로
+    // 남긴다 — 재시도로 복구할 여지가 있다. 녹음이 말투를 보여 주지 않은 것은 실패가 아니다(위 머리말).
+    const analysis = await analyzeSpeechStyleWithVertex(env, transcript, options.language, { deadlineAt });
+    if (analysis.kind === 'failed') {
+      throw new Error(`Speech style analysis failed (${analysis.reason}).`);
     }
-    // 저장 직전 재확인 — 전사·분석 왕복 중 철회됐으면 파생 결과(speech_style)를 저장하지 않는다.
+    // 저장 직전 재확인 — 전사·분석 왕복 중 철회됐으면 파생 결과(speech_style)를 저장하지 않는다. 표준 말투도 같다 —
+    // 철회 경쟁은 다시 하면 될 수 있는 실패다('done' 으로 덮지 않는다).
     const missingBeforeSave = await missingConsentType(db, options.ownerPk, SENSITIVE_REQUIRED_CONSENTS);
     if (missingBeforeSave) {
       throw new Error(`Speech style analysis discarded: consent withdrawn (${missingBeforeSave}).`);
     }
+    if (analysis.kind === 'standard') {
+      // 표준 말투 — 말투를 비우고(재시도로 들어온 행에 옛 값이 있어도) 'done'. 사전렌더 큐는 건드리지 않는다.
+      const cleared = await db.execute({
+        sql: `UPDATE voice_profiles
+              SET speech_style = NULL, speech_style_status = 'done', updated_at = datetime('now')
+              WHERE ${targetClause}`,
+        args: targetArgs,
+      });
+      // 전사 원문은 남기지 않는다 — 길이만(등록의 말소리 확인과 같은 셈 — 소리 표시를 뺀 글자 수).
+      logStructured('info', {
+        at: 'voice.speech_style.standard',
+        reason: analysis.reason,
+        transcript_chars: speechCharCount(transcript),
+      });
+      return { ok: true, written: (cleared.rowsAffected ?? 0) > 0 };
+    }
+    const style = analysis.style;
     const written = await db.batch(
       [
         {
@@ -2099,6 +2136,37 @@ voiceProfile.post('/clone', async (c) => {
     }
 
     const audioBuffer = await audioFile.arrayBuffer();
+
+    // 이번 달 등록을 다 쓴 계정은 **전사부터 하지 않는다**(2026-10-11). 아래 말소리 확인은 공용·한도 있는
+    // ElevenLabs 키로 Scribe 를 부른다 — 어차피 429 로 끝날 요청에 그 값을 치르지 않는다. 읽기만 하고(원장에
+    // 아무것도 쓰지 않는다), 답은 예약 트랜잭션의 거절과 같은 코드·같은 몸통이다. ⚠ **권위 있는 확인은 그대로
+    // 예약 트랜잭션 맨 앞이다** — 이 읽기와 그 사이에(전사가 몇 초 걸린다) 다른 기기가 등록할 수 있다.
+    if ((await readMonthlyRegistrationUsage(db, userPk)).remaining <= 0) {
+      return monthlyVoiceChangeLimitResponse(c);
+    }
+
+    // ⚠ **말소리가 없으면 등록하지 않는다**(2026-10-11 오너 결정 — "목소리(말소리) 없으면 등록 못 하도록 막는다.
+    // 다시 만들기는 횟수 제한 없음 — 확정 등록만 월 1회", `docs/spec/voice-and-message.md` §4-1 「말소리가 없으면
+    // 등록하지 않는다」). provider 등록과 예약 트랜잭션보다 **앞**이고, 거절은 **한 줄도 쓰지 않는다** — 초안 행·초안
+    // 시도 집계·원장·provider 보이스·R2 원본·삭제 예약·옛 초안 정리 어느 것도 없다. 그래서 다시 녹음하는 데 횟수
+    // 제한이 없다.
+    //
+    // 2026-10-10 prod(ALARMTALK-BACKEND-F): 한 사용자가 세 번(03:58·04:03·04:32 UTC) 등록했고 세 번 다 클론이 만들어졌다.
+    // 뒤의 둘은 전사가 20자도 안 되는 — 말소리가 거의 없는 — 녹음이었다. 쓸 수 없는 목소리를 받고 다시 등록하다 월
+    // 한도에 걸렸다. (첫 건은 전사가 20자를 넘었고 말투 분석이 확신하지 못했다 — 그때는 소리 표시까지 셌다. 그 글자가
+    // 말소리였다면 이 확인으로는 막히지 않는다.)
+    //
+    // 전사 **자체가 실패하면 막지 않는다**(fail-open) — 예전 그대로 등록하고, 말투 분석이 스스로 다시 전사한다. 전사가
+    // 잠깐 죽은 동안 모든 등록이 막히는 것보다 낫다. 응답에 글이 없는 것도 실패다(`speechToText` 가 던진다).
+    const speechCheck = await checkCloneSpeech(c.env, audioBuffer, {
+      mimeType: audioMimeType,
+      fileName: audioFile.name || undefined,
+    });
+    if (speechCheck.status === 'no_speech') {
+      return jsonError(c, 400, 'VOICE_CLONE_NO_SPEECH', 'voice clone audio contains too little speech');
+    }
+    // 말투 분석에 넘긴다 — 등록 한 번에 Scribe 는 한 번이다(전사가 실패했으면 null — 분석이 다시 전사한다).
+    const enrollmentTranscript = speechCheck.status === 'speech' ? speechCheck.transcript : null;
     const profileId = crypto.randomUUID();
 
     const insertResult = await withWriteTransaction(db, async (tx) => {
@@ -2116,6 +2184,7 @@ voiceProfile.post('/clone', async (c) => {
       // 보다 뒤로 내리면 '만들 수 없는 등록' 이 그 사람의 남은 초안을 지우고 집계를 올린다.
       // 확정의 게이트(`reserveMonthlyOfficialVoiceChange`)는 그대로 둔다 — 초안을 만든 뒤
       // 다른 기기가 먼저 등록할 수 있어, 여기를 통과했다는 것은 확정의 근거가 못 된다.
+      // (위의 읽기 전용 선검사는 전사 비용을 아끼는 것일 뿐이다 — 이 확인을 대신하지 않는다.)
       const registration = await readMonthlyRegistrationUsage(tx, userPk);
       if (registration.remaining <= 0) {
         return { status: 'monthly_limit' as const, ledgerId: null };
@@ -2338,6 +2407,7 @@ voiceProfile.post('/clone', async (c) => {
     // 처리하는 고지된 수탁사), Vertex 에는 음성이 아니라 전사 텍스트만 전송한다.
     // 결과 상태는 speech_style_status 에 반드시 기록한다(pending→done|failed) — 과거처럼
     // 조용히 삼키면 클라가 알 수 없으므로, failed 는 /:id/speech-style/retry 로 복구한다.
+    // 녹음이 말투를 보여 주지 않은 것은 실패가 아니다 — 표준 말투로 done 이다(`runSpeechStyleAnalysis`).
     // 첫 자동 미리듣기와 레이스할 수 있다 — 그 경우 첫 미리듣기만 기본 톤이고,
     // 문구 수정·재생성과 매일 사전렌더부터는 분석 결과가 반영된다.
     await setSpeechStyleStatus(db, profileId, 'pending');
@@ -2357,6 +2427,7 @@ voiceProfile.post('/clone', async (c) => {
             language: previewLanguage,
             ownerPk: userPk,
             providerVoiceId: voiceId,
+            transcript: enrollmentTranscript,
           }).then((analysis) => {
             if (!analysis.ok) logRouteError(c, analysis.error);
           }),
@@ -2476,6 +2547,69 @@ function isVoiceSlotExhaustedError(detail: string): boolean {
     lower.includes('voice limit') ||
     lower.includes('voice slot')
   );
+}
+
+/**
+ * 등록의 말소리 확인에 쓰는 전사 한 번의 상한(요청 직전부터, 응답 본문 읽기까지 — `ElevenLabsClient.speechToText`
+ * 의 `deadlineAt`). 넘기면 막지 않고 통과시킨다(`checkCloneSpeech`).
+ *
+ * ⚠ **앱의 등록 요청 대기 안에 전사와 provider 등록이 함께 들어가야 한다.** 서버는 응답을 다 만들 때까지 한 바이트도
+ * 보내지 않는다 — 안드로이드는 OkHttp 읽기 대기 60초(`network/AlarmTalkApiClient.kt`, 호출 전체 상한은 없다), iOS 는
+ * 요청 대기 60초·요청 전체(업로드 포함) 120초다(`AlarmTalkAPI.makeDefaultSession`). provider 등록(ElevenLabs
+ * `voices/add`, 잡음 제거 포함)에는 서버 쪽 상한이 없고, 2026-10-10 prod 의 등록 세 건은 요청 전체가 5.3~13.9초였다.
+ * 그 녹음(20~70초)의 응답 뒤 분석은 Vertex 를 부르지 않은 두 건이 동의 조회·전사·기록까지 1.1·1.2초였다. 10초면 전사가
+ * 그보다 여러 배 늦어도 기다리고, 그 최악(10초 + 등록 14초 남짓)도 60초 안이다. 더 늘리지 말 것 — 늘린 만큼 사용자가
+ * 더 기다리고, 못 기다린 쪽은 말소리 확인 없이 예전처럼 등록될 뿐이다.
+ */
+const CLONE_SPEECH_CHECK_TIMEOUT_MS = 10_000;
+
+/** 던져진 것의 이름만 — 전사 원문이나 제공자 응답 본문(오류 메시지에 실린다)은 로그에 남기지 않는다. */
+function errorNameOf(err: unknown): string {
+  if (typeof err === 'object' && err !== null && typeof (err as { name?: unknown }).name === 'string') {
+    return (err as { name: string }).name;
+  }
+  return 'unknown';
+}
+
+/**
+ * 등록 녹음에 **말소리가 있는가** — ElevenLabs Scribe 로 한 번 전사해 말소리로 셀 글자 수(`speechCharCount` — 소리
+ * 표시를 빼고 앞뒤 공백을 걷는다)를 `MIN_SPEECH_TRANSCRIPT_CHARS`(말투 분석의 '짧은 전사' 와 같은 값·같은 셈)와 견준다.
+ *
+ * - `speech`: 말소리가 있다. 전사를 돌려준다 — 말투 분석이 같은 녹음을 다시 전사하지 않게(소리 표시도 그대로 간다).
+ * - `no_speech`: 거의 없다 — 호출자가 `VOICE_CLONE_NO_SPEECH` 로 거절한다.
+ * - `unavailable`: 전사 자체가 실패했다(네트워크·시간 초과·제공자 4xx/5xx·키 없음·답에 글(`text`)이 없음 — 응답 모양이
+ *   바뀌면 `speechToText` 가 던진다) — **막지 않는다**(fail-open). warn 한 줄(오류 이름만)을 남긴다.
+ *
+ * ⚠ 전사 원문은 저장하지도 로그에 남기지도 않는다 — 로그에는 길이만 싣는다.
+ */
+async function checkCloneSpeech(
+  env: Env,
+  audioData: ArrayBuffer,
+  file: { mimeType: string; fileName?: string },
+): Promise<{ status: 'speech'; transcript: string } | { status: 'no_speech' } | { status: 'unavailable' }> {
+  let transcript: string;
+  try {
+    if (!env.ELEVENLABS_API_KEY) {
+      logStructured('warn', { at: 'voice.clone.speech_check', outcome: 'unavailable', error: 'not_configured' });
+      return { status: 'unavailable' };
+    }
+    transcript = await new ElevenLabsClient(env.ELEVENLABS_API_KEY).speechToText(audioData, {
+      mimeType: file.mimeType,
+      fileName: file.fileName,
+      deadlineAt: Date.now() + CLONE_SPEECH_CHECK_TIMEOUT_MS,
+    });
+  } catch (err) {
+    logStructured('warn', { at: 'voice.clone.speech_check', outcome: 'unavailable', error: errorNameOf(err) });
+    return { status: 'unavailable' };
+  }
+  const transcriptChars = speechCharCount(transcript);
+  const hasSpeech = transcriptChars >= MIN_SPEECH_TRANSCRIPT_CHARS;
+  logStructured('info', {
+    at: 'voice.clone.speech_check',
+    outcome: hasSpeech ? 'speech' : 'no_speech',
+    transcript_chars: transcriptChars,
+  });
+  return hasSpeech ? { status: 'speech', transcript } : { status: 'no_speech' };
 }
 
 function validateCloneDuration(value: unknown): {
@@ -2650,6 +2784,8 @@ voiceProfile.post('/:id/speech-style/retry', async (c) => {
       'The voice changed while it was being analyzed. Refresh and try again.',
     );
   }
+  // 녹음이 말투를 보여 주지 않은 것(표준 말투 — `speech_style` NULL)도 여기다. 실패가 아니다 — 같은 녹음이라 다시
+  // 눌러도 같은 답이므로 502 로 재시도를 권하지 않는다(`runSpeechStyleAnalysis`).
   return c.json({ success: true, status: 'done' });
 });
 

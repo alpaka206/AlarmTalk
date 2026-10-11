@@ -78,6 +78,13 @@ describe('에러 코드 목록', () => {
     expect(ALERTING_ERROR_CODES).toContain('INVALID_USAGE_EVENTS');
   });
 
+  it('목소리 등록의 말소리 없음 400 은 경보로 올린다 — 갑자기 늘면 전사가 고장 나 모든 등록이 막힌 것이다', () => {
+    // 보통은 그 사람의 녹음이다(다시 녹음하면 풀린다). 그런데 판정이 전사의 글자 수라, 전사가 빈 글을 돌려주는
+    // 고장은 '말소리 없음' 과 구별되지 않는다 — 그동안 모든 등록이 이 400 으로 막히고, 고칠 수 있는 것은 우리뿐이다
+    // (`docs/spec/error-codes.md` §3).
+    expect(ALERTING_ERROR_CODES).toContain('VOICE_CLONE_NO_SPEECH');
+  });
+
   it('라우트가 내보내는 코드는 전부 목록에 있다', () => {
     // ⚠ 이 검사가 이 규약의 **유일한 강제 수단**이다. `error_code: 'FOO'` 는 그냥 문자열이라
     //   오타를 내도 컴파일이 통과하고, 그 코드로 분기하던 앱만 조용히 폴백으로 떨어진다.

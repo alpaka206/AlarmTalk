@@ -47,6 +47,11 @@ export const ERROR_CODES = [
   'VOICE_CAPACITY_EXHAUSTED',
   'VOICE_CLONE_AUDIO_TOO_LONG',
   'VOICE_CLONE_AUDIO_TOO_SHORT',
+  /**
+   * 등록 녹음에서 말소리를 거의 찾지 못했다(전사가 `MIN_SPEECH_TRANSCRIPT_CHARS` 자 미만) — 아무것도
+   * 만들지 않았고 월 등록 횟수도 그대로다. 다시 녹음하면 된다(`docs/spec/voice-and-message.md` §4-1).
+   */
+  'VOICE_CLONE_NO_SPEECH',
   'VOICE_CLONING_FAILED',
   'VOICE_DRAFT_REQUIRED',
   'VOICE_LIMIT_REACHED',
@@ -326,6 +331,11 @@ export const ALERTING_ERROR_CODES: readonly ErrorCode[] = [
   'MANUAL_TTS_QUOTA_EXCEEDED',
   // 외부 제공자(음성 합성·클론)가 실패한 것. 우리가 고칠 수 있는 유일한 갈래다.
   'VOICE_CLONING_FAILED',
+  // 목소리 등록 녹음에 말소리가 없다는 400. 보통은 그 사람의 녹음이라 다시 녹음하면 풀린다 — 그런데
+  // 판정이 전사(ElevenLabs Scribe)의 글자 수라, **갑자기 늘면** 전사가 빈 글을 돌려주는 고장이고 그동안
+  // **모든 등록이 막힌다**(전사가 아예 실패하면 막지 않고 통과시키지만, 빈 글은 '말소리 없음' 과 구별되지
+  // 않는다). 그 고장은 사용자가 고칠 수 없어 경보로 올린다(`docs/spec/error-codes.md` §3).
+  'VOICE_CLONE_NO_SPEECH',
   'TTS_GENERATION_FAILED',
   'PERSO_FAILED',
   // 스키마 마이그레이션 창에 걸린 요청 — 배포 직후 잠깐이어야 하고, 계속 나오면 사고다.
