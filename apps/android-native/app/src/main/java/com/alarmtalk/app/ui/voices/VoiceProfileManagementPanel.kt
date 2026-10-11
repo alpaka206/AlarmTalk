@@ -332,6 +332,20 @@ private fun VoiceRecordScriptCard(
     }
 }
 
+/**
+ * 음원 준비 단계로 돌려보낸 이유(말소리 없음 — `RegistrationFailureSurface.ReRecord`) — 녹음 카드(파일 경로는 파일
+ * 고르기) **바로 아래**에 둔다. 다음에 누를 것이 녹음 버튼이라 그 곁이 사용자가 보는 자리다. 글자·색은 확정 화면의
+ * 오류 줄과 같다(`bodySmall`·`colorScheme.error`) — 단계 맨 아래의 안내 줄은 힌트와 같은 흐린 글자라 거절로 읽히지 않는다.
+ */
+@Composable
+private fun RerecordReasonLine(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.error,
+    )
+}
+
 @Composable
 internal fun VoiceProfileManagementPanel(
     voiceProfiles: List<VoiceProfile>,
@@ -431,6 +445,10 @@ internal fun VoiceProfileManagementPanel(
     val registrationConsentSatisfied = !needsBiometricConsent || voiceBiometricAgreed
     var selectedAudio by remember { mutableStateOf<CachedAlarmAudio?>(null) }
     var localMessage by remember { mutableStateOf<String?>(null) }
+    // 등록을 거절당해 음원 준비 단계로 돌아온 이유(말소리 없음 — `RegistrationFailureSurface.ReRecord`). 녹음 카드(파일
+    // 고르기) 바로 아래에 오류 색으로 그린다 — 단계 맨 아래의 안내 줄(`localMessage`)은 힌트와 같은 흐린 글자라, 왜 이
+    // 단계로 돌아왔는지가 묻힌다. 새로 녹음하거나 파일을 새로 고르면(또는 방식을 바꾸면·창을 닫으면) 걷힌다.
+    var rerecordReason by remember { mutableStateOf<String?>(null) }
     var inputMode by remember { mutableStateOf(VoiceCaptureMode.Record) }
     var isRecording by remember { mutableStateOf(false) }
 
@@ -1256,6 +1274,8 @@ internal fun VoiceProfileManagementPanel(
                 // 짧은 파일도 배너로 나무라지 않는다 — 못 넘어가는 이유는 '다음' 버튼 자리에서
                 // 말한다(녹음과 같은 규칙).
                 localMessage = null
+                // 새 파일이다 — 앞 파일이 거절당한 이유는 이 파일의 이야기가 아니다.
+                rerecordReason = null
             }
                 .onFailure { error ->
                     AlarmTalkLog.reportError("Failed to cache voice profile audio", error)
@@ -1312,6 +1332,8 @@ internal fun VoiceProfileManagementPanel(
             recordingLevel = 0f
             isRecording = true
             localMessage = null
+            // 다시 녹음하기 시작했다 — 앞 녹음이 거절당한 이유는 걷는다(남겨 두면 새 녹음도 거절당한 것처럼 읽힌다).
+            rerecordReason = null
             recordTooShort = false
         }.onFailure { error ->
             AlarmTalkLog.reportError("Failed to start voice profile recording", error)
@@ -1348,6 +1370,7 @@ internal fun VoiceProfileManagementPanel(
         // 뷰모델이 그걸 가르는 값이 이것이다(`registrationFailureSurface`).
         onRegistrationWindowOpenChange(false)
         localMessage = null
+        rerecordReason = null
         // 다음에 창을 열 때 지난 거절 때문에 본문이 저절로 내려가지 않게 한다.
         registrationFailureTick = 0
         // 미리듣기 스텝 상태 정리 — 진행 중 합성 코루틴을 취소해 늦은 재생을 막는다. 확인을 기다리던 옛 재생도
@@ -1406,6 +1429,21 @@ internal fun VoiceProfileManagementPanel(
         selectedAudio = null
         selectedFileUri = null
         selectedFileDurationMillis = null
+    }
+
+    // 말소리가 없어 거절된 녹음(고른 파일)을 놓는다 — 새로 녹음하거나 파일을 새로 고를 때까지 `다음`·`등록` 이 같은
+    // 소리를 다시 보내지 못하게(`canSubmitRecord`·`canSubmitSingleFile` 이 둘 다 거짓이 된다). 파일 자체(녹음 원본,
+    // 파일 경로는 업로드한 잘라 낸 사본)는 뷰모델이 지운다(`cloneRejectionSpendsRecording`). 사용자가 고른 원본 파일은
+    // 우리 것이 아니라 참조만 놓는다. 이름·관계·호칭·언어는 그대로 둔다 — 새로 녹음한 뒤 다시 칠 일이 없게.
+    fun dropRejectedRecording() {
+        releaseRegistrationSource()
+        recordTooShort = false
+        recordingElapsedMillis = 0L
+        cropStartMillis = 0L
+        cropEndMillis = VoiceProfileAudioLimits.MAX_DURATION_MILLIS
+        // 그 녹음에서 재던 높이도 버린다 — 새 녹음으로 `다음` 을 누르면 다시 잰다(`startSourcePitchAnalysis`).
+        sourceF0Job?.cancel()
+        sourceF0Job = null
     }
 
     LaunchedEffect(pendingVoiceDraft?.id, pendingVoiceDraft?.status) {
@@ -1547,6 +1585,19 @@ internal fun VoiceProfileManagementPanel(
                 (confirmNewVoice ?: pendingVoiceDraft)?.id?.let { draftId -> onDiscardVoiceDraftQuietly(draftId) }
                 closeCreateDialog()
             }
+            // 녹음에 말소리가 거의 없었다 — 서버는 아무것도 쓰지 않았다(초안도, 횟수도). 같은 녹음은 다시 보내도 같은
+            // 답이라 처음 단계(음원 준비)로 돌아가 녹음(고른 파일)을 놓고, 녹음 카드(파일 고르기) 바로 아래에 이유를
+            // 쓴다. 흐름은 끝내지 않고 횟수도 건드리지 않는다 — 다시 녹음하는 데는 제한이 없다.
+            // 본문을 끝까지 내리지 않는다(`registrationFailureTick` 을 올리지 않는다) — 이유는 본문 위쪽에 있다. 창이
+            // 본문을 맨 위로 올린다(`LaunchedEffect(rerecordReason)`).
+            RegistrationFailureSurface.ReRecord -> {
+                onVoiceRegistrationFailureShown()
+                dropRejectedRecording()
+                currentStep = VoiceRegistrationStep.Source
+                createSubmitAttempted = false
+                localMessage = null
+                rerecordReason = failure.message
+            }
             // 지금 보이는 단계 안에 쓴다 — 세부 정보 단계의 안내 줄, 확정 화면의 오류 줄(둘 다
             // `localMessage` 를 그린다). 사용자가 읽고 그대로 다시 누른다.
             RegistrationFailureSurface.InWindow -> {
@@ -1590,17 +1641,18 @@ internal fun VoiceProfileManagementPanel(
         if (!canShareVoice) shareVoice = false
     }
 
-    // 이용권이 끝났으면 등록 창을 닫는다. 결정 구간에선 구독 상태가 흔들려도 플로우를 강제 종료하지 않는다(결정이 먼저).
-    // ⚠ **단계도 키다.** 만드는 중에 이용권이 끝나면 그때는 닫지 않는데, 등록이 실패해 세부 정보로 돌아온 뒤 이
-    // 효과가 다시 돌지 않으면 창이 '열기로 한' 채 그려지지 않고 남는다 — 목소리 탭의 안내 줄은 꺼진 채이고, 이용권이
-    // 돌아오면 지난 등록 화면이 저절로 다시 뜬다.
-    LaunchedEffect(canCreateVoice, currentStep) {
-        if (!canCreateVoice && showCreateForm &&
-            currentStep != VoiceRegistrationStep.Creating &&
-            currentStep != VoiceRegistrationStep.Preview
-        ) {
-            closeCreateDialog()
-        }
+    // 열기로 했는데 그려지지 않는 창은 닫는다 — 닫는 조건은 **그리는 조건의 여집합**이다(`registrationWindowShown` —
+    // `shouldDrawRegistrationWindow`). 음원 준비·세부 정보 단계에서 이용권이 끝나면 닫히고, 만드는 중·확정·준비 단계는
+    // 이용권이 흔들려도 그리므로 닫히지 않는다(결정과 진행이 먼저다).
+    // ⚠ **단계 목록을 여기 따로 쓰지 말 것.** 2026-10-11 리뷰: 이 효과가 '만드는 중·확정이 아니면' 으로 따로 적혀 있어
+    // 준비 단계를 닫았다 — 저장하기가 성공해 준비 단계로 넘어가는 순간 기기가 이용권을 '없다' 로 읽으면(기기 시계가
+    // 기한을 넘겼다·기간 한정 플랜 도장이 지났다 — 서버는 확정을 받았다) 준비 진행 없이 창이 닫혔다. 1.2.10 은 준비 화면을
+    // 지켰다. 그리는 값이 키라서, 만드는 중에 이용권이 끝난 뒤 세부 정보로 돌아와 그려지지 않게 된 창도 그때 닫힌다 —
+    // 안 닫으면 '열기로 한' 채 남아 목소리 탭의 안내 줄이 꺼져 있고, 이용권이 돌아오면 지난 등록 화면이 저절로 다시 뜬다.
+    // 그 등록의 거절은 닫기 전에 거절 효과가 스낵바로 보낸다(닫기가 먼저 와도 `closeCreateDialog` 의 닫힘 알림이 읽지 않은
+    // 거절을 스낵바로 넘긴다 — `voiceRegistrationWindowChanged`).
+    LaunchedEffect(registrationWindowShown, showCreateForm) {
+        if (showCreateForm && !registrationWindowShown) closeCreateDialog()
     }
 
     DisposableEffect(Unit) {
@@ -2265,6 +2317,12 @@ internal fun VoiceProfileManagementPanel(
                         // 아직 스크롤에 붙지 않았으면(재지 않은 기본값) 건드리지 않는다.
                         if (bottom != Int.MAX_VALUE) contentScrollState.animateScrollTo(bottom)
                     }
+                    // 음원 준비 단계로 돌려보낸 이유는 녹음 카드(파일 고르기) 바로 아래 — 본문 **위쪽**이다. 본문을 맨 위로
+                    // 올려 그 줄과 녹음 버튼이 함께 보이게 한다. 단계들이 스크롤 상태 하나를 같이 쓰므로 앞 단계에서 내려 둔
+                    // 위치가 남아 있을 수 있다(글자를 키운 기기에서는 그 위치가 이 줄을 화면 밖에 둔다).
+                    LaunchedEffect(rerecordReason) {
+                        if (rerecordReason != null) contentScrollState.animateScrollTo(0)
+                    }
                     Column(
                         modifier = Modifier
                             .weight(1f)
@@ -2287,6 +2345,8 @@ internal fun VoiceProfileManagementPanel(
                                         if (inputMode != it) {
                                             stopMediaPreview()
                                             localMessage = null
+                                            // 거절당한 것은 앞 방식의 소리다 — 다른 방식으로 옮기면 그 이유는 맞지 않는다.
+                                            rerecordReason = null
                                             if (recordTooShort) {
                                                 val discarded = selectedAudio
                                                 selectedAudio = null
@@ -2350,6 +2410,7 @@ internal fun VoiceProfileManagementPanel(
                                             }
                                         },
                                     )
+                                    rerecordReason?.let { reason -> RerecordReasonLine(reason) }
                                     // 곁에 없는 사람의 목소리를 등록하려는 경우가 흔하다.
                                     // 업로드할 파일이 없어도 방법이 있다는 걸 알려 준다.
                                     // 두 안내를 마침표마다 줄을 나눠 둔다 — 한 문단으로 붙이면
@@ -2400,6 +2461,7 @@ internal fun VoiceProfileManagementPanel(
                                             },
                                             onPreviewCrop = { playFileCropPreview() },
                                         )
+                                        rerecordReason?.let { reason -> RerecordReasonLine(reason) }
                                         // 여러 명이 섞인 오디오는 클론 품질이 떨어진다 — 파일을 고르면
                                         // 한 사람 목소리만 넣도록 안내한다.
                                         if (selectedFileDurationMillis != null) {

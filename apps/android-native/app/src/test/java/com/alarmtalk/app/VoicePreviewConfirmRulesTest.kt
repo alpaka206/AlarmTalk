@@ -7,6 +7,7 @@ import com.google.gson.Gson
 import com.google.gson.JsonParser
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -22,9 +23,10 @@ import org.junit.Test
  *  - 잠금표: 서버 일이 돌면 뒤로가기·다시 만들기·저장·공유·고치기를 잠그고, 막대·두 버튼은 받기·청취 확인으로는 잠그지 않는다.
  *  - 저장 잠금은 **지금 막대 값을 끝까지 들었을 때만** 열리고(원본은 0), 원본과 번갈아 들어도 다시 잠기지 않는다.
  *  - 이미 등록된 목소리가 있으면 저장은 **언제나 교체**다 — `replace_existing: true` 가 나간다(체크 없음).
- *  - 등록 흐름의 거절을 어디에 말하는가(2026-10-11, §4-1 「월 등록 한도」 ③): 월 한도는 흐름을 끝내고, 그 밖은 등록 창
- *    안에, 창이 닫힌 뒤에 온 것은 스낵바로. '창이 있다' 는 **그려져 있다** 는 뜻이다(열기로 한 것과 다르다).
- *    배선은 `VoiceRegistrationFailureWiringTest`.
+ *  - 등록 흐름의 거절을 어디에 말하는가(2026-10-11, §4-1 「월 등록 한도」 ③): 월 한도는 흐름을 끝내고, 말소리 없음은
+ *    처음 단계(음원 준비)로 돌려보내고, 그 밖은 등록 창 안에, 창이 닫힌 뒤에 온 것은 스낵바로. '창이 있다' 는 **그려져
+ *    있다** 는 뜻이다(열기로 한 것과 다르다). 같은 녹음을 다시 보내도 같은 답인 거절(월 한도·말소리 없음)만 녹음을
+ *    지운다. 배선은 `VoiceRegistrationFailureWiringTest`.
  */
 class VoicePreviewConfirmRulesTest {
 
@@ -96,9 +98,63 @@ class VoicePreviewConfirmRulesTest {
     @Test
     fun `등록 창이 닫힌 뒤에 온 실패는 스낵바로 간다`() {
         // 나가기 경고의 '나가기' 는 초안 삭제를 보내고 곧바로 창을 닫는다 — 그 실패를 창 안의 줄에만
-        // 쓰면 어디에도 안 보인다. 월 한도 코드여도 같다: 닫을 창도, 그 위에 띄울 흐름도 없다.
-        for (code in listOf(null, "INTERNAL_ERROR", "VOICE_PREVIEW_REQUIRED", VOICE_MONTHLY_LIMIT_ERROR_CODE)) {
+        // 쓰면 어디에도 안 보인다. 월 한도 코드여도 같다: 닫을 창도, 그 위에 띄울 흐름도 없다. 말소리 없음도 같다:
+        // 돌아갈 단계가 그려지지 않는다.
+        for (code in listOf(
+            null,
+            "INTERNAL_ERROR",
+            "VOICE_PREVIEW_REQUIRED",
+            VOICE_MONTHLY_LIMIT_ERROR_CODE,
+            VOICE_CLONE_NO_SPEECH_ERROR_CODE,
+        )) {
             assertEquals("$code", RegistrationFailureSurface.AppSnackbar, registrationFailureSurface(code, windowOpen = false))
+        }
+    }
+
+    // ── 말소리 없음 — 처음 단계로 돌아가 새로 녹음한다(2026-10-11 소유자 결정) ─────────────
+    //
+    // 2026-10-10 prod(UTC): 한 사용자가 세 번 목소리를 만들었다(세 번 다 201). 뒤이은 말투 분석은 셋 다 '실패' 였고,
+    // 그중 둘은 받아 적은 글이 20자도 안 됐다 — 녹음에 말소리가 거의 없었는데 목소리는 만들어졌다. 그 사용자는 그 뒤
+    // 다시 등록하다 월 한도에 걸렸다. 이제 서버는 그런 녹음을 provider 에 올리기 전에 거절한다(`VOICE_CLONE_NO_SPEECH`,
+    // 아무것도 쓰지 않는다).
+
+    @Test
+    fun `말소리가 없는 녹음은 처음 단계로 돌려보낸다 — 흐름을 끝내지도 그 자리에 머물지도 않는다`() {
+        // 서버가 내는 코드 그대로다(`packages/shared/src/schemas/error-codes.ts` — 배선 테스트가 목록에 있는지도 본다).
+        assertEquals("VOICE_CLONE_NO_SPEECH", VOICE_CLONE_NO_SPEECH_ERROR_CODE)
+        assertEquals(
+            RegistrationFailureSurface.ReRecord,
+            registrationFailureSurface(VOICE_CLONE_NO_SPEECH_ERROR_CODE, windowOpen = true),
+        )
+        // ⚠ 세부 정보 단계에 머물면(InWindow) `등록` 이 같은 녹음을 다시 보낸다 — 몇 번을 눌러도 같은 답이다. 흐름을
+        // 끝내면(EndFlow) 다시 녹음하려고 창을 처음부터 다시 열어야 하고, 횟수와 무관한 거절에 월 한도 알럿이 뜬다.
+        assertNotEquals(RegistrationFailureSurface.InWindow, registrationFailureSurface(VOICE_CLONE_NO_SPEECH_ERROR_CODE, windowOpen = true))
+        assertNotEquals(RegistrationFailureSurface.EndFlow, registrationFailureSurface(VOICE_CLONE_NO_SPEECH_ERROR_CODE, windowOpen = true))
+        // 처음 단계로 돌려보내는 것은 이 코드 하나다 — 다시 시도할 수 있는 실패는 녹음을 그대로 두고 그 자리에서 말한다.
+        for (code in listOf(null, "INTERNAL_ERROR", "VOICE_CLONE_AUDIO_TOO_SHORT", "VOICE_CAPACITY_EXHAUSTED", "SOMETHING_NEW")) {
+            assertNotEquals("$code", RegistrationFailureSurface.ReRecord, registrationFailureSurface(code, windowOpen = true))
+        }
+    }
+
+    @Test
+    fun `같은 녹음을 다시 보내도 같은 답인 거절만 녹음을 지운다`() {
+        // 월 한도: 이번 달에는 몇 번을 눌러도 같은 답이다(창도 닫힌다). 말소리 없음: 그 녹음에는 말소리가 없다.
+        assertTrue(cloneRejectionSpendsRecording(VOICE_MONTHLY_LIMIT_ERROR_CODE))
+        assertTrue(cloneRejectionSpendsRecording(VOICE_CLONE_NO_SPEECH_ERROR_CODE))
+        // ⚠ 다시 시도할 수 있는 실패는 녹음을 남긴다 — `등록` 을 그대로 다시 누를 수 있어야 한다(스펙 §4-1 ③). 코드 없음은
+        // 네트워크 실패·게이트웨이 5xx 다.
+        for (code in listOf(
+            null,
+            "INTERNAL_ERROR",
+            "RATE_LIMITED",
+            "VOICE_CAPACITY_EXHAUSTED",
+            "VOICE_SLOT_EXHAUSTED",
+            "VOICE_FEATURE_REQUIRES_PAID_PLAN",
+            "CONSENT_REQUIRED",
+            "VOICE_CLONE_AUDIO_TOO_SHORT",
+            "SOMETHING_NEW",
+        )) {
+            assertFalse("$code", cloneRejectionSpendsRecording(code))
         }
     }
 
@@ -140,7 +196,7 @@ class VoicePreviewConfirmRulesTest {
         // 그 안에 쓰면 어디에도 안 보이므로(목소리 탭의 안내 줄도 창이 열린 동안은 꺼져 있다) 스낵바로 간다.
         val afterRevert = shouldDrawRegistrationWindow(requested = true, step = VoiceRegistrationStep.Details, canOpenCreateForm = false)
         assertFalse(afterRevert)
-        for (code in listOf("VOICE_FEATURE_REQUIRES_PAID_PLAN", null, VOICE_MONTHLY_LIMIT_ERROR_CODE)) {
+        for (code in listOf("VOICE_FEATURE_REQUIRES_PAID_PLAN", null, VOICE_MONTHLY_LIMIT_ERROR_CODE, VOICE_CLONE_NO_SPEECH_ERROR_CODE)) {
             assertEquals("$code", RegistrationFailureSurface.AppSnackbar, registrationFailureSurface(code, windowOpen = afterRevert))
         }
         // 이용권이 그대로면 같은 실패를 세부 정보 단계 안에 쓴다(예전 그대로).

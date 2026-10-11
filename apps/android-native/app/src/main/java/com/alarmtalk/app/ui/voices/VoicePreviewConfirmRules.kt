@@ -176,6 +176,14 @@ internal fun monthlyRegistrationUsedUp(quota: VoiceDraftQuotaResponse?): Boolean
 internal const val VOICE_MONTHLY_LIMIT_ERROR_CODE = "VOICE_MONTHLY_CHANGE_LIMIT_REACHED"
 
 /**
+ * 서버가 "녹음에서 말소리를 거의 찾지 못했다" 고 답하는 코드 — 등록(`POST /voice/clone`)만 낸다. 서버는 provider 에
+ * 올리기 전에 녹음을 한 번 받아 적어 보고, 글자가 너무 적으면 **아무것도 쓰지 않고** 거절한다 — 초안도, 초안 시도
+ * 집계도, 월 등록 횟수도 그대로다(2026-10-11 소유자 결정: "목소리(말소리) 없으면 등록 못 하도록 막는다. 다시 만들기는
+ * 횟수 제한 없음"). 그래서 다시 녹음하는 데는 제한이 없다.
+ */
+internal const val VOICE_CLONE_NO_SPEECH_ERROR_CODE = "VOICE_CLONE_NO_SPEECH"
+
+/**
  * 등록 흐름(등록·저장·다시 만들기)의 거절 한 건 — 서버의 에러 코드와 사용자에게 보일 문구.
  * 뷰모델이 올리고(`MainViewModel.voiceRegistrationFailure`) 등록 창이 읽어 자기 안에 그린다.
  *
@@ -191,6 +199,13 @@ internal enum class RegistrationFailureSurface {
      */
     EndFlow,
 
+    /**
+     * 처음 단계(음원 준비 — 녹음 또는 파일)로 돌아간다 — 녹음(고른 파일)을 버리고 그 단계의 녹음 카드(파일 고르기) 바로
+     * 아래에 이유를 쓴다. 같은 녹음은 다시 보내도 같은 답이라 `등록` 을 그대로 다시 누르게 두지 않는다. 흐름은 끝내지
+     * 않는다 — 서버가 아무것도 쓰지 않았고(초안·횟수 그대로) 다시 녹음하는 데는 제한이 없다.
+     */
+    ReRecord,
+
     /** 지금 보이는 단계 안에 쓴다 — 세부 정보 단계의 안내 줄, 확정 화면의 오류 줄. 사용자가 고쳐 다시 누른다. */
     InWindow,
 
@@ -205,27 +220,47 @@ internal enum class RegistrationFailureSurface {
  * | --- | --- | --- |
  * | 닫혀 있다 | 무엇이든 | [RegistrationFailureSurface.AppSnackbar] |
  * | 열려 있다 | 월 한도([VOICE_MONTHLY_LIMIT_ERROR_CODE]) | [RegistrationFailureSurface.EndFlow] |
+ * | 열려 있다 | 말소리 없음([VOICE_CLONE_NO_SPEECH_ERROR_CODE]) | [RegistrationFailureSurface.ReRecord] |
  * | 열려 있다 | 그 밖(유료·동의·미리듣기·용량·네트워크·5xx…) | [RegistrationFailureSurface.InWindow] |
  *
  * - 창이 닫혀 있는 경우는 **창을 닫으면서 보낸 요청**이다 — 나가기 경고의 '나가기' 가 초안 삭제를 보내고
  *   곧바로 창을 닫는다. 그 실패를 창 안의 줄에만 쓰면 **어디에도 안 보인다.** 열기로 했어도 그려지지 않는 창도
- *   닫힌 것이다([shouldDrawRegistrationWindow]).
+ *   닫힌 것이다([shouldDrawRegistrationWindow]). 말소리 없음도 그때는 스낵바다 — 돌아갈 단계가 그려지지 않는다.
  * - 월 한도는 등록 단계에서든 저장 단계에서든 같은 답이다. 서버가 초안을 만들기 전에 막으므로(§4-1 ①)
  *   보통은 등록 단계에서 만나고, 저장 단계에서 만나려면 그사이 다른 기기가 먼저 등록해야 한다.
+ * - 말소리 없음은 등록 단계에서만 온다. 흐름을 끝내지도 횟수를 건드리지도 않고 처음 단계로 돌려보낸다 — 고칠 것은
+ *   이름이 아니라 녹음이다. 녹음 파일은 뷰모델이 지운다([cloneRejectionSpendsRecording]).
  * - ⚠ **월 한도 말고는 흐름을 끝내지 않는다.** 유료·동의(403)와 `VOICE_PREVIEW_REQUIRED` 는 창 안에서
  *   말하고 사용자가 고친다. 다시 시도할 수 있는 실패(네트워크·5xx·`VOICE_CAPACITY_EXHAUSTED`)에서
  *   창을 닫으면 녹음을 처음부터 다시 해야 한다.
  *
- * iOS 는 창(`fullScreenCover`) 안에 이미 쓰고 있어 이 가르기가 없다 — 월 한도로 흐름을 끝내는 것만 같다
- * (`VoiceStudioViewModel.isMonthlyLimitRejection`).
+ * iOS 는 창(`fullScreenCover`) 안에 이미 쓰고 있어 이 가르기가 없다 — 월 한도로 흐름을 끝내는 것
+ * (`VoiceStudioViewModel.isMonthlyLimitRejection`)과, 말소리 없음으로 처음 단계로 돌려보내는 것이 같아야 한다.
  *
  * @param windowOpen 등록 창이 지금 **그려져 있는가**([shouldDrawRegistrationWindow]) — 열기로 했는가가 아니다.
  */
 internal fun registrationFailureSurface(errorCode: String?, windowOpen: Boolean): RegistrationFailureSurface = when {
     !windowOpen -> RegistrationFailureSurface.AppSnackbar
     errorCode == VOICE_MONTHLY_LIMIT_ERROR_CODE -> RegistrationFailureSurface.EndFlow
+    errorCode == VOICE_CLONE_NO_SPEECH_ERROR_CODE -> RegistrationFailureSurface.ReRecord
     else -> RegistrationFailureSurface.InWindow
 }
+
+/**
+ * 등록(`POST /voice/clone`)의 거절이 **보낸 녹음을 다 쓴 것으로 만드는가** — 같은 녹음을 그대로 다시 보내도 같은 답이
+ * 오는 거절이다. 그러면 뷰모델이 그 녹음(파일 경로는 잘라 낸 사본 — 업로드한 것이 그것이다)을 지운다. 녹음은 음성
+ * 생체정보 평문이라, 남겨 두는 것은 그대로 다시 시도할 수 있을 때뿐이다(`purgeVoiceCloneSourceRecordings` 의 규칙).
+ *
+ * | 코드 | 녹음 | 왜 |
+ * | --- | --- | --- |
+ * | 월 한도([VOICE_MONTHLY_LIMIT_ERROR_CODE]) | 지운다 | 이번 달에는 몇 번을 눌러도 같은 답이다 — 창도 닫힌다 |
+ * | 말소리 없음([VOICE_CLONE_NO_SPEECH_ERROR_CODE]) | 지운다 | 그 녹음에는 말소리가 없다 — 새로 녹음해야 한다 |
+ * | 그 밖(네트워크·5xx·용량·코드 없음…) | 남긴다 | `등록` 을 그대로 다시 누를 수 있어야 한다(스펙 §4-1 ③) |
+ *
+ * 창이 녹음 참조를 놓는 것은 따로다 — 말소리 없음은 [RegistrationFailureSurface.ReRecord] 가, 월 한도는 창 닫기가 놓는다.
+ */
+internal fun cloneRejectionSpendsRecording(errorCode: String?): Boolean =
+    errorCode == VOICE_MONTHLY_LIMIT_ERROR_CODE || errorCode == VOICE_CLONE_NO_SPEECH_ERROR_CODE
 
 /**
  * 등록 창을 **그리는가** — 패널의 `registrationWindowShown` 이 이 값이다. 그리는 조건(`Dialog`), 뷰모델에 알리는 열림

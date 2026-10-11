@@ -133,6 +133,7 @@ internal object SnackbarSeverities {
         R.string.msg_voice_fetch_failed,
         R.string.msg_voice_clone_audio_too_short,
         R.string.msg_voice_clone_audio_too_long,
+        R.string.msg_voice_clone_no_speech,
         R.string.msg_voice_invalid_duration,
         R.string.msg_voice_invalid_audio_format,
         R.string.msg_voice_slot_exhausted,

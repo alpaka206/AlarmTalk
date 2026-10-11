@@ -3,6 +3,7 @@ package com.alarmtalk.app
 import android.content.Context
 import android.content.res.Configuration
 import androidx.test.core.app.ApplicationProvider
+import com.alarmtalk.app.network.apiErrorMessage
 import com.google.gson.JsonParser
 import java.io.File
 import java.util.Locale
@@ -21,6 +22,9 @@ import org.robolectric.annotation.Config
  * 등록·저장·다시 만들기의 실패를 전부 `MainViewModel.message`(스낵바)에만 썼다 — 2026-10-10 prod 의
  * 사용자는 월 한도로 거절된 같은 저장을 일곱 번 눌렀다. 등록 단계는 더 나빴다: '만드는 중' 으로
  * 넘어가며 녹음을 먼저 놓아, 실패하면 꺼진 `등록` 버튼과 보이지 않는 문구만 남았다.
+ *
+ * 말소리 없는 녹음(`VOICE_CLONE_NO_SPEECH`, 2026-10-11)은 창 안에서 **처음 단계로** 돌아간다 — 녹음을 버리고 녹음 카드
+ * 아래에 이유를 쓴다(흐름도 횟수도 그대로다).
  *
  * 어디에 말할지의 판정은 순수 함수(`registrationFailureSurface` — `VoicePreviewConfirmRulesTest`)가
  * 지키고, 여기서는 그 판정이 **실제로 쓰이는가**를 소스로 본다. `MainViewModel` 도 이 화면도 단위
@@ -78,10 +82,7 @@ class VoiceRegistrationFailureWiringTest {
 
         // 등록 창: 월 한도 갈래만 조용한 길을 쓴다. 사용자가 누른 두 삭제는 예전 길 그대로다.
         val effect = functionBody(panel, "LaunchedEffect(voiceRegistrationFailure)")
-        val endFlow = effect.substring(
-            effect.indexOf("RegistrationFailureSurface.EndFlow ->"),
-            effect.indexOf("RegistrationFailureSurface.InWindow ->"),
-        )
+        val endFlow = surfaceBranch(effect, "EndFlow")
         assertTrue("월 한도 갈래가 초안을 조용히 버리지 않는다.", endFlow.contains("onDiscardVoiceDraftQuietly(draftId)"))
         assertFalse("월 한도 갈래가 사용자 삭제 길로 초안을 버린다.", endFlow.contains("onDeleteVoiceDraft("))
         assertEquals(
@@ -123,15 +124,30 @@ class VoiceRegistrationFailureWiringTest {
     }
 
     @Test
-    fun aMonthlyLimitRejectionAtTheCloneStepDropsTheRecordingAfterBusyIsLowered() {
-        // 월 한도 거절은 '그대로 다시 시도' 가 없는 실패다 — 녹음(평문 생체정보)을 남겨 둘 이유가 없다.
+    fun aRejectionThatSpendsTheRecordingDropsItAfterBusyIsLowered() {
+        // 월 한도·말소리 없음은 '그대로 다시 시도' 가 없는 실패다 — 녹음(평문 생체정보)을 남겨 둘 이유가 없다. 어느 코드가
+        // 그런지는 순수 함수(`cloneRejectionSpendsRecording` — `VoicePreviewConfirmRulesTest`)가 정하고, 여기서는 등록 실패
+        // 갈래가 그 판정으로 지우는지를 본다. 말소리 없음에서 녹음을 남기면 파일 경로의 잘라 낸 사본(업로드한 것)이
+        // 아무도 다시 보내지 않는 채 남는다 — 창은 그 참조를 이미 놓았다.
         // ⚠ busy 를 내린 **뒤에** 지운다. 먼저 지우면 그동안 등록 창이 흐름을 끝내며 보내는 초안 삭제가
         // busy 에 걸려 버려진다.
         val create = functionBody(voiceActions, "internal fun MainViewModel.createVoiceProfiles(")
         val lowered = create.lastIndexOf("voiceProfileBusy = false")
-        val purge = create.indexOf("if (refusedForMonth) purgeSourceRecordings()")
-        assertTrue("월 한도로 끝난 등록의 녹음을 지우지 않는다.", purge > 0)
+        val purge = create.indexOf("if (recordingSpent) purgeSourceRecordings()")
+        assertTrue("같은 녹음으로는 다시 안 되는 거절에서 녹음을 지우지 않는다.", purge > 0)
         assertTrue("녹음을 busy 를 내리기 전에 지운다.", purge > lowered)
+        assertTrue(
+            "등록 실패 갈래가 녹음을 지울지를 `cloneRejectionSpendsRecording` 으로 가르지 않는다 — 월 한도만 보면 말소리 " +
+                "없음으로 거절된 녹음이 남는다.",
+            create.contains("recordingSpent = cloneRejectionSpendsRecording(createErrorCode)"),
+        )
+        // 횟수를 다시 읽는 것은 월 한도뿐이다 — 말소리 없음은 서버가 아무것도 쓰지 않아 숫자가 그대로다.
+        val quotaReload = Regex(
+            """if \(createErrorCode == VOICE_MONTHLY_LIMIT_ERROR_CODE\) \{\s*loadVoiceDraftQuota\(\)\s*\}""",
+        )
+        assertTrue("월 한도 거절 뒤에 횟수를 다시 읽지 않거나, 다른 거절에서도 읽는다.", quotaReload.containsMatchIn(create))
+        // 문장은 공용 표 하나에서 온다 — 등록 실패 갈래가 이 코드에 따로 문장을 달면 두 앱의 문장이 갈라진다.
+        assertFalse(create.contains("\"VOICE_CLONE_NO_SPEECH\""))
         // 다시 시도할 수 있는 실패에서는 지우지 않는다 — 실패 갈래 안에는 무조건 지우는 줄이 없다.
         val failure = create.substring(create.indexOf(".onFailure { error ->"), lowered)
         val guardedPurges = Regex("""purgeSourceRecordings\(\)""").findAll(failure).count()
@@ -153,21 +169,21 @@ class VoiceRegistrationFailureWiringTest {
             effect.contains("registrationFailureSurface(failure.code, windowOpen = registrationWindowShown)"),
         )
         // 창 안의 줄 — 세부 정보 단계와 확정 화면이 둘 다 `localMessage` 를 그린다.
-        val inWindow = effect.substring(effect.indexOf("RegistrationFailureSurface.InWindow ->"))
+        val inWindow = surfaceBranch(effect, "InWindow")
         assertTrue(inWindow.contains("localMessage = failure.message"))
         // 월 한도: 알럿 하나 → 초안 삭제 → 창 닫기. 같은 버튼을 다시 누르게 두지 않는다.
-        val endFlow = effect.substring(
-            effect.indexOf("RegistrationFailureSurface.EndFlow ->"),
-            effect.indexOf("RegistrationFailureSurface.InWindow ->"),
-        )
+        val endFlow = surfaceBranch(effect, "EndFlow")
         val notice = endFlow.indexOf("monthlyLimitNoticeOpen = true")
         val discard = endFlow.indexOf("onDiscardVoiceDraftQuietly(draftId)")
         val close = endFlow.indexOf("closeCreateDialog()")
         assertTrue("월 한도 알럿을 띄우지 않는다.", notice >= 0)
         assertTrue("초안을 버리지 않는다.", discard > notice)
         assertTrue("창을 닫지 않거나, 초안 삭제를 보내기 전에 닫는다.", close > discard)
-        // 두 갈래 모두 읽었다고 알린다 — 같은 거절을 두 번 처리하지 않는다.
-        assertEquals(2, Regex("""onVoiceRegistrationFailureShown\(\)""").findAll(effect).count())
+        // 창 안의 세 갈래(흐름 끝내기·처음 단계로·그 자리에) 모두 읽었다고 알린다 — 같은 거절을 두 번 처리하지 않는다.
+        for (name in listOf("EndFlow", "ReRecord", "InWindow")) {
+            assertEquals(name, 1, Regex("""onVoiceRegistrationFailureShown\(\)""").findAll(surfaceBranch(effect, name)).count())
+        }
+        assertEquals(3, Regex("""onVoiceRegistrationFailureShown\(\)""").findAll(effect).count())
 
         // 알럿은 공용 껍데기 하나이고 문구는 리소스다.
         val alert = functionBody(panel, "if (monthlyLimitNoticeOpen)")
@@ -250,13 +266,38 @@ class VoiceRegistrationFailureWiringTest {
         assertTrue("되돌리기 효과를 못 찾았다.", revert >= 0)
         assertTrue("거절 라우터가 되돌리기 효과보다 앞에 있다.", revert < router)
 
-        // 그려지지 않는 창은 닫는다 — 이용권이 끝났을 때의 닫기는 **단계가 바뀔 때도** 다시 본다. 단계를 키로 두지
-        // 않으면, 만드는 중에 이용권이 끝난 뒤 세부 정보로 돌아온 창이 '열기로 한' 채 그려지지 않고 남는다.
-        val entitlementClose = functionBody(panel, "LaunchedEffect(canCreateVoice, currentStep)")
-        assertTrue(entitlementClose.contains("closeCreateDialog()"))
-        assertTrue(entitlementClose.contains("currentStep != VoiceRegistrationStep.Creating"))
-        assertTrue(entitlementClose.contains("currentStep != VoiceRegistrationStep.Preview"))
+        // 그려지지 않는 창은 닫는다 — 닫는 조건은 그리는 값의 여집합이다(아래 `aWindowClosesExactlyWhenItIsNotDrawn`).
+        // 그 값이 키라서, 만드는 중에 이용권이 끝난 뒤 세부 정보로 돌아와 그려지지 않게 된 창도 그때 닫힌다.
+        assertTrue(panel.contains("LaunchedEffect(registrationWindowShown, showCreateForm)"))
+    }
+
+    @Test
+    fun aWindowClosesExactlyWhenItIsNotDrawn() {
+        // 2026-10-11 리뷰(2차의 뒤): 이용권이 끝났을 때의 닫기가 단계 목록('만드는 중·확정이 아니면')으로 따로 적혀
+        // 있었다. 그리는 조건은 **준비 단계**도 이용권과 무관하게 그리는데 닫기는 그 단계를 닫았다 — 저장하기가 성공해 준비
+        // 단계로 넘어가는 순간 기기가 이용권을 '없다' 로 읽으면(기기 시계가 기한을 넘겼다·기간 한정 플랜 도장이 지났다 —
+        // 서버는 확정을 받았다) 준비 진행 없이 창이 닫혔다. 1.2.10 은 준비 화면을 지켰다.
+        // 판정(`shouldDrawRegistrationWindow` — 준비 단계는 이용권이 없어도 그린다)은 `VoicePreviewConfirmRulesTest` 가
+        // 지키고, 여기서는 닫기가 그 값의 여집합 **하나**인지를 본다 — 단계를 따로 늘어놓으면 두 규칙이 다시 갈라진다.
+        assertTrue(
+            "닫기가 그리는 값(`registrationWindowShown`)의 여집합이 아니다 — 열기로 했는데 그려지지 않을 때만 닫아야 한다.",
+            Regex(
+                """LaunchedEffect\(registrationWindowShown, showCreateForm\) \{\s*""" +
+                    """if \(showCreateForm && !registrationWindowShown\) closeCreateDialog\(\)\s*\}""",
+            ).containsMatchIn(panel),
+        )
+        // 옛 닫기(이용권·단계 목록)가 남아 있으면 준비 단계가 다시 닫힌다.
+        assertFalse("이용권으로 닫는 옛 효과가 남아 있다.", panel.contains("LaunchedEffect(canCreateVoice, currentStep)"))
         assertFalse(panel.contains("LaunchedEffect(canCreateVoice) {"))
+        assertFalse(
+            "창을 닫는 조건이 단계 목록을 따로 든다 — 그리는 조건과 갈라진다.",
+            Regex("""!canCreateVoice && showCreateForm""").containsMatchIn(panel),
+        )
+        // 이용권이 끝나 닫히는 창의 거절이 사라지지 않는다: 거절 효과가 '그려져 있는가' 로 갈라 스낵바로 보내고
+        // (`aWindowThatIsNotDrawnIsNotTreatedAsOpen`), 닫기가 먼저 와도 닫힘 알림이 읽지 않은 거절을 스낵바로 넘긴다.
+        assertTrue(functionBody(panel, "fun closeCreateDialog()").contains("onRegistrationWindowOpenChange(false)"))
+        val windowChanged = functionBody(voiceActions, "internal fun MainViewModel.voiceRegistrationWindowChanged(")
+        assertTrue(Regex("""voiceRegistrationFailure = null\s*message = unread\.message""").containsMatchIn(windowChanged))
     }
 
     @Test
@@ -278,6 +319,96 @@ class VoiceRegistrationFailureWiringTest {
         assertTrue(panel.contains("val canSubmitRecord = inputMode == VoiceCaptureMode.Record &&"))
         assertTrue(panel.contains("(selectedAudio?.durationMillis ?: 0L) >= VoiceProfileAudioLimits.MIN_DURATION_MILLIS"))
         assertTrue(panel.contains("selectedFileUri != null &&"))
+    }
+
+    @Test
+    fun aRecordingWithoutSpeechGoesBackToTheFirstStepAndDropsTheRecording() {
+        // 2026-10-11 소유자 결정: "목소리(말소리) 없으면 등록 못 하도록 막는다. 다시 만들기는 횟수 제한 없음." 서버는 그
+        // 녹음을 provider 에 올리기 전에 거절하고 아무것도 쓰지 않는다(`VOICE_CLONE_NO_SPEECH`). 창은 세부 정보 단계에
+        // 머물지 않는다 — 머물면 `등록` 이 같은 녹음을 다시 보낸다. 판정은 `registrationFailureSurface`
+        // (`VoicePreviewConfirmRulesTest`)이고, 여기서는 그 갈래가 실제로 하는 일을 본다.
+        val effect = functionBody(panel, "LaunchedEffect(voiceRegistrationFailure)")
+        val reRecord = surfaceBranch(effect, "ReRecord")
+        assertTrue("처음 단계(음원 준비)로 돌아가지 않는다.", reRecord.contains("currentStep = VoiceRegistrationStep.Source"))
+        assertTrue("거절된 녹음(고른 파일)을 놓지 않는다 — `다음`·`등록` 이 같은 소리를 다시 보낸다.", reRecord.contains("dropRejectedRecording()"))
+        assertTrue("돌아온 이유를 그 단계에 쓰지 않는다.", reRecord.contains("rerecordReason = failure.message"))
+        // 흐름을 끝내지 않는다 — 창을 닫거나 초안을 버리거나 월 한도 알럿을 띄우지 않는다(서버가 아무것도 만들지 않았다).
+        for (endsTheFlow in listOf("closeCreateDialog()", "monthlyLimitNoticeOpen", "onDiscardVoiceDraftQuietly", "onDeleteVoiceDraft")) {
+            assertFalse("말소리 없음 갈래가 흐름을 끝낸다: $endsTheFlow", reRecord.contains(endsTheFlow))
+        }
+        // 이유는 단계 맨 아래의 흐린 안내 줄이 아니라 녹음 카드 아래의 줄에 쓴다 — 본문을 끝까지 내리지도 않는다.
+        assertFalse(reRecord.contains("localMessage = failure.message"))
+        assertFalse(reRecord.contains("registrationFailureTick"))
+
+        // 놓는 것: 녹음·고른 파일의 참조, 자르기 범위, 그 녹음에서 재던 높이. 파일 자체는 뷰모델이 지운다
+        // (`aRejectionThatSpendsTheRecordingDropsItAfterBusyIsLowered`).
+        val drop = functionBody(panel, "fun dropRejectedRecording()")
+        assertTrue(drop.contains("releaseRegistrationSource()"))
+        assertTrue(drop.contains("cropStartMillis = 0L") && drop.contains("cropEndMillis = VoiceProfileAudioLimits.MAX_DURATION_MILLIS"))
+        assertTrue(drop.contains("sourceF0Job?.cancel()"))
+        val release = functionBody(panel, "fun releaseRegistrationSource()")
+        for (reference in listOf("selectedAudio = null", "selectedFileUri = null", "selectedFileDurationMillis = null")) {
+            assertTrue(reference, release.contains(reference))
+        }
+
+        // 그 줄은 음원 준비 단계의 녹음 카드(파일 경로는 파일 고르기) **바로 아래**다 — 다음에 누를 것이 녹음 버튼이다.
+        // 본문의 음원 준비 단계 — 상단바·하단 행에도 같은 단계 이름이 있어 그 단계가 그리는 첫 컨트롤로 집는다.
+        val sourceStart = Regex("""VoiceRegistrationStep\.Source -> \{\s*VoiceCaptureModeSelector\(""").find(panel)
+        val detailsStart = Regex("""VoiceRegistrationStep\.Details -> \{\s*OutlinedTextField\(""").find(panel)
+        assertTrue("본문의 음원 준비·세부 정보 단계를 못 찾았다.", sourceStart != null && detailsStart != null)
+        val sourceStep = panel.substring(sourceStart!!.range.first, detailsStart!!.range.first)
+        val recordCard = sourceStep.indexOf("VoiceRecordControls(")
+        val recordLine = sourceStep.indexOf("rerecordReason?.let { reason -> RerecordReasonLine(reason) }", recordCard)
+        assertTrue("녹음 카드 아래에 이유 줄이 없다.", recordCard >= 0 && recordLine > recordCard)
+        assertTrue("이유 줄이 녹음 카드 바로 아래가 아니다 — 힌트·대사 카드 뒤로 밀렸다.", recordLine < sourceStep.indexOf("R.string.voices_record_status_hint"))
+        val fileControls = sourceStep.indexOf("VoiceFileControls(")
+        val fileLine = sourceStep.indexOf("rerecordReason?.let { reason -> RerecordReasonLine(reason) }", fileControls)
+        assertTrue("파일 고르기 아래에 이유 줄이 없다.", fileControls >= 0 && fileLine > fileControls)
+        // 글자·색은 토큰이다(확정 화면의 오류 줄과 같다) — 생 색·크기를 박지 않는다.
+        val line = functionBody(panel, "private fun RerecordReasonLine(text: String)")
+        assertTrue(line.contains("style = MaterialTheme.typography.bodySmall"))
+        assertTrue(line.contains("color = MaterialTheme.colorScheme.error"))
+        assertFalse(line.contains("Color(0x"))
+        // 이유 줄은 본문 위쪽이다 — 앞 단계에서 내려 둔 스크롤을 맨 위로 올린다.
+        assertTrue(
+            Regex("""LaunchedEffect\(rerecordReason\) \{\s*if \(rerecordReason != null\) contentScrollState\.animateScrollTo\(0\)\s*\}""")
+                .containsMatchIn(panel),
+        )
+
+        // 걷는 때: 새로 녹음하기 시작했을 때, 파일을 새로 골랐을 때, 방식을 바꿨을 때, 창을 닫을 때. 남겨 두면 새 녹음도
+        // 거절당한 것처럼 읽힌다.
+        assertTrue("녹음을 다시 시작해도 이유가 남는다.", functionBody(panel, "fun startRecording()").contains("rerecordReason = null"))
+        assertTrue("파일을 새로 골라도 이유가 남는다.", functionBody(panel, "fun prepareSelectedFile(uri: Uri)").contains("rerecordReason = null"))
+        assertTrue("창을 닫아도 이유가 남는다.", functionBody(panel, "fun closeCreateDialog()").contains("rerecordReason = null"))
+        val modeSelector = sourceStep.substring(sourceStep.indexOf("onSelect = {"), sourceStep.indexOf("inputMode = it"))
+        assertTrue("방식을 바꿔도 이유가 남는다.", modeSelector.contains("rerecordReason = null"))
+    }
+
+    @Test
+    fun theNoSpeechSentenceIsOneTableEntryInThreeLanguages() {
+        // 두 앱이 같은 문장을 쓴다(2026-10-11 소유자 결정의 문장 — iOS `APIErrorMessages.swift` 와 짝). 등록 창이 그려져
+        // 있으면 녹음 카드 아래에, 아니면 스낵바에 — 어느 쪽이든 공용 표의 이 문장이다(등록 실패 갈래는 이 코드에 따로
+        // 문장을 달지 않는다 — `aRejectionThatSpendsTheRecordingDropsItAfterBusyIsLowered`).
+        val expected = mapOf(
+            "ko" to "녹음에서 말소리를 거의 찾지 못했어요. 조용한 곳에서 문장을 또렷하게 읽으며 다시 녹음해 주세요.",
+            "en" to "We couldn't find much speech in the recording. Please record again in a quiet place, reading the sentences clearly.",
+            "ja" to "録音から話し声がほとんど見つかりませんでした。静かな場所で、文をはっきり読みながらもう一度録音してください。",
+        )
+        for ((language, sentence) in expected) {
+            val context = context(language)
+            assertEquals(language, sentence, apiErrorMessage(context, VOICE_CLONE_NO_SPEECH_ERROR_CODE))
+            assertEquals(language, sentence, context.getString(R.string.msg_voice_clone_no_speech))
+            // 창이 그려지지 않아 스낵바로 가면 오류 색이다(거절이다).
+            assertEquals(language, MessageSeverity.Error, snackbarSeverity(context, sentence))
+        }
+        // 표의 열쇠는 서버가 내는 코드 그대로다 — 공용 목록(`packages/shared/src/schemas/error-codes.ts`)에 있어야 한다.
+        // 철자가 어긋나면 표가 조용히 빗나가 폴백 문장('목소리를 만들지 못했어요')이 뜬다.
+        val sharedCodes = File("../../../packages/shared/src/schemas/error-codes.ts").readText()
+        assertTrue(
+            "공용 에러 코드 목록에 `$VOICE_CLONE_NO_SPEECH_ERROR_CODE` 가 없다.",
+            sharedCodes.contains("'$VOICE_CLONE_NO_SPEECH_ERROR_CODE',"),
+        )
+        assertTrue(withoutLineComments(readSource("network/ApiErrorMessages.kt")).contains("\"VOICE_CLONE_NO_SPEECH\" to R.string.msg_voice_clone_no_speech,"))
     }
 
     @Test
@@ -304,23 +435,36 @@ class VoiceRegistrationFailureWiringTest {
 
     @Test
     fun theMonthlyLimitAlertSaysTheSameThingAsTheIosCatalog() {
-        val catalog = JsonParser.parseString(File("../../ios-native/AlarmTalk/Localizable.xcstrings").readText())
-            .asJsonObject.getAsJsonObject("strings")
-        fun ios(key: String, language: String): String =
-            if (language == "ko") {
-                assertTrue("iOS 카탈로그에 `$key` 가 없다.", catalog.has(key))
-                key
-            } else {
-                catalog.getAsJsonObject(key).getAsJsonObject("localizations").getAsJsonObject(language)
-                    .getAsJsonObject("stringUnit").get("value").asString
-            }
         val titleKey = "이번 달 목소리는 다 만들었어요"
         val messageKey = "목소리는 한 달에 1개 만들 수 있어요. 다음 달에 새로 만들 수 있고, 지금 목소리를 지워도 이번 달에는 다시 만들 수 없어요."
         for (language in listOf("ko", "en", "ja")) {
             val context = context(language)
-            assertEquals(language, ios(titleKey, language), context.getString(R.string.voices_monthly_limit_title))
-            assertEquals(language, ios(messageKey, language), context.getString(R.string.voices_monthly_limit_message))
+            assertEquals(language, iosCatalogValue(titleKey, language), context.getString(R.string.voices_monthly_limit_title))
+            assertEquals(language, iosCatalogValue(messageKey, language), context.getString(R.string.voices_monthly_limit_message))
         }
+    }
+
+    @Test
+    fun theNoSpeechSentenceSaysTheSameThingAsTheIosCatalog() {
+        // 말소리 없음의 문장은 두 앱의 오류 표가 짝으로 든다(안드로이드 `ApiErrorMessages.kt` / iOS `APIErrorMessages.swift`).
+        // 한쪽만 고치면 같은 거절이 두 앱에서 다르게 읽힌다 — iOS 카탈로그는 한국어 문장이 열쇠다.
+        val key = "녹음에서 말소리를 거의 찾지 못했어요. 조용한 곳에서 문장을 또렷하게 읽으며 다시 녹음해 주세요."
+        for (language in listOf("ko", "en", "ja")) {
+            assertEquals(language, iosCatalogValue(key, language), context(language).getString(R.string.msg_voice_clone_no_speech))
+        }
+    }
+
+    /** iOS 카탈로그(`Localizable.xcstrings`)의 값 — 한국어는 열쇠 자체다. 없으면 열쇠를 알려 주며 실패한다. */
+    private fun iosCatalogValue(key: String, language: String): String {
+        assertTrue("iOS 카탈로그에 `$key` 가 없다.", iosCatalog.has(key))
+        if (language == "ko") return key
+        return iosCatalog.getAsJsonObject(key).getAsJsonObject("localizations").getAsJsonObject(language)
+            .getAsJsonObject("stringUnit").get("value").asString
+    }
+
+    private val iosCatalog by lazy {
+        JsonParser.parseString(File("../../ios-native/AlarmTalk/Localizable.xcstrings").readText())
+            .asJsonObject.getAsJsonObject("strings")
     }
 
     private fun context(language: String): Context {
@@ -328,6 +472,14 @@ class VoiceRegistrationFailureWiringTest {
         val configuration = Configuration(base.resources.configuration)
         configuration.setLocale(Locale.forLanguageTag(language))
         return base.createConfigurationContext(configuration)
+    }
+
+    /** 거절 효과의 한 갈래 — `RegistrationFailureSurface.<name> ->` 부터 다음 갈래 앞까지(마지막 갈래면 끝까지). */
+    private fun surfaceBranch(effect: String, name: String): String {
+        val start = effect.indexOf("RegistrationFailureSurface.$name ->")
+        assertTrue("거절 효과에 `$name` 갈래가 없다.", start >= 0)
+        val next = effect.indexOf("RegistrationFailureSurface.", start + 1)
+        return if (next < 0) effect.substring(start) else effect.substring(start, next)
     }
 
     private val voiceActions: String by lazy { withoutLineComments(readSource("ui/main/MainViewModelVoiceActions.kt")) }

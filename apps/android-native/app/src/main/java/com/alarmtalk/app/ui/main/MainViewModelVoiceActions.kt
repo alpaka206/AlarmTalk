@@ -70,13 +70,14 @@ internal fun MainViewModel.consumeVoiceRegistrationFailure() {
  * 등록 흐름(등록·저장·다시 만들기)의 거절을 **보이는 곳에** 올린다 — 등록 창이 열려 있으면 그 창이
  * 읽을 상태로, 닫혀 있으면 앱 스낵바로(`registrationFailureSurface`, 스펙 §4-1 「월 등록 한도」 ③).
  *
- * 창이 열려 있을 때 그 안의 줄에 쓸지(`InWindow`) 흐름을 끝낼지(`EndFlow`)는 창이 같은 규칙으로
- * 가른다 — 알럿·초안 삭제·창 닫기가 전부 창의 일이다(`VoiceProfileManagementPanel`).
+ * 창이 열려 있을 때 그 안의 줄에 쓸지(`InWindow`), 처음 단계로 돌려보낼지(`ReRecord`), 흐름을 끝낼지(`EndFlow`)는
+ * 창이 같은 규칙으로 가른다 — 알럿·초안 삭제·단계 이동·창 닫기가 전부 창의 일이다(`VoiceProfileManagementPanel`).
  */
 private fun MainViewModel.showVoiceRegistrationFailure(errorCode: String?, text: String) {
     when (registrationFailureSurface(errorCode, windowOpen = voiceRegistrationWindowOpen)) {
         RegistrationFailureSurface.AppSnackbar -> message = text
         RegistrationFailureSurface.InWindow,
+        RegistrationFailureSurface.ReRecord,
         RegistrationFailureSurface.EndFlow,
         -> voiceRegistrationFailure = VoiceRegistrationFailure(code = errorCode, message = text)
     }
@@ -271,8 +272,9 @@ internal fun MainViewModel.createVoiceProfiles(
     fun sessionChanged() = authSession?.user?.id != ownerUserId
     viewModelScope.launch {
         suspend fun purgeSourceRecordings() = purgeVoiceCloneSourceRecordings(drafts)
-        // 월 한도 거절로 끝났는가 — 그러면 busy 를 내린 **뒤에** 녹음을 지운다(아래 실패 갈래).
-        var refusedForMonth = false
+        // 같은 녹음을 다시 보내도 같은 답인 거절(월 한도·말소리 없음)로 끝났는가 — 그러면 busy 를 내린 **뒤에** 녹음을
+        // 지운다(아래 실패 갈래, `cloneRejectionSpendsRecording`).
+        var recordingSpent = false
         runCatching {
             // 순서 고정: 동의 기록 → 업로드. 같은 runCatching 안에 두어 기록이 실패하면
             // 녹음이 절대 나가지 않고, 실패 처리도 업로드 실패와 같은 경로를 탄다.
@@ -353,24 +355,27 @@ internal fun MainViewModel.createVoiceProfiles(
             }
             // ⚠ **전역 `message`(스낵바)에 곧바로 쓰지 않는다.** 이 요청은 등록 창에서 나가는데 그
             // 창은 화면을 다 덮는 자기 창이라 스낵바가 그 뒤에 그려진다 — 실패한 사용자는 꺼진
-            // `등록` 버튼만 봤다. 창이 열려 있으면 그 창이 읽어 세부 정보 단계에 쓴다.
+            // `등록` 버튼만 봤다. 창이 열려 있으면 그 창이 읽어 세부 정보 단계에 쓴다(말소리 없음이면 처음 단계로
+            // 돌아가 녹음 카드 아래에 — `RegistrationFailureSurface.ReRecord`).
             showVoiceRegistrationFailure(createErrorCode, failureText)
             if (createErrorCode == VOICE_MONTHLY_LIMIT_ERROR_CODE) {
                 // 서버가 방금 "이번 달은 다 썼다" 고 말했다 — 화면의 '생성 가능 n/m회' 가 틀렸다는
                 // 뜻이다. 다시 읽어 `추가` 버튼과 삭제 경고를 맞춘다. 앱에서만 깎지 않는다(§4-1 ②).
+                // 말소리 없음에서는 읽지 않는다 — 서버가 아무것도 쓰지 않아 숫자가 그대로다.
                 loadVoiceDraftQuota()
-                refusedForMonth = true
             }
+            recordingSpent = cloneRejectionSpendsRecording(createErrorCode)
         }
         // busy 는 세션과 무관하게 반드시 내린다 — 가드로 일찍 빠져나온 경우에도 남겨 두면
         // 등록 화면이 '만드는 중' 에서 못 빠져나온다.
         voiceProfileBusy = false
-        // 월 한도 거절은 '그대로 다시 시도' 가 없는 실패다 — 이번 달에는 몇 번을 눌러도 같은 답이고
-        // 등록 창도 닫힌다. 녹음을 남겨 둘 이유(재시도)가 없으니 평문 생체정보를 지운다
-        // ([purgeVoiceCloneSourceRecordings] 의 규칙 — 남기는 예외는 재시도할 수 있는 실패뿐이다).
+        // 월 한도·말소리 없음은 '그대로 다시 시도' 가 없는 실패다 — 이번 달에는 몇 번을 눌러도 같은 답이고(창도
+        // 닫힌다), 말소리가 없는 녹음은 다시 보내도 말소리가 없다(창은 처음 단계로 돌아가 새 녹음을 받는다). 녹음을
+        // 남겨 둘 이유(재시도)가 없으니 평문 생체정보를 지운다 — 파일 경로는 잘라 낸 사본이 업로드한 것이라 그것을
+        // 지운다([purgeVoiceCloneSourceRecordings] 의 규칙 — 남기는 예외는 재시도할 수 있는 실패뿐이다).
         // ⚠ busy 를 내린 **뒤에** 한다. 먼저 하면 지우는 동안 등록 창이 흐름을 끝내며 보내는 초안
         // 삭제가 busy 에 걸려 버려진다.
-        if (refusedForMonth) purgeSourceRecordings()
+        if (recordingSpent) purgeSourceRecordings()
     }
     return true
 }
