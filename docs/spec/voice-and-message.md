@@ -494,8 +494,14 @@
   목소리를 만들 수 없어요" 를 붙인다)다. 낡은 숫자는 둘 다 틀리게 만든다 — 2026-10-10 의 그 사용자는
   같은 프로세스에서 등록을 마쳤는데 숫자가 `1/1` 로 남아 `추가` 가 눌렸다(안드로이드. iOS 는 확정 뒤에
   이미 다시 읽고 있었다).
-- 늦게 온 답은 **요청한 계정의 것일 때만** 적는다(로그아웃·계정 전환 뒤의 답은 버린다) — 읽는 자리가
-  늘면 그 틈도 넓어진다.
+- 늦게 온 답은 **가장 나중에 낸 요청의 답이고, 요청한 계정의 것일 때만** 적는다 — 읽는 자리가 늘면 그 틈도
+  넓어진다.
+  - 먼저 낸 요청의 답은 버린다(뒤에 낸 요청의 답이 먼저 왔든 아직 안 왔든). 읽는 자리(확정·탭 진입·초안 생성·
+    월 한도 거절·목록)가 여럿이라 답이 낸 순서대로 오지 않는다 — 확정 직후의 `0/1` 위에 그 전에 낸 요청의
+    `1/1` 이 늦게 와 앉으면 `추가` 가 다시 켜지고 삭제 경고가 빠진다. 계정만 대조해서는 못 막는다.
+  - 로그아웃·계정 전환 뒤에 온 앞 계정의 답도 버린다.
+  - ⚠ iOS 는 아직 계정만 대조한다(`VoiceStudioViewModel.refresh(session:force:)` — 강제 갱신은 진행 중인 갱신을
+    기다리지 않아 답이 겹칠 수 있다). 같은 틈이 남아 있다.
 - 조회가 실패하면 **앞 값을 지킨다.** 실패는 "모른다" 이지 "남았다" 가 아니다.
 - **`추가` 를 누를 때 다시 읽지는 않는다.** 탭 뒤에 네트워크 대기를 세우면 그 대기의 진행·실패 상태가
   따로 필요해진다. 위 셋과 서버의 ①이 같은 경우를 덮는다.
@@ -510,9 +516,17 @@
   안내 줄, 확정 화면의 오류 줄). 확정 화면의 `다시 만들기`(초안 삭제)가 실패해 그 화면에 머무는
   안드로이드도 같은 줄에 쓴다(iOS 는 그 실패로 사용자를 붙잡지 않고 음원 준비로 넘어간다 — 초안은 서버가
   거둔다).
-- 창을 닫으면서 보낸 삭제(나가기 경고)의 실패만 앱 스낵바로 간다 — 그때는 창이 이미 없다. 창 안의 줄에만
-  쓰면 **어디에도 안 보인다.**
-- **월 한도 거절은 흐름을 끝낸다** — 등록 단계에서든 저장 단계에서든.
+- 창이 **그려져 있지 않을 때** 온 실패는 앱 스낵바로 간다 — 창 안의 줄에만 쓰면 **어디에도 안 보인다.** 여기서
+  '열려 있다' 는 '열기로 했다' 가 아니라 **지금 그려져 있다** 는 뜻이다(안드로이드 `registrationWindowShown` —
+  `shouldDrawRegistrationWindow`. `Dialog` 를 그리는 조건과 거절을 가르는 값이 하나다). 안드로이드에서 그런 때는 둘이다.
+  - 창을 닫으면서 보낸 삭제(나가기 경고)의 실패 — 그때는 창이 이미 없다.
+  - 만드는 중에 이용권이 끝난 뒤의 등록 실패 — 세부 정보 단계로 돌아오는데, 그 단계는 이용권이 없으면 그리지
+    않는다(만드는 중·확정·준비 단계만 이용권과 무관하게 그린다 — 결정과 진행이 먼저다). 월 한도 거절도 이때는
+    알럿이 아니라 스낵바(공용 표의 문장)로 말한다. 흐름은 그래도 끝난다 — 거절된 등록은 초안을 만들지 않았고(①),
+    녹음은 놓고, 숫자는 다시 읽고(②), 창은 이용권 판정이 닫는다. 1.2.10 도 여기서는 스낵바였다 — 그려지지 않는 창
+    안에 쓰면 그보다 나빠진다.
+- **월 한도 거절은 흐름을 끝낸다** — 등록 단계에서든 저장 단계에서든(창이 그려져 있지 않을 때 온 거절은 위
+  줄대로 스낵바다).
   - **알럿 하나**로 이유를 말한다. 액션은 닫기 하나다.
     - 제목: `이번 달 목소리는 다 만들었어요`
     - 본문: `목소리는 한 달에 1개 만들 수 있어요. 다음 달에 새로 만들 수 있고, 지금 목소리를 지워도 이번 달에는 다시 만들 수 없어요.`
@@ -520,6 +534,10 @@
       안드로이드도 **같은 제목·본문**을 쓴다(ko·en·ja — iOS 카탈로그의 번역과 같은 말).
   - 초안이 있으면 **버린다**(삭제 요청). 삭제가 실패해도 흐름은 끝낸다 — 남은 초안은 사고의 잔해라
     서버가 거둔다(위 「초안은 저장하지 않으면 없는 것이다」).
+    - ⚠ 이 삭제의 실패는 **화면에 말하지 않는다** — 안드로이드는 기록(`AlarmTalkLog`)만 남기고 iOS 는 `try?` 로
+      버린다. 사용자가 고른 삭제가 아니다 — 월 한도 알럿 뒤에 '목소리 삭제에 실패했어요' 가 뜨면 등록된 목소리를
+      못 지운 것처럼 읽힌다. 안드로이드에서 실패를 말하는 삭제는 사용자가 누른 것(확정 화면의 `다시 만들기`·나가기
+      경고)뿐이다.
   - 등록 창을 **닫는다.** 같은 버튼을 다시 누르게 두지 않는다 — 이번 달에는 몇 번을 눌러도 같은 답이다.
   - 알럿을 등록 창 위에 띄우든, 창을 닫고 목소리 탭 위에 띄우든 구현이 정한다(스낵바와 달리 알럿은
     가려지지 않는 자리에 띄울 수 있다) — 끝났을 때 **알럿을 한 번 봤고, 창이 닫혀 있고, 초안이 없고,
@@ -2290,8 +2308,8 @@ R2 파일·ElevenLabs 클론은 DB 트랜잭션 안에서 지울 수 없으므�
 | 제자리 교체 원자성·원본 승계 | — | — | `replaceVoiceInPlace` + `voice_uploads` + `voice_prerender_queue` |
 | 교체도 같은 등록 게이트 | — | — | `replaceVoiceInPlace`(플랜·동의·`voice_profile_change_ledger`) |
 | 월 등록을 다 썼으면 초안을 만들지 않는다(§4-1 「월 등록 한도」 ① — 자격 확인 · provider 등록 전 · 아무것도 쓰지 않음 · 확정과 같은 429 몸통) | 등록 실패 갈래가 그 코드를 받는다(아래 ③ 행) | 같음 | `routes/voice-profile.ts` 의 `POST /clone` 예약 트랜잭션 **맨 앞**에서 `readMonthlyRegistrationUsage` → 남은 횟수 0이면 `monthlyVoiceChangeLimitResponse`(`discardAbandonedDrafts`·`hasCloneSlotCapacity`·`reserveMonthlyDraftAttempt`·`voice_profiles` INSERT 보다 먼저) · 회귀 `test/voice-profile.test.ts`(순서 큐 목 — 이번 달 등록을 썼으면 429·provider 호출 0·`voice_profiles`/`voice_draft_attempt_usage` 쓰기 0·옛 초안 그대로·트랜잭션 맨 앞, 집계 조건은 확정의 예약과 같다)·`test/voice-clone-monthly-gate.test.ts`(진짜 SQLite — 이번 달 `succeeded`·`reserved` 줄이면 429·한 줄도 쓰지 않음 / `failed` 줄뿐·지난달 줄·다른 계정의 줄이면 201) |
-| `생성 가능 n/m회` 다시 읽기(② — 확정 직후 · 목소리 탭 진입 · 월 한도 거절 직후 · 앱에서만 깎지 않는다 · 요청한 계정의 답만 적는다) | `ui/main/MainViewModelVoiceActions.kt` 의 `loadVoiceDraftQuota`(`responseStillBelongsToRequester` 로 가른다) ← `promoteVoiceDraft` 성공 갈래 · `preloadVoiceProfiles` 의 신선 갈래(탭 진입 — `AlarmTalkApp` 의 `tabRefreshThrottleMs` 60초) · `createVoiceProfiles`·`promoteVoiceDraft` 의 월 한도 갈래 → `MainViewModel.voiceDraftQuota` → 패널의 `monthlyExhausted`(`추가`)·`AlarmTalkApp` 의 `voiceDraftQuotaExhausted`(삭제 경고) · 회귀 `VoiceRegistrationQuotaWiringTest` | `VoiceStudioViewModel.refresh(session:force:)` 가 `draftQuota` 를 다시 읽는다 ← `VoicePreviewConfirmView.promote` 성공(기존) · `refreshOnEntry`(탭 진입, 60초 — 기존) · `handleMonthlyLimitRejection(session:)`(신규 — `cloneAudioForProfile` 의 catch·`VoicePreviewConfirmView.promote` 의 catch) → `VoiceProfileManagementPanel` 의 `monthlyExhausted`(`추가`·삭제 경고) · 회귀 `AlarmTalkTests/VoiceStudioViewModelTests` | `GET /voice/draft-quota`(`registration_limit`·`registration_remaining` ← `readMonthlyRegistrationUsage`) |
-| 등록 창 안의 거절은 창 안에서 · 월 한도 거절은 흐름을 끝낸다(알럿 하나·초안 삭제·창 닫기) · 다시 시도할 수 있는 등록 실패는 녹음을 지킨다(③) | `MainViewModel.voiceRegistrationFailure`(`VoiceRegistrationFailure` — 코드와 문구. `createVoiceProfiles`·`promoteVoiceDraft`·`deleteVoiceDraft` 의 실패 갈래가 `registrationFailureSurface(errorCode, windowOpen)` 로 가른다 — `ui/voices/VoicePreviewConfirmRules.kt` 의 `RegistrationFailureSurface.EndFlow`/`InWindow`/`AppSnackbar`) → `VoiceProfileManagementPanel`: `InWindow` = `localMessage`, `EndFlow` = `monthlyLimitNoticeOpen`(`IosAlertDialog` — `voices_monthly_limit_title`·`voices_monthly_limit_message`, ko·en·ja) + `onDeleteVoiceDraft` + `closeCreateDialog`, `AppSnackbar` = `MainViewModel.message`(나가기 경고의 삭제). 녹음은 `enterCreatingStep` 이 놓지 않는다 — 초안이 온 뒤와 `closeCreateDialog` 에서 놓는다. 저장이 실패하면 `promotedForPrerenderId` 를 내린다(안 내리면 뒤의 `다시 만들기` 가 '저장 중…' 으로 그려진다) · 회귀 `VoicePreviewConfirmRulesTest`(판정표)·`VoiceRegistrationFailureWiringTest` | `VoiceStudioViewModel.isMonthlyLimitRejection(_:)`(`VoiceStudioViewModel+ErrorMapping.swift`)·`monthlyLimitRejected`(게시 값 — `handleMonthlyLimitRejection(session:)` 이 세운다) ← `VoiceCloneUploadFlow.submit`(거절이면 `route = .management`, 그 밖의 실패는 `.details` 로 — 녹음은 그대로)·`VoicePreviewConfirmView.promote` 의 catch(초안 삭제 뒤 닫는다) → `VoiceProfileManagementPanel` 의 `monthlyLimitNoticeOpen` 알럿(있던 문구 — 여는 자리는 `VoicesPanelView` 의 `fullScreenCover(onDismiss:)`: 등록 창이 다 내려간 뒤) · 그 밖의 실패는 기존 인라인(`voice.statusMessage`·`errorMessage`) · 회귀 `AlarmTalkTests/VoiceStudioViewModelTests` | `VOICE_MONTHLY_CHANGE_LIMIT_REACHED`(위 ① 행·확정 게이트 — 몸통 `VOICE_MONTHLY_LIMIT`) |
+| `생성 가능 n/m회` 다시 읽기(② — 확정 직후 · 목소리 탭 진입 · 월 한도 거절 직후 · 앱에서만 깎지 않는다 · 가장 나중에 낸 요청의, 요청한 계정의 답만 적는다) | `ui/main/MainViewModelVoiceActions.kt` 의 `applyVoiceDraftQuota`(서버 답을 싣는 곳은 여기 하나 — `MainViewModel.voiceDraftQuotaRequestSeq` 로 가장 나중에 낸 요청의 답만, `responseStillBelongsToRequester` 로 요청한 계정의 답만) ← `loadVoiceDraftQuota`(← `promoteVoiceDraft` 성공 갈래 · `createVoiceProfiles` 성공 갈래 · `preloadVoiceProfiles` 의 신선 갈래(탭 진입 — `AlarmTalkApp` 의 `tabRefreshThrottleMs` 60초) · `createVoiceProfiles`·`promoteVoiceDraft` 의 월 한도 갈래)·`fetchVoiceProfiles`(목록과 함께 읽는 한도) — 번호는 둘 다 요청을 내기 직전에 뽑는다(`nextVoiceDraftQuotaRequest`) → `MainViewModel.voiceDraftQuota` → 패널의 `monthlyExhausted`(`추가`)·`AlarmTalkApp` 의 `voiceDraftQuotaExhausted`(삭제 경고) · 회귀 `VoiceRegistrationQuotaWiringTest`(`anOlderAnswerNeverOverwritesANewerOne`·`aLateAnswerIsDroppedUnlessItBelongsToTheRequester`) | `VoiceStudioViewModel.refresh(session:force:)` 가 `draftQuota` 를 다시 읽는다(계정만 대조한다 — 요청 순서는 아직 보지 않는다, §4-1 ②의 ⚠) ← `VoicePreviewConfirmView.promote` 성공(기존) · `refreshOnEntry`(탭 진입, 60초 — 기존) · `handleMonthlyLimitRejection(session:)`(신규 — `cloneAudioForProfile` 의 catch·`VoicePreviewConfirmView.promote` 의 catch) → `VoiceProfileManagementPanel` 의 `monthlyExhausted`(`추가`·삭제 경고) · 회귀 `AlarmTalkTests/VoiceStudioViewModelTests` | `GET /voice/draft-quota`(`registration_limit`·`registration_remaining` ← `readMonthlyRegistrationUsage`) |
+| 등록 창이 그려져 있을 때의 거절은 창 안에서, 아니면 스낵바 · 월 한도 거절은 흐름을 끝낸다(알럿 하나·초안을 조용히 삭제·창 닫기) · 다시 시도할 수 있는 등록 실패는 녹음을 지킨다(③) | `MainViewModel.voiceRegistrationFailure`(`VoiceRegistrationFailure` — 코드와 문구. `createVoiceProfiles`·`promoteVoiceDraft`·`deleteVoiceDraft` 의 실패 갈래가 `registrationFailureSurface(errorCode, windowOpen)` 로 가른다 — `ui/voices/VoicePreviewConfirmRules.kt` 의 `RegistrationFailureSurface.EndFlow`/`InWindow`/`AppSnackbar`. `windowOpen` 은 창이 **그려져 있는가**다 — 패널의 `registrationWindowShown`(`shouldDrawRegistrationWindow`) 하나가 `Dialog` 를 그리는 조건·`voiceRegistrationWindowChanged` 로 알리는 열림·패널의 거절 효과를 함께 정한다) → `VoiceProfileManagementPanel`: `InWindow` = `localMessage`, `EndFlow` = `monthlyLimitNoticeOpen`(`IosAlertDialog` — `voices_monthly_limit_title`·`voices_monthly_limit_message`, ko·en·ja) + `onDiscardVoiceDraftQuietly`(`deleteVoiceDraft(…, surfaceFailure = false)` — 실패는 기록만) + `closeCreateDialog`, `AppSnackbar` = `MainViewModel.message`(나가기 경고의 삭제 · 그려지지 않은 창 — 만드는 중에 이용권이 끝난 뒤의 등록 실패. 되돌리기 효과(만드는 중 → 세부 정보)가 거절 효과보다 **앞에** 있어야 그 단계로 가른다). 이용권이 끝나면 창을 닫는 효과는 `(canCreateVoice, currentStep)` 이 키다 — 만드는 중에서 세부 정보로 돌아온 뒤에도 닫는다. 녹음은 `enterCreatingStep` 이 놓지 않는다 — 초안이 온 뒤와 `closeCreateDialog` 에서 놓는다. 저장이 실패하면 `promotedForPrerenderId` 를 내린다(안 내리면 뒤의 `다시 만들기` 가 '저장 중…' 으로 그려진다) · 회귀 `VoicePreviewConfirmRulesTest`(판정표·그리는 조건)·`VoiceRegistrationFailureWiringTest`(`theMonthlyLimitDiscardOfTheDraftIsQuiet`·`aWindowThatIsNotDrawnIsNotTreatedAsOpen` 포함) | `VoiceStudioViewModel.isMonthlyLimitRejection(_:)`(`VoiceStudioViewModel+ErrorMapping.swift`)·`monthlyLimitRejected`(게시 값 — `handleMonthlyLimitRejection(session:)` 이 세운다) ← `VoiceCloneUploadFlow.submit`(거절이면 `route = .management`, 그 밖의 실패는 `.details` 로 — 녹음은 그대로)·`VoicePreviewConfirmView.promote` 의 catch(초안 삭제 뒤 닫는다) → `VoiceProfileManagementPanel` 의 `monthlyLimitNoticeOpen` 알럿(있던 문구 — 여는 자리는 `VoicesPanelView` 의 `fullScreenCover(onDismiss:)`: 등록 창이 다 내려간 뒤) · 그 밖의 실패는 기존 인라인(`voice.statusMessage`·`errorMessage`) · 회귀 `AlarmTalkTests/VoiceStudioViewModelTests` | `VOICE_MONTHLY_CHANGE_LIMIT_REACHED`(위 ① 행·확정 게이트 — 몸통 `VOICE_MONTHLY_LIMIT`) |
 | 목소리 높이 — 등록 확정에서만 받는다(새 등록부터 · 0/null/미전송 = 원래 소리 · 범위 밖 400 · 등록 뒤 409, 같은 값의 재시도는 200 · 응답에 적은 값) | 끝까지 들은 높이를 싣는다 — `MainViewModel.promoteVoiceDraft`(`pitchSemitones`, 0 이면 키 없음) → `VoiceProfileUpdateRequest.pitchSemitones` ← `VoiceProfileManagementPanel`(`heardTunings`) · 바디 `voiceDraftPromotionRequest`(교체는 기존 목소리가 있으면 언제나 — `registrationReplaceTarget`); 문구 `network/ApiErrorMessages.kt`; 회귀 `VoiceProfileUpdateRequestTest` | 끝까지 들은 높이를 싣는다 — `AlarmTalkAPI.promoteVoiceDraft(pitchSemitones:)`·`voiceDraftPromoteBody`(0 이면 키 없음) ← `VoicePreviewConfirmView.promote`(`VoiceTonePreview.canSave` · 교체 `replacementTarget`); 회귀 `VoiceStudioViewModelTests.test_promotionReplacesWheneverAnOfficialVoiceExists`; 문구 `APIErrorMessages.swift`; 회귀 `VoiceStudioViewModelTests.test_voiceDraftPromotionBody_carriesPitchOnlyWhenNotZero` | `PATCH /voice/:id`(`pitch_semitones`·`pitchSemitones` → `VoicePitchSemitonesSchema`, `INVALID_VOICE_PITCH`·`VOICE_PITCH_LOCKED`·재시도 판정 `pitchRetryOfRegistration`, `routes/voice-profile.ts`) → `voice_profiles.pitch_semitones`·`pitch_model_id`(#128). 회귀 `voice-pitch-promote.test.ts`·배포 창 `voice-pitch-deploy-window.test.ts` |
 | 목소리 높이 — 교체 등록은 새로 고른 값으로 덮어쓴다(안 고르면 비운다) | — | — | `replaceVoiceInPlace`(`pitchSemitones`) ← `PATCH /voice/:id`. 회귀 `voice-replace-in-place.test.ts`「교체는 새로 고른 높이와 지금 모델을 적고…」·`voice-pitch-promote.test.ts`「교체 등록은 고른 높이를…」 |
 | 목소리 높이 — 서버가 굽는다(사전렌더·`/tts/generate` · PCM → TD-PSOLA → 크기 되맞춤 → 음량 → MP3 128 · 실패·형식 이상·60초 초과는 던진다 · 모델이 바뀌면 굽지 않는다 · 인코더는 isolate 당 하나) | 받은 파일을 그대로 튼다 | 받은 파일을 그대로 튼다 | 굽는 곳 `createSynthesisAttempts`(`lib/voice-provider.ts`) ← `voicePitchFromRow`·`appliedPitchSemitones`·`bakeVoiceMp3`·`bakeVoiceSamples`·`encodeMp3`(`lib/voice-pitch.ts`) ← 셈 `shiftVoicePitch`(`packages/voice/src/pitch-shift.ts`) · PCM 응답 형식 검사 `ElevenLabsClient.textToSpeech` · 행 읽기 `findUsableVoiceProfile`(`SELECT *`·`vp.*` — 공유 목소리는 주인의 값, `routes/tts.ts`) · 사전렌더 `listReadyCloneVoices` → `findMissingStockTargets` → `generateStockClip`(`lib/stock-clips.ts`) · 인코더 묶기 `src/index.ts`(`registerMp3EncoderModule`)·`wrangler.toml` 의 `[[rules]]`(테스트는 `test/support/register-mp3-encoder.ts` — `vitest.config.ts` 의 `setupFiles`). 회귀 `voice-pitch.test.ts`·`prerender-pitch.test.ts`·`tts.test.ts`「높이가 있는 목소리의 직접 입력은…」·`elevenlabs.test.ts`「PCM 을 달라고 하면…」·`worker-wasm-bundle.test.ts`·`packages/voice/test/pitch-shift.test.ts`(두 앱과 같은 기대값) |

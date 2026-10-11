@@ -179,11 +179,15 @@
   1.2.10 의 Q 에는 이메일 인증 거절·목소리 월 한도 429·사전 출시 로봇의 504 가 한데 섞여 있었다
   (42건 중 26건이 로봇). 백엔드 경보의 묶음 키가 에러 코드인 것과 같은 이유이고(구현 지도), 앱은 거기에
   호출 자리를 더한다 — 앱에는 라우트별 스택이 없다.
-- ⚠ **두 앱의 키는 같은 모양이어야 한다.** 한쪽만 고치면 같은 실패가 프로젝트마다 다르게 묶인다. iOS 는
-  보고 호출부가 둘뿐이라(알람 push·사용 기록 전송) 지금은 조용하다. 다만 Sentry 는 Swift 오류를
-  도메인·코드로 묶으므로 `APIError.server` 는 상태·코드가 달라도 한 이슈가 되기 쉽다 — 401 700건이
-  ALARMTALK-IOS-2 하나에 쌓였던 것과 같은 성질이다(401 이 아닌 실패가 실제로 거기 붙는지는 확인하지
-  못했다).
+- ⚠ **두 앱의 키는 같은 모양이어야 한다.** 한쪽만 고치면 같은 실패가 프로젝트마다 다르게 묶인다. iOS 의
+  보고 호출부는 알람 push·사용 기록 전송 둘이었다가, 2026-10-11 에 인증 코드 다섯 갈래(코드 요청 둘 · 인증
+  확인 · 가입 · 재설정 확정 — `AuthViewModel` 의 `reportFailure`)가 더해졌다 — iOS 도 이제 조용하지 않다.
+  그 다섯은 안드로이드 `ui/main/MainViewModelAuthActions.kt` 의 보고와 **같은 글자**다. 그 글자가 `logKey`
+  (지문의 셋째 마디)이자 `log.key` 태그라, 한 글자만 달라도 같은 거절(시도 상한 뒤의 429 등)이 두
+  프로젝트에서 다른 이름으로 묶인다. 호출부는 거르지 않는다 — 브레드크럼으로 내리는 판정은 보고 함수
+  한 곳이다(위 표). 또 Sentry 는 Swift 오류를 도메인·코드로 묶으므로 `APIError.server` 는 상태·코드가
+  달라도 한 이슈가 되기 쉽다 — 401 700건이 ALARMTALK-IOS-2 하나에 쌓였던 것과 같은 성질이다(401 이 아닌
+  실패가 실제로 거기 붙는지는 확인하지 못했다).
 
 ## 4. 앱은 **코드로** 문구를 고른다
 
@@ -220,7 +224,9 @@ Android는 `UserFacingException`(원인 예외 안의 것도 포함), iOS는 `Ap
   "맞지 않아요" 를 들었다 — 상한 뒤에는 맞는 코드를 넣어도 같은 답인데, 다시 받으라는 말은 어디에도 없었다.
 - ⚠ **"인증 코드가 맞지 않아요" 는 `AUTH_EMAIL_CODE_INVALID` 일 때만 말한다.** 만료
   (`AUTH_EMAIL_CODE_EXPIRED`)·시도 상한(`AUTH_EMAIL_CODE_ATTEMPTS_EXCEEDED`)은 **다시 받으라**고 말하고,
-  그 밖의 코드는 표의 문장(`RATE_LIMITED` 등)을, 코드가 없으면(네트워크·5xx) 그 화면의 중립 폴백을 쓴다 —
+  그 밖의 코드는 표의 문장(`RATE_LIMITED` 등)을, 표에 없거나 코드가 없으면(5xx·읽지 못한 응답) 그 화면의
+  중립 폴백을 쓴다. 연결 실패는 안드로이드는 같은 폴백이고, iOS 는 위 문단의 `NSURLErrorDomain` 설명일 수
+  있다(자리별 표는 [session-and-auth.md](session-and-auth.md) 「문장은 코드(error_code)로 고른다」) —
   '맞지 않아요' 를 폴백으로 두지 않는다. 맞는 코드를 든 사람에게 틀렸다고 말하게 된다.
 - 문장만 바꾸고 끝내지 않는다 — 문장이 시키는 일(다시 확인·다시 받기)을 화면이 할 수 있어야 한다.
   그 화면 규칙은 위 스펙 문서에 있다.
@@ -283,7 +289,7 @@ Android는 `UserFacingException`(원인 예외 안의 것도 포함), iOS는 `Ap
 | 앱의 이슈/브레드크럼 판정 | `core/AlarmTalkLog.kt` 의 `isExpectedTransientFailure`(HTTP/2 리셋 포함)·`isGoogleSignInUserAction` · `TransientFailureClassificationTest` | `AlarmTalkLog.swift` 의 `isExpectedTransientFailure` · `TransientFailureClassificationTests` | — |
 | 401 은 이슈가 아니라 브레드크럼 | `core/AlarmTalkLog.kt` 의 `isHandledAuthFailure` · `TransientFailureClassificationTest` | `AlarmTalkLog.swift` 의 `isHandledAuthFailure` · `AlarmTalkTests/TransientFailureClassificationTests` | — |
 | 낮추는 **범위**(그 밖의 4xx·5xx 는 그대로 이슈) | `core/AlarmTalkLog.kt` 의 `breadcrumbCategoryFor` · `TransientFailureClassificationTest` 의 `onlyUnauthorizedAndTransientBecomeBreadcrumbs` | `AlarmTalkLog.swift` 의 `handledFailureCategory` · `AlarmTalkTests/TransientFailureClassificationTests` 의 `test_401_외의_상태코드는_그대로_이슈다` | — |
-| 앱의 **묶음 키**(§3 — `[api_error, 코드 또는 HTTP_상태, logKey]` · 코드 없는 5xx 는 `logKey` 없음 · 태그 `api.status`·`api.error_code`·`log.key` · 낮추는 것 없음) | `core/AlarmTalkLog.kt` 의 `logKeyOf`·`apiFailureFingerprint` ← `reportError`(이슈 갈래에서 `apiFailureOf` 로 상태·코드를 읽어 지문·태그를 달고 `network/ReportedApiFailure` 로 감싸 올린다. HTTP 가 아니면 `log.key` 태그만) · 회귀 `ApiFailureReportingTest`(Robolectric — id 만 다른 메시지는 같은 지문 · 코드가 다르면 다른 지문 · 코드 없는 504 는 `[api_error, HTTP_504]` · 코드 없는 404 는 `logKey` 유지 · HTTP 가 아니면 지문 없음 · 포장의 메시지·`cause`·패키지). ⚠ 지문이 실제 이벤트에 실리는지는 유닛 테스트가 못 본다 — dev 빌드 이벤트 한 건으로 확인한다 | `AlarmTalkLog.swift` 의 `logKey(of:)`·`apiFailureFingerprint(for:message:)` ← `reportError`(원인 사슬에 `APIError.server` 가 있으면 지문·태그, 없으면 `log.key` 태그만. 포장 없음 — 컨텍스트 키 `log_message` 는 그대로) · 회귀 `AlarmTalkTests/TransientFailureClassificationTests` 의 `test_API_실패의_묶음_키` | 짝: `middleware/errorCode.ts` 의 `setFingerprint(['api_error', code])`(위 행) |
+| 앱의 **묶음 키**(§3 — `[api_error, 코드 또는 HTTP_상태, logKey]` · 코드 없는 5xx 는 `logKey` 없음 · 태그 `api.status`·`api.error_code`·`log.key` · 낮추는 것 없음) | `core/AlarmTalkLog.kt` 의 `logKeyOf`·`apiFailureFingerprint` ← `reportError`(이슈 갈래에서 `apiFailureOf` 로 상태·코드를 읽어 지문·태그를 달고 `network/ReportedApiFailure` 로 감싸 올린다. HTTP 가 아니면 `log.key` 태그만) · 회귀 `ApiFailureReportingTest`(Robolectric — id 만 다른 메시지는 같은 지문 · 코드가 다르면 다른 지문 · 코드 없는 504 는 `[api_error, HTTP_504]` · 코드 없는 404 는 `logKey` 유지 · HTTP 가 아니면 지문 없음 · 포장의 메시지·`cause`·패키지). ⚠ 지문이 실제 이벤트에 실리는지는 유닛 테스트가 못 본다 — dev 빌드 이벤트 한 건으로 확인한다 | `AlarmTalkLog.swift` 의 `logKey(of:)`·`apiFailureFingerprint(for:message:)` ← `reportError`(원인 사슬에 `APIError.server` 가 있으면 지문·태그, 없으면 `log.key` 태그만. 포장 없음 — 컨텍스트 키 `log_message` 는 그대로) ← 호출부 `RemoteAlarmPushSync`(알람 push)·`UsageEventUploader.flush`(사용 기록 전송)·`AuthViewModel` 의 `reportFailure`(2026-10-11 — `requestEmailVerification`·`verifyEmailCode`·`performRegisterWithEmail`·`requestPasswordReset`·`confirmPasswordReset`, 메시지는 안드로이드 `ui/main/MainViewModelAuthActions.kt` 와 같은 글자) · 회귀 `AlarmTalkTests/TransientFailureClassificationTests` 의 `test_API_실패의_묶음_키` · `AlarmTalkTests/EmailCodeErrorMessageTests` 의 `test_인증_코드_다섯_갈래의_실패는_정해진_글자로_한_번씩_올린다`(성공은 올리지 않는다 · 실패마다 한 번 · 안드로이드와 같은 글자 · 받은 오류를 그대로)·`test_올린_실패의_갈래와_묶음_키는_보고_함수가_정한다`(호출부는 거르지 않는다 — 코드의 거절은 `[api_error, 코드, 호출 자리]` 이슈 · 코드 없는 5xx 는 `[api_error, HTTP_503]` · 시간 초과·401 은 브레드크럼) | 짝: `middleware/errorCode.ts` 의 `setFingerprint(['api_error', code])`(위 행) |
 | 코드 읽기는 **본문을 소진하지 않는다**(순서·횟수와 무관하게 같은 답) | `network/ApiErrors.kt` 의 `apiError`(버퍼된 오류 본문을 엿본다)·`apiFailureOf`(원인 사슬에서 상태 + 코드 — `ApiFailure`) · 회귀 `TransientFailureClassificationTest` 의 `apiErrorCanBeReadTwice`·`apiFailureIsIndependentOfCallOrder`(기존 `breadcrumbClassificationDoesNotConsumeTheErrorBody`·`unauthorizedClassificationDoesNotConsumeTheErrorBody` 는 그대로 초록) | — (`APIError.server(status, _, code)` 가 코드를 값으로 든다) | — |
 | 동의 전 403 은 재시도가 아님 | `sync/SyncWorkerFailure.kt` 의 `syncWorkerOutcome` | `RemoteAlarmSyncViewModel` 의 `runFullSync` catch | `middleware/consent.ts` |
 | 401 은 재시도가 아니라 세션 종료 | `sync/SyncWorkerFailure.kt` 의 `endSessionAfterWorkerUnauthorized`(**세대+토큰** 검사) · `TransientFailureClassificationTest` | `AlarmTalkAPI.handleUnauthorized` → `AuthViewModel.handleUnauthorized`(**토큰** 대조 후 `signOut`) — API 계층이라 백그라운드도 같다 | — |
