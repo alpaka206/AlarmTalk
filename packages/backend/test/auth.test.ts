@@ -415,6 +415,82 @@ describe('다시 받기 간격 — 쓸 수 없는 코드는 붙잡지 않는다(
   });
 });
 
+// ── 가장 새 코드만 된다 — **쓴 뒤에도**(스펙 session-and-auth 「이메일 인증 코드」) ──
+//
+// 판정은 쓰지 않은 코드 중 가장 새 것만 본다. 가입·재설정이 성공한 뒤 판정에 쓴 줄 하나만 소모하면, 바로
+// 앞에 받은 코드가 '가장 새 것' 으로 올라와 제 수명(10분)까지 다시 통한다 — 메일은 "가장 최근에 받은
+// 코드만 쓸 수 있어요" 라고 약속한다. 그래서 소모는 그 주소·그 용도의 쓰지 않은 줄 **전부**를 한 문장으로
+// 적는다.
+//
+// 대역 DB 는 SQL 을 실행하지 않으므로 여기서는 문장의 대상과 인자를 본다. 앞 코드가 실제로 죽는지는 진짜
+// SQLite 위에서 `auth-email-code-consume.test.ts` 가 본다.
+describe('코드를 쓰면 그 주소·용도의 쓰지 않은 코드가 모두 죽는다(가입·재설정 공통)', () => {
+  function consumeCalls() {
+    return mockDB.calls.filter((c) => c.sql.includes('SET consumed_at'));
+  }
+
+  function expectConsumesEveryUnusedCode(email: string, purpose: string) {
+    const consumes = consumeCalls();
+    expect(consumes).toHaveLength(1);
+    const sql = consumes[0]!.sql.replace(/\s+/g, ' ');
+    expect(sql).toContain('WHERE email = ? AND purpose = ? AND consumed_at IS NULL');
+    // 판정한 줄 하나(`id`)로 좁히지 않는다 — 좁히면 앞 코드가 '가장 새 것' 으로 되살아난다.
+    expect(sql).not.toMatch(/\bid\s*=/);
+    // 주소는 코드를 저장할 때와 같은 정규화된 값이다 — 친 그대로(대문자)면 한 줄도 닿지 않는다.
+    expect(consumes[0]!.args).toEqual([email, purpose]);
+  }
+
+  it('가입: 성공하면 그 주소의 가입 코드를 전부 쓴 것으로 적는다', async () => {
+    await pushValidEmailVerification('kim@test.com'); // 1) 코드 검증 SELECT
+    mockDB.pushResult([]); // 2) 기존 이메일 SELECT (없음)
+    mockDB.pushResult([], 1); // 3) INSERT users
+    mockDB.pushResult([], 2); // 4) 소모 — 판정한 코드와 그 앞 코드
+
+    const res = await buildApp().request(
+      jsonReq('POST', '/auth/register', registerBody('KIM@Test.COM')),
+      undefined,
+      ENV,
+    );
+
+    expect(res.status).toBe(201);
+    expectConsumesEveryUnusedCode('kim@test.com', 'register');
+  });
+
+  it('재설정 확정: 성공하면 그 주소의 재설정 코드를 전부 쓴 것으로 적는다', async () => {
+    await pushValidEmailVerification('kim@test.com'); // 코드 검증 SELECT
+    mockDB.pushResult([{ password_hash: 'bcrypt-hash' }]); // classify → password
+    mockDB.pushResult([], 1); // UPDATE users
+    mockDB.pushResult([], 2); // 소모 — 판정한 코드와 그 앞 코드
+
+    const res = await buildApp().request(
+      jsonReq('POST', '/auth/password-reset/confirm', {
+        email: 'KIM@Test.COM',
+        code: EMAIL_CODE,
+        password: 'newSecret1',
+      }),
+      undefined,
+      ENV,
+    );
+
+    expect(res.status).toBe(200);
+    expectConsumesEveryUnusedCode('kim@test.com', 'reset');
+  });
+
+  // 인증 확인은 코드를 쓰지 않는다 — 가입이 같은 코드를 한 번 더 판정한다.
+  it('인증 확인: 통과해도 아무 코드도 쓰지 않는다', async () => {
+    await pushValidEmailVerification('kim@test.com');
+
+    const res = await buildApp().request(
+      jsonReq('POST', '/auth/email-code/verify', { email: 'kim@test.com', code: EMAIL_CODE }),
+      undefined,
+      ENV,
+    );
+
+    expect(res.status).toBe(200);
+    expect(consumeCalls()).toHaveLength(0);
+  });
+});
+
 describe('POST /auth/email-code/verify', () => {
   it('올바른 6자리 코드를 확인한다', async () => {
     await pushValidEmailVerification('kim@test.com');

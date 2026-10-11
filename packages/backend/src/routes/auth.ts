@@ -77,7 +77,9 @@ type EmailVerificationRow = {
 };
 
 type EmailVerificationCheck =
-  | { ok: true; id: string }
+  // 통과한 줄의 id 는 돌려주지 않는다 — 소모는 그 줄 하나가 아니라 주소·용도 단위다
+  // (`consumeEmailVerificationCodes`).
+  | { ok: true }
   // code 는 **목록에 있는 코드**여야 한다 — 그대로 응답에 실려 앱이 분기하는 값이다.
   | { ok: false; status: 400 | 429; code: ErrorCode; message: string };
 
@@ -142,15 +144,31 @@ async function checkEmailVerificationCode(
     };
   }
 
-  return { ok: true, id: row.id };
+  return { ok: true };
 }
 
-async function consumeEmailVerificationCode(db: Client, id: string): Promise<void> {
+/**
+ * 코드를 다 쓴다 — 가입·재설정 확정이 **성공한 뒤에만** 부른다(인증 확인은 쓰지 않는다).
+ *
+ * 그 주소·그 용도의 **쓰지 않은 코드를 전부** 함께 쓴 것으로 적는다 — 판정에 쓴 줄 하나가 아니다.
+ * 판정은 쓰지 않은 코드 중 가장 새 것만 보므로(`checkEmailVerificationCode`), 그 줄 하나만 적으면
+ * 바로 앞에 받은 코드가 '가장 새 것' 으로 올라와 제 수명(10분)이 다할 때까지 **다시 통한다.**
+ * 메일은 "가장 최근에 받은 코드만 쓸 수 있어요" 라고 약속하고, 재설정이면 방금 바꾼 비밀번호를 그
+ * 앞 코드로 한 번 더 바꿀 수 있다(`docs/spec/session-and-auth.md` 「이메일 인증 코드」).
+ *
+ * ⚠ `WHERE id = ?` 로 되돌리지 말 것. 문장도 하나로 둔다 — 판정한 줄과 앞 코드를 따로 적으면 그
+ * 사이에 앞 코드가 통한다.
+ */
+async function consumeEmailVerificationCodes(
+  db: Client,
+  email: string,
+  purpose: string,
+): Promise<void> {
   await db.execute({
     sql: `UPDATE email_verification_codes
           SET consumed_at = datetime('now')
-          WHERE id = ?`,
-    args: [id],
+          WHERE email = ? AND purpose = ? AND consumed_at IS NULL`,
+    args: [email, purpose],
   });
 }
 
@@ -444,7 +462,7 @@ auth.post('/password-reset/confirm', async (c) => {
       args: [passwordHash, email],
     });
 
-    await consumeEmailVerificationCode(db, check.id);
+    await consumeEmailVerificationCodes(db, email, EMAIL_VERIFICATION_PURPOSE_RESET);
 
     return c.json({ success: true });
   } catch (err) {
@@ -510,7 +528,7 @@ auth.post('/register', async (c) => {
       args: [id, normalizedEmail, passwordHash, name],
     });
 
-    await consumeEmailVerificationCode(db, verification.id);
+    await consumeEmailVerificationCodes(db, normalizedEmail, EMAIL_VERIFICATION_PURPOSE_REGISTER);
 
     // 신규 가입자는 token_epoch 가 항상 0 이지만(방금 INSERT), 폐기 로직과 일관되게
     // 명시적으로 박아 둔다.
