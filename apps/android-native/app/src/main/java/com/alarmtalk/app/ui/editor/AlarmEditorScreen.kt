@@ -153,6 +153,42 @@ internal fun emptyMessageBlockReason(editor: AlarmEditorState, usesStockClips: B
 }
 
 /**
+ * 저장이 막힌 사유를 말하는 알럿의 (제목, 본문) 문자열 id.
+ *
+ * 저장 버튼(누르는 순간 정해지는 사유)과 저장 흐름(로컬 확인 뒤에 정해지는 오프라인 사유 —
+ * `docs/spec/alarm-editor.md` §6)이 **같은 표**를 쓴다. 따로 적으면 같은 사유가 자리마다 다르게 말한다.
+ */
+internal fun saveBlockAlertStrings(reason: SaveBlockReason, familyAlarmMode: Boolean): Pair<Int, Int> {
+    val titleRes = when (reason) {
+        SaveBlockReason.RECORDING_MISSING -> R.string.editor_block_recording_title
+        SaveBlockReason.VOICE_MISSING,
+        SaveBlockReason.VOICE_UNAVAILABLE -> R.string.editor_block_voice_title
+        SaveBlockReason.VOICE_SETTLING -> R.string.editor_block_voice_settling_title
+        SaveBlockReason.WEATHER_LOCATION_MISSING -> R.string.editor_block_weather_title
+        SaveBlockReason.FORTUNE_INFO_MISSING -> R.string.editor_block_fortune_title
+        SaveBlockReason.OFFLINE_NEW_MESSAGE -> R.string.editor_block_offline_title
+        SaveBlockReason.MESSAGE_PREPARING -> R.string.editor_block_preparing_title
+        SaveBlockReason.MANUAL_TEXT_MISSING -> R.string.editor_block_manual_text_title
+    }
+    val messageRes = when (reason) {
+        SaveBlockReason.RECORDING_MISSING -> R.string.editor_block_recording_message
+        SaveBlockReason.VOICE_MISSING -> R.string.editor_block_voice_message
+        SaveBlockReason.VOICE_UNAVAILABLE -> R.string.editor_block_voice_unavailable_message
+        SaveBlockReason.VOICE_SETTLING -> R.string.msg_voice_replacement_settling
+        SaveBlockReason.WEATHER_LOCATION_MISSING ->
+            if (familyAlarmMode) R.string.editor_block_weather_family_message
+            else R.string.editor_block_weather_message
+        SaveBlockReason.FORTUNE_INFO_MISSING ->
+            if (familyAlarmMode) R.string.editor_block_fortune_family_message
+            else R.string.editor_block_fortune_message
+        SaveBlockReason.OFFLINE_NEW_MESSAGE -> R.string.editor_block_offline_message
+        SaveBlockReason.MESSAGE_PREPARING -> R.string.editor_block_preparing_message
+        SaveBlockReason.MANUAL_TEXT_MISSING -> R.string.editor_block_manual_text_message
+    }
+    return titleRes to messageRes
+}
+
+/**
  * 관문 **1/3**(목소리 선택) — [ClipGate.needsClipPreparation] 을 **바뀔 값**으로 부른다.
  *
  * 관문은 목소리를 바꾸기 **전에** 돈다. 직접 녹음에서 오면 [AlarmEditorState.selectTtsVoice]
@@ -332,10 +368,16 @@ internal fun AlarmEditorScreen(
     var isRecording by remember { mutableStateOf(false) }
     // 음성 생성 구간(편집기 안에서 도는 부분). 저장 전체는 아래 [busy] 로 본다.
     var generating by remember { mutableStateOf(false) }
-    // 저장 관련 UI 는 예외 없이 이걸 본다: 생성 중이거나, 뷰모델이 아직 저장 중이거나.
-    // 둘 중 하나만 보면 반드시 구멍이 생긴다 — 생성만 보면 빠른 경로에서 버튼이 안 잠기고,
-    // 뷰모델만 보면 생성하는 몇십 초 동안 버튼이 살아 있다.
-    val busy = generating || saving
+    // 저장 버튼의 로컬 확인(같은 문구의 오디오가 폰에 있는가) — 파일을 읽으므로 IO 에서, 찾는 동안은
+    // '저장 중' 이다(`docs/spec/alarm-editor.md` §6).
+    val manualAudioReuse = remember(scope) { ManualAudioReuseGate(scope) }
+    // 저장 관련 UI 는 예외 없이 이걸 본다: 로컬 확인 중이거나, 생성 중이거나, 뷰모델이 아직 저장 중이거나.
+    // 하나라도 빼면 반드시 구멍이 생긴다 — 생성만 보면 빠른 경로에서 버튼이 안 잠기고,
+    // 뷰모델만 보면 생성하는 몇십 초 동안 버튼이 살아 있고, 로컬 확인을 빼면 찾는 사이의 탭이 쌓인다.
+    val busy = manualAudioReuse.inFlight || generating || saving
+    // 연결 상태 — 저장 흐름의 오프라인 판정(`saveEditor`, 로컬 확인 뒤)과 아래 스톡 클립 효과의 키가
+    // 함께 본다. `saveEditor` 보다 **먼저** 선언해야 그 함수가 읽을 수 있다(코틀린 지역 선언 순서).
+    val isOnline by rememberIsOnline()
     // 직접 입력 문구 선택기에 '(남은/총)' 을 보여주기 위한 이번 달 사용 현황(유료만 조회).
     var manualQuota by remember { mutableStateOf<ManualQuotaResponse?>(null) }
     LaunchedEffect(freeVoiceTier, onLoadManualQuota) {
@@ -763,7 +805,7 @@ internal fun AlarmEditorScreen(
     }
 
     /**
-     * 이 목소리로 말할 때 붙는 호칭. **저장 경로와 오프라인 판정이 같이 쓴다** —
+     * 이 목소리로 말할 때 붙는 호칭. **저장 요청과 로컬 확인(오프라인 판정 포함)이 같은 값을 쓴다** —
      * 호칭은 문구 **안에** 병합되므로 캐시 키가 달라진다. 둘이 다른 값을 쓰면 "있는데
      * 없다고" 하거나 그 반대가 된다.
      */
@@ -779,6 +821,12 @@ internal fun AlarmEditorScreen(
             ).trimmedOrNull()
             // 기본(시스템) 목소리는 별도 호칭 없이 계정 닉네임으로 부른다.
             ?: authSession?.user?.name?.takeIf { isSelectedSystemVoice }?.trimmedOrNull()
+    }
+
+    /** 저장이 막힌 이유를 알럿으로 말한다 — 저장 버튼과 저장 흐름이 같은 표를 쓴다([saveBlockAlertStrings]). */
+    fun showSaveBlockAlert(reason: SaveBlockReason) {
+        val (titleRes, messageRes) = saveBlockAlertStrings(reason, familyAlarmMode)
+        familyBlockAlert = context.getString(titleRes) to context.getString(messageRes)
     }
 
     fun saveEditor() {
@@ -939,200 +987,220 @@ internal fun AlarmEditorScreen(
         } else {
             null
         }
-        ttsInputKey
-            ?.let { audioStore.resolveTtsInput(it) }
-            ?.let { alias -> audioStore.getCachedAudio(alias.cacheKey, rawAudioUri = editor.rawAudioUri)?.to(alias) }
-            ?.let { (cached, alias) ->
+        // ⚠ **생성은 로컬 확인이 '없다' 고 답한 뒤에만 시작한다**(아래 `manualAudioReuse.request`).
+        //   잠금(`generating`)은 **시작하는 순간** 세운다 — 로컬 확인의 잠금(`inFlight`)이 그 뒤에 내려가므로
+        //   `busy` 가 끊기는 틈이 없다.
+        fun startGeneration() {
+            // 이전에 진행 중이던 generation 이 남아 있다면 취소.
+            generationJob?.cancel()
+            generating = true
+            generationJob = scope.launch {
+                generating = true
+                // 1) **문구 종류를 골랐으면 반드시 사전렌더 클립으로 묶는다.**
+                //
+                // ⚠ **여기서 라이브 생성으로 폴백하지 말 것**(2026-08-18 변경). 예전에는 버킷이
+                // 미완성이거나 다운로드가 실패하면 아래 라이브 생성으로 떨어졌는데, 알람 음성은
+                // 이제 **프리셋 + 직접 입력 둘뿐**이다(docs/qa/dev-test-handoff.md 5절).
+                // 폴백을 남겨 두면 그 경로로 저장된 알람이 **매일 같은 한 문장**을 반복한다 —
+                // 서버가 다시 지어 줄 일이 없기 때문이다.
+                //
+                // 못 묶으면 **준비 페이지로 보낸다**(관문과 같은 처리). 저장이 늦어지는 대신
+                // 되돌릴 수 없는 잘못된 행이 남지 않는다.
+                //
+                // 예전 제외 갈래 둘을 **없앴다**:
+                //  - `!familyAlarmMode`: 가족 알람도 이제 `bucket_id` 를 실어 보낸다(`f7385200`).
+                //    받는 사람이 그 테마의 자기 클립을 묶으므로 수신자 무음 문제가 사라졌고,
+                //    날씨 조건도 **받는 사람 기준**으로 고른다(docs/spec/family-alarm.md 4절).
+                //  - `!isSystemVoiceId`: 기본 목소리도 같은 테마 클립을 갖는다. 제외해 둘 이유가
+                //    라이브 폴백뿐이었는데 그게 없어졌다.
+                // ⚠ **고른 버킷이 있으면 그것이 곧 카테고리다.** 컨텍스트에서 유도하면, 목소리
+                // 재선택 등으로 컨텍스트가 기본값(`preset`)으로 밀린 순간 `preset → greeting`
+                // 매핑이 걸려 **미리듣기 샘플 버킷**이 알람에 붙는다. greeting 은 목소리 창의
+                // '들어보기' 전용이라 알람으로는 성립하지 않고, 서버가 `POST /alarm` 을 400 으로
+                // 거절한다 — 로컬에만 남는 알람이 된다(2026-08-31 실기기: bucketId=greeting,
+                // 문구 "안녕하세요! 만나서 정말 반가워요.").
+                val cloneBucketCategory = editor.selectedBucket
+                    ?: clonePrerenderBucketCategoryFor(editor.voiceRandomContext)
+                // ⚠ **`voiceRandomPrompt` 하나로 가르지 말 것**(2026-08-31 실기기 재현).
+                // `setBucketAudio` 는 버킷을 붙이면서 **항상 그 값을 끈다.** 그래서 이 조건만 보면,
+                // 바인딩이 한 번이라도 풀린 버킷 알람은 **여기로 돌아올 길이 없고** 아래 '직접
+                // 입력' 갈래로 떨어져 유료 전용 라이브 TTS 를 부른다 — 무료 사용자는 기본 목소리로
+                // 날씨를 고르고 저장만 눌렀는데 "유료 이용권에서 사용할 수 있어요" 를 본다
+                // (`generateTtsAudio` 의 check 가 네트워크 전에 던진다).
+                //
+                // 바인딩을 푸는 길은 여럿이다: 이미 고른 목소리를 시트에서 **다시 누르기**
+                // (동일 id 가드가 없어 `clearAudio()`+`clearTtsMeta()`), 재생 방식 왕복, 클립
+                // 언어 ≠ 앱 언어. 어느 쪽이든 `voiceText`(클립 문구)와 `selectedBucket` 은 남는다.
+                //
+                // 그래서 판정은 **사용자가 고른 것이 테마인가**(`selectedBucket`)로 본다.
+                // `hasBucketMessageChoice()`/`isActiveBucketAlarm()` 은 쓸 수 없다 — 둘 다
+                // `audioCacheKey` 가 살아 있어야 true 라, 바인딩이 풀린 바로 그 상태에서 false 다.
+                // (직접 입력을 고르면 `selectedBucket` 은 확실히 null 이 된다 — 문구 화면 두 곳.)
+                val bucketMessageChosen = editor.hasMessageKindChoice()
+                if (bucketMessageChosen && cloneBucketCategory != null) {
+                    // 이미 resolve 된 contextVariantIndex 를 넘겨 재저장 시 null 로 덮어써지지 않게 한다(넘기지
+                    // 않으면 setBucketAudio 가 null 로 리셋 → 준비창 재해결 전까지 날씨 0=맑음 오재생).
+                    val bound = runCatching {
+                        bindStockBucketClips(cloneBucketCategory, profileId, editor.contextVariantIndex)
+                    }.getOrDefault(false)
+                    generating = false
+                    if (bound) {
+                        submitDraft(editor.toDraft())
+                    } else {
+                        openClipPreparation(profileId)
+                    }
+                    return@launch
+                }
+                // 2) 여기까지 왔다 = **직접 입력**이다(랜덤이 아니거나 버킷으로 안 매핑되는 종류).
+                //    그 문구를 서버에 합성시킨다 — 이 갈래는 월 한도를 차감하는 유료 경로다.
+                //
+                // ⚠ **보내기 전에 남은 횟수를 한 번 더 본다**(2026-09-07 지시). 순서는
+                //    **① 로컬 확인 → ② 남은 횟수 확인 → ③ 생성 요청** 이다. 위에서 로컬 재사용이
+                //    실패했다 = 이 폰에 없다 = 서버를 불러야 한다 = **차감 대상**이다. 그러니
+                //    한도가 0인데 요청부터 보내 429 를 받을 이유가 없다.
+                //    화면에 띄워 둔 값이 아니라 **그 자리에서 다시 조회한다** — 다른 기기가 그
+                //    사이 다 썼을 수 있고, 편집기를 연 뒤 시간이 흘렀을 수도 있다.
+                //    ⚠ **강제는 여기가 아니다.** 서버가 예약에서 다시 막는다(429) — 이건 불필요한
+                //    왕복을 줄이는 것뿐이라, 조회에 실패하면 그냥 진행한다.
+                if (!familyAlarmMode && onLoadManualQuota != null) {
+                    val quota = runCatching { onLoadManualQuota() }.getOrNull()
+                    if (quota != null && quota.limit > 0 && quota.remaining <= 0) {
+                        generating = false
+                        manualQuota = quota
+                        familyBlockAlert = context.getString(R.string.editor_block_manual_quota_title) to
+                            context.getString(R.string.editor_block_manual_quota_message, quota.limit)
+                        return@launch
+                    }
+                    if (quota != null) manualQuota = quota
+                }
+                // 진행 안내는 저장 버튼의 스피너(EditorActionButtons)가 맡는다 — 방금 누른
+                // 자리에서 도는 게 화면 위쪽 카드에 뜬 '준비하는 중이에요' 한 줄보다 직관적이고,
+                // 이 자리에 안내를 넣으면 실패했을 때 그 자리에 들어올 에러 문구를 밀어낸다.
+                runCatching {
+                    val response = onGenerateTts(
+                        TtsGenerateRequest(
+                            voiceProfileId = profileId,
+                            text = text,
+                            category = editor.activeVoiceCategory(),
+                            language = editor.activeVoiceLanguage(),
+                            translate = false,
+                            // ⚠ **`random` 은 언제나 false 다**(2026-08-18). 이 자리에 도달하는 건
+                            // 직접 입력뿐이라, 서버가 문장을 '지어내는' 갈래는 앱에서 사라졌다.
+                            // 되살리지 말 것 — 되살리면 그 알람은 매일 같은 한 문장을 반복한다
+                            // (서버가 다시 지어 줄 주기적 경로가 없다).
+                            //
+                            // ⚠ 같이 사라진 것: `randomContext`·`alarmHour`/`alarmMinute`·
+                            // `weather*`·`fortune*`. 그 값들은 **행에는 그대로 남는다** — 사전렌더
+                            // variant 를 고르는 데(`/tts/prerender-variant`) 쓰이기 때문이다.
+                            // 다만 `/tts/generate` 로는 다시 보내지 말 것.
+                            random = false,
+                            randomContext = null,
+                            targetUserId = selectedFamilyRecipientId.takeIf { familyAlarmMode }?.trimmedOrNull(),
+                            listenerTitle = listenerTitleForSave,
+                        ),
+                    )
+                    val rawAudioUri = response.audioUrl ?: response.audioObjectKey?.let { "r2://$it" }
+                    val cacheKey = AlarmAudioStore.ttsCacheKey(
+                        profileId = profileId,
+                        text = response.text,
+                        category = editor.activeVoiceCategory(),
+                        language = editor.activeVoiceLanguage(),
+                        serverCacheKey = response.cacheKey,
+                    )
+                    val cachedAudio = withContext(Dispatchers.IO) {
+                        // base64 디코딩도 메인 스레드가 아닌 IO 디스패처에서 수행한다.
+                        val audioBytes = Base64.decode(response.audioBase64, Base64.DEFAULT)
+                        audioStore.cacheGeneratedAudio(
+                            bytes = audioBytes,
+                            format = response.audioFormat,
+                            rawAudioUri = rawAudioUri,
+                            cacheKey = cacheKey,
+                            messageId = response.messageId,
+                        )
+                    }
+                    // 다음에 같은 문구를 넣으면 이 파일을 바로 찾을 수 있게 화살표를 남긴다.
+                    // 서버 표시 문구(response.text)도 함께 — 번역이 켜지면 입력 원문과 다르다.
+                    ttsInputKey?.let { inputKey ->
+                        audioStore.linkTtsInput(inputKey, cacheKey, response.text)
+                        // **표시 문구로도 화살표를 남긴다.** 알람에 저장되는 건 입력 원문이 아니라
+                        // 서버 표시 문구이고(setGeneratedTtsAudio — 잠금화면 문구와 음성을 맞추려고),
+                        // '마지막에 쓴 직접 입력 문구' 로 기억되는 것도 그 값이다. 번역이 켜진
+                        // 기기(앱 언어 ≠ ko)에서는 둘이 달라서, 입력 원문 키만 남기면 다음 새 알람이
+                        // 표시 문구로 열려 캐시를 빗나간다 — 재생성도 없고 한도도 안 깎인다던 약속이
+                        // 조용히 깨진다(Codex #685). 같은 값이면 굳이 두 번 쓰지 않는다.
+                        val displayTextKey = AlarmAudioStore.ttsInputKey(
+                            userId = reuseUserId!!,
+                            profileId = profileId,
+                            text = response.text,
+                            category = editor.activeVoiceCategory(),
+                            language = editor.activeVoiceLanguage(),
+                            listenerTitle = listenerTitleForSave,
+                        )
+                        if (displayTextKey != inputKey) {
+                            audioStore.linkTtsInput(displayTextKey, cacheKey, response.text)
+                        }
+                    }
+                    editor.setGeneratedTtsAudio(
+                        audio = cachedAudio,
+                        profileId = profileId,
+                        text = response.text,
+                        messageId = response.messageId,
+                        rawAudioUri = rawAudioUri,
+                        listenerTitle = listenerTitleForSave,
+                    )
+                    editor.voiceListenerTitleOverride = listenerTitleForSave.orEmpty()
+                    submitDraft(editor.toDraft())
+                }.onFailure { error ->
+                    AlarmTalkLog.reportError("Failed to generate TTS alarm audio", error)
+                    val ttsErrorCode = apiErrorCode(error)
+                    audioMessage = when (ttsErrorCode) {
+                        "MANUAL_TTS_QUOTA_EXCEEDED" ->
+                            context.getString(R.string.editor_error_manual_tts_quota)
+                        // 나머지는 공용 표(ApiErrorMessages)가 받는다 — 프리셋 전용 목소리·합성
+                        // 실패처럼 "잠시 후 다시" 로 뭉개면 영영 눌러 보게 되는 코드들이 거기 있다.
+                        else -> com.alarmtalk.app.network.apiErrorMessage(context, ttsErrorCode)
+                            ?: userFacingError(error, context.getString(R.string.editor_error_voice_generation_failed))
+                    }
+                }
+                generating = false
+                generationJob = null
+            }
+        }
+
+        // ① **로컬 확인**(위 `ttsInputKey` — 같은 문구로 만든 오디오가 폰에 있으면 서버를 부르지 않는다).
+        // ⚠ **찾는 일은 메인 밖에서, 저장 잠금 안에서 한다**(2026-10-10 Sentry 조사 —
+        //   `docs/spec/alarm-editor.md` §6). 예전에는 누르는 순간 메인에서 별칭을 읽고 파일을 찾고 길이까지
+        //   쟀다. 찾는 동안은 '저장 중' 이라(`busy`) 그 사이의 탭은 버려진다 — 쌓이면 두 번 저장·두 번
+        //   팝(검은 화면)이다. 편집기 상태는 IO 에서 읽지 않는다 — 누른 순간의 값을 잡아 넘긴다.
+        val rawAudioUriAtTap = editor.rawAudioUri
+        manualAudioReuse.request(
+            lookup = { ttsInputKey?.let { audioStore.findReusableTtsAudio(it, rawAudioUriAtTap) } },
+            onFound = { reusable ->
                 editor.setGeneratedTtsAudio(
-                    audio = cached,
+                    audio = reusable.audio,
                     profileId = profileId,
                     // 입력 원문이 아니라 **그 오디오와 짝이 되는 서버 표시 문구**를 쓴다.
                     // 번역이 켜지면 둘이 달라지는데, 원문을 쓰면 잠금화면 문구와 실제 음성이
                     // 어긋난다(Codex #660).
-                    text = alias.displayText,
-                    messageId = cached.messageId ?: editor.ttsMessageId ?: "",
-                    rawAudioUri = cached.rawAudioUri,
+                    text = reusable.alias.displayText,
+                    messageId = reusable.audio.messageId ?: editor.ttsMessageId ?: "",
+                    rawAudioUri = reusable.audio.rawAudioUri,
                     listenerTitle = listenerTitleForSave,
                 )
                 audioMessage = context.getString(R.string.editor_existing_voice_cache_used)
                 editor.voiceListenerTitleOverride = listenerTitleForSave.orEmpty()
                 submitDraft(editor.toDraft())
-                return
-            }
-
-        // 이전에 진행 중이던 generation 이 남아 있다면 취소.
-        generationJob?.cancel()
-        generationJob = scope.launch {
-            generating = true
-            // 1) **문구 종류를 골랐으면 반드시 사전렌더 클립으로 묶는다.**
-            //
-            // ⚠ **여기서 라이브 생성으로 폴백하지 말 것**(2026-08-18 변경). 예전에는 버킷이
-            // 미완성이거나 다운로드가 실패하면 아래 라이브 생성으로 떨어졌는데, 알람 음성은
-            // 이제 **프리셋 + 직접 입력 둘뿐**이다(docs/qa/dev-test-handoff.md 5절).
-            // 폴백을 남겨 두면 그 경로로 저장된 알람이 **매일 같은 한 문장**을 반복한다 —
-            // 서버가 다시 지어 줄 일이 없기 때문이다.
-            //
-            // 못 묶으면 **준비 페이지로 보낸다**(관문과 같은 처리). 저장이 늦어지는 대신
-            // 되돌릴 수 없는 잘못된 행이 남지 않는다.
-            //
-            // 예전 제외 갈래 둘을 **없앴다**:
-            //  - `!familyAlarmMode`: 가족 알람도 이제 `bucket_id` 를 실어 보낸다(`f7385200`).
-            //    받는 사람이 그 테마의 자기 클립을 묶으므로 수신자 무음 문제가 사라졌고,
-            //    날씨 조건도 **받는 사람 기준**으로 고른다(docs/spec/family-alarm.md 4절).
-            //  - `!isSystemVoiceId`: 기본 목소리도 같은 테마 클립을 갖는다. 제외해 둘 이유가
-            //    라이브 폴백뿐이었는데 그게 없어졌다.
-            // ⚠ **고른 버킷이 있으면 그것이 곧 카테고리다.** 컨텍스트에서 유도하면, 목소리
-            // 재선택 등으로 컨텍스트가 기본값(`preset`)으로 밀린 순간 `preset → greeting`
-            // 매핑이 걸려 **미리듣기 샘플 버킷**이 알람에 붙는다. greeting 은 목소리 창의
-            // '들어보기' 전용이라 알람으로는 성립하지 않고, 서버가 `POST /alarm` 을 400 으로
-            // 거절한다 — 로컬에만 남는 알람이 된다(2026-08-31 실기기: bucketId=greeting,
-            // 문구 "안녕하세요! 만나서 정말 반가워요.").
-            val cloneBucketCategory = editor.selectedBucket
-                ?: clonePrerenderBucketCategoryFor(editor.voiceRandomContext)
-            // ⚠ **`voiceRandomPrompt` 하나로 가르지 말 것**(2026-08-31 실기기 재현).
-            // `setBucketAudio` 는 버킷을 붙이면서 **항상 그 값을 끈다.** 그래서 이 조건만 보면,
-            // 바인딩이 한 번이라도 풀린 버킷 알람은 **여기로 돌아올 길이 없고** 아래 '직접
-            // 입력' 갈래로 떨어져 유료 전용 라이브 TTS 를 부른다 — 무료 사용자는 기본 목소리로
-            // 날씨를 고르고 저장만 눌렀는데 "유료 이용권에서 사용할 수 있어요" 를 본다
-            // (`generateTtsAudio` 의 check 가 네트워크 전에 던진다).
-            //
-            // 바인딩을 푸는 길은 여럿이다: 이미 고른 목소리를 시트에서 **다시 누르기**
-            // (동일 id 가드가 없어 `clearAudio()`+`clearTtsMeta()`), 재생 방식 왕복, 클립
-            // 언어 ≠ 앱 언어. 어느 쪽이든 `voiceText`(클립 문구)와 `selectedBucket` 은 남는다.
-            //
-            // 그래서 판정은 **사용자가 고른 것이 테마인가**(`selectedBucket`)로 본다.
-            // `hasBucketMessageChoice()`/`isActiveBucketAlarm()` 은 쓸 수 없다 — 둘 다
-            // `audioCacheKey` 가 살아 있어야 true 라, 바인딩이 풀린 바로 그 상태에서 false 다.
-            // (직접 입력을 고르면 `selectedBucket` 은 확실히 null 이 된다 — 문구 화면 두 곳.)
-            val bucketMessageChosen = editor.hasMessageKindChoice()
-            if (bucketMessageChosen && cloneBucketCategory != null) {
-                // 이미 resolve 된 contextVariantIndex 를 넘겨 재저장 시 null 로 덮어써지지 않게 한다(넘기지
-                // 않으면 setBucketAudio 가 null 로 리셋 → 준비창 재해결 전까지 날씨 0=맑음 오재생).
-                val bound = runCatching {
-                    bindStockBucketClips(cloneBucketCategory, profileId, editor.contextVariantIndex)
-                }.getOrDefault(false)
-                generating = false
-                if (bound) {
-                    submitDraft(editor.toDraft())
+            },
+            onMissing = {
+                // ② **오프라인이면 여기서 막는다** — 요청을 보내 보지 않는다(voice-and-message §8). 아래 남은
+                //   횟수 조회부터 네트워크다. 판정식은 예전 저장 사유와 같다(직접 입력 + 오프라인 + 폰에 없음).
+                if (editor.isManualForSave() && !isOnline) {
+                    showSaveBlockAlert(SaveBlockReason.OFFLINE_NEW_MESSAGE)
                 } else {
-                    openClipPreparation(profileId)
+                    startGeneration()
                 }
-                return@launch
-            }
-            // 2) 여기까지 왔다 = **직접 입력**이다(랜덤이 아니거나 버킷으로 안 매핑되는 종류).
-            //    그 문구를 서버에 합성시킨다 — 이 갈래는 월 한도를 차감하는 유료 경로다.
-            //
-            // ⚠ **보내기 전에 남은 횟수를 한 번 더 본다**(2026-09-07 지시). 순서는
-            //    **① 로컬 확인 → ② 남은 횟수 확인 → ③ 생성 요청** 이다. 위에서 로컬 재사용이
-            //    실패했다 = 이 폰에 없다 = 서버를 불러야 한다 = **차감 대상**이다. 그러니
-            //    한도가 0인데 요청부터 보내 429 를 받을 이유가 없다.
-            //    화면에 띄워 둔 값이 아니라 **그 자리에서 다시 조회한다** — 다른 기기가 그
-            //    사이 다 썼을 수 있고, 편집기를 연 뒤 시간이 흘렀을 수도 있다.
-            //    ⚠ **강제는 여기가 아니다.** 서버가 예약에서 다시 막는다(429) — 이건 불필요한
-            //    왕복을 줄이는 것뿐이라, 조회에 실패하면 그냥 진행한다.
-            if (!familyAlarmMode && onLoadManualQuota != null) {
-                val quota = runCatching { onLoadManualQuota() }.getOrNull()
-                if (quota != null && quota.limit > 0 && quota.remaining <= 0) {
-                    generating = false
-                    manualQuota = quota
-                    familyBlockAlert = context.getString(R.string.editor_block_manual_quota_title) to
-                        context.getString(R.string.editor_block_manual_quota_message, quota.limit)
-                    return@launch
-                }
-                if (quota != null) manualQuota = quota
-            }
-            // 진행 안내는 저장 버튼의 스피너(EditorActionButtons)가 맡는다 — 방금 누른
-            // 자리에서 도는 게 화면 위쪽 카드에 뜬 '준비하는 중이에요' 한 줄보다 직관적이고,
-            // 이 자리에 안내를 넣으면 실패했을 때 그 자리에 들어올 에러 문구를 밀어낸다.
-            runCatching {
-                val response = onGenerateTts(
-                    TtsGenerateRequest(
-                        voiceProfileId = profileId,
-                        text = text,
-                        category = editor.activeVoiceCategory(),
-                        language = editor.activeVoiceLanguage(),
-                        translate = false,
-                        // ⚠ **`random` 은 언제나 false 다**(2026-08-18). 이 자리에 도달하는 건
-                        // 직접 입력뿐이라, 서버가 문장을 '지어내는' 갈래는 앱에서 사라졌다.
-                        // 되살리지 말 것 — 되살리면 그 알람은 매일 같은 한 문장을 반복한다
-                        // (서버가 다시 지어 줄 주기적 경로가 없다).
-                        //
-                        // ⚠ 같이 사라진 것: `randomContext`·`alarmHour`/`alarmMinute`·
-                        // `weather*`·`fortune*`. 그 값들은 **행에는 그대로 남는다** — 사전렌더
-                        // variant 를 고르는 데(`/tts/prerender-variant`) 쓰이기 때문이다.
-                        // 다만 `/tts/generate` 로는 다시 보내지 말 것.
-                        random = false,
-                        randomContext = null,
-                        targetUserId = selectedFamilyRecipientId.takeIf { familyAlarmMode }?.trimmedOrNull(),
-                        listenerTitle = listenerTitleForSave,
-                    ),
-                )
-                val rawAudioUri = response.audioUrl ?: response.audioObjectKey?.let { "r2://$it" }
-                val cacheKey = AlarmAudioStore.ttsCacheKey(
-                    profileId = profileId,
-                    text = response.text,
-                    category = editor.activeVoiceCategory(),
-                    language = editor.activeVoiceLanguage(),
-                    serverCacheKey = response.cacheKey,
-                )
-                val cachedAudio = withContext(Dispatchers.IO) {
-                    // base64 디코딩도 메인 스레드가 아닌 IO 디스패처에서 수행한다.
-                    val audioBytes = Base64.decode(response.audioBase64, Base64.DEFAULT)
-                    audioStore.cacheGeneratedAudio(
-                        bytes = audioBytes,
-                        format = response.audioFormat,
-                        rawAudioUri = rawAudioUri,
-                        cacheKey = cacheKey,
-                        messageId = response.messageId,
-                    )
-                }
-                // 다음에 같은 문구를 넣으면 이 파일을 바로 찾을 수 있게 화살표를 남긴다.
-                // 서버 표시 문구(response.text)도 함께 — 번역이 켜지면 입력 원문과 다르다.
-                ttsInputKey?.let { inputKey ->
-                    audioStore.linkTtsInput(inputKey, cacheKey, response.text)
-                    // **표시 문구로도 화살표를 남긴다.** 알람에 저장되는 건 입력 원문이 아니라
-                    // 서버 표시 문구이고(setGeneratedTtsAudio — 잠금화면 문구와 음성을 맞추려고),
-                    // '마지막에 쓴 직접 입력 문구' 로 기억되는 것도 그 값이다. 번역이 켜진
-                    // 기기(앱 언어 ≠ ko)에서는 둘이 달라서, 입력 원문 키만 남기면 다음 새 알람이
-                    // 표시 문구로 열려 캐시를 빗나간다 — 재생성도 없고 한도도 안 깎인다던 약속이
-                    // 조용히 깨진다(Codex #685). 같은 값이면 굳이 두 번 쓰지 않는다.
-                    val displayTextKey = AlarmAudioStore.ttsInputKey(
-                        userId = reuseUserId!!,
-                        profileId = profileId,
-                        text = response.text,
-                        category = editor.activeVoiceCategory(),
-                        language = editor.activeVoiceLanguage(),
-                        listenerTitle = listenerTitleForSave,
-                    )
-                    if (displayTextKey != inputKey) {
-                        audioStore.linkTtsInput(displayTextKey, cacheKey, response.text)
-                    }
-                }
-                editor.setGeneratedTtsAudio(
-                    audio = cachedAudio,
-                    profileId = profileId,
-                    text = response.text,
-                    messageId = response.messageId,
-                    rawAudioUri = rawAudioUri,
-                    listenerTitle = listenerTitleForSave,
-                )
-                editor.voiceListenerTitleOverride = listenerTitleForSave.orEmpty()
-                submitDraft(editor.toDraft())
-            }.onFailure { error ->
-                AlarmTalkLog.reportError("Failed to generate TTS alarm audio", error)
-                val ttsErrorCode = apiErrorCode(error)
-                audioMessage = when (ttsErrorCode) {
-                    "MANUAL_TTS_QUOTA_EXCEEDED" ->
-                        context.getString(R.string.editor_error_manual_tts_quota)
-                    // 나머지는 공용 표(ApiErrorMessages)가 받는다 — 프리셋 전용 목소리·합성
-                    // 실패처럼 "잠시 후 다시" 로 뭉개면 영영 눌러 보게 되는 코드들이 거기 있다.
-                    else -> com.alarmtalk.app.network.apiErrorMessage(context, ttsErrorCode)
-                        ?: userFacingError(error, context.getString(R.string.editor_error_voice_generation_failed))
-                }
-            }
-            generating = false
-            generationJob = null
-        }
+            },
+        )
     }
 
     val recordPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -1195,8 +1263,8 @@ internal fun AlarmEditorScreen(
         }
     }
 
-    // 연결 상태를 키에 포함해, 오프라인으로 버킷을 못 받았다가 연결이 복구되면 자동 재시도한다.
-    val isOnline by rememberIsOnline()
+    // 연결 상태(`isOnline` — 위 `busy` 옆에서 읽는다)를 키에 포함해, 오프라인으로 버킷을 못 받았다가
+    // 연결이 복구되면 자동 재시도한다.
     // ⚠ **문구 pane 이 돌려준 값에는 종류가 안 바뀐 경우도 있다**(2026-09-06 실기기 재현).
     //   `applyRandomPromptSettings` 는 버킷·문구·오디오를 **비우고** 다시 붙이는 일을 아래
     //   효과에 맡기는데, 아래 키는 전부 그때 그대로일 수 있다 — 같은 종류를 다시 확인하고
@@ -1349,35 +1417,6 @@ internal fun AlarmEditorScreen(
         return true
     }
 
-    /**
-     * 이 직접 입력 문구의 오디오를 **폰이 이미 갖고 있는가.**
-     *
-     * 판정은 저장 경로와 **같은 두 단계**다(`saveEditor` 의 `resolveTtsInput` → `getCachedAudio`):
-     * 입력 별칭이 있어도 **파일이 없으면 없는 것**이다. 별칭 파일은 오디오와 이름이 달라
-     * 함께 지워지지 않으므로, 별칭만 보고 판단하면 "있다" 고 착각한다.
-     * 두 번째 단계는 `getCachedAudio != null` 과 답이 같은 `hasCachedAudio` 로 묻는다 — 이 함수는
-     * 저장 사유(`editorSaveBlockReason`)를 셀 때 **콤포지션마다** 불리므로 길이를 재지 않는다.
-     *
-     * 가족 알람은 제외한다 — 서버가 수신자별로 만들어야 해서 내 캐시로는 대신할 수 없다.
-     */
-    fun manualAudioReadyLocally(profileId: String, text: String): Boolean {
-        if (editor.hasFreshTtsAudio(profileId, text) && !editor.localAudioUri.isNullOrBlank()) return true
-        if (familyAlarmMode) return false
-        val reuseUserId = authSession?.user?.id?.takeIf { it.isNotBlank() } ?: return false
-        val alias = audioStore.resolveTtsInput(
-            AlarmAudioStore.ttsInputKey(
-                userId = reuseUserId,
-                profileId = profileId,
-                text = text,
-                category = editor.activeVoiceCategory(),
-                language = editor.activeVoiceLanguage(),
-                // 저장 시점과 같은 호칭을 쓴다 — 호칭이 문구 안에 병합되므로 키가 달라진다.
-                listenerTitle = resolvedVoiceListenerTitle(profileId, text),
-            ),
-        ) ?: return false
-        return audioStore.hasCachedAudio(alias.cacheKey, rawAudioUri = editor.rawAudioUri)
-    }
-
     // 저장이 막혔는가. ⚠ **사유 문구는 두지 않는다**(2026-08-18 변경. 그전에는 하단 바에
     // 한 줄씩 떴다). 이유를 말하는 자리는 **그 값이 사는 곳**이다:
     //  - 목소리 → 목소리 카드의 `NoUsableVoiceProfileCallout`("아직 사용할 목소리가 없어요."
@@ -1405,6 +1444,11 @@ internal fun AlarmEditorScreen(
      *
      * 그래서 **누르게 두고, 왜 안 되는지 알럿으로 말한다** — 가족 알람 차단 알럿과 같은
      * 껍데기(`IosAlertDialog`)를 쓴다.
+     *
+     * ⚠ **여기서 파일을 읽지 말 것**(2026-10-10 Sentry 조사). 이 값은 화면이 다시 그려질 때마다
+     * 계산된다 — 예전의 오프라인 갈래(`OFFLINE_NEW_MESSAGE`)는 그때마다 별칭·캐시 파일을 읽었다.
+     * 그 갈래는 저장 흐름의 로컬 확인 뒤로 옮겼다(`saveEditor` 의 `manualAudioReuse` — IO 에서 한 번,
+     * `docs/spec/alarm-editor.md` §6). 여기 남은 판정은 전부 메모리 값이다.
      */
     val editorSaveBlockReason: SaveBlockReason? = when {
         editor.playMode == AlarmPlayModes.ALARM_ONLY -> null
@@ -1437,11 +1481,8 @@ internal fun AlarmEditorScreen(
                 //   **매번 같은 클립**이 나간다. 날씨만 막고 두면 그 조용한 오작동이 남는다.
                 usesStockClips && editor.selectedBucket == "fortune" &&
                     !fortuneInfoReady() -> SaveBlockReason.FORTUNE_INFO_MISSING
-                // 오프라인 + 폰에 그 문구의 오디오가 없다 → 만들 길이 없다.
-                // ⚠ **요청을 보내 보고 실패를 보여 주지 않는다.** 로컬에서 답이 나오는
-                // 질문이라, 누른 즉시 이유를 말하는 편이 낫다(그리고 서버도 안 부른다).
-                editor.isManualForSave() && text.isNotBlank() && !isOnline &&
-                    !manualAudioReadyLocally(profileId, text) -> SaveBlockReason.OFFLINE_NEW_MESSAGE
+                // 오프라인 + 폰에 그 문구의 오디오가 없다(`OFFLINE_NEW_MESSAGE`)는 여기서 보지 않는다 —
+                // 파일을 읽어야 답이 나오는 질문이라 저장 흐름의 로컬 확인 뒤에 정한다(위 KDoc).
                 // 빈 문구 — 등록 목소리면 '빈 직접 입력', 스톡 클립 목소리면 클립 과도기.
                 else -> emptyMessageBlockReason(editor, usesStockClips)
             }
@@ -1890,33 +1931,7 @@ internal fun AlarmEditorScreen(
                                 if (reason == null) {
                                     saveEditor()
                                 } else {
-                                    val titleRes = when (reason) {
-                                        SaveBlockReason.RECORDING_MISSING -> R.string.editor_block_recording_title
-                                        SaveBlockReason.VOICE_MISSING,
-                                        SaveBlockReason.VOICE_UNAVAILABLE -> R.string.editor_block_voice_title
-                                        SaveBlockReason.VOICE_SETTLING -> R.string.editor_block_voice_settling_title
-                                        SaveBlockReason.WEATHER_LOCATION_MISSING -> R.string.editor_block_weather_title
-                                        SaveBlockReason.FORTUNE_INFO_MISSING -> R.string.editor_block_fortune_title
-                                        SaveBlockReason.OFFLINE_NEW_MESSAGE -> R.string.editor_block_offline_title
-                                        SaveBlockReason.MESSAGE_PREPARING -> R.string.editor_block_preparing_title
-                                        SaveBlockReason.MANUAL_TEXT_MISSING -> R.string.editor_block_manual_text_title
-                                    }
-                                    val messageRes = when (reason) {
-                                        SaveBlockReason.RECORDING_MISSING -> R.string.editor_block_recording_message
-                                        SaveBlockReason.VOICE_MISSING -> R.string.editor_block_voice_message
-                                        SaveBlockReason.VOICE_UNAVAILABLE -> R.string.editor_block_voice_unavailable_message
-                                        SaveBlockReason.VOICE_SETTLING -> R.string.msg_voice_replacement_settling
-                                        SaveBlockReason.WEATHER_LOCATION_MISSING ->
-                                            if (familyAlarmMode) R.string.editor_block_weather_family_message
-                                            else R.string.editor_block_weather_message
-                                        SaveBlockReason.FORTUNE_INFO_MISSING ->
-                                            if (familyAlarmMode) R.string.editor_block_fortune_family_message
-                                            else R.string.editor_block_fortune_message
-                                        SaveBlockReason.OFFLINE_NEW_MESSAGE -> R.string.editor_block_offline_message
-                                        SaveBlockReason.MESSAGE_PREPARING -> R.string.editor_block_preparing_message
-                                        SaveBlockReason.MANUAL_TEXT_MISSING -> R.string.editor_block_manual_text_message
-                                    }
-                                    familyBlockAlert = context.getString(titleRes) to context.getString(messageRes)
+                                    showSaveBlockAlert(reason)
                                 }
                             },
                             onCancel = onCancel,

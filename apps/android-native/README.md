@@ -91,6 +91,8 @@ Android crash and ANR reporting is disabled by default. Set a flavor-specific DS
 
 When the DSN is blank, the app does not initialize the Sentry SDK. Release bundles include native debug symbol metadata where available.
 
+Release builds upload their R8 `mapping.txt` to Sentry only when the `SENTRY_AUTH_TOKEN` environment variable is set in the building shell; without it the Sentry Gradle plugin does nothing. Steps and what to check: `docs/ops/environments.md` ("Android R8 매핑 올리기").
+
 ## Build
 
 ```powershell

@@ -293,6 +293,85 @@ class TransientFailureClassificationTest {
         assertNull(apiFailureOf(a))
     }
 
+    // ── 사용자가 친 값의 예상된 거절 — `docs/spec/error-codes.md` §3 「앱도 같다」 ──────────
+
+    /**
+     * 목록은 정해진 열한 개다. 원본은 shared 의 `CLIENT_EXPECTED_REFUSAL_CODES` 이고 셋(shared·안드로이드·iOS)이
+     * 같은지는 CI lint(`scripts/check-expected-refusal-codes.py`)가 본다 — 여기서는 이 앱의 값이 넓어지거나
+     * (진짜 사고가 묻힌다) 좁아지지(이슈 목록이 다시 시끄러워진다) 않게 그 자체를 고정한다.
+     */
+    @Test
+    fun expectedRefusalListIsExactlyTheElevenCodes() {
+        assertEquals(
+            setOf(
+                "AUTH_EMAIL_CODE_INVALID", "AUTH_EMAIL_CODE_EXPIRED", "AUTH_EMAIL_TAKEN", "AUTH_EMAIL_SOCIAL",
+                "CODE_NOT_FOUND", "CODE_EXPIRED", "CODE_ALREADY_USED", "CODE_ALREADY_REDEEMED_BY_YOU",
+                "CODE_EXHAUSTED", "CODE_INACTIVE", "CODE_NOT_IN_WINDOW",
+            ),
+            AlarmTalkLog.EXPECTED_REFUSAL_CODES,
+        )
+    }
+
+    @Test
+    fun onlyListedRefusalsBecomeRefusalBreadcrumbs() {
+        // 목록의 코드면 4xx 의 어느 상태로 와도 `refusal` 이다 — 인증 코드는 400, 이메일 중복은 409 처럼
+        // 라우트마다 상태가 다르다.
+        for (code in AlarmTalkLog.EXPECTED_REFUSAL_CODES) {
+            for (status in listOf(400, 404, 409, 410, 422)) {
+                val error = httpException(status, """{"error_code":"$code"}""")
+                assertEquals("$status $code", "refusal", AlarmTalkLog.breadcrumbCategoryFor(error))
+            }
+        }
+        // 저장소가 도메인 예외로 한 번 감싼 거절도 같은 거절이다.
+        val wrapped = IllegalStateException(
+            "redeem failed",
+            httpException(404, """{"error_code":"CODE_NOT_FOUND"}"""),
+        )
+        assertEquals("refusal", AlarmTalkLog.breadcrumbCategoryFor(wrapped))
+    }
+
+    /**
+     * ⚠ **시도를 다 태운 두 코드는 그대로 이슈다.** 1.2.10 의 두 묶음(같은 코드 다섯 번 제출, 낡은 등록
+     * 횟수)이 그 둘로 드러났다 — 거기 닿았다는 것은 화면이 시도를 다 태우게 뒀다는 뜻이다.
+     */
+    @Test
+    fun attemptsExceededAndMonthlyLimitStayIssues() {
+        assertNull(
+            AlarmTalkLog.breadcrumbCategoryFor(httpException(429, """{"error_code":"AUTH_EMAIL_CODE_ATTEMPTS_EXCEEDED"}""")),
+        )
+        assertNull(
+            AlarmTalkLog.breadcrumbCategoryFor(httpException(429, """{"error_code":"VOICE_MONTHLY_CHANGE_LIMIT_REACHED"}""")),
+        )
+        assertFalse("AUTH_EMAIL_CODE_ATTEMPTS_EXCEEDED" in AlarmTalkLog.EXPECTED_REFUSAL_CODES)
+        assertFalse("VOICE_MONTHLY_CHANGE_LIMIT_REACHED" in AlarmTalkLog.EXPECTED_REFUSAL_CODES)
+    }
+
+    /** 셋(4xx · 코드 있음 · 목록에 있음) 중 하나라도 아니면 그대로 이슈다. */
+    @Test
+    fun aRefusalNeedsA4xxAndAListedCode() {
+        // 같은 코드라도 5xx 면 서버 사고다.
+        assertNull(AlarmTalkLog.breadcrumbCategoryFor(httpException(500, """{"error_code":"CODE_NOT_FOUND"}""")))
+        assertNull(AlarmTalkLog.breadcrumbCategoryFor(httpException(503, """{"error_code":"AUTH_EMAIL_CODE_INVALID"}""")))
+        // 코드 없는 4xx 는 무엇이 거절됐는지 모른다.
+        assertNull(AlarmTalkLog.breadcrumbCategoryFor(httpException(400, "")))
+        assertNull(AlarmTalkLog.breadcrumbCategoryFor(httpException(404, "<html>not found</html>")))
+        // 목록 밖의 4xx 코드.
+        assertNull(AlarmTalkLog.breadcrumbCategoryFor(httpException(400, """{"error_code":"INVALID_BODY"}""")))
+        assertNull(AlarmTalkLog.breadcrumbCategoryFor(httpException(429, """{"error_code":"RATE_LIMITED"}""")))
+        assertNull(AlarmTalkLog.breadcrumbCategoryFor(httpException(403, """{"error_code":"CONSENT_REQUIRED"}""")))
+        assertFalse(AlarmTalkLog.isExpectedRefusal(IllegalStateException("bug")))
+    }
+
+    @Test
+    fun refusalClassificationDoesNotConsumeTheErrorBody() {
+        // 보고 함수가 코드를 읽은 뒤에도 호출부는 같은 코드로 문구를 고른다.
+        val body = """{"error_code":"AUTH_EMAIL_TAKEN"}"""
+        val error = httpException(409, body)
+        assertEquals("refusal", AlarmTalkLog.breadcrumbCategoryFor(error))
+        assertEquals("AUTH_EMAIL_TAKEN", apiErrorCode(error))
+        assertEquals(body, error.response()?.errorBody()?.string())
+    }
+
     // ── 백그라운드 워커의 실패 마무리 ─────────────────────────────────────
 
     @Test

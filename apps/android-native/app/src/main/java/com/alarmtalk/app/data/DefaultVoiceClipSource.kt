@@ -14,7 +14,10 @@ import com.alarmtalk.app.network.StockClipListResponse
  */
 class DefaultVoiceClipSource(
     private val context: Context,
-    /** 캐시에 있는 클립만 돌려준다(`AlarmAudioStore.getCachedAudio`). 테스트가 갈아 끼운다. */
+    /**
+     * 캐시에 있는 클립만 돌려준다 — **길이는 재지 않는다**(`AlarmAudioStore.getCachedAudioUnmeasured`).
+     * 울림(`ringUri`)도 잠금(`lockBinding`)도 파일 자리·키·원격 주소만 쓴다. 테스트가 갈아 끼운다.
+     */
     private val cachedAudio: (cacheKey: String, audioUrl: String?) -> CachedAlarmAudio?,
     /** 받아 둔 매니페스트 — 클립과 함께 세트 크기(`expected_variants`)를 쓴다. 테스트가 갈아 끼운다. */
     private val manifest: (userId: String?) -> StockClipListResponse? = { userId ->
@@ -26,7 +29,7 @@ class DefaultVoiceClipSource(
     },
 ) {
     constructor(context: Context, audioStore: AlarmAudioStore) :
-        this(context, { key, url -> audioStore.getCachedAudio(key, url) })
+        this(context, { key, url -> audioStore.getCachedAudioUnmeasured(key, url) })
 
     /** 잠금이 행에 묶을 클립 한 벌. */
     data class Binding(val bucket: String, val language: String, val clips: List<DefaultVoiceClip>)

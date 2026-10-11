@@ -1485,15 +1485,19 @@ class AlarmRepository(
         return next
     }
 
+    /**
+     * 울릴 클립 자리와 그 파일 — 파일 자리만 쓰므로 **길이를 재지 않는다**
+     * (`AlarmAudioStore.getCachedAudioUnmeasured`, 스펙 alarm-ringing §4 「울릴 때는 파일 자리만 찾는다」).
+     */
     fun resolveBucketClipSelection(alarm: AlarmEntity): BucketClipSelection? {
         val keys = alarm.bucketClipKeys()
         if (alarm.bucketId == null || keys.isEmpty()) return null
         val preferredIndex = alarm.bucketVariantIndex() ?: return null
-        alarmAudioStore.getCachedAudio(keys[preferredIndex])?.let { audio ->
+        alarmAudioStore.getCachedAudioUnmeasured(keys[preferredIndex])?.let { audio ->
             return BucketClipSelection(preferredIndex, audio.localAudioUri)
         }
         for ((index, key) in keys.withIndex()) {
-            alarmAudioStore.getCachedAudio(key)?.let { audio ->
+            alarmAudioStore.getCachedAudioUnmeasured(key)?.let { audio ->
                 return BucketClipSelection(index, audio.localAudioUri)
             }
         }

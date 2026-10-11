@@ -146,7 +146,8 @@ Android OAuth client ID는 Google Cloud Console에 등록만 한다. 앱 코드�
 1. prod Web OAuth client ID가 Android Gradle property와 backend `GOOGLE_CLIENT_ID`에 같은 값으로 설정되어 있는지 확인한다.
 2. prod Android OAuth client가 Google Cloud Console에 등록되어 있는지 확인한다.
 3. `versionCode`를 이전 Play 업로드보다 크게 올린다.
-4. prod release AAB를 빌드한다.
+4. prod release AAB를 빌드한다 — **빌드하는 셸에 `SENTRY_AUTH_TOKEN` 을 두고** 빌드한다. 그래야 그 빌드의 R8
+   매핑이 Sentry 에 올라간다(아래 「Android R8 매핑 올리기」 — 빌드 뒤 확인할 것도 거기 있다).
 5. 업로드 키로 AAB를 서명한다.
 6. Play Console 내부테스트 트랙에 업로드한다.
 7. Play Console에서 앱 서명 키 SHA-1을 확인하고 Google Cloud Console의 prod Android OAuth client에 반영한다.
@@ -155,6 +156,29 @@ Android OAuth client ID는 Google Cloud Console에 등록만 한다. 앱 코드�
 
 - Android Sentry DSN은 release 빌드 시 Gradle property로 주입한다.
 - Backend Sentry DSN은 Worker secret으로만 설정한다.
+
+### Android R8 매핑 올리기
+
+release 빌드는 R8 이 클래스·메서드 이름을 줄인다(이슈 제목이 `b5.o: HTTP 429` 처럼 나온다). 그 빌드의
+`mapping.txt` 가 Sentry 에 있어야 스택이 원래 이름으로 읽힌다. Sentry Android Gradle 플러그인
+(`io.sentry.android.gradle` — 판과 고른 이유는 `apps/android-native/build.gradle.kts`, 설정은 `app/build.gradle.kts` 의
+`sentry { }`)이 release 빌드에 ProGuard UUID 를 심고(AAB 의 `sentry-debug-meta.properties`) 같은 UUID 로 매핑을 올린다.
+
+- **토큰**: 환경 변수 `SENTRY_AUTH_TOKEN` — Sentry 조직 `alarmtalk` 의 조직 토큰(Organization Token). 값은 저장소·문서·
+  `gradle.properties` 에 두지 않고 **빌드하는 셸에만** 둔다. 조직·프로젝트(`alarmtalk` / `alarmtalk-android`)는 빌드 파일에 있다.
+- **토큰이 없으면 플러그인은 아무것도 하지 않는다** — UUID 도 심지 않고 원격으로 나가는 것도 없다. 빌드는 그대로
+  되지만 그 빌드의 오류는 난독화된 이름으로 남는다. 로컬·CI 의 평소 빌드(`assembleDevDebug`·`lintProdRelease` 등)가
+  그렇다. dev 디버그 빌드는 토큰이 있어도 손대지 않는다.
+- **빌드한 뒤 확인할 것**:
+  1. 빌드 로그에 `:app:uploadSentryProguardMappingsProdRelease` 가 돌았고 실패하지 않았다(토큰이 없으면 이 작업이
+     아예 없다).
+  2. 만든 AAB 에 UUID 가 들어 있다 —
+     `unzip -p app/build/outputs/bundle/prodRelease/app-prod-release.aab base/assets/sentry-debug-meta.properties`
+     에 `io.sentry.ProguardUuids=<UUID>` 줄이 있다.
+  3. Sentry 의 `alarmtalk-android` 프로젝트 설정의 ProGuard(디버그 파일) 목록에 같은 UUID 가 있다.
+  4. 그 릴리스에서 처음 올라온 이벤트의 스택이 원래 클래스·메서드 이름으로 보인다.
+- ⚠ 플러그인을 6.x 로 올리지 않는다 — 이 저장소의 Gradle(8.10.2)에서는 올리기 작업을 만들다 `NoSuchMethodError` 로
+  빌드가 죽는다. 토큰이 없으면 그 작업을 만들지 않아 평소 빌드는 통과하므로 릴리스 날에야 드러난다.
 
 ## 알람 동작 원칙
 

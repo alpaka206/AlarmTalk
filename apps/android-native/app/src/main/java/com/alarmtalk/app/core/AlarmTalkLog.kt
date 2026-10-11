@@ -73,9 +73,9 @@ object AlarmTalkLog {
      *
      * ⚠ HTTP 4xx 를 여기서 낮추지 않는다. 그 4xx 가 무엇을 뜻하는지는 문맥을 아는 호출부가 코드를
      * 볼 자리에서 결정한다(예: `sync/SyncWorkerFailure.kt` 의 `CONSENT_REQUIRED`).
-     * 낮추는 유일한 예외가 **401** 인데, 그건 본문이 아니라 상태코드만 보면 되므로
-     * [isHandledAuthFailure] 로 따로 갈라 두었다. ([reportError] 는 이제 코드를 **읽는다** — 낮추려는
-     * 것이 아니라 묶으려는 것이다, [apiFailureFingerprint].)
+     * 낮추는 4xx 는 둘뿐이고 각자 갈래가 따로다 — **401**([isHandledAuthFailure], 상태코드만 본다)과
+     * **예상된 거절**([isExpectedRefusal], 목록에 있는 코드만 본다). ([reportError] 는 코드를 **읽는다** —
+     * 그 둘 말고는 낮추려는 것이 아니라 묶으려는 것이다, [apiFailureFingerprint].)
      */
     fun isExpectedTransientFailure(error: Throwable): Boolean {
         if (error is CancellationException) return true
@@ -139,12 +139,42 @@ object AlarmTalkLog {
      * 그렇다고 여기서 본문을 열 이유가 생긴 것은 아니다.)
      *
      * ⚠ **401 만이다.** 403 은 동의·권한 상태라 호출부가 코드로 가르고(`CONSENT_REQUIRED`),
-     * 그 밖의 4xx 는 그대로 올라간다. 인증 헤더를 빼먹는 우리 쪽 결함이 401 로 나타나도
+     * 그 밖의 4xx 는 그대로 올라간다(목록에 있는 예상된 거절만 [isExpectedRefusal] 이 따로 낮춘다).
+     * 인증 헤더를 빼먹는 우리 쪽 결함이 401 로 나타나도
      * 조용해지지 않는다 — 그 경로는 세션을 끊고 "다시 로그인해 주세요" 를 띄운다.
      *
      * iOS 짝은 `AlarmTalkLog.swift` 의 같은 이름 함수다 — **한쪽만 고치지 말 것.**
      */
     fun isHandledAuthFailure(error: Throwable): Boolean = httpStatusCode(error) == 401
+
+    /**
+     * **예상된 거절** — 사용자가 친 값이 틀렸거나(인증 코드·이용권 코드) 이미 쓰인 것이라 서버가 정상적으로
+     * 거절한 코드. 화면이 그 자리에서 이유를 말하고(문구 표 `network/ApiErrorMessages.kt`), 우리가 고칠 결함이
+     * 아니다. 이슈로 올리면 틀린 코드 하나마다 이벤트가 쌓여 진짜 사고가 그 사이에 묻힌다
+     * (`docs/spec/error-codes.md` §3 「앱도 같다」).
+     *
+     * ⚠ **원본은 shared 하나다** — `packages/shared/src/schemas/error-codes.ts` 의 `CLIENT_EXPECTED_REFUSAL_CODES`.
+     *   이 앱은 TypeScript 를 가져다 쓸 수 없어 같은 값을 손으로 둔다. CI lint(`scripts/check-expected-refusal-codes.py`)가
+     *   이 **이름과 모양**(`val EXPECTED_REFUSAL_CODES = setOf(...)`, 문자열 리터럴만)으로 찾아 대조하므로, 이름을
+     *   바꾸거나 상수로 쪼개지 말 것. iOS 짝은 `AlarmTalkLog.expectedRefusalCodes`.
+     * ⚠ **넣지 않는 것**: `AUTH_EMAIL_CODE_ATTEMPTS_EXCEEDED`(같은 코드를 다섯 번 낸 묶음이 드러난 자리다 —
+     *   1.2.10)·`VOICE_MONTHLY_CHANGE_LIMIT_REACHED`(낡은 등록 횟수가 드러난 자리다). 둘은 그대로 이슈다.
+     */
+    val EXPECTED_REFUSAL_CODES = setOf("AUTH_EMAIL_CODE_INVALID","AUTH_EMAIL_CODE_EXPIRED","AUTH_EMAIL_TAKEN","AUTH_EMAIL_SOCIAL","CODE_NOT_FOUND","CODE_EXPIRED","CODE_ALREADY_USED","CODE_ALREADY_REDEEMED_BY_YOU","CODE_EXHAUSTED","CODE_INACTIVE","CODE_NOT_IN_WINDOW")
+
+    /**
+     * 브레드크럼(`refusal`)으로 낮출 **예상된 거절**인가 — HTTP 4xx 이고, `error_code` 가 있고, 그 코드가
+     * [EXPECTED_REFUSAL_CODES] 에 있을 때만. 셋 중 하나라도 아니면 그대로 이슈다 — 같은 코드라도 5xx 면
+     * 서버 사고이고, 코드 없는 4xx 는 무엇이 거절됐는지 모른다.
+     *
+     * 원인 사슬을 푼다(`apiFailureOf`) — 저장소가 한 번 감싼 거절도 같은 거절이다. 코드는 본문을 소진하지
+     * 않고 읽는다(`network/ApiErrors.kt`) — 호출부가 뒤에서 같은 코드로 문구를 고른다.
+     */
+    internal fun isExpectedRefusal(error: Throwable): Boolean {
+        val failure = apiFailureOf(error) ?: return false
+        val code = failure.code ?: return false
+        return failure.status in 400..499 && code in EXPECTED_REFUSAL_CODES
+    }
 
     /**
      * 원인 사슬에서 처음 만나는 HTTP 상태코드. 도메인 예외로 한 번 감싼 실패도 같은 실패다
@@ -171,13 +201,14 @@ object AlarmTalkLog {
      * "4xx 면 전부 auth" 로 넓혀도 **기존 테스트가 전부 초록**이다 — 403·404·5xx 가 이슈
      * 목록에서 조용히 사라지고, 그게 바로 이 판정이 막으려던 사고다. 경계는 결과물인
      * category 로 고정한다(`TransientFailureClassificationTest` 의
-     * `onlyUnauthorizedAndTransientBecomeBreadcrumbs`, iOS 짝은
+     * `onlyUnauthorizedAndTransientBecomeBreadcrumbs`·`onlyListedRefusalsBecomeRefusalBreadcrumbs`, iOS 짝은
      * `AlarmTalkLog.handledFailureCategory` 와 `test_401_외의_상태코드는_그대로_이슈다`).
      */
     internal fun breadcrumbCategoryFor(error: Throwable): String? = when {
         isExpectedTransientFailure(error) -> "transient"
         isHandledAuthFailure(error) -> "auth"
         isGoogleSignInUserAction(error) -> "user"
+        isExpectedRefusal(error) -> "refusal"
         else -> null
     }
 

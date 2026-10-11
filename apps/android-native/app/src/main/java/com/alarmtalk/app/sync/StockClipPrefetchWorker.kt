@@ -1,6 +1,7 @@
 package com.alarmtalk.app.sync
 
 import android.content.Context
+import android.os.SystemClock
 import android.util.Base64
 import android.util.Log
 import androidx.work.BackoffPolicy
@@ -136,6 +137,43 @@ internal fun isPermanentClipFailure(error: Throwable): Boolean = when (error) {
     else -> false
 }
 
+/**
+ * 받기 진행을 **포그라운드 서비스로 올릴 것인가** — 빠진 클립이 있을 때만이다(스펙
+ * voice-and-message 「준비 페이지」).
+ *
+ * 이 워커는 콜드 스타트마다 돌고, 대부분의 회차는 받을 것이 없다. 예전에는 빠진 것을 세기
+ * **전에** 진행을 알리며(`setForeground`) 서비스를 올려, 받을 것이 없는 회차마다 `dataSync`
+ * 서비스와 알림이 떴다가 내려갔다 — 하는 일 없이 Android 15 의 서비스 시간 한도에 들어갔다.
+ * 받을 것이 없으면 진행 값만 알린다(`setProgress` — 받기 화면·헤더 퍼센트가 읽는다).
+ */
+internal fun shouldPromoteToForeground(missingCount: Int): Boolean = missingCount > 0
+
+/**
+ * 받기 한 회차의 시간 예산. 넘으면 **다음 배치를 시작하지 않고** 다시 시도로 넘긴다
+ * ([mayStartNextClipBatch]).
+ *
+ * 6분은 배치 하나(요청마다 [AlarmTalkApiClient.CLIP_DOWNLOAD_CALL_TIMEOUT_SECONDS] 상한)를 더해도
+ * 일반 작업의 실행 한도(약 10분) 안에 들도록 잡았다 — 서비스를 못 올렸거나(백그라운드 시작 제한)
+ * 시스템이 서비스를 끝낸 뒤(Android 15+)에는 그 한도가 걸린다.
+ */
+internal const val CLIP_PREFETCH_RUN_BUDGET_MILLIS: Long = 6L * 60_000L
+
+/**
+ * 이 회차가 **다음 배치를 시작해도 되는가** — 배치 사이에서만 묻는다.
+ *
+ * 첫 배치는 언제나 시작한다. 매니페스트·프로필 조회가 예산을 다 써도 회차마다 조금은 나아가야
+ * 한다 — 아니면 약한 망에서 회차가 하나도 못 받고 다시 시도만 되풀이한다.
+ *
+ * @param batchesStarted 이 회차에 이미 시작한 배치 수.
+ * @param runStartedAtMillis 회차를 시작한 시각. [nowMillis] 와 같은 단조 시계(`SystemClock.elapsedRealtime`)다.
+ */
+internal fun mayStartNextClipBatch(
+    batchesStarted: Int,
+    runStartedAtMillis: Long,
+    nowMillis: Long,
+    budgetMillis: Long = CLIP_PREFETCH_RUN_BUDGET_MILLIS,
+): Boolean = batchesStarted == 0 || nowMillis - runStartedAtMillis < budgetMillis
+
 class StockClipPrefetchWorker(
     appContext: Context,
     params: WorkerParameters,
@@ -177,8 +215,10 @@ class StockClipPrefetchWorker(
     override suspend fun getForegroundInfo(): androidx.work.ForegroundInfo = foregroundInfo(0, 0)
 
     /**
-     * 진행률을 알림에도 반영한다. 실패해도 다운로드는 계속한다 — 알림 권한이 없거나
-     * 포그라운드 승격이 막혀도(백그라운드 제한) **받는 일 자체를 멈추면 안 된다.**
+     * 진행률을 알림에도 반영한다(= 포그라운드 서비스로 올린다). **받는 동안에만** 부른다 — 받을 것이
+     * 없는 회차는 진행 값만 알린다([shouldPromoteToForeground]).
+     * 실패해도 다운로드는 계속한다 — 알림 권한이 없거나 포그라운드 승격이 막혀도(백그라운드 제한)
+     * **받는 일 자체를 멈추면 안 된다.**
      */
     private suspend fun publishProgress(done: Int, total: Int) {
         setProgress(progressData(done = done, total = total))
@@ -193,6 +233,8 @@ class StockClipPrefetchWorker(
     }
 
     private suspend fun runWork(): Result {
+        // 회차의 시간 예산은 여기서부터 센다([mayStartNextClipBatch]) — 매니페스트·프로필 조회도 회차다.
+        val runStartedAt = SystemClock.elapsedRealtime()
         val sessionStore = AuthSessionStore(applicationContext)
         // ⚠ **세대를 세션보다 먼저 읽는다**(2026-09-01 리뷰). 순서가 반대면 두 줄 사이의
         // A→B 전환에서 **세션은 A, 세대는 B** 가 잡혀, 나중의 `saveTokenIfGeneration` 이
@@ -209,7 +251,9 @@ class StockClipPrefetchWorker(
         val entitlement = EntitlementWriter(applicationContext)
         val ticket = AccessTicket(session.user.id, startGeneration)
         return runCatching {
-            val api = AlarmTalkApiClient.create()
+            // 요청 하나에 호출 전체 상한을 둔다 — 연결·읽기·쓰기 상한은 바이트 사이 간격이라 아주 느린 망에서
+            // 클립 하나가 끝없이 길어질 수 있다([AlarmTalkApiClient.CLIP_DOWNLOAD_CALL_TIMEOUT_SECONDS]).
+            val api = AlarmTalkApiClient.create(callTimeoutSeconds = AlarmTalkApiClient.CLIP_DOWNLOAD_CALL_TIMEOUT_SECONDS)
             // 토큰이 굴러가면 **헤더도 함께** 갈아 끼운다 — 굴린 뒤의 요청까지 옛 토큰으로
             // 내보내면 그 만료가 가까워 401 이 나는데도 아무도 세션을 못 끊는다.
             var auth = AlarmTalkApiClient.bearer(usedToken)
@@ -525,14 +569,19 @@ class StockClipPrefetchWorker(
                 }
                 keys.takeIf { it.isNotEmpty() }?.let { clip to it }
             }
-            publishProgress(done = clips.size - missing.size, total = clips.size)
-            if (missing.isEmpty()) {
+            val alreadyCached = clips.size - missing.size
+            // ⚠ **받을 것이 없으면 서비스를 올리지 않는다**(2026-10-11, [shouldPromoteToForeground]).
+            //   예전에는 이 판정 **앞에서** `publishProgress` 를 불러, 받을 것이 없는 콜드 스타트마다
+            //   `dataSync` 서비스와 알림이 떴다. 진행 값만 알린다 — 받기 화면·헤더 퍼센트가 이 값을 읽는다.
+            if (!shouldPromoteToForeground(missing.size)) {
+                setProgress(progressData(done = alreadyCached, total = clips.size))
                 rebind()
                 if (accountChangedDuringRun) return@runCatching Result.retry()
                 return@runCatching Result.success()
             }
+            publishProgress(done = alreadyCached, total = clips.size)
 
-            var done = clips.size - missing.size
+            var done = alreadyCached
             // ⚠ **격리는 하되 실패를 삼키지는 않는다**(2026-08-31 리뷰). 클립별로 예외를 잡아
             // 형제 요청을 살리는 것과, 그 회차를 '성공' 으로 보고하는 것은 다른 문제다.
             // 성공으로 끝내면 WorkManager 가 백오프 재시도를 걸지 않아, 약전파에서 한두 개를
@@ -549,10 +598,17 @@ class StockClipPrefetchWorker(
             //   바깥의 SESSION_EXPIRED 갈래 한 곳이 끝낸다. 다음 배치는 시작하지 않는다 — 같은 토큰으로
             //   보내 봐야 같은 401 이다.
             val sessionExpired = java.util.concurrent.atomic.AtomicReference<Throwable?>(null)
+            // ⚠ **한 회차는 끝이 있다**(2026-10-11, [mayStartNextClipBatch]). 예산을 넘겼으면 남은 배치를
+            //   시작하지 않는다 — 받아 둔 클립은 캐시에 남고 다음 회차가 나머지만 받는다.
+            var budgetExhausted = false
             // 클립당 HTTP 왕복 1회다. 44개를 순차로 받으면 약전파에서 1분을 넘기므로 소량 병렬로
             // 겹친다(서버·기기 부담을 감안해 4로 제한).
-            for (batch in missing.chunked(PARALLELISM)) {
+            for ((batchIndex, batch) in missing.chunked(PARALLELISM).withIndex()) {
                 if (sessionExpired.get() != null) break
+                if (!mayStartNextClipBatch(batchIndex, runStartedAt, SystemClock.elapsedRealtime())) {
+                    budgetExhausted = true
+                    break
+                }
                 coroutineScope {
                     batch.map { (clip, cacheKeys) ->
                         async(Dispatchers.IO) {
@@ -607,6 +663,13 @@ class StockClipPrefetchWorker(
             // 받은 것은 묶어 둔 채(부분 성공은 남는다) 401 을 바깥 한 곳으로 올린다.
             sessionExpired.get()?.let { throw it }
             if (accountChangedDuringRun) return@runCatching Result.retry()
+            // 예산에 닿아 멈춘 회차는 끝난 것이 아니다 — 다른 일시적 실패와 **같은 횟수 한도 안에서** 다시
+            // 시도한다. 한도를 다 쓰면 실패로 끝나 받기 화면이 '다시 시도' 를 띄운다(약한 망에서 끝없이
+            // 돌지 않는다). 시작하지 못한 클립은 실패로 세지 않는다 — 시도한 적이 없다.
+            if (budgetExhausted) {
+                Log.i(TAG, "Stock clip prefetch reached its run budget; the remaining clips continue on the next run")
+                return@runCatching if (runAttemptCount < MAX_RUN_ATTEMPTS) Result.retry() else Result.failure()
+            }
             // 하나라도 못 받았으면 이 회차는 끝난 것이 아니다 — 다음 회차가 나머지만 받는다
             // (이미 받은 파일은 캐시에 남아 `missing` 계산에서 빠진다).
             //

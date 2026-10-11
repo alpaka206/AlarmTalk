@@ -68,6 +68,52 @@ object StockClipManifestStore {
     private var publishedTicket: Long = 0
 
     /**
+     * 디스크 파일의 **판(版)**. 파일(과 그걸 읽게 하는 임자·격리 표시)이 바뀔 수 있는 자리마다 오른다 —
+     * 공개 시도([save] — 실패한 쓰기도 파일을 반쯤 갈았을 수 있다)·지우기([clearAndInvalidate])·깨진 파일
+     * 정리([load]). [AudioUrlIndex] 가 이 값이 그대로면 파일을 다시 읽지 않는다.
+     * [revisionLock] 안에서만, 바뀐 것을 다 남긴 **뒤에** 올리고, 잠그지 않고 읽는다.
+     *
+     * ⚠ [publishedTicket] 으로 대신하지 말 것 — 로그아웃·계정 전환의 지우기는 그 표를 올리지 않는다. 그걸
+     *   놓치면 지운 앞 계정의 주소로 다음 쓰기를 '지나간 응답' 이라 거절한다.
+     */
+    @Volatile
+    private var diskRevision: Long = 0
+
+    /**
+     * 매니페스트가 지금 가리키는 **message id → 오디오 주소**. 캐시 쓰기의 '지나간 응답인가' 가드
+     * (`AlarmAudioStore.incomingIsSupersededByManifest`, Codex #703)가 묻는다.
+     *
+     * ⚠ **파일이 바뀌었을 때만 다시 읽는다**([diskRevision]). 예전에는 가드가 쓰기마다 [load] 로 파일
+     * (약 168KB)을 다시 읽어 파싱했다 — 선다운로드 워커 한 회차가 클립 수십 개를 쓰므로 그 횟수만큼이었다
+     * (2026-10-10 Sentry 조사). 판이 그대로면 파일도 그대로라 답은 쓰기마다 읽은 것과 같다 — 가드는
+     * 여전히 **쓰는 순간의 매니페스트**를 본다. 판은 **읽기 전에** 잡는다 — 읽는 사이 공개가 일어나면
+     * 잡아 둔 판이 이미 옛것이라 다음 질문이 다시 읽는다(새 판에 옛 목록을 적어 두는 일이 없다).
+     *
+     * 한 인스턴스를 여러 스레드가 함께 쓴다(워커는 클립 넷을 동시에 받는다) — 읽기는 한 번에 하나다.
+     * 프로세스 전역에 두지 않고 저장소(`AlarmAudioStore`) 인스턴스마다 하나다 — 워커의 목록은 그 회차와
+     * 함께 사라진다.
+     */
+    class AudioUrlIndex(private val context: Context) {
+        private var revision: Long = -1
+        private var urls: Map<String, String?> = emptyMap()
+
+        /** 그 message id 의 **첫** 클립이 가리키는 주소(예전 가드의 `firstOrNull` 과 같다). 모르면 null. */
+        @Synchronized
+        fun audioUrlFor(messageId: String): String? {
+            val current = diskRevision
+            if (current != revision) {
+                val next = HashMap<String, String?>()
+                load(context)?.clips?.forEach { clip ->
+                    if (!next.containsKey(clip.messageId)) next[clip.messageId] = clip.audioUrl
+                }
+                urls = next
+                revision = current
+            }
+            return urls[messageId]
+        }
+    }
+
+    /**
      * 공개가 일어날 때마다 그 표를 흘린다 — **누가 공개했든**(전경·프리페치 워커·접근권 워커).
      *
      * 뷰모델 메모리(`stockClips`)가 이걸 보고 **디스크의 공개본을 표 순서로 따라간다**(Codex #825).
@@ -237,6 +283,8 @@ object StockClipManifestStore {
                     )
                 }
             }
+            // 지웠든 격리했든 읽히는 것이 달라졌다 — 주소표가 다시 읽게 판을 올린다([diskRevision]).
+            diskRevision += 1
         }
     }
 
@@ -279,7 +327,11 @@ object StockClipManifestStore {
             // 더 새 응답을 봤다 — 성패와 무관하게 수위선을 올린다(위 `seenTicket` 주석).
             seenTicket = fetchTicket
             // 쓰기가 실패하면 **공개되지 않았다**고 답한다. 호출자가 다시 시도한다.
-            if (!writeManifest(context, response)) return PublishResult.FAILED
+            if (!writeManifest(context, response)) {
+                // 실패한 쓰기도 파일을 반쯤 갈았을 수 있다 — 판은 올린다([diskRevision]).
+                diskRevision += 1
+                return PublishResult.FAILED
+            }
             publishedTicket = fetchTicket
             // 파일과 임자는 **같은 임계구역에서** 함께 남긴다. 방금 이 계정의 내용으로
             // 갈아 끼웠으므로 격리 표시도 함께 내린다 — 지우지 못했던 파일이 **덮여** 없어진
@@ -290,6 +342,8 @@ object StockClipManifestStore {
                     .remove(QUARANTINE_KEY)
                     .commit()
             }
+            // 판도 파일·임자까지 남긴 **뒤에** 올린다 — 새 판으로 읽는 쪽이 반쯤 바뀐 상태를 보지 않게.
+            diskRevision += 1
             // 파일·임자까지 남긴 **뒤에** 알린다 — 따라가는 쪽이 읽을 때 임자 대조가 통과하게.
             publications.value = fetchTicket
             return PublishResult.PUBLISHED
@@ -349,6 +403,7 @@ object StockClipManifestStore {
         if (!target.exists()) return null
         // 읽기는 잠그지 않는다 — 그사이 [save] 가 더 새 파일로 갈아 끼울 수 있다(아래 삭제 조건).
         val publishedBeforeRead = publishedTicket
+        AudioCacheProbeCounter.recordManifestRead()
         return runCatching {
             gson.fromJson(target.readText(), StockClipListResponse::class.java)
         }.getOrElse {
@@ -360,6 +415,9 @@ object StockClipManifestStore {
             // [publishedTicket] 이 없는 파일을 가리키고, 이긴 것 이어받기·교체 수리가 다음 조회까지 멎는다.
             synchronized(revisionLock) {
                 if (publishedTicket == publishedBeforeRead) target.delete()
+                // 지웠으면 파일이 사라졌고, 안 지웠으면 그새 후속본이 공개됐다 — 어느 쪽이든 주소표가
+                // 다시 읽게 판을 올린다([diskRevision]. 공개가 이미 올렸어도 한 번 더 읽을 뿐이다).
+                diskRevision += 1
             }
             null
         }
