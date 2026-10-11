@@ -212,7 +212,7 @@
 
 | 단계 | 화면에 두는 것 | 다음 조건 |
 | --- | --- | --- |
-| 음원 준비 | 녹음/파일 2택, 녹음 카드 또는 파일 자르기·미리듣기, 접힌 예시 대본 | 12초 이상 2분 이하 음원 |
+| 음원 준비 | 녹음/파일 2택, 녹음 카드 또는 파일 자르기·미리듣기, 접힌 예시 대본 | 12초 이상 2분 이하 음원. 말소리가 거의 없으면 서버가 등록을 거절해 이 단계로 돌아온다(아래 「말소리가 없으면 등록하지 않는다」) |
 | 세부 정보 | 목소리 이름, 관계, 나를 부를 호칭, 알람 문구 언어, 필요한 생체정보 동의 | **이름만 필수**. 이름 칸은 비워 시작하며 예시를 실제 이름으로 저장하지 않는다. 관계·호칭은 선택 |
 | 생성 중 | 진행 표시와 설명만 | 서버 초안 생성 완료 |
 | 미리듣기·확정 | 생성된 목소리 듣기·문구 수정, 공유 설정, 기존 목소리 교체 확인 | 끝까지 들어본 뒤 저장 또는 삭제 |
@@ -500,8 +500,8 @@
     월 한도 거절·목록)가 여럿이라 답이 낸 순서대로 오지 않는다 — 확정 직후의 `0/1` 위에 그 전에 낸 요청의
     `1/1` 이 늦게 와 앉으면 `추가` 가 다시 켜지고 삭제 경고가 빠진다. 계정만 대조해서는 못 막는다.
   - 로그아웃·계정 전환 뒤에 온 앞 계정의 답도 버린다.
-  - ⚠ iOS 는 아직 계정만 대조한다(`VoiceStudioViewModel.refresh(session:force:)` — 강제 갱신은 진행 중인 갱신을
-    기다리지 않아 답이 겹칠 수 있다). 같은 틈이 남아 있다.
+  - 두 앱이 같다(iOS 는 2026-10-11 셋째 회차에 요청 순서 대조를 더했다 — 그전에는 계정만 대조해, 진행 중인 갱신을
+    기다리지 않는 강제 갱신의 답이 겹칠 수 있었다).
 - 조회가 실패하면 **앞 값을 지킨다.** 실패는 "모른다" 이지 "남았다" 가 아니다.
 - **`추가` 를 누를 때 다시 읽지는 않는다.** 탭 뒤에 네트워크 대기를 세우면 그 대기의 진행·실패 상태가
   따로 필요해진다. 위 셋과 서버의 ①이 같은 경우를 덮는다.
@@ -546,8 +546,90 @@
   세부 정보 단계로 돌아와 이유를 읽고 `등록` 을 **그대로 다시 누를 수 있어야** 한다. 녹음(또는 고른 파일)을
   놓는 것은 초안이 만들어진 **뒤**다. 예전 안드로이드는 '만드는 중' 으로 넘어가며 녹음을 먼저 놓아, 실패하면
   꺼진 `등록` 과 보이지 않는 문구만 남았다(다시 녹음해야 했다).
+  - **말소리가 없다는 거절(`VOICE_CLONE_NO_SPEECH`)만 반대다** — 같은 소리를 다시 보내면 같은 답이므로 녹음을
+    **버리고** 음원 준비로 돌아간다(아래 「말소리가 없으면 등록하지 않는다」).
 - ⚠ **월 한도 말고는 흐름을 끝내지 않는다.** 유료·동의(403)와 `VOICE_PREVIEW_REQUIRED` 는 그 창 안에서
-  말하고 사용자가 고친다.
+  말하고 사용자가 고친다. 말소리 없음도 흐름을 끝내지 않는다 — 창 안에서 음원 준비로 돌아간다.
+
+### 말소리가 없으면 **등록하지 않는다** (2026-10-11)
+
+오너 결정(2026-10-11): "목소리(말소리) 없으면 등록 못 하도록 막는다. 다시 만들기는 횟수 제한 없음 — 확정 등록만
+월 1회."
+
+**서버 — `POST /voice/clone`**
+
+- 녹음을 **한 번** 전사(ElevenLabs Scribe)해 **말소리로 셀 글자 수**를 센다(`speechCharCount` — 소리 표시를 빼고
+  앞뒤 공백을 걷는다). **20자**(`MIN_SPEECH_TRANSCRIPT_CHARS`) 미만이면 `400 VOICE_CLONE_NO_SPEECH` 로 답한다. 몸통은
+  `VOICE_CLONE_AUDIO_TOO_SHORT` 와 같은 모양(`{ error, error_code }`)이다.
+  - 20자는 한두 마디다. 등록 녹음은 12초 이상이라 읽어 내려간 녹음의 전사는 수십~수백 자다.
+  - ⚠ **말투 분석의 '짧은 전사'(§4-2)와 같은 상수·같은 셈 하나다.** 갈라지면 등록은 통과시킨 녹음을 분석이
+    '말소리 없음' 으로 읽는다(또는 그 반대).
+  - ⚠ **소리 표시는 말소리가 아니다.** Scribe 는 `(laughter)`·`(footsteps)`·`[music]` 같은 소리 표시를 **기본으로**
+    붙인다(`tag_audio_events` 기본 켜짐 — 우리는 그 값을 보내지 않는다). 전사 길이를 그대로 세면 TV·선풍기·발소리만
+    든 녹음의 표시(`(background noise) (footsteps) (door closes)`)가 20자를 넘겨 등록된다. 그래서 **세는 것만** 괄호·
+    대괄호(전각 포함) 속을 빼고, 전사는 표시까지 그대로 말투 분석에 넘긴다 — 결 판정이 웃음을 단서로 쓴다. (실제
+    Scribe 가 말소리 없는 녹음에 무엇을 돌려주는지는 재 보지 않았다 — 문서의 기본값에 기댄 판단이다. 등록 대본에는
+    괄호 글자가 없다.)
+- **자리** — 값싼 검사(초안 표시·유료·민감 동의·이름·관계·호칭·결·크기·길이·MIME) 뒤, 업로드를 읽은 뒤, 그리고:
+  1. 먼저 이번 달 등록을 **읽기만** 한다. 다 썼으면 전사하지 않고 월 한도 응답(위 「월 등록 한도」 ①과 같은
+     429·같은 몸통)으로 끝낸다 — 어차피 막힐 요청에 공용·한도 있는 ElevenLabs 키로 전사 값을 치르지 않는다.
+  2. 그다음 전사와 말소리 확인.
+  3. 그 뒤가 예약 트랜잭션과 provider 등록이다. ⚠ ①의 **권위 있는** 자격 확인은 그대로 예약 트랜잭션 맨 앞에
+     있다 — 1의 읽기와 그 사이(전사가 몇 초 걸린다)에 다른 기기가 등록할 수 있다. 1은 비용을 아끼는 것일 뿐이다.
+- **거절은 한 줄도 쓰지 않는다** — 초안 행, 초안 시도 집계, 원장, provider 보이스, R2 원본, 삭제 예약, 옛 초안
+  정리 어느 것도 없다. 그래서 **다시 녹음하는 데 횟수 제한이 없고**(오너 결정 그대로) `생성 가능 n/m회` 도
+  그대로다.
+- **전사 자체가 실패하면 막지 않는다**(fail-open) — 네트워크·시간 초과·제공자 4xx/5xx·키 없음·**답에 글(`text`)이
+  없음**(응답 모양이 바뀌었다 — `{}`·`{"text":null}`). 예전 그대로 등록하고 warn 한 줄(`at:"voice.clone.speech_check"`,
+  오류 **이름**만 — 제공자 응답 본문은 싣지 않는다)을 남긴다. 말투 분석은 받아 둔 전사가 없으니 스스로 다시
+  전사한다(같은 답이면 분석도 다시 할 수 있는 실패로 남는다 — 녹음에 대해 알아낸 것이 없다, §4-2). 전사가 잠깐 죽은
+  동안 모든 등록이 막히는 것보다 낫다.
+  - ⚠ 글이 없는 답을 **빈 글로 바꾸지 말 것**(`ElevenLabsClient.speechToText` 가 던진다). 빈 글은 '말소리 없음' 이라,
+    바꾸면 응답 모양이 바뀐 날 모든 등록이 400 으로 막힌다.
+  - ⚠ 전사가 **빈 글**(`{"text":""}`)을 돌려주는 고장은 '말소리 없음' 과 구별되지 않는다 — 그동안은 모든 등록이
+    막힌다. 그래서 이 코드는 사용자가 고칠 수 있는 400 인데도 경보로 올린다([error-codes.md](error-codes.md) §3).
+- **전사 한 번의 상한은 10초**(`CLONE_SPEECH_CHECK_TIMEOUT_MS` — 요청 직전부터 응답 본문까지)이고, 넘기면 위의
+  fail-open 이다. 앱의 등록 요청 대기에 맞춘 값이다. 서버는 응답을 다 만들 때까지 한 바이트도 보내지 않는데,
+  안드로이드는 OkHttp 읽기 대기 60초(호출 전체 상한은 없다), iOS 는 요청 대기 60초·요청 전체(업로드 포함)
+  120초다. provider 등록에는 서버 쪽 상한이 없고 2026-10-10 prod 의 등록 세 건은 요청 전체가 5.3~13.9초였다 —
+  전사 10초를 더한 최악도 60초 안이다. (그 녹음들의 응답 뒤 분석은 Vertex 를 부르지 않은 두 건이 동의 조회·
+  전사·기록까지 1.1·1.2초였다.)
+- **등록 한 번에 전사는 한 번이다.** 말소리가 있으면 그 전사를 말투 분석(§4-2)에 넘긴다 — 분석은 다시 전사하지
+  않는다(동의 재확인은 그대로 한다 — 다음 단계가 그 전사를 Vertex 로 보낸다).
+- **전사 원문은 저장하지도 로그에 남기지도 않는다.** 로그에는 길이(`transcript_chars` — 말소리로 센 글자 수, 위의
+  `speechCharCount`)만 싣는다(`voice.clone.speech_check` info 한 줄 — `speech`·`no_speech`).
+
+**앱 — 등록 창 안에서 음원 준비로 돌아간다**(안드로이드가 원본, iOS 가 같다)
+
+- 등록 창이 **그려져 있는 동안**(위 ③의 '그려져 있다') 이 거절을 받으면 창을 닫지 않고 **첫 단계(음원 준비 —
+  녹음/파일)** 로 돌아가, 녹음(또는 고른 파일)을 **버린다** — `등록` 이 같은 소리를 다시 보내지 못하게. 문장은
+  **그 단계**, 사용자가 보고 있는 자리에 띄운다.
+- 흐름을 끝내지 않고, `생성 가능 n/m회` 를 깎지도 다시 읽지도 않는다(서버가 아무것도 쓰지 않았다). 다시 녹음하는
+  데 제한이 없다.
+- 창이 그려져 있지 않을 때 온 거절은 다른 실패처럼 앱 스낵바(공용 표의 문장)로 간다(③).
+- 문장 — 두 앱의 공용 표(`network/ApiErrorMessages.kt` / `APIErrorMessages.swift`)에 같은 문장을 둔다:
+  - ko `녹음에서 말소리를 거의 찾지 못했어요. 조용한 곳에서 문장을 또렷하게 읽으며 다시 녹음해 주세요.`
+  - en `We couldn't find much speech in the recording. Please record again in a quiet place, reading the sentences clearly.`
+  - ja `録音から話し声がほとんど見つかりませんでした。静かな場所で、文をはっきり読みながらもう一度録音してください。`
+- **스토어의 1.2.10 은 이 코드를 모른다**(1.2.11 은 싣는다 — 버전은 `82a71e63` 에서 올렸지만 스토어 빌드는 이 변경이
+  develop 에 들어간 뒤 만든다). 두 앱이 다르게 끝난다(1.2.10 의 코드 `f03aac2d` 로 확인했다):
+  - **iOS** — 세부 정보 단계에 일반 실패 문장 `목소리를 처리하지 못했어요. 잠시 후 다시 시도해 주세요.` 를 띄우고
+    **녹음을 그대로 둔다.** `등록` 을 다시 누르면 같은 소리라 같은 400 이다 — 사용자가 스스로 다시 녹음해야 풀린다.
+    누를 때마다 서버는 전사를 한 번 하고 `VOICE_CLONE_NO_SPEECH` 경보 사건을 하나 남기므로, 출시 뒤의 경보 건수에는
+    옛 iOS 의 되풀이가 섞인다([error-codes.md](error-codes.md) §3).
+  - **안드로이드** — '만드는 중' 으로 넘어갈 때 녹음(고른 파일)을 먼저 놓는다(위 ③의 옛 결함 — `enterCreatingStep`).
+    그래서 세부 정보 단계로 돌아오면 `등록` 이 **꺼져 있고**(`canSubmitRecord`·`canSubmitSingleFile` 이 거짓), 문장
+    (`목소리를 만들지 못했어요` — `msg_voice_create_failed`)은 등록 창 **뒤의** 스낵바라 창이 열린 동안 안 보일 수 있다.
+    같은 소리를 다시 보낼 수는 없다 — 이유를 모른 채 음원 준비로 돌아가 다시 녹음해야 한다.
+  - 받아들인 차이다: 쓸 수 없는 목소리를 만들어 주는 것보다 낫다. 이 코드를 아는 앱이 퍼지면 사라진다.
+
+**왜**: 2026-10-10 prod(ALARMTALK-BACKEND-F) — 한 사용자가 세 번(03:58·04:03·04:32 UTC, 업로드 20~70초 남짓)
+등록했고 세 번 다 클론이 만들어졌다(201). 말투 분석만 셋 다 '실패' 였다. 03:58 은 Vertex 가 200·STOP 에 출력
+28토큰으로 답했고(확신 부족), 04:03·04:32 는 Vertex 호출 줄 자체가 없었다 — 전사가 20자 미만이었다는 뜻이다.
+말소리가 거의 없는 녹음으로 쓸 수 없는 목소리를 받은 사용자는 다시 등록했고, 그 끝에 월 한도에 걸렸다(위 ①의
+일곱 번의 429). 첫 건은 전사가 20자를 넘었다(그때는 소리 표시까지 셌다). 그 글자가 말소리였다면 이 확인으로는
+막히지 않고, 그 분석은 이제 실패가 아니라 표준 말투로 끝난다(§4-2). 소리 표시였는지는 알 수 없다 — 원문을 남기지
+않는다.
 
 ## 4-2. 클론 문구는 **목소리의 결**과 **사람이 쓴 대사**를 따른다
 
@@ -602,6 +684,18 @@
     같은 답을 낸다). 재시도 버튼(`POST /voice/:id/speech-style/retry`, 동기)도 같은 함수라 같은 규칙이다.
     - ⚠ 생성 상한을 토큰 발급 **앞에서** 미리 재 두지 말 것(2026-10-01 리뷰). 다시 묻는 회차의 토큰 발급이 8초 걸리면
       미리 잰 상한이 그 8초를 모른 채 남아 생성 요청이 마감을 넘기고, `waitUntil` 에 잘려 상태가 `pending` 에 갇힌다.
+  - ⚠ **`failed` 는 다시 하면 될 수 있는 것만이다 — 녹음의 답은 `done` 이다**(2026-10-11). 분석 결과는 셋이다:
+    | 결과 | 언제 | 기록 |
+    | --- | --- | --- |
+    | 말투 | 찾았다 | `speech_style` 에 저장·`done`(정식 목소리면 위의 '다시 굽기') |
+    | **표준 말투** | 녹음이 말투를 보여 주지 않았다 — 전사가 `MIN_SPEECH_TRANSCRIPT_CHARS`(20자, §4-1 「말소리가 없으면 등록하지 않는다」와 같은 상수·같은 셈 — 소리 표시는 세지 않는다, `speechCharCount`) 미만 · 확신이 기준(0.6) 미만 · 찾은 것이 하나도 없다(대본 어체를 버리고 나니 남은 것이 없는 경우 포함) | `speech_style` **NULL**·`done`. info 한 줄(`voice.speech_style.standard` — 이유와 전사 길이(말소리로 센 글자 수)만)·오류 보고 없음·**다시 굽지 않는다**(말투 없이 구운 클립이 이미 그 답이다) |
+    | 실패 | 알아내지 못했다 — 전사·모델의 전송 실패·시간 초과(위의 다시 묻기로도), 자격 증명·인증·설정, 거절된 요청(400 등), 깨지거나 잘린 답(전사 답에 글(`text`)이 없음·JSON 이 아님·필수 값인 확신이 없음·MAX_TOKENS), 동의 철회 경쟁 | `failed`(재시도 버튼)·오류 보고 |
+    - 예전에는 표준 말투도 실패와 같은 `null` 이라 `failed` 였다. 같은 녹음이라 다시 눌러도 같은 답인데 재시도 버튼이
+      뜨고 분석마다 Sentry 에 올라갔다 — 2026-10-10 prod 세 건(ALARMTALK-BACKEND-F, §4-1 「말소리가 없으면 등록하지
+      않는다」의 '왜')이 그랬다.
+    - 재시도(`POST /voice/:id/speech-style/retry`)도 같다 — 표준 말투면 `200 { success, status: 'done' }`, 실패만
+      `502 SPEECH_STYLE_ANALYSIS_FAILED`. 앱은 바뀌지 않았다 — 두 앱 모두 `failed` 일 때만 재시도 줄을 그린다.
+    - '다시 묻지 않는다'(위 항목)와 '실패' 는 다른 질문이다 — 깨진 답·잘린 답은 다시 묻지 않지만 실패로 남는다.
   - ⚠ **등록 첫 미리듣기도 분석을 기다린다**(최대 ≈10초). 등록 화면은 클론 직후 곧바로 미리듣기를 부르는데,
     안 기다리면 결 없이 만든 문구가 영속되고 사용자가 그걸 듣고 확정한다 — 알람 클립과 다른 결을 승인하는
     셈이다. 그래도 안 끝나면 **생성하지 않고** 고정 예문으로 들려주고 영속하지 않는다(다음 미리듣기가 분석 뒤에
@@ -633,8 +727,9 @@
       따로 세면 '안녕하세요' 를 네 번 말한 자유 발화가 절반을 넘었다.
     - 대본의 숫자 줄은 받아쓰기가 아라비아 숫자로(일본어는 한자 숫자로도) 적는다 — 그 꼴도 대본으로 센다(Codex #864). 그 꼴은
       대본의 숫자 줄 글을 바꿔 끼워 만들므로, 대본의 숫자 줄을 고치면 서버의 숫자 줄 상수도 고친다(테스트가 잡는다).
-  - 어체만 있던 분석도 실패가 아니다 — 빈 말투로 `done` 이다. 실패로 두면 재시도 버튼이 뜨는데, 같은 녹음이라 다시 눌러도
-    같은 답이다.
+  - 어체만 있던 분석도 실패가 아니다 — 어체를 버리고 나면 찾은 것이 없으니 **표준 말투**(`speech_style` NULL)로 `done` 이다
+    (위 '`failed` 는 다시 하면 될 수 있는 것만이다'). 실패로 두면 재시도 버튼이 뜨는데, 같은 녹음이라 다시 눌러도 같은 답이다.
+    (2026-10-11 전에는 빈 말투 객체를 저장했다 — 정식 목소리의 재시도라면 그 저장이 클립을 같은 소리로 다시 굽게 했다.)
   - 대본의 원본은 `packages/shared/src/voice-enrollment-script.json` 하나다. 두 앱은 같은 글을 손으로 두고 CI lint 가 글자·
     숫자로 대조한다 — **대본을 고치면 셋을 같이 고친다.** 앱만 고치면 서버가 새 대본을 못 알아봐 아무 경보 없이 예전으로
     돌아간다.
@@ -2262,7 +2357,8 @@ R2 파일·ElevenLabs 클론은 DB 트랜잭션 안에서 지울 수 없으므�
 | 클론 문구의 말투·내용 규칙(사투리 강도·아이는 이유 없이·운세는 가능성·일본어 가족 です・ます 거절(어체는 확정 문구가 먼저, 분석은 그다음 · 확정 문구와 생성 문구는 같은 끊기·같은 판정 · 호칭은 부름말 자리에서만 지운다 · 꼬리 걷고 서술어로)·어체는 끝 장식을 걷고 읽는다(일·한 — 문자 종류로, 끝을 늘인 작은 히라가나·얼굴 문자의 팔까지, 늘임은 띄어 쓸 때만 끊는다)·영어 직역 거절·한국어 어긋난 낱말 짝 거절·확정 문구의 끝 어미를 본뜨지 않음) | — (서버가 만든다) | — (서버가 만든다) | `prerenderClipPrompt`(`speechStyleInstruction`·`humanReferenceInstruction`·`styleReferenceInstruction`(피할 끝말 `lastPhrase`)·`careKeepsVoice`·`childlikeInstruction`·끝의 `TIME OF DAY`·`DIALECT` 줄) · 검사 `prerenderRejectionReason` → `hasMixedKoreanRegister`(마디 끝 낱말 `koreanEndingEntries` — 끝 장식 `KO_TRAILING_DECORATION`, 확정 문구·생성 문구 공용)·`hasJapanesePoliteEnding`(문장 끊기 `japaneseSentenceEnds`(부름말 자리의 호칭만 지우기 — 앞뒤 경계 `japaneseVocativePattern`(`JA_EDGE`)·붙여 쓴 끝 호칭 `withoutGluedPoliteVocative`, 문장 끝 표시 `JA_SENTENCE_BREAK`(지운 웃음·괄호 덧말 자리 `JA_DECORATION_BREAK`), 끝 장식 `JA_SENTENCE_TRAILER`(가장자리 `JA_EDGE`·늘임 작은 글자 `JA_TRAILING_SMALL_KANA`), 낱말 안 늘임 `JA_INNER_ELONGATION` — 확정 문구·생성 문구·평가 도구 `scripts/eval-gemini-prompts.ts` 의 `jaPoliteEndings` 공용), 글자 웃음 `spokenForRegister`·괄호 덧말과 얼굴 문자의 팔 `withoutParentheticalAsides`(`PARENTHETICAL_ASIDE`, 일·한 공용), 문장 판정 `isJapanesePoliteSentence`(꼬리 `JA_PREDICATE_TAIL` 를 걷은 서술어 끝 `japanesePredicateEnd`, 정중형 아님 `JA_NOT_POLITE_PREDICATE`), 확정 문구의 어체 `japaneseReferenceRegister`(반말 판정 `isJapaneseCasualSentence` — 정중체에 가까운 끝 `JA_POLITE_LIKE_PREDICATE` 는 반말 아님), 허용 목록 `isConfirmedCloseRelationshipLabel`)·`hasAssumedMorning`·`hasEnglishLiteralCalque`·`hasKoreanCollocationError`(`lib/vertex-translate.ts`) · 운세 시드 `CLONE_CLIP_SEEDS`(`lib/stock-clips.ts`). 회귀 `vertex-translate.test.ts`「사전렌더 — 3.8 튜닝」·「사전렌더 — 마지막 튜닝 회차」·「hasJapanesePoliteEnding — 엄격한 허용 목록」(끝 장식은 '문장 끝에 붙인 마침표 변형·기호·이모지·글자 웃음은 걷고 읽는다…'·'낱말 안의 늘임은 지우고 읽는다…'·'늘임 작은 글자·얼굴 문자의 팔은 걷고…')·'확정 문구 끝의 이모지·기호·글자 웃음은 걷고 어체를 읽는다…'(한국어)·`prerender-clip-failure-reason.test.ts`(재시도 힌트) |
 | 확정 미리듣기 문구가 사투리 지시를 이긴다 | — (서버가 만든다) | — (서버가 만든다) | `prerenderClipPrompt` 의 `styleReference` 갈래(`dialectFollowsReference` → `speechStyleInstruction`·`humanReferenceInstruction`·끝의 `DIALECT` 줄) ← `stock-clips.ts` 가 `preview_text` 를 넘긴다. 회귀 `vertex-translate.test.ts`「확정 문구(STYLE REFERENCE)가 있으면 사투리 지시가 그것을 따른다」· 평가 `scripts/eval-gemini-prompts.ts`(프로필마다 `styleReference`, `*-stdref` 프로필) |
 | 제시 대본을 읽은 녹음은 어체를 버린다(사투리·말버릇·페르소나·아이·결은 그대로) | 대본 글만 둔다 — `voices2_record_script`(`res/values{,-en,-ja}/strings.xml`) | 대본 글만 둔다 — `Views/Voices/VoiceCloneUploadFlow.swift` `recordingScript` | `analyzeSpeechStyleWithVertex`(판정 `isEnrollmentScriptReading` — 포함률 `ENROLLMENT_SCRIPT_READ_THRESHOLD`·대본 분량 `ENROLLMENT_SCRIPT_MIN_MATCHED_UNITS`·숫자 줄의 다른 꼴 `ENROLLMENT_SCRIPT_NUMBER_LINES`, `lib/enrollment-script.ts` — 모델이 본 앞부분 `SPEECH_STYLE_TRANSCRIPT_LIMIT`) ← 원본 `VOICE_ENROLLMENT_SCRIPTS`(`packages/shared/src/voice-enrollment-script.json`) · 세 벌 대조 `scripts/check-voice-enrollment-script.py`(CI lint). 회귀 `enrollment-script.test.ts`·`vertex-translate.test.ts`「제시 대본을 읽은 녹음은 어체를 버린다」 |
-| 말투 분석 재시도(전송 실패만·`waitUntil` 마감 안) | — | — | `analyzeSpeechStyleWithVertex`(`SPEECH_STYLE_RETRY_DELAYS_MS`·`SPEECH_STYLE_ANALYSIS_BUDGET_MS`, 판정 `isVertexTransportFailure` ← `markTransportFailure`·`VertexHttpError`, 요청마다 직전에 재는 상한 `GenerateContentConfig.deadlineAt` → `deadlineBoundedTimeoutMs`(토큰 `createAccessToken`·생성 `generateContentAtEndpoint`), `lib/vertex-translate.ts`) · 마감은 `runSpeechStyleAnalysis`(`routes/voice-profile.ts`)가 전사 전부터 세고 `ElevenLabsClient.speechToText(deadlineAt)`도 따른다. 회귀 `elevenlabs.test.ts`(마감 전 요청·본문 읽기 중단, 만료 뒤 요청 금지). 회귀 `vertex-translate.test.ts`「전송 실패만 마감 안에서 다시 묻는다」(「어느 회차도 마감을 넘기지 않는다(가짜 시계)」 — 토큰 발급 8초)·`voice-profile-speech-style.test.ts`(마감 전달) |
+| 말투 분석 재시도(전송 실패만·`waitUntil` 마감 안) | — | — | `analyzeSpeechStyleWithVertex`(`SPEECH_STYLE_RETRY_DELAYS_MS`·`SPEECH_STYLE_ANALYSIS_BUDGET_MS`, 판정 `isVertexTransportFailure` ← `markTransportFailure`·`VertexHttpError`, 요청마다 직전에 재는 상한 `GenerateContentConfig.deadlineAt` → `deadlineBoundedTimeoutMs`(토큰 `createAccessToken`·생성 `generateContentAtEndpoint`), `lib/vertex-translate.ts`) · 마감은 `runSpeechStyleAnalysis`(`routes/voice-profile.ts`)가 시작할 때부터 센다 — 등록이 넘긴 전사가 없을 때(재시도·등록의 전사 실패) 그 안의 전사도 `ElevenLabsClient.speechToText(deadlineAt)` 로 따른다. 회귀 `elevenlabs.test.ts`(마감 전 요청·본문 읽기 중단, 만료 뒤 요청 금지). 회귀 `vertex-translate.test.ts`「전송 실패만 마감 안에서 다시 묻는다」(「어느 회차도 마감을 넘기지 않는다(가짜 시계)」 — 토큰 발급 8초)·`voice-profile-speech-style.test.ts`(마감 전달) |
+| 말투 분석 결과는 셋 — 말투 / **표준 말투**(말소리로 센 전사 20자 미만·확신 0.6 미만·찾은 것 없음 → `speech_style` NULL·`done`·info 한 줄·오류 보고 없음·다시 굽지 않음) / 실패(다시 하면 될 수 있는 것만 — 전송·시간 초과·설정·인증·거절·깨진 답·동의 철회 경쟁 → `failed`·보고) · 재시도도 같다(표준 말투면 200 done) (§4-2) | 바뀌지 않았다 — `VoiceProfileManagementPanel` 의 `speechStyleFailed`(`speechStyleStatus == "failed"` 일 때만 재시도 줄) → `MainViewModel.retryVoiceSpeechStyleAnalysis`(답의 `status` 로 행을 고친다) | 바뀌지 않았다 — `VoiceProfileManagementPanel` 이 `speechStyleStatus == "failed"` 일 때만 `VoiceSpeechStyleFailedRow` | `analyzeSpeechStyleWithVertex` → `SpeechStyleAnalysis`(`style`·`standard`·`failed`, 이유 `SpeechStyleStandardReason`·`SpeechStyleFailureReason` ← `speechStyleFailureReason`, 짧은 전사 `MIN_SPEECH_TRANSCRIPT_CHARS`·셈 `speechCharCount`(등록의 말소리 확인과 같다) — `lib/vertex-translate.ts`) ← `runSpeechStyleAnalysis`(`standard` 는 `speech_style = NULL`·`done` + `at:"voice.speech_style.standard"`, 사전렌더 큐를 건드리지 않는다) ← 등록 `waitUntil`·`POST /:id/speech-style/retry`. 회귀 `vertex-translate.test.ts`「녹음이 말투를 보여 주지 않은 것은 실패가 아니다」(소리 표시뿐인 전사는 묻지 않고 표준 · 표시는 모델에 그대로 · `speechCharCount`)·「전송 실패만 마감 안에서 다시 묻는다」의 내용 실패 갈래(400·형식 오류·잘린 답은 실패, 낮은 확신은 표준)·「제시 대본을 읽은 녹음은 어체를 버린다」(어체만 있던 분석 = 표준) · `voice-profile-speech-style.test.ts`(등록·재시도의 표준/실패 — NULL·큐 쓰기 없음·Sentry) · `voice-clone-speech-gate.test.ts`(진짜 SQLite — 등록·재시도, 재시도의 표준은 큐 그대로·말투는 다시 굽기) |
 | 톤 조절 막대·자동 추천(§4-3) — 높이 하나, −10…+6·0.5, 반올림 뒤 데드밴드 1.5, 클립마다 다시 잼 · 카드는 제목 줄·막대·`원본 듣기`/`현재 톤 듣기` 뿐(설명·추천값·0으로 없음) | `ui/voices/VoiceTuningCard.kt`(`TuningListenButton`) ← `VoiceProfileManagementPanel`(`startSourcePitchAnalysis` — 업로드 전 등록 녹음 · `ensureTuningSuggestion`(`tuningSuggestionClipUri`)) · `data/VoiceTuning.kt`(`PITCH_RANGE`) · `VoiceTuningAnalysis.suggest`(`suggestedPitchSemitones`); 회귀 `VoiceTuningAnalysisTest`(범위가 서버 `VOICE_PITCH_*` 와 같은가 포함) | `Views/Voices/VoicePreviewConfirmView.swift`(`tuningCard`·`prepareTuning` 이 클립마다 잼) · `VoiceStudioViewModel.pendingDraftSourceMeasurement`(업로드하는 동안 잰 등록 녹음 — 숫자만) · `VoiceTuning.swift` · `VoiceTuningAnalyzer.suggest`; 회귀 `VoiceTuningAnalyzerTests` | `VoicePitchSemitonesSchema`(`VOICE_PITCH_MIN/MAX/STEP_SEMITONES`, `packages/shared/src/schemas/voice.ts`) |
 | 몸집 유지 높이 변환(TD-PSOLA)·원래 크기로 되맞춤·분석은 정확히 16 kHz — 세 구현 같은 숫자·같은 반올림 자리 | `data/VoicePitchShifter.kt`(`shift`·`pitchTrack`·`resample`·`matchLoudness`); 회귀 `VoicePitchShifterTest` | `VoicePitchShifter.swift`(`render`·`analysisRate`·`resample`); 회귀 `VoicePitchShifterTests` | `shiftVoicePitch`(`packages/voice/src/pitch-shift.ts`); 회귀 `packages/voice/test/pitch-shift.test.ts`(두 앱과 같은 기대값) |
 | 등록 미리듣기는 메모리에서 구워 **한 번** 튼다(파일 없음) · `원본 듣기`/`현재 톤 듣기` 번갈아(트는 버튼 다시 누르면 멈춤, 다른 버튼은 바꿔 틂) · 손 떼면 다시 굽기 · 첫 미리듣기는 끊지 않고 끝난 뒤 새 높이 · 실패하면 원래 소리(들은 높이 0) · 지금 값을 끝까지 들어야 저장 | `data/VoiceTuningRenderer.render`(WAV 바이트)·`InMemoryAudioDataSource` ← `VoiceProfileManagementPanel`(`onTuningListen`·`bakeTunedPreview`·`startPreviewWithFallback`·`playLocalTunedPreview`·`replayTunedPreviewIfReady`·들은 높이 `heardTunings`) · 판정 `ui/voices/VoicePreviewConfirmRules.kt`(`tuningListenAction`·`tuningReleaseAction`·`tuningHeardToEnd`·잠금 `confirmStepLocks`); 회귀 `VoicePreviewConfirmRulesTest`·`VoiceTuningRendererTest` | `VoiceTuningRenderer.previewWAV`·`VoiceTuningPreviewPlayer.play`(`VoiceTuningAudio.swift`) ← `VoicePreviewConfirmView`(`startPreview`·`playbackEnded`·`replayAfterPlayback`) · 판정 `VoiceTonePreview`(`press`·`applied`·`sliderReleased`·`canSave`)·잠금 `VoicePreviewConfirmView.locks` · `VoiceStudioViewModel.fetchDraftPreview`·`confirmDraftPreviewListened`·`tuningPreviewPlayer`; 회귀 `VoiceTonePreviewTests`·`VoicePitchShifterTests.test_previewWAV_bakesInMemoryAndKeepsLength` | — (초안 미리듣기는 원래 소리 — 초안 행에 높이가 없다) |
@@ -2307,9 +2403,10 @@ R2 파일·ElevenLabs 클론은 DB 트랜잭션 안에서 지울 수 없으므�
 | 확정 단계 공유 | `VoiceProfileManagementPanel` Preview | `VoicePreviewConfirmView` | 일반 승격은 `scheduleVoiceShareChangedPush`, 제자리 교체는 `notifySharedVoicePrerenderComplete`(공유 해제만 즉시) |
 | 제자리 교체 원자성·원본 승계 | — | — | `replaceVoiceInPlace` + `voice_uploads` + `voice_prerender_queue` |
 | 교체도 같은 등록 게이트 | — | — | `replaceVoiceInPlace`(플랜·동의·`voice_profile_change_ledger`) |
-| 월 등록을 다 썼으면 초안을 만들지 않는다(§4-1 「월 등록 한도」 ① — 자격 확인 · provider 등록 전 · 아무것도 쓰지 않음 · 확정과 같은 429 몸통) | 등록 실패 갈래가 그 코드를 받는다(아래 ③ 행) | 같음 | `routes/voice-profile.ts` 의 `POST /clone` 예약 트랜잭션 **맨 앞**에서 `readMonthlyRegistrationUsage` → 남은 횟수 0이면 `monthlyVoiceChangeLimitResponse`(`discardAbandonedDrafts`·`hasCloneSlotCapacity`·`reserveMonthlyDraftAttempt`·`voice_profiles` INSERT 보다 먼저) · 회귀 `test/voice-profile.test.ts`(순서 큐 목 — 이번 달 등록을 썼으면 429·provider 호출 0·`voice_profiles`/`voice_draft_attempt_usage` 쓰기 0·옛 초안 그대로·트랜잭션 맨 앞, 집계 조건은 확정의 예약과 같다)·`test/voice-clone-monthly-gate.test.ts`(진짜 SQLite — 이번 달 `succeeded`·`reserved` 줄이면 429·한 줄도 쓰지 않음 / `failed` 줄뿐·지난달 줄·다른 계정의 줄이면 201) |
-| `생성 가능 n/m회` 다시 읽기(② — 확정 직후 · 목소리 탭 진입 · 월 한도 거절 직후 · 앱에서만 깎지 않는다 · 가장 나중에 낸 요청의, 요청한 계정의 답만 적는다) | `ui/main/MainViewModelVoiceActions.kt` 의 `applyVoiceDraftQuota`(서버 답을 싣는 곳은 여기 하나 — `MainViewModel.voiceDraftQuotaRequestSeq` 로 가장 나중에 낸 요청의 답만, `responseStillBelongsToRequester` 로 요청한 계정의 답만) ← `loadVoiceDraftQuota`(← `promoteVoiceDraft` 성공 갈래 · `createVoiceProfiles` 성공 갈래 · `preloadVoiceProfiles` 의 신선 갈래(탭 진입 — `AlarmTalkApp` 의 `tabRefreshThrottleMs` 60초) · `createVoiceProfiles`·`promoteVoiceDraft` 의 월 한도 갈래)·`fetchVoiceProfiles`(목록과 함께 읽는 한도) — 번호는 둘 다 요청을 내기 직전에 뽑는다(`nextVoiceDraftQuotaRequest`) → `MainViewModel.voiceDraftQuota` → 패널의 `monthlyExhausted`(`추가`)·`AlarmTalkApp` 의 `voiceDraftQuotaExhausted`(삭제 경고) · 회귀 `VoiceRegistrationQuotaWiringTest`(`anOlderAnswerNeverOverwritesANewerOne`·`aLateAnswerIsDroppedUnlessItBelongsToTheRequester`) | `VoiceStudioViewModel.refresh(session:force:)` 가 `draftQuota` 를 다시 읽는다(계정만 대조한다 — 요청 순서는 아직 보지 않는다, §4-1 ②의 ⚠) ← `VoicePreviewConfirmView.promote` 성공(기존) · `refreshOnEntry`(탭 진입, 60초 — 기존) · `handleMonthlyLimitRejection(session:)`(신규 — `cloneAudioForProfile` 의 catch·`VoicePreviewConfirmView.promote` 의 catch) → `VoiceProfileManagementPanel` 의 `monthlyExhausted`(`추가`·삭제 경고) · 회귀 `AlarmTalkTests/VoiceStudioViewModelTests` | `GET /voice/draft-quota`(`registration_limit`·`registration_remaining` ← `readMonthlyRegistrationUsage`) |
-| 등록 창이 그려져 있을 때의 거절은 창 안에서, 아니면 스낵바 · 월 한도 거절은 흐름을 끝낸다(알럿 하나·초안을 조용히 삭제·창 닫기) · 다시 시도할 수 있는 등록 실패는 녹음을 지킨다(③) | `MainViewModel.voiceRegistrationFailure`(`VoiceRegistrationFailure` — 코드와 문구. `createVoiceProfiles`·`promoteVoiceDraft`·`deleteVoiceDraft` 의 실패 갈래가 `registrationFailureSurface(errorCode, windowOpen)` 로 가른다 — `ui/voices/VoicePreviewConfirmRules.kt` 의 `RegistrationFailureSurface.EndFlow`/`InWindow`/`AppSnackbar`. `windowOpen` 은 창이 **그려져 있는가**다 — 패널의 `registrationWindowShown`(`shouldDrawRegistrationWindow`) 하나가 `Dialog` 를 그리는 조건·`voiceRegistrationWindowChanged` 로 알리는 열림·패널의 거절 효과를 함께 정한다) → `VoiceProfileManagementPanel`: `InWindow` = `localMessage`, `EndFlow` = `monthlyLimitNoticeOpen`(`IosAlertDialog` — `voices_monthly_limit_title`·`voices_monthly_limit_message`, ko·en·ja) + `onDiscardVoiceDraftQuietly`(`deleteVoiceDraft(…, surfaceFailure = false)` — 실패는 기록만) + `closeCreateDialog`, `AppSnackbar` = `MainViewModel.message`(나가기 경고의 삭제 · 그려지지 않은 창 — 만드는 중에 이용권이 끝난 뒤의 등록 실패. 되돌리기 효과(만드는 중 → 세부 정보)가 거절 효과보다 **앞에** 있어야 그 단계로 가른다). 이용권이 끝나면 창을 닫는 효과는 `(canCreateVoice, currentStep)` 이 키다 — 만드는 중에서 세부 정보로 돌아온 뒤에도 닫는다. 녹음은 `enterCreatingStep` 이 놓지 않는다 — 초안이 온 뒤와 `closeCreateDialog` 에서 놓는다. 저장이 실패하면 `promotedForPrerenderId` 를 내린다(안 내리면 뒤의 `다시 만들기` 가 '저장 중…' 으로 그려진다) · 회귀 `VoicePreviewConfirmRulesTest`(판정표·그리는 조건)·`VoiceRegistrationFailureWiringTest`(`theMonthlyLimitDiscardOfTheDraftIsQuiet`·`aWindowThatIsNotDrawnIsNotTreatedAsOpen` 포함) | `VoiceStudioViewModel.isMonthlyLimitRejection(_:)`(`VoiceStudioViewModel+ErrorMapping.swift`)·`monthlyLimitRejected`(게시 값 — `handleMonthlyLimitRejection(session:)` 이 세운다) ← `VoiceCloneUploadFlow.submit`(거절이면 `route = .management`, 그 밖의 실패는 `.details` 로 — 녹음은 그대로)·`VoicePreviewConfirmView.promote` 의 catch(초안 삭제 뒤 닫는다) → `VoiceProfileManagementPanel` 의 `monthlyLimitNoticeOpen` 알럿(있던 문구 — 여는 자리는 `VoicesPanelView` 의 `fullScreenCover(onDismiss:)`: 등록 창이 다 내려간 뒤) · 그 밖의 실패는 기존 인라인(`voice.statusMessage`·`errorMessage`) · 회귀 `AlarmTalkTests/VoiceStudioViewModelTests` | `VOICE_MONTHLY_CHANGE_LIMIT_REACHED`(위 ① 행·확정 게이트 — 몸통 `VOICE_MONTHLY_LIMIT`) |
+| 월 등록을 다 썼으면 초안을 만들지 않는다(§4-1 「월 등록 한도」 ① — 자격 확인 · provider 등록 전 · 아무것도 쓰지 않음 · 확정과 같은 429 몸통 · 다 쓴 달은 전사도 하지 않는다) | 등록 실패 갈래가 그 코드를 받는다(아래 ③ 행) | 같음 | `routes/voice-profile.ts` 의 `POST /clone` — 업로드를 읽은 뒤 **읽기 전용 선검사** `readMonthlyRegistrationUsage(db, …)`(말소리 확인의 전사보다 앞 — 비용을 아낄 뿐이다) · **권위 있는 확인**은 예약 트랜잭션 **맨 앞**의 `readMonthlyRegistrationUsage(tx, …)` → 남은 횟수 0이면 `monthlyVoiceChangeLimitResponse`(`discardAbandonedDrafts`·`hasCloneSlotCapacity`·`reserveMonthlyDraftAttempt`·`voice_profiles` INSERT 보다 먼저) · 회귀 `test/voice-profile.test.ts`(순서 큐 목 — 이번 달 등록을 썼으면 429·provider 호출 0·`voice_profiles`/`voice_draft_attempt_usage` 쓰기 0·옛 초안 그대로·트랜잭션 맨 앞, 집계 조건은 확정의 예약과 같다)·`test/voice-clone-monthly-gate.test.ts`(진짜 SQLite — 이번 달 `succeeded`·`reserved` 줄이면 429·한 줄도 쓰지 않음 / `failed` 줄뿐·지난달 줄·다른 계정의 줄이면 201 / 다 쓴 달은 전사 0회 / 선검사 뒤 전사하는 사이 다른 기기가 등록하면 트랜잭션 맨 앞이 429·한 줄도 쓰지 않음) · `test/voice-profile.test.ts` 의 같은 두 갈래(순서 큐 목) |
+| 말소리가 없으면 등록하지 않는다(§4-1 — 말소리로 센 전사(소리 표시는 세지 않는다)가 20자 미만이면 400 `VOICE_CLONE_NO_SPEECH` · 읽기 전용 월 선검사 뒤, 예약 트랜잭션·provider 등록 전 · 아무것도 쓰지 않음(다시 녹음 횟수 제한 없음) · 전사 실패(글이 없는 답 포함)는 통과·warn 은 오류 이름만 · 전사 10초 · 전사는 말투 분석에 넘김 · 원문은 로그에 없음 · 앱은 창 안에서 음원 준비로 돌아가 녹음을 버리고 그 단계에 문장, 창이 없으면 스낵바) | `ui/voices/VoicePreviewConfirmRules.kt` 의 `VOICE_CLONE_NO_SPEECH_ERROR_CODE` → `registrationFailureSurface` 의 `RegistrationFailureSurface.ReRecord`(창이 그려져 있을 때만 — 아니면 `AppSnackbar`)·`cloneRejectionSpendsRecording`(녹음 파일을 지운다 — `MainViewModel.createVoiceProfiles` 가 busy 를 내린 뒤) → `VoiceProfileManagementPanel` 의 `ReRecord` 갈래(`dropRejectedRecording` · `VoiceRegistrationStep.Source` · 녹음 카드 아래 `RerecordReasonLine`(`rerecordReason`)) · 문장 `network/ApiErrorMessages.kt` → `msg_voice_clone_no_speech`(`res/values{,-en,-ja}/strings.xml`) · 회귀 `VoicePreviewConfirmRulesTest`·`VoiceRegistrationFailureWiringTest`(`aRecordingWithoutSpeechGoesBackToTheFirstStepAndDropsTheRecording`·`aRejectionThatSpendsTheRecordingDropsItAfterBusyIsLowered`·`theNoSpeechSentenceIsOneTableEntryInThreeLanguages`·`theNoSpeechSentenceSaysTheSameThingAsTheIosCatalog`) | `VoiceStudioViewModel+ErrorMapping.swift` 의 `isNoSpeechRejection(_:)` → `VoiceStudioViewModel.noSpeechRejected`(`uploadRecordingForClone`·`cloneAudioForProfile` 가 보낼 때마다 먼저 내린다) → `VoiceCloneUploadFlow.submitOutcome(created:monthlyLimitRejected:noSpeechRejected:)` 의 `.rerecordForNoSpeech`(월 한도가 앞선다) → 순수 셈 `rerecordPlan(sentMode:selectedFileURL:uploadedURL:)`(보낸 갈래만 버린다 — 녹음이면 녹음기를 비우고, 고른 파일이면 가져온 사본과 올린 잘라 낸 사본을 지우고 선택을 놓는다 · 돌아갈 단계 `.source`)을 `discardSentSource(_:)`·`registrationStep = plan.step` 이 그대로 따른다 · 문장은 뷰모델의 안내 줄(`statusMessage`)에서 창의 `@State` `rerecordReason` 으로 옮겨 녹음 카드·파일 고르기 바로 아래 `rerecordReasonLine`(`theme.typography.bodySmall`·`theme.palette.error` — 안드로이드 `RerecordReasonLine` 과 같다)에 그린다 · 녹음이 실제로 시작되면·파일을 새로 가져오면·방식을 바꾸면 걷고 창과 함께 사라진다 · 새 창은 남은 안내를 비우고 연다(`VoiceStudioViewModel.beginVoiceCreation`) · 문장 `APIErrorMessages.swift`(`Localizable.xcstrings` en·ja) · 회귀 `AlarmTalkTests/VoiceStudioViewModelTests`(제출 뒤 갈 곳의 순서 · `isNoSpeechRejection` · 월 한도를 건드리지 않는다 · 다음 등록으로 넘어가지 않는다 · `rerecordPlan` · 이유 줄의 자리·색·걷기(소스 배선) · 새 창은 남은 안내를 비운다)·`AlarmTalkTests/VoiceLocalizationTests`(`noSpeechRejectionCopy`) | `routes/voice-profile.ts` 의 `POST /clone`: `readMonthlyRegistrationUsage(db, …)`(읽기 전용 선검사) → `checkCloneSpeech`(`CLONE_SPEECH_CHECK_TIMEOUT_MS` · 셈 `speechCharCount`(소리 표시를 뺀다)·`MIN_SPEECH_TRANSCRIPT_CHARS` ← `lib/vertex-translate.ts` · 전사 `ElevenLabsClient.speechToText`(글(`text`)이 없는 답은 던진다 — 빈 글로 바꾸지 않는다, `lib/elevenlabs.ts`) · `at:"voice.clone.speech_check"` — 길이·오류 이름만) → `jsonError(c, 400, 'VOICE_CLONE_NO_SPEECH', …)` · 말소리가 있으면 `runSpeechStyleAnalysis` 에 `transcript` · 경보 `ALERTING_ERROR_CODES`([error-codes.md](error-codes.md) §3) · 회귀 `test/voice-clone-speech-gate.test.ts`(진짜 SQLite — 빈·공백·19자·소리 표시뿐·표시 사이의 한두 마디는 400·쓰기 0·provider 0·R2 0 / 20자는 201 / 표시가 섞인 말소리는 201·분석에는 표시까지 그대로 / 다섯 번 거절해도 남은 등록·초안 집계 그대로 / 전사 실패 네 갈래는 201·warn 은 이름만·분석이 다시 전사 / 글이 없는 전사 답(진짜 클라이언트)은 201·warn·분석은 `failed` / 등록 한 번에 전사 한 번·원문 로그 없음 / 10초 상한)·`test/elevenlabs.test.ts`(글이 없는 답은 던진다·빈 글은 그대로·소리 표시를 끄지 않는다)·`test/voice-clone-monthly-gate.test.ts`·`test/voice-profile.test.ts`(다 쓴 달은 전사 0회 · 전사하는 사이 다른 기기의 등록은 트랜잭션 맨 앞이 막는다) |
+| `생성 가능 n/m회` 다시 읽기(② — 확정 직후 · 목소리 탭 진입 · 월 한도 거절 직후 · 앱에서만 깎지 않는다 · 가장 나중에 낸 요청의, 요청한 계정의 답만 적는다) | `ui/main/MainViewModelVoiceActions.kt` 의 `applyVoiceDraftQuota`(서버 답을 싣는 곳은 여기 하나 — `MainViewModel.voiceDraftQuotaRequestSeq` 로 가장 나중에 낸 요청의 답만, `responseStillBelongsToRequester` 로 요청한 계정의 답만) ← `loadVoiceDraftQuota`(← `promoteVoiceDraft` 성공 갈래 · `createVoiceProfiles` 성공 갈래 · `preloadVoiceProfiles` 의 신선 갈래(탭 진입 — `AlarmTalkApp` 의 `tabRefreshThrottleMs` 60초) · `createVoiceProfiles`·`promoteVoiceDraft` 의 월 한도 갈래)·`fetchVoiceProfiles`(목록과 함께 읽는 한도) — 번호는 둘 다 요청을 내기 직전에 뽑는다(`nextVoiceDraftQuotaRequest`) → `MainViewModel.voiceDraftQuota` → 패널의 `monthlyExhausted`(`추가`)·`AlarmTalkApp` 의 `voiceDraftQuotaExhausted`(삭제 경고) · 회귀 `VoiceRegistrationQuotaWiringTest`(`anOlderAnswerNeverOverwritesANewerOne`·`aLateAnswerIsDroppedUnlessItBelongsToTheRequester`) | `VoiceStudioViewModel.refresh(session:force:)` 가 `draftQuota` 를 다시 읽는다 — 서버 답을 싣는 곳은 `applyDraftQuota(_:requestSeq:userID:)` 하나(`draftQuotaRequestSeq` 로 가장 나중에 낸 요청의 답만, 요청한 계정의 답만 — 번호는 요청을 내기 직전에 뽑고, 계정 상태를 비워도 되감지 않는다. 안드로이드 `voiceDraftQuotaRequestSeq` 와 같은 규칙, 2026-10-11 셋째 회차) ← `VoicePreviewConfirmView.promote` 성공(기존) · `refreshOnEntry`(탭 진입, 60초 — 기존) · `handleMonthlyLimitRejection(session:)`(`cloneAudioForProfile` 의 catch·`VoicePreviewConfirmView.promote` 의 catch) → `VoiceProfileManagementPanel` 의 `monthlyExhausted`(`추가`·삭제 경고) · 회귀 `AlarmTalkTests/VoiceStudioViewModelTests`(`test_겹친_새로고침에서_늦게_온_옛_한도_답은_새_답을_덮지_않는다`·`test_한도_요청_번호는_계정_상태를_비워도_되감지_않는다`) | `GET /voice/draft-quota`(`registration_limit`·`registration_remaining` ← `readMonthlyRegistrationUsage`) |
+| 등록 창이 그려져 있을 때의 거절은 창 안에서, 아니면 스낵바 · 월 한도 거절은 흐름을 끝낸다(알럿 하나·초안을 조용히 삭제·창 닫기) · 말소리 없음은 창 안에서 음원 준비로(녹음을 버린다 — 위 '말소리가 없으면' 행) · 다시 시도할 수 있는 등록 실패는 녹음을 지킨다(③) | `MainViewModel.voiceRegistrationFailure`(`VoiceRegistrationFailure` — 코드와 문구. `createVoiceProfiles`·`promoteVoiceDraft`·`deleteVoiceDraft` 의 실패 갈래가 `registrationFailureSurface(errorCode, windowOpen)` 로 가른다 — `ui/voices/VoicePreviewConfirmRules.kt` 의 `RegistrationFailureSurface.EndFlow`/`ReRecord`(말소리 없음 — 위 행)/`InWindow`/`AppSnackbar`. `windowOpen` 은 창이 **그려져 있는가**다 — 패널의 `registrationWindowShown`(`shouldDrawRegistrationWindow`) 하나가 `Dialog` 를 그리는 조건·`voiceRegistrationWindowChanged` 로 알리는 열림·패널의 거절 효과를 함께 정한다) → `VoiceProfileManagementPanel`: `InWindow` = `localMessage`, `EndFlow` = `monthlyLimitNoticeOpen`(`IosAlertDialog` — `voices_monthly_limit_title`·`voices_monthly_limit_message`, ko·en·ja) + `onDiscardVoiceDraftQuietly`(`deleteVoiceDraft(…, surfaceFailure = false)` — 실패는 기록만) + `closeCreateDialog`, `AppSnackbar` = `MainViewModel.message`(나가기 경고의 삭제 · 그려지지 않은 창 — 만드는 중에 이용권이 끝난 뒤의 등록 실패. 되돌리기 효과(만드는 중 → 세부 정보)가 거절 효과보다 **앞에** 있어야 그 단계로 가른다). 열기로 했는데 그려지지 않는 창을 닫는 효과는 `LaunchedEffect(registrationWindowShown, showCreateForm)` 하나다 — 닫는 조건(`showCreateForm && !registrationWindowShown`)이 `shouldDrawRegistrationWindow` 의 여집합이라 만드는 중·확정·준비 단계는 이용권이 흔들려도 닫지 않고, 만드는 중에 이용권이 끝난 뒤 세부 정보로 돌아오면 닫는다(단계 목록을 따로 적지 않는다 — 적으면 그리는 조건과 갈라진다). 녹음은 `enterCreatingStep` 이 놓지 않는다 — 초안이 온 뒤와 `closeCreateDialog` 에서 놓는다. 저장이 실패하면 `promotedForPrerenderId` 를 내린다(안 내리면 뒤의 `다시 만들기` 가 '저장 중…' 으로 그려진다) · 회귀 `VoicePreviewConfirmRulesTest`(판정표·그리는 조건)·`VoiceRegistrationFailureWiringTest`(`theMonthlyLimitDiscardOfTheDraftIsQuiet`·`aWindowThatIsNotDrawnIsNotTreatedAsOpen`·`aWindowClosesExactlyWhenItIsNotDrawn` 포함) | `VoiceStudioViewModel.isMonthlyLimitRejection(_:)`(`VoiceStudioViewModel+ErrorMapping.swift`)·`monthlyLimitRejected`(게시 값 — `handleMonthlyLimitRejection(session:)` 이 세운다) ← `VoiceCloneUploadFlow.submit` 이 갈 곳을 순수 셈 `submitOutcome(created:monthlyLimitRejected:noSpeechRejected:)` 에 맡긴다(둘째 회차의 `submitOutcome(created:monthlyLimitRejected:)` 에 셋째 회차가 말소리 갈래를 더했다): `.closeForMonthlyLimit` = `route = .management`, `.rerecordForNoSpeech` = 녹음을 버리고 음원 준비로(위 '말소리가 없으면' 행), `.details` = 그 밖의 실패(녹음은 그대로) · `VoicePreviewConfirmView.promote` 의 catch(초안 삭제 뒤 닫는다) → `VoiceProfileManagementPanel` 의 `monthlyLimitNoticeOpen` 알럿(있던 문구 — 여는 자리는 `VoicesPanelView` 의 `fullScreenCover(onDismiss:)`: 등록 창이 다 내려간 뒤 `VoiceStudioViewModel.consumeMonthlyLimitNotice()` 가 꺼내고 내린다) · 그 밖의 실패는 기존 인라인(`voice.statusMessage`·`errorMessage`) · 회귀 `AlarmTalkTests/VoiceStudioViewModelTests`(`test_제출_뒤_갈_곳은_만든_초안_월_한도_거절_말소리_거절_그_밖의_실패_순서로_가른다` 포함) | `VOICE_MONTHLY_CHANGE_LIMIT_REACHED`(위 ① 행·확정 게이트 — 몸통 `VOICE_MONTHLY_LIMIT`) |
 | 목소리 높이 — 등록 확정에서만 받는다(새 등록부터 · 0/null/미전송 = 원래 소리 · 범위 밖 400 · 등록 뒤 409, 같은 값의 재시도는 200 · 응답에 적은 값) | 끝까지 들은 높이를 싣는다 — `MainViewModel.promoteVoiceDraft`(`pitchSemitones`, 0 이면 키 없음) → `VoiceProfileUpdateRequest.pitchSemitones` ← `VoiceProfileManagementPanel`(`heardTunings`) · 바디 `voiceDraftPromotionRequest`(교체는 기존 목소리가 있으면 언제나 — `registrationReplaceTarget`); 문구 `network/ApiErrorMessages.kt`; 회귀 `VoiceProfileUpdateRequestTest` | 끝까지 들은 높이를 싣는다 — `AlarmTalkAPI.promoteVoiceDraft(pitchSemitones:)`·`voiceDraftPromoteBody`(0 이면 키 없음) ← `VoicePreviewConfirmView.promote`(`VoiceTonePreview.canSave` · 교체 `replacementTarget`); 회귀 `VoiceStudioViewModelTests.test_promotionReplacesWheneverAnOfficialVoiceExists`; 문구 `APIErrorMessages.swift`; 회귀 `VoiceStudioViewModelTests.test_voiceDraftPromotionBody_carriesPitchOnlyWhenNotZero` | `PATCH /voice/:id`(`pitch_semitones`·`pitchSemitones` → `VoicePitchSemitonesSchema`, `INVALID_VOICE_PITCH`·`VOICE_PITCH_LOCKED`·재시도 판정 `pitchRetryOfRegistration`, `routes/voice-profile.ts`) → `voice_profiles.pitch_semitones`·`pitch_model_id`(#128). 회귀 `voice-pitch-promote.test.ts`·배포 창 `voice-pitch-deploy-window.test.ts` |
 | 목소리 높이 — 교체 등록은 새로 고른 값으로 덮어쓴다(안 고르면 비운다) | — | — | `replaceVoiceInPlace`(`pitchSemitones`) ← `PATCH /voice/:id`. 회귀 `voice-replace-in-place.test.ts`「교체는 새로 고른 높이와 지금 모델을 적고…」·`voice-pitch-promote.test.ts`「교체 등록은 고른 높이를…」 |
 | 목소리 높이 — 서버가 굽는다(사전렌더·`/tts/generate` · PCM → TD-PSOLA → 크기 되맞춤 → 음량 → MP3 128 · 실패·형식 이상·60초 초과는 던진다 · 모델이 바뀌면 굽지 않는다 · 인코더는 isolate 당 하나) | 받은 파일을 그대로 튼다 | 받은 파일을 그대로 튼다 | 굽는 곳 `createSynthesisAttempts`(`lib/voice-provider.ts`) ← `voicePitchFromRow`·`appliedPitchSemitones`·`bakeVoiceMp3`·`bakeVoiceSamples`·`encodeMp3`(`lib/voice-pitch.ts`) ← 셈 `shiftVoicePitch`(`packages/voice/src/pitch-shift.ts`) · PCM 응답 형식 검사 `ElevenLabsClient.textToSpeech` · 행 읽기 `findUsableVoiceProfile`(`SELECT *`·`vp.*` — 공유 목소리는 주인의 값, `routes/tts.ts`) · 사전렌더 `listReadyCloneVoices` → `findMissingStockTargets` → `generateStockClip`(`lib/stock-clips.ts`) · 인코더 묶기 `src/index.ts`(`registerMp3EncoderModule`)·`wrangler.toml` 의 `[[rules]]`(테스트는 `test/support/register-mp3-encoder.ts` — `vitest.config.ts` 의 `setupFiles`). 회귀 `voice-pitch.test.ts`·`prerender-pitch.test.ts`·`tts.test.ts`「높이가 있는 목소리의 직접 입력은…」·`elevenlabs.test.ts`「PCM 을 달라고 하면…」·`worker-wasm-bundle.test.ts`·`packages/voice/test/pitch-shift.test.ts`(두 앱과 같은 기대값) |
@@ -2426,9 +2523,9 @@ R2 파일·ElevenLabs 클론은 DB 트랜잭션 안에서 지울 수 없으므�
   톤만 울린다 — 그건 정상이다. **앱 UI 로 만든 알람**으로 검증해야 한다.
 - 무료 등급은 버킷 클립 선다운로드가 끝난 뒤여야 오프라인에서도 소리가 난다.
 
-§4-1 「월 등록 한도」와 받기 진행 알림(2026-10-11)은 유닛 테스트가 **배선과 판정**만 지킨다. 아래는
-실기기로만 보인다(이 절을 쓴 시점에는 **아직 돌리지 않은** 절차다 — 돌린 결과는
-`docs/qa/dev-test-handoff.md` 에 적는다).
+§4-1 「월 등록 한도」·「말소리가 없으면 등록하지 않는다」, §4-2 의 표준 말투, 받기 진행 알림(2026-10-11)은 유닛
+테스트가 **배선과 판정**만 지킨다. 아래는 실기기로만 보인다(이 절을 쓴 시점에는 **아직 돌리지 않은** 절차다 — 돌린
+결과는 `docs/qa/dev-test-handoff.md` 에 적는다).
 - **등록 뒤 숫자**: 목소리를 등록하고 앱을 다시 켜지 않은 채 목소리 탭으로 돌아온다 — `생성 가능 0/1회` 이고
   `추가` 가 꺼져 있어야 한다. 그 목소리의 삭제 알럿에는 "이번 달에는 새 목소리를 만들 수 없고…" 가 붙는다.
 - **창 안의 실패**: 확정 화면에서 비행기 모드로 `저장하기` 를 누른다 — 실패 문구가 **그 화면 안**에 보여야
@@ -2437,6 +2534,27 @@ R2 파일·ElevenLabs 클론은 DB 트랜잭션 안에서 지울 수 없으므�
   네트워크를 되돌린 뒤 `등록` 이 **그대로 다시 눌려야** 한다(다시 녹음하지 않는다).
 - **월 한도로 끝나는 흐름**: 이번 달 등록을 이미 쓴 계정은 dev 에서도 `등록` 에서 429 를 받는다 — 미리듣기·톤
   화면을 다시 보려면 그 계정의 이번 달 원장 줄이 없어야 한다(테스트 계정을 새로 쓰거나 달이 바뀐 뒤).
+- **말소리 없는 녹음**(§4-1 「말소리가 없으면 등록하지 않는다」): 이번 달 등록이 남은 계정으로, 조용한 곳에서 12초 넘게
+  아무 말 없이(숨소리·잡음만) 녹음해 `등록` 을 누른다. 등록 창이 닫히지 않고 **음원 준비**로 돌아오며, 방금 녹음이
+  사라져 있고(그 녹음을 다시 보낼 길이 없다), 그 단계에 `녹음에서 말소리를 거의 찾지 못했어요…` 가 보여야 한다. 몇 번을
+  되풀이해도 같고 목소리 탭의 `생성 가능 n/m회` 는 그대로다. 파일 고르기로도 한 번(말소리 없는 음원) — 고른 파일이
+  비워져야 한다. 그다음 문장을 읽어 녹음하면 곧바로 등록된다. 앱 언어 en·ja 로 문장을 한 번씩 본다.
+  - dev Workers Logs: `voice.clone.speech_check` 가 `no_speech`·`transcript_chars` 로 찍히고, 전사 **원문은 어느 줄에도
+    없어야** 한다. 등록 한 번에 전사가 한 번인지(말투 분석이 다시 전사하지 않는지)는 ElevenLabs 사용 내역에서 본다 —
+    그 키는 dev·prod 가 함께 쓰므로 요청 시각으로 대조한다.
+  - 1.2.10 빌드(이 코드를 모른다)로 같은 녹음 — 스펙이 받아들인 차이(§4-1 「말소리가 없으면…」의 스토어 앱
+    항목)가 실제로 그 정도인지 본다. 두 앱의 기대가 다르다:
+    - **iOS**: 세부 정보 단계에 `목소리를 처리하지 못했어요. 잠시 후 다시 시도해 주세요.` 가 뜨고 녹음이 그대로 남아,
+      `등록` 을 다시 누르면 같은 거절이다(누를 때마다 `voice.clone.speech_check` 의 `no_speech` 한 줄).
+    - **안드로이드**: 세부 정보 단계로 돌아오되 녹음이 없어 `등록` 이 **꺼져 있고**, 문장(`목소리를 만들지 못했어요`)은 창
+      뒤 스낵바라 창이 열린 동안 안 보일 수 있다 — 음원 준비로 돌아가 다시 녹음해야 한다. 이것은 회귀가 아니라 옛 ③
+      결함 그대로다.
+  - 전사가 **실패할 때**(그대로 통과시킨다)는 실기기로 재현하지 않는다 — dev·prod 가 키를 함께 써서 키를 바꿀 수 없다.
+    유닛 테스트(`voice-clone-speech-gate.test.ts`)만 지킨다. 배포 뒤 Workers Logs 의 `voice.clone.speech_check` warn
+    줄 수를 한 번 본다(늘면 전사가 아프다는 뜻이다).
+- **표준 말투**(§4-2): 말투가 드러나지 않을 녹음(대본 몇 문장을 또박또박 읽기 — 어체는 대본이라 버려지고 사투리·말버릇이
+  없으면 표준 말투다)으로 등록한다. 목소리 목록에 말투 분석 재시도 줄이 **뜨지 않아야** 하고, Workers Logs 에
+  `voice.speech_style.standard` info 한 줄이 있으며 Sentry 에 그 등록의 분석 실패가 없어야 한다.
 - **포그라운드 서비스 시간 한도**(Android 15+ 테스트폰): 아래 설정으로 한도를 5초로 줄이고, 느린 망에서
   기본 목소리 받기를 시작한 뒤 홈으로 나간다. 한도는 앱이 화면에 있는 동안 다시 채워지므로 **나간 뒤에도
   받는 중**이어야 한다(값이 크거나 망이 빠르면 그 전에 끝난다). logcat 에 서비스 시간 초과가 찍히되
