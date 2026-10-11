@@ -154,6 +154,62 @@ async function consumeEmailVerificationCode(db: Client, id: string): Promise<voi
   });
 }
 
+/** 최근 24시간 발급 이력 한 줄 — 다시 받기 간격·하루 상한 판정에 쓴다. */
+type RecentEmailCodeRow = {
+  created_at: string | null;
+  expires_at: string | null;
+  attempts: number | string | null;
+  consumed_at: string | null;
+};
+
+/**
+ * 이번 코드 요청을 **보내지 않는 성공**으로 넘길 것인가 — 가입(`/email-code`)·재설정(`/password-reset`)
+ * 공용이다. 둘 중 하나면 넘긴다.
+ *
+ *  - **다시 받기 간격(60초)**: 간격 안에 보낸 코드가 **아직 쓸 수 있을 때만**이다 — 만료 전이고, 틀린
+ *    횟수가 상한 아래이고, 쓰지 않은 코드. 상한에 닿은 코드는 맞는 숫자도 429 이고, 쓴 코드는 판정에서
+ *    빠진다(`checkEmailVerificationCode`). 그런 코드가 간격을 붙잡으면 막다른 길이 된다 — 두 앱은 상한에서
+ *    "다시 받아 주세요" 라고 하는데, 곧바로 누른 다시 받기가 '보냈어요' 로 끝나고 메일은 오지 않으며 든
+ *    코드는 계속 429 다.
+ *  - **하루 상한(10번)**: 쓸 수 있든 없든 **발급한 수**를 센다. 간격이 풀린 만큼의 남용(메일 폭탄·추측)은
+ *    이 상한과 인증 리미터(`authRateLimitMiddleware`)가 막는다 — 간격은 속도를 늦출 뿐 하루 총량은 이
+ *    상한이 정한다.
+ *
+ * ⚠ SELECT 에서 `attempts`·`consumed_at` 을 빼지 말 것. 빠지면 횟수가 비어 0 으로 읽히고, 상한에 닿은
+ * 코드가 도로 간격을 붙잡는다. 대역 DB 는 SQL 과 상관없이 줄을 돌려주므로 테스트가 SQL 글자도 본다
+ * (`test/auth.test.ts` 의 「다시 받기 간격」).
+ */
+async function shouldSkipEmailCodeSend(
+  db: Client,
+  email: string,
+  purpose: string,
+): Promise<boolean> {
+  const nowMs = Date.now();
+  const recent = await db.execute({
+    sql: `SELECT strftime('%Y-%m-%dT%H:%M:%fZ', created_at) AS created_at, expires_at,
+                 attempts, consumed_at
+          FROM email_verification_codes
+          WHERE email = ? AND purpose = ?
+            AND created_at >= datetime('now', '-1 day')
+          ORDER BY created_at DESC`,
+    args: [email, purpose],
+  });
+  if (recent.rows.length >= EMAIL_VERIFICATION_DAILY_CAP) return true;
+
+  return recent.rows.some((r) => {
+    const row = typedRow<RecentEmailCodeRow>(r);
+    const created = Date.parse(String(row.created_at ?? ''));
+    const expires = Date.parse(String(row.expires_at ?? ''));
+    if (!Number.isFinite(created)) return false;
+    const withinCooldown =
+      nowMs - created < EMAIL_VERIFICATION_RESEND_COOLDOWN_SECONDS * 1000;
+    const stillValid = Number.isFinite(expires) ? expires > nowMs : false;
+    const stillUsable =
+      Number(row.attempts ?? 0) < EMAIL_VERIFICATION_MAX_ATTEMPTS && row.consumed_at == null;
+    return withinCooldown && stillValid && stillUsable;
+  });
+}
+
 type ExistingAccount = { kind: 'password' } | { kind: 'social'; provider: 'google' };
 
 // 가입 시도 이메일이 이미 존재하면 그 가입 방식을 분류한다(중복 가입 차단·로그인 유도용).
@@ -224,28 +280,8 @@ auth.post('/email-code', async (c) => {
       return c.json(conflict.body, conflict.status);
     }
 
-    const nowMs = Date.now();
-    // 최근 발급 이력 조회: (a) 쿨다운 내 미만료 코드가 있으면 재발송하지 않고
-    // 동일 응답, (b) 최근 24시간 발급 건수가 일일 상한을 넘으면 미발송.
-    const recent = await db.execute({
-      sql: `SELECT strftime('%Y-%m-%dT%H:%M:%fZ', created_at) AS created_at, expires_at
-            FROM email_verification_codes
-            WHERE email = ? AND purpose = ?
-              AND created_at >= datetime('now', '-1 day')
-            ORDER BY created_at DESC`,
-      args: [email, EMAIL_VERIFICATION_PURPOSE_REGISTER],
-    });
-
-    const cooldownActive = recent.rows.some((r) => {
-      const created = Date.parse(String(r.created_at ?? ''));
-      const expires = Date.parse(String(r.expires_at ?? ''));
-      if (!Number.isFinite(created)) return false;
-      const withinCooldown =
-        nowMs - created < EMAIL_VERIFICATION_RESEND_COOLDOWN_SECONDS * 1000;
-      const stillValid = Number.isFinite(expires) ? expires > nowMs : false;
-      return withinCooldown && stillValid;
-    });
-    if (cooldownActive || recent.rows.length >= EMAIL_VERIFICATION_DAILY_CAP) {
+    // 다시 받기 간격(아직 쓸 수 있는 코드가 있을 때만)·하루 상한에 걸리면 보내지 않고 같은 성공으로 답한다.
+    if (await shouldSkipEmailCodeSend(db, email, EMAIL_VERIFICATION_PURPOSE_REGISTER)) {
       return successResponse();
     }
 
@@ -333,26 +369,8 @@ auth.post('/password-reset', async (c) => {
       return successResponse();
     }
 
-    const nowMs = Date.now();
-    const recent = await db.execute({
-      sql: `SELECT strftime('%Y-%m-%dT%H:%M:%fZ', created_at) AS created_at, expires_at
-            FROM email_verification_codes
-            WHERE email = ? AND purpose = ?
-              AND created_at >= datetime('now', '-1 day')
-            ORDER BY created_at DESC`,
-      args: [email, EMAIL_VERIFICATION_PURPOSE_RESET],
-    });
-
-    const cooldownActive = recent.rows.some((r) => {
-      const created = Date.parse(String(r.created_at ?? ''));
-      const expires = Date.parse(String(r.expires_at ?? ''));
-      if (!Number.isFinite(created)) return false;
-      const withinCooldown =
-        nowMs - created < EMAIL_VERIFICATION_RESEND_COOLDOWN_SECONDS * 1000;
-      const stillValid = Number.isFinite(expires) ? expires > nowMs : false;
-      return withinCooldown && stillValid;
-    });
-    if (cooldownActive || recent.rows.length >= EMAIL_VERIFICATION_DAILY_CAP) {
+    // 가입과 같은 규칙이다(`shouldSkipEmailCodeSend`) — 상한에 닿았거나 쓴 코드는 간격을 붙잡지 않는다.
+    if (await shouldSkipEmailCodeSend(db, email, EMAIL_VERIFICATION_PURPOSE_RESET)) {
       return successResponse();
     }
 
