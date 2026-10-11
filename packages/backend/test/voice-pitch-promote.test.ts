@@ -158,10 +158,18 @@ describe('등록 확정 — 목소리 높이', () => {
 
     const res = await patch({ is_draft: false, replace_existing: true, pitch_semitones: -2 });
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { replaced?: boolean; pitch_semitones?: number; profile?: { id?: string } };
+    const body = (await res.json()) as {
+      replaced?: boolean;
+      pitch_semitones?: number;
+      profile?: { id?: string; name?: unknown; is_shared?: unknown };
+    };
     expect(body.replaced).toBe(true);
     expect(body.pitch_semitones).toBe(-2);
     expect(body.profile?.id).toBe(OLD);
+    // 교체 응답의 프로필도 다른 응답과 같은 모양이다 — `is_shared` 가 SQLite 정수(0/1)로 나가면 안드로이드(Gson
+    // `Boolean`)가 응답을 못 읽어 서버는 교체를 끝냈는데 앱은 '목소리를 만들지 못했어요' 를 띄운다(2026-10-11 실기기).
+    expect(typeof body.profile?.is_shared, 'is_shared 가 불리언이 아니다').toBe('boolean');
+    expect(typeof body.profile?.name).toBe('string');
     const old = await db.execute({
       sql: 'SELECT elevenlabs_voice_id, pitch_semitones, pitch_model_id FROM voice_profiles WHERE id = ?',
       args: [OLD],

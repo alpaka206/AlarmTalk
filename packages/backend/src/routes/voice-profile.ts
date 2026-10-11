@@ -1355,7 +1355,21 @@ export async function replaceVoiceInPlace(
   const refreshedRow = refreshed.rows[0];
   return {
     ok: true,
-    profile: (refreshedRow ?? {}) as Record<string, unknown>,
+    // 다른 프로필 응답과 같은 모양으로 싣는다 — 행을 그대로 실으면 SQLite 정수 `is_shared`(0/1)가 숫자로 나가,
+    // 안드로이드(Gson `Boolean`)가 등록 확정 응답을 못 읽고 '목소리를 만들지 못했어요' 를 띄운다. 서버는 이미
+    // 교체를 끝냈는데 앱은 아직 초안으로 알고, 나가기 경고의 '나가고 삭제' 가 새 목소리를 지운다(2026-10-11 실기기).
+    profile: refreshedRow
+      ? {
+          id: String(refreshedRow.id),
+          name: String(refreshedRow.name ?? ''),
+          status: refreshedRow.status,
+          is_shared: Boolean(Number(refreshedRow.is_shared ?? 0)),
+          relationship_label: refreshedRow.relationship_label ?? null,
+          listener_title: refreshedRow.listener_title ?? null,
+          created_at: refreshedRow.created_at,
+          custom_audio_invalidated_at: refreshedRow.custom_audio_invalidated_at ?? null,
+        }
+      : {},
     notifyShareRemoval: replacementState.notifyShareRemoval,
     revokedCustomAlarms: replacementState.revokedCustomAlarms,
     // 행이 하나도 안 잡혀도 소유자(와 공유 중이었다면 그룹원)는 깨운다 — 아직 서버에
