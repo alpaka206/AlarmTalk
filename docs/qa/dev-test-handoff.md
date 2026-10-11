@@ -37,12 +37,22 @@
 - Workers Logs(과거 로그)는 `wrangler login` 토큰으로는 못 읽는다(관측 권한이 없어 403). 공식 `cf` CLI 로
   읽기 권한만 받아 본다: `npx -y cf@1.0.0-beta.14 auth login --scopes account:read user:read workers:read workers_observability:read offline`
   → `cf o11y telemetry query --body '<json>'`(넓은 시간창은 0건을 돌려줘 6시간 창으로 나눠 묻는다).
-- [ ] [#876](https://github.com/alpaka206/AlarmTalk/pull/876) 머지 뒤 #874 head 에서 두 앱 스토어 빌드·제출(방법은 아래 「스토어 상태」 의 '릴리스 방법').
+- 두 앱을 #874 head(`f57d9f34`)에서 빌드해 **심사에 냈다**(10/11 — App Store 1.2.11 빌드 8 수동 출시, Play `31 (1.2.11)`
+  관리형 게시). 등록정보 새 판(이름·부제·검색어·INTERIM 설명)도 같은 제출에 실었다 — 아래 「스토어 상태」.
+- [ ] 두 스토어 승인 확인 → #874 머지 → Deploy Backend 초록 → 곧바로 출시(App Store 는 'Release This Version' 또는
+      API `appStoreVersionReleaseRequests`, Play 는 게시 개요의 '게시'). #874 는 Codex 이슈 없음(`f57d9f34`)·CI 초록이다.
+- **빌드 출처**: 두 앱은 main 머지 **전에** #874 head `f57d9f34` 에서 빌드했다 — 오너 결정(10/08 동시 출시, 10/11 지시)으로
+  CLAUDE.md 의 '로컬 빌드는 main 머지 뒤' 보다 앞당겼다. `git merge-tree --write-tree origin/main f57d9f34` 가
+  `f57d9f34^{tree}`(`cb975003`)와 같다 — main 에만 있는 커밋 25개는 전부 머지 커밋이라, 머지한 뒤 main 의 소스가 빌드한
+  것과 똑같다. ⚠ **앱에 들어가는 파일이 바뀌면 다시 빌드·제출한다** — `apps/android-native`·`apps/ios-native`·
+  `docs/legal`(법무 문서 전문이 두 앱에 실린다). 확인: `git diff --quiet f57d9f34 origin/develop -- apps/android-native
+  apps/ios-native docs/legal` 이 조용히 끝나면(차이 없음) 빌드는 그대로 유효하다. 문서만 바꾸는 머지(#880 등)는
+  빌드에 영향이 없다 — 다만 #874 의 head 가 바뀌므로 #874 의 Codex·CI 는 새 head 에서 다시 돌린다.
 - [ ] 말소리 없음 거절([#876](https://github.com/alpaka206/AlarmTalk/pull/876)) 실기기 확인 — 두 앱에서 거의 무음으로 녹음해
       등록하면 녹음 단계로 돌아가 이유가 녹음 칸 아래에 뜨는지, 다시 녹음해 바로 등록되는지(남은 횟수 그대로).
       ElevenLabs 키가 dev·prod 공용이라 한두 번만 한다.
-- [ ] 출시 노트 1.2.11 초안은 [`release-notes.md`](../product/release-notes.md) 에 있다 — 오너가 문안을 확정한다.
-      Play 와 App Store 문안이 두 줄 다르다(미나 줄·고친 문제 줄).
+- 출시 노트는 [`release-notes.md`](../product/release-notes.md) 1.2.11 초안 그대로 넣었다(Play 와 App Store 문안이
+  두 줄 다르다 — 미나 줄·고친 문제 줄).
 - ⚠ **dev 테스터**: 이번 달 이미 목소리를 등록한 계정은 [#876](https://github.com/alpaka206/AlarmTalk/pull/876) 뒤 clone 단계에서 429 로 막힌다 —
   미리듣기·톤 화면을 보려면 이번 달 등록을 안 쓴 계정을 쓴다.
 - ⚠ **1.2.10 안드로이드**는 이번 달 등록을 이미 쓴 상태로 서버 게이트에 걸리면 세부 정보 단계에서 멈춘다
@@ -53,8 +63,20 @@
 - **결정(10/11)**: 인증 코드는 **가장 최근 코드만** 받는다(오너 확인 — 메일 문구와 같고, 살아 있는 코드가 늘지 않는다).
   안드로이드 기본 목소리 받기의 포그라운드 서비스는 **없애지 않고 받을 때만** 쓴다(오너가 맡김 — 스펙
   `voice-and-message.md` 「준비 페이지」).
-- [ ] R8 매핑 업로드: 1.2.11 prod 번들을 만들 때 `SENTRY_AUTH_TOKEN` 을 넣는다(`docs/ops/environments.md`
-      「Android R8 매핑 올리기」). Sentry 프로젝트 이름 `alarmtalk-android` 는 이슈 접두어로 짐작한 값이라 첫 업로드에서 확인한다.
+- R8 매핑: 1.2.11 prod 번들(31)을 `SENTRY_AUTH_TOKEN` 과 함께 빌드해 올렸다 — UUID `cd3b03c8-0e81-398c-8b9d-0ffd42b7fa25`
+  가 AAB(`sentry-debug-meta.properties`)와 Sentry `alarmtalk-android` 의 디버그 파일 목록에 둘 다 있다. 프로젝트 이름은
+  이걸로 확인됐다. 토큰(조직 토큰)은 이 맥의 `~/.alarmtalk-sentry.env`(저장소 밖, 권한 600)에 있다 — 다음 prod 빌드도
+  `set -a; . ~/.alarmtalk-sentry.env; set +a` 를 한 셸에서 빌드한다. **저장소 안에 두지 않는다.**
+- 매핑이 실제로 먹는 것도 확인했다 — 1.2.11 의 첫 이벤트(ALARMTALK-ANDROID-11, 아래)의 스택이
+  `StockClipPrefetchWorker.kt:651`·`AlarmTalkLog.kt:348` 처럼 원래 이름·줄 번호로 보인다.
+- **ALARMTALK-ANDROID-11(10/11 08:57Z, HTTP 504 두 건)은 Play 사전 출시 로봇이다** — 1.2.11(31)을 올린 지 12분 뒤,
+  OnePlus8Pro·288×448·CPU 2개·x86_64. 결제 정보 읽기와 기본 목소리 클립 받기가 1분 안에 504 를 받았는데, prod 워커
+  로그(08:56~09:00Z)에는 5xx 가 한 줄도 없고 같은 클립 요청은 48초 뒤 200 으로 나갔다. backend Sentry 도 24시간 0건,
+  30일 동안 504 는 이 두 건뿐(실사용자 0). 오류 코드 없는 504 라 워커 앞단(로봇의 네트워크 경로)에서 난 것이다.
+  1.2.11 로봇 실행에서 크래시는 없었다.
+  - [ ] **로봇 판별이 빗나갔다** — 1.2.11 은 `firebase.test.lab` 설정이 `"true"` 인 기기만 `prelaunch` 로 찍는데
+        (`AlarmTalkApplication.sentryEnvironment`), 이 로봇(Android 11)은 `production` 으로 찍혀 알림 메일까지 갔다.
+        그 설정이 없는 사전 출시 기기를 가를 다른 신호가 필요하다(다음 안드로이드 버전).
 - 출시 뒤에 할 것: 1.2.10 이 1.2.11 로 바뀐 뒤 Sentry 이슈 정리(ANDROID-X·Z·10·S·T·V·W·Y, B·K·Q), Play 게재 뒤
   안드로이드 `minSupported` 를 31 로 올릴지.
 
@@ -80,7 +102,11 @@
 - dev 기본 목소리 240개 v4 Turbo 교체와 마이그레이션 125는 10월 1일 완료 기록이 있다.
   dev 재게시·재합성은 반복하지 않는다. `GOOGLE_VERTEX_MODEL` dev 시크릿 제거와 KMA 키 설정도
   이전 세션에서 완료했다. prod 스톡도 10/08 에 +4 dB 로 게시했다(위 2026-10-11 절).
-- [ ] v4 Turbo 음량은 +4 dB 로 정했다(#873). iOS 반복 사이 0.9초 쉼은 사람의 청취 결정이 남아 있다(앱 빌드 전에).
+- v4 Turbo 음량은 +4 dB 로 정했다(#873). **iOS 반복 사이 쉼은 1.2.11 에서 그대로 둔다**(2026-10-11 오너 결정 — 빌드 8 을
+  이미 심사에 낸 뒤 물었다). iOS 는 AlarmKit 이 소리 파일을 그대로 되풀이해 기록상 약 0.17초 쉰다(안드로이드는 0.9초).
+  기본 목소리는 10/08 prod 스톡 교체부터 이미 그렇고, #874 뒤에는 등록한 목소리 알람도 끝 무음이 짧은 v4 소리라 같아진다.
+  - [ ] 다음 iOS 버전 전에 사람이 듣고 정한다 — 0.9초로 맞추려면 알람 소리를 준비할 때(`AlarmSoundStaging.swift`) 끝에
+        쉼을 붙이는 앱 수정이라 새 빌드가 필요하다.
   Vertex 위치는 처리방침의 미국 계약에 맞춰 `us`를 유지한다. 위치 변경은 이번 수정에 포함하지 않았다.
 - [ ] 스토어 원고의 앱 화면 3개 언어 문장은 **번역을 포함한 앱 버전 게재 뒤** 사용한다.
   Play 원고는 다음 버전 기준 (B) 에만 그 문장이 있고, 지금 올리는 INTERIM 과 Android 30 기준 (A) 에는 없다.
@@ -88,13 +114,17 @@
 - 10월 5일 기기 연결 조회: Android A32 연결, iPhone 14 Pro Wi-Fi 페어링 available, S23 미연결.
   앱을 새로 빌드·설치하거나 실기기 검증한 결과는 아니다.
 
-## 스토어 상태 — 2026-09-29
+## 스토어 상태 — 2026-10-11
 
-- **Play**: 프로덕션 `30 (1.2.10)` **게재**(2026-09-28 — 승인 뒤 관리형 게시로 대기하다 운영자가 게시, `releases.list`
-  의 `releaseLifecycleState: PUBLISHED`. ⚠ 트랙 `status: completed` 는 심사 중·게시 대기 중에도 그랬다).
-- **App Store**: `1.2.10`(빌드 7) **게재**(`READY_FOR_SALE`, 공개 조회 kr·us `currentVersionReleaseDate`
-  2026-09-28T04:57Z — 2026-09-27T15:04Z 제출, `AFTER_APPROVAL` 로 승인 즉시 게재). 심사 노트는 "WHAT'S NEW IN 1.2.10" 머리말로 새로 썼다(3,950자 — 목소리 느낌·자연스러운 문구·**서버가
-  켜는 기간 한정 개인 플랜은 심사 중 꺼져 있음**·첫 실행 코드 안내 제거). 첨부 없음.
+- **Play**: 프로덕션 `31 (1.2.11)` **심사 중**(2026-10-11T08:45Z commit, `releaseLifecycleState: IN_REVIEW`,
+  관리형 게시 켜짐 — 오너 확인). 승인돼도 운영자가 게시할 때까지 나가지 않는다. 게재 중인 것은 `30 (1.2.10)`
+  (2026-09-28). 같은 commit 에 등록정보 INTERIM(새 제목·짧은 설명·전체 설명, 세 언어)이 실려 있어 게시할 때 함께 바뀐다.
+  ⚠ 트랙 `status: completed` 는 심사 중·게시 대기 중에도 그렇다 — 상태는 `releases.list` 로 본다.
+- **App Store**: `1.2.11`(빌드 8) **심사 대기**(`WAITING_FOR_REVIEW`, 2026-10-11T08:22Z 제출,
+  `releaseType=MANUAL`). 게재 중인 것은 `1.2.10`(빌드 7, 2026-09-28). 이 레코드에 새 이름·부제·검색어·INTERIM 설명을
+  실었다(`app-store-listing.md` 「지금 상태」). 심사 노트는 "WHAT'S NEW IN 1.2.11" 머리말로 새로 썼다(3,964자 — 톤 조절,
+  말소리 없는 녹음 거절, 미나 대체, 날씨 지역 목록, **개인 플랜 무료 기간이 켜져 있음**(10/31 15:00Z 까지, 데모 계정 포함),
+  날씨 원천 KMA·JMA·NWS). 첨부 없음. 심사 대기 중에도 설명은 고칠 수 있었다(10/11 줄표를 뺄 때 다시 제출하지 않았다).
 - **prod 서버**: #797 머지(d604b08e)로 배포·마이그레이션 #121·#122 적용 확인(2026-09-27). prod Gemini 는
   `gemini-3.5-flash`/`us` 로 전환했다(시크릿 동기화 — 2.5 은퇴 10/20 대응). 다음 모델 `gemini-3.8-flash` 는
   시크릿이 아니라 **코드 머지로** 바뀐다 — 아래 「Gemini 3.8 Flash」.
@@ -129,11 +159,13 @@
   copyright 가 이 값으로 따라왔는지 확인한다.
   서버를 먼저 내는 회차는 빌드 전에 main 의 Deploy Backend 실행이 **성공**했고 로그에 그 회차의
   마이그레이션이 적용으로 찍혔는지 눈으로 본다(가정하지 않는다 — 안 돌았으면 `workflow_dispatch`).
-- [ ] **스토어 등록정보 교체 대기**(2026-09-30 — 새 이름 `알람톡: 목소리 알람 시계` 등, 아직 아무것도 올리지
-      않았다). 원본과 순서·조건은 `docs/product/app-store-listing.md`·`docs/product/play-store-listing.md`:
-      Play 는 날씨 주장을 뺀 INTERIM 을 지금 올리고(옛 설명에 익명 후기·해시태그·개인 연락처가 있다), App Store 는
-      프로모션 문구만 지금(P), 이름·부제·검색어·설명은 다음 버전 레코드에서. 날씨가 맞는다고 말하는 문장은
-      **날씨 지역 서버 변경이 prod 에 배포되고 확인된 뒤에만**(W) — 확인하면 결과를 여기 적고 판을 바꾼다.
+- **스토어 등록정보 새 판은 1.2.11 제출에 실었다**(10/11): App Store 는 1.2.11 레코드(이름·부제·검색어·INTERIM 설명),
+  Play 는 같은 commit 의 INTERIM — 둘 다 출시(게시)하는 순간 바뀐다. 원본은 `docs/product/app-store-listing.md`·
+  `play-store-listing.md`. 검색어는 띄어 쓴 'alarm talk' 대신 `alarmtalk`·`alarm-talk` 로 찾히게 했다(10/11 오너 결정),
+  스토어 문구에는 줄표(`—`)를 쓰지 않는다(10/11 오너 지적).
+  - [ ] 날씨가 맞는다고 말하는 문장(W)은 #874 머지 뒤 prod 날씨를 확인하고 나서 — App Store 는 그다음 버전 레코드에서
+        (B), Play 는 그때 (B) 로 바꾼다.
+  - [ ] App Store 프로모션 문구는 비어 있다(심사 없이 언제든 넣는다 — 넣을지는 오너 결정).
 - **1.2.10 순서**(2026-09-27 결정 — 서버 먼저): 버전 올림 → #797(develop→main) 머지로 prod 배포·
   마이그레이션 #121·#122 → main 에서 두 앱 빌드·제출 → prod Gemini 시크릿 전환(10/20 전) → iOS 1.2.10
   게재 뒤 iOS 강제 업데이트(하한 7). 실제로는 Android 강제 업데이트(30)를 Play 30 게재 뒤 먼저 냈고
