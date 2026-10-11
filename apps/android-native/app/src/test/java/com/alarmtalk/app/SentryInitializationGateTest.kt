@@ -63,6 +63,35 @@ class SentryInitializationGateTest {
         assertFalse(shouldInitializeSentry("", DEVICE_FINGERPRINT))
     }
 
+    // ── 사전 출시 로봇은 환경으로 가른다(버리지 않는다) ─────────────────────
+
+    @Test
+    fun prelaunchRobotsReportUnderTheirOwnEnvironment() {
+        // 1.2.10 의 잡동사니 이슈(ANDROID-Q) 42건 중 26건이 Play 사전 출시 로봇이었다. 이벤트는
+        // 그대로 올라오되 운영 사용자 수에 섞이지 않게 환경만 바꾼다.
+        assertEquals("prelaunch", sentryEnvironment("production", "true"))
+        assertEquals("prelaunch", sentryEnvironment("development", "true"))
+    }
+
+    @Test
+    fun everythingElseKeepsTheBuildEnvironment() {
+        // ⚠ 정확히 "true" 일 때만이다. 설정이 없거나(실기기) 다른 값이면 빌드가 정한 환경 그대로 —
+        // 실기기 이벤트가 다른 환경으로 새면 운영 경보에서 사라진다.
+        for (value in listOf(null, "", "false", "TRUE", "1", " true")) {
+            assertEquals("값=$value", "production", sentryEnvironment("production", value))
+        }
+        assertEquals("development", sentryEnvironment("development", null))
+    }
+
+    @Test
+    fun robolectricHasNoTestLabSetting() {
+        // 초기화 경로가 읽는 그 설정이 테스트 환경에는 없다 — 읽기 자체가 던지지 않는다는 것까지 본다.
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val value = android.provider.Settings.System.getString(context.contentResolver, FIREBASE_TEST_LAB_SETTING)
+        assertEquals("firebase.test.lab", FIREBASE_TEST_LAB_SETTING)
+        assertEquals("production", sentryEnvironment("production", value))
+    }
+
     private companion object {
         /** 값은 쓰이지 않는다 — 형태만 실제와 같게 둔다(테스트는 SDK 를 켜지 않는다). */
         const val REAL_LOOKING_DSN = "https://0123456789abcdef@o0.ingest.sentry.io/1234567"

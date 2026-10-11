@@ -14,36 +14,33 @@ extension VoiceStudioViewModel {
         if let code = extractServerErrorCode(from: error) {
             return Self.localizedVoiceMessage(forCode: code)
         }
-        // 2) URLError / VoiceRecorderError / 일반 메시지.
         if let recorderError = error as? VoiceRecorderError {
-            return recorderError.errorDescription ?? "녹음 중 오류가 발생했어요."
+            return userFacingErrorMessage(recorderError, fallback: String(localized: "녹음 중 오류가 발생했어요."))
         }
         if let urlError = error as? URLError {
             switch urlError.code {
             case .notConnectedToInternet, .networkConnectionLost, .timedOut:
-                return "네트워크가 불안정해요. 잠시 후 다시 시도해 주세요."
+                return String(localized: "네트워크가 불안정해요. 잠시 후 다시 시도해 주세요.")
             default:
-                return "연결에 실패했어요. 다시 시도해 주세요."
+                return String(localized: "연결에 실패했어요. 다시 시도해 주세요.")
             }
         }
         if let apiError = error as? APIError {
             switch apiError {
             case .invalidResponse:
-                return "서버 응답을 해석하지 못했어요."
-            case .server(let status, let message, _):
-                let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines)
-                if status == 401 { return "권한이 없어요. 로그인 상태를 확인해 주세요." }
-                if status == 403 {
-                    return trimmed.containsKorean ? trimmed : "권한이 없어요. 로그인 상태를 확인해 주세요."
+                return String(localized: "서버 응답을 해석하지 못했어요.")
+            case .server(let status, _, _):
+                if status == 401 || status == 403 {
+                    return String(localized: "권한이 없어요. 로그인 상태를 확인해 주세요.")
                 }
-                if status >= 500 { return "서버가 응답하지 않아요. 잠시 후 다시 시도해 주세요." }
-                return trimmed.containsKorean ? trimmed : "처리 중 오류가 발생했어요."
+                if status >= 500 { return String(localized: "서버가 응답하지 않아요. 잠시 후 다시 시도해 주세요.") }
+                return String(localized: "처리 중 오류가 발생했어요.")
             }
         }
-        return "처리 중 오류가 발생했어요."
+        return userFacingErrorMessage(error, fallback: String(localized: "처리 중 오류가 발생했어요."))
     }
 
-    /// 코드 -> 한국어 메시지. 테스트가 직접 호출할 수 있게 static.
+    /// 코드 -> 현재 앱 언어의 메시지. 테스트가 직접 호출할 수 있게 static.
     nonisolated static func localizedVoiceMessage(forCode code: String) -> String {
         // 목소리 등록·확정 화면에서만 다르게 말해야 하는 코드들. 나머지는 공용 표가 받는다.
         switch code {
@@ -61,6 +58,26 @@ extension VoiceStudioViewModel {
             return APIErrorMessages.message(for: code)
                 ?? String(localized: "목소리를 처리하지 못했어요. 잠시 후 다시 시도해 주세요.")
         }
+    }
+
+    /// 서버가 **이번 달 등록을 다 썼다**고 거절한 것인가(`429 VOICE_MONTHLY_CHANGE_LIMIT_REACHED`).
+    ///
+    /// 등록 창 안의 다른 실패와 갈래가 다르다 — 이번 달에는 몇 번을 눌러도 같은 답이라 창 안에
+    /// 문구를 띄우고 다시 누르게 두지 않고 **흐름을 끝낸다**(`handleMonthlyLimitRejection`,
+    /// `docs/spec/voice-and-message.md` §4-1 「월 등록 한도」 ③). 코드는 문구를 고를 때와 같은
+    /// 방법으로 읽는다 — 문구는 한도라고 말하는데 흐름은 안 끝나는 어긋남을 만들지 않는다.
+    nonisolated func isMonthlyLimitRejection(_ error: Error) -> Bool {
+        extractServerErrorCode(from: error) == "VOICE_MONTHLY_CHANGE_LIMIT_REACHED"
+    }
+
+    /// 서버가 등록 녹음에 **말소리가 거의 없다**고 거절한 것인가(`400 VOICE_CLONE_NO_SPEECH`).
+    ///
+    /// 등록 창 안의 다른 실패와 갈래가 다르다 — 같은 녹음을 다시 보내면 같은 답이라 세부 정보로 돌려 `등록` 을 다시
+    /// 누르게 두지 않고, **음원 준비로 돌아가 그 녹음을 버린다**(`VoiceCloneUploadFlow.submitOutcome`). 흐름은 끝내지
+    /// 않는다 — 서버는 아무것도 쓰지 않았고 이번 달 등록도 그대로라 다시 녹음하는 데 제한이 없다. 코드는 문구를 고를
+    /// 때와 같은 방법으로 읽는다.
+    nonisolated func isNoSpeechRejection(_ error: Error) -> Bool {
+        extractServerErrorCode(from: error) == "VOICE_CLONE_NO_SPEECH"
     }
 
     private nonisolated func extractServerErrorCode(from error: Error) -> String? {
@@ -119,6 +136,7 @@ extension VoiceStudioViewModel {
         "MANUAL_TTS_QUOTA_EXCEEDED",
         "VOICE_CLONE_AUDIO_TOO_SHORT",
         "VOICE_CLONE_AUDIO_TOO_LONG",
+        "VOICE_CLONE_NO_SPEECH",
         "INVALID_DURATION",
         "INVALID_AUDIO_MIME_TYPE",
         "VOICE_SLOT_EXHAUSTED",
@@ -128,7 +146,8 @@ extension VoiceStudioViewModel {
         "VOICE_CLONING_FAILED",
         "VOICE_MONTHLY_CHANGE_LIMIT_REACHED",
         "VOICE_PREVIEW_REQUIRED",
-        "INVALID_VOICE_ENERGY",
+        "INVALID_VOICE_PITCH",
+        "VOICE_PITCH_LOCKED",
         "CONSENT_REQUIRED",
         "ALARM_NOT_FOUND",
         "TTS_GENERATION_FAILED",

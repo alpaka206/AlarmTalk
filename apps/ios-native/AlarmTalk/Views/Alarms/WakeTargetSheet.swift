@@ -33,7 +33,7 @@ struct WakeTargetSheet: View {
         // 다르지 않게(`SelectionSheet` 주석). 여기는 '지금 고른 값' 이 없는 목적지
         // 고르기라 `selectedID` 를 비워 체크마크가 뜨지 않는다.
         SelectionSheet(
-            title: "누구를 깨울까요?",
+            title: String(localized: "누구를 깨울까요?"),
             items: targets,
             selectedID: nil,
             onSelect: { target in
@@ -45,19 +45,19 @@ struct WakeTargetSheet: View {
         ) { target in
             switch target {
             case .myself:
-                Text("내 알람 맞추기")
+                Text(String(localized: "내 알람 맞추기"))
                     .font(.body.weight(.semibold))
                     .foregroundStyle(theme.palette.onSurface)
             case .member(let recipient):
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(recipient.name?.nilIfBlank ?? recipient.email ?? "구성원")
+                    Text(recipient.name?.nilIfBlank ?? recipient.email ?? String(localized: "member.unnamed"))
                         .font(.body.weight(.semibold))
                         .foregroundStyle(theme.palette.onSurface)
                     // 상대가 알람을 받지 않는 시간대를 **고르기 전에** 보여준다.
                     // 편집기에서야 막히면 시각을 다 정한 뒤에 되돌아와야 한다.
                     let quiet = FamilyAlarmScheduleRules.quietScheduleLabel(recipient)
                     if !quiet.isEmpty {
-                        Text("받지 않는 시간: \(quiet)")
+                        Text(String(localized: "받지 않는 시간: \(quiet)"))
                             .font(.footnote)
                             .foregroundStyle(theme.palette.onSurfaceVariant)
                     }

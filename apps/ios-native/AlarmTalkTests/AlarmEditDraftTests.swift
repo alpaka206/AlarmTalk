@@ -567,6 +567,43 @@ extension AlarmEditDraftTests {
         XCTAssertEqual(saved.preLockPlayMode, AlarmPlayMode.voiceOnly.rawValue)
     }
 
+    /// 기본 목소리로 잠긴 알람의 시각만 고쳐 저장해도 **잠금 보관본**(원래 유료 목소리)이 남아야 한다 —
+    /// 사라지면 재결제해도 그 알람만 원래 목소리로 돌아오지 않는다(billing-lifecycle.md 「목소리를 못 쓰게 되면」).
+    func test_toRecord_keepsDefaultVoiceLockSnapshotOnTimeOnlyEdit() {
+        let original = Self.makeRecord { $0.voiceProfileId = "clone-a" }
+        let locked = DefaultVoiceSubstitute.locked(
+            original,
+            voiceID: bundledSystemVoiceProfiles()[0].id,
+            binding: nil,
+            nowMillis: 400
+        )
+        var draft = AlarmEditDraft(from: locked)
+        draft.hour = 7
+
+        let saved = draft.toRecord(existing: locked, fireAtMillis: 1_000, nowMillis: 500)
+
+        XCTAssertEqual(saved.preLockVoice?.voiceProfileId, "clone-a")
+        XCTAssertEqual(saved.preLockPlayMode, locked.preLockPlayMode)
+    }
+
+    /// 재생 방식을 바꿔 저장하면 그 편집이 이긴다 — 보관본을 남기면 재결제 때 복원이 편집을 덮는다.
+    func test_toRecord_dropsDefaultVoiceLockWhenTheVoiceEditChangesIt() {
+        let original = Self.makeRecord { $0.voiceProfileId = "clone-a" }
+        let locked = DefaultVoiceSubstitute.locked(
+            original,
+            voiceID: bundledSystemVoiceProfiles()[0].id,
+            binding: nil,
+            nowMillis: 400
+        )
+        var draft = AlarmEditDraft(from: locked)
+        draft.playMode = .alarmOnly
+
+        let saved = draft.toRecord(existing: locked, fireAtMillis: 1_000, nowMillis: 500)
+
+        XCTAssertNil(saved.preLockVoice)
+        XCTAssertNil(saved.preLockPlayMode)
+    }
+
     /// 소유자를 잃으면 계정 전환 시 남의 알람으로 취급된다.
     func test_toRecord_keepsOwnerUserId() {
         let owned = Self.makeRecord { $0.ownerUserId = "user-1" }
@@ -593,6 +630,36 @@ extension AlarmEditDraftTests {
         XCTAssertEqual(saved.bucketId, "weather")
         XCTAssertEqual(saved.bucketClipKeys, ["a", "b", "c"])
         XCTAssertEqual(saved.bucketRotationIndex, 2)
+    }
+
+    /// ⚠ **알람 전용으로 저장해도 iOS 는 테마를 남긴다 — 안드로이드와 다른 한 곳이다**
+    /// (안드로이드 `AlarmEditorState.toDraft` 는 알람 전용이면 `bucketId` 를 비운다).
+    ///
+    /// 무료 잠금으로 알람 전용이 된 알람을 편집해 저장한 뒤 재결제로 복원되면, 울릴 음원은
+    /// **버킷 키에서만** 나온다 — 알람 전용 저장이 `audioCacheKey` 를 비우고,
+    /// `AlarmSoundResolver` 는 `rotatedBucketClipKey ?? audioCacheKey` 로 고른다. 그래서 이 행을
+    /// '목소리' 로 되돌리면 문구가 비어 있지 않다 — 계정의 직전 선택이 아니라 **그 알람의 옛
+    /// 테마**가 돌아온다(빈 직접 입력은 아니다). 스펙 `voice-and-message.md` §4.
+    func test_toRecord_alarmOnlyKeepsThemeSoVoiceSwitchRestoresIt() {
+        let themed = Self.makeRecord {
+            $0.bucketId = "weather"
+            $0.bucketClipKeys = ["a", "b", "c"]
+        }
+        var draft = AlarmEditDraft(from: themed)
+        draft.playMode = .alarmOnly
+
+        let saved = draft.toRecord(existing: themed, fireAtMillis: 1_000, nowMillis: 500)
+
+        XCTAssertNil(saved.audioCacheKey)
+        XCTAssertEqual(saved.bucketId, "weather")
+        XCTAssertEqual(saved.bucketClipKeys, ["a", "b", "c"])
+        // 편집기가 여는 식 그대로(`loadVoicePromptState`) — 잇기(`adoptLastMessageChoiceIfUnset`)를
+        // 타지 않고 옛 테마로 돌아온다.
+        XCTAssertFalse(AlarmEditDraft.hasNoMessageChoice(
+            randomPrompt: saved.voiceRandomPrompt,
+            selectedBucket: FreeBucket.stored(saved.bucketId),
+            ttsText: saved.voiceText ?? ""
+        ))
     }
 
     /// 새 알람(기존 레코드 없음)은 당연히 비어 있어야 한다.

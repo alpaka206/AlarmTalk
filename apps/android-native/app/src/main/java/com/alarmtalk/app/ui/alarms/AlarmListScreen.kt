@@ -26,12 +26,14 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
+import com.alarmtalk.app.data.systemVoiceDisplayName
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import com.alarmtalk.app.R
 import com.alarmtalk.app.data.AlarmEntity
 import com.alarmtalk.app.data.VoiceSources
+import com.alarmtalk.app.data.wasVoiceAlarmConvertedBySystem
 import com.alarmtalk.app.data.VoiceProfileCreationDraft
 import com.alarmtalk.app.network.AuthSession
 import com.alarmtalk.app.network.BillingSubscriptionResponse
@@ -79,8 +81,9 @@ internal fun AlarmListScreen(
     /** 기간 한정 개인 플랜 중의 커플·가족 보류 규칙(`MainViewModel.personalPromoTierHold`). */
     personalPromoTierHold: PersonalPromoTierHold?,
     /**
-     * 이용권 화면 한 줄의 프로모(`MainViewModel.planScreenPersonalPromo`) — 계정 응답과 구독 응답 중
-     * **나중에 받은 답**의 것. 여기서 세션·구독 응답을 OR 로 다시 고르지 말 것.
+     * 이용권 화면에 보일 프로모(`MainViewModel.planScreenPersonalPromo`) — 계정 응답과 구독 응답 중
+     * **나중에 받은 답**의 것. 여기서 세션·구독 응답을 OR 로 다시 고르지 말 것. 개인 카드에 앉을지
+     * 카드 위 한 줄일지는 이용권 화면이 정한다(`planScreenCurrentOf`).
      */
     planScreenPersonalPromo: com.alarmtalk.app.network.PersonalPromo?,
     voiceDraftQuotaExhausted: Boolean = false,
@@ -88,7 +91,6 @@ internal fun AlarmListScreen(
     voiceDraftQuota: com.alarmtalk.app.network.VoiceDraftQuotaResponse? = null,
     vouchers: List<VoucherItem>,
     onCreateVoiceProfile: (VoiceProfileCreationDraft, Boolean) -> Boolean,
-    onCreateVoiceProfiles: (List<VoiceProfileCreationDraft>) -> Unit,
     // 목소리 등록 화면의 인라인 동의 항목에 그대로 넘긴다.
     sensitiveConsentMissing: List<String> = emptyList(),
     onGenerateTts: suspend (TtsGenerateRequest) -> TtsGenerateResponse,
@@ -105,6 +107,9 @@ internal fun AlarmListScreen(
     onRetryVoicePrerender: suspend (String) -> Boolean = { false },
     onRetryVoiceSpeechStyle: suspend (String) -> Boolean = { false },
     onReloadStockClips: () -> Unit = {},
+    // 목소리 하나의 클립 캐시 — 목소리마다 한 벌만 돈다(드라이브와 나눠 쓴다).
+    onCacheVoiceClips: suspend (String, List<com.alarmtalk.app.network.StockClip>, (Int, Int) -> Unit) -> Boolean =
+        { _, _, _ -> false },
     // promote 직후 사전렌더 드라이브(ViewModel 스코프) 진행/시작.
     prerenderDrive: PrerenderDriveState? = null,
     onStartPrerenderDrive: (String) -> Unit = {},
@@ -114,9 +119,15 @@ internal fun AlarmListScreen(
     onDeleteVoiceProfile: (String) -> Unit,
     onConfirmVoicePreviewPlayed: suspend (String, String) -> Unit,
     onUpdateVoicePreviewText: suspend (String, String) -> String,
-    onPromoteVoiceDraft: (String, Boolean, Boolean) -> Unit,
+    onPromoteVoiceDraft: (String, Boolean, Boolean, Float) -> Unit,
     onDeleteVoiceDraft: (String) -> Unit,
-    onRefreshSocial: () -> Unit,
+    // 월 한도로 등록 흐름을 끝내며 초안을 조용히 버린다(실패를 화면에 말하지 않는다) — 목소리 패널에 그대로 넘긴다.
+    onDiscardVoiceDraftQuietly: (String) -> Unit,
+    // 등록 흐름의 거절을 등록 창 안에 그리기 위한 세 가지 — 목소리 패널에 그대로 넘긴다
+    // (`VoiceProfileManagementPanel` 의 같은 이름 인자 참고).
+    voiceRegistrationFailure: VoiceRegistrationFailure? = null,
+    onVoiceRegistrationFailureShown: () -> Unit = {},
+    onRegistrationWindowOpenChange: (Boolean) -> Unit = {},
     onLeaveFamilyGroup: (String) -> Unit,
     onRegisterCode: (String) -> Unit,
     onEnsureFamilyShareCode: () -> Unit,
@@ -136,7 +147,6 @@ internal fun AlarmListScreen(
     onToggleEnabled: (String, Boolean) -> Unit,
     onEditAlarm: (AlarmEntity) -> Unit,
     onDeleteAlarm: (String) -> Unit,
-    onRequestAlarmPermissions: () -> Unit,
     /** 배너에서 곧장 그 권한 요청/설정으로 보낸다(모달을 거치지 않는다). */
     onRequestAlarmPermission: (PermissionTarget) -> Unit = {},
     // 선택 모드 진입/이탈을 알린다 — 상위 Scaffold 가 ＋ FAB 를 감추는 데 쓴다.
@@ -154,6 +164,7 @@ internal fun AlarmListScreen(
     }
     val hasAnyAlarm = sortedAlarms.isNotEmpty()
 
+    val context = LocalContext.current
     val listState = rememberLazyListState()
     // ⚠ **이용권에서 나가면 맨 위로 올린다**(2026-08-15 지시).
     // 나가기 버튼은 화면 **아래쪽**에 있어서, 나간 뒤 그 자리에 그대로 있으면 바뀐 이용권
@@ -285,7 +296,6 @@ internal fun AlarmListScreen(
                         familyGroup = familyGroup,
                         authSession = authSession,
                         onCreateVoiceProfile = onCreateVoiceProfile,
-                        onCreateVoiceProfiles = onCreateVoiceProfiles,
                         sensitiveConsentMissing = sensitiveConsentMissing,
                         onGenerateTts = onGenerateTts,
                         stockClips = stockClips,
@@ -298,6 +308,10 @@ internal fun AlarmListScreen(
                         onUpdateVoicePreviewText = onUpdateVoicePreviewText,
                         onPromoteVoiceDraft = onPromoteVoiceDraft,
                         onDeleteVoiceDraft = onDeleteVoiceDraft,
+                        onDiscardVoiceDraftQuietly = onDiscardVoiceDraftQuietly,
+                        voiceRegistrationFailure = voiceRegistrationFailure,
+                        onVoiceRegistrationFailureShown = onVoiceRegistrationFailureShown,
+                        onRegistrationWindowOpenChange = onRegistrationWindowOpenChange,
                         onOpenBilling = { onSelectTab(NativeTab.Billing) },
                         voiceDraftQuota = voiceDraftQuota,
                         onRegisterCode = onRegisterCode,
@@ -306,6 +320,7 @@ internal fun AlarmListScreen(
                         onRetryVoicePrerender = onRetryVoicePrerender,
                         onRetryVoiceSpeechStyle = onRetryVoiceSpeechStyle,
                         onReloadStockClips = onReloadStockClips,
+                        onCacheVoiceClips = onCacheVoiceClips,
                         prerenderDrive = prerenderDrive,
                         onStartPrerenderDrive = onStartPrerenderDrive,
                         storeEntitledNow = storeEntitledNow,
@@ -348,12 +363,13 @@ internal fun AlarmListScreen(
                 }
                 items(sortedAlarms, key = { it.id }) { alarm ->
                     // TTS 알람만 프로필 이름을 찾는다(녹음·파일 알람은 이름 없이 날짜만).
-                    // 무료 전환으로 사운드온리 잠금된 알람(preLockPlayMode≠null)은 더는 그 목소리로
-                    // 울리지 않으므로 목소리 이름을 숨긴다(대신 '기본 알람으로 변환' 배지가 뜬다).
+                    // 시스템이 '알람' 모드로 바꿔 둔 옛 잠금·강등 행은 더는 그 목소리로 울리지 않으므로
+                    // 목소리 이름을 숨긴다. 2026-09-29 부터의 잠금은 행을 **기본 목소리 알람**으로
+                    // 고쳐 쓰므로(billing-lifecycle.md 「목소리를 못 쓰게 되면」) 그 기본 목소리 이름이 보인다.
                     val voiceName = alarm.voiceProfileId
-                        ?.takeIf { alarm.voiceSource != VoiceSources.LOCAL_AUDIO && alarm.preLockPlayMode == null }
+                        ?.takeIf { alarm.voiceSource != VoiceSources.LOCAL_AUDIO && !alarm.wasVoiceAlarmConvertedBySystem() }
                         ?.let { profileId ->
-                            voiceProfiles.firstOrNull { it.id == profileId }?.name
+                            voiceProfiles.firstOrNull { it.id == profileId }?.let { systemVoiceDisplayName(context, it.id, it.name) }
                                 ?: familyVoices.firstOrNull { it.id == profileId }?.name
                         }
                     AlarmRow(

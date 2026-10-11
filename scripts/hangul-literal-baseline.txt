@@ -1,0 +1,2 @@
+# path<TAB>literal SHA-256 prefix<TAB>reviewed reason
+# 초기 기준선 0개. UI 미번역 문구를 추가해 검사를 우회하지 않는다.

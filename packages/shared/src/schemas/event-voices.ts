@@ -11,8 +11,9 @@ import catalogJson from '../event-voices.json';
  *   1. `event-voices.json` 의 `"<이벤트 id>".voices` 에 항목을 더한다(배열 순서 = 화면 순서, `?celeb=2`
  *      같은 번호 링크의 순번). `id` 는 소문자 슬러그이고 주소·좋아요 행·파일 이름에 그대로 쓰인다.
  *      `name` 은 세 언어 라벨(익명이면 "voice 2" 처럼), `portrait` 는 `public/` 경로이거나 null
- *      (null 이면 추상 아바타). `portraits` 는 **메시지 종류별** 사진(`birthday`·`chuseok` → 경로) —
+ *      (null 이면 추상 아바타). `portraits` 는 **메시지 종류별** 사진(`birthday`·`love` → 경로) —
  *      그 종류의 소리가 재생될 때 화면이 그 사진으로 바꿔 보여 준다(없는 종류는 `portrait`).
+ *      키는 랜딩 `MESSAGE_KINDS` 에 있는 종류만 읽힌다 — 화면에서 뺀 종류의 사진은 적어 둬도 안 쓰인다.
  *      `perso` 는 언어별 더빙 프로젝트 번호 — 같은 프로젝트를 여러 언어가 나눠 써도 되고,
  *      `reserved` 는 돌리면 안 되는 문장(홍보용) 번호다.
  *   2. 사진을 `apps/landing/public/event/<id>.<kind>.jpg` 로 넣는다(정사각 640px 이면 충분하다 — 화면은
@@ -44,7 +45,7 @@ export const EventVoiceSchema = z.object({
   name: z.object({ ko: z.string().min(1), en: z.string().min(1), ja: z.string().min(1) }),
   /** `public/` 아래 경로. null 이면 사진 없이 추상 아바타. */
   portrait: z.string().startsWith('/').nullable(),
-  /** 메시지 종류별 사진(`birthday`·`chuseok` → `public/` 경로). 없는 종류는 `portrait` 로 그린다. */
+  /** 메시지 종류별 사진(`birthday`·`love` → `public/` 경로). 없는 종류는 `portrait` 로 그린다. */
   portraits: z.record(z.string(), z.string().startsWith('/')).optional(),
   perso: z.object({
     /** 프로젝트가 속한 Perso 스페이스(`GET /portal/api/v1/spaces`). 문장 목록을 읽을 때 필요하다. */

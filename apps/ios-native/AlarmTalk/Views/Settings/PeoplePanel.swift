@@ -14,9 +14,9 @@ struct PeoplePanel: View {
             if let group = socialFeatures.familyGroup?.group {
                 HStack {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("가족 그룹")
+                        Text(String(localized: "가족 그룹"))
                             .font(.headline)
-                        Text("멤버 \(socialFeatures.familyGroup?.members.count ?? 0)/\(group.maxMembers)")
+                        Text(String(localized: "멤버 \(socialFeatures.familyGroup?.members.count ?? 0)/\(group.maxMembers)"))
                             .font(.footnote)
                             .foregroundStyle(AlarmTalkTheme.textSecondary)
                     }
@@ -29,7 +29,7 @@ struct PeoplePanel: View {
                         VStack(alignment: .leading, spacing: 3) {
                             Text(member.name ?? member.email ?? member.userId)
                                 .font(.subheadline.weight(.semibold))
-                            Text(member.allowFamilyAlarms == true ? "상대방 알람 허용" : "상대방 알람 꺼짐")
+                            Text(member.allowFamilyAlarms == true ? String(localized: "상대방 알람 허용") : String(localized: "상대방 알람 꺼짐"))
                                 .font(.caption)
                                 .foregroundStyle(AlarmTalkTheme.textSecondary)
                         }
@@ -71,7 +71,7 @@ struct VoucherRow: View {
                 Text(voucher.code)
                     .font(.subheadline.weight(.bold))
                     .foregroundStyle(AlarmTalkTheme.text)
-                Text("\(voucher.planName) · \(voucherStatusLabel(voucher.status)) · \(voucher.useCount ?? 0)/\(voucher.maxUses ?? 1)")
+                Text(String(localized: "\(voucher.localizedPlanName()) · \(voucherStatusLabel(voucher.status)) · \(voucher.useCount ?? 0)/\(voucher.maxUses ?? 1)"))
                     .font(.caption)
                     .foregroundStyle(AlarmTalkTheme.textSecondary)
             }
@@ -102,17 +102,17 @@ private func voucherStatusLabel(_ status: String?) -> String {
     let trimmed = status?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     switch trimmed {
     case "active", "issued":
-        return "사용 가능"
+        return String(localized: "사용 가능")
     case "pending":
-        return "대기 중"
+        return String(localized: "대기 중")
     case "redeemed", "used":
-        return "사용됨"
+        return String(localized: "사용됨")
     case "expired":
-        return "만료됨"
+        return String(localized: "만료됨")
     case "revoked", "cancelled", "canceled":
-        return "취소됨"
+        return String(localized: "취소됨")
     default:
-        return trimmed.isEmpty ? "상태 없음" : trimmed
+        return trimmed.isEmpty ? String(localized: "상태 없음") : trimmed
     }
 }
 

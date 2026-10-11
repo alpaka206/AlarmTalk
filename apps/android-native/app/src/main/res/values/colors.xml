@@ -2,7 +2,8 @@
 <resources>
     <color name="voice_alarm_app_background">#171A1D</color>
     <color name="voice_alarm_status_bar">#111827</color>
-    <!-- 적응형 아이콘 배경. 로고가 full-bleed 파랑이라 foreground 가 캔버스를 다 덮지만,
-         기기가 아이콘을 확대·시차 이동시킬 때 가장자리가 드러나므로 로고 파랑과 맞춰 둔다. -->
+    <!-- 적응형 아이콘 배경 = 브랜드 원본(docs/brand/app-icon-master.png)의 단색 배경.
+         foreground 에는 시계만 있고 시계 안 파형도 투명이라, 배경과 파형을 이 색이 채운다 —
+         원본과 값이 어긋나면 파형만 다른 파랑으로 떠 보인다. -->
     <color name="ic_launcher_background">#0560E9</color>
 </resources>

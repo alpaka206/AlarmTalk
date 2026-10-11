@@ -94,7 +94,7 @@ describe('GET /family/groups/current', () => {
     expect(data.members[1].user_id).toBe(MEMBER_PK);
     expect(data.members[1].allow_family_alarms).toBe(false);
     expect(data.members[1].dynamic_prompt_settings).toEqual({
-      weather: { country: null, city: null },
+      weather: { region: null, country: null, city: null },
       fortune: { gender: null, birth_date: null, birth_time: null },
     });
     expect(data.members[1].dynamic_prompt_settings_state).toEqual({

@@ -29,14 +29,10 @@ struct FamilyAlarmQuietTimeDialog: View {
     /// 달라진다(예: 월·수만 골라도 평일 전체로 저장된다). 안드로이드는 처음부터
     /// `QUIET_DAY_PRESETS` 3택이다.
     static let dayPresets: [(label: String, days: Set<Int>)] = [
-        ("평일", [1, 2, 3, 4, 5]),
-        ("주말", [0, 6]),
-        ("매일", [0, 1, 2, 3, 4, 5, 6]),
+        (String(localized: "평일"), [1, 2, 3, 4, 5]),
+        (String(localized: "주말"), [0, 6]),
+        (String(localized: "매일"), [0, 1, 2, 3, 4, 5, 6]),
     ]
-
-    private var isValid: Bool {
-        !drafts.isEmpty && drafts.allSatisfy { $0.isValid }
-    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -65,7 +61,7 @@ struct FamilyAlarmQuietTimeDialog: View {
                             drafts.append(QuietWindowDraft.defaultEvening)
                         }
                     } label: {
-                        Text("+ 시간 추가")
+                        Text(String(localized: "+ 시간 추가"))
                             .font(.subheadline.weight(.semibold))
                             .frame(maxWidth: .infinity)
                     }
@@ -106,7 +102,7 @@ struct FamilyAlarmQuietTimeDialog: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Text("설정 불가 시간")
+                Text(String(localized: "설정 불가 시간"))
                     .font(.title3.weight(.bold))
                 Spacer()
                 Button(action: onCancel) {
@@ -115,7 +111,7 @@ struct FamilyAlarmQuietTimeDialog: View {
                 }
                 .buttonStyle(.plain)
             }
-            Text("선택한 시간대에는 다른 사람이 내게 알람을 만들 수 없어요.")
+            Text(String(localized: "선택한 시간대에는 다른 사람이 내게 알람을 만들 수 없어요."))
                 .font(.footnote)
                 .foregroundStyle(AlarmTalkTheme.textSecondary)
         }
@@ -128,13 +124,15 @@ struct FamilyAlarmQuietTimeDialog: View {
         // (`ui/settings/SettingsScreenComponents.kt` 의 설정 불가 시간 다이얼로그)도
         // `ModalDialogTitle` 의 X + [저장] **둘뿐**이고 취소가 없다.
         HStack(spacing: 10) {
-            Button("저장") {
+            Button(String(localized: "저장")) {
                 onConfirm(drafts.map { $0.toWindow() })
             }
             .buttonStyle(.borderedProminent)
             .tint(AlarmTalkTheme.primary)
             .frame(maxWidth: .infinity)
-            .disabled(!isValid)
+            // 시·분은 DatePicker 성분이거나 `parse` 가 이미 범위로 자른 값이고, 요일은
+            // 프리셋 또는 평일 폴백이라 비지 않는다 — 막을 것은 onAppear 전 첫 프레임뿐이다.
+            .disabled(drafts.isEmpty)
         }
         .padding(20)
         .background(AlarmTalkTheme.surface)
@@ -151,9 +149,7 @@ struct FamilyAlarmQuietTimeDialog: View {
     /// 프리셋 집합을 **통째로 대입**한다. 개별 요일을 켜고 끄지 않는다(위 주석 참조).
     private func selectDayPreset(index: Int, days: Set<Int>) {
         guard drafts.indices.contains(index) else { return }
-        var draft = drafts[index]
-        draft.days = days
-        drafts[index] = draft
+        drafts[index].days = days
     }
 
     private func hour(forTarget target: QuietTimePickerTarget) -> Int {
@@ -170,15 +166,13 @@ struct FamilyAlarmQuietTimeDialog: View {
 
     private func apply(hour: Int, minute: Int, target: QuietTimePickerTarget) {
         guard drafts.indices.contains(target.index) else { return }
-        var draft = drafts[target.index]
         if target.isStart {
-            draft.startHour = hour
-            draft.startMinute = minute
+            drafts[target.index].startHour = hour
+            drafts[target.index].startMinute = minute
         } else {
-            draft.endHour = hour
-            draft.endMinute = minute
+            drafts[target.index].endHour = hour
+            drafts[target.index].endMinute = minute
         }
-        drafts[target.index] = draft
     }
 }
 
@@ -199,33 +193,6 @@ private struct QuietWindowDraft: Equatable {
         endMinute: 0
     )
 
-    init(days: Set<Int>, startHour: Int, startMinute: Int, endHour: Int, endMinute: Int) {
-        self.days = days
-        self.startHour = startHour
-        self.startMinute = startMinute
-        self.endHour = endHour
-        self.endMinute = endMinute
-    }
-
-    init(window: FamilyAlarmQuietWindow) {
-        let cleanedDays = window.days.filter { (0...6).contains($0) }
-        days = Set(cleanedDays.isEmpty ? [1, 2, 3, 4, 5] : cleanedDays)
-        let start = QuietWindowDraft.parse(window.start, fallbackHour: 9, fallbackMinute: 0)
-        let end = QuietWindowDraft.parse(window.end, fallbackHour: 18, fallbackMinute: 30)
-        startHour = start.hour
-        startMinute = start.minute
-        endHour = end.hour
-        endMinute = end.minute
-    }
-
-    var isValid: Bool {
-        !days.isEmpty &&
-            (0...23).contains(startHour) &&
-            (0...59).contains(startMinute) &&
-            (0...23).contains(endHour) &&
-            (0...59).contains(endMinute)
-    }
-
     func toWindow() -> FamilyAlarmQuietWindow {
         FamilyAlarmQuietWindow(
             days: days.sorted(),
@@ -243,6 +210,20 @@ private struct QuietWindowDraft: Equatable {
 
     private static func timeString(hour: Int, minute: Int) -> String {
         String(format: "%02d:%02d", max(0, min(23, hour)), max(0, min(59, minute)))
+    }
+}
+
+// 확장에 두어야 합성 멤버와이즈 init 이 살아 있다(본문에 init 을 두면 사라진다).
+extension QuietWindowDraft {
+    init(window: FamilyAlarmQuietWindow) {
+        let cleanedDays = window.days.filter { (0...6).contains($0) }
+        days = Set(cleanedDays.isEmpty ? [1, 2, 3, 4, 5] : cleanedDays)
+        let start = QuietWindowDraft.parse(window.start, fallbackHour: 9, fallbackMinute: 0)
+        let end = QuietWindowDraft.parse(window.end, fallbackHour: 18, fallbackMinute: 30)
+        startHour = start.hour
+        startMinute = start.minute
+        endHour = end.hour
+        endMinute = end.minute
     }
 }
 
@@ -268,7 +249,7 @@ private struct QuietWindowCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("시간대 \(index + 1)")
+                Text(String(localized: "시간대 \(index + 1)"))
                     .font(.subheadline.weight(.semibold))
                 Spacer()
                 if removable {
@@ -277,7 +258,7 @@ private struct QuietWindowCard: View {
                             .foregroundStyle(AlarmTalkTheme.error)
                     }
                     .buttonStyle(.borderless)
-                    .accessibilityLabel("이 시간대 삭제")
+                    .accessibilityLabel(String(localized: "이 시간대 삭제"))
                 }
             }
             HStack(spacing: 6) {
@@ -368,7 +349,7 @@ private struct QuietTimePicker: View {
             .frame(maxWidth: .infinity)
             // 취소는 위 X 하나로 낸다(같은 이유 — `footer` 주석 참조).
             HStack(spacing: 10) {
-                Button("확인") {
+                Button(String(localized: "확인")) {
                     let cal = Calendar(identifier: .gregorian)
                     let parts = cal.dateComponents([.hour, .minute], from: selection)
                     onConfirm(parts.hour ?? 0, parts.minute ?? 0)

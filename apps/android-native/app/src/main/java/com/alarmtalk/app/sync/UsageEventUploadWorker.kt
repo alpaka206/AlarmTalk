@@ -14,7 +14,7 @@ import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import com.alarmtalk.app.core.AlarmTalkLog
 import com.alarmtalk.app.core.AlarmTalkLog.TAG
-import com.alarmtalk.app.data.AlarmAppContainer
+import com.alarmtalk.app.data.AlarmDatabase
 import com.alarmtalk.app.data.UsageEventEntity
 import com.alarmtalk.app.network.AlarmTalkApiClient
 import com.alarmtalk.app.network.AuthSessionStore
@@ -45,7 +45,7 @@ class UsageEventUploadWorker(
         // ⚠ 다른 워커와 같은 순서 — 세대를 세션보다 먼저 읽는다(A→B 전환 중이면 안전하게 실패).
         val startGeneration = sessionStore.sessionGeneration()
         val session = sessionStore.read() ?: return Result.success()
-        val dao = AlarmAppContainer.database(applicationContext).usageEventDao()
+        val dao = AlarmDatabase.getInstance(applicationContext).usageEventDao()
 
         return runCatching {
             val api = AlarmTalkApiClient.create()

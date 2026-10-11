@@ -50,6 +50,7 @@
 - 주석은 **왜**를 설명한다. **무엇**은 식별자가 설명한다.
 - `TODO` / `FIXME` 는 이슈 id 를 달고 쓴다.
 - 사용자 노출 문자열은 로컬라이즈한다. 백엔드 로그는 영어 구조화 로그(`logStructured('info', { at: 'route.path', ... })`).
+- `scripts/check-hangul-literals.py`가 호출부·카탈로그를 검사한다. 허용목록은 사유 분류를 적고, 기준선은 늘리지 않는다. 상세는 [앱 화면 언어](../spec/localization.md#6-번역-누락-ci-검사).
 
 ## 6. 테스트
 

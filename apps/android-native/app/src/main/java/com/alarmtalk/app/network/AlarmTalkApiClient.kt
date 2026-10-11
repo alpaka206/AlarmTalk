@@ -35,11 +35,41 @@ object AlarmTalkApiClient {
         fun onConsentRequired(consent: String?) {}
     }
 
+    /**
+     * 기본 목소리 받기 워커의 **요청 하나에 걸리는 전체 시간 상한**(초).
+     *
+     * 연결·읽기·쓰기 60초는 **바이트 사이** 간격이라, 아주 느린 망에서는 클립 하나가 끝없이 길어질 수
+     * 있다 — 그동안 워커 회차가 끝나지 않는다(2026-10-10 Sentry 조사). 넘으면 OkHttp 가
+     * `InterruptedIOException("timeout")` 을 던지고, 워커는 그걸 일시적 실패로 세어 다음 회차에 다시 받는다.
+     * 규칙은 `docs/spec/voice-and-message.md` 「준비 페이지」 의 '받기 한 회차에는 끝이 있다'.
+     *
+     * 전경 클라이언트(`MainViewModel.api`)에는 걸지 않는다 — 목소리 등록 업로드처럼 오래 걸려도 정상인
+     * 요청이 같은 클라이언트를 쓴다.
+     */
+    const val CLIP_DOWNLOAD_CALL_TIMEOUT_SECONDS = 90L
+
+    /**
+     * @param callTimeoutSeconds 요청 하나의 **전체** 시간 상한. 0 이면 상한이 없다(OkHttp 기본값).
+     */
     fun create(
         baseUrl: String = BuildConfig.VOICE_ALARM_API_BASE_URL,
         unauthorizedHandler: UnauthorizedHandler? = null,
         appVersionCode: Int = 0,
-    ): AlarmTalkApi {
+        callTimeoutSeconds: Long = 0L,
+    ): AlarmTalkApi =
+        Retrofit.Builder()
+            .baseUrl(normalizeBaseUrl(baseUrl))
+            .client(httpClient(unauthorizedHandler, appVersionCode, callTimeoutSeconds))
+            .addConverterFactory(GsonConverterFactory.create())
+            .build()
+            .create(AlarmTalkApi::class.java)
+
+    /** [create] 가 쓰는 HTTP 클라이언트. 테스트가 시간 상한을 직접 본다. */
+    internal fun httpClient(
+        unauthorizedHandler: UnauthorizedHandler? = null,
+        appVersionCode: Int = 0,
+        callTimeoutSeconds: Long = 0L,
+    ): OkHttpClient {
         val logging = HttpLoggingInterceptor().apply {
             level = if (BuildConfig.DEBUG) {
                 HttpLoggingInterceptor.Level.BASIC
@@ -78,20 +108,14 @@ object AlarmTalkApiClient {
             .connectTimeout(60, TimeUnit.SECONDS)
             .readTimeout(60, TimeUnit.SECONDS)
             .writeTimeout(60, TimeUnit.SECONDS)
+            .callTimeout(callTimeoutSeconds, TimeUnit.SECONDS)
             .addInterceptor(versionHeader)
             .addInterceptor(consentInterceptor)
             .addInterceptor(logging)
         if (unauthorizedHandler != null) {
             builder.authenticator(UnauthorizedAuthenticator(unauthorizedHandler))
         }
-        val client = builder.build()
-
-        return Retrofit.Builder()
-            .baseUrl(normalizeBaseUrl(baseUrl))
-            .client(client)
-            .addConverterFactory(GsonConverterFactory.create())
-            .build()
-            .create(AlarmTalkApi::class.java)
+        return builder.build()
     }
 
     fun bearer(token: String): String = "Bearer $token"

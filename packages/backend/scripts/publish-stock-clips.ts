@@ -1,7 +1,7 @@
 /**
  * **미리 구워 둔 스톡 클립을 R2 와 DB 에 게시한다.**
  *
- * `scripts/prerender-stock-preview.ts` 가 만든 `voice-preview/` 의 바이트를 그대로 올린다 —
+ * `scripts/prerender-stock-preview.ts` 가 만든 `voice-preview/` 의 바이트 — 사람이 들어 본 소리 — 를 올린다.
  * **배포 때 서버가 다시 합성하지 않는다.** 그게 이 스크립트의 존재 이유다:
  *
  *  - 예전에는 배포 직후 cron 이 240개를 5분에 6개씩 구웠다. **3시간 20분** 동안 기본
@@ -11,23 +11,37 @@
  *  - 미리 올려 두면 **동시에 굽는 렌더가 없다.** 경합이 성립하지 않는다.
  *
  * ⚠ **키는 서버가 계산하는 것과 한 글자도 달라선 안 된다.** 그래서 `computeTtsCacheKey`·
- *   `generatedTtsObjectKey`·`withClosingBreath` 를 **서버 소스에서 그대로 가져다 쓴다**
+ *   `generatedTtsObjectKey`·`TTS_MODEL_ID`·`TTS_LOUDNESS_BOOST_DB` 를 **서버 소스에서 그대로 가져다 쓴다**
  *   (베끼지 않는다). 어긋나면 `findMissingStockTargets` 가 이 클립을 '없다' 로 세어
  *   cron 이 같은 자리를 다시 굽고, 그때부터 옛 경합이 되살아난다.
  *
  * 멱등하다 — 이미 게시된 자리는 건너뛴다. 중간에 끊기면 다시 돌리면 이어서 한다.
  *
+ * **교체 갈래**(2026-09-30): 같은 자리에 살아 있는 행이 있는데 그 `audio_url` 이 지금 문구·모델로 계산한 키와
+ * 다르면(= 원장 `request_hash` 가 새 캐시 키와 다르면 — 키가 결정론적이라 둘은 같은 질문이다) **같은 message_id 에
+ * 소리만 갈아 끼운다**(`replaceStockClipInPlace`). 합성 모델을 바꾼 회차(eleven_v3 → eleven_v4_turbo)가 이 길로
+ * 간다 — 행을 은퇴시키지 않으므로 앱에 차단 화면이 뜨지 않고, 앱은 바뀐 `audio_url` 을 보고 다시 받는다.
+ * ⚠ `POST /api/admin/seed-stock-clips?reset=` 은 쓰지 말 것 — 행을 지우고 알람을 sound-only 로 뗀다.
+ *
+ * **음량**(2026-10-08): 서버는 모든 합성을 `TTS_LOUDNESS_BOOST_DB` 만큼 올려 묶는다. 게시본도 같아야 해서, 들어 본
+ * 바이트를 **같은 셈·같은 인코더로 올린 사본**(`mp3-loudness-boost.ts` — 다시 합성하지 않는다)을 만들어 그걸 올린다.
+ * 시청본은 손대지 않는다. 다시 묶어도 커지지 않는 클립(봉우리가 높은 시우 거의 전부)은 들어 본 소리를 그대로 두고
+ * 표지만 단 사본이다 — 다시 묶으면 약 0.45 dB 작아져서 올리기가 오히려 소리를 줄인다(`boostMp3` 의 `reencoded`).
+ * 올린 값은 캐시 키에도 들어가므로(`loudnessBoostDb` — 서버 `generateStockClip` 과 같은 값; 그대로 둔 클립도 같다)
+ * 올리기 전에 게시한 클립은 키가 달라 위 교체 갈래로 간다 — dev 의 올리기 전 v4 클립도, prod 의 v3 클립도.
+ * ⚠ 풀기에 macOS 내장 `afconvert` 를 쓴다 — 이 스크립트는 macOS 에서 돌린다.
+ *
  * 사용 (packages/backend 에서):
- *   npm run publish:stock -- --env dev --dry-run   # 무엇을 올릴지만 본다
+ *   npm run publish:stock -- --env dev --dry-run   # 무엇을 올릴지·바꿀지만 본다([예정]·[교체])
  *   npm run publish:stock -- --env dev
  *   npm run publish:stock -- --env prod
  *
  * ⚠ **R2 버킷과 DB 는 환경별로 따로다**(dev `voice-alarm-voices` / prod
  *   `voice-alarm-voices-prod`). 합성은 한 번이지만 **게시는 두 번** 해야 한다.
  *
- * ⚠ **prod 는 `#110` 이 옛 프리셋을 은퇴시킨 뒤에 돌린다.** 은퇴 전에는 같은 자리에 살아
- *   있는 행이 있어 이 스크립트가 전부 건너뛴다(`retired_at` 컬럼 자체가 없으면 아무것도
- *   하지 않고 먼저 멈춘다). R2 업로드만 먼저 해 두는 것은 무해하다 — 키가 결정론적이라
+ * ⚠ **`retired_at`(#110) 이 없는 DB 에서는 아무것도 하지 않고 먼저 멈춘다.** 살아 있는 행이 옛 소리를
+ *   가리키면 위 교체 갈래가 같은 id 에 소리만 바꾼다(2026-09-30 전에는 건너뛰었다 — 그래서 #110 이 먼저
+ *   은퇴시켜야 했다). R2 업로드만 먼저 해 두는 것은 무해하다 — 키가 결정론적이라
  *   나중에 이 스크립트가 **같은 자리에 같은 바이트를 다시 PUT** 하고, 그때 원장 행이 그
  *   키를 가리키게 된다.
  *
@@ -39,7 +53,7 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 
 import { createClient, type Client } from '@libsql/client';
@@ -47,34 +61,25 @@ import { createClient, type Client } from '@libsql/client';
 import {
   STOCK_CLIP_PRESETS,
   SYSTEM_VOICE_LIBRARY_USER_ID,
-  stripDeliveryTags,
-  withClosingBreath,
+  systemStockTexts,
 } from '../src/lib/stock-clips.ts';
-import { computeTtsCacheKey, generatedTtsObjectKey } from '../src/lib/audio-cache.ts';
-import { prepareAlarmTextWithVertex } from '../src/lib/vertex-translate.ts';
+import { computeTtsCacheKey, generatedTtsObjectKey, STOCK_TTS_CACHE_SCOPE } from '../src/lib/audio-cache.ts';
+import { ledgerAudioUrlFor, replaceStockClipInPlace } from '../src/lib/stock-clip-replace.ts';
 import { ELEVENLABS_TTS_OUTPUT_FORMAT } from '../src/lib/elevenlabs.ts';
+import { TTS_LOUDNESS_BOOST_DB, TTS_MODEL_ID, TTS_VOICE_SETTINGS } from '../src/lib/tts-model.ts';
+import { afconvertDecoder, AlreadyBoostedError, boostMp3 } from './mp3-loudness-boost.ts';
 import {
   computeFingerprint,
   fingerprintKey,
   loadFingerprints,
 } from './stock-preview-fingerprint.ts';
 
-/** `voice-provider.ts` 의 elevenlabs 갈래와 같은 값. 바뀌면 캐시 키가 갈라진다. */
-const PROVIDER = 'elevenlabs';
-const MODEL_ID = 'eleven_v3';
-const OUTPUT_FORMAT = 'mp3';
-
 /**
- * ⚠ `prerender-stock-preview.ts` 의 `VOICE_SETTINGS` 와 **같은 값**이어야 한다 —
- * 지문 계산에 들어가므로 다르면 멀쩡한 시청본이 전부 '낡음' 으로 읽힌다.
+ * `voice-provider.ts` 의 elevenlabs 갈래와 같은 값. 바뀌면 캐시 키가 갈라진다.
+ * 모델(`TTS_MODEL_ID`)과 합성 설정(`TTS_VOICE_SETTINGS` — 지문에 들어간다)은 서버 상수를 그대로 쓴다.
  */
-const PREVIEW_VOICE_SETTINGS = {
-  stability: 0.5,
-  similarity_boost: 0.8,
-  style: 0.4,
-  speed: 0.9,
-  use_speaker_boost: true,
-} as const;
+const PROVIDER = 'elevenlabs';
+const OUTPUT_FORMAT = 'mp3';
 
 /** 교체 후의 시스템 목소리. `migrations.ts` #111 · 시청본 생성기와 **같은 값**이어야 한다. */
 const VOICES = [
@@ -112,6 +117,11 @@ function findRepoRoot(): string {
 const REPO_ROOT = findRepoRoot();
 const BACKEND_DIR = resolve(REPO_ROOT, 'packages/backend');
 const PREVIEW_ROOT = resolve(REPO_ROOT, 'voice-preview');
+/**
+ * 음량을 올린 게시본 사본을 두는 곳(`<언어>/<목소리>/<파일>`). 실행마다 다시 만든다 — 시청본에서 결정론적으로
+ * 나오므로 남은 사본을 믿지 않는다. 올리기 전에 들어 보고 싶으면 `--dry-run` 뒤 여기서 듣는다.
+ */
+const STAGING_ROOT = resolve(BACKEND_DIR, 'node_modules/.cache/publish-stock-clips');
 
 function argValue(name: string): string | undefined {
   const argv = process.argv.slice(2);
@@ -158,7 +168,10 @@ interface Target {
   category: string;
   variant: number;
   baseText: string;
+  /** 사람이 들어 본 시청본 — 읽기만 한다. */
   filePath: string;
+  /** 그 시청본의 음량을 올린 사본 — **이걸 올린다**(`stageBoostedClips`). */
+  stagedPath: string;
 }
 
 function collectTargets(): Target[] {
@@ -183,6 +196,7 @@ function collectTargets(): Target[] {
             variant,
             baseText,
             filePath: previewPath(language, voice.name, fileName),
+            stagedPath: resolve(STAGING_ROOT, 'boosted', language, voice.name, fileName),
           });
         });
       }
@@ -191,38 +205,22 @@ function collectTargets(): Target[] {
   return targets;
 }
 
-/**
- * 서버의 시스템 스톡 갈래와 **같은 방식**으로 문구 세 벌을 만든다
- * (`generateStockClip` 의 else 분기).
- *
- * `translate:false, autoTag:false` 면 `prepareAlarmTextWithVertex` 는 네트워크를 타지 않고
- * 로컬 패스스루로 태그만 뽑는다 — 그래서 `env` 가 비어도 된다.
- */
-async function deriveTexts(baseText: string, language: Language) {
-  const prepared = await prepareAlarmTextWithVertex({} as never, baseText, {
-    targetLanguage: language,
-    sourceLanguage: language,
-    translate: false,
-    autoTag: false,
-  });
-  const synthesisText = prepared.text;
-  return {
-    synthesisText,
-    displayText: stripDeliveryTags(synthesisText) || stripDeliveryTags(baseText),
-    deliveryTagsJson: JSON.stringify(prepared.tags),
-  };
-}
 
-/** 이 자리에 이미 살아 있는 프리셋이 있으면 그 id, 없으면 null. */
-async function publishedMessageId(db: Client, target: Target): Promise<string | null> {
+/** 이 자리에 이미 살아 있는 프리셋이 있으면 그 id 와 지금 가리키는 소리, 없으면 null. */
+async function publishedMessage(
+  db: Client,
+  target: Target,
+): Promise<{ id: string; audioUrl: string | null } | null> {
   const rows = await db.execute({
-    sql: `SELECT id FROM messages
+    sql: `SELECT id, audio_url FROM messages
            WHERE voice_profile_id = ? AND category = ? AND language = ? AND variant = ?
              AND COALESCE(is_preset, 0) = 1 AND retired_at IS NULL
            LIMIT 1`,
     args: [target.profileId, target.category, target.language, target.variant],
   });
-  return rows.rows[0] ? String(rows.rows[0].id) : null;
+  const row = rows.rows[0];
+  if (!row) return null;
+  return { id: String(row.id), audioUrl: row.audio_url == null ? null : String(row.audio_url) };
 }
 
 /**
@@ -234,7 +232,11 @@ async function publishedMessageId(db: Client, target: Target): Promise<string | 
  *   `generated_audio_assets` 는 R2 키의 **유일한 출처**라, 없으면 동의 철회·계정 삭제에도
  *   그 오디오를 찾아 지울 수 없다.
  *
- * @returns 실제로 채웠으면 true.
+ * ⚠ **판정은 message_id 가 아니라 지금 가리키는 오브젝트(`audio_url`)로 한다**(Codex #840). 교체는 같은
+ *   message_id 에 소리만 바꾸므로 옛 모델의 원장 행이 그 id 로 남아 있다 — id 로 보면 새 오브젝트의 원장이
+ *   빠져도 "있다" 로 읽는다.
+ * ⚠ 같은 `request_hash` 를 다른 오브젝트가 쥐고 있으면 채울 수 없다(`UNIQUE`) — 조용히 무시하지 않고
+ *   `'hash-taken'` 으로 알린다.
  */
 async function repairLedgerIfMissing(
   db: Client,
@@ -243,25 +245,26 @@ async function repairLedgerIfMissing(
   cacheKey: string,
   objectKey: string,
   synthesisText: string,
-): Promise<boolean> {
+): Promise<'present' | 'repaired' | 'hash-taken'> {
   const existing = await db.execute({
-    sql: 'SELECT 1 FROM generated_audio_assets WHERE message_id = ? LIMIT 1',
-    args: [messageId],
+    sql: 'SELECT 1 FROM generated_audio_assets WHERE audio_url = ? LIMIT 1',
+    args: [`r2://${objectKey}`],
   });
-  if (existing.rows.length > 0) return false;
-  const result = await db.execute({
-    sql: `INSERT OR IGNORE INTO generated_audio_assets
+  if (existing.rows.length > 0) return 'present';
+  if ((await ledgerAudioUrlFor(db, cacheKey)) !== null) return 'hash-taken';
+  await db.execute({
+    sql: `INSERT INTO generated_audio_assets
             (id, user_id, voice_profile_id, message_id, provider, provider_voice_id,
              model_id, language, request_hash, text,
              audio_url, audio_object_key, audio_format)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     args: [
       crypto.randomUUID(), SYSTEM_VOICE_LIBRARY_USER_ID, target.profileId, messageId,
-      PROVIDER, target.providerVoiceId, MODEL_ID, target.language,
+      PROVIDER, target.providerVoiceId, TTS_MODEL_ID, target.language,
       cacheKey, synthesisText, `r2://${objectKey}`, objectKey, OUTPUT_FORMAT,
     ],
   });
-  return (result.rowsAffected ?? 0) > 0;
+  return 'repaired';
 }
 
 function uploadToR2(bucket: string, key: string, filePath: string, env: Record<string, string>): void {
@@ -280,6 +283,72 @@ function uploadToR2(bucket: string, key: string, filePath: string, env: Record<s
   );
 }
 
+/**
+ * **들어 본 시청본을 서버와 같은 만큼 올린 게시본 사본을 만든다**(`mp3-loudness-boost.ts`).
+ *
+ * DB 에 손대기 전에 대상 전부를 만든다 — 하나라도 못 만들면(afconvert 없음·깨진 파일·이미 올린 파일) 아무것도
+ * 게시하지 않고 멈춘다. 그래야 '일부만 올린 크기' 로 섞이지 않는다.
+ * ⚠ 시청본에 표지가 있으면(누가 올린 사본을 `voice-preview/` 에 넣었다) 멈춘다 — 그대로 올리면 두 번 올라간다.
+ * 끝에 몇 개를 다 올렸고·덜 올렸고·그대로 뒀는지, 다시 묶은 것이 실제로 얼마나 커졌는지(순 변화 — 다시 묶는 손실까지
+ * 친 값)를 한 줄로 보여 준다.
+ */
+async function stageBoostedClips(targets: Target[]): Promise<boolean> {
+  const decode = afconvertDecoder(resolve(STAGING_ROOT, 'decode'));
+  const fullGainDb = TTS_LOUDNESS_BOOST_DB;
+  let limited = 0;
+  let kept = 0;
+  const netDbs: number[] = [];
+  for (const target of targets) {
+    const label = `${target.language}/${target.voiceName}/${target.category}_${String(target.variant).padStart(2, '0')}`;
+    if (!(fullGainDb > 0)) {
+      // 0 이면 서버도 굽지 않고 제공자 MP3 를 그대로 쓴다(`needsVoiceBake`) — 들어 본 바이트를 그대로 올린다.
+      // 키에서도 음량이 빠지므로 올리기 전의 키·바이트로 돌아간다.
+      mkdirSync(dirname(target.stagedPath), { recursive: true });
+      writeFileSync(target.stagedPath, readFileSync(target.filePath));
+      continue;
+    }
+    try {
+      const boosted = await boostMp3(readFileSync(target.filePath), decode);
+      mkdirSync(dirname(target.stagedPath), { recursive: true });
+      writeFileSync(target.stagedPath, boosted.bytes);
+      if (!boosted.reencoded) {
+        // 다시 묶으면 들어 본 것보다 작아지는 클립 — 소리는 그대로, 표지만 달았다.
+        kept += 1;
+        continue;
+      }
+      netDbs.push(boosted.netDb!);
+      // 봉우리(−0.2 dBFS)에 닿아 덜 올린 클립 — 정해진 동작이지만 몇 개인지는 보여 준다.
+      if (20 * Math.log10(boosted.gain) < fullGainDb - 0.005) limited += 1;
+    } catch (error) {
+      const message =
+        error instanceof AlreadyBoostedError
+          ? `시청본에 음량 표지(${error.markerDb} dB)가 있다 — voice-preview/ 에는 받은 원본만 둔다(올린 사본을 넣지 말 것)`
+          : (error as Error).message;
+      console.error(`⚠ 게시본을 만들지 못했다 — ${label}: ${message}`);
+      return false;
+    }
+  }
+  console.log(
+    fullGainDb > 0
+      ? `음량 +${fullGainDb} dB(TTS_LOUDNESS_BOOST_DB) 게시본 ${targets.length}개 — ` +
+          `다 올린 것 ${targets.length - limited - kept}개, 봉우리 때문에 덜 올린 것 ${limited}개, ` +
+          `다시 묶어도 커지지 않아 소리를 그대로 둔 것 ${kept}개${netChangeSummary(netDbs)} · ` +
+          resolve(STAGING_ROOT, 'boosted')
+      : `음량 값이 0 이다 — 들어 본 바이트 ${targets.length}개를 그대로 올린다`,
+  );
+  return true;
+}
+
+/** 다시 묶은 클립들의 순 변화(dB) — 가장 작은 것~가장 큰 것과 중앙. 없으면 빈 글자. */
+function netChangeSummary(netDbs: number[]): string {
+  if (netDbs.length === 0) return '';
+  const sorted = [...netDbs].sort((a, b) => a - b);
+  const signed = (value: number) => `${value > 0 ? '+' : ''}${value.toFixed(2)}`;
+  const mid = Math.floor(sorted.length / 2);
+  const median = sorted.length % 2 === 1 ? sorted[mid]! : (sorted[mid - 1]! + sorted[mid]!) / 2;
+  return ` · 다시 묶은 ${sorted.length}개의 순 변화 ${signed(sorted[0]!)}~${signed(sorted[sorted.length - 1]!)} dB(중앙 ${signed(median)})`;
+}
+
 async function main(): Promise<void> {
   const envName = argValue('--env') ?? 'dev';
   const bucket = BUCKETS[envName];
@@ -292,17 +361,18 @@ async function main(): Promise<void> {
 
   // ⚠ **지문을 먼저 본다**(리뷰 15차). 파일이 있다는 것만으로 올리면, 옛 대사·옛 설정으로
   //   구운 바이트가 **새 카탈로그로 계산한 키와 문구를 달고** 프로덕션에 올라간다.
-  //   실제로 이 작업 중에 그 상태를 만들었다(`withClosingBreath` 누락본 80개).
+  //   실제로 이 작업 중에 그 상태를 만들었다(v3 시절 여운 꼬리 누락본 80개).
   const fingerprints = loadFingerprints(PREVIEW_ROOT);
   const staleFiles: string[] = [];
   for (const t of targets) {
     if (!existsSync(t.filePath)) continue;
     const expected = computeFingerprint({
       providerVoiceId: t.providerVoiceId,
-      modelId: MODEL_ID,
+      modelId: TTS_MODEL_ID,
       outputFormat: ELEVENLABS_TTS_OUTPUT_FORMAT,
-      voiceSettings: PREVIEW_VOICE_SETTINGS,
-      providerText: withClosingBreath((await deriveTexts(t.baseText, t.language)).synthesisText),
+      voiceSettings: TTS_VOICE_SETTINGS,
+      // 서버의 시스템 스톡 갈래(`generateStockClip`)와 **같은 함수**로 문구를 만든다.
+      providerText: systemStockTexts(t.baseText).synthesisText,
     });
     if (fingerprints[fingerprintKey(t.language, t.voiceName, `${t.category}_${String(t.variant).padStart(2, '0')}.mp3`)] !== expected) {
       staleFiles.push(`${t.language}/${t.voiceName}/${t.category}_${t.variant}`);
@@ -327,6 +397,11 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (!(await stageBoostedClips(targets))) {
+    process.exitCode = 1;
+    return;
+  }
+
   const db = createClient({ url: env.TURSO_DATABASE_URL!, authToken: env.TURSO_AUTH_TOKEN });
 
   // ⚠ **`retired_at` 이 없으면 아직 #110 이 안 돌았다.** 그 상태로 진행하면 같은 자리에
@@ -346,43 +421,103 @@ async function main(): Promise<void> {
   console.log(`환경 ${envName} · 버킷 ${bucket} · 대상 ${targets.length}개`);
 
   let published = 0;
+  let replaced = 0;
   let skipped = 0;
   let failed = 0;
   for (const target of targets) {
     const label = `${target.language}/${target.voiceName}/${target.category}_${String(target.variant).padStart(2, '0')}`;
     try {
-      const { synthesisText, displayText, deliveryTagsJson } = await deriveTexts(
-        target.baseText,
-        target.language,
-      );
-      // ⚠ **제공자에게 보낸 그 글자로 키를 만든다** — 시청본도 같은 글자로 구웠다.
+      const { synthesisText, displayText, deliveryTagsJson } = systemStockTexts(target.baseText);
+      // ⚠ **제공자에게 보낸 그 글자로 키를 만든다** — 시청본도 같은 글자로 구웠고, 서버도 같다.
       const cacheKey = await computeTtsCacheKey({
         provider: PROVIDER,
         providerVoiceId: target.providerVoiceId,
         voiceProfileId: target.profileId,
-        modelId: MODEL_ID,
+        modelId: TTS_MODEL_ID,
         language: target.language,
         languageCode: target.language,
-        text: withClosingBreath(synthesisText),
+        text: synthesisText,
         outputFormat: OUTPUT_FORMAT,
+        scope: STOCK_TTS_CACHE_SCOPE, // 서버 `generateStockClip` 과 같은 범위 — 사용자 생성과 키가 겹치지 않는다.
+        // 올린 음량도 키에 든다 — 서버 `generateStockClip` 의 `loudnessBoostDb` 와 같은 값이고, 올리는 바이트(사본)도
+        // 같은 값으로 올렸다. 그래서 올리기 전에 게시한 클립(dev 의 v4)은 키가 달라 아래 교체 갈래로 간다.
+        loudnessBoostDb: TTS_LOUDNESS_BOOST_DB,
       });
       const objectKey = generatedTtsObjectKey(SYSTEM_VOICE_LIBRARY_USER_ID, cacheKey, OUTPUT_FORMAT);
       const audioUrl = `r2://${objectKey}`;
-      const size = statSync(target.filePath).size;
+      const size = statSync(target.stagedPath).size;
 
+      const existing = await publishedMessage(db, target);
+      // 이미 지금 문구·모델로 게시됐다(키가 결정론적이라 audio_url 이 같으면 request_hash 도 같다).
       // ⚠ **건너뛰기 전에 원장부터 본다**(리뷰 15차). message 는 들어갔는데 원장 INSERT
       //   전에 끊긴 상태가 남을 수 있고, 그냥 건너뛰면 그 구멍을 **아무도 못 고친다.**
-      const existingId = await publishedMessageId(db, target);
-      if (existingId) {
+      if (existing && existing.audioUrl === audioUrl) {
         if (dryRun) {
           skipped += 1;
           continue;
         }
-        const repaired = await repairLedgerIfMissing(
-          db, target, existingId, cacheKey, objectKey, synthesisText,
+        const ledger = await repairLedgerIfMissing(
+          db, target, existing.id, cacheKey, objectKey, synthesisText,
         );
-        if (repaired) console.log(`[원장 복구] ${label}`);
+        if (ledger === 'hash-taken') {
+          failed += 1;
+          console.error(`[보류] ${label} — 원장이 빠졌는데 같은 request_hash 를 다른 오브젝트가 쥐고 있어 채울 수 없다`);
+          continue;
+        }
+        if (ledger === 'repaired') console.log(`[원장 복구] ${label}`);
         skipped += 1;
+        continue;
+      }
+
+      // ⚠ **같은 request_hash 를 다른 오브젝트가 이미 쥐고 있으면 올리지 않는다**(Codex #840). 해시는 전역 UNIQUE
+      //   인데 오브젝트 키는 주인을 담는다. 스톡 키는 스톡 범위(`STOCK_TTS_CACHE_SCOPE`)라 사용자 생성과 겹치지
+      //   않지만, 겹치는 행이 있으면 그대로 게시할 때 원장 INSERT 가 무시돼 우리 오브젝트가 원장에 없게 된다.
+      //   그 자리는 옛 소리로 계속 울린다(`docs/ops/tts-model-rerender.md`). 실패로 세어 명령이 1 로 끝난다.
+      const ledgerUrl = await ledgerAudioUrlFor(db, cacheKey);
+      if (ledgerUrl !== null && ledgerUrl !== audioUrl) {
+        failed += 1;
+        console.error(`[보류] ${label} — 같은 request_hash 의 원장 행이 다른 오브젝트(${ledgerUrl})를 가리킨다`);
+        continue;
+      }
+
+      // ── 교체 갈래: 살아 있는 행이 옛 소리(옛 모델·옛 문구)를 가리킨다 → 같은 message_id 에 소리만 바꾼다.
+      if (existing) {
+        if (dryRun) {
+          console.log(`[교체] ${label}  ${(size / 1024).toFixed(0)}KB  ${existing.audioUrl ?? '(없음)'} → ${objectKey}`);
+          replaced += 1;
+          continue;
+        }
+        // 올린 뒤에 행을 바꾼다 — 행이 없는 오브젝트를 가리키는 순간이 없게. 올리는 것은 음량을 올린 사본이다.
+        uploadToR2(bucket, objectKey, target.stagedPath, env);
+        const outcome = await replaceStockClipInPlace(db, {
+          messageId: existing.id,
+          previousAudioUrl: existing.audioUrl,
+          ownerUserId: SYSTEM_VOICE_LIBRARY_USER_ID,
+          voiceProfileId: target.profileId,
+          provider: PROVIDER,
+          providerVoiceId: target.providerVoiceId,
+          modelId: TTS_MODEL_ID,
+          language: target.language,
+          cacheKey,
+          objectKey,
+          outputFormat: OUTPUT_FORMAT,
+          displayText,
+          synthesisText,
+          deliveryTagsJson,
+        });
+        if (outcome === 'replaced') {
+          replaced += 1;
+          console.log(`[교체 ${replaced}] ${label}  ${(size / 1024).toFixed(0)}KB`);
+        } else if (outcome === 'hash-taken') {
+          // 위 확인과 이 트랜잭션 사이에 누가 해시를 차지했다 — 행은 그대로다(옛 소리). 다시 돌리면 다시 본다.
+          failed += 1;
+          console.error(`[보류] ${label} — 게시 직전에 같은 request_hash 의 다른 원장 행이 생겼다`);
+        } else {
+          // 그 사이 다른 게시가 이 행을 바꿨다 — 다시 돌리면 그 값 기준으로 다시 본다. 방금 올린 오브젝트는
+          // 지우지 않는다(결정론적 키라 이긴 쪽이 같은 키일 수 있다 — 아래 새 게시 갈래와 같은 이유).
+          skipped += 1;
+          console.log(`[교체 건너뜀] ${label} — 그 사이 다른 게시가 바꿨다`);
+        }
         continue;
       }
 
@@ -392,7 +527,7 @@ async function main(): Promise<void> {
         continue;
       }
 
-      uploadToR2(bucket, objectKey, target.filePath, env);
+      uploadToR2(bucket, objectKey, target.stagedPath, env);
 
       const messageId = crypto.randomUUID();
       // ⚠ **두 행을 한 트랜잭션에 넣는다**(리뷰 15차). 나눠 쓰면 message 만 남고 원장이
@@ -421,15 +556,21 @@ async function main(): Promise<void> {
         });
         insertedRows = inserted.rowsAffected ?? 0;
         if (insertedRows > 0) {
-          await tx.execute({
-            sql: `INSERT OR IGNORE INTO generated_audio_assets
+          // 위 업로드 전 확인과 같은 판정을 트랜잭션 안에서 한 번 더 한다(Codex #840) — 해시를 다른 오브젝트가
+          // 쥐었으면 던져서 message INSERT 까지 되돌린다. 같은 오브젝트의 행이 있으면 그 행을 쓴다.
+          const heldBy = await ledgerAudioUrlFor(tx, cacheKey);
+          if (heldBy !== null && heldBy !== audioUrl) {
+            throw new Error(`같은 request_hash 의 원장 행이 다른 오브젝트(${heldBy})를 가리킨다`);
+          }
+          if (heldBy === null) await tx.execute({
+            sql: `INSERT INTO generated_audio_assets
                     (id, user_id, voice_profile_id, message_id, provider, provider_voice_id,
                      model_id, language, request_hash, text,
                      audio_url, audio_object_key, audio_format)
                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             args: [
               crypto.randomUUID(), SYSTEM_VOICE_LIBRARY_USER_ID, target.profileId, messageId,
-              PROVIDER, target.providerVoiceId, MODEL_ID, target.language,
+              PROVIDER, target.providerVoiceId, TTS_MODEL_ID, target.language,
               cacheKey, synthesisText, audioUrl, objectKey, OUTPUT_FORMAT,
             ],
           });
@@ -462,7 +603,7 @@ async function main(): Promise<void> {
   }
 
   console.log(
-    `\n게시 ${published}개 · 이미 있음 ${skipped}개${failed ? ` · 실패 ${failed}개(다시 돌리면 그것만 재시도한다)` : ''}`,
+    `\n게시 ${published}개 · 교체 ${replaced}개 · 이미 있음 ${skipped}개${failed ? ` · 실패 ${failed}개(다시 돌리면 그것만 재시도한다)` : ''}`,
   );
   if (failed > 0) process.exitCode = 1;
 }

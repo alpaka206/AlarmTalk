@@ -60,11 +60,6 @@ enum PendingRevokedTransactionStore {
         defaults.stringArray(forKey: key) ?? []
     }
 
-    /// ⚠ **로그아웃에서 비우지 않는다.** 주인이 로그아웃한 뒤에 온 환불이 정확히 이 큐가
-    /// 있어야 하는 경우다 — 비우면 만들자마자 쓸모가 없어진다.
-    static func clearAllForTests(defaults: UserDefaults = .standard) {
-        lock.lock()
-        defer { lock.unlock() }
-        defaults.removeObject(forKey: key)
-    }
+    // ⚠ **로그아웃에서 비우지 않는다.** 주인이 로그아웃한 뒤에 온 환불이 정확히 이 큐가
+    // 있어야 하는 경우다 — 비우면 만들자마자 쓸모가 없어진다.
 }

@@ -7,7 +7,7 @@ import { callerOwnerIds } from '../lib/caller-ids';
 import { typedRow } from '../lib/db-types';
 import { UUID_RE } from '../lib/validate';
 import { R2VoiceStorage } from '../lib/r2-storage';
-import { computeTtsCacheKey, generatedTtsObjectKey } from '../lib/audio-cache';
+import { computeTtsCacheKey, generatedTtsObjectKey, manualTtsCacheScope } from '../lib/audio-cache';
 import { loadAudioBytes, uint8ToBase64 } from '../lib/audio-loader';
 import { assertSameGroup } from '../lib/family-helpers';
 import {
@@ -18,24 +18,20 @@ import {
   UnsupportedVoiceProviderError,
 } from '../lib/voice-provider';
 import { recloneEvictedVoiceProfile } from '../lib/voice-recover';
+import { voicePitchFromRow } from '../lib/voice-pitch';
 import {
   AlarmTextPreparationInvalidError,
   AlarmTextTranslationUnavailableError,
-  applyDeliveryTagPerSentence,
   generateDynamicAlarmTextWithVertex,
   generatePrerenderClipText,
   deriveAlarmDisplayText,
   normalizeAlarmTextWithoutTags,
   parseSpeechStyle,
   withVoiceEnergy,
-  fallbackTagForEnergy,
   prepareAlarmTextWithVertex,
-  type WeatherSignal,
-  type WeatherCondition,
 } from '../lib/vertex-translate';
 import {
   CLONE_CLIP_SEEDS,
-  CLONE_WEATHER_CONDITIONS,
   FREE_BUCKET_CATEGORIES,
   findLegacyBucketHints,
   normalizeStockCategory,
@@ -61,11 +57,13 @@ import {
 } from '../lib/dynamic-prompt-settings';
 import { withWriteTransaction, type DbExecutor } from '../lib/transactions';
 import { enqueueExternalDeletion } from '../lib/audio-retention';
-import {
-  fetchOpenMeteo,
-  WEATHER_FORECAST_CACHE_TTL_SECONDS,
-  WEATHER_GEOCODE_CACHE_TTL_SECONDS,
-} from '../lib/weather-fetch';
+import { weatherRegionFor } from '../lib/weather-signal';
+import { resolveRegionVariantIndex } from '../lib/weather-region-daily';
+import { kmaServiceKey } from '../lib/weather-source';
+
+// 날씨 분류는 `lib/weather-signal.ts` 에 있다(서버 미리 계산 cron 과 같이 쓴다). 이 라우트를 기준으로
+// 부르던 테스트·문서가 있어 이름은 여기서도 그대로 내보낸다.
+export { resolvePrerenderWeatherIndex, type WeatherSignalInput } from '../lib/weather-signal';
 
 const tts = new Hono<AppEnv>();
 // 클라가 보내는 카테고리(= messages.category 저장값). 넷이 전부다.
@@ -103,34 +101,6 @@ class VoiceAuthorizationChangedDuringTtsError extends Error {
     this.name = 'VoiceAuthorizationChangedDuringTtsError';
   }
 }
-
-type WeatherForecastResponse = {
-  daily?: {
-    time?: unknown[];
-    weather_code?: unknown[];
-    temperature_2m_max?: unknown[];
-    temperature_2m_min?: unknown[];
-    precipitation_probability_max?: unknown[];
-    precipitation_sum?: unknown[];
-  };
-};
-
-type AirQualityForecastResponse = {
-  hourly?: {
-    time?: unknown[];
-    pm10?: unknown[];
-    pm2_5?: unknown[];
-  };
-};
-
-type WeatherGeocodingResponse = {
-  results?: Array<{
-    name?: unknown;
-    country?: unknown;
-    latitude?: unknown;
-    longitude?: unknown;
-  }>;
-};
 
 /**
  * 클라가 보낸 카테고리를 **저장할 값**으로 접는다.
@@ -195,12 +165,6 @@ function optionalInt(value: unknown, min: number, max: number): number | null {
   return numeric;
 }
 
-function optionalNumber(value: unknown, min: number, max: number): number | null {
-  const numeric = typeof value === 'number' ? value : Number(value);
-  if (!Number.isFinite(numeric) || numeric < min || numeric > max) return null;
-  return numeric;
-}
-
 function normalizeShortText(value: unknown, maxLength: number): string | null {
   if (typeof value !== 'string') return null;
   const text = value.trim();
@@ -234,10 +198,6 @@ function fortuneProfile(args: {
     birthTime ? `birth time=${birthTime}` : null,
   ].filter(Boolean);
   return parts.length > 0 ? parts.join(', ') : null;
-}
-
-function randomContextUsesWeather(context: RandomContext): boolean {
-  return context === 'wake_weather';
 }
 
 async function loadTargetDynamicPromptSettings(
@@ -309,16 +269,11 @@ function pickRandomPresetText(category: string, language: string): string | null
   return messages[randomIndex(messages.length)]!;
 }
 
-// 프리셋 문구 앞에 호칭을 붙인다. 프리셋은 '[brightly] 오늘은…' 처럼 delivery 태그로 시작하는데,
-// 호칭을 그 **앞**에 붙이면 태그가 문장 중간으로 밀려 호칭만 톤 지시 없이 읽힌다.
-// 그래서 선두 태그는 그대로 두고 그 뒤에 끼워 넣는다.
+// 프리셋 문구 앞에 호칭을 붙인다. 프리셋·미리듣기 고정 예문에는 태그가 없다(2026-09-30).
 function presetTextWithListenerTitle(text: string, listenerTitle: string | null): string {
   const title = listenerTitle?.trim();
   const base = text.trim();
-  if (!title || !base) return base;
-  const lead = base.match(/^\[[a-z][a-z -]{1,32}\]\s*/i)?.[0] ?? '';
-  const spoken = base.slice(lead.length);
-  if (!spoken || spoken.startsWith(title)) return base;
+  if (!title || !base || base.startsWith(title)) return base;
   // ⚠ **길이로 호칭을 떨어뜨리지 않는다**(2026-09-02 정정). 예전에는 결과가 200자를 넘으면
   //   호칭을 통째로 버렸는데, 그 200 은 **사용자가 직접 친 문구**의 상한이지 우리 프리셋의
   //   상한이 아니다. 실제로 영어 프리셋은 그 자체가 200자를 넘고(최장 308자), 그래서
@@ -326,7 +281,7 @@ function presetTextWithListenerTitle(text: string, listenerTitle: string | null)
   //   나가면서 호칭만 조용히 사라지는, 앞뒤가 안 맞는 동작이었다.
   //   호칭 자체는 이미 30자로 잘려 들어오므로(`normalizeRelationshipLabel`) 늘어나는
   //   길이는 최대 32자로 묶여 있다.
-  return `${lead}${title}, ${spoken}`;
+  return `${title}, ${base}`;
 }
 
 function draftPreviewText(language: string): string {
@@ -343,6 +298,9 @@ async function findUsableVoiceProfile(
   userPk: string,
   voiceProfileId: string,
 ): Promise<Record<string, unknown> | null> {
+  // ⚠ 세 갈래 모두 행 전체(`*`·`vp.*`)를 읽는다 — 목소리 높이(#128, `voicePitchFromRow`)·결(#122)처럼 합성에 쓰는
+  //   새 컬럼을 배포 창에도 안전하게 넘긴다. 열을 골라 적지 말 것: 공유 갈래에서 높이가 빠지면 가족이 주인이 고른
+  //   높이 대신 원래 소리를 듣는다(실패로 보이지도 않는다).
   const owned = await db.execute({
     sql: 'SELECT * FROM voice_profiles WHERE id = ? AND user_id IN (?, ?) AND deleted_at IS NULL',
     args: [voiceProfileId, userPk, userLoginId],
@@ -400,354 +358,6 @@ async function findViewerRelationshipField(
   return normalizeRelationshipLabel(result.rows[0]?.[column]);
 }
 
-const RAIN_WMO_CODES = [51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82, 95, 96, 99];
-const SNOW_WMO_CODES = [71, 73, 75, 77, 85, 86];
-
-async function loadWeatherSignal(args: {
-  latitude?: unknown;
-  longitude?: unknown;
-  locationLabel?: unknown;
-  country?: unknown;
-  city?: unknown;
-}): Promise<WeatherSignal | null> {
-  // 라이브 생성: 그 자리에서 읽을 문장 하나라, 지오코딩·미세먼지를 못 받았다고 문장을 통째로 비우기보다
-  // 서울 좌표·먼지 없음으로 이어 가는 기존 규약을 지킨다. 저장되는 값이 아니라 다시 받을 기회도 없다.
-  const input = await loadWeatherSignalInput(args, 'fallback');
-  return input ? buildWeatherSignal(input) : null;
-}
-
-/**
- * 세 호출(지오코딩·예보·미세먼지) 가운데 하나를 못 받았을 때 어떻게 할지.
- *
- *  - `'unresolved'` — **null**. 사전렌더 인덱스(`GET /prerender-variant`)용. 그 인덱스는 클라가
- *    '해결된 사실' 로 저장하고 발사 24시간 창 안에서 **다시 받지 않는다**(Android
- *    `weatherVariantNeedsRefresh`, iOS `BucketVariantResolver`). 그래서 한 조각이라도 못 받은 값을
- *    내보내면 그게 그 알람의 최종 조건이 된다 — 지오코딩만 타임아웃이면 서울 예보로 만든 인덱스가
- *    부산 알람에 박혀 엉뚱한 날씨를 읽는다(코덱스 #788 P2). null 이면 클라는 미해결로 두고 시간당
- *    재시도하며, 끝내 못 받으면 '못 알아봤어요' 안내 클립을 튼다(`docs/spec/voice-and-message.md` 5-1).
- *  - `'fallback'` — 지오코딩 실패는 서울 좌표로, 미세먼지 실패는 '없음' 으로 이어 간다. 라이브
- *    생성(`POST /generate`)용 — 저장되지 않는 문장 하나라 다시 받을 기회가 없고, 문장을 비우는 것보다
- *    낫다고 본 기존 규약이다. 예보 자체를 못 받으면 여기서도 null(날씨 문장 생략).
- */
-type WeatherFetchFailurePolicy = 'unresolved' | 'fallback';
-
-/** open-meteo 원시 데이터(코드·기온·강수·미세먼지)를 가져와 구조화 입력으로만 환원한다. */
-export async function loadWeatherSignalInput(
-  args: {
-    latitude?: unknown;
-    longitude?: unknown;
-    locationLabel?: unknown;
-    country?: unknown;
-    city?: unknown;
-    targetDate?: unknown;
-    timezone?: unknown;
-  },
-  onFetchFailure: WeatherFetchFailurePolicy,
-): Promise<WeatherSignalInput | null> {
-  const resolved = await resolveWeatherLocation(args);
-  const location =
-    resolved.location ??
-    (onFetchFailure === 'fallback' ? { ...SEOUL_LOCATION, label: resolved.label } : null);
-  if (!location) return null;
-  const url = new URL('https://api.open-meteo.com/v1/forecast');
-  url.searchParams.set('latitude', String(location.latitude));
-  url.searchParams.set('longitude', String(location.longitude));
-  url.searchParams.set(
-    'daily',
-    [
-      'weather_code',
-      'temperature_2m_max',
-      'temperature_2m_min',
-      'precipitation_probability_max',
-      'precipitation_sum',
-    ].join(','),
-  );
-  const targetDate =
-    typeof args.targetDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(args.targetDate)
-      ? args.targetDate
-      : null;
-  const timezone =
-    typeof args.timezone === 'string' && /^[A-Za-z0-9_+\-/]{1,64}$/.test(args.timezone)
-      ? args.timezone
-      : 'Asia/Seoul';
-  url.searchParams.set('timezone', timezone);
-  if (targetDate) {
-    url.searchParams.set('start_date', targetDate);
-    url.searchParams.set('end_date', targetDate);
-  } else {
-    url.searchParams.set('forecast_days', '1');
-  }
-
-  try {
-    // 타임아웃·엣지 캐시·로그는 `lib/weather-fetch.ts` 한 곳에서. 타임아웃으로 거부되면 이
-    // try 가 잡아 null 로 돌아간다 — 저장 버튼이 이 응답을 기다리고 있으므로 500 으로 새면 안 된다.
-    // ⚠ 캐시는 URL 에 날짜가 실린 호출(`start_date=end_date=targetDate`)에만 건다. 날짜 없는
-    //   라이브 경로(`forecast_days=1`)를 캐시하면 자정을 넘긴 어제 예보가 TTL 동안 오늘로 나간다.
-    const response = await fetchOpenMeteo(
-      'forecast',
-      url,
-      targetDate ? WEATHER_FORECAST_CACHE_TTL_SECONDS : null,
-    );
-    const json = await response
-      .json<WeatherForecastResponse>()
-      .catch(() => ({}) as WeatherForecastResponse);
-    if (!response.ok || !json.daily) return null;
-    const targetIndex = targetDate
-      ? (json.daily.time?.findIndex((value) => value === targetDate) ?? -1)
-      : 0;
-    if (targetIndex < 0) return null;
-    // ⚠ `Number(null)` 은 0 이다 — Open-Meteo 는 자료 없는 표본을 null 로 채우므로 그대로 읽으면
-    //   "기온 0도·강수 0" 이 되어 없는 자료가 '추위' 로 분류된다(코덱스 #788 4차). 없는 표본은 NaN.
-    const code = sampleOrNaN(json.daily.weather_code?.[targetIndex]);
-    const maxTemp = sampleOrNaN(json.daily.temperature_2m_max?.[targetIndex]);
-    const minTemp = sampleOrNaN(json.daily.temperature_2m_min?.[targetIndex]);
-    const rainProbability = sampleOrNaN(json.daily.precipitation_probability_max?.[targetIndex]);
-    const precipitation = sampleOrNaN(json.daily.precipitation_sum?.[targetIndex]);
-    const samples = [code, maxTemp, minTemp, rainProbability, precipitation];
-    if (onFetchFailure === 'unresolved') {
-      // 사전렌더 인덱스는 다섯 표본을 다 보고 고른다(눈·비·안개·흐림은 code, 더위·추위는 기온,
-      // 비는 강수). 하나라도 없으면 그 자리의 조건을 못 본 채 굳히는 것이라 **받은 것이 아니다.**
-      // 실측(2026-09-22): Open-Meteo 는 예보 범위 안의 날짜에 다섯 값을 모두 주고, 범위 밖은
-      // 200 이 아니라 400(`error: true`)이라 위 `!response.ok` 로 걸러진다.
-      if (samples.some((value) => !Number.isFinite(value))) return null;
-    } else if (samples.every((value) => !Number.isFinite(value))) {
-      // 라이브 문장: 코드·기온·강수가 모두 없을 때만 분류 불가 → null(문장 생략). weather_code 만
-      // 없고 기온/강수가 있으면 그것으로 분류한다 — buildWeatherSignal 의 우산·한파 멘트는 code 없이도
-      // 나온다(code 만으로 null 을 돌리면 라이브 날씨 멘트가 통째로 사라진다).
-      return null;
-    }
-    const dust = await loadDustSignal(location, targetDate, timezone);
-    if (dust === null && onFetchFailure === 'unresolved') return null;
-    return { code, maxTemp, minTemp, rainProbability, precipitation, hasDust: dust ?? false };
-  } catch {
-    return null;
-  }
-}
-
-export interface WeatherSignalInput {
-  code: number;
-  maxTemp: number;
-  minTemp: number;
-  rainProbability: number;
-  precipitation: number;
-  hasDust: boolean;
-}
-
-// 날씨를 언어무관 구조화 시그널(condition+action, 최대 2개)로 환원한다(설계 #7). 한국어/타깃어
-// 표면 생성은 vertex-translate의 *WeatherSurface 헬퍼가 담당.
-function buildWeatherSignal(input: WeatherSignalInput): WeatherSignal | null {
-  const { code, maxTemp, minTemp, rainProbability, precipitation, hasDust } = input;
-  const heavyRain =
-    (Number.isFinite(rainProbability) && rainProbability >= 60) ||
-    (Number.isFinite(precipitation) && precipitation > 1) ||
-    RAIN_WMO_CODES.includes(code);
-  const lightRain =
-    !heavyRain &&
-    ((Number.isFinite(rainProbability) && rainProbability >= 30) ||
-      (Number.isFinite(precipitation) && precipitation > 0));
-  const snowy = SNOW_WMO_CODES.includes(code);
-
-  const conditions: WeatherCondition[] = [];
-  if (snowy) {
-    conditions.push({ kind: 'snow', action: 'coat' });
-  } else if (heavyRain || lightRain) {
-    conditions.push({ kind: 'rain', action: 'umbrella' });
-  }
-
-  if (hasDust) {
-    conditions.push({ kind: 'dust', action: 'mask' });
-  }
-
-  if (conditions.length === 0) {
-    if (Number.isFinite(maxTemp) && maxTemp >= 30) {
-      conditions.push({ kind: 'heat', action: 'water' });
-    } else if (Number.isFinite(maxTemp) && maxTemp >= 25) {
-      conditions.push({ kind: 'nice', action: 'walk' });
-    } else if (
-      (Number.isFinite(minTemp) && minTemp <= 0) ||
-      (Number.isFinite(maxTemp) && maxTemp <= 5)
-    ) {
-      conditions.push({ kind: 'cold', action: 'coat' });
-    } else if (Number.isFinite(maxTemp) && maxTemp <= 12) {
-      conditions.push({ kind: 'cold', action: 'coat' });
-    } else if (Number.isFinite(maxTemp) && maxTemp >= 15 && maxTemp <= 24) {
-      conditions.push({ kind: 'nice', action: 'walk' });
-    }
-  }
-
-  if (conditions.length === 0) return null;
-  return { conditions: conditions.slice(0, 2) };
-}
-
-const FOG_WMO_CODES = [45, 48];
-const CLOUD_WMO_CODES = [2, 3]; // partly cloudy / overcast = 흐림
-
-/**
- * open-meteo 원시 입력을 CLONE_WEATHER_CONDITIONS(nice/rain/snow/dust/cloud/fog/heat) 인덱스로
- * 분류한다. 사전렌더 weather 클립은 이 순서로 저장되므로, 클라가 이 인덱스로 오프라인 선택한다.
- * 우선순위: 눈>비>미세먼지>안개>더위>흐림>맑음(기본).
- */
-export function resolvePrerenderWeatherIndex(input: WeatherSignalInput): number {
-  const { code, maxTemp, minTemp, rainProbability, precipitation, hasDust } = input;
-  // 인덱스는 CLONE_WEATHER_CONDITIONS 순서에서 파생(하드코딩 대신 → 순서 바뀌어도 안전).
-  const idx = (kind: (typeof CLONE_WEATHER_CONDITIONS)[number]) =>
-    Math.max(0, CLONE_WEATHER_CONDITIONS.indexOf(kind));
-  const rainy =
-    (Number.isFinite(rainProbability) && rainProbability >= 30) ||
-    (Number.isFinite(precipitation) && precipitation > 0) ||
-    RAIN_WMO_CODES.includes(code);
-  if (SNOW_WMO_CODES.includes(code)) return idx('snow');
-  if (rainy) return idx('rain');
-  if (hasDust) return idx('dust');
-  if (FOG_WMO_CODES.includes(code)) return idx('fog');
-  if (Number.isFinite(maxTemp) && maxTemp >= 30) return idx('heat');
-  // 추위: 라이브 buildWeatherSignal 과 동일 기준(최저<=0 또는 최고<=12). buildWeatherSignal 은 최고<=5
-  // 와 최고<=12 두 분기 모두 cold 로 밀어넣으므로 실질 기준이 <=12 → 6~12°C 맑은 날 '산책' 오재 방지.
-  if ((Number.isFinite(minTemp) && minTemp <= 0) || (Number.isFinite(maxTemp) && maxTemp <= 12)) {
-    return idx('cold');
-  }
-  if (CLOUD_WMO_CODES.includes(code)) return idx('cloud');
-  return idx('nice');
-}
-
-/**
- * 미세먼지가 나쁜 날인가. **못 받았으면 `null`** — 타임아웃·불통·비정상 응답 모두. false 로 뭉개지
- * 않는다: 사전렌더 인덱스는 먼지 여부가 곧 클립 번호라(`resolvePrerenderWeatherIndex` 의 dust),
- * 못 받은 것을 '없음' 으로 굳히면 그 알람은 먼지 나쁜 날에 산책을 권한다. 폴백은 호출부가 정한다.
- */
-async function loadDustSignal(
-  location: { latitude: number; longitude: number },
-  targetDate: string | null,
-  timezone: string,
-): Promise<boolean | null> {
-  const url = new URL('https://air-quality-api.open-meteo.com/v1/air-quality');
-  url.searchParams.set('latitude', String(location.latitude));
-  url.searchParams.set('longitude', String(location.longitude));
-  url.searchParams.set('hourly', ['pm10', 'pm2_5'].join(','));
-  url.searchParams.set('timezone', timezone);
-  if (targetDate) {
-    url.searchParams.set('start_date', targetDate);
-    url.searchParams.set('end_date', targetDate);
-  } else {
-    url.searchParams.set('forecast_days', '1');
-  }
-
-  try {
-    // 예보와 같은 TTL — 미세먼지도 같은 (좌표·날짜) 키로 하루 네 번만 오리진에 닿는다.
-    // 타임아웃이면 이 try 가 잡아 null(못 받음)로 돌아간다 — 폴백 여부는 `loadWeatherSignalInput` 이 정한다.
-    // 날짜 없는 호출은 예보와 같은 이유로 캐시하지 않는다.
-    const response = await fetchOpenMeteo(
-      'air',
-      url,
-      targetDate ? WEATHER_FORECAST_CACHE_TTL_SECONDS : null,
-    );
-    const json = await response
-      .json<AirQualityForecastResponse>()
-      .catch(() => ({}) as AirQualityForecastResponse);
-    if (!response.ok || !json.hourly) return null;
-    const pm10Max = maxFinite(json.hourly.pm10);
-    const pm25Max = maxFinite(json.hourly.pm2_5);
-    // 200 에 `hourly` 가 있어도 요청한 두 계열이 비어 있거나 전부 null 이면(예보 지평 밖·자료 없음)
-    // **받은 것이 아니다** — 여기서 false 로 뭉개면 사전렌더 경로가 그것을 '먼지 없음' 으로 굳힌다
-    // (코덱스 #788 3차). 두 계열 다 쓸 만한 표본이 있어야 판정한다.
-    if (pm10Max === null || pm25Max === null) return null;
-    return pm10Max > 80 || pm25Max > 35;
-  } catch {
-    return null;
-  }
-}
-
-/** 표본 하나를 숫자로. null·undefined·빈 문자열 등 자료가 없으면 NaN — `Number(null) === 0` 을 막는다. */
-function sampleOrNaN(value: unknown): number {
-  if (typeof value === 'number') return value;
-  if (typeof value === 'string' && value.trim() !== '') return Number(value);
-  return Number.NaN;
-}
-
-/**
- * 계열의 최댓값. 쓸 만한 표본이 하나도 없으면 null.
- * ⚠ `null` 표본을 `Number()` 로 읽으면 **0** 이 된다 — Open-Meteo 는 자료 없는 시각을 `null` 로
- *   채우므로, 그대로 두면 전부 null 인 계열이 "pm 0 = 먼지 없음" 으로 읽힌다. 숫자(또는 숫자 문자열)만 센다.
- */
-function maxFinite(values: unknown[] | undefined): number | null {
-  const numbers = (values ?? [])
-    .filter((value) => typeof value === 'number' || (typeof value === 'string' && value.trim() !== ''))
-    .map((value) => Number(value))
-    .filter((value) => Number.isFinite(value));
-  return numbers.length > 0 ? Math.max(...numbers) : null;
-}
-
-type WeatherLocation = { latitude: number; longitude: number; label: string };
-
-/** 도시가 없을 때의 기본 위치이자, 라이브 생성이 지오코딩 실패에 쓰는 폴백. */
-const SEOUL_LOCATION: WeatherLocation = { latitude: 37.5665, longitude: 126.978, label: '서울' };
-
-/**
- * 어느 좌표의 예보를 볼지. 좌표가 오면 그대로, 도시가 없으면 서울(기본값), 도시가 있으면 지오코딩.
- *
- * 지오코딩을 시도했는데 못 했으면 **`location: null`** 이다 — 타임아웃·불통·비정상 응답·결과 없음
- * 모두. 여기서 서울로 바꿔치기하지 않는다: 그 좌표로 받은 예보는 겉보기에 멀쩡한 '해결된 값' 이라
- * 사전렌더 경로에서는 클라가 다시 받지 않고 서울 아닌 도시의 알람이 서울 날씨를 읽게 된다
- * (코덱스 #788 P2). 폴백 여부는 호출부가 정한다(`WeatherFetchFailurePolicy`).
- */
-async function resolveWeatherLocation(args: {
-  latitude?: unknown;
-  longitude?: unknown;
-  locationLabel?: unknown;
-  country?: unknown;
-  city?: unknown;
-}): Promise<{ location: WeatherLocation | null; label: string }> {
-  const fallback = SEOUL_LOCATION;
-  const latitude = optionalNumber(args.latitude, -90, 90);
-  const longitude = optionalNumber(args.longitude, -180, 180);
-  const country = normalizeShortText(args.country, 30);
-  const city = normalizeShortText(args.city, 30);
-  const label =
-    normalizeShortText(args.locationLabel, 40) ||
-    [country, city].filter(Boolean).join(' ').trim() ||
-    fallback.label;
-  if (latitude != null && longitude != null) {
-    return { location: { latitude, longitude, label }, label };
-  }
-  if (!city && label !== fallback.label) {
-    return { location: { ...fallback, label: fallback.label }, label: fallback.label };
-  }
-  if (!city) {
-    return { location: { ...fallback, label }, label };
-  }
-  try {
-    const url = new URL('https://geocoding-api.open-meteo.com/v1/search');
-    url.searchParams.set('name', city);
-    url.searchParams.set('count', '10');
-    url.searchParams.set('language', 'ko');
-    url.searchParams.set('format', 'json');
-    // 도시명 → 좌표는 바뀌지 않으니 7일 캐시. 타임아웃은 다른 실패와 같이 아래 catch 로 들어간다.
-    const response = await fetchOpenMeteo('geocode', url, WEATHER_GEOCODE_CACHE_TTL_SECONDS);
-    const json = await response
-      .json<WeatherGeocodingResponse>()
-      .catch(() => ({}) as WeatherGeocodingResponse);
-    if (!response.ok) return { location: null, label };
-    const results = json.results ?? [];
-    const matched =
-      results.find((item) => {
-        const resultCountry = typeof item.country === 'string' ? item.country : '';
-        return country ? resultCountry.toLowerCase().includes(country.toLowerCase()) : true;
-      }) ?? results[0];
-    const resolvedLatitude = optionalNumber(matched?.latitude, -90, 90);
-    const resolvedLongitude = optionalNumber(matched?.longitude, -180, 180);
-    if (resolvedLatitude == null || resolvedLongitude == null) return { location: null, label };
-    const resolvedCity = typeof matched?.name === 'string' ? matched.name : city;
-    const resolvedCountry = typeof matched?.country === 'string' ? matched.country : country;
-    const resolvedLabel = [resolvedCountry, resolvedCity].filter(Boolean).join(' ').trim() || label;
-    return {
-      location: { latitude: resolvedLatitude, longitude: resolvedLongitude, label: resolvedLabel },
-      label: resolvedLabel,
-    };
-  } catch {
-    return { location: null, label };
-  }
-}
-
 tts.post('/generate', async (c) => {
   // 소유권 기준은 users.id(userPk). userLoginId 는 통일 이전에 user_id 컬럼에 저장된
   // 로그인 식별자(구글 로그인이면 google_id)까지 매칭하기 위한 보조값이다.
@@ -784,6 +394,8 @@ tts.post('/generate', async (c) => {
     weatherCountry?: string;
     weather_city?: string;
     weatherCity?: string;
+    weather_region?: string;
+    weatherRegion?: string;
     alarm_hour?: number;
     alarmHour?: number;
     alarm_minute?: number;
@@ -863,8 +475,7 @@ tts.post('/generate', async (c) => {
     );
   }
 
-  // 프리셋 문구는 STOCK_CLIP_PRESETS 에서 오고 '[brightly]' 같은 delivery 태그를 달고 온다.
-  // 사용자가 친 대괄호가 아니라 우리 마크업이므로 표시 문구에서는 벗겨야 한다(아래 messageText).
+  // 프리셋 문구는 STOCK_CLIP_PRESETS 에서 온다 — 사용자가 친 글이 아니다(아래 messageText 는 빈 원문으로 만든다).
   const presetTextUsed = !draftPreviewRequested && randomRequested && randomContext === 'preset';
   let requestText = draftPreviewRequested
     ? draftPreviewText('ko')
@@ -1098,13 +709,6 @@ tts.post('/generate', async (c) => {
   let manualQuotaResult: { used: number; limit: number; remaining: number } | null = null;
   let previewClaimed = false;
   let activePreviewClaimToken: string | null = null;
-  // 미리듣기의 기본 태그. 차분한 목소리면 들뜬 `cheerfully` 대신 `warmly` 다(Codex #802) —
-  // 생성이 실패해 고정 예문으로 떨어지는 갈래에서도 결과 반대로 들리면 안 된다. 여기서는 사용자가
-  // **고른** 결만 본다. 분석이 끝나 추정 결을 알게 되면 생성 갈래가 그걸로 다시 정한다(아래).
-  // ⚠ 고정 예문으로 합성한 태그는 claim 이 `preview_tag` 에 남긴다 — 확정 뒤 재생은 그 값을 쓴다.
-  //   다시 계산하면 확정 뒤에 채워진 분석값 때문에 태그가 바뀌어 재생이 캐시를 빗나간다.
-  const draftPreviewDefaultTag = fallbackTagForEnergy('cheerfully', String(vp.voice_energy ?? ''));
-  let draftPreviewTag = draftPreviewDefaultTag;
 
   try {
     const requestedLanguage = draftPreviewRequested
@@ -1114,7 +718,7 @@ tts.post('/generate', async (c) => {
     if (draftPreviewRequested) {
       // 미리듣기 문구를 keep(승격) 후 사전렌더될 greeting 과 같은 seed 로 '관계·호칭 톤 적응' 생성한다
       // — 사용자가 확정 전에 그 목소리의 실제 말투(관계에 맞는 어투 + 호칭)를 듣고 결정하게 하기 위함.
-      // 생성 문구는 요청마다 달라질 수 있으므로 첫 생성분을 draft 행(preview_text/preview_tag)에 영속해
+      // 생성 문구는 요청마다 달라질 수 있으므로 첫 생성분을 draft 행(preview_text)에 영속해
       // 재생을 결정적으로 만든다 — previewed_at 이후 재생은 캐시 히트로만 성립하므로 같은 문구가 필수.
       // 관계/호칭 수정 시 previewed_at 과 함께 리셋돼 새 문구로 재생성된다(voice-profile PATCH).
       // 실패(Vertex 미설정·모델 오류·검증 탈락) 시 위의 고정 예문(+호칭 접두어)으로 폴백해 미리듣기
@@ -1122,22 +726,19 @@ tts.post('/generate', async (c) => {
       // 뒤에만 일어난다.
       const storedText =
         typeof vp.preview_text === 'string' && vp.preview_text.trim() ? vp.preview_text.trim() : null;
+      // ⚠ 합성은 태그 없이 그 문구 그대로다(2026-09-30 — `lib/vertex-translate.ts` 「태그」 머리말). 예전에는
+      //   `preview_tag` 로 톤 태그를 문장마다 입혀 합성했고 그 값을 영속했다 — 이제 읽지도 쓰지도 않고,
+      //   컬럼은 마이그레이션 125 가 DROP 한다 — 그 뒤에는 칸이 없으니 참조를 되살리지 말 것.
       if (storedText) {
         requestText = storedText;
-        const storedTag = typeof vp.preview_tag === 'string' ? vp.preview_tag.trim() : '';
-        if (storedTag) draftPreviewTag = storedTag;
       } else if (vp.previewed_at) {
         // 이미 확정(previewed_at)됐는데 저장 문구가 없는 draft = 이 기능 이전(또는 고정 폴백으로 확정).
         // 그때 합성된 문구는 '고정 예문+호칭'이므로 새로 생성하면 캐시 키가 어긋나 재생이
         // VOICE_PREVIEW_UNAVAILABLE 이 된다 → 생성하지 않고 고정 폴백을 유지해 재생 캐시 히트를 지킨다.
-        // 태그는 그때 합성한 값(claim 이 남긴 `preview_tag`)을 쓴다. 없으면(이 규칙 이전) 기본값.
-        const storedTag = typeof vp.preview_tag === 'string' ? vp.preview_tag.trim() : '';
-        if (storedTag) draftPreviewTag = storedTag;
       } else {
         // 생성이 어디서 실패하든 합성은 **영속된 문구 아니면 고정 예문** 둘 중 하나여야 한다 — 생성만 되고
         // 영속되지 않은 문구로 합성하면, 그대로 확정했을 때 재생(고정 예문)이 캐시를 빗나간다.
         const fixedPreviewText = requestText;
-        let fixedPreviewTag = draftPreviewDefaultTag;
         try {
           const greetingSeed = CLONE_CLIP_SEEDS.find((s) => s.category === STOCK_GREETING_CATEGORY);
           // ⚠ **말투 분석을 잠깐 기다린다**(Codex #802). 등록 화면은 클론 직후 곧바로 여기로 오고 분석은
@@ -1151,34 +752,19 @@ tts.post('/generate', async (c) => {
             analysisSettled = waited.settled;
             if (waited.settled) analyzedSpeechStyle = waited.speechStyle;
           }
-          // 분석이 끝났으면 폴백 태그도 실제 결(고른 값 > 추정값)을 따른다 — 생성이 실패해 고정 예문으로
-          // 떨어져도 차분으로 추정된 목소리가 `cheerfully` 로 들리지 않게(Codex #802).
-          if (analysisSettled) {
-            fixedPreviewTag = fallbackTagForEnergy(
-              'cheerfully',
-              withVoiceEnergy(parseSpeechStyle(analyzedSpeechStyle), vp.voice_energy)?.energy,
-            );
-            draftPreviewTag = fixedPreviewTag;
-          }
           if (greetingSeed && analysisSettled) {
             const generated = await generatePrerenderClipText(c.env, {
               seed: greetingSeed.seeds[0]!,
               relationshipLabel: normalizeRelationshipLabel(vp.relationship_label) ?? null,
               listenerTitle: draftPreviewListenerTitle,
               targetLanguage: storedPreviewLanguage,
-              defaultTag: greetingSeed.defaultTag,
               // 등록 녹음에서 분석한 화자 말투(사투리 등) — 미리듣기 문구를 그 말투로. 사용자가 고른
               // 목소리의 결(voice_energy)이 있으면 그게 앞선다(`SELECT *` 라 컬럼이 없던 창에도 안전).
               speechStyle: withVoiceEnergy(parseSpeechStyle(analyzedSpeechStyle), vp.voice_energy),
             });
-            // ⚠ **여기 들어오는 문구는 태그를 벗겨서 쓴다**(2026-08-20).
-            // `generatePrerenderClipText` 는 이제 딜리버리 태그가 인라인으로 박힌 문구를
-            // 돌려준다. 그런데 이 값은 `preview_text` 로 저장돼 **사용자가 직접 고치는**
-            // 문구이고, 아래에서 `applyDeliveryTagPerSentence` 로 태그를 다시 입힌다 —
-            // 그대로 받으면 화면에 대괄호가 노출되고 합성 문구는 `[cheerfully] [cheerfully] …`
-            // 로 겹친다(테스트 `draft 미리듣기는 … 톤 적응 문구로 합성한다` 가 잡았다).
-            requestText = normalizeAlarmTextWithoutTags(generated.text) || generated.text;
-            if (generated.tag) draftPreviewTag = generated.tag;
+            // 태그 없는 문구다(`generatePrerenderClipText` 가 벗긴다) — `preview_text` 로 저장돼 **사용자가 직접
+            // 고치는** 문구이고, 그대로 합성한다.
+            requestText = generated.text;
             // 합성 전에 영속: 합성이 실패해도 재시도가 같은 문구를 쓰게(중복 생성 방지 + 캐시 정합).
             // 조건부(비어있을 때만) 쓰기 = first-writer-wins: 동시 첫-미리듣기 요청이 겹쳐도 늦은 쪽이
             // 이미 영속된(재생될) 문구를 덮어써 재생 결정성을 깨지 못한다. 지면 승자 문구를 재사용.
@@ -1192,7 +778,7 @@ tts.post('/generate', async (c) => {
             // 문구를 남겨 재생 캐시 키를 어긋내는 것 방지(claim 과 동일한 5분 lease 기준).
             const persisted = await db.execute({
               sql: `UPDATE voice_profiles
-                    SET preview_text = ?, preview_tag = ?, updated_at = datetime('now')
+                    SET preview_text = ?, updated_at = datetime('now')
                     WHERE id = ? AND user_id IN (?, ?) AND deleted_at IS NULL
                       AND COALESCE(is_draft, 0) = 1
                       AND COALESCE(relationship_label, '') = ?
@@ -1203,11 +789,8 @@ tts.post('/generate', async (c) => {
                       AND (preview_claimed_at IS NULL
                         OR preview_claimed_at <= datetime('now', '-5 minutes'))`,
               args: [
-                // 위에서 태그를 벗겨 `requestText` 로 쓴 그 문구를 그대로 저장한다.
-                // `generated.text`(태그 포함)를 저장하면 **저장본과 합성·표시본이 갈려**
-                // 다음 재생이 캐시를 빗나가고, 사용자가 고치는 화면에 대괄호가 뜬다.
+                // 합성·표시하는 그 문구를 그대로 저장한다 — 갈리면 다음 재생이 캐시를 빗나간다.
                 requestText,
-                draftPreviewTag,
                 body.voice_profile_id,
                 userPk,
                 userLoginId,
@@ -1218,7 +801,7 @@ tts.post('/generate', async (c) => {
             });
             if ((persisted.rowsAffected ?? 0) === 0) {
               const winner = await db.execute({
-                sql: `SELECT preview_text, preview_tag FROM voice_profiles
+                sql: `SELECT preview_text FROM voice_profiles
                       WHERE id = ? AND user_id IN (?, ?) AND deleted_at IS NULL
                       LIMIT 1`,
                 args: [body.voice_profile_id, userPk, userLoginId],
@@ -1226,18 +809,12 @@ tts.post('/generate', async (c) => {
               const winnerRow = winner.rows[0];
               const winnerText =
                 typeof winnerRow?.preview_text === 'string' ? winnerRow.preview_text.trim() : '';
-              if (winnerText) {
-                requestText = winnerText;
-                const winnerTag =
-                  typeof winnerRow?.preview_tag === 'string' ? winnerRow.preview_tag.trim() : '';
-                draftPreviewTag = winnerTag || draftPreviewDefaultTag;
-              }
+              if (winnerText) requestText = winnerText;
             }
           }
         } catch {
-          // 고정 예문 폴백 — 생성 뒤 영속 단계에서 던졌어도 고정 예문과 그 태그로 되돌린다.
+          // 고정 예문 폴백 — 생성 뒤 영속 단계에서 던졌어도 고정 예문으로 되돌린다.
           requestText = fixedPreviewText;
-          draftPreviewTag = fixedPreviewTag;
         }
       }
     }
@@ -1266,23 +843,10 @@ tts.post('/generate', async (c) => {
         normalizeRelationshipLabel(body.listener_title ?? body.listenerTitle) ??
         (await findViewerRelationshipField(db, userPk, userLoginId, body.voice_profile_id, 'listener_title')) ??
         (isSharedVoiceProfile ? null : normalizeRelationshipLabel(vp.listener_title));
-      const weatherSignal = randomContextUsesWeather(randomContext)
-        ? await loadWeatherSignal({
-            latitude: body.weather_latitude ?? body.weatherLatitude,
-            longitude: body.weather_longitude ?? body.weatherLongitude,
-            locationLabel: body.weather_location_label ?? body.weatherLocationLabel,
-            country: firstNonBlankText(
-              body.weather_country,
-              body.weatherCountry,
-              targetDynamicPromptSettings.weather.country,
-            ),
-            city: firstNonBlankText(
-              body.weather_city,
-              body.weatherCity,
-              targetDynamicPromptSettings.weather.city,
-            ),
-          })
-        : null;
+      // ⚠ 이 갈래는 닿지 않는다 — 라이브 랜덤 생성은 위에서 `RANDOM_TTS_RETIRED`(400)로 거절된다. 날씨 원천을
+      // 나라별 공식 예보로 바꾸면서(2026-10-01) 이 경로의 날씨 조회(서울 폴백·먼지 없음 폴백)를 지웠다 — 문장용
+      // 날씨는 더 만들지 않는다. 남은 코드를 지우는 것은 후속 정리다.
+      const weatherSignal = null;
       const generated = await generateDynamicAlarmTextWithVertex(c.env, {
         mode: randomContext,
         category,
@@ -1334,41 +898,14 @@ tts.post('/generate', async (c) => {
     //   이미 더 빡빡하므로(원시 길이) 이 검사는 더해 주는 것이 없었다.
 
     const sourceLanguage = inferSynthesisLanguage(requestText, 'ko');
-    // 동적 모드는 생성 단계에서 이미 태그가 인라인된 {text} 를 한 호출로 받았으므로(순환 모순 제거),
-    // 2차 Vertex 호출(prepareAlarmTextWithVertex autoTag) 없이 그 문구를 그대로 쓴다.
-    // prepare는 preset/custom + 번역 경로 전용으로 남긴다.
+    // ⚠ **태그를 붙이지 않는다**(2026-09-30 — `lib/vertex-translate.ts` 「태그」 머리말). 미리듣기·동적 생성은
+    //   생성한 문구 그대로, 직접 입력·프리셋은 `prepareAlarmTextWithVertex` 가 번역할 때만 Gemini 를 부른다 —
+    //   같은 언어 직접 입력은 사용자가 친 글(글자 웃음만 `[laughs]`) 그대로다.
     let prepared: { text: string; translated: boolean; tags: string[] };
     if (draftPreviewRequested) {
-      // 톤 적응 생성이 성공했으면 그 delivery 태그를, 폴백(고정 예문)이면 기본 태그(`draftPreviewDefaultTag` — 차분이면 warmly)를 쓴다.
-      // 태그는 문장마다 다시 앞세워 끝까지 톤을 고정하고, 상한 초과 시 태그 없이 폴백한다
-      // (그때 tags 배열도 비워 메타와 합성 텍스트를 일치시킨다).
-      // 상한 200 = 아래 synthesisText 200자 검증과 동일 값 — 기본 300을 쓰면 태그 부착으로
-      // 200을 넘긴 텍스트가 폴백 없이 통과했다가 뒤늦게 TEXT_TOO_LONG 으로 거부된다.
-      const taggedText = applyDeliveryTagPerSentence(draftPreviewTag, requestText, 200);
-      const tagApplied = taggedText !== requestText;
-      prepared = {
-        text: taggedText,
-        translated: false,
-        tags: tagApplied ? [draftPreviewTag] : [],
-      };
+      prepared = { text: requestText, translated: false, tags: [] };
     } else if (dynamicGenerated) {
-      // ⚠ **모델이 배치한 인라인 태그를 살린다**(Codex #701 P2).
-      // 예전에는 `tags[0]` 하나를 뽑아 문장마다 다시 앞세웠다. 모델이 태그를 인라인으로
-      // 내기 시작하면 그 경로는 배치를 뭉갤 뿐 아니라, `tags` 가 빈 채로 남아
-      // `delivery_tags_json` 이 `[]` 가 되고 대괄호가 화면 문구로 샌다.
-      // `synthesisText` 가 있으면 그게 곧 합성 문구다(표시는 아래 `messageText` 가 태그 없는
-      // `dynamicGenerated.text` 를 쓴다). 없으면 예전대로 태그 하나를 문장마다 입힌다.
-      const dynamicTag = dynamicGenerated.tags[0] ?? '';
-      // 상한 200: 위 draft 미리듣기 경로와 동일 — 태그 부착이 200자 검증을 넘기지 않게 한다.
-      const taggedText =
-        dynamicGenerated.synthesisText ??
-        applyDeliveryTagPerSentence(dynamicTag, dynamicGenerated.text, 200);
-      const tagApplied = taggedText !== dynamicGenerated.text;
-      prepared = {
-        text: taggedText,
-        translated: false,
-        tags: tagApplied ? dynamicGenerated.tags : [],
-      };
+      prepared = { text: dynamicGenerated.text, translated: false, tags: [] };
     } else {
       const shouldTranslate =
         body.translate === true || (randomRequested && requestedLanguage !== sourceLanguage);
@@ -1376,22 +913,31 @@ tts.post('/generate', async (c) => {
         targetLanguage: shouldTranslate ? requestedLanguage : sourceLanguage,
         sourceLanguage,
         translate: shouldTranslate,
-        autoTag: true,
+        // 사용자가 친 ㅋㅋ·haha·www 를 글자로 읽지 않고 웃음소리(`[laughs]`)로 — 프리셋은 우리 대사라 켜지 않는다.
+        speakTypedLaughter: !presetTextUsed,
       });
     }
     const synthesisText = prepared.text;
-    // 표시/저장 문구(messageText): 실제 음성 텍스트(synthesisText, 번역됐으면 번역본)에서
-    // '우리가 자동으로 맨 앞에 붙인 delivery 태그'만 벗긴 값. requestText 에 사용자가 친 대괄호가
-    // 있으면 자동 태그가 아니므로 원문 보존, 없으면 맨 앞 태그 1개만 제거한다(deriveAlarmDisplayText).
+    // 표시/저장 문구(messageText): 실제 음성 텍스트(synthesisText, 번역됐으면 번역본)에서 서버가 넣은 대괄호만
+    // 벗긴 값. requestText 에 사용자가 친 대괄호가 있으면 원문 보존, 없으면 대괄호를 벗긴다(deriveAlarmDisplayText).
     // → (1) 번역 경로에서도 화면 문구가 음성 언어와 일치하고, (2) '[after lunch]'·'[calm]'만 입력 등
-    //   사용자 대괄호가 안 지워지며, (3) 모델이 붙인 비승인 태그도 화면엔 새지 않는다.
+    //   사용자 대괄호가 안 지워진다.
     //
-    // 프리셋 경로는 사용자가 친 문구가 없다(우리 스톡 문구 + 그 안의 delivery 태그). 원문을
-    // 그대로 넘기면 태그를 '사용자 대괄호'로 보고 보존해 화면에 '[brightly] …' 가 샌다.
-    // 빈 원문을 넘겨 태그를 벗긴다 — 사전렌더 경로(stock-clips.ts stripDeliveryTags)와 같은 결과.
+    // 프리셋 경로는 사용자가 친 문구가 없다(우리 스톡 문구). 빈 원문을 넘겨 대괄호를 벗긴다 — 옛 태그가 남은
+    // 문구에서도 화면에 '[brightly] …' 가 새지 않게.
+    //
+    // ⚠ **같은 언어의 직접 입력은 사용자가 친 글에서 만든다**(합성 문구가 아니라). 합성 문구의 `[laughs]` 는
+    //   사용자가 친 ㅋㅋ·haha 를 소리로 바꾼 것이라, 합성 문구에서 태그를 벗기면 그 웃음이 화면에서 사라진다.
+    //   같은 언어면 합성 문구는 원문에서 웃음만 바꾼 것이다(`prepareAlarmTextWithVertex` — 태그를 붙이지 않는다).
+    //   번역은 합성 문구(번역문)에서 만든다.
+    const typedSameLanguage =
+      !draftPreviewRequested && !dynamicGenerated && !presetTextUsed && !prepared.translated;
     const messageText = dynamicGenerated
       ? dynamicGenerated.text
-      : deriveAlarmDisplayText(synthesisText, presetTextUsed ? '' : requestText);
+      : deriveAlarmDisplayText(
+          typedSameLanguage ? requestText : synthesisText,
+          presetTextUsed ? '' : requestText,
+        );
     const deliveryTagsJson = JSON.stringify(prepared.tags);
     // synthesisLanguage 결정 시 요청 언어 의도를 보존한다.
     // - 번역 경로(translated): requestedLanguage 로 번역했으므로 그대로 사용.
@@ -1426,6 +972,22 @@ tts.post('/generate', async (c) => {
       );
     }
 
+    // ⚠ **캐시 키는 화면 문구까지 가린다 — 화면 문구가 합성 문구에서 나오지 않을 때만**(Codex #830).
+    //   글자 웃음은 `ㅋㅋ`·`ㅋㅋㅋ`·`haha` 가 모두 같은 `[laughs]` 가 되므로, 합성 글자만으로 키를 만들면 캐시
+    //   히트가 **다른 철자로 만든 옛 행**(`message_id`·`messages.text`)을 돌려준다 — 알람은 그 id 를 저장하고,
+    //   서버가 내려 주는 알람 문구가 사용자가 방금 친 글이 아니게 된다. 화면 문구가 합성 문구에서 태그만
+    //   벗긴 것과 같으면(웃음이 없으면) 예전 키 그대로다 — 쌓아 둔 캐시를 버리지 않는다.
+    //   ⚠ 화면 문구는 **공백까지 그대로** 싣는다(`encodeURIComponent`) — 키 계산이 공백을 접으므로, 그대로 실으면
+    //   공백·줄바꿈만 다른 두 문구가 한 행을 나눠 쓴다.
+    const cacheKeyText =
+      messageText === normalizeAlarmTextWithoutTags(synthesisText)
+        ? synthesisText
+        : `${synthesisText}\n[display] ${encodeURIComponent(messageText)}`;
+    // 그 목소리의 등록 높이 — 서버가 굽는다(스펙 §4-3). `vp` 는 `SELECT *`·`vp.*` 라 공유 목소리면 **주인의** 값이고,
+    // 배포 창(#128 전)에는 컬럼이 없어 null 이다(그때는 아무 목소리도 높이를 가질 수 없다). 초안·시스템 목소리는
+    // 값이 없어 원래 높이다 — 초안 미리듣기는 원래 높이여야 한다(앱이 그 위에서 높이를 고른다). 음량은 높이와 상관없이
+    // 모든 합성에 같은 만큼 올린다(§10) — 초안 미리듣기도 올린 크기라, 앱이 그 위에서 구운 미리듣기가 알람과 같은 크기다.
+    const voicePitch = voicePitchFromRow(vp);
     const buildPreparedAttempts = async (voiceIdForSynthesis: string | null | undefined) => {
       const attempts = createSynthesisAttempts({
         env: c.env,
@@ -1434,6 +996,7 @@ tts.post('/generate', async (c) => {
         },
         text: synthesisText,
         language: synthesisLanguage,
+        pitch: voicePitch,
       });
       return Promise.all(
         attempts.map(async (attempt) => {
@@ -1444,8 +1007,17 @@ tts.post('/generate', async (c) => {
             modelId: attempt.modelId,
             language: synthesisLanguage,
             languageCode: synthesisLanguage,
-            text: synthesisText,
+            text: cacheKeyText,
             outputFormat: attempt.outputFormat,
+            // ⚠ 직접 입력은 **그 사람 범위**로 키를 만든다(Codex #840). 원장 해시는 전역 UNIQUE 인데 오브젝트는
+            //   주인 아래에 놓인다 — 두 사람이 같은 기본 목소리로 같은 글을 치거나 스톡 문장을 그대로 치면 키가 겹쳐
+            //   두 번째 원장 행이 조용히 빠지고, 그 오브젝트는 계정 삭제에도 못 찾는다. 직접 입력 캐시는 원래 남과
+            //   나누지 않으므로(`anyUser` 가 false) 잃는 적중이 없다. 초안 미리듣기는 범위 없이 둔다(초안 목소리는
+            //   그 사람 것뿐이고, 스톡 키는 `STOCK_TTS_CACHE_SCOPE` 로 갈려 있다).
+            scope: isManualGeneration ? manualTtsCacheScope(userPk) : undefined,
+            pitchSemitones: attempt.pitchSemitones,
+            // 올린 음량도 키에 든다 — 올리기 전에 만든 소리를 캐시가 다시 내주지 않는다(스펙 §10).
+            loudnessBoostDb: attempt.loudnessBoostDb,
           });
           return { attempt, cacheKey };
         }),
@@ -1503,11 +1075,8 @@ tts.post('/generate', async (c) => {
     if (draftPreviewRequested && !vp.previewed_at) {
       const previewClaimToken = crypto.randomUUID();
       const claimed = await db.execute({
-        // 영속된 문구가 없으면(고정 예문으로 합성) 합성하는 태그를 `preview_tag` 에 남긴다 — 확정 뒤 재생이
-        // 같은 태그로 캐시를 맞힌다. 영속된 문구가 있으면 그 태그를 그대로 둔다.
         sql: `UPDATE voice_profiles
               SET preview_claimed_at = datetime('now'), preview_claim_token = ?,
-                  preview_tag = CASE WHEN COALESCE(preview_text, '') = '' THEN ? ELSE preview_tag END,
                   updated_at = datetime('now')
               WHERE id = ? AND user_id IN (?, ?) AND deleted_at IS NULL
                 AND COALESCE(is_draft, 0) = 1 AND status = 'ready' AND previewed_at IS NULL
@@ -1517,7 +1086,6 @@ tts.post('/generate', async (c) => {
                 AND (preview_claimed_at IS NULL OR preview_claimed_at <= datetime('now', '-5 minutes'))`,
         args: [
           previewClaimToken,
-          draftPreviewTag,
           body.voice_profile_id,
           userPk,
           userLoginId,
@@ -2327,20 +1895,27 @@ function expectedVariantCounts(): { system: Record<string, number>; clone: Recor
 tts.get('/prerender-variant', async (c) => {
   const context = c.req.query('context') ?? '';
   if (context === 'wake_weather') {
-    // 세 조회(지오코딩·예보·미세먼지) 중 하나라도 못 받으면 null — 이 인덱스는 클라가 '해결된 사실' 로
-    // 저장하고 발사 24시간 창 안에서 다시 받지 않으므로, 서울 좌표·먼지 없음 같은 폴백으로 만든 값을
-    // 내보내면 그게 그 알람의 최종 조건이 된다. null 이면 클라는 '맑음(0)' 과 구분해 미해결로 두고
-    // 시간당 재시도한다(`WeatherFetchFailurePolicy`).
-    const input = await loadWeatherSignalInput(
-      {
-        country: c.req.query('country'),
-        city: c.req.query('city'),
-        targetDate: c.req.query('target_date'),
-        timezone: c.req.query('timezone'),
-      },
-      'unresolved',
+    // 우선순위(`docs/spec/voice-and-message.md` 5-1 「서버가 미리 계산해 둔다」):
+    //  1. `region` 이 목록의 키 → 미리 계산한 (지역, target_date) 행. 없거나 36시간보다 오래됐으면 그 지역의
+    //     원천(기상청·気象庁·NWS)을 한 번 불러 곧바로 계산해 적는다 — 대상 날짜가 지역의 [오늘, +3] 밖이면
+    //     네트워크 없이 null. `target_date` 는 **지역 시간대의 달력 날짜**다.
+    //  2. `region` 이 없거나 모르는 키 → 옛 `country`/`city` 글자를 목록으로 되짚어 1과 같이.
+    //  3. 되짚지 못한 옛 글자 → **null**. 지오코딩은 없다(목록 밖의 곳은 공식 예보의 칸을 정할 수 없다).
+    // 어느 경로든 한 조각이라도 못 받으면 null — 이 인덱스는 클라가 '해결된 사실' 로 저장하고 발사 24시간 창
+    // 안에서 다시 받지 않는다. null 이면 클라는 '맑음(0)' 과 구분해 미해결로 두고 시간당 재시도한다.
+    const region = weatherRegionFor(
+      c.req.query('region'),
+      c.req.query('country'),
+      c.req.query('city'),
     );
-    return c.json({ context, variant_index: input ? resolvePrerenderWeatherIndex(input) : null });
+    if (!region) return c.json({ context, variant_index: null });
+    const variantIndex = await resolveRegionVariantIndex(
+      () => getDB(c.env),
+      region,
+      c.req.query('target_date'),
+      { kmaServiceKey: kmaServiceKey(c.env) },
+    );
+    return c.json({ context, variant_index: variantIndex });
   }
   // 운세는 클라가 사주+날짜로 온디바이스 결정(fortuneThemeIndex)한다. 그 외(love/medication 회전)도
   // 서버 인덱스 불필요.

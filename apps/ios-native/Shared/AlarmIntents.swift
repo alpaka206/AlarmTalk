@@ -41,9 +41,9 @@ struct StopAlarmIntent: LiveActivityIntent {
     /// Live Activity 버튼이 부르는 것이지 사람이 부르는 것이 아니다.
     static let isDiscoverable = false
 
-    static let title: LocalizedStringResource = "알람 끄기"
+    static let title = LocalizedStringResource("alarm.action.dismiss", defaultValue: "알람 끄기")
 
-    @Parameter(title: "알람 ID")
+    @Parameter(title: LocalizedStringResource("알람 ID"))
     var alarmID: String
 
     init() {
@@ -76,7 +76,7 @@ struct StopAlarmIntent: LiveActivityIntent {
         // ⚠ **ctx·기록이 없어도 적는다.** 락스크린 콜드 부팅에서는 `shared` 가 nil 이거나
         //   저장소의 디스크 로드가 아직 안 끝나 못 찾는다 — 그건 안 누른 것이 아니다.
         //   안드로이드는 Intent 의 알람 id 로 무조건 적어서 이 창이 아예 없다.
-        let stoppedRecord = AlarmAppContext.shared?.store?.recordByAlarmKitID(uuid.uuidString)
+        let stoppedRecord = AlarmAppContext.shared?.store?.record(alarmKitID: uuid.uuidString)
         // ⚠ **울린 사실도 여기서 적는다**(2026-09-07 리뷰 31차). 이 앱은 **발사 시점에
         //   우리 코드가 돌지 않는다**(AlarmKit 이 울리고, 우리는 해제할 때 불린다).
         //   관찰자(`AlarmKitViewModel` 의 `.alerting` 진입)는 그 순간 앱이 살아 있을 때만
@@ -126,7 +126,7 @@ struct SnoozeAlarmIntent: LiveActivityIntent {
 
     static let title: LocalizedStringResource = "알람 다시 울리기"
 
-    @Parameter(title: "알람 ID")
+    @Parameter(title: LocalizedStringResource("알람 ID"))
     var alarmID: String
 
     init() {
@@ -158,7 +158,7 @@ struct SnoozeAlarmIntent: LiveActivityIntent {
         // ⚠ **기록을 못 찾아도 적는다** — 바로 아래 `.unknown` 갈래가 그 창을 이미 인정하고
         //   있다(콜드 부팅이면 판단 근거가 없다). 같은 요청 안에서 저장소를 한쪽은 못 믿고
         //   한쪽은 믿을 수는 없다.
-        let snoozedRecord = ctx?.store?.recordByAlarmKitID(uuid.uuidString)
+        let snoozedRecord = ctx?.store?.record(alarmKitID: uuid.uuidString)
         // 위 해제 갈래와 같은 이유 — 다시 울림을 눌렀다는 것은 **울렸다는 뜻**이다.
         recordRingIfObserverMissedIt(snoozedRecord, alarmKitID: uuid.uuidString)
         // ⚠ **다시 울림은 결과가 정해진 뒤에 적는다**(2026-09-07 리뷰 37차). 누른 것과

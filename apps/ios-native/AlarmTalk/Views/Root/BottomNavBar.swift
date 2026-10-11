@@ -45,7 +45,7 @@ struct BottomNavBar: View {
                             .font(.caption2.weight(selected == tab ? .semibold : .medium))
                     }
                     // ⚠ **선택 탭에 배경 알약을 두지 않는다.** 안드로이드는 색(+채워진
-                    // 아이콘 스왑)만으로 선택을 표시한다(`AlarmTalkBottomBar.kt:107` 주석
+                    // 아이콘 스왑)만으로 선택을 표시한다(`AlarmTalkBottomBar.kt:104` 주석
                     // "배경 인디케이터 없이 색으로만"). 알약을 다시 넣지 말 것.
                     .frame(maxWidth: .infinity, minHeight: 58)
                     // ⚠ **없으면 셀이 아니라 글리프만 눌린다 — 빼지 말 것**(2026-08-18
@@ -63,7 +63,7 @@ struct BottomNavBar: View {
         .padding(.horizontal, 6)
         .padding(.vertical, 6)
         // 배경색과 같게 깔아 시스템 홈 인디케이터 영역과 이음새 없이 이어지게 한다
-        // (안드로이드 `AlarmTalkBottomBar.kt:49-52`). 구분선도 두지 않는다 —
+        // (안드로이드 `AlarmTalkBottomBar.kt:46-49`). 구분선도 두지 않는다 —
         // `surface` + 상단 1px 선은 옛 iOS 전용 처리였다.
         .background(theme.palette.background)
     }

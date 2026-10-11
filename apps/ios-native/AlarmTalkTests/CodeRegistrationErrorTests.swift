@@ -53,10 +53,10 @@ final class CodeRegistrationErrorTests: XCTestCase {
         XCTAssertEqual(CodeRegistrationError.message(for: error, fallback: "폴백"), "폴백")
     }
 
-    /// 표에 없어도 서버가 한국어를 주면 그게 폴백보다 구체적이다.
-    func test_unknownCodeWithKoreanMessage_usesServerMessage() {
+    /// 표에 없는 코드는 서버 문장 언어와 무관하게 화면 폴백을 쓴다.
+    func test_unknownCodeWithKoreanMessage_usesFallback() {
         let error = APIError.server(status: 400, message: "이 코드는 쓸 수 없어요", errorCode: "WAT")
-        XCTAssertEqual(CodeRegistrationError.message(for: error, fallback: "폴백"), "이 코드는 쓸 수 없어요")
+        XCTAssertEqual(CodeRegistrationError.message(for: error, fallback: "폴백"), "폴백")
     }
 
     /// 네트워크 오류 등 `APIError` 가 아닌 것은 기존 경로로 떨어진다.

@@ -23,7 +23,7 @@
 
 - **미리 들어보기**: 홈 첫 화면의 재생 버튼 하나로 기본 목소리(시우·미나·도현·애니)의
   인사말을 차례로 들을 수 있다. 앱이 실제로 쓰는 클립 그대로다.
-- **이벤트 1 · 내 이름 음성 메시지**(https://alarm-talk.com/event/1/): 이름을 적으면 AI 로 만든 목소리가 이름을 부르는 생일 축하·위로 메시지를 한국어·영어·일본어로 만들어 준다. 실존 인물의 음성이 아닌 AI 목소리다.
+- **이벤트 1 · 내 이름 음성 메시지**(https://alarm-talk.com/event/1/): 이름을 적으면 AI 로 만든 목소리가 이름을 부르는 생일 축하·사랑 메시지를 한국어·영어·일본어로 만들어 준다. 실존 인물의 음성이 아닌 AI 목소리다.
 
 ## 무료로 되는 것
 
@@ -56,7 +56,7 @@
 - 홈: https://alarm-talk.com/
 - Google Play: https://play.google.com/store/apps/details?id=com.alarmtalk.app
 - App Store: https://apps.apple.com/app/id6799711245
-- 이벤트 목록: https://alarm-talk.com/event/ (1: 응원 메시지 https://alarm-talk.com/event/1/)
+- 이벤트 목록: https://alarm-talk.com/event/ (1: 내 이름 음성 메시지 https://alarm-talk.com/event/1/)
 - 요금: https://alarm-talk.com/pricing/
 - 자주 묻는 질문: https://alarm-talk.com/faq/
 - 개인정보 처리방침: https://alarm-talk.com/privacy/

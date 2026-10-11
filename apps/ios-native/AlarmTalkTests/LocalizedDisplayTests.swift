@@ -1,0 +1,108 @@
+import Foundation
+import XCTest
+@testable import AlarmTalk
+
+final class LocalizedDisplayTests: XCTestCase {
+    private func bundle(_ language: String) throws -> Bundle {
+        let path = try XCTUnwrap(Bundle.main.path(forResource: language, ofType: "lproj"))
+        return try XCTUnwrap(Bundle(path: path))
+    }
+
+    func testStoredFortuneValuesAreDisplayedWithoutChangingTheContract() throws {
+        for (language, male, female, unknown) in [("en", "Male", "Female", "Unknown"), ("ja", "男性", "女性", "時間不明")] {
+            let bundle = try bundle(language)
+            XCTAssertEqual(FortunePromptInputFormat.displayLabel("남성", bundle: bundle), male)
+            XCTAssertEqual(FortunePromptInputFormat.displayLabel("여성", bundle: bundle), female)
+            for alias in ["male", "M", "남자"] {
+                XCTAssertEqual(FortunePromptInputFormat.displayLabel(alias, bundle: bundle), male)
+            }
+            for alias in ["female", "F", "여자"] {
+                XCTAssertEqual(FortunePromptInputFormat.displayLabel(alias, bundle: bundle), female)
+            }
+            for alias in ["시간 모름", "모름", "알 수 없음"] {
+                XCTAssertEqual(FortunePromptInputFormat.displayLabel(alias, bundle: bundle), unknown)
+            }
+            XCTAssertEqual(FortunePromptInputFormat.displayLabel("09:31~11:30", bundle: bundle), "09:31~11:30")
+            XCTAssertEqual(FortunePromptInputFormat.male, "남성")
+            XCTAssertEqual(FortunePromptInputFormat.unknownTime, "시간 모름")
+        }
+    }
+
+    func testBirthDateUnitsDoNotReuseWeekdayOrDurationKeys() throws {
+        let english = try bundle("en")
+        let japanese = try bundle("ja")
+        XCTAssertEqual(FortunePromptInputFormat.yearLabel(1990, bundle: english), "1990")
+        XCTAssertEqual(FortunePromptInputFormat.monthLabel(3, bundle: english), "3")
+        XCTAssertEqual(FortunePromptInputFormat.dayLabel(7, bundle: english), "7")
+        XCTAssertEqual(FortunePromptInputFormat.yearLabel(1990, bundle: japanese), "1990年")
+        XCTAssertEqual(FortunePromptInputFormat.monthLabel(3, bundle: japanese), "3月")
+        XCTAssertEqual(FortunePromptInputFormat.dayLabel(7, bundle: japanese), "7日")
+        XCTAssertEqual(english.localizedString(forKey: "fortune.birth.month", value: nil, table: nil), "Month")
+        XCTAssertEqual(english.localizedString(forKey: "fortune.birth.day", value: nil, table: nil), "Day")
+    }
+
+    func testSystemVoiceIDsChooseNamesAndPrivateNamesStayUntouched() throws {
+        for (language, expected) in [("en", ["Siwoo", "Mina", "Dohyun", "Aeni"]), ("ja", ["シウ", "ミナ", "ドヒョン", "エニ"])] {
+            let bundle = try bundle(language)
+            for (voice, name) in zip(bundledSystemVoiceProfiles(), expected) {
+                XCTAssertEqual(systemVoiceDisplayName(id: voice.id, fallback: voice.name, bundle: bundle), name)
+            }
+            XCTAssertEqual(systemVoiceDisplayName(id: "private-id", fallback: "미나", bundle: bundle), "미나")
+            XCTAssertEqual(systemVoiceDisplayName(id: systemVoiceIDPrefix + "000000000999", fallback: "New name", bundle: bundle), "New name")
+        }
+        XCTAssertEqual(bundledSystemVoiceProfiles()[1].name, "미나")
+    }
+
+    func testRelationshipPresetsAreTranslatedAndCustomValuesStayUntouched() throws {
+        for language in ["en", "ja"] {
+            let bundle = try bundle(language)
+            for preset in VoiceRelationshipPreset.allCases {
+                XCTAssertNotEqual(preset.localizedDisplayLabel(bundle: bundle), preset.label)
+            }
+            XCTAssertEqual(parseVoiceRelationshipLabel("나의 소중한 친구").localizedDisplayLabel(bundle: bundle), "나의 소중한 친구")
+        }
+        XCTAssertEqual(VoiceRelationshipPreset.custom.localizedDisplayLabel(bundle: try bundle("en")), "Custom")
+    }
+
+    func testReceivedAlarmHonorificIsAddedOnce() throws {
+        let japanese = try bundle("ja")
+        XCTAssertEqual(receivedAlarmDisplayLabel(sender: "田中", bundle: japanese), "田中さんから届いたアラーム")
+        XCTAssertEqual(receivedAlarmDisplayLabel(sender: "田中さん", bundle: japanese), "田中さんから届いたアラーム")
+        XCTAssertEqual(receivedAlarmDisplayLabel(sender: "민수님", bundle: japanese), "민수님から届いたアラーム")
+        XCTAssertEqual(receivedAlarmDisplayLabel(sender: "Tanaka", bundle: try bundle("en")), "Alarm from Tanaka")
+        XCTAssertEqual(receivedAlarmDisplayLabel(sender: nil, bundle: try bundle("en")), "Alarm from someone")
+        XCTAssertEqual(receivedAlarmDisplayLabel(sender: "  ", bundle: japanese), "相手から届いたアラーム")
+    }
+
+    func testCustomRelationshipMatchingPresetKeepsUserInput() throws {
+        for language in ["ko", "en", "ja"] {
+            let bundle = try bundle(language)
+            let custom = VoiceRelationshipSelection(preset: .custom, customLabel: "엄마")
+            XCTAssertEqual(custom.localizedDisplayLabel(bundle: bundle), "엄마")
+            XCTAssertEqual(custom.resolved, "엄마")
+            let restored = parseVoiceRelationshipLabel(custom.resolved)
+            XCTAssertEqual(restored.preset, .custom)
+            XCTAssertEqual(restored.localizedDisplayLabel(bundle: bundle), "엄마")
+            XCTAssertEqual(VoiceRelationshipSelection(preset: .mom).localizedDisplayLabel(bundle: bundle),
+                           VoiceRelationshipPreset.mom.localizedDisplayLabel(bundle: bundle))
+        }
+    }
+
+    func testSharedVoiceOwnerUsesCurrentLanguageAndOneHonorific() throws {
+        for (language, owner, expected) in [
+            ("en", "Alex", "Voice shared by Alex"),
+            ("ja", "田中さん", "田中さんから共有された声"),
+            ("ko", "민수님", "민수님에게 공유받은 목소리")
+        ] {
+            let voice = FamilyVoiceProfile(id: "shared", name: "Voice", ownerName: owner)
+            XCTAssertEqual(voice.localizedSharedFromLabel(bundle: try bundle(language)), expected)
+        }
+    }
+
+    func testLegalLinksFollowAppLanguageWithKoreanFallback() {
+        for (language, path) in [("ko", "ko"), ("en-US", "en"), ("ja", "ja"), ("fr", "ko")] {
+            XCTAssertEqual(LegalLinks.url(for: "terms", language: language).absoluteString, "https://alarm-talk.com/\(path)/terms")
+            XCTAssertEqual(LegalLinks.url(for: "privacy", language: language).absoluteString, "https://alarm-talk.com/\(path)/privacy")
+        }
+    }
+}

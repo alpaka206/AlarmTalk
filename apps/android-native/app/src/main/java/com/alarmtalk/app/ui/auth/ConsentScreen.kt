@@ -1,7 +1,6 @@
 package com.alarmtalk.app
 
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -25,7 +24,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -337,7 +335,6 @@ private fun ConsentRow(
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
     label: String,
-    description: String? = null,
     emphasized: Boolean = false,
     detail: AnnotatedString? = null,
     scrollableDetail: Boolean = false,
@@ -369,16 +366,8 @@ private fun ConsentRow(
                     fontWeight = if (emphasized) FontWeight.Bold else FontWeight.Normal,
                     color = TextOnScene,
                 )
-                if (description != null) {
-                    Spacer(Modifier.height(2.dp))
-                    Text(
-                        text = description,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = AuthTextMuted,
-                    )
-                }
             }
-            // ⚠ 민감 동의(생체정보·국외이전)의 긴 설명은 `description` 이 아니라 **`detail`**
+            // ⚠ 민감 동의(생체정보·국외이전)의 긴 설명은 라벨 아래 부제가 아니라 **`detail`**
             // 로 넘긴다 — 그래야 이 화살표로 접힌다. iOS 는 같은 일을
             // `ConsentRow.collapsibleDescription` 으로 한다(구조가 달라 이름이 다르다).
             if (detail != null) {

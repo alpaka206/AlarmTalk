@@ -1,8 +1,6 @@
 import Foundation
 
-#if canImport(UserNotifications)
 import UserNotifications
-#endif
 
 struct SocialNotificationRequest: Equatable {
     var noteID: String
@@ -14,17 +12,14 @@ enum SocialNotificationTracker {
     static func requestAuthorizationIfNeeded() async {
         // 화면 확인 모드에서는 권한 팝업이 화면을 가린다(시뮬레이터엔 탭할 방법이 없다).
         if UIPreviewSeed.isEnabled { return }
-        #if canImport(UserNotifications)
         let center = UNUserNotificationCenter.current()
         let settings = await center.notificationSettings()
         guard settings.authorizationStatus == .notDetermined else { return }
         _ = try? await center.requestAuthorization(options: [.alert, .sound, .badge])
-        #endif
     }
 
     static func notifyReceivedAlarm(alarmID: String, title: String, time: String) async {
         let request = receivedAlarmRequest(alarmID: alarmID, title: title, time: time)
-        #if canImport(UserNotifications)
         let center = UNUserNotificationCenter.current()
         let settings = await center.notificationSettings()
         guard canPostNotifications(status: settings.authorizationStatus) else { return }
@@ -40,21 +35,17 @@ enum SocialNotificationTracker {
             trigger: nil
         )
         try? await center.add(notification)
-        #endif
     }
 
     static func receivedAlarmRequest(alarmID: String, title: String, time: String) -> SocialNotificationRequest {
-        let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        let trimmedTime = time.trimmingCharacters(in: .whitespacesAndNewlines)
-        return SocialNotificationRequest(
+        SocialNotificationRequest(
             noteID: alarmID,
-            title: trimmedTitle.isEmpty ? "상대가 보낸 알람" : trimmedTitle,
+            title: title.nilIfBlank ?? String(localized: "상대가 보낸 알람"),
             // Android `SocialNotificationFactory.kt:35` 과 동일 문구(마침표 없음).
-            body: trimmedTime.isEmpty ? "상대가 내 알람을 설정했어요" : "\(trimmedTime)에 울려요"
+            body: time.nilIfBlank.map { String(localized: "\(String($0))에 울려요") } ?? String(localized: "상대가 내 알람을 설정했어요")
         )
     }
 
-    #if canImport(UserNotifications)
     private static func canPostNotifications(status: UNAuthorizationStatus) -> Bool {
         switch status {
         case .authorized, .provisional, .ephemeral:
@@ -65,5 +56,4 @@ enum SocialNotificationTracker {
             return false
         }
     }
-    #endif
 }

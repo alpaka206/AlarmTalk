@@ -17,7 +17,7 @@ enum PaidPlans {
 /// ## 왜 예약 시점인가 — iOS 와 안드로이드의 결정적 차이
 ///
 /// 안드로이드는 `RingingService` 가 **울릴 때** 로컬 영속 구독으로 유료 권한을 다시 보고,
-/// 무료로 떨어졌으면 그 자리에서 기본 톤으로 강등한다. 푸시가 유실돼도, 앱을 몇 주 안 열어도,
+/// 무료로 떨어졌으면 그 자리에서 기본 목소리로 바꾼다(2026-09-29 전에는 기본 톤). 푸시가 유실돼도, 앱을 몇 주 안 열어도,
 /// 오프라인이어도 그 게이트가 막아 준다.
 ///
 /// **iOS 에는 그 자리가 없다.** AlarmKit 은 발사 시점에 우리 코드를 실행하지 않는다
@@ -43,7 +43,7 @@ enum PaidVoiceAccess {
 
 enum PaidVoiceGate {
 
-    /// 이 알람이 **유료 목소리**를 쓰는가. 안드로이드 `alarmUsesPaidVoice` 와 동일.
+    /// 이 알람이 **유료 목소리**를 쓰는가. 안드로이드 `hasVoiceResources` 와 동일.
     /// ⚠ **재생 방식만으로 판단하지 말 것.** `playModeEnum != .alarmOnly` 를 단독 조건으로
     /// 두면 **말할 자원이 하나도 없는 알람**이 유료로 잡힌다 — 그러면 한 번도 유료였던 적
     /// 없는 계정이 강등 대상이 된다(2026-08-18 실계정 확인). 짝인
@@ -230,7 +230,8 @@ enum PaidVoiceGate {
         )
     }
 
-    /// 예약 시점에 이 알람의 유료 목소리를 기본 톤으로 강등해야 하는가.
+    /// 예약 시점에 이 알람의 유료 목소리를 **기본 목소리로** 바꿔야 하는가
+    /// (`DefaultVoiceSubstitute` — 2026-09-29 전에는 기본 톤이었다. billing-lifecycle.md 「목소리를 못 쓰게 되면」).
     ///
     /// **본인 소유(`localOwned`) 알람만 대상이다.** 공유받은 알람(`receivedRemote`)은
     /// 보낸 사람의 구독으로 성립하는 것이라 받는 쪽 구독으로 판단하지 않는다.
@@ -238,7 +239,7 @@ enum PaidVoiceGate {
     /// - Parameter fireAt: 알람이 울릴 시각. 기간 한정 개인 플랜만으로 열린 목소리는 **그 시각에도**
     ///   프로모가 덮어야 한다(`resolve` 의 `promoAt`). ⚠ iOS 는 울릴 때 앱 코드가 돌지 않는다
     ///   (AlarmKit 이 예약 때 받은 소리를 그대로 튼다) — 안드로이드처럼 울릴 때 다시 볼 수 없으니,
-    ///   끝 뒤에 울릴 예약은 **예약할 때** 기본 알람음으로 건다(Codex #803). 이미 예약된 반복 알람은
+    ///   끝 뒤에 울릴 예약은 **예약할 때** 기본 목소리로 건다(Codex #803). 이미 예약된 반복 알람은
     ///   다음 리컨사일(앱 열기·백그라운드 새로고침·`plan_changed` 푸시)에서 다음 울림이 끝 뒤가 되는
     ///   순간 바뀐다.
     static func shouldDowngrade(
@@ -260,7 +261,7 @@ enum PaidVoiceGate {
     /// ⚠ **주간 반복 알람은 AlarmKit 이 한 번 받은 설정을 모든 회차에 다시 쓴다**(Codex #803). 예약할 때
     /// 울릴 시각을 봐도(`shouldDowngrade` 의 `fireAt`) 다음 회차가 끝 전이면 목소리로 걸리고, 그 설정이
     /// 끝 뒤 회차까지 간다. 그래서 이런 알람은 **정지할 때마다 다시 맞춘다**(`AlarmAppContext` — 무료
-    /// 테마 회전과 같은 경로) — 끝 전 마지막 회차를 끄는 순간 다음 회차(끝 뒤)가 기본 알람음으로 걸린다.
+    /// 테마 회전과 같은 경로) — 끝 전 마지막 회차를 끄는 순간 다음 회차(끝 뒤)가 기본 목소리로 걸린다.
     /// 앱 코드는 정지 인텐트에서 돌므로 네트워크도 화면도 필요 없다.
     static func dependsOnPromoCutover(
         record: LocalAlarmRecord,
@@ -276,16 +277,6 @@ enum PaidVoiceGate {
         // 남는다. 판정은 '끝(또는 지금, 더 늦은 쪽)에 못 듣는가' 하나다 — 결제자(활성 구독 행)는 언제나 듣는다.
         // 리컨사일러는 예약 판정이 바뀔 때만 다시 예약하므로 넓게 불러도 해가 없다.
         return !isEntitled(snapshot: snapshot, now: now, promoAt: max(ends, now))
-    }
-
-    /// 강등된 형태 — **알람은 그대로 울린다.** 목소리만 빼고 기본 알람음으로 떨어뜨린다.
-    ///
-    /// ⚠ 이 값을 store 에 쓰지 **않는다.** 예약에 쓸 사운드를 고르기 위한 일시적 형태일 뿐이고,
-    /// 저장해 버리면 구독을 되살렸을 때 되돌릴 원본이 사라진다.
-    static func downgraded(_ record: LocalAlarmRecord) -> LocalAlarmRecord {
-        var next = record
-        next.playMode = AlarmPlayMode.alarmOnly.rawValue
-        return next
     }
 
     // MARK: - 내부

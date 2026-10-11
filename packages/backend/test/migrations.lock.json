@@ -466,5 +466,29 @@
   "122": {
     "name": "voice-profiles-voice-energy",
     "sha": "38e454e725fa771a"
+  },
+  "123": {
+    "name": "weather-region-daily",
+    "sha": "02e761f1267be5e2"
+  },
+  "124": {
+    "name": "refresh-stock-clips-v4-turbo-c0e0f678c172a871",
+    "sha": "a48604bfa0c57cac"
+  },
+  "125": {
+    "name": "drop-voice-profiles-preview-tag",
+    "sha": "c73a8609da75a55c"
+  },
+  "126": {
+    "name": "pending-plan-notifications",
+    "sha": "17ee21fe48c78e25"
+  },
+  "127": {
+    "name": "weather-region-daily-official",
+    "sha": "39a092899d31462d"
+  },
+  "128": {
+    "name": "voice-profile-pitch",
+    "sha": "09c0cab151add4bd"
   }
 }

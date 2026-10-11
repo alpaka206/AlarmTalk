@@ -28,11 +28,21 @@ data class AuthSession(
      * `userPlanPromo`) — 캐시된 계산값 `plus` 는 **종료 전에 받은 것**일 때만, 종료가 지나면
      * 무료로 읽는다. 종료 **뒤에** 받은 답은 서버가 이미 계산한 것이라 그대로 믿는다.
      *
-     * 서버 응답을 저장하는 자리(로그인·`/auth/me`)가 새로 찍고, 프로필만 고쳐 다시 저장하는
-     * 자리는 **들고 있던 값을 그대로** 넘긴다 — plan·프로모와 함께 복사된 옛 답이므로 받은
-     * 시각도 그 답의 것이어야 한다.
+     * 서버 응답을 저장하는 자리(로그인·`/auth/me`)가 새로 찍는다. 프로필만 고친 저장
+     * ([AuthSessionStore.updateUserIfAlive])은 plan 답이 아니라 **저장소의 값을 그대로** 둔다 —
+     * plan·프로모와 한 벌이라, 셋 중 하나만 옛 답의 것이 되면 오프라인 차단이 엉뚱한 답을 자른다.
      */
     val userFetchedAtMillis: Long? = null,
+    /**
+     * 이 세션을 적은 **저장 순번** — 저장할 때마다 1씩 오르고 줄지 않는다(세션이 끝나도 이어진다).
+     *
+     * 계정 설정 받아 적기가 "새 응답이 왔다" 를 가르는 축이다(`AccountSettingsReceipt`).
+     * ⚠ [userFetchedAtMillis] 로 가르지 말 것(Codex #837) — 개인 프로모 계정은 그 값이 서버의
+     * `computed_at`(초 단위)으로 바뀌어 같은 초의 `/auth/me` 두 번이 **같은 값**이 되고, 값이 같은
+     * 응답은 받아 적기를 다시 돌리지 않는다 — 앞 업로드가 실패했으면 밀린 변경이 남는다.
+     * 플랜·시계와 무관한 순번이어야 한다.
+     */
+    val accountAnswerSeq: Long = 0L,
 )
 
 /**
@@ -148,6 +158,29 @@ internal fun sessionSurvivedForWrite(
 ): Boolean = currentGeneration == expectedGeneration && !currentToken.isNullOrBlank()
 
 /**
+ * 화면이 "세션이 바뀌었나" 를 가르는 키 — **계정 + 세션 세대**. 토큰은 넣지 않는다.
+ *
+ * 앱 루트(`AlarmTalkApp`)의 세션 효과(계정·동의·목소리 준비 확인, 목소리·클립·구독 선로드,
+ * 푸시 신호 구독)와 탭 새로고침 스로틀이 이 값을 키로 쓴다.
+ *
+ * ⚠ **토큰을 키로 쓰지 말 것**(2026-09-29 효율 감사 H3). `GET /auth/me` 의 rolling refresh 는
+ * 같은 세션 안에서 토큰을 갈아 끼운다 — 콜드 스타트의 진입 갱신, 워커의 갱신, 결제·쿠폰 뒤의
+ * 갱신이 전부 그렇다. 토큰을 키로 두면 굴러갈 때마다 효과가 전부 다시 돌아, 콜드 스타트
+ * 한 번에 요청이 57건까지 불었다(필요한 것은 그 절반 이하). Play 구독자는 자동 정합화가
+ * 토큰을 굴리고 → 탭 효과가 다시 돌아 → 다시 정합화하는 고리까지 생겼다(H4).
+ *
+ * ⚠ **계정 id 만으로도 부족하다.** 로그아웃 뒤 **같은 계정**으로 다시 로그인하면 id 가 같아
+ * 효과가 다시 돌지 않는다 — 로그아웃이 비운 동의·계정 상태를 아무도 다시 묻지 않는다.
+ * 세대는 세션이 끝날 때만 오르므로([AuthSessionStore.sessionGeneration]) 그 경우를 가른다.
+ * [sessionSurvivedForWrite] 가 세대로 가르는 것과 같은 이유다.
+ */
+data class SessionEffectKey(val userId: String, val generation: Long)
+
+/** [session] 이 없으면(비로그인) null. 순수 함수 — 판정만 고정해 두려고 뗐다. */
+fun sessionEffectKey(session: AuthSession?, generation: Long): SessionEffectKey? =
+    session?.let { SessionEffectKey(userId = it.user.id, generation = generation) }
+
+/**
  * **명시적 로그아웃이 진행 중인가** — 시각 하나로 판정한다.
  *
  * 왜 불리언이 아니라 시각인가: 이 표시는 prefs 에 남는다(아래 [AuthSessionStore.beginSignOut]
@@ -222,6 +255,7 @@ class AuthSessionStore internal constructor(
                 personalPromo = readPersonalPromo(),
             ),
             userFetchedAtMillis = prefs.getLong(KEY_USER_FETCHED_AT, 0L).takeIf { it > 0L },
+            accountAnswerSeq = prefs.getLong(KEY_ACCOUNT_ANSWER_SEQ, 0L),
         )
     }
 
@@ -271,10 +305,13 @@ class AuthSessionStore internal constructor(
         // 세션 세대를 올린다 — 이 값이 바뀌면 "그 사이 세션이 끝났다" 는 뜻이다.
         // 자세한 계약은 [sessionGeneration] 주석 참고.
         val nextGeneration = prefs.getLong(KEY_SESSION_GENERATION, 0L) + 1L
+        // 저장 순번도 이어 간다 — 줄지 않아야 '새 응답' 판정이 세션을 넘어서도 겹치지 않는다([AuthSession.accountAnswerSeq]).
+        val answerSeq = prefs.getLong(KEY_ACCOUNT_ANSWER_SEQ, 0L)
         prefs.edit()
             .clear()
             .putString(KEY_PENDING_OWNER_USER_ID, pendingOwner)
             .putLong(KEY_SESSION_GENERATION, nextGeneration)
+            .putLong(KEY_ACCOUNT_ANSWER_SEQ, answerSeq)
             .also { if (expiredOwner != null) it.putString(KEY_SESSION_EXPIRED_OWNER, expiredOwner) }
             .also { if (!pendingDisables.isNullOrEmpty()) it.putStringSet(KEY_PENDING_DISABLE_ALARM_IDS, pendingDisables) }
             .also { if (signOutStartedAt > 0L) it.putLong(KEY_SIGN_OUT_STARTED_AT, signOutStartedAt) }
@@ -483,8 +520,8 @@ class AuthSessionStore internal constructor(
      * @param rolledToken 서버가 이번 응답으로 **새로 준** 토큰. 없으면(null·공백) 저장소의
      *   현재 토큰을 지킨다 — 호출부가 시작할 때 잡아 둔 토큰으로 되돌리면 안 된다. 그 사이
      *   굴러간 토큰을 옛 것으로 덮는 것이기 때문이다.
-     * @param userFetchedAtMillis [user] 를 서버에서 받은 시각([AuthSession.userFetchedAtMillis]).
-     *   `/auth/me` 응답이면 지금, 들고 있던 세션의 프로필만 고친 것이면 **그 세션의 값**이다.
+     * @param userFetchedAtMillis [user] 를 서버에서 받은 시각([AuthSession.userFetchedAtMillis]) — 방금 받은
+     *   응답이면 지금. 들고 있던 세션의 프로필만 고친 저장은 이 함수가 아니라 [updateUserIfAlive] 다.
      *
      * 저장하지 않는 경우(모두 null 반환):
      *  - 시작할 때의 세션이 이미 끝났다([sessionSurvivedForWrite]).
@@ -497,6 +534,11 @@ class AuthSessionStore internal constructor(
         provider: String,
         rolledToken: String?,
         userFetchedAtMillis: Long?,
+        /**
+         * 계정 설정만 이 값으로 적는다(정규화 뒤에 덮는다). 계정 설정 올리기가 끝나기 전에 보낸 `/auth/me` 의
+         * 옛 설정을 쓰지 않을 때(`fencedAccountSettings`). null 이면 [user] 의 것 그대로.
+         */
+        dynamicPromptSettingsOverride: DynamicPromptSettings? = null,
     ): AuthSession? = synchronized(sessionWriteLock) {
         val storedToken = prefs.getString(KEY_TOKEN, null)
         val alive = sessionSurvivedForWrite(
@@ -511,6 +553,49 @@ class AuthSessionStore internal constructor(
             provider = provider,
             user = user,
             userFetchedAtMillis = userFetchedAtMillis,
+            dynamicPromptSettingsOverride = dynamicPromptSettingsOverride,
+        )
+    }
+
+    /**
+     * 프로필 저장(`PATCH /user/me` — 닉네임·가족 알람 설정·계정 설정)의 결과를 적는다 — **지금 저장된 세션 위에
+     * 바꾼 칸만** 얹는다. 시작할 때의 세션이 살아 있지 않거나 다른 계정이 됐으면 아무것도 쓰지 않고 null.
+     *
+     * ⚠ **요청 전에 잡아 둔 세션의 사본을 저장하지 말 것**(2026-10-05). 그 사본에는 plan·프로모·받은 시각·다른 칸이
+     * 요청을 보낼 때의 값으로 들어 있어, 그 사이 `/auth/me`(쿠폰·초대 등록 뒤의 갱신, `plan_changed`, 복귀 갱신,
+     * 다른 기기 결제)가 적은 더 새 답을 다음 `/auth/me` 까지 되돌린다 — 판정 스냅샷은 그대로여도, 세션 plan 을
+     * 직접 읽는 편집기(`freeVoiceTier`)·목소리 관리(`paidVoiceAccess`)가 방금 가족이 된 사람을 무료로 그렸다.
+     * 예전에는 계정 설정 한 칸만 지켰다(Codex #837 검증의 `keepStoredPromptSettings`).
+     *
+     * - **plan·프로모·받은 시각은 저장소의 짝 그대로다** — 프로필 저장은 plan 답이 아니다. [change] 가 무엇을
+     *   돌려주든 plan·프로모·계정 id 는 저장소의 값으로 다시 박는다(받은 시각과 한 벌 — [AuthSession.userFetchedAtMillis]).
+     * - 토큰·provider 도 저장소의 것이다(Codex #665 P2 — 그 사이 굴러간 토큰을 옛 것으로 덮지 않는다).
+     * - 읽기·확인·쓰기를 [saveSessionIfAlive]·[clear] 와 같은 락 안에서 한다 — 따로 하면 그 사이 끼어든 쓰기를 되돌린다.
+     *
+     * @param userId 요청을 보낸 계정. 그 사이 다른 계정이 됐으면 남의 세션에 쓰지 않는다(Codex #665 P1).
+     * @param change 바꾼 칸만 고친다(`{ it.copy(name = …) }`). 저장소에서 읽은 사용자를 받는다.
+     */
+    fun updateUserIfAlive(
+        expectedGeneration: Long,
+        userId: String,
+        change: (AuthUser) -> AuthUser,
+    ): AuthSession? = synchronized(sessionWriteLock) {
+        val alive = sessionSurvivedForWrite(
+            expectedGeneration = expectedGeneration,
+            currentGeneration = prefs.getLong(KEY_SESSION_GENERATION, 0L),
+            currentToken = prefs.getString(KEY_TOKEN, null),
+        )
+        if (!alive) return@synchronized null
+        val stored = read()?.takeIf { it.user.id == userId } ?: return@synchronized null
+        save(
+            token = stored.token,
+            provider = stored.provider,
+            user = change(stored.user).copy(
+                id = stored.user.id,
+                plan = stored.user.plan,
+                personalPromo = stored.user.personalPromo,
+            ),
+            userFetchedAtMillis = stored.userFetchedAtMillis,
         )
     }
 
@@ -527,17 +612,26 @@ class AuthSessionStore internal constructor(
         provider: String,
         user: AuthUser,
         userFetchedAtMillis: Long?,
-    ): AuthSession {
+        dynamicPromptSettingsOverride: DynamicPromptSettings? = null,
+    ): AuthSession = synchronized(sessionWriteLock) {
         // 서버가 계산 시각(`personal_promo.computed_at`)을 줬으면 그것이 이 답의 시각이다(D7).
-        // **정규화 전에** 읽는다 — 정규화가 그 키를 뺀다. 프로필만 고친 저장은 이미 정규화된
-        // user 라 키가 없어, 들고 있던 값이 그대로 남는다.
+        // **정규화 전에** 읽는다 — 정규화가 그 키를 뺀다. 프로필만 고친 저장([updateUserIfAlive])은
+        // 저장소에서 읽은 user 라 키가 없어, 저장소의 받은 시각이 그대로 남는다.
         val answeredAtMillis = userFetchedAtMillis?.let { received ->
             planAnswerStampMillis(runCatching { user.personalPromo }.getOrNull(), received)
         }
-        val normalizedUser = normalizeUser(user)
+        // 정규화한 뒤에 덮는다 — 정규화 전의 서버 응답은 Gson 이 빈 칸을 null 로 채워 `copy` 가 깨질 수 있다.
+        val normalizedUser = normalizeUser(user).let { normalized ->
+            dynamicPromptSettingsOverride?.let { normalized.copy(dynamicPromptSettings = normalizeDynamicPromptSettings(it)) }
+                ?: normalized
+        }
         val firstQuietWindow = normalizedUser.familyAlarmQuietWindows.firstOrNull()
             ?: FamilyAlarmQuietWindow(days = normalizedUser.familyAlarmQuietDays)
+        // 저장마다 새 순번 — 내용이 똑같은 응답도 '새 응답' 으로 보이게([AuthSession.accountAnswerSeq]).
+        // 읽고 올려 쓰기가 한 덩어리여야 해서 이 함수 전체가 세션 쓰기 락 안이다(재진입 가능).
+        val answerSeq = prefs.getLong(KEY_ACCOUNT_ANSWER_SEQ, 0L) + 1L
         prefs.edit()
+            .putLong(KEY_ACCOUNT_ANSWER_SEQ, answerSeq)
             .putString(KEY_TOKEN, token)
             .putString(KEY_PROVIDER, provider)
             .putString(KEY_USER_ID, normalizedUser.id)
@@ -581,11 +675,12 @@ class AuthSessionStore internal constructor(
                 }
             }
             .apply()
-        return AuthSession(
+        AuthSession(
             token = token,
             provider = provider,
             user = normalizedUser,
             userFetchedAtMillis = answeredAtMillis?.takeIf { it > 0L },
+            accountAnswerSeq = answerSeq,
         )
     }
 
@@ -667,6 +762,7 @@ class AuthSessionStore internal constructor(
                 weather = DynamicPromptWeatherSettings(
                     country = weather?.optString("country").trimmedOrNull(),
                     city = weather?.optString("city").trimmedOrNull(),
+                    region = weather?.optString("region").trimmedOrNull(),
                 ),
                 fortune = DynamicPromptFortuneSettings(
                     gender = fortune?.optString("gender").trimmedOrNull(),
@@ -683,7 +779,8 @@ class AuthSessionStore internal constructor(
                 "weather",
                 JSONObject()
                     .put("country", settings.weather.country.trimmedOrNull())
-                    .put("city", settings.weather.city.trimmedOrNull()),
+                    .put("city", settings.weather.city.trimmedOrNull())
+                    .put("region", settings.weather.region.trimmedOrNull()),
             )
             .put(
                 "fortune",
@@ -897,6 +994,7 @@ class AuthSessionStore internal constructor(
         private const val KEY_PERSONAL_PROMO_NOTICE_FROM = "personal_promo_notice_from"
         private const val KEY_PERSONAL_PROMO_DELETES_VOICES = "personal_promo_deletes_voices_at_end"
         private const val KEY_USER_FETCHED_AT = "user_fetched_at_millis"
+        private const val KEY_ACCOUNT_ANSWER_SEQ = "account_answer_seq"
         // 방해금지 창은 최대 2개(평일 근무 + 주말 정도). 백엔드 family-alarm-settings.ts와 동일.
         private const val MAX_QUIET_WINDOWS = 2
     }
@@ -928,6 +1026,7 @@ internal fun normalizeDynamicPromptSettings(settings: DynamicPromptSettings?): D
         weather = DynamicPromptWeatherSettings(
             country = runCatching { weather?.country }.getOrNull().trimmedOrNull(),
             city = runCatching { weather?.city }.getOrNull().trimmedOrNull(),
+            region = runCatching { weather?.region }.getOrNull().trimmedOrNull(),
         ),
         fortune = DynamicPromptFortuneSettings(
             gender = runCatching { fortune?.gender }.getOrNull().trimmedOrNull(),

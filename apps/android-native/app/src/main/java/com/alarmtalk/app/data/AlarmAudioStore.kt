@@ -11,6 +11,7 @@ import android.provider.OpenableColumns
 import android.util.Log
 import android.webkit.MimeTypeMap
 import androidx.core.net.toUri
+import com.alarmtalk.app.UserFacingException
 import com.alarmtalk.app.R
 import com.alarmtalk.app.core.AlarmTalkLog
 import com.alarmtalk.app.core.AlarmTalkLog.TAG
@@ -44,6 +45,12 @@ data class TtsInputAlias(
     val displayText: String,
 )
 
+/** [AlarmAudioStore.findReusableTtsAudio] 결과 — 폰에 있는 그 문구의 오디오와, 짝이 되는 표시 문구의 별칭. */
+data class ReusableTtsAudio(
+    val audio: CachedAlarmAudio,
+    val alias: TtsInputAlias,
+)
+
 data class CachedAlarmAudio(
     val localAudioUri: String,
     val rawAudioUri: String?,
@@ -62,11 +69,66 @@ data class CachedAlarmAudio(
  */
 class SupersededAudioException : IllegalStateException("Audio response is superseded by a newer manifest")
 
+/**
+ * 캐시 조회가 **디렉터리를 몇 번 통째로 읽고, 길이를 몇 번 쟀는가** — 회귀 테스트가 센다.
+ *
+ * 2026-09-29 A32: ＋ 한 번에 알람 관문이 기본 목소리 76개를 클립마다 [AlarmAudioStore.getCachedAudio]
+ * 로 물어(디렉터리 전량 읽기 2회 + 길이 측정 1회) 메인 스레드가 1.4~1.8초 멎었다. 그 회귀가
+ * 다시 들어오는 것을 이 숫자로 막는다(`AlarmAudioStoreProbeCountTest`). iOS 짝은
+ * `AudioCacheScanCounter`.
+ *
+ * ⚠ **스레드 로컬이다** — 재는 쪽이 부른 것만 센다. 전역 숫자로 두면 다른 스레드의 스윕·
+ * 프리페치가 같은 함수를 불러 단언 사이에 끼어든다(iOS 가 그렇게 한 번 깨졌다).
+ * 재지 않을 때는 스레드 로컬 한 번 읽는 값만 든다.
+ *
+ * 매니페스트 파일(약 168KB)을 **읽어 파싱한 횟수**도 센다(`StockClipManifestStore.load`) — 캐시 쓰기의
+ * '지나간 응답인가' 가드가 쓰기마다 그 파일을 다시 파싱하던 회귀를 막는다(2026-10-10 Sentry 조사).
+ */
+internal object AudioCacheProbeCounter {
+    class Counts {
+        var directoryListings: Int = 0
+        var durationReads: Int = 0
+        var manifestReads: Int = 0
+    }
+
+    private val current = ThreadLocal<Counts?>()
+
+    fun <T> measuring(block: () -> T): Pair<T, Counts> {
+        val counts = Counts()
+        val previous = current.get()
+        current.set(counts)
+        try {
+            return block() to counts
+        } finally {
+            current.set(previous)
+        }
+    }
+
+    fun recordDirectoryListing() {
+        current.get()?.let { it.directoryListings += 1 }
+    }
+
+    fun recordDurationRead() {
+        current.get()?.let { it.durationReads += 1 }
+    }
+
+    fun recordManifestRead() {
+        current.get()?.let { it.manifestReads += 1 }
+    }
+}
+
 class AlarmAudioStore(
     private val context: Context,
 ) {
     private val audioDir: File
         get() = File(context.filesDir, AUDIO_DIR).also { it.mkdirs() }
+
+    /**
+     * '지나간 응답인가' 가드([incomingIsSupersededByManifest])가 보는 매니페스트 주소표 — **이 인스턴스의
+     * 쓰기들이 함께 쓴다.** 매니페스트 파일이 바뀌었을 때만 다시 읽는다(`StockClipManifestStore.AudioUrlIndex`).
+     * 선다운로드 워커는 회차마다 인스턴스를 하나 만들므로, 한 회차에 매니페스트를 한 번 읽는다.
+     */
+    private val manifestAudioUrls = StockClipManifestStore.AudioUrlIndex(context)
 
     fun createRecordingFile(): File =
         File(audioDir, "recording_${System.currentTimeMillis()}.m4a")
@@ -99,7 +161,7 @@ class AlarmAudioStore(
         startMillis: Long = 0L,
     ): CachedAlarmAudio {
         val durationMillis = readDurationMillis(sourceUri)
-            ?: throw IllegalArgumentException(context.getString(R.string.rd_audio_duration_unreadable))
+            ?: throw UserFacingException(context.getString(R.string.rd_audio_duration_unreadable))
         val displayName = readDisplayName(sourceUri) ?: "voice_${System.currentTimeMillis()}"
         val extension = extensionFor(sourceUri, displayName)
         val sourceMimeType = context.contentResolver.getType(sourceUri)
@@ -219,7 +281,7 @@ class AlarmAudioStore(
             }.onFailure { error ->
                 AlarmTalkLog.reportError("trimToMaxDuration failed", error)
                 runCatching { trimTarget.delete() }
-                throw IllegalArgumentException(
+                throw UserFacingException(
                     context.getString(R.string.rd_audio_trim_failed),
                     error,
                 )
@@ -232,15 +294,15 @@ class AlarmAudioStore(
                 AlarmTalkLog.reportError("trim output empty path=${trimTarget.absolutePath} size=${trimTarget.length()} duration=$trimDuration",
                 )
                 runCatching { trimTarget.delete() }
-                throw IllegalArgumentException(
+                throw UserFacingException(
                     context.getString(R.string.rd_audio_trim_failed),
                 )
             }
         } else {
             File(audioDir, "${safeCacheKey(cacheKey)}.$extension").also { file ->
                 context.contentResolver.openInputStream(sourceUri).use { input ->
-                    requireNotNull(input) { context.getString(R.string.rd_audio_open_failed) }
-                    file.outputStream().use { output -> input.copyTo(output) }
+                    val source = input ?: throw UserFacingException(context.getString(R.string.rd_audio_open_failed))
+                    file.outputStream().use { output -> source.copyTo(output) }
                 }
             }
         }
@@ -255,7 +317,7 @@ class AlarmAudioStore(
             AlarmTalkLog.reportError("Cached audio empty path=${target.absolutePath} size=${target.length()} duration=$trimmedDuration",
             )
             runCatching { target.delete() }
-            throw IllegalArgumentException(context.getString(R.string.rd_audio_extract_failed))
+            throw UserFacingException(context.getString(R.string.rd_audio_extract_failed))
         }
         val cachedDurationMillis = trimmedDuration
         val normalizedDurationMillis = normalizeDurationWithinLimit(
@@ -393,21 +455,100 @@ class AlarmAudioStore(
         )
     }
 
+    /**
+     * 캐시된 오디오(없거나 낡았으면 null). **길이까지 잰다** — 결과를 알람 오디오로 쓸 때만 부른다.
+     *
+     * 있는지만 물을 때는 [hasCachedAudio], 여러 개를 한꺼번에 물을 때는 [missingOrStaleCacheKeys]
+     * 를 쓴다. 길이 측정(`MediaMetadataRetriever`)은 파일마다 수십 ms 라, 클립 목록을 이걸로
+     * 훑으면 그 시간이 클립 수만큼 곱해진다(2026-09-29 A32 — 알람 관문 한 번에 1.4~1.8초).
+     */
     fun getCachedAudio(cacheKey: String, rawAudioUri: String? = null): CachedAlarmAudio? {
-        if (cachedAudioIsStale(cacheKey, rawAudioUri)) {
-            return null
-        }
+        val cached = getCachedAudioUnmeasured(cacheKey, rawAudioUri) ?: return null
+        return cached.copy(durationMillis = readDurationMillis(cached.localAudioUri.toUri()))
+    }
+
+    /**
+     * [getCachedAudio] 와 **같은 답**(없거나 낡았으면 null — 낡음은 같은 메타 대조)인데 **길이를 재지
+     * 않는다** — `durationMillis` 는 언제나 null 이다.
+     *
+     * 틀 파일 자리만 쓰는 곳이 부른다 — 울림(`AlarmRepository.resolveBucketClipSelection`·
+     * `DefaultVoiceClipSource.ringUri`)과 잠금의 클립 묶기(`DefaultVoiceClipSource.lockBinding`).
+     * 예전에는 거기서도 [getCachedAudio] 를 불러 클립마다 `MediaMetadataRetriever` 를 돌리고 그 값을
+     * 버렸다(2026-10-10 Sentry 조사) — 알람이 울리는 순간에 할 일이 아니다.
+     */
+    fun getCachedAudioUnmeasured(cacheKey: String, rawAudioUri: String? = null): CachedAlarmAudio? {
         val cached = findCachedFile(cacheKey) ?: return null
-        val uri = cached.toUri()
         val metadata = readMetadata(cacheKey)
+        if (metadataIsStale(metadata, rawAudioUri)) return null
         return CachedAlarmAudio(
-            localAudioUri = uri.toString(),
+            localAudioUri = cached.toUri().toString(),
             rawAudioUri = metadata.rawAudioUri ?: rawAudioUri,
             displayName = cached.name,
-            durationMillis = readDurationMillis(uri),
+            durationMillis = null,
             cacheKey = cacheKey,
             messageId = metadata.messageId,
         )
+    }
+
+    /**
+     * [getCachedAudio] 가 null 이 아닌가 — 답은 같고 **길이를 재지 않는다.**
+     *
+     * "이미 받아 뒀으니 건너뛴다" 처럼 있는지만 보는 자리는 이걸 쓴다.
+     */
+    fun hasCachedAudio(cacheKey: String, rawAudioUri: String? = null): Boolean {
+        if (findCachedFile(cacheKey) == null) return false
+        return !metadataSaysStale(cacheKey, rawAudioUri)
+    }
+
+    /**
+     * 캐시 키 여러 개가 **없거나 낡았는지**를 디렉터리 **한 번**으로 답한다. 길이는 재지 않는다.
+     *
+     * 답은 키마다 `getCachedAudio(key, url) == null` 을 부른 것과 **같아야 한다** — 알람 관문
+     * (`StockClipPrefetchWorker.defaultVoiceProgress`)과 진행률이 이 값을 그대로 쓰므로
+     * 조금이라도 어긋나면 관문이 잘못 열리거나, 퍼센트가 뒤로 가거나 100% 에 닿지 않는다.
+     * iOS 짝은 `AudioCacheStore.missingOrStaleCacheKeys`.
+     *
+     * ⚠ **목록을 메모리에 이고 있지 않는다**(memo 금지). 디스크가 진실이라 무효화할 것이 없고,
+     * 방금 받은 클립이 **다음 질문에서 곧바로** 보여야 한다 — 받는 중인 진행률이 멈추면 안 된다.
+     */
+    fun missingOrStaleCacheKeys(requests: List<Pair<String, String?>>): Set<String> {
+        if (requests.isEmpty()) return emptySet()
+        val cache = snapshot()
+        return requests
+            .filter { (cacheKey, remoteAudioUri) -> cache.isMissingOrStale(cacheKey, remoteAudioUri) }
+            .mapTo(mutableSetOf()) { it.first }
+    }
+
+    /**
+     * 캐시 디렉터리를 **한 번** 읽어 둔 지금의 모습. 여러 키를 연달아 물을 때 쓴다.
+     *
+     * ⚠ **한 번의 판정 안에서만 쓰고 들고 있지 말 것.** 들고 있으면 그 뒤에 받은 파일이 안
+     * 보인다([missingOrStaleCacheKeys] 의 memo 금지와 같은 이유).
+     */
+    fun snapshot(): CacheSnapshot {
+        val names = listAudioDirNames(audioDir) ?: emptyArray()
+        val basesWithAudio = HashSet<String>(names.size)
+        names.forEach { name ->
+            // 이름 규칙은 [findCachedFile] 과 같다(`nameWithoutExtension`/`extension`).
+            // 항목마다 `isFile` 을 묻지 않는다 — 이 디렉터리에는 하위 폴더를 만들지 않는다.
+            if (name.substringAfterLast('.', "") != META_EXTENSION) {
+                basesWithAudio += name.substringBeforeLast(".")
+            }
+        }
+        return CacheSnapshot(basesWithAudio)
+    }
+
+    /** [snapshot] 의 결과. 판정 규칙은 한 키씩 묻는 함수들과 **같다**(각 함수 주석). */
+    inner class CacheSnapshot internal constructor(private val basesWithAudio: Set<String>) {
+        private fun hasFile(cacheKey: String): Boolean = safeCacheKey(cacheKey) in basesWithAudio
+
+        /** = `getCachedAudio(cacheKey, remoteAudioUri) == null`. */
+        fun isMissingOrStale(cacheKey: String, remoteAudioUri: String?): Boolean =
+            !hasFile(cacheKey) || metadataSaysStale(cacheKey, remoteAudioUri)
+
+        /** = [isCachedAudioStale] — 파일이 **있는데** 서버 주소가 바뀐 것만. */
+        fun isStale(cacheKey: String, remoteAudioUri: String?): Boolean =
+            hasFile(cacheKey) && metadataSaysStale(cacheKey, remoteAudioUri)
     }
 
     fun isCachedAudioStale(cacheKey: String, incomingRawAudioUri: String?): Boolean =
@@ -437,21 +578,38 @@ class AlarmAudioStore(
      * 매니페스트가 그 message ID 를 알고 있고 지금 가리키는 주소가 이 응답의 주소와 다르면,
      * 이 응답은 뒤처진 것이다 — 덮어쓰지 않는다. 매니페스트가 모르는 message ID(직접 생성한
      * TTS 등)나 주소가 없는 응답은 판단 근거가 없으므로 **막지 않는다.**
+     *
+     * 매니페스트는 쓰기마다 다시 읽지 않는다 — 파일이 바뀌었을 때만 읽는 주소표([manifestAudioUrls])에 묻는다.
+     * 답은 쓰기마다 읽은 것과 같다(그 주석).
      */
     private fun incomingIsSupersededByManifest(messageId: String?, incomingRawAudioUri: String?): Boolean {
         val id = messageId?.takeIf { it.isNotBlank() } ?: return false
         val incoming = incomingRawAudioUri?.takeIf { it.isNotBlank() } ?: return false
-        val current = StockClipManifestStore.load(context)
-            ?.clips?.firstOrNull { it.messageId == id }
-            ?.audioUrl?.takeIf { it.isNotBlank() } ?: return false
+        val current = manifestAudioUrls.audioUrlFor(id)?.takeIf { it.isNotBlank() } ?: return false
         return current != incoming
     }
 
     /** 같은 message ID라도 서버의 R2 주소가 바뀌면 제자리 목소리 교체로 게시된 새 음원이다. */
     private fun cachedAudioIsStale(cacheKey: String, incomingRawAudioUri: String?): Boolean {
         if (findCachedFile(cacheKey) == null) return false
+        return metadataSaysStale(cacheKey, incomingRawAudioUri)
+    }
+
+    /**
+     * 메타에 적힌 원격 주소가 들고 온 주소와 **다른가**. 파일이 있는지는 보지 않는다(호출자가 본다).
+     *
+     * ⚠ **모르면 낡지 않았다.** 들고 온 주소가 없거나 저장된 주소가 없으면 false 다 — 뒤집으면
+     * 알람마다 네트워크를 타고 오프라인에서는 아예 못 쓴다. 들고 온 주소가 없으면 메타를 읽지도
+     * 않는다.
+     */
+    private fun metadataSaysStale(cacheKey: String, incomingRawAudioUri: String?): Boolean {
+        if (incomingRawAudioUri.isNullOrBlank()) return false
+        return metadataIsStale(readMetadata(cacheKey), incomingRawAudioUri)
+    }
+
+    private fun metadataIsStale(metadata: CachedAudioMetadata, incomingRawAudioUri: String?): Boolean {
         val incoming = incomingRawAudioUri?.takeIf { it.isNotBlank() } ?: return false
-        val stored = readMetadata(cacheKey).rawAudioUri?.takeIf { it.isNotBlank() } ?: return false
+        val stored = metadata.rawAudioUri?.takeIf { it.isNotBlank() } ?: return false
         return stored != incoming
     }
 
@@ -507,9 +665,22 @@ class AlarmAudioStore(
         }
     }
 
+    /**
+     * 같은 직접 입력 문구로 만든 오디오가 **이 폰에 있으면** 그 오디오와 짝 별칭. 없으면 null — 서버를 부른다.
+     *
+     * 판정은 두 단계다: 입력 별칭([resolveTtsInput])이 있어도 **파일이 없으면 없는 것**이다(별칭 파일은
+     * 오디오와 이름이 달라 함께 지워지지 않는다). 별칭 `.meta` 를 읽고, 파일을 찾고, **길이를 잰다** —
+     * 메인 스레드에서 부르지 말 것. 편집기의 저장 버튼은 `ManualAudioReuseGate` 로 IO 에서 부른다.
+     */
+    fun findReusableTtsAudio(inputKey: String, rawAudioUri: String?): ReusableTtsAudio? {
+        val alias = resolveTtsInput(inputKey) ?: return null
+        val audio = getCachedAudio(alias.cacheKey, rawAudioUri = rawAudioUri) ?: return null
+        return ReusableTtsAudio(audio = audio, alias = alias)
+    }
+
     fun deleteCachedAudio(cacheKey: String) {
         val safeKey = safeCacheKey(cacheKey)
-        audioDir.listFiles()?.forEach { file ->
+        listAudioDirFiles(audioDir)?.forEach { file ->
             if (file.isFile && file.nameWithoutExtension == safeKey) {
                 if (file.delete()) {
                     Log.i(TAG, "Deleted cached alarm audio path=${file.absolutePath}")
@@ -539,7 +710,7 @@ class AlarmAudioStore(
             Log.i(TAG, "Skipped deleting audio outside cache dir path=$path")
             return
         }
-        dir.listFiles()?.forEach { candidate ->
+        listAudioDirFiles(dir)?.forEach { candidate ->
             if (candidate.isFile && candidate.nameWithoutExtension == file.nameWithoutExtension) {
                 if (candidate.delete()) {
                     Log.i(TAG, "Deleted keyless cached audio path=${candidate.absolutePath}")
@@ -565,7 +736,7 @@ class AlarmAudioStore(
     ): Int {
         val cutoffMillis = nowMillis - maxAgeMillis
         var deleted = 0
-        audioDir.listFiles()?.forEach { file ->
+        listAudioDirFiles(audioDir)?.forEach { file ->
             if (!file.isFile) return@forEach
             // 쓰다 만 잔재는 어떤 알람도 참조하지 않으니 TTL 을 기다리지 않고 정리한다
             // (다음 다운로드가 다시 받는다). 단 '지금 쓰고 있는' staging 까지 지우면 그 쪽
@@ -599,6 +770,7 @@ class AlarmAudioStore(
     }
 
     fun readDurationMillis(uri: Uri): Long? {
+        AudioCacheProbeCounter.recordDurationRead()
         val retriever = MediaMetadataRetriever()
         return runCatching {
             retriever.setDataSource(context, uri)
@@ -703,7 +875,7 @@ class AlarmAudioStore(
             // 전체 URI 는 Logcat 에만 남기고 Sentry 로 가는 메시지에는 scheme 만 포함한다.
             Log.e(TAG, "Failed to trim selected voice audio uri=$sourceUri", error)
             AlarmTalkLog.reportError("Failed to trim selected voice audio scheme=${sourceUri.scheme}", error)
-            throw IllegalArgumentException(context.getString(R.string.rd_audio_over_limit_trim_failed, maxDurationMillis / 1000), error)
+            throw UserFacingException(context.getString(R.string.rd_audio_over_limit_trim_failed, maxDurationMillis / 1000), error)
         }.getOrThrow()
     }
 
@@ -754,7 +926,7 @@ class AlarmAudioStore(
             // 위 trimMp4 와 동일 — 전체 URI 는 Logcat 전용, Sentry 메시지는 scheme 만.
             Log.e(TAG, "Failed to trim selected mp3 voice audio uri=$sourceUri", error)
             AlarmTalkLog.reportError("Failed to trim selected mp3 voice audio scheme=${sourceUri.scheme}", error)
-            throw IllegalArgumentException(context.getString(R.string.rd_audio_mp3_trim_failed), error)
+            throw UserFacingException(context.getString(R.string.rd_audio_mp3_trim_failed), error)
         }.getOrThrow()
     }
 
@@ -814,7 +986,7 @@ class AlarmAudioStore(
      * 다시 받지 않고, 다른 기기로 로그인하면 그 기기에는 파일이 없어 새로 받는다.
      */
     fun cachedStockClipCount(): Int =
-        audioDir.listFiles()?.count { file ->
+        listAudioDirFiles(audioDir)?.count { file ->
             file.isFile &&
                 file.extension != META_EXTENSION &&
                 file.extension != PARTIAL_EXTENSION &&
@@ -842,7 +1014,7 @@ class AlarmAudioStore(
         if (liveKeys.isEmpty()) return 0 // 매니페스트를 못 받았으면 판단 근거가 없다.
         val keep = referencedKeys + liveKeys
         var deleted = 0
-        audioDir.listFiles()?.forEach { file ->
+        listAudioDirFiles(audioDir)?.forEach { file ->
             if (!file.isFile) return@forEach
             if (file.extension == PARTIAL_EXTENSION) return@forEach
             val key = file.nameWithoutExtension
@@ -877,11 +1049,46 @@ class AlarmAudioStore(
     fun cachedAudioCreatedAtMillis(cacheKey: String): Long? =
         findCachedFile(cacheKey)?.lastModified()?.takeIf { it > 0L }
 
+    /**
+     * 그 캐시 키의 오디오 파일. **디렉터리를 훑지 않고 이름으로 찾는다.**
+     *
+     * ⚠ 예전에는 부를 때마다 디렉터리를 통째로 읽고 항목마다 `isFile` 을 물었다. 기본 목소리만
+     * 76개(본체+메타 150여 개)인 폴더라, 클립 목록을 한 번 훑으면 그게 클립 수 × 두 번이었다
+     * (2026-09-29 A32 실측 — [getCachedAudio] 주석).
+     *
+     * 파일 이름은 `<safeCacheKey>.<확장자>` 로 정해지고, 확장자는 우리가 쓰는 몇 가지뿐이다
+     * ([KNOWN_AUDIO_EXTENSIONS]). 그 밖의 확장자(옛 버전이 남긴 것 등)일 때만 **이름 목록**을
+     * 한 번 읽는다 — 항목마다 stat 하지 않는다. 판정 규칙(`nameWithoutExtension == safeKey`,
+     * `.meta` 제외)은 예전과 같다.
+     */
     private fun findCachedFile(cacheKey: String): File? {
+        val dir = audioDir
         val safeKey = safeCacheKey(cacheKey)
-        return audioDir.listFiles()?.firstOrNull { file ->
-            file.isFile && file.nameWithoutExtension == safeKey && file.extension != META_EXTENSION
+        for (extension in KNOWN_AUDIO_EXTENSIONS) {
+            val candidate = File(dir, "$safeKey.$extension")
+            if (candidate.isFile) return candidate
         }
+        return listAudioDirNames(dir)
+            ?.asSequence()
+            ?.filter { name ->
+                name.substringBeforeLast(".") == safeKey && name.substringAfterLast('.', "") != META_EXTENSION
+            }
+            ?.map { name -> File(dir, name) }
+            ?.firstOrNull { it.isFile }
+    }
+
+    /**
+     * 캐시 디렉터리의 전량 목록. **통째로 읽는 자리를 이 둘로 모은다** — 한 곳이라야 세어서
+     * 막을 수 있다([AudioCacheProbeCounter]). iOS 짝은 `AudioCacheStore.listNames`.
+     */
+    private fun listAudioDirNames(dir: File): Array<String>? {
+        AudioCacheProbeCounter.recordDirectoryListing()
+        return dir.list()
+    }
+
+    private fun listAudioDirFiles(dir: File): Array<File>? {
+        AudioCacheProbeCounter.recordDirectoryListing()
+        return dir.listFiles()
     }
 
     private fun metadataFile(cacheKey: String): File =
@@ -958,6 +1165,19 @@ class AlarmAudioStore(
             "3gp" to "audio/3gpp",
             "amr" to "audio/amr",
         )
+
+        /**
+         * 캐시 파일에 붙는 확장자 — [findCachedFile] 이 디렉터리를 훑지 않고 **이 이름들만** 먼저
+         * 확인한다. 자주 쓰는 순서다: 서버 TTS·스톡 클립(`mp3`), 녹음·트림(`m4a`), 서버의 나머지
+         * 형식(`wav`), 그리고 [cacheFromUri] 가 트림 없이 복사하는 업로드 확장자 전부.
+         *
+         * ⚠ **목록 밖 확장자도 여전히 찾는다**(이름 목록 폴백) — 여기서 빠뜨려도 느려질 뿐 못
+         * 찾지는 않는다. 새 확장자로 쓰는 경로를 만들면 여기에 더할 것.
+         *
+         * ⚠ [UPLOAD_AUDIO_MIME_BY_EXTENSION] **뒤에** 선언한다 — 동반 객체는 적힌 순서로 초기화된다.
+         */
+        private val KNOWN_AUDIO_EXTENSIONS: List<String> =
+            (listOf("mp3", "m4a", "wav") + UPLOAD_AUDIO_MIME_BY_EXTENSION.keys).distinct()
 
         /** 이 기간 이상 손대지 않은(미참조) 캐시 파일은 앱 시작 시 백그라운드 sweep 으로 정리한다. */
         const val STALE_CACHE_MAX_AGE_MILLIS: Long = 30L * 24 * 60 * 60 * 1_000

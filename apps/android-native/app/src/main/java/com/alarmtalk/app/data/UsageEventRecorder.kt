@@ -1,6 +1,5 @@
 package com.alarmtalk.app.data
 
-import android.content.Context
 import android.util.Log
 import com.alarmtalk.app.core.AlarmTalkLog
 import java.util.UUID

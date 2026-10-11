@@ -13,17 +13,17 @@ enum AlarmTalkThemeMode: String, CaseIterable, Identifiable {
         switch self {
         // 안드로이드 `misc2_theme_mode_system` 과 같은 문구다 — '시스템 설정' 만 쓰면
         // 설정 화면으로 가는 링크처럼 읽힌다.
-        case .system: return "시스템 설정과 같이"
-        case .light: return "밝은 모드"
-        case .dark: return "어두운 모드"
+        case .system: return String(localized: "시스템 설정과 같이")
+        case .light: return String(localized: "밝은 모드")
+        case .dark: return String(localized: "어두운 모드")
         }
     }
 
     var pickerTitle: String {
         switch self {
-        case .system: return "시스템"
-        case .light: return "밝게"
-        case .dark: return "어둡게"
+        case .system: return String(localized: "시스템")
+        case .light: return String(localized: "밝게")
+        case .dark: return String(localized: "어둡게")
         }
     }
 
@@ -128,9 +128,9 @@ struct AlarmTalkThemeProvider<Content: View>: View {
 /// 화면 배경을 홈 그라데이션으로 깐다.
 ///
 /// 안드로이드는 `homeGradientBrush()` 를 **탭뿐 아니라 하위 전체화면에도** 깐다 —
-/// 설정(`SettingsScreen.kt:73`)·구성원 관리(`MemberManagementScreen.kt:106`)·
-/// 동의 내역(`ConsentHistoryScreen.kt:83`)·약관 전문(`LegalDocumentScreen.kt:41`)·
-/// 오픈소스 라이선스(`OssLicensesScreen.kt:84`)까지. 그래서 탭에서 하위 화면으로
+/// 설정(`SettingsScreen.kt:65`)·구성원 관리(`MemberManagementScreen.kt:100`)·
+/// 동의 내역(`ConsentHistoryScreen.kt:81`)·약관 전문(`LegalDocumentScreen.kt:37`)·
+/// 오픈소스 라이선스(`OssLicensesScreen.kt:83`)까지. 그래서 탭에서 하위 화면으로
 /// 들어가도 배경 톤이 튀지 않는다.
 ///
 /// ⚠ iOS 는 탭(`MainTabsView`)에만 깔고 하위 화면은 단색 `background` 였다 — 설정에

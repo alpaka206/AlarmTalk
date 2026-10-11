@@ -77,10 +77,28 @@ type EmailVerificationRow = {
 };
 
 type EmailVerificationCheck =
-  | { ok: true; id: string }
+  // 통과한 줄의 id 는 돌려주지 않는다 — 소모는 그 줄 하나가 아니라 주소·용도 단위다
+  // (`consumeEmailVerificationCodes`).
+  | { ok: true }
   // code 는 **목록에 있는 코드**여야 한다 — 그대로 응답에 실려 앱이 분기하는 값이다.
   | { ok: false; status: 400 | 429; code: ErrorCode; message: string };
 
+/**
+ * 그 주소·그 용도의 **가장 새 코드 하나**로 판정한다(`docs/spec/session-and-auth.md` 「이메일 인증 코드」).
+ * 순서는 없음 → 만료 → 상한 → 대조다.
+ *
+ * ⚠ **상한 확인과 세기는 한 문장이다**(2026-10-11). 줄을 읽고 숫자를 대조한 뒤
+ * `SET attempts = attempts + ? WHERE id = ? AND attempts < ?` 하나로 확정한다 — 틀렸으면 +1, 맞았으면 +0.
+ * 예전에는 읽은 횟수로 상한을 보고 틀리면 따로 +1 했다. 같은 순간에 온 요청은 모두 상한 아래를 읽으므로
+ * **보낸 수만큼 대조받았고**(맞는 숫자가 섞여 있으면 통과했다) 횟수는 상한을 넘어 올라갔다. 이 문장이 0행이면
+ * 읽은 뒤 그 사이에 상한이 찬 것이라 맞는 숫자도 429 다.
+ *  - 두 문장(확인 → +1)으로 나누지 말 것 — 그 사이가 다시 열린다.
+ *  - 맞는 코드도 이 문장을 지나게 둘 것 — 읽은 값만으로 통과시키면 같은 순간의 추측 가운데 맞는 하나는 상한과
+ *    상관없이 통과한다. +0 이라 맞는 코드는 횟수를 쓰지 않는다(인증 확인과 가입이 같은 코드를 두 번 판정한다).
+ *
+ * '가장 새 것' 은 발급 시각, 같은 초면 나중에 넣은 줄(`rowid`)이다 — 다시 받기 간격(`shouldSkipEmailCodeSend`)이
+ * 같은 순서로 고른다.
+ */
 async function checkEmailVerificationCode(
   db: Client,
   env: Env,
@@ -89,10 +107,11 @@ async function checkEmailVerificationCode(
   purpose: string = EMAIL_VERIFICATION_PURPOSE_REGISTER,
 ): Promise<EmailVerificationCheck> {
   const result = await db.execute({
+    // created_at 은 초 단위라 같은 순간에 보낸 두 코드가 동점이 된다. rowid(삽입 순서)를 보조 정렬로 둔다.
     sql: `SELECT id, code_hash, attempts, expires_at
           FROM email_verification_codes
           WHERE email = ? AND purpose = ? AND consumed_at IS NULL
-          ORDER BY created_at DESC
+          ORDER BY created_at DESC, rowid DESC
           LIMIT 1`,
     args: [email, purpose],
   });
@@ -116,24 +135,26 @@ async function checkEmailVerificationCode(
     };
   }
 
-  const attempts = Number(row.attempts ?? 0);
-  if (attempts >= EMAIL_VERIFICATION_MAX_ATTEMPTS) {
-    return {
-      ok: false,
-      status: 429,
-      code: 'AUTH_EMAIL_CODE_ATTEMPTS_EXCEEDED',
-      message: 'Too many email verification attempts',
-    };
-  }
+  const attemptsExceeded: EmailVerificationCheck = {
+    ok: false,
+    status: 429,
+    code: 'AUTH_EMAIL_CODE_ATTEMPTS_EXCEEDED',
+    message: 'Too many email verification attempts',
+  };
+  // 이미 찬 코드는 쓰지 않고 돌려보낸다. 권위 있는 확인은 아래 문장이다 — 이 값은 읽은 순간의 것이다.
+  if (Number(row.attempts ?? 0) >= EMAIL_VERIFICATION_MAX_ATTEMPTS) return attemptsExceeded;
 
   const expectedHash = await hashEmailVerificationCode(email, code, env.PASSWORD_PEPPER);
-  if (expectedHash !== row.code_hash) {
-    await db.execute({
-      sql: `UPDATE email_verification_codes
-            SET attempts = attempts + 1
-            WHERE id = ?`,
-      args: [row.id],
-    });
+  const matched = expectedHash === row.code_hash;
+  const counted = await db.execute({
+    sql: `UPDATE email_verification_codes
+          SET attempts = attempts + ?
+          WHERE id = ? AND attempts < ?`,
+    args: [matched ? 0 : 1, row.id, EMAIL_VERIFICATION_MAX_ATTEMPTS],
+  });
+  if ((counted.rowsAffected ?? 0) === 0) return attemptsExceeded;
+
+  if (!matched) {
     return {
       ok: false,
       status: 400,
@@ -142,16 +163,92 @@ async function checkEmailVerificationCode(
     };
   }
 
-  return { ok: true, id: row.id };
+  return { ok: true };
 }
 
-async function consumeEmailVerificationCode(db: Client, id: string): Promise<void> {
+/**
+ * 코드를 다 쓴다 — 가입·재설정 확정이 **성공한 뒤에만** 부른다(인증 확인은 쓰지 않는다).
+ *
+ * 그 주소·그 용도의 **쓰지 않은 코드를 전부** 함께 쓴 것으로 적는다 — 판정에 쓴 줄 하나가 아니다.
+ * 판정은 쓰지 않은 코드 중 가장 새 것만 보므로(`checkEmailVerificationCode`), 그 줄 하나만 적으면
+ * 바로 앞에 받은 코드가 '가장 새 것' 으로 올라와 제 수명(10분)이 다할 때까지 **다시 통한다.**
+ * 메일은 "가장 최근에 받은 코드만 쓸 수 있어요" 라고 약속하고, 재설정이면 방금 바꾼 비밀번호를 그
+ * 앞 코드로 한 번 더 바꿀 수 있다(`docs/spec/session-and-auth.md` 「이메일 인증 코드」).
+ *
+ * ⚠ `WHERE id = ?` 로 되돌리지 말 것. 문장도 하나로 둔다 — 판정한 줄과 앞 코드를 따로 적으면 그
+ * 사이에 앞 코드가 통한다.
+ */
+async function consumeEmailVerificationCodes(
+  db: Client,
+  email: string,
+  purpose: string,
+): Promise<void> {
   await db.execute({
     sql: `UPDATE email_verification_codes
           SET consumed_at = datetime('now')
-          WHERE id = ?`,
-    args: [id],
+          WHERE email = ? AND purpose = ? AND consumed_at IS NULL`,
+    args: [email, purpose],
   });
+}
+
+/** 최근 24시간 발급 이력 한 줄 — 다시 받기 간격·하루 상한 판정에 쓴다. */
+type RecentEmailCodeRow = {
+  created_at: string | null;
+  expires_at: string | null;
+  attempts: number | string | null;
+  consumed_at: string | null;
+};
+
+/**
+ * 이번 코드 요청을 **보내지 않는 성공**으로 넘길 것인가 — 가입(`/email-code`)·재설정(`/password-reset`)
+ * 공용이다. 둘 중 하나면 넘긴다.
+ *
+ *  - **다시 받기 간격(60초)**: 간격 안에 보낸 **가장 새 코드**(판정에 쓰일 코드)가 **아직 쓸 수 있을 때만**이다
+ *    — 만료 전이고, 틀린 횟수가 상한 아래이고, 쓰지 않은 코드. 상한에 닿은 코드는 맞는 숫자도 429 이고, 쓴
+ *    코드는 판정에서 빠진다(`checkEmailVerificationCode`). 그런 코드가 간격을 붙잡으면 막다른 길이 된다 — 두
+ *    앱은 상한에서 "다시 받아 주세요" 라고 하는데, 곧바로 누른 다시 받기가 '보냈어요' 로 끝나고 메일은 오지
+ *    않으며 든 코드는 계속 429 다.
+ *    ⚠ **가장 새 코드보다 앞 코드는 보지 않는다**(2026-10-11). 다시 받기 두 번이 같은 순간에 오면 둘 다 이 확인을
+ *    지나 코드가 둘 생긴다. 판정은 가장 새 것만 보므로 앞 코드는 이미 쓸 수 없는데, 예전에는 그 앞 코드가 틀린
+ *    횟수 0 인 채로 간격을 붙잡아 — 가장 새 코드가 상한에 닿은 뒤 최대 60초 동안 위의 막다른 길이었다. 순서는
+ *    판정과 같다(`created_at DESC, rowid DESC`) — 다르면 판정에 쓰이지 않는 줄이 '가장 새 것' 이 된다.
+ *  - **하루 상한(10번)**: 쓸 수 있든 없든 **발급한 수**를 센다. 간격이 풀린 만큼의 남용(메일 폭탄·추측)은
+ *    이 상한과 인증 리미터(`authRateLimitMiddleware`)가 막는다 — 간격은 속도를 늦출 뿐 하루 총량은 이
+ *    상한이 정한다.
+ *
+ * ⚠ SELECT 에서 `attempts`·`consumed_at` 을 빼지 말 것. 빠지면 횟수가 비어 0 으로 읽히고, 상한에 닿은
+ * 코드가 도로 간격을 붙잡는다. 대역 DB 는 SQL 과 상관없이 줄을 돌려주므로 테스트가 SQL 글자도 본다
+ * (`test/auth.test.ts` 의 「다시 받기 간격」).
+ */
+async function shouldSkipEmailCodeSend(
+  db: Client,
+  email: string,
+  purpose: string,
+): Promise<boolean> {
+  const nowMs = Date.now();
+  const recent = await db.execute({
+    sql: `SELECT strftime('%Y-%m-%dT%H:%M:%fZ', created_at) AS created_at, expires_at,
+                 attempts, consumed_at
+          FROM email_verification_codes
+          WHERE email = ? AND purpose = ?
+            AND created_at >= datetime('now', '-1 day')
+          ORDER BY created_at DESC, rowid DESC`,
+    args: [email, purpose],
+  });
+  if (recent.rows.length >= EMAIL_VERIFICATION_DAILY_CAP) return true;
+
+  // 판정에 쓰일 코드 = 쓰지 않은 줄 가운데 맨 앞(위 순서). 없으면 붙잡을 코드가 없다.
+  const judged = recent.rows
+    .map((r) => typedRow<RecentEmailCodeRow>(r))
+    .find((row) => row.consumed_at == null);
+  if (!judged) return false;
+  const created = Date.parse(String(judged.created_at ?? ''));
+  const expires = Date.parse(String(judged.expires_at ?? ''));
+  if (!Number.isFinite(created)) return false;
+  const withinCooldown = nowMs - created < EMAIL_VERIFICATION_RESEND_COOLDOWN_SECONDS * 1000;
+  const stillValid = Number.isFinite(expires) ? expires > nowMs : false;
+  const belowCap = Number(judged.attempts ?? 0) < EMAIL_VERIFICATION_MAX_ATTEMPTS;
+  return withinCooldown && stillValid && belowCap;
 }
 
 type ExistingAccount = { kind: 'password' } | { kind: 'social'; provider: 'google' };
@@ -224,28 +321,8 @@ auth.post('/email-code', async (c) => {
       return c.json(conflict.body, conflict.status);
     }
 
-    const nowMs = Date.now();
-    // 최근 발급 이력 조회: (a) 쿨다운 내 미만료 코드가 있으면 재발송하지 않고
-    // 동일 응답, (b) 최근 24시간 발급 건수가 일일 상한을 넘으면 미발송.
-    const recent = await db.execute({
-      sql: `SELECT strftime('%Y-%m-%dT%H:%M:%fZ', created_at) AS created_at, expires_at
-            FROM email_verification_codes
-            WHERE email = ? AND purpose = ?
-              AND created_at >= datetime('now', '-1 day')
-            ORDER BY created_at DESC`,
-      args: [email, EMAIL_VERIFICATION_PURPOSE_REGISTER],
-    });
-
-    const cooldownActive = recent.rows.some((r) => {
-      const created = Date.parse(String(r.created_at ?? ''));
-      const expires = Date.parse(String(r.expires_at ?? ''));
-      if (!Number.isFinite(created)) return false;
-      const withinCooldown =
-        nowMs - created < EMAIL_VERIFICATION_RESEND_COOLDOWN_SECONDS * 1000;
-      const stillValid = Number.isFinite(expires) ? expires > nowMs : false;
-      return withinCooldown && stillValid;
-    });
-    if (cooldownActive || recent.rows.length >= EMAIL_VERIFICATION_DAILY_CAP) {
+    // 다시 받기 간격(아직 쓸 수 있는 코드가 있을 때만)·하루 상한에 걸리면 보내지 않고 같은 성공으로 답한다.
+    if (await shouldSkipEmailCodeSend(db, email, EMAIL_VERIFICATION_PURPOSE_REGISTER)) {
       return successResponse();
     }
 
@@ -333,26 +410,8 @@ auth.post('/password-reset', async (c) => {
       return successResponse();
     }
 
-    const nowMs = Date.now();
-    const recent = await db.execute({
-      sql: `SELECT strftime('%Y-%m-%dT%H:%M:%fZ', created_at) AS created_at, expires_at
-            FROM email_verification_codes
-            WHERE email = ? AND purpose = ?
-              AND created_at >= datetime('now', '-1 day')
-            ORDER BY created_at DESC`,
-      args: [email, EMAIL_VERIFICATION_PURPOSE_RESET],
-    });
-
-    const cooldownActive = recent.rows.some((r) => {
-      const created = Date.parse(String(r.created_at ?? ''));
-      const expires = Date.parse(String(r.expires_at ?? ''));
-      if (!Number.isFinite(created)) return false;
-      const withinCooldown =
-        nowMs - created < EMAIL_VERIFICATION_RESEND_COOLDOWN_SECONDS * 1000;
-      const stillValid = Number.isFinite(expires) ? expires > nowMs : false;
-      return withinCooldown && stillValid;
-    });
-    if (cooldownActive || recent.rows.length >= EMAIL_VERIFICATION_DAILY_CAP) {
+    // 가입과 같은 규칙이다(`shouldSkipEmailCodeSend`) — 상한에 닿았거나 쓴 코드는 간격을 붙잡지 않는다.
+    if (await shouldSkipEmailCodeSend(db, email, EMAIL_VERIFICATION_PURPOSE_RESET)) {
       return successResponse();
     }
 
@@ -426,7 +485,7 @@ auth.post('/password-reset/confirm', async (c) => {
       args: [passwordHash, email],
     });
 
-    await consumeEmailVerificationCode(db, check.id);
+    await consumeEmailVerificationCodes(db, email, EMAIL_VERIFICATION_PURPOSE_RESET);
 
     return c.json({ success: true });
   } catch (err) {
@@ -492,7 +551,7 @@ auth.post('/register', async (c) => {
       args: [id, normalizedEmail, passwordHash, name],
     });
 
-    await consumeEmailVerificationCode(db, verification.id);
+    await consumeEmailVerificationCodes(db, normalizedEmail, EMAIL_VERIFICATION_PURPOSE_REGISTER);
 
     // 신규 가입자는 token_epoch 가 항상 0 이지만(방금 INSERT), 폐기 로직과 일관되게
     // 명시적으로 박아 둔다.

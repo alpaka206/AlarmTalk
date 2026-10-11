@@ -9,7 +9,7 @@ import XCTest
 ///  2. 그 하나마저 소유권 확인 없이 무조건 껐다 — 남의 알람을 지우면 지금 울리는
 ///     알람의 목소리가 끊겼다.
 ///
-/// 그래서 판정은 `AlarmAppContext.stopVoiceIfOwnedStatic(by:)` 한 곳으로 모았고,
+/// 그래서 판정은 `AlarmAppContext.stopVoiceIfOwned(by:)` 한 곳으로 모았고,
 /// 이 테스트가 그 규칙을 고정한다.
 final class AlarmVoiceStopOwnershipTests: XCTestCase {
 
@@ -17,7 +17,7 @@ final class AlarmVoiceStopOwnershipTests: XCTestCase {
     func test_소유자가_같으면_끈다() {
         AlarmVoicePlayer.shared.stop()
         AlarmVoicePlayer.shared.debugSetCurrentRecordID("alarm-A")
-        AlarmAppContext.stopVoiceIfOwnedStatic(by: "alarm-A")
+        AlarmAppContext.stopVoiceIfOwned(by: "alarm-A")
         XCTAssertNil(
             AlarmVoicePlayer.shared.currentRecordID,
             "자기 알람이면 목소리를 꺼야 한다"
@@ -28,7 +28,7 @@ final class AlarmVoiceStopOwnershipTests: XCTestCase {
     func test_다른_알람이면_끄지_않는다() {
         AlarmVoicePlayer.shared.stop()
         AlarmVoicePlayer.shared.debugSetCurrentRecordID("alarm-A")
-        AlarmAppContext.stopVoiceIfOwnedStatic(by: "alarm-B")
+        AlarmAppContext.stopVoiceIfOwned(by: "alarm-B")
         XCTAssertEqual(
             AlarmVoicePlayer.shared.currentRecordID,
             "alarm-A",
@@ -41,7 +41,7 @@ final class AlarmVoiceStopOwnershipTests: XCTestCase {
     func test_대상을_모르면_끈다() {
         AlarmVoicePlayer.shared.stop()
         AlarmVoicePlayer.shared.debugSetCurrentRecordID("alarm-A")
-        AlarmAppContext.stopVoiceIfOwnedStatic(by: nil)
+        AlarmAppContext.stopVoiceIfOwned(by: nil)
         XCTAssertNil(
             AlarmVoicePlayer.shared.currentRecordID,
             "대상을 모르면 끄는 쪽이 안전하다 — 소리가 남는 게 더 나쁘다"

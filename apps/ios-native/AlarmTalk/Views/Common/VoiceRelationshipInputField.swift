@@ -70,19 +70,17 @@ struct VoiceRelationshipSelection: Equatable {
 func parseVoiceRelationshipLabel(_ raw: String?) -> VoiceRelationshipSelection {
     let trimmed = raw?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     guard !trimmed.isEmpty else { return VoiceRelationshipSelection() }
-    if let match = VoiceRelationshipPreset.allCases.first(where: { $0 != .custom && $0.label == trimmed }) {
-        return VoiceRelationshipSelection(preset: match)
-    }
+    // 저장 계약에는 선택 출처가 없으므로 사용자 입력을 프리셋으로 재분류하지 않는다.
     return VoiceRelationshipSelection(preset: .custom, customLabel: trimmed)
 }
 
 struct VoiceRelationshipInputField: View {
     @Binding var selection: VoiceRelationshipSelection
 
-    var title: String = "나와의 관계"
+    var title: String = String(localized: "나와의 관계")
     var submitted: Bool = false
     var required: Bool = true
-    var placeholder: String = "예: 손녀, 연인, 동료"
+    var placeholder: String = String(localized: "예: 손녀, 연인, 동료")
 
     private var isError: Bool {
         submitted && required && !selection.isComplete
@@ -91,13 +89,13 @@ struct VoiceRelationshipInputField: View {
     @ViewBuilder
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(required ? "\(title) (필수)" : title)
+            Text(required ? String(localized: "\(title) (필수)") : title)
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(AlarmTalkTheme.textSecondary)
 
             Menu {
                 ForEach(VoiceRelationshipPreset.allCases) { preset in
-                    Button(preset.label) {
+                    Button(preset.displayLabel) {
                         if preset == .custom {
                             selection = VoiceRelationshipSelection(
                                 preset: .custom,
@@ -110,7 +108,7 @@ struct VoiceRelationshipInputField: View {
                 }
             } label: {
                 HStack(spacing: 10) {
-                    Text(selection.preset?.label ?? "관계를 선택해 주세요")
+                    Text(selection.preset?.displayLabel ?? String(localized: "관계를 선택해 주세요"))
                         .font(.subheadline)
                         .foregroundStyle(selection.preset == nil ? AlarmTalkTheme.textSecondary : AlarmTalkTheme.text)
                     Spacer()
@@ -140,7 +138,7 @@ struct VoiceRelationshipInputField: View {
             }
 
             if isError {
-                Text("꼭 입력해 주세요.")
+                Text(String(localized: "꼭 입력해 주세요."))
                     .font(.caption2.weight(.semibold))
                     .foregroundStyle(AlarmTalkTheme.error)
             }
@@ -150,27 +148,27 @@ struct VoiceRelationshipInputField: View {
 
 struct VoiceListenerPreviewCard: View {
     let listenerTitle: String
-    let relationshipLabel: String
+    let relationshipSelection: VoiceRelationshipSelection
 
     private var trimmedListener: String {
         listenerTitle.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private var trimmedRelationship: String {
-        relationshipLabel.trimmingCharacters(in: .whitespacesAndNewlines)
+        relationshipSelection.localizedDisplayLabel()
     }
 
     var body: some View {
         if !trimmedListener.isEmpty {
             VStack(alignment: .leading, spacing: 6) {
-                Text("이 목소리는 이렇게 불러줘요")
+                Text(String(localized: "이 목소리는 이렇게 불러줘요"))
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(AlarmTalkTheme.primary)
-                Text("\"\(trimmedListener), 일어날 시간이에요\"")
+                Text(String(localized: "\"\(trimmedListener), 일어날 시간이에요\""))
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(AlarmTalkTheme.text)
                 if !trimmedRelationship.isEmpty {
-                    Text("관계 · \(trimmedRelationship)")
+                    Text(String(localized: "관계 · \(trimmedRelationship)"))
                         .font(.caption)
                         .foregroundStyle(AlarmTalkTheme.textSecondary)
                 }

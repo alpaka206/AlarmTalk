@@ -58,9 +58,36 @@ internal fun WakerVolumeSlider(
      */
     onValueChangeFinished: (() -> Unit)? = null,
 ) {
+    WakerStepSlider(
+        value = value,
+        onValueChange = onValueChange,
+        valueRange = valueRange,
+        stepSize = stepSize.toFloat(),
+        modifier = modifier,
+        enabled = enabled,
+        onValueChangeFinished = onValueChangeFinished,
+    )
+}
+
+/**
+ * [WakerVolumeSlider] 와 같은 물건(얇은 트랙 + 흰 원형 손잡이, 눈금 점 없음)이되 눈금이 소수일 수
+ * 있다(목소리 보정의 0.5 dB·0.5 반음). 눈금 규약은 [WakerVolumeSlider] 주석 그대로다 —
+ * [stepSize] 는 마디 '개수' 가 아니라 **간격**이다.
+ */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+internal fun WakerStepSlider(
+    value: Float,
+    onValueChange: (Float) -> Unit,
+    valueRange: ClosedFloatingPointRange<Float>,
+    stepSize: Float,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    onValueChangeFinished: (() -> Unit)? = null,
+) {
     val interactionSource = remember { MutableInteractionSource() }
     val span = valueRange.endInclusive - valueRange.start
-    val intervals = (span / stepSize).toInt().coerceAtLeast(1)
+    val intervals = Math.round(span / stepSize).coerceAtLeast(1)
     // 사이 마디 = 구간 수 - 1.
     val steps = (intervals - 1).coerceAtLeast(0)
     val active = MaterialTheme.colorScheme.primary

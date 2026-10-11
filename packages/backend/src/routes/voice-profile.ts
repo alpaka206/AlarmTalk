@@ -36,14 +36,24 @@ import {
   evictLruClonesIfOverCapTx,
   hasCloneSlotCapacity,
 } from '../lib/voice-slots';
-import { analyzeSpeechStyleWithVertex } from '../lib/vertex-translate';
+import {
+  analyzeSpeechStyleWithVertex,
+  MIN_SPEECH_TRANSCRIPT_CHARS,
+  SPEECH_STYLE_ANALYSIS_BUDGET_MS,
+  speechCharCount,
+} from '../lib/vertex-translate';
 import { getSharedInMemoryVoiceStorage } from '@alarmtalk/voice';
 import {
   VoiceEnergySchema,
+  VoicePitchSemitonesSchema,
+  VOICE_PITCH_MAX_SEMITONES,
+  VOICE_PITCH_MIN_SEMITONES,
+  VOICE_PITCH_STEP_SEMITONES,
   VoicePreviewTextUpdateSchema,
   VOICE_NAME_MAX_LENGTH,
   normalizeDisplayName,
 } from '@alarmtalk/shared';
+import { TTS_MODEL_ID } from '../lib/tts-model';
 
 const voiceProfile = new Hono<AppEnv>();
 const MAX_VOICE_PROFILES = 1;
@@ -189,7 +199,10 @@ async function discardAbandonedDrafts(tx: DbExecutor, ownerIds: string[]): Promi
   for (const row of drafts.rows) {
     const draftId = String(row.id);
     // 소프트 삭제를 **먼저 클레임**한다 — 그 사이 승격(is_draft=0)된 행의 클론을 큐에
-    // 넣어 파기하는 TOCTOU 를 막는다(`cleanupStaleDraftVoices` 와 같은 순서).
+    // 넣어 파기하는 TOCTOU 를 막는다. 클레임이 성공한 행만 예약하고, 둘이 같이 커밋되는
+    // 것은 호출부의 트랜잭션(`tx`)이 보장한다.
+    // (cron 의 `cleanupStaleDraftVoices` 는 순서가 반대다 — 집합 단위 batch 라 행마다 클레임
+    //  결과를 볼 수 없으므로, 같은 조건의 예약 `INSERT … SELECT` 를 소프트 삭제 **앞에** 둔다.)
     const claimed = await tx.execute({
       sql: `UPDATE voice_profiles
             SET deleted_at = datetime('now'), updated_at = datetime('now')
@@ -479,6 +492,12 @@ export function speechStyleResultTargetArgs(
  * 삼키면 클라가 알 길이 없다. 클론 등록의 waitUntil 경로와 재시도 엔드포인트(동기)가 공유한다.
  * 시작 시·저장 직전에 민감 동의(음성/국외이전)를 재확인한다 — 진행 중 철회되면 외부 전사/
  * 저장을 중단한다(stock-clips generateStockClip 의 assertCloneAuthorization 패턴).
+ *
+ * ⚠ **'failed' 는 다시 하면 될 수 있는 것만이다**(2026-10-11, 스펙 §4-2). 녹음이 말투를 보여 주지 않은 것
+ * (`analyzeSpeechStyleWithVertex` 의 `standard` — 전사가 짧다·확신이 낮다·찾은 것이 없다)은 실패가 아니라 **표준 말투**다 —
+ * `speech_style` 을 NULL 로, 상태를 'done' 으로 적고 info 한 줄만 남긴다(오류를 보고하지 않는다). 같은 녹음이라 다시 눌러도
+ * 같은 답인데 재시도 버튼을 띄우고 매번 Sentry 에 올렸다 — 2026-10-10 prod 세 건(ALARMTALK-BACKEND-F)이 그랬다. 표준 말투는
+ * 사전렌더를 다시 굽지 않는다 — 말투 없이 구운 클립이 이미 그 답이다.
  */
 async function runSpeechStyleAnalysis(
   env: Env,
@@ -498,9 +517,17 @@ async function runSpeechStyleAnalysis(
     providerVoiceId?: string | null;
     /** 재시도가 읽은 원본 녹음 키 — 결과를 그 녹음을 아직 문 프로필에만 쓴다(`SPEECH_STYLE_RESULT_TARGET_SQL`). */
     sourceObjectKey?: string | null;
+    /**
+     * 등록이 말소리 확인(`checkCloneSpeech`)에서 이미 받은 이 녹음의 전사. 있으면 다시 전사하지 않는다 — 등록 한 번에
+     * Scribe 는 한 번이다. 없으면(재시도·등록의 전사가 실패해 그대로 통과시킨 경우) 여기서 전사한다.
+     */
+    transcript?: string | null;
   },
 ): Promise<{ ok: true; written: boolean } | { ok: false; error: unknown }> {
   const db = getDB(env);
+  // 등록 경로는 `waitUntil`(응답 뒤 30초에 잘린다) — 전사까지 포함해 여기서부터 센다. 말투 분석의 재시도는 이 마감
+  // 안에서만 한다(`SPEECH_STYLE_ANALYSIS_BUDGET_MS`).
+  const deadlineAt = Date.now() + SPEECH_STYLE_ANALYSIS_BUDGET_MS;
   const targetClause = SPEECH_STYLE_RESULT_TARGET_SQL;
   const providerVoiceId = options.providerVoiceId ?? null;
   const targetArgs = speechStyleResultTargetArgs(profileId, {
@@ -509,29 +536,52 @@ async function runSpeechStyleAnalysis(
   });
   try {
     // 동의 철회 경쟁(H): 시작 시 재확인 — 철회됐으면 원본을 외부 전사(ElevenLabs)로 보내지 않는다.
+    // 전사를 이미 받았어도 확인한다 — 다음 단계가 그 전사를 Vertex(국외)로 보낸다.
     const missingAtStart = await missingConsentType(db, options.ownerPk, SENSITIVE_REQUIRED_CONSENTS);
     if (missingAtStart) {
       throw new Error(`Speech style analysis aborted: consent withdrawn (${missingAtStart}).`);
     }
-    if (!env.ELEVENLABS_API_KEY) {
-      throw new Error('ELEVENLABS_API_KEY is not configured for speech style analysis.');
+    let transcript = options.transcript ?? null;
+    if (transcript === null) {
+      if (!env.ELEVENLABS_API_KEY) {
+        throw new Error('ELEVENLABS_API_KEY is not configured for speech style analysis.');
+      }
+      const client = new ElevenLabsClient(env.ELEVENLABS_API_KEY);
+      transcript = await client.speechToText(audioData, {
+        mimeType: options.mimeType,
+        fileName: options.fileName,
+        deadlineAt,
+      });
     }
-    const client = new ElevenLabsClient(env.ELEVENLABS_API_KEY);
-    const transcript = await client.speechToText(audioData, {
-      mimeType: options.mimeType,
-      fileName: options.fileName,
-    });
-    // null = Vertex 미설정/호출 실패/전사가 너무 짧음(전사 실패 의심) — 재시도로 복구 여지가
-    // 있으므로 'failed' 로 기록한다(성공 판단은 speech_style 저장 여부).
-    const style = await analyzeSpeechStyleWithVertex(env, transcript, options.language);
-    if (!style) {
-      throw new Error('Speech style analysis produced no result (empty transcript or Vertex failure).');
+    // 상류 시간 초과·5xx 는 함수 안에서 마감까지 다시 묻는다. 그래도 알아내지 못하면(전송·설정·인증·깨진 답) 실패로
+    // 남긴다 — 재시도로 복구할 여지가 있다. 녹음이 말투를 보여 주지 않은 것은 실패가 아니다(위 머리말).
+    const analysis = await analyzeSpeechStyleWithVertex(env, transcript, options.language, { deadlineAt });
+    if (analysis.kind === 'failed') {
+      throw new Error(`Speech style analysis failed (${analysis.reason}).`);
     }
-    // 저장 직전 재확인 — 전사·분석 왕복 중 철회됐으면 파생 결과(speech_style)를 저장하지 않는다.
+    // 저장 직전 재확인 — 전사·분석 왕복 중 철회됐으면 파생 결과(speech_style)를 저장하지 않는다. 표준 말투도 같다 —
+    // 철회 경쟁은 다시 하면 될 수 있는 실패다('done' 으로 덮지 않는다).
     const missingBeforeSave = await missingConsentType(db, options.ownerPk, SENSITIVE_REQUIRED_CONSENTS);
     if (missingBeforeSave) {
       throw new Error(`Speech style analysis discarded: consent withdrawn (${missingBeforeSave}).`);
     }
+    if (analysis.kind === 'standard') {
+      // 표준 말투 — 말투를 비우고(재시도로 들어온 행에 옛 값이 있어도) 'done'. 사전렌더 큐는 건드리지 않는다.
+      const cleared = await db.execute({
+        sql: `UPDATE voice_profiles
+              SET speech_style = NULL, speech_style_status = 'done', updated_at = datetime('now')
+              WHERE ${targetClause}`,
+        args: targetArgs,
+      });
+      // 전사 원문은 남기지 않는다 — 길이만(등록의 말소리 확인과 같은 셈 — 소리 표시를 뺀 글자 수).
+      logStructured('info', {
+        at: 'voice.speech_style.standard',
+        reason: analysis.reason,
+        transcript_chars: speechCharCount(transcript),
+      });
+      return { ok: true, written: (cleared.rowsAffected ?? 0) > 0 };
+    }
+    const style = analysis.style;
     const written = await db.batch(
       [
         {
@@ -817,9 +867,9 @@ voiceProfile.post('/:id/preview-played', async (c) => {
 
 // 등록 미리듣기 문구 직접 수정(초안 전용) — "말투가 마음에 안 들면 수정" 플로우.
 // 수정한 문구가 이후 미리듣기 합성 문구(캐시 키)이자 사전렌더 톤 스타일 레퍼런스가 된다.
-// previewed_at/claim 을 함께 리셋해 수정본을 끝까지 다시 들어야 승격(keep)할 수 있게 하고,
-// preview_tag 도 함께 비운다 — 이전 문구 기준으로 골랐던 delivery 태그가 수정본에 그대로
-// 붙으면(예: 차분한 수정본이 [excited] 로) 어긋나므로, 수정본은 중립 기본 태그로 합성된다.
+// previewed_at/claim 을 함께 리셋해 수정본을 끝까지 다시 들어야 승격(keep)할 수 있게 한다.
+// 합성은 태그 없이 그 문구 그대로다(2026-09-30). `voice_profiles.preview_tag` 는 더 읽지도 쓰지도 않는다 —
+// 컬럼은 마이그레이션 125 가 DROP 한다 — 그 뒤에는 칸이 없으니 이 파일에 참조를 되살리지 말 것.
 voiceProfile.patch('/:id/preview-text', async (c) => {
   const ids = ownerIds(c);
   const db = getDB(c.env);
@@ -863,7 +913,7 @@ voiceProfile.patch('/:id/preview-text', async (c) => {
   const ph = ids.map(() => '?').join(',');
   const updated = await db.execute({
     sql: `UPDATE voice_profiles
-          SET preview_text = ?, preview_tag = NULL, previewed_at = NULL,
+          SET preview_text = ?, previewed_at = NULL,
               preview_claimed_at = NULL, preview_claim_token = NULL,
               updated_at = datetime('now')
           WHERE id = ? AND user_id IN (${ph}) AND deleted_at IS NULL
@@ -938,9 +988,15 @@ export async function replaceVoiceInPlace(
      * 교체는 **내 개인 기능**이라 승격과 같은 계산값 게이트(`hasPersonalVoiceAccess`)를 쓴다.
      */
     promo: PersonalPromoState;
+    /**
+     * 등록 미리듣기에서 고른 목소리 높이(반음, 0 = 원래 소리). 교체는 **새 목소리**라(2026-10-07 사용자) 옛
+     * 목소리의 높이를 물려받지 않는다 — 언제나 덮어쓴다(0 이면 비운다). 스펙 voice-and-message §4-3.
+     */
+    pitchSemitones?: number;
   },
 ): Promise<ReplaceResult> {
   const { targetUserIds, draftProfileId, language, isShared, ownerPk, loginId, promo } = params;
+  const pitchSemitones = params.pitchSemitones ?? 0;
   const ph = targetUserIds.map(() => '?').join(',');
 
   const replacementState = await withWriteTransaction(db, async (tx) => {
@@ -1018,10 +1074,14 @@ export async function replaceVoiceInPlace(
       // ⚠ `voice_energy`(목소리의 결)도 관계·호칭과 같은 **페르소나**다. 안 옮기면 초안에서 고른
       // 결이 초안과 함께 지워지고, 교체된 프로필은 옛 결(또는 없음)로 아래 재렌더 큐를 돈다
       // (Codex #802). #122 배포 창에는 위 SELECT 가 던져 롤백된다 — 같은 이유로 그게 옳다.
+      //
+      // ⚠ `pitch_semitones`·`pitch_model_id`(목소리 높이, #128)는 **언제나 덮어쓴다** — 교체는 새 목소리라 옛 목소리의
+      // 높이가 남으면 안 된다(0 이면 비운다). #128 배포 창에는 컬럼이 없어 이 트랜잭션이 롤백된다 — 위와 같은 이유로 옳다.
       sql: `UPDATE voice_profiles
             SET name = ?, elevenlabs_voice_id = ?, relationship_label = ?, listener_title = ?,
                 preview_text = ?, preview_language = ?, speech_style = ?, speech_style_status = ?,
                 is_shared = ?, voice_energy = ?, status = 'ready',
+                pitch_semitones = ?, pitch_model_id = ?,
                 custom_audio_invalidated_at = datetime('now'),
                 updated_at = datetime('now')
             WHERE id = ?`,
@@ -1036,6 +1096,8 @@ export async function replaceVoiceInPlace(
         draft.speech_style_status ?? null,
         finalIsShared ? 1 : 0,
         draft.voice_energy ?? null,
+        pitchSemitones !== 0 ? pitchSemitones : null,
+        pitchSemitones !== 0 ? TTS_MODEL_ID : null,
         targetId,
       ],
     });
@@ -1293,7 +1355,21 @@ export async function replaceVoiceInPlace(
   const refreshedRow = refreshed.rows[0];
   return {
     ok: true,
-    profile: (refreshedRow ?? {}) as Record<string, unknown>,
+    // 다른 프로필 응답과 같은 모양으로 싣는다 — 행을 그대로 실으면 SQLite 정수 `is_shared`(0/1)가 숫자로 나가,
+    // 안드로이드(Gson `Boolean`)가 등록 확정 응답을 못 읽고 '목소리를 만들지 못했어요' 를 띄운다. 서버는 이미
+    // 교체를 끝냈는데 앱은 아직 초안으로 알고, 나가기 경고의 '나가고 삭제' 가 새 목소리를 지운다(2026-10-11 실기기).
+    profile: refreshedRow
+      ? {
+          id: String(refreshedRow.id),
+          name: String(refreshedRow.name ?? ''),
+          status: refreshedRow.status,
+          is_shared: Boolean(Number(refreshedRow.is_shared ?? 0)),
+          relationship_label: refreshedRow.relationship_label ?? null,
+          listener_title: refreshedRow.listener_title ?? null,
+          created_at: refreshedRow.created_at,
+          custom_audio_invalidated_at: refreshedRow.custom_audio_invalidated_at ?? null,
+        }
+      : {},
     notifyShareRemoval: replacementState.notifyShareRemoval,
     revokedCustomAlarms: replacementState.revokedCustomAlarms,
     // 행이 하나도 안 잡혀도 소유자(와 공유 중이었다면 그룹원)는 깨운다 — 아직 서버에
@@ -1335,6 +1411,8 @@ voiceProfile.patch('/:id', async (c) => {
     app_language?: unknown;
     replace_existing?: unknown;
     replaceExisting?: unknown;
+    pitch_semitones?: unknown;
+    pitchSemitones?: unknown;
   };
   try {
     body = await c.req.json();
@@ -1376,7 +1454,28 @@ voiceProfile.patch('/:id', async (c) => {
    */
   const replaceExisting =
     body.replace_existing === true || body.replaceExisting === true;
-  if (!hasName && !hasShared && !hasDraft && !hasRelationship && !hasListenerTitle) {
+  /**
+   * 등록 미리듣기에서 고른 **목소리 높이**(반음) — 등록 확정(초안 → 정식) 때만 받는다(아래 `VOICE_PITCH_LOCKED`).
+   * 서버가 이 목소리로 만드는 모든 알람 소리에 굽는다(스펙 voice-and-message §4-3). 보내지 않거나 null 이면 0(원래
+   * 소리) — 높이를 모르는 앱(1.2.10)이 그렇다. 범위·눈금 밖이거나 숫자가 아닌 값은 거절한다: 조용히 0 으로 바꾸면 고른
+   * 높이가 말없이 사라진다.
+   */
+  const rawPitch = body.pitch_semitones ?? body.pitchSemitones;
+  const hasPitch = rawPitch !== undefined && rawPitch !== null;
+  let pitchSemitones = 0;
+  if (hasPitch) {
+    const parsedPitch = VoicePitchSemitonesSchema.safeParse(rawPitch);
+    if (!parsedPitch.success) {
+      return jsonError(
+        c,
+        400,
+        'INVALID_VOICE_PITCH',
+        `pitch_semitones must be ${VOICE_PITCH_MIN_SEMITONES}..${VOICE_PITCH_MAX_SEMITONES} in ${VOICE_PITCH_STEP_SEMITONES} steps`,
+      );
+    }
+    pitchSemitones = parsedPitch.data;
+  }
+  if (!hasName && !hasShared && !hasDraft && !hasRelationship && !hasListenerTitle && !hasPitch) {
     return c.json(
       { error: `name must be 1-${VOICE_NAME_MAX_LENGTH} characters`, error_code: 'INVALID_NAME_LENGTH' },
       400,
@@ -1420,6 +1519,27 @@ voiceProfile.patch('/:id', async (c) => {
   const promotesDraftToOfficial =
     hasDraft && isDraftUpdate === false && Number(existing.rows[0]!.is_draft ?? 0) === 1;
 
+  /** 이미 정식인 목소리에 같은 높이로 다시 온 등록 확정 — 응답만 잃은 요청의 재시도다(아래). */
+  let pitchRetryOfRegistration = false;
+  if (hasPitch && !promotesDraftToOfficial) {
+    // 높이는 등록 확정 때 한 번만 정한다 — 그 뒤에 바꾸면 이미 구운 클립(프리셋 21개·직접 입력)과 어긋난다.
+    // ⚠ 단 **등록 확정의 재시도**는 통과시킨다. 등록은 커밋됐는데 응답만 잃으면(시간 초과·HTTP 클라이언트의 재전송)
+    //   같은 요청이 다시 오고, 그때는 이미 정식이다. 적힌 높이와 같으면 높이 없는 재시도와 똑같이 200 이다(이 기능
+    //   이전 동작) — 막으면 등록은 됐는데 앱은 실패를 띄운다. 다른 값이면 바꾸려는 것이라 409 다.
+    //   적힌 값은 이 갈래에서만 읽는다 — 위 조회에 넣으면 #128 배포 창에 모든 PATCH 가 500 이 된다.
+    if (hasDraft && isDraftUpdate === false && Number(existing.rows[0]!.is_draft ?? 0) === 0) {
+      const stored = await db.execute({
+        sql: `SELECT pitch_semitones FROM voice_profiles
+              WHERE id = ? AND user_id IN (${ph}) AND deleted_at IS NULL`,
+        args: [id, ...ids],
+      });
+      const storedPitch = Number(stored.rows[0]?.pitch_semitones ?? 0);
+      pitchRetryOfRegistration = storedPitch === pitchSemitones;
+    }
+    if (!pitchRetryOfRegistration) {
+      return jsonError(c, 409, 'VOICE_PITCH_LOCKED', 'Voice pitch can only be set when a draft is registered.');
+    }
+  }
   if (promotesDraftToOfficial && (hasRelationship || hasListenerTitle)) {
     return c.json(
       {
@@ -1493,6 +1613,7 @@ voiceProfile.patch('/:id', async (c) => {
         ownerPk: userPk,
         loginId: userId,
         promo: resolvePersonalPromo(c.env),
+        pitchSemitones,
       });
       if (!replaced.ok) {
         return c.json(
@@ -1520,7 +1641,7 @@ voiceProfile.patch('/:id', async (c) => {
       if (replaced.notifyShareRemoval) scheduleVoiceShareChangedPush(c, db, userPk);
       // `replaced: true` 는 등록 기기가 **자기 직접 입력 알람을 곧바로 내리는** 신호다
       // (푸시를 기다리지 않는다). 다른 기기는 아래 fanout 의 voice_access_revoked 로 안다.
-      return c.json({ profile: replaced.profile, replaced: true });
+      return c.json({ profile: replaced.profile, replaced: true, pitch_semitones: pitchSemitones });
     }
   }
 
@@ -1546,7 +1667,6 @@ voiceProfile.patch('/:id', async (c) => {
     updates.push('preview_claim_token = NULL');
     // 관계가 바뀌면 톤 적응 미리듣기 문구도 무효 — 리셋해 다음 미리듣기가 새 관계로 재생성되게 한다.
     updates.push('preview_text = NULL');
-    updates.push('preview_tag = NULL');
   }
   if (hasListenerTitle) {
     updates.push('listener_title = ?');
@@ -1556,8 +1676,17 @@ voiceProfile.patch('/:id', async (c) => {
       updates.push('preview_claimed_at = NULL');
       updates.push('preview_claim_token = NULL');
       updates.push('preview_text = NULL');
-      updates.push('preview_tag = NULL');
     }
+  }
+  if (promotesDraftToOfficial && pitchSemitones !== 0) {
+    // 높이와 **그 높이를 고른 모델**을 함께 적는다 — 높이는 그 모델이 낸 높이를 바로잡는 상대값이라 모델이 바뀌면
+    // 굽지 않는다(`appliedPitchSemitones`). 0 이면 아무것도 적지 않는다 — 초안 행은 처음부터 비어 있고, 0 일 때
+    // 새 컬럼을 건드리지 않아야 #128 배포 창에도 높이 없는 등록이 그대로 된다(높이 있는 등록은 롤백 → 500 —
+    // 재시도하면 된다, CLAUDE.md 「배포가 마이그레이션보다 먼저 돈다」).
+    updates.push('pitch_semitones = ?');
+    args.push(pitchSemitones);
+    updates.push('pitch_model_id = ?');
+    args.push(TTS_MODEL_ID);
   }
   updates.push("updated_at = datetime('now')");
   args.push(id, ...ids);
@@ -1676,6 +1805,8 @@ voiceProfile.patch('/:id', async (c) => {
       ...(hasRelationship ? { relationship_label: relationshipLabel ?? '' } : {}),
       ...(hasListenerTitle ? { listener_title: listenerTitle ?? '' } : {}),
     },
+    // 저장한 높이를 돌려준다 — 앱이 보낸 값이 서버에 실렸는지 확인할 수 있게(높이를 모르는 옛 서버는 이 칸이 없다).
+    ...(promotesDraftToOfficial || pitchRetryOfRegistration ? { pitch_semitones: pitchSemitones } : {}),
   });
 });
 
@@ -1708,6 +1839,9 @@ voiceProfile.patch('/:id/relationship', async (c) => {
 
   // 목소리의 결(경쾌/차분) — 관계·호칭과 같은 '페르소나' 라 초안에서만 받는다. 보내지 않으면 그대로 둔다
   // (구버전 앱은 이 필드를 모른다). 모르는 값은 거절한다 — 조용히 '자동' 으로 바꾸면 고른 결이 사라진다.
+  // ⚠ 1.2.10 다음 앱은 결을 보내지 않는다('목소리 느낌' 선택 제거, 2026-09-29). 이 처리는 아직 선택지를
+  //   보여 주는 1.2.10 앱 때문에 남긴 것이다 — 두 스토어의 `minSupported`(`lib/app-version.ts`)가 선택지를
+  //   뺀 릴리스를 넘긴 뒤에 지운다(`docs/spec/voice-and-message.md` 4-2).
   const rawEnergy = body.voice_energy ?? body.voiceEnergy;
   const hasVoiceEnergy = rawEnergy !== undefined && rawEnergy !== null;
   const energyParsed = hasVoiceEnergy ? VoiceEnergySchema.safeParse(rawEnergy) : null;
@@ -1765,7 +1899,7 @@ voiceProfile.patch('/:id/relationship', async (c) => {
       sql: `UPDATE voice_profiles
             SET relationship_label = ?, listener_title = ?,${hasVoiceEnergy ? ' voice_energy = ?,' : ''} previewed_at = NULL,
                 preview_claimed_at = NULL, preview_claim_token = NULL,
-                preview_text = NULL, preview_tag = NULL,
+                preview_text = NULL,
                 updated_at = datetime('now')
             WHERE id = ? AND user_id IN (?, ?) AND deleted_at IS NULL
               AND COALESCE(is_draft, 0) = 1`,
@@ -1902,6 +2036,9 @@ voiceProfile.post('/clone', async (c) => {
       ) ?? '';
     // 목소리의 결 — 관계·호칭과 같이 초안을 만들 때 받는다(PATCH /:id/relationship 과 같은 규칙).
     // 보내지 않은 구버전 앱 요청은 새 컬럼(#122)을 건드리지 않는다.
+    // ⚠ 1.2.10 다음 앱도 보내지 않는다('목소리 느낌' 선택 제거, 2026-09-29) — 그러면 전사 추정 말투를 쓴다.
+    //   이 처리는 선택지를 보여 주는 1.2.10 앱 때문에 남긴 것이다. 두 스토어의 `minSupported`
+    //   (`lib/app-version.ts`)가 선택지를 뺀 릴리스를 넘긴 뒤에 지운다(`docs/spec/voice-and-message.md` 4-2).
     const rawVoiceEnergy = formData.get('voiceEnergy') ?? formData.get('voice_energy');
     const hasVoiceEnergy = rawVoiceEnergy !== null && rawVoiceEnergy !== undefined;
     const voiceEnergyParsed = hasVoiceEnergy ? VoiceEnergySchema.safeParse(String(rawVoiceEnergy)) : null;
@@ -1941,8 +2078,10 @@ voiceProfile.post('/clone', async (c) => {
       //
       // 옛 주석은 "promote 가 한도로 거부되니 stranded draft 가 된다" 였는데, 그 전제는
       // `replace_existing` 이 생기면서 사라졌다 — 승격은 이제 기존 행을 **재사용**한다.
-      // 월 등록 한도(`reserveMonthlyDraftAttempt`)는 그대로 남아 있어, 한 달에 한 번이라는
-      // 규칙은 여기서 풀리지 않는다.
+      // 한 달에 한 번이라는 규칙은 여기서 풀리지 않는다 — 그건 등록 원장
+      // (`voice_profile_change_ledger`)이 지킨다: 아래 예약 트랜잭션 맨 앞의 자격 확인
+      // (`readMonthlyRegistrationUsage`)과 확정의 예약(`reserveMonthlyOfficialVoiceChange`).
+      // (`reserveMonthlyDraftAttempt` 는 초안 시도를 세기만 한다 — 아무것도 막지 않는다.)
       // ⚠ **초안이 남아 있다고 거절하지 않는다**(2026-08-25 지시). 아래 예약 트랜잭션이
       // 같은 스냅샷에서 그 초안을 **버리고** 진행한다 — 이유는 그쪽 주석에 있다.
       // 이 선검사는 official 슬롯 수를 세는 용도로만 남는다(로그·지표).
@@ -2011,9 +2150,59 @@ voiceProfile.post('/clone', async (c) => {
     }
 
     const audioBuffer = await audioFile.arrayBuffer();
+
+    // 이번 달 등록을 다 쓴 계정은 **전사부터 하지 않는다**(2026-10-11). 아래 말소리 확인은 공용·한도 있는
+    // ElevenLabs 키로 Scribe 를 부른다 — 어차피 429 로 끝날 요청에 그 값을 치르지 않는다. 읽기만 하고(원장에
+    // 아무것도 쓰지 않는다), 답은 예약 트랜잭션의 거절과 같은 코드·같은 몸통이다. ⚠ **권위 있는 확인은 그대로
+    // 예약 트랜잭션 맨 앞이다** — 이 읽기와 그 사이에(전사가 몇 초 걸린다) 다른 기기가 등록할 수 있다.
+    if ((await readMonthlyRegistrationUsage(db, userPk)).remaining <= 0) {
+      return monthlyVoiceChangeLimitResponse(c);
+    }
+
+    // ⚠ **말소리가 없으면 등록하지 않는다**(2026-10-11 오너 결정 — "목소리(말소리) 없으면 등록 못 하도록 막는다.
+    // 다시 만들기는 횟수 제한 없음 — 확정 등록만 월 1회", `docs/spec/voice-and-message.md` §4-1 「말소리가 없으면
+    // 등록하지 않는다」). provider 등록과 예약 트랜잭션보다 **앞**이고, 거절은 **한 줄도 쓰지 않는다** — 초안 행·초안
+    // 시도 집계·원장·provider 보이스·R2 원본·삭제 예약·옛 초안 정리 어느 것도 없다. 그래서 다시 녹음하는 데 횟수
+    // 제한이 없다.
+    //
+    // 2026-10-10 prod(ALARMTALK-BACKEND-F): 한 사용자가 세 번(03:58·04:03·04:32 UTC) 등록했고 세 번 다 클론이 만들어졌다.
+    // 뒤의 둘은 전사가 20자도 안 되는 — 말소리가 거의 없는 — 녹음이었다. 쓸 수 없는 목소리를 받고 다시 등록하다 월
+    // 한도에 걸렸다. (첫 건은 전사가 20자를 넘었고 말투 분석이 확신하지 못했다 — 그때는 소리 표시까지 셌다. 그 글자가
+    // 말소리였다면 이 확인으로는 막히지 않는다.)
+    //
+    // 전사 **자체가 실패하면 막지 않는다**(fail-open) — 예전 그대로 등록하고, 말투 분석이 스스로 다시 전사한다. 전사가
+    // 잠깐 죽은 동안 모든 등록이 막히는 것보다 낫다. 응답에 글이 없는 것도 실패다(`speechToText` 가 던진다).
+    const speechCheck = await checkCloneSpeech(c.env, audioBuffer, {
+      mimeType: audioMimeType,
+      fileName: audioFile.name || undefined,
+    });
+    if (speechCheck.status === 'no_speech') {
+      return jsonError(c, 400, 'VOICE_CLONE_NO_SPEECH', 'voice clone audio contains too little speech');
+    }
+    // 말투 분석에 넘긴다 — 등록 한 번에 Scribe 는 한 번이다(전사가 실패했으면 null — 분석이 다시 전사한다).
+    const enrollmentTranscript = speechCheck.status === 'speech' ? speechCheck.transcript : null;
     const profileId = crypto.randomUUID();
 
     const insertResult = await withWriteTransaction(db, async (tx) => {
+      // ⚠ **이번 달 등록을 이미 썼으면 초안부터 만들지 않는다**(2026-10-11,
+      // `docs/spec/voice-and-message.md` 4-1 「월 등록 한도」 ①). 한도를 깎는 것이 아니라
+      // **자격 확인**이다 — 남은 횟수가 있는 동안의 초안은 몇 번을 만들든 그대로다.
+      //
+      // 저장할 수 없는 초안은 provider 보이스 하나를 그냥 쓰고(그 키는 dev·prod 가 함께
+      // 쓰고 한도가 있다), 사용자를 녹음·생성·미리듣기를 다 마친 **마지막 단계**에서 막는다 —
+      // 2026-10-10 prod 에서 등록을 마친 사용자가 초안을 또 만들었고 그 저장이 429 로 일곱 번
+      // 거절됐다(ALARMTALK-ANDROID-Q).
+      //
+      // ⚠ **맨 앞이어야 한다.** 거절은 한 줄도 쓰지 않는다 — 옛 초안 정리
+      // (`discardAbandonedDrafts`)·초안 시도 집계(`reserveMonthlyDraftAttempt`)·프로필 INSERT
+      // 보다 뒤로 내리면 '만들 수 없는 등록' 이 그 사람의 남은 초안을 지우고 집계를 올린다.
+      // 확정의 게이트(`reserveMonthlyOfficialVoiceChange`)는 그대로 둔다 — 초안을 만든 뒤
+      // 다른 기기가 먼저 등록할 수 있어, 여기를 통과했다는 것은 확정의 근거가 못 된다.
+      // (위의 읽기 전용 선검사는 전사 비용을 아끼는 것일 뿐이다 — 이 확인을 대신하지 않는다.)
+      const registration = await readMonthlyRegistrationUsage(tx, userPk);
+      if (registration.remaining <= 0) {
+        return { status: 'monthly_limit' as const, ledgerId: null };
+      }
       const ids = ownerIds(c);
       // draft 슬롯과 official 슬롯을 한 스냅샷으로 함께 센다(둘 사이 TOCTOU 없음). 둘 중 하나라도 한도면 차단.
       // ⚠ **official 슬롯은 여기서 보지 않는다**(2026-08-12 확정 — 위 선검사와 같은 이유).
@@ -2041,7 +2230,8 @@ voiceProfile.post('/clone', async (c) => {
         // cron 의 `cleanupStaleDraftVoices`(TTL 1시간)는 아무도 다시 시작하지 않는
         // 초안을 거두는 뒷받침이고, 이 갈래는 그보다 먼저 오는 사용자 의사다.
         //
-        // 월 등록 한도는 여기서 풀리지 않는다 — 그건 **확정**에서만 소모된다.
+        // 월 등록 한도는 여기서 풀리지도 깎이지도 않는다 — **소모**는 확정에서만이다
+        // (다 쓴 달의 요청은 위 자격 확인에서 이미 돌아갔다 — 여기까지 오지 않는다).
         await discardAbandonedDrafts(tx, ids);
       }
       // F1(Codex #599 3차): 전역 슬롯이 꽉 찼는데 evict 후보가 전부 보호 대상(공유·draft)이면
@@ -2072,6 +2262,10 @@ voiceProfile.post('/clone', async (c) => {
       });
       return { status: 'ok' as const, ledgerId: null };
     });
+    if (insertResult.status === 'monthly_limit') {
+      // 확정(승격·교체)의 거절과 **같은 코드·같은 몸통**이다 — 앱은 한 갈래만 처리한다.
+      return monthlyVoiceChangeLimitResponse(c);
+    }
     if (insertResult.status === 'clone_capacity') {
       return c.json(
         {
@@ -2227,6 +2421,7 @@ voiceProfile.post('/clone', async (c) => {
     // 처리하는 고지된 수탁사), Vertex 에는 음성이 아니라 전사 텍스트만 전송한다.
     // 결과 상태는 speech_style_status 에 반드시 기록한다(pending→done|failed) — 과거처럼
     // 조용히 삼키면 클라가 알 수 없으므로, failed 는 /:id/speech-style/retry 로 복구한다.
+    // 녹음이 말투를 보여 주지 않은 것은 실패가 아니다 — 표준 말투로 done 이다(`runSpeechStyleAnalysis`).
     // 첫 자동 미리듣기와 레이스할 수 있다 — 그 경우 첫 미리듣기만 기본 톤이고,
     // 문구 수정·재생성과 매일 사전렌더부터는 분석 결과가 반영된다.
     await setSpeechStyleStatus(db, profileId, 'pending');
@@ -2246,6 +2441,7 @@ voiceProfile.post('/clone', async (c) => {
             language: previewLanguage,
             ownerPk: userPk,
             providerVoiceId: voiceId,
+            transcript: enrollmentTranscript,
           }).then((analysis) => {
             if (!analysis.ok) logRouteError(c, analysis.error);
           }),
@@ -2365,6 +2561,89 @@ function isVoiceSlotExhaustedError(detail: string): boolean {
     lower.includes('voice limit') ||
     lower.includes('voice slot')
   );
+}
+
+/**
+ * 등록의 말소리 확인에 쓰는 전사 한 번의 상한(요청 직전부터, 응답 본문 읽기까지 — `ElevenLabsClient.speechToText`
+ * 의 `deadlineAt`). 넘기면 막지 않고 통과시킨다(`checkCloneSpeech`).
+ *
+ * ⚠ **앱의 등록 요청 대기 안에 전사와 provider 등록이 함께 들어가야 한다.** 서버는 응답을 다 만들 때까지 한 바이트도
+ * 보내지 않는다 — 안드로이드는 OkHttp 읽기 대기 60초(`network/AlarmTalkApiClient.kt`, 호출 전체 상한은 없다), iOS 는
+ * 요청 대기 60초·요청 전체(업로드 포함) 120초다(`AlarmTalkAPI.makeDefaultSession`). provider 등록(ElevenLabs
+ * `voices/add`, 잡음 제거 포함)에는 서버 쪽 상한이 없고, 2026-10-10 prod 의 등록 세 건은 요청 전체가 5.3~13.9초였다.
+ * 그 녹음(20~70초)의 응답 뒤 분석은 Vertex 를 부르지 않은 두 건이 동의 조회·전사·기록까지 1.1·1.2초였다. 10초면 전사가
+ * 그보다 여러 배 늦어도 기다리고, 그 최악(10초 + 등록 14초 남짓)도 60초 안이다. 더 늘리지 말 것 — 늘린 만큼 사용자가
+ * 더 기다리고, 못 기다린 쪽은 말소리 확인 없이 예전처럼 등록될 뿐이다.
+ */
+const CLONE_SPEECH_CHECK_TIMEOUT_MS = 10_000;
+
+/** 던져진 것의 이름만 — 전사 원문이나 제공자 응답 본문(오류 메시지에 실린다)은 로그에 남기지 않는다. */
+function errorNameOf(err: unknown): string {
+  if (typeof err === 'object' && err !== null && typeof (err as { name?: unknown }).name === 'string') {
+    return (err as { name: string }).name;
+  }
+  return 'unknown';
+}
+
+/**
+ * 등록 녹음에 **말소리가 있는가** — ElevenLabs Scribe 로 한 번 전사해 말소리로 셀 글자 수(`speechCharCount` — 소리
+ * 표시를 빼고 앞뒤 공백을 걷는다)를 `MIN_SPEECH_TRANSCRIPT_CHARS`(말투 분석의 '짧은 전사' 와 같은 값·같은 셈)와 견준다.
+ *
+ * - `speech`: 말소리가 있다. 전사를 돌려준다 — 말투 분석이 같은 녹음을 다시 전사하지 않게(소리 표시도 그대로 간다).
+ * - `no_speech`: 거의 없다 — 호출자가 `VOICE_CLONE_NO_SPEECH` 로 거절한다.
+ * - `unavailable`: 전사 자체가 실패했다(네트워크·시간 초과·제공자 4xx/5xx·키 없음·답에 글(`text`)이 없음 — 응답 모양이
+ *   바뀌면 `speechToText` 가 던진다) — **막지 않는다**(fail-open). warn 한 줄(오류 이름만)을 남긴다.
+ *
+ * ⚠ 전사 원문은 저장하지도 로그에 남기지도 않는다 — 로그에는 길이만 싣는다.
+ *
+ * 줄마다 녹음 크기(`audio_bytes`)를, 전사를 불렀으면 걸린 시간(`duration_ms` — 부르기 직전부터 답·실패까지)을 함께
+ * 싣는다. 운영 로그로 10초 상한(`CLONE_SPEECH_CHECK_TIMEOUT_MS`)이 맞는지 — 몇 초에 끝나고, 어떤 크기에서 늦는지 —
+ * 보려는 것이다. 키가 없어 부르지 않은 줄에는 `duration_ms` 가 없다.
+ */
+async function checkCloneSpeech(
+  env: Env,
+  audioData: ArrayBuffer,
+  file: { mimeType: string; fileName?: string },
+): Promise<{ status: 'speech'; transcript: string } | { status: 'no_speech' } | { status: 'unavailable' }> {
+  const audioBytes = audioData.byteLength;
+  if (!env.ELEVENLABS_API_KEY) {
+    logStructured('warn', {
+      at: 'voice.clone.speech_check',
+      outcome: 'unavailable',
+      error: 'not_configured',
+      audio_bytes: audioBytes,
+    });
+    return { status: 'unavailable' };
+  }
+  const startedAt = Date.now();
+  let transcript: string;
+  try {
+    transcript = await new ElevenLabsClient(env.ELEVENLABS_API_KEY).speechToText(audioData, {
+      mimeType: file.mimeType,
+      fileName: file.fileName,
+      deadlineAt: startedAt + CLONE_SPEECH_CHECK_TIMEOUT_MS,
+    });
+  } catch (err) {
+    logStructured('warn', {
+      at: 'voice.clone.speech_check',
+      outcome: 'unavailable',
+      error: errorNameOf(err),
+      duration_ms: Date.now() - startedAt,
+      audio_bytes: audioBytes,
+    });
+    return { status: 'unavailable' };
+  }
+  const durationMs = Date.now() - startedAt;
+  const transcriptChars = speechCharCount(transcript);
+  const hasSpeech = transcriptChars >= MIN_SPEECH_TRANSCRIPT_CHARS;
+  logStructured('info', {
+    at: 'voice.clone.speech_check',
+    outcome: hasSpeech ? 'speech' : 'no_speech',
+    transcript_chars: transcriptChars,
+    duration_ms: durationMs,
+    audio_bytes: audioBytes,
+  });
+  return hasSpeech ? { status: 'speech', transcript } : { status: 'no_speech' };
 }
 
 function validateCloneDuration(value: unknown): {
@@ -2539,6 +2818,8 @@ voiceProfile.post('/:id/speech-style/retry', async (c) => {
       'The voice changed while it was being analyzed. Refresh and try again.',
     );
   }
+  // 녹음이 말투를 보여 주지 않은 것(표준 말투 — `speech_style` NULL)도 여기다. 실패가 아니다 — 같은 녹음이라 다시
+  // 눌러도 같은 답이므로 502 로 재시도를 권하지 않는다(`runSpeechStyleAnalysis`).
   return c.json({ success: true, status: 'done' });
 });
 

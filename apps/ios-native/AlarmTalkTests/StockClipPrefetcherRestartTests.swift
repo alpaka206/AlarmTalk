@@ -57,6 +57,24 @@ final class StockClipPrefetcherRestartTests: XCTestCase {
         prefetcher.cancel()
         XCTAssertEqual(prefetcher.runningOwnedVoiceProfileIDs, [])
     }
+
+    /// '신호 뒤'(클론 생성이 끝난 뒤의 다운로드) 회차를 창만 쓰는 넓히기가 끊고 다시 시작해도, 그
+    /// 요구는 **이어 간다** — 안 이으면 새 회차가 신호 전에 출발한 목록으로 받아 새 클립을 놓친다.
+    func testWideningRestartKeepsTheStricterManifestRequirement() {
+        let prefetcher = makePrefetcher()
+        self.prefetcher = prefetcher
+        let signal = Date(timeIntervalSince1970: 1_800_000_000)
+        prefetcher.start(session: session, ownedVoiceProfileIDs: ["clone-1"], manifestDepartedAfter: signal)
+        XCTAssertEqual(prefetcher.runningManifestDepartedAfter, signal)
+        prefetcher.start(session: session, ownedVoiceProfileIDs: ["clone-2"])
+        XCTAssertEqual(prefetcher.runningOwnedVoiceProfileIDs, ["clone-1", "clone-2"])
+        XCTAssertEqual(prefetcher.runningManifestDepartedAfter, signal, "넓히기는 신호 뒤 요구를 지우지 않는다")
+        let later = signal.addingTimeInterval(10)
+        prefetcher.start(session: session, ownedVoiceProfileIDs: ["clone-3"], manifestDepartedAfter: later)
+        XCTAssertEqual(prefetcher.runningManifestDepartedAfter, later, "더 늦은 신호가 이긴다")
+        prefetcher.cancel()
+        XCTAssertNil(prefetcher.runningManifestDepartedAfter)
+    }
 }
 
 /// 모든 요청을 즉시 연결 실패로 끝낸다.

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { Hono } from 'hono';
 import type { Env } from '../src/types';
-import { createMockDB, jsonReq } from './helpers';
+import { createMockDB, jsonReq, type MockRow } from './helpers';
 
 const mockDB = createMockDB();
 
@@ -11,7 +11,12 @@ vi.mock('../src/lib/db', () => ({
 
 import authRoutes from '../src/routes/auth';
 import { hashPassword } from '../src/lib/password';
-import { hashEmailVerificationCode } from '../src/lib/email-verification';
+import {
+  EMAIL_VERIFICATION_DAILY_CAP,
+  EMAIL_VERIFICATION_MAX_ATTEMPTS,
+  EMAIL_VERIFICATION_TTL_SECONDS,
+  hashEmailVerificationCode,
+} from '../src/lib/email-verification';
 
 const ENV: Env = {
   ELEVENLABS_API_KEY: 'x',
@@ -41,6 +46,9 @@ afterEach(() => {
 
 const EMAIL_CODE = '123456';
 
+/** 판정의 상한 문장 — 대조 뒤 상한 확인과 세기를 한 번에 한다(틀렸으면 +1, 맞았으면 +0). */
+const ATTEMPT_GATE_SQL = 'SET attempts = attempts + ?';
+
 async function pushValidEmailVerification(email: string) {
   mockDB.pushResult([
     {
@@ -50,6 +58,15 @@ async function pushValidEmailVerification(email: string) {
       expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
     },
   ]);
+  // 상한 문장은 SQL 로 짝지어 둔다 — 큐 자리를 차지하지 않으니 뒤에 넣어 둔 결과의 순서가 그대로다.
+  // 1행 = 상한 아래였다(0행이면 그 사이에 상한이 찬 것이라 맞는 코드도 429 — 진짜 SQLite 로는
+  // `auth-email-code-attempts.test.ts`).
+  mockDB.pushResultFor(ATTEMPT_GATE_SQL, [], 1);
+}
+
+/** 상한 문장이 센 값 — 틀렸으면 1, 맞았으면 0. 문장이 없었으면 undefined. */
+function countedIncrement(): unknown {
+  return mockDB.calls.find((c) => c.sql.includes(ATTEMPT_GATE_SQL))?.args[0];
 }
 
 function registerBody(email: string, password = 'superSecret1', name = '김규원') {
@@ -59,6 +76,14 @@ function registerBody(email: string, password = 'superSecret1', name = '김규�
     name,
     email_verification_code: EMAIL_CODE,
   };
+}
+
+/**
+ * ASCII 숫자를 **아라비아-인도 숫자(U+0660–0669)** 로 옮긴다 — 그런 숫자를 내는 키보드로 친 코드.
+ * 눈으로는 구분이 안 되는 글자라 리터럴로 적지 않고 코드포인트로 만든다.
+ */
+function toArabicIndicDigits(code: string): string {
+  return [...code].map((digit) => String.fromCodePoint(0x0660 + Number(digit))).join('');
 }
 
 describe('POST /auth/password-reset', () => {
@@ -130,6 +155,27 @@ describe('POST /auth/password-reset/confirm', () => {
     );
     expect(upd).toBeTruthy();
     expect(upd?.sql).toContain('password_hash');
+  });
+
+  it('아라비아-인도 숫자로 친 코드로도 재설정한다(인증 확인과 같은 스키마)', async () => {
+    await pushValidEmailVerification('kim@test.com'); // checkEmailVerificationCode SELECT
+    mockDB.pushResult([{ password_hash: 'bcrypt-hash' }]); // classify → password
+    mockDB.pushResult([], 1); // UPDATE users
+    mockDB.pushResult([], 1); // consume code
+
+    const app = buildApp();
+    const res = await app.request(
+      jsonReq('POST', '/auth/password-reset/confirm', {
+        email: 'kim@test.com',
+        code: toArabicIndicDigits(EMAIL_CODE),
+        password: 'newSecret1',
+      }),
+      undefined,
+      ENV,
+    );
+
+    expect(res.status).toBe(200);
+    expect((await res.json()).success).toBe(true);
   });
 
   it('코드가 없거나 틀리면 400 AUTH_EMAIL_CODE_INVALID', async () => {
@@ -259,6 +305,204 @@ describe('POST /auth/email-code', () => {
   });
 });
 
+// ── 다시 받기 간격은 **쓸 수 있는 코드**만 붙잡는다(스펙 session-and-auth 「이메일 인증 코드」) ──
+//
+// 틀린 횟수가 상한(5번)에 닿은 코드는 맞는 숫자를 넣어도 429 다. 두 앱은 그때 "다시 받아 주세요" 라고
+// 하는데, 그 코드가 60초 간격을 붙잡고 있으면 곧바로 누른 다시 받기가 '보내지 않는 성공' 으로 끝난다 —
+// 앱은 '보냈어요' 라고 하고, 메일은 오지 않고, 든 코드는 계속 429 다(2026-10-09 의 그 사람은 코드를 받은
+// 지 34초 만에 상한에 닿았다). 이미 쓴 코드도 판정에서 빠지므로 같다.
+//
+// 메일이 정말 나가는지 보려고 메일 서비스 설정을 넣고 `fetch` 를 대역으로 둔다 — 나가는 요청은 없다.
+// 설정이 있으면 `debug_code` 가 실리지 않으므로 INSERT 와 대역 호출로 본다.
+describe('다시 받기 간격 — 쓸 수 없는 코드는 붙잡지 않는다(가입·재설정 공통)', () => {
+  const DELIVERY_ENV: Env = {
+    ...ENV,
+    RESEND_API_KEY: 'test-resend-key',
+    AUTH_EMAIL_FROM: 'AlarmTalk <no-reply@example.test>',
+  };
+
+  const REGISTER = {
+    name: '가입',
+    path: '/auth/email-code',
+    purpose: 'register',
+    account: [] as MockRow[], // 미가입 주소여야 보낸다
+  };
+  const RESET = {
+    name: '재설정',
+    path: '/auth/password-reset',
+    purpose: 'reset',
+    account: [{ password_hash: 'bcrypt-hash' }] as MockRow[], // 비밀번호 계정이어야 보낸다
+  };
+  const ROUTES = [REGISTER, RESET];
+
+  /** `secondsAgo` 초 전에 보낸 코드 한 줄 — 실제 줄처럼 수명은 발급 시각에서 센다. */
+  function issuedCode(
+    secondsAgo: number,
+    fields: { attempts?: number; consumed_at?: string } = {},
+  ): MockRow {
+    const issuedAt = Date.now() - secondsAgo * 1000;
+    return {
+      created_at: new Date(issuedAt).toISOString(),
+      expires_at: new Date(issuedAt + EMAIL_VERIFICATION_TTL_SECONDS * 1000).toISOString(),
+      attempts: fields.attempts ?? 0,
+      consumed_at: fields.consumed_at ?? null,
+    };
+  }
+
+  /** 다시 받기를 누른다 — 최근 24시간 발급 이력으로 `recent` 를 돌려준다. */
+  async function requestCode(route: typeof REGISTER, recent: MockRow[]) {
+    mockDB.pushResult(route.account); // classifyExistingAccount
+    mockDB.pushResult(recent); // 최근 24시간 발급 이력
+    mockDB.pushResult([], 1); // INSERT — 새 코드를 보낼 때만 닿는다
+    const delivery = vi.fn(async () => new Response('{}'));
+    globalThis.fetch = delivery as unknown as typeof fetch;
+
+    const res = await buildApp().request(
+      jsonReq('POST', route.path, { email: 'kim@test.com' }),
+      undefined,
+      DELIVERY_ENV,
+    );
+
+    // 보내든 안 보내든 답은 같다 — 앱은 둘을 구분하지 못한다.
+    expect(res.status).toBe(200);
+    expect((await res.json()).success).toBe(true);
+    return {
+      delivery,
+      insert: mockDB.calls.find((c) => c.sql.includes('INSERT INTO email_verification_codes')),
+      recentQuery: mockDB.calls.find((c) => c.sql.includes("datetime('now', '-1 day')")),
+    };
+  }
+
+  it.each(ROUTES)(
+    '$name: 상한(5번)에 닿은 코드는 간격을 붙잡지 않는다 — 10초 만의 다시 받기도 새 코드를 보낸다',
+    async (route) => {
+      const { delivery, insert, recentQuery } = await requestCode(route, [
+        issuedCode(10, { attempts: EMAIL_VERIFICATION_MAX_ATTEMPTS }),
+      ]);
+
+      expect(insert?.args[2]).toBe(route.purpose);
+      expect(delivery).toHaveBeenCalledTimes(1);
+      expect(delivery.mock.calls[0]?.[0]).toBe('https://api.resend.com/emails');
+      // 대역 DB 는 SELECT 가 무엇을 읽든 넣어 둔 줄을 그대로 돌려준다 — 두 열을 읽지 않는 SELECT 도 위
+      // 단언은 통과한다(운영에서는 횟수가 비어 0 으로 읽히고 간격이 그대로 붙잡는다). 그래서 SQL 도 본다.
+      expect(recentQuery?.sql).toContain('attempts');
+      expect(recentQuery?.sql).toContain('consumed_at');
+    },
+  );
+
+  it.each(ROUTES)(
+    '$name: 아직 쓸 수 있는 코드(4번 틀림)는 간격을 붙잡는다 — 보내지 않고 성공으로 답한다',
+    async (route) => {
+      const { delivery, insert } = await requestCode(route, [
+        issuedCode(10, { attempts: EMAIL_VERIFICATION_MAX_ATTEMPTS - 1 }),
+      ]);
+
+      expect(insert).toBeUndefined();
+      expect(delivery).not.toHaveBeenCalled();
+    },
+  );
+
+  // 재설정을 마치면 그 코드는 쓴 것이 된다(`consumed_at`) — 판정에서 빠지므로 간격도 붙잡지 않는다.
+  // (가입 코드를 쓴 주소는 이미 가입돼 있어 간격까지 오기 전에 409 로 끝난다.)
+  it('재설정: 이미 쓴 코드는 간격을 붙잡지 않는다', async () => {
+    const { delivery, insert } = await requestCode(RESET, [
+      issuedCode(10, { consumed_at: new Date(Date.now() - 5 * 1000).toISOString() }),
+    ]);
+
+    expect(insert?.args[2]).toBe('reset');
+    expect(delivery).toHaveBeenCalledTimes(1);
+  });
+
+  // 간격을 풀어도 **하루 상한**은 그대로다 — 상한에 닿은 코드로 간격을 건너뛰며 메일을 끝없이 받게 두지 않는다.
+  it.each(ROUTES)('$name: 상한에 닿은 코드라도 하루 발급 상한은 넘기지 않는다', async (route) => {
+    const { delivery, insert } = await requestCode(route, [
+      issuedCode(10, { attempts: EMAIL_VERIFICATION_MAX_ATTEMPTS }),
+      ...Array.from({ length: EMAIL_VERIFICATION_DAILY_CAP - 1 }, (_, i) =>
+        issuedCode((i + 1) * 15 * 60),
+      ),
+    ]);
+
+    expect(insert).toBeUndefined();
+    expect(delivery).not.toHaveBeenCalled();
+  });
+});
+
+// ── 가장 새 코드만 된다 — **쓴 뒤에도**(스펙 session-and-auth 「이메일 인증 코드」) ──
+//
+// 판정은 쓰지 않은 코드 중 가장 새 것만 본다. 가입·재설정이 성공한 뒤 판정에 쓴 줄 하나만 소모하면, 바로
+// 앞에 받은 코드가 '가장 새 것' 으로 올라와 제 수명(10분)까지 다시 통한다 — 메일은 "가장 최근에 받은
+// 코드만 쓸 수 있어요" 라고 약속한다. 그래서 소모는 그 주소·그 용도의 쓰지 않은 줄 **전부**를 한 문장으로
+// 적는다.
+//
+// 대역 DB 는 SQL 을 실행하지 않으므로 여기서는 문장의 대상과 인자를 본다. 앞 코드가 실제로 죽는지는 진짜
+// SQLite 위에서 `auth-email-code-consume.test.ts` 가 본다.
+describe('코드를 쓰면 그 주소·용도의 쓰지 않은 코드가 모두 죽는다(가입·재설정 공통)', () => {
+  function consumeCalls() {
+    return mockDB.calls.filter((c) => c.sql.includes('SET consumed_at'));
+  }
+
+  function expectConsumesEveryUnusedCode(email: string, purpose: string) {
+    const consumes = consumeCalls();
+    expect(consumes).toHaveLength(1);
+    const sql = consumes[0]!.sql.replace(/\s+/g, ' ');
+    expect(sql).toContain('WHERE email = ? AND purpose = ? AND consumed_at IS NULL');
+    // 판정한 줄 하나(`id`)로 좁히지 않는다 — 좁히면 앞 코드가 '가장 새 것' 으로 되살아난다.
+    expect(sql).not.toMatch(/\bid\s*=/);
+    // 주소는 코드를 저장할 때와 같은 정규화된 값이다 — 친 그대로(대문자)면 한 줄도 닿지 않는다.
+    expect(consumes[0]!.args).toEqual([email, purpose]);
+  }
+
+  it('가입: 성공하면 그 주소의 가입 코드를 전부 쓴 것으로 적는다', async () => {
+    await pushValidEmailVerification('kim@test.com'); // 1) 코드 검증 SELECT
+    mockDB.pushResult([]); // 2) 기존 이메일 SELECT (없음)
+    mockDB.pushResult([], 1); // 3) INSERT users
+    mockDB.pushResult([], 2); // 4) 소모 — 판정한 코드와 그 앞 코드
+
+    const res = await buildApp().request(
+      jsonReq('POST', '/auth/register', registerBody('KIM@Test.COM')),
+      undefined,
+      ENV,
+    );
+
+    expect(res.status).toBe(201);
+    expectConsumesEveryUnusedCode('kim@test.com', 'register');
+  });
+
+  it('재설정 확정: 성공하면 그 주소의 재설정 코드를 전부 쓴 것으로 적는다', async () => {
+    await pushValidEmailVerification('kim@test.com'); // 코드 검증 SELECT
+    mockDB.pushResult([{ password_hash: 'bcrypt-hash' }]); // classify → password
+    mockDB.pushResult([], 1); // UPDATE users
+    mockDB.pushResult([], 2); // 소모 — 판정한 코드와 그 앞 코드
+
+    const res = await buildApp().request(
+      jsonReq('POST', '/auth/password-reset/confirm', {
+        email: 'KIM@Test.COM',
+        code: EMAIL_CODE,
+        password: 'newSecret1',
+      }),
+      undefined,
+      ENV,
+    );
+
+    expect(res.status).toBe(200);
+    expectConsumesEveryUnusedCode('kim@test.com', 'reset');
+  });
+
+  // 인증 확인은 코드를 쓰지 않는다 — 가입이 같은 코드를 한 번 더 판정한다.
+  it('인증 확인: 통과해도 아무 코드도 쓰지 않는다', async () => {
+    await pushValidEmailVerification('kim@test.com');
+
+    const res = await buildApp().request(
+      jsonReq('POST', '/auth/email-code/verify', { email: 'kim@test.com', code: EMAIL_CODE }),
+      undefined,
+      ENV,
+    );
+
+    expect(res.status).toBe(200);
+    expect(consumeCalls()).toHaveLength(0);
+  });
+});
+
 describe('POST /auth/email-code/verify', () => {
   it('올바른 6자리 코드를 확인한다', async () => {
     await pushValidEmailVerification('kim@test.com');
@@ -294,7 +538,92 @@ describe('POST /auth/email-code/verify', () => {
     expect(res.status).toBe(400);
     const body = await res.json();
     expect(body.error_code).toBe('AUTH_EMAIL_CODE_INVALID');
-    expect(mockDB.calls[1]?.sql).toContain('attempts = attempts + 1');
+    // 상한 확인과 세기는 한 문장이다 — 판정한 그 줄에, 상한 아래일 때만 +1.
+    const gate = mockDB.calls[1]!;
+    expect(gate.sql.replace(/\s+/g, ' ')).toContain(
+      'SET attempts = attempts + ? WHERE id = ? AND attempts < ?',
+    );
+    expect(gate.args).toEqual([1, 'email-code-1', EMAIL_VERIFICATION_MAX_ATTEMPTS]);
+  });
+
+  // 상한 문장이 0행이면 읽은 뒤 그 사이에 상한이 찬 것이다 — 맞는 숫자도 통과시키지 않는다.
+  it.each([
+    ['맞는 코드', EMAIL_CODE],
+    ['틀린 코드', '000000'],
+  ])('읽은 뒤 상한이 찼으면(상한 문장 0행) %s도 429 AUTH_EMAIL_CODE_ATTEMPTS_EXCEEDED', async (_label, code) => {
+    mockDB.pushResult([
+      {
+        id: 'email-code-1',
+        code_hash: await hashEmailVerificationCode('kim@test.com', EMAIL_CODE, ENV.PASSWORD_PEPPER),
+        attempts: EMAIL_VERIFICATION_MAX_ATTEMPTS - 1,
+        expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+      },
+    ]);
+    mockDB.pushResultFor(ATTEMPT_GATE_SQL, [], 0);
+
+    const res = await buildApp().request(
+      jsonReq('POST', '/auth/email-code/verify', { email: 'kim@test.com', code }),
+      undefined,
+      ENV,
+    );
+
+    expect(res.status).toBe(429);
+    expect((await res.json()).error_code).toBe('AUTH_EMAIL_CODE_ATTEMPTS_EXCEEDED');
+  });
+
+  // ── 서버 2차 정규화(스펙 session-and-auth 「코드는 ASCII 숫자 여섯 자다」) ──
+  //
+  // 형식 검사는 ASCII 숫자만 받는다. 아라비아-인도·페르시아·전각 숫자를 내는 키보드로 친 코드는
+  // 값이 맞아도 `AUTH_VALIDATION_FAILED` 로 떨어져 **횟수도 세지 않고 영영 통과하지 못했다.**
+  // shared 스키마가 형식을 보기 전에 ASCII 로 바꾸고, 라우트는 그 바뀐 값을 해시한다.
+  it('아라비아-인도 숫자로 친 맞는 코드를 확인한다 — ASCII 로 바꾼 값을 해시한다', async () => {
+    await pushValidEmailVerification('kim@test.com'); // 해시는 ASCII '123456' 으로 만든 것이다
+
+    const app = buildApp();
+    const res = await app.request(
+      jsonReq('POST', '/auth/email-code/verify', {
+        email: 'kim@test.com',
+        code: toArabicIndicDigits(EMAIL_CODE),
+      }),
+      undefined,
+      ENV,
+    );
+
+    expect(res.status).toBe(200);
+    expect((await res.json()).success).toBe(true);
+    // 맞는 코드다 — 상한 문장은 지나되 틀린 횟수를 세지 않았다(+0).
+    expect(countedIncrement()).toBe(0);
+  });
+
+  it('아라비아-인도 숫자로 친 틀린 코드는 횟수를 센다 — 형식 오류로 빠져나가지 않는다', async () => {
+    await pushValidEmailVerification('kim@test.com');
+
+    const app = buildApp();
+    const res = await app.request(
+      jsonReq('POST', '/auth/email-code/verify', {
+        email: 'kim@test.com',
+        code: toArabicIndicDigits('000000'),
+      }),
+      undefined,
+      ENV,
+    );
+
+    expect(res.status).toBe(400);
+    expect((await res.json()).error_code).toBe('AUTH_EMAIL_CODE_INVALID');
+    expect(countedIncrement()).toBe(1);
+  });
+
+  it('가운데 공백이 낀 코드는 여전히 형식 오류다 — 판정까지 가지 않는다(횟수를 세지 않는다)', async () => {
+    const app = buildApp();
+    const res = await app.request(
+      jsonReq('POST', '/auth/email-code/verify', { email: 'kim@test.com', code: '123 456' }),
+      undefined,
+      ENV,
+    );
+
+    expect(res.status).toBe(400);
+    expect((await res.json()).error_code).toBe('AUTH_VALIDATION_FAILED');
+    expect(mockDB.calls).toHaveLength(0);
   });
 });
 
@@ -318,6 +647,27 @@ describe('POST /auth/register', () => {
     expect(body.user.plan).toBe('free');
     const insertCall = mockDB.calls.find((call) => call.sql.includes('INSERT INTO users'));
     expect(insertCall?.args[0]).toBe(body.user.id);
+  });
+
+  // 가입은 같은 코드를 **한 번 더** 판정한다 — 인증 확인만 고치면 인증은 통과하고 가입에서 막힌다.
+  it('아라비아-인도 숫자로 친 코드로도 가입한다(인증 확인과 같은 스키마)', async () => {
+    await pushValidEmailVerification('kim@test.com'); // 1) 코드 검증 SELECT
+    mockDB.pushResult([]); // 2) 기존 이메일 SELECT (없음)
+    mockDB.pushResult([], 1); // 3) INSERT users
+    mockDB.pushResult([], 1); // 4) consume code UPDATE
+
+    const app = buildApp();
+    const res = await app.request(
+      jsonReq('POST', '/auth/register', {
+        ...registerBody('kim@test.com'),
+        email_verification_code: toArabicIndicDigits(EMAIL_CODE),
+      }),
+      undefined,
+      ENV,
+    );
+
+    expect(res.status).toBe(201);
+    expect(countedIncrement()).toBe(0);
   });
 
   it('중복 이메일(비밀번호 계정)은 409 AUTH_EMAIL_TAKEN 으로 막는다', async () => {

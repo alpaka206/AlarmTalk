@@ -1,4 +1,5 @@
 import QuartzCore
+import SwiftUI
 
 /// 손을 뗀 뒤 휠이 **굴러가서 멈추는** 동작.
 ///
@@ -18,24 +19,17 @@ enum TimeWheelSettle {
     /// ⚠ 안드로이드 `TimeWheelEasing` 은 지금 `(0.3, 0.6, 0.3, 1)` 이다 — A32 프레임 예산에
     /// 맞춰 2026-08-15 에 손본 값이다. 두 값 다 스펙 「의도된 차이」에 있다(§1-1 은 두 앱이
     /// 같은 값만 적으므로 곡선이 없다). iOS 는 원값을 쓴다.
+    ///
+    /// 풀이는 SwiftUI `UnitCurve` 에 맡긴다(예전 손으로 짠 이분법 20회와 0…1 전 구간에서
+    /// 1e-5 안으로 같다).
     static func ease(_ progress: Double) -> Double {
-        let x = min(max(progress, 0), 1)
-        let x1 = 0.16, y1 = 1.0, x2 = 0.3, y2 = 1.0
-
-        func curve(_ t: Double, _ a: Double, _ b: Double) -> Double {
-            let mt = 1 - t
-            return 3 * mt * mt * t * a + 3 * mt * t * t * b + t * t * t
-        }
-
-        // ⚠ **뉴턴법을 쓰지 말 것.** 이 곡선은 끝부분 기울기가 0에 가까워 나눗셈이 폭주한다.
-        // 이분법 20회면 오차가 1e-6 아래라 60fps 에서 충분하다.
-        var lo = 0.0, hi = 1.0
-        for _ in 0..<20 {
-            let mid = (lo + hi) / 2
-            if curve(mid, x1, x2) < x { lo = mid } else { hi = mid }
-        }
-        return curve((lo + hi) / 2, y1, y2)
+        curve.value(at: min(max(progress, 0), 1))
     }
+
+    private static let curve = UnitCurve.bezier(
+        startControlPoint: UnitPoint(x: 0.16, y: 1),
+        endControlPoint: UnitPoint(x: 0.3, y: 1)
+    )
 
     /// 굴릴 칸수에 따른 애니메이션 길이(초). 안드로이드와 같은 값이다 —
     /// 붙기만 할 땐 170ms, 튕겼으면 `190 + 42×칸수` 를 230~720ms 로 조인다.

@@ -80,7 +80,7 @@ final class AlarmAppContextTests: XCTestCase {
         let endsISO = ISO8601DateFormatter().string(from: ends)
         var promoOnly = AccessSnapshot.empty
         promoOnly.userPlan = "plus"
-        promoOnly.subscriptionResponse = BillingSubscriptionResponse(subscription: nil, plan: nil, nextPlan: nil)
+        promoOnly.subscriptionResponse = BillingSubscriptionResponse(subscription: nil, plan: nil)
         promoOnly.personalPromo = PersonalPromo(endsAt: endsISO, noticeFrom: nil, fetchedAt: fixedNow)
 
         func stop(_ snapshot: AccessSnapshot, weekly: Bool = true) async -> [String] {
@@ -104,12 +104,9 @@ final class AlarmAppContextTests: XCTestCase {
         var payer = promoOnly
         payer.subscriptionResponse = BillingSubscriptionResponse(
             subscription: BillingSubscription(
-                id: "sub-1", planId: "p", planGroupId: nil, status: "active",
-                startsAt: "2026-01-01T00:00:00Z", expiresAt: "2099-01-01T00:00:00Z",
-                cancelAtPeriodEnd: nil, canceledAt: nil, nextPlanId: nil
+                id: "sub-1", planId: "p", status: "active", expiresAt: "2099-01-01T00:00:00Z"
             ),
-            plan: BillingPlan(id: "p", key: "personal", name: "personal", planType: "personal", periodDays: 30, maxMembers: 1, priceKrw: 0),
-            nextPlan: nil
+            plan: BillingPlan(id: "p", key: "personal", name: "personal", planType: "personal", maxMembers: 1)
         )
         let payerStop = await stop(payer)
         XCTAssertTrue(payerStop.isEmpty, "활성 구독 행이 있으면 프로모와 무관하다")

@@ -22,6 +22,12 @@ PR #660 에서 **같은 모양의 버그가 네 번** 나왔다(동의 → 버�
 | `versionChecked` / `AppVersionGate.checked` | 최소지원버전 정책 | 되돌리지 않는다(앱·기기 단위) |
 | `stockReplacementChecked` / `stockReplacement.isChecked(for:)` | 기본 목소리 교체가 미완인지 판정 | **계정 id 를 들고 비교한다**(전역 Bool 이면 A 의 확인이 B 에 샌다). 실패한 시도도 '끝났다' 로 센다 |
 
+⚠ **안드로이드의 받기 화면 판정(`showVoiceSetup`)은 따로 신호를 두지 않고 순서로 지킨다**(2026-10-11). 그 판정이
+메인 밖에서 파일을 세느라 잠깐 걸리게 되어(`MainViewModel.checkVoiceSetupFor` — suspend, `VoiceSetupProbe`), 세션
+이펙트가 **그 판정을 마친 뒤에** 계정·동의 조회를 띄운다(`AlarmTalkApp.kt`). 1회성 오버레이는 계정·동의 응답을
+기다리므로, 그 응답이 왔을 때는 받기 화면 판정도 끝나 있다 — 응답 전 기본값(false)을 '받기 화면 없음' 으로 읽고
+소진 플래그를 태우는 틈이 없다. 이 순서를 바꾸면(조회를 판정과 나란히 띄우면) 그 틈이 다시 생긴다.
+
 ## 개인 플랜 종료 안내 — **들어올 때마다**, 준비가 끝난 뒤에만 (2026-09-27)
 
 기간 한정 개인 플랜([`billing-lifecycle.md`](billing-lifecycle.md) 「기간 한정 개인 플랜」)이
@@ -84,8 +90,9 @@ PR #660 에서 **같은 모양의 버그가 네 번** 나왔다(동의 → 버�
       (전경 잠금의 기다림 — [`billing-lifecycle.md`](billing-lifecycle.md) D12)으로는 그대로 쓴다.
   - **결과는 어느 경로로 반영되든, 버려지든 적는다.** 이번 진입에 보낸 요청의 답이 세션 밖 경로로
     반영되거나(iOS `SocialFeatureViewModel` 의 `/auth/me` → `applyFreshPlan(…request:)` — 순번에 밀려
-    짝을 쓰지 않아도), 이 계정의 토큰이 그 사이 굴러 응답 본문을 버리는 경우에도(iOS
-    `refreshUserApplyingToken` 의 `isTokenRolledWithinSignIn` — 성공이면 짝을 반영하고 적고, 실패면
+    짝을 쓰지 않아도), 이 계정의 토큰이 그 사이 굴러 에폭 가드에 걸리는 경우에도(iOS
+    `refreshUserApplyingToken` 의 `isTokenRolledWithinSignIn` — 성공이면 지금 토큰 위에 짝과 프로필 칸을 반영하고
+    적고(`applyAccountAnswerOnRolledToken` — 밀린 답이면 쓰지 않고 적기만), 실패면
     실패로 적는다) **이 진입의 결과**는 적는다 — 안 적으면 진입이 '대기' 로 남아, 같은 진입의 나중
     응답이 첫 결과가 되어 세션 한가운데서 판정한다(리뷰). 안드로이드는 세션을 세대로 가르므로
     (`saveSessionIfAlive`) 토큰이 굴러도 응답이 버려지지 않는다.
@@ -103,7 +110,9 @@ PR #660 에서 **같은 모양의 버그가 네 번** 나왔다(동의 → 버�
     `PersonalPromoLedger.claimPlanAnswer`(plan 순번은 따로 — `checkAccountStatus` 는 plan 을 쓰지
     않는다), plan 반영 표시는 `recordPlanApplied`(밀린 요청을 다시 거른다). iOS:
     `AuthViewModel.applyFreshPlan(…request:)` 과 `refreshUserApplyingToken` 이 한 순번으로 가른다. 더 새
-    답이 이미 반영됐으면 그 plan·프로모 짝을 지킨다 — 탈퇴 유예는 그대로 반영한다. 규칙 전문은
+    답이 이미 반영됐으면 그 plan·프로모 짝을 지킨다 — 탈퇴 유예는 그대로 반영한다. plan 답이 아닌 저장
+    (프로필 저장·iOS 탈퇴 복구)은 plan·프로모를 **아예 쓰지 않는다** — 들고 있던 세션 사본째 저장하면 순번을
+    지나 반영된 더 새 답을 되돌린다(2026-10-05). 규칙 전문은
     [`billing-lifecycle.md`](billing-lifecycle.md) 「앱」의 순번 가드.
   - 세션 밖에서 계정 답을 받는 경로(iOS `SocialFeatureViewModel` 의 `/auth/me`·결제 전 조회)도 같은
     표를 받는다(`SocialFeatureViewModel.beginAccountRequest` → `onFreshPlan`·`onAccountRequestFailed`).
@@ -150,7 +159,7 @@ PR #660 에서 **같은 모양의 버그가 네 번** 나왔다(동의 → 버�
 
 **모양**: 버튼 둘 — `다시 보지 않기` · `확인`. Android 는 `IosAlertDialog`(버튼 2개 = 가로),
 iOS 는 시스템 `.alert`. 바깥 탭·뒤로가기는 `확인` 과 같다(이번 진입만 닫힘). **아이콘은 없다**
-(양 앱 — 이용권 화면 한 줄도 같다).
+(양 앱 — 이용권 화면의 프로모 문구도 같다).
 - `다시 보지 않기` → **계정별 + 그 `ends_at` 별로** 저장(키에 계정 id, 값에 `ends_at`). 서버가
   기간을 늘려 `ends_at` 이 바뀌면 새 종료를 한 번 더 알린다 — 사용자가 끈 것은 "이 종료 안내" 다.
   로그아웃해도 지우지 않는다 — 같은 사람이 다시 로그인하면 또 묻지 않는다. 옛

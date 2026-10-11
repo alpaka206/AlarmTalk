@@ -76,6 +76,15 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
     /// "내일 아침 알람이 없어졌다" 가 됐다(2026-08-07 수정).
     var preLockPlayMode: String?
 
+    /// **무료 잠금 보관본** — 잠그기 전의 유료 목소리 필드.
+    ///
+    /// 2026-09-29 부터 잠금은 재생 방식을 `alarm_only` 로 내리지 않고 행을 **기본 목소리 알람**으로
+    /// 고쳐 쓴다(`DefaultVoiceSubstitute.locked`). 원래 목소리는 여기 두었다가 다시 유료가 되면
+    /// 되돌린다(`DefaultVoiceSubstitute.restored`). 이 값이 있으면 '새 모양으로 잠겼다' 는 뜻이다.
+    /// 규칙: `docs/spec/billing-lifecycle.md` 「목소리를 못 쓰게 되면」. 안드로이드 짝은
+    /// `AlarmEntity.preLockVoiceJson`.
+    var preLockVoice: LockedPaidVoice?
+
     /// 이 알람을 만든 계정. 무료 전환 잠금이 **다른 계정 알람까지 건드리지 않게** 하는 가드.
     /// 안드로이드 `AlarmEntity.ownerUserId` 미러.
     var ownerUserId: String?
@@ -99,7 +108,7 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
     ///
     /// ⚠ **날씨·운세 테마는 전진하지 않는다.** 그 둘은 '조건에 맞는 클립' 을 고르는
     /// 것이라(비 오는 날엔 비 문구) 순서를 돌리면 엉뚱한 문구가 나온다. 안드로이드
-    /// `MATCHING_BUCKET_IDS` 와 같은 이유다.
+    /// `MatchingBucketIds` 와 같은 이유다.
     var bucketRotationIndex: Int?
 
     /// 날씨 테마가 **실제 예보로 확정한** 클립 자리(0-based, `StockClip.variant` 와 같은 축).
@@ -146,10 +155,10 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
     /// 잠긴 뒤에도 참이어야 한다는 점은 그대로다: 잠금은 `playMode` 만 바꾸고
     /// `voiceProfileId` 는 남기므로 자원 기준으로 봐도 계속 대상으로 잡힌다.
     var usesPaidVoiceFeatures: Bool {
-        !(localAudioUri?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true) ||
-            !(rawAudioUri?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true) ||
-            !(voiceProfileId?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true) ||
-            !(ttsMessageId?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+        localAudioUri.nilIfBlank != nil ||
+            rawAudioUri.nilIfBlank != nil ||
+            voiceProfileId.nilIfBlank != nil ||
+            ttsMessageId.nilIfBlank != nil
     }
 
     /// **직접 입력 문구로 합성한 음성 알람인가** — 서버 `messages.category = 'custom'` 의 로컬 짝.
@@ -202,8 +211,8 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
         // 한쪽만 고치면 '예약은 목소리로 되는데 앱을 껐다 켜면 잠긴다'(또는 그 반대)가 된다.
         if voiceSourceEnum == .localAudio, localAudioUri?.nilIfBlank != nil { return false }
         let stockVoiceOnly =
-            (localAudioUri?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true) &&
-            (rawAudioUri?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true) &&
+            localAudioUri.nilIfBlank == nil &&
+            rawAudioUri.nilIfBlank == nil &&
             isSystemVoiceId(voiceProfileId)
         return usesPaidVoiceFeatures &&
             !stockVoiceOnly &&
@@ -265,6 +274,19 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
 
     /// 다음 발화 시각 (fireAtMillis 기반).
     var nextFireDate: Date { Date(timeIntervalSince1970: TimeInterval(fireAtMillis) / 1000.0) }
+
+    /// 이 행의 시각·요일·공휴일 설정으로 **다시 계산한** 다음 울림 시각.
+    /// 울릴 날이 없으면 던진다 — 폴백은 부르는 쪽이 정한다.
+    func nextFireAtMillis(nowMillis: Int64, isHoliday: (Date) -> Bool) throws -> Int64 {
+        try AlarmTimeCalculator.nextFireAtMillis(
+            hour: hour,
+            minute: minute,
+            repeatDaysMask: repeatDaysMask,
+            holidayOff: holidayOff,
+            nowMillis: nowMillis,
+            isHoliday: isHoliday
+        )
+    }
 
     // MARK: Defaults / Designated init
 
@@ -425,6 +447,7 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
         // 건드리지 않게 막는 가드도 늘 통과했다(ownerUserId).
         // **새 필드를 추가할 때는 여기와 디코더·인코더 세 곳을 함께 고칠 것.**
         case preLockPlayMode
+        case preLockVoice
         case ownerUserId
         case bucketId
         case bucketClipKeys
@@ -524,6 +547,8 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
         self.alarmKitID = try c.decodeIfPresent(String.self, forKey: .alarmKitID)
         self.scheduledSoundFingerprint = try c.decodeIfPresent(String.self, forKey: .scheduledSoundFingerprint)
         self.preLockPlayMode = try c.decodeIfPresent(String.self, forKey: .preLockPlayMode)
+        // 깨진 보관본 하나 때문에 알람 목록 전체를 못 읽으면 안 된다 — 못 읽으면 없는 것으로 본다.
+        self.preLockVoice = (try? c.decodeIfPresent(LockedPaidVoice.self, forKey: .preLockVoice)) ?? nil
         self.ownerUserId = try c.decodeIfPresent(String.self, forKey: .ownerUserId)
         self.bucketId = try c.decodeIfPresent(String.self, forKey: .bucketId)
         self.bucketClipKeys = try c.decodeIfPresent([String].self, forKey: .bucketClipKeys)
@@ -597,6 +622,7 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
         try c.encodeIfPresent(alarmKitID, forKey: .alarmKitID)
         try c.encodeIfPresent(scheduledSoundFingerprint, forKey: .scheduledSoundFingerprint)
         try c.encodeIfPresent(preLockPlayMode, forKey: .preLockPlayMode)
+        try c.encodeIfPresent(preLockVoice, forKey: .preLockVoice)
         try c.encodeIfPresent(ownerUserId, forKey: .ownerUserId)
         try c.encodeIfPresent(bucketId, forKey: .bucketId)
         try c.encodeIfPresent(bucketClipKeys, forKey: .bucketClipKeys)
@@ -623,9 +649,8 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
 }
 
 // MARK: - Validation
-// Android `AlarmRepository.kt:471-484` `validateDraft` 의 검증 규칙을 Swift error 로 이식.
+// Android `AlarmRepository.kt:468-481` `validateDraft` 의 검증 규칙을 Swift error 로 이식.
 enum LocalAlarmValidationError: LocalizedError, Equatable {
-    case alarmNotFound
     case invalidHour
     case invalidMinute
     case invalidRepeatDaysMask
@@ -641,19 +666,18 @@ enum LocalAlarmValidationError: LocalizedError, Equatable {
 
     var errorDescription: String? {
         switch self {
-        case .alarmNotFound: return "알람을 찾지 못했어요."
-        case .invalidHour: return "시는 0~23 사이여야 해요."
-        case .invalidMinute: return "분은 0~59 사이여야 해요."
-        case .invalidRepeatDaysMask: return "반복 요일 비트가 유효하지 않아요."
-        case .invalidSnoozeMinutes: return "다시 울림은 1~30분이어야 해요."
-        case .invalidSnoozeRepeatLimit: return "다시 울림 반복 횟수가 유효하지 않아요."
-        case .invalidAlarmVolume: return "알람 볼륨은 0~100 사이여야 해요."
-        case .invalidVoiceVolume: return "목소리 크기는 0~100 사이여야 해요."
-        case .unknownVibrationPattern: return "지원하지 않는 진동 패턴이에요."
-        case .unknownPlayMode: return "지원하지 않는 재생 방식이에요."
-        case .unknownVoiceSource: return "지원하지 않는 음성 소스예요."
-        case .voiceAudioRequired: return "음성 알람은 음원을 먼저 캐싱해야 해요."
-        case .duplicateTime: return "이미 같은 시간에 알람이 있어요. 다른 시간을 선택해 주세요."
+        case .invalidHour: return String(localized: "시는 0~23 사이여야 해요.")
+        case .invalidMinute: return String(localized: "분은 0~59 사이여야 해요.")
+        case .invalidRepeatDaysMask: return String(localized: "반복 요일 비트가 유효하지 않아요.")
+        case .invalidSnoozeMinutes: return String(localized: "다시 울림은 1~30분이어야 해요.")
+        case .invalidSnoozeRepeatLimit: return String(localized: "다시 울림 반복 횟수가 유효하지 않아요.")
+        case .invalidAlarmVolume: return String(localized: "알람 볼륨은 0~100 사이여야 해요.")
+        case .invalidVoiceVolume: return String(localized: "목소리 크기는 0~100 사이여야 해요.")
+        case .unknownVibrationPattern: return String(localized: "지원하지 않는 진동 패턴이에요.")
+        case .unknownPlayMode: return String(localized: "지원하지 않는 재생 방식이에요.")
+        case .unknownVoiceSource: return String(localized: "지원하지 않는 음성 소스예요.")
+        case .voiceAudioRequired: return String(localized: "음성 알람은 음원을 먼저 캐싱해야 해요.")
+        case .duplicateTime: return String(localized: "이미 같은 시간에 알람이 있어요. 다른 시간을 선택해 주세요.")
         }
     }
 }

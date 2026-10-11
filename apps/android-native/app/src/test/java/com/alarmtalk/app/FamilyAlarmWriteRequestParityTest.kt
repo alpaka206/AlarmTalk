@@ -10,7 +10,6 @@ import com.alarmtalk.app.data.SnoozeRepeatLimits
 import com.alarmtalk.app.data.AlarmPlayModes
 import com.alarmtalk.app.data.VoiceSources
 import com.alarmtalk.app.network.RemoteAlarmMapper
-import com.alarmtalk.app.network.RemoteAlarmWriteRequest
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -130,5 +129,16 @@ class FamilyAlarmWriteRequestParityTest {
         assertEquals("recipient-789", fromDraft.targetUserId)
         assertEquals("alarm-1", fromEntity.clientAlarmId)
         assertEquals(null, fromDraft.clientAlarmId)
+    }
+
+    /**
+     * 가족 녹음 알람의 기본 라벨은 **계약값(한국어)** 이다 — 서버가 받는 사람의 문구로 저장하고
+     * 받는 기기가 자기 언어로 바꿔 보여 준다. 예전에는 앱 언어의 번역문("Voice from family")을
+     * 보내 받는 사람 화면에 보낸 사람의 언어가 남았다. 언어와 무관해야 하므로 컨텍스트 없이 본다.
+     */
+    @Test
+    fun familyVoiceLabelFallsBackToContractValueNotTranslation() {
+        assertEquals("가족이 보낸 음성", draft().copy(label = "  ").familyVoiceAlarmLabel())
+        assertEquals("테스트", draft().familyVoiceAlarmLabel())
     }
 }

@@ -27,6 +27,12 @@ enum APIErrorMessages {
         String(localized: "이메일 주소 형식이 올바르지 않아요. 다시 확인해 주세요.")
     }
 
+    /// 원인을 가를 수 없는 일시 실패의 중립 문구 — `INTERNAL_ERROR` 의 문장이자, 이메일 인증
+    /// 확인의 화면 폴백이다(`AuthViewModel.verifyEmailCode`). 두 자리에 리터럴을 따로 두지 않는다.
+    static var temporaryFailure: String {
+        String(localized: "잠시 문제가 생겼어요. 잠시 후 다시 시도해 주세요.")
+    }
+
     /// 이 코드에 정해 둔 문구. 없으면 nil — 부르는 쪽이 자기 폴백을 쓴다.
     ///
     /// ⚠ **모든 코드에 문구를 둘 필요는 없다.** `INVALID_JSON` 처럼 사용자가 할 수 있는 게
@@ -40,7 +46,7 @@ enum APIErrorMessages {
         case "REQUEST_BODY_TOO_LARGE":
             return String(localized: "보내려는 파일이 너무 커요. 더 짧게 녹음해 주세요.")
         case "INTERNAL_ERROR":
-            return String(localized: "잠시 문제가 생겼어요. 잠시 후 다시 시도해 주세요.")
+            return temporaryFailure
         case "ALARM_SCHEMA_UPGRADING":
             return String(localized: "서버를 업데이트하고 있어요. 잠시 후 다시 시도해 주세요.")
 
@@ -85,6 +91,11 @@ enum APIErrorMessages {
             return String(localized: "목소리를 만들 음성은 12초 이상이어야 해요.")
         case "VOICE_CLONE_AUDIO_TOO_LONG":
             return String(localized: "목소리를 만들 음성은 2분 이하로 준비해 주세요.")
+        // 녹음에 말소리가 거의 없다 — 서버가 목소리를 만들기 전에 받아쓰기로 보고 거절했다. 아무것도 쓰지 않았고 이번 달
+        // 등록도 그대로라, 할 일은 다시 녹음하는 것뿐이다. 등록 창은 이 거절에 음원 준비로 돌아가 그 녹음을 버린다
+        // (`VoiceCloneUploadFlow.submitOutcome`).
+        case "VOICE_CLONE_NO_SPEECH":
+            return String(localized: "녹음에서 말소리를 거의 찾지 못했어요. 조용한 곳에서 문장을 또렷하게 읽으며 다시 녹음해 주세요.")
         case "INVALID_DURATION":
             return String(localized: "음성 길이를 확인하지 못했어요. 파일을 다시 선택해 주세요.")
         case "INVALID_AUDIO_MIME_TYPE":
@@ -101,10 +112,15 @@ enum APIErrorMessages {
             return String(localized: "목소리는 한 달에 1번만 바꿀 수 있어요. 다음 달에 다시 시도해 주세요.")
         case "VOICE_PREVIEW_REQUIRED":
             return String(localized: "문구가 바뀌었어요. 새 문구를 끝까지 들어본 뒤 저장해 주세요.")
-        // 목소리 느낌(결)이 '' · 'lively' · 'calm' 이 아니다. 앱은 세그먼트 값만 보내므로
-        // 정상 흐름에서는 나지 않는다 — 나면 다시 고르게 하는 것 말고 할 수 있는 게 없다.
-        case "INVALID_VOICE_ENERGY":
-            return String(localized: "목소리 느낌을 확인하지 못했어요. 다시 골라 주세요.")
+        // `INVALID_VOICE_ENERGY` 는 두지 않는다 — 이 앱은 목소리의 결을 보내지 않아(2026-09-29
+        // '목소리 느낌' 선택 제거) 그 코드를 받을 길이 없다. 서버는 1.2.10 앱 때문에 아직 낸다.
+        // 목소리 높이는 등록 확정 요청에만 싣는다(스펙 voice-and-message §4-3). 앱이 범위·눈금을 먼저 맞추므로
+        // 범위 밖(400)은 서버의 범위가 앱과 갈렸을 때뿐이고, 409 는 등록이 끝난 목소리에 다른 높이를 실었을 때다.
+        // 문구는 화면의 이름(`톤 조절`)을 따라 '톤' 이라 부른다(2026-10-08 — 그전 이름 '목소리 높이'). 코드는 그대로다.
+        case "INVALID_VOICE_PITCH":
+            return String(localized: "톤 값이 올바르지 않아요. 다시 맞춰 주세요.")
+        case "VOICE_PITCH_LOCKED":
+            return String(localized: "톤은 목소리를 등록할 때만 정할 수 있어요.")
         case "CONSENT_REQUIRED":
             return String(localized: "목소리를 만들려면 음성 정보 활용 동의가 필요해요. 더보기 → 약관 및 동의에서 다시 동의해 주세요.")
 
@@ -114,8 +130,31 @@ enum APIErrorMessages {
         case "TTS_GENERATION_FAILED":
             return String(localized: "음성을 만들지 못했어요. 잠시 후 다시 시도해 주세요.")
 
+        // ── 가족 알람 보내기(`routes/alarm-helpers.ts` 의 `evaluateFamilyAlarmTimingGuard`) ──
+        // 편집기가 먼저 막지만 그 판정은 받는 사람의 **캐시된** 설정과 이 기기 시계로 한 것이다.
+        // 서버가 다시 거절하면 이유를 말해야 한다 — 예전에는 셋 다 "상대 알람 설정에 실패했어요"
+        // 로 뭉개져 다시 눌러도 똑같이 실패했다(`docs/spec/family-alarm.md` §3).
+        case "FAMILY_ALARM_DISABLED":
+            return String(localized: "상대가 알람을 받지 않도록 설정해 뒀어요.")
+        // 숫자(5분)를 문구에 넣지 않는다 — 그 값은 서버·두 앱 세 곳에만 둔다(§3 표).
+        case "FAMILY_ALARM_LEAD_TIME":
+            return String(localized: "상대 알람은 조금 더 뒤로 맞춰 주세요. 상대 기기에 전달될 시간이 조금 필요해요.")
+        case "FAMILY_ALARM_QUIET_TIME":
+            return String(localized: "상대가 받을 수 없는 시간이에요.")
+
+        // ── 이용권 그룹 ───────────────────────────────────────────────────
+        case "OWNER_CANNOT_LEAVE":
+            return String(localized: "관리자는 이용권에서 나갈 수 없어요.")
+
         default:
             return nil
         }
+    }
+
+    /// 화면 전용 문구가 없는 자리의 층 순서 — **공용 표 → 화면 폴백**. 안드로이드는
+    /// `apiErrorMessage(context, apiErrorCode(error)) ?: userFacingError(error, fallback)` 이다
+    /// (`familyAlarmFailureMessage`·`leaveGroupFailureMessage`).
+    static func message(for error: Error, fallback: String) -> String {
+        message(for: (error as? APIError)?.serverErrorCode) ?? userFacingErrorMessage(error, fallback: fallback)
     }
 }

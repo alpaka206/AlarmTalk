@@ -83,7 +83,7 @@ struct StockClipLanguageRebinder {
         // ⚠ **남의 알람을 건드리지 않는다**(2026-09-03 리뷰 17차). 로컬 알람은 로그아웃해도
         //   남으므로, 전체를 훑으면 계정 B 가 계정 A 의 숨은 알람에 **B 의 지역·생년월일을
         //   써 넣고** DIRTY 로 표시한다 — A 가 다시 로그인하면 그 값이 서버로 올라간다.
-        let visible = callerUserId == nil ? store.alarms : store.alarms(visibleTo: callerUserId)
+        let visible = visibleAlarms(callerUserId)
         let stale: [LocalAlarmRecord] = visible.filter { (record: LocalAlarmRecord) -> Bool in
             Self.shouldRebind(
                 record: record, language: language, liveKeys: liveKeys,
@@ -94,7 +94,6 @@ struct StockClipLanguageRebinder {
 
         var rebound = 0
         var changedIds: Set<String> = []
-        var conditionBucketRebound = false
         for record in stale {
             // ⚠ **묶을 때도 접은 이름을 쓴다**(2026-09-03 리뷰 5차). 지난 회차에
             //   `normalizedBucketId` 를 **완전성 검사에만** 넣었더니, 검사는 통과하는데
@@ -114,7 +113,6 @@ struct StockClipLanguageRebinder {
             //   그게 읽는 것이 이 필드들이고, 받은 알람은 전부 비어 있다.
             bound = Self.withRecipientConditions(bound, bucket: bucket, prefs: conditionInputs)
             _ = store.upsertPreservingServerSyncFields(bound)
-            if MatchingBucketIds.contains(bucket) { conditionBucketRebound = true }
             changedIds.insert(bound.id)
             rebound += 1
         }
@@ -123,22 +121,27 @@ struct StockClipLanguageRebinder {
         //   조건이 바뀌면 AlarmKit 예약도 다시 잡아야 하는데 그 핸들은 호출부에 있다
         //   (`AlarmTalkApp.rebindStockClipsIfNeeded`). 안드로이드는 워커가 스케줄러를
         //   직접 부른다 — 플랫폼 사정이라 모양이 다르다.
-        _ = conditionBucketRebound
 
-        // ⚠⚠ **디스크에 앉히고 나서 돌아간다**(2026-09-03 리뷰 17차).
-        //   `upsert` 는 저장을 **비동기로 걸어 둘 뿐**이라, 그대로 돌려주면 호출부가
-        //   메모리 위의 행만 보고 **옛 오디오 파일을 지우고** '교체 완료' 로 문을 연다.
-        //   그 사이 앱이 종료되면 다음 콜드 스타트가 **옛 행을 다시 읽는데 그 행이
-        //   가리키는 파일은 이미 없다** — 내 알람은 서버에서 되받는 경로가 없어
-        //   오프라인 복구가 불가능하다.
-        //   ⚠ **개수 0 으로는 못 막는다**(리뷰 18차). `upsert` 가 이미 `store.alarms` 를
-        //     바꿔 놨으므로, 호출부는 메모리 위의 행을 보고 그대로 지우고 문을 연다.
-        //     실패를 **값으로** 들고 나가야 한다(`StockRebindOutcome.persisted`).
-        // ⚠⚠ **디스크에 앉히기 *전에* id 를 남긴다**(2026-09-03 리뷰 23차).
-        //   호출부에서 남기면 그 사이(날씨 갱신·파일 정리)에 앱이 종료됐을 때 **행은 이미
-        //   새것인데 id 는 없다** — 다음 실행은 재바인더가 `.none` 을 돌려주고 강제 재예약
-        //   목록도 비어, AlarmKit 이 옛 소리를 쥔 채 영영 남는다.
-        //   먼저 남기면 최악이 '이미 최신인 예약을 한 번 더 확인' 이라 해가 없다.
+        return finishRebind(rebound: rebound, changedIds: changedIds, callerUserId: callerUserId)
+    }
+
+    /// 두 재바인더(`rebindIfLanguageChanged`·`rebindLiveGenerationRows`)의 마무리.
+    ///
+    /// ⚠⚠ **디스크에 앉히고 나서 돌아간다**(2026-09-03 리뷰 17차).
+    ///   `upsert` 는 저장을 **비동기로 걸어 둘 뿐**이라, 그대로 돌려주면 호출부가
+    ///   메모리 위의 행만 보고 **옛 오디오 파일을 지우고** '교체 완료' 로 문을 연다.
+    ///   그 사이 앱이 종료되면 다음 콜드 스타트가 **옛 행을 다시 읽는데 그 행이
+    ///   가리키는 파일은 이미 없다** — 내 알람은 서버에서 되받는 경로가 없어
+    ///   오프라인 복구가 불가능하다.
+    ///   ⚠ **개수 0 으로는 못 막는다**(리뷰 18차). `upsert` 가 이미 `store.alarms` 를
+    ///     바꿔 놨으므로, 호출부는 메모리 위의 행을 보고 그대로 지우고 문을 연다.
+    ///     실패를 **값으로** 들고 나가야 한다(`StockRebindOutcome.persisted`).
+    /// ⚠⚠ **디스크에 앉히기 *전에* id 를 남긴다**(2026-09-03 리뷰 23차).
+    ///   호출부에서 남기면 그 사이(날씨 갱신·파일 정리)에 앱이 종료됐을 때 **행은 이미
+    ///   새것인데 id 는 없다** — 다음 실행은 재바인더가 `.none` 을 돌려주고 강제 재예약
+    ///   목록도 비어, AlarmKit 이 옛 소리를 쥔 채 영영 남는다.
+    ///   먼저 남기면 최악이 '이미 최신인 예약을 한 번 더 확인' 이라 해가 없다.
+    private func finishRebind(rebound: Int, changedIds: Set<String>, callerUserId: String?) -> StockRebindOutcome {
         if !changedIds.isEmpty {
             StockReplacementStatus.shared.noteReplaced(ids: changedIds, for: callerUserId)
         }
@@ -146,6 +149,12 @@ struct StockClipLanguageRebinder {
             return StockRebindOutcome(rebound: rebound, persisted: false, changedIds: changedIds)
         }
         return StockRebindOutcome(rebound: rebound, persisted: true, changedIds: changedIds)
+    }
+
+    /// 이 계정에 보이는 알람. 계정을 모르면(nil) 전부다 — 남의 알람을 건드리지 않도록
+    /// 재바인딩·미완료 판정·정리가 모두 이걸로 고른다.
+    private func visibleAlarms(_ callerUserId: String?) -> [LocalAlarmRecord] {
+        callerUserId == nil ? store.alarms : store.alarms(visibleTo: callerUserId)
     }
 
     /// **다시 묶어야 하고, 갈아탈 세트도 완전한가.**
@@ -323,9 +332,7 @@ struct StockClipLanguageRebinder {
     ) -> LocalAlarmRecord {
         guard let prefs else { return record }
         func keep(_ current: String?, _ fallback: String) -> String? {
-            if let value = (current).nilIfBlank { return value }
-            let trimmed = fallback.trimmingCharacters(in: .whitespacesAndNewlines)
-            return trimmed.isEmpty ? nil : trimmed
+            current.nilIfBlank ?? fallback.nilIfBlank
         }
         var next = record
         switch bucket {
@@ -363,7 +370,7 @@ struct StockClipLanguageRebinder {
     ) -> Bool {
         guard manifestFetched, store.hasLoadedFromDisk else { return false }
         let liveKeys = Set(clips.map { AudioCacheStore.stockCacheKey(messageId: $0.messageId) })
-        let visible = callerUserId == nil ? store.alarms : store.alarms(visibleTo: callerUserId)
+        let visible = visibleAlarms(callerUserId)
         return visible.contains { record in
             // ⚠ **이번 교체가 책임지는 알람만 센다**(리뷰 20차) — 클론까지 세면 기기 언어를
             //   바꾼 단일 언어 클론이 문을 영영 못 열게 한다.
@@ -402,7 +409,7 @@ struct StockClipLanguageRebinder {
         // ⚠ **판정은 이 계정 것만, 남길 것은 전부.** 남의 알람 때문에 정리를 영영 미루면
         //   안 되고(그 계정은 로그인하지 않는다), 반대로 남의 알람이 물고 있는 클립을
         //   지우면 그 사람이 다시 로그인했을 때 **소리를 잃는다.**
-        let mine = callerUserId == nil ? alarms : store.alarms(visibleTo: callerUserId)
+        let mine = visibleAlarms(callerUserId)
 
         // ① 아직 갈아탈 것이 남았으면 미룬다. ② 세트가 모자라 못 갈아탄 것이 있어도 미룬다.
         let pending = mine.contains {
@@ -414,12 +421,11 @@ struct StockClipLanguageRebinder {
         guard !pending else { return 0 }
         // 같은 이유로 여기서도 이번 교체가 책임지는 알람만 본다 — 갈아탈 수 없는 클론
         // 하나 때문에 옛 파일 정리를 **영영 미루지** 않는다.
-        let waitingForSeed = mine.contains { record in
-            guard Self.isReplacementScoped(record) else { return false }
-            return Self.needsRebind(
-                record: record, language: language, liveKeys: liveKeys, legacyHints: legacyHints,
-            ) || Self.needsLegacyConversion(record)
-        }
+        // 판정은 차단 화면과 같은 술어 하나다(`hasPendingReplacement`).
+        let waitingForSeed = hasPendingReplacement(
+            clips: clips, language: language, manifestFetched: true,
+            legacyHints: legacyHints, callerUserId: callerUserId
+        )
         guard !waitingForSeed else { return 0 }
 
         // ③ 지금 알람들이 물고 있는 키는 전부 남긴다(여러 알람이 같은 클립을 공유한다).
@@ -428,6 +434,9 @@ struct StockClipLanguageRebinder {
         for alarm in alarms {
             referenced.formUnion(alarm.bucketClipKeys ?? [])
             if let key = alarm.audioCacheKey, !key.isEmpty { referenced.insert(key) }
+            // 무료 잠금 보관본이 붙든 원래 목소리 클립도 남긴다 — 재결제 때 복원할 소리다
+            // (billing-lifecycle.md 「목소리를 못 쓰게 되면」).
+            referenced.formUnion(alarm.preLockVoice?.referencedCacheKeys ?? [])
             // 옛 별칭 디렉터리는 파일 **이름**으로 참조된다(`<messageId>.<ext>`).
             if let uri = alarm.localAudioUri, !uri.isEmpty {
                 referencedFileNames.insert((uri as NSString).lastPathComponent)
@@ -493,7 +502,7 @@ struct StockClipLanguageRebinder {
         guard let token = session?.token, !clips.isEmpty else { return .none }
 
         // 남의 알람은 건드리지 않는다 — `rebindIfLanguageChanged` 와 같은 이유.
-        let visibleLegacy = callerUserId == nil ? store.alarms : store.alarms(visibleTo: callerUserId)
+        let visibleLegacy = visibleAlarms(callerUserId)
         // ⚠ 술어를 여기서 다시 조립하지 않는다 — 미완료 판정과 **같은 이름**을 쓴다.
         //   두 벌로 갈라지면 "변환은 남았는데 완료라고 보고" 하는 상태가 다시 생긴다.
         let legacy: [LocalAlarmRecord] = visibleLegacy.filter(Self.needsLegacyConversion)
@@ -534,21 +543,8 @@ struct StockClipLanguageRebinder {
             changedIds.insert(bound.id)
             rebound += 1
         }
-        // ⚠ **디스크에 앉히고 나서 돌아간다**(리뷰 17차) — `rebindIfLanguageChanged` 와
-        //   같은 이유다. 메모리만 바뀐 채로 '끝났다' 고 하면 호출부가 옛 파일을 지우고,
-        //   그 사이 앱이 종료되면 다음 콜드 스타트가 **없는 파일을 가리키는 옛 행**을 읽는다.
-        // ⚠⚠ **디스크에 앉히기 *전에* id 를 남긴다**(2026-09-03 리뷰 23차).
-        //   호출부에서 남기면 그 사이(날씨 갱신·파일 정리)에 앱이 종료됐을 때 **행은 이미
-        //   새것인데 id 는 없다** — 다음 실행은 재바인더가 `.none` 을 돌려주고 강제 재예약
-        //   목록도 비어, AlarmKit 이 옛 소리를 쥔 채 영영 남는다.
-        //   먼저 남기면 최악이 '이미 최신인 예약을 한 번 더 확인' 이라 해가 없다.
-        if !changedIds.isEmpty {
-            StockReplacementStatus.shared.noteReplaced(ids: changedIds, for: callerUserId)
-        }
-        if rebound > 0, !store.saveNow() {
-            return StockRebindOutcome(rebound: rebound, persisted: false, changedIds: changedIds)
-        }
-        return StockRebindOutcome(rebound: rebound, persisted: true, changedIds: changedIds)
+        // 디스크에 앉히고 나서 돌아간다 — 이유는 `finishRebind` 주석(리뷰 17·23차).
+        return finishRebind(rebound: rebound, changedIds: changedIds, callerUserId: callerUserId)
     }
 
     /// **다운로드 도중 사용자가 고친 것을 덮지 않는다**(2026-09-03 리뷰 8차).

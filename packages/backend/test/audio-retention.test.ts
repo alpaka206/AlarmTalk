@@ -1,6 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import { createClient } from '@libsql/client';
-import { cleanupStaleDraftVoices, drainExternalDeletions } from '../src/lib/audio-retention';
+import {
+  cleanupStaleDraftVoices,
+  drainExternalDeletions,
+  enqueueExternalDeletion,
+  enqueueExternalDeletionsBatch,
+} from '../src/lib/audio-retention';
 
 // 실제 libSQL(인메모리)로 검증한다 — created_at 은 datetime('now')(공백 구분) 포맷이고
 // cutoff 는 ISO(T 구분)라, 원시 텍스트 비교로 회귀하면 같은 날짜의 방금 만든 draft 까지
@@ -206,6 +211,57 @@ describe('drainExternalDeletions — R2 오브젝트', () => {
     await drainExternalDeletions(db, { VOICE_BUCKET: bucket } as never);
 
     expect(deleted, '업로더가 쓰고 있는 키를 지웠다').toEqual([]);
+  });
+
+  /**
+   * ⚠ **참조를 본 뒤 마지막 참조가 끊기며 같은 키가 다시 예약되면, 드레인의 옛 판단이 그 예약을 지우면 안 된다**
+   * (Codex #840). 두 프리셋이 한 오브젝트를 나눠 쓰는 클론 재렌더에서 실제로 겹친다: 드레인이 '아직 참조가
+   * 있다' 고 본 직후 두 번째 자리가 교체되며 같은 키를 다시 넣는다. 예전(`INSERT OR IGNORE`)에는 옛 예약이 있어
+   * 무시됐고, 드레인은 그 예약을 id 로 지웠다 — 오브젝트는 참조도 예약도 없는 미아가 됐다.
+   */
+  it('참조 확인 뒤 같은 키가 다시 예약되면 그 예약은 남고, 다음 회차가 지운다', async () => {
+    const db = await setupDb();
+    const deleted: string[] = [];
+    await queue(db, 'p1', 'voices/shared.mp3', '-2 hours');
+    await db.execute({ sql: "INSERT INTO messages (id, audio_url) VALUES ('m2', ?)", args: ['r2://voices/shared.mp3'] });
+
+    let raced = false;
+    const racing = Object.create(db) as typeof db;
+    racing.execute = (async (stmt: Parameters<typeof db.execute>[0]) => {
+      const result = await db.execute(stmt);
+      const sql = typeof stmt === 'string' ? stmt : stmt.sql;
+      if (!raced && sql.includes('SELECT 1 FROM messages WHERE audio_url = ?')) {
+        raced = true;
+        // 드레인이 '아직 참조가 있다' 를 읽은 바로 뒤 — 두 번째 자리가 교체되며 같은 키를 다시 예약한다.
+        await db.execute("UPDATE messages SET audio_url = 'r2://voices/new.mp3' WHERE id = 'm2'");
+        await enqueueExternalDeletion(db, 'r2_object', 'voices/shared.mp3');
+      }
+      return result;
+    }) as typeof db.execute;
+
+    await drainExternalDeletions(racing, envWith(deleted, 120));
+
+    expect(raced).toBe(true);
+    expect(deleted, '그 회차는 참조가 있다고 봤으니 지우지 않는다').toEqual([]);
+    const left = await db.execute('SELECT id, ref FROM pending_external_deletions');
+    expect(left.rows.map((r) => String(r.ref)), '마지막 삭제 요청이 사라지면 오브젝트가 미아가 된다').toEqual([
+      'voices/shared.mp3',
+    ]);
+    expect(String(left.rows[0]!.id), '다시 넣은 예약은 새 id 다').not.toBe('p1');
+
+    await drainExternalDeletions(db, envWith(deleted, 120));
+    expect(deleted).toEqual(['voices/shared.mp3']);
+    expect((await db.execute('SELECT id FROM pending_external_deletions')).rows).toHaveLength(0);
+  });
+
+  it('같은 키를 두 번 예약해도 한 행이다 — id 만 새로 바뀐다(일괄 적재도 같다)', async () => {
+    const db = await setupDb();
+    await enqueueExternalDeletion(db, 'r2_object', 'voices/a.mp3');
+    const first = String((await db.execute('SELECT id FROM pending_external_deletions')).rows[0]!.id);
+    await enqueueExternalDeletionsBatch(db, 'r2_object', ['voices/a.mp3', 'voices/b.mp3']);
+    const rows = (await db.execute('SELECT id, ref FROM pending_external_deletions ORDER BY ref')).rows;
+    expect(rows.map((r) => String(r.ref))).toEqual(['voices/a.mp3', 'voices/b.mp3']);
+    expect(String(rows[0]!.id)).not.toBe(first);
   });
 
   /** 오브젝트가 이미 없으면 지울 것도 없다 — 큐에서 내린다(무한 재시도 방지). */

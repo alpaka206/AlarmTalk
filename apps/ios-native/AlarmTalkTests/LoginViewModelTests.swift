@@ -38,6 +38,17 @@ final class LoginViewModelTests: XCTestCase {
         XCTAssertFalse(LoginValidator.isValidPasswordLength(String(repeating: "a", count: 129)))
     }
 
+    /// 가입과 재설정이 쓰는 한 벌(`PasswordPolicy`) — 서버 `PasswordSchema` 와 같은
+    /// 8~128자 + 영문·숫자 각 1자 이상.
+    func testPasswordPolicyRequiresLengthLetterAndDigit() {
+        XCTAssertTrue(PasswordPolicy.isValid("abcd1234"))
+        XCTAssertFalse(PasswordPolicy.isValid("abc1234"), "7자")
+        XCTAssertFalse(PasswordPolicy.isValid("abcdefgh"), "숫자 없음")
+        XCTAssertFalse(PasswordPolicy.isValid("12345678"), "영문 없음")
+        XCTAssertTrue(PasswordPolicy.isValid(String(repeating: "a", count: 127) + "1"), "128자")
+        XCTAssertFalse(PasswordPolicy.isValid(String(repeating: "a", count: 128) + "1"), "129자")
+    }
+
     // MARK: - Verification code
 
     func testVerificationCodeRequiresSixDigits() {

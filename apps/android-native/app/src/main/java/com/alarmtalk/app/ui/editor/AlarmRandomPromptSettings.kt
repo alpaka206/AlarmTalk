@@ -1,55 +1,44 @@
 package com.alarmtalk.app
 
-import android.Manifest
 import androidx.activity.compose.BackHandler
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.gestures.scrollBy
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.snapshotFlow
+import kotlinx.coroutines.flow.first
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
-import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.rememberCoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.alarmtalk.app.R
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import androidx.compose.material3.TextButton
 import androidx.compose.ui.text.style.TextOverflow
+import com.alarmtalk.app.data.WeatherCountry
+import com.alarmtalk.app.data.WeatherRegion
+import com.alarmtalk.app.data.WeatherRegions
+import com.alarmtalk.app.data.weatherRegionFor
 
 @Composable
 internal fun RandomPromptSettingsPane(
@@ -306,25 +295,32 @@ internal fun RandomPromptSettingsPane(
                 }
 
                 if (randomContextUsesWeather(normalizedContext)) {
+                    val weatherDisplay = weatherRegionDisplay(context, draftWeatherCountry, draftWeatherCity)
                     RandomPromptDetailRow(
+                        // '날씨 지역' 이 아니라 **'지역'** 이다(2026-09-30) — 공휴일 국가도 이 값의 나라다.
                         title = stringResource(R.string.editorp_random_weather_region_title),
                         onChange = {
                             contextBeforeDialog = null
                             weatherDialogOpen = true
                         },
                         value = when {
-                            // ⚠ **도시 하나로 판정한다**(2026-08-15). 나라는 국내면 비는 값이라
-                            // (`WeatherCityPickerSheet` 프리셋은 도시만 준다) 둘 다 요구하면
-                            // **저장돼 있는데도 "아직 고르지 않았어요"** 로 보인다 — 실기기에
-                            // `weather_city=인천, weather_country=""` 로 들어 있었다.
+                            // ⚠ **도시 하나로 판정한다**(2026-08-15). 옛 값에는 나라가 빈 행이 있다
+                            // (실기기에 `weather_city=인천, weather_country=""`). 둘 다 요구하면
+                            // **저장돼 있는데도 "아직 고르지 않았어요"** 로 보인다.
                             // 모달을 띄울지 보는 `savedWeatherConfigured` 도 도시만 본다.
                             draftWeatherCity.isNotBlank() ->
                                 // 값만 보여준다 — "…날씨를 사용해요." 로 감싸면 상세 카드가
                                 // 값이 아니라 문장이 된다(iOS 는 "서울" 하나만 보여준다).
-                                weatherLocationSummary(context, draftWeatherCountry, draftWeatherCity)
+                                weatherDisplay.label
                             usingTargetDynamicPromptSettings && savedWeatherConfigured ->
                                 stringResource(R.string.editorp_random_weather_region_saved)
                             else -> stringResource(R.string.editorp_random_weather_region_required)
+                        },
+                        // 목록에 없는 옛 글자(직접 입력 시절) — 글자는 그대로 두고 다시 고르라고만 한다.
+                        hint = if (draftWeatherCity.isNotBlank() && weatherDisplay.needsRepick) {
+                            stringResource(R.string.region_picker_legacy_hint)
+                        } else {
+                            null
                         },
                     )
                 }
@@ -340,7 +336,7 @@ internal fun RandomPromptSettingsPane(
                             draftFortuneGender.isNotBlank() &&
                                 draftFortuneBirthDate.isNotBlank() &&
                                 draftFortuneBirthTime.isNotBlank() ->
-                                fortuneInfoSummary(context, draftFortuneGender, draftFortuneBirthDate, draftFortuneBirthTime)
+                                fortuneInfoSummary(fortuneValueLabel(context, draftFortuneGender), draftFortuneBirthDate, fortuneValueLabel(context, draftFortuneBirthTime))
                             usingTargetDynamicPromptSettings && savedFortuneConfigured ->
                                 stringResource(R.string.editorp_random_fortune_saved)
                             else -> stringResource(R.string.editorp_random_fortune_required)
@@ -364,9 +360,11 @@ internal fun RandomPromptSettingsPane(
                 weatherDialogOpen = false
                 cancelContextSelection()
             },
-            onConfirm = { country, city ->
-                draftWeatherCountry = country
-                draftWeatherCity = city
+            // 행·계정에는 **옛 앱이 읽는 글자**를 적는다 — 키는 그 글자에서 되짚힌다
+            // (`weatherRegionFor`, 회귀 `WeatherRegionsAliasTest`).
+            onConfirm = { region ->
+                draftWeatherCountry = region.legacyCountry
+                draftWeatherCity = region.legacyCity
                 weatherDialogOpen = false
                 contextBeforeDialog = null
             },
@@ -414,11 +412,8 @@ internal fun RandomPromptSettingsPane(
 internal const val ManualMessageMaxLength = 200
 
 // '직접 입력' 선택 시 뜨는 문구 입력 다이얼로그(날씨·운세 다이얼로그와 같은 층위).
-// ⚠ `internal` 이다 — 무료 버킷 pane(`FreeBucketSettingsPane`)도 같은 다이얼로그를 쓴다.
-// 유료 사용자가 **기본 목소리**로도 직접 입력을 할 수 있게 되면서(2026-08-11 서버 개방),
-// 그 pane 에서도 이 입력창이 필요해졌다. 두 벌로 만들지 않는다.
 @Composable
-internal fun ManualMessageDialog(
+private fun ManualMessageDialog(
     initialText: String,
     onDismiss: () -> Unit,
     onConfirm: (String) -> Unit,
@@ -466,6 +461,8 @@ internal fun RandomPromptDetailRow(
     // 한 번 등록한 뒤에는 목록에서 그 항목을 다시 눌러도 입력창이 뜨지 않으므로, 고치는
     // 길은 여기 하나뿐이다 — 없으면 등록한 값을 영영 못 바꾼다.
     onChange: (() -> Unit)? = null,
+    // 값 아래 작은 안내(예: 목록에 없는 옛 지역 — "목록에서 다시 골라 주세요").
+    hint: String? = null,
 ) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
@@ -506,6 +503,13 @@ internal fun RandomPromptDetailRow(
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
+                if (hint != null) {
+                    Text(
+                        text = hint,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
             if (onChange != null) {
                 TextButton(onClick = onChange) {
@@ -523,109 +527,197 @@ internal fun RandomPromptDetailRow(
     }
 }
 
-// 지역 선택 — 기본 목소리/테마와 같은 바텀시트 선택 패턴(WakerSelectionSheet). 도시 행을
-// 탭하면 그 자리에서 선택+저장+닫힘(별도 저장 버튼 없음). '직접 입력'을 고르면 시트 안에
-// 입력 필드가 열린다. 프리셋이 없는 로케일은 처음부터 입력 필드만 보여준다.
-
 /**
- * 직접 입력한 지역 문자열을 **나라와 도시**로 가른다 — iOS `WeatherCityPickerSheet.parseLocation`
- * 과 같은 규칙이다.
+ * 저장된 날씨 지역(옛 앱용 글자 한 벌)을 **화면에 어떻게 보일지**.
  *
- * ⚠ 나라를 안 가르면 "뉴욕" 이 **대한민국 뉴욕**으로 저장돼 서버가 엉뚱한 좌표를 잡는다.
+ * 설정 '지역' 행·문구 화면 상세 카드·편집기 문구 요약이 **전부 이걸 거친다** — 한 자리만
+ * 다른 규칙으로 그리면 같은 값이 두 이름을 갖는다.
  */
-internal fun parseWeatherLocation(context: android.content.Context, raw: String): Pair<String, String> {
-    val trimmed = raw.trim()
-    val separator = trimmed.indexOf(' ')
-    if (separator < 0) return defaultWeatherCountry(context) to trimmed
-    val country = trimmed.substring(0, separator).trim()
-    val city = trimmed.substring(separator + 1).trim()
-    // 끝에 공백만 있던 경우 — 나라 이름만 남으므로 도시로 되돌린다.
-    return if (city.isBlank()) defaultWeatherCountry(context) to country else country to city
+internal data class WeatherRegionDisplay(
+    /** 보일 글자. 목록의 지역이면 **앱 언어의 이름**, 못 되짚은 옛 값이면 적힌 글자 그대로. 비었으면 "". */
+    val label: String,
+    /** 되짚힌 지역. 비었거나 못 되짚었으면 null. */
+    val region: WeatherRegion?,
+) {
+    /**
+     * 목록에 없는 옛 글자인가 — 이름 곁에 "목록에서 다시 골라 주세요" 를 붙인다.
+     * 고르게 **강요하지는 않는다**(모달·차단 없음). 바꾸기 전까지 서버의 엄격한 옛 경로로 돈다.
+     */
+    val needsRepick: Boolean get() = region == null && label.isNotBlank()
 }
 
-/** 프리셋·공백 없는 입력에 붙이는 기본 나라. iOS `defaultCountry` 와 같은 값이다. */
-internal fun defaultWeatherCountry(context: android.content.Context): String =
-    context.getString(R.string.hs_weather_default_country)
+/**
+ * (나라, 도시) 글자 → 보일 모양. 규칙은 docs/spec/voice-and-message.md 「날씨 지역은 목록에서만
+ * 고른다」.
+ *
+ * 되짚지 못한 옛 값은 **적힌 글자 그대로**다. 나라 칸이 아는 나라(옛 앱이 자동으로 붙인
+ * `대한민국` 등)면 도시만, 모르는 글자면 옛 입력칸이 첫 낱말을 나라 칸으로 떼어 간 것이라
+ * 둘을 다시 이어 붙인다("Birmingham England" 가 "England" 로 보이면 안 된다).
+ */
+internal fun weatherRegionDisplay(
+    context: android.content.Context,
+    country: String,
+    city: String,
+): WeatherRegionDisplay {
+    val region = weatherRegionFor(country, city)
+    if (region != null) return WeatherRegionDisplay(context.getString(region.nameRes), region)
+    val trimmedCountry = country.trim()
+    val trimmedCity = city.trim()
+    val raw = if (trimmedCountry.isEmpty() || WeatherRegions.countryForLabel(trimmedCountry) != null) {
+        trimmedCity
+    } else {
+        listOf(trimmedCountry, trimmedCity).filter { it.isNotEmpty() }.joinToString(" ")
+    }
+    return WeatherRegionDisplay(raw, null)
+}
 
+/**
+ * 지역 고르기를 **열 때** 보여 줄 나라. 지금 지역이 있으면 그 나라, 없으면 [fallbackCountryCode]
+ * (이 기기의 공휴일 국가 — 없으면 기기 로케일 기준 KR·JP·US, 아니면 KR).
+ */
+internal fun initialWeatherPickerCountry(
+    current: WeatherRegion?,
+    fallbackCountryCode: String?,
+): WeatherCountry =
+    current?.country ?: WeatherCountry.fromCode(fallbackCountryCode) ?: WeatherCountry.KR
+
+/**
+ * 서버의 날씨가 기상청(KR)·気象庁(JP)·NWS(US)의 예보에서 온다는 토큰 — `GET /api/app/version` 의
+ * `weather_attribution`(백엔드 `WEATHER_ATTRIBUTION`, `packages/backend/src/lib/weather-attribution.ts`).
+ */
+internal const val OFFICIAL_FORECASTS_WEATHER_ATTRIBUTION = "kma_jma_nws"
+
+/**
+ * 지역 시트에 날씨 출처 줄을 그릴까 — 서버가 **정확히** [OFFICIAL_FORECASTS_WEATHER_ATTRIBUTION] 을 줄 때만.
+ * 그 밖(모르는 값·null·필드가 없는 옛 서버·버전 확인 실패·아직 응답 전)은 숨긴다.
+ *
+ * 출처 문장은 서버가 **실제로 쓰는 원천**을 따라가야 한다 — 앱이 단정하면 서버의 원천 교체가 늦거나 되돌려진
+ * 동안 쓰지 않는 기관을 출처로 적는다(코덱스 #845). 규칙: `docs/spec/voice-and-message.md` 「지역 시트의 날씨
+ * 출처 줄 — 서버가 원천을 말할 때만」. iOS 는 `WeatherAttribution.showsLine` 이 같은 판정이다.
+ */
+internal fun showsWeatherAttribution(token: String?): Boolean =
+    token == OFFICIAL_FORECASTS_WEATHER_ATTRIBUTION
+
+/**
+ * 서버가 알려 준 날씨 원천 토큰(`MainViewModel.weatherAttribution`) — `MainActivity` 가 앱 전체에 내려 준다.
+ * 지역 시트는 설정·편집기 두 곳에서 열리므로 인자로 실어 나르지 않고 여기서 읽는다. 기본값 null = 숨김이라,
+ * 내려 주지 않은 곳에서 열려도 출처를 지어내지 않는다.
+ */
+internal val LocalWeatherAttribution = compositionLocalOf<String?> { null }
+
+/**
+ * 지역 고르기 — **나라 → 지역**, 직접 입력은 없다(2026-09-30).
+ *
+ * 위에 나라 세그먼트(대한민국 · 일본 · 미국), 아래에 그 나라의 지역 목록(목록 순서 — 생성
+ * 파일 `WeatherRegions.kt`, 원본 `packages/shared/src/weather-regions.json`). 지역 행을 누르면
+ * 그 자리에서 선택+닫힘이다(별도 저장 버튼 없음). 닫힘은 [onConfirm] 쪽 상태가 맡는다 —
+ * 시트의 `dismiss()` 는 [onDismissWithoutSave] 를 부르므로 **여기서 쓰지 않는다**(문구 화면은
+ * 그걸 '취소' 로 읽어 고르기 전 종류로 되돌린다).
+ *
+ * 되짚지 못한 옛 값이면 부제에 그 글자와 "다시 골라 주세요" 를 보인다. 목록에 없는 것을
+ * 고른 채로 둘 수는 없으므로 체크 표시는 없다.
+ *
+ * 시트 껍데기는 [WakerSelectionSheet] 이다 — 창을 스스로 등록한다(`TrackOpenModal`).
+ */
 @Composable
 internal fun WeatherLocationDialog(
     country: String,
     city: String,
     onDismissWithoutSave: () -> Unit,
-    onConfirm: (String, String) -> Unit,
+    onConfirm: (WeatherRegion) -> Unit,
 ) {
-    val presetCities = androidx.compose.ui.res.stringArrayResource(R.array.hs_weather_preset_cities).toList()
     val context = androidx.compose.ui.platform.LocalContext.current
-    // 직접 입력 필드는 항상 빈칸으로 시작 — 이전 도시명을 프리필하지 않는다(기본값 없음 규칙).
-    // 현재 저장된 지역은 뒤 화면의 '날씨 지역' 행에 이미 보인다.
-    var draftCity by remember(city) { mutableStateOf("") }
-    var customMode by remember(city) {
-        mutableStateOf(presetCities.isEmpty() || (city.isNotBlank() && city !in presetCities))
+    val display = remember(country, city) { weatherRegionDisplay(context, country, city) }
+    val fallbackCountry = remember(context) {
+        com.alarmtalk.app.data.HolidayCountryPreferenceStore(context).read()
+    }
+    var shownCountry by remember(display.region?.key) {
+        mutableStateOf(initialWeatherPickerCountry(display.region, fallbackCountry))
+    }
+    val showsAttribution = showsWeatherAttribution(LocalWeatherAttribution.current)
+
+    val regions = WeatherRegions.byCountry(shownCountry)
+    // 나라마다 목록을 새로 연다 — 새 목록은 맨 위에서 시작한다.
+    val listState = remember(shownCountry) { LazyListState() }
+    val selectedIndex = regions.indexOfFirst { it.key == display.region?.key }
+    // 시트를 연 직후에만 고른 지역을 찾아간다. 사용자가 나라를 바꾸면 그 뒤로는 늘 맨 위다
+    // (2026-09-30 사용자 지시 — 바꾸면 곧바로 맨 위로). 고른 지역이 있는 나라로 되돌아와도 같다.
+    var followSelection by remember(display.region?.key) { mutableStateOf(true) }
+    // ⚠ **열 때 고른 지역으로 스크롤한다**(iOS `WeatherRegionPickerSheet.scrollToCurrent` 와 같다).
+    // 미국은 69곳이라 고른 지역이 화면 밖에 있기 쉽다 — 안 옮기면 무엇이 골라져 있는지 안 보인다.
+    LaunchedEffect(listState, selectedIndex) {
+        if (!followSelection || selectedIndex <= 0) return@LaunchedEffect
+        listState.scrollToItem(selectedIndex)
+        // 목록이 한 번 그려져야 칸 높이를 안다 — 그다음 가운데로 끌어온다.
+        // ⚠ **지금 자리에서 가운데까지의 차이만큼** 옮긴다. 끝 가까운 지역(제주)은 `scrollToItem`
+        // 이 끝에서 멈춰 칸이 이미 아래쪽에 있다 — '맨 위에 왔다' 고 보고 반 화면을 되돌리면
+        // 목록 맨 위로 돌아가 버린다(2026-09-30 A32 에서 그렇게 됐다).
+        val layout = snapshotFlow { listState.layoutInfo }
+            .first { info -> info.visibleItemsInfo.any { it.index == selectedIndex } }
+        val item = layout.visibleItemsInfo.first { it.index == selectedIndex }
+        val viewport = layout.viewportEndOffset - layout.viewportStartOffset
+        val centered = layout.viewportStartOffset + (viewport - item.size) / 2
+        listState.scrollBy((item.offset - centered).toFloat())
     }
 
+    // ⚠ **나라 세그먼트는 제자리에 둔다**(`scrollsContent = false`). 껍데기가 통째로 스크롤하면
+    // 긴 목록(미국 69곳)을 내려간 뒤 나라를 바꾸려면 맨 위까지 되돌아가야 했다(2026-09-30 A32).
+    // iOS 도 세그먼트는 고정이고 목록만 스크롤한다.
     WakerSelectionSheet(
         title = stringResource(R.string.editorp_random_weather_region_title),
+        subtitle = if (display.needsRepick) {
+            stringResource(R.string.region_picker_legacy_value_hint, display.label)
+        } else {
+            null
+        },
         onDismiss = onDismissWithoutSave,
+        scrollsContent = false,
     ) { _ ->
-        WakerSheetOptionGroup {
-            presetCities.forEach { preset ->
+        EditorSegmentedSelector(
+            options = WeatherCountry.entries.map { it.code to stringResource(it.nameRes) },
+            selected = shownCountry.code,
+            onSelect = { code ->
+                WeatherCountry.fromCode(code)?.let {
+                    followSelection = false
+                    shownCountry = it
+                }
+            },
+            modifier = Modifier.padding(horizontal = 20.dp),
+        )
+        LazyColumn(
+            state = listState,
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f, fill = false),
+        ) {
+            itemsIndexed(regions, key = { _, region -> region.key }) { index, region ->
                 WakerSheetOptionRow(
-                    title = preset,
-                    selected = !customMode && city == preset,
-                    // 탭 = 선택+저장+닫힘(닫힘 전이는 onConfirm 쪽 상태가 담당).
-                    // ⚠ **나라를 빈 채로 저장하지 말 것**(2026-08-17). 예전에는 저장된
-                    // `country` 를 그대로 흘려보내서, 한 번도 나라가 채워진 적 없는 계정은
-                    // 계속 빈 값이었다. 서버는 도시 이름으로 지오코딩한 뒤 **나라로 후보를
-                    // 고르므로**(`routes/tts.ts` 의 `resolveWeatherLocation`), 나라가 없으면
-                    // 동명 도시 중 첫 결과를 쓴다 — 표시가 아니라 **날씨가 틀릴 수 있다.**
-                    // 프리셋은 전부 국내 도시라 나라는 하나다(iOS `WeatherCityPickerSheet`
-                    // 의 `defaultCountry` 와 같은 값).
-                    onClick = { onConfirm(defaultWeatherCountry(context), preset) },
-                    divider = true,
-                )
-            }
-            if (presetCities.isNotEmpty()) {
-                WakerSheetOptionRow(
-                    title = stringResource(R.string.hs_weather_city_custom),
-                    selected = customMode,
-                    onClick = { customMode = !customMode },
+                    title = stringResource(region.nameRes),
+                    // 날씨를 재는 곳이 이름과 다를 때만(경기 → 수원, 愛知 → 名古屋).
+                    description = region.seatNameRes?.let {
+                        stringResource(R.string.region_picker_seat_description, stringResource(it))
+                    },
+                    selected = index == selectedIndex,
+                    onClick = { onConfirm(region) },
+                    divider = index != regions.lastIndex,
                 )
             }
         }
-        if (customMode) {
-            Column(
+        // 날씨 출처 — 목록 **아래 고정**(목록이 `weight(1f, fill = false)` 라 늘 보인다). 원천과 가공해 쓴다는
+        // 사실은 기상법(출처 표시)과 気象庁 약관(공공데이터 이용규약 — 가공 시 그 사실을 적는다)이 요구한다. 지역을
+        // 고르는 곳이 이 시트 하나라(설정·편집기 공용) 여기 한 곳에만 둔다. iOS `WeatherRegionPickerSheet` 와 같은
+        // 문장이다.
+        // ⚠ **서버가 그 원천을 쓴다고 말할 때만 그린다**([showsWeatherAttribution]). 문장을 늘 그리면 서버의 원천
+        // 교체가 늦거나 되돌려진 동안 쓰지 않는 기관을 출처로 적는다(코덱스 #845).
+        if (showsAttribution) {
+            Text(
+                text = stringResource(R.string.region_picker_weather_attribution),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 20.dp)
-                    .imePadding(),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                OutlinedTextField(
-                    value = draftCity,
-                    // 도시명은 사람 이름이 아니지만 '한 줄·보이지 않는 문자 없음' 규칙은 같다.
-                    onValueChange = { draftCity = sanitizeDisplayName(it, maxLength = DisplayNameMaxLength) },
-                    label = { Text(stringResource(R.string.hs_weather_city_label)) },
-                    placeholder = { Text(stringResource(R.string.hs_weather_city_placeholder)) },
-                    singleLine = true,
-                    shape = WakerInputShape,
-                    colors = wakerOutlinedTextFieldColors(),
-                    modifier = Modifier.textInputTapTarget().then(Modifier.fillMaxWidth()),
-                )
-                Button(
-                    // 공백이 있으면 **첫 낱말이 나라, 나머지가 도시**다("미국 뉴욕").
-                    // 공백이 없으면 국내로 본다 — iOS `parseLocation` 과 같은 규칙이다.
-                    onClick = {
-                        val (parsedCountry, parsedCity) = parseWeatherLocation(context, draftCity)
-                        onConfirm(parsedCountry, parsedCity)
-                    },
-                    enabled = draftCity.isNotBlank(),
-                    colors = wakerButtonColors(),
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = WakerButtonShape,
-                ) {
-                    Text(stringResource(R.string.editorp_weather_save_button))
-                }
-            }
+                    .padding(horizontal = 20.dp),
+            )
         }
     }
 }

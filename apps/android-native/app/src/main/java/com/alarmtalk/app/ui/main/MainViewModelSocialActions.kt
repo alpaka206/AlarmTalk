@@ -3,7 +3,6 @@ package com.alarmtalk.app
 import com.alarmtalk.app.data.DowngradeNoticeStore
 import android.util.Log
 import androidx.lifecycle.viewModelScope
-import com.alarmtalk.app.R
 import com.alarmtalk.app.core.AlarmTalkLog
 import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import kotlinx.coroutines.async
@@ -21,7 +20,7 @@ internal fun MainViewModel.preloadSocial() {
 
 private fun MainViewModel.refreshSocialData(showMessage: Boolean) {
     if (socialBusy) return
-    val authorization = bearerOrMessage("Login is required to load shared plan data.") ?: return
+    val authorization = bearerOrMessage(getApplication<android.app.Application>().getString(R.string.msg_gb_login_required_generic)) ?: return
     // **이 조회를 시작한 계정과 세대.** 응답이 늦게 도착하는 사이 로그아웃·계정 전환이 있었으면
     // 그 응답은 지금 계정의 것이 아니다 — 반영하면 A 의 목록이 B 의 상태로 자리 잡고, 이어지는
     // 강등이 A 의 목록으로 B 의 알람을 훑어 목소리를 영구히 벗긴다(Codex #665 P1).
@@ -65,9 +64,21 @@ private fun MainViewModel.refreshSocialData(showMessage: Boolean) {
                 // 편집기의 오프라인 프리셋 버킷도 바인딩되지 않는다.
                 val sharedIdsChanged = snapshot.familyVoicesFresh &&
                     snapshot.familyVoices.map { it.id }.toSet() != familyVoices.map { it.id }.toSet()
+                // 비교 대상(앞 목록)이 이 세션에 서버에서 받은 것이었는가 — 갱신하기 **전에** 본다.
+                // 중간 조회가 실패해도 앞 목록은 서버 목록 그대로 남으므로 `familyVoicesLoadedFresh`
+                // (조회마다 내려간다)로 가르면 안 된다(Codex #825).
+                val comparedAgainstServerList = familyVoicesFromServer
                 familyVoices = snapshot.familyVoices
                 familyVoicesLoadedFresh = snapshot.familyVoicesFresh
-                if (sharedIdsChanged) loadStockClips(forceReload = true)
+                if (snapshot.familyVoicesFresh) familyVoicesFromServer = true
+                // 앞 목록도 서버에서 받은 것이었으면 **서버에서 바뀐 것**이다 — 그 뒤에 출발한
+                // 매니페스트가 필요하다. 앞 목록을 몰랐으면(세션 첫 목록) 바뀐 게 아니라 이제 안
+                // 것이고, 거의 같은 때 받은 매니페스트가 같은 상태를 담고 있다 — 신선도 창 안이면
+                // 그걸 쓴다(콜드 스타트마다 한 번 더 받지 않게, 효율 감사 M1). 실제 공유 변경은
+                // `voice_share_changed` 푸시가 따로 LATEST 로 깨운다.
+                if (sharedIdsChanged) {
+                    loadStockClips(if (comparedAgainstServerList) ManifestNeed.LATEST else ManifestNeed.RECENT)
+                }
                 // 접근권 잃은 목소리 알람 강등 — 내 음성·공유 목소리 두 로드 중 늦게 끝난 쪽에서
                 // 실행되도록 헬퍼로 위임한다(한쪽이 먼저 끝나 스킵돼도 재실행됨).
                 // **목록을 가져온 계정을 그대로 넘긴다** — '지금 계정' 이 아니다.
@@ -75,7 +86,7 @@ private fun MainViewModel.refreshSocialData(showMessage: Boolean) {
             }.onFailure { error ->
                 AlarmTalkLog.reportError("Failed to refresh social data", error)
                 if (showMessage) {
-                    message = userFacingError(error, "Failed to load shared plan data")
+                    message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_gb_billing_info_load_failed))
                 }
             }
         } finally {
@@ -192,6 +203,14 @@ internal fun MainViewModel.reconcileInaccessibleVoiceAlarms(listOwner: String?) 
     }
 }
 
+/**
+ * 이용권(그룹)에서 나가기 실패 문구 — 관리자가 나가려 하면 서버가 `OWNER_CANNOT_LEAVE` 로 거절한다.
+ * 공용 표가 그 이유를 말하고, 표에 없으면 화면 폴백이다.
+ */
+internal fun leaveGroupFailureMessage(context: android.content.Context, error: Throwable): String =
+    com.alarmtalk.app.network.apiErrorMessage(context, com.alarmtalk.app.network.apiErrorCode(error))
+        ?: userFacingError(error, context.getString(R.string.msg_leave_group_failed))
+
 internal fun MainViewModel.leaveFamilyGroup(groupId: String) {
     val authorization = bearerOrMessage(
         getApplication<android.app.Application>().getString(R.string.msg_leave_group_login_required),
@@ -214,7 +233,7 @@ internal fun MainViewModel.leaveFamilyGroup(groupId: String) {
             refreshAppSession()
         }.onFailure { error ->
             AlarmTalkLog.reportError("Failed to leave family group id=$groupId", error)
-            message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_leave_group_failed))
+            message = leaveGroupFailureMessage(getApplication(), error)
             // 실패 시에만 여기서 busy 를 리셋(성공 시엔 refreshSocial 이 소유).
             socialBusy = false
         }

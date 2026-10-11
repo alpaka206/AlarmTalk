@@ -82,7 +82,7 @@ final class AlarmSoundAcousticProbe: XCTestCase {
         func stagedFile(_ gain: Int) async throws -> URL {
             let key = "ruler-\(gain)"
             let name = try await MainActor.run {
-                AlarmSoundStaging.clearStagedSound(forKey: key)
+                AlarmSoundStaging.clearStagedSoundFiles(forKey: key)
                 return try AlarmSoundStaging.stage(url: source, key: key, volumePercent: gain)
             }
             let lib = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first!
@@ -137,7 +137,7 @@ final class AlarmSoundAcousticProbe: XCTestCase {
         defer { try? FileManager.default.removeItem(at: source) }
         let key = "loop-probe"
         let name = try await MainActor.run {
-            AlarmSoundStaging.clearStagedSound(forKey: key)
+            AlarmSoundStaging.clearStagedSoundFiles(forKey: key)
             return try AlarmSoundStaging.stage(url: source, key: key, volumePercent: 100)
         }
 
@@ -180,7 +180,7 @@ final class AlarmSoundAcousticProbe: XCTestCase {
         let key = "acoustic-probe-\(gainPercent)"
         defer { try? FileManager.default.removeItem(at: source) }
         let name = try await MainActor.run {
-            AlarmSoundStaging.clearStagedSound(forKey: key)
+            AlarmSoundStaging.clearStagedSoundFiles(forKey: key)
             return try AlarmSoundStaging.stage(url: source, key: key, volumePercent: gainPercent)
         }
 

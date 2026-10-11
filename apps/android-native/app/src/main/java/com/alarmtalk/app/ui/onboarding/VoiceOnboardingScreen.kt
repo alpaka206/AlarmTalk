@@ -6,29 +6,19 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.work.WorkInfo
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
@@ -37,9 +27,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import com.alarmtalk.app.network.StockClip
-import com.alarmtalk.app.network.TtsMessageAudioResponse
-import com.alarmtalk.app.network.VoiceProfile
 
 /**
  * 기본 목소리 준비(다운로드) 화면.
@@ -57,13 +44,6 @@ internal fun VoiceOnboardingScreen(
     done: Int,
     total: Int,
     failed: Boolean,
-    /**
-     * 화면상 '받는 중' 과 구분되지 않지만 실제로는 진행하지 못하는 상태인가(재시도 대기,
-     * 네트워크가 없어 큐에만 올라간 상태, 빈손으로 끝난 상태). 이때는 탈출구를 즉시 연다.
-     *
-     * 다만 **갇히지 않는다는 보장을 이 값에 걸지 않는다** — 아래 유예 타이머를 볼 것.
-     */
-    stalled: Boolean = false,
     /**
      * 프리페치 워커가 **아직 살아 있는가**(ENQUEUED/RUNNING/BLOCKED). 탈출구 문구를 이걸로
      * 가른다 — 살아 있을 때만 '백그라운드에서 계속 받기' 다.
@@ -84,7 +64,7 @@ internal fun VoiceOnboardingScreen(
     //
     // **'어떤 상태에서 갇히는가' 를 열거해 맞히지 않는다.** 그렇게 짰다가 두 조합에서 갇혔다
     // (Codex #660): ① 네트워크가 없어 워커가 runAttemptCount=0 인 채 ENQUEUED 로만 남는 경우
-    // — 재시도 대기가 아니라 stalled 가 false 다. ② 매니페스트가 아직 없어 워커가 아무것도
+    // — 재시도 대기로도 잡히지 않는다. ② 매니페스트가 아직 없어 워커가 아무것도
     // 받지 못하고 성공(SUCCEEDED)으로 끝난 경우 — 실패도 대기도 아닌데 게이트는 안 닫힌다.
     // 둘 다 진행 표시만 도는 화면에 뒤로가기까지 막힌 상태로 영원히 남는다.
     //
@@ -94,12 +74,10 @@ internal fun VoiceOnboardingScreen(
     // 없다가 생기는 컨트롤은 사용자가 "뭔가 잘못됐나" 로 읽는다. 게다가 그 12초 동안은
     // 뒤로가기까지 막혀 있어(아래 `BackHandler`) 빠져나갈 길이 아예 없었다.
     // 이 버튼은 다운로드를 취소하지 않는다(계속 받는다) — 숨길 이유가 없다.
-    val showEscape = true
 
-    // 뒤로가기: 탈출구가 보일 때는 그 동작(나중에 받기)에 잇고, 정상적으로 받는 중에는
-    // 삼킨다. 그대로 두면 시스템 기본 동작이 앱을 닫아 버려, 몇 초 기다리면 될 일에
-    // 사용자가 튕겨 나간다.
-    BackHandler(enabled = true) { if (showEscape) onSkip() }
+    // 뒤로가기: 탈출구와 같은 동작(나중에 받기)에 잇는다. 그대로 두면 시스템 기본 동작이
+    // 앱을 닫아 버려, 몇 초 기다리면 될 일에 사용자가 튕겨 나간다.
+    BackHandler { onSkip() }
 
     SceneSystemBars(top = OnbSceneTop, bottom = OnbSceneBottom)
     Box(
@@ -174,7 +152,7 @@ internal fun VoiceOnboardingScreen(
                         enabled = true,
                     )
                 }
-                // **처음부터 보여준다**(위 `showEscape` 주석). 여기서 갇히면 앱을 아예 못 쓴다.
+                // **처음부터 보여준다**(위 탈출구 주석). 여기서 갇히면 앱을 아예 못 쓴다.
                 //
                 // 문구는 **상태에 따라 다르다.** 받는 중이면 '백그라운드에서 계속' 이다 —
                 // 이 버튼은 워커를 취소하지 않으므로(skipVoiceSetup 은 화면만 닫는다) 실제로
@@ -185,36 +163,20 @@ internal fun VoiceOnboardingScreen(
                 // onSkip 은 워커를 새로 넣지 않는다. 그때 '계속 받기' 라고 하면 돌지 않는
                 // 다운로드를 돈다고 말하는 셈이다(Codex #673 P2). 그래서 실패 여부가 아니라
                 // **워커가 살아 있는지**(downloadContinuing)로 가른다.
-                if (showEscape) {
-                    TextButton(onClick = onSkip) {
-                        Text(
-                            text = if (downloadContinuing) {
-                                stringResource(R.string.onb_voice_download_background)
-                            } else {
-                                stringResource(R.string.onb_voice_download_later)
-                            },
-                            color = AuthTextMuted,
-                        )
-                    }
+                TextButton(onClick = onSkip) {
+                    Text(
+                        text = if (downloadContinuing) {
+                            stringResource(R.string.onb_voice_download_background)
+                        } else {
+                            stringResource(R.string.onb_voice_download_later)
+                        },
+                        color = AuthTextMuted,
+                    )
                 }
             }
         }
     }
 }
-
-/**
- * 프리페치 워커가 **확실히** 진행하지 못하는 상태인가(= 유예를 기다리지 않고 바로 탈출구를
- * 여는 조건).
- *
- * 진입 직후의 `null`·`ENQUEUED(시도 이력 없음)` 는 여기 넣지 않는다 — 정상 경로와 구분이
- * 안 돼, 넣으면 모두에게 '나중에 받기' 가 깜빡인다. 네트워크가 없어 영영 큐에만 남는
- * 경우도 상태만으로는 같은 모양이라 가를 수 없고, 그건 화면의 유예 타이머가 받는다.
- */
-internal fun stockPrefetchStalled(state: WorkInfo.State?, runAttemptCount: Int): Boolean =
-    (state == WorkInfo.State.ENQUEUED && runAttemptCount > 0) ||
-        // 끝났는데 이 화면이 아직 떠 있다 = 워커가 빈손으로 성공한 것이다(매니페스트 미도착
-        // 등). completeVoiceSetupIfDownloaded 가 캐시 0 이라 게이트를 못 닫는다.
-        state?.isFinished == true
 
 // 새벽 네이비 온보딩 배경(AuthScreen 의 장면 색과 동일 값 — 그쪽은 private 이라 재선언).
 private val OnbSceneTop = Color(0xFF1A2A52)

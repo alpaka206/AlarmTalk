@@ -31,22 +31,22 @@ struct RedeemCodeSheet: View {
 
     var body: some View {
         FormSheet(
-            title: "쿠폰 입력",
-            saveTitle: busy ? "등록 중…" : "등록",
+            title: String(localized: "쿠폰 입력"),
+            saveTitle: busy ? String(localized: "등록 중…") : String(localized: "code.redeem.submit"),
             // 되돌릴 입력이 아니라 지나치는 안내다 — '취소' 가 아니라 '닫기'.
-            cancelTitle: "닫기",
+            cancelTitle: String(localized: "닫기"),
             saveEnabled: !busy && !trimmed.isEmpty,
             onCancel: onClose,
             onSave: submit
         ) {
             VStack(alignment: .leading, spacing: 6) {
                 // 안드로이드 `plan_gate_redeem_desc` 와 같은 문장 — 한쪽만 고치지 말 것.
-                Text("받으신 프로모션·선물 코드를 넣어 주세요. 초대 코드도 여기에 넣을 수 있어요.")
+                Text(String(localized: "받으신 프로모션·선물 코드를 넣어 주세요. 초대 코드도 여기에 넣을 수 있어요."))
                     .font(.pretendard(.regular, size: 14.5, relativeTo: .subheadline))
                     .foregroundStyle(theme.palette.onSurfaceVariant)
                     .padding(.bottom, 10)
 
-                TextField("초대·선물·프로모션 코드", text: $code)
+                TextField(String(localized: "초대·선물·프로모션 코드"), text: $code)
                     .textInputAutocapitalization(.characters)
                     .autocorrectionDisabled()
                     .font(theme.typography.bodyMedium)

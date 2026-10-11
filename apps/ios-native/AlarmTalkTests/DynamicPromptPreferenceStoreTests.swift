@@ -137,19 +137,16 @@ final class DefaultVoicePreferenceStoreLastUsedTests: XCTestCase {
         super.tearDown()
     }
 
-    /// ⚠ **핵심 계약**: last-used 를 기록해도 온보딩이 '완료' 로 바뀌면 안 된다.
-    /// `default_voice_<uid>` 는 `hasChosen` → `hasCompletedSetup` → `RootView` 로 이어져
-    /// 온보딩을 건너뛸지 정하는 키다. 알람 저장이 그걸 덮으면 온보딩을 안 본 사용자가
-    /// 갑자기 완료 상태가 된다.
+    /// ⚠ **핵심 계약**: last-used 를 기록해도 온보딩 기본 목소리(`default_voice_<uid>`)는
+    /// 그대로다. 두 값은 뜻이 다르다 — 알람 저장이 그 키를 덮으면 고른 적 없는 기본 목소리가 생긴다.
     func test_lastUsedVoice_doesNotAffectOnboardingCompletion() {
-        XCTAssertFalse(store.hasCompletedSetup(userID: "u1"))
+        XCTAssertNil(store.defaultVoiceId(userID: "u1"))
 
         store.setLastUsedVoiceId(userID: "u1", voiceId: "clone-abc")
 
         XCTAssertEqual(store.lastUsedVoiceId(userID: "u1"), "clone-abc")
-        XCTAssertFalse(store.hasChosen(userID: "u1"), "온보딩 기본 목소리는 여전히 미선택")
-        XCTAssertFalse(store.hasCompletedSetup(userID: "u1"), "온보딩 완료로 바뀌면 안 된다")
-        XCTAssertNil(store.defaultVoiceId(userID: "u1"))
+        XCTAssertNil(store.defaultVoiceId(userID: "u1"), "온보딩 기본 목소리는 여전히 미선택")
+        XCTAssertFalse(store.hasSkipped(userID: "u1"), "건너뜀 표시도 건드리지 않는다")
     }
 
     func test_lastUsedVoice_usesSeparateKey() {

@@ -23,11 +23,31 @@ struct FamilyAlarmQuietWindow: Codable, Equatable {
     var days: [Int]
     var start: String
     var end: String
+
+    /// 계정에 둘 수 있는 창의 최대 개수.
+    static let maxCount = 8
+
+    /// "HH:mm"(00:00~23:59)인가. 서버에서 읽을 때와 서버로 보낼 때가 같은 규칙을 쓴다.
+    static func isValidTime(_ value: String) -> Bool {
+        value.range(of: #"^([01]\d|2[0-3]):[0-5]\d$"#, options: .regularExpression) != nil
+    }
+
+    /// 요일을 0...6 으로 거르고 중복 없이 정렬한 창. 남는 요일이 없으면 nil.
+    var withNormalizedDays: FamilyAlarmQuietWindow? {
+        let normalized = Array(Set(days.filter { (0...6).contains($0) })).sorted()
+        return normalized.isEmpty ? nil : FamilyAlarmQuietWindow(days: normalized, start: start, end: end)
+    }
 }
 
 struct DynamicPromptWeatherSettings: Codable, Equatable {
     var country: String?
     var city: String?
+    /// 날씨 지역 키(`kr-seoul`·`jp-aichi`·`us-new-york` — `WeatherRegions`). 2026-09-30 추가.
+    ///
+    /// 서버는 알맞은 키를 받으면 `country`·`city` 를 옛 앱용 표준 글자로 덮고, 모르는 키면 이
+    /// 칸만 버린다(PATCH 전체를 400 으로 막지 않는다 — 운세가 같은 payload 에 실린다).
+    /// 옛 서버는 모르는 칸이라 무시한다. 읽을 때는 되짚히는 옛 값에도 이 키를 채워 준다.
+    var region: String? = nil
 }
 
 struct DynamicPromptFortuneSettings: Codable, Equatable {
@@ -46,7 +66,8 @@ struct DynamicPromptSettings: Codable, Equatable {
     ) {
         self.weather = DynamicPromptWeatherSettings(
             country: (weather.country).nilIfBlank,
-            city: (weather.city).nilIfBlank
+            city: (weather.city).nilIfBlank,
+            region: (weather.region).nilIfBlank
         )
         self.fortune = DynamicPromptFortuneSettings(
             gender: (fortune.gender).nilIfBlank,
@@ -103,10 +124,18 @@ struct DynamicPromptPreferences: Codable, Equatable {
         return "\(legacyStorageKey)_\(userID)"
     }
 
+    /// 서버 계정 설정 → 이 앱이 쓰는 모양.
+    ///
+    /// ⚠ **`region` 이 알맞으면 글자보다 먼저다.** 그 키의 옛 앱용 표준 글자로 채운다 — 서버도
+    /// 저장할 때 같은 일을 하므로 보통은 같은 값이지만, 키와 글자가 어긋나 오면 키가 이긴다
+    /// (`WeatherRegions.normalizeSetting` 과 같은 우선순위).
     static func from(settings: DynamicPromptSettings?) -> DynamicPromptPreferences {
-        DynamicPromptPreferences(
-            weatherCountry: settings?.weather.country?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "",
-            weatherCity: settings?.weather.city?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "",
+        let regionLabels = WeatherRegions.canonicalLabels(key: settings?.weather.region)
+        return DynamicPromptPreferences(
+            weatherCountry: regionLabels?.country
+                ?? settings?.weather.country?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "",
+            weatherCity: regionLabels?.city
+                ?? settings?.weather.city?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "",
             fortuneGender: settings?.fortune.gender?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "",
             fortuneBirthDate: settings?.fortune.birthDate?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "",
             fortuneBirthTime: settings?.fortune.birthTime?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -139,24 +168,32 @@ struct DynamicPromptPreferences: Codable, Equatable {
     }
 
     /// Keychain 에 계정별로 저장한다.
-    func save(userID: String?) {
+    /// - Returns: 키체인에 적었는가. ⚠ '안 올라간 변경' 표시는 적었을 때만 남긴다(`saveLocalEdit`).
+    @discardableResult
+    func save(userID: String?) -> Bool {
         guard let key = Self.storageKey(userID: userID),
-              let data = try? JSONEncoder().encode(normalized()) else { return }
-        KeychainStore.saveData(data, account: key)
+              let data = try? JSONEncoder().encode(normalized()) else { return false }
+        return KeychainStore.saveData(data, account: key)
     }
 
     /// 명시적 로그아웃·탈퇴에서만 부른다(자동 401 에서는 부르지 말 것 — 같은 사람이
     /// 다시 로그인할 때 자기 사주를 다시 입력하게 된다).
     static func clear(userID: String?) {
+        // '아직 안 올라간 변경' 표시도 함께 — 값이 없는데 표시만 남으면 다시 로그인했을 때 빈 기기 값이
+        // 서버를 이긴다(`adoptAccount`).
+        clearUnsyncedMark(userID: userID)
         guard let key = storageKey(userID: userID) else { return }
         KeychainStore.deleteData(account: key)
     }
 
+    /// 서버로 보낼 모양. 지역 키는 저장된 글자에서 되짚어 **함께** 보낸다(`region`) — 글자도
+    /// 계속 보낸다(새 서버가 배포되기 전 창과 옛 서버 호환). 못 되짚는 옛 글자면 키 없이 글자만 간다.
     func toSettings() -> DynamicPromptSettings {
         DynamicPromptSettings(
             weather: DynamicPromptWeatherSettings(
                 country: (weatherCountry).nilIfBlank,
-                city: (weatherCity).nilIfBlank
+                city: (weatherCity).nilIfBlank,
+                region: weatherRegion?.key
             ),
             fortune: DynamicPromptFortuneSettings(
                 gender: (fortuneGender).nilIfBlank,
@@ -168,6 +205,12 @@ struct DynamicPromptPreferences: Codable, Equatable {
 
     var weatherReady: Bool {
         (weatherCountry).nilIfBlank != nil && (weatherCity).nilIfBlank != nil
+    }
+
+    /// 저장된 글자가 가리키는 지역. 되짚지 못한 옛 글자면 nil(그래도 `weatherReady` 일 수 있다 —
+    /// 그 값은 서버의 엄격한 옛 경로로 계속 돈다).
+    var weatherRegion: WeatherRegion? {
+        WeatherRegions.resolveAlias(country: weatherCountry, city: weatherCity)
     }
 
     var fortuneReady: Bool {
@@ -250,8 +293,7 @@ struct AuthUser: Codable, Equatable, Identifiable {
         self.familyAlarmQuietWindows = quietWindows
         self.appleUserId = (appleUserId).nilIfBlank
         self.dynamicPromptSettings = dynamicPromptSettings ?? .empty
-        let trimmedDeletion = deletionStatus.trimmingCharacters(in: .whitespacesAndNewlines)
-        self.deletionStatus = trimmedDeletion.isEmpty ? "active" : trimmedDeletion
+        self.deletionStatus = deletionStatus.nilIfBlank ?? "active"
         self.personalPromo = PersonalPromo.normalized(personalPromo)
     }
 
@@ -293,8 +335,7 @@ struct AuthUser: Codable, Equatable, Identifiable {
     }
 
     private static func normalizedPlan(_ value: String?) -> String {
-        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return trimmed.isEmpty ? "free" : trimmed
+        value.nilIfBlank ?? "free"
     }
 
     private static func normalizedQuietDays(_ days: [Int]?) -> [Int] {
@@ -303,27 +344,20 @@ struct AuthUser: Codable, Equatable, Identifiable {
     }
 
     private static func normalizedQuietTime(_ value: String?, fallback: String) -> String {
-        guard let value, value.range(of: #"^([01]\d|2[0-3]):[0-5]\d$"#, options: .regularExpression) != nil else {
-            return fallback
-        }
+        guard let value, FamilyAlarmQuietWindow.isValidTime(value) else { return fallback }
         return value
     }
 
+    /// 서버에서 읽은 창 — 요일이 없거나 시각 형식이 틀린 창은 버린다.
     private static func normalizedQuietWindows(
         _ windows: [FamilyAlarmQuietWindow]?,
         fallback: FamilyAlarmQuietWindow
     ) -> [FamilyAlarmQuietWindow] {
         guard let windows else { return [fallback] }
-        let normalized = windows.compactMap { window -> FamilyAlarmQuietWindow? in
-            let days = Array(Set(window.days.filter { (0...6).contains($0) })).sorted()
-            guard !days.isEmpty else { return nil }
-            guard window.start.range(of: #"^([01]\d|2[0-3]):[0-5]\d$"#, options: .regularExpression) != nil,
-                  window.end.range(of: #"^([01]\d|2[0-3]):[0-5]\d$"#, options: .regularExpression) != nil else {
-                return nil
-            }
-            return FamilyAlarmQuietWindow(days: days, start: window.start, end: window.end)
+        let normalized = windows.compactMap(\.withNormalizedDays).filter {
+            FamilyAlarmQuietWindow.isValidTime($0.start) && FamilyAlarmQuietWindow.isValidTime($0.end)
         }
-        return Array(normalized.prefix(8))
+        return Array(normalized.prefix(FamilyAlarmQuietWindow.maxCount))
     }
 
 }
@@ -397,6 +431,51 @@ struct RemoteAlarmWriteRequest: Encodable {
     /// 알람을 해석할 수 있도록 생성/수정 페이로드에 항상 동봉한다.
     var timezone: String? = TimeZone.current.identifier
     var clientAlarmId: String? = nil
+    /// `messageId`·`bucketId` 가 비어 있으면 **빼지 않고 `null` 로 실어** 서버 값을 지운다.
+    /// 본문에는 실리지 않는다(`encode(to:)` 가 읽기만 한다). 안드로이드
+    /// `RemoteAlarmWriteRequest.clearsMissingVoiceReferences` 미러.
+    ///
+    /// 합성 인코딩은 nil 을 빼고(`encodeIfPresent`), 서버 `PATCH /alarm` 은 빠진 필드를 **그대로 둔다.**
+    /// 그래서 무료 잠금이 오디오 없이 기본 목소리로 바꾼 알람(`preLockVoice != nil`)을 켜고 끄면 새
+    /// 기본 목소리 id 만 올라가고 클론의 `message_id`·`bucket_id` 는 서버에 남는다 — 기본 인사말
+    /// 알람은 토글마다 `INVALID_BUCKET_ID` 로 거절되고, 나머지는 반쯤 바뀐 서버 행이 된다(Codex #820).
+    var clearsMissingVoiceReferences: Bool = false
+
+    private enum CodingKeys: String, CodingKey {
+        case time, repeatDays, snoozeMinutes, mode, vibrationPattern, wakeMode, isActive, messageId
+        case voiceProfileId, targetUserId, bucketId, timezone, clientAlarmId
+    }
+
+    /// 합성 인코딩과 같다(nil 은 뺀다) — 단 `clearsMissingVoiceReferences` 면 `messageId`·`bucketId`
+    /// 의 nil 을 `null` 로 싣는다. 키 이름은 인코더의 `convertToSnakeCase` 가 만든다.
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(time, forKey: .time)
+        try container.encode(repeatDays, forKey: .repeatDays)
+        try container.encode(snoozeMinutes, forKey: .snoozeMinutes)
+        try container.encode(mode, forKey: .mode)
+        try container.encode(vibrationPattern, forKey: .vibrationPattern)
+        try container.encode(wakeMode, forKey: .wakeMode)
+        try container.encodeIfPresent(isActive, forKey: .isActive)
+        try encodeClearable(messageId, forKey: .messageId, in: &container)
+        try container.encodeIfPresent(voiceProfileId, forKey: .voiceProfileId)
+        try container.encodeIfPresent(targetUserId, forKey: .targetUserId)
+        try encodeClearable(bucketId, forKey: .bucketId, in: &container)
+        try container.encodeIfPresent(timezone, forKey: .timezone)
+        try container.encodeIfPresent(clientAlarmId, forKey: .clientAlarmId)
+    }
+
+    private func encodeClearable(
+        _ value: String?,
+        forKey key: CodingKeys,
+        in container: inout KeyedEncodingContainer<CodingKeys>
+    ) throws {
+        if let value {
+            try container.encode(value, forKey: key)
+        } else if clearsMissingVoiceReferences {
+            try container.encodeNil(forKey: key)
+        }
+    }
 }
 
 struct VoiceProfileListResponse: Decodable {
@@ -419,13 +498,13 @@ struct VoiceProfile: Decodable, Identifiable, Equatable {
     /// `isSystemVoiceId(_:)` 가 폴백이다. Android `VoiceProfile.isSystem` 미러.
     var isSystem: Bool? = nil
     /// 작성 중 임시 프로필 여부. promote 하기 전엔 알람 선택에 노출하지 않는다.
-    /// Android `VoiceProfileApi.kt:72`.
+    /// Android `VoiceProfileApi.kt:65`.
     var isDraft: Bool? = nil
     /// 공유 음성을 받은 사람이 음성 주인과의 관계를 기록한 라벨.
-    /// (예: "엄마", "할머니"). Android `VoiceProfileApi.kt:73`.
+    /// (예: "엄마", "할머니"). Android `VoiceProfileApi.kt:66`.
     var relationshipLabel: String? = nil
     /// 공유 음성이 viewer 를 부를 때 쓰는 호칭(예: "지호야").
-    /// Android `VoiceProfileApi.kt:74`.
+    /// Android `VoiceProfileApi.kt:67`.
     var listenerTitle: String? = nil
     /// 말투 분석 상태(`ready` / `failed` / nil). 서버가 `GET /voice-profile` 에 실어 보낸다
     /// (`voice-profile.ts` 의 `speech_style_status`).
@@ -450,12 +529,16 @@ struct VoiceProfile: Decodable, Identifiable, Equatable {
 /// 서버가 409 `VOICE_PERSONA_LOCKED` 로 거절한다(`voice-profile.ts:733-741`).
 struct VoiceDraftPromoteRequest: Encodable {
     var isDraft: Bool
-    /// 등록 확정 화면의 **교체 체크**. 이미 등록된 목소리가 있어 한도에 걸릴 때,
-    /// 막는 대신 **그 목소리 자리에 이 목소리를 앉힌다**(서버가 프로필 행을 재사용한다).
-    /// nil 이면 키가 아예 안 나가서 서버는 지금까지처럼 한도로 막는다.
+    /// **교체 등록**. 이미 등록된 목소리가 있으면 등록 확정 화면이 언제나 true 로 보낸다 — 체크는 없고, 그 화면의
+    /// 저장이 곧 교체다(2026-10-08 사용자). 막는 대신 **그 목소리 자리에 이 목소리를 앉힌다**(서버가 프로필 행을
+    /// 재사용한다). nil 이면 키가 아예 안 나가서 서버는 지금까지처럼 한도로 막는다.
     var replaceExisting: Bool?
     /// 공유는 초안 입력이 아니라 실제 등록을 확정하는 화면에서 고른다.
     var isShared: Bool
+    /// 등록 미리듣기에서 **끝까지 들은 목소리 높이**(반음, −10…+6·0.5 눈금). 서버가 적어 두고 그 목소리로 만드는
+    /// 모든 알람 소리에 굽는다(스펙 voice-and-message §4-3). nil 이면 키가 아예 안 나가서(원래 소리) 높이 이전과
+    /// 같은 바디다. 등록 확정 때만 받는다 — 다른 요청에 실으면 409 `VOICE_PITCH_LOCKED`.
+    var pitchSemitones: Double? = nil
 }
 
 struct VoicePreviewPlayedRequest: Encodable {
@@ -472,7 +555,6 @@ struct VoicePrerenderStatus: Decodable, Equatable {
     var status: String?
     var total: Int
     var generated: Int
-    var attempts: Int
 }
 
 /// `POST voice/{id}/prerender/advance` — 호출당 최대 **2**클립 전진
@@ -494,76 +576,29 @@ struct VoiceProfileUpdateRequest: Encodable {
     var isShared: Bool?
     var relationshipLabel: String?
     var listenerTitle: String?
-
-    init(
-        name: String? = nil,
-        isShared: Bool? = nil,
-        relationshipLabel: String? = nil,
-        listenerTitle: String? = nil,
-    ) {
-        self.name = name
-        self.isShared = isShared
-        self.relationshipLabel = relationshipLabel
-        self.listenerTitle = listenerTitle
-    }
-}
-
-/// 목소리의 결 — 등록 '세부 정보' 단계에서 사용자가 고른다(`voice_profiles.voice_energy`).
-/// 유료 클론의 사전렌더·미리듣기 문구가 이 결을 따라 문장 에너지와 딜리버리 태그를 고른다
-/// (`docs/spec/voice-and-message.md` §4-2). 서버 계약은 `@alarmtalk/shared` 의 `VoiceEnergySchema`.
-///
-/// - `rawValue` 가 곧 전송 값이다: 자동 = `""`, 경쾌 = `"lively"`, 차분 = `"calm"`.
-///   다른 값은 서버가 400 `INVALID_VOICE_ENERGY` 로 거절한다.
-/// - 관계·호칭처럼 **초안에서만** 바뀐다(정식 등록 뒤에는 `VOICE_PERSONA_LOCKED`).
-/// - ⚠ 음향은 보지 않는다 — 음성 파일을 분석에 보내려면 처리방침·동의부터 바꿔야 해서
-///   사용자가 고르게 했다. '자동' 이면 서버가 등록 녹음 전사로 추정한 값을 쓴다.
-enum VoiceEnergy: String, CaseIterable, Identifiable {
-    case auto = ""
-    case lively
-    case calm
-
-    var id: String { rawValue }
-
-    /// 기본값은 자동이다 — 고르지 않아도 다음으로 넘어갈 수 있는 선택 입력이다.
-    static let defaultValue: VoiceEnergy = .auto
-
-    /// 세그먼트 라벨. 좌→우 순서는 `allCases`(자동 · 경쾌 · 차분)이고 안드로이드와 같다.
-    var label: String {
-        switch self {
-        case .auto: return String(localized: "자동")
-        case .lively: return String(localized: "경쾌")
-        case .calm: return String(localized: "차분")
-        }
-    }
 }
 
 /// `PATCH /voice/:id/relationship` 의 body. 관계/호칭 두 값은 필수.
 ///
 /// 지금 iOS 에서 이 라우트를 부르는 곳은 **공유받은 음성 viewer** 의 관계/호칭 등록뿐이다
-/// (내 초안의 관계·호칭·결은 클론 요청 `POST voice/clone` 에 실어 보낸다).
-/// Android `VoiceProfileApi.kt:61-64`.
+/// (내 초안의 관계·호칭은 클론 요청 `POST voice/clone` 에 실어 보낸다).
+///
+/// ⚠ 목소리의 결(`voice_energy`)은 **어느 요청에도 싣지 않는다**(2026-09-29 '목소리 느낌' 선택
+/// 제거). 결은 서버가 등록 녹음 전사로 추정한다(`docs/spec/voice-and-message.md` §4-2).
 struct VoiceProfileRelationshipUpdateRequest: Encodable {
     var relationshipLabel: String
     var listenerTitle: String
-    /// 목소리의 결(`voice_energy`). **내 초안**의 페르소나를 고칠 때만 싣는다.
-    /// nil 이면 키가 아예 안 나가서 서버는 그 컬럼을 건드리지 않는다 — viewer 경로는
-    /// 늘 nil 이다(결은 목소리 주인이 정하는 것이지 받은 사람의 것이 아니다).
-    var voiceEnergy: String? = nil
 }
 
 /// 이번 달(KST) 목소리 쿼터. Android `VoiceDraftQuotaResponse` 미러.
 ///
-/// ⚠ **두 쿼터가 한 응답에 들어 있고 뜻이 다르다.**
-///  - `limit`/`used`/`remaining` : 초안(draft) 재시도 여유. iOS 는 draft 플로우가 없어 쓰지 않는다.
-///    제한 해제 후 호환용으로 `remaining` 이 0 고정이라, 이걸로 판정하면 **이번 달 등록이
-///    남아 있어도** 소진으로 읽힌다.
-///  - `registration*` : **정식 등록** 쿼터(한 달에 1개). 화면 표시와 삭제 경고는 이쪽이다.
+/// ⚠ **두 쿼터가 한 응답에 들어 있고 뜻이 다르다.** 여기 두는 것은 `registration*` —
+/// **정식 등록** 쿼터(한 달에 1개)뿐이다. 화면 표시와 삭제 경고는 이쪽이다.
+/// 같은 응답의 `limit`/`used`/`remaining` 은 초안(draft) 재시도 여유라 디코드하지 않는다 —
+/// iOS 는 draft 플로우가 없고, 제한 해제 후 호환용으로 `remaining` 이 0 고정이라 그걸로
+/// 판정하면 **이번 달 등록이 남아 있어도** 소진으로 읽힌다.
 struct VoiceDraftQuotaResponse: Decodable, Equatable {
-    var limit: Int = 0
-    var used: Int = 0
-    var remaining: Int = 0
     var registrationLimit: Int = 0
-    var registrationUsed: Int = 0
     var registrationRemaining: Int = 0
 }
 
@@ -599,51 +634,14 @@ struct TtsGenerateRequest: Encodable {
     var fortuneGender: String?
     var fortuneBirthDate: String?
     var fortuneBirthTime: String?
-    /// Family/member alarm TTS target. Android `TtsApi.kt` sends `target_user_id`.
-    var targetUserId: String?
     /// 공유 음성 viewer 가 자신을 부를 호칭.
     var listenerTitle: String?
+    /// Family/member alarm TTS target. Android `TtsApi.kt` sends `target_user_id`.
+    var targetUserId: String?
     /// 등록 확인 스텝의 미리듣기 합성인가. 서버가 이때만 `preview_playback_token` 을
     /// 함께 내려주고, 그 토큰을 `preview-played` 로 돌려줘야 초안 승격이 허용된다.
     var draftPreview: Bool?
-
-    init(
-        voiceProfileId: String,
-        text: String,
-        category: String,
-        language: String,
-        translate: Bool,
-        random: Bool,
-        randomContext: String? = nil,
-        alarmHour: Int? = nil,
-        alarmMinute: Int? = nil,
-        weatherCountry: String? = nil,
-        weatherCity: String? = nil,
-        fortuneGender: String? = nil,
-        fortuneBirthDate: String? = nil,
-        fortuneBirthTime: String? = nil,
-        listenerTitle: String? = nil,
-        targetUserId: String? = nil,
-        draftPreview: Bool? = nil
-    ) {
-        self.voiceProfileId = voiceProfileId
-        self.text = text
-        self.category = category
-        self.language = language
-        self.translate = translate
-        self.random = random
-        self.randomContext = randomContext
-        self.alarmHour = alarmHour
-        self.alarmMinute = alarmMinute
-        self.weatherCountry = weatherCountry
-        self.weatherCity = weatherCity
-        self.fortuneGender = fortuneGender
-        self.fortuneBirthDate = fortuneBirthDate
-        self.fortuneBirthTime = fortuneBirthTime
-        self.listenerTitle = listenerTitle
-        self.targetUserId = targetUserId
-        self.draftPreview = draftPreview
-    }
+    // 멤버와이즈 init 은 합성된다 — 선언 순서가 곧 인자 순서다(옵셔널은 기본값 nil).
 }
 
 struct TtsGenerateResponse: Decodable, Equatable {
@@ -658,7 +656,7 @@ struct TtsGenerateResponse: Decodable, Equatable {
     var cacheHit: Bool?
     var provider: String?
     /// 랜덤 프롬프트가 사용된 경우, 백엔드가 선택한 실제 컨텍스트(다양화/감사 용).
-    /// Android `TtsApi.kt:39`.
+    /// Android `TtsApi.kt:37`.
     var randomContext: String?
     /// 초안 미리듣기 합성일 때만 온다. 재생을 **끝까지** 마친 뒤 `preview-played` 로
     /// 돌려주면 서버가 청취를 기록하고 승격이 열린다.
@@ -696,7 +694,7 @@ struct TtsMessageAudioResponse: Decodable, Equatable {
 /// `GET /tts/stock-clips` 응답. 무료 등급이 알람 에디터에서 고르는 기본 제공
 /// 음성 카탈로그. 서버는 모든 인증 사용자에게 동일한 전역 카탈로그를 준다
 /// (tts.ts:1287-1313). 쿼리 파라미터 없음 — 언어 필터는 클라이언트에서 처리한다.
-/// Android `TtsApi.kt:70` `StockClipListResponse` 미러.
+/// Android `TtsApi.kt:67` `StockClipListResponse` 미러.
 struct StockClipListResponse: Codable {
     var clips: [StockClip]
     /// 카테고리별 **완전한 세트의 클립 수**. 없으면(옛 서버) nil.
@@ -742,7 +740,7 @@ struct PrerenderVariantResponse: Decodable {
 
 /// 기본 제공(스톡) 알람 클립 한 건. preset 메시지 × 시스템 보이스 조합.
 /// 인라인 오디오는 없고, 미리듣기/선택 시 `GET /tts/messages/:id/audio` 로
-/// 음원을 받아 캐싱한다. Android `TtsApi.kt:74` `StockClip` 미러(`tags` 는 드롭).
+/// 음원을 받아 캐싱한다. Android `TtsApi.kt:71` `StockClip` 미러(`tags` 는 드롭).
 /// camelCase 필드는 convertFromSnakeCase 로 snake_case 에서 자동 디코드.
 struct StockClip: Codable, Identifiable, Equatable {
     var messageId: String
@@ -844,8 +842,14 @@ extension FamilyVoiceProfile {
     }
 
     var sharedFromLabel: String {
+        localizedSharedFromLabel()
+    }
+
+    func localizedSharedFromLabel(bundle: Bundle = .main) -> String {
         let owner = ownerName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return owner.isEmpty ? "공유받은 목소리" : "\(owner)님에게 공유받은 목소리"
+        guard !owner.isEmpty else { return String(localized: "공유받은 목소리", bundle: bundle) }
+        let name = personDisplayName(owner, bundle: bundle)
+        return String(localized: "\(name)에게 공유받은 목소리", bundle: bundle)
     }
 }
 
@@ -861,7 +865,6 @@ struct CodeRegisterResponse: Decodable, Equatable {
 struct BillingSubscriptionResponse: Codable, Equatable {
     var subscription: BillingSubscription?
     var plan: BillingPlan?
-    var nextPlan: BillingPlanSummary?
     /**
      지금 이 계정의 **갱신을 쥔 스토어 전부** — `["apple"]`, `["google"]`, 둘 다, 또는 빈 배열.
 
@@ -888,13 +891,8 @@ struct BillingSubscriptionResponse: Codable, Equatable {
 struct BillingSubscription: Codable, Identifiable, Equatable {
     var id: String
     var planId: String
-    var planGroupId: String?
     var status: String
-    var startsAt: String
     var expiresAt: String
-    var cancelAtPeriodEnd: Bool?
-    var canceledAt: String?
-    var nextPlanId: String?
     /// **해지가 어느 스토어를 거쳐야 하는가** — `"apple"` / `"google"` / `nil`.
     ///
     /// ⚠ **이 판정을 로컬 StoreKit 상태로 흉내 내지 말 것**(코덱스 #732 P1).
@@ -916,16 +914,7 @@ struct BillingPlan: Codable, Identifiable, Equatable {
     var key: String
     var name: String
     var planType: String
-    var periodDays: Int
     var maxMembers: Int
-    var priceKrw: Int
-}
-
-struct BillingPlanSummary: Codable, Identifiable, Equatable {
-    var id: String
-    var key: String
-    var name: String
-    var planType: String
 }
 
 struct VoucherListResponse: Decodable {
@@ -943,6 +932,12 @@ struct VoucherItem: Decodable, Identifiable, Equatable {
     var expiresAt: String
     var maxUses: Int?
     var useCount: Int?
+}
+
+extension VoucherItem {
+    func localizedPlanName(bundle: Bundle = .main) -> String {
+        PlanTier.displayName(forPlanKey: planKey, bundle: bundle) ?? String(localized: "이용권", bundle: bundle)
+    }
 }
 
 // ⚠ **`/checkout` 요청·응답 모델을 되살리지 말 것**(2026-08-07 삭제).
@@ -964,7 +959,6 @@ struct CancelSubscriptionRequest: Encodable {
 struct CancelSubscriptionResponse: Decodable, Equatable {
     var success: Bool
     var mode: String
-    var subscriptionId: String?
 }
 
 struct UpdateProfileRequest: Encodable {
@@ -1083,11 +1077,15 @@ struct ConsentStatusResponse: Decodable, Equatable {
     var policyVersion: String = "1"
 }
 
-/// 앱 최소지원버전 정책 응답. Android `AuthApi.kt:159` `AppVersionResponse`.
+/// 앱 최소지원버전 정책 응답. Android `AuthApi.kt:158` `AppVersionResponse`.
 struct AppVersionResponse: Decodable, Equatable {
     var platform: String = "ios"
     var minSupportedVersion: Int = 1
     var storeUrl: String = ""
+    /// 지역 시트의 날씨 출처 줄을 켜는 서버 신호(`weather_attribution`, 불투명 토큰). 정확히 `"kma_jma_nws"` 일
+    /// 때만 줄을 그린다(`WeatherAttribution.showsLine`). **옵셔널이어야 한다** — 필드가 없는 옛 서버의 응답도
+    /// 디코딩이 깨지지 않고 nil(숨김)이 된다.
+    var weatherAttribution: String? = nil
 }
 
 // MARK: - 이메일/비밀번호 + 인증코드 + 멤버/Family 액션 + 바우처
@@ -1098,10 +1096,6 @@ struct RequestEmailVerificationRequest: Encodable {
 
 struct RequestEmailVerificationResponse: Decodable, Equatable {
     var success: Bool
-    /// 디버그(dev) 환경에서 서버가 바로 코드를 돌려보내는 경우가 있어 옵셔널로 둔다.
-    /// 백엔드는 `debug_code` 키로 보낸다(auth.ts:190/301). convertFromSnakeCase 로
-    /// `debugCode` 에 매핑된다. Android `AuthApi.kt:84`.
-    var debugCode: String?
 }
 
 struct VerifyEmailCodeRequest: Encodable {
@@ -1150,7 +1144,7 @@ struct PasswordResetConfirmResponse: Decodable, Equatable {
 }
 
 // MARK: - 동의 목록 (GET user/consents)
-// Android `AuthApi.kt:166-175`, 백엔드 user.ts:401-431.
+// Android `AuthApi.kt:165-174`, 백엔드 user.ts:401-431.
 
 /// 동의 기록 1건(유형별 최신값). 백엔드는 snake_case 로 보내며 decoder 의
 /// convertFromSnakeCase 로 camelCase 에 매핑된다. Android `ConsentRecord`.

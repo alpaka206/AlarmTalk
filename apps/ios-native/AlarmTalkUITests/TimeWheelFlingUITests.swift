@@ -13,7 +13,7 @@ final class TimeWheelFlingUITests: XCTestCase {
         app.launchArguments += ["-UIPreviewSeed", "-UIPreviewTab", "alarms", "-UIPreviewEditor"]
         app.launch()
 
-        let minutes = app.otherElements["timeWheel.분"]
+        let minutes = app.otherElements["timeWheel.minute"]
         guard minutes.waitForExistence(timeout: 20) else {
             throw XCTSkip("타임휠 분 칼럼을 찾지 못했다")
         }

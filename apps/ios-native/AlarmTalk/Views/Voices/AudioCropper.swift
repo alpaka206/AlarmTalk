@@ -27,11 +27,11 @@ enum AudioCropper {
 
         var errorDescription: String? {
             switch self {
-            case .sessionUnavailable: return "오디오 자르기 세션을 만들 수 없어요."
+            case .sessionUnavailable: return String(localized: "오디오 자르기 세션을 만들 수 없어요.")
             case .exportFailed:
-                return "선택한 구간을 오디오 파일로 자르지 못했어요. 시작점을 조금 조정하거나 다른 파일로 다시 시도해 주세요."
-            case .invalidRange: return "잘라낼 구간이 유효하지 않아요."
-            case .noAudioTrack: return "선택한 파일에서 오디오를 찾지 못했어요. 다른 파일로 시도해 주세요."
+                return String(localized: "선택한 구간을 오디오 파일로 자르지 못했어요. 시작점을 조금 조정하거나 다른 파일로 다시 시도해 주세요.")
+            case .invalidRange: return String(localized: "잘라낼 구간이 유효하지 않아요.")
+            case .noAudioTrack: return String(localized: "선택한 파일에서 오디오를 찾지 못했어요. 다른 파일로 시도해 주세요.")
             }
         }
     }
@@ -75,9 +75,13 @@ enum AudioCropper {
         }
     }
 
+    /// 잘라 낸 사본을 두는 폴더(캐시 아래). 등록 음원 정리(`VoiceCloneUploadFlow.sentSourceCleanup`)는 이 폴더의
+    /// 파일을 앱이 뜬 사본으로 보고 지운다 — 다른 쓰임(캐시 트림)은 자기가 만든 사본을 스스로 지운다.
+    static let outputFolderName = "VoiceCrop"
+
     private static func makeOutputURL() -> URL {
         let dir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("VoiceCrop", isDirectory: true)
+            .appendingPathComponent(outputFolderName, isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir.appendingPathComponent("crop-\(UUID().uuidString).m4a")
     }

@@ -3,7 +3,6 @@ package com.alarmtalk.app
 import android.app.Application
 import android.util.Log
 import androidx.lifecycle.viewModelScope
-import com.alarmtalk.app.R
 import com.alarmtalk.app.core.AlarmTalkLog
 import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import kotlinx.coroutines.delay
@@ -16,12 +15,12 @@ import com.alarmtalk.app.network.TtsGenerateResponse
 import com.alarmtalk.app.network.ManualQuotaResponse
 import com.alarmtalk.app.network.TtsMessageAudioResponse
 import com.alarmtalk.app.network.AlarmTalkApiClient
+import com.alarmtalk.app.network.VoiceDraftQuotaResponse
 import com.alarmtalk.app.network.VoiceProfileUpdateRequest
 import com.alarmtalk.app.network.createVoiceCloneDraft
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.withContext
@@ -35,9 +34,53 @@ internal fun MainViewModel.preloadVoiceProfiles() {
     // 번들 기본 목소리는 '첫 응답 전 화면 시드'일 뿐 서버 조회 성공을 뜻하지 않는다.
     if (voiceProfilesLoadedFresh) {
         voiceProfileLoadFinished = true
+        // 목록은 이미 받았지만 **'생성 가능 n/m회' 는 다시 읽는다**(스펙 voice-and-message §4-1
+        // 「월 등록 한도」 ②). 이 갈래가 목소리 탭 진입이다(`AlarmTalkApp` 의 탭 갱신 — 60초 창).
+        // 예전에는 여기서 그냥 돌아가 숫자를 프로세스가 끝날 때까지 들고 있었다 — 다른 기기에서
+        // 등록했거나 프로세스가 산 채로 달이 바뀌면 틀린 숫자가 `추가` 버튼과 삭제 경고를 연다.
+        loadVoiceDraftQuota()
         return
     }
     fetchVoiceProfiles(showMessage = false)
+}
+
+/**
+ * 등록 창(목소리 탭의 전체 화면 `Dialog`)이 그려지고 사라지는 것을 패널이 알린다(열기로 했어도 그려지지 않으면
+ * 닫힌 것이다 — `shouldDrawRegistrationWindow`). 등록 흐름의 거절을 어디에 말할지([showVoiceRegistrationFailure])가
+ * 이 값을 본다.
+ *
+ * 닫히는 순간 **창이 아직 읽지 않은 거절**이 남아 있으면 스낵바로 넘긴다 — 창 안의 줄에 쓰려던 문구가
+ * 창과 함께 사라져 어디에도 안 보이는 일이 없게.
+ */
+internal fun MainViewModel.voiceRegistrationWindowChanged(open: Boolean) {
+    voiceRegistrationWindowOpen = open
+    if (open) return
+    voiceRegistrationFailure?.let { unread ->
+        voiceRegistrationFailure = null
+        message = unread.message
+    }
+}
+
+/** 등록 창이 거절을 자기 안에 그렸다(또는 흐름을 끝냈다) — 같은 거절을 두 번 처리하지 않게 비운다. */
+internal fun MainViewModel.consumeVoiceRegistrationFailure() {
+    voiceRegistrationFailure = null
+}
+
+/**
+ * 등록 흐름(등록·저장·다시 만들기)의 거절을 **보이는 곳에** 올린다 — 등록 창이 열려 있으면 그 창이
+ * 읽을 상태로, 닫혀 있으면 앱 스낵바로(`registrationFailureSurface`, 스펙 §4-1 「월 등록 한도」 ③).
+ *
+ * 창이 열려 있을 때 그 안의 줄에 쓸지(`InWindow`), 처음 단계로 돌려보낼지(`ReRecord`), 흐름을 끝낼지(`EndFlow`)는
+ * 창이 같은 규칙으로 가른다 — 알럿·초안 삭제·단계 이동·창 닫기가 전부 창의 일이다(`VoiceProfileManagementPanel`).
+ */
+private fun MainViewModel.showVoiceRegistrationFailure(errorCode: String?, text: String) {
+    when (registrationFailureSurface(errorCode, windowOpen = voiceRegistrationWindowOpen)) {
+        RegistrationFailureSurface.AppSnackbar -> message = text
+        RegistrationFailureSurface.InWindow,
+        RegistrationFailureSurface.ReRecord,
+        RegistrationFailureSurface.EndFlow,
+        -> voiceRegistrationFailure = VoiceRegistrationFailure(code = errorCode, message = text)
+    }
 }
 
 internal fun MainViewModel.fetchVoiceProfiles(showMessage: Boolean) {
@@ -60,6 +103,9 @@ internal fun MainViewModel.fetchVoiceProfiles(showMessage: Boolean) {
                 // 목록·초안·월 등록 한도는 서로 독립이다. 한도가 목록 뒤에 시작하면
                 // '생성 가능 n/m회'만 한 왕복 늦게 나타나므로 셋을 함께 시작한다.
                 val draftRequest = async { api.getVoiceDraft(authorization).profile }
+                // 한도 요청의 번호 — 이 답은 목록·초안·정리를 다 기다린 **뒤에** 싣는다. 그사이 다른 자리(초안 생성·
+                // 확정·탭 진입)가 한도를 또 물었으면 이 답은 늦은 것이다([applyVoiceDraftQuota]).
+                val quotaRequestSeq = nextVoiceDraftQuotaRequest()
                 val quotaRequest = async { api.getVoiceDraftQuota(authorization) }
                 val profiles = api.listVoiceProfiles(authorization).profiles
                 if (!responseStillBelongsToRequester(requestOwner, startGeneration)) {
@@ -102,9 +148,7 @@ internal fun MainViewModel.fetchVoiceProfiles(showMessage: Boolean) {
                 reconcileInaccessibleVoiceAlarms(requestOwner)
                 try {
                     val quota = quotaRequest.await()
-                    if (responseStillBelongsToRequester(requestOwner, startGeneration)) {
-                        voiceDraftQuota = quota
-                    }
+                    applyVoiceDraftQuota(quota, quotaRequestSeq, requestOwner, startGeneration)
                 } catch (error: CancellationException) {
                     throw error
                 } catch (error: Throwable) {
@@ -153,13 +197,15 @@ internal fun MainViewModel.createVoiceProfiles(
     items: List<VoiceProfileCreationDraft>,
     consentAgreedInline: Boolean = false,
 ): Boolean {
-    val session = authSession
-    if (session == null) {
-        message = getApplication<android.app.Application>().getString(R.string.msg_voice_create_login_required)
-        return false
-    }
+    val session = sessionOrMessage(R.string.msg_voice_create_login_required) ?: return false
+    // 아래 두 거절도 등록 창에서 누른 `등록` 의 답이다 — 창이 열려 있으면 그 안에 쓴다
+    // ([showVoiceRegistrationFailure]). 화면이 같은 조건을 먼저 막지만, 두 판정이 어긋난 순간에
+    // 스낵바로만 말하면 사용자는 아무 반응 없는 버튼만 본다.
     if (!isPaidVoiceEntitledOptimistic()) {
-        message = getApplication<android.app.Application>().getString(R.string.plan_gate_paid_message)
+        showVoiceRegistrationFailure(
+            errorCode = null,
+            text = getApplication<android.app.Application>().getString(R.string.plan_gate_paid_message),
+        )
         return false
     }
     val drafts = items.map {
@@ -170,15 +216,17 @@ internal fun MainViewModel.createVoiceProfiles(
         )
     }
     if (drafts.isEmpty() || drafts.any { it.name.isBlank() }) {
-        message = getApplication<android.app.Application>().getString(R.string.msg_voice_name_required)
+        showVoiceRegistrationFailure(
+            errorCode = null,
+            text = getApplication<android.app.Application>().getString(R.string.msg_voice_name_required),
+        )
         return false
     }
     // 관계·호칭은 선택 입력 — 비어 있으면 파트를 보내지 않는다(백엔드 옵셔널).
-    // 목소리의 결도 선택이지만 기본값(자동 = 빈 값)이 있어 여기서 막을 일이 없다.
     //
     // ⚠ **이미 목소리가 있다고 막지 않는다**(2026-08-12 확정).
     // 슬롯이 찼으면 **교체**로 간다 — 초안을 만들어 들어보고, 마음에 들 때 등록 확정
-    // 화면에서 "기존 목소리를 교체할까요" 를 묻는다(`replaceExistingChecked`).
+    // 화면에서 저장하면 그 목소리를 교체한다(화면은 교체 한 줄로 알린다 — `registrationReplaceTarget`).
     // 여기서 막으면 그 화면에 도달할 수 없어 교체가 죽은 코드가 된다.
     //
     // ⚠ **남은 초안으로도 막지 않는다**(2026-08-25 지시. 그전에는 `pendingVoiceDraft != null`
@@ -224,6 +272,9 @@ internal fun MainViewModel.createVoiceProfiles(
     fun sessionChanged() = authSession?.user?.id != ownerUserId
     viewModelScope.launch {
         suspend fun purgeSourceRecordings() = purgeVoiceCloneSourceRecordings(drafts)
+        // 같은 녹음을 다시 보내도 같은 답인 거절(월 한도·말소리 없음)로 끝났는가 — 그러면 busy 를 내린 **뒤에** 녹음을
+        // 지운다(아래 실패 갈래, `cloneRejectionSpendsRecording`).
+        var recordingSpent = false
         runCatching {
             // 순서 고정: 동의 기록 → 업로드. 같은 runCatching 안에 두어 기록이 실패하면
             // 녹음이 절대 나가지 않고, 실패 처리도 업로드 실패와 같은 경로를 탄다.
@@ -249,11 +300,11 @@ internal fun MainViewModel.createVoiceProfiles(
             }
             withContext(Dispatchers.IO) {
                 drafts.map { draft ->
-                    // 폼 필드(관계·호칭·목소리의 결·언어…)는 `createVoiceCloneDraft` 한 곳에서 조립한다.
+                    // 폼 필드(관계·호칭·언어…)는 `createVoiceCloneDraft` 한 곳에서 조립한다.
                     api.createVoiceCloneDraft(
                         authorization = AlarmTalkApiClient.bearer(session.token),
                         draft = draft,
-                        audio = voiceUploadPart(draft.audio),
+                        audio = voiceUploadPart(getApplication(), draft.audio),
                         fallbackLanguage = deviceAppVoiceLanguage(),
                     )
                 }
@@ -283,7 +334,7 @@ internal fun MainViewModel.createVoiceProfiles(
             AlarmTalkLog.reportError("Failed to create voice profile", error)
             val app = getApplication<android.app.Application>()
             val createErrorCode = apiErrorCode(error)
-            message = when (createErrorCode) {
+            val failureText = when (createErrorCode) {
                 "VOICE_CLONE_AUDIO_TOO_SHORT" -> app.getString(R.string.msg_voice_clone_audio_too_short)
                 "VOICE_CLONE_AUDIO_TOO_LONG" -> app.getString(R.string.msg_voice_clone_audio_too_long)
                 "INVALID_DURATION" -> app.getString(R.string.msg_voice_invalid_duration)
@@ -302,41 +353,91 @@ internal fun MainViewModel.createVoiceProfiles(
                 else -> com.alarmtalk.app.network.apiErrorMessage(app, createErrorCode)
                     ?: userFacingError(error, app.getString(R.string.msg_voice_create_failed))
             }
+            // ⚠ **전역 `message`(스낵바)에 곧바로 쓰지 않는다.** 이 요청은 등록 창에서 나가는데 그
+            // 창은 화면을 다 덮는 자기 창이라 스낵바가 그 뒤에 그려진다 — 실패한 사용자는 꺼진
+            // `등록` 버튼만 봤다. 창이 열려 있으면 그 창이 읽어 세부 정보 단계에 쓴다(말소리 없음이면 처음 단계로
+            // 돌아가 녹음 카드 아래에 — `RegistrationFailureSurface.ReRecord`).
+            showVoiceRegistrationFailure(createErrorCode, failureText)
+            if (createErrorCode == VOICE_MONTHLY_LIMIT_ERROR_CODE) {
+                // 서버가 방금 "이번 달은 다 썼다" 고 말했다 — 화면의 '생성 가능 n/m회' 가 틀렸다는
+                // 뜻이다. 다시 읽어 `추가` 버튼과 삭제 경고를 맞춘다. 앱에서만 깎지 않는다(§4-1 ②).
+                // 말소리 없음에서는 읽지 않는다 — 서버가 아무것도 쓰지 않아 숫자가 그대로다.
+                loadVoiceDraftQuota()
+            }
+            recordingSpent = cloneRejectionSpendsRecording(createErrorCode)
         }
         // busy 는 세션과 무관하게 반드시 내린다 — 가드로 일찍 빠져나온 경우에도 남겨 두면
         // 등록 화면이 '만드는 중' 에서 못 빠져나온다.
         voiceProfileBusy = false
+        // 월 한도·말소리 없음은 '그대로 다시 시도' 가 없는 실패다 — 이번 달에는 몇 번을 눌러도 같은 답이고(창도
+        // 닫힌다), 말소리가 없는 녹음은 다시 보내도 말소리가 없다(창은 처음 단계로 돌아가 새 녹음을 받는다). 녹음을
+        // 남겨 둘 이유(재시도)가 없으니 평문 생체정보를 지운다 — 파일 경로는 잘라 낸 사본이 업로드한 것이라 그것을
+        // 지운다([purgeVoiceCloneSourceRecordings] 의 규칙 — 남기는 예외는 재시도할 수 있는 실패뿐이다).
+        // ⚠ busy 를 내린 **뒤에** 한다. 먼저 하면 지우는 동안 등록 창이 흐름을 끝내며 보내는 초안
+        // 삭제가 busy 에 걸려 버려진다.
+        if (recordingSpent) purgeSourceRecordings()
     }
     return true
 }
+
+/**
+ * 등록 확정(`PATCH /voice/:id` 의 `is_draft: false`) 바디. 교체면 `replace_existing: true` 를, 0 이 아닌 높이면
+ * `pitch_semitones` 를 싣고 — 아니면 키를 아예 보내지 않아 그 기능 이전과 같은 바디다.
+ *
+ * 교체 여부는 확정 화면이 정한다: 이미 등록된 목소리가 있으면 그 화면의 저장은 **언제나 교체**다(2026-10-08 — 체크가
+ * 없다, `registrationReplaceTarget`). 회귀 테스트 `VoicePreviewConfirmRulesTest`.
+ */
+internal fun voiceDraftPromotionRequest(
+    replaceExisting: Boolean,
+    isShared: Boolean,
+    language: String,
+    pitchSemitones: Float,
+): VoiceProfileUpdateRequest = VoiceProfileUpdateRequest(
+    isShared = isShared,
+    isDraft = false,
+    language = language,
+    replaceExisting = if (replaceExisting) true else null,
+    // 0 은 원래 소리다 — 키를 아예 보내지 않아 높이 이전과 같은 요청이 된다.
+    pitchSemitones = pitchSemitones.takeIf { it != 0f },
+)
 
 internal fun MainViewModel.promoteVoiceDraft(
     profileId: String,
     replaceExisting: Boolean = false,
     isShared: Boolean = false,
+    /**
+     * 등록 미리듣기에서 **끝까지 들은** 목소리 높이(반음). 등록 확정 요청에 한 번 싣고(교체 등록도 같다), 서버가 그
+     * 목소리로 만드는 알람 소리에 굽는다 — 기기에는 남기지 않는다(스펙 voice-and-message §4-3). 0 이면 보내지 않는다.
+     */
+    pitchSemitones: Float = 0f,
 ) {
     val session = authSession ?: return
     viewModelScope.launch {
         if (voiceProfileBusy) return@launch
         voiceProfileBusy = true
+        val request = voiceDraftPromotionRequest(
+            replaceExisting = replaceExisting,
+            isShared = isShared,
+            language = deviceAppVoiceLanguage(),
+            pitchSemitones = pitchSemitones,
+        )
+        val sentPitch = request.pitchSemitones
         // ⚠ `.onSuccess { }` 로 감싸지 않는다 — 아래 강등은 **정지 함수**이고, 성공 갈래를
         // 그대로 코루틴 본문에 두는 편이 순서를 읽기도 쉽다.
         val result = runCatching {
-            withContext(Dispatchers.IO) {
-                api.updateVoiceProfile(
-                    authorization = AlarmTalkApiClient.bearer(session.token),
-                    id = profileId,
-                    request = VoiceProfileUpdateRequest(
-                        isShared = isShared,
-                        isDraft = false,
-                        language = deviceAppVoiceLanguage(),
-                        replaceExisting = if (replaceExisting) true else null,
-                    ),
-                ).profile
-            }
+            api.updateVoiceProfile(
+                authorization = AlarmTalkApiClient.bearer(session.token),
+                id = profileId,
+                request = request,
+            )
         }
-        val profile = result.getOrNull()
+        val profile = result.getOrNull()?.profile
         if (profile != null) {
+            // 높이를 모르는 옛 서버는 높이를 무시하고 원래 소리로 등록한다 — 응답에 높이가 없다. 실패로 보이지 않으므로
+            // 화면에는 알리지 않고 기록만 남긴다(서버가 먼저 나가야 한다 — 스펙 §4-3).
+            if (sentPitch != null && result.getOrNull()?.pitchSemitones != sentPitch) {
+                Log.w(TAG, "Server did not record the voice pitch on promotion id=$profileId")
+            }
             val draft = pendingVoiceDraft
             // 서버 PATCH 응답은 변경된 필드만 돌려준다 — 승격은 is_draft 만 보내므로 name 이 빠진다.
             // Gson 은 누락 필드에 (기본값 "" 을 무시하고) null 을 주입할 수 있어, non-null 로 선언된
@@ -354,8 +455,9 @@ internal fun MainViewModel.promoteVoiceDraft(
             pendingVoiceDraft = null
             // ⚠ **교체한 기기에서 곧바로 내린다 — 목록에 올리기 전에.** 교체는 옛 프로필 행을
             // 그대로 재사용하므로(id 가 같다) 어떤 접근권 재확인으로도 이 알람들은 잡히지
-            // 않는다 — 놔두면 화면이 "직접 입력으로 해둔 알람들도 기본 알람으로 설정됩니다"
-            // 라고 약속하고 동의까지 받은 바로 그 기기에서 **지운 목소리가 계속 울린다**.
+            // 않는다 — 놔두면 확정 화면이 "이전에 저장한 목소리는 삭제하고 이 목소리로 등록할게요"
+            // 라고 알리고 저장한 바로 그 기기에서 **지운 목소리가 계속 울린다**. 별도 안내는 띄우지
+            // 않는다(스펙 voice-and-message §4-1).
             //
             // ⚠ **순서가 중요하다.** 목록에 먼저 올리면 그 순간부터 새 목소리를 고를 수 있는데,
             // 강등은 프로필 id 로만 대상을 고르므로 그 사이에 만든 **새 목소리 알람까지**
@@ -409,6 +511,12 @@ internal fun MainViewModel.promoteVoiceDraft(
                 settlingVoiceProfileIds = settlingVoiceProfileIds - official.id
                 voiceProfiles = listOf(official) + voiceProfiles.filterNot { it.id == official.id }
             }
+            // ⚠ **방금 이번 달 등록 한 번을 썼다 — '생성 가능 n/m회' 를 다시 읽는다**(§4-1 ②).
+            // 안 읽으면 숫자가 프로세스가 끝날 때까지 `1/1` 로 남아 `추가` 가 눌리고, 삭제 경고
+            // ("이번 달에는 새 목소리를 만들 수 없어요")도 빠진다. 2026-10-10 prod 의 사용자가 그랬다:
+            // 등록을 마친 같은 프로세스에서 초안을 또 만들었고, 그 저장이 429 로 일곱 번 거절됐다.
+            // 앱에서 `n − 1` 로 깎아 두지 않는다 — 원장은 서버 것이고 다른 기기도 같이 쓴다.
+            loadVoiceDraftQuota()
         } else {
             val error = result.exceptionOrNull() ?: IllegalStateException("promote failed")
             AlarmTalkLog.reportError("Failed to promote voice draft id=$profileId", error)
@@ -416,7 +524,7 @@ internal fun MainViewModel.promoteVoiceDraft(
             // 확정(승격·제자리 교체)은 유료·동의·월 1회 게이트를 다시 통과해야 한다. 매핑이
             // 없으면 영어 본문이 일반 실패 문구로 뭉개져 **왜 막혔는지**가 사라진다.
             val promoteErrorCode = apiErrorCode(error)
-            message = when (promoteErrorCode) {
+            val failureText = when (promoteErrorCode) {
                 "VOICE_FEATURE_REQUIRES_PAID_PLAN" -> app.getString(R.string.plan_gate_paid_message)
                 "VOICE_MONTHLY_CHANGE_LIMIT_REACHED" -> app.getString(R.string.msg_voice_monthly_change_limit)
                 "CONSENT_REQUIRED" -> app.getString(R.string.msg_voice_consent_required)
@@ -426,6 +534,11 @@ internal fun MainViewModel.promoteVoiceDraft(
                 else -> com.alarmtalk.app.network.apiErrorMessage(app, promoteErrorCode)
                     ?: userFacingError(error, app.getString(R.string.msg_voice_create_failed))
             }
+            // 저장 버튼은 등록 창 안에 있다 — 거절도 그 창의 오류 줄에 쓴다([showVoiceRegistrationFailure]).
+            // 예전에는 전역 `message`(스낵바)에만 써서 창 뒤에 가려졌다.
+            showVoiceRegistrationFailure(promoteErrorCode, failureText)
+            // 월 한도 거절이면 숫자를 다시 읽는다(등록 단계의 같은 갈래와 같은 이유).
+            if (promoteErrorCode == VOICE_MONTHLY_LIMIT_ERROR_CODE) loadVoiceDraftQuota()
         }
         voiceProfileBusy = false
     }
@@ -433,13 +546,11 @@ internal fun MainViewModel.promoteVoiceDraft(
 
 internal suspend fun MainViewModel.confirmVoicePreviewPlayed(profileId: String, token: String) {
     val session = authSession ?: error("Authentication required")
-    withContext(Dispatchers.IO) {
-        api.confirmVoicePreviewPlayed(
-            authorization = AlarmTalkApiClient.bearer(session.token),
-            id = profileId,
-            request = com.alarmtalk.app.network.VoicePreviewPlayedRequest(token),
-        )
-    }
+    api.confirmVoicePreviewPlayed(
+        authorization = AlarmTalkApiClient.bearer(session.token),
+        id = profileId,
+        request = com.alarmtalk.app.network.VoicePreviewPlayedRequest(token),
+    )
 }
 
 /**
@@ -448,33 +559,45 @@ internal suspend fun MainViewModel.confirmVoicePreviewPlayed(profileId: String, 
  */
 internal suspend fun MainViewModel.updateVoicePreviewText(profileId: String, text: String): String {
     val session = authSession ?: error("Authentication required")
-    return withContext(Dispatchers.IO) {
-        api.updateVoicePreviewText(
-            authorization = AlarmTalkApiClient.bearer(session.token),
-            id = profileId,
-            request = com.alarmtalk.app.network.VoicePreviewTextUpdateRequest(previewText = text),
-        ).previewText
-    }
+    return api.updateVoicePreviewText(
+        authorization = AlarmTalkApiClient.bearer(session.token),
+        id = profileId,
+        request = com.alarmtalk.app.network.VoicePreviewTextUpdateRequest(previewText = text),
+    ).previewText
 }
 
-internal fun MainViewModel.deleteVoiceDraft(profileId: String) {
+/**
+ * 등록 초안을 지운다(`draft_only`).
+ *
+ * @param surfaceFailure 실패를 사용자에게 말하는가. 사용자가 누른 삭제(확정 화면의 `다시 만들기`·나가기 경고)는 말한다
+ *   ([showVoiceRegistrationFailure] — 창 안의 줄 또는 스낵바). 월 한도로 흐름을 끝내며 등록 창이 치우는 삭제는 말하지
+ *   않는다(false) — 사용자가 고른 삭제가 아닌데 월 한도 알럿 뒤에 '목소리 삭제에 실패했어요' 가 뜨면 등록된 목소리를 못
+ *   지운 것처럼 읽힌다. 삭제가 실패해도 흐름은 끝나고 남은 초안은 서버가 거둔다(스펙 voice-and-message §4-1
+ *   「월 등록 한도」 ③ — iOS 도 그 실패를 버린다). 기록(`AlarmTalkLog`)은 어느 쪽이든 남긴다.
+ */
+internal fun MainViewModel.deleteVoiceDraft(profileId: String, surfaceFailure: Boolean = true) {
     val session = authSession ?: return
     viewModelScope.launch {
         if (voiceProfileBusy) return@launch
         voiceProfileBusy = true
         runCatching {
-            withContext(Dispatchers.IO) {
-                api.deleteVoiceProfile(
-                    authorization = AlarmTalkApiClient.bearer(session.token),
-                    id = profileId,
-                    draftOnly = true,
-                )
-            }
+            api.deleteVoiceProfile(
+                authorization = AlarmTalkApiClient.bearer(session.token),
+                id = profileId,
+                draftOnly = true,
+            )
         }.onSuccess {
             if (pendingVoiceDraft?.id == profileId) pendingVoiceDraft = null
         }.onFailure { error ->
             AlarmTalkLog.reportError("Failed to delete voice draft id=$profileId", error)
-            message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_voice_delete_failed))
+            if (!surfaceFailure) return@onFailure
+            // 확정 화면의 `다시 만들기` 가 실패했으면 그 화면에 머문다 — 그 화면의 오류 줄에 쓴다.
+            // 나가기 경고의 삭제는 창을 닫으면서 보낸 것이라 스낵바로 간다(창 안에 쓰면 안 보인다).
+            // 코드는 넘기지 않는다 — 삭제의 실패에는 흐름을 끝내는 갈래가 없다.
+            showVoiceRegistrationFailure(
+                errorCode = null,
+                text = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_voice_delete_failed)),
+            )
         }
         voiceProfileBusy = false
     }
@@ -485,11 +608,7 @@ internal fun MainViewModel.renameVoiceProfile(
     profileId: String,
     name: String,
 ) {
-    val session = authSession
-    if (session == null) {
-        message = getApplication<android.app.Application>().getString(R.string.msg_voice_edit_login_required)
-        return
-    }
+    val session = sessionOrMessage(R.string.msg_voice_edit_login_required) ?: return
     val trimmedName = name.trim()
     if (trimmedName.isBlank()) {
         message = getApplication<android.app.Application>().getString(R.string.msg_voice_name_required)
@@ -499,15 +618,13 @@ internal fun MainViewModel.renameVoiceProfile(
         if (voiceProfileBusy) return@launch
         voiceProfileBusy = true
         runCatching {
-            withContext(Dispatchers.IO) {
-                api.updateVoiceProfile(
-                    authorization = AlarmTalkApiClient.bearer(session.token),
-                    id = profileId,
-                    request = VoiceProfileUpdateRequest(
-                        name = trimmedName,
-                    ),
-                ).profile
-            }
+            api.updateVoiceProfile(
+                authorization = AlarmTalkApiClient.bearer(session.token),
+                id = profileId,
+                request = VoiceProfileUpdateRequest(
+                    name = trimmedName,
+                ),
+            ).profile
         }.onSuccess { profile ->
             voiceProfiles = voiceProfiles.map {
                 if (it.id == profile.id) {
@@ -530,11 +647,7 @@ internal fun MainViewModel.renameVoiceProfile(
 }
 
 internal fun MainViewModel.setVoiceProfileShared(profileId: String, shared: Boolean) {
-    val session = authSession
-    if (session == null) {
-        message = getApplication<android.app.Application>().getString(R.string.msg_voice_share_login_required)
-        return
-    }
+    val session = sessionOrMessage(R.string.msg_voice_share_login_required) ?: return
     if (!hasCoupleOrFamilyAccess(subscriptionResponse, familyGroup, personalPromoTierHold())) {
         message = getApplication<android.app.Application>().getString(R.string.msg_voice_share_couple_family_required)
         return
@@ -557,13 +670,11 @@ internal fun MainViewModel.setVoiceProfileShared(profileId: String, shared: Bool
         try {
             while (true) {
                 val want = shareToggleDesired[profileId] ?: break
-                val profile = withContext(Dispatchers.IO) {
-                    api.updateVoiceProfile(
-                        authorization = AlarmTalkApiClient.bearer(session.token),
-                        id = profileId,
-                        request = VoiceProfileUpdateRequest(isShared = want),
-                    ).profile
-                }
+                val profile = api.updateVoiceProfile(
+                    authorization = AlarmTalkApiClient.bearer(session.token),
+                    id = profileId,
+                    request = VoiceProfileUpdateRequest(isShared = want),
+                ).profile
                 acked = profile.isShared ?: want
                 // PATCH 중에 다시 토글됐으면 최신 desired 로 재전송(직렬이라 순서 역전 없음).
                 if (shareToggleDesired[profileId] != want) continue
@@ -577,6 +688,9 @@ internal fun MainViewModel.setVoiceProfileShared(profileId: String, shared: Bool
                 // CancellationException 은 삼키지 말고 그대로 던진다.
                 try {
                     familyVoices = api.listFamilyVoiceProfiles(AlarmTalkApiClient.bearer(session.token)).profiles
+                    // 서버에서 받은 공유 목록이다 — 다음 공유 목록 변화는 '서버에서 바뀐 것' 으로 본다
+                    // (`familyVoicesFromServer`, Codex #825). 목록을 바꾸는 곳은 모두 이걸 함께 세운다.
+                    familyVoicesFromServer = true
                 } catch (e: kotlin.coroutines.cancellation.CancellationException) {
                     throw e
                 } catch (_: Exception) {
@@ -600,11 +714,7 @@ internal fun MainViewModel.setVoiceProfileShared(profileId: String, shared: Bool
 }
 
 internal fun MainViewModel.deleteVoiceProfile(profileId: String) {
-    val session = authSession
-    if (session == null) {
-        message = getApplication<android.app.Application>().getString(R.string.msg_voice_delete_login_required)
-        return
-    }
+    val session = sessionOrMessage(R.string.msg_voice_delete_login_required) ?: return
 
     viewModelScope.launch {
         if (voiceProfileBusy) return@launch
@@ -616,13 +726,11 @@ internal fun MainViewModel.deleteVoiceProfile(profileId: String) {
             }
         }
         runCatching {
-            withContext(Dispatchers.IO) {
-                api.deleteVoiceProfile(
-                    authorization = AlarmTalkApiClient.bearer(session.token),
-                    id = profileId,
-                    force = true,
-                )
-            }
+            api.deleteVoiceProfile(
+                authorization = AlarmTalkApiClient.bearer(session.token),
+                id = profileId,
+                force = true,
+            )
         }.onSuccess {
             voiceProfiles = voiceProfiles.filterNot { it.id == profileId }
             // 삭제된 목소리를 쓰던 내 알람을 즉시 기본 알람으로 변환한다(공유해제·무료강등과 동일 결과).
@@ -648,13 +756,11 @@ internal fun MainViewModel.deleteVoiceProfile(profileId: String) {
 }
 
 internal suspend fun MainViewModel.generateTtsAudio(request: TtsGenerateRequest): TtsGenerateResponse {
-    check(isPaidVoiceEntitledOptimistic() || request.isFreeSystemPresetRequest()) {
-        getApplication<android.app.Application>().getString(R.string.plan_gate_paid_message)
+    if (!isPaidVoiceEntitledOptimistic() && !request.isFreeSystemPresetRequest()) {
+        throw UserFacingException(getApplication<android.app.Application>().getString(R.string.plan_gate_paid_message))
     }
-    val session = authSession ?: throw IllegalStateException(getApplication<android.app.Application>().getString(R.string.msg_voice_tts_generate_login_required))
-    return withContext(Dispatchers.IO) {
-        api.generateTts(AlarmTalkApiClient.bearer(session.token), request)
-    }
+    val session = authSession ?: throw UserFacingException(getApplication<android.app.Application>().getString(R.string.msg_voice_tts_generate_login_required))
+    return api.generateTts(AlarmTalkApiClient.bearer(session.token), request)
 }
 
 internal fun TtsGenerateRequest.isFreeSystemPresetRequest(): Boolean =
@@ -666,23 +772,63 @@ internal fun TtsGenerateRequest.isFreeSystemPresetRequest(): Boolean =
         text.isBlank()
 
 internal suspend fun MainViewModel.downloadTtsMessageAudio(messageId: String): TtsMessageAudioResponse {
-    val session = authSession ?: throw IllegalStateException(getApplication<android.app.Application>().getString(R.string.msg_voice_tts_audio_load_login_required))
-    return withContext(Dispatchers.IO) {
-        api.getTtsMessageAudio(AlarmTalkApiClient.bearer(session.token), messageId)
+    val session = authSession ?: throw UserFacingException(getApplication<android.app.Application>().getString(R.string.msg_voice_tts_audio_load_login_required))
+    return api.getTtsMessageAudio(AlarmTalkApiClient.bearer(session.token), messageId)
+}
+
+/**
+ * 이번 달 등록 한도('생성 가능 n/m회')를 서버에서 다시 읽어 `voiceDraftQuota` 에 싣는다. fire-and-forget.
+ *
+ * **이 숫자 하나가 두 곳을 연다** — `추가` 버튼(다 썼으면 끈다)과 삭제 경고(다 썼으면 "이번 달에는 새
+ * 목소리를 만들 수 없어요" 를 붙인다). 그래서 한 번 읽은 값을 들고 있지 않고 아래 때마다 다시 읽는다
+ * (스펙 voice-and-message §4-1 「월 등록 한도」 ②):
+ *  - 목록을 새로 받을 때([fetchVoiceProfiles] — 거기서는 목록·초안과 함께 병렬로 묻는다)
+ *  - **목소리 탭에 들어올 때**([preloadVoiceProfiles] 의 신선 갈래 — 탭 갱신의 60초 창을 따른다)
+ *  - 초안을 만든 직후([createVoiceProfiles] 성공)
+ *  - **정식 등록이 확정된 직후**([promoteVoiceDraft] 성공 — 방금 한 번을 썼다)
+ *  - **월 한도 거절을 받은 직후**(등록·저장 어느 단계든 — 서버가 방금 "0" 이라고 말했다)
+ *
+ * - 앱에서만 깎지 않는다. `n − 1` 을 계산해 두는 것으로 끝내지 않고 서버 값을 읽는다 — 원장의 예약은
+ *   확정이 실패하면 롤백되고, 다른 기기도 같은 원장을 쓴다.
+ * - 실패·미로그인은 조용히 넘긴다 — **앞 값을 지킨다.** 실패는 "모른다" 이지 "남았다" 가 아니다.
+ * - ⚠ **늦게 온 답은 가장 나중에 낸 요청의 답이고, 요청한 계정의 것일 때만 적는다**([applyVoiceDraftQuota]).
+ *   읽는 자리가 늘면 그 틈도 넓어진다 — 확정 직후의 `0` 위에 먼저 낸 요청의 `1` 이 늦게 와 앉거나, 로그아웃·계정
+ *   전환 뒤에 도착한 앞 계정의 답이 지금 계정의 `추가` 버튼을 끄거나(0) 다 쓴 계정에 켜 준다.
+ */
+internal fun MainViewModel.loadVoiceDraftQuota() {
+    val session = authSession ?: return
+    val requestOwner = session.user.id
+    val startGeneration = authSessionStore.sessionGeneration()
+    val requestSeq = nextVoiceDraftQuotaRequest()
+    viewModelScope.launch {
+        runCatching {
+            api.getVoiceDraftQuota(AlarmTalkApiClient.bearer(session.token))
+        }.onSuccess { quota -> applyVoiceDraftQuota(quota, requestSeq, requestOwner, startGeneration) }
     }
 }
 
-// 이번 달 목소리 초안 생성 쿼터 조회 → voiceDraftQuota 상태 갱신(삭제 전 재생성 가능 판정용).
-// 실패/미로그인은 조용히 무시(기존 값 유지). fire-and-forget.
-internal fun MainViewModel.loadVoiceDraftQuota() {
-    val session = authSession ?: return
-    viewModelScope.launch {
-        runCatching {
-            withContext(Dispatchers.IO) {
-                api.getVoiceDraftQuota(AlarmTalkApiClient.bearer(session.token))
-            }
-        }.onSuccess { voiceDraftQuota = it }
-    }
+/** 한도 조회 한 번의 번호를 뽑는다 — **요청을 내기 직전에**([MainViewModel.voiceDraftQuotaRequestSeq]). */
+private fun MainViewModel.nextVoiceDraftQuotaRequest(): Long {
+    voiceDraftQuotaRequestSeq += 1
+    return voiceDraftQuotaRequestSeq
+}
+
+/**
+ * 한도 조회의 답을 `voiceDraftQuota` 에 싣는다 — 서버 답을 쓰는 곳은 **여기 하나**다(두 읽는 자리 —
+ * [loadVoiceDraftQuota]·[fetchVoiceProfiles] — 가 같은 문을 지난다). 둘 다 맞을 때만 싣는다:
+ *  - [requestSeq] 가 **아직 가장 나중에 낸 요청**이다. 그 뒤에 낸 요청이 있으면 이 답은 늦었다 — 먼저 왔든 나중에
+ *    오든 그 요청의 답이 더 새 원장을 본다.
+ *  - 그 요청을 낸 **계정·세션의 답**이다([responseStillBelongsToRequester]).
+ */
+private fun MainViewModel.applyVoiceDraftQuota(
+    quota: VoiceDraftQuotaResponse,
+    requestSeq: Long,
+    requestOwner: String?,
+    startGeneration: Long,
+) {
+    if (requestSeq != voiceDraftQuotaRequestSeq) return
+    if (!responseStillBelongsToRequester(requestOwner, startGeneration)) return
+    voiceDraftQuota = quota
 }
 
 // 직접 입력 문구 만들기 이번 달 사용 현황(선택기 '직접 입력 (남은/총)' 표시용).
@@ -690,9 +836,7 @@ internal fun MainViewModel.loadVoiceDraftQuota() {
 internal suspend fun MainViewModel.loadManualQuota(): ManualQuotaResponse? {
     val session = authSession ?: return null
     return runCatching {
-        withContext(Dispatchers.IO) {
-            api.getManualQuota(AlarmTalkApiClient.bearer(session.token))
-        }
+        api.getManualQuota(AlarmTalkApiClient.bearer(session.token))
     }.getOrNull()
 }
 
@@ -720,7 +864,6 @@ private fun MainViewModel.deviceAppVoiceLanguage(): String {
  *    유료 클론 전용이라 받아도 쓰지 못한 채 저장 공간만 먹는다(Codex #607).
  * best-effort: 실패해도 알람 저장 시점의 기존 다운로드 경로가 다시 시도한다.
  */
-/** 스톡 클립 동시 다운로드 수. 순차는 약전파에서 1분을 넘기고, 과하면 서버·기기가 힘들다. */
 /**
  * 목소리 등록 화면의 **인라인 동의 항목이 실제로 묻는** 유형.
  *
@@ -730,8 +873,6 @@ private fun MainViewModel.deviceAppVoiceLanguage(): String {
  */
 private val INLINE_COVERED_CONSENTS = setOf("voice_biometric")
 
-private const val PREFETCH_PARALLELISM = 4
-
 internal fun MainViewModel.prefetchFreeBucketClips(voiceProfileId: String? = null) {
     // 목소리를 연달아 바꾸면 이전 프리페치는 취소하고 마지막 선택만 받는다.
     voicePrefetchJob?.cancel()
@@ -739,7 +880,6 @@ internal fun MainViewModel.prefetchFreeBucketClips(voiceProfileId: String? = nul
     job = viewModelScope.launch(Dispatchers.IO) {
         try {
             val language = deviceAppVoiceLanguage()
-            val audioStore = com.alarmtalk.app.data.AlarmAudioStore(getApplication<Application>())
             // 무료 버킷에서 실제로 쓰이는 카테고리(날씨·약)만 받는다 — greeting 제외 전부를 받으면
             // 무료 사용자의 클론처럼 운세/사랑 사전렌더가 섞인 보이스에서 제한 편집기가 노출하지
             // 않는 유료 전용 클립까지 내려받아 저장 공간만 차지한다(Codex #607).
@@ -752,28 +892,15 @@ internal fun MainViewModel.prefetchFreeBucketClips(voiceProfileId: String? = nul
             if (clips.isEmpty()) return@launch
             // 이미 캐시된 클립도 진행 수에 포함해 n/전체가 실제 준비율을 보여주게 한다.
             voicePrefetchProgress = 0 to clips.size
-            val done = java.util.concurrent.atomic.AtomicInteger(0)
-            // 클립당 HTTP 왕복 1회다. 44개를 순차로 받으면 약전파에서 1분을 넘기므로 소량 병렬로
-            // 겹친다(서버·기기 부담을 감안해 4로 제한).
-            kotlinx.coroutines.coroutineScope {
-                clips.chunked(PREFETCH_PARALLELISM).forEach { batch ->
-                    batch.map { clip ->
-                        async {
-                            val cacheKey = "${com.alarmtalk.app.data.AlarmAudioStore.STOCK_CACHE_KEY_PREFIX}${clip.messageId}"
-                            if (audioStore.getCachedAudio(cacheKey, clip.audioUrl) == null) {
-                                val response = downloadTtsMessageAudio(clip.messageId)
-                                audioStore.cacheGeneratedAudio(
-                                    bytes = android.util.Base64.decode(response.audioBase64, android.util.Base64.DEFAULT),
-                                    format = response.audioFormat,
-                                    rawAudioUri = response.audioUrl,
-                                    displayName = cacheKey,
-                                    cacheKey = cacheKey,
-                                    messageId = clip.messageId,
-                                )
-                            }
-                            voicePrefetchProgress = done.incrementAndGet() to clips.size
-                        }
-                    }.awaitAll()
+            // ⚠ **목소리마다 받기 자리(`voiceClipDownloads`)를 거친다**(Codex #825). 제자리 교체 수리·
+            // 클론 구동도 같은 자리를 쓰므로, 누가 먼저 시작했든 같은 `stock_` 클립을 동시에 받지 않는다 —
+            // 뒤에 온 쪽은 앞 벌이 끝난 뒤 **그때 다시 세어** 빠진 것만 받는다. 목소리는 차례로, 한
+            // 목소리 안에서 동시에 4개(약전파에서 순차는 1분을 넘긴다). 한 클립이 실패해도 나머지는 받는다.
+            val doneByVoice = HashMap<String, Int>()
+            clips.groupBy { it.voiceProfileId }.forEach { (voiceId, voiceClips) ->
+                cacheVoiceClips(voiceId, voiceClips) { done, _ ->
+                    doneByVoice[voiceId] = done
+                    voicePrefetchProgress = doneByVoice.values.sum() to clips.size
                 }
             }
         } catch (error: kotlin.coroutines.cancellation.CancellationException) {
@@ -794,9 +921,7 @@ internal suspend fun MainViewModel.fetchVoicePrerenderStatus(
     profileId: String,
 ): com.alarmtalk.app.network.VoicePrerenderStatusResponse {
     val session = authSession ?: error("Authentication required")
-    return withContext(Dispatchers.IO) {
-        api.getVoicePrerenderStatus(AlarmTalkApiClient.bearer(session.token), profileId)
-    }
+    return api.getVoicePrerenderStatus(AlarmTalkApiClient.bearer(session.token), profileId)
 }
 
 /** 사전렌더 전진 1스텝(서버가 호출당 최대 3클립 생성). 드라이브 루프가 done 까지 반복
@@ -805,9 +930,7 @@ internal suspend fun MainViewModel.advanceVoicePrerender(
     profileId: String,
 ): com.alarmtalk.app.network.VoicePrerenderAdvanceResponse {
     val session = authSession ?: error("Authentication required")
-    return withContext(Dispatchers.IO) {
-        api.advanceVoicePrerender(AlarmTalkApiClient.bearer(session.token), profileId)
-    }
+    return api.advanceVoicePrerender(AlarmTalkApiClient.bearer(session.token), profileId)
 }
 
 /** promote 직후 사전렌더 드라이브 시작: 생성(advance 반복) → 클립 전체 기기 다운로드.
@@ -849,13 +972,15 @@ internal fun MainViewModel.startPrerenderDrive(voiceId: String) {
             prerenderDrive = prerenderDrive?.let {
                 PrerenderDriveState(it.voiceId, 0, it.total, downloading = true)
             }
-            runCatching {
+            val complete = runCatching {
                 downloadAllPresetClips(voiceId) { done, total ->
                     prerenderDrive = PrerenderDriveState(voiceId, done, total, downloading = true)
                 }
             }.onFailure { error ->
                 AlarmTalkLog.reportError("Voice preset clip download failed", error)
-            }
+            }.getOrDefault(false)
+            // 빠진 것은 목소리 탭 폴링이 이어받는다 — 드라이브가 끝나면 그쪽이 다시 센다.
+            if (!complete) Log.w(TAG, "Voice preset clips incomplete after the drive voice=$voiceId")
         } finally {
             // 종료(완료/실패/취소) 시 진행 표시를 걷는다 — 열려 있던 '생성 중' 화면은 닫힌다.
             prerenderDrive = null
@@ -864,27 +989,58 @@ internal fun MainViewModel.startPrerenderDrive(voiceId: String) {
 }
 
 /** 방금 생성된 클론 preset 클립 전체를 기기에 내려받아 캐시한다(비행기모드 알람 대비).
- *  스톡 매니페스트를 새로 받아 방금 생성분까지 포함하고, 이미 캐시된 클립은 건너뛴다. */
+ *  매니페스트는 **생성이 끝난 뒤에 출발한** 것을 쓴다([ManifestNeed.LATEST]) — 그래야 방금
+ *  생성분이 들어 있다. 이미 캐시된 클립은 건너뛴다.
+ *
+ *  ⚠ 매니페스트를 여기서 직접 받지 않는다(효율 감사 M1). 예전에는 표 없이 받아 `stockClips` 를
+ *  덮어 **Codex #703 가드를 우회**했다 — 교체 전에 출발한 응답이 새 목록을 되돌릴 수 있었다.
+ *  @return 빠진 것 없이 다 받았는가. 매니페스트를 못 받았거나(이긴 것을 확인하지 못한 경우 포함)
+ *  그 목소리의 클립이 목록에 없으면 false. */
 internal suspend fun MainViewModel.downloadAllPresetClips(
     voiceProfileId: String,
     onProgress: (Int, Int) -> Unit,
-) {
-    val session = authSession ?: return
-    withContext(Dispatchers.IO) {
-        val response = api.getStockClips(AlarmTalkApiClient.bearer(session.token))
-        val manifest = response.clips
-        stockClips = manifest
-        response.expectedVariants?.let { expectedVariants = it }
-        // 클론 사전렌더는 '등록 때 고른 언어' 단일 세트 — 기기 언어로 거르지 않고 전부 받는다
-        // (일본어로 만든 목소리를 한국어 기기에서 쓰는 경우에도 클립이 캐시되게).
-        val clips = manifest.filter { it.voiceProfileId == voiceProfileId }
-        if (clips.isEmpty()) return@withContext
-        val audioStore = com.alarmtalk.app.data.AlarmAudioStore(getApplication<Application>())
-        var done = 0
-        onProgress(0, clips.size)
-        clips.forEach { clip ->
-            val cacheKey = "stock_${clip.messageId}"
-            if (audioStore.getCachedAudio(cacheKey, clip.audioUrl) == null) {
+): Boolean {
+    if (authSession == null) return false
+    // 실패 갈래는 조회가 이미 기록했다("Failed to load stock clips"). 목소리 탭 폴링이 이어받는다.
+    // 막는 것은 FAILED 하나다 — UNCONFIRMED 는 생성 **뒤에** 출발한 이 요청의 응답이 실린 것이다
+    // (`ManifestFlightOutcome.UNCONFIRMED` 주석, Codex #825).
+    if (ensureStockClipManifest(ManifestNeed.LATEST) == ManifestFlightOutcome.FAILED) return false
+    // 클론 사전렌더는 '등록 때 고른 언어' 단일 세트 — 기기 언어로 거르지 않고 전부 받는다
+    // (일본어로 만든 목소리를 한국어 기기에서 쓰는 경우에도 클립이 캐시되게).
+    val clips = stockClips.filter { it.voiceProfileId == voiceProfileId }
+    // 생성이 끝났는데 목록에 한 개도 없으면 받은 게 아니다 — '다 받았다' 로 답하지 않는다.
+    if (clips.isEmpty()) return false
+    return cacheVoiceClips(voiceProfileId, clips, onProgress)
+}
+
+/**
+ * 목소리 하나의 클립을 캐시한다 — **목소리마다 한 벌만** 돈다(드라이브와 목소리 탭이 나눠 쓴다,
+ * 효율 감사 M4). 빠진 것은 디렉터리를 **한 번** 읽어 고르고, 동시에 4개씩 받는다.
+ *
+ * @return 빠진 것 없이 다 캐시됐는가.
+ */
+internal suspend fun MainViewModel.cacheVoiceClips(
+    voiceProfileId: String,
+    clips: List<com.alarmtalk.app.network.StockClip>,
+    onProgress: (Int, Int) -> Unit,
+): Boolean = withContext(Dispatchers.IO) {
+    val audioStore = com.alarmtalk.app.data.AlarmAudioStore(getApplication<Application>())
+    voiceClipDownloads.cache(
+        voiceId = voiceProfileId,
+        clips = clips,
+        missing = { list ->
+            // 판정은 `hasCachedAudio` 와 같다(`AlarmAudioStore.snapshot` 주석) — 디렉터리만 한 번 읽는다.
+            val cache = audioStore.snapshot()
+            list.filter { clip ->
+                cache.isMissingOrStale(
+                    "${com.alarmtalk.app.data.AlarmAudioStore.STOCK_CACHE_KEY_PREFIX}${clip.messageId}",
+                    clip.audioUrl,
+                )
+            }
+        },
+        download = { clip ->
+            val cacheKey = "${com.alarmtalk.app.data.AlarmAudioStore.STOCK_CACHE_KEY_PREFIX}${clip.messageId}"
+            try {
                 val response = downloadTtsMessageAudio(clip.messageId)
                 audioStore.cacheGeneratedAudio(
                     bytes = android.util.Base64.decode(response.audioBase64, android.util.Base64.DEFAULT),
@@ -894,20 +1050,23 @@ internal suspend fun MainViewModel.downloadAllPresetClips(
                     cacheKey = cacheKey,
                     messageId = clip.messageId,
                 )
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                // 그 클립만 실패다 — 나머지는 계속 받고, 다음 회차가 빠진 것만 다시 받는다.
+                Log.w(TAG, "Failed to cache voice clip voice=$voiceProfileId message=${clip.messageId}", error)
+                throw error
             }
-            done += 1
-            onProgress(done, clips.size)
-        }
-    }
+        },
+        onProgress = onProgress,
+    )
 }
 
 /** 사전렌더 실패 시 재생성 요청. true 면 재시작 수락 — 호출측이 폴링을 재개한다. */
 internal suspend fun MainViewModel.retryVoicePrerender(profileId: String): Boolean {
     val session = authSession ?: return false
     return try {
-        withContext(Dispatchers.IO) {
-            api.retryVoicePrerender(AlarmTalkApiClient.bearer(session.token), profileId)
-        }.success
+        api.retryVoicePrerender(AlarmTalkApiClient.bearer(session.token), profileId).success
     } catch (error: kotlin.coroutines.cancellation.CancellationException) {
         throw error
     } catch (error: Exception) {
@@ -924,9 +1083,7 @@ internal suspend fun MainViewModel.retryVoicePrerender(profileId: String): Boole
 internal suspend fun MainViewModel.retryVoiceSpeechStyleAnalysis(profileId: String): Boolean {
     val session = authSession ?: return false
     return try {
-        val response = withContext(Dispatchers.IO) {
-            api.retryVoiceSpeechStyle(AlarmTalkApiClient.bearer(session.token), profileId)
-        }
+        val response = api.retryVoiceSpeechStyle(AlarmTalkApiClient.bearer(session.token), profileId)
         if (response.success) {
             voiceProfiles = voiceProfiles.map {
                 if (it.id == profileId) it.copy(speechStyleStatus = response.status ?: "done") else it
@@ -945,109 +1102,267 @@ internal suspend fun MainViewModel.retryVoiceSpeechStyleAnalysis(profileId: Stri
     }
 }
 
-internal fun MainViewModel.loadStockClips(forceReload: Boolean = false) {
+/**
+ * 스톡 클립 매니페스트를 [need] 만큼 새것으로 채운다(기다리지 않는다).
+ *
+ * - [ManifestNeed.SESSION](앱 시작): 이번 세션에 받았으면 다시 받지 않는다.
+ * - [ManifestNeed.RECENT](탭 새로고침): 유료 클론 클립은 확정 후 cron 이 세션 중에 만들 수 있어
+ *   탭에 들어올 때 다시 본다. 다만 신선도 창 안에 받은 게 있으면 그걸 쓴다.
+ * - [ManifestNeed.LATEST](공유 변경 푸시·생성 완료): 신호 **뒤에** 출발한 요청이어야 한다.
+ *
+ * ⚠ **디스크에서 먼저 채운다.** 매니페스트가 메모리에만 있으면 '모른다' 상태가 생기고,
+ * 관문(`onNeedsClipPreparation`: null → 막지 않음)과 저장(`hasCompleteCloneBucket`:
+ * null → 불완전)이 **정반대로 답한다** — 고를 수는 있는데 저장은 안 된다.
+ * 자세한 것은 `StockClipManifestStore` 주석. 읽기는 메인 밖에서 한다(효율 감사 M2).
+ */
+internal fun MainViewModel.loadStockClips(need: ManifestNeed = ManifestNeed.SESSION) {
     val session = authSession ?: return
-    // stockClips 는 세션 전용 in-memory 캐시라 한번 채우면 재조회 안 함. 유료 클론 클립은 확정 후
-    // cron 이 세션 중에 만들 수 있으므로, 클론 편집 진입 시 forceReload=true 로 매니페스트를 새로 받는다.
-    // ⚠ **디스크에서 먼저 채운다.** 매니페스트가 메모리에만 있으면 '모른다' 상태가 생기고,
-    // 관문(`onNeedsClipPreparation`: null → 막지 않음)과 저장(`hasCompleteCloneBucket`:
-    // null → 불완전)이 **정반대로 답한다** — 고를 수는 있는데 저장은 안 된다.
-    // 자세한 것은 `StockClipManifestStore` 주석.
-    if (stockClips.isEmpty()) {
+    if (stockClips.isEmpty()) seedStockClipsFromDisk(session.user.id)
+    // ⚠ 판정은 비었는가가 아니라 **이번 세션에 받았는가**다([ManifestNeed.SESSION]). 디스크에서
+    // 채웠다는 이유로 건너뛰면 운영이 추가한 프리셋이 영영 안 들어온다.
+    viewModelScope.launch { ensureStockClipManifest(need) }
+}
+
+/**
+ * 디스크 사본으로 메모리를 채운다 — 파싱(약 168KB)은 메인 밖에서.
+ *
+ * 그사이 서버 응답이 이미 실렸으면 버린다: 디스크 사본은 그보다 오래됐거나 같다.
+ */
+private fun MainViewModel.seedStockClipsFromDisk(userId: String) {
+    if (stockClipSeedJob?.isActive == true) return
+    val appliedBefore = stockClipManifestApplyCount
+    stockClipSeedJob = viewModelScope.launch {
         // 계정 id 를 함께 넘긴다 — 지우지 못해 격리된 파일은 **임자 본인에게만** 열린다
         // (Codex #703 P1, `StockClipManifestStore.load` 주석).
-        com.alarmtalk.app.data.StockClipManifestStore
-            .load(getApplication(), authSession?.user?.id)?.let { cached ->
-            stockClips = cached.clips
-            cached.expectedVariants?.let { expectedVariants = it }
-        }
+        val cached = withContext(Dispatchers.IO) {
+            com.alarmtalk.app.data.StockClipManifestStore.load(getApplication(), userId)
+        } ?: return@launch
+        if (stockClipManifestApplyCount != appliedBefore) return@launch
+        if (authSession?.user?.id != userId || stockClips.isNotEmpty()) return@launch
+        // 시드는 표가 없다(0) — 뒤에 오는 공개본은 무엇이든 이걸 덮는다.
+        applyStockClipManifest(cached, ticket = 0L)
     }
-    // ⚠ 판정은 비었는가가 아니라 **이번 세션에 받았는가**다. 디스크에서 채웠다는 이유로
-    // 건너뛰면 운영이 추가한 프리셋이 영영 안 들어온다.
-    if (!forceReload && stockClipManifestFetched) return
-    // 이 조회의 세대. 뒤에 시작한 조회가 세대를 올리면 이 응답은 **공개하지도 저장하지도**
-    // 않는다 — 옛 매니페스트로 되돌리면 캐시 대조의 기준 자체가 뒤로 간다.
-    stockClipManifestRevision += 1
-    val manifestRevision = stockClipManifestRevision
-    // 디스크 권위의 표. **프로세스 전역**이라 프리페치 워커와도 순서가 맞는다
-    // (`stockClipManifestRevision` 은 이 뷰모델 안의 순서만 본다).
-    val manifestTicket = com.alarmtalk.app.data.StockClipManifestStore.beginFetch()
-    viewModelScope.launch {
-        runCatching {
-            api.getStockClips(AlarmTalkApiClient.bearer(session.token))
-        }.onSuccess { response ->
-            if (manifestRevision != stockClipManifestRevision) return@onSuccess
-            if (authSession?.user?.id != session.user.id) return@onSuccess
+}
+
+/**
+ * 메모리(화면·판정의 권위)에 싣는다. 디스크 권위가 받아 준 것만 여기로 온다.
+ *
+ * ⚠ **표 순서로만 앞으로 간다**(Codex #825). 전경의 응답·다른 쪽 공개 따라가기가 섞여 도착하므로,
+ * 이미 실린 것보다 앞선(작은) 표는 버린다 — 메모리가 교체 이전 목록으로 되돌아가지 않게.
+ * @return 실었는가.
+ */
+private fun MainViewModel.applyStockClipManifest(
+    manifest: com.alarmtalk.app.network.StockClipListResponse,
+    ticket: Long,
+): Boolean {
+    if (ticket != 0L && ticket <= stockClipManifestAppliedTicket) return false
+    stockClips = manifest.clips
+    manifest.expectedVariants?.let { expectedVariants = it }
+    stockClipManifestApplyCount += 1
+    if (ticket != 0L) stockClipManifestAppliedTicket = ticket
+    return true
+}
+
+/**
+ * 공개본을 메모리에 **실은 뒤에** 하는 일 — 누가 공개했든 같다(전경 응답·물러난 회차의 이긴 것·
+ * 다른 쪽 공개 따라가기). 제자리 교체 수리와, 매니페스트를 기다리던 프리페치 재시도.
+ *
+ * ⚠ 이긴 것을 실을 때도 돌린다(Codex #825 P1). 워커는 공유받은 목소리를 받지 않고
+ * (`StockClipPrefetchWorker`) 접근권 워커는 낡음을 **판정만** 한다 — 여기서 안 고치면 알람이 쓰는
+ * 캐시 별칭이 교체된 사람의 목소리를 문 채 다음 전경 공개까지 남는다.
+ */
+private fun MainViewModel.afterStockClipManifestApplied(manifest: com.alarmtalk.app.network.StockClipListResponse) {
+    repairReplacedStockClips(manifest.clips)
+    // 매니페스트 도착 전 setDefaultVoice 로 프리페치가 빈손이었으면 여기서 1회 재시도한다.
+    // 재시도 여부와 무관하게 pending 은 비워 무한 재시도를 막는다(비움 결과도 정상 종료).
+    pendingPrefetchVoiceId?.let { voiceId ->
+        pendingPrefetchVoiceId = null
+        prefetchFreeBucketClips(voiceId)
+    }
+}
+
+/**
+ * 메모리를 **디스크의 마지막 공개본**까지 따라가게 한다 — 누가 공개했든(워커 포함).
+ * `StockClipManifestStore.publishedTickets` 를 보는 구독(`MainViewModel` 의 init)과, 물러난 회차가 부른다.
+ *
+ * ⚠ **확인 못 한 마지막 공개본도 싣는다 — 세지만 않는다**(Codex #825). 가장 최근에 본 표의 쓰기가
+ * 실패했어도 디스크에는 그 앞의 마지막 공개본이 그대로 있고, 그게 가장 새 목록이다. 실패한 쓰기는
+ * 알림을 내지 않으므로, 워커가 공개한 직후 그런 실패가 끼면 여기서 버리는 순간 메모리는 그 공개본을
+ * 영영 못 따라가고 교체 수리도 건너뛴다. 싣기는 여전히 표 순서로만 앞으로 간다.
+ *
+ * @return 메모리가 지금 **확인된** 마지막 공개본을 담고 있는가. 가장 최근에 본 표의 응답이 공개되지
+ *   않았으면(쓰기 실패·로그아웃 무효화) 실었더라도 false — '새로 받았다' 로 세지 않는다(Codex #825).
+ */
+internal suspend fun MainViewModel.syncStockClipsToPublished(
+    owner: com.alarmtalk.app.network.SessionEffectKey,
+): Boolean {
+    // 확인된 마지막 공개본이 이미 실렸다 — 디스크를 다시 읽지 않는다(실린 것은 전부 임자 대조를 거쳤다).
+    com.alarmtalk.app.data.StockClipManifestStore.latestPublishedTicket()?.let { latest ->
+        if (latest <= stockClipManifestAppliedTicket) return responseStillBelongsToRequester(owner.userId, owner.generation)
+    }
+    // 실린 것보다 뒤의 공개본이 없다 — 읽을 것이 없다. 위를 지나왔으면 확인도 못 한 것이다.
+    if (com.alarmtalk.app.data.StockClipManifestStore.lastPublishedTicket() <= stockClipManifestAppliedTicket) return false
+    val app = getApplication<Application>()
+    // 확인 → 읽기 → 재확인은 저장소가 한다(`loadPublishedWinner`). 그 뒤의 공개는 구독이 다시 따라간다.
+    val winner = withContext(Dispatchers.IO) {
+        com.alarmtalk.app.data.StockClipManifestStore.loadPublishedWinner(app, owner.userId)
+    } ?: return false
+    if (!responseStillBelongsToRequester(owner.userId, owner.generation)) return false
+    if (applyStockClipManifest(winner.response, winner.ticket)) afterStockClipManifestApplied(winner.response)
+    return winner.confirmed
+}
+
+/** 지금 세션으로 [syncStockClipsToPublished] 를 부른다 — 구독이 쓴다. 세션이 없으면 아무 일도 없다. */
+internal suspend fun MainViewModel.followPublishedStockClips() {
+    val session = authSession ?: return
+    val owner = com.alarmtalk.app.network.sessionEffectKey(session, authSessionStore.sessionGeneration()) ?: return
+    runCatching { syncStockClipsToPublished(owner) }
+        .onFailure { error ->
+            if (error is kotlin.coroutines.cancellation.CancellationException) throw error
+            AlarmTalkLog.reportError("Failed to follow the published stock clip manifest", error)
+        }
+}
+
+/**
+ * 매니페스트를 [need] 만큼 새것으로 만든 뒤 돌아온다 — **받는 곳은 여기 하나다**(뷰모델 안).
+ * 떠 있는 요청을 나눠 쓰고, 신선도 창 안이면 요청을 내지 않는다(`StockClipManifestFlights`).
+ * 돌아온 뒤에는 `stockClips`·`expectedVariants` 를 읽으면 된다.
+ *
+ * ⚠ 준비도(`refreshClipReadiness`)·클론 다운로드(`downloadAllPresetClips`)도 이걸 쓴다. 예전에는
+ * 둘이 매니페스트를 직접 받아 표 없이 `stockClips` 를 덮었다 — Codex #703 가드의 우회로였다.
+ */
+internal suspend fun MainViewModel.ensureStockClipManifest(need: ManifestNeed): ManifestFlightOutcome {
+    val session = authSession ?: return ManifestFlightOutcome.FAILED
+    val owner = com.alarmtalk.app.network.sessionEffectKey(session, authSessionStore.sessionGeneration())
+        ?: return ManifestFlightOutcome.FAILED
+    return stockClipManifestFlights.ensure(owner, need) { fetchAndPublishStockClips(owner) }
+}
+
+/**
+ * 요청 한 번: 표 뽑기 → 조회 → 디스크 공개 → 메모리 반영. [StockClipManifestFlights] 만 부른다.
+ */
+private suspend fun MainViewModel.fetchAndPublishStockClips(
+    owner: com.alarmtalk.app.network.SessionEffectKey,
+): ManifestFlightOutcome {
+    // 줄 서 있던 사이 로그아웃·계정 전환이 있었으면 요청을 내지 않는다.
+    if (!responseStillBelongsToRequester(owner.userId, owner.generation)) return ManifestFlightOutcome.FAILED
+    val token = authSession?.token ?: return ManifestFlightOutcome.FAILED
+    val app = getApplication<Application>()
+    // 디스크 권위의 표. **요청 전에** 뽑는다 — 그래야 늦게 끝난 옛 요청이 거절된다. **프로세스
+    // 전역**이라 프리페치 워커와도 순서가 맞는다.
+    // 표는 메인 밖에서 뽑는다 — 워커가 공개(쓰기)하는 동안 같은 잠금을 잡고 있어, 메인에서 뽑으면
+    // 그동안 화면이 멎는다(Codex #825).
+    val ticket = withContext(Dispatchers.IO) { com.alarmtalk.app.data.StockClipManifestStore.beginFetch() }
+    val response = try {
+        api.getStockClips(AlarmTalkApiClient.bearer(token))
+    } catch (error: CancellationException) {
+        throw error
+    } catch (error: Exception) {
+        AlarmTalkLog.reportError("Failed to load stock clips", error)
+        return ManifestFlightOutcome.FAILED
+    }
+    // 응답을 기다리는 사이 세션이 끝났으면 공개하지 않는다(표도 무효화돼 있지만 먼저 거른다).
+    if (!responseStillBelongsToRequester(owner.userId, owner.generation)) return ManifestFlightOutcome.FAILED
+    // 직렬화·파일 교체·prefs `commit()` 은 메인 밖에서(효율 감사 M2). 워커와 같은 잠금을 잡으므로
+    // 메인에서 부르면 워커가 쓰는 동안 화면이 멎는다.
+    val published = withContext(Dispatchers.IO) {
+        com.alarmtalk.app.data.StockClipManifestStore.save(app, response, ticket, owner.userId)
+    }
+    if (!responseStillBelongsToRequester(owner.userId, owner.generation)) return ManifestFlightOutcome.FAILED
+    return when (published) {
+        com.alarmtalk.app.data.StockClipManifestStore.PublishResult.PUBLISHED -> {
             // ⚠ **디스크 권위가 받아 준 응답만 화면·판정의 권위가 된다**(Codex #703 P1).
-            // 표가 거절됐다 = **더 새 매니페스트가 이미 나왔다.** 그런데도 이 응답으로
-            // `stockClips` 를 덮으면, 준비 판정이 **교체 이전 스냅샷**(전부 rendered=true)을
-            // 보고 세대를 확정해 버린다 — 완료 푸시를 놓치면 되돌릴 폴백이 없다.
-            // 거절이든 실패든, **디스크 권위가 되지 못한 응답은 판정의 권위도 아니다.**
-            if (com.alarmtalk.app.data.StockClipManifestStore.save(
-                    getApplication(),
-                    response,
-                    manifestTicket,
-                    session.user.id,
-                ) != com.alarmtalk.app.data.StockClipManifestStore.PublishResult.PUBLISHED
-            ) {
-                return@onSuccess
+            // 순서: 공개가 확인된 **뒤에** 싣는다.
+            // 싣기는 표 순서로만(`applyStockClipManifest`) — 공개하고 메인으로 돌아오는 사이 구독이
+            // 더 새 공개본을 먼저 실었으면 이 응답은 버린다.
+            if (applyStockClipManifest(response, ticket)) afterStockClipManifestApplied(response)
+            // ⚠ 공개 상태를 **지금** 다시 본다(Codex #825) — 공개하고 돌아오는 사이 워커가 움직였을 수 있다.
+            when {
+                com.alarmtalk.app.data.StockClipManifestStore.latestPublishedTicket() == ticket ->
+                    ManifestFlightOutcome.PUBLISHED
+                // 더 새 것이 공개됐으면(워커는 메모리를 고치지 않는다) 지금 따라간다 — 확인됐든 아니든
+                // 디스크의 마지막 공개본을 싣는다. 기다리던 준비도·클론 다운로드가 곧바로 메모리를 읽는다.
+                // 따라간 것이 확인된 마지막이면 받은 것으로 센다. 이 뒤의 공개는 구독이 따라간다.
+                syncStockClipsToPublished(owner) -> ManifestFlightOutcome.PUBLISHED
+                // 더 새 표를 봤는데 그 쓰기가 실패했다(디스크는 이 응답이거나, 그 뒤의 공개본을 방금 실었다).
+                // 쓸 수는 있지만 '마지막을 받았다' 로 세지 않는다 — 다음 호출이 다시 받는다.
+                else -> ManifestFlightOutcome.UNCONFIRMED
             }
-            val clips = response.clips
-            stockClips = clips
-            response.expectedVariants?.let { expectedVariants = it }
-            stockClipManifestFetched = true
-            // 제자리 목소리 교체는 message ID를 보존한다. 파일 존재만 보면 옛 목소리를
-            // 계속 쓰므로, 새 매니페스트의 audio_url과 다른 캐시만 다시 받는다.
-            withContext(Dispatchers.IO) {
-                val audioStore = com.alarmtalk.app.data.AlarmAudioStore(getApplication<Application>())
-                val stale = clips.mapNotNull { clip ->
-                    val keys = com.alarmtalk.app.data.AlarmAudioStore.messageCacheKeys(clip.messageId)
-                        .filter { key ->
-                            audioStore.isCachedAudioStale(key, clip.audioUrl) ||
-                                // 세대 표식이 없는 옛 캐시도 **한 번은** 다시 받는다 —
-                                // 비교할 값이 없어 낡음 판정을 영영 통과하지 못한다.
-                                audioStore.cachedAudioNeedsRevisionRefresh(key, clip.audioUrl)
-                        }
-                    keys.takeIf { it.isNotEmpty() }?.let { clip to it }
-                }
-                stale.chunked(PREFETCH_PARALLELISM).forEach { batch ->
-                    kotlinx.coroutines.coroutineScope {
-                        batch.map { (clip, cacheKeys) ->
-                            async {
-                                try {
-                                    val audio = downloadTtsMessageAudio(clip.messageId)
-                                    val bytes = android.util.Base64.decode(
-                                        audio.audioBase64,
-                                        android.util.Base64.DEFAULT,
-                                    )
-                                    cacheKeys.forEach { key ->
-                                        audioStore.cacheGeneratedAudio(
-                                            bytes = bytes,
-                                            format = audio.audioFormat,
-                                            rawAudioUri = audio.audioUrl,
-                                            displayName = key,
-                                            cacheKey = key,
-                                            messageId = clip.messageId,
-                                        )
-                                    }
-                                } catch (error: kotlin.coroutines.cancellation.CancellationException) {
-                                    throw error
-                                } catch (error: Exception) {
-                                    AlarmTalkLog.reportError("Failed to refresh replaced voice clip", error)
-                                }
+        }
+        // 더 새 표가 이미 나왔다(콜드 스타트엔 프리페치 워커와 거의 동시에 받는다).
+        // 이 응답으로 덮으면 준비 판정이 **교체 이전 스냅샷**을 보고 세대를 확정해 버린다 — 대신 디스크의
+        // 이긴 것을 싣는다. 받은 것으로 세는 것은 이긴 것이 **확인된 마지막 공개본일 때만**이다(Codex #825):
+        // 더 새 표의 쓰기가 실패했거나 표가 무효화됐으면 디스크의 마지막 공개본은 싣되(표 순서로만) 실패로
+        // 돌려 준비도는 앞 값을 지키고, 클론 다운로드는 목소리 탭 폴링에 넘긴다(스펙 「공개 경합의 규칙」).
+        com.alarmtalk.app.data.StockClipManifestStore.PublishResult.SUPERSEDED ->
+            if (syncStockClipsToPublished(owner)) ManifestFlightOutcome.SUPERSEDED else ManifestFlightOutcome.FAILED
+        // 디스크에 못 남겼다 — 아무도 공개하지 못했으니 판정의 권위도 아니다. 다음 호출이 다시 받는다.
+        com.alarmtalk.app.data.StockClipManifestStore.PublishResult.FAILED -> ManifestFlightOutcome.FAILED
+    }
+}
+
+/**
+ * 제자리 목소리 교체는 message ID를 보존한다. 파일 존재만 보면 옛 목소리를 계속 쓰므로,
+ * 새 매니페스트의 audio_url과 다른 캐시만 다시 받는다. **표식과 무관하게** 공개마다 돈다
+ * (스펙 「교체 확정 시점」 — 안드로이드는 여기서 프리셋을 고친다).
+ *
+ * 매니페스트를 기다리는 쪽을 붙잡지 않게 따로 돈다. 더 새 매니페스트가 공개되면 앞 회차를 끊는다 —
+ * 새 목록이 권위이고, 이미 받은 것은 다음 회차가 낡지 않은 것으로 본다.
+ *
+ * ⚠ **목소리마다 받기 자리(`voiceClipDownloads`)를 거친다**(Codex #825). 제자리 교체 직후에는
+ * 이 수리와 구동(`downloadAllPresetClips`)·목소리 탭이 **같은 `stock_` 클립**을 낡은 것으로 보고
+ * 동시에 받았다 — 목소리마다 한 벌이라던 받기가 두 벌(요청 8개)이 되고 같은 파일을 두 번 썼다.
+ * 이제 한쪽이 끝난 뒤 다른 쪽은 **그때 다시 세어** 빠진 것만 받는다. 목소리는 차례로 돈다(동시 4개).
+ * 기본 목소리 선다운로드(`prefetchFreeBucketClips`)도 같은 자리를 거친다.
+ */
+private fun MainViewModel.repairReplacedStockClips(clips: List<com.alarmtalk.app.network.StockClip>) {
+    replacedClipRepairJob?.cancel()
+    replacedClipRepairJob = viewModelScope.launch(Dispatchers.IO) {
+        val audioStore = com.alarmtalk.app.data.AlarmAudioStore(getApplication<Application>())
+        clips.groupBy { it.voiceProfileId }.forEach { (voiceId, voiceClips) ->
+            // 받을 키는 **자리를 잡은 뒤에** 센다(`missing` — 한 번만 불린다). 그 전에 세면 앞 벌이
+            // 이미 고친 키까지 다시 받는다.
+            var staleKeys: Map<String, List<String>> = emptyMap()
+            voiceClipDownloads.cache(
+                voiceId = voiceId,
+                clips = voiceClips,
+                missing = { list ->
+                    val found = list.associate { clip ->
+                        clip.messageId to com.alarmtalk.app.data.AlarmAudioStore.messageCacheKeys(clip.messageId)
+                            .filter { key ->
+                                audioStore.isCachedAudioStale(key, clip.audioUrl) ||
+                                    // 세대 표식이 없는 옛 캐시도 **한 번은** 다시 받는다 —
+                                    // 비교할 값이 없어 낡음 판정을 영영 통과하지 못한다.
+                                    audioStore.cachedAudioNeedsRevisionRefresh(key, clip.audioUrl)
                             }
-                        }.awaitAll()
+                    }.filterValues { it.isNotEmpty() }
+                    staleKeys = found
+                    list.filter { it.messageId in found }
+                },
+                download = { clip ->
+                    try {
+                        val audio = downloadTtsMessageAudio(clip.messageId)
+                        val bytes = android.util.Base64.decode(
+                            audio.audioBase64,
+                            android.util.Base64.DEFAULT,
+                        )
+                        staleKeys[clip.messageId].orEmpty().forEach { key ->
+                            audioStore.cacheGeneratedAudio(
+                                bytes = bytes,
+                                format = audio.audioFormat,
+                                rawAudioUri = audio.audioUrl,
+                                displayName = key,
+                                cacheKey = key,
+                                messageId = clip.messageId,
+                            )
+                        }
+                    } catch (error: kotlin.coroutines.cancellation.CancellationException) {
+                        throw error
+                    } catch (error: Exception) {
+                        AlarmTalkLog.reportError("Failed to refresh replaced voice clip", error)
                     }
-                }
-            }
-            // 매니페스트 도착 전 setDefaultVoice 로 프리페치가 빈손이었으면 여기서 1회 재시도한다.
-            // 재시도 여부와 무관하게 pending 은 비워 무한 재시도를 막는다(비움 결과도 정상 종료).
-            pendingPrefetchVoiceId?.let { voiceId ->
-                pendingPrefetchVoiceId = null
-                prefetchFreeBucketClips(voiceId)
-            }
-        }.onFailure { error ->
-            AlarmTalkLog.reportError("Failed to load stock clips", error)
+                },
+            )
         }
     }
 }

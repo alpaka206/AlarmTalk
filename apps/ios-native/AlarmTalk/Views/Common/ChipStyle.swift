@@ -20,29 +20,6 @@ struct PermissionPill: View {
     }
 }
 
-/// 화면 상단 큰 제목 + 부제목 묶음.
-///
-/// ContentView 의 `screenHeader(title:subtitle:)` 를 옮긴 것.
-/// 음성/알람/메시지 등 일반 탭과 보조 시트 모두에서 동일 스타일을 쓴다.
-struct ScreenHeader: View {
-    let title: LocalizedStringKey
-    var subtitle: LocalizedStringKey? = nil
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(title)
-                .font(.largeTitle.weight(.bold))
-                .foregroundStyle(AlarmTalkTheme.text)
-            if let subtitle {
-                Text(subtitle)
-                    .font(.subheadline)
-                    .foregroundStyle(AlarmTalkTheme.textSecondary)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-}
-
 /// 하위 전체화면의 공용 원형 뒤로가기. Android `WakerBackButton`과 같은 자리·표면을 쓰되
 /// 글리프는 플랫폼 규약대로 SF Symbol을 쓴다.
 struct WakerBackButton: View {
@@ -99,23 +76,17 @@ struct WakerTopBar: View {
 
 #if DEBUG
 #Preview("Chips") {
-    VStack(alignment: .leading, spacing: 16) {
-        ScreenHeader(title: "알람", subtitle: "현재 활성 알람 3개")
-        HStack {
-            PermissionPill(text: "허용됨")
-            PermissionPill(text: "만료 2026-06-01")
-            PermissionPill(text: "owner")
-        }
+    HStack {
+        PermissionPill(text: "허용됨")
+        PermissionPill(text: "만료 2026-06-01")
+        PermissionPill(text: "owner")
     }
     .padding()
 }
 
 #Preview("Chips (dark)") {
-    VStack(alignment: .leading, spacing: 16) {
-        ScreenHeader(title: "메시지")
-        PermissionPill(text: "허용됨")
-    }
-    .padding()
+    PermissionPill(text: "허용됨")
+        .padding()
     .preferredColorScheme(.dark)
 }
 #endif

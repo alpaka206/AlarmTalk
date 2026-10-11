@@ -1,6 +1,7 @@
 package com.alarmtalk.app.sync
 
 import android.content.Context
+import android.os.SystemClock
 import android.util.Base64
 import android.util.Log
 import androidx.work.BackoffPolicy
@@ -30,6 +31,7 @@ import com.alarmtalk.app.isEntitledOptimistic
 import com.alarmtalk.app.resolvePaidVoiceAccess
 import com.alarmtalk.app.storeSignalStillValid
 import com.alarmtalk.app.network.AuthSessionStore
+import com.alarmtalk.app.network.SessionTokenRenewal
 import com.alarmtalk.app.freshPlanPromoStamp
 import com.alarmtalk.app.network.StockClip
 import java.util.concurrent.TimeUnit
@@ -62,6 +64,30 @@ import kotlinx.coroutines.withContext
  */
 internal fun tokenAfterRoll(previousToken: String, savedToken: String?): String =
     savedToken?.takeIf { it.isNotBlank() } ?: previousToken
+
+/**
+ * 이 워커가 `GET /auth/me` 로 받은 새 토큰을 **저장할 것인가** — 저장할 토큰, 아니면 null.
+ *
+ * **지금 쓰는 토큰의 만료가 가까울 때만**([SessionTokenRenewal.shouldRenew] — 남은 수명
+ * 90일 미만, `exp` 를 못 읽으면 갱신) 저장한다. 주기 동기화(`RemoteAlarmSyncWorker`)와 같은
+ * 판정이다.
+ *
+ * ⚠ **예전에는 받을 때마다 저장했다**(효율 감사 H3). 이 워커는 콜드 스타트마다 뷰모델의 진입
+ * 갱신과 함께 도는데, 그때 저장하면 방금 굴린 토큰을 또 굴려 세션이 한 번 더 바뀌었다 —
+ * 토큰을 키로 쓰던 화면 효과가 그만큼 다시 돌았다. 서버 토큰은 무상태 JWT(365일)라 버려도
+ * 지금 토큰이 그대로 유효하다.
+ * ⚠ **그렇다고 아예 버리지는 않는다**(2026-09-01 리뷰). 이 워커는 배경에서만 도는 일이 있어
+ * (`voice_changed` FCM) 그때는 이 요청이 **그 실행의 유일한 세션 갱신**일 수 있다 — 만료가
+ * 가까운데 버리면 앱이 전경으로 오기 전에 저장된 JWT 가 죽는다. 그래서 판정은 버림이 아니라
+ * 임계값이다.
+ *
+ * 저장하지 않으면 호출부는 헤더와 401 귀속(`usedToken`)을 **그대로** 둔다 — 저장소에 없는
+ * 토큰으로 옮기면 [tokenAfterRoll] 의 두 갈래 사고가 난다.
+ */
+internal fun workerRolledTokenToSave(currentToken: String, rolledToken: String?, nowMillis: Long): String? {
+    val rolled = rolledToken?.takeIf { it.isNotBlank() } ?: return null
+    return rolled.takeIf { SessionTokenRenewal.shouldRenew(currentToken, nowMillis) }
+}
 
 /**
  * 기본(시스템) 목소리 알람 클립을 기기에 내려받는 워커.
@@ -111,6 +137,43 @@ internal fun isPermanentClipFailure(error: Throwable): Boolean = when (error) {
     else -> false
 }
 
+/**
+ * 받기 진행을 **포그라운드 서비스로 올릴 것인가** — 빠진 클립이 있을 때만이다(스펙
+ * voice-and-message 「준비 페이지」).
+ *
+ * 이 워커는 콜드 스타트마다 돌고, 대부분의 회차는 받을 것이 없다. 예전에는 빠진 것을 세기
+ * **전에** 진행을 알리며(`setForeground`) 서비스를 올려, 받을 것이 없는 회차마다 `dataSync`
+ * 서비스와 알림이 떴다가 내려갔다 — 하는 일 없이 Android 15 의 서비스 시간 한도에 들어갔다.
+ * 받을 것이 없으면 진행 값만 알린다(`setProgress` — 받기 화면·헤더 퍼센트가 읽는다).
+ */
+internal fun shouldPromoteToForeground(missingCount: Int): Boolean = missingCount > 0
+
+/**
+ * 받기 한 회차의 시간 예산. 넘으면 **다음 배치를 시작하지 않고** 다시 시도로 넘긴다
+ * ([mayStartNextClipBatch]).
+ *
+ * 6분은 배치 하나(요청마다 [AlarmTalkApiClient.CLIP_DOWNLOAD_CALL_TIMEOUT_SECONDS] 상한)를 더해도
+ * 일반 작업의 실행 한도(약 10분) 안에 들도록 잡았다 — 서비스를 못 올렸거나(백그라운드 시작 제한)
+ * 시스템이 서비스를 끝낸 뒤(Android 15+)에는 그 한도가 걸린다.
+ */
+internal const val CLIP_PREFETCH_RUN_BUDGET_MILLIS: Long = 6L * 60_000L
+
+/**
+ * 이 회차가 **다음 배치를 시작해도 되는가** — 배치 사이에서만 묻는다.
+ *
+ * 첫 배치는 언제나 시작한다. 매니페스트·프로필 조회가 예산을 다 써도 회차마다 조금은 나아가야
+ * 한다 — 아니면 약한 망에서 회차가 하나도 못 받고 다시 시도만 되풀이한다.
+ *
+ * @param batchesStarted 이 회차에 이미 시작한 배치 수.
+ * @param runStartedAtMillis 회차를 시작한 시각. [nowMillis] 와 같은 단조 시계(`SystemClock.elapsedRealtime`)다.
+ */
+internal fun mayStartNextClipBatch(
+    batchesStarted: Int,
+    runStartedAtMillis: Long,
+    nowMillis: Long,
+    budgetMillis: Long = CLIP_PREFETCH_RUN_BUDGET_MILLIS,
+): Boolean = batchesStarted == 0 || nowMillis - runStartedAtMillis < budgetMillis
+
 class StockClipPrefetchWorker(
     appContext: Context,
     params: WorkerParameters,
@@ -152,8 +215,10 @@ class StockClipPrefetchWorker(
     override suspend fun getForegroundInfo(): androidx.work.ForegroundInfo = foregroundInfo(0, 0)
 
     /**
-     * 진행률을 알림에도 반영한다. 실패해도 다운로드는 계속한다 — 알림 권한이 없거나
-     * 포그라운드 승격이 막혀도(백그라운드 제한) **받는 일 자체를 멈추면 안 된다.**
+     * 진행률을 알림에도 반영한다(= 포그라운드 서비스로 올린다). **받는 동안에만** 부른다 — 받을 것이
+     * 없는 회차는 진행 값만 알린다([shouldPromoteToForeground]).
+     * 실패해도 다운로드는 계속한다 — 알림 권한이 없거나 포그라운드 승격이 막혀도(백그라운드 제한)
+     * **받는 일 자체를 멈추면 안 된다.**
      */
     private suspend fun publishProgress(done: Int, total: Int) {
         setProgress(progressData(done = done, total = total))
@@ -168,6 +233,8 @@ class StockClipPrefetchWorker(
     }
 
     private suspend fun runWork(): Result {
+        // 회차의 시간 예산은 여기서부터 센다([mayStartNextClipBatch]) — 매니페스트·프로필 조회도 회차다.
+        val runStartedAt = SystemClock.elapsedRealtime()
         val sessionStore = AuthSessionStore(applicationContext)
         // ⚠ **세대를 세션보다 먼저 읽는다**(2026-09-01 리뷰). 순서가 반대면 두 줄 사이의
         // A→B 전환에서 **세션은 A, 세대는 B** 가 잡혀, 나중의 `saveTokenIfGeneration` 이
@@ -184,7 +251,9 @@ class StockClipPrefetchWorker(
         val entitlement = EntitlementWriter(applicationContext)
         val ticket = AccessTicket(session.user.id, startGeneration)
         return runCatching {
-            val api = AlarmTalkApiClient.create()
+            // 요청 하나에 호출 전체 상한을 둔다 — 연결·읽기·쓰기 상한은 바이트 사이 간격이라 아주 느린 망에서
+            // 클립 하나가 끝없이 길어질 수 있다([AlarmTalkApiClient.CLIP_DOWNLOAD_CALL_TIMEOUT_SECONDS]).
+            val api = AlarmTalkApiClient.create(callTimeoutSeconds = AlarmTalkApiClient.CLIP_DOWNLOAD_CALL_TIMEOUT_SECONDS)
             // 토큰이 굴러가면 **헤더도 함께** 갈아 끼운다 — 굴린 뒤의 요청까지 옛 토큰으로
             // 내보내면 그 만료가 가까워 401 이 나는데도 아무도 세션을 못 끊는다.
             var auth = AlarmTalkApiClient.bearer(usedToken)
@@ -278,13 +347,16 @@ class StockClipPrefetchWorker(
                     // 돈 내는 사용자의 클론 클립을 하나도 안 받는다. 게다가 이 작업은
                     // `ExistingWorkPolicy.KEEP` 이라 뒤이은 재큐잉이 버려져 그 회차가 그대로 굳는다.
                     val plan = me.user.plan
-                    // ⚠ **굴러온 토큰을 버리지 않는다**(2026-09-01 리뷰). 이 워커는 배경에서
-                    // 도는 일이 있어(예: `voice_changed` FCM) 그때는 이 요청이 **그 실행의
-                    // 유일한 세션 갱신**이다. 버리면 앱이 전경으로 오기 전에 저장된 JWT 가
-                    // 죽고, 이후 프리페치·동기화가 그 옛 토큰으로 401 만 받는다.
+                    // ⚠ **만료가 가까우면 굴러온 토큰을 버리지 않는다**(2026-09-01 리뷰). 이
+                    // 워커는 배경에서 도는 일이 있어(예: `voice_changed` FCM) 그때는 이 요청이
+                    // **그 실행의 유일한 세션 갱신**이다. 버리면 앱이 전경으로 오기 전에 저장된
+                    // JWT 가 죽고, 이후 프리페치·동기화가 그 옛 토큰으로 401 만 받는다.
+                    // 만료가 멀면 저장하지 않는다(효율 감사 H3) — 콜드 스타트마다 진입 갱신이
+                    // 방금 굴린 토큰을 또 굴려 세션을 한 번 더 바꿨다. 판정은
+                    // [workerRolledTokenToSave](`SessionTokenRenewal.shouldRenew`).
                     // **검사와 저장을 한 덩어리로** 한다 — 따로 하면 그 사이 로그아웃이
                     // 끼어들어 비운 저장소에 세션을 되쓴다(`PlanChangeSyncWorker` 와 같은 이유).
-                    me.token?.takeIf { it.isNotBlank() }?.let { rolled ->
+                    workerRolledTokenToSave(usedToken, me.token, System.currentTimeMillis())?.let { rolled ->
                         // ⚠ **저장만 하고 끝내지 않는다**(2026-09-21 리뷰). 굴린 토큰으로
                         // 이후 요청(`listVoiceProfiles`·클립 다운로드·재바인딩)과 401 귀속을
                         // **함께** 옮긴다 — 둘이 갈라졌을 때의 두 갈래 사고는 [tokenAfterRoll].
@@ -337,6 +409,10 @@ class StockClipPrefetchWorker(
                         .toSet()
                 }
             }
+            // 캐시는 디렉터리를 **한 번** 읽어 아래 두 판정(`clips`·`missing`)이 같이 본다 —
+            // 클립 × 키마다 따로 물으면 그만큼 디렉터리를 다시 읽는다. 그 사이 이 회차는 아무것도
+            // 쓰지 않으므로 답은 한 키씩 물은 것과 같다(`AlarmAudioStore.snapshot`).
+            val cache = withContext(Dispatchers.IO) { audioStore.snapshot() }
             val clips = allClips.filter {
                 val isDefaultVoiceClip = it.targetsDefaultVoices(language)
                 // 클론 사전렌더는 '등록 때 고른 언어' 단일 세트라 기기 언어로 거르지 않는다 —
@@ -349,7 +425,7 @@ class StockClipPrefetchWorker(
                 // 시스템 클립을 다 받고도 그 하나 때문에 재시도를 소진하고 FAILED 로 끝난다.
                 val staleNeedsRefresh = (paidVoiceAccess || isDefaultVoiceClip) &&
                     AlarmAudioStore.messageCacheKeys(it.messageId).any { key ->
-                        audioStore.isCachedAudioStale(key, it.audioUrl)
+                        cache.isStale(key, it.audioUrl)
                     }
                 isDefaultVoiceClip || isOwnedCloneClip || staleNeedsRefresh
             }
@@ -487,20 +563,25 @@ class StockClipPrefetchWorker(
             val missing = clips.mapNotNull { clip ->
                 val prefetchStock = clip.targetsDefaultVoices(language) || clip.voiceProfileId in ownedProfileIds
                 val keys = AlarmAudioStore.messageCacheKeys(clip.messageId).filter { key ->
-                    audioStore.isCachedAudioStale(key, clip.audioUrl) ||
+                    cache.isStale(key, clip.audioUrl) ||
                         (prefetchStock && key == cacheKeyFor(clip) &&
-                            audioStore.getCachedAudio(key, clip.audioUrl) == null)
+                            cache.isMissingOrStale(key, clip.audioUrl))
                 }
                 keys.takeIf { it.isNotEmpty() }?.let { clip to it }
             }
-            publishProgress(done = clips.size - missing.size, total = clips.size)
-            if (missing.isEmpty()) {
+            val alreadyCached = clips.size - missing.size
+            // ⚠ **받을 것이 없으면 서비스를 올리지 않는다**(2026-10-11, [shouldPromoteToForeground]).
+            //   예전에는 이 판정 **앞에서** `publishProgress` 를 불러, 받을 것이 없는 콜드 스타트마다
+            //   `dataSync` 서비스와 알림이 떴다. 진행 값만 알린다 — 받기 화면·헤더 퍼센트가 이 값을 읽는다.
+            if (!shouldPromoteToForeground(missing.size)) {
+                setProgress(progressData(done = alreadyCached, total = clips.size))
                 rebind()
                 if (accountChangedDuringRun) return@runCatching Result.retry()
                 return@runCatching Result.success()
             }
+            publishProgress(done = alreadyCached, total = clips.size)
 
-            var done = clips.size - missing.size
+            var done = alreadyCached
             // ⚠ **격리는 하되 실패를 삼키지는 않는다**(2026-08-31 리뷰). 클립별로 예외를 잡아
             // 형제 요청을 살리는 것과, 그 회차를 '성공' 으로 보고하는 것은 다른 문제다.
             // 성공으로 끝내면 WorkManager 가 백오프 재시도를 걸지 않아, 약전파에서 한두 개를
@@ -517,10 +598,17 @@ class StockClipPrefetchWorker(
             //   바깥의 SESSION_EXPIRED 갈래 한 곳이 끝낸다. 다음 배치는 시작하지 않는다 — 같은 토큰으로
             //   보내 봐야 같은 401 이다.
             val sessionExpired = java.util.concurrent.atomic.AtomicReference<Throwable?>(null)
+            // ⚠ **한 회차는 끝이 있다**(2026-10-11, [mayStartNextClipBatch]). 예산을 넘겼으면 남은 배치를
+            //   시작하지 않는다 — 받아 둔 클립은 캐시에 남고 다음 회차가 나머지만 받는다.
+            var budgetExhausted = false
             // 클립당 HTTP 왕복 1회다. 44개를 순차로 받으면 약전파에서 1분을 넘기므로 소량 병렬로
             // 겹친다(서버·기기 부담을 감안해 4로 제한).
-            for (batch in missing.chunked(PARALLELISM)) {
+            for ((batchIndex, batch) in missing.chunked(PARALLELISM).withIndex()) {
                 if (sessionExpired.get() != null) break
+                if (!mayStartNextClipBatch(batchIndex, runStartedAt, SystemClock.elapsedRealtime())) {
+                    budgetExhausted = true
+                    break
+                }
                 coroutineScope {
                     batch.map { (clip, cacheKeys) ->
                         async(Dispatchers.IO) {
@@ -575,6 +663,13 @@ class StockClipPrefetchWorker(
             // 받은 것은 묶어 둔 채(부분 성공은 남는다) 401 을 바깥 한 곳으로 올린다.
             sessionExpired.get()?.let { throw it }
             if (accountChangedDuringRun) return@runCatching Result.retry()
+            // 예산에 닿아 멈춘 회차는 끝난 것이 아니다 — 다른 일시적 실패와 **같은 횟수 한도 안에서** 다시
+            // 시도한다. 한도를 다 쓰면 실패로 끝나 받기 화면이 '다시 시도' 를 띄운다(약한 망에서 끝없이
+            // 돌지 않는다). 시작하지 못한 클립은 실패로 세지 않는다 — 시도한 적이 없다.
+            if (budgetExhausted) {
+                Log.i(TAG, "Stock clip prefetch reached its run budget; the remaining clips continue on the next run")
+                return@runCatching if (runAttemptCount < MAX_RUN_ATTEMPTS) Result.retry() else Result.failure()
+            }
             // 하나라도 못 받았으면 이 회차는 끝난 것이 아니다 — 다음 회차가 나머지만 받는다
             // (이미 받은 파일은 캐시에 남아 `missing` 계산에서 빠진다).
             //
@@ -703,14 +798,25 @@ class StockClipPrefetchWorker(
          * 기준은 서버 매니페스트에 **실제로 있는** 클립이다 — 기대 개수표로 세면 서버가 아직
          * 못 만든 몫 때문에 알람 설정 관문이 영영 안 열린다. iOS 짝은
          * `StockClipPrefetcher.defaultVoiceProgress`.
+         *
+         * ⚠ **디스크를 읽는다 — 메인 스레드에서 부르지 말 것.** 알람 관문은
+         * `ui/app/DefaultVoiceGate.kt` 가 IO 에서 부른다.
+         *
+         * ⚠ **클립마다 캐시를 따로 묻지 말 것**(2026-09-29 A32). 예전에는 클립마다
+         * `getCachedAudio` 를 불러 디렉터리를 두 번 통째로 읽고 **길이까지 쟀다** — 76개면 한 번
+         * 묻는 데 1.4~1.8초였고, 그걸 ＋ 한 번에 메인에서 두 번 불러 화면이 3.5초 멎었다.
+         * 디렉터리 한 번 + 메타만 본다(`AlarmAudioStore.missingOrStaleCacheKeys`, 답은 같다).
+         * 회귀 테스트 `AlarmAudioStoreProbeCountTest`.
          */
         fun defaultVoiceProgress(context: Context, userId: String?): Pair<Int, Int>? {
             val manifest = StockClipManifestStore.load(context, userId) ?: return null
             val locales = context.resources.configuration.locales
             val language = appVoiceLanguageOf((if (!locales.isEmpty) locales[0] else null)?.language)
-            val store = AlarmAudioStore(context)
             val targets = manifest.clips.filter { it.isDefaultVoiceTarget(language) }
-            val done = targets.count { store.getCachedAudio(cacheKeyFor(it), it.audioUrl) != null }
+            val missing = AlarmAudioStore(context).missingOrStaleCacheKeys(
+                targets.map { cacheKeyFor(it) to it.audioUrl },
+            )
+            val done = targets.count { cacheKeyFor(it) !in missing }
             return done to targets.size
         }
 
@@ -720,7 +826,14 @@ class StockClipPrefetchWorker(
          * 「기본 목소리를 다 받아야 알람을 설정한다」.
          */
         fun defaultVoicesReady(context: Context, userId: String?): Boolean =
-            defaultVoiceProgress(context, userId)?.let { (done, total) -> done >= total } ?: false
+            defaultVoicesReady(defaultVoiceProgress(context, userId))
+
+        /**
+         * 이미 센 진행률로 같은 판정을 한다 — 관문이 한 번 세서 판정과 알럿 퍼센트에 **함께**
+         * 쓰게 한다(예전에는 막힐 때 두 번 셌다). 모르면(null) 막는다.
+         */
+        fun defaultVoicesReady(progress: Pair<Int, Int>?): Boolean =
+            progress?.let { (done, total) -> done >= total } ?: false
 
         private fun cacheKeyFor(clip: StockClip): String =
             "${AlarmAudioStore.STOCK_CACHE_KEY_PREFIX}${clip.messageId}"

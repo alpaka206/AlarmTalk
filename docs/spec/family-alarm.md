@@ -9,6 +9,9 @@
 음성 업로드로 보내는 가족 알람도 발신자의 서버 유료 권한이 필요하다. 결제 보류로 그룹
 구조만 남아 있는 것은 전송 권한이 아니다. 메시지·알람을 쓰는 트랜잭션에서 발신자 plan을
 재확인하며, 무료이면 기존 업로드가 있어도 생성·재전송·푸시 없이 거절한다.
+그룹 주인이 탈퇴해 그룹이 해체되면 멤버의 권한도 함께 바뀐다 — 멤버 기기는 커밋 뒤
+`plan_changed` 로 곧바로 다시 읽는다(주인의 클론 유무와 무관,
+[billing-lifecycle.md](billing-lifecycle.md) 「그룹 주인이 탈퇴하면」).
 
 | | 보낸 사람 | 받은 사람 |
 | --- | --- | --- |
@@ -26,6 +29,11 @@
 ⚠ **보낸 사람의 목록에 그 알람이 남지 않는다.** 양 앱 모두 가족 알람은 서버로만 보내고
 **로컬 행을 만들지 않는다**(`createFamilyTargetAlarm`). 그래서 보낸 사람에게는 고칠 화면
 자체가 없다 — 이게 위 표를 지키는 방식이다.
+
+⚠ **서버가 받았으면 곧바로 닫는다 — 새로고침을 기다리지 않는다**(2026-09-29). 안드로이드는
+처음부터 `onSuccess { onDone() }` 였다. 보낸 사람 기기에는 반영할 행이 없으니(바로 위) pull 이
+가져올 것이 없고, 보내기로 바뀌는 이용권 정보도 없다. iOS 는 예전에 알람 pull 과 이용권
+새로고침(직렬 4~5 왕복)을 **기다린 뒤에** 닫아, 저장을 누르고 편집기가 몇 초씩 멈춰 있었다.
 
 ### 1-1. 받은 뒤에는 **전부** 받은 사람 것이다
 
@@ -126,7 +134,13 @@ ack 한다. 로컬 행과 음원이 있어도 AlarmManager/AlarmKit 예약이 �
   (`upsertPreservingServerSyncFields`). 이 불변식이 깨지면 판정이 통째로 뒤집힌다.
 - `syncState` 로는 못 한다 — 받은 알람은 항상 `synced` 로 파생된다(`nextLocalSyncState`).
 - **예외는 목소리 철회뿐이다.** 발신자가 탈퇴하면 고친 행에서도 목소리를 걷어낸다
-  (생체정보 파기). 그건 재구성이 아니라 별도 경로다(`withVoiceRevoked`).
+  (생체정보 파기). 그건 재구성이 아니라 별도 경로다(`withVoiceRevoked`). 걷어낸 알람은 같은
+  시각에 **기본 목소리(미나)** 로 운다 — 재생 방식은 받은 사람이 둔 값 그대로다(2026-09-29 — 그전에는
+  '알람' 모드로 내렸다. [billing-lifecycle.md](billing-lifecycle.md) 「목소리를 잃은 알람」).
+- 재구성이 도는 행(아직 안 고친 행)도 같다 — 수신 확인 전에 서버가 목소리를 걷어냈거나 문구의 음원이
+  없어져 보낸 사람 목소리를 **더는 받을 수 없으면** '알람' 모드가 아니라 미나로 다시 짓는다(안드로이드
+  `buildReceivedAlarmRow` 의 `senderVoiceNoLongerAvailable`, iOS `RemoteAlarmPullSync.replacingUnavailableSenderVoice`).
+  음원 **다운로드 실패**는 다음 pull 이 다시 받으므로 그 사이만 알람음이다.
 
 ### ⚠ 보낸 알람은 **절대** 수정할 수 없다 (서버가 강제한다)
 
@@ -338,8 +352,11 @@ OS 예약까지 성공시킨 뒤 현재 버전을 로컬에 기록하고 ack한�
 5분 그대로고, 추가 1분은 앱 안내·선택에만 쓰는 전송 여유다.
 
 ⚠ **값은 세 곳에 있고 반드시 같아야 한다.** 하나만 내리면 앱은 통과시키는데 서버가
-400 `FAMILY_ALARM_LEAD_TIME` 으로 거절해, 사용자에게는 이유를 알 수 없는 "상대 알람
-설정에 실패했어요" 만 보인다(2026-08-21 실기기에서 실제로 그랬다).
+400 `FAMILY_ALARM_LEAD_TIME` 으로 거절한다. 예전에는 그 거절이 이유를 알 수 없는 "상대 알람
+설정에 실패했어요" 로만 보였다(2026-08-21 실기기에서 실제로 그랬다). 지금은 두 앱의 공용
+오류 표가 「조금 더 뒤로 맞춰 주세요」로 말하고, 받지 않음(`FAMILY_ALARM_DISABLED`)·설정 불가능
+시간(`FAMILY_ALARM_QUIET_TIME`)도 그 이유를 말한다. 문구에는 분 수를 넣지 않는다 — 값은 아래
+세 곳에만 둔다.
 
 | 서버 | Android | iOS |
 | --- | --- | --- |
@@ -355,6 +372,21 @@ pull 을 돌린다(실측 3초). 그래서 근거가 사라진 값이다.
 **APNs 설정 오류로 등록을 지우지 않는다.** `DeviceTokenNotForTopic`·`BadDeviceToken`은
 서버의 topic/샌드박스 설정 불일치일 수도 있으므로 등록을 보존한다. 명시적인 `Unregistered`만
 자동 정리한다. 설정을 바로잡으면 같은 등록으로 다시 전송할 수 있어야 한다.
+
+**푸시 등록은 스스로 낫는다**(2026-10-11 — iOS 를 안드로이드에 맞췄다). 서버의 등록(`push_tokens`)은 앱 모르게
+사라지거나 생기지 못할 수 있다 — 등록 요청이 실패했거나(2026-09-28·10-07 `/push/register` 가 게이트웨이 525·520 을
+받아 500 이었다), 서버가 `Unregistered` 로 정리했거나. 앱이 "이미 올렸다" 는 기억만 믿으면 그 기기는 토큰이나 계정이
+바뀔 때까지 가족 알람 푸시를 못 받는다(주기 동기화만 남는다). 그래서:
+
+- **실행마다 한 번은 지금 토큰을 다시 올린다 — 같은 값이어도.** 안드로이드는 프로세스가 뜰 때마다(주기 워커가 깨운
+  실행 포함)·로그인·탈퇴 취소·토큰 회전 때 올린다. iOS 는 실행의 첫 토큰 콜백을 기억과 같아도 올린다. 같은 실행
+  안에서는 같은 값을 다시 올리지 않는다.
+- **iOS 는 확인될 때까지 전경으로 돌아올 때마다 다시 올린다.** 그 실행의 등록이 실패했거나, 토큰이 세션 없이 왔거나,
+  APNs 등록이 실패했으면 다음 전경 복귀가 토큰을 다시 받아 올린다. iOS 앱은 멈춘 채 며칠씩 살아 있어 '다음 실행' 을
+  기다리면 그동안 푸시가 끊긴다. 확인된 뒤에는 전경마다 올리지 않는다.
+- 해제(로그아웃·탈퇴 신청)를 보낸 뒤에는 같은 계정이라도 확인을 내린다 — 응답만 잃었을 수 있다.
+- **탈퇴 대기 중에는 전경에서 다시 올리지 않는다** — 서버가 등록을 403 으로 막는다. 복구가 스스로 다시 건다
+  ([session-and-auth.md](session-and-auth.md) 「탈퇴 예약을 취소해 복구할 때」).
 
 **콜드 실행의 가족 알람 pull도 로컬 저장소 로드를 기다린다.** 상한 내에 로드되지 않거나
 작업이 취소되면 새 행·예약·ACK를 만들지 않고 실패로 처리해 다음 수신/동기화에서 재시도한다.
@@ -439,16 +471,22 @@ offset은 동시 삭제·재정렬에서 누락을 완전히 막을 수 없으�
   보내는 쪽에서 미리 확정해 박으면 **그 순간의 발신자 날씨가 영원히 고정**된다.
 - ⚠ **받는 사람이 지역을 등록하지 않았으면 서버 폴백(서울)이 아니라 날씨가 아닌 테마로
   보내야 한다.** 폴백은 "내 날씨인 줄 알았는데 아니었다" 를 조용히 만든다.
+- 받는 사람의 지역은 **목록의 지역**(계정 설정 `weather.region`, 2026-09-30)이다 — 서버가 그 지역으로
+  미리 계산해 둔 날씨를 준다. 도시를 글자로 적던 시절의 옛 값은 서버가 목록으로 되짚고, 되짚지 못한
+  값은 옛 경로로 돈다([voice-and-message.md](voice-and-message.md) 「날씨 지역은 목록에서만 고른다」).
+  규칙(받는 사람 기준)은 그대로다.
 
 ## 구현 지도
 
 | 규칙 | Android | iOS | 백엔드 |
 | --- | --- | --- | --- |
-| 보내기(로컬 행 없음) | `MainViewModelAlarmActions.createFamilyTargetAlarm` | `AlarmEditorSheet.createFamilyTargetAlarm` | `routes/family-alarm.ts` |
+| 보내기(로컬 행 없음 · 성공하면 새로고침 없이 닫는다) | `MainViewModelAlarmActions.createFamilyTargetAlarm` | `AlarmEditorSheet.createFamilyTargetAlarm` | `routes/family-alarm.ts` |
 | 음성 업로드 발신자의 유료 권한 | 기존 API 소비 | 기존 API 소비 | `family-alarm.ts` 쓰기 트랜잭션 → `isPaidVoicePlan` |
 | 받는 사람 고르기 | 「누구를 깨울까요?」 시트 | `WakeTargetSheet` | — |
+| 녹음 기본 라벨은 계약값으로 보내고 받는 기기 언어로 표시 | `familyVoiceAlarmLabel` · `localizedReceivedVoiceText` | `ReceivedVoiceTextDisplay` | `family-alarm.ts` 의 `DEFAULT_VOICE_LABEL` |
 | 저장 버튼 라벨 | `editor_save_for`(`저장 · %1$s`) | `AlarmEditorSheet.saveButtonTitle` | — |
 | 방해금지 판정 | — | — | `lib/family-alarm-settings.ts` `isBlockedByFamilyAlarmQuietTime` |
+| 서버 거절 이유를 말한다(받지 않음·리드타임·설정 불가능 시간) | `familyAlarmFailureMessage` → `network/ApiErrorMessages.kt` | `APIErrorMessages.message(for:fallback:)` | `routes/alarm-helpers.ts` 의 `evaluateFamilyAlarmTimingGuard`·`routes/family-alarm.ts` |
 | 방해금지 기본값 없음 | `MainViewModelAuthActions`(다 지우면 그대로) | `AuthViewModel.updateProfile`(같음) | `normalizeQuietWindows` 폴백 `[]` + 가입 응답 |
 | 기존 계정 정리 | — | — | 마이그레이션 98 |
 | 리드타임(**세 값이 같아야 한다**) | `AlarmEditorScreenComponents.kt` 의 `FAMILY_ALARM_MIN_LEAD_MILLIS`·`earliestSelectableFamilyAlarmMillis`·`isFamilyAlarmLeadTooSoon` | `AlarmEditorSheet.familyAlarmMinLeadMillis`·`earliestSelectableFamilyAlarmMillis` | `routes/alarm-helpers.ts` 의 `FAMILY_ALARM_MIN_LEAD_MINUTES` |
@@ -461,6 +499,7 @@ offset은 동시 삭제·재정렬에서 누락을 완전히 막을 수 없으�
 | 서버 수신 판별·origin 일치 | `RemoteAlarm.isReceivedForPull` → 받은 행 생성 | `RemoteAlarm.isReceivedForPull` → `RemoteAlarmPullSync`·`RemoteAlarmMapper` | `normalizeAlarmRow`의 UUID·로그인 식별자 판정 |
 | 전송 중 편집 보존·생성 성공 뒤 취소 | `AlarmSyncService`의 `NonCancellable` → `AlarmDao.setSyncStateIfUnchanged`·`markRemoteIdKeepDirty` | 일괄/단건 push → `LocalAlarmStore.markRemote(snapshot:)` → `saveNow` 후 취소 확인 | 기존 POST 생성·PATCH 수정 |
 | APNs 설정 오류는 등록 보존 | — | 기존 등록 캐시 유지 | `apns.ts` `isDeadApnsToken` → `fcm.ts` `pruneDeadApnsTokens` |
+| 푸시 등록은 스스로 낫는다(실행마다 한 번은 같은 값이어도 · iOS 는 확인될 때까지 전경마다 · 해제를 보내면 확인을 내린다 · 탈퇴 대기는 전경에서 올리지 않는다) | `AlarmTalkApplication.onCreate`(세션이 있으면)·`onSignedIn`·`cancelAccountDeletion` → `AlarmTalkMessagingService.registerCurrentToken`(기억 없이 매번 POST) · `onNewToken`(토큰 회전) | `PushNotificationCoordinator.registerToken`(실행의 첫 콜백은 영속 캐시와 같아도 올린다 — 메모리 값 `uploadConfirmedInThisProcess`, 실패·`unregisterCurrentToken`(해제를 보내기 직전)·`clearRegistrationCache` 가 내린다) · `resumeRegistrationIfNeeded(session:)`(`registrationConfirmedInThisProcess(userID:)` 가 아니면 `start` — 세션 없음·탈퇴 대기는 하지 않는다) ← `AlarmTalkApp` 의 `scenePhase == .active` · 회귀 `AlarmTalkTests/PushRegistrationRecoveryTests`(`test_실행마다_첫_등록은_캐시와_같아도_서버에_다시_올린다`·`test_실패한_등록은_같은_실행의_전경_복귀가_다시_올린다`·`test_전경_복귀는_세션이_있고_탈퇴_대기가_아닐_때만_확인되지_않은_등록을_다시_요청한다`·`test_해제를_보낸_뒤에는_같은_계정이어도_다시_올린다`·`test_전경_복귀가_확인되지_않은_푸시_등록을_다시_올린다`) | `routes/push.ts` 의 `/register`(같은 값을 다시 올려도 같은 한 행 — `pushRegisterStatements` 의 멱등 batch · 게이트웨이 실패는 `retryTransientTurso` 가 다시 보낸다) |
 | 보낸 뒤 수정 금지 | — | — | `alarm-mutation.ts` 타깃 PATCH → 409 |
 | 수신자 음원 접근권 | — | — | `routes/tts.ts` `GET /messages/:id/audio` 의 `target_user_id` 갈래 |
 | 받은 뒤 수정은 수신자 것 | `RemoteAlarmPullSyncService.locallyEditedByRecipient` | `RemoteAlarmPullSync.locallyEditedByRecipient` | — |
@@ -468,6 +507,7 @@ offset은 동시 삭제·재정렬에서 누락을 완전히 막을 수 없으�
 | 수신자 편집을 서버에 안 올림 | `AlarmSyncService`(`origin == LOCAL_OWNED`) | `RemoteAlarmPushSync` + `AlarmsListView.shouldPushToServer` | `alarm-mutation.ts` PATCH 소유권 게이트 |
 | 그만받기(삭제) | `MainViewModelAlarmActions`(decline) | `RemoteAlarmSyncViewModel`(decline) | `POST /alarm/:id/decline`, `GET /alarm/declined` |
 | 목소리가 사라짐 → 목소리만 회수 | `withVoiceRevoked` | `RemoteAlarmPullSync.withVoiceRevoked` | `lib/voice-revocation.ts` → `GET /alarm/declined` 의 `revokedAlarmIds` |
+| 수신 확인 전 보낸 사람 목소리를 더는 받을 수 없음 → 미나로 다시 지음 | `buildReceivedAlarmRow`(`senderVoiceNoLongerAvailable`) | `RemoteAlarmPullSync.replacingUnavailableSenderVoice`(← `mergeRemote`) | `lib/voice-revocation.ts`(살아 있는 행의 `message_id`·`voice_profile_id` 를 비움) · 제자리 교체(`messages.audio_url` 을 비움) |
 | 회귀 테스트 | `RemoteAlarmPullSyncServiceTest` | `RemoteAlarmPullSyncTests` | — |
 
 ## 검증 방법

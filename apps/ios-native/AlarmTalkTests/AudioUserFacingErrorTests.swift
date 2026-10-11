@@ -4,7 +4,17 @@ import XCTest
 @testable import AlarmTalk
 
 final class AudioUserFacingErrorTests: XCTestCase {
-    func test_userFacingMessagePreservesKoreanError() {
+    private struct AppMessage: AppUserFacingError {
+        let errorDescription: String?
+    }
+
+    func test_audioErrorUsesAppMessagesInEnglishAndJapanese() {
+        for message in ["Could not open the audio file.", "音声ファイルを開けません。"] {
+            XCTAssertEqual(AudioUserFacingError.message(for: AppMessage(errorDescription: message), fallback: "fallback"), message)
+        }
+    }
+
+    func test_userFacingMessageRejectsUntrustedKoreanError() {
         let error = NSError(
             domain: "test",
             code: 1,
@@ -13,7 +23,7 @@ final class AudioUserFacingErrorTests: XCTestCase {
 
         XCTAssertEqual(
             AudioUserFacingError.message(for: error, fallback: "fallback"),
-            "오디오 길이를 확인하지 못했어요."
+            "fallback"
         )
     }
 

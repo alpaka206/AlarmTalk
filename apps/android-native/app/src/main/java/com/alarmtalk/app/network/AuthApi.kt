@@ -22,8 +22,16 @@ data class DynamicPromptSettings(
 )
 
 data class DynamicPromptWeatherSettings(
+    /** 옛 앱이 읽는 나라 글자(`대한민국`·`일본`·`미국`). 서버가 [region] 에서 다시 적는다. */
     val country: String? = null,
+    /** 옛 앱이 읽는 지역 글자(한국어 이름). 서버가 [region] 에서 다시 적는다. */
     val city: String? = null,
+    /**
+     * 목록의 지역 키(`kr-seoul`) — docs/spec/voice-and-message.md 「날씨 지역은 목록에서만 고른다」.
+     * 옛 서버·옛 행이면 null 이고, 그때는 위 글자를 되짚는다(`resolvedRegion`). 옛 서버는 모르는
+     * 칸을 무시하므로 보내도 저장이 깨지지 않는다.
+     */
+    val region: String? = null,
 )
 
 data class DynamicPromptFortuneSettings(
@@ -64,9 +72,16 @@ data class PersonalPromo(
      * 대상이면 등록한 목소리가 3일 보관 후 삭제된다. 결제 보류(ON_HOLD·PAUSED)처럼 활성 행이
      * 남은 계정은 false 다.
      *
-     * 종료 안내가 이 값으로 "등록한 목소리는 3일 보관 후 삭제돼요" 를 넣을지 가른다 — 대상이
-     * 아닌 사람에게 삭제를 말하면 거짓 안내다. 이 키를 주지 않던 서버(null)는 예전 문구
-     * 그대로 true 로 읽는다([personalPromoDeletesVoicesAtEnd]).
+     * 이 값을 읽는 곳은 둘이다:
+     * - 종료 안내가 "등록한 목소리는 3일 보관 후 삭제돼요" 를 넣을지 가른다 — 대상이 아닌
+     *   사람에게 삭제를 말하면 거짓 안내다. 이 키를 주지 않던 서버(null)는 예전 문구 그대로
+     *   true 로 읽는다([personalPromoDeletesVoicesAtEnd]).
+     * - 이용권 화면이 **보류 행 신호**로 쓴다 — `false` 면 원시 free 인데 `active` 구독 행이 남은
+     *   계정(결제 보류 등)이라 개인 카드를 '현재 이용권' 으로 올리지 않고 프로모 문구를 카드 위
+     *   한 줄로 둔다(`ui/billing/BillingPanels.kt` 의 `planScreenCurrentOf` 에 넘기는
+     *   `hasHeldSubscriptionRow = deletesVoicesAtEnd == false`, 스펙 billing-lifecycle D4).
+     *   보류 행은 구독 응답에 실리지 않아 이 값이 아니면 프로모만 쓰는 계정과 구별되지 않는다.
+     *   null(키를 모르는 서버)은 보류가 아닌 것으로 읽는다.
      */
     @SerializedName("deletes_voices_at_end") val deletesVoicesAtEnd: Boolean? = null,
     /**
@@ -144,7 +159,6 @@ data class EmailVerificationRequest(
 
 data class EmailVerificationResponse(
     val success: Boolean,
-    @SerializedName("expires_in_seconds") val expiresInSeconds: Int? = null,
     @SerializedName("debug_code") val debugCode: String? = null,
 )
 
@@ -290,6 +304,11 @@ data class AppVersionResponse(
     @SerializedName("min_supported_version") val minSupportedVersion: Int = 1,
     @SerializedName("latest_version") val latestVersion: Int = 1,
     @SerializedName("store_url") val storeUrl: String = "",
+    /**
+     * 지역 시트의 날씨 출처 줄을 켜는 서버 신호(불투명 토큰). 정확히 `"kma_jma_nws"` 일 때만 줄을 그린다
+     * (`showsWeatherAttribution`, `ui/editor/AlarmRandomPromptSettings.kt`). 필드가 없는 옛 서버는 null 이다.
+     */
+    @SerializedName("weather_attribution") val weatherAttribution: String? = null,
 )
 
 interface AuthApi {

@@ -77,8 +77,8 @@ final class AlarmSoundVolumeTests: XCTestCase {
         let key100 = "vol-test-100-\(UUID().uuidString)"
         let key30 = "vol-test-30-\(UUID().uuidString)"
         defer {
-            AlarmSoundStaging.clearStagedSound(forKey: key100)
-            AlarmSoundStaging.clearStagedSound(forKey: key30)
+            AlarmSoundStaging.clearStagedSoundFiles(forKey: key100)
+            AlarmSoundStaging.clearStagedSoundFiles(forKey: key30)
             try? FileManager.default.removeItem(at: source)
         }
 
@@ -103,7 +103,7 @@ final class AlarmSoundVolumeTests: XCTestCase {
         let source = try makeSineWAV(amplitude: 0.5, name: "voice-cache")
         let key = "vol-cache-\(UUID().uuidString)"
         defer {
-            AlarmSoundStaging.clearStagedSound(forKey: key)
+            AlarmSoundStaging.clearStagedSoundFiles(forKey: key)
             try? FileManager.default.removeItem(at: source)
         }
 
@@ -124,7 +124,7 @@ final class AlarmSoundVolumeTests: XCTestCase {
         let source = try makeSineWAV(amplitude: 0.5, name: "silent")
         let key = "vol-zero-\(UUID().uuidString)"
         defer {
-            AlarmSoundStaging.clearStagedSound(forKey: key)
+            AlarmSoundStaging.clearStagedSoundFiles(forKey: key)
             try? FileManager.default.removeItem(at: source)
         }
 

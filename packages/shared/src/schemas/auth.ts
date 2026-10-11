@@ -14,9 +14,51 @@ export const PasswordSchema = z
   .regex(/[A-Za-z]/, '영문자를 최소 1자 포함해야 합니다')
   .regex(/[0-9]/, '숫자를 최소 1자 포함해야 합니다');
 
+const ARABIC_INDIC_ZERO = 0x0660;
+const PERSIAN_ZERO = 0x06f0;
+const FULLWIDTH_ZERO = 0xff10;
+const NON_ASCII_CODE_DIGIT_RE = /[\u0660-\u0669\u06F0-\u06F9\uFF10-\uFF19]/g;
+
+/**
+ * 인증 코드의 형식을 보기 **전에** 거치는 정규화 — 입력 규칙의 **서버 2차**다
+ * (앱 1차는 안드로이드 `sanitizeVerificationCode`, iOS `InputSanitizer.sanitizeVerificationCode`).
+ *
+ * 하는 일은 둘뿐이다: 앞뒤 공백을 걷고, 아라비아-인도(U+0660–0669)·페르시아(U+06F0–06F9)·
+ * 전각(U+FF10–FF19) 숫자를 **같은 값의 ASCII 숫자**로 바꾼다.
+ *
+ * 왜 필요한가: 형식 검사(`\d{6}`)는 ASCII 숫자만 받는다. 그런 숫자를 내는 키보드로 친 코드는
+ * 값이 맞아도 형식에서 떨어져 **틀린 횟수도 세지 않고 영영 통과하지 못했다** — 화면은 그동안
+ * "맞지 않아요" 라고 했다. 스토어에 이미 나가 있는 앱에 닿는 길은 이 변환뿐이다
+ * (`docs/spec/session-and-auth.md` 「코드는 ASCII 숫자 여섯 자다」).
+ *
+ * ⚠ **그 밖의 글자는 손대지 않는다.** 가운데 공백·하이픈·글자는 지우지 않는다 — 그대로 남아
+ * 형식 검사에서 `AUTH_VALIDATION_FAILED` 로 떨어진다(횟수를 세지 않는다). 여기서 지우기 시작하면
+ * "무엇이든 숫자만 남기면 통과" 가 되어 앱의 새니타이저와 규칙이 둘이 된다.
+ *
+ * 인증 확인·가입·비밀번호 재설정 확정이 모두 [EmailVerificationCodeSchema] 를 지나므로, 코드
+ * 해시(`hashEmailVerificationCode`)도 **바뀐 값으로** 만들어진다 — 발급 때는 서버가 만든 ASCII
+ * 여섯 자를 해시하므로 두 값이 만난다.
+ */
+export function normalizeVerificationCode(raw: string): string {
+  return raw.trim().replace(NON_ASCII_CODE_DIGIT_RE, (digit) => {
+    const codePoint = digit.charCodeAt(0);
+    const zero =
+      codePoint >= FULLWIDTH_ZERO
+        ? FULLWIDTH_ZERO
+        : codePoint >= PERSIAN_ZERO
+          ? PERSIAN_ZERO
+          : ARABIC_INDIC_ZERO;
+    return String(codePoint - zero);
+  });
+}
+
 export const EmailVerificationCodeSchema = z
   .string()
-  .regex(/^\d{6}$/, '인증 코드는 6자리 숫자여야 합니다');
+  .transform(normalizeVerificationCode)
+  // 형식 검사는 **바꾼 뒤의 값**에 건다. JS 의 `\d` 는 유니코드 플래그가 없으면 ASCII `[0-9]` 뿐이라,
+  // 위에서 바꾸지 않은 다른 문자 체계의 숫자(데바나가리 등)는 여전히 거절된다.
+  // (`refine` 이 아니라 `pipe` 로 잇는다 — 400 응답의 `issues` 에 실리는 형식 오류의 모양이 예전 그대로다.)
+  .pipe(z.string().regex(/^\d{6}$/, '인증 코드는 6자리 숫자여야 합니다'));
 
 /**
  * 이메일 **형식 규칙의 단일 출처** — 서버·안드로이드·iOS 가 이 한 줄을 베껴 쓴다.

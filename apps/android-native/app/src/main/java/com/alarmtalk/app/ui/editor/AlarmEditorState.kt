@@ -1,9 +1,7 @@
 package com.alarmtalk.app
 
-import androidx.compose.material3.Text
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
-import com.alarmtalk.app.data.AlarmAudioStore
 import com.alarmtalk.app.data.AlarmDraft
 import com.alarmtalk.app.data.AlarmEntity
 import com.alarmtalk.app.data.AlarmPlayModes
@@ -12,7 +10,6 @@ import com.alarmtalk.app.data.isSystemVoiceId
 import com.alarmtalk.app.data.SnoozeRepeatLimits
 import com.alarmtalk.app.data.VibrationPatterns
 import com.alarmtalk.app.data.VoiceSources
-import com.alarmtalk.app.network.TtsMessage
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 
@@ -52,18 +49,14 @@ internal class AlarmEditorState(
     voiceProfileId: String?,
     voiceListenerTitle: String?,
     voiceText: String?,
-    voiceCategory: String?,
     voiceLanguage: String?,
     voiceRandomPrompt: Boolean,
     voiceRandomContext: String?,
     voiceWeatherCountry: String?,
     voiceWeatherCity: String?,
-    voiceWeatherLatitude: Double? = null,
-    voiceWeatherLongitude: Double? = null,
     voiceFortuneGender: String?,
     voiceFortuneBirthDate: String?,
     voiceFortuneBirthTime: String?,
-    voiceRepeat: Boolean,
     voiceVolumePercent: Int,
     ttsMessageId: String?,
     alarmVolumePercent: Int,
@@ -74,6 +67,7 @@ internal class AlarmEditorState(
     bucketClipKeysJson: String? = null,
     bucketClipTextsJson: String? = null,
     contextVariantIndex: Int? = null,
+    followsLastMessageChoice: Boolean = false,
 ) {
     var label by mutableStateOf(label)
     var hour by mutableIntStateOf(hour)
@@ -98,18 +92,14 @@ internal class AlarmEditorState(
     // 고리를 끊되, **생성 문구일 때만** 벗긴다 — 직접 입력한 문구의 대괄호는 사용자 것이라
     // 건드리면 저장 시 영구히 사라진다(Codex #660).
     var voiceText by mutableStateOf(voiceText?.stripDeliveryTags(generated = voiceRandomPrompt) ?: "")
-    var voiceCategory by mutableStateOf(normalizedTtsCategory(voiceCategory ?: "morning"))
     var voiceLanguage by mutableStateOf(supportedAppVoiceLanguage(voiceLanguage))
     var voiceRandomPrompt by mutableStateOf(voiceRandomPrompt)
     var voiceRandomContext by mutableStateOf(normalizedRandomPromptContext(voiceRandomContext ?: DefaultRandomPromptContext))
     var voiceWeatherCountry by mutableStateOf(voiceWeatherCountry ?: "")
     var voiceWeatherCity by mutableStateOf(voiceWeatherCity ?: "")
-    var voiceWeatherLatitude by mutableStateOf(voiceWeatherLatitude)
-    var voiceWeatherLongitude by mutableStateOf(voiceWeatherLongitude)
     var voiceFortuneGender by mutableStateOf(voiceFortuneGender ?: "")
     var voiceFortuneBirthDate by mutableStateOf(voiceFortuneBirthDate ?: "")
     var voiceFortuneBirthTime by mutableStateOf(voiceFortuneBirthTime ?: "")
-    var voiceRepeat by mutableStateOf(voiceRepeat)
     var voiceVolumePercent by mutableIntStateOf(voiceVolumePercent.coerceIn(MinVoiceVolumePercent, 100))
     var ttsMessageId by mutableStateOf(ttsMessageId)
     var alarmVolumePercent by mutableIntStateOf(alarmVolumePercent.coerceIn(0, 100))
@@ -127,6 +117,15 @@ internal class AlarmEditorState(
     // 알람 편집 시 값을 보존해야 재저장으로 인덱스가 null 로 날아가지 않는다. 운세는 발사 시점 기기
     // 계산이라 안 담고, 회전형(사랑/약)도 null.
     var contextVariantIndex by mutableStateOf(contextVariantIndex)
+    /**
+     * 이 편집 세션이 **계정의 직전 선택을 이어받는가.** 새 알람은 처음부터 true 이고, 기존
+     * 알람은 문구가 하나도 없던 상태(알람 전용·직접 녹음)에서 목소리 문구로 들어와
+     * [adoptLastMessageChoiceIfUnset] 이 실제로 이어받았을 때만 true 가 된다.
+     *
+     * 편집기의 테마 이어받기(`AlarmEditorScreen` 의 `remembered`)가 이 값을 본다 —
+     * `alarm == null` 로 가르면 알람 전용 알람을 목소리로 바꿨을 때 직전 테마를 못 잇는다.
+     */
+    var followsLastMessageChoice by mutableStateOf(followsLastMessageChoice)
     private var generatedTtsKey by mutableStateOf(
         ttsMessageId?.let {
             buildTtsKey(
@@ -306,6 +305,130 @@ internal class AlarmEditorState(
         !voiceRandomPrompt && !hasChosenBucketKind() && voiceText.isNotBlank()
 
     /**
+     * **문구가 하나도 정해지지 않았는가** — 종류(생성형)도, 테마도, 친 문구도 없다.
+     *
+     * 판정식이 '직접 입력' 과 같은 모양이라 화면은 이 상태를 **빈 직접 입력**으로 그린다
+     * ([isManualForDisplay] 가 true). 그래서 두 가지로 읽힌다:
+     *  - 알람 전용·직접 녹음 알람에는 문구 개념이 없다(`toDraft` 가 문구 필드를 전부 비워
+     *    저장한다). 그 알람을 목소리 문구로 옮긴 직후가 이 상태다 → [adoptLastMessageChoiceIfUnset].
+     *  - 등록(클론) 목소리에서 이 상태로 저장을 누르면 **직접 입력인데 문구가 비었다** →
+     *    서버를 부르기 전에 막는다(`emptyMessageBlockReason`).
+     */
+    fun hasNoMessageChoice(): Boolean =
+        !voiceRandomPrompt && !hasChosenBucketKind() && voiceText.isBlank()
+
+    /**
+     * 문구가 **하나도 정해지지 않았으면** 계정의 직전 선택을 잇는다. 이어받았으면 true.
+     *
+     * ⚠ **빈 '직접 입력' 으로 두지 말 것**(2026-09-29 실기기 보고). 알람 전용 알람을 목소리로
+     * 바꾸면 문구가 비어 있어 요약 행이 '직접 입력' 이 됐고, 그 상태는 저장도 못 하고 고치려면
+     * 한도가 걸린 직접 입력을 새로 쳐야 했다. 규칙은 새 알람과 같다 —
+     * `CLAUDE.md` 「알람 편집기 기본값 = 직전 선택 유지」:
+     *  - 마지막이 직접 입력이었으면 **그 문구까지** 잇는다(글자가 같아 폰에 있는 음성을
+     *    재사용하므로 서버 호출도 한도 차감도 없다).
+     *  - 아니면 마지막 문구 종류, 그것도 없으면 '기본 인사말'(preset).
+     *
+     * 문구가 이미 있으면 **아무것도 바꾸지 않는다** — 기존 알람의 자기 값, 이 세션에서 고른
+     * 값이 언제나 이긴다(열기만 해도 문구가 바뀌면 안 된다는 규칙은 그대로다).
+     */
+    fun adoptLastMessageChoiceIfUnset(lastMessageContext: String?, lastManualText: String?): Boolean {
+        if (!hasNoMessageChoice()) return false
+        val manualText = lastManualText?.takeIf { it.isNotBlank() }
+        if (manualText != null) {
+            voiceRandomPrompt = false
+            voiceText = manualText
+        } else {
+            voiceRandomPrompt = true
+            voiceRandomContext = adoptedRandomContext(lastMessageContext)
+        }
+        clearTtsMeta()
+        followsLastMessageChoice = true
+        return true
+    }
+
+    /**
+     * 재생 방식을 **'알람' → '목소리'** 로 바꾼 순간. 목소리 소스를 TTS 로 되돌리고
+     * (알람 전용 행은 소스가 `LOCAL_AUDIO` 로 저장된다), 문구가 비어 있으면 직전 선택을 잇는다.
+     */
+    fun enterVoiceModeFromAlarmOnly(lastMessageContext: String?, lastManualText: String?) {
+        voiceSource = VoiceSources.TTS_PROFILE
+        clearTtsMeta()
+        adoptLastMessageChoiceIfUnset(lastMessageContext, lastManualText)
+    }
+
+    /**
+     * 편집기의 두 스위치(목소리·알람음)를 재생 방식에 반영한다 — `AlarmEditorScreen.applyAlarmOutput`
+     * 이 그대로 넘긴다. 상태만 바꾸는 부분이라 여기 두고, '알람' → '목소리' 연결을 테스트가 본다.
+     */
+    fun applyAlarmOutput(
+        voice: Boolean,
+        sound: Boolean,
+        signedIn: Boolean,
+        lastMessageContext: String?,
+        lastManualText: String?,
+    ) {
+        val wasAlarmOnly = playMode == AlarmPlayModes.ALARM_ONLY
+        playMode = if (voice) AlarmPlayModes.VOICE_ONLY else AlarmPlayModes.ALARM_ONLY
+        // ⚠ **'목소리만' 에서는 alarmSoundEnabled 를 끄지 않는다.**
+        // 톤을 안 트는 것은 playMode 가 이미 표현한다(표시도 파생값이라 화면은 그대로다).
+        // 여기서 0 으로 박으면, 나중에 유료 만료·목소리 삭제로 그 알람이 강등됐을 때
+        // 톤 폴백까지 함께 막혀 **소리가 하나도 안 나는 알람**이 된다 — 폴백이 가장 필요한
+        // 바로 그 상황에서만 꺼진다. 그 값은 '알람음을 쓸 때의 설정' 으로만 둔다.
+        if (sound) {
+            alarmSoundEnabled = true
+        } else if (!voice) {
+            alarmSoundEnabled = false
+        }
+        if (voice && !signedIn) {
+            voiceSource = VoiceSources.LOCAL_AUDIO
+            clearTtsMeta()
+        } else if (voice && wasAlarmOnly) {
+            // ⚠ **알람 전용 알람에는 문구가 없다** — 저장할 때 문구 필드를 전부 비운다
+            // ([toDraft]). 그대로 목소리로 옮기면 '빈 직접 입력' 으로 보이고 저장도 못 한다
+            // (2026-09-29 실기기 보고). 비어 있으면 **새 알람과 같은 규칙으로** 직전 선택을
+            // 잇는다 — 이미 고른 문구가 있으면 건드리지 않는다.
+            enterVoiceModeFromAlarmOnly(lastMessageContext, lastManualText)
+        }
+    }
+
+    /**
+     * 목소리 선택 시트에서 **목소리(TTS)** 를 골랐다 — `VoiceAudioCard` 가 부른다.
+     * 직접 녹음에서 왔고 문구가 하나도 없으면 직전 선택을 잇는다(알람 전용 → 목소리와 같은 규칙).
+     *
+     * ⚠ **순서가 둘이다**(2026-09-29 리뷰):
+     *  - **잇기 판정은 목소리를 바꾸기 전에.** 기본 목소리로 바꾸면 [selectVoiceProfile] 이 랜덤·
+     *    문구·테마를 비운다 — 그 뒤에 보면 테마가 있던 알람도 '비었다' 로 읽혀 계정의 직전
+     *    선택으로 덮인다. 원래는 거기서 살아남은 `voiceRandomContext` 로 편집기가 **같은 테마**를
+     *    다시 붙인다.
+     *  - **잇기는 바꾼 뒤에.** 먼저 이으면 방금 이은 직접 입력 문구를 [selectVoiceProfile] 이 지운다.
+     */
+    fun selectTtsVoice(profileId: String, lastMessageContext: String?, lastManualText: String?) {
+        val adopts = adoptsLastMessageChoiceOnTtsPick()
+        voiceSource = VoiceSources.TTS_PROFILE
+        clearAudio()
+        clearTtsMeta()
+        selectVoiceProfile(profileId)
+        if (adopts) adoptLastMessageChoiceIfUnset(lastMessageContext, lastManualText)
+    }
+
+    /**
+     * [selectTtsVoice] 가 켤 **랜덤 종류** — 잇지 않거나 직접 입력 문구를 이으면 null.
+     *
+     * 목소리 선택 관문(`needsClipPreparationForVoicePick`)은 목소리를 바꾸기 **전에** 돈다. 그때
+     * 지금 값(녹음 알람이라 랜덤 꺼짐)으로 물으면 "클립이 필요 없다" 며 통과시킨 직후 잇기가
+     * 랜덤을 켜 클립이 필요한 상태로 바뀐다 — 그래서 **바뀔 값**을 따로 내준다.
+     */
+    fun randomContextAdoptedByTtsPick(lastMessageContext: String?, lastManualText: String?): String? =
+        if (adoptsLastMessageChoiceOnTtsPick() && lastManualText.isNullOrBlank()) {
+            adoptedRandomContext(lastMessageContext)
+        } else {
+            null
+        }
+
+    private fun adoptsLastMessageChoiceOnTtsPick(): Boolean =
+        voiceSource == VoiceSources.LOCAL_AUDIO && hasNoMessageChoice()
+
+    /**
      * **사용자가 고른 문구가 테마(버킷)인가 — 재생 방식과 무관하다.**
      *
      * ⚠ **`isActiveBucketAlarm()` 과 용도가 다르다. 둘을 합치지 말 것**(2026-08-16 분리).
@@ -381,6 +504,24 @@ internal class AlarmEditorState(
             clearBucketSelection()
         }
         clearTtsMeta()
+    }
+
+    /**
+     * 목소리가 비어 있을 때 편집기가 **대신 고른다** — `AlarmEditorScreen` 의 기본 목소리
+     * 선택 `LaunchedEffect`. 사용자가 목소리를 바꾼 게 아니다.
+     *
+     * ⚠ **쳐 둔 직접 입력 문구를 지우지 않는다**(2026-09-29 리뷰). [selectVoiceProfile] 은 기본
+     * 목소리로 바뀌면 문구를 비우는데, 그건 사용자가 "문구가 사라져요" 를 확인하고 목소리를
+     * **바꿀 때**의 규칙이다(`VoiceAudioCard` 의 `losesManualText`). 자동 선택에서 그러면 직전
+     * 선택으로 이은 직접 입력 문구(새 알람·알람 전용 → 목소리, 둘 다 목소리가 비어 있다)가 말없이
+     * 사라지고, 스톡 클립 효과가 그 자리에 테마를 붙인다 — 유료의 `manualChosen` 가드는 이미
+     * 지워진 문구를 못 본다. 무료 등급은 그 효과가 여전히 테마로 강제한다(직접 입력 잠금).
+     * iOS 는 기본 선택이 문구를 비우지 않는다(`AlarmEditorSheet.selectDefaultVoiceProfileIfNeeded`).
+     */
+    fun preselectVoiceProfile(profileId: String) {
+        val typedManualText = voiceText.takeIf { hasTypedManualText() }
+        selectVoiceProfile(profileId)
+        if (typedManualText != null) voiceText = typedManualText
     }
 
     fun ttsTextForSave(): String = if (voiceRandomPrompt) "" else voiceText.trim()
@@ -546,7 +687,6 @@ internal class AlarmEditorState(
                 voiceProfileId = alarm?.voiceProfileId,
                 voiceListenerTitle = alarm?.voiceListenerTitle,
                 voiceText = alarm?.voiceText ?: seedManualText,
-                voiceCategory = alarm?.voiceCategory ?: "morning",
                 voiceLanguage = alarm?.voiceLanguage ?: "ko",
                 // 새 알람은 랜덤(기본 문구) ON — 목소리만 고르면 추가 입력 없이 저장 가능.
                 // 단 마지막 선택이 직접 입력이었으면 그 문구로 연다(seedManualText).
@@ -570,7 +710,6 @@ internal class AlarmEditorState(
                 voiceFortuneGender = alarm?.voiceFortuneGender,
                 voiceFortuneBirthDate = alarm?.voiceFortuneBirthDate,
                 voiceFortuneBirthTime = alarm?.voiceFortuneBirthTime,
-                voiceRepeat = true,
                 voiceVolumePercent = alarm?.voiceVolumePercent ?: 100,
                 ttsMessageId = alarm?.ttsMessageId,
                 alarmVolumePercent = alarm?.alarmVolumePercent ?: 100,
@@ -581,6 +720,9 @@ internal class AlarmEditorState(
                 bucketClipKeysJson = alarm?.bucketClipKeysJson,
                 bucketClipTextsJson = alarm?.bucketClipTextsJson,
                 contextVariantIndex = alarm?.contextVariantIndex,
+                // 새 알람만 처음부터 이어받는다. 기존 알람은 문구가 없던 상태에서 목소리
+                // 문구로 들어올 때만 켜진다(adoptLastMessageChoiceIfUnset).
+                followsLastMessageChoice = alarm == null,
             )
         }
     }
@@ -595,9 +737,6 @@ internal fun buildTtsKey(
 ): String =
     listOf(profileId, text.trim(), category, language, listenerTitle?.trim().orEmpty()).joinToString("|")
 
-internal fun normalizedTtsCategory(category: String): String =
-    if (TtsCategories.any { (key, _) -> key == category }) category else DefaultRandomTtsCategory
-
 internal fun normalizedRandomPromptContext(context: String): String =
     when (context) {
         "daily", "weather" -> "wake_weather"
@@ -609,6 +748,10 @@ internal fun normalizedRandomPromptContext(context: String): String =
         "love" -> "cheer"
         else -> if (RandomPromptContexts.any { (key, _) -> key == context }) context else DefaultRandomPromptContext
     }
+
+/** 직전 선택을 이을 때 켤 문구 종류 — 기록이 없으면 '기본 인사말'(preset). */
+private fun adoptedRandomContext(lastMessageContext: String?): String =
+    normalizedRandomPromptContext(lastMessageContext?.takeIf { it.isNotBlank() } ?: DefaultRandomPromptContext)
 
 internal fun ttsCategoryForRandomContext(context: String?): String =
     when (normalizedRandomPromptContext(context ?: DefaultRandomPromptContext)) {
@@ -671,7 +814,6 @@ internal fun randomPromptContextForBucket(bucket: String?): String? =
         else -> null
     }
 
-private const val DefaultRandomTtsCategory = "morning"
 // 기본은 추가 입력이 필요 없는 고정 문구(preset) — 목소리만 고르면 바로 저장할 수 있다.
 internal const val DefaultRandomPromptContext = "preset"
 /**

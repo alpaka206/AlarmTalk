@@ -23,7 +23,7 @@ import Foundation
 /// - `/System/Library/Audio/UISounds/New`(17, `.caf`) = **알림음**(Anticipate·Bloom·
 ///   Calypso·Choo Choo·…). 벨소리보다 짧다.
 /// - `/System/Library/Audio/UISounds`(97) 는 **훑지 않는다.** 키보드 탭·잠금·결제음 같은
-///   UI 효과음이라 알람음으로 내놓을 것이 아니다(`directories` 에 넣지 말 것).
+///   UI 효과음이라 알람음으로 내놓을 것이 아니다(`directory` 로 바꾸지 말 것).
 ///
 /// 같은 날 함께 잰 것 — 알림음을 목록에 둘지 판단한 근거다:
 /// - **애플 시계 앱의 알람 사운드 목록에는 알림음이 없다.** 실기기에서 그 화면을 열어
@@ -60,9 +60,7 @@ enum SystemRingtoneLibrary {
     /// 시계 앱의 알람 사운드 목록에 **알림음 구역이 없다**(실기기에서 그 화면을 읽었다).
     /// 설정 앱의 벨소리·문자음 목록에는 있으니 없어서 못 주는 게 아니라 **알람에만 안 주는**
     /// 것이다. 길이도 다르다 — 알림음 중앙값 2.2초(최소 0.9초) vs 벨소리 10.6초.
-    private static let directories = [
-        "/Library/Ringtones",
-    ]
+    private static let directory = "/Library/Ringtones"
 
     /// 시계 앱 알람 목록에 **없는** 벨소리. 통화용 리믹스로 보인다.
     ///
@@ -89,13 +87,11 @@ enum SystemRingtoneLibrary {
     /// 최신 벨소리 먼저, 그 뒤에 클래식 — 시계 앱과 같은 순서다.
     static var entries: [Entry] {
         if let cached { return cached }
-        let found = directories.flatMap { scan($0) }
-        // ⚠ **보이는 이름으로 중복을 지우지 말 것**(2026-08-17). 디렉터리가 둘이던 시절의
-        // 코드인데, 꼬리표를 떼고 나니 `Reflection.m4r`(클래식)과
-        // `Reflection-EncoreInfinitum.m4r`(최신)이 같은 이름이 되어 **한 쪽이 조용히
-        // 사라졌다**(79개가 78개로). 애플도 둘 다 준다 — 구역이 다르니 헷갈리지 않는다.
-        var seen = Set<String>()
-        let unique = found.filter { seen.insert($0.url.path).inserted }
+        // 디렉터리가 하나라 경로가 겹치지 않는다(둘이던 시절에는 경로로 중복을 걸렀다).
+        // ⚠ **보이는 이름으로 중복을 지우지 말 것**(2026-08-17). 꼬리표를 떼고 나면
+        // `Reflection.m4r`(클래식)과 `Reflection-EncoreInfinitum.m4r`(최신)이 같은 이름이 되어
+        // **한 쪽이 조용히 사라진다**(79개가 78개로). 애플도 둘 다 준다 — 구역이 다르니 헷갈리지 않는다.
+        let unique = scan(directory)
         let byName: (Entry, Entry) -> Bool = {
             $0.name.localizedStandardCompare($1.name) == .orderedAscending
         }

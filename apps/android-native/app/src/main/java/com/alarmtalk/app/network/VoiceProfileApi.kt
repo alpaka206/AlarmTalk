@@ -20,6 +20,11 @@ data class VoiceProfileListResponse(
 
 data class VoiceProfileResponse(
     val profile: VoiceProfile,
+    /**
+     * 등록 확정(교체 포함) 응답에만 실리는, 서버가 적은 목소리 높이(반음). 높이를 모르는 옛 서버는 이 칸이 없다 —
+     * 그때 보낸 높이는 알람 소리에 실리지 않는다(스펙 voice-and-message §4-3). 화면에는 쓰지 않는다.
+     */
+    @SerializedName("pitch_semitones") val pitchSemitones: Float? = null,
 )
 
 data class VoiceProfileDraftResponse(
@@ -33,7 +38,6 @@ data class VoiceDraftQuotaResponse(
     val remaining: Int = 0,
     // 이번 달 '정식 등록' 쿼터 — 목소리는 한 달에 1개. 위 limit(초안 재시도 여유 3회)와 다르다.
     @SerializedName("registration_limit") val registrationLimit: Int = 0,
-    @SerializedName("registration_used") val registrationUsed: Int = 0,
     @SerializedName("registration_remaining") val registrationRemaining: Int = 0,
 )
 
@@ -43,12 +47,6 @@ data class VoiceUploadResponse(
 
 data class VoiceUpload(
     val id: String,
-    val objectKey: String? = null,
-    val mimeType: String? = null,
-    val sizeBytes: Long? = null,
-    val durationMs: Long? = null,
-    val originalName: String? = null,
-    val createdAt: String? = null,
 )
 
 data class VoiceProfileUpdateRequest(
@@ -60,12 +58,20 @@ data class VoiceProfileUpdateRequest(
     // draft→official 승격 시 사전렌더할 앱 언어(서버는 promote 시점에만 사용, 미전송 시 'ko').
     val language: String? = null,
     /**
-     * 등록 확정 화면의 **교체 체크**. 이미 등록된 목소리가 있어 한도에 걸릴 때, 막는 대신
+     * 등록 확정의 **교체**. 이미 등록된 목소리가 있어 한도에 걸릴 때, 막는 대신
      * **그 목소리 자리에 이 목소리를 앉힌다**(서버가 프로필 행을 지우지 않고 재사용한다 —
-     * 지우면 그 목소리를 쓰던 알람이 전부 기본 알람음으로 떨어진다).
+     * 지우면 그 목소리를 쓰던 알람이 전부 기본 목소리(미나)로 바뀐다). 확정 화면은 묻지 않는다 —
+     * 이미 등록된 목소리가 있으면 그 화면의 저장은 언제나 교체다(`voiceDraftPromotionRequest`).
      * null 이면 키가 아예 안 나가서 서버는 지금까지처럼 한도로 막는다.
      */
     @SerializedName("replace_existing") val replaceExisting: Boolean? = null,
+    /**
+     * 등록 미리듣기에서 **끝까지 들은** 목소리 높이(반음, −10…+6·0.5 눈금) — 등록 확정(`is_draft: false`, 교체 포함)
+     * 때만 싣는다. 서버가 그 목소리로 만드는 모든 알람 소리에 굽는다(스펙 voice-and-message §4-3).
+     * null 이면 키가 아예 안 나가서(0 = 원래 소리) 높이 이전과 같은 요청이다. 등록 확정이 아닌 요청에 실으면
+     * 서버가 409 `VOICE_PITCH_LOCKED`, 범위·눈금 밖이면 400 `INVALID_VOICE_PITCH` 로 거절한다.
+     */
+    @SerializedName("pitch_semitones") val pitchSemitones: Float? = null,
 )
 
 data class VoicePreviewPlayedRequest(
@@ -93,7 +99,6 @@ data class VoicePrerenderStatusResponse(
     val status: String? = null,
     val total: Int = 0,
     val generated: Int = 0,
-    val attempts: Int = 0,
 )
 
 /** POST voice/{id}/prerender/advance 응답 — 소유자 주도 사전렌더 전진(호출당 최대 2클립). */
@@ -157,7 +162,6 @@ data class FamilyVoiceProfile(
     @SerializedName("is_shared") val isShared: Boolean? = null,
     @SerializedName("relationship_label") val relationshipLabel: String? = null,
     @SerializedName("listener_title") val listenerTitle: String? = null,
-    @SerializedName("needs_viewer_info") val needsViewerInfo: Boolean? = null,
     /**
      * 공유받은 목소리의 **직접 입력 음원 무효 시각**. 내 목소리와 같은 규약이다
      * ([VoiceProfile.customAudioInvalidatedAt]) — 공유받은 사람도 그 목소리로 자기 직접
@@ -187,9 +191,8 @@ interface VoiceProfileApi {
         // 관계·호칭은 선택 입력 — 비우면 파트 자체를 보내지 않는다(백엔드 옵셔널).
         @Part("relationshipLabel") relationshipLabel: RequestBody?,
         @Part("listenerTitle") listenerTitle: RequestBody?,
-        // 목소리의 결(`data/VoiceEnergy.kt`) — '' = 자동 / lively / calm. 자동도 **빈 값으로 보낸다**.
-        // 모르는 값은 400 INVALID_VOICE_ENERGY. 조립은 `createVoiceCloneDraft` 한 곳에서 한다.
-        @Part("voiceEnergy") voiceEnergy: RequestBody,
+        // 목소리의 결(`voiceEnergy`)은 보내지 않는다 — 서버가 전사로 추정한 말투를 쓴다
+        // (`createVoiceCloneDraft` 주석). 조립은 그 함수 한 곳에서 한다.
         @Part("durationMs") durationMs: RequestBody,
         @Part("isDraft") isDraft: RequestBody,
         // 사전렌더할 앱 언어(미전송 시 서버가 'ko' 폴백 → 비-ko 유저가 클론 버킷을 못 받음).

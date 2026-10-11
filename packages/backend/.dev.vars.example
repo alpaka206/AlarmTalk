@@ -15,14 +15,16 @@ PASSWORD_PEPPER=
 
 # === AI provider ===
 ELEVENLABS_API_KEY=
+# The TTS model is NOT configurable here — it is the TTS_MODEL_ID constant in src/lib/tts-model.ts
+# (eleven_v4_turbo), shared by the worker and the stock-clip scripts so cache keys cannot diverge.
 
 # Vertex Gemini (text tagging, clone prerender lines, speech-style analysis). Service-account JSON.
-# gemini-2.5-flash retires 2026-10-20 — use gemini-3.5-flash (NOT flash-lite: it lost blind quality
-# judging to 2.5 Flash; 3.5 Flash matched or beat it). `us` keeps ML processing in the United States,
-# which the privacy policy states (3.5 Flash-Lite does not run in us-central1 at all).
+# The model is NOT configurable here — it is the VERTEX_MODEL constant in src/lib/vertex-translate.ts
+# (gemini-3.8-flash), changed together with its request settings in code. `us` keeps ML processing in
+# the United States, which the privacy policy states (3.8 Flash runs only in global/us/eu — there is no
+# us-central1).
 GOOGLE_VERTEX_CREDENTIALS_JSON=
 GOOGLE_VERTEX_LOCATION=us
-GOOGLE_VERTEX_MODEL=gemini-3.5-flash
 
 # === Optional: transactional email (Resend) ===
 RESEND_API_KEY=
@@ -68,6 +70,12 @@ APPLE_PRIVATE_KEY=
 #    BadEnvironmentKeyInToken 으로 전부 막힌다.
 APNS_KEY_ID=
 APNS_PRIVATE_KEY=
+# 기상청 단기예보 서비스 키(data.go.kr VilageFcstInfoService_2.0) — **일반 인증키(Decoding)** 를 넣는다.
+# 한국 지역 날씨(src/lib/weather-kma.ts)에 쓴다. 비워 두면 KR 날씨만 미해결(운영은 슬롯마다 경보).
+# Encoding 키를 넣으면 이중 인코딩되어 SERVICE_KEY_IS_NOT_REGISTERED_ERROR(30)가 난다.
+# (일본 気象庁·미국 NWS 는 키가 없다. 예전 OPEN_METEO_API_KEY 는 없앴다.)
+KMA_SERVICE_KEY=
+
 # Perso API 키 (랜딩 이벤트 메시지 클립, routes/event.ts). 없으면 그 라우트만 503.
 # 프로젝트·문장 슬롯은 src/lib/event-voices.ts 에 있다.
 PERSO_API_KEY=

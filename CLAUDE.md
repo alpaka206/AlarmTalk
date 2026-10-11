@@ -456,16 +456,17 @@ gainMb=600`)로 확인했고, 사용자가 맞춘 음량이 첫 회만 지켜지
 | --- | --- |
 | [`docs/spec/alarm-ringing.md`](docs/spec/alarm-ringing.md) | **잠김=전체화면 / 앱 보임=전체화면 / 다른 앱=배너**(OS 가 가른다), **벗어나면=해제**, 스와이프=해제, 타임아웃 없음, 소리·음량, 권한별 사실 |
 | [`docs/spec/alarm-editor.md`](docs/spec/alarm-editor.md) | 편집기 — 타임휠(튕기면 굴러간다·숫자 탭은 **그 자리 입력**), 재생 방식 세그먼트, 모달 **세 형태** |
-| [`docs/spec/voice-and-message.md`](docs/spec/voice-and-message.md) | 재생 방식 2택, **문구 목록은 하나**(등급으로 안 자른다), 직전 선택 유지, 버킷 선다운로드 |
+| [`docs/spec/voice-and-message.md`](docs/spec/voice-and-message.md) | 재생 방식 2택, **문구 목록은 하나**(등급으로 안 자른다), 직전 선택 유지, 버킷 선다운로드, 월 등록 한도 — **다 썼으면 초안부터 만들지 않는다**, 말소리가 거의 없는 녹음은 **등록하지 않는다**(다시 녹음은 횟수 제한 없음) |
 | [`docs/spec/plan-gates.md`](docs/spec/plan-gates.md) | 로그인·이용권 게이트 **3상태**와 상태별 액션 |
-| [`docs/spec/session-and-auth.md`](docs/spec/session-and-auth.md) | 로그인 유지 — TTL 365일 + **백그라운드 갱신**, 끊는 경우 |
+| [`docs/spec/session-and-auth.md`](docs/spec/session-and-auth.md) | 로그인 유지 — TTL 365일 + **백그라운드 갱신**, 끊는 경우, 이메일 인증 코드 — **가장 최근 코드만**, 거절되면 칸을 비운다 |
 | [`docs/spec/billing-lifecycle.md`](docs/spec/billing-lifecycle.md) | 구독 해지·만료 — **스토어가 권위**, 애플은 서버가 못 끊는다 |
 | [`docs/spec/family-alarm.md`](docs/spec/family-alarm.md) | 가족 알람 — **보내면 끝**(보낸 알람 수정은 서버가 409 로 거절, 완화 금지), 받은 뒤엔 **전부 받은 사람 것**, 단 **다시 보내면 새 것이 이긴다**, 설정 불가능 시간은 **자동 생성 금지** |
 | [`docs/spec/consent.md`](docs/spec/consent.md) | 동의 화면 — **미체크 ≠ 철회**, 재동의 레버 |
 | [`docs/spec/gates-and-overlays.md`](docs/spec/gates-and-overlays.md) | 게이트·1회성 오버레이의 **준비 신호** |
 | [`docs/spec/alarm-lifecycle.md`](docs/spec/alarm-lifecycle.md) | 알람의 **행 vs 예약** 두 겹, 계정을 떠날 때 끄기, `.failed` 낙인 규칙 |
 | [`docs/spec/usage-events.md`](docs/spec/usage-events.md) | 사용 기록 — **울릴 때 네트워크 금지**(로컬에 적고 나중에 전송), 재전송 멱등, 보관 1년 |
-| [`docs/spec/error-codes.md`](docs/spec/error-codes.md) | 에러 코드 — **목록은 하나**(shared), 나간 코드는 **바꾸지 않는다**, 기록은 전부·경보는 골라서 |
+| [`docs/spec/error-codes.md`](docs/spec/error-codes.md) | 에러 코드 — **목록은 하나**(shared), 나간 코드는 **바꾸지 않는다**, 기록은 전부·경보는 골라서, 앱 Sentry 묶음 키(코드 + 호출 자리) |
+| [`docs/spec/localization.md`](docs/spec/localization.md) | 앱 화면 번역 — 용어·저장값과 표시·오류·존칭·언어 변경 |
 
 각 스펙 문서 끝에 **「구현 지도」** 표가 있다 — 규칙 한 줄이 세 구현의 어디에 사는지
 적어 둔 것이라, **한 곳만 고치는 사고**를 막는다. 동작을 바꾸면 스펙을 먼저 고친다.
@@ -496,7 +497,8 @@ gainMb=600`)로 확인했고, 사용자가 맞춘 음량이 첫 회만 지켜지
 
     조립본도 이름이 있다: **표시**는 `isManualForDisplay()`, **저장**은 `isManualForSave()`,
     **저장 갈래 가르기**는 `hasMessageKindChoice()`, **직접입력을 실제로 쳤는가**는
-    `hasTypedManualText()`. 호출부에서 `!voiceRandomPrompt && …` 를 새로 쓰지 말 것.
+    `hasTypedManualText()`, **문구가 하나도 없는가**(= 빈 직접 입력으로 보이는 상태)는
+    `hasNoMessageChoice()`. 호출부에서 `!voiceRandomPrompt && …` 를 새로 쓰지 말 것.
   - ⚠ **표시와 저장은 답이 다를 수 있다**(2026-08-16 분리). `isActiveBucketAlarm()` 은 첫 줄에서
     `playMode == ALARM_ONLY` 면 false 다 — "**울릴 때** 클립을 쓰는가" 로는 맞지만, 그걸
     **문구 종류 표시**에 쓰면 재생 방식을 '알람' 으로 바꾸는 것만으로 요약 행이 `약` →
@@ -516,7 +518,10 @@ gainMb=600`)로 확인했고, 사용자가 맞춘 음량이 첫 회만 지켜지
   - `rememberMessageChoiceUsed` 는 값이 비면 **조용히 아무 일도 하지 않는다.** 그래서 이 버그는
     저장 시점이 아니라 한참 뒤 "새 알람이 매번 기본 인사말" 로만 드러난다. 회귀 테스트는
     `AlarmEditorStateTest`(저장 시 종류 보존·옛 행 복구·직접 입력은 그대로 null).
-- **적용 대상은 새 알람뿐.** 기존 알람을 열 때는 저장된 자기 값만 쓴다(열기만 해도 문구가 바뀌면 안 된다). `AlarmTalkApp` 이 `lastMessageContext`/`lastFreeBucket` 을 **신규 라우트에만** 넘기고, 버킷 이어받기는 `alarm == null` 로 한 번 더 막는다.
+- **적용 대상은 새 알람뿐.** 기존 알람을 열 때는 저장된 자기 값만 쓴다(열기만 해도 문구가 바뀌면 안 된다). `AlarmEditorState.from` 이 직전 선택을 `alarm == null` 일 때만 쓰고, 테마 이어받기는 `followsLastMessageChoice` 로 한 번 더 막는다.
+  - ⚠ **예외 하나 — 문구가 없던 알람을 목소리 문구로 옮기는 순간**(2026-09-29 실기기 보고). 알람 전용·직접 녹음 알람은 문구 필드를 비워 저장하므로(iOS 알람 전용은 테마만 남긴다 — 스펙 §4), '알람' → '목소리'(또는 직접 녹음 → 목소리)로 바꾸면 **빈 직접 입력**이 됐다 — 저장도 못 하고 고치려면 한도가 걸린 직접 입력을 쳐야 했다. 그때만 새 알람과 같은 규칙으로 잇는다(`adoptLastMessageChoiceIfUnset` — 판정 `hasNoMessageChoice()`, 양 앱). 그래서 `AlarmTalkApp` 은 **기존 알람 라우트에도** 직전 선택을 넘긴다. 문구가 하나라도 있으면 아무것도 바꾸지 않는다. **빈 직접 입력으로 되돌리지 말 것.**
+    - ⚠ 직접 녹음 → 목소리는 **판정을 목소리 교체 전, 잇기를 뒤**에 한다(`AlarmEditorState.selectTtsVoice`). 교체 뒤에 판정하면 기본 목소리 교체가 비운 테마를 '문구 없음' 으로 읽어 테마 알람을 직전 선택으로 덮는다.
+  - 빈 직접 입력으로 저장을 누르면 **요청 전에** 전용 사유로 막는다(`SaveBlockReason.MANUAL_TEXT_MISSING` / iOS `manualTextMissing`). '준비 중' 으로 뭉개지 말 것 — 기다려도 안 풀린다. 상세 `docs/spec/voice-and-message.md` §4.
 - **목소리 프리셀렉트는 마지막에 쓴 것이 그룹보다 우선**(`VoiceAudioCard`). 그룹(내 클론 → 공유받은 → 기본)을 먼저 보면, 클론을 가진 사람이 기본 목소리를 골라 저장해도 매번 클론으로 되돌아간다.
 - **한 번도 고른 적 없을 때만** 폴백: 문구는 `preset`(기본 인사말), 기본 목소리 경로는 `FreeBucketOrder` 첫 값(날씨). `FreeBucketOrder` 는 최후 폴백 순서일 뿐 "항상 적용되는 기본값" 이 아니고, 목록 자체는 `EditorMessageContexts` 에서 유도된다(손으로 적지 않는다 — '직접 입력' 과 '기본 인사말' 만 빠진다. 이유는 `docs/spec/voice-and-message.md` §2).
 - **직접 입력은 문구까지 기억한다**(2026-08-06 변경. 그전에는 아예 기억하지 않았다).
@@ -527,8 +532,8 @@ gainMb=600`)로 확인했고, 사용자가 맞춘 음량이 첫 회만 지켜지
     - 바뀐 이유: 편집기 본문에 문장이 있으면 재생 방식을 '알람' 으로 바꿀 때 사라지는 카드에 실려 잠깐 읽힌다("문구 잔재"). 세 번 지적됐다.
     - 잃는 것을 알고 택했다 — 새 알람은 직전 직접입력 문구를 이어받으므로, 종류만 보이면 **어제 문구를 그대로 물고 온 것**을 요약 행에서는 알아챌 수 없다. 확인하려면 문구 행을 눌러 들어가야 한다(상세 카드에 전문이 있다).
   - 기존 알람을 편집할 때는 당연히 자기 문구가 그대로 남는다(delivery 태그 제거가 이걸 깎아먹지 않도록 `DeliveryTags.kt` 는 **우리가 내보낸 태그만** 벗긴다).
-- **이미 등록한 정보는 다시 묻지 않는다**(문구 화면). 날씨 지역·운세 사주·직접 입력 문구는 값이 **없을 때만** 고르는 순간 입력창이 뜬다. 이미 있으면 선택만 되고, 고치는 길은 리스트 아래 상세 카드의 '변경하기' 하나다(`RandomPromptDetailRow` 의 `onChange`). 이 액션을 지우면 등록한 값을 영영 못 바꾼다.
-- **모달은 자기만 닫는다.** 날씨·운세·직접 입력 다이얼로그는 확인해도 문구 목록을 닫지 않는다(예전에는 확인이 곧 `onSaveSettings` 라 목록까지 닫혀, 도시 하나 바꾸려다 화면 밖으로 튕겼다). 최종 반영은 문구 화면의 저장 버튼 **한 곳**이다.
+- **이미 등록한 정보는 다시 묻지 않는다**(문구 화면). 지역(날씨 — 나라 → 지역 목록, 직접 입력 없음)·운세 사주·직접 입력 문구는 값이 **없을 때만** 고르는 순간 선택창·입력창이 뜬다. 이미 있으면 선택만 되고, 고치는 길은 리스트 아래 상세 카드의 '변경하기' 하나다(`RandomPromptDetailRow` 의 `onChange`). 이 액션을 지우면 등록한 값을 영영 못 바꾼다.
+- **모달은 자기만 닫는다.** 날씨·운세·직접 입력 다이얼로그는 확인해도 문구 목록을 닫지 않는다(예전에는 확인이 곧 `onSaveSettings` 라 목록까지 닫혀, 지역 하나 바꾸려다 화면 밖으로 튕겼다). 최종 반영은 문구 화면의 저장 버튼 **한 곳**이다.
 - **삭제는 명시적 로그아웃·탈퇴에서만**(`clearCurrentDefaultVoicePreferences`). 자동 401(`clearSessionKeepingAlarms`)에서 지우면 같은 사람이 다시 로그인할 때 취향을 잃는다(Codex #646 회귀).
 - 이어받는 것은 **선택 값 하나**뿐이다. 회전 인덱스·클립 키(`bucketRotationIndex`/`bucketClipKeysJson` 등)는 알람별 상태라 절대 따라가지 않는다. 무료 버킷 **회전**(울릴 때마다 클립 순차 이동)과는 다른 축이라 서로 충돌하지 않는다.
 

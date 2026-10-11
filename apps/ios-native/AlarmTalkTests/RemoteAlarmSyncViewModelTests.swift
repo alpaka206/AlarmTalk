@@ -12,12 +12,12 @@ final class RemoteAlarmSyncViewModelTests: XCTestCase {
         )
     }
 
-    func test_userFacingErrorMessage_keepsKoreanServerMessageLikeAndroid() {
+    func test_userFacingErrorMessage_usesFallbackLikeAndroid() {
         let error = APIError.server(status: 400, message: "이미 삭제된 알람이에요", errorCode: nil)
 
         XCTAssertEqual(
             userFacingErrorMessage(error, fallback: "알람 삭제에 실패했어요"),
-            "이미 삭제된 알람이에요"
+            "알람 삭제에 실패했어요"
         )
     }
 }

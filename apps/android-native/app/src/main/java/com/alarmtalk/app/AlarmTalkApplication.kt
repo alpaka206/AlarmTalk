@@ -2,6 +2,7 @@ package com.alarmtalk.app
 
 import android.app.Application
 import android.os.Build
+import android.provider.Settings
 import android.util.Log
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
@@ -36,7 +37,7 @@ class AlarmTalkApplication : Application() {
         // 일이 없지만 같은 모양으로 감싼다 — 실패해도 앱 진입을 막지 않는다.
         runCatching { com.alarmtalk.app.alarm.VisibleActivityTracker.install(this) }
             .onFailure { AlarmTalkLog.reportError("VisibleActivityTracker install failed", it) }
-        runCatching { NotificationChannels.ensure(this) }
+        runCatching { NotificationChannels.install(this) }
             .onFailure { AlarmTalkLog.reportError("NotificationChannels init failed", it) }
         // ⚠ **우리가 올려 둔 기기 알람 볼륨을 여기서도 되돌린다.** 울림은 서비스가 끝내면서
         //   되돌리고 그 서비스가 다시 뜰 때 한 번 더 본다. 그런데 **미리듣기**도 같은 크기로
@@ -68,6 +69,8 @@ class AlarmTalkApplication : Application() {
             ProcessLifecycleOwner.get().lifecycle.addObserver(
                 object : DefaultLifecycleObserver {
                     override fun onStart(owner: LifecycleOwner) {
+                        runCatching { NotificationChannels.ensure(this@AlarmTalkApplication) }
+                            .onFailure { AlarmTalkLog.reportError("NotificationChannels locale refresh failed", it) }
                         // 세션과 무관하게 **먼저** 센다 — '진입할 때마다' 뜨는 안내의 기준이다
                         // (`AppSignals.appEntries`). 아래 동기화가 실패해도 진입은 진입이다.
                         com.alarmtalk.app.core.AppSignals.markAppEntered()
@@ -103,9 +106,15 @@ class AlarmTalkApplication : Application() {
             return
         }
 
+        // Play 사전 출시 로봇(Firebase Test Lab 기기)이 세우는 시스템 설정. 읽기가 실패하면 모르는
+        // 것이고, 모르면 평소 환경 그대로다([sentryEnvironment]).
+        val firebaseTestLab = runCatching {
+            Settings.System.getString(contentResolver, FIREBASE_TEST_LAB_SETTING)
+        }.getOrNull()
+
         SentryAndroid.init(this) { options ->
             options.dsn = sentryDsn
-            options.environment = BuildConfig.VOICE_ALARM_SENTRY_ENVIRONMENT
+            options.environment = sentryEnvironment(BuildConfig.VOICE_ALARM_SENTRY_ENVIRONMENT, firebaseTestLab)
             options.release =
                 "${BuildConfig.APPLICATION_ID}@${BuildConfig.VERSION_NAME}+${BuildConfig.VERSION_CODE}"
             options.isSendDefaultPii = false
@@ -164,3 +173,31 @@ internal const val ROBOLECTRIC_BUILD_FINGERPRINT = "robolectric"
  */
 internal fun shouldInitializeSentry(dsn: String, buildFingerprint: String?): Boolean =
     dsn.isNotEmpty() && buildFingerprint != ROBOLECTRIC_BUILD_FINGERPRINT
+
+/** Firebase Test Lab 이 테스트 기기에 세우는 `Settings.System` 키 — 값이 `"true"` 면 그 기기다. */
+internal const val FIREBASE_TEST_LAB_SETTING = "firebase.test.lab"
+
+/** 사전 출시 로봇이 올린 이벤트의 Sentry 환경 이름. */
+internal const val SENTRY_ENVIRONMENT_PRELAUNCH = "prelaunch"
+
+/**
+ * 이 실행의 Sentry **환경**(environment). Play 사전 출시 로봇이면 [SENTRY_ENVIRONMENT_PRELAUNCH],
+ * 아니면 빌드가 정한 값([base]) 그대로다.
+ *
+ * 1.2.10 의 잡동사니 이슈(ALARMTALK-ANDROID-Q) 42건 중 26건, '사용자' 7명 중 5명이 사전 출시
+ * 로봇이었다. 기기 이름으로 거르면 놓친다 — 가상 OnePlus8Pro 말고 다른 기기 프로필(HRY-LX1T)도 돈다.
+ *
+ * ⚠ **버리지 않는다 — 환경만 가른다.** 이벤트는 그대로 올라오고, 운영(production) 사용자 수에
+ * 섞이지 않을 뿐이다. 로봇이 밟은 크래시는 실사용자도 밟을 수 있다. 가르는 것은 "실행 환경이
+ * 무엇인가" 하나이고, 예외 이름·메시지로는 아무것도 거르지 않는다([shouldInitializeSentry] 와
+ * 같은 원칙).
+ *
+ * ⚠ 이 설정은 Firebase 문서가 **Test Lab** 기기에 대해 적은 것이다. Play 사전 출시 보고서의 기기도
+ * 세우는지는 확인하지 못했다(2026-10-11) — 안 세우면 이 함수는 [base] 를 돌려주고 달라지는 것이
+ * 없다. 사전 출시 회차의 이벤트에 이 환경이 찍히는지 한 번 본다.
+ *
+ * @param base `BuildConfig.VOICE_ALARM_SENTRY_ENVIRONMENT`.
+ * @param firebaseTestLab `Settings.System` 의 [FIREBASE_TEST_LAB_SETTING] 값(없으면 null).
+ */
+internal fun sentryEnvironment(base: String, firebaseTestLab: String?): String =
+    if (firebaseTestLab == "true") SENTRY_ENVIRONMENT_PRELAUNCH else base

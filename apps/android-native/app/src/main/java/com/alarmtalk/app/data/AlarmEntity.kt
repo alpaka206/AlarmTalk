@@ -74,6 +74,16 @@ data class AlarmEntity(
     // 여기에 저장한다(playMode 는 ALARM_ONLY 로 내림). 다시 유료가 되면 이 값으로 복원하고 null 로 되돌린다.
     // null = 잠기지 않은 정상 알람.
     val preLockPlayMode: String? = null,
+    /**
+     * **무료 잠금 보관본** — 잠그기 전의 유료 목소리 필드(JSON, [LockedPaidVoice]).
+     *
+     * 2026-09-29 부터 잠금은 재생 방식을 '알람' 으로 내리지 않고 행을 **기본 목소리 알람**으로
+     * 고쳐 쓴다(`lockedToDefaultVoice`). 원래 목소리는 여기 두었다가 다시 유료가 되면
+     * 되돌린다(`restoredFromLock`). 이 값이 있으면 '새 모양으로 잠겼다' 는 뜻이다.
+     * 규칙: `docs/spec/billing-lifecycle.md` 「목소리를 못 쓰게 되면」. iOS 짝은
+     * `LocalAlarmRecord.preLockVoice`.
+     */
+    val preLockVoiceJson: String? = null,
     // 알람을 만든 계정(로그인 user id, 생성 시 1회 기록·불변). 로컬 알람은 로그아웃 후에도 남으므로,
     // 잠금/복원은 현재 세션이 이 알람의 소유자일 때만 수행한다 — 다른 계정으로 로그인해 무료/유료가 돼도
     // 남의 목소리 알람을 잠그거나(→소유자가 복원 못하는 영구 잠금) 복원하지(→남의 목소리 재생) 못하게 한다.

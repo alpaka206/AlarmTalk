@@ -75,6 +75,8 @@ async function register(env: Env) {
       expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
     },
   ]);
+  // 판정의 상한 문장(맞는 코드는 +0) — 상한 아래였다. 큐 자리를 차지하지 않게 SQL 로 짝짓는다.
+  mockDB.pushResultFor('SET attempts = attempts + ?', [], 1);
   mockDB.pushResult([]); // 기존 이메일 없음
   mockDB.pushResult([], 1); // INSERT users
   mockDB.pushResult([], 1); // consume code

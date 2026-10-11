@@ -120,7 +120,7 @@ internal fun isPersonalPromoActive(promo: PersonalPromo?, nowMillis: Long): Bool
  * 지금 살아 있는 프로모 — [sessionPromo] 를 먼저, 없으면 [billingPromo] 를 본다. 끝났거나 못
  * 읽으면 null. 앱을 켜 둔 채 기간이 끝나도 기기 시계로 다시 재므로 표시가 스스로 사라진다.
  *
- * ⚠ 이용권 화면 한 줄은 이걸 직접 쓰지 않는다 — 두 응답 중 **나중에 받은 답**을 고르는
+ * ⚠ 이용권 화면의 프로모 문구는 이걸 직접 쓰지 않는다 — 두 응답 중 **나중에 받은 답**을 고르는
  *   `planScreenPersonalPromoOf` 를 쓴다(OR 로 보면 결제 직후에도 옛 구독 응답의 promo 가 남는다).
  */
 internal fun activePersonalPromoOf(

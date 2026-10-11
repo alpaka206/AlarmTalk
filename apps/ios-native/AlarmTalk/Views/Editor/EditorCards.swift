@@ -21,7 +21,6 @@ struct EditorSectionTitle: View {
 /// 나란히 놓으면 다른 앱이 된다. 편집기는 카드 목록이지 설정 폼이 아니다.
 struct EditorCard<Content: View>: View {
     @Environment(\.voiceAlarmTheme) private var theme
-    var horizontalPadding: CGFloat = 16
     var verticalPadding: CGFloat = 4
     @ViewBuilder var content: () -> Content
 
@@ -29,7 +28,7 @@ struct EditorCard<Content: View>: View {
         VStack(alignment: .leading, spacing: 0) {
             content()
         }
-        .padding(.horizontal, horizontalPadding)
+        .padding(.horizontal, 16)
         .padding(.vertical, verticalPadding)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
@@ -43,18 +42,16 @@ struct EditorCard<Content: View>: View {
     }
 }
 
-/// 세부 설정 카드의 한 행 — 제목 + 요약 부제 + (선택) 스위치. 탭하면 상세 pane 으로.
+/// 세부 설정 카드의 한 행 — 제목 + 요약 부제 + 셰브론. 탭하면 상세 pane 으로.
 ///
 /// 안드로이드 `AlarmSettingRow`. **요약이 핵심이다** — 값을 보려고 매번 열어 볼 필요가
 /// 없어야 카드 하나로 네 가지 설정이 한눈에 읽힌다.
-struct AlarmSettingRow<Trailing: View>: View {
+struct AlarmSettingRow: View {
     @Environment(\.voiceAlarmTheme) private var theme
 
     let title: String
     let subtitle: String
-    var showsChevron: Bool = true
     let onTap: () -> Void
-    @ViewBuilder var trailing: () -> Trailing
 
     var body: some View {
         HStack(spacing: 12) {
@@ -75,28 +72,18 @@ struct AlarmSettingRow<Trailing: View>: View {
             }
             .buttonStyle(PressScaleButtonStyle())
 
-            trailing()
-
-            if showsChevron {
-                Button(action: onTap) {
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(theme.palette.onSurfaceVariant)
-                        .frame(width: 44, height: 44)
-                        // ⚠ 없으면 글리프만 눌린다 — `frame`/`padding` 이 넓힌 자리는 투명해 히트테스트를 건너뛴다.
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
+            Button(action: onTap) {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(theme.palette.onSurfaceVariant)
+                    .frame(width: 44, height: 44)
+                    // ⚠ 없으면 글리프만 눌린다 — `frame`/`padding` 이 넓힌 자리는 투명해 히트테스트를 건너뛴다.
+                    .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
         }
         .padding(.vertical, 12)
         .frame(minHeight: 56)
-    }
-}
-
-extension AlarmSettingRow where Trailing == EmptyView {
-    init(title: String, subtitle: String, showsChevron: Bool = true, onTap: @escaping () -> Void) {
-        self.init(title: title, subtitle: subtitle, showsChevron: showsChevron, onTap: onTap, trailing: { EmptyView() })
     }
 }
 
@@ -115,7 +102,7 @@ struct AlarmSettingDivider: View {
 ///
 /// ⚠ **스크롤에 딸려 보내지 말 것.** 저장 버튼이 본문 맨 아래에 있으면, 설정을 다 만진
 /// 뒤 저장하려고 다시 끝까지 스크롤해야 한다. 안드로이드는 상단바를 없애고 취소·저장을
-/// 하단에 고정했다(`AlarmEditorScreen.kt:1269-1271` 주석).
+/// 하단에 고정했다(`AlarmEditorScreen.kt:1223-1225` 주석).
 ///
 /// ⚠ **저장 중에는 취소도 함께 잠근다.** 저장만 잠그면 사용자가 X 를 눌러 취소한 줄
 /// 아는데 몇 초 뒤 알람이 저장·예약되고 탭이 튄다.

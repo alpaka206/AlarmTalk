@@ -155,6 +155,42 @@ describe('보관 만료 정리 — 가족알람 음성 끊기', () => {
     ]);
   });
 
+  // 가족 녹음 원본은 프로필에 안 묶여 7일 TTL 이 업로드 행을 먼저 지운다(`cleanupExpiredAudio`).
+  // 그 뒤에도 수신 확인 전 알람은 같은 키를 들고 있다 — 업로드 행으로만 판정하면 철회가 그
+  // 알람을 못 찾아, 다운로드는 끝났는데 수신 확인이 실패한 기기가 그 녹음으로 계속 운다.
+  it('업로드 행이 TTL 로 먼저 지워진 녹음도 키 앞머리로 찾아 걷어낸다', async () => {
+    await db.execute(
+      `INSERT INTO voice_profiles (id, user_id, name, status) VALUES ('vp-r', 'recipient', '수신자 목소리', 'ready')`,
+    );
+    await db.execute(
+      `INSERT INTO messages (id, user_id, voice_profile_id, text, audio_url, category)
+       VALUES ('msg-old', 'recipient', 'vp-r', '일어나', 'voices/sender/old.m4a', 'family-voice')`,
+    );
+    await db.execute(
+      `INSERT INTO alarms (id, user_id, target_user_id, message_id, time, mode)
+       VALUES ('al-old', 'sender', 'recipient', 'msg-old', '07:00', 'voice')`,
+    );
+
+    const downgraded = await deleteSensitiveVoiceDataForUser(db, 'sender', 'sender');
+
+    expect(downgraded.downgradedAlarms).toContainEqual({
+      alarmId: 'al-old',
+      ownerUserId: 'recipient',
+      isReceived: true,
+    });
+    const alarm = (await db.execute(`SELECT mode, message_id FROM alarms WHERE id = 'al-old'`)).rows[0];
+    expect(alarm?.mode).toBe('sound-only');
+    expect(alarm?.message_id).toBeNull();
+    // 문구는 받은 사람 것이라 남고 키만 비운다 — 그 **전에** 키를 삭제 큐로 옮겨야 한다.
+    // TTL 이 행만 지우고 큐 적재에 실패했다면 R2 파일의 키를 아는 곳이 이 문구뿐이다.
+    const message = (await db.execute(`SELECT audio_url FROM messages WHERE id = 'msg-old'`)).rows[0];
+    expect(message?.audio_url).toBeNull();
+    const queued = await db.execute(
+      `SELECT kind FROM pending_external_deletions WHERE ref = 'voices/sender/old.m4a'`,
+    );
+    expect(queued.rows.map((row) => row.kind)).toEqual(['r2_object']);
+  });
+
   it('내 업로드와 무관한 수신자 메시지는 건드리지 않는다', async () => {
     await db.execute(
       `INSERT INTO voice_profiles (id, user_id, name, status) VALUES ('vp-r', 'recipient', '수신자 목소리', 'ready')`,

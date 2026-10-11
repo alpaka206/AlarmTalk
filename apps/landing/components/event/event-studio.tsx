@@ -21,6 +21,7 @@ import { DownloadDialog } from "./download-dialog";
 import {
   addLike,
   ClipError,
+  deployWindowRetryDelayMs,
   fetchLikes,
   generateClip,
   releaseClip,
@@ -43,15 +44,17 @@ import { formatClock, probeDuration, useEventPlayer } from "./use-event-player";
 
 /**
  * 이벤트 1 — 이름을 적고, 인물을 **돌려 보며** 고르고, 생성하기를 누르면 그 인물 목소리로
- * 메시지 **둘 다**(생일 축하 · 추석 인사 — 2026-09-22 까지는 위로 한마디)를 **세 언어 모두** 만들어 들려준다(2026-09-16 지시:
- * 한 번에 여섯). 언어 버튼은 만든 것을 골라 듣는 자리다.
+ * 메시지 **둘 다**(생일 축하 · 사랑 한마디 — 2026-09-22 까지는 위로 한마디, 2026-09-29 까지는 추석 인사)를
+ * **세 언어 모두** 만들어 들려준다(2026-09-16 지시: 한 번에 여섯). 언어 버튼은 만든 것을 골라 듣는 자리다.
  *
  *   이름 입력 → 목소리 플레이어(미리 듣기, ⏮ ⏭, 좋아요) → 생성하기 → 언어 고르기 → 결과 두 줄(재생 · 다운로드)
  *
- * 카드의 사진은 종류별 사진 둘(생일 축하·추석 인사)이 **5초마다 자연스럽게 갈린다**(2026-09-22 지시,
- * `RotatingPortrait`). 결과 클립이 재생 중이면 그 종류의 사진에 머문다. 미리 듣기는 종류가 아니라
- * 미리 듣기만의 인사말(서버 `EVENT_PREVIEW_MESSAGES`, `public/event/samples` 의 정적 mp3 —
- * `npm run samples:event` 로 굽는다)이라 사진은 계속 돈다.
+ * 카드의 사진은 종류별 사진이 둘 이상이면 **5초마다 자연스럽게 갈린다**(2026-09-22 지시,
+ * `RotatingPortrait`). 결과 클립이 재생 중이면 그 종류의 사진에 머문다. 지금은 사랑 한마디의 사진이
+ * 없어 기본 사진(생일 축하 사진) 하나뿐이라 돌지 않는다 — `public/event/<id>.love.jpg` 와 카탈로그의
+ * `portraits.love` 를 더하면 다시 돈다. 미리 듣기는 종류가 아니라 미리 듣기만의 인사말(서버
+ * `EVENT_PREVIEW_MESSAGES`, `public/event/samples` 의 정적 mp3 — `npm run samples:event` 로 굽는다)이라
+ * 사진을 붙들지 않는다.
  *
  * 소리는 서버가 문장 전체를 인물 목소리로 만들어 mp3 로 준다(`event-api.ts`). 만드는 데 10~30초
  * 걸리므로 여섯을 따로 불러 **오는 대로** 카드를 채운다. 카드는 트랙 한 줄이다 — 왼쪽 원형
@@ -98,6 +101,11 @@ export function EventStudio() {
   const resultsRef = useRef<HTMLDivElement | null>(null);
   const resultsHeadingRef = useRef<HTMLHeadingElement | null>(null);
   const inflightRef = useRef<Set<string>>(new Set());
+  /**
+   * 자동으로 다시 부르려고 기다리는 타이머들. 배포 창의 `INVALID_BODY` 만 여기 든다(`event-api.ts` 의
+   * `DEPLOY_WINDOW_RETRY_DELAYS_MS`). 떠날 때 걷으려고 모아 둔다.
+   */
+  const retryTimersRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
   const { activeId, position, duration, play, stop } = useEventPlayer();
   /** 지금 무엇이 재생 중인지 — 30초 뒤에 온 자동 재생이 사용자가 튼 소리를 끊지 않게. */
   const activeIdRef = useRef<string | null>(null);
@@ -114,6 +122,9 @@ export function EventStudio() {
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
+      // 기다리던 자동 재시도는 걷는다 — 가는 중인 요청은 두지만(위), 떠난 화면이 **새로** 부르지는 않는다.
+      for (const timer of retryTimersRef.current) clearTimeout(timer);
+      retryTimersRef.current.clear();
       // 떠나면 사라진다 — 들고 있던 소리의 Blob URL 을 돌려준다.
       for (const state of Object.values(clipsRef.current)) {
         if (state.status === "ready") releaseClip(state.clip);
@@ -150,6 +161,11 @@ export function EventStudio() {
    * 첫 메시지가 오면 한 번 자동으로 들려준다 — 단, 그 사이 다른 인물·이름·언어로 옮겨 갔거나
    * 페이지를 떠났거나 사용자가 다른 소리를 틀어 두었으면 들려주지 않는다(보이지 않는 카드가
    * 말하거나 듣던 것을 끊으면 안 된다). 브라우저가 막으면(iOS 는 동작 안에서만) 버튼만 남는다.
+   *
+   * 실패 가운데 `INVALID_BODY` 만은 곧바로 실패로 보이지 않는다 — 배포 창의 옛 워커가 새 종류를 아직
+   * 모르는 것이라, 카드를 '생성 중' 으로 둔 채 간격을 늘려 가며 기다렸다 다시 부른다(`deployWindowRetryDelayMs`).
+   * 다 써도 안 되면 그때 실패로 보이고 '다시 시도' 가 남는다. 다시 불러 온 소리도 위 자동 재생 규칙을
+   * **도착한 순간에** 그대로 본다 — 그 사이 옮겨 간 카드는 채워지기만 하고 말하지 않는다.
    */
   const request = useCallback(
     (
@@ -166,7 +182,27 @@ export function EventStudio() {
         if (cur?.status === "failed" && !opts.retry) continue;
         inflightRef.current.add(key);
         setClips((c) => ({ ...c, [key]: { status: "pending" } }));
-        generateClip({ celebrity: target, name: targetName, locale, kind })
+        // 배포 창: 옛 워커가 이 종류를 아직 몰라 거절하면 실패로 넘기지 않고 기다렸다 다시 부른다. 그동안
+        // 이 약속이 **끝나지 않으므로** 아래 흐름은 그대로다 — 카드는 '생성 중', 키는 `inflightRef` 에 남아
+        // 그 틈에 같은 클립을 또 부르지 않는다. `retried` 는 이미 자동으로 다시 부른 횟수(손으로 누른
+        // '다시 시도' 는 0 부터 다시 센다). 떠난 뒤에는 기다리지 않는다.
+        const generate = async (retried: number): Promise<Clip> => {
+          try {
+            return await generateClip({ celebrity: target, name: targetName, locale, kind });
+          } catch (e) {
+            const delay = e instanceof ClipError ? deployWindowRetryDelayMs(e.code, retried) : null;
+            if (delay === null || !mountedRef.current) throw e;
+            await new Promise<void>((resolve) => {
+              const timer = setTimeout(() => {
+                retryTimersRef.current.delete(timer);
+                resolve();
+              }, delay);
+              retryTimersRef.current.add(timer);
+            });
+            return generate(retried + 1);
+          }
+        };
+        generate(0)
           .then((clip) => {
             if (!mountedRef.current) return;
             setClips((c) => ({ ...c, [key]: { status: "ready", clip } }));
@@ -736,7 +772,7 @@ function LikeButton({
 const PORTRAIT_ROTATE_MS = 5000;
 
 /**
- * 종류별 사진을 5초마다 돌려 보여 준다(생일 축하 ↔ 추석 인사). `pinnedKind` 가 있으면 거기 머문다
+ * 종류별 사진을 5초마다 돌려 보여 준다(생일 축하 ↔ 사랑 한마디). `pinnedKind` 가 있으면 거기 머문다
  * (그 종류의 소리가 나는 중). 종류별 사진이 하나뿐이거나 없으면 돌릴 것이 없다.
  * 움직임 줄이기 설정이면 돌리지 않고 첫 사진에 머문다 — 자동으로 바뀌는 그림 자체가 그 설정이
  * 막으려는 것이다.

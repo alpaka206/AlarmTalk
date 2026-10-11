@@ -15,6 +15,8 @@ plugins {
     id("com.google.devtools.ksp")
     // FCM: google-services.json(app/src/{dev,prod}/) 을 읽어 Firebase 초기화 리소스를 생성.
     id("com.google.gms.google-services")
+    // Sentry: 릴리스(R8) 빌드의 매핑 올리기 — 토큰이 있을 때만(아래 `sentry { }`).
+    id("io.sentry.android.gradle")
 }
 
 abstract class GenerateAlarmToneTask : DefaultTask() {
@@ -161,8 +163,11 @@ android {
         // ⚠ 이 빌드는 **강제 업데이트 하한**이다(`app-version.ts` 의 Android `minSupported`).
         // 하한이 되는 빌드는 **Play 게재를 확인하기 전에** 서버를 올리면 안 된다 — 받을 것이 없는
         // 강제 업데이트로 앱이 벽돌이 된다. iOS 하한은 App Store 게재로 **따로** 간다.
-        versionCode = 30
-        versionName = "1.2.10"
+        // 31 = 1.2.11. 목소리 등록의 '톤 조절'(높이 −10…+6반음 — 서버가 구워 알람까지 같은 높이),
+        // 무음 알람 수정(유료 목소리를 못 쓰면 기본 목소리로 운다), 영어·일본어 화면, 날씨 출처 줄
+        // 릴리스. 서버(develop→main)와 **동시에** 낸다 — 심사를 통과한 앱을 대기시켜 두고 머지 뒤 출시한다.
+        versionCode = 31
+        versionName = "1.2.11"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -318,6 +323,38 @@ composeCompiler {
     // reportsDestination = layout.buildDirectory.dir("compose-reports")
 }
 
+// ── Sentry: 릴리스 빌드의 R8 매핑 올리기 ─────────────────────────────────────────────
+//
+// R8 이 클래스·메서드 이름을 줄이므로(`b5.o` 같은) 매핑이 없으면 Sentry 의 스택을 읽을 수 없다. 플러그인이
+// 릴리스 빌드에 ProGuard UUID 를 심고(assets 의 `sentry-debug-meta.properties` — SDK 가 읽어 이벤트에 싣는다)
+// 그 빌드의 mapping.txt 를 같은 UUID 로 올린다. 절차는 `docs/ops/environments.md` 「Android 배포 순서」.
+//
+// ⚠ **토큰이 있을 때만 한다.** 환경 변수 `SENTRY_AUTH_TOKEN` 이 없으면 플러그인은 어느 변형에도 작업을 걸지
+//   않는다(UUID 도 심지 않는다) — 빌드는 그대로 되고 원격으로 나가는 것이 없다. 로컬·CI 의 평소 빌드가 그렇다.
+// ⚠ **SDK 버전을 바꾸지 않는다** — 자동 설치를 끈다. SDK 는 아래 dependencies 의 `sentry-android-core` 한 줄이
+//   정한다. 플러그인 판(5.12.2)을 고른 이유는 루트 build.gradle.kts 에 있다.
+// ⚠ **앱 코드를 바꾸지 않는다** — 바이트코드 계측(트레이싱)을 끈다. 소스 컨텍스트·네이티브 심볼·의존성 보고도
+//   싣지 않고, 플러그인 자체의 사용 통계(telemetry)도 보내지 않는다.
+// 디버그 빌드 유형은 언제나 제외한다 — dev 디버그 빌드는 이 플러그인이 없을 때와 같다.
+val sentryAuthToken: String? = providers.environmentVariable("SENTRY_AUTH_TOKEN").orNull?.takeIf { it.isNotBlank() }
+
+sentry {
+    org.set("alarmtalk")
+    // 이슈 이름이 ALARMTALK-ANDROID-* 인 프로젝트. 매핑은 UUID 로 찾으므로 dev 릴리스 빌드가 올려도 섞이지 않는다.
+    projectName.set("alarmtalk-android")
+    authToken.set(sentryAuthToken)
+    includeProguardMapping.set(sentryAuthToken != null)
+    autoUploadProguardMapping.set(sentryAuthToken != null)
+    ignoredBuildTypes.set(if (sentryAuthToken != null) setOf("debug") else setOf("debug", "release"))
+    autoInstallation { enabled.set(false) }
+    tracingInstrumentation { enabled.set(false) }
+    includeSourceContext.set(false)
+    includeNativeSources.set(false)
+    uploadNativeSymbols.set(false)
+    includeDependenciesReport.set(false)
+    telemetry.set(false)
+}
+
 tasks.named("preBuild").configure {
     dependsOn(generateAlarmTone)
     dependsOn(copyLegalDocs)
@@ -327,13 +364,11 @@ dependencies {
     val composeBom = platform("androidx.compose:compose-bom:2024.12.01")
 
     implementation(composeBom)
-    androidTestImplementation(composeBom)
 
     implementation("androidx.activity:activity-compose:1.9.3")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.compose.ui:ui")
-    implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
@@ -347,13 +382,26 @@ dependencies {
     implementation("androidx.room:room-ktx:2.6.1")
     implementation("androidx.room:room-runtime:2.6.1")
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
-    implementation("androidx.work:work-runtime-ktx:2.9.1")
+    // ⚠ **2.10 아래로 내리지 말 것**(2026-10-11, ALARMTALK-ANDROID-Y). 기본 목소리 받기 워커가
+    // `dataSync` 포그라운드 서비스를 올리는데(`sync/StockClipPrefetchWorker.kt`), Android 15 부터
+    // 시스템은 그 서비스를 `Service.onTimeout` 으로 끝내라고 할 수 있다. 2.9.x 의
+    // `SystemForegroundService` 는 그 콜백이 없어 서비스가 그대로 떠 있고, 시스템이 10초 뒤
+    // **앱을 죽인다**(1.2.10 이 2.9.1 이었다). 2.10 부터 WorkManager 가 그 작업과 서비스를 스스로
+    // 멈추고 작업은 다시 예약된다. 회귀 `sync/WorkManagerForegroundTimeoutContractTest`.
+    // 2.11·2.12 는 Kotlin 2.1.20 · 코루틴 1.9.0 · Room 2.7.0 을 요구한다(각 POM) — 이 앱은 Kotlin
+    // 2.0.21 · 코루틴 1.7.3 · Room 2.6.1 이라 함께 올라가는 일이 된다. 따로 올리고 여기서는 2.10.x 에
+    // 둔다(2.10.5 는 지금 풀리는 버전 그대로다 — `:app:dependencies` 전후 비교로 확인).
+    // 매니페스트의 `SystemForegroundService` 타입 합치기(`dataSync`)는 그대로 필요하다 — 2.10.5 의
+    // 라이브러리 매니페스트에도 타입이 없다.
+    implementation("androidx.work:work-runtime-ktx:2.10.5")
     implementation("com.android.billingclient:billing-ktx:8.0.0")
     // Google Play In-App Updates(신 Play SDK). Play 설치본에서만 실제 트리거되고
     // debug/사이드로드에선 no-op(콜백에서 예외 방어). 구 com.google.android.play:core 미사용.
     implementation("com.google.android.play:app-update:2.1.0")
-    implementation("com.google.android.play:app-update-ktx:2.1.0")
     implementation("com.google.android.gms:play-services-auth:21.2.0")
+    // ⚠ 앱 코드는 위치 API 를 쓰지 않지만 지우지 말 것 — billing 8.0.0 이 이걸 19.0.0 으로
+    // 끌어온다. 이 줄이 그 전이 의존을 21.3.0 으로 올려 두고 있어, 지우면 APK 에서 빠지는 게
+    // 아니라 19.0.0 으로 내려간다(2026-09-29 `:app:dependencies` 전후 비교로 확인).
     implementation("com.google.android.gms:play-services-location:21.3.0")
     implementation("io.sentry:sentry-android-core:8.43.0")
     implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
@@ -363,7 +411,6 @@ dependencies {
     ksp("androidx.room:room-compiler:2.6.1")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
-    debugImplementation("androidx.compose.ui:ui-test-manifest")
 
     testImplementation("junit:junit:4.13.2")
     // runTest 의 가상 시계 — 저장이 날씨 응답을 기다리는 상한(WeatherResolveTimeoutTest)을 8초

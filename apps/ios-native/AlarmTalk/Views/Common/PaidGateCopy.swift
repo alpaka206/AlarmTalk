@@ -19,13 +19,13 @@ import Foundation
 /// 다 씀), 삭제 확인 같은 것은 다른 사실이다.
 enum PaidGateCopy {
     /// 유료 게이트의 **설명** 문장. 제목은 자리마다 다를 수 있다.
-    static let message = "해당 기능은 유료 이용권에서 사용할 수 있어요."
+    static var message: String { String(localized: "해당 기능은 유료 이용권에서 사용할 수 있어요.") }
 
     /// 이용권 화면으로 보내는 액션 라벨.
-    static let viewPlans = "이용권 보기"
+    static var viewPlans: String { String(localized: "이용권 보기") }
 
     /// ⚠ **쿠폰 갈래는 유료 게이트에 **항상** 둔다**(2026-08-11 지시).
     /// 돈을 내는 것 말고 **코드로 여는 길**이 있는데, 그 길을 게이트마다 다르게 두면
     /// 어떤 화면에서는 있고 어떤 화면에서는 없다(실제로 iOS 목소리 게이트에는 없었다).
-    static let redeemCode = "쿠폰이 있어요"
+    static var redeemCode: String { String(localized: "쿠폰이 있어요") }
 }

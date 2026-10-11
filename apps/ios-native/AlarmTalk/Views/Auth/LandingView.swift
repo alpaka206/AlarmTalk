@@ -6,9 +6,8 @@ import SwiftUI
 /// 구성 요소
 ///   1. AlarmTalk 브랜드 표식(단일 로고 마크)
 ///   2. 큰 카피 ("좋아하는 목소리로\n깨어나는 알람")
-///   3. 알람 미리듣기 카드 — 32-bar 파형 + 재생 버튼. 번들 mp3 가 없을 때는
-///      시각 시뮬레이션(5초 동안 progress 가 0→1) 으로 동작한다.
-///   4. 하단 진입 버튼 2개 — [로그인] filled / [회원가입] outlined.
+///   3. 알람 미리듣기 카드 — 30바 파형 + 재생 버튼. 번들 mp3 가 없으면 버튼이 비활성된다.
+///   4. 하단 진입 버튼 하나 — [시작하기].
 ///
 /// 소셜(Apple) 로그인은 이 화면에 두지 않고 로그인 화면 안에만 노출한다(Android 가
 /// Google 을 AuthScreen 안에만 두는 것과 동일). NavigationStack 의 destination 으로
@@ -43,7 +42,7 @@ struct LandingView: View {
 
                             VStack(alignment: .leading, spacing: 0) {
                                 // 강조는 **가운데 키워드만**, 색만 다르고 굵기는 같다(둘 다 Bold).
-                                Text("좋아하는 \(Text("목소리").foregroundColor(AuthSceneColors.accent))로\n깨어나는 아침")
+                                Text("좋아하는 \(Text("auth.landing.voiceKeyword").foregroundColor(AuthSceneColors.accent))로\n깨어나는 아침")
                                     .font(theme.typography.headlineLarge)
                                     .fontWeight(.bold)
                                     .foregroundStyle(AuthSceneColors.text)
@@ -51,7 +50,7 @@ struct LandingView: View {
 
                                 Color.clear.frame(height: 10)
 
-                                Text("매일 아침, 그 목소리가 새로운 한마디로 깨워드려요.")
+                                Text(String(localized: "매일 아침, 그 목소리가 새로운 한마디로 깨워드려요."))
                                     .font(theme.typography.bodyMedium)
                                     .foregroundStyle(AuthSceneColors.textDim)
 
@@ -137,10 +136,10 @@ private struct VoicePreviewCard: View {
             }
             .buttonStyle(.plain)
             .disabled(!preview.hasAudio)
-            .accessibilityLabel(preview.isPlaying ? "미리듣기 일시정지" : "목소리 미리듣기")
+            .accessibilityLabel(preview.isPlaying ? String(localized: "미리듣기 일시정지") : String(localized: "목소리 미리듣기"))
 
             VStack(alignment: .leading, spacing: 8) {
-                Text("할아버지, 좋은 아침이에요\n오늘은 비가 온대요\n나가실 때 우산 꼭 챙기세요")
+                Text(String(localized: "할아버지, 좋은 아침이에요\n오늘은 비가 온대요\n나가실 때 우산 꼭 챙기세요"))
                     .font(theme.typography.bodyMedium)
                     .fontWeight(.medium)
                     .foregroundStyle(AuthSceneColors.text)
@@ -191,15 +190,6 @@ private struct MiniWaveform: View {
 // ⚠ **`LandingWaveformBar`(32칸 파형)를 되살리지 말 것**(2026-08-07 삭제).
 // 선언만 있고 그리는 곳이 없었다. 안드로이드 랜딩도 파형을 쓰지 않는다.
 
-/// 미리듣기 상태 컨트롤러.
-///
-/// 두 경로를 지원한다:
-///   1. `Bundle.main.url(forResource: "landing_voice_preview", withExtension: "mp3")`
-///      가 nil 이 아니면 `AudioPreviewPlayer` 로 실제 재생.
-///   2. nil 이면 시각 시뮬레이션 — 5초 동안 progress 가 0→1 로 차오른다.
-///
-/// 두 경우 모두 progress 는 `Task.sleep` 기반 ticker 로 갱신한다.
-@MainActor
 /// 랜딩 미리듣기 재생 상태.
 ///
 /// ⚠ **소리 없이 진행바만 채우는 '시뮬레이션' 을 되살리지 말 것.** 예전에는 번들에 mp3 가
@@ -207,6 +197,7 @@ private struct MiniWaveform: View {
 /// 재생 중처럼 보여, 이 카드가 보여줘야 할 단 하나(목소리가 어떤지)를 정반대로 전했다.
 /// 이제 Android `res/raw/landing_voice_preview.mp3` 원본을 iOS 번들에도 넣고, 그래도 못 찾으면
 /// [hasAudio] 가 `false` 라 버튼이 **비활성**된다.
+@MainActor
 private final class LandingPreviewController: ObservableObject {
     @Published private(set) var isPlaying = false
     @Published private(set) var progress: Double = 0

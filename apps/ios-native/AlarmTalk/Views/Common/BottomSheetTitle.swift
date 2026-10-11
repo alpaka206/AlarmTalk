@@ -2,8 +2,8 @@ import SwiftUI
 
 /// 바텀시트 맨 위의 제목 — **모든 바텀시트가 이걸 쓴다.**
 ///
-/// ⚠ **제목을 직접 그리지 말 것.** 예전에는 `SelectionSheet`·`WeatherCityPickerSheet`·
-/// `VoiceSelectionSheet` 셋이 같은 구성을 **각자 손으로 베껴** 갖고 있었고, 그중 하나만
+/// ⚠ **제목을 직접 그리지 말 것.** 예전에는 `SelectionSheet`·날씨 도시 시트(지금의
+/// `WeatherRegionPickerSheet`)·`VoiceSelectionSheet` 셋이 같은 구성을 **각자 손으로 베껴** 갖고 있었고, 그중 하나만
 /// 고쳐도 나머지가 남았다. 실제로 셋 다 `.padding(.top, 4)` 를 갖고 있었는데 — 바로 그
 /// 값이 "드래그 핸들과 붙어 제목이 잘려 보인다" 며 **금지돼 있던 값**이다(2026-08-10 지적
 /// "모달 위에 여백이 없어 잘리려고 한다"). 주석은 18 을 쓰라고 했지만 코드는 4 였다.

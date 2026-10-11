@@ -44,9 +44,7 @@ struct ConsentCompletionStore {
     }
 
     private func key(_ userID: String?, _ policyVersion: String) -> String? {
-        guard let id = userID?.trimmingCharacters(in: .whitespacesAndNewlines), !id.isEmpty else {
-            return nil
-        }
+        guard let id = userID.nilIfBlank else { return nil }
         return "consent_done_\(policyVersion)_\(id)"
     }
 }

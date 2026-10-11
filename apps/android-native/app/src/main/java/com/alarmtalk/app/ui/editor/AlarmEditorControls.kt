@@ -31,9 +31,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -43,24 +41,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
-import com.alarmtalk.app.fitToWidthScale
-import com.alarmtalk.app.WakerChipShape
-import com.alarmtalk.app.WakerPillShape
-import com.alarmtalk.app.data.AlarmAudioLimits
 import com.alarmtalk.app.data.AlarmPlayModes
 import com.alarmtalk.app.data.AlarmTimeCalculator
-import com.alarmtalk.app.data.HolidayDate
-import com.alarmtalk.app.data.holidayCountryDisplayName
-import com.alarmtalk.app.data.holidayCountryFlagEmoji
-import com.alarmtalk.app.data.VoiceSources
-import com.alarmtalk.app.network.VoiceProfile
-import com.alarmtalk.app.R
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -73,9 +60,6 @@ internal fun ScheduleDetailsCard(
     holidayOff: Boolean,
     onToggleDay: (Int) -> Unit,
     onHolidayOffChange: (Boolean) -> Unit,
-    holidayCountryCode: String,
-    upcomingHolidays: List<HolidayDate>,
-    onHolidayColdCache: () -> Unit,
 ) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
@@ -94,9 +78,6 @@ internal fun ScheduleDetailsCard(
                 holidayOff = holidayOff,
                 onToggleDay = onToggleDay,
                 onHolidayOffChange = onHolidayOffChange,
-                holidayCountryCode = holidayCountryCode,
-                upcomingHolidays = upcomingHolidays,
-                onHolidayColdCache = onHolidayColdCache,
             )
         }
     }
@@ -110,9 +91,6 @@ internal fun RepeatSelector(
     holidayOff: Boolean,
     onToggleDay: (Int) -> Unit,
     onHolidayOffChange: (Boolean) -> Unit,
-    holidayCountryCode: String,
-    upcomingHolidays: List<HolidayDate>,
-    onHolidayColdCache: () -> Unit,
 ) {
     val holidayEnabled = repeatDaysMask != 0
     val context = LocalContext.current
@@ -552,17 +530,6 @@ internal fun PlayModeChip(
     }
 }
 
-// TTS 카테고리(서버 전송값)의 정식 집합. 화면에 칩으로 그리지는 않고,
-// normalizedTtsCategory 의 화이트리스트와 버킷 칩 라벨 조회에만 쓴다.
-// morning = 문구를 안 바꿨을 때의 기본값(서버가 greeting 문구로 이어 붙인다).
-internal val TtsCategories: List<Pair<String, Int>> = listOf(
-    "morning" to R.string.editor2_cat_morning,
-    "medication" to R.string.editor2_cat_medication,
-    "cheer" to R.string.editor2_cat_love,
-)
-
-
-/** stockClips manifest 에서 (해당 보이스·언어) 로 실제 존재하는 무료 버킷을 노출 순서대로. */
 /**
  * stockClips manifest 에서 (해당 보이스·언어) 로 **완전히** 준비된 무료 버킷을 노출 순서대로.
  *

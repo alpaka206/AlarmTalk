@@ -28,8 +28,25 @@ export type Celebrity = {
 /** 이 페이지의 이벤트 번호(`lib/events.ts`). 좋아요 카운터·클립 생성의 키다. */
 export const EVENT_ID = "1";
 
-/** 메시지 종류. 순서가 곧 화면의 선택지 순서다. */
-export const MESSAGE_KINDS = ["birthday", "chuseok"] as const;
+/**
+ * 메시지 종류. 순서가 곧 화면의 선택지 순서다. 2026-09-29 에 '추석 인사'(`chuseok`)를
+ * '사랑 한마디'(`love`)로 갈아 끼웠다 — 서버는 캐시된 옛 번들을 위해 `chuseok` 을 옛 문안으로 계속
+ * 받는다(`LEGACY_EVENT_MESSAGE_KINDS`). `love` 는 종류별 사진이 없어 기본 사진(`portrait`)으로 그린다.
+ *
+ * ⚠ 새 종류를 여기 더하는 변경은 **서버가 그 종류를 받게 된 뒤에** prod 에 나가야 한다 — 옛 prod 서버는
+ * 모르는 `kind` 를 400 `INVALID_BODY` 로 거절한다. 랜딩(Vercel)과 백엔드(Workers)는 같은 `main` 머지로
+ * 따로 돌아 순서를 보장하지 못하므로 릴리스를 둘로 나눠 서버부터 올린다(`docs/qa/dev-test-handoff.md` 의
+ * 「prod 게재 순서」).
+ *
+ * `love` 는 그 순서를 지키지 못했다 — 서버(#818)와 이 변경(#815)이 한 릴리스에 같이 나가고(릴리스 PR 의
+ * 코덱스 P2), Vercel 이 먼저 끝나 워커가 올라오기까지 1분쯤(추정) `love` 가 400 이다. 그 창은 화면이 스스로
+ * 넘긴다(2026-10-11): `INVALID_BODY` 로 거절된 카드를 실패로 바꾸지 않고 '생성 중' 으로 둔 채 3·6·12·24·48초
+ * 뒤에 다시 부르고(첫 거절부터 약 93초), 다 써도 안 되면 그때 실패 + '다시 시도' 로 떨어진다(`event-api.ts` 의
+ * `DEPLOY_WINDOW_RETRY_DELAYS_MS`, `event-studio.tsx` 의 `request`).
+ * ⚠ 이건 `love` 한 번을 위한 안전망이지 순서를 뒤집어도 된다는 허락이 아니다 — 다음 종류도 **서버 먼저**다.
+ * 93초보다 긴 배포 창이나 실패한 배포는 못 넘기고, 그때 사용자는 1분 반 가까이 도는 카드를 보다가 실패를 본다.
+ */
+export const MESSAGE_KINDS = ["birthday", "love"] as const;
 export type MessageKind = (typeof MESSAGE_KINDS)[number];
 
 export const CELEBRITIES: readonly Celebrity[] = catalog[EVENT_ID].voices.map((v) => ({

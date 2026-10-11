@@ -3,7 +3,7 @@ import UIKit
 
 /// 가족/커플 그룹 멤버 관리 화면.
 ///
-/// Android `apps/android-native/.../ui/members/MemberManagementScreen.kt:48-332` 의
+/// Android `apps/android-native/.../ui/members/MemberManagementScreen.kt` 의 `MemberManagementScreen` 의
 /// 모든 동작을 1:1 포팅했다.
 ///
 /// 기능 요약
@@ -31,11 +31,7 @@ struct MemberManagementView: View {
     private var isOwner: Bool { familyGroup?.role == "owner" && group != nil }
     private var activePlanKey: String? { socialFeatures.subscription?.plan?.key }
     private var planLabel: String {
-        switch activePlanKey {
-        case "couple": return "커플"
-        case "family": return "가족"
-        default: return "공유"
-        }
+        PlanTier.displayName(forPlanKey: activePlanKey) ?? String(localized: "group.plan.shared")
     }
 
     /// 멤버 정렬: 소유자 먼저, 그 다음 가입일 오름차순.
@@ -83,8 +79,8 @@ struct MemberManagementView: View {
                     if let user = auth.session?.user {
                         FamilyAlarmPermissionCard(
                             title: activePlanKey == "couple"
-                                ? "커플이 내 알람 맞추기 허용"
-                                : "가족이 내 알람 맞추기 허용",
+                                ? LocalizedStringKey("커플이 내 알람 맞추기 허용")
+                                : LocalizedStringKey("가족이 내 알람 맞추기 허용"),
                             allowFamilyAlarms: user.allowFamilyAlarms ?? false,
                             quietWindows: user.familyAlarmQuietWindows ?? [],
                             isBusy: auth.isBusy || socialFeatures.isBusy,
@@ -99,17 +95,17 @@ struct MemberManagementView: View {
                     }
 
                     if isOwner {
-                        sectionTitle("공유 코드")
+                        sectionTitle(String(localized: "공유 코드"))
                         shareCodeSection
                     }
 
                     // 정원은 **구성원 옆**에 둔다 — 공유 코드 옆에 두면 '코드 사용량' 으로
                     // 읽힌다(분모도 다르다: 코드는 소유자를 뺀 max_members - 1).
                     HStack {
-                        sectionTitle("구성원")
+                        sectionTitle(String(localized: "구성원"))
                         Spacer()
                         if let group {
-                            Text("\(sortedMembers.count)/\(group.maxMembers)명")
+                            Text(String(localized: "\(sortedMembers.count)/\(group.maxMembers)명"))
                                 .font(theme.typography.bodySmall)
                                 .foregroundStyle(theme.palette.onSurfaceVariant)
                                 .monospacedDigit()
@@ -132,17 +128,17 @@ struct MemberManagementView: View {
             .padding(.vertical, 12)
         }
         .homeGradientBackground()
-        .navigationTitle("공유 이용권")
+        .navigationTitle(String(localized: "공유 이용권"))
         .navigationBarTitleDisplayMode(.inline)
         .alert(
-            "구성원 내보내기",
+            String(localized: "구성원 내보내기"),
             isPresented: Binding(
                 get: { pendingRemoveMember != nil },
                 set: { if !$0 { pendingRemoveMember = nil } }
             ),
             presenting: pendingRemoveMember
         ) { member in
-            Button("내보내기", role: .destructive) {
+            Button(String(localized: "내보내기"), role: .destructive) {
                 guard let groupId = group?.id else { return }
                 Task {
                     await socialFeatures.removeMember(
@@ -153,27 +149,27 @@ struct MemberManagementView: View {
                 }
                 pendingRemoveMember = nil
             }
-            Button("취소", role: .cancel) {
+            Button(String(localized: "취소"), role: .cancel) {
                 pendingRemoveMember = nil
             }
         } message: { _ in
-            Text("이 구성원을 내보낼까요? 다시 초대하려면 새 초대 코드가 필요해요.")
+            Text(String(localized: "이 구성원을 내보낼까요? 다시 초대하려면 새 초대 코드가 필요해요."))
         }
         .alert(
-            "공유 코드 재발급",
+            String(localized: "공유 코드 재발급"),
             isPresented: $showRegenerateConfirm
         ) {
-            Button("코드 재발급", role: .destructive) {
+            Button(String(localized: "코드 재발급"), role: .destructive) {
                 showRegenerateConfirm = false
                 Task {
                     await socialFeatures.regenerateFamilyShareCode(session: auth.session)
                 }
             }
-            Button("취소", role: .cancel) {
+            Button(String(localized: "취소"), role: .cancel) {
                 showRegenerateConfirm = false
             }
         } message: {
-            Text("재발급하면 지금 코드는 더 이상 쓸 수 없어요. 이미 코드를 보낸 사람에게는 새 코드를 다시 보내야 해요.")
+            Text(String(localized: "재발급하면 지금 코드는 더 이상 쓸 수 없어요. 이미 코드를 보낸 사람에게는 새 코드를 다시 보내야 해요."))
         }
         .sheet(isPresented: $isSharePresented) {
             BillingActivityShareSheet(text: shareText)
@@ -204,8 +200,11 @@ struct MemberManagementView: View {
         // 한국어가 "취소됨" 이라, 사용자는 취소한 적 없는 "취소됨" 을 본다
         // (2026-08-10 사용자 보고 → 원인 확인).
         // 다시 돌아야 하는 건 **계정이 바뀔 때**뿐이므로 user.id 로 건다.
+        // 진입 갱신이다 — 더보기 탭 진입이 1분 안에 받아 둔 것이 있으면 다시 받지 않는다
+        // (`refreshOnEntry`, 스펙 plan-gates §4). 쓰기 뒤의 갱신(허용 토글·방해금지·내보내기)은
+        // 창을 보지 않는 `refreshAll` 이다 — 구성원 행의 허용 상태가 그 응답에서 온다.
         .task(id: auth.session?.user.id) {
-            await socialFeatures.refreshAll(session: auth.session)
+            await socialFeatures.refreshOnEntry(session: auth.session)
         }
     }
 
@@ -215,7 +214,7 @@ struct MemberManagementView: View {
     /// 이 행에도 남겨 두면 같은 숫자가 한 화면에 두 번 나온다. 여기는 **어떤 이용권인지**만
     /// 말한다(안드로이드에는 이 행이 없다 — 인원은 구성원 옆 한 곳뿐이다).
     private var capacityRow: some View {
-        Text("\(planLabel) 이용권")
+        Text(String(localized: "\(planLabel) 이용권"))
             .font(theme.typography.bodyMedium)
             .foregroundStyle(theme.palette.onSurfaceVariant)
     }
@@ -234,15 +233,15 @@ struct MemberManagementView: View {
         } else {
             VStack(alignment: .leading, spacing: 10) {
                 Text(isCapacityFull
-                     ? "정원이 가득 차서 더 이상 공유할 수 없어요."
-                     : "공유 코드가 아직 없어요. \(planLabel) 구성원을 초대할 초대 코드를 만들어 주세요.")
+                     ? String(localized: "정원이 가득 차서 더 이상 공유할 수 없어요.")
+                     : String(localized: "공유 코드가 아직 없어요. \(planLabel) 구성원을 초대할 초대 코드를 만들어 주세요."))
                     .font(theme.typography.bodySmall)
                     .foregroundStyle(theme.palette.onSurfaceVariant)
 
                 Button {
                     Task { await socialFeatures.ensureFamilyShareCode(session: auth.session) }
                 } label: {
-                    Text(isCapacityFull ? "공유 불가" : "공유 코드 만들기")
+                    Text(isCapacityFull ? String(localized: "공유 불가") : String(localized: "공유 코드 만들기"))
                         .font(theme.typography.labelLarge)
                         .frame(maxWidth: .infinity, minHeight: 46)
                 }
@@ -274,8 +273,8 @@ struct MemberManagementView: View {
 
             if isFull {
                 Text(isCapacityFull
-                     ? "정원이 가득 차서 공유할 수 없어요"
-                     : "이 코드는 다 썼어요. 재발급하면 다시 공유할 수 있어요.")
+                     ? String(localized: "정원이 가득 차서 공유할 수 없어요")
+                     : String(localized: "이 코드는 다 썼어요. 재발급하면 다시 공유할 수 있어요."))
                     .font(theme.typography.bodySmall)
                     .foregroundStyle(theme.palette.onSurfaceVariant)
             }
@@ -288,7 +287,7 @@ struct MemberManagementView: View {
                 Button {
                     UIPasteboard.general.string = voucher.code
                 } label: {
-                    Label("코드 복사", systemImage: "doc.on.doc")
+                    Label(String(localized: "코드 복사"), systemImage: "doc.on.doc")
                         .font(theme.typography.labelLarge)
                         .frame(maxWidth: .infinity, minHeight: 44)
                 }
@@ -300,18 +299,18 @@ struct MemberManagementView: View {
                     Task {
                         await socialFeatures.refreshAll(session: auth.session, force: true)
                         guard let latestVoucher = shareVoucher else {
-                            socialFeatures.statusMessage = "공유 코드를 다시 불러오지 못했어요."
+                            socialFeatures.statusMessage = String(localized: "공유 코드를 다시 불러오지 못했어요.")
                             return
                         }
                         // 새로고침 뒤 값으로 다시 판정한다 — 정원과 코드 소진 둘 다.
                         let latestExhausted = (latestVoucher.maxUses ?? 1) > 0
                             && (latestVoucher.useCount ?? 0) >= (latestVoucher.maxUses ?? 1)
                         guard !isCapacityFull else {
-                            socialFeatures.statusMessage = "정원이 가득 차서 공유할 수 없어요."
+                            socialFeatures.statusMessage = String(localized: "정원이 가득 차서 공유할 수 없어요.")
                             return
                         }
                         guard !latestExhausted else {
-                            socialFeatures.statusMessage = "이 코드는 다 썼어요. 재발급하면 다시 공유할 수 있어요."
+                            socialFeatures.statusMessage = String(localized: "이 코드는 다 썼어요. 재발급하면 다시 공유할 수 있어요.")
                             return
                         }
                         // 클립보드는 **코드만** — 받은 사람이 붙여넣기로 바로 등록한다.
@@ -321,7 +320,7 @@ struct MemberManagementView: View {
                         isSharePresented = true
                     }
                 } label: {
-                    Label(isFull ? "공유 불가" : "공유하기", systemImage: "square.and.arrow.up")
+                    Label(isFull ? String(localized: "공유 불가") : String(localized: "공유하기"), systemImage: "square.and.arrow.up")
                         .font(theme.typography.labelLarge)
                         .frame(maxWidth: .infinity, minHeight: 44)
                 }
@@ -335,7 +334,7 @@ struct MemberManagementView: View {
             Button {
                 showRegenerateConfirm = true
             } label: {
-                Text("코드 재발급")
+                Text(String(localized: "코드 재발급"))
                     .font(theme.typography.labelLarge)
                     .frame(maxWidth: .infinity, minHeight: 44)
             }
@@ -343,7 +342,7 @@ struct MemberManagementView: View {
             .clipShape(RoundedRectangle(cornerRadius: theme.shapes.small, style: .continuous))
             .disabled(socialFeatures.isBusy)
 
-            Text("코드가 외부에 노출됐다면 재발급해서 기존 코드를 막을 수 있어요.")
+            Text(String(localized: "코드가 외부에 노출됐다면 재발급해서 기존 코드를 막을 수 있어요."))
                 .font(theme.typography.bodySmall)
                 .foregroundStyle(theme.palette.onSurfaceVariant)
         }
@@ -401,7 +400,7 @@ private struct FamilyAlarmPermissionCard: View {
                 Button(action: onEditQuietTime) {
                     HStack(spacing: 12) {
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("알람 받지 않을 시간")
+                            Text(String(localized: "알람 받지 않을 시간"))
                                 .font(theme.typography.bodyMedium.weight(.medium))
                                 .foregroundStyle(theme.palette.onSurface)
                             Text(HelperFormatters.quietScheduleLabel(quietWindows))
@@ -410,7 +409,7 @@ private struct FamilyAlarmPermissionCard: View {
                                 .lineLimit(1)
                         }
                         Spacer()
-                        Text("수정")
+                        Text(String(localized: "수정"))
                             .font(theme.typography.labelLarge)
                             .foregroundStyle(theme.palette.primary)
                     }
@@ -444,7 +443,7 @@ private struct MemberRow: View {
     var body: some View {
         HStack(alignment: .center) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(member.name ?? member.email ?? "멤버")
+                Text(member.name ?? member.email ?? String(localized: "멤버"))
                     .font(theme.typography.bodyMedium.weight(.medium))
                     .foregroundStyle(theme.palette.onSurface)
                 if let email = member.email, member.name != nil {
@@ -453,7 +452,7 @@ private struct MemberRow: View {
                         .foregroundStyle(theme.palette.onSurfaceVariant)
                 }
                 if let allow = member.allowFamilyAlarms {
-                    Text(allow ? "상대방 알람 허용" : "상대방 알람 꺼짐")
+                    Text(allow ? String(localized: "상대방 알람 허용") : String(localized: "상대방 알람 꺼짐"))
                         .font(theme.typography.bodySmall)
                         .foregroundStyle(theme.palette.onSurfaceVariant)
                 }
@@ -481,7 +480,7 @@ private struct MemberRow: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(!removeEnabled)
-                .accessibilityLabel("내보내기")
+                .accessibilityLabel(String(localized: "내보내기"))
             }
         }
         .padding(.horizontal, 14)
@@ -499,8 +498,8 @@ private struct MemberRow: View {
     }
 
     private var chipLabel: String? {
-        if member.role == "owner" { return "관리자" }
-        if isMe { return "나" }
+        if member.role == "owner" { return String(localized: "관리자") }
+        if isMe { return String(localized: "나") }
         return nil
     }
 }

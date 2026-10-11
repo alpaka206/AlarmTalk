@@ -71,8 +71,13 @@ class VoiceReplacementCascadeTest {
         val degraded = repository.degradeCustomMessageAlarmsUsingVoiceProfile("clone-1", "user-a")
 
         assertEquals("직접 입력 알람 하나만 내려야 한다", 1, degraded)
-        assertNull(dao.getById("custom")?.voiceProfileId)
-        assertEquals(AlarmPlayModes.ALARM_ONLY, dao.getById("custom")?.playMode)
+        // 알람음이 아니라 **기본 목소리(미나)** 로 바뀐다 — 낡은 오디오·문구 참조는 버린다(2026-09-29).
+        val custom = dao.getById("custom")!!
+        assertEquals(SUBSTITUTE_SYSTEM_VOICE_ID, custom.voiceProfileId)
+        assertEquals(AlarmPlayModes.VOICE_ONLY, custom.playMode)
+        assertNull(custom.ttsMessageId)
+        assertNull(custom.audioCacheKey)
+        assertNull("되돌릴 목소리가 없으니 표시도 남기지 않는다", custom.preLockPlayMode)
         assertEquals(
             "프리셋(버킷) 알람은 새 목소리로 다시 만들어진다 — 벗기면 되돌릴 수 없다",
             "clone-1",
@@ -117,7 +122,11 @@ class VoiceReplacementCascadeTest {
         )
 
         assertEquals(1, degraded)
-        assertNull("울렸다는 이유로 면제되면 안 된다", dao.getById("rang-after-marker")?.voiceProfileId)
+        assertEquals(
+            "울렸다는 이유로 면제되면 안 된다",
+            SUBSTITUTE_SYSTEM_VOICE_ID,
+            dao.getById("rang-after-marker")?.voiceProfileId,
+        )
         assertEquals(
             "표식 뒤에 만든 오디오는 새 목소리다 — 건드리지 않는다",
             "clone-1",
@@ -151,7 +160,7 @@ class VoiceReplacementCascadeTest {
             1,
             repository.degradeCustomMessageAlarmsUsingVoiceProfile("clone-1", "user-a"),
         )
-        assertNull(dao.getById("fresh")?.voiceProfileId)
+        assertEquals(SUBSTITUTE_SYSTEM_VOICE_ID, dao.getById("fresh")?.voiceProfileId)
     }
 
     /**
@@ -179,13 +188,37 @@ class VoiceReplacementCascadeTest {
         )
 
         assertEquals(1, degraded)
-        assertNull(dao.getById("manual")?.voiceProfileId)
+        // 교체된 것은 오디오뿐이고 그 기본 목소리는 그대로 쓸 수 있다 — 미나로 바꾸지 않고 낡은 오디오만 버린다.
+        val manual = dao.getById("manual")!!
+        assertEquals(systemVoice, manual.voiceProfileId)
+        assertEquals(AlarmPlayModes.VOICE_ONLY, manual.playMode)
+        assertNull(manual.ttsMessageId)
+        assertNull(manual.audioCacheKey)
         assertEquals(
             "프리셋(버킷) 알람은 서버가 새 목소리로 다시 만든다 — 벗기면 되돌릴 수 없다",
             systemVoice,
             dao.getById("bucket")?.voiceProfileId,
         )
         assertEquals(systemVoice, dao.getById("legacy-clip")?.voiceProfileId)
+    }
+
+    /**
+     * 이미 기본 목소리로 바꿔 둔 직접 입력 알람에는 **낡을 오디오가 없다** — 그 기본 목소리의 교체
+     * 표식이 올 때마다 같은 행을 다시 '강등' 으로 세면 없는 변화를 안내한다.
+     */
+    @Test
+    fun anAlarmWithoutAnyAudioIsNotDegradedAgainByAReplacementMarker() = runBlocking {
+        dao.upsert(alarm(id = "custom", voiceProfileId = "clone-1"))
+        assertEquals(1, repository.degradeCustomMessageAlarmsUsingVoiceProfile("clone-1", "user-a"))
+        assertEquals(SUBSTITUTE_SYSTEM_VOICE_ID, dao.getById("custom")?.voiceProfileId)
+
+        val again = repository.degradeCustomMessageAlarmsUsingVoiceProfile(
+            voiceProfileId = SUBSTITUTE_SYSTEM_VOICE_ID,
+            expectedOwnerUserId = "user-a",
+            allowSystemVoice = true,
+        )
+
+        assertEquals("강등 안내에 다시 세지 않는다", 0, again)
     }
 
     private fun writeCachedAudio(cacheKey: String, createdAtMillis: Long) {

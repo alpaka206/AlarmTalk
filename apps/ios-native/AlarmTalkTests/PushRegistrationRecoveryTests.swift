@@ -134,6 +134,122 @@ final class PushRegistrationRecoveryTests: XCTestCase {
         }
     }
 
+    // MARK: - 등록은 스스로 낫는다(스펙 family-alarm §3 「푸시 등록은 스스로 낫는다」)
+
+    /// 서버의 등록은 앱 모르게 사라질 수 있다 — 영속 캐시만 보고 건너뛰면 그 기기는 토큰이나 계정이 바뀔 때까지 푸시를
+    /// 못 받는다. **실행마다 첫 토큰 콜백은 캐시와 같아도 올린다**(안드로이드는 프로세스가 뜰 때마다 등록한다). 같은 실행
+    /// 안에서는 다시 올리지 않는다.
+    func test_실행마다_첫_등록은_캐시와_같아도_서버에_다시_올린다() async {
+        await withDefaults { defaults in
+            let api = PushTokenAPIFixture()
+            let first = PushNotificationCoordinator(api: api, defaults: defaults, requestAPNsToken: {})
+            await first.registerToken(deviceToken, session: session("A"))
+            await api.dropBinding()
+            // 같은 실행 — 전경 복귀마다 토큰이 다시 와도 올리지 않는다.
+            await first.registerToken(deviceToken, session: session("A"))
+            let sameProcess = await api.snapshot()
+            XCTAssertEqual(sameProcess.events, ["register:token-A"])
+
+            // 다음 실행 — 영속 캐시는 같은 토큰·같은 계정이지만 올린다. 서버가 잃은 등록이 되살아난다.
+            let next = PushNotificationCoordinator(api: api, defaults: defaults, requestAPNsToken: {})
+            await next.registerToken(deviceToken, session: session("A"))
+            await next.registerToken(deviceToken, session: session("A"))
+            let result = await api.snapshot()
+            XCTAssertEqual(result.events, ["register:token-A", "register:token-A"], "다음 실행이 같은 값이라며 건너뛴다")
+            XCTAssertEqual(result.binding, "token-A", "서버가 잃은 등록이 되살아나지 않는다")
+        }
+    }
+
+    /// 실행 첫 등록이 실패하면(게이트웨이 5xx·오프라인) **같은 실행의 전경 복귀**가 토큰을 다시 받아 올린다 — iOS 앱은
+    /// 멈춘 채 며칠씩 살아 있어 '다음 실행' 을 기다리면 그동안 가족 알람 푸시가 끊긴다. 앞 실행에서 확인된 등록이 있어도
+    /// 같다(영속 캐시는 그 실패를 모른다). 확인된 뒤의 전경 복귀는 아무것도 요청하지 않는다.
+    func test_실패한_등록은_같은_실행의_전경_복귀가_다시_올린다() async {
+        await withDefaults { defaults in
+            let api = PushTokenAPIFixture()
+            let earlier = PushNotificationCoordinator(api: api, defaults: defaults, requestAPNsToken: {})
+            await earlier.registerToken(deviceToken, session: session("A"))
+            await api.dropBinding()
+
+            var apnsRequests = 0
+            let push = PushNotificationCoordinator(api: api, defaults: defaults,
+                requestAPNsToken: { apnsRequests += 1 })
+            await api.failNextRegistration()
+            await push.registerToken(deviceToken, session: session("A"))
+            XCTAssertFalse(push.registrationConfirmedInThisProcess(userID: "A"), "실패한 등록을 확인된 것으로 적는다")
+
+            push.resumeRegistrationIfNeeded(session: session("A"))
+            XCTAssertEqual(apnsRequests, 1, "실패한 등록을 전경 복귀가 다시 올리지 않는다 — 다음 실행까지 푸시가 끊긴다")
+            // APNs 가 토큰을 다시 준다(`didRegisterForRemoteNotificationsWithDeviceToken`).
+            await push.registerToken(deviceToken, session: session("A"))
+            XCTAssertTrue(push.registrationConfirmedInThisProcess(userID: "A"))
+
+            push.resumeRegistrationIfNeeded(session: session("A"))
+            XCTAssertEqual(apnsRequests, 1, "확인된 등록을 전경마다 다시 요청한다")
+            let result = await api.snapshot()
+            XCTAssertEqual(result.events, ["register:token-A", "register:token-A", "register:token-A"])
+            XCTAssertEqual(result.binding, "token-A")
+        }
+    }
+
+    /// 확인되지 않은 때는 실패만이 아니다 — 토큰이 세션 없이 왔으면(올리지 못했다) 다음 전경 복귀가 다시 받아 올린다.
+    /// 세션이 없거나 탈퇴 대기 중이면 요청하지 않는다 — 탈퇴 대기는 서버가 등록을 403 으로 막고, 복구가 스스로 다시 건다.
+    func test_전경_복귀는_세션이_있고_탈퇴_대기가_아닐_때만_확인되지_않은_등록을_다시_요청한다() async {
+        await withDefaults { defaults in
+            let api = PushTokenAPIFixture()
+            var apnsRequests = 0
+            let push = PushNotificationCoordinator(api: api, defaults: defaults,
+                requestAPNsToken: { apnsRequests += 1 })
+            await push.registerToken(deviceToken, session: nil)
+
+            push.resumeRegistrationIfNeeded(session: nil)
+            var pending = session("A")
+            pending.user.deletionStatus = "pending_deletion"
+            push.resumeRegistrationIfNeeded(session: pending)
+            XCTAssertEqual(apnsRequests, 0, "세션이 없거나 탈퇴 대기인데 토큰을 다시 요청한다")
+
+            push.resumeRegistrationIfNeeded(session: session("A"))
+            XCTAssertEqual(apnsRequests, 1, "세션 없이 온 토큰을 다음 전경 복귀가 다시 올리지 않는다")
+            await push.registerToken(deviceToken, session: session("A"))
+            let result = await api.snapshot()
+            XCTAssertEqual(result.events, ["register:token-A"])
+            XCTAssertEqual(result.binding, "token-A")
+        }
+    }
+
+    /// 해제를 보낸 순간부터 서버의 등록은 '없거나 모른다' 다 — 응답만 잃었을 수 있다. 같은 실행에서 같은 계정이 다시
+    /// 들어오면 다음 토큰 콜백이 다시 올려야 한다(영속 캐시는 실패한 해제 뒤에도 그 계정을 가리킨다).
+    func test_해제를_보낸_뒤에는_같은_계정이어도_다시_올린다() async {
+        await withDefaults { defaults in
+            let api = PushTokenAPIFixture()
+            var apnsRequests = 0
+            let push = PushNotificationCoordinator(api: api, defaults: defaults,
+                requestAPNsToken: { apnsRequests += 1 })
+            await push.registerToken(deviceToken, session: session("A"))
+            await api.loseNextUnregisterResponse()
+            let unregistered = await push.unregisterCurrentToken(authToken: "token-A", expectedOwnerUserID: "A")
+            XCTAssertFalse(unregistered)
+            XCTAssertFalse(push.registrationConfirmedInThisProcess(userID: "A"), "해제를 보낸 뒤에도 등록이 확인된 것으로 남는다")
+
+            push.resumeRegistrationIfNeeded(session: session("A"))
+            XCTAssertEqual(apnsRequests, 1)
+            await push.registerToken(deviceToken, session: session("A"))
+            let result = await api.snapshot()
+            XCTAssertEqual(result.events, ["register:token-A", "unregister:token-A", "register:token-A"])
+            XCTAssertEqual(result.binding, "token-A", "응답을 잃은 해제 뒤 같은 계정의 등록이 되살아나지 않는다")
+        }
+    }
+
+    /// 화면 배선 — 전경 복귀(`scenePhase == .active`)가 지금 세션으로 다시 올릴지 묻는다. `App` 의 `onChange` 라
+    /// 유닛 테스트가 부를 수 없어 소스를 읽는다(`AppSourceText`).
+    func test_전경_복귀가_확인되지_않은_푸시_등록을_다시_올린다() throws {
+        let app = try AppSourceText.read("AlarmTalkApp.swift")
+        let active = try AppSourceText.region(of: app, from: "case .active:", to: "case .background:")
+        XCTAssertTrue(
+            active.contains("push.resumeRegistrationIfNeeded(session: auth.session)"),
+            "전경 복귀가 확인되지 않은 푸시 등록을 다시 올리지 않는다"
+        )
+    }
+
     func test_recoveryInvalidationRunsAfterInFlightRegistrationCommitsItsCache() async {
         await withDefaults { defaults in
             let api = PushTokenAPIFixture()
@@ -174,6 +290,8 @@ private actor PushTokenAPIFixture: PushTokenAPIProviding {
 
     func loseNextUnregisterResponse() { loseResponse = true }
     func failNextRegistration() { failRegistration = true }
+    /// 서버가 앱 모르게 등록을 지운 경우(`Unregistered` 정리, 응답을 잃은 실패 등).
+    func dropBinding() { binding = nil }
     func holdNextRegistration(_ gate: PushRegistrationGate) { registrationGate = gate }
     func holdNextUnregistration(_ gate: PushRegistrationGate) { unregistrationGate = gate }
     func snapshot() -> (events: [String], binding: String?) { (events, binding) }

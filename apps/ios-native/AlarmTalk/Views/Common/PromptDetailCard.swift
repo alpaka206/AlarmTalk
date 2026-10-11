@@ -11,6 +11,8 @@ struct PromptDetailCard: View {
     @Environment(\.voiceAlarmTheme) private var theme
     let title: String
     let value: String
+    /// 값 아래 작은 안내(예: 되짚지 못한 옛 지역의 "목록에서 다시 골라 주세요"). 없으면 안 그린다.
+    var note: String? = nil
     let onChange: () -> Void
 
     var body: some View {
@@ -27,6 +29,11 @@ struct PromptDetailCard: View {
                     Text(value)
                         .font(theme.typography.bodyLarge)
                         .foregroundStyle(theme.palette.onSurface)
+                    if let note {
+                        Text(verbatim: note)
+                            .font(theme.typography.bodySmall)
+                            .foregroundStyle(theme.palette.onSurfaceVariant)
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 // ⚠ 이 액션을 지우면 등록한 값을 영영 못 바꾼다.

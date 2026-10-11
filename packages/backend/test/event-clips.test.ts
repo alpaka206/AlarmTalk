@@ -4,7 +4,9 @@ import type { AppEnv } from '../src/types';
 import { createMockDB } from './helpers';
 import {
   EVENT_LOCALES,
+  EVENT_MESSAGE_KINDS,
   EVENT_MESSAGES,
+  LEGACY_EVENT_MESSAGE_KINDS,
   renderMessage,
   renderPreviewMessage,
   resolveEventMessageKind,
@@ -160,9 +162,10 @@ describe('event-voices — 미리 듣기 인사말', () => {
       expect(m.tts).not.toContain('{name}');
       expect(m.display).not.toMatch(/\[[^\]]+\]/);
       expect(m.tts).toMatch(/^\[[^\]]+\]/);
-      // 생일·추석 문안이 아니다 — 미리 듣기만의 인사말.
+      // 생일·사랑 문안이 아니다 — 미리 듣기만의 인사말.
       expect(m.tts).not.toContain('생일 정말 축하해');
       expect(m.tts).not.toContain('Happy birthday!');
+      expect(m.tts).not.toContain('사랑해');
     }
   });
 
@@ -193,6 +196,32 @@ describe('event-voices — 문장·부르는 꼴·슬롯', () => {
     expect(m.display).not.toMatch(/\[/);
     expect(m.display.split('\n').length).toBe(4);
     expect(renderMessage('birthday', 'en', '지민').display).toContain('Hey, 지민. Happy birthday!');
+  });
+
+  it('renderMessage(love): 세 언어 모두 이름을 부르고 사랑한다고 말한다(2026-09-29, 추석 인사 자리)', () => {
+    const ko = renderMessage('love', 'ko', '하나');
+    expect(ko.tts).toContain('[warm, relaxed] 하나야, [gentle, sincere] 정말 많이 사랑해.');
+    expect(ko.display.startsWith('하나야, 정말 많이 사랑해.')).toBe(true);
+    expect(ko.display.split('\n').length).toBe(4);
+    expect(renderMessage('love', 'en', 'Emily').display.startsWith('Hey, Emily. I love you so much.')).toBe(
+      true,
+    );
+    expect(renderMessage('love', 'ja', 'さくら').display.startsWith('さくら、本当に大好きだよ。')).toBe(true);
+  });
+
+  it('모든 문안: 태그로 시작하고, {name} 은 한 번뿐이며, 20자 이름에도 길이 검사를 통과한다', () => {
+    // {name} 이 두 번이면 긴 이름에서 `renderMessage` 의 상한 검사(문장 + 이름 한 번)가 던진다.
+    const longName = '가'.repeat(19) + '각';
+    for (const kind of [...EVENT_MESSAGE_KINDS, ...LEGACY_EVENT_MESSAGE_KINDS]) {
+      for (const locale of EVENT_LOCALES) {
+        const template = EVENT_MESSAGES[kind][locale];
+        expect(template).toMatch(/^\[[^\]]+\] /);
+        expect(template.split('{name}')).toHaveLength(2);
+        const m = renderMessage(kind, locale, longName);
+        expect(m.display).not.toMatch(/[\[\]]/);
+        expect(m.display).toContain(m.spoken);
+      }
+    }
   });
 
   it('renderMessage: 이름의 $ 패턴을 치환 문법으로 읽지 않는다', () => {
@@ -275,20 +304,51 @@ describe('POST /event/:id/clips — 메시지 클립 생성', () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
-  it('화면에서 뺀 옛 종류(comfort)는 배포 창 동안 400 이 아니라 **옛 문안 그대로** 읽어 준다', async () => {
-    // 서버가 먼저 배포된 뒤에도 브라우저에 열려 있는 옛 랜딩 번들은 '위로 한마디' 라벨로 comfort 를
-    // 보낸다(코덱스 #788 2차). 다른 문구(추석)로 바꿔 읽으면 고른 것과 다른 것이 나온다(4차).
+  it('화면의 종류는 생일·사랑 둘이고, 뺀 옛 종류(comfort·chuseok)도 아직 받는다', () => {
+    expect([...EVENT_MESSAGE_KINDS]).toEqual(['birthday', 'love']);
+    expect(resolveEventMessageKind('birthday')).toBe('birthday');
+    expect(resolveEventMessageKind('love')).toBe('love');
     expect(resolveEventMessageKind('comfort')).toBe('comfort');
     expect(resolveEventMessageKind('chuseok')).toBe('chuseok');
     expect(resolveEventMessageKind('wedding')).toBeNull();
+  });
+
+  it('화면에서 뺀 옛 종류(comfort)는 배포 창 동안 400 이 아니라 **옛 문안 그대로** 읽어 준다', async () => {
+    // 서버가 먼저 배포된 뒤에도 브라우저에 열려 있는 옛 랜딩 번들은 '위로 한마디' 라벨로 comfort 를
+    // 보낸다(코덱스 #788 2차). 다른 문구로 바꿔 읽으면 고른 것과 다른 것이 나온다(4차).
     const { stored } = fakePerso();
     cursorPositions(3);
     const res = await buildApp()('/event/1/clips', post({ ...ok, kind: 'comfort' }));
     expect(res.status).toBe(200);
-    // 실제로 Perso 에 보낸 글자는 옛 '위로' 문안이다 — 추석 인사가 아니다.
+    // 실제로 Perso 에 보낸 글자는 옛 '위로' 문안이다 — 추석 인사도 사랑 한마디도 아니다.
     const sent = [...stored.values()].join('\n');
     expect(sent).toContain('고생했어');
     expect(sent).not.toContain('즐거운 추석 보내');
+    expect(sent).not.toContain('사랑해');
+  });
+
+  it('화면에서 뺀 옛 종류(chuseok)도 배포 창 동안 **옛 추석 문안 그대로** 읽어 준다 — 사랑 한마디로 바꾸지 않는다', async () => {
+    // 2026-09-29 에 '추석 인사' 를 '사랑 한마디'(love)로 갈아 끼웠다. 그 전에 열린 옛 번들은 여전히
+    // '추석 인사' 라벨 아래에서 chuseok 을 보낸다 — 400 이면 그 줄이 재시도로도 안 살고, 사랑 한마디로
+    // 읽어 주면 사용자가 고른 것과 다른 것이 나온다(comfort 와 같은 이유).
+    const { stored } = fakePerso();
+    cursorPositions(4);
+    const res = await buildApp()('/event/1/clips', post({ ...ok, kind: 'chuseok' }));
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toBe('audio/mpeg');
+    const sent = [...stored.values()].join('\n');
+    expect(sent).toContain('[warm, relaxed] 지민아, [gently cheerful] 즐거운 추석 보내!');
+    expect(sent).not.toContain('사랑해');
+  });
+
+  it('새 종류(love)는 사랑 한마디 문안을 읽는다', async () => {
+    const { stored } = fakePerso();
+    cursorPositions(2);
+    const res = await buildApp()('/event/1/clips', post({ ...ok, kind: 'love' }));
+    expect(res.status).toBe(200);
+    const sent = [...stored.values()].join('\n');
+    expect(sent).toContain('[warm, relaxed] 지민아, [gentle, sincere] 정말 많이 사랑해.');
+    expect(sent).not.toContain('추석');
   });
 
   it('문장 목록 → 순번 슬롯에 match-rewrite → generate-audio → 파일 받기 → mp3 바이트를 그대로 응답', async () => {
@@ -334,7 +394,7 @@ describe('POST /event/:id/clips — 메시지 클립 생성', () => {
     cursorPositions(0, 1);
     const req = buildApp();
     await req('/event/1/clips', post(ok));
-    await req('/event/1/clips', post({ ...ok, kind: 'chuseok' }));
+    await req('/event/1/clips', post({ ...ok, kind: 'love' }));
     const a = slotAt(VOICE, SENTENCES, 0);
     const b = slotAt(VOICE, SENTENCES, 1);
     expect(a.sentence).not.toBe(b.sentence);

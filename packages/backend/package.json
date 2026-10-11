@@ -20,24 +20,27 @@
     "samples:event": "esbuild scripts/make-event-samples.ts --bundle --platform=node --format=esm --log-level=error --outfile=node_modules/.cache/make-event-samples.mjs && node node_modules/.cache/make-event-samples.mjs",
     "preview:stock": "esbuild scripts/prerender-stock-preview.ts --bundle --platform=node --format=esm --log-level=error --outfile=node_modules/.cache/prerender-stock-preview.mjs && node node_modules/.cache/prerender-stock-preview.mjs",
     "publish:stock": "esbuild scripts/publish-stock-clips.ts --bundle --platform=node --format=esm --external:@libsql/client --log-level=error --outfile=node_modules/.cache/publish-stock-clips.mjs && node node_modules/.cache/publish-stock-clips.mjs",
-    "eval:gemini": "esbuild scripts/eval-gemini-prompts.ts --bundle --platform=node --format=esm --external:@libsql/client --log-level=error --outfile=node_modules/.cache/eval-gemini-prompts.mjs && node node_modules/.cache/eval-gemini-prompts.mjs"
+    "boost:greetings": "esbuild scripts/boost-bundled-greetings.ts --bundle --platform=node --format=esm --log-level=error --outfile=node_modules/.cache/boost-bundled-greetings.mjs && node node_modules/.cache/boost-bundled-greetings.mjs",
+    "eval:gemini": "esbuild scripts/eval-gemini-prompts.ts --bundle --platform=node --format=esm --external:@libsql/client --log-level=error --outfile=node_modules/.cache/eval-gemini-prompts.mjs && node node_modules/.cache/eval-gemini-prompts.mjs",
+    "check:weather": "esbuild scripts/weather-sources-check.ts --bundle --platform=node --format=esm --log-level=error --outfile=node_modules/.cache/weather-sources-check.mjs && node node_modules/.cache/weather-sources-check.mjs"
   },
   "type": "module",
   "devDependencies": {
-    "@cloudflare/workers-types": "^5.20260918.1",
+    "@cloudflare/workers-types": "^5.20261003.1",
     "@types/bcryptjs": "^3.0.0",
     "esbuild": "^0.28.2",
     "typescript": "^7.0.2",
-    "vitest": "^5.0.1",
-    "wrangler": "^4.135.0"
+    "vitest": "^5.0.3",
+    "wrangler": "^4.147.0"
   },
   "dependencies": {
     "@alarmtalk/shared": "*",
     "@alarmtalk/voice": "*",
     "@libsql/client": "^0.18.0",
     "bcryptjs": "^3.0.3",
-    "date-holidays": "^3.36.1",
-    "hono": "^4.13.8",
-    "toucan-js": "^4.1.1"
+    "date-holidays": "^3.37.0",
+    "hono": "^4.13.12",
+    "toucan-js": "^4.1.1",
+    "wasm-media-encoders": "0.7.0"
   }
 }

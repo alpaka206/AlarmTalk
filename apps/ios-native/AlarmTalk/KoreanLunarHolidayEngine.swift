@@ -28,8 +28,8 @@ import Foundation
 //   (b) 모든 양력 민용일 버킷팅/컴포넌트 추출은 Asia/Seoul 고정 캘린더로 수행한다
 //       (디바이스 로컬 금지). HolidaySeedData.ymd 와 같은 시계라 epochDay 가 정확히 일치한다.
 //   (c) 그래도 엔진은 체인 3순위(서버 캐시·KASI 검증 시드 아래)에 둔다 — 미래 연도에서
-//       ICU 와 KASI 가 갈리면 server_sync 또는 시드가 보정한다.
-//   (d) kasiOverrides[year] 정적 테이블로 알려진 발산 연도를 코드 수정 없이 오프라인으로 pin.
+//       ICU 와 KASI 가 갈리면 server_sync 또는 시드가 보정한다. (그래서 엔진 안에 연도별
+//       핀 표를 따로 두지 않는다 — 한때 비어 있는 `kasiOverrides` 가 있었다.)
 //
 // 회귀 방지: `LocalHolidayCalendarLunarTests.test_seollal_goldenVectors` 의 값은 KASI 공식이며
 // 안드로이드 ground truth(`LunarHolidayCalendarTest.kt` 의 `seollalByYear`)와 같은 값이다.
@@ -37,23 +37,6 @@ import Foundation
 //
 // 모든 Date 생성/컴포넌트 추출/epochDay 도출은 고정 Asia/Seoul 캘린더만 사용한다 (Calendar.current 금지).
 enum KoreanLunarHolidayEngine {
-
-    // MARK: 음력 앵커 (gregorian 연도 → 음력 공휴일 양력 날짜 override 용)
-
-    /// 알려진 KASI 발산 연도를 코드 변경 없이 핀하기 위한 escape hatch. 기본은 비어 있음.
-    /// 키: gregorian 연도. 값: 해당 연도의 음력 앵커 양력 날짜(월/일).
-    struct KoreanLunarAnchors {
-        /// 설날 당일 (음력 1/1) 의 양력 (month, day)
-        let seollalMonthDay: (Int, Int)
-        /// 추석 당일 (음력 8/15) 의 양력 (month, day)
-        let chuseokMonthDay: (Int, Int)
-        /// 부처님오신날 (음력 4/8) 의 양력 (month, day)
-        let buddhaMonthDay: (Int, Int)
-    }
-
-    /// 비어 있는 것이 기본. 알려진 KASI 발산 연도가 생기면 여기에 핀한다.
-    /// 예) `[2031: KoreanLunarAnchors(...)]`
-    static let kasiOverrides: [Int: KoreanLunarAnchors] = [:]
 
     // MARK: 고정 Asia/Seoul 캘린더 (엔진 전역에서 동일 시계 사용)
 
@@ -199,16 +182,9 @@ enum KoreanLunarHolidayEngine {
         let buddha: Int?    // 음력 4/8 의 epochDay
     }
 
-    /// 해당 gregorian 연도의 음력 앵커 양력 epochDay. override 가 있으면 우선.
+    /// 해당 gregorian 연도의 음력 앵커 양력 epochDay.
     private static func lunarAnchorEpochDays(forYear year: Int) -> AnchorEpochDays {
-        if let o = kasiOverrides[year] {
-            return AnchorEpochDays(
-                seollal: epochDay(year: year, month: o.seollalMonthDay.0, day: o.seollalMonthDay.1),
-                chuseok: epochDay(year: year, month: o.chuseokMonthDay.0, day: o.chuseokMonthDay.1),
-                buddha: epochDay(year: year, month: o.buddhaMonthDay.0, day: o.buddhaMonthDay.1)
-            )
-        }
-        return AnchorEpochDays(
+        AnchorEpochDays(
             seollal: gregorianEpochDay(forLunarMonth: 1, day: 1, gregorianYear: year, seedMonth: 2, seedDay: 1),
             chuseok: gregorianEpochDay(forLunarMonth: 8, day: 15, gregorianYear: year, seedMonth: 9, seedDay: 22),
             buddha: gregorianEpochDay(forLunarMonth: 4, day: 8, gregorianYear: year, seedMonth: 5, seedDay: 10)

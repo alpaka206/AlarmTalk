@@ -9,7 +9,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [AlarmEntity::class, HolidayEntity::class, UsageEventEntity::class],
-    version = 26,
+    version = 27,
     exportSchema = false,
 )
 abstract class AlarmDatabase : RoomDatabase() {
@@ -53,6 +53,7 @@ abstract class AlarmDatabase : RoomDatabase() {
                     MIGRATION_23_24,
                     MIGRATION_24_25,
                     MIGRATION_25_26,
+                    MIGRATION_26_27,
                 )
                     // ⚠ **`fallbackToDestructiveMigration()` 을 다시 넣지 말 것**(2026-08-18 제거).
                     //
@@ -318,6 +319,17 @@ abstract class AlarmDatabase : RoomDatabase() {
                         "detail TEXT, " +
                         "userId TEXT)",
                 )
+            }
+        }
+
+        /**
+         * 무료 잠금 보관본(`AlarmEntity.preLockVoiceJson`) — 잠금이 행을 기본 목소리 알람으로
+         * 고쳐 쓸 때 원래 유료 목소리 필드를 담아 둔다(2026-09-29,
+         * `docs/spec/billing-lifecycle.md` 「목소리를 못 쓰게 되면」). 옛 행은 NULL = 보관본 없음.
+         */
+        private val MIGRATION_26_27 = object : Migration(26, 27) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE alarms ADD COLUMN preLockVoiceJson TEXT")
             }
         }
     }

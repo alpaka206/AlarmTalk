@@ -5,7 +5,7 @@
         "id": "voice1",
         "name": { "ko": "voice 1", "en": "voice 1", "ja": "voice 1" },
         "portrait": "/event/voice1.birthday.jpg",
-        "portraits": { "birthday": "/event/voice1.birthday.jpg", "chuseok": "/event/voice1.chuseok.jpg" },
+        "portraits": { "birthday": "/event/voice1.birthday.jpg" },
         "perso": {
           "spaceSeq": 501031,
           "ko": { "project": 415525, "reserved": [11162674, 11162675] },

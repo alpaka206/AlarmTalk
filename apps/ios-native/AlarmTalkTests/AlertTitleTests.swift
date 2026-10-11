@@ -37,4 +37,12 @@ final class AlertTitleTests: XCTestCase {
         XCTAssertEqual(title, "오전 7:30")
     }
 
+    /// 편집기가 빈 이름 대신 저장하는 기본 이름은 사용자가 고른 이름이 아니다 — 영어·일본어 기기에
+    /// 한국어 '알람' 이 섞이지 않게 시각만 쓴다(안드로이드 울림 화면의 `customTitle` 과 같다, 코덱스 #836).
+    func test_기본_이름이면_시각만() {
+        for label in ["알람", "Alarm", "アラーム"] {
+            XCTAssertEqual(AlarmKitViewModel.alertTitle(for: record(label: label, voiceText: nil)), "오전 7:30")
+        }
+    }
+
 }

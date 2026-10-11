@@ -94,3 +94,17 @@ enum AuthEmailSubmitOutcome: Equatable {
     /// 서버로 보낸다.
     case submit
 }
+
+/// 비밀번호 규칙 — 서버 `@alarmtalk/shared` 의 `PasswordSchema`·안드로이드와 같다
+/// (8~128자 + 영문·숫자 각 1자 이상). 가입(`LoginView` 의 규칙 체크리스트)과 재설정
+/// (`PasswordResetView`)이 이 한 벌을 쓴다 — 갈라지면 가입과 재설정이 다른 비밀번호를 받는다.
+enum PasswordPolicy {
+    static let lengthRange = 8...128
+
+    static func hasLetter(_ value: String) -> Bool { value.contains(where: \.isLetter) }
+    static func hasDigit(_ value: String) -> Bool { value.contains(where: \.isNumber) }
+
+    static func isValid(_ value: String) -> Bool {
+        lengthRange.contains(value.count) && hasLetter(value) && hasDigit(value)
+    }
+}

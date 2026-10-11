@@ -42,6 +42,9 @@
 알람만 목소리를 잃고, 기본 목소리로 보낸 알람은 그대로 남는다. 파기 대상은 내
 **생체정보**이지 남의 기상 시각이 아니다. 탈퇴·목소리 삭제·플랜 강등이 **같은 함수**를
 부른다(`lib/voice-revocation.ts`) — 같은 사건이므로 결과도 같아야 한다.
+탈퇴에서는 그 철회가 **구독 취소보다 먼저** 돈다 — 취소가 그룹을 해체하고 보낸 알람을
+강등하고 나면 철회가 걷어낼 대상을 못 찾는다([session-and-auth.md](session-and-auth.md)
+「탈퇴 파기」).
 
 ⚠ **단, "임자를 모른다" 와 "확인에 실패했다" 는 다르다**(2026-08-19 Codex #699 P1).
 안드로이드는 소유권을 확정한 **뒤에 행을 다시 읽어** 판정하는데, 그 읽기가 실패하면
@@ -289,6 +292,14 @@ version 규칙을 유지한다.
   고아 예약**이 남는다. 그래서 예약을 끊을 때는 핸들도 같이 비운다.
 - `AlarmManager.shared.alarms` 가 **권위**다. 캐시된 스냅샷으로 "아직 예약돼 있는가" 를
   판단하지 말 것 — emit 이 늦는 창에서 잘못 답한다.
+- **행의 켜짐·상태는 AlarmKit 보다 늦을 수 있다.** 앱이 꺼진 채 잠금 화면에서 끄거나 다시
+  울림을 누르면 인텐트는 AlarmKit 만 움직이고 행은 못 고친다(`AlarmAppContext.shared` 가 없다).
+  행은 켜진 채 옛 핸들을 들고, 전경의 관찰자(`alarmUpdates`)가 다음에 볼 때까지 그대로다 —
+  백그라운드 새로고침은 관찰자 없이 재조정을 돈다. 그 사이 "켜져 있고 핸들이 있다" 만 보고
+  다시 걸면 **끈 1회성 알람이 되살아나고, 다시 울림 카운트다운이 취소돼 다시 울리지 않는다.**
+  그래서 언어 재예약은 AlarmKit 이 그 핸들을 **대기(`scheduled`) 상태로 들고 있을 때만**
+  건다([localization.md](localization.md) §5). 소리 지문·강제 재예약 갈래는 아직 행의
+  상태(`isInFlight`)만 본다 — 같은 창이 남아 있어 따로 다룬다.
 
 ### 안드로이드 (AlarmManager)
 
@@ -329,12 +340,85 @@ OR로 합치면 평일 알람을 건너뛸 수 있으므로 계산 폴백 자체
 [KASI 달력자료](https://astro.kasi.re.kr/life/post/calendarData). KASI의 2년 후 자료는 공식 월력요항
 발표 전 자료라는 표시도 함께 따른다.
 
+## 공휴일 국가는 **지역의 나라**다 (2026-09-30)
+
+'공휴일에는 끄기' 가 볼 달력의 나라(KR·JP·US)를 따로 고르는 자리는 **없다.** 설정 화면의
+'공휴일 달력' 행을 지웠고, 나라는 **날씨 지역의 나라**를 따른다 — 지역을 고르는 곳이 '문구 정보'
+카드의 '지역' 하나다([voice-and-message.md](voice-and-message.md) 「날씨 지역은 목록에서만 고른다」).
+
+- 공휴일 국가는 지금처럼 **기기 설정**(안드로이드 `HolidayCountryPreferenceStore`, iOS `HolidayStore` 의
+  UserDefaults)에 둔다. 공휴일 엔진·동기화·음력 계산은 **그대로**다 — 바뀌는 것은 누가 그 값을 쓰느냐뿐이다.
+- 기기가 아는 지역이 바뀔 때마다 그 지역의 나라를 적는다 — 사용자가 고를 때, 그리고 서버에서 계정
+  설정을 받아 그 기기가 받아들일 때(새 기기 로그인·다른 기기에서 고침). 계정 설정은 계정에, 공휴일 국가는
+  기기에 있으므로, 받아 올 때 맞추지 않으면 두 번째 기기는 설정 행도 없이 옛 나라에 남는다. **두 앱이 같은
+  규칙이다:**
+  - 고를 때: 설정 '지역' 행은 **고를 때마다** 적는다. 편집기 문구 화면은 **내 알람에서 지역이 실제로 바뀔
+    때만** 적는다(날씨 종류만 골라도 그 자리를 지나므로). 가족 알람에서 고른 지역은 받는 사람의 것이라
+    **적지 않는다** — 적으면 남의 나라 공휴일로 내 알람이 꺼진다. 서버 저장이 실패해도(오프라인) 이 기기는
+    곧바로 맞춘다.
+  - 받을 때: 이 기기가 계정 설정을 **받아들였을 때만** 지역의 나라로 맞춘다([voice-and-message.md](voice-and-message.md)
+    「계정의 지역·사주는 기기에 받아 적는다」). 이 기기에 **아직 안 올라간 변경**이 있으면 받아들이지 않으므로
+    공휴일 국가도 서버의 옛 지역을 따르지 않는다 — 화면의 지역과 달력의 나라가 갈라진다.
+  - 받을 때: ⚠ **업데이트 직후 처음 받는 계정 지역**인데 이 기기에 옛 '공휴일 달력' 행에서 **직접 고른**
+    나라가 있고 그게 지역의 나라와 다르면, **그 계정 지역이 바뀌기 전까지** 그 나라를 둔다(행이 사라졌다고
+    사용자가 고른 달력을 말없이 바꾸면 공휴일에 꺼지는 날이 조용히 달라진다). 지역을 다시 고르면 곧바로
+    지역의 나라가 된다.
+    그 기회는 **업데이트 뒤 처음 계정 설정을 받은 계정 하나**의 것이다 — 그 계정에 지역이 없어도 기회를 가져가고
+    (나중에 받은 첫 지역에서 지킨다), 다른 계정의 지역을 따라 나라를 적거나 지역을 고르면 끝난다. 지역이 있는 첫
+    계정으로 두면 지역 없는 A 뒤에 들어온 B 의 첫 지역이 그 기회가 되어 A 때 고른 나라를 B 가 물려받는다(Codex #837).
+    ⚠ 지키는 것은 **그 계정에 대해서뿐**이다 — 그 표시는 기기 전역이라 지역 키로만 가르면, 같은 지역의 **다른
+    계정**이 이 기기에 들어와도 앞 계정 때 지켜 둔 나라를 물려받는다(그 계정에게는 나라를 바꿀 행이 없다).
+    다른 계정이 들어오면 지역이 같아도 그 계정 지역의 나라를 따른다. 같은 계정이 다시 들어오면 그대로 지킨다.
+  - 그 밖에는 **받아들일 때마다** 맞춘다. "지난번에 받은 지역과 같으면 건너뛴다" 를 두지 않는다 — 로그아웃은
+    지역 값과 '안 올라간 변경' 표시를 지우지만 공휴일 국가는 남기므로, 건너뛰면 같은 계정으로 다시 들어왔을 때
+    화면의 지역과 달력의 나라가 갈라진 채 남는다.
+- **나라가 바뀌면 '공휴일에는 끄기' 반복 알람을 새 달력으로 다시 잡는다.** 다음 발생은 저장·해제할 때 그
+  순간의 달력으로 한 번 계산돼 박힌다 — 다시 잡지 않으면 **다음 한 번은 옛 나라의 달력**을 따라, 새 나라의
+  평일인데 옛 나라의 공휴일이라 안 울리거나(사고), 새 나라의 공휴일인데 울린다.
+  - **멱등이다.** 같은 달력으로 몇 번을 다시 잡아도 결과가 같고, 바뀐 것이 없으면 쓰지 않는다.
+  - ⚠ **다시 잡는 것은 다음 발생이 아직 미래인 '공휴일에는 끄기' 반복 알람뿐이다.** 지난 행·스누즈 중인 행·다른
+    알람은 건드리지 않는다 — 원래 그 일을 맡는 길목(앱 시작·부팅·예약 정합성 확인)이 지금 달력으로 맡는다. 일반
+    복원처럼 전부 돌리면 지난 일회성이 꺼지고(API 31·32 비정확 폴백이면 아직 배달 대기 중일 수 있다) 지난 반복의
+    수정 시각이 올라 받은 가족 알람이 '수신자가 고쳤다' 로 읽힌다(Codex #837). 두 앱 같다 — 안드로이드
+    `refreshHolidayOffAlarms`, iOS `AlarmKitViewModel.recomputeHolidayOffAlarms`(평소 복구와 따로다).
+  - **다시 잡았다는 기록은 계정마다다.** 다시 잡기는 지금 계정의 알람만 보므로, 달력만 기록하면 한 기기의 앞 계정이
+    같은 달력으로 이미 잡아 둔 뒤 들어온 계정의 알람이 옛 달력의 날짜로 남는다(iOS 표지 `계정|달력`, 안드로이드는
+    나라·계정을 함께 본다). **도중에 멈췄거나(계정을 떠나는 중) 다른 복구와 겹쳐 건너뛴 알람이 있으면 기록하지
+    않는다** — 전경 복귀 때 다시 돈다(iOS `runHolidayOffRescheduleIfNeeded`).
+  - 받을 때 따르는 지역은 **받아 적은 뒤의 이 기기 값**이다 — 서버 값이 아니다(Codex #837). 서버의 날씨 묶음이
+    비어 있으면 이 기기의 지역을 두는데, 서버 값을 따르면 달력이 기기 기본값에 남는다(화면은 도쿄, 공휴일은 한국).
+  - **KR 밖 나라(JP·US)의 공휴일은 서버에서 받아야 생긴다** — 받은 뒤의 달력으로 잡아야 한다. 안드로이드는
+    새 나라의 공휴일을 먼저 받고 잡는다. iOS 는 '받기 전' 달력(`JP:pending`)으로 한 번, 받은 뒤 한 번 더 잡는다.
+  - ⚠ **못 받았으면(오프라인·서버 오류) 빈 달력으로 잡고, 받을 때까지 앱에 들어올 때마다 다시 받아 본다**(Codex #837).
+    미루지 않는다 — 옛 나라의 달력이 남으면 옛 나라의 공휴일인 새 나라의 평일에 **안 울린다**(사고). 빈 달력은
+    새 나라의 공휴일에 울릴 뿐이다(안전한 쪽). 나라 값은 다시 흐르지 않으므로 진입이 재시도의 계기다(안드로이드
+    `MainViewModel` 의 진입 번호 축 + `HolidayCalendarRefresh.calendarReady`, iOS 전경 복귀의 `ensureSynced`).
+  - ⚠ **'받았다' 는 아직 오지 않은 공휴일까지 덮는가로 가른다** — 그 나라 행이 있는가가 아니다. 받은 창(~1년)이
+    지나면 지난 공휴일만 남는데, 행만 보면 다시 받지도 다시 잡지도 않는다(Codex #837). 안드로이드
+    `ensureHolidaysSynced` 는 다가올 공휴일을 보고, iOS 달력 표지는 덮는 끝을 싣는다(`JP@<마지막 날>` — 새 창을 받아
+    끝이 늘면 표지가 바뀌어 다시 잡는다, 지나면 `JP:pending`).
+  - 다시 잡아 **발사 날짜가 바뀌면 받아 둔 날씨 조건을 버린다**([voice-and-message.md](voice-and-message.md) 5-1
+    「발사 날짜가 바뀌면 받아 둔 인덱스를 버린다」) — 놓친 회차를 넘기는 복원도 같다(안드로이드 `withNextFireAt`,
+    iOS `invalidateWeatherVariantIfFireDateChanges`).
+  - 국가를 적는 자리마다 붙이지 않는다 — **국가 값(달력)을 보는 한 곳**이 한다. 앱을 켤 때도 한 번 본다(지난
+    실행에서 국가만 바뀌고 다시 잡기 전에 죽었거나, KR 밖 나라의 공휴일 캐시가 비어 있는 경우를 메운다).
+    알람 저장소를 읽기 전·로그인 전에는 **미루고**, 갖춰지면 다시 본다 — 버리지 않는다(예전 iOS 콜백은
+    그 두 경우에 조용히 버려졌다).
+  - 스누즈 중·울리는 중인 알람과 일회성 알람은 건드리지 않는다. 다시 잡는 것은 사용자의 편집이 아니므로
+    **수정 시각을 올리지 않는다** — 올리면 받은 가족 알람이 '받은 사람이 고쳤다' 로 읽혀, 다시 보낸 알람이
+    덮지 못한다.
+- 지역이 없거나 되짚지 못한 옛 글자뿐이면 **건드리지 않는다** — 지금 값(없으면 기기 로케일이 KR·JP·US
+  면 그 나라, 아니면 KR)이 그대로다.
+- 편집기의 '공휴일에는 끄기' 스위치는 그대로다.
+
 ## 구현 지도
 
 | 규칙 | 백엔드 | 안드로이드 | iOS |
 | --- | --- | --- | --- |
 | 본인 알람 생성 재전송·초기 켜짐 상태 | `alarm-mutation.ts`·`ownAlarmIdentity`·`creation_replayed` | `RemoteAlarmMapper`·`AlarmSyncService.createAndReconcile` | `RemoteAlarmMapper`·`AlarmTalkAPI.createAlarm` |
 | 한국 음력 공휴일 폴백 | 서버 공휴일 동기화는 기존 경로 유지 | `IcuLunarConverter`의 ICU dangi | `KoreanLunarHolidayEngine.seoulLunar`의 ICU dangi |
+| 공휴일 국가 = 지역의 나라(설정의 '공휴일 달력' 행 없음) | — | 고를 때 `WeatherRegionHolidaySync.onRegionSaved`(설정 `SettingsScreen`·편집기 `AlarmEditorScreen`), 받을 때 `adoptAccountPromptSettings` → `WeatherRegionHolidaySync.onAccountRegionReceived`(`data/WeatherRegionSettings.kt`) ← `MainViewModel.onAccountPromptSettingsReceived` ← `AlarmTalkApp` 의 `LaunchedEffect` — 회귀 `WeatherRegionPickerTest`·`AccountPromptSettingsAdoptionTest` | 고를 때 `HolidayStore.adoptCountry(ofWeatherRegion:)` ← `SettingsView`·`AlarmEditorSheet.syncOwnPromptPreferences`, 받을 때 `DynamicPromptPreferences.adoptAccount` 가 `.accepted` 면 `HolidayStore.adoptCountry(ofAccountWeatherRegion:userID:)`(판정 `countryForAccountRegion`) ← `AlarmTalkApp` 의 계정 설정 관찰 — 회귀 `WeatherRegionCatalogTests`·`AccountPromptSettingsAdoptionTests`·`EditorPromptPreferenceUpdateTests` |
+| 나라(달력)가 바뀌면 공휴일off 반복 알람 다시 잡기(멱등 · 앱 시작마다 한 번 · 스누즈·울림·일회성 제외 · 수정 시각 그대로) | — | `HolidayCountryPreferenceStore.countryCode` 수집(`MainViewModel` init) → `AlarmRepository.refreshHolidayOffAlarms`(`ensureHolidaysSynced` 먼저, `reschedulePendingAlarmsLocked` 의 `recomputeHolidayOff`) — 회귀 `HolidayCountryRescheduleTest` | 달력 표지 `HolidayStore.holidayCalendarMarker`(`:pending`) → `HolidayOffRescheduler.runIfNeeded` → `AlarmKitViewModel.recoverScheduledAlarms(forceHolidayOffRecompute: true)` → `LocalAlarmStore.recomputeHolidayOffFireTime`(바뀐 게 없거나 스누즈·울림이면 건너뜀, 수정 시각 그대로) ← `AlarmTalkApp` 의 `holidayOffRescheduleKey` — 회귀 `HolidayOffReschedulerTests` |
 | 1-1 계정 떠날 때 끄기 | — | `data/AlarmRepository.detachAlarmsOnSignOut` | `AlarmKitViewModel.stopAllScheduledAlarms(store:ownerUserId:)` ← `AuthViewModel.onLeaveAccountStopAlarms` |
 | 1-1 탈퇴는 내 행과 나를 향한 미전달 행을 지운다 | `lib/account-deletion.ts` 의 `DELETE FROM alarms WHERE user_id IN (…) OR target_user_id IN (…)` | — | — |
 | 1-1 목소리가 사라질 때 걷어내기 | `lib/voice-revocation.ts` 의 `revokeDeletedVoices`(탈퇴·목소리 삭제·플랜 강등 공용) | `VoiceAccessSyncWorker` | `PushNotificationCoordinator.onAuthoritativeRefresh` |
@@ -361,4 +445,5 @@ OR로 합치면 평일 알람을 건너뛸 수 있으므로 계산 폴백 자체
 | 1-3 못 끊은 예약 회수 | — | (해당 없음 — `AlarmManager.cancel` 은 실패를 알리지 않는다) | `AlarmKitViewModel.retryPendingCancellations` + `PendingAlarmCancellationStore` |
 | 1-4 예약 중 계정 변경 | — | (해당 없음 — 발화 시 Room 을 다시 읽는다) | `AlarmKitViewModel.accountEpoch` |
 | iOS 소리 지문 | — | (해당 없음) | `AlarmScheduleReconciler.scheduledFingerprint` |
+| iOS 언어 재예약은 AlarmKit 대기 상태만(행 상태가 늦는 창) | — | (해당 없음 — 울릴 때 표시를 만든다) | `AlarmScheduleReconciler.reconcile` 의 `readIdleHandles` ← `AlarmKitViewModel.idleScheduledHandles` — 회귀 `AlarmKitLocalizationTests` |
 | 회귀 테스트 | — | — | `AlarmTalkTests/InaccessibleVoiceReconcileTests.swift`(`LeaveAccountAlarmTests`) |

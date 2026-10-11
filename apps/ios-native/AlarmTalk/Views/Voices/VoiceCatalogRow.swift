@@ -2,7 +2,7 @@ import SwiftUI
 
 /// 목소리 목록의 한 행 — **내 목소리·공유받은 목소리·기본 목소리를 같은 모양으로** 세운다.
 ///
-/// 안드로이드 `ui/voices/VoiceProfileRowComponents.kt:341-424` 의 `VoiceCatalogRow`.
+/// 안드로이드 `ui/voices/VoiceProfileRowComponents.kt:318-401` 의 `VoiceCatalogRow`.
 /// 그 주석이 이 컴포넌트가 생긴 이유를 못박는다: 셋 다 "알람에 쓸 수 있는 목소리" 라는
 /// 같은 종류인데 예전에는 섹션과 시트로 흩어져 있어서, **무료 사용자에겐 정작 쓸 수 있는
 /// 기본 목소리 4개가 시트를 열기 전까진 보이지 않았다.**
@@ -81,7 +81,7 @@ struct VoiceCatalogRow<Below: View>: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(!enabled)
-                .accessibilityLabel(isPlaying ? "정지" : "듣기")
+                .accessibilityLabel(isPlaying ? String(localized: "정지") : String(localized: "듣기"))
             }
             .frame(minHeight: Self.contentHeight)
 
@@ -158,7 +158,7 @@ struct VoiceSectionCard<Content: View>: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(Text("\(title) 섹션"))
-                .accessibilityHint(Text(expanded ? "접기" : "펼치기"))
+                .accessibilityHint(Text(expanded ? String(localized: "접기") : String(localized: "펼치기")))
 
                 Spacer(minLength: 8)
                 trailing
@@ -185,10 +185,6 @@ struct VoiceSectionCard<Content: View>: View {
     }
 }
 
-/// 사전렌더(알람 음성 준비) 진행·실패 표시. 안드로이드 `VoiceProfileRowComponents.kt:484-508`.
-///
-/// ⚠ **iOS 에는 이게 아예 없었다.** 유료 클론을 등록하면 21개 클립이 서버에서 렌더되는
-/// 동안 알람에 쓸 수 없는데, 화면에는 아무 표시도 없어 "만들었는데 안 쓰인다" 로 보였다.
 /// 말투 분석이 실패했을 때의 안내 + 재시도.
 ///
 /// ⚠ **이 행이 없으면 사용자는 실패한 줄도 모른다.** 분석이 실패한 목소리는 말투 없이
@@ -196,17 +192,30 @@ struct VoiceSectionCard<Content: View>: View {
 /// 부를 방법이 앱에 없었다. 안드로이드 `ui/voices/VoiceProfileRowComponents.kt` 의
 /// `voicesr_speech_style_failed` / `voicesr_speech_style_retry` 행과 같은 모양이다.
 struct VoiceSpeechStyleFailedRow: View {
+    let retrying: Bool
+    let onRetry: () -> Void
+
+    var body: some View {
+        RetryRow(message: "말투 분석에 실패했어요", retryTitle: "다시 분석", retrying: retrying, onRetry: onRetry)
+    }
+}
+
+/// 실패 안내 한 줄 + '다시 …' 링크. 말투 분석 실패와 알람 음성 생성 실패가 같은 모양이다.
+private struct RetryRow: View {
     @Environment(\.voiceAlarmTheme) private var theme
 
+    // 리터럴을 받아 번역 키로 쓴다 — `String` 으로 받으면 그대로(verbatim) 그려진다.
+    let message: LocalizedStringKey
+    let retryTitle: LocalizedStringKey
     let retrying: Bool
     let onRetry: () -> Void
 
     var body: some View {
         HStack(spacing: 8) {
-            Text("말투 분석에 실패했어요")
+            Text(message)
                 .font(theme.typography.bodySmall)
                 .foregroundStyle(theme.palette.error)
-            Button("다시 분석", action: onRetry)
+            Button(retryTitle, action: onRetry)
                 .font(theme.typography.bodySmall.weight(.semibold))
                 .buttonStyle(.plain)
                 .foregroundStyle(theme.palette.primary)
@@ -216,6 +225,10 @@ struct VoiceSpeechStyleFailedRow: View {
     }
 }
 
+/// 사전렌더(알람 음성 준비) 진행·실패 표시. 안드로이드 `VoiceProfileRowComponents.kt:461-485`.
+///
+/// ⚠ **iOS 에는 이게 아예 없었다.** 유료 클론을 등록하면 21개 클립이 서버에서 렌더되는
+/// 동안 알람에 쓸 수 없는데, 화면에는 아무 표시도 없어 "만들었는데 안 쓰인다" 로 보였다.
 struct VoicePrerenderStatusRow: View {
     @Environment(\.voiceAlarmTheme) private var theme
 
@@ -253,17 +266,7 @@ struct VoicePrerenderStatusRow: View {
     var body: some View {
         switch status.status {
         case "failed":
-            HStack(spacing: 8) {
-                Text("알람 음성 생성에 실패했어요")
-                    .font(theme.typography.bodySmall)
-                    .foregroundStyle(theme.palette.error)
-                Button("다시 시도", action: onRetry)
-                    .font(theme.typography.bodySmall.weight(.semibold))
-                    .buttonStyle(.plain)
-                    .foregroundStyle(theme.palette.primary)
-                    .disabled(retrying)
-                Spacer(minLength: 0)
-            }
+            RetryRow(message: "알람 음성 생성에 실패했어요", retryTitle: "다시 시도", retrying: retrying, onRetry: onRetry)
         case _ where isPreparing:
             HStack(spacing: 8) {
                 ProgressView(value: Double(percent), total: 100)

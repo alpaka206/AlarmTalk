@@ -17,12 +17,17 @@ enum FallbackPlanPrice {
     private static let krw: [PlanTier: Int] = [.personal: 3900, .couple: 6900, .family: 14900]
 
     /// "3,900원" 꼴. 무료 등급이나 모르는 등급이면 nil.
-    static func label(for tier: PlanTier) -> String? {
-        guard let value = krw[tier] else { return nil }
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .decimal
-        let number = formatter.string(from: NSNumber(value: value)) ?? String(value)
-        return "\(number)원"
+    static func label(for tier: PlanTier, bundle: Bundle = .main) -> String? {
+        krw[tier].map { String(localized: "\($0.formatted())원", bundle: bundle) }
+    }
+}
+
+extension SubscriptionManager {
+    /// 등급의 가격 문자열 — 스토어 값이 있으면 그걸, 없으면 폴백표. 플랜 카드와 결제 확인
+    /// 알럿이 **같은 값**을 보여 주도록 둘 다 이걸 부른다.
+    func priceLabel(for tier: PlanTier) -> String? {
+        SubscriptionProduct.make(tier: tier).flatMap(product(for:))?.displayPrice
+            ?? FallbackPlanPrice.label(for: tier)
     }
 }
 import StoreKit
@@ -67,26 +72,29 @@ struct PlanCard: View {
     @Environment(\.voiceAlarmTheme) private var theme
     @EnvironmentObject private var subscriptions: SubscriptionManager
     let tier: PlanTier
+    /// '현재 이용권' 뱃지·강조. 결제 버튼과는 **따로** 정한다(`showsPurchase`).
     let isCurrent: Bool
+    /// 결제 버튼을 그리는가(`PlanScreenCurrent.showsPurchase`). 산 이용권의 현재 카드엔 없고,
+    /// 프로모로 현재가 된 개인 카드엔 있다 — `isCurrent` 로 대신하지 말 것.
+    let showsPurchase: Bool
+    /// 현재 카드의 상태 한 줄 — 지금은 기간 한정 개인 플랜의 "개인 플랜 무료 이용 중 · …까지" 뿐이다
+    /// (안드로이드 `SubscriptionPlanCard` 의 `currentStatusText` 자리 — 가격 바로 아래).
+    let statusText: String?
     /// 지금 **유료 이용권을 쓰는 중인가**. 다른 플랜 카드의 버튼 라벨이 이걸 본다 —
     /// 쓰는 중이면 '결제하기' 가 아니라 '이용권 변경' 이다(안드로이드 `BillingPanels.kt`
     /// 의 `hasActiveSubscription` 과 같은 축). 초대로 들어온 공유 멤버도 포함이다.
     let hasActivePlan: Bool
     let isBusy: Bool
     let vouchers: [VoucherItem]
-    let onPurchase: (SubscriptionProduct) -> Void
+    let onPurchase: () -> Void
     let onGiftPersonal: () -> Void
     let onShareVouchers: () -> Void
 
     /// 카드에 보여줄 가격. 스토어 값이 있으면 그걸, 없으면 폴백을 쓴다.
     /// 무료는 상품이 아니라 그냥 0원이다.
     private var priceLabel: String? {
-        if tier == .free { return "0원" }
-        if let productID = SubscriptionProduct.make(tier: tier)?.rawValue,
-           let product = subscriptions.products.first(where: { $0.id == productID }) {
-            return "월 \(product.displayPrice)"
-        }
-        return FallbackPlanPrice.label(for: tier).map { "월 \($0)" }
+        if tier == .free { return String(localized: "0원") }
+        return subscriptions.priceLabel(for: tier).map { String(localized: "월 \(String($0))") }
     }
 
     var body: some View {
@@ -100,7 +108,7 @@ struct PlanCard: View {
                     .foregroundStyle(theme.palette.onSurface)
                 Spacer()
                 if isCurrent {
-                    Text("현재 이용권")
+                    Text(String(localized: "현재 이용권"))
                         .font(.caption.weight(.semibold))
                         .padding(.vertical, 6)
                         .padding(.horizontal, 10)
@@ -121,11 +129,19 @@ struct PlanCard: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
 
+            // 상태 한 줄은 **가격 바로 아래**다(안드로이드와 같은 자리·같은 결 — 강조색 semibold).
+            if isCurrent, let statusText {
+                Text(statusText)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(theme.palette.primary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
             VStack(alignment: .leading, spacing: 6) {
-                // `LocalizedStringKey` 는 Hashable 이 아니라 `id: \.self` 를 못 쓴다.
-                // 목록이 고정 순서라 인덱스를 id 로 삼아도 안전하다.
-                ForEach(Array(Self.features(for: tier).enumerated()), id: \.offset) { _, feature in
-                    PlanFeatureRow(text: feature)
+                // 목록은 카탈로그 **키**(한국어 원문)라 그리는 자리에서 `LocalizedStringKey` 로 감싼다.
+                // 한 카드 안에서 같은 줄이 두 번 나오지 않으므로 글자를 id 로 삼아도 안전하다.
+                ForEach(Self.features(for: tier), id: \.self) { feature in
+                    PlanFeatureRow(text: LocalizedStringKey(feature))
                 }
             }
 
@@ -135,7 +151,7 @@ struct PlanCard: View {
 
             if tier == .personal {
                 Button(action: onGiftPersonal) {
-                    Label("선물하기", systemImage: "gift")
+                    Label(String(localized: "선물하기"), systemImage: "gift")
                         .font(.subheadline.weight(.semibold))
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 6)
@@ -146,7 +162,7 @@ struct PlanCard: View {
 
             if !vouchers.isEmpty {
                 Button(action: onShareVouchers) {
-                    Label("이용권 코드 공유", systemImage: "square.and.arrow.up")
+                    Label(String(localized: "이용권 코드 공유"), systemImage: "square.and.arrow.up")
                         .font(.subheadline.weight(.semibold))
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 6)
@@ -168,6 +184,11 @@ struct PlanCard: View {
                     lineWidth: 1
                 )
         )
+        // 카드 한 장을 컨테이너로 묶는다 — 안의 글자·버튼은 각자 그대로 읽힌다(`.contain`).
+        // UI 테스트가 '현재 이용권' 뱃지·결제 버튼·상태 문구가 **어느 카드에** 있는지 가리는 자리다
+        // (`PersonalPromoNoticeUITests`). 카드마다 같은 글자가 있어 화면 전체로는 특정할 수 없다.
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("planCard.\(tier.apiKey)")
     }
 
     /// 월간 가격 버튼 (월간만 판매). Product 가 아직 fetch 되지 않았으면 비활성.
@@ -180,15 +201,20 @@ struct PlanCard: View {
 
     @ViewBuilder
     private func priceButton(for plan: SubscriptionProduct) -> some View {
-        // ⚠ **현재 이용권 카드에는 버튼을 그리지 않는다**(2026-08-24 지시, 안드로이드
-        // `BillingPanels.kt` 의 `if (option.key != "free" && !isCurrent)` 와 같다).
+        // ⚠ **산 현재 이용권 카드에는 버튼을 그리지 않는다**(2026-08-24 지시, 안드로이드
+        // `SubscriptionPlanCard`(`ui/billing/BillingPanels.kt`)의 `if (showsPurchase)` —
+        // 판정은 양쪽 다 `PlanScreenCurrent.showsPurchase` 다).
         // 예전에는 비활성 '사용 중' 버튼을 그렸는데, 누를 수 없는 버튼은 자리를 차지하면서
         // **누를 수 있는 것처럼** 보인다 — 카드 위쪽 '현재 이용권' 뱃지가 이미 같은 말을 한다.
-        if isCurrent {
+        //
+        // ⚠ **`isCurrent` 로 되돌리지 말 것**(2026-09-29). 프로모만 쓰는 계정은 개인 카드가 '현재'
+        // 인데 산 이용권이 아니라 결제 버튼이 남아야 한다 — 끝난 뒤 이어 쓰려면 사야 하고, 버튼을
+        // 숨기면 살 길이 사라진다(`PlanScreenCurrent.showsPurchase`).
+        if !showsPurchase {
             EmptyView()
         } else if subscriptions.product(for: plan) != nil {
             Button {
-                onPurchase(plan)
+                onPurchase()
             } label: {
                 VStack(spacing: 2) {
                     if subscriptions.isPurchasing {
@@ -201,7 +227,7 @@ struct PlanCard: View {
                         // 제 자리에 있고, 버튼은 **무엇을 하는지**만 말한다 — 안드로이드도
                         // '이용권 변경' 처럼 액션 라벨만 둔다.
                         // 이미 유료를 쓰는 중이면 이건 **결제가 아니라 전환**이다.
-                        Text(hasActivePlan ? "이용권 변경" : "결제하기")
+                        Text(hasActivePlan ? String(localized: "이용권 변경") : String(localized: "결제하기"))
                             .font(.subheadline.weight(.semibold))
                     }
                 }
@@ -220,7 +246,7 @@ struct PlanCard: View {
                 .frame(maxWidth: .infinity)
                 .frame(height: 40)
                 .overlay(ProgressView().controlSize(.small))
-                .accessibilityLabel("가격 불러오는 중")
+                .accessibilityLabel(String(localized: "가격 불러오는 중"))
         } else {
             // ⚠ **"준비중" 같은 말을 지어내지 말 것.** 가격은 **스토어가 권위**라 못 받아
             // 올 수 있는데(시뮬레이터·미출시 트랙 등), 그때 "준비중" 이라고 쓰면 우리가
@@ -230,7 +256,7 @@ struct PlanCard: View {
             Button {
                 // no-op — 상품을 못 받았으니 결제로 갈 수 없다.
             } label: {
-                Text("결제하기")
+                Text(String(localized: "결제하기"))
                     .font(.subheadline.weight(.semibold))
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 6)
@@ -248,22 +274,32 @@ struct PlanCard: View {
     /// 주석은 "1:1" 이라고 적혀 있었지만 실제로는 아니었다 — 같은 상품을 두 스토어에서
     /// **다르게 설명**하고 있었고, 커플 카드의 '개인 이용권 기능 전부 포함' 은 아예 빠져
     /// 있어 왜 더 비싼지 알 수 없었다.
-    private static func features(for tier: PlanTier) -> [LocalizedStringKey] {
+    ///
+    /// ⚠ **무료에도 있는 것을 유료 혜택처럼 적지 말 것.** 개인 카드는 2026-09-30 까지
+    /// "날씨·운세 등 매일 다른 문구" 라고 적었는데, 날씨·운세·응원·약 문구는 기본 목소리로
+    /// 무료다(`docs/spec/voice-and-message.md` §2 — 목록은 등급으로 자르지 않는다). 클립은
+    /// 준비된 것을 돌려 쓰므로 '매일 새 문구' 도 사실이 아니다. 개인 이용권이 파는 것은
+    /// 그 문구를 **등록한 목소리로** 듣는 것이다.
+    ///
+    /// 돌려주는 것은 `Localizable.xcstrings` 의 키(한국어 원문)다 — 테스트가 줄마다 영어·일본어
+    /// 번역이 있는지 볼 수 있도록 `LocalizedStringKey` 가 아니라 `String` 이고 `private` 이 아니다.
+    /// 고정 목록이라 뷰의 메인 액터에 묶지 않는다(`nonisolated`) — 테스트가 어느 격리에서든 읽는다.
+    nonisolated static func features(for tier: PlanTier) -> [String] {
         switch tier {
         case .free:
-            return ["일반 알람 무제한", "기본 목소리 알람"]
+            return [String(localized: "일반 알람 무제한"), String(localized: "기본 목소리 알람")]
         case .personal:
-            return ["원하는 목소리 1개 등록", "날씨·운세 등 매일 다른 문구"]
+            return [String(localized: "원하는 목소리 1개 등록"), String(localized: "등록한 목소리로 듣는 날씨·운세 문구")]
         case .couple:
-            return ["개인 이용권 기능 전부 포함", "서로의 목소리 공유", "상대 알람 맞춰주기", "2명이 함께 사용"]
+            return [String(localized: "개인 이용권 기능 전부 포함"), String(localized: "서로의 목소리 공유"), String(localized: "상대 알람 맞춰주기"), String(localized: "2명이 함께 사용")]
         case .family:
-            return ["개인 이용권 기능 전부 포함", "가족 목소리 공유", "가족에게 알람 보내기", "최대 5명이 함께 사용"]
+            return [String(localized: "개인 이용권 기능 전부 포함"), String(localized: "가족 목소리 공유"), String(localized: "가족에게 알람 보내기"), String(localized: "최대 5명이 함께 사용")]
         }
     }
 }
 
 /// 플랜 카드 안의 기능 한 줄(점 + 텍스트). Android `PlanFeatureRow`
-/// (BillingPanels.kt:663-680): 6dp primary 점 + bodyMedium onSurfaceVariant 텍스트.
+/// (BillingPanels.kt:649-666): 6dp primary 점 + bodyMedium onSurfaceVariant 텍스트.
 struct PlanFeatureRow: View {
     @Environment(\.voiceAlarmTheme) private var theme
     let text: LocalizedStringKey
@@ -304,7 +340,7 @@ struct BillingPlansSkeleton: View {
         }
         .redacted(reason: .placeholder)
         .accessibilityElement()
-        .accessibilityLabel("이용권 정보를 불러오는 중이에요")
+        .accessibilityLabel(String(localized: "이용권 정보를 불러오는 중이에요"))
     }
 
     private func skeletonBar(width: CGFloat, height: CGFloat) -> some View {
@@ -325,11 +361,11 @@ struct BillingProductsErrorState: View {
             HStack(spacing: 8) {
                 Image(systemName: "exclamationmark.triangle")
                     .foregroundStyle(AlarmTalkTheme.error)
-                Text("이용권 정보를 불러오지 못했어요")
+                Text(String(localized: "이용권 정보를 불러오지 못했어요"))
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(AlarmTalkTheme.text)
             }
-            Text("네트워크 상태를 확인한 뒤 다시 시도해 주세요.")
+            Text(String(localized: "네트워크 상태를 확인한 뒤 다시 시도해 주세요."))
                 .font(.footnote)
                 .foregroundStyle(AlarmTalkTheme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -340,7 +376,7 @@ struct BillingProductsErrorState: View {
                         ProgressView()
                             .controlSize(.small)
                     }
-                    Label("다시 시도", systemImage: "arrow.clockwise")
+                    Label(String(localized: "다시 시도"), systemImage: "arrow.clockwise")
                         .font(.subheadline.weight(.semibold))
                 }
                 .frame(maxWidth: .infinity)
@@ -364,23 +400,23 @@ struct SubscriptionTermsFootnote: View {
     @Environment(\.openURL) private var openURL
 
     // 약관/개인정보 외부 링크는 RootView 와 동일 출처를 사용한다.
-    private static let termsURL = URL(string: "https://alarm-talk.com/ko/terms")!
-    private static let privacyURL = URL(string: "https://alarm-talk.com/ko/privacy")!
+    private static var termsURL: URL { LegalLinks.terms }
+    private static var privacyURL: URL { LegalLinks.privacy }
     // Apple 표준 EULA (앱별 EULA 미지정 시 Apple 이 적용하는 약관).
     private static let eulaURL = URL(string: "https://www.apple.com/legal/internet-services/itunes/dev/stdeula/")!
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("구독은 자동으로 갱신돼요. 현재 기간 종료 24시간 전까지 해지하지 않으면 동일 금액으로 갱신되며, 요금은 결제 시점에 Apple ID 계정으로 청구돼요. 구매 후 App Store 계정 설정에서 언제든지 갱신을 끄거나 해지할 수 있어요.")
+            Text(String(localized: "구독은 자동으로 갱신돼요. 현재 기간 종료 24시간 전까지 해지하지 않으면 동일 금액으로 갱신되며, 요금은 결제 시점에 Apple ID 계정으로 청구돼요. 구매 후 App Store 계정 설정에서 언제든지 갱신을 끄거나 해지할 수 있어요."))
                 .font(.caption2)
                 .foregroundStyle(AlarmTalkTheme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
 
             HStack(spacing: 12) {
-                Button("이용약관") { openURL(Self.termsURL) }
+                Button(String(localized: "이용약관")) { openURL(Self.termsURL) }
                 Text("·")
                     .foregroundStyle(AlarmTalkTheme.textSecondary)
-                Button("개인정보 처리방침") { openURL(Self.privacyURL) }
+                Button(String(localized: "개인정보 처리방침")) { openURL(Self.privacyURL) }
                 Text("·")
                     .foregroundStyle(AlarmTalkTheme.textSecondary)
                 Button("EULA") { openURL(Self.eulaURL) }
@@ -408,10 +444,10 @@ struct PersonalGiftPassSheet: View {
         VStack(alignment: .leading, spacing: 18) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("개인 이용권 선물하기")
+                    Text(String(localized: "개인 이용권 선물하기"))
                         .font(.headline.weight(.bold))
                         .foregroundStyle(AlarmTalkTheme.text)
-                    Text("받는 사람이 직접 등록할 수 있는 개인 이용권 코드를 만들어요. 내 이용권은 그대로 유지돼요.")
+                    Text(String(localized: "받는 사람이 직접 등록할 수 있는 개인 이용권 코드를 만들어요. 내 이용권은 그대로 유지돼요."))
                         .font(.footnote)
                         .foregroundStyle(AlarmTalkTheme.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -425,11 +461,11 @@ struct PersonalGiftPassSheet: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("닫기")
+                .accessibilityLabel(String(localized: "닫기"))
             }
 
             Button(action: onConfirm) {
-                Text("선물 코드 만들기")
+                Text(String(localized: "선물 코드 만들기"))
                     .font(.subheadline.weight(.semibold))
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 10)
@@ -454,10 +490,10 @@ struct VoucherShareSelectionSheet: View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("공유할 이용권 선택")
+                    Text(String(localized: "공유할 이용권 선택"))
                         .font(.headline.weight(.bold))
                         .foregroundStyle(AlarmTalkTheme.text)
-                    Text("아직 등록되지 않은 코드를 골라 바로 공유할 수 있어요.")
+                    Text(String(localized: "아직 등록되지 않은 코드를 골라 바로 공유할 수 있어요."))
                         .font(.footnote)
                         .foregroundStyle(AlarmTalkTheme.textSecondary)
                 }
@@ -468,7 +504,7 @@ struct VoucherShareSelectionSheet: View {
                         .padding(8)
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("닫기")
+                .accessibilityLabel(String(localized: "닫기"))
             }
 
             // ⚠ **목록은 스크롤 갈래로 감싼다.** 바텀시트는 높이 상한을 걸지 않으므로
@@ -513,7 +549,7 @@ struct VoucherShareRow: View {
             }
             Spacer()
             Button(action: onShare) {
-                Text("공유")
+                Text(String(localized: "공유"))
                     .font(.caption.weight(.semibold))
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
@@ -548,9 +584,9 @@ func shareableVouchersForPlan(_ vouchers: [VoucherItem], planKey: String) -> [Vo
 
 func voucherShareSubtitle(_ voucher: VoucherItem) -> String {
     if let issuedAt = formatPassDate(voucher.issuedAt) {
-        return "미등록 · 발급일 \(issuedAt)"
+        return String(localized: "미등록 · 발급일 \(issuedAt)")
     }
-    return "미등록"
+    return String(localized: "미등록")
 }
 
 #if DEBUG

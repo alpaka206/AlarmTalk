@@ -6,6 +6,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
+import androidx.compose.runtime.CompositionLocalProvider
 
 class MainActivity : ComponentActivity() {
     private val viewModel: MainViewModel by viewModels()
@@ -34,11 +35,15 @@ class MainActivity : ComponentActivity() {
         // 막히는 것도 그 대가다. 그래서 걷어낸다(2026-08-04 확정).
         setContent {
             AlarmTalkTheme(themeMode = viewModel.themeMode) {
-                AlarmTalkApp(
-                    viewModel = viewModel,
-                    onCheckInAppUpdate = inAppUpdateManager::checkForUpdates,
-                    onCompleteInAppUpdate = inAppUpdateManager::completeFlexibleUpdate,
-                )
+                // 지역 시트의 날씨 출처 줄 — 서버가 알려 준 원천(`checkAppVersion`)을 앱 전체에 내려 준다.
+                // 설정·편집기 두 곳의 시트가 읽는다(`LocalWeatherAttribution`, `showsWeatherAttribution`).
+                CompositionLocalProvider(LocalWeatherAttribution provides viewModel.weatherAttribution) {
+                    AlarmTalkApp(
+                        viewModel = viewModel,
+                        onCheckInAppUpdate = inAppUpdateManager::checkForUpdates,
+                        onCompleteInAppUpdate = inAppUpdateManager::completeFlexibleUpdate,
+                    )
+                }
             }
         }
     }

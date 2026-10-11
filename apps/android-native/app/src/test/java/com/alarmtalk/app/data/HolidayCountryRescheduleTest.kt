@@ -1,0 +1,347 @@
+package com.alarmtalk.app.data
+
+import android.content.Context
+import androidx.room.Room
+import androidx.test.core.app.ApplicationProvider
+import com.alarmtalk.app.alarm.AlarmScheduler
+import com.alarmtalk.app.network.HolidayApi
+import com.alarmtalk.app.network.HolidayDto
+import com.alarmtalk.app.network.HolidayResponse
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
+import java.time.ZonedDateTime
+import kotlinx.coroutines.runBlocking
+import org.junit.After
+import org.junit.Assert.assertEquals
+import org.junit.Before
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+
+/**
+ * 공휴일 국가(= 지역의 나라)가 바뀌면 **이미 잡힌** '공휴일엔 끄기' 알람을 새 달력으로 다시 잡는가
+ * (`AlarmRepository.refreshHolidayOffAlarms`).
+ *
+ * 다음 발생은 저장·해제 순간의 달력으로 행에 박힌다. 나라만 바뀌고 다시 잡지 않으면 **옛 나라의
+ * 달력**으로 한 번 더 돈다 — 새 나라의 공휴일에 울리고, 옛 나라의 공휴일(이제 평일)은 건너뛴다.
+ */
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34])
+class HolidayCountryRescheduleTest {
+    private val context: Context = ApplicationProvider.getApplicationContext()
+    private val zone: ZoneId = ZoneId.systemDefault()
+    private lateinit var db: AlarmDatabase
+    private lateinit var dao: AlarmDao
+    private lateinit var holidayCountry: HolidayCountryPreferenceStore
+
+    /** 나라별로 서버가 돌려줄 공휴일. 받은 요청 수도 센다. */
+    private val serverHolidays = mutableMapOf<String, List<LocalDate>>()
+    private val holidayRequests = mutableListOf<String>()
+    /** true 면 서버가 안 된다(오프라인·5xx). */
+    private var holidayServerDown = false
+
+    private val fakeHolidayApi = object : HolidayApi {
+        override suspend fun getHolidays(country: String, from: String, to: String, lang: String?): HolidayResponse {
+            holidayRequests += country
+            if (holidayServerDown) throw java.io.IOException("offline")
+            return HolidayResponse(
+                holidays = serverHolidays[country].orEmpty().map { date ->
+                    HolidayDto(date = date.toString(), name = "holiday", type = "public")
+                },
+            )
+        }
+    }
+
+    private val repository by lazy {
+        AlarmRepository(
+            alarmDao = dao,
+            holidayCalendarStore = HolidayCalendarStore(db.holidayDao()),
+            holidayCountryPreferenceStore = holidayCountry,
+            alarmScheduler = AlarmScheduler(context),
+            alarmAudioStore = AlarmAudioStore(context),
+            context = context,
+            holidayApiProvider = { fakeHolidayApi },
+            currentUserIdProvider = { OWNER },
+            ringingAlarmIdsProvider = { emptySet() },
+        )
+    }
+
+    // 세 시간 뒤의 시·분 — 매일 반복 알람의 '공휴일이 없을 때' 다음 발생(D)이 오늘이든 내일이든 미래다.
+    private val alarmTime: ZonedDateTime = ZonedDateTime.now(zone).plusHours(3)
+    private val hour = alarmTime.hour
+    private val minute = alarmTime.minute
+
+    /** 공휴일이 하나도 없을 때의 다음 발생(D). */
+    private val nextWithoutHolidays: Long = AlarmTimeCalculator.nextFireAtMillis(
+        hour = hour,
+        minute = minute,
+        repeatDaysMask = EVERY_DAY,
+        holidayOff = true,
+        isHoliday = { false },
+    )
+    private val nextDay: Long = Instant.ofEpochMilli(nextWithoutHolidays).atZone(zone).plusDays(1)
+        .toInstant().toEpochMilli()
+
+    private fun dateOf(millis: Long): LocalDate = Instant.ofEpochMilli(millis).atZone(zone).toLocalDate()
+
+    @Before
+    fun setUp() {
+        db = Room.inMemoryDatabaseBuilder(context, AlarmDatabase::class.java)
+            .allowMainThreadQueries()
+            .build()
+        dao = db.alarmDao()
+        holidayCountry = HolidayCountryPreferenceStore(context)
+    }
+
+    @After
+    fun tearDown() {
+        db.close()
+    }
+
+    @Test
+    fun 새_나라의_공휴일에_잡혀_있던_알람은_그날을_건너뛴다() = runBlocking {
+        seed(id = "holiday-off", fireAtMillis = nextWithoutHolidays, holidayOff = true)
+        // 지역을 도쿄로 옮겼다 — D 가 일본의 공휴일이다(한국 달력에서는 평일이라 D 로 잡혀 있었다).
+        serverHolidays["JP"] = listOf(dateOf(nextWithoutHolidays))
+        holidayCountry.setCountry("JP")
+
+        repository.refreshHolidayOffAlarms()
+
+        val moved = requireNotNull(dao.getById("holiday-off"))
+        assertEquals(nextDay, moved.fireAtMillis)
+        assertEquals(AlarmStates.SCHEDULED, moved.state)
+        // 사용자의 편집이 아니다 — 받은 가족 알람이 '수신자가 고쳤다' 로 읽히면 안 된다.
+        assertEquals(SEEDED_UPDATED_AT, moved.updatedAtMillis)
+        assertEquals(listOf("JP"), holidayRequests)
+    }
+
+    @Test
+    fun 옛_나라의_공휴일이라_건너뛰었던_날은_되돌아온다() = runBlocking {
+        // 옛 나라에서는 D 가 공휴일이라 D+1 로 잡혀 있었다. 새 나라(미국)에는 그날 공휴일이 없다.
+        seed(id = "holiday-off", fireAtMillis = nextDay, holidayOff = true)
+        serverHolidays["US"] = emptyList()
+        holidayCountry.setCountry("US")
+
+        repository.refreshHolidayOffAlarms()
+
+        assertEquals(nextWithoutHolidays, dao.getById("holiday-off")?.fireAtMillis)
+    }
+
+    @Test
+    fun 다시_불러도_결과가_같고_받은_달력을_다시_받지_않는다() = runBlocking {
+        seed(id = "holiday-off", fireAtMillis = nextWithoutHolidays, holidayOff = true)
+        serverHolidays["JP"] = listOf(dateOf(nextWithoutHolidays))
+        holidayCountry.setCountry("JP")
+
+        repository.refreshHolidayOffAlarms()
+        val first = requireNotNull(dao.getById("holiday-off"))
+        repository.refreshHolidayOffAlarms()
+        val second = requireNotNull(dao.getById("holiday-off"))
+
+        assertEquals(first, second)
+        // 두 번째에는 캐시가 있어 서버를 부르지 않는다.
+        assertEquals(listOf("JP"), holidayRequests)
+    }
+
+    @Test
+    fun 공휴일_끄기가_아닌_알람과_일회성_알람은_건드리지_않는다() = runBlocking {
+        seed(id = "every-day", fireAtMillis = nextWithoutHolidays, holidayOff = false)
+        seed(id = "one-shot", fireAtMillis = nextWithoutHolidays, holidayOff = true, repeatDaysMask = 0)
+        serverHolidays["JP"] = listOf(dateOf(nextWithoutHolidays))
+        holidayCountry.setCountry("JP")
+
+        repository.refreshHolidayOffAlarms()
+
+        assertEquals(nextWithoutHolidays, dao.getById("every-day")?.fireAtMillis)
+        assertEquals(nextWithoutHolidays, dao.getById("one-shot")?.fireAtMillis)
+        assertEquals(SEEDED_UPDATED_AT, dao.getById("every-day")?.updatedAtMillis)
+    }
+
+    /**
+     * **달력만 바뀐 호출은 지난 알람을 건드리지 않는다**(Codex #837). 일반 복원처럼 돌리면 지난 일회성은
+     * `FAILED` 로 꺼지고(API 31·32 비정확 폴백이면 아직 배달 대기 중일 수 있다), 지난 반복은 수정 시각이
+     * 올라 받은 가족 알람이 '수신자가 고쳤다' 로 읽힌다. 그 행들은 원래 길목(앱 시작·정합성 워커)이 맡는다.
+     */
+    @Test
+    fun 달력만_바뀐_호출은_지난_알람을_건드리지_않는다() = runBlocking {
+        val past = System.currentTimeMillis() - 10 * 60_000L
+        seed(id = "past-one-shot", fireAtMillis = past, holidayOff = false, repeatDaysMask = 0)
+        seed(id = "past-every-day", fireAtMillis = past, holidayOff = false)
+        seed(id = "past-holiday-off", fireAtMillis = past, holidayOff = true)
+        serverHolidays["JP"] = emptyList()
+        holidayCountry.setCountry("JP")
+
+        repository.refreshHolidayOffAlarms()
+
+        for (id in listOf("past-one-shot", "past-every-day", "past-holiday-off")) {
+            val row = requireNotNull(dao.getById(id))
+            assertEquals("$id 는 켜진 채다", true, row.enabled)
+            assertEquals("$id 의 상태", AlarmStates.SCHEDULED, row.state)
+            assertEquals("$id 의 시각", past, row.fireAtMillis)
+            assertEquals("$id 의 수정 시각", SEEDED_UPDATED_AT, row.updatedAtMillis)
+        }
+    }
+
+    /**
+     * **새 나라의 달력을 못 받았으면 빈 달력으로 잡고, 못 받았다고 알린다**(Codex #837). 미루면 옛 나라의
+     * 달력이 남아 옛 나라의 공휴일인 새 나라의 평일에 안 울린다(사고) — 빈 달력은 공휴일에 울릴 뿐이다.
+     * 호출부(`MainViewModel`)는 `calendarReady=false` 를 보고 앱에 들어올 때마다 다시 부른다.
+     */
+    @Test
+    fun 새_나라의_달력을_못_받으면_빈_달력으로_잡고_받은_뒤_다시_잡는다() = runBlocking {
+        // 옛 나라(한국)에서는 D 가 공휴일이라 D+1 로 잡혀 있었다.
+        seed(id = "holiday-off", fireAtMillis = nextDay, holidayOff = true)
+        serverHolidays["JP"] = listOf(dateOf(nextWithoutHolidays))
+        holidayServerDown = true
+        holidayCountry.setCountry("JP")
+
+        val offline = repository.refreshHolidayOffAlarms()
+
+        assertEquals(false, offline.calendarReady)
+        // 옛 나라의 공휴일 때문에 건너뛰던 D 로 돌아온다 — 새 나라에서 D 는 공휴일이지만, 모르는 채로는
+        // 울리는 쪽이 안전하다.
+        assertEquals(nextWithoutHolidays, dao.getById("holiday-off")?.fireAtMillis)
+
+        holidayServerDown = false
+        val online = repository.refreshHolidayOffAlarms()
+
+        assertEquals(true, online.calendarReady)
+        assertEquals(nextDay, dao.getById("holiday-off")?.fireAtMillis)
+    }
+
+    /**
+     * **다시 잡아 날짜가 바뀌면 받아 둔 날씨 조건을 버린다**(Codex #837). 조건은 그 날짜의 날씨다 —
+     * 남기면 준비창 갱신이 "이미 받았다" 로 건너뛰고 옛 날짜의 날씨가 운다. 날짜가 그대로면 지킨다.
+     */
+    @Test
+    fun 다시_잡아_날짜가_바뀌면_받아_둔_날씨_조건을_버린다() = runBlocking {
+        seed(id = "moves", fireAtMillis = nextWithoutHolidays, holidayOff = true)
+        withWeatherVariant("moves")
+        // 새 나라(일본)에서 D 가 공휴일이다 — D+1 로 옮겨진다.
+        serverHolidays["JP"] = listOf(dateOf(nextWithoutHolidays))
+        holidayCountry.setCountry("JP")
+
+        repository.refreshHolidayOffAlarms()
+
+        val moved = requireNotNull(dao.getById("moves"))
+        assertEquals(nextDay, moved.fireAtMillis)
+        assertEquals(null, moved.contextVariantIndex)
+        assertEquals(null, moved.contextResolvedAtMillis)
+
+        // 날짜가 그대로인 다시 잡기(같은 달력)는 조건을 지킨다.
+        withWeatherVariant("moves")
+        repository.refreshHolidayOffAlarms()
+        assertEquals(1, dao.getById("moves")?.contextVariantIndex)
+    }
+
+    /** 놓친 반복 알람을 다음 회차로 넘기는 복원도 같다(iOS `prepareForScheduleRecovery` 와 같은 판정). */
+    @Test
+    fun 놓친_반복_날씨_알람을_넘기면_받아_둔_조건을_버린다() = runBlocking {
+        // 놓친 회차는 **다음 회차의 하루 전**이다 — 넘기면 반드시 날짜가 바뀐다(지금 시각과 무관하게).
+        val missed = Instant.ofEpochMilli(nextWithoutHolidays).atZone(zone).minusDays(1).toInstant().toEpochMilli()
+        seed(id = "missed", fireAtMillis = missed, holidayOff = false)
+        withWeatherVariant("missed")
+
+        repository.reschedulePendingAlarms()
+
+        val rolled = requireNotNull(dao.getById("missed"))
+        assertEquals(true, rolled.fireAtMillis > missed)
+        assertEquals(null, rolled.contextVariantIndex)
+        assertEquals(null, rolled.contextResolvedAtMillis)
+    }
+
+    private suspend fun withWeatherVariant(id: String) {
+        val row = requireNotNull(dao.getById(id))
+        dao.upsert(
+            row.copy(
+                bucketId = "weather",
+                contextVariantIndex = 1,
+                contextResolvedAtMillis = System.currentTimeMillis(),
+            ),
+        )
+    }
+
+    @Test
+    fun 다시_울림_중인_알람은_그_마감_그대로_둔다() = runBlocking {
+        val snoozeDeadline = System.currentTimeMillis() + 5 * 60_000L
+        seed(
+            id = "snoozed",
+            fireAtMillis = snoozeDeadline,
+            holidayOff = true,
+            state = AlarmStates.SNOOZED,
+        )
+        serverHolidays["JP"] = listOf(dateOf(snoozeDeadline))
+        holidayCountry.setCountry("JP")
+
+        repository.refreshHolidayOffAlarms()
+
+        assertEquals(snoozeDeadline, dao.getById("snoozed")?.fireAtMillis)
+    }
+
+    private suspend fun seed(
+        id: String,
+        fireAtMillis: Long,
+        holidayOff: Boolean,
+        repeatDaysMask: Int = EVERY_DAY,
+        state: String = AlarmStates.SCHEDULED,
+    ) {
+        dao.upsert(
+            AlarmEntity(
+                id = id,
+                label = id,
+                hour = hour,
+                minute = minute,
+                fireAtMillis = fireAtMillis,
+                repeatDaysMask = repeatDaysMask,
+                holidayOff = holidayOff,
+                snoozeEnabled = true,
+                snoozeMinutes = 5,
+                snoozeRepeatLimit = SnoozeRepeatLimits.THREE,
+                snoozeCount = 0,
+                vibrationPattern = VibrationPatterns.DEFAULT,
+                playMode = AlarmPlayModes.ALARM_ONLY,
+                defaultAlarmSoundId = DefaultAlarmSounds.BUNDLED_DEFAULT,
+                localAudioUri = null,
+                audioCacheKey = null,
+                rawAudioUri = null,
+                voiceSource = VoiceSources.LOCAL_AUDIO,
+                voiceProfileId = null,
+                voiceListenerTitle = null,
+                voiceText = null,
+                voiceCategory = null,
+                voiceLanguage = null,
+                voiceRandomPrompt = false,
+                voiceRandomContext = null,
+                voiceWeatherCountry = null,
+                voiceWeatherCity = null,
+                voiceFortuneGender = null,
+                voiceFortuneBirthDate = null,
+                voiceFortuneBirthTime = null,
+                dynamicVoicePreparedForFireAtMillis = null,
+                voiceRepeat = true,
+                voiceVolumePercent = 100,
+                ttsMessageId = null,
+                remoteAlarmId = null,
+                lastSyncedAtMillis = null,
+                syncState = AlarmSyncStates.LOCAL_ONLY,
+                origin = AlarmOrigins.LOCAL_OWNED,
+                alarmVolumePercent = 100,
+                alarmSoundUri = null,
+                alarmSoundLabel = null,
+                enabled = true,
+                state = state,
+                createdAtMillis = SEEDED_UPDATED_AT,
+                updatedAtMillis = SEEDED_UPDATED_AT,
+                ownerUserId = OWNER,
+            ),
+        )
+    }
+
+    private companion object {
+        const val OWNER = "owner"
+        const val EVERY_DAY = 0x7f
+        const val SEEDED_UPDATED_AT = 1_000L
+    }
+}

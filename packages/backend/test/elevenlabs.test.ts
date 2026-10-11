@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { ElevenLabsClient } from '../src/lib/elevenlabs';
+import { ElevenLabsClient, SpeechToTextNoTextError } from '../src/lib/elevenlabs';
 
 const mockFetch = vi.fn();
 const origFetch = globalThis.fetch;
@@ -53,7 +53,7 @@ describe('ElevenLabsClient', () => {
   });
 
   describe('textToSpeech', () => {
-    it('옵션 미지정 시 v3 디폴트 voice_settings를 전송한다', async () => {
+    it('eleven_v4_turbo 에 stability·similarity_boost 두 값만 보낸다', async () => {
       mockFetch.mockResolvedValueOnce(okArrayBuffer());
 
       await client.textToSpeech('voice-123', '안녕하세요');
@@ -66,60 +66,21 @@ describe('ElevenLabsClient', () => {
       expect(opts.method).toBe('POST');
       const body = JSON.parse(opts.body);
       expect(body.text).toBe('안녕하세요');
-      expect(body.model_id).toBe('eleven_v3');
-      // 검증된 버그 수정: v3에도 항상 voice_settings를 전송한다(이전엔 역조건으로 미전송).
-      expect(body.voice_settings).toEqual({
-        stability: 0.5,
-        similarity_boost: 0.8,
-        style: 0.4,
-        speed: 0.9,
-        use_speaker_boost: true,
-      });
+      expect(body.model_id).toBe('eleven_v4_turbo');
+      // v4 계열은 style·speed·use_speaker_boost 를 받지 않는다(보내도 조용히 무시한다) — 보내지 않는다.
+      expect(body.voice_settings).toEqual({ stability: 0.5, similarity_boost: 0.8 });
+      expect(body).not.toHaveProperty('language_code');
     });
 
-    it('v3도 커스텀 voice settings 옵션을 전송한다(버그 수정)', async () => {
+    it('language_code 를 넘기면 그대로 싣는다', async () => {
       mockFetch.mockResolvedValueOnce(okArrayBuffer());
 
-      await client.textToSpeech('v1', 'hello', {
-        stability: 0.8,
-        similarity_boost: 0.9,
-        style: 0.3,
-        speed: 0.7,
-        use_speaker_boost: true,
-        language_code: 'ko',
-      });
+      await client.textToSpeech('v1', 'hello', { language_code: 'en' });
 
       const body = JSON.parse(mockFetch.mock.calls[0][1].body);
-      expect(body.model_id).toBe('eleven_v3');
-      expect(body.language_code).toBe('ko');
-      expect(body.voice_settings.stability).toBe(0.8);
-      expect(body.voice_settings.similarity_boost).toBe(0.9);
-      expect(body.voice_settings.style).toBe(0.3);
-      expect(body.voice_settings.speed).toBe(0.7);
-      expect(body.voice_settings.use_speaker_boost).toBe(true);
-    });
-
-    it('비-v3 모델도 커스텀 옵션을 반영(미지정 항목은 디폴트)', async () => {
-      mockFetch.mockResolvedValueOnce(okArrayBuffer());
-
-      await client.textToSpeech('v1', 'hello', {
-        stability: 0.8,
-        similarity_boost: 0.9,
-        style: 0.3,
-        model_id: 'eleven_turbo_v2',
-        language_code: 'ko',
-      });
-
-      const body = JSON.parse(mockFetch.mock.calls[0][1].body);
-      expect(body.model_id).toBe('eleven_turbo_v2');
-      expect(body.language_code).toBe('ko');
-      expect(body.voice_settings.stability).toBe(0.8);
-      expect(body.voice_settings.similarity_boost).toBe(0.9);
-      expect(body.voice_settings.style).toBe(0.3);
-      // ⚠ 알람은 막 깬 사람이 듣는다 — 평상시 속도(1.0)로 읽으면 따라가지 못한다.
-      // 2026-08-13 사용자 지적("말이 엄청 빠르다")으로 0.9 가 기본이 됐다.
-      expect(body.voice_settings.speed).toBe(0.9);
-      expect(body.voice_settings.use_speaker_boost).toBe(true);
+      expect(body.model_id).toBe('eleven_v4_turbo');
+      expect(body.language_code).toBe('en');
+      expect(body.voice_settings).toEqual({ stability: 0.5, similarity_boost: 0.8 });
     });
 
     it('ArrayBuffer 반환', async () => {
@@ -134,9 +95,60 @@ describe('ElevenLabsClient', () => {
 
       await expect(client.textToSpeech('v1', 'test')).rejects.toThrow('ElevenLabs API error 429');
     });
+
+    // 굽는 합성은 머리말 없는 PCM 을 받는다 — 높이(스펙 voice-and-message §4-3)와 음량(§10). 음량을 올리는 동안은
+    // 모든 서버 합성이 그렇다. 형식을 넘기지 않으면 기본은 MP3 다(위 첫 테스트).
+    it('PCM 을 달라고 하면 output_format 을 바꾸고, 다른 형식이 오면 던진다', async () => {
+      mockFetch.mockResolvedValueOnce(
+        new Response(new ArrayBuffer(100), { status: 200, headers: { 'Content-Type': 'application/octet-stream' } }),
+      );
+      const pcm = await client.textToSpeech('v1', 'test', { output_format: 'pcm_44100' });
+      expect(pcm.byteLength).toBe(100);
+      expect(mockFetch.mock.calls[0][0]).toBe('https://api.elevenlabs.io/v1/text-to-speech/v1?output_format=pcm_44100');
+
+      // MP3·WAV 를 표본으로 읽으면 잡음을 굽는다 — 형식이 다르면 실패로 끝낸다.
+      for (const contentType of ['audio/mpeg', 'audio/wav', 'application/json']) {
+        mockFetch.mockResolvedValueOnce(
+          new Response(new ArrayBuffer(100), { status: 200, headers: { 'Content-Type': contentType } }),
+        );
+        await expect(client.textToSpeech('v1', 'test', { output_format: 'pcm_44100' })).rejects.toThrow(contentType);
+      }
+    });
   });
 
   describe('speechToText', () => {
+    it('전체 마감이 지나면 전사 요청을 보내지 않는다', async () => {
+      await expect(client.speechToText(new ArrayBuffer(10), { deadlineAt: Date.now() - 1 }))
+        .rejects.toMatchObject({ name: 'TimeoutError' });
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it.each(['headers', 'body'])('마감에 걸리면 %s 대기도 중단한다', async (stage) => {
+      const controller = new AbortController();
+      const timeout = vi.spyOn(AbortSignal, 'timeout').mockReturnValue(controller.signal);
+      try {
+        const readUntilAbort = (signal: AbortSignal) => new Promise<never>((_, reject) => {
+          signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+        });
+        mockFetch.mockImplementation(async (_url, init) => {
+          if (stage === 'headers') return readUntilAbort(init.signal);
+          return { ok: true, json: () => readUntilAbort(init.signal) };
+        });
+        const pending = client.speechToText(new ArrayBuffer(10), { deadlineAt: Date.now() + 26_000 });
+        const assertion = expect(pending).rejects.toMatchObject({ name: 'TimeoutError' });
+        await vi.waitFor(() => expect(timeout).toHaveBeenCalledOnce());
+        // 응답 본문을 기다리는 경우에도 같은 취소 신호를 쓴다.
+        await Promise.resolve();
+        const [duration] = timeout.mock.calls[0];
+        expect(duration).toBeGreaterThan(0);
+        expect(duration).toBeLessThanOrEqual(26_000);
+        controller.abort(new DOMException('Deadline exceeded', 'TimeoutError'));
+        await assertion;
+      } finally {
+        timeout.mockRestore();
+      }
+    });
+
     it('scribe_v2 모델로 전사 요청 (scribe_v1 은 2026-07-09 제거됨)', async () => {
       mockFetch.mockResolvedValueOnce(okJson({ text: '  안녕하세요 반갑습니다  ' }));
 
@@ -159,17 +171,41 @@ describe('ElevenLabsClient', () => {
       expect(text).toBe('안녕하세요 반갑습니다');
     });
 
-    it('text 필드 없으면 빈 문자열', async () => {
-      mockFetch.mockResolvedValueOnce(okJson({}));
-      const text = await client.speechToText(new ArrayBuffer(10));
-      expect(text).toBe('');
+    // 2026-10-11: 예전에는 글이 없는 답을 빈 문자열로 바꿨다. 빈 글은 등록의 말소리 확인에서 '말소리 없음'(400)이라, 응답
+    // 모양이 바뀌면 모든 등록이 막혔다 — 실패로 던져야 말소리 확인이 막지 않고 통과시킨다(fail-open, 스펙 §4-1).
+    it.each([
+      ['text 필드 없음', {}],
+      ['text 가 null', { text: null }],
+      ['text 가 글이 아님', { text: 3 }],
+      ['본문이 null', null],
+    ])('%s → 빈 글로 바꾸지 않고 던진다', async (_label, body) => {
+      mockFetch.mockResolvedValueOnce(okJson(body));
+      const thrown = client.speechToText(new ArrayBuffer(10));
+      await expect(thrown).rejects.toThrow('ElevenLabs speech-to-text response has no text');
+      // 이름이 따로 있다 — 말소리 확인의 warn 줄(오류 이름만)이 제공자 4xx/5xx(`Error`)와 가른다.
+      await expect(thrown).rejects.toBeInstanceOf(SpeechToTextNoTextError);
+      await expect(thrown).rejects.toMatchObject({ name: 'SpeechToTextNoTextError' });
+    });
+
+    it('글이 빈 답은 답이다 — 빈 문자열을 그대로 준다(말소리가 없는 녹음)', async () => {
+      mockFetch.mockResolvedValueOnce(okJson({ text: '  ' }));
+      expect(await client.speechToText(new ArrayBuffer(10))).toBe('');
+    });
+
+    it('소리 표시(tag_audio_events)는 끄지 않는다 — 말투 분석이 그 글을 그대로 읽는다', async () => {
+      mockFetch.mockResolvedValueOnce(okJson({ text: '(laughter) 안녕하세요' }));
+      expect(await client.speechToText(new ArrayBuffer(10))).toBe('(laughter) 안녕하세요');
+      const body = mockFetch.mock.calls[0][1].body as FormData;
+      expect(body.has('tag_audio_events')).toBe(false);
     });
 
     it('API 에러 시 예외 (호출자가 failed 상태를 기록)', async () => {
       mockFetch.mockResolvedValueOnce(errorResponse(400, 'invalid_model_id'));
-      await expect(client.speechToText(new ArrayBuffer(10))).rejects.toThrow(
-        'ElevenLabs API error 400',
-      );
+      const thrown = client.speechToText(new ArrayBuffer(10));
+      await expect(thrown).rejects.toThrow('ElevenLabs API error 400');
+      // 글이 없는 답과 이름이 다르다(`SpeechToTextNoTextError`).
+      await expect(thrown).rejects.toMatchObject({ name: 'Error' });
+      await expect(thrown).rejects.not.toBeInstanceOf(SpeechToTextNoTextError);
     });
   });
 

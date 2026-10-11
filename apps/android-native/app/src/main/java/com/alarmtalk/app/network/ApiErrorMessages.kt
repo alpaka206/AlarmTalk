@@ -66,6 +66,10 @@ private val API_ERROR_MESSAGES: Map<String, Int> = mapOf(
     // ── 목소리 ────────────────────────────────────────────────────────────
     "VOICE_CLONE_AUDIO_TOO_SHORT" to R.string.msg_voice_clone_audio_too_short,
     "VOICE_CLONE_AUDIO_TOO_LONG" to R.string.msg_voice_clone_audio_too_long,
+    // 녹음에 말소리가 거의 없다 — 서버가 받아 적어 본 글자가 너무 적어 등록을 받지 않았다(아무것도 쓰지 않았다 —
+    // 초안도, 횟수도). 등록 창이 그려져 있으면 처음 단계로 돌아가 녹음 카드 아래에 이 문장을 쓰고
+    // (`RegistrationFailureSurface.ReRecord`), 아니면 스낵바다. iOS `APIErrorMessages.swift` 와 짝이다 — 같은 문장이다.
+    "VOICE_CLONE_NO_SPEECH" to R.string.msg_voice_clone_no_speech,
     "INVALID_DURATION" to R.string.msg_voice_invalid_duration,
     "INVALID_AUDIO_MIME_TYPE" to R.string.msg_voice_invalid_audio_format,
     "VOICE_SLOT_EXHAUSTED" to R.string.msg_voice_slot_exhausted,
@@ -76,14 +80,28 @@ private val API_ERROR_MESSAGES: Map<String, Int> = mapOf(
     "VOICE_MONTHLY_CHANGE_LIMIT_REACHED" to R.string.msg_voice_monthly_change_limit,
     "VOICE_PREVIEW_REQUIRED" to R.string.msg_voice_preview_required,
     "CONSENT_REQUIRED" to R.string.msg_voice_consent_required,
-    // 목소리 느낌(결)이 '' · lively · calm 밖이다. 화면은 그 셋만 고를 수 있어 정상 경로에서는
-    // 나지 않는다 — 그래도 폴백의 "목소리를 만들지 못했어요" 로 떨어지면 녹음을 탓하게 되니,
-    // 무엇을 다시 하면 되는지(느낌을 다시 고르기)만 차분히 말한다.
-    "INVALID_VOICE_ENERGY" to R.string.api_error_invalid_voice_energy,
+    // 목소리 높이(스펙 voice-and-message §4-3) — 등록 확정 요청에 싣는 `pitch_semitones` 의 거절. iOS
+    // `APIErrorMessages.swift` 와 짝이다.
+    "INVALID_VOICE_PITCH" to R.string.api_error_invalid_voice_pitch,
+    "VOICE_PITCH_LOCKED" to R.string.api_error_voice_pitch_locked,
+    // `INVALID_VOICE_ENERGY` 는 표에 두지 않는다 — 이 앱은 목소리의 결을 보내지 않아(2026-09-29
+    // '목소리 느낌' 선택 제거) 그 코드를 받을 길이 없다. 서버는 1.2.10 앱 때문에 아직 낸다.
 
     // ── 알람·문구 ─────────────────────────────────────────────────────────
     "ALARM_NOT_FOUND" to R.string.api_error_alarm_not_found,
     "TTS_GENERATION_FAILED" to R.string.api_error_tts_generation_failed,
+
+    // ── 가족 알람 보내기(`routes/alarm-helpers.ts` 의 `evaluateFamilyAlarmTimingGuard`) ──
+    // 편집기가 먼저 막지만 그 판정은 받는 사람의 **캐시된** 설정과 이 기기 시계로 한 것이다.
+    // 서버가 다시 거절하면 이유를 말해야 한다 — 예전에는 셋 다 "상대 알람 설정에 실패했어요"
+    // 로 뭉개져 다시 눌러도 똑같이 실패했다(`docs/spec/family-alarm.md` §3).
+    "FAMILY_ALARM_DISABLED" to R.string.api_error_family_alarm_disabled,
+    // 숫자(5분)를 문구에 넣지 않는다 — 그 값은 서버·두 앱 세 곳에만 둔다(§3 표).
+    "FAMILY_ALARM_LEAD_TIME" to R.string.api_error_family_alarm_lead_time,
+    "FAMILY_ALARM_QUIET_TIME" to R.string.editor_error_family_alarm_time_unavailable,
+
+    // ── 이용권 그룹 ───────────────────────────────────────────────────────
+    "OWNER_CANNOT_LEAVE" to R.string.api_error_owner_cannot_leave,
 )
 
 /** 이 코드에 정해 둔 문구가 있으면 돌려준다. 없으면 null — 부르는 쪽이 폴백을 쓴다. */
@@ -101,8 +119,10 @@ fun apiErrorMessageRes(code: String?): Int? = code?.let { API_ERROR_MESSAGES[it]
  * message = apiErrorMessage(app, code) ?: userFacingError(error, app.getString(R.string.…))
  * ```
  *
- * ⚠ **`code` 는 이미 뽑아 놓은 값을 넘길 것.** `HttpException` 의 errorBody 는 **한 번만**
- * 읽힌다 — 같은 예외에 [apiErrorCode] 를 두 번 부르면 두 번째가 빈손이 된다.
+ * `code` 는 [apiErrorCode] 로 뽑은 값이다. 같은 예외에서 거듭 뽑아도 같은 값이 나온다 — 코드를
+ * 읽어도 오류 본문은 소진되지 않는다(`network/ApiErrors.kt`). 다만 화면이 문구와 **함께** 코드로
+ * 갈래를 가른다면 한 번 뽑아 둘 다에 쓴다 — 두 번 뽑는 것이 틀려서가 아니라, 문구와 갈래가 같은
+ * 값에서 나왔다는 것이 코드에 보이게 하려는 것이다.
  */
 fun apiErrorMessage(context: Context, code: String?): String? =
     apiErrorMessageRes(code)?.let(context::getString)

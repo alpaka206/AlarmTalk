@@ -44,13 +44,8 @@ final class PaidVoiceGateTests: XCTestCase {
         BillingSubscription(
             id: "sub-1",
             planId: "plan-1",
-            planGroupId: nil,
             status: status,
-            startsAt: "2026-01-01T00:00:00Z",
-            expiresAt: expiresAt,
-            cancelAtPeriodEnd: nil,
-            canceledAt: nil,
-            nextPlanId: nil
+            expiresAt: expiresAt
         )
     }
 
@@ -60,7 +55,7 @@ final class PaidVoiceGateTests: XCTestCase {
         userPlan: String? = nil
     ) -> AccessSnapshot {
         AccessSnapshot(
-            subscriptionResponse: BillingSubscriptionResponse(subscription: sub, plan: plan, nextPlan: nil),
+            subscriptionResponse: BillingSubscriptionResponse(subscription: sub, plan: plan),
             familyGroup: nil,
             storePlanKey: nil,
             storeEntitlementUntilMillis: nil,
@@ -157,13 +152,11 @@ final class PaidVoiceGateTests: XCTestCase {
     /// 액션을 유도한다. 단 스토어는 여전히 위다.
     func test_bestKnown_ignoresRetainedRowWhenPlanSuspended() {
         let plan = BillingPlan(
-            id: "p", key: "family", name: "가족", planType: "family",
-            periodDays: 30, maxMembers: 4, priceKrw: 5900
+            id: "p", key: "family", name: "가족", planType: "family", maxMembers: 4
         )
         let response = BillingSubscriptionResponse(
             subscription: subscription(status: "active", expiresAt: "2099-01-01T00:00:00Z"),
-            plan: plan,
-            nextPlan: nil
+            plan: plan
         )
         XCTAssertEqual(
             PlanTier.bestKnown(serverSubscription: response, storeTier: .free, userPlan: "free"),
@@ -183,8 +176,7 @@ final class PaidVoiceGateTests: XCTestCase {
     /// 본인 구독이 없어도 커플/가족 그룹 멤버면 유료 목소리를 쓴다.
     func test_groupMemberWithoutOwnSubscription_doesNotDowngrade() {
         let plan = BillingPlan(
-            id: "p", key: "family", name: "가족", planType: "family",
-            periodDays: 30, maxMembers: 4, priceKrw: 5900
+            id: "p", key: "family", name: "가족", planType: "family", maxMembers: 4
         )
         let snap = snapshot(nil, plan: plan)
         XCTAssertFalse(PaidVoiceGate.shouldDowngrade(record: paidVoiceAlarm(), snapshot: snap))
@@ -220,21 +212,31 @@ final class PaidVoiceGateTests: XCTestCase {
 
     // MARK: - 강등 결과
 
-    /// **알람 자체는 그대로 울린다.** 목소리만 빼고 기본 톤으로 떨어뜨린다 —
-    /// 시각·요일·켜짐을 건드리면 그날 못 일어난다.
-    func test_downgraded_keepsScheduleAndOnlyDropsVoice() {
+    /// **알람 자체는 그대로 울린다 — 기본 목소리로.** 목소리만 기본 목소리로 바꾸고 재생 방식은
+    /// 그대로다(2026-09-29 dev 리허설 — 알람음으로 내린 모양이 안드로이드에서 무음으로 울렸다).
+    /// 시각·요일·켜짐을 건드리면 그날 못 일어난다. 원래 행은 값 타입이라 그대로다(예약에만 쓴다).
+    func test_substitute_keepsScheduleAndVoiceModeWithADefaultVoice() {
         let record = paidVoiceAlarm()
-        let downgraded = PaidVoiceGate.downgraded(record)
+        let snap = snapshot(nil)
+        XCTAssertTrue(PaidVoiceGate.shouldDowngrade(record: record, snapshot: snap))
 
-        XCTAssertEqual(downgraded.playMode, AlarmPlayMode.alarmOnly.rawValue)
-        XCTAssertEqual(downgraded.hour, record.hour)
-        XCTAssertEqual(downgraded.minute, record.minute)
-        XCTAssertEqual(downgraded.repeatDaysMask, record.repeatDaysMask)
-        XCTAssertEqual(downgraded.enabled, record.enabled)
-        XCTAssertEqual(downgraded.id, record.id)
-        // 원본 값은 남겨 둔다 — 구독을 되살리면 그대로 돌아와야 한다.
-        XCTAssertEqual(downgraded.voiceProfileId, record.voiceProfileId)
-        XCTAssertEqual(downgraded.audioCacheKey, record.audioCacheKey)
+        let substitute = DefaultVoiceSubstitute.substitutedForScheduling(
+            record,
+            voiceID: DefaultVoiceSubstitute.pickVoiceID(alarmVoiceID: record.voiceProfileId),
+            binding: nil
+        )
+
+        XCTAssertEqual(substitute.playMode, AlarmPlayMode.voiceOnly.rawValue, "알람음으로 내리지 않는다")
+        XCTAssertTrue(isSystemVoiceId(substitute.voiceProfileId))
+        XCTAssertEqual(substitute.hour, record.hour)
+        XCTAssertEqual(substitute.minute, record.minute)
+        XCTAssertEqual(substitute.repeatDaysMask, record.repeatDaysMask)
+        XCTAssertEqual(substitute.enabled, record.enabled)
+        XCTAssertEqual(substitute.id, record.id)
+        XCTAssertEqual(substitute.updatedAtMillis, record.updatedAtMillis, "예약 지문의 입력을 흔들지 않는다")
+        XCTAssertNil(substitute.preLockVoice, "예약용 대체는 잠금이 아니다 — 보관본을 만들지 않는다")
+        // 대체 행은 무료 기본 목소리 알람이라 다시 강등 대상이 아니다.
+        XCTAssertFalse(PaidVoiceGate.shouldDowngrade(record: substitute, snapshot: snap))
     }
 
     // MARK: - 타임스탬프 파싱

@@ -7,18 +7,43 @@ import com.alarmtalk.app.network.DynamicPromptWeatherSettings
 import com.alarmtalk.app.network.trimmedOrNull
 
 data class DynamicPromptPreferences(
+    /**
+     * 날씨 지역은 **옛 앱이 읽는 글자**로 둔다(나라 `대한민국`/`일본`/`미국` + 한국어 지역 이름,
+     * `WeatherRegions.canonicalLabels`). 지역 키는 따로 적지 않고 [weatherRegion] 이 글자에서
+     * 되짚는다 — 알람 행(`AlarmEntity.voiceWeatherCountry`/`City`)과 같은 모양이라, 둘 사이를
+     * 오가는 복사(`withRecipientConditions`·편집기 프리필)가 그대로 돈다.
+     * 되짚지 못하는 값은 직접 입력 시절의 옛 글자다 — 바꾸기 전까지 서버의 옛 경로로 돈다.
+     */
     val weatherCountry: String = "",
     val weatherCity: String = "",
     val fortuneGender: String = "",
     val fortuneBirthDate: String = "",
     val fortuneBirthTime: String = "",
-)
+) {
+    /** 저장된 글자가 가리키는 목록의 지역. 비었거나 되짚지 못하면 null. */
+    val weatherRegion: WeatherRegion? get() = weatherRegionFor(weatherCountry, weatherCity)
+
+    internal fun hasWeather(): Boolean = weatherCountry.isNotEmpty() || weatherCity.isNotEmpty()
+
+    internal fun hasFortune(): Boolean =
+        fortuneGender.isNotEmpty() || fortuneBirthDate.isNotEmpty() || fortuneBirthTime.isNotEmpty()
+
+    internal fun hasSameWeather(other: DynamicPromptPreferences): Boolean =
+        weatherCountry == other.weatherCountry && weatherCity == other.weatherCity
+
+    internal fun hasSameFortune(other: DynamicPromptPreferences): Boolean =
+        fortuneGender == other.fortuneGender &&
+            fortuneBirthDate == other.fortuneBirthDate &&
+            fortuneBirthTime == other.fortuneBirthTime
+}
 
 fun DynamicPromptPreferences.toDynamicPromptSettings(): DynamicPromptSettings =
     DynamicPromptSettings(
         weather = DynamicPromptWeatherSettings(
             country = weatherCountry.trimmedOrNull(),
             city = weatherCity.trimmedOrNull(),
+            // 새 서버는 이 키로 저장하고 글자를 다시 적는다. 옛 서버는 모르는 칸을 무시한다.
+            region = weatherRegion?.key,
         ),
         fortune = DynamicPromptFortuneSettings(
             gender = fortuneGender.trimmedOrNull(),
@@ -34,14 +59,36 @@ fun DynamicPromptPreferences.toDynamicPromptSettings(): DynamicPromptSettings =
  * (예: 선다운로드 워커) 서버 값을 쓰려면 UI 패키지를 가져와야 했다 — 그래서 실제로
  * **로컬만 보고 서버를 버리는 코드**가 생겼다(2026-09-03 리뷰 16차).
  */
-fun DynamicPromptSettings.toPromptPreferences(): DynamicPromptPreferences =
-    DynamicPromptPreferences(
-        weatherCountry = weather.country?.trim().orEmpty(),
-        weatherCity = weather.city?.trim().orEmpty(),
+fun DynamicPromptSettings.toPromptPreferences(): DynamicPromptPreferences {
+    // 알맞은 지역 키가 있으면 **그 지역의 옛 앱용 글자**가 이긴다 — 서버도 저장할 때 그렇게
+    // 덮는다(`normalizeSetting`). 키가 없거나 모르는 키면 글자를 그대로 둔다.
+    val labels = WeatherRegions.canonicalLabels(weather.region)
+    return DynamicPromptPreferences(
+        weatherCountry = labels?.country ?: weather.country?.trim().orEmpty(),
+        weatherCity = labels?.city ?: weather.city?.trim().orEmpty(),
         fortuneGender = fortune.gender?.trim().orEmpty(),
         fortuneBirthDate = fortune.birthDate?.trim().orEmpty(),
         fortuneBirthTime = fortune.birthTime?.trim().orEmpty(),
     )
+}
+
+/** [DynamicPromptPreferenceStore.adoptAccountSettings] 의 결과. */
+sealed interface AccountSettingsAdoption {
+    /** 서버 값을 받아들였다(바뀐 게 없었을 수도 있다). 공휴일 국가도 서버 지역을 따라도 된다. */
+    data object Accepted : AccountSettingsAdoption
+
+    /**
+     * 이 기기에 서버보다 새 변경이 있어 **덮지 않았다**(밀린 묶음). 호출부는 [settings] 를 다시 올린다.
+     *
+     * [weatherAccepted] 는 **날씨 묶음은 밀리지 않아 서버 값을 받아들였는가**다(사주만 밀린 경우). 그러면 공휴일
+     * 국가도 서버 지역을 따른다 — 안 따르면 화면의 지역과 달력의 나라가 갈라진다(Codex #837). 날씨 묶음이
+     * 밀렸으면 따르지 않는다 — 이 기기에서 고를 때 이미 맞췄다.
+     */
+    data class LocalPending(
+        val settings: DynamicPromptSettings,
+        val weatherAccepted: Boolean = false,
+    ) : AccountSettingsAdoption
+}
 
 class DynamicPromptPreferenceStore(context: Context) {
     private val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -68,15 +115,141 @@ class DynamicPromptPreferenceStore(context: Context) {
         )
     }
 
+    /**
+     * 사용자가 **이 기기에서** 고른 지역. 서버로 올리기 전까지는 '아직 안 올라간 변경' 으로
+     * 표시한다([adoptAccountSettings] 가 서버의 옛 값으로 덮지 않게). 호출부는 곧바로 서버에
+     * 올리고(`updateDynamicPromptSettings`), 성공하면 [markPushed] 가 표시를 내린다.
+     *
+     * ⚠ 표시는 **묶음(날씨·사주)마다**다(Codex #837). 한 칸으로 두면, 이 기기에서 지역만 고쳐 밀려 있는 사이
+     * 다른 기기가 사주를 고쳤을 때 이 기기가 **옛 사주까지** 다시 올려 그 변경을 지운다 — 서버는 설정 전체를
+     * 갈아 끼운다(`PATCH /user/me`).
+     */
     fun saveWeatherLocation(userId: String?, country: String, city: String) {
         saveScoped(KEY_WEATHER_COUNTRY, userId, country)
         saveScoped(KEY_WEATHER_CITY, userId, city)
+        markUnsynced(userId, KEY_WEATHER_SYNC_PENDING)
     }
 
+    /** [saveWeatherLocation] 의 사주 짝 — 사주 묶음에 '안 올라간 변경' 표시를 남긴다. */
     fun saveFortuneInfo(userId: String?, gender: String, birthDate: String, birthTime: String) {
         saveScoped(KEY_FORTUNE_GENDER, userId, gender)
         saveScoped(KEY_FORTUNE_BIRTH_DATE, userId, birthDate)
         saveScoped(KEY_FORTUNE_BIRTH_TIME, userId, birthTime)
+        markUnsynced(userId, KEY_FORTUNE_SYNC_PENDING)
+    }
+
+    /**
+     * 서버의 계정 설정(`dynamic_prompt_settings`)을 이 기기에 받아 적는다 — 로그인·`/auth/me`·
+     * 설정 저장 응답이 올 때마다 부른다. **멱등이다**(같은 값을 몇 번 받아도 결과가 같다).
+     *
+     * 왜 필요한가: 설정의 '지역'·'운세 정보' 행과 편집기는 이 로컬 저장소를 읽는데, 예전에는
+     * 여기를 채우는 길이 **이 기기에서 고를 때뿐**이었다. 그래서 두 번째 기기·새로 깐 기기는
+     * 계정에 지역이 있는데도 '미설정' 으로 보였다. iOS 설정(`SettingsView.loadPromptPreferences`)은
+     * 처음부터 서버 값을 먼저 본다.
+     *
+     * 규칙(**묶음 — 날씨·사주 — 마다** 따로 본다, Codex #837):
+     *  - **그 묶음에 이 기기의 안 올라간 변경이 있으면 덮지 않는다**([saveWeatherLocation]·
+     *    [saveFortuneInfo] 뒤 서버 저장이 실패한 경우). 서버가 준 값은 그 변경보다 **옛것**이다 —
+     *    덮으면 방금 고른 지역이 조용히 되돌아간다. 서버 값이 로컬과 같아졌으면(올리기는
+     *    성공했는데 응답을 못 받은 경우) 그 묶음의 표시만 내린다.
+     *  - 안 올라간 변경이 없는 묶음은 **서버가 이긴다**(다른 기기에서 바꾼 값). 단 서버가 비어 있으면
+     *    로컬을 그대로 둔다 — 비어 있는 것은 '지웠다' 가 아니라 '아직 안 올라갔다' 이다(서버에는 이
+     *    값을 지우는 경로가 없다).
+     *  - 밀린 묶음이 남았으면 [AccountSettingsAdoption.LocalPending] 을 돌려준다 — 실어 보낼 값은 **밀린
+     *    묶음은 이 기기 값, 나머지는 방금 받은 서버 값**이다. 이 기기의 옛 사주를 함께 올려 다른 기기가
+     *    고친 사주를 지우지 않는다.
+     */
+    fun adoptAccountSettings(userId: String?, server: DynamicPromptSettings): AccountSettingsAdoption {
+        val weatherPendingKey = scopedKey(KEY_WEATHER_SYNC_PENDING, userId) ?: return AccountSettingsAdoption.Accepted
+        val fortunePendingKey = scopedKey(KEY_FORTUNE_SYNC_PENDING, userId) ?: return AccountSettingsAdoption.Accepted
+        val local = read(userId)
+        val remote = server.toPromptPreferences()
+        val editor = prefs.edit()
+        var changed = false
+        var pendingLeft = false
+
+        val weatherPending = prefs.getBoolean(weatherPendingKey, false)
+        var weatherPendingLeft = false
+        if (weatherPending) {
+            if (local.hasSameWeather(remote)) {
+                editor.remove(weatherPendingKey)
+                changed = true
+            } else {
+                pendingLeft = true
+                weatherPendingLeft = true
+            }
+        } else if (remote.hasWeather() && !local.hasSameWeather(remote)) {
+            putScoped(editor, KEY_WEATHER_COUNTRY, userId, remote.weatherCountry)
+            putScoped(editor, KEY_WEATHER_CITY, userId, remote.weatherCity)
+            changed = true
+        }
+
+        val fortunePending = prefs.getBoolean(fortunePendingKey, false)
+        if (fortunePending) {
+            if (local.hasSameFortune(remote)) {
+                editor.remove(fortunePendingKey)
+                changed = true
+            } else {
+                pendingLeft = true
+            }
+        } else if (remote.hasFortune() && !local.hasSameFortune(remote)) {
+            putScoped(editor, KEY_FORTUNE_GENDER, userId, remote.fortuneGender)
+            putScoped(editor, KEY_FORTUNE_BIRTH_DATE, userId, remote.fortuneBirthDate)
+            putScoped(editor, KEY_FORTUNE_BIRTH_TIME, userId, remote.fortuneBirthTime)
+            changed = true
+        }
+
+        if (changed) editor.apply()
+        return if (pendingLeft) {
+            AccountSettingsAdoption.LocalPending(
+                settings = read(userId).toDynamicPromptSettings(),
+                weatherAccepted = !weatherPendingLeft,
+            )
+        } else {
+            AccountSettingsAdoption.Accepted
+        }
+    }
+
+    /**
+     * 서버 저장이 성공했다. 묶음마다, 올린 값이 **지금도** 로컬과 같을 때만 그 묶음의 '안 올라간 변경'
+     * 표시를 내린다 — 올리는 사이에 또 고쳤으면 그 새 값은 아직 안 올라갔다.
+     */
+    fun markPushed(userId: String?, pushed: DynamicPromptSettings) {
+        val weatherPendingKey = scopedKey(KEY_WEATHER_SYNC_PENDING, userId) ?: return
+        val fortunePendingKey = scopedKey(KEY_FORTUNE_SYNC_PENDING, userId) ?: return
+        // 올린 값은 이 기기 값에서 만든 것이다(`toDynamicPromptSettings`) — 같은 모양으로 묶음마다 비교한다.
+        val local = read(userId).toDynamicPromptSettings()
+        val editor = prefs.edit()
+        if (local.weather == pushed.weather) editor.remove(weatherPendingKey)
+        if (local.fortune == pushed.fortune) editor.remove(fortunePendingKey)
+        editor.apply()
+    }
+
+    /**
+     * 지금 올릴 값 — 밀린 묶음이 있으면 **지금의 이 기기 값**(밀린 묶음 + 받아 적은 나머지), 없으면 null(올릴 것이 없다).
+     *
+     * 올리기 줄(`PromptSettingsUploadQueue`)은 **차례가 온 뒤에** 이걸 본다(Codex #837). 줄에 설 때 찍은 사본은
+     * 그 사이 앞 요청이 같은 값을 올려 표시를 내렸거나 다른 기기의 값을 받아 적은 것을 모른다 — 그대로 올리면 같은
+     * 값을 두 번 올리고, 그 사이 다른 기기가 쓴 값을 옛 사본으로 덮는다.
+     */
+    fun pendingUploadSnapshot(userId: String?): DynamicPromptSettings? =
+        if (hasUnsyncedChange(userId)) read(userId).toDynamicPromptSettings() else null
+
+    /** 이 기기에 아직 서버로 안 올라간 지역·사주 변경이 있는가(어느 묶음이든). */
+    fun hasUnsyncedChange(userId: String?): Boolean {
+        val weatherPendingKey = scopedKey(KEY_WEATHER_SYNC_PENDING, userId) ?: return false
+        val fortunePendingKey = scopedKey(KEY_FORTUNE_SYNC_PENDING, userId) ?: return false
+        return prefs.getBoolean(weatherPendingKey, false) || prefs.getBoolean(fortunePendingKey, false)
+    }
+
+    private fun markUnsynced(userId: String?, bundleKey: String) {
+        val pendingKey = scopedKey(bundleKey, userId) ?: return
+        prefs.edit().putBoolean(pendingKey, true).apply()
+    }
+
+    private fun putScoped(editor: android.content.SharedPreferences.Editor, key: String, userId: String?, value: String) {
+        val scoped = scopedKey(key, userId) ?: return
+        editor.putString(scoped, value.trim())
     }
 
     /**
@@ -204,6 +377,10 @@ class DynamicPromptPreferenceStore(context: Context) {
             scopedKey(key, userId)?.let { editor.remove(it) }
             editor.remove(key) // 아직 아무도 안 넘겨받은 옛 전역 값
         }
+        // 값을 지웠으니 '안 올라간 변경' 도 없다 — 남기면 다시 로그인했을 때 빈 로컬이 서버를
+        // 이겨 계정 값을 받아 오지 못한다.
+        scopedKey(KEY_WEATHER_SYNC_PENDING, userId)?.let { editor.remove(it) }
+        scopedKey(KEY_FORTUNE_SYNC_PENDING, userId)?.let { editor.remove(it) }
         editor.apply()
     }
 
@@ -227,6 +404,9 @@ class DynamicPromptPreferenceStore(context: Context) {
         private const val KEY_LAST_MESSAGE_CONTEXT = "last_message_context"
         private const val KEY_LAST_FREE_BUCKET = "last_free_bucket"
         private const val KEY_LAST_MANUAL_TEXT = "last_manual_text"
+        // 이 기기에서 고친 지역·사주가 아직 서버로 안 올라갔다([adoptAccountSettings]) — 묶음마다.
+        private const val KEY_WEATHER_SYNC_PENDING = "account_weather_unsynced"
+        private const val KEY_FORTUNE_SYNC_PENDING = "account_fortune_unsynced"
 
         // 마지막 선택은 계정별로 나눈다 — 날씨/사주와 달리 이건 '그 사람이 쓰던 것'이라
         // 기기 전역으로 두면 계정을 바꿨을 때 앞 사람 선택으로 첫 알람이 열린다.

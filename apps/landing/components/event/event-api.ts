@@ -39,6 +39,47 @@ export class ClipError extends Error {
   }
 }
 
+/**
+ * 배포 창 자동 재시도의 간격(ms) — 순서대로 한 번씩, 다 쓰면 그만둔다.
+ *
+ * 왜 있나: 릴리스 머지 한 번에 랜딩(Vercel)과 백엔드(Workers)가 **따로** 올라가고 랜딩이 먼저 끝난다.
+ * 그 뒤 워커가 올라오기까지 1분쯤(추정)은 옛 prod 워커가 이 번들의 새 종류(`love`)를 400 `INVALID_BODY` 로
+ * 거절한다(`event-catalog.ts` 의 `MESSAGE_KINDS` ⚠). 그 창을 화면이 스스로 넘기려고 둔다 — 카드를
+ * '생성 중' 으로 둔 채 3·6·12·24·48초 뒤에 다시 부르고(첫 거절부터 약 93초), 그래도 안 되면 원래대로
+ * 실패 + '다시 시도' 다(`event-studio.tsx` 의 `request`). 덮는 길이는 창보다 길어야 한다 — 가장 오래
+ * 기다리는 사람은 창 첫머리에 누른 사람이고, 24초에서 그치면(첫 거절부터 45초) 그 사람은 워커가 오기 전에
+ * 실패로 떨어진다.
+ *
+ * ⚠ 늘릴 때는 한도를 같이 본다. 거절(400)도 클립 한도(백엔드 `eventClipRateLimitMiddleware` — IP 당 30,
+ * 첫 요청부터 재는 60초 창)에 들어간다. 배포 창에서 생성하기 한 번은 여섯 요청 + `love` 세 언어 × 다시
+ * 부르기 다섯 = 21 이고, 첫 1분에 드는 것은 18 이다(0초에 여섯, 3·9·21·45초에 셋씩 — 다섯째는 93초쯤이라
+ * 다음 창이다). 같은 IP 에서 그 1분 안에 생성하기가 또 눌리면(다른 이름·목소리, 새로고침, 같은 망의 다른
+ * 사람 — 같은 화면의 같은 이름·목소리는 다시 부르지 않는다) 두 번째가 첫 번째부터 약 40초 안일 때 둘이
+ * 합쳐 33~36 으로 30 을 넘는다. 넘치는 것은 뒤쪽의 `love` 다시 부르기이고, 429 `RATE_LIMITED` 는 기다리지
+ * 않으니 그 카드는 곧바로 한도 문구로 실패하고 '다시 시도' 가 남는다 — 다섯째가 없던 때와 같다. 다시
+ * 부르기를 첫 1분 안에 더 넣으면(간격을 줄이는 것도) 이 수를 다시 센다. 버킷이 isolate 메모리라 실제로는
+ * 이보다 느슨하다 — 여기 수는 한 곳에 다 몰린 최악이다.
+ *
+ * 모든 prod 워커가 `love` 를 알게 되면(이 릴리스의 Deploy Backend(main)가 초록) 이 상수와
+ * `deployWindowRetryDelayMs`, `event-studio.tsx` 의 `generate`·`retryTimersRef` 를 함께 지워도 된다
+ * (`generate(0)` 은 도로 `generateClip(...)` 이 된다).
+ */
+export const DEPLOY_WINDOW_RETRY_DELAYS_MS = [3_000, 6_000, 12_000, 24_000, 48_000] as const;
+
+/**
+ * 실패한 생성을 자동으로 다시 부를지 — 기다릴 시간(ms), 다시 부르지 않으면 null.
+ * `retried` 는 그 카드를 이미 자동으로 다시 부른 횟수(처음 실패면 0).
+ *
+ * `INVALID_BODY` **하나뿐**이다. 이 화면이 보내는 몸통에서 서버가 모를 수 있는 것은 종류뿐이라
+ * (인물·언어는 카탈로그 값이고 이름은 서버와 같은 규칙으로 이미 걸렀다) 그 코드는 곧 '아직 옛 워커' 다.
+ * 한도(`RATE_LIMITED`)·없는 목소리(`VOICE_NOT_AVAILABLE`)·망 오류는 기다린다고 달라지지 않거나 더
+ * 나빠지니(한도) 곧바로 실패로 보여 준다.
+ */
+export function deployWindowRetryDelayMs(code: string, retried: number): number | null {
+  if (code !== "INVALID_BODY") return null;
+  return DEPLOY_WINDOW_RETRY_DELAYS_MS[retried] ?? null;
+}
+
 /** 생성 한 번의 상한. 서버가 슬롯 겹침을 만나면 최대 세 번 만든다(한 번에 ~30초). */
 const CLIP_TIMEOUT_MS = 150_000;
 

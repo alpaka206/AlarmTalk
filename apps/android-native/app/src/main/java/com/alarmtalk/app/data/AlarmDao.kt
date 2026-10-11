@@ -117,7 +117,16 @@ interface AlarmDao {
     )
     suspend fun findAtTime(hour: Int, minute: Int, callerUserId: String?, excludeId: String? = null): AlarmEntity?
 
-    @Query("SELECT COUNT(*) FROM alarms WHERE audioCacheKey = :cacheKey")
+    /**
+     * 이 캐시 키를 참조하는 행 수. **무료 잠금 보관본**(`preLockVoiceJson`)이 붙들고 있는 원래
+     * 목소리의 오디오도 참조로 센다 — 안 세면 다른 알람을 지우거나 강등할 때 그 파일이 지워져,
+     * 재결제 때 복원한 알람이 들을 소리가 없다. `LIKE` 의 `_` 는 한 글자 와일드카드라 더
+     * 넓게만 맞는다(지우지 않는 쪽으로 틀린다).
+     */
+    @Query(
+        "SELECT COUNT(*) FROM alarms WHERE audioCacheKey = :cacheKey " +
+            "OR (preLockVoiceJson IS NOT NULL AND preLockVoiceJson LIKE '%' || :cacheKey || '%')",
+    )
     suspend fun countByAudioCacheKey(cacheKey: String): Int
 
     /**

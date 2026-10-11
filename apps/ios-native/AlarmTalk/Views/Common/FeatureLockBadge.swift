@@ -12,7 +12,7 @@ struct FeatureLockBadge: View {
     @Environment(\.voiceAlarmTheme) private var theme
     var size: CGFloat = 22
     var iconSize: CGFloat = 12
-    var accessibilityLabel: String? = "이용권 필요"
+    var accessibilityLabel: String? = String(localized: "이용권 필요")
 
     var body: some View {
         ZStack {
@@ -27,7 +27,7 @@ struct FeatureLockBadge: View {
         }
         .frame(width: size, height: size)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(accessibilityLabel ?? "이용권 필요")
+        .accessibilityLabel(accessibilityLabel ?? String(localized: "이용권 필요"))
     }
 }
 

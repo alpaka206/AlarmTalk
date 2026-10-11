@@ -1,7 +1,6 @@
 package com.alarmtalk.app.network
 
 import com.alarmtalk.app.data.CachedAlarmAudio
-import com.alarmtalk.app.data.VoiceEnergy
 import com.alarmtalk.app.data.VoiceProfileCreationDraft
 import kotlinx.coroutines.runBlocking
 import okhttp3.MediaType.Companion.toMediaType
@@ -24,46 +23,29 @@ import retrofit2.converter.gson.GsonConverterFactory
  *
  * Retrofit 인터페이스에 파트를 더해도 호출부가 값을 안 넘기면(또는 다른 이름으로 넘기면) 컴파일은
  * 통과한다 — 그래서 조립 함수(`createVoiceCloneDraft`)를 실제 Retrofit 에 태워 나가는 파트
- * 이름과 값을 본다. 서버 계약: `routes/voice-profile.ts` 의 `voiceEnergy` 폼 필드,
- * `'' | 'lively' | 'calm'`(`VoiceEnergySchema`).
+ * 이름과 값을 본다. 서버 계약: `routes/voice-profile.ts` 의 `POST /clone` 폼 필드.
  */
 class VoiceCloneRequestTest {
 
+    /**
+     * 목소리의 결(`voiceEnergy`/`voice_energy`)은 **어떤 이름으로도** 보내지 않는다(2026-09-29
+     * '목소리 느낌' 선택 제거). 서버는 필드가 없으면 전사로 추정한 말투를 쓴다 — 빈 값(`""`)을
+     * 보내도 결과는 같지만, 앱이 고르지 않는 값을 싣지 않는다.
+     */
     @Test
-    fun 자동은_빈_값으로_voiceEnergy_를_보낸다() {
-        val parts = sendClone(draft(voiceEnergy = VoiceEnergy.AUTO))
-
-        // 자동도 파트가 있어야 한다 — 서버 결과는 같지만, 조립에서 필드가 빠지는 회귀를 여기서 잡는다.
-        assertTrue("voiceEnergy 파트가 없다: ${parts.keys}", "voiceEnergy" in parts)
-        assertEquals("", parts["voiceEnergy"])
-    }
-
-    @Test
-    fun 기본값은_자동이다() {
+    fun 목소리의_결은_보내지_않는다() {
         val parts = sendClone(
-            VoiceProfileCreationDraft(
-                name = "엄마 목소리",
-                audio = audio(),
-                shared = false,
-                relationshipLabel = "",
-                listenerTitle = "",
-            ),
+            draft(relationshipLabel = "남자친구", listenerTitle = "자기", language = "ja"),
         )
 
-        assertEquals("", parts["voiceEnergy"])
+        assertFalse("voiceEnergy 파트가 나갔다: ${parts.keys}", "voiceEnergy" in parts)
+        assertFalse("voice_energy 파트가 나갔다: ${parts.keys}", "voice_energy" in parts)
     }
 
     @Test
-    fun 경쾌와_차분은_고른_값_그대로_보낸다() {
-        assertEquals("lively", sendClone(draft(voiceEnergy = VoiceEnergy.LIVELY))["voiceEnergy"])
-        assertEquals("calm", sendClone(draft(voiceEnergy = VoiceEnergy.CALM))["voiceEnergy"])
-    }
-
-    @Test
-    fun 결을_더해도_기존_필드는_그대로다() {
+    fun 채운_필드는_그대로_보낸다() {
         val parts = sendClone(
             draft(
-                voiceEnergy = VoiceEnergy.CALM,
                 relationshipLabel = "남자친구",
                 listenerTitle = "자기",
                 language = "ja",
@@ -82,7 +64,7 @@ class VoiceCloneRequestTest {
 
     @Test
     fun 비어_있는_관계_호칭은_파트를_보내지_않고_언어는_앱_로케일로_채운다() {
-        val parts = sendClone(draft(voiceEnergy = VoiceEnergy.LIVELY, language = null))
+        val parts = sendClone(draft(language = null))
 
         assertFalse("relationshipLabel" in parts)
         assertFalse("listenerTitle" in parts)
@@ -100,7 +82,6 @@ class VoiceCloneRequestTest {
     )
 
     private fun draft(
-        voiceEnergy: String,
         relationshipLabel: String = "",
         listenerTitle: String = "",
         language: String? = "ko",
@@ -111,7 +92,6 @@ class VoiceCloneRequestTest {
         relationshipLabel = relationshipLabel,
         listenerTitle = listenerTitle,
         language = language,
-        voiceEnergy = voiceEnergy,
     )
 
     /** 조립 함수를 실제 Retrofit 에 태우고, 나간 멀티파트를 `파트 이름 → 본문` 으로 돌려준다. */

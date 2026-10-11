@@ -29,7 +29,6 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.alarmtalk.app.R
 
 private enum class OssLicenseKind(val displayName: String, val rawRes: Int) {
     APACHE_2_0("Apache License 2.0", R.raw.license_apache_2_0),

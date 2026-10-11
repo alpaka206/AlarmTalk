@@ -2,13 +2,10 @@ package com.alarmtalk.app
 
 import android.app.Application
 import android.util.Log
-import androidx.compose.foundation.layout.offset
-import androidx.compose.foundation.layout.size
-import androidx.compose.material3.Text
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.alarmtalk.app.R
 import com.alarmtalk.app.billing.PlayBillingManager
 import com.alarmtalk.app.core.AlarmTalkLog
 import com.alarmtalk.app.core.AppSignals
@@ -16,40 +13,26 @@ import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import com.alarmtalk.app.data.AlarmAppContainer
 import com.alarmtalk.app.data.AlarmDraft
 import com.alarmtalk.app.data.AlarmEntity
-import com.alarmtalk.app.data.CachedAlarmAudio
 import com.alarmtalk.app.data.bundledSystemVoiceProfiles
-import com.alarmtalk.app.network.AuthTokenResponse
 import com.alarmtalk.app.network.AuthSession
 import com.alarmtalk.app.network.AuthSessionStore
 import com.alarmtalk.app.network.observeSession
 import com.alarmtalk.app.network.shouldAbsorbStoredSession
 import com.alarmtalk.app.network.BillingSubscriptionResponse
-import com.alarmtalk.app.network.CodeRegisterRequest
 import com.alarmtalk.app.network.FamilyGroupCurrentResponse
 import com.alarmtalk.app.network.FamilyVoiceProfile
 import com.alarmtalk.app.network.PersonalPromo
 import com.alarmtalk.app.network.VoiceDraftQuotaResponse
-import com.alarmtalk.app.network.LoginRequest
-import com.alarmtalk.app.network.RegisterRequest
-import com.alarmtalk.app.network.TtsGenerateRequest
-import com.alarmtalk.app.network.TtsGenerateResponse
-import com.alarmtalk.app.network.TtsMessage
-import com.alarmtalk.app.network.TtsMessageAudioResponse
 import com.alarmtalk.app.network.AlarmTalkApiClient
 import com.alarmtalk.app.network.VoiceProfile
-import com.alarmtalk.app.network.VoiceProfileUpdateRequest
 import com.alarmtalk.app.network.VoucherItem
 import com.alarmtalk.app.sync.RemoteAlarmSyncScheduler
-import java.time.Instant
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.RequestBody.Companion.toRequestBody
 import com.alarmtalk.app.data.VoiceProfileCreationDraft
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
@@ -376,7 +359,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             // 문구 포함)를 시드로 읽는다. WorkManager 요청은 세션과 무관하게 살아 있어 취소로는
             // 못 막으므로, 표를 죽이는 것과 파일을 지우는 것이 같은 잠금 안이어야 한다.
             com.alarmtalk.app.data.StockClipManifestStore.clearAndInvalidate(getApplication())
-            stockClipManifestFetched = false
+            // '이번 세션에 받았는가' 는 따로 내리지 않는다 — 조회의 주인이 계정 + 세션 세대라,
+            // 세대가 오르면 다음 세션은 저절로 '아직 안 받음' 이다(`stockClipManifestFlights`).
             // 저장소는 위 임계구역에서 이미 비웠다. 여기서 다시 불러도 무해하고(clear 는 멱등,
             // 임자 표시도 보존된다), 화면 상태(authSession·유저 스코프 캐시)를 마저 정리해야 한다.
             clearSessionKeepingAlarms()
@@ -484,6 +468,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var passwordResetCodeSentTo by mutableStateOf<String?>(null)
         internal set
 
+    /**
+     * **인증 코드 칸을 비우라는 신호** — 값이 바뀔 때마다 가입·비밀번호 재설정 화면이 코드 칸을 비운다
+     * (`AuthScreen`·`PasswordResetScreen` 의 `codeFieldClearTick`). 규칙은 스펙 session-and-auth
+     * 「거절된 숫자를 칸에 남기지 않는다」.
+     *
+     * 올리는 때는 둘이다: 서버가 **코드를 거절했을 때**(`isEmailCodeRefusal` — 틀림·만료·시도 상한)와
+     * **다시 받기가 성공했을 때**. 칸이 비면 확인 버튼이 눌리지 않아 방금 거절된 숫자를 그대로 다시
+     * 보낼 수 없고(2026-10-09 prod — 같은 여섯 자리를 3초에 다섯 번 보내 시도 상한을 태웠다), 꽉 찬
+     * 칸에 새 코드가 한 글자도 안 들어가는 일도 없다.
+     *
+     * ⚠ **오류 문장([registerError])에 얹지 말 것.** 그 상태는 쓰는 곳이 여럿이라(요청·확인·가입·
+     * 화면 전환) 함께 지워지지 않고, 화면이 번역된 문장을 비교해 갈래를 가르게 된다. 판정은 코드로
+     * 하고, 화면에는 이 신호 하나만 준다. iOS `AuthViewModel.emailCodeFieldClearTick` 과 짝이다.
+     */
+    var emailCodeFieldClearTick by mutableIntStateOf(0)
+        internal set
+
     // 가입 시도 이메일이 이미 가입돼 있을 때(AUTH_EMAIL_TAKEN) 로그인 화면으로 전환하라는 신호.
     var authRedirectToLogin by mutableStateOf(false)
         internal set
@@ -547,8 +548,39 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         internal set
 
     // 이번 달 목소리 초안 생성 쿼터(삭제 전 '이번 달 재생성 가능 여부' 판정용). null=미조회.
+    // ⚠ 한 번 읽은 값을 프로세스가 끝날 때까지 들고 있지 않는다 — 언제 다시 읽는지는
+    // `loadVoiceDraftQuota`(스펙 voice-and-message §4-1 「월 등록 한도」 ②).
     var voiceDraftQuota by mutableStateOf<VoiceDraftQuotaResponse?>(null)
         internal set
+
+    /**
+     * [voiceDraftQuota] 를 묻는 요청의 번호 — 요청을 낼 때마다 오른다(`nextVoiceDraftQuotaRequest`). 답은 그 번호가
+     * **아직 가장 나중 것일 때만** 싣는다(`applyVoiceDraftQuota`). 메인 스레드에서만 읽고 쓴다.
+     *
+     * ⚠ 읽는 자리가 여럿이라(목록·탭 진입·초안 생성·확정·월 한도 거절) 답이 낸 순서대로 오지 않는다. 늦게 온 **옛 답**이
+     * 새 답을 덮으면 확정 직후의 `0/1` 위에 그 전의 `1/1` 이 다시 앉는다 — `추가` 가 다시 눌리고 삭제 경고가 빠진다
+     * (2026-10-10 의 그 숫자다). 계정·세션이 같은지만 보는 가드(`responseStillBelongsToRequester`)로는 못 막는다.
+     * 되감지 않는다(계정이 바뀌어도) — 되감으면 떠 있던 옛 요청의 번호가 새 요청의 번호와 같아질 수 있다.
+     */
+    internal var voiceDraftQuotaRequestSeq = 0L
+
+    /**
+     * 등록 창(목소리 탭의 전체 화면 `Dialog`)이 **지금 그려져 있는가**(열기로 했는가가 아니다 — 패널의
+     * `registrationWindowShown`). 패널이 알린다(`voiceRegistrationWindowChanged`). 등록 흐름의 거절을 어디에 말할지
+     * 가르는 데만 쓴다(`registrationFailureSurface`) — 화면을 그리는 값이 아니라 관찰 상태로 두지 않는다.
+     */
+    internal var voiceRegistrationWindowOpen = false
+
+    /**
+     * 등록 창이 **자기 안에** 그려야 할 거절(등록·저장·다시 만들기의 실패). 창이 읽으면 비운다
+     * (`consumeVoiceRegistrationFailure`).
+     *
+     * ⚠ **등록 창이 열려 있는 동안의 거절을 [message](앱 스낵바)로 보내지 말 것.** 그 창은 화면을 다
+     * 덮는 자기 창이라 스낵바는 그 뒤에 그려진다 — 2026-10-10 prod 의 사용자는 같은 저장을 일곱 번
+     * 눌렀다. 반대로 창이 닫힌 뒤에 온 실패(나가기 경고의 초안 삭제)는 스낵바로 간다 — 창 안의
+     * 줄에만 쓰면 어디에도 안 보인다. 가르는 규칙은 `registrationFailureSurface` 하나다.
+     */
+    internal var voiceRegistrationFailure by mutableStateOf<VoiceRegistrationFailure?>(null)
 
     var voiceProfileBusy by mutableStateOf(false)
         internal set
@@ -580,22 +612,52 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         internal set
 
     /**
-     * 이번 실행에서 서버 매니페스트를 받았는가. **디스크 시드와 구분하기 위한 값이다** —
-     * `stockClips.isEmpty()` 로 판정하면 디스크에서 채운 순간 재조회가 막혀, 운영이 추가한
-     * 프리셋이 영영 안 들어온다(`StockClipManifestStore` 주석).
+     * 매니페스트 조회를 **한 번에 하나**로 묶는다(`ensureStockClipManifest`, 효율 감사 M1).
+     *
+     * '이번 세션에 서버에서 받았는가' 도 여기서 판정한다([ManifestNeed.SESSION]) — **디스크
+     * 시드와 구분하기 위해서다.** `stockClips.isEmpty()` 로 판정하면 디스크에서 채운 순간
+     * 재조회가 막혀, 운영이 추가한 프리셋이 영영 안 들어온다(`StockClipManifestStore` 주석).
+     * 주인이 계정 + 세션 세대라 로그아웃·계정 전환 뒤에는 저절로 '아직 안 받음' 이 된다.
+     *
+     * ⚠ 요청들이 **차례로** 뜨므로 늦게 도착한 앞선 응답이 새 매니페스트를 덮지 못한다(예전의
+     * `stockClipManifestRevision` 이 하던 일, Codex #703 P1). 디스크 쪽 순서는 여전히 표가 지킨다.
      */
-    internal var stockClipManifestFetched = false
+    internal val stockClipManifestFlights = StockClipManifestFlights<com.alarmtalk.app.network.SessionEffectKey>(
+        scope = viewModelScope,
+        clock = { android.os.SystemClock.elapsedRealtime() },
+        // 신선도를 센 뒤 워커의 더 새 표가 쓰기에 실패했으면 다시 받는다(Codex #825).
+        lastSeenPublished = { com.alarmtalk.app.data.StockClipManifestStore.latestPublishedTicket() != null },
+    )
+
+    /** 메모리에 매니페스트를 실은 횟수. 디스크 시드가 그사이 실린 서버 응답을 덮지 않게 본다. */
+    internal var stockClipManifestApplyCount: Int = 0
 
     /**
-     * 매니페스트 조회의 **세대**. 늦게 도착한 앞선 응답이 새 매니페스트를 덮는 것을 막는다.
-     *
-     * ⚠ 이 값이 없으면 권위 자체가 뒤로 간다(Codex #703 P1). `loadStockClips` 는
-     * `viewModelScope.launch` 라 겹칠 수 있는데, 교체 **전에** 시작한 요청이 나중에 끝나면
-     * `stockClips` 와 디스크 매니페스트를 옛 것으로 되돌린다. 그러면 캐시 쓰기 경로의
-     * '지나간 응답인가' 대조가 **되살아난 옛 주소**를 기준으로 삼아, 서버의 현재 음원을
-     * 지나간 것으로 판정해 회수된 목소리를 그대로 남긴다.
+     * 메모리에 실린 공개본의 표(0 = 디스크 시드이거나 아직 없음). 메모리는 이 표보다 **앞선 것으로
+     * 되돌아가지 않는다**(`applyStockClipManifest`, Codex #825).
      */
-    internal var stockClipManifestRevision: Int = 0
+    internal var stockClipManifestAppliedTicket: Long = 0L
+
+    /** 디스크 시드(메인 밖에서 읽는다). 비어 있을 때 연달아 불려도 한 번만 읽는다. */
+    internal var stockClipSeedJob: kotlinx.coroutines.Job? = null
+
+    /** 제자리 교체로 낡은 클립 다시 받기. 새 매니페스트가 공개되면 앞 회차를 끊고 새로 돈다. */
+    internal var replacedClipRepairJob: kotlinx.coroutines.Job? = null
+
+    /** 목소리별 클립 받기 — 드라이브와 목소리 탭이 나눠 쓴다(`cacheVoiceClips`). */
+    internal val voiceClipDownloads = VoiceClipDownloads()
+
+    init {
+        // ⚠ **메모리는 디스크의 공개본을 따라간다 — 누가 공개했든**(Codex #825). 프리페치·접근권 워커는
+        // 매니페스트를 따로 받아 공개하지만(의도) 뷰모델 메모리는 모른다. 따라가지 않으면 전경이 자기
+        // 응답을 실은 직후 워커가 더 새 것을 공개해도 준비도·클론 다운로드가 교체 이전 목록을 읽는다.
+        // `Dispatchers.Main`(즉시 아님)이라 생성이 끝난 뒤에 돈다 — 아래에 선언된 상태를 건드리므로.
+        viewModelScope.launch(Dispatchers.Main) {
+            com.alarmtalk.app.data.StockClipManifestStore.publishedTickets.collect { ticket ->
+                if (ticket > stockClipManifestAppliedTicket) followPublishedStockClips()
+            }
+        }
+    }
 
     var socialBusy by mutableStateOf(false)
         internal set
@@ -609,6 +671,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // 이 신선 로드 + voiceProfiles 로드가 모두 확보됐을 때만 수행한다(reconcileInaccessibleVoiceAlarms).
     internal var familyVoicesLoadedFresh: Boolean = false
         internal set
+
+    /**
+     * 지금 [familyVoices] 가 **이 세션에 서버에서 한 번이라도 받은 목록**인가. [familyVoicesLoadedFresh]
+     * 와 다르다 — 그쪽은 조회를 시작할 때마다 내려가고 실패하면 내려간 채지만, 목록 자체는 앞서
+     * 받은 서버 목록 그대로 남는다(`refreshSocialData`). 공유 목록이 바뀌었을 때 매니페스트를
+     * **신호 뒤** 로 받을지(서버에서 바뀌었다) **창** 으로 받을지(세션 첫 목록 — 이제 안 것)를 이걸로
+     * 가른다(Codex #825). 세션이 끝날 때만 내린다. ⚠ [familyVoices] 를 서버 목록으로 바꾸는 곳은
+     * **전부** 이걸 세운다(`refreshSocialData`, 목소리 공유 토글의 목록 갱신).
+     */
+    internal var familyVoicesFromServer: Boolean = false
 
     // 내 음성 목록이 API 로 '성공적으로' 로드됐는지(빈 목록도 유효한 신선 로드로 취급). voiceProfiles.isEmpty()
     // 를 '미로드'로 쓰면 마지막 목소리를 삭제·접근상실한 사용자의 알람 강등이 스킵되므로 별도 플래그로 추적(PR #536 P2).
@@ -806,7 +878,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         internal set
 
     private val defaultVoiceStore = com.alarmtalk.app.data.DefaultVoicePreferenceStore(application)
-    private val dynamicPromptStore = com.alarmtalk.app.data.DynamicPromptPreferenceStore(application)
+    internal val dynamicPromptStore = com.alarmtalk.app.data.DynamicPromptPreferenceStore(application)
+
+    /** 계정 설정(지역·사주) 올리기를 한 번에 하나씩 — `updateDynamicPromptSettings`. */
+    internal val promptSettingsUploads = com.alarmtalk.app.data.PromptSettingsUploadQueue()
+
+    /**
+     * 계정 설정 올리기가 **끝났을 때** 이미 떠 있던 계정 요청의 마지막 순번. 그 이하의 `/auth/me` 응답은 올리기 전의
+     * 설정을 읽었을 수 있어 설정만은 지금 세션의 값을 지킨다(`accountAnswerSettings`, Codex #837).
+     */
+    internal var promptSettingsAnswerFence: Long = 0L
+
+    /** 공휴일 국가(앱 전역). 값은 계정 지역의 나라를 따른다 — `onAccountPromptSettingsReceived`. */
+    internal val holidayCountryStore = com.alarmtalk.app.data.HolidayCountryPreferenceStore(application)
 
     // 첫 로그인 "목소리 고르기" 스텝 표시 여부. 기본 목소리를 아직 안 고른 사용자에게만 1회.
     var showVoiceSetup by mutableStateOf(false)
@@ -919,7 +1003,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     internal var pendingSensitiveConsent by mutableStateOf<SensitiveConsentRequest?>(null)
 
     /**
-     * 기간 한정 개인 플랜의 **진입별 장부** — 계정 응답의 진입·순번, 종료 안내, 이용권 화면 한 줄.
+     * 기간 한정 개인 플랜의 **진입별 장부** — 계정 응답의 진입·순번, 종료 안내, 이용권 화면의 프로모 문구.
      * 규칙은 전부 [PersonalPromoLedger] 에 있고 아래 멤버는 그 위임이다(뷰모델을 단위 테스트에서
      * 세울 수 없어 규칙을 떼어 두었다 — `PersonalPromoLedgerTest`).
      */
@@ -1024,7 +1108,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /**
-     * 이용권 화면 한 줄의 프로모 — 계정 응답과 구독 응답 중 **나중에 받은 답**의 것
+     * 이용권 화면에 보일 프로모 — 계정 응답과 구독 응답 중 **나중에 받은 답**의 것
      * ([PersonalPromoLedger.planScreenPromo]). 방금 결제·쿠폰 등록으로 새 계정 응답에 promo 가
      * 없으면, 결제 전에 캐시된 구독 응답의 promo 가 대신 보이지 않는다.
      */
@@ -1134,6 +1218,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         internal set
     var updateStoreUrl by mutableStateOf("")
         internal set
+    /**
+     * 서버가 알려 준 날씨 원천 토큰 — `GET /api/app/version` 의 `weather_attribution`. 지역 시트가 출처 줄을
+     * 그릴지 이 값으로 정한다(`showsWeatherAttribution`) — 앱이 원천을 스스로 단정하지 않는다.
+     * 저장하지 않고 새로 묻지도 않는다: [checkAppVersion] 이 받아 온 값을 이 뷰모델이 사는 동안만 들고,
+     * 확인이 실패하면 null(숨김)로 되돌린다. 화면에는 `MainActivity` 가 `LocalWeatherAttribution` 으로 내려 준다.
+     */
+    var weatherAttribution by mutableStateOf<String?>(null)
+        internal set
     // FLEXIBLE In-App Update 다운로드가 끝나면 InAppUpdateManager 가 true 로 세팅 →
     // AlarmTalkApp 이 '재시작' 스낵바를 띄우고, 액션 시 completeUpdate() 를 호출한다.
     var flexibleUpdateDownloaded by mutableStateOf(false)
@@ -1187,16 +1279,30 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      * 차단 화면이 돌아와 사용자의 선택이 무시된다. 다운로드는 어차피 워커가 계속하고,
      * 그래도 비어 있으면 알람 편집기가 쓰려는 순간 받아 온다.
      *
-     * hasChosen(기본 목소리 저장)은 보지 않는다 — 이 브랜치에서 그 값의 뜻이 '마지막에 쓴
+     * 저장된 목소리 값(`defaultVoiceStore.read`)은 보지 않는다 — 그 값의 뜻이 '마지막에 쓴
      * 목소리'로 바뀌어 다운로드 완료 여부와 무관해졌다.
+     *
+     * ⚠ **파일은 메인 밖에서 센다**([voiceSetupProbe] — 2026-10-10 Sentry 조사). 그래서 `suspend` 다 —
+     * 부르는 쪽(`AlarmTalkApp` 의 세션 효과)이 **이 답을 받은 뒤에** 계정·동의 조회를 띄운다. 1회성
+     * 오버레이(첫 권한 안내·강등 안내·개인 플랜 종료 안내)는 그 두 응답을 기다리므로, [showVoiceSetup] 의
+     * 응답 전 기본값 `false` 를 '받기 화면 없음' 으로 읽는 틈이 생기지 않는다
+     * (`docs/spec/gates-and-overlays.md` — 응답 전 기본값은 '아니오' 가 아니다).
+     * 세는 사이 계정이 바뀌었으면 옛 계정의 답이라 적지 않는다.
      */
-    fun checkVoiceSetupFor(userId: String) {
+    suspend fun checkVoiceSetupFor(userId: String) {
         if (userId.isBlank()) return
         lastUsedVoiceId = defaultVoiceStore.read(userId)
-        val cachedStockClips = com.alarmtalk.app.data.AlarmAudioStore(getApplication())
-            .cachedStockClipCount()
-        showVoiceSetup = cachedStockClips == 0 && !defaultVoiceStore.hasSkipped(userId)
+        val needsSetup = voiceSetupProbe.needsSetup(skipped = defaultVoiceStore.hasSkipped(userId))
+        if (authSession?.user?.id != userId) return
+        showVoiceSetup = needsSetup
     }
+
+    /** 받기 화면 판정의 파일 세기 — 메인 밖에서([VoiceSetupProbe]). */
+    private val voiceSetupProbe = VoiceSetupProbe(
+        countCachedStockClips = {
+            com.alarmtalk.app.data.AlarmAudioStore(getApplication()).cachedStockClipCount()
+        },
+    )
 
     /**
      * 부족한 기본 목소리 클립을 채운다. 화면을 띄우든 말든 항상 부른다
@@ -1225,10 +1331,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      * 워커는 받을 게 없거나(매니페스트 비어 있음) 세션이 없으면 한 개도 받지 않고도
      * 성공을 낸다. 그걸 사용자의 선택으로 기록하면, 클립이 0개인데 준비 화면이 영영
      * 다시 뜨지 않게 된다. 그래서 '실제로 파일이 생겼는가'로만 닫는다.
+     *
+     * 파일은 메인 밖에서 센다([voiceSetupProbe]) — 부르는 효과가 화면과 함께 사라지면 답도 버려진다.
      */
-    fun completeVoiceSetupIfDownloaded() {
-        val cached = com.alarmtalk.app.data.AlarmAudioStore(getApplication()).cachedStockClipCount()
-        if (cached > 0) showVoiceSetup = false
+    suspend fun completeVoiceSetupIfDownloaded() {
+        if (voiceSetupProbe.anyDownloaded()) showVoiceSetup = false
     }
 
     /**
@@ -1406,7 +1513,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 .also { snapshot -> persisted = snapshot }
         }
         // 부르는 쪽은 문을 통과하면 곧바로 화면 사본(`subscriptionResponse`)을 이 응답으로 바꾼다 —
-        // 이용권 화면 한 줄이 '나중에 받은 답' 을 고를 수 있게 순서를 적는다(문을 지난 응답만 —
+        // 이용권 화면의 프로모 문구가 '나중에 받은 답' 을 고를 수 있게 순서를 적는다(문을 지난 응답만 —
         // 장부가 결과를 보고 가른다).
         personalPromoLedger.recordBillingAnswer(result)
         if (result == EntitlementWrite.Applied && response?.userPlan != null) {
@@ -1458,6 +1565,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         pendingPrefetchVoiceId = null
         prerenderDriveJob?.cancel()
         prerenderDriveJob = null
+        // 앞 계정의 매니페스트 시드·낡은 클립 다시 받기도 끊는다(다음 계정이 새로 돌린다).
+        stockClipSeedJob?.cancel()
+        stockClipSeedJob = null
+        replacedClipRepairJob?.cancel()
+        replacedClipRepairJob = null
         shareToggleJobs.values.forEach { it.cancel() }
         shareToggleJobs.clear()
         shareToggleDesired.clear()
@@ -1465,6 +1577,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         voiceProfiles = bundledSystemVoiceProfiles()
         pendingVoiceDraft = null
         voiceDraftQuota = null
+        // 앞 계정의 등록 거절이 다음 계정의 등록 창에 뜨지 않게 한다.
+        voiceRegistrationFailure = null
         voiceProfileLoadFinished = false
         voiceProfilesLoadedFresh = false
         showVoiceSetup = false
@@ -1474,6 +1588,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         // 공유 목소리 신선-로드 플래그도 함께 초기화 — 안 그러면 다음 세션에서 fetchVoiceProfiles 가
         // refreshSocial 전에 강등 판단해, 공유 목소리 쓰는 알람이 오강등될 수 있다(PR #536 P2).
         familyVoicesLoadedFresh = false
+        familyVoicesFromServer = false
         subscriptionResponse = null
         // ⚠ **스토어 신호는 계정 것이다.** 안 지우면 유료 A 가 로그아웃한 뒤 무료 B 가
         // 로그인했을 때(액티비티 재생성 없이) B 가 A 의 등급을 물려받아 모든 게이트를 통과한다.
@@ -1567,9 +1682,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             authSessionStore.observeSession().collect(::absorbStoredSession)
         }
         RemoteAlarmSyncScheduler.ensurePeriodic(application)
-        if (authSession != null) {
-            RemoteAlarmSyncScheduler.runOnce(application)
-        }
+        // ⚠ **여기서 즉시 pull(`RemoteAlarmSyncScheduler.runOnce`)을 걸지 않는다**(효율 감사).
+        //   뷰모델은 `MainActivity.onCreate` 에서 만들어지고, 곧이어 오는 프로세스 `ON_START`
+        //   (`AlarmTalkApplication` 의 `runOnceThrottled`)가 같은 유니크 작업을 `REPLACE` 로 다시
+        //   건다 — 여기서 건 것은 돌기도 전에 취소되고 요청만 한 번 더 나갔다. 그 `ON_START` 가
+        //   스로틀(60초)에 걸리거나 오지 않는 경우(다른 액티비티가 이미 떠 있던 프로세스)도 알람
+        //   탭 진입의 `syncNow` 가 push·pull 을 한다.
         viewModelScope.launch {
             runCatching {
                 repository.reschedulePendingAlarms()
@@ -1577,6 +1695,39 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 Log.i(TAG, "Startup alarm sync complete scheduled=$scheduled")
             }.onFailure { error ->
                 AlarmTalkLog.reportError("Startup alarm sync failed", error)
+            }
+        }
+        // 공휴일 국가가 바뀌면 '공휴일엔 끄기' 알람을 새 달력으로 다시 잡는다
+        // (`AlarmRepository.refreshHolidayOffAlarms`). 국가를 적는 자리는 셋(설정 '지역'·편집기
+        // 문구 화면·계정 설정 수신)인데, 호출부마다 붙이면 하나가 빠진다 — 값의 흐름 한 곳에서 본다.
+        // ⚠ **첫 값도 받는다.** 앱을 켤 때마다 한 번 돈다: 지난 실행에서 국가만 바뀌고 다시 잡기
+        // 전에 프로세스가 죽었거나, KR 밖 나라의 공휴일 캐시가 비어 있어도(받는 길이 이것뿐이다)
+        // 여기서 메운다. 멱등이라 바뀐 게 없으면 행을 쓰지 않는다.
+        // ⚠ **그 나라의 달력을 못 받았으면 앱에 들어올 때마다 다시 본다**(Codex #837). 오프라인에서 JP·US 로
+        // 바뀌면 빈 달력으로 잡히는데(안전한 쪽 — 공휴일에 울릴 뿐), 나라 값은 다시 흐르지 않으므로 진입
+        // 번호(`AppSignals.appEntries`)도 축에 둔다. 받은 뒤로는 같은 나라에서 다시 돌지 않는다.
+        // ⚠ **계정도 축이다**(Codex #837). 다시 잡기는 지금 계정의 알람만 보므로, 나라만 보면 한 기기의 앞 계정이
+        // 같은 나라로 이미 잡아 둔 뒤 들어온 계정의 알람은 옛 달력의 날짜로 남는다(iOS 표지도 계정을 싣는다 —
+        // `HolidayOffRescheduler.ownerScopedMarker`).
+        viewModelScope.launch {
+            var calendarReadyFor: Pair<String, String?>? = null
+            kotlinx.coroutines.flow.combine(
+                holidayCountryStore.countryCode,
+                com.alarmtalk.app.core.AppSignals.appEntries,
+                androidx.compose.runtime.snapshotFlow { authSession?.user?.id },
+            ) { country, _, owner -> country to owner }.collect { calendar ->
+                val (country, _) = calendar
+                if (calendar == calendarReadyFor) return@collect
+                runCatching { repository.refreshHolidayOffAlarms() }
+                    .onSuccess { result ->
+                        calendarReadyFor = calendar.takeIf { result.calendarReady }
+                        Log.i(
+                            TAG,
+                            "Holiday calendar applied country=$country scheduled=${result.scheduled} " +
+                                "ready=${result.calendarReady}",
+                        )
+                    }
+                    .onFailure { error -> AlarmTalkLog.reportError("Holiday calendar refresh failed", error) }
             }
         }
         // 결제 직후 앱 종료 등으로 서버 검증이 누락된 Play 구매를 앱 시작 시 재전송.
@@ -1603,9 +1754,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         // 기간 한정 개인 플랜 종료 안내는 **그 진입의 새 응답**이 온 뒤에만 판정한다
         // (`docs/spec/gates-and-overlays.md` 「개인 플랜 종료 안내」) — 복귀할 때 받지 않으면
         // 지난 실행의 프로모로 판정해, 그 사이 결제한 사람에게도 "곧 끝나요" 를 띄운다.
-        // ⚠ 토큰은 **이 뷰모델의 첫 갱신에서만** 굴린다(예전 콜드 스타트 한 번과 같다). 복귀할
-        //   때마다 굴리면 토큰을 키로 쓰는 효과가 전부 다시 돌아 앱 전체를 다시 불러온다
-        //   (`refreshAppSessionNow` 의 `rollToken`).
+        // ⚠ 토큰은 **이 뷰모델의 첫 갱신에서만** 굴린다(예전 콜드 스타트 한 번과 같다 —
+        //   `docs/spec/session-and-auth.md` 「앱 오픈 갱신」). 복귀할 때마다 굴려도 얻는 것이 없다
+        //   (`refreshAppSessionNow` 의 `rollToken`). 굴러간 토큰이 화면 효과를 다시 부르지 않는
+        //   것은 효과의 키가 토큰이 아니라서다(`SessionEffectKey`).
         viewModelScope.launch {
             var firstEntryRefresh = true
             AppSignals.appEntries.collect { entry ->
@@ -1633,4 +1785,16 @@ data class PrerenderDriveState(
     val generated: Int,
     val total: Int,
     val downloading: Boolean,
-)
+) {
+    /**
+     * 생성 0~50%, 다운로드 50~100% 로 이어 붙인 **하나의 진행률**(0~1). 전체 개수를 아직 모르면 null.
+     *
+     * 등록 마지막 단계와 목소리 목록의 행이 **이 값 하나**를 쓴다(스펙 「진행률은 하나다」) —
+     * 드라이브가 도는 동안 목록은 따로 폴링하지 않는다(효율 감사 M4).
+     */
+    fun overallFraction(): Float? {
+        if (total <= 0) return null
+        val frac = (generated.toFloat() / total.toFloat()).coerceIn(0f, 1f)
+        return if (downloading) 0.5f + frac * 0.5f else frac * 0.5f
+    }
+}

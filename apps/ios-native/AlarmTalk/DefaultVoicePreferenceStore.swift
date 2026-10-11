@@ -24,9 +24,9 @@ struct DefaultVoicePreferenceStore {
 
     /// 마지막으로 **알람에 실제로 저장한** 목소리 id.
     ///
-    /// ⚠ `default_voice_<uid>` 와 **절대 섞지 않는다.** 그 키는 온보딩 완료 판정
-    /// (`hasChosen` → `hasCompletedSetup` → `RootView`)에 쓰이므로, 알람 저장이 그걸
-    /// 덮으면 온보딩을 건너뛴 사용자가 갑자기 '완료' 로 바뀐다.
+    /// ⚠ `default_voice_<uid>`(온보딩에서 고른 기본 목소리)와 **절대 섞지 않는다.** 뜻이 다른
+    /// 두 값이다 — 알람 저장이 그 키를 덮으면 고른 적 없는 '기본 목소리' 가 생긴다.
+    /// (온보딩 완료 판정은 이제 이 키를 보지 않는다 — `RootView.refreshOnboardingCompletion`.)
     ///
     /// 규약(`CLAUDE.md` 「알람 편집기 기본값 = 직전 선택 유지」):
     ///  - 기록은 **알람 저장 성공 시에만**. 편집기에서 눌러만 보고 취소한 건 기억하지 않는다.
@@ -40,7 +40,7 @@ struct DefaultVoicePreferenceStore {
 
     func setLastUsedVoiceId(userID: String?, voiceId: String?) {
         guard let key = lastUsedVoiceKey(userID) else { return }
-        if let voiceId = voiceId?.trimmingCharacters(in: .whitespacesAndNewlines), !voiceId.isEmpty {
+        if let voiceId = voiceId.nilIfBlank {
             defaults.set(voiceId, forKey: key)
         } else {
             defaults.removeObject(forKey: key)
@@ -56,7 +56,7 @@ struct DefaultVoicePreferenceStore {
     /// 기본 목소리 선택을 저장한다. voiceId 가 비면 선택을 지운다.
     func setDefaultVoiceId(userID: String?, voiceId: String?) {
         guard let key = voiceKey(userID) else { return }
-        if let voiceId = voiceId?.trimmingCharacters(in: .whitespacesAndNewlines), !voiceId.isEmpty {
+        if let voiceId = voiceId.nilIfBlank {
             defaults.set(voiceId, forKey: key)
             if let skippedKey = skippedKey(userID) {
                 defaults.removeObject(forKey: skippedKey)
@@ -64,15 +64,6 @@ struct DefaultVoicePreferenceStore {
         } else {
             defaults.removeObject(forKey: key)
         }
-    }
-
-    /// 사용자가 기본 목소리를 한 번이라도 골랐는지(온보딩 목소리 스텝 완료 판정).
-    func hasChosen(userID: String?) -> Bool {
-        defaultVoiceId(userID: userID) != nil
-    }
-
-    func hasCompletedSetup(userID: String?) -> Bool {
-        hasChosen(userID: userID) || hasSkipped(userID: userID)
     }
 
     func markSkipped(userID: String?) {
@@ -125,10 +116,5 @@ struct DefaultVoicePreferenceStore {
         return "default_voice_setup_skipped_\(id)"
     }
 
-    private func normalized(_ userID: String?) -> String? {
-        guard let id = userID?.trimmingCharacters(in: .whitespacesAndNewlines), !id.isEmpty else {
-            return nil
-        }
-        return id
-    }
+    private func normalized(_ userID: String?) -> String? { userID.nilIfBlank }
 }

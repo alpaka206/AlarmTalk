@@ -280,6 +280,77 @@ final class RemoteAlarmMapperTests: XCTestCase {
         XCTAssertNil(req.voiceProfileId)
     }
 
+    /// 서버에 실제로 나가는 본문 — 앱과 같은 인코더(`convertToSnakeCase`).
+    private func sentBody(_ local: LocalAlarmRecord) throws -> [String: Any] {
+        let data = try AlarmTalkAPI.makeJSONEncoder().encode(RemoteAlarmMapper.toRemoteRequest(local))
+        return try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+    }
+
+    /// 무료 잠금이 오디오 없이 기본 목소리로 바꾼 알람(Codex #820). 서버 `PATCH /alarm` 은 빠진 필드를
+    /// 그대로 두므로 비어 있는 문구·테마를 **null 로 실어야** 클론의 `message_id`·`bucket_id` 가 기본
+    /// 목소리 옆에 남지 않는다. 안드로이드 `RemoteAlarmMapperTest` 짝.
+    func test_toRemoteRequest_audiolessDefaultVoiceLock_clearsServerMessageAndTheme() throws {
+        let now = Int64(Date().timeIntervalSince1970 * 1000)
+        var clone = LocalAlarmRecord(
+            label: "locked",
+            hour: 8,
+            minute: 10,
+            fireAtMillis: now + 60_000,
+            playMode: AlarmPlayMode.voiceOnly.rawValue,
+            voiceSource: VoiceSource.ttsProfile.rawValue,
+            voiceProfileId: "clone-a",
+            ttsMessageId: "clone-greeting",
+            createdAtMillis: now,
+            updatedAtMillis: now
+        )
+        clone.bucketId = "greeting"
+        var locked = clone
+        locked.preLockVoice = LockedPaidVoice(of: clone)
+        locked.voiceProfileId = bundledSystemVoiceProfiles()[0].id
+        locked.ttsMessageId = nil
+        locked.bucketId = nil
+
+        let body = try sentBody(locked)
+
+        XCTAssertTrue(body["message_id"] is NSNull, "\(body)")
+        XCTAssertTrue(body["bucket_id"] is NSNull, "\(body)")
+        XCTAssertEqual(body["voice_profile_id"] as? String, bundledSystemVoiceProfiles()[0].id)
+        // 나머지 빈 값은 예전처럼 빠진다 — 지우는 것은 이 두 키뿐이다.
+        XCTAssertNil(body["target_user_id"])
+        XCTAssertNil(body["clears_missing_voice_references"], "본문에 실리지 않는 표시")
+
+        // 잠금이 아닌 알람은 예전처럼 빈 값을 서버에 맡긴다.
+        let plain = try sentBody(clone.withMessage(nil))
+        XCTAssertNil(plain["message_id"])
+        XCTAssertEqual(plain["bucket_id"] as? String, "greeting")
+        XCTAssertEqual(plain["repeat_days"] as? [Int], [])
+    }
+
+    /// 잠금이 **확정**됐거나 목소리를 잃어 **미나**로 바꾼 알람에는 보관본이 없다 — 보관본으로만 가리면
+    /// 그 알람의 켜기·끄기가 기본 목소리 id 만 올려 클론의 `greeting` 테마 옆에 앉히고, 서버는 토글마다
+    /// `INVALID_BUCKET_ID` 로 거절한다. 기본 목소리 알람이면 빈 문구·테마를 지운다. 안드로이드
+    /// `RemoteAlarmMapperTest.aDefaultVoiceAlarmWithoutASnapshotStillClearsTheServersMessageAndTheme` 짝.
+    func test_toRemoteRequest_defaultVoiceAlarmWithoutSnapshot_clearsServerMessageAndTheme() throws {
+        let now = Int64(Date().timeIntervalSince1970 * 1000)
+        let converted = LocalAlarmRecord(
+            label: "converted",
+            hour: 8,
+            minute: 10,
+            fireAtMillis: now + 60_000,
+            playMode: AlarmPlayMode.voiceOnly.rawValue,
+            voiceSource: VoiceSource.ttsProfile.rawValue,
+            voiceProfileId: substituteSystemVoiceID,
+            createdAtMillis: now,
+            updatedAtMillis: now
+        )
+
+        let body = try sentBody(converted)
+
+        XCTAssertTrue(body["message_id"] is NSNull, "\(body)")
+        XCTAssertTrue(body["bucket_id"] is NSNull, "\(body)")
+        XCTAssertEqual(body["voice_profile_id"] as? String, substituteSystemVoiceID)
+    }
+
     // MARK: - toLocalRecord
 
     func test_toLocalRecord_receivedRemote_setsExpectedFields() throws {
@@ -394,5 +465,13 @@ final class RemoteAlarmMapperTests: XCTestCase {
             isFamilyAlarm: false,
             isReceivedFamilyAlarm: true
         )
+    }
+}
+
+private extension LocalAlarmRecord {
+    func withMessage(_ id: String?) -> LocalAlarmRecord {
+        var copy = self
+        copy.ttsMessageId = id
+        return copy
     }
 }
