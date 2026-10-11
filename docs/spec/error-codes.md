@@ -81,14 +81,19 @@
 
 - ⚠ **`IOException` 전체가 아니다.** 파일 없음·디스크 가득참은 결함일 수 있어 그대로 올린다.
   iOS 도 `.badServerResponse`·`.cannotParseResponse` 는 뺀다.
-- ⚠ **HTTP 4xx 는 여기서 가르지 않는다.** `errorBody` 는 한 번만 읽히므로 호출부가 코드를
-  보는 자리에서 결정한다 — 로그인 직후 동의 전 `403 CONSENT_REQUIRED` 는 재시도 대상이
+- ⚠ **HTTP 4xx 를 여기서 낮추지 않는다.** 그 4xx 가 무엇을 뜻하는지는 문맥을 아는 호출부가
+  코드를 보는 자리에서 결정한다 — 로그인 직후 동의 전 `403 CONSENT_REQUIRED` 는 재시도 대상이
   아니라 **동의를 마쳐야 풀리는 상태**라, 백그라운드 워커는 성공으로 끝내고 다음 전경
   진입·주기가 다시 끌어온다(`sync/SyncWorkerFailure.kt`, iOS 는 `RemoteAlarmSyncViewModel`).
   정확히 그 코드만이다 — `CONSENT_STATE_UNAVAILABLE`·`ACCOUNT_PENDING_DELETION` 은 파손이다.
-- ⚠ **예외는 401 하나이고, 그것도 본문이 아니라 상태코드로 가른다.** `apiError`·`apiErrorCode`
-  를 부르면 `errorBody` 를 소진해 **호출부가 읽을 몫을 빼앗는다** — `HttpException.code()` 만
-  본다. 401 은 코드를 볼 필요도 없다: `TOKEN_REVOKED` 든 만료든 결말이 하나(세션 정리)다.
+  (보고 함수도 이제 코드를 **읽는다** — 낮추려는 것이 아니라 묶으려는 것이다. 아래 「앱의 묶음 키」.)
+- ⚠ **낮추는 예외는 401 하나이고, 그것도 본문이 아니라 상태코드로 가른다.** 401 은 코드를 볼
+  필요가 없다: `TOKEN_REVOKED` 든 만료든 결말이 하나(세션 정리)다. `HttpException.code()` 만 본다.
+  - 2026-10-11 전에는 이유가 하나 더 있었다 — 안드로이드의 `apiError`·`apiErrorCode` 가
+    `errorBody` 를 **소진**해, 먼저 읽은 쪽이 나중에 읽는 쪽의 몫을 빼앗았다(결제 경로는 보고
+    **전에**, 목소리 경로는 보고 **뒤에** 코드를 읽고 있어 줄 순서가 곧 동작이었다). 이제 **코드를
+    읽어도 본문은 소진되지 않는다** — 몇 번을, 어떤 순서로 읽어도 같은 답이다. 그래도 401 판정은
+    상태코드 하나다. 순서 걱정이 사라졌다고 본문을 열 이유가 생긴 것은 아니다.
 - ⚠ **401 을 낮추는 것이 침묵이 아닌 이유.** 우리 쪽 결함(인증 헤더 누락 등)이 401 로
   나타나도 그 경로는 세션을 끊고 재로그인 화면을 띄운다 — 사용자에게 **더 크게** 보인다.
 - ⚠ **백그라운드 워커는 401 에서 재시도하지 않는다.** 같은 토큰을 다시 보내 봐야 또 거절
@@ -126,11 +131,63 @@
   - ⚠ **404 전부가 아니라 그 코드일 때만이다.** 베이스 URL 오설정·라우팅 실패도 404 라,
     상태코드만 보고 끊으면 **설정 실수 한 번이 전체 로그아웃**이 된다. 코드가 없거나 다른
     404 는 세션을 유지하고 평소의 실패 문구로 끝낸다.
-  - ⚠ **이 판정만 본문을 연다.** 401 은 상태코드로 가르는데(`errorBody` 를 아껴야 한다)
-    여기는 코드를 봐야 하므로, **404 일 때만** `apiError`·`serverErrorCode` 를 부른다.
-    순서가 뒤집히면 코드를 볼 자리가 빈 본문을 받는다.
+  - ⚠ **이 판정은 코드를 본다.** 401 은 상태코드로 가르지만 여기는 코드를 봐야 하므로,
+    **404 일 때만** `apiError`·`serverErrorCode` 를 부른다. (예전에는 읽는 순서까지 지켜야 했다 —
+    먼저 읽으면 코드를 볼 자리가 빈 본문을 받았다. 이제 읽어도 본문이 남는다 — 아래 「앱의 묶음 키」.)
 - **브레드크럼이지 침묵이 아니다.** 다음 진짜 이벤트에 맥락으로 붙는다. "왜 그때 sync 가
   안 됐나" 는 브레드크럼에 있고, 이슈 목록에는 고칠 수 있는 것만 남는다.
+
+### 앱의 묶음 키 — API 실패는 **코드와 호출 자리**로 묶는다 (2026-10-11)
+
+위 표를 지나 **이슈로 올라가는** 실패 가운데, 원인 사슬에 HTTP 응답이 있는 것(안드로이드
+`HttpException`, iOS `APIError.server`)은 Sentry 의 기본 묶음(스택)을 쓰지 않고 지문을 직접 준다.
+
+| 응답 | 지문(fingerprint) |
+| --- | --- |
+| `error_code` 가 있다 | `["api_error", "<error_code>", "<logKey>"]` |
+| 코드 없는 **4xx** | `["api_error", "HTTP_<status>", "<logKey>"]` |
+| 코드 없는 **5xx** | `["api_error", "HTTP_<status>"]` |
+
+- **`logKey`** 는 `reportError` 에 넘긴 로그 메시지에서 ` key=value` 토큰(공백 뒤 `이름=값`)을 뺀 것이다 —
+  **어디서 부른 실패인가**만 남긴다.
+  - `Failed to promote voice draft id=9264e503-…` → `Failed to promote voice draft`
+  - `Failed to update voice profile sharing id=x shared=true` → `Failed to update voice profile sharing`
+  - iOS 의 `알람 push 실패(create): status=403 code=X` 에서도 `status=`·`code=` 가 빠진다.
+  - ⚠ 메시지를 그대로 지문에 넣지 말 것 — 목소리 id·상대 id 마다 이슈가 하나씩 생긴다.
+- **태그**: `api.status`, `api.error_code`(있을 때), `log.key`. 지문이 묶고, 태그가 찾는다.
+- **올리는 예외는 읽을 수 있는 포장이다**(안드로이드). `network/ReportedApiFailure` — 메시지
+  `[<error_code 또는 HTTP_<status>>] <logKey> (HTTP <status>)`, 원래 예외는 `cause` 로 남는다. R8 이
+  `retrofit2.HttpException` 을 `b5.o` 같은 이름으로 바꿔 이슈 제목을 읽을 수 없었다 — 포장은 `network`
+  패키지에 있어 이름이 그대로 남는다(그 패키지는 통째로 keep 이다). iOS 는 난독화가 없어 `APIError` 를
+  그대로 올린다.
+- **HTTP 가 아닌 오류**는 기본 묶음 그대로다. `log.key` 태그만 얻는다.
+- ⚠ **이 규칙으로 브레드크럼으로 내려가는 것은 하나도 없다.** 낮추는 범위는 위 표 그대로다(취소·일시적
+  네트워크·401…). 여기서 바뀌는 것은 올라간 이벤트가 **어느 이슈에 붙는가**뿐이다 — 4xx 거절도 5xx 도
+  전처럼 이슈다. 예상된 거절(틀린 인증 코드 등)을 낮추는 일은 **하지 않았다** — 1.2.10 의 두 묶음
+  (같은 코드 다섯 번 제출, 낡은 등록 횟수)은 그 거절들이 이슈로 올라왔기 때문에 드러났다.
+- **왜 코드 없는 5xx 는 호출 자리를 빼는가.** 우리 워커는 코드 없는 4xx/5xx 를 내지 않는다
+  (`test/error-codes.test.ts` 의 ④). 코드 없는 5xx 는 워커 **앞단**(게이트웨이·프록시)이 낸 것이라, 어느
+  화면이 불렀는지는 원인을 가르지 않는다. 1.2.8 부터 Play 사전 출시 로봇이 모든 호출에서 504 를 받았는데
+  로그 메시지가 일곱 가지였다 — 호출 자리를 넣으면 회차마다 이슈가 일곱 개다. 코드 없는 **4xx** 는
+  호출 자리를 남긴다(주소·라우팅이 틀린 자리를 가리킨다).
+- **코드를 읽어도 본문이 소진되지 않아야** 이 지문이 성립한다. 보고 함수가 코드를 읽는데 그 읽기가
+  본문을 비우면, 지문이 **호출부의 줄 순서**에 따라 달라지고(위 「낮추는 예외는 401 하나」) 뒤에 읽는
+  호출부는 문구를 잃는다. 안드로이드 `apiError` 는 버퍼된 오류 본문을 **엿본다**(peek). iOS 는
+  `APIError.server` 가 코드를 값으로 들고 있어 처음부터 그 문제가 없다.
+- **왜 필요했나.** Retrofit 은 모든 비-2xx 를 **같은 콜백 프레임**에서 던진다 — 스택이 하나라 엔드포인트가
+  달라도 한 이슈였고, R8 이 그 콜백의 이름을 바꿀 때마다 새 잡동사니 이슈가 열렸다(ANDROID-B → K → Q).
+  1.2.10 의 Q 에는 이메일 인증 거절·목소리 월 한도 429·사전 출시 로봇의 504 가 한데 섞여 있었다
+  (42건 중 26건이 로봇). 백엔드 경보의 묶음 키가 에러 코드인 것과 같은 이유이고(구현 지도), 앱은 거기에
+  호출 자리를 더한다 — 앱에는 라우트별 스택이 없다.
+- ⚠ **두 앱의 키는 같은 모양이어야 한다.** 한쪽만 고치면 같은 실패가 프로젝트마다 다르게 묶인다. iOS 의
+  보고 호출부는 알람 push·사용 기록 전송 둘이었다가, 2026-10-11 에 인증 코드 다섯 갈래(코드 요청 둘 · 인증
+  확인 · 가입 · 재설정 확정 — `AuthViewModel` 의 `reportFailure`)가 더해졌다 — iOS 도 이제 조용하지 않다.
+  그 다섯은 안드로이드 `ui/main/MainViewModelAuthActions.kt` 의 보고와 **같은 글자**다. 그 글자가 `logKey`
+  (지문의 셋째 마디)이자 `log.key` 태그라, 한 글자만 달라도 같은 거절(시도 상한 뒤의 429 등)이 두
+  프로젝트에서 다른 이름으로 묶인다. 호출부는 거르지 않는다 — 브레드크럼으로 내리는 판정은 보고 함수
+  한 곳이다(위 표). 또 Sentry 는 Swift 오류를 도메인·코드로 묶으므로 `APIError.server` 는 상태·코드가
+  달라도 한 이슈가 되기 쉽다 — 401 700건이 ALARMTALK-IOS-2 하나에 쌓였던 것과 같은 성질이다(401 이 아닌
+  실패가 실제로 거기 붙는지는 확인하지 못했다).
 
 ## 4. 앱은 **코드로** 문구를 고른다
 
@@ -150,12 +207,29 @@ Android는 `UserFacingException`(원인 예외 안의 것도 포함), iOS는 `Ap
 
 ⚠ **공용 표는 '아무 데서나' 가 아니라 정해진 자리에서 불린다.** 일반 오류 헬퍼
 (`userFacingError` / `userFacingErrorMessage`)는 코드를 보지 않는다 — 표를 부르는 자리는
-**로그인 · TTS 생성 · 목소리 등록 · 목소리 승격 · 가족 알람 보내기 · 이용권 나가기** 여섯이고,
-두 앱이 같은 여섯이다. 여기를 늘릴 때는 **양쪽을 같이** 늘린다(한쪽만 늘리면 같은 실패가 두
-앱에서 다르게 읽힌다). 가족 알람 보내기는 2026-10-06 에 더했다 — 그전에는 서버의 거절 이유
+**로그인 · TTS 생성 · 목소리 등록 · 목소리 승격 · 가족 알람 보내기 · 이용권 나가기 · 이메일 인증 확인 ·
+가입 · 비밀번호 재설정 확정** 아홉이고, 두 앱이 같은 아홉이다. 여기를 늘릴 때는 **양쪽을 같이**
+늘린다(한쪽만 늘리면 같은 실패가 두 앱에서 다르게 읽힌다). 가족 알람 보내기는 2026-10-06 에
+더했다 — 그전에는 서버의 거절 이유
 (`FAMILY_ALARM_DISABLED`·`FAMILY_ALARM_LEAD_TIME`·`FAMILY_ALARM_QUIET_TIME`)가 두 앱 모두
 "상대 알람 설정에 실패했어요" 로 뭉개져 다시 눌러도 같은 실패를 반복했다. 이용권 나가기의
 `OWNER_CANNOT_LEAVE` 도 같은 틈이었다.
+
+⚠ **코드를 확인하는 세 자리 — 이메일 인증 확인 · 가입 · 비밀번호 재설정 확정 — 은 2026-10-11 에 더했다.**
+셋 다 서버가 같은 판정(`checkEmailVerificationCode`)으로 인증 코드를 본다
+([session-and-auth.md](session-and-auth.md) 「이메일 인증 코드」).
+- 그전에는 두 앱 모두 이 자리의 실패를 **한 문장**으로 말했다. 인증 확인은 400 이든 429 든 네트워크
+  실패든 "인증 코드가 맞지 않아요" 였고, 가입·재설정은 "…에 실패했어요" 였다. 표에는 세 코드의 문장이
+  이미 있었는데 **부르는 자리가 없었다.** 2026-10-09 에 시도 상한(429)에 닿은 신규 가입자는 그 429 에도
+  "맞지 않아요" 를 들었다 — 상한 뒤에는 맞는 코드를 넣어도 같은 답인데, 다시 받으라는 말은 어디에도 없었다.
+- ⚠ **"인증 코드가 맞지 않아요" 는 `AUTH_EMAIL_CODE_INVALID` 일 때만 말한다.** 만료
+  (`AUTH_EMAIL_CODE_EXPIRED`)·시도 상한(`AUTH_EMAIL_CODE_ATTEMPTS_EXCEEDED`)은 **다시 받으라**고 말하고,
+  그 밖의 코드는 표의 문장(`RATE_LIMITED` 등)을, 표에 없거나 코드가 없으면(5xx·읽지 못한 응답) 그 화면의
+  중립 폴백을 쓴다. 연결 실패는 안드로이드는 같은 폴백이고, iOS 는 위 문단의 `NSURLErrorDomain` 설명일 수
+  있다(자리별 표는 [session-and-auth.md](session-and-auth.md) 「문장은 코드(error_code)로 고른다」) —
+  '맞지 않아요' 를 폴백으로 두지 않는다. 맞는 코드를 든 사람에게 틀렸다고 말하게 된다.
+- 문장만 바꾸고 끝내지 않는다 — 문장이 시키는 일(다시 확인·다시 받기)을 화면이 할 수 있어야 한다.
+  그 화면 규칙은 위 스펙 문서에 있다.
 
 ⚠ **모든 코드에 문구를 둘 필요는 없다.** `INVALID_JSON` 처럼 사용자가 할 수 있는 게 없는
 것은 비워 두고 폴백에 맡긴다 — 억지로 채우면 알아들을 수 없는 말만 늘어난다.
@@ -165,19 +239,25 @@ Android는 `UserFacingException`(원인 예외 안의 것도 포함), iOS는 `Ap
 "이번 달 목소리 생성 한도를 모두 사용했어요" 로 말하고 있었고, **회귀 테스트가 그 틀린
 문구를 지키고 있었다**(2026-09-07 정정).
 
-⚠ **맞추는 범위는 '위 여섯 자리에 닿을 수 있는 코드' 다 — 목록 전체가 아니다.** 표를 부르지
+⚠ **맞추는 범위는 '위 아홉 자리에 닿을 수 있는 코드' 다 — 목록 전체가 아니다.** 표를 부르지
 않는 경로의 코드는 표에 있어도 아무도 읽지 않으므로, 한쪽에만 있다고 반대편에 베껴 넣지
 않는다. 지금 그런 것이 둘 있다: `AUTH_EMAIL_TAKEN`·`AUTH_EMAIL_SOCIAL`
-(`network/ApiErrorMessages.kt`)은 **가입** 경로의 409(`routes/auth.ts`)인데, 표를 부르는 여섯
-자리에 가입이 없다. 두 앱 모두 가입 실패는 **화면이 직접** 가른다 — 안드로이드
-`duplicateEmailMessage`(`ui/main/MainViewModelAuthActions.kt`), iOS
-`AuthViewModel.requestEmailVerification` 의 `userFacingErrorMessage` 폴백.
-- **그래서 iOS 표에 이 둘을 더해도 아무 화면도 달라지지 않는다** — 더하지 말 것. 표만
-  같아 보이게 만들고 실제 차이는 그대로 남는다.
+(`network/ApiErrorMessages.kt`)은 이미 가입된 주소의 409(`routes/auth.ts`)다. 정상 흐름에서 그 409 를
+받는 자리는 **인증 코드 요청**(`POST /auth/email-code`)이고, 거기는 표를 부르는 자리가 아니다 —
+두 앱 모두 **화면이 직접** 가른다: 안드로이드 `duplicateEmailMessage`
+(`ui/main/MainViewModelAuthActions.kt`), iOS `AuthViewModel.requestEmailVerification` 의
+`userFacingErrorMessage` 폴백.
+- **가입(`POST /auth/register`)은 2026-10-11 부터 표를 부른다**(위 문단). 거기서 이 409 는 코드를 받은
+  뒤 같은 주소로 다른 가입이 먼저 끝난 경쟁에서만 온다. 안드로이드는 그때도 `duplicateEmailMessage`
+  (화면 층)가 표보다 **먼저** 받아 로그인 화면으로 넘긴다 — 층 순서 그대로다. iOS 는 표에 그 두 줄이
+  없어 가입 화면의 폴백으로 떨어진다.
+- **iOS 표에 이 둘을 더하는 일은 이번 변경에 넣지 않았다.** 더하면 가입의 그 드문 409 문장만 달라지고
+  코드 요청 경로는 그대로다 — 표만 같아 보이고 실제 차이는 남는다. 맞추려면 두 경로를 함께, 아래의
+  화면 전환까지 정한다.
 - 특히 `AUTH_EMAIL_TAKEN` 은 문구만이 아니라 **로그인 화면 전환**(`authRedirectToLogin`)을
   겸한다. 표는 문자열 하나만 돌려주므로 구조적으로 그 일을 할 수 없다.
-- 안드로이드 표의 그 두 줄은 지금 **닿지 않는 자리**다. 지우려면 가입 경로가 정말로 표를
-  거치지 않는지 먼저 확인하고, 이 문단도 함께 고친다.
+- 안드로이드 표의 그 두 줄은 화면 층이 늘 먼저 받아 지금도 **닿지 않는 자리**다. 지우려면 가입·코드
+  요청 경로가 정말로 표까지 내려오지 않는지 먼저 확인하고, 이 문단도 함께 고친다.
 
 ## 5. 코드를 새로 만들 때
 
@@ -202,19 +282,23 @@ Android는 `UserFacingException`(원인 예외 안의 것도 포함), iOS는 `Ap
 | 본문 초과의 서버 장애 오인 방지 | — | — | `lib/logger.ts`의 요청별 초과 표시 확인; 최종 413은 `middleware/errorCode.ts`에서 기록 |
 | 기록·경보 | — | — | `middleware/errorCode.ts` |
 | Turso 게이트웨이 일시 실패는 **읽기만** 다시 시도(5xx·전송 실패, 150·450ms, 최대 3회) | — | — | `lib/turso-retry.ts` 의 `isTransientTursoGatewayError`·`withTransientReadRetry`, `lib/db.ts` 의 `getDB` 가 두른다(HTTP·cron 공통); 읽기 트랜잭션은 `lib/transactions.ts` 의 `withReadTransaction` 이 통째로 다시 시도 · `test/turso-retry.test.ts`·`test/transactions.test.ts`. 2026-09-22 전에는 cron 만, 그것도 520 만 — 525(BACKEND-3)는 한 번도 재시도되지 않아 인증 조회가 그대로 503 `ACCOUNT_STATUS_UNVERIFIED` 였다 |
+| 쓰기 재시도의 **좁은 예외** — 호출부가 **원자적 쓰기 batch 하나**(`db.batch(문장들, 'write')` — 한 번의 왕복이고 전부 아니면 전무다. 문장이 하나뿐인 쓰기는 그 자체로 그렇다)를 다시 보낼 수 있다. 조건은 둘 다: ① **모든 문장이 멱등**(같은 인자로 두 번 실행해도 결과가 같다) ② 다시 도는 클로저 안에 **DB 밖의 일이 없다**(외부 API 호출·푸시 발송·R2 쓰기 — 다시 돌면 그 일도 두 번 일어난다). 재시도마다 warn 한 줄 | — | — | **지금은 `routes/push.ts` 뿐이다** — `/register`(`pushRegisterStatements` 가 만든 `DELETE 다른 소유자` + `UPSERT` 를 `db.batch(…, 'write')` 로, `retryTransientTurso` 안에서)·`/unregister`(호출자 행의 `DELETE` 하나를 `retryTransientTurso` 안에서) · `lib/turso-retry.ts` 의 `retryTransientTurso` 가 재시도마다 `logStructured('warn', { at: 'turso.retry', … })`(읽기 재시도도 같은 함수를 지나 같이 찍힌다) · `test/push.test.ts`·`test/push-token-unique.test.ts`·`test/turso-retry.test.ts`. 2026-09-28·10-07 에 `/push/register` 의 대화형 쓰기 트랜잭션이 게이트웨이 525·520 을 받아 그대로 500 이었다(BACKEND-E — 스택의 줄 위치로는 둘 다 첫 왕복이다). 안드로이드는 프로세스가 뜰 때마다 다시 등록하지만 iOS 는 바인딩이 없거나 바뀌었다고 볼 때만 올린다 — 실패한 한 번이 다음 올리기까지 푸시를 끊을 수 있다. batch 는 왕복이 하나라 재시도가 안전하고 싸다(열어 둔 스트림이 남지 않는다). ⚠ **일반 규칙으로 넓히지 말 것** — `withWriteTransaction`·`getDB` 프록시는 쓰기를 재시도하지 않는다(대화형 트랜잭션은 왕복이 여럿이라 어디까지 적용됐는지 모른 채 다시 보내게 되고, 멱등이 아닌 쓰기는 두 번 적용된다). 새 자리를 더하려면 두 조건을 그 자리의 주석에 적고 이 칸에 더한다 |
 | 경보의 **묶음 키는 에러 코드**(경로 아님) | — | — | `middleware/errorCode.ts` 의 `setFingerprint(['api_error', code])` · `test/error-code-middleware.test.ts`. Sentry 는 기본으로 스택으로 묶어 같은 미들웨어가 낸 예외는 코드가 달라도 한 이슈가 됐다(BACKEND-8 에 두 코드가 섞임, 2026-09-22) |
 | 라우트의 4xx 거절은 경보가 아님 | — | — | `routes/auth.ts` 의 `/google`·`/apple` catch · `test/auth-apple-route.test.ts` |
 | 중복 보고 방지 표시 | — | — | `lib/logger.ts` 의 `logRouteError` |
 | 앱의 이슈/브레드크럼 판정 | `core/AlarmTalkLog.kt` 의 `isExpectedTransientFailure`(HTTP/2 리셋 포함)·`isGoogleSignInUserAction` · `TransientFailureClassificationTest` | `AlarmTalkLog.swift` 의 `isExpectedTransientFailure` · `TransientFailureClassificationTests` | — |
 | 401 은 이슈가 아니라 브레드크럼 | `core/AlarmTalkLog.kt` 의 `isHandledAuthFailure` · `TransientFailureClassificationTest` | `AlarmTalkLog.swift` 의 `isHandledAuthFailure` · `AlarmTalkTests/TransientFailureClassificationTests` | — |
 | 낮추는 **범위**(그 밖의 4xx·5xx 는 그대로 이슈) | `core/AlarmTalkLog.kt` 의 `breadcrumbCategoryFor` · `TransientFailureClassificationTest` 의 `onlyUnauthorizedAndTransientBecomeBreadcrumbs` | `AlarmTalkLog.swift` 의 `handledFailureCategory` · `AlarmTalkTests/TransientFailureClassificationTests` 의 `test_401_외의_상태코드는_그대로_이슈다` | — |
+| 앱의 **묶음 키**(§3 — `[api_error, 코드 또는 HTTP_상태, logKey]` · 코드 없는 5xx 는 `logKey` 없음 · 태그 `api.status`·`api.error_code`·`log.key` · 낮추는 것 없음) | `core/AlarmTalkLog.kt` 의 `logKeyOf`·`apiFailureFingerprint` ← `reportError`(이슈 갈래에서 `apiFailureOf` 로 상태·코드를 읽어 지문·태그를 달고 `network/ReportedApiFailure` 로 감싸 올린다. HTTP 가 아니면 `log.key` 태그만) · 회귀 `ApiFailureReportingTest`(Robolectric — id 만 다른 메시지는 같은 지문 · 코드가 다르면 다른 지문 · 코드 없는 504 는 `[api_error, HTTP_504]` · 코드 없는 404 는 `logKey` 유지 · HTTP 가 아니면 지문 없음 · 포장의 메시지·`cause`·패키지). ⚠ 지문이 실제 이벤트에 실리는지는 유닛 테스트가 못 본다 — dev 빌드 이벤트 한 건으로 확인한다 | `AlarmTalkLog.swift` 의 `logKey(of:)`·`apiFailureFingerprint(for:message:)` ← `reportError`(원인 사슬에 `APIError.server` 가 있으면 지문·태그, 없으면 `log.key` 태그만. 포장 없음 — 컨텍스트 키 `log_message` 는 그대로) ← 호출부 `RemoteAlarmPushSync`(알람 push)·`UsageEventUploader.flush`(사용 기록 전송)·`AuthViewModel` 의 `reportFailure`(2026-10-11 — `requestEmailVerification`·`verifyEmailCode`·`performRegisterWithEmail`·`requestPasswordReset`·`confirmPasswordReset`, 메시지는 안드로이드 `ui/main/MainViewModelAuthActions.kt` 와 같은 글자) · 회귀 `AlarmTalkTests/TransientFailureClassificationTests` 의 `test_API_실패의_묶음_키` · `AlarmTalkTests/EmailCodeErrorMessageTests` 의 `test_인증_코드_다섯_갈래의_실패는_정해진_글자로_한_번씩_올린다`(성공은 올리지 않는다 · 실패마다 한 번 · 안드로이드와 같은 글자 · 받은 오류를 그대로)·`test_올린_실패의_갈래와_묶음_키는_보고_함수가_정한다`(호출부는 거르지 않는다 — 코드의 거절은 `[api_error, 코드, 호출 자리]` 이슈 · 코드 없는 5xx 는 `[api_error, HTTP_503]` · 시간 초과·401 은 브레드크럼) | 짝: `middleware/errorCode.ts` 의 `setFingerprint(['api_error', code])`(위 행) |
+| 코드 읽기는 **본문을 소진하지 않는다**(순서·횟수와 무관하게 같은 답) | `network/ApiErrors.kt` 의 `apiError`(버퍼된 오류 본문을 엿본다)·`apiFailureOf`(원인 사슬에서 상태 + 코드 — `ApiFailure`) · 회귀 `TransientFailureClassificationTest` 의 `apiErrorCanBeReadTwice`·`apiFailureIsIndependentOfCallOrder`(기존 `breadcrumbClassificationDoesNotConsumeTheErrorBody`·`unauthorizedClassificationDoesNotConsumeTheErrorBody` 는 그대로 초록) | — (`APIError.server(status, _, code)` 가 코드를 값으로 든다) | — |
 | 동의 전 403 은 재시도가 아님 | `sync/SyncWorkerFailure.kt` 의 `syncWorkerOutcome` | `RemoteAlarmSyncViewModel` 의 `runFullSync` catch | `middleware/consent.ts` |
 | 401 은 재시도가 아니라 세션 종료 | `sync/SyncWorkerFailure.kt` 의 `endSessionAfterWorkerUnauthorized`(**세대+토큰** 검사) · `TransientFailureClassificationTest` | `AlarmTalkAPI.handleUnauthorized` → `AuthViewModel.handleUnauthorized`(**토큰** 대조 후 `signOut`) — API 계층이라 백그라운드도 같다 | — |
 | 401 이면 **그 회차를 끊는다**(남은 후보를 같은 죽은 토큰으로 밀지 않는다) | 워커가 `SESSION_EXPIRED` 에서 `Result.success()` 로 끝낸다(`sync/SyncWorkerFailure.kt`) | `RemoteAlarmPushSync` 의 후보 루프 `break` · `AlarmTalkTests/UnauthorizedSessionHandlingTests` 의 `PushSyncUnauthorizedCycleTests` | — |
 | 파기된 계정의 404 는 401 과 **같은 갈래**(코드 없는 404 는 **세션 유지**) | `ui/main/MainViewModelAuthActions.kt` 의 `isDestroyedAccountFailure` → `MainViewModel.handleUnauthorized` · `DestroyedAccountSessionTest` | `AuthViewModel.refreshUserApplyingToken` 의 `status == 404 && errorCode == "AUTH_USER_NOT_FOUND"` · `AlarmTalkTests/UnauthorizedSessionHandlingTests` 의 `SessionHealthCheckDestroyedAccountTests` | `routes/auth.ts` 의 `GET /auth/me`(그 밖의 라우트는 `middleware/auth.ts` 가 401) |
-| 응답에서 코드 꺼내기 | `network/ApiErrors.kt` 의 `apiErrorCode` | `APIError.serverErrorCode` | — |
+| 응답에서 코드 꺼내기 | `network/ApiErrors.kt` 의 `apiErrorCode`(본문을 소진하지 않는다 — 위 행) | `APIError.serverErrorCode` | — |
 | 코드 → 문구(공용) | `network/ApiErrorMessages.kt` | `APIErrorMessages.swift` | — |
 | 일반 오류 문구의 출처 | `ui/util/PlatformAndLabelUtils.kt`의 `UserFacingException`·`userFacingError` | `UserFacingError.swift`의 `AppUserFacingError`·`userFacingErrorMessage`, `AudioUserFacingError`도 위임 | 서버 문장은 앱에서 직접 표시하지 않음 |
 | 코드 → 문구(가족 알람 보내기·이용권 나가기) | `ui/main/MainViewModelAlarmActions.kt` 의 `familyAlarmFailureMessage` · `ui/main/MainViewModelSocialActions.kt` 의 `leaveGroupFailureMessage` · `FamilyAlarmFailureMessageTest` | `APIErrorMessages.message(for:fallback:)` ← `AlarmEditorSheet.createFamilyTargetAlarm`·`SocialFeatureViewModel.leaveFamilyGroup` · `AlarmTalkTests/FamilyAlarmFailureMessageTests` | `routes/alarm-helpers.ts` 의 `evaluateFamilyAlarmTimingGuard`·`routes/family-alarm.ts`·`routes/family-group.ts` |
 | 코드 → 문구(목소리 화면) | `ui/main/MainViewModelVoiceActions.kt` | `VoiceStudioViewModel+ErrorMapping.swift` | — |
 | 코드 → 문구(로그인 화면) | `ui/main/MainViewModelAuthActions.kt` 의 login 갈래 | `AuthViewModel.loginErrorMessage` | — |
+| 코드 → 문구(이메일 인증 확인·가입·비밀번호 재설정 확정 — '맞지 않아요' 는 `AUTH_EMAIL_CODE_INVALID` 일 때만) | `ui/main/MainViewModelAuthActions.kt` 의 `emailCodeFailureMessage(context, error, fallback)`(표 → 화면 폴백) ← `confirmEmailVerification`(폴백 `api_error_server`)·`register`(`duplicateEmailMessage` 다음, 폴백 `msg_register_failed`)·`confirmPasswordReset`(폴백 `msg_password_reset_failed`) · 회귀 `EmailCodeFailureMessageTest`(Robolectric, ko·en·ja) | `AuthViewModel.emailCodeErrorMessage(for:fallback:)`(`loginErrorMessage(for:)` 의 형제 — `nonisolated static`) ← `verifyEmailCode`·`performRegisterWithEmail`·`confirmPasswordReset` · 회귀 `AlarmTalkTests/EmailCodeErrorMessageTests` | `routes/auth.ts` 의 `checkEmailVerificationCode`(`/email-code/verify`·`/register`·`/password-reset/confirm` 공용) — 규칙은 [session-and-auth.md](session-and-auth.md) 「이메일 인증 코드」 |

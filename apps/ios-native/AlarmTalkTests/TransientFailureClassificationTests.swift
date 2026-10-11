@@ -166,4 +166,107 @@ final class TransientFailureClassificationTests: XCTestCase {
         struct Bug: Error {}
         XCTAssertFalse(AlarmTalkLog.isExpectedTransientFailure(Bug()))
     }
+
+    // ── 묶음 키 — 올라간 이벤트가 어느 이슈에 붙는가 ──────────────────────────
+
+    /// API 실패는 **코드와 호출 자리**로 묶는다 — `docs/spec/error-codes.md` §3 「앱의 묶음 키」.
+    /// 안드로이드와 같은 세 모양이어야 한다(한쪽만 다르면 같은 실패가 프로젝트마다 다르게 묶인다).
+    ///
+    /// Sentry 는 Swift 오류를 도메인·코드로 묶는다. `APIError.server` 는 상태·코드가 달라도 같은
+    /// enum case 라 지문 없이는 서로 다른 실패가 한 이슈에 쌓이기 쉽다 — 안드로이드 1.2.10 의
+    /// ALARMTALK-ANDROID-Q 에는 이메일 인증 거절·목소리 월 한도 429·로봇의 504 가 섞여 있었다.
+    /// ⚠ 지문이 실제 이벤트에 실리는지는 유닛 테스트가 못 본다(테스트에서는 Sentry 를 켜지 않는다).
+    func test_API_실패의_묶음_키() {
+        func server(_ status: Int, _ code: String? = nil) -> APIError {
+            .server(status: status, message: "body", errorCode: code)
+        }
+
+        // ① 호출 자리(logKey)는 ` key=value` 토큰을 뺀 것이다 — 회차마다 바뀌는 값이 이슈를 쪼개지 않는다.
+        XCTAssertEqual(AlarmTalkLog.logKey(of: "알람 push 실패(create): status=403 code=X"), "알람 push 실패(create):")
+        XCTAssertEqual(
+            AlarmTalkLog.logKey(of: "Failed to promote voice draft id=9264e503-8579-4fc1-827c-8bb0048c7ab4"),
+            "Failed to promote voice draft"
+        )
+        XCTAssertEqual(
+            AlarmTalkLog.logKey(of: "Failed to update voice profile sharing id=x shared=true"),
+            "Failed to update voice profile sharing"
+        )
+        // 토큰이 없으면 그대로다.
+        XCTAssertEqual(AlarmTalkLog.logKey(of: "사용 기록 전송 실패 — 큐에 남겨 둔다"), "사용 기록 전송 실패 — 큐에 남겨 둔다")
+        XCTAssertEqual(
+            AlarmTalkLog.apiFailureFingerprint(for: server(403, "A"), message: "알람 push 실패(update): status=403 code=A"),
+            AlarmTalkLog.apiFailureFingerprint(for: server(403, "A"), message: "알람 push 실패(update): status=409 code=B"),
+            "status=·code= 만 다른 메시지는 같은 호출 자리다"
+        )
+
+        // ② 코드가 있으면 [api_error, 코드, logKey] — 상태코드가 같아도 코드가 다르면 다른 이슈다.
+        XCTAssertEqual(
+            AlarmTalkLog.apiFailureFingerprint(
+                for: server(429, "VOICE_MONTHLY_CHANGE_LIMIT_REACHED"), message: "목소리 저장 실패 id=abc"
+            ),
+            ["api_error", "VOICE_MONTHLY_CHANGE_LIMIT_REACHED", "목소리 저장 실패"]
+        )
+        XCTAssertNotEqual(
+            AlarmTalkLog.apiFailureFingerprint(for: server(429, "VOICE_MONTHLY_CHANGE_LIMIT_REACHED"), message: "저장 실패"),
+            AlarmTalkLog.apiFailureFingerprint(for: server(429, "RATE_LIMITED"), message: "저장 실패")
+        )
+        // 같은 코드라도 호출 자리가 다르면 다른 이슈다 — 앱에는 라우트별 스택이 없다.
+        XCTAssertNotEqual(
+            AlarmTalkLog.apiFailureFingerprint(for: server(500, "INTERNAL_ERROR"), message: "알람 push 실패(create):"),
+            AlarmTalkLog.apiFailureFingerprint(for: server(500, "INTERNAL_ERROR"), message: "사용 기록 전송 실패")
+        )
+
+        // ③ 코드 없는 4xx 는 호출 자리를 남긴다(주소·라우팅이 틀린 자리를 가리킨다).
+        XCTAssertEqual(
+            AlarmTalkLog.apiFailureFingerprint(for: server(404), message: "알람 push 실패(update): status=404 code=-"),
+            ["api_error", "HTTP_404", "알람 push 실패(update):"]
+        )
+        XCTAssertEqual(
+            AlarmTalkLog.apiFailureFingerprint(for: server(404, ""), message: "사용 기록 전송 실패"),
+            ["api_error", "HTTP_404", "사용 기록 전송 실패"],
+            "빈 코드는 코드 없음이다"
+        )
+
+        // ④ 코드 없는 5xx 는 호출 자리를 뺀다 — 워커 앞단(게이트웨이)이 낸 것이라 어느 화면이
+        //    불렀는지는 원인을 가르지 않는다. 호출부마다 이슈가 갈리면 장애 하나가 여러 이슈다.
+        XCTAssertEqual(
+            AlarmTalkLog.apiFailureFingerprint(for: server(504), message: "알람 push 실패(create): status=504 code=-"),
+            ["api_error", "HTTP_504"]
+        )
+        XCTAssertEqual(
+            AlarmTalkLog.apiFailureFingerprint(for: server(504), message: "알람 push 실패(create): status=504 code=-"),
+            AlarmTalkLog.apiFailureFingerprint(for: server(504), message: "사용 기록 전송 실패 — 큐에 남겨 둔다")
+        )
+
+        // ⑤ 감싸인 응답도 같은 키다 — 낮추는 판정(`isHandledAuthFailure`)과 같은 방식으로 사슬을 탄다.
+        let wrapped = NSError(
+            domain: "AlarmTalk.Sync", code: 1,
+            userInfo: [NSUnderlyingErrorKey: server(409, "TRANSACTION_OWNED_BY_OTHER_USER")]
+        )
+        XCTAssertEqual(
+            AlarmTalkLog.apiFailureFingerprint(for: wrapped, message: "결제 확정 실패"),
+            ["api_error", "TRANSACTION_OWNED_BY_OTHER_USER", "결제 확정 실패"]
+        )
+
+        // ⑥ HTTP 응답이 아니면 지문이 없다 — Sentry 의 기본 묶음 그대로다.
+        struct Bug: Error {}
+        XCTAssertNil(AlarmTalkLog.apiFailureFingerprint(for: Bug(), message: "알람 push 실패(create): Bug"))
+        XCTAssertNil(AlarmTalkLog.apiFailureFingerprint(for: APIError.invalidResponse, message: "사용 기록 전송 실패"))
+        XCTAssertNil(AlarmTalkLog.apiFailureFingerprint(for: URLError(.badServerResponse), message: "사용 기록 전송 실패"))
+    }
+
+    /// ⚠ **묶음 키는 무엇도 낮추지 않는다.** 지문이 생기는 실패는 전처럼 이슈다 — 여기서 바뀌는 것은
+    /// 어느 이슈에 붙는가뿐이다(예상된 거절을 브레드크럼으로 내리는 일은 하지 않았다).
+    func test_묶음_키가_있다고_브레드크럼으로_내려가지_않는다() {
+        let refusals: [APIError] = [
+            .server(status: 429, message: "limit", errorCode: "VOICE_MONTHLY_CHANGE_LIMIT_REACHED"),
+            .server(status: 429, message: "attempts", errorCode: "AUTH_EMAIL_CODE_ATTEMPTS_EXCEEDED"),
+            .server(status: 400, message: "invalid", errorCode: "AUTH_EMAIL_CODE_INVALID"),
+            .server(status: 504, message: "gateway"),
+        ]
+        for error in refusals {
+            XCTAssertNotNil(AlarmTalkLog.apiFailureFingerprint(for: error, message: "실패"), "\(error)")
+            XCTAssertNil(AlarmTalkLog.handledFailureCategory(error), "\(error)")
+        }
+    }
 }

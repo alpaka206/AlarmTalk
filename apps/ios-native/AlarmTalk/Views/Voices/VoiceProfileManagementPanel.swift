@@ -18,6 +18,15 @@ struct VoiceProfileManagementPanel: View {
 
     @Binding var route: VoicesRoute
 
+    /// **이번 달 등록 한도**를 다 썼다는 알럿. 이용권 안내와 **다른 모달**이다 — 이미 이용권이
+    /// 있는 사람에게 이용권을 사라고 하면 안 된다.
+    ///
+    /// 여는 자리는 등록 창을 가진 부모다(`VoicesPanelView`): 서버가 등록·저장을 월 한도로 거절해
+    /// 등록 창이 닫히면, 창이 **다 내려간 뒤에** 연다(스펙 voice-and-message §4-1 「월 등록 한도」
+    /// ③). 그래서 화면 상태가 아니라 바인딩이다. `추가` 버튼의 같은 갈래는 버튼이 같은 조건에서
+    /// 꺼져 있어 닿지 않는다 — 2026-10-11 전에는 이 알럿이 통째로 닿지 않는 자리였다.
+    @Binding var monthlyLimitNoticeOpen: Bool
+
     /// Phase 4-D1: PlanGate "결제 화면으로" 를 눌렀을 때 호출되는 라우팅 콜백.
     /// 부모가 MainTabsView 의 `auxiliaryScreen = .billing` 으로 chain 한다.
     /// 시트 충돌을 피하기 위해 본 화면의 시트를 먼저 닫고, 다음 runloop 에서
@@ -37,9 +46,6 @@ struct VoiceProfileManagementPanel: View {
     /// 슬롯 가득 시 노출하는 플랜 안내 시트.
     @State private var planGateOpen: Bool = false
     @State private var redeemCodeAlertOpen = false
-    /// 유료인데 **이번 달 등록 한도**를 다 쓴 경우. 이용권 안내와 **다른 모달**이다 —
-    /// 이미 이용권이 있는 사람에게 이용권을 사라고 하면 안 된다.
-    @State private var monthlyLimitNoticeOpen: Bool = false
 
     /// 내 목소리 행의 ⋮ 가 여는 액션 시트 대상.
     @State private var actionSheetTarget: VoiceProfile?
@@ -270,6 +276,9 @@ struct VoiceProfileManagementPanel: View {
         }
         // 화자 분리는 제품에서 사라졌다(VoicesPanelView 주석 참조) — 없는 기능을 근거로
         // 결제를 권하지 않는다.
+        // 서버가 등록·저장을 월 등록 한도로 거절해 등록 창이 닫혔을 때 뜬다 — 이유를 말하는 것은
+        // 이 알럿 하나이고 액션은 닫기 하나다(여는 자리는 `VoicesPanelView`). 제목·본문은 두 앱이
+        // 같은 말을 쓰기로 한 문구다(스펙 voice-and-message §4-1 「월 등록 한도」 ③) — 한쪽만 고치지 말 것.
         .alert(String(localized: "이번 달 목소리는 다 만들었어요"), isPresented: $monthlyLimitNoticeOpen) {
             Button(String(localized: "닫기"), role: .cancel) {}
         } message: {

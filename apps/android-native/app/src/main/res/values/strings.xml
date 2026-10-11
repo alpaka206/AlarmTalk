@@ -33,7 +33,6 @@
     <string name="auth_reset_title">비밀번호 재설정</string>
     <string name="auth_reset_subtitle">가입한 이메일로 인증 코드를 보내드려요.</string>
     <string name="auth_reset_send_code">인증 코드 받기</string>
-    <string name="auth_reset_code_sent">코드를 보냈어요</string>
     <string name="auth_reset_new_password">새 비밀번호</string>
     <string name="auth_reset_submit">비밀번호 변경</string>
     <string name="msg_password_reset_code_sent">인증 코드를 보냈어요. 메일을 확인해 주세요.</string>
@@ -582,6 +581,10 @@
     <string name="voicesr_delete">삭제</string>
     <string name="voices_delete_quota_title">정말 삭제할까요?</string>
     <string name="voices_delete_quota_message">이 목소리로 만든 알람은 기본 목소리로 바뀌고, 저장된 음성도 함께 지워져요. 되돌릴 수 없어요. 이번 달에는 새 목소리를 만들 수 없고, 다음 달부터 다시 만들 수 있어요.</string>
+    <!-- 이번 달 등록을 다 써서 서버가 등록·저장을 거절했을 때 등록 흐름을 끝내며 띄우는 알럿.
+         iOS 카탈로그의 같은 알럿(「이번 달 목소리는 다 만들었어요」)과 **같은 제목·본문**이다 — 한쪽만 고치지 말 것. -->
+    <string name="voices_monthly_limit_title">이번 달 목소리는 다 만들었어요</string>
+    <string name="voices_monthly_limit_message">목소리는 한 달에 1개 만들 수 있어요. 다음 달에 새로 만들 수 있고, 지금 목소리를 지워도 이번 달에는 다시 만들 수 없어요.</string>
     <string name="voicesr_delete_dialog_confirm">\'%1$s\' 목소리를 삭제할까요?</string>
     <string name="voicesr_delete_dialog_title">목소리 삭제</string>
     <string name="voicesr_delete_dialog_warning">이 목소리를 쓰는 알람은 기본 목소리로 바뀌어요. 저장된 음원 파일도 함께 삭제돼요.</string>

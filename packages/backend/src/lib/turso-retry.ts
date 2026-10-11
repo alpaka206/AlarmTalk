@@ -1,4 +1,5 @@
 import type { Client } from '@libsql/client/web';
+import { logStructured } from './logger';
 
 const TURSO_RETRY_DELAYS_MS = [150, 450] as const;
 
@@ -28,7 +29,16 @@ export function isTransientTursoGatewayError(error: unknown): boolean {
   return /\bfetch failed\b|ECONNRESET|ECONNREFUSED|ETIMEDOUT|EAI_AGAIN/i.test(message);
 }
 
-/** Turso 게이트웨이 실패만 정해진 백오프(150ms·450ms, 최대 3회)로 다시 시도한다. */
+/**
+ * Turso 게이트웨이 실패만 정해진 백오프(150ms·450ms, 최대 3회)로 다시 시도한다.
+ *
+ * **다시 시도할 때마다 warn 한 줄을 남긴다**(`at: "turso.retry"`). 재시도가 성공하면 그 딸꾹질은
+ * 어디에도 흔적이 없다 — Sentry 에는 끝까지 실패한 것만 올라간다. 그러면 "이슈가 조용하다" 가
+ * 재시도가 살려서인지, 애초에 딸꾹질이 없어서인지 가를 수 없다(주 1건꼴의 실패에서 침묵은
+ * 근거가 못 된다). 이 줄이 운영 로그에서 **재시도가 실제로 돌았다**는 유일한 증거다.
+ * `attempt` 는 방금 실패한 회차(1부터)다. 마지막 회차의 실패는 여기 찍히지 않고 그대로 던져진다 —
+ * 그건 호출부가 기록한다.
+ */
 export async function retryTransientTurso<T>(operation: () => Promise<T>): Promise<T> {
   for (let attempt = 0; ; attempt += 1) {
     try {
@@ -36,6 +46,11 @@ export async function retryTransientTurso<T>(operation: () => Promise<T>): Promi
     } catch (error) {
       const delay = TURSO_RETRY_DELAYS_MS[attempt];
       if (!isTransientTursoGatewayError(error) || delay === undefined) throw error;
+      logStructured('warn', {
+        at: 'turso.retry',
+        attempt: attempt + 1,
+        error: error instanceof Error ? `${error.name}: ${error.message}` : String(error),
+      });
       await new Promise<void>((resolve) => setTimeout(resolve, delay));
     }
   }
@@ -88,6 +103,11 @@ function stripStringLiterals(sql: string): string {
  * 쓰기는 감싸지 않는다 — 애매한 HTTP 실패 뒤에 쓰기를 다시 보내면 부작용이 두 번 날 수 있다
  * (INSERT 중복 등). 실패한 쓰기는 호출부가 자기 규약대로 처리한다(cron 은 다음 틱에 재개,
  * 요청은 500 → 앱이 재시도).
+ *
+ * ⚠ **좁은 예외는 호출부가 스스로 고른다 — 여기(프록시)를 넓히지 말 것.** 원자적 쓰기 batch
+ * 하나(`db.batch(문장들, 'write')` — 왕복 한 번, 전부 아니면 전무)는 ① 모든 문장이 멱등이고
+ * ② 다시 도는 클로저 안에 DB 밖의 일이 없을 때에 한해 호출부가 `retryTransientTurso` 로 직접
+ * 감쌀 수 있다. 지금은 `routes/push.ts` 뿐이다(`docs/spec/error-codes.md` 구현 지도).
  *
  * 2026-09-22 전에는 이 감싸기가 **cron 진입점에만** 있었다. HTTP 요청 경로의 `getDB` 는 맨
  * 클라이언트라, 인증 미들웨어의 users 한 줄 조회가 게이트웨이 한 번의 딸꾹질에 그대로 503 이

@@ -19,15 +19,24 @@ function consentRow(type: string) {
   return { consent_type: type, policy_version: CURRENT_POLICY_VERSION, agreed: 1 };
 }
 
+/** `readMonthlyRegistrationUsage` 의 집계 SELECT — 초안 등록(POST /clone)과 `GET /draft-quota` 가 함께 쓴다. */
+const MONTHLY_REGISTRATION_READ = 'SELECT COUNT(*) AS used FROM voice_profile_change_ledger';
+
 /**
  * POST /clone 은 `c.get('userIdPK')` 가 있으면 유료 플랜 여부를 실제로 조회한다
  * (SELECT plan FROM users ...). fakeAuthMiddleware 가 실제 authMiddleware 처럼
  * userIdPK 를 채우게 되면서 이 쿼리가 결과 큐의 맨 앞을 소비하므로, 클론 테스트는
  * 유료 플랜 행을 가장 먼저 넣어 줘야 이후 결과(한도 카운트·INSERT ...)가 한 칸씩
  * 밀리지 않는다. 무료 플랜이면 403 VOICE_FEATURE_REQUIRES_PAID_PLAN 으로 떨어진다.
+ *
+ * 예약 트랜잭션 맨 앞의 **월 등록 자격 확인**(이번 달 등록 원장 집계, 2026-10-11)도 여기서
+ * 답을 깐다. 그 SELECT 는 큐가 아니라 **SQL 로 짝짓는다** — 큐에 넣으면 그 뒤의 결과
+ * (슬롯 수·INSERT·ready 전환)가 전부 한 칸씩 밀린다. 인자는 이번 달에 이미 쓴 등록 횟수다
+ * (기본 0 = 아직 남았다 → 통과, 1 이면 429 `VOICE_MONTHLY_CHANGE_LIMIT_REACHED`).
  */
-function pushPaidPlan() {
+function pushPaidPlan(registrationsUsedThisMonth = 0) {
   mockDB.pushResult([{ plan: 'plus' }]);
+  mockDB.pushResultFor(MONTHLY_REGISTRATION_READ, [{ used: registrationsUsedThisMonth }]);
 }
 
 vi.mock('../src/lib/db', () => ({
@@ -739,8 +748,84 @@ describe('POST /clone — 음성 클론 (voice-profile)', () => {
     expect(quotaCall).toBeDefined();
     expect(quotaCall!.sql).toContain("status != 'failed'");
     expect(mockDB.calls.some((call) => call.sql.includes('voice_draft_attempt_usage'))).toBe(true);
-    expect(mockDB.calls.some((call) => call.sql.includes('voice_profile_change_ledger'))).toBe(
-      false,
+    // ⚠ 2026-10-11 에 **뒤집었다.** 예전에는 "초안 등록은 등록 원장을 아예 보지 않는다" 를
+    // 단언했다 — 그래서 이번 달 등록을 다 쓴 사람도 초안을 만들 수 있었고, 그 초안의 저장이
+    // 429 로 막혔다. 이제 초안 등록은 원장을 **한 번 읽는다**(자격 확인). 여전히 **쓰지는
+    // 않는다** — 깎는 것은 확정(승격·교체)뿐이다.
+    const ledgerCalls = mockDB.calls.filter((call) =>
+      call.sql.includes('voice_profile_change_ledger'),
+    );
+    expect(ledgerCalls).toHaveLength(1);
+    expect(ledgerCalls[0]!.sql.trimStart().startsWith('SELECT')).toBe(true);
+  });
+
+  // ── 월 등록 한도 — 다 썼으면 초안부터 만들지 않는다(스펙 voice-and-message §4-1 ①) ──
+  //
+  // 2026-10-10 prod: 이번 달 등록을 마친 사용자가 초안을 또 만들 수 있었고, 그 초안의 저장이
+  // 429 로 일곱 번 거절됐다(ALARMTALK-ANDROID-Q). 저장할 수 없는 초안은 provider 보이스
+  // 하나를 그냥 쓰고, 사용자를 녹음·생성·미리듣기를 다 마친 마지막 단계에서 막는다.
+  //
+  // 여기(순서 큐 목)는 **무엇을 부르지 않는가**를 지킨다. 원장 줄의 상태·달에 따른 판정
+  // (`failed` 줄·지난달 줄은 세지 않는다)은 진짜 SQLite 로 도는 `voice-clone-monthly-gate.test.ts` 가 지킨다.
+  it('이번 달 등록을 이미 썼으면 초안도 만들지 않는다 — 429, provider 호출도 쓰기도 없다', async () => {
+    pushPaidPlan(1);
+    // 남아 있던 옛 초안 하나 — 평소라면 새 등록이 이걸 버린다. 거절은 이것도 건드리지 않는다.
+    mockDB.pushResultFor('as draft_count', [{ draft_count: 1, official_count: 1 }]);
+    mockDB.pushResultFor('AS draft_count', [{ draft_count: 1, official_count: 1 }]);
+    mockDB.pushResultFor('SELECT id, elevenlabs_voice_id FROM voice_profiles', [
+      { id: 'draft-old', elevenlabs_voice_id: 'elv-old' },
+    ]);
+    mockDB.pushResultFor("SET deleted_at = datetime('now')", [], 1);
+    mockDB.pushResultFor("status = 'processing'", [], 1);
+    mockCreateInstantClone.mockResolvedValue({ voice_id: 'elv-must-not-exist' });
+
+    const res = await req(buildApp(), cloneForm(new Uint8Array([1, 2, 3]), '두 번째 목소리'));
+
+    expect(res.status).toBe(429);
+    // 확정(승격·교체)의 거절과 **같은 코드·같은 몸통** — 스토어에 나가 있는 앱이 이미 읽는 답이다.
+    expect(await res.json()).toEqual({
+      error: '목소리는 한 달에 1번만 변경할 수 있습니다.',
+      error_code: 'VOICE_MONTHLY_CHANGE_LIMIT_REACHED',
+    });
+    expect(mockCreateInstantClone).not.toHaveBeenCalled();
+
+    const sqls = mockDB.calls.map((call) => call.sql);
+    expect(sqls.some((sql) => sql.includes('INSERT INTO voice_profiles'))).toBe(false);
+    expect(sqls.some((sql) => sql.includes('voice_draft_attempt_usage'))).toBe(false);
+    // 옛 초안: 소프트 삭제도, 외부 자원 삭제 예약도 없다.
+    expect(sqls.some((sql) => sql.includes("SET deleted_at = datetime('now')"))).toBe(false);
+    expect(sqls.some((sql) => sql.includes('pending_external_deletions'))).toBe(false);
+    // 위 넷을 포함해 — 거절은 **한 줄도 쓰지 않는다.**
+    expect(sqls.filter((sql) => /^\s*(?:INSERT|UPDATE|DELETE|REPLACE)\b/i.test(sql))).toEqual([]);
+    // 자격 확인이 예약 트랜잭션의 **맨 앞**이다 — 트랜잭션 안의 슬롯 집계(`AS draft_count`)에도
+    // 닿지 않았다(트랜잭션 밖 선검사는 소문자 `as draft_count` 라 구분된다).
+    expect(sqls.some((sql) => sql.includes('AS draft_count'))).toBe(false);
+    expect(mockDB.transactions.rollbacks).toBe(0);
+  });
+
+  it('자격 확인은 이번 달(KST)의 실패하지 않은 등록만 센다 — 남았으면 초안을 만든다', async () => {
+    pushPaidPlan(0);
+    mockDB.pushResult([{ count: 0 }]);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
+    mockCreateInstantClone.mockResolvedValue({ voice_id: 'elv-first' });
+
+    const res = await req(buildApp('user-1'), cloneForm(new Uint8Array([1, 2, 3]), '첫 목소리'));
+
+    expect(res.status).toBe(201);
+    expect(mockCreateInstantClone).toHaveBeenCalledOnce();
+    const read = mockDB.calls.find((call) => call.sql.includes(MONTHLY_REGISTRATION_READ))!;
+    // 확정의 예약(부분 유니크 인덱스 `WHERE status != 'failed'`)과 **같은 조건**이어야 한다 —
+    // 어긋나면 초안은 만들어지는데 저장이 막히는 원래 사고로 돌아간다.
+    expect(read.sql).toContain("status != 'failed'");
+    expect(read.sql).toContain("change_month = strftime('%Y-%m', 'now', '+9 hours')");
+    expect(read.args).toEqual(['user-1', 'official_voice']);
+    // 읽기가 프로필 INSERT 보다 먼저다.
+    const order = mockDB.calls.map((call) => call.sql);
+    expect(order.findIndex((sql) => sql.includes(MONTHLY_REGISTRATION_READ))).toBeLessThan(
+      order.findIndex((sql) => sql.includes('INSERT INTO voice_profiles')),
     );
   });
 

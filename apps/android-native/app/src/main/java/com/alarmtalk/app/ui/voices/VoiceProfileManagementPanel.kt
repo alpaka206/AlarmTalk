@@ -56,11 +56,14 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
@@ -363,7 +366,11 @@ internal fun VoiceProfileManagementPanel(
     onUpdateVoicePreviewText: suspend (String, String) -> String,
     /** (초안 id, 교체, 공유, 목소리 높이 반음) — 높이는 끝까지 들은 값이고, 0 이면 서버에 보내지 않는다. */
     onPromoteVoiceDraft: (String, Boolean, Boolean, Float) -> Unit,
+    // 사용자가 누른 초안 삭제(확정 화면의 `다시 만들기`·나가기 경고) — 실패하면 사용자에게 말한다.
     onDeleteVoiceDraft: (String) -> Unit,
+    // 월 한도로 흐름을 끝내며 초안을 **조용히** 버린다 — 실패해도 화면에 말하지 않고 기록만 남긴다(사용자가 고른
+    // 삭제가 아니다. 남은 초안은 서버가 거둔다). 기본값을 두지 않는다 — 빠뜨리면 초안이 버려지지 않는다.
+    onDiscardVoiceDraftQuietly: (String) -> Unit,
     onOpenBilling: () -> Unit,
     // 이번 달 목소리 생성 쿼터 — 추가 버튼 옆에 '남은/전체'로 보여준다.
     voiceDraftQuota: com.alarmtalk.app.network.VoiceDraftQuotaResponse? = null,
@@ -391,6 +398,13 @@ internal fun VoiceProfileManagementPanel(
     // 그 사람에게만 '세부 정보' 단계 아래에 인라인 동의 항목을 그리고, 체크해야 등록이 눌린다.
     // 한 번 동의하면 서버 기록이 남아 이 목록이 비고 다음 등록부터는 보이지 않는다.
     sensitiveConsentMissing: List<String> = emptyList(),
+    // 등록 흐름(등록·저장·다시 만들기)의 거절 — 뷰모델이 올리고 **이 창이 자기 안에** 그린다
+    // (`MainViewModel.voiceRegistrationFailure`). 앱 스낵바는 이 창 뒤에 가려 안 보인다.
+    voiceRegistrationFailure: VoiceRegistrationFailure? = null,
+    // 그 거절을 그렸다(또는 흐름을 끝냈다) — 뷰모델이 비운다.
+    onVoiceRegistrationFailureShown: () -> Unit = {},
+    // 등록 창이 열리고 닫히는 것을 뷰모델에 알린다 — 닫힌 뒤에 온 실패는 스낵바로 가야 한다.
+    onRegistrationWindowOpenChange: (Boolean) -> Unit = {},
 ) {
     val context = LocalContext.current
     val previewLanguage = com.alarmtalk.app.data.appVoiceLanguageOf(
@@ -435,6 +449,11 @@ internal fun VoiceProfileManagementPanel(
     var showCreateForm by remember { mutableStateOf(false) }
     // 등록 결정 구간(만드는 중/미리듣기)에서 나가려 할 때 띄우는 '임시 목소리 삭제' 경고.
     var draftExitWarningOpen by remember { mutableStateOf(false) }
+    // 서버가 "이번 달 등록을 다 썼다" 고 답해 등록 흐름을 끝냈다 — 이유를 말하는 알럿(스펙
+    // voice-and-message §4-1 「월 등록 한도」 ③). 등록 창을 닫은 뒤 목소리 탭 위에 뜬다.
+    var monthlyLimitNoticeOpen by remember { mutableStateOf(false) }
+    // 이 창 안에 거절 문구를 쓴 횟수 — 오를 때마다 그 줄이 보이게 본문을 내린다.
+    var registrationFailureTick by remember { mutableIntStateOf(0) }
     // 미리듣기·사전렌더 문구 언어 — 기본은 앱 로케일(ko/en/ja 외엔 ko).
     val configuration = LocalConfiguration.current
     val defaultVoiceLanguage = remember(configuration) {
@@ -579,9 +598,19 @@ internal fun VoiceProfileManagementPanel(
     // (유지/삭제를 골라야만 끝난다).
     val inDraftDecisionFlow = currentStep == VoiceRegistrationStep.Creating ||
         currentStep == VoiceRegistrationStep.Preview
-    // promote 직후 사전렌더 진행 화면 — 등록이 끝나도 다이얼로그를 유지해야
-    // 진행 UI·'백그라운드에서 계속'이 보인다(닫기는 자유 — 드라이브는 ViewModel 에서 계속된다).
-    val inPrerenderingFlow = currentStep == VoiceRegistrationStep.Prerendering
+    // 등록 창이 **지금 그려져 있는가**(`shouldDrawRegistrationWindow`). 그리는 조건(아래 `Dialog`)·뷰모델에 알리는
+    // 열림·등록 거절을 어디에 말할지가 이 값 하나를 본다 — '열기로 했다'(`showCreateForm`)와 다르다. 만드는 중에
+    // 이용권이 끝나고 등록이 실패하면 세부 정보로 돌아오는데, 그 단계는 그려지지 않는다. 결정 구간과 promote 직후의
+    // 사전렌더 진행 화면은 이용권과 무관하게 그린다 — 진행 UI·'백그라운드에서 계속' 이 보여야 한다(닫기는 자유 —
+    // 드라이브는 ViewModel 에서 계속된다).
+    //
+    // ⚠ **파생 상태로 둔다**(그냥 `val` 로 바꾸지 말 것). 효과 안에서 읽는 값이 **그 순간의 값**이어야 한다 — 그냥
+    // `val` 은 효과가 시작된 화면의 값에 묶여, 같은 차례에 앞의 효과가 단계를 바꿔 놓아도(만드는 중 → 세부 정보)
+    // '그려져 있다' 를 읽는다. 이용권 판정은 상태가 아니라 매 화면 계산하는 값이라 최신 값을 따로 쥔다.
+    val latestCanOpenCreateForm by rememberUpdatedState(canOpenCreateForm)
+    val registrationWindowShown by remember {
+        derivedStateOf { shouldDrawRegistrationWindow(showCreateForm, currentStep, latestCanOpenCreateForm) }
+    }
     // 확정 화면의 잠금표 — 서버 일(받기·청취 확인·문구 저장·등록 확정·초안 삭제)이 도는 동안 무엇을 잠그는지는 한 곳에서
     // 정한다(`confirmStepLocks`). 컨트롤마다 따로 고르면 뒤로가기는 열려 있는데 다시 만들기는 잠기는 식으로 갈라진다.
     val confirmLocks = confirmStepLocks(
@@ -1314,7 +1343,13 @@ internal fun VoiceProfileManagementPanel(
         mediaPlayer?.release()
         mediaPlayer = null
         showCreateForm = false
+        // ⚠ 닫힘은 **그 자리에서** 알린다(효과로 미루지 않는다). 나가기 경고는 초안 삭제를 보낸
+        // 바로 다음 줄에서 이 함수를 부른다 — 그 삭제의 실패는 창이 없으니 스낵바로 가야 하고,
+        // 뷰모델이 그걸 가르는 값이 이것이다(`registrationFailureSurface`).
+        onRegistrationWindowOpenChange(false)
         localMessage = null
+        // 다음에 창을 열 때 지난 거절 때문에 본문이 저절로 내려가지 않게 한다.
+        registrationFailureTick = 0
         // 미리듣기 스텝 상태 정리 — 진행 중 합성 코루틴을 취소해 늦은 재생을 막는다. 확인을 기다리던 옛 재생도
         // 세대를 올려 무효로 한다(Codex #870).
         confirmPreviewGeneration += 1
@@ -1346,19 +1381,31 @@ internal fun VoiceProfileManagementPanel(
 
     // 등록 요청을 보낸 뒤에도 다이얼로그를 닫지 않고 '만드는 중' 스텝으로 전환한다 —
     // 유지/삭제를 결정할 때까지 플로우 밖으로 나가지 않는다(사용자 요구).
+    //
+    // ⚠ **녹음(또는 고른 파일)은 여기서 놓지 않는다**(2026-10-11). 예전에는 '만드는 중' 으로 넘어가며
+    // 먼저 놓았다 — 그래서 등록이 실패해 세부 정보 단계로 돌아오면 `등록` 이 꺼져 있었고
+    // (`canSubmitRecord`·`canSubmitSingleFile` 이 둘 다 거짓), 네트워크가 잠깐 끊겼을 뿐인데도 처음부터
+    // 다시 녹음해야 했다. 놓는 것은 초안이 만들어진 **뒤**다(`releaseRegistrationSource` — 원본 파일은
+    // 그때 뷰모델이 지운다). 실패하면 뷰모델도 파일을 남긴다(`purgeVoiceCloneSourceRecordings` — 같은
+    // 계정의 일반 실패는 그대로 다시 시도할 수 있어야 한다).
     fun enterCreatingStep() {
         if (recorder.isRecording) recorder.cancel()
         isRecording = false
         recordingElapsedMillis = 0L
         recordingLevel = 0f
         stopMediaPreview()
-        selectedAudio = null
-        selectedFileUri = null
-        selectedFileDurationMillis = null
         createPreparing = false
         createSubmitAttempted = false
         localMessage = null
         currentStep = VoiceRegistrationStep.Creating
+    }
+
+    // 초안이 만들어졌다 — 등록에 쓴 녹음(고른 파일)의 참조를 놓는다. 녹음 파일은 업로드가 성공하면
+    // 뷰모델이 곧바로 지우므로(평문 생체정보) 이 참조는 더는 가리키는 것이 없다.
+    fun releaseRegistrationSource() {
+        selectedAudio = null
+        selectedFileUri = null
+        selectedFileDurationMillis = null
     }
 
     LaunchedEffect(pendingVoiceDraft?.id, pendingVoiceDraft?.status) {
@@ -1367,6 +1414,7 @@ internal fun VoiceProfileManagementPanel(
             // 생성 완료 → 만들기 다이얼로그 안 미리듣기 스텝으로. 앱 재시작/재로그인으로
             // ready draft 가 남아 있으면 이 스텝으로 바로 복귀한다(결정 전 이탈 방지).
             draft != null && (draft.status == null || draft.status == "ready") -> {
+                releaseRegistrationSource()
                 if (confirmNewVoice?.id != draft.id) {
                     // 초안이 바뀌었다 — 옛 초안의 늦은 청취 확인이 새 초안의 저장을 열지 않게(Codex #870).
                     confirmPreviewGeneration += 1
@@ -1391,6 +1439,7 @@ internal fun VoiceProfileManagementPanel(
 
             // 아직 클론 생성 중(서버 processing) → 만드는 중 스텝 유지/복귀.
             draft != null && draft.status == "processing" -> {
+                releaseRegistrationSource()
                 showCreateForm = true
                 if (currentStep != VoiceRegistrationStep.Creating) {
                     currentStep = VoiceRegistrationStep.Creating
@@ -1452,11 +1501,61 @@ internal fun VoiceProfileManagementPanel(
     // 만드는 중 스텝에서 생성 요청이 draft 행도 못 만들고 실패하면(업로드/클론 오류)
     // 세부 정보 스텝으로 되돌린다. Creating 진입은 요청 수락(busy=true 동기 설정) 후에만
     // 일어나므로, busy 도 아니고 draft 도 없으면 생성이 끝났는데 실패한 것이다.
-    // 오류 메시지는 ViewModel 이 전역 message 로 띄운다.
+    // 오류 문구는 아래 효과가 쓴다(`voiceRegistrationFailure`) — 창이 그려져 있으면 그 안에, 아니면 스낵바에.
+    // 녹음은 그대로 남아 있어 `등록` 을 다시 누를 수 있다(`enterCreatingStep` 주석).
+    // ⚠ **이 효과는 아래 거절 효과보다 앞에 둔다.** 실패와 busy 해제가 한 화면에 함께 와서 둘이 같은 차례에 도는데,
+    // 단계를 먼저 바꿔 놓아야 거절 효과가 '세부 정보 단계가 그려지는가' 로 가른다(`registrationWindowShown`).
     LaunchedEffect(voiceProfileBusy, pendingVoiceDraft?.id, currentStep) {
         if (currentStep != VoiceRegistrationStep.Creating) return@LaunchedEffect
         if (!voiceProfileBusy && pendingVoiceDraft == null) {
             currentStep = VoiceRegistrationStep.Details
+        }
+    }
+
+    // 등록 창이 **그려지고 사라지는 것**을 뷰모델에 알린다 — '열기로 했다'(`showCreateForm`)가 아니다. 열기로 했어도
+    // 그려지지 않으면 닫힌 것이고, 그 사이의 거절은 스낵바로 가야 보인다(`registrationWindowShown`).
+    // 닫힘은 `closeCreateDialog` 가 **그 자리에서도** 알린다 — 창을 닫으면서 보낸 요청의 실패가 스낵바로 가려면 응답보다
+    // 먼저 알려져 있어야 한다. 화면을 떠날 때도 닫힌 것이다(아래 `DisposableEffect`).
+    LaunchedEffect(registrationWindowShown) {
+        onRegistrationWindowOpenChange(registrationWindowShown)
+    }
+
+    // ── 등록 흐름의 거절은 이 창 안에서 말한다 ──
+    // 등록(`POST /voice/clone`)·저장(승격·교체)·다시 만들기(초안 삭제)의 실패를 뷰모델이 올리면 여기서
+    // 받는다. 어디에 말할지는 `registrationFailureSurface` 하나가 정한다(스펙 voice-and-message §4-1
+    // 「월 등록 한도」 ③).
+    //
+    // ⚠ **앱 스낵바에 맡기지 말 것.** 이 창은 화면을 다 덮는 자기 창이라 스낵바는 그 뒤에 그려진다.
+    // 2026-10-10 prod 의 사용자는 같은 `저장하기` 를 일곱 번 눌렀다 — 문구는 맞았는데 보이지 않았다.
+    LaunchedEffect(voiceRegistrationFailure) {
+        val failure = voiceRegistrationFailure ?: return@LaunchedEffect
+        // 저장이 실패했으면 '저장을 보냈다' 는 표시를 내린다. 안 내리면 뒤에 누른 `다시 만들기` 가
+        // 지우는 동안 저장 버튼이 '저장 중…' 으로 그려진다(두 버튼의 진행 표시가 이 값으로 갈린다).
+        promotedForPrerenderId = null
+        // ⚠ `windowOpen` 은 **지금 그려져 있는가**다(`registrationWindowShown` — 이 순간의 값을 읽는다). 만드는 중에
+        // 이용권이 끝나고 등록이 실패하면, 위의 되돌리기 효과(만드는 중 → 세부 정보)가 **같은 차례에 먼저** 돌아
+        // 그려지지 않는 단계로 바꿔 놓는다 — 그래서 이 거절은 스낵바로 간다. '열기로 했다'(`showCreateForm`)로 가르면
+        // 그려지지 않는 창 안에 써서 어디에도 안 보였다. 되돌리기 효과를 이 효과 **뒤로** 옮기지 말 것.
+        when (registrationFailureSurface(failure.code, windowOpen = registrationWindowShown)) {
+            // 이번 달 등록을 다 썼다 — 몇 번을 눌러도 같은 답이다. 알럿 하나로 이유를 말하고, 초안이
+            // 있으면 버리고, 창을 닫는다. 삭제가 실패해도 흐름은 끝낸다 — 남은 초안은 서버가 거둔다.
+            // 그래서 그 삭제는 **조용히** 보낸다(`onDiscardVoiceDraftQuietly`) — 사용자가 고른 삭제가 아닌데 월 한도
+            // 알럿 뒤에 '목소리 삭제에 실패했어요' 가 뜨면 등록된 목소리를 못 지운 것처럼 읽힌다(iOS 도 그 실패를 버린다).
+            RegistrationFailureSurface.EndFlow -> {
+                onVoiceRegistrationFailureShown()
+                monthlyLimitNoticeOpen = true
+                (confirmNewVoice ?: pendingVoiceDraft)?.id?.let { draftId -> onDiscardVoiceDraftQuietly(draftId) }
+                closeCreateDialog()
+            }
+            // 지금 보이는 단계 안에 쓴다 — 세부 정보 단계의 안내 줄, 확정 화면의 오류 줄(둘 다
+            // `localMessage` 를 그린다). 사용자가 읽고 그대로 다시 누른다.
+            RegistrationFailureSurface.InWindow -> {
+                onVoiceRegistrationFailureShown()
+                localMessage = failure.message
+                registrationFailureTick += 1
+            }
+            // 그사이 창이 닫혔거나 그려지지 않는다 — 닫힘을 다시 알리면 뷰모델이 읽지 않은 거절을 스낵바로 넘긴다.
+            RegistrationFailureSurface.AppSnackbar -> onRegistrationWindowOpenChange(false)
         }
     }
 
@@ -1491,8 +1590,11 @@ internal fun VoiceProfileManagementPanel(
         if (!canShareVoice) shareVoice = false
     }
 
-    LaunchedEffect(canCreateVoice) {
-        // 결정 구간에선 구독 상태가 흔들려도 플로우를 강제 종료하지 않는다(결정이 먼저).
+    // 이용권이 끝났으면 등록 창을 닫는다. 결정 구간에선 구독 상태가 흔들려도 플로우를 강제 종료하지 않는다(결정이 먼저).
+    // ⚠ **단계도 키다.** 만드는 중에 이용권이 끝나면 그때는 닫지 않는데, 등록이 실패해 세부 정보로 돌아온 뒤 이
+    // 효과가 다시 돌지 않으면 창이 '열기로 한' 채 그려지지 않고 남는다 — 목소리 탭의 안내 줄은 꺼진 채이고, 이용권이
+    // 돌아오면 지난 등록 화면이 저절로 다시 뜬다.
+    LaunchedEffect(canCreateVoice, currentStep) {
         if (!canCreateVoice && showCreateForm &&
             currentStep != VoiceRegistrationStep.Creating &&
             currentStep != VoiceRegistrationStep.Preview
@@ -1505,6 +1607,8 @@ internal fun VoiceProfileManagementPanel(
         onDispose {
             if (recorder.isRecording) recorder.cancel()
             stopMediaPreview()
+            // 이 화면이 사라지면 등록 창도 없다 — 뒤늦게 오는 등록 실패는 스낵바로 가야 한다.
+            onRegistrationWindowOpenChange(false)
         }
     }
 
@@ -1846,7 +1950,7 @@ internal fun VoiceProfileManagementPanel(
             // 유료인데 이번 달을 다 썼으면 버튼을 끈다 — 바로 옆에 '생성 가능 0/1회'가 있어
             // 왜 흐린지가 그 자리에서 읽힌다. 무료는 숫자가 없으니 끄지 않고(왜 흐린지 알 길이
             // 없다) 항상 눌리게 두어 이용권 안내 모달로 보낸다.
-            val monthlyExhausted = monthlyQuota != null && monthlyQuota.registrationRemaining <= 0
+            val monthlyExhausted = monthlyRegistrationUsedUp(monthlyQuota)
             Button(
                 onClick = {
                     if (canOpenCreateForm) showCreateForm = true else voicePlanGateOpen = true
@@ -1858,6 +1962,9 @@ internal fun VoiceProfileManagementPanel(
             }
         }
 
+        // 창을 열기로 한 동안 `localMessage` 는 창의 줄이다 — 그려지지 못하는 한 차례(이용권이 끝나 닫히기 직전)에
+        // 본문으로 새어 나오지 않게 `registrationWindowShown` 이 아니라 `showCreateForm` 으로 가른다. 그사이의 등록
+        // 거절은 스낵바로 간다.
         if (localMessage != null && !showCreateForm && localMessage != paidVoiceRequiredMessage) {
             MutedText(localMessage.orEmpty())
         }
@@ -2033,7 +2140,9 @@ internal fun VoiceProfileManagementPanel(
     // 그대로 두어서, 목소리가 이미 하나 있으면 **버튼을 눌러도 아무 일도 일어나지 않았다** —
     // `showCreateForm` 은 true 가 되는데 그릴 조건이 false 라 화면이 그대로였다.
     // 눌러도 아무 반응이 없는 것이 가장 나쁜 형태다(막혔다는 것조차 알 수 없다).
-    if (showCreateForm && (inDraftDecisionFlow || inPrerenderingFlow || canOpenCreateForm)) {
+    // 그리는 조건은 `registrationWindowShown` 하나다 — 뷰모델에 알리는 열림과 거절을 어디에 말할지도 같은 값을
+    // 본다. 여기만 따로 조건을 쓰면 '그려지지 않았는데 열려 있다' 가 다시 생긴다.
+    if (registrationWindowShown) {
         val useManualSystemInsets = Build.VERSION.SDK_INT >= 35
         val actionBottomPadding = 10.dp + if (useManualSystemInsets) {
             androidNavigationBarHeightPadding() + AndroidEdgeToEdgeNavigationExtraPadding
@@ -2144,6 +2253,18 @@ internal fun VoiceProfileManagementPanel(
                         inputMode == VoiceCaptureMode.Record &&
                         LocalConfiguration.current.screenHeightDp >= 560
                     val contentScrollState = rememberScrollState()
+                    // 방금 이 창 안에 쓴 거절 문구가 화면에 들어오게 본문을 끝까지 내린다. 문구 줄은 본문의
+                    // 아래쪽에 있다(세부 정보 단계는 맨 아래, 확정 화면은 공유 설정 바로 위) — 글자를 키운
+                    // 기기에서는 접힌 부분 아래로 밀려, 쓰고도 안 보일 수 있다. 본문이 화면에 다 들어오면
+                    // 아무 일도 하지 않는다.
+                    LaunchedEffect(registrationFailureTick) {
+                        if (registrationFailureTick == 0) return@LaunchedEffect
+                        // 문구 줄이 놓인 **뒤의** 높이로 잰다 — 한 프레임 기다린다.
+                        withFrameNanos { }
+                        val bottom = contentScrollState.maxValue
+                        // 아직 스크롤에 붙지 않았으면(재지 않은 기본값) 건드리지 않는다.
+                        if (bottom != Int.MAX_VALUE) contentScrollState.animateScrollTo(bottom)
+                    }
                     Column(
                         modifier = Modifier
                             .weight(1f)
@@ -2777,6 +2898,24 @@ internal fun VoiceProfileManagementPanel(
                     label = stringResource(R.string.voices_draft_exit_stay),
                     emphasized = true,
                     onClick = { draftExitWarningOpen = false },
+                ),
+            ),
+        )
+    }
+
+    // 이번 달 등록을 다 써서 등록 흐름을 끝냈다 — 왜 끝났는지 한 번 말한다(스펙 voice-and-message
+    // §4-1 「월 등록 한도」 ③). 등록 창은 이미 닫혔고 이 알럿은 목소리 탭 위에 뜬다. 액션은 닫기
+    // 하나다 — 이번 달에는 할 수 있는 일이 없다. 제목·본문은 iOS 의 같은 알럿과 같은 말이다.
+    if (monthlyLimitNoticeOpen) {
+        IosAlertDialog(
+            title = stringResource(R.string.voices_monthly_limit_title),
+            message = stringResource(R.string.voices_monthly_limit_message),
+            onDismiss = { monthlyLimitNoticeOpen = false },
+            actions = listOf(
+                IosAlertAction(
+                    label = stringResource(R.string.voicesr_close),
+                    emphasized = true,
+                    onClick = { monthlyLimitNoticeOpen = false },
                 ),
             ),
         )

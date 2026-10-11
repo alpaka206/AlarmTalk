@@ -3,12 +3,16 @@ import { z } from 'zod';
 import {
   EMAIL_PATTERN,
   EmailSchema,
+  EmailVerificationCodeSchema,
+  EmailVerificationConfirmRequestSchema,
+  PasswordResetConfirmRequestSchema,
   RegisterRequestSchema,
   LoginRequestSchema,
   DisplayNameSchema,
   clampDisplayName,
   isValidEmailFormat,
   normalizeEmail,
+  normalizeVerificationCode,
   VoicePitchSemitonesSchema,
   VOICE_PITCH_MIN_SEMITONES,
   VOICE_PITCH_MAX_SEMITONES,
@@ -94,6 +98,113 @@ describe('이메일 형식 규칙', () => {
     expect(EMAIL_PATTERN).toBe(
       "^(?:[A-Za-z0-9_'+-]+\\.)*[A-Za-z0-9_'+-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9-]*\\.)+[A-Za-z]{2,}$",
     );
+  });
+});
+
+/**
+ * **인증 코드는 ASCII 숫자 여섯 자다 — 서버 2차**(`docs/spec/session-and-auth.md`).
+ *
+ * 형식 검사(`\d{6}`)는 ASCII 만 받는다. 아라비아-인도·페르시아·전각 숫자를 내는 키보드로 친 코드는
+ * 값이 맞아도 형식에서 떨어져 횟수도 세지 않고 영영 통과하지 못했다 — 스토어에 나가 있는 앱에
+ * 닿는 길은 이 스키마의 변환뿐이다. 숫자는 코드포인트로 적는다(눈으로는 구분이 안 된다).
+ */
+describe('EmailVerificationCodeSchema — 숫자 정규화', () => {
+  const ARABIC_INDIC = '\u0661\u0662\u0663\u0664\u0665\u0666';
+  const PERSIAN = '\u06F1\u06F2\u06F3\u06F4\u06F5\u06F6';
+  const FULLWIDTH = '\uFF11\uFF12\uFF13\uFF14\uFF15\uFF16';
+
+  it.each([
+    ['ASCII', '123456'],
+    ['아라비아-인도(U+0660–0669)', ARABIC_INDIC],
+    ['페르시아(U+06F0–06F9)', PERSIAN],
+    ['전각(U+FF10–FF19)', FULLWIDTH],
+    ['섞어 쓴 것', '1\u0662\u06F3\uFF14' + '56'],
+  ])('%s 숫자를 받고 ASCII 여섯 자로 돌려준다', (_label, input) => {
+    expect(EmailVerificationCodeSchema.parse(input)).toBe('123456');
+  });
+
+  it('각 블록의 0 과 9 — 경계가 한 칸씩 밀리지 않는다', () => {
+    expect(normalizeVerificationCode('\u0660\u0669\u06F0\u06F9\uFF10\uFF19')).toBe('090909');
+    // 블록 바로 밖의 글자는 숫자가 아니다 — 그대로 남아 형식 검사에서 떨어진다.
+    for (const outside of ['\u065F', '\u066A', '\u06EF', '\u06FA', '\uFF0F', '\uFF1A']) {
+      expect(normalizeVerificationCode(outside)).toBe(outside);
+      expect(EmailVerificationCodeSchema.safeParse(`12345${outside}`).success, outside).toBe(false);
+    }
+  });
+
+  it('앞뒤 공백은 걷는다(붙여넣기)', () => {
+    expect(EmailVerificationCodeSchema.parse('  123456\n')).toBe('123456');
+    expect(EmailVerificationCodeSchema.parse(`\t${ARABIC_INDIC} `)).toBe('123456');
+  });
+
+  // ⚠ **그 밖의 글자는 손대지 않는다.** 여기서 지우기 시작하면 앱의 새니타이저와 규칙이 둘이 된다.
+  it.each([
+    ['5자리', '12345'],
+    ['7자리', '1234567'],
+    ['아라비아-인도 5자리', '\u0661\u0662\u0663\u0664\u0665'],
+    ['전각 7자리', '\uFF11\uFF12\uFF13\uFF14\uFF15\uFF16\uFF17'],
+    ['글자', '12a456'],
+    ['글자만', 'abcdef'],
+    ['가운데 공백', '123 456'],
+    ['가운데 하이픈', '123-456'],
+    ['다른 문자 체계의 숫자(데바나가리)', '\u0967\u0968\u0969\u096A\u096B\u096C'],
+    ['원문자', '\u2460\u2461\u2462\u2463\u2464\u2465'],
+    ['빈 문자열', ''],
+    ['공백만', '      '],
+  ])('%s 는 여전히 거절한다', (_label, input) => {
+    expect(EmailVerificationCodeSchema.safeParse(input).success).toBe(false);
+  });
+
+  it('문자열이 아니면 거절한다(숫자 123456 을 조용히 받지 않는다)', () => {
+    expect(EmailVerificationCodeSchema.safeParse(123456).success).toBe(false);
+    expect(EmailVerificationCodeSchema.safeParse(null).success).toBe(false);
+  });
+
+  // 세 요청이 같은 스키마를 쓴다 — 그래서 라우트가 해시하는 값(`parsed.data`)이 **바뀐 값**이다.
+  it('인증 확인·가입·비밀번호 재설정 확정이 모두 바뀐 값을 내놓는다', () => {
+    expect(
+      EmailVerificationConfirmRequestSchema.parse({ email: 'kim@example.com', code: ARABIC_INDIC })
+        .code,
+    ).toBe('123456');
+    expect(
+      PasswordResetConfirmRequestSchema.parse({
+        email: 'kim@example.com',
+        code: PERSIAN,
+        password: 's3curepass!',
+      }).code,
+    ).toBe('123456');
+    expect(
+      RegisterRequestSchema.parse({
+        email: 'kim@example.com',
+        password: 's3curepass!',
+        name: '김규원',
+        email_verification_code: FULLWIDTH,
+      }).email_verification_code,
+    ).toBe('123456');
+  });
+
+  it('형식 오류는 그 필드 한 칸을 가리킨다(400 응답의 issues)', () => {
+    const bad = EmailVerificationConfirmRequestSchema.safeParse({
+      email: 'kim@example.com',
+      code: '123 456',
+    });
+    expect(bad.success).toBe(false);
+    expect(bad.error?.issues.map((issue) => issue.path.join('.'))).toEqual(['code']);
+  });
+
+  // 가입·재설정 확정의 400 은 `issues` 를 그대로 싣는다. 변환을 끼워 넣으면서 그 모양이 달라지지
+  // 않았는지 — 변환 없는 옛 스키마와 나란히 놓고 본다(형식 오류·타입 오류 둘 다).
+  it('형식 오류의 issue 모양은 변환을 넣기 전과 같다', () => {
+    const before = z.object({
+      code: z.string().regex(/^\d{6}$/, '인증 코드는 6자리 숫자여야 합니다'),
+    });
+    const after = z.object({ code: EmailVerificationCodeSchema });
+    const issuesOf = (schema: z.ZodType, code: unknown) =>
+      JSON.parse(JSON.stringify(schema.safeParse({ code }).error?.issues ?? null));
+    for (const code of ['12345', '123 456', 'abcdef', '', 123456, null]) {
+      expect(issuesOf(after, code), String(code)).toEqual(issuesOf(before, code));
+      expect(issuesOf(after, code), String(code)).not.toBeNull();
+    }
   });
 });
 

@@ -1,6 +1,7 @@
 package com.alarmtalk.app
 
 import android.app.Application
+import android.content.Context
 import android.util.Log
 import androidx.annotation.StringRes
 import androidx.lifecycle.viewModelScope
@@ -19,6 +20,8 @@ import com.alarmtalk.app.network.PasswordResetConfirmRequest
 import com.alarmtalk.app.network.PasswordResetRequest
 import com.alarmtalk.app.network.RegisterRequest
 import com.alarmtalk.app.network.AlarmTalkApiClient
+import com.alarmtalk.app.network.apiErrorCode
+import com.alarmtalk.app.network.apiErrorMessage
 import com.alarmtalk.app.sync.RemoteAlarmSyncScheduler
 import kotlinx.coroutines.launch
 
@@ -50,9 +53,8 @@ internal fun MainViewModel.login(email: String, password: String) {
             // 스낵바(전역 message) 대신 로그인 화면 인라인 에러로 — 키보드가 열려 있어도 보인다.
             // 서버는 미가입/비밀번호 불일치를 구분하지 않고 AUTH_INVALID_CREDENTIALS 401 하나로
             // 응답한다(계정 존재 여부 노출 방지) — 안내 문구도 이메일·비밀번호를 함께 확인하게 쓴다.
-            // ⚠ **코드는 예외에서 한 번만 뽑는다**(`apiErrorMessage` 주석 — errorBody 는 한 번만
-            // 읽힌다). 뽑은 값을 문구와 **함께** 상태로 올려, 화면이 갈래를 가를 때 번역된
-            // 문구가 아니라 이 코드를 보게 한다.
+            // 코드는 한 번 뽑아 문구와 **함께** 상태로 올린다 — 화면이 갈래를 가를 때 번역된
+            // 문구가 아니라 이 코드를 보게 한다(`apiErrorMessage` 주석).
             val errorCode = com.alarmtalk.app.network.apiError(error).code
             loginErrorCode = errorCode
             loginError = when (errorCode) {
@@ -66,6 +68,8 @@ internal fun MainViewModel.login(email: String, password: String) {
 }
 
 internal fun MainViewModel.requestEmailVerification(email: String) {
+    // 도는 동안의 두 번째 탭은 버린다([confirmEmailVerification] 주석).
+    if (authBusy) return
     val normalizedEmail = email.trim().lowercase()
     if (normalizedEmail.isBlank()) {
         message = getApplication<android.app.Application>().getString(R.string.msg_email_required)
@@ -79,6 +83,9 @@ internal fun MainViewModel.requestEmailVerification(email: String) {
         }.onSuccess { response ->
             registerEmailVerificationSentTo = normalizedEmail
             registerEmailVerified = null
+            // 새 코드를 받았다 — 앞의 코드는 죽었다(서버는 가장 새 것만 본다). 칸에 남은 옛 숫자를
+            // 비운다. 안 비우면 꽉 찬 칸에 치는 새 숫자가 한 글자도 안 들어가 옛 숫자가 다시 나간다.
+            emailCodeFieldClearTick++
             message = response.debugCode
                 ?.takeIf { BuildConfig.DEBUG && it.isNotBlank() }
                 ?.let { getApplication<android.app.Application>().getString(R.string.msg_verification_code_debug, it) }
@@ -115,7 +122,51 @@ private fun MainViewModel.duplicateEmailMessage(error: Throwable): String? {
     }
 }
 
+/**
+ * 서버가 **인증 코드 자체를** 거절한 코드 셋 — 틀림·만료·시도 상한. 인증 확인·가입·비밀번호 재설정
+ * 확정이 같은 판정(`routes/auth.ts` 의 `checkEmailVerificationCode`)을 지나므로 셋 다 같은 코드를 낸다.
+ */
+private val EMAIL_CODE_REFUSAL_CODES = setOf(
+    "AUTH_EMAIL_CODE_INVALID",
+    "AUTH_EMAIL_CODE_EXPIRED",
+    "AUTH_EMAIL_CODE_ATTEMPTS_EXCEEDED",
+)
+
+/**
+ * 이 실패가 **코드가 거절됐다**는 뜻인가 — 그렇다면 코드 칸을 비우고, 가입 화면은 '인증 완료' 를
+ * 내린다(스펙 session-and-auth 「거절된 숫자를 칸에 남기지 않는다」·「거절 뒤에 할 일이 화면에 있어야
+ * 한다」). iOS `AuthViewModel.isEmailCodeRefusal(_:)` 과 짝이다.
+ *
+ * ⚠ **그 셋뿐이다.** 네트워크·5xx·`RATE_LIMITED`·`AUTH_VALIDATION_FAILED` 는 코드가 거절된 것이
+ * 아니다 — 숫자를 그대로 두어 다시 누를 수 있게 한다.
+ */
+internal fun isEmailCodeRefusal(errorCode: String?): Boolean = errorCode in EMAIL_CODE_REFUSAL_CODES
+
+/**
+ * 인증 코드를 확인하는 세 자리(인증 확인·가입·비밀번호 재설정 확정)의 실패 문구 — 공용 표
+ * (`ApiErrorMessages`)가 서버의 거절 이유를 말하고, 표에 없으면 그 화면의 폴백이다
+ * (`docs/spec/error-codes.md` §4). iOS `AuthViewModel.emailCodeErrorMessage(for:fallback:)`.
+ *
+ * ⚠ **'인증 코드가 맞지 않아요' 를 [fallback] 으로 넘기지 말 것.** 그 문장은
+ * `AUTH_EMAIL_CODE_INVALID` 일 때만 표가 말한다. 예전에는 인증 확인의 폴백이 그 문장이라 시도 상한
+ * (429)도 네트워크 실패도 "틀렸다" 로 읽혔다 — 2026-10-09 prod 의 신규 가입자는 상한에 닿은 뒤에도
+ * 그 말만 들었고, 다시 받으라는 말은 어디에도 없었다.
+ */
+internal fun emailCodeFailureMessage(context: Context, error: Throwable, fallback: String): String =
+    apiErrorMessage(context, apiErrorCode(error)) ?: userFacingError(error, fallback)
+
+/** 코드가 거절됐으면 코드 칸을 비우라는 신호를 올린다. 거절이었는지를 돌려준다. */
+private fun MainViewModel.clearEmailCodeFieldIfRefused(error: Throwable): Boolean {
+    val refused = isEmailCodeRefusal(apiErrorCode(error))
+    if (refused) emailCodeFieldClearTick++
+    return refused
+}
+
 internal fun MainViewModel.confirmEmailVerification(email: String, code: String) {
+    // 확인이 도는 동안의 두 번째 탭은 버린다. `authBusy` 는 아래 코루틴이 **곧바로** 세우지만
+    // (메인 즉시 디스패처) 버튼이 꺼지는 것은 다음 리컴포지션이다 — 그 한 프레임 사이의 탭이 같은
+    // 숫자를 한 번 더 보내 시도 횟수를 하나 더 태운다.
+    if (authBusy) return
     val normalizedEmail = email.trim().lowercase()
     if (normalizedEmail.isBlank() || code.trim().length != 6) {
         registerError = getApplication<android.app.Application>().getString(R.string.msg_verification_code_six_digits_required)
@@ -136,7 +187,10 @@ internal fun MainViewModel.confirmEmailVerification(email: String, code: String)
             message = getApplication<android.app.Application>().getString(R.string.msg_email_verification_completed)
         }.onFailure { error ->
             AlarmTalkLog.reportError("Email verification confirm failed", error)
-            registerError = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_verification_code_mismatch))
+            val app = getApplication<android.app.Application>()
+            // 폴백은 중립 문장이다 — '맞지 않아요' 는 `AUTH_EMAIL_CODE_INVALID` 일 때만([emailCodeFailureMessage]).
+            registerError = emailCodeFailureMessage(app, error, app.getString(R.string.api_error_server))
+            clearEmailCodeFieldIfRefused(error)
         }
         authBusy = false
     }
@@ -148,6 +202,7 @@ internal fun MainViewModel.register(
     name: String,
     emailVerificationCode: String,
 ) {
+    if (authBusy) return
     val normalizedEmail = email.trim().lowercase()
     val trimmedName = name.trim()
     val trimmedCode = emailVerificationCode.trim()
@@ -181,12 +236,18 @@ internal fun MainViewModel.register(
             message = getApplication<android.app.Application>().getString(R.string.msg_register_success, response.user.email)
         }.onFailure { error ->
             AlarmTalkLog.reportError("Email registration failed", error)
+            val app = getApplication<android.app.Application>()
             val friendly = duplicateEmailMessage(error)
             if (authRedirectToLogin) {
                 authNotice = friendly
             } else {
                 registerError = friendly
-                    ?: userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_register_failed))
+                    ?: emailCodeFailureMessage(app, error, app.getString(R.string.msg_register_failed))
+                // 가입은 같은 코드를 **한 번 더** 판정한다 — 인증을 통과하고도 코드를 받은 지 10분이
+                // 지났으면 여기서 만료로 거절된다. 그때 '인증 완료' 를 내려야 코드 줄과 '다시 받기' 가
+                // 돌아온다. 안 내리면 "다시 받아 주세요" 옆에 꺼진 버튼만 남고, 그 주소로는 프로세스가
+                // 죽을 때까지 풀리지 않는다.
+                if (clearEmailCodeFieldIfRefused(error)) registerEmailVerified = null
             }
         }
         authBusy = false
@@ -196,6 +257,7 @@ internal fun MainViewModel.register(
 // 비밀번호 재설정 코드 요청. 백엔드는 계정 존재 여부를 노출하지 않으므로(비번 계정에만 발송),
 // 응답은 항상 성공이다. 코드를 보낸 이메일을 기억해 다음 단계(코드+새 비번)를 노출한다.
 internal fun MainViewModel.requestPasswordReset(email: String) {
+    if (authBusy) return
     val normalizedEmail = email.trim().lowercase()
     if (normalizedEmail.isBlank()) {
         message = getApplication<android.app.Application>().getString(R.string.msg_email_required)
@@ -207,6 +269,8 @@ internal fun MainViewModel.requestPasswordReset(email: String) {
             api.requestPasswordReset(PasswordResetRequest(email = normalizedEmail))
         }.onSuccess { response ->
             passwordResetCodeSentTo = normalizedEmail
+            // 다시 받았으면 칸의 옛 숫자를 비운다([requestEmailVerification] 과 같은 이유).
+            emailCodeFieldClearTick++
             message = response.debugCode
                 ?.takeIf { BuildConfig.DEBUG && it.isNotBlank() }
                 ?.let { getApplication<android.app.Application>().getString(R.string.msg_verification_code_debug, it) }
@@ -226,6 +290,7 @@ internal fun MainViewModel.confirmPasswordReset(
     newPassword: String,
     onSuccess: () -> Unit,
 ) {
+    if (authBusy) return
     val normalizedEmail = email.trim().lowercase()
     if (normalizedEmail.isBlank() || code.trim().length != 6 || newPassword.isBlank()) {
         message = getApplication<android.app.Application>().getString(R.string.msg_register_all_fields_required)
@@ -247,7 +312,11 @@ internal fun MainViewModel.confirmPasswordReset(
             onSuccess()
         }.onFailure { error ->
             AlarmTalkLog.reportError("Password reset confirm failed", error)
-            message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_password_reset_failed))
+            val app = getApplication<android.app.Application>()
+            message = emailCodeFailureMessage(app, error, app.getString(R.string.msg_password_reset_failed))
+            // 거절된 숫자를 칸에 남기지 않는다 — 요청 버튼이 '인증 코드 다시 받기' 로 눌리므로
+            // (`PasswordResetScreen`) 다시 받아 새 숫자를 치면 된다.
+            clearEmailCodeFieldIfRefused(error)
         }
         authBusy = false
     }
@@ -1415,9 +1484,10 @@ internal fun sessionTokenToSave(rollToken: Boolean, serverToken: String?): Strin
  * 상태코드만 보고 끊으면 **설정 실수 한 번이 전체 로그아웃**이 된다. iOS 에도 같은 경계가
  * 있다(`AuthViewModel.refreshUserApplyingToken`).
  *
- * ⚠ **`errorBody` 는 한 번만 읽힌다.** 그래서 본문은 **404 일 때만** 연다 —
- * `AlarmTalkLog.isHandledAuthFailure` 가 상태코드만 보는 것과 같은 규약이고, 이 판정을
- * 쓰는 자리(`refreshAppSessionNow` 의 `onFailure`)는 본문을 달리 읽지 않는다.
+ * ⚠ **본문은 404 일 때만 연다.** 상태코드로 끝나는 판정에 본문을 끌어들이지 않는다 —
+ * `AlarmTalkLog.isHandledAuthFailure` 가 상태코드만 보는 것과 같은 규약이다. (예전에는 읽는
+ * 순서까지 지켜야 했다 — 코드를 읽으면 오류 본문이 소진됐다. 이제는 읽어도 남는다 —
+ * `network/ApiErrors.kt`.)
  * 감싼 예외를 풀지 않는 것도 `network/ApiErrors.kt` 의 `apiError` 와 같다 — 판정하는 자리가
  * Retrofit 호출 바로 그 자리라 `HttpException` 이 맨 위에 온다.
  */

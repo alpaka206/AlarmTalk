@@ -21,6 +21,22 @@ protocol AuthAPIProviding: AnyObject, Sendable {
 
 extension AlarmTalkAPI: AuthAPIProviding {}
 
+/// 이메일 인증 코드를 다루는 다섯 요청(코드 요청 둘 + 코드를 확인하는 세 자리).
+///
+/// `AuthAPIProviding` 과 따로 둔다 — 거기 더하면 그 프로토콜의 mock 셋이 쓰지도 않는 다섯
+/// 메서드를 채워야 한다. 가르는 이유는 하나다: **거절 갈래의 배선**(문장 자리 · 코드 칸 비우기)을
+/// 회귀 테스트가 뷰모델에서 직접 볼 수 있게 한다(`EmailCodeErrorMessageTests`). 예전에는 다섯
+/// 요청이 모두 `AlarmTalkAPI.shared` 를 직접 불러 문구 고르기 말고는 고정할 길이 없었다.
+protocol EmailCodeAPIProviding: AnyObject, Sendable {
+    func requestEmailVerification(email: String) async throws -> RequestEmailVerificationResponse
+    func verifyEmailCode(email: String, code: String) async throws -> VerifyEmailCodeResponse
+    func register(email: String, password: String, name: String, verificationCode: String) async throws -> AuthSession
+    func requestPasswordReset(email: String) async throws -> RequestEmailVerificationResponse
+    func confirmPasswordReset(email: String, code: String, password: String) async throws -> PasswordResetConfirmResponse
+}
+
+extension AlarmTalkAPI: EmailCodeAPIProviding {}
+
 /// Apple 자격 증명 상태를 조회하는 의존성. 단위 테스트에서 mock 가능.
 /// 실제 구현은 `ASAuthorizationAppleIDProvider.credentialState(forUserID:)`(SDK 의 async 판)를 호출.
 protocol AppleCredentialStateProviding: Sendable {
@@ -84,6 +100,39 @@ final class AuthViewModel: ObservableObject {
     func clearLoginError() {
         loginError = nil
         loginErrorCode = nil
+    }
+
+    /// 가입 화면의 **이메일 인증 묶음 안**(인라인 오류 자리)에 붙는 실패 문장 — 코드 요청(다시 받기
+    /// 포함)·인증 확인·가입(`POST /auth/register`)의 실패다. 코드 줄이 떠 있으면 그 아래에 뜬다.
+    /// 가입이 코드를 거절했으면 코드 줄이 되돌아와 그 아래에, 코드와 무관한 가입 실패는 '이메일
+    /// 인증 완료' 줄 아래에, 아직 코드를 받지 못했으면 '이메일 인증' 버튼 바로 아래에 뜬다(`LoginView`).
+    ///
+    /// ⚠ **하단 `statusMessage` 로 보내지 말 것.** 그 자리는 비밀번호 칸과 제출 버튼을 지난 화면
+    /// 맨 아래라 키패드 뒤에 놓인다 — iOS 숫자 키패드에는 닫는 키가 없다. 2026-10-09 까지
+    /// 세 실패가 전부 거기로 갔다. 안드로이드는 처음부터 이 자리에 붙인다
+    /// (`ui/auth/AuthScreen.kt` 의 `registerError`). 규칙은 `docs/spec/session-and-auth.md`
+    /// 「이메일 인증 코드」.
+    @Published private(set) var emailCodeError: String?
+
+    /// 코드 칸을 **비우라는 신호** — 화면은 값이 아니라 바뀌었다는 사실만 본다
+    /// (`LoginView`·`PasswordResetView` 의 `.onChange`).
+    ///
+    /// 올리는 자리는 둘이다: 서버가 코드를 거절했을 때(`isEmailCodeRefusal` — 인증 확인·가입·
+    /// 재설정 확정 어디서든)와 **다시 받기가 성공했을 때**.
+    /// - 확인 버튼은 6자리가 찼을 때만 눌린다. 칸이 비면 방금 거절된 숫자를 그대로 다시 보낼
+    ///   수 없다 — 2026-10-09 prod 의 신규 가입자는 같은 여섯 자리를 3초 사이에 다섯 번 보내
+    ///   시도 상한을 태웠다.
+    /// - 칸은 6자에서 자른다. 꽉 찬 칸에 새 코드를 치면 한 글자도 안 들어간다 — 비우지 않으면
+    ///   다시 받은 뒤에도 옛 숫자가 나간다.
+    ///
+    /// ⚠ **오류 문장에 얹지 말 것.** 문장은 번역되고(화면이 글자를 비교하면 en·ja 에서 조용히
+    /// 어긋난다), 쓰는 곳이 여럿이라 함께 지워지지 않는다. 신호는 이것 하나다.
+    @Published private(set) var emailCodeFieldClearTick = 0
+
+    /// 코드·이메일·비밀번호를 고쳐 치기 시작하면 화면이 부른다 — 이미 고친 값 곁에 옛 경고를
+    /// 남기지 않는다(`clearLoginError` 와 같은 시점이다).
+    func clearEmailCodeError() {
+        emailCodeError = nil
     }
 
     /// 진행 중인 **서버 쪽 로그아웃 뒷정리**. 로그인은 이게 끝난 뒤에 세션을 심는다.
@@ -174,6 +223,34 @@ final class AuthViewModel: ObservableObject {
         // "로그인에 실패했어요" 로 읽혀 사용자가 계속 다시 시도한다.
         return APIErrorMessages.message(for: code)
             ?? userFacingErrorMessage(error, fallback: String(localized: "로그인에 실패했어요"))
+    }
+
+    /// 인증 코드를 확인하는 세 자리(인증 확인 · 가입 · 비밀번호 재설정 확정)의 실패를 사용자
+    /// 문구로 바꾼다. 층 순서는 **공용 표 → 그 화면의 폴백**이고, 셋 다 서버의 같은 판정
+    /// (`checkEmailVerificationCode`)을 지나므로 문장도 같은 표에서 고른다
+    /// (`docs/spec/error-codes.md` §4 — 표를 부르는 아홉 자리).
+    ///
+    /// ⚠ **'맞지 않아요' 를 `fallback` 으로 넘기지 말 것.** 그 말은 `AUTH_EMAIL_CODE_INVALID` 일
+    /// 때만 한다(표가 그 문장을 준다). 예전에는 인증 확인의 폴백이 "인증 코드가 맞지 않아요" 였고
+    /// 폴백 헬퍼는 코드를 보지 않아, 시도 상한(429)·만료·네트워크 실패까지 전부 그렇게 읽혔다 —
+    /// 상한에 닿은 사람은 맞는 코드를 넣어도 같은 답을 들었고, 다시 받으라는 말은 어디에도
+    /// 없었다(2026-10-09 prod).
+    nonisolated static func emailCodeErrorMessage(for error: Error, fallback: String) -> String {
+        APIErrorMessages.message(for: error, fallback: fallback)
+    }
+
+    /// 서버가 **코드를 거절한** 답인가 — 틀림 · 만료 · 시도 상한 셋뿐이다. 이때만 코드 칸을 비우고
+    /// (`emailCodeFieldClearTick`), 가입 화면은 '인증 완료' 를 내려 코드 줄과 다시 받기를 되돌린다.
+    ///
+    /// ⚠ **네트워크·5xx·`RATE_LIMITED`·`AUTH_VALIDATION_FAILED` 는 거절이 아니다.** 코드가
+    /// 틀렸다는 답이 아니므로 숫자를 그대로 두어 다시 누를 수 있게 한다.
+    nonisolated static func isEmailCodeRefusal(_ errorCode: String?) -> Bool {
+        switch errorCode {
+        case "AUTH_EMAIL_CODE_INVALID", "AUTH_EMAIL_CODE_EXPIRED", "AUTH_EMAIL_CODE_ATTEMPTS_EXCEEDED":
+            return true
+        default:
+            return false
+        }
     }
     @Published var isBusy = false
     /// 401 외의 일시 오류(5xx, 4xx 기타, 네트워크 단절 등) 를 사용자에게 보여주되
@@ -450,6 +527,22 @@ final class AuthViewModel: ObservableObject {
     @Published private(set) var consentUnsupported = false
 
     private let api: AuthAPIProviding
+    private let emailCodeAPI: EmailCodeAPIProviding
+    /// 인증 코드 갈래 다섯(코드 요청 둘 · 인증 확인 · 가입 · 재설정 확정)이 잡은 실패를 올리는 자리 —
+    /// 기본은 `AlarmTalkLog.reportError`. 유닛 테스트는 Sentry 를 켜지 않아 무엇이 올라갔는지 SDK 로는
+    /// 볼 수 없으므로(`AlarmTalkLog.shouldStartCrashReporting`), 이 자리를 주입해 「실패마다 한 번, 정해진
+    /// 글자로」 를 회귀 테스트가 직접 본다(`EmailCodeErrorMessageTests`). `UsageEventUploader.flush` 의
+    /// `reportFailure` 와 같은 모양이다.
+    ///
+    /// ⚠ **메시지는 안드로이드 `ui/main/MainViewModelAuthActions.kt` 의 보고와 같은 글자다.**
+    /// 번역하거나 다듬지 말 것 — 그 글자가 `log.key` 태그이자 묶음 키의 셋째 마디라
+    /// (`AlarmTalkLog.apiFailureFingerprint`), 한 글자만 달라도 같은 실패가 두 프로젝트에서 다른 이름으로
+    /// 묶인다. 2026-10-11 전에는 iOS 가 이 다섯 갈래를 아예 올리지 않았다 — 1.2.10 의 막다른 길(시도
+    /// 상한 뒤의 429)은 Sentry 에서 한쪽 앱으로만 보였다.
+    ///
+    /// ⚠ **호출부에서 거르지 말 것.** 취소·일시적 네트워크·401 을 브레드크럼으로 내리는 판정은 그 함수
+    /// 한 곳이다(`AlarmTalkLog.handledFailureCategory`, `docs/spec/error-codes.md` §3).
+    private let reportFailure: (String, Error) -> Void
     private let appleCredentialProvider: AppleCredentialStateProviding
     private let accessSnapshotStore: AccessSnapshotStore
     /// `addObserver(forName:object:queue:using:)` 가 반환한 토큰. deinit 시
@@ -471,10 +564,14 @@ final class AuthViewModel: ObservableObject {
 
     init(
         api: AuthAPIProviding = AlarmTalkAPI.shared,
+        emailCodeAPI: EmailCodeAPIProviding = AlarmTalkAPI.shared,
         appleCredentialProvider: AppleCredentialStateProviding = LiveAppleCredentialStateProvider(),
-        accessSnapshotStore: AccessSnapshotStore = AccessSnapshotStore()
+        accessSnapshotStore: AccessSnapshotStore = AccessSnapshotStore(),
+        reportFailure: @escaping (String, Error) -> Void = { AlarmTalkLog.reportError($0, error: $1) }
     ) {
         self.api = api
+        self.emailCodeAPI = emailCodeAPI
+        self.reportFailure = reportFailure
         self.appleCredentialProvider = appleCredentialProvider
         self.accessSnapshotStore = accessSnapshotStore
         // ⚠ **읽기 전에** 판정한다 — 새로 깐 앱이 옛 키체인 세션을 물고 뜨지 않게.
@@ -656,8 +753,10 @@ final class AuthViewModel: ObservableObject {
 
     // MARK: - Phase 3-C3: 이메일/비밀번호 + 인증코드
 
-    /// 이메일 인증 코드를 발송한다. UI 는 statusMessage 를 받아 상태 메시지로 노출.
-    /// 인증 코드를 보낸다. **성공하면 true** — 호출부는 이 값으로 다음 단계를 연다.
+    /// 이메일 인증 코드를 발송한다. 보냈다는 안내는 `statusMessage`, 실패 문장은 `emailCodeError`
+    /// (인증 묶음의 인라인 자리)로 간다.
+    /// 인증 코드를 보낸다. **성공하면 true** — 호출부는 이 값으로 다음 단계를 연다. false 는 그
+    /// 단계를 **닫으라는** 뜻이 아니다(`LoginView.verifyEmailRow`).
     ///
     /// ⚠ **반환값을 없애고 `statusMessage` 를 비교하는 방식으로 되돌리지 말 것.**
     /// 예전에는 호출부가 `auth.statusMessage == "인증 코드를 보냈어요…"` 로 성공을
@@ -669,37 +768,81 @@ final class AuthViewModel: ObservableObject {
         guard !isBusy, !email.isEmpty else { return false }
         isBusy = true
         defer { isBusy = false }
+        // 새 시도다 — 앞 코드에 대한 경고("…다시 받아 주세요")를 다시 받는 중에 남기지 않는다.
+        emailCodeError = nil
 
         do {
-            _ = try await AlarmTalkAPI.shared.requestEmailVerification(email: email)
+            _ = try await emailCodeAPI.requestEmailVerification(email: email)
             statusMessage = String(localized: "인증 코드를 보냈어요. 메일을 확인해 주세요.")
+            // 다시 받았으면 칸에 남은 앞 코드를 비운다(`emailCodeFieldClearTick` 주석).
+            // 서버가 보내지 않고 답한 성공(다시 받기 간격 · 하루 상한)도 응답이 같아 구분하지 못하고 같이
+            // 비운다. 그 뒤에 할 일은 둘이 다르다:
+            // - 간격이면 쥐고 있던 코드가 아직 살아 있다 — 서버는 간격 안의 코드를 **아직 쓸 수 있을
+            //   때만** 붙잡는다(`routes/auth.ts` 의 `shouldSkipEmailCodeSend`). 가장 새 메일의 숫자를 다시
+            //   치면 된다.
+            // - 하루 상한이면 아니다 — 새 코드가 오지 않으므로, 쥐고 있던 코드가 상한에 닿았거나
+            //   만료됐으면 최근 24시간에 보낸 수가 상한 아래로 내려갈 때까지 이 주소로는 가입을 마칠 수
+            //   없다(`docs/spec/session-and-auth.md` 「거절된 숫자를 칸에 남기지 않는다」).
+            emailCodeFieldClearTick &+= 1
             return true
         } catch {
-            failStatus(userFacingErrorMessage(error, fallback: String(localized: "인증 코드를 보내지 못했어요")))
+            reportFailure("Email verification request failed", error)
+            // 실패도 인라인 자리로 보낸다 — 다시 받기를 누르는 사람은 대개 방금 "…다시 받아 주세요"
+            // 를 읽은 사람이다. 그 답이 하단 상태 줄(키패드 뒤)로 가면 눌러도 아무 반응이 없는 것처럼
+            // 보인다(2026-10-11 리뷰). 안드로이드도 같은 실패를 인라인 `registerError` 에 둔다.
+            // 문장은 그대로다 — 코드 요청은 공용 표를 부르는 자리가 아니다(`docs/spec/error-codes.md` §4).
+            // 칸은 건드리지 않는다 — 쥐고 있는 코드가 아직 살아 있을 수 있다.
+            showEmailCodeError(
+                userFacingErrorMessage(error, fallback: String(localized: "인증 코드를 보내지 못했어요")),
+                refused: false
+            )
             return false
         }
     }
 
     /// 이메일 인증 코드를 검증한다. 성공하면 true, 실패하면 false.
     /// UI 는 반환값으로 다음 단계(비밀번호 입력 활성화)를 결정.
+    ///
+    /// 실패 문장은 하단 `statusMessage` 가 아니라 **코드 줄 아래**(`emailCodeError`)로 간다.
     @discardableResult
     func verifyEmailCode(email: String, code: String) async -> Bool {
+        // 확인이 도는 동안의 두 번째 탭은 버린다 — 겹쳐 보낸 같은 숫자가 틀린 횟수를 태운다.
         guard !isBusy else { return false }
         isBusy = true
         defer { isBusy = false }
+        emailCodeError = nil
 
         do {
-            let response = try await AlarmTalkAPI.shared.verifyEmailCode(email: email, code: code)
+            let response = try await emailCodeAPI.verifyEmailCode(email: email, code: code)
             if response.verified == false {
-                statusMessage = String(localized: "인증 코드가 일치하지 않아요.")
+                // 지금 서버는 거절을 4xx 로만 답한다(`routes/auth.ts` 의 `/email-code/verify`).
+                // 이 갈래는 옛 응답 모양을 위한 것이고, 틀린 코드와 같은 자리·같은 신호로 다룬다.
+                showEmailCodeError(String(localized: "인증 코드가 일치하지 않아요."), refused: true)
                 return false
             }
             statusMessage = String(localized: "이메일 인증이 완료됐어요.")
             return true
         } catch {
-            failStatus(userFacingErrorMessage(error, fallback: String(localized: "인증 코드가 맞지 않아요")))
+            reportFailure("Email verification confirm failed", error)
+            showEmailCodeError(
+                // 코드가 없거나 표에 없는 실패(네트워크·5xx)는 중립 문장이다 — 맞는 코드를 든
+                // 사람에게 틀렸다고 말하지 않는다.
+                Self.emailCodeErrorMessage(for: error, fallback: APIErrorMessages.temporaryFailure),
+                refused: Self.isEmailCodeRefusal((error as? APIError)?.serverErrorCode)
+            )
             return false
         }
+    }
+
+    /// 코드 요청·인증 확인·가입의 실패 문장을 이메일 인증 묶음의 인라인 자리에 세운다(`emailCodeError`).
+    /// 서버가 코드를 거절한 것이면 코드 칸도 비우게 한다(`emailCodeFieldClearTick`).
+    ///
+    /// 하단 안내는 지운다 — 남겨 두면 "인증 코드를 보냈어요" 와 실패 문장이 한 화면의 두 자리에
+    /// 함께 떠 있다.
+    private func showEmailCodeError(_ message: String, refused: Bool) {
+        statusMessage = nil
+        emailCodeError = message
+        if refused { emailCodeFieldClearTick &+= 1 }
     }
 
     /// 이메일/비밀번호 로그인.
@@ -734,10 +877,11 @@ final class AuthViewModel: ObservableObject {
         verificationCode: String
     ) async {
 
+        emailCodeError = nil
         do {
             // 보낸 진입·순번을 응답까지 들고 간다(`recordAccountAnswer`).
             let accountRequest = beginAccountRequest()
-            let nextSession = try await AlarmTalkAPI.shared.register(
+            let nextSession = try await emailCodeAPI.register(
                 email: email,
                 password: password,
                 name: name,
@@ -749,7 +893,17 @@ final class AuthViewModel: ObservableObject {
             // 신규 가입자는 필수 약관 동의가 필요 — 동의 화면으로 게이팅.
             await checkConsentStatus()
         } catch {
-            failStatus(userFacingErrorMessage(error, fallback: String(localized: "회원가입에 실패했어요")))
+            reportFailure("Email registration failed", error)
+            // ⚠ **가입은 같은 코드를 한 번 더 판정한다** — 인증을 통과하고도 가입 버튼을 누를 때
+            // 코드를 받은 지 10분이 지났으면 여기서 만료로 거절된다. 그때는 문장만 바꾸고 끝내지
+            // 않는다: 신호를 올리면 화면이 '인증 완료' 를 내려 코드 줄과 다시 받기를 되돌린다
+            // (`LoginView`). '인증 완료' 를 그대로 두면 꺼진 다시 받기 옆에서 "다시 받아 주세요" 라고
+            // 말하게 된다. 코드와 무관한 실패(네트워크·`RATE_LIMITED`)는 인증 상태를 건드리지 않는다 —
+            // 같은 코드로 다시 누르면 된다.
+            showEmailCodeError(
+                Self.emailCodeErrorMessage(for: error, fallback: String(localized: "회원가입에 실패했어요")),
+                refused: Self.isEmailCodeRefusal((error as? APIError)?.serverErrorCode)
+            )
         }
     }
 
@@ -765,10 +919,14 @@ final class AuthViewModel: ObservableObject {
         defer { isBusy = false }
 
         do {
-            _ = try await AlarmTalkAPI.shared.requestPasswordReset(email: normalized)
+            _ = try await emailCodeAPI.requestPasswordReset(email: normalized)
             passwordResetCodeSentTo = normalized
             statusMessage = String(localized: "재설정 코드를 보냈어요. 메일을 확인해 주세요.")
+            // 다시 받았으면 칸에 남은 앞 코드를 비운다 — 가입 화면과 같은 규칙이다
+            // (`emailCodeFieldClearTick` 주석).
+            emailCodeFieldClearTick &+= 1
         } catch {
+            reportFailure("Password reset request failed", error)
             failStatus(userFacingErrorMessage(error, fallback: String(localized: "인증 코드를 보내지 못했어요")))
         }
     }
@@ -790,7 +948,7 @@ final class AuthViewModel: ObservableObject {
         defer { isBusy = false }
 
         do {
-            _ = try await AlarmTalkAPI.shared.confirmPasswordReset(
+            _ = try await emailCodeAPI.confirmPasswordReset(
                 email: normalized,
                 code: trimmedCode,
                 password: newPassword
@@ -799,7 +957,13 @@ final class AuthViewModel: ObservableObject {
             statusMessage = String(localized: "비밀번호를 변경했어요. 새 비밀번호로 로그인해 주세요.")
             return true
         } catch {
-            failStatus(userFacingErrorMessage(error, fallback: String(localized: "비밀번호 재설정에 실패했어요")))
+            reportFailure("Password reset confirm failed", error)
+            // 재설정 확정도 같은 판정으로 코드를 본다 — 문장은 표에서 고르고, 코드가 거절됐으면
+            // 칸을 비운다. 다시 받는 길은 그 화면의 요청 버튼이다(`PasswordResetView.sendCodeButton`).
+            failStatus(Self.emailCodeErrorMessage(for: error, fallback: String(localized: "비밀번호 재설정에 실패했어요")))
+            if Self.isEmailCodeRefusal((error as? APIError)?.serverErrorCode) {
+                emailCodeFieldClearTick &+= 1
+            }
             return false
         }
     }
@@ -1823,7 +1987,7 @@ final class AuthViewModel: ObservableObject {
         marketingConsentLoadFailed = false
         do {
             // listConsents 는 AuthAPIProviding 프로토콜 밖이므로(테스트 mock 불필요)
-            // requestEmailVerification 과 동일하게 공유 인스턴스로 직접 호출한다.
+            // 공유 인스턴스로 직접 호출한다.
             let response = try await AlarmTalkAPI.shared.listConsents(token: token)
             marketingConsentAgreed = response.consents.first { $0.consentType == "marketing" }?.agreed ?? false
         } catch {

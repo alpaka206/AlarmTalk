@@ -82,14 +82,21 @@ enum AlarmTalkLog {
         _ error: Error,
         where predicate: (Error) -> Bool
     ) -> Bool {
+        firstInErrorChain(error) { predicate($0) ? true : nil } ?? false
+    }
+
+    /// 원인 사슬에서 [pick] 이 처음 값을 돌려주는 자리를 찾는다. 사슬을 타는 곳은 **여기 하나**다 —
+    /// 판정([errorChainContains])과 묶음 키([apiFailure])가 다른 방식으로 타면, 같은 실패가
+    /// 감싸였는지에 따라 낮추는 판정과 지문이 서로 어긋난다.
+    private static func firstInErrorChain<Found>(_ error: Error, _ pick: (Error) -> Found?) -> Found? {
         var current: Error? = error
         var depth = 0
         while let candidate = current, depth < 8 {
-            if predicate(candidate) { return true }
+            if let found = pick(candidate) { return found }
             current = (candidate as NSError).userInfo[NSUnderlyingErrorKey] as? Error
             depth += 1
         }
-        return false
+        return nil
     }
 
     /// **중앙 401 처리기가 이미 끝낸** 인증 실패인가. 로그와 브레드크럼에만 남긴다.
@@ -129,6 +136,67 @@ enum AlarmTalkLog {
         return nil
     }
 
+    // MARK: - 묶음 키 — API 실패는 코드와 호출 자리로 묶는다
+
+    /// 로그 메시지에서 ` key=value` 토큰(공백 뒤 `이름=값`)을 뺀 것 — **어디서 부른 실패인가**만
+    /// 남긴다. `알람 push 실패(create): status=403 code=X` → `알람 push 실패(create):`.
+    ///
+    /// ⚠ **메시지를 그대로 지문에 넣지 말 것.** 상태코드·id 처럼 회차마다 바뀌는 값이 섞여
+    /// 값마다 이슈가 하나씩 생긴다.
+    static func logKey(of message: String) -> String {
+        guard let regex = keyValueTokenPattern else { return message }
+        let range = NSRange(message.startIndex..., in: message)
+        return regex.stringByReplacingMatches(in: message, range: range, withTemplate: "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// 로그 메시지의 값 토큰 — 공백 뒤 `이름=값`. 안드로이드 `core/AlarmTalkLog.kt` 의 `logKeyOf` 와
+    /// 같은 패턴이어야 한다(다르면 같은 메시지 모양이 두 앱에서 다른 키가 된다).
+    private static let keyValueTokenPattern = try? NSRegularExpression(pattern: "\\s+[A-Za-z_][A-Za-z0-9_.]*=\\S*")
+
+    /// Sentry 태그 값의 길이 상한.
+    private static let sentryTagValueMax = 200
+
+    /// 원인 사슬에서 처음 만나는 HTTP 응답(`APIError.server`)의 상태와 `error_code`.
+    private static func apiFailure(in error: Error) -> (status: Int, code: String?)? {
+        firstInErrorChain(error) { candidate in
+            guard case let APIError.server(status, _, code) = candidate else { return nil }
+            return (status, code?.isEmpty == false ? code : nil)
+        }
+    }
+
+    /// API 실패의 **묶음 키**(Sentry fingerprint). 원인 사슬에 HTTP 응답이 없으면 nil — 그때는
+    /// Sentry 의 기본 묶음을 그대로 쓴다. 규칙은 `docs/spec/error-codes.md` §3 「앱의 묶음 키」
+    /// 이고, 안드로이드 `core/AlarmTalkLog.kt` 와 **같은 세 모양**이어야 한다(한쪽만 다르면 같은
+    /// 실패가 프로젝트마다 다르게 묶인다).
+    ///
+    /// | 응답 | 지문 |
+    /// | --- | --- |
+    /// | `error_code` 가 있다 | `["api_error", 코드, logKey]` |
+    /// | 코드 없는 4xx | `["api_error", "HTTP_<상태>", logKey]` |
+    /// | 코드 없는 5xx | `["api_error", "HTTP_<상태>"]` |
+    ///
+    /// - **왜 필요한가.** Sentry 는 Swift 오류를 도메인·코드로 묶는다. `APIError.server` 는 상태와
+    ///   코드가 달라도 같은 enum case 라, 지문을 주지 않으면 서로 다른 실패가 한 이슈에 쌓이기
+    ///   쉽다 — 401 메아리 700건이 ALARMTALK-IOS-2 하나였던 것과 같은 성질이다(401 이 아닌 실패가
+    ///   실제로 거기 붙는지는 확인하지 못했다 — 그때 보고 호출부는 알람 push·사용 기록 전송 둘뿐이었다.
+    ///   2026-10-11 에 인증 코드 다섯 갈래가 더해졌다 — `AuthViewModel` 의 `reportFailure`).
+    /// - **왜 코드 없는 5xx 는 호출 자리를 빼는가.** 우리 워커는 코드 없는 4xx/5xx 를 내지 않는다.
+    ///   코드 없는 5xx 는 워커 앞단(게이트웨이·프록시)이 낸 것이라, 어느 화면이 불렀는지는 원인을
+    ///   가르지 않는다 — 호출 자리를 넣으면 같은 장애가 호출부 수만큼의 이슈로 갈린다. 코드 없는
+    ///   4xx 는 남긴다(주소·라우팅이 틀린 자리를 가리킨다).
+    ///
+    /// ⚠ **이 키는 무엇도 낮추지 않는다.** 브레드크럼으로 내려가는 범위는 [handledFailureCategory]
+    /// 그대로다. 여기서 정하는 것은 올라간 이벤트가 **어느 이슈에 붙는가**뿐이다.
+    static func apiFailureFingerprint(for error: Error, message: String) -> [String]? {
+        guard let failure = apiFailure(in: error) else { return nil }
+        if let code = failure.code {
+            return ["api_error", code, logKey(of: message)]
+        }
+        let status = "HTTP_\(failure.status)"
+        return failure.status >= 500 ? ["api_error", status] : ["api_error", status, logKey(of: message)]
+    }
+
     /// 잡아서 처리한 오류를 알린다. 크래시는 SDK 가 알아서 잡는다.
     static func reportError(_ message: String, error: Error? = nil) {
         if let error, let category = handledFailureCategory(error) {
@@ -153,13 +221,29 @@ enum AlarmTalkLog {
         // ⚠ **여기서 먼저 마스킹한다.** `beforeSend` 는 이벤트 메시지·예외 값만 훑으므로,
         // 우리가 붙이는 컨텍스트는 이 자리에서 거르지 않으면 그대로 나간다.
         let safeMessage = redactUserURIs(message)
+        // 지문이 묶고, 태그가 찾는다. 호출 자리(`log.key`)는 HTTP 가 아닌 오류에도 붙인다 —
+        // 묶음은 기본 그대로 두고 검색만 되게 한다. 태그 값은 상한(200자)에서 자른다 — 넘으면
+        // 서버가 그 태그를 버린다(안드로이드 `core/AlarmTalkLog.kt` 의 `reportTags` 와 같은 값).
+        let key = String(logKey(of: safeMessage).prefix(sentryTagValueMax))
         if let error {
+            let failure = apiFailure(in: error)
+            let fingerprint = apiFailureFingerprint(for: error, message: safeMessage)
             SentrySDK.capture(error: error) { scope in
                 scope.setTag(value: "true", key: "handled")
+                scope.setTag(value: key, key: "log.key")
+                if let failure {
+                    scope.setTag(value: String(failure.status), key: "api.status")
+                    if let code = failure.code {
+                        scope.setTag(value: String(code.prefix(sentryTagValueMax)), key: "api.error_code")
+                    }
+                }
+                if let fingerprint { scope.setFingerprint(fingerprint) }
                 scope.setContext(value: ["message": safeMessage], key: "log_message")
             }
         } else {
-            SentrySDK.capture(message: safeMessage)
+            SentrySDK.capture(message: safeMessage) { scope in
+                scope.setTag(value: key, key: "log.key")
+            }
         }
     }
 

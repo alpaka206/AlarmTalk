@@ -56,7 +56,7 @@ class DestroyedAccountSessionTest {
     @Test
     fun unauthorizedIsNotThisBranch() {
         // 401 은 okhttp 인증기가 이미 `handleUnauthorized` 로 수렴시킨다. 여기서 또 가르면
-        // 같은 만료가 두 번 처리되고, 무엇보다 **errorBody 를 한 번 더 읽으려 든다.**
+        // 같은 만료가 두 번 처리된다 — 401 은 코드를 볼 것도 없이 상태코드로 끝난 판정이다.
         assertFalse(isDestroyedAccountFailure(httpException(401, """{"error_code":"AUTH_USER_NOT_FOUND"}""")))
     }
 
@@ -68,12 +68,18 @@ class DestroyedAccountSessionTest {
     }
 
     @Test
-    fun onlyA404OpensTheErrorBody() {
-        // ⚠ `errorBody` 는 한 번만 읽힌다. 404 가 아닐 때 본문을 열면 그 뒤 코드를 보려던
-        // 호출부가 빈 본문을 받는다 — 상태코드를 먼저 보는 순서가 계약이다.
+    fun theVerdictLeavesTheErrorBodyForTheCaller() {
+        // 판정 뒤에도 호출부는 본문을 그대로 읽을 수 있어야 한다 — 404 가 아니어서 본문을 열지
+        // 않은 갈래도, **404 라서 코드를 읽은 갈래도.** 예전에는 앞의 것만 성립했다(코드를 읽으면
+        // 본문이 소진돼 "404 일 때만 연다" 는 순서가 곧 계약이었다). 이제 코드 읽기는 본문을
+        // 엿볼 뿐이다(`network/ApiErrors.kt`).
         val other = httpException(403, """{"error_code":"CONSENT_REQUIRED"}""")
         assertFalse(isDestroyedAccountFailure(other))
         assertEquals("""{"error_code":"CONSENT_REQUIRED"}""", other.response()?.errorBody()?.string())
+
+        val destroyed = httpException(404, """{"error_code":"AUTH_USER_NOT_FOUND"}""")
+        assertTrue(isDestroyedAccountFailure(destroyed))
+        assertEquals("""{"error_code":"AUTH_USER_NOT_FOUND"}""", destroyed.response()?.errorBody()?.string())
     }
 
     private fun httpException(code: Int, body: String): HttpException =

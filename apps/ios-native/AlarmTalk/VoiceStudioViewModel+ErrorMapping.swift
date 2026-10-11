@@ -60,6 +60,16 @@ extension VoiceStudioViewModel {
         }
     }
 
+    /// 서버가 **이번 달 등록을 다 썼다**고 거절한 것인가(`429 VOICE_MONTHLY_CHANGE_LIMIT_REACHED`).
+    ///
+    /// 등록 창 안의 다른 실패와 갈래가 다르다 — 이번 달에는 몇 번을 눌러도 같은 답이라 창 안에
+    /// 문구를 띄우고 다시 누르게 두지 않고 **흐름을 끝낸다**(`handleMonthlyLimitRejection`,
+    /// `docs/spec/voice-and-message.md` §4-1 「월 등록 한도」 ③). 코드는 문구를 고를 때와 같은
+    /// 방법으로 읽는다 — 문구는 한도라고 말하는데 흐름은 안 끝나는 어긋남을 만들지 않는다.
+    nonisolated func isMonthlyLimitRejection(_ error: Error) -> Bool {
+        extractServerErrorCode(from: error) == "VOICE_MONTHLY_CHANGE_LIMIT_REACHED"
+    }
+
     private nonisolated func extractServerErrorCode(from error: Error) -> String? {
         // 1) 정상 경로 — APIError 가 errorCode 를 보존하고 있다.
         if let apiError = error as? APIError, let code = apiError.serverErrorCode {

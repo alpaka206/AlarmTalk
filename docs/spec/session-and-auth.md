@@ -223,6 +223,144 @@ iOS는 네트워크/5xx/응답 해석 실패와 구서버의 `NO_PENDING_DELETIO
 조회할 수 있다. 실패로 기존 정상 캐시를 덮지 않으며 아직 유효한 기존 키는 계속 검증한다.
 재조회에도 키가 없거나 조회·서명·issuer/audience/nonce 검증이 실패하면 거절한다.
 
+## 이메일 인증 코드 — 가입과 비밀번호 재설정 (2026-10-11)
+
+가입과 비밀번호 재설정은 메일로 보낸 **6자리 코드**로 주소의 주인을 확인한다. 판정은 서버 한 곳
+(`routes/auth.ts` 의 `checkEmailVerificationCode`)이고, 인증 확인(`POST /auth/email-code/verify`)·가입
+(`POST /auth/register`)·재설정 확정(`POST /auth/password-reset/confirm`) 셋이 **같은 판정**을 지난다.
+숫자는 `lib/email-verification.ts` 가 유일 출처다.
+
+| 규칙 | 값 | 서버의 답 |
+| --- | --- | --- |
+| 유효한 코드 | 그 주소·그 용도(가입 / 재설정)로 보낸, 아직 쓰지 않은 코드 중 **가장 새 것 하나** | 다른 숫자는 `400 AUTH_EMAIL_CODE_INVALID` |
+| 수명 | 발급 뒤 **10분**(`EMAIL_VERIFICATION_TTL_SECONDS`) | 지나면 `400 AUTH_EMAIL_CODE_EXPIRED` |
+| 틀린 횟수 | 코드 하나에 **5번**(`EMAIL_VERIFICATION_MAX_ATTEMPTS`) — 틀릴 때마다 센다 | 다섯 번 틀린 뒤로는 **맞는 코드도** `429 AUTH_EMAIL_CODE_ATTEMPTS_EXCEEDED` |
+| 다시 받기 간격 | **60초**(`EMAIL_VERIFICATION_RESEND_COOLDOWN_SECONDS`) | 그 안에 보낸 코드를 **아직 쓸 수 있으면** 요청을 **보내지 않고 성공**으로 답한다. 그 코드가 상한에 닿았거나 이미 쓰였으면 기다리지 않고 **새 코드를 보낸다** |
+| 하루 발급 수 | 주소·용도마다 최근 24시간에 **10번**(`EMAIL_VERIFICATION_DAILY_CAP`) | 넘으면 **보내지 않고 성공**으로 답한다 |
+
+- **새 코드를 받으면 앞의 코드는 죽는다.** 서버는 가장 새 것만 본다 — 먼저 온 메일의 숫자를 넣으면 숫자가
+  멀쩡해도 `AUTH_EMAIL_CODE_INVALID` 이고, **틀린 횟수로 센다.** (60초 안의 다시 받기는 앞의 코드를 아직 쓸
+  수 있으면 새 코드를 만들지 않으므로, 그때는 앞의 코드가 그대로 살아 있다.)
+- **코드를 쓰면 앞의 코드도 함께 죽는다.** 가입·재설정이 성공하면 그 주소·그 용도의 쓰지 않은 코드를
+  **전부** 쓴 것으로 적는다(UPDATE 한 문장). 판정에 쓴 코드 하나만 적으면 바로 앞 코드가 '가장 새 것' 으로
+  올라와 제 수명(10분)까지 다시 통한다 — 메일의 "가장 최근에 받은 코드만" 이 거짓이 되고, 재설정이면 방금
+  바꾼 비밀번호를 그 앞 코드로 한 번 더 바꿀 수 있다(2026-10-11 까지 그랬다). 다른 용도·다른 주소의 코드는
+  건드리지 않는다.
+- 판정 순서는 **없음 → 만료 → 상한 → 대조**다. 형식이 틀린 값(6자리 숫자가 아니다)은 판정 **전에**
+  `400 AUTH_VALIDATION_FAILED` 로 돌아가고 횟수를 세지 않는다.
+- 상한은 **코드마다** 센다. 새 코드는 0부터다 — 상한에 닿은 사람이 할 일은 **다시 받기** 하나다.
+- **상한에 닿았거나 이미 쓴 코드는 다시 받기 간격을 붙잡지 않는다** — 곧바로 누른 다시 받기가 새 코드를
+  받는다. 붙잡으면 막다른 길이다: 두 앱은 상한에서 "다시 받아 주세요" 라고 하는데, 그 다시 받기가 '보내지
+  않은 성공' 으로 끝나 앱은 '보냈어요' 라고 하고 메일은 오지 않으며, 든 코드는 맞는 숫자도 429 다
+  (2026-10-09 의 그 사람은 코드를 받은 지 34초 만에 상한에 닿았다). 남용(메일 폭탄·추측)은 **하루 상한**과
+  인증 요청 한도(`authRateLimitMiddleware`)가 막는다 — 간격은 속도만 늦췄고, 하루 총량은 하루 상한이 정한다.
+- 인증 확인은 코드를 **쓰지 않는다**(소모는 가입·재설정이 성공할 때다). 가입은 같은 코드를 **한 번 더**
+  판정한다 — 그래서 인증을 통과하고도 가입 버튼을 누를 때 10분이 지났으면 가입이
+  `AUTH_EMAIL_CODE_EXPIRED` 로 거절된다(아래 「거절 뒤에 할 일이 화면에 있어야 한다」).
+- **보내지 않은 성공은 진짜 발송과 응답이 같다**(`success: true`). 앱은 둘을 구분하지 못한다. 재설정
+  요청은 비밀번호 계정이 아닌 주소에도 같은 성공으로 답한다(계정이 있는지 드러내지 않는다). 가입 쪽
+  요청은 이미 가입된 주소면 409 다([error-codes.md](error-codes.md) §4).
+
+**왜 이 절이 생겼나.** 2026-10-09 prod(안드로이드 1.2.10)에서 신규 가입자 한 명이 거절된 같은 여섯 자리를
+3초 사이에 다섯 번 보내 상한을 태웠고, 그 뒤의 429 에도 "인증 코드가 맞지 않아요" 만 들었다. 그 화면은
+코드를 다시 받아도 옛 숫자를 칸에 남겼고(꽉 찬 칸에 치는 새 숫자는 버려진다), 그 사람은 이메일 가입을
+끝내지 못했다. 서버 규칙은 그때도 지금도 같다 — 틀린 것은 **앱이 그 규칙을 말하지도 따르지도 않은 것**이다.
+(iOS 도 같은 모양인데 이 실패를 Sentry 에 올리지 않아 보이지 않았을 뿐이다 — 2026-10-11 부터 올린다.
+인증 코드 다섯 갈래가 안드로이드와 같은 글자로 보고한다([error-codes.md](error-codes.md) §3 「앱의 묶음 키」).)
+
+### 문장은 코드(error_code)로 고른다
+
+세 자리 모두 공용 표를 부른다([error-codes.md](error-codes.md) §4 — 표를 부르는 아홉 자리).
+
+| 서버의 답 | 말하는 것 | 사용자가 할 일 |
+| --- | --- | --- |
+| `AUTH_EMAIL_CODE_INVALID` | 인증 코드가 맞지 않아요. 다시 확인해 주세요. | 다시 친다 / 다시 받는다 |
+| `AUTH_EMAIL_CODE_EXPIRED` | 인증 코드가 만료됐어요. 다시 받아 주세요. | 다시 받는다 |
+| `AUTH_EMAIL_CODE_ATTEMPTS_EXCEEDED` | 인증 코드를 너무 많이 틀렸어요. 다시 받아 주세요. | 다시 받는다 |
+| 그 밖의 코드(`RATE_LIMITED`·`INTERNAL_ERROR` 등) | 표의 그 문장 | 그 문장대로 |
+| 표에 없는 코드(세 라우트의 5xx `AUTH_EMAIL_CODE_VERIFY_FAILED`·`AUTH_REGISTER_FAILED`·`AUTH_PASSWORD_RESET_FAILED`, `AUTH_VALIDATION_FAILED` 등) · 코드 없는 응답(워커 앞단의 5xx · 읽지 못한 본문) | 그 화면의 폴백 — 인증 확인은 `잠시 문제가 생겼어요. 잠시 후 다시 시도해 주세요.`, 가입·재설정은 그 화면의 실패 문장 | 같은 숫자로 다시 누른다 |
+| 연결 실패(오프라인 · 시간 초과 — 응답이 없다) | 안드로이드는 위와 같은 폴백. **iOS 는 OS 가 준 연결 오류 문장일 수 있다**(오프라인·시간 초과를 시스템의 말로 알린다) — 폴백 헬퍼 `userFacingErrorMessage` 가 `NSURLErrorDomain` 오류의 설명이 있으면 그것을 쓴다([error-codes.md](error-codes.md) §4) | 연결을 확인하고 같은 숫자로 다시 누른다 |
+
+- ⚠ **'맞지 않아요' 를 폴백으로 두지 않는다.** `AUTH_EMAIL_CODE_INVALID` 일 때만 말한다. 폴백으로 두면
+  상한(429)도 네트워크 실패도 "틀렸다" 로 읽혀, 맞는 코드를 든 사람이 숫자만 다시 본다.
+- 가입 화면에서는 그 문장을 **코드 줄 가까이**(가입 화면의 인라인 오류 자리)에 보인다. 화면 맨 아래 상태
+  줄에만 두면 숫자 키패드 뒤에 놓일 수 있다 — iOS 숫자 키패드에는 닫는 키가 없다.
+- 같은 요청을 겹쳐 보내지 않는다 — 확인이 도는 동안의 두 번째 탭은 버린다.
+
+### 거절된 숫자를 칸에 남기지 않는다
+
+- 서버가 코드를 거절하면(**`AUTH_EMAIL_CODE_INVALID`·`AUTH_EMAIL_CODE_EXPIRED`·
+  `AUTH_EMAIL_CODE_ATTEMPTS_EXCEEDED`** — 세 자리 어디서든) **코드 칸을 비운다.**
+- **다시 받기가 성공해도** 비운다.
+- 왜 둘 다인가:
+  - 확인 버튼은 6자리가 찼을 때만 눌린다. 칸이 비면 **방금 거절된 숫자를 그대로 다시 보낼 수 없다** —
+    연타가 횟수를 태우지 못한다.
+  - 칸은 6자에서 자른다. 꽉 찬 칸에 새 코드를 치면 **한 글자도 안 들어간다** — 비우지 않으면 다시 받은
+    뒤에도 옛 숫자가 나간다.
+- ⚠ **비우는 것은 그 셋뿐이다.** 네트워크·5xx·`RATE_LIMITED`·`AUTH_VALIDATION_FAILED` 는 코드가 거절된
+  것이 아니다 — 숫자를 그대로 두어 다시 누를 수 있게 한다.
+- ⚠ **판정은 코드로 한다 — 번역되는 문장으로 하지 않는다.** 화면이 "맞지 않아요" 라는 글자를 비교해
+  칸을 비우면 en·ja 기기에서 조용히 어긋난다. 뷰모델이 **신호 하나**를 올리고 화면은 그것만 본다.
+  오류 문장 상태에 얹지 않는다 — 그 상태는 쓰는 곳이 여럿이라(요청·확인·가입·화면 전환) 함께 지워지지
+  않는다.
+- '보내지 않은 성공'(간격·하루 상한)에도 칸은 비워진다 — 앱이 구분할 수 없다.
+  - **간격**으로 보내지 않았다면 가장 새 코드를 아직 쓸 수 있다는 뜻이다(상한에 닿았거나 쓴 코드는 간격을
+    붙잡지 않는다 — 위 표). 가장 새 메일의 숫자를 치면 된다.
+  - **하루 상한**이면 그렇지 않다. 새 코드가 오지 않으므로, 든 코드가 상한에 닿았거나 만료됐으면 최근
+    24시간에 보낸 코드 수가 상한 아래로 내려갈 때까지 그 주소로는 그 일(가입 / 재설정)을 마칠 수 없다. 하루
+    상한은 남용 한도라 일부러 둔다.
+- '거절된 숫자를 기억해 두었다가 막는' 방식은 쓰지 않는다 — 고쳐 친 숫자를 막을 위험이 있고, 비우기가 같은
+  일을 상태 없이 한다.
+
+### 거절 뒤에 할 일이 화면에 있어야 한다
+
+문장이 시키는 일(다시 확인 · 다시 받기)을 화면이 막으면 문장을 고친 것이 소용없다.
+
+- **가입 화면 — 인증 확인 단계**: 코드 줄과 `인증 코드 다시 받기` 가 이미 함께 있다.
+- **가입 화면 — `POST /auth/register` 가 코드를 거절했을 때**(위 셋): **'인증 완료' 상태를 내린다.** 코드 줄과
+  다시 받기가 돌아온다. 예전에는 '이메일 인증 완료' 인 채로 다시 받기가 꺼져 있었다 — 안드로이드는 그
+  주소로는 프로세스가 죽을 때까지 풀리지 않았다(코드를 받은 지 10분이 지난 뒤 가입 버튼을 누르면 그렇게 된다).
+- **재설정 화면**: 코드를 보낸 뒤에도 요청 버튼이 `인증 코드 다시 받기` 로 **눌린다**(가입 화면과 같은 말).
+  코드 칸은 비운 채 남긴다. 예전에는 한 번 보내면 '코드를 보냈어요' 로 잠겨, 다시 받으려면 화면을 나갔다
+  와야 했다.
+- **가입 화면 — 다시 받기가 실패했을 때**: 코드 줄을 **닫지 않는다.** 실패 문장은 인증 묶음의 인라인 오류
+  자리(코드 줄 아래)에 둔다 — 다시 받기를 누르는 사람은 대개 방금 "…다시 받아 주세요" 를 읽은 사람이다. 닫으면
+  코드 줄과 그 답을 함께 잃고, 답은 화면 맨 아래 상태 줄(키패드 뒤)로 간다. iOS 가 2026-10-11 까지 그랬다 —
+  요청 결과를 코드 줄을 여는 값에 그대로 대입했다. 칸의 숫자도 그대로 둔다(코드가 거절된 것이 아니다).
+- `AUTH_EMAIL_TAKEN` 의 로그인 화면 전환은 그대로다([error-codes.md](error-codes.md) §4).
+
+### 코드는 ASCII 숫자 여섯 자다 — 앱 1차 · 서버 2차
+
+서버의 형식 검사는 ASCII 숫자만 받는다. 아라비아-인도·페르시아·전각 숫자를 내는 키보드로 친 코드는
+형식에서 떨어져 **횟수도 세지 않고 영영 통과하지 못한다** — 화면은 그동안 "맞지 않아요" 라고 했다.
+
+- **앱 1차 — 새니타이저는 앱마다 하나.** 가입·재설정 두 화면의 코드 칸이 같은 함수를 거친다. 유니코드
+  십진 숫자는 **같은 값의 ASCII 숫자**로 바꾸고, 숫자가 아닌 것(공백·하이픈·글자·분수·원문자)은 버리고,
+  6자에서 자른다. 메일 본문을 통째로 붙여도 여섯 자리만 남는다. 화면마다 `isDigit`·`isNumber` 필터를 따로
+  쓰지 않는다 — 그 둘은 ASCII 가 아닌 숫자를 **그대로** 통과시킨다. 강제: `scripts/check-input-sanitizers.py`
+  (CI lint) — 인증 화면에서 숫자를 거르거나 6자로 자르는 입력 핸들러는 이 새니타이저를 불러야 한다.
+- **서버 2차 — shared 스키마의 변환 하나.** `EmailVerificationCodeSchema` 가 먼저 **앞뒤 공백**(줄바꿈
+  포함 — 붙여 넣은 값)을 걷고, 아라비아-인도(U+0660–0669)·페르시아(U+06F0–06F9)·전각(U+FF10–FF19) 숫자를
+  ASCII 로 바꾼 **뒤에** 6자리 검사를 한다. 세 라우트가 같은 스키마를 쓰므로 한 곳에서 끝나고, 해시도 바뀐
+  값으로 만든다. **코드 안의 글자**(가운데 공백·하이픈·글자·세 블록 밖의 숫자 — 데바나가리 등)는 손대지
+  않는다 — 여전히 `AUTH_VALIDATION_FAILED` 이고 횟수를 세지 않는다. 앞뒤 공백만 붙은 값은 형식 오류가 아니라
+  대조까지 간다(틀리면 횟수를 센다). 스토어에 나가 있는 앱에 닿는 길은 이것뿐이다.
+- ⚠ 이것은 2026-10-09 의 원인이 **아니다** — 그때는 횟수가 세졌다(ASCII 여섯 자가 대조까지 갔다는 뜻이다).
+  같은 화면의 다른 구멍이고, 그런 키보드를 쓰는 지역의 사용자가 이미 들어와 있어 함께 막는다.
+
+### 메일 — 세 언어로, 가장 새 코드만 된다고 말한다
+
+- 한 메일에 **한국어·영어·일본어**를 함께 쓴다. 코드를 요청할 때 서버는 그 사람의 언어를 모른다(요청에는
+  주소뿐이다). 예전에는 한국어뿐이었다.
+- 본문에 **"가장 최근에 받은 코드만 쓸 수 있어요"** 를 적는다(세 언어). 위 표의 첫 줄을 사용자가 아는
+  유일한 자리다.
+- **가입 메일은 제목에 코드를 넣는다.** 제목이 메일마다 달라져 메일 앱이 한 대화로 묶지 않고, 알림에서
+  바로 읽힌다. 예전 제목은 늘 같았다 — 같은 제목은 한 대화로 묶이기 쉽고, 묶이면 **먼저 온 메일**이 먼저
+  보인다(2026-10-09 의 그 사람이 앞의 코드를 넣었는지는 확인하지 못했다 — 서버에는 해시만 남는다).
+- ⚠ **재설정 메일은 제목에 코드를 넣지 않는다.** 제목은 잠금 화면 알림에 그대로 뜬다 — 재설정 코드는
+  비밀번호를 바꿀 권한이라, 잠긴 폰을 잠깐 손에 넣은 사람이 **계정을 가져갈 수 있다.** 가입 코드는 아직
+  없는 계정의 주소 확인이라 그럴 것이 없다. 두 메일을 "같게 맞추자" 며 재설정 제목에 코드를 넣지 말 것.
+
 ## 구현 지도
 
 | 규칙 | 백엔드 | 안드로이드 | iOS |
@@ -246,6 +384,12 @@ iOS는 네트워크/5xx/응답 해석 실패와 구서버의 `NO_PENDING_DELETIO
 | 탈퇴 파기 범위(남는 것 셋뿐) | `lib/account-deletion.ts` `purgeUserAccount`(유예 파기 `index.ts`·즉시 삭제 `user.ts` 공용) · 회귀 `test/account-purge-residue.test.ts` | — | — |
 | 그룹 주인 탈퇴 — 멤버 등급 통지 | `purgeUserAccount` 가 같은 트랜잭션에서 `pending_plan_notifications` 에 적재 → 커밋 뒤 `sendPlanNotificationsNow`(`user.ts`) · 1분 전용 크론 홀수 분 `runPlanNotificationDrainTurn`(`index.ts`) → `notifyBillingStateChanged` · 회귀 `test/account-purge-plan-push.test.ts`·`test/pending-plan-notifications.test.ts` | 기존 `plan_changed` 처리 | 기존 `plan_changed` 처리 |
 | 탈퇴 취소 응답 유실·재확인 | `user.ts` DELETE 멱등 처리(이미 active는 무변경 성공) | 기존 취소 재시도 응답 소비 | `cancelAccountDeletion` 재확인·`refreshUser` 전환 감지 → `completeAccountRecovery` |
+| 인증 코드 판정(가장 새 것 하나 · 10분 · 틀린 5번 → 429 · 다시 받기 60초·하루 10번은 보내지 않는 성공 · 상한에 닿았거나 쓴 코드는 간격을 붙잡지 않는다 · 쓰면 그 주소·용도의 쓰지 않은 코드가 모두 죽는다) | `routes/auth.ts` 의 `checkEmailVerificationCode`(`/email-code/verify`·`/register`·`/password-reset/confirm` 공용)·`shouldSkipEmailCodeSend`(`/email-code`·`/password-reset` 공용 — 간격·하루 상한)·`consumeEmailVerificationCodes`(`/register`·`/password-reset/confirm` 이 성공한 뒤 — 주소·용도의 쓰지 않은 줄 전부를 UPDATE 한 문장으로. 인증 확인은 부르지 않는다) · 숫자는 `lib/email-verification.ts`(`EMAIL_VERIFICATION_TTL_SECONDS`·`EMAIL_VERIFICATION_MAX_ATTEMPTS`·`EMAIL_VERIFICATION_RESEND_COOLDOWN_SECONDS`·`EMAIL_VERIFICATION_DAILY_CAP`) · `test/auth.test.ts`(「다시 받기 간격」 — 상한에 닿은 코드·쓴 코드는 10초 만에도 새 코드, 4번 틀린 코드는 간격을 붙잡는다, 하루 상한은 그대로 · 「코드를 쓰면…」 — 소모 문장의 대상·인자) · `test/auth-email-code-consume.test.ts`(진짜 SQLite — 새 코드로 마친 뒤 앞 코드는 400, 다른 용도·주소의 코드는 그대로, 인증 확인은 쓰지 않는다) | 응답 소비 | 응답 소비 |
+| 인증 코드 거절 문장은 코드로('맞지 않아요' 는 `AUTH_EMAIL_CODE_INVALID` 만) | 세 라우트가 `errorBody(check.code, …)` 로 같은 코드를 낸다 | `ui/main/MainViewModelAuthActions.kt` 의 `emailCodeFailureMessage` ← `confirmEmailVerification`·`register`·`confirmPasswordReset` · 회귀 `EmailCodeFailureMessageTest` | `AuthViewModel.emailCodeErrorMessage(for:fallback:)` ← `verifyEmailCode`·`performRegisterWithEmail`·`confirmPasswordReset` · 가입 화면은 `LoginView` 의 코드 줄 아래에 그린다 · 회귀 `AlarmTalkTests/EmailCodeErrorMessageTests` |
+| 거절된 숫자를 칸에 남기지 않는다(거절 셋 · 다시 받기 성공 → 코드 칸 비우기 · 판정은 코드로 · 겹친 확인은 버린다) | — | `isEmailCodeRefusal(errorCode)`(`ui/main/MainViewModelAuthActions.kt`) → `MainViewModel.emailCodeFieldClearTick` ← 위 세 함수의 거절 갈래 + `requestEmailVerification`·`requestPasswordReset` 의 성공 갈래 → `AuthScreen`·`PasswordResetScreen` 의 `codeFieldClearTick`(바뀌면 칸을 비운다) · `confirmEmailVerification` 의 `authBusy` 가드 · 회귀 `EmailCodeFailureMessageTest`(비우는 판정표). ⚠ 화면 배선은 자동 테스트가 없다 — 실기기로 본다 | `AuthViewModel.isEmailCodeRefusal(_:)`·`emailCodeFieldClearTick`(게시 값 — 세 거절 갈래와 `requestEmailVerification`·`requestPasswordReset` 의 성공에서 올린다) → `LoginView`·`PasswordResetView` 의 `.onChange`(코드 칸 비우기) · 회귀 `AlarmTalkTests/EmailCodeErrorMessageTests`(비우는 판정표 · 뷰모델이 문장을 세우고 신호를 올리는 배선 — 다섯 요청을 `EmailCodeAPIProviding` 으로 주입한다). ⚠ 화면이 그 신호로 칸을 비우는 것은 UI 테스트의 몫이고 CI 에서 돌지 않는다 — 실기기로 본다 |
+| 거절 뒤에 다시 확인·다시 받기가 화면에 있다(가입 거절 → '인증 완료' 내리기 · 재설정은 보낸 뒤에도 다시 받기 · 가입의 다시 받기가 실패해도 코드 줄은 남고 실패는 인라인) | `/register` 가 코드를 다시 판정한다(`checkEmailVerificationCode`) | `register` 의 거절 갈래가 `registerEmailVerified = null` · `PasswordResetScreen` 의 요청 버튼(보낸 뒤 `auth_email_verify_resend` 로 눌린다) · 회귀 `EmailCodeFailureMessageTest` · `requestEmailVerification` 의 실패 갈래는 `registerEmailVerificationSentTo` 를 건드리지 않고(코드 줄 유지) 문장을 `registerError`(인증 묶음 아래 인라인)에 둔다 — 이 갈래는 자동 테스트가 없다 | `LoginView` 가 `emailCodeFieldClearTick` 에서 `verificationCompleted = false` · `PasswordResetView.sendCodeButton`(보낸 뒤 `인증 코드 다시 받기` 로 눌린다) · `LoginView.verifyEmailRow` 는 요청이 **성공할 때만** `verificationSent = true`(실패로 코드 줄을 닫지 않는다) · 실패 문장은 `AuthViewModel.requestEmailVerification` 이 `emailCodeError` 에 둔다(코드 줄 아래 — 코드 줄이 없으면 '이메일 인증' 버튼 아래, 하단 `statusMessage` 가 아니다) · 회귀 `AlarmTalkTests/EmailCodeErrorMessageTests`(다시 받기 실패 → 인라인 문장 · 칸 그대로). ⚠ 코드 줄이 남는 화면 배선은 자동 테스트가 없다 — 실기기로 본다 |
+| 인증 코드는 ASCII 숫자 여섯 자(앱 1차 · 서버 2차) | `packages/shared/src/schemas/auth.ts` 의 `normalizeVerificationCode`(앞뒤 공백을 걷고 세 숫자 블록을 ASCII 로 — 코드 안의 글자(가운데 공백·하이픈·글자·세 블록 밖의 숫자)는 손대지 않아 `AUTH_VALIDATION_FAILED`) → `EmailVerificationCodeSchema`(변환 뒤 6자리 검사 — 세 요청 스키마가 함께 쓴다) · 회귀 `packages/shared/test/schemas.test.ts`·`test/auth.test.ts`(아라비아-인도 숫자로 친 맞는 코드는 200, 틀린 코드는 횟수를 센다 — 인증 확인·가입·재설정 확정 셋 다) | `ui/components/CodeRedeemField.kt` 의 `sanitizeVerificationCode` ← `AuthScreen`·`PasswordResetScreen` 의 코드 칸 · 회귀 `InputSanitizerTest` · 강제 `scripts/check-input-sanitizers.py`(`ui/auth/` 의 `onValueChange` 가 `isDigit`·`take(6)` 이면 이 함수를 불러야 한다) | `InputSanitizer.sanitizeVerificationCode` ← `LoginView`·`PasswordResetView` 의 코드 칸(키보드 `.asciiCapableNumberPad`) · 회귀 `AlarmTalkTests/InputSanitizerTests` · 강제 `scripts/check-input-sanitizers.py`(`Views/Auth/` 의 `.onChange`·`set:` 가 `isNumber`·`prefix(6)` 이면 이 함수를 불러야 한다) |
+| 인증 메일(ko·en·ja 한 통 · '가장 최근 코드만' 한 줄 · 가입은 제목에 코드, 재설정은 제목에 코드 없음) | `lib/email-verification.ts` 의 `buildEmailVerificationMail`·`buildPasswordResetMail`(제목·text·html 을 만드는 순수 함수) ← `sendEmailVerificationCode`·`sendPasswordResetCode` · 회귀 `test/email-verification-mail.test.ts` | — | — |
 | 회귀 테스트 | `test/auth.test.ts` (TTL·503) | `network/SessionTokenRenewalTest.kt` · `ColdStartRequestKeysTest.kt` · `EntryRefreshKeepsTokenTest.kt` | `SessionTokenRenewalTests.swift` |
 
 ## 의도된 플랫폼 차이

@@ -149,4 +149,34 @@ extension InputSanitizer {
         .prefix(64)
         .description
     }
+
+    /// 이메일 인증 코드의 자릿수. 서버 `EmailVerificationCodeSchema`
+    /// (`packages/shared/src/schemas/auth.ts`)의 6자리와 같아야 한다.
+    static let verificationCodeLength = 6
+
+    /// 이메일 인증 코드(가입·비밀번호 재설정) 정리 — **ASCII 숫자 여섯 자만 남긴다.**
+    /// 규칙은 `docs/spec/session-and-auth.md` 「코드는 ASCII 숫자 여섯 자다」이고, 안드로이드도
+    /// 같은 규칙을 `ui/components/CodeRedeemField.kt` 의 `sanitizeVerificationCode` 에 둔다
+    /// (앱 1차 · 서버 2차 — 서버는 `normalizeVerificationCode` 로 세 문자 체계만 바꿔 받는다).
+    ///
+    /// - 유니코드 십진 숫자(아라비아-인도 U+0660~ · 페르시아 U+06F0~ · 전각 U+FF10~ …)는
+    ///   **같은 값의 ASCII 숫자**로 바꾼다. 형식 검사는 ASCII 여섯 자만 받는다 — 거기서 떨어진
+    ///   값은 틀린 횟수도 세지 않은 채 영영 통과하지 못한다.
+    /// - 숫자가 아닌 것(공백·하이픈·글자)은 버린다. 메일 본문을 통째로 붙여도 여섯 자리만 남는다.
+    /// - 6자에서 자른다.
+    ///
+    /// ⚠ **`isNumber` 로 거르지 말 것.** 분수(`½`)·원문자(`④`)·위첨자(`²`)도 number 라 그대로
+    /// 통과하고, ASCII 가 아닌 숫자도 **바뀌지 않은 채** 남는다 — 두 화면이 그렇게 거르고 있었다.
+    /// 여기서 받는 것은 십진 자리수(`numericType == .decimal`) 하나다.
+    static func sanitizeVerificationCode(_ raw: String) -> String {
+        var digits = String.UnicodeScalarView()
+        for scalar in raw.unicodeScalars {
+            if digits.count == verificationCodeLength { break }
+            guard scalar.properties.numericType == .decimal,
+                  let value = scalar.properties.numericValue,
+                  let ascii = Unicode.Scalar(UInt32(48 + Int(value))) else { continue }
+            digits.append(ascii)
+        }
+        return String(digits)
+    }
 }

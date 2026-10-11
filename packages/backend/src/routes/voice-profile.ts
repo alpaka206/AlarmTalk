@@ -2027,8 +2027,10 @@ voiceProfile.post('/clone', async (c) => {
       //
       // 옛 주석은 "promote 가 한도로 거부되니 stranded draft 가 된다" 였는데, 그 전제는
       // `replace_existing` 이 생기면서 사라졌다 — 승격은 이제 기존 행을 **재사용**한다.
-      // 월 등록 한도(`reserveMonthlyDraftAttempt`)는 그대로 남아 있어, 한 달에 한 번이라는
-      // 규칙은 여기서 풀리지 않는다.
+      // 한 달에 한 번이라는 규칙은 여기서 풀리지 않는다 — 그건 등록 원장
+      // (`voice_profile_change_ledger`)이 지킨다: 아래 예약 트랜잭션 맨 앞의 자격 확인
+      // (`readMonthlyRegistrationUsage`)과 확정의 예약(`reserveMonthlyOfficialVoiceChange`).
+      // (`reserveMonthlyDraftAttempt` 는 초안 시도를 세기만 한다 — 아무것도 막지 않는다.)
       // ⚠ **초안이 남아 있다고 거절하지 않는다**(2026-08-25 지시). 아래 예약 트랜잭션이
       // 같은 스냅샷에서 그 초안을 **버리고** 진행한다 — 이유는 그쪽 주석에 있다.
       // 이 선검사는 official 슬롯 수를 세는 용도로만 남는다(로그·지표).
@@ -2100,6 +2102,24 @@ voiceProfile.post('/clone', async (c) => {
     const profileId = crypto.randomUUID();
 
     const insertResult = await withWriteTransaction(db, async (tx) => {
+      // ⚠ **이번 달 등록을 이미 썼으면 초안부터 만들지 않는다**(2026-10-11,
+      // `docs/spec/voice-and-message.md` 4-1 「월 등록 한도」 ①). 한도를 깎는 것이 아니라
+      // **자격 확인**이다 — 남은 횟수가 있는 동안의 초안은 몇 번을 만들든 그대로다.
+      //
+      // 저장할 수 없는 초안은 provider 보이스 하나를 그냥 쓰고(그 키는 dev·prod 가 함께
+      // 쓰고 한도가 있다), 사용자를 녹음·생성·미리듣기를 다 마친 **마지막 단계**에서 막는다 —
+      // 2026-10-10 prod 에서 등록을 마친 사용자가 초안을 또 만들었고 그 저장이 429 로 일곱 번
+      // 거절됐다(ALARMTALK-ANDROID-Q).
+      //
+      // ⚠ **맨 앞이어야 한다.** 거절은 한 줄도 쓰지 않는다 — 옛 초안 정리
+      // (`discardAbandonedDrafts`)·초안 시도 집계(`reserveMonthlyDraftAttempt`)·프로필 INSERT
+      // 보다 뒤로 내리면 '만들 수 없는 등록' 이 그 사람의 남은 초안을 지우고 집계를 올린다.
+      // 확정의 게이트(`reserveMonthlyOfficialVoiceChange`)는 그대로 둔다 — 초안을 만든 뒤
+      // 다른 기기가 먼저 등록할 수 있어, 여기를 통과했다는 것은 확정의 근거가 못 된다.
+      const registration = await readMonthlyRegistrationUsage(tx, userPk);
+      if (registration.remaining <= 0) {
+        return { status: 'monthly_limit' as const, ledgerId: null };
+      }
       const ids = ownerIds(c);
       // draft 슬롯과 official 슬롯을 한 스냅샷으로 함께 센다(둘 사이 TOCTOU 없음). 둘 중 하나라도 한도면 차단.
       // ⚠ **official 슬롯은 여기서 보지 않는다**(2026-08-12 확정 — 위 선검사와 같은 이유).
@@ -2127,7 +2147,8 @@ voiceProfile.post('/clone', async (c) => {
         // cron 의 `cleanupStaleDraftVoices`(TTL 1시간)는 아무도 다시 시작하지 않는
         // 초안을 거두는 뒷받침이고, 이 갈래는 그보다 먼저 오는 사용자 의사다.
         //
-        // 월 등록 한도는 여기서 풀리지 않는다 — 그건 **확정**에서만 소모된다.
+        // 월 등록 한도는 여기서 풀리지도 깎이지도 않는다 — **소모**는 확정에서만이다
+        // (다 쓴 달의 요청은 위 자격 확인에서 이미 돌아갔다 — 여기까지 오지 않는다).
         await discardAbandonedDrafts(tx, ids);
       }
       // F1(Codex #599 3차): 전역 슬롯이 꽉 찼는데 evict 후보가 전부 보호 대상(공유·draft)이면
@@ -2158,6 +2179,10 @@ voiceProfile.post('/clone', async (c) => {
       });
       return { status: 'ok' as const, ledgerId: null };
     });
+    if (insertResult.status === 'monthly_limit') {
+      // 확정(승격·교체)의 거절과 **같은 코드·같은 몸통**이다 — 앱은 한 갈래만 처리한다.
+      return monthlyVoiceChangeLimitResponse(c);
+    }
     if (insertResult.status === 'clone_capacity') {
       return c.json(
         {

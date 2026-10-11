@@ -433,8 +433,11 @@
     같은 트랜잭션에서 옛 초안을 버린다(`discardAbandonedDrafts` — 프로필 tombstone + provider
     보이스·R2 오브젝트는 삭제 큐로). ② 아무도 다시 시작하지 않으면 cron 이 **1시간**
     (`DRAFT_VOICE_TTL_HOURS`) 뒤 `cleanupStaleDraftVoices` 로 거둔다.
-  - **월 등록 한도는 여기서 풀리지 않는다** — 그건 확정(승격)에서만 소모된다. 초안을 몇 번
-    버리고 다시 만들든 한도와 무관하다.
+    (이번 달 등록을 다 써서 **거절된** 새 등록은 아무것도 쓰지 않으므로 ①도 돌지 않는다 — 그때 남은
+    초안은 ②가 거둔다. 아래 「월 등록 한도」.)
+  - **월 등록 한도는 여기서 풀리지도 깎이지도 않는다** — **소모**는 확정(승격·교체)에서만 일어난다.
+    초안을 몇 번 버리고 다시 만들든 남은 횟수는 그대로다. 다만 이번 달 등록을 **이미 쓴 뒤에는 초안
+    자체를 만들지 않는다** — 그건 소모가 아니라 자격 확인이다(아래 「월 등록 한도」).
 - 녹음 카드에는 상태·시간·녹음/재생/다시 녹음만 둔다. `12초 이상 2분 이하로 녹음해
   주세요` 같은 상시 길이 안내는 두지 않고, 실제로 짧아 다음 단계가 막힐 때 고정 하단 버튼이
   `12초 이상 녹음해 주세요`로 이유를 말한다. 12초 전에 멈춘 경우 카드 제목도
@@ -449,6 +452,102 @@
   쓰면 무엇을 세는지, 남은 횟수인지 사용한 횟수인지 알 수 없다. `n` 은 이번 달(KST)
   정식 등록 원장의 남은 횟수라 앱에 `1/1` 을 박아 추정하지 않는다. 다만 목소리 목록·초안과
   독립인 조회이므로 새로고침을 시작할 때 함께 병렬로 요청해 추가 왕복을 만들지 않는다.
+  **언제 다시 읽는지**는 아래 「월 등록 한도」에 있다 — 한 번 읽은 값을 프로세스가 끝날 때까지 들고
+  있지 않는다.
+
+### 월 등록 한도 — 다 썼으면 **초안부터 만들지 않는다** (2026-10-11)
+
+정식 등록은 한 달(KST)에 **1번**이다(`MAX_OFFICIAL_VOICE_CHANGES_PER_MONTH`). 세는 것은 등록 원장
+(`voice_profile_change_ledger` — 실패로 끝난 줄은 세지 않는다)이고, **깎는 것은 확정(승격·교체)뿐**이다.
+초안은 깎지 않는다 — 초안 시도에는 상한이 없고(`voice_draft_attempt_usage` 는 운영 지표로만 센다),
+마음에 들 때까지 지우고 다시 만들 수 있다. 목소리를 지워도 그 달의 등록은 돌아오지 않는다.
+
+**① 이번 달 등록을 이미 썼으면 서버는 초안을 만들지 않는다.**
+
+- `POST /voice/clone` 은 provider 에 목소리를 올리기 **전에** 원장을 읽고, 남은 횟수가 0이면
+  `429 VOICE_MONTHLY_CHANGE_LIMIT_REACHED` 로 답한다. 확정의 거절과 **같은 코드·같은 몸통**이다.
+- 이건 한도를 깎는 것이 아니라 **자격 확인**이다. 남은 횟수가 있는 동안의 초안은 예전 그대로다 —
+  몇 번을 만들든 깎이지 않는다.
+- 거절은 **한 줄도 쓰지 않는다.** 초안 행도, 초안 시도 집계도, 남아 있던 옛 초안의 정리도 없다.
+  provider 호출도 없다.
+- **왜:** 저장할 수 없는 초안은 provider 보이스 하나를 그냥 쓴다 — 그 키는 dev·prod 가 함께 쓰고 한도가
+  있다. 그리고 사용자를 녹음·생성·미리듣기를 다 마친 **마지막 단계**에서 막는다. 2026-10-10 prod 에서
+  이미 등록을 마친 유료 사용자가 초안을 또 만들 수 있었고, 그 초안의 저장이 429 로 **일곱 번** 거절됐다
+  (ALARMTALK-ANDROID-Q. 이벤트에는 상태코드만 있다 — 월 한도였다는 것은 그 계정의 원장과 요청 간격으로 읽었다).
+- **확정의 게이트는 그대로 둔다**(위 「교체도 정식 등록과 같은 게이트를 통과한다」). 초안을 만든 뒤 다른
+  기기가 먼저 등록할 수 있다 — 초안을 만들 때 통과했다는 것은 여전히 근거가 못 된다.
+- 스토어에 나가 있는 앱도 이 답을 읽는다. 코드를 새로 만들지 않았고(error-codes.md §2), 두 앱의 등록
+  실패 갈래가 이미 이 코드를 문구로 바꾼다. ⚠ 다만 안드로이드 1.2.10 은 그 문구를 등록 창 **뒤의**
+  스낵바에 띄운다(③이 고치는 결함) — 그 버전은 서버로 못 고친다.
+
+**② `생성 가능 n/m회` 는 서버에서 다시 읽는다 — 두 앱 모두.**
+
+| 다시 읽는 때 | 왜 |
+| --- | --- |
+| 정식 등록이 **확정된 직후**(승격·교체) | 방금 한 번을 썼다. 안 읽으면 `추가` 가 켜진 채 남는다 |
+| **목소리 탭에 들어올 때**(탭 진입 갱신의 60초 창을 따른다) | 다른 기기의 등록, 달이 바뀐 것(프로세스가 살아서 월을 넘기면 `0/1` 이 남는다) |
+| **월 한도 거절을 받은 직후**(등록·저장 어느 단계든) | 서버가 방금 "0" 이라고 말했다 — 화면의 숫자가 틀렸다는 뜻이다 |
+
+- ⚠ **앱에서만 깎지 않는다.** `n − 1` 을 앱이 계산해 두는 것으로 끝내지 않고 서버 값을 다시 읽는다 —
+  원장의 예약은 확정이 실패하면 롤백되거나 세지 않는 줄(`failed`)로 내려가고, 다른 기기도 같은 원장을 쓴다.
+- ⚠ **이 숫자 하나가 두 곳을 연다.** `추가` 버튼(다 썼으면 끈다)과 **삭제 경고**(다 썼으면 "이번 달에는 새
+  목소리를 만들 수 없어요" 를 붙인다)다. 낡은 숫자는 둘 다 틀리게 만든다 — 2026-10-10 의 그 사용자는
+  같은 프로세스에서 등록을 마쳤는데 숫자가 `1/1` 로 남아 `추가` 가 눌렸다(안드로이드. iOS 는 확정 뒤에
+  이미 다시 읽고 있었다).
+- 늦게 온 답은 **가장 나중에 낸 요청의 답이고, 요청한 계정의 것일 때만** 적는다 — 읽는 자리가 늘면 그 틈도
+  넓어진다.
+  - 먼저 낸 요청의 답은 버린다(뒤에 낸 요청의 답이 먼저 왔든 아직 안 왔든). 읽는 자리(확정·탭 진입·초안 생성·
+    월 한도 거절·목록)가 여럿이라 답이 낸 순서대로 오지 않는다 — 확정 직후의 `0/1` 위에 그 전에 낸 요청의
+    `1/1` 이 늦게 와 앉으면 `추가` 가 다시 켜지고 삭제 경고가 빠진다. 계정만 대조해서는 못 막는다.
+  - 로그아웃·계정 전환 뒤에 온 앞 계정의 답도 버린다.
+  - ⚠ iOS 는 아직 계정만 대조한다(`VoiceStudioViewModel.refresh(session:force:)` — 강제 갱신은 진행 중인 갱신을
+    기다리지 않아 답이 겹칠 수 있다). 같은 틈이 남아 있다.
+- 조회가 실패하면 **앞 값을 지킨다.** 실패는 "모른다" 이지 "남았다" 가 아니다.
+- **`추가` 를 누를 때 다시 읽지는 않는다.** 탭 뒤에 네트워크 대기를 세우면 그 대기의 진행·실패 상태가
+  따로 필요해진다. 위 셋과 서버의 ①이 같은 경우를 덮는다.
+
+**③ 등록 창이 열려 있는 동안의 거절은 그 창 안에서 말한다.**
+
+등록 창은 화면을 다 덮는 **자기 창**이다(안드로이드 `Dialog`, iOS `fullScreenCover`). 안드로이드 앱 본체의
+스낵바는 그 창 **뒤**에 그려진다 — 2026-10-10 의 사용자가 같은 저장을 일곱 번 누른 것은 맞는 문구가 창 뒤에
+떠 있었기 때문으로 읽는다(코드로 읽은 것이다 — 실기기 확인은 「검증 방법」). iOS 는 이미 창 안에 쓴다.
+
+- 등록(`POST /voice/clone`)과 저장(승격·교체)의 실패는 **지금 보이는 단계 안**에 쓴다(세부 정보 단계의
+  안내 줄, 확정 화면의 오류 줄). 확정 화면의 `다시 만들기`(초안 삭제)가 실패해 그 화면에 머무는
+  안드로이드도 같은 줄에 쓴다(iOS 는 그 실패로 사용자를 붙잡지 않고 음원 준비로 넘어간다 — 초안은 서버가
+  거둔다).
+- 창이 **그려져 있지 않을 때** 온 실패는 앱 스낵바로 간다 — 창 안의 줄에만 쓰면 **어디에도 안 보인다.** 여기서
+  '열려 있다' 는 '열기로 했다' 가 아니라 **지금 그려져 있다** 는 뜻이다(안드로이드 `registrationWindowShown` —
+  `shouldDrawRegistrationWindow`. `Dialog` 를 그리는 조건과 거절을 가르는 값이 하나다). 안드로이드에서 그런 때는 둘이다.
+  - 창을 닫으면서 보낸 삭제(나가기 경고)의 실패 — 그때는 창이 이미 없다.
+  - 만드는 중에 이용권이 끝난 뒤의 등록 실패 — 세부 정보 단계로 돌아오는데, 그 단계는 이용권이 없으면 그리지
+    않는다(만드는 중·확정·준비 단계만 이용권과 무관하게 그린다 — 결정과 진행이 먼저다). 월 한도 거절도 이때는
+    알럿이 아니라 스낵바(공용 표의 문장)로 말한다. 흐름은 그래도 끝난다 — 거절된 등록은 초안을 만들지 않았고(①),
+    녹음은 놓고, 숫자는 다시 읽고(②), 창은 이용권 판정이 닫는다. 1.2.10 도 여기서는 스낵바였다 — 그려지지 않는 창
+    안에 쓰면 그보다 나빠진다.
+- **월 한도 거절은 흐름을 끝낸다** — 등록 단계에서든 저장 단계에서든(창이 그려져 있지 않을 때 온 거절은 위
+  줄대로 스낵바다).
+  - **알럿 하나**로 이유를 말한다. 액션은 닫기 하나다.
+    - 제목: `이번 달 목소리는 다 만들었어요`
+    - 본문: `목소리는 한 달에 1개 만들 수 있어요. 다음 달에 새로 만들 수 있고, 지금 목소리를 지워도 이번 달에는 다시 만들 수 없어요.`
+    - iOS 에 있던 문구다. 그 알럿은 `추가` 가 같은 조건에서 꺼져 있어 닿지 않았다 — 이제 이 자리가 쓴다.
+      안드로이드도 **같은 제목·본문**을 쓴다(ko·en·ja — iOS 카탈로그의 번역과 같은 말).
+  - 초안이 있으면 **버린다**(삭제 요청). 삭제가 실패해도 흐름은 끝낸다 — 남은 초안은 사고의 잔해라
+    서버가 거둔다(위 「초안은 저장하지 않으면 없는 것이다」).
+    - ⚠ 이 삭제의 실패는 **화면에 말하지 않는다** — 안드로이드는 기록(`AlarmTalkLog`)만 남기고 iOS 는 `try?` 로
+      버린다. 사용자가 고른 삭제가 아니다 — 월 한도 알럿 뒤에 '목소리 삭제에 실패했어요' 가 뜨면 등록된 목소리를
+      못 지운 것처럼 읽힌다. 안드로이드에서 실패를 말하는 삭제는 사용자가 누른 것(확정 화면의 `다시 만들기`·나가기
+      경고)뿐이다.
+  - 등록 창을 **닫는다.** 같은 버튼을 다시 누르게 두지 않는다 — 이번 달에는 몇 번을 눌러도 같은 답이다.
+  - 알럿을 등록 창 위에 띄우든, 창을 닫고 목소리 탭 위에 띄우든 구현이 정한다(스낵바와 달리 알럿은
+    가려지지 않는 자리에 띄울 수 있다) — 끝났을 때 **알럿을 한 번 봤고, 창이 닫혀 있고, 초안이 없고,
+    숫자가 다시 읽혔으면**(②) 된다.
+- **다시 시도할 수 있는 등록 실패는 녹음을 버리지 않는다** — 네트워크, 5xx, `VOICE_CAPACITY_EXHAUSTED`.
+  세부 정보 단계로 돌아와 이유를 읽고 `등록` 을 **그대로 다시 누를 수 있어야** 한다. 녹음(또는 고른 파일)을
+  놓는 것은 초안이 만들어진 **뒤**다. 예전 안드로이드는 '만드는 중' 으로 넘어가며 녹음을 먼저 놓아, 실패하면
+  꺼진 `등록` 과 보이지 않는 문구만 남았다(다시 녹음해야 했다).
+- ⚠ **월 한도 말고는 흐름을 끝내지 않는다.** 유료·동의(403)와 `VOICE_PREVIEW_REQUIRED` 는 그 창 안에서
+  말하고 사용자가 고친다.
 
 ## 4-2. 클론 문구는 **목소리의 결**과 **사람이 쓴 대사**를 따른다
 
@@ -1560,10 +1659,22 @@ AlarmKit 예약을 다시 만들 수 있다.
 
 - **백그라운드로 계속 받는다.** 페이지를 떠나거나 앱을 내려도 멈추지 않는다.
 - **진행률이 폰에서 실시간으로 보인다.**
-  - 안드로이드: 진행률 알림(포그라운드 서비스)
+  - 안드로이드: 진행률 알림(포그라운드 서비스 — 기본 목소리 받기 워커가 `dataSync` 타입으로 올린다)
+    - ⚠ **Android 15 부터는 시스템이 그 서비스를 언제든 끝낼 수 있다**(2026-10-11). `dataSync`
+      포그라운드 서비스에는 시스템이 세는 시간 한도가 있고, 한도에 닿았다고 보면 `Service.onTimeout`
+      으로 끝내라고 한다. 그러면 **진행률 알림은 사라지지만 받기는 거기서 끝나지 않는다** — 일반
+      백그라운드 작업으로 이어 받고(그 회차는 멈췄다가 다시 예약된다 — 받아 둔 클립은 건너뛴다), 진행은
+      **앱 안에서 다시 보인다**(받기 화면, 목소리 탭 '기본 목소리' 헤더 옆 「받는 중 N%」 — 아래 「기본
+      목소리를 다 받아야 알람을 설정한다」). 알림이 사라진 것을 실패로 읽지 않는다.
+    - ⚠ **WorkManager 는 2.10 이상이어야 한다 — 내리지 말 것.** 그 전 버전은 `Service.onTimeout` 을
+      처리하지 않는다. 시스템은 끝내라고 한 서비스가 그대로 떠 있으면 10초 뒤 **앱을 죽인다**
+      (2026-10-09 prod, ALARMTALK-ANDROID-Y — 1.2.10 은 2.9.1 이었다. 그 계정은 가입한 지 3분 뒤였다 —
+      오래 받은 기기에서만 오는 것이 아니다). 2.10 부터는 WorkManager 가 그 작업과 서비스를 스스로
+      멈추고, 작업은 다시 예약돼 서비스 없이 이어진다.
   - iOS: **Live Activity** — iOS 에는 갱신되는 진행률 알림이 없다. 잠금화면·다이나믹
     아일랜드에 진행을 계속 보여 주는 정식 수단이 Live Activity 이고, 알람용 인프라가
-    이미 있다(`AlarmTalkWidget/AlarmLiveActivity.swift`).
+    이미 있다(`AlarmTalkWidget/AlarmLiveActivity.swift`). 포그라운드 서비스도 그 시간 한도도 없어
+    위 두 줄은 해당이 없다 — 달라진 것이 없다.
 - **실패는 재시도한다.** 서버 생성 실패는 `POST /voice/:id/prerender-retry`(큐를 pending
   으로 되돌린다), 다운로드 실패는 그 클립만 다시 받는다.
 - **오프라인이면 목소리 등록을 막는다.** 등록은 생성·다운로드가 있어야 끝나는 일이라
@@ -2172,6 +2283,7 @@ R2 파일·ElevenLabs 클론은 DB 트랜잭션 안에서 지울 수 없으므�
 | 문구 없던 알람 → 목소리 문구 = 직전 선택 잇기 | `AlarmEditorState.applyAlarmOutput` → `enterVoiceModeFromAlarmOnly`·`adoptLastMessageChoiceIfUnset`(`hasNoMessageChoice`) ← `AlarmEditorScreen.applyAlarmOutput`. 직접 녹음 → 목소리는 `AlarmEditorState.selectTtsVoice`(판정은 목소리 교체 **전**, 잇기는 **뒤**) ← `VoiceAudioCard`, 그 관문은 `needsClipPreparationForVoicePick`(이을 값으로 판정). 목소리 자동 선택은 `AlarmEditorState.preselectVoiceProfile`(이은 직접 입력 문구를 비우지 않는다). 기존 알람 라우트도 직전 선택을 받는다(`AlarmTalkApp`). 알람 전용 저장은 테마까지 비운다(`toDraft`). 회귀 `AlarmEditorStateTest` | `AlarmEditorSheet.adoptLastMessageChoiceIfUnset`(`AlarmEditDraft.hasNoMessageChoice`·`lastMessageChoice`) ← 재생 방식 `.onChange`(`AlarmEditorSheet+AlarmModeSection.swift`)·`commitVoiceSelection`(직접 녹음 → 목소리의 소스 전환·잇기는 선택을 **확정할 때만** — 바로 고름·기본 목소리 확인·공유 목소리 호칭 확인이 모두 여기로 오고, 닫으면 아무것도 안 바뀐다. 잇기가 목소리 적용 **전**이고 녹음 전환이 테마를 안 지워 순서 문제가 없다. 관문은 소스를 바꾸기 **전에** `recordingExitNeedsClipPreparation`(이을 값 `AlarmEditDraft.randomContextAdoptedByTtsPick`)으로 — `selectVoiceOption` 과 확정에서 — 보고, 잇기 뒤 `.onChange` 가 같은 식으로 한 번 더). 이은 직접 입력은 테마 이어받기가 덮지 않는다(`applyPendingFreeBucketIfNeeded` ← `AlarmEditDraft.keepsPaidTypedManualText`, 안드로이드는 `AlarmEditorScreen` 스톡 클립 `LaunchedEffect` 의 `manualChosen` 가드). 알람 전용 저장은 **테마를 남긴다**(`AlarmEditDraft.carryOverNonEditableFields` — 위 ⚠). 회귀 `MessageContextMemoryTests`·`AlarmEditDraftTests.test_toRecord_alarmOnlyKeepsThemeSoVoiceSwitchRestoresIt` | — |
 | 빈 직접 입력은 요청 전에 막는다 | `SaveBlockReason.MANUAL_TEXT_MISSING` ← `emptyMessageBlockReason`(판정 `hasNoMessageChoice`, 저장 버튼이 `saveEditor()` **전에** 판정) | `AlarmEditDraft.manualTextMissing` ← `AlarmEditorSheet.manualTextMissing` — `saveFlow` 첫머리(권한·한도 조회·생성 앞), 버튼은 살려 둔다 | — |
 | 버킷 클립 선다운로드 | `sync/StockClipPrefetchWorker.kt` | `StockClipPrefetcher.swift` | `GET /tts/stock-clips`, `GET /tts/messages/:id/audio` |
+| 받기 진행 알림 — `dataSync` 포그라운드 서비스를 시스템이 끝내도(Android 15+) 받기는 이어지고 진행은 앱 안에 보인다 · **WorkManager ≥ 2.10** | `app/build.gradle.kts` 의 `androidx.work:work-runtime-ktx` **2.10.5**(2.9.1 은 `Service.onTimeout` 을 처리하지 않아 10초 뒤 앱이 죽는다 — ALARMTALK-ANDROID-Y) · `AndroidManifest.xml` 의 `SystemForegroundService` 에 `foregroundServiceType="dataSync"` 합치기(그대로 둔다 — 2.10.5 의 라이브러리 매니페스트에도 타입이 없다) · `sync/StockClipPrefetchWorker.kt` 의 `publishProgress`(`setForeground` 가 실패해도 받기는 계속)·`foregroundInfo` · 회귀 `sync/WorkManagerForegroundTimeoutContractTest`(`SystemForegroundService` 에 `onTimeout(int, int)` 이 있어야 한다 — 2.9.1 로 내리면 실패) | — (Live Activity — 포그라운드 서비스가 없다) | — |
 | 매니페스트 신선도 창(출발 기준 45초 · 공개본만 · '신호 뒤' 는 창 무시) | 위 '매니페스트 조회 한 번에 하나' 행(`StockClipManifestFlights.FRESH_WINDOW_MS`) | `StockClipPrefetcher.manifestFreshnessWindow`·`manifestForRun` ← `StockClipManifestStorage.recentlyPublished`; '신호 뒤' 는 `ClonePrerenderDrive`·`ClipPreparationView.refresh` 의 `manifestDepartedAfter`, 등록 진행률은 `StockClipPrefetcher.progressOffMain(manifestDepartedAfter:)` ← `StockClipManifestStorage.publishedManifest`. 회귀 `StockClipManifestStoreTests`·`StockClipPrefetcherSupersededTests`·`StockClipPrefetcherRestartTests` | `GET /tts/stock-clips` |
 | 재바인딩은 계정·언어당 한 번에 하나 · 전경 복귀는 재바인딩 뒤 보충 | 재바인딩이 `StockClipPrefetchWorker` 안에서 돈다(`enqueueUniqueWork(…, KEEP)`) | `StockReplacementStatus.beginRebind`·`endRebind`·`waitForRebind`(물러난 쪽은 합류) ← `AlarmTalkApp.rebindStockClipsIfNeeded`; 전경 복귀 순서는 `AlarmTalkApp` 의 `.active`. 회귀 `StockClipRefetchGuardTests` | — |
 | 준비 페이지 폴링은 준비가 끝나면 멈춘다(실패·소유자 대기는 계속) | — | `ClipPreparationView.pollingCanStop`; 회귀 `StockClipRefetchGuardTests` | `GET /voice/:id/prerender-status` |
@@ -2195,6 +2307,9 @@ R2 파일·ElevenLabs 클론은 DB 트랜잭션 안에서 지울 수 없으므�
 | 확정 단계 공유 | `VoiceProfileManagementPanel` Preview | `VoicePreviewConfirmView` | 일반 승격은 `scheduleVoiceShareChangedPush`, 제자리 교체는 `notifySharedVoicePrerenderComplete`(공유 해제만 즉시) |
 | 제자리 교체 원자성·원본 승계 | — | — | `replaceVoiceInPlace` + `voice_uploads` + `voice_prerender_queue` |
 | 교체도 같은 등록 게이트 | — | — | `replaceVoiceInPlace`(플랜·동의·`voice_profile_change_ledger`) |
+| 월 등록을 다 썼으면 초안을 만들지 않는다(§4-1 「월 등록 한도」 ① — 자격 확인 · provider 등록 전 · 아무것도 쓰지 않음 · 확정과 같은 429 몸통) | 등록 실패 갈래가 그 코드를 받는다(아래 ③ 행) | 같음 | `routes/voice-profile.ts` 의 `POST /clone` 예약 트랜잭션 **맨 앞**에서 `readMonthlyRegistrationUsage` → 남은 횟수 0이면 `monthlyVoiceChangeLimitResponse`(`discardAbandonedDrafts`·`hasCloneSlotCapacity`·`reserveMonthlyDraftAttempt`·`voice_profiles` INSERT 보다 먼저) · 회귀 `test/voice-profile.test.ts`(순서 큐 목 — 이번 달 등록을 썼으면 429·provider 호출 0·`voice_profiles`/`voice_draft_attempt_usage` 쓰기 0·옛 초안 그대로·트랜잭션 맨 앞, 집계 조건은 확정의 예약과 같다)·`test/voice-clone-monthly-gate.test.ts`(진짜 SQLite — 이번 달 `succeeded`·`reserved` 줄이면 429·한 줄도 쓰지 않음 / `failed` 줄뿐·지난달 줄·다른 계정의 줄이면 201) |
+| `생성 가능 n/m회` 다시 읽기(② — 확정 직후 · 목소리 탭 진입 · 월 한도 거절 직후 · 앱에서만 깎지 않는다 · 가장 나중에 낸 요청의, 요청한 계정의 답만 적는다) | `ui/main/MainViewModelVoiceActions.kt` 의 `applyVoiceDraftQuota`(서버 답을 싣는 곳은 여기 하나 — `MainViewModel.voiceDraftQuotaRequestSeq` 로 가장 나중에 낸 요청의 답만, `responseStillBelongsToRequester` 로 요청한 계정의 답만) ← `loadVoiceDraftQuota`(← `promoteVoiceDraft` 성공 갈래 · `createVoiceProfiles` 성공 갈래 · `preloadVoiceProfiles` 의 신선 갈래(탭 진입 — `AlarmTalkApp` 의 `tabRefreshThrottleMs` 60초) · `createVoiceProfiles`·`promoteVoiceDraft` 의 월 한도 갈래)·`fetchVoiceProfiles`(목록과 함께 읽는 한도) — 번호는 둘 다 요청을 내기 직전에 뽑는다(`nextVoiceDraftQuotaRequest`) → `MainViewModel.voiceDraftQuota` → 패널의 `monthlyExhausted`(`추가`)·`AlarmTalkApp` 의 `voiceDraftQuotaExhausted`(삭제 경고) · 회귀 `VoiceRegistrationQuotaWiringTest`(`anOlderAnswerNeverOverwritesANewerOne`·`aLateAnswerIsDroppedUnlessItBelongsToTheRequester`) | `VoiceStudioViewModel.refresh(session:force:)` 가 `draftQuota` 를 다시 읽는다(계정만 대조한다 — 요청 순서는 아직 보지 않는다, §4-1 ②의 ⚠) ← `VoicePreviewConfirmView.promote` 성공(기존) · `refreshOnEntry`(탭 진입, 60초 — 기존) · `handleMonthlyLimitRejection(session:)`(신규 — `cloneAudioForProfile` 의 catch·`VoicePreviewConfirmView.promote` 의 catch) → `VoiceProfileManagementPanel` 의 `monthlyExhausted`(`추가`·삭제 경고) · 회귀 `AlarmTalkTests/VoiceStudioViewModelTests` | `GET /voice/draft-quota`(`registration_limit`·`registration_remaining` ← `readMonthlyRegistrationUsage`) |
+| 등록 창이 그려져 있을 때의 거절은 창 안에서, 아니면 스낵바 · 월 한도 거절은 흐름을 끝낸다(알럿 하나·초안을 조용히 삭제·창 닫기) · 다시 시도할 수 있는 등록 실패는 녹음을 지킨다(③) | `MainViewModel.voiceRegistrationFailure`(`VoiceRegistrationFailure` — 코드와 문구. `createVoiceProfiles`·`promoteVoiceDraft`·`deleteVoiceDraft` 의 실패 갈래가 `registrationFailureSurface(errorCode, windowOpen)` 로 가른다 — `ui/voices/VoicePreviewConfirmRules.kt` 의 `RegistrationFailureSurface.EndFlow`/`InWindow`/`AppSnackbar`. `windowOpen` 은 창이 **그려져 있는가**다 — 패널의 `registrationWindowShown`(`shouldDrawRegistrationWindow`) 하나가 `Dialog` 를 그리는 조건·`voiceRegistrationWindowChanged` 로 알리는 열림·패널의 거절 효과를 함께 정한다) → `VoiceProfileManagementPanel`: `InWindow` = `localMessage`, `EndFlow` = `monthlyLimitNoticeOpen`(`IosAlertDialog` — `voices_monthly_limit_title`·`voices_monthly_limit_message`, ko·en·ja) + `onDiscardVoiceDraftQuietly`(`deleteVoiceDraft(…, surfaceFailure = false)` — 실패는 기록만) + `closeCreateDialog`, `AppSnackbar` = `MainViewModel.message`(나가기 경고의 삭제 · 그려지지 않은 창 — 만드는 중에 이용권이 끝난 뒤의 등록 실패. 되돌리기 효과(만드는 중 → 세부 정보)가 거절 효과보다 **앞에** 있어야 그 단계로 가른다). 이용권이 끝나면 창을 닫는 효과는 `(canCreateVoice, currentStep)` 이 키다 — 만드는 중에서 세부 정보로 돌아온 뒤에도 닫는다. 녹음은 `enterCreatingStep` 이 놓지 않는다 — 초안이 온 뒤와 `closeCreateDialog` 에서 놓는다. 저장이 실패하면 `promotedForPrerenderId` 를 내린다(안 내리면 뒤의 `다시 만들기` 가 '저장 중…' 으로 그려진다) · 회귀 `VoicePreviewConfirmRulesTest`(판정표·그리는 조건)·`VoiceRegistrationFailureWiringTest`(`theMonthlyLimitDiscardOfTheDraftIsQuiet`·`aWindowThatIsNotDrawnIsNotTreatedAsOpen` 포함) | `VoiceStudioViewModel.isMonthlyLimitRejection(_:)`(`VoiceStudioViewModel+ErrorMapping.swift`)·`monthlyLimitRejected`(게시 값 — `handleMonthlyLimitRejection(session:)` 이 세운다) ← `VoiceCloneUploadFlow.submit`(거절이면 `route = .management`, 그 밖의 실패는 `.details` 로 — 녹음은 그대로)·`VoicePreviewConfirmView.promote` 의 catch(초안 삭제 뒤 닫는다) → `VoiceProfileManagementPanel` 의 `monthlyLimitNoticeOpen` 알럿(있던 문구 — 여는 자리는 `VoicesPanelView` 의 `fullScreenCover(onDismiss:)`: 등록 창이 다 내려간 뒤) · 그 밖의 실패는 기존 인라인(`voice.statusMessage`·`errorMessage`) · 회귀 `AlarmTalkTests/VoiceStudioViewModelTests` | `VOICE_MONTHLY_CHANGE_LIMIT_REACHED`(위 ① 행·확정 게이트 — 몸통 `VOICE_MONTHLY_LIMIT`) |
 | 목소리 높이 — 등록 확정에서만 받는다(새 등록부터 · 0/null/미전송 = 원래 소리 · 범위 밖 400 · 등록 뒤 409, 같은 값의 재시도는 200 · 응답에 적은 값) | 끝까지 들은 높이를 싣는다 — `MainViewModel.promoteVoiceDraft`(`pitchSemitones`, 0 이면 키 없음) → `VoiceProfileUpdateRequest.pitchSemitones` ← `VoiceProfileManagementPanel`(`heardTunings`) · 바디 `voiceDraftPromotionRequest`(교체는 기존 목소리가 있으면 언제나 — `registrationReplaceTarget`); 문구 `network/ApiErrorMessages.kt`; 회귀 `VoiceProfileUpdateRequestTest` | 끝까지 들은 높이를 싣는다 — `AlarmTalkAPI.promoteVoiceDraft(pitchSemitones:)`·`voiceDraftPromoteBody`(0 이면 키 없음) ← `VoicePreviewConfirmView.promote`(`VoiceTonePreview.canSave` · 교체 `replacementTarget`); 회귀 `VoiceStudioViewModelTests.test_promotionReplacesWheneverAnOfficialVoiceExists`; 문구 `APIErrorMessages.swift`; 회귀 `VoiceStudioViewModelTests.test_voiceDraftPromotionBody_carriesPitchOnlyWhenNotZero` | `PATCH /voice/:id`(`pitch_semitones`·`pitchSemitones` → `VoicePitchSemitonesSchema`, `INVALID_VOICE_PITCH`·`VOICE_PITCH_LOCKED`·재시도 판정 `pitchRetryOfRegistration`, `routes/voice-profile.ts`) → `voice_profiles.pitch_semitones`·`pitch_model_id`(#128). 회귀 `voice-pitch-promote.test.ts`·배포 창 `voice-pitch-deploy-window.test.ts` |
 | 목소리 높이 — 교체 등록은 새로 고른 값으로 덮어쓴다(안 고르면 비운다) | — | — | `replaceVoiceInPlace`(`pitchSemitones`) ← `PATCH /voice/:id`. 회귀 `voice-replace-in-place.test.ts`「교체는 새로 고른 높이와 지금 모델을 적고…」·`voice-pitch-promote.test.ts`「교체 등록은 고른 높이를…」 |
 | 목소리 높이 — 서버가 굽는다(사전렌더·`/tts/generate` · PCM → TD-PSOLA → 크기 되맞춤 → 음량 → MP3 128 · 실패·형식 이상·60초 초과는 던진다 · 모델이 바뀌면 굽지 않는다 · 인코더는 isolate 당 하나) | 받은 파일을 그대로 튼다 | 받은 파일을 그대로 튼다 | 굽는 곳 `createSynthesisAttempts`(`lib/voice-provider.ts`) ← `voicePitchFromRow`·`appliedPitchSemitones`·`bakeVoiceMp3`·`bakeVoiceSamples`·`encodeMp3`(`lib/voice-pitch.ts`) ← 셈 `shiftVoicePitch`(`packages/voice/src/pitch-shift.ts`) · PCM 응답 형식 검사 `ElevenLabsClient.textToSpeech` · 행 읽기 `findUsableVoiceProfile`(`SELECT *`·`vp.*` — 공유 목소리는 주인의 값, `routes/tts.ts`) · 사전렌더 `listReadyCloneVoices` → `findMissingStockTargets` → `generateStockClip`(`lib/stock-clips.ts`) · 인코더 묶기 `src/index.ts`(`registerMp3EncoderModule`)·`wrangler.toml` 의 `[[rules]]`(테스트는 `test/support/register-mp3-encoder.ts` — `vitest.config.ts` 의 `setupFiles`). 회귀 `voice-pitch.test.ts`·`prerender-pitch.test.ts`·`tts.test.ts`「높이가 있는 목소리의 직접 입력은…」·`elevenlabs.test.ts`「PCM 을 달라고 하면…」·`worker-wasm-bundle.test.ts`·`packages/voice/test/pitch-shift.test.ts`(두 앱과 같은 기대값) |
@@ -2310,3 +2425,21 @@ R2 파일·ElevenLabs 클론은 DB 트랜잭션 안에서 지울 수 없으므�
 - raw API 로 만든 알람은 `voice_profile_id`·`message_id`·`bucket_id` 가 비어 있어
   톤만 울린다 — 그건 정상이다. **앱 UI 로 만든 알람**으로 검증해야 한다.
 - 무료 등급은 버킷 클립 선다운로드가 끝난 뒤여야 오프라인에서도 소리가 난다.
+
+§4-1 「월 등록 한도」와 받기 진행 알림(2026-10-11)은 유닛 테스트가 **배선과 판정**만 지킨다. 아래는
+실기기로만 보인다(이 절을 쓴 시점에는 **아직 돌리지 않은** 절차다 — 돌린 결과는
+`docs/qa/dev-test-handoff.md` 에 적는다).
+- **등록 뒤 숫자**: 목소리를 등록하고 앱을 다시 켜지 않은 채 목소리 탭으로 돌아온다 — `생성 가능 0/1회` 이고
+  `추가` 가 꺼져 있어야 한다. 그 목소리의 삭제 알럿에는 "이번 달에는 새 목소리를 만들 수 없고…" 가 붙는다.
+- **창 안의 실패**: 확정 화면에서 비행기 모드로 `저장하기` 를 누른다 — 실패 문구가 **그 화면 안**에 보여야
+  한다(1.2.10 빌드에서 같은 조작을 하면 아무 문구도 안 보이는지 — 스낵바가 창 뒤에 있다는 것 — 도 한 번
+  본다. 지금까지는 코드로만 읽었다). 세부 정보 단계에서 같은 방법으로 `등록` 을 누르면 문구가 보이고,
+  네트워크를 되돌린 뒤 `등록` 이 **그대로 다시 눌려야** 한다(다시 녹음하지 않는다).
+- **월 한도로 끝나는 흐름**: 이번 달 등록을 이미 쓴 계정은 dev 에서도 `등록` 에서 429 를 받는다 — 미리듣기·톤
+  화면을 다시 보려면 그 계정의 이번 달 원장 줄이 없어야 한다(테스트 계정을 새로 쓰거나 달이 바뀐 뒤).
+- **포그라운드 서비스 시간 한도**(Android 15+ 테스트폰): 아래 설정으로 한도를 5초로 줄이고, 느린 망에서
+  기본 목소리 받기를 시작한 뒤 홈으로 나간다. 한도는 앱이 화면에 있는 동안 다시 채워지므로 **나간 뒤에도
+  받는 중**이어야 한다(값이 크거나 망이 빠르면 그 전에 끝난다). logcat 에 서비스 시간 초과가 찍히되
+  `ForegroundServiceDidNotStopInTimeException` 이 없어야 하고, 받기는 뒤 회차에서 끝나야 한다.
+  - 줄이기: `adb shell device_config put activity_manager data_sync_fgs_timeout_duration 5000`
+  - ⚠ 끝나면 **지운다**: `adb shell device_config delete activity_manager data_sync_fgs_timeout_duration`

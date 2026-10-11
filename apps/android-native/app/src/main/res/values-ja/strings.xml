@@ -31,7 +31,6 @@
     <string name="auth_reset_title">パスワード再設定</string>
     <string name="auth_reset_subtitle">登録メールに認証コードをお送りします。</string>
     <string name="auth_reset_send_code">認証コードを受け取る</string>
-    <string name="auth_reset_code_sent">コードを送信しました</string>
     <string name="auth_reset_new_password">新しいパスワード</string>
     <string name="auth_reset_submit">パスワードを変更</string>
     <string name="msg_password_reset_code_sent">認証コードを送りました。メールをご確認ください。</string>
@@ -548,6 +547,8 @@
     <string name="voicesr_delete">削除</string>
     <string name="voices_delete_quota_title">削除しますか？</string>
     <string name="voices_delete_quota_message">この声で作ったアラームは基本の声に変わり、保存された音声も一緒に削除されます。元に戻せません。今月は新しい声を作れず、来月から作成できます。</string>
+    <string name="voices_monthly_limit_title">今月の声はもう作りました</string>
+    <string name="voices_monthly_limit_message">声は月に1つ作れます。次は来月に作れます。今の声を削除しても今月は作れません。</string>
     <string name="voicesr_delete_dialog_confirm">「%1$s」の声を削除しますか?</string>
     <string name="voicesr_delete_dialog_title">声を削除</string>
     <string name="voicesr_delete_dialog_warning">この声を使うアラームは基本の声に変わります。保存された音源ファイルも一緒に削除されます。</string>

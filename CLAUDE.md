@@ -456,16 +456,16 @@ gainMb=600`)로 확인했고, 사용자가 맞춘 음량이 첫 회만 지켜지
 | --- | --- |
 | [`docs/spec/alarm-ringing.md`](docs/spec/alarm-ringing.md) | **잠김=전체화면 / 앱 보임=전체화면 / 다른 앱=배너**(OS 가 가른다), **벗어나면=해제**, 스와이프=해제, 타임아웃 없음, 소리·음량, 권한별 사실 |
 | [`docs/spec/alarm-editor.md`](docs/spec/alarm-editor.md) | 편집기 — 타임휠(튕기면 굴러간다·숫자 탭은 **그 자리 입력**), 재생 방식 세그먼트, 모달 **세 형태** |
-| [`docs/spec/voice-and-message.md`](docs/spec/voice-and-message.md) | 재생 방식 2택, **문구 목록은 하나**(등급으로 안 자른다), 직전 선택 유지, 버킷 선다운로드 |
+| [`docs/spec/voice-and-message.md`](docs/spec/voice-and-message.md) | 재생 방식 2택, **문구 목록은 하나**(등급으로 안 자른다), 직전 선택 유지, 버킷 선다운로드, 월 등록 한도 — **다 썼으면 초안부터 만들지 않는다** |
 | [`docs/spec/plan-gates.md`](docs/spec/plan-gates.md) | 로그인·이용권 게이트 **3상태**와 상태별 액션 |
-| [`docs/spec/session-and-auth.md`](docs/spec/session-and-auth.md) | 로그인 유지 — TTL 365일 + **백그라운드 갱신**, 끊는 경우 |
+| [`docs/spec/session-and-auth.md`](docs/spec/session-and-auth.md) | 로그인 유지 — TTL 365일 + **백그라운드 갱신**, 끊는 경우, 이메일 인증 코드 — **가장 최근 코드만**, 거절되면 칸을 비운다 |
 | [`docs/spec/billing-lifecycle.md`](docs/spec/billing-lifecycle.md) | 구독 해지·만료 — **스토어가 권위**, 애플은 서버가 못 끊는다 |
 | [`docs/spec/family-alarm.md`](docs/spec/family-alarm.md) | 가족 알람 — **보내면 끝**(보낸 알람 수정은 서버가 409 로 거절, 완화 금지), 받은 뒤엔 **전부 받은 사람 것**, 단 **다시 보내면 새 것이 이긴다**, 설정 불가능 시간은 **자동 생성 금지** |
 | [`docs/spec/consent.md`](docs/spec/consent.md) | 동의 화면 — **미체크 ≠ 철회**, 재동의 레버 |
 | [`docs/spec/gates-and-overlays.md`](docs/spec/gates-and-overlays.md) | 게이트·1회성 오버레이의 **준비 신호** |
 | [`docs/spec/alarm-lifecycle.md`](docs/spec/alarm-lifecycle.md) | 알람의 **행 vs 예약** 두 겹, 계정을 떠날 때 끄기, `.failed` 낙인 규칙 |
 | [`docs/spec/usage-events.md`](docs/spec/usage-events.md) | 사용 기록 — **울릴 때 네트워크 금지**(로컬에 적고 나중에 전송), 재전송 멱등, 보관 1년 |
-| [`docs/spec/error-codes.md`](docs/spec/error-codes.md) | 에러 코드 — **목록은 하나**(shared), 나간 코드는 **바꾸지 않는다**, 기록은 전부·경보는 골라서 |
+| [`docs/spec/error-codes.md`](docs/spec/error-codes.md) | 에러 코드 — **목록은 하나**(shared), 나간 코드는 **바꾸지 않는다**, 기록은 전부·경보는 골라서, 앱 Sentry 묶음 키(코드 + 호출 자리) |
 | [`docs/spec/localization.md`](docs/spec/localization.md) | 앱 화면 번역 — 용어·저장값과 표시·오류·존칭·언어 변경 |
 
 각 스펙 문서 끝에 **「구현 지도」** 표가 있다 — 규칙 한 줄이 세 구현의 어디에 사는지

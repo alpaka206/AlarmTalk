@@ -115,8 +115,10 @@ fun apiErrorMessageRes(code: String?): Int? = code?.let { API_ERROR_MESSAGES[it]
  * message = apiErrorMessage(app, code) ?: userFacingError(error, app.getString(R.string.…))
  * ```
  *
- * ⚠ **`code` 는 이미 뽑아 놓은 값을 넘길 것.** `HttpException` 의 errorBody 는 **한 번만**
- * 읽힌다 — 같은 예외에 [apiErrorCode] 를 두 번 부르면 두 번째가 빈손이 된다.
+ * `code` 는 [apiErrorCode] 로 뽑은 값이다. 같은 예외에서 거듭 뽑아도 같은 값이 나온다 — 코드를
+ * 읽어도 오류 본문은 소진되지 않는다(`network/ApiErrors.kt`). 다만 화면이 문구와 **함께** 코드로
+ * 갈래를 가른다면 한 번 뽑아 둘 다에 쓴다 — 두 번 뽑는 것이 틀려서가 아니라, 문구와 갈래가 같은
+ * 값에서 나왔다는 것이 코드에 보이게 하려는 것이다.
  */
 fun apiErrorMessage(context: Context, code: String?): String? =
     apiErrorMessageRes(code)?.let(context::getString)

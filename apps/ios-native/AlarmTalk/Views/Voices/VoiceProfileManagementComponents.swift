@@ -210,12 +210,12 @@ struct AudioCropRangeSlider: View {
 
 #if DEBUG
 #Preview("VoiceProfileManagementPanel (light)") {
-    VoiceProfileManagementPanel(route: .constant(.management))
+    VoiceProfileManagementPanel(route: .constant(.management), monthlyLimitNoticeOpen: .constant(false))
         .voiceAlarmPreviewEnvironment()
 }
 
 #Preview("VoiceProfileManagementPanel (dark)") {
-    VoiceProfileManagementPanel(route: .constant(.management))
+    VoiceProfileManagementPanel(route: .constant(.management), monthlyLimitNoticeOpen: .constant(false))
         .preferredColorScheme(.dark)
         .voiceAlarmPreviewEnvironment()
 }

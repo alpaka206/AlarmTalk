@@ -117,6 +117,33 @@ internal fun sanitizeRedeemCode(raw: String): String = raw
     // 프로모 코드 최대 64자(admin 발급 폼 maxlength=64)와 맞춘다 — 32자 잘림으로 긴 코드가 실패하던 문제.
     .take(64)
 
+/** 이메일 인증 코드의 자릿수. 서버(`@alarmtalk/shared` 의 `EmailVerificationCodeSchema`)와 같은 값이다. */
+internal const val VerificationCodeLength = 6
+
+/**
+ * 이메일 인증 코드(가입·비밀번호 재설정). **ASCII 숫자 여섯 자만 남긴다.**
+ *
+ * 유니코드 십진 숫자는 **같은 값의 ASCII 숫자**로 바꾸고(아라비아-인도 U+0660–0669 · 페르시아
+ * U+06F0–06F9 · 전각 U+FF10–FF19 등), 숫자가 아닌 것(공백·하이픈·글자·분수·원문자)은 버리고, 여섯
+ * 자에서 자른다. 메일 본문을 통째로 붙여도 앞의 여섯 자리만 남는다.
+ *
+ * ⚠ **`filter(Char::isDigit)` 로 거르지 말 것.** `isDigit` 은 ASCII 가 아닌 숫자를 **그대로** 통과시키는데
+ * 서버의 형식 검사는 ASCII 만 받는다 — 그런 키보드로 친 코드는 형식에서 떨어져(400
+ * `AUTH_VALIDATION_FAILED`) 틀린 횟수도 세지 않은 채 영영 통과하지 못한다. 가입·재설정 두 화면의 코드
+ * 칸이 이 함수 하나를 거친다(스펙 session-and-auth 「코드는 ASCII 숫자 여섯 자다」). 서버도 2차로 같은
+ * 변환을 한다. iOS `InputSanitizer.sanitizeVerificationCode` 와 같은 규칙.
+ */
+internal fun sanitizeVerificationCode(raw: String): String = buildString(VerificationCodeLength) {
+    var index = 0
+    while (index < raw.length && length < VerificationCodeLength) {
+        // 코드 포인트로 본다 — BMP 밖의 십진 숫자(수학 기호 숫자 등)는 서러게이트 쌍이다.
+        val codePoint = raw.codePointAt(index)
+        index += Character.charCount(codePoint)
+        val digit = Character.digit(codePoint, 10)
+        if (digit >= 0) append('0' + digit)
+    }
+}
+
 @Composable
 internal fun CodeRedeemField(
     busy: Boolean,

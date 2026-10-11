@@ -125,6 +125,54 @@ final class InputSanitizerTests: XCTestCase {
         XCTAssertEqual(InputSanitizer.clampDisplayName("김규원"), "김규원")
     }
 
+    // MARK: - 이메일 인증 코드 — ASCII 숫자 여섯 자
+
+    /// 서버의 형식 검사(`EmailVerificationCodeSchema`)는 ASCII 숫자만 받는다. 다른 문자 체계의
+    /// 숫자를 그대로 보내면 형식에서 떨어져 **횟수도 세지 않고 영영 통과하지 못한다** — 화면은
+    /// 그동안 "맞지 않아요" 라고 했다. 같은 값의 ASCII 숫자로 바꾼다
+    /// (`docs/spec/session-and-auth.md` 「코드는 ASCII 숫자 여섯 자다」 — 두 앱이 같은 규칙이다).
+    func test_verificationCode_mapsOtherDecimalDigitsToASCII() {
+        // 아라비아-인도(U+0660~), 페르시아(U+06F0~), 전각(U+FF10~) — 코드포인트로 적는다
+        // (글자로 적으면 편집기에 따라 좌우 순서가 뒤집혀 보인다).
+        let arabicIndic = "\u{0661}\u{0662}\u{0663}\u{0664}\u{0665}\u{0666}"
+        let persian = "\u{06F1}\u{06F2}\u{06F3}\u{06F4}\u{06F5}\u{06F6}"
+        let fullWidth = "\u{FF11}\u{FF12}\u{FF13}\u{FF14}\u{FF15}\u{FF16}"
+        for raw in [arabicIndic, persian, fullWidth] {
+            XCTAssertEqual(InputSanitizer.sanitizeVerificationCode(raw), "123456")
+        }
+        XCTAssertEqual(InputSanitizer.sanitizeVerificationCode("12\u{0663}\u{06F4}\u{FF15}6"), "123456")
+        XCTAssertEqual(InputSanitizer.sanitizeVerificationCode("000000"), "000000")
+    }
+
+    /// ⚠ **`isNumber` 가 통과시키던 것들이다.** 분수·원문자·위첨자·로마 숫자는 number 지만 십진
+    /// 자리수가 아니다 — 남기면 서버가 형식에서 떨어뜨린다.
+    func test_verificationCode_dropsEverythingThatIsNotADecimalDigit() {
+        XCTAssertEqual(InputSanitizer.sanitizeVerificationCode("1\u{00BD}2\u{2463}3\u{00B2}4\u{2167}"), "1234")
+        XCTAssertEqual(InputSanitizer.sanitizeVerificationCode("12 34-56"), "123456")
+        XCTAssertEqual(InputSanitizer.sanitizeVerificationCode("12a3b4\n5\u{200B}6"), "123456")
+        XCTAssertEqual(InputSanitizer.sanitizeVerificationCode("abc"), "")
+        XCTAssertEqual(InputSanitizer.sanitizeVerificationCode(""), "")
+    }
+
+    func test_verificationCode_capsAtSix_evenForAPastedMailBody() {
+        XCTAssertEqual(InputSanitizer.verificationCodeLength, 6)
+        XCTAssertEqual(InputSanitizer.sanitizeVerificationCode("1234567890"), "123456")
+        // 메일 본문을 통째로 붙여도 여섯 자리만 남는다.
+        XCTAssertEqual(InputSanitizer.sanitizeVerificationCode("AlarmTalk 인증 코드: 123456 (10분)"), "123456")
+    }
+
+    /// 확인 버튼(가입·재설정)이 쓰는 판정 — **이미 정리된** 여섯 자만 유효하다.
+    func test_verificationCode_validityFollowsTheSanitizer() {
+        XCTAssertTrue(LoginValidator.isValidVerificationCode("123456"))
+        XCTAssertFalse(LoginValidator.isValidVerificationCode("12345"))
+        XCTAssertFalse(LoginValidator.isValidVerificationCode("1234567"))
+        XCTAssertFalse(LoginValidator.isValidVerificationCode("12345a"))
+        // 예전 판정(`allSatisfy(\.isNumber)`)은 이 셋을 '유효' 라고 했다 — 서버는 형식에서 떨어뜨린다.
+        XCTAssertFalse(LoginValidator.isValidVerificationCode("\u{0661}\u{0662}\u{0663}\u{0664}\u{0665}\u{0666}"))
+        XCTAssertFalse(LoginValidator.isValidVerificationCode("12345\u{00BD}"))
+        XCTAssertFalse(LoginValidator.isValidVerificationCode("12345\u{2463}"))
+    }
+
     // MARK: - 조합
 
     func test_combined_realisticAttack() {

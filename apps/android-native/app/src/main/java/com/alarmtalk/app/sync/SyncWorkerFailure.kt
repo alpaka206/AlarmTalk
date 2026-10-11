@@ -44,9 +44,11 @@ import kotlin.coroutines.cancellation.CancellationException
 internal enum class SyncWorkerOutcome { RETHROW, SESSION_EXPIRED, CONSENT_PENDING, RETRY }
 
 /**
- * ⚠ **401 을 `apiErrorCode` 보다 먼저 본다.** `errorBody` 는 한 번만 읽히는데, 401 판정은
- * 상태코드만 보면 되므로(`AlarmTalkLog.isHandledAuthFailure`) 본문을 건드리지 않는다.
- * 순서가 반대면 아무도 쓰지 않을 401 본문을 한 번 읽고 버린다.
+ * ⚠ **401 을 `apiErrorCode` 보다 먼저 본다.** 401 판정은 상태코드만 보면 된다
+ * (`AlarmTalkLog.isHandledAuthFailure`) — `TOKEN_REVOKED` 든 만료든 결말이 하나라 코드를 볼 이유가
+ * 없다. 순서가 반대면 아무도 쓰지 않을 401 본문을 괜히 한 번 파싱한다.
+ * (예전에는 이유가 하나 더 있었다 — 코드를 읽으면 오류 본문이 소진됐다. 이제는 읽어도 남는다 —
+ * `network/ApiErrors.kt`. 그래도 401 은 상태코드로 가른다.)
  */
 internal fun syncWorkerOutcome(error: Throwable): SyncWorkerOutcome =
     when {
