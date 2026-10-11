@@ -44,8 +44,10 @@
 - **빌드 출처**: 두 앱은 main 머지 **전에** #874 head `f57d9f34` 에서 빌드했다 — 오너 결정(10/08 동시 출시, 10/11 지시)으로
   CLAUDE.md 의 '로컬 빌드는 main 머지 뒤' 보다 앞당겼다. `git merge-tree --write-tree origin/main f57d9f34` 가
   `f57d9f34^{tree}`(`cb975003`)와 같다 — main 에만 있는 커밋 25개는 전부 머지 커밋이라, 머지한 뒤 main 의 소스가 빌드한
-  것과 똑같다. ⚠ **#874 head 가 바뀌면(develop 에 무엇이든 머지되면) 다시 빌드·제출한다** — 그래서 문서 PR #880 도
-  #874 뒤에 머지한다.
+  것과 똑같다. ⚠ **앱에 들어가는 파일이 바뀌면 다시 빌드·제출한다** — `apps/android-native`·`apps/ios-native`·
+  `docs/legal`(법무 문서 전문이 두 앱에 실린다). 확인: `git diff --quiet f57d9f34 origin/develop -- apps/android-native
+  apps/ios-native docs/legal` 이 조용히 끝나면(차이 없음) 빌드는 그대로 유효하다. 문서만 바꾸는 머지(#880 등)는
+  빌드에 영향이 없다 — 다만 #874 의 head 가 바뀌므로 #874 의 Codex·CI 는 새 head 에서 다시 돌린다.
 - [ ] 말소리 없음 거절([#876](https://github.com/alpaka206/AlarmTalk/pull/876)) 실기기 확인 — 두 앱에서 거의 무음으로 녹음해
       등록하면 녹음 단계로 돌아가 이유가 녹음 칸 아래에 뜨는지, 다시 녹음해 바로 등록되는지(남은 횟수 그대로).
       ElevenLabs 키가 dev·prod 공용이라 한두 번만 한다.
