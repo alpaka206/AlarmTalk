@@ -58,10 +58,10 @@ enum AlarmTalkLog {
     /// 2. **일시적 네트워크 실패**([transientURLErrorCodes]). `NSUnderlyingErrorKey` 사슬
     ///    어디에 있든 본다 — 도메인 오류로 한 번 감싼 것도 같은 실패다.
     ///
-    /// ⚠ HTTP 4xx(`APIError.server`)는 **401 하나만 빼고** 여기서 가르지 않는다. 나머지는
+    /// ⚠ HTTP 4xx(`APIError.server`)는 여기서 가르지 않는다. 낮추는 4xx 는 둘뿐이고 각자 **형제 판정**이
+    /// 맡는다 — 401 은 [isHandledAuthFailure], 사용자가 고칠 예상된 거절 목록은 [isExpectedRefusal]. 둘 다 기기
+    /// 사정으로 곧 나아질 실패가 아니라 뜻이 달라서, 한 판정에 합치면 브레드크럼 category 가 섞인다. 그 밖의 4xx 는
     /// 호출부가 `error_code` 를 보고 결정한다(`RemoteAlarmSyncViewModel` 의 `CONSENT_REQUIRED`).
-    /// 401 은 이 함수가 아니라 **형제 판정** [isHandledAuthFailure] 가 맡는다 — 기기 사정으로
-    /// 곧 나아질 실패가 아니라 **이미 처리가 끝난** 실패라서, 둘을 한 판정에 합치면 뜻이 섞인다.
     static func isExpectedTransientFailure(_ error: Error) -> Bool {
         if error is CancellationError { return true }
         return errorChainContains(error) { candidate in
@@ -125,14 +125,38 @@ enum AlarmTalkLog {
         }
     }
 
-    /// 이슈로 올리지 않고 브레드크럼으로만 남길 실패인가 — 남긴다면 그 category.
-    /// 올려야 할 실패면 nil.
+    /// **사용자가 고칠 예상된 거절**의 `error_code` — 이 앱에서는 이 목록 한 곳이다. 사용자가 친 값의 문제이고 화면이
+    /// 코드로 고른 문장으로 이유를 이미 말해, 우리가 고칠 코드가 없다. 규칙은 `docs/spec/error-codes.md` §3 「앱도 같다」.
+    /// 원본은 `packages/shared/src/schemas/error-codes.ts` 의 `CLIENT_EXPECTED_REFUSAL_CODES` 이고 값이 같아야 한다 —
+    /// CI lint(`scripts/check-expected-refusal-codes.py`)가 이 이름과 모양(`Set<String>`)으로 찾아 대조한다.
     ///
-    /// 두 갈래를 **한 이름으로 뭉치지 않는다.** 다음 진짜 이벤트를 읽을 때 "네트워크가
-    /// 끊겨 있었다" 와 "세션이 끊겨 이미 로그아웃했다" 는 전혀 다른 맥락이다.
+    /// ⚠ **`AUTH_EMAIL_CODE_ATTEMPTS_EXCEEDED`·`VOICE_MONTHLY_CHANGE_LIMIT_REACHED` 를 넣지 말 것.** 1.2.10 의 두
+    /// 묶음(같은 코드 다섯 번 제출, 낡은 등록 횟수)은 그 둘이 이슈로 올라와 드러났다 — 시도 상한·월 한도에 닿는 것은
+    /// 화면이 사람을 막다른 길로 보냈다는 신호일 수 있다.
+    static let expectedRefusalCodes: Set<String> = ["AUTH_EMAIL_CODE_INVALID","AUTH_EMAIL_CODE_EXPIRED","AUTH_EMAIL_TAKEN","AUTH_EMAIL_SOCIAL","CODE_NOT_FOUND","CODE_EXPIRED","CODE_ALREADY_USED","CODE_ALREADY_REDEEMED_BY_YOU","CODE_EXHAUSTED","CODE_INACTIVE","CODE_NOT_IN_WINDOW"]
+
+    /// [expectedRefusalCodes] 의 거절인가 — 원인 사슬의 첫 HTTP 응답이 **4xx** 이고 그 코드가 목록에 있을 때만.
+    ///
+    /// - 응답은 묶음 키와 **같은 방법**으로 읽는다([apiFailure] — 감싸인 응답도 같다). 다르게 읽으면 같은 거절이
+    ///   감싸였는지에 따라 낮춰지기도 하고 이슈가 되기도 한다.
+    /// - ⚠ 같은 코드라도 5xx 면 거절이 아니라 사고다 — 상태를 함께 본다.
+    /// - 코드가 없으면 거절로 보지 않는다 — 무엇을 거절했는지 모르면 고칠 것이 있는지도 모른다.
+    static func isExpectedRefusal(_ error: Error) -> Bool {
+        guard let failure = apiFailure(in: error),
+              (400...499).contains(failure.status),
+              let code = failure.code else { return false }
+        return expectedRefusalCodes.contains(code)
+    }
+
+    /// 이슈로 올리지 않고 브레드크럼으로만 남길 실패인가 — 남긴다면 그 category.
+    /// 올려야 할 실패면 nil. 안드로이드 짝은 `core/AlarmTalkLog.kt` 의 `breadcrumbCategoryFor` 다.
+    ///
+    /// 갈래를 **한 이름으로 뭉치지 않는다.** 다음 진짜 이벤트를 읽을 때 "네트워크가 끊겨 있었다",
+    /// "세션이 끊겨 이미 로그아웃했다", "사용자가 틀린 코드를 넣었다" 는 전혀 다른 맥락이다.
     static func handledFailureCategory(_ error: Error) -> String? {
         if isHandledAuthFailure(error) { return "auth" }
         if isExpectedTransientFailure(error) { return "transient" }
+        if isExpectedRefusal(error) { return "refusal" }
         return nil
     }
 

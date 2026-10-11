@@ -12,6 +12,18 @@ type AudioUploadOptions = {
   fileName?: string | null;
 };
 
+/**
+ * 전사 답에 글(`text`)이 없다 — 응답 모양이 바뀌었다(`speechToText`). 이름이 따로 있는 것은 등록의 말소리 확인
+ * warn 줄이 **오류 이름만** 싣기 때문이다(`checkCloneSpeech`) — 제공자 4xx/5xx(`Error`)·시간 초과(`TimeoutError`)와
+ * 같은 이름이면 그 줄로는 어느 쪽이 늘었는지 가를 수 없다.
+ */
+export class SpeechToTextNoTextError extends Error {
+  constructor() {
+    super('ElevenLabs speech-to-text response has no text');
+    this.name = 'SpeechToTextNoTextError';
+  }
+}
+
 export class ElevenLabsClient {
   constructor(private apiKey: string) {}
 
@@ -67,7 +79,7 @@ export class ElevenLabsClient {
     // ⚠ 글(`text`)이 없는 답은 **실패**다 — 빈 글('')로 바꾸지 말 것(2026-10-11). 빈 글은 등록의 말소리 확인에서 '말소리
     //   없음'(400)이라, 응답 모양이 바뀌면(`{}`·`{"text":null}`·필드 이름 변경) 모든 등록이 막힌다. 던지면 말소리 확인은
     //   통과시키고(fail-open) 말투 분석은 다시 할 수 있는 실패로 남는다. 글이 빈 것(`{"text":""}`)은 답이다 — 그대로 준다.
-    if (typeof text !== 'string') throw new Error('ElevenLabs speech-to-text response has no text');
+    if (typeof text !== 'string') throw new SpeechToTextNoTextError();
     return text.trim();
   }
 

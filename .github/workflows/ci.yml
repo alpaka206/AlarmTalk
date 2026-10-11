@@ -128,6 +128,14 @@ jobs:
       - name: Check voice enrollment script matches across shared/Android/iOS
         run: python3 scripts/check-voice-enrollment-script.py
 
+      # 사용자가 친 값의 예상된 거절(틀린 인증 코드·이미 가입된 이메일·잘못 친 이용권 코드)은 두 앱이 이슈 대신
+      # 브레드크럼으로 남긴다. 목록의 원본은 `packages/shared` 의 `CLIENT_EXPECTED_REFUSAL_CODES` 이고 두 앱은 같은 값을
+      # 손으로 둔다 — 한쪽만 고치면 같은 거절이 한 앱에서만 이슈가 되는데, 각 앱의 테스트는 자기 목록만 본다.
+      - name: Check expected refusal codes match across shared/Android/iOS
+        run: |
+          python3 scripts/check-expected-refusal-codes.py --self-test
+          python3 scripts/check-expected-refusal-codes.py
+
       # 유닛 테스트가 호스트 앱 프로세스에서 도는 탓에, 저장 위치를 손으로 조립하면
       # **사용자가 쓰는 그 파일**을 잡는다. 실제로 기기에서 테스트를 돌릴 때마다
       # 로그인·알람·기본 목소리 클립이 지워지고 있었다(2026-08-19). 테스트는 초록으로

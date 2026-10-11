@@ -172,6 +172,28 @@ iOS 26 의 `UIAlertController` 를 시뮬레이터에서 재서 얻은 값이다
   재생 방식이 '알람' 일 때만 있으므로, 행 사이 구분선은 **알람음 행에 붙어** 함께 나타나고
   사라진다. iOS 에는 진동 행이 없다(AlarmKit 이 진동을 소유한다 — 「의도된 차이」).
 
+## 6. 저장 버튼 — 파일을 읽는 확인은 **메인 밖에서, 저장 잠금 안에서** (안드로이드, 2026-10-11)
+
+저장 버튼의 규칙(버튼은 '저장 중' 일 때만 잠그고, 저장할 수 없는 사유는 누르면 알럿으로 말한다 —
+`CLAUDE.md` 「저장 뒤 검은 화면」)은 그대로다. 바뀐 것은 **파일을 읽는 확인이 어디서 도는가**다.
+
+- **같은 문구의 오디오가 폰에 있는가**(직접 입력 재사용 — [voice-and-message.md](voice-and-message.md)
+  §8 「저장할 때의 순서」의 ①)는 저장을 누른 뒤 **IO 에서** 찾는다 — 별칭 `.meta` 읽기 · 파일 찾기 ·
+  길이 재기. 예전에는 누르는 순간 메인 스레드에서 했다(2026-10-10 Sentry 조사).
+- **찾는 동안이 곧 '저장 중' 이다.** 버튼이 잠기고(스피너) 그동안 들어온 두 번째 탭은 **버린다** —
+  쌓아 두면 같은 알람이 두 번 저장되고 완료 콜백이 두 번 팝해 검은 화면이 된다. 찾았으면 서버를 부르지
+  않고 곧바로 저장하고(뷰모델의 '저장 중' 으로 이어진다 — 잠금이 풀리는 틈이 없다), 못 찾았으면 다음
+  단계로 간다. 찾다 실패하면 '없다' 로 보고 다음 단계로 간다.
+- **찾는 동안 편집기가 바뀌었으면 그 저장은 버린다**(Codex #879). 잠기는 것은 저장 버튼뿐이라 그 사이 시각·
+  문구·목소리를 고칠 수 있다 — 결과를 그대로 이으면 누른 순간의 값으로 찾은 오디오가 바뀐 상태와 섞여 저장된다.
+  누른 순간의 초안과 지금 초안이 같을 때만 잇고(찾았으면 저장, 못 찾았으면 다음 단계), 다르면 아무것도 하지
+  않는다 — 잠금이 풀리니 다시 누르면 지금 상태로 저장된다.
+- **오프라인 판정(`OFFLINE_NEW_MESSAGE`)도 그 확인으로 한다** — §8 의 ②. 저장 사유를 세는 자리는 더 이상
+  파일을 읽지 않는다. 예전에는 오프라인 + 직접 입력이면 화면이 다시 그려질 때마다 같은 파일을 읽었다.
+  그래서 이 알럿은 이제 저장 흐름 안에서, 권한·가족 알람 확인 **뒤에** 뜬다 — 문구와 판정식(직접 입력 +
+  오프라인 + 폰에 없음)은 같다.
+- 나머지 사유(목소리·날씨·운세·빈 직접 입력·클립 과도기)는 메모리 값만 보므로 그대로 누르는 순간 판정한다.
+
 ## iOS 중복 시각 알람 교체의 실패 처리
 
 새 알람의 저장·예약이 성공한 뒤 충돌 알람을 정리하되, **서버 삭제/그만받기 성공을 확인한
@@ -208,6 +230,7 @@ iOS 26 의 `UIAlertController` 를 시뮬레이터에서 재서 얻은 값이다
 | 재생 방식 세그먼트 | `ui/editor/AlarmEditorControls.kt` 의 `EditorSegmentedSelector` | `Views/Editor/VoicePlayModePicker.swift` |
 | '알람' → '목소리' 전환(TTS 갈래 + 직전 선택 잇기) | `AlarmEditorScreen` 의 `applyAlarmOutput` → `AlarmEditorState.applyAlarmOutput` → `enterVoiceModeFromAlarmOnly` | `Views/Editor/AlarmEditorSheet+AlarmModeSection.swift` 의 재생 방식 `.onChange` → `AlarmEditorSheet.adoptLastMessageChoiceIfUnset` |
 | 쓸 수 없는 목소리 — 배너 없음, 저장 시 알럿 | `ui/editor/AlarmEditorScreen.kt` 의 `editorSaveBlockReason`(`SaveBlockReason.VOICE_UNAVAILABLE`) | `AlarmEditDraft.selectedVoiceUnusable` → `AlarmEditorSheet.saveFlow` 첫머리(`editorSaveBlocked` 는 이 갈래로 버튼을 죽이지 않는다) |
+| 저장 버튼의 로컬 확인 — IO 에서 · 찾는 동안은 '저장 중'(두 번째 탭은 버림) · 오프라인 판정도 그 확인으로(§6) | `ui/editor/ManualAudioReuseGate.kt` 의 `ManualAudioReuseGate`(`request` · `inFlight` — 편집기의 `busy` 가 함께 본다) ← `AlarmEditorScreen` 의 `saveEditor`(찾으면 `submitDraft`, 못 찾으면 오프라인 알럿 또는 `startGeneration`) · 찾기 `data/AlarmAudioStore.kt` 의 `findReusableTtsAudio` · 알럿 문자열 `saveBlockAlertStrings`(저장 버튼과 저장 흐름이 함께 쓴다) | — |
 | 세부 설정 행 순서(알람음 → 진동) | `ui/editor/AlarmSettingsCard.kt` 의 `AlarmSettingsCard` | 알람음 행 하나(`AlarmEditorSheet.detailSettingsSection`) |
 | 음성 출력(크기·반복) | `ui/editor/VoiceAudioCard.kt` 의 `VoiceVolumeSelector` | `Views/Editor/AlarmSettingsPanes.swift` 의 `VoiceOutputSettingsPane` |
 | 목록 바텀시트 | `ui/components/WakerModal.kt` 의 `WakerSelectionSheet` | `Views/Common/BottomSheetHost.swift` + `Views/Common/SelectionSheet.swift` |
@@ -227,6 +250,7 @@ iOS 26 의 `UIAlertController` 를 시뮬레이터에서 재서 얻은 값이다
 | 스냅 방향(되돌아가지 않는가) | `AlarmTalkTests/TimeWheelSnapDirectionTests.swift` |
 | 재생 방식 세그먼트 존재 | `AlarmTalkUITests/FunctionalE2EUITests.swift` |
 | 알람 전용 → 목소리 = 직전 선택(없으면 기본 인사말), 빈 직접 입력은 요청 전 차단 | `AlarmEditorStateTest`(안드로이드) · `AlarmTalkTests/MessageContextMemoryTests.swift`(iOS) |
+| 저장 버튼의 로컬 확인은 IO 에서 한 번 · 도는 동안의 탭은 버림 · 찾으면 서버 없이 저장 · 그 사이 편집기가 바뀌었으면 버림 · 저장 사유는 파일을 읽지 않는다(§6) | `ManualAudioReuseGateTest`(안드로이드 — `aLookupResultIsDroppedWhenTheEditorChangedMeanwhile`) |
 | 선택 시트에 '닫기' 가 없는가 | `AlarmTalkUITests/VoiceSheetScreenshotUITests.swift` |
 
 ⚠ **계산부 테스트만으로는 부족하다.** 식이 맞는지만 보고 **연결돼 있는지**는 보지 못한다 —

@@ -170,9 +170,13 @@ function fakeExecutionCtx() {
   };
 }
 
+/** 등록 녹음 — 말소리 확인 줄의 `audio_bytes` 가 이 크기다. */
+const AUDIO = new Uint8Array([1, 2, 3, 4]);
+const AUDIO_BYTES = AUDIO.byteLength;
+
 function cloneForm(): FormData {
   const form = new FormData();
-  form.append('audio', new Blob([new Uint8Array([1, 2, 3, 4])], { type: 'audio/wav' }), 'sample.wav');
+  form.append('audio', new Blob([AUDIO], { type: 'audio/wav' }), 'sample.wav');
   form.append('name', '새 목소리');
   form.append('durationMs', '45000');
   form.append('isDraft', 'true');
@@ -401,6 +405,8 @@ describe('POST /voice/clone — 전사가 실패하면 막지 않는다(fail-ope
       at: 'voice.clone.speech_check',
       outcome: 'unavailable',
       error: errorName,
+      duration_ms: expect.any(Number),
+      audio_bytes: AUDIO_BYTES,
     });
     // 오류 이름만 — 제공자 응답 본문은 어떤 줄에도 없다.
     expect(logLines.some((line) => line.includes(PROVIDER_BODY))).toBe(false);
@@ -438,11 +444,14 @@ describe('POST /voice/clone — 전사가 실패하면 막지 않는다(fail-ope
       expect(mockCreateInstantClone).toHaveBeenCalledOnce();
       const warnings = logLines.filter((line) => line.includes('"at":"voice.clone.speech_check"'));
       expect(warnings).toHaveLength(1);
+      // 이름이 따로 있다 — 같은 warn 줄의 제공자 4xx/5xx(`Error`)와 갈린다.
       expect(JSON.parse(warnings[0]!)).toEqual({
         level: 'warn',
         at: 'voice.clone.speech_check',
         outcome: 'unavailable',
-        error: 'Error',
+        error: 'SpeechToTextNoTextError',
+        duration_ms: expect.any(Number),
+        audio_bytes: AUDIO_BYTES,
       });
 
       // 말투 분석도 같은 답을 받는다 — 녹음에 대해 알아낸 것이 없으니 표준 말투로 덮지 않고 다시 할 수 있는 실패다.
@@ -460,6 +469,72 @@ describe('POST /voice/clone — 전사가 실패하면 막지 않는다(fail-ope
     } finally {
       fetchSpy.mockRestore();
     }
+  });
+});
+
+// 말소리 확인 줄에는 전사에 걸린 시간(`duration_ms`)과 녹음 크기(`audio_bytes`)가 실린다 — 운영 로그로 10초 상한
+// (`CLONE_SPEECH_CHECK_TIMEOUT_MS`)이 맞는지 보려는 것이다. 시계만 가짜로 두고(타이머는 그대로) 전사 대역이 시계를 민
+// 만큼이 그대로 찍히는지 본다.
+describe('POST /voice/clone — 말소리 확인 줄의 전사 시간·녹음 크기', () => {
+  const TOOK_MS = 2_345;
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-11T03:58:00Z'));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const cases: [outcome: string, level: string, transcribe: () => Promise<string>, status: number][] = [
+    ['speech', 'info', async () => SPEECH, 201],
+    ['no_speech', 'info', async () => '음…', 400],
+    [
+      'unavailable',
+      'warn',
+      async () => {
+        throw new DOMException('The operation was aborted due to timeout', 'TimeoutError');
+      },
+      201,
+    ],
+  ];
+
+  it.each(cases)('%s 줄에 걸린 시간과 녹음 크기가 실린다 — 전사 원문은 없다', async (outcome, level, transcribe, status) => {
+    mockSpeechToText.mockImplementation(async () => {
+      vi.setSystemTime(Date.now() + TOOK_MS);
+      return transcribe();
+    });
+
+    const res = await clone();
+
+    expect(res.status).toBe(status);
+    const lines = logLines.filter((line) => line.includes('"at":"voice.clone.speech_check"'));
+    expect(lines).toHaveLength(1);
+    expect(JSON.parse(lines[0]!)).toMatchObject({ level, outcome, duration_ms: TOOK_MS, audio_bytes: AUDIO_BYTES });
+    expect(logLines.some((line) => line.includes(SPEECH.slice(0, 10)))).toBe(false);
+  });
+
+  it('키가 없어 전사를 부르지 않았으면 걸린 시간 없이 녹음 크기만 싣는다', async () => {
+    const res = await buildApp().request(
+      '/voice/clone',
+      { method: 'POST', body: cloneForm() },
+      { ...ENV, ELEVENLABS_API_KEY: '' },
+    );
+
+    // 키가 없으면 그 뒤의 provider 등록도 못 한다(응답은 그쪽 몫이다) — 여기서 보는 것은 말소리 확인 줄뿐이다.
+    expect(res.status).not.toBe(400);
+    expect(mockSpeechToText).not.toHaveBeenCalled();
+    const lines = logLines.filter((line) => line.includes('"at":"voice.clone.speech_check"'));
+    expect(lines.map((line) => JSON.parse(line))).toEqual([
+      {
+        level: 'warn',
+        at: 'voice.clone.speech_check',
+        outcome: 'unavailable',
+        error: 'not_configured',
+        audio_bytes: AUDIO_BYTES,
+      },
+    ]);
   });
 });
 

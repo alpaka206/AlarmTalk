@@ -1,15 +1,20 @@
 package com.alarmtalk.app.data
 
 import android.content.Context
+import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.alarmtalk.app.FreeBucketOrder
+import com.alarmtalk.app.alarm.AlarmScheduler
 import com.alarmtalk.app.network.StockClip
 import com.alarmtalk.app.network.StockClipListResponse
 import com.alarmtalk.app.sync.StockClipPrefetchWorker
 import java.io.File
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -50,17 +55,30 @@ class AlarmAudioStoreProbeCountTest {
     private val systemVoiceId = SYSTEM_VOICE_ID_PREFIX + "000000000101"
     private val userId = "user-probe"
 
+    /** 울림 경로의 저장소가 쓰는 DB — 그 테스트에서만 만든다. */
+    private var db: AlarmDatabase? = null
+
     @Before
     fun clean() {
         audioDir.listFiles()?.forEach { it.delete() }
         StockClipManifestStore.clearAndInvalidate(context)
     }
 
+    @After
+    fun closeDb() {
+        db?.close()
+    }
+
     /** 매니페스트가 주는 모양 그대로 — 기본(시스템) 목소리의 무료 테마 클립 한 건. */
-    private fun stockClip(messageId: String, audioUrl: String?, variant: Int = 0) = StockClip(
+    private fun stockClip(
+        messageId: String,
+        audioUrl: String?,
+        variant: Int = 0,
+        category: String = FreeBucketOrder.first(),
+    ) = StockClip(
         messageId = messageId,
         voiceProfileId = systemVoiceId,
-        category = FreeBucketOrder.first(),
+        category = category,
         language = language,
         variant = variant,
         text = "오늘은 맑아요",
@@ -261,5 +279,144 @@ class AlarmAudioStoreProbeCountTest {
         assertTrue(missing.isEmpty())
         assertEquals(0, counts.directoryListings)
         assertEquals(0, counts.durationReads)
+    }
+
+    // ── 캐시 쓰기의 '지나간 응답인가' 가드 — 매니페스트는 바뀌었을 때만 다시 읽는다 ─────────────
+    //
+    // 2026-10-10 Sentry 조사: 가드가 쓰기마다 매니페스트(약 168KB)를 다시 읽어 파싱했다 — 선다운로드
+    // 워커 한 회차가 클립 수십 개를 쓰므로 그 횟수만큼이었다. 고치기 전에는 아래 첫 테스트가 쓰기 수만큼
+    // (여기서는 열두 번) 읽는다.
+
+    @Test
+    fun cacheWritesInOneRunParseTheManifestOnce() {
+        val clips = (0 until 12).map { stockClip("run-$it", "https://r2.example/run-$it.mp3", variant = it) }
+        publishManifest(clips)
+
+        val (_, counts) = AudioCacheProbeCounter.measuring {
+            clips.forEach { putCachedClip(it.messageId, it.audioUrl) }
+        }
+
+        assertEquals("열두 번 써도 매니페스트는 한 번만 읽는다", 1, counts.manifestReads)
+        clips.forEach { assertTrue(store.hasCachedAudio(stockKey(it.messageId), it.audioUrl)) }
+    }
+
+    /**
+     * ⚠ **가드는 여전히 쓰는 순간의 매니페스트를 본다**(Codex #703). 읽어 둔 목록을 들고 있는 채로 새
+     * 매니페스트가 공개되면 다음 쓰기가 다시 읽는다 — 안 그러면 교체 **전** 주소의 늦은 응답이 새 세대를
+     * 회수된 옛 바이트로 덮는다.
+     */
+    @Test
+    fun aNewPublicationIsSeenByTheNextWrite() {
+        val before = stockClip("swap", "https://r2.example/swap-old.mp3")
+        val other = stockClip("other", "https://r2.example/other.mp3", variant = 1)
+        publishManifest(listOf(before, other))
+        putCachedClip(other.messageId, other.audioUrl) // 이 인스턴스가 목록을 읽어 둔다.
+
+        // 제자리 교체 — 같은 message ID 에 새 주소가 공개된다.
+        publishManifest(listOf(before.copy(audioUrl = "https://r2.example/swap-new.mp3"), other))
+
+        val (_, counts) = AudioCacheProbeCounter.measuring {
+            // 교체 **전** 주소로 출발한 응답이 늦게 도착했다 — 쓸 캐시도 없으니 거절이다.
+            assertThrows(SupersededAudioException::class.java) {
+                putCachedClip(before.messageId, before.audioUrl)
+            }
+            // 새 주소의 응답은 쓴다.
+            putCachedClip(before.messageId, "https://r2.example/swap-new.mp3")
+        }
+
+        assertEquals("새 공개 뒤에 한 번만 다시 읽는다", 1, counts.manifestReads)
+        assertTrue(store.hasCachedAudio(stockKey(before.messageId), "https://r2.example/swap-new.mp3"))
+    }
+
+    /**
+     * 로그아웃·계정 전환의 지우기는 공개 표를 올리지 않는다 — 그래도 다음 쓰기는 **매니페스트가 없는 것**으로
+     * 본다(예전처럼 판단 근거가 없으면 막지 않는다). 지운 앞 계정의 주소로 거절하면 안 된다.
+     */
+    @Test
+    fun clearingTheManifestIsSeenByTheNextWrite() {
+        val clip = stockClip("cleared", "https://r2.example/cleared-new.mp3")
+        val warm = stockClip("warm", "https://r2.example/warm.mp3", variant = 1)
+        publishManifest(listOf(clip, warm))
+        putCachedClip(warm.messageId, warm.audioUrl) // 목록을 읽어 둔다.
+
+        StockClipManifestStore.clearAndInvalidate(context)
+
+        // 지운 매니페스트로는 '지나갔다' 고 판단하지 않는다 — 다른 주소의 응답도 쓴다.
+        putCachedClip(clip.messageId, "https://r2.example/cleared-other.mp3")
+        assertNotNull(store.getCachedAudioUnmeasured(stockKey(clip.messageId), "https://r2.example/cleared-other.mp3"))
+    }
+
+    // ── 울림 경로는 파일 자리만 찾는다 — 길이를 재지 않는다(alarm-ringing §4) ─────────────────────
+
+    @Test
+    fun unmeasuredLookupAnswersLikeGetCachedAudioWithoutProbingDuration() {
+        putCachedClip("msg-ring", "https://r2.example/ring.mp3")
+        val key = stockKey("msg-ring")
+
+        val (unmeasured, counts) = AudioCacheProbeCounter.measuring {
+            store.getCachedAudioUnmeasured(key, "https://r2.example/ring.mp3")
+        }
+        val measured = store.getCachedAudio(key, "https://r2.example/ring.mp3")
+
+        assertEquals(0, counts.durationReads)
+        assertNull(unmeasured?.durationMillis)
+        assertEquals(measured?.copy(durationMillis = null), unmeasured)
+        // 낡음 판정은 같다 — 주소가 바뀌었으면 없는 것이다.
+        assertNull(store.getCachedAudioUnmeasured(key, "https://r2.example/ring-replaced.mp3"))
+        assertNull(store.getCachedAudio(key, "https://r2.example/ring-replaced.mp3"))
+    }
+
+    /**
+     * 고치기 전에는 아래 세 자리가 클립마다 `getCachedAudio` 로 길이를 재고 그 값을 버렸다 —
+     * 울림 화면을 띄우는 순간에 할 일이 아니다.
+     */
+    @Test
+    fun ringAndLockPathsNeverProbeDuration() {
+        val clips = (0 until 2).map {
+            stockClip("med-$it", "https://r2.example/med-$it.mp3", variant = it, category = "medication")
+        }
+        clips.forEach { putCachedClip(it.messageId, it.audioUrl) }
+        publishManifest(clips)
+        val keys = clips.map { stockKey(it.messageId) }
+        val alarm = rehearsalCloneAlarm(
+            voiceProfileId = systemVoiceId,
+            bucketId = "medication",
+            bucketClipKeysJson = encodeBucketClipKeys(keys),
+            voiceRandomContext = null,
+        )
+        val source = DefaultVoiceClipSource(context, store)
+        val database = Room.inMemoryDatabaseBuilder(context, AlarmDatabase::class.java)
+            .allowMainThreadQueries()
+            .build()
+            .also { db = it }
+        val repository = AlarmRepository(
+            alarmDao = database.alarmDao(),
+            holidayCalendarStore = HolidayCalendarStore(database.holidayDao()),
+            holidayCountryPreferenceStore = HolidayCountryPreferenceStore(context),
+            alarmScheduler = AlarmScheduler(context),
+            alarmAudioStore = store,
+            context = context,
+            currentUserIdProvider = { userId },
+            defaultVoiceClipSource = source,
+        )
+        val firstClipUri = store.getCachedAudioUnmeasured(keys[0])?.localAudioUri
+
+        val (ringUri, ringCounts) = AudioCacheProbeCounter.measuring { source.ringUri(alarm, userId) }
+        assertEquals(firstClipUri, ringUri)
+        assertEquals("울릴 기본 목소리 클립을 고르는 데 길이를 재지 않는다", 0, ringCounts.durationReads)
+
+        val (binding, lockCounts) = AudioCacheProbeCounter.measuring {
+            source.lockBinding(alarm, systemVoiceId, userId)
+        }
+        assertEquals(keys, binding?.clips?.map { it.cacheKey })
+        assertEquals(clips.map { it.audioUrl }, binding?.clips?.map { it.rawAudioUri })
+        assertEquals("잠금이 클립을 묶는 데 길이를 재지 않는다", 0, lockCounts.durationReads)
+
+        val (selection, selectionCounts) = AudioCacheProbeCounter.measuring {
+            repository.resolveBucketClipSelection(alarm)
+        }
+        assertEquals(0, selection?.variantIndex)
+        assertEquals(firstClipUri, selection?.localAudioUri)
+        assertEquals("울릴 테마 클립을 고르는 데 길이를 재지 않는다", 0, selectionCounts.durationReads)
     }
 }

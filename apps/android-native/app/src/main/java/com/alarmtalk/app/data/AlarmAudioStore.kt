@@ -45,6 +45,12 @@ data class TtsInputAlias(
     val displayText: String,
 )
 
+/** [AlarmAudioStore.findReusableTtsAudio] 결과 — 폰에 있는 그 문구의 오디오와, 짝이 되는 표시 문구의 별칭. */
+data class ReusableTtsAudio(
+    val audio: CachedAlarmAudio,
+    val alias: TtsInputAlias,
+)
+
 data class CachedAlarmAudio(
     val localAudioUri: String,
     val rawAudioUri: String?,
@@ -74,11 +80,15 @@ class SupersededAudioException : IllegalStateException("Audio response is supers
  * ⚠ **스레드 로컬이다** — 재는 쪽이 부른 것만 센다. 전역 숫자로 두면 다른 스레드의 스윕·
  * 프리페치가 같은 함수를 불러 단언 사이에 끼어든다(iOS 가 그렇게 한 번 깨졌다).
  * 재지 않을 때는 스레드 로컬 한 번 읽는 값만 든다.
+ *
+ * 매니페스트 파일(약 168KB)을 **읽어 파싱한 횟수**도 센다(`StockClipManifestStore.load`) — 캐시 쓰기의
+ * '지나간 응답인가' 가드가 쓰기마다 그 파일을 다시 파싱하던 회귀를 막는다(2026-10-10 Sentry 조사).
  */
 internal object AudioCacheProbeCounter {
     class Counts {
         var directoryListings: Int = 0
         var durationReads: Int = 0
+        var manifestReads: Int = 0
     }
 
     private val current = ThreadLocal<Counts?>()
@@ -101,6 +111,10 @@ internal object AudioCacheProbeCounter {
     fun recordDurationRead() {
         current.get()?.let { it.durationReads += 1 }
     }
+
+    fun recordManifestRead() {
+        current.get()?.let { it.manifestReads += 1 }
+    }
 }
 
 class AlarmAudioStore(
@@ -108,6 +122,13 @@ class AlarmAudioStore(
 ) {
     private val audioDir: File
         get() = File(context.filesDir, AUDIO_DIR).also { it.mkdirs() }
+
+    /**
+     * '지나간 응답인가' 가드([incomingIsSupersededByManifest])가 보는 매니페스트 주소표 — **이 인스턴스의
+     * 쓰기들이 함께 쓴다.** 매니페스트 파일이 바뀌었을 때만 다시 읽는다(`StockClipManifestStore.AudioUrlIndex`).
+     * 선다운로드 워커는 회차마다 인스턴스를 하나 만들므로, 한 회차에 매니페스트를 한 번 읽는다.
+     */
+    private val manifestAudioUrls = StockClipManifestStore.AudioUrlIndex(context)
 
     fun createRecordingFile(): File =
         File(audioDir, "recording_${System.currentTimeMillis()}.m4a")
@@ -442,15 +463,28 @@ class AlarmAudioStore(
      * 훑으면 그 시간이 클립 수만큼 곱해진다(2026-09-29 A32 — 알람 관문 한 번에 1.4~1.8초).
      */
     fun getCachedAudio(cacheKey: String, rawAudioUri: String? = null): CachedAlarmAudio? {
+        val cached = getCachedAudioUnmeasured(cacheKey, rawAudioUri) ?: return null
+        return cached.copy(durationMillis = readDurationMillis(cached.localAudioUri.toUri()))
+    }
+
+    /**
+     * [getCachedAudio] 와 **같은 답**(없거나 낡았으면 null — 낡음은 같은 메타 대조)인데 **길이를 재지
+     * 않는다** — `durationMillis` 는 언제나 null 이다.
+     *
+     * 틀 파일 자리만 쓰는 곳이 부른다 — 울림(`AlarmRepository.resolveBucketClipSelection`·
+     * `DefaultVoiceClipSource.ringUri`)과 잠금의 클립 묶기(`DefaultVoiceClipSource.lockBinding`).
+     * 예전에는 거기서도 [getCachedAudio] 를 불러 클립마다 `MediaMetadataRetriever` 를 돌리고 그 값을
+     * 버렸다(2026-10-10 Sentry 조사) — 알람이 울리는 순간에 할 일이 아니다.
+     */
+    fun getCachedAudioUnmeasured(cacheKey: String, rawAudioUri: String? = null): CachedAlarmAudio? {
         val cached = findCachedFile(cacheKey) ?: return null
         val metadata = readMetadata(cacheKey)
         if (metadataIsStale(metadata, rawAudioUri)) return null
-        val uri = cached.toUri()
         return CachedAlarmAudio(
-            localAudioUri = uri.toString(),
+            localAudioUri = cached.toUri().toString(),
             rawAudioUri = metadata.rawAudioUri ?: rawAudioUri,
             displayName = cached.name,
-            durationMillis = readDurationMillis(uri),
+            durationMillis = null,
             cacheKey = cacheKey,
             messageId = metadata.messageId,
         )
@@ -544,13 +578,14 @@ class AlarmAudioStore(
      * 매니페스트가 그 message ID 를 알고 있고 지금 가리키는 주소가 이 응답의 주소와 다르면,
      * 이 응답은 뒤처진 것이다 — 덮어쓰지 않는다. 매니페스트가 모르는 message ID(직접 생성한
      * TTS 등)나 주소가 없는 응답은 판단 근거가 없으므로 **막지 않는다.**
+     *
+     * 매니페스트는 쓰기마다 다시 읽지 않는다 — 파일이 바뀌었을 때만 읽는 주소표([manifestAudioUrls])에 묻는다.
+     * 답은 쓰기마다 읽은 것과 같다(그 주석).
      */
     private fun incomingIsSupersededByManifest(messageId: String?, incomingRawAudioUri: String?): Boolean {
         val id = messageId?.takeIf { it.isNotBlank() } ?: return false
         val incoming = incomingRawAudioUri?.takeIf { it.isNotBlank() } ?: return false
-        val current = StockClipManifestStore.load(context)
-            ?.clips?.firstOrNull { it.messageId == id }
-            ?.audioUrl?.takeIf { it.isNotBlank() } ?: return false
+        val current = manifestAudioUrls.audioUrlFor(id)?.takeIf { it.isNotBlank() } ?: return false
         return current != incoming
     }
 
@@ -628,6 +663,19 @@ class AlarmAudioStore(
             // 스윕 TTL 이 '최초 생성'이 아니라 '마지막 사용' 기준이 되게 만져 둔다.
             runCatching { file.setLastModified(System.currentTimeMillis()) }
         }
+    }
+
+    /**
+     * 같은 직접 입력 문구로 만든 오디오가 **이 폰에 있으면** 그 오디오와 짝 별칭. 없으면 null — 서버를 부른다.
+     *
+     * 판정은 두 단계다: 입력 별칭([resolveTtsInput])이 있어도 **파일이 없으면 없는 것**이다(별칭 파일은
+     * 오디오와 이름이 달라 함께 지워지지 않는다). 별칭 `.meta` 를 읽고, 파일을 찾고, **길이를 잰다** —
+     * 메인 스레드에서 부르지 말 것. 편집기의 저장 버튼은 `ManualAudioReuseGate` 로 IO 에서 부른다.
+     */
+    fun findReusableTtsAudio(inputKey: String, rawAudioUri: String?): ReusableTtsAudio? {
+        val alias = resolveTtsInput(inputKey) ?: return null
+        val audio = getCachedAudio(alias.cacheKey, rawAudioUri = rawAudioUri) ?: return null
+        return ReusableTtsAudio(audio = audio, alias = alias)
     }
 
     fun deleteCachedAudio(cacheKey: String) {

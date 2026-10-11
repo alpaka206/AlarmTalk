@@ -2581,33 +2581,53 @@ function errorNameOf(err: unknown): string {
  *   바뀌면 `speechToText` 가 던진다) — **막지 않는다**(fail-open). warn 한 줄(오류 이름만)을 남긴다.
  *
  * ⚠ 전사 원문은 저장하지도 로그에 남기지도 않는다 — 로그에는 길이만 싣는다.
+ *
+ * 줄마다 녹음 크기(`audio_bytes`)를, 전사를 불렀으면 걸린 시간(`duration_ms` — 부르기 직전부터 답·실패까지)을 함께
+ * 싣는다. 운영 로그로 10초 상한(`CLONE_SPEECH_CHECK_TIMEOUT_MS`)이 맞는지 — 몇 초에 끝나고, 어떤 크기에서 늦는지 —
+ * 보려는 것이다. 키가 없어 부르지 않은 줄에는 `duration_ms` 가 없다.
  */
 async function checkCloneSpeech(
   env: Env,
   audioData: ArrayBuffer,
   file: { mimeType: string; fileName?: string },
 ): Promise<{ status: 'speech'; transcript: string } | { status: 'no_speech' } | { status: 'unavailable' }> {
+  const audioBytes = audioData.byteLength;
+  if (!env.ELEVENLABS_API_KEY) {
+    logStructured('warn', {
+      at: 'voice.clone.speech_check',
+      outcome: 'unavailable',
+      error: 'not_configured',
+      audio_bytes: audioBytes,
+    });
+    return { status: 'unavailable' };
+  }
+  const startedAt = Date.now();
   let transcript: string;
   try {
-    if (!env.ELEVENLABS_API_KEY) {
-      logStructured('warn', { at: 'voice.clone.speech_check', outcome: 'unavailable', error: 'not_configured' });
-      return { status: 'unavailable' };
-    }
     transcript = await new ElevenLabsClient(env.ELEVENLABS_API_KEY).speechToText(audioData, {
       mimeType: file.mimeType,
       fileName: file.fileName,
-      deadlineAt: Date.now() + CLONE_SPEECH_CHECK_TIMEOUT_MS,
+      deadlineAt: startedAt + CLONE_SPEECH_CHECK_TIMEOUT_MS,
     });
   } catch (err) {
-    logStructured('warn', { at: 'voice.clone.speech_check', outcome: 'unavailable', error: errorNameOf(err) });
+    logStructured('warn', {
+      at: 'voice.clone.speech_check',
+      outcome: 'unavailable',
+      error: errorNameOf(err),
+      duration_ms: Date.now() - startedAt,
+      audio_bytes: audioBytes,
+    });
     return { status: 'unavailable' };
   }
+  const durationMs = Date.now() - startedAt;
   const transcriptChars = speechCharCount(transcript);
   const hasSpeech = transcriptChars >= MIN_SPEECH_TRANSCRIPT_CHARS;
   logStructured('info', {
     at: 'voice.clone.speech_check',
     outcome: hasSpeech ? 'speech' : 'no_speech',
     transcript_chars: transcriptChars,
+    duration_ms: durationMs,
+    audio_bytes: audioBytes,
   });
   return hasSpeech ? { status: 'speech', transcript } : { status: 'no_speech' };
 }

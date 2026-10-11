@@ -48,12 +48,16 @@ struct MainTabsView: View {
     /// 2026-09-17 지시: 다 받기 전에는 설정 화면 자체를 막는다. 받다 만 상태로 들어가면
     /// 문구 행이 「문구를 준비하고 있어요」 에 머물고, 저장해도 테마 회전이 비어 운다.
     /// 규칙은 `docs/spec/voice-and-message.md` 「기본 목소리를 다 받아야 알람을 설정한다」.
+    ///
+    /// ⚠ **탭 하나에 한 번 센다**(`StockClipPrefetcher.defaultVoiceGate`). 세는 일은 메인 액터에서 캐시 디렉터리를
+    /// 읽는다 — 예전에는 판정과 알럿 퍼센트를 따로 세어 막힐 때마다 두 번 읽었다. 막히면 센 값 그대로 알럿에 쓴다.
     private func openEditorIfVoicesReady(_ target: AlarmEditorTarget) {
         #if DEBUG
         if UIPreviewSeed.isEnabled { editorTarget = target; return }
         #endif
-        guard StockClipPrefetcher.defaultVoicesReady() else {
-            voicesNotReadyProgress = StockClipPrefetcher.defaultVoiceProgress()
+        let gate = StockClipPrefetcher.defaultVoiceGate()
+        guard gate.ready else {
+            voicesNotReadyProgress = gate.progress
             // 막았으면 받기부터 깨운다 — 멈춰 있던 다운로드를 사용자가 따로 찾게 하지 않는다.
             if !stockClipPrefetcher.isRunning { restartDefaultVoiceDownload() }
             voicesNotReadyAlert = true

@@ -177,6 +177,73 @@ final class StockClipProgressScanTests: XCTestCase {
         XCTAssertEqual(scans, 0)
     }
 
+    // MARK: - 알람 설정 관문 — 탭 하나에 한 번 센다
+
+    /// 기본(시스템) 목소리의 무료 테마 클립 — 관문이 세는 대상이다(`StockClipPrefetcher.isDefaultVoiceTarget`).
+    private func defaultVoiceClip(_ messageId: String) -> StockClip {
+        StockClip(
+            messageId: messageId,
+            voiceProfileId: systemVoiceIDPrefix + "000000000101",
+            voiceName: nil,
+            category: "weather",
+            language: "ko",
+            text: "오늘은 맑아요",
+            audioUrl: "https://r2.example/\(messageId).mp3",
+            variant: nil,
+            renderedForCurrentVoice: nil
+        )
+    }
+
+    /// **관문 한 번 = 디렉터리 한 번**(`StockClipPrefetcher.defaultVoiceGate`). 막혔을 때 판정과 알럿 퍼센트를 따로
+    /// 세면 메인 액터에서 디렉터리를 두 번 읽는다(고치기 전 `MainTabsView.openEditorIfVoicesReady` 가 그랬다 — 안드로이드는
+    /// 같은 두 번이 2026-09-29 A32 에서 3.5초였다). 알럿 퍼센트는 그 한 번 센 값이다.
+    func test_관문_한_번은_디렉터리를_한_번만_읽고_막힌_퍼센트도_그_값이다() throws {
+        let clips = (0..<6).map { defaultVoiceClip("gate-\($0)") }
+        let manifest = StockClipListResponse(clips: clips, expectedVariants: nil, legacyBucketHints: nil)
+        for clip in clips.prefix(2) {
+            try putCachedClip(messageId: clip.messageId, rawAudioUri: clip.audioUrl)
+        }
+
+        let (blocked, blockedScans) = AudioCacheScanCounter.measuringScans {
+            StockClipPrefetcher.defaultVoiceGate(language: "ko", manifest: manifest)
+        }
+        XCTAssertEqual(blockedScans, 1, "막힌 탭 한 번에 디렉터리를 두 번 읽는다 — 판정과 퍼센트를 따로 셌다")
+        XCTAssertFalse(blocked.ready, "여섯 중 둘만 받았는데 알람 설정을 연다")
+        XCTAssertEqual(blocked.progress?.done, 2)
+        XCTAssertEqual(blocked.progress?.total, 6)
+
+        for clip in clips.dropFirst(2) {
+            try putCachedClip(messageId: clip.messageId, rawAudioUri: clip.audioUrl)
+        }
+        let (open, openScans) = AudioCacheScanCounter.measuringScans {
+            StockClipPrefetcher.defaultVoiceGate(language: "ko", manifest: manifest)
+        }
+        XCTAssertEqual(openScans, 1)
+        XCTAssertTrue(open.ready, "다 받았는데 막는다")
+        XCTAssertEqual(open.progress?.done, 6)
+
+        // 매니페스트를 한 번도 못 받았으면 모른다 — 막고, 디스크는 읽지 않는다.
+        let (unknown, unknownScans) = AudioCacheScanCounter.measuringScans {
+            StockClipPrefetcher.defaultVoiceGate(language: "ko", manifest: nil)
+        }
+        XCTAssertFalse(unknown.ready)
+        XCTAssertNil(unknown.progress)
+        XCTAssertEqual(unknownScans, 0)
+    }
+
+    /// 화면이 그 한 번을 쓰는가 — 뷰의 `private` 함수라 유닛 테스트가 부를 수 없어 소스를 읽는다(`AppSourceText`).
+    /// 관문을 한 번 부르고, 막히면 그 값을 알럿 퍼센트에 쓰고, 따로 다시 세지 않는다.
+    func test_알람_설정_관문은_탭_하나에_한_번_센다() throws {
+        let source = try AppSourceText.read("Views/Root/MainTabsView.swift")
+        let gate = try AppSourceText.region(
+            of: source, from: "private func openEditorIfVoicesReady(", to: "private func restartDefaultVoiceDownload("
+        )
+        XCTAssertEqual(gate.components(separatedBy: "StockClipPrefetcher.defaultVoiceGate()").count - 1, 1, "관문을 한 번 부르지 않는다")
+        XCTAssertTrue(gate.contains("voicesNotReadyProgress = gate.progress"), "막힌 퍼센트를 센 값으로 쓰지 않는다")
+        XCTAssertFalse(gate.contains("defaultVoicesReady("), "판정을 따로 다시 센다")
+        XCTAssertFalse(gate.contains("defaultVoiceProgress("), "퍼센트를 따로 다시 센다")
+    }
+
     /// ⚠ **관측자는 재는 범위 밖으로 새지 않는다.** 이 줄이 무너지면(=다시 전역 카운터가
     /// 되면) 호스트 앱이 배경에서 돌리는 캐시 청소가 위 단언들에 섞여 든다.
     func test_재는_범위_밖의_스캔은_세지_않는다() throws {

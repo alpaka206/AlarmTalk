@@ -3,7 +3,7 @@ import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
 
-/// 등록 음원의 갈래 — 녹음 또는 고른 파일. 회귀 테스트가 `VoiceCloneUploadFlow.rerecordPlan` 을 부르도록 파일 밖에 연다.
+/// 등록 음원의 갈래 — 녹음 또는 고른 파일. 회귀 테스트가 `VoiceCloneUploadFlow.sentSourceCleanup` 을 부르도록 파일 밖에 연다.
 enum VoiceCloneSourceMode: String, CaseIterable, Identifiable {
     case record
     case file
@@ -19,13 +19,19 @@ enum VoiceCloneSourceMode: String, CaseIterable, Identifiable {
 }
 
 extension VoiceCloneUploadFlow {
-    /// 등록 창의 단계. 회귀 테스트가 `rerecordPlan` 의 답을 보도록 연다 — 흔한 이름이라 모듈 맨 위가 아니라 이 화면
-    /// 안에 둔다.
+    /// 등록 창의 단계 — 흔한 이름이라 모듈 맨 위가 아니라 이 화면 안에 둔다.
     enum RegistrationStep: Sendable {
         case source
         case details
         case creating
     }
+
+    /// 가져온 파일의 사본을 두는 폴더(캐시 아래, `copyImportedAudio`). 등록 음원 정리(`sentSourceCleanup`)가 지우는
+    /// 것은 이 폴더와 잘라 낸 사본 폴더(`AudioCropper.outputFolderName`)의 파일뿐이다.
+    nonisolated static let importFolderName = "VoiceImports"
+
+    /// 본문 맨 위 — 음원 준비로 돌려보낼 때 여기로 올린다(`rerecordReason`).
+    private static let contentTopID = "voice-clone-content-top"
 }
 
 /// 녹음/파일 선택 → 세부 정보 → 생성 중 워크플로우.
@@ -169,20 +175,33 @@ struct VoiceCloneUploadFlow: View {
             )
             .padding(.top, 18)
 
-            ScrollView {
-                VStack(alignment: .leading, spacing: 14) {
-                    switch registrationStep {
-                    case .source:
-                        sourceSection
-                    case .details:
-                        detailsSection
-                    case .creating:
-                        creatingSection
+            ScrollViewReader { scroll in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 14) {
+                        switch registrationStep {
+                        case .source:
+                            sourceSection
+                        case .details:
+                            detailsSection
+                        case .creating:
+                            creatingSection
+                        }
+                        statusSection
+                        Spacer(minLength: 4)
                     }
-                    statusSection
-                    Spacer(minLength: 4)
+                    .padding(.horizontal, 20)
+                    .id(Self.contentTopID)
                 }
-                .padding(.horizontal, 20)
+                // 음원 준비로 돌려보낸 이유(`rerecordReason`)는 녹음 카드·파일 고르기 바로 아래 — 본문 **위쪽**이다. 본문을
+                // 맨 위로 올려 그 줄과 녹음 버튼이 함께 보이게 한다. 단계들이 스크롤 하나를 같이 써서 세부 정보 단계에서 내려
+                // 둔 위치가 남을 수 있다(글자를 키운 기기에서는 그 위치가 이 줄을 화면 밖에 둔다). 안드로이드
+                // `VoiceProfileManagementPanel` 의 `LaunchedEffect(rerecordReason)` 과 같다. 걷힐 때(nil)는 움직이지 않는다.
+                .onChange(of: rerecordReason) { _, reason in
+                    guard reason != nil else { return }
+                    withAnimation(reduceMotion ? nil : .snappy(duration: 0.25)) {
+                        scroll.scrollTo(Self.contentTopID, anchor: .top)
+                    }
+                }
             }
 
             bottomActions
@@ -748,8 +767,8 @@ struct VoiceCloneUploadFlow: View {
         let trimmedRelationship = relationshipSelection.resolved.nilIfBlank
         let trimmedListener = listenerTitle.trimmingCharacters(in: .whitespacesAndNewlines).nilIfBlank
 
-        // 보낸 음원의 갈래와, 고른 파일이면 실제로 올린 파일(구간을 잘랐으면 잘라 낸 사본) — 말소리가 없다고 돌려받으면
-        // 이것들을 버린다(`rerecordPlan`).
+        // 보낸 음원의 갈래와, 고른 파일이면 실제로 올린 파일(구간을 잘랐으면 잘라 낸 사본) — 갈 곳이 정해지면 이것으로
+        // 보낸 음원을 정리한다(`sentSourceCleanup`).
         let sentMode = sourceMode
         var uploadedFileURL: URL?
         registrationStep = .creating
@@ -794,11 +813,21 @@ struct VoiceCloneUploadFlow: View {
             }
         }
         // 갈 곳은 순수 셈이 정한다(`submitOutcome` — 가르는 규칙과 그 이유는 거기 있다).
-        switch Self.submitOutcome(
+        let outcome = Self.submitOutcome(
             created: created,
             monthlyLimitRejected: voice.monthlyLimitRejected,
             noSpeechRejected: voice.noSpeechRejected
-        ) {
+        )
+        // 보낸 음원은 갈 곳이 정해진 뒤 **이 한 자리에서** 정리한다 — 무엇을 지울지는 순수 셈(`sentSourceCleanup`)이
+        // 정하고 여기서는 그대로 따른다. 다 쓴 음원(초안이 만들어졌다·월 한도·말소리 없음)은 평문 생체정보라 곧바로
+        // 지우고, 다시 시도할 수 있는 실패는 `등록` 이 다시 보낼 것을 남긴다(스펙 voice-and-message §4-1).
+        discardSentSource(Self.sentSourceCleanup(
+            after: outcome,
+            sentMode: sentMode,
+            selectedFileURL: selectedFileURL,
+            uploadedURL: uploadedFileURL
+        ))
+        switch outcome {
         case .preview(let draftID):
             // 확인 스텝이 목록 새로고침을 기다리지 않고 그리게 초안을 넘겨 둔다.
             voice.pendingDraft = created
@@ -807,12 +836,10 @@ struct VoiceCloneUploadFlow: View {
             // 창을 닫는다 — 창이 다 내려간 뒤 목소리 탭이 알럿 하나로 이유를 말한다(`VoicesPanelView`).
             route = .management
         case .rerecordForNoSpeech:
-            // 보낸 녹음(고른 파일)을 버리고 음원 준비로 돌아간다 — 남겨 두면 `등록` 이 같은 소리를 다시 보내 같은 답을
-            // 받는다. 무엇을 버리고 어디로 가는지는 순수 셈(`rerecordPlan`)이 정하고 여기서는 그대로 따른다. 이름·관계·
-            // 호칭·언어는 그대로 둔다.
-            let plan = Self.rerecordPlan(sentMode: sentMode, selectedFileURL: selectedFileURL, uploadedURL: uploadedFileURL)
-            discardSentSource(plan)
-            registrationStep = plan.step
+            // 음원 준비로 돌아간다 — 보낸 녹음(고른 파일)은 위에서 버렸다. 남겨 두면 `등록` 이 같은 소리를 다시 보내 같은
+            // 답을 받는다. 세부 정보로 돌리지 않는다 — 고칠 것은 이름이 아니라 소리다(같은 400 을 받으러 갈 때마다 공용·
+            // 한도 있는 키로 전사 한 번을 치른다). 이름·관계·호칭·언어는 그대로 둔다.
+            registrationStep = .source
             submitted = false
             // 이유(뷰모델이 안내 줄에 세운 문장)는 이 창의 거절 줄로 옮긴다 — 녹음 카드·파일 고르기 바로 아래, 오류 색
             // (`rerecordReasonLine`). 안내 줄에 남기면 맨 아래 흐린 힌트처럼 읽히고, 창을 닫은 뒤에도 목소리 탭 맨 위에
@@ -821,23 +848,23 @@ struct VoiceCloneUploadFlow: View {
             rerecordReason = voice.statusMessage
             voice.statusMessage = nil
         case .details:
-            // 이유는 `statusSection` 이 이 창 안에서 말하고, 녹음(고른 파일)은 그대로라 `등록` 을 그대로
-            // 다시 누를 수 있다.
+            // 이유는 `statusSection` 이 이 창 안에서 말하고, 녹음(가져온 사본)은 그대로라 `등록` 을 그대로
+            // 다시 누를 수 있다(잘라 낸 사본은 다음 `등록` 이 다시 자른다).
             registrationStep = .details
         }
     }
 
-    /// 말소리가 없다고 돌려받은 음원을 계획(`rerecordPlan`)대로 버린다 — 다음 `등록` 이 같은 소리를 보내지 못하게
-    /// (`SubmitOutcome.rerecordForNoSpeech`). 계획을 **그대로** 따른다 — 무엇을 버릴지는 여기서 다시 셈하지 않는다.
-    private func discardSentSource(_ plan: RerecordPlan) {
-        if plan.clearsRecorder {
+    /// 보낸 음원을 정리 계획(`sentSourceCleanup`)대로 지운다. 계획을 **그대로** 따른다 — 무엇을 지울지는 여기서 다시
+    /// 셈하지 않는다.
+    private func discardSentSource(_ cleanup: SentSourceCleanup) {
+        if cleanup.clearsRecorder {
             voice.previewPlayer.stop()
             voice.recorder.clearLatest()
         }
-        for url in plan.filesToDelete {
+        for url in cleanup.filesToDelete {
             try? FileManager.default.removeItem(at: url)
         }
-        if plan.clearsFileSelection {
+        if cleanup.clearsFileSelection {
             selectedFileURL = nil
             selectedFileName = nil
             selectedFileDurationMs = nil
@@ -845,44 +872,66 @@ struct VoiceCloneUploadFlow: View {
         }
     }
 
-    /// 말소리가 없다고 돌려받은 뒤(`SubmitOutcome.rerecordForNoSpeech`) 등록 창이 할 일 — 화면 상태와 떼어 낸 순수
-    /// 셈의 답이다(회귀 `VoiceStudioViewModelTests`). `submit` 이 이것을 그대로 따른다(`discardSentSource`).
-    struct RerecordPlan: Equatable, Sendable {
-        /// 녹음기를 비운다 — 녹음 파일도 함께 지워진다(`VoiceRecorder.clearLatest`).
+    /// 제출이 끝난 뒤(`SubmitOutcome`) 보낸 음원을 무엇까지 지우는가 — 화면 상태와 떼어 낸 순수 셈의 답이다(회귀
+    /// `VoiceStudioViewModelTests`). `submit` 이 갈 곳을 정한 뒤 한 번 이것을 그대로 따른다(`discardSentSource`).
+    struct SentSourceCleanup: Equatable, Sendable {
+        /// 녹음기를 비운다 — 녹음 파일(`VoiceRecordings`)도 녹음기가 함께 지운다(`VoiceRecorder.clearLatest`).
         let clearsRecorder: Bool
-        /// 지울 파일 — 앱이 만든 사본(가져온 파일·잘라 낸 구간)뿐이다. 사용자가 고른 원본은 가져올 때 사본을 떴으므로
-        /// (`copyImportedAudio`) 건드리지 않는다.
+        /// 지울 파일 — 앱이 뜬 사본(가져온 사본·잘라 낸 사본)뿐이다(`isAppMadeSourceCopy`). 사용자가 고른 원본은 가져올
+        /// 때 사본을 떴으므로(`copyImportedAudio`) 건드리지 않는다.
         let filesToDelete: [URL]
         /// 고른 파일을 놓는다 — 고르기 전으로 돌린다.
         let clearsFileSelection: Bool
-        /// 돌아갈 단계.
-        let step: RegistrationStep
     }
 
-    /// 위 계획을 셈한다. **보낸 갈래의 소리만** 버린다 — 녹음을 보냈으면 녹음을, 고른 파일을 보냈으면 그 파일을. 다른
-    /// 갈래에 준비해 둔 소리는 보내지 않았으니 그대로 둔다.
+    /// 위 계획을 셈한다(스펙 voice-and-message §4-1 「보낸 음원은 다 쓰면 곧바로 지운다」). **보낸 갈래의 소리만**
+    /// 다룬다 — 다른 갈래에 준비해 둔 소리는 보내지 않았으니 그대로 둔다.
     ///
-    /// - ⚠ **돌아갈 곳은 음원 준비다 — 세부 정보가 아니다.** 고칠 것은 이름이 아니라 소리다. 세부 정보로 돌리면 `등록` 이
-    ///   같은 소리를 다시 보내 같은 400 을 받고, 누를 때마다 공용·한도 있는 ElevenLabs 키로 전사 한 번을 치른다.
-    /// - ⚠ **고른 파일은 잘라 낸 사본까지 지운다.** 구간을 잘라 보냈으면 올린 것은 가져온 사본이 아니라 잘라 낸 사본
-    ///   (`uploadedURL` — 캐시의 `VoiceCrop`)이다. 등록 녹음은 음성 생체정보 평문이라 다시 보낼 일이 없는 사본을 남기지
-    ///   않는다. 안드로이드도 거절로 다 쓴 녹음은 올린 사본까지 지운다(`cloneRejectionSpendsRecording`).
+    /// | 갈 곳 | 녹음을 보냈다 | 고른 파일을 보냈다 |
+    /// | --- | --- | --- |
+    /// | 초안이 만들어졌다 · 월 한도 · 말소리 없음 | 녹음기를 비운다 | 가져온 사본 + 잘라 낸 사본을 지우고 선택을 놓는다 |
+    /// | 다시 시도할 수 있는 실패(`.details`) | 그대로 | 잘라 낸 사본만 지운다 — 가져온 사본과 선택은 남긴다 |
+    ///
+    /// - ⚠ **다 쓴 음원은 지운다.** 서버가 받아들였으면 다시 보낼 일이 없고(확인 스텝의 `다시 만들기` 는 새로 녹음한다),
+    ///   월 한도·말소리 없음은 같은 음원을 다시 보내도 같은 답이다. 등록 녹음은 음성 생체정보 평문이다. 안드로이드도
+    ///   업로드가 성공하면(`purgeVoiceCloneSourceRecordings`), 거절로 다 쓰면(`cloneRejectionSpendsRecording`) 지운다.
+    /// - ⚠ **다시 시도할 수 있는 실패는 `등록` 이 다시 보낼 것을 남긴다** — 녹음과 가져온 사본. 잘라 낸 사본은 남기지
+    ///   않는다: 구간은 보낼 때마다 새로 자르므로(`preparedFileAudio`) 남겨 둔 사본은 다시 쓰이지 않고 쌓이기만 한다.
+    /// - ⚠ **알람이 쓰는 파일은 지우지 않는다** — 지울 목록은 앱이 뜬 사본 폴더의 파일로만 셈한다(`isAppMadeSourceCopy`).
+    ///   알람 음원은 다른 폴더(`AudioCacheStore`)에 있어 여기 섞일 일이 없지만, 다른 곳을 가리키는 주소가 들어와도
+    ///   지우지 않는다.
     /// - 녹음은 녹음기가 자기 파일을 지운다 — 지울 파일 목록에 다시 올리지 않는다.
-    nonisolated static func rerecordPlan(
+    nonisolated static func sentSourceCleanup(
+        after outcome: SubmitOutcome,
         sentMode: VoiceCloneSourceMode,
         selectedFileURL: URL?,
         uploadedURL: URL?
-    ) -> RerecordPlan {
+    ) -> SentSourceCleanup {
+        let spent: Bool
+        switch outcome {
+        case .preview, .closeForMonthlyLimit, .rerecordForNoSpeech: spent = true
+        case .details: spent = false
+        }
         switch sentMode {
         case .record:
-            return RerecordPlan(clearsRecorder: true, filesToDelete: [], clearsFileSelection: false, step: .source)
+            return SentSourceCleanup(clearsRecorder: spent, filesToDelete: [], clearsFileSelection: false)
         case .file:
-            var files = selectedFileURL.map { [$0] } ?? []
-            if let uploadedURL, uploadedURL != selectedFileURL {
-                files.append(uploadedURL)
-            }
-            return RerecordPlan(clearsRecorder: false, filesToDelete: files, clearsFileSelection: true, step: .source)
+            // 고른 파일과 다른 파일을 올렸으면 그것이 이번 제출이 잘라 낸 사본이다.
+            let cropped = uploadedURL == selectedFileURL ? nil : uploadedURL
+            let candidates = spent ? [selectedFileURL, cropped] : [cropped]
+            return SentSourceCleanup(
+                clearsRecorder: false,
+                filesToDelete: candidates.compactMap { $0 }.filter(isAppMadeSourceCopy),
+                clearsFileSelection: spent
+            )
         }
+    }
+
+    /// 앱이 뜬 등록 음원 사본인가 — 가져온 사본 폴더(`importFolderName`)·잘라 낸 사본 폴더(`AudioCropper.outputFolderName`)
+    /// **바로 안의** 파일만 그렇다. 정리(`sentSourceCleanup`)는 이것만 지운다.
+    nonisolated static func isAppMadeSourceCopy(_ url: URL) -> Bool {
+        url.isFileURL && [importFolderName, AudioCropper.outputFolderName]
+            .contains(url.deletingLastPathComponent().lastPathComponent)
     }
 
     /// 제출(`submit`) 뒤 등록 창이 갈 곳 — 화면 상태와 떼어 낸 순수 셈이다(회귀 `VoiceStudioViewModelTests`).
@@ -1000,7 +1049,7 @@ struct VoiceCloneUploadFlow: View {
             }
         }
         let directory = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("VoiceImports", isDirectory: true)
+            .appendingPathComponent(Self.importFolderName, isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let ext = source.pathExtension.isEmpty ? "m4a" : source.pathExtension
         let destination = directory.appendingPathComponent("clone-import-\(UUID().uuidString).\(ext)")

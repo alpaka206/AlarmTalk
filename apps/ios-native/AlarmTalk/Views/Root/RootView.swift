@@ -572,9 +572,9 @@ struct RootView: View {
         // ⚠ **'한 개라도 있다' 로 판정하지 말 것**(2026-09-17). 받다 만 기기가 다시 켜면
         // 받기 화면을 건너뛰고, 알람 관문(`StockClipPrefetcher.defaultVoicesReady`)에서야
         // 막힌다. 매니페스트를 한 번도 못 받은 옛 설치만 파일 유무로 본다.
-        let ready = StockClipPrefetcher.defaultVoiceProgress() == nil
-            ? AudioCacheStore.shared.hasAnyStockClip
-            : StockClipPrefetcher.defaultVoicesReady()
+        // 진행률은 한 번만 센다 — 판정이 같은 값을 다시 쓴다(`StockClipPrefetcher.defaultVoiceGate`).
+        let gate = StockClipPrefetcher.defaultVoiceGate()
+        let ready = gate.progress == nil ? AudioCacheStore.shared.hasAnyStockClip : gate.ready
         voiceSetupDone = ready || DefaultVoicePreferenceStore().hasSkipped(userID: userID)
     }
 

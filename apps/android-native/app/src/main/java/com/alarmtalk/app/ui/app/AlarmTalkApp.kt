@@ -553,6 +553,10 @@ internal fun AlarmTalkApp(
                 context,
                 authSession.user.id,
             )
+            // ⚠ **받기 화면 판정이 끝난 뒤에** 계정·동의 조회를 띄운다(순서가 준비 신호다). 판정은 이제
+            //   메인 밖에서 파일을 세느라 잠깐 걸린다(`checkVoiceSetupFor` 는 suspend). 1회성 오버레이는
+            //   계정·동의 응답을 기다리므로, 그 요청을 판정 **뒤에** 내야 `showVoiceSetup` 의 응답 전
+            //   기본값(false)을 '받기 화면 없음' 으로 읽고 소진 플래그를 태우는 틈이 없다.
             viewModel.checkVoiceSetupFor(authSession.user.id)
             viewModel.checkAccountStatus()
             viewModel.checkConsentStatus()

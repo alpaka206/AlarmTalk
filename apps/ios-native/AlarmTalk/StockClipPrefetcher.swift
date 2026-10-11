@@ -169,10 +169,14 @@ final class StockClipPrefetcher: ObservableObject {
     /// 기준은 서버 매니페스트에 **실제로 있는** 클립이다(기대 개수표가 아니다) — 서버가 아직
     /// 못 만든 클립까지 세면 받을 수 없는 몫 때문에 관문이 영영 안 열린다.
     /// 매니페스트를 한 번도 못 받았으면 nil(= 모른다).
+    ///
+    /// 셀 때마다 캐시 디렉터리를 **한 번** 읽는다(`missingClips`). 그래서 한 번의 판정에서 두 번 부르지 않는다 —
+    /// 관문은 [defaultVoiceGate] 로 한 번 세고 그 값을 다시 쓴다.
     static func defaultVoiceProgress(
-        language: String = VoiceStudioViewModel.appVoiceLanguage()
+        language: String = VoiceStudioViewModel.appVoiceLanguage(),
+        manifest: StockClipListResponse? = StockClipManifestStore.load()
     ) -> (done: Int, total: Int)? {
-        guard let manifest = StockClipManifestStore.load() else { return nil }
+        guard let manifest else { return nil }
         let targets = manifest.clips.filter { isDefaultVoiceTarget($0, language: language) }
         let missing = missingClips(targets).count
         return (targets.count - missing, targets.count)
@@ -180,9 +184,24 @@ final class StockClipPrefetcher: ObservableObject {
 
     /// 기본 목소리를 다 받아 **알람을 설정해도 되는가**(2026-09-17 지시: 다 받기 전에는 알람
     /// 설정 화면 자체를 막는다). 매니페스트가 비어 있으면(서버가 줄 것이 없다) 막지 않는다.
-    static func defaultVoicesReady() -> Bool {
-        guard let progress = defaultVoiceProgress() else { return false }
+    /// **이미 센 진행률**로 답한다 — 세는 일은 [defaultVoiceGate] 가 한 번 한다. 모르면(nil) 막는다.
+    static func defaultVoicesReady(_ progress: (done: Int, total: Int)?) -> Bool {
+        guard let progress else { return false }
         return progress.done >= progress.total
+    }
+
+    /// 알람 설정 관문 **한 번**의 답 — 진행률을 한 번 세고(캐시 디렉터리 한 번), 그 값으로 열지(`ready`)와 막혔을 때
+    /// 알럿이 말할 퍼센트(`progress`)를 함께 낸다. 막혀도 다시 세지 않는다.
+    ///
+    /// ⚠ **관문에서 `defaultVoicesReady()` 와 `defaultVoiceProgress()` 를 따로 부르지 말 것** — 메인 액터에서 디렉터리를
+    /// 두 번 읽는다(스펙 voice-and-message 「기본 목소리를 다 받아야 알람을 설정한다」 — 세는 값은 싸야 한다).
+    /// 안드로이드도 탭 하나에 한 번 센다(`ui/app/DefaultVoiceGate.kt`).
+    static func defaultVoiceGate(
+        language: String = VoiceStudioViewModel.appVoiceLanguage(),
+        manifest: StockClipListResponse? = StockClipManifestStore.load()
+    ) -> (ready: Bool, progress: (done: Int, total: Int)?) {
+        let progress = defaultVoiceProgress(language: language, manifest: manifest)
+        return (defaultVoicesReady(progress), progress)
     }
 
     var isRunning: Bool {

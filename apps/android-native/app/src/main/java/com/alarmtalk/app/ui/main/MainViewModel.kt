@@ -1281,14 +1281,28 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      *
      * 저장된 목소리 값(`defaultVoiceStore.read`)은 보지 않는다 — 그 값의 뜻이 '마지막에 쓴
      * 목소리'로 바뀌어 다운로드 완료 여부와 무관해졌다.
+     *
+     * ⚠ **파일은 메인 밖에서 센다**([voiceSetupProbe] — 2026-10-10 Sentry 조사). 그래서 `suspend` 다 —
+     * 부르는 쪽(`AlarmTalkApp` 의 세션 효과)이 **이 답을 받은 뒤에** 계정·동의 조회를 띄운다. 1회성
+     * 오버레이(첫 권한 안내·강등 안내·개인 플랜 종료 안내)는 그 두 응답을 기다리므로, [showVoiceSetup] 의
+     * 응답 전 기본값 `false` 를 '받기 화면 없음' 으로 읽는 틈이 생기지 않는다
+     * (`docs/spec/gates-and-overlays.md` — 응답 전 기본값은 '아니오' 가 아니다).
+     * 세는 사이 계정이 바뀌었으면 옛 계정의 답이라 적지 않는다.
      */
-    fun checkVoiceSetupFor(userId: String) {
+    suspend fun checkVoiceSetupFor(userId: String) {
         if (userId.isBlank()) return
         lastUsedVoiceId = defaultVoiceStore.read(userId)
-        val cachedStockClips = com.alarmtalk.app.data.AlarmAudioStore(getApplication())
-            .cachedStockClipCount()
-        showVoiceSetup = cachedStockClips == 0 && !defaultVoiceStore.hasSkipped(userId)
+        val needsSetup = voiceSetupProbe.needsSetup(skipped = defaultVoiceStore.hasSkipped(userId))
+        if (authSession?.user?.id != userId) return
+        showVoiceSetup = needsSetup
     }
+
+    /** 받기 화면 판정의 파일 세기 — 메인 밖에서([VoiceSetupProbe]). */
+    private val voiceSetupProbe = VoiceSetupProbe(
+        countCachedStockClips = {
+            com.alarmtalk.app.data.AlarmAudioStore(getApplication()).cachedStockClipCount()
+        },
+    )
 
     /**
      * 부족한 기본 목소리 클립을 채운다. 화면을 띄우든 말든 항상 부른다
@@ -1317,10 +1331,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      * 워커는 받을 게 없거나(매니페스트 비어 있음) 세션이 없으면 한 개도 받지 않고도
      * 성공을 낸다. 그걸 사용자의 선택으로 기록하면, 클립이 0개인데 준비 화면이 영영
      * 다시 뜨지 않게 된다. 그래서 '실제로 파일이 생겼는가'로만 닫는다.
+     *
+     * 파일은 메인 밖에서 센다([voiceSetupProbe]) — 부르는 효과가 화면과 함께 사라지면 답도 버려진다.
      */
-    fun completeVoiceSetupIfDownloaded() {
-        val cached = com.alarmtalk.app.data.AlarmAudioStore(getApplication()).cachedStockClipCount()
-        if (cached > 0) showVoiceSetup = false
+    suspend fun completeVoiceSetupIfDownloaded() {
+        if (voiceSetupProbe.anyDownloaded()) showVoiceSetup = false
     }
 
     /**

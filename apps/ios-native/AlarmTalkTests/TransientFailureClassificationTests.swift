@@ -128,9 +128,10 @@ final class TransientFailureClassificationTests: XCTestCase {
 
     // ── 그대로 이슈로 올리는 것 — 여기가 무너지면 진짜 결함이 사라진다 ────────
 
-    /// ⚠ **401 만 예외다.** 403·404·409·5xx 는 그대로 이슈로 올라가야 한다 — 권한 박탈,
-    /// 파기된 계정, 결제 확정 거절(`TRANSACTION_OWNED_BY_OTHER_USER` 는 서버의
-    /// `ALERTING_ERROR_CODES` 에 있다), 서버 사고는 전부 우리가 고칠 것이 있는 갈래다.
+    /// ⚠ **401 과 예상된 거절 목록만 예외다**(목록은 아래 「사용자가 고칠 예상된 거절」). 그 밖의
+    /// 403·404·409·5xx 는 그대로 이슈로 올라가야 한다 — 권한 박탈, 파기된 계정, 결제 확정 거절
+    /// (`TRANSACTION_OWNED_BY_OTHER_USER` 는 서버의 `ALERTING_ERROR_CODES` 에 있다), 서버 사고는 전부
+    /// 우리가 고칠 것이 있는 갈래다.
     func test_401_외의_상태코드는_그대로_이슈다() {
         let errors: [APIError] = [
             .server(status: 403, message: "forbidden", errorCode: "CONSENT_REQUIRED"),
@@ -256,16 +257,80 @@ final class TransientFailureClassificationTests: XCTestCase {
     }
 
     /// ⚠ **묶음 키는 무엇도 낮추지 않는다.** 지문이 생기는 실패는 전처럼 이슈다 — 여기서 바뀌는 것은
-    /// 어느 이슈에 붙는가뿐이다(예상된 거절을 브레드크럼으로 내리는 일은 하지 않았다).
+    /// 어느 이슈에 붙는가뿐이다. 예상된 거절은 묶음 키가 아니라 목록으로만 낮춘다(아래).
     func test_묶음_키가_있다고_브레드크럼으로_내려가지_않는다() {
         let refusals: [APIError] = [
             .server(status: 429, message: "limit", errorCode: "VOICE_MONTHLY_CHANGE_LIMIT_REACHED"),
             .server(status: 429, message: "attempts", errorCode: "AUTH_EMAIL_CODE_ATTEMPTS_EXCEEDED"),
-            .server(status: 400, message: "invalid", errorCode: "AUTH_EMAIL_CODE_INVALID"),
+            .server(status: 409, message: "conflict", errorCode: "TRANSACTION_OWNED_BY_OTHER_USER"),
             .server(status: 504, message: "gateway"),
         ]
         for error in refusals {
             XCTAssertNotNil(AlarmTalkLog.apiFailureFingerprint(for: error, message: "실패"), "\(error)")
+            XCTAssertNil(AlarmTalkLog.handledFailureCategory(error), "\(error)")
+        }
+    }
+
+    // ── 사용자가 고칠 예상된 거절 — 목록으로만 낮춘다(`docs/spec/error-codes.md` §3) ──────────
+
+    /// 목록은 `AlarmTalkLog.expectedRefusalCodes` 한 곳이고 정확히 이 열한 개다. 넓히면(4xx 전부·`AUTH_` 전부)
+    /// 권한·상태 충돌 같은 고칠 것이 이슈 목록에서 조용히 사라지고, 좁히면 사용자가 잘못 친 값이 다시 이슈를 채운다.
+    /// 바꿀 때는 스펙의 표와 이 줄을 함께 고친다.
+    func test_예상된_거절_목록은_정해진_열한_개다() {
+        XCTAssertEqual(AlarmTalkLog.expectedRefusalCodes, [
+            "AUTH_EMAIL_CODE_INVALID", "AUTH_EMAIL_CODE_EXPIRED", "AUTH_EMAIL_TAKEN", "AUTH_EMAIL_SOCIAL",
+            "CODE_NOT_FOUND", "CODE_EXPIRED", "CODE_ALREADY_USED", "CODE_ALREADY_REDEEMED_BY_YOU",
+            "CODE_EXHAUSTED", "CODE_INACTIVE", "CODE_NOT_IN_WINDOW",
+        ])
+    }
+
+    /// 틀린·만료된 인증 코드, 이미 쓰는 이메일, 이용권 코드의 거절은 사용자가 친 값의 문제이고 화면이 이유를 이미
+    /// 말한다 — 이슈가 아니라 브레드크럼(`refusal`)이다. 서버가 실제로 내는 상태(400·404·409)로 보고, 감싸인 응답도
+    /// 같다(묶음 키와 같은 방법으로 사슬을 탄다 — 감싸였는지로 경보가 갈리면 계약이 아니다).
+    func test_사용자가_고칠_예상된_거절은_브레드크럼이다() {
+        let refusals: [APIError] = [
+            .server(status: 400, message: "invalid", errorCode: "AUTH_EMAIL_CODE_INVALID"),
+            .server(status: 400, message: "expired", errorCode: "AUTH_EMAIL_CODE_EXPIRED"),
+            .server(status: 409, message: "taken", errorCode: "AUTH_EMAIL_TAKEN"),
+            .server(status: 409, message: "social", errorCode: "AUTH_EMAIL_SOCIAL"),
+            .server(status: 404, message: "not found", errorCode: "CODE_NOT_FOUND"),
+            .server(status: 409, message: "expired", errorCode: "CODE_EXPIRED"),
+            .server(status: 409, message: "used", errorCode: "CODE_ALREADY_USED"),
+            .server(status: 409, message: "mine", errorCode: "CODE_ALREADY_REDEEMED_BY_YOU"),
+            .server(status: 409, message: "exhausted", errorCode: "CODE_EXHAUSTED"),
+            .server(status: 409, message: "inactive", errorCode: "CODE_INACTIVE"),
+            .server(status: 409, message: "window", errorCode: "CODE_NOT_IN_WINDOW"),
+        ]
+        XCTAssertEqual(Set(refusals.compactMap(\.serverErrorCode)), AlarmTalkLog.expectedRefusalCodes)
+        for refusal in refusals {
+            XCTAssertTrue(AlarmTalkLog.isExpectedRefusal(refusal), "\(refusal)")
+            XCTAssertEqual(AlarmTalkLog.handledFailureCategory(refusal), "refusal", "\(refusal)")
+            // 다른 갈래로 새지 않는다 — 다음 진짜 이벤트에서 "틀린 코드" 와 "네트워크" 는 다른 이야기다.
+            XCTAssertFalse(AlarmTalkLog.isExpectedTransientFailure(refusal), "\(refusal)")
+            XCTAssertFalse(AlarmTalkLog.isHandledAuthFailure(refusal), "\(refusal)")
+            let wrapped = NSError(domain: "AlarmTalk.Auth", code: 1, userInfo: [NSUnderlyingErrorKey: refusal])
+            XCTAssertEqual(AlarmTalkLog.handledFailureCategory(wrapped), "refusal", "감싸인 \(refusal)")
+        }
+    }
+
+    /// ⚠ **시도 상한과 월 한도는 목록에 없다 — 그대로 이슈다.** 1.2.10 의 두 묶음(같은 코드 다섯 번 제출, 낡은 등록
+    /// 횟수)은 이 둘이 이슈로 올라와 드러났다. 같은 코드라도 5xx 면 거절이 아니라 사고이고, 코드가 없거나 본문에만
+    /// 있으면 무엇을 거절했는지 모른다 — 셋 다 이슈다.
+    func test_시도_상한_월_한도_5xx_코드_없는_거절은_그대로_이슈다() {
+        let issues: [Error] = [
+            APIError.server(status: 429, message: "attempts", errorCode: "AUTH_EMAIL_CODE_ATTEMPTS_EXCEEDED"),
+            APIError.server(status: 429, message: "limit", errorCode: "VOICE_MONTHLY_CHANGE_LIMIT_REACHED"),
+            APIError.server(status: 500, message: "boom", errorCode: "AUTH_EMAIL_CODE_INVALID"),
+            APIError.server(status: 503, message: "gateway", errorCode: "CODE_NOT_FOUND"),
+            APIError.server(status: 400, message: "Bad Request", errorCode: nil),
+            APIError.server(status: 400, message: "Bad Request", errorCode: ""),
+            APIError.server(status: 400, message: "AUTH_EMAIL_CODE_INVALID: wrong digits", errorCode: nil),
+            NSError(domain: "AlarmTalk.Auth", code: 1, userInfo: [
+                NSUnderlyingErrorKey: APIError.server(status: 429, message: "attempts", errorCode: "AUTH_EMAIL_CODE_ATTEMPTS_EXCEEDED"),
+            ]),
+        ]
+        for error in issues {
+            XCTAssertFalse(AlarmTalkLog.isExpectedRefusal(error), "\(error)")
             XCTAssertNil(AlarmTalkLog.handledFailureCategory(error), "\(error)")
         }
     }

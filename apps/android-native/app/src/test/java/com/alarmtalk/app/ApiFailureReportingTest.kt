@@ -216,10 +216,9 @@ class ApiFailureReportingTest {
 
     @Test
     fun groupingNeverDemotesAnything() {
-        // ⚠ 이 규칙으로 브레드크럼으로 내려가는 것은 하나도 없다. 지문이 생기는 실패는 전부 여전히
-        // 이슈다 — 예상된 거절(틀린 인증 코드·월 한도)도, 코드 없는 5xx 도.
+        // ⚠ 묶음 키 규칙으로 브레드크럼으로 내려가는 것은 하나도 없다. 지문이 생기는 실패는 전부 여전히
+        // 이슈다 — 시도를 다 태운 거절(시도 상한·월 한도)도, 코드 없는 4xx·5xx 도.
         val reported = listOf(
-            http(400, """{"error_code":"AUTH_EMAIL_CODE_INVALID"}"""),
             http(429, """{"error_code":"AUTH_EMAIL_CODE_ATTEMPTS_EXCEEDED"}"""),
             http(429, """{"error_code":"VOICE_MONTHLY_CHANGE_LIMIT_REACHED"}"""),
             http(404, ""),
@@ -228,9 +227,11 @@ class ApiFailureReportingTest {
         for (error in reported) {
             assertNull(error.message, AlarmTalkLog.breadcrumbCategoryFor(error))
         }
-        // 낮추는 것은 예전 그대로 401 과 일시적 실패뿐이다.
+        // 낮추는 것은 401·일시적 실패, 그리고 **목록에 있는** 예상된 거절뿐이다(2026-10-11 — 그 경계는
+        // `TransientFailureClassificationTest` 의 `onlyListedRefusalsBecomeRefusalBreadcrumbs` 가 지킨다).
         assertEquals("auth", AlarmTalkLog.breadcrumbCategoryFor(http(401, """{"error_code":"TOKEN_REVOKED"}""")))
         assertEquals("transient", AlarmTalkLog.breadcrumbCategoryFor(UnknownHostException("api.alarm-talk.com")))
+        assertEquals("refusal", AlarmTalkLog.breadcrumbCategoryFor(http(400, """{"error_code":"AUTH_EMAIL_CODE_INVALID"}""")))
     }
 
     private fun http(status: Int, body: String): HttpException =

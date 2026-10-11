@@ -15,6 +15,8 @@ plugins {
     id("com.google.devtools.ksp")
     // FCM: google-services.json(app/src/{dev,prod}/) 을 읽어 Firebase 초기화 리소스를 생성.
     id("com.google.gms.google-services")
+    // Sentry: 릴리스(R8) 빌드의 매핑 올리기 — 토큰이 있을 때만(아래 `sentry { }`).
+    id("io.sentry.android.gradle")
 }
 
 abstract class GenerateAlarmToneTask : DefaultTask() {
@@ -319,6 +321,38 @@ composeCompiler {
     // `app/build/compose-reports/app_devDebug-composables.txt` 를 본다.
     // metricsDestination = layout.buildDirectory.dir("compose-metrics")
     // reportsDestination = layout.buildDirectory.dir("compose-reports")
+}
+
+// ── Sentry: 릴리스 빌드의 R8 매핑 올리기 ─────────────────────────────────────────────
+//
+// R8 이 클래스·메서드 이름을 줄이므로(`b5.o` 같은) 매핑이 없으면 Sentry 의 스택을 읽을 수 없다. 플러그인이
+// 릴리스 빌드에 ProGuard UUID 를 심고(assets 의 `sentry-debug-meta.properties` — SDK 가 읽어 이벤트에 싣는다)
+// 그 빌드의 mapping.txt 를 같은 UUID 로 올린다. 절차는 `docs/ops/environments.md` 「Android 배포 순서」.
+//
+// ⚠ **토큰이 있을 때만 한다.** 환경 변수 `SENTRY_AUTH_TOKEN` 이 없으면 플러그인은 어느 변형에도 작업을 걸지
+//   않는다(UUID 도 심지 않는다) — 빌드는 그대로 되고 원격으로 나가는 것이 없다. 로컬·CI 의 평소 빌드가 그렇다.
+// ⚠ **SDK 버전을 바꾸지 않는다** — 자동 설치를 끈다. SDK 는 아래 dependencies 의 `sentry-android-core` 한 줄이
+//   정한다. 플러그인 판(5.12.2)을 고른 이유는 루트 build.gradle.kts 에 있다.
+// ⚠ **앱 코드를 바꾸지 않는다** — 바이트코드 계측(트레이싱)을 끈다. 소스 컨텍스트·네이티브 심볼·의존성 보고도
+//   싣지 않고, 플러그인 자체의 사용 통계(telemetry)도 보내지 않는다.
+// 디버그 빌드 유형은 언제나 제외한다 — dev 디버그 빌드는 이 플러그인이 없을 때와 같다.
+val sentryAuthToken: String? = providers.environmentVariable("SENTRY_AUTH_TOKEN").orNull?.takeIf { it.isNotBlank() }
+
+sentry {
+    org.set("alarmtalk")
+    // 이슈 이름이 ALARMTALK-ANDROID-* 인 프로젝트. 매핑은 UUID 로 찾으므로 dev 릴리스 빌드가 올려도 섞이지 않는다.
+    projectName.set("alarmtalk-android")
+    authToken.set(sentryAuthToken)
+    includeProguardMapping.set(sentryAuthToken != null)
+    autoUploadProguardMapping.set(sentryAuthToken != null)
+    ignoredBuildTypes.set(if (sentryAuthToken != null) setOf("debug") else setOf("debug", "release"))
+    autoInstallation { enabled.set(false) }
+    tracingInstrumentation { enabled.set(false) }
+    includeSourceContext.set(false)
+    includeNativeSources.set(false)
+    uploadNativeSymbols.set(false)
+    includeDependenciesReport.set(false)
+    telemetry.set(false)
 }
 
 tasks.named("preBuild").configure {

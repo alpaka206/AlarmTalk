@@ -356,3 +356,38 @@ export const ALERTING_ERROR_CODES: readonly ErrorCode[] = [
   // 같은 갈래다.
   'INVALID_USAGE_EVENTS',
 ];
+
+/**
+ * **사용자가 친 값의 예상된 거절.** 두 앱은 이 코드의 4xx 를 Sentry 이벤트로 올리지 않고 브레드크럼(category
+ * `refusal`)으로 남긴다. 틀렸거나 지난 인증 코드, 이미 가입된 이메일, 잘못 친 이용권 코드 — 이유가 **사용자가 친
+ * 값**이고, 화면이 코드로 고른 문장으로 그 이유를 이미 말한다. 우리가 고칠 코드가 없다
+ * (`docs/spec/error-codes.md` §3 「앱도 같다」).
+ *
+ * 낮추는 조건은 셋이 다 맞을 때다 — 상태 400~499, 응답에 `error_code` 가 있다, 그 코드가 이 목록에 있다. 같은
+ * 코드라도 5xx 면 그대로 이슈다.
+ *
+ * 두 앱은 TypeScript 를 가져다 쓸 수 없어 **같은 값을 손으로** 둔다(안드로이드 `EXPECTED_REFUSAL_CODES`, iOS
+ * `expectedRefusalCodes`). 셋이 어긋나는 것은 `scripts/check-expected-refusal-codes.py`(CI lint)가 막는다 — 여기를
+ * 고치면 두 앱도 같이 고친다.
+ *
+ * ⚠ `AUTH_EMAIL_CODE_ATTEMPTS_EXCEEDED`·`VOICE_MONTHLY_CHANGE_LIMIT_REACHED` 는 **넣지 않는다**(시끄럽게 둔다). 거기
+ * 닿았다는 것은 화면이 사용자에게 시도를 다 태우게 뒀다는 뜻이다 — 고칠 것은 화면이고, 1.2.10 의 두 묶음(같은
+ * 코드 다섯 번 제출, 낡은 등록 횟수)이 그렇게 이슈로 올라와 드러났다. 경보 목록(`ALERTING_ERROR_CODES`)과도 겹치지
+ * 않는다 — 그쪽은 '우리가 고칠 것', 이쪽은 '사용자가 고칠 것' 이다.
+ */
+export const CLIENT_EXPECTED_REFUSAL_CODES: readonly ErrorCode[] = [
+  // 이메일 인증 코드가 틀렸거나 지났다 — 맞는 숫자를 다시 치거나 새 코드를 받으면 풀린다.
+  'AUTH_EMAIL_CODE_INVALID',
+  'AUTH_EMAIL_CODE_EXPIRED',
+  // 가입하려는 이메일이 이미 있다(이메일/비밀번호 계정 · 소셜 계정) — 화면이 로그인으로 안내한다.
+  'AUTH_EMAIL_TAKEN',
+  'AUTH_EMAIL_SOCIAL',
+  // 이용권 코드 — 친 코드가 없거나, 지났거나, 이미 쓰였거나(남이 · 내가), 다 찼거나, 꺼졌거나, 기간 밖이다.
+  'CODE_NOT_FOUND',
+  'CODE_EXPIRED',
+  'CODE_ALREADY_USED',
+  'CODE_ALREADY_REDEEMED_BY_YOU',
+  'CODE_EXHAUSTED',
+  'CODE_INACTIVE',
+  'CODE_NOT_IN_WINDOW',
+];
