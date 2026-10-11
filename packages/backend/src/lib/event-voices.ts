@@ -22,9 +22,12 @@ export function isEventLocale(v: unknown): v is EventLocale {
 /**
  * 화면(랜딩 `MESSAGE_KINDS`)이 고를 수 있는 종류.
  *
- * ⚠ 서버가 **먼저** prod 에 나간다 — `love` 를 보내는 랜딩 번들이 옛 서버에 닿으면 400 이라서, 이 변경과
- * 랜딩 교체(#815)를 두 PR·두 번의 릴리스로 나눴다(`docs/qa/dev-test-handoff.md` 의 「prod 게재 순서」).
- * 그 사이에는 prod 랜딩이 아직 `chuseok` 을 보내고, 아래 `LEGACY_EVENT_MESSAGE_KINDS` 가 옛 문안으로 받는다.
+ * ⚠ 새 종류는 서버가 **먼저** prod 에 나가야 한다 — 그 종류를 보내는 랜딩 번들이 옛 서버에 닿으면 400
+ * `INVALID_BODY` 다. `love` 는 그 순서를 지키지 못했다 — 이 변경(#818)과 랜딩 교체(#815)가 한 릴리스(1.2.11)로
+ * 같이 나가고, 랜딩이 먼저 뜨는 창은 랜딩 화면이 그 400 을 45초쯤 자동으로 다시 불러 넘긴다
+ * (`apps/landing/components/event/event-api.ts` 의 `DEPLOY_WINDOW_RETRY_DELAYS_MS`,
+ * `docs/qa/dev-test-handoff.md` 의 「prod 게재 순서」). 그건 `love` 한 번의 안전망이고, 다음 종류는 다시 서버 먼저다.
+ * 캐시된 옛 랜딩 번들은 그 뒤에도 `chuseok` 을 보내고, 아래 `LEGACY_EVENT_MESSAGE_KINDS` 가 옛 문안으로 받는다.
  */
 export const EVENT_MESSAGE_KINDS = ['birthday', 'love'] as const;
 export type EventMessageKind = (typeof EVENT_MESSAGE_KINDS)[number];

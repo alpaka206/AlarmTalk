@@ -21,6 +21,7 @@ import { DownloadDialog } from "./download-dialog";
 import {
   addLike,
   ClipError,
+  deployWindowRetryDelayMs,
   fetchLikes,
   generateClip,
   releaseClip,
@@ -100,6 +101,11 @@ export function EventStudio() {
   const resultsRef = useRef<HTMLDivElement | null>(null);
   const resultsHeadingRef = useRef<HTMLHeadingElement | null>(null);
   const inflightRef = useRef<Set<string>>(new Set());
+  /**
+   * 자동으로 다시 부르려고 기다리는 타이머들. 배포 창의 `INVALID_BODY` 만 여기 든다(`event-api.ts` 의
+   * `DEPLOY_WINDOW_RETRY_DELAYS_MS`). 떠날 때 걷으려고 모아 둔다.
+   */
+  const retryTimersRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
   const { activeId, position, duration, play, stop } = useEventPlayer();
   /** 지금 무엇이 재생 중인지 — 30초 뒤에 온 자동 재생이 사용자가 튼 소리를 끊지 않게. */
   const activeIdRef = useRef<string | null>(null);
@@ -116,6 +122,9 @@ export function EventStudio() {
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
+      // 기다리던 자동 재시도는 걷는다 — 가는 중인 요청은 두지만(위), 떠난 화면이 **새로** 부르지는 않는다.
+      for (const timer of retryTimersRef.current) clearTimeout(timer);
+      retryTimersRef.current.clear();
       // 떠나면 사라진다 — 들고 있던 소리의 Blob URL 을 돌려준다.
       for (const state of Object.values(clipsRef.current)) {
         if (state.status === "ready") releaseClip(state.clip);
@@ -152,6 +161,11 @@ export function EventStudio() {
    * 첫 메시지가 오면 한 번 자동으로 들려준다 — 단, 그 사이 다른 인물·이름·언어로 옮겨 갔거나
    * 페이지를 떠났거나 사용자가 다른 소리를 틀어 두었으면 들려주지 않는다(보이지 않는 카드가
    * 말하거나 듣던 것을 끊으면 안 된다). 브라우저가 막으면(iOS 는 동작 안에서만) 버튼만 남는다.
+   *
+   * 실패 가운데 `INVALID_BODY` 만은 곧바로 실패로 보이지 않는다 — 배포 창의 옛 워커가 새 종류를 아직
+   * 모르는 것이라, 카드를 '생성 중' 으로 둔 채 잠깐씩 기다렸다 다시 부른다(`deployWindowRetryDelayMs`).
+   * 다 써도 안 되면 그때 실패로 보이고 '다시 시도' 가 남는다. 다시 불러 온 소리도 위 자동 재생 규칙을
+   * **도착한 순간에** 그대로 본다 — 그 사이 옮겨 간 카드는 채워지기만 하고 말하지 않는다.
    */
   const request = useCallback(
     (
@@ -168,7 +182,27 @@ export function EventStudio() {
         if (cur?.status === "failed" && !opts.retry) continue;
         inflightRef.current.add(key);
         setClips((c) => ({ ...c, [key]: { status: "pending" } }));
-        generateClip({ celebrity: target, name: targetName, locale, kind })
+        // 배포 창: 옛 워커가 이 종류를 아직 몰라 거절하면 실패로 넘기지 않고 기다렸다 다시 부른다. 그동안
+        // 이 약속이 **끝나지 않으므로** 아래 흐름은 그대로다 — 카드는 '생성 중', 키는 `inflightRef` 에 남아
+        // 그 틈에 같은 클립을 또 부르지 않는다. `retried` 는 이미 자동으로 다시 부른 횟수(손으로 누른
+        // '다시 시도' 는 0 부터 다시 센다). 떠난 뒤에는 기다리지 않는다.
+        const generate = async (retried: number): Promise<Clip> => {
+          try {
+            return await generateClip({ celebrity: target, name: targetName, locale, kind });
+          } catch (e) {
+            const delay = e instanceof ClipError ? deployWindowRetryDelayMs(e.code, retried) : null;
+            if (delay === null || !mountedRef.current) throw e;
+            await new Promise<void>((resolve) => {
+              const timer = setTimeout(() => {
+                retryTimersRef.current.delete(timer);
+                resolve();
+              }, delay);
+              retryTimersRef.current.add(timer);
+            });
+            return generate(retried + 1);
+          }
+        };
+        generate(0)
           .then((clip) => {
             if (!mountedRef.current) return;
             setClips((c) => ({ ...c, [key]: { status: "ready", clip } }));

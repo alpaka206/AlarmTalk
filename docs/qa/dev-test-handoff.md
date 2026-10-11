@@ -392,25 +392,28 @@
 - [ ] iPhone 다운로드 화면의 Hangs/Time Profiler 측정. Watchdog는 원인 미확정 유지.
 - [ ] 새 서버와 새 앱 적용 후 Sentry·생성 재전송·이벤트 배치 지연·큐 대기 시간 관찰.
       운영 DB 변경/배포는 이번 작업에서 실행하지 않았다.
-- [ ] ⚠ **prod 게재 순서 — 사랑 한마디(`love`)는 백엔드가 prod 에 먼저 떠 있어야 한다**(코드로 못 막는다 —
-      그래서 PR 을 **둘로 나눴다**: 백엔드 `feat/event-love-backend` / 랜딩 #815 `feat/landing-event-love`).
-      랜딩(Vercel)과 백엔드(Workers)는 `main` 머지 한 번으로 **함께** prod 에 나가고, 랜딩은 기본으로 prod API 를
+- [ ] ⚠ **prod 게재 순서 — 사랑 한마디(`love`)는 서버(#818)와 랜딩(#815)이 1.2.11 한 릴리스로 같이 나간다.**
+      처음에는 서버를 먼저 올리려고 두 PR·두 번의 릴리스로 나눴지만, 둘 다 develop 에 머지됐다.
+      랜딩(Vercel)과 백엔드(Workers)는 `main` 머지 한 번으로 **따로** 돌고, 랜딩은 기본으로 prod API 를
       부른다(`apps/landing/lib/site.ts` 의 `API_BASE`). Vercel 정적 빌드가 `deploy-backend.yml`(npm ci → typecheck →
-      wrangler → migrate)보다 먼저 끝나면 새 번들의 `kind: "love"` 를 옛 prod 서버가 **400 `INVALID_BODY`** 로
-      거절한다 — 두 번째 클립이 실패로 뜨고, '다시 시도' 도 워커가 올라오기 전에는 또 실패한다. 반대 순서(서버 먼저)는
-      옛 번들의 `chuseok` 을 `LEGACY_EVENT_MESSAGE_KINDS` 가 받으므로 안전하다. `main` 은 `develop` 에서만 받으니
-      **두 PR 을 두 번의 릴리스로** 올린다:
-      1. **백엔드 PR**(`feat/event-love-backend` — `packages/backend/src/lib/event-voices.ts`·
-         `packages/backend/test/event-clips.test.ts`)을 develop 에 머지하고 develop → main 으로 prod 에 올린다.
-         혼자 나가도 안전하다 — `love` 를 더할 뿐이고 `chuseok` 은 옛 종류로 계속 받는다.
-      2. Deploy Backend(main)가 초록인지 보고, prod 가 `love` 를 받는지 한 줄로 확인한다 — 없는 목소리 id 라
-         종류 검사 **다음**(목소리 조회)에서 멈추므로 Perso 를 부르지 않는다:
+      wrangler → migrate)보다 먼저 끝나면, 워커가 올라오기까지(수십 초~1분으로 추정) 옛 prod 워커가 새 번들의
+      `kind: "love"` 를 **400 `INVALID_BODY`** 로 거절한다(릴리스 PR 의 코덱스 P2). 그 창은 이벤트 화면이 스스로
+      넘긴다 — 그 코드로 거절된 카드를 '생성 중' 으로 둔 채 3·6·12·24초 뒤에 다시 부르고(첫 거절부터 약 45초 —
+      `apps/landing/components/event/event-api.ts` 의 `DEPLOY_WINDOW_RETRY_DELAYS_MS`), 그래도 안 되면 실패 +
+      '다시 시도' 로 떨어진다('다시 시도' 는 45초를 새로 탄다). 그래서 릴리스를 다시 둘로 나누지 않는다 — #815 를
+      develop 에서 되돌리거나 1.2.11 을 이 때문에 잡아 두지 않는다. 옛 번들의 `chuseok` 은 옛 워커도 새 워커도
+      받는다(새 워커는 `LEGACY_EVENT_MESSAGE_KINDS`). 출시 뒤 확인:
+      1. Deploy Backend(main)가 초록인지 본다.
+      2. prod 가 `love` 를 받는지 한 줄로 확인한다 — 없는 목소리 id 라 종류 검사 **다음**(목소리 조회)에서 멈추므로
+         Perso 를 부르지 않는다:
          `curl -s -o /dev/null -w '%{http_code}\n' -X POST https://api.alarm-talk.com/api/event/1/clips -H 'content-type: application/json' -d '{"celebrity":"no-such-voice","locale":"ko","kind":"love","name":"확인"}'`
          → 새 서버 **404**, 옛 서버 **400**(2026-09-29 dev 실측: 옛 서버에서 `love` 400 · `birthday` 404).
-      3. 그다음에야 **랜딩 PR #815**(`apps/landing/**`·`packages/shared/src/event-voices.json` — 백엔드는 카탈로그의
-         `portraits` 를 읽지 않으니 랜딩 쪽에 두었다)를 develop 에 머지하고 develop → main.
-         ⚠ #815 를 1단계 릴리스 **전에** develop 에 머지하면 다음 develop → main 한 번에 둘이 같이 나가 이 순서가
-         깨진다 — 2단계 확인 전에는 develop 에도 머지하지 않는다.
+      3. 라이브 페이지(`https://alarm-talk.com/event/1/`)에서 이름을 넣고 '생성하기' 를 **한 번** 눌러 '사랑 한마디'
+         카드가 소리로 채워지는지 본다. 이건 Perso 를 부른다 — 한 번에 종류 둘 × 언어 셋, 클립 여섯이다.
+      ⚠ 재시도는 `love` 한 번을 위한 안전망이지 순서를 뒤집어도 된다는 허락이 아니다 — 45초보다 긴 배포나 실패한
+      배포는 못 넘기고, 그동안 사용자는 도는 카드만 본다. **다음 새 종류는 서버 먼저다**: 서버 변경을 prod 에 올리고
+      위 2번 curl 을 그 종류로 보내 404 를 본 뒤에야 랜딩 변경을 develop 에 머지한다
+      (`apps/landing/components/event/event-catalog.ts` 의 `MESSAGE_KINDS` ⚠).
 - [ ] 랜딩 이벤트의 옛 종류 `comfort`(위로 한마디)·`chuseok`(추석 인사) 호환 제거 — 새 랜딩 번들
       (생일/사랑, #815 `feat/landing-event-love`)이 게재되고 **며칠** 지나 옛 번들이 다 밀려난 뒤,
       백엔드 `lib/event-voices.ts` 의 `LEGACY_EVENT_MESSAGE_KINDS` 와 `EVENT_MESSAGES.comfort`·
