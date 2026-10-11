@@ -27,6 +27,12 @@ enum APIErrorMessages {
         String(localized: "이메일 주소 형식이 올바르지 않아요. 다시 확인해 주세요.")
     }
 
+    /// 원인을 가를 수 없는 일시 실패의 중립 문구 — `INTERNAL_ERROR` 의 문장이자, 이메일 인증
+    /// 확인의 화면 폴백이다(`AuthViewModel.verifyEmailCode`). 두 자리에 리터럴을 따로 두지 않는다.
+    static var temporaryFailure: String {
+        String(localized: "잠시 문제가 생겼어요. 잠시 후 다시 시도해 주세요.")
+    }
+
     /// 이 코드에 정해 둔 문구. 없으면 nil — 부르는 쪽이 자기 폴백을 쓴다.
     ///
     /// ⚠ **모든 코드에 문구를 둘 필요는 없다.** `INVALID_JSON` 처럼 사용자가 할 수 있는 게
@@ -40,7 +46,7 @@ enum APIErrorMessages {
         case "REQUEST_BODY_TOO_LARGE":
             return String(localized: "보내려는 파일이 너무 커요. 더 짧게 녹음해 주세요.")
         case "INTERNAL_ERROR":
-            return String(localized: "잠시 문제가 생겼어요. 잠시 후 다시 시도해 주세요.")
+            return temporaryFailure
         case "ALARM_SCHEMA_UPGRADING":
             return String(localized: "서버를 업데이트하고 있어요. 잠시 후 다시 시도해 주세요.")
 

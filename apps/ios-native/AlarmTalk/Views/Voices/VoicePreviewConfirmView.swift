@@ -36,6 +36,8 @@ struct VoicePreviewConfirmView: View {
     let onSaved: (String) -> Void
     /// 다시 만들기 — 부모가 등록 폼으로 되돌린다.
     let onDiscarded: () -> Void
+    /// 저장이 **월 등록 한도**로 거절됐다 — 부모가 등록 창을 닫는다(이유는 닫힌 뒤의 알럿이 말한다).
+    let onMonthlyLimitRejected: () -> Void
 
     @State private var previewText: String = ""
     @State private var editing = false
@@ -912,7 +914,24 @@ struct VoicePreviewConfirmView: View {
             // 삭제된 draft 를 기다리지 않도록 서버가 돌려준 실제 id 를 넘긴다.
             onSaved(promoted.id)
         } catch {
-            errorMessage = voice.mapVoiceError(error)
+            guard voice.isMonthlyLimitRejection(error) else {
+                // 다시 시도할 수 있는 실패(네트워크·5xx)와 사용자가 고칠 실패(유료·동의·미리듣기)는
+                // 이 화면 안에서 말한다.
+                errorMessage = voice.mapVoiceError(error)
+                return
+            }
+            // ⚠ **월 등록 한도 거절은 흐름을 끝낸다**(스펙 voice-and-message §4-1 「월 등록 한도」 ③).
+            // 이번 달에는 몇 번을 눌러도 같은 답이다 — 문구만 띄우고 `저장하기` 를 살려 두면 같은
+            // 거절을 계속 받는다(2026-10-10 prod 의 안드로이드 사용자는 일곱 번 눌렀다). 등록 단계가
+            // 먼저 막으므로 여기까지 오는 것은 초안을 만든 뒤 다른 기기가 먼저 등록한 경우다.
+            pendingPlayKind = nil
+            replayAfterPlayback = false
+            stopPreview()
+            // 저장할 수 없는 초안은 버린다. 실패해도 흐름은 끝낸다 — 남은 초안은 서버가 거둔다.
+            try? await AlarmTalkAPI.shared.deleteVoiceDraft(id: draft.id, token: token)
+            // 알릴 것이 있다고 적고 남은 횟수를 다시 읽는다 — 목소리 탭이 `0/1` 과 꺼진 `추가` 로 돌아온다.
+            await voice.handleMonthlyLimitRejection(session: auth.session)
+            onMonthlyLimitRejected()
         }
     }
 

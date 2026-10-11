@@ -120,7 +120,9 @@ final class PasswordResetE2EUITests: XCTestCase {
         app.launch()
         XCTAssertTrue(app.buttons["인증 코드 받기"].firstMatch.waitForExistence(timeout: 20),
                       "재진입 화면이 초기 상태가 아니다")
-        XCTAssertFalse(app.staticTexts["코드를 보냈어요"].exists, "재진입인데 '코드를 보냈어요' 가 남아 있다")
+        // 발송 뒤의 버튼 문구는 '인증 코드 다시 받기' 다(2026-10-11 — 그전의 '코드를 보냈어요' 는
+        // 잠긴 버튼이었다). 화면에서 없앤 문구를 찾는 검사는 언제나 통과한다.
+        XCTAssertFalse(app.buttons["인증 코드 다시 받기"].exists, "재진입인데 발송 뒤 상태가 남아 있다")
         shot("05-재진입")
     }
 }

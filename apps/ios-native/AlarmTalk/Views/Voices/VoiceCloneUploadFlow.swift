@@ -765,7 +765,16 @@ struct VoiceCloneUploadFlow: View {
             // 알람에 쓸 수도 없다.
             voice.pendingDraft = created
             route = .preview(created.id)
+        } else if voice.monthlyLimitRejected {
+            // 서버가 **이번 달 등록을 다 썼다**고 거절했다(`VoiceStudioViewModel.cloneAudioForProfile`
+            // 이 적고 남은 횟수를 다시 읽었다). 이번 달에는 몇 번을 눌러도 같은 답이라 세부 정보로
+            // 되돌려 같은 버튼을 다시 누르게 두지 않는다 — 창을 닫고, 창이 다 내려간 뒤 목소리 탭이
+            // 알럿 하나로 이유를 말한다(`VoicesPanelView`). 서버가 초안을 만들지 않았으니 지울
+            // 것도 없다.
+            route = .management
         } else {
+            // 다시 시도할 수 있는 실패 — 이유는 `statusSection` 이 이 창 안에서 말하고, 녹음(고른
+            // 파일)은 그대로라 `등록` 을 그대로 다시 누를 수 있다.
             registrationStep = .details
         }
     }

@@ -40,7 +40,7 @@ struct PasswordResetView: View {
     private var passwordPolicyValid: Bool { PasswordPolicy.isValid(password) }
 
     private var canConfirm: Bool {
-        !auth.isBusy && codeSent && code.count == 6 && passwordPolicyValid
+        !auth.isBusy && codeSent && LoginValidator.isValidVerificationCode(code) && passwordPolicyValid
     }
 
     var body: some View {
@@ -103,6 +103,10 @@ struct PasswordResetView: View {
             auth.passwordResetCodeSentTo = nil
             auth.statusMessage = nil
         }
+        // 코드 칸을 비우라는 신호 — 서버가 코드를 거절했거나(틀림·만료·시도 상한) 다시 받기가
+        // 성공했다. 칸은 6자에서 잘리므로, 비우지 않으면 새로 받은 코드를 쳐도 한 글자도 안
+        // 들어가고 옛 숫자가 다시 나간다(`AuthViewModel.emailCodeFieldClearTick`).
+        .onChange(of: auth.emailCodeFieldClearTick) { _, _ in code = "" }
         // ⚠ **뒤로가기를 직접 그리지 말 것 — 두 개가 된다.**
         // 이 화면은 `LoginView` 의 `.navigationDestination` 으로 **push** 되므로
         // NavigationStack 이 이미 시스템 뒤로가기를 그린다. 예전에는 여기에
@@ -129,11 +133,16 @@ struct PasswordResetView: View {
     /// ⚠ **형식으로 버튼을 죽이지 않는다**(CLAUDE.md) — 누를 수는 있고, 누르면 왜 안 되는지
     /// 이메일 칸 아래에 말한다. 예전에는 `emailLooksValid` 로 잠가 놔서, 주소를 잘못 친
     /// 사람은 눌리지 않는 버튼 앞에서 이유를 들을 길이 없었다. 잠그는 것은 **보낼 것이
-    /// 없을 때**(빈 칸)와 이미 보낸 뒤뿐이다. 판정은 로그인·가입과 같은 함수다.
+    /// 없을 때**(빈 칸)뿐이다. 판정은 로그인·가입과 같은 함수다.
+    ///
+    /// ⚠ **보낸 뒤에도 잠그지 않는다 — `인증 코드 다시 받기` 로 눌린다**(가입 화면과 같은 말).
+    /// 예전에는 한 번 보내면 '코드를 보냈어요' 로 잠겼다. 코드가 만료되거나 시도 상한에 닿으면
+    /// 할 일이 '다시 받기' 하나인데, 그러려면 화면을 나갔다 와야 했다
+    /// (`docs/spec/session-and-auth.md` 「거절 뒤에 할 일이 화면에 있어야 한다」).
     private var sendCodeButton: some View {
         AuthOutlinedButton(
-            title: codeSent ? "코드를 보냈어요" : "인증 코드 받기",
-            enabled: !auth.isBusy && AuthEmailFormat.canRequestEmailCode(email) && !codeSent
+            title: codeSent ? "인증 코드 다시 받기" : "인증 코드 받기",
+            enabled: !auth.isBusy && AuthEmailFormat.canRequestEmailCode(email)
         ) {
             guard AuthEmailFormat.submitOutcome(email: email) == .submit else {
                 emailFormatError = true
@@ -148,12 +157,13 @@ struct PasswordResetView: View {
             VocaTextField(
                 title: "인증 코드",
                 text: $code,
-                keyboardType: .numberPad,
+                // 가입 화면의 코드 칸과 같은 키패드·같은 새니타이저다(ASCII 숫자 여섯 자).
+                keyboardType: .asciiCapableNumberPad,
                 enabled: !auth.isBusy
             )
             .onChange(of: code) { _, newValue in
-                let digits = newValue.filter(\.isNumber)
-                code = String(digits.prefix(6))
+                let cleaned = InputSanitizer.sanitizeVerificationCode(newValue)
+                if cleaned != newValue { code = cleaned }
             }
         }
     }

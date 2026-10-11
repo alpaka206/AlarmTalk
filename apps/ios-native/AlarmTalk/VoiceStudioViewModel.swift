@@ -103,6 +103,28 @@ final class VoiceStudioViewModel: ObservableObject {
     /// 등록 화면의 첫 진입에서만 부른다. 파일 선택기·권한 시트 왕복 중에는 입력을 보존한다.
     func beginVoiceCreation() {
         cloneName = ""
+        // 알리지 못한 채 남은 지난 거절이 새 등록의 창 닫힘에 딸려 나오지 않게 한다.
+        monthlyLimitRejected = false
+    }
+
+    /// 서버가 등록 창 안에서 **월 등록 한도로 거절했다** — 창이 닫힌 뒤 알럿 하나로 알릴 것이 있다.
+    ///
+    /// 세우는 곳은 `handleMonthlyLimitRejection(session:)` 하나이고, 목소리 탭이 등록 창이 **다
+    /// 내려간 뒤에** 읽어 알럿을 열며 내린다(`VoicesPanelView` → `VoiceProfileManagementPanel` 의
+    /// `monthlyLimitNoticeOpen`). 창이 내려가는 중에는 알럿을 띄울 수 없어 화면 상태가 아니라
+    /// 여기에 둔다.
+    @Published var monthlyLimitRejected = false
+
+    /// 월 등록 한도 거절을 받았을 때 — 등록(`POST /voice/clone`)이든 저장(승격·교체)이든 — 부른다.
+    ///
+    /// 1. 알릴 것이 있다고 적는다([monthlyLimitRejected]).
+    /// 2. **`생성 가능 n/m회` 를 서버에서 다시 읽는다.** 서버가 방금 "0" 이라고 말했다 — 화면의
+    ///    숫자가 틀렸다는 뜻이다(조회가 실패했던 기기, 다른 기기에서 먼저 등록한 경우). 안 읽으면
+    ///    창이 닫힌 뒤에도 `추가` 가 켜진 채 남아 같은 거절을 또 받으러 들어간다. 앱에서 숫자를
+    ///    깎지 않는다 — 다른 기기도 같은 원장을 쓴다(스펙 voice-and-message §4-1 「월 등록 한도」 ②).
+    func handleMonthlyLimitRejection(session: AuthSession?) async {
+        monthlyLimitRejected = true
+        await refresh(session: session, force: true)
     }
     /// **사용자가 시작한 쓰기**(등록·삭제·이름변경·공유 토글…) 전용. 화면이 버튼을 잠근다.
     @Published var isBusy = false
@@ -213,6 +235,7 @@ final class VoiceStudioViewModel: ObservableObject {
         statusMessage = nil
         preparedAlarm = nil
         draftQuota = nil
+        monthlyLimitRejected = false
     }
 
     func clearPaidVoiceState() {
@@ -1040,7 +1063,17 @@ final class VoiceStudioViewModel: ObservableObject {
             await refresh(session: session, force: true)
             return profile
         } catch {
-            statusMessage = mapVoiceError(error)
+            if isMonthlyLimitRejection(error) {
+                // 이번 달 등록을 이미 썼다 — 서버는 초안도 만들지 않았다. 다시 눌러도 같은 답이라
+                // 등록 창은 여기서 끝난다(`VoiceCloneUploadFlow.submit`). 이유는 창이 닫힌 뒤의
+                // 알럿 하나가 말한다 — 여기에 문구를 남기면 목소리 탭 맨 위에 같은 이유가 다른
+                // 말로 한 번 더 남는다.
+                statusMessage = nil
+                await handleMonthlyLimitRejection(session: session)
+            } else {
+                // 다시 시도할 수 있는 실패다 — 녹음(고른 파일)은 그대로 두고 문구만 세운다.
+                statusMessage = mapVoiceError(error)
+            }
             return nil
         }
     }

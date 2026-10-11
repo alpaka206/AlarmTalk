@@ -129,9 +129,17 @@ struct LoginView: View {
                     if mode == .register {
                         verifyEmailRow
                         if verificationSent && !verificationCompleted {
+                            // 실패 문장은 이 줄이 직접 그린다(안내 문구의 자리).
                             verificationCodeRow
-                        } else if isEmailVerifiedForCurrentInput {
-                            RuleRow(text: "이메일 인증 완료", satisfied: true)
+                        } else {
+                            if isEmailVerifiedForCurrentInput {
+                                RuleRow(text: "이메일 인증 완료", satisfied: true)
+                            }
+                            // 코드 줄이 없을 때의 실패 문장은 이 묶음의 끝에 둔다(안드로이드 `registerError`
+                            // 와 같은 자리). 인증을 마쳤으면 코드와 무관한 가입 실패(네트워크 등)가 '인증 완료'
+                            // 아래에, 아직 코드를 못 받았으면 첫 요청의 실패가 '이메일 인증' 버튼 바로 아래에
+                            // 뜬다. 코드가 거절된 가입은 '인증 완료' 가 내려가 위 갈래(코드 줄)로 간다.
+                            emailCodeErrorText
                         }
                     }
 
@@ -183,11 +191,38 @@ struct LoginView: View {
         }
         // 고쳐 치기 시작하면 지운다 — 안드로이드의 `onClearLoginError`(입력창 onValueChange)와
         // 같은 시점이다. 남겨 두면 이미 고친 값 아래에 옛 경고가 붙어 있다.
-        .onChange(of: password) { _, _ in auth.clearLoginError() }
-        .onChange(of: email) { _, _ in auth.clearLoginError() }
+        // 가입 쪽 인라인 오류(`emailCodeError`)도 같은 시점에 지운다 — 안드로이드는 한 콜백이
+        // 로그인·가입 오류를 함께 지운다.
+        .onChange(of: password) { _, _ in
+            auth.clearLoginError()
+            auth.clearEmailCodeError()
+        }
+        .onChange(of: email) { _, _ in
+            auth.clearLoginError()
+            auth.clearEmailCodeError()
+        }
         // 로그인↔가입을 오갈 때도 지운다(안드로이드는 `authRoute` 가 바뀔 때 지운다) —
         // 가입 화면에서는 이 자리에 비밀번호 규칙이 온다.
-        .onChange(of: mode) { _, _ in auth.clearLoginError() }
+        // 가입 쪽 인라인 오류도 함께 지운다 — 안드로이드의 그 자리도 `registerError` 를 지운다. 남기면
+        // 다시 들어온 가입 화면의 '이메일 인증' 버튼 아래에 앞 회차의 문장이 붙어 있다(코드 줄은
+        // `handleModeChange` 가 닫는다).
+        .onChange(of: mode) { _, _ in
+            auth.clearLoginError()
+            auth.clearEmailCodeError()
+        }
+        // 코드 칸을 비우라는 신호 — 서버가 코드를 거절했거나 다시 받기가 성공했다
+        // (`AuthViewModel.emailCodeFieldClearTick`, 스펙 session-and-auth 「이메일 인증 코드」).
+        .onChange(of: auth.emailCodeFieldClearTick) { _, _ in
+            // 재설정 화면(이 화면 위에 push 된다)도 같은 신호를 올린다 — 로그인 모드에서는 볼 것이 없다.
+            guard mode == .register else { return }
+            verificationCode = ""
+            // ⚠ **'인증 완료' 도 내린다.** 가입(`POST /auth/register`)이 코드를 거절했을 때 이게
+            // 남으면 코드 줄이 숨은 채 '이메일 인증 완료' 버튼만 꺼져 있어, "다시 받아 주세요" 를
+            // 읽고도 다시 받을 길이 없다. 내리면 코드 줄과 `인증 코드 다시 받기` 가 되돌아온다.
+            // 인증 확인 단계에서 온 신호라면 이미 false 다.
+            verificationCompleted = false
+            verifiedEmail = ""
+        }
     }
 
     // MARK: - Sections
@@ -302,7 +337,15 @@ struct LoginView: View {
                 // 발송이 성공했을 때만 코드 입력 단계를 노출한다. 중복 이메일(AUTH_EMAIL_TAKEN)
                 // 등으로 발송이 실패하면 verificationSent 가 켜지지 않아 6자리 코드 입력칸이
                 // 뜨지 않는다. Android 는 codeSentForEmail 을 발송 성공 시에만 세팅한다.
-                verificationSent = await auth.requestEmailVerification(email: normalizedEmail)
+                //
+                // ⚠ **결과를 그대로 대입하지 말 것 — 실패로 닫지도 않는다.** 예전에는
+                // `verificationSent = await …` 라, '인증 코드 다시 받기' 가 실패하면 코드 줄이
+                // 사라지고 버튼이 '이메일 인증' 으로 되돌아갔다. 상한·만료로 "…다시 받아 주세요" 를
+                // 읽고 누른 사람이 코드 줄과 그 아래의 답을 함께 잃었다(2026-10-11 리뷰). 안드로이드도
+                // 실패에서는 `registerEmailVerificationSentTo` 를 건드리지 않는다.
+                if await auth.requestEmailVerification(email: normalizedEmail) {
+                    verificationSent = true
+                }
             }
         }
     }
@@ -325,13 +368,21 @@ struct LoginView: View {
                 VocaTextField(
                     title: "인증 코드",
                     text: $verificationCode,
-                    keyboardType: .numberPad,
+                    // ASCII 숫자만 내는 키패드로 못 박는다 — 서버의 형식 검사는 ASCII 만 받는데
+                    // `.numberPad` 에는 그 보장이 없다(다른 숫자를 실제로 내는 기기가 있는지는
+                    // 확인하지 못했다). 붙여 넣은 값은 아래 새니타이저가 받는다.
+                    keyboardType: .asciiCapableNumberPad,
                     submitLabel: .next,
                     enabled: !auth.isBusy
                 )
                 .onChange(of: verificationCode) { _, newValue in
-                    let digits = newValue.filter(\.isNumber)
-                    verificationCode = String(digits.prefix(6))
+                    // 숫자 규칙은 새니타이저 한 곳이다(붙여 넣은 값·다른 키보드까지 같은 규칙).
+                    let cleaned = InputSanitizer.sanitizeVerificationCode(newValue)
+                    if cleaned != newValue { verificationCode = cleaned }
+                    // 고쳐 치기 시작하면 옛 경고를 지운다. ⚠ 빈 값에서는 지우지 않는다 — 거절된
+                    // 숫자를 화면이 비운 것(`emailCodeFieldClearTick`)이지 고쳐 친 것이 아니다.
+                    // 거기서 지우면 문장이 뜨자마자 사라진다.
+                    if !cleaned.isEmpty { auth.clearEmailCodeError() }
                 }
 
                 Button {
@@ -362,13 +413,36 @@ struct LoginView: View {
                 .disabled(!confirmCodeEnabled)
             }
 
-            Text("메일로 받은 6자리 코드를 입력해 주세요.")
-                .font(theme.typography.bodySmall)
-                .foregroundStyle(AuthSceneColors.textDim)
+            // 다시 받기·인증 확인·가입의 실패는 **이 줄 바로 아래**, 안내 문구의 자리에 뜬다.
+            // ⚠ 하단 `statusMessage` 로 보내지 말 것 — 비밀번호 칸과 제출 버튼을 지난 맨 아래라
+            // 숫자 키패드 뒤에 놓이고, 이 키패드에는 닫는 키가 없다(`AuthViewModel.emailCodeError`).
+            if auth.emailCodeError != nil {
+                emailCodeErrorText
+            } else {
+                Text("메일로 받은 6자리 코드를 입력해 주세요.")
+                    .font(theme.typography.bodySmall)
+                    .foregroundStyle(AuthSceneColors.textDim)
+            }
         }
     }
 
-    private var confirmCodeEnabled: Bool { !auth.isBusy && verificationCode.count == 6 }
+    /// 코드 요청·인증 확인·가입의 실패 문장(`AuthViewModel.emailCodeError`). 자리는 이메일 인증 묶음
+    /// 안이다 — 코드 줄이 있으면 그 아래, 인증을 마친 뒤면 '이메일 인증 완료' 아래, 아직 코드를 못
+    /// 받았으면 '이메일 인증' 버튼 바로 아래. 안드로이드의 같은 자리는 `ui/auth/AuthScreen.kt` 의
+    /// `registerError` 다.
+    @ViewBuilder
+    private var emailCodeErrorText: some View {
+        if let message = auth.emailCodeError {
+            Text(message)
+                .font(theme.typography.bodySmall)
+                .foregroundStyle(AuthSceneColors.error)
+        }
+    }
+
+    /// 6자리가 찼을 때만 눌린다 — 거절 뒤에 칸이 비면 같은 숫자를 다시 보낼 수 없다.
+    private var confirmCodeEnabled: Bool {
+        !auth.isBusy && LoginValidator.isValidVerificationCode(verificationCode)
+    }
 
     /// 로그인 실패는 **여기**, 비밀번호 입력창 바로 아래에 붙는다.
     ///
@@ -694,9 +768,16 @@ enum LoginValidator {
         PasswordPolicy.lengthRange.contains(value.count)
     }
 
-    /// 인증코드 = 정확히 6자리 숫자.
+    /// 인증코드 = 정확히 **ASCII 숫자** 6자리 — 서버 `EmailVerificationCodeSchema` 가 받는 모양이다.
+    /// 가입·재설정 두 화면의 확인 버튼이 이 판정으로 열린다(`LoginView.confirmCodeEnabled`·
+    /// `PasswordResetView.canConfirm`).
+    ///
+    /// 예전에는 `allSatisfy(\.isNumber)` 였고 **부르는 화면이 없었다**(테스트만 불렀다). 그 판정은
+    /// 아라비아-인도 숫자·분수·원문자도 통과시켜 서버가 형식에서 떨어뜨릴 값을 '유효' 라고 했다.
+    /// 숫자 규칙은 새니타이저 한 곳이다 — 이미 정리된 여섯 자만 유효하다.
     static func isValidVerificationCode(_ value: String) -> Bool {
-        value.count == 6 && value.allSatisfy(\.isNumber)
+        value.utf8.count == InputSanitizer.verificationCodeLength
+            && InputSanitizer.sanitizeVerificationCode(value) == value
     }
 }
 

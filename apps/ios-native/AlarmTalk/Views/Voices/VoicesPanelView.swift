@@ -33,16 +33,27 @@ struct VoicesPanelView: View {
     @EnvironmentObject private var socialFeatures: SocialFeatureViewModel
     @EnvironmentObject private var auth: AuthViewModel
 
+    /// 등록 창이 월 등록 한도 거절로 닫힌 뒤 띄우는 알럿(`VoiceProfileManagementPanel` 이 그린다).
+    @State private var monthlyLimitNoticeOpen = false
+
     var body: some View {
         VoiceProfileManagementPanel(
             route: $route,
+            monthlyLimitNoticeOpen: $monthlyLimitNoticeOpen,
             onRequestBilling: onRequestBilling,
             // 유료 게이트는 **항상** 쿠폰 갈래를 함께 낸다(`PaidGateCopy.redeemCode`).
             onRedeemCode: { code in
                 await socialFeatures.registerCodeReportingFailure(code, session: auth.session)
             }
         )
-        .fullScreenCover(isPresented: subflowPresented) {
+        // ⚠ **알럿은 창이 다 내려간 뒤에 연다 — `onDismiss` 가 그 시점이다.** 창을 닫는 것과 같은
+        // 순간에 열면 내려가는 창과 겹쳐, 알럿이 뜨지 않은 채 끝날 수 있다(목소리 탭의 액션시트 →
+        // 알럿이 한 박자 늦게 여는 것과 같은 이유다). 못 보면 사용자는 창이 왜 닫혔는지 모른다.
+        .fullScreenCover(isPresented: subflowPresented, onDismiss: {
+            guard voice.monthlyLimitRejected else { return }
+            voice.monthlyLimitRejected = false
+            monthlyLimitNoticeOpen = true
+        }) {
             NavigationStack {
                 subflow
             }
@@ -72,7 +83,8 @@ struct VoicesPanelView: View {
                 VoicePreviewConfirmView(
                     draft: draft,
                     onSaved: { route = .preparation($0) },
-                    onDiscarded: { route = .clone }
+                    onDiscarded: { route = .clone },
+                    onMonthlyLimitRejected: { route = .management }
                 )
             } else {
                 // 초안을 못 찾으면(새로고침 중 유실 등) 갇히지 않게 목록으로 돌린다.
