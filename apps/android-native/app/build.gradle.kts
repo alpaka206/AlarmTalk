@@ -348,7 +348,18 @@ dependencies {
     implementation("androidx.room:room-ktx:2.6.1")
     implementation("androidx.room:room-runtime:2.6.1")
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
-    implementation("androidx.work:work-runtime-ktx:2.9.1")
+    // ⚠ **2.10 아래로 내리지 말 것**(2026-10-11, ALARMTALK-ANDROID-Y). 기본 목소리 받기 워커가
+    // `dataSync` 포그라운드 서비스를 올리는데(`sync/StockClipPrefetchWorker.kt`), Android 15 부터
+    // 시스템은 그 서비스를 `Service.onTimeout` 으로 끝내라고 할 수 있다. 2.9.x 의
+    // `SystemForegroundService` 는 그 콜백이 없어 서비스가 그대로 떠 있고, 시스템이 10초 뒤
+    // **앱을 죽인다**(1.2.10 이 2.9.1 이었다). 2.10 부터 WorkManager 가 그 작업과 서비스를 스스로
+    // 멈추고 작업은 다시 예약된다. 회귀 `sync/WorkManagerForegroundTimeoutContractTest`.
+    // 2.11·2.12 는 Kotlin 2.1.20 · 코루틴 1.9.0 · Room 2.7.0 을 요구한다(각 POM) — 이 앱은 Kotlin
+    // 2.0.21 · 코루틴 1.7.3 · Room 2.6.1 이라 함께 올라가는 일이 된다. 따로 올리고 여기서는 2.10.x 에
+    // 둔다(2.10.5 는 지금 풀리는 버전 그대로다 — `:app:dependencies` 전후 비교로 확인).
+    // 매니페스트의 `SystemForegroundService` 타입 합치기(`dataSync`)는 그대로 필요하다 — 2.10.5 의
+    // 라이브러리 매니페스트에도 타입이 없다.
+    implementation("androidx.work:work-runtime-ktx:2.10.5")
     implementation("com.android.billingclient:billing-ktx:8.0.0")
     // Google Play In-App Updates(신 Play SDK). Play 설치본에서만 실제 트리거되고
     // debug/사이드로드에선 no-op(콜백에서 예외 방어). 구 com.google.android.play:core 미사용.
