@@ -57,9 +57,9 @@ it('대소문자 무시', () => {
   // 1.2.10 강제 업데이트(2026-09-28). 잠금 화면 울림 화면(26~28)·개인 플랜 종료 안내 —
   // 이유와 순서(Play 30 게재 뒤)는 app-version.ts 주석.
   // 차단이 목적이라 권장 기준(latest)이 아니라 하한을 고정한다.
-  it('android minSupported 는 1.2.10(30) 이상이다 — 강제 업데이트', () => {
+  it('android minSupported 는 1.2.11(31) 이상이다 — 무음 알람 수정 강제 업데이트', () => {
     const p = appVersionPolicy('android');
-    expect(p.minSupported).toBeGreaterThanOrEqual(30);
+    expect(p.minSupported).toBeGreaterThanOrEqual(31);
     expect(p.latest).toBeGreaterThanOrEqual(p.minSupported);
   });
 
