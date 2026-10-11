@@ -29,8 +29,15 @@ CLAUDE.md 「입력 규칙은 한 곳에서만」 규약의 기계 검사다. �
      `sanitizeVerificationCode` 를 불러야 하고, iOS `Views/Auth/` 의 `.onChange(of:)`·`set:`
      클로저가 `filter(\\.isNumber)` 로 거르거나 `prefix(6)` 으로 자르면
      `InputSanitizer.sanitizeVerificationCode` 를 불러야 한다. 핸들러를 **블록째** 읽는다 — 예전
-     가입 화면처럼 `onValueChange = {` 와 필터가 다른 줄에 있어도 잡는다. 주석·문자열 속 글자는
-     세지 않는다. 인증 화면 폴더가 없거나 그 새니타이저를 부르는 칸을 하나도 못 찾으면 실패한다 —
+     가입 화면처럼 `onValueChange = {` 와 필터가 다른 줄에 있어도 잡는다. `.onChange` 는 뒤따르는
+     클로저도, 괄호 **안에** 넘긴 클로저(`.onChange(of: x, perform: { … })`)도 읽는다. 주석·문자열 속
+     글자는 세지 않는다.
+     핸들러 밖도 본다 — 숫자 거르기·6자 자르기를 같은 파일의 **도우미로 옮기면**
+     (`onValueChange = { code = digitsOnly(it) }` + `fun digitsOnly(…) = raw.filter(Char::isDigit).take(6)`)
+     핸들러만 읽어서는 안 보인다. 그래서 인증 화면 파일 **전체**(주석·문자열을 지운 것)에서 그 두 모양을
+     찾아, 새니타이저를 부르는 핸들러 안이 아니면 걸린다. 파일 전체에서는 **거르기·자르기만** 본다 —
+     `all { it.isDigit() }`·`allSatisfy` 는 값을 바꾸지 않는 검증(버튼을 켤지)이라 걸지 않는다.
+     인증 화면 폴더가 없거나 그 새니타이저를 부르는 칸을 하나도 못 찾으면 실패한다 —
      화면이 옮겨 갔는데 이 검사만 남아 조용히 통과하지 않게.
 """
 from __future__ import annotations
@@ -53,24 +60,31 @@ IOS_OK = ("InputSanitizer.",)
 ANDROID_NUMERIC = ("isDigit", "isNumber", "filter(Char::isDigit)")
 IOS_NUMERIC = ("isNumber", "isWholeNumber", "filter(\\.isNumber)")
 
-# 5번 — 인증 코드 칸. (화면 폴더, 핸들러 시작, 옛 칸의 모양, 반드시 부를 새니타이저, 코틀린인가)
+# 5번 — 인증 코드 칸. (화면 폴더, 핸들러 시작, 핸들러 안의 옛 칸 모양, 파일 전체에서 볼 모양,
+# 반드시 부를 새니타이저, 코틀린인가)
 # 옛 칸의 모양은 **숫자로 거르기**(`filter`·`all` 류)와 **6자 자르기**다. `any { it.isDigit() }` 같은
 # 비밀번호 규칙 확인은 거르기가 아니라 걸리지 않는다. 코드 칸은 거의 언제나 6자에서 자르므로, 낯선
-# 거르기 모양은 자르기가 잡는다.
+# 거르기 모양은 자르기가 잡는다. 파일 전체에서는 값을 **바꾸는** 모양(거르기·자르기)만 본다 —
+# `all`·`allSatisfy` 는 핸들러 밖에서는 검증(버튼을 켤지)일 뿐이라 걸면 멀쩡한 화면이 막힌다.
+ANDROID_CODE_REWRITE = (r"\b(?:filter|filterNot)\s*(?:\(\s*Char::isDigit\s*\)|\{[^{}]*\bisDigit\b)"
+                        r"|\.take\(\s*(?:6|VerificationCodeLength)\s*\)")
+IOS_CODE_REWRITE = (r"\bfilter\s*(?:\(\s*\\\.(?:isNumber|isWholeNumber)\s*\)"
+                    r"|\{[^{}]*\b(?:isNumber|isWholeNumber|decimalDigits)\b)"
+                    r"|\.prefix\(\s*(?:6|(?:InputSanitizer\.)?verificationCodeLength)\s*\)")
 AUTH_CODE_FIELDS = (
     (
         ANDROID / "com/alarmtalk/app/ui/auth", ".kt",
         re.compile(r"\bonValueChange\s*=\s*\{"),
-        re.compile(r"\b(?:filter|filterNot|all)\s*(?:\(\s*Char::isDigit\s*\)|\{[^{}]*\bisDigit\b)"
-                   r"|\.take\(\s*(?:6|VerificationCodeLength)\s*\)"),
+        re.compile(ANDROID_CODE_REWRITE + r"|\ball\s*(?:\(\s*Char::isDigit\s*\)|\{[^{}]*\bisDigit\b)"),
+        re.compile(ANDROID_CODE_REWRITE),
         "sanitizeVerificationCode", True,
     ),
     (
         IOS / "Views/Auth", ".swift",
         re.compile(r"\.onChange\s*\(|\bset:\s*\{"),
-        re.compile(r"\b(?:filter|allSatisfy)\s*(?:\(\s*\\\.(?:isNumber|isWholeNumber)\s*\)"
-                   r"|\{[^{}]*\b(?:isNumber|isWholeNumber|decimalDigits)\b)"
-                   r"|\.prefix\(\s*(?:6|(?:InputSanitizer\.)?verificationCodeLength)\s*\)"),
+        re.compile(IOS_CODE_REWRITE + r"|\ballSatisfy\s*(?:\(\s*\\\.(?:isNumber|isWholeNumber)\s*\)"
+                   r"|\{[^{}]*\b(?:isNumber|isWholeNumber|decimalDigits)\b)"),
+        re.compile(IOS_CODE_REWRITE),
         "InputSanitizer.sanitizeVerificationCode", False,
     ),
 )
@@ -160,7 +174,13 @@ def blank_comments_and_strings(text: str, kotlin: bool) -> str:
 
 
 def handler_body(code: str, match: re.Match) -> tuple[int, int] | None:
-    """핸들러가 여는 블록 본문의 (시작, 끝) 자리. `.onChange(…)` 는 괄호를 건너 뒤따르는 클로저를 본다."""
+    """핸들러가 여는 블록 본문의 (시작, 끝) 자리.
+
+    `.onChange(…)` 는 괄호를 건너 뒤따르는 클로저를 본다. 뒤따르는 클로저가 없으면 클로저를 괄호 **안에**
+    넘긴 것이다(`.onChange(of: x, perform: { … })`·이름 없는 `{ … }`) — 그때는 괄호 안 인자 전체를 본문으로
+    읽는다(그 클로저가 거기 있다). `perform: handleCode` 처럼 함수 이름만 넘겼으면 인자에는 모양이 없고,
+    그 함수가 같은 파일에 있으면 파일 전체 검사가 잡는다.
+    """
     start = match.end() - 1
     if code[start] == "(":
         depth = 0
@@ -170,11 +190,12 @@ def handler_body(code: str, match: re.Match) -> tuple[int, int] | None:
                 break
         else:
             return None
+        arguments = (start + 1, k)
         start = k + 1
         while start < len(code) and code[start].isspace():
             start += 1
         if start >= len(code) or code[start] != "{":
-            return None  # `perform:` 처럼 클로저가 아닌 인자
+            return arguments
     depth = 0
     for k in range(start, len(code)):
         depth += {"{": 1, "}": -1}.get(code[k], 0)
@@ -186,7 +207,7 @@ def handler_body(code: str, match: re.Match) -> tuple[int, int] | None:
 def scan_auth_code_fields() -> list[str]:
     """5번 — 인증 화면에서 숫자를 거르거나 6자로 자르는 핸들러는 인증 코드 새니타이저를 부른다."""
     bad: list[str] = []
-    for directory, suffix, handler, old_shape, sanitizer, kotlin in AUTH_CODE_FIELDS:
+    for directory, suffix, handler, old_shape, rewrite_shape, sanitizer, kotlin in AUTH_CODE_FIELDS:
         where = directory.relative_to(ROOT)
         if not directory.is_dir():
             bad.append(f"{where}  인증 화면 폴더가 없다 — 화면을 옮겼으면 이 검사의 경로도 옮길 것")
@@ -195,20 +216,35 @@ def scan_auth_code_fields() -> list[str]:
         for path in sorted(directory.rglob(f"*{suffix}")):
             raw = path.read_text(encoding="utf-8")
             code = blank_comments_and_strings(raw, kotlin)
+            lines = raw.splitlines()
+            reported: set[int] = set()
+
+            def report(offset: int, why: str = "") -> None:
+                lineno = code.count("\n", 0, offset) + 1
+                if lineno in reported:
+                    return  # 한 줄에 거르기와 자르기가 같이 있어도 한 번만 말한다
+                reported.add(lineno)
+                bad.append(f"{path.relative_to(ROOT)}:{lineno}  {lines[lineno - 1].strip()[:100]}{why}")
+
+            # 이미 본 핸들러 본문 — 파일 전체 검사가 같은 자리를 두 번 세거나, 새니타이저를 부른 핸들러를 걸지 않게.
+            seen_bodies: list[tuple[int, int]] = []
             for match in handler.finditer(code):
                 span = handler_body(code, match)
                 if span is None:
                     continue
+                seen_bodies.append(span)
                 body = code[span[0]:span[1]]
                 if sanitizer in body:
                     sanitized_fields += 1
                     continue
                 hit = old_shape.search(body)
-                if not hit:
+                if hit:
+                    report(span[0] + hit.start())
+            # 핸들러 밖 — 같은 파일의 도우미로 옮긴 거르기·자르기.
+            for hit in rewrite_shape.finditer(code):
+                if any(start <= hit.start() < end for start, end in seen_bodies):
                     continue
-                lineno = code.count("\n", 0, span[0] + hit.start()) + 1
-                line = raw.splitlines()[lineno - 1].strip()
-                bad.append(f"{path.relative_to(ROOT)}:{lineno}  {line[:100]}")
+                report(hit.start(), "  (핸들러 밖 — 도우미로 옮긴 거르기·자르기도 새니타이저를 거친다)")
         if sanitized_fields == 0:
             bad.append(
                 f"{where}  `{sanitizer}` 를 부르는 인증 코드 칸을 하나도 못 찾았다 — "
