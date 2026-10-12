@@ -329,6 +329,14 @@ it('target_user_id 사용자가 없으면 403 NOT_CONNECTED', async () => {
     expect(body.alarm.voice_profile_id).toBeNull();
   });
 
+  it('안드로이드 진동 패턴(heartbeat)도 받는다 — 셋만 받던 때는 400 이었다(ALARMTALK-ANDROID-14)', async () => {
+    const res = await buildApp().request(
+      jsonReq('POST', '/alarms', { time: '07:30', vibration_pattern: 'heartbeat' }),
+    );
+    expect(res.status).toBe(201);
+    expect((await res.json()).alarm.vibration_pattern).toBe('heartbeat');
+  });
+
   it('유효하지 않은 vibration_pattern → 400 INVALID_VIBRATION_PATTERN', async () => {
     const res = await buildApp().request(
       jsonReq('POST', '/alarms', { ...validBody, vibration_pattern: 'ultra' }),

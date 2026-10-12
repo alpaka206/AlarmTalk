@@ -171,6 +171,11 @@ iOS 26 의 `UIAlertController` 를 시뮬레이터에서 재서 얻은 값이다
 - **세부 설정 카드의 행 순서는 알람음 → 진동**이다(2026-09-29 지시, 안드로이드). 알람음 행은
   재생 방식이 '알람' 일 때만 있으므로, 행 사이 구분선은 **알람음 행에 붙어** 함께 나타나고
   사라진다. iOS 에는 진동 행이 없다(AlarmKit 이 진동을 소유한다 — 「의도된 차이」).
+- **진동 값은 안드로이드 목록 18종이 그대로 서버 계약이다**(2026-10-12). 안드로이드는 고른 값을 그대로
+  동기화하고, 서버는 같은 목록을 받는다(`VIBRATION_PATTERNS`). 그 전에는 서버가 `default`·`strong`·`none` 셋만
+  받아 그 밖의 패턴을 고른 알람이 동기화마다 400 `INVALID_VIBRATION_PATTERN` 이었다(ALARMTALK-ANDROID-14) —
+  알람은 폰에서 울렸지만 서버 사본이 갱신되지 않았다. iOS 는 진동 목록이 없고 값을 문자열 그대로 왕복한다.
+  패턴을 더하면 서버 목록도 같이 고친다 — `scripts/check-vibration-patterns.py`(CI lint)가 두 목록을 비교한다.
 
 ## 6. 저장 버튼 — 파일을 읽는 확인은 **메인 밖에서, 저장 잠금 안에서** (안드로이드, 2026-10-11)
 
@@ -232,6 +237,7 @@ iOS 26 의 `UIAlertController` 를 시뮬레이터에서 재서 얻은 값이다
 | 쓸 수 없는 목소리 — 배너 없음, 저장 시 알럿 | `ui/editor/AlarmEditorScreen.kt` 의 `editorSaveBlockReason`(`SaveBlockReason.VOICE_UNAVAILABLE`) | `AlarmEditDraft.selectedVoiceUnusable` → `AlarmEditorSheet.saveFlow` 첫머리(`editorSaveBlocked` 는 이 갈래로 버튼을 죽이지 않는다) |
 | 저장 버튼의 로컬 확인 — IO 에서 · 찾는 동안은 '저장 중'(두 번째 탭은 버림) · 오프라인 판정도 그 확인으로(§6) | `ui/editor/ManualAudioReuseGate.kt` 의 `ManualAudioReuseGate`(`request` · `inFlight` — 편집기의 `busy` 가 함께 본다) ← `AlarmEditorScreen` 의 `saveEditor`(찾으면 `submitDraft`, 못 찾으면 오프라인 알럿 또는 `startGeneration`) · 찾기 `data/AlarmAudioStore.kt` 의 `findReusableTtsAudio` · 알럿 문자열 `saveBlockAlertStrings`(저장 버튼과 저장 흐름이 함께 쓴다) | — |
 | 세부 설정 행 순서(알람음 → 진동) | `ui/editor/AlarmSettingsCard.kt` 의 `AlarmSettingsCard` | 알람음 행 하나(`AlarmEditorSheet.detailSettingsSection`) |
+| 진동 값 = 서버 계약(18종 — 서버 `packages/backend/src/routes/alarm-helpers.ts` 의 `VIBRATION_PATTERNS`, 비교 `scripts/check-vibration-patterns.py`) | `data/AlarmConstants.kt` 의 `VibrationPatterns.all` → `network/RemoteAlarmMapper.kt` 의 `toWriteRequest`(그대로 보낸다) | `LocalAlarmRecord.vibrationPattern`(문자열 그대로 왕복 — 모르는 값은 `vibrationPatternEnum` 이 `.default` 로 읽는다) |
 | 음성 출력(크기·반복) | `ui/editor/VoiceAudioCard.kt` 의 `VoiceVolumeSelector` | `Views/Editor/AlarmSettingsPanes.swift` 의 `VoiceOutputSettingsPane` |
 | 목록 바텀시트 | `ui/components/WakerModal.kt` 의 `WakerSelectionSheet` | `Views/Common/BottomSheetHost.swift` + `Views/Common/SelectionSheet.swift` |
 | 폼 시트 | `ui/components/WakerModal.kt` 의 `WakerFormSheet` | `Views/Common/FormSheet.swift` |
