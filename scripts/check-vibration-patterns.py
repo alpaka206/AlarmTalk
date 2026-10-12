@@ -1,21 +1,23 @@
 #!/usr/bin/env python3
-"""안드로이드 진동 패턴 목록과 서버가 받는 목록이 같은지 본다.
+"""안드로이드·iOS 진동 패턴 목록과 서버가 받는 목록이 같은지 본다.
 
 ## 왜 있는가
 
 안드로이드는 고른 진동 값을 그대로 동기화한다(`network/RemoteAlarmMapper.kt`). 서버가 그 값을 모르면
 `POST·PATCH /alarm` 이 400 `INVALID_VIBRATION_PATTERN` 으로 막히는데, 알람은 폰에서 그대로 울려 아무도
 모른다 — 서버 사본만 조용히 갱신되지 않는다. 2026-10-12 까지 서버는 안드로이드 18종 중 셋만 받았다
-(ALARMTALK-ANDROID-14). 두 목록은 언어가 달라 **같은 값을 손으로** 둔다.
+(ALARMTALK-ANDROID-14). iOS 는 진동 화면이 없지만 같은 값을 enum 으로 읽고 편집기 저장 때 그 enum 의 값으로
+다시 적는다 — 목록에 없는 값은 `.default` 로 읽혀(`LocalAlarmRecord.vibrationPatternEnum`) 안드로이드에서 고른
+패턴이 iOS 에서 열고 저장하는 순간 '기본' 으로 덮인다(Codex #887). 세 목록은 언어가 달라 **같은 값을 손으로** 둔다.
 
 ## 무엇을 비교하는가
 
-| 안드로이드 | 서버 |
-| --- | --- |
-| `data/AlarmConstants.kt` 의 `object VibrationPatterns` 안 `val all = listOf(...)` (상수 이름 → `const val` 값) | `packages/backend/src/routes/alarm-helpers.ts` 의 `VIBRATION_PATTERNS = [...] as const` |
+| 안드로이드(기준) | iOS | 서버 |
+| --- | --- | --- |
+| `data/AlarmConstants.kt` 의 `object VibrationPatterns` 안 `val all = listOf(...)` (상수 이름 → `const val` 값) | `AlarmEnums.swift` 의 `enum VibrationPattern: String` 의 `case`(원시값이 없으면 이름) | `packages/backend/src/routes/alarm-helpers.ts` 의 `VIBRATION_PATTERNS = [...] as const` |
 
 걸리는 것: 선언을 못 찾는다 / 문자열·상수가 아닌 항목이 섞였다 / 같은 값이 두 번 있다 / 두 집합이 다르다
-(순서는 보지 않는다). iOS 는 진동 목록이 없고 값을 문자열 그대로 왕복하므로 비교하지 않는다.
+(순서는 보지 않는다).
 이 맥의 시스템 python3(3.9)로 돈다.
 
     python3 scripts/check-vibration-patterns.py --self-test   # 검사기 자체만
@@ -28,6 +30,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 ANDROID = ROOT / "apps/android-native/app/src/main/java/com/alarmtalk/app/data/AlarmConstants.kt"
 SERVER = ROOT / "packages/backend/src/routes/alarm-helpers.ts"
+IOS = ROOT / "apps/ios-native/AlarmTalk/AlarmEnums.swift"
 
 
 class CheckError(Exception):
@@ -87,9 +90,28 @@ def server_patterns(source):
     return values
 
 
-def compare(android, server):
+def ios_patterns(source):
+    body = _strip_line_comments(_block_after(source, "enum VibrationPattern"))
+    values = []
+    for m in re.finditer(r"\bcase\s+([^\n]+)", body):
+        for part in [p.strip() for p in m.group(1).split(",") if p.strip()]:
+            raw = re.fullmatch(r'`?(\w+)`?\s*=\s*"([^"]*)"', part)
+            bare = re.fullmatch(r"`?(\w+)`?", part)
+            if raw:
+                values.append(raw.group(2))
+            elif bare:
+                values.append(bare.group(1))
+            else:
+                raise CheckError("iOS enum 에 읽을 수 없는 case 가 있다: " + part)
+    if not values:
+        raise CheckError("iOS enum VibrationPattern 에 case 가 없다")
+    return values
+
+
+def compare(android, server, ios=None):
     problems = []
-    for name, values in (("안드로이드", android), ("서버", server)):
+    named = [("안드로이드", android), ("서버", server)] + ([("iOS", ios)] if ios is not None else [])
+    for name, values in named:
         dupes = sorted({v for v in values if values.count(v) > 1})
         if dupes:
             problems.append(name + " 목록에 같은 값이 두 번 있다: " + ", ".join(dupes))
@@ -99,6 +121,13 @@ def compare(android, server):
         problems.append("서버가 받지 않는 안드로이드 패턴(동기화가 400 으로 막힌다): " + ", ".join(missing))
     if extra:
         problems.append("안드로이드에 없는 서버 패턴: " + ", ".join(extra))
+    if ios is not None:
+        ios_missing = sorted(set(android) - set(ios))
+        ios_extra = sorted(set(ios) - set(android))
+        if ios_missing:
+            problems.append("iOS enum 에 없는 안드로이드 패턴(iOS 에서 열고 저장하면 '기본' 으로 덮인다): " + ", ".join(ios_missing))
+        if ios_extra:
+            problems.append("안드로이드에 없는 iOS 패턴: " + ", ".join(ios_extra))
     return problems
 
 
@@ -128,6 +157,15 @@ object VibrationPatterns {
     found = compare(android_patterns(kt), server_patterns(narrow))
     assert len(found) == 1 and "sos" in found[0], found
     assert compare(["a", "a"], ["a"])[0].startswith("안드로이드 목록에 같은 값")
+    swift = '''enum VibrationPattern: String, Codable, CaseIterable {
+    case `default`
+    case sos
+    case offBeat = "off_beat" // 주석
+}
+'''
+    assert ios_patterns(swift) == ["default", "sos", "off_beat"], ios_patterns(swift)
+    behind = compare(["default", "sos", "off_beat", "new_one"], ["default", "sos", "off_beat", "new_one"], ios_patterns(swift))
+    assert len(behind) == 1 and "new_one" in behind[0] and "iOS" in behind[0], behind
     try:
         server_patterns("export const VIBRATION_PATTERNS = ['default', OTHER] as const;")
         raise AssertionError("상수 항목을 놓쳤다")
@@ -148,10 +186,11 @@ def main():
     try:
         android = android_patterns(ANDROID.read_text(encoding="utf-8"))
         server = server_patterns(SERVER.read_text(encoding="utf-8"))
+        ios = ios_patterns(IOS.read_text(encoding="utf-8"))
     except CheckError as e:
         print("check-vibration-patterns: " + str(e))
         return 1
-    problems = compare(android, server)
+    problems = compare(android, server, ios)
     if problems:
         for p in problems:
             print("check-vibration-patterns: " + p)

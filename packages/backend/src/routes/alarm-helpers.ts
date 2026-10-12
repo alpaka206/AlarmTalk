@@ -19,9 +19,10 @@ export type AlarmMode = (typeof ALARM_MODES)[number];
 // 안드로이드 진동 패턴 목록(`data/AlarmConstants.kt` 의 `VibrationPatterns.all`)과 **같은 값**이다 — 앱은 고른
 // 값을 그대로 동기화한다(`RemoteAlarmMapper`). 2026-10-12 전에는 서버가 `default`·`strong`·`none` 셋만 받아,
 // 그 밖의 패턴을 고른 알람은 동기화마다 400 `INVALID_VIBRATION_PATTERN` 이었다(ALARMTALK-ANDROID-14) — 알람은
-// 폰에서 울렸지만 서버 사본이 갱신되지 않았다. iOS 는 진동 목록이 없고 값을 문자열 그대로 왕복한다.
+// 폰에서 울렸지만 서버 사본이 갱신되지 않았다. iOS 는 진동 화면이 없지만 같은 18종 enum(`AlarmEnums.swift` 의
+// `VibrationPattern`)으로 읽고 편집기 저장 때 그 값으로 다시 적는다 — enum 에 없는 값은 '기본' 으로 덮인다.
 // DB 칸에는 값 제약이 없다 — 처음 칸을 더할 때의 CHECK 는 표를 다시 만든 마이그레이션 22·23 에서 빠졌다.
-// 패턴을 더하면 여기도 같이 고친다 — `scripts/check-vibration-patterns.py`(CI lint)가 두 목록을 비교한다.
+// 패턴을 더하면 세 곳을 같이 고친다 — `scripts/check-vibration-patterns.py`(CI lint)가 세 목록을 비교한다.
 export const VIBRATION_PATTERNS = [
   'default',
   'strong',
