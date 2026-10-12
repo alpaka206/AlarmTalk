@@ -21,6 +21,38 @@ node -e "const m=require('fs').readFileSync('docs/product/release-notes.md','utf
 
 ---
 
+## 1.2.12 (versionCode 32 / iOS 빌드 9)
+
+프로모 코드 폐지. iOS 1.2.11(빌드 8)이 App Store 심사 지침 3.1.1 로 반려돼(2026-10-12) 고친 판이다. 코드 칸은
+선물·초대 코드만 받는다(`docs/spec/plan-gates.md` 「프로모 코드 — 폐지」). 버전을 두 앱 모두 1.2.12 로 올린 이유는
+`docs/qa/dev-test-handoff.md` 2026-10-12 절.
+
+- **App Store**: 1.2.11 은 게재된 적이 없다 — iOS 사용자는 1.2.10 에서 곧바로 1.2.12 로 온다. 그래서 아래 1.2.11 의
+  App Store 문안(뒤 세 블록)을 **그대로** 쓴다. 코드 칸 문구 변화는 적지 않는다(영어 500자에 자리가 없다).
+- **Play**: 1.2.11 이 게재돼 있다. 아래 한 줄만 낸다.
+
+### Play (Android 32)
+
+### ko-KR
+
+```
+• 코드 등록 칸은 이제 선물 코드와 초대 코드만 받습니다.
+```
+
+### en-US
+
+```
+• The code field now accepts gift and invite codes only.
+```
+
+### ja-JP
+
+```
+• コード登録欄はギフトコードと招待コードのみ受け付けるようになりました。
+```
+
+---
+
 ## 1.2.11 (versionCode 31 / iOS 빌드 8)
 
 #870·#871·#872(톤 조절) · #820·#828(못 쓰게 된 목소리 → 미나) · #817('목소리 느낌' 제거) · #837(날씨 지역 목록) ·
