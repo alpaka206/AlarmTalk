@@ -296,17 +296,17 @@ class TransientFailureClassificationTest {
     // ── 사용자가 친 값의 예상된 거절 — `docs/spec/error-codes.md` §3 「앱도 같다」 ──────────
 
     /**
-     * 목록은 정해진 열한 개다. 원본은 shared 의 `CLIENT_EXPECTED_REFUSAL_CODES` 이고 셋(shared·안드로이드·iOS)이
+     * 목록은 정해진 여덟 개다(프로모 코드 갈래 셋은 2026-10-12 에 프로모 코드와 함께 빠졌다). 원본은 shared 의
+     * `CLIENT_EXPECTED_REFUSAL_CODES` 이고 셋(shared·안드로이드·iOS)이
      * 같은지는 CI lint(`scripts/check-expected-refusal-codes.py`)가 본다 — 여기서는 이 앱의 값이 넓어지거나
      * (진짜 사고가 묻힌다) 좁아지지(이슈 목록이 다시 시끄러워진다) 않게 그 자체를 고정한다.
      */
     @Test
-    fun expectedRefusalListIsExactlyTheElevenCodes() {
+    fun expectedRefusalListIsExactlyTheEightCodes() {
         assertEquals(
             setOf(
                 "AUTH_EMAIL_CODE_INVALID", "AUTH_EMAIL_CODE_EXPIRED", "AUTH_EMAIL_TAKEN", "AUTH_EMAIL_SOCIAL",
                 "CODE_NOT_FOUND", "CODE_EXPIRED", "CODE_ALREADY_USED", "CODE_ALREADY_REDEEMED_BY_YOU",
-                "CODE_EXHAUSTED", "CODE_INACTIVE", "CODE_NOT_IN_WINDOW",
             ),
             AlarmTalkLog.EXPECTED_REFUSAL_CODES,
         )

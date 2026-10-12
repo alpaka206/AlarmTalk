@@ -4559,19 +4559,19 @@
         }
       }
     },
-    "받으신 프로모션·선물 코드를 넣어 주세요. 초대 코드도 여기에 넣을 수 있어요." : {
+    "받으신 선물 코드를 넣어 주세요. 초대 코드도 여기에 넣을 수 있어요." : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Enter a promo or gift code. Invite codes work here too."
+            "value" : "Enter a gift code you received. Invite codes work here too."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "プロモーション・ギフトコードを入力してください。招待コードも使えます。"
+            "value" : "受け取ったギフトコードを入力してください。招待コードも使えます。"
           }
         }
       }
@@ -9569,36 +9569,36 @@
         }
       }
     },
-    "초대 코드, 이용권 선물 코드, 프로모션 코드 모두 등록할 수 있어요." : {
+    "초대 코드와 이용권 선물 코드를 등록할 수 있어요." : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Invite codes, gifted plan codes, and promo codes all work here."
+            "value" : "Invite codes and gifted plan codes work here."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "招待コード・利用券ギフトコード・プロモコードのすべてを登録できます。"
+            "value" : "招待コードと利用券ギフトコードを登録できます。"
           }
         }
       }
     },
-    "초대·선물·프로모션 코드" : {
+    "초대·선물 코드" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Invite, gift, or promo code"
+            "value" : "Invite or gift code"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "招待・ギフト・プロモコード"
+            "value" : "招待・ギフトコード"
           }
         }
       }
@@ -9909,36 +9909,19 @@
         }
       }
     },
-    "쿠폰 입력" : {
+    "선물·초대 코드가 있어요" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Enter a code"
+            "value" : "I have a gift or invite code"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "コードを入力"
-          }
-        }
-      }
-    },
-    "쿠폰이 있어요" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "I have a code"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "クーポンをお持ちの方"
+            "value" : "ギフト・招待コードをお持ちの方"
           }
         }
       }
@@ -15295,72 +15278,6 @@
         }
       }
     },
-    "사용 가능 횟수가 모두 소진된 프로모 코드예요" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "This promo code has reached its usage limit"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "利用回数の上限に達したプロモコードです"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "사용 가능 횟수가 모두 소진된 프로모 코드예요"
-          }
-        }
-      }
-    },
-    "아직 사용 기간이 아니거나 종료된 프로모 코드예요" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "This promo code isn't active yet or has ended"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "まだ利用期間ではないか、終了したプロモコードです"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "아직 사용 기간이 아니거나 종료된 프로모 코드예요"
-          }
-        }
-      }
-    },
-    "이미 같은 계열의 프로모 코드를 사용했어요. 이 혜택은 계정당 한 번만 받을 수 있어요" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "You've already used a promo code from this promotion. This benefit is limited to once per account"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "同じキャンペーンのプロモコードをすでに使用しています。この特典はアカウントごとに1回のみです"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "이미 같은 계열의 프로모 코드를 사용했어요. 이 혜택은 계정당 한 번만 받을 수 있어요"
-          }
-        }
-      }
-    },
     "이미 등록한 코드예요" : {
       "localizations" : {
         "en" : {
@@ -15405,24 +15322,19 @@
         }
       }
     },
-    "이미 이용 중인 그룹 이용권이 있어 프로모 코드를 적용할 수 없어요" : {
+    "이미 이용 중인 그룹 이용권이 있어 이 코드를 등록할 수 없어요" : {
+      "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "You already have an active group plan, so this promo code can't be applied"
+            "value" : "You already have an active group plan, so this code can't be registered"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "すでに利用中のグループプランがあるため、プロモコードを適用できません"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "이미 이용 중인 그룹 이용권이 있어 프로모 코드를 적용할 수 없어요"
+            "value" : "すでに利用中のグループプランがあるため、このコードは登録できません"
           }
         }
       }
@@ -15471,28 +15383,6 @@
         }
       }
     },
-    "이용 중인 이용권이 있어요. 해지 후 쿠폰을 등록할 수 있어요" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "You already have an active plan. Cancel it before redeeming a coupon"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "利用中のプランがあります。解約後にクーポンを登録できます"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "이용 중인 이용권이 있어요. 해지 후 쿠폰을 등록할 수 있어요"
-          }
-        }
-      }
-    },
     "이용권이 확인되어 목소리 알람을 다시 켰어요." : {
       "localizations" : {
         "en" : {
@@ -15533,28 +15423,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "잘못된 코드입니다."
-          }
-        }
-      }
-    },
-    "지금은 사용할 수 없는 프로모 코드예요" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "This promo code isn't available right now"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "現在は使用できないプロモコードです"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "지금은 사용할 수 없는 프로모 코드예요"
           }
         }
       }
@@ -15665,28 +15533,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "코드의 이용권 정보를 찾지 못했어요"
-          }
-        }
-      }
-    },
-    "프로모 코드를 적용하지 못했어요. 잠시 후 다시 시도해 주세요" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Couldn't apply the promo code. Please try again in a moment."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "プロモコードを適用できませんでした。しばらくしてからもう一度お試しください。"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "프로모 코드를 적용하지 못했어요. 잠시 후 다시 시도해 주세요"
           }
         }
       }

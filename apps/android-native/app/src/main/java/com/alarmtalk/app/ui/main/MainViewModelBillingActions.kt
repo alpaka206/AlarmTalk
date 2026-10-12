@@ -348,16 +348,11 @@ private fun codeRegistrationFailureMessage(context: android.content.Context, err
         "INVALID_GIFT_PLAN", "INVALID_INVITE_PLAN" -> context.getString(R.string.msg2_code_fail_invalid_plan_type)
         "PLAN_NOT_FOUND" -> context.getString(R.string.msg2_code_fail_plan_not_found)
         "USER_NOT_FOUND" -> context.getString(R.string.msg2_code_fail_user_not_found)
-        // 통합 엔드포인트가 가족그룹 초대/프로모 코드도 처리하므로 그쪽 에러 코드도 매핑한다.
+        // 가족그룹 초대 갈래의 에러 코드도 매핑한다. 프로모 코드 갈래(CODE_INACTIVE 등)는 프로모 코드와
+        // 함께 2026-10-12 에 지웠다 — 서버가 더는 받지 않는다(App Store 3.1.1, `routes/code.ts` 머리말).
         "CODE_REVOKED" -> context.getString(R.string.msg2_code_fail_code_revoked)
         "ALREADY_MEMBER" -> context.getString(R.string.msg2_code_fail_already_member)
-        "CODE_INACTIVE" -> context.getString(R.string.msg2_promo_fail_code_inactive)
-        "CODE_NOT_IN_WINDOW" -> context.getString(R.string.msg2_promo_fail_not_in_window)
-        "CODE_EXHAUSTED" -> context.getString(R.string.msg2_promo_fail_code_exhausted)
-        // 리딤 그룹(`redemption_group`) — 같은 계열 코드를 이미 썼으면 다른 코드도 불가.
-        "CODE_GROUP_ALREADY_REDEEMED" -> context.getString(R.string.msg2_promo_fail_group_already_redeemed)
-        "OWNS_ACTIVE_GROUP" -> context.getString(R.string.msg2_promo_fail_owns_active_group)
-        "ACTIVE_SUBSCRIPTION_EXISTS" -> context.getString(R.string.msg2_promo_fail_active_subscription)
+        "OWNS_ACTIVE_GROUP" -> context.getString(R.string.msg2_code_fail_owns_active_group)
         else -> fallback
     }
 
@@ -365,7 +360,7 @@ private fun com.alarmtalk.app.network.BillingPlanSummary?.isSharedPassPlan(): Bo
     this != null && (key in setOf("couple", "family") || planType in setOf("couple", "family"))
 
 /**
- * 코드(바우처·초대·프로모) 등록.
+ * 코드(선물·초대 이용권) 등록. 프로모 코드는 2026-10-12 에 없앴다(`routes/code.ts` 머리말).
  *
  * [onResult] 는 **결과를 기다려야 하는 호출부**만 넘긴다 — null 이면 성공, 문자열이면 실패 사유다.
  * 모달 안에서 코드를 받는 자리(유료 게이트의 '쿠폰이 있어요')는 실패했는데 화면이 먼저 닫히면
@@ -407,11 +402,7 @@ internal fun MainViewModel.registerCode(
             api.registerCode(authorization, CodeRegisterRequest(trimmedCode))
         }.onSuccess { response ->
             if (authSession?.user?.id != ownerUserId) return@onSuccess
-            message = if (response.type == "promo") {
-                getApplication<android.app.Application>().getString(R.string.msg_gb_promo_redeemed)
-            } else {
-                getApplication<android.app.Application>().getString(R.string.msg_gb_code_registered)
-            }
+            message = getApplication<android.app.Application>().getString(R.string.msg_gb_code_registered)
             refreshBillingAfterMutation(authorization, "code registration", ownerTicket)
             refreshSocial()
             refreshAppSession()

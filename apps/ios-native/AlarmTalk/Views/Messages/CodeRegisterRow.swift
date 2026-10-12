@@ -63,17 +63,16 @@ struct CodeRegisterRow: View {
                 }
 
                 // ⚠ **입력창은 하나다.** 예전에는 '초대 코드'(INV-…)와 '이용권 코드'(GIFT-…)로
-                // 나뉘어 있었는데, 서버는 처음부터 통합 엔드포인트(`POST /code/register`)로
-                // 바우처·가족 초대·프로모를 **한 번에 판별**한다. 칸을 나누면 두 가지가 깨진다:
-                //   1. **프로모션 코드가 갈 곳이 없다.** 어느 칸에 넣어야 하는지 화면이
-                //      말해 주지 않고, 라벨은 오히려 "둘 중 하나여야 한다" 고 오해시킨다.
-                //   2. 받는 사람은 자기 코드가 어떤 종류인지 모른다 — 그건 서버가 안다.
-                // 안드로이드는 이미 한 칸으로 합쳐 두었다(`ui/social/SocialPanels.kt` 의
-                // "통합 입력" 주석과 `CodeRedeemField`). iOS 만 옛 2칸으로 남아 있었다.
+                // 나뉘어 있었는데, 서버는 처음부터 한 엔드포인트(`POST /code/register`)로 종류를
+                // **한 번에 판별**한다. 받는 사람은 자기 코드가 어떤 종류인지 모른다 — 그건 서버가 안다.
+                // 안드로이드도 한 칸이다(`ui/social/SocialPanels.kt` 의 "통합 입력" 주석과 `CodeRedeemField`).
+                // ⚠ **프로모션 코드는 없다**(2026-10-12). 1.2.11 이 App Store 지침 3.1.1(인앱 결제 외 수단으로
+                // 유료 기능 해제)로 반려돼 서버·두 앱에서 지웠다. 받는 것은 스토어 결제에서 나온 선물·초대
+                // 코드뿐이다 — 문구에 '프로모션'·'쿠폰' 을 되살리지 말 것.
                 Text(String(localized: "코드 입력"))
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(AlarmTalkTheme.text)
-                Text(String(localized: "초대 코드, 이용권 선물 코드, 프로모션 코드 모두 등록할 수 있어요."))
+                Text(String(localized: "초대 코드와 이용권 선물 코드를 등록할 수 있어요."))
                     .font(.footnote)
                     .foregroundStyle(AlarmTalkTheme.textSecondary)
                 HStack(spacing: 8) {
@@ -81,7 +80,7 @@ struct CodeRegisterRow: View {
                     // 거기서 값을 바꿔도 `TextField` 가 제 내부 상태를 그대로 들고 있어
                     // **화면에는 친 그대로 남는다** — 소문자도 한글도 그대로 보이다가
                     // 제출할 때에야 바뀐다(2026-08-13 지적). `onChange` 로 고쳐야 반영된다.
-                    TextField(String(localized: "초대·선물·프로모션 코드"), text: $codeDraft)
+                    TextField(String(localized: "초대·선물 코드"), text: $codeDraft)
                     // ⚠ **`.keyboardType(.asciiCapable)` 로 키보드를 바꾸지 말 것**(2026-08-13 지시).
                     // 쓰던 키보드가 갑자기 다른 언어로 바뀌면 당황스럽다 — 막을 것은 키보드가
                     // 아니라 **들어가는 글자**다. 아래 `onChange` 가 친 즉시 걸러 낸다.

@@ -133,7 +133,7 @@ enum AlarmTalkLog {
     /// ⚠ **`AUTH_EMAIL_CODE_ATTEMPTS_EXCEEDED`·`VOICE_MONTHLY_CHANGE_LIMIT_REACHED` 를 넣지 말 것.** 1.2.10 의 두
     /// 묶음(같은 코드 다섯 번 제출, 낡은 등록 횟수)은 그 둘이 이슈로 올라와 드러났다 — 시도 상한·월 한도에 닿는 것은
     /// 화면이 사람을 막다른 길로 보냈다는 신호일 수 있다.
-    static let expectedRefusalCodes: Set<String> = ["AUTH_EMAIL_CODE_INVALID","AUTH_EMAIL_CODE_EXPIRED","AUTH_EMAIL_TAKEN","AUTH_EMAIL_SOCIAL","CODE_NOT_FOUND","CODE_EXPIRED","CODE_ALREADY_USED","CODE_ALREADY_REDEEMED_BY_YOU","CODE_EXHAUSTED","CODE_INACTIVE","CODE_NOT_IN_WINDOW"]
+    static let expectedRefusalCodes: Set<String> = ["AUTH_EMAIL_CODE_INVALID","AUTH_EMAIL_CODE_EXPIRED","AUTH_EMAIL_TAKEN","AUTH_EMAIL_SOCIAL","CODE_NOT_FOUND","CODE_EXPIRED","CODE_ALREADY_USED","CODE_ALREADY_REDEEMED_BY_YOU"]
 
     /// [expectedRefusalCodes] 의 거절인가 — 원인 사슬의 첫 HTTP 응답이 **4xx** 이고 그 코드가 목록에 있을 때만.
     ///

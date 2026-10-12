@@ -20,7 +20,7 @@ final class CodeRegistrationErrorTests: XCTestCase {
             ("CODE_NOT_FOUND", "잘못된 코드입니다."),
             ("CODE_REVOKED", "취소된 코드예요"),
             ("ALREADY_MEMBER", "이미 함께 쓰고 있는 그룹이에요"),
-            ("CODE_EXHAUSTED", "사용 가능 횟수가 모두 소진된 프로모 코드예요"),
+            ("OWNS_ACTIVE_GROUP", "이미 이용 중인 그룹 이용권이 있어 이 코드를 등록할 수 없어요"),
         ]
         for (code, expected) in cases {
             XCTAssertEqual(
@@ -28,6 +28,15 @@ final class CodeRegistrationErrorTests: XCTestCase {
                 expected,
                 "\(code) 가 폴백으로 떨어졌다"
             )
+        }
+    }
+
+    /// 프로모 코드는 2026-10-12 에 없앴다(App Store 지침 3.1.1). 그 갈래의 코드는 표에 없다 — 서버가 더는 내지 않고,
+    /// 문구에 '프로모'·'쿠폰' 이 남으면 없는 기능을 말하게 된다.
+    func test_promoCodeBranchIsGone() {
+        for code in ["CODE_INACTIVE", "CODE_NOT_IN_WINDOW", "CODE_EXHAUSTED", "CODE_GROUP_ALREADY_REDEEMED",
+                     "ACTIVE_SUBSCRIPTION_EXISTS", "PROMO_REDEEM_FAILED"] {
+            XCTAssertEqual(CodeRegistrationError.message(for: serverError(code), fallback: "폴백"), "폴백", code)
         }
     }
 
