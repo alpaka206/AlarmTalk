@@ -1554,7 +1554,7 @@ export const migrations: Migration[] = [
   {
     // 웰컴 프로모 3종(개인/커플/가족, 각 30일). '웰컴 계열 전체에서 계정당 1회' 규칙을 위해
     // promo_codes.redemption_group 을 추가한다 — 같은 group 의 어떤 코드든 한 번 사용한 계정은
-    // 그 group 의 다른 코드를 다시 사용할 수 없다(집행은 promo-redemption.ts 원자 claim).
+    // 그 group 의 다른 코드를 다시 사용할 수 없다(집행하던 promo-redemption.ts 는 프로모 코드와 함께 2026-10-12 에 지웠다).
     // group 이 NULL 인 기존/일반 코드는 코드별 1회 규칙만 그대로 적용된다.
     id: 72,
     name: 'promo-welcome-codes-redemption-group',
@@ -2937,7 +2937,8 @@ export const migrations: Migration[] = [
       // 웰컴 코드 안내를 폐지하면서(2026-09-27, `docs/spec/plan-gates.md` 「웰컴 코드 안내 —
       // 폐지」) 운영자가 /admin/promo 로 발급해 둔 웰컴 그룹 코드를 **끈다.**
       // - ⚠ **DELETE 하지 않는다.** `promo_code_redemptions` 가 이 행을 참조한다 — 지우면 받은
-      //   사람의 사용 기록이 고아가 된다. 꺼진 코드를 넣으면 CODE_INACTIVE 다.
+      //   사람의 사용 기록이 고아가 된다. 꺼진 코드를 넣으면 CODE_INACTIVE 였다(2026-10-12 에 프로모 코드를
+      //   통째로 없앴다 — 지금은 켜져 있어도 CODE_NOT_FOUND).
       // - 코드명을 여기 적지 않는다(공개 저장소 — #78 과 같은 규칙). 그룹으로만 고른다.
       // - 이미 받은 웰컴 구독은 건드리지 않는다 — 자기 만료일까지 간다.
       // - 그룹명이 정확히 'welcome' 이 아닌 변형(대소문자·다른 이름)은 잡지 않는다 — 배포 전에

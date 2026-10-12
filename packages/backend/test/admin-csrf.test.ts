@@ -28,27 +28,10 @@ beforeEach(() => {
 // Basic 인증 콘솔은 브라우저가 자격증명을 자동 첨부하므로, cross-site 폼 POST 로 관리자 몰래
 // 상태를 바꾸는 CSRF 가 가능하다. 상태 변경 POST 는 Origin(없으면 Referer)이 콘솔 호스트와
 // 일치할 때만 허용해야 한다.
+// 상태를 바꾸는 POST 는 이제 로그인·로그아웃뿐이다(프로모 코드 발급·켜기는 2026-10-12 에 없앴다).
 describe('admin console CSRF defense', () => {
-  it('rejects cross-site POST /admin/promo (Origin mismatch) with 403', async () => {
-    const res = await request('http://localhost/admin/promo', {
-      method: 'POST',
-      headers: { Authorization: AUTH, Origin: 'https://evil.example', ...FORM },
-      body: 'code=HACKED&plan_key=personal&duration_days=30',
-    });
-    expect(res.status).toBe(403);
-  });
-
-  it('rejects POST with no Origin/Referer with 403', async () => {
-    const res = await request('http://localhost/admin/promo', {
-      method: 'POST',
-      headers: { Authorization: AUTH, ...FORM },
-      body: 'code=HACKED&plan_key=personal&duration_days=30',
-    });
-    expect(res.status).toBe(403);
-  });
-
-  it('rejects cross-site POST /admin/promo/:id/toggle with 403', async () => {
-    const res = await request('http://localhost/admin/promo/abc/toggle', {
+  it('rejects cross-site POST /admin/logout (Origin mismatch) with 403', async () => {
+    const res = await request('http://localhost/admin/logout', {
       method: 'POST',
       headers: { Authorization: AUTH, Origin: 'https://evil.example', ...FORM },
       body: '',
@@ -56,12 +39,20 @@ describe('admin console CSRF defense', () => {
     expect(res.status).toBe(403);
   });
 
+  it('rejects POST with no Origin/Referer with 403', async () => {
+    const res = await request('http://localhost/admin/logout', {
+      method: 'POST',
+      headers: { Authorization: AUTH, ...FORM },
+      body: '',
+    });
+    expect(res.status).toBe(403);
+  });
+
   it('allows same-origin POST (Origin matches host) — passes CSRF, not 403', async () => {
-    mockDB.pushResult([]); // loadPlanByKey → 플랜 없음 → 303 리다이렉트(=CSRF 통과)
-    const res = await request('http://localhost/admin/promo', {
+    const res = await request('http://localhost/admin/logout', {
       method: 'POST',
       headers: { Authorization: AUTH, Origin: 'http://localhost', ...FORM },
-      body: 'code=WELCOME&plan_key=personal&duration_days=30',
+      body: '',
     });
     expect(res.status).not.toBe(403);
   });

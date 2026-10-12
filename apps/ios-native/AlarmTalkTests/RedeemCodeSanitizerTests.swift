@@ -1,7 +1,7 @@
 import XCTest
 @testable import AlarmTalk
 
-/// 이용권·초대·프로모션 코드 입력 규칙.
+/// 이용권(선물·초대) 코드 입력 규칙.
 ///
 /// ⚠ **안드로이드 `sanitizeRedeemCode`(`ui/components/CodeRedeemField.kt`)와 같은 규칙이다.**
 /// 한쪽만 고치면 한 앱에서만 통과하는 코드가 생긴다.

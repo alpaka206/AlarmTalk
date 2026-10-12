@@ -3,7 +3,8 @@ import Foundation
 /// 코드 등록 실패를 사유별로 현재 앱 언어에 맞춰 표시한다.
 /// 안드로이드 `codeRegistrationFailureMessage`와 같은 코드·문구를 쓴다.
 /// 서버 원문 대신 화면 전용 표 또는 호출부의 고정 폴백을 쓴다.
-/// 통합 엔드포인트의 바우처·가족 초대·프로모 세 갈래를 한 표에 둔다.
+/// 바우처(선물·초대)와 가족 초대 갈래를 한 표에 둔다. 프로모 코드 갈래는 2026-10-12 에 없앴다
+/// (App Store 지침 3.1.1 — 서버가 더는 받지 않는다).
 enum CodeRegistrationError {
 
     /// - Parameters:
@@ -17,7 +18,7 @@ enum CodeRegistrationError {
         return userFacingErrorMessage(error, fallback: fallback)
     }
 
-    /// 안드로이드 `msg2_code_fail_*` · `msg2_promo_fail_*` 와 **같은 문구**다.
+    /// 안드로이드 `msg2_code_fail_*` 와 **같은 문구**다.
     /// 한쪽만 고치지 말 것 — 같은 실패를 두 플랫폼이 다르게 설명하게 된다.
     private static var table: [String: String] { [
         // 바우처(선물·초대) 갈래
@@ -40,16 +41,7 @@ enum CodeRegistrationError {
         "CODE_REVOKED": String(localized: "취소된 코드예요"),
         "ALREADY_MEMBER": String(localized: "이미 함께 쓰고 있는 그룹이에요"),
 
-        // 프로모 갈래
-        "CODE_INACTIVE": String(localized: "지금은 사용할 수 없는 프로모 코드예요"),
-        "CODE_NOT_IN_WINDOW": String(localized: "아직 사용 기간이 아니거나 종료된 프로모 코드예요"),
-        "CODE_EXHAUSTED": String(localized: "사용 가능 횟수가 모두 소진된 프로모 코드예요"),
-        // 리딤 그룹(운영자가 `redemption_group` 으로 묶은 코드들) — 같은 계열 코드를 이미
-        // 썼으면 다른 코드도 불가. 코드 이름을 바꾸지 말 것 — 계약이다.
-        "CODE_GROUP_ALREADY_REDEEMED":
-            String(localized: "이미 같은 계열의 프로모 코드를 사용했어요. 이 혜택은 계정당 한 번만 받을 수 있어요"),
-        "OWNS_ACTIVE_GROUP": String(localized: "이미 이용 중인 그룹 이용권이 있어 프로모 코드를 적용할 수 없어요"),
-        "ACTIVE_SUBSCRIPTION_EXISTS": String(localized: "이용 중인 이용권이 있어요. 해지 후 쿠폰을 등록할 수 있어요"),
-        "PROMO_REDEEM_FAILED": String(localized: "프로모 코드를 적용하지 못했어요. 잠시 후 다시 시도해 주세요"),
+        // 그룹 이용권 주인은 다른 사람이 함께 쓰는 동안 새 코드를 등록할 수 없다(`lib/voucher-redemption.ts`).
+        "OWNS_ACTIVE_GROUP": String(localized: "이미 이용 중인 그룹 이용권이 있어 이 코드를 등록할 수 없어요"),
     ] }
 }

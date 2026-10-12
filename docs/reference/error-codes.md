@@ -165,36 +165,25 @@
 | `NO_ACTIVE_FAMILY_OWNER_SUBSCRIPTION` | 활성 가족 플랜 소유권 없음(공유코드 발급 불가) | 404 | `routes/billing-mutation.ts` |
 | `GROUP_FULL` | 그룹 정원 초과 | 409 | `routes/billing-mutation.ts`, `lib/voucher-redemption.ts` |
 
-## 4. 프로모 / 바우처 코드
+## 4. 바우처(선물·초대) 코드
 
-`routes/code.ts`(바우처: 초대·선물), `routes/billing-promo.ts`(공용 프로모),
-`lib/voucher-redemption.ts`, `lib/promo-redemption.ts`.
-공용 프로모와 개인 바우처는 별개 경로지만 노출 코드는 상당수 공유한다.
+`routes/code.ts`, `lib/voucher-redemption.ts`. 프로모 코드(`routes/billing-promo.ts`·`lib/promo-redemption.ts`)는
+2026-10-12 에 없앴다 — App Store 심사 지침 3.1.1 반려(`docs/spec/plan-gates.md` 「프로모 코드 — 폐지」). 그 갈래의
+코드(`ACTIVE_SUBSCRIPTION_EXISTS`·`CODE_EXHAUSTED`·`CODE_GROUP_ALREADY_REDEEMED`·`CODE_INACTIVE`·`CODE_MISCONFIGURED`·
+`CODE_NOT_IN_WINDOW`·`PROMO_REDEEM_FAILED`)도 목록에서 함께 지웠다.
 
 | 코드 | 의미 | HTTP | 위치 |
 |---|---|---|---|
-| `CODE_REQUIRED` | code 값 필요 | 400 | `routes/code.ts`, `billing-promo.ts`, `billing-mutation.ts`, `lib/*-redemption.ts` |
+| `CODE_REQUIRED` | code 값 필요 | 400 | `routes/code.ts`, `billing-mutation.ts`, `lib/voucher-redemption.ts` |
 | `INVALID_FORMAT` | 바우처 코드 형식 오류 | 400 | `lib/voucher-redemption.ts` |
-| `CODE_NOT_FOUND` | 코드 미존재(바우처/프로모) | 404 | `lib/voucher-redemption.ts`, `lib/promo-redemption.ts` |
-| `CODE_INACTIVE` | 프로모 코드 비활성 | 409 | `lib/promo-redemption.ts` |
-| `CODE_MISCONFIGURED` | 프로모 코드 설정 오류(duration ≤ 0) | 409 | `lib/promo-redemption.ts` |
-| `CODE_NOT_IN_WINDOW` | 등록 유효창(valid_from~until) 밖 | 409 | `lib/promo-redemption.ts` |
+| `CODE_NOT_FOUND` | 코드 미존재 — INV-/GIFT- 형식이 아닌 입력도 여기다(옛 프로모 코드 포함) | 404 | `routes/code.ts`, `lib/voucher-redemption.ts` |
 | `CODE_EXPIRED` | 코드 만료 | 409 | `lib/voucher-redemption.ts` |
 | `CODE_ALREADY_USED` | 이미 사용된 코드(상한 도달) | 409 | `lib/voucher-redemption.ts` |
-| `CODE_ALREADY_REDEEMED_BY_YOU` | 본인이 이미 사용한 코드(중복) | 409 | `lib/voucher-redemption.ts`, `lib/promo-redemption.ts` |
-| `CODE_GROUP_ALREADY_REDEEMED` | 같은 프로모션 그룹의 다른 코드를 이미 사용 | 409 | `lib/promo-redemption.ts` |
-| `CODE_EXHAUSTED` | 총 사용 상한 소진(원자 claim 실패) | 409 | `lib/promo-redemption.ts` |
-| `ACTIVE_SUBSCRIPTION_EXISTS` | 활성 유료 구독 보유자는 프로모 사용 불가 | 409 | `lib/promo-redemption.ts` |
+| `CODE_ALREADY_REDEEMED_BY_YOU` | 본인이 이미 사용한 코드(중복) | 409 | `lib/voucher-redemption.ts` |
 | `SELF_ISSUED` | 본인이 발급한 바우처는 사용 불가 | 400 | `lib/voucher-redemption.ts` |
 | `INVALID_GIFT_PLAN` | 선물 코드는 개인 플랜만 | 400 | `lib/voucher-redemption.ts` |
 | `INVALID_INVITE_PLAN` | 초대 코드는 가족/커플 플랜만 | 400 | `lib/voucher-redemption.ts` |
-| `OWNS_ACTIVE_GROUP` | 다른 멤버가 있는 가족 그룹 소유자는 코드 사용 불가(양도/정리 후 재시도) | 409 | `lib/voucher-redemption.ts`, `lib/promo-redemption.ts` |
-| `PROMO_REDEEM_FAILED` | 프로모 사용 처리 중 예기치 못한 실패 | 500 | `routes/billing-promo.ts` |
-
-> 클라 폴백: `code/register`(바우처) 가 `CODE_NOT_FOUND` **또는 `INVALID_FORMAT`** 으로 실패하면
-> Android 는 `billing/promo/redeem`(공용 프로모)로 폴백한다
-> (`ui/main/MainViewModelBillingActions.kt`). 공용 프로모 코드는 바우처 형식을 안 지켜서
-> `INVALID_FORMAT` 으로 떨어지기 때문이다. 그 외 코드는 폴백하지 않고 매핑 문구를 노출한다.
+| `OWNS_ACTIVE_GROUP` | 다른 멤버가 있는 가족 그룹 소유자는 코드 사용 불가(양도/정리 후 재시도) | 409 | `lib/voucher-redemption.ts` |
 
 ## 5. 알람
 

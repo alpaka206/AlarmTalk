@@ -106,7 +106,7 @@
     <string name="billing_play_change_downgrade">You are not charged now. You keep your current plan until it ends, then it switches to the %1$s plan at the next renewal.</string>
     <string name="billing_play_change_upgrade">You switch to the %1$s plan right away. Your remaining time is prorated at the new rate.</string>
     <string name="billing_play_change_title">Switch to the %1$s plan?</string>
-    <string name="code_redeem_placeholder">Invite, gift, or promo code</string>
+    <string name="code_redeem_placeholder">Invite or gift code</string>
     <string name="code_redeem_submit">Redeem</string>
     <string name="billing_restore_purchases">Restore purchases</string>
     <string name="billing_restore_none">No purchases to restore. Check your store account.</string>
@@ -324,7 +324,6 @@
     <string name="msg_gb_code_input_required_period">Please enter a code.</string>
     <string name="msg_gb_code_register_failed">Couldn\'t register the code.</string>
     <string name="msg_gb_code_registered">Code registered</string>
-    <string name="msg_gb_promo_redeemed">Promo code applied</string>
     <string name="msg_gb_google_play_start_failed">Couldn\'t start the Google Play payment. Please try again in a moment.</string>
     <string name="msg_gb_billing_info_load_failed">Couldn\'t load your plan info</string>
     <string name="msg_gb_login_required_apply_plan">Please log in first to apply a plan.</string>
@@ -480,7 +479,7 @@
     <string name="social_shared_plan_title">Invite &amp; manage members</string>
 
     <string name="social_code_input_label">Enter a code</string>
-    <string name="social_code_input_hint">Invite codes, gifted plan codes, and promo codes all work here.</string>
+    <string name="social_code_input_hint">Invite codes and gifted plan codes work here.</string>
     <string name="social_members_capacity">%1$d/%2$d</string>
     <string name="social_capacity_full">Full, so you can\'t share</string>
     <string name="voices_create_dialog_title">Create a voice</string>
@@ -667,12 +666,7 @@
     <string name="msg2_code_fail_invalid_plan_type">The code and plan type don\'t match</string>
     <string name="msg2_code_fail_plan_not_found">We couldn\'t find the plan info for this code</string>
     <string name="msg2_code_fail_user_not_found">Please check your login info again</string>
-    <string name="msg2_promo_fail_code_inactive">This promo code isn\'t available right now</string>
-    <string name="msg2_promo_fail_not_in_window">This promo code isn\'t active yet or has ended</string>
-    <string name="msg2_promo_fail_code_exhausted">This promo code has reached its usage limit</string>
-    <string name="msg2_promo_fail_group_already_redeemed">You\'ve already used a promo code from this promotion. This benefit is limited to once per account</string>
-    <string name="msg2_promo_fail_owns_active_group">You already have an active group plan, so this promo code can\'t be applied</string>
-    <string name="msg2_promo_fail_active_subscription">You already have an active plan. Cancel it before redeeming a coupon</string>
+    <string name="msg2_code_fail_owns_active_group">You already have an active group plan, so this code can\'t be registered</string>
     <string name="onb_voice_title">Getting the voices your alarms will use</string>
     <string name="onb_voice_loading">Downloading voices…</string>
     <string name="misc2_theme_mode_system">Match system</string>
@@ -787,9 +781,9 @@
     <string name="voices_my_voices_title">My voices</string>
     <string name="voices_shared_voices_title">Shared with me</string>
     <string name="voices_system_voices_title">Default voices</string>
-    <string name="plan_gate_redeem_action">I have a code</string>
+    <string name="plan_gate_redeem_action">I have a gift or invite code</string>
     <string name="plan_gate_redeem_title">Enter a code</string>
-    <string name="plan_gate_redeem_desc">Enter a promo or gift code. Invite codes work here too.</string>
+    <string name="plan_gate_redeem_desc">Enter a gift code you received. Invite codes work here too.</string>
     <string name="voicesr_preview_stop">Stop</string>
     <string name="voice_consent_title">Registering a voice needs a separate consent</string>
     <string name="voice_consent_body">A registered voice is used to create a voice profile, read alarm lines aloud, play alarms, and cache audio on this device. Voice cloning and text-to-speech run through our voice AI provider ElevenLabs, and your voice and text are sent overseas as part of that. AlarmTalk does not use your voice for public search, advertising, or data sales, and does not train its own general-purpose AI models on it. You can delete a voice profile at any time.</string>

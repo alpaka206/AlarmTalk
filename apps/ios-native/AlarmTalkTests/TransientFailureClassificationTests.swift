@@ -273,14 +273,14 @@ final class TransientFailureClassificationTests: XCTestCase {
 
     // ── 사용자가 고칠 예상된 거절 — 목록으로만 낮춘다(`docs/spec/error-codes.md` §3) ──────────
 
-    /// 목록은 `AlarmTalkLog.expectedRefusalCodes` 한 곳이고 정확히 이 열한 개다. 넓히면(4xx 전부·`AUTH_` 전부)
+    /// 목록은 `AlarmTalkLog.expectedRefusalCodes` 한 곳이고 정확히 이 여덟 개다(프로모 코드 갈래 셋은 2026-10-12 에
+    /// 프로모 코드와 함께 빠졌다). 넓히면(4xx 전부·`AUTH_` 전부)
     /// 권한·상태 충돌 같은 고칠 것이 이슈 목록에서 조용히 사라지고, 좁히면 사용자가 잘못 친 값이 다시 이슈를 채운다.
     /// 바꿀 때는 스펙의 표와 이 줄을 함께 고친다.
-    func test_예상된_거절_목록은_정해진_열한_개다() {
+    func test_예상된_거절_목록은_정해진_여덟_개다() {
         XCTAssertEqual(AlarmTalkLog.expectedRefusalCodes, [
             "AUTH_EMAIL_CODE_INVALID", "AUTH_EMAIL_CODE_EXPIRED", "AUTH_EMAIL_TAKEN", "AUTH_EMAIL_SOCIAL",
             "CODE_NOT_FOUND", "CODE_EXPIRED", "CODE_ALREADY_USED", "CODE_ALREADY_REDEEMED_BY_YOU",
-            "CODE_EXHAUSTED", "CODE_INACTIVE", "CODE_NOT_IN_WINDOW",
         ])
     }
 
@@ -297,9 +297,6 @@ final class TransientFailureClassificationTests: XCTestCase {
             .server(status: 409, message: "expired", errorCode: "CODE_EXPIRED"),
             .server(status: 409, message: "used", errorCode: "CODE_ALREADY_USED"),
             .server(status: 409, message: "mine", errorCode: "CODE_ALREADY_REDEEMED_BY_YOU"),
-            .server(status: 409, message: "exhausted", errorCode: "CODE_EXHAUSTED"),
-            .server(status: 409, message: "inactive", errorCode: "CODE_INACTIVE"),
-            .server(status: 409, message: "window", errorCode: "CODE_NOT_IN_WINDOW"),
         ]
         XCTAssertEqual(Set(refusals.compactMap(\.serverErrorCode)), AlarmTalkLog.expectedRefusalCodes)
         for refusal in refusals {

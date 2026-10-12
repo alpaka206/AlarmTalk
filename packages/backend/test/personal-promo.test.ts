@@ -29,6 +29,7 @@ import { join } from 'node:path';
 import { PERSONAL_PROMO } from '@alarmtalk/shared';
 import type { AppEnv, Env } from '../src/types';
 import { runMigrations } from '../src/lib/migrations';
+import { issueVoucherCode } from '../src/lib/voucher-issue';
 
 let db: Client;
 vi.mock('../src/lib/db', () => ({ getDB: () => db }));
@@ -38,6 +39,7 @@ const { default: voiceUpload } = await import('../src/routes/voice-upload');
 const { default: tts } = await import('../src/routes/tts');
 const { default: alarmMutation } = await import('../src/routes/alarm-mutation');
 const { default: billingQuery } = await import('../src/routes/billing-query');
+const { default: billingAll } = await import('../src/routes/billing');
 const { default: codeRoutes } = await import('../src/routes/code');
 const { resolvePersonalPromo, resolvePersonalPromoWindow, personalPromoField, computedUserPlan } =
   await import('../src/lib/personal-promo');
@@ -768,16 +770,61 @@ describe('계산값 자리 — 끝 1초 전 열림 / 끝 시각 닫힘', () => {
     });
   }
 
-  it('기간 중 쿠폰 등록이 된다 — 프로모는 구독이 아니라 ACTIVE_SUBSCRIPTION_EXISTS 에 안 걸린다', async () => {
+  it('기간 중 선물 코드 등록이 된다 — 기간 한정 개인 플랜은 구독이 아니다', async () => {
     atMoment(new Date(END.getTime() - 1000));
-    const res = await call(COUPON_USER, 'POST', '/code/register', { code: 'PP_PLAIN' });
+    const gift = await issueVoucherCode(db, {
+      kind: 'gift',
+      planId: PERSONAL,
+      issuerUserId: 'pp-paid',
+      issuerSubscriptionId: null,
+      issuedAt: '2026-10-01T00:00:00Z',
+      expiresAt: '2099-01-01T00:00:00Z',
+      maxUses: 1,
+    });
+    const res = await call(COUPON_USER, 'POST', '/code/register', { code: gift.code });
     expect(res.status).toBe(200);
-    expect(res.body.type).toBe('promo');
+    expect(res.body.type).toBe('voucher');
     // 이제 원시 plus — personal_promo 는 없고, 계산값도 그대로 plus 다.
     const sub = await call(COUPON_USER, 'GET', '/billing/subscription?refresh_store=1');
     expect(sub.body.user_plan).toBe('plus');
     expect(sub.body.personal_promo).toBeNull();
     expect(sub.body.subscription).not.toBeNull();
+  });
+
+  // 프로모 코드는 2026-10-12 에 없앴다(App Store 3.1.1 — `routes/code.ts` 머리말). 켜진 코드가
+  // DB 에 남아 있어도 서버가 받지 않아야 옛 앱('프로모션 코드' 문구가 남은 버전)으로도 못 연다.
+  it('프로모 코드는 받지 않는다 — 켜진 코드가 있어도 CODE_NOT_FOUND, 구독·사용 기록이 안 생긴다', async () => {
+    atMoment(new Date(END.getTime() - 1000));
+    const user = { pk: 'pp-free-new' };
+    const before = await db.execute(`SELECT COUNT(*) AS n FROM subscriptions WHERE user_id = 'pp-free-new'`);
+    for (const code of ['PP_PLAIN', 'pp_plain']) {
+      const res = await call(user, 'POST', '/code/register', { code });
+      expect(res.status).toBe(404);
+      expect(res.body.error_code).toBe('CODE_NOT_FOUND');
+    }
+    // 옛 경로(`POST /billing/promo/redeem`)도 없다 — 결제 라우터 전체를 올려 확인한다.
+    const billingApp = new Hono<AppEnv>();
+    billingApp.use('*', async (c, next) => {
+      c.set('userId', user.pk);
+      c.set('userIdPK', user.pk);
+      c.set('userLoginId', user.pk);
+      await next();
+    });
+    billingApp.route('/billing', billingAll);
+    const legacy = await billingApp.request(
+      new Request('http://localhost/billing/promo/redeem', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: 'PP_PLAIN' }),
+      }),
+      undefined,
+      PROD_ENV,
+    );
+    expect(legacy.status).toBe(404);
+    const after = await db.execute(`SELECT COUNT(*) AS n FROM subscriptions WHERE user_id = 'pp-free-new'`);
+    expect(Number(after.rows[0]?.n)).toBe(Number(before.rows[0]?.n));
+    const used = await db.execute(`SELECT COUNT(*) AS n FROM promo_code_redemptions`);
+    expect(Number(used.rows[0]?.n)).toBe(0);
   });
 });
 
