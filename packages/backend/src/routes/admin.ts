@@ -1,8 +1,6 @@
 import { Hono } from 'hono';
 import type { AppEnv } from '../types';
 import { getDB } from '../lib/db';
-import { loadPlanByKey } from '../lib/store-billing';
-import { logRouteError } from '../lib/logger';
 import { authRateLimitMiddleware } from '../middleware/rateLimit';
 
 // MARK: - 관리자 전용 페이지 (/admin/*)
@@ -13,7 +11,9 @@ import { authRateLimitMiddleware } from '../middleware/rateLimit';
 // curl/스크립트용으로 HTTP Basic(비밀번호=ADMIN_SECRET, 아이디 무시)도 그대로 허용한다.
 // ADMIN_SECRET 미설정 시 503. 접속: https://<host>/admin/login
 //
-// SQL 수기 입력 없이 웹 폼에서 공용 프로모 쿠폰을 발급/조회/활성토글 한다.
+// 프로모 코드 **이력**(발급했던 코드와 사용 수)을 읽기 전용으로 보여 준다. 발급·켜기는 없다 —
+// 프로모 코드는 2026-10-12 에 없앴다(App Store 3.1.1 반려, `routes/code.ts` 머리말). 서버가 더는
+// 받지 않으므로 여기서 새 코드를 만들어도 아무도 쓸 수 없다 — 발급 폼을 되살리지 말 것.
 
 const admin = new Hono<AppEnv>();
 
@@ -207,35 +207,20 @@ const PAGE_STYLE = `
   :root { color-scheme: light dark; }
   body { font-family: system-ui, sans-serif; max-width: 960px; margin: 24px auto; padding: 0 16px; }
   h1 { font-size: 20px; } h2 { font-size: 16px; margin-top: 28px; }
-  form.create { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 16px; align-items: end; }
-  form.create label { display: flex; flex-direction: column; font-size: 13px; gap: 4px; }
-  form.create input, form.create select { padding: 7px 8px; font-size: 14px; }
-  form.create .full { grid-column: 1 / -1; }
   button { padding: 8px 14px; font-size: 14px; cursor: pointer; }
   table { border-collapse: collapse; width: 100%; margin-top: 12px; font-size: 13px; }
   th, td { border: 1px solid #8883; padding: 6px 8px; text-align: left; }
   code { background: #8882; padding: 1px 5px; border-radius: 4px; }
   .msg { padding: 10px 12px; border-radius: 6px; margin: 12px 0; }
-  .msg.ok { background: #2ecc7133; } .msg.err { background: #e74c3c33; }
+  .msg.err { background: #e74c3c33; }
   .muted { opacity: 0.6; } .off { opacity: 0.45; }
 `;
 
-function renderMsg(c: { req: { query: (k: string) => string | undefined } }): string {
-  const ok = c.req.query('ok');
-  const err = c.req.query('err');
-  if (ok) return `<div class="msg ok">${escapeHtml(ok)}</div>`;
-  if (err) return `<div class="msg err">${escapeHtml(err)}</div>`;
-  return '';
-}
-
 admin.get('/promo', async (c) => {
   const db = getDB(c.env);
-  const plansRes = await db.execute({
-    sql: `SELECT key, name, plan_type FROM plans WHERE is_active = 1 ORDER BY price_krw`,
-  });
   // deploy-backend.yml 이 배포 '후' 마이그레이션을 돌리므로, redemption_group(#72) 컬럼이
-  // 아직 없는 창에서도 콘솔이 500 나지 않게 레거시 스키마로 폴백한다(promo-redemption.ts 와
-  // 동일 패턴). NULL AS redemption_group 으로 렌더러는 그대로 쓴다.
+  // 아직 없는 창에서도 콘솔이 500 나지 않게 레거시 스키마로 폴백한다.
+  // NULL AS redemption_group 으로 렌더러는 그대로 쓴다.
   let codesRes;
   try {
     codesRes = await db.execute({
@@ -260,20 +245,12 @@ admin.get('/promo', async (c) => {
     });
   }
 
-  const planOptions = plansRes.rows
-    .map(
-      (r) =>
-        `<option value="${escapeHtml(r.key)}">${escapeHtml(r.name)} (${escapeHtml(r.key)} · ${escapeHtml(r.plan_type)})</option>`,
-    )
-    .join('');
-
   const rows = codesRes.rows
     .map((r) => {
       const active = Number(r.is_active) === 1;
       const max = r.max_redemptions == null ? '∞' : escapeHtml(r.max_redemptions);
       const from = r.valid_from ? escapeHtml(r.valid_from) : '—';
       const until = r.valid_until ? escapeHtml(r.valid_until) : '—';
-      const toggleLabel = active ? '비활성화' : '활성화';
       return `<tr class="${active ? '' : 'off'}">
         <td><code>${escapeHtml(r.code)}</code></td>
         <td>${escapeHtml(r.plan_name ?? r.plan_key ?? '?')}</td>
@@ -283,176 +260,28 @@ admin.get('/promo', async (c) => {
         <td>${r.redemption_group ? `<code>${escapeHtml(r.redemption_group)}</code>` : '—'}</td>
         <td>${active ? '✅' : '⛔'}</td>
         <td class="muted">${escapeHtml(r.note ?? '')}</td>
-        <td>
-          <form method="post" action="/admin/promo/${escapeHtml(r.id)}/toggle" style="margin:0">
-            <button type="submit">${toggleLabel}</button>
-          </form>
-        </td>
       </tr>`;
     })
     .join('');
 
   const html = `<!doctype html><html lang="ko"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>AlarmTalk 관리자 · 프로모 쿠폰</title><style>${PAGE_STYLE}
+<title>AlarmTalk 관리자 · 프로모 코드 이력</title><style>${PAGE_STYLE}
   .topbar { display: flex; justify-content: space-between; align-items: center; }
 </style></head><body>
 <div class="topbar">
-  <h1>프로모 쿠폰 관리</h1>
+  <h1>프로모 코드 이력</h1>
   <form method="post" action="/admin/logout" style="margin:0"><button type="submit">로그아웃</button></form>
 </div>
-<p class="muted">코드를 발급하면 사용자가 앱의 코드 등록(<code>POST /api/code/register</code>)으로 등록해 해당 플랜을 지정 기간만큼 받습니다. (결제 없이 부여되므로 유효창·사용상한을 신중히 설정하세요.)</p>
-${renderMsg(c)}
-<h2>새 코드 발급</h2>
-<form class="create" method="post" action="/admin/promo">
-  <label>코드 문자열
-    <input name="code" placeholder="PROMO_EXAMPLE" required maxlength="64" autocomplete="off">
-  </label>
-  <label>플랜
-    <select name="plan_key" required>${planOptions}</select>
-  </label>
-  <label>이용 기간(일)
-    <input name="duration_days" type="number" min="1" max="3650" value="30" required>
-  </label>
-  <label>총 사용 상한(빈칸=무제한)
-    <input name="max_redemptions" type="number" min="1" placeholder="예: 100">
-  </label>
-  <label>등록 가능 시작(내 로컬 시각 · 빈칸=제한없음)
-    <input name="valid_from_local" type="datetime-local">
-  </label>
-  <label>등록 가능 종료(내 로컬 시각 · 빈칸=제한없음)
-    <input name="valid_until_local" type="datetime-local">
-  </label>
-  <input type="hidden" name="valid_from">
-  <input type="hidden" name="valid_until">
-  <label>리딤 그룹(빈칸=없음)
-    <input name="redemption_group" placeholder="예: autumn-event" maxlength="64" autocomplete="off">
-  </label>
-  <label class="full">메모(관리용)
-    <input name="note" placeholder="예: 6월 런칭 프로모" maxlength="200">
-  </label>
-  <div class="full"><button type="submit">발급</button></div>
-</form>
-<h2>발급된 코드</h2>
+<div class="msg err">프로모 코드는 2026-10-12 에 없앴습니다. 앱과 서버가 더는 받지 않으므로 새로 발급하거나 다시 켤 수 없습니다(App Store 심사 지침 3.1.1). 이벤트 혜택은 스토어의 오퍼 코드로 하세요.</div>
+<h2>발급했던 코드</h2>
 <table>
-  <thead><tr><th>코드</th><th>플랜</th><th>기간</th><th>사용/상한</th><th>유효창</th><th>그룹</th><th>활성</th><th>메모</th><th></th></tr></thead>
-  <tbody>${rows || '<tr><td colspan="9" class="muted">아직 발급된 코드가 없습니다.</td></tr>'}</tbody>
+  <thead><tr><th>코드</th><th>플랜</th><th>기간</th><th>사용/상한</th><th>유효창</th><th>그룹</th><th>활성</th><th>메모</th></tr></thead>
+  <tbody>${rows || '<tr><td colspan="8" class="muted">발급했던 코드가 없습니다.</td></tr>'}</tbody>
 </table>
-<script>
-(function () {
-  var form = document.querySelector('form.create');
-  if (!form) return;
-  // datetime-local 은 타임존 없는 로컬 벽시계값이라, 서버(datetime('now'), UTC)와 비교가
-  // 어긋난다. 제출 직전 로컬값을 UTC ISO 로 변환해 hidden 필드에 실어 보낸다.
-  form.addEventListener('submit', function () {
-    [['valid_from_local', 'valid_from'], ['valid_until_local', 'valid_until']].forEach(function (p) {
-      var src = form.elements[p[0]];
-      var dst = form.elements[p[1]];
-      dst.value = src && src.value ? new Date(src.value).toISOString() : '';
-    });
-  });
-})();
-</script>
 </body></html>`;
 
   return c.html(html);
-});
-
-admin.post('/promo', async (c) => {
-  const db = getDB(c.env);
-  try {
-    const form = await c.req.parseBody();
-    const code = String(form.code ?? '').trim();
-    const planKey = String(form.plan_key ?? '').trim();
-    const durationDays = Number(String(form.duration_days ?? '').trim());
-    const maxRaw = String(form.max_redemptions ?? '').trim();
-    const maxRedemptions = maxRaw === '' ? null : Number(maxRaw);
-    const validFrom = String(form.valid_from ?? '').trim() || null;
-    const validUntil = String(form.valid_until ?? '').trim() || null;
-    const note = String(form.note ?? '').trim() || null;
-    // 리딤 그룹: 같은 그룹의 코드는 계정당 통틀어 1회만 사용 가능(예: 한 행사의 개인·커플·가족 코드).
-    const redemptionGroup = String(form.redemption_group ?? '').trim() || null;
-
-    if (!code) return c.redirect('/admin/promo?err=' + encodeURIComponent('코드를 입력하세요'), 303);
-    if (!Number.isInteger(durationDays) || durationDays <= 0) {
-      return c.redirect('/admin/promo?err=' + encodeURIComponent('이용 기간(일)이 올바르지 않습니다'), 303);
-    }
-    if (maxRedemptions !== null && (!Number.isInteger(maxRedemptions) || maxRedemptions <= 0)) {
-      return c.redirect('/admin/promo?err=' + encodeURIComponent('총 사용 상한이 올바르지 않습니다'), 303);
-    }
-
-    const plan = await loadPlanByKey(db, planKey);
-    if (!plan) {
-      return c.redirect('/admin/promo?err=' + encodeURIComponent('존재하지 않는 플랜입니다'), 303);
-    }
-
-    // 중복 코드(대소문자 무시) 사전 확인 — UNIQUE 위반을 친화적 메시지로.
-    const existing = await db.execute({
-      sql: `SELECT 1 FROM promo_codes WHERE code = ? COLLATE NOCASE LIMIT 1`,
-      args: [code],
-    });
-    if (existing.rows.length > 0) {
-      return c.redirect('/admin/promo?err=' + encodeURIComponent('이미 존재하는 코드입니다'), 303);
-    }
-
-    try {
-      await db.execute({
-        sql: `INSERT INTO promo_codes
-                (id, code, plan_id, duration_days, valid_from, valid_until, max_redemptions, is_active, note, redemption_group)
-              VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
-        args: [
-          crypto.randomUUID(),
-          code,
-          plan.id,
-          durationDays,
-          validFrom,
-          validUntil,
-          maxRedemptions,
-          note,
-          redemptionGroup,
-        ],
-      });
-    } catch (err) {
-      // 배포→마이그레이션(#72) 창: redemption_group 컬럼이 아직 없다. 그룹 없는 발급은
-      // 레거시 스키마로 그대로 진행하고, 그룹 지정 발급만 마이그레이션 이후로 안내한다.
-      if (!isMissingColumnError(err)) throw err;
-      if (redemptionGroup) {
-        return c.redirect(
-          '/admin/promo?err=' +
-            encodeURIComponent('리딤 그룹은 DB 마이그레이션(#72) 적용 후 사용할 수 있습니다'),
-          303,
-        );
-      }
-      await db.execute({
-        sql: `INSERT INTO promo_codes
-                (id, code, plan_id, duration_days, valid_from, valid_until, max_redemptions, is_active, note)
-              VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)`,
-        args: [crypto.randomUUID(), code, plan.id, durationDays, validFrom, validUntil, maxRedemptions, note],
-      });
-    }
-    return c.redirect('/admin/promo?ok=' + encodeURIComponent('코드 발급 완료: ' + code), 303);
-  } catch (err) {
-    logRouteError(c, err);
-    return c.redirect('/admin/promo?err=' + encodeURIComponent('발급 중 오류가 발생했습니다'), 303);
-  }
-});
-
-admin.post('/promo/:id/toggle', async (c) => {
-  const db = getDB(c.env);
-  const id = c.req.param('id');
-  try {
-    await db.execute({
-      sql: `UPDATE promo_codes
-            SET is_active = CASE WHEN is_active = 1 THEN 0 ELSE 1 END,
-                updated_at = datetime('now')
-            WHERE id = ?`,
-      args: [id],
-    });
-    return c.redirect('/admin/promo?ok=' + encodeURIComponent('상태를 변경했습니다'), 303);
-  } catch (err) {
-    logRouteError(c, err);
-    return c.redirect('/admin/promo?err=' + encodeURIComponent('상태 변경 중 오류가 발생했습니다'), 303);
-  }
 });
 
 export default admin;

@@ -100,7 +100,7 @@ describe('admin 비밀번호 전용 로그인', () => {
     });
     expect(res.status).toBe(200);
     const html = await res.text();
-    expect(html).toContain('프로모 쿠폰 관리');
+    expect(html).toContain('프로모 코드 이력');
   });
 
   it('위조/변조 쿠키는 거부하고 로그인으로 보낸다', async () => {

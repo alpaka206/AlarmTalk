@@ -278,7 +278,7 @@ api.route('/push', pushRoutes);
 api.route('/events', eventsRoutes);
 
 // 관리자 콘솔(/admin) — 사용자 JWT 가 아니라 ADMIN_SECRET(HTTP Basic)로 보호한다
-// (admin.ts 내부 미들웨어). 프로모 쿠폰 발급/관리 등 SQL 수기 없이 웹 폼에서.
+// (admin.ts 내부 미들웨어). 지금은 없앤 프로모 코드의 이력만 읽기 전용으로 보여 준다.
 app.route('/admin', adminRoutes);
 
 app.route('/api', api);

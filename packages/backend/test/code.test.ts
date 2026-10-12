@@ -110,13 +110,18 @@ describe('POST /code/register common validation', () => {
     expect((await res.json()).error_code).toBe('USER_NOT_FOUND');
   });
 
-  it('falls through group-invite and promo lookup for legacy numeric codes and returns CODE_NOT_FOUND', async () => {
-    // 통합 디스패치: 레거시 숫자 코드는 voucher 포맷이 아니므로 가족그룹 초대 조회
-    // (plan_group_invites, 빈 결과) → 프로모 조회(빈 결과) 순으로 폴백 후 404 로 끝난다.
-    pushUser();
-    const res = await buildApp().request(jsonReq('POST', '/code/register', { code: '123456' }));
-    expect(res.status).toBe(404);
-    expect((await res.json()).error_code).toBe('CODE_NOT_FOUND');
+  it('returns CODE_NOT_FOUND for anything that is not an INV-/GIFT- code, without any DB lookup', async () => {
+    // 프로모 코드는 2026-10-12 에 없앴다(App Store 3.1.1 — routes/code.ts 머리말). 예전에는 여기서
+    // 프로모 조회로 넘어갔다 — 지금은 사용자 확인 뒤 곧바로 404 이고 promo_codes 를 보지 않는다.
+    for (const code of ['123456', 'WELCOME', 'PROMO_EXAMPLE']) {
+      mockDB.reset();
+      pushUser();
+      const res = await buildApp().request(jsonReq('POST', '/code/register', { code }));
+      expect(res.status).toBe(404);
+      expect((await res.json()).error_code).toBe('CODE_NOT_FOUND');
+      expect(mockDB.calls).toHaveLength(1);
+      expect(mockDB.calls.some((call) => call.sql.includes('promo_code'))).toBe(false);
+    }
   });
 });
 
@@ -132,20 +137,18 @@ describe('POST /code/register voucher redemption', () => {
     expect(mockDB.calls[1]!.args[0]).toBe(`hash:${GIFT_CODE}`);
   });
 
-  it('falls through to promo lookup for a GIFT-format code missing as a voucher', async () => {
-    // GIFT- 포맷이지만 voucher 에 없는(CODE_NOT_FOUND) 코드는 프로모(3단계)까지 폴백해야 한다.
-    // 통합 /code/register 계약: GIFT- 형식과 겹치는 프로모 코드도 등록 가능해야 함.
+  it('does not fall through to a promo lookup for a GIFT-format code missing as a voucher', async () => {
+    // 예전에는 GIFT- 형식이라도 voucher 에 없으면 프로모 조회로 넘어갔다. 프로모 코드는
+    // 2026-10-12 에 없앴다(App Store 3.1.1) — 이용권에 없으면 그걸로 끝이다.
     pushUser();
     mockDB.pushResult([]); // voucher hash 조회 → 없음
-    // 이후 프로모 조회도 비워 최종 CODE_NOT_FOUND 로 끝나되, 프로모 조회 자체는 발생해야 한다.
 
     const res = await buildApp().request(jsonReq('POST', '/code/register', { code: GIFT_CODE }));
 
     expect(res.status).toBe(404);
     expect((await res.json()).error_code).toBe('CODE_NOT_FOUND');
-    // 수정 전에는 GIFT- 가 promo 조회 없이 종료됐다 — promo_codes 조회 도달을 검증해 회귀를 잠근다.
     const sqls = mockDB.calls.map((call) => call.sql).join('\n');
-    expect(sqls).toMatch(/promo_codes/i);
+    expect(sqls).not.toMatch(/promo_code/i);
   });
 
   it('returns CODE_ALREADY_USED when voucher has no remaining uses', async () => {
