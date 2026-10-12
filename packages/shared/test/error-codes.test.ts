@@ -9,7 +9,9 @@ import {
 } from '../src/index.js';
 
 describe('CLIENT_EXPECTED_REFUSAL_CODES', () => {
-  it('오너가 정한 열한 개 그대로다 — 늘리거나 줄이면 두 앱과 스펙도 같이 바꾼다', () => {
+  // 열한 개였는데 프로모 코드 갈래 셋(CODE_EXHAUSTED·CODE_INACTIVE·CODE_NOT_IN_WINDOW)이 프로모 코드와 함께
+  // 2026-10-12 에 사라졌다(App Store 3.1.1) — 서버가 더는 내지 않는 코드라 목록에서도 뺐다.
+  it('오너가 정한 여덟 개 그대로다 — 늘리거나 줄이면 두 앱과 스펙도 같이 바꾼다', () => {
     expect([...CLIENT_EXPECTED_REFUSAL_CODES].sort()).toEqual(
       [
         'AUTH_EMAIL_CODE_INVALID',
@@ -20,9 +22,6 @@ describe('CLIENT_EXPECTED_REFUSAL_CODES', () => {
         'CODE_EXPIRED',
         'CODE_ALREADY_USED',
         'CODE_ALREADY_REDEEMED_BY_YOU',
-        'CODE_EXHAUSTED',
-        'CODE_INACTIVE',
-        'CODE_NOT_IN_WINDOW',
       ].sort(),
     );
   });

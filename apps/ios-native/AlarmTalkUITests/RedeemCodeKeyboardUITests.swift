@@ -6,8 +6,8 @@ import XCTest
 /// 알럿은 화면 가운데라 이 문제가 약하다 — 그래서 "코드 입력에 시트가 맞느냐" 는
 /// 물음은 정당하고, 답은 이 테스트가 한다.
 ///
-/// 대상은 유료 게이트의 쿠폰 입력 시트(`RedeemCodeSheet`)다. 예전에는 웰컴 코드 안내
-/// 시트를 봤는데 그 시트는 2026-09-27 에 없앴다(쿠폰 입력 자체는 남았다) — 같은 껍데기
+/// 대상은 유료 게이트의 코드 입력 시트(`RedeemCodeSheet`)다. 예전에는 웰컴 코드 안내
+/// 시트를 봤는데 그 시트는 2026-09-27 에 없앴다(코드 입력 자체는 남았다) — 같은 껍데기
 /// (`FormSheet` + `BottomSheetHost`)라 여기로 옮겼다.
 final class RedeemCodeKeyboardUITests: XCTestCase {
 
@@ -33,11 +33,11 @@ final class RedeemCodeKeyboardUITests: XCTestCase {
         XCTAssertTrue(manual.waitForExistence(timeout: 10), "문구 화면에 '직접 입력' 행이 없다")
         manual.tap()
 
-        let redeem = app.buttons["쿠폰이 있어요"].firstMatch
-        XCTAssertTrue(redeem.waitForExistence(timeout: 5), "유료 게이트에 '쿠폰이 있어요' 가 없다")
+        let redeem = app.buttons["선물·초대 코드가 있어요"].firstMatch
+        XCTAssertTrue(redeem.waitForExistence(timeout: 5), "유료 게이트에 '선물·초대 코드가 있어요' 가 없다")
         redeem.tap()
 
-        let field = app.textFields["초대·선물·프로모션 코드"]
+        let field = app.textFields["초대·선물 코드"]
         XCTAssertTrue(field.waitForExistence(timeout: 10), "시트의 입력창이 없다")
         shot(app, "01-키보드전")
 

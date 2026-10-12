@@ -120,7 +120,7 @@ describe('API latency baselines', () => {
   });
 
   describe('POST /code/register', () => {
-    it('resolves an unknown code (invite/promo fallback) within threshold', async () => {
+    it('resolves an unknown code within threshold', async () => {
       mockDB.pushResult([{ id: 'pk-1' }]); // user lookup
       const app = buildApp('/code', codeRoutes);
       const { res, ms } = await measureLatency(() =>

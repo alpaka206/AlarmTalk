@@ -166,8 +166,10 @@ android {
         // 31 = 1.2.11. 목소리 등록의 '톤 조절'(높이 −10…+6반음 — 서버가 구워 알람까지 같은 높이),
         // 무음 알람 수정(유료 목소리를 못 쓰면 기본 목소리로 운다), 영어·일본어 화면, 날씨 출처 줄
         // 릴리스. 서버(develop→main)와 **동시에** 낸다 — 심사를 통과한 앱을 대기시켜 두고 머지 뒤 출시한다.
-        versionCode = 31
-        versionName = "1.2.11"
+        // 32 = 1.2.12. 프로모 코드 등록을 없앤다 — iOS 1.2.11 이 App Store 지침 3.1.1(인앱 결제 외 수단으로
+        // 유료 기능 해제)로 반려됐다. 코드 칸은 선물·초대 코드만 받는다. iOS 도 같은 내용으로 1.2.12 를 낸다.
+        versionCode = 32
+        versionName = "1.2.12"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

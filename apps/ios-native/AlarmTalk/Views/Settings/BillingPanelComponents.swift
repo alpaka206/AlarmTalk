@@ -612,7 +612,7 @@ extension View {
     /// 선물 이용권 안내 시트를 붙인다.
     ///
     /// ⚠ **`.sheet` + `presentationDetents` 를 쓰지 말 것** — `PersonalGiftPassSheet` 주석의
-    /// '상자 둘' 문제. 쿠폰 입력 시트(`redeemCodeSheet`)와 같은 껍데기를 쓴다.
+    /// '상자 둘' 문제. 코드 입력 시트(`redeemCodeSheet`)와 같은 껍데기를 쓴다.
     func personalGiftPassSheet(
         isPresented: Binding<Bool>,
         onConfirm: @escaping () -> Void

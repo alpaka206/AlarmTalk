@@ -108,7 +108,6 @@ Current prices and quotas are shown in the app under More → "Plan".
 
 - `INV-XXXX-XXXX-XXXX` → join a family or couple group.
 - `GIFT-XXXX-XXXX-XXXX` → activate a personal plan someone gifted you.
-- Any other promotional code → type it exactly as you received it.
 
 ### Cancel
 

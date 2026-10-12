@@ -257,9 +257,8 @@ export const ERROR_CODES = [
   'GOOGLE_VERIFICATION_FAILED',
   'RTDN_BAD_TOKEN',
   'RTDN_UNCONFIGURED',
-  // 프로모션 (billing-promo.ts)
+  // 코드 등록 — 빈 입력 (code.ts)
   'CODE_REQUIRED',
-  'PROMO_REDEEM_FAILED',
   // 동의 (consent.ts)
   'CONSENT_REQUIRED',
   'CONSENT_STATE_UNAVAILABLE',
@@ -271,19 +270,16 @@ export const ERROR_CODES = [
   'INVALID_PUSH_TOKEN',
   // 관리자 (admin.ts)
   'ADMIN_UNCONFIGURED',
-  // 코드 등록·프로모 (lib/voucher-redemption.ts, lib/promo-redemption.ts)
-  // ⚠ 라우트가 아니라 **라이브러리**가 던진다(RedemptionError.errorCode) — 목록에서 빠지기
+  // 코드 등록 (lib/voucher-redemption.ts)
+  // ⚠ 라우트가 아니라 **라이브러리**가 던진다(VoucherRedemptionError.errorCode) — 목록에서 빠지기
   //    쉬운 자리다. 앱의 코드 등록 화면이 이 코드들로 안내 문구를 고른다.
-  'ACTIVE_SUBSCRIPTION_EXISTS',
+  // 프로모 코드 갈래(ACTIVE_SUBSCRIPTION_EXISTS·CODE_EXHAUSTED·CODE_GROUP_ALREADY_REDEEMED·
+  // CODE_INACTIVE·CODE_MISCONFIGURED·CODE_NOT_IN_WINDOW·PROMO_REDEEM_FAILED)는 프로모 코드와 함께
+  // 2026-10-12 에 지웠다(App Store 3.1.1 — routes/code.ts 머리말). 옛 앱은 그 코드를 받을 일이 없다.
   'CODE_ALREADY_REDEEMED_BY_YOU',
   'CODE_ALREADY_USED',
-  'CODE_EXHAUSTED',
   'CODE_EXPIRED',
-  'CODE_GROUP_ALREADY_REDEEMED',
-  'CODE_INACTIVE',
-  'CODE_MISCONFIGURED',
   'CODE_NOT_FOUND',
-  'CODE_NOT_IN_WINDOW',
   'INVALID_FORMAT',
   'INVALID_GIFT_PLAN',
   'INVALID_INVITE_PLAN',
@@ -382,12 +378,9 @@ export const CLIENT_EXPECTED_REFUSAL_CODES: readonly ErrorCode[] = [
   // 가입하려는 이메일이 이미 있다(이메일/비밀번호 계정 · 소셜 계정) — 화면이 로그인으로 안내한다.
   'AUTH_EMAIL_TAKEN',
   'AUTH_EMAIL_SOCIAL',
-  // 이용권 코드 — 친 코드가 없거나, 지났거나, 이미 쓰였거나(남이 · 내가), 다 찼거나, 꺼졌거나, 기간 밖이다.
+  // 이용권 코드 — 친 코드가 없거나, 지났거나, 이미 쓰였다(남이 · 내가).
   'CODE_NOT_FOUND',
   'CODE_EXPIRED',
   'CODE_ALREADY_USED',
   'CODE_ALREADY_REDEEMED_BY_YOU',
-  'CODE_EXHAUSTED',
-  'CODE_INACTIVE',
-  'CODE_NOT_IN_WINDOW',
 ];
