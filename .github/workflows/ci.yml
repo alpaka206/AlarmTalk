@@ -136,6 +136,14 @@ jobs:
           python3 scripts/check-expected-refusal-codes.py --self-test
           python3 scripts/check-expected-refusal-codes.py
 
+      # 안드로이드는 고른 진동 값을 그대로 동기화한다. 서버가 그 값을 모르면 동기화가 400 으로 막히는데 알람은
+      # 폰에서 그대로 울려 아무도 모른다(2026-10-12 까지 서버는 18종 중 셋만 받았다 — ALARMTALK-ANDROID-14).
+      # iOS 는 같은 값을 enum 으로 읽고 저장하므로, enum 에 없는 값은 iOS 에서 열고 저장할 때 '기본' 으로 덮인다.
+      - name: Check vibration patterns match across Android, iOS and server
+        run: |
+          python3 scripts/check-vibration-patterns.py --self-test
+          python3 scripts/check-vibration-patterns.py
+
       # 유닛 테스트가 호스트 앱 프로세스에서 도는 탓에, 저장 위치를 손으로 조립하면
       # **사용자가 쓰는 그 파일**을 잡는다. 실제로 기기에서 테스트를 돌릴 때마다
       # 로그인·알람·기본 목소리 클립이 지워지고 있었다(2026-08-19). 테스트는 초록으로

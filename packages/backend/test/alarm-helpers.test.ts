@@ -101,6 +101,14 @@ describe('normalizeAlarmRow', () => {
     expect(normalizeAlarmRow({ ...base, vibration_pattern: 'none' }).vibration_pattern).toBe('none');
   });
 
+  // 안드로이드 진동 18종 전부를 서버가 받고 그대로 돌려준다 — 셋만 받던 때는 그 밖의 패턴을 고른 알람이
+  // 동기화마다 400 이었다(ALARMTALK-ANDROID-14, 2026-10-12). 목록 자체의 일치는 scripts/check-vibration-patterns.py.
+  it('안드로이드 진동 패턴 전부를 그대로 돌려준다', () => {
+    for (const pattern of ['short', 'medium', 'rise', 'pulse', 'bounce', 'drumroll', 'heartbeat', 'ticktock', 'waltz', 'zigzag', 'off_beat', 'ripple', 'siren', 'soft', 'sos']) {
+      expect(normalizeAlarmRow({ ...base, vibration_pattern: pattern }).vibration_pattern, pattern).toBe(pattern);
+    }
+  });
+
   it('defaults wake_mode to sound_then_voice', () => {
     expect(normalizeAlarmRow({ ...base }).wake_mode).toBe('sound_then_voice');
   });
@@ -264,6 +272,12 @@ describe('validateAlarmFields', () => {
 
   it('rejects invalid vibration_pattern', () => {
     expect(validateAlarmFields({ vibration_pattern: 'turbo' })?.error_code).toBe('INVALID_VIBRATION_PATTERN');
+  });
+
+  it('accepts every Android vibration pattern', () => {
+    for (const pattern of ['heartbeat', 'siren', 'sos', 'off_beat', 'ripple', 'drumroll']) {
+      expect(validateAlarmFields({ vibration_pattern: pattern }), pattern).toBeNull();
+    }
   });
 
   it('accepts valid vibration_patterns', () => {
