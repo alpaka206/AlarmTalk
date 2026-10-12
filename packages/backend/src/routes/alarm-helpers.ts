@@ -16,7 +16,33 @@ const DEFAULT_ALARM_TIMEZONE = 'Asia/Seoul';
 
 export const ALARM_MODES = ['sound-only', 'tts'] as const;
 export type AlarmMode = (typeof ALARM_MODES)[number];
-export const VIBRATION_PATTERNS = ['default', 'strong', 'none'] as const;
+// 안드로이드 진동 패턴 목록(`data/AlarmConstants.kt` 의 `VibrationPatterns.all`)과 **같은 값**이다 — 앱은 고른
+// 값을 그대로 동기화한다(`RemoteAlarmMapper`). 2026-10-12 전에는 서버가 `default`·`strong`·`none` 셋만 받아,
+// 그 밖의 패턴을 고른 알람은 동기화마다 400 `INVALID_VIBRATION_PATTERN` 이었다(ALARMTALK-ANDROID-14) — 알람은
+// 폰에서 울렸지만 서버 사본이 갱신되지 않았다. iOS 는 진동 화면이 없지만 같은 18종 enum(`AlarmEnums.swift` 의
+// `VibrationPattern`)으로 읽고 편집기 저장 때 그 값으로 다시 적는다 — enum 에 없는 값은 '기본' 으로 덮인다.
+// DB 칸에는 값 제약이 없다 — 처음 칸을 더할 때의 CHECK 는 표를 다시 만든 마이그레이션 22·23 에서 빠졌다.
+// 패턴을 더하면 세 곳을 같이 고친다 — `scripts/check-vibration-patterns.py`(CI lint)가 세 목록을 비교한다.
+export const VIBRATION_PATTERNS = [
+  'default',
+  'strong',
+  'short',
+  'medium',
+  'rise',
+  'pulse',
+  'bounce',
+  'drumroll',
+  'heartbeat',
+  'ticktock',
+  'waltz',
+  'zigzag',
+  'off_beat',
+  'ripple',
+  'siren',
+  'soft',
+  'sos',
+  'none',
+] as const;
 export type VibrationPattern = (typeof VIBRATION_PATTERNS)[number];
 export const WAKE_MODES = ['sound_then_voice', 'voice_only'] as const;
 export type WakeMode = (typeof WAKE_MODES)[number];
@@ -62,10 +88,9 @@ export function normalizeAlarmRow(row: AlarmRow, viewer?: string | string[] | nu
   const mode: AlarmMode =
     row.mode === 'sound-only' || row.mode === 'tts' ? row.mode : 'tts';
 
-  const vibrationPattern: VibrationPattern =
-    row.vibration_pattern === 'default' || row.vibration_pattern === 'strong' || row.vibration_pattern === 'none'
-      ? row.vibration_pattern
-      : 'default';
+  const vibrationPattern: VibrationPattern = VIBRATION_PATTERNS.includes(row.vibration_pattern as VibrationPattern)
+    ? (row.vibration_pattern as VibrationPattern)
+    : 'default';
 
   const wakeMode: WakeMode =
     row.wake_mode === 'sound_then_voice' || row.wake_mode === 'voice_only'
