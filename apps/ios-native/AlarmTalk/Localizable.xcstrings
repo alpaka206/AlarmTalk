@@ -3233,19 +3233,19 @@
         }
       }
     },
-    "등록되면 초대한 사람의 커플·가족 이용권으로 옮겨 가요. 지금 쓰는 %@ 이용권을 App Store에서 구독 중이라면, 결제를 멈추려면 App Store에서 해지해 주세요." : {
+    "등록되면 초대한 사람의 커플·가족 이용권으로 옮겨 가요. 지금 쓰는 %@ 이용권을 스토어에서 구독 중이라면, 결제를 멈추려면 구독한 스토어에서 해지해 주세요." : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "If the code works, you'll move to the Couple or Family plan you were invited to. If you subscribe to your %1$@ plan through the App Store, cancel it in the App Store to stop being charged."
+            "value" : "If the code works, you'll move to the Couple or Family plan you were invited to. If your %1$@ plan is a store subscription, cancel it in the store where you subscribed to stop being charged."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "登録できると、招待した人のカップル・ファミリープランに移ります。今の%1$@プランをApp Storeで購読している場合は、課金を止めるためにApp Storeで解約してください。"
+            "value" : "登録できると、招待した人のカップル・ファミリープランに移ります。今の%1$@プランをストアで購読している場合は、課金を止めるために購読したストアで解約してください。"
           }
         }
       }
@@ -14845,24 +14845,24 @@
         }
       }
     },
-    "등록되면 초대한 사람의 커플·가족 이용권으로 옮겨 가요. 지금 이용권을 App Store에서 구독 중이라면, 결제를 멈추려면 App Store에서 해지해 주세요." : {
+    "등록되면 초대한 사람의 커플·가족 이용권으로 옮겨 가요. 지금 이용권을 스토어에서 구독 중이라면, 결제를 멈추려면 구독한 스토어에서 해지해 주세요." : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "If the code works, you'll move to the Couple or Family plan you were invited to. If you subscribe to your current plan through the App Store, cancel it in the App Store to stop being charged."
+            "value" : "If the code works, you'll move to the Couple or Family plan you were invited to. If your current plan is a store subscription, cancel it in the store where you subscribed to stop being charged."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "登録できると、招待した人のカップル・ファミリープランに移ります。今のプランをApp Storeで購読している場合は、課金を止めるためにApp Storeで解約してください。"
+            "value" : "登録できると、招待した人のカップル・ファミリープランに移ります。今のプランをストアで購読している場合は、課金を止めるために購読したストアで解約してください。"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "등록되면 초대한 사람의 커플·가족 이용권으로 옮겨 가요. 지금 이용권을 App Store에서 구독 중이라면, 결제를 멈추려면 App Store에서 해지해 주세요."
+            "value" : "등록되면 초대한 사람의 커플·가족 이용권으로 옮겨 가요. 지금 이용권을 스토어에서 구독 중이라면, 결제를 멈추려면 구독한 스토어에서 해지해 주세요."
           }
         }
       }

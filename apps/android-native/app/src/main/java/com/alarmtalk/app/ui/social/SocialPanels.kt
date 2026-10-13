@@ -127,7 +127,7 @@ internal fun FamilyConnectionPanel(
 
     pendingRegisterCode?.let { code ->
         // 질문만 제목, 부가 설명은 작은 설명으로(탈퇴 알럿과 동일 구성). 이용권이 있는 사람에게는 어디로 옮겨 가는지와
-        // Google Play 구독은 직접 해지해야 결제가 멈춘다는 것을 말한다 — 등록은 서버의 구독 행만 닫는다
+        // 스토어 구독은 구독한 스토어에서 직접 해지해야 결제가 멈춘다는 것을 말한다 — 등록은 서버의 구독 행만 닫는다
         // (`social_register_dialog_message_active` 위 주석).
         IosAlertDialog(
             title = stringResource(R.string.social_register_dialog_message),

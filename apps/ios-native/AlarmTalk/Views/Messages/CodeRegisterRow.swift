@@ -236,13 +236,15 @@ struct CodeRegisterRow: View {
     /// 등록 확인 알럿의 부가 설명 — 이용권을 쓰는 중일 때만 붙는다.
     ///
     /// ⚠ **"지금 이용권이 끝난다" 로만 말하지 말 것.** 서버는 지금 이용권의 **구독 행만** 정리하고
-    /// (`cancelActiveSubscriptionsForUser`) 초대한 사람의 그룹에 넣는다. App Store 구독은 서버가 끊을 수 없어
+    /// (`cancelActiveSubscriptionsForUser`) 초대한 사람의 그룹에 넣는다. 스토어 구독은 등록 때 끊지 않으므로
     /// (`docs/spec/billing-lifecycle.md`) 사용자가 해지하지 않으면 결제가 이어진다 — 그래서 해지할 곳을 함께 말한다.
+    /// ⚠ **스토어 이름을 대지 말 것**(Codex #898). 구독한 스토어는 계정마다 다르고(안드로이드에서 산 구독도 있다),
+    /// iOS 화면에는 다른 플랫폼 이름을 쓸 수 없다(App Store 지침 2.3.10) — "구독한 스토어" 로만 말한다. 안드로이드도 같다.
     private var planReplacementDescription: String {
         if let activePlanName {
-            return String(localized: "등록되면 초대한 사람의 커플·가족 이용권으로 옮겨 가요. 지금 쓰는 \(activePlanName) 이용권을 App Store에서 구독 중이라면, 결제를 멈추려면 App Store에서 해지해 주세요.")
+            return String(localized: "등록되면 초대한 사람의 커플·가족 이용권으로 옮겨 가요. 지금 쓰는 \(activePlanName) 이용권을 스토어에서 구독 중이라면, 결제를 멈추려면 구독한 스토어에서 해지해 주세요.")
         }
-        return String(localized: "등록되면 초대한 사람의 커플·가족 이용권으로 옮겨 가요. 지금 이용권을 App Store에서 구독 중이라면, 결제를 멈추려면 App Store에서 해지해 주세요.")
+        return String(localized: "등록되면 초대한 사람의 커플·가족 이용권으로 옮겨 가요. 지금 이용권을 스토어에서 구독 중이라면, 결제를 멈추려면 구독한 스토어에서 해지해 주세요.")
     }
 }
 

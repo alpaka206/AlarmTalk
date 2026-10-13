@@ -74,12 +74,16 @@ class InviteCodeCopyTest {
     }
 
     @Test
-    fun `등록 확인 알럿은 Google Play 에서 해지해야 결제가 멈춘다고 말한다`() {
+    fun `등록 확인 알럿은 구독한 스토어에서 해지하라고 말하고 스토어 이름은 대지 않는다`() {
+        // 구독한 스토어는 계정마다 다르다(iOS 에서 산 구독도 있다 — Codex #898). iOS 는 같은 알럿에서 다른 플랫폼
+        // 이름을 쓸 수 없다(App Store 지침 2.3.10). 그래서 두 앱 모두 '구독한 스토어' 로만 말한다.
+        val storeWord = mapOf("values" to "스토어", "values-en" to "store", "values-ja" to "ストア")
         for (dir in dirs) {
             val message = value(dir, "social_register_dialog_message_active")
             assertTrue("$dir: 지금 쓰는 플랜 이름 자리가 없다 — $message", message.contains("%1\$s"))
-            assertTrue("$dir: 결제를 멈출 곳(Google Play)을 말하지 않는다 — $message", message.contains("Google Play"))
-            assertFalse("$dir: 안드로이드 문구에 다른 스토어 이름이 있다 — $message", message.contains("App Store"))
+            assertTrue("$dir: 결제를 멈출 곳(구독한 스토어)을 말하지 않는다 — $message", message.contains(storeWord.getValue(dir)))
+            assertFalse("$dir: 스토어 이름(Google Play)을 댄다 — $message", message.contains("Google Play"))
+            assertFalse("$dir: 스토어 이름(App Store)을 댄다 — $message", message.contains("App Store"))
             assertTrue("$dir: 초대한 사람의 그룹으로 옮겨 간다고 말하지 않는다 — $message", message.has(groupPlanWord.getValue(dir)))
         }
     }

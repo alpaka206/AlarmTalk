@@ -460,7 +460,7 @@
     <string name="social_regenerate_share_code_dialog_title">Regenerate share code</string>
     <string name="social_register_button">Register</string>
     <string name="social_register_dialog_message">Register this code?</string>
-    <string name="social_register_dialog_message_active">If the code works, you\'ll move to the Couple or Family plan you were invited to. If you subscribe to your %1$s plan through Google Play, cancel it in Google Play to stop being charged.</string>
+    <string name="social_register_dialog_message_active">If the code works, you\'ll move to the Couple or Family plan you were invited to. If your %1$s plan is a store subscription, cancel it in the store where you subscribed to stop being charged.</string>
     <string name="social_register_other_code">Register invite code</string>
     <string name="social_register_will_change_plan">Registering an invite code adds you to the Couple or Family plan you were invited to.</string>
     <string name="social_remove_button">Remove</string>

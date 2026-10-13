@@ -459,7 +459,7 @@
     <string name="social_regenerate_share_code_dialog_title">共有コードの再発行</string>
     <string name="social_register_button">登録</string>
     <string name="social_register_dialog_message">このコードを登録しますか？</string>
-    <string name="social_register_dialog_message_active">登録できると、招待した人のカップル・ファミリープランに移ります。今の%1$sプランをGoogle Playで購読している場合は、課金を止めるためにGoogle Playで解約してください。</string>
+    <string name="social_register_dialog_message_active">登録できると、招待した人のカップル・ファミリープランに移ります。今の%1$sプランをストアで購読している場合は、課金を止めるために購読したストアで解約してください。</string>
     <string name="social_register_other_code">招待コード登録</string>
     <string name="social_register_will_change_plan">招待コードを登録すると、招待した人のカップル・ファミリープランに参加します。</string>
     <string name="social_remove_button">退出させる</string>

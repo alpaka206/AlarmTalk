@@ -499,10 +499,11 @@
     <string name="social_register_button">등록</string>
     <string name="social_register_dialog_message">이 코드를 등록할까요?</string>
     <!-- ⚠ **결제를 멈추는 길을 함께 말한다**(2026-10-14). 초대 코드를 등록하면 서버는 지금 이용권의 구독 행만 닫고
-         (`voucher-redemption.ts` 의 `cancelActiveSubscriptionsForUser`) 스토어 구독은 건드리지 않는다 — Google Play 는
-         그대로 갱신·청구한다. 서버가 등록할 때 Play 구독을 해지하게 바뀌면 이 문장도 고친다.
-         스토어 이름은 앱마다 제 것만 쓴다: 안드로이드는 Google Play, iOS 는 App Store(지침 2.3.10 — 다른 플랫폼 이름 금지). -->
-    <string name="social_register_dialog_message_active">등록되면 초대한 사람의 커플·가족 이용권으로 옮겨 가요. 지금 쓰는 %1$s 이용권을 Google Play에서 구독 중이라면, 결제를 멈추려면 Google Play에서 해지해 주세요.</string>
+         (`voucher-redemption.ts` 의 `cancelActiveSubscriptionsForUser`) 스토어 구독은 건드리지 않는다 — 구독한 스토어가
+         그대로 갱신·청구한다. 서버가 등록할 때 스토어 구독을 해지하게 바뀌면 이 문장도 고친다.
+         ⚠ 스토어 이름을 대지 말 것(Codex #898): 구독한 스토어는 계정마다 다르고(iOS 에서 산 구독도 있다), iOS 는 다른
+         플랫폼 이름을 화면에 쓸 수 없다(지침 2.3.10) — 두 앱 모두 '구독한 스토어' 로만 말한다. -->
+    <string name="social_register_dialog_message_active">등록되면 초대한 사람의 커플·가족 이용권으로 옮겨 가요. 지금 쓰는 %1$s 이용권을 스토어에서 구독 중이라면, 결제를 멈추려면 구독한 스토어에서 해지해 주세요.</string>
     <string name="social_register_other_code">초대 코드 등록</string>
     <!-- 이 칸이 받는 것은 초대 코드 하나라 무엇이 되는지가 정해져 있다 — 플랜 이름 인자 없이 그 결과를 말한다. -->
     <string name="social_register_will_change_plan">초대 코드를 등록하면 초대한 사람의 커플·가족 이용권에 함께해요.</string>
