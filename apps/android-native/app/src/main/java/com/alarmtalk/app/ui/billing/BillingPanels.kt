@@ -10,7 +10,6 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.width
@@ -20,10 +19,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Logout
-import androidx.compose.material.icons.outlined.CardGiftcard
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -66,7 +63,6 @@ internal fun SubscriptionPanel(
     /// 스토어 값이 권위이며, 아직 못 받았을 때만 백엔드의 한국 가격표와 같은 폴백을 쓴다.
     planPrices: Map<String, String>,
     onPurchasePlay: (Activity, String) -> Unit,
-    onGiftPersonal: (Activity) -> Unit,
     onCancelSubscription: (Boolean) -> Unit,
     onLeaveFamilyGroup: (String) -> Unit,
     onRefreshShareCodeData: suspend () -> List<VoucherItem>,
@@ -147,13 +143,8 @@ internal fun SubscriptionPanel(
     )
     fun shareVoucher(voucher: VoucherItem) {
         clipboard.setText(AnnotatedString(voucher.code))
-        // INV- 는 가족·커플 합류, GIFT- 는 개인 이용권 선물 — 받는 사람이 할 일이 다르다.
-        val kind = if (voucher.code.startsWith("GIFT-", ignoreCase = true)) {
-            RedeemCodeKind.Gift
-        } else {
-            RedeemCodeKind.Invite
-        }
-        context.shareRedeemCode(voucher.code, kind)
+        // 공유하는 코드는 초대 코드(INV-)뿐이다 — 고르는 목록이 이미 그것만 남긴다(`shareableVouchersForPlan`).
+        context.shareRedeemCode(voucher.code)
     }
     fun openVoucherShare(vouchersForPlan: List<VoucherItem>) {
         if (vouchersForPlan.isNotEmpty()) {
@@ -255,58 +246,17 @@ internal fun SubscriptionPanel(
                     vouchers = vouchersForPlan,
                     onPurchase = { purchaseTarget = option },
                     onShareVouchers = { refreshAndOpenVoucherShare(option.key) },
-                    extraAction = if (option.key == "personal") {
-                        @Composable { ->
-                            // ⚠ **`wakerCardBorder()` 로 되돌리지 말 것.** 그 테두리는
-                            // 카드 위에서 거의 안 보인다 — 현재 이용권 카드는 배경이
-                            // `primaryContainer` 라 옅은 회색 선이 묻힌다(2026-08-11 지적
-                            // "현재 이용권이 개인일 때 좀 안 보인다"). 강조색 테두리 + 옅은
-                            // 채움으로 두 배경(현재 카드/일반 카드) 모두에서 읽히게 한다.
-                            //
-                            // ⚠ 채워진 버튼으로 만들지는 말 것 — 결제 버튼과 무게가 같아져
-                            // 어느 것이 주 액션인지 흐려진다. 선물은 부가 액션이다.
-                            OutlinedButton(
-                                onClick = {
-                                    val activity = context.findActivity()
-                                    if (!billingBusy && activity != null) onGiftPersonal(activity)
-                                },
-                                enabled = !billingBusy,
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = WakerButtonShape,
-                                border = BorderStroke(
-                                    1.dp,
-                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.55f),
-                                ),
-                                colors = ButtonDefaults.outlinedButtonColors(
-                                    containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.08f),
-                                    contentColor = MaterialTheme.colorScheme.primary,
-                                ),
-                            ) {
-                                // iOS 는 `Label(..., systemImage: "gift")` 로 아이콘을
-                                // 달고 있었다 — 안드로이드만 글자뿐이라 눈에 덜 걸렸다.
-                                Icon(
-                                    imageVector = Icons.Outlined.CardGiftcard,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(18.dp),
-                                )
-                                Spacer(modifier = Modifier.width(ButtonDefaults.IconSpacing))
-                                Text(stringResource(R.string.billing_gift_personal_action))
-                            }
-                        }
-                    } else {
-                        null
-                    },
                 )
             }
         }
 
-        // 선물하기 — 개인 이용권 1개월을 **결제해서** 코드로 만든다.
-        // ⚠ 무결제 발급이 아니다(서버가 production 에서 막는다). 1회성 인앱 상품을 산다.
-        // ⚠ **'개인 이용권 선물하기' 를 별도 섹션으로 되돌리지 말 것**(2026-08-11 요청).
-        // 이제 **개인 플랜 카드 안**, 결제 버튼 바로 아래에 있다 — 무엇을 선물하는지가
-        // 카드 제목으로 자명해진다. 아이폰이 그렇게 돼 있다.
+        // ⚠ **개인 카드의 '선물하기'(개인 이용권 1개월을 사서 GIFT- 코드로 주기)는 2026-10-14 에
+        // 지웠다 — 되살리지 말 것.** iOS 1.2.12 가 App Store 지침 3.1.1 로 두 번째 반려됐다("선물 코드로
+        // 디지털 기능을 연다"). 그 버튼을 받던 카드의 부가 액션 자리(`extraAction`)도 함께 뺐다.
+        // 할인·무료 이용은 스토어 오퍼 코드(App Store 오퍼 코드 · Play 프로모션 코드)로 준다.
 
-        // 코드 등록(선물 이용권·프로모션·초대)은 '전체' 탭 통합 입력에서만 받는다 — 이용권 화면 중복 제거.
+        // 초대 코드 등록은 더보기의 '초대 코드 등록' 화면(`FamilyConnectionPanel`)에서만 받는다 — 이용권
+        // 화면에 입력칸을 두지 않는다.
 
         // **이전 구매 복원 — 항상 보인다.** 이용권이 있든 없든 필요하다: 기기를 바꾸거나
         // 다른 경로로 로그인해 서버에 결제 기록이 없을 때, 여기가 없으면 사용자가 할 수 있는
@@ -666,14 +616,6 @@ internal fun SubscriptionPlanCard(
     onShareVouchers: () -> Unit,
     // 현재 플랜 카드에만 붙는 만료/전환 상태 한 줄 (예: "7월 20일까지 이용할 수 있어요").
     currentStatusText: String? = null,
-    /**
-     * 카드 안 결제 버튼 **아래**에 붙는 부가 액션(개인 이용권 선물하기).
-     *
-     * ⚠ **화면 아래 별도 섹션으로 되돌리지 말 것**(2026-08-11 요청). 선물은 '개인 이용권'
-     * 을 주는 일이라 그 카드 안에 있어야 무엇을 선물하는지가 자명하다 — 아래로 떼어 놓으면
-     * 어느 플랜을 선물하는지 제목을 읽어야 알 수 있었다. 아이폰이 그렇게 돼 있다.
-     */
-    extraAction: (@Composable ColumnScope.() -> Unit)? = null,
 ) {
     OutlinedCard(
         shape = WakerCardShape,
@@ -784,9 +726,6 @@ internal fun SubscriptionPlanCard(
                     )
                 }
             }
-            // 결제 버튼 **바로 아래** 부가 액션(개인 이용권 선물하기 등).
-            extraAction?.invoke(this)
-
             // 코드 공유는 **산** '현재 이용권' 카드에서만 — 해지/강등 후 옛 코드가 남아 있어도
             // (서버가 만료 처리하지만 우회 데이터 방어) 무료 사용자에게 공유 버튼이 뜨지 않게.
             // 프로모로 현재가 된 개인 카드는 산 이용권이 아니라 여기 들지 않는다([sharesVouchers]).
@@ -806,12 +745,21 @@ internal fun SubscriptionPlanCard(
     }
 }
 
-private fun shareableVouchersForPlan(
+/**
+ * 그 카드에서 공유할 수 있는 코드 — **초대 코드(INV-)만**이다.
+ *
+ * ⚠ **선물 코드(GIFT-)를 다시 넣지 말 것**(2026-10-14). 선물은 App Store 지침 3.1.1 두 번째 반려로
+ * 없앴고, 서버는 INV- 가 아니면 등록을 `CODE_NOT_FOUND` 로 거절한다 — 예전에 만든 선물 바우처가 목록에
+ * 남아 있어도 보내 봐야 받는 사람이 쓸 수 없다. 구성원 관리 화면의 공유도 같은 판정이다
+ * (`MemberManagementScreen` 의 `startsWith("INV-")`). 회귀 테스트 `GiftCodeRemovalTest`.
+ */
+internal fun shareableVouchersForPlan(
     vouchers: List<VoucherItem>,
     planKey: String,
 ): List<VoucherItem> =
     vouchers.filter { voucher ->
-        voucher.status in listOf("issued", "active", "pending") &&
+        voucher.code.startsWith("INV-") &&
+            voucher.status in listOf("issued", "active", "pending") &&
             voucher.useCount < voucher.maxUses &&
             voucher.planKey == planKey
     }

@@ -129,10 +129,11 @@ export async function pseudonymizeBillingForRetention(
   }
 
   // ⚠ **일회성 결제도 보존한다**(코덱스 #730). 위 SELECT 는 `subscriptions` 만 훑는데,
-  //   **선물 구매는 구독 행을 만들지 않는다** — `store_transactions` 에 `subscription_id`
-  //   가 NULL 인 행으로만 남는다(`routes/billing-apple.ts` 의 선물 갈래). 그런데
-  //   `purgeUserAccount` 는 그 표를 통째로 지우므로, 선물을 산 사람이 탈퇴하면
-  //   **대금결제 기록이 사라진다** — 전자상거래법상 5년 보존이 깨진다.
+  //   **선물 구매는 구독 행을 만들지 않았다** — `store_transactions` 에 `subscription_id`
+  //   가 NULL 인 행으로만 남는다. 그런데 `purgeUserAccount` 는 그 표를 통째로 지우므로,
+  //   선물을 산 사람이 탈퇴하면 **대금결제 기록이 사라진다** — 전자상거래법상 5년 보존이 깨진다.
+  //   선물은 2026-10-14 에 없앴지만(App Store 심사 지침 3.1.1 — `routes/code.ts` 머리말, 되살리지
+  //   말 것) 그 전에 쓰인 행은 이력으로 남으므로 이 갈래는 **지우지 않는다.**
   const oneTime = await tx.execute({
     sql: `SELECT st.id, st.plan_key, st.created_at, st.last_paid_at, st.provider, st.provider_transaction_id,
                  st.product_id, st.raw_payload, p.id AS plan_id
@@ -331,6 +332,7 @@ export async function purgeUserAccount(
     // 코드의 ON DELETE SET NULL만으로는 거래 ID가 무기한 남는다. 소유 근거를 지우기
     // 전에 연결도 파기한다. 이미 코드가 없으면 Apple 원장으로 찾고, 거래 증빙은 호출부가
     // retained_billing_records에 분리 보존해 기존 기한 정리의 대상이 되게 한다.
+    // (선물은 2026-10-14 에 없애 이 표에 새 행이 생기지 않는다. 그 전의 이력 행을 치우려고 남긴다.)
     await tx.execute({
       sql: `DELETE FROM apple_gift_deliveries
             WHERE transaction_id IN (

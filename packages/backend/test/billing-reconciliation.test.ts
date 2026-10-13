@@ -1100,7 +1100,8 @@ describe('결제 증빙 보존도 실제 원장으로 검증한다', () => {
       { provider_transaction_id: 'receipt-second' },
     ]);
   });
-  it('선물 기록도 서버 수신일이 아니라 실제 구매일부터 보존한다', async () => {
+  // 선물은 2026-10-14 에 없앴다(App Store 3.1.1) — 그 전에 쓰인 일회성 결제 행은 이력으로 남아 같은 규칙을 탄다.
+  it('옛 선물 결제 기록도 서버 수신일이 아니라 실제 구매일부터 보존한다', async () => {
     await seed();
     await db.execute({
       sql: `INSERT INTO store_transactions

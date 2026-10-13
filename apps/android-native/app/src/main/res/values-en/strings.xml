@@ -67,8 +67,6 @@
     <string name="billing_cancel_description_no_date">Choose when to cancel. Canceling on the end date keeps your plan until the current period ends. Canceling now gives you a prorated refund for the remaining time.</string>
     <string name="billing_cancel_description_with_date">Canceling on the end date keeps your plan until %1$s. Canceling now ends your plan immediately with a prorated refund for the remaining time.</string>
     <string name="billing_cancel_dialog_title">Cancel your plan?</string>
-    <string name="billing_gift_personal_action">Gift</string>
-    <string name="billing_gift_failed">We couldn\'t create the gift code. Please try again in a moment.</string>
     <string name="billing_cancel_immediate_description">The remaining period is refunded pro rata and your plan ends right away. Your voice is kept for 3 days. Resubscribe within that window and it comes back as it was; after that it is deleted for good.</string>
     <string name="billing_cancel_immediate_title">Cancel right now?</string>
     <string name="billing_cancel_now">Cancel now</string>
@@ -106,16 +104,16 @@
     <string name="billing_play_change_downgrade">You are not charged now. You keep your current plan until it ends, then it switches to the %1$s plan at the next renewal.</string>
     <string name="billing_play_change_upgrade">You switch to the %1$s plan right away. Your remaining time is prorated at the new rate.</string>
     <string name="billing_play_change_title">Switch to the %1$s plan?</string>
-    <string name="code_redeem_placeholder">Invite or gift code</string>
-    <string name="code_redeem_submit">Redeem</string>
+    <string name="code_redeem_placeholder">Invite code</string>
+    <string name="code_redeem_submit">Register</string>
     <string name="billing_restore_purchases">Restore purchases</string>
     <string name="billing_restore_none">No purchases to restore. Check your store account.</string>
     <string name="billing_restore_checking">Checking your purchases…</string>
     <string name="billing_select_button">Pay</string>
     <string name="billing_share_button">Share</string>
-    <string name="billing_share_voucher_code">Share plan code</string>
-    <string name="billing_share_voucher_select_description">Pick an unregistered code and share it right away.</string>
-    <string name="billing_share_voucher_select_title">Choose a plan to share</string>
+    <string name="billing_share_voucher_code">Share invite code</string>
+    <string name="billing_share_voucher_select_description">Pick an unused invite code and share it right away.</string>
+    <string name="billing_share_voucher_select_title">Choose an invite code to share</string>
     <string name="billing_status_available_until">Available until %1$s.</string>
     <string name="billing_status_change_to_next_after_date">Switches to the %2$s plan after %1$s.</string>
     <string name="billing_status_change_to_next_scheduled">Scheduled to switch to the %1$s plan.</string>
@@ -136,7 +134,7 @@
     <string name="common_permission_gate_mic_title">Microphone permission needed</string>
     <string name="common_permission_gate_notifications_title">Allow notification permission to set alarms</string>
     <string name="common_tab_billing">Plan</string>
-    <string name="common_tab_code_register">Register code</string>
+    <string name="common_tab_code_register">Register invite code</string>
     <string name="common_voice_capture_mode_file">File</string>
     <string name="common_voice_capture_mode_record">Record</string>
     <string name="common_voice_record_start">Record</string>
@@ -430,7 +428,7 @@
     <string name="rd_test_alarm_label">Test alarm</string>
     <string name="ringing_notification_text">Time to wake up</string>
     <string name="ringing_notification_title">Your alarm is going off</string>
-    <string name="social_active_plan_in_use">Your %1$s plan is active. You can register a new code once it ends.</string>
+    <string name="social_active_plan_in_use">Your %1$s plan is active.</string>
     <string name="social_allow_partner_alarm">Let family set my alarms</string>
     <string name="social_allow_partner_alarm_couple">Let your partner set my alarms</string>
     <string name="social_back_cd">Back</string>
@@ -462,9 +460,9 @@
     <string name="social_regenerate_share_code_dialog_title">Regenerate share code</string>
     <string name="social_register_button">Register</string>
     <string name="social_register_dialog_message">Register this code?</string>
-    <string name="social_register_dialog_message_active">If this code is valid, your current %1$s plan will end and switch to the new plan.</string>
-    <string name="social_register_other_code">Other code</string>
-    <string name="social_register_will_change_plan">Registering will change your current %1$s plan.</string>
+    <string name="social_register_dialog_message_active">If the code works, you\'ll move to the Couple or Family plan you were invited to. If your %1$s plan is a store subscription, cancel it in the store where you subscribed to stop being charged.</string>
+    <string name="social_register_other_code">Register invite code</string>
+    <string name="social_register_will_change_plan">Registering an invite code adds you to the Couple or Family plan you were invited to.</string>
     <string name="social_remove_button">Remove</string>
     <string name="social_remove_member_dialog_message">Remove this member? You\'ll need a new invite code to invite them again.</string>
     <string name="social_remove_member_dialog_title">Remove member</string>
@@ -478,8 +476,8 @@
     <string name="social_share_unavailable">Can\'t share</string>
     <string name="social_shared_plan_title">Invite &amp; manage members</string>
 
-    <string name="social_code_input_label">Enter a code</string>
-    <string name="social_code_input_hint">Invite codes and gifted plan codes work here.</string>
+    <string name="social_code_input_label">Enter invite code</string>
+    <string name="social_code_input_hint">Enter an invite code to join a Couple or Family plan.</string>
     <string name="social_members_capacity">%1$d/%2$d</string>
     <string name="social_capacity_full">Full, so you can\'t share</string>
     <string name="voices_create_dialog_title">Create a voice</string>
@@ -650,7 +648,6 @@
     <string name="msg2_billing_fail_plan_not_found">We couldn\'t find the plan information</string>
     <string name="msg2_billing_fail_plan_inactive">This plan can\'t be selected right now</string>
     <string name="msg2_billing_fail_free_not_billable">The Free plan can\'t be applied here</string>
-    <string name="msg2_billing_fail_checkout_disabled">In the test version, please enter an invite code</string>
     <string name="msg2_billing_fail_user_not_found">Please check your login details again</string>
     <string name="msg2_billing_fail_transaction_owned_by_other_user">This purchase is already linked to another account. Please sign in with that account</string>
     <string name="msg2_code_fail_code_required">Please enter a code</string>
@@ -781,9 +778,6 @@
     <string name="voices_my_voices_title">My voices</string>
     <string name="voices_shared_voices_title">Shared with me</string>
     <string name="voices_system_voices_title">Default voices</string>
-    <string name="plan_gate_redeem_action">I have a gift or invite code</string>
-    <string name="plan_gate_redeem_title">Enter a code</string>
-    <string name="plan_gate_redeem_desc">Enter a gift code you received. Invite codes work here too.</string>
     <string name="voicesr_preview_stop">Stop</string>
     <string name="voice_consent_title">Registering a voice needs a separate consent</string>
     <string name="voice_consent_body">A registered voice is used to create a voice profile, read alarm lines aloud, play alarms, and cache audio on this device. Voice cloning and text-to-speech run through our voice AI provider ElevenLabs, and your voice and text are sent overseas as part of that. AlarmTalk does not use your voice for public search, advertising, or data sales, and does not train its own general-purpose AI models on it. You can delete a voice profile at any time.</string>
@@ -796,8 +790,7 @@
     <string name="auth_consent_expand">Expand item</string>
     <string name="auth_consent_collapse">Collapse item</string>
     <string name="auth_consent_marketing_detail">News about new features, events, and offers, sent by push or email. Declining changes nothing about signing up or using the app, and you can turn it off any time from the More tab. Promotional messages are only sent between 8am and 9pm; alarms you set yourself are not promotions and ring exactly when you scheduled them.</string>
-    <string name="share_code_invite_body">Come use my voice alarms on AlarmTalk!\n\nInvite code: %1$s\n\n1. Install AlarmTalk https://alarm-talk.com/en/\n2. Sign up and log in\n3. Enter the code under More → Register code</string>
-    <string name="share_code_gift_body">I sent you an AlarmTalk plan.\n\nPlan code: %1$s\n\n1. Install AlarmTalk https://alarm-talk.com/en/\n2. Sign up and log in\n3. Enter the code under More → Register code</string>
+    <string name="share_code_invite_body">Come use my voice alarms on AlarmTalk!\n\nInvite code: %1$s\n\n1. Install AlarmTalk https://alarm-talk.com/en/\n2. Sign up and log in\n3. Enter the code under More → Register invite code</string>
     <string name="auth_consent_title_updated">We have updated our terms</string>
     <string name="auth_consent_subtitle_updated">Only the items that changed are listed below. Everything you already agreed to stays as it is.</string>
     <string name="tts_consent_title">Creating a spoken alarm needs your consent</string>
@@ -823,11 +816,11 @@
     <string name="downgrade_notice_shared_title">You\'ve left the shared plan</string>
     <string name="downgrade_notice_replaced_title">Your voice was replaced</string>
     <string name="downgrade_notice_replaced_message">Registering a new voice switched %1$d alarm(s) with custom text to a default voice. Create those messages again with the new voice.</string>
-    <string name="downgrade_notice_shared_message">The shared voice is no longer available, so %1$d alarm(s) now use a default voice. To use it again you need your own plan or a new invite code.</string>
+    <string name="downgrade_notice_shared_message">The shared voice is no longer available, so %1$d alarm(s) now use a default voice. To use it again, it has to be shared with you again.</string>
     <string name="downgrade_notice_open_billing">View plans</string>
     <string name="plan_gate_paid_message">This feature is available with a paid plan.</string>
     <string name="msg_voice_preset_only">Basic voices can only say prepared phrases. Choose your own voice to wake up with text you type.</string>
-    <string name="msg_voice_locked_free_plan">You\'re on the Free plan now, so this voice can\'t be used. Register a plan again to bring it back.</string>
+    <string name="msg_voice_locked_free_plan">You\'re on the Free plan now, so this voice can\'t be used. Subscribe again to bring it back.</string>
     <string name="clip_prefetch_notification_title">Downloading voices</string>
     <string name="voices_clip_prep_done">Done</string>
     <string name="voices_clip_prep_background">Continue in the background</string>

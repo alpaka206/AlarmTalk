@@ -18,13 +18,9 @@ final class SubscriptionConfirmationTests: XCTestCase {
             XCTAssertEqual(outcome.rejection, message, "purchase는 이 값이 없으면 구독 성공으로 처리한다")
             XCTAssertEqual(manager.lastError, message)
             XCTAssertEqual(refreshes, 0)
-            // 실패 안내와 finish 정책은 다르다. 미확정 선물은 계속 미완료로 남겨야 한다.
-            for product in SubscriptionProduct.allCases {
-                XCTAssertEqual(
-                    SubscriptionManager.mayFinish(productID: product.rawValue, serverConfirmed: outcome.confirmed),
-                    product.isSubscription
-                )
-            }
+            // ⚠ 확정 전에는 끝내지 않는 갈래(`mayFinish`)는 소모성 선물 하나를 위한 것이었고, 선물과 함께
+            // 2026-10-14 에 없앴다(App Store 지침 3.1.1 두 번째 반려 — 되살리지 말 것, 할인·무료 이용은 스토어
+            // 오퍼 코드). 남은 상품은 전부 구독이라 확정 여부와 무관하게 끝낸다(`SubscriptionManagerTests`).
         }
     }
 

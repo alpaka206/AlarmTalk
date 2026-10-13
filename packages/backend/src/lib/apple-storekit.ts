@@ -334,19 +334,12 @@ const APPLE_PRODUCT_TO_PLAN_KEY: Record<string, 'personal' | 'couple' | 'family'
   'com.alarmtalk.app.personal_monthly': 'personal',
   'com.alarmtalk.app.couple_monthly': 'couple',
   'com.alarmtalk.app.family_monthly': 'family',
-  // ⚠ **선물 상품은 구독이 아니라 소모성(consumable)이다.** 자동 갱신 구독은 남에게
-  // 줄 수 없어서(스토어가 구매자 계정에 묶는다), 선물은 1회성 상품을 팔고 그 대금으로
-  // **바우처 코드**를 발급한다. 그래서 이 상품의 결제는 구독 갈래를 타면 안 된다 —
-  // `isAppleGiftProductId` 로 갈라 `billing-apple.ts` 가 바우처를 만든다.
-  'com.alarmtalk.app.personal_gift_1m': 'personal',
+  // ⚠ **선물 상품(소모성 `com.alarmtalk.app.personal_gift_1m`)은 2026-10-14 에 없앴다 — 되살리지
+  //   말 것**(App Store 심사 지침 3.1.1, 두 번째 반려 — `routes/code.ts` 머리말). 그 결제는 받는
+  //   사람이 **코드를 쳐서** 여는 선물 코드를 만들었고, 애플이 막는 것이 바로 그 '코드로 해제' 다.
+  //   이 목록에서 빠졌으므로 확정 라우트는 그 결제를 모르는 상품(400 `UNKNOWN_PRODUCT`)으로 돌려준다
+  //   — 코드 발급도 환불 회수 갈래도 없다. 할인·무료 이용은 스토어 오퍼 코드로 준다.
 };
-
-/** 선물용 1회성 상품 ID. 구독 갈래로 새면 구매자 본인이 이용권을 받게 된다. */
-const APPLE_GIFT_PRODUCT_IDS = new Set<string>(['com.alarmtalk.app.personal_gift_1m']);
-
-export function isAppleGiftProductId(productId: string): boolean {
-  return APPLE_GIFT_PRODUCT_IDS.has(productId);
-}
 
 export function applePlanKeyFromProductId(
   productId: string,

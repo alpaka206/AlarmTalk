@@ -69,7 +69,7 @@ struct MemberManagementView: View {
                 if group == nil {
                     EmptyStatePlaceholder(
                         title: "현재 함께 쓰는 이용권이 없어요.",
-                        subtitle: "가족·커플 이용권을 등록하면 여기에서 함께 쓰는 사람을 관리할 수 있어요.",
+                        subtitle: "가족·커플 이용권을 구독하면 여기에서 함께 쓰는 사람을 관리할 수 있어요.",
                         icon: "person.2"
                     )
                     .padding(.vertical, 12)

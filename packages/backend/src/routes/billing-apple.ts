@@ -27,7 +27,6 @@ import { applyStoreEntitlement, loadPlanByKey } from '../lib/store-billing';
 import {
   appleStoreKitConfigFromEnv,
   applePlanKeyFromProductId,
-  isAppleGiftProductId,
   fetchAppleTransaction,
   fetchAppleSubscriptionStatus,
   APPLE_SUBSCRIPTION_STATUS,
@@ -35,7 +34,6 @@ import {
   type AppleTransactionInfo,
 } from '../lib/apple-storekit';
 import { resolveUserPk } from './billing-helpers';
-import { issueVoucherCode } from '../lib/voucher-issue';
 
 const billingApple = new Hono<AppEnv>();
 
@@ -99,6 +97,11 @@ billingApple.post('/apple/confirm', async (c) => {
     );
   }
 
+  // ⚠ **선물 상품(소모성 `com.alarmtalk.app.personal_gift_1m`)은 2026-10-14 에 없앴다 — 되살리지
+  //   말 것**(App Store 심사 지침 3.1.1, 두 번째 반려 — `routes/code.ts` 머리말). 상품 목록에서
+  //   빠졌으므로 그 결제는 **여기서** 모르는 상품으로 끝난다 — 아래 환불 회수·체인 조회·계정 바인딩·
+  //   발급 어디에도 닿지 않는다. 예전 선물 갈래(바우처 발급·`apple_gift_deliveries` 연결·환불 회수)는
+  //   통째로 지웠다. 할인·무료 이용은 스토어 오퍼 코드로 준다.
   const planKey = applePlanKeyFromProductId(info.productId);
   if (!planKey) {
     return c.json(
@@ -121,13 +124,6 @@ billingApple.post('/apple/confirm', async (c) => {
   //   애플이 확인해 준 사실이고(`fetchAppleTransaction` 이 검증한다), 그 구독은 누가
   //   알려 주든 끊기는 것이 맞다.
   if (info.revocationDate) {
-    if (isAppleGiftProductId(info.productId)) {
-      const settled = await revokeRefundedAppleGift(db0, info, planKey);
-      if (!settled) {
-        return c.json({ error: 'Gift mapping requires reconciliation', error_code: 'APPLE_VERIFICATION_FAILED' }, 502);
-      }
-      return c.json({ error: 'Transaction was revoked', error_code: 'TRANSACTION_REVOKED' }, 400);
-    }
     // ⚠ **체인이 아직 살아 있으면 손대지 않는다**(코덱스 #733 2차). 자동갱신 구독은
     //   갱신마다 트랜잭션이 새로 나지만 `originalTransactionId` 는 **체인 전체가 공유**한다.
     //   그래서 옛 갱신 한 건이 뒤늦게 환불되면, 아래 조회가 그 id 로 **지금 살아 있는
@@ -176,33 +172,29 @@ billingApple.post('/apple/confirm', async (c) => {
   //   "결제가 한 번에 안 된다" 로 겪었다(2026-09-19 운영 로그). 그래서 보낸 id 는 **어느
   //   체인인지 찾는 열쇠**로만 쓰고, 표식·상품·만료는 전부 애플이 돌려준 **가장 최근
   //   트랜잭션**에서 읽는다. 어느 트랜잭션이 올라오든 답이 같다.
-  //
-  //   선물(소모성)은 체인이 없다 — 보낸 트랜잭션 그대로 판정한다.
   let effective: AppleTransactionInfo = info;
   let chainStatus: number | null = null;
   let chainGraceExpiresDate: number | undefined;
-  if (!isAppleGiftProductId(info.productId)) {
-    try {
-      const chain = await fetchAppleSubscriptionStatus(info.originalTransactionId, config);
-      effective = chain.latest;
-      chainStatus = chain.status;
-      chainGraceExpiresDate = chain.gracePeriodExpiresDate;
-    } catch (err) {
-      if (!(err instanceof AppleTransactionNotFoundError)) {
-        // 판정을 못 했으면 판정한 척하지 않는다 — 재시도 가능한 502.
-        logStructured('error', {
-          at: 'billing.apple.confirm',
-          step: 'chain_status',
-          error: String(err),
-        });
-        return c.json(
-          { error: 'Apple verification failed', error_code: 'APPLE_VERIFICATION_FAILED' },
-          502,
-        );
-      }
-      // 체인을 못 찾았다(방금 조회된 트랜잭션인데 상태 API 에만 없다) — 보낸 트랜잭션으로
-      // 판정한다. 예전 동작 그대로라 잃는 것이 없다.
+  try {
+    const chain = await fetchAppleSubscriptionStatus(info.originalTransactionId, config);
+    effective = chain.latest;
+    chainStatus = chain.status;
+    chainGraceExpiresDate = chain.gracePeriodExpiresDate;
+  } catch (err) {
+    if (!(err instanceof AppleTransactionNotFoundError)) {
+      // 판정을 못 했으면 판정한 척하지 않는다 — 재시도 가능한 502.
+      logStructured('error', {
+        at: 'billing.apple.confirm',
+        step: 'chain_status',
+        error: String(err),
+      });
+      return c.json(
+        { error: 'Apple verification failed', error_code: 'APPLE_VERIFICATION_FAILED' },
+        502,
+      );
     }
+    // 체인을 못 찾았다(방금 조회된 트랜잭션인데 상태 API 에만 없다) — 보낸 트랜잭션으로
+    // 판정한다. 예전 동작 그대로라 잃는 것이 없다.
   }
   const subscriptionPlanKey = applePlanKeyFromProductId(effective.productId);
   if (!subscriptionPlanKey) {
@@ -214,9 +206,9 @@ billingApple.post('/apple/confirm', async (c) => {
 
   // ⚠ **이 결제가 이 계정 것인지 확인한다**(2026-08-18 Codex #697 P1).
   // 구글 갈래는 `obfuscatedExternalAccountId` 로 처음부터 이 검사를 했는데 애플에는
-  // 없었다. 애플은 소모성·구독 모두 **끝내지 않은 트랜잭션을 재전달**하므로, 서버 확정에
+  // 없었다. 애플은 **끝내지 않은 트랜잭션을 재전달**하므로, 서버 확정에
   // 실패한 채 같은 기기에서 다른 AlarmTalk 계정으로 로그인하면 그 트랜잭션이 **새 세션의
-  // 토큰으로** 다시 올라온다 — 검사가 없으면 나중 계정이 구독·선물 바우처를 가져간다.
+  // 토큰으로** 다시 올라온다 — 검사가 없으면 나중 계정이 구독을 가져간다.
   //
   // 대조 값은 클라가 구매 시 `appAccountToken` 에 실은 우리 쪽 사용자 id(UUID)다.
   // 구글이 해시를 쓰는 것과 달리 애플은 **UUID 만** 허용해 그대로 싣는다.
@@ -241,16 +233,12 @@ billingApple.post('/apple/confirm', async (c) => {
       //
       //   표식의 주인이 **살아 있을 때만** 막는 것이 이 검사의 본래 뜻이다 — 두 계정이
       //   같은 결제를 다투는 상황 말이다. 주인이 없으면 다툴 상대가 없다.
-      //   ⚠ **선물(소모성)은 예외다.** 구독은 App Store 계정에 달려 있어 같은 사람이 되찾는
-      //     것이지만, 선물 코드는 **값을 새로 발행**하는 일이라 주인 없는 표식으로 넘겨주면
-      //     남의 결제로 코드를 받아 갈 수 있다. 그쪽은 기존대로 막는다
-      //     (회귀 테스트: `billing-apple-gift-refund.test.ts`).
-      const ownerAlive = isAppleGiftProductId(info.productId)
-        ? { rows: [{ 1: 1 }] }
-        : await db0.execute({
-            sql: `SELECT 1 FROM users WHERE lower(id) = ? OR lower(google_id) = ? LIMIT 1`,
-            args: [appleAccountToken, appleAccountToken],
-          });
+      //   (예전에는 선물(소모성)만 주인이 없어도 막았다 — 코드를 새로 발행하는 일이라서. 선물은
+      //   2026-10-14 에 없앴고 그 상품은 위 `UNKNOWN_PRODUCT` 에서 끝나 여기 오지 않는다.)
+      const ownerAlive = await db0.execute({
+        sql: `SELECT 1 FROM users WHERE lower(id) = ? OR lower(google_id) = ? LIMIT 1`,
+        args: [appleAccountToken, appleAccountToken],
+      });
       if (ownerAlive.rows.length > 0) {
         logStructured('warn', {
           at: 'billing.apple.confirm',
@@ -281,9 +269,7 @@ billingApple.post('/apple/confirm', async (c) => {
     const boundRes = await db0.execute({
       sql: `SELECT user_id FROM store_transactions
             WHERE provider = 'apple' AND provider_transaction_id = ?`,
-      args: [
-        isAppleGiftProductId(info.productId) ? info.transactionId : info.originalTransactionId,
-      ],
+      args: [info.originalTransactionId],
     });
     if (boundRes.rows.length === 0) {
       logStructured('warn', {
@@ -299,92 +285,6 @@ billingApple.post('/apple/confirm', async (c) => {
         403,
       );
     }
-  }
-
-  // ⚠ **선물 상품은 여기서 갈라진다.** 자동 갱신 구독은 남에게 줄 수 없어(스토어가
-  // 구매자 계정에 묶는다) 선물은 1회성 상품을 팔고 그 대금으로 **바우처 코드**를 만든다.
-  // 이 갈래를 안 만들면 구매자 본인이 이용권을 받게 되고, 아래 `expiresDate` 검사에
-  // 걸려 소모성 결제는 통째로 거절된다.
-  if (isAppleGiftProductId(info.productId)) {
-    const giftPlan = await loadPlanByKey(db0, planKey);
-    if (!giftPlan) {
-      return c.json({ error: 'Plan not found', error_code: 'PLAN_NOT_FOUND' }, 400);
-    }
-    const issuedAt = new Date(info.purchaseDate);
-    // 바우처 유효기간은 **받는 사람이 등록할 때까지의 기한**이다. 등록하면 그 시점부터
-    // 플랜 기간이 시작된다.
-    const voucherExpiresAt = new Date(
-      issuedAt.getTime() + giftPlan.period_days * 24 * 60 * 60 * 1000,
-    );
-    const gift = await withWriteTransaction(db0, async (txDb) => {
-      const state = await txDb.execute({
-        sql: 'SELECT revoked_at FROM apple_gift_deliveries WHERE transaction_id = ?',
-        args: [info.transactionId],
-      });
-      if (state.rows[0]?.revoked_at) return 'revoked' as const;
-      // ⚠ **같은 결제로 두 번 발급하지 않는다.** 스토어는 같은 트랜잭션을 재전송할 수
-      // 있고(네트워크 재시도·복원), 멱등하지 않으면 코드가 여러 장 나온다.
-      const seen = await txDb.execute({
-        sql: `SELECT id, user_id FROM store_transactions
-              WHERE provider = 'apple' AND provider_transaction_id = ? LIMIT 1`,
-        args: [info.transactionId],
-      });
-      if (seen.rows.length > 0) {
-        if (seen.rows[0]!.user_id !== userPk) return 'owned' as const;
-        return null;
-      }
-      await txDb.execute({
-        // ⚠ **`plan_key` 를 빠뜨리지 말 것.** 마이그레이션 42 가 `TEXT NOT NULL`(기본값
-        // 없음)로 만든 컬럼이라, 빠지면 INSERT 가 거절되고 **트랜잭션이 통째로 롤백**된다 —
-        // 스토어는 이미 결제를 받았는데 바우처가 안 나간다(2026-08-18 Codex #697 P1).
-        sql: `INSERT INTO store_transactions
-              (id, user_id, provider, provider_transaction_id, product_id, plan_key, subscription_id, raw_payload, last_paid_at)
-              VALUES (?, ?, 'apple', ?, ?, ?, NULL, ?, ?)`,
-        args: [
-          crypto.randomUUID(),
-          userPk,
-          info.transactionId,
-          info.productId,
-          planKey,
-          JSON.stringify({ kind: 'gift', environment: info.environment ?? null }),
-          issuedAt.toISOString(),
-        ],
-      });
-      const voucher = await issueVoucherCode(txDb, {
-        kind: 'gift',
-        planId: giftPlan.id,
-        issuerUserId: userPk,
-        issuerSubscriptionId: null,
-        issuedAt: issuedAt.toISOString(),
-        expiresAt: voucherExpiresAt.toISOString(),
-        maxUses: 1,
-      });
-      await txDb.execute({
-        sql: 'INSERT INTO apple_gift_deliveries (transaction_id, voucher_id) VALUES (?, ?)',
-        args: [info.transactionId, voucher.id],
-      });
-      return voucher;
-    });
-    if (gift === 'revoked') {
-      return c.json({ error: 'Transaction was revoked', error_code: 'TRANSACTION_REVOKED' }, 400);
-    }
-    if (gift === 'owned') {
-      return c.json({ error: 'Transaction belongs to another user', error_code: 'TRANSACTION_OWNED_BY_OTHER_USER' }, 409);
-    }
-    // ⚠ **성공 필드는 `success` 다 — `ok` 가 아니다.** 아래 구독 갈래도, 클라의
-    // `ConfirmAppleSubscriptionResponse` 도 `success` 만 읽는다(없으면 `false` 로 떨어진다).
-    // 그래서 선물은 **발급에 성공해도 클라에서는 실패**로 보였다(2026-08-18 Codex #697 P1).
-    // 지금은 그게 곧바로 손해다: 클라가 확정 못 한 소모성 결제를 `finish` 하지 않으므로
-    // 정상 발급된 선물이 계속 미완료로 남고 구매 화면은 실패라고 말한다.
-    if (!gift) {
-      // 이미 처리한 결제다. 실패가 아니라 **같은 결과**를 돌려준다.
-      return c.json({ success: true, gift: true, duplicate: true });
-    }
-    return c.json({
-      success: true,
-      gift: true,
-      voucher: { code: gift.code, expires_at: gift.expires_at },
-    });
   }
 
   // 자동 갱신 구독은 expiresDate 가 반드시 있다. 없으면 우리가 파는 상품이 아니다
@@ -589,73 +489,6 @@ async function appleChainStatus(
   }
 }
 
-/** 실제 결제→코드 연결만 회수한다. 환불이 발급을 앞질러도 재발급 금지 표식을 남긴다. */
-async function revokeRefundedAppleGift(
-  db: ReturnType<typeof getDB>, info: AppleTransactionInfo, planKey: string,
-): Promise<boolean> {
-  return withWriteTransaction(db, async (tx) => {
-    const transactionId = info.transactionId;
-    const mapping = await tx.execute({
-      sql: 'SELECT voucher_id FROM apple_gift_deliveries WHERE transaction_id = ?',
-      args: [transactionId],
-    });
-    const receipt = await tx.execute({
-      sql: "SELECT id FROM store_transactions WHERE provider = 'apple' AND provider_transaction_id = ?",
-      args: [transactionId],
-    });
-    // 연결을 복구하지 못한 옛 결제는 임의의 다른 코드를 만료시키지 않는다.
-    if (mapping.rows.length === 0 && receipt.rows.length > 0) return false;
-    const voucherId = mapping.rows[0]?.voucher_id;
-    if (receipt.rows.length === 0) {
-      // 발급 전 환불도 원장에 구매자를 남겨야 계정 파기/5년 보존 경로가 찾을 수 있다.
-      // 요청자는 제보자일 뿐이다. 기존 코드 또는 Apple이 검증한 계정 연결만 사용한다.
-      const accountToken = info.appAccountToken?.trim().toLowerCase() ?? '';
-      const purchaser = await tx.execute(typeof voucherId === 'string' ? {
-        sql: `SELECT u.id FROM users u JOIN voucher_codes v ON v.issuer_user_id = u.id
-              WHERE v.id = ?`,
-        args: [voucherId],
-      } : {
-        sql: `SELECT id FROM users WHERE ? <> '' AND (lower(id) = ? OR lower(google_id) = ?) LIMIT 2`,
-        args: [accountToken, accountToken, accountToken],
-      });
-      if (purchaser.rows.length !== 1) {
-        if (purchaser.rows.length > 1 || typeof voucherId === 'string') return false;
-        // 이미 탈퇴했거나 최초 청구에 필요한 계정 연결이 없다. 발급할 대상이 없는데
-        // 표식만 재생성하면 다시 무기한 고아가 된다. 기존 무연결 표식도 함께 정리한다.
-        await tx.execute({
-          sql: 'DELETE FROM apple_gift_deliveries WHERE transaction_id = ? AND voucher_id IS NULL',
-          args: [transactionId],
-        });
-        return true;
-      }
-      await tx.execute({
-        sql: `INSERT INTO store_transactions
-              (id, user_id, provider, provider_transaction_id, product_id, plan_key, raw_payload, last_paid_at)
-              VALUES (?, ?, 'apple', ?, ?, ?, ?, ?)`,
-        args: [
-          crypto.randomUUID(), String(purchaser.rows[0]!.id), transactionId, info.productId,
-          planKey, JSON.stringify({ kind: 'gift', refunded: true, environment: info.environment ?? null }),
-          new Date(info.purchaseDate).toISOString(),
-        ],
-      });
-    }
-    await tx.execute({
-      sql: `INSERT INTO apple_gift_deliveries (transaction_id, revoked_at) VALUES (?, ?)
-        ON CONFLICT(transaction_id) DO UPDATE SET
-          revoked_at = COALESCE(apple_gift_deliveries.revoked_at, excluded.revoked_at)`,
-      args: [transactionId, new Date(info.revocationDate!).toISOString()],
-    });
-    if (typeof voucherId === 'string') {
-      await tx.execute({
-        sql: `UPDATE voucher_codes SET status = 'expired' WHERE id = ? AND status = 'issued'
-          AND NOT EXISTS (SELECT 1 FROM voucher_redemptions WHERE voucher_id = voucher_codes.id)`,
-        args: [voucherId],
-      });
-    }
-    return true;
-  });
-}
-
 async function readRefundedMapping(
   db: DbExecutor,
   info: { originalTransactionId: string; transactionId: string },
@@ -682,7 +515,9 @@ async function readRefundedMapping(
  * 한 건만 취소하고, 목소리는 지우지 않고 보관 유예를 건다(재구독하면 entitle 경로가
  * 유예를 푼다). 강등되는 당사자와 해체된 그룹 멤버에게 알린다.
  *
- * 구독만 처리한다. 선물은 체인 조회 전에 `revokeRefundedAppleGift`로 분기한다.
+ * 구독만 처리한다. 예전에는 선물(소모성) 환불을 따로 회수했는데, 선물은 2026-10-14 에 없앴고
+ * 그 상품은 라우트 앞의 `UNKNOWN_PRODUCT` 에서 끝나 여기 오지 않는다(되살리지 말 것 — App Store
+ * 심사 지침 3.1.1).
  */
 async function revokeRefundedAppleSubscription(
   db: ReturnType<typeof getDB>,
@@ -700,7 +535,7 @@ async function revokeRefundedAppleSubscription(
     const row = await readRefundedMapping(tx, info);
     // Apple 왕복 중 새 갱신이 같은 체인에 반영됐으면, 옛 종료 응답으로 그룹을 해체하지 않는다.
     if (JSON.stringify(row) !== JSON.stringify(expected)) throw new BillingStateChangedError();
-    if (!row) return null; // 구독이 아니거나(선물) 이미 정리됐다.
+    if (!row) return null; // 매핑된 활성 구독이 없다 — 이미 정리됐거나 반영한 적이 없다.
 
     const mapped: ActiveSubscription = {
       subscriptionId: String(row.subscription_id),

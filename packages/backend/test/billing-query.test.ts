@@ -75,7 +75,7 @@ describe('GET /billing/vouchers (billingQuery)', () => {
     });
   });
 
-  it('SQL 에 JOIN plans + issuer_user_id 필터 + ORDER BY issued_at DESC 포함', async () => {
+  it('SQL 에 JOIN plans + issuer_user_id 필터 + 초대 코드(INV-) 조건 + ORDER BY issued_at DESC 포함', async () => {
     mockDB.pushResult([{ id: 'user-pk-1' }]);
     mockDB.pushResult([]);
 
@@ -84,6 +84,10 @@ describe('GET /billing/vouchers (billingQuery)', () => {
     const sql = mockDB.calls[1]!.sql;
     expect(sql).toContain('JOIN plans p ON p.id = v.plan_id');
     expect(sql).toContain('v.issuer_user_id = ?');
+    // 옛 선물 행을 거르는 조건은 고정 리터럴이다 — 바인딩되는 값은 발급자 하나뿐이다.
+    // 실제로 걸러지는지는 `gift-codes-retired.test.ts` 가 실제 DB 로 본다.
+    expect(sql).toContain("v.code LIKE 'INV-%'");
+    expect(mockDB.calls[1]!.args).toEqual(['user-pk-1']);
     expect(sql).toContain('ORDER BY v.issued_at DESC');
   });
 

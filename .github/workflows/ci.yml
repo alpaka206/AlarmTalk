@@ -144,6 +144,16 @@ jobs:
           python3 scripts/check-vibration-patterns.py --self-test
           python3 scripts/check-vibration-patterns.py
 
+      # 코드를 쳐서 유료 기능을 여는 길은 App Store 지침 3.1.1 로 두 번 반려됐다 — 1.2.11 은 프로모 코드, 1.2.12 는 선물
+      # 코드(2026-10-12). 첫 번째 때 사례(프로모)만 지우고 같은 종류(선물)를 남긴 것이 두 번째의 원인이라, 규칙을 종류로
+      # 적고(`docs/spec/plan-gates.md` 「선물 코드 — 폐지」) 두 앱의 화면 문구·앱과 서버 코드·스토어 문구 원본에서 선물·
+      # 프로모·쿠폰 어휘와 은퇴한 상품 id·`GIFT-` 형식이 돌아오면 여기서 막는다. 남는 코드는 초대 코드(INV-) 하나다.
+      # 형식 검사(`VOUCHER_CODE_RE` 가 INV- 하나뿐인지)와 두 앱 유료 게이트에 코드 입력이 돌아오는지도 같이 본다.
+      - name: Check no code-based paid unlocks (gift, promo, coupon codes)
+        run: |
+          python3 scripts/check-paid-unlock-codes.py --self-test
+          python3 scripts/check-paid-unlock-codes.py
+
       # 유닛 테스트가 호스트 앱 프로세스에서 도는 탓에, 저장 위치를 손으로 조립하면
       # **사용자가 쓰는 그 파일**을 잡는다. 실제로 기기에서 테스트를 돌릴 때마다
       # 로그인·알람·기본 목소리 클립이 지워지고 있었다(2026-08-19). 테스트는 초록으로

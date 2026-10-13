@@ -691,6 +691,17 @@ final class PersonalPromoTests: XCTestCase {
         XCTAssertFalse(screen.showsPurchase(.free))
     }
 
+    func test_planScreen_sharesVouchersOnlyOnPurchasedCurrentCard() {
+        // 안드로이드 `PlanScreenCurrent.sharesVouchers` 와 같은 답 — 산 현재 카드에서만 초대 코드를 공유한다.
+        let purchased = planScreen(purchased: .couple)
+        XCTAssertTrue(purchased.sharesVouchers(.couple))
+        XCTAssertFalse(purchased.sharesVouchers(.family), "현재가 아닌 카드에는 공유 버튼이 없다")
+        XCTAssertFalse(purchased.sharesVouchers(.personal))
+        let promoOnly = planScreen()
+        XCTAssertFalse(promoOnly.sharesVouchers(.personal), "프로모로 현재가 된 카드는 산 것이 아니다")
+        XCTAssertFalse(promoOnly.sharesVouchers(.couple))
+    }
+
     func test_planScreen_purchasedPlanStaysCurrentAndPromoLineStaysAbove() {
         // 산 이용권이 있는데 프로모가 보이는 경우(StoreKit 이 먼저 안 결제 직후 등) — 예전 그대로.
         let screen = planScreen(purchased: .couple)

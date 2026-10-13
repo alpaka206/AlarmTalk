@@ -14,16 +14,9 @@ describe('generateVoucherCodePlain', () => {
     }
   });
 
-  it("kind='gift' 는 GIFT-XXXX-XXXX-XXXX 포맷", () => {
-    for (let i = 0; i < 20; i++) {
-      const code = generateVoucherCodePlain('gift');
-      expect(code).toMatch(/^GIFT-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/);
-    }
-  });
-
   it('시각적 혼동 문자 (0/O/1/I/L) 는 무작위 그룹에 포함되지 않는다 (prefix 자체 글자는 제외)', () => {
     for (let i = 0; i < 200; i++) {
-      const groups = generateVoucherCodePlain().replace(/^(INV|GIFT)-/, '');
+      const groups = generateVoucherCodePlain().replace(/^INV-/, '');
       expect(groups).not.toMatch(/[01OIL]/);
     }
   });
@@ -60,20 +53,20 @@ describe('generateVoucherCode', () => {
     expect(code).toMatch(/^INV-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/);
     expect(hash).toBe(await hashVoucherCode(code));
   });
-
-  it("kind='gift' → GIFT- code + hash", async () => {
-    const { code, hash } = await generateVoucherCode('gift');
-    expect(code).toMatch(/^GIFT-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/);
-    expect(hash).toBe(await hashVoucherCode(code));
-  });
 });
 
 describe('isValidVoucherCodeFormat', () => {
-  it('INV/GIFT prefix 정상 포맷 → true', () => {
+  it('INV prefix 정상 포맷 → true', () => {
     expect(isValidVoucherCodeFormat('INV-ABCD-EFGH-JKMN')).toBe(true);
     expect(isValidVoucherCodeFormat('INV-2345-6789-ABCD')).toBe(true);
-    expect(isValidVoucherCodeFormat('GIFT-ABCD-EFGH-JKMN')).toBe(true);
-    expect(isValidVoucherCodeFormat('GIFT-2345-6789-ABCD')).toBe(true);
+  });
+
+  // ⚠ **선물 코드(GIFT-)는 2026-10-14 에 없앴다 — 되살리지 말 것**(App Store 심사 지침 3.1.1, 두 번째
+  //   반려 — `routes/code.ts` 머리말). 형식이 맞는 선물 코드도 이제 '이용권 형식이 아니다' 다 — 그래야
+  //   등록 라우트가 조회조차 하지 않고 `CODE_NOT_FOUND` 로 끝낸다.
+  it('GIFT- 코드는 형식이 맞아도 false — 선물 코드는 폐지됐다', () => {
+    expect(isValidVoucherCodeFormat('GIFT-ABCD-EFGH-JKMN')).toBe(false);
+    expect(isValidVoucherCodeFormat('GIFT-2345-6789-ABCD')).toBe(false);
   });
 
   it('잘못된 포맷 → false', () => {

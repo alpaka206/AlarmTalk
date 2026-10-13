@@ -1494,10 +1494,8 @@ internal fun AlarmTalkApp(
           val lastManualText = remember(authSession?.user?.id) { viewModel.lastManualText() }
           AlarmEditorScreen(
               contentPadding = padding,
-              // ⚠ **편집기에서는 화면을 옮기지 않는다.** 옮기면 쿠폰을 넣는 순간
-              // 홈으로 튕겨 편집 중이던 알람이 통째로 사라진다.
-              onRegisterCode = { code -> viewModel.registerCode(code, navigateOnSuccess = false) },
-              redeemBusy = viewModel.billingBusy,
+              // ⚠ 편집기 유료 게이트의 코드 입력(`onRegisterCode`)은 2026-10-14 에 지웠다 — 되살리지 말 것
+              // (선물 코드 폐지, App Store 3.1.1 두 번째 반려 — `PlanGateDialog` 머리말).
               alarm = alarm,
               authSession = authSession,
               subscriptionResponse = subscriptionResponse,
@@ -1629,10 +1627,8 @@ internal fun AlarmTalkApp(
                           },
                           onLeaveFamilyGroup = viewModel::leaveFamilyGroup,
                           onRegisterCode = viewModel::registerCode,
-                          onEnsureFamilyShareCode = viewModel::ensureFamilyShareCode,
                           planPrices = viewModel.billingPlanPrices,
                           onPurchasePlay = viewModel::startPlayPurchase,
-                          onGiftPersonal = viewModel::startGiftPurchase,
                           onCancelSubscription = viewModel::cancelSubscription,
                           onRefreshShareCodeData = viewModel::refreshShareCodeData,
                           onRestorePurchases = viewModel::restorePurchases,

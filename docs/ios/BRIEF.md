@@ -65,7 +65,7 @@
 | Xcode | 26.6 (17F113), `xcode-select` 설정 완료 |
 | iOS SDK | 26.5 (device + simulator), `AlarmKit.framework` 양쪽에 존재 |
 | 시뮬레이터 런타임 | iOS 26.5 (23F77) 설치됨 |
-| 기기 | `iPhone 17 Pro` (`0733FD07-812F-4EC4-B149-B9A992E51F00`) 부팅됨 |
+| 기기 | `iPhone 18 Pro` (iOS 27.0, `2259AC9B-B807-494E-9D0B-1F79B48D1626`) — 2026-10-14 새 맥 |
 | XcodeGen | 2.46.0 (`project.yml` 그대로 generate 성공) |
 | Swift | 6.3.3 |
 | npm 의존성 | `npm ci` 완료 |
@@ -140,7 +140,7 @@ xcodebuild -project AlarmTalkNative.xcodeproj -scheme AlarmTalk -configuration D
 
 ```bash
 xcodebuild -project AlarmTalkNative.xcodeproj -scheme AlarmTalk -configuration Debug \
-  -destination "id=0733FD07-812F-4EC4-B149-B9A992E51F00" -skipPackagePluginValidation \
+  -destination "id=2259AC9B-B807-494E-9D0B-1F79B48D1626" -skipPackagePluginValidation \
   CODE_SIGN_IDENTITY="-" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=YES \
   GENERATE_INFOPLIST_FILE=YES test
 ```
@@ -339,7 +339,7 @@ xcodebuild -project AlarmTalkNative.xcodeproj -scheme AlarmTalk -configuration D
   -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
   -skipPackagePluginValidation CODE_SIGNING_ALLOWED=NO build
 xcodebuild -project AlarmTalkNative.xcodeproj -scheme AlarmTalk -configuration Debug \
-  -destination "id=0733FD07-812F-4EC4-B149-B9A992E51F00" -skipPackagePluginValidation \
+  -destination "id=2259AC9B-B807-494E-9D0B-1F79B48D1626" -skipPackagePluginValidation \
   CODE_SIGN_IDENTITY="-" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=YES \
   GENERATE_INFOPLIST_FILE=YES test
 

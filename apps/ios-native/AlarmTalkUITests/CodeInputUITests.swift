@@ -13,9 +13,9 @@ final class CodeInputUITests: XCTestCase {
         app.launchArguments += ["-UIPreviewSeed", "-UIPreviewTab", "menu"]
         app.launch()
         let row = app.descendants(matching: .any)
-            .matching(NSPredicate(format: "label CONTAINS %@", "코드 등록"))
+            .matching(NSPredicate(format: "label CONTAINS %@", "초대 코드 등록"))
             .element(boundBy: 0)
-        XCTAssertTrue(row.waitForExistence(timeout: 10), "'코드 등록' 행이 없다")
+        XCTAssertTrue(row.waitForExistence(timeout: 10), "'초대 코드 등록' 행이 없다")
         row.tap()
         return app
     }
@@ -68,10 +68,10 @@ final class CodeInputUITests: XCTestCase {
         let confirm = app.alerts.buttons["등록"].firstMatch
         if confirm.waitForExistence(timeout: 3) { confirm.tap() }
 
-        // ⚠ **`"코드"` 로 찾지 말 것 — 안내 문구("초대 코드, 이용권 선물 코드…")에도 있어
+        // ⚠ **`"코드"` 로 찾지 말 것 — 제목·안내 문구("커플·가족 이용권 초대 코드…")에도 있어
         // 버그가 있어도 늘 통과한다.** 실제 오류 문구만 본다.
         //
-        // 서버가 CODE_NOT_FOUND 를 주면 "잘못된 코드입니다.", 프리뷰처럼 서버가 없으면
+        // 서버가 CODE_NOT_FOUND 를 주면 "잘못된 코드예요", 프리뷰처럼 서버가 없으면
         // 폴백("…실패했어요.")이 온다 — 어느 쪽이든 **오류가 화면에 남는가**가 요점이다.
         let error = app.staticTexts.matching(
             NSPredicate(

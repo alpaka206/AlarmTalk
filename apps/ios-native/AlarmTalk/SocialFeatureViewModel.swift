@@ -65,7 +65,7 @@ final class SocialFeatureViewModel: ObservableObject {
      * `/auth/me` 가 준 **지금 plan** 을 세션 주인에게 건넨다(2026-09-01 리뷰).
      *
      * ⚠ 이 갱신은 plan 을 `AccessSnapshotStore` 에만 적었는데, 화면 게이트들은
-     * `auth.session.user.plan` 을 본다. 그래서 무료 사용자가 `INV-`/`GIFT-` 코드를 등록해
+     * `auth.session.user.plan` 을 본다. 그래서 무료 사용자가 `INV-` 초대 코드를 등록해
      * 서버가 구독을 만들고 `users.plan` 을 올려도, **세션은 free 그대로**라 판정기의
      * '아는 free 우선' 규칙이 방금 받은 활성 구독을 덮어 목소리·편집기가 잠긴 채 남는다.
      * (그 규칙 자체는 보류를 잡기 위해 필요하다 — 고칠 것은 **plan 의 신선도**다.)
@@ -533,17 +533,10 @@ final class SocialFeatureViewModel: ObservableObject {
         }
     }
 
-    /// 코드를 등록하고 **실패 사유를 돌려준다**(성공이면 `nil`).
-    ///
-    /// 유료 게이트의 쿠폰 시트(`RedeemCodeSheet`)가 오류를 **입력창 바로 밑**에 그리려면
-    /// 결과를 문자열로 받아야 한다. `registerCode` 는 실패를 `statusMessage` 로만 알리는데,
-    /// 그걸 그대로 읽으면 **직전 성공 문구**("코드를 등록했어요.")가 남아 있을 수 있어
-    /// 먼저 비운다 — `isBusy` 로 조용히 빠지는 갈래도 그때 폴백 문구를 받는다.
-    func registerCodeReportingFailure(_ code: String, session: AuthSession?) async -> String? {
-        let destination = await registerCode(code, session: session)
-        guard destination == nil else { return nil }
-        return statusMessage ?? String(localized: "코드 등록에 실패했어요.")
-    }
+    // ⚠ **`registerCodeReportingFailure`(유료 게이트의 코드 입력 시트용)를 되살리지 말 것**(2026-10-14,
+    // App Store 지침 3.1.1 두 번째 반려 — 선물 코드 폐지). 게이트에는 코드 입력이 없고, 초대 코드는
+    // 더보기 → 초대 코드 등록(`CodeRegisterRow` → `registerCode`)에서만 넣는다. 할인·무료 이용은
+    // 스토어 오퍼 코드로 준다.
 
     func ensureFamilyShareCode(session: AuthSession?) async {
         await runShareCodeAction(
@@ -679,8 +672,8 @@ final class SocialFeatureViewModel: ObservableObject {
             return String(localized: "지금은 선택할 수 없는 이용권이에요")
         case "FREE_NOT_BILLABLE":
             return String(localized: "무료 이용권은 여기에서 적용할 수 없어요")
-        case "GIFT_PERSONAL_ONLY":
-            return String(localized: "선물하기는 개인 이용권에서만 사용할 수 있어요")
+        // ⚠ `GIFT_PERSONAL_ONLY` 갈래를 되살리지 말 것(2026-10-14, App Store 지침 3.1.1 두 번째 반려 —
+        //   선물하기 폐지). 서버도 더는 내지 않는다. 할인·무료 이용은 스토어 오퍼 코드로 준다.
         case "USER_NOT_FOUND":
             return String(localized: "로그인 정보를 다시 확인해 주세요")
         default:
@@ -721,7 +714,6 @@ final class SocialFeatureViewModel: ObservableObject {
         "PLAN_NOT_FOUND",
         "PLAN_INACTIVE",
         "FREE_NOT_BILLABLE",
-        "GIFT_PERSONAL_ONLY",
         "USER_NOT_FOUND"
     ]
 
@@ -923,7 +915,7 @@ final class SocialFeatureViewModel: ObservableObject {
             // '삭제했어요' 라고 하지 않는다 — 지우지 않았고, 알람은 **기본 목소리로** 계속 울린다.
             // 강등 모달(`RootView.downgradeNoticeMessage` 의 `.freePlan`)과 같은 뜻이어야 한다 —
             // 코드 등록 오류로는 재사용하지 않는다(등록 시작 시 지난 상태를 비운다).
-            statusMessage = String(localized: "무료 이용권으로 전환되어 목소리 알람이 기본 목소리로 바뀌었어요. 3일 안에 다시 등록하면 내 목소리가 돌아오고, 지나면 영구 삭제돼요.")
+            statusMessage = String(localized: "무료 이용권으로 전환되어 목소리 알람이 기본 목소리로 바뀌었어요. 3일 안에 다시 구독하면 내 목소리가 돌아오고, 지나면 영구 삭제돼요.")
         }
     }
 }

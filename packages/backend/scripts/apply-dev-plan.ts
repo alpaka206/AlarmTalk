@@ -90,7 +90,8 @@ async function main(): Promise<void> {
   const now = new Date();
   const expiresAt = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
 
-  // 1) 기존 active 구독 정리 — 그 구독이 발급한 미사용 초대/선물 코드도 함께 만료한다
+  // 1) 기존 active 구독 정리 — 그 구독이 발급한 미사용 초대 코드도 함께 만료한다
+  //    (선물 코드는 2026-10-14 에 없앴다 — App Store 심사 지침 3.1.1, 되살리지 말 것)
   //    (실서비스 해지 경로 expireUnusedVouchersFor 와 동일. 안 하면 무료로 내려간 계정에
   //    살아 있는 코드가 남아 공유 버튼 노출/코드 등록 구멍이 생긴다).
   await db.execute({

@@ -29,6 +29,12 @@ billingQuery.get('/vouchers', async (c) => {
   }
   const db = getDB(c.env);
 
+  // ⚠ **초대 코드(INV-)만 돌려준다 — 이 조건을 빼지 말 것**(2026-10-14, App Store 심사 지침 3.1.1).
+  //   선물 코드(GIFT-)는 없앴지만 발급 행은 이력이라 `voucher_codes` 에 남아 있다(`routes/code.ts`
+  //   머리말). 등록만 막으면 선물을 샀던 사람의 앱(옛 버전 포함)이 그 코드를 목록·공유 화면에 계속
+  //   띄운다 — 코드로 여는 이용권을 화면이 내보이는 것 자체가 반려 사유다. 경계는 등록이 받는 형식
+  //   (`isValidVoucherCodeFormat`)과 같다. 조건은 고정 리터럴이다(사용자 입력을 넣지 말 것).
+  //   공유할 코드를 내주는 `POST /billing/vouchers/family-share` 도 같은 조건을 쓴다.
   const result = await db.execute({
     sql: `SELECT v.id, v.code, v.plan_id, v.issuer_subscription_id, v.redeemed_by_user_id,
                  v.status, v.issued_at, v.used_at, v.expires_at, v.max_uses,
@@ -37,6 +43,7 @@ billingQuery.get('/vouchers', async (c) => {
           FROM voucher_codes v
           JOIN plans p ON p.id = v.plan_id
           WHERE v.issuer_user_id = ?
+            AND v.code LIKE 'INV-%'
           ORDER BY v.issued_at DESC`,
     args: [userPk],
   });

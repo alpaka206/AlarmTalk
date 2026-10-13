@@ -85,9 +85,9 @@ struct PlanCard: View {
     /// 의 `hasActiveSubscription` 과 같은 축). 초대로 들어온 공유 멤버도 포함이다.
     let hasActivePlan: Bool
     let isBusy: Bool
+    /// 공유할 수 있는 초대 코드. 커플·가족 카드에만 온다(`BillingPanel`).
     let vouchers: [VoucherItem]
     let onPurchase: () -> Void
-    let onGiftPersonal: () -> Void
     let onShareVouchers: () -> Void
 
     /// 카드에 보여줄 가격. 스토어 값이 있으면 그걸, 없으면 폴백을 쓴다.
@@ -149,20 +149,12 @@ struct PlanCard: View {
                 purchaseButtons
             }
 
-            if tier == .personal {
-                Button(action: onGiftPersonal) {
-                    Label(String(localized: "선물하기"), systemImage: "gift")
-                        .font(.subheadline.weight(.semibold))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 6)
-                }
-                .buttonStyle(.bordered)
-                .disabled(isBusy || subscriptions.isPurchasing)
-            }
+            // ⚠ **개인 카드의 '선물하기' 를 되살리지 말 것**(2026-10-14, App Store 지침 3.1.1 두 번째 반려).
+            // 사서 받은 코드를 쳐서 유료 기능을 여는 길이었다. 할인·무료 이용은 스토어 오퍼 코드로 준다.
 
             if !vouchers.isEmpty {
                 Button(action: onShareVouchers) {
-                    Label(String(localized: "이용권 코드 공유"), systemImage: "square.and.arrow.up")
+                    Label(String(localized: "초대 코드 공유"), systemImage: "square.and.arrow.up")
                         .font(.subheadline.weight(.semibold))
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 6)
@@ -429,56 +421,16 @@ struct SubscriptionTermsFootnote: View {
     }
 }
 
-/// **개인 이용권 선물 안내 시트.**
+// ⚠ **개인 이용권 선물 안내 시트(`PersonalGiftPassSheet`)를 되살리지 말 것**(2026-10-14, App Store
+// 지침 3.1.1 두 번째 반려 — 선물하기 폐지). 할인·무료 이용은 스토어 오퍼 코드로 준다.
+
+/// **공유할 초대 코드를 고르는 시트** — 커플·가족 카드의 '초대 코드 공유'.
 ///
 /// ⚠ **시스템 `.sheet` + `presentationDetents` 로 되돌리지 말 것**(2026-09-21 시뮬레이터
 /// 캡처로 확인). 그러면 반투명한 시스템 시트 위에 이 내용이 **자기 배경을 깔고 한 겹 더**
 /// 떠서, 상자가 둘로 보인다("모달 뒤에 불필요한 박스"). 앱의 다른 모달과 같이
 /// `BottomSheetHost`(좌우 꽉 참·위 모서리만 둥금·드래그 핸들·스크림) 위에 올린다 —
 /// 표면은 껍데기가 그리므로 **여기서 배경을 칠하지 않는다**.
-struct PersonalGiftPassSheet: View {
-    let onDismiss: () -> Void
-    let onConfirm: () -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(String(localized: "개인 이용권 선물하기"))
-                        .font(.headline.weight(.bold))
-                        .foregroundStyle(AlarmTalkTheme.text)
-                    Text(String(localized: "받는 사람이 직접 등록할 수 있는 개인 이용권 코드를 만들어요. 내 이용권은 그대로 유지돼요."))
-                        .font(.footnote)
-                        .foregroundStyle(AlarmTalkTheme.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                Spacer()
-                Button(action: onDismiss) {
-                    Image(systemName: "xmark")
-                        .font(.subheadline.weight(.semibold))
-                        .frame(width: 44, height: 44)
-                        // ⚠ 없으면 글리프만 눌린다 — `frame`/`padding` 이 넓힌 자리는 투명해 히트테스트를 건너뛴다.
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(String(localized: "닫기"))
-            }
-
-            Button(action: onConfirm) {
-                Text(String(localized: "선물 코드 만들기"))
-                    .font(.subheadline.weight(.semibold))
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 10)
-            }
-            .buttonStyle(.borderedProminent)
-            .tint(AlarmTalkTheme.primary)
-            .foregroundStyle(AlarmTalkTheme.onPrimary)
-        }
-        .padding(20)
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-}
-
 struct VoucherShareSelectionSheet: View {
     let vouchers: [VoucherItem]
     let onDismiss: () -> Void
@@ -490,10 +442,10 @@ struct VoucherShareSelectionSheet: View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(String(localized: "공유할 이용권 선택"))
+                    Text(String(localized: "공유할 초대 코드 선택"))
                         .font(.headline.weight(.bold))
                         .foregroundStyle(AlarmTalkTheme.text)
-                    Text(String(localized: "아직 등록되지 않은 코드를 골라 바로 공유할 수 있어요."))
+                    Text(String(localized: "아직 쓰지 않은 초대 코드를 골라 바로 공유할 수 있어요."))
                         .font(.footnote)
                         .foregroundStyle(AlarmTalkTheme.textSecondary)
                 }
@@ -516,7 +468,7 @@ struct VoucherShareSelectionSheet: View {
                             // 클립보드는 **코드만**, 설치 안내는 공유 본문에만
                             // (안드로이드 `ui/billing/BillingPanels.kt` 의 `shareVoucher` 와 같다).
                             UIPasteboard.general.string = voucher.code
-                            shareText = CodeShareText.forCode(voucher.code)
+                            shareText = CodeShareText.invite(code: voucher.code)
                             isSharePresented = true
                         }
                     }
@@ -574,9 +526,16 @@ struct BillingActivityShareSheet: UIViewControllerRepresentable {
     func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }
 
+/// 그 카드에서 공유할 수 있는 코드 — **초대 코드(INV-)만**이다(안드로이드 `shareableVouchersForPlan` 과 같은 판정).
+///
+/// ⚠ **접두 검사를 빼지 말 것**(2026-10-14). 선물 코드(GIFT-)는 App Store 지침 3.1.1 두 번째 반려로 없앴고, 서버는
+/// INV- 가 아니면 등록을 `CODE_NOT_FOUND` 로 거절한다 — 예전에 만든 선물 바우처가 목록에 남아 있어도 보내 봐야 받는
+/// 사람이 쓸 수 없다. 구성원 관리 화면의 공유도 같은 접두로 고른다(`MemberManagementView.shareVoucher`).
+/// 회귀 테스트는 `GiftRemovalTests`.
 func shareableVouchersForPlan(_ vouchers: [VoucherItem], planKey: String) -> [VoucherItem] {
     vouchers.filter { voucher in
-        ["issued", "active", "pending"].contains(voucher.status) &&
+        voucher.code.hasPrefix("INV-") &&
+            ["issued", "active", "pending"].contains(voucher.status) &&
             (voucher.useCount ?? 0) < (voucher.maxUses ?? 1) &&
             voucher.planKey == planKey
     }
@@ -609,24 +568,10 @@ func voucherShareSubtitle(_ voucher: VoucherItem) -> String {
 // MARK: - 시트 표시
 
 extension View {
-    /// 선물 이용권 안내 시트를 붙인다.
+    /// 발급된 초대 코드 중 하나를 골라 공유하는 시트를 붙인다.
     ///
-    /// ⚠ **`.sheet` + `presentationDetents` 를 쓰지 말 것** — `PersonalGiftPassSheet` 주석의
-    /// '상자 둘' 문제. 코드 입력 시트(`redeemCodeSheet`)와 같은 껍데기를 쓴다.
-    func personalGiftPassSheet(
-        isPresented: Binding<Bool>,
-        onConfirm: @escaping () -> Void
-    ) -> some View {
-        // 껍데기는 공용 `bottomSheet` 하나다 — 같은 모양을 두 벌로 만들지 않는다.
-        bottomSheet(isPresented: isPresented, onDismiss: { isPresented.wrappedValue = false }) {
-            PersonalGiftPassSheet(
-                onDismiss: { isPresented.wrappedValue = false },
-                onConfirm: onConfirm
-            )
-        }
-    }
-
-    /// 발급된 선물 코드 중 하나를 골라 공유하는 시트. 같은 껍데기를 쓴다.
+    /// ⚠ **`.sheet` + `presentationDetents` 를 쓰지 말 것** — `VoucherShareSelectionSheet` 주석의
+    /// '상자 둘' 문제. 껍데기는 공용 `bottomSheet` 하나다 — 같은 모양을 두 벌로 만들지 않는다.
     func voucherShareSelectionSheet(
         vouchers: Binding<[VoucherItem]>
     ) -> some View {
