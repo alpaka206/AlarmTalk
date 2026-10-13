@@ -17,8 +17,8 @@
 //   4. 목록·공유: `GET /billing/vouchers` 는 초대 코드(INV-)만 돌려준다 — 남아 있는 선물 행이 앱(옛 버전
 //      포함)의 코드 목록에 뜨지 않는다. 공유할 코드를 내주는 `POST /billing/vouchers/family-share` 도
 //      같은 경계다. 행은 숨길 뿐 지우지 않는다(이력).
-// (dev 스텁 `/billing/checkout` 의 `gift: true`·`/billing/test-codes` 의 개인 플랜 거절은
-//  `billing-test-codes.test.ts`, 형식 검사는 `vouchers.test.ts`.)
+// (dev 스텁 `/billing/checkout` 의 `gift: true` 거절과 `/billing/test-codes` 가 없다는 것은
+//  `billing-checkout-stub.test.ts`, 형식 검사는 `vouchers.test.ts`.)
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createClient } from '@libsql/client';
 import { mkdtempSync, rmSync } from 'node:fs';

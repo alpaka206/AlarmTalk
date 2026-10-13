@@ -50,7 +50,7 @@ beforeEach(() => {
 // ---------------------------------------------------------------------------
 // TODO(#249-followup): SQL 호출 순서 mock 검증이 새 흐름(cancelSubscriptionImmediate
 // 진입, voucher_redemptions, max_uses)과 어긋나 통째로 보류. 별도 PR 에서 흐름 기반으로
-// 재작성 예정. (선물 결제 `gift: true` 는 2026-10-14 에 없앴다 — 거절은 billing-test-codes.test.ts 가 본다.)
+// 재작성 예정. (선물 결제 `gift: true` 는 2026-10-14 에 없앴다 — 거절은 billing-checkout-stub.test.ts 가 본다.)
 describe.skip('POST /billing/checkout (billingMutation)', () => {
   it('plan_key 앞뒤 공백 trim 처리', async () => {
     mockDB.pushResult([PLAN_PLUS]);

@@ -111,13 +111,10 @@ export const ERROR_CODES = [
   'VOICE_PROFILE_NOT_READY',
   // 결제·구독 (billing-mutation.ts)
   'CHECKOUT_DISABLED',
-  'FORBIDDEN',
   'FREE_NOT_BILLABLE',
   // GIFT_PERSONAL_ONLY 는 2026-10-14 에 지웠다 — 선물 결제를 없앴다(아래 「코드 등록」 묶음의 ⚠).
   'GROUP_FULL',
   'INVALID_CANCEL_MODE',
-  'INVALID_COUNT',
-  'INVALID_DAYS',
   'NOT_FOUND',
   'NO_ACTIVE_FAMILY_OWNER_SUBSCRIPTION',
   'NO_ACTIVE_SUBSCRIPTION',

@@ -195,7 +195,7 @@ curl -X POST "https://<host>/api/init-db?fromId=1&toId=10" -H "x-init-db-secret:
 
 **`POST /code/register`** — 받는 것은 커플·가족 이용권의 초대 코드(`INV-XXXX-XXXX-XXXX`) 하나다. 바우처 사용(구독 insert + 플랜 갱신)으로 발급자의 플랜 그룹에 멤버로 합류시킨다. 발급 근거인 발급자 구독이 없거나 살아 있지 않으면 거절한다(409 `SUBSCRIPTION_NOT_ACTIVE`·`CODE_EXPIRED` — 2026-09-14 `6ea8a25c` 부터, 예전의 '단독 코드는 등록한 사람이 새 그룹의 소유자' 는 그 뒤로 없다). 그 외 문자열은 조회 없이 404 `CODE_NOT_FOUND` 다 — 프로모 코드는 2026-10-12, 선물 코드(`GIFT-`)는 2026-10-14 에 없앴다(App Store 지침 3.1.1 — `docs/spec/plan-gates.md` 「선물 코드 — 폐지」).
 
-**`POST /billing/test-codes`** — Google Play 결제가 연결되기 전까지 쓰는 내부 클로즈드 테스트용. `TEST_CODE_ISSUER_EMAILS` 에 적힌 이메일만 발급할 수 있고, 미설정이면 아무도 못 한다(fail-closed, 하드코딩 기본값 없음). `couple`/`family` 만 `INV-` 형식 1회용으로 발급하고, `personal` 은 400 `INVALID_REQUEST` 다(선물 코드 폐지 — 2026-10-14). ⚠ 이 코드는 발급자 구독 없이 만들어져 위 `POST /code/register` 가 `SUBSCRIPTION_NOT_ACTIVE` 로 거절한다 — 응답의 `first_redeemer_becomes_owner` 는 그 뒤로 사실이 아니다.
+**`POST /billing/test-codes`** — **2026-10-14 에 지웠다**(라우트·`TEST_CODE_ISSUER_EMAILS`·그 라우트만 내던 에러 코드). 운영자가 커플·가족 초대 코드를 찍어 내던 dev 도구였는데, 발급자 구독 없이 만들어져 `POST /code/register` 가 `SUBSCRIPTION_NOT_ACTIVE` 로 늘 거절했다. 등록되게 고치면 운영자가 만든 코드로 이용권을 여는 것이라 App Store 지침 3.1.1 반려(1.2.11 프로모 코드)와 같은 종류다 — 되살리지 말 것. 테스트 계정의 이용권은 `packages/backend/scripts/apply-dev-plan.ts` 로 준다.
 
 ### 크론
 

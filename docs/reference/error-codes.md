@@ -35,7 +35,7 @@
 1. **모든 에러 응답에 `error_code` 부여.** 클라가 HTTP status 만으로 분기하지 않게 안정적인 문자열 코드를 준다.
 2. **표기법은 `SCREAMING_SNAKE_CASE`.**
 3. **도메인 접두 권장.** 계정/인증은 `AUTH_`, 결제 검증은 `GOOGLE_`/`PLAY_`, 코드 사용은 `CODE_`,
-   가족 알람은 `FAMILY_ALARM_`, 목소리는 `VOICE_`. 전역 공통 코드(`USER_NOT_FOUND`, `FORBIDDEN`,
+   가족 알람은 `FAMILY_ALARM_`, 목소리는 `VOICE_`. 전역 공통 코드(`USER_NOT_FOUND`,
    `INVALID_REQUEST`)는 접두 없이 둔다.
 4. **코드는 안정적 계약.** 클라가 매핑한 코드의 철자를 함부로 바꾸지 않는다(문구는 코드와 분리해 바꾼다).
 5. **메시지(`error`)는 로그·관리자용 참고 텍스트.** 사용자 노출 문구는 클라가 코드로 결정한다.
@@ -51,8 +51,7 @@
 | 코드 | 의미 | HTTP | 위치 |
 |---|---|---|---|
 | `USER_NOT_FOUND` | 인증 주체/대상 사용자를 DB 에서 찾을 수 없음 | 404 | `routes/user.ts`, `billing-*.ts`, `code.ts`, `family-*.ts` |
-| `FORBIDDEN` | 리소스 접근/소유권 없음(테스트 코드 발급자 아님) | 403 | `routes/billing-mutation.ts` |
-| `INVALID_REQUEST` | 요청 바디 파싱/검증 실패(결제 계열). dev 스텁 `POST /billing/checkout` 의 `gift: true` 와 `POST /billing/test-codes` 의 개인 플랜도 여기다(선물 폐지 — 2026-10-14) | 400 | `routes/billing-google.ts`, `routes/billing-mutation.ts` |
+| `INVALID_REQUEST` | 요청 바디 파싱/검증 실패(결제 계열). dev 스텁 `POST /billing/checkout` 의 `gift: true` 도 여기다(선물 폐지 — 2026-10-14) | 400 | `routes/billing-google.ts`, `routes/billing-mutation.ts` |
 | `INVALID_JSON` | JSON 본문 파싱 실패 | 400 | `routes/user.ts`, `push.ts`, `events.ts` |
 | `JSON_BODY_REQUIRED` | JSON 본문 필요 | 400 | `routes/voice-profile.ts` |
 | `ADMIN_UNCONFIGURED` | 관리자 콘솔 미구성(`ADMIN_SECRET` 없음) | 503 | `routes/admin.ts` |
@@ -148,8 +147,6 @@
 | `PLAN_NOT_FOUND` | 플랜 미존재 | 400 | `routes/billing-*.ts`, `lib/*-redemption.ts` |
 | `PLAN_INACTIVE` | 비활성 플랜 | 400 | `routes/billing-mutation.ts` |
 | `FREE_NOT_BILLABLE` | 무료 플랜은 결제/코드 대상 아님 | 400 | `routes/billing-mutation.ts` |
-| `INVALID_COUNT` | 테스트 코드 count 범위 오류(1~50) | 400 | `routes/billing-mutation.ts` |
-| `INVALID_DAYS` | 테스트 코드 days 범위 오류(1~365) | 400 | `routes/billing-mutation.ts` |
 | `INVALID_CANCEL_MODE` | 해지 mode 가 `at_period_end`/`immediate` 아님 | 400 | `routes/billing-mutation.ts` |
 | `NO_ACTIVE_SUBSCRIPTION` | 활성 구독 없음(취소 대상 없음) | 404 | `routes/billing-mutation.ts` |
 | `PLAY_CANCEL_FAILED` | Play 구독 해지 실패(+`manage_url`) | 502 | `routes/billing-mutation.ts` |

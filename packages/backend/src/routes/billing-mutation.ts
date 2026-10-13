@@ -26,7 +26,6 @@ import type { DbExecutor } from '../lib/transactions';
 import { withWriteTransaction } from '../lib/transactions';
 import {
   PAID_PLAN_TYPES,
-  isGroupPlanType,
   planTypeToUserPlan,
   plannedMaxUses,
   resolveUserPk,
@@ -90,20 +89,6 @@ type FamilyShareCodeResult =
       };
     };
 
-interface TestCodeVoucher {
-  id: string;
-  code: string;
-  plan_id: string;
-  plan_key: string;
-  plan_name: string;
-  plan_type: string;
-  status: 'issued';
-  issued_at: string;
-  expires_at: string;
-  max_uses: number;
-  use_count: number;
-}
-
 function isBillingStubEnabled(env: Partial<AppEnv['Bindings']> | undefined): boolean {
   // production 에서는 BILLING_STUB_ENABLED 값과 무관하게 항상 비활성한다.
   // (env 오설정 하나로 /checkout·/change-plan 이 무결제 유료지급 디스펜서가 되는 것 차단.)
@@ -115,34 +100,9 @@ function isBillingStubEnabled(env: Partial<AppEnv['Bindings']> | undefined): boo
 
 function checkoutDisabledResponse() {
   return {
-    error: 'Checkout is disabled for this test build. Register an invite code.',
+    error: 'Checkout is disabled for this build.',
     error_code: 'CHECKOUT_DISABLED',
   };
-}
-
-function allowedTestCodeIssuerEmails(env: Partial<AppEnv['Bindings']> | undefined): Set<string> {
-  // 발급자 화이트리스트는 TEST_CODE_ISSUER_EMAILS 로만 지정한다. 개인 이메일 하드코딩
-  // 폴백을 두면 env 누락·계정 탈취 시 단일 계정이 무제한 무료 유료코드 발급 권한을 갖게
-  // 되므로, 미설정이면 발급자 없음(fail-closed)으로 둔다.
-  const raw = env?.TEST_CODE_ISSUER_EMAILS?.trim();
-  if (!raw) return new Set();
-  return new Set(
-    raw
-      .split(',')
-      .map((email) => email.trim().toLowerCase())
-      .filter(Boolean),
-  );
-}
-
-function isTestCodeIssuer(env: Partial<AppEnv['Bindings']> | undefined, email: string): boolean {
-  return allowedTestCodeIssuerEmails(env).has(email.trim().toLowerCase());
-}
-
-function readInteger(value: unknown, fallback: number): number | null {
-  if (value === undefined || value === null) return fallback;
-  if (typeof value === 'number' && Number.isInteger(value)) return value;
-  if (typeof value === 'string' && /^\d+$/.test(value.trim())) return Number(value.trim());
-  return null;
 }
 
 function normalizeBillablePlan(row: Record<string, unknown>): BillablePlan {
@@ -329,116 +289,11 @@ billingMutation.post('/checkout', async (c) => {
   });
 });
 
-billingMutation.post('/test-codes', async (c) => {
-  if (c.env.ENVIRONMENT === 'production') {
-    return c.json({ error: 'Not found', error_code: 'NOT_FOUND' }, 404);
-  }
-
-  const userEmail = c.get('userEmail') || '';
-  if (!isTestCodeIssuer(c.env, userEmail)) {
-    return c.json({ error: 'Test code issuer access is required', error_code: 'FORBIDDEN' }, 403);
-  }
-
-  const issuerUserPk = await resolveUserPk(c);
-  if (!issuerUserPk) {
-    return c.json({ error: 'User not found', error_code: 'USER_NOT_FOUND' }, 404);
-  }
-
-  const body = await c.req
-    .json<{ plan_key?: unknown; count?: unknown; days?: unknown }>()
-    .catch((): { plan_key?: unknown; count?: unknown; days?: unknown } => ({
-      plan_key: undefined,
-      count: undefined,
-      days: undefined,
-    }));
-
-  const planKey = typeof body.plan_key === 'string' ? body.plan_key.trim() : '';
-  const count = readInteger(body.count, 1);
-  const days = readInteger(body.days, 30);
-
-  if (!planKey) {
-    return c.json({ error: 'plan_key is required', error_code: 'PLAN_KEY_REQUIRED' }, 400);
-  }
-  if (count === null || count < 1 || count > 50) {
-    return c.json({ error: 'count must be between 1 and 50', error_code: 'INVALID_COUNT' }, 400);
-  }
-  if (days === null || days < 1 || days > 365) {
-    return c.json({ error: 'days must be between 1 and 365', error_code: 'INVALID_DAYS' }, 400);
-  }
-
-  const db = getDB(c.env);
-  const planRes = await db.execute({
-    sql: `SELECT id, key, name, plan_type, period_days, max_members, price_krw, is_active
-          FROM plans WHERE key = ?`,
-    args: [planKey],
-  });
-  if (planRes.rows.length === 0) {
-    return c.json({ error: 'Plan not found', error_code: 'PLAN_NOT_FOUND' }, 400);
-  }
-
-  const plan = planRes.rows[0]!;
-  if (Number(plan.is_active) !== 1) {
-    return c.json({ error: 'Plan is inactive', error_code: 'PLAN_INACTIVE' }, 400);
-  }
-
-  const planType = String(plan.plan_type);
-  if (!PAID_PLAN_TYPES.has(planType)) {
-    return c.json({ error: 'Free plan is not supported for test codes', error_code: 'FREE_NOT_BILLABLE' }, 400);
-  }
-
-  const billablePlan = normalizeBillablePlan(plan);
-  // ⚠ **개인 플랜 테스트 코드는 없다 — 되살리지 말 것**(2026-10-14). 개인 플랜을 코드로 여는 길은
-  //   선물 코드(GIFT-)였고, App Store 심사 지침 3.1.1 두 번째 반려로 선물을 통째로 없앴다
-  //   (`routes/code.ts` 머리말). 여기서 내주는 것은 커플·가족 초대 코드(INV-)뿐이다. 할인·무료
-  //   이용은 스토어 오퍼 코드로 준다.
-  if (!isGroupPlanType(billablePlan.plan_type)) {
-    return jsonError(
-      c,
-      400,
-      'INVALID_REQUEST',
-      'Test codes are invite codes for couple or family plans only',
-    );
-  }
-  const issuedAt = new Date();
-  const issuedAtIso = issuedAt.toISOString();
-  const expiresAtIso = new Date(issuedAt.getTime() + days * 24 * 60 * 60 * 1000).toISOString();
-
-  const codes = await withWriteTransaction(db, async (tx) => {
-    const issuedCodes: TestCodeVoucher[] = [];
-    for (let i = 0; i < count; i++) {
-      const issued = await issueVoucherCode(tx, {
-        kind: 'invite',
-        planId: billablePlan.id,
-        issuerUserId: issuerUserPk,
-        issuerSubscriptionId: null,
-        issuedAt: issuedAtIso,
-        expiresAt: expiresAtIso,
-        maxUses: 1,
-      });
-      issuedCodes.push({
-        id: issued.id,
-        code: issued.code,
-        plan_id: billablePlan.id,
-        plan_key: billablePlan.key,
-        plan_name: billablePlan.name,
-        plan_type: billablePlan.plan_type,
-        status: 'issued',
-        issued_at: issuedAtIso,
-        expires_at: issued.expires_at,
-        max_uses: issued.max_uses,
-        use_count: issued.use_count,
-      });
-    }
-    return issuedCodes;
-  });
-
-  return c.json({
-    success: true,
-    plan: planResponse(billablePlan),
-    first_redeemer_becomes_owner: billablePlan.plan_type === 'family',
-    codes,
-  });
-});
+// ⚠ **운영자가 코드를 찍어 내던 dev 라우트 `POST /billing/test-codes` 는 2026-10-14 에 지웠다 — 되살리지 말 것.**
+//   App Store 심사 지침 3.1.1 이 '코드로 유료 기능을 연다' 를 두 번 반려했다(1.2.11 프로모 코드, 1.2.12 선물
+//   코드 — `routes/code.ts` 머리말). 이 라우트가 내준 초대 코드는 주인 구독이 없어 등록조차 되지 않았고
+//   (`voucher-redemption.ts` 의 `SUBSCRIPTION_NOT_ACTIVE`), 등록되게 고치면 운영자가 만든 코드로 이용권을 여는
+//   그 모양이 된다. 테스트 계정의 이용권은 `scripts/apply-dev-plan.ts` 로, 할인·무료 이용은 스토어 오퍼 코드로 준다.
 
 interface FamilyOwnerContext {
   subscriptionId: string;

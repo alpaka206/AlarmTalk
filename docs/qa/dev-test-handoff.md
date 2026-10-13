@@ -23,8 +23,7 @@
 - **고친 것**(규칙은 `plan-gates.md` 「선물 코드 — 폐지」):
   - 서버(모든 앱 버전에, 안드로이드 포함): `POST /code/register` 는 INV- 4-4-4 가 아니면 조회 없이 404 `CODE_NOT_FOUND`
     다(GIFT- 는 발급 행이 있어도). 선물 상품의 애플·구글 확정은 400 `UNKNOWN_PRODUCT` 다 — 코드를 만들지 않고 Play 확인도
-    하지 않는다(→ Play 자동 환불). dev 스텁 `/billing/checkout` 의 `gift: true`·`/billing/test-codes` 의 개인 플랜은 400
-    `INVALID_REQUEST`. 에러 코드 `GIFT_PERSONAL_ONLY`·`INVALID_GIFT_PLAN`·`PURCHASE_NOT_COMPLETED` 를 목록에서 지웠다.
+    하지 않는다(→ Play 자동 환불). dev 스텁 `/billing/checkout` 의 `gift: true` 는 400 `INVALID_REQUEST`. 에러 코드 `GIFT_PERSONAL_ONLY`·`INVALID_GIFT_PLAN`·`PURCHASE_NOT_COMPLETED` 를 목록에서 지웠다.
   - 두 앱: 개인 카드의 '선물하기'·선물 결제·선물 공유 문구, 유료 게이트의 '선물·초대 코드가 있어요' 와 그 입력 창을
     지웠다. 코드 칸은 '초대 코드' / 'Invite code' / '招待コード', 더보기 행·화면 제목은 '초대 코드 등록' / 'Register
     invite code' / '招待コード登録', 입력 버튼은 '등록' / 'Register' / '登録' 이다. 초대 공유 문구의 3단계는 두 앱이 같다 —
@@ -43,9 +42,10 @@
     버튼은 안드로이드처럼 **산 현재 카드**에만(`PlanScreenCurrent.sharesVouchers`). 안드로이드에서 닿지 않던
     CHECKOUT_DISABLED 문구("테스트 버전에서는 초대 코드를 등록해 주세요" — 결제 대신 코드를 권하는 말)와 쓰지 않던 공유
     함수·매개변수를 지웠다.
-  - ⚠ dev 전용 `POST /billing/test-codes`(prod 404)가 발급하는 INV 코드는 주인 구독이 없어 등록되지 않는다(409
-    `SUBSCRIPTION_NOT_ACTIVE`) — 앱이 부르지 않는 죽은 도구다. 등록되게 '고치면' 운영자가 만든 코드로 이용권을 여는
-    1.2.11 반려와 같은 모양이 된다. 그러지 말 것.
+  - **Codex 리뷰(#898) 반영**: 운영자가 코드를 찍어 내던 dev 라우트 `POST /billing/test-codes`(prod 404)를 지웠다 —
+    그 INV 코드는 주인 구독이 없어 등록되지 않았고(409 `SUBSCRIPTION_NOT_ACTIVE`), 등록되게 고치면 운영자가 만든 코드로
+    이용권을 여는 1.2.11 반려와 같은 모양이 된다. 그 라우트만 내던 `FORBIDDEN`·`INVALID_COUNT`·`INVALID_DAYS` 와
+    `TEST_CODE_ISSUER_EMAILS` 도 지웠다. 테스트 계정 이용권은 `scripts/apply-dev-plan.ts`.
 - **재발 방지**:
   - 규칙을 **종류**로 적었다 — 코드로 유료 기능을 여는 길은 초대 코드 하나, 선물·프로모·쿠폰·체험·라이선스 코드와 코드를
     발급하는 1회성 상품 금지, 코드 칸은 이용권 화면·유료 게이트에 두지 않음, 스토어 문구·심사 노트에 코드 해제를 쓰지 않음

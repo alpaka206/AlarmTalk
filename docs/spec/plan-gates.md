@@ -284,8 +284,9 @@ iOS 1.2.11(빌드 8)이 App Store 심사 지침 **3.1.1**("인앱 결제가 아�
     배포보다 늦으면 안 된다**(옛 빌드로 산 사람은 돈만 내고 코드를 못 받는다).
   - 발급한 코드 목록(`GET /billing/vouchers`)과 공유할 코드(`POST /billing/vouchers/family-share`)는 INV- 만 돌려준다
     — 옛 GIFT- 행이 남아 있어도 옛 앱의 목록·공유 화면에 나오지 않는다(2026-10-14 2차).
-  - dev 스텁 `POST /billing/checkout` 의 `gift: true`, `POST /billing/test-codes` 의 개인 플랜은 400
-    `INVALID_REQUEST` 다(테스트 코드는 커플·가족 초대 코드뿐).
+  - dev 스텁 `POST /billing/checkout` 의 `gift: true` 는 400 `INVALID_REQUEST` 다. 운영자가 코드를 찍어 내던 dev 라우트
+    `POST /billing/test-codes` 는 지웠다(그 코드는 주인 구독이 없어 등록조차 안 됐고, 되게 고치면 운영자 코드로 이용권을
+    여는 1.2.11 반려의 모양이 된다). 에러 코드 `FORBIDDEN`·`INVALID_COUNT`·`INVALID_DAYS` 는 그 라우트만 냈다.
   - 에러 코드 `GIFT_PERSONAL_ONLY`·`INVALID_GIFT_PLAN` 과, 선물 확정 갈래만 내던 `PURCHASE_NOT_COMPLETED` 는
     목록에서 지웠다. 두 앱의 표에서도 앞의 둘을 지웠다(`error-codes.md`). `INVALID_INVITE_PLAN` 은 남는다.
 - **두 앱(1.2.13)**: 개인 카드의 '선물하기'·선물 결제·선물 공유 문구, 유료 게이트의 '선물·초대 코드가
