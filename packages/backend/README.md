@@ -62,7 +62,7 @@ npm run typecheck # tsc --noEmit
 | `/api/tts/*` | TTS 생성 + 메시지 관리 |
 | `/api/alarm/*` | 알람 CRUD + 스케줄러 |
 | `/api/billing/*` | Google Play·App Store 결제 검증, 구독·이용권 |
-| `/api/code/*` | 통합 코드 등록(초대권·선물권·프로모) |
+| `/api/code/*` | 초대 코드 등록(커플·가족 `INV-` 이용권만. 선물·프로모 코드는 App Store 지침 3.1.1 로 폐지 — `routes/code.ts` 머리말) |
 | `/api/family/*` | 가족 플랜 그룹 + 초대 + 알람 |
 | `/api/user/*` | 사용자 프로필 + 설정 |
 | `/api/push/*` | FCM·APNs 토큰 등록/해제 |

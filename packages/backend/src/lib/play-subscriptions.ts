@@ -107,7 +107,10 @@ export function googlePlanKeyFromProductId(
     personal_monthly: 'personal',
     couple_monthly: 'couple',
     family_monthly: 'family',
-    personal_gift_1m: 'personal',
+    // ⚠ **선물 상품(1회성 `personal_gift_1m`)은 2026-10-14 에 없앴다 — 되살리지 말 것**(App Store
+    //   심사 지침 3.1.1, 두 번째 반려 — `routes/code.ts` 머리말). 목록에서 빠졌으므로 확정 라우트가
+    //   그 구매를 Play API 를 부르기 전에 400 `UNKNOWN_PRODUCT` 로 돌려준다. 할인·무료 이용은 스토어
+    //   오퍼 코드로 준다.
   };
   return products[productId] ?? null;
 }

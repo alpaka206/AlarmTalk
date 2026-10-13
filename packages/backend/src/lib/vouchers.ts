@@ -1,13 +1,17 @@
-// 결제 시 발급되는 공유/선물 코드.
-//   - 'invite' 종류: 가족/커플 합류용 (포맷 'INV-XXXX-XXXX-XXXX')
-//   - 'gift'   종류: 개인 플랜 선물용  (포맷 'GIFT-XXXX-XXXX-XXXX')
+// 결제 시 발급되는 초대 코드 — 커플·가족 이용권 합류용(포맷 'INV-XXXX-XXXX-XXXX').
 // 시각적 혼동 방지를 위해 0/O/1/I/L 은 제외.
+//
+// ⚠ **선물 코드('GIFT-')는 2026-10-14 에 없앴다 — 되살리지 말 것.** iOS 1.2.12 가 App Store 심사
+// 지침 3.1.1 로 **두 번째** 반려됐다(1.2.11 은 프로모 코드). 선물은 스토어 결제로 샀어도 받는 사람이
+// **코드를 쳐서** 유료 기능을 연다 — 애플이 막는 것이 그 '코드로 해제' 다. 종류를 'invite' 하나로
+// 줄여 둔 것은 일부러다: 새 발급처가 다른 종류를 넘기면 컴파일이 막는다. 형식 검사도 INV- 만 통과
+// 시키므로 옛 선물 행이 `voucher_codes` 에 남아 있어도(이력이라 지우지 않는다) 등록되지 않는다.
+// 할인·무료 이용은 스토어 오퍼 코드(App Store 오퍼 코드·Play 프로모션 코드)로 준다.
 
-export type VoucherKind = 'invite' | 'gift';
+export type VoucherKind = 'invite';
 
 const VOUCHER_PREFIX: Record<VoucherKind, string> = {
   invite: 'INV',
-  gift: 'GIFT',
 };
 
 const VOUCHER_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
@@ -51,7 +55,8 @@ export async function generateVoucherCode(kind: VoucherKind = 'invite'): Promise
   return { code, hash };
 }
 
-const VOUCHER_CODE_RE = /^(INV|GIFT)-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/;
+/** 받는 형식은 초대 코드(INV- 4-4-4) 하나뿐이다 — GIFT- 를 다시 넣지 말 것(맨 위 ⚠). */
+const VOUCHER_CODE_RE = /^INV-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/;
 
 export function isValidVoucherCodeFormat(raw: string): boolean {
   return VOUCHER_CODE_RE.test(raw);

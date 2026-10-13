@@ -10,7 +10,7 @@
 //      `voiceProfileBelongsToCaller` 가 같은 답). 살아 있는 그룹의 공유는 그대로 열린다.
 //   4. 직접 입력 한도 30 → 0, `/billing/subscription` 의 계산값·`personal_promo`
 //      (`deletes_voices_at_end`·`computed_at` 포함).
-//   5. 기간 중 쿠폰 등록이 되고, 그 구독이 기간 중 끝나도 보관이 걸리지 않는다.
+//   5. 기간 중 코드(초대 코드) 등록이 되고, 그 구독이 기간 중 끝나도 보관이 걸리지 않는다.
 //   6. 종료 전환 — 대상만·묶음·멱등·`delete_after` 는 끝 + 3일(더 이르지 않다), 기간 중 스윕은
 //      풀어만 준다.
 //      (대량·예산·굶김은 `test/personal-promo-end.test.ts`.)
@@ -770,23 +770,26 @@ describe('계산값 자리 — 끝 1초 전 열림 / 끝 시각 닫힘', () => {
     });
   }
 
-  it('기간 중 선물 코드 등록이 된다 — 기간 한정 개인 플랜은 구독이 아니다', async () => {
+  // 등록할 수 있는 코드는 이제 커플·가족 초대 코드(INV-)뿐이다 — 선물 코드는 2026-10-14 에 없앴다
+  // (App Store 3.1.1 두 번째 반려 — `routes/code.ts` 머리말, 되살리지 말 것). 그래서 살아 있는 가족
+  // 주인(pp-live-owner)의 초대 코드로 본다.
+  it('기간 중 초대 코드 등록이 된다 — 기간 한정 개인 플랜은 구독이 아니다', async () => {
     atMoment(new Date(END.getTime() - 1000));
-    const gift = await issueVoucherCode(db, {
-      kind: 'gift',
-      planId: PERSONAL,
-      issuerUserId: 'pp-paid',
-      issuerSubscriptionId: null,
+    const invite = await issueVoucherCode(db, {
+      kind: 'invite',
+      planId: FAMILY,
+      issuerUserId: 'pp-live-owner',
+      issuerSubscriptionId: 'sub-lo',
       issuedAt: '2026-10-01T00:00:00Z',
       expiresAt: '2099-01-01T00:00:00Z',
-      maxUses: 1,
+      maxUses: 4,
     });
-    const res = await call(COUPON_USER, 'POST', '/code/register', { code: gift.code });
+    const res = await call(COUPON_USER, 'POST', '/code/register', { code: invite.code });
     expect(res.status).toBe(200);
     expect(res.body.type).toBe('voucher');
-    // 이제 원시 plus — personal_promo 는 없고, 계산값도 그대로 plus 다.
+    // 이제 원시 family(살아 있는 그룹의 멤버) — personal_promo 는 없고, 계산값도 그대로다.
     const sub = await call(COUPON_USER, 'GET', '/billing/subscription?refresh_store=1');
-    expect(sub.body.user_plan).toBe('plus');
+    expect(sub.body.user_plan).toBe('family');
     expect(sub.body.personal_promo).toBeNull();
     expect(sub.body.subscription).not.toBeNull();
   });

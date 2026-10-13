@@ -49,8 +49,8 @@ beforeEach(() => {
 // POST /billing/checkout — split module direct import
 // ---------------------------------------------------------------------------
 // TODO(#249-followup): SQL 호출 순서 mock 검증이 새 흐름(cancelSubscriptionImmediate
-// 진입, voucher_redemptions, max_uses, voucher prefix INV/GIFT 분기)과 어긋나
-// 통째로 보류. 별도 PR 에서 흐름 기반으로 재작성 예정.
+// 진입, voucher_redemptions, max_uses)과 어긋나 통째로 보류. 별도 PR 에서 흐름 기반으로
+// 재작성 예정. (선물 결제 `gift: true` 는 2026-10-14 에 없앴다 — 거절은 billing-test-codes.test.ts 가 본다.)
 describe.skip('POST /billing/checkout (billingMutation)', () => {
   it('plan_key 앞뒤 공백 trim 처리', async () => {
     mockDB.pushResult([PLAN_PLUS]);
@@ -120,25 +120,6 @@ describe.skip('POST /billing/checkout (billingMutation)', () => {
     expect(mockDB.calls[2]!.sql).toContain('INSERT INTO subscriptions');
     expect(mockDB.calls[3]!.sql).toContain('UPDATE users SET plan');
     expect(mockDB.calls[4]!.sql).toContain('INSERT INTO voucher_codes');
-  });
-
-  it('gift checkout 은 구독을 바꾸지 않고 voucher 만 발급', async () => {
-    mockDB.pushResult([PLAN_PLUS]);
-    mockDB.pushResult([{ id: 'user-pk-1' }]);
-    mockDB.pushResult([], 1);
-
-    const res = await buildApp().request(
-      jsonReq('POST', '/billing/checkout', { plan_key: 'personal', gift: true }),
-    );
-    const body = await res.json();
-
-    expect(res.status).toBe(200);
-    expect(body.subscription).toBeNull();
-    expect(body.plan.key).toBe('personal');
-    expect(body.voucher.code).toMatch(/^(INV|GIFT)-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/);
-    expect(mockDB.calls).toHaveLength(3);
-    expect(mockDB.calls[2]!.sql).toContain('INSERT INTO voucher_codes');
-    expect(mockDB.calls[2]!.args[5]).toBeNull();
   });
 
   it('family checkout DB 쿼리 순서: plan → user → plan_groups → plan_group_members → subscription → users.plan → voucher', async () => {

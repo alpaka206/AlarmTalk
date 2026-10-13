@@ -77,26 +77,40 @@ describe('POST /billing/test-codes', () => {
     expect(mockDB.calls).toHaveLength(0);
   });
 
-  it('allows issuer@example.com to issue a personal test code', async () => {
+  // ⚠ **개인 플랜 테스트 코드는 2026-10-14 에 없앴다 — 되살리지 말 것.** 개인 플랜을 코드로 여는 길은
+  //   선물 코드(GIFT-)였고, App Store 심사 지침 3.1.1 두 번째 반려로 선물을 통째로 없앴다
+  //   (`routes/code.ts` 머리말). 발급자 허용 목록에 있어도 코드 행을 하나도 만들지 않는다.
+  it('refuses personal test codes with INVALID_REQUEST and writes no voucher', async () => {
     mockDB.pushResult([{ id: 'admin-pk' }]);
     mockDB.pushResult([PLAN_PERSONAL]);
-    mockDB.pushResult([], 1);
 
     const res = await buildApp().request(
       jsonReq('POST', '/billing/test-codes', { plan_key: 'personal' }),
     );
 
+    expect(res.status).toBe(400);
+    expect((await res.json()).error_code).toBe('INVALID_REQUEST');
+    expect(mockDB.calls.some((c) => /voucher_codes/i.test(c.sql))).toBe(false);
+    expect(mockDB.calls.some((c) => /INSERT|UPDATE|DELETE/i.test(c.sql))).toBe(false);
+  });
+
+  it('issues couple and family test codes as INV- invite codes only', async () => {
+    mockDB.pushResult([{ id: 'admin-pk' }]);
+    mockDB.pushResult([PLAN_COUPLE]);
+    mockDB.pushResult([], 1);
+
+    const res = await buildApp().request(
+      jsonReq('POST', '/billing/test-codes', { plan_key: 'couple' }),
+    );
+
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.success).toBe(true);
-    expect(body.first_redeemer_becomes_owner).toBe(false);
     expect(body.codes).toHaveLength(1);
-    expect(body.codes[0].code).toMatch(/^GIFT-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/);
-
+    expect(body.codes[0].code).toMatch(/^INV-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/);
     const insert = mockDB.calls.find((c) => c.sql.includes('INSERT OR IGNORE INTO voucher_codes'));
-    expect(insert?.args[3]).toBe(PLAN_PERSONAL.id);
+    expect(String(insert?.args[1])).toMatch(/^INV-/);
+    expect(insert?.args[3]).toBe(PLAN_COUPLE.id);
     expect(insert?.args[4]).toBe('admin-pk');
-    expect(insert?.args[5]).toBeNull();
     expect(insert?.args[8]).toBe(1);
   });
 
@@ -160,6 +174,21 @@ describe('POST /billing/test-codes', () => {
 });
 
 describe('billing checkout test-build guard', () => {
+  // ⚠ **선물 결제는 2026-10-14 에 없앴다 — 되살리지 말 것**(App Store 심사 지침 3.1.1, 두 번째 반려 —
+  //   `routes/code.ts` 머리말). 스텁이 켜진 빌드라도 `gift: true` 는 아무것도 읽거나 쓰기 전에 거절한다.
+  it.each(['personal', 'family'])(
+    'rejects gift checkout (plan %s) with INVALID_REQUEST before touching the DB',
+    async (planKey) => {
+      const res = await buildApp().request(
+        jsonReq('POST', '/billing/checkout', { plan_key: planKey, gift: true }),
+      );
+
+      expect(res.status).toBe(400);
+      expect((await res.json()).error_code).toBe('INVALID_REQUEST');
+      expect(mockDB.calls).toHaveLength(0);
+    },
+  );
+
   it('blocks mock checkout in production unless the server explicitly enables billing stubs', async () => {
     const res = await buildApp().request(
       jsonReq('POST', '/billing/checkout', { plan_key: 'personal' }),

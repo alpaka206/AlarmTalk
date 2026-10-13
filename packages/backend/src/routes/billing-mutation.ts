@@ -26,10 +26,12 @@ import type { DbExecutor } from '../lib/transactions';
 import { withWriteTransaction } from '../lib/transactions';
 import {
   PAID_PLAN_TYPES,
+  isGroupPlanType,
   planTypeToUserPlan,
   plannedMaxUses,
   resolveUserPk,
 } from './billing-helpers';
+import { jsonError } from '../lib/api-error';
 
 const billingMutation = new Hono<AppEnv>();
 
@@ -266,8 +268,15 @@ billingMutation.post('/checkout', async (c) => {
       gift: undefined,
     }));
 
+  // ⚠ **선물 결제(`gift: true`)는 2026-10-14 에 없앴다 — 되살리지 말 것**(App Store 심사 지침 3.1.1,
+  //   두 번째 반려 — `routes/code.ts` 머리말). 받는 사람이 코드를 쳐서 유료 기능을 여는 선물 코드를
+  //   찍어 내던 갈래다 — dev 스텁이라도 남겨 두면 발급 경로가 하나 살아 있는 셈이라, 아무것도 읽기
+  //   전에 거절한다. 할인·무료 이용은 스토어 오퍼 코드로 준다.
+  if (body.gift === true) {
+    return jsonError(c, 400, 'INVALID_REQUEST', 'Gift checkout is no longer available');
+  }
+
   const planKey = typeof body.plan_key === 'string' ? body.plan_key.trim() : '';
-  const gift = body.gift === true;
   if (!planKey) {
     return c.json({ error: 'plan_key is required', error_code: 'PLAN_KEY_REQUIRED' }, 400);
   }
@@ -289,12 +298,6 @@ billingMutation.post('/checkout', async (c) => {
   if (!PAID_PLAN_TYPES.has(planType)) {
     return c.json({ error: 'Free plan is not billable', error_code: 'FREE_NOT_BILLABLE' }, 400);
   }
-  if (gift && planType !== 'personal') {
-    return c.json(
-      { error: 'Gift checkout is only available for personal plans', error_code: 'GIFT_PERSONAL_ONLY' },
-      400,
-    );
-  }
 
   const userPk = await resolveUserPk(c);
   if (!userPk) {
@@ -304,26 +307,6 @@ billingMutation.post('/checkout', async (c) => {
   const billablePlan = normalizeBillablePlan(plan);
   const checkoutResult = await withWriteTransaction(db, async (tx) => {
     const startsAt = new Date();
-    const expiresAt = new Date(
-      startsAt.getTime() + billablePlan.period_days * 24 * 60 * 60 * 1000,
-    );
-
-    if (gift) {
-      return {
-        subscription: null,
-        plan_group: null,
-        voucher: await issueVoucherCode(tx, {
-          kind: 'gift',
-          planId: billablePlan.id,
-          issuerUserId: userPk,
-          issuerSubscriptionId: null,
-          issuedAt: startsAt.toISOString(),
-          expiresAt: expiresAt.toISOString(),
-          maxUses: 1,
-        }),
-      };
-    }
-
     await cancelActiveSubscriptionsForUser(tx, userPk, startsAt, {
       deleteVoiceData: false,
       promoCoversFree: personalPromoCoversFree(c.env, startsAt),
@@ -404,7 +387,18 @@ billingMutation.post('/test-codes', async (c) => {
   }
 
   const billablePlan = normalizeBillablePlan(plan);
-  const kind = billablePlan.plan_type === 'personal' ? 'gift' : 'invite';
+  // ⚠ **개인 플랜 테스트 코드는 없다 — 되살리지 말 것**(2026-10-14). 개인 플랜을 코드로 여는 길은
+  //   선물 코드(GIFT-)였고, App Store 심사 지침 3.1.1 두 번째 반려로 선물을 통째로 없앴다
+  //   (`routes/code.ts` 머리말). 여기서 내주는 것은 커플·가족 초대 코드(INV-)뿐이다. 할인·무료
+  //   이용은 스토어 오퍼 코드로 준다.
+  if (!isGroupPlanType(billablePlan.plan_type)) {
+    return jsonError(
+      c,
+      400,
+      'INVALID_REQUEST',
+      'Test codes are invite codes for couple or family plans only',
+    );
+  }
   const issuedAt = new Date();
   const issuedAtIso = issuedAt.toISOString();
   const expiresAtIso = new Date(issuedAt.getTime() + days * 24 * 60 * 60 * 1000).toISOString();
@@ -413,7 +407,7 @@ billingMutation.post('/test-codes', async (c) => {
     const issuedCodes: TestCodeVoucher[] = [];
     for (let i = 0; i < count; i++) {
       const issued = await issueVoucherCode(tx, {
-        kind,
+        kind: 'invite',
         planId: billablePlan.id,
         issuerUserId: issuerUserPk,
         issuerSubscriptionId: null,
@@ -585,12 +579,16 @@ billingMutation.post('/vouchers/family-share', async (c) => {
       };
     }
 
+    // 앱이 공유할 코드로 띄우는 것은 초대 코드(INV-)뿐이다 — 목록(`GET /billing/vouchers`,
+    // `routes/billing-query.ts`)과 같은 고정 조건이다. 옛 선물 행은 구독에 묶이지 않고 발급됐지만
+    // (issuer_subscription_id NULL) 그 사실에 기대지 않고 여기서도 거른다.
     const existingRes = await tx.execute({
       sql: `SELECT v.id, v.code, v.status, v.issued_at, v.expires_at, v.max_uses,
                    (SELECT COUNT(*) FROM voucher_redemptions WHERE voucher_id = v.id) AS use_count
             FROM voucher_codes v
             WHERE v.issuer_user_id = ?
               AND v.issuer_subscription_id = ?
+              AND v.code LIKE 'INV-%'
               AND v.status = 'issued'
               AND v.expires_at > datetime('now')
             ORDER BY v.issued_at DESC`,

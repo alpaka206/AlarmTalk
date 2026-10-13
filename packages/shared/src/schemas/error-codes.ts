@@ -113,7 +113,7 @@ export const ERROR_CODES = [
   'CHECKOUT_DISABLED',
   'FORBIDDEN',
   'FREE_NOT_BILLABLE',
-  'GIFT_PERSONAL_ONLY',
+  // GIFT_PERSONAL_ONLY 는 2026-10-14 에 지웠다 — 선물 결제를 없앴다(아래 「코드 등록」 묶음의 ⚠).
   'GROUP_FULL',
   'INVALID_CANCEL_MODE',
   'INVALID_COUNT',
@@ -240,7 +240,8 @@ export const ERROR_CODES = [
   'GOOGLE_BILLING_UNCONFIGURED',
   'PACKAGE_MISMATCH',
   'PRODUCT_MISMATCH',
-  'PURCHASE_NOT_COMPLETED',
+  // PURCHASE_NOT_COMPLETED 는 2026-10-14 에 지웠다 — 그 코드를 내던 1회성 상품(선물) 확정 갈래가
+  // 없어졌다(아래 「코드 등록」 묶음의 ⚠). 구독 확정은 이 코드를 낸 적이 없다.
   'SUBSCRIPTION_NOT_ACTIVE',
   // 공휴일 (holiday.ts)
   'COUNTRY_REQUIRED',
@@ -276,12 +277,14 @@ export const ERROR_CODES = [
   // 프로모 코드 갈래(ACTIVE_SUBSCRIPTION_EXISTS·CODE_EXHAUSTED·CODE_GROUP_ALREADY_REDEEMED·
   // CODE_INACTIVE·CODE_MISCONFIGURED·CODE_NOT_IN_WINDOW·PROMO_REDEEM_FAILED)는 프로모 코드와 함께
   // 2026-10-12 에 지웠다(App Store 3.1.1 — routes/code.ts 머리말). 옛 앱은 그 코드를 받을 일이 없다.
+  // ⚠ **선물 갈래(INVALID_GIFT_PLAN — 그리고 위의 GIFT_PERSONAL_ONLY·PURCHASE_NOT_COMPLETED)는 선물 코드와
+  //   함께 2026-10-14 에 지웠다 — 되살리지 말 것**(App Store 3.1.1 두 번째 반려 — routes/code.ts 머리말).
+  //   서버가 더는 내지 않으니 옛 앱도 받을 일이 없다. 할인·무료 이용은 스토어 오퍼 코드로 준다.
   'CODE_ALREADY_REDEEMED_BY_YOU',
   'CODE_ALREADY_USED',
   'CODE_EXPIRED',
   'CODE_NOT_FOUND',
   'INVALID_FORMAT',
-  'INVALID_GIFT_PLAN',
   'INVALID_INVITE_PLAN',
   'OWNS_ACTIVE_GROUP',
   'SELF_ISSUED',
