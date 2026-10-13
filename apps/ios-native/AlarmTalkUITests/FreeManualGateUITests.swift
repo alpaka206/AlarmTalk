@@ -29,6 +29,13 @@ final class FreeManualGateUITests: XCTestCase {
             "직접 입력을 눌렀는데 이용권 모달이 뜨지 않는다"
         )
         XCTAssertTrue(app.buttons["이용권 보기"].exists, "게이트에 '이용권 보기' 액션이 없다")
+        // ⚠ 게이트에는 **코드 입력 액션이 없다**(2026-10-14, App Store 지침 3.1.1 두 번째 반려 — 선물 코드
+        // 폐지). 되살리지 말 것 — 초대 코드는 더보기 → 초대 코드 등록에서만 넣고, 할인·무료 이용은 스토어
+        // 오퍼 코드로 준다(`docs/spec/plan-gates.md` §2).
+        XCTAssertFalse(
+            app.alerts.buttons.matching(NSPredicate(format: "label CONTAINS %@", "코드")).firstMatch.exists,
+            "유료 게이트에 코드 입력 액션이 남아 있다"
+        )
     }
 
     /// 목소리 고르기 **시트** 안에서 잠긴 목소리를 눌러도 같은 게이트가 떠야 한다.

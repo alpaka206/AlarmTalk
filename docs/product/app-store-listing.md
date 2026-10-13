@@ -5,7 +5,7 @@ App Store Connect(앱 6799711245)에 올리는 값의 원본이다. 스토어를
 [`play-store-listing.md`](play-store-listing.md) 가 같은 역할을 한다. 설명 본문은 두 스토어가 같고, 끝의
 스토어별 절만 다르다.
 
-- 상한: 이름·부제 30자 · 프로모션 170자 · 설명 4000자 · 검색어는 아래 K. 출시 노트("이 버전의 새로운 기능")는
+- 상한: 이름·부제 30자 · 프로모션 170자 · 설명 4000자 · 검색어는 아래 K. 출시 노트("이 버전의 새로운 기능", 4000자)는
   [`release-notes.md`](release-notes.md) 의 ko/en/ja 를 그대로 쓴다.
 - 스크린샷은 ko 것 하나만 올려 두었고, 다른 언어는 애플이 기본 언어(ko) 스크린샷을 그대로 보여 준다.
 - 앱 화면 언어 지원 문장은 번역을 포함한 다음 앱 버전이 게재된 뒤 사용한다. 게재 전 설명에서는 해당 한 줄을 뺀다.
@@ -19,12 +19,28 @@ App Store Connect(앱 6799711245)에 올리는 값의 원본이다. 스토어를
 | en-US | https://alarm-talk.com/en/contact/ | https://alarm-talk.com/en/ | https://alarm-talk.com/en/privacy/ |
 | ja | https://alarm-talk.com/ja/contact/ | https://alarm-talk.com/ja/ | https://alarm-talk.com/ja/privacy/ |
 
-## 지금 상태 (2026-10-12)
+## 지금 상태 (2026-10-14)
 
-- **10/12 반려 → 같은 레코드를 1.2.12(빌드 9)로 다시 낸다.** 1.2.11(빌드 8)이 심사 지침 3.1.1(프로모 코드로 유료
-  기능을 연다)로 반려됐다. 프로모 코드를 서버·두 앱에서 지운 빌드로, 버전 문자열만 1.2.12 로 바꿔 다시 제출한다
-  (안드로이드와 versionName 을 맞춘다 — `docs/qa/dev-test-handoff.md` 2026-10-12 절). 아래 이름·검색어·설명·새 기능
-  값은 그대로 쓴다. 출시 방식은 오너가 10/11 에 **승인 즉시 자동 출시**(`AFTER_APPROVAL`)로 바꿨다.
+- **1.2.12(빌드 9)도 반려됐다(2026-10-12) → 같은 레코드를 1.2.13(빌드 10)으로 다시 낸다.** 지침 3.1.1 의 두 번째
+  반려이고, 이번 사유는 선물 코드다("the app uses gift code to unlock or enable digital item/feature"). 선물을 서버·두
+  앱에서 지운 빌드로 버전 문자열만 1.2.13 으로 바꿔 다시 제출한다(안드로이드와 versionName 을 맞춘다 —
+  `docs/qa/dev-test-handoff.md` 2026-10-14 절, 규칙은 `docs/spec/plan-gates.md` 「선물 코드 — 폐지」).
+- ⚠ **그 레코드에 실려 있는 설명(INTERIM)에는 선물 문장이 아직 있다**(ko·en-US·ja 모두 — 10/11 에 이 파일의 INTERIM 을
+  실었고 1.2.12 재제출 때 그대로 뒀다. 레코드를 다시 읽어 대조하지는 않았다). 「■ 개인 이용권」 의
+  "개인 1개월 이용권을 선물 코드로 보낼 수도 있어요(1회 결제, 자동 갱신 없음)." 와 「■ 이용권과 결제」 끝의
+  "개인 1개월 선물 이용권은 자동 갱신되지 않는 1회성 상품이에요." 다(en·ja 도 같은 두 문장). 이 파일의 원본에서는
+  2026-10-14 에 지웠다. **다시 낼 때 설명을 이 파일의 INTERIM 전문으로 바꾸고**, 저장한 뒤 다시 읽어 선물·gift·
+  ギフト·贈 이 남지 않았는지 본다. 심사 노트도 새로 쓴다 — 1.2.12 노트는 선물 코드의 출처를 설명하며 같은 선물을
+  Google Play 에서도 판다고 적었다.
+  - 같은 날(2차) 커플·가족 줄도 고쳤다 — "초대 코드로 모여요" 를 "한 사람이 앱에서 구독하고, 함께 쓸 사람을 초대
+    코드로 그 이용권에 들여요" 로(en·ja 도). 코드만으로 이용권이 생기는 것처럼 읽히지 않게 구독이 먼저임을 말한다.
+- **선물 상품은 판매를 내렸다**(2026-10-14): 인앱 구입 `com.alarmtalk.app.personal_gift_1m` 이
+  `DEVELOPER_REMOVED_FROM_SALE`, 판매 지역 0곳이다. 내리기 전의 판매 지역 목록은 로컬 백업
+  `.claude/release-tools/gift-products-backup-20261014.json` 에 있다(저장소에 올리지 않는 파일).
+- 이름·부제·검색어는 그대로 둔다. 이 버전의 새로운 기능은 [`release-notes.md`](release-notes.md) 1.2.13 App Store 블록.
+  출시 방식은 오너가 10/11 에 **승인 즉시 자동 출시**(`AFTER_APPROVAL`)로 바꿨다.
+- (이력) 1.2.11(빌드 8)이 10/12 에 지침 3.1.1(프로모 코드로 유료 기능을 연다)로 반려돼, 같은 레코드를 버전 문자열만
+  1.2.12 로 바꿔 빌드 9 로 다시 냈었다.
 - **1.2.11(빌드 8) 버전 레코드를 만들어 심사에 냈다** — 2026-10-11T08:22Z, `WAITING_FOR_REVIEW`,
   `releaseType=MANUAL`(승인돼도 오너가 출시할 때까지 나가지 않는다). 그 레코드에 넣은 값:
   - 이름·부제: 아래 「이름 · 부제」 표 그대로(ko·en-US·ja). 이름이 겹친다고 막히지 않았다.
@@ -36,7 +52,9 @@ App Store Connect(앱 6799711245)에 올리는 값의 원본이다. 스토어를
   - 프로모션 문구는 넣지 않았다(1.2.10 에도 비어 있었다 — 버전과 무관하게 언제든 넣는다). en-GB 로컬라이제이션도
     만들지 않았다.
 - 게재 중인 값은 아직 1.2.10 의 옛 값이다(이름 `Alarm-Talk`, 옛 부제·검색어·설명 — 이 파일의 이전 판). 이 레코드
-  (1.2.12)가 출시되는 순간 위 값으로 바뀐다.
+  (1.2.13)가 출시되는 순간 위 값으로 바뀐다. ⚠ 그 옛 설명에도 선물 문장이 있다 — 이 파일의 2026-09-15 판(`ab670e99`)
+  기준으로 "개인 1개월 이용권을 선물 코드로 전할 수 있습니다." 와 결제 문단의 1회성 선물 문장(en·ja 도 같다). 게재본을
+  직접 대조하지는 않았다. App Store 설명은 버전과 함께만 바뀌므로 1.2.13 이 출시돼야 빠진다.
 - 저작권은 이미 `© 2026 Vailen` 으로 게재돼 있다(ASC 입력값 `2026 Vailen` — `©` 는 애플이 붙인다. 2026-09-30
   KR 공개 페이지에서 확인).
 
@@ -183,7 +201,7 @@ Start the day with a familiar voice. Default-voice and recorded alarms are free;
 
 ## 설명 — (B) 다음 버전, W 충족 뒤
 
-### ko (2802/4000)
+### ko (2751/4000)
 
 ```text
 좋아하는 목소리로 깨는 아침.
@@ -210,10 +228,9 @@ Start the day with a familiar voice. Default-voice and recorded alarms are free;
 • 직접 입력: 내가 쓴 문장을 AI가 그 목소리로 읽어 줘요. 새로 만들기는 월 30회이고, 같은 목소리로 같은 문장을 쓰는 알람이 이 폰에 남아 있으면 다시 써도 횟수가 줄지 않아요.
 • 알람을 읽어 줄 언어는 한국어·영어·일본어 중에서 골라요.
 • 목소리는 한 계정에 1개, 등록·교체는 한 달에 한 번 할 수 있어요.
-• 개인 1개월 이용권을 선물 코드로 보낼 수도 있어요(1회 결제, 자동 갱신 없음).
 
 ■ 커플·가족 이용권: 서로 맞춰 주는 알람
-• 커플은 2명, 가족은 최대 5명(본인 포함)이 초대 코드로 모여요. 구성원마다 목소리를 1개씩 등록할 수 있고, 개인 이용권 기능이 모두 들어 있어요.
+• 커플(2명)·가족(최대 5명, 본인 포함) 이용권은 한 사람이 앱에서 구독하고, 함께 쓸 사람을 초대 코드로 그 이용권에 들여요. 구성원마다 목소리를 1개씩 등록할 수 있고, 개인 이용권 기능이 모두 들어 있어요.
 • 목소리 공유: 공유를 켠 목소리는 그룹 안에서만 보이고, 공유받은 목소리로 내 알람을 만들거나 직접 입력을 쓸 수 있어요.
 • 상대 알람: 시각·요일·목소리·문구를 정해 상대의 폰으로 알람을 보내요.
   ◦ 받는 사람이 설정에서 상대 알람을 허용해 둔 경우에만 도착하고, 알람을 받지 않을 시간도 정할 수 있어요.
@@ -242,14 +259,14 @@ Start the day with a familiar voice. Default-voice and recorded alarms are free;
 • 울리는 알람은 잠금 화면과 다이내믹 아일랜드(지원 기기)에서도 바로 끄거나 다시 울림으로 넘길 수 있어요.
 
 ■ 이용권과 결제
-개인·커플·가족 이용권은 매월 자동 갱신되는 구독이에요. 결제 금액과 갱신 조건은 구매 화면에서 확인할 수 있어요. 결제는 구매를 확정할 때 Apple 계정으로 청구되고, 현재 기간이 끝나기 24시간 전까지 자동 갱신을 끄지 않으면 다음 기간이 자동으로 결제돼요. 구독 관리와 취소는 Apple 계정 설정에서 할 수 있어요. 개인 1개월 선물 이용권은 자동 갱신되지 않는 1회성 상품이에요.
+개인·커플·가족 이용권은 매월 자동 갱신되는 구독이에요. 결제 금액과 갱신 조건은 구매 화면에서 확인할 수 있어요. 결제는 구매를 확정할 때 Apple 계정으로 청구되고, 현재 기간이 끝나기 24시간 전까지 자동 갱신을 끄지 않으면 다음 기간이 자동으로 결제돼요. 구독 관리와 취소는 Apple 계정 설정에서 할 수 있어요.
 
 이용약관: https://alarm-talk.com/terms/
 개인정보 처리방침: https://alarm-talk.com/privacy/
 Apple 표준 사용권 계약(EULA): https://www.apple.com/legal/internet-services/itunes/dev/stdeula/
 ```
 
-### en-US (3781/4000)
+### en-US (3709/4000)
 
 ```text
 Wake up to a voice you love.
@@ -272,10 +289,9 @@ No math, no shaking.
 • Wake-up, weather, fortune, encouragement and meds messages in that voice are made in advance on our servers and downloaded to your phone, tailored to who the voice is to you and what it calls you (both optional)
 • Type it yourself: AI reads your text in that voice (30 new a month; free if an alarm on this phone has the same text and voice)
 • Messages in Korean, English or Japanese
-• Gift a 1-month Personal plan by code (one-time purchase, no renewal)
 
 ■ Couple (2) and Family (up to 5, incl. you)
-• Join by invite code; each member can register a voice; everything in Personal is included
+• One person subscribes in the app and invites the others to that plan with an invite code; each member can register a voice; everything in Personal is included
 • Share voices within your group only, for your own alarms and typed messages
 • Send an alarm (time, days, voice, message) to a member who allows it, outside hours they block. Once delivered, it's theirs to change or delete; weather and fortune use their details.
 • Typed messages: 50 a month for Couple, 100 for Family, shared by the group
@@ -296,14 +312,14 @@ No math, no shaking.
 • A ringing alarm also appears on the Lock Screen and in the Dynamic Island (on supported models), where you can stop or snooze it.
 
 ■ Plans and billing
-Personal, Couple and Family plans are monthly auto-renewing subscriptions. The price and renewal terms are shown on the purchase screen. Payment is charged to your Apple Account when you confirm the purchase, and the subscription renews automatically unless auto-renew is turned off at least 24 hours before the end of the current period. You can manage or cancel it in your Apple Account settings. The 1-month Personal gift is a one-time purchase that does not renew.
+Personal, Couple and Family plans are monthly auto-renewing subscriptions. The price and renewal terms are shown on the purchase screen. Payment is charged to your Apple Account when you confirm the purchase, and the subscription renews automatically unless auto-renew is turned off at least 24 hours before the end of the current period. You can manage or cancel it in your Apple Account settings.
 
 Terms of Service: https://alarm-talk.com/en/terms/
 Privacy Policy: https://alarm-talk.com/en/privacy/
 Apple Standard EULA: https://www.apple.com/legal/internet-services/itunes/dev/stdeula/
 ```
 
-### ja (2672/4000)
+### ja (2613/4000)
 
 ```text
 好きな声で目覚める朝を。
@@ -330,10 +346,9 @@ Apple Standard EULA: https://www.apple.com/legal/internet-services/itunes/dev/st
 • 自分で入力：書いた文をAIがその声で読み上げます。新しく作れるのは月30回まで。同じ声・同じ文を使うアラームがこのスマホに残っていれば、回数に数えません。
 • 読み上げる言語は、日本語・韓国語・英語から選べます。
 • 声は1アカウントに1つ。登録・変更は月1回までです。
-• パーソナル1か月分をギフトコードで贈ることもできます(1回限りの購入、自動更新なし)。
 
 ■ カップル・ファミリープラン：起こし合うアラーム
-• カップルは2人、ファミリーは最大5人(本人を含む)で、招待コードでグループを作ります。メンバーはそれぞれ声を1つ登録でき、パーソナルプランの機能もすべて含まれます。
+• カップルは2人、ファミリーは最大5人(本人を含む)。1人がアプリで購読し、ほかの人を招待コードでそのプランに招待します。メンバーはそれぞれ声を1つ登録でき、パーソナルプランの機能もすべて含まれます。
 • 声の共有：共有をオンにした声はグループ内だけに表示され、共有された声で自分のアラームを作ったり、自分で入力を使ったりできます。
 • 相手のアラーム設定：時刻・曜日・声・メッセージを決めて、相手のスマホにアラームを送れます。
   ◦ 受け取る人が設定で相手からのアラームを許可している場合だけ届きます。アラームを受け取らない時間も設定できます。
@@ -362,7 +377,7 @@ Apple Standard EULA: https://www.apple.com/legal/internet-services/itunes/dev/st
 • 鳴っているアラームは、ロック画面とダイナミックアイランド(対応機種)からもすぐに止めたりスヌーズしたりできます。
 
 ■ プランとお支払い
-パーソナル・カップル・ファミリープランは毎月自動更新されるサブスクリプションです。料金と更新条件は購入画面でご確認いただけます。お支払いは購入の確定時にAppleアカウントに請求され、現在の期間が終わる24時間前までに自動更新をオフにしない限り、次の期間が自動的に更新されます。管理や解約はAppleアカウントの設定から行えます。パーソナル1か月ギフトは自動更新されない1回限りの商品です。
+パーソナル・カップル・ファミリープランは毎月自動更新されるサブスクリプションです。料金と更新条件は購入画面でご確認いただけます。お支払いは購入の確定時にAppleアカウントに請求され、現在の期間が終わる24時間前までに自動更新をオフにしない限り、次の期間が自動的に更新されます。管理や解約はAppleアカウントの設定から行えます。
 
 利用規約: https://alarm-talk.com/ja/terms/
 プライバシーポリシー: https://alarm-talk.com/ja/privacy/
@@ -375,7 +390,7 @@ Apple 標準使用許諾契約 (EULA): https://www.apple.com/legal/internet-serv
 다르지 않다. 날씨 줄은 Play 의 INTERIM 과 같다 — Play INTERIM 은 번역이 들어간 Android 버전보다 먼저 올리므로 앱
 화면 언어 문장도 빼지만, 여기 설명은 다음 버전과 함께 게재되므로 그 문장을 둔다.
 
-**ko** (결과 2721/4000)
+**ko** (결과 2670/4000)
 
 ```diff
 -• 무료: 기본 목소리 4종이 날씨·운세 같은 문구를 읽어 주고, 알람마다 30초까지 녹음해 두면 그 녹음 그대로 울려요.
@@ -389,7 +404,7 @@ Apple 標準使用許諾契約 (EULA): https://www.apple.com/legal/internet-serv
 +  ◦ 운세 문구는 받는 사람의 정보로 골라요.
 ```
 
-**en-US** (결과 3692/4000)
+**en-US** (결과 3620/4000)
 
 ```diff
 -• Free: default voices read messages like weather and fortune, and a recording plays exactly as recorded.
@@ -402,7 +417,7 @@ Apple 標準使用許諾契約 (EULA): https://www.apple.com/legal/internet-serv
 +• Send an alarm (time, days, voice, message) to a member who allows it, outside hours they block. Once delivered, it's theirs to change or delete; fortune uses their details.
 ```
 
-**ja** (결과 2597/4000)
+**ja** (결과 2538/4000)
 
 ```diff
 -• 無料：基本の声4種類が天気・運勢などのメッセージを読み上げます。アラームごとに30秒まで録音すれば、録音したそのままの音で鳴ります。
@@ -444,7 +459,7 @@ alarmtalk,alarm-talk,alarm,voice,talking,custom,record,message,morning,ai,ringto
 | 검색어 대체안 — 글자 / 바이트 | 100바이트 | 48 / 92 | 92 / 98 | 44 / 100 |
 | 프로모션 — 기간판 | 170자 | 141 | 166 | 131 |
 | 프로모션 — 상시판 | 170자 | 93 | 168 | 83 |
-| 설명 — (B) | 4000자 | 2802 | 3781 | 2672 |
-| 설명 — INTERIM | 4000자 | 2721 | 3692 | 2597 |
+| 설명 — (B) | 4000자 | 2751 | 3709 | 2613 |
+| 설명 — INTERIM | 4000자 | 2670 | 3620 | 2538 |
 
 글자 수는 유니코드 코드 포인트 수, 바이트는 UTF-8 이다. 이 표는 위 문구에서 센 값이다 — 문구를 고치면 다시 센다.

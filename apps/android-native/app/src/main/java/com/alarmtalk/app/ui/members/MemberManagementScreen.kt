@@ -87,7 +87,7 @@ internal fun MemberManagementScreen(
     val clipboard = LocalClipboardManager.current
     fun shareCode(code: String) {
         clipboard.setText(AnnotatedString(code))
-        context.shareRedeemCode(code, RedeemCodeKind.Invite)
+        context.shareRedeemCode(code)
     }
 
     var pendingRemoveMember by remember { mutableStateOf<FamilyGroupMember?>(null) }

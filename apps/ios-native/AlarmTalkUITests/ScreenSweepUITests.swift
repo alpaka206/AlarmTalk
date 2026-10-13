@@ -125,7 +125,7 @@ final class ScreenSweepUITests: XCTestCase {
     /// 시트로 남아 있었는데, 최상위 탭만 찍고 있어서 **스크린샷에 한 번도 잡히지 않았다.**
     func test_sweep_menuSubscreens() {
         launch(["-UIPreviewSeed", "-UIPreviewTab", "menu"])
-        // 공유 이용권이 없으면 '코드 등록', 있으면 '초대 및 구성원 관리' 로 갈린다.
+        // 공유 이용권이 없으면 '초대 코드 등록', 있으면 '초대 및 구성원 관리' 로 갈린다.
         // ⚠ `app.buttons` 로만 찾지 말 것 — 이 행은 접근성 트리에 버튼으로 안 잡힌다.
         // staticTexts 까지 훑고, 그래도 없으면 좌표로 눌러 본다.
         // ⚠ 술어를 지역 변수로 빼지 말 것 — `NSPredicate` 는 Sendable 이 아니라

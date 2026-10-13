@@ -130,10 +130,8 @@ internal fun AlarmListScreen(
     onRegistrationWindowOpenChange: (Boolean) -> Unit = {},
     onLeaveFamilyGroup: (String) -> Unit,
     onRegisterCode: (String) -> Unit,
-    onEnsureFamilyShareCode: () -> Unit,
     planPrices: Map<String, String>,
     onPurchasePlay: (android.app.Activity, String) -> Unit,
-    onGiftPersonal: (android.app.Activity) -> Unit,
     onCancelSubscription: (Boolean) -> Unit,
     onRefreshShareCodeData: suspend () -> List<VoucherItem>,
     onRestorePurchases: () -> Unit,
@@ -314,7 +312,6 @@ internal fun AlarmListScreen(
                         onRegistrationWindowOpenChange = onRegistrationWindowOpenChange,
                         onOpenBilling = { onSelectTab(NativeTab.Billing) },
                         voiceDraftQuota = voiceDraftQuota,
-                        onRegisterCode = onRegisterCode,
                         voicePrefetchProgress = voicePrefetchProgress,
                         onGetVoicePrerenderStatus = onGetVoicePrerenderStatus,
                         onRetryVoicePrerender = onRetryVoicePrerender,
@@ -400,10 +397,8 @@ internal fun AlarmListScreen(
                         billingBusy = billingBusy,
                         familyGroup = familyGroup,
                         subscriptionResponse = subscriptionResponse,
-                        vouchers = vouchers,
                         onLeaveFamilyGroup = onLeaveFamilyGroup,
                         onRegisterCode = onRegisterCode,
-                        onEnsureFamilyShareCode = onEnsureFamilyShareCode,
                     )
                 }
             }
@@ -435,7 +430,6 @@ internal fun AlarmListScreen(
                         vouchers = vouchers,
                         planPrices = planPrices,
                         onPurchasePlay = onPurchasePlay,
-                        onGiftPersonal = onGiftPersonal,
                         onCancelSubscription = onCancelSubscription,
                         onLeaveFamilyGroup = onLeaveFamilyGroup,
                         onRefreshShareCodeData = onRefreshShareCodeData,

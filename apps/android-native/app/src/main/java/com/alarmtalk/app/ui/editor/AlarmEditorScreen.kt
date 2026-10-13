@@ -254,9 +254,8 @@ internal fun AlarmEditorScreen(
     lastFreeBucket: String? = null,
     // 마지막에 쓴 직접 입력 문구. 차 있으면 마지막 선택이 직접 입력이었다는 뜻이다.
     lastManualText: String? = null,
-    // 유료 안내 모달에서 바로 프로모션/선물 코드를 넣을 수 있게 한다.
-    onRegisterCode: (String) -> Unit = {},
-    redeemBusy: Boolean = false,
+    // ⚠ 유료 안내 모달의 코드 입력(`onRegisterCode`·`redeemBusy`)은 2026-10-14 에 지웠다 — 되살리지 말 것
+    // (선물 코드 폐지, App Store 3.1.1 두 번째 반려 — `PlanGateDialog` 머리말).
     onCancel: () -> Unit,
     onOpenBilling: () -> Unit,
     onCreateVoiceProfile: () -> Unit,
@@ -2092,8 +2091,8 @@ internal fun AlarmEditorScreen(
         // (2026-09-02 부터 잠긴 '직접 입력' 은 **무료에게만** 뜬다 — 그전에는 기본 목소리를
         // 고른 유료 사용자에게도 떠서 이 사고의 주된 경로였다.)
         //
-        // 이제 셋으로 가른다. **각 상태에 맞는 액션만 붙인다** — 쿠폰·이용권 버튼은
-        // '이용권이 없어서' 막힌 경우에만 뜻이 있다.
+        // 이제 셋으로 가른다. **각 상태에 맞는 액션만 붙인다** — 유료인데 막힌 사람의 확인 버튼은
+        // 결제가 아니라 목소리 등록이다.
         val gateReason = when {
             authSession == null -> VoiceGateReason.LOGIN_REQUIRED
             freeVoiceTier -> VoiceGateReason.PLAN_REQUIRED
@@ -2131,10 +2130,9 @@ internal fun AlarmEditorScreen(
                 }
             },
             onDismiss = { voicePlanGateOpen = false },
-            // ⚠ 쿠폰 입력은 **이용권이 없을 때만** 붙인다. 비로그인에게 붙이면 등록할 계정이
-            // 없고, 이미 유료인 사람에게 붙이면 넣어 봐야 아무 일도 일어나지 않는다.
-            onRedeemCode = if (gateReason == VoiceGateReason.PLAN_REQUIRED) onRegisterCode else null,
-            redeemBusy = redeemBusy,
+            // ⚠ **코드 입력 액션을 다시 붙이지 말 것**(2026-10-14). 예전에는 '이용권 필요' 갈래에만
+            // '선물·초대 코드가 있어요' 를 붙였는데, 선물 코드 폐지(App Store 3.1.1 두 번째 반려)와 함께
+            // 게이트의 코드 입력을 지웠다 — `PlanGateDialog` 머리말. 초대 코드는 더보기에서만 받는다.
         )
     }
 
@@ -2166,10 +2164,13 @@ internal fun AlarmEditorScreen(
  * 로그인한 유료 사용자가 '로그인이 필요해요' 를 보는 사고가 났다.
  */
 private enum class VoiceGateReason {
-    /** 세션이 없다. 쿠폰을 등록할 계정도 없다. */
+    /** 세션이 없다. */
     LOGIN_REQUIRED,
 
-    /** 로그인했지만 이용권이 없다. 여기서만 쿠폰 입력이 뜻을 갖는다. */
+    /**
+     * 로그인했지만 이용권이 없다. 예전에는 여기에만 코드 입력('선물·초대 코드가 있어요')이 붙었는데
+     * 2026-10-14 에 지웠다(선물 코드 폐지 — `PlanGateDialog` 머리말).
+     */
     PLAN_REQUIRED,
 
     /**

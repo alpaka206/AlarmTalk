@@ -114,6 +114,7 @@ const A_OWNED_ROWS: Array<[table: string, column: string, id: string]> = [
   ['subscriptions', 'id', 'sub-a'],
   ['store_transactions', 'id', 'st-a'],
   ['store_transactions', 'id', 'st-a-gift'],
+  ['store_transactions', 'id', 'st-a-play'],
   ['plan_groups', 'id', 'g-a'],
   ['voucher_codes', 'id', 'v-a-gift'],
   ['voice_prerender_queue', 'voice_profile_id', 'vp-a'],
@@ -203,7 +204,8 @@ async function seed(): Promise<void> {
              '{"originalTransactionId":"apple-tx-a-sub"}', '2026-09-01T00:00:00.000Z')`,
     [A_PK],
   );
-  // 선물 구매 — 구독 행 없이 거래만 남는 일회성 결제.
+  // 선물 구매 — 구독 행 없이 거래만 남는 일회성 결제. 선물은 2026-10-14 에 없앴지만(App Store 3.1.1)
+  // 그 전에 쓰인 행·코드·`apple_gift_deliveries` 연결은 이력으로 남는다 — 파기와 가명 보존은 그대로 돌아야 한다.
   await run(
     `INSERT INTO store_transactions (id, user_id, provider, provider_transaction_id, product_id, plan_key,
                                      subscription_id, raw_payload, last_paid_at)
@@ -224,6 +226,33 @@ async function seed(): Promise<void> {
   await run(`INSERT INTO voucher_redemptions (id, voucher_id, user_id) VALUES ('vr-b', 'v-a-gift', ?)`, [B_PK]);
   await run(`INSERT INTO voucher_redemptions (id, voucher_id, user_id) VALUES ('vr-a', 'v-c', ?)`, [A_PK]);
   await run(`INSERT INTO apple_gift_deliveries (transaction_id, voucher_id) VALUES ('apple-tx-a-gift', 'v-a-gift')`);
+  // ⚠ **거래 id 는 스토어마다 따로 매긴다** — `store_transactions` 의 유일성은 (provider, 거래 id) 다. 글자가
+  //   같아도 스토어가 다르면 남의 결제다. (선물을 없애며 지운 `billing-apple-gift-refund.test.ts` 가 지키던 것을
+  //   여기로 옮겼다.)
+  //   ① C 가 애플로 산 옛 선물(거래·선물 연결 → C 의 코드 v-c)의 거래 id 를 A 의 Play 구매 토큰이 그대로 쓴다.
+  //      선물 연결 정리가 `provider = 'apple'` 을 빠뜨리면 C 의 연결까지 지운다.
+  //   ② 반대로 남는 B 의 Play 구매 토큰이 A 의 애플 선물 거래 id 와 같다 — A 의 연결·거래는 지워도 B 의 거래는 남는다.
+  //   A 의 Play 결제는 5년 보존 기한이 지난 것이라 가명 보존 기록에 들어가지 않는다(아래 보존 검사가 그대로다).
+  await run(
+    `INSERT INTO store_transactions (id, user_id, provider, provider_transaction_id, product_id, plan_key,
+                                     subscription_id, raw_payload, last_paid_at)
+     VALUES ('st-c-gift', ?, 'apple', 'apple-tx-c-gift', 'com.alarmtalk.app.personal_gift_1m', 'personal', NULL,
+             '{"kind":"gift"}', '2026-09-04T00:00:00.000Z')`,
+    [C_PK],
+  );
+  await run(`INSERT INTO apple_gift_deliveries (transaction_id, voucher_id) VALUES ('apple-tx-c-gift', 'v-c')`);
+  await run(
+    `INSERT INTO store_transactions (id, user_id, provider, provider_transaction_id, product_id, plan_key,
+                                     subscription_id, last_paid_at)
+     VALUES ('st-a-play', ?, 'google', 'apple-tx-c-gift', 'personal_monthly', 'personal', NULL, '2018-01-01T00:00:00.000Z')`,
+    [A_PK],
+  );
+  await run(
+    `INSERT INTO store_transactions (id, user_id, provider, provider_transaction_id, product_id, plan_key,
+                                     subscription_id, last_paid_at)
+     VALUES ('st-b-play', ?, 'google', 'apple-tx-a-gift', 'personal_monthly', 'personal', NULL, '2026-09-03T00:00:00.000Z')`,
+    [B_PK],
+  );
   await run(`INSERT INTO promo_codes (id, code, plan_id, duration_days) VALUES ('promo-1', 'WELCOME', ?, 30)`, [PERSONAL]);
   await run(`INSERT INTO promo_code_redemptions (id, promo_code_id, user_id) VALUES ('pr-a', 'promo-1', ?)`, [A_PK]);
   await run(`INSERT INTO promo_code_redemptions (id, promo_code_id, user_id) VALUES ('pr-b', 'promo-1', ?)`, [B_PK]);
@@ -510,6 +539,31 @@ describe('탈퇴 파기 뒤 잔존물 (실제 SQLite)', () => {
       // C 가 발급한 선물 코드는 C 의 것이라 남고, 사용자 칸만 비운다.
       const voucher = await db.execute(`SELECT id, redeemed_by_user_id FROM voucher_codes`);
       expect(voucher.rows.map((row) => [row.id, row.redeemed_by_user_id])).toEqual([['v-c', null]]);
+    });
+
+    it('스토어가 다른 같은 거래 id 는 남의 것이다 — C 의 선물 연결·거래와 B 의 Play 거래가 남는다', async () => {
+      // ① A 의 Play 토큰과 글자가 같은 C 의 애플 선물 — 연결이 C 의 코드를 그대로 가리킨다.
+      const deliveries = await db.execute(
+        `SELECT transaction_id, voucher_id, revoked_at FROM apple_gift_deliveries ORDER BY transaction_id`,
+      );
+      expect(
+        deliveries.rows.map((row) => [row.transaction_id, row.voucher_id, row.revoked_at]),
+      ).toEqual([['apple-tx-c-gift', 'v-c', null]]);
+      // ② A 의 거래(구독·선물·Play)는 전부 사라지고, 같은 글자를 쓰는 남의 거래만 남는다.
+      const transactions = await db.execute(
+        `SELECT id, user_id, provider, provider_transaction_id FROM store_transactions ORDER BY id`,
+      );
+      expect(
+        transactions.rows.map((row) => [
+          row.id,
+          row.user_id,
+          row.provider,
+          row.provider_transaction_id,
+        ]),
+      ).toEqual([
+        ['st-b-play', B_PK, 'google', 'apple-tx-a-gift'],
+        ['st-c-gift', C_PK, 'apple', 'apple-tx-c-gift'],
+      ]);
     });
 
     it('B 의 알람은 남고, A 의 목소리를 쓰던 것만 목소리를 잃는다', async () => {

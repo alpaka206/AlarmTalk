@@ -7,7 +7,7 @@ import XCTest
 /// 는 Xcode 시뮬레이터의 StoreKit Configuration 위에서만 동작하므로 본 테스트는
 /// 다루지 않는다. 본 파일은 다음만 검증한다.
 ///
-///   - 3개 SubscriptionProduct enum case (월간만) 가 모두 등록되어 있다.
+///   - SubscriptionProduct 는 월간 구독 3개뿐이다(선물 상품 없음). 번들의 StoreKit 설정도 같은 셋이다.
 ///   - 각 productID 가 백엔드 plan key 와 1:1 매핑된다.
 ///   - PlanTier ↔ SubscriptionProduct round-trip 이 안전하다.
 ///   - `SubscriptionProduct.make(tier:)` 가 free 에 대해 nil 을 돌려준다.
@@ -16,19 +16,43 @@ final class SubscriptionManagerTests: XCTestCase {
 
     // MARK: - Product enum
 
-    /// 구독 3종 + 선물 1종.
-    /// ⚠ 선물은 **소모성**이라 구독이 아니다 — `isSubscription` 이 그걸 가른다.
-    func testHasThreeSubscriptionsAndOneGift() {
-        XCTAssertEqual(SubscriptionProduct.allCases.count, 4)
-        XCTAssertEqual(SubscriptionProduct.allCases.filter(\.isSubscription).count, 3)
-        XCTAssertEqual(SubscriptionProduct.allCases.filter { !$0.isSubscription }, [.personalGift])
+    /// **파는 것은 월간 자동 갱신 구독 셋뿐이다.**
+    ///
+    /// ⚠ **선물(소모성) 상품을 되살리지 말 것**(2026-10-14, App Store 지침 3.1.1 두 번째 반려).
+    /// 사서 받은 `GIFT-` 코드를 쳐서 유료 기능을 여는 길이 반려 사유였다. 할인·무료 이용은
+    /// 스토어 오퍼 코드로 준다. 상품이 하나라도 늘면 이 테스트가 먼저 깨져야 한다.
+    func testSellsOnlyTheThreeMonthlySubscriptions() {
+        XCTAssertEqual(SubscriptionProduct.allCases, [.personalMonthly, .coupleMonthly, .familyMonthly])
+        XCTAssertEqual(
+            Set(SubscriptionProduct.allCases.map(\.rawValue)),
+            [
+                "com.alarmtalk.app.personal_monthly",
+                "com.alarmtalk.app.couple_monthly",
+                "com.alarmtalk.app.family_monthly",
+            ]
+        )
+        XCTAssertNil(
+            SubscriptionProduct(rawValue: "com.alarmtalk.app.personal_gift_1m"),
+            "선물 상품은 없앴다 — 남은 옛 트랜잭션은 모르는 상품으로 끝낸다"
+        )
     }
 
-    /// 선물 구매가 **구매자의 등급을 올리면 안 된다.** 사서 남에게 주는 코드다.
-    func testGiftIsNotASubscription() {
-        XCTAssertFalse(SubscriptionProduct.personalGift.isSubscription)
-        // planTier 는 '무엇을 선물하는가' 를 뜻할 뿐, 구매자 권한이 아니다.
-        XCTAssertEqual(SubscriptionProduct.personalGift.planTier, .personal)
+    /// 시뮬레이터용 StoreKit 설정(앱 번들에 실린다)도 **같은 셋**만 판다.
+    /// 소모성 상품이 남으면 로컬 결제 시험에서 없앤 선물을 그대로 살 수 있다.
+    func testStoreKitConfigurationSellsOnlyTheSameSubscriptions() throws {
+        let url = try XCTUnwrap(
+            Bundle.main.url(forResource: "StoreKitConfiguration", withExtension: "storekit"),
+            "앱 번들에 StoreKit 설정이 없다(project.yml 의 resources)"
+        )
+        let root = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
+        let products = try XCTUnwrap(root["products"] as? [Any])
+        XCTAssertTrue(products.isEmpty, "구독 그룹 밖 상품(소모성·비소모성)이 남아 있다: \(products)")
+        let groups = try XCTUnwrap(root["subscriptionGroups"] as? [[String: Any]])
+        let subscriptionIDs = groups
+            .flatMap { ($0["subscriptions"] as? [[String: Any]]) ?? [] }
+            .compactMap { $0["productID"] as? String }
+        XCTAssertEqual(Set(subscriptionIDs), Set(SubscriptionProduct.allCases.map(\.rawValue)))
+        XCTAssertEqual(subscriptionIDs.count, SubscriptionProduct.allCases.count)
     }
 
     func testAllProductIDsAreUnique() {

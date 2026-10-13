@@ -17,7 +17,7 @@ final class CodeRegistrationErrorTests: XCTestCase {
             ("CODE_ALREADY_REDEEMED_BY_YOU", "이미 등록한 코드예요"),
             ("GROUP_FULL", "이미 정원이 찬 코드예요"),
             ("INVALID_FORMAT", "코드 형식을 확인해 주세요"),
-            ("CODE_NOT_FOUND", "잘못된 코드입니다."),
+            ("CODE_NOT_FOUND", "잘못된 코드예요"),
             ("CODE_REVOKED", "취소된 코드예요"),
             ("ALREADY_MEMBER", "이미 함께 쓰고 있는 그룹이에요"),
             ("OWNS_ACTIVE_GROUP", "이미 이용 중인 그룹 이용권이 있어 이 코드를 등록할 수 없어요"),
@@ -38,6 +38,17 @@ final class CodeRegistrationErrorTests: XCTestCase {
                      "ACTIVE_SUBSCRIPTION_EXISTS", "PROMO_REDEEM_FAILED"] {
             XCTAssertEqual(CodeRegistrationError.message(for: serverError(code), fallback: "폴백"), "폴백", code)
         }
+    }
+
+    /// 선물 코드는 2026-10-14 에 없앴다(App Store 지침 3.1.1 두 번째 반려). 서버는 `INV-` 가 아닌 코드를
+    /// 전부 `CODE_NOT_FOUND` 로 돌려주고 `INVALID_GIFT_PLAN` 을 내지 않는다 — 표에 남기면 없는 갈래다.
+    /// 초대 갈래의 같은 뜻 코드(`INVALID_INVITE_PLAN`)는 그대로 남는다.
+    func test_giftCodeBranchIsGone() {
+        XCTAssertEqual(CodeRegistrationError.message(for: serverError("INVALID_GIFT_PLAN"), fallback: "폴백"), "폴백")
+        XCTAssertEqual(
+            CodeRegistrationError.message(for: serverError("INVALID_INVITE_PLAN"), fallback: "폴백"),
+            "코드와 이용권 종류가 맞지 않아요"
+        )
     }
 
     /// 서버가 두 이름을 쓰지만 사용자에게는 같은 뜻이다.

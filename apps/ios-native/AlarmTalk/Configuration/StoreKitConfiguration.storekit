@@ -1,23 +1,7 @@
 {
   "identifier": "AlarmTalkStoreKit",
   "nonRenewingSubscriptions": [],
-  "products": [
-    {
-      "displayPrice": "3900",
-      "familyShareable": false,
-      "internalID": "55927B60",
-      "localizations": [
-        {
-          "description": "퍼스널 1개월 이용권 선물, 1회성 결제",
-          "displayName": "AlarmTalk 개인플랜 1달 이용권",
-          "locale": "ko_KR"
-        }
-      ],
-      "productID": "com.alarmtalk.app.personal_gift_1m",
-      "referenceName": "Personal Gift 1 Month",
-      "type": "Consumable"
-    }
-  ],
+  "products": [],
   "settings": {
     "_billingIssuesEnabled": false,
     "_compatibilityTimeRate": 0,

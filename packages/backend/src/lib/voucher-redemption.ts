@@ -53,10 +53,6 @@ export interface RedeemedVoucherResult {
   };
 }
 
-function codePrefix(code: string): 'INV' | 'GIFT' {
-  return code.startsWith('GIFT-') ? 'GIFT' : 'INV';
-}
-
 async function claimVoucherUse(
   db: DbExecutor,
   params: {
@@ -218,59 +214,58 @@ async function redeemVoucherCodeInTransaction(
   }
 
   const plan = planRes.rows[0]!;
-  const prefix = codePrefix(code);
   const planType = String(plan.plan_type);
   const planKey = String(plan.key);
   const periodDays = Number(plan.period_days) || 30;
   const maxMembers = Number(plan.max_members) || 1;
   const priceKrw = Number(plan.price_krw) || 0;
 
-  if (prefix === 'GIFT' && planType !== 'personal') {
-    throw new VoucherRedemptionError(400, 'INVALID_GIFT_PLAN', 'Gift codes are personal plans only');
-  }
-  if (prefix === 'INV' && planType !== 'family') {
+  // ⚠ **선물 코드(GIFT-)는 2026-10-14 에 없앴다 — 되살리지 말 것**(App Store 심사 지침 3.1.1, 두 번째
+  //   반려 — `routes/code.ts` 머리말). 여기 닿는 것은 초대 코드(INV-)뿐이다(`isValidVoucherCodeFormat`).
+  //   그래서 예전의 '접두사별 플랜 검사' 는 하나로 줄었다: 그룹형(커플·가족)이 아닌 플랜을 가리키는
+  //   행은 — 옛 선물 행이든 잘못 만든 초대 행이든 — 개인 플랜을 열지 못하고 여기서 막힌다.
+  //   할인·무료 이용은 스토어 오퍼 코드로 준다.
+  if (planType !== 'family') {
     throw new VoucherRedemptionError(400, 'INVALID_INVITE_PLAN', 'Invite codes are family or couple plans only');
   }
 
-  if (prefix === 'INV') {
-    // 발급 근거 구독이 살아 있어야 초대가 유효하다. 정상 해지/만료 경로는
-    // expireUnusedVouchersFor 가 코드를 만료시키지만, 그 경로를 우회한 데이터
-    // (dev 스크립트 교체·레거시)로 무료가 된 발급자의 코드가 남으면 새 계정이
-    // 그 코드로 가족 플랜 자리를 얻을 수 있다 — 여기서 최종 방어한다.
-    if (!issuerSubscriptionId) {
-      throw new VoucherRedemptionError(
-        409,
-        'SUBSCRIPTION_NOT_ACTIVE',
-        'Invite subscription is not active',
-      );
-    }
-    const issuerSubRes = await db.execute({
-      sql: `SELECT entitlement_state FROM subscriptions
-            WHERE id = ? AND user_id = ? AND status = 'active' AND datetime(expires_at) > datetime('now')
-            LIMIT 1`,
-      args: [issuerSubscriptionId, issuerUserId],
-    });
-    if (issuerSubRes.rows.length === 0) {
-      await db.execute({
-        sql: `UPDATE voucher_codes SET status = 'expired' WHERE id = ?`,
-        args: [voucherId],
-      });
-      return { error: new VoucherRedemptionError(409, 'CODE_EXPIRED', 'Code is expired') };
-    }
-    // 회복 가능한 보류·미확인은 코드를 소진/만료시키지 않는다.
-    if (issuerSubRes.rows[0]!.entitlement_state !== 'entitled') {
-      throw new VoucherRedemptionError(
-        409,
-        'SUBSCRIPTION_NOT_ACTIVE',
-        'Invite subscription is not entitled',
-      );
-    }
-    await assertIssuerGroupHasCapacity(db, {
-      issuerSubscriptionId,
-      issuerUserId,
-      fallbackMaxMembers: maxMembers,
-    });
+  // 발급 근거 구독이 살아 있어야 초대가 유효하다. 정상 해지/만료 경로는
+  // expireUnusedVouchersFor 가 코드를 만료시키지만, 그 경로를 우회한 데이터
+  // (dev 스크립트 교체·레거시)로 무료가 된 발급자의 코드가 남으면 새 계정이
+  // 그 코드로 가족 플랜 자리를 얻을 수 있다 — 여기서 최종 방어한다.
+  if (!issuerSubscriptionId) {
+    throw new VoucherRedemptionError(
+      409,
+      'SUBSCRIPTION_NOT_ACTIVE',
+      'Invite subscription is not active',
+    );
   }
+  const issuerSubRes = await db.execute({
+    sql: `SELECT entitlement_state FROM subscriptions
+          WHERE id = ? AND user_id = ? AND status = 'active' AND datetime(expires_at) > datetime('now')
+          LIMIT 1`,
+    args: [issuerSubscriptionId, issuerUserId],
+  });
+  if (issuerSubRes.rows.length === 0) {
+    await db.execute({
+      sql: `UPDATE voucher_codes SET status = 'expired' WHERE id = ?`,
+      args: [voucherId],
+    });
+    return { error: new VoucherRedemptionError(409, 'CODE_EXPIRED', 'Code is expired') };
+  }
+  // 회복 가능한 보류·미확인은 코드를 소진/만료시키지 않는다.
+  if (issuerSubRes.rows[0]!.entitlement_state !== 'entitled') {
+    throw new VoucherRedemptionError(
+      409,
+      'SUBSCRIPTION_NOT_ACTIVE',
+      'Invite subscription is not entitled',
+    );
+  }
+  await assertIssuerGroupHasCapacity(db, {
+    issuerSubscriptionId,
+    issuerUserId,
+    fallbackMaxMembers: maxMembers,
+  });
 
   // 방어 가드: 코드를 사용하면 redeemer 의 기존 구독이 취소되는데, redeemer 가
   // *다른 멤버가 있는 가족 그룹의 소유자*라면 그 취소가 그룹을 해체하고 멤버들의

@@ -30,21 +30,18 @@ struct VoicesPanelView: View {
     var onRequestBilling: (() -> Void)? = nil
 
     @EnvironmentObject private var voice: VoiceStudioViewModel
-    @EnvironmentObject private var socialFeatures: SocialFeatureViewModel
-    @EnvironmentObject private var auth: AuthViewModel
 
     /// 등록 창이 월 등록 한도 거절로 닫힌 뒤 띄우는 알럿(`VoiceProfileManagementPanel` 이 그린다).
     @State private var monthlyLimitNoticeOpen = false
 
     var body: some View {
+        // ⚠ 유료 게이트의 코드 입력 갈래(`onRedeemCode`)는 2026-10-14 에 없앴다(App Store 지침 3.1.1 두 번째
+        // 반려 — 선물 코드 폐지). 되살리지 말 것 — 초대 코드는 더보기 → 초대 코드 등록에서만 넣고,
+        // 할인·무료 이용은 스토어 오퍼 코드로 준다.
         VoiceProfileManagementPanel(
             route: $route,
             monthlyLimitNoticeOpen: $monthlyLimitNoticeOpen,
-            onRequestBilling: onRequestBilling,
-            // 유료 게이트는 **항상** 쿠폰 갈래를 함께 낸다(`PaidGateCopy.redeemCode`).
-            onRedeemCode: { code in
-                await socialFeatures.registerCodeReportingFailure(code, session: auth.session)
-            }
+            onRequestBilling: onRequestBilling
         )
         // ⚠ **알럿은 창이 다 내려간 뒤에 연다 — `onDismiss` 가 그 시점이다.** 창을 닫는 것과 같은
         // 순간에 열면 내려가는 창과 겹쳐, 알럿이 뜨지 않은 채 끝날 수 있다(목소리 탭의 액션시트 →

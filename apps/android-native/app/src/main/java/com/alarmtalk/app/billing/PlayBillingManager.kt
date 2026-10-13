@@ -38,15 +38,11 @@ object PlayBillingProducts {
     const val COUPLE_MONTHLY = "couple_monthly"
     const val FAMILY_MONTHLY = "family_monthly"
 
-    /**
-     * 선물용 **1회성 인앱 상품**.
-     *
-     * ⚠ **구독이 아니다.** 자동 갱신 구독은 남에게 줄 수 없어(Play 가 구매자 계정에 묶는다)
-     * 선물은 1회성 상품을 팔고 그 대금으로 서버가 **바우처 코드**를 만든다.
-     * 그래서 조회·구매 모두 `ProductType.INAPP` 을 써야 한다 — SUBS 로 조회하면 안 나온다.
-     */
-    const val PERSONAL_GIFT_1M = "personal_gift_1m"
-
+    // ⚠ **선물 상품(1회성 인앱 `personal_gift_1m`)은 2026-10-14 에 없앴다 — 되살리지 말 것.**
+    // iOS 1.2.12 가 App Store 지침 3.1.1 로 **두 번째** 반려됐다("선물 코드로 디지털 기능을 연다").
+    // 앱이 파는 것은 아래 구독 셋뿐이다. 서버도 그 상품 ID 를 `UNKNOWN_PRODUCT`(400)로 거절한다 —
+    // 바우처도 acknowledge 도 없으니 Play 가 자동 환불한다. 할인·무료 이용은 스토어 오퍼 코드
+    // (App Store 오퍼 코드 · Play 프로모션 코드)로 준다 — 우리 코드 체계를 다시 만들지 말 것.
     val all: List<String> = listOf(
         PERSONAL_MONTHLY,
         COUPLE_MONTHLY,
@@ -149,6 +145,10 @@ class PlayBillingManager(
 
     private val billingClient: BillingClient = BillingClient.newBuilder(context.applicationContext)
         .setListener(this)
+        // ⚠ **`enableOneTimeProducts()` 는 선물(1회성 상품)의 잔재가 아니다 — 지우지 말 것.**
+        // 1회성 상품을 하나도 팔지 않아도 billing 8.0.0 의 `PendingPurchasesParams.Builder.build()` 가
+        // 이게 없으면 `IllegalArgumentException`("Pending purchases for one-time products must be
+        // supported.")을 던진다 — 결제 매니저를 만드는 순간 앱이 죽는다.
         .enablePendingPurchases(
             PendingPurchasesParams.newBuilder().enableOneTimeProducts().build(),
         )
@@ -248,56 +248,9 @@ class PlayBillingManager(
         return basePhase?.formattedPrice
     }
 
-    /**
-     * 1회성(INAPP) 상품 결제 시트를 띄운다 — 선물 전용.
-     *
-     * ⚠ 구독 경로와 **섞지 말 것**: INAPP 에는 offerToken 이 없고, 구독 교체
-     * (`setSubscriptionUpdateParams`)를 붙이면 Play 가 거절한다.
-     */
-    suspend fun launchOneTimePurchase(
-        activity: Activity,
-        productId: String,
-        userId: String? = null,
-        mayLaunch: () -> Boolean = { true },
-    ): Boolean {
-        if (!ensureConnected()) return false
-        val details = productDetailsCache[productId] ?: run {
-            val fetched = billingClient.queryProductDetails(
-                QueryProductDetailsParams.newBuilder()
-                    .setProductList(
-                        listOf(
-                            QueryProductDetailsParams.Product.newBuilder()
-                                .setProductId(productId)
-                                .setProductType(BillingClient.ProductType.INAPP)
-                                .build(),
-                        ),
-                    )
-                    .build(),
-            ).productDetailsList?.firstOrNull()
-            if (fetched != null) productDetailsCache[productId] = fetched
-            fetched
-        } ?: run {
-            Log.w(TAG, "Play one-time product not found productId=$productId")
-            return false
-        }
-        val builder = BillingFlowParams.newBuilder()
-            .setProductDetailsParamsList(
-                listOf(
-                    BillingFlowParams.ProductDetailsParams.newBuilder()
-                        .setProductDetails(details)
-                        .build(),
-                ),
-            )
-        userId?.takeIf { it.isNotBlank() }?.let { builder.setObfuscatedAccountId(sha256Hex(it)) }
-        kotlinx.coroutines.currentCoroutineContext().ensureActive()
-        if (activity.isDestroyed || activity.isFinishing || !mayLaunch()) return false
-        val result = billingClient.launchBillingFlow(activity, builder.build())
-        if (result.responseCode != BillingClient.BillingResponseCode.OK) {
-            Log.w(TAG, "launchBillingFlow(one-time) failed code=${result.responseCode}")
-            return false
-        }
-        return true
-    }
+    // ⚠ **1회성(INAPP) 결제 시트(`launchOneTimePurchase`)는 선물과 함께 2026-10-14 에 지웠다 —
+    // 되살리지 말 것.** 그 시트가 팔던 것은 선물 상품 하나였고, 선물은 App Store 지침 3.1.1 두 번째
+    // 반려로 없앴다(위 `PlayBillingProducts`). 할인·무료 이용은 스토어 오퍼 코드로 준다.
 
     /**
      * 결제 시트를 띄운다. 결과(성공/보류/취소)는 [PurchasesUpdatedListener] 로 비동기 전달된다.
@@ -476,30 +429,30 @@ class PlayBillingManager(
      */
     suspend fun resendUnconfirmedPurchases(): Int {
         if (!ensureConnected()) return 0
-        // ⚠ **구독(SUBS)만 보지 말 것**(2026-08-18 Codex #697 P1). 선물은 1회성 상품
-        // (INAPP)이라 여기에 안 잡히면 **재시도할 경로가 아예 없다** — 1회성 구매에는
-        // RTDN 도 오지 않는다. 서버가 바우처를 발급한 뒤 `:consume` 이 일시적으로 실패하면
-        // 그 구매는 미확인인 채 남고, Play 는 3일 뒤 자동 환불하는데 바우처는 그대로
-        // 쓸 수 있다(돈은 돌려주고 이용권은 나간 상태). 다시 보내면 서버의 중복 갈래가
-        // 소비를 재시도한다.
-        var resent = 0
-        for (type in listOf(BillingClient.ProductType.SUBS, BillingClient.ProductType.INAPP)) {
-            val result = billingClient.queryPurchasesAsync(
-                QueryPurchasesParams.newBuilder().setProductType(type).build(),
-            )
-            if (result.billingResult.responseCode != BillingClient.BillingResponseCode.OK) {
-                Log.w(TAG, "queryPurchasesAsync($type) failed code=${result.billingResult.responseCode}")
-                continue
-            }
-            result.purchasesList
-                .filter { it.purchaseState == Purchase.PurchaseState.PURCHASED && !it.isAcknowledged }
-                .forEach { purchase ->
-                    val productId = purchase.products.firstOrNull() ?: return@forEach
-                    Log.i(TAG, "Resending unconfirmed Play purchase type=$type productId=$productId")
-                    listener.onPurchaseReady(purchase.purchaseToken, productId)
-                    resent++
-                }
+        // ⚠ **구독(SUBS)만 본다 — 1회성(INAPP) 조회를 되살리지 말 것**(2026-10-14). 1회성 상품은
+        // 선물 하나뿐이었고, 선물은 App Store 지침 3.1.1 두 번째 반려로 없앴다(위 `PlayBillingProducts`).
+        // 남은 선물 구매를 다시 보내면 서버가 `UNKNOWN_PRODUCT` 로 거절하는데, 이 재전송은 사용자
+        // 구매 갈래(`onPurchaseReady`)를 타므로 **앱을 켤 때마다** 결제 확인 실패 문구와 오류 보고가
+        // 쌓인다. 승인되지 않은 그 구매는 Play 가 3일 뒤 자동 환불한다.
+        // (예전에는 선물 소비 재시도 때문에 INAPP 도 봤다 — 2026-08-18 Codex #697 P1.)
+        val result = billingClient.queryPurchasesAsync(
+            QueryPurchasesParams.newBuilder()
+                .setProductType(BillingClient.ProductType.SUBS)
+                .build(),
+        )
+        if (result.billingResult.responseCode != BillingClient.BillingResponseCode.OK) {
+            Log.w(TAG, "queryPurchasesAsync failed code=${result.billingResult.responseCode}")
+            return 0
         }
+        var resent = 0
+        result.purchasesList
+            .filter { it.purchaseState == Purchase.PurchaseState.PURCHASED && !it.isAcknowledged }
+            .forEach { purchase ->
+                val productId = purchase.products.firstOrNull() ?: return@forEach
+                Log.i(TAG, "Resending unconfirmed Play purchase productId=$productId")
+                listener.onPurchaseReady(purchase.purchaseToken, productId)
+                resent++
+            }
         return resent
     }
 

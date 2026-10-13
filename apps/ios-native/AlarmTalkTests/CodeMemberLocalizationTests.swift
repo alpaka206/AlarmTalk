@@ -14,24 +14,22 @@ struct CodeMemberLocalizationTests {
         #expect(destination == nil)
         #expect(model.statusMessage == nil)
         #expect(model.isBusy)
-        model.statusMessage = "이전 안내"
-        let failure = await model.registerCodeReportingFailure("INV-TEST", session: session)
-        #expect(failure == String(localized: "코드 등록에 실패했어요."))
     }
 
+    /// 등록 버튼은 두 앱이 같은 글자다(안드로이드 `code_redeem_submit`). 영어는 'Redeem' 이 아니라 'Register' —
+    /// 코드로 무언가를 '교환' 하는 것이 아니라 초대 코드를 **등록**하는 것이다(2026-10-14, 선물 코드 폐지).
     @Test("코드 등록 버튼과 공유 그룹 이름을 각 역할에 맞게 표시한다", arguments: ["en", "ja"])
     func codeAndGroupLabels(language: String) throws {
         let path = try #require(Bundle.main.path(forResource: language, ofType: "lproj"))
         let bundle = try #require(Bundle(path: path))
         #expect(bundle.localizedString(forKey: "code.redeem.submit", value: nil, table: nil)
-                == (language == "en" ? "Redeem" : "登録"))
+                == (language == "en" ? "Register" : "登録"))
         #expect(bundle.localizedString(forKey: "group.plan.shared", value: nil, table: nil)
                 == (language == "en" ? "Shared" : "共有"))
         let plan = try #require(PlanTier.displayName(forPlanKey: "family", bundle: bundle))
         let format = bundle.localizedString(forKey: "%@ 이용권", value: nil, table: nil)
         #expect(String(format: format, plan) == (language == "en" ? "Family plan" : "ファミリー利用券"))
-        let voucher = bundle.localizedString(forKey: "%@ · %@ · %lld/%lld", value: nil, table: nil)
-        #expect(String(format: voucher, plan, "Active", 2, 4) == "\(plan) · Active · 2/4")
+        // 발급 코드 행의 '플랜 · 상태 · 사용/정원' 서식은 그 행(`VoucherRow`)과 함께 2026-10-14 에 지웠다.
         let scoped = bundle.localizedString(forKey: "%1$@: %2$@", value: nil, table: nil)
         #expect(String(format: scoped, "Plan", "Error") == "Plan: Error")
     }

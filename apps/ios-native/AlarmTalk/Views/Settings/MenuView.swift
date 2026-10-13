@@ -23,7 +23,7 @@ struct MenuView: View {
     let onOpenBilling: () -> Void
     /// 초대 및 구성원 관리 진입.
     let onOpenMembers: () -> Void
-    /// 코드 등록 진입(공유 이용권이 없을 때).
+    /// 초대 코드 등록 진입(공유 이용권이 없을 때).
     let onOpenPeople: () -> Void
     /// 공유 이용권 그룹에 속해 있는가.
     let hasSharedPass: Bool
@@ -56,11 +56,15 @@ struct MenuView: View {
                 Divider()
                 // ⚠ **공유 이용권 유무로 갈린다**(안드로이드 `HomeComponents.kt:219-229`).
                 // 그룹이 없는 사람에게 '구성원 관리' 를 보여주면 관리할 게 없는 화면으로
-                // 보내고, 정작 필요한 **코드 등록** 경로가 더보기에 없어진다.
+                // 보내고, 정작 필요한 **초대 코드 등록** 경로가 더보기에 없어진다.
                 if hasSharedPass {
                     SettingsValueButton(label: "초대 및 구성원 관리", action: onOpenMembers)
                 } else {
-                    SettingsValueButton(label: "코드 등록", action: onOpenPeople)
+                    // ⚠ **이 이름은 세 곳이 같다** — 이 행, 도착 화면의 제목(`AuxiliaryScreen.people`),
+                    // 초대 공유 문구의 3단계(`CodeShareText.invite`). 하나만 바꾸면 초대받은 사람이
+                    // 없는 메뉴를 찾는다. 받는 코드는 초대 코드뿐이다(선물 코드는 2026-10-14 폐지 —
+                    // App Store 지침 3.1.1 두 번째 반려, 되살리지 말 것. 할인·무료 이용은 스토어 오퍼 코드).
+                    SettingsValueButton(label: "초대 코드 등록", action: onOpenPeople)
                 }
             }
             .settingsCard(title: nil)

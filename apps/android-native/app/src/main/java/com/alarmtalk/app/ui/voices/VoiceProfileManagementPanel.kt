@@ -388,8 +388,8 @@ internal fun VoiceProfileManagementPanel(
     onOpenBilling: () -> Unit,
     // 이번 달 목소리 생성 쿼터 — 추가 버튼 옆에 '남은/전체'로 보여준다.
     voiceDraftQuota: com.alarmtalk.app.network.VoiceDraftQuotaResponse? = null,
-    // 유료 안내 모달의 '쿠폰이 있어요' 입력에 쓴다.
-    onRegisterCode: (String) -> Unit = {},
+    // ⚠ 유료 안내 모달의 코드 입력(`onRegisterCode`)은 2026-10-14 에 지웠다 — 되살리지 말 것
+    // (선물 코드 폐지, App Store 3.1.1 두 번째 반려 — `PlanGateDialog` 머리말).
     // 기본 목소리 무료 버킷 프리페치 진행(다운로드 n to 전체). null = 진행 중 아님.
     voicePrefetchProgress: Pair<Int, Int>? = null,
     // 유료 클론 사전렌더(R2 21클립) 상태 조회/재시도 — 목소리 탭 준비 표시가 폴링한다.
@@ -2175,8 +2175,6 @@ internal fun VoiceProfileManagementPanel(
                 onOpenBilling()
             },
             onDismiss = { voicePlanGateOpen = false },
-            onRedeemCode = onRegisterCode,
-            redeemBusy = voiceProfileBusy,
         )
     }
 

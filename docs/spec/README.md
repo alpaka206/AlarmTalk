@@ -57,7 +57,7 @@
 | [alarm-ringing.md](alarm-ringing.md) | 알람이 울릴 때 무엇이 뜨고, 어떻게 꺼지는가 |
 | [alarm-editor.md](alarm-editor.md) | 알람을 만드는 화면 — 타임휠, 재생 방식, 모달 세 형태 |
 | [voice-and-message.md](voice-and-message.md) | 목소리·문구를 고르고 저장하는 규칙, 등급별 제한, 목소리 등록의 월 한도(다 썼으면 초안부터 만들지 않는다 · 남은 횟수 다시 읽기 · 창 안의 거절)·말소리가 없으면 등록하지 않는다(다시 녹음은 횟수 제한 없음)·말투 분석의 표준 말투는 실패가 아니다, 날씨 지역 목록(나라 → 지역)·계정의 지역·사주 받아 적기·서버 미리 계산(나라별 공식 예보 — 기상청·気象庁·NWS, 현지 슬롯, 출처 표기) |
-| [plan-gates.md](plan-gates.md) | 로그인·이용권 게이트가 뜨는 조건과 문구 |
+| [plan-gates.md](plan-gates.md) | 로그인·이용권 게이트가 뜨는 조건과 문구 · 코드로 유료 기능을 여는 길은 초대 코드 하나(선물·프로모 코드 폐지, 게이트에 코드 칸 없음) |
 | [family-alarm.md](family-alarm.md) | 남에게 보내는 알람 — 보내면 끝, 설정 불가능 시간 |
 | [consent.md](consent.md) | 동의 화면 — 미체크는 철회가 아니다, 재동의 레버 |
 | [gates-and-overlays.md](gates-and-overlays.md) | 차단 게이트와 1회성 오버레이의 순서 |

@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// 가족 그룹 멤버 + 초대코드 등록 + 공유 코드 목록.
+/// 가족 그룹 멤버 + 초대 코드 등록. 더보기의 '초대 코드 등록' 화면이다.
 ///
 /// ContentView 의 `peoplePanel` 을 옮긴 것. Phase 3-C3 가 MemberManagement 로
 /// 확장하므로 본 파일은 기존 구조 그대로 보존한다.
@@ -44,44 +44,20 @@ struct PeoplePanel: View {
                 }
             }
             // ⚠ **"…이 없어요" 빈 상태를 다시 넣지 말 것**(2026-08-13 지시).
-            // 이 화면이 하는 일은 **코드를 등록하는 것 하나**다. 없는 것을 두 줄에 걸쳐
+            // 이 화면이 하는 일은 **초대 코드를 등록하는 것 하나**다(선물 코드는 2026-10-14 에
+            // 없앴다 — `CodeRegisterRow` 주석). 없는 것을 두 줄에 걸쳐
             // 설명하면 정작 해야 할 일(입력칸)이 아래로 밀리고, 처음 온 사람은 화면 대부분이
-            // '없다' 는 말인 화면을 본다. 그룹·공유 코드는 **있을 때만** 보여준다.
+            // '없다' 는 말인 화면을 본다. 그룹은 **있을 때만** 보여준다.
 
             CodeRegisterRow(onCodeRegistered: onCodeRegistered)
 
-            ForEach(socialFeatures.vouchers.prefix(4)) { voucher in
-                VoucherRow(voucher: voucher)
-            }
+            // ⚠ **입력칸 아래 '내가 발급한 코드' 목록(`VoucherRow`)을 되살리지 말 것**(2026-10-14). 접두와 무관하게
+            // 늘어놓아 지운 선물 코드(GIFT-)까지 코드 칸 바로 밑에 남겼고, 행마다 QR 글리프를 달아 없는 QR 기능을
+            // 내보였다(App Store 지침 3.1.1 은 QR 코드를 금지된 해제 수단으로 든다). 안드로이드 같은 화면
+            // (`ui/social/SocialPanels.kt` 의 `FamilyConnectionPanel`)에는 이런 목록이 없다. 초대 코드 공유는
+            // 이용권 화면의 커플·가족 카드와 구성원 관리 화면에서 한다.
         }
         .sectionSurface()
-    }
-}
-
-/// 공유 코드 한 줄.
-///
-/// ContentView 의 `voucherRow(_:)` 헬퍼를 옮긴 것. Billing 패널과
-/// PeoplePanel 두 곳에서 사용한다.
-struct VoucherRow: View {
-    let voucher: VoucherItem
-
-    var body: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(voucher.code)
-                    .font(.subheadline.weight(.bold))
-                    .foregroundStyle(AlarmTalkTheme.text)
-                Text(String(localized: "\(voucher.localizedPlanName()) · \(voucherStatusLabel(voucher.status)) · \(voucher.useCount ?? 0)/\(voucher.maxUses ?? 1)"))
-                    .font(.caption)
-                    .foregroundStyle(AlarmTalkTheme.textSecondary)
-            }
-            Spacer()
-            Image(systemName: "qrcode")
-                .foregroundStyle(AlarmTalkTheme.primary)
-        }
-        .padding(12)
-        .background(AlarmTalkTheme.surfaceVariant)
-        .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 }
 
@@ -95,24 +71,6 @@ private func sharedPassRoleLabel(_ role: String?) -> String {
     default:
         // 알 수 없는 role 은 서버 원문 그대로 — 번역 대상이 아니다.
         return trimmed.isEmpty ? String(localized: "구성원") : trimmed
-    }
-}
-
-private func voucherStatusLabel(_ status: String?) -> String {
-    let trimmed = status?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-    switch trimmed {
-    case "active", "issued":
-        return String(localized: "사용 가능")
-    case "pending":
-        return String(localized: "대기 중")
-    case "redeemed", "used":
-        return String(localized: "사용됨")
-    case "expired":
-        return String(localized: "만료됨")
-    case "revoked", "cancelled", "canceled":
-        return String(localized: "취소됨")
-    default:
-        return trimmed.isEmpty ? String(localized: "상태 없음") : trimmed
     }
 }
 

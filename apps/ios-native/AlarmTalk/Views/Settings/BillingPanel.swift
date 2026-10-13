@@ -40,7 +40,6 @@ struct BillingPanel: View {
     @State private var showLeaveSharedPassConfirm = false
     @State private var showCancelSubscriptionSheet = false
     @State private var showCancelImmediateConfirm = false
-    @State private var showPersonalGiftSheet = false
     @State private var voucherShareTargets: [VoucherItem] = []
     /// 결제 확인 대기 중인 플랜. nil 이면 알럿이 닫혀 있다.
     ///
@@ -154,10 +153,13 @@ struct BillingPanel: View {
                 }
             } else {
                 ForEach(PlanTier.allCases, id: \.self) { tier in
-                    let shareableVouchers = shareableVouchersForPlan(
-                        socialFeatures.vouchers,
-                        planKey: tier.apiKey
-                    )
+                    // ⚠ **코드 공유는 커플·가족 카드에만 있다**(2026-10-14). 개인 이용권 코드는 선물 코드뿐이었고,
+                    // 선물하기(개인 카드의 '선물하기'·안내 시트·소모성 결제)는 App Store 지침 3.1.1 두 번째 반려로
+                    // 없앴다 — 되살리지 말 것. 할인·무료 이용은 스토어 오퍼 코드로 준다.
+                    // 공유 버튼은 **산 현재 카드**에만 단다(`screen.sharesVouchers` — 안드로이드와 같다).
+                    let shareableVouchers = tier.sharedSeats > 1 && screen.sharesVouchers(tier)
+                        ? shareableVouchersForPlan(socialFeatures.vouchers, planKey: tier.apiKey)
+                        : []
                     PlanCard(
                         tier: tier,
                         isCurrent: screen.isCurrent(tier),
@@ -169,9 +171,6 @@ struct BillingPanel: View {
                         isBusy: socialFeatures.isBusy,
                         vouchers: shareableVouchers,
                         onPurchase: { beginPurchase(tier: tier) },
-                        onGiftPersonal: {
-                            showPersonalGiftSheet = true
-                        },
                         onShareVouchers: {
                             Task { await refreshAndOpenVoucherShare(planKey: tier.apiKey) }
                         }
@@ -243,13 +242,10 @@ struct BillingPanel: View {
                     .padding(.top, 4)
             }
 
-            if !socialFeatures.vouchers.isEmpty {
-                Text(String(localized: "공유 코드"))
-                    .font(.subheadline.weight(.semibold))
-                ForEach(socialFeatures.vouchers.prefix(5)) { voucher in
-                    VoucherRow(voucher: voucher)
-                }
-            }
+            // ⚠ **화면 아래 '공유 코드' 목록을 되살리지 말 것**(2026-10-14). 내가 발급한 코드(`GET /billing/vouchers`)를
+            // 종류·접두와 무관하게 늘어놓아, 지운 선물 코드(GIFT-)까지 결제 화면에 남겼다(App Store 지침 3.1.1 두 번째
+            // 반려). 안드로이드 이용권 화면(`ui/billing/BillingPanels.kt`)에는 이런 목록이 없다. 초대 코드 공유는 커플·가족
+            // 카드의 '초대 코드 공유'(`shareableVouchersForPlan` — INV- 만)와 구성원 관리 화면에서 한다.
         }
         // ⚠ **`.sectionSurface()` 로 되돌리지 말 것**(2026-08-11 요청). 플랜 카드들이 이미
         // 각자 카드라, 그 전체를 또 한 겹 카드로 감싸면 **카드 안의 카드**가 된다 —
@@ -357,11 +353,7 @@ struct BillingPanel: View {
             }
             Button(String(localized: "취소"), role: .cancel) {}
         } message: {
-            Text(String(localized: "남은 기간 요금은 비례 환불되고 이용권이 바로 종료돼요. 목소리는 3일간 보관돼요. 그 안에 이용권을 다시 등록하면 그대로 쓸 수 있고, 지나면 영구 삭제돼요."))
-        }
-        .personalGiftPassSheet(isPresented: $showPersonalGiftSheet) {
-            showPersonalGiftSheet = false
-            Task { await giftPersonalPass() }
+            Text(String(localized: "남은 기간 요금은 비례 환불되고 이용권이 바로 종료돼요. 목소리는 3일간 보관돼요. 그 안에 이용권을 다시 구독하면 그대로 쓸 수 있고, 지나면 영구 삭제돼요."))
         }
         .voucherShareSelectionSheet(vouchers: $voucherShareTargets)
     }
@@ -545,7 +537,7 @@ struct BillingPanel: View {
                 Label(String(localized: "이전 구매 복원"), systemImage: "arrow.clockwise.circle")
             }
             // ⚠ **글자 폭에 맞춘 작은 버튼으로 되돌리지 말 것**(2026-08-17 지시).
-            // 위쪽 결제·선물 버튼이 전부 화면 폭인데 여기만 작으면 **눌러야 할 것으로
+            // 위쪽 결제 버튼이 전부 화면 폭인데 여기만 작으면 **눌러야 할 것으로
             // 보이지 않는다.** 같은 폭·같은 세로 여백으로 둔다(안드로이드도 같다).
             .font(.subheadline.weight(.semibold))
             .frame(maxWidth: .infinity)
@@ -602,42 +594,9 @@ struct BillingPanel: View {
         }
     }
 
-    /// 선물 이용권 **구매**.
-    ///
-    /// ⚠ **결제 없이 코드를 만들지 않는다.** 예전에는 `POST /billing/checkout` 의
-    /// `gift: true` 를 불렀는데, 그건 무결제 발급이라 서버가 production 에서 항상 막는다
-    /// (열면 누구나 무료로 유료 이용권을 뽑을 수 있다). 이제 소모성 상품을 실제로 사고,
-    /// 서버가 그 영수증을 검증해 바우처를 만든다.
-    private func giftPersonalPass() async {
-        let result = await subscriptions.purchase(.personalGift)
-        switch result {
-        case .success:
-            // 영수증 동기화(`syncWithBackend`)가 이미 서버에 바우처를 만들었다.
-            // 목록을 새로 받아 방금 생긴 코드를 화면에 띄운다.
-            await socialFeatures.refreshAll(session: auth.session, force: true)
-        case .userCancelled:
-            return
-        case .pending:
-            socialFeatures.statusMessage = String(localized: "결제 승인을 기다리고 있어요. 완료되면 코드가 만들어져요.")
-            return
-        case .failure(let reason):
-            socialFeatures.statusMessage = reason
-            return
-        }
-        // 여기 오는 건 `.success` 하나뿐이다(나머지 갈래는 위에서 전부 return).
-        // 예전에는 `let success = true` + `guard success else { return }` 가 남아 있어
-        // **없는 실패 경로가 있는 것처럼** 보였다 — 컴파일러도 "will never be executed"
-        // 로 잡았다.
-        await auth.refreshUser()
-
-        let refreshedTargets = shareableVouchersForPlan(
-            socialFeatures.vouchers,
-            planKey: "personal"
-        )
-        if !refreshedTargets.isEmpty {
-            voucherShareTargets = refreshedTargets
-        }
-    }
+    // ⚠ **선물 이용권 구매(`giftPersonalPass`)를 되살리지 말 것**(2026-10-14, App Store 지침 3.1.1 두 번째
+    // 반려). 소모성 상품을 사서 받은 코드를 남이 쳐서 유료 기능을 여는 길이었다. 할인·무료 이용은 스토어
+    // 오퍼 코드로 준다. 무결제 발급(`POST /billing/checkout` 의 `gift: true`)도 서버가 거절한다.
 
     private func refreshAndOpenVoucherShare(planKey: String) async {
         await socialFeatures.refreshAll(session: auth.session, force: true)
@@ -646,7 +605,7 @@ struct BillingPanel: View {
             planKey: planKey
         )
         if refreshedTargets.isEmpty {
-            purchaseFeedback = String(localized: "공유할 이용권 코드가 없어요.")
+            purchaseFeedback = String(localized: "공유할 초대 코드가 없어요.")
         } else {
             voucherShareTargets = refreshedTargets
         }

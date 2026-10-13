@@ -1,7 +1,7 @@
 import XCTest
 @testable import AlarmTalk
 
-/// 이용권(선물·초대) 코드 입력 규칙.
+/// 초대 코드 입력 규칙. (선물 코드는 2026-10-14 에 없앴다 — App Store 지침 3.1.1 두 번째 반려.)
 ///
 /// ⚠ **안드로이드 `sanitizeRedeemCode`(`ui/components/CodeRedeemField.kt`)와 같은 규칙이다.**
 /// 한쪽만 고치면 한 앱에서만 통과하는 코드가 생긴다.

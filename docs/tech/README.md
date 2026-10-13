@@ -177,7 +177,7 @@ curl -X POST "https://<host>/api/init-db?fromId=1&toId=10" -H "x-init-db-secret:
 | `/alarm` | 알람 CRUD |
 | `/family` | 가족 그룹, 초대, 가족 알람 |
 | `/billing` | 구독·바우처. `/billing/google/rtdn` 은 유저 인증 없는 공개 RTDN 웹훅(쿼리 토큰으로 보호) |
-| `/code` | 통합 코드 등록(`INV-`/`GIFT-` 이용권 / 프로모 자동 판별) |
+| `/code` | 초대 코드 등록(커플·가족 `INV-` 하나 — 선물·프로모 코드는 App Store 지침 3.1.1 로 폐지) |
 | `/push` | FCM 토큰 등록·해제 |
 | `/events` | 사용 기록 배치 수신(기기 UUID 가 PK 라 재전송이 멱등) — `docs/spec/usage-events.md` |
 | `/holiday` | 공휴일 조회(인증 없음, 공개 캐시) |
@@ -193,9 +193,9 @@ curl -X POST "https://<host>/api/init-db?fromId=1&toId=10" -H "x-init-db-secret:
 
 **`POST /voice/clone` (multipart)** — 공식 보이스를 바로 만들 수 없다. 클라는 ① 비공개 초안 1개 생성 → ② 결정적 프리뷰 요청 → ③ 로컬 재생을 끝낸 뒤에만 서버가 발급한 재생 토큰을 `POST /voice/:id/preview-played` 로 보고 → ④ `PATCH /voice/:id` + `is_draft=false` 로 승격, 순서를 지켜야 한다. 초안의 프로바이더 등록은 KST 월 3회·활성 초안 1개로 제한되고, 승격은 KST 월 1회다. 공식 보이스를 지워도 그 달 승격 횟수는 환불되지 않는다. 초안은 공유·알람 연결·일반 TTS 에 쓸 수 없다.
 
-**`POST /code/register`** — 형식으로 자동 판별한다. `INV-`/`GIFT-XXXX-XXXX-XXXX` 는 바우처 사용(구독 insert + 플랜 갱신)이고, 발급자 구독이 딸린 코드는 그 발급자의 플랜 그룹에 멤버로 합류시키며, 단독 코드는 사용자를 새 그룹의 소유자로 만든다(결제한 것과 동일). 그 외 문자열은 프로모 코드(대소문자 무시)로 본다.
+**`POST /code/register`** — 받는 것은 커플·가족 이용권의 초대 코드(`INV-XXXX-XXXX-XXXX`) 하나다. 바우처 사용(구독 insert + 플랜 갱신)으로 발급자의 플랜 그룹에 멤버로 합류시킨다. 발급 근거인 발급자 구독이 없거나 살아 있지 않으면 거절한다(409 `SUBSCRIPTION_NOT_ACTIVE`·`CODE_EXPIRED` — 2026-09-14 `6ea8a25c` 부터, 예전의 '단독 코드는 등록한 사람이 새 그룹의 소유자' 는 그 뒤로 없다). 그 외 문자열은 조회 없이 404 `CODE_NOT_FOUND` 다 — 프로모 코드는 2026-10-12, 선물 코드(`GIFT-`)는 2026-10-14 에 없앴다(App Store 지침 3.1.1 — `docs/spec/plan-gates.md` 「선물 코드 — 폐지」).
 
-**`POST /billing/test-codes`** — Google Play 결제가 연결되기 전까지 쓰는 내부 클로즈드 테스트용. `TEST_CODE_ISSUER_EMAILS` 에 적힌 이메일만 발급할 수 있고, 미설정이면 아무도 못 한다(fail-closed, 하드코딩 기본값 없음). `personal` 은 `GIFT-`, `couple`/`family` 는 `INV-` 형식이며 모두 1회용이고, 공유 그룹 코드는 처음 등록한 사람이 소유자가 된다.
+**`POST /billing/test-codes`** — **2026-10-14 에 지웠다**(라우트·`TEST_CODE_ISSUER_EMAILS`·그 라우트만 내던 에러 코드). 운영자가 커플·가족 초대 코드를 찍어 내던 dev 도구였는데, 발급자 구독 없이 만들어져 `POST /code/register` 가 `SUBSCRIPTION_NOT_ACTIVE` 로 늘 거절했다. 등록되게 고치면 운영자가 만든 코드로 이용권을 여는 것이라 App Store 지침 3.1.1 반려(1.2.11 프로모 코드)와 같은 종류다 — 되살리지 말 것. 테스트 계정의 이용권은 `packages/backend/scripts/apply-dev-plan.ts` 로 준다.
 
 ### 크론
 

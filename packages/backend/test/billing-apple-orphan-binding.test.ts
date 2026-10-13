@@ -5,8 +5,9 @@
 // 새 결제를 만들지 않고, 서버는 `appAccountToken` 이 다르다며 403 으로 막는다. 사용자가 할
 // 수 있는 일이 없어 실제로 갇혔다(2026-09-18 실기기).
 //
-// 주인이 **살아 있을 때만** 막는 것이 이 검사의 본래 뜻이다. 선물(소모성)은 값을 새로
-// 발행하는 일이라 예외로 계속 막는다.
+// 주인이 **살아 있을 때만** 막는 것이 이 검사의 본래 뜻이다. 예전에는 선물(소모성)만 값을
+// 새로 발행하는 일이라 예외로 막았다 — 선물은 2026-10-14 에 없앴고(App Store 3.1.1), 그 상품은
+// 바인딩 검사 전에 모르는 상품으로 끝난다(`gift-codes-retired.test.ts`).
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createClient } from '@libsql/client';
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -79,10 +80,15 @@ describe('주인이 사라진 애플 결제', () => {
     expect((await db.execute('SELECT * FROM store_transactions')).rows).toEqual([]);
   });
 
-  it('선물(소모성)은 주인이 없어도 막는다 — 값을 새로 발행하는 일이다', async () => {
+  // ⚠ 선물(소모성)은 2026-10-14 에 없앴다 — 되살리지 말 것(App Store 심사 지침 3.1.1, 두 번째 반려).
+  //   주인 없는 표식이든 아니든 바인딩 검사에 닿기 전에 모르는 상품이다. 상세 회귀는
+  //   `gift-codes-retired.test.ts`.
+  it('선물 상품은 주인이 없어도 이어받지 않는다 — 바인딩 전에 모르는 상품(400)이다', async () => {
     info = { ...info, productId: 'com.alarmtalk.app.personal_gift_1m', appAccountToken: GONE };
     const res = await confirm();
-    expect(res.status).toBe(403);
-    expect(await res.json()).toMatchObject({ error_code: 'TRANSACTION_ACCOUNT_MISMATCH' });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({ error_code: 'UNKNOWN_PRODUCT' });
+    expect((await db.execute('SELECT * FROM store_transactions')).rows).toEqual([]);
+    expect((await db.execute('SELECT * FROM voucher_codes')).rows).toEqual([]);
   });
 });

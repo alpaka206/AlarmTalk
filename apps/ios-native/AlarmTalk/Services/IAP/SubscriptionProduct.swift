@@ -15,25 +15,22 @@ import Foundation
 ///
 /// 본 enum 은 순수 데이터 매핑이며 StoreKit 의 `Product` 인스턴스를 직접 들지
 /// 않는다. 실제 `Product` 는 `SubscriptionManager.products` 에 lazy-cache 된다.
+///
+/// ⚠ **선물(소모성) 상품 `com.alarmtalk.app.personal_gift_1m` 을 되살리지 말 것**(2026-10-14,
+/// App Store 지침 3.1.1 두 번째 반려). 사서 받은 `GIFT-` 코드를 쳐서 유료 기능을 여는 길이 반려
+/// 사유였다 — 상품·코드 발급·등록을 서버와 두 앱에서 전부 없앴다. 할인·무료 이용은 스토어의
+/// 오퍼 코드로 준다(결제가 스토어를 거친다). 그래서 여기 남는 것은 **자동 갱신 구독뿐**이고,
+/// 모두 `currentEntitlements` 로 회복되므로 `SubscriptionManager` 는 트랜잭션을 확정 여부와
+/// 무관하게 끝낸다. 상품 목록은 `SubscriptionManagerTests` 가 고정한다.
 enum SubscriptionProduct: String, CaseIterable {
     case personalMonthly = "com.alarmtalk.app.personal_monthly"
     case coupleMonthly   = "com.alarmtalk.app.couple_monthly"
     case familyMonthly   = "com.alarmtalk.app.family_monthly"
 
-    /// 선물용 **1회성(소모성)** 상품.
-    ///
-    /// ⚠ **자동 갱신 구독은 남에게 줄 수 없다** — 스토어가 구매자 계정에 묶는다.
-    /// 그래서 선물은 소모성 상품을 팔고, 서버가 그 결제로 **바우처 코드**를 만든다
-    /// (`billing-apple.ts` 의 `isAppleGiftProductId` 갈래).
-    case personalGift    = "com.alarmtalk.app.personal_gift_1m"
-
-    /// 이 상품이 **본인 구독**인가. 선물은 아니다 — 사서 남에게 주는 코드다.
-    var isSubscription: Bool { self != .personalGift }
-
     /// 백엔드 PlanTier 매핑.
     var planTier: PlanTier {
         switch self {
-        case .personalMonthly, .personalGift: return .personal
+        case .personalMonthly: return .personal
         case .coupleMonthly:   return .couple
         case .familyMonthly:   return .family
         }

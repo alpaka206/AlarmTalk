@@ -594,7 +594,7 @@ const VOICE_DELETION_WARNING_TITLE = '목소리가 곧 삭제돼요';
 function voiceDeletionWarningBody(retentionDays: number): string {
   return (
     `이용권이 끝나 목소리를 ${retentionDays}일간만 보관해요. ` +
-    '그 안에 다시 등록하면 그대로 쓸 수 있고, 지나면 영구 삭제돼요.'
+    '그 안에 다시 구독하면 그대로 쓸 수 있고, 지나면 영구 삭제돼요.'
   );
 }
 
@@ -602,7 +602,7 @@ function voiceDeletionWarningBody(retentionDays: number): string {
  * **기간 한정 개인 플랜이 끝나** 보관 유예가 걸렸을 때의 본문(`lib/personal-promo-end.ts`).
  *
  * 기본 문구("이용권이 끝나 … n일간만 보관")를 쓰지 않는 이유 둘:
- * - 이 사람들은 **이용권을 산 적이 없다** — "다시 등록하면" 은 틀린 말이다.
+ * - 이 사람들은 **이용권을 산 적이 없다** — "다시 구독하면" 은 틀린 말이다.
  * - 기한이 '지금부터 3일' 이 아니라 **정해진 시각**(`delete_after` — 끝 + 3일, 그 하루 안쪽이나
  *   뒤에 전환된 사람은 전환 + 24시간 — D16)이다. 전환이 끝 하루 뒤에 닿은 사람에게 "3일간" 이라고
  *   하면 실제보다 길게 말한다.

@@ -41,7 +41,7 @@ final class SystemPermissionPrompts: ObservableObject {
 /// SwiftUI 는 이미 무언가를 띄운 화면 위에 루트의 `.alert` 를 올리지 못한다 — 경고 한 줄만
 /// 남기고 **조용히 건너뛴다.** 그러면 상태는 '떠 있음' 인데 화면에는 없어, 그 상태가 다른
 /// 안내까지 막는다(2026-09-27 리뷰). 시트·전체 화면 커버(우리 바텀시트 포함 —
-/// `bottomSheet`·`redeemCodeSheet` 는 `fullScreenCover` 다)·알럿·확인 대화상자는 전부
+/// `bottomSheet`·`formSheet` 는 `fullScreenCover` 다)·알럿·확인 대화상자는 전부
 /// 모달 표시라 여기 잡힌다.
 @MainActor
 enum ModalPresentationProbe {

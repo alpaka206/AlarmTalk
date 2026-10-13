@@ -26,7 +26,6 @@ vi.mock('../src/lib/apple-storekit', () => ({
     bundleId: 'b',
   }),
   applePlanKeyFromProductId: () => 'personal',
-  isAppleGiftProductId: () => false,
   fetchAppleTransaction: vi.fn(async () => transactionInfo),
   fetchAppleSubscriptionStatus: vi.fn(async () => {
     if (chainStatus instanceof Error) throw chainStatus;

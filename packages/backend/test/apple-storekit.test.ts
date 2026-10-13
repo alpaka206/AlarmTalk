@@ -235,6 +235,9 @@ describe('applePlanKeyFromProductId', () => {
     expect(applePlanKeyFromProductId('com.alarmtalk.app.lifetime')).toBeNull();
     // 구글 쪽 짧은 ID 가 애플 경로로 새면 안 된다.
     expect(applePlanKeyFromProductId('personal_monthly')).toBeNull();
+    // ⚠ 선물 상품(소모성)은 2026-10-14 에 없앴다 — 다시 매핑하지 말 것(App Store 심사 지침 3.1.1,
+    //   두 번째 반려). 모르는 상품이어야 확정 라우트가 400 UNKNOWN_PRODUCT 로 끝낸다(gift-codes-retired.test.ts).
+    expect(applePlanKeyFromProductId('com.alarmtalk.app.personal_gift_1m')).toBeNull();
   });
 });
 
