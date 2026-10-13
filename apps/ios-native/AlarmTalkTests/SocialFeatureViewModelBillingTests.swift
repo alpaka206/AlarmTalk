@@ -20,7 +20,7 @@ final class SocialFeatureViewModelBillingTests: XCTestCase {
 
     func test_upsertingVoucher_replacesSameIdAndMovesToFrontLikeAndroid() {
         let stale = voucher(id: "share", code: "INV-OLD", useCount: 0)
-        let other = voucher(id: "other", code: "GIFT-1", useCount: 0)
+        let other = voucher(id: "other", code: "INV-OTHER", useCount: 0)
         let fresh = voucher(id: "share", code: "INV-NEW", useCount: 1)
 
         let result = SocialFeatureViewModel.upsertingVoucher(fresh, into: [other, stale])
@@ -33,7 +33,17 @@ final class SocialFeatureViewModelBillingTests: XCTestCase {
     func test_codeRegistrationDestination_opensSharedPassForInviteResponseLikeAndroid() {
         let result = SocialFeatureViewModel.codeRegistrationDestination(
             responseType: "invite",
-            code: "GIFT-1234"
+            code: "ABCD-1234"
+        )
+
+        XCTAssertEqual(result, .sharedPass)
+    }
+
+    /// 서버는 `INV-` 등록에도 응답 type 을 `voucher` 로 준다(`routes/code.ts`). 접두사로 가른다.
+    func test_codeRegistrationDestination_opensSharedPassForInviteVoucherResponse() {
+        let result = SocialFeatureViewModel.codeRegistrationDestination(
+            responseType: "voucher",
+            code: "INV-ABCD-1234-EFGH"
         )
 
         XCTAssertEqual(result, .sharedPass)
@@ -48,10 +58,12 @@ final class SocialFeatureViewModelBillingTests: XCTestCase {
         XCTAssertEqual(result, .sharedPass)
     }
 
-    func test_codeRegistrationDestination_opensHomeForVoucherLikeAndroid() {
+    /// 초대가 아닌 등록은 홈으로 간다 — 안드로이드 `navigateHomeTick` 과 같은 폴백이다. 지금 서버는
+    /// `INV-` 말고는 받지 않으므로(선물 코드는 2026-10-14 폐지) 실제로는 닿지 않는 방어 갈래다.
+    func test_codeRegistrationDestination_fallsBackToHomeForNonInviteLikeAndroid() {
         let result = SocialFeatureViewModel.codeRegistrationDestination(
             responseType: "voucher",
-            code: "GIFT-ABCD-1234"
+            code: "ABCD-1234"
         )
 
         XCTAssertEqual(result, .home)
@@ -70,6 +82,18 @@ final class SocialFeatureViewModelBillingTests: XCTestCase {
             SocialFeatureViewModel.billingFailureMessage(errorCode: nil, fallback: "fallback"),
             "fallback"
         )
+    }
+
+    /// 선물하기는 2026-10-14 에 없앴다(App Store 지침 3.1.1 두 번째 반려). 서버가 더는 내지 않는
+    /// `GIFT_PERSONAL_ONLY` 를 표에 남기면 없는 기능("선물하기는…")을 말하게 된다.
+    func test_billingFailureMessage_hasNoGiftBranch() {
+        XCTAssertEqual(
+            SocialFeatureViewModel.billingFailureMessage(errorCode: "GIFT_PERSONAL_ONLY", fallback: "fallback"),
+            "fallback"
+        )
+        let raw = #"{"error":"Gift is personal only","error_code":"GIFT_PERSONAL_ONLY"}"#
+        let encoded = APIError.server(status: 400, message: raw, errorCode: nil)
+        XCTAssertEqual(SocialFeatureViewModel.billingErrorMessage(encoded, fallback: "fallback"), "fallback")
     }
 
     func test_billingErrorMessage_readsApiErrorCodeAndJsonFallback() {

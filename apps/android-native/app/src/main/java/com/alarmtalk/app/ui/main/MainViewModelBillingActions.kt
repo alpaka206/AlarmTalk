@@ -325,7 +325,6 @@ private fun billingFailureMessage(context: android.content.Context, errorCode: S
         "PLAN_NOT_FOUND" -> context.getString(R.string.msg2_billing_fail_plan_not_found)
         "PLAN_INACTIVE" -> context.getString(R.string.msg2_billing_fail_plan_inactive)
         "FREE_NOT_BILLABLE" -> context.getString(R.string.msg2_billing_fail_free_not_billable)
-        "CHECKOUT_DISABLED" -> context.getString(R.string.msg2_billing_fail_checkout_disabled)
         "USER_NOT_FOUND" -> context.getString(R.string.msg2_billing_fail_user_not_found)
         // 같은 영수증이 다른 계정에 이미 묶인 경우다(`lib/store-billing.ts` 의 409).
         // 재설치·계정 갈아타기에서 실제로 나오고, 사용자가 할 수 있는 일이 있으므로
@@ -345,7 +344,9 @@ private fun codeRegistrationFailureMessage(context: android.content.Context, err
         "CODE_ALREADY_REDEEMED_BY_YOU" -> context.getString(R.string.msg2_code_fail_code_already_redeemed_by_you)
         "SELF_ISSUED", "SELF_ACCEPT" -> context.getString(R.string.msg2_code_fail_self_issued)
         "GROUP_FULL" -> context.getString(R.string.msg2_code_fail_group_full)
-        "INVALID_GIFT_PLAN", "INVALID_INVITE_PLAN" -> context.getString(R.string.msg2_code_fail_invalid_plan_type)
+        // 선물 코드 갈래(`INVALID_GIFT_PLAN`)는 선물과 함께 2026-10-14 에 지웠다 — 서버가 더는 내지 않는다
+        // (App Store 3.1.1 두 번째 반려). 남은 것은 초대 코드의 플랜 검사뿐이다.
+        "INVALID_INVITE_PLAN" -> context.getString(R.string.msg2_code_fail_invalid_plan_type)
         "PLAN_NOT_FOUND" -> context.getString(R.string.msg2_code_fail_plan_not_found)
         "USER_NOT_FOUND" -> context.getString(R.string.msg2_code_fail_user_not_found)
         // 가족그룹 초대 갈래의 에러 코드도 매핑한다. 프로모 코드 갈래(CODE_INACTIVE 등)는 프로모 코드와
@@ -360,37 +361,21 @@ private fun com.alarmtalk.app.network.BillingPlanSummary?.isSharedPassPlan(): Bo
     this != null && (key in setOf("couple", "family") || planType in setOf("couple", "family"))
 
 /**
- * 코드(선물·초대 이용권) 등록. 프로모 코드는 2026-10-12 에 없앴다(`routes/code.ts` 머리말).
+ * 초대 코드(INV-) 등록 — 커플·가족 이용권 그룹에 합류한다. 입구는 더보기의 '초대 코드 등록' 화면
+ * (`FamilyConnectionPanel`) 하나다. 프로모 코드는 2026-10-12 에 없앴다(`routes/code.ts` 머리말).
  *
- * [onResult] 는 **결과를 기다려야 하는 호출부**만 넘긴다 — null 이면 성공, 문자열이면 실패 사유다.
- * 모달 안에서 코드를 받는 자리(유료 게이트의 '쿠폰이 있어요')는 실패했는데 화면이 먼저 닫히면
- * 사용자가 코드를 고쳐 넣을 곳을 잃는다(Codex #660). 그래서 실패 문구를 스낵바 대신 호출부로
- * 돌려주고, 호출부가 화면을 열어 둔 채 인라인으로 보여 준다(다이얼로그가 떠 있으면 스낵바는
- * 그 뒤로 가린다). 넘기지 않으면 지금처럼 스낵바로만 알린다.
+ * ⚠ **선물 코드(GIFT-)는 2026-10-14 에 없앴다 — 되살리지 말 것.** iOS 1.2.12 가 App Store 지침 3.1.1 로
+ * 두 번째 반려됐다("선물 코드로 디지털 기능을 연다"). 서버도 INV- 형식이 아니면 조회 없이
+ * `CODE_NOT_FOUND` 다. 할인·무료 이용은 스토어 오퍼 코드로 준다.
+ * 같은 날 유료 게이트의 코드 입력도 지웠다 — 그 입구만 쓰던 인자 둘(성공 뒤 화면을 옮기지 않는
+ * `navigateOnSuccess`, 모달 안에 실패 사유를 돌려주는 `onResult`)도 함께 뺐다.
  */
-/**
- * 코드 등록(초대·선물·프로모 공용).
- *
- * @param navigateOnSuccess 성공 시 화면을 옮길지. **편집기 게이트에서 부를 때는 false**다 —
- *   true 로 두면 쿠폰을 넣는 순간 홈/구성원 탭으로 튕겨 **편집 중이던 알람이 통째로
- *   사라진다**(시각·반복·문구를 다시 입력해야 한다). 잠금이 풀리는 것은 구독 갱신
- *   (`refreshBillingAfterMutation`)이 하므로 화면을 옮기지 않아도 그 자리에서 이어서 쓴다.
- */
-internal fun MainViewModel.registerCode(
-    code: String,
-    navigateOnSuccess: Boolean = true,
-    onResult: ((String?) -> Unit)? = null,
-) {
+internal fun MainViewModel.registerCode(code: String) {
     val authorization = bearerOrMessage(getApplication<android.app.Application>().getString(R.string.msg_gb_login_required_register_code))
-        ?: run {
-            // 조기 반환도 결과를 알린다 — 안 그러면 호출부는 로딩도 에러도 없이 멈춘 것처럼 보인다.
-            onResult?.invoke(message)
-            return
-        }
+        ?: return
     val trimmedCode = code.trim()
     if (trimmedCode.isBlank()) {
         message = getApplication<android.app.Application>().getString(R.string.msg_gb_code_input_required_period)
-        onResult?.invoke(message)
         return
     }
     // 응답이 늦게 온 사이 계정이 바뀌면 그 계정 화면을 건드리지 않는다(이 PR 의 반복 지점).
@@ -410,71 +395,31 @@ internal fun MainViewModel.registerCode(
             val joinedSharedPass = response.type == "invite" ||
                 response.type == "group_invite" ||
                 response.plan.isSharedPassPlan()
-            if (navigateOnSuccess) {
-                if (joinedSharedPass) {
-                    navigateSharedPassTick++
-                } else {
-                    navigateHomeTick++
-                }
+            if (joinedSharedPass) {
+                navigateSharedPassTick++
+            } else {
+                navigateHomeTick++
             }
-            onResult?.invoke(null)
         }.onFailure { error ->
             if (authSession?.user?.id != ownerUserId) return@onFailure
             // error_code 는 한 번 뽑아 문구 판정에 쓴다. 보고보다 먼저 읽어도 되고 뒤에 읽어도 된다 —
             // 코드를 읽어도 오류 본문은 소진되지 않는다(`network/ApiErrors.kt`).
             val errorCode = apiErrorCode(error)
             AlarmTalkLog.reportError("Failed to register code", error)
-            val failure = codeRegistrationFailureMessage(
+            message = codeRegistrationFailureMessage(
                 getApplication<android.app.Application>(),
                 errorCode,
                 userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_gb_code_register_failed)),
             )
-            if (onResult != null) {
-                onResult(failure)
-            } else {
-                message = failure
-            }
         }
         billingBusy = false
     }
 }
 
-/**
- * 선물 이용권 **구매**를 시작한다(1회성 인앱 상품).
- *
- * ⚠ **결제 없이 코드를 만들지 않는다.** 무결제 발급 경로(`POST /billing/checkout`
- * gift:true)는 서버가 production 에서 항상 막는다 — 열면 누구나 무료로 유료 이용권을
- * 뽑을 수 있다. 여기서는 1회성 상품을 실제로 사고, 서버가 그 구매를 검증해 바우처를 만든다.
- *
- * ⚠ 구독 경로(`startPlayPurchase`)와 **섞지 말 것**: INAPP 에는 offerToken 이 없고,
- * 구독 교체 파라미터를 붙이면 Play 가 거절한다.
- */
-internal fun MainViewModel.startGiftPurchase(activity: android.app.Activity) {
-    val ticket = accessTicket()
-    val session = sessionOrMessage(R.string.msg_gb_login_required_purchase_plan) ?: return
-    if (billingBusy) return
-    if (ticket == null || ticket.userId != session.user.id) return
-    viewModelScope.launch {
-        billingBusy = true
-        runCatching {
-            playBilling.launchOneTimePurchase(
-                activity,
-                com.alarmtalk.app.billing.PlayBillingProducts.PERSONAL_GIFT_1M,
-                userId = session.user.id.takeIf { it.isNotBlank() },
-                mayLaunch = { responseStillBelongsToRequester(ticket.userId, ticket.epoch) },
-            )
-        }.onSuccess { launched ->
-            if (!launched) {
-                message = getApplication<android.app.Application>().getString(R.string.msg_gb_google_play_start_failed)
-                billingBusy = false
-            }
-        }.onFailure { error ->
-            AlarmTalkLog.reportError("Failed to launch Play gift purchase", error)
-            message = getApplication<android.app.Application>().getString(R.string.billing_gift_failed)
-            billingBusy = false
-        }
-    }
-}
+// ⚠ **선물 이용권 구매(`startGiftPurchase` — 1회성 인앱 상품을 사서 GIFT- 코드를 받는 길)는
+// 2026-10-14 에 지웠다 — 되살리지 말 것.** iOS 1.2.12 가 App Store 지침 3.1.1 로 두 번째 반려됐다
+// ("선물 코드로 디지털 기능을 연다"). 앱이 파는 것은 구독뿐이다(`startPlayPurchase`).
+// 할인·무료 이용은 스토어 오퍼 코드(App Store 오퍼 코드 · Play 프로모션 코드)로 준다.
 
 /**
  * **결제를 시작해도 되는가** — 막아야 하면 보여 줄 문구 리소스, 진행해도 되면 null.

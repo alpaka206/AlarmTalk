@@ -16,7 +16,8 @@ enum AuxiliaryScreen: String, Identifiable, Hashable {
     // (`String` 이면 `Text(변수)` 로 그려져 번역이 죽는다 — `GradientCta.title` 주석).
     var title: LocalizedStringKey {
         switch self {
-        case .people: return "코드 등록"
+        // 더보기의 행 이름·초대 공유 문구의 3단계와 같은 글자다(`MenuView` 주석).
+        case .people: return "초대 코드 등록"
         case .members: return "공유 이용권"
         case .billing: return "이용권"
         }

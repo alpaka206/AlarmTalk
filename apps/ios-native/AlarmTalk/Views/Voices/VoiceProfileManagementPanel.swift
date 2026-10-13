@@ -32,9 +32,6 @@ struct VoiceProfileManagementPanel: View {
     /// 시트 충돌을 피하기 위해 본 화면의 시트를 먼저 닫고, 다음 runloop 에서
     /// 부모가 BillingPanel 시트를 띄우는 패턴을 사용한다.
     var onRequestBilling: (() -> Void)? = nil
-    /// 쿠폰 코드 등록. 유료 게이트는 **항상** 이 갈래를 함께 낸다(`PaidGateCopy.redeemCode`).
-    /// 코드를 등록하고 **실패 사유**를 돌려준다(성공이면 `nil`) — 시트가 입력창 밑에 그린다.
-    var onRedeemCode: ((String) async -> String?)? = nil
 
     /// 프로필 편집 다이얼로그 입력값.
     @State private var editTarget: VoiceProfile?
@@ -45,7 +42,6 @@ struct VoiceProfileManagementPanel: View {
 
     /// 슬롯 가득 시 노출하는 플랜 안내 시트.
     @State private var planGateOpen: Bool = false
-    @State private var redeemCodeAlertOpen = false
 
     /// 내 목소리 행의 ⋮ 가 여는 액션 시트 대상.
     @State private var actionSheetTarget: VoiceProfile?
@@ -149,7 +145,7 @@ struct VoiceProfileManagementPanel: View {
         //
         // ⚠ **탭 진입의 이용권 갱신은 빼지 말 것**(2026-08-24 실기기). 권한을 앱 시작의 캐시
         // 스냅샷(`restoreAccessSnapshot`)에만 기대면, 이 기기 밖에서 플랜이 바뀐(다른 기기
-        // 결제·선물 코드·가족 그룹 합류) **가족 이용권 사용자가 '추가' 를 눌렀는데 이용권 안내
+        // 결제·초대 코드로 가족 그룹 합류) **가족 이용권 사용자가 '추가' 를 눌렀는데 이용권 안내
         // 모달이 떴다.** 이용권 화면에 한 번 다녀와야 풀렸다 — 목소리를 만들려는 사람이 그 화면에
         // 들를 이유가 없으니 영영 막힌 것처럼 보인다. 규칙은 `docs/spec/plan-gates.md` §4.
 
@@ -286,26 +282,21 @@ struct VoiceProfileManagementPanel: View {
         }
         // ⚠ **alert 제목에 마침표를 찍지 말 것**(Apple HIG). 제목은 짧은 구절이고,
         // 문장이 필요하면 `message` 로 내린다 — 다른 alert 들도 전부 그렇게 돼 있다.
-        // ⚠ **쿠폰 갈래를 빼지 말 것.** 안드로이드 게이트에는 처음부터 있었는데
-        // 여기만 없어서, 같은 상황에서 iOS 사용자는 **코드로 여는 길을 못 봤다**
-        // (2026-08-11 전수 조사). 제목도 안드로이드(`voices_create_paid_title`)에 맞춘다.
+        // ⚠ **코드 갈래('선물·초대 코드가 있어요')와 그 입력 시트(`RedeemCodeSheet`)를 되살리지 말 것**
+        // (2026-10-14, App Store 지침 3.1.1 두 번째 반려 — 선물 코드 폐지). 2026-08-11 에 두 앱을 맞추려고
+        // 넣었지만 코드를 쳐서 유료 기능을 여는 길 자체가 반려 사유였다 — 두 앱 모두에서 뺐다. 초대 코드는
+        // 더보기 → 초대 코드 등록에서만 넣고, 할인·무료 이용은 스토어 오퍼 코드로 준다.
+        // 제목은 안드로이드(`voices_create_paid_title`)에 맞춘다.
         .alert(String(localized: "내 목소리 만들기는 유료 기능이에요"), isPresented: $planGateOpen) {
             Button(String(localized: "닫기"), role: .cancel) {}
-            Button(PaidGateCopy.redeemCode) { redeemCodeAlertOpen = true }
             Button(PaidGateCopy.viewPlans) { onRequestBilling?() }
                 // ⚠ **이 줄이 강조를 만든다 — 빼지 말 것.** 시스템 알럿은 버튼 색을 직접
                 // 주지 못하고, '기본 액션' 으로 지정된 하나만 채운 캡슐로 그린다. 없으면
-                // 세 버튼이 **똑같은 회색**이라 주행동이 사라진다(2026-08-18 실기기 확인).
+                // 버튼이 **똑같은 회색**이라 주행동이 사라진다(2026-08-18 실기기 확인).
                 // 편집기 쪽 짝은 `Views/Editor/VoicePlanGateAlert.swift` — 한쪽만 고치지 말 것.
                 .keyboardShortcut(.defaultAction)
         } message: {
             Text(PaidGateCopy.message)
-        }
-        // ⚠ 껍데기는 `RedeemCodeSheet` 하나다 — 편집기 게이트도 같은 것을 쓴다.
-        // 여기에 알럿을 다시 만들면 실패 사유를 그릴 자리가 없어져, 코드를 잘못 친
-        // 사용자에게 모달이 그냥 닫힌다(2026-08-18 실기기 확인).
-        .redeemCodeSheet(isPresented: $redeemCodeAlertOpen) { code in
-            await onRedeemCode?(code)
         }
         .sheet(item: $sharedViewerInfoTarget) { profile in
             SharedVoiceViewerInfoDialog(

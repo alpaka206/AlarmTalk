@@ -21,11 +21,15 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 
 /**
- * 코드 입력 필드 — 초대(INV-)·이용권 선물(GIFT-) 코드를 이 한 필드로 받는다. 종류 판별은
- * 서버(POST /code/register)가 하므로 클라는 형식을 가리지 않는다. 프로모 코드(자유 문자열)는
- * 2026-10-12 에 없앴다(App Store 3.1.1) — 서버가 받지 않으니 화면에서도 말하지 않는다.
- * `_` 허용은 그 시절의 것이다(걸러도 얻는 것이 없어 그대로 둔다). 입력은 대문자로 자동 변환한다 —
- * 서버가 이용권 코드를 대문자로 맞춰 찾으므로 사용자 입력 편의만 올라간다.
+ * 초대 코드 입력 필드 — 커플·가족 이용권의 초대 코드(INV-)를 받는다. 형식 검사는 서버
+ * (POST /code/register)가 하므로 클라는 형식을 가리지 않는다. 입력은 대문자로 자동 변환한다 —
+ * 서버가 코드를 대문자로 맞춰 찾으므로 사용자 입력 편의만 올라간다.
+ *
+ * 프로모 코드(자유 문자열)는 2026-10-12 에(App Store 3.1.1), 이용권 선물 코드(GIFT-)는 2026-10-14 에
+ * (같은 지침의 두 번째 반려 — "선물 코드로 디지털 기능을 연다") 없앴다. 서버가 INV- 가 아니면 조회 없이
+ * `CODE_NOT_FOUND` 로 거절하니 화면에서도 말하지 않는다. `_` 허용은 프로모 시절의 것이다(걸러도 얻는
+ * 것이 없어 그대로 둔다).
+ * ⚠ **선물·프로모 문구를 되살리지 말 것.** 할인·무료 이용은 스토어 오퍼 코드로 준다.
  */
 /**
  * 어떤 입력에도 들어와선 안 되는 문자를 걷는다 — **모든 사용자 입력의 1차 방어선**.
@@ -105,7 +109,8 @@ internal fun sanitizeDisplayName(raw: String, maxLength: Int = Int.MAX_VALUE): S
         .takeWithoutSplittingPairs(maxLength)
 
 /**
- * 이용권·초대·프로모션 코드. **영문 대문자·숫자·`-`·`_` 만 남긴다.**
+ * 초대 코드(`INV-XXXX-XXXX-XXXX`). **영문 대문자·숫자·`-`·`_` 만 남긴다.** 선물·프로모 코드는
+ * 없앴지만(위 [CodeRedeemField] 머리말) 거르는 규칙은 그 시절 그대로다 — 좁히려면 iOS 와 함께 고친다.
  *
  * ⚠ **`isLetterOrDigit()` 하나로 거르지 말 것.** 한글도 letter 라서 그대로 통과한다 —
  * 코드에는 한글이 쓰이지 않는데 입력은 되니, 사용자는 다 치고 나서야 "잘못된 코드" 를
@@ -114,7 +119,8 @@ internal fun sanitizeDisplayName(raw: String, maxLength: Int = Int.MAX_VALUE): S
 internal fun sanitizeRedeemCode(raw: String): String = raw
     .uppercase()
     .filter { (it.code < 128 && it.isLetterOrDigit()) || it == '-' || it == '_' }
-    // 프로모 코드 최대 64자(admin 발급 폼 maxlength=64)와 맞춘다 — 32자 잘림으로 긴 코드가 실패하던 문제.
+    // 64자는 프로모 코드(2026-10-12 폐지)의 상한이던 값이다 — 32자 잘림으로 긴 코드가 실패하던 문제.
+    // 초대 코드는 18자라 넉넉하다. iOS `sanitizeRedeemCode` 의 `prefix(64)` 와 같은 값으로 둔다.
     .take(64)
 
 /** 이메일 인증 코드의 자릿수. 서버(`@alarmtalk/shared` 의 `EmailVerificationCodeSchema`)와 같은 값이다. */

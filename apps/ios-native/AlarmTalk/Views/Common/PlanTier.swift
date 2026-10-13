@@ -209,6 +209,10 @@ struct PlanScreenCurrent: Equatable {
         tier != .free && (!isCurrent(tier) || promoOnPersonalCard)
     }
 
+    /// 초대 코드 공유 버튼 — **산** 현재 이용권 카드에서만(안드로이드 `PlanScreenCurrent.sharesVouchers` 와 같다).
+    /// 프로모 카드는 산 것이 아니고, 예전에 쓰던 다른 카드의 남은 코드는 주인 구독이 끝나 등록되지 않는다.
+    func sharesVouchers(_ tier: PlanTier) -> Bool { isCurrent(tier) && !promoOnPersonalCard }
+
     /// 프로모 문구를 카드 목록 **위에** 그리는가 — 플랜 카드가 지금 그려지는지(`cardsVisible`)까지 본다.
     ///
     /// iOS 는 스토어 상품을 기다리는 동안(`BillingPlansSkeleton`)과 가져오기에 실패한 동안

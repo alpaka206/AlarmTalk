@@ -41,15 +41,11 @@ final class BillingScreenshotUITests: XCTestCase {
         bottom.lifetime = .keepAlways
         add(bottom)
 
-        app.swipeDown()
-        app.swipeDown()
-        let gift = app.buttons["선물하기"].firstMatch
-        XCTAssertTrue(gift.waitForExistence(timeout: 5))
-        gift.tap()
-        XCTAssertTrue(app.staticTexts["개인 이용권 선물하기"].waitForExistence(timeout: 5))
-        let giftScreen = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
-        giftScreen.name = "billing-gift"
-        giftScreen.lifetime = .keepAlways
-        add(giftScreen)
+        // ⚠ 개인 카드의 '선물하기' 와 그 안내 시트는 2026-10-14 에 없앴다(App Store 지침 3.1.1 두 번째
+        // 반려) — 되살리지 말 것. 할인·무료 이용은 스토어 오퍼 코드로 준다.
+        XCTAssertFalse(
+            app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "선물")).firstMatch.exists,
+            "이용권 화면에 선물 버튼이 남아 있다"
+        )
     }
 }

@@ -277,19 +277,19 @@
         }
       }
     },
-    "%@ 이용권 사용 중이에요. 등록은 이용권이 종료된 다음 가능해요." : {
+    "%@ 이용권을 쓰는 중이에요." : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Your %1$@ plan is active. You can register a new code once it ends."
+            "value" : "Your %1$@ plan is active."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%1$@プランを利用中です。登録はプランの終了後に可能です。"
+            "value" : "%1$@プランを利用中です。"
           }
         }
       }
@@ -934,19 +934,19 @@
         }
       }
     },
-    "가족·커플 이용권을 등록하면 여기에서 함께 쓰는 사람을 관리할 수 있어요." : {
+    "가족·커플 이용권을 구독하면 여기에서 함께 쓰는 사람을 관리할 수 있어요." : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Register a Family or Couple plan to manage the people you share it with here."
+            "value" : "Subscribe to a Family or Couple plan to manage the people you share it with here."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "ファミリー・カップルプランを登録すると、ここで一緒に使う人を管理できます。"
+            "value" : "ファミリー・カップルプランを購読すると、ここで一緒に使う人を管理できます。"
           }
         }
       }
@@ -1049,23 +1049,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "パーソナルの全機能を含む"
-          }
-        }
-      }
-    },
-    "개인 이용권 선물하기" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Gift a Personal plan"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "パーソナル利用券をプレゼント"
           }
         }
       }
@@ -1544,19 +1527,19 @@
         }
       }
     },
-    "공유받던 목소리가 끊겨서 알람 %lld개가 기본 목소리로 바뀌었어요. 다시 쓰려면 이용권을 등록하거나 새 초대 코드를 받아야 해요." : {
+    "공유받던 목소리가 끊겨서 알람 %lld개가 기본 목소리로 바뀌었어요. 다시 쓰려면 그 목소리를 다시 공유받아야 해요." : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "The shared voice is no longer available, so %lld alarm(s) now use a default voice. To use it again you need your own plan or a new invite code."
+            "value" : "The shared voice is no longer available, so %lld alarm(s) now use a default voice. To use it again, it has to be shared with you again."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "共有されていた声が使えなくなり、アラーム%lld件が基本の声に変わりました。再び使うには利用券の登録か新しい招待コードが必要です。"
+            "value" : "共有されていた声が使えなくなり、アラーム%lld件が基本の声に変わりました。再び使うには、もう一度共有してもらう必要があります。"
           }
         }
       }
@@ -1629,36 +1612,36 @@
         }
       }
     },
-    "공유할 이용권 선택" : {
+    "공유할 초대 코드 선택" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Choose a plan to share"
+            "value" : "Choose an invite code to share"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "共有する利用券を選択"
+            "value" : "共有する招待コードを選択"
           }
         }
       }
     },
-    "공유할 이용권 코드가 없어요." : {
+    "공유할 초대 코드가 없어요." : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "You don't have any plan codes to share."
+            "value" : "You don't have any invite codes to share."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "共有できる利用券コードがありません。"
+            "value" : "共有できる招待コードがありません。"
           }
         }
       }
@@ -2372,7 +2355,7 @@
         }
       }
     },
-    "남은 기간 요금은 비례 환불되고 이용권이 바로 종료돼요. 목소리는 3일간 보관돼요. 그 안에 이용권을 다시 등록하면 그대로 쓸 수 있고, 지나면 영구 삭제돼요." : {
+    "남은 기간 요금은 비례 환불되고 이용권이 바로 종료돼요. 목소리는 3일간 보관돼요. 그 안에 이용권을 다시 구독하면 그대로 쓸 수 있고, 지나면 영구 삭제돼요." : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
@@ -2384,7 +2367,7 @@
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "残り期間の料金は日割りで返金され、利用券はすぐに終了します。声は3日間保管され、その間に利用券を登録し直せばそのまま使えます。過ぎると完全に削除されます。"
+            "value" : "残り期間の料金は日割りで返金され、利用券はすぐに終了します。声は3日間保管され、その間に利用券を購読し直せばそのまま使えます。過ぎると完全に削除されます。"
           }
         }
       }
@@ -3012,23 +2995,6 @@
         }
       }
     },
-    "대기 중" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Pending"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "保留中"
-          }
-        }
-      }
-    },
     "대체 공휴일 및 임시 공휴일 포함" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3267,53 +3233,36 @@
         }
       }
     },
-    "등록" : {
+    "등록되면 초대한 사람의 커플·가족 이용권으로 옮겨 가요. 지금 쓰는 %@ 이용권을 App Store에서 구독 중이라면, 결제를 멈추려면 App Store에서 해지해 주세요." : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Redeem"
+            "value" : "If the code works, you'll move to the Couple or Family plan you were invited to. If you subscribe to your %1$@ plan through the App Store, cancel it in the App Store to stop being charged."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "登録"
+            "value" : "登録できると、招待した人のカップル・ファミリープランに移ります。今の%1$@プランをApp Storeで購読している場合は、課金を止めるためにApp Storeで解約してください。"
           }
         }
       }
     },
-    "등록 가능한 코드라면 현재 %@ 이용권은 종료되고 새 이용권으로 바뀌어요." : {
+    "초대 코드를 등록하면 초대한 사람의 커플·가족 이용권에 함께해요." : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "If this code is valid, your current %1$@ plan will end and switch to the new plan."
+            "value" : "Registering an invite code adds you to the Couple or Family plan you were invited to."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "登録可能なコードの場合、現在の%1$@プランは終了し、新しいプランに切り替わります。"
-          }
-        }
-      }
-    },
-    "등록하면 현재 %@ 이용권이 변경돼요." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Registering will change your current %1$@ plan."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "登録すると、現在の%1$@プランが変更されます。"
+            "value" : "招待コードを登録すると、招待した人のカップル・ファミリープランに参加します。"
           }
         }
       }
@@ -3552,23 +3501,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "14歳以上の確認"
-          }
-        }
-      }
-    },
-    "만료됨" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Expired"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "期限切れ"
           }
         }
       }
@@ -3947,7 +3879,7 @@
         }
       }
     },
-    "목소리 알람 %lld개가 기본 목소리로 바뀌었어요. 3일 안에 이용권을 다시 등록하면 내 목소리가 돌아오고, 지나면 영구 삭제돼요." : {
+    "목소리 알람 %lld개가 기본 목소리로 바뀌었어요. 3일 안에 이용권을 다시 구독하면 내 목소리가 돌아오고, 지나면 영구 삭제돼요." : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
@@ -3959,7 +3891,7 @@
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "声のアラーム%lld件が基本の声に変わりました。3日以内に利用券を登録し直すと自分の声が戻り、過ぎると完全に削除されます。"
+            "value" : "声のアラーム%lld件が基本の声に変わりました。3日以内に利用券を購読し直すと自分の声が戻り、過ぎると完全に削除されます。"
           }
         }
       }
@@ -4525,23 +4457,6 @@
         }
       }
     },
-    "받는 사람이 직접 등록할 수 있는 개인 이용권 코드를 만들어요. 내 이용권은 그대로 유지돼요." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Create a Personal plan code that the recipient can register themselves. Your own plan stays the same."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "受け取った方がご自身で登録できるパーソナル利用券コードを作成します。ご自分の利用券はそのまま維持されます。"
-          }
-        }
-      }
-    },
     "받는 중…" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4555,23 +4470,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ダウンロード中…"
-          }
-        }
-      }
-    },
-    "받으신 선물 코드를 넣어 주세요. 초대 코드도 여기에 넣을 수 있어요." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Enter a gift code you received. Invite codes work here too."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "受け取ったギフトコードを入力してください。招待コードも使えます。"
           }
         }
       }
@@ -4967,40 +4865,6 @@
         }
       }
     },
-    "사용 가능" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Available"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "利用可能"
-          }
-        }
-      }
-    },
-    "사용됨" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Used"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "使用済み"
-          }
-        }
-      }
-    },
     "사용할 목소리를 먼저 선택해 주세요." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5205,23 +5069,6 @@
         }
       }
     },
-    "상태 없음" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No status"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "状態なし"
-          }
-        }
-      }
-    },
     "새 목소리로 바뀌었어요" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5388,40 +5235,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "利用規約"
-          }
-        }
-      }
-    },
-    "선물 코드 만들기" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Create gift code"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "プレゼントコードを作成"
-          }
-        }
-      }
-    },
-    "선물하기는 개인 이용권에서만 사용할 수 있어요" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Gifting is only available with the Personal plan"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "プレゼントはパーソナルプランでのみご利用いただけます"
           }
         }
       }
@@ -6010,19 +5823,19 @@
         }
       }
     },
-    "아직 등록되지 않은 코드를 골라 바로 공유할 수 있어요." : {
+    "아직 쓰지 않은 초대 코드를 골라 바로 공유할 수 있어요." : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pick an unregistered code and share it right away."
+            "value" : "Pick an unused invite code and share it right away."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "まだ登録されていないコードを選んですぐに共有できます。"
+            "value" : "まだ使われていない招待コードを選んですぐに共有できます。"
           }
         }
       }
@@ -6726,36 +6539,25 @@
         }
       }
     },
-    "알람톡 이용권을 보냈어요.\n\n이용권 코드: %1$@\n\n1. 알람톡 설치 %2$@\n2. 가입하고 로그인\n3. 더보기 → 코드 등록에 위 코드 입력" : {
+    "알람톡에서 내 목소리 알람을 같이 쓰자!\n\n초대 코드: %1$@\n\n1. 알람톡 설치 %2$@\n2. 가입하고 로그인\n3. 더보기 → 초대 코드 등록에 위 코드 입력" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "I sent you an AlarmTalk plan.\n\nPlan code: %1$@\n\n1. Install AlarmTalk %2$@\n2. Sign up and log in\n3. Enter the code under More → Register code"
+            "value" : "Come use my voice alarms on AlarmTalk!\n\nInvite code: %1$@\n\n1. Install AlarmTalk %2$@\n2. Sign up and log in\n3. Enter the code under More → Register invite code"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "AlarmTalkのプランを贈りました。\n\nコード: %1$@\n\n1. AlarmTalkをインストール %2$@\n2. 登録してログイン\n3. 「その他」→「コードを登録」に上のコードを入力"
-          }
-        }
-      }
-    },
-    "알람톡에서 내 목소리 알람을 같이 쓰자!\n\n초대 코드: %1$@\n\n1. 알람톡 설치 %2$@\n2. 가입하고 로그인\n3. 더보기 → 코드 등록에 위 코드 입력" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Come use my voice alarms on AlarmTalk!\n\nInvite code: %1$@\n\n1. Install AlarmTalk %2$@\n2. Sign up and log in\n3. Enter the code under More → Register code"
+            "value" : "AlarmTalkで私の声のアラームを一緒に使おう!\n\n招待コード: %1$@\n\n1. AlarmTalkをインストール %2$@\n2. 登録してログイン\n3. 「その他」→「招待コード登録」に上のコードを入力"
           }
         },
-        "ja" : {
+        "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "AlarmTalkで私の声のアラームを一緒に使おう!\n\n招待コード: %1$@\n\n1. AlarmTalkをインストール %2$@\n2. 登録してログイン\n3. 「その他」→「コードを登録」に上のコードを入力"
+            "value" : "알람톡에서 내 목소리 알람을 같이 쓰자!\n\n초대 코드: %1$@\n\n1. 알람톡 설치 %2$@\n2. 가입하고 로그인\n3. 더보기 → 초대 코드 등록에 위 코드 입력"
           }
         }
       }
@@ -8300,19 +8102,19 @@
         }
       }
     },
-    "이용권 코드 공유" : {
+    "초대 코드 공유" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Share plan code"
+            "value" : "Share invite code"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "利用券コードを共有"
+            "value" : "招待コードを共有"
           }
         }
       }
@@ -9569,36 +9371,48 @@
         }
       }
     },
-    "초대 코드와 이용권 선물 코드를 등록할 수 있어요." : {
+    "커플·가족 이용권 초대 코드를 등록할 수 있어요." : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Invite codes and gifted plan codes work here."
+            "value" : "Enter an invite code to join a Couple or Family plan."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "招待コードと利用券ギフトコードを登録できます。"
+            "value" : "カップル・ファミリープランの招待コードを登録できます。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "커플·가족 이용권 초대 코드를 등록할 수 있어요."
           }
         }
       }
     },
-    "초대·선물 코드" : {
+    "초대 코드" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Invite or gift code"
+            "value" : "Invite code"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "招待・ギフトコード"
+            "value" : "招待コード"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "초대 코드"
           }
         }
       }
@@ -9756,19 +9570,25 @@
         }
       }
     },
-    "코드 등록" : {
+    "초대 코드 등록" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Register code"
+            "value" : "Register invite code"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "コード登録"
+            "value" : "招待コード登録"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "초대 코드 등록"
           }
         }
       }
@@ -9807,19 +9627,25 @@
         }
       }
     },
-    "코드 입력" : {
+    "초대 코드 입력" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Enter a code"
+            "value" : "Enter invite code"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "コード入力"
+            "value" : "招待コードを入力"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "초대 코드 입력"
           }
         }
       }
@@ -9905,23 +9731,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "コードを入力してください。"
-          }
-        }
-      }
-    },
-    "선물·초대 코드가 있어요" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "I have a gift or invite code"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ギフト・招待コードをお持ちの方"
           }
         }
       }
@@ -10700,19 +10509,19 @@
         }
       }
     },
-    "무료 이용권으로 바뀌어 이 목소리를 쓸 수 없어요. 이용권을 다시 등록하면 돌아와요." : {
+    "무료 이용권으로 바뀌어 이 목소리를 쓸 수 없어요. 이용권을 다시 구독하면 돌아와요." : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "You're on the Free plan now, so this voice can't be used. Register a plan again to bring it back."
+            "value" : "You're on the Free plan now, so this voice can't be used. Subscribe again to bring it back."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "無料利用券に変わり、この声は使えません。利用券を登録し直すと戻ります。"
+            "value" : "無料利用券に変わり、この声は使えません。利用券を購読し直すと戻ります。"
           }
         }
       }
@@ -14266,28 +14075,6 @@
         }
       }
     },
-    "결제 승인을 기다리고 있어요. 완료되면 코드가 만들어져요." : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Waiting for payment approval. Your code will be created when it is complete."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "決済の承認を待っています。完了するとコードが作成されます。"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "결제 승인을 기다리고 있어요. 완료되면 코드가 만들어져요."
-          }
-        }
-      }
-    },
     "결제 확인 동기화에 실패했어요. 잠시 후 자동 재시도됩니다." : {
       "localizations" : {
         "en" : {
@@ -14398,28 +14185,6 @@
         }
       }
     },
-    "결제는 완료됐지만 선물 코드 발급을 확인하지 못했어요. 앱을 다시 열면 자동으로 다시 시도해요." : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Payment is complete, but the gift code could not be confirmed. This will retry automatically when you reopen the app."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "決済は完了しましたが、ギフトコードの発行を確認できませんでした。アプリを開き直すと自動で再試行します。"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "결제는 완료됐지만 선물 코드 발급을 확인하지 못했어요. 앱을 다시 열면 자동으로 다시 시도해요."
-          }
-        }
-      }
-    },
     "결제를 취소했어요." : {
       "localizations" : {
         "en" : {
@@ -14482,28 +14247,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "복원할 구매 내역이 없어요."
-          }
-        }
-      }
-    },
-    "선물하기" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Gift"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ギフト"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "선물하기"
           }
         }
       }
@@ -14948,28 +14691,6 @@
         }
       }
     },
-    "%@ · %@ · %lld/%lld" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%1$@ · %2$@ · %3$lld/%4$lld"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%1$@ · %2$@ · %3$lld/%4$lld"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ · %@ · %lld/%lld"
-          }
-        }
-      }
-    },
     "결제를 확인하지 못했어요. '이전 구매 복원'을 눌러 다시 시도해 주세요." : {
       "localizations" : {
         "en" : {
@@ -15085,7 +14806,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Redeem"
+            "value" : "Register"
           }
         },
         "ja" : {
@@ -15124,90 +14845,24 @@
         }
       }
     },
-    "다른 코드 등록" : {
+    "등록되면 초대한 사람의 커플·가족 이용권으로 옮겨 가요. 지금 이용권을 App Store에서 구독 중이라면, 결제를 멈추려면 App Store에서 해지해 주세요." : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Other code"
+            "value" : "If the code works, you'll move to the Couple or Family plan you were invited to. If you subscribe to your current plan through the App Store, cancel it in the App Store to stop being charged."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "別のコード"
+            "value" : "登録できると、招待した人のカップル・ファミリープランに移ります。今のプランをApp Storeで購読している場合は、課金を止めるためにApp Storeで解約してください。"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "다른 코드 등록"
-          }
-        }
-      }
-    },
-    "등록 가능한 코드라면 현재 이용권은 종료되고 새 이용권으로 바뀌어요." : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "If the code is valid, your current plan will end and be replaced with the new plan."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "登録できるコードの場合、現在の利用券は終了し、新しい利用券に切り替わります。"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "등록 가능한 코드라면 현재 이용권은 종료되고 새 이용권으로 바뀌어요."
-          }
-        }
-      }
-    },
-    "등록 중…" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Redeeming…"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "登録中…"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "등록 중…"
-          }
-        }
-      }
-    },
-    "등록하면 현재 이용권이 변경돼요." : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Redeeming a code will change your current plan."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "コードを登録すると、現在の利用券が変わります。"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "등록하면 현재 이용권이 변경돼요."
+            "value" : "등록되면 초대한 사람의 커플·가족 이용권으로 옮겨 가요. 지금 이용권을 App Store에서 구독 중이라면, 결제를 멈추려면 App Store에서 해지해 주세요."
           }
         }
       }
@@ -15234,7 +14889,7 @@
         }
       }
     },
-    "무료 이용권으로 전환되어 목소리 알람이 기본 목소리로 바뀌었어요. 3일 안에 다시 등록하면 내 목소리가 돌아오고, 지나면 영구 삭제돼요." : {
+    "무료 이용권으로 전환되어 목소리 알람이 기본 목소리로 바뀌었어요. 3일 안에 다시 구독하면 내 목소리가 돌아오고, 지나면 영구 삭제돼요." : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -15245,13 +14900,13 @@
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "無料プランに切り替わったため、声のアラームは基本の声に変わりました。3日以内に再登録すると自分の声に戻せます。それを過ぎると完全に削除されます。"
+            "value" : "無料プランに切り替わったため、声のアラームは基本の声に変わりました。3日以内に購読し直すと自分の声に戻せます。それを過ぎると完全に削除されます。"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "무료 이용권으로 전환되어 목소리 알람이 기본 목소리로 바뀌었어요. 3일 안에 다시 등록하면 내 목소리가 돌아오고, 지나면 영구 삭제돼요."
+            "value" : "무료 이용권으로 전환되어 목소리 알람이 기본 목소리로 바뀌었어요. 3일 안에 다시 구독하면 내 목소리가 돌아오고, 지나면 영구 삭제돼요."
           }
         }
       }
@@ -15405,7 +15060,7 @@
         }
       }
     },
-    "잘못된 코드입니다." : {
+    "잘못된 코드예요" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -15422,7 +15077,7 @@
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "잘못된 코드입니다."
+            "value" : "잘못된 코드예요"
           }
         }
       }
@@ -15537,24 +15192,24 @@
         }
       }
     },
-    "현재 이용권 사용 중이에요. 등록은 이용권이 종료된 다음 가능해요." : {
+    "지금 이용권을 쓰는 중이에요." : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "You have an active plan. You can redeem a code after it ends."
+            "value" : "You have an active plan."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "現在、利用券を使用中です。利用券が終了してからコードを登録できます。"
+            "value" : "現在、利用券を使用中です。"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "현재 이용권 사용 중이에요. 등록은 이용권이 종료된 다음 가능해요."
+            "value" : "지금 이용권을 쓰는 중이에요."
           }
         }
       }

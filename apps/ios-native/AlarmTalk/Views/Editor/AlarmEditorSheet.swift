@@ -74,7 +74,6 @@ struct AlarmEditorSheet: View {
     /// 이용권만 있으면 이미 다 쓴 것처럼 읽혀 거짓말이 된다).
     @State var manualQuota: ManualQuotaResponse?
     @State var voiceGateAlert: VoiceGateAlertContent?
-    @State var redeemCodeAlertOpen = false
     @State var sharedVoiceSetupTarget: FamilyVoiceProfile?
     /// 기본(시스템) 목소리로 바꾸면 직접 입력 문구를 쓸 수 없어 편집기가 문구를 비운다.
     /// 조용히 지우면 '문구가 사라졌다' 가 되므로 한 번 확인받는다
@@ -217,7 +216,8 @@ struct AlarmEditorSheet: View {
         let id = UUID()
         let title: String
         let message: String
-        /// 이용권이 없어서 막힌 경우에만 true — 그때만 쿠폰·결제 액션이 뜻을 갖는다.
+        /// 이용권이 없어서 막힌 경우에만 true — 그때만 결제 액션('이용권 보기')이 뜻을 갖는다.
+        /// (코드 입력 액션은 2026-10-14 에 없앴다 — `VoicePlanGateAlert` 주석.)
         let offersPlanActions: Bool
     }
 
@@ -479,7 +479,6 @@ struct AlarmEditorSheet: View {
             // 상태(`voiceGateAlert`)는 하나라 두 번 뜨지 않는다.
             .voicePlanGateAlert(
                 content: $voiceGateAlert,
-                onRedeemCode: { redeemCodeAlertOpen = true },
                 onOpenBilling: { onRequestBilling?() }
             )
         }
@@ -523,14 +522,11 @@ struct AlarmEditorSheet: View {
         }
         .voicePlanGateAlert(
             content: $voiceGateAlert,
-            onRedeemCode: { redeemCodeAlertOpen = true },
             onOpenBilling: { onRequestBilling?() }
         )
-        // ⚠ 여기에 입력 알럿을 다시 만들지 말 것 — 껍데기는 `RedeemCodeSheet` 하나다
-        // (실패 사유를 그릴 자리가 있는 쪽). 목소리 탭 게이트도 같은 것을 쓴다.
-        .redeemCodeSheet(isPresented: $redeemCodeAlertOpen) { code in
-            await socialFeatures.registerCodeReportingFailure(code, session: auth.session)
-        }
+        // ⚠ **게이트에 코드 입력 시트(`RedeemCodeSheet`)를 되살리지 말 것**(2026-10-14, App Store 지침
+        // 3.1.1 두 번째 반려 — 선물 코드 폐지). 초대 코드는 더보기 → 초대 코드 등록에서만 넣고,
+        // 할인·무료 이용은 스토어 오퍼 코드로 준다. 목소리 탭 게이트도 같다.
         // 검증/실패 알림이 뜰 때 한 번 error 햅틱을 울려 저장 실패를 촉각으로 알린다.
         .onChange(of: validationAlert?.id) { _, newID in
             if newID != nil {
@@ -2263,8 +2259,8 @@ struct AlarmEditorSheet: View {
         voiceGateAlert = VoiceGateAlertContent(
             title: title,
             message: message,
-            // ⚠ 쿠폰·결제 액션은 **이용권이 없어서 막힌 경우에만**. 비로그인에게는
-            // 등록할 계정이 없고, 이미 유료인 사람에게는 눌러도 아무 일이 없다.
+            // ⚠ 결제 액션('이용권 보기')은 **이용권이 없어서 막힌 경우에만**. 비로그인에게는
+            // 결제할 계정이 없고, 이미 유료인 사람에게는 눌러도 아무 일이 없다.
             offersPlanActions: planAccess == .free
         )
     }

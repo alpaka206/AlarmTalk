@@ -170,43 +170,41 @@ final class SubscriptionManager: ObservableObject {
         }
     }
 
-    /// **앞 실행이 끝내지 못한 트랜잭션을 다시 올린다.**
+    /// **앞 실행이 끝내지 못한 트랜잭션을 다시 올리고 끝낸다.**
     ///
-    /// ⚠ 이게 없으면 **결제만 되고 선물이 안 나가는 상태가 영구히 남는다**(코덱스 #730 2차).
-    /// 선물은 소모성(consumable)이라 `currentEntitlements` 에 **나오지 않고**,
-    /// `Transaction.updates` 는 앞 프로세스가 남긴 것을 다시 훑어 주는 시퀀스가 아니다.
-    /// 서버 확정 전에 앱이 죽으면 재시도할 경로가 하나도 없었다 — `purchase` 가 확정에
-    /// 실패한 트랜잭션을 **일부러 끝내지 않고** "다시 열면 재시도된다" 고 안내하는데,
-    /// 그 약속을 지키는 것이 여기다.
+    /// 서버 확정이나 `finish()` 전에 앱이 죽으면 그 트랜잭션은 `Transaction.unfinished` 에 남는다.
+    /// 끝내지 않은 채 두면 스토어가 계속 다시 배달하고, `purchase` 가 결제 시트 대신 그 옛것을
+    /// 돌려주기도 한다(`purchase` 의 2026-09-19 주석). 서버에 한 번 더 알린 뒤 끝낸다 — 남은
+    /// 상품은 전부 자동 갱신 구독이라 `currentEntitlements` 로 회복되므로 확정 여부와 무관하게
+    /// 끝내도 잃는 것이 없다.
     ///
-    /// 확정 성공 여부에 따라 끝낼지 정하는 규칙은 구매 경로와 **같은 함수**를 쓴다
-    /// ([mayFinish]) — 두 곳이 갈라지면 소모성이 확정 없이 끝나 버린다.
+    /// ⚠ 이 함수를 처음 둔 이유는 **소모성 선물**이었다(코덱스 #730 2차 — 확정 전에 끝내면 코드를
+    /// 영영 못 받았다). 선물하기는 2026-10-14 에 App Store 지침 3.1.1 두 번째 반려로 없앴다 —
+    /// 되살리지 말 것. 할인·무료 이용은 스토어 오퍼 코드로 준다. 옛 선물 트랜잭션이 남아 있으면
+    /// 서버가 모르는 상품으로 거절하고(`UNKNOWN_PRODUCT`) 여기서 끝낸다 — 재시도해도 결과가 같다.
     ///
     /// ⚠ **부르는 곳이 둘이다 — `bootstrap` 과 계정 변경**(`AlarmTalkApp` 의
-    /// `.task(id: auth.session?.user.id)`). 아래 계정 가드가 로그아웃·다른 계정 회차의
-    /// 트랜잭션을 건너뛰므로, 시작 때 한 번만 훑으면 **그 뒤 로그인한 주인은 앱을 껐다
-    /// 켜기 전까지 선물을 못 받는다**(코덱스 #732 P2).
+    /// `.task(id: auth.session?.user.id)`). 계정이 바뀌면 남은 것을 지금 계정의 토큰으로 다시
+    /// 보내 본다(코덱스 #732 P2).
     func replayUnfinishedTransactions() async {
         for await result in Transaction.unfinished {
             guard let transaction = try? checkVerified(result) else { continue }
             // ⚠ **남의 계정 트랜잭션은 보내지도, 끝내지도 않는다**(코덱스 #732 P2).
             //   리스너·재동기화와 **같은 가드**다(`maySyncToBackend`) — 여기만 빠져 있었다.
             //   같은 기기를 A 가 쓰다 B 로 로그인하면, A 가 남긴 미완료 트랜잭션이 **B 의
-            //   토큰으로** 올라가 계정 불일치로 거절되고, 구독 갈래는 `mayFinish` 가
-            //   그걸 **끝내 버려** A 가 다시 로그인해도 재시도할 것이 남지 않는다.
+            //   토큰으로** 올라가 계정 불일치로 거절되고, 구독 갈래는 그걸 **끝내 버려**
+            //   A 가 다시 로그인해도 재시도할 것이 남지 않는다.
             //   건너뛴 것은 끝내지 않은 채로 둔다 — 주인이 로그인하면 그때 올라간다.
             // 환불은 주인이 아니어도 전달한다(위 리스너와 같은 이유).
             // ⚠ 리스너와 같은 이유로 **건너뛰지 않는다**(2026-09-19). 판정은 서버가 하고,
-            //   구독은 결과와 무관하게 끝내 큐가 비게 한다. 자세한 근거는 리스너 주석.
+            //   결과와 무관하게 끝내 큐가 비게 한다. 자세한 근거는 리스너 주석.
             let mine = transaction.revocationDate != nil || maySyncToBackend(transaction)
-            let outcome = await syncWithBackend(transaction: transaction, surfacesError: mine)
-            if Self.mayFinish(productID: transaction.productID, serverConfirmed: outcome.confirmed) {
-                await transaction.finish()
-            }
+            await syncWithBackend(transaction: transaction, surfacesError: mine)
+            await transaction.finish()
         }
     }
 
-    /// App Store 로부터 6개 제품 정보 fetch.
+    /// App Store 로부터 구독 3종의 제품 정보 fetch.
     /// 실패해도 fatal 이 아니다 — UI 는 "제품 정보가 없어요" 카드를 보여주고
     /// 다음 진입 시 재시도된다.
     func fetchProducts() async {
@@ -247,7 +245,7 @@ final class SubscriptionManager: ObservableObject {
             // ⚠ **이 결제가 누구 것인지 스토어에 새긴다**(2026-08-18 Codex #697 P1).
             // 애플은 끝내지 않은 트랜잭션을 재전달하므로, 서버 확정에 실패한 채 같은
             // 기기에서 다른 계정으로 로그인하면 그 트랜잭션이 **새 세션의 토큰으로** 다시
-            // 올라간다 — 서버가 대조할 값이 없으면 나중 계정이 구독·선물을 가져간다.
+            // 올라간다 — 서버가 대조할 값이 없으면 나중 계정이 구독을 가져간다.
             // 안드로이드는 `setObfuscatedAccountId(sha256(userId))` 로 처음부터 했다.
             // 애플은 해시가 아니라 **UUID 만** 받으므로 사용자 id 를 그대로 싣는다.
             let accountToken = authProvider()?.user.id.nilIfBlank.flatMap(UUID.init(uuidString:))
@@ -268,10 +266,9 @@ final class SubscriptionManager: ObservableObject {
             //   띄우지 않고 **그 옛것을 그대로** 돌려준다(로그: preflight→confirm 0.2초, 서버는
             //   400 `SUBSCRIPTION_EXPIRED`). 사용자는 버튼을 눌렀는데 아무 일도 없이 무료로
             //   남고, 한 번 더 눌러야 진짜 시트가 떴다 — "한 번에 안 된다" 의 정체다.
-            //   그래서 옛것은 **여기서 끝내고**(구독이라 잃는 것이 없다 — `mayFinish` 주석),
-            //   진짜 결제를 **한 번만** 다시 요청한다.
-            if plan.isSubscription,
-               case .success(let staleResult) = result,
+            //   그래서 옛것은 **여기서 끝내고**(구독이라 잃는 것이 없다 — `currentEntitlements` 에
+            //   남는다), 진짜 결제를 **한 번만** 다시 요청한다.
+            if case .success(let staleResult) = result,
                let stale = try? checkVerified(staleResult),
                let expiry = stale.expirationDate, expiry <= Date() {
                 await stale.finish()
@@ -281,10 +278,10 @@ final class SubscriptionManager: ObservableObject {
             case .success(let verificationResult):
                 let transaction = try checkVerified(verificationResult)
                 let outcome = await syncWithBackend(transaction: transaction)
-                // ⚠ 무조건 finish 하지 말 것 — `mayFinish` 주석 참조.
-                if Self.mayFinish(productID: transaction.productID, serverConfirmed: outcome.confirmed) {
-                    await transaction.finish()
-                }
+                // 확정 여부와 무관하게 끝낸다 — 구독은 `currentEntitlements` 에 남아 다음 동기화가
+                // 따라잡는다. ⚠ 확정 전에는 끝내지 않던 선물(소모성) 갈래는 2026-10-14 에 없앴다
+                // (App Store 지침 3.1.1 두 번째 반려 — 되살리지 말 것, 할인·무료 이용은 스토어 오퍼 코드).
+                await transaction.finish()
                 await refreshPurchasedProducts()
                 // ⚠ **서버가 거절했으면 성공이라고 말하지 않는다**(코덱스 #733 5차).
                 //   구독 갈래는 확정 여부와 무관하게 `.success` 를 돌려주는데, 그건
@@ -294,15 +291,7 @@ final class SubscriptionManager: ObservableObject {
                 if let rejection = outcome.rejection {
                     return .failure(reason: rejection)
                 }
-                guard plan.isSubscription || outcome.confirmed else {
-                    // 결제는 됐지만 발급을 확인하지 못했다. **성공이라고 말하지 않는다** —
-                    // 트랜잭션을 안 끝냈으므로 다음 실행에서 `Transaction.updates` 가
-                    // 다시 물어다 주고 리스너가 재시도한다.
-                    return .failure(
-                        reason: String(localized: "결제는 완료됐지만 선물 코드 발급을 확인하지 못했어요. 앱을 다시 열면 자동으로 다시 시도해요.")
-                    )
-                }
-                // ⚠ **구독도 서버가 확정해야 '완료' 다**(2026-09-19 운영 로그). 예전에는 확정이
+                // ⚠ **서버가 확정해야 '완료' 다**(2026-09-19 운영 로그). 예전에는 확정이
                 //   403/400 으로 막혀도 「결제가 완료되었어요」 를 띄웠다. 그런데 유료 기능은
                 //   서버의 `users.plan` 이 열어 주므로, 사용자는 성공 문구를 본 직후
                 //   「해당 기능은 유료 이용권에서 사용할 수 있어요」 를 만났다.
@@ -523,7 +512,7 @@ final class SubscriptionManager: ObservableObject {
     }
 
     /// ⚠ **등급 계산을 여기 말고 다른 데 또 쓰지 말 것.** 배경 경로가 인스턴스 없이 써야 해서
-    /// 정적으로 뽑았을 뿐, 규칙(계정 필터·선물 제외·만료 수집)은 여기 하나다 —
+    /// 정적으로 뽑았을 뿐, 규칙(계정 필터·모르는 상품 제외·만료 수집)은 여기 하나다 —
     /// 복제하면 두 경로가 갈라진다(이 저장소에서 반복된 사고다).
     /// 스토어 신호를 **캐시에 쓰는 순서**. 전경 인스턴스 경로와 배경 정적 경로가 함께 쓴다.
     ///
@@ -547,10 +536,10 @@ final class SubscriptionManager: ObservableObject {
             }
             if transaction.appAccountToken != currentAccount { continue }
             scan.productIDs.insert(transaction.productID)
+            // 모르는 상품은 등급을 올리지 않는다. ⚠ 없앤 선물(소모성) 상품도 여기서 걸러진다 —
+            // 선물하기는 2026-10-14 App Store 지침 3.1.1 두 번째 반려로 없앴고 되살리지 않는다
+            // (할인·무료 이용은 스토어 오퍼 코드). 남은 상품은 전부 본인 구독이다.
             guard let plan = SubscriptionProduct(rawValue: transaction.productID) else { continue }
-            // ⚠ **선물 구매는 구매자의 등급을 올리지 않는다.** 사서 남에게 주는 코드라
-            // 본인 권한이 아니다 — 없으면 선물을 산 무료 사용자의 유료 기능이 열린다.
-            guard plan.isSubscription else { continue }
             if let expires = transaction.expirationDate, expires > (scan.latestExpiry ?? .distantPast) {
                 scan.latestExpiry = expires
             }
@@ -630,23 +619,17 @@ final class SubscriptionManager: ObservableObject {
                     //   때마다 다시 배달한다 — 실제로 한 기기에 미완료 20건이 쌓였고, 그
                     //   계정이 **탈퇴로 사라진 뒤에는** 아무도 그걸 끝낼 수 없었다.
                     //   판정은 서버가 한다(주인이 살아 있으면 403, 사라졌으면 이어받는다 —
-                    //   `routes/billing-apple.ts`). 그래서 **보내 보고**, 구독은 결과와
-                    //   무관하게 끝낸다(아래 `mayFinish` 주석: 구독은 `currentEntitlements`
-                    //   에 남아 다음 동기화가 따라잡는다). 소모성 선물만 확정 전까지 남긴다.
+                    //   `routes/billing-apple.ts`). 그래서 **보내 보고**, 결과와 무관하게
+                    //   끝낸다 — 구독은 `currentEntitlements` 에 남아 다음 동기화가 따라잡는다.
                     //   배경 경로라 실패 문구는 띄우지 않는다 — 결제한 적 없는 사용자에게
                     //   "동기화 실패" 가 상시로 뜨던 이유가 그것이었다.
-                    let outcome = await self.syncWithBackend(
+                    await self.syncWithBackend(
                         transaction: transaction,
                         surfacesError: isRevoked || maySend
                     )
-                    // ⚠ 여기도 같은 규칙이다 — 확정 못 한 소모성 선물은 끝내지 않는다.
-                    // 그래야 다음 실행에서 `Transaction.updates` 가 다시 물어다 준다.
-                    if await SubscriptionManager.mayFinish(
-                        productID: transaction.productID,
-                        serverConfirmed: outcome.confirmed
-                    ) {
-                        await transaction.finish()
-                    }
+                    // ⚠ 확정 전에는 끝내지 않던 소모성 선물 갈래는 2026-10-14 에 없앴다(App Store 지침
+                    //   3.1.1 두 번째 반려 — 되살리지 말 것, 할인·무료 이용은 스토어 오퍼 코드).
+                    await transaction.finish()
                     await self.refreshPurchasedProducts()
                 } catch {
                     // 검증 실패 — Apple JWS 서명이 무효한 트랜잭션. 무시.
@@ -690,8 +673,7 @@ final class SubscriptionManager: ObservableObject {
     ///
     /// 클라가 보내는 것은 transaction id 하나뿐이다 —
     /// 상품·만료·환불은 서버가 애플에 직접 물어본 응답이 권위다.
-    /// ⚠ 반환값을 무시하지 말 것 — 소모성 선물은 `confirmed` 가 false 면 `finish()` 하면
-    /// 안 된다(`mayFinish` 주석 참조).
+    /// 반환값은 구매 경로가 '완료' 라고 말해도 되는지 가르는 데 쓴다(`purchase`).
     @discardableResult
     private func syncWithBackend(
         transaction: Transaction,
@@ -739,8 +721,8 @@ final class SubscriptionManager: ObservableObject {
             //   `plan_changed` 푸시를 놓치면 다음 갱신까지 `PaidVoiceGate` 가 유료 목소리를
             //   계속 내준다 — 서버는 이미 회수했는데.
             //   그래서 **여기서 권위 상태를 다시 읽는다.** 반환은 false 가 맞다(권한을 얻지
-            //   못했다). 구독이라 `mayFinish` 가 트랜잭션을 끝내는 것도 맞다 — 환불된
-            //   트랜잭션은 재시도해도 결과가 같다.
+            //   못했다). 호출부가 트랜잭션을 끝내는 것도 맞다 — 환불된 트랜잭션은
+            //   재시도해도 결과가 같다.
             await onServerEntitlementUpdated?()
             PendingRevokedTransactionStore.remove(transactionID)
             return .notConfirmed
@@ -786,24 +768,12 @@ final class SubscriptionManager: ObservableObject {
         }
     }
 
-    /// 이 트랜잭션을 **지금 `finish()` 해도 되는가.**
-    ///
-    /// ⚠ **소모성 선물은 서버가 확정하기 전에 finish 하면 영구히 잃는다**(2026-08-18
-    /// Codex #697 P1). 애플은 소모성 상품을 `Transaction.currentEntitlements` 에 남기지
-    /// 않으므로, finish 한 뒤에는 `resyncEntitlements`·`refreshPurchasedProducts` 가
-    /// **절대 찾지 못한다** — 돈은 나갔는데 바우처가 없고 되찾을 길이 없다.
-    /// 예전에는 `syncWithBackend` 가 실패를 삼키고 그대로 finish 해서, 일시적 네트워크
-    /// 오류 한 번이 그 결과를 만들었다(게다가 `purchase()` 는 성공을 돌려줬다).
-    ///
-    /// 자동갱신 구독은 **반대다.** `currentEntitlements` 에 남아 있으므로 finish 해도
-    /// 다음 동기화가 따라잡는다 — 오히려 안 끝내면 스토어가 계속 되돌려 준다.
-    ///
-    /// 모르는 productID 는 finish 한다. 끝내지 않으면 영영 다시 배달되는데, 우리가
-    /// 처리할 수 없는 상품이라 재시도해도 결과가 같다.
-    nonisolated static func mayFinish(productID: String, serverConfirmed: Bool) -> Bool {
-        guard let plan = SubscriptionProduct(rawValue: productID) else { return true }
-        return plan.isSubscription || serverConfirmed
-    }
+    // ⚠ **`mayFinish`(확정 전에는 끝내지 않는 갈래)를 되살리지 말 것**(2026-10-14).
+    //   소모성 선물 상품 하나를 위한 규칙이었다 — 소모성은 `currentEntitlements` 에 남지 않아
+    //   확정 전에 끝내면 코드를 영영 못 받았다(2026-08-18 Codex #697 P1). 선물하기는 App Store
+    //   지침 3.1.1 두 번째 반려로 서버·두 앱에서 없앴다. 할인·무료 이용은 스토어 오퍼 코드로 준다.
+    //   남은 상품은 전부 자동 갱신 구독이라 구매·리스너·재전송 세 경로 모두 확정 여부와 무관하게
+    //   끝낸다 — 안 끝내면 스토어가 계속 되돌려 준다. 모르는 상품(옛 선물 트랜잭션)도 끝낸다.
 
     nonisolated static func userFacingPurchaseError(_ error: Error, fallback: String) -> String {
         userFacingErrorMessage(error, fallback: fallback)

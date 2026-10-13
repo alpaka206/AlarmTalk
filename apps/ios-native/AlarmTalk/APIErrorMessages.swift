@@ -75,7 +75,7 @@ enum APIErrorMessages {
         case "VOICE_FEATURE_REQUIRES_PAID_PLAN":
             return PaidGateCopy.message
         case "VOICE_LOCKED_FREE_PLAN":
-            return String(localized: "무료 이용권으로 바뀌어 이 목소리를 쓸 수 없어요. 이용권을 다시 등록하면 돌아와요.")
+            return String(localized: "무료 이용권으로 바뀌어 이 목소리를 쓸 수 없어요. 이용권을 다시 구독하면 돌아와요.")
         case "FREE_PLAN_PRESET_ONLY", "BASIC_VOICE_PRESET_ONLY":
             return String(localized: "기본 목소리는 준비된 문구로만 말할 수 있어요. 직접 입력한 문구로 깨우려면 내 목소리를 골라 주세요.")
         case "MANUAL_TTS_QUOTA_EXCEEDED":

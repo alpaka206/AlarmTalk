@@ -27,9 +27,10 @@ struct RootView: View {
 
     // ⚠ **웰컴 코드 안내 시트를 되살리지 말 것**(2026-09-27 폐지). 무료 계정에 계정당 한 번
     // 쿠폰 입력을 권하던 시트였는데, 기간 한정 개인 플랜으로 무료 계정이 전부 개인이 되면서
-    // 권할 이유가 사라졌고 운영 코드도 전부 꺼졌다. 프로모 코드 자체도 2026-10-12 에 없앴다(App Store
-    // 지침 3.1.1). 남은 코드 입력은 선물·초대 코드뿐이다 — 더보기의 코드 등록(`CodeRegisterRow`)과
-    // 유료 게이트의 '선물·초대 코드가 있어요'(`RedeemCodeSheet`).
+    // 권할 이유가 사라졌고 운영 코드도 전부 꺼졌다. 프로모 코드 자체도 2026-10-12 에, 선물 코드와 유료
+    // 게이트의 코드 입력은 2026-10-14 에 없앴다(App Store 지침 3.1.1 — 두 번째 반려, 되살리지 말 것).
+    // 남은 코드 입력은 커플·가족 초대 코드 하나이고 자리는 더보기의 초대 코드 등록(`CodeRegisterRow`)
+    // 하나다. 할인·무료 이용은 스토어 오퍼 코드로 준다.
     @State private var downgradeNotice: DowngradeNoticeStore.Notice?
 
     /// 이 프로세스에서 앱에 들어온 횟수(콜드 스타트 = 1, 백그라운드 → 활성마다 +1). **읽기만
@@ -493,11 +494,15 @@ struct RootView: View {
     private func downgradeNoticeMessage(_ notice: DowngradeNoticeStore.Notice) -> LocalizedStringKey {
         switch notice.cause {
         case .freePlan:
-            return "목소리 알람 \(notice.count)개가 기본 목소리로 바뀌었어요. 3일 안에 이용권을 다시 등록하면 내 목소리가 돌아오고, 지나면 영구 삭제돼요."
+            return "목소리 알람 \(notice.count)개가 기본 목소리로 바뀌었어요. 3일 안에 이용권을 다시 구독하면 내 목소리가 돌아오고, 지나면 영구 삭제돼요."
         case .voiceReplaced:
             return "목소리를 새로 등록하면서 직접 입력한 문구로 만든 알람 \(notice.count)개가 기본 목소리로 바뀌었어요. 새 목소리로 문구를 다시 만들어 주세요."
         case .sharedReleased:
-            return "공유받던 목소리가 끊겨서 알람 \(notice.count)개가 기본 목소리로 바뀌었어요. 다시 쓰려면 이용권을 등록하거나 새 초대 코드를 받아야 해요."
+            // ⚠ 돌아오는 길로 **코드를 내밀지 말 것**(2026-10-14, App Store 지침 3.1.1). 예전 끝 문장은 "이용권을
+            //   등록하거나 새 초대 코드를 받아야 해요" 였다. 구독해도 남의 목소리는 돌아오지 않는다 — 공유 목소리는
+            //   지금 그룹의 구성원이 공유한 것만 보인다(`voice-profile.ts`). 그래서 끝 문장은 '다시 공유받아야 한다'
+            //   하나다(안드로이드 `downgrade_notice_shared_message` 와 같다).
+            return "공유받던 목소리가 끊겨서 알람 \(notice.count)개가 기본 목소리로 바뀌었어요. 다시 쓰려면 그 목소리를 다시 공유받아야 해요."
         }
     }
 

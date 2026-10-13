@@ -3,8 +3,11 @@ import Foundation
 /// 코드 등록 실패를 사유별로 현재 앱 언어에 맞춰 표시한다.
 /// 안드로이드 `codeRegistrationFailureMessage`와 같은 코드·문구를 쓴다.
 /// 서버 원문 대신 화면 전용 표 또는 호출부의 고정 폴백을 쓴다.
-/// 바우처(선물·초대)와 가족 초대 갈래를 한 표에 둔다. 프로모 코드 갈래는 2026-10-12 에 없앴다
+/// 초대 바우처(`INV-`)와 가족 초대 갈래를 한 표에 둔다. 프로모 코드 갈래는 2026-10-12 에 없앴다
 /// (App Store 지침 3.1.1 — 서버가 더는 받지 않는다).
+///
+/// ⚠ **선물 코드 갈래(`INVALID_GIFT_PLAN`)를 되살리지 말 것**(2026-10-14, 같은 지침 3.1.1 두 번째 반려).
+/// 서버는 `INV-` 가 아닌 코드를 전부 `CODE_NOT_FOUND` 로 돌려준다. 할인·무료 이용은 스토어 오퍼 코드로 준다.
 enum CodeRegistrationError {
 
     /// - Parameters:
@@ -21,10 +24,10 @@ enum CodeRegistrationError {
     /// 안드로이드 `msg2_code_fail_*` 와 **같은 문구**다.
     /// 한쪽만 고치지 말 것 — 같은 실패를 두 플랫폼이 다르게 설명하게 된다.
     private static var table: [String: String] { [
-        // 바우처(선물·초대) 갈래
+        // 초대 바우처(`INV-`) 갈래
         "CODE_REQUIRED": String(localized: "코드를 입력해 주세요"),
         "INVALID_FORMAT": String(localized: "코드 형식을 확인해 주세요"),
-        "CODE_NOT_FOUND": String(localized: "잘못된 코드입니다."),
+        "CODE_NOT_FOUND": String(localized: "잘못된 코드예요"),
         "CODE_EXPIRED": String(localized: "만료된 코드예요"),
         "CODE_ALREADY_USED": String(localized: "이미 사용된 코드예요"),
         "CODE_ALREADY_REDEEMED_BY_YOU": String(localized: "이미 등록한 코드예요"),
@@ -32,7 +35,6 @@ enum CodeRegistrationError {
         "SELF_ISSUED": String(localized: "본인이 발급한 코드는 등록할 수 없어요"),
         "SELF_ACCEPT": String(localized: "본인이 발급한 코드는 등록할 수 없어요"),
         "GROUP_FULL": String(localized: "이미 정원이 찬 코드예요"),
-        "INVALID_GIFT_PLAN": String(localized: "코드와 이용권 종류가 맞지 않아요"),
         "INVALID_INVITE_PLAN": String(localized: "코드와 이용권 종류가 맞지 않아요"),
         "PLAN_NOT_FOUND": String(localized: "코드의 이용권 정보를 찾지 못했어요"),
         "USER_NOT_FOUND": String(localized: "로그인 정보를 다시 확인해 주세요"),

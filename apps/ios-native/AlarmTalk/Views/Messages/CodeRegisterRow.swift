@@ -1,10 +1,10 @@
 // ⚠ **파일 이름이 `VoiceMessagePanel` 이었다 — 내용과 달랐다**(2026-08-12 개명).
 // 음성 메시지 기능은 오래전에 없어졌는데 껍데기 이름만 남아, "음성 메시지 잔존물" 을
-// 찾을 때 **살아 있는 코드 등록 UI 가 삭제 후보로 잡혔다.** 실제 내용은 이용권 코드 등록
+// 찾을 때 **살아 있는 코드 등록 UI 가 삭제 후보로 잡혔다.** 실제 내용은 초대 코드 등록
 // 행(`PeoplePanel` 이 쓴다)이다.
 import SwiftUI
 
-/// 가족 초대 코드 / 이용권 코드 등록 행.
+/// 커플·가족 이용권 초대 코드 등록 행 — 앱에서 코드를 넣는 **유일한 자리**다.
 ///
 /// ContentView 의 `codeRegisterRow` 를 옮긴 것. PeoplePanel 에서 사용한다.
 struct CodeRegisterRow: View {
@@ -49,30 +49,33 @@ struct CodeRegisterRow: View {
                         showCodeInputs = true
                     }
                 } label: {
-                    Text(isSharedMember ? String(localized: "나가고 등록하기") : String(localized: "다른 코드 등록"))
+                    Text(isSharedMember ? String(localized: "나가고 등록하기") : String(localized: "초대 코드 등록"))
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.bordered)
                 .foregroundStyle(isSharedMember ? AlarmTalkTheme.error : AlarmTalkTheme.text)
                 .disabled(socialFeatures.isBusy)
             } else {
+                // 받는 코드는 초대 코드 하나뿐이라 등록하면 무엇이 되는지도 하나다 — 이용권 이름으로 갈래를
+                // 나누지 않는다(예전 "등록하면 현재 … 이용권이 변경돼요" 두 벌을 한 문장으로 합쳤다).
                 if hasActivePlan {
-                    Text(planChangeDescription)
+                    Text(String(localized: "초대 코드를 등록하면 초대한 사람의 커플·가족 이용권에 함께해요."))
                         .font(.footnote)
                         .foregroundStyle(AlarmTalkTheme.textSecondary)
                 }
 
                 // ⚠ **입력창은 하나다.** 예전에는 '초대 코드'(INV-…)와 '이용권 코드'(GIFT-…)로
                 // 나뉘어 있었는데, 서버는 처음부터 한 엔드포인트(`POST /code/register`)로 종류를
-                // **한 번에 판별**한다. 받는 사람은 자기 코드가 어떤 종류인지 모른다 — 그건 서버가 안다.
-                // 안드로이드도 한 칸이다(`ui/social/SocialPanels.kt` 의 "통합 입력" 주석과 `CodeRedeemField`).
-                // ⚠ **프로모션 코드는 없다**(2026-10-12). 1.2.11 이 App Store 지침 3.1.1(인앱 결제 외 수단으로
-                // 유료 기능 해제)로 반려돼 서버·두 앱에서 지웠다. 받는 것은 스토어 결제에서 나온 선물·초대
-                // 코드뿐이다 — 문구에 '프로모션'·'쿠폰' 을 되살리지 말 것.
-                Text(String(localized: "코드 입력"))
+                // **한 번에 판별**한다. 안드로이드도 한 칸이다(`ui/social/SocialPanels.kt` 의 `CodeRedeemField`).
+                // ⚠ **받는 것은 커플·가족 이용권의 초대 코드(`INV-`)뿐이다.** 프로모션 코드는 2026-10-12
+                // (1.2.11 반려), 선물 코드는 2026-10-14(1.2.12 반려)에 서버·두 앱에서 지웠다 — 둘 다 App Store
+                // 지침 3.1.1(인앱 결제 외 수단으로 유료 기능 해제)이다. 초대 코드는 그룹 주인이 이미 결제한
+                // 이용권에 합류하는 것이라 남는다. 문구에 '선물'·'프로모션'·'쿠폰' 을 되살리지 말 것 —
+                // 할인·무료 이용은 스토어 오퍼 코드로 준다.
+                Text(String(localized: "초대 코드 입력"))
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(AlarmTalkTheme.text)
-                Text(String(localized: "초대 코드와 이용권 선물 코드를 등록할 수 있어요."))
+                Text(String(localized: "커플·가족 이용권 초대 코드를 등록할 수 있어요."))
                     .font(.footnote)
                     .foregroundStyle(AlarmTalkTheme.textSecondary)
                 HStack(spacing: 8) {
@@ -80,7 +83,7 @@ struct CodeRegisterRow: View {
                     // 거기서 값을 바꿔도 `TextField` 가 제 내부 상태를 그대로 들고 있어
                     // **화면에는 친 그대로 남는다** — 소문자도 한글도 그대로 보이다가
                     // 제출할 때에야 바뀐다(2026-08-13 지적). `onChange` 로 고쳐야 반영된다.
-                    TextField(String(localized: "초대·선물 코드"), text: $codeDraft)
+                    TextField(String(localized: "초대 코드"), text: $codeDraft)
                     // ⚠ **`.keyboardType(.asciiCapable)` 로 키보드를 바꾸지 말 것**(2026-08-13 지시).
                     // 쓰던 키보드가 갑자기 다른 언어로 바뀌면 당황스럽다 — 막을 것은 키보드가
                     // 아니라 **들어가는 글자**다. 아래 `onChange` 가 친 즉시 걸러 낸다.
@@ -184,7 +187,7 @@ struct CodeRegisterRow: View {
                         // 실패 사유는 **입력창 밑**에서 말한다 — 틀린 값 바로 옆이라야 읽힌다.
                         // 입력은 그대로 두므로 `onChange` 가 깨지 않는다.
                         await MainActor.run {
-                            codeError = socialFeatures.statusMessage ?? String(localized: "잘못된 코드입니다.")
+                            codeError = socialFeatures.statusMessage ?? String(localized: "잘못된 코드예요")
                             socialFeatures.statusMessage = nil
                         }
                     }
@@ -220,23 +223,26 @@ struct CodeRegisterRow: View {
         socialFeatures.subscription?.subscription != nil
     }
 
+    /// ⚠ **"이용권이 끝난 다음 등록할 수 있다" 고 쓰지 말 것** — 사실이 아니다. 바로 아래 버튼('초대 코드 등록'·
+    /// '나가고 등록하기')이 지금 등록하는 길이고, 서버도 "받는 사람에게 활성 구독이 있어도 거절하지 않는다"
+    /// (`docs/spec/plan-gates.md`). 지금 무엇을 쓰는지만 말한다.
     private var activePlanDescription: String {
         if let activePlanName {
-            return String(localized: "\(activePlanName) 이용권 사용 중이에요. 등록은 이용권이 종료된 다음 가능해요.")
+            return String(localized: "\(activePlanName) 이용권을 쓰는 중이에요.")
         }
-        return String(localized: "현재 이용권 사용 중이에요. 등록은 이용권이 종료된 다음 가능해요.")
+        return String(localized: "지금 이용권을 쓰는 중이에요.")
     }
 
-    private var planChangeDescription: String {
-        if let activePlanName { return String(localized: "등록하면 현재 \(activePlanName) 이용권이 변경돼요.") }
-        return String(localized: "등록하면 현재 이용권이 변경돼요.")
-    }
-
+    /// 등록 확인 알럿의 부가 설명 — 이용권을 쓰는 중일 때만 붙는다.
+    ///
+    /// ⚠ **"지금 이용권이 끝난다" 로만 말하지 말 것.** 서버는 지금 이용권의 **구독 행만** 정리하고
+    /// (`cancelActiveSubscriptionsForUser`) 초대한 사람의 그룹에 넣는다. App Store 구독은 서버가 끊을 수 없어
+    /// (`docs/spec/billing-lifecycle.md`) 사용자가 해지하지 않으면 결제가 이어진다 — 그래서 해지할 곳을 함께 말한다.
     private var planReplacementDescription: String {
         if let activePlanName {
-            return String(localized: "등록 가능한 코드라면 현재 \(activePlanName) 이용권은 종료되고 새 이용권으로 바뀌어요.")
+            return String(localized: "등록되면 초대한 사람의 커플·가족 이용권으로 옮겨 가요. 지금 쓰는 \(activePlanName) 이용권을 App Store에서 구독 중이라면, 결제를 멈추려면 App Store에서 해지해 주세요.")
         }
-        return String(localized: "등록 가능한 코드라면 현재 이용권은 종료되고 새 이용권으로 바뀌어요.")
+        return String(localized: "등록되면 초대한 사람의 커플·가족 이용권으로 옮겨 가요. 지금 이용권을 App Store에서 구독 중이라면, 결제를 멈추려면 App Store에서 해지해 주세요.")
     }
 }
 
