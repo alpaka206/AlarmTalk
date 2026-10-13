@@ -2,10 +2,13 @@
 
 Play Console 의 "이 출시의 새로운 기능" 과 App Store Connect 의 "이 버전의 새로운 기능" 에
 그대로 붙여 넣는 원문. **세 언어(ko/en/ja)를 항상 함께 쓴다** — App Store 도 en-US·ja 현지화가
-있다([`app-store-listing.md`](app-store-listing.md)). 언어당 **500자 제한**이라
-길이를 넘기지 말 것. 지원 언어는 앱의 `resourceConfigurations`(ko/en/ja)와 같다.
+있다([`app-store-listing.md`](app-store-listing.md)). 지원 언어는 앱의 `resourceConfigurations`(ko/en/ja)와 같다.
 
-길이는 눈대중하지 말고 재고, **줄바꿈이 CRLF 로 세어질 여지까지 감안해 여유를 남긴다**
+상한은 스토어마다 다르다 — **Play 는 언어당 500자**, App Store Connect 의 '이 버전의 새로운 기능' 은 **4000자**다.
+⚠ 1.2.12 까지는 App Store 칸도 500자라고 잘못 알고 App Store 문안을 줄이거나 줄을 뺐다(1.2.11·1.2.12 절의 '영어 500자'
+설명). 그 절들은 이력이라 그대로 두고, 1.2.13 부터는 App Store 문안을 500자에 맞춰 줄이지 않는다.
+
+길이는 눈대중하지 말고 재고, Play 문안은 **줄바꿈이 CRLF 로 세어질 여지까지 감안해 여유를 남긴다**
 (영어는 한 줄이 길어 금방 490자를 넘긴다):
 
 ```bash
@@ -21,6 +24,86 @@ node -e "const m=require('fs').readFileSync('docs/product/release-notes.md','utf
 
 ---
 
+## 1.2.13 (versionCode 33 / iOS 빌드 10)
+
+선물 코드 폐지. iOS 1.2.12(빌드 9)가 App Store 심사 지침 3.1.1 로 다시 반려돼(2026-10-12 — 이번 사유는 선물 코드) 고친
+판이다. 개인 이용권 선물(1회성 상품 결제 → GIFT- 코드)을 서버·두 앱에서 지웠고, 유료 게이트의 코드 입력도 없앴다
+(`docs/spec/plan-gates.md` 「선물 코드 — 폐지」). 버전 계획과 순서는 `docs/qa/dev-test-handoff.md` 2026-10-14 절.
+
+- **Play**: 아래 한 줄만 낸다. 31(1.2.11)·32(1.2.12) 어느 쪽에서 올라와도 맞는 문장이다 — 1.2.12 의 Play 줄("선물 코드와
+  초대 코드만 받습니다")은 이제 틀린 말이라 다시 쓰지 않는다.
+- **App Store**: 1.2.11·1.2.12 는 게재된 적이 없다 — iOS 사용자는 1.2.10 에서 곧바로 1.2.13 으로 온다. 그래서 App Store
+  레코드에 실려 있는 1.2.11 문안(아래 1.2.11 의 뒤 세 블록)을 **한 글자도 바꾸지 않고** 쓰고, 끝에 같은 선물 줄 하나만
+  더한다. App Store 칸은 4000자라 줄일 까닭이 없다(이 절의 첫 판은 500자로 잘못 알고 영어 두 줄을 줄였었다).
+- 선물 줄은 기능을 **없앴다고만** 말한다. 코드 칸·코드 등록 이야기는 어느 블록에도 쓰지 않는다 — 심사가 문제 삼은 것이
+  코드로 여는 길이라 스토어 문구는 그쪽을 가리키지 않는다(`plan-gates.md` 같은 절의 규칙). 초대 코드는 스토어 설명의
+  커플·가족 줄에서 "한 사람이 구독하고 초대 코드로 그 이용권에 들인다" 로만 말한다.
+
+### Play (Android 33)
+
+길이 ko 30 · en 47 · ja 25.
+
+### ko-KR
+
+```
+• 개인 이용권 선물하기를 더 이상 제공하지 않습니다.
+```
+
+### en-US
+
+```
+• Gifting a Personal plan is no longer offered.
+```
+
+### ja-JP
+
+```
+• パーソナルプランのギフトは提供を終了しました。
+```
+
+### App Store (iOS 1.2.13 빌드 10)
+
+길이 ko 403 · en 542 · ja 364(CRLF 로 세면 409 · 548 · 370) — 1.2.11 App Store 블록(372 · 494 · 338)에 한 줄을 더한 값이다.
+App Store 칸의 상한은 4000자다(맨 위).
+
+### ko-KR
+
+```
+• 목소리를 등록할 때 '톤 조절'로 목소리 높이를 맞출 수 있습니다. '원본 듣기'와 '현재 톤 듣기'로 비교하며 고릅니다.
+• 쓰던 목소리를 더 쓸 수 없게 된 알람(이용권 종료·목소리 삭제·공유 해제)은 이제 알람음이 아니라 기본 목소리 '미나'로 울립니다.
+• 목소리 등록의 '목소리 느낌' 선택을 없앴습니다. 알람 문구는 등록한 녹음의 말투를 따릅니다.
+• 날씨 지역 목록이 대한민국·일본·미국의 지역으로 넓어졌고, 직접 입력은 없어졌습니다.
+• 영어·일본어 화면에 한국어로 남아 있던 곳을 번역했습니다.
+• 이메일 인증 코드가 거절되거나, 이번 달 목소리 등록을 이미 마쳤거나, 녹음에 말소리가 거의 없어 등록할 수 없을 때 그 이유를 바로 알려 줍니다.
+• 개인 이용권 선물하기를 더 이상 제공하지 않습니다.
+```
+
+### en-US
+
+```
+• New Tone slider for voice registration: compare "Play original" and "Play current tone".
+• Alarms whose voice becomes unavailable now ring in the default voice Mina, not an alarm sound.
+• Voice feel is gone; messages follow your recording's style.
+• Weather regions now cover South Korea, Japan and the US; manual entry is gone.
+• Translated leftover Korean text.
+• Clearer messages when a verification code is refused, the monthly voice limit is reached, or a recording has almost no speech.
+• Gifting a Personal plan is no longer offered.
+```
+
+### ja-JP
+
+```
+• 声を登録するときに「トーン調整」で声の高さを合わせられます。「元の声を聞く」と「今のトーンで聞く」で聞き比べて選びます。
+• 使っていた声が使えなくなったアラーム(利用券の終了・声の削除・共有の解除)は、アラーム音ではなく基本の声「ミナ」で鳴るようになりました。
+• 声の登録時の「声の雰囲気」の選択をなくしました。アラーム文言は登録した録音の話し方に合わせます。
+• 天気の地域リストが韓国・日本・アメリカの地域に広がり、直接入力はなくなりました。
+• 英語・日本語の画面で韓国語のまま残っていた箇所を翻訳しました。
+• 認証コードが受け付けられなかったとき、今月の声の登録が済んでいるとき、録音に話し声がほとんどなく登録できないときに、その理由をすぐにお知らせします。
+• パーソナルプランのギフトは提供を終了しました。
+```
+
+---
+
 ## 1.2.12 (versionCode 32 / iOS 빌드 9)
 
 프로모 코드 폐지. iOS 1.2.11(빌드 8)이 App Store 심사 지침 3.1.1 로 반려돼(2026-10-12) 고친 판이다. 코드 칸은
@@ -30,6 +113,8 @@ node -e "const m=require('fs').readFileSync('docs/product/release-notes.md','utf
 - **App Store**: 1.2.11 은 게재된 적이 없다 — iOS 사용자는 1.2.10 에서 곧바로 1.2.12 로 온다. 그래서 아래 1.2.11 의
   App Store 문안(뒤 세 블록)을 **그대로** 쓴다. 코드 칸 문구 변화는 적지 않는다(영어 500자에 자리가 없다).
 - **Play**: 1.2.11 이 게재돼 있다. 아래 한 줄만 낸다.
+- ⚠ **(2026-10-14 덧붙임)** iOS 1.2.12 도 같은 지침 3.1.1 로 반려됐다 — 이번 사유는 선물 코드다. 그래서 위 '선물·초대 코드만
+  받는다' 는 1.2.13 에서 틀린 말이 됐다(선물 코드 폐지 — 위 1.2.13 절). 이 절의 문안은 다시 쓰지 않는다.
 
 ### Play (Android 32)
 

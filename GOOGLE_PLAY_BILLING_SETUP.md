@@ -44,7 +44,7 @@
 이 매핑이 정의된 곳 (변경 시 **3곳을 같이** 맞춰야 한다 — 의도된 다중 진실 공급원, 서로 주석으로 교차참조됨):
 
 1. **Android** — `…/billing/PlayBillingManager.kt` `PlayBillingProducts` (+ `productIdFor()`)
-2. **백엔드(Google)** — `…/routes/billing-google.ts` `GOOGLE_PRODUCT_TO_PLAN_KEY`
+2. **백엔드(Google)** — `…/lib/play-subscriptions.ts` `googlePlanKeyFromProductId`(`routes/billing-google.ts` 가 다시 내보낸다)
 3. **DB plans 시드** — `…/lib/migrations.ts` (planKey·price_krw·max_members)
 
 > 새 플랜을 추가하려면: ① 위 1~3에 planKey 추가 → ② Play Console에 `{planKey}_monthly` 상품 생성.
@@ -59,14 +59,17 @@
 2. **구독 상품 3개 생성** — *Monetize → Products → Subscriptions*:
    - 상품 ID: `personal_monthly`, `couple_monthly`, `family_monthly` (위 표와 **철자 동일**, 자동갱신 구독)
    - 각 상품에 **base plan(월간, auto-renewing)** + **가격**(아래 §4) 설정 후 **활성화(Active)**.
-3. **선물 상품 1개 생성** — *Monetize → Products → **In-app products*** (구독 아님):
-   - 상품 ID: **`personal_gift_1m`**, 유형 **일회성(one-time / consumable)**, 가격 **₩3,900**.
-   - ⚠ **구독으로 만들지 말 것.** 자동갱신 구독은 남에게 줄 수 없어서(스토어가 구매자
-     계정에 묶는다), 선물은 1회성 상품을 팔고 그 대금으로 **바우처 코드**를 발급한다.
-     서버가 `GOOGLE_GIFT_PRODUCT_IDS`(`routes/billing-google.ts`)로 갈라 구독 갈래를
-     타지 않게 한다 — 구독으로 만들면 구매자 본인이 이용권을 받게 된다.
-   - 발급 바우처의 유효기간은 **받는 사람이 등록할 때까지의 기한**(30일)이고, 등록한
-     시점부터 개인 플랜 1개월이 시작된다.
+3. ⚠ **선물 상품(`personal_gift_1m`, 일회성 인앱 상품)은 만들지 않는다 — 2026-10-14 폐지, 되살리지 말 것.**
+   iOS 1.2.12 가 App Store 심사 지침 3.1.1 로 두 번째 반려됐다("선물 코드로 디지털 기능을 연다"). 선물은 산 사람이
+   스토어로 냈어도 **받는 사람이 코드를 쳐서** 유료 기능을 여는 것이라, 서버·두 앱에서 통째로 지웠다
+   ([`docs/spec/plan-gates.md`](docs/spec/plan-gates.md) 「선물 코드 — 폐지」).
+   - 콘솔의 그 상품은 **판매를 내렸다**: 구매 옵션 `personal-gift-1m` 이 `INACTIVE` 다(2026-10-14, Play Developer API
+     `oneTimeProducts.purchaseOptions:batchUpdateStates`). 예전에 만든 상품이라 지우지 않고 남긴다 — 다시 켜지 말 것.
+   - 서버는 그 상품의 구매를 Play 를 부르기 전에 400 `UNKNOWN_PRODUCT` 로 돌려준다 — 코드를 만들지 않고 확인
+     (acknowledge)도 하지 않으므로 Play 가 3일 뒤 자동 환불한다. 앱(1.2.13~)은 1회성 상품을 조회·판매하지 않는다
+     (`PlayBillingProducts.all` — 구독 셋).
+   - 할인·무료 이용이 필요하면 **Play 프로모션 코드**(Play Console 에서 만든다 — 결제가 Play 를 거친다)를 쓴다.
+     우리 서버에 코드 체계를 다시 만들지 않는다.
 4. **라이선스 테스터 등록** — *Setup → License testing*: 테스트 계정은 실제 청구 없이 구매 가능.
 5. **(중요) RTDN 연결** — *Monetize → Monetization setup → Real-time developer notifications*:
    - Cloud Pub/Sub 토픽 생성 → push 구독 URL을

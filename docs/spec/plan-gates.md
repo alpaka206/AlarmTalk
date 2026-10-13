@@ -7,11 +7,29 @@
 2026-08-07 사용자 문의: **"로그인도 했고 쿠폰도 등록했는데 '로그인이 필요하다' 모달이
 뜬다."** 원인은 상태가 셋인데 분기가 둘이었던 것이다. 양쪽 앱 모두 같은 결함이 있었다.
 
-| 상태 | 무엇이 문제인가 | 제목 | 확인 버튼이 가는 곳 | 코드 입력(선물·초대) |
-| --- | --- | --- | --- | --- |
-| **비로그인** | 세션이 없다 | "로그인이 필요해요" | 로그인 | **붙이지 않는다** — 등록할 계정이 없다 |
-| **로그인 + 무료** | 이용권이 없다 | "유료 이용권이 필요해요" | 결제 | **여기서만** 뜻이 있다 |
-| **로그인 + 유료** | 플랜 문제가 **아니다** | "기본 목소리로는 직접 입력을 쓸 수 없어요" | **목소리 등록** | 붙이지 않는다 — 이미 유료다 |
+| 상태 | 무엇이 문제인가 | 제목 | 확인 버튼이 가는 곳 |
+| --- | --- | --- | --- |
+| **비로그인** | 세션이 없다 | "로그인이 필요해요" | 로그인 |
+| **로그인 + 무료** | 이용권이 없다 | "유료 이용권이 필요해요" | 결제(이용권 화면) |
+| **로그인 + 유료** | 플랜 문제가 **아니다** | "기본 목소리로는 직접 입력을 쓸 수 없어요" | **목소리 등록** |
+
+나머지 액션은 세 상태 모두 '닫기' 하나이고, 버튼 순서는 두 앱 모두 [닫기][확인] 이다(§2). ⚠ **게이트에는 코드 입력이
+없다 — 어느 상태에도**(2026-10-14, 아래 「선물 코드 — 폐지」). 예전에는 '로그인 + 무료' 에만 '선물·초대 코드가 있어요' 가
+붙었다.
+
+⚠ **지금 두 앱은 이 표를 다 따르지 않는다 — 비로그인·유료 갈래가 표와 다르다**(2026-10-14 코드로 확인. 이번 회차가
+만든 차이가 아니라 그 전부터다). 위 표가 규칙이고, 아래는 편집기 게이트의 지금 구현이다. 맞추는 일은
+[`dev-test-handoff.md`](../qa/dev-test-handoff.md) 2026-10-14 절의 후속 항목이다 — 맞추기 전에는 두 앱이 표대로 동작한다고
+쓰지 말 것.
+
+| 상태 | Android 지금(`PlanGateDialog` — 갈래는 `AlarmEditorScreen` 의 `VoiceGateReason`) | iOS 지금(`VoicePlanGateAlert` — 내용은 `AlarmEditorSheet.showVoicePlanLockedAlert`) |
+| --- | --- | --- |
+| 비로그인 | [닫기][이용권 보기] — '이용권 보기' 가 **이용권 화면**으로 간다(표의 '로그인' 이 아니고, §2 의 '비로그인에게 결제를 붙이지 않는다' 에도 어긋난다) | **[닫기] 하나** — 로그인으로 가는 버튼이 없다 |
+| 로그인 + 무료 | [닫기][이용권 보기] → 이용권 화면(표와 같다) | [닫기][이용권 보기] → 이용권 화면(표와 같다) |
+| 로그인 + 유료 | [닫기][등록하기] → 목소리 등록(표와 같다) | **[닫기] 하나** — 목소리 등록으로 가는 버튼이 없다 |
+
+목소리 탭의 '내 목소리 만들기' 게이트는 두 앱 모두 상태로 가르지 않는 [닫기][이용권 보기] 한 모양이다(안드로이드
+`VoiceProfileManagementPanel` 의 `PlanGateDialog`, iOS 같은 이름 파일의 `planGateOpen` 알럿).
 
 ### 왜 2분기가 틀렸나
 
@@ -59,12 +77,21 @@ freeVoiceTier = 로그인함 && !유료
 
 ## 2. 버튼은 상태마다 다르다
 
-'선물·초대 코드가 있어요'·'이용권 보기' 는 **이용권이 없어서 막힌 경우에만** 뜻이 있다.
+'이용권 보기' 는 **이용권이 없어서 막힌 경우에만** 뜻이 있다.
 
-- 비로그인에게 코드 입력을 붙이면 → 넣어도 **등록할 계정이 없다**
-- 유료에게 코드 입력·결제를 붙이면 → 눌러도 **아무 일도 일어나지 않는다**
+- 비로그인에게 결제를 붙이면 → 결제할 **계정이 없다**
+- 유료에게 결제를 붙이면 → 눌러도 **아무 일도 일어나지 않는다**
 
-⚠ 이 액션의 이름은 **'선물·초대 코드'** 다 — '쿠폰'·'프로모션' 으로 되돌리지 말 것(아래 「프로모 코드 — 폐지」).
+⚠ **게이트에 코드 입력 액션을 다시 붙이지 말 것**(2026-10-14 — 아래 「선물 코드 — 폐지」). 예전에는
+'로그인 + 무료' 게이트에 '선물·초대 코드가 있어요' 와 그 입력 창이 있었다. 막힌 기능 바로 옆의 코드 칸은
+'코드를 넣으면 유료 기능이 열린다' 로 읽히고, 그것이 App Store 심사 지침 3.1.1 반려의 사유다. 게이트의
+결제 쪽 액션은 '이용권 보기' 하나이고, 남은 초대 코드는 더보기 → 초대 코드 등록에서만 넣는다.
+
+⚠ **버튼 순서는 두 앱 모두 [닫기][이용권 보기] 다**(2026-10-14) — 닫기가 앞(왼쪽), 강조한 확인이 끝(오른쪽). iOS 는
+'닫기' 에 취소 역할(`.cancel`)을 주고, 가로 한 줄 알럿에서 시스템이 그것을 앞에 둔다. 안드로이드는 `PlanGateDialog` 의
+`actions` 순서로 같은 자리를 만든다(앱의 다른 두 액션 알럿도 닫기·취소가 앞이다). 예전 [이용권 보기][닫기](2026-08-15
+지시)는 코드 액션까지 셋을 세로로 쌓던 때의 순서다 — 세로에서는 iOS 가 취소를 맨 아래로 내린다. 확인 버튼이 다른
+게이트(유료 갈래의 '등록하기')도 같은 자리다.
 
 ⚠ 게이트를 새로 만들 때 액션 목록을 그대로 복사하지 말 것. 상태를 먼저 정하고,
 그 상태에 **실제로 도움이 되는 액션만** 붙인다.
@@ -84,17 +111,21 @@ freeVoiceTier = 로그인함 && !유료
 - 소비는 두 규칙뿐이다: **모르면 잠그지 않는다**(표시·울림·저장) /
   **확실히 무료일 때만**(되돌릴 수 없는 잠금·강등).
 
-**코드 등록은 선물·초대 이용권 둘뿐이고, 등록하면 구독 행이 생긴다**(2026-10-12 — 프로모 코드 폐지).
-- **이용권 코드(INV-/GIFT-)** → `subscriptions` 행을 만들고 `users.plan` 도 올린다 → 유료 판정 통과.
-  둘 다 **스토어 결제에서 나온다** — GIFT- 는 보낸 사람이 산 선물(`billing-apple.ts`·`billing-google.ts`),
-  INV- 는 커플·가족 이용권 주인의 초대다.
-- 그 밖의 문자열은 전부 `CODE_NOT_FOUND` 다. 프로모 코드는 없다 — 아래 「프로모 코드 — 폐지」.
+**코드 등록은 초대 코드 하나뿐이고, 등록하면 구독 행이 생긴다**(2026-10-14 — 선물 코드 폐지.
+그 전 2026-10-12 에 프로모 코드 폐지).
+- **초대 코드(INV-)** → `subscriptions` 행을 만들고 `users.plan` 도 올린다 → 유료 판정 통과.
+  커플·가족 이용권 **주인이 스토어 결제로 내고 있는** 그룹의 자리에 합류하는 것이다. 발급 근거인 주인의
+  구독이 살아 있고 권한이 있어야 하며(`SUBSCRIPTION_NOT_ACTIVE`·`CODE_EXPIRED`), 그룹 정원이 남아야 한다
+  (`GROUP_FULL`). 받는 형식(INV- 4-4-4, `lib/vouchers.ts` 의 `VOUCHER_CODE_RE`)은 CI 검사가 고정한다 —
+  접두를 더하면 머지 전에 실패한다(`scripts/check-paid-unlock-codes.py` (d)).
+- 그 밖의 문자열은 전부 `CODE_NOT_FOUND` 다 — 옛 선물 코드(GIFT-)는 발급 행이 남아 있어도 조회하지 않고,
+  옛 프로모 코드도 같다. 아래 「선물 코드 — 폐지」·「프로모 코드 — 폐지」.
 - 받는 사람에게 활성 구독이 있어도 **거절하지 않는다** — 기존 구독 행을 정리하고
   (`cancelActiveSubscriptionsForUser`) 새 행을 만든다. 막는 것은 **다른 사람이 함께 쓰는 그룹의
   주인**뿐이다(`OWNS_ACTIVE_GROUP` — 한 사람의 등록이 남의 구독을 깨지 않게). (2026-10-12 정정 —
   예전에는 "둘 다 활성 유료 구독이 있으면 거절한다" 고 적혀 있었는데, 거절은 프로모 갈래의
   `ACTIVE_SUBSCRIPTION_EXISTS` 뿐이었다.)
-- ⚠ **기간 한정 개인 플랜은 구독이 아니다.** 원시 무료 계정은 기간 중에도 선물·초대 코드를 그대로
+- ⚠ **기간 한정 개인 플랜은 구독이 아니다.** 원시 무료 계정은 기간 중에도 초대 코드를 그대로
   등록할 수 있다(그 판정은 원시 구독 행만 본다). 등록한 이용권 구독은 자기 `expires_at` 대로
   가고, 기간과 겹치는 날은 그냥 소진된다.
 
@@ -152,12 +183,18 @@ freeVoiceTier = 로그인함 && !유료
 | 규칙 | Android | iOS | 백엔드 |
 | --- | --- | --- | --- |
 | 세 상태 열거 | `VoiceGateReason` (`ui/editor/AlarmEditorScreen.kt`) | `PlanAccess` (`Views/Editor/AlarmEditorSheet.swift`) | — |
-| 게이트 표시 | `PlanGateDialog` (`ui/components/PlanGateDialog.kt`) | `showVoicePlanLockedAlert` (`AlarmEditorSheet.swift`) | — |
+| 게이트 표시(비로그인·유료 갈래는 두 앱이 §1 의 표와 다르다 — 같은 절의 '지금 구현' 표) | `PlanGateDialog` (`ui/components/PlanGateDialog.kt`) | 내용 `showVoicePlanLockedAlert` (`AlarmEditorSheet.swift`) → 그리기 `VoicePlanGateAlert` | — |
 | 유료 판정 — **유일 출처** | `resolvePaidVoiceAccess` (`ui/util/PlatformAndLabelUtils.kt`) | `PaidVoiceGate.resolve` | `isPaidVoicePlan` |
 | 판정 소비 — 표시·게이트 | `MainViewModel.isPaidVoiceEntitledOptimistic` · 커플·가족은 `hasCoupleOrFamilyAccess`(기간 한정 개인 플랜 중 보류 규칙 `MainViewModel.personalPromoTierHold` — `billing-lifecycle.md` D9) | `PlanTier.bestKnown`(보류면 남은 행으로 등급을 올리지 않는다 — 기간 중에는 `bestKnown(user:)`) · 그룹으로 여는 자리는 `PlanTier.personalPromoHoldActive`(D9) | — |
 | 판정 소비 — 되돌릴 수 없는 잠금 | `MainViewModel.isDefinitelyFreePlan` · 갈래 `foregroundPlanLockAction` · 낡은 프로모 갈래는 이번 진입의 plan 반영 뒤에만(`freePlanLockMayApply` → `WaitForEntryPlan`, 재확인 `deferredPromoLapseLockDue` — `billing-lifecycle.md` D12) | `AlarmTalkApp.applyFreePlanVoiceLockIfNeeded` · 낡은 프로모 갈래는 이번 진입의 plan 반영 뒤에만(`PaidVoiceGate.freePlanLockMayApply`·`isFreeOnlyByPromoLapse`, `AuthViewModel.planAnsweredEntry`, 재확인 `promoLapseLockWaitKey` — D12) | — |
 | 기간 한정 개인 플랜 — 낡은 캐시만 무료로(D1·D7: 받은 시각 = `computed_at`, 없으면 끝 전의 답) | `personalPromoLapsed`·`planAnswerStampMillis`(`ui/billing/PersonalPromo.kt`) | `PersonalPromo.isStale`·`PersonalPromo.fetchedAt` | `personalPromoField` 의 `computed_at` |
-| 코드 등록(선물·초대) | `CodeRedeemField` → `POST /api/code/register` | 같은 라우트 | `routes/code.ts` → `voucher-redemption.ts` |
+| 게이트에 코드 입력 없음(§2 — 결제 쪽 액션은 '이용권 보기' 하나) | `PlanGateDialog` 의 액션 두 개(입력 슬롯 없음) — 회귀 `GiftCodeRemovalTest`. CI 검사 (e) 가 `PlanGateDialog.kt` 전체에서 입력 칸·코드 등록 이름을 막는다 | `VoicePlanGateAlert`(편집기) · `VoiceProfileManagementPanel` 의 `planGateOpen` 알럿(목소리 탭) · 문구 `PaidGateCopy`. CI 검사 (e) 가 앞의 파일 전체와 뒤의 알럿 블록을 막는다 | — |
+| 게이트 버튼 순서 [닫기][이용권 보기] — §2 | `PlanGateDialog` 의 `actions` 순서 — 회귀 `GiftCodeRemovalTest` | '닫기' 의 `.cancel` 역할(시스템이 앞에 둔다) — 회귀 테스트 없음, 실기기로 본다 | — |
+| 코드 등록 — 초대 코드(INV-)만, 입구는 더보기 → 초대 코드 등록 하나 | 행 `common_tab_code_register`(`ui/home/HomeComponents.kt`) → `FamilyConnectionPanel`(`ui/social/SocialPanels.kt`) 의 `CodeRedeemField` → `POST /api/code/register` | `MenuView` 의 '초대 코드 등록' → `AuxiliaryScreen.people` → `PeoplePanel` 의 `CodeRegisterRow` → 같은 라우트 | `routes/code.ts`(INV- 형식이 아니면 조회 없이 `CODE_NOT_FOUND` — `isValidVoucherCodeFormat`, `lib/vouchers.ts`. 형식은 CI 검사 (d) 가 고정) → `voucher-redemption.ts` |
+| 발급한 코드의 목록·공유는 초대 코드(INV-)만 — 옛 GIFT- 행이 남아 있어도 | `shareableVouchersForPlan`(`ui/billing/BillingPanels.kt`, INV- 접두) · 구성원 관리 `MemberManagementScreen` 의 같은 접두 — 회귀 `GiftCodeRemovalTest` | `shareableVouchersForPlan`(`Views/Settings/BillingPanelComponents.swift`, INV- 접두 — 회귀 `GiftRemovalTests`) · 구성원 관리 `MemberManagementView.shareVoucher`. 이용권 화면 아래의 '공유 코드' 목록(발급한 코드를 종류 없이 늘어놓던 것)은 지웠다 | `GET /billing/vouchers`(`routes/billing-query.ts`)·`POST /billing/vouchers/family-share`(`routes/billing-mutation.ts`)의 `v.code LIKE 'INV-%'` — 회귀 `gift-codes-retired.test.ts` |
+| 파는 상품은 구독 셋뿐(코드를 발급하는 1회성·소모성 상품 없음) | `PlayBillingProducts.all`(`billing/PlayBillingManager.kt`) | `SubscriptionProduct`(`Services/IAP/SubscriptionProduct.swift`) · `Configuration/StoreKitConfiguration.storekit` | `APPLE_PRODUCT_TO_PLAN_KEY`(`lib/apple-storekit.ts`) · `googlePlanKeyFromProductId`(`lib/play-subscriptions.ts`) — 목록 밖 상품은 400 `UNKNOWN_PRODUCT` |
+| 코드 공유 문구는 초대 하나(3단계 = 더보기 → 초대 코드 등록) | `share_code_invite_body` · `shareRedeemCode`(`ui/components/ShareCode.kt`) | `CodeShareText.invite` | — |
+| 강제 — 무엇이 막는가(CI lint 는 필수 체크, 두 앱의 단위 테스트는 각 빌드 워크플로 — 필수 체크가 아니다) | CI lint `scripts/check-paid-unlock-codes.py` 의 (a) 화면 문구·(b) 코드·(e) 게이트 모양 + 단위 테스트 `GiftCodeRemovalTest`·`InviteCodeCopyTest`(`android-build.yml`) | 같은 검사의 (a)·(b)·(e) + 단위 테스트 `GiftRemovalTests`(`ios-build.yml`) | 같은 검사의 (b) 코드·라우트 경로·(d) 초대 코드 형식 + `gift-codes-retired.test.ts`(필수 `test` 잡). 스토어 문구 원본은 같은 검사의 (c) |
 | 구독 조회 | `subscriptionResponse` | `socialFeatures.subscription` | `routes/billing-query.ts` |
 | 진입 갱신 — 목소리·이용권(완결된 갱신만 · 60초 · 같은 계정·같은 앱 진입 · 보낼 때 적는다) | `ui/app/AlarmTalkApp.kt` 의 `lastTabRefreshAt`(키는 `tab to sessionEffectKey` — 계정 + 세션 세대라 규칙과 같다. ⚠ 표를 갱신 **전에** 적는다 — 실패 뒤 재시도 규칙은 아직 다르다) | `EntryRefreshFreshness` · `SocialFeatureViewModel.refreshOnEntry` · `VoiceStudioViewModel.refreshOnEntry` — 부르는 자리 `MainTabsView.refreshForSelectedTab`(목소리·더보기)·`MainTabsView.refreshAll`·`AlarmEditorSheet`·`MemberManagementView`·`BillingPanel` | — |
 | 알람 탭 동기화 스로틀(키 = 탭 + 계정 — 토큰 아님 · 완결되지 않은 회차는 칸을 지운다) | 같은 `lastTabRefreshAt`(`tab to sessionEffectKey` — ⚠ 실패해도 칸을 지우지 않는다) | `MainTabsView.tabRefreshThrottleKey` · `AlarmTabSyncThrottle`(완결 판정은 `RemoteAlarmSyncViewModel.runFullSync` 의 반환값. 재로그인은 `MainTabsView` 가 새로 만들어져 표가 비워진다) | — |
@@ -183,12 +220,14 @@ freeVoiceTier = 로그인함 && !유료
 ⚠ **되살릴 때 옛 소진 플래그(`promo_prompted_*`)를 재사용하지 말 것.** 기존 계정은 이미
 `true` 라 새 안내가 영영 뜨지 않는다.
 
-**코드 입력(선물·초대)은 남는다** — 전부 `POST /api/code/register` 한 라우트로 간다:
+**코드 입력은 초대 코드 하나만 남는다**(2026-10-14) — `POST /api/code/register` 한 라우트로 간다:
 
 | 입구 | Android | iOS |
 | --- | --- | --- |
-| 더보기(가족·연결 화면)의 코드 등록 | `FamilyConnectionPanel` 의 `CodeRedeemField` | `PeoplePanel` 의 `CodeRegisterRow` |
-| 이용권 게이트의 '선물·초대 코드가 있어요'(§2 — 로그인 + 무료에서만) | `PlanGateDialog` | `AlarmEditorSheet`·`VoiceProfileManagementPanel` → `RedeemCodeSheet` |
+| 더보기 → 초대 코드 등록(공유 이용권이 없을 때의 행 — 있으면 그 자리는 '초대 및 구성원 관리') | `FamilyConnectionPanel` 의 `CodeRedeemField` | `PeoplePanel` 의 `CodeRegisterRow` |
+
+이용권 게이트의 '선물·초대 코드가 있어요'(그 입력 창 — 안드로이드 `PlanGateDialog` 의 입력 알럿, iOS
+`RedeemCodeSheet`)는 2026-10-14 에 지웠다(§2, 아래 「선물 코드 — 폐지」). 되살리지 말 것.
 
 ## 프로모 코드 — **폐지** (2026-10-12)
 
@@ -198,9 +237,14 @@ iOS 1.2.11(빌드 8)이 App Store 심사 지침 **3.1.1**("인앱 결제가 아�
 3개는 #121 로 꺼져 있었다).
 
 - **서버가 받지 않는 것이 실질 차단이다.** 앱 문구만 지우면 이미 깔린 옛 앱('프로모션 코드' 문구가
-  남은 버전)으로 계속 열린다. `POST /code/register` 는 INV-/GIFT- 형식이 아니면 조회 없이
-  `CODE_NOT_FOUND` 이고, 옛 경로 `POST /billing/promo/redeem` 은 라우트째 지웠다(404).
-- **문구에 '프로모션'·'쿠폰' 을 되살리지 말 것.** 코드 칸의 이름은 '초대·선물 코드' 다(양 앱 ko·en·ja).
+  남은 버전)으로 계속 열린다. `POST /code/register` 는 (그때는) INV-/GIFT- 형식이 아니면 조회 없이
+  `CODE_NOT_FOUND` 였고 — 2026-10-14 부터는 INV- 하나다(아래 「선물 코드 — 폐지」) — 옛 경로
+  `POST /billing/promo/redeem` 은 라우트째 지웠다(404).
+- **문구에 '프로모션'·'쿠폰' 을 되살리지 말 것.** 코드 칸의 이름은 그때 '초대·선물 코드' 였고, 2026-10-14
+  부터 '초대 코드' 다(양 앱 ko·en·ja).
+- ⚠ **이 폐지는 사례만 고쳤다.** "남은 두 코드(선물·초대)는 둘 다 스토어 결제에서 나온다" 는 이유로 선물
+  코드를 남겼는데, 애플이 막는 것은 결제 수단이 아니라 코드로 여는 것 자체였다 — 그래서 1.2.12 가 같은
+  지침으로 다시 반려됐다(아래).
 - **이력은 남긴다.** `promo_codes`·`promo_code_redemptions` 는 지우지 않는다 — 받은 사람의 구독 근거다.
   관리자 콘솔(`/admin/promo`)은 그 이력을 **읽기만** 한다. 발급·켜기 라우트는 지웠다 — 만들어도 아무도
   쓸 수 없는 코드가 생길 뿐이라서다.
@@ -209,3 +253,79 @@ iOS 1.2.11(빌드 8)이 App Store 심사 지침 **3.1.1**("인앱 결제가 아�
   문구 표·예상된 거절 목록에서 함께 지웠다 — 서버가 더는 내지 않는다(`error-codes.md`).
 - 행사 혜택이 필요하면 **스토어의 오퍼 코드**(App Store 오퍼 코드 · Play 프로모션 코드)를 쓴다 —
   결제가 스토어를 거치므로 3.1.1 에 걸리지 않는다. 우리 서버에 코드 체계를 다시 만들지 말 것.
+
+## 선물 코드 — **폐지** (2026-10-14)
+
+개인 이용권을 사서 남에게 보내던 **선물**(1회성 상품 결제 → `GIFT-XXXX-XXXX-XXXX` 코드 발급 → 받는 사람이
+코드 칸에 입력)을 **서버·두 앱·두 스토어에서 지웠다.** iOS 1.2.12(빌드 9)가 App Store 심사 지침 **3.1.1** 로
+**두 번째** 반려됐다(2026-10-12, 심사 기기 iPhone 17 Pro Max·iPad Air 11-inch (M3)). 애플의 문장:
+
+> The app still unlocks or enables additional functionality with mechanisms other than In-App Purchase, which is
+> not appropriate. Specifically, the app uses gift code to unlock or enable digital item/feature. … It would be
+> appropriate to remove these features from the app and any other feature that unlocks or enables functionality
+> with mechanisms other than the App Store. If you want to provide discounted or free access to items or
+> subscriptions in the app, create offer codes for In-App Purchases.
+
+- **왜 두 번 반려됐나 — 사례를 고치고 종류를 남겼다.** 1.2.11 반려(프로모 코드) 때 프로모 코드만 지우고,
+  남은 선물·초대 코드는 "둘 다 스토어 결제에서 나온다" 는 이유로 두었다(그 반려의 근거 화면 문구 "초대 코드, 이용권
+  선물 코드, 프로모션 코드 모두 등록할 수 있어요" 에 선물 코드가 이미 있었다). 애플이 막는 것은 결제 수단이 아니라
+  **코드를 쳐서 유료 기능을 여는 것** 자체다 — 선물은 보낸 사람이 인앱 결제로 샀어도 받는 사람은 코드로 연다.
+  게다가 1.2.12 의 스토어 설명("개인 1개월 이용권을 선물 코드로 보낼 수도 있어요")과 심사 노트(선물 코드의
+  출처를 설명하며 "같은 선물을 Google Play 에서도 판다" 고 적었다)가 그 기능을 직접 내보였다.
+- **운영 데이터는 없다**(2026-10-14 prod 읽기 전용 조회): 발급된 GIFT 코드 0개, 두 스토어의 선물 결제 0건.
+  옮기거나 환불할 것이 없다. 초대 코드는 7개 발급·0개 사용이다.
+- **서버가 받지 않는 것이 실질 차단이다 — 모든 앱 버전에, 안드로이드 포함.**
+  - `POST /code/register` 는 INV- 4-4-4 형식이 아니면 조회 없이 404 `CODE_NOT_FOUND` 다. GIFT- 코드는
+    `voucher_codes` 에 발급 행이 남아 있어도 읽지 않는다(`isValidVoucherCodeFormat` — INV- 만).
+  - 선물 상품의 결제 확정(애플 `com.alarmtalk.app.personal_gift_1m`·구글 `personal_gift_1m`)은 상품 목록에서
+    빠져 400 `UNKNOWN_PRODUCT` 다 — 코드를 만들지 않는다. 구글은 Play 를 부르기 전에 끝나 확인(acknowledge)도
+    하지 않으므로 Play 가 3일 뒤 자동 환불한다. 애플 환불 통보도 같은 자리에서 끝난다(예전의 선물 환불 회수
+    갈래는 지웠다). ⚠ 애플은 전달하지 못한 소모성 결제를 스스로 환불하지 않는다 — 그래서 **판매 중지가 prod
+    배포보다 늦으면 안 된다**(옛 빌드로 산 사람은 돈만 내고 코드를 못 받는다).
+  - 발급한 코드 목록(`GET /billing/vouchers`)과 공유할 코드(`POST /billing/vouchers/family-share`)는 INV- 만 돌려준다
+    — 옛 GIFT- 행이 남아 있어도 옛 앱의 목록·공유 화면에 나오지 않는다(2026-10-14 2차).
+  - dev 스텁 `POST /billing/checkout` 의 `gift: true`, `POST /billing/test-codes` 의 개인 플랜은 400
+    `INVALID_REQUEST` 다(테스트 코드는 커플·가족 초대 코드뿐).
+  - 에러 코드 `GIFT_PERSONAL_ONLY`·`INVALID_GIFT_PLAN` 과, 선물 확정 갈래만 내던 `PURCHASE_NOT_COMPLETED` 는
+    목록에서 지웠다. 두 앱의 표에서도 앞의 둘을 지웠다(`error-codes.md`). `INVALID_INVITE_PLAN` 은 남는다.
+- **두 앱(1.2.13)**: 개인 카드의 '선물하기'·선물 결제·선물 공유 문구, 유료 게이트의 '선물·초대 코드가
+  있어요'(§2)를 지웠다. 코드 칸은 '초대 코드'(ko·en·ja 같은 문구)이고 넣는 자리는 더보기 → 초대 코드 등록
+  하나다(위 「코드 입력은 초대 코드 하나만 남는다」 표). 이용권 화면의 코드 공유는 커플·가족 카드에만 있다.
+- **스토어**: 두 스토어의 선물 상품은 판매를 내렸다(2026-10-14) — App Store 인앱 구입
+  `com.alarmtalk.app.personal_gift_1m` 은 `DEVELOPER_REMOVED_FROM_SALE`(판매 지역 0곳), Play `personal_gift_1m` 의 구매
+  옵션 `personal-gift-1m` 은 `INACTIVE`. 스토어 설명의 선물 줄과 결제 문단의 '1회성 선물' 문장도 지웠고, 커플·가족 줄은
+  "한 사람이 구독하고 초대 코드로 그 이용권에 들인다" 로 고쳤다(`docs/product/app-store-listing.md`·`play-store-listing.md`).
+- **이력은 남긴다.** `voucher_codes`·`apple_gift_deliveries` 표는 지우지 않는다(마이그레이션 없음). 탈퇴 때
+  `apple_gift_deliveries` 를 치우는 정리와 1회성 결제(구독 행 없는 `store_transactions`)의 5년 보존 갈래도
+  그대로다 — 그 전에 쓰인 행이 남을 수 있어서다.
+
+### 규칙 — 코드로 유료 기능을 열지 않는다 (사례가 아니라 종류로)
+
+- **코드로 유료 기능을 얻는 길은 초대 코드(INV-) 하나뿐이다.** 그것도 새 권한을 만드는 것이 아니라, **주인이
+  이미 인앱 결제로 내고 있는** 커플·가족 그룹의 빈자리에 합류하는 것이다. 애플도 문제 삼지 않았다.
+- **선물·프로모·쿠폰·체험·라이선스 코드를 새로 만들지 말 것** — 이름이 달라도 '코드를 쳐서 유료 기능이
+  열린다' 면 같은 것이다. **코드를 발급하는 1회성·소모성 상품**도 같다.
+- 앞으로의 할인·무료 이용은 **스토어 장치로만** 준다 — App Store 는 첫 구독 할인(introductory offer)·오퍼 코드, Play 는
+  프로모션 코드·무료 체험. 코드를 넣는 곳도, 결제도 스토어다 — 우리 서버에 코드 체계를 다시 만들지 않는다. 앱 안에서
+  오퍼 코드를 받게 하고 싶으면 스토어의 시스템 화면(StoreKit 의 오퍼 코드 시트 등)을 띄운다 — 그건 우리 코드 칸이 아니다.
+  그 버튼 문구가 아래 검사의 어휘(redeem 등)에 걸리면 검사의 허용 목록에 이유와 함께 둔다.
+- ⚠ **스토어 밖 예외는 지금 하나뿐이다 — 되풀이하지 않는다.** 서버가 켜고 끄는 기간 한정 개인 플랜
+  ([`billing-lifecycle.md`](billing-lifecycle.md) 「기간 한정 개인 플랜」 — 끝 시각은 shared 의 `PERSONAL_PROMO.endsAt`
+  한 곳에만 둔다)이 원시 무료 계정 모두에게 결제 없이 개인 플랜을 연다. 코드를 치는 길은 아니지만 스토어를 거치지 않고
+  유료 기능을 여는 것이라 심사 노트에 밝힌다(1.2.11 노트부터 — 1.2.13 노트에도 남긴다). 이 기간이 끝난 뒤의 행사는 위
+  스토어 장치로 한다 — 같은 모양의 서버 무료 기간을 새로 만들지 말 것.
+- **코드 칸을 이용권 화면·유료 게이트(페이월)에 두지 않는다.** 막힌 기능 바로 옆의 코드 칸은 '코드를 넣으면
+  열린다' 로 읽힌다. 초대 코드는 더보기 → 초대 코드 등록에서만 받는다.
+- **스토어 설명·출시 노트·심사 노트에 코드로 유료 기능을 연다고 쓰지 않는다.** 초대 코드는 "그룹 주인이 구독한
+  커플·가족 그룹에 합류한다" 로만 말한다.
+- 강제(무엇이 실제로 막는가 — 위 「구현 지도」 의 '강제' 줄):
+  - **서버**가 실질 차단이다(옛 앱이 남는다): 등록 형식 INV- 하나, 발급 코드 목록·공유도 INV- 만, 선물 상품은
+    `UNKNOWN_PRODUCT`. 회귀 `packages/backend/test/gift-codes-retired.test.ts`(필수 `test` 잡).
+  - **CI lint** `scripts/check-paid-unlock-codes.py`(필수 `lint` 잡): (a) 두 앱의 화면 문구와 (c) 스토어 문구 원본에
+    선물·프로모·쿠폰·바우처·redeem·이용권 코드 어휘, (b) 앱·서버 코드에 은퇴한 상품 id·`GIFT-` 형식·선물 에러 코드·이름
+    속의 gift·서버의 gift 라우트 경로, (d) 초대 코드 형식이 INV- 4-4-4 그대로인지, (e) 두 앱의 유료 게이트에 입력 칸·코드
+    등록이 없는지. 아는 어휘·형식·자리만 본다 — 새 이름·새 자리는 리뷰가 본다(`AGENTS.md` 「리뷰에서 막을 것」).
+  - **두 앱의 단위 테스트**: Android `GiftCodeRemovalTest`·`InviteCodeCopyTest`(`android-build.yml`), iOS
+    `GiftRemovalTests`(`ios-build.yml`). 둘 다 필수 체크가 아니다.
+  - 못 보는 것: 심사 노트와 App Store '이 버전의 새로운 기능' 의 실제 입력값(저장소 밖) — 제출 전에 사람이 읽는다
+    (`docs/qa/dev-test-handoff.md`).

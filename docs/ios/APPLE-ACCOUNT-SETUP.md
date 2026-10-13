@@ -142,26 +142,28 @@ StoreKit 업그레이드/다운그레이드로 처리된다 — 앱에 '이용�
 
 ⚠ 가격의 권위는 **App Store Connect** 이고 DB `price_krw` 는 표시용이다. 둘을 일치시켜
 둔다 — 위 값은 마이그레이션 `#52` 의 시드가이고 안드로이드 Play 상품과도 같다.
-`.storekit` 파일도 지금은 같은 값을 담고 있다(`displayPrice` 3900 / 6900 / 14900 + 선물 3900).
+`.storekit` 파일도 지금은 같은 값을 담고 있다(`displayPrice` 3900 / 6900 / 14900 — 구독 셋뿐이다. 선물 상품은 2026-10-14 에 뺐다).
 시뮬레이터 전용이라 실제 과금과는 무관하지만, 표시 금액이 어긋나면 사람이 헷갈리므로
 가격을 바꿀 때 **함께** 고친다.
 
-### 5-2b. 선물 상품 1개 등록 — **소모성(Consumable)**
+### 5-2b. 선물 상품 — **폐지** (2026-10-14, 되살리지 말 것)
 
-| 상품 ID | 한국 가격 | 유형 |
-|---|---|---|
-| `com.alarmtalk.app.personal_gift_1m` | ₩3,900 | **소모성(Consumable)** |
+| 상품 ID | 한국 가격 | 유형 | 상태 |
+|---|---|---|---|
+| `com.alarmtalk.app.personal_gift_1m` | ₩3,900 | 소모성(Consumable) | **판매를 내렸다**(2026-10-14 — `DEVELOPER_REMOVED_FROM_SALE`, 판매 지역 0곳. 내리기 전의 판매 지역은 로컬 백업 `.claude/release-tools/gift-products-backup-20261014.json`) |
 
-⚠ **자동 갱신 구독으로 만들지 말 것.** 자동 갱신 구독은 남에게 줄 수 없다(스토어가
-구매자 계정에 묶는다). 그래서 선물은 1회성 상품을 팔고 그 대금으로 **바우처 코드**를
-발급한다 — 서버가 `isAppleGiftProductId` 로 갈라 구독 갈래를 타지 않게 한다
-(`routes/billing-apple.ts`). 구독으로 만들면 `expiresDate` 검사에 걸려 결제가 통째로
-거절되거나, 구매자 본인이 이용권을 받게 된다.
+⚠ **선물(소모성 상품 → 받는 사람이 `GIFT-` 코드를 쳐서 여는 이용권)은 서버·두 앱에서 지웠다.** iOS 1.2.12 가 App
+Store 심사 지침 3.1.1 로 **두 번째** 반려됐다 — "the app uses gift code to unlock or enable digital item/feature".
+산 사람이 인앱 결제로 냈어도 받는 사람은 코드로 유료 기능을 연다. 그 '코드로 해제' 가 반려 사유다
+([`docs/spec/plan-gates.md`](../spec/plan-gates.md) 「선물 코드 — 폐지」).
 
-⚠ **구독 그룹에 넣지 않는다.** 소모성 상품은 그룹 개념이 없다.
-
-> 발급되는 바우처의 유효기간은 **받는 사람이 등록할 때까지의 기한**(30일)이고,
-> 등록한 시점부터 개인 플랜 1개월이 시작된다.
+- 앱(1.2.13~)은 그 상품을 조회·판매하지 않는다(`SubscriptionProduct` — 구독 셋, `.storekit` 의 `products` 는 비어 있다).
+- 서버는 그 상품의 확정 요청을 400 `UNKNOWN_PRODUCT` 로 돌려준다(`lib/apple-storekit.ts` 의 `APPLE_PRODUCT_TO_PLAN_KEY`
+  에서 뺐다 — 예전의 `isAppleGiftProductId` 갈래·바우처 발급·환불 회수는 지웠다). 코드는 만들지 않는다.
+- ⚠ **판매 중지는 prod 서버 배포보다 늦으면 안 된다.** 애플은 전달하지 못한 소모성 결제를 스스로 환불하지 않는다 —
+  옛 빌드로 산 사람은 돈만 내고 코드를 못 받는다(prod 의 선물 결제는 2026-10-14 까지 0건이었다).
+- 할인·무료 이용이 필요하면 **첫 구독 할인(introductory offer)·App Store 오퍼 코드**(구독 상품에 만든다 — 결제가 App
+  Store 를 거친다)를 쓴다. 스토어 밖 예외는 지금의 기간 한정 개인 플랜 하나뿐이다(`plan-gates.md` 같은 절).
 
 ### 5-3. App Store Server API 키 발급
 

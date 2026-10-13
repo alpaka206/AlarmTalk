@@ -4,21 +4,33 @@ Play Console 에 올리는 값의 원본이다. 콘솔을 고칠 때는 이 파�
 [`app-store-listing.md`](app-store-listing.md) 가 같은 역할을 한다. 설명 본문은 두 스토어가 같고, 끝의 'Android에서'·
 결제·권한·링크 절만 Play 것이다.
 
-- 상한: 제목 30자 · 짧은 설명 80자 · 전체 설명 4000자. 출시 노트는 [`release-notes.md`](release-notes.md).
+- 상한: 제목 30자 · 짧은 설명 80자 · 전체 설명 4000자. 출시 노트(언어당 500자)는 [`release-notes.md`](release-notes.md).
 - **스토어 문구에 줄표(`—`)를 쓰지 않는다**(2026-10-11 오너 지적 — AI 가 쓴 글처럼 읽힌다). 소제목은
   `■ 이름: 설명`(ja 는 전각 `：`), 하위 항목은 `◦` 로 쓴다. 규칙은 [`app-store-listing.md`](app-store-listing.md) 와 같다.
 - Play 등록정보는 앱 버전과 무관하게 바꿀 수 있다 — App Store 와 달리 새 버전을 기다리지 않는다.
 - 앱 화면 언어 지원 문장(ko·ja 「이용 안내」 마지막 줄)은 번역을 포함한 다음 Android 버전이 게재된 뒤에만 참이다.
   그래서 그 버전 기준인 (B) 에만 둔다. 지금 올리는 INTERIM 과 Android 30 기준인 (A) 에는 넣지 않는다.
 
-## 지금 상태 (2026-10-11)
+## 지금 상태 (2026-10-14)
 
-- **INTERIM 을 1.2.11 과 같은 edit 로 올려 심사에 냈다**(2026-10-11T08:45Z — 프로덕션 `31 (1.2.11)` 과 함께
-  `IN_REVIEW`). 제목·짧은 설명·전체 설명 모두 ko-KR·en-US·ja-JP. 관리형 게시가 켜져 있어(오너 확인) 승인돼도 오너가
-  게시할 때까지 앱도 등록정보도 나가지 않는다.
-- 게재 중인 값은 아직 옛 제목 `알람톡 - 좋아하는 목소리로 깨워주는 알람 시계` 와 옛 설명이다(익명 이용자 후기, 연예인·
-  캐릭터 목소리 권유, 해시태그 목록, 개인 연락처가 있고 무료 범위와 날씨 설명이 지금 앱과 다르다). 게시하는 순간
-  INTERIM 으로 바뀐다.
+- ⚠ **게재 중인 등록정보(INTERIM)에 선물 문장이 아직 있다**(ko-KR·en-US·ja-JP 모두 — 10/11 에 이 파일의 INTERIM 을
+  올렸으므로 그렇다. 게재본을 다시 읽어 대조하지는 않았다). 「■ 개인 이용권」 의
+  "개인 1개월 이용권을 선물 코드로 보낼 수도 있어요(1회 결제, 자동 갱신 없음)." / "Gift a 1-month Personal plan by
+  code (one-time purchase, no renewal)" / "パーソナル1か月分をギフトコードで贈ることもできます(1回限りの購入、自動更新なし)。"
+  다. 선물은 2026-10-14 에 서버·두 앱에서 지웠고(`docs/spec/plan-gates.md` 「선물 코드 — 폐지」), 이 파일의 원본에서도
+  지웠다. Play 등록정보는 앱 버전을 기다리지 않으므로 **아래 INTERIM 전문으로 지금 바꿔 올린다**(사람이 콘솔·API 로
+  한다 — 진행은 `docs/qa/dev-test-handoff.md` 2026-10-14 절). 올린 뒤 다시 읽어 선물·gift·ギフト·贈 이 남지 않았는지 본다.
+  - 같은 날(2차) 커플·가족 줄도 고쳤다 — "초대 코드로 모여요" 를 "한 사람이 앱에서 구독하고, 함께 쓸 사람을 초대
+    코드로 그 이용권에 들여요" 로(en·ja 도, INTERIM·(B) 모두). 코드만으로 이용권이 생기는 것처럼 읽히지 않게 구독이
+    먼저임을 말한다.
+- **선물 상품은 판매를 내렸다**(2026-10-14): 인앱 상품 `personal_gift_1m` 의 구매 옵션 `personal-gift-1m` 이
+  `INACTIVE` 다. 내리기 전 설정은 로컬 백업 `.claude/release-tools/gift-products-backup-20261014.json` 에 있다(저장소에
+  올리지 않는 파일).
+- (이력) **INTERIM 을 1.2.11 과 같은 edit 로 올려 심사에 냈고**(2026-10-11T08:45Z — 프로덕션 `31 (1.2.11)` 과 함께
+  `IN_REVIEW`) 오너가 1.2.11 과 함께 게시했다. 제목·짧은 설명·전체 설명 모두 ko-KR·en-US·ja-JP. 관리형 게시가 켜져
+  있어(오너 확인) 승인돼도 오너가 게시할 때까지 앱도 등록정보도 나가지 않는다. 그 전 옛 제목
+  `알람톡 - 좋아하는 목소리로 깨워주는 알람 시계` 와 옛 설명(익명 이용자 후기, 연예인·캐릭터 목소리 권유, 해시태그
+  목록, 개인 연락처가 있고 무료 범위와 날씨 설명이 지금 앱과 다르다)은 그때 INTERIM 으로 바뀌었다.
 - 고해상도 아이콘은 이미 단색 파랑이다 — ko-KR 아이콘이 원본(`docs/brand/app-icon-master.png`)을 512 로 줄인 것과
   sha1 이 같다(`8eaf7143…`). en-US·ja-JP 는 아이콘을 따로 두지 않아 기본 언어(ko-KR) 것을 쓴다.
 
@@ -43,7 +55,7 @@ Play Console 에 올리는 값의 원본이다. 콘솔을 고칠 때는 이 파�
   - (B) 는 세 언어 모두 국내 9개 프리셋(보내는 값이 같다)으로 확인한다.
 - **R1 · R2 — 앱 해지·환불 문장.** 앱 안 해지는 코드로만 확인했고 운영에서 실행해 본 적이 없다. Google Play 로
   직접 결제한 구독은 Play `cancel` 이 성공한 뒤에만 '종료일에 해지' 를, `revoke`(비례 환불)가 성공한 뒤에만
-  '지금 해지' 를 반영하고, 실패하면 502 로 Play 에서 해지하라고 안내한다. 선물·코드 이용권은 환불이 없고,
+  '지금 해지' 를 반영하고, 실패하면 502 로 Play 에서 해지하라고 안내한다. 코드로 받은 이용권(초대 코드, 폐지 전의 선물·프로모 코드)은 환불이 없고,
   App Store 결제는 앱에서 해지할 수 없다.
   - R1 은 E1 뒤에 붙인다: 운영 서비스 계정의 Play `cancel` 권한과 앱 '종료일에 해지' 한 번을 관찰.
   - R2 는 E2 뒤에, R1 다음에만 붙인다: 실결제 구독의 '지금 해지'(비례 환불)를 관찰.
@@ -69,7 +81,7 @@ Play Console 에 올리는 값의 원본이다. 콘솔을 고칠 때는 이 파�
 
 ## 전체 설명 — INTERIM (지금)
 
-### ko-KR (2887/4000)
+### ko-KR (2873/4000)
 
 ```text
 좋아하는 목소리로 깨는 아침.
@@ -95,10 +107,9 @@ Play Console 에 올리는 값의 원본이다. 콘솔을 고칠 때는 이 파�
 • 직접 입력: 내가 쓴 문장을 AI가 그 목소리로 읽어 줘요. 새로 만들기는 월 30회이고, 같은 목소리로 같은 문장을 쓰는 알람이 이 폰에 남아 있으면 다시 써도 횟수가 줄지 않아요.
 • 알람을 읽어 줄 언어는 한국어·영어·일본어 중에서 골라요.
 • 목소리는 한 계정에 1개, 등록·교체는 한 달에 한 번 할 수 있어요.
-• 개인 1개월 이용권을 선물 코드로 보낼 수도 있어요(1회 결제, 자동 갱신 없음).
 
 ■ 커플·가족 이용권: 서로 맞춰 주는 알람
-• 커플은 2명, 가족은 최대 5명(본인 포함)이 초대 코드로 모여요. 구성원마다 목소리를 1개씩 등록할 수 있고, 개인 이용권 기능이 모두 들어 있어요.
+• 커플(2명)·가족(최대 5명, 본인 포함) 이용권은 한 사람이 앱에서 구독하고, 함께 쓸 사람을 초대 코드로 그 이용권에 들여요. 구성원마다 목소리를 1개씩 등록할 수 있고, 개인 이용권 기능이 모두 들어 있어요.
 • 목소리 공유: 공유를 켠 목소리는 그룹 안에서만 보이고, 공유받은 목소리로 내 알람을 만들거나 직접 입력을 쓸 수 있어요.
 • 상대 알람: 시각·요일·목소리·문구를 정해 상대의 폰으로 알람을 보내요.
   ◦ 받는 사람이 설정에서 상대 알람을 허용해 둔 경우에만 도착하고, 알람을 받지 않을 시간도 정할 수 있어요.
@@ -140,7 +151,7 @@ Play Console 에 올리는 값의 원본이다. 콘솔을 고칠 때는 이 파�
 고객 지원: https://alarm-talk.com/contact/
 ```
 
-### en-US (3726/4000)
+### en-US (3724/4000)
 
 ```text
 Wake up to a voice you love.
@@ -163,10 +174,9 @@ No math, no shaking.
 • Wake-up, fortune, encouragement and meds messages in that voice are made in advance on our servers and downloaded to your phone, tailored to who the voice is to you and what it calls you (both optional)
 • Type it yourself: AI reads your text in that voice (30 new a month; free if an alarm on this phone has the same text and voice)
 • Messages in Korean, English or Japanese
-• Gift a 1-month Personal plan by code (one-time purchase, no renewal)
 
 ■ Couple (2) and Family (up to 5, incl. you)
-• Join by invite code; each member can register a voice; everything in Personal is included
+• One person subscribes in the app and invites the others to that plan with an invite code; each member can register a voice; everything in Personal is included
 • Share voices within your group only, for your own alarms and typed messages
 • Send an alarm (time, days, voice, message) to a member who allows it, outside hours they block. Once delivered, it's theirs to change or delete; fortune uses their details.
 • Typed messages: 50 a month for Couple, 100 for Family, shared by the group
@@ -201,7 +211,7 @@ Terms of Service: https://alarm-talk.com/en/terms/
 Support: https://alarm-talk.com/en/contact/
 ```
 
-### ja-JP (2757/4000)
+### ja-JP (2728/4000)
 
 ```text
 好きな声で目覚める朝を。
@@ -227,10 +237,9 @@ Support: https://alarm-talk.com/en/contact/
 • 自分で入力：書いた文をAIがその声で読み上げます。新しく作れるのは月30回まで。同じ声・同じ文を使うアラームがこのスマホに残っていれば、回数に数えません。
 • 読み上げる言語は、日本語・韓国語・英語から選べます。
 • 声は1アカウントに1つ。登録・変更は月1回までです。
-• パーソナル1か月分をギフトコードで贈ることもできます(1回限りの購入、自動更新なし)。
 
 ■ カップル・ファミリープラン：起こし合うアラーム
-• カップルは2人、ファミリーは最大5人(本人を含む)で、招待コードでグループを作ります。メンバーはそれぞれ声を1つ登録でき、パーソナルプランの機能もすべて含まれます。
+• カップルは2人、ファミリーは最大5人(本人を含む)。1人がアプリで購読し、ほかの人を招待コードでそのプランに招待します。メンバーはそれぞれ声を1つ登録でき、パーソナルプランの機能もすべて含まれます。
 • 声の共有：共有をオンにした声はグループ内だけに表示され、共有された声で自分のアラームを作ったり、自分で入力を使ったりできます。
 • 相手のアラーム設定：時刻・曜日・声・メッセージを決めて、相手のスマホにアラームを送れます。
   ◦ 受け取る人が設定で相手からのアラームを許可している場合だけ届きます。アラームを受け取らない時間も設定できます。
@@ -274,7 +283,7 @@ Support: https://alarm-talk.com/en/contact/
 
 ## 전체 설명 — (B) 다음 Android 버전, W 뒤
 
-### ko-KR (2994/4000)
+### ko-KR (2980/4000)
 
 ```text
 좋아하는 목소리로 깨는 아침.
@@ -301,10 +310,9 @@ Support: https://alarm-talk.com/en/contact/
 • 직접 입력: 내가 쓴 문장을 AI가 그 목소리로 읽어 줘요. 새로 만들기는 월 30회이고, 같은 목소리로 같은 문장을 쓰는 알람이 이 폰에 남아 있으면 다시 써도 횟수가 줄지 않아요.
 • 알람을 읽어 줄 언어는 한국어·영어·일본어 중에서 골라요.
 • 목소리는 한 계정에 1개, 등록·교체는 한 달에 한 번 할 수 있어요.
-• 개인 1개월 이용권을 선물 코드로 보낼 수도 있어요(1회 결제, 자동 갱신 없음).
 
 ■ 커플·가족 이용권: 서로 맞춰 주는 알람
-• 커플은 2명, 가족은 최대 5명(본인 포함)이 초대 코드로 모여요. 구성원마다 목소리를 1개씩 등록할 수 있고, 개인 이용권 기능이 모두 들어 있어요.
+• 커플(2명)·가족(최대 5명, 본인 포함) 이용권은 한 사람이 앱에서 구독하고, 함께 쓸 사람을 초대 코드로 그 이용권에 들여요. 구성원마다 목소리를 1개씩 등록할 수 있고, 개인 이용권 기능이 모두 들어 있어요.
 • 목소리 공유: 공유를 켠 목소리는 그룹 안에서만 보이고, 공유받은 목소리로 내 알람을 만들거나 직접 입력을 쓸 수 있어요.
 • 상대 알람: 시각·요일·목소리·문구를 정해 상대의 폰으로 알람을 보내요.
   ◦ 받는 사람이 설정에서 상대 알람을 허용해 둔 경우에만 도착하고, 알람을 받지 않을 시간도 정할 수 있어요.
@@ -347,7 +355,7 @@ Support: https://alarm-talk.com/en/contact/
 고객 지원: https://alarm-talk.com/contact/
 ```
 
-### en-US (3815/4000)
+### en-US (3813/4000)
 
 ```text
 Wake up to a voice you love.
@@ -370,10 +378,9 @@ No math, no shaking.
 • Wake-up, weather, fortune, encouragement and meds messages in that voice are made in advance on our servers and downloaded to your phone, tailored to who the voice is to you and what it calls you (both optional)
 • Type it yourself: AI reads your text in that voice (30 new a month; free if an alarm on this phone has the same text and voice)
 • Messages in Korean, English or Japanese
-• Gift a 1-month Personal plan by code (one-time purchase, no renewal)
 
 ■ Couple (2) and Family (up to 5, incl. you)
-• Join by invite code; each member can register a voice; everything in Personal is included
+• One person subscribes in the app and invites the others to that plan with an invite code; each member can register a voice; everything in Personal is included
 • Share voices within your group only, for your own alarms and typed messages
 • Send an alarm (time, days, voice, message) to a member who allows it, outside hours they block. Once delivered, it's theirs to change or delete; weather and fortune use their details.
 • Typed messages: 50 a month for Couple, 100 for Family, shared by the group
@@ -408,7 +415,7 @@ Terms of Service: https://alarm-talk.com/en/terms/
 Support: https://alarm-talk.com/en/contact/
 ```
 
-### ja-JP (2858/4000)
+### ja-JP (2829/4000)
 
 ```text
 好きな声で目覚める朝を。
@@ -435,10 +442,9 @@ Support: https://alarm-talk.com/en/contact/
 • 自分で入力：書いた文をAIがその声で読み上げます。新しく作れるのは月30回まで。同じ声・同じ文を使うアラームがこのスマホに残っていれば、回数に数えません。
 • 読み上げる言語は、日本語・韓国語・英語から選べます。
 • 声は1アカウントに1つ。登録・変更は月1回までです。
-• パーソナル1か月分をギフトコードで贈ることもできます(1回限りの購入、自動更新なし)。
 
 ■ カップル・ファミリープラン：起こし合うアラーム
-• カップルは2人、ファミリーは最大5人(本人を含む)で、招待コードでグループを作ります。メンバーはそれぞれ声を1つ登録でき、パーソナルプランの機能もすべて含まれます。
+• カップルは2人、ファミリーは最大5人(本人を含む)。1人がアプリで購読し、ほかの人を招待コードでそのプランに招待します。メンバーはそれぞれ声を1つ登録でき、パーソナルプランの機能もすべて含まれます。
 • 声の共有：共有をオンにした声はグループ内だけに表示され、共有された声で自分のアラームを作ったり、自分で入力を使ったりできます。
 • 相手のアラーム設定：時刻・曜日・声・メッセージを決めて、相手のスマホにアラームを送れます。
   ◦ 受け取る人が設定で相手からのアラームを許可している場合だけ届きます。アラームを受け取らない時間も設定できます。
@@ -489,20 +495,20 @@ Support: https://alarm-talk.com/en/contact/
 - en·ja 의 날씨 줄을 바꾼다 — Android 30 의 en 은 프리셋이 없고 ja 프리셋은 일본 도시라서 '국내 9개 도시'를
   말하지 않는다.
 
-**ko-KR** (결과 2970/4000)
+**ko-KR** (결과 2954/4000)
 
 ```diff
 -• 앱 화면은 한국어·영어·일본어를 지원해요.
 ```
 
-**en-US** (결과 3785/4000)
+**en-US** (결과 3783/4000)
 
 ```diff
 -• Messages: Weather (the day's weather, from rain to poor air; one of 9 major Korean cities), Fortune (for fun, from gender, birth date and time), Encouragement and Meds (each ring plays the next prepared one)
 +• Messages: Weather (the day's weather, from rain to poor air), Fortune (for fun, from gender, birth date and time), Encouragement and Meds (each ring plays the next prepared one)
 ```
 
-**ja-JP** (결과 2820/4000)
+**ja-JP** (결과 2785/4000)
 
 ```diff
 -  ◦ 天気：その日の天気(晴れ・雨・雪・PM2.5・暑さ・寒さなど)に合わせたメッセージ。都市は韓国の主要9都市から選びます。
@@ -560,14 +566,14 @@ R2 (100자)
 | 제목 | 30 | 14 | 28 | 16 |
 | 짧은 설명 — INTERIM | 80 | 54 | 78 | 53 |
 | 짧은 설명 — (A)·(B) | 80 | 54 | 80 | 53 |
-| 전체 설명 — INTERIM | 4000 | 2887 | 3726 | 2757 |
-| 전체 설명 — INTERIM + R1 | 4000 | 2940 | 3786 | 2799 |
-| 전체 설명 — INTERIM + R1 + R2 | 4000 | 3042 | 3904 | 2899 |
-| 전체 설명 — (A) | 4000 | 2968 | 3785 | 2814 |
-| 전체 설명 — (A) + R1 | 4000 | 3021 | 3845 | 2856 |
-| 전체 설명 — (A) + R1 + R2 | 4000 | 3123 | 3963 | 2956 |
-| 전체 설명 — (B) | 4000 | 2994 | 3815 | 2858 |
-| 전체 설명 — (B) + R1 | 4000 | 3047 | 3875 | 2900 |
-| 전체 설명 — (B) + R1 + R2 | 4000 | 3149 | 3993 | 3000 |
+| 전체 설명 — INTERIM | 4000 | 2873 | 3724 | 2728 |
+| 전체 설명 — INTERIM + R1 | 4000 | 2926 | 3784 | 2770 |
+| 전체 설명 — INTERIM + R1 + R2 | 4000 | 3028 | 3902 | 2870 |
+| 전체 설명 — (A) | 4000 | 2954 | 3783 | 2785 |
+| 전체 설명 — (A) + R1 | 4000 | 3007 | 3843 | 2827 |
+| 전체 설명 — (A) + R1 + R2 | 4000 | 3109 | 3961 | 2927 |
+| 전체 설명 — (B) | 4000 | 2980 | 3813 | 2829 |
+| 전체 설명 — (B) + R1 | 4000 | 3033 | 3873 | 2871 |
+| 전체 설명 — (B) + R1 + R2 | 4000 | 3135 | 3991 | 2971 |
 
 글자 수는 유니코드 코드 포인트 수다. 이 표는 위 문구에서 센 값이다 — 문구를 고치면 다시 센다.

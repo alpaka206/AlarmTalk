@@ -52,7 +52,7 @@
 |---|---|---|---|
 | `USER_NOT_FOUND` | 인증 주체/대상 사용자를 DB 에서 찾을 수 없음 | 404 | `routes/user.ts`, `billing-*.ts`, `code.ts`, `family-*.ts` |
 | `FORBIDDEN` | 리소스 접근/소유권 없음(테스트 코드 발급자 아님) | 403 | `routes/billing-mutation.ts` |
-| `INVALID_REQUEST` | 요청 바디 파싱/검증 실패(결제 계열) | 400 | `routes/billing-google.ts` |
+| `INVALID_REQUEST` | 요청 바디 파싱/검증 실패(결제 계열). dev 스텁 `POST /billing/checkout` 의 `gift: true` 와 `POST /billing/test-codes` 의 개인 플랜도 여기다(선물 폐지 — 2026-10-14) | 400 | `routes/billing-google.ts`, `routes/billing-mutation.ts` |
 | `INVALID_JSON` | JSON 본문 파싱 실패 | 400 | `routes/user.ts`, `push.ts`, `events.ts` |
 | `JSON_BODY_REQUIRED` | JSON 본문 필요 | 400 | `routes/voice-profile.ts` |
 | `ADMIN_UNCONFIGURED` | 관리자 콘솔 미구성(`ADMIN_SECRET` 없음) | 503 | `routes/admin.ts` |
@@ -133,7 +133,7 @@
 | `GOOGLE_BILLING_UNCONFIGURED` | Google 결제 서버 미구성 | 503 | `routes/billing-google.ts` |
 | `RTDN_UNCONFIGURED` | RTDN(실시간 알림) 미구성 | 503 | `routes/billing-google-rtdn.ts` |
 | `RTDN_BAD_TOKEN` | RTDN 검증 토큰 불일치 | 403 | `routes/billing-google-rtdn.ts` |
-| `UNKNOWN_PRODUCT` | SKU 화이트리스트 밖 상품 id | 400 | `routes/billing-google.ts` |
+| `UNKNOWN_PRODUCT` | SKU 화이트리스트 밖 상품 id — 은퇴한 선물 상품 `personal_gift_1m` 도 여기다(Play 호출 전, 확인 없음 → Play 자동 환불) | 400 | `routes/billing-google.ts` |
 | `PACKAGE_MISMATCH` | 패키지명 불일치 | 400 | `routes/billing-google.ts` |
 | `PRODUCT_MISMATCH` | 상품 id 불일치 | 400 | `routes/billing-google.ts` |
 | `GOOGLE_VERIFICATION_FAILED` | Google 구매 검증 실패(업스트림) | 502 | `routes/billing-google.ts`, `billing-google-rtdn.ts` |
@@ -143,12 +143,11 @@
 | `TRANSACTION_ACCOUNT_MISMATCH` | 구매의 `obfuscatedAccountId` 가 다른 계정 | 403 | `routes/billing-google.ts` |
 | `TRANSACTION_ACCOUNT_UNVERIFIED` | 구매에 계정 식별자가 없어 귀속 확인 불가 | 403 | `routes/billing-google.ts` |
 | `TRANSACTION_OWNED_BY_OTHER_USER` | 다른 계정에 이미 귀속된 트랜잭션 | 409 | `lib/store-billing.ts`(→ `billing-google.ts`) |
-| `CHECKOUT_DISABLED` | 테스트 빌드에서 체크아웃 비활성(코드 등록 유도) | 409 | `routes/billing-mutation.ts` |
+| `CHECKOUT_DISABLED` | dev 스텁 체크아웃이 꺼져 있음(prod 는 늘 이것). 두 앱 모두 이 라우트를 부르지 않아 문구가 없다 — 안드로이드의 '초대 코드를 등록해 주세요' 안내는 2026-10-14 에 지웠다(코드로 결제를 대신하라는 말이라 3.1.1) | 409 | `routes/billing-mutation.ts` |
 | `PLAN_KEY_REQUIRED` | plan_key 필요 | 400 | `routes/billing-mutation.ts` |
 | `PLAN_NOT_FOUND` | 플랜 미존재 | 400 | `routes/billing-*.ts`, `lib/*-redemption.ts` |
 | `PLAN_INACTIVE` | 비활성 플랜 | 400 | `routes/billing-mutation.ts` |
 | `FREE_NOT_BILLABLE` | 무료 플랜은 결제/코드 대상 아님 | 400 | `routes/billing-mutation.ts` |
-| `GIFT_PERSONAL_ONLY` | 선물 결제는 개인 플랜만 | 400 | `routes/billing-mutation.ts` |
 | `INVALID_COUNT` | 테스트 코드 count 범위 오류(1~50) | 400 | `routes/billing-mutation.ts` |
 | `INVALID_DAYS` | 테스트 코드 days 범위 오류(1~365) | 400 | `routes/billing-mutation.ts` |
 | `INVALID_CANCEL_MODE` | 해지 mode 가 `at_period_end`/`immediate` 아님 | 400 | `routes/billing-mutation.ts` |
@@ -159,15 +158,18 @@
 | `APPLE_BILLING_UNCONFIGURED` | 애플 결제 시크릿 미설정 | 503 | `routes/billing-apple.ts` |
 | `TRANSACTION_NOT_FOUND` | App Store Server API 에 그 트랜잭션이 없음 | 404 | `routes/billing-apple.ts` |
 | `APPLE_VERIFICATION_FAILED` | 애플 서명 검증 실패 | 502 | `routes/billing-apple.ts` |
-| `UNKNOWN_PRODUCT` | 우리가 모르는 애플 product id | 400 | `routes/billing-apple.ts` |
+| `UNKNOWN_PRODUCT` | 우리가 모르는 애플 product id — 은퇴한 선물 상품 `com.alarmtalk.app.personal_gift_1m` 도 여기다(환불 통보 포함, 코드·원장을 쓰지 않는다) | 400 | `routes/billing-apple.ts` |
 | `TRANSACTION_REVOKED` | 환불·취소된 트랜잭션 | 400 | `routes/billing-apple.ts` |
 | `TRANSACTION_NOT_SUBSCRIPTION` | 만료일이 없는 트랜잭션(구독 아님) | 400 | `routes/billing-apple.ts` |
 | `NO_ACTIVE_FAMILY_OWNER_SUBSCRIPTION` | 활성 가족 플랜 소유권 없음(공유코드 발급 불가) | 404 | `routes/billing-mutation.ts` |
 | `GROUP_FULL` | 그룹 정원 초과 | 409 | `routes/billing-mutation.ts`, `lib/voucher-redemption.ts` |
 
-## 4. 바우처(선물·초대) 코드
+## 4. 초대(바우처) 코드
 
-`routes/code.ts`, `lib/voucher-redemption.ts`. 프로모 코드(`routes/billing-promo.ts`·`lib/promo-redemption.ts`)는
+`routes/code.ts`, `lib/voucher-redemption.ts`. 받는 코드는 커플·가족 이용권의 초대 코드(`INV-`) 하나다.
+선물 코드(`GIFT-`)는 2026-10-14 에 없앴다 — App Store 심사 지침 3.1.1 두 번째 반려(`docs/spec/plan-gates.md`
+「선물 코드 — 폐지」). 그 갈래의 코드 `INVALID_GIFT_PLAN` 과 선물 결제 쪽의 `GIFT_PERSONAL_ONLY`(dev 스텁 체크아웃)·
+`PURCHASE_NOT_COMPLETED`(구글 1회성 상품 확정)는 목록에서 지웠다 — 서버가 더는 내지 않는다. 프로모 코드(`routes/billing-promo.ts`·`lib/promo-redemption.ts`)는
 2026-10-12 에 없앴다 — App Store 심사 지침 3.1.1 반려(`docs/spec/plan-gates.md` 「프로모 코드 — 폐지」). 그 갈래의
 코드(`ACTIVE_SUBSCRIPTION_EXISTS`·`CODE_EXHAUSTED`·`CODE_GROUP_ALREADY_REDEEMED`·`CODE_INACTIVE`·`CODE_MISCONFIGURED`·
 `CODE_NOT_IN_WINDOW`·`PROMO_REDEEM_FAILED`)도 목록에서 함께 지웠다.
@@ -176,12 +178,11 @@
 |---|---|---|---|
 | `CODE_REQUIRED` | code 값 필요 | 400 | `routes/code.ts`, `billing-mutation.ts`, `lib/voucher-redemption.ts` |
 | `INVALID_FORMAT` | 바우처 코드 형식 오류 | 400 | `lib/voucher-redemption.ts` |
-| `CODE_NOT_FOUND` | 코드 미존재 — INV-/GIFT- 형식이 아닌 입력도 여기다(옛 프로모 코드 포함) | 404 | `routes/code.ts`, `lib/voucher-redemption.ts` |
+| `CODE_NOT_FOUND` | 코드 미존재 — INV- 형식이 아닌 입력은 조회 없이 여기다(옛 선물 코드 GIFT- 는 발급 행이 남아 있어도, 옛 프로모 코드도) | 404 | `routes/code.ts`, `lib/voucher-redemption.ts` |
 | `CODE_EXPIRED` | 코드 만료 | 409 | `lib/voucher-redemption.ts` |
 | `CODE_ALREADY_USED` | 이미 사용된 코드(상한 도달) | 409 | `lib/voucher-redemption.ts` |
 | `CODE_ALREADY_REDEEMED_BY_YOU` | 본인이 이미 사용한 코드(중복) | 409 | `lib/voucher-redemption.ts` |
 | `SELF_ISSUED` | 본인이 발급한 바우처는 사용 불가 | 400 | `lib/voucher-redemption.ts` |
-| `INVALID_GIFT_PLAN` | 선물 코드는 개인 플랜만 | 400 | `lib/voucher-redemption.ts` |
 | `INVALID_INVITE_PLAN` | 초대 코드는 가족/커플 플랜만 | 400 | `lib/voucher-redemption.ts` |
 | `OWNS_ACTIVE_GROUP` | 다른 멤버가 있는 가족 그룹 소유자는 코드 사용 불가(양도/정리 후 재시도) | 409 | `lib/voucher-redemption.ts` |
 
