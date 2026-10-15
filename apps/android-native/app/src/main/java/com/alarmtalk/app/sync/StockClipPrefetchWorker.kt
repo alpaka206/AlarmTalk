@@ -885,6 +885,28 @@ class StockClipPrefetchWorker(
         }
 
         /**
+         * **탈퇴 유예를 철회한 직후**의 큐잉. [enqueue] 와 달리 돌고 있는 회차를 **갈아 끼운다**(`REPLACE`).
+         *
+         * 철회 순간 유예 403 을 받은 회차가 아직 끝나는 중일 수 있다 — 그때 [enqueue] 의 `KEEP` 은 새 요청을
+         * 버리고, 그 회차는 곧 FAILED 로 끝난다(`ACCOUNT_PENDING_DELETION` 갈래). 유예 표시는 한 번만 바뀌므로
+         * 그 뒤 아무도 다시 걸지 않아 복구한 사용자가 받기 실패 화면에 남는다(코덱스 #901).
+         * ⚠ **`APPEND` 로 바꾸지 말 것** — 앞 작업이 뒤에 실패하면 WorkManager 가 이어 붙인 작업까지 FAILED 로
+         *   만든다. 갈아 끼워도 잃는 것이 없다: 철회 전에 시작한 회차는 데이터 라우트가 전부 막혀 있던 때라
+         *   어차피 실패할 회차이고, 받아 둔 클립은 캐시에 남는다.
+         */
+        fun enqueueAfterAccountRecovery(context: Context) {
+            val request = OneTimeWorkRequestBuilder<StockClipPrefetchWorker>()
+                .setConstraints(networkConstraints)
+                .setBackoffCriteria(BackoffPolicy.LINEAR, 30, TimeUnit.SECONDS)
+                .build()
+            WorkManager.getInstance(context.applicationContext).enqueueUniqueWork(
+                WORK_NAME,
+                ExistingWorkPolicy.REPLACE,
+                request,
+            )
+        }
+
+        /**
          * 진행 상황 구독 — 다운로드 화면이 이 값으로 로딩을 그린다.
          *
          * 유니크 작업 '이력'이 오므로 실패 후 재시도를 걸면 끝난 예전 항목과 새 항목이
