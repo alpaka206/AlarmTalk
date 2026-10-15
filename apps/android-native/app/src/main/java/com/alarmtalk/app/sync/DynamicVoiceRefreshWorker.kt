@@ -53,11 +53,6 @@ class DynamicVoiceRefreshWorker(
                     Log.i(TAG, "Dynamic voice refresh worker deferred: consent not settled yet")
                     Result.success()
                 }
-                SyncWorkerOutcome.ACCOUNT_PENDING_DELETION -> {
-                    // 철회 전에는 같은 403 만 돌아온다 — 재시도·이슈 없이 끝낸다(`syncWorkerOutcome`).
-                    Log.i(TAG, "Dynamic voice refresh worker stopped: account is pending deletion")
-                    Result.success()
-                }
                 SyncWorkerOutcome.RETRY -> {
                     AlarmTalkLog.reportError("Dynamic voice refresh worker failed", error)
                     Result.retry()

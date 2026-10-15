@@ -589,21 +589,36 @@ user.get('/consents/status', async (c) => {
 });
 
 // 탈퇴 유예 (개인정보보호법 제21조). 신청 즉시 pending_deletion 으로 두고 30일 후
-// cron 이 영구파기한다. 유예 기간 내 DELETE /me/deletion 으로 철회 가능.
+// cron 이 영구파기한다. 유예 기간 안에 **다시 로그인하면 철회**된다(`cancelPendingDeletionOnSignIn`,
+// 2026-10-15) — 옛 앱의 철회 버튼(DELETE /me/deletion)도 그대로 받는다.
+//
+// ⚠ **신청은 모든 기기의 세션을 끊는다**(`token_epoch + 1`)고 그 계정의 푸시 등록을 지운다. '다시 로그인하면
+//   철회' 가 어느 기기에서나 같아야 해서다 — 세션이 남은 기기는 로그인 화면을 거치지 않으니 철회할 길도 없이
+//   모든 요청이 403 인 채로 남는다. 2026-10-15 전에는 신청한 기기만 스스로 로그아웃했다.
 user.post('/me/deletion', async (c) => {
   const userId = c.get('userId');
   const db = getDB(c.env);
   const now = new Date();
   const purgeAt = new Date(now.getTime() + DELETION_GRACE_DAYS * 24 * 60 * 60 * 1000);
   try {
-    const res = await db.execute({
-      sql: `UPDATE users
-            SET deletion_status = 'pending_deletion',
-                deletion_requested_at = ?,
-                deletion_purge_at = ?,
-                updated_at = datetime('now')
-            WHERE google_id = ? OR id = ?`,
-      args: [now.toISOString(), purgeAt.toISOString(), userId, userId],
+    const res = await withWriteTransaction(db, async (tx) => {
+      const updated = await tx.execute({
+        sql: `UPDATE users
+              SET deletion_status = 'pending_deletion',
+                  deletion_requested_at = ?,
+                  deletion_purge_at = ?,
+                  token_epoch = token_epoch + 1,
+                  updated_at = datetime('now')
+              WHERE google_id = ? OR id = ?`,
+        args: [now.toISOString(), purgeAt.toISOString(), userId, userId],
+      });
+      if (updated.rowsAffected > 0) {
+        await tx.execute({
+          sql: `DELETE FROM push_tokens WHERE user_id IN (SELECT id FROM users WHERE google_id = ? OR id = ?)`,
+          args: [userId, userId],
+        });
+      }
+      return updated;
     });
     if (res.rowsAffected === 0) {
       return c.json({ error: 'User not found', error_code: 'USER_NOT_FOUND' }, 404);

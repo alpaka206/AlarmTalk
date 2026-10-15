@@ -627,6 +627,16 @@ async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext)
         //   롤백돼 다음 틱이 처음부터 다시 한다.
         try {
           const purged = await withWriteTransaction(db, async (tx) => {
+            // ⚠ **같은 트랜잭션에서 아직 유예인지 다시 본다**(2026-10-15). 위 조회와 이 사이(애플 연결 해제는
+            //   네트워크다)에 사람이 다시 로그인하면 철회된다(`cancelPendingDeletionOnSignIn`) — 다시 보지 않으면
+            //   방금 돌아온 계정을 지운다.
+            const still = await tx.execute({
+              sql: `SELECT 1 FROM users WHERE id = ? AND deletion_status = 'pending_deletion' LIMIT 1`,
+              args: [userPk],
+            });
+            if (still.rows.length === 0) {
+              return { downgradedAlarms: [], voiceAccessRevokedUserIds: [], planChangedUserIds: [] };
+            }
             await pseudonymizeBillingForRetention(tx, userPk, env.PASSWORD_PEPPER, now);
             return purgeUserAccount(tx, userPk, userId, personalPromoCoversFree(env, now));
           });

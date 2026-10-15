@@ -10,6 +10,30 @@ import { enqueuePlanNotificationsStatement, REQUEUE_ON_CONFLICT } from './pendin
 
 const TEXT_ENCODER = new TextEncoder();
 
+/**
+ * **다시 로그인하면 탈퇴를 철회한다**(2026-10-15 오너 결정). 자격증명을 확인한 로그인(이메일·구글·애플)이
+ * 탈퇴 유예 계정이면 그 자리에서 `active` 로 되돌린다 — 예전에는 로그인 뒤 '회원 탈퇴가 진행 중이에요' 화면에서
+ * 버튼을 한 번 더 눌러야 했는데, 앱의 탈퇴 안내 문구는 처음부터 "그 전에 다시 로그인하면 탈퇴를 취소할 수 있어요"
+ * 였다(`docs/spec/session-and-auth.md` 「탈퇴 유예 — 다시 로그인하면 철회」).
+ *
+ * ⚠ **토큰 갱신(`GET /auth/me`)에서는 부르지 않는다.** 남아 있던 세션은 탈퇴 신청이 끊으므로(`POST /user/me/deletion`
+ * 이 `token_epoch` 를 올린다) 철회는 언제나 사람이 자격증명을 다시 넣은 순간이다.
+ *
+ * @returns 이번에 철회했으면 true(이미 active 면 false — 멱등).
+ */
+export async function cancelPendingDeletionOnSignIn(db: DbExecutor, userPk: string): Promise<boolean> {
+  const res = await db.execute({
+    sql: `UPDATE users
+          SET deletion_status = 'active',
+              deletion_requested_at = NULL,
+              deletion_purge_at = NULL,
+              updated_at = datetime('now')
+          WHERE id = ? AND deletion_status = 'pending_deletion'`,
+    args: [userPk],
+  });
+  return res.rowsAffected > 0;
+}
+
 export function billingRetentionUntil(now: Date): Date {
   const retainUntil = new Date(now);
   retainUntil.setUTCFullYear(retainUntil.getUTCFullYear() + 5);

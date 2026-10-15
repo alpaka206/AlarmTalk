@@ -24,6 +24,7 @@ import { verifyGoogleIdToken } from '../lib/oauth';
 import { verifyAppleIdToken } from '../lib/apple-oauth';
 import { appleSignInConfig, exchangeAppleAuthorizationCode } from '../lib/apple-revoke';
 import { familyAlarmSettingsFromRow } from '../lib/family-alarm-settings';
+import { cancelPendingDeletionOnSignIn } from '../lib/account-deletion';
 import {
   computedUserPlan,
   loadPersonalPromoField,
@@ -666,6 +667,10 @@ auth.post('/login', async (c) => {
         args: [row.id, row.id],
       });
     }
+    // 다시 로그인하면 탈퇴를 철회한다(`cancelPendingDeletionOnSignIn`). 실패하면 500 — 다시 시도하면 된다.
+    if (await cancelPendingDeletionOnSignIn(db, String(row.id))) {
+      logStructured('info', { at: 'auth.sign_in', op: 'deletion_cancelled', provider: 'email' });
+    }
 
     const token = await signAppJwt(
       {
@@ -787,6 +792,9 @@ auth.post('/google', async (c) => {
         // 구글 이름은 아직 이름이 없을 때만 채운다.
         args: [googleId, email, effectiveName || null, userId],
       });
+      if (await cancelPendingDeletionOnSignIn(db, userId)) {
+        logStructured('info', { at: 'auth.sign_in', op: 'deletion_cancelled', provider: 'google' });
+      }
     } else {
       // 신규 구글 가입도 서버 생성 UUID 를 PK 로 쓴다. 과거에는 googleId 를 그대로 PK 로
       // 삼아 users.id 가 외부 식별자였는데, 그러면 내부 관계 키가 provider 에 종속된다.
@@ -975,6 +983,9 @@ auth.post('/apple', async (c) => {
         // 진짜 주소가 지워진다.
         args: [appleId, effectiveName || null, userId],
       });
+      if (await cancelPendingDeletionOnSignIn(db, userId)) {
+        logStructured('info', { at: 'auth.sign_in', op: 'deletion_cancelled', provider: 'apple' });
+      }
     } else {
       userId = crypto.randomUUID();
       rawPlan = 'free';

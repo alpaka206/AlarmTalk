@@ -36,17 +36,12 @@ import kotlin.coroutines.cancellation.CancellationException
  *   상태라 백오프 재시도는 403 만 반복한다 — 한 사용자가 17분에 12건을 남겼다. 성공으로
  *   끝내고, 동의 뒤 알람 탭 진입의 `syncNow` 와 주기 실행이 다시 끌어온다. 전경 경로
  *   (`MainViewModelAuthActions` 의 `syncNow`)와 같은 판단이다.
- *   ⚠ 정확히 `CONSENT_REQUIRED` 만이다 — `CONSENT_STATE_UNAVAILABLE` 같은 실제 인증·동의 파손은
- *   [RETRY] 로 가 모니터링에 남는다.
- * - [ACCOUNT_PENDING_DELETION]: **탈퇴 유예 계정의 403.** 사용자가 탈퇴를 신청해 둔 상태라 서버가
- *   철회 말고는 전부 막는다(`middleware/auth.ts`). 철회해야 풀리고, 철회는 앱이 복구 화면에서
- *   받는다 — 백오프 재시도는 같은 403 만 반복한다. 이슈로 올리지 않고 끝낸다(2026-10-12~13 Play
- *   사전 출시 로봇이 가입·탈퇴 신청 뒤 다시 로그인해 워커 실패를 이슈로 남겼다, ANDROID-1B).
- *   판정은 `AlarmTalkLog.isAccountPendingDeletion` 하나다(상태 403 + 코드).
+ *   ⚠ 정확히 `CONSENT_REQUIRED` 만이다 — `CONSENT_STATE_UNAVAILABLE`·`ACCOUNT_PENDING_DELETION`
+ *   같은 실제 인증·동의 파손은 [RETRY] 로 가 모니터링에 남는다.
  * - [RETRY]: 그 밖의 실패. 보고하고 재시도한다(일시적 네트워크 실패는 `AlarmTalkLog` 가
  *   이슈 대신 브레드크럼으로 낮춘다).
  */
-internal enum class SyncWorkerOutcome { RETHROW, SESSION_EXPIRED, CONSENT_PENDING, ACCOUNT_PENDING_DELETION, RETRY }
+internal enum class SyncWorkerOutcome { RETHROW, SESSION_EXPIRED, CONSENT_PENDING, RETRY }
 
 /**
  * ⚠ **401 을 `apiErrorCode` 보다 먼저 본다.** 401 판정은 상태코드만 보면 된다
@@ -60,7 +55,6 @@ internal fun syncWorkerOutcome(error: Throwable): SyncWorkerOutcome =
         error is CancellationException -> SyncWorkerOutcome.RETHROW
         AlarmTalkLog.isHandledAuthFailure(error) -> SyncWorkerOutcome.SESSION_EXPIRED
         apiErrorCode(error) == "CONSENT_REQUIRED" -> SyncWorkerOutcome.CONSENT_PENDING
-        AlarmTalkLog.isAccountPendingDeletion(error) -> SyncWorkerOutcome.ACCOUNT_PENDING_DELETION
         else -> SyncWorkerOutcome.RETRY
     }
 

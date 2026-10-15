@@ -93,6 +93,27 @@ describe('scheduled() — 계정 파기 격리', () => {
     expect(withWriteTransaction).toHaveBeenCalledTimes(2);
   });
 
+  it('트랜잭션 안에서 다시 봐서 그 사이 로그인으로 철회된 계정은 지우지 않는다(2026-10-15)', async () => {
+    const { purgeUserAccount, pseudonymizeBillingForRetention } = await import('../src/lib/account-deletion');
+    // 'stuck' 은 조회와 트랜잭션 사이에 다시 로그인해 active 가 됐다, 'next' 는 그대로 유예다.
+    const tx = {
+      execute: vi.fn().mockImplementation((arg: { args?: unknown[] }) =>
+        Promise.resolve({ rows: arg.args?.[0] === 'stuck' ? [] : [{ 1: 1 }] }),
+      ),
+    };
+    withWriteTransaction.mockImplementation((_db: unknown, fn: (t: typeof tx) => unknown) => fn(tx));
+
+    await worker.scheduled(
+      { scheduledTime: new Date('2026-09-20T00:00:00.000Z').getTime(), cron: '*/5 * * * *' } as never,
+      { TURSO_DATABASE_URL: 'mock', TURSO_AUTH_TOKEN: 'mock', PASSWORD_PEPPER: 'pep' } as never,
+    );
+
+    expect(vi.mocked(purgeUserAccount).mock.calls.map((call) => call[1])).toEqual(['next']);
+    expect(vi.mocked(pseudonymizeBillingForRetention).mock.calls.map((call) => call[1])).toEqual(['next']);
+    const recheck = tx.execute.mock.calls.map(([arg]) => (arg as { sql: string }).sql);
+    expect(recheck.every((sql) => sql.includes("deletion_status = 'pending_deletion'"))).toBe(true);
+  });
+
   it('파기 순서는 기한이 먼저 온 계정부터로 고정이다', async () => {
     withWriteTransaction.mockResolvedValue({ downgradedAlarms: [], voiceAccessRevokedUserIds: [], planChangedUserIds: [] });
     await worker.scheduled(
