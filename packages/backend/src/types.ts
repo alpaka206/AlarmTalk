@@ -152,6 +152,11 @@ type AuthVariables = {
   userLoginId: string;
   userEmail: string;
   userName: string;
+  /**
+   * 이 요청이 쓴 앱 JWT 의 세대(`epoch`). 미들웨어가 폐기 검사를 지난 뒤에 심는다. 미들웨어를 지난 뒤 오래 걸리는 쓰기가
+   * **그 사이 폐기되지 않았는지** 같은 문장에서 다시 볼 때 쓴다(`/push/register` — 코덱스 #904).
+   */
+  tokenEpoch?: number;
   sentry: SentryClient;
   /**
    * 이 요청의 에러를 `logRouteError` 가 이미 Sentry 로 보냈는가.

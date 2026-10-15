@@ -40,14 +40,22 @@ export function pushRegisterStatements(
   userPk: string,
   token: string,
   platform: PushPlatform,
+  /**
+   * 요청이 쓴 JWT 의 세대(미들웨어가 심은 `tokenEpoch`). 주면 **그 세대가 아직 유효할 때만** 적는다(`token_epoch <= ?` —
+   * 미들웨어의 폐기 검사와 같은 뜻). 미들웨어를 지난 등록이 탈퇴 신청(세대 +1)과 그 뒤의 철회 로그인(세대 +1) 다음에
+   * 커밋되면, 계정은 다시 active 라 상태만 봐서는 막지 못한다 — 로그아웃된 기기가 그 계정에 묶여 남는다(코덱스 #904).
+   */
+  authEpoch?: number,
 ): InStatement[] {
+  const epochGuard = authEpoch === undefined ? '' : ' AND token_epoch <= ?';
+  const epochArgs = authEpoch === undefined ? [] : [authEpoch];
   return [
     {
       // ⚠ 아래 INSERT 와 **같은 조건**을 건다(코덱스 #904). 유예 계정의 늦은 등록이 INSERT 는 건너뛰면서 이 DELETE 만
       //   돌면, 그 사이 같은 기기 토큰으로 등록을 마친 다른 계정의 행을 지운다 — 그 계정은 200 을 받고도 푸시를 놓친다.
       sql: `DELETE FROM push_tokens WHERE token = ? AND user_id != ?
-            AND EXISTS (SELECT 1 FROM users WHERE id = ? AND deletion_status = 'active')`,
-      args: [token, userPk, userPk],
+            AND EXISTS (SELECT 1 FROM users WHERE id = ? AND deletion_status = 'active'${epochGuard})`,
+      args: [token, userPk, userPk, ...epochArgs],
     },
     {
       // ⚠ **계정이 아직 active 일 때만 적는다**(코덱스 #904). 탈퇴 신청은 같은 트랜잭션에서 그 계정의 `push_tokens` 를
@@ -57,11 +65,11 @@ export function pushRegisterStatements(
       // (SQLite 는 `INSERT … SELECT` 에 upsert 를 붙이려면 SELECT 에 WHERE 가 있어야 한다 — 아래 EXISTS 가 그 자리다.)
       sql: `INSERT INTO push_tokens (id, user_id, token, platform, created_at, updated_at)
             SELECT ?, ?, ?, ?, datetime('now'), datetime('now')
-            WHERE EXISTS (SELECT 1 FROM users WHERE id = ? AND deletion_status = 'active')
+            WHERE EXISTS (SELECT 1 FROM users WHERE id = ? AND deletion_status = 'active'${epochGuard})
             ON CONFLICT(user_id, token) DO UPDATE SET
               platform = excluded.platform,
               updated_at = datetime('now')`,
-      args: [crypto.randomUUID(), userPk, token, platform, userPk],
+      args: [crypto.randomUUID(), userPk, token, platform, userPk, ...epochArgs],
     },
   ];
 }
@@ -115,7 +123,7 @@ push.post('/register', async (c) => {
   //
   // fail-closed 는 그대로다: 세 번 다 실패하면(또는 SQL 오류면 즉시) 예외가 올라가 500 이고,
   // batch 는 전부 아니면 전무라 반쯤 적용된 상태가 남지 않는다.
-  const statements = pushRegisterStatements(userPk, token, platform as PushPlatform);
+  const statements = pushRegisterStatements(userPk, token, platform as PushPlatform, c.get('tokenEpoch'));
   await retryTransientTurso(() => db.batch(statements, 'write'));
 
   return c.json({ success: true });

@@ -147,6 +147,7 @@ export async function authMiddleware(c: Context<AppEnv>, next: Next) {
       if (verified.epoch < tokenEpoch) {
         return c.json({ error: 'Token has been revoked', error_code: 'TOKEN_REVOKED' }, 401);
       }
+      c.set('tokenEpoch', verified.epoch);
     } catch (err) {
       // 사용자 행 해석에 실패하면 탈퇴 유예(pending_deletion) 여부를 확인할 수 없다.
       // 이때 요청을 계속 처리(fail-open)하면 유예 계정이 차단을 우회할 수 있으므로,

@@ -227,6 +227,14 @@ describe('탈퇴 신청은 모든 기기의 세션과 푸시 등록을 끊는다
     const kept = await db.execute("SELECT user_id FROM push_tokens WHERE token = 'tok-shared'");
     expect(kept.rows.map((r) => r.user_id)).toEqual(['other']);
     await db.execute("DELETE FROM push_tokens WHERE user_id = 'other'");
+    // 그 사이 탈퇴 신청(+1)과 철회 로그인(+1)으로 세대가 올라 active 로 돌아왔어도, 옛 세대의 늦은 등록은 적지 않는다.
+    await db.execute("UPDATE users SET deletion_status = 'active', token_epoch = 2 WHERE id = 'owner'");
+    await db.batch(pushRegisterStatements('owner', 'tok-revoked', 'android', 0), 'write');
+    const revoked = await db.execute("SELECT 1 FROM push_tokens WHERE user_id = 'owner'");
+    expect(revoked.rows).toHaveLength(0);
+    await db.batch(pushRegisterStatements('owner', 'tok-current', 'android', 2), 'write');
+    const current = await db.execute("SELECT token FROM push_tokens WHERE user_id = 'owner'");
+    expect(current.rows.map((r) => r.token)).toEqual(['tok-current']);
     // active 계정은 그대로 적힌다.
     await db.batch(pushRegisterStatements('other', 'tok-ok', 'android'), 'write');
     const ok = await db.execute("SELECT token FROM push_tokens WHERE user_id = 'other'");
