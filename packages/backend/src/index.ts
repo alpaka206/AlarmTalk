@@ -604,44 +604,44 @@ async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext)
       for (const row of due.rows) {
         const userPk = String(row.id);
         const userId = (row.google_id as string | null) ?? userPk;
-        // 애플 연결을 끊는다 — **행을 지우기 전에.**
-        // ⚠ 실패해도 파기는 진행한다(즉시 삭제 경로와 같은 판단). 애플이 잠깐 죽었다고
-        // 파기를 막으면 사용자의 데이터가 유예 기간을 넘겨 남는다.
-        const appleRefreshToken = row.apple_refresh_token as string | null;
-        if (appleRefreshToken) {
-          // ⚠ **설정 생성까지 try 안에 둔다**(코덱스 #730 2차). `appleSignInConfig` 는
-          //   PEM 이 잘려 있으면 **던진다.** 밖에 두면 그 예외가 이 루프를 빠져나가
-          //   **그 계정도, 같은 배치의 뒤 계정도 전부 파기되지 않는다** — 조회에
-          //   커서가 없어 다음 틱도 같은 계정에서 다시 막히므로, 파기 요청 데이터가
-          //   무기한 남는다. 애플 연결 해제는 최선 노력이고 파기가 본 목적이다.
-          try {
-            const signInConfig = appleSignInConfig(env, env.APPLE_BUNDLE_ID);
-            if (signInConfig) await revokeAppleToken(signInConfig, appleRefreshToken);
-          } catch (err) {
-            captureCron('scheduled.account_purge.apple_revoke', err);
-          }
-        }
         // ⚠ **한 계정이 실패해도 다음 계정으로 간다**(2026-09-20). 예전에는 예외가 루프를
         //   빠져나가 같은 배치의 뒤 계정이 파기되지 않았고, 다음 틱도 같은 계정에서 다시
         //   막혔다 — 파기 요청 데이터가 무기한 남는다. 실패한 계정은 트랜잭션이 통째로
         //   롤백돼 다음 틱이 처음부터 다시 한다.
         try {
           const purged = await withWriteTransaction(db, async (tx) => {
-            // ⚠ **같은 트랜잭션에서 아직 유예인지 다시 본다**(2026-10-15). 위 조회와 이 사이(애플 연결 해제는
-            //   네트워크다)에 사람이 다시 로그인하면 철회된다(`cancelPendingDeletionOnSignIn`) — 다시 보지 않으면
-            //   방금 돌아온 계정을 지운다.
+            // ⚠ **같은 트랜잭션에서 아직 '기한이 지난 유예' 인지 다시 본다**(2026-10-15, 코덱스 #904). 위 조회와 이
+            //   사이에 사람이 다시 로그인하면 철회된다(`cancelPendingDeletionOnSignIn`). 철회한 뒤 **다시 탈퇴를
+            //   신청했으면** 상태는 또 유예지만 기한은 30일 뒤다 — 상태만 보면 새 신청을 옛 기한으로 곧바로 지운다.
             const still = await tx.execute({
-              sql: `SELECT 1 FROM users WHERE id = ? AND deletion_status = 'pending_deletion' LIMIT 1`,
-              args: [userPk],
+              sql: `SELECT 1 FROM users
+                    WHERE id = ? AND deletion_status = 'pending_deletion'
+                      AND deletion_purge_at IS NOT NULL AND deletion_purge_at <= ?
+                    LIMIT 1`,
+              args: [userPk, now.toISOString()],
             });
-            if (still.rows.length === 0) {
-              return { downgradedAlarms: [], voiceAccessRevokedUserIds: [], planChangedUserIds: [] };
-            }
+            if (still.rows.length === 0) return null;
             await pseudonymizeBillingForRetention(tx, userPk, env.PASSWORD_PEPPER, now);
             return purgeUserAccount(tx, userPk, userId, personalPromoCoversFree(env, now));
           });
+          if (!purged) continue;
           revokedTargets.push(...purged.downgradedAlarms);
           voiceAccessRevokedUserIds.push(...purged.voiceAccessRevokedUserIds);
+          // 애플 연결을 끊는다 — **파기가 커밋된 뒤에**(코덱스 #904). 예전에는 행을 지우기 전에 끊었는데(파기 뒤에는
+          //   토큰을 읽을 곳이 없다), 그 사이 다시 로그인해 철회된 계정은 파기는 건너뛰면서 애플 연결만 잃었다. 토큰은
+          //   위 조회에서 이미 읽어 메모리에 있다.
+          // ⚠ 실패해도 파기는 이미 끝났다(즉시 삭제 경로와 같은 판단 — 애플이 잠깐 죽었다고 파기를 막지 않는다).
+          const appleRefreshToken = row.apple_refresh_token as string | null;
+          if (appleRefreshToken) {
+            // ⚠ **설정 생성까지 try 안에 둔다**(코덱스 #730 2차). `appleSignInConfig` 는 PEM 이 잘려 있으면 **던진다** —
+            //   밖에 두면 같은 배치의 뒤 계정이 파기되지 않는다.
+            try {
+              const signInConfig = appleSignInConfig(env, env.APPLE_BUNDLE_ID);
+              if (signInConfig) await revokeAppleToken(signInConfig, appleRefreshToken);
+            } catch (err) {
+              captureCron('scheduled.account_purge.apple_revoke', err);
+            }
+          }
         } catch (err) {
           captureCron('scheduled.account_purge.user', err);
         }

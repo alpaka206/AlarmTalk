@@ -20,6 +20,7 @@ import authRoutes from '../src/routes/auth';
 import user from '../src/routes/user';
 import { hashPassword } from '../src/lib/password';
 import { cancelPendingDeletionOnSignIn } from '../src/lib/account-deletion';
+import { signAppJwt } from '../src/lib/jwt';
 
 const ENV = {
   ELEVENLABS_API_KEY: 'x',
@@ -102,6 +103,24 @@ describe('로그인하면 탈퇴를 철회한다', () => {
     expect(await cancelPendingDeletionOnSignIn(db, 'owner')).toBe(true);
     expect(await cancelPendingDeletionOnSignIn(db, 'owner')).toBe(false);
     expect((await row('owner')).deletion_status).toBe('active');
+  });
+});
+
+describe('다른 기기의 끊긴 세션은 유예 코드로 답한다(코덱스 #904)', () => {
+  it('GET /auth/me — 탈퇴 신청으로 폐기된 토큰이면 401 이 아니라 403 ACCOUNT_PENDING_DELETION(계정 내용 없음)', async () => {
+    await db.execute("UPDATE users SET token_epoch = 1 WHERE id = 'owner'");
+    const token = await signAppJwt({ sub: 'owner', email: 'owner@example.test', epoch: 0 }, ENV.JWT_SECRET);
+    const app = new Hono<{ Bindings: Env }>();
+    app.route('/auth', authRoutes);
+    const res = await app.request(
+      new Request('http://localhost/auth/me', { headers: { Authorization: `Bearer ${token}` } }),
+      undefined,
+      ENV,
+    );
+    expect(res.status).toBe(403);
+    const body = await res.json();
+    expect(body.error_code).toBe('ACCOUNT_PENDING_DELETION');
+    expect(body.user).toBeUndefined();
   });
 });
 

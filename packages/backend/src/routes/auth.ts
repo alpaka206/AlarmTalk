@@ -667,10 +667,6 @@ auth.post('/login', async (c) => {
         args: [row.id, row.id],
       });
     }
-    // 다시 로그인하면 탈퇴를 철회한다(`cancelPendingDeletionOnSignIn`). 실패하면 500 — 다시 시도하면 된다.
-    if (await cancelPendingDeletionOnSignIn(db, String(row.id))) {
-      logStructured('info', { at: 'auth.sign_in', op: 'deletion_cancelled', provider: 'email' });
-    }
 
     const token = await signAppJwt(
       {
@@ -690,6 +686,12 @@ auth.post('/login', async (c) => {
     );
     const promo = resolvePersonalPromo(c.env);
     const personalPromo = await loadPersonalPromoField(db, String(row.id), row.plan, promo);
+    // ⚠ **다시 로그인하면 탈퇴를 철회한다 — 응답이 다 준비된 뒤 마지막에**(`cancelPendingDeletionOnSignIn`, 코덱스 #904).
+    //   토큰 서명·계정 조회·프로모 조회가 실패해 로그인이 실패로 끝났는데 철회만 남으면, 실패를 본 사람은 아직
+    //   탈퇴가 진행 중인 줄 안다. 이 쓰기가 실패하면 500 — 다시 로그인하면 된다.
+    if (await cancelPendingDeletionOnSignIn(db, String(row.id))) {
+      logStructured('info', { at: 'auth.sign_in', op: 'deletion_cancelled', provider: 'email' });
+    }
     return c.json({
       token,
       user: {
@@ -792,9 +794,6 @@ auth.post('/google', async (c) => {
         // 구글 이름은 아직 이름이 없을 때만 채운다.
         args: [googleId, email, effectiveName || null, userId],
       });
-      if (await cancelPendingDeletionOnSignIn(db, userId)) {
-        logStructured('info', { at: 'auth.sign_in', op: 'deletion_cancelled', provider: 'google' });
-      }
     } else {
       // 신규 구글 가입도 서버 생성 UUID 를 PK 로 쓴다. 과거에는 googleId 를 그대로 PK 로
       // 삼아 users.id 가 외부 식별자였는데, 그러면 내부 관계 키가 provider 에 종속된다.
@@ -844,6 +843,12 @@ auth.post('/google', async (c) => {
 
     const promo = resolvePersonalPromo(c.env);
     const personalPromo = await loadPersonalPromoField(db, userId, rawPlan, promo);
+    // ⚠ **다시 로그인하면 탈퇴를 철회한다 — 응답이 다 준비된 뒤 마지막에**(`cancelPendingDeletionOnSignIn`, 코덱스 #904).
+    //   토큰 서명·계정 조회·프로모 조회가 실패해 로그인이 실패로 끝났는데 철회만 남으면, 실패를 본 사람은 아직
+    //   탈퇴가 진행 중인 줄 안다. 이 쓰기가 실패하면 500 — 다시 로그인하면 된다.
+    if (await cancelPendingDeletionOnSignIn(db, userId)) {
+      logStructured('info', { at: 'auth.sign_in', op: 'deletion_cancelled', provider: 'google' });
+    }
     return c.json({
       token,
       user: {
@@ -983,9 +988,6 @@ auth.post('/apple', async (c) => {
         // 진짜 주소가 지워진다.
         args: [appleId, effectiveName || null, userId],
       });
-      if (await cancelPendingDeletionOnSignIn(db, userId)) {
-        logStructured('info', { at: 'auth.sign_in', op: 'deletion_cancelled', provider: 'apple' });
-      }
     } else {
       userId = crypto.randomUUID();
       rawPlan = 'free';
@@ -1061,6 +1063,12 @@ auth.post('/apple', async (c) => {
 
     const promo = resolvePersonalPromo(c.env);
     const personalPromo = await loadPersonalPromoField(db, userId, rawPlan, promo);
+    // ⚠ **다시 로그인하면 탈퇴를 철회한다 — 응답이 다 준비된 뒤 마지막에**(`cancelPendingDeletionOnSignIn`, 코덱스 #904).
+    //   토큰 서명·계정 조회·프로모 조회가 실패해 로그인이 실패로 끝났는데 철회만 남으면, 실패를 본 사람은 아직
+    //   탈퇴가 진행 중인 줄 안다. 이 쓰기가 실패하면 500 — 다시 로그인하면 된다.
+    if (await cancelPendingDeletionOnSignIn(db, userId)) {
+      logStructured('info', { at: 'auth.sign_in', op: 'deletion_cancelled', provider: 'apple' });
+    }
     return c.json({
       token,
       user: {
@@ -1146,6 +1154,12 @@ auth.get('/me', async (c) => {
     // 로그아웃(전 기기)/비밀번호 재설정으로 무효화된 구 토큰 → 401. /auth/me 가 세션
     // 검증 역할을 하므로 보호 API 도달 전에 여기서 막아 폐기된 세션 재저장을 방지한다.
     if ((payload.epoch ?? 0) < Number(row.token_epoch ?? 0)) {
+      // ⚠ **탈퇴 유예라 끊긴 토큰이면 유예 코드로 답한다**(코덱스 #904 — `authMiddleware` 와 같은 이유). 탈퇴 신청은
+      //   모든 기기의 세션을 끊는데, 401 이면 다른 기기는 자동 만료로 읽어 알람 예약을 남긴다 — 유예 코드여야 그
+      //   기기도 알람까지 정리하고 떠난다. 계정 내용은 싣지 않는다(폐기된 토큰이다).
+      if (row.deletion_status === 'pending_deletion') {
+        return c.json(errorBody('ACCOUNT_PENDING_DELETION', 'Account is scheduled for deletion'), 403);
+      }
       return c.json(errorBody('TOKEN_REVOKED', 'Token has been revoked'), 401);
     }
     const familyAlarmSettings = familyAlarmSettingsFromRow(row);

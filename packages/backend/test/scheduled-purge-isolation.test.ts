@@ -49,6 +49,11 @@ vi.mock('../src/lib/weather-region-daily', () => ({
   hasWeatherSlotLastTick: vi.fn().mockReturnValue(false),
   refreshWeatherRegionDaily: vi.fn(),
 }));
+const revokeAppleToken = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
+vi.mock('../src/lib/apple-revoke', () => ({
+  appleSignInConfig: () => ({ teamId: 't', keyId: 'k', privateKey: 'p', clientId: 'c' }),
+  revokeAppleToken,
+}));
 vi.mock('../src/lib/fcm', () => ({
   sendAlarmPush: vi.fn().mockResolvedValue(undefined),
   notifyDowngradedAlarms: vi.fn().mockResolvedValue(undefined),
@@ -91,6 +96,41 @@ describe('scheduled() — 계정 파기 격리', () => {
     );
 
     expect(withWriteTransaction).toHaveBeenCalledTimes(2);
+  });
+
+  it('파기 직전 재확인은 기한도 본다 — 철회 뒤 다시 신청한 계정을 옛 기한으로 지우지 않고, 애플 연결도 끊지 않는다', async () => {
+    const { purgeUserAccount } = await import('../src/lib/account-deletion');
+    const original = executeMock.getMockImplementation()!;
+    executeMock.mockImplementation((arg: { sql?: string } | string) => {
+      const sql = typeof arg === 'string' ? arg : (arg.sql ?? '');
+      if (sql.includes("deletion_status = 'pending_deletion'")) {
+        return Promise.resolve({
+          rows: [
+            { id: 'renewed', google_id: null, apple_refresh_token: 'apple-rt' },
+            { id: 'due', google_id: null, apple_refresh_token: 'apple-rt-2' },
+          ],
+        });
+      }
+      return original(arg);
+    });
+    const tx = {
+      execute: vi.fn().mockImplementation((arg: { sql: string; args?: unknown[] }) => {
+        // 'renewed' 는 철회 뒤 다시 신청해 기한이 30일 뒤다 — 기한 조건에 걸려 0행.
+        expect(arg.sql).toMatch(/deletion_purge_at <= \?/);
+        return Promise.resolve({ rows: arg.args?.[0] === 'renewed' ? [] : [{ 1: 1 }] });
+      }),
+    };
+    withWriteTransaction.mockImplementation((_db: unknown, fn: (t: typeof tx) => unknown) => fn(tx));
+
+    await worker.scheduled(
+      { scheduledTime: new Date('2026-09-20T00:00:00.000Z').getTime(), cron: '*/5 * * * *' } as never,
+      { TURSO_DATABASE_URL: 'mock', TURSO_AUTH_TOKEN: 'mock', PASSWORD_PEPPER: 'pep' } as never,
+    );
+
+    expect(vi.mocked(purgeUserAccount).mock.calls.map((call) => call[1])).toEqual(['due']);
+    // 애플 연결은 파기가 커밋된 계정만 끊는다(코덱스 #904).
+    expect(revokeAppleToken.mock.calls.map((call) => call[1])).toEqual(['apple-rt-2']);
+    executeMock.mockImplementation(original);
   });
 
   it('트랜잭션 안에서 다시 봐서 그 사이 로그인으로 철회된 계정은 지우지 않는다(2026-10-15)', async () => {
