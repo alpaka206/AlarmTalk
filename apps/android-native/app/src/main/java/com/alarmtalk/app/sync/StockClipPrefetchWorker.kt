@@ -105,12 +105,6 @@ internal enum class ClipFailure {
     /** 401 — 세지 않고 위로 올린다. 재시도가 아니라 세션 종료가 답이다. */
     SESSION_EXPIRED,
 
-    /**
-     * 403 `ACCOUNT_PENDING_DELETION` — 세지 않고 위로 올린다. 철회 전에는 클립마다 같은 403 이라 재시도할 것이
-     * 없다(`syncWorkerOutcome` 의 같은 갈래). 일시 실패로 세면 횟수 한도까지 배치를 되풀이한다(코덱스 #901).
-     */
-    ACCOUNT_PENDING_DELETION,
-
     /** 다시 받아 봐야 같은 결과(404 등, 응답 형식 오류). */
     PERMANENT,
 
@@ -126,7 +120,6 @@ internal enum class ClipFailure {
  */
 internal fun classifyClipFailure(error: Throwable): ClipFailure = when {
     syncWorkerOutcome(error) == SyncWorkerOutcome.SESSION_EXPIRED -> ClipFailure.SESSION_EXPIRED
-    syncWorkerOutcome(error) == SyncWorkerOutcome.ACCOUNT_PENDING_DELETION -> ClipFailure.ACCOUNT_PENDING_DELETION
     isPermanentClipFailure(error) -> ClipFailure.PERMANENT
     else -> ClipFailure.TRANSIENT
 }
@@ -605,16 +598,13 @@ class StockClipPrefetchWorker(
             //   바깥의 SESSION_EXPIRED 갈래 한 곳이 끝낸다. 다음 배치는 시작하지 않는다 — 같은 토큰으로
             //   보내 봐야 같은 401 이다.
             val sessionExpired = java.util.concurrent.atomic.AtomicReference<Throwable?>(null)
-            // 탈퇴 유예 403 도 같은 모양이다 — 클립마다 같은 403 이니 기억했다가 배치 뒤 되던져 바깥의
-            // ACCOUNT_PENDING_DELETION 갈래가 재시도 없이 끝낸다(코덱스 #901).
-            val accountPendingDeletion = java.util.concurrent.atomic.AtomicReference<Throwable?>(null)
             // ⚠ **한 회차는 끝이 있다**(2026-10-11, [mayStartNextClipBatch]). 예산을 넘겼으면 남은 배치를
             //   시작하지 않는다 — 받아 둔 클립은 캐시에 남고 다음 회차가 나머지만 받는다.
             var budgetExhausted = false
             // 클립당 HTTP 왕복 1회다. 44개를 순차로 받으면 약전파에서 1분을 넘기므로 소량 병렬로
             // 겹친다(서버·기기 부담을 감안해 4로 제한).
             for ((batchIndex, batch) in missing.chunked(PARALLELISM).withIndex()) {
-                if (sessionExpired.get() != null || accountPendingDeletion.get() != null) break
+                if (sessionExpired.get() != null) break
                 if (!mayStartNextClipBatch(batchIndex, runStartedAt, SystemClock.elapsedRealtime())) {
                     budgetExhausted = true
                     break
@@ -646,10 +636,6 @@ class StockClipPrefetchWorker(
                                         sessionExpired.compareAndSet(null, error)
                                         return@onFailure
                                     }
-                                    ClipFailure.ACCOUNT_PENDING_DELETION -> {
-                                        accountPendingDeletion.compareAndSet(null, error)
-                                        return@onFailure
-                                    }
                                     // ⚠ **영구 실패는 종류까지 기억한다**(2026-09-01 리뷰). 개수만
                                     // 세면 404 같은 재시도 불가 실패도 아래에서 `retry` 로 나가,
                                     // 될 리 없는 요청을 15분쯤 반복하는 동안 준비 화면이 계속
@@ -676,7 +662,6 @@ class StockClipPrefetchWorker(
             rebind()
             // 받은 것은 묶어 둔 채(부분 성공은 남는다) 401 을 바깥 한 곳으로 올린다.
             sessionExpired.get()?.let { throw it }
-            accountPendingDeletion.get()?.let { throw it }
             if (accountChangedDuringRun) return@runCatching Result.retry()
             // 예산에 닿아 멈춘 회차는 끝난 것이 아니다 — 다른 일시적 실패와 **같은 횟수 한도 안에서** 다시
             // 시도한다. 한도를 다 쓰면 실패로 끝나 받기 화면이 '다시 시도' 를 띄운다(약한 망에서 끝없이
@@ -710,7 +695,9 @@ class StockClipPrefetchWorker(
                     // 성공으로 내보내면 못 받은 클립이 있는데도 100% SUCCEEDED 가 되어
                     // '다시 시도' 를 영영 못 띄운다(아래 종료 규칙과 같은 이유). 세션이
                     // 끊겼으니 재시도도 무의미하다 — 재로그인 뒤 큐가 다시 걸린다.
-                    endSessionAfterWorkerUnauthorized(
+                    endWorkerSession(
+                        error = error,
+                        context = applicationContext,
                         sessionStore = sessionStore,
                         expectedGeneration = startGeneration,
                         // 시작 토큰이 아니라 **이 요청이 실제로 보낸** 토큰이다([tokenAfterRoll]).
@@ -726,12 +713,6 @@ class StockClipPrefetchWorker(
                     // 받지 못했어요' 만 남는다 — 네트워크는 멀쩡한데도. 이슈로는 올리지 않는다.
                     Log.i(TAG, "Stock clip prefetch deferred: consent not settled yet")
                     if (runAttemptCount >= MAX_RUN_ATTEMPTS) Result.failure() else Result.retry()
-                }
-                SyncWorkerOutcome.ACCOUNT_PENDING_DELETION -> {
-                    // 동의와 달리 곧 풀리지 않는다 — 철회는 사용자가 복구 화면에서 고른다. 재시도로 큐에 남기지
-                    // 않고 FAILED 로 끝내(다운로드 화면의 '다시 시도' 가 뜬다) 이슈로는 올리지 않는다.
-                    Log.i(TAG, "Stock clip prefetch stopped: account is pending deletion")
-                    Result.failure()
                 }
                 SyncWorkerOutcome.RETRY -> {
                     AlarmTalkLog.reportError("Stock clip prefetch failed", error)
@@ -880,28 +861,6 @@ class StockClipPrefetchWorker(
             WorkManager.getInstance(context.applicationContext).enqueueUniqueWork(
                 WORK_NAME,
                 ExistingWorkPolicy.KEEP,
-                request,
-            )
-        }
-
-        /**
-         * **탈퇴 유예를 철회한 직후**의 큐잉. [enqueue] 와 달리 돌고 있는 회차를 **갈아 끼운다**(`REPLACE`).
-         *
-         * 철회 순간 유예 403 을 받은 회차가 아직 끝나는 중일 수 있다 — 그때 [enqueue] 의 `KEEP` 은 새 요청을
-         * 버리고, 그 회차는 곧 FAILED 로 끝난다(`ACCOUNT_PENDING_DELETION` 갈래). 유예 표시는 한 번만 바뀌므로
-         * 그 뒤 아무도 다시 걸지 않아 복구한 사용자가 받기 실패 화면에 남는다(코덱스 #901).
-         * ⚠ **`APPEND` 로 바꾸지 말 것** — 앞 작업이 뒤에 실패하면 WorkManager 가 이어 붙인 작업까지 FAILED 로
-         *   만든다. 갈아 끼워도 잃는 것이 없다: 철회 전에 시작한 회차는 데이터 라우트가 전부 막혀 있던 때라
-         *   어차피 실패할 회차이고, 받아 둔 클립은 캐시에 남는다.
-         */
-        fun enqueueAfterAccountRecovery(context: Context) {
-            val request = OneTimeWorkRequestBuilder<StockClipPrefetchWorker>()
-                .setConstraints(networkConstraints)
-                .setBackoffCriteria(BackoffPolicy.LINEAR, 30, TimeUnit.SECONDS)
-                .build()
-            WorkManager.getInstance(context.applicationContext).enqueueUniqueWork(
-                WORK_NAME,
-                ExistingWorkPolicy.REPLACE,
                 request,
             )
         }

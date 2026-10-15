@@ -87,14 +87,6 @@ struct RootView: View {
                 NavigationStack {
                     LandingView()
                 }
-            } else if auth.pendingDeletion {
-                // 탈퇴 유예 상태 — 복구하거나 로그아웃하기 전까지 앱 진입을 막는다.
-                // Android `AccountPendingDeletionScreen` 게이팅과 동등.
-                AccountPendingDeletionView(
-                    busy: auth.isBusy,
-                    onRecover: { Task { await auth.cancelAccountDeletion() } },
-                    onLogout: { auth.signOutExplicitly() }
-                )
             } else if !auth.consentStatusChecked && !consentCachedDone {
                 // 동의 확인 응답 전에는 온보딩·홈을 아예 그리지 않는다. 응답 전 기본값
                 // `false` 가 '아니오' 와 구분되지 않아, 그 틈에 오버레이(강등 안내·프로모
@@ -293,7 +285,6 @@ struct RootView: View {
         versionGate.updateRequired
             || auth.consentUnsupported
             || !auth.isAuthenticated
-            || auth.pendingDeletion
             || auth.showConsentScreen
             // ⚠ **판정 전에는 '아니오' 가 아니라 '모른다' 다**(리뷰 21차). 아직 모르는
             //   동안 안내가 뜨면 뒤늦게 온 차단 화면이 그 위를 덮는다.

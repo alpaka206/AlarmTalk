@@ -61,7 +61,9 @@ class RemoteAlarmSyncWorker(
                 SyncWorkerOutcome.RETHROW -> throw error
                 SyncWorkerOutcome.SESSION_EXPIRED -> {
                     // 재시도해 봐야 같은 토큰이 또 거절당한다 — 세션을 끊고 끝낸다.
-                    endSessionAfterWorkerUnauthorized(
+                    endWorkerSession(
+                        error = error,
+                        context = applicationContext,
                         sessionStore = sessionStore,
                         expectedGeneration = startGeneration,
                         usedToken = usedToken,
@@ -72,11 +74,6 @@ class RemoteAlarmSyncWorker(
                 }
                 SyncWorkerOutcome.CONSENT_PENDING -> {
                     Log.i(TAG, "Remote alarm worker deferred: consent not settled yet")
-                    Result.success()
-                }
-                SyncWorkerOutcome.ACCOUNT_PENDING_DELETION -> {
-                    // 철회 전에는 같은 403 만 돌아온다 — 재시도·이슈 없이 끝낸다(`syncWorkerOutcome`).
-                    Log.i(TAG, "Remote alarm worker stopped: account is pending deletion")
                     Result.success()
                 }
                 SyncWorkerOutcome.RETRY -> {

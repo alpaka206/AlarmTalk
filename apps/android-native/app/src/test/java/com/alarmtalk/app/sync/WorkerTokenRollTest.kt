@@ -11,7 +11,7 @@ import org.junit.Test
  *
  * ## 왜 필요한가
  *
- * `endSessionAfterWorkerUnauthorized` 의 두 번째 문은 "내가 보낸 그 토큰이 아직 저장소에
+ * `endWorkerSession`(→ `endSessionAfterWorkerUnauthorized`·`leaveAccountAfterPendingDeletion`)의 두 번째 문은 "내가 보낸 그 토큰이 아직 저장소에
  * 있는가"([workerMayEndSession])다. 그래서 워커가 `GET /auth/me` 로 토큰을 굴린 뒤에도
  * **시작 토큰**을 귀속에 쓰면, 굴린 다음 나간 요청이 401 을 받아도 '지나간 토큰' 으로
  * 판정돼 **끊어야 할 세션을 못 끊는다** — 그 워커는 폐기된 세션으로 계속 돌고 사용자는
@@ -54,7 +54,8 @@ class WorkerTokenRollTest {
                 "$path: 토큰을 굴려 놓고 그 결과를 쓰지 않는다 — tokenAfterRoll 로 usedToken 을 옮길 것.",
                 source.contains("tokenAfterRoll("),
             )
-            val args = argumentsOf(source, "endSessionAfterWorkerUnauthorized(", path)
+            // 워커는 `endWorkerSession` 으로 끝낸다(원인이 탈퇴 유예면 떠나기, 아니면 자동 만료 — 2026-10-15).
+            val args = argumentsOf(source, "endWorkerSession(", path)
             assertTrue(
                 "$path: 401 귀속에 시작 토큰을 넘기고 있다(usedToken = usedToken 이어야 한다). " +
                     "토큰이 굴러간 뒤의 401 이 '지나간 토큰' 으로 판정돼 끊어야 할 세션을 못 끊는다. 넘긴 인자: $args",

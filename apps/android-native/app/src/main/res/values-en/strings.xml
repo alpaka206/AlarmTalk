@@ -297,12 +297,8 @@
     <string name="hs_perm_banner_exact_alarm">Without exact alarm permission, alarms may not ring on time</string>
     <string name="hs_perm_banner_full_screen">Without lock screen permission, alarms will not appear on the lock screen</string>
     <string name="hs_alarm_row_date_voice">%1$s · %2$s</string>
-    <string name="msg_account_delete_failed">Couldn\'t delete your account.</string>
-    <string name="msg_account_deleted">Your account has been deleted.</string>
-    <string name="msg_account_deleted_google_unlink_failed">Your account was deleted, but we couldn\'t unlink your Google account.</string>
-    <string name="msg_account_deletion_cancel_failed">Couldn\'t cancel the deletion. Please try again.</string>
-    <string name="msg_account_deletion_cancelled">Your account deletion was canceled. Your account has been restored.</string>
     <string name="msg_account_deletion_request_failed">Couldn\'t submit your account deletion request.</string>
+    <string name="msg_account_left_pending_deletion">This account is scheduled for deletion, so you have been signed out on this device too. Sign in again to cancel the deletion.</string>
     <string name="msg_account_deletion_requested">Your account deletion request has been received. You can cancel it by logging back in within 30 days.</string>
     <string name="msg_alarm_delete_failed">Couldn\'t delete your alarm.</string>
     <string name="msg_alarm_save_failed">Couldn\'t save your alarm.</string>
@@ -727,11 +723,6 @@
     <string name="r3dlg_plan_gate_confirm">View plans</string>
     <string name="r3dlg_modal_dialog_close">Close</string>
     <string name="r3dlg_feature_lock_badge_desc">Plan required</string>
-    <string name="r3dlg_pending_deletion_title">Your account deletion is in progress</string>
-    <string name="r3dlg_pending_deletion_body">Your account and data will be permanently deleted 30 days after your request.\nCancel the deletion before then to restore your account as it was.</string>
-    <string name="r3dlg_pending_deletion_processing">Processing…</string>
-    <string name="r3dlg_pending_deletion_recover">Cancel deletion and keep using</string>
-    <string name="r3dlg_pending_deletion_logout">Log out</string>
     <string name="r3ed_google_signin_error_config">Your Google sign-in settings don\'t match. Please check the package name and SHA-1 of your Android OAuth client.</string>
     <string name="r3ed_google_signin_error_network">Please check your network connection and try again.</string>
     <string name="r3ed_google_signin_error_failed">Google sign-in failed.</string>
@@ -837,7 +828,7 @@
     <string name="api_error_email_code_invalid">That verification code doesn\'t match. Please check it again.</string>
     <string name="api_error_email_code_expired">That verification code has expired. Please request a new one.</string>
     <string name="api_error_email_code_attempts">Too many incorrect codes. Please request a new one.</string>
-    <string name="api_error_account_pending_deletion">This account is scheduled for deletion. Cancel the deletion to use it again.</string>
+    <string name="api_error_account_pending_deletion">This account is scheduled for deletion. Sign in again to cancel the deletion.</string>
     <string name="api_error_session_expired">Your session has expired. Please sign in again.</string>
     <string name="api_error_voice_limit_reached">You\'ve used all your voice slots. Delete a voice you no longer need.</string>
     <string name="api_error_voice_not_ready">This voice is still being created. Please try again in a moment.</string>

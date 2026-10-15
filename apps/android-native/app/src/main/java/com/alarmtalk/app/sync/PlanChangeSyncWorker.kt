@@ -212,7 +212,9 @@ class PlanChangeSyncWorker(
                     // **아무것도 변환하지 않는다**(위 `genuinelyFree` 게이트) — 재시도만
                     // 영원히 도는 대신 세션을 끊고, 다시 로그인하면 전경 조회와
                     // 주기 폴백이 강등을 마저 맞춘다.
-                    endSessionAfterWorkerUnauthorized(
+                    endWorkerSession(
+                        error = error,
+                        context = applicationContext,
                         sessionStore = sessionStore,
                         expectedGeneration = startGeneration,
                         // 시작 토큰이 아니라 **이 요청이 실제로 보낸** 토큰이다([tokenAfterRoll]).
@@ -227,11 +229,6 @@ class PlanChangeSyncWorker(
                         "PlanChangeSyncWorker",
                         "Plan change sync deferred: consent not settled yet",
                     )
-                    Result.success()
-                }
-                SyncWorkerOutcome.ACCOUNT_PENDING_DELETION -> {
-                    // 철회 전에는 같은 403 만 돌아온다 — 재시도·이슈 없이 끝낸다(`syncWorkerOutcome`).
-                    android.util.Log.i("PlanChangeSyncWorker", "Plan change sync stopped: account is pending deletion")
                     Result.success()
                 }
                 SyncWorkerOutcome.RETRY -> {

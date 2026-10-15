@@ -24,6 +24,7 @@ import { verifyGoogleIdToken } from '../lib/oauth';
 import { verifyAppleIdToken } from '../lib/apple-oauth';
 import { appleSignInConfig, exchangeAppleAuthorizationCode } from '../lib/apple-revoke';
 import { familyAlarmSettingsFromRow } from '../lib/family-alarm-settings';
+import { cancelPendingDeletionOnSignIn } from '../lib/account-deletion';
 import {
   computedUserPlan,
   loadPersonalPromoField,
@@ -627,6 +628,7 @@ auth.post('/login', async (c) => {
   try {
     const result = await db.execute({
       sql: `SELECT id, google_id, email, password_hash, name, plan, token_epoch,
+                   deletion_status, deletion_requested_at,
                    allow_family_alarms,
                    family_alarm_quiet_windows, dynamic_prompt_settings_json
             FROM users WHERE email = ?`,
@@ -650,6 +652,8 @@ auth.post('/login', async (c) => {
       name: string | null;
       plan: 'free' | 'plus' | 'family' | null;
       token_epoch: number | string | null;
+      deletion_status: string | null;
+      deletion_requested_at: string | null;
     }>(result.rows[0]!);
 
     // OAuth 전용 계정(비밀번호 없음)도 더미 해시로 동일 비용 비교 후 동일 응답을
@@ -672,7 +676,8 @@ auth.post('/login', async (c) => {
         sub: row.id,
         email: row.email,
         name: row.name ?? undefined,
-        epoch: Number(row.token_epoch ?? 0),
+        // 유예 계정이면 아래 철회가 세대를 올린다 — 올린 세대로 서명한다(`cancelPendingDeletionOnSignIn`).
+        epoch: Number(row.token_epoch ?? 0) + (row.deletion_status === 'pending_deletion' && row.deletion_requested_at ? 1 : 0),
       },
       c.env.JWT_SECRET,
     );
@@ -685,6 +690,24 @@ auth.post('/login', async (c) => {
     );
     const promo = resolvePersonalPromo(c.env);
     const personalPromo = await loadPersonalPromoField(db, String(row.id), row.plan, promo);
+    // ⚠ **다시 로그인하면 탈퇴를 철회한다 — 응답이 다 준비된 뒤 마지막에**(`cancelPendingDeletionOnSignIn`, 코덱스 #904).
+    //   토큰 서명·계정 조회·프로모 조회가 실패해 로그인이 실패로 끝났는데 철회만 남으면, 실패를 본 사람은 아직
+    //   탈퇴가 진행 중인 줄 안다. 이 쓰기가 실패하면 500 — 다시 로그인하면 된다.
+    const deletionOutcome = await cancelPendingDeletionOnSignIn(db, String(row.id), {
+      requestedAt: row.deletion_status === 'pending_deletion' ? row.deletion_requested_at : null,
+      tokenEpoch: Number(row.token_epoch ?? 0),
+    });
+    if (deletionOutcome === 'missing') {
+      // 그 사이 파기됐다 — 없는 계정의 토큰을 내주지 않는다(존재하지 않는 이메일과 같은 응답).
+      return c.json(errorBody('AUTH_INVALID_CREDENTIALS', 'Invalid email or password'), 401);
+    }
+    if (deletionOutcome === 'superseded') {
+      // 그 사이 다른 기기가 탈퇴를 신청했거나 세대가 올랐다 — 이 토큰은 쓸 수 없다. 다시 로그인하면 새 상태로 처리한다.
+      return c.json(errorBody('AUTH_LOGIN_FAILED', 'Login failed'), 500);
+    }
+    if (deletionOutcome === 'cancelled') {
+      logStructured('info', { at: 'auth.sign_in', op: 'deletion_cancelled', provider: 'email' });
+    }
     return c.json({
       token,
       user: {
@@ -738,6 +761,7 @@ auth.post('/google', async (c) => {
 
     const existing = await db.execute({
       sql: `SELECT id, google_id, email, name, plan, token_epoch,
+                   deletion_status, deletion_requested_at,
                    allow_family_alarms,
                    family_alarm_quiet_windows, dynamic_prompt_settings_json
             FROM users
@@ -751,6 +775,8 @@ auth.post('/google', async (c) => {
     // 개인으로 올리지 않고, 응답에서만 예전처럼 'free' 로 읽는다.
     let rawPlan: 'free' | 'plus' | 'family' | null;
     let tokenEpoch = 0;
+    // 로그인 첫 조회가 본 탈퇴 신청(유예가 아니면 null) — 그 신청만 철회한다(`cancelPendingDeletionOnSignIn`).
+    let observedDeletionRequestedAt: string | null = null;
     // DB 에 쓰는 이름과 응답·JWT 에 담는 이름은 **같은 값이어야 한다.** 갈라지면 로그인
     // 직후엔 구글 이름이 보이다가 새로고침하면 저장된 닉네임으로 바뀐다.
     let effectiveName = name;
@@ -769,6 +795,8 @@ auth.post('/google', async (c) => {
       userId = row.id;
       rawPlan = row.plan;
       tokenEpoch = Number(row.token_epoch ?? 0);
+      observedDeletionRequestedAt =
+        row.deletion_status === 'pending_deletion' ? ((row.deletion_requested_at as string | null) ?? null) : null;
       // 이미 이름이 있으면 그게 사용자가 고른 닉네임이다. 구글 이름은 빈 칸만 채운다.
       //
       // 단 **저장된 값도 규칙을 통과시킨다.** 옛 스키마(가입 max(64)·trim 없음)로 만들어진
@@ -809,7 +837,8 @@ auth.post('/google', async (c) => {
     // `WHERE google_id = ?` 로 조회하는 라우트와 users.id 로 조회하는 라우트가 서로 다른
     // 사용자를 보게 되어(구독·가족그룹·코드등록이 조용히 0행) 데이터가 반으로 쪼개졌다.
     const token = await signAppJwt(
-      { sub: userId, email, name: effectiveName || undefined, epoch: tokenEpoch },
+      // 유예 계정이면 아래 철회가 세대를 올린다 — 올린 세대로 서명한다(`cancelPendingDeletionOnSignIn`).
+      { sub: userId, email, name: effectiveName || undefined, epoch: tokenEpoch + (observedDeletionRequestedAt ? 1 : 0) },
       c.env.JWT_SECRET,
     );
 
@@ -836,6 +865,24 @@ auth.post('/google', async (c) => {
 
     const promo = resolvePersonalPromo(c.env);
     const personalPromo = await loadPersonalPromoField(db, userId, rawPlan, promo);
+    // ⚠ **다시 로그인하면 탈퇴를 철회한다 — 응답이 다 준비된 뒤 마지막에**(`cancelPendingDeletionOnSignIn`, 코덱스 #904).
+    //   토큰 서명·계정 조회·프로모 조회가 실패해 로그인이 실패로 끝났는데 철회만 남으면, 실패를 본 사람은 아직
+    //   탈퇴가 진행 중인 줄 안다. 이 쓰기가 실패하면 500 — 다시 로그인하면 된다.
+    const deletionOutcome = await cancelPendingDeletionOnSignIn(db, userId, {
+      requestedAt: observedDeletionRequestedAt,
+      tokenEpoch,
+    });
+    if (deletionOutcome === 'missing') {
+      // 그 사이 파기됐다 — 없는 계정의 토큰을 내주지 않는다. 다시 시도하면 새 계정으로 들어온다.
+      throw new Error('account purged during sign-in');
+    }
+    if (deletionOutcome === 'superseded') {
+      // 그 사이 다른 기기가 탈퇴를 신청했거나 세대가 올랐다 — 이 토큰은 쓸 수 없다. 다시 로그인하면 새 상태로 처리한다.
+      throw new Error('account changed during sign-in');
+    }
+    if (deletionOutcome === 'cancelled') {
+      logStructured('info', { at: 'auth.sign_in', op: 'deletion_cancelled', provider: 'google' });
+    }
     return c.json({
       token,
       user: {
@@ -924,6 +971,7 @@ auth.post('/apple', async (c) => {
 
     const existing = await db.execute({
       sql: `SELECT id, apple_id, email, name, plan, token_epoch,
+                   deletion_status, deletion_requested_at,
                    allow_family_alarms,
                    family_alarm_quiet_windows, dynamic_prompt_settings_json
             FROM users
@@ -937,6 +985,8 @@ auth.post('/apple', async (c) => {
     // 개인으로 올리지 않고, 응답에서만 예전처럼 'free' 로 읽는다.
     let rawPlan: 'free' | 'plus' | 'family' | null;
     let tokenEpoch = 0;
+    // 로그인 첫 조회가 본 탈퇴 신청(유예가 아니면 null) — 그 신청만 철회한다(`cancelPendingDeletionOnSignIn`).
+    let observedDeletionRequestedAt: string | null = null;
     let effectiveName = name;
     // ⚠ **저장된 진짜 이메일이 이긴다**(코덱스 #730 3차). 애플은 재로그인 때 이메일을 안
     // 주는 경우가 있어 위에서 `<sub>@apple.local` 을 합성하는데, 그 값을 JWT·응답에 실으면
@@ -958,6 +1008,8 @@ auth.post('/apple', async (c) => {
       userId = row.id;
       rawPlan = row.plan;
       tokenEpoch = Number(row.token_epoch ?? 0);
+      observedDeletionRequestedAt =
+        row.deletion_status === 'pending_deletion' ? ((row.deletion_requested_at as string | null) ?? null) : null;
       // 저장된 이름이 이긴다 — 애플 이름은 빈 칸만 채운다(구글 경로와 동일한 이유:
       // 재로그인이 사용자가 고친 닉네임을 덮어쓰면 안 된다). 옛 스키마로 저장된 값도
       // 규칙을 통과시킨다.
@@ -1023,7 +1075,8 @@ auth.post('/apple', async (c) => {
 
     // JWT sub 은 항상 users.id (구글 경로 주석 참고).
     const token = await signAppJwt(
-      { sub: userId, email: effectiveEmail, name: effectiveName || undefined, epoch: tokenEpoch },
+      // 유예 계정이면 아래 철회가 세대를 올린다 — 올린 세대로 서명한다(`cancelPendingDeletionOnSignIn`).
+      { sub: userId, email: effectiveEmail, name: effectiveName || undefined, epoch: tokenEpoch + (observedDeletionRequestedAt ? 1 : 0) },
       c.env.JWT_SECRET,
     );
 
@@ -1050,6 +1103,24 @@ auth.post('/apple', async (c) => {
 
     const promo = resolvePersonalPromo(c.env);
     const personalPromo = await loadPersonalPromoField(db, userId, rawPlan, promo);
+    // ⚠ **다시 로그인하면 탈퇴를 철회한다 — 응답이 다 준비된 뒤 마지막에**(`cancelPendingDeletionOnSignIn`, 코덱스 #904).
+    //   토큰 서명·계정 조회·프로모 조회가 실패해 로그인이 실패로 끝났는데 철회만 남으면, 실패를 본 사람은 아직
+    //   탈퇴가 진행 중인 줄 안다. 이 쓰기가 실패하면 500 — 다시 로그인하면 된다.
+    const deletionOutcome = await cancelPendingDeletionOnSignIn(db, userId, {
+      requestedAt: observedDeletionRequestedAt,
+      tokenEpoch,
+    });
+    if (deletionOutcome === 'missing') {
+      // 그 사이 파기됐다 — 없는 계정의 토큰을 내주지 않는다. 다시 시도하면 새 계정으로 들어온다.
+      throw new Error('account purged during sign-in');
+    }
+    if (deletionOutcome === 'superseded') {
+      // 그 사이 다른 기기가 탈퇴를 신청했거나 세대가 올랐다 — 이 토큰은 쓸 수 없다. 다시 로그인하면 새 상태로 처리한다.
+      throw new Error('account changed during sign-in');
+    }
+    if (deletionOutcome === 'cancelled') {
+      logStructured('info', { at: 'auth.sign_in', op: 'deletion_cancelled', provider: 'apple' });
+    }
     return c.json({
       token,
       user: {
@@ -1090,6 +1161,23 @@ auth.post('/apple', async (c) => {
     return c.json(errorBody('AUTH_APPLE_FAILED', 'Apple sign-in failed'), status);
   }
 });
+
+/**
+ * 탈퇴 유예 403 을 **'그 기기에서 떠나기'** 로 처리하는 첫 빌드(플랫폼별 — 안드로이드 versionCode, iOS 빌드 번호).
+ * 이보다 옛 앱은 그 403 을 모른다 — `/auth/me` 의 200 + `deletion_status: pending_deletion` 을 받아야 옛 '회원 탈퇴가
+ * 진행 중이에요' 화면을 띄운다(코덱스 #904). 그 앱들에는 끊긴 토큰이어도 예전 모양으로 답한다.
+ * ⚠ **이 빌드들이 두 스토어에 게재되고 `app-version.ts` 의 `minSupported` 로 옛 앱을 막은 뒤 이 분기를 지운다**
+ *   (오너 결정 2026-10-15 — 옛 앱 문제는 강제 업데이트로 정리).
+ */
+const PENDING_DELETION_LEAVE_SINCE: Readonly<Record<string, number>> = { android: 34, ios: 11 };
+
+/** 요청한 앱이 탈퇴 유예 403 을 모르는 옛 빌드인가(`X-App-Platform`·`X-App-Version`). 헤더가 없으면 아니다. */
+function expectsLegacyPendingDeletionAnswer(c: { req: { header(name: string): string | undefined } }): boolean {
+  const platform = c.req.header('X-App-Platform')?.trim().toLowerCase();
+  const since = platform ? PENDING_DELETION_LEAVE_SINCE[platform] : undefined;
+  const version = Number(c.req.header('X-App-Version'));
+  return since !== undefined && Number.isInteger(version) && version > 0 && version < since;
+}
 
 auth.get('/me', async (c) => {
   const authHeader = c.req.header('Authorization');
@@ -1135,7 +1223,30 @@ auth.get('/me', async (c) => {
     // 로그아웃(전 기기)/비밀번호 재설정으로 무효화된 구 토큰 → 401. /auth/me 가 세션
     // 검증 역할을 하므로 보호 API 도달 전에 여기서 막아 폐기된 세션 재저장을 방지한다.
     if ((payload.epoch ?? 0) < Number(row.token_epoch ?? 0)) {
-      return c.json(errorBody('TOKEN_REVOKED', 'Token has been revoked'), 401);
+      // ⚠ **탈퇴 유예라 끊긴 토큰이면 유예 코드로 답한다**(코덱스 #904 — `authMiddleware` 와 같은 이유). 탈퇴 신청은
+      //   모든 기기의 세션을 끊는데, 401 이면 다른 기기는 자동 만료로 읽어 알람 예약을 남긴다 — 유예 코드여야 그
+      //   기기도 알람까지 정리하고 떠난다. 계정 내용은 싣지 않는다(폐기된 토큰이다).
+      //   ⚠ 단 **그 403 을 모르는 옛 앱**에는 예전처럼 200 + `deletion_status: pending_deletion` 으로 답한다 — 그래야 옛
+      //   '회원 탈퇴가 진행 중이에요' 화면이 뜬다(`expectsLegacyPendingDeletionAnswer`). 새 토큰은 주지 않는다.
+      if (row.deletion_status === 'pending_deletion') {
+        if (!expectsLegacyPendingDeletionAnswer(c)) {
+          return c.json(errorBody('ACCOUNT_PENDING_DELETION', 'Account is scheduled for deletion'), 403);
+        }
+        // ⚠ **계정 내용은 싣지 않는다**(코덱스 #904) — 폐기된 토큰이고, 그 폐기가 탈퇴 신청 때문이었는지(비밀번호
+        //   재설정·전 기기 로그아웃일 수도 있다) 이 자리에서는 모른다. 옛 앱이 유예 화면을 띄우는 데 필요한 최소 모양만 —
+        //   이름·이메일은 그 토큰이 이미 담고 있던 값이다.
+        return c.json({
+          user: {
+            id: String(row.id),
+            email: payload.email ?? '',
+            name: payload.name ?? '',
+            plan: 'free',
+            deletion_status: 'pending_deletion',
+          },
+        });
+      } else {
+        return c.json(errorBody('TOKEN_REVOKED', 'Token has been revoked'), 401);
+      }
     }
     const familyAlarmSettings = familyAlarmSettingsFromRow(row);
     const dynamicPromptSettings = dynamicPromptSettingsFromRow(row);

@@ -65,7 +65,7 @@ enum APIErrorMessages {
         case "AUTH_EMAIL_CODE_ATTEMPTS_EXCEEDED":
             return String(localized: "인증 코드를 너무 많이 틀렸어요. 다시 받아 주세요.")
         case "ACCOUNT_PENDING_DELETION":
-            return String(localized: "탈퇴 신청 중인 계정이에요. 탈퇴를 취소하면 다시 쓸 수 있어요.")
+            return String(localized: "탈퇴 신청 중인 계정이에요. 다시 로그인하면 탈퇴가 취소돼요.")
         // 세션이 끊긴 셋. 앱은 자동 로그아웃으로도 처리하지만, 그 사이 문구가 뜨면
         // "다시 로그인" 이라고 말해야 사용자가 무슨 일인지 안다.
         case "TOKEN_REVOKED", "AUTH_TOKEN_EXPIRED", "AUTH_USER_NOT_FOUND":

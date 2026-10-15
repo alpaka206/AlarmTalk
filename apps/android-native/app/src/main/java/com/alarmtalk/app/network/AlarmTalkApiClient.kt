@@ -33,6 +33,14 @@ object AlarmTalkApiClient {
          *   이 값 없이 가입 게이트만 열면 사용자가 통과할 방법이 없어 무한 루프가 된다.
          */
         fun onConsentRequired(consent: String?) {}
+
+        /**
+         * 어느 라우트든 403 `ACCOUNT_PENDING_DELETION` 을 받았을 때 — 다른 기기에서 탈퇴를 신청해 이 기기의 세션도
+         * 끝났다. 전경은 그 기기에서 계정을 떠난다(알람까지 끄는 명시적 로그아웃 — `leaveAccountForPendingDeletion`).
+         * 계정 확인(`checkAccountStatus`)은 세션 키가 바뀔 때만 돌아, 프로세스가 살아 있는 채 전경으로 돌아오면 닿지
+         * 않는다(코덱스 #904) — 그래서 응답 쪽 한 곳에서 받는다. 기본 구현은 동작 없음.
+         */
+        fun onAccountPendingDeletion(failedToken: String?) {}
     }
 
     /**
@@ -100,6 +108,12 @@ object AlarmTalkApiClient {
                 if (errorCode == "CONSENT_REQUIRED") {
                     val consent = parsed?.optString("consent")?.takeIf { it.isNotBlank() }
                     runCatching { unauthorizedHandler.onConsentRequired(consent) }
+                } else if (errorCode == "ACCOUNT_PENDING_DELETION") {
+                    val failedToken = response.request.header("Authorization")
+                        ?.removePrefix("Bearer ")
+                        ?.trim()
+                        ?.takeIf { it.isNotEmpty() }
+                    runCatching { unauthorizedHandler.onAccountPendingDeletion(failedToken) }
                 }
             }
             response

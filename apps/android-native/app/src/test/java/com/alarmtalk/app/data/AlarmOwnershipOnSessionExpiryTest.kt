@@ -122,6 +122,27 @@ class AlarmOwnershipOnSessionExpiryTest {
     }
 
     /**
+     * **락 안의 조건이 거짓이면 아무것도 건드리지 않는다**(코덱스 #904). 백그라운드 떠나기가 락을 기다리는 사이 같은
+     * 계정으로 다시 로그인했으면, 그 새 세션의 알람을 끄지도 세션을 비우지도 않는다.
+     */
+    @Test
+    fun detachDoesNothingWhenTheInLockPreconditionFails() = runBlocking {
+        seedLegacyAlarm(id = "b-owned", owner = "account-B")
+        currentUser = "account-B"
+        var cleared = false
+
+        val result = repository.detachAlarmsOnSignOut(
+            signedOutUserId = "account-B",
+            proceedInsideLock = { false },
+            clearSessionInsideLock = { cleared = true },
+        )
+
+        assertEquals(-1, result)
+        assertEquals("새 세션의 알람이 꺼졌다", true, dao.getById("b-owned")?.enabled)
+        assertEquals("새 세션이 비워졌다", false, cleared)
+    }
+
+    /**
      * 소유자 미기록(옛 행)은 떠나는 계정 것으로 본다 — 단 **소유권 확정에 성공했을 때만**이다.
      * 확정 전 스냅샷으로 판정하면 앞 계정 행을 오인한다(같은 리뷰에서 한 번 밟았다).
      */

@@ -489,27 +489,34 @@ internal fun MainViewModel.requestAccountDeletion(signOutGoogle: suspend () -> U
     val shouldSignOutGoogle = session.provider == AuthSessionStore.PROVIDER_GOOGLE
     viewModelScope.launch {
         authBusy = true
-        // 유예 신청 자체는 `token_epoch` 를 올리지 않지만(user.ts), **성공하면 곧바로
-        // 아래 세션 정리로 들어간다** — 그 왕복 동안 워커가 받은 401 이 '자동 만료' 마커를
-        // 남기면 방금 떼어낸 알람이 되살아난다(로그아웃과 같은 사고). 요청이 실패해 사용자가
-        // 로그인 상태로 남는 경우에만 아래 catch 에서 표시를 도로 내린다.
+        // 유예 신청은 **모든 기기의 세션을 끊는다**(서버가 `token_epoch` 를 올린다 — user.ts). 성공하면 곧바로
+        // 아래 세션 정리로 들어가는데, 그 왕복 동안 워커가 받은 401 이 '자동 만료' 마커를 남기면 방금 떼어낸
+        // 알람이 되살아난다(로그아웃과 같은 사고). 요청이 실패해 사용자가 로그인 상태로 남는 경우에만 아래
+        // catch 에서 표시를 도로 내린다.
         markSignOutInProgress()
         try {
             api.requestAccountDeletion(authorization)
-            // 삭제 신청이 '성공한 뒤에만' 이 기기 FCM 토큰을 제거한다(유예 기간 동안 push 방지). 신청이
-            // 실패하면 사용자는 로그인 유지 상태이므로 토큰을 지우지 않아 즉시 push 를 계속 받게 한다.
-            // /me/deletion 은 token_epoch 를 올리지 않아(user.ts) 신청 후에도 세션 토큰이 유효하다.
-            runCatching {
-                com.alarmtalk.app.fcm.AlarmTalkMessagingService.unregisterCurrentToken(session.token)
-            }.onFailure { error -> Log.w(TAG, "FCM unregister on deletion failed (continuing)", error) }
+            // 이 기기의 FCM 토큰은 **서버가 신청과 같은 트랜잭션에서 지운다**(그 계정의 모든 기기 — user.ts).
+            // 예전에는 여기서 해제를 따로 보냈는데, 이제 신청이 세션을 끊어 그 요청은 401 이다.
             if (shouldSignOutGoogle) {
                 runCatching { signOutGoogle() }.onFailure { Log.w(TAG, "Google sign-out failed", it) }
             }
             clearSignedInSession(departingUserId = session?.user?.id)
-            pendingDeletion = false
             dismissDeleteAccount()
             message = getApplication<android.app.Application>().getString(R.string.msg_account_deletion_requested)
         } catch (error: Throwable) {
+            // ⚠ **이미 탈퇴 유예면 실패가 아니다**(코덱스 #904). 다른 기기가 먼저 신청했다 — 서버는 이 기기의 세션도 끊었고
+            //   푸시 등록도 지웠다. 이 흐름이 로그아웃 창(`signingOut`)을 열어 둔 채라 인터셉터의 떠나기는 그 창 때문에
+            //   물러선다 — 여기서 성공 갈래와 같은 정리(알람 떼어내기·세션 비우기)를 하지 않으면 알람이 남는다.
+            if (AlarmTalkLog.isAccountPendingDeletion(error)) {
+                if (shouldSignOutGoogle) {
+                    runCatching { signOutGoogle() }.onFailure { Log.w(TAG, "Google sign-out failed", it) }
+                }
+                clearSignedInSession(departingUserId = session.user.id)
+                dismissDeleteAccount()
+                message = getApplication<android.app.Application>().getString(R.string.msg_account_deletion_requested)
+                return@launch
+            }
             AlarmTalkLog.reportError("Failed to request account deletion", error)
             // 신청이 실패했으면 사용자는 그대로 로그인 상태다 — 표시를 남겨 두면 그 60초
             // 동안의 **진짜** 자동 만료가 마커를 못 남겨, 업데이트 후 재예약이 이 기기의
@@ -522,8 +529,14 @@ internal fun MainViewModel.requestAccountDeletion(signOutGoogle: suspend () -> U
     }
 }
 
-// 로그인 후 탈퇴 유예 상태인지 확인한다. pending_deletion 이면 복구 화면을 띄운다.
-// (GET /me 는 유예 상태에서도 허용되는 엔드포인트) 실패 시 앱 진입을 막지 않는다.
+// 로그인 후 계정 상태를 확인한다(기간 한정 개인 플랜 안내의 근거). 실패 시 앱 진입을 막지 않는다.
+//
+// ⚠ **탈퇴 유예 계정이면 이 기기에서 그 계정을 떠난다**(2026-10-15). 다시 로그인하면 서버가 탈퇴를 철회하므로
+//   (`docs/spec/session-and-auth.md` 「탈퇴 유예 — 다시 로그인하면 철회」) 유예 상태의 세션은 끝난 세션이다.
+//   예전에는 '회원 탈퇴가 진행 중이에요' 화면과 철회 버튼이 있었다 — 되살리지 말 것.
+//   ⚠ **자동 만료(`handleUnauthorized`)로 끊지 말 것**(코덱스 #904). 자동 만료는 같은 사람이 다시 로그인할 것으로
+//   보고 알람 예약을 남긴다 — 다른 기기에서 탈퇴를 신청한 사람의 이 기기에서 로그인 화면 뒤로 숨은 알람이 계속
+//   운다. 탈퇴를 신청한 기기와 같은 정리(`leaveAccountForPendingDeletion` — 알람까지 끄는 명시적 로그아웃)를 한다.
 internal fun MainViewModel.checkAccountStatus() {
     val session = authSession ?: return
     val authorization = com.alarmtalk.app.network.AlarmTalkApiClient.bearer(session.token)
@@ -533,16 +546,25 @@ internal fun MainViewModel.checkAccountStatus() {
         runCatching {
             api.me(authorization)
         }.onSuccess { response ->
-            pendingDeletion = response.user.deletionStatus == "pending_deletion"
+            if (response.user.deletionStatus == "pending_deletion") {
+                // 확인 끝(`accountStatusChecked`)을 켜지 않는다 — 세션이 끝나는 중에 1회성 안내가 소진되면 안 된다.
+                leaveAccountForPendingDeletion(session)
+                return@launch
+            }
             // 기간 한정 개인 플랜 종료 안내는 **가장 최근 계정 응답**으로 판정한다
             // (`MainViewModel.latestAccountPromo`). 그 사이 계정이 바뀌었으면 남의 값이라 적지 않는다.
-            // 더 새 계정 응답이 이미 적혔으면 장부가 이 옛 답을 버린다(탈퇴 유예는 위에서 그대로 반영).
+            // 더 새 계정 응답이 이미 적혔으면 장부가 이 옛 답을 버린다.
             if (authSession?.user?.id == session.user.id &&
                 !recordAccountAnswer(accountRequest, response.user.personalPromo)
             ) {
                 Log.i(TAG, "Account status answer superseded by a later account answer")
             }
         }.onFailure { error ->
+            // 탈퇴 신청으로 끊긴 세션은 서버가 401 이 아니라 403 `ACCOUNT_PENDING_DELETION` 으로 답한다(`/auth/me`).
+            if (AlarmTalkLog.isAccountPendingDeletion(error)) {
+                leaveAccountForPendingDeletion(session)
+                return@launch
+            }
             Log.w(TAG, "Failed to check account status", error)
             // **이 진입의 첫 결과가 실패면 이 진입은 종료 안내를 띄우지 않는다**(D11) — 같은 진입의
             // 뒤 성공(쿠폰·`plan_changed` 뒤의 갱신)으로 세션 한가운데 뜨지 않게 실패도 적는다.
@@ -560,39 +582,34 @@ internal fun MainViewModel.checkAccountStatus() {
     }
 }
 
-// 유예 기간 내 탈퇴 철회 → 계정 복구. 성공 시 복구 화면을 닫고 정상 진입한다.
-internal fun MainViewModel.cancelAccountDeletion() {
-    val session = sessionOrMessage(R.string.msg_login_required_to_use) ?: return
-    val authorization = com.alarmtalk.app.network.AlarmTalkApiClient.bearer(session.token)
+/**
+ * **다른 기기에서 탈퇴를 신청한 계정을 이 기기에서 떠난다** — 알람까지 끄는 명시적 로그아웃(`requestAccountDeletion`
+ * 의 성공 갈래와 같은 정리). 서버 쪽 정리는 없다: 신청이 이미 모든 세션을 끊고 푸시 등록을 지웠다(user.ts).
+ * 구글 로그아웃은 하지 않는다 — 다시 로그인하면 탈퇴가 철회되는 것이 이 정책이라, 같은 계정을 다시 고르기 쉬워도 된다.
+ */
+internal suspend fun MainViewModel.leaveAccountForPendingDeletion(session: AuthSession) {
+    // ⚠ **계정이 아니라 토큰으로 본다**(코덱스 #904). 옛 토큰으로 떠난 `/auth/me` 의 답이 같은 계정으로 다시 로그인한
+    //   뒤에 도착하면, 계정만 보고는 **새 세션**을 끊고 그 알람까지 끈다(401 경로 `handleUnauthorized` 와 같은 규칙).
+    if (authSession?.token != session.token) return
+    // 같은 순간 여러 요청이 403 을 받으면 여러 번 들어온다 — 이미 떠나는 중이면 한 번만.
+    if (signingOut) return
+    markSignOutInProgress()
+    clearSignedInSession(departingUserId = session.user.id)
+    message = getApplication<android.app.Application>().getString(R.string.msg_account_left_pending_deletion)
+}
+
+/**
+ * 백그라운드 워커가 이 계정을 이미 떠났다(`AppSignals.accountLeftForPendingDeletion`) — 저장소는 비었는데 화면(메모리
+ * 세션)은 로그인된 채라 같은 떠나기로 맞춘다. 알람 떼어내기·저장소 비우기는 이미 끝났고 다시 해도 같은 결과다.
+ *
+ * ⚠ **계정이 아니라 워커가 비운 그 토큰으로 본다**(코덱스 #904). 신호가 처리되기 전에 같은 계정으로 다시 로그인했으면
+ *   계정 id 는 같아도 새 세션이다 — id 만 보면 그 새 세션을 끊고 알람을 끈다.
+ */
+internal fun MainViewModel.onAccountLeftInBackground(left: com.alarmtalk.app.core.AppSignals.AccountLeft) {
     viewModelScope.launch {
-        authBusy = true
-        runCatching {
-            api.cancelAccountDeletion(authorization)
-        }.onSuccess {
-            pendingDeletion = false
-            // 철회로 계정이 'active' 로 복구됐으니, 삭제 신청 때 제거됐던 이 기기 FCM 토큰을 다시 등록한다.
-            // (pending 중엔 로그인해도 게이트가 /push/register 를 막아 등록이 안 됐다.) 그래야 가족 알람
-            // push 가 이 기기에 다시 온다 — active 복구 후라 등록 게이트를 통과한다.
-            com.alarmtalk.app.fcm.AlarmTalkMessagingService.registerCurrentToken(getApplication())
-            // ⚠ **막혀 있던 동안 끝낸 워커를 곧바로 다시 돌린다**(코덱스 #901 P1). 유예 403 을 받은 워커는
-            //   재시도 없이 끝나므로(`SyncWorkerOutcome.ACCOUNT_PENDING_DELETION`) 철회 뒤 아무도 다시 부르지
-            //   않으면, 푸시 토큰이 없던 동안 온 가족 알람이 다음 주기 pull(15분)까지 기다리다 시각을 넘길 수
-            //   있다. 화면 데이터(목소리·클립·소셜·이용권)는 `AlarmTalkApp` 의 데이터 효과가 `pendingDeletion`
-            //   을 키로 다시 부른다.
-            com.alarmtalk.app.sync.RemoteAlarmSyncScheduler.runOnce(getApplication())
-            com.alarmtalk.app.sync.DynamicVoiceRefreshScheduler.runOnce(getApplication())
-            // ⚠ 셋 다 **갈아 끼우는** 큐잉이어야 한다 — `KEEP` 이면 유예 403 으로 끝나는 중인 회차 때문에 새 요청이
-            //   버려진다(코덱스 #901). 알람 pull·날씨는 `runOnce` 가 이미 `REPLACE` 다.
-            com.alarmtalk.app.sync.UsageEventUploadWorker.runAfterAccountRecovery(getApplication())
-            // 클립 받기도 갈아 끼운다 — 유예 403 으로 끝나는 중인 회차가 있으면 `KEEP` 이 새 요청을 버린다
-            // (`StockClipPrefetchWorker.enqueueAfterAccountRecovery`).
-            com.alarmtalk.app.sync.StockClipPrefetchWorker.enqueueAfterAccountRecovery(getApplication())
-            message = getApplication<android.app.Application>().getString(R.string.msg_account_deletion_cancelled)
-        }.onFailure { error ->
-            AlarmTalkLog.reportError("Failed to cancel account deletion", error)
-            message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_account_deletion_cancel_failed))
-        }
-        authBusy = false
+        val session = authSession ?: return@launch
+        if (session.user.id != left.userId || session.token != left.clearedToken) return@launch
+        leaveAccountForPendingDeletion(session)
     }
 }
 
@@ -788,45 +805,6 @@ internal fun MainViewModel.onAccountPromptSettingsReceived(userId: String, setti
 
 private fun isValidTimeText(value: String): Boolean =
     Regex("""^([01]\d|2[0-3]):[0-5]\d$""").matches(value)
-
-internal fun MainViewModel.deleteAccount(revokeGoogleAccess: suspend () -> Unit = {}) {
-    val session = sessionOrMessage(R.string.msg_login_required_to_use) ?: return
-    val authorization = com.alarmtalk.app.network.AlarmTalkApiClient.bearer(session.token)
-    val shouldRevokeGoogle = session.provider == AuthSessionStore.PROVIDER_GOOGLE
-    viewModelScope.launch {
-        authBusy = true
-        // 즉시 탈퇴는 계정 행 자체를 지운다 — 그 순간부터 떠 있던 워커 요청이 전부 401 로
-        // 돌아온다(로그아웃의 `token_epoch` 와 같은 자리다). 서버를 부르기 전에 표시를 세워
-        // 그 401 들이 '자동 만료' 마커를 남기지 못하게 한다.
-        markSignOutInProgress()
-        try {
-            api.deleteAccount(authorization)
-            val revokeError = if (shouldRevokeGoogle) {
-                runCatching { revokeGoogleAccess() }.exceptionOrNull()
-            } else {
-                null
-            }
-            if (revokeError != null) {
-                Log.w(TAG, "Failed to revoke Google account access after account deletion", revokeError)
-            }
-            clearCurrentAccessSnapshot()
-            clearSignedInSession(departingUserId = session?.user?.id)
-            dismissDeleteAccount()
-            message = if (revokeError == null) {
-                getApplication<android.app.Application>().getString(R.string.msg_account_deleted)
-            } else {
-                getApplication<android.app.Application>().getString(R.string.msg_account_deleted_google_unlink_failed)
-            }
-        } catch (error: Throwable) {
-            AlarmTalkLog.reportError("Failed to delete account", error)
-            // 삭제가 실패했으면 세션은 그대로다 — 위 유예 신청과 같은 이유로 표시를 내린다.
-            endSignOutMarker()
-            message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_account_delete_failed))
-        } finally {
-            authBusy = false
-        }
-    }
-}
 
 // 앱 시작 시 백엔드 최소지원버전을 조회한다. 설치 버전이 그 미만이면 updateRequired=true 로
 // 두어 AlarmTalkApp 이 업데이트 차단 화면을 띄운다. (로그인 여부와 무관하게 동작)

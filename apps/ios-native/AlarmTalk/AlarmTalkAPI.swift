@@ -652,11 +652,7 @@ final class AlarmTalkAPI: @unchecked Sendable {
         try await request("user/me", method: "PATCH", token: token, body: requestBody)
     }
 
-    func deleteAccount(token: String) async throws -> DeleteAccountResponse {
-        try await request("user/me", method: "DELETE", token: token)
-    }
-
-    /// 30일 유예 탈퇴 신청. 즉시 삭제 대신 유예 상태로 전환. Android `AuthApi.kt:196`.
+    /// 30일 유예 탈퇴 신청(즉시 삭제 경로는 없다 — 2026-10-15 삭제). Android `AuthApi.kt:196`.
     func requestAccountDeletion(token: String) async throws -> AccountDeletionResponse {
         try await request("user/me/deletion", method: "POST", token: token)
     }
@@ -1038,6 +1034,14 @@ final class AlarmTalkAPI: @unchecked Sendable {
             Self.handleUnauthorized(token: token)
         }
         let serverError = try? decoder.decode(ServerError.self, from: data)
+        if http.statusCode == 403, serverError?.errorCode == Self.accountPendingDeletionErrorCode,
+           let token, !token.isEmpty {
+            NotificationCenter.default.post(
+                name: Self.accountPendingDeletionNotification,
+                object: nil,
+                userInfo: [Self.unauthorizedTokenKey: token]
+            )
+        }
         if http.statusCode == 403, serverError?.errorCode == Self.consentRequiredErrorCode {
             Self.handleConsentRequired(consent: serverError?.consent)
         }
@@ -1076,6 +1080,13 @@ final class AlarmTalkAPI: @unchecked Sendable {
     static let consentRequiredNotification = Notification.Name("AlarmTalkAPIConsentRequired")
 
     static let consentRequiredErrorCode = "CONSENT_REQUIRED"
+
+    /// 어느 요청이든 403 `ACCOUNT_PENDING_DELETION` 을 받으면 쏘는 알림(2026-10-15) — 다른 기기에서 탈퇴를 신청해 이 기기의
+    /// 세션도 끝났다. `AuthViewModel` 이 받아 그 토큰의 세션이면 알람까지 끄고 떠난다(`leaveAccountForPendingDeletion`).
+    /// 전경의 `refreshUser` 만 이 코드를 보면 백그라운드 동기화가 받은 403 은 재시도로만 흘러가 숨은 알람이 남는다 —
+    /// 무음 푸시(`account_deletion_requested`)는 배달이 보장되지 않는다(코덱스 #904). userInfo 는 `unauthorizedTokenKey`.
+    static let accountPendingDeletionNotification = Notification.Name("AlarmTalkAPIAccountPendingDeletion")
+    static let accountPendingDeletionErrorCode = "ACCOUNT_PENDING_DELETION"
 
     /// `consentRequiredNotification` 의 userInfo 키 — 서버가 지목한 민감 동의 유형.
     static let consentRequiredTypeKey = "consentType"

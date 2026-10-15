@@ -75,7 +75,9 @@ class UsageEventUploadWorker(
                     // ⚠ **여기가 ANDROID-M 이었다.** 401 에도 `Result.retry()` 를 돌려줘,
                     // 폐기된 토큰으로 같은 요청을 영원히 재시도하며 그 회차마다 이슈를 한 건씩
                     // 올렸다. 재시도가 풀어 줄 수 있는 실패가 아니다 — 세션을 끊는다.
-                    endSessionAfterWorkerUnauthorized(
+                    endWorkerSession(
+                        error = error,
+                        context = applicationContext,
                         sessionStore = sessionStore,
                         expectedGeneration = startGeneration,
                         usedToken = session.token,
@@ -86,11 +88,6 @@ class UsageEventUploadWorker(
                 }
                 SyncWorkerOutcome.CONSENT_PENDING -> {
                     Log.i(TAG, "Usage event upload deferred: consent not settled yet")
-                    Result.success()
-                }
-                SyncWorkerOutcome.ACCOUNT_PENDING_DELETION -> {
-                    // 철회 전에는 같은 403 만 돌아온다 — 재시도·이슈 없이 끝낸다(`syncWorkerOutcome`).
-                    Log.i(TAG, "Usage event upload stopped: account is pending deletion")
                     Result.success()
                 }
                 SyncWorkerOutcome.RETRY -> {
@@ -146,25 +143,14 @@ class UsageEventUploadWorker(
         }
 
         /** 연결이 돌아왔을 때·앱을 열었을 때 한 번. 이미 예약돼 있으면 그대로 둔다. */
-        fun runOnce(context: Context) = enqueueOnce(context, ExistingWorkPolicy.KEEP)
-
-        /**
-         * **탈퇴 유예를 철회한 직후** 한 번 — 돌고 있는 회차를 갈아 끼운다(`REPLACE`).
-         *
-         * 철회 순간 유예 403 으로 끝나는 중인 회차가 있으면 [runOnce] 의 `KEEP` 이 새 요청을 버리고, 그 회차는
-         * 큐를 그대로 둔 채 성공으로 끝난다 — 다음 계기(앱 열기·6시간 주기)까지 기록이 안 올라간다(코덱스 #901).
-         * 갈아 끼워도 안전하다: 전송은 멱등이고(기기가 만든 UUID 가 서버 PK) 성공한 배치만 지운다.
-         */
-        fun runAfterAccountRecovery(context: Context) = enqueueOnce(context, ExistingWorkPolicy.REPLACE)
-
-        private fun enqueueOnce(context: Context, policy: ExistingWorkPolicy) {
+        fun runOnce(context: Context) {
             val request = OneTimeWorkRequestBuilder<UsageEventUploadWorker>()
                 .setConstraints(networkConstraints)
                 .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 1, TimeUnit.MINUTES)
                 .build()
             WorkManager.getInstance(context.applicationContext).enqueueUniqueWork(
                 ONE_TIME_WORK_NAME,
-                policy,
+                ExistingWorkPolicy.KEEP,
                 request,
             )
         }

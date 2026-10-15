@@ -117,32 +117,37 @@ export async function authMiddleware(c: Context<AppEnv>, next: Next) {
       // sound-only 로 강등된다), 가족 그룹이 없다고 나오며, /code/register 가 404 다.
       c.set('userId', pk);
 
+      // 탈퇴 유예(pending_deletion) 계정은 탈퇴 철회(DELETE /user/me/deletion) 외의
+      // 인증 API 사용을 차단한다(개인정보보호법 제21조, migrations #41 주석).
+      // 앱은 이 코드를 받으면 **이 기기에서 그 계정을 떠난다**(알람까지 끄는 명시적 로그아웃) — 다시 로그인하면
+      // 서버가 탈퇴를 철회한다(`cancelPendingDeletionOnSignIn`).
+      //
+      // ⚠ **폐기 검사보다 먼저 본다**(2026-10-15, 코덱스 #904). 탈퇴 신청은 `token_epoch` 를 올려 모든 기기의 세션을
+      //   끊는데, 폐기 검사가 먼저면 다른 기기는 `TOKEN_REVOKED`(401) 를 받고 그것을 **자동 만료**로 읽는다 — 자동
+      //   만료는 같은 사람이 다시 로그인할 것으로 보고 알람 예약을 남기므로, 로그인 화면 뒤에서 보이지도 끌 수도 없는
+      //   알람이 운다. 유예 코드를 받아야 그 기기도 알람까지 정리하고 떠난다.
+      //   허용하는 두 경로(철회·푸시 해제)는 아래에서 그대로 폐기 검사를 지난다 — 폐기된 토큰으로 철회되면 안 된다.
+      const path = c.req.path;
+      const method = c.req.method;
+      const isCancelDeletion = method === 'DELETE' && path.endsWith('/user/me/deletion');
+      // FCM 토큰 해제는 허용한다 — 옛 앱은 삭제 신청 '성공 후'(=pending 전환 후) 이 기기 토큰을 제거한다.
+      const isPushUnregister = method === 'POST' && path.endsWith('/push/unregister');
+      if (deletionStatus === 'pending_deletion' && !isCancelDeletion && !isPushUnregister) {
+        return c.json(
+          {
+            error: 'Account is scheduled for deletion',
+            error_code: 'ACCOUNT_PENDING_DELETION',
+          },
+          403,
+        );
+      }
+
       // 토큰 폐기 검사(B5): JWT epoch 가 현재 users.token_epoch 보다 낮으면, 로그아웃
       // (전 기기) 또는 비밀번호 재설정으로 무효화된 구(舊) 토큰이다. 만료 전이라도 거부.
       if (verified.epoch < tokenEpoch) {
         return c.json({ error: 'Token has been revoked', error_code: 'TOKEN_REVOKED' }, 401);
       }
-
-      // 탈퇴 유예(pending_deletion) 계정은 탈퇴 철회(DELETE /user/me/deletion) 외의
-      // 인증 API 사용을 차단한다(개인정보보호법 제21조, migrations #41 주석).
-      // 클라이언트는 이 코드를 받으면 복구 화면으로 유도한다.
-      if (deletionStatus === 'pending_deletion') {
-        const path = c.req.path;
-        const method = c.req.method;
-        const isCancelDeletion = method === 'DELETE' && path.endsWith('/user/me/deletion');
-        // FCM 토큰 해제는 허용한다 — 클라가 삭제 신청 '성공 후'(=pending 전환 후) 이 기기 토큰을 제거해
-        // 유예 기간 push 를 막는데, 이걸 차단하면 토큰이 영구파기까지 남아 push 가 계속 온다.
-        const isPushUnregister = method === 'POST' && path.endsWith('/push/unregister');
-        if (!isCancelDeletion && !isPushUnregister) {
-          return c.json(
-            {
-              error: 'Account is scheduled for deletion',
-              error_code: 'ACCOUNT_PENDING_DELETION',
-            },
-            403,
-          );
-        }
-      }
+      c.set('tokenEpoch', verified.epoch);
     } catch (err) {
       // 사용자 행 해석에 실패하면 탈퇴 유예(pending_deletion) 여부를 확인할 수 없다.
       // 이때 요청을 계속 처리(fail-open)하면 유예 계정이 차단을 우회할 수 있으므로,

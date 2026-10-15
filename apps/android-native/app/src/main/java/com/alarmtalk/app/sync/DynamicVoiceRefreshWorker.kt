@@ -40,7 +40,9 @@ class DynamicVoiceRefreshWorker(
                 SyncWorkerOutcome.SESSION_EXPIRED -> {
                     // 폐기된 토큰으로는 날씨 변형을 받아 올 수 없다. 재시도 대신 세션을 끊고,
                     // 다시 로그인하면 주기 실행이 알람 전까지 마저 메운다.
-                    endSessionAfterWorkerUnauthorized(
+                    endWorkerSession(
+                        error = error,
+                        context = applicationContext,
                         sessionStore = sessionStore,
                         expectedGeneration = startGeneration,
                         usedToken = session.token,
@@ -51,11 +53,6 @@ class DynamicVoiceRefreshWorker(
                 }
                 SyncWorkerOutcome.CONSENT_PENDING -> {
                     Log.i(TAG, "Dynamic voice refresh worker deferred: consent not settled yet")
-                    Result.success()
-                }
-                SyncWorkerOutcome.ACCOUNT_PENDING_DELETION -> {
-                    // 철회 전에는 같은 403 만 돌아온다 — 재시도·이슈 없이 끝낸다(`syncWorkerOutcome`).
-                    Log.i(TAG, "Dynamic voice refresh worker stopped: account is pending deletion")
                     Result.success()
                 }
                 SyncWorkerOutcome.RETRY -> {

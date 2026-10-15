@@ -10,6 +10,86 @@ import { enqueuePlanNotificationsStatement, REQUEUE_ON_CONFLICT } from './pendin
 
 const TEXT_ENCODER = new TextEncoder();
 
+/** 로그인이 끝날 때 계정의 탈퇴 상태가 어떻게 됐는지. */
+export type SignInDeletionOutcome =
+  /** 로그인이 처음 본 탈퇴 신청을 철회했다. */
+  | 'cancelled'
+  /** 바꾼 것이 없다 — 처음부터 active 였고 그대로다. */
+  | 'unchanged'
+  /**
+   * 로그인이 처음 읽은 뒤 계정이 바뀌었다 — 그 사이 탈퇴를 (다시) 신청했거나 세션 세대가 올랐다. 이 로그인이 서명한
+   * 토큰은 곧바로 403·401 을 받으니 성공으로 돌려주지 않는다(다시 로그인하면 새 상태를 읽고 처리한다).
+   */
+  | 'superseded'
+  /** 그 사이 계정이 파기됐다 — 로그인을 성공으로 돌려주면 안 된다(다음 요청이 곧바로 `AUTH_USER_NOT_FOUND`). */
+  | 'missing';
+
+/**
+ * **다시 로그인하면 탈퇴를 철회한다**(2026-10-15 오너 결정). 자격증명을 확인한 로그인(이메일·구글·애플)이 탈퇴 유예
+ * 계정이면 `active` 로 되돌린다 — 예전에는 로그인 뒤 '회원 탈퇴가 진행 중이에요' 화면에서 버튼을 한 번 더 눌러야
+ * 했는데, 앱의 탈퇴 안내 문구는 처음부터 "그 전에 다시 로그인하면 탈퇴를 취소할 수 있어요" 였다
+ * (`docs/spec/session-and-auth.md` 「탈퇴 유예 — 다시 로그인하면 철회」).
+ *
+ * ⚠ **로그인이 처음 읽은 그 상태에 묶는다**(`observed` — 로그인 첫 조회의 `deletion_requested_at`(유예가 아니면 null)과
+ *   `token_epoch`, 코덱스 #904). 조건 없이 되돌리면 active 로 읽은 로그인이 그 사이 다른 기기가 낸 새 신청을 아무도
+ *   모르게 철회하고, 철회하지 않더라도 그 사이 신청이 세대를 올렸으면 이 로그인이 서명한 토큰은 쓸 수 없다.
+ * ⚠ **로그인 응답이 다 준비된 뒤 마지막에 부른다** — 실패한 로그인이 철회만 남기지 않게.
+ * ⚠ **토큰 갱신(`GET /auth/me`)에서는 부르지 않는다.** 남아 있던 세션은 탈퇴 신청이 끊으므로(`POST /user/me/deletion`
+ *   이 `token_epoch` 를 올린다) 철회는 언제나 사람이 자격증명을 다시 넣은 순간이다.
+ */
+export async function cancelPendingDeletionOnSignIn(
+  db: DbExecutor,
+  userPk: string,
+  observed: { requestedAt: string | null; tokenEpoch: number },
+): Promise<SignInDeletionOutcome> {
+  if (observed.requestedAt) {
+    // ⚠ **철회는 그 자리에서 다른 기기의 세션·푸시 등록도 끊는다**(`token_epoch + 1`·그 계정의 `push_tokens` 삭제, 코덱스
+    //   #904). 탈퇴 신청이 이미 끊었으면 한 번 더 끊는 것뿐이지만, 이 배포 **전에** 신청한 유예 행은 신청이 끊지 않았다 —
+    //   마이그레이션 #129 가 소급하지만 배포가 마이그레이션보다 먼저 돌아, 그 사이 철회되면 #129 가 건너뛴다. 철회가
+    //   스스로 끊으면 마이그레이션 순서와 무관하다. 그래서 이 로그인이 내주는 토큰은 **올린 세대**로 서명한다(호출부).
+    //   두 문장은 한 batch(원자적)다 — 조건이 같아 함께 적용되거나 함께 건너뛴다.
+    const condition = `id = ? AND deletion_status = 'pending_deletion' AND deletion_requested_at = ? AND token_epoch = ?`;
+    const args = [userPk, observed.requestedAt, observed.tokenEpoch];
+    const [, res] = await db.batch([
+      {
+        sql: `DELETE FROM push_tokens WHERE user_id = ? AND EXISTS (SELECT 1 FROM users WHERE ${condition})`,
+        args: [userPk, ...args],
+      },
+      {
+        sql: `UPDATE users
+              SET deletion_status = 'active',
+                  deletion_requested_at = NULL,
+                  deletion_purge_at = NULL,
+                  token_epoch = token_epoch + 1,
+                  updated_at = datetime('now')
+              WHERE ${condition}`,
+        args,
+      },
+    ]);
+    if ((res?.rowsAffected ?? 0) > 0) return 'cancelled';
+  }
+  const now = await db.execute({
+    sql: 'SELECT deletion_status, token_epoch FROM users WHERE id = ? LIMIT 1',
+    args: [userPk],
+  });
+  const row = now.rows[0];
+  if (!row) {
+    // 유예였던 행만 그 사이 파기될 수 있다(크론은 기한이 지난 유예 행만 지운다). active 로 읽은 행이 없으면 판단할
+    // 근거가 없으니 그대로 둔다.
+    return observed.requestedAt ? 'missing' : 'unchanged';
+  }
+  // 유예로 읽었는데 철회되지 않았으면(그 사이 다른 철회·재신청) 이 로그인이 올린 세대로 서명한 토큰은 맞지 않는다 —
+  // active 로 읽었으면 세대가 그대로여야 한다.
+  if (
+    row.deletion_status === 'pending_deletion' ||
+    observed.requestedAt !== null ||
+    Number(row.token_epoch ?? 0) !== observed.tokenEpoch
+  ) {
+    return 'superseded';
+  }
+  return 'unchanged';
+}
+
 export function billingRetentionUntil(now: Date): Date {
   const retainUntil = new Date(now);
   retainUntil.setUTCFullYear(retainUntil.getUTCFullYear() + 5);
@@ -191,7 +271,7 @@ export type RevokedRecipientTarget = {
 /**
  * 탈퇴 커밋 후 보내야 할 알림. 앞의 둘은 그대로 `notifyDowngradedAlarms` 의 3·4번째 인자,
  * `planChangedUserIds` 는 같은 트랜잭션에서 통지 대기열에 이미 적힌 사람들이다
- * (즉시 삭제는 커밋 뒤 `sendPlanNotificationsNow` 로 곧바로 보내고, 남으면 1분 전용 크론이 잇는다).
+ * (1분 전용 크론이 보낸다 — 파기는 유예 크론 하나다. 즉시 삭제 `DELETE /user/me` 는 2026-10-15 에 지웠다).
  */
 export type AccountPurgeNotifications = {
   /** 서버 알람 행에서 찾은 강등 대상. 받은 알람이면 pull, 본인 알람이면 접근권 재확인. */
@@ -207,8 +287,7 @@ export type AccountPurgeNotifications = {
   /**
    * 내 구독 취소로 **등급·그룹이 바뀐 사람들** — 내가 주인이던 그룹이 해체돼 떨어져 나간 멤버.
    * 파기와 같은 트랜잭션에서 통지 대기열(`pending_plan_notifications`)에 적히고, 커밋 뒤
-   * `plan_changed`(+삭제 예고)가 나간다 — 즉시 삭제는 곧바로(`sendPlanNotificationsNow`), 남은 것은 1분 전용
-   * 크론의 홀수 분이 자기 예산으로(`runPlanNotificationDrainTurn`).
+   * `plan_changed`(+삭제 예고)가 나간다 — 1분 전용 크론의 홀수 분이 자기 예산으로(`runPlanNotificationDrainTurn`).
    *
    * ⚠ 위 두 목록과 **별개다.** 그 둘은 '내 목소리를 들고 있던 사람' 이라 클론이 없는 주인이
    * 탈퇴하면 비어 있다 — 그러면 가족에서 무료로 내려간 멤버가 아무 신호도 못 받았다.

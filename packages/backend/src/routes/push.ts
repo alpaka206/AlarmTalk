@@ -40,19 +40,36 @@ export function pushRegisterStatements(
   userPk: string,
   token: string,
   platform: PushPlatform,
+  /**
+   * 요청이 쓴 JWT 의 세대(미들웨어가 심은 `tokenEpoch`). 주면 **그 세대가 아직 유효할 때만** 적는다(`token_epoch <= ?` —
+   * 미들웨어의 폐기 검사와 같은 뜻). 미들웨어를 지난 등록이 탈퇴 신청(세대 +1)과 그 뒤의 철회 로그인(세대 +1) 다음에
+   * 커밋되면, 계정은 다시 active 라 상태만 봐서는 막지 못한다 — 로그아웃된 기기가 그 계정에 묶여 남는다(코덱스 #904).
+   */
+  authEpoch?: number,
 ): InStatement[] {
+  const epochGuard = authEpoch === undefined ? '' : ' AND token_epoch <= ?';
+  const epochArgs = authEpoch === undefined ? [] : [authEpoch];
   return [
     {
-      sql: 'DELETE FROM push_tokens WHERE token = ? AND user_id != ?',
-      args: [token, userPk],
+      // ⚠ 아래 INSERT 와 **같은 조건**을 건다(코덱스 #904). 유예 계정의 늦은 등록이 INSERT 는 건너뛰면서 이 DELETE 만
+      //   돌면, 그 사이 같은 기기 토큰으로 등록을 마친 다른 계정의 행을 지운다 — 그 계정은 200 을 받고도 푸시를 놓친다.
+      sql: `DELETE FROM push_tokens WHERE token = ? AND user_id != ?
+            AND EXISTS (SELECT 1 FROM users WHERE id = ? AND deletion_status = 'active'${epochGuard})`,
+      args: [token, userPk, userPk, ...epochArgs],
     },
     {
+      // ⚠ **계정이 아직 active 일 때만 적는다**(코덱스 #904). 탈퇴 신청은 같은 트랜잭션에서 그 계정의 `push_tokens` 를
+      //   지우는데(user.ts), 미들웨어를 이미 통과해 쓰기를 기다리던 등록 요청이 그 뒤에 커밋되면 유예 계정에 푸시 행이
+      //   되살아난다(앱은 실행마다 등록하므로 드문 경합이 아니다). 조건을 이 문장 안에 둬 원자적으로 막는다 — 0행이면
+      //   아무것도 적지 않는다(요청은 200 이지만, 그 계정은 곧 모든 요청이 403 이다).
+      // (SQLite 는 `INSERT … SELECT` 에 upsert 를 붙이려면 SELECT 에 WHERE 가 있어야 한다 — 아래 EXISTS 가 그 자리다.)
       sql: `INSERT INTO push_tokens (id, user_id, token, platform, created_at, updated_at)
-            VALUES (?, ?, ?, ?, datetime('now'), datetime('now'))
+            SELECT ?, ?, ?, ?, datetime('now'), datetime('now')
+            WHERE EXISTS (SELECT 1 FROM users WHERE id = ? AND deletion_status = 'active'${epochGuard})
             ON CONFLICT(user_id, token) DO UPDATE SET
               platform = excluded.platform,
               updated_at = datetime('now')`,
-      args: [crypto.randomUUID(), userPk, token, platform],
+      args: [crypto.randomUUID(), userPk, token, platform, userPk, ...epochArgs],
     },
   ];
 }
@@ -106,8 +123,22 @@ push.post('/register', async (c) => {
   //
   // fail-closed 는 그대로다: 세 번 다 실패하면(또는 SQL 오류면 즉시) 예외가 올라가 500 이고,
   // batch 는 전부 아니면 전무라 반쯤 적용된 상태가 남지 않는다.
-  const statements = pushRegisterStatements(userPk, token, platform as PushPlatform);
-  await retryTransientTurso(() => db.batch(statements, 'write'));
+  const statements = pushRegisterStatements(userPk, token, platform as PushPlatform, c.get('tokenEpoch'));
+  const results = await retryTransientTurso(() => db.batch(statements, 'write'));
+  // ⚠ **적히지 않았으면 성공이 아니다**(코덱스 #904). 위 조건(active · 요청 토큰의 세대가 유효)에 걸려 INSERT 가 0행이면,
+  //   200 을 받은 앱은 등록이 확인됐다고 적고(iOS `uploadConfirmedInThisProcess`) 다시 올리지 않는다 — 서버에는 행이
+  //   없는데. 그 사이 계정이 유예가 됐으면 유예 코드로, 아니면(세대가 올랐다 — 탈퇴 신청·철회·전 기기 로그아웃) 폐기로 답한다.
+  //   (ON CONFLICT DO UPDATE 로 갱신된 것도 1행이다 — 같은 값을 다시 올린 등록은 그대로 성공이다.)
+  if (results[1]?.rowsAffected === 0) {
+    const now = await db.execute({
+      sql: 'SELECT deletion_status FROM users WHERE id = ? LIMIT 1',
+      args: [userPk],
+    });
+    if (now.rows[0]?.deletion_status === 'pending_deletion') {
+      return c.json({ error: 'Account is scheduled for deletion', error_code: 'ACCOUNT_PENDING_DELETION' }, 403);
+    }
+    return c.json({ error: 'Token has been revoked', error_code: 'TOKEN_REVOKED' }, 401);
+  }
 
   return c.json({ success: true });
 });

@@ -17,7 +17,12 @@ import {
   FEATURE_CONSENT_TYPES,
   needsConsent,
 } from '../src/lib/consent';
-import { billingRetentionUntil } from '../src/lib/account-deletion';
+import {
+  billingRetentionUntil,
+  pseudonymizeBillingForRetention,
+  purgeUserAccount,
+} from '../src/lib/account-deletion';
+import { withWriteTransaction } from '../src/lib/transactions';
 
 // libsql `:memory:` 는 연결마다 별도 DB라 autocommit execute 와 transaction 이 스키마를
 // 공유하지 못한다. 모든 연결이 같은 스키마를 보도록 임시 파일 DB 를 사용한다.
@@ -27,6 +32,18 @@ const db: Client = createClient({ url: `file:${DB_PATH}` });
 vi.mock('../src/lib/db', () => ({ getDB: () => db }));
 
 import userRoutes from '../src/routes/user';
+
+/**
+ * 계정 파기 — 30일 유예 파기 크론(`index.ts`)과 같은 두 함수를 같은 순서로 한 트랜잭션에서 부른다.
+ * (2026-10-15 전에는 즉시 삭제 라우트 `DELETE /user/me` 를 통해 봤다 — 앱이 쓰지 않아 지웠다.)
+ */
+async function purgeLikeCron(loginId: string, pk: string): Promise<{ status: number }> {
+  await withWriteTransaction(db, async (tx) => {
+    await pseudonymizeBillingForRetention(tx, pk, 'pep', new Date());
+    return purgeUserAccount(tx, pk, loginId, false);
+  });
+  return { status: 200 };
+}
 
 const SUB = 'compliance-sub';
 const PK = 'compliance-pk';
@@ -313,7 +330,7 @@ describe('탈퇴 30일 유예 / 철회', () => {
   });
 });
 
-describe('즉시 회원탈퇴(DELETE /me) — 결제기록 5년 가명보존', () => {
+describe('계정 파기 — 결제기록 5년 가명보존', () => {
   const SUB3 = 'hard-del-sub';
   const PK3 = 'hard-del-pk';
   const PERSONAL_PLAN = '70000000-0000-4000-8000-000000000002';
@@ -329,18 +346,14 @@ describe('즉시 회원탈퇴(DELETE /me) — 결제기록 5년 가명보존', (
       args: ['sub-hard-1', PK3, PERSONAL_PLAN],
     });
 
-    const app = buildApp(SUB3, PK3);
-    // DELETE /me 는 c.env.PASSWORD_PEPPER 를 쓰므로 env 를 넘긴다.
-    const res = await app.request(req('DELETE', '/user/me'), undefined, {
-      PASSWORD_PEPPER: 'pep',
-    } as unknown as Record<string, unknown>);
+    const res = await purgeLikeCron(SUB3, PK3);
     expect(res.status).toBe(200);
 
     const retained = await db.execute({
       sql: `SELECT pseudonym, plan_id, retained_reason FROM retained_billing_records WHERE plan_id = ?`,
       args: [PERSONAL_PLAN],
     });
-    console.log('[DELETE /me retained]', JSON.stringify(retained.rows));
+    console.log('[purge retained]', JSON.stringify(retained.rows));
     expect(retained.rows.length).toBe(1);
     expect(String(retained.rows[0]!.pseudonym)).toHaveLength(64); // SHA-256 hex
     expect(retained.rows[0]!.retained_reason).toBe('ecommerce_act_5y');
@@ -379,9 +392,7 @@ describe('즉시 회원탈퇴(DELETE /me) — 결제기록 5년 가명보존', (
       ],
     });
 
-    const res = await buildApp(SUB5, PK5).request(req('DELETE', '/user/me'), undefined, {
-      PASSWORD_PEPPER: 'pep',
-    } as unknown as Record<string, unknown>);
+    const res = await purgeLikeCron(SUB5, PK5);
     expect(res.status).toBe(200);
 
     const retained = await db.execute({
@@ -422,9 +433,7 @@ describe('즉시 회원탈퇴(DELETE /me) — 결제기록 5년 가명보존', (
     });
     // store_transactions 없음 — 프로모·바우처 갈래.
 
-    const res = await buildApp(SUB9, PK9).request(req('DELETE', '/user/me'), undefined, {
-      PASSWORD_PEPPER: 'pep',
-    } as unknown as Record<string, unknown>);
+    const res = await purgeLikeCron(SUB9, PK9);
     expect(res.status).toBe(200);
 
     const retained = await db.execute({
@@ -458,9 +467,7 @@ describe('즉시 회원탈퇴(DELETE /me) — 결제기록 5년 가명보존', (
       args: ['st-hard-4', PK6, 'play-token-hard-4', 'sub-hard-4'],
     });
 
-    const res = await buildApp(SUB6, PK6).request(req('DELETE', '/user/me'), undefined, {
-      PASSWORD_PEPPER: 'pep',
-    } as unknown as Record<string, unknown>);
+    const res = await purgeLikeCron(SUB6, PK6);
     expect(res.status).toBe(200);
 
     const retained = await db.execute({
@@ -498,9 +505,7 @@ describe('즉시 회원탈퇴(DELETE /me) — 결제기록 5년 가명보존', (
       args: ['st-hard-5', PK7, 'play-token-hard-5', 'sub-hard-5'],
     });
 
-    const res = await buildApp(SUB7, PK7).request(req('DELETE', '/user/me'), undefined, {
-      PASSWORD_PEPPER: 'pep',
-    } as unknown as Record<string, unknown>);
+    const res = await purgeLikeCron(SUB7, PK7);
     expect(res.status).toBe(200);
 
     const retained = await db.execute({
@@ -541,9 +546,7 @@ describe('즉시 회원탈퇴(DELETE /me) — 결제기록 5년 가명보존', (
       args: ['st-hard-8', PKA, 'apple-original-8', 'sub-hard-8'],
     });
 
-    const res = await buildApp(SUBA, PKA).request(req('DELETE', '/user/me'), undefined, {
-      PASSWORD_PEPPER: 'pep',
-    } as unknown as Record<string, unknown>);
+    const res = await purgeLikeCron(SUBA, PKA);
     expect(res.status).toBe(200);
 
     const retained = await db.execute({
@@ -584,9 +587,7 @@ describe('즉시 회원탈퇴(DELETE /me) — 결제기록 5년 가명보존', (
       args: ['st-hard-6', PK8, 'play-token-hard-6', 'sub-hard-6'],
     });
 
-    const res = await buildApp(SUB8, PK8).request(req('DELETE', '/user/me'), undefined, {
-      PASSWORD_PEPPER: 'pep',
-    } as unknown as Record<string, unknown>);
+    const res = await purgeLikeCron(SUB8, PK8);
     expect(res.status).toBe(200);
 
     const retained = await db.execute({
@@ -613,9 +614,7 @@ describe('즉시 회원탈퇴(DELETE /me) — 결제기록 5년 가명보존', (
       args: ['ev-purge-1', PK4],
     });
 
-    const res = await buildApp(SUB4, PK4).request(req('DELETE', '/user/me'), undefined, {
-      PASSWORD_PEPPER: 'pep',
-    } as unknown as Record<string, unknown>);
+    const res = await purgeLikeCron(SUB4, PK4);
     expect(res.status).toBe(200);
 
     const userGone = await db.execute({ sql: 'SELECT id FROM users WHERE id = ?', args: [PK4] });
