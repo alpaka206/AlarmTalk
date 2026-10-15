@@ -199,8 +199,14 @@ pepper 로 가명 보존 기록까지 곧장 이어져, 분리 보관을 무너�
 - **앱은 유예를 보면 그 기기에서 계정을 떠난다** — 알람까지 끄는 명시적 로그아웃(탈퇴를 신청한 기기와 같은 로컬 정리),
   자동 만료가 아니다. 안드로이드 `checkAccountStatus` → `leaveAccountForPendingDeletion` / iOS `refreshUser` →
   `leaveAccountForPendingDeletion`(계정 응답의 `pending_deletion` 이든 `/auth/me` 의 403 이든). 서버 쪽 정리는 없다 —
-  신청이 이미 세션을 끊고 푸시 등록을 지웠다. **워커는 세션을 끊지 않는다**(안드로이드 `syncWorkerOutcome` → `RETRY`,
-  이슈는 올리지 않는다) — 워커가 `SESSION_EXPIRED` 로 끊으면 자동 만료라 알람이 남는다. 앱을 열면 전경이 정리한다.
+  신청이 이미 세션을 끊고 푸시 등록을 지웠다. **안드로이드 워커도 같은 떠나기를 한다**(`syncWorkerOutcome` →
+  `SESSION_EXPIRED` → `endWorkerSession` 이 이 코드를 보고 `leaveAccountAfterPendingDeletion` — 자동 만료가 아니다).
+  서버가 푸시 등록을 지워 백그라운드 기기를 깨울 다른 길이 없으니 403 을 본 워커가 그 자리에서 정리해야 한다(코덱스 #904).
+- **탈퇴 신청은 그 계정의 다른 기기에 무음 신호 `account_deletion_requested` 를 보낸다**(`sendAccountDeletionRequestedPush`
+  — 지우기 전에 읽어 둔 토큰으로, 커밋 뒤 `waitUntil`). 기기는 서버에 다음 요청을 보낼 때까지 세션이 끊긴 줄 모르고
+  그 사이 화면은 로그인된 채 알람이 운다 — 이 신호가 그 창을 줄인다. 앱은 **신호만 믿고 떠나지 않는다**(그 사이 철회됐을
+  수 있다): 안드로이드는 알람 pull 워커를 곧바로 돌려 403 이면 그 워커가 떠나고, iOS 는 `refreshUser` 로 다시 묻는다.
+  최선 노력이다 — iOS 무음 푸시는 배달이 보장되지 않고 강제 종료한 앱은 깨우지 않는다. 옛 앱은 모르는 종류라 무시한다.
   ⚠ 유예 화면·철회 버튼을 되살리지 말 것. 워커가 이 403 을 '성공으로 끝내기' 로 따로 다루던 시도는 입력을 든
   작업(목소리 교체 신호)·요금제 대조를 잃는 땜질을 줄줄이 불렀다(#901~#903).
 - **안드로이드는 어느 요청이든 403 `ACCOUNT_PENDING_DELETION` 을 받으면 떠난다** — 응답 쪽 한 곳(`AlarmTalkApiClient` 의
@@ -209,7 +215,9 @@ pepper 로 가명 보존 기록까지 곧장 이어져, 분리 보관을 무너�
 - **푸시 등록은 계정이 active 일 때만 적힌다**(`pushRegisterStatements` 의 `INSERT … SELECT … WHERE EXISTS` — 다른 계정의
   같은 토큰 행을 지우는 DELETE 에도 같은 조건. 유예 계정의 늦은 등록이 그 행만 지우면 다른 계정이 푸시를 놓친다). 미들웨어를
   이미 지난 등록 요청이 탈퇴 신청 뒤에 커밋되면 유예 계정에 푸시 행이 되살아난다 — 조건을 그 문장 안에 둬 원자적으로 막는다.
-- **iOS 는 자동 만료(401)에서도 기기의 푸시 등록 확인을 내린다**(`signOut` 의 자동 만료 갈래 → `onServerRemovedPushRegistration`).
+- **iOS 는 자동 만료(401)에서도 기기의 푸시 등록 확인을 내린다**(`signOut` 의 자동 만료 갈래 → `onServerRemovedPushRegistration`
+  → `PushNotificationCoordinator.invalidateRegistration` — 등록·해제와 **같은 줄**에서. 줄 밖에서 비우면 응답을 기다리던 앞선
+  등록이 끝나며 확인을 도로 적는다).
   탈퇴 신청으로 서버 행이 지워진 뒤 다른 기기가 철회하면 이 기기는 유예 코드 대신 `TOKEN_REVOKED` 를 받는데, 확인이 남으면
   같은 실행에서 다시 로그인해도 등록을 건너뛴다.
 - 탈퇴를 신청한 기기는 푸시 해제를 따로 보내지 않는다 — 서버가 지웠고, 신청 뒤의 토큰은 이미 폐기됐다(iOS 는 기기 쪽
@@ -447,7 +455,7 @@ iOS는 네트워크/5xx/응답 해석 실패와 구서버의 `NO_PENDING_DELETIO
 | 전경 push의 첫 인증 실패 중단 | — | `AlarmSyncService.syncWithBackend` | `RemoteAlarmPushSync.runOnce` |
 | 저장 경합 방지 | — | `AuthSessionStore.saveTokenIfGeneration`·`saveSessionIfAlive` | `AuthViewModel` 의 출처 **토큰** 재확인(`refreshUser`·`applyRolledToken`·`applyFreshPlan`) |
 | 프로필 저장은 바꾼 칸만 쓰는 순간의 세션 위에(plan·프로모·받은 시각·토큰은 그대로) + 확인 조회 | `PATCH /user/me`(`user.ts`) | `AuthSessionStore.updateUserIfAlive` ← `MainViewModelAuthActions` 의 `saveProfileEdit`(`updateNickname`·`updateFamilyAlarmSettings`·`uploadDynamicPromptSettings`) → `refreshAppSession(rollToken = false)`·`refreshAppSessionNow(rollToken = false)` · 회귀 `ProfileSaveKeepsAccountAnswerTest.kt` | `AuthViewModel.updateProfile`(응답 뒤 `var updated = current`) → `refreshUser`(옛 답이 먼저 와 토큰이 굴렀으면 `isTokenRolledWithinSignIn` → `applyAccountAnswerOnRolledToken` 이 프로필 칸까지) · 회귀 `AuthViewModelTests`(확인 조회와 옛 답의 두 도착 순서 — 닉네임·가족 설정) |
-| 다시 로그인하면 탈퇴 철회 · 신청은 모든 기기 세션·푸시 등록을 끊는다 · 유예 세션은 끝난 세션 · 파기 직전 재확인 | `lib/account-deletion.ts` 의 `cancelPendingDeletionOnSignIn` ← `routes/auth.ts` 의 `/login`·`/google`·`/apple` · `routes/user.ts` 의 `POST /me/deletion`(`token_epoch + 1`·`push_tokens` 삭제, 한 트랜잭션) · `index.ts` 파기 트랜잭션의 재확인(유예 + 기한)·커밋 뒤 애플 연결 해제 · `middleware/auth.ts`·`/auth/me` 는 유예면 끊긴 토큰에도 403 · 회귀 `test/sign-in-cancels-deletion.test.ts`·`test/scheduled-purge-isolation.test.ts`·`test/auth-pending-deletion.test.ts` | `ui/main/MainViewModelAuthActions.kt` 의 `checkAccountStatus` → `leaveAccountForPendingDeletion`(알람까지 끄는 떠나기) · `sync/SyncWorkerFailure.kt` 의 `syncWorkerOutcome`(유예 403 → `RETRY`, 세션을 끊지 않는다) · 유예 화면 없음 | `AuthViewModel.refreshUser` → `leaveAccountForPendingDeletion` · 탈퇴 신청 뒤 `onServerRemovedPushRegistration`(기기 쪽 등록 기록만) · `RootView` 에 유예 게이트 없음 |
+| 다시 로그인하면 탈퇴 철회 · 신청은 모든 기기 세션·푸시 등록을 끊는다 · 유예 세션은 끝난 세션 · 파기 직전 재확인 | `lib/account-deletion.ts` 의 `cancelPendingDeletionOnSignIn` ← `routes/auth.ts` 의 `/login`·`/google`·`/apple` · `routes/user.ts` 의 `POST /me/deletion`(`token_epoch + 1`·`push_tokens` 삭제, 한 트랜잭션) · `lib/fcm.ts` 의 `sendAccountDeletionRequestedPush`(신청 커밋 뒤) · `index.ts` 파기 트랜잭션의 재확인(유예 + 기한)·커밋 뒤 애플 연결 해제 · `middleware/auth.ts`·`/auth/me` 는 유예면 끊긴 토큰에도 403 · 회귀 `test/sign-in-cancels-deletion.test.ts`·`test/scheduled-purge-isolation.test.ts`·`test/auth-pending-deletion.test.ts` | `ui/main/MainViewModelAuthActions.kt` 의 `checkAccountStatus` → `leaveAccountForPendingDeletion`(알람까지 끄는 떠나기) · 워커 `sync/SyncWorkerFailure.kt` 의 `endWorkerSession` → `leaveAccountAfterPendingDeletion`(백그라운드판) · `fcm/AlarmTalkMessagingService.kt` 의 `account_deletion_requested` → `RemoteAlarmSyncScheduler.runOnce` · 유예 화면 없음 | `AuthViewModel.refreshUser` → `leaveAccountForPendingDeletion` · 탈퇴 신청 뒤 `onServerRemovedPushRegistration`(기기 쪽 등록 기록만, 등록과 같은 줄 — `invalidateRegistration`) · `PushNotificationCoordinator` 의 `accountDeletionRequested` → `refreshUser` · 회귀 `PushRegistrationRecoveryTests`(`test_invalidationQueuesBehindAnInFlightRegistration`·`test_accountDeletionRequestedSignalAsksTheServerAgain`) · `RootView` 에 유예 게이트 없음 |
 | 탈퇴 복구 저장은 준비 뒤의 세션 위에(1.2.13 이하에서 올라온 유예 세션) | `user.ts` 탈퇴 취소 | — (유예 화면·철회 버튼을 2026-10-15 에 지웠다) | `AuthViewModel.completeAccountRecovery`(기다린 뒤 `latest` · `/auth/me` 경로는 `reconcileAccountAnswer` 로 다시 다듬기) · 회귀 `AuthViewModelTests` |
 | 401 중앙 처리 | — | `UnauthorizedAuthenticator` | `AlarmTalkAPI.unauthorizedNotification`(**실패한 토큰을 싣는다**) → `AuthViewModel.handleUnauthorized` |
 | 즉시 폐기 | `authMiddleware` 의 `token_epoch` 비교 | — | — |
