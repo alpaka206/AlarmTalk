@@ -1592,7 +1592,6 @@ final class AuthViewModel: ObservableObject {
             statusMessage = String(localized: "로그인이 필요해요.")
             return
         }
-        let currentUserID = session?.user.id.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !isBusy else { return }
         isBusy = true
         defer { isBusy = false }
@@ -1607,33 +1606,14 @@ final class AuthViewModel: ObservableObject {
         // 다음 실행마다 다시 시도했다(코덱스 #904). 기기 쪽 등록 기록만 비운다.
         do {
             _ = try await api.requestAccountDeletion(token: token)
-            // 표시는 요청이 성공한 뒤에 남긴다 — 먼저 남기면 실패했을 때 로그인된 사용자에게 정리 표시만 남는다.
-            PendingSignOutStore.mark(currentUserID)
-            await onServerRemovedPushRegistration()
-            beginLeavingAccount()
-            if let currentUserID, !currentUserID.isEmpty {
-                accessSnapshotStore.clear(userID: currentUserID)
-                clearAccountPreferences(currentUserID)
-            }
-            // ⚠ 탈퇴도 로그아웃과 같다 — 계정을 떠났는데 알람이 울리면 안 된다.
-            let cleaned = await onLeaveAccountStopAlarms(currentUserID)
-            // ⚠ **재시도용 토큰을 남겼으면 폐기하지 않는다**(Codex #699 P2).
-            // `signOut` 의 기본값은 `revokeOnServer: true` 라 `/auth/logout` 으로 그 토큰을
-            // 죽인다 — 다음 실행의 `/push/unregister` 재시도가 **401 로 영원히** 실패하고
-            // 바인딩과 표시만 남는다.
-            // ⚠ **폐기하지 않는다.** 유예 계정은 백엔드가 `/auth/logout` 을 403 으로 막는다
-            // (`middleware/auth.ts` — 탈퇴 철회와 푸시 해제만 허용). 부르면 실패할 뿐이고,
-            // 무엇보다 그 토큰은 **탈퇴를 철회할 때 필요하다.**
-            signOut(
-                message: String(localized: "회원 탈퇴가 접수됐어요. 30일 안에 다시 로그인하면 취소할 수 있어요."),
-                revokeOnServer: false
+            // ⚠ **정리는 '이미 유예' 403 의 떠나기와 같은 작업 하나로 한다**(코덱스 #904). 신청이 성공하는 사이 다른
+            //   요청(또는 서버가 보낸 탈퇴 신청 푸시가 부른 조회)이 403 을 받으면 그 떠나기가 함께 돈다 — 따로 정리하면
+            //   먼저 끝난 쪽이 로그아웃하고 화면 잠금을 풀어, 다시 로그인한 새 세션의 알람에 다른 쪽이 닿는다.
+            //   표시(`PendingSignOutStore`)는 그 작업이 요청 성공 뒤에 남긴다. 서버가 세션을 이미 끊었으니 폐기하지 않는다.
+            await leaveAccountForPendingDeletion(
+                token: token,
+                message: String(localized: "회원 탈퇴가 접수됐어요. 30일 안에 다시 로그인하면 취소할 수 있어요.")
             )
-            // 세션을 비운 뒤 한 번 더 — 알람 정리를 기다리는 사이 받아 적힌 값을 지운다(`signOutExplicitly` 주석).
-            if let currentUserID, !currentUserID.isEmpty { clearAccountPreferences(currentUserID) }
-            // 탈퇴는 되살릴 계정 자체가 없다 — 자동 만료 표시를 남기지 않는다.
-            SessionExpiryStore.clear()
-            // 로컬 뒷정리가 끝났을 때만 표시를 내린다(푸시 해제는 서버가 이미 했다).
-            if cleaned { PendingSignOutStore.clear(currentUserID) }
         } catch {
             // ⚠ **이미 탈퇴 유예면 실패가 아니다**(코덱스 #904) — 다른 기기가 먼저 신청했다. 통신 계층이 같은 403 을
             //   알려 `leaveAccountForPendingDeletion` 이 알람까지 끄고 떠난다 — 여기서 '실패' 를 띄우지 않고, 그 떠나기를 기다린다.
@@ -1651,7 +1631,10 @@ final class AuthViewModel: ObservableObject {
     ///
     /// ⚠ **자동 만료(`signOut` 기본값)로 끊지 말 것**(코덱스 #904) — 자동 만료는 같은 사람이 다시 로그인할 것으로 보고
     /// 알람 예약을 남겨, 로그인 화면 뒤로 숨은 알람이 계속 운다.
-    private func leaveAccountForPendingDeletion(token: String) async {
+    private func leaveAccountForPendingDeletion(
+        token: String,
+        message: String = String(localized: "탈퇴를 신청한 계정이라 이 기기에서도 로그아웃했어요. 다시 로그인하면 탈퇴가 취소돼요.")
+    ) async {
         guard session?.token == token else { return }
         if UIPreviewSeed.isEnabled { return }
         // ⚠ **여러 번 들어오면 한 번만 하고, 나중에 온 쪽은 그 정리가 끝날 때까지 기다린다**(코덱스 #904). 탈퇴 신청이
@@ -1662,14 +1645,14 @@ final class AuthViewModel: ObservableObject {
             return
         }
         let task = Task<Void, Never> { @MainActor in
-            await self.performLeaveAccountForPendingDeletion(token: token)
+            await self.performLeaveAccountForPendingDeletion(token: token, message: message)
         }
         pendingDeletionLeave = (token, task)
         await task.value
         if pendingDeletionLeave?.token == token { pendingDeletionLeave = nil }
     }
 
-    private func performLeaveAccountForPendingDeletion(token: String) async {
+    private func performLeaveAccountForPendingDeletion(token: String, message: String) async {
         guard session?.token == token else { return }
         // ⚠ **정리하는 동안 화면을 잠근다**(`isBusy`, 코덱스 #904) — `signOutExplicitly` 와 같다. 기다리는 사이 로그아웃·
         //   재로그인이 끼어들면 아래 정리가 **새 세션**에 닿는다.
@@ -1696,10 +1679,7 @@ final class AuthViewModel: ObservableObject {
             if cleaned { PendingSignOutStore.clear(currentUserID) }
             return
         }
-        signOut(
-            message: String(localized: "탈퇴를 신청한 계정이라 이 기기에서도 로그아웃했어요. 다시 로그인하면 탈퇴가 취소돼요."),
-            revokeOnServer: false
-        )
+        signOut(message: message, revokeOnServer: false)
         if let currentUserID, !currentUserID.isEmpty { clearAccountPreferences(currentUserID) }
         // 사용자가 끝낸 계정이다 — 자동 만료 표시를 남기지 않는다(그 표시가 있으면 떼어낸 알람이 되살아난다).
         SessionExpiryStore.clear()
