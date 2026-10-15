@@ -601,8 +601,8 @@ internal fun AlarmTalkApp(
     // 백그라운드 워커가 탈퇴 유예 계정을 떠났다 — 뷰모델은 비워진 저장소를 흡수하지 않으니 같은 떠나기로 맞춘다.
     LaunchedEffect(sessionEffectKey) {
         if (authSession == null) return@LaunchedEffect
-        com.alarmtalk.app.core.AppSignals.accountLeftForPendingDeletion.collect { userId ->
-            viewModel.onAccountLeftInBackground(userId)
+        com.alarmtalk.app.core.AppSignals.accountLeftForPendingDeletion.collect { left ->
+            viewModel.onAccountLeftInBackground(left)
         }
     }
     // 플랜 변경(plan_changed push) — 앱이 살아 있는 채로 구독이 만료·강등되면 워커는 SharedPreferences

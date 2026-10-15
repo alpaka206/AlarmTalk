@@ -589,11 +589,14 @@ internal suspend fun MainViewModel.leaveAccountForPendingDeletion(session: AuthS
 /**
  * 백그라운드 워커가 이 계정을 이미 떠났다(`AppSignals.accountLeftForPendingDeletion`) — 저장소는 비었는데 화면(메모리
  * 세션)은 로그인된 채라 같은 떠나기로 맞춘다. 알람 떼어내기·저장소 비우기는 이미 끝났고 다시 해도 같은 결과다.
+ *
+ * ⚠ **계정이 아니라 워커가 비운 그 토큰으로 본다**(코덱스 #904). 신호가 처리되기 전에 같은 계정으로 다시 로그인했으면
+ *   계정 id 는 같아도 새 세션이다 — id 만 보면 그 새 세션을 끊고 알람을 끈다.
  */
-internal fun MainViewModel.onAccountLeftInBackground(userId: String) {
+internal fun MainViewModel.onAccountLeftInBackground(left: com.alarmtalk.app.core.AppSignals.AccountLeft) {
     viewModelScope.launch {
         val session = authSession ?: return@launch
-        if (session.user.id != userId) return@launch
+        if (session.user.id != left.userId || session.token != left.clearedToken) return@launch
         leaveAccountForPendingDeletion(session)
     }
 }
