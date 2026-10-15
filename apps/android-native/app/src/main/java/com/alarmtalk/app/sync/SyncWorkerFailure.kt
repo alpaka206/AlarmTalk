@@ -40,7 +40,9 @@ import kotlin.coroutines.cancellation.CancellationException
  *   [RETRY] 로 가 모니터링에 남는다.
  * - [ACCOUNT_PENDING_DELETION]: **탈퇴 유예 계정의 403.** 사용자가 탈퇴를 신청해 둔 상태라 서버가
  *   철회 말고는 전부 막는다(`middleware/auth.ts`). 철회해야 풀리고, 철회는 앱이 복구 화면에서
- *   받는다 — 백오프 재시도는 같은 403 만 반복한다. 이슈로 올리지 않고 끝낸다(2026-10-12~13 Play
+ *   받는다 — 백오프 재시도는 같은 403 만 반복한다. 이슈로 올리지 않고 끝내고, 철회하면
+ *   `cancelAccountDeletion` 이 다시 건다. ⚠ **입력(payload)을 든 워커는 끝내지 않는다** —
+ *   `VoiceAccessSyncWorker` 는 교체 신호를 들어 재시도로 남긴다(코덱스 #902). (2026-10-12~13 Play
  *   사전 출시 로봇이 가입·탈퇴 신청 뒤 다시 로그인해 워커 실패를 이슈로 남겼다, ANDROID-1B).
  *   판정은 `AlarmTalkLog.isAccountPendingDeletion` 하나다(상태 403 + 코드).
  * - [RETRY]: 그 밖의 실패. 보고하고 재시도한다(일시적 네트워크 실패는 `AlarmTalkLog` 가

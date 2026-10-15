@@ -584,6 +584,11 @@ internal fun MainViewModel.cancelAccountDeletion() {
             // ⚠ 셋 다 **갈아 끼우는** 큐잉이어야 한다 — `KEEP` 이면 유예 403 으로 끝나는 중인 회차 때문에 새 요청이
             //   버려진다(코덱스 #901). 알람 pull·날씨는 `runOnce` 가 이미 `REPLACE` 다.
             com.alarmtalk.app.sync.UsageEventUploadWorker.runAfterAccountRecovery(getApplication())
+            // 요금제 대조도 다시 — 유예 동안 끝난 `plan_changed` 회차가 있으면 권한 스냅샷·스토어 신호가 옛 유료로 남아
+            // 유료 목소리 알람이 울림 관문을 지난다(코덱스 #902 P1). `runOnce` 는 `REPLACE` 다.
+            // (목소리 접근 워커는 교체 신호를 입력으로 들어 유예 동안 끝내지 않고 재시도로 남긴다 — 여기서 다시 걸지
+            // 않는다. 입력 없는 일반 대조를 먼저 돌리면 그 표식을 기준선으로 삼아 버린다.)
+            com.alarmtalk.app.sync.PlanChangeSyncWorker.runOnce(getApplication())
             // 클립 받기도 갈아 끼운다 — 유예 403 으로 끝나는 중인 회차가 있으면 `KEEP` 이 새 요청을 버린다
             // (`StockClipPrefetchWorker.enqueueAfterAccountRecovery`).
             com.alarmtalk.app.sync.StockClipPrefetchWorker.enqueueAfterAccountRecovery(getApplication())

@@ -314,9 +314,14 @@ class VoiceAccessSyncWorker(
                     Result.success()
                 }
                 SyncWorkerOutcome.ACCOUNT_PENDING_DELETION -> {
-                    // 철회 전에는 같은 403 만 돌아온다 — 재시도·이슈 없이 끝낸다(`syncWorkerOutcome`).
-                    Log.i(TAG, "Voice access sync stopped: account is pending deletion")
-                    Result.success()
+                    // ⚠ **이 워커만 끝내지 않고 남긴다**(코덱스 #902 P1). 다른 워커는 들고 있는 것이 없어 철회 뒤
+                    //   다시 걸면 되지만, 이 작업은 교체 신호(`replacedVoiceProfileId`·`replacedGeneration`)를 **입력으로**
+                    //   든다. 성공으로 끝내면 그 입력이 사라지고, 뒤의 일반 목록 대조는 그것을 대신하지 못한다 —
+                    //   `VoiceReplacementMarkerStore` 가 처음 본 표식을 기준선으로 삼아, 교체된 목소리를 문 직접 입력
+                    //   알람이 그대로 남는다. 재시도로 두면 WorkManager 가 입력째 보관하고 철회 뒤 다음 회차가 처리한다.
+                    //   이슈로는 올리지 않는다(`AlarmTalkLog.isAccountPendingDeletion` → 브레드크럼).
+                    Log.i(TAG, "Voice access sync deferred: account is pending deletion — keeping the payload for recovery")
+                    Result.retry()
                 }
                 SyncWorkerOutcome.RETRY -> {
                     AlarmTalkLog.reportError("voice_access_revoked handling failed", error)
