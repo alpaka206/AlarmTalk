@@ -1635,6 +1635,12 @@ final class AuthViewModel: ObservableObject {
             // 로컬 뒷정리가 끝났을 때만 표시를 내린다(푸시 해제는 서버가 이미 했다).
             if cleaned { PendingSignOutStore.clear(currentUserID) }
         } catch {
+            // ⚠ **이미 탈퇴 유예면 실패가 아니다**(코덱스 #904) — 다른 기기가 먼저 신청했다. 통신 계층이 같은 403 을
+            //   알려 `leaveAccountForPendingDeletion` 이 알람까지 끄고 떠난다 — 여기서 '실패' 를 띄우지 않고, 그 떠나기를 기다린다.
+            if let apiError = error as? APIError, apiError.isAccountPendingDeletion {
+                await leaveAccountForPendingDeletion(token: token)
+                return
+            }
             failStatus(userFacingErrorMessage(error, fallback: String(localized: "회원 탈퇴 신청에 실패했어요")))
         }
     }

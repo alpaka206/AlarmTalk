@@ -505,6 +505,18 @@ internal fun MainViewModel.requestAccountDeletion(signOutGoogle: suspend () -> U
             dismissDeleteAccount()
             message = getApplication<android.app.Application>().getString(R.string.msg_account_deletion_requested)
         } catch (error: Throwable) {
+            // ⚠ **이미 탈퇴 유예면 실패가 아니다**(코덱스 #904). 다른 기기가 먼저 신청했다 — 서버는 이 기기의 세션도 끊었고
+            //   푸시 등록도 지웠다. 이 흐름이 로그아웃 창(`signingOut`)을 열어 둔 채라 인터셉터의 떠나기는 그 창 때문에
+            //   물러선다 — 여기서 성공 갈래와 같은 정리(알람 떼어내기·세션 비우기)를 하지 않으면 알람이 남는다.
+            if (AlarmTalkLog.isAccountPendingDeletion(error)) {
+                if (shouldSignOutGoogle) {
+                    runCatching { signOutGoogle() }.onFailure { Log.w(TAG, "Google sign-out failed", it) }
+                }
+                clearSignedInSession(departingUserId = session.user.id)
+                dismissDeleteAccount()
+                message = getApplication<android.app.Application>().getString(R.string.msg_account_deletion_requested)
+                return@launch
+            }
             AlarmTalkLog.reportError("Failed to request account deletion", error)
             // 신청이 실패했으면 사용자는 그대로 로그인 상태다 — 표시를 남겨 두면 그 60초
             // 동안의 **진짜** 자동 만료가 마커를 못 남겨, 업데이트 후 재예약이 이 기기의
