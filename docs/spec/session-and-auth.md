@@ -232,8 +232,13 @@ pepper 로 가명 보존 기록까지 곧장 이어져, 분리 보관을 무너�
 - **안드로이드는 어느 요청이든 403 `ACCOUNT_PENDING_DELETION` 을 받으면 떠난다** — 응답 쪽 한 곳(`AlarmTalkApiClient` 의
   인터셉터 → `UnauthorizedHandler.onAccountPendingDeletion`). 계정 확인(`checkAccountStatus`)은 세션 키가 바뀔 때만 돌아,
   프로세스가 살아 있는 채 전경으로 돌아오면 닿지 않는다(코덱스 #904). iOS 는 전경 복귀마다 `refreshUser` 가 돈다.
-- **푸시 등록은 계정이 active 일 때만 적힌다**(`pushRegisterStatements` 의 `INSERT … SELECT … WHERE EXISTS` — 다른 계정의
-  같은 토큰 행을 지우는 DELETE 에도 같은 조건. 유예 계정의 늦은 등록이 그 행만 지우면 다른 계정이 푸시를 놓친다). 미들웨어를
+- **푸시 등록은 계정이 active 이고 요청 토큰의 세대가 아직 유효할 때만 적힌다**(`pushRegisterStatements` 의
+  `INSERT … SELECT … WHERE EXISTS` — 미들웨어가 심은 `tokenEpoch` 로 `token_epoch <= ?`. 다른 계정의 같은 토큰 행을 지우는
+  DELETE 에도 같은 조건). 상태만 보면 탈퇴 신청(세대 +1)과 철회 로그인(세대 +1) 뒤에 커밋된 늦은 등록이 로그아웃된 기기를
+  그 계정에 묶는다(코덱스 #904).
+- **이 기기의 탈퇴 신청이 '이미 유예' 403 을 받으면 실패가 아니다** — 다른 기기가 먼저 신청했다. 신청 성공과 같은 정리를
+  한다(안드로이드 `requestAccountDeletion` 의 catch, iOS 는 `leaveAccountForPendingDeletion`). 그 흐름이 로그아웃 창을 열어 둔
+  채라 응답 쪽 떠나기가 물러서기 때문이다. 미들웨어를
   이미 지난 등록 요청이 탈퇴 신청 뒤에 커밋되면 유예 계정에 푸시 행이 되살아난다 — 조건을 그 문장 안에 둬 원자적으로 막는다.
 - **iOS 는 자동 만료(401)에서도 기기의 푸시 등록 확인을 내린다**(`signOut` 의 자동 만료 갈래 → `onServerRemovedPushRegistration`
   → `PushNotificationCoordinator.invalidateRegistration` — 등록·해제와 **같은 줄**에서. 줄 밖에서 비우면 응답을 기다리던 앞선
