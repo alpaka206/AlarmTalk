@@ -410,18 +410,23 @@ class TransientFailureClassificationTest {
     }
 
     @Test
-    fun workerRetriesWithoutEndingTheSessionOnAccountPendingDeletion() {
-        // 탈퇴 유예는 세션을 끊어야 하지만 그 정리는 알람까지 끄는 명시적 로그아웃이라 전경이 한다
-        // (`leaveAccountForPendingDeletion`). 워커가 SESSION_EXPIRED 로 끊으면 자동 만료라 알람 예약이 남는다(코덱스 #904).
+    fun workerEndsTheSessionOnAccountPendingDeletion() {
+        // 탈퇴 유예 403 은 끝난 세션이다 — 워커는 SESSION_EXPIRED 로 끝내되 `endWorkerSession` 이 이 코드를 보고 자동 만료가
+        // 아니라 알람까지 끄는 떠나기로 정리한다(코덱스 #904 — 재시도로 두면 서버가 푸시 등록을 지워 깨울 길이 없어 숨은
+        // 알람이 운다).
         assertEquals(
-            SyncWorkerOutcome.RETRY,
+            SyncWorkerOutcome.SESSION_EXPIRED,
             syncWorkerOutcome(httpException(403, """{"error_code":"ACCOUNT_PENDING_DELETION"}""")),
         )
         assertEquals(
-            SyncWorkerOutcome.RETRY,
+            SyncWorkerOutcome.SESSION_EXPIRED,
             syncWorkerOutcome(
                 IllegalStateException("sync failed", httpException(403, """{"error_code":"ACCOUNT_PENDING_DELETION"}""")),
             ),
+        )
+        assertEquals(
+            SyncWorkerOutcome.RETRY,
+            syncWorkerOutcome(httpException(500, """{"error_code":"ACCOUNT_PENDING_DELETION"}""")),
         )
     }
 

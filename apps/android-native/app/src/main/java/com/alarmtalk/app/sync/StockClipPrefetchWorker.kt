@@ -695,7 +695,9 @@ class StockClipPrefetchWorker(
                     // 성공으로 내보내면 못 받은 클립이 있는데도 100% SUCCEEDED 가 되어
                     // '다시 시도' 를 영영 못 띄운다(아래 종료 규칙과 같은 이유). 세션이
                     // 끊겼으니 재시도도 무의미하다 — 재로그인 뒤 큐가 다시 걸린다.
-                    endSessionAfterWorkerUnauthorized(
+                    endWorkerSession(
+                        error = error,
+                        context = applicationContext,
                         sessionStore = sessionStore,
                         expectedGeneration = startGeneration,
                         // 시작 토큰이 아니라 **이 요청이 실제로 보낸** 토큰이다([tokenAfterRoll]).

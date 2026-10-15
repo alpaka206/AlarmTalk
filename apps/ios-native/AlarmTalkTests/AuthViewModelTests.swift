@@ -1694,6 +1694,8 @@ final class AuthViewModelTests: XCTestCase {
         vm.onServerRemovedPushRegistration = { cleared += 1 }
 
         await vm.refreshUser()
+        // 자동 만료 갈래는 동기라 확인 내리기를 줄에 태워 두기만 한다(`invalidateRegistration`) — 그 일이 돌 때까지 기다린다.
+        for _ in 0..<50 where cleared == 0 { await Task.yield() }
 
         XCTAssertNil(vm.session)
         XCTAssertEqual(cleared, 1)

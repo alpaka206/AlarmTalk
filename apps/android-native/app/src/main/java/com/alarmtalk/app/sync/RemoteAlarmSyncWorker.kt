@@ -61,7 +61,9 @@ class RemoteAlarmSyncWorker(
                 SyncWorkerOutcome.RETHROW -> throw error
                 SyncWorkerOutcome.SESSION_EXPIRED -> {
                     // 재시도해 봐야 같은 토큰이 또 거절당한다 — 세션을 끊고 끝낸다.
-                    endSessionAfterWorkerUnauthorized(
+                    endWorkerSession(
+                        error = error,
+                        context = applicationContext,
                         sessionStore = sessionStore,
                         expectedGeneration = startGeneration,
                         usedToken = usedToken,

@@ -77,6 +77,14 @@ class AlarmTalkMessagingService : FirebaseMessagingService() {
                 }.onFailure { AlarmTalkLog.reportError("billing_hold notification failed", it) }
             }
         }
+        // 다른 기기에서 탈퇴를 신청했다(2026-10-15) — 이 기기의 세션도 끊겼다. **신호만 믿고 떠나지 않는다**(그 사이
+        // 다른 기기에서 다시 로그인해 철회됐을 수 있다): 알람 pull 워커를 곧바로 돌려 서버에 묻게 하고, 서버가 403
+        // `ACCOUNT_PENDING_DELETION` 이면 그 워커가 알람까지 끄고 떠난다(`endWorkerSession` →
+        // `leaveAccountAfterPendingDeletion`). 앱이 떠 있으면 같은 403 을 인터셉터가 받아 전경도 떠난다.
+        if (message.data["type"] == "account_deletion_requested") {
+            runCatching { RemoteAlarmSyncScheduler.runOnce(applicationContext) }
+                .onFailure { AlarmTalkLog.reportError("account_deletion_requested handling failed", it) }
+        }
         if (message.data["type"] == "plan_changed") {
             runCatching { com.alarmtalk.app.sync.PlanChangeSyncWorker.runOnce(applicationContext) }
                 .onFailure { AlarmTalkLog.reportError("plan_changed handling failed", it) }
