@@ -557,8 +557,8 @@ final class AuthViewModel: ObservableObject {
     /// 세션은 유지하되 동의 화면으로 게이팅하기 위해 `needsConsent=true` 로 둔다.
     private nonisolated(unsafe) var consentRequiredObserver: NSObjectProtocol?
     private nonisolated(unsafe) var accountPendingDeletionObserver: NSObjectProtocol?
-    /// 떠나기가 도는 중인 세션의 토큰 — 여러 요청이 한꺼번에 403 을 받아도 한 번만 정리한다.
-    private var leavingForPendingDeletionToken: String?
+    /// 진행 중인 탈퇴 유예 떠나기(그 세션의 토큰과 작업) — 겹쳐 들어온 호출이 이 작업이 끝날 때까지 기다린다.
+    private var pendingDeletionLeave: (token: String, task: Task<Void, Never>)?
     /// `verifyAppleCredentialStateIfNeeded` 가 같은 사용자에 대해 중복 동시 호출되는
     /// 일을 막는다. SwiftUI scenePhase 가 짧은 시간 안에 두 번 .active 가 되는
     /// 경우(예: 시스템 알림창 → 복귀) 가 있어 직렬화.
@@ -1654,16 +1654,27 @@ final class AuthViewModel: ObservableObject {
     private func leaveAccountForPendingDeletion(token: String) async {
         guard session?.token == token else { return }
         if UIPreviewSeed.isEnabled { return }
-        // 여러 요청이 한꺼번에 403 을 받으면 여러 번 들어온다 — 한 번만.
-        guard leavingForPendingDeletionToken != token else { return }
-        leavingForPendingDeletionToken = token
+        // ⚠ **여러 번 들어오면 한 번만 하고, 나중에 온 쪽은 그 정리가 끝날 때까지 기다린다**(코덱스 #904). 탈퇴 신청이
+        //   '이미 유예' 를 받으면 통신 계층의 알림과 신청의 catch 가 함께 들어온다 — 나중 쪽이 곧바로 돌아가면 신청 흐름이
+        //   `isBusy` 를 먼저 풀어, 알람 정리를 기다리는 사이 로그아웃·재로그인이 끼어든다.
+        if let running = pendingDeletionLeave, running.token == token {
+            await running.task.value
+            return
+        }
+        let task = Task<Void, Never> { @MainActor in
+            await self.performLeaveAccountForPendingDeletion(token: token)
+        }
+        pendingDeletionLeave = (token, task)
+        await task.value
+        if pendingDeletionLeave?.token == token { pendingDeletionLeave = nil }
+    }
+
+    private func performLeaveAccountForPendingDeletion(token: String) async {
+        guard session?.token == token else { return }
         // ⚠ **정리하는 동안 화면을 잠근다**(`isBusy`, 코덱스 #904) — `signOutExplicitly` 와 같다. 기다리는 사이 로그아웃·
         //   재로그인이 끼어들면 아래 정리가 **새 세션**에 닿는다.
         isBusy = true
-        defer {
-            isBusy = false
-            if leavingForPendingDeletionToken == token { leavingForPendingDeletionToken = nil }
-        }
+        defer { isBusy = false }
         let currentUserID = session?.user.id.trimmingCharacters(in: .whitespacesAndNewlines)
         /// 기다린 뒤마다 다시 본다 — 그 세션이 아직 이 세션인가. 아니면 그 자리에서 멈춘다(이미 한 정리는 떠나는 계정의 것).
         func stillThisSession() -> Bool { session?.token == token }
@@ -2239,6 +2250,9 @@ final class AuthViewModel: ObservableObject {
     }
 
     func signOutExplicitly() {
+        // 탈퇴 유예 떠나기가 이 세션을 이미 정리하는 중이면 그 흐름이 로그아웃까지 한다 — 겹쳐 시작하면 그 정리가
+        // 알람을 기다리는 사이 세션이 바뀌어, 다음 로그인의 알람에 닿을 수 있다(코덱스 #904).
+        if let running = pendingDeletionLeave, running.token == session?.token { return }
         let userID = session?.user.id
         beginLeavingAccount()
         clearAccountPreferences(userID)
