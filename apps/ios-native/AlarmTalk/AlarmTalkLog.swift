@@ -148,6 +148,28 @@ enum AlarmTalkLog {
         return expectedRefusalCodes.contains(code)
     }
 
+    /// **우리 서버가 아닌 곳이 낸 504** — HTTP 504 인데 `error_code` 가 없다.
+    ///
+    /// 우리 워커는 504 를 내지 않고 모든 4xx/5xx 에 `error_code` 를 싣는다(`docs/spec/error-codes.md`). 코드 없는 504 는
+    /// 기기와 우리 사이의 프록시·게이트웨이가 시간을 넘긴 것이라 일시적 네트워크 실패와 같은 부류다(2026-10-11~14 안드로이드
+    /// `HTTP_504` 23건은 전부 Play 사전 출시 로봇, 같은 시각 서버 기록에 5xx 없음). ⚠ 502·503 은 넣지 않는다 — 워커 자체의
+    /// 실패로 Cloudflare 가 내는 자리라 우리가 고칠 것일 수 있다. 안드로이드 짝은 `core/AlarmTalkLog.kt` 의 `isForeignGatewayTimeout`.
+    static func isForeignGatewayTimeout(_ error: Error) -> Bool {
+        guard let failure = apiFailure(in: error) else { return false }
+        return failure.status == 504 && failure.code == nil
+    }
+
+    /// **탈퇴 유예 계정의 403**(`ACCOUNT_PENDING_DELETION`)인가 — 원인 사슬의 첫 HTTP 응답이 403 이고 그 코드일 때만.
+    ///
+    /// 사용자가 직접 탈퇴를 신청해 둔 상태라 서버가 철회·푸시 해제 말고는 전부 막는다(`middleware/auth.ts`). 앱은 계정
+    /// 응답의 `deletion_status` 로 복구 화면을 띄운다 — 고칠 결함이 아니라 사용자가 고른 계정 상태다. 이슈로 올리면
+    /// 유예 계정이 로그인할 때마다 그 답보다 먼저 떠난 호출이 한 건씩 쌓인다(2026-10-12~13 안드로이드 ANDROID-15~1B).
+    /// ⚠ 같은 코드라도 5xx 면 사고다 — 상태를 함께 본다. 안드로이드 짝은 `core/AlarmTalkLog.kt` 의 `isAccountPendingDeletion`.
+    static func isAccountPendingDeletion(_ error: Error) -> Bool {
+        guard let failure = apiFailure(in: error) else { return false }
+        return failure.status == 403 && failure.code == "ACCOUNT_PENDING_DELETION"
+    }
+
     /// 이슈로 올리지 않고 브레드크럼으로만 남길 실패인가 — 남긴다면 그 category.
     /// 올려야 할 실패면 nil. 안드로이드 짝은 `core/AlarmTalkLog.kt` 의 `breadcrumbCategoryFor` 다.
     ///
@@ -156,7 +178,9 @@ enum AlarmTalkLog {
     static func handledFailureCategory(_ error: Error) -> String? {
         if isHandledAuthFailure(error) { return "auth" }
         if isExpectedTransientFailure(error) { return "transient" }
+        if isForeignGatewayTimeout(error) { return "transient" }
         if isExpectedRefusal(error) { return "refusal" }
+        if isAccountPendingDeletion(error) { return "account" }
         return nil
     }
 

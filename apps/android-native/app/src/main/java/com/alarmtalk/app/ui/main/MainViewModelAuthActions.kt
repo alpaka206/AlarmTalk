@@ -574,6 +574,19 @@ internal fun MainViewModel.cancelAccountDeletion() {
             // (pending 중엔 로그인해도 게이트가 /push/register 를 막아 등록이 안 됐다.) 그래야 가족 알람
             // push 가 이 기기에 다시 온다 — active 복구 후라 등록 게이트를 통과한다.
             com.alarmtalk.app.fcm.AlarmTalkMessagingService.registerCurrentToken(getApplication())
+            // ⚠ **막혀 있던 동안 끝낸 워커를 곧바로 다시 돌린다**(코덱스 #901 P1). 유예 403 을 받은 워커는
+            //   재시도 없이 끝나므로(`SyncWorkerOutcome.ACCOUNT_PENDING_DELETION`) 철회 뒤 아무도 다시 부르지
+            //   않으면, 푸시 토큰이 없던 동안 온 가족 알람이 다음 주기 pull(15분)까지 기다리다 시각을 넘길 수
+            //   있다. 화면 데이터(목소리·클립·소셜·이용권)는 `AlarmTalkApp` 의 데이터 효과가 `pendingDeletion`
+            //   을 키로 다시 부른다.
+            com.alarmtalk.app.sync.RemoteAlarmSyncScheduler.runOnce(getApplication())
+            com.alarmtalk.app.sync.DynamicVoiceRefreshScheduler.runOnce(getApplication())
+            // ⚠ 셋 다 **갈아 끼우는** 큐잉이어야 한다 — `KEEP` 이면 유예 403 으로 끝나는 중인 회차 때문에 새 요청이
+            //   버려진다(코덱스 #901). 알람 pull·날씨는 `runOnce` 가 이미 `REPLACE` 다.
+            com.alarmtalk.app.sync.UsageEventUploadWorker.runAfterAccountRecovery(getApplication())
+            // 클립 받기도 갈아 끼운다 — 유예 403 으로 끝나는 중인 회차가 있으면 `KEEP` 이 새 요청을 버린다
+            // (`StockClipPrefetchWorker.enqueueAfterAccountRecovery`).
+            com.alarmtalk.app.sync.StockClipPrefetchWorker.enqueueAfterAccountRecovery(getApplication())
             message = getApplication<android.app.Application>().getString(R.string.msg_account_deletion_cancelled)
         }.onFailure { error ->
             AlarmTalkLog.reportError("Failed to cancel account deletion", error)
@@ -1393,8 +1406,10 @@ internal fun MainViewModel.syncNow() {
             // 흔한데(면제 경로 아님), 이건 정상 재시도로 곧 풀린다. 사용자에게 뜨던
             // "알람 정보를 주고받지 못했어요" 토스트를 제거한다.
             if (error is kotlin.coroutines.cancellation.CancellationException) throw error
-            // 403 이라도 error_code 로 정확히 CONSENT_REQUIRED 만 강등한다 — CONSENT_STATE_UNAVAILABLE
-            // ·ACCOUNT_PENDING_DELETION 같은 실제 인증/동의 파손은 모니터링에 남겨야 한다.
+            // 403 이라도 error_code 로 정확히 CONSENT_REQUIRED 만 여기서 강등한다 — CONSENT_STATE_UNAVAILABLE
+            // 같은 실제 인증/동의 파손은 모니터링에 남겨야 한다. (탈퇴 유예 403 `ACCOUNT_PENDING_DELETION` 은
+            // `reportError` 가 스스로 브레드크럼으로 낮춘다 — 복구 화면이 이미 그 상태를 말한다,
+            // `AlarmTalkLog.isAccountPendingDeletion`.)
             if (com.alarmtalk.app.network.apiErrorCode(error) == "CONSENT_REQUIRED") {
                 Log.i(TAG, "Auto-sync deferred: consent not settled yet, will retry")
             } else {

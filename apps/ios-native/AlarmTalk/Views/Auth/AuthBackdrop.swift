@@ -30,24 +30,37 @@ struct SunriseBackdrop<Content: View>: View {
 }
 
 /// 파형·윤슬이 움직이는 일출 씬. 유일한 애니메이션 항은 `phase` 다.
+///
+/// ⚠ **`TimelineView`·`Canvas` 의 클로저는 `@Sendable` 로 둔다 — 메인 액터 격리를 물려받으면 죽는다.**
+/// 표기 없이 이 `View` 의 `body` 안에 쓰면 클로저가 메인 액터로 추론되고, Swift 6 이 그 진입부에 메인
+/// 스레드 검사를 심는다. 그런데 iOS 27 의 SwiftUI 는 `.animation` 타임라인을 **그리기 전용 스레드**
+/// (`ViewGraphDisplayLink.asyncThread`)에서 갱신하기도 해서, 그 검사가 `dispatch_assert_queue` 로
+/// 프로세스를 죽였다(2026-10-14 1.2.13 iPad, Sentry ALARMTALK-IOS-4 — 빌드 10 역어셈블로 두 클로저
+/// 모두 검사를 품은 것을 확인). 그리는 코드는 그래서 격리 없는 [SunriseSceneRenderer] 에 있다.
+/// 강제: `scripts/check-bgtask-handler-isolation.py`.
 struct SunriseScene: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         if reduceMotion {
             // 모션을 줄인 사용자에게는 정지 프레임으로 그린다(그림 자체는 그대로).
-            Canvas { context, size in Self.draw(in: &context, size: size, phase: 0) }
+            Canvas { @Sendable context, size in SunriseSceneRenderer.draw(in: &context, size: size, phase: 0) }
         } else {
-            TimelineView(.animation) { timeline in
+            TimelineView(.animation) { @Sendable timeline in
                 let t = timeline.date.timeIntervalSinceReferenceDate
-                Canvas { context, size in
+                Canvas { @Sendable context, size in
                     // 안드로이드는 6초 주기 무한 회전(0..2π). 같은 속도로 맞춘다.
-                    Self.draw(in: &context, size: size, phase: t.truncatingRemainder(dividingBy: 6) / 6 * 2 * .pi)
+                    SunriseSceneRenderer.draw(
+                        in: &context, size: size, phase: t.truncatingRemainder(dividingBy: 6) / 6 * 2 * .pi
+                    )
                 }
             }
         }
     }
+}
 
+/// [SunriseScene] 의 그림. `View` 가 아니라서 메인 액터에 묶이지 않는다 — 그리기 스레드에서 불려도 된다.
+enum SunriseSceneRenderer {
     // MARK: - 색 (안드로이드 LandingScene 과 동일 값)
 
     private static let sky: [(CGFloat, Color)] = [

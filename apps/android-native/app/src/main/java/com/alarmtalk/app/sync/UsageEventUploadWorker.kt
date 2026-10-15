@@ -88,6 +88,11 @@ class UsageEventUploadWorker(
                     Log.i(TAG, "Usage event upload deferred: consent not settled yet")
                     Result.success()
                 }
+                SyncWorkerOutcome.ACCOUNT_PENDING_DELETION -> {
+                    // 철회 전에는 같은 403 만 돌아온다 — 재시도·이슈 없이 끝낸다(`syncWorkerOutcome`).
+                    Log.i(TAG, "Usage event upload stopped: account is pending deletion")
+                    Result.success()
+                }
                 SyncWorkerOutcome.RETRY -> {
                     AlarmTalkLog.reportError("Usage event upload failed", error)
                     Result.retry()
@@ -141,14 +146,25 @@ class UsageEventUploadWorker(
         }
 
         /** 연결이 돌아왔을 때·앱을 열었을 때 한 번. 이미 예약돼 있으면 그대로 둔다. */
-        fun runOnce(context: Context) {
+        fun runOnce(context: Context) = enqueueOnce(context, ExistingWorkPolicy.KEEP)
+
+        /**
+         * **탈퇴 유예를 철회한 직후** 한 번 — 돌고 있는 회차를 갈아 끼운다(`REPLACE`).
+         *
+         * 철회 순간 유예 403 으로 끝나는 중인 회차가 있으면 [runOnce] 의 `KEEP` 이 새 요청을 버리고, 그 회차는
+         * 큐를 그대로 둔 채 성공으로 끝난다 — 다음 계기(앱 열기·6시간 주기)까지 기록이 안 올라간다(코덱스 #901).
+         * 갈아 끼워도 안전하다: 전송은 멱등이고(기기가 만든 UUID 가 서버 PK) 성공한 배치만 지운다.
+         */
+        fun runAfterAccountRecovery(context: Context) = enqueueOnce(context, ExistingWorkPolicy.REPLACE)
+
+        private fun enqueueOnce(context: Context, policy: ExistingWorkPolicy) {
             val request = OneTimeWorkRequestBuilder<UsageEventUploadWorker>()
                 .setConstraints(networkConstraints)
                 .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 1, TimeUnit.MINUTES)
                 .build()
             WorkManager.getInstance(context.applicationContext).enqueueUniqueWork(
                 ONE_TIME_WORK_NAME,
-                ExistingWorkPolicy.KEEP,
+                policy,
                 request,
             )
         }

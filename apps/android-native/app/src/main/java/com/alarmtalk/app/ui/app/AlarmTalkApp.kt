@@ -568,9 +568,13 @@ internal fun AlarmTalkApp(
     // 화면에 도착한 사용자에게 '목소리를 받지 못했어요' 만 남는다 — 네트워크는 멀쩡한데도.
     // 여기는 **소진되는 플래그가 아니다** — 데이터를 좀 일찍 부르는 것뿐이라 캐시 통과의
     // 이득(재로그인 시 즉시 로드)을 그대로 둔다. consentStatusChecked 를 기다릴 이유가 없다.
-    LaunchedEffect(sessionEffectKey, viewModel.consentChecked, viewModel.showConsentScreen) {
+    // `pendingDeletion` 도 키다 — 탈퇴 유예 계정은 서버가 데이터 라우트를 전부 403 으로 막으므로 그동안은 부르지
+    // 않고, 철회해 false 로 내려가는 순간 다시 부른다(코덱스 #901 — 예전에는 세션 키가 그대로라 철회 뒤 아무도
+    // 다시 부르지 않았다).
+    LaunchedEffect(sessionEffectKey, viewModel.consentChecked, viewModel.showConsentScreen, viewModel.pendingDeletion) {
         if (authSession == null) return@LaunchedEffect
         if (!viewModel.consentChecked || viewModel.showConsentScreen) return@LaunchedEffect
+        if (viewModel.pendingDeletion) return@LaunchedEffect
         viewModel.preloadVoiceProfiles()
         viewModel.loadStockClips()
         viewModel.prefetchStockClips()

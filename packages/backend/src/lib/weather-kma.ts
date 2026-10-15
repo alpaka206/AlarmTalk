@@ -48,8 +48,18 @@ const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
 
 /** 결과 코드 — 다시 해도 소용없는 것(설정 실패). 10~12 는 요청 모양이 틀린 것(우리 코드의 잘못)이다. */
 const KMA_CONFIG_RESULT_CODES = new Set(['10', '11', '12', '20', '21', '22', '30', '31', '32', '33']);
-/** 결과 코드 — `NODATA_ERROR`. 발표 직후 아직 안 올라온 것이라 한 회차 물러선다. */
+/** 결과 코드 — `NODATA_ERROR`. 그 회차가 아직 안 올라온 것이라 한 회차씩 물러선다(`KMA_NODATA_MAX_STEPS`). */
 export const KMA_NODATA_REASON = 'kma_03';
+/**
+ * NODATA 에 물러서는 최대 회차 수 — 3이면 최신에서 9시간 전 회차까지 본다.
+ *
+ * ⚠ **한 번으로 줄이지 말 것.** 발표가 몇 시간씩 늦는 날이 있다 — 2026-10-13·14 아침(06시 KST) 슬롯에서 0500·0200
+ * 두 회차가 다 NODATA 라 KR 이 13/17 → 17/17 실패했다(14일은 09시에도 0500·0800 이 없었고, 0200 은 그 뒤에야
+ * 올라왔다). 전날 2300 회차는 있었으니 두 번만 더 물러섰으면 오늘·내일을 다 만들었다.
+ * 예산은 늘지 않는다 — 물러서기마다 fetch 몫을 쓰고(`options.budget`, 읽기 경로는 2라 한 번까지), 한 틱 안에서는
+ * 찾은 회차를 다른 지역이 이어 쓴다(`SourceFetchOptions.kmaRunMemo`).
+ */
+export const KMA_NODATA_MAX_STEPS = 3;
 
 export type KmaRun = { baseDate: string; baseTime: string };
 
@@ -70,7 +80,7 @@ export function latestKmaRun(now: Date): KmaRun {
   return runAt(kst - 24 * 60 * 60 * 1000, 23);
 }
 
-/** 한 회차 앞(3시간 전). NODATA(03) 를 받았을 때 한 번만 쓴다. */
+/** 한 회차 앞(3시간 전). NODATA(03) 를 받았을 때 쓴다(최대 `KMA_NODATA_MAX_STEPS` 번). */
 export function previousKmaRun(run: KmaRun): KmaRun {
   const y = Number(run.baseDate.slice(0, 4));
   const m = Number(run.baseDate.slice(4, 6));
@@ -454,8 +464,10 @@ function tmpRange(
  * 지역 하나의 단기예보를 받는다. 실패는 `WeatherSourceError` 로 던진다(`fetchRegionSourceDays` 가 받는다).
  *
  * - 키가 없으면 네트워크를 부르지 않고 `config:missing_key`.
- * - 결과 코드 03(NODATA)이면 **한 회차 물러서서 한 번 더** — 예산 안에서만, 그리고 마감(`deadlineAt`, 읽기 경로)
- *   안에서만. 마감이 지났으면 부르지 않고 타임아웃이다(`fetchWeatherSource`).
+ * - 결과 코드 03(NODATA)이면 **한 회차씩 물러선다**(최대 `KMA_NODATA_MAX_STEPS`) — 예산 안에서만, 그리고 마감
+ *   (`deadlineAt`, 읽기 경로) 안에서만. 마감이 지났으면 부르지 않고 타임아웃이다(`fetchWeatherSource`).
+ * - 같은 틱의 다른 지역이 이미 찾은 회차(`kmaRunMemo`)가 있으면 거기서 시작한다 — 그보다 새 회차는 이 틱에 이미
+ *   NODATA 였다.
  * - `items.length` ≠ `totalCount` 면 다음 페이지를 받는다(예산·마감 안). 그래도 다르면 실패다.
  * - 엣지 캐시는 쓰지 않는다(`weather-fetch.ts` 의 `WEATHER_SOURCE_CACHE_TTL_SECONDS` 주석).
  */
@@ -467,19 +479,36 @@ export async function fetchKmaDays(
   const serviceKey = options.kmaServiceKey?.trim();
   if (!serviceKey) throw new WeatherSourceError('config', 'missing_key');
   const today = zonedParts(options.now, region.tz).date;
-  let run = latestKmaRun(options.now);
-  for (let attempt = 0; ; attempt += 1) {
+  const latest = latestKmaRun(options.now);
+  // ⚠ 깊이는 **최신 회차에서** 센다 — 메모에서 시작한다고 0 부터 다시 세면 메모가 한 칸 묵었을 때 12시간, 세 칸이면
+  //   18시간 전 회차까지 내려간다(코덱스 #901). 메모가 상한보다 깊거나 최신보다 새면 쓰지 않는다.
+  const memoDepth = options.kmaRunMemo?.run ? kmaRunsBehind(latest, options.kmaRunMemo.run) : null;
+  let depth = memoDepth !== null && memoDepth > 0 ? memoDepth : 0;
+  let run = depth > 0 ? options.kmaRunMemo!.run! : latest;
+  for (;;) {
     try {
       const items = await fetchAllPages(source, run, serviceKey, options);
+      if (options.kmaRunMemo) options.kmaRunMemo.run = run;
       return kmaDaysFromItems(items, today, run);
     } catch (err) {
-      if (attempt === 0 && err instanceof WeatherSourceError && err.reason === KMA_NODATA_REASON) {
+      if (depth < KMA_NODATA_MAX_STEPS && err instanceof WeatherSourceError && err.reason === KMA_NODATA_REASON) {
         run = previousKmaRun(run);
+        depth += 1;
         continue;
       }
       throw err;
     }
   }
+}
+
+/** [run] 이 [latest] 에서 몇 회차 앞인가(같으면 0). `KMA_NODATA_MAX_STEPS` 안에 없거나 더 새면 null. */
+function kmaRunsBehind(latest: KmaRun, run: KmaRun): number | null {
+  let cursor = latest;
+  for (let steps = 0; steps <= KMA_NODATA_MAX_STEPS; steps += 1) {
+    if (cursor.baseDate === run.baseDate && cursor.baseTime === run.baseTime) return steps;
+    cursor = previousKmaRun(cursor);
+  }
+  return null;
 }
 
 async function fetchAllPages(

@@ -313,6 +313,11 @@ class VoiceAccessSyncWorker(
                     Log.i(TAG, "Voice access sync deferred: consent not settled yet")
                     Result.success()
                 }
+                SyncWorkerOutcome.ACCOUNT_PENDING_DELETION -> {
+                    // 철회 전에는 같은 403 만 돌아온다 — 재시도·이슈 없이 끝낸다(`syncWorkerOutcome`).
+                    Log.i(TAG, "Voice access sync stopped: account is pending deletion")
+                    Result.success()
+                }
                 SyncWorkerOutcome.RETRY -> {
                     AlarmTalkLog.reportError("voice_access_revoked handling failed", error)
                     Result.retry()

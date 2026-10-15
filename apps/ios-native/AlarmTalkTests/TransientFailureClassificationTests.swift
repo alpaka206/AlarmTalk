@@ -128,7 +128,7 @@ final class TransientFailureClassificationTests: XCTestCase {
 
     // ── 그대로 이슈로 올리는 것 — 여기가 무너지면 진짜 결함이 사라진다 ────────
 
-    /// ⚠ **401 과 예상된 거절 목록만 예외다**(목록은 아래 「사용자가 고칠 예상된 거절」). 그 밖의
+    /// ⚠ **401 과 예상된 거절 목록·탈퇴 유예 403 만 예외다**(목록은 아래 「사용자가 고칠 예상된 거절」). 그 밖의
     /// 403·404·409·5xx 는 그대로 이슈로 올라가야 한다 — 권한 박탈, 파기된 계정, 결제 확정 거절
     /// (`TRANSACTION_OWNED_BY_OTHER_USER` 는 서버의 `ALERTING_ERROR_CODES` 에 있다), 서버 사고는 전부
     /// 우리가 고칠 것이 있는 갈래다.
@@ -263,7 +263,8 @@ final class TransientFailureClassificationTests: XCTestCase {
             .server(status: 429, message: "limit", errorCode: "VOICE_MONTHLY_CHANGE_LIMIT_REACHED"),
             .server(status: 429, message: "attempts", errorCode: "AUTH_EMAIL_CODE_ATTEMPTS_EXCEEDED"),
             .server(status: 409, message: "conflict", errorCode: "TRANSACTION_OWNED_BY_OTHER_USER"),
-            .server(status: 504, message: "gateway"),
+            // 코드 없는 504 는 중간 프록시라 일시 실패다(`test_코드_없는_504는_일시_실패다`) — 502 는 그대로 이슈다.
+            .server(status: 502, message: "gateway"),
         ]
         for error in refusals {
             XCTAssertNotNil(AlarmTalkLog.apiFailureFingerprint(for: error, message: "실패"), "\(error)")
@@ -308,6 +309,30 @@ final class TransientFailureClassificationTests: XCTestCase {
             let wrapped = NSError(domain: "AlarmTalk.Auth", code: 1, userInfo: [NSUnderlyingErrorKey: refusal])
             XCTAssertEqual(AlarmTalkLog.handledFailureCategory(wrapped), "refusal", "감싸인 \(refusal)")
         }
+    }
+
+    /// **코드 없는 504 는 일시 실패다** — 우리 워커는 504 를 내지 않는다(중간 프록시가 시간을 넘긴 것). 코드가 실린 5xx,
+    /// 코드 없는 502·503(워커 자체 실패일 수 있다)은 그대로 이슈다.
+    func test_코드_없는_504는_일시_실패다() {
+        XCTAssertEqual(AlarmTalkLog.handledFailureCategory(APIError.server(status: 504, message: "Gateway Time-out", errorCode: nil)), "transient")
+        XCTAssertNil(AlarmTalkLog.handledFailureCategory(APIError.server(status: 504, message: "boom", errorCode: "INTERNAL_ERROR")))
+        XCTAssertNil(AlarmTalkLog.handledFailureCategory(APIError.server(status: 502, message: "bad gateway", errorCode: nil)))
+        XCTAssertNil(AlarmTalkLog.handledFailureCategory(APIError.server(status: 503, message: "unavailable", errorCode: nil)))
+    }
+
+    /// **탈퇴 유예 403 은 브레드크럼(`account`)이다** — 사용자가 고른 계정 상태라 복구 화면이 이미 말한다. 403 일 때만이고
+    /// (같은 코드라도 5xx 면 사고), 감싸인 응답도 같다. 이웃한 403(동의 상태 확인 실패)은 그대로 이슈다.
+    func test_탈퇴_유예_403은_account_브레드크럼이다() {
+        let pending = APIError.server(status: 403, message: "Account is scheduled for deletion", errorCode: "ACCOUNT_PENDING_DELETION")
+        XCTAssertEqual(AlarmTalkLog.handledFailureCategory(pending), "account")
+        let wrapped = NSError(domain: "AlarmTalk.Sync", code: 1, userInfo: [NSUnderlyingErrorKey: pending])
+        XCTAssertEqual(AlarmTalkLog.handledFailureCategory(wrapped), "account")
+        XCTAssertNil(AlarmTalkLog.handledFailureCategory(
+            APIError.server(status: 500, message: "boom", errorCode: "ACCOUNT_PENDING_DELETION")
+        ))
+        XCTAssertNil(AlarmTalkLog.handledFailureCategory(
+            APIError.server(status: 403, message: "forbidden", errorCode: "CONSENT_STATE_UNAVAILABLE")
+        ))
     }
 
     /// ⚠ **시도 상한과 월 한도는 목록에 없다 — 그대로 이슈다.** 1.2.10 의 두 묶음(같은 코드 다섯 번 제출, 낡은 등록

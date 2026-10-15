@@ -217,12 +217,13 @@ class ApiFailureReportingTest {
     @Test
     fun groupingNeverDemotesAnything() {
         // ⚠ 묶음 키 규칙으로 브레드크럼으로 내려가는 것은 하나도 없다. 지문이 생기는 실패는 전부 여전히
-        // 이슈다 — 시도를 다 태운 거절(시도 상한·월 한도)도, 코드 없는 4xx·5xx 도.
+        // 이슈다 — 시도를 다 태운 거절(시도 상한·월 한도)도, 코드 없는 4xx·5xx 도. (코드 없는 504 만은 중간 프록시라
+        // 일시 실패로 낮춘다 — `TransientFailureClassificationTest` 의 `codelessGatewayTimeoutIsTransientButOur5xxStayIssues`.)
         val reported = listOf(
             http(429, """{"error_code":"AUTH_EMAIL_CODE_ATTEMPTS_EXCEEDED"}"""),
             http(429, """{"error_code":"VOICE_MONTHLY_CHANGE_LIMIT_REACHED"}"""),
             http(404, ""),
-            http(504, "<html>gateway</html>"),
+            http(502, "<html>gateway</html>"),
         )
         for (error in reported) {
             assertNull(error.message, AlarmTalkLog.breadcrumbCategoryFor(error))
