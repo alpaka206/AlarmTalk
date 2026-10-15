@@ -105,6 +105,12 @@ internal enum class ClipFailure {
     /** 401 — 세지 않고 위로 올린다. 재시도가 아니라 세션 종료가 답이다. */
     SESSION_EXPIRED,
 
+    /**
+     * 403 `ACCOUNT_PENDING_DELETION` — 세지 않고 위로 올린다. 철회 전에는 클립마다 같은 403 이라 재시도할 것이
+     * 없다(`syncWorkerOutcome` 의 같은 갈래). 일시 실패로 세면 횟수 한도까지 배치를 되풀이한다(코덱스 #901).
+     */
+    ACCOUNT_PENDING_DELETION,
+
     /** 다시 받아 봐야 같은 결과(404 등, 응답 형식 오류). */
     PERMANENT,
 
@@ -120,6 +126,7 @@ internal enum class ClipFailure {
  */
 internal fun classifyClipFailure(error: Throwable): ClipFailure = when {
     syncWorkerOutcome(error) == SyncWorkerOutcome.SESSION_EXPIRED -> ClipFailure.SESSION_EXPIRED
+    syncWorkerOutcome(error) == SyncWorkerOutcome.ACCOUNT_PENDING_DELETION -> ClipFailure.ACCOUNT_PENDING_DELETION
     isPermanentClipFailure(error) -> ClipFailure.PERMANENT
     else -> ClipFailure.TRANSIENT
 }
@@ -598,13 +605,16 @@ class StockClipPrefetchWorker(
             //   바깥의 SESSION_EXPIRED 갈래 한 곳이 끝낸다. 다음 배치는 시작하지 않는다 — 같은 토큰으로
             //   보내 봐야 같은 401 이다.
             val sessionExpired = java.util.concurrent.atomic.AtomicReference<Throwable?>(null)
+            // 탈퇴 유예 403 도 같은 모양이다 — 클립마다 같은 403 이니 기억했다가 배치 뒤 되던져 바깥의
+            // ACCOUNT_PENDING_DELETION 갈래가 재시도 없이 끝낸다(코덱스 #901).
+            val accountPendingDeletion = java.util.concurrent.atomic.AtomicReference<Throwable?>(null)
             // ⚠ **한 회차는 끝이 있다**(2026-10-11, [mayStartNextClipBatch]). 예산을 넘겼으면 남은 배치를
             //   시작하지 않는다 — 받아 둔 클립은 캐시에 남고 다음 회차가 나머지만 받는다.
             var budgetExhausted = false
             // 클립당 HTTP 왕복 1회다. 44개를 순차로 받으면 약전파에서 1분을 넘기므로 소량 병렬로
             // 겹친다(서버·기기 부담을 감안해 4로 제한).
             for ((batchIndex, batch) in missing.chunked(PARALLELISM).withIndex()) {
-                if (sessionExpired.get() != null) break
+                if (sessionExpired.get() != null || accountPendingDeletion.get() != null) break
                 if (!mayStartNextClipBatch(batchIndex, runStartedAt, SystemClock.elapsedRealtime())) {
                     budgetExhausted = true
                     break
@@ -636,6 +646,10 @@ class StockClipPrefetchWorker(
                                         sessionExpired.compareAndSet(null, error)
                                         return@onFailure
                                     }
+                                    ClipFailure.ACCOUNT_PENDING_DELETION -> {
+                                        accountPendingDeletion.compareAndSet(null, error)
+                                        return@onFailure
+                                    }
                                     // ⚠ **영구 실패는 종류까지 기억한다**(2026-09-01 리뷰). 개수만
                                     // 세면 404 같은 재시도 불가 실패도 아래에서 `retry` 로 나가,
                                     // 될 리 없는 요청을 15분쯤 반복하는 동안 준비 화면이 계속
@@ -662,6 +676,7 @@ class StockClipPrefetchWorker(
             rebind()
             // 받은 것은 묶어 둔 채(부분 성공은 남는다) 401 을 바깥 한 곳으로 올린다.
             sessionExpired.get()?.let { throw it }
+            accountPendingDeletion.get()?.let { throw it }
             if (accountChangedDuringRun) return@runCatching Result.retry()
             // 예산에 닿아 멈춘 회차는 끝난 것이 아니다 — 다른 일시적 실패와 **같은 횟수 한도 안에서** 다시
             // 시도한다. 한도를 다 쓰면 실패로 끝나 받기 화면이 '다시 시도' 를 띄운다(약한 망에서 끝없이

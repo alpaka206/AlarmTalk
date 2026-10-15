@@ -480,16 +480,20 @@ export async function fetchKmaDays(
   if (!serviceKey) throw new WeatherSourceError('config', 'missing_key');
   const today = zonedParts(options.now, region.tz).date;
   const latest = latestKmaRun(options.now);
-  const memo = options.kmaRunMemo;
-  let run = memo?.run && kmaRunKey(memo.run) < kmaRunKey(latest) ? memo.run : latest;
-  for (let attempt = 0; ; attempt += 1) {
+  // ⚠ 깊이는 **최신 회차에서** 센다 — 메모에서 시작한다고 0 부터 다시 세면 메모가 한 칸 묵었을 때 12시간, 세 칸이면
+  //   18시간 전 회차까지 내려간다(코덱스 #901). 메모가 상한보다 깊거나 최신보다 새면 쓰지 않는다.
+  const memoDepth = options.kmaRunMemo?.run ? kmaRunsBehind(latest, options.kmaRunMemo.run) : null;
+  let depth = memoDepth !== null && memoDepth > 0 ? memoDepth : 0;
+  let run = depth > 0 ? options.kmaRunMemo!.run! : latest;
+  for (;;) {
     try {
       const items = await fetchAllPages(source, run, serviceKey, options);
-      if (memo) memo.run = run;
+      if (options.kmaRunMemo) options.kmaRunMemo.run = run;
       return kmaDaysFromItems(items, today, run);
     } catch (err) {
-      if (attempt < KMA_NODATA_MAX_STEPS && err instanceof WeatherSourceError && err.reason === KMA_NODATA_REASON) {
+      if (depth < KMA_NODATA_MAX_STEPS && err instanceof WeatherSourceError && err.reason === KMA_NODATA_REASON) {
         run = previousKmaRun(run);
+        depth += 1;
         continue;
       }
       throw err;
@@ -497,9 +501,14 @@ export async function fetchKmaDays(
   }
 }
 
-/** 회차의 정렬 키 — `YYYYMMDDHH00` 문자열이라 사전순이 곧 시간순이다. */
-function kmaRunKey(run: KmaRun): string {
-  return `${run.baseDate}${run.baseTime}`;
+/** [run] 이 [latest] 에서 몇 회차 앞인가(같으면 0). `KMA_NODATA_MAX_STEPS` 안에 없거나 더 새면 null. */
+function kmaRunsBehind(latest: KmaRun, run: KmaRun): number | null {
+  let cursor = latest;
+  for (let steps = 0; steps <= KMA_NODATA_MAX_STEPS; steps += 1) {
+    if (cursor.baseDate === run.baseDate && cursor.baseTime === run.baseTime) return steps;
+    cursor = previousKmaRun(cursor);
+  }
+  return null;
 }
 
 async function fetchAllPages(

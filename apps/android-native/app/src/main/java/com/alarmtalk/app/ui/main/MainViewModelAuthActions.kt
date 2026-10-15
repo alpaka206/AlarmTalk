@@ -574,6 +574,14 @@ internal fun MainViewModel.cancelAccountDeletion() {
             // (pending 중엔 로그인해도 게이트가 /push/register 를 막아 등록이 안 됐다.) 그래야 가족 알람
             // push 가 이 기기에 다시 온다 — active 복구 후라 등록 게이트를 통과한다.
             com.alarmtalk.app.fcm.AlarmTalkMessagingService.registerCurrentToken(getApplication())
+            // ⚠ **막혀 있던 동안 끝낸 워커를 곧바로 다시 돌린다**(코덱스 #901 P1). 유예 403 을 받은 워커는
+            //   재시도 없이 끝나므로(`SyncWorkerOutcome.ACCOUNT_PENDING_DELETION`) 철회 뒤 아무도 다시 부르지
+            //   않으면, 푸시 토큰이 없던 동안 온 가족 알람이 다음 주기 pull(15분)까지 기다리다 시각을 넘길 수
+            //   있다. 화면 데이터(목소리·클립·소셜·이용권)는 `AlarmTalkApp` 의 데이터 효과가 `pendingDeletion`
+            //   을 키로 다시 부른다.
+            com.alarmtalk.app.sync.RemoteAlarmSyncScheduler.runOnce(getApplication())
+            com.alarmtalk.app.sync.DynamicVoiceRefreshScheduler.runOnce(getApplication())
+            com.alarmtalk.app.sync.UsageEventUploadWorker.runOnce(getApplication())
             message = getApplication<android.app.Application>().getString(R.string.msg_account_deletion_cancelled)
         }.onFailure { error ->
             AlarmTalkLog.reportError("Failed to cancel account deletion", error)

@@ -435,6 +435,23 @@ describe('fetchKmaDays — 호출', () => {
     await fetchKmaDays(SEOUL, SEOUL_SOURCE, { now, budget: fixedFetchBudget(12), kmaServiceKey: KEY, kmaRunMemo: memo });
     expect(calls.map((u) => u.searchParams.get('base_time'))).toEqual(['1700']);
 
+    // 깊이는 최신에서 센다 — 두 칸 묵은 메모(2000)에서 시작한 지역은 한 칸(1700)만 더 물러설 수 있다(코덱스 #901).
+    const deepMemo = { run: { baseDate: '20261001', baseTime: '2000' } };
+    calls = stub([json(nodata), json(nodata)]);
+    await expect(
+      fetchKmaDays(SEOUL, SEOUL_SOURCE, { now, budget: fixedFetchBudget(12), kmaServiceKey: KEY, kmaRunMemo: deepMemo }),
+    ).rejects.toMatchObject({ failure: 'transient', reason: 'kma_03' });
+    expect(calls.map((u) => u.searchParams.get('base_time'))).toEqual(['2000', '1700']);
+    // 상한보다 깊은 메모는 쓰지 않는다 — 최신부터 본다.
+    calls = stub([json(relabel('1700', '1700'))]);
+    await fetchKmaDays(SEOUL, SEOUL_SOURCE, {
+      now,
+      budget: fixedFetchBudget(12),
+      kmaServiceKey: KEY,
+      kmaRunMemo: { run: { baseDate: '20261001', baseTime: '1400' } },
+    }).catch(() => undefined);
+    expect(calls[0]?.searchParams.get('base_time')).toBe('0200');
+
     // 네 회차 모두 NODATA 면 더 물러서지 않는다 — 일시 실패 kma_03.
     calls = stub([json(nodata), json(nodata), json(nodata), json(nodata)]);
     await expect(

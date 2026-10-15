@@ -5,7 +5,9 @@ import com.alarmtalk.app.network.ApiFailure
 import com.alarmtalk.app.network.apiError
 import com.alarmtalk.app.network.apiErrorCode
 import com.alarmtalk.app.network.apiFailureOf
+import com.alarmtalk.app.sync.ClipFailure
 import com.alarmtalk.app.sync.SyncWorkerOutcome
+import com.alarmtalk.app.sync.classifyClipFailure
 import com.alarmtalk.app.sync.syncWorkerOutcome
 import com.alarmtalk.app.sync.workerMayEndSession
 import java.io.FileNotFoundException
@@ -440,6 +442,20 @@ class TransientFailureClassificationTest {
         assertNull(AlarmTalkLog.breadcrumbCategoryFor(httpException(504, """{"error_code":"INTERNAL_ERROR"}""")))
         assertNull(AlarmTalkLog.breadcrumbCategoryFor(httpException(502, "")))
         assertNull(AlarmTalkLog.breadcrumbCategoryFor(httpException(503, "")))
+    }
+
+    @Test
+    fun clipDownloadStopsOnAccountPendingDeletion() {
+        // 스톡 클립 받기 도중 계정이 유예로 바뀌면 클립마다 같은 403 이다 — 일시 실패로 세면 횟수 한도까지 배치를
+        // 되풀이한다(코덱스 #901). 본문(JSON)을 읽어야 하는 판정이라 Robolectric 인 이 클래스에 둔다.
+        val pending = httpException(403, """{"error_code":"ACCOUNT_PENDING_DELETION"}""")
+        assertEquals(ClipFailure.ACCOUNT_PENDING_DELETION, classifyClipFailure(pending))
+        assertEquals(
+            ClipFailure.ACCOUNT_PENDING_DELETION,
+            classifyClipFailure(IllegalStateException("download failed", pending)),
+        )
+        // 코드 없는 403(무료 계정에 남은 클론 프리셋 등)은 그대로 일시 실패다.
+        assertEquals(ClipFailure.TRANSIENT, classifyClipFailure(httpException(403, "{}")))
     }
 
     @Test
