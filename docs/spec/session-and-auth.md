@@ -199,7 +199,9 @@ pepper 로 가명 보존 기록까지 곧장 이어져, 분리 보관을 무너�
   **철회도 그 자리에서 같은 정리를 한다**(`token_epoch + 1`·그 계정의 `push_tokens` 삭제를 한 batch 로 — 로그인이 내주는
   토큰은 올린 세대로 서명한다). 배포가 마이그레이션보다 먼저 돌아 그 사이 철회된 옛 유예 행은 #129 가 건너뛰기 때문이다.
 - **옛 앱(그 403 을 모르는 빌드 — 안드로이드 versionCode ≤33, iOS 빌드 ≤10)에는 `/auth/me` 가 예전 모양으로 답한다**
-  (끊긴 토큰이어도 200 + `deletion_status: pending_deletion`, 새 토큰 없음 — `expectsLegacyPendingDeletionAnswer`). 그래야
+  (끊긴 토큰이어도 200 + `deletion_status: pending_deletion`, 새 토큰 없음 — `expectsLegacyPendingDeletionAnswer`). **계정 내용은
+  싣지 않는다** — id·토큰이 담고 있던 이메일·이름·`plan: free`·`deletion_status` 만(헤더는 누구나 꾸밀 수 있고, 그 폐기가 탈퇴
+  때문이었는지 그 자리에서는 모른다). 그래야
   옛 '회원 탈퇴가 진행 중이에요' 화면이 뜬다. 새 앱은 둘 다 떠나기로 처리한다. ⚠ **1.2.14 가 두 스토어에 게재되고
   `minSupported` 로 옛 앱을 막은 뒤 이 분기를 지운다**(오너 결정 — 옛 앱 문제는 강제 업데이트로).
 - **유예 계정이면 끊긴 토큰에도 401 이 아니라 403 `ACCOUNT_PENDING_DELETION` 으로 답한다**(`authMiddleware`·`/auth/me`
@@ -235,7 +237,10 @@ pepper 로 가명 보존 기록까지 곧장 이어져, 분리 보관을 무너�
 - **푸시 등록은 계정이 active 이고 요청 토큰의 세대가 아직 유효할 때만 적힌다**(`pushRegisterStatements` 의
   `INSERT … SELECT … WHERE EXISTS` — 미들웨어가 심은 `tokenEpoch` 로 `token_epoch <= ?`. 다른 계정의 같은 토큰 행을 지우는
   DELETE 에도 같은 조건). 상태만 보면 탈퇴 신청(세대 +1)과 철회 로그인(세대 +1) 뒤에 커밋된 늦은 등록이 로그아웃된 기기를
-  그 계정에 묶는다(코덱스 #904).
+  그 계정에 묶는다(코덱스 #904). **조건에 걸려 아무것도 적히지 않으면 200 이 아니다** — 유예면 403 ACCOUNT_PENDING_DELETION,
+  아니면 401 TOKEN_REVOKED(200 이면 앱이 등록을 확인한 것으로 적고 다시 올리지 않는다).
+- **옛 앱의 철회 버튼(`DELETE /user/me/deletion`)도 철회와 같은 정리를 한다**(세대 +1·그 계정의 푸시 등록 삭제) — 마이그레이션
+  #129 보다 먼저 철회되는 배포 전 유예 행 때문이다. 부른 기기도 끊기므로 옛 앱은 다시 로그인한다.
 - **이 기기의 탈퇴 신청이 '이미 유예' 403 을 받으면 실패가 아니다** — 다른 기기가 먼저 신청했다. 신청 성공과 같은 정리를
   한다(안드로이드 `requestAccountDeletion` 의 catch, iOS 는 `leaveAccountForPendingDeletion`). 그 흐름이 로그아웃 창을 열어 둔
   채라 응답 쪽 떠나기가 물러서기 때문이다. 미들웨어를
