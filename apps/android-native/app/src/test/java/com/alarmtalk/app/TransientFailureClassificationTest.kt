@@ -202,7 +202,7 @@ class TransientFailureClassificationTest {
      */
     @Test
     fun onlyUnauthorizedAndTransientBecomeBreadcrumbs() {
-        // 낮추는 둘. 갈래 이름까지 본다 — 하나로 뭉치면 다음 진짜 이벤트를 읽을 때
+        // 낮추는 것들(예상된 거절·탈퇴 유예는 아래 테스트가 따로 본다). 갈래 이름까지 본다 — 하나로 뭉치면 다음 진짜 이벤트를 읽을 때
         // "네트워크가 나빴다" 와 "세션이 끊겼다" 를 구분할 수 없다.
         assertEquals("auth", AlarmTalkLog.breadcrumbCategoryFor(httpException(401, "")))
         assertEquals("transient", AlarmTalkLog.breadcrumbCategoryFor(SocketTimeoutException("timeout")))
@@ -408,12 +408,58 @@ class TransientFailureClassificationTest {
     }
 
     @Test
-    fun workerStillRetriesAndReportsOther403s() {
-        // 같은 403 이라도 실제 인증·동의 파손은 모니터링에 남아야 한다.
+    fun workerStopsWithoutRetryForAccountPendingDeletion() {
+        // 탈퇴 유예는 사용자가 고른 계정 상태다 — 철회 전에는 같은 403 만 온다(ANDROID-1B).
         assertEquals(
-            SyncWorkerOutcome.RETRY,
+            SyncWorkerOutcome.ACCOUNT_PENDING_DELETION,
             syncWorkerOutcome(httpException(403, """{"error_code":"ACCOUNT_PENDING_DELETION"}""")),
         )
+        // 저장소가 한 번 감싼 것도 같다.
+        assertEquals(
+            SyncWorkerOutcome.ACCOUNT_PENDING_DELETION,
+            syncWorkerOutcome(
+                IllegalStateException("sync failed", httpException(403, """{"error_code":"ACCOUNT_PENDING_DELETION"}""")),
+            ),
+        )
+        // 같은 코드라도 403 이 아니면(서버 사고) 그대로 재시도·보고다.
+        assertEquals(
+            SyncWorkerOutcome.RETRY,
+            syncWorkerOutcome(httpException(500, """{"error_code":"ACCOUNT_PENDING_DELETION"}""")),
+        )
+    }
+
+    @Test
+    fun codelessGatewayTimeoutIsTransientButOur5xxStayIssues() {
+        // 우리 워커는 504 를 내지 않는다 — 코드 없는 504 는 중간 프록시다(2026-10-11~14 로봇 23건).
+        assertEquals(
+            "transient",
+            AlarmTalkLog.breadcrumbCategoryFor(httpException(504, "<html><body>504 Gateway Time-out</body></html>")),
+        )
+        assertEquals("transient", AlarmTalkLog.breadcrumbCategoryFor(httpException(504, "")))
+        // 우리 코드가 실린 5xx, 코드 없는 502·503(워커 자체 실패일 수 있다)은 그대로 이슈다.
+        assertNull(AlarmTalkLog.breadcrumbCategoryFor(httpException(504, """{"error_code":"INTERNAL_ERROR"}""")))
+        assertNull(AlarmTalkLog.breadcrumbCategoryFor(httpException(502, "")))
+        assertNull(AlarmTalkLog.breadcrumbCategoryFor(httpException(503, "")))
+    }
+
+    @Test
+    fun accountPendingDeletionBecomesAccountBreadcrumbOnlyAs403() {
+        assertEquals(
+            "account",
+            AlarmTalkLog.breadcrumbCategoryFor(httpException(403, """{"error_code":"ACCOUNT_PENDING_DELETION"}""")),
+        )
+        assertNull(
+            AlarmTalkLog.breadcrumbCategoryFor(httpException(500, """{"error_code":"ACCOUNT_PENDING_DELETION"}""")),
+        )
+        // 이웃한 403 은 그대로 이슈다.
+        assertNull(
+            AlarmTalkLog.breadcrumbCategoryFor(httpException(403, """{"error_code":"CONSENT_STATE_UNAVAILABLE"}""")),
+        )
+    }
+
+    @Test
+    fun workerStillRetriesAndReportsOther403s() {
+        // 같은 403 이라도 실제 인증·동의 파손은 모니터링에 남아야 한다.
         assertEquals(
             SyncWorkerOutcome.RETRY,
             syncWorkerOutcome(httpException(403, """{"error_code":"CONSENT_STATE_UNAVAILABLE"}""")),

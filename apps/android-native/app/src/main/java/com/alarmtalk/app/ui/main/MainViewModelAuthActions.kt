@@ -1393,8 +1393,10 @@ internal fun MainViewModel.syncNow() {
             // 흔한데(면제 경로 아님), 이건 정상 재시도로 곧 풀린다. 사용자에게 뜨던
             // "알람 정보를 주고받지 못했어요" 토스트를 제거한다.
             if (error is kotlin.coroutines.cancellation.CancellationException) throw error
-            // 403 이라도 error_code 로 정확히 CONSENT_REQUIRED 만 강등한다 — CONSENT_STATE_UNAVAILABLE
-            // ·ACCOUNT_PENDING_DELETION 같은 실제 인증/동의 파손은 모니터링에 남겨야 한다.
+            // 403 이라도 error_code 로 정확히 CONSENT_REQUIRED 만 여기서 강등한다 — CONSENT_STATE_UNAVAILABLE
+            // 같은 실제 인증/동의 파손은 모니터링에 남겨야 한다. (탈퇴 유예 403 `ACCOUNT_PENDING_DELETION` 은
+            // `reportError` 가 스스로 브레드크럼으로 낮춘다 — 복구 화면이 이미 그 상태를 말한다,
+            // `AlarmTalkLog.isAccountPendingDeletion`.)
             if (com.alarmtalk.app.network.apiErrorCode(error) == "CONSENT_REQUIRED") {
                 Log.i(TAG, "Auto-sync deferred: consent not settled yet, will retry")
             } else {

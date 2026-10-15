@@ -712,6 +712,12 @@ class StockClipPrefetchWorker(
                     Log.i(TAG, "Stock clip prefetch deferred: consent not settled yet")
                     if (runAttemptCount >= MAX_RUN_ATTEMPTS) Result.failure() else Result.retry()
                 }
+                SyncWorkerOutcome.ACCOUNT_PENDING_DELETION -> {
+                    // 동의와 달리 곧 풀리지 않는다 — 철회는 사용자가 복구 화면에서 고른다. 재시도로 큐에 남기지
+                    // 않고 FAILED 로 끝내(다운로드 화면의 '다시 시도' 가 뜬다) 이슈로는 올리지 않는다.
+                    Log.i(TAG, "Stock clip prefetch stopped: account is pending deletion")
+                    Result.failure()
+                }
                 SyncWorkerOutcome.RETRY -> {
                     AlarmTalkLog.reportError("Stock clip prefetch failed", error)
                     // 영구 실패(스테일 매니페스트가 없는 메시지를 가리킴, 재시도 불가 4xx 등)까지
