@@ -577,6 +577,8 @@ internal fun MainViewModel.checkAccountStatus() {
  */
 internal suspend fun MainViewModel.leaveAccountForPendingDeletion(session: AuthSession) {
     if (authSession?.user?.id != session.user.id) return
+    // 같은 순간 여러 요청이 403 을 받으면 여러 번 들어온다 — 이미 떠나는 중이면 한 번만.
+    if (signingOut) return
     markSignOutInProgress()
     clearSignedInSession(departingUserId = session.user.id)
     message = getApplication<android.app.Application>().getString(R.string.msg_account_left_pending_deletion)

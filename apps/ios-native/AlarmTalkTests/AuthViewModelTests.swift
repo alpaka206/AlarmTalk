@@ -1674,6 +1674,35 @@ final class AuthViewModelTests: XCTestCase {
         XCTAssertNil(SessionExpiryStore.expiredOwnerUserId, "자동 만료 표시가 남으면 떼어낸 알람이 되살아난다")
     }
 
+    /// 알람 정리를 기다리는 사이 다시 로그인했으면 새 세션을 끊지 않는다(코덱스 #904).
+    func test_leaveForPendingDeletion_doesNotSignOutASessionCreatedWhileCleaningUp() async {
+        let previous = KeychainStore.readSession()
+        defer {
+            if let previous { try? KeychainStore.saveSession(previous) } else { KeychainStore.deleteSession() }
+        }
+        let api = MockAuthAPI()
+        api.meResult = .failure(
+            APIError.server(status: 403, message: "Account is scheduled for deletion", errorCode: "ACCOUNT_PENDING_DELETION")
+        )
+        let vm = AuthViewModel(
+            api: api,
+            appleCredentialProvider: MockAppleCredentialProvider(),
+            accessSnapshotStore: AccessSnapshotStore(defaults: UserDefaults(suiteName: "relogin-\(UUID().uuidString)")!)
+        )
+        let old = makeEmailSession()
+        vm._setSessionForTesting(old)
+        let fresh = AuthSession(token: "fresh-token", user: old.user)
+        vm.onLeaveAccountStopAlarms = { _ in
+            // 정리를 기다리는 사이 사용자가 다시 로그인했다.
+            vm._setSessionForTesting(fresh)
+            return true
+        }
+
+        await vm.refreshUser()
+
+        XCTAssertEqual(vm.session?.token, "fresh-token", "정리 뒤의 로그아웃이 새 세션을 끊었다")
+    }
+
     /// 세션·보관 캐시는 사례별로 격리하고, 실제 APNs 호출 대신 launch가 연결하는 훅을 관찰한다.
     private func withPendingDeletion(
         _ body: (AuthViewModel, MockAuthAPI) async throws -> Void

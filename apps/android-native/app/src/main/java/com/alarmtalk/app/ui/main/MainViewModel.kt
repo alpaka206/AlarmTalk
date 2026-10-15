@@ -107,6 +107,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 // 데이터 라우트가 403 CONSENT_REQUIRED 를 반환 → 동의 플로우로 유도한다.
                 handleConsentRequired(consent)
             }
+
+            override fun onAccountPendingDeletion(failedToken: String?) {
+                // 다른 기기에서 탈퇴를 신청했다 — 이 기기에서도 그 계정을 떠난다(알람까지 끈다).
+                viewModelScope.launch {
+                    val session = authSession ?: return@launch
+                    // 그 403 이 지금 세션의 것일 때만(옛 토큰의 뒤늦은 응답이 새 세션을 끊지 않게).
+                    if (failedToken != null && failedToken != session.token) return@launch
+                    leaveAccountForPendingDeletion(session)
+                }
+            }
         },
         appVersionCode = appVersionCode,
     )

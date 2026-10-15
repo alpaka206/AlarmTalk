@@ -1689,6 +1689,13 @@ final class AuthViewModel: ObservableObject {
         }
         _ = await onSessionEndClaimAlarms(currentUserID)
         let cleaned = await onLeaveAccountStopAlarms(currentUserID)
+        // ⚠ **기다린 뒤 그 세션이 아직 이 세션인지 다시 본다**(코덱스 #904). 알람 정리를 기다리는 사이 사용자가
+        //   로그아웃하고 다시 로그인했으면, 여기서 끊는 것은 **새 세션**이다 — 방금 로그인한 사람을 도로 내보내고 그
+        //   계정 설정까지 지운다. 떠나는 계정의 알람은 이미 껐으니 그대로 둔다.
+        guard session?.token == token else {
+            if cleaned { PendingSignOutStore.clear(currentUserID) }
+            return
+        }
         signOut(
             message: String(localized: "탈퇴를 신청한 계정이라 이 기기에서도 로그아웃했어요. 다시 로그인하면 탈퇴가 취소돼요."),
             revokeOnServer: false
