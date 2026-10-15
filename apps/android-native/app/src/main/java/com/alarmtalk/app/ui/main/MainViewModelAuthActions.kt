@@ -586,6 +586,18 @@ internal suspend fun MainViewModel.leaveAccountForPendingDeletion(session: AuthS
     message = getApplication<android.app.Application>().getString(R.string.msg_account_left_pending_deletion)
 }
 
+/**
+ * 백그라운드 워커가 이 계정을 이미 떠났다(`AppSignals.accountLeftForPendingDeletion`) — 저장소는 비었는데 화면(메모리
+ * 세션)은 로그인된 채라 같은 떠나기로 맞춘다. 알람 떼어내기·저장소 비우기는 이미 끝났고 다시 해도 같은 결과다.
+ */
+internal fun MainViewModel.onAccountLeftInBackground(userId: String) {
+    viewModelScope.launch {
+        val session = authSession ?: return@launch
+        if (session.user.id != userId) return@launch
+        leaveAccountForPendingDeletion(session)
+    }
+}
+
 internal fun MainViewModel.updateNickname(name: String) {
     val session = sessionOrMessage(R.string.msg_login_required_to_use) ?: return
     val trimmed = name.trim()

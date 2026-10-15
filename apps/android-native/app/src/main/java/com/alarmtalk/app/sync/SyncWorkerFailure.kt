@@ -201,6 +201,8 @@ internal suspend fun leaveAccountAfterPendingDeletion(
         sessionStore.endSignOut()
     }
     Log.i(TAG, if (left) "$workerName left the account: pending deletion" else "$workerName did not leave: session changed")
+    // 화면이 떠 있으면 뷰모델도 떠나게 한다 — 뷰모델은 비워진 저장소를 흡수하지 않는다(코덱스 #904).
+    if (left && userId.isNotBlank()) com.alarmtalk.app.core.AppSignals.emitAccountLeftForPendingDeletion(userId)
     return left
 }
 
