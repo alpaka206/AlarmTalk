@@ -11,6 +11,19 @@ import { enqueuePlanNotificationsStatement, REQUEUE_ON_CONFLICT } from './pendin
 const TEXT_ENCODER = new TextEncoder();
 
 /** 로그인이 끝날 때 계정의 탈퇴 상태가 어떻게 됐는지. */
+/**
+ * 이 토큰이 **탈퇴 신청 바로 전까지 유효했던 세대**인가(`token_epoch - 1`). 신청(또는 그 전 신청 행에 대한 마이그레이션
+ * #129)이 세대를 하나 올려 끊은 토큰만 해당한다 — 그보다 옛 토큰(비밀번호 재설정·전 기기 로그아웃으로 끊긴 것)은 아니다.
+ * 유예 동안에는 세대를 올리는 다른 길이 없다(로그인은 철회하고, 나머지 쓰기는 유예 403 으로 막힌다).
+ *
+ * 쓰는 곳은 **옛 앱(안드로이드 ≤33·iOS ≤10)의 유예 화면 한 쌍**뿐이다 — `/auth/me` 의 옛 앱 답(그 화면을 띄운다)과
+ * `DELETE /user/me/deletion`(그 화면의 철회 버튼). 신청 전에는 이 토큰으로 철회할 수 있었으니 넓어지는 권한은 없다.
+ * ⚠ 1.2.14 게재 뒤 `minSupported` 로 옛 앱을 막으면 함께 지운다(`routes/auth.ts` 의 `PENDING_DELETION_LEAVE_SINCE`).
+ */
+export function isRevokedByDeletionRequest(tokenEpoch: number, rowEpoch: number): boolean {
+  return Number.isInteger(tokenEpoch) && tokenEpoch === rowEpoch - 1;
+}
+
 export type SignInDeletionOutcome =
   /** 로그인이 처음 본 탈퇴 신청을 철회했다. */
   | 'cancelled'
