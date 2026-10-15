@@ -1,12 +1,9 @@
 import { Hono } from 'hono';
 import type { AppEnv } from '../types';
 import { getDB } from '../lib/db';
-import { personalPromoCoversFree } from '../lib/personal-promo';
 import { logRouteError } from '../lib/logger';
 import { deleteSensitiveVoiceDataForUser, type DowngradedAlarm } from '../lib/paid-voice-cleanup';
 import { notifyDowngradedAlarms, sendAccountDeletionRequestedPush, type DeletedPushTarget } from '../lib/fcm';
-import { purgeUserAccount, pseudonymizeBillingForRetention } from '../lib/account-deletion';
-import { sendPlanNotificationsNow } from '../lib/pending-plan-notifications';
 import { withWriteTransaction } from '../lib/transactions';
 import {
   normalizeQuietWindows,
@@ -27,7 +24,6 @@ import {
   loadLatestConsents,
   missingConsentTypesFrom,
 } from '../lib/consent';
-import { appleSignInConfig, revokeAppleToken } from '../lib/apple-revoke';
 
 const user = new Hono<AppEnv>();
 
@@ -239,95 +235,9 @@ user.patch('/me', async (c) => {
   });
 });
 
-user.delete('/me', async (c) => {
-  const userId = c.get('userId');
-  const db = getDB(c.env);
-
-  try {
-    // 토큰이 담고 있던 로그인 식별자. userId 는 미들웨어가 users.id 로 정규화하므로,
-    // 통일 이전에 user_id 컬럼에 로그인 식별자가 저장된 자식 데이터(알람·메시지·목소리·
-    // 생성 오디오·R2 삭제 큐)까지 지우려면 이 값을 함께 넘겨야 한다. 빠뜨리면 users 행만
-    // 지워지고 나머지 PII 가 고아로 남는다(유예 파기 cron 은 row.google_id 를 읽어 이걸 피한다).
-    const userLoginId = c.get('userLoginId') || userId;
-    const userRes = await db.execute({
-      sql: `SELECT id, apple_refresh_token FROM users WHERE google_id = ? OR id = ? LIMIT 1`,
-      args: [userLoginId, userId],
-    });
-    const userPk = userRes.rows.length > 0 ? String(userRes.rows[0]!.id) : null;
-
-    // 애플 연결을 끊는다 — **행을 지우기 전에.** 지운 뒤에는 refresh token 을 읽을 곳이
-    // 없어 영영 폐기하지 못하고, 사용자의 '설정 → Apple로 로그인' 목록에 우리 앱이
-    // 남는다(애플 심사 5.1.1(v)).
-    //
-    // ⚠ **실패해도 탈퇴는 진행한다.** 애플이 잠깐 죽었다고 탈퇴를 막으면 사용자는 자기
-    // 데이터를 못 지운다 — 그건 폐기 누락보다 나쁘다. 대신 로그에 남겨 추적한다.
-    const appleRefreshToken =
-      userRes.rows.length > 0 ? (userRes.rows[0]!.apple_refresh_token as string | null) : null;
-    if (appleRefreshToken) {
-      // ⚠ **설정 생성까지 try 안에 둔다**(코덱스 #730 3차). `appleSignInConfig` 는 PEM 이
-      //   잘려 있으면 **던진다.** 밖에 두면 바깥 catch 가 `DELETE_ACCOUNT_FAILED` 를
-      //   돌려주고 `pseudonymizeBillingForRetention`·`purgeUserAccount` 가 **아예 돌지
-      //   않는다** — 바로 위 주석이 약속한 "실패해도 탈퇴는 진행한다" 가 깨진다.
-      //   (유예 파기 크론은 2차에서 이미 이렇게 고쳤다 — `index.ts`.)
-      try {
-        const signInConfig = appleSignInConfig(c.env, c.env.APPLE_BUNDLE_ID);
-        if (signInConfig) await revokeAppleToken(signInConfig, appleRefreshToken);
-      } catch (err) {
-        logRouteError(c, err);
-      }
-    }
-
-    // 즉시 hard delete 경로에서도 전자상거래법(5년) 결제·구독 기록 가명보존을 먼저 수행한다.
-    // (cron 유예 파기 경로와 동일하게 보존 후 파기 — 어느 경로든 보존 누락이 없도록)
-    const now = new Date();
-    // PASSWORD_PEPPER 는 필수 시크릿. 빈 값으로 조용히 가명보존을 돌리면 진짜 pepper 로
-    // 해시된 기존 기록과 어긋나(약한 가명화·불일치) 되므로, 미설정이면 진행하지 않고 실패시킨다.
-    const pepper = c.env?.PASSWORD_PEPPER;
-    if (!pepper) {
-      throw new Error('PASSWORD_PEPPER is not configured');
-    }
-    const purgeNotifications = await withWriteTransaction(db, async (tx) => {
-      if (userPk) {
-        await pseudonymizeBillingForRetention(tx, userPk, pepper, now);
-      }
-      return purgeUserAccount(tx, userPk, userLoginId, personalPromoCoversFree(c.env));
-    });
-
-    // 내가 주인이던 그룹이 해체돼 **등급이 바뀐 멤버들**에게 커밋 후에 알린다 — 아래 철회
-    // 통지와 별개다(클론이 없는 주인이면 그쪽은 아무도 안 깨운다). 다른 해체 경로와 같은 함수다:
-    // `plan_changed` + 보관 유예가 걸린 사람에게 삭제 예고. 던지지 않지만 탈퇴 응답을 지키려고
-    // 한 번 더 감싼다.
-    // ⚠ **철회 통지보다 먼저다**(코덱스 #841). 이쪽에 **보이는 삭제 예고**가 실린다 — 무음 철회
-    //   신호가 먼저 subrequest 예산을 다 쓰면 예고가 잘려, 멤버가 예고 없이 목소리를 잃는다.
-    //   (`docs/spec/billing-lifecycle.md` 「그룹 주인이 탈퇴하면」)
-    // 받을 사람은 파기 트랜잭션에서 이미 대기열에 적혔다 — 여기서 못 보내면(예산·실패) 행이 남아
-    // 1분 전용 크론이 자기 예산으로 잇는다(`sendPlanNotificationsNow` 는 시도 횟수를 쓰지 않는다).
-    try {
-      await sendPlanNotificationsNow(db, c.env, purgeNotifications.planChangedUserIds);
-    } catch (err) {
-      logRouteError(c, err);
-    }
-    // 내 목소리를 들고 있는 기기들에 **커밋 후에** 알린다 — 받은 알람은 pull 신호로
-    // (family_alarm), 본인 알람·미동기화 알람은 접근권 재확인으로(voice_access_revoked).
-    // 안 보내면 다음 주기까지 탈퇴자의 복제 목소리로 계속 울린다.
-    // 실패해도 탈퇴는 성공이다(즉시성만 잃고 주기 재조회가 폴백).
-    try {
-      await notifyDowngradedAlarms(
-        db,
-        c.env,
-        purgeNotifications.downgradedAlarms,
-        purgeNotifications.voiceAccessRevokedUserIds,
-      );
-    } catch (err) {
-      logRouteError(c, err);
-    }
-
-    return c.json({ success: true });
-  } catch (err) {
-    logRouteError(c, err);
-    return c.json({ error: 'Failed to delete account', error_code: 'DELETE_ACCOUNT_FAILED' }, 500);
-  }
-});
+// ⚠ **즉시 회원 탈퇴(`DELETE /user/me`)는 없다**(2026-10-15 삭제). 두 앱은 2026-06 부터 30일 유예 탈퇴(`POST /me/deletion`)
+//   만 쓰고 스토어에 나간 어떤 버전도 이 경로를 부르지 않았다. 남겨 두면 유예·철회 규칙(다시 로그인하면 철회 · 파기 직전
+//   재확인)을 우회하는 두 번째 파기 경로가 되어 경합을 하나씩 더 만든다(코덱스 #904). 파기는 유예 크론(`index.ts`) 하나다.
 
 // 동의 설정(ALLOWED/REQUIRED/CURRENT_POLICY_VERSION)과 충족 판정 헬퍼(needsConsent)는
 // lib/consent.ts 로 일원화됐다(라우트 게이트 미들웨어와 공유). 여기서는 import 해 사용한다.
