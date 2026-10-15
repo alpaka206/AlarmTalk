@@ -4,7 +4,7 @@ import { getDB } from '../lib/db';
 import { personalPromoCoversFree } from '../lib/personal-promo';
 import { logRouteError } from '../lib/logger';
 import { deleteSensitiveVoiceDataForUser, type DowngradedAlarm } from '../lib/paid-voice-cleanup';
-import { notifyDowngradedAlarms } from '../lib/fcm';
+import { notifyDowngradedAlarms, sendAccountDeletionRequestedPush, type DeletedPushTarget } from '../lib/fcm';
 import { purgeUserAccount, pseudonymizeBillingForRetention } from '../lib/account-deletion';
 import { sendPlanNotificationsNow } from '../lib/pending-plan-notifications';
 import { withWriteTransaction } from '../lib/transactions';
@@ -601,7 +601,11 @@ user.post('/me/deletion', async (c) => {
   const now = new Date();
   const purgeAt = new Date(now.getTime() + DELETION_GRACE_DAYS * 24 * 60 * 60 * 1000);
   try {
+    // 지우기 전에 읽어 둔 그 계정의 푸시 토큰 — 커밋 뒤 다른 기기에 '탈퇴 신청됨' 신호를 보낸다
+    // (`sendAccountDeletionRequestedPush`). 트랜잭션이 다시 돌면 다시 채운다.
+    let deletedTargets: DeletedPushTarget[] = [];
     const res = await withWriteTransaction(db, async (tx) => {
+      deletedTargets = [];
       const updated = await tx.execute({
         sql: `UPDATE users
               SET deletion_status = 'pending_deletion',
@@ -613,6 +617,11 @@ user.post('/me/deletion', async (c) => {
         args: [now.toISOString(), purgeAt.toISOString(), userId, userId],
       });
       if (updated.rowsAffected > 0) {
+        const tokens = await tx.execute({
+          sql: `SELECT token, platform FROM push_tokens WHERE user_id IN (SELECT id FROM users WHERE google_id = ? OR id = ?)`,
+          args: [userId, userId],
+        });
+        deletedTargets = tokens.rows.map((r) => ({ token: String(r.token), platform: String(r.platform) }));
         await tx.execute({
           sql: `DELETE FROM push_tokens WHERE user_id IN (SELECT id FROM users WHERE google_id = ? OR id = ?)`,
           args: [userId, userId],
@@ -620,6 +629,16 @@ user.post('/me/deletion', async (c) => {
       }
       return updated;
     });
+    if (res.rowsAffected > 0 && deletedTargets.length > 0) {
+      // 논블로킹(waitUntil). executionCtx 가 없는 컨텍스트(테스트)에선 접근이 던지므로 생략한다 — 놓쳐도 그 기기의
+      // 다음 요청이 403 `ACCOUNT_PENDING_DELETION` 을 받아 같은 정리를 한다.
+      const targets = deletedTargets;
+      try {
+        c.executionCtx.waitUntil(sendAccountDeletionRequestedPush(c.env, targets).catch(() => {}));
+      } catch {
+        // executionCtx 없음
+      }
+    }
     if (res.rowsAffected === 0) {
       return c.json({ error: 'User not found', error_code: 'USER_NOT_FOUND' }, 404);
     }

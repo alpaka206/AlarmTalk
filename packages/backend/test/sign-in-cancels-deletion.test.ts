@@ -15,6 +15,11 @@ import { runMigrations } from '../src/lib/migrations';
 const directory = mkdtempSync(join(tmpdir(), 'alarmtalk-sign-in-cancel-'));
 const db = createClient({ url: `file:${join(directory, 'test.db')}` });
 vi.mock('../src/lib/db', () => ({ getDB: () => db }));
+const sendAccountDeletionRequestedPush = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
+vi.mock('../src/lib/fcm', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/lib/fcm')>()),
+  sendAccountDeletionRequestedPush,
+}));
 
 import authRoutes from '../src/routes/auth';
 import user from '../src/routes/user';
@@ -176,8 +181,18 @@ describe('탈퇴 신청은 모든 기기의 세션과 푸시 등록을 끊는다
       await next();
     });
     app.route('/user', user);
-    const res = await app.request('/user/me/deletion', { method: 'POST' }, ENV);
+    const waited: Promise<unknown>[] = [];
+    const res = await app.request('/user/me/deletion', { method: 'POST' }, ENV, {
+      waitUntil: (p: Promise<unknown>) => waited.push(p),
+      passThroughOnException: () => undefined,
+      props: {},
+    } as never);
     expect(res.status).toBe(200);
+    await Promise.all(waited);
+    // 지우기 전에 읽은 그 계정의 토큰에 '탈퇴 신청됨' 신호를 보낸다 — 다른 계정의 토큰은 빠진다.
+    expect(sendAccountDeletionRequestedPush).toHaveBeenCalledTimes(1);
+    const targets = sendAccountDeletionRequestedPush.mock.calls[0]![1] as Array<{ token: string; platform: string }>;
+    expect(targets.map((t) => t.token).sort()).toEqual(['tok-owner-a', 'tok-owner-b']);
 
     const after = await row('owner');
     expect(after.deletion_status).toBe('pending_deletion');
