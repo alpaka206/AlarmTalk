@@ -26,6 +26,7 @@
 테스트 디렉터리는 보지 않는다 — 더블에 꽂는 핸들러는 시스템 큐에서 불리지 않는다.
 
 실행: python3 scripts/check-bgtask-handler-isolation.py   (문제가 있으면 exit 1)
+      python3 scripts/check-bgtask-handler-isolation.py --self-test   # 검사기 자체만
 """
 
 from __future__ import annotations
@@ -45,8 +46,14 @@ REGISTER_CALL = re.compile(r"\.register\s*\(")
 # 런치 핸들러가 열리는 자리: 인자 목록을 닫고 붙는 트레일링 클로저이거나 레이블 인자.
 HANDLER_OPEN = re.compile(r"(?:\)\s*|launchHandler:\s*)\{")
 EXPIRATION_ASSIGN = re.compile(r"expirationHandler\s*=\s*\{")
-# SwiftUI 가 메인 밖에서 부를 수 있는 클로저 — 트레일링 클로저로 여는 꼴만 본다(이 저장소의 쓰임새).
-RENDER_CLOSURE_OPEN = re.compile(r"\b(?:TimelineView\s*\([^()]*(?:\([^()]*\)[^()]*)*\)|Canvas(?:\s*\([^()]*\))?)\s*\{")
+# SwiftUI 가 메인 밖에서 부를 수 있는 클로저를 받는 초기화. 이름 뒤에 `(` 나 `{` 가 오는 자리만 본다
+# (`-> Canvas<EmptyView>` 같은 타입 표기는 건너뛴다). 클로저는 여러 줄에 걸쳐 열릴 수 있어 [render_closure_opens] 가
+# 괄호를 따라 읽는다(코덱스 #901 — 한 줄 정규식은 `Canvas(` 다음 줄에서 여는 클로저를 놓쳤다).
+RENDER_INIT = re.compile(r"\b(?:TimelineView|Canvas)\s*[({]")
+# 괄호 안에서 이름표로 넘기는 클로저(`Canvas(renderer: { ... })`, `TimelineView(.x, content: { ... })`).
+LABELED_CLOSURE = re.compile(r"\b(?:renderer|content)\s*:\s*\{")
+# 초기화 하나를 따라 읽는 최대 줄 수.
+RENDER_LOOKAHEAD = 20
 COMMENT_START = ("//", "///", "*", "/*")
 
 # register 호출이 줄바꿈으로 갈린 경우(`BGTaskScheduler.shared` 다음 줄에 `.register(`)까지 본다.
@@ -67,6 +74,57 @@ def has_sendable(lines: list[str], index: int, brace_end: int) -> bool:
     return tail.startswith("@Sendable")
 
 
+def sendable_after(text: str, pos: int) -> bool:
+    """[pos] 의 `{` 뒤(공백·줄바꿈을 건너뛰고)가 `@Sendable` 로 시작하는가."""
+    return text[pos + 1:].lstrip().startswith("@Sendable")
+
+
+def render_closure_opens(lines: list[str], index: int, start: int) -> list[int]:
+    """`TimelineView`·`Canvas` 초기화 하나에서 `@Sendable` 없이 열린 클로저들의 줄 번호(0 기반).
+
+    여러 줄을 이어 붙여 괄호를 따라간다 — 인자 목록 안의 이름표 클로저(`renderer:`·`content:`)와 인자 목록을 닫은
+    뒤의 트레일링 클로저를 본다. 문자열·주석 안의 괄호는 이 저장소의 쓰임새에 없어 따로 다루지 않는다.
+    """
+    window = "\n".join(lines[index:index + RENDER_LOOKAHEAD])
+    offsets = [0]
+    for row in lines[index:index + RENDER_LOOKAHEAD]:
+        offsets.append(offsets[-1] + len(row) + 1)
+
+    def row_of(pos: int) -> int:
+        for k in range(len(offsets) - 1):
+            if pos < offsets[k + 1]:
+                return index + k
+        return index
+
+    bad: list[int] = []
+    cursor = start + RENDER_INIT.match(window, start).end() - start - 1
+    if window[cursor] == "(":
+        depth = 0
+        close = None
+        for pos in range(cursor, len(window)):
+            ch = window[pos]
+            if ch == "(":
+                depth += 1
+            elif ch == ")":
+                depth -= 1
+                if depth == 0:
+                    close = pos
+                    break
+        if close is None:
+            return bad  # 창 안에서 닫히지 않는다 — 판단하지 않는다.
+        for labeled in LABELED_CLOSURE.finditer(window, cursor, close):
+            if not sendable_after(window, labeled.end() - 1):
+                bad.append(row_of(labeled.start()))
+        rest = window[close + 1:]
+        stripped = rest.lstrip()
+        if not stripped.startswith("{"):
+            return bad  # 트레일링 클로저가 없다(이름표 클로저만 썼다).
+        cursor = close + 1 + (len(rest) - len(stripped))
+    if not sendable_after(window, cursor):
+        bad.append(row_of(cursor))
+    return bad
+
+
 def check_file(path: Path, problems: list[str]) -> None:
     lines = path.read_text(encoding="utf-8").splitlines()
     rel = path.relative_to(ROOT)
@@ -84,11 +142,11 @@ def check_file(path: Path, problems: list[str]) -> None:
                     f"    {line.strip()}"
                 )
 
-        for opened in RENDER_CLOSURE_OPEN.finditer(line):
-            if not has_sendable(lines, index, opened.end()):
+        for opened in RENDER_INIT.finditer(line):
+            for row in render_closure_opens(lines, index, opened.start()):
                 problems.append(
-                    f"{rel}:{index + 1}: TimelineView·Canvas 클로저에 `@Sendable` 이 없다\n"
-                    f"    {line.strip()}"
+                    f"{rel}:{row + 1}: TimelineView·Canvas 클로저에 `@Sendable` 이 없다\n"
+                    f"    {lines[index].strip()}"
                 )
 
         if not REGISTER_CALL.search(line):
@@ -111,7 +169,51 @@ def check_file(path: Path, problems: list[str]) -> None:
             break
 
 
+SELF_TEST_CASES: list[tuple[str, int]] = [
+    # (스위프트 조각, 걸려야 하는 클로저 수)
+    ("Canvas { context, size in }", 1),
+    ("Canvas { @Sendable context, size in }", 0),
+    ("Canvas(\n    opaque: false\n) { context, size in }", 1),  # 여러 줄 — 코덱스 #901
+    ("Canvas(\n    opaque: false\n) { @Sendable context, size in }", 0),
+    ("Canvas(renderer: { context, size in })", 1),
+    ("Canvas(renderer: { @Sendable context, size in })", 0),
+    ("TimelineView(.animation(minimumInterval: 1)) {\n    timeline in Text(\"x\")\n}", 1),  # 다음 줄의 `in`
+    ("TimelineView(.animation) { @Sendable timeline in Text(\"x\") }", 0),
+    ("func f() -> Canvas<EmptyView> { fatalError() }", 0),  # 타입 표기
+    ("BGTaskScheduler.shared.register(forTaskWithIdentifier: id, using: nil) { task in }", 1),
+    ("BGTaskScheduler.shared.register(forTaskWithIdentifier: id, using: nil) { @Sendable task in }", 0),
+    ("task.expirationHandler = { work.cancel() }", 1),
+]
+
+
+def self_test() -> int:
+    """검사기 자체를 시험한다 — 걸러야 할 것은 걸리고, 고친 꼴은 통과하는가."""
+    import tempfile
+
+    failures = 0
+    for snippet, expected in SELF_TEST_CASES:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "Probe.swift"
+            path.write_text(snippet + "\n", encoding="utf-8")
+            problems: list[str] = []
+            global ROOT
+            saved, ROOT = ROOT, Path(tmp)
+            try:
+                check_file(path, problems)
+            finally:
+                ROOT = saved
+        if len(problems) != expected:
+            failures += 1
+            print(f"자체 시험 실패: 기대 {expected} 건, 실제 {len(problems)} 건\n    {snippet!r}")
+    if failures:
+        return 1
+    print(f"check-bgtask-handler-isolation 자체 시험 통과({len(SELF_TEST_CASES)}건).")
+    return 0
+
+
 def main() -> int:
+    if "--self-test" in sys.argv[1:]:
+        return self_test()
     problems: list[str] = []
     for directory in SOURCE_DIRS:
         if not directory.is_dir():

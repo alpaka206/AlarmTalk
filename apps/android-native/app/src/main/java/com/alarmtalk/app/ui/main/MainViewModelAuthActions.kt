@@ -581,8 +581,10 @@ internal fun MainViewModel.cancelAccountDeletion() {
             //   을 키로 다시 부른다.
             com.alarmtalk.app.sync.RemoteAlarmSyncScheduler.runOnce(getApplication())
             com.alarmtalk.app.sync.DynamicVoiceRefreshScheduler.runOnce(getApplication())
-            com.alarmtalk.app.sync.UsageEventUploadWorker.runOnce(getApplication())
-            // 클립 받기는 갈아 끼운다 — 유예 403 으로 끝나는 중인 회차가 있으면 `KEEP` 이 새 요청을 버린다
+            // ⚠ 셋 다 **갈아 끼우는** 큐잉이어야 한다 — `KEEP` 이면 유예 403 으로 끝나는 중인 회차 때문에 새 요청이
+            //   버려진다(코덱스 #901). 알람 pull·날씨는 `runOnce` 가 이미 `REPLACE` 다.
+            com.alarmtalk.app.sync.UsageEventUploadWorker.runAfterAccountRecovery(getApplication())
+            // 클립 받기도 갈아 끼운다 — 유예 403 으로 끝나는 중인 회차가 있으면 `KEEP` 이 새 요청을 버린다
             // (`StockClipPrefetchWorker.enqueueAfterAccountRecovery`).
             com.alarmtalk.app.sync.StockClipPrefetchWorker.enqueueAfterAccountRecovery(getApplication())
             message = getApplication<android.app.Application>().getString(R.string.msg_account_deletion_cancelled)
