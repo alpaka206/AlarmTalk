@@ -43,16 +43,30 @@ export async function cancelPendingDeletionOnSignIn(
   observed: { requestedAt: string | null; tokenEpoch: number },
 ): Promise<SignInDeletionOutcome> {
   if (observed.requestedAt) {
-    const res = await db.execute({
-      sql: `UPDATE users
-            SET deletion_status = 'active',
-                deletion_requested_at = NULL,
-                deletion_purge_at = NULL,
-                updated_at = datetime('now')
-            WHERE id = ? AND deletion_status = 'pending_deletion' AND deletion_requested_at = ? AND token_epoch = ?`,
-      args: [userPk, observed.requestedAt, observed.tokenEpoch],
-    });
-    if (res.rowsAffected > 0) return 'cancelled';
+    // ⚠ **철회는 그 자리에서 다른 기기의 세션·푸시 등록도 끊는다**(`token_epoch + 1`·그 계정의 `push_tokens` 삭제, 코덱스
+    //   #904). 탈퇴 신청이 이미 끊었으면 한 번 더 끊는 것뿐이지만, 이 배포 **전에** 신청한 유예 행은 신청이 끊지 않았다 —
+    //   마이그레이션 #129 가 소급하지만 배포가 마이그레이션보다 먼저 돌아, 그 사이 철회되면 #129 가 건너뛴다. 철회가
+    //   스스로 끊으면 마이그레이션 순서와 무관하다. 그래서 이 로그인이 내주는 토큰은 **올린 세대**로 서명한다(호출부).
+    //   두 문장은 한 batch(원자적)다 — 조건이 같아 함께 적용되거나 함께 건너뛴다.
+    const condition = `id = ? AND deletion_status = 'pending_deletion' AND deletion_requested_at = ? AND token_epoch = ?`;
+    const args = [userPk, observed.requestedAt, observed.tokenEpoch];
+    const [, res] = await db.batch([
+      {
+        sql: `DELETE FROM push_tokens WHERE user_id = ? AND EXISTS (SELECT 1 FROM users WHERE ${condition})`,
+        args: [userPk, ...args],
+      },
+      {
+        sql: `UPDATE users
+              SET deletion_status = 'active',
+                  deletion_requested_at = NULL,
+                  deletion_purge_at = NULL,
+                  token_epoch = token_epoch + 1,
+                  updated_at = datetime('now')
+              WHERE ${condition}`,
+        args,
+      },
+    ]);
+    if ((res?.rowsAffected ?? 0) > 0) return 'cancelled';
   }
   const now = await db.execute({
     sql: 'SELECT deletion_status, token_epoch FROM users WHERE id = ? LIMIT 1',
@@ -64,7 +78,13 @@ export async function cancelPendingDeletionOnSignIn(
     // 근거가 없으니 그대로 둔다.
     return observed.requestedAt ? 'missing' : 'unchanged';
   }
-  if (row.deletion_status === 'pending_deletion' || Number(row.token_epoch ?? 0) !== observed.tokenEpoch) {
+  // 유예로 읽었는데 철회되지 않았으면(그 사이 다른 철회·재신청) 이 로그인이 올린 세대로 서명한 토큰은 맞지 않는다 —
+  // active 로 읽었으면 세대가 그대로여야 한다.
+  if (
+    row.deletion_status === 'pending_deletion' ||
+    observed.requestedAt !== null ||
+    Number(row.token_epoch ?? 0) !== observed.tokenEpoch
+  ) {
     return 'superseded';
   }
   return 'unchanged';
