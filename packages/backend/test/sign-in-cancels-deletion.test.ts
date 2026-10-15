@@ -183,7 +183,7 @@ describe('다른 기기의 끊긴 세션은 유예 코드로 답한다(코덱스
     expect(body.user).toBeUndefined();
   });
 
-  it('그 403 을 모르는 옛 앱(안드로이드 ≤33·iOS ≤10)에는 예전처럼 200 + pending_deletion — 새 토큰은 없다', async () => {
+  it('그 403 을 모르는 옛 앱(안드로이드 ≤33·iOS ≤10)에는 401 — 옛 유예 화면 대신 다시 로그인하게 한다(코덱스 #902)', async () => {
     await db.execute("UPDATE users SET token_epoch = 1 WHERE id = 'owner'");
     const token = await signAppJwt({ sub: 'owner', email: 'owner@example.test', epoch: 0 }, ENV.JWT_SECRET);
     const app = new Hono<{ Bindings: Env }>();
@@ -202,14 +202,26 @@ describe('다른 기기의 끊긴 세션은 유예 코드로 답한다(코덱스
       );
     for (const [platform, version] of [['android', '33'], ['ios', '10']] as const) {
       const res = await ask(platform, version);
-      expect(res.status, `${platform} ${version}`).toBe(200);
-      const body = (await res.json()) as { token?: string; user: Record<string, unknown> };
-      expect(body.user.deletion_status).toBe('pending_deletion');
+      // 옛 유예 화면의 철회 버튼은 이 끊긴 토큰으로 부르니 언제나 401 이다 — 화면을 띄우지 않고 로그인으로 보낸다.
+      expect(res.status, `${platform} ${version}`).toBe(401);
+      const body = (await res.json()) as { error_code?: string; user?: unknown; token?: string };
+      expect(body.error_code).toBe('TOKEN_REVOKED');
+      expect(body.user).toBeUndefined();
       expect(body.token).toBeUndefined();
-      // 폐기된 토큰이다 — 지금 계정 내용(이메일 외 설정·플랜)은 싣지 않는다. 이메일은 토큰이 담고 있던 값이다.
-      expect(Object.keys(body.user).sort()).toEqual(['deletion_status', 'email', 'id', 'name', 'plan']);
-      expect(body.user.plan).toBe('free');
     }
+    // 그 앱이 다시 로그인하면 탈퇴가 철회되고 바로 쓸 수 있다.
+    const login = await app.request(
+      new Request('http://localhost/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-App-Platform': 'android', 'X-App-Version': '33' },
+        body: JSON.stringify({ email: 'owner@example.test', password: 'superSecret1' }),
+      }),
+      undefined,
+      ENV,
+    );
+    expect(login.status).toBe(200);
+    expect((await row('owner')).deletion_status).toBe('active');
+    await db.execute("UPDATE users SET deletion_status = 'pending_deletion', deletion_requested_at = '2026-10-01', token_epoch = token_epoch + 1 WHERE id = 'owner'");
     for (const [platform, version] of [['android', '34'], ['ios', '11'], [undefined, undefined]] as const) {
       const res = await ask(platform, version);
       expect(res.status, `${platform} ${version}`).toBe(403);
