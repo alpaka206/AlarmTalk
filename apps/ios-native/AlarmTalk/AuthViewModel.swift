@@ -2095,8 +2095,8 @@ final class AuthViewModel: ObservableObject {
     /// `AlarmTalkApp` 이 `PushNotificationCoordinator` 를 꽂는다 — 여기서 코디네이터를
     /// 직접 들면 순환 참조가 된다(코디네이터의 `onFamilyAlarm` 과 같은 방식).
     var onSignOutUnregisterPush: (String, String?, @escaping @Sendable () -> Bool) async -> Bool = { _, _, _ in true }
-    /// 서버가 이 계정의 푸시 등록을 이미 지웠을 때(탈퇴 신청 — user.ts) 기기 쪽 등록 기록만 비운다.
-    /// launch 에서 `PushNotificationCoordinator.clearRegistrationCache` 로 꽂는다.
+    /// 서버가 이 계정의 푸시 등록을 이미 지웠을 때(탈퇴 신청 — user.ts) 또는 지웠을 수 있을 때(자동 만료) 기기 쪽 등록
+    /// 기록만 비운다 — 다음 등록이 서버에 다시 올리게. launch 에서 `PushNotificationCoordinator.clearRegistrationCache` 로 꽂는다.
     var onServerRemovedPushRegistration: @MainActor () -> Void = {}
 
     /// 로그아웃·탈퇴 때 **이 기기의 OS 알람 예약을 끊는** 훅.
@@ -2328,6 +2328,11 @@ final class AuthViewModel: ObservableObject {
         // 명시적 로그아웃·탈퇴는 `revokeOnServer: false` 로 들어오거나 곧바로 `clear()` 한다.
         if revokeOnServer {
             SessionExpiryStore.markSessionExpired(userId: session?.user.id)
+            // ⚠ **자동 만료면 이 기기의 푸시 등록 확인도 내린다**(코덱스 #904). 끊긴 이유가 탈퇴 신청이었으면 서버가 그
+            //   계정의 푸시 행을 이미 지웠다 — 그 사이 다른 기기가 다시 로그인해 철회했으면 이 기기는 유예 코드 대신
+            //   `TOKEN_REVOKED` 를 받는다. 확인을 남겨 두면 같은 실행에서 같은 계정으로 다시 로그인해도 등록을 건너뛰어
+            //   가족 알람 푸시를 놓친다. 내리면 다음 로그인이 한 번 더 올릴 뿐이다.
+            onServerRemovedPushRegistration()
         }
         // ⚠ **세션을 비우기 전에** 소유자를 새긴다 — 뒤에 하면 누구 것인지 알 수 없다.
         //

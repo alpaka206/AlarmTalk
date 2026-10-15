@@ -1674,6 +1674,31 @@ final class AuthViewModelTests: XCTestCase {
         XCTAssertNil(SessionExpiryStore.expiredOwnerUserId, "자동 만료 표시가 남으면 떼어낸 알람이 되살아난다")
     }
 
+    /// 자동 만료(401)도 푸시 등록 확인을 내린다 — 탈퇴 신청으로 서버 행이 지워졌는데 그 뒤 철회돼 유예 코드 대신
+    /// `TOKEN_REVOKED` 를 받은 기기가, 같은 실행에서 다시 로그인했을 때 등록을 건너뛰지 않게(코덱스 #904).
+    func test_automaticExpiryClearsPushRegistrationConfirmation() async {
+        let previous = KeychainStore.readSession()
+        defer {
+            if let previous { try? KeychainStore.saveSession(previous) } else { KeychainStore.deleteSession() }
+            SessionExpiryStore.clear()
+        }
+        let api = MockAuthAPI()
+        api.meResult = .failure(APIError.server(status: 401, message: "Token has been revoked", errorCode: "TOKEN_REVOKED"))
+        let vm = AuthViewModel(
+            api: api,
+            appleCredentialProvider: MockAppleCredentialProvider(),
+            accessSnapshotStore: AccessSnapshotStore(defaults: UserDefaults(suiteName: "expiry-push-\(UUID().uuidString)")!)
+        )
+        vm._setSessionForTesting(makeEmailSession())
+        var cleared = 0
+        vm.onServerRemovedPushRegistration = { cleared += 1 }
+
+        await vm.refreshUser()
+
+        XCTAssertNil(vm.session)
+        XCTAssertEqual(cleared, 1)
+    }
+
     /// 알람 정리를 기다리는 사이 다시 로그인했으면 새 세션을 끊지 않는다(코덱스 #904).
     func test_leaveForPendingDeletion_doesNotSignOutASessionCreatedWhileCleaningUp() async {
         let previous = KeychainStore.readSession()

@@ -576,7 +576,9 @@ internal fun MainViewModel.checkAccountStatus() {
  * 구글 로그아웃은 하지 않는다 — 다시 로그인하면 탈퇴가 철회되는 것이 이 정책이라, 같은 계정을 다시 고르기 쉬워도 된다.
  */
 internal suspend fun MainViewModel.leaveAccountForPendingDeletion(session: AuthSession) {
-    if (authSession?.user?.id != session.user.id) return
+    // ⚠ **계정이 아니라 토큰으로 본다**(코덱스 #904). 옛 토큰으로 떠난 `/auth/me` 의 답이 같은 계정으로 다시 로그인한
+    //   뒤에 도착하면, 계정만 보고는 **새 세션**을 끊고 그 알람까지 끈다(401 경로 `handleUnauthorized` 와 같은 규칙).
+    if (authSession?.token != session.token) return
     // 같은 순간 여러 요청이 403 을 받으면 여러 번 들어온다 — 이미 떠나는 중이면 한 번만.
     if (signingOut) return
     markSignOutInProgress()
