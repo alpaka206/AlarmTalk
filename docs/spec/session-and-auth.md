@@ -194,6 +194,8 @@ pepper 로 가명 보존 기록까지 곧장 이어져, 분리 보관을 무너�
   `token_epoch + 1` · `push_tokens` 삭제). 그래야 '다시 로그인하면 철회' 가 어느 기기에서나 같다 — 세션이 남은
   기기는 로그인 화면을 거치지 않으니 철회할 길 없이 모든 요청이 403 인 채로 남는다. 2026-10-15 전에는 신청한 기기만
   스스로 로그아웃했다.
+  배포 전에 신청해 이미 유예였던 행에는 같은 정리를 마이그레이션 #129(`pending-deletion-revoke-sessions-backfill`)가 한 번
+  소급한다 — 안 하면 한 기기가 로그인해 철회하는 순간 신청 전 토큰을 든 다른 기기가 다시 통과한다(코덱스 #904).
 - **유예 계정이면 끊긴 토큰에도 401 이 아니라 403 `ACCOUNT_PENDING_DELETION` 으로 답한다**(`authMiddleware`·`/auth/me`
   — 폐기 검사보다 먼저 본다, 코덱스 #904). 다른 기기가 `TOKEN_REVOKED` 를 받으면 자동 만료로 읽어 알람 예약을 남기고,
   로그인 화면 뒤에서 보이지도 끌 수도 없는 알람이 운다. 철회·푸시 해제 두 허용 경로는 그대로 폐기 검사를 지난다 —
@@ -215,6 +217,9 @@ pepper 로 가명 보존 기록까지 곧장 이어져, 분리 보관을 무너�
   확인 내리기 · 알람 소유자 새기기 · 알람 끄기) 그 사이 같은 계정으로 다시 로그인하면 **새 세션**의 알람·설정에 닿는다.
   iOS 는 단계마다 토큰을 다시 보고 정리하는 동안 화면을 잠그며(`isBusy`), 안드로이드 백그라운드판은 알람 잠금 **안에서**
   알람을 건드리기 전에 본다(`detachAlarmsOnSignOut` 의 `proceedInsideLock`).
+- **안드로이드 워커가 떠나면 떠 있는 화면도 떠난다**(`AppSignals.accountLeftForPendingDeletion` →
+  `MainViewModel.onAccountLeftInBackground`). 워커는 저장소만 비우는데 뷰모델은 비워진 저장소를 흡수하지 않아
+  (`shouldAbsorbStoredSession`) 화면이 로그인된 채 남는다 — 앱이 떠 있을 때 온 탈퇴 신호가 그 경로다(코덱스 #904).
 - **iOS 도 어느 요청이든 403 `ACCOUNT_PENDING_DELETION` 을 받으면 떠난다** — 통신 계층이 알리고
   (`AlarmTalkAPI.accountPendingDeletionNotification`) 뷰모델이 그 토큰의 세션이면 정리한다. 전경의 `refreshUser` 만 보면
   무음 푸시를 놓친 기기의 백그라운드 동기화가 받은 403 은 재시도로만 흘러 알람이 남는다.
