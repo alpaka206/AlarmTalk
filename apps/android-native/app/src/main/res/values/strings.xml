@@ -318,8 +318,6 @@
     <string name="msg_account_delete_failed">회원 탈퇴에 실패했어요</string>
     <string name="msg_account_deleted">회원 탈퇴가 완료되었어요</string>
     <string name="msg_account_deleted_google_unlink_failed">회원 탈퇴는 완료되었지만 Google 연결 해제에 실패했어요</string>
-    <string name="msg_account_deletion_cancel_failed">탈퇴 취소에 실패했어요. 다시 시도해 주세요</string>
-    <string name="msg_account_deletion_cancelled">회원 탈퇴를 취소했어요. 계정이 복구됐어요.</string>
     <string name="msg_account_deletion_request_failed">회원 탈퇴 신청에 실패했어요</string>
     <string name="msg_account_deletion_requested">회원 탈퇴가 접수됐어요. 30일 안에 다시 로그인하면 취소할 수 있어요.</string>
     <string name="msg_alarm_delete_failed">알람 삭제에 실패했어요</string>
@@ -783,11 +781,6 @@
     <string name="r3dlg_plan_gate_confirm">이용권 보기</string>
     <string name="r3dlg_modal_dialog_close">닫기</string>
     <string name="r3dlg_feature_lock_badge_desc">이용권 필요</string>
-    <string name="r3dlg_pending_deletion_title">회원 탈퇴가 진행 중이에요</string>
-    <string name="r3dlg_pending_deletion_body">신청일로부터 30일 뒤에 계정과 데이터가 완전히 삭제돼요.\n그 전에 탈퇴를 취소하면 계정을 그대로 복구할 수 있어요.</string>
-    <string name="r3dlg_pending_deletion_processing">처리 중…</string>
-    <string name="r3dlg_pending_deletion_recover">탈퇴 취소하고 계속 사용하기</string>
-    <string name="r3dlg_pending_deletion_logout">로그아웃</string>
     <string name="r3ed_google_signin_error_config">Google 로그인 설정이 맞지 않아요. Android OAuth 클라이언트의 패키지 이름과 SHA-1을 확인해 주세요.</string>
     <string name="r3ed_google_signin_error_network">네트워크 연결을 확인한 뒤 다시 시도해 주세요.</string>
     <string name="r3ed_google_signin_error_failed">Google 로그인에 실패했어요.</string>
@@ -886,7 +879,7 @@
     <string name="api_error_email_code_invalid">인증 코드가 맞지 않아요. 다시 확인해 주세요.</string>
     <string name="api_error_email_code_expired">인증 코드가 만료됐어요. 다시 받아 주세요.</string>
     <string name="api_error_email_code_attempts">인증 코드를 너무 많이 틀렸어요. 다시 받아 주세요.</string>
-    <string name="api_error_account_pending_deletion">탈퇴 신청 중인 계정이에요. 탈퇴를 취소하면 다시 쓸 수 있어요.</string>
+    <string name="api_error_account_pending_deletion">탈퇴 신청 중인 계정이에요. 다시 로그인하면 탈퇴가 취소돼요.</string>
     <string name="api_error_session_expired">로그인이 만료됐어요. 다시 로그인해 주세요.</string>
     <string name="api_error_voice_limit_reached">등록할 수 있는 목소리를 다 채웠어요. 쓰지 않는 목소리를 지워 주세요.</string>
     <string name="api_error_voice_not_ready">목소리를 아직 만들고 있어요. 잠시 후 다시 시도해 주세요.</string>

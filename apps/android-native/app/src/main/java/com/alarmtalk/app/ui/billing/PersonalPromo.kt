@@ -218,7 +218,6 @@ internal data class PersonalPromoNoticeGates(
     val consentUnsupported: Boolean,
     /** `/auth/me` 응답(= plan·프로모)이 이 계정으로 도착했는가. 실패도 '도착' 이다. */
     val accountStatusChecked: Boolean,
-    val pendingDeletion: Boolean,
     val consentStatusChecked: Boolean,
     val showConsentScreen: Boolean,
     val stockReplacementChecked: Boolean,
@@ -241,7 +240,7 @@ internal data class PersonalPromoNoticeGates(
     fun ready(): Boolean =
         signedIn &&
             versionChecked && !updateRequired && !consentUnsupported &&
-            accountStatusChecked && !pendingDeletion &&
+            accountStatusChecked &&
             consentStatusChecked && !showConsentScreen &&
             stockReplacementChecked && !stockReplacementPending &&
             !permissionGateOpen && !showVoiceSetup && !otherModalOpen &&

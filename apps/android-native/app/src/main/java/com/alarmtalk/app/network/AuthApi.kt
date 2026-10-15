@@ -221,11 +221,6 @@ data class AccountDeletionResponse(
     @SerializedName("grace_days") val graceDays: Int = 30,
 )
 
-data class CancelDeletionResponse(
-    val success: Boolean = false,
-    val status: String = "active",
-)
-
 data class ConsentItemRequest(
     val type: String,
     val agreed: Boolean,
@@ -356,11 +351,6 @@ interface AuthApi {
     suspend fun requestAccountDeletion(
         @Header("Authorization") authorization: String,
     ): AccountDeletionResponse
-
-    @DELETE("user/me/deletion")
-    suspend fun cancelAccountDeletion(
-        @Header("Authorization") authorization: String,
-    ): CancelDeletionResponse
 
     @GET("user/consents/status")
     suspend fun consentStatus(@Header("Authorization") authorization: String): ConsentStatusResponse

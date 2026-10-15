@@ -1147,10 +1147,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var marketingConsentLoadFailed by mutableStateOf(false)
         internal set
 
-    // 탈퇴 유예(pending_deletion) 상태로 로그인하면 true → 복구/로그아웃만 가능한 화면을 띄운다.
-    var pendingDeletion by mutableStateOf(false)
-        internal set
-
     /**
      * `/consents/status` **응답이 실제로 도착했는지**(성공·실패 무관).
      *
@@ -1176,8 +1172,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         internal set
 
     // 계정 상태 조회가 끝났는지(성공·실패 무관). versionChecked 와 같은 이유로 필요하다 —
-    // 이게 false 인 동안 pendingDeletion 은 '아직 모른다' 는 뜻의 기본값 false 라, 이 값을
-    // 안 보면 탈퇴 유예 계정에서도 1회성 오버레이가 먼저 떠 플래그를 태운다(Codex #660).
+    // 응답 전에는 이 계정이 남을지 모른다(탈퇴 유예면 세션을 끊는다 — `checkAccountStatus`). 이 값을
+    // 안 보면 그 사이 1회성 오버레이가 먼저 떠 플래그를 태운다(Codex #660).
     var accountStatusChecked by mutableStateOf(false)
         internal set
 
@@ -1621,7 +1617,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         // 안 되고, 떠 있던 요청의 응답은 앞 계정의 것이라 순번을 앞질러 버린다
         // ([PersonalPromoLedger.resetForAccountSwitch]).
         personalPromoLedger.resetForAccountSwitch()
-        pendingDeletion = false
         accountStatusChecked = false
         consentStatusChecked = false
         // 마케팅 수신 토글도 user-scoped — 옛 사용자의 동의값이 다음 사용자 화면에 잔존하지 않게

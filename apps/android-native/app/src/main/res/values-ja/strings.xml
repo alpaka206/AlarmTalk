@@ -300,8 +300,6 @@
     <string name="msg_account_delete_failed">退会に失敗しました。</string>
     <string name="msg_account_deleted">退会が完了しました。</string>
     <string name="msg_account_deleted_google_unlink_failed">退会は完了しましたが、Googleの連携解除に失敗しました。</string>
-    <string name="msg_account_deletion_cancel_failed">退会のキャンセルに失敗しました。もう一度お試しください。</string>
-    <string name="msg_account_deletion_cancelled">退会をキャンセルしました。アカウントが復元されました。</string>
     <string name="msg_account_deletion_request_failed">退会の申請に失敗しました。</string>
     <string name="msg_account_deletion_requested">退会の申請を受け付けました。30日以内に再度ログインすると取り消せます。</string>
     <string name="msg_alarm_delete_failed">アラームの削除に失敗しました。</string>
@@ -726,11 +724,6 @@
     <string name="r3dlg_plan_gate_confirm">プランを見る</string>
     <string name="r3dlg_modal_dialog_close">閉じる</string>
     <string name="r3dlg_feature_lock_badge_desc">プランが必要</string>
-    <string name="r3dlg_pending_deletion_title">退会手続きが進行中です</string>
-    <string name="r3dlg_pending_deletion_body">申請日から30日後に、アカウントとデータが完全に削除されます。\nそれまでに退会を取り消せば、アカウントをそのまま復元できます。</string>
-    <string name="r3dlg_pending_deletion_processing">処理中…</string>
-    <string name="r3dlg_pending_deletion_recover">退会を取り消して使い続ける</string>
-    <string name="r3dlg_pending_deletion_logout">ログアウト</string>
     <string name="r3ed_google_signin_error_config">Googleログインの設定が正しくありません。Android OAuthクライアントのパッケージ名とSHA-1をご確認ください。</string>
     <string name="r3ed_google_signin_error_network">ネットワーク接続をご確認のうえ、もう一度お試しください。</string>
     <string name="r3ed_google_signin_error_failed">Googleログインに失敗しました。</string>
@@ -836,7 +829,7 @@
     <string name="api_error_email_code_invalid">認証コードが一致しません。もう一度ご確認ください。</string>
     <string name="api_error_email_code_expired">認証コードの有効期限が切れました。もう一度受け取ってください。</string>
     <string name="api_error_email_code_attempts">認証コードの入力を間違えすぎました。もう一度受け取ってください。</string>
-    <string name="api_error_account_pending_deletion">退会申請中のアカウントです。退会を取り消すと再び利用できます。</string>
+    <string name="api_error_account_pending_deletion">退会申請中のアカウントです。もう一度ログインすると退会が取り消されます。</string>
     <string name="api_error_session_expired">ログインの有効期限が切れました。もう一度ログインしてください。</string>
     <string name="api_error_voice_limit_reached">登録できる声をすべて使いました。使わない声を削除してください。</string>
     <string name="api_error_voice_not_ready">声をまだ作成しています。しばらくしてからもう一度お試しください。</string>

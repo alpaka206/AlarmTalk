@@ -3,7 +3,7 @@ import UIKit
 
 /// 앱 진입을 막는 전체 화면의 골격 — 아이콘 · 제목 · (선택) 한 줄 · 본문 · 버튼.
 ///
-/// 강제 업데이트(`UpdateRequiredView`), 탈퇴 유예(`AccountPendingDeletionView`),
+/// 강제 업데이트(`UpdateRequiredView`),
 /// 기본 목소리 교체(`StockReplacementView`)가 함께 쓴다. 화면마다 다른 것은 아이콘·문구·
 /// 버튼뿐이다.
 struct BlockingScreen<Detail: View, Actions: View>: View {

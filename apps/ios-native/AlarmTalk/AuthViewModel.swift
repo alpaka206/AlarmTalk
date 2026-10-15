@@ -1245,8 +1245,14 @@ final class AuthViewModel: ObservableObject {
             // ⚠ **여기서 `SessionExpiryStore.clear()` 를 하지 말 것.** 이건 rolling refresh 라
             // 로그인 확정이 아니다 — 로그아웃 직후 늦게 도착한 응답 하나가 표시를 지워
             // 떼어낸 알람이 되살아난다(안드로이드 `AuthSessionStore` 의 같은 경고).
-            // 탈퇴 유예 상태 반영 — pending_deletion 이면 RootView 가 복구 화면으로 게이팅.
-            // Android `MainViewModel.checkAccountStatus()` 와 동등.
+            // ⚠ **탈퇴 유예면 세션을 끊는다**(2026-10-15). 다시 로그인하면 서버가 탈퇴를 철회하므로
+            //   (`docs/spec/session-and-auth.md` 「탈퇴 유예 — 다시 로그인하면 철회」) 유예 상태의 세션은 끝난 세션이다.
+            //   예전에는 RootView 가 '회원 탈퇴가 진행 중이에요' 화면과 철회 버튼으로 게이팅했다 — 되살리지 말 것.
+            //   Android `MainViewModel.checkAccountStatus` 와 같다.
+            if merged.isPendingDeletion {
+                handleUnauthorized(failedToken: token)
+                return nil
+            }
             if wasPendingDeletion, merged.deletionStatus == "active" {
                 guard await completeAccountRecovery(
                     userID: merged.id,
@@ -1664,59 +1670,18 @@ final class AuthViewModel: ObservableObject {
         }
     }
 
-    /// 유예 기간 내 탈퇴 철회 → 계정 복구. 성공 시 `pendingDeletion` 을 내려 정상 진입.
-    /// Android `MainViewModel.cancelAccountDeletion()`.
-    func cancelAccountDeletion() async {
-        guard let token, let ownerUserID = session?.user.id else {
-            statusMessage = String(localized: "로그인이 필요해요.")
-            return
-        }
-        guard !isBusy else { return }
-        isBusy = true
-        defer { isBusy = false }
-        let recoveryRevision = accountRecoveryRevision
-
-        do {
-            let response = try await api.cancelAccountDeletion(token: token)
-            guard !Task.isCancelled, session?.user.id == ownerUserID, self.token == token,
-                  accountRecoveryRevision == recoveryRevision else { return }
-            guard response.success, response.status == "active" else { throw APIError.invalidResponse }
-            guard await completeAccountRecovery(userID: ownerUserID) else { return }
-            statusMessage = String(localized: "회원 탈퇴를 취소했어요. 계정이 복구됐어요.")
-        } catch {
-            guard !Task.isCancelled, session?.user.id == ownerUserID, self.token == token,
-                  accountRecoveryRevision == recoveryRevision else { return }
-            // 응답 유실/구서버 재시도 거절은 서버의 현재 상태로 판정한다. 재확인에서
-            // pending→active를 확인하면 refreshUser가 공통 복구 처리와 푸시 훅을 실행한다.
-            if Self.isAmbiguousDeletionCancellation(error) {
-                let confirmedToken = await refreshUserApplyingToken()
-                guard !Task.isCancelled, session?.user.id == ownerUserID,
-                      accountRecoveryRevision == recoveryRevision,
-                      self.token == (confirmedToken ?? token) else { return }
-            }
-            failStatus(userFacingErrorMessage(error, fallback: String(localized: "탈퇴 취소에 실패했어요. 다시 시도해 주세요")))
-        }
-    }
-
-    private static func isAmbiguousDeletionCancellation(_ error: Error) -> Bool {
-        // API의 2xx 본문 디코딩 오류는 invalidResponse로 변환되지 않고 그대로 전달된다.
-        if error is URLError || error is DecodingError { return true }
-        guard let apiError = error as? APIError else { return false }
-        switch apiError {
-        case .invalidResponse: return true
-        case .server(let status, _, let code):
-            return status >= 500 || (status == 404 && code == "NO_PENDING_DELETION")
-        }
-    }
-
-    /// 성공 응답과 이후의 권위 조회가 같은 복구 후처리를 사용한다.
+    /// 저장된 유예 세션이 `active` 로 돌아온 것을 확인했을 때의 복구 후처리(`refreshUser`).
+    ///
+    /// 2026-10-15 부터 철회 버튼(`cancelAccountDeletion`)은 없다 — 다시 로그인하면 서버가 철회하고, 유예 세션은
+    /// `refreshUser` 가 끊는다. 이 함수가 남은 것은 1.2.13 이하에서 유예 화면에 머물던 세션이 올라왔는데 그 사이 다른
+    /// 기기에서 다시 로그인해 철회된 경우다(저장된 pending → active).
     ///
     /// ⚠ **저장할 세션은 준비를 기다린 뒤에 만든다**(2026-10-05). 기다리기 전에 잡은 세션(또는 그때 다듬은 `/auth/me`
     /// 답)을 그대로 저장하면, 준비를 기다리는 사이 반영된 plan·프로모(결제 전 조회·세션 밖 `/auth/me` 처럼 토큰을
     /// 굴리지 않고 plan 을 쓰는 답)를 다음 조회까지 옛 값으로 되돌린다(드문 경로 — 복구 화면에서 준비를 기다리는 사이에만
     /// 열린다). 탈퇴 상태만 바꾸고 나머지는 **그때의** 세션 것이다. `/auth/me` 로 복구를 확인한 경로(`recoveredAnswer`)는
-    /// 그 답을 기다린 뒤 다시 다듬는다(`reconcileAccountAnswer`). 안드로이드는 탈퇴 취소 뒤 세션을 다시 쓰지 않는다
-    /// (`cancelAccountDeletion` 은 `pendingDeletion` 만 내린다).
+    /// 그 답을 기다린 뒤 다시 다듬는다(`reconcileAccountAnswer`). 안드로이드에는 대응이 없다 — 유예 세션은
+    /// 끊고 다시 로그인시킨다(`checkAccountStatus`).
     private func completeAccountRecovery(
         userID: String,
         recoveredAnswer: (session: AuthSession, request: AccountRequest)? = nil

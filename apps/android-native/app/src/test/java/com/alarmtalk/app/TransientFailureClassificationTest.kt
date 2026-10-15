@@ -410,15 +410,16 @@ class TransientFailureClassificationTest {
     }
 
     @Test
-    fun workerStopsWithoutRetryForAccountPendingDeletion() {
-        // 탈퇴 유예는 사용자가 고른 계정 상태다 — 철회 전에는 같은 403 만 온다(ANDROID-1B).
+    fun workerEndsTheSessionOnAccountPendingDeletion() {
+        // 탈퇴 유예 403 은 끝난 세션이다 — 다시 로그인하면 서버가 탈퇴를 철회하고, 신청은 모든 기기의 세션을
+        // 끊는다(2026-10-15). 401 과 같이 끊는다(`SESSION_EXPIRED`).
         assertEquals(
-            SyncWorkerOutcome.ACCOUNT_PENDING_DELETION,
+            SyncWorkerOutcome.SESSION_EXPIRED,
             syncWorkerOutcome(httpException(403, """{"error_code":"ACCOUNT_PENDING_DELETION"}""")),
         )
         // 저장소가 한 번 감싼 것도 같다.
         assertEquals(
-            SyncWorkerOutcome.ACCOUNT_PENDING_DELETION,
+            SyncWorkerOutcome.SESSION_EXPIRED,
             syncWorkerOutcome(
                 IllegalStateException("sync failed", httpException(403, """{"error_code":"ACCOUNT_PENDING_DELETION"}""")),
             ),
@@ -445,15 +446,12 @@ class TransientFailureClassificationTest {
     }
 
     @Test
-    fun clipDownloadStopsOnAccountPendingDeletion() {
-        // 스톡 클립 받기 도중 계정이 유예로 바뀌면 클립마다 같은 403 이다 — 일시 실패로 세면 횟수 한도까지 배치를
-        // 되풀이한다(코덱스 #901). 본문(JSON)을 읽어야 하는 판정이라 Robolectric 인 이 클래스에 둔다.
+    fun clipDownloadEndsTheSessionOnAccountPendingDeletion() {
+        // 스톡 클립 받기 도중의 유예 403 도 401 과 같이 세지 않고 위로 올려 세션을 끊는다. 본문(JSON)을 읽어야 하는
+        // 판정이라 Robolectric 인 이 클래스에 둔다.
         val pending = httpException(403, """{"error_code":"ACCOUNT_PENDING_DELETION"}""")
-        assertEquals(ClipFailure.ACCOUNT_PENDING_DELETION, classifyClipFailure(pending))
-        assertEquals(
-            ClipFailure.ACCOUNT_PENDING_DELETION,
-            classifyClipFailure(IllegalStateException("download failed", pending)),
-        )
+        assertEquals(ClipFailure.SESSION_EXPIRED, classifyClipFailure(pending))
+        assertEquals(ClipFailure.SESSION_EXPIRED, classifyClipFailure(IllegalStateException("download failed", pending)))
         // 코드 없는 403(무료 계정에 남은 클론 프리셋 등)은 그대로 일시 실패다.
         assertEquals(ClipFailure.TRANSIENT, classifyClipFailure(httpException(403, "{}")))
     }
