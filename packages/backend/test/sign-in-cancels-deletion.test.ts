@@ -203,9 +203,12 @@ describe('다른 기기의 끊긴 세션은 유예 코드로 답한다(코덱스
     for (const [platform, version] of [['android', '33'], ['ios', '10']] as const) {
       const res = await ask(platform, version);
       expect(res.status, `${platform} ${version}`).toBe(200);
-      const body = (await res.json()) as { token?: string; user: { deletion_status: string } };
+      const body = (await res.json()) as { token?: string; user: Record<string, unknown> };
       expect(body.user.deletion_status).toBe('pending_deletion');
       expect(body.token).toBeUndefined();
+      // 폐기된 토큰이다 — 지금 계정 내용(이메일 외 설정·플랜)은 싣지 않는다. 이메일은 토큰이 담고 있던 값이다.
+      expect(Object.keys(body.user).sort()).toEqual(['deletion_status', 'email', 'id', 'name', 'plan']);
+      expect(body.user.plan).toBe('free');
     }
     for (const [platform, version] of [['android', '34'], ['ios', '11'], [undefined, undefined]] as const) {
       const res = await ask(platform, version);
@@ -270,6 +273,29 @@ describe('탈퇴 신청은 모든 기기의 세션과 푸시 등록을 끊는다
     expect(after.deletion_status).toBe('pending_deletion');
     expect(Number(after.token_epoch)).toBe(before + 1);
     const tokens = await db.execute('SELECT user_id, token FROM push_tokens ORDER BY token');
+    expect(tokens.rows.map((r) => r.token)).toEqual(['tok-other']);
+  });
+
+  it('옛 앱의 철회 버튼(DELETE /user/me/deletion)도 다른 기기의 세션·푸시 등록을 끊는다(코덱스 #904)', async () => {
+    // 이 배포 전에 신청해 세대가 그대로인 유예 행 — 마이그레이션 #129 보다 먼저 철회되는 경우.
+    await db.execute("DELETE FROM push_tokens");
+    await db.execute(`INSERT INTO push_tokens (id, user_id, token, platform) VALUES
+      ('q1', 'owner', 'tok-owner-old', 'android'), ('q2', 'other', 'tok-other', 'android')`);
+    const before = Number((await row('owner')).token_epoch);
+
+    const app = new Hono<AppEnv>();
+    app.use('*', async (c, next) => {
+      c.set('userId', 'owner');
+      await next();
+    });
+    app.route('/user', user);
+    const res = await app.request('/user/me/deletion', { method: 'DELETE' }, ENV);
+    expect(res.status).toBe(200);
+
+    const after = await row('owner');
+    expect(after.deletion_status).toBe('active');
+    expect(Number(after.token_epoch)).toBe(before + 1);
+    const tokens = await db.execute('SELECT token FROM push_tokens ORDER BY token');
     expect(tokens.rows.map((r) => r.token)).toEqual(['tok-other']);
   });
 });

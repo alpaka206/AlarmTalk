@@ -572,11 +572,22 @@ user.delete('/me/deletion', async (c) => {
   const db = getDB(c.env);
   try {
     const recovered = await withWriteTransaction(db, async (tx) => {
+      // ⚠ **옛 앱의 철회 버튼도 다른 기기를 끊는다**(코덱스 #904) — 로그인 철회(`cancelPendingDeletionOnSignIn`)와 같은
+      //   정리(`token_epoch + 1`·그 계정의 `push_tokens` 삭제). 이 배포 전에 신청한 유예 행은 신청이 끊지 않았고, 배포가
+      //   마이그레이션 #129 보다 먼저 돌아 그 사이 여기서 철회되면 #129 가 건너뛴다. 부른 기기의 세션도 끊기므로 옛 앱은
+      //   다음 요청에서 다시 로그인한다(그 로그인은 이미 active 라 아무것도 철회하지 않는다).
+      await tx.execute({
+        sql: `DELETE FROM push_tokens
+              WHERE user_id IN (SELECT id FROM users
+                                WHERE (google_id = ? OR id = ?) AND deletion_status = 'pending_deletion')`,
+        args: [userId, userId],
+      });
       const res = await tx.execute({
         sql: `UPDATE users
             SET deletion_status = 'active',
                 deletion_requested_at = NULL,
                 deletion_purge_at = NULL,
+                token_epoch = token_epoch + 1,
                 updated_at = datetime('now')
             WHERE (google_id = ? OR id = ?) AND deletion_status = 'pending_deletion'`,
         args: [userId, userId],

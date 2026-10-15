@@ -124,7 +124,21 @@ push.post('/register', async (c) => {
   // fail-closed 는 그대로다: 세 번 다 실패하면(또는 SQL 오류면 즉시) 예외가 올라가 500 이고,
   // batch 는 전부 아니면 전무라 반쯤 적용된 상태가 남지 않는다.
   const statements = pushRegisterStatements(userPk, token, platform as PushPlatform, c.get('tokenEpoch'));
-  await retryTransientTurso(() => db.batch(statements, 'write'));
+  const results = await retryTransientTurso(() => db.batch(statements, 'write'));
+  // ⚠ **적히지 않았으면 성공이 아니다**(코덱스 #904). 위 조건(active · 요청 토큰의 세대가 유효)에 걸려 INSERT 가 0행이면,
+  //   200 을 받은 앱은 등록이 확인됐다고 적고(iOS `uploadConfirmedInThisProcess`) 다시 올리지 않는다 — 서버에는 행이
+  //   없는데. 그 사이 계정이 유예가 됐으면 유예 코드로, 아니면(세대가 올랐다 — 탈퇴 신청·철회·전 기기 로그아웃) 폐기로 답한다.
+  //   (ON CONFLICT DO UPDATE 로 갱신된 것도 1행이다 — 같은 값을 다시 올린 등록은 그대로 성공이다.)
+  if (results[1]?.rowsAffected === 0) {
+    const now = await db.execute({
+      sql: 'SELECT deletion_status FROM users WHERE id = ? LIMIT 1',
+      args: [userPk],
+    });
+    if (now.rows[0]?.deletion_status === 'pending_deletion') {
+      return c.json({ error: 'Account is scheduled for deletion', error_code: 'ACCOUNT_PENDING_DELETION' }, 403);
+    }
+    return c.json({ error: 'Token has been revoked', error_code: 'TOKEN_REVOKED' }, 401);
+  }
 
   return c.json({ success: true });
 });

@@ -1222,8 +1222,6 @@ auth.get('/me', async (c) => {
     // 토큰 폐기 검사(authMiddleware 와 동일): JWT epoch 가 users.token_epoch 보다 낮으면
     // 로그아웃(전 기기)/비밀번호 재설정으로 무효화된 구 토큰 → 401. /auth/me 가 세션
     // 검증 역할을 하므로 보호 API 도달 전에 여기서 막아 폐기된 세션 재저장을 방지한다.
-    // 옛 앱이 끊긴 토큰으로 유예 계정을 물으면 예전 모양(200 + deletion_status)으로 답한다 — 토큰은 굴리지 않는다.
-    let legacyPendingAnswer = false;
     if ((payload.epoch ?? 0) < Number(row.token_epoch ?? 0)) {
       // ⚠ **탈퇴 유예라 끊긴 토큰이면 유예 코드로 답한다**(코덱스 #904 — `authMiddleware` 와 같은 이유). 탈퇴 신청은
       //   모든 기기의 세션을 끊는데, 401 이면 다른 기기는 자동 만료로 읽어 알람 예약을 남긴다 — 유예 코드여야 그
@@ -1234,7 +1232,18 @@ auth.get('/me', async (c) => {
         if (!expectsLegacyPendingDeletionAnswer(c)) {
           return c.json(errorBody('ACCOUNT_PENDING_DELETION', 'Account is scheduled for deletion'), 403);
         }
-        legacyPendingAnswer = true;
+        // ⚠ **계정 내용은 싣지 않는다**(코덱스 #904) — 폐기된 토큰이고, 그 폐기가 탈퇴 신청 때문이었는지(비밀번호
+        //   재설정·전 기기 로그아웃일 수도 있다) 이 자리에서는 모른다. 옛 앱이 유예 화면을 띄우는 데 필요한 최소 모양만 —
+        //   이름·이메일은 그 토큰이 이미 담고 있던 값이다.
+        return c.json({
+          user: {
+            id: String(row.id),
+            email: payload.email ?? '',
+            name: payload.name ?? '',
+            plan: 'free',
+            deletion_status: 'pending_deletion',
+          },
+        });
       } else {
         return c.json(errorBody('TOKEN_REVOKED', 'Token has been revoked'), 401);
       }
@@ -1252,17 +1261,15 @@ auth.get('/me', async (c) => {
     // 재발급이 실패해도 200 은 유지한다. /auth/me 는 본래 사용자 정보를 주는 자리라,
     // 토큰을 못 갱신했다고 로그인 자체를 깨뜨릴 이유가 없다 — 클라는 token 이 없으면
     // 쓰던 토큰을 그대로 쓰고 다음 기회에 다시 시도한다.
-    const rolledToken = legacyPendingAnswer
-      ? null
-      : await signAppJwt(
-          {
-            sub: String(row.id),
-            email: row.email,
-            name: row.name ?? undefined,
-            epoch: Number(row.token_epoch ?? 0),
-          },
-          c.env.JWT_SECRET,
-        ).catch(() => null);
+    const rolledToken = await signAppJwt(
+      {
+        sub: String(row.id),
+        email: row.email,
+        name: row.name ?? undefined,
+        epoch: Number(row.token_epoch ?? 0),
+      },
+      c.env.JWT_SECRET,
+    ).catch(() => null);
     const promo = resolvePersonalPromo(c.env);
     const personalPromo = await loadPersonalPromoField(db, String(row.id), row.plan, promo);
     return c.json({
