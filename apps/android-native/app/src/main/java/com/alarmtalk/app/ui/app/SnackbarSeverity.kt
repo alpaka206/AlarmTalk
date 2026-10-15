@@ -34,6 +34,7 @@ internal object SnackbarSeverities {
         R.string.msg_password_reset_code_sent,
         R.string.msg_password_reset_done,
         R.string.msg_account_deletion_requested,
+        R.string.msg_account_left_pending_deletion,
         R.string.msg_family_alarm_settings_saved,
         R.string.msg_account_deleted,
         R.string.msg_voice_consent_withdrawn,

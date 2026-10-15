@@ -15497,6 +15497,23 @@
           }
         }
       }
+    },
+    "탈퇴를 신청한 계정이라 이 기기에서도 로그아웃했어요. 다시 로그인하면 탈퇴가 취소돼요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This account is scheduled for deletion, so you have been signed out on this device too. Sign in again to cancel the deletion."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "退会申請中のアカウントのため、この端末でもログアウトしました。もう一度ログインすると退会が取り消されます。"
+          }
+        }
+      }
     }
   },
   "version" : "1.0"

@@ -377,6 +377,7 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
         // `.task(id: 세션)` 안에서 꽂았는데, 그 태스크는 **알림 권한 팝업을 먼저 기다린다.**
         // 그 사이 '끊긴 로그아웃 이어서 끝내기' 가 먼저 도달하면 기본값(아무것도 안 함)이
         // 불려, `/auth/logout` 으로 토큰만 폐기되고 **기기는 그 계정에 묶인 채** 남는다.
+        deps.auth.onServerRemovedPushRegistration = { [weak push = deps.push] in push?.clearRegistrationCache() }
         deps.auth.onSignOutUnregisterPush = { [weak push = deps.push] token, expectedOwner, stillNeeded in
             guard let push else { return false }
             return await push.unregisterCurrentToken(

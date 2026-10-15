@@ -319,6 +319,7 @@
     <string name="msg_account_deleted">회원 탈퇴가 완료되었어요</string>
     <string name="msg_account_deleted_google_unlink_failed">회원 탈퇴는 완료되었지만 Google 연결 해제에 실패했어요</string>
     <string name="msg_account_deletion_request_failed">회원 탈퇴 신청에 실패했어요</string>
+    <string name="msg_account_left_pending_deletion">탈퇴를 신청한 계정이라 이 기기에서도 로그아웃했어요. 다시 로그인하면 탈퇴가 취소돼요.</string>
     <string name="msg_account_deletion_requested">회원 탈퇴가 접수됐어요. 30일 안에 다시 로그인하면 취소할 수 있어요.</string>
     <string name="msg_alarm_delete_failed">알람 삭제에 실패했어요</string>
     <string name="msg_alarm_save_failed">알람 저장에 실패했어요</string>

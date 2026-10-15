@@ -1245,12 +1245,13 @@ final class AuthViewModel: ObservableObject {
             // ⚠ **여기서 `SessionExpiryStore.clear()` 를 하지 말 것.** 이건 rolling refresh 라
             // 로그인 확정이 아니다 — 로그아웃 직후 늦게 도착한 응답 하나가 표시를 지워
             // 떼어낸 알람이 되살아난다(안드로이드 `AuthSessionStore` 의 같은 경고).
-            // ⚠ **탈퇴 유예면 세션을 끊는다**(2026-10-15). 다시 로그인하면 서버가 탈퇴를 철회하므로
+            // ⚠ **탈퇴 유예면 이 기기에서 그 계정을 떠난다**(2026-10-15). 다시 로그인하면 서버가 탈퇴를 철회하므로
             //   (`docs/spec/session-and-auth.md` 「탈퇴 유예 — 다시 로그인하면 철회」) 유예 상태의 세션은 끝난 세션이다.
             //   예전에는 RootView 가 '회원 탈퇴가 진행 중이에요' 화면과 철회 버튼으로 게이팅했다 — 되살리지 말 것.
-            //   Android `MainViewModel.checkAccountStatus` 와 같다.
+            //   ⚠ 자동 만료(`handleUnauthorized`)로 끊지 말 것 — 알람 예약이 남아 로그인 화면 뒤에서 운다(코덱스 #904).
+            //   Android `checkAccountStatus` → `leaveAccountForPendingDeletion` 과 같다.
             if merged.isPendingDeletion {
-                handleUnauthorized(failedToken: token)
+                await leaveAccountForPendingDeletion(token: token)
                 return nil
             }
             if wasPendingDeletion, merged.deletionStatus == "active" {
@@ -1283,7 +1284,12 @@ final class AuthViewModel: ObservableObject {
                 //   서버를 401 로 바꾸는 쪽은 하지 않는다: 스토어에 나간 구버전 앱이 그
                 //   상태코드로 분기하고 있을 수 있어, 이미 나간 계약을 고치는 셈이다
                 //   (`docs/spec/error-codes.md` §2 「코드는 바꾸지 않는다」와 같은 취지).
-                if status == 401 || (status == 404 && errorCode == "AUTH_USER_NOT_FOUND") {
+                if status == 403, errorCode == "ACCOUNT_PENDING_DELETION" {
+                    // 다른 기기에서 탈퇴를 신청해 끊긴 세션 — 서버는 401 이 아니라 이 코드로 답한다(`/auth/me`, 코덱스 #904).
+                    guard session?.token == token else { return nil }
+                    await leaveAccountForPendingDeletion(token: token)
+                    return nil
+                } else if status == 401 || (status == 404 && errorCode == "AUTH_USER_NOT_FOUND") {
                     // ⚠ **그 사이 세션이 바뀌었으면 로그아웃하지 않는다**(코덱스 #730 4차).
                     //   401 은 **이 요청에 쓴 옛 토큰**이 죽었다는 뜻이다 — 그 사이 새로
                     //   로그인했다면 방금 만든 멀쩡한 세션을 끊게 된다.
@@ -1627,20 +1633,14 @@ final class AuthViewModel: ObservableObject {
         // ⚠ 유예 탈퇴는 30일 안에 **복구할 수 있다** — 그때 다시 로그인하면 푸시가 다시
         // 등록되고(`registerToken`) 알람도 사용자가 켠다. 지금 떼는 것이 맞다:
         // 그 30일 동안 이 기기는 그 계정을 쓰지 않는데 알림만 받고 있을 이유가 없다.
-        // ⚠ **유예 탈퇴는 즉시 탈퇴와 다르다** — 계정이 30일 동안 **살아 있으므로** 서버가
-        // `push_tokens` 를 지우지 않는다. 그래서 이쪽은 클라이언트가 떼야 하는데,
-        // **요청이 성공한 뒤에** 뗀다(안드로이드도 같은 순서다) — 먼저 떼면 요청이 실패했을 때
-        // 로그인된 사용자의 푸시만 사라진다.
+        // ⚠ **푸시 등록은 서버가 지운다**(2026-10-15). 탈퇴 신청이 같은 트랜잭션에서 `token_epoch` 를 올리고 그 계정의
+        // `push_tokens` 를 지운다(user.ts) — 그 뒤 이 토큰으로 `/push/unregister` 를 보내면 401 이라, 실패로 남아
+        // 다음 실행마다 다시 시도했다(코덱스 #904). 기기 쪽 등록 기록만 비운다.
         do {
             _ = try await api.requestAccountDeletion(token: token)
             // 표시는 요청이 성공한 뒤에 남긴다(즉시 탈퇴 주석과 같은 이유).
             PendingSignOutStore.mark(currentUserID)
-            let pushUnregistered = await onSignOutUnregisterPush(token, currentUserID, { true })
-            if !pushUnregistered {
-                // 해제를 다시 시도할 수 있게 토큰을 남긴다. 30일 안에 복구하면 다음 로그인이
-                // 토큰을 다시 등록하므로, 그때는 이 표시가 정리된다.
-                PendingSignOutStore.markServerCleanup(token: token, for: currentUserID)
-            }
+            onServerRemovedPushRegistration()
             beginLeavingAccount()
             if let currentUserID, !currentUserID.isEmpty {
                 accessSnapshotStore.clear(userID: currentUserID)
@@ -1663,11 +1663,40 @@ final class AuthViewModel: ObservableObject {
             if let currentUserID, !currentUserID.isEmpty { clearAccountPreferences(currentUserID) }
             // 탈퇴는 되살릴 계정 자체가 없다 — 자동 만료 표시를 남기지 않는다.
             SessionExpiryStore.clear()
-            // 로컬 뒷정리와 푸시 해제가 **둘 다** 끝났을 때만 표시를 내린다.
-            if cleaned && pushUnregistered { PendingSignOutStore.clear(currentUserID) }
+            // 로컬 뒷정리가 끝났을 때만 표시를 내린다(푸시 해제는 서버가 이미 했다).
+            if cleaned { PendingSignOutStore.clear(currentUserID) }
         } catch {
             failStatus(userFacingErrorMessage(error, fallback: String(localized: "회원 탈퇴 신청에 실패했어요")))
         }
+    }
+
+    /// **다른 기기에서 탈퇴를 신청한 계정을 이 기기에서 떠난다** — 알람까지 끄는 명시적 로그아웃(`requestAccountDeletion`
+    /// 의 성공 갈래와 같은 로컬 정리). 서버 쪽 정리는 없다: 신청이 이미 모든 세션을 끊고 푸시 등록을 지웠다(user.ts).
+    /// Android `leaveAccountForPendingDeletion`.
+    ///
+    /// ⚠ **자동 만료(`signOut` 기본값)로 끊지 말 것**(코덱스 #904) — 자동 만료는 같은 사람이 다시 로그인할 것으로 보고
+    /// 알람 예약을 남겨, 로그인 화면 뒤로 숨은 알람이 계속 운다.
+    private func leaveAccountForPendingDeletion(token: String) async {
+        guard session?.token == token else { return }
+        if UIPreviewSeed.isEnabled { return }
+        let currentUserID = session?.user.id.trimmingCharacters(in: .whitespacesAndNewlines)
+        PendingSignOutStore.mark(currentUserID)
+        onServerRemovedPushRegistration()
+        beginLeavingAccount()
+        if let currentUserID, !currentUserID.isEmpty {
+            accessSnapshotStore.clear(userID: currentUserID)
+            clearAccountPreferences(currentUserID)
+        }
+        _ = await onSessionEndClaimAlarms(currentUserID)
+        let cleaned = await onLeaveAccountStopAlarms(currentUserID)
+        signOut(
+            message: String(localized: "탈퇴를 신청한 계정이라 이 기기에서도 로그아웃했어요. 다시 로그인하면 탈퇴가 취소돼요."),
+            revokeOnServer: false
+        )
+        if let currentUserID, !currentUserID.isEmpty { clearAccountPreferences(currentUserID) }
+        // 사용자가 끝낸 계정이다 — 자동 만료 표시를 남기지 않는다(그 표시가 있으면 떼어낸 알람이 되살아난다).
+        SessionExpiryStore.clear()
+        if cleaned { PendingSignOutStore.clear(currentUserID) }
     }
 
     /// 저장된 유예 세션이 `active` 로 돌아온 것을 확인했을 때의 복구 후처리(`refreshUser`).
@@ -2059,6 +2088,9 @@ final class AuthViewModel: ObservableObject {
     /// `AlarmTalkApp` 이 `PushNotificationCoordinator` 를 꽂는다 — 여기서 코디네이터를
     /// 직접 들면 순환 참조가 된다(코디네이터의 `onFamilyAlarm` 과 같은 방식).
     var onSignOutUnregisterPush: (String, String?, @escaping @Sendable () -> Bool) async -> Bool = { _, _, _ in true }
+    /// 서버가 이 계정의 푸시 등록을 이미 지웠을 때(탈퇴 신청 — user.ts) 기기 쪽 등록 기록만 비운다.
+    /// launch 에서 `PushNotificationCoordinator.clearRegistrationCache` 로 꽂는다.
+    var onServerRemovedPushRegistration: @MainActor () -> Void = {}
 
     /// 로그아웃·탈퇴 때 **이 기기의 OS 알람 예약을 끊는** 훅.
     ///

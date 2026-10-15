@@ -410,24 +410,18 @@ class TransientFailureClassificationTest {
     }
 
     @Test
-    fun workerEndsTheSessionOnAccountPendingDeletion() {
-        // 탈퇴 유예 403 은 끝난 세션이다 — 다시 로그인하면 서버가 탈퇴를 철회하고, 신청은 모든 기기의 세션을
-        // 끊는다(2026-10-15). 401 과 같이 끊는다(`SESSION_EXPIRED`).
+    fun workerRetriesWithoutEndingTheSessionOnAccountPendingDeletion() {
+        // 탈퇴 유예는 세션을 끊어야 하지만 그 정리는 알람까지 끄는 명시적 로그아웃이라 전경이 한다
+        // (`leaveAccountForPendingDeletion`). 워커가 SESSION_EXPIRED 로 끊으면 자동 만료라 알람 예약이 남는다(코덱스 #904).
         assertEquals(
-            SyncWorkerOutcome.SESSION_EXPIRED,
+            SyncWorkerOutcome.RETRY,
             syncWorkerOutcome(httpException(403, """{"error_code":"ACCOUNT_PENDING_DELETION"}""")),
         )
-        // 저장소가 한 번 감싼 것도 같다.
         assertEquals(
-            SyncWorkerOutcome.SESSION_EXPIRED,
+            SyncWorkerOutcome.RETRY,
             syncWorkerOutcome(
                 IllegalStateException("sync failed", httpException(403, """{"error_code":"ACCOUNT_PENDING_DELETION"}""")),
             ),
-        )
-        // 같은 코드라도 403 이 아니면(서버 사고) 그대로 재시도·보고다.
-        assertEquals(
-            SyncWorkerOutcome.RETRY,
-            syncWorkerOutcome(httpException(500, """{"error_code":"ACCOUNT_PENDING_DELETION"}""")),
         )
     }
 
@@ -443,17 +437,6 @@ class TransientFailureClassificationTest {
         assertNull(AlarmTalkLog.breadcrumbCategoryFor(httpException(504, """{"error_code":"INTERNAL_ERROR"}""")))
         assertNull(AlarmTalkLog.breadcrumbCategoryFor(httpException(502, "")))
         assertNull(AlarmTalkLog.breadcrumbCategoryFor(httpException(503, "")))
-    }
-
-    @Test
-    fun clipDownloadEndsTheSessionOnAccountPendingDeletion() {
-        // 스톡 클립 받기 도중의 유예 403 도 401 과 같이 세지 않고 위로 올려 세션을 끊는다. 본문(JSON)을 읽어야 하는
-        // 판정이라 Robolectric 인 이 클래스에 둔다.
-        val pending = httpException(403, """{"error_code":"ACCOUNT_PENDING_DELETION"}""")
-        assertEquals(ClipFailure.SESSION_EXPIRED, classifyClipFailure(pending))
-        assertEquals(ClipFailure.SESSION_EXPIRED, classifyClipFailure(IllegalStateException("download failed", pending)))
-        // 코드 없는 403(무료 계정에 남은 클론 프리셋 등)은 그대로 일시 실패다.
-        assertEquals(ClipFailure.TRANSIENT, classifyClipFailure(httpException(403, "{}")))
     }
 
     @Test

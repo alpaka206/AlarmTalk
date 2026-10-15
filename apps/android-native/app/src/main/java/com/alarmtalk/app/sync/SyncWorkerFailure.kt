@@ -38,11 +38,13 @@ import kotlin.coroutines.cancellation.CancellationException
  *   (`MainViewModelAuthActions` 의 `syncNow`)와 같은 판단이다.
  *   ⚠ 정확히 `CONSENT_REQUIRED` 만이다 — `CONSENT_STATE_UNAVAILABLE` 같은 실제 인증·동의 파손은
  *   [RETRY] 로 가 모니터링에 남는다.
- * - **탈퇴 유예 403(`ACCOUNT_PENDING_DELETION`)도 [SESSION_EXPIRED] 다**(2026-10-15). 탈퇴 신청은 모든 기기의
- *   세션을 끊고, 다시 로그인하면 서버가 탈퇴를 철회한다(`docs/spec/session-and-auth.md` 「탈퇴 유예 — 다시 로그인하면
- *   철회」). 그러니 이 403 을 받는 세션은 끝난 세션이다 — 401 과 같이 끊고 재로그인으로 보낸다.
- *   ⚠ '성공으로 끝내기' 나 '철회까지 재시도' 로 따로 다루지 말 것 — 2026-10-15 에 그렇게 했다가 입력을 든 워커
- *   (목소리 교체 신호)·요금제 대조를 잃는 땜질이 줄줄이 따라 나왔다(#901·#902·#903).
+ * - **탈퇴 유예 403(`ACCOUNT_PENDING_DELETION`)은 [RETRY] 다 — 세션을 끊지 않는다**(2026-10-15). 다른 기기에서 탈퇴를
+ *   신청하면 이 기기의 세션도 끝난 것인데(`docs/spec/session-and-auth.md` 「탈퇴 유예 — 다시 로그인하면 철회」), 그
+ *   정리는 **알람까지 끄는 명시적 로그아웃**이라 워커가 할 일이 아니다 — 앱을 열면 전경의 `checkAccountStatus` 가
+ *   `leaveAccountForPendingDeletion` 으로 한다. 워커가 [SESSION_EXPIRED] 로 끊으면 자동 만료라 알람 예약이 남고, 로그인
+ *   화면 뒤로 숨은 알람이 운다(코덱스 #904). 이슈로는 올리지 않는다(`AlarmTalkLog.isAccountPendingDeletion` → 브레드크럼).
+ *   ⚠ '성공으로 끝내기' 로 따로 다루지 말 것 — 2026-10-15 에 그렇게 했다가 입력을 든 워커(목소리 교체 신호)·요금제
+ *   대조를 잃는 땜질이 줄줄이 따라 나왔다(#901·#902·#903).
  * - [RETRY]: 그 밖의 실패. 보고하고 재시도한다(일시적 네트워크 실패는 `AlarmTalkLog` 가
  *   이슈 대신 브레드크럼으로 낮춘다).
  */
@@ -59,7 +61,6 @@ internal fun syncWorkerOutcome(error: Throwable): SyncWorkerOutcome =
     when {
         error is CancellationException -> SyncWorkerOutcome.RETHROW
         AlarmTalkLog.isHandledAuthFailure(error) -> SyncWorkerOutcome.SESSION_EXPIRED
-        AlarmTalkLog.isAccountPendingDeletion(error) -> SyncWorkerOutcome.SESSION_EXPIRED
         apiErrorCode(error) == "CONSENT_REQUIRED" -> SyncWorkerOutcome.CONSENT_PENDING
         else -> SyncWorkerOutcome.RETRY
     }

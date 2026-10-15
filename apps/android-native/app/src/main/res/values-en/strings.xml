@@ -301,6 +301,7 @@
     <string name="msg_account_deleted">Your account has been deleted.</string>
     <string name="msg_account_deleted_google_unlink_failed">Your account was deleted, but we couldn\'t unlink your Google account.</string>
     <string name="msg_account_deletion_request_failed">Couldn\'t submit your account deletion request.</string>
+    <string name="msg_account_left_pending_deletion">This account is scheduled for deletion, so you have been signed out on this device too. Sign in again to cancel the deletion.</string>
     <string name="msg_account_deletion_requested">Your account deletion request has been received. You can cancel it by logging back in within 30 days.</string>
     <string name="msg_alarm_delete_failed">Couldn\'t delete your alarm.</string>
     <string name="msg_alarm_save_failed">Couldn\'t save your alarm.</string>

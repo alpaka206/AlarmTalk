@@ -519,10 +519,12 @@ internal fun MainViewModel.requestAccountDeletion(signOutGoogle: suspend () -> U
 
 // 로그인 후 계정 상태를 확인한다(기간 한정 개인 플랜 안내의 근거). 실패 시 앱 진입을 막지 않는다.
 //
-// ⚠ **탈퇴 유예 계정이면 세션을 끊는다**(2026-10-15). 다시 로그인하면 서버가 탈퇴를 철회하므로
-//   (`docs/spec/session-and-auth.md` 「탈퇴 유예 — 다시 로그인하면 철회」) 유예 상태의 세션은 끝난 세션이다 —
-//   401 과 같이 다루고 로그인 화면으로 보낸다. 예전에는 '회원 탈퇴가 진행 중이에요' 화면과 철회 버튼이 있었다.
-//   그 화면을 되살리지 말 것. 탈퇴 신청이 모든 기기의 세션을 끊으므로 이 갈래에 오는 일 자체가 드물다.
+// ⚠ **탈퇴 유예 계정이면 이 기기에서 그 계정을 떠난다**(2026-10-15). 다시 로그인하면 서버가 탈퇴를 철회하므로
+//   (`docs/spec/session-and-auth.md` 「탈퇴 유예 — 다시 로그인하면 철회」) 유예 상태의 세션은 끝난 세션이다.
+//   예전에는 '회원 탈퇴가 진행 중이에요' 화면과 철회 버튼이 있었다 — 되살리지 말 것.
+//   ⚠ **자동 만료(`handleUnauthorized`)로 끊지 말 것**(코덱스 #904). 자동 만료는 같은 사람이 다시 로그인할 것으로
+//   보고 알람 예약을 남긴다 — 다른 기기에서 탈퇴를 신청한 사람의 이 기기에서 로그인 화면 뒤로 숨은 알람이 계속
+//   운다. 탈퇴를 신청한 기기와 같은 정리(`leaveAccountForPendingDeletion` — 알람까지 끄는 명시적 로그아웃)를 한다.
 internal fun MainViewModel.checkAccountStatus() {
     val session = authSession ?: return
     val authorization = com.alarmtalk.app.network.AlarmTalkApiClient.bearer(session.token)
@@ -534,7 +536,7 @@ internal fun MainViewModel.checkAccountStatus() {
         }.onSuccess { response ->
             if (response.user.deletionStatus == "pending_deletion") {
                 // 확인 끝(`accountStatusChecked`)을 켜지 않는다 — 세션이 끝나는 중에 1회성 안내가 소진되면 안 된다.
-                handleUnauthorized(session.token)
+                leaveAccountForPendingDeletion(session)
                 return@launch
             }
             // 기간 한정 개인 플랜 종료 안내는 **가장 최근 계정 응답**으로 판정한다
@@ -546,6 +548,11 @@ internal fun MainViewModel.checkAccountStatus() {
                 Log.i(TAG, "Account status answer superseded by a later account answer")
             }
         }.onFailure { error ->
+            // 탈퇴 신청으로 끊긴 세션은 서버가 401 이 아니라 403 `ACCOUNT_PENDING_DELETION` 으로 답한다(`/auth/me`).
+            if (AlarmTalkLog.isAccountPendingDeletion(error)) {
+                leaveAccountForPendingDeletion(session)
+                return@launch
+            }
             Log.w(TAG, "Failed to check account status", error)
             // **이 진입의 첫 결과가 실패면 이 진입은 종료 안내를 띄우지 않는다**(D11) — 같은 진입의
             // 뒤 성공(쿠폰·`plan_changed` 뒤의 갱신)으로 세션 한가운데 뜨지 않게 실패도 적는다.
@@ -561,6 +568,18 @@ internal fun MainViewModel.checkAccountStatus() {
         // (versionChecked 와 같은 규약.)
         accountStatusChecked = true
     }
+}
+
+/**
+ * **다른 기기에서 탈퇴를 신청한 계정을 이 기기에서 떠난다** — 알람까지 끄는 명시적 로그아웃(`requestAccountDeletion`
+ * 의 성공 갈래와 같은 정리). 서버 쪽 정리는 없다: 신청이 이미 모든 세션을 끊고 푸시 등록을 지웠다(user.ts).
+ * 구글 로그아웃은 하지 않는다 — 다시 로그인하면 탈퇴가 철회되는 것이 이 정책이라, 같은 계정을 다시 고르기 쉬워도 된다.
+ */
+internal suspend fun MainViewModel.leaveAccountForPendingDeletion(session: AuthSession) {
+    if (authSession?.user?.id != session.user.id) return
+    markSignOutInProgress()
+    clearSignedInSession(departingUserId = session.user.id)
+    message = getApplication<android.app.Application>().getString(R.string.msg_account_left_pending_deletion)
 }
 
 internal fun MainViewModel.updateNickname(name: String) {

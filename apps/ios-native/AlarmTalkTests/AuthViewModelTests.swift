@@ -1628,11 +1628,50 @@ final class AuthViewModelTests: XCTestCase {
         let session = makeEmailSession()
         vm._setSessionForTesting(session)
         try? KeychainStore.saveSession(session)
+        var stoppedAlarmsFor: [String?] = []
+        vm.onLeaveAccountStopAlarms = { userID in stoppedAlarmsFor.append(userID); return true }
 
         await vm.refreshUser()
 
         XCTAssertNil(vm.session, "유예 세션을 남기면 모든 요청이 403 인 채로 화면만 열린다")
         XCTAssertFalse(vm.pendingDeletion)
+        // 자동 만료가 아니라 떠나기다 — 알람까지 끈다(코덱스 #904).
+        XCTAssertEqual(stoppedAlarmsFor, [session.user.id])
+    }
+
+    /// 다른 기기에서 탈퇴를 신청해 끊긴 세션 — `/auth/me` 는 401 이 아니라 403 `ACCOUNT_PENDING_DELETION` 으로 답한다.
+    /// 자동 만료(알람 예약을 남긴다)로 읽으면 로그인 화면 뒤에서 숨은 알람이 운다(코덱스 #904). 떠나기로 정리하고
+    /// 자동 만료 표시는 남기지 않는다.
+    func test_refreshUser_leavesAccount_whenSessionWasCutByDeletionElsewhere() async {
+        let previous = KeychainStore.readSession()
+        defer {
+            if let previous { try? KeychainStore.saveSession(previous) } else { KeychainStore.deleteSession() }
+            SessionExpiryStore.clear()
+        }
+        SessionExpiryStore.clear()
+        let api = MockAuthAPI()
+        api.meResult = .failure(
+            APIError.server(status: 403, message: "Account is scheduled for deletion", errorCode: "ACCOUNT_PENDING_DELETION")
+        )
+        let vm = AuthViewModel(
+            api: api,
+            appleCredentialProvider: MockAppleCredentialProvider(),
+            accessSnapshotStore: AccessSnapshotStore(defaults: UserDefaults(suiteName: "cut-\(UUID().uuidString)")!)
+        )
+        let session = makeEmailSession()
+        vm._setSessionForTesting(session)
+        try? KeychainStore.saveSession(session)
+        var stoppedAlarmsFor: [String?] = []
+        vm.onLeaveAccountStopAlarms = { userID in stoppedAlarmsFor.append(userID); return true }
+        var pushCacheCleared = 0
+        vm.onServerRemovedPushRegistration = { pushCacheCleared += 1 }
+
+        await vm.refreshUser()
+
+        XCTAssertNil(vm.session)
+        XCTAssertEqual(stoppedAlarmsFor, [session.user.id])
+        XCTAssertEqual(pushCacheCleared, 1)
+        XCTAssertNil(SessionExpiryStore.expiredOwnerUserId, "자동 만료 표시가 남으면 떼어낸 알람이 되살아난다")
     }
 
     /// 세션·보관 캐시는 사례별로 격리하고, 실제 APNs 호출 대신 launch가 연결하는 훅을 관찰한다.

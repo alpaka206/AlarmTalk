@@ -301,6 +301,7 @@
     <string name="msg_account_deleted">退会が完了しました。</string>
     <string name="msg_account_deleted_google_unlink_failed">退会は完了しましたが、Googleの連携解除に失敗しました。</string>
     <string name="msg_account_deletion_request_failed">退会の申請に失敗しました。</string>
+    <string name="msg_account_left_pending_deletion">退会申請中のアカウントのため、この端末でもログアウトしました。もう一度ログインすると退会が取り消されます。</string>
     <string name="msg_account_deletion_requested">退会の申請を受け付けました。30日以内に再度ログインすると取り消せます。</string>
     <string name="msg_alarm_delete_failed">アラームの削除に失敗しました。</string>
     <string name="msg_alarm_save_failed">アラームの保存に失敗しました。</string>
