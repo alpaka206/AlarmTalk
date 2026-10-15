@@ -21,6 +21,7 @@ import user from '../src/routes/user';
 import { hashPassword } from '../src/lib/password';
 import { cancelPendingDeletionOnSignIn } from '../src/lib/account-deletion';
 import { signAppJwt } from '../src/lib/jwt';
+import { pushRegisterStatements } from '../src/routes/push';
 
 const ENV = {
   ELEVENLABS_API_KEY: 'x',
@@ -100,9 +101,24 @@ describe('로그인하면 탈퇴를 철회한다', () => {
   });
 
   it('헬퍼는 멱등이다 — 이미 active 면 아무것도 바꾸지 않는다', async () => {
-    expect(await cancelPendingDeletionOnSignIn(db, 'owner')).toBe(true);
-    expect(await cancelPendingDeletionOnSignIn(db, 'owner')).toBe(false);
+    expect(await cancelPendingDeletionOnSignIn(db, 'owner', '2026-10-01')).toBe('cancelled');
+    expect(await cancelPendingDeletionOnSignIn(db, 'owner', '2026-10-01')).toBe('unchanged');
     expect((await row('owner')).deletion_status).toBe('active');
+  });
+
+  it('로그인이 처음 본 그 신청만 철회한다 — 그 사이 새로 낸 신청은 그대로 둔다(코덱스 #904)', async () => {
+    // active 로 읽은 로그인(observed null)이 끝나기 전에 다른 기기가 새로 신청했다 — 쿼리도 없이 그대로 둔다.
+    expect(await cancelPendingDeletionOnSignIn(db, 'owner', null)).toBe('unchanged');
+    expect((await row('owner')).deletion_status).toBe('pending_deletion');
+    // 유예로 읽었는데 그 사이 철회 → 다시 신청해 신청 시각이 바뀌었다.
+    await db.execute("UPDATE users SET deletion_requested_at = '2026-10-15' WHERE id = 'owner'");
+    expect(await cancelPendingDeletionOnSignIn(db, 'owner', '2026-10-01')).toBe('unchanged');
+    expect((await row('owner')).deletion_status).toBe('pending_deletion');
+  });
+
+  it('그 사이 파기됐으면 missing — 로그인은 토큰을 내주지 않는다', async () => {
+    await db.execute("DELETE FROM users WHERE id = 'other'");
+    expect(await cancelPendingDeletionOnSignIn(db, 'other', '2026-10-01')).toBe('missing');
   });
 });
 
@@ -125,6 +141,18 @@ describe('다른 기기의 끊긴 세션은 유예 코드로 답한다(코덱스
 });
 
 describe('탈퇴 신청은 모든 기기의 세션과 푸시 등록을 끊는다', () => {
+  it('미들웨어를 이미 지난 등록 요청이 신청 뒤에 커밋돼도 유예 계정에는 푸시 행이 생기지 않는다(코덱스 #904)', async () => {
+    // owner 는 유예다(beforeEach). 등록 문장은 그 조건을 스스로 본다.
+    await db.batch(pushRegisterStatements('owner', 'tok-late', 'android'), 'write');
+    const late = await db.execute("SELECT 1 FROM push_tokens WHERE user_id = 'owner'");
+    expect(late.rows).toHaveLength(0);
+    // active 계정은 그대로 적힌다.
+    await db.execute("UPDATE users SET deletion_status = 'active' WHERE id = 'other'");
+    await db.batch(pushRegisterStatements('other', 'tok-ok', 'android'), 'write');
+    const ok = await db.execute("SELECT token FROM push_tokens WHERE user_id = 'other'");
+    expect(ok.rows.map((r) => r.token)).toEqual(['tok-ok']);
+  });
+
   it('token_epoch 를 올리고 그 계정의 푸시 토큰만 지운다', async () => {
     await db.execute("UPDATE users SET deletion_status = 'active', deletion_requested_at = NULL, deletion_purge_at = NULL");
     await db.execute(`INSERT INTO push_tokens (id, user_id, token, platform) VALUES

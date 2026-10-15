@@ -47,12 +47,18 @@ export function pushRegisterStatements(
       args: [token, userPk],
     },
     {
+      // ⚠ **계정이 아직 active 일 때만 적는다**(코덱스 #904). 탈퇴 신청은 같은 트랜잭션에서 그 계정의 `push_tokens` 를
+      //   지우는데(user.ts), 미들웨어를 이미 통과해 쓰기를 기다리던 등록 요청이 그 뒤에 커밋되면 유예 계정에 푸시 행이
+      //   되살아난다(앱은 실행마다 등록하므로 드문 경합이 아니다). 조건을 이 문장 안에 둬 원자적으로 막는다 — 0행이면
+      //   아무것도 적지 않는다(요청은 200 이지만, 그 계정은 곧 모든 요청이 403 이다).
+      // (SQLite 는 `INSERT … SELECT` 에 upsert 를 붙이려면 SELECT 에 WHERE 가 있어야 한다 — 아래 EXISTS 가 그 자리다.)
       sql: `INSERT INTO push_tokens (id, user_id, token, platform, created_at, updated_at)
-            VALUES (?, ?, ?, ?, datetime('now'), datetime('now'))
+            SELECT ?, ?, ?, ?, datetime('now'), datetime('now')
+            WHERE EXISTS (SELECT 1 FROM users WHERE id = ? AND deletion_status = 'active')
             ON CONFLICT(user_id, token) DO UPDATE SET
               platform = excluded.platform,
               updated_at = datetime('now')`,
-      args: [crypto.randomUUID(), userPk, token, platform],
+      args: [crypto.randomUUID(), userPk, token, platform, userPk],
     },
   ];
 }
