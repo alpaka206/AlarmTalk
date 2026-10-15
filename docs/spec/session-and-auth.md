@@ -136,8 +136,10 @@ JWT 는 유한한 숫자 만료 시각이 필수이고, 현재 시각이 `exp` �
 ## 탈퇴 파기 — 서버가 지우는 것과 남기는 것
 
 탈퇴 신청(`POST /user/me/deletion`)은 계정을 `pending_deletion` 으로 두고 30일 뒤 크론이
-파기한다(`index.ts` 의 유예 파기 — 틱당 2건). 즉시 삭제(`DELETE /user/me`)도 같은 두 함수를
-같은 순서로 부른다: `pseudonymizeBillingForRetention` → `purgeUserAccount`(한 쓰기 트랜잭션).
+파기한다(`index.ts` 의 유예 파기 — 틱당 2건). 부르는 두 함수: `pseudonymizeBillingForRetention` →
+`purgeUserAccount`(한 쓰기 트랜잭션). ⚠ **즉시 삭제(`DELETE /user/me`)는 없다**(2026-10-15 삭제) — 두 앱은 2026-06 부터
+유예 탈퇴만 썼고, 남겨 두면 유예·철회 규칙(다시 로그인하면 철회 · 파기 직전 재확인)을 우회하는 두 번째 파기 경로가 되어
+경합을 하나씩 더 만들었다(코덱스 #904). 되살리지 말 것.
 처리방침의 약속은 "서버 데이터를 영구 삭제하되, 법정 보존 결제 기록만 가명처리해 분리
 보관한다" 이다(`docs/legal/privacy-policy.ko.md` 3장).
 
@@ -209,6 +211,13 @@ pepper 로 가명 보존 기록까지 곧장 이어져, 분리 보관을 무너�
   최선 노력이다 — iOS 무음 푸시는 배달이 보장되지 않고 강제 종료한 앱은 깨우지 않는다. 옛 앱은 모르는 종류라 무시한다.
   ⚠ 유예 화면·철회 버튼을 되살리지 말 것. 워커가 이 403 을 '성공으로 끝내기' 로 따로 다루던 시도는 입력을 든
   작업(목소리 교체 신호)·요금제 대조를 잃는 땜질을 줄줄이 불렀다(#901~#903).
+- **떠나기는 기다린 뒤마다 그 세션이 아직 같은지 다시 본다**(코덱스 #904). 정리는 기다리는 단계가 여럿이라(푸시 등록
+  확인 내리기 · 알람 소유자 새기기 · 알람 끄기) 그 사이 같은 계정으로 다시 로그인하면 **새 세션**의 알람·설정에 닿는다.
+  iOS 는 단계마다 토큰을 다시 보고 정리하는 동안 화면을 잠그며(`isBusy`), 안드로이드 백그라운드판은 알람 잠금 **안에서**
+  알람을 건드리기 전에 본다(`detachAlarmsOnSignOut` 의 `proceedInsideLock`).
+- **iOS 도 어느 요청이든 403 `ACCOUNT_PENDING_DELETION` 을 받으면 떠난다** — 통신 계층이 알리고
+  (`AlarmTalkAPI.accountPendingDeletionNotification`) 뷰모델이 그 토큰의 세션이면 정리한다. 전경의 `refreshUser` 만 보면
+  무음 푸시를 놓친 기기의 백그라운드 동기화가 받은 403 은 재시도로만 흘러 알람이 남는다.
 - **안드로이드는 어느 요청이든 403 `ACCOUNT_PENDING_DELETION` 을 받으면 떠난다** — 응답 쪽 한 곳(`AlarmTalkApiClient` 의
   인터셉터 → `UnauthorizedHandler.onAccountPendingDeletion`). 계정 확인(`checkAccountStatus`)은 세션 키가 바뀔 때만 돌아,
   프로세스가 살아 있는 채 전경으로 돌아오면 닿지 않는다(코덱스 #904). iOS 는 전경 복귀마다 `refreshUser` 가 돈다.
@@ -460,7 +469,7 @@ iOS는 네트워크/5xx/응답 해석 실패와 구서버의 `NO_PENDING_DELETIO
 | 401 중앙 처리 | — | `UnauthorizedAuthenticator` | `AlarmTalkAPI.unauthorizedNotification`(**실패한 토큰을 싣는다**) → `AuthViewModel.handleUnauthorized` |
 | 즉시 폐기 | `authMiddleware` 의 `token_epoch` 비교 | — | — |
 | 탈퇴 취소 뒤 푸시 재등록 | `authMiddleware` 탈퇴 대기 허용 경로·`user.ts` 탈퇴 취소 | 로그인(`onSignedIn`) → `registerCurrentToken` — 철회는 로그인 자체다 | `AuthViewModel.prepareAccountRecovery` → `PushNotificationCoordinator.prepareAccountRecovery`를 await한 뒤 상태 확정 → `onAccountRecovered` → `start`(launch에서 연결) |
-| 탈퇴 파기 범위(남는 것 셋뿐) | `lib/account-deletion.ts` `purgeUserAccount`(유예 파기 `index.ts`·즉시 삭제 `user.ts` 공용) · 회귀 `test/account-purge-residue.test.ts` | — | — |
+| 탈퇴 파기 범위(남는 것 셋뿐) | `lib/account-deletion.ts` `purgeUserAccount`(유예 파기 `index.ts` — 즉시 삭제 경로는 없다) · 회귀 `test/account-purge-residue.test.ts`·`test/compliance-verify.test.ts`(크론과 같은 두 함수) | — | — |
 | 그룹 주인 탈퇴 — 멤버 등급 통지 | `purgeUserAccount` 가 같은 트랜잭션에서 `pending_plan_notifications` 에 적재 → 커밋 뒤 `sendPlanNotificationsNow`(`user.ts`) · 1분 전용 크론 홀수 분 `runPlanNotificationDrainTurn`(`index.ts`) → `notifyBillingStateChanged` · 회귀 `test/account-purge-plan-push.test.ts`·`test/pending-plan-notifications.test.ts` | 기존 `plan_changed` 처리 | 기존 `plan_changed` 처리 |
 | 탈퇴 취소 응답 유실·재확인 | `user.ts` DELETE 멱등 처리(이미 active는 무변경 성공) | — (철회 버튼이 없다) | `cancelAccountDeletion` 재확인·`refreshUser` 전환 감지 → `completeAccountRecovery` |
 | 인증 코드 판정(가장 새 것 하나 — 같은 초면 나중에 넣은 것 · 10분 · 틀린 5번 → 429 — 상한 확인과 세기는 한 문장이고 맞는 코드도 지난다(+0) · 다시 받기 60초·하루 10번은 보내지 않는 성공 · 간격은 가장 새 코드만 붙잡는다 · 상한에 닿았거나 쓴 코드는 간격을 붙잡지 않는다 · 쓰면 그 주소·용도의 쓰지 않은 코드가 모두 죽는다) | `routes/auth.ts` 의 `checkEmailVerificationCode`(`/email-code/verify`·`/register`·`/password-reset/confirm` 공용 — 읽기는 `ORDER BY created_at DESC, rowid DESC`, 대조 뒤 상한 확인과 세기는 `UPDATE … SET attempts = attempts + ? WHERE id = ? AND attempts < ?` 한 문장 — 0행이면 맞는 코드도 429)·`shouldSkipEmailCodeSend`(`/email-code`·`/password-reset` 공용 — 간격·하루 상한. 간격은 쓰지 않은 줄 가운데 판정과 같은 순서의 가장 새 것 하나만 본다)·`consumeEmailVerificationCodes`(`/register`·`/password-reset/confirm` 이 성공한 뒤 — 주소·용도의 쓰지 않은 줄 전부를 UPDATE 한 문장으로. 인증 확인은 부르지 않는다) · 숫자는 `lib/email-verification.ts`(`EMAIL_VERIFICATION_TTL_SECONDS`·`EMAIL_VERIFICATION_MAX_ATTEMPTS`·`EMAIL_VERIFICATION_RESEND_COOLDOWN_SECONDS`·`EMAIL_VERIFICATION_DAILY_CAP`) · `test/auth.test.ts`(「다시 받기 간격」 — 상한에 닿은 코드·쓴 코드는 10초 만에도 새 코드, 4번 틀린 코드는 간격을 붙잡는다, 하루 상한은 그대로 · 「코드를 쓰면…」 — 소모 문장의 대상·인자 · 「POST /auth/email-code/verify」 — 상한 문장의 인자(틀리면 +1, 맞으면 +0)·0행이면 맞는 코드도 429) · `test/auth-email-code-consume.test.ts`(진짜 SQLite — 새 코드로 마친 뒤 앞 코드는 400, 다른 용도·주소의 코드는 그대로, 인증 확인은 쓰지 않는다) · `test/auth-email-code-attempts.test.ts`(진짜 SQLite — 읽은 뒤 상한이 찬 틀린 코드·맞는 코드는 429·횟수 5 그대로 / 같은 순간 열 번 틀리면 400 다섯·429 다섯 / 네 번 틀린 뒤 인증 확인과 가입이 둘 다 통과 / 같은 순간 두 번 보낸 다시 받기의 앞 코드는 간격을 붙잡지 않는다) | 응답 소비 | 응답 소비 |
