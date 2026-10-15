@@ -13,9 +13,13 @@
 여러 릴리스를 나갔다 — 토큰 롤링 갱신·못 끊은 예약 회수·목소리 접근권 재확인·push/pull·
 날씨 variant·리컨사일러가 전부 죽은 코드였는데 크래시 말고는 아무 신호가 없었다.
 
-검사하는 것 두 가지:
+검사하는 것 세 가지:
   1. `BGTaskScheduler...register(` 의 런치 핸들러 클로저에 `@Sendable` 이 있는가
   2. `expirationHandler = {` 에 `@Sendable` 이 있는가 (시스템이 어느 큐에서든 부른다)
+  3. `TimelineView(...) {`·`Canvas {` 의 클로저에 `@Sendable` 이 있는가 — 같은 사고의 SwiftUI 판이다.
+     iOS 27 의 SwiftUI 는 애니메이션 타임라인을 **그리기 전용 스레드**(`ViewGraphDisplayLink.asyncThread`)에서
+     갱신하기도 해서, `body` 안에서 메인 액터를 물려받은 클로저가 그 자리에서 트랩했다(2026-10-14 1.2.13,
+     같은 이슈 ALARMTALK-IOS-4 — `Views/Auth/AuthBackdrop.swift` 의 `SunriseScene`).
 
 격리를 건너는 일은 클로저 **안에서** `Task { @MainActor in ... }` 로 명시적으로 한다.
 
@@ -41,6 +45,8 @@ REGISTER_CALL = re.compile(r"\.register\s*\(")
 # 런치 핸들러가 열리는 자리: 인자 목록을 닫고 붙는 트레일링 클로저이거나 레이블 인자.
 HANDLER_OPEN = re.compile(r"(?:\)\s*|launchHandler:\s*)\{")
 EXPIRATION_ASSIGN = re.compile(r"expirationHandler\s*=\s*\{")
+# SwiftUI 가 메인 밖에서 부를 수 있는 클로저 — 트레일링 클로저로 여는 꼴만 본다(이 저장소의 쓰임새).
+RENDER_CLOSURE_OPEN = re.compile(r"\b(?:TimelineView\s*\([^()]*(?:\([^()]*\)[^()]*)*\)|Canvas(?:\s*\([^()]*\))?)\s*\{")
 COMMENT_START = ("//", "///", "*", "/*")
 
 # register 호출이 줄바꿈으로 갈린 경우(`BGTaskScheduler.shared` 다음 줄에 `.register(`)까지 본다.
@@ -78,6 +84,13 @@ def check_file(path: Path, problems: list[str]) -> None:
                     f"    {line.strip()}"
                 )
 
+        for opened in RENDER_CLOSURE_OPEN.finditer(line):
+            if not has_sendable(lines, index, opened.end()):
+                problems.append(
+                    f"{rel}:{index + 1}: TimelineView·Canvas 클로저에 `@Sendable` 이 없다\n"
+                    f"    {line.strip()}"
+                )
+
         if not REGISTER_CALL.search(line):
             continue
         window = "\n".join(lines[max(0, index - LOOKBACK):index + 1])
@@ -107,19 +120,20 @@ def main() -> int:
             check_file(path, problems)
 
     if problems:
-        print("BGTask 콜백이 메인 액터 격리를 물려받는다:\n")
+        print("시스템·SwiftUI 가 메인 밖에서 부르는 콜백이 메인 액터 격리를 물려받는다:\n")
         for problem in problems:
             print(f"  {problem}\n")
         print(
             "표기가 없는 클로저는 감싸는 `@MainActor` 타입의 격리를 물려받는데, 시스템은\n"
             "그 콜백을 **기본 백그라운드 큐**에서 부른다 — 배달되는 즉시 트랩한다\n"
-            "(2026-09-21 Sentry ALARMTALK-IOS-4/-7/-8).\n"
+            "(2026-09-21 Sentry ALARMTALK-IOS-4/-7/-8). TimelineView·Canvas 는 SwiftUI 가 그리기 스레드에서\n"
+            "부른다(2026-10-14 같은 이슈) — 그리는 코드는 `View` 밖의 타입에 둔다(`SunriseSceneRenderer`).\n"
             "클로저를 `{ @Sendable ... in` 으로 열고, 메인 액터로 건너뛰는 일은 그 안에서\n"
             "`Task { @MainActor in ... }` 로 명시적으로 할 것 — `BackgroundSyncTask.handleLaunch` 가 그 꼴이다."
         )
         return 1
 
-    print("BGTask 콜백 격리 검사 통과")
+    print("BGTask·SwiftUI 렌더 콜백 격리 검사 통과")
     return 0
 
 
