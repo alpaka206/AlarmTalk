@@ -52,23 +52,11 @@ class SignOutWindowOpensBeforeServerCallTest {
     }
 
     @Test
-    fun `즉시 탈퇴도 서버를 부르기 전에 창을 연다`() {
-        assertOrderInBody(
-            source = authActions,
-            header = "internal fun MainViewModel.deleteAccount(",
-            first = "markSignOutInProgress()",
-            second = "api.deleteAccount(",
-            why = "계정 행이 지워지는 순간부터 떠 있던 요청이 전부 401 로 돌아온다.",
-        )
-    }
-
-    @Test
     fun `서버 호출이 실패하면 표시를 도로 내린다`() {
-        // 신청·삭제가 실패하면 사용자는 그대로 로그인 상태다. 표시를 남겨 두면 그 60초 동안의
+        // 신청이 실패하면 사용자는 그대로 로그인 상태다. 표시를 남겨 두면 그 60초 동안의
         // **진짜** 자동 만료가 마커를 못 남겨, 업데이트 후 재예약이 이 기기의 알람을 잃는다.
         listOf(
             "internal fun MainViewModel.requestAccountDeletion(",
-            "internal fun MainViewModel.deleteAccount(",
         ).forEach { header ->
             val body = bodyOf(authActions, header)
             assertTrue(

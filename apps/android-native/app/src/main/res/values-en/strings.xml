@@ -297,9 +297,6 @@
     <string name="hs_perm_banner_exact_alarm">Without exact alarm permission, alarms may not ring on time</string>
     <string name="hs_perm_banner_full_screen">Without lock screen permission, alarms will not appear on the lock screen</string>
     <string name="hs_alarm_row_date_voice">%1$s · %2$s</string>
-    <string name="msg_account_delete_failed">Couldn\'t delete your account.</string>
-    <string name="msg_account_deleted">Your account has been deleted.</string>
-    <string name="msg_account_deleted_google_unlink_failed">Your account was deleted, but we couldn\'t unlink your Google account.</string>
     <string name="msg_account_deletion_request_failed">Couldn\'t submit your account deletion request.</string>
     <string name="msg_account_left_pending_deletion">This account is scheduled for deletion, so you have been signed out on this device too. Sign in again to cancel the deletion.</string>
     <string name="msg_account_deletion_requested">Your account deletion request has been received. You can cancel it by logging back in within 30 days.</string>

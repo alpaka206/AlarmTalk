@@ -779,45 +779,6 @@ internal fun MainViewModel.onAccountPromptSettingsReceived(userId: String, setti
 private fun isValidTimeText(value: String): Boolean =
     Regex("""^([01]\d|2[0-3]):[0-5]\d$""").matches(value)
 
-internal fun MainViewModel.deleteAccount(revokeGoogleAccess: suspend () -> Unit = {}) {
-    val session = sessionOrMessage(R.string.msg_login_required_to_use) ?: return
-    val authorization = com.alarmtalk.app.network.AlarmTalkApiClient.bearer(session.token)
-    val shouldRevokeGoogle = session.provider == AuthSessionStore.PROVIDER_GOOGLE
-    viewModelScope.launch {
-        authBusy = true
-        // 즉시 탈퇴는 계정 행 자체를 지운다 — 그 순간부터 떠 있던 워커 요청이 전부 401 로
-        // 돌아온다(로그아웃의 `token_epoch` 와 같은 자리다). 서버를 부르기 전에 표시를 세워
-        // 그 401 들이 '자동 만료' 마커를 남기지 못하게 한다.
-        markSignOutInProgress()
-        try {
-            api.deleteAccount(authorization)
-            val revokeError = if (shouldRevokeGoogle) {
-                runCatching { revokeGoogleAccess() }.exceptionOrNull()
-            } else {
-                null
-            }
-            if (revokeError != null) {
-                Log.w(TAG, "Failed to revoke Google account access after account deletion", revokeError)
-            }
-            clearCurrentAccessSnapshot()
-            clearSignedInSession(departingUserId = session?.user?.id)
-            dismissDeleteAccount()
-            message = if (revokeError == null) {
-                getApplication<android.app.Application>().getString(R.string.msg_account_deleted)
-            } else {
-                getApplication<android.app.Application>().getString(R.string.msg_account_deleted_google_unlink_failed)
-            }
-        } catch (error: Throwable) {
-            AlarmTalkLog.reportError("Failed to delete account", error)
-            // 삭제가 실패했으면 세션은 그대로다 — 위 유예 신청과 같은 이유로 표시를 내린다.
-            endSignOutMarker()
-            message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_account_delete_failed))
-        } finally {
-            authBusy = false
-        }
-    }
-}
-
 // 앱 시작 시 백엔드 최소지원버전을 조회한다. 설치 버전이 그 미만이면 updateRequired=true 로
 // 두어 AlarmTalkApp 이 업데이트 차단 화면을 띄운다. (로그인 여부와 무관하게 동작)
 // 네트워크 실패 시에는 앱 사용을 막지 않는다.

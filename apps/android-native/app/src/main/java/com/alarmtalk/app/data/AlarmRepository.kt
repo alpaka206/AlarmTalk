@@ -636,13 +636,18 @@ class AlarmRepository(
      *   락을 기다리던 복원이 깨어났을 때 prefs 가 아직 '로그인됨' 이면, 방금 취소한 예약을
      *   그 계정 것으로 보고 전부 되살린다. 로그인 화면 뒤에서 끌 수 없는 알람이 울린다
      *   (Codex #666 P1). 취소와 세션 전환은 한 임계구역 안에서 끝나야 한다.
+     * @param proceedInsideLock 락을 잡은 **뒤**, 알람을 건드리기 **전에** 다시 보는 조건. false 면 아무것도 하지 않고 -1 을
+     *   돌려준다. 백그라운드 떠나기(`leaveAccountAfterPendingDeletion`)가 "그 토큰이 아직 저장된 세션인가" 를 여기서
+     *   본다 — 락 밖에서만 보면 락을 기다리는 사이 같은 계정으로 다시 로그인한 **새 세션**의 알람을 끈다(코덱스 #904).
      */
     suspend fun detachAlarmsOnSignOut(
         signedOutUserId: String?,
+        proceedInsideLock: suspend () -> Boolean = { true },
         clearSessionInsideLock: suspend () -> Unit = {},
     ): Int =
         // 복원과 직렬화한다 — 이유는 [restoreMutex] 주석 참고.
         restoreMutex.withLock {
+            if (!proceedInsideLock()) return@withLock -1
             val detached = detachAlarmsOnSignOutLocked(signedOutUserId)
             val cleared = runCatching { clearSessionInsideLock() }
                 .onFailure { error -> AlarmTalkLog.reportError("Failed to clear session inside restore lock", error) }

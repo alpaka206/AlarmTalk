@@ -315,9 +315,6 @@
     <string name="hs_perm_banner_exact_alarm">정확한 알람 권한을 허용하지 않으면 제때 울리지 않을 수 있어요</string>
     <string name="hs_perm_banner_full_screen">잠금 화면 알람 권한을 허용하지 않으면 잠금 화면에 뜨지 않아요</string>
     <string name="hs_alarm_row_date_voice">%1$s · %2$s 목소리</string>
-    <string name="msg_account_delete_failed">회원 탈퇴에 실패했어요</string>
-    <string name="msg_account_deleted">회원 탈퇴가 완료되었어요</string>
-    <string name="msg_account_deleted_google_unlink_failed">회원 탈퇴는 완료되었지만 Google 연결 해제에 실패했어요</string>
     <string name="msg_account_deletion_request_failed">회원 탈퇴 신청에 실패했어요</string>
     <string name="msg_account_left_pending_deletion">탈퇴를 신청한 계정이라 이 기기에서도 로그아웃했어요. 다시 로그인하면 탈퇴가 취소돼요.</string>
     <string name="msg_account_deletion_requested">회원 탈퇴가 접수됐어요. 30일 안에 다시 로그인하면 취소할 수 있어요.</string>

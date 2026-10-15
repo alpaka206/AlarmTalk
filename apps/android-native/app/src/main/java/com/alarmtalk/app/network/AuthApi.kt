@@ -3,7 +3,6 @@ package com.alarmtalk.app.network
 import com.google.gson.annotations.JsonAdapter
 import com.google.gson.annotations.SerializedName
 import retrofit2.http.Body
-import retrofit2.http.DELETE
 import retrofit2.http.GET
 import retrofit2.http.Header
 import retrofit2.http.PATCH
@@ -206,10 +205,6 @@ data class UpdateProfileResponse(
     @SerializedName("dynamic_prompt_settings") val dynamicPromptSettings: DynamicPromptSettings? = null,
 )
 
-data class DeleteAccountResponse(
-    val success: Boolean,
-)
-
 data class LogoutResponse(
     val success: Boolean = false,
 )
@@ -344,8 +339,6 @@ interface AuthApi {
         @Body request: UpdateProfileRequest,
     ): UpdateProfileResponse
 
-    @DELETE("user/me")
-    suspend fun deleteAccount(@Header("Authorization") authorization: String): DeleteAccountResponse
 
     @POST("user/me/deletion")
     suspend fun requestAccountDeletion(

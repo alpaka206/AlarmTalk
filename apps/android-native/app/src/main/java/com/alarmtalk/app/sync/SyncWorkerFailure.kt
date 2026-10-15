@@ -181,12 +181,16 @@ internal suspend fun leaveAccountAfterPendingDeletion(
         runCatching { sessionStore.clearSessionExpiredOwner() }
         runCatching {
             com.alarmtalk.app.data.AlarmAppContainer.repository(context)
-                .detachAlarmsOnSignOut(userId.takeIf { it.isNotBlank() }) {
-                    if (workerMayEndSession(usedToken, sessionStore.read()?.token)) {
+                .detachAlarmsOnSignOut(
+                    signedOutUserId = userId.takeIf { it.isNotBlank() },
+                    // ⚠ **락 안에서, 알람을 건드리기 전에** 다시 본다(코덱스 #904) — 락을 기다리는 사이 같은 계정으로
+                    //   다시 로그인했으면 그 새 세션의 알람을 끄지 않는다.
+                    proceedInsideLock = { workerMayEndSession(usedToken, sessionStore.read()?.token) },
+                    clearSessionInsideLock = {
                         sessionStore.clear()
                         left = true
-                    }
-                }
+                    },
+                )
         }.onFailure { error -> AlarmTalkLog.reportError("Leaving account from $workerName failed", error) }
         if (left && userId.isNotBlank()) {
             runCatching { com.alarmtalk.app.data.DefaultVoicePreferenceStore(context).clear(userId) }

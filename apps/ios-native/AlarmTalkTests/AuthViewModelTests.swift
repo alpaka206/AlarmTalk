@@ -1556,33 +1556,6 @@ final class AuthViewModelTests: XCTestCase {
         XCTAssertNil(vm.lastNetworkError)
     }
 
-    func test_deleteAccount_clearsOnlyCurrentUserAccessSnapshot() async {
-        let suiteName = "AuthViewModelTests-\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suiteName)!
-        defaults.removePersistentDomain(forName: suiteName)
-        defer { defaults.removePersistentDomain(forName: suiteName) }
-
-        let snapshotStore = AccessSnapshotStore(defaults: defaults)
-        snapshotStore.patchWithoutOwnershipCheck("user-1") { $0.subscriptionResponse = subscription(planKey: "family") }
-        snapshotStore.patchWithoutOwnershipCheck("user-2") { $0.subscriptionResponse = subscription(planKey: "personal") }
-
-        let api = MockAuthAPI()
-        api.deleteAccountResult = .success(DeleteAccountResponse(success: true))
-        let vm = AuthViewModel(
-            api: api,
-            appleCredentialProvider: MockAppleCredentialProvider(),
-            accessSnapshotStore: snapshotStore
-        )
-        vm._setSessionForTesting(makeEmailSession())
-
-        await vm.deleteAccount()
-
-        XCTAssertNil(vm.session)
-        XCTAssertEqual(api.deleteAccountCallCount, 1)
-        XCTAssertNil(snapshotStore.read(userID: "user-1").subscriptionResponse)
-        XCTAssertEqual(snapshotStore.read(userID: "user-2").subscriptionResponse?.plan?.key, "personal")
-    }
-
     func test_requestAccountDeletion_signsOutAndClearsSnapshot() async {
         let suiteName = "AuthViewModelTests-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
@@ -1699,6 +1672,67 @@ final class AuthViewModelTests: XCTestCase {
 
         XCTAssertNil(vm.session)
         XCTAssertEqual(cleared, 1)
+    }
+
+    /// 어느 요청이든 403 `ACCOUNT_PENDING_DELETION` 을 받으면(백그라운드 동기화 포함) 통신 계층이 알리고, 그 토큰의
+    /// 세션이면 떠난다(코덱스 #904 — 전경의 `refreshUser` 만 보면 무음 푸시를 놓친 기기의 알람이 남는다).
+    func test_pendingDeletionNotificationFromAnyRequestLeavesTheAccount() async {
+        let previous = KeychainStore.readSession()
+        defer {
+            if let previous { try? KeychainStore.saveSession(previous) } else { KeychainStore.deleteSession() }
+            SessionExpiryStore.clear()
+        }
+        let vm = AuthViewModel(
+            api: MockAuthAPI(),
+            appleCredentialProvider: MockAppleCredentialProvider(),
+            accessSnapshotStore: AccessSnapshotStore(defaults: UserDefaults(suiteName: "notify-\(UUID().uuidString)")!)
+        )
+        let session = makeEmailSession()
+        vm._setSessionForTesting(session)
+        var stopped: [String?] = []
+        vm.onLeaveAccountStopAlarms = { userID in stopped.append(userID); return true }
+
+        // 옛 토큰의 403 은 지금 세션을 건드리지 않는다.
+        NotificationCenter.default.post(
+            name: AlarmTalkAPI.accountPendingDeletionNotification, object: nil,
+            userInfo: [AlarmTalkAPI.unauthorizedTokenKey: "some-old-token"]
+        )
+        NotificationCenter.default.post(
+            name: AlarmTalkAPI.accountPendingDeletionNotification, object: nil,
+            userInfo: [AlarmTalkAPI.unauthorizedTokenKey: session.token]
+        )
+        for _ in 0..<100 where vm.session != nil { await Task.yield() }
+
+        XCTAssertNil(vm.session)
+        XCTAssertEqual(stopped, [session.user.id], "한 번만, 지금 세션의 계정만 정리한다")
+    }
+
+    /// 푸시 등록 확인을 내리는 첫 기다림 사이에 다시 로그인했으면 알람·설정 정리를 시작하지도 않는다(코덱스 #904).
+    func test_leaveForPendingDeletion_stopsBeforeAlarmCleanupWhenSessionChangedEarly() async {
+        let previous = KeychainStore.readSession()
+        defer {
+            if let previous { try? KeychainStore.saveSession(previous) } else { KeychainStore.deleteSession() }
+        }
+        let api = MockAuthAPI()
+        api.meResult = .failure(
+            APIError.server(status: 403, message: "Account is scheduled for deletion", errorCode: "ACCOUNT_PENDING_DELETION")
+        )
+        let vm = AuthViewModel(
+            api: api,
+            appleCredentialProvider: MockAppleCredentialProvider(),
+            accessSnapshotStore: AccessSnapshotStore(defaults: UserDefaults(suiteName: "early-\(UUID().uuidString)")!)
+        )
+        let old = makeEmailSession()
+        vm._setSessionForTesting(old)
+        let fresh = AuthSession(token: "fresh-token", user: old.user)
+        vm.onServerRemovedPushRegistration = { vm._setSessionForTesting(fresh) }
+        var stopped = 0
+        vm.onLeaveAccountStopAlarms = { _ in stopped += 1; return true }
+
+        await vm.refreshUser()
+
+        XCTAssertEqual(vm.session?.token, "fresh-token")
+        XCTAssertEqual(stopped, 0, "새 세션의 알람을 껐다")
     }
 
     /// 알람 정리를 기다리는 사이 다시 로그인했으면 새 세션을 끊지 않는다(코덱스 #904).
@@ -2079,7 +2113,6 @@ private final class MockAuthAPI: AuthAPIProviding, @unchecked Sendable {
             dynamicPromptSettings: nil
         )
     )
-    var deleteAccountResult: Result<DeleteAccountResponse, Error> = .success(DeleteAccountResponse(success: true))
     var requestAccountDeletionResult: Result<AccountDeletionResponse, Error> = .success(AccountDeletionResponse(success: true))
     var cancelAccountDeletionResult: Result<CancelDeletionResponse, Error> = .success(CancelDeletionResponse(success: true))
     var beforeCancelAccountDeletionResponse: (@MainActor @Sendable () -> Void)?
@@ -2088,7 +2121,6 @@ private final class MockAuthAPI: AuthAPIProviding, @unchecked Sendable {
     private(set) var meCallCount = 0
     private(set) var updateProfileCallCount = 0
     private(set) var lastUpdateProfileRequest: UpdateProfileRequest?
-    private(set) var deleteAccountCallCount = 0
     private(set) var requestAccountDeletionCallCount = 0
     private(set) var cancelAccountDeletionCallCount = 0
     private(set) var consentStatusCallCount = 0
@@ -2126,16 +2158,6 @@ private final class MockAuthAPI: AuthAPIProviding, @unchecked Sendable {
         let result = updateProfileResult
         await beforeUpdateProfileResponse?()
         switch result {
-        case .success(let response):
-            return response
-        case .failure(let error):
-            throw error
-        }
-    }
-
-    func deleteAccount(token: String) async throws -> DeleteAccountResponse {
-        deleteAccountCallCount += 1
-        switch deleteAccountResult {
         case .success(let response):
             return response
         case .failure(let error):
