@@ -456,6 +456,8 @@ export async function refreshWeatherRegionDaily(
   const statements: InStatement[] = [];
   let approximated = 0;
   const failedReasons = new Map<string, WeatherRegionFailure>();
+  // 한 지역이 NODATA 로 물러서 찾은 회차를 이 틱의 다른 지역이 이어 쓴다(`SourceFetchOptions.kmaRunMemo`).
+  const kmaRunMemo: { run?: { baseDate: string; baseTime: string } } = {};
   let next = 0;
   const worker = async () => {
     while (next < tasks.length) {
@@ -490,6 +492,7 @@ export async function refreshWeatherRegionDaily(
           },
           kmaServiceKey: kmaKey,
           cacheTtlSeconds: null,
+          kmaRunMemo,
         });
         if (!outcome.ok) {
           if (outcome.failure === 'budget') {

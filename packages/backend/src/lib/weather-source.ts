@@ -135,7 +135,16 @@ export type SourceFetchOptions = {
    * 없으면(cron) fetch 마다 5초. `now` 는 회차·날짜를 고르는 논리 시각이라 마감에 쓰지 않는다.
    */
   deadlineAt?: number | null;
+  /**
+   * KMA 의 '받아진 회차' 를 한 틱 안의 지역끼리 나눈다(cron 만 건다). 발표는 전국이 한꺼번에라 한 지역이 NODATA 로
+   * 물러서 찾은 회차는 다른 지역에도 그대로 맞다 — 지역마다 처음부터 다시 물러서면 그 틱의 KMA 몫(6)이 물러서기에만
+   * 쓰인다(2026-10-14 아침 슬롯 0/17, `weather-kma.ts` 의 `KMA_NODATA_MAX_STEPS`). 없으면 지역마다 최신부터 본다.
+   */
+  kmaRunMemo?: { run?: KmaRunRef };
 };
+
+/** `weather-kma.ts` 의 `KmaRun` 과 같은 모양 — 이 모듈이 어댑터를 정적으로 가져오지 않으려고 따로 둔다. */
+export type KmaRunRef = { baseDate: string; baseTime: string };
 
 /** 지역의 원천을 골라 날짜별 표본을 받는다. 던지지 않는다 — 실패는 `{ ok: false }` 로 돌아온다. */
 export async function fetchRegionSourceDays(
