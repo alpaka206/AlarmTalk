@@ -14,8 +14,13 @@ const TEXT_ENCODER = new TextEncoder();
 export type SignInDeletionOutcome =
   /** 로그인이 처음 본 탈퇴 신청을 철회했다. */
   | 'cancelled'
-  /** 바꾼 것이 없다 — 처음부터 active 였거나, 그 사이 상태가 바뀌었다(새로 신청했으면 그 신청은 그대로 둔다). */
+  /** 바꾼 것이 없다 — 처음부터 active 였고 그대로다. */
   | 'unchanged'
+  /**
+   * 로그인이 처음 읽은 뒤 계정이 바뀌었다 — 그 사이 탈퇴를 (다시) 신청했거나 세션 세대가 올랐다. 이 로그인이 서명한
+   * 토큰은 곧바로 403·401 을 받으니 성공으로 돌려주지 않는다(다시 로그인하면 새 상태를 읽고 처리한다).
+   */
+  | 'superseded'
   /** 그 사이 계정이 파기됐다 — 로그인을 성공으로 돌려주면 안 된다(다음 요청이 곧바로 `AUTH_USER_NOT_FOUND`). */
   | 'missing';
 
@@ -25,9 +30,9 @@ export type SignInDeletionOutcome =
  * 했는데, 앱의 탈퇴 안내 문구는 처음부터 "그 전에 다시 로그인하면 탈퇴를 취소할 수 있어요" 였다
  * (`docs/spec/session-and-auth.md` 「탈퇴 유예 — 다시 로그인하면 철회」).
  *
- * ⚠ **로그인이 처음 읽은 그 신청만 철회한다**(`observedRequestedAt` — 로그인 첫 조회의 `deletion_requested_at`,
- *   유예가 아니었으면 null, 코덱스 #904). 조건 없이 되돌리면, active 로 읽은 로그인이 끝나기 전에 다른 기기에서 새로
- *   낸 탈퇴 신청을 아무도 모르게 철회한다 — 신청한 사람은 성공을 받고 모든 기기가 로그아웃됐는데 파기 예약만 사라진다.
+ * ⚠ **로그인이 처음 읽은 그 상태에 묶는다**(`observed` — 로그인 첫 조회의 `deletion_requested_at`(유예가 아니면 null)과
+ *   `token_epoch`, 코덱스 #904). 조건 없이 되돌리면 active 로 읽은 로그인이 그 사이 다른 기기가 낸 새 신청을 아무도
+ *   모르게 철회하고, 철회하지 않더라도 그 사이 신청이 세대를 올렸으면 이 로그인이 서명한 토큰은 쓸 수 없다.
  * ⚠ **로그인 응답이 다 준비된 뒤 마지막에 부른다** — 실패한 로그인이 철회만 남기지 않게.
  * ⚠ **토큰 갱신(`GET /auth/me`)에서는 부르지 않는다.** 남아 있던 세션은 탈퇴 신청이 끊으므로(`POST /user/me/deletion`
  *   이 `token_epoch` 를 올린다) 철회는 언제나 사람이 자격증명을 다시 넣은 순간이다.
@@ -35,25 +40,34 @@ export type SignInDeletionOutcome =
 export async function cancelPendingDeletionOnSignIn(
   db: DbExecutor,
   userPk: string,
-  observedRequestedAt: string | null,
+  observed: { requestedAt: string | null; tokenEpoch: number },
 ): Promise<SignInDeletionOutcome> {
-  // 유예가 아니었으면 할 일이 없다 — 파기 크론은 기한이 지난 유예 행만 지우므로 그 사이 사라질 수도 없다.
-  if (!observedRequestedAt) return 'unchanged';
-  {
+  if (observed.requestedAt) {
     const res = await db.execute({
       sql: `UPDATE users
             SET deletion_status = 'active',
                 deletion_requested_at = NULL,
                 deletion_purge_at = NULL,
                 updated_at = datetime('now')
-            WHERE id = ? AND deletion_status = 'pending_deletion' AND deletion_requested_at = ?`,
-      args: [userPk, observedRequestedAt],
+            WHERE id = ? AND deletion_status = 'pending_deletion' AND deletion_requested_at = ? AND token_epoch = ?`,
+      args: [userPk, observed.requestedAt, observed.tokenEpoch],
     });
     if (res.rowsAffected > 0) return 'cancelled';
   }
-  // 0행이면 그 사이 상태가 바뀌었거나(철회·재신청) 파기 크론과 겹쳐 행이 사라졌다 — 둘을 구분한다(코덱스 #904).
-  const still = await db.execute({ sql: 'SELECT 1 FROM users WHERE id = ? LIMIT 1', args: [userPk] });
-  return still.rows.length > 0 ? 'unchanged' : 'missing';
+  const now = await db.execute({
+    sql: 'SELECT deletion_status, token_epoch FROM users WHERE id = ? LIMIT 1',
+    args: [userPk],
+  });
+  const row = now.rows[0];
+  if (!row) {
+    // 유예였던 행만 그 사이 파기될 수 있다(크론은 기한이 지난 유예 행만 지운다). active 로 읽은 행이 없으면 판단할
+    // 근거가 없으니 그대로 둔다.
+    return observed.requestedAt ? 'missing' : 'unchanged';
+  }
+  if (row.deletion_status === 'pending_deletion' || Number(row.token_epoch ?? 0) !== observed.tokenEpoch) {
+    return 'superseded';
+  }
+  return 'unchanged';
 }
 
 export function billingRetentionUntil(now: Date): Date {

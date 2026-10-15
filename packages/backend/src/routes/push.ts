@@ -43,8 +43,11 @@ export function pushRegisterStatements(
 ): InStatement[] {
   return [
     {
-      sql: 'DELETE FROM push_tokens WHERE token = ? AND user_id != ?',
-      args: [token, userPk],
+      // ⚠ 아래 INSERT 와 **같은 조건**을 건다(코덱스 #904). 유예 계정의 늦은 등록이 INSERT 는 건너뛰면서 이 DELETE 만
+      //   돌면, 그 사이 같은 기기 토큰으로 등록을 마친 다른 계정의 행을 지운다 — 그 계정은 200 을 받고도 푸시를 놓친다.
+      sql: `DELETE FROM push_tokens WHERE token = ? AND user_id != ?
+            AND EXISTS (SELECT 1 FROM users WHERE id = ? AND deletion_status = 'active')`,
+      args: [token, userPk, userPk],
     },
     {
       // ⚠ **계정이 아직 active 일 때만 적는다**(코덱스 #904). 탈퇴 신청은 같은 트랜잭션에서 그 계정의 `push_tokens` 를

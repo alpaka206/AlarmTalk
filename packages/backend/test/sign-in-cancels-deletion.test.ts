@@ -101,24 +101,29 @@ describe('로그인하면 탈퇴를 철회한다', () => {
   });
 
   it('헬퍼는 멱등이다 — 이미 active 면 아무것도 바꾸지 않는다', async () => {
-    expect(await cancelPendingDeletionOnSignIn(db, 'owner', '2026-10-01')).toBe('cancelled');
-    expect(await cancelPendingDeletionOnSignIn(db, 'owner', '2026-10-01')).toBe('unchanged');
+    expect(await cancelPendingDeletionOnSignIn(db, 'owner', { requestedAt: '2026-10-01', tokenEpoch: 0 })).toBe('cancelled');
+    expect(await cancelPendingDeletionOnSignIn(db, 'owner', { requestedAt: '2026-10-01', tokenEpoch: 0 })).toBe('unchanged');
     expect((await row('owner')).deletion_status).toBe('active');
   });
 
   it('로그인이 처음 본 그 신청만 철회한다 — 그 사이 새로 낸 신청은 그대로 둔다(코덱스 #904)', async () => {
-    // active 로 읽은 로그인(observed null)이 끝나기 전에 다른 기기가 새로 신청했다 — 쿼리도 없이 그대로 둔다.
-    expect(await cancelPendingDeletionOnSignIn(db, 'owner', null)).toBe('unchanged');
+    // active 로 읽은 로그인(observed null)이 끝나기 전에 다른 기기가 새로 신청했다 — 철회하지 않고, 이 로그인은
+    // 쓸 수 없는 토큰을 서명했으니 실패로 돌린다(superseded).
+    expect(await cancelPendingDeletionOnSignIn(db, 'owner', { requestedAt: null, tokenEpoch: 0 })).toBe('superseded');
     expect((await row('owner')).deletion_status).toBe('pending_deletion');
     // 유예로 읽었는데 그 사이 철회 → 다시 신청해 신청 시각이 바뀌었다.
     await db.execute("UPDATE users SET deletion_requested_at = '2026-10-15' WHERE id = 'owner'");
-    expect(await cancelPendingDeletionOnSignIn(db, 'owner', '2026-10-01')).toBe('unchanged');
+    expect(await cancelPendingDeletionOnSignIn(db, 'owner', { requestedAt: '2026-10-01', tokenEpoch: 0 })).toBe('superseded');
     expect((await row('owner')).deletion_status).toBe('pending_deletion');
+    // active 로 읽은 뒤 세대만 올랐다(다른 기기의 전 기기 로그아웃 등) — 이 토큰도 쓸 수 없다.
+    await db.execute("UPDATE users SET deletion_status = 'active', deletion_requested_at = NULL, token_epoch = 3 WHERE id = 'owner'");
+    expect(await cancelPendingDeletionOnSignIn(db, 'owner', { requestedAt: null, tokenEpoch: 2 })).toBe('superseded');
+    expect(await cancelPendingDeletionOnSignIn(db, 'owner', { requestedAt: null, tokenEpoch: 3 })).toBe('unchanged');
   });
 
   it('그 사이 파기됐으면 missing — 로그인은 토큰을 내주지 않는다', async () => {
     await db.execute("DELETE FROM users WHERE id = 'other'");
-    expect(await cancelPendingDeletionOnSignIn(db, 'other', '2026-10-01')).toBe('missing');
+    expect(await cancelPendingDeletionOnSignIn(db, 'other', { requestedAt: '2026-10-01', tokenEpoch: 0 })).toBe('missing');
   });
 });
 
@@ -146,8 +151,14 @@ describe('탈퇴 신청은 모든 기기의 세션과 푸시 등록을 끊는다
     await db.batch(pushRegisterStatements('owner', 'tok-late', 'android'), 'write');
     const late = await db.execute("SELECT 1 FROM push_tokens WHERE user_id = 'owner'");
     expect(late.rows).toHaveLength(0);
-    // active 계정은 그대로 적힌다.
+    // 그 늦은 등록이 같은 기기 토큰을 가진 다른 계정의 행을 지우지도 않는다.
     await db.execute("UPDATE users SET deletion_status = 'active' WHERE id = 'other'");
+    await db.execute("INSERT INTO push_tokens (id, user_id, token, platform) VALUES ('p-b', 'other', 'tok-shared', 'ios')");
+    await db.batch(pushRegisterStatements('owner', 'tok-shared', 'ios'), 'write');
+    const kept = await db.execute("SELECT user_id FROM push_tokens WHERE token = 'tok-shared'");
+    expect(kept.rows.map((r) => r.user_id)).toEqual(['other']);
+    await db.execute("DELETE FROM push_tokens WHERE user_id = 'other'");
+    // active 계정은 그대로 적힌다.
     await db.batch(pushRegisterStatements('other', 'tok-ok', 'android'), 'write');
     const ok = await db.execute("SELECT token FROM push_tokens WHERE user_id = 'other'");
     expect(ok.rows.map((r) => r.token)).toEqual(['tok-ok']);

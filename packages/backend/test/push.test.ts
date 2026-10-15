@@ -89,7 +89,9 @@ describe('POST /push/register — FCM 토큰 등록', () => {
     expect(mockDB.transactions).toEqual({ commits: 0, rollbacks: 0, closes: 0 });
     const del = mockDB.calls.find((c) => c.sql.startsWith('DELETE FROM push_tokens'));
     expect(del).toBeDefined();
-    expect(del!.args).toEqual(['fcm-token-abc', 'user-1']);
+    // 마지막 인자는 '계정이 아직 active 인가' 조건의 id 다(코덱스 #904 — INSERT 와 같은 조건).
+    expect(del!.args).toEqual(['fcm-token-abc', 'user-1', 'user-1']);
+    expect(del!.sql).toContain("deletion_status = 'active'");
     const insert = mockDB.calls.find((c) => c.sql.includes('INSERT INTO push_tokens'));
     expect(insert).toBeDefined();
     // 컨플릭트 타깃은 (user_id, token) 유지 — 배포가 마이그레이션(#71 token 전역 UNIQUE)보다

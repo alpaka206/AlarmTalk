@@ -692,14 +692,17 @@ auth.post('/login', async (c) => {
     // ⚠ **다시 로그인하면 탈퇴를 철회한다 — 응답이 다 준비된 뒤 마지막에**(`cancelPendingDeletionOnSignIn`, 코덱스 #904).
     //   토큰 서명·계정 조회·프로모 조회가 실패해 로그인이 실패로 끝났는데 철회만 남으면, 실패를 본 사람은 아직
     //   탈퇴가 진행 중인 줄 안다. 이 쓰기가 실패하면 500 — 다시 로그인하면 된다.
-    const deletionOutcome = await cancelPendingDeletionOnSignIn(
-      db,
-      String(row.id),
-      row.deletion_status === 'pending_deletion' ? row.deletion_requested_at : null,
-    );
+    const deletionOutcome = await cancelPendingDeletionOnSignIn(db, String(row.id), {
+      requestedAt: row.deletion_status === 'pending_deletion' ? row.deletion_requested_at : null,
+      tokenEpoch: Number(row.token_epoch ?? 0),
+    });
     if (deletionOutcome === 'missing') {
       // 그 사이 파기됐다 — 없는 계정의 토큰을 내주지 않는다(존재하지 않는 이메일과 같은 응답).
       return c.json(errorBody('AUTH_INVALID_CREDENTIALS', 'Invalid email or password'), 401);
+    }
+    if (deletionOutcome === 'superseded') {
+      // 그 사이 다른 기기가 탈퇴를 신청했거나 세대가 올랐다 — 이 토큰은 쓸 수 없다. 다시 로그인하면 새 상태로 처리한다.
+      return c.json(errorBody('AUTH_LOGIN_FAILED', 'Login failed'), 500);
     }
     if (deletionOutcome === 'cancelled') {
       logStructured('info', { at: 'auth.sign_in', op: 'deletion_cancelled', provider: 'email' });
@@ -863,10 +866,17 @@ auth.post('/google', async (c) => {
     // ⚠ **다시 로그인하면 탈퇴를 철회한다 — 응답이 다 준비된 뒤 마지막에**(`cancelPendingDeletionOnSignIn`, 코덱스 #904).
     //   토큰 서명·계정 조회·프로모 조회가 실패해 로그인이 실패로 끝났는데 철회만 남으면, 실패를 본 사람은 아직
     //   탈퇴가 진행 중인 줄 안다. 이 쓰기가 실패하면 500 — 다시 로그인하면 된다.
-    const deletionOutcome = await cancelPendingDeletionOnSignIn(db, userId, observedDeletionRequestedAt);
+    const deletionOutcome = await cancelPendingDeletionOnSignIn(db, userId, {
+      requestedAt: observedDeletionRequestedAt,
+      tokenEpoch,
+    });
     if (deletionOutcome === 'missing') {
       // 그 사이 파기됐다 — 없는 계정의 토큰을 내주지 않는다. 다시 시도하면 새 계정으로 들어온다.
       throw new Error('account purged during sign-in');
+    }
+    if (deletionOutcome === 'superseded') {
+      // 그 사이 다른 기기가 탈퇴를 신청했거나 세대가 올랐다 — 이 토큰은 쓸 수 없다. 다시 로그인하면 새 상태로 처리한다.
+      throw new Error('account changed during sign-in');
     }
     if (deletionOutcome === 'cancelled') {
       logStructured('info', { at: 'auth.sign_in', op: 'deletion_cancelled', provider: 'google' });
@@ -1093,10 +1103,17 @@ auth.post('/apple', async (c) => {
     // ⚠ **다시 로그인하면 탈퇴를 철회한다 — 응답이 다 준비된 뒤 마지막에**(`cancelPendingDeletionOnSignIn`, 코덱스 #904).
     //   토큰 서명·계정 조회·프로모 조회가 실패해 로그인이 실패로 끝났는데 철회만 남으면, 실패를 본 사람은 아직
     //   탈퇴가 진행 중인 줄 안다. 이 쓰기가 실패하면 500 — 다시 로그인하면 된다.
-    const deletionOutcome = await cancelPendingDeletionOnSignIn(db, userId, observedDeletionRequestedAt);
+    const deletionOutcome = await cancelPendingDeletionOnSignIn(db, userId, {
+      requestedAt: observedDeletionRequestedAt,
+      tokenEpoch,
+    });
     if (deletionOutcome === 'missing') {
       // 그 사이 파기됐다 — 없는 계정의 토큰을 내주지 않는다. 다시 시도하면 새 계정으로 들어온다.
       throw new Error('account purged during sign-in');
+    }
+    if (deletionOutcome === 'superseded') {
+      // 그 사이 다른 기기가 탈퇴를 신청했거나 세대가 올랐다 — 이 토큰은 쓸 수 없다. 다시 로그인하면 새 상태로 처리한다.
+      throw new Error('account changed during sign-in');
     }
     if (deletionOutcome === 'cancelled') {
       logStructured('info', { at: 'auth.sign_in', op: 'deletion_cancelled', provider: 'apple' });
