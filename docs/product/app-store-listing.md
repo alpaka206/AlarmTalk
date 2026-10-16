@@ -239,7 +239,7 @@ Start the day with a familiar voice. Default-voice and recorded alarms are free;
 Apple 표준 사용권 계약(EULA): https://www.apple.com/legal/internet-services/itunes/dev/stdeula/
 ```
 
-### en-US (3720/4000)
+### en-US (3715/4000)
 
 ```text
 Wake up to a voice you love.
@@ -253,7 +253,7 @@ No math, no shaking.
 ■ Free
 • Repeating or one-time alarms
 • Four default voices speak the app language (English, Korean or Japanese), or use an alarm sound
-• Messages: Weather (the day's weather, from rain to poor air; pick a region in Korea, Japan or the US), Fortune (for fun, from gender, birth date and time), Encouragement and Meds (each ring plays the next prepared one)
+• Messages: Weather (the day's weather, from rain to poor air; regions in Korea, Japan and the US), Fortune (for fun, from gender, birth date and time), Encouragement and Meds (each ring plays the next prepared one)
 • Recorded alarm: up to 30 seconds per alarm, played exactly as recorded; it can't read other text
 • Turn off on holidays (incl. substitute and temporary holidays; Korea, Japan or US), snooze, voice volume
 
@@ -382,7 +382,7 @@ Apple 標準使用許諾契約 (EULA): https://www.apple.com/legal/internet-serv
 ```diff
 -• Free: default voices read messages like weather and fortune, and a recording plays exactly as recorded.
 +• Free: default voices read messages like fortune and encouragement, and a recording plays exactly as recorded.
--• Messages: Weather (the day's weather, from rain to poor air; pick a region in Korea, Japan or the US), Fortune (for fun, from gender, birth date and time), Encouragement and Meds (each ring plays the next prepared one)
+-• Messages: Weather (the day's weather, from rain to poor air; regions in Korea, Japan and the US), Fortune (for fun, from gender, birth date and time), Encouragement and Meds (each ring plays the next prepared one)
 +• Messages include Fortune (for fun, from gender, birth date and time), Encouragement and Meds (each ring plays the next prepared one)
 -• Wake-up, weather, fortune, encouragement and meds messages in that voice are made in advance on our servers and downloaded to your phone, tailored to who the voice is to you and what it calls you (both optional)
 +• Wake-up, fortune, encouragement and meds messages in that voice are made in advance on our servers and downloaded to your phone, tailored to who the voice is to you and what it calls you (both optional)

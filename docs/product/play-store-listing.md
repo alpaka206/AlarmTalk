@@ -9,15 +9,15 @@ Play Console 에 올리는 값의 원본이다. 콘솔을 고칠 때는 이 파�
   `■ 이름: 설명`(ja 는 전각 `：`), 하위 항목은 `◦` 로 쓴다. 규칙은 [`app-store-listing.md`](app-store-listing.md) 와 같다.
 - Play 등록정보는 앱 버전과 무관하게 바꿀 수 있다 — App Store 와 달리 새 버전을 기다리지 않는다.
 - 앱 화면 언어 지원 문장(ko·ja 「이용 안내」 마지막 줄)은 번역을 포함한 다음 Android 버전이 게재된 뒤에만 참이다.
-  그래서 그 버전 기준인 (B) 에만 둔다. 지금 올리는 INTERIM 과 Android 30 기준인 (A) 에는 넣지 않는다.
+  그래서 (B) 에만 둔다(2026-10-16 부터 Play 게시본). 이력인 INTERIM·(A) 에는 없다.
 
 ## 지금 상태 (2026-10-16)
 
 - **게재 중: 34 (1.2.14)** — 프로덕션 `RELEASE_LIFECYCLE_STATE_PUBLISHED`(2026-10-16 Play Developer API 로 확인).
-- **등록정보는 (B)** 다(2026-10-16 commit — 제목·짧은 설명 (A)·(B)·전체 설명 (B), 세 언어. 다시 읽어 글자 수 2984·3824·2836
+- **등록정보는 (B)** 다(2026-10-16 commit — 제목·짧은 설명 (A)·(B)·전체 설명 (B), 세 언어. 다시 읽어 글자 수 2984·3819·2836
   이 이 파일과 같음을 확인). W 는 같은 날 prod 로 확인했다 — 한국 17·일본 47·미국 69 지역 모두 공식 예보가 들어와 있다.
   (B) 의 날씨 지역 문장은 1.2.11 부터 앱이 나라별 지역 목록을 주므로 '국내 주요 9개 도시' 에서 '대한민국·일본·미국의 지역 목록'
-  으로 고쳐 올렸다.
+  으로 고쳐 올렸다. 영어는 R1·R2 를 붙여도 4000 자 안이 되게 'regions in Korea, Japan and the US' 로 줄였다(코덱스 #915).
 
 ## 판과 게시 조건
 
@@ -37,7 +37,9 @@ Play Console 에 올리는 값의 원본이다. 콘솔을 고칠 때는 이 파�
     없음), ja 는 일본 도시 프리셋 8개(`東京` 등 — 나라 값은 `大韓民国` 으로 보낸다). 2026-09-30 로컬 실행에서
     ja `東京` 프리셋은 해석에 실패했고, en 직접 입력은 입력 형식에 따라 다른 지점이 골라졌다(`New York` → 영국
     요크). 확인되지 않은 언어는 INTERIM 을 유지한다.
-  - (B) 는 세 언어 모두 국내 9개 프리셋(보내는 값이 같다)으로 확인한다.
+  - (B) 는 앱이 지금 주는 **나라 → 지역 목록 전부**(대한민국 17·일본 47·미국 69, `@alarmtalk/shared` 의 `WeatherRegions`)로
+    확인한다 — prod `weather_region_daily_official` 에 모든 지역의 다가오는 날짜 예보가 있는지 본다(2026-10-16 확인).
+    목록이 늘면 그 지역까지 본다. (옛 판은 국내 9개 프리셋으로 확인했다 — 1.2.11 전의 지역 고르기다.)
 - **R1 · R2 — 앱 해지·환불 문장.** 앱 안 해지는 코드로만 확인했고 운영에서 실행해 본 적이 없다. Google Play 로
   직접 결제한 구독은 Play `cancel` 이 성공한 뒤에만 '종료일에 해지' 를, `revoke`(비례 환불)가 성공한 뒤에만
   '지금 해지' 를 반영하고, 실패하면 502 로 Play 에서 해지하라고 안내한다. 코드로 받은 이용권(초대 코드, 폐지 전의 선물·프로모 코드)은 환불이 없고,
@@ -340,7 +342,7 @@ Support: https://alarm-talk.com/en/contact/
 고객 지원: https://alarm-talk.com/contact/
 ```
 
-### en-US (3824/4000)
+### en-US (3819/4000)
 
 ```text
 Wake up to a voice you love.
@@ -354,7 +356,7 @@ No math, no shaking.
 ■ Free
 • Repeating or one-time alarms
 • Four default voices speak the app language (English, Korean or Japanese), or use an alarm sound
-• Messages: Weather (the day's weather, from rain to poor air; pick a region in Korea, Japan or the US), Fortune (for fun, from gender, birth date and time), Encouragement and Meds (each ring plays the next prepared one)
+• Messages: Weather (the day's weather, from rain to poor air; regions in Korea, Japan and the US), Fortune (for fun, from gender, birth date and time), Encouragement and Meds (each ring plays the next prepared one)
 • Recorded alarm: up to 30 seconds per alarm, played exactly as recorded; it can't read other text
 • Turn off on holidays (incl. substitute and temporary holidays; Korea, Japan or US), snooze, voice volume
 
@@ -489,7 +491,7 @@ Support: https://alarm-talk.com/en/contact/
 **en-US** (결과 3783/4000)
 
 ```diff
--• Messages: Weather (the day's weather, from rain to poor air; pick a region in Korea, Japan or the US), Fortune (for fun, from gender, birth date and time), Encouragement and Meds (each ring plays the next prepared one)
+-• Messages: Weather (the day's weather, from rain to poor air; regions in Korea, Japan and the US), Fortune (for fun, from gender, birth date and time), Encouragement and Meds (each ring plays the next prepared one)
 +• Messages: Weather (the day's weather, from rain to poor air), Fortune (for fun, from gender, birth date and time), Encouragement and Meds (each ring plays the next prepared one)
 ```
 
@@ -557,8 +559,8 @@ R2 (100자)
 | 전체 설명 — (A) | 4000 | 2954 | 3783 | 2785 |
 | 전체 설명 — (A) + R1 | 4000 | 3007 | 3843 | 2827 |
 | 전체 설명 — (A) + R1 + R2 | 4000 | 3109 | 3961 | 2927 |
-| 전체 설명 — (B) | 4000 | 2980 | 3813 | 2829 |
-| 전체 설명 — (B) + R1 | 4000 | 3033 | 3873 | 2871 |
-| 전체 설명 — (B) + R1 + R2 | 4000 | 3135 | 3991 | 2971 |
+| 전체 설명 — (B) | 4000 | 2984 | 3819 | 2836 |
+| 전체 설명 — (B) + R1 | 4000 | 3037 | 3879 | 2878 |
+| 전체 설명 — (B) + R1 + R2 | 4000 | 3139 | 3997 | 2978 |
 
 글자 수는 유니코드 코드 포인트 수다. 이 표는 위 문구에서 센 값이다 — 문구를 고치면 다시 센다.
