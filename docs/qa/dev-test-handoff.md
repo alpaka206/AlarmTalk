@@ -7,7 +7,7 @@
 
 - **1.2.14**: Play `34` 게재(10/16). App Store 빌드 12 심사 중(`AFTER_APPROVAL`). 탈퇴 유예 화면 폐지(#904·#905)·법무 문서
   6(#906)·iOS 첫 화면 크래시 수정(#901)이 실렸다. 아래 「스토어 상태」.
-- **옛 앱 정리(#911)**: Android `minSupported`·`latest` 34. 탈퇴 유예 화면용 옛 갈래(`/auth/me` 옛 모양·철회 버튼 예외)는
+- **옛 앱 정리(#911 — 이 문서 PR 보다 먼저 머지한다)**: Android `minSupported`·`latest` 34. 탈퇴 유예 화면용 옛 갈래(`/auth/me` 옛 모양·철회 버튼 예외)는
   지웠다(iOS 는 실사용자가 없다 — 오너). ⚠ **문서 버전 5 수락은 남겼다** — App Store 에서 지금 받는 iOS 는 1.2.13(문서 5)이라
   빼면 그 앱의 새 가입이 동의 409 에 갇힌다.
   - [ ] iOS 1.2.14 게재 확인 → iOS `minSupported`·`latest` 12 → `ACCEPTED_POLICY_VERSIONS` 에서 5 제거.
@@ -287,14 +287,15 @@
 
 ## 스토어 상태 — 2026-10-16
 
-- **게재 중: 두 스토어 모두 1.2.13** — Play 프로덕션 `33 (1.2.13)` `RELEASE_LIFECYCLE_STATE_PUBLISHED`, App Store 1.2.13(빌드 10)
-  `READY_FOR_SALE`(2026-10-16 두 스토어 API 로 확인). 게재 중인 설명·등록정보에 선물·쿠폰 낱말이 없음도 같은 날 확인했다.
+- **게재 중: Play `34 (1.2.14)`, App Store 1.2.13(빌드 10)** — Play `RELEASE_LIFECYCLE_STATE_PUBLISHED`(10/16), App Store
+  1.2.13 `READY_FOR_SALE`·1.2.14(빌드 12) `WAITING_FOR_REVIEW`(`AFTER_APPROVAL` — 승인 즉시 출시). 두 스토어 API 로 확인.
+  Play 등록정보는 10/16 부터 (B), App Store 설명은 INTERIM(다음 버전 레코드에서 (B)). 선물·쿠폰 낱말은 없다.
 - **선물 상품을 두 스토어에서 지웠다**(2026-10-16 — 오너 지시). App Store `com.alarmtalk.app.personal_gift_1m`
   (`DEVELOPER_REMOVED_FROM_SALE` 이던 것)은 `DELETE /v2/inAppPurchases` 204, Play 일회성 상품 `personal_gift_1m`
   (구매 옵션 `INACTIVE` 이던 것)은 `DELETE oneTimeProducts` 204. 다시 조회해 두 목록에 없음을 확인했다. 지우기 전 설정은
   `.claude/release-tools/gift-products-backup-20261014.json`. 같은 상품 id 는 다시 쓸 수 없다.
-- **1.2.14**(Android 34 · iOS 빌드 12): 법무 문서 버전 6 을 싣는다 — 서버가 개정 동안 5·6 을 모두 받게 한 변경(#906)이
-  prod 에 나간 뒤 앱이 게재돼야 한다(안 그러면 1.2.14 의 가입·동의가 409). #904 서버(로그인하면 탈퇴 철회)도 같은 조건이다.
+- **1.2.14**(Android 34 · iOS 빌드 12): 법무 문서 버전 6 을 싣는다 — 서버가 개정 동안 5·6 을 모두 받게 한 변경(#906)과
+  #904 서버(로그인하면 탈퇴 철회)는 10/16 01:21Z prod 에 나갔다(#902), 앱 게재보다 먼저다.
   ⚠ 10/16 에 버전 5 로 만든 첫 빌드(Play edit validate 만, App Store 빌드 11 업로드)는 쓰지 않는다 — 문서 6 으로 다시
   빌드한다(App Store 는 빌드 12).
 - 아래는 2026-10-14 판이다(이력).
