@@ -157,19 +157,21 @@ describe('lib/consent — config', () => {
   // ⚠ **최소 버전은 「그 유형의 동의 내용이 실제로 바뀔 때만」 올린다** — 문서 버전이
   // 올랐다는 이유로 올리지 말 것(docs/spec/consent.md).
   //
-  // ⚠ **privacy 를 법무 판단 없이 5 로 올리지 말 것 — v5 앱이 스토어에 없던 동안은 올리면 기존
-  // 사용자가 갇혔다**(코덱스 #731). 그 조건은 2026-09-22 iOS 게재로 채워졌다 — 올리면 아래 단언도
-  // 함께 고친다(`docs/qa/dev-test-handoff.md` §1-D).
-  // 버전 5 본문에 사용 기록 수집이 새로 들어갔으니 기준상으로는 올릴 사유가 맞지만,
-  // `POST /user/consents` 가 문서 버전 불일치를 409 로 거절하므로 스토어에 v5 앱이 없는
-  // 동안 올리면 재동의 화면을 **제출할 수 없다.** 고지 없는 수집은 대신 수집 쪽에서
-  // 막는다(`USAGE_EVENT_MIN_PRIVACY_VERSION`, `routes/events.ts`).
-  it('최소 버전은 전부 3 이고, 사용 기록 수집만 5 를 요구한다', () => {
-    // 6(2026-10-16)은 탈퇴 철회 방법·결제 기록 문구 정정 — 수집 범위가 그대로라 최소 버전은 그대로다.
+  // ⚠ **privacy 만 5 다**(2026-10-16 오너 결정). 버전 5 본문에 사용 기록 수집이 새로 들어간 확대 개정이라
+  // 그 전(기록 3)에 동의한 사람은 앱에 들어오면 처리방침만 다시 동의한다. 나머지 유형은 내용이 바뀌지 않아 3 그대로다.
+  it('최소 버전은 privacy 만 5 이고 나머지는 3, 사용 기록 수집도 5 를 요구한다', () => {
+    // 6(2026-10-16)은 탈퇴 철회 방법·결제 기록 문구 정정 — 수집 범위가 그대로라 5 로 동의한 사람은 다시 묻지 않는다.
     expect(CURRENT_POLICY_VERSION).toBe('6');
     // 앞 버전 5(1.2.13 이하 앱의 문서)는 2026-10-16 에 지웠다(오너 — 옛 앱 정리).
     expect([...ACCEPTED_POLICY_VERSIONS]).toEqual(['6']);
-    expect(Object.values(CONSENT_MIN_POLICY_VERSION).every((v) => v === 3)).toBe(true);
+    expect(CONSENT_MIN_POLICY_VERSION).toEqual({
+      terms: 3,
+      privacy: 5,
+      age14: 3,
+      marketing: 3,
+      voice_biometric: 3,
+      overseas_transfer: 3,
+    });
     expect(USAGE_EVENT_MIN_PRIVACY_VERSION).toBe(5);
   });
 });
@@ -267,10 +269,10 @@ describe('lib/consent — CONSENT_MIN_POLICY_VERSION', () => {
     Object.assign(CONSENT_MIN_POLICY_VERSION, originalMin);
   });
 
-  it('문서 버전이 4 여도 v3 기록은 그대로 유효하다 (v4 축소 개정 회귀 방지)', async () => {
+  it('문서 버전이 4 여도 v3 기록은 그대로 유효하다 (v4 축소 개정 회귀 방지 — privacy 는 5 부터)', async () => {
     mockDB.pushResult([
       consentRow('terms', 1, '3'),
-      consentRow('privacy', 1, '3'),
+      consentRow('privacy', 1, minVersionOf('privacy')),
       consentRow('age14', 1, '3'),
     ]);
     expect(await needsConsent(mockDB.client as never, 'pk-1', GENERAL_REQUIRED_CONSENTS)).toBe(
@@ -293,10 +295,10 @@ describe('lib/consent — CONSENT_MIN_POLICY_VERSION', () => {
   });
 
   it('한 유형의 최소 버전만 올리면 그 유형만 missing 이 된다', async () => {
-    CONSENT_MIN_POLICY_VERSION.privacy = 4;
+    CONSENT_MIN_POLICY_VERSION.privacy = BASELINE_MIN_VERSION.privacy + 1;
     mockDB.pushResult([
       consentRow('terms', 1, '3'),
-      consentRow('privacy', 1, '3'),
+      consentRow('privacy', 1, minVersionOf('privacy')),
       consentRow('age14', 1, '3'),
     ]);
     expect(await missingConsentTypes(mockDB.client as never, 'pk-1', GENERAL_REQUIRED_CONSENTS))
@@ -308,7 +310,7 @@ describe('lib/consent — CONSENT_MIN_POLICY_VERSION', () => {
     async (version) => {
       mockDB.pushResult([
         consentRow('terms', 1, version),
-        consentRow('privacy', 1, '3'),
+        consentRow('privacy', 1, minVersionOf('privacy')),
         consentRow('age14', 1, '3'),
       ]);
       expect(await missingConsentTypes(mockDB.client as never, 'pk-1', GENERAL_REQUIRED_CONSENTS))
@@ -317,10 +319,10 @@ describe('lib/consent — CONSENT_MIN_POLICY_VERSION', () => {
   );
 
   it('복수형은 미충족 전부를, 단수형은 그 첫 원소를 돌려준다', async () => {
-    mockDB.pushResult([consentRow('privacy', 1, '3')]);
+    mockDB.pushResult([consentRow('privacy', 1, minVersionOf('privacy'))]);
     expect(await missingConsentTypes(mockDB.client as never, 'pk-1', GENERAL_REQUIRED_CONSENTS))
       .toEqual(['terms', 'age14']);
-    mockDB.pushResult([consentRow('privacy', 1, '3')]);
+    mockDB.pushResult([consentRow('privacy', 1, minVersionOf('privacy'))]);
     expect(await missingConsentType(mockDB.client as never, 'pk-1', GENERAL_REQUIRED_CONSENTS))
       .toBe('terms');
   });
@@ -556,9 +558,38 @@ describe('GET /user/consents/status — collect / sensitive_missing', () => {
   it('문서 버전이 올라가도 최소 버전을 안 올리면 다시 묻지 않는다', async () => {
     mockConsentRows = [...answeredRows(), consentRow('marketing', 1, '3')];
     expect((await consentStatus()).collect).toEqual([]);
-    // 최소 버전을 올린 유형만 다시 담긴다(기준선 5보다 위로 올려야 뜻이 산다).
-    CONSENT_MIN_POLICY_VERSION.privacy = 4;
+    // 최소 버전을 올린 유형만 다시 담긴다(기준선보다 위로 올려야 뜻이 산다).
+    CONSENT_MIN_POLICY_VERSION.privacy = BASELINE_MIN_VERSION.privacy + 1;
     expect((await consentStatus()).collect).toEqual(['privacy']);
+  });
+
+  // ⚠ 2026-10-16 재동의: 처리방침을 5 미만(3·4)으로 동의한 사람(2026-09-14 전 가입)은 **처리방침 하나만** 다시 받는다.
+  //   다른 동의(생체정보·국외 이전·마케팅 동의)는 그대로 남고 화면에도 뜨지 않는다.
+  it('처리방침 기록이 3 이면 처리방침만 다시 받는다 — 나머지 동의는 그대로', async () => {
+    mockConsentRows = [...answeredRows({ privacy: { version: '3' } }, '3'), consentRow('marketing', 1, '3')];
+    const body = await consentStatus();
+    expect(body.needs_consent).toBe(true);
+    expect(body.missing).toEqual(['privacy']);
+    expect(body.collect).toEqual(['privacy']);
+    expect(body.prechecked).toEqual([]);
+    expect(body.sensitive_missing).toEqual([]);
+    expect(body.has_prior_consent).toBe(true);
+  });
+
+  it('처리방침 재동의 때 마케팅을 거절했던 사람에게만 마케팅이 선택으로 한 번 붙는다', async () => {
+    mockConsentRows = [...answeredRows({ privacy: { version: '3' } }, '3'), consentRow('marketing', 0, '3')];
+    const body = await consentStatus();
+    expect(body.missing).toEqual(['privacy']);
+    expect(body.collect).toEqual(['privacy', 'marketing']);
+  });
+
+  it('처리방침을 5 이상으로 동의한 사람은 다시 묻지 않는다', async () => {
+    for (const version of ['5', CURRENT_POLICY_VERSION]) {
+      mockConsentRows = [...answeredRows({ privacy: { version } }, '3'), consentRow('marketing', 1, '3')];
+      const body = await consentStatus();
+      expect(body.needs_consent).toBe(false);
+      expect(body.collect).toEqual([]);
+    }
   });
 
   it('마케팅 거절 기록도 유효한 응답이라 다시 묻지 않는다', async () => {
@@ -584,7 +615,7 @@ describe('GET /user/consents/status — collect / sensitive_missing', () => {
   });
 
   it('한 유형의 최소 버전만 올리면 그 유형만 missing/collect 에 뜬다', async () => {
-    CONSENT_MIN_POLICY_VERSION.privacy = 4;
+    CONSENT_MIN_POLICY_VERSION.privacy = BASELINE_MIN_VERSION.privacy + 1;
     mockConsentRows = [...answeredRows(), consentRow('marketing', 1, '3')];
     const body = await consentStatus();
     expect(body.needs_consent).toBe(true);
