@@ -48,8 +48,7 @@ final class EditorPushNavigationUITests: XCTestCase {
         // ('음성 출력' 행은 여기 없다 — 음량·반복은 목소리 카드가 여는 상세가 소유한다.)
         // ⚠ **행 이름을 고를 때는 그 행이 지금 있는지 먼저 확인할 것.** 여기서 두 번 낡았다 —
         // '진동'(2026-08-17 삭제, AlarmKit 이 알람 진동을 소유한다), '다시 울림'(편집기에서
-        // 설정 자체를 없앴다 — `LocalAlarmRecord` 의 스누즈 주석, `docs/qa/dev-test-handoff.md`
-        // 의 "편집기에는 '다시 울림' 항목이 **없다**"). UI 테스트는 CI 에서 돌지 않아
+        // 설정 자체를 없앴다 — `LocalAlarmRecord` 의 스누즈 주석). UI 테스트는 CI 에서 돌지 않아
         // (`ios-build.yml` 은 유닛 테스트 + Release 빌드다) 낡아도 아무도 모른다.
         // 지금 push 되는 pane 은 `AlarmSettingsPane` 의 둘('알람음' · '목소리 크기')뿐이다.
         // ⚠ '알람음' 으로 검사하지 말 것 — 그 행이 있는 '세부 설정' 카드는

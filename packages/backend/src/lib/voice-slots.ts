@@ -14,7 +14,7 @@ import { enqueueExternalDeletion } from './audio-retention';
 // ⚠ **2026-09-27: 200 → 500.** 기간 한정 개인 플랜 동안 모든 무료 계정이 클론을 등록할 수 있어
 //   200 이면 LRU 반납이 유료자의 클론까지 밀어낸다(재클론 지연·비용, 반납할 자리가 없으면
 //   `NO_VOICE_ID`). ElevenLabs 요금제의 보이스 슬롯이 500 을 허용해야 한다 — 요금제가 그보다
-//   작으면 공급자가 먼저 거절한다(`docs/qa/dev-test-handoff.md` 「기간 한정 개인 플랜」).
+//   작으면 공급자가 먼저 거절한다(`docs/ops/personal-promo-end-runbook.md`).
 export const MAX_PROVIDER_CLONE_VOICES = 500;
 
 /**

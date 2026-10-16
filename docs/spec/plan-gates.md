@@ -19,7 +19,7 @@
 
 ⚠ **지금 두 앱은 이 표를 다 따르지 않는다 — 비로그인·유료 갈래가 표와 다르다**(2026-10-14 코드로 확인. 이번 회차가
 만든 차이가 아니라 그 전부터다). 위 표가 규칙이고, 아래는 편집기 게이트의 지금 구현이다. 맞추는 일은
-[`dev-test-handoff.md`](../qa/dev-test-handoff.md) 2026-10-14 절의 후속 항목이다 — 맞추기 전에는 두 앱이 표대로 동작한다고
+[`dev-test-handoff.md`](../qa/dev-test-handoff.md) 「다음 할 일」의 항목이다(2026-10-16 오너 결정 — iOS 를 안드로이드에 맞춘다) — 맞추기 전에는 두 앱이 표대로 동작한다고
 쓰지 말 것.
 
 | 상태 | Android 지금(`PlanGateDialog` — 갈래는 `AlarmEditorScreen` 의 `VoiceGateReason`) | iOS 지금(`VoicePlanGateAlert` — 내용은 `AlarmEditorSheet.showVoicePlanLockedAlert`) |

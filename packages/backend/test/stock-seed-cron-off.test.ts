@@ -8,7 +8,7 @@
 //
 // 되살릴 거라면 순서가 있다: 먼저 게시가 렌더 산출물을 **덮어쓰도록** 고치고
 // (`docs/spec/voice-and-message.md` §5-3), 그 다음 이 테스트와 #110·#111 주석,
-// `docs/qa/dev-test-handoff.md` §0-A 를 **같이** 고친다.
+// `docs/ops/tts-model-rerender.md` 를 **같이** 고친다.
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 

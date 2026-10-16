@@ -147,7 +147,7 @@ export const ACCEPTED_POLICY_VERSIONS: readonly string[] = [CURRENT_POLICY_VERSI
  *   그 사용자의 이용 기록은 아래 `USAGE_EVENT_MIN_PRIVACY_VERSION` 이 받지 않는다. 올리는
  *   시점은 **버전 5 를 번들한 앱이 스토어에 게재된 뒤**여야 했다 — 먼저 올리면 구버전 앱이
  *   재동의 화면에서 409 로 갇힌다. 그 조건은 2026-09-22 iOS 게재로 채워졌다(Android 는
- *   `minSupported` 25 부터 v5 번들). 체크리스트는 `docs/qa/dev-test-handoff.md` §1-D.
+ *   `minSupported` 25 부터 v5 번들). 올릴지는 `docs/qa/dev-test-handoff.md` 「오너가 정할 것」.
  *
  * 올리는 기준: **그 유형의 동의 내용이 실제로 바뀔 때만** 해당 유형만 올린다 —
  * 수집 항목·이용 목적·보유 기간 확대, 새 제3자 제공/국외 이전, 처리 방식 변경 등.
@@ -176,7 +176,7 @@ export const CONSENT_MIN_POLICY_VERSION: Record<ConsentType, number> = {
   //   않고도 동의 없는 수집이 일어나지 않는다.
   //
   //   ⚠ **여기를 5 로 올리는 것은 v5 앱이 양 스토어에 게재된 뒤의 별도 작업이다.** 그 조건은
-  //   2026-09-22 iOS 게재로 채워졌다 — 남은 것은 올릴지의 법무 판단이다(`docs/qa/dev-test-handoff.md` §1-D).
+  //   2026-09-22 iOS 게재로 채워졌다 — 남은 것은 올릴지의 법무 판단이다(`docs/qa/dev-test-handoff.md` 「오너가 정할 것」).
   privacy: 3,
   age14: 3,
   marketing: 3,

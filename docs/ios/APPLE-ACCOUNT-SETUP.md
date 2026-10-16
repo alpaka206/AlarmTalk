@@ -5,8 +5,7 @@
 
 > **iOS 는 2026-09-22 에 App Store 에 게재됐다(1.2.8).** 지금 스토어 상태는
 > [`dev-test-handoff.md`](../qa/dev-test-handoff.md) 「스토어 상태」 절, 출시 준비 과정(2026-09-14)은
-> [출시 기록](../qa/ios-release-preparation-2026-09-14.md) 참조. 남은 확인(스토어 빌드로 실구매·복원·
-> APNs 검증 등)은 같은 핸드오프 문서의 「iOS 첫 출시」 절에 있다.
+> [출시 기록](../qa/ios-release-preparation-2026-09-14.md) 참조. 지금 남은 일도 같은 핸드오프 문서에 있다.
 
 > ✅ **가입은 이미 끝났다(2026-09-08 이 맥에서 재확인).** 서명 인증서
 > `Apple Development: <이름>`(`security find-identity -v -p codesigning`), 팀

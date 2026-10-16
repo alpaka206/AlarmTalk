@@ -2535,7 +2535,7 @@ struct AlarmEditorSheet: View {
                 return
             }
             // ⚠ **라이브 랜덤 생성은 없앴다**(2026-08-18). 알람 음성은 **프리셋 + 직접 입력**
-            // 둘뿐이다(docs/qa/dev-test-handoff.md 5절). 랜덤 문구인 채로 여기 도달했다는 건
+            // 둘뿐이다(docs/spec/voice-and-message.md 「구현 지도」). 랜덤 문구인 채로 여기 도달했다는 건
             // 위 `prepareSelectedBucketClipIfNeeded` 가 클립을 못 묶었다는 뜻이므로,
             // 서버에 문장을 지어 달라고 하는 대신 **막는다.**
             //
