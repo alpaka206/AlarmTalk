@@ -15,6 +15,10 @@ export interface Migration {
    * atomic 이면 실패 시 통째로 롤백되므로 재시도가 항상 처음 상태에서 다시 돈다.
    * 대신 idempotent DDL 에러 관용을 적용하지 않는다 — 부분 적용 상태가 없으므로
    * "이미 적용됨" 을 삼킬 이유가 없고, 삼키면 롤백 보장이 깨진다.
+   *
+   * **`_migrations` 기록도 같은 트랜잭션에 넣는다**(2026-10-16, 코덱스 #902). 따로 적으면 문장은 커밋됐는데 응답이나
+   * 기록이 실패한 경우 다음 배포가 같은 문장을 **한 번 더** 돌린다 — 다시 돌면 결과가 달라지는 데이터 변경
+   * (`token_epoch + 1` 같은 누적)에는 그게 곧 잘못된 데이터다. 그런 마이그레이션에도 atomic 을 붙인다.
    */
   atomic?: boolean;
 }
@@ -3114,9 +3118,12 @@ export const migrations: Migration[] = [
     // 트랜잭션에서 `token_epoch + 1`·그 계정의 `push_tokens` 삭제를 하고(`POST /user/me/deletion`), 다시 로그인하면 철회된다
     // (`cancelPendingDeletionOnSignIn`). 그 전에 신청해 유예 중인 행은 세대가 그대로라, 한 기기가 로그인해 철회하는 순간
     // 신청 전의 토큰을 든 다른 기기가 다시 통과하고 옛 푸시 등록도 남는다. 배포 때 한 번 같은 정리를 해 둔다.
-    // 데이터 변경만이라 다시 돌아도 같은 결과로 수렴한다(세대는 한 번 더 오를 뿐 — 유예 계정은 어차피 모든 요청이 403).
+    // ⚠ **두 번 돌면 안 된다 — atomic**(코덱스 #902). 세대가 한 번 더 오르면 옛 앱의 유예 화면 호환(`token_epoch - 1`
+    //   세대만 받는다 — `isRevokedByDeletionRequest`)이 깨진다. 문장과 `_migrations` 기록을 한 트랜잭션에 넣어, 응답을
+    //   잃은 재시도도 기록을 보고 건너뛴다.
     id: 129,
     name: 'pending-deletion-revoke-sessions-backfill',
+    atomic: true,
     statements: [
       `DELETE FROM push_tokens
         WHERE user_id IN (SELECT id FROM users WHERE deletion_status = 'pending_deletion')`,
@@ -3171,7 +3178,11 @@ export const __isIdempotentDDLErrorForTest = isIdempotentDDLError;
  */
 async function applyMigrationStatements(db: Client, migration: Migration): Promise<void> {
   if (migration.atomic) {
-    await db.batch(migration.statements, 'write');
+    // 기록까지 한 batch — 커밋되면 둘 다, 아니면 둘 다 없다. 응답만 잃어도 다음 실행은 기록을 보고 건너뛴다.
+    await db.batch(
+      [...migration.statements, { sql: 'INSERT INTO _migrations (id, name) VALUES (?, ?)', args: [migration.id, migration.name] }],
+      'write',
+    );
     return;
   }
   for (const stmt of migration.statements) {
@@ -3208,10 +3219,12 @@ export async function runMigrationsRange(
     if (migration.id < fromId || migration.id > toId) continue;
     if (appliedIds.has(migration.id)) continue;
     await applyMigrationStatements(db, migration);
-    await db.execute({
-      sql: 'INSERT INTO _migrations (id, name) VALUES (?, ?)',
-      args: [migration.id, migration.name],
-    });
+    if (!migration.atomic) {
+      await db.execute({
+        sql: 'INSERT INTO _migrations (id, name) VALUES (?, ?)',
+        args: [migration.id, migration.name],
+      });
+    }
     ran.push(`${migration.id}_${migration.name}`);
   }
   return ran;
@@ -3236,10 +3249,13 @@ export async function runMigrations(db: Client): Promise<string[]> {
 
     await applyMigrationStatements(db, migration);
 
-    await db.execute({
-      sql: 'INSERT INTO _migrations (id, name) VALUES (?, ?)',
-      args: [migration.id, migration.name],
-    });
+    // atomic 은 위 batch 가 이미 적었다.
+    if (!migration.atomic) {
+      await db.execute({
+        sql: 'INSERT INTO _migrations (id, name) VALUES (?, ?)',
+        args: [migration.id, migration.name],
+      });
+    }
 
     ran.push(`${migration.id}_${migration.name}`);
   }

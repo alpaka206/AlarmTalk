@@ -47,3 +47,43 @@ describe('#129 pending-deletion-revoke-sessions-backfill', () => {
     expect(tokens.rows.map((r) => r.token)).toEqual(['tok-a']);
   });
 });
+
+describe('#129 은 두 번 돌지 않는다 — 응답을 잃은 재시도(코덱스 #902)', () => {
+  const PATH2 = join(tmpdir(), `alarmtalk-pending-revoke-retry-${process.pid}.db`);
+  let db2: Client;
+
+  beforeAll(async () => {
+    rmSync(PATH2, { force: true });
+    db2 = createClient({ url: `file:${PATH2}` });
+    await runMigrationsRange(db2, 1, 128);
+    await db2.execute(`INSERT INTO users (id, google_id, email, deletion_status, token_epoch, family_alarm_quiet_windows)
+      VALUES ('pending', 'pending', 'p@example.test', 'pending_deletion', 2, '[]')`);
+  });
+
+  afterAll(() => {
+    db2.close();
+    rmSync(PATH2, { force: true });
+  });
+
+  it('batch 가 커밋된 뒤 응답만 실패해도 다음 실행은 기록을 보고 건너뛴다 — 세대는 한 번만 오른다', async () => {
+    // 커밋은 되고 응답만 잃는 클라이언트 — 배포 러너가 실패로 끝나 다시 도는 경우다.
+    const lossy = new Proxy(db2, {
+      get(target, prop, receiver) {
+        if (prop === 'batch') {
+          return async (...args: Parameters<Client['batch']>) => {
+            await target.batch(...args);
+            throw new Error('response lost');
+          };
+        }
+        const v = Reflect.get(target, prop, receiver);
+        return typeof v === 'function' ? v.bind(target) : v;
+      },
+    }) as Client;
+    await expect(runMigrationsRange(lossy, 129, 129)).rejects.toThrow('response lost');
+    await runMigrationsRange(db2, 129, 129);
+    const row = await db2.execute("SELECT token_epoch FROM users WHERE id = 'pending'");
+    expect(Number(row.rows[0]!.token_epoch)).toBe(3);
+    const ledger = await db2.execute('SELECT id FROM _migrations WHERE id = 129');
+    expect(ledger.rows).toHaveLength(1);
+  });
+});
