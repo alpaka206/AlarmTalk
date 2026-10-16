@@ -167,8 +167,9 @@
 - **ElevenLabs 운영 제공자 기준으로 고지**: 베일런(처리자 본인)은 음성을 자사가 직접 운영하는
   별도 범용 AI 학습에 사용하지 않고, 음성 수탁사 ElevenLabs의 처리 조건은 실제 적용 계약과
   정책에 따른다고 고지한다. 국외 이전(미국, 유럽연합 등)·하위 처리자는 ElevenLabs 최종 계약/정책 기준.
-- **정책 버전**: 정책 버전 상수는 `packages/backend/src/lib/consent.ts`의 `CURRENT_POLICY_VERSION`이
-  단일 출처다. 처리방침·약관의 "정책 버전 / 최종 개정일"은 이 상수와 동기화한다. 다만 버전을
+- **정책 버전**: 원본은 처리방침·약관 머리말의 "정책 버전: N" 이다. 두 앱은 빌드할 때 그 줄을 읽고, 서버의
+  `packages/backend/src/lib/consent.ts` `CURRENT_POLICY_VERSION` 은 그 사본이다(워커는 저장소 파일을 못 읽는다).
+  어긋나면 서버 테스트(`packages/backend/test/policy-version-matches-legal-docs.test.ts`)가 실패한다. 다만 버전을
   올린다고 전 유형 재동의가 걸리지는 않는다 — 재동의는 유형별 최소 버전
   (`CONSENT_MIN_POLICY_VERSION`)을 올린 유형에만 발생한다(§8).
 - **출시 전 확정**: ElevenLabs 실제 적용 약관, DPA, retention/zero-retention 설정, 하위 처리자 목록, 삭제 API 보장을 확인한다.

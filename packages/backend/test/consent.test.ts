@@ -146,8 +146,8 @@ describe('lib/consent — config', () => {
   });
   // 이 단언은 정책버전이 **실수로** 올라가는 것을 막는 가드다. 값을 바꿀 때는 반드시
   // docs/legal/*.ko.md 의 '정책 버전' 머리말과 함께 바꾸고, 왜 올렸는지 남길 것.
-  // (안드로이드 빌드가 privacy-policy.ko.md / terms-of-service.ko.md 의 '정책 버전: N' 을
-  //  파싱해 BuildConfig.LEGAL_POLICY_VERSION 을 만든다 — 서버와 어긋나면 동의 기록이 409 된다.)
+  // (두 앱이 privacy-policy.ko.md / terms-of-service.ko.md 의 '정책 버전: N' 을 빌드 때 읽는다 — 서버와 어긋나면 동의
+  //  기록이 409 된다. 어긋남은 policy-version-matches-legal-docs.test.ts 가 잡는다.)
   // ⚠ **본문이 바뀌면 버전을 올린다 — 단, 그 버전이 이미 배포된 경우에만**(2026-08-26).
   // 번호를 태우는 이유는 앞 버전 **본문에 동의한 사람**을 보호하기 위해서다. 버전 5 는
   // 그때(8-24) prod(`main` = '4')에 없어 동의자가 0명이었으므로, 8-24 보완분은 5 본문을
