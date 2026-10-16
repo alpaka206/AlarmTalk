@@ -88,6 +88,8 @@ class TransientFailureClassificationTest {
         // 2026-09-22 ANDROID-P: 로보가 로그인 버튼을 연타한 12502 가 이슈로 올라갔다.
         assertEquals("user", AlarmTalkLog.breadcrumbCategoryFor(ApiException(Status(12501))))
         assertEquals("user", AlarmTalkLog.breadcrumbCategoryFor(ApiException(Status(12502))))
+        // 2026-10-16 ANDROID-1G: 계정 선택 창을 닫으면 16(CANCELED)·resultCode=0 으로 돌아온다 — 취소다.
+        assertEquals("user", AlarmTalkLog.breadcrumbCategoryFor(ApiException(Status(16))))
         assertEquals("user", AlarmTalkLog.breadcrumbCategoryFor(IllegalStateException("wrapped", ApiException(Status(12501)))))
         // 네트워크(7)는 일시적 실패와 같은 갈래.
         assertEquals("transient", AlarmTalkLog.breadcrumbCategoryFor(ApiException(Status(7))))
