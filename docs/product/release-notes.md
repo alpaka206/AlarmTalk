@@ -24,15 +24,15 @@ node -e "const m=require('fs').readFileSync('docs/product/release-notes.md','utf
 
 ---
 
-## 1.2.14 (versionCode 34 / iOS 빌드 11)
+## 1.2.14 (versionCode 34 / iOS 빌드 12)
 
 탈퇴 유예 화면 폐지(#904·#905). 탈퇴를 신청하면 모든 기기에서 로그아웃되고, 30일 안에 다시 로그인하면 서버가 탈퇴를
 철회한다(`docs/spec/session-and-auth.md` 「탈퇴 유예 — 다시 로그인하면 철회」). iOS 는 첫 화면(랜딩)이 iOS 27 일부 기기에서
 닫히던 것도 고쳤다(#901, Sentry ALARMTALK-IOS-4). 서버 쪽 고침(날씨 원천 물러서기 등)은 모든 버전에 가므로 적지 않는다.
 
-- 법무 문서는 **버전 5 그대로**다. 탈퇴 철회 문구·쿠폰 기록 문구 개정(버전 6)은 서버의 `CURRENT_POLICY_VERSION` 이 정확히
-  같은 값만 받아(`POST /user/consents` 409) 두 스토어 게재 시점과 맞춰야 해서 이번 회차에 싣지 않았다. 지금 처리방침의
-  "30일의 유예 기간 동안 철회할 수 있습니다" 는 그대로 사실이다(철회 방법이 다시 로그인으로 바뀌었을 뿐).
+- 법무 문서 **버전 6**을 싣는다(탈퇴 철회 방법, 결제 기록의 '쿠폰' 문구, '다시 구독'). 서버는 개정 동안 5·6 을 모두
+  받아(`ACCEPTED_POLICY_VERSIONS`) 두 스토어의 게재 시점이 달라도 가입·동의가 막히지 않는다. 처리방침 개정은 출시 노트에
+  적지 않는다(앱 안 변화가 아니다).
 
 ### Play (Android 34)
 
@@ -57,7 +57,7 @@ node -e "const m=require('fs').readFileSync('docs/product/release-notes.md','utf
 • 申請から30日以内にもう一度ログインすると、退会は取り消されます。
 ```
 
-### App Store (iOS 빌드 11)
+### App Store (iOS 빌드 12)
 
 #### ko
 
