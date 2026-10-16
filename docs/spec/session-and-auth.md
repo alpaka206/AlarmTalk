@@ -201,11 +201,11 @@ pepper 로 가명 보존 기록까지 곧장 이어져, 분리 보관을 무너�
 - **옛 앱(그 403 을 모르는 빌드 — 안드로이드 versionCode ≤33, iOS 빌드 ≤10)용 호환은 2026-10-16 에 지웠다.** 그 앱들은
   유예 403 을 모르고 멈추므로 1.2.14 출시 동안 옛 유예 화면 응답(신청이 끊은 `token_epoch - 1` 세대에만)과 그 화면의 철회
   버튼 예외를 두었다(#905). Play 34 게재 뒤 Android `minSupported` 를 34 로 올려 옛 앱을 막고 함께 지웠다(iOS 는 실사용자가
-  없어 오너 판단으로 같이). 이제 옛 앱 헤더를 보내도 `/auth/me` 는 403, 끊긴 토큰의 철회 버튼은 401 이다.
+  없어 오너 판단으로 같이). 이제 옛 앱 헤더를 보내도 `/auth/me` 는 403 이고, 철회 버튼 경로(`DELETE /user/me/deletion`)는 없다(404).
 - **유예 계정이면 끊긴 토큰에도 401 이 아니라 403 `ACCOUNT_PENDING_DELETION` 으로 답한다**(`authMiddleware`·`/auth/me`
   — 폐기 검사보다 먼저 본다, 코덱스 #904). 다른 기기가 `TOKEN_REVOKED` 를 받으면 자동 만료로 읽어 알람 예약을 남기고,
-  로그인 화면 뒤에서 보이지도 끌 수도 없는 알람이 운다. 철회·푸시 해제 두 허용 경로는 그대로 폐기 검사를 지난다 —
-  폐기된 토큰으로 철회되면 안 된다. `/auth/me` 의 이 403 에는 계정 내용을 싣지 않는다.
+  로그인 화면 뒤에서 보이지도 끌 수도 없는 알람이 운다. **유예 계정의 예외 경로는 없다**(철회·푸시 해제 예외는
+  2026-10-16 에 지웠다 — 모든 인증 API 가 403). `/auth/me` 의 이 403 에는 계정 내용을 싣지 않는다.
 - **앱은 유예를 보면 그 기기에서 계정을 떠난다** — 알람까지 끄는 명시적 로그아웃(탈퇴를 신청한 기기와 같은 로컬 정리),
   자동 만료가 아니다. 안드로이드 `checkAccountStatus` → `leaveAccountForPendingDeletion` / iOS `refreshUser` →
   `leaveAccountForPendingDeletion`(계정 응답의 `pending_deletion` 이든 `/auth/me` 의 403 이든). 서버 쪽 정리는 없다 —
@@ -237,8 +237,6 @@ pepper 로 가명 보존 기록까지 곧장 이어져, 분리 보관을 무너�
   DELETE 에도 같은 조건). 상태만 보면 탈퇴 신청(세대 +1)과 철회 로그인(세대 +1) 뒤에 커밋된 늦은 등록이 로그아웃된 기기를
   그 계정에 묶는다(코덱스 #904). **조건에 걸려 아무것도 적히지 않으면 200 이 아니다** — 유예면 403 ACCOUNT_PENDING_DELETION,
   아니면 401 TOKEN_REVOKED(200 이면 앱이 등록을 확인한 것으로 적고 다시 올리지 않는다).
-- **옛 앱의 철회 버튼(`DELETE /user/me/deletion`)도 철회와 같은 정리를 한다**(세대 +1·그 계정의 푸시 등록 삭제) — 마이그레이션
-  #129 보다 먼저 철회되는 배포 전 유예 행 때문이다. 부른 기기도 끊기므로 옛 앱은 다시 로그인한다.
 - **이 기기의 탈퇴 신청이 '이미 유예' 403 을 받으면 실패가 아니다** — 다른 기기가 먼저 신청했다. 신청 성공과 같은 정리를
   한다(안드로이드 `requestAccountDeletion` 의 catch, iOS 는 `leaveAccountForPendingDeletion`). 그 흐름이 로그아웃 창을 열어 둔
   채라 응답 쪽 떠나기가 물러서기 때문이다.
@@ -259,10 +257,8 @@ pepper 로 가명 보존 기록까지 곧장 이어져, 분리 보관을 무너�
   트랜잭션 안에서 **아직 유예이고 기한이 지났는지**를 다시 보고, 아니면 지우지 않는다(`index.ts`). 기한까지 보는 이유:
   철회한 뒤 다시 신청하면 상태는 또 유예지만 기한은 30일 뒤다. **애플 연결 해제는 파기가 커밋된 뒤에** 한다 — 먼저
   끊으면 철회된 계정이 파기는 건너뛰면서 애플 연결만 잃는다(코덱스 #904).
-- `DELETE /user/me/deletion`(옛 앱의 철회 버튼)은 라우트로 남아 있지만, 끊기지 않은 토큰으로만 닿는다 — 유예 계정의
-  토큰은 신청이 전부 끊으므로 지금 앱에서는 쓰이지 않는다.
 - 개인정보 처리방침·이용약관은 **버전 6**(1.2.14 에 실림, 2026-10-16)에서 "모든 기기에서 로그아웃되고, 30일 안에 다시
-  로그인하면 탈퇴 신청이 철회된다" 로 고쳤다. 서버는 개정 동안 버전 5 도 받는다 — iOS 1.2.14 게재 뒤 6 하나로 줄인다
+  로그인하면 탈퇴 신청이 철회된다" 로 고쳤다. 서버는 개정 동안 버전 5 도 받다가 2026-10-16 에 6 하나로 줄였다
   (`ACCEPTED_POLICY_VERSIONS` — `docs/spec/consent.md`).
 
 ## 탈퇴 예약을 취소해 복구할 때
@@ -486,13 +482,13 @@ iOS는 네트워크/5xx/응답 해석 실패를 받으면 `/auth/me`로 현재 �
 | 저장 경합 방지 | — | `AuthSessionStore.saveTokenIfGeneration`·`saveSessionIfAlive` | `AuthViewModel` 의 출처 **토큰** 재확인(`refreshUser`·`applyRolledToken`·`applyFreshPlan`) |
 | 프로필 저장은 바꾼 칸만 쓰는 순간의 세션 위에(plan·프로모·받은 시각·토큰은 그대로) + 확인 조회 | `PATCH /user/me`(`user.ts`) | `AuthSessionStore.updateUserIfAlive` ← `MainViewModelAuthActions` 의 `saveProfileEdit`(`updateNickname`·`updateFamilyAlarmSettings`·`uploadDynamicPromptSettings`) → `refreshAppSession(rollToken = false)`·`refreshAppSessionNow(rollToken = false)` · 회귀 `ProfileSaveKeepsAccountAnswerTest.kt` | `AuthViewModel.updateProfile`(응답 뒤 `var updated = current`) → `refreshUser`(옛 답이 먼저 와 토큰이 굴렀으면 `isTokenRolledWithinSignIn` → `applyAccountAnswerOnRolledToken` 이 프로필 칸까지) · 회귀 `AuthViewModelTests`(확인 조회와 옛 답의 두 도착 순서 — 닉네임·가족 설정) |
 | 다시 로그인하면 탈퇴 철회 · 신청은 모든 기기 세션·푸시 등록을 끊는다 · 유예 세션은 끝난 세션 · 파기 직전 재확인 | `lib/account-deletion.ts` 의 `cancelPendingDeletionOnSignIn` ← `routes/auth.ts` 의 `/login`·`/google`·`/apple` · `routes/user.ts` 의 `POST /me/deletion`(`token_epoch + 1`·`push_tokens` 삭제, 한 트랜잭션) · `lib/fcm.ts` 의 `sendAccountDeletionRequestedPush`(신청 커밋 뒤) · `index.ts` 파기 트랜잭션의 재확인(유예 + 기한)·커밋 뒤 애플 연결 해제 · `middleware/auth.ts`·`/auth/me` 는 유예면 끊긴 토큰에도 403 · 회귀 `test/sign-in-cancels-deletion.test.ts`·`test/scheduled-purge-isolation.test.ts`·`test/auth-pending-deletion.test.ts` | `ui/main/MainViewModelAuthActions.kt` 의 `checkAccountStatus` → `leaveAccountForPendingDeletion`(알람까지 끄는 떠나기) · 워커 `sync/SyncWorkerFailure.kt` 의 `endWorkerSession` → `leaveAccountAfterPendingDeletion`(백그라운드판) · `fcm/AlarmTalkMessagingService.kt` 의 `account_deletion_requested` → `RemoteAlarmSyncScheduler.runOnce` · 유예 화면 없음 | `AuthViewModel.refreshUser` → `leaveAccountForPendingDeletion` · 탈퇴 신청 뒤 `onServerRemovedPushRegistration`(기기 쪽 등록 기록만, 등록과 같은 줄 — `invalidateRegistration`) · `PushNotificationCoordinator` 의 `accountDeletionRequested` → `refreshUser` · 회귀 `PushRegistrationRecoveryTests`(`test_invalidationQueuesBehindAnInFlightRegistration`·`test_accountDeletionRequestedSignalAsksTheServerAgain`) · `RootView` 에 유예 게이트 없음 |
-| 탈퇴 복구 저장은 준비 뒤의 세션 위에(1.2.13 이하에서 올라온 유예 세션) | `user.ts` 탈퇴 취소 | — (유예 화면·철회 버튼을 2026-10-15 에 지웠다) | `AuthViewModel.completeAccountRecovery`(기다린 뒤 `latest` · `/auth/me` 경로는 `reconcileAccountAnswer` 로 다시 다듬기) · 회귀 `AuthViewModelTests` |
+| 탈퇴 복구 저장은 준비 뒤의 세션 위에(1.2.13 이하에서 올라온 유예 세션) | — (철회는 로그인 — `cancelPendingDeletionOnSignIn`. 철회 라우트는 2026-10-16 에 지웠다) | — (유예 화면·철회 버튼을 2026-10-15 에 지웠다) | `AuthViewModel.completeAccountRecovery`(기다린 뒤 `latest` · `/auth/me` 경로는 `reconcileAccountAnswer` 로 다시 다듬기) · 회귀 `AuthViewModelTests` |
 | 401 중앙 처리 | — | `UnauthorizedAuthenticator` | `AlarmTalkAPI.unauthorizedNotification`(**실패한 토큰을 싣는다**) → `AuthViewModel.handleUnauthorized` |
 | 즉시 폐기 | `authMiddleware` 의 `token_epoch` 비교 | — | — |
-| 탈퇴 취소 뒤 푸시 재등록 | `authMiddleware` 탈퇴 대기 허용 경로·`user.ts` 탈퇴 취소 | 로그인(`onSignedIn`) → `registerCurrentToken` — 철회는 로그인 자체다 | `AuthViewModel.prepareAccountRecovery` → `PushNotificationCoordinator.prepareAccountRecovery`를 await한 뒤 상태 확정 → `onAccountRecovered` → `start`(launch에서 연결) |
+| 탈퇴 취소 뒤 푸시 재등록 | 로그인 철회 뒤 일반 `/push/register`(유예 동안은 모든 경로 403) | 로그인(`onSignedIn`) → `registerCurrentToken` — 철회는 로그인 자체다 | `AuthViewModel.prepareAccountRecovery` → `PushNotificationCoordinator.prepareAccountRecovery`를 await한 뒤 상태 확정 → `onAccountRecovered` → `start`(launch에서 연결) |
 | 탈퇴 파기 범위(남는 것 셋뿐) | `lib/account-deletion.ts` `purgeUserAccount`(유예 파기 `index.ts` — 즉시 삭제 경로는 없다) · 회귀 `test/account-purge-residue.test.ts`·`test/compliance-verify.test.ts`(크론과 같은 두 함수) | — | — |
 | 그룹 주인 탈퇴 — 멤버 등급 통지 | `purgeUserAccount` 가 같은 트랜잭션에서 `pending_plan_notifications` 에 적재 → 커밋 뒤 `sendPlanNotificationsNow`(`user.ts`) · 1분 전용 크론 홀수 분 `runPlanNotificationDrainTurn`(`index.ts`) → `notifyBillingStateChanged` · 회귀 `test/account-purge-plan-push.test.ts`·`test/pending-plan-notifications.test.ts` | 기존 `plan_changed` 처리 | 기존 `plan_changed` 처리 |
-| 탈퇴 취소 응답 유실·재확인 | `user.ts` DELETE 멱등 처리(이미 active는 무변경 성공) | — (철회 버튼이 없다) | `cancelAccountDeletion` 재확인·`refreshUser` 전환 감지 → `completeAccountRecovery` |
+| 탈퇴 취소 응답 유실·재확인 | — (철회 라우트가 없다 — 2026-10-16) | — (철회 버튼이 없다) | `refreshUser` 전환 감지 → `completeAccountRecovery` |
 | 인증 코드 판정(가장 새 것 하나 — 같은 초면 나중에 넣은 것 · 10분 · 틀린 5번 → 429 — 상한 확인과 세기는 한 문장이고 맞는 코드도 지난다(+0) · 다시 받기 60초·하루 10번은 보내지 않는 성공 · 간격은 가장 새 코드만 붙잡는다 · 상한에 닿았거나 쓴 코드는 간격을 붙잡지 않는다 · 쓰면 그 주소·용도의 쓰지 않은 코드가 모두 죽는다) | `routes/auth.ts` 의 `checkEmailVerificationCode`(`/email-code/verify`·`/register`·`/password-reset/confirm` 공용 — 읽기는 `ORDER BY created_at DESC, rowid DESC`, 대조 뒤 상한 확인과 세기는 `UPDATE … SET attempts = attempts + ? WHERE id = ? AND attempts < ?` 한 문장 — 0행이면 맞는 코드도 429)·`shouldSkipEmailCodeSend`(`/email-code`·`/password-reset` 공용 — 간격·하루 상한. 간격은 쓰지 않은 줄 가운데 판정과 같은 순서의 가장 새 것 하나만 본다)·`consumeEmailVerificationCodes`(`/register`·`/password-reset/confirm` 이 성공한 뒤 — 주소·용도의 쓰지 않은 줄 전부를 UPDATE 한 문장으로. 인증 확인은 부르지 않는다) · 숫자는 `lib/email-verification.ts`(`EMAIL_VERIFICATION_TTL_SECONDS`·`EMAIL_VERIFICATION_MAX_ATTEMPTS`·`EMAIL_VERIFICATION_RESEND_COOLDOWN_SECONDS`·`EMAIL_VERIFICATION_DAILY_CAP`) · `test/auth.test.ts`(「다시 받기 간격」 — 상한에 닿은 코드·쓴 코드는 10초 만에도 새 코드, 4번 틀린 코드는 간격을 붙잡는다, 하루 상한은 그대로 · 「코드를 쓰면…」 — 소모 문장의 대상·인자 · 「POST /auth/email-code/verify」 — 상한 문장의 인자(틀리면 +1, 맞으면 +0)·0행이면 맞는 코드도 429) · `test/auth-email-code-consume.test.ts`(진짜 SQLite — 새 코드로 마친 뒤 앞 코드는 400, 다른 용도·주소의 코드는 그대로, 인증 확인은 쓰지 않는다) · `test/auth-email-code-attempts.test.ts`(진짜 SQLite — 읽은 뒤 상한이 찬 틀린 코드·맞는 코드는 429·횟수 5 그대로 / 같은 순간 열 번 틀리면 400 다섯·429 다섯 / 네 번 틀린 뒤 인증 확인과 가입이 둘 다 통과 / 같은 순간 두 번 보낸 다시 받기의 앞 코드는 간격을 붙잡지 않는다) | 응답 소비 | 응답 소비 |
 | 인증 코드 거절 문장은 코드로('맞지 않아요' 는 `AUTH_EMAIL_CODE_INVALID` 만) | 세 라우트가 `errorBody(check.code, …)` 로 같은 코드를 낸다 | `ui/main/MainViewModelAuthActions.kt` 의 `emailCodeFailureMessage` ← `confirmEmailVerification`·`register`·`confirmPasswordReset` · 회귀 `EmailCodeFailureMessageTest` | `AuthViewModel.emailCodeErrorMessage(for:fallback:)` ← `verifyEmailCode`·`performRegisterWithEmail`·`confirmPasswordReset` · 가입 화면은 `LoginView` 의 코드 줄 아래에 그린다 · 회귀 `AlarmTalkTests/EmailCodeErrorMessageTests` |
 | 거절된 숫자를 칸에 남기지 않는다(거절 셋 · 다시 받기 성공 → 코드 칸 비우기 · 판정은 코드로 · 겹친 확인은 버린다) | — | `isEmailCodeRefusal(errorCode)`(`ui/main/MainViewModelAuthActions.kt`) → `MainViewModel.emailCodeFieldClearTick` ← 위 세 함수의 거절 갈래 + `requestEmailVerification`·`requestPasswordReset` 의 성공 갈래 → `AuthScreen`·`PasswordResetScreen` 의 `codeFieldClearTick`(바뀌면 칸을 비운다) · `confirmEmailVerification` 의 `authBusy` 가드 · 회귀 `EmailCodeFailureMessageTest`(비우는 판정표). ⚠ 화면 배선은 자동 테스트가 없다 — 실기기로 본다 | `AuthViewModel.isEmailCodeRefusal(_:)`·`emailCodeFieldClearTick`(게시 값 — 세 거절 갈래와 `requestEmailVerification`·`requestPasswordReset` 의 성공에서 올린다) → `LoginView`·`PasswordResetView` 의 `.onChange`(코드 칸 비우기) · 회귀 `AlarmTalkTests/EmailCodeErrorMessageTests`(비우는 판정표 · 뷰모델이 문장을 세우고 신호를 올리는 배선 — 다섯 요청을 `EmailCodeAPIProviding` 으로 주입한다). ⚠ 화면이 그 신호로 칸을 비우는 것은 UI 테스트의 몫이고 CI 에서 돌지 않는다 — 실기기로 본다 |
