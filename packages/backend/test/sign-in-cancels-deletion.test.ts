@@ -22,6 +22,7 @@ vi.mock('../src/lib/fcm', async (importOriginal) => ({
 }));
 
 import authRoutes from '../src/routes/auth';
+import { authMiddleware } from '../src/middleware/auth';
 import user from '../src/routes/user';
 import { hashPassword } from '../src/lib/password';
 import { cancelPendingDeletionOnSignIn } from '../src/lib/account-deletion';
@@ -183,12 +184,13 @@ describe('다른 기기의 끊긴 세션은 유예 코드로 답한다(코덱스
     expect(body.user).toBeUndefined();
   });
 
-  it('그 403 을 모르는 옛 앱(안드로이드 ≤33·iOS ≤10)에는 예전처럼 200 + pending_deletion — 새 토큰은 없다', async () => {
-    await db.execute("UPDATE users SET token_epoch = 1 WHERE id = 'owner'");
-    const token = await signAppJwt({ sub: 'owner', email: 'owner@example.test', epoch: 0 }, ENV.JWT_SECRET);
+  it('그 403 을 모르는 옛 앱(안드로이드 ≤33·iOS ≤10)에는 신청이 끊은 그 세대의 토큰이면 옛 유예 화면 모양(코덱스 #905)', async () => {
+    await db.execute("UPDATE users SET token_epoch = 2 WHERE id = 'owner'");
+    const deletionGen = await signAppJwt({ sub: 'owner', email: 'owner@example.test', epoch: 1 }, ENV.JWT_SECRET);
+    const older = await signAppJwt({ sub: 'owner', email: 'owner@example.test', epoch: 0 }, ENV.JWT_SECRET);
     const app = new Hono<{ Bindings: Env }>();
     app.route('/auth', authRoutes);
-    const ask = (platform?: string, version?: string) =>
+    const ask = (token: string, platform?: string, version?: string) =>
       app.request(
         new Request('http://localhost/auth/me', {
           headers: {
@@ -201,19 +203,46 @@ describe('다른 기기의 끊긴 세션은 유예 코드로 답한다(코덱스
         ENV,
       );
     for (const [platform, version] of [['android', '33'], ['ios', '10']] as const) {
-      const res = await ask(platform, version);
+      const res = await ask(deletionGen, platform, version);
       expect(res.status, `${platform} ${version}`).toBe(200);
       const body = (await res.json()) as { token?: string; user: Record<string, unknown> };
       expect(body.user.deletion_status).toBe('pending_deletion');
       expect(body.token).toBeUndefined();
-      // 폐기된 토큰이다 — 지금 계정 내용(이메일 외 설정·플랜)은 싣지 않는다. 이메일은 토큰이 담고 있던 값이다.
+      // 폐기된 토큰이다 — 지금 계정 내용(설정·플랜)은 싣지 않는다. 이메일은 토큰이 담고 있던 값이다.
       expect(Object.keys(body.user).sort()).toEqual(['deletion_status', 'email', 'id', 'name', 'plan']);
-      expect(body.user.plan).toBe('free');
+      // 그보다 옛 토큰(비밀번호 재설정 등으로 끊긴 것)은 401 이다.
+      expect((await ask(older, platform, version)).status, `${platform} ${version} older`).toBe(401);
     }
     for (const [platform, version] of [['android', '34'], ['ios', '11'], [undefined, undefined]] as const) {
-      const res = await ask(platform, version);
-      expect(res.status, `${platform} ${version}`).toBe(403);
+      expect((await ask(deletionGen, platform, version)).status, `${platform} ${version}`).toBe(403);
     }
+  });
+
+  it('옛 유예 화면의 철회 버튼은 그 세대의 토큰으로 통과하고, 철회가 그 토큰까지 끝낸다(코덱스 #905)', async () => {
+    await db.execute("UPDATE users SET token_epoch = 2 WHERE id = 'owner'");
+    await db.execute("INSERT INTO push_tokens (id, user_id, token, platform) VALUES ('r1', 'owner', 'tok-owner', 'android')");
+    const deletionGen = await signAppJwt({ sub: 'owner', email: 'owner@example.test', epoch: 1 }, ENV.JWT_SECRET);
+    const older = await signAppJwt({ sub: 'owner', email: 'owner@example.test', epoch: 0 }, ENV.JWT_SECRET);
+    const app = new Hono<AppEnv>();
+    app.use('/user/*', authMiddleware);
+    app.route('/user', user);
+    const cancel = (token: string) =>
+      app.request('/user/me/deletion', { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } }, ENV);
+
+    // 끊긴 지 더 오래된 토큰으로는 철회할 수 없다.
+    expect((await cancel(older)).status).toBe(401);
+    expect((await row('owner')).deletion_status).toBe('pending_deletion');
+    // 철회 말고는 그 세대로도 막힌다(유예 403).
+    const other = await app.request('/user/me', { headers: { Authorization: `Bearer ${deletionGen}` } }, ENV);
+    expect(other.status).toBe(403);
+
+    expect((await cancel(deletionGen)).status).toBe(200);
+    const after = await row('owner');
+    expect(after.deletion_status).toBe('active');
+    expect(Number(after.token_epoch)).toBe(3);
+    expect((await db.execute("SELECT 1 FROM push_tokens WHERE user_id = 'owner'")).rows).toHaveLength(0);
+    // 그 토큰은 이제 끝났다 — 옛 앱은 다시 로그인한다.
+    expect((await app.request('/user/me', { headers: { Authorization: `Bearer ${deletionGen}` } }, ENV)).status).toBe(401);
   });
 });
 

@@ -24,7 +24,7 @@ import { verifyGoogleIdToken } from '../lib/oauth';
 import { verifyAppleIdToken } from '../lib/apple-oauth';
 import { appleSignInConfig, exchangeAppleAuthorizationCode } from '../lib/apple-revoke';
 import { familyAlarmSettingsFromRow } from '../lib/family-alarm-settings';
-import { cancelPendingDeletionOnSignIn } from '../lib/account-deletion';
+import { cancelPendingDeletionOnSignIn, isRevokedByDeletionRequest } from '../lib/account-deletion';
 import {
   computedUserPlan,
   loadPersonalPromoField,
@@ -1164,8 +1164,12 @@ auth.post('/apple', async (c) => {
 
 /**
  * 탈퇴 유예 403 을 **'그 기기에서 떠나기'** 로 처리하는 첫 빌드(플랫폼별 — 안드로이드 versionCode, iOS 빌드 번호).
- * 이보다 옛 앱은 그 403 을 모른다 — `/auth/me` 의 200 + `deletion_status: pending_deletion` 을 받아야 옛 '회원 탈퇴가
- * 진행 중이에요' 화면을 띄운다(코덱스 #904). 그 앱들에는 끊긴 토큰이어도 예전 모양으로 답한다.
+ * 이보다 옛 앱은 그 403 을 모른다 — `/auth/me` 가 403 이면 유예 화면도 로그아웃도 못 한 채 멈춘다(코덱스 #904).
+ * 그 앱들에는 **탈퇴 신청이 끊은 그 세대의 토큰**(`isRevokedByDeletionRequest`)이면 예전 모양(200 +
+ * `pending_deletion`, 계정 내용 없음)으로 답해 옛 '회원 탈퇴가 진행 중이에요' 화면을 띄운다. 그 화면에서 로그아웃을
+ * 누르면 알람까지 끄고 떠나고, 철회 버튼은 미들웨어가 같은 세대에 한해 통과시킨다(코덱스 #902·#905).
+ * ⚠ **401 로 바꾸지 말 것**(코덱스 #905) — 옛 앱은 401 을 자동 만료로 읽어 알람 예약을 남긴 채 로그인 화면으로 간다.
+ *   그보다 옛 토큰(비밀번호 재설정 등으로 끊긴 것)은 그대로 401 이다.
  * ⚠ **이 빌드들이 두 스토어에 게재되고 `app-version.ts` 의 `minSupported` 로 옛 앱을 막은 뒤 이 분기를 지운다**
  *   (오너 결정 2026-10-15 — 옛 앱 문제는 강제 업데이트로 정리).
  */
@@ -1226,27 +1230,25 @@ auth.get('/me', async (c) => {
       // ⚠ **탈퇴 유예라 끊긴 토큰이면 유예 코드로 답한다**(코덱스 #904 — `authMiddleware` 와 같은 이유). 탈퇴 신청은
       //   모든 기기의 세션을 끊는데, 401 이면 다른 기기는 자동 만료로 읽어 알람 예약을 남긴다 — 유예 코드여야 그
       //   기기도 알람까지 정리하고 떠난다. 계정 내용은 싣지 않는다(폐기된 토큰이다).
-      //   ⚠ 단 **그 403 을 모르는 옛 앱**에는 예전처럼 200 + `deletion_status: pending_deletion` 으로 답한다 — 그래야 옛
-      //   '회원 탈퇴가 진행 중이에요' 화면이 뜬다(`expectsLegacyPendingDeletionAnswer`). 새 토큰은 주지 않는다.
+      //   ⚠ 단 **그 403 을 모르는 옛 앱**에는 예전 유예 화면을 띄우는 최소 모양으로 답한다 — 탈퇴 신청이 끊은 그 세대의
+      //   토큰일 때만(`PENDING_DELETION_LEAVE_SINCE` 주석). 계정 내용은 싣지 않는다 — 이름·이메일은 토큰이 담고 있던 값이다.
       if (row.deletion_status === 'pending_deletion') {
         if (!expectsLegacyPendingDeletionAnswer(c)) {
           return c.json(errorBody('ACCOUNT_PENDING_DELETION', 'Account is scheduled for deletion'), 403);
         }
-        // ⚠ **계정 내용은 싣지 않는다**(코덱스 #904) — 폐기된 토큰이고, 그 폐기가 탈퇴 신청 때문이었는지(비밀번호
-        //   재설정·전 기기 로그아웃일 수도 있다) 이 자리에서는 모른다. 옛 앱이 유예 화면을 띄우는 데 필요한 최소 모양만 —
-        //   이름·이메일은 그 토큰이 이미 담고 있던 값이다.
-        return c.json({
-          user: {
-            id: String(row.id),
-            email: payload.email ?? '',
-            name: payload.name ?? '',
-            plan: 'free',
-            deletion_status: 'pending_deletion',
-          },
-        });
-      } else {
-        return c.json(errorBody('TOKEN_REVOKED', 'Token has been revoked'), 401);
+        if (isRevokedByDeletionRequest(payload.epoch ?? 0, Number(row.token_epoch ?? 0))) {
+          return c.json({
+            user: {
+              id: String(row.id),
+              email: payload.email ?? '',
+              name: payload.name ?? '',
+              plan: 'free',
+              deletion_status: 'pending_deletion',
+            },
+          });
+        }
       }
+      return c.json(errorBody('TOKEN_REVOKED', 'Token has been revoked'), 401);
     }
     const familyAlarmSettings = familyAlarmSettingsFromRow(row);
     const dynamicPromptSettings = dynamicPromptSettingsFromRow(row);
