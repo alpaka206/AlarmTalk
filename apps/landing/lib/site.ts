@@ -44,11 +44,23 @@ export function localeUrl(locale: string, page = ""): string {
   return `${SITE_URL}${localePath(locale, page)}`;
 }
 
-/** hreflang(alternates.languages) 맵 — ko/en/ja + x-default(ko). */
+/**
+ * 본문이 한국어로만 있는 페이지(법무 문서). en·ja 주소도 열리지만 같은 한국어 본문이라 색인하지 않고(noindex),
+ * 사이트맵과 hreflang 에도 넣지 않는다 — noindex 페이지를 사이트맵·hreflang 으로 내밀면 Search Console 이
+ * '제출했는데 noindex' 로 보고한다(2026-10-16).
+ */
+export const KO_ONLY_PAGES: ReadonlySet<string> = new Set(["privacy", "terms"]);
+
+/** 그 페이지가 실제로 색인을 받는 로케일들. */
+export function indexedLocales(page = ""): readonly string[] {
+  return KO_ONLY_PAGES.has(page) ? [routing.defaultLocale] : routing.locales;
+}
+
+/** hreflang(alternates.languages) 맵 — 색인하는 로케일 + x-default(ko). */
 export function languageAlternates(page = ""): Record<string, string> {
   return {
     ...Object.fromEntries(
-      routing.locales.map((l) => [l, localePath(l, page)]),
+      indexedLocales(page).map((l) => [l, localePath(l, page)]),
     ),
     "x-default": localePath(routing.defaultLocale, page),
   };
@@ -57,20 +69,19 @@ export function languageAlternates(page = ""): Record<string, string> {
 /**
  * 스토어 링크 — 두 곳 다 **앱과 백엔드가 쓰는 식별자 그대로**다.
  *
- * - Google Play: 패키지명 `com.alarmtalk.app`. 출시된 앱이라 기본값이 실제 주소다 —
- *   배포 환경변수 하나 빠뜨렸다고 출시된 앱을 '곧 출시' 로 말하게 두지 않는다.
+ * - Google Play: 패키지명 `com.alarmtalk.app`.
  * - App Store: App Store Connect 앱 레코드의 Apple ID `6799711245`
  *   (`packages/backend/src/lib/app-version.ts` 의 `IOS.storeUrl` 과 같은 값).
  *   2026-09-15 심사 제출 — 배지는 기본으로 **링크가 살아 있다**(게재 승인 즉시 열리게).
  *   다시 '곧 출시' 로 내려야 하면 `NEXT_PUBLIC_APP_STORE_LIVE=0` 을 켠다.
+ *
+ * ⚠ **환경변수로 덮지 않는다**(2026-10-16). 예전에는 `NEXT_PUBLIC_GOOGLE_PLAY_URL`·`NEXT_PUBLIC_APP_STORE_URL` 이
+ * 덮을 수 있었는데, 배포 환경에 시험값 "test" 가 들어가 운영의 모든 페이지에서 두 배지가 `href="test"` 로 죽어
+ * 있었다(Search Console 의 `/en/faq/test` 404 로 드러났다). 주소는 앱 식별자 그대로라 바뀔 일이 없다 — 바뀌면 여기를 고친다.
  */
 export const STORE_LINKS = {
-  googlePlay:
-    process.env.NEXT_PUBLIC_GOOGLE_PLAY_URL ??
-    "https://play.google.com/store/apps/details?id=com.alarmtalk.app",
-  appStore:
-    process.env.NEXT_PUBLIC_APP_STORE_URL ??
-    "https://apps.apple.com/app/id6799711245",
+  googlePlay: "https://play.google.com/store/apps/details?id=com.alarmtalk.app",
+  appStore: "https://apps.apple.com/app/id6799711245",
 } as const;
 
 /**

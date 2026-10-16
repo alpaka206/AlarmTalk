@@ -101,7 +101,9 @@ function Badge({ href, live, glyph, eyebrow, label, ariaLive, ariaSoon }: BadgeP
  */
 export function StoreBadges({ className }: { className?: string }) {
   const t = useTranslations("store");
-  const playLive = STORE_LINKS.googlePlay !== "#";
+  // Play 는 게재 중이다. 예전에는 env 로 주소를 "#" 로 덮어 '곧 출시' 로 내릴 수 있었지만, 스토어 주소를 env 로 덮지
+  // 않게 되면서(lib/site.ts — "test" 사고) 그 길도 없어졌다. 내려야 하면 App Store 처럼 스위치를 둔다.
+  const playLive = true;
 
   return (
     <div className={`flex flex-wrap items-center justify-center gap-3 ${className ?? ""}`}>

@@ -11,6 +11,8 @@ export async function securityHeadersMiddleware(c: Context, next: Next) {
   c.header('X-Permitted-Cross-Domain-Policies', 'none');
   c.header('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
   c.header('Strict-Transport-Security', 'max-age=63072000; includeSubDomains');
+  // API 는 검색 결과에 나오지 않는다 — 공개 페이지는 랜딩(alarm-talk.com)이다(2026-10-16, Search Console 이 API 루트를 크롤링).
+  c.header('X-Robots-Tag', 'noindex, nofollow');
   // 관리자 콘솔(/admin)은 폼 유효기간 변환용 인라인 script 와 페이지 style 을 쓴다.
   // Basic 인증으로 보호되고 렌더링 데이터는 escapeHtml 로 이스케이프하므로, 이 경로에만
   // inline script/style 을 허용한다(그 외 API 응답은 default-src 'none' 유지).
