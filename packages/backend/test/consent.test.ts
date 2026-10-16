@@ -295,7 +295,7 @@ describe('lib/consent — CONSENT_MIN_POLICY_VERSION', () => {
   });
 
   it('한 유형의 최소 버전만 올리면 그 유형만 missing 이 된다', async () => {
-    CONSENT_MIN_POLICY_VERSION.privacy = BASELINE_MIN_VERSION.privacy + 1;
+    CONSENT_MIN_POLICY_VERSION.privacy = Number(minVersionOf('privacy')) + 1;
     mockDB.pushResult([
       consentRow('terms', 1, '3'),
       consentRow('privacy', 1, minVersionOf('privacy')),
@@ -367,7 +367,7 @@ describe('consentMiddleware — 데이터 라우트 게이트 (B4)', () => {
     mockConsentRows = [];
     const res = await call('GET', '/api/alarm');
     expect(res.status).toBe(403);
-    expect((await res.json()).error_code).toBe('CONSENT_REQUIRED');
+    expect(((await res.json()) as { error_code: string }).error_code).toBe('CONSENT_REQUIRED');
   });
 
   it('일반 필수 3종만 기록해도 데이터 라우트 통과 (게이트는 민감 동의를 보지 않는다)', async () => {
@@ -378,7 +378,7 @@ describe('consentMiddleware — 데이터 라우트 게이트 (B4)', () => {
     ];
     const res = await call('GET', '/api/alarm');
     expect(res.status).toBe(200);
-    expect((await res.json()).ok).toBe('data-route');
+    expect(((await res.json()) as { ok: string }).ok).toBe('data-route');
   });
 
   // 가입 시 5종을 다 받더라도, 설정에서 음성 동의를 철회한 사용자는 그 기능만 막혀야 한다.
@@ -418,6 +418,9 @@ interface StatusBody {
   missing: string[];
   collect: string[];
   sensitive_missing: string[];
+  optional: string[];
+  prechecked: string[];
+  has_prior_consent: boolean;
   policy_version: string;
 }
 
@@ -490,7 +493,7 @@ describe('POST /user/consents — 저장되는 정책 버전', () => {
     for (const v of ['5', '4', '7', '999']) {
       const res = await postConsents([{ type: 'terms', agreed: true }], v);
       expect(res.status, v).toBe(409);
-      expect((await res.json()).error_code).toBe('POLICY_VERSION_MISMATCH');
+      expect(((await res.json()) as { error_code: string }).error_code).toBe('POLICY_VERSION_MISMATCH');
     }
     expect(mockConsentInserts.map((r) => r.version)).toEqual(['6']);
   });
@@ -559,7 +562,7 @@ describe('GET /user/consents/status — collect / sensitive_missing', () => {
     mockConsentRows = [...answeredRows(), consentRow('marketing', 1, '3')];
     expect((await consentStatus()).collect).toEqual([]);
     // 최소 버전을 올린 유형만 다시 담긴다(기준선보다 위로 올려야 뜻이 산다).
-    CONSENT_MIN_POLICY_VERSION.privacy = BASELINE_MIN_VERSION.privacy + 1;
+    CONSENT_MIN_POLICY_VERSION.privacy = Number(minVersionOf('privacy')) + 1;
     expect((await consentStatus()).collect).toEqual(['privacy']);
   });
 
@@ -615,7 +618,7 @@ describe('GET /user/consents/status — collect / sensitive_missing', () => {
   });
 
   it('한 유형의 최소 버전만 올리면 그 유형만 missing/collect 에 뜬다', async () => {
-    CONSENT_MIN_POLICY_VERSION.privacy = BASELINE_MIN_VERSION.privacy + 1;
+    CONSENT_MIN_POLICY_VERSION.privacy = Number(minVersionOf('privacy')) + 1;
     mockConsentRows = [...answeredRows(), consentRow('marketing', 1, '3')];
     const body = await consentStatus();
     expect(body.needs_consent).toBe(true);
