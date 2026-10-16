@@ -120,8 +120,10 @@ async function healthPayload(env: Env) {
 }
 
 // **API 는 검색에 나오지 않는다**(2026-10-16 — Search Console 이 `https://api.alarm-talk.com/` 를 크롤링했다).
-// 모든 응답에 noindex 를 싣고(`securityHeadersMiddleware`), robots.txt 로 크롤링도 막는다. 공개 페이지는 랜딩(alarm-talk.com)이다.
-app.get('/robots.txt', (c) => c.text('User-agent: *\nDisallow: /\n'));
+// 모든 응답에 noindex 를 싣는다(`securityHeadersMiddleware`). 공개 페이지는 랜딩(alarm-talk.com)이다.
+// ⚠ robots.txt 로 **막지 않는다**(코덱스 #909) — 크롤링을 막으면 크롤러가 noindex 헤더를 읽지 못해, 이미 발견된 주소가
+//   '차단된 채 주소만' 색인에 남는다. 열어 두고 noindex 로 빼는 것이 맞다.
+app.get('/robots.txt', (c) => c.text('User-agent: *\nAllow: /\n'));
 
 // Health check with DB connectivity
 app.get('/', async (c) => c.json(await healthPayload(c.env)));

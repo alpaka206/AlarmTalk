@@ -69,45 +69,20 @@ export function languageAlternates(page = ""): Record<string, string> {
 /**
  * 스토어 링크 — 두 곳 다 **앱과 백엔드가 쓰는 식별자 그대로**다.
  *
- * - Google Play: 패키지명 `com.alarmtalk.app`. 출시된 앱이라 기본값이 실제 주소다 —
- *   배포 환경변수 하나 빠뜨렸다고 출시된 앱을 '곧 출시' 로 말하게 두지 않는다.
+ * - Google Play: 패키지명 `com.alarmtalk.app`.
  * - App Store: App Store Connect 앱 레코드의 Apple ID `6799711245`
  *   (`packages/backend/src/lib/app-version.ts` 의 `IOS.storeUrl` 과 같은 값).
  *   2026-09-15 심사 제출 — 배지는 기본으로 **링크가 살아 있다**(게재 승인 즉시 열리게).
  *   다시 '곧 출시' 로 내려야 하면 `NEXT_PUBLIC_APP_STORE_LIVE=0` 을 켠다.
+ *
+ * ⚠ **환경변수로 덮지 않는다**(2026-10-16). 예전에는 `NEXT_PUBLIC_GOOGLE_PLAY_URL`·`NEXT_PUBLIC_APP_STORE_URL` 이
+ * 덮을 수 있었는데, 배포 환경에 시험값 "test" 가 들어가 운영의 모든 페이지에서 두 배지가 `href="test"` 로 죽어
+ * 있었다(Search Console 의 `/en/faq/test` 404 로 드러났다). 주소는 앱 식별자 그대로라 바뀔 일이 없다 — 바뀌면 여기를 고친다.
  */
 export const STORE_LINKS = {
-  googlePlay: storeUrl(
-    process.env.NEXT_PUBLIC_GOOGLE_PLAY_URL,
-    "https://play.google.com/store/apps/details?id=com.alarmtalk.app",
-    "play.google.com",
-  ),
-  appStore: storeUrl(
-    process.env.NEXT_PUBLIC_APP_STORE_URL,
-    "https://apps.apple.com/app/id6799711245",
-    "apps.apple.com",
-  ),
+  googlePlay: "https://play.google.com/store/apps/details?id=com.alarmtalk.app",
+  appStore: "https://apps.apple.com/app/id6799711245",
 } as const;
-
-/**
- * 환경변수로 덮은 스토어 주소는 **그 스토어의 https 주소일 때만** 쓴다.
- *
- * ⚠ 2026-10-16 에 운영 랜딩의 모든 페이지에서 두 스토어 배지가 `href="test"` 였다 — 배포 환경변수에 시험값이
- * 들어가 있었고 코드는 `??` 로 아무 문자열이나 받았다. 상대 경로라 `/en/faq/test` 같은 404 로 이어졌고(Search
- * Console 404 보고), 무엇보다 설치 버튼이 죽어 있었다. 그래서 형식을 보고, 아니면 기본값으로 돌아가며 빌드 로그에 남긴다.
- */
-function storeUrl(raw: string | undefined, fallback: string, host: string): string {
-  const value = raw?.trim();
-  if (!value) return fallback;
-  try {
-    const url = new URL(value);
-    if (url.protocol === "https:" && url.hostname === host) return url.toString();
-  } catch {
-    // 아래에서 경고하고 기본값을 쓴다.
-  }
-  console.warn(`[site] 스토어 주소 "${value}" 는 https://${host}/… 가 아니라 기본값 ${fallback} 을 씁니다.`);
-  return fallback;
-}
 
 /**
  * 백엔드 API 원점. 랜딩이 부르는 것은 인증 없는 공개 라우트뿐이다(이벤트 좋아요).
