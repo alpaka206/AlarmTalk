@@ -24,6 +24,67 @@ node -e "const m=require('fs').readFileSync('docs/product/release-notes.md','utf
 
 ---
 
+## 1.2.14 (versionCode 34 / iOS 빌드 11)
+
+탈퇴 유예 화면 폐지(#904·#905). 탈퇴를 신청하면 모든 기기에서 로그아웃되고, 30일 안에 다시 로그인하면 서버가 탈퇴를
+철회한다(`docs/spec/session-and-auth.md` 「탈퇴 유예 — 다시 로그인하면 철회」). iOS 는 첫 화면(랜딩)이 iOS 27 일부 기기에서
+닫히던 것도 고쳤다(#901, Sentry ALARMTALK-IOS-4). 서버 쪽 고침(날씨 원천 물러서기 등)은 모든 버전에 가므로 적지 않는다.
+
+- 법무 문서는 **버전 5 그대로**다. 탈퇴 철회 문구·쿠폰 기록 문구 개정(버전 6)은 서버의 `CURRENT_POLICY_VERSION` 이 정확히
+  같은 값만 받아(`POST /user/consents` 409) 두 스토어 게재 시점과 맞춰야 해서 이번 회차에 싣지 않았다. 지금 처리방침의
+  "30일의 유예 기간 동안 철회할 수 있습니다" 는 그대로 사실이다(철회 방법이 다시 로그인으로 바뀌었을 뿐).
+
+### Play (Android 34)
+
+### ko-KR
+
+```
+• 회원 탈퇴를 신청하면 모든 기기에서 로그아웃됩니다.
+• 탈퇴를 신청한 뒤 30일 안에 다시 로그인하면 탈퇴가 취소됩니다.
+```
+
+### en-US
+
+```
+• Requesting account deletion now signs you out on all devices.
+• Signing in again within 30 days of the request cancels the deletion.
+```
+
+### ja-JP
+
+```
+• 退会を申請すると、すべての端末からログアウトします。
+• 申請から30日以内にもう一度ログインすると、退会は取り消されます。
+```
+
+### App Store (iOS 빌드 11)
+
+#### ko
+
+```
+• 회원 탈퇴를 신청하면 모든 기기에서 로그아웃됩니다.
+• 탈퇴를 신청한 뒤 30일 안에 다시 로그인하면 탈퇴가 취소됩니다.
+• 일부 기기에서 첫 화면을 열 때 앱이 닫히던 문제를 고쳤습니다.
+```
+
+#### en-US
+
+```
+• Requesting account deletion now signs you out on all devices.
+• Signing in again within 30 days of the request cancels the deletion.
+• Fixed the app closing on the first screen on some devices.
+```
+
+#### ja
+
+```
+• 退会を申請すると、すべての端末からログアウトします。
+• 申請から30日以内にもう一度ログインすると、退会は取り消されます。
+• 一部の端末で最初の画面を開くとアプリが終了する問題を修正しました。
+```
+
+---
+
 ## 1.2.13 (versionCode 33 / iOS 빌드 10)
 
 선물 코드 폐지. iOS 1.2.12(빌드 9)가 App Store 심사 지침 3.1.1 로 다시 반려돼(2026-10-12 — 이번 사유는 선물 코드) 고친
