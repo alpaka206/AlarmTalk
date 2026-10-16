@@ -35,9 +35,8 @@ settings:
     # ⚠ 빌드 7(1.2.10)은 **강제 업데이트 하한**이 된다(`IOS.minSupported` 를 7 로 올려 빌드
     # 5·6 을 막는다). 하한이 되는 빌드는 **App Store 게재를 확인하기 전에** 서버를 올리면 안 된다
     # — 받을 것이 없는 강제 업데이트로 앱이 벽돌이 된다. Android 하한은 Play 게재로 따로 간다.
-    # 빌드 12(1.2.14) — 서버가 옛 앱을 가르는 문턱은 11 이다(`routes/auth.ts` 의 `PENDING_DELETION_LEAVE_SINCE` — 11
-    # 미만은 옛 탈퇴 유예 화면). 빌드 11 은 법무 문서 버전 5 로 만들어 App Store 에 올렸다가 쓰지 않았다(문서 6 으로 다시
-    # 빌드). App Store 게재·`minSupported` 상향 뒤 그 분기를 지운다.
+    # 빌드 12(1.2.14). 빌드 11 은 법무 문서 버전 5 로 만들어 App Store 에 올렸다가 쓰지 않았다(문서 6 으로 다시 빌드).
+    # 서버의 옛 앱(빌드 ≤10) 호환 갈래는 2026-10-16 에 지웠다 — 실사용자가 없다(오너).
     MARKETING_VERSION: "1.2.14"
     CURRENT_PROJECT_VERSION: "12"
     # DEVELOPMENT_TEAM must be set per-developer via xcconfig or Xcode UI.

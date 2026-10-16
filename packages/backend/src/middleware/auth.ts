@@ -16,7 +16,6 @@ import type { Context, Next } from 'hono';
 import type { ErrorCode } from '@alarmtalk/shared';
 import type { AppEnv } from '../types';
 import { verifyAppJwt } from '../lib/jwt';
-import { isRevokedByDeletionRequest } from '../lib/account-deletion';
 
 interface TokenPayload {
   sub: string;
@@ -145,12 +144,7 @@ export async function authMiddleware(c: Context<AppEnv>, next: Next) {
 
       // 토큰 폐기 검사(B5): JWT epoch 가 현재 users.token_epoch 보다 낮으면, 로그아웃
       // (전 기기) 또는 비밀번호 재설정으로 무효화된 구(舊) 토큰이다. 만료 전이라도 거부.
-      // ⚠ 예외 하나 — **옛 앱 유예 화면의 철회 버튼**(코덱스 #905). 그 화면은 탈퇴 신청이 끊은 토큰으로 떠 있으니,
-      //   그 세대(`token_epoch - 1`)만은 철회를 허용한다. 막으면 옛 앱은 401 을 자동 만료로 읽어 알람 예약을 남긴 채
-      //   로그인 화면으로 간다. 철회 라우트는 세대를 다시 올려 이 토큰도 끝낸다(옛 앱은 그 뒤 한 번 다시 로그인한다).
-      const legacyCancelWithDeletionToken =
-        deletionStatus === 'pending_deletion' && isCancelDeletion && isRevokedByDeletionRequest(verified.epoch, tokenEpoch);
-      if (verified.epoch < tokenEpoch && !legacyCancelWithDeletionToken) {
+      if (verified.epoch < tokenEpoch) {
         return c.json({ error: 'Token has been revoked', error_code: 'TOKEN_REVOKED' }, 401);
       }
       c.set('tokenEpoch', verified.epoch);

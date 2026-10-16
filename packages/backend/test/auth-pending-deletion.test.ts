@@ -111,16 +111,13 @@ describe('authMiddleware — pending_deletion 차단', () => {
     expect((await res.json()).error_code).toBe('TOKEN_REVOKED');
   });
 
-  it('탈퇴 신청이 끊은 그 세대의 토큰은 철회만 통과한다 — 옛 앱 유예 화면의 철회 버튼(코덱스 #905)', async () => {
+  it('탈퇴 신청이 끊은 바로 그 세대의 토큰도 철회를 통과하지 못한다(옛 앱 예외는 2026-10-16 에 지웠다)', async () => {
     deletionStatus = 'pending_deletion';
     tokenEpoch = 1;
     mockVerifyAppJwt.mockResolvedValueOnce({ sub: 'user-1', iss: 'voice-alarm', epoch: 0 });
     const res = await call(buildApp(), 'DELETE', '/api/user/me/deletion');
-    expect(res.status).toBe(200);
-    // 푸시 해제는 예외가 아니다 — 폐기 검사를 그대로 지난다.
-    mockVerifyAppJwt.mockResolvedValueOnce({ sub: 'user-1', iss: 'voice-alarm', epoch: 0 });
-    const unregister = await call(buildApp(), 'POST', '/api/push/unregister');
-    expect(unregister.status).toBe(401);
+    expect(res.status).toBe(401);
+    expect((await res.json()).error_code).toBe('TOKEN_REVOKED');
   });
 
   it('active 계정의 폐기된 토큰은 그대로 401 TOKEN_REVOKED', async () => {
