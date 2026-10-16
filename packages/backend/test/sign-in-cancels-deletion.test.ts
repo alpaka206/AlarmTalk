@@ -202,16 +202,6 @@ describe('다른 기기의 끊긴 세션은 유예 코드로 답한다(코덱스
     }
   });
 
-  it('끊긴 토큰으로는 철회 버튼(DELETE /user/me/deletion)도 통과하지 못한다 — 다시 로그인하면 철회된다', async () => {
-    await db.execute("UPDATE users SET token_epoch = 2 WHERE id = 'owner'");
-    const deletionGen = await signAppJwt({ sub: 'owner', email: 'owner@example.test', epoch: 1 }, ENV.JWT_SECRET);
-    const app = new Hono<AppEnv>();
-    app.use('/user/*', authMiddleware);
-    app.route('/user', user);
-    const res = await app.request('/user/me/deletion', { method: 'DELETE', headers: { Authorization: `Bearer ${deletionGen}` } }, ENV);
-    expect(res.status).toBe(401);
-    expect((await row('owner')).deletion_status).toBe('pending_deletion');
-  });
 });
 
 describe('탈퇴 신청은 모든 기기의 세션과 푸시 등록을 끊는다', () => {
@@ -273,26 +263,4 @@ describe('탈퇴 신청은 모든 기기의 세션과 푸시 등록을 끊는다
     expect(tokens.rows.map((r) => r.token)).toEqual(['tok-other']);
   });
 
-  it('옛 앱의 철회 버튼(DELETE /user/me/deletion)도 다른 기기의 세션·푸시 등록을 끊는다(코덱스 #904)', async () => {
-    // 이 배포 전에 신청해 세대가 그대로인 유예 행 — 마이그레이션 #129 보다 먼저 철회되는 경우.
-    await db.execute("DELETE FROM push_tokens");
-    await db.execute(`INSERT INTO push_tokens (id, user_id, token, platform) VALUES
-      ('q1', 'owner', 'tok-owner-old', 'android'), ('q2', 'other', 'tok-other', 'android')`);
-    const before = Number((await row('owner')).token_epoch);
-
-    const app = new Hono<AppEnv>();
-    app.use('*', async (c, next) => {
-      c.set('userId', 'owner');
-      await next();
-    });
-    app.route('/user', user);
-    const res = await app.request('/user/me/deletion', { method: 'DELETE' }, ENV);
-    expect(res.status).toBe(200);
-
-    const after = await row('owner');
-    expect(after.deletion_status).toBe('active');
-    expect(Number(after.token_epoch)).toBe(before + 1);
-    const tokens = await db.execute('SELECT token FROM push_tokens ORDER BY token');
-    expect(tokens.rows.map((r) => r.token)).toEqual(['tok-other']);
-  });
 });
