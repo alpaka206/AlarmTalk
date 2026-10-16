@@ -307,26 +307,12 @@ describe('탈퇴 30일 유예 / 철회', () => {
     expect(days).toBeLessThan(30.1);
   });
 
-  it('DELETE /me/deletion → active 로 복구', async () => {
+  it('철회 버튼 경로(DELETE /me/deletion)는 없다 — 철회는 다시 로그인 하나다(2026-10-16)', async () => {
     const app = buildApp();
     const res = await app.request(req('DELETE', '/user/me/deletion'));
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    console.log('[DELETE /me/deletion]', JSON.stringify(body));
-    expect(body.status).toBe('active');
+    expect(res.status).toBe(404);
     const row = await db.execute({ sql: 'SELECT deletion_status FROM users WHERE id = ?', args: [PK] });
-    expect(row.rows[0]!.deletion_status).toBe('active');
-  });
-
-  it('이미 active인 계정의 철회 재시도는 무변경 성공이다', async () => {
-    const app = buildApp();
-    const before = await db.execute({ sql: 'SELECT * FROM users WHERE id = ?', args: [PK] });
-    expect(before.rows[0]!.deletion_status).toBe('active');
-    const res = await app.request(req('DELETE', '/user/me/deletion'));
-    expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ success: true, status: 'active' });
-    const after = await db.execute({ sql: 'SELECT * FROM users WHERE id = ?', args: [PK] });
-    expect(after.rows).toEqual(before.rows);
+    expect(row.rows[0]!.deletion_status).toBe('pending_deletion');
   });
 });
 

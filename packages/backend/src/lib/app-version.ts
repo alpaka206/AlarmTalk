@@ -81,7 +81,12 @@ const ANDROID: AppVersionPolicy = {
   // **인앱 업데이트로는 확인할 수 없다** — 29 는 서버가 `updateRequired`·`updateRecommended`
   // 를 켜야만 인앱 업데이트를 띄우는데(`InAppUpdateManager`), 29 에서 그걸 켜는 것이 바로
   // 이 변경이다. 이 값이 prod 에 나가기 전에는 30 이 게재돼 있어도 아무것도 뜨지 않는다.
-  minSupported: 31,
+  //
+  // 34 로 올리는 이유(2026-10-16) — **탈퇴 유예 화면 폐지(1.2.14, #904)와 법무 문서 버전 6**. 33 이하는 탈퇴 유예
+  // 403 을 모르고(다른 기기 탈퇴 신청 뒤 멈춘다) 문서 버전 5 를 싣는다. 서버가 그 앱들을 위해 두던 호환 갈래(옛 유예 화면
+  // 응답·철회 버튼 예외·문서 5 수락)를 이 회차에 지웠다. 순서: Play `34 (1.2.14)` 가 `PUBLISHED` 인 것을 확인하고
+  // 올렸다(2026-10-16 `releases.list`).
+  minSupported: 34,
   // 권장 업데이트 기준(비차단). 미만이면 클라가 FLEXIBLE 인앱 업데이트를 띄운다
   // (`InAppUpdateManager` — 백그라운드 다운로드 후 재시작 안내). minSupported 보다
   // 낮으면 "필수 버전이 최신 버전보다 높다" 는 모순이라 함께 올린다.
@@ -112,7 +117,8 @@ const ANDROID: AppVersionPolicy = {
   // **차단 화면**이다 — 순서 규칙은 위 `minSupported` 주석.
   //
   // 31(2026-10-11): `minSupported` 를 31 로 올리므로 함께 올린다 — 이번에도 차단 화면이다.
-  latest: 31,
+  // 34(2026-10-16): `minSupported` 를 34 로 올리므로 함께 올린다 — 차단 화면이다.
+  latest: 34,
   storeUrl: 'https://play.google.com/store/apps/details?id=com.alarmtalk.app',
 };
 

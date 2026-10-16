@@ -63,6 +63,11 @@ it('대소문자 무시', () => {
     expect(p.latest).toBeGreaterThanOrEqual(p.minSupported);
   });
 
+  // 33 이하는 탈퇴 유예 403 을 모르고 문서 버전 5 를 싣는다 — 서버가 그 호환 갈래를 지웠으므로 막는다(2026-10-16).
+  it('android minSupported 는 1.2.14(34) 이상이다 — 옛 앱 호환 갈래를 지운 회차', () => {
+    expect(appVersionPolicy('android').minSupported).toBeGreaterThanOrEqual(34);
+  });
+
   // --- iOS ---
 
   it('ios 정책은 android 와 분리돼 있다', () => {

@@ -167,8 +167,8 @@ describe('lib/consent — config', () => {
   it('최소 버전은 전부 3 이고, 사용 기록 수집만 5 를 요구한다', () => {
     // 6(2026-10-16)은 탈퇴 철회 방법·결제 기록 문구 정정 — 수집 범위가 그대로라 최소 버전은 그대로다.
     expect(CURRENT_POLICY_VERSION).toBe('6');
-    // 개정 동안은 앞 버전(5 — 1.2.13 이하 앱에 실린 문서)도 받는다. 옛 앱을 막은 뒤 지운다.
-    expect([...ACCEPTED_POLICY_VERSIONS]).toEqual(['5', '6']);
+    // 앞 버전 5(1.2.13 이하 앱의 문서)는 2026-10-16 에 지웠다(오너 — 옛 앱 정리).
+    expect([...ACCEPTED_POLICY_VERSIONS]).toEqual(['6']);
     expect(Object.values(CONSENT_MIN_POLICY_VERSION).every((v) => v === 3)).toBe(true);
     expect(USAGE_EVENT_MIN_PRIVACY_VERSION).toBe(5);
   });
@@ -483,18 +483,14 @@ describe('POST /user/consents — 저장되는 정책 버전', () => {
     ]);
   });
 
-  it('개정 동안은 앞 문서 버전(5)도 받고, 앱이 보여 준 그 버전으로 기록한다 — 그 밖은 409(2026-10-16)', async () => {
-    const legacy = await postConsents([{ type: 'terms', agreed: true }], '5');
-    expect(legacy.status).toBe(200);
-    const current = await postConsents([{ type: 'terms', agreed: true }], '6');
-    expect(current.status).toBe(200);
-    expect(mockConsentInserts.map((r) => r.version)).toEqual(['5', '6']);
-    for (const v of ['4', '7', '999']) {
+  it('받는 문서 버전은 6 하나다 — 5·4·7·999 는 409, 6 은 그 값으로 기록한다', async () => {
+    expect((await postConsents([{ type: 'terms', agreed: true }], '6')).status).toBe(200);
+    for (const v of ['5', '4', '7', '999']) {
       const res = await postConsents([{ type: 'terms', agreed: true }], v);
       expect(res.status, v).toBe(409);
       expect((await res.json()).error_code).toBe('POLICY_VERSION_MISMATCH');
     }
-    expect(mockConsentInserts).toHaveLength(2);
+    expect(mockConsentInserts.map((r) => r.version)).toEqual(['6']);
   });
 
   it('version 필드는 호환을 위해 받기만 하고 무시한다 — 400 으로 깨지 않는다', async () => {

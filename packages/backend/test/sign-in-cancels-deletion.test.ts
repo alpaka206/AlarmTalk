@@ -184,66 +184,24 @@ describe('다른 기기의 끊긴 세션은 유예 코드로 답한다(코덱스
     expect(body.user).toBeUndefined();
   });
 
-  it('그 403 을 모르는 옛 앱(안드로이드 ≤33·iOS ≤10)에는 신청이 끊은 그 세대의 토큰이면 옛 유예 화면 모양(코덱스 #905)', async () => {
+  it('옛 앱 헤더를 보내도 예전 유예 화면 모양은 주지 않는다 — 옛 앱 호환은 2026-10-16 에 지웠다', async () => {
     await db.execute("UPDATE users SET token_epoch = 2 WHERE id = 'owner'");
     const deletionGen = await signAppJwt({ sub: 'owner', email: 'owner@example.test', epoch: 1 }, ENV.JWT_SECRET);
-    const older = await signAppJwt({ sub: 'owner', email: 'owner@example.test', epoch: 0 }, ENV.JWT_SECRET);
     const app = new Hono<{ Bindings: Env }>();
     app.route('/auth', authRoutes);
-    const ask = (token: string, platform?: string, version?: string) =>
-      app.request(
+    for (const [platform, version] of [['android', '33'], ['ios', '10'], ['android', '34']] as const) {
+      const res = await app.request(
         new Request('http://localhost/auth/me', {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            ...(platform ? { 'X-App-Platform': platform } : {}),
-            ...(version ? { 'X-App-Version': version } : {}),
-          },
+          headers: { Authorization: `Bearer ${deletionGen}`, 'X-App-Platform': platform, 'X-App-Version': version },
         }),
         undefined,
         ENV,
       );
-    for (const [platform, version] of [['android', '33'], ['ios', '10']] as const) {
-      const res = await ask(deletionGen, platform, version);
-      expect(res.status, `${platform} ${version}`).toBe(200);
-      const body = (await res.json()) as { token?: string; user: Record<string, unknown> };
-      expect(body.user.deletion_status).toBe('pending_deletion');
-      expect(body.token).toBeUndefined();
-      // 폐기된 토큰이다 — 지금 계정 내용(설정·플랜)은 싣지 않는다. 이메일은 토큰이 담고 있던 값이다.
-      expect(Object.keys(body.user).sort()).toEqual(['deletion_status', 'email', 'id', 'name', 'plan']);
-      // 그보다 옛 토큰(비밀번호 재설정 등으로 끊긴 것)은 401 이다.
-      expect((await ask(older, platform, version)).status, `${platform} ${version} older`).toBe(401);
-    }
-    for (const [platform, version] of [['android', '34'], ['ios', '11'], [undefined, undefined]] as const) {
-      expect((await ask(deletionGen, platform, version)).status, `${platform} ${version}`).toBe(403);
+      expect(res.status, `${platform} ${version}`).toBe(403);
+      expect(((await res.json()) as { error_code: string }).error_code).toBe('ACCOUNT_PENDING_DELETION');
     }
   });
 
-  it('옛 유예 화면의 철회 버튼은 그 세대의 토큰으로 통과하고, 철회가 그 토큰까지 끝낸다(코덱스 #905)', async () => {
-    await db.execute("UPDATE users SET token_epoch = 2 WHERE id = 'owner'");
-    await db.execute("INSERT INTO push_tokens (id, user_id, token, platform) VALUES ('r1', 'owner', 'tok-owner', 'android')");
-    const deletionGen = await signAppJwt({ sub: 'owner', email: 'owner@example.test', epoch: 1 }, ENV.JWT_SECRET);
-    const older = await signAppJwt({ sub: 'owner', email: 'owner@example.test', epoch: 0 }, ENV.JWT_SECRET);
-    const app = new Hono<AppEnv>();
-    app.use('/user/*', authMiddleware);
-    app.route('/user', user);
-    const cancel = (token: string) =>
-      app.request('/user/me/deletion', { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } }, ENV);
-
-    // 끊긴 지 더 오래된 토큰으로는 철회할 수 없다.
-    expect((await cancel(older)).status).toBe(401);
-    expect((await row('owner')).deletion_status).toBe('pending_deletion');
-    // 철회 말고는 그 세대로도 막힌다(유예 403).
-    const other = await app.request('/user/me', { headers: { Authorization: `Bearer ${deletionGen}` } }, ENV);
-    expect(other.status).toBe(403);
-
-    expect((await cancel(deletionGen)).status).toBe(200);
-    const after = await row('owner');
-    expect(after.deletion_status).toBe('active');
-    expect(Number(after.token_epoch)).toBe(3);
-    expect((await db.execute("SELECT 1 FROM push_tokens WHERE user_id = 'owner'")).rows).toHaveLength(0);
-    // 그 토큰은 이제 끝났다 — 옛 앱은 다시 로그인한다.
-    expect((await app.request('/user/me', { headers: { Authorization: `Bearer ${deletionGen}` } }, ENV)).status).toBe(401);
-  });
 });
 
 describe('탈퇴 신청은 모든 기기의 세션과 푸시 등록을 끊는다', () => {
@@ -305,26 +263,4 @@ describe('탈퇴 신청은 모든 기기의 세션과 푸시 등록을 끊는다
     expect(tokens.rows.map((r) => r.token)).toEqual(['tok-other']);
   });
 
-  it('옛 앱의 철회 버튼(DELETE /user/me/deletion)도 다른 기기의 세션·푸시 등록을 끊는다(코덱스 #904)', async () => {
-    // 이 배포 전에 신청해 세대가 그대로인 유예 행 — 마이그레이션 #129 보다 먼저 철회되는 경우.
-    await db.execute("DELETE FROM push_tokens");
-    await db.execute(`INSERT INTO push_tokens (id, user_id, token, platform) VALUES
-      ('q1', 'owner', 'tok-owner-old', 'android'), ('q2', 'other', 'tok-other', 'android')`);
-    const before = Number((await row('owner')).token_epoch);
-
-    const app = new Hono<AppEnv>();
-    app.use('*', async (c, next) => {
-      c.set('userId', 'owner');
-      await next();
-    });
-    app.route('/user', user);
-    const res = await app.request('/user/me/deletion', { method: 'DELETE' }, ENV);
-    expect(res.status).toBe(200);
-
-    const after = await row('owner');
-    expect(after.deletion_status).toBe('active');
-    expect(Number(after.token_epoch)).toBe(before + 1);
-    const tokens = await db.execute('SELECT token FROM push_tokens ORDER BY token');
-    expect(tokens.rows.map((r) => r.token)).toEqual(['tok-other']);
-  });
 });
