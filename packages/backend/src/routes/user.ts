@@ -20,6 +20,7 @@ import {
   FEATURE_CONSENT_TYPES,
   OPTIONAL_CONSENT_TYPES,
   CURRENT_POLICY_VERSION,
+  ACCEPTED_POLICY_VERSIONS,
   consentAnswerIsCurrent,
   loadLatestConsents,
   missingConsentTypesFrom,
@@ -268,8 +269,8 @@ user.post('/consents', async (c) => {
   // 이미 충족된 것으로 판정돼 영영 안 뜬다.
   //
   // 그래서 클라는 **자기가 실제로 띄운 문서의 버전**(document_version)을 함께 보내야 하고,
-  // 그것이 지금 게시된 버전과 다르면 기록하지 않는다. 기록되는 값은 여전히 서버 상수다 —
-  // document_version 은 저장용이 아니라 '같은 문서를 보고 있는가' 를 확인하는 값이다.
+  // 그것이 받는 버전(`ACCEPTED_POLICY_VERSIONS` — 개정 동안은 앞 버전도)이 아니면 기록하지 않는다. 받으면 **그 버전
+  // 그대로** 기록한다 — 이용자가 실제로 본 문서다(2026-10-16, 버전 6 개정).
   const documentVersion = (body as { document_version?: unknown }).document_version;
   if (typeof documentVersion !== 'string' || documentVersion.trim() === '') {
     return c.json(
@@ -281,7 +282,8 @@ user.post('/consents', async (c) => {
       400,
     );
   }
-  if (documentVersion.trim() !== CURRENT_POLICY_VERSION) {
+  const shownVersion = documentVersion.trim();
+  if (!ACCEPTED_POLICY_VERSIONS.includes(shownVersion)) {
     return c.json(
       {
         error: 'Consent document is out of date',
@@ -355,7 +357,7 @@ user.post('/consents', async (c) => {
         await tx.execute({
           sql: `INSERT INTO user_consents (id, user_id, consent_type, policy_version, agreed)
                 VALUES (?, ?, ?, ?, ?)`,
-          args: [crypto.randomUUID(), userPk, r.type, CURRENT_POLICY_VERSION, r.agreed ? 1 : 0],
+          args: [crypto.randomUUID(), userPk, r.type, shownVersion, r.agreed ? 1 : 0],
         });
       }
       if (withdrewSensitiveConsent) {

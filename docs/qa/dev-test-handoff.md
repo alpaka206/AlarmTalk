@@ -254,7 +254,21 @@
 - 10월 5일 기기 연결 조회: Android A32 연결, iPhone 14 Pro Wi-Fi 페어링 available, S23 미연결.
   앱을 새로 빌드·설치하거나 실기기 검증한 결과는 아니다.
 
-## 스토어 상태 — 2026-10-14
+## 스토어 상태 — 2026-10-16
+
+- **게재 중: 두 스토어 모두 1.2.13** — Play 프로덕션 `33 (1.2.13)` `RELEASE_LIFECYCLE_STATE_PUBLISHED`, App Store 1.2.13(빌드 10)
+  `READY_FOR_SALE`(2026-10-16 두 스토어 API 로 확인). 게재 중인 설명·등록정보에 선물·쿠폰 낱말이 없음도 같은 날 확인했다.
+- **선물 상품을 두 스토어에서 지웠다**(2026-10-16 — 오너 지시). App Store `com.alarmtalk.app.personal_gift_1m`
+  (`DEVELOPER_REMOVED_FROM_SALE` 이던 것)은 `DELETE /v2/inAppPurchases` 204, Play 일회성 상품 `personal_gift_1m`
+  (구매 옵션 `INACTIVE` 이던 것)은 `DELETE oneTimeProducts` 204. 다시 조회해 두 목록에 없음을 확인했다. 지우기 전 설정은
+  `.claude/release-tools/gift-products-backup-20261014.json`. 같은 상품 id 는 다시 쓸 수 없다.
+- **1.2.14**(Android 34 · iOS 빌드 12): 법무 문서 버전 6 을 싣는다 — 서버가 개정 동안 5·6 을 모두 받게 한 변경(#906)이
+  prod 에 나간 뒤 앱이 게재돼야 한다(안 그러면 1.2.14 의 가입·동의가 409). #904 서버(로그인하면 탈퇴 철회)도 같은 조건이다.
+  ⚠ 10/16 에 버전 5 로 만든 첫 빌드(Play edit validate 만, App Store 빌드 11 업로드)는 쓰지 않는다 — 문서 6 으로 다시
+  빌드한다(App Store 는 빌드 12).
+- 아래는 2026-10-14 판이다(이력).
+
+## 스토어 상태 — 2026-10-14 (이력)
 
 - **Play**: 프로덕션 `31 (1.2.11)` **게재**(2026-10-11 오너 게시 — 등록정보 INTERIM 새 판도 함께 나갔다). 강제
   업데이트 하한·latest 는 31 이다(#884). 그다음 `32 (1.2.12)` — 프로모 코드 폐지(위 2026-10-12 절)는 10/12 에 commit
