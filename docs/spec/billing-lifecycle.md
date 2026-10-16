@@ -1311,9 +1311,11 @@ Vibration disabled for ringing alarm
   보관본이 없어 보관본만으로는 못 가린다(같은 400 이 난다). 기본 목소리 알람의 빈 문구·테마는 로컬의
   사실 그대로라 서버도 비우는 것이 맞다(판정: 녹음(`local_audio`)이 아니고 목소리가 기본 목소리).
   그 밖의 알람(클론·녹음)은 예전처럼 빠진 필드를 서버가 지킨다.
-- **안내 문구**: 무료 강등 안내(`downgrade_notice_free_message`)는 "기본 알람음으로" 가 아니라
-  **"기본 목소리로 바뀌었어요"** 다(두 앱, ko·en·ja). 목소리를 잃은 알람의 안내(공유 해제
-  `downgrade_notice_shared_message` · 제자리 교체 `downgrade_notice_replaced_message`)와 그 일을 예고하는
+- **안내 문구**: 목소리를 잃은 알람의 1회성 안내는 **원인과 상관없이 한 문장**이다(2026-10-16 오너 결정 —
+  `downgrade_notice_title`·`downgrade_notice_message`, "기존에 설정한 알람 N개의 목소리가 기본 목소리로 바뀌었어요.",
+  버튼은 '확인' 하나). 예전에는 무료 강등·공유 해제·제자리 교체로 문구를 갈랐는데, 원인을 맞히는 판정이 틀리면 엉뚱한
+  안내가 떴다(2026-10-11 내가 지운 목소리를 '공유 이용권에서 나가게 됐어요' 로). 원인은 대기표가 계속 따로 적는다(유료
+  복원이 무료 강등분만 지운다). 무료 강등의 기한(3일)은 삭제 예고 푸시가 말한다. 그 일을 예고하는
   확인 문구(목소리 삭제 `voicesr_delete_dialog_warning`·`voices_delete_quota_message` · 교체
   `voices_replace_existing_desc` · 음성 동의 철회 `consent_withdraw_voice_body`)도 **"기본 목소리로"** 다
   (두 앱, ko·en·ja — iOS 는 소스 문자열과 `Localizable.xcstrings`).

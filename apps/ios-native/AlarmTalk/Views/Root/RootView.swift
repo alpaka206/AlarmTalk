@@ -206,9 +206,7 @@ struct RootView: View {
                 downgradeNotice = nil
             }
         } message: { notice in
-            // ⚠ **세 원인의 결말이 다르다.** 무료 강등은 이용권을 다시 등록하면 돌아오지만,
-            // 공유 해제는 **돌아오지 않고**(다시 공유받아야 한다), 목소리 교체는 이용권과
-            // 아예 무관하다 — 같은 말로 뭉치면 기다리거나 결제하면 될 줄 안다.
+            // 원인과 무관한 한 문장이다(`downgradeNoticeTitle` 주석).
             Text(downgradeNoticeMessage(notice))
         }
         // 기간 한정 개인 플랜 종료 안내 — **시스템 `.alert`** 다(iOS 의 확인 모달 규약.
@@ -474,27 +472,15 @@ struct RootView: View {
     /// ⚠ 반환 타입이 `LocalizedStringKey` 여야 `.alert(_:)`·`Text(_:)` 가 **번역 카탈로그를
     /// 본다.** `String` 을 돌려주면 비-지역화 오버로드에 묶여, 카탈로그에 en·ja 를 넣어도
     /// 한국어 그대로 나온다(고쳐도 안 고쳐지는 것처럼 보인다).
+    /// ⚠ **원인과 상관없이 한 문장이다**(2026-10-16 오너 결정 — 안드로이드 `downgrade_notice_title`·`downgrade_notice_message`
+    /// 와 같다). 예전에는 무료 강등·공유 해제·목소리 교체로 문구를 갈랐는데, 원인을 맞히는 판정이 틀리면 엉뚱한 안내가 떴다
+    /// (2026-10-11 '공유 이용권에서 나가게 됐어요' 오분류). 알람은 언제나 기본 목소리로 바꾸고, 안내는 바뀌었다는 사실만 말한다.
     private func downgradeNoticeTitle(_ cause: DowngradeNoticeStore.Cause?) -> LocalizedStringKey {
-        switch cause {
-        case .freePlan: return "무료 이용권으로 바뀌었어요"
-        case .voiceReplaced: return "새 목소리로 바뀌었어요"
-        default: return "공유 이용권에서 나가게 됐어요"
-        }
+        return "알람 목소리가 바뀌었어요"
     }
 
     private func downgradeNoticeMessage(_ notice: DowngradeNoticeStore.Notice) -> LocalizedStringKey {
-        switch notice.cause {
-        case .freePlan:
-            return "목소리 알람 \(notice.count)개가 기본 목소리로 바뀌었어요. 3일 안에 이용권을 다시 구독하면 내 목소리가 돌아오고, 지나면 영구 삭제돼요."
-        case .voiceReplaced:
-            return "목소리를 새로 등록하면서 직접 입력한 문구로 만든 알람 \(notice.count)개가 기본 목소리로 바뀌었어요. 새 목소리로 문구를 다시 만들어 주세요."
-        case .sharedReleased:
-            // ⚠ 돌아오는 길로 **코드를 내밀지 말 것**(2026-10-14, App Store 지침 3.1.1). 예전 끝 문장은 "이용권을
-            //   등록하거나 새 초대 코드를 받아야 해요" 였다. 구독해도 남의 목소리는 돌아오지 않는다 — 공유 목소리는
-            //   지금 그룹의 구성원이 공유한 것만 보인다(`voice-profile.ts`). 그래서 끝 문장은 '다시 공유받아야 한다'
-            //   하나다(안드로이드 `downgrade_notice_shared_message` 와 같다).
-            return "공유받던 목소리가 끊겨서 알람 \(notice.count)개가 기본 목소리로 바뀌었어요. 다시 쓰려면 그 목소리를 다시 공유받아야 해요."
-        }
+        return "기존에 설정한 알람 \(notice.count)개의 목소리가 기본 목소리로 바뀌었어요."
     }
 
     /// 대기표에 적힌 강등 안내가 있으면 모달을 연다. 준비 신호·차단 게이트 조건은 프로모

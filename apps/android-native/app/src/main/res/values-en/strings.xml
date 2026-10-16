@@ -802,13 +802,8 @@
     <string name="misc2_theme_mode_system_short">System</string>
     <string name="misc2_theme_mode_light_short">Light</string>
     <string name="misc2_theme_mode_dark_short">Dark</string>
-    <string name="downgrade_notice_free_title">You\'re on the Free plan now</string>
-    <string name="downgrade_notice_free_message">%1$d voice alarm(s) now use a default voice. Subscribe again within 3 days to get your voices back; after that they are deleted permanently.</string>
-    <string name="downgrade_notice_shared_title">You\'ve left the shared plan</string>
-    <string name="downgrade_notice_replaced_title">Your voice was replaced</string>
-    <string name="downgrade_notice_replaced_message">Registering a new voice switched %1$d alarm(s) with custom text to a default voice. Create those messages again with the new voice.</string>
-    <string name="downgrade_notice_shared_message">The shared voice is no longer available, so %1$d alarm(s) now use a default voice. To use it again, it has to be shared with you again.</string>
-    <string name="downgrade_notice_open_billing">View plans</string>
+    <string name="downgrade_notice_title">Alarm voice changed</string>
+    <string name="downgrade_notice_message">%1$d of your alarms now use the default voice.</string>
     <string name="plan_gate_paid_message">This feature is available with a paid plan.</string>
     <string name="msg_voice_preset_only">Basic voices can only say prepared phrases. Choose your own voice to wake up with text you type.</string>
     <string name="msg_voice_locked_free_plan">You\'re on the Free plan now, so this voice can\'t be used. Subscribe again to bring it back.</string>

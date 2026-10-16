@@ -112,7 +112,7 @@ class InviteCodeCopyTest {
                 "$dir/msg_voice_locked_free_plan 이 구독하라고 말하지 않는다",
                 value(dir, "msg_voice_locked_free_plan").has(subscribeWord.getValue(dir)),
             )
-            for (name in listOf("downgrade_notice_shared_message", "msg_voice_locked_free_plan")) {
+            for (name in listOf("downgrade_notice_message", "msg_voice_locked_free_plan")) {
                 val text = value(dir, name)
                 assertFalse("$dir/$name 이 '등록' 이라고 한다 — 코드 입력으로 읽힌다: $text", text.has(registerWord.getValue(dir)))
                 assertFalse("$dir/$name 이 돌아가는 길로 코드를 내민다 — $text", text.has(codeWord.getValue(dir)))
