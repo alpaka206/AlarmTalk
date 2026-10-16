@@ -5755,23 +5755,6 @@
         }
       }
     },
-    "신청일로부터 30일 뒤에 계정과 데이터가 완전히 삭제돼요.\n그 전에 탈퇴를 취소하면 계정을 그대로 복구할 수 있어요." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Your account and data will be permanently deleted 30 days after your request.\nCancel the deletion before then to restore your account as it was."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "申請日から30日後に、アカウントとデータが完全に削除されます。\nそれまでに退会を取り消せば、アカウントをそのまま復元できます。"
-          }
-        }
-      }
-    },
     "아내" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -9769,23 +9752,6 @@
         }
       }
     },
-    "탈퇴 취소하고 계속 사용하기" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Cancel deletion and keep using"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "退会を取り消して使い続ける"
-          }
-        }
-      }
-    },
     "태어난 시간" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -10319,23 +10285,6 @@
         }
       }
     },
-    "회원 탈퇴가 진행 중이에요" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Your account deletion is in progress"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "退会手続きが進行中です"
-          }
-        }
-      }
-    },
     "회원 탈퇴를 취소했어요. 계정이 복구됐어요." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -10777,23 +10726,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "対応していない音声形式です。もう一度録音してください。"
-          }
-        }
-      }
-    },
-    "탈퇴 신청 중인 계정이에요. 탈퇴를 취소하면 다시 쓸 수 있어요." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "This account is scheduled for deletion. Cancel the deletion to use it again."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "退会申請中のアカウントです。退会を取り消すと再び利用できます。"
           }
         }
       }
@@ -15545,6 +15477,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "保存した声は削除して、この声で登録します。"
+          }
+        }
+      }
+    },
+    "탈퇴 신청 중인 계정이에요. 다시 로그인하면 탈퇴가 취소돼요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This account is scheduled for deletion. Sign in again to cancel the deletion."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "退会申請中のアカウントです。もう一度ログインすると退会が取り消されます。"
+          }
+        }
+      }
+    },
+    "탈퇴를 신청한 계정이라 이 기기에서도 로그아웃했어요. 다시 로그인하면 탈퇴가 취소돼요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This account is scheduled for deletion, so you have been signed out on this device too. Sign in again to cancel the deletion."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "退会申請中のアカウントのため、この端末でもログアウトしました。もう一度ログインすると退会が取り消されます。"
           }
         }
       }

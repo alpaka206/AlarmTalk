@@ -16,6 +16,7 @@ import {
   latestKmaRun,
   parseKmaPrecipAmount,
   previousKmaRun,
+  KMA_NODATA_MAX_STEPS,
   readKmaPage,
   type KmaItem,
 } from '../src/lib/weather-kma';
@@ -406,6 +407,57 @@ describe('fetchKmaDays — 호출', () => {
     await expect(
       fetchKmaDays(SEOUL, SEOUL_SOURCE, { now: NOW, budget: fixedFetchBudget(1), kmaServiceKey: KEY }),
     ).rejects.toMatchObject({ failure: 'budget' });
+  });
+
+  it('발표가 몇 시간 늦으면 세 회차까지 물러선다 — 그 이상은 NODATA 실패, 찾은 회차는 같은 틱의 다음 지역이 이어 쓴다', async () => {
+    // 2026-10-13·14 아침 슬롯: 0500·0200 이 다 NODATA 라 한 번만 물러서던 때는 KR 이 통째로 실패했다.
+    const nodata = JSON.stringify({ response: { header: { resultCode: '03', resultMsg: 'NO_DATA' } } });
+    const now = new Date('2026-10-01T17:15:00Z'); // 02:15 KST(10/02) → 0200 회차
+    const memo: { run?: { baseDate: string; baseTime: string } } = {};
+    let calls = stub([json(nodata), json(nodata), json(nodata), json(relabel('1700', '1700'))]);
+    const days = await fetchKmaDays(SEOUL, SEOUL_SOURCE, {
+      now,
+      budget: fixedFetchBudget(12),
+      kmaServiceKey: KEY,
+      kmaRunMemo: memo,
+    });
+    expect(calls.map((u) => `${u.searchParams.get('base_date')} ${u.searchParams.get('base_time')}`)).toEqual([
+      '20261002 0200',
+      '20261001 2300',
+      '20261001 2000',
+      '20261001 1700',
+    ]);
+    expect(days.get('2026-10-02')).toMatchObject({ maxTemp: 21, minTemp: 12 });
+    expect(memo.run).toEqual({ baseDate: '20261001', baseTime: '1700' });
+
+    // 같은 틱의 다음 지역은 찾은 회차에서 곧바로 시작한다 — 물러서기에 KMA 몫을 다시 쓰지 않는다.
+    calls = stub([json(relabel('1700', '1700'))]);
+    await fetchKmaDays(SEOUL, SEOUL_SOURCE, { now, budget: fixedFetchBudget(12), kmaServiceKey: KEY, kmaRunMemo: memo });
+    expect(calls.map((u) => u.searchParams.get('base_time'))).toEqual(['1700']);
+
+    // 깊이는 최신에서 센다 — 두 칸 묵은 메모(2000)에서 시작한 지역은 한 칸(1700)만 더 물러설 수 있다(코덱스 #901).
+    const deepMemo = { run: { baseDate: '20261001', baseTime: '2000' } };
+    calls = stub([json(nodata), json(nodata)]);
+    await expect(
+      fetchKmaDays(SEOUL, SEOUL_SOURCE, { now, budget: fixedFetchBudget(12), kmaServiceKey: KEY, kmaRunMemo: deepMemo }),
+    ).rejects.toMatchObject({ failure: 'transient', reason: 'kma_03' });
+    expect(calls.map((u) => u.searchParams.get('base_time'))).toEqual(['2000', '1700']);
+    // 상한보다 깊은 메모는 쓰지 않는다 — 최신부터 본다.
+    calls = stub([json(relabel('1700', '1700'))]);
+    await fetchKmaDays(SEOUL, SEOUL_SOURCE, {
+      now,
+      budget: fixedFetchBudget(12),
+      kmaServiceKey: KEY,
+      kmaRunMemo: { run: { baseDate: '20261001', baseTime: '1400' } },
+    }).catch(() => undefined);
+    expect(calls[0]?.searchParams.get('base_time')).toBe('0200');
+
+    // 네 회차 모두 NODATA 면 더 물러서지 않는다 — 일시 실패 kma_03.
+    calls = stub([json(nodata), json(nodata), json(nodata), json(nodata)]);
+    await expect(
+      fetchKmaDays(SEOUL, SEOUL_SOURCE, { now, budget: fixedFetchBudget(12), kmaServiceKey: KEY }),
+    ).rejects.toMatchObject({ failure: 'transient', reason: 'kma_03' });
+    expect(calls).toHaveLength(1 + KMA_NODATA_MAX_STEPS);
   });
 
   it('마감(deadlineAt — 읽기 경로)이 있으면 물러서기도 그 안에서만 — fetch 마다 5초를 새로 주지 않는다', async () => {

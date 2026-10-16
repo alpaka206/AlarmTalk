@@ -169,12 +169,15 @@ final class RemoteAlarmSyncViewModel: ObservableObject {
             // (`MainViewModelAuthActions.kt` 의 `syncNow` onFailure) — iOS 만 남아 있었다.
             // ⚠ **부분 실패(`failedMessage`)는 그대로 띄운다.** 그건 개별 알람이 실제로
             // 안 올라간 것이라 사용자가 알아야 한다.
-            // ⚠ 403 이라고 다 강등하지 말 것 — `error_code` 로 CONSENT_REQUIRED 만 고른다.
-            // `CONSENT_STATE_UNAVAILABLE`·`ACCOUNT_PENDING_DELETION` 같은 실제 파손은
-            // 로그에 error 로 남아야 한다(안드로이드도 같은 구분을 한다).
+            // ⚠ 403 이라고 다 강등하지 말 것 — `error_code` 로 CONSENT_REQUIRED 와 탈퇴 유예만 고른다.
+            // `CONSENT_STATE_UNAVAILABLE` 같은 실제 파손은 로그에 error 로 남아야 한다(안드로이드도 같은
+            // 구분을 한다). 탈퇴 유예(`ACCOUNT_PENDING_DELETION`)는 사용자가 고른 계정 상태라 복구 화면이
+            // 이미 말한다(`AlarmTalkLog.isAccountPendingDeletion`).
             let code: String? = if case let APIError.server(_, _, errorCode) = error { errorCode } else { nil }
             if code == AlarmTalkAPI.consentRequiredErrorCode {
                 Self.syncLogger.info("자동 동기화 연기: 동의 정착 전이라 다음 회차에 재시도한다")
+            } else if AlarmTalkLog.isAccountPendingDeletion(error) {
+                Self.syncLogger.info("자동 동기화 중단: 탈퇴 유예 계정이라 철회 전에는 서버가 막는다")
             } else {
                 Self.syncLogger.error("자동 동기화 실패: \(String(describing: error), privacy: .public)")
             }

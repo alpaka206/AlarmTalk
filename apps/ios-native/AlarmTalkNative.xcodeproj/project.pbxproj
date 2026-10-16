@@ -167,6 +167,7 @@
 		6435272191E36EB4988B971A /* StockClipManifestStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0996FA9899B83A51D9A1154D /* StockClipManifestStore.swift */; };
 		6566B7CDF10123C42F5B6DBD /* AuthEmailFormatTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A7AF22ED9CD605A27C041F5 /* AuthEmailFormatTests.swift */; };
 		66B9FA8003ABB652DD337086 /* StockClipRefetchGuardTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C8A89CE775F9628C2A38B82 /* StockClipRefetchGuardTests.swift */; };
+		66D1F7639A57D02948CBC11D /* SunriseSceneRendererIsolationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C64D852074A8877C72C37B07 /* SunriseSceneRendererIsolationTests.swift */; };
 		68169BCE6066FE499AC4DC87 /* SubscriptionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4028869EEA0A313C4D673E6B /* SubscriptionManager.swift */; };
 		68198E3D4BC57296B43E7DE7 /* KoreanLunarHolidayEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5AEC8A234A39D4E7AAFC0F82 /* KoreanLunarHolidayEngine.swift */; };
 		6952BAD905EFB40D45C4EEF4 /* PaidGateCopy.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA09D222C2E3EABB05079D94 /* PaidGateCopy.swift */; };
@@ -325,7 +326,6 @@
 		C6597340E9B6E8CA773345A5 /* SessionExpiryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A837BD3F8D319A53856D516 /* SessionExpiryStore.swift */; };
 		C6D9D903A1464A0F1120DD84 /* pretendard_medium.otf in Resources */ = {isa = PBXBuildFile; fileRef = A1460F6B80519002D6B9F945 /* pretendard_medium.otf */; };
 		C9AC298F3AC6D9B84D3F93D5 /* SubscriptionManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 291DBF70F5BA99D4BC3C3F25 /* SubscriptionManagerTests.swift */; };
-		C9EE7704D02B0E865DAED8BC /* AccountPendingDeletionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99E9564C1E25D37106ECC398 /* AccountPendingDeletionView.swift */; };
 		CA02D54C99DB8E021BAF2D19 /* LandingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC8E6B3DC78145608078758B /* LandingView.swift */; };
 		CA4601708EFFE51237F1A44E /* AlarmScheduleReconciler.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9E50137D938486E4DC448DB /* AlarmScheduleReconciler.swift */; };
 		CC81F3AF013FA6DDED7D47C8 /* StockClipManifestStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3712A9DC7E2B0D7C482B215 /* StockClipManifestStoreTests.swift */; };
@@ -335,7 +335,6 @@
 		D12B4A02203BA1C6F7FEBE3B /* WeatherVariantRolloverTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0C75DB9B643CF3B45BF58E0 /* WeatherVariantRolloverTests.swift */; };
 		D24BBA54EBB8905ED136B876 /* BundledLegalDocumentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E67A1EE12ED53636F8740A18 /* BundledLegalDocumentView.swift */; };
 		D2D1F86586550DD78EA7ABFF /* BucketVariantResolverTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2814AA70411EC7A3564475A1 /* BucketVariantResolverTests.swift */; };
-		D2ED9AAC5211DB158ED3019A /* AccountRecoveryDecodingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = ECDC41C509F16D2A5D9350A6 /* AccountRecoveryDecodingTests.swift */; };
 		D30265AE4597A222A6867E0F /* MessageContextMemoryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B974CF425547C72D086DCFE /* MessageContextMemoryTests.swift */; };
 		D3817E0B7FAFEE9522D0F67F /* AlarmSoundPlanTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4061A001D00A305855EE9206 /* AlarmSoundPlanTests.swift */; };
 		D46D09E78B1AEE5C9E99BB38 /* AlarmVoiceStopOwnershipTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE244676814E7183470594C3 /* AlarmVoiceStopOwnershipTests.swift */; };
@@ -686,7 +685,6 @@
 		990682BABD1C4BBE186FC3D5 /* PendingSignOutStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PendingSignOutStore.swift; sourceTree = "<group>"; };
 		993F13DD98269244F828B44E /* AppSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSettings.swift; sourceTree = "<group>"; };
 		9975523465DEA02414F2A1CA /* ClonePrerenderDrive.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClonePrerenderDrive.swift; sourceTree = "<group>"; };
-		99E9564C1E25D37106ECC398 /* AccountPendingDeletionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountPendingDeletionView.swift; sourceTree = "<group>"; };
 		9A1C8164C5467E1065C0FFF7 /* VoiceSheetScreenshotUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceSheetScreenshotUITests.swift; sourceTree = "<group>"; };
 		9A7AF22ED9CD605A27C041F5 /* AuthEmailFormatTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthEmailFormatTests.swift; sourceTree = "<group>"; };
 		9A837BD3F8D319A53856D516 /* SessionExpiryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionExpiryStore.swift; sourceTree = "<group>"; };
@@ -752,6 +750,7 @@
 		C223E6B29C6CA17031439FC6 /* UnauthorizedSessionHandlingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UnauthorizedSessionHandlingTests.swift; sourceTree = "<group>"; };
 		C25CB92C4983452F222A3678 /* PushRegistrationRecoveryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushRegistrationRecoveryTests.swift; sourceTree = "<group>"; };
 		C2812B5566D2A2EED4169FC6 /* StockClipLanguageRebinder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StockClipLanguageRebinder.swift; sourceTree = "<group>"; };
+		C64D852074A8877C72C37B07 /* SunriseSceneRendererIsolationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SunriseSceneRendererIsolationTests.swift; sourceTree = "<group>"; };
 		C84FBD5267145436CD8B0F93 /* DynamicPromptPreferenceStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DynamicPromptPreferenceStoreTests.swift; sourceTree = "<group>"; };
 		C85849E44ED914564F02925F /* StoreKitConfiguration.storekit */ = {isa = PBXFileReference; path = StoreKitConfiguration.storekit; sourceTree = "<group>"; };
 		C88E7D845E4834C339CFCE38 /* BlockingScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlockingScreen.swift; sourceTree = "<group>"; };
@@ -809,7 +808,6 @@
 		EC6B972EFA8543A20D363BEE /* SectionCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SectionCard.swift; sourceTree = "<group>"; };
 		EC77A6F63E8DC16E45C72986 /* DefaultVoiceSubstitute.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DefaultVoiceSubstitute.swift; sourceTree = "<group>"; };
 		ECCD419D20318FDD0B2DAF13 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
-		ECDC41C509F16D2A5D9350A6 /* AccountRecoveryDecodingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountRecoveryDecodingTests.swift; sourceTree = "<group>"; };
 		ECF3BDC0CB41DDC6B8481013 /* PaidVoiceGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaidVoiceGate.swift; sourceTree = "<group>"; };
 		ED15BBE45240517F3F5FA0D0 /* EditorPromptPreferenceUpdate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorPromptPreferenceUpdate.swift; sourceTree = "<group>"; };
 		ED42794544C7FEC54EC21EB8 /* VoicePitchShifterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoicePitchShifterTests.swift; sourceTree = "<group>"; };
@@ -953,7 +951,6 @@
 		310639804EE465A783A61106 /* Auth */ = {
 			isa = PBXGroup;
 			children = (
-				99E9564C1E25D37106ECC398 /* AccountPendingDeletionView.swift */,
 				2E08EA39F68F4C059B5B58EC /* AuthBackdrop.swift */,
 				C88E7D845E4834C339CFCE38 /* BlockingScreen.swift */,
 				B63D58A42E36FE6F60DC05E0 /* ConsentView.swift */,
@@ -1161,7 +1158,6 @@
 			children = (
 				10CE147023F745A31BD0720B /* AccessSnapshotStoreTests.swift */,
 				4CF8E5697CEEB27BA786D3B1 /* AccountPromptSettingsAdoptionTests.swift */,
-				ECDC41C509F16D2A5D9350A6 /* AccountRecoveryDecodingTests.swift */,
 				D03ECCB0C7064914B464A555 /* AlarmAppContextTests.swift */,
 				473E04E3AE046A9066B33515 /* AlarmCancelDeletionTests.swift */,
 				71B76904A71177DB5B69BBF0 /* AlarmCreationReplayTests.swift */,
@@ -1267,6 +1263,7 @@
 				3C8A89CE775F9628C2A38B82 /* StockClipRefetchGuardTests.swift */,
 				5C97D5BF0E20BEB9201D3618 /* SubscriptionConfirmationTests.swift */,
 				291DBF70F5BA99D4BC3C3F25 /* SubscriptionManagerTests.swift */,
+				C64D852074A8877C72C37B07 /* SunriseSceneRendererIsolationTests.swift */,
 				481AE34FF594622D016836C7 /* SystemRingtoneLibraryTests.swift */,
 				06869DCC5A5B226FCD29AAE9 /* SystemVoiceCatalogTests.swift */,
 				5A12157E5D422109667286EC /* TimeWheelPickerLogicTests.swift */,
@@ -1724,7 +1721,6 @@
 				D4BC7CAADCECBC3A7610C2FA /* APIErrorMessages.swift in Sources */,
 				FDE7F606F313F39BE459D19D /* AccessSnapshotStore.swift in Sources */,
 				8841D7970A97CC0AF150153C /* AccountPanel.swift in Sources */,
-				C9EE7704D02B0E865DAED8BC /* AccountPendingDeletionView.swift in Sources */,
 				9E5D69D488A0DC3840D052C7 /* AccountPromptSettingsAdoption.swift in Sources */,
 				46C1C613B52586A9E527A86D /* AlarmAppContext.swift in Sources */,
 				F0C2A0E2DF53A9C510B3A7AD /* AlarmDefaultLabel.swift in Sources */,
@@ -1924,7 +1920,6 @@
 			files = (
 				992A9D8F236801102199EBA7 /* AccessSnapshotStoreTests.swift in Sources */,
 				CCE8DA0811BC4D0B790B63BA /* AccountPromptSettingsAdoptionTests.swift in Sources */,
-				D2ED9AAC5211DB158ED3019A /* AccountRecoveryDecodingTests.swift in Sources */,
 				5E6B21DDF250B3C5F29EB7FD /* AlarmAppContextTests.swift in Sources */,
 				93FCF08E81662269356B34C6 /* AlarmCancelDeletionTests.swift in Sources */,
 				73FC1FE950FD060DB5336E16 /* AlarmCreationReplayTests.swift in Sources */,
@@ -2030,6 +2025,7 @@
 				66B9FA8003ABB652DD337086 /* StockClipRefetchGuardTests.swift in Sources */,
 				FA71B3E207E6672692C54335 /* SubscriptionConfirmationTests.swift in Sources */,
 				C9AC298F3AC6D9B84D3F93D5 /* SubscriptionManagerTests.swift in Sources */,
+				66D1F7639A57D02948CBC11D /* SunriseSceneRendererIsolationTests.swift in Sources */,
 				A524D29E8CD5E3AB0277A61C /* SystemRingtoneLibraryTests.swift in Sources */,
 				B4988F338BF0799DBB167B39 /* SystemVoiceCatalogTests.swift in Sources */,
 				DA74241C9B726EF21F7111B0 /* TimeWheelPickerLogicTests.swift in Sources */,
@@ -2165,7 +2161,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 10;
+				CURRENT_PROJECT_VERSION = 12;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = "$(DEVELOPMENT_TEAM)";
 				ENABLE_NS_ASSERTIONS = NO;
@@ -2180,7 +2176,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
-				MARKETING_VERSION = 1.2.13;
+				MARKETING_VERSION = 1.2.14;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = NO;
@@ -2316,7 +2312,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 10;
+				CURRENT_PROJECT_VERSION = 12;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = "$(DEVELOPMENT_TEAM)";
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
@@ -2336,7 +2332,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
-				MARKETING_VERSION = 1.2.13;
+				MARKETING_VERSION = 1.2.14;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;

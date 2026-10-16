@@ -66,6 +66,22 @@ afterEach(() => {
 });
 
 describe('POST /push/register — FCM 토큰 등록', () => {
+  it('조건에 걸려 아무것도 적히지 않으면 성공이 아니다 — 세대가 올랐으면 401, 유예면 403(코덱스 #904)', async () => {
+    mockDB.pushResult([], 0);
+    mockDB.pushResult([], 0); // INSERT 0행 — 세대가 올랐다
+    mockDB.pushResult([{ deletion_status: 'active' }]);
+    const revoked = await buildApp().request(registerRequest());
+    expect(revoked.status).toBe(401);
+    expect((await revoked.json()).error_code).toBe('TOKEN_REVOKED');
+
+    mockDB.pushResult([], 0);
+    mockDB.pushResult([], 0);
+    mockDB.pushResult([{ deletion_status: 'pending_deletion' }]);
+    const pending = await buildApp().request(registerRequest());
+    expect(pending.status).toBe(403);
+    expect((await pending.json()).error_code).toBe('ACCOUNT_PENDING_DELETION');
+  });
+
   beforeEach(() => mockDB.reset());
 
   it('유효 토큰+플랫폼 → success, 원자적 쓰기 batch 하나로 DELETE+UPSERT 재배정', async () => {
@@ -89,7 +105,9 @@ describe('POST /push/register — FCM 토큰 등록', () => {
     expect(mockDB.transactions).toEqual({ commits: 0, rollbacks: 0, closes: 0 });
     const del = mockDB.calls.find((c) => c.sql.startsWith('DELETE FROM push_tokens'));
     expect(del).toBeDefined();
-    expect(del!.args).toEqual(['fcm-token-abc', 'user-1']);
+    // 마지막 인자는 '계정이 아직 active 인가' 조건의 id 다(코덱스 #904 — INSERT 와 같은 조건).
+    expect(del!.args).toEqual(['fcm-token-abc', 'user-1', 'user-1']);
+    expect(del!.sql).toContain("deletion_status = 'active'");
     const insert = mockDB.calls.find((c) => c.sql.includes('INSERT INTO push_tokens'));
     expect(insert).toBeDefined();
     // 컨플릭트 타깃은 (user_id, token) 유지 — 배포가 마이그레이션(#71 token 전역 UNIQUE)보다
@@ -106,6 +124,8 @@ describe('POST /push/register — FCM 토큰 등록', () => {
   // 500 이었다. 쓰기라 아무도 재시도하지 않았다. 두 문장이 멱등이고 batch 가 전부 아니면 전무라
   // 여기만 다시 보낸다(`docs/spec/error-codes.md` 구현 지도).
   it('게이트웨이 520 뒤의 성공 → 200, batch 를 두 번 보낸다(같은 문장 그대로)', async () => {
+    mockDB.pushResult([], 0); // DELETE 다른 소유자 행
+    mockDB.pushResult([], 1); // INSERT ... ON CONFLICT(user_id, token)
     const batch = vi.spyOn(mockDB.client, 'batch').mockRejectedValueOnce(gatewayError(520));
     vi.spyOn(console, 'warn').mockImplementation(() => {});
 
@@ -175,6 +195,8 @@ describe('POST /push/register — FCM 토큰 등록', () => {
   // 되돌린 값이다. 라우트 레벨에서 다시 막히면 iOS 기기가 가족 알람·목소리 공유·
   // 목소리 철회 신호를 하나도 못 받는다.
   it('ios platform 을 받아들인다 (#94)', async () => {
+    mockDB.pushResult([], 0);
+    mockDB.pushResult([], 1);
     const res = await buildApp().request(
       jsonReq('POST', '/push/register', { token: 'apns-token-abc', platform: 'ios' }),
     );

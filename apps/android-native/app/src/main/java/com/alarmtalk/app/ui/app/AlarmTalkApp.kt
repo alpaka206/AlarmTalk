@@ -395,7 +395,6 @@ internal fun AlarmTalkApp(
         viewModel.updateRequired,
         viewModel.consentUnsupported,
         viewModel.accountStatusChecked,
-        viewModel.pendingDeletion,
         // ⚠ **가드만 넣지 말고 키에도 넣어야** 판정이 온 뒤 효과가 다시 돈다.
         stockReplacementChecked,
         stockReplacementPending,
@@ -406,10 +405,8 @@ internal fun AlarmTalkApp(
         // 소진된다(리뷰 21차).
         if (!stockReplacementChecked || stockReplacementPending) return@LaunchedEffect
         if (viewModel.updateRequired || viewModel.consentUnsupported) return@LaunchedEffect
-        // pendingDeletion 만 보면 안 된다 — 조회 응답 전에는 기본값 false 라 '유예 아님' 과
-        // 구분되지 않는다. 확인이 끝난 뒤에 판단한다(Codex #660).
+        // 계정 응답이 온 뒤에 판단한다 — 응답 전에는 그 계정이 이 화면에 머물지 알 수 없다(Codex #660).
         if (!viewModel.accountStatusChecked) return@LaunchedEffect
-        if (viewModel.pendingDeletion) return@LaunchedEffect
         // 캐시로 켜지는 consentChecked 가 아니라 **응답이 온** consentStatusChecked 를 본다 —
         // 정책 개정 직후에는 캐시가 옛 버전 기준이라 재동의가 필요한데도 통과한다(Codex #660).
         if (!viewModel.consentStatusChecked || viewModel.showConsentScreen) return@LaunchedEffect
@@ -464,7 +461,6 @@ internal fun AlarmTalkApp(
         viewModel.updateRequired,
         viewModel.consentUnsupported,
         viewModel.accountStatusChecked,
-        viewModel.pendingDeletion,
         stockReplacementChecked,
         stockReplacementPending,
         downgradeNotice,
@@ -482,7 +478,6 @@ internal fun AlarmTalkApp(
             updateRequired = viewModel.updateRequired,
             consentUnsupported = viewModel.consentUnsupported,
             accountStatusChecked = viewModel.accountStatusChecked,
-            pendingDeletion = viewModel.pendingDeletion,
             consentStatusChecked = viewModel.consentStatusChecked,
             showConsentScreen = viewModel.showConsentScreen,
             stockReplacementChecked = stockReplacementChecked,
@@ -516,7 +511,6 @@ internal fun AlarmTalkApp(
         viewModel.updateRequired,
         viewModel.consentUnsupported,
         viewModel.accountStatusChecked,
-        viewModel.pendingDeletion,
         viewModel.personalPromoEndNotice,
         alarms,
     ) {
@@ -524,7 +518,6 @@ internal fun AlarmTalkApp(
         if (!viewModel.versionChecked) return@LaunchedEffect
         if (viewModel.updateRequired || viewModel.consentUnsupported) return@LaunchedEffect
         if (!viewModel.accountStatusChecked) return@LaunchedEffect
-        if (viewModel.pendingDeletion) return@LaunchedEffect
         if (!viewModel.consentStatusChecked || viewModel.showConsentScreen) return@LaunchedEffect
         if (viewModel.permissionGateRequest != null) return@LaunchedEffect
         if (viewModel.showVoiceSetup) return@LaunchedEffect
@@ -603,6 +596,13 @@ internal fun AlarmTalkApp(
             viewModel.refreshSocial()
             // 서버가 바뀌었다는 신호다 — 그 **뒤에** 출발한 매니페스트여야 한다(신선도 창을 쓰지 않는다).
             viewModel.loadStockClips(com.alarmtalk.app.ManifestNeed.LATEST)
+        }
+    }
+    // 백그라운드 워커가 탈퇴 유예 계정을 떠났다 — 뷰모델은 비워진 저장소를 흡수하지 않으니 같은 떠나기로 맞춘다.
+    LaunchedEffect(sessionEffectKey) {
+        if (authSession == null) return@LaunchedEffect
+        com.alarmtalk.app.core.AppSignals.accountLeftForPendingDeletion.collect { left ->
+            viewModel.onAccountLeftInBackground(left)
         }
     }
     // 플랜 변경(plan_changed push) — 앱이 살아 있는 채로 구독이 만료·강등되면 워커는 SharedPreferences
@@ -1066,8 +1066,7 @@ internal fun AlarmTalkApp(
     //   권한 모달·개인 플랜 종료 안내·민감 동의 시트가 그대로 겹쳐 뜬다 — 1회성 안내라면
     //   **소진 플래그까지 태우고** 사용자는 본 적도 없이 잃는다(CLAUDE.md 「1회성 오버레이」).
     val blockingGateActive =
-        viewModel.updateRequired || viewModel.consentUnsupported || viewModel.pendingDeletion ||
-            stockReplacementPending
+        viewModel.updateRequired || viewModel.consentUnsupported || stockReplacementPending
 
     // 동의 화면이 떠 있는 동안에는 그리지 않는다 — 위 트리거가 막지만, 다른 경로로 요청이
     // 세워졌을 때도 약관 화면 위에 권한 모달이 겹치는 일은 없어야 한다.
@@ -1216,7 +1215,7 @@ internal fun AlarmTalkApp(
     // 교체 게이트가 떠 있으면 하단바·＋FAB 도 그리지 않는다 — 남겨 두면 차단 화면 위에서
     // 탭을 옮기고 알람을 만들 수 있어 '막았다' 가 거짓말이 된다.
     val showAppChrome = authSession != null && viewModel.consentChecked && !viewModel.showConsentScreen &&
-        !viewModel.updateRequired && !viewModel.consentUnsupported && !viewModel.pendingDeletion &&
+        !viewModel.updateRequired && !viewModel.consentUnsupported &&
         !stockReplacementPending && !viewModel.showVoiceSetup && isRootTab
 
     Scaffold(
@@ -1350,18 +1349,6 @@ internal fun AlarmTalkApp(
                   onFindPassword = { authNavigate(AuthRoute.ResetPassword) },
               )
           }
-          return@Scaffold
-      }
-      if (viewModel.pendingDeletion) {
-          // 화면에 '복구'·'로그아웃' 이라는 정식 선택지가 있다. 뒤로가기로 앱이 닫히면
-          // 그 선택지를 보지 못한 채 나가게 된다.
-          GateBackGuard()
-          AccountPendingDeletionScreen(
-              contentPadding = padding,
-              busy = authBusy,
-              onRecover = viewModel::cancelAccountDeletion,
-              onLogout = ::logout,
-          )
           return@Scaffold
       }
       // 동의 확인이 끝나기 전엔 온보딩·홈을 띄우지 않고 로딩으로 잡아둬, 동의가 필요한

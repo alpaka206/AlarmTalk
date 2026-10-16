@@ -300,7 +300,9 @@ class VoiceAccessSyncWorker(
                     // 오강등이 미강등보다 나쁘다). 폐기된 토큰으로 재시도해 봐야 같은 401
                     // 이므로 세션을 끊는다. 다시 로그인하면 하루 주기 폴백과 앱 시작
                     // refreshSocial 이 같은 대조를 다시 한다.
-                    endSessionAfterWorkerUnauthorized(
+                    endWorkerSession(
+                        error = error,
+                        context = applicationContext,
                         sessionStore = sessionStore,
                         expectedGeneration = startGeneration,
                         usedToken = session.token,

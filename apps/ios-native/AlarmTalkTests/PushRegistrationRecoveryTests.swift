@@ -278,6 +278,44 @@ final class PushRegistrationRecoveryTests: XCTestCase {
             XCTAssertEqual(result.events, ["register:token-A", "register:token-A"])
         }
     }
+
+    /// **서버가 지운 등록의 확인 내리기도 등록과 같은 줄에 선다**(코덱스 #904). 응답을 기다리던 앞선 등록이 그 뒤에 끝나며
+    /// 확인을 도로 적으면, 같은 실행에서 같은 계정으로 다시 로그인해도 등록을 건너뛴다.
+    func test_invalidationQueuesBehindAnInFlightRegistration() async {
+        await withDefaults { defaults in
+            let api = PushTokenAPIFixture()
+            let started = expectation(description: "앞선 등록이 응답을 기다림")
+            let gate = PushRegistrationGate(started: started)
+            await api.holdNextRegistration(gate)
+            let push = PushNotificationCoordinator(api: api, defaults: defaults, requestAPNsToken: {})
+            let registration = Task { await push.registerToken(deviceToken, session: session("A")) }
+            await fulfillment(of: [started], timeout: 2)
+            let invalidation = Task { await push.invalidateRegistration() }
+            await gate.release()
+            await registration.value
+            await invalidation.value
+            // 탈퇴 신청이 서버 행을 지웠다.
+            await api.dropBinding()
+
+            await push.registerToken(deviceToken, session: session("A"))
+
+            let result = await api.snapshot()
+            XCTAssertEqual(result.events, ["register:token-A", "register:token-A"], "앞선 등록이 확인을 도로 적어 다시 올리지 않았다")
+            XCTAssertEqual(result.binding, "token-A")
+        }
+    }
+
+    /// `account_deletion_requested` 는 계정을 다시 묻는 훅을 부른다 — 신호만 믿고 떠나지 않는다.
+    func test_accountDeletionRequestedSignalAsksTheServerAgain() async {
+        await withDefaults { defaults in
+            let push = PushNotificationCoordinator(api: PushTokenAPIFixture(), defaults: defaults, requestAPNsToken: {})
+            var asked = 0
+            push.onAccountDeletionRequested = { asked += 1 }
+            let handled = await push.handle(userInfo: ["type": "account_deletion_requested"])
+            XCTAssertTrue(handled)
+            XCTAssertEqual(asked, 1)
+        }
+    }
 }
 
 private actor PushTokenAPIFixture: PushTokenAPIProviding {

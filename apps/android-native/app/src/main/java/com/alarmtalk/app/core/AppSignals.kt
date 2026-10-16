@@ -31,6 +31,24 @@ object AppSignals {
         planChanged.tryEmit(Unit)
     }
 
+    /**
+     * **백그라운드 워커가 탈퇴 유예 계정을 떠났다**(2026-10-15) — 값은 떠난 계정 id. 워커는 저장소(`AuthSessionStore`)만
+     * 비우는데 뷰모델은 비워진 저장소를 흡수하지 않아(`shouldAbsorbStoredSession`) 화면이 로그인된 채 남는다(코덱스 #904).
+     * 화면이 떠 있으면 이 신호로 뷰모델도 같은 계정을 떠난다(`MainViewModel.onAccountLeftInBackground`). 구독자가 없으면
+     * 버려지고, 다음 시작은 비워진 저장소에서 로그아웃 상태로 연다.
+     */
+    val accountLeftForPendingDeletion = MutableSharedFlow<AccountLeft>(extraBufferCapacity = 4)
+
+    /**
+     * 떠난 계정과 **워커가 비운 세션의 토큰**. 뷰모델은 지금 세션의 토큰이 이것과 같을 때만 떠난다 — 신호를 처리하기 전에
+     * 같은 계정으로 다시 로그인했으면 계정 id 는 같아도 토큰이 다르다(코덱스 #904).
+     */
+    data class AccountLeft(val userId: String, val clearedToken: String)
+
+    fun emitAccountLeftForPendingDeletion(userId: String, clearedToken: String) {
+        accountLeftForPendingDeletion.tryEmit(AccountLeft(userId, clearedToken))
+    }
+
     private val appEntryCount = MutableStateFlow(0L)
 
     /**

@@ -73,8 +73,9 @@ object AlarmTalkLog {
      *
      * ⚠ HTTP 4xx 를 여기서 낮추지 않는다. 그 4xx 가 무엇을 뜻하는지는 문맥을 아는 호출부가 코드를
      * 볼 자리에서 결정한다(예: `sync/SyncWorkerFailure.kt` 의 `CONSENT_REQUIRED`).
-     * 낮추는 4xx 는 둘뿐이고 각자 갈래가 따로다 — **401**([isHandledAuthFailure], 상태코드만 본다)과
-     * **예상된 거절**([isExpectedRefusal], 목록에 있는 코드만 본다). ([reportError] 는 코드를 **읽는다** —
+     * 낮추는 4xx 는 셋뿐이고 각자 갈래가 따로다 — **401**([isHandledAuthFailure], 상태코드만 본다),
+     * **예상된 거절**([isExpectedRefusal], 목록에 있는 코드만 본다), **탈퇴 유예 403**([isAccountPendingDeletion]).
+     * 5xx 는 하나 — **코드 없는 504**([isForeignGatewayTimeout], 우리 서버가 낸 것이 아니다). ([reportError] 는 코드를 **읽는다** —
      * 그 둘 말고는 낮추려는 것이 아니라 묶으려는 것이다, [apiFailureFingerprint].)
      */
     fun isExpectedTransientFailure(error: Throwable): Boolean {
@@ -177,6 +178,36 @@ object AlarmTalkLog {
     }
 
     /**
+     * **우리 서버가 아닌 곳이 낸 504** — HTTP 504 인데 응답에 `error_code` 가 없다.
+     *
+     * 우리 워커는 504 를 내지 않는다(원천의 504 는 자기 코드로 바꿔 내보내고, 모든 4xx/5xx 에 `error_code` 를 싣는다 —
+     * `docs/spec/error-codes.md`). 그러니 코드 없는 504 는 기기와 우리 사이의 프록시·게이트웨이가 시간을 넘긴 것이다 —
+     * 일시적 네트워크 실패와 같은 부류다. 2026-10-11~14 의 `HTTP_504` 23건(ANDROID-11 외, 6명)은 전부 Play 사전 출시
+     * 로봇이었고, 같은 시각 서버 기록에는 5xx 가 한 건도 없었다(Workers Logs `api_error`).
+     * ⚠ 502·503 은 넣지 않는다 — Cloudflare 가 워커 자체의 실패(예외·한도)로 내는 자리라 우리가 고칠 것일 수 있다.
+     */
+    internal fun isForeignGatewayTimeout(error: Throwable): Boolean {
+        val failure = apiFailureOf(error) ?: return false
+        return failure.status == 504 && failure.code == null
+    }
+
+    /**
+     * **탈퇴 유예 계정의 403**(`ACCOUNT_PENDING_DELETION`) — 사용자가 직접 탈퇴를 신청해 둔 상태라 서버가
+     * 철회·푸시 해제 말고는 전부 막는다(`middleware/auth.ts`, 개인정보보호법 제21조). 앱은 `GET /user/me` 의
+     * `deletion_status` 로 복구 화면을 띄운다 — 우리가 고칠 결함이 아니라 **사용자가 고른 계정 상태**다.
+     *
+     * 이슈로 올리면 유예 계정이 로그인할 때마다 그 답이 오기 전에 떠난 호출(동기화·소셜·이용권·스톡 클립·목소리·
+     * 푸시 등록)이 한 건씩 쌓인다 — 2026-10-12~13 Play 사전 출시 로봇이 가입·탈퇴 신청 뒤 다시 로그인해 6개 이슈를
+     * 열었다(ANDROID-15~1B). 상태와 코드를 **둘 다** 본다 — 같은 코드라도 5xx 면 사고다.
+     */
+    internal fun isAccountPendingDeletion(error: Throwable): Boolean {
+        val failure = apiFailureOf(error) ?: return false
+        return failure.status == 403 && failure.code == ACCOUNT_PENDING_DELETION_CODE
+    }
+
+    const val ACCOUNT_PENDING_DELETION_CODE = "ACCOUNT_PENDING_DELETION"
+
+    /**
      * 원인 사슬에서 처음 만나는 HTTP 상태코드. 도메인 예외로 한 번 감싼 실패도 같은 실패다
      * (저장소·리포지토리가 흔히 감싼다). 사슬이 순환해도 멈추도록 본 것을 기억한다.
      */
@@ -206,9 +237,11 @@ object AlarmTalkLog {
      */
     internal fun breadcrumbCategoryFor(error: Throwable): String? = when {
         isExpectedTransientFailure(error) -> "transient"
+        isForeignGatewayTimeout(error) -> "transient"
         isHandledAuthFailure(error) -> "auth"
         isGoogleSignInUserAction(error) -> "user"
         isExpectedRefusal(error) -> "refusal"
+        isAccountPendingDeletion(error) -> "account"
         else -> null
     }
 

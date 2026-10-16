@@ -66,7 +66,14 @@
   `POST /user/consents` 가 **409 POLICY_VERSION_MISMATCH** 로 전부 거부하고, 앱은 그걸
   '업데이트 필요' 차단 화면으로 처리한다 — **받을 새 버전이 스토어에 없으면 신규 가입과
   재동의가 통째로 막힌다.**
-  순서: 새 문서를 번들한 앱을 **스토어에 먼저 올린 뒤** 서버의 버전 상수를 main 에 머지한다.
+  ⚠ **2026-10-16(버전 6)부터 순서가 반대다 — 서버 먼저.** 서버가 개정 동안 앞 버전도 받는다
+  (`ACCEPTED_POLICY_VERSIONS` — `docs/spec/consent.md`): 새 버전 상수와 받는 목록을 **main 에 먼저** 내고, 그 뒤에
+  새 문서를 실은 앱을 게재한다. 옛 앱은 앞 버전으로 계속 받히고, 새 앱도 게재되는 순간부터 받힌다. 앞 버전은 그
+  문서를 실은 앱을 `minSupported` 로 막은 뒤 목록에서 지운다.
+  ⚠ 재동의를 요구하는 개정(최소 버전을 올릴 때)도 **앱 먼저로 돌아가지 않는다** — ① 서버가 새 버전도 받게 하되 최소
+  버전은 그대로 ② 새 문서를 실은 앱 게재·`minSupported` 로 옛 앱 막기 ③ 그 뒤에 최소 버전을 올리고 앞 버전을 목록에서
+  지운다. 앱을 먼저 내면 옛 서버가 새 버전을 409 로 막고, ②보다 먼저 최소 버전을 올리면 옛 앱이 재동의를 못 낸다.
+  (옛 규칙 — 앱 먼저: 새 문서를 번들한 앱을 **스토어에 먼저 올린 뒤** 서버의 버전 상수를 main 에 머지한다.)
   강제 업데이트로 구버전을 잘라낼 거면 `app-version.ts` 의 `minSupported` 상향도 **그 릴리스가
   게재된 뒤**여야 한다(안 그러면 받을 게 없는 강제 업데이트로 앱이 벽돌이 된다).
 - **init-db 시크릿**: dev/prod 분리. GitHub `INIT_DB_SECRET_DEV`/`INIT_DB_SECRET_PROD`(**Repository** Actions secret)가 각 워커의 `INIT_DB_SECRET`(`.dev.vars.{dev,prod}` → `npm run secrets:sync:{dev,prod}`)과 일치해야 migrate 통과. 안 맞으면 404.
@@ -477,7 +484,7 @@ gainMb=600`)로 확인했고, 사용자가 맞춘 음량이 첫 회만 지켜지
 | [`docs/spec/alarm-editor.md`](docs/spec/alarm-editor.md) | 편집기 — 타임휠(튕기면 굴러간다·숫자 탭은 **그 자리 입력**), 재생 방식 세그먼트, 모달 **세 형태** |
 | [`docs/spec/voice-and-message.md`](docs/spec/voice-and-message.md) | 재생 방식 2택, **문구 목록은 하나**(등급으로 안 자른다), 직전 선택 유지, 버킷 선다운로드, 월 등록 한도 — **다 썼으면 초안부터 만들지 않는다**, 말소리가 거의 없는 녹음은 **등록하지 않는다**(다시 녹음은 횟수 제한 없음) |
 | [`docs/spec/plan-gates.md`](docs/spec/plan-gates.md) | 로그인·이용권 게이트 **3상태**와 상태별 액션 |
-| [`docs/spec/session-and-auth.md`](docs/spec/session-and-auth.md) | 로그인 유지 — TTL 365일 + **백그라운드 갱신**, 끊는 경우, 이메일 인증 코드 — **가장 최근 코드만**, 거절되면 칸을 비운다 |
+| [`docs/spec/session-and-auth.md`](docs/spec/session-and-auth.md) | 로그인 유지 — TTL 365일 + **백그라운드 갱신**, 끊는 경우, 탈퇴 유예 — **다시 로그인하면 철회**(유예 화면 없음, 신청은 모든 기기 로그아웃), 이메일 인증 코드 — **가장 최근 코드만**, 거절되면 칸을 비운다 |
 | [`docs/spec/billing-lifecycle.md`](docs/spec/billing-lifecycle.md) | 구독 해지·만료 — **스토어가 권위**, 애플은 서버가 못 끊는다 |
 | [`docs/spec/family-alarm.md`](docs/spec/family-alarm.md) | 가족 알람 — **보내면 끝**(보낸 알람 수정은 서버가 409 로 거절, 완화 금지), 받은 뒤엔 **전부 받은 사람 것**, 단 **다시 보내면 새 것이 이긴다**, 설정 불가능 시간은 **자동 생성 금지** |
 | [`docs/spec/consent.md`](docs/spec/consent.md) | 동의 화면 — **미체크 ≠ 철회**, 재동의 레버 |
@@ -675,7 +682,11 @@ FOREGROUND_SERVICE … (BAL_BLOCK) result code=102`. 그래서 2026-09-09 의 "�
   **알람 자체는 AlarmKit 예약이라 울렸다** — 그래서 아무도 몰랐다.
 - 규칙: 그런 콜백은 `{ @Sendable ... }` 로 못 박고, 비-Sendable 인자는 `nonisolated(unsafe)` 지역
   상수로 받아 `Task { @MainActor in }` 으로 넘긴다. `expirationHandler` 도 같다.
-- 강제: `scripts/check-bgtask-handler-isolation.py`(CI lint). 회귀 테스트는 **비격리 테스트
+- **SwiftUI 도 같다 — `TimelineView`·`Canvas` 의 클로저.** iOS 27 의 SwiftUI 는 `.animation` 타임라인을
+  **그리기 전용 스레드**(`ViewGraphDisplayLink.asyncThread`)에서 갱신하기도 한다. `body` 안에서 표기 없이 쓴
+  클로저는 메인 액터를 물려받아 거기서 트랩한다(2026-10-14 1.2.13 iPad — 같은 이슈 IOS-4, 랜딩 일출 씬).
+  클로저는 `{ @Sendable ... in` 으로 열고, 그리는 코드는 `View` 밖 타입에 둔다(`SunriseSceneRenderer`).
+- 강제: `scripts/check-bgtask-handler-isolation.py`(CI lint — BGTask 콜백 + `TimelineView`·`Canvas`). 회귀 테스트는 **비격리 테스트
   메서드**여야 한다 — `@MainActor` 클래스에 넣으면 이 버그를 구조적으로 못 잡는다
   (`AlarmTalkTests/BackgroundSyncTaskLaunchHandlerTests`).
 

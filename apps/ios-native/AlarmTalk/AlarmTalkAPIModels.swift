@@ -976,10 +976,6 @@ struct UpdateProfileResponse: Decodable, Equatable {
     var dynamicPromptSettings: DynamicPromptSettings?
 }
 
-struct DeleteAccountResponse: Decodable, Equatable {
-    var success: Bool
-}
-
 /// 30일 유예 탈퇴 신청 응답. Android `AuthApi.kt:125` `AccountDeletionResponse`.
 struct AccountDeletionResponse: Decodable, Equatable {
     var success: Bool = false

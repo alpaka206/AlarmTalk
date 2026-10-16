@@ -172,8 +172,12 @@ android {
         // 33 = 1.2.13. 선물 코드를 없앤다 — iOS 1.2.12 가 같은 지침 3.1.1 로 두 번째 반려됐다("선물 코드로
         // 디지털 기능을 연다"). 선물 구매(1회성 상품 `personal_gift_1m`)·선물 공유 문구·유료 게이트의 코드
         // 입력을 지웠고, 코드 칸은 초대 코드만 받는다(더보기 → 초대 코드 등록). iOS 와 같은 versionName 을 쓴다.
-        versionCode = 33
-        versionName = "1.2.13"
+        // 34 = 1.2.14. 탈퇴 유예 화면을 없앤다 — 탈퇴 신청은 모든 기기에서 로그아웃하고, 30일 안에 다시 로그인하면
+        //   서버가 탈퇴를 철회한다(#904). ⚠ 서버는 이 값으로 옛 앱을 가른다(`routes/auth.ts` 의
+        //   `PENDING_DELETION_LEAVE_SINCE` — 34 미만은 옛 유예 화면). 이 빌드가 Play 에 게재되고 `minSupported` 로 옛 앱을
+        //   막은 뒤 그 분기를 지운다. iOS 와 같은 versionName 을 쓴다.
+        versionCode = 34
+        versionName = "1.2.14"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

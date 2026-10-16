@@ -11,7 +11,6 @@ protocol AuthAPIProviding: AnyObject, Sendable {
     /// rolling refresh — 새 토큰을 함께 돌려준다(서버 재발급 실패 시 nil).
     func me(token: String) async throws -> (token: String?, user: AuthUser)
     func updateProfile(_ requestBody: UpdateProfileRequest, token: String) async throws -> UpdateProfileResponse
-    func deleteAccount(token: String) async throws -> DeleteAccountResponse
     func requestAccountDeletion(token: String) async throws -> AccountDeletionResponse
     func cancelAccountDeletion(token: String) async throws -> CancelDeletionResponse
     func consentStatus(token: String) async throws -> ConsentStatusResponse
@@ -557,6 +556,9 @@ final class AuthViewModel: ObservableObject {
     /// 데이터 라우트가 403 CONSENT_REQUIRED 를 받으면 `AlarmTalkAPI` 가 쏘는 알림의 옵저버.
     /// 세션은 유지하되 동의 화면으로 게이팅하기 위해 `needsConsent=true` 로 둔다.
     private nonisolated(unsafe) var consentRequiredObserver: NSObjectProtocol?
+    private nonisolated(unsafe) var accountPendingDeletionObserver: NSObjectProtocol?
+    /// 진행 중인 탈퇴 유예 떠나기(그 세션의 토큰과 작업) — 겹쳐 들어온 호출이 이 작업이 끝날 때까지 기다린다.
+    private var pendingDeletionLeave: (token: String, task: Task<Void, Never>)?
     /// `verifyAppleCredentialStateIfNeeded` 가 같은 사용자에 대해 중복 동시 호출되는
     /// 일을 막는다. SwiftUI scenePhase 가 짧은 시간 안에 두 번 .active 가 되는
     /// 경우(예: 시스템 알림창 → 복귀) 가 있어 직렬화.
@@ -621,6 +623,18 @@ final class AuthViewModel: ObservableObject {
             }
         }
 
+        // 어느 요청이든 403 ACCOUNT_PENDING_DELETION 이면(다른 기기의 탈퇴 신청) 그 세션이면 알람까지 끄고 떠난다.
+        accountPendingDeletionObserver = NotificationCenter.default.addObserver(
+            forName: AlarmTalkAPI.accountPendingDeletionNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] note in
+            guard let failedToken = note.userInfo?[AlarmTalkAPI.unauthorizedTokenKey] as? String else { return }
+            Task { @MainActor [weak self] in
+                await self?.leaveAccountForPendingDeletion(token: failedToken)
+            }
+        }
+
         // 데이터 라우트가 403 CONSENT_REQUIRED 를 받으면 동의 화면으로 게이팅한다.
         // 세션은 유지하므로 signOut 이 아니라 needsConsent 만 올린다(재기록 후 재시도).
         consentRequiredObserver = NotificationCenter.default.addObserver(
@@ -645,6 +659,9 @@ final class AuthViewModel: ObservableObject {
             NotificationCenter.default.removeObserver(token)
         }
         if let token = consentRequiredObserver {
+            NotificationCenter.default.removeObserver(token)
+        }
+        if let token = accountPendingDeletionObserver {
             NotificationCenter.default.removeObserver(token)
         }
     }
@@ -1245,8 +1262,15 @@ final class AuthViewModel: ObservableObject {
             // ⚠ **여기서 `SessionExpiryStore.clear()` 를 하지 말 것.** 이건 rolling refresh 라
             // 로그인 확정이 아니다 — 로그아웃 직후 늦게 도착한 응답 하나가 표시를 지워
             // 떼어낸 알람이 되살아난다(안드로이드 `AuthSessionStore` 의 같은 경고).
-            // 탈퇴 유예 상태 반영 — pending_deletion 이면 RootView 가 복구 화면으로 게이팅.
-            // Android `MainViewModel.checkAccountStatus()` 와 동등.
+            // ⚠ **탈퇴 유예면 이 기기에서 그 계정을 떠난다**(2026-10-15). 다시 로그인하면 서버가 탈퇴를 철회하므로
+            //   (`docs/spec/session-and-auth.md` 「탈퇴 유예 — 다시 로그인하면 철회」) 유예 상태의 세션은 끝난 세션이다.
+            //   예전에는 RootView 가 '회원 탈퇴가 진행 중이에요' 화면과 철회 버튼으로 게이팅했다 — 되살리지 말 것.
+            //   ⚠ 자동 만료(`handleUnauthorized`)로 끊지 말 것 — 알람 예약이 남아 로그인 화면 뒤에서 운다(코덱스 #904).
+            //   Android `checkAccountStatus` → `leaveAccountForPendingDeletion` 과 같다.
+            if merged.isPendingDeletion {
+                await leaveAccountForPendingDeletion(token: token)
+                return nil
+            }
             if wasPendingDeletion, merged.deletionStatus == "active" {
                 guard await completeAccountRecovery(
                     userID: merged.id,
@@ -1277,7 +1301,12 @@ final class AuthViewModel: ObservableObject {
                 //   서버를 401 로 바꾸는 쪽은 하지 않는다: 스토어에 나간 구버전 앱이 그
                 //   상태코드로 분기하고 있을 수 있어, 이미 나간 계약을 고치는 셈이다
                 //   (`docs/spec/error-codes.md` §2 「코드는 바꾸지 않는다」와 같은 취지).
-                if status == 401 || (status == 404 && errorCode == "AUTH_USER_NOT_FOUND") {
+                if status == 403, errorCode == "ACCOUNT_PENDING_DELETION" {
+                    // 다른 기기에서 탈퇴를 신청해 끊긴 세션 — 서버는 401 이 아니라 이 코드로 답한다(`/auth/me`, 코덱스 #904).
+                    guard session?.token == token else { return nil }
+                    await leaveAccountForPendingDeletion(token: token)
+                    return nil
+                } else if status == 401 || (status == 404 && errorCode == "AUTH_USER_NOT_FOUND") {
                     // ⚠ **그 사이 세션이 바뀌었으면 로그아웃하지 않는다**(코덱스 #730 4차).
                     //   401 은 **이 요청에 쓴 옛 토큰**이 죽었다는 뜻이다 — 그 사이 새로
                     //   로그인했다면 방금 만든 멀쩡한 세션을 끊게 된다.
@@ -1555,56 +1584,7 @@ final class AuthViewModel: ObservableObject {
         Array(windows.compactMap(\.withNormalizedDays).prefix(FamilyAlarmQuietWindow.maxCount))
     }
 
-    func deleteAccount() async {
-        guard let token else {
-            statusMessage = String(localized: "로그인이 필요해요.")
-            return
-        }
-        let currentUserID = session?.user.id.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !isBusy else { return }
-        isBusy = true
-        defer { isBusy = false }
-
-        // ⚠ **탈퇴도 '계정을 떠나는' 것이다 — 로그아웃과 같은 뒷정리가 필요하다**
-        // (2026-08-19 감사 P2). 두 가지가 빠져 있었다:
-        //  1. 기기 푸시 토큰을 안 뗐다 → **탈퇴했는데 그 계정 알림이 계속 온다.**
-        //     계정이 사라지기 **전에** 떼야 한다(토큰이 아직 유효할 때).
-        //  2. 복구 표시가 없었다 → 아래 `onLeaveAccountStopAlarms` 는 저장소가 로드 전이면
-        //     조용히 물러서는데, 그때 되짚을 근거가 하나도 없어 **탈퇴한 계정의 알람이
-        //     그대로 예약된 채** 남는다.
-        // ⚠ **여기서 푸시를 떼지 않는다**(Codex #699 P2). 요청 **전에** 떼면, 요청이
-        // 오프라인·5xx 로 실패했을 때 사용자는 로그인된 채인데 **기기 토큰만 사라져**
-        // 가족 알람 푸시를 놓친다(다시 등록되는 건 보통 다음 실행이다).
-        // 즉시 탈퇴는 서버가 계정과 함께 `push_tokens` 를 지우므로(`lib/account-deletion.ts`)
-        // 클라이언트가 뗄 일이 애초에 없다.
-        do {
-            _ = try await api.deleteAccount(token: token)
-            // ⚠ **표시는 요청이 성공한 뒤에 남긴다**(Codex #699 P1). 먼저 남기면 요청이
-            // 오프라인·5xx 로 실패했을 때도 표시가 살아남아, **다음 실행이 계정이 멀쩡한
-            // 사용자를 로그아웃시키고 알람까지 끈다.**
-            PendingSignOutStore.mark(currentUserID)
-            beginLeavingAccount()
-            if let currentUserID, !currentUserID.isEmpty {
-                accessSnapshotStore.clear(userID: currentUserID)
-                clearAccountPreferences(currentUserID)
-            }
-            // ⚠ 탈퇴도 로그아웃과 같다 — 계정을 떠났는데 알람이 울리면 안 된다.
-            let cleaned = await onLeaveAccountStopAlarms(currentUserID)
-            signOut(message: String(localized: "회원 탈퇴가 완료됐어요."))
-            // 세션을 비운 뒤 한 번 더 — 알람 정리를 기다리는 사이 받아 적힌 값을 지운다(`signOutExplicitly` 주석).
-            if let currentUserID, !currentUserID.isEmpty { clearAccountPreferences(currentUserID) }
-            // 탈퇴는 되살릴 계정 자체가 없다 — 자동 만료 표시를 남기지 않는다.
-            SessionExpiryStore.clear()
-            // ⚠ **뒷정리가 실제로 끝났을 때만** 표시를 내린다(Codex #699 P1). 콜드 스타트에서
-            // 저장소 로드가 상한 안에 안 끝나면 위 훅은 아무것도 못 끄고 물러서는데, 그때
-            // 표시까지 지우면 **탈퇴한 계정의 OS 예약이 그대로 울면서** 되짚을 길이 없다.
-            if cleaned { PendingSignOutStore.clear(currentUserID) }
-        } catch {
-            failStatus(userFacingErrorMessage(error, fallback: String(localized: "회원 탈퇴에 실패했어요")))
-        }
-    }
-
-    /// 30일 유예 탈퇴 신청. 즉시 삭제(`deleteAccount`) 대신 유예 상태로 전환하고
+    /// 30일 유예 탈퇴 신청 — 유예 상태로 전환하고
     /// 로그아웃 처리한다. 유예 기간 내 다시 로그인해 `cancelAccountDeletion` 으로 복구 가능.
     /// Android `MainViewModel.requestAccountDeletion()`.
     func requestAccountDeletion() async {
@@ -1612,111 +1592,112 @@ final class AuthViewModel: ObservableObject {
             statusMessage = String(localized: "로그인이 필요해요.")
             return
         }
-        let currentUserID = session?.user.id.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !isBusy else { return }
         isBusy = true
         defer { isBusy = false }
 
-        // 즉시 탈퇴와 같은 이유로 푸시를 떼고 복구 표시를 남긴다(위 `deleteAccount` 주석).
+        // 복구 표시를 남긴다 — 아래 알람 끄기는 저장소가 로드 전이면 조용히 물러서는데, 그때 되짚을 근거가 있어야
+        // 탈퇴한 계정의 알람이 예약된 채 남지 않는다(다음 실행이 마저 한다 — `PendingSignOutStore`).
         // ⚠ 유예 탈퇴는 30일 안에 **복구할 수 있다** — 그때 다시 로그인하면 푸시가 다시
         // 등록되고(`registerToken`) 알람도 사용자가 켠다. 지금 떼는 것이 맞다:
         // 그 30일 동안 이 기기는 그 계정을 쓰지 않는데 알림만 받고 있을 이유가 없다.
-        // ⚠ **유예 탈퇴는 즉시 탈퇴와 다르다** — 계정이 30일 동안 **살아 있으므로** 서버가
-        // `push_tokens` 를 지우지 않는다. 그래서 이쪽은 클라이언트가 떼야 하는데,
-        // **요청이 성공한 뒤에** 뗀다(안드로이드도 같은 순서다) — 먼저 떼면 요청이 실패했을 때
-        // 로그인된 사용자의 푸시만 사라진다.
+        // ⚠ **푸시 등록은 서버가 지운다**(2026-10-15). 탈퇴 신청이 같은 트랜잭션에서 `token_epoch` 를 올리고 그 계정의
+        // `push_tokens` 를 지운다(user.ts) — 그 뒤 이 토큰으로 `/push/unregister` 를 보내면 401 이라, 실패로 남아
+        // 다음 실행마다 다시 시도했다(코덱스 #904). 기기 쪽 등록 기록만 비운다.
         do {
             _ = try await api.requestAccountDeletion(token: token)
-            // 표시는 요청이 성공한 뒤에 남긴다(즉시 탈퇴 주석과 같은 이유).
-            PendingSignOutStore.mark(currentUserID)
-            let pushUnregistered = await onSignOutUnregisterPush(token, currentUserID, { true })
-            if !pushUnregistered {
-                // 해제를 다시 시도할 수 있게 토큰을 남긴다. 30일 안에 복구하면 다음 로그인이
-                // 토큰을 다시 등록하므로, 그때는 이 표시가 정리된다.
-                PendingSignOutStore.markServerCleanup(token: token, for: currentUserID)
-            }
-            beginLeavingAccount()
-            if let currentUserID, !currentUserID.isEmpty {
-                accessSnapshotStore.clear(userID: currentUserID)
-                clearAccountPreferences(currentUserID)
-            }
-            // ⚠ 탈퇴도 로그아웃과 같다 — 계정을 떠났는데 알람이 울리면 안 된다.
-            let cleaned = await onLeaveAccountStopAlarms(currentUserID)
-            // ⚠ **재시도용 토큰을 남겼으면 폐기하지 않는다**(Codex #699 P2).
-            // `signOut` 의 기본값은 `revokeOnServer: true` 라 `/auth/logout` 으로 그 토큰을
-            // 죽인다 — 다음 실행의 `/push/unregister` 재시도가 **401 로 영원히** 실패하고
-            // 바인딩과 표시만 남는다.
-            // ⚠ **폐기하지 않는다.** 유예 계정은 백엔드가 `/auth/logout` 을 403 으로 막는다
-            // (`middleware/auth.ts` — 탈퇴 철회와 푸시 해제만 허용). 부르면 실패할 뿐이고,
-            // 무엇보다 그 토큰은 **탈퇴를 철회할 때 필요하다.**
-            signOut(
-                message: String(localized: "회원 탈퇴가 접수됐어요. 30일 안에 다시 로그인하면 취소할 수 있어요."),
-                revokeOnServer: false
+            // ⚠ **정리는 '이미 유예' 403 의 떠나기와 같은 작업 하나로 한다**(코덱스 #904). 신청이 성공하는 사이 다른
+            //   요청(또는 서버가 보낸 탈퇴 신청 푸시가 부른 조회)이 403 을 받으면 그 떠나기가 함께 돈다 — 따로 정리하면
+            //   먼저 끝난 쪽이 로그아웃하고 화면 잠금을 풀어, 다시 로그인한 새 세션의 알람에 다른 쪽이 닿는다.
+            //   표시(`PendingSignOutStore`)는 그 작업이 요청 성공 뒤에 남긴다. 서버가 세션을 이미 끊었으니 폐기하지 않는다.
+            await leaveAccountForPendingDeletion(
+                token: token,
+                message: String(localized: "회원 탈퇴가 접수됐어요. 30일 안에 다시 로그인하면 취소할 수 있어요.")
             )
-            // 세션을 비운 뒤 한 번 더 — 알람 정리를 기다리는 사이 받아 적힌 값을 지운다(`signOutExplicitly` 주석).
-            if let currentUserID, !currentUserID.isEmpty { clearAccountPreferences(currentUserID) }
-            // 탈퇴는 되살릴 계정 자체가 없다 — 자동 만료 표시를 남기지 않는다.
-            SessionExpiryStore.clear()
-            // 로컬 뒷정리와 푸시 해제가 **둘 다** 끝났을 때만 표시를 내린다.
-            if cleaned && pushUnregistered { PendingSignOutStore.clear(currentUserID) }
         } catch {
+            // ⚠ **이미 탈퇴 유예면 실패가 아니다**(코덱스 #904) — 다른 기기가 먼저 신청했다. 통신 계층이 같은 403 을
+            //   알려 `leaveAccountForPendingDeletion` 이 알람까지 끄고 떠난다 — 여기서 '실패' 를 띄우지 않고, 그 떠나기를 기다린다.
+            if let apiError = error as? APIError, apiError.isAccountPendingDeletion {
+                await leaveAccountForPendingDeletion(token: token)
+                return
+            }
             failStatus(userFacingErrorMessage(error, fallback: String(localized: "회원 탈퇴 신청에 실패했어요")))
         }
     }
 
-    /// 유예 기간 내 탈퇴 철회 → 계정 복구. 성공 시 `pendingDeletion` 을 내려 정상 진입.
-    /// Android `MainViewModel.cancelAccountDeletion()`.
-    func cancelAccountDeletion() async {
-        guard let token, let ownerUserID = session?.user.id else {
-            statusMessage = String(localized: "로그인이 필요해요.")
+    /// **다른 기기에서 탈퇴를 신청한 계정을 이 기기에서 떠난다** — 알람까지 끄는 명시적 로그아웃(`requestAccountDeletion`
+    /// 의 성공 갈래와 같은 로컬 정리). 서버 쪽 정리는 없다: 신청이 이미 모든 세션을 끊고 푸시 등록을 지웠다(user.ts).
+    /// Android `leaveAccountForPendingDeletion`.
+    ///
+    /// ⚠ **자동 만료(`signOut` 기본값)로 끊지 말 것**(코덱스 #904) — 자동 만료는 같은 사람이 다시 로그인할 것으로 보고
+    /// 알람 예약을 남겨, 로그인 화면 뒤로 숨은 알람이 계속 운다.
+    private func leaveAccountForPendingDeletion(
+        token: String,
+        message: String = String(localized: "탈퇴를 신청한 계정이라 이 기기에서도 로그아웃했어요. 다시 로그인하면 탈퇴가 취소돼요.")
+    ) async {
+        guard session?.token == token else { return }
+        if UIPreviewSeed.isEnabled { return }
+        // ⚠ **여러 번 들어오면 한 번만 하고, 나중에 온 쪽은 그 정리가 끝날 때까지 기다린다**(코덱스 #904). 탈퇴 신청이
+        //   '이미 유예' 를 받으면 통신 계층의 알림과 신청의 catch 가 함께 들어온다 — 나중 쪽이 곧바로 돌아가면 신청 흐름이
+        //   `isBusy` 를 먼저 풀어, 알람 정리를 기다리는 사이 로그아웃·재로그인이 끼어든다.
+        if let running = pendingDeletionLeave, running.token == token {
+            await running.task.value
             return
         }
-        guard !isBusy else { return }
+        let task = Task<Void, Never> { @MainActor in
+            await self.performLeaveAccountForPendingDeletion(token: token, message: message)
+        }
+        pendingDeletionLeave = (token, task)
+        await task.value
+        if pendingDeletionLeave?.token == token { pendingDeletionLeave = nil }
+    }
+
+    private func performLeaveAccountForPendingDeletion(token: String, message: String) async {
+        guard session?.token == token else { return }
+        // ⚠ **정리하는 동안 화면을 잠근다**(`isBusy`, 코덱스 #904) — `signOutExplicitly` 와 같다. 기다리는 사이 로그아웃·
+        //   재로그인이 끼어들면 아래 정리가 **새 세션**에 닿는다.
         isBusy = true
         defer { isBusy = false }
-        let recoveryRevision = accountRecoveryRevision
-
-        do {
-            let response = try await api.cancelAccountDeletion(token: token)
-            guard !Task.isCancelled, session?.user.id == ownerUserID, self.token == token,
-                  accountRecoveryRevision == recoveryRevision else { return }
-            guard response.success, response.status == "active" else { throw APIError.invalidResponse }
-            guard await completeAccountRecovery(userID: ownerUserID) else { return }
-            statusMessage = String(localized: "회원 탈퇴를 취소했어요. 계정이 복구됐어요.")
-        } catch {
-            guard !Task.isCancelled, session?.user.id == ownerUserID, self.token == token,
-                  accountRecoveryRevision == recoveryRevision else { return }
-            // 응답 유실/구서버 재시도 거절은 서버의 현재 상태로 판정한다. 재확인에서
-            // pending→active를 확인하면 refreshUser가 공통 복구 처리와 푸시 훅을 실행한다.
-            if Self.isAmbiguousDeletionCancellation(error) {
-                let confirmedToken = await refreshUserApplyingToken()
-                guard !Task.isCancelled, session?.user.id == ownerUserID,
-                      accountRecoveryRevision == recoveryRevision,
-                      self.token == (confirmedToken ?? token) else { return }
-            }
-            failStatus(userFacingErrorMessage(error, fallback: String(localized: "탈퇴 취소에 실패했어요. 다시 시도해 주세요")))
+        let currentUserID = session?.user.id.trimmingCharacters(in: .whitespacesAndNewlines)
+        /// 기다린 뒤마다 다시 본다 — 그 세션이 아직 이 세션인가. 아니면 그 자리에서 멈춘다(이미 한 정리는 떠나는 계정의 것).
+        func stillThisSession() -> Bool { session?.token == token }
+        PendingSignOutStore.mark(currentUserID)
+        await onServerRemovedPushRegistration()
+        guard stillThisSession() else { return }
+        beginLeavingAccount()
+        if let currentUserID, !currentUserID.isEmpty {
+            accessSnapshotStore.clear(userID: currentUserID)
+            clearAccountPreferences(currentUserID)
         }
+        _ = await onSessionEndClaimAlarms(currentUserID)
+        guard stillThisSession() else { return }
+        let cleaned = await onLeaveAccountStopAlarms(currentUserID)
+        // ⚠ **기다린 뒤 그 세션이 아직 이 세션인지 다시 본다**(코덱스 #904). 알람 정리를 기다리는 사이 사용자가
+        //   로그아웃하고 다시 로그인했으면, 여기서 끊는 것은 **새 세션**이다 — 방금 로그인한 사람을 도로 내보내고 그
+        //   계정 설정까지 지운다. 떠나는 계정의 알람은 이미 껐으니 그대로 둔다.
+        guard stillThisSession() else {
+            if cleaned { PendingSignOutStore.clear(currentUserID) }
+            return
+        }
+        signOut(message: message, revokeOnServer: false)
+        if let currentUserID, !currentUserID.isEmpty { clearAccountPreferences(currentUserID) }
+        // 사용자가 끝낸 계정이다 — 자동 만료 표시를 남기지 않는다(그 표시가 있으면 떼어낸 알람이 되살아난다).
+        SessionExpiryStore.clear()
+        if cleaned { PendingSignOutStore.clear(currentUserID) }
     }
 
-    private static func isAmbiguousDeletionCancellation(_ error: Error) -> Bool {
-        // API의 2xx 본문 디코딩 오류는 invalidResponse로 변환되지 않고 그대로 전달된다.
-        if error is URLError || error is DecodingError { return true }
-        guard let apiError = error as? APIError else { return false }
-        switch apiError {
-        case .invalidResponse: return true
-        case .server(let status, _, let code):
-            return status >= 500 || (status == 404 && code == "NO_PENDING_DELETION")
-        }
-    }
-
-    /// 성공 응답과 이후의 권위 조회가 같은 복구 후처리를 사용한다.
+    /// 저장된 유예 세션이 `active` 로 돌아온 것을 확인했을 때의 복구 후처리(`refreshUser`).
+    ///
+    /// 2026-10-15 부터 철회 버튼(`cancelAccountDeletion`)은 없다 — 다시 로그인하면 서버가 철회하고, 유예 세션은
+    /// `refreshUser` 가 끊는다. 이 함수가 남은 것은 1.2.13 이하에서 유예 화면에 머물던 세션이 올라왔는데 그 사이 다른
+    /// 기기에서 다시 로그인해 철회된 경우다(저장된 pending → active).
     ///
     /// ⚠ **저장할 세션은 준비를 기다린 뒤에 만든다**(2026-10-05). 기다리기 전에 잡은 세션(또는 그때 다듬은 `/auth/me`
     /// 답)을 그대로 저장하면, 준비를 기다리는 사이 반영된 plan·프로모(결제 전 조회·세션 밖 `/auth/me` 처럼 토큰을
     /// 굴리지 않고 plan 을 쓰는 답)를 다음 조회까지 옛 값으로 되돌린다(드문 경로 — 복구 화면에서 준비를 기다리는 사이에만
     /// 열린다). 탈퇴 상태만 바꾸고 나머지는 **그때의** 세션 것이다. `/auth/me` 로 복구를 확인한 경로(`recoveredAnswer`)는
-    /// 그 답을 기다린 뒤 다시 다듬는다(`reconcileAccountAnswer`). 안드로이드는 탈퇴 취소 뒤 세션을 다시 쓰지 않는다
-    /// (`cancelAccountDeletion` 은 `pendingDeletion` 만 내린다).
+    /// 그 답을 기다린 뒤 다시 다듬는다(`reconcileAccountAnswer`). 안드로이드에는 대응이 없다 — 유예 세션은
+    /// 끊고 다시 로그인시킨다(`checkAccountStatus`).
     private func completeAccountRecovery(
         userID: String,
         recoveredAnswer: (session: AuthSession, request: AccountRequest)? = nil
@@ -2094,6 +2075,9 @@ final class AuthViewModel: ObservableObject {
     /// `AlarmTalkApp` 이 `PushNotificationCoordinator` 를 꽂는다 — 여기서 코디네이터를
     /// 직접 들면 순환 참조가 된다(코디네이터의 `onFamilyAlarm` 과 같은 방식).
     var onSignOutUnregisterPush: (String, String?, @escaping @Sendable () -> Bool) async -> Bool = { _, _, _ in true }
+    /// 서버가 이 계정의 푸시 등록을 이미 지웠을 때(탈퇴 신청 — user.ts) 또는 지웠을 수 있을 때(자동 만료) 기기 쪽 등록
+    /// 기록만 비운다 — 다음 등록이 서버에 다시 올리게. launch 에서 `PushNotificationCoordinator.clearRegistrationCache` 로 꽂는다.
+    var onServerRemovedPushRegistration: @MainActor () async -> Void = {}
 
     /// 로그아웃·탈퇴 때 **이 기기의 OS 알람 예약을 끊는** 훅.
     ///
@@ -2246,6 +2230,9 @@ final class AuthViewModel: ObservableObject {
     }
 
     func signOutExplicitly() {
+        // 탈퇴 유예 떠나기가 이 세션을 이미 정리하는 중이면 그 흐름이 로그아웃까지 한다 — 겹쳐 시작하면 그 정리가
+        // 알람을 기다리는 사이 세션이 바뀌어, 다음 로그인의 알람에 닿을 수 있다(코덱스 #904).
+        if let running = pendingDeletionLeave, running.token == session?.token { return }
         let userID = session?.user.id
         beginLeavingAccount()
         clearAccountPreferences(userID)
@@ -2324,6 +2311,13 @@ final class AuthViewModel: ObservableObject {
         // 명시적 로그아웃·탈퇴는 `revokeOnServer: false` 로 들어오거나 곧바로 `clear()` 한다.
         if revokeOnServer {
             SessionExpiryStore.markSessionExpired(userId: session?.user.id)
+            // ⚠ **자동 만료면 이 기기의 푸시 등록 확인도 내린다**(코덱스 #904). 끊긴 이유가 탈퇴 신청이었으면 서버가 그
+            //   계정의 푸시 행을 이미 지웠다 — 그 사이 다른 기기가 다시 로그인해 철회했으면 이 기기는 유예 코드 대신
+            //   `TOKEN_REVOKED` 를 받는다. 확인을 남겨 두면 같은 실행에서 같은 계정으로 다시 로그인해도 등록을 건너뛰어
+            //   가족 알람 푸시를 놓친다. 내리면 다음 로그인이 한 번 더 올릴 뿐이다. 등록·해제와 같은 줄에 태운다
+            //   (`PushNotificationCoordinator.invalidateRegistration`) — 이 함수는 동기라 기다리지는 않는다.
+            let invalidate = onServerRemovedPushRegistration
+            Task { await invalidate() }
         }
         // ⚠ **세션을 비우기 전에** 소유자를 새긴다 — 뒤에 하면 누구 것인지 알 수 없다.
         //

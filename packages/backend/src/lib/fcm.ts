@@ -764,6 +764,41 @@ class PushOutbox {
   }
 }
 
+/** 탈퇴 신청으로 지운 푸시 토큰 — 지우기 **전에** 읽어 둔 것(`POST /user/me/deletion`). */
+export type DeletedPushTarget = { token: string; platform: string };
+
+/**
+ * **탈퇴 신청을 그 계정의 다른 기기에 알린다**(2026-10-15) — data-only 신호 `account_deletion_requested`.
+ *
+ * 신청은 모든 기기의 세션을 끊는데(`token_epoch + 1`), 기기는 서버에 다음 요청을 보낼 때까지 그 사실을 모른다 — 그
+ * 사이 화면은 로그인된 채이고 예약된 알람이 운다. 이 신호를 받은 앱은 **계정 상태를 서버에 다시 묻고**(신호만 믿고
+ * 떠나지 않는다 — 그 사이 다른 기기에서 다시 로그인해 철회됐을 수 있다), 유예면 알람까지 끄고 떠난다.
+ *
+ * 토큰은 이미 지웠으므로 DB 를 다시 읽지 않고 받은 목록에 보낸다. 죽은 토큰을 정리할 행도 없다. 최선 노력이다 — iOS 의
+ * 무음 푸시는 배달이 보장되지 않고(강제 종료한 앱은 깨우지 않는다), 놓치면 다음 요청의 403 이 같은 정리를 한다.
+ */
+export async function sendAccountDeletionRequestedPush(
+  env: SignalPushEnv,
+  targets: readonly DeletedPushTarget[],
+): Promise<void> {
+  if (targets.length === 0) return;
+  const outbox = new PushOutbox();
+  const data = { type: 'account_deletion_requested' };
+  for (const target of targets) {
+    if (target.platform === 'ios') {
+      outbox.apns({ token: target.token, title: '', body: '', data, silent: true });
+    } else {
+      outbox.fcm({ token: target.token, title: '', body: '', data });
+    }
+  }
+  const { fcmMessages, apnsMessages } = outbox.take();
+  if (fcmMessages.length > 0) await sendPushNotifications(fcmMessages, env);
+  if (apnsMessages.length > 0) {
+    const config = apnsConfigFromEnv(env);
+    if (config) await sendApnsNotifications(apnsMessages, config);
+  }
+}
+
 export async function sendBillingStateSignals(
   db: Client,
   env: SignalPushEnv,

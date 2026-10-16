@@ -53,6 +53,8 @@ final class PushNotificationCoordinator: NSObject, ObservableObject {
         case planChanged = "plan_changed"
         /// 공유 이용권 결제 실패 — 표시 전용(서버가 alert 로 보낸다).
         case billingHold = "billing_hold"
+        /// 다른 기기에서 탈퇴를 신청했다(2026-10-15) → 이 기기의 세션도 끊겼다. 신호만 믿지 않고 계정을 다시 묻는다.
+        case accountDeletionRequested = "account_deletion_requested"
     }
 
     /// 푸시가 도착했을 때 할 일. `AlarmTalkApp` 이 꽂는다 —
@@ -71,6 +73,8 @@ final class PushNotificationCoordinator: NSObject, ObservableObject {
      */
     var onVoiceReplaced: (String, String?) async -> Void = { _, _ in }
     var onPlanChanged: () async -> Void = {}
+    /// `account_deletion_requested` — 계정 상태를 서버에 다시 묻는다(유예면 `refreshUser` 가 알람까지 끄고 떠난다).
+    var onAccountDeletionRequested: () async -> Void = {}
 
     /// 마지막으로 **서버에 올린** 기기 토큰.
     ///
@@ -285,6 +289,17 @@ final class PushNotificationCoordinator: NSObject, ObservableObject {
     }
 
     /// 로그아웃 시 다음 로그인에서 반드시 다시 올리도록 캐시를 비운다.
+    /// 서버가 이 계정의 푸시 행을 지웠거나 지웠을 수 있을 때 확인을 내린다 — **등록·해제와 같은 줄에서**.
+    ///
+    /// ⚠ 줄 밖에서 곧바로 비우면, 응답을 기다리던 앞선 등록이 그 뒤에 끝나며 `uploadConfirmedInThisProcess` 와 옛 주인을
+    ///   도로 적는다 — 서버 행은 없는데(탈퇴 신청이 지웠거나 늦은 등록을 서버가 건너뛰었다) 같은 실행에서 같은 계정으로 다시
+    ///   로그인해도 등록을 건너뛴다(코덱스 #904).
+    func invalidateRegistration() async {
+        await serializePushMutation { [weak self] in
+            self?.clearRegistrationCache()
+        }
+    }
+
     func clearRegistrationCache() {
         lastRegisteredToken = nil
         lastRegisteredUserID = nil
@@ -323,6 +338,12 @@ final class PushNotificationCoordinator: NSObject, ObservableObject {
             // 표시 전용 — 시스템이 배너를 띄운다. 앱이 할 일은 없다.
             // (짝이 되는 data-only `plan_changed` 가 재조회를 담당한다.)
             return false
+        case .accountDeletionRequested:
+            // ⚠ **신호만 믿고 떠나지 않는다** — 그 사이 다른 기기에서 다시 로그인해 철회됐을 수 있다. 서버가 유예라고
+            //   답할 때만 떠난다(`AuthViewModel.refreshUser` → `leaveAccountForPendingDeletion`). 무음 푸시는 배달이
+            //   보장되지 않는다 — 놓치면 다음 요청의 403 이 같은 정리를 한다.
+            await onAccountDeletionRequested()
+            return true
         }
     }
 }
@@ -377,6 +398,7 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
         // `.task(id: 세션)` 안에서 꽂았는데, 그 태스크는 **알림 권한 팝업을 먼저 기다린다.**
         // 그 사이 '끊긴 로그아웃 이어서 끝내기' 가 먼저 도달하면 기본값(아무것도 안 함)이
         // 불려, `/auth/logout` 으로 토큰만 폐기되고 **기기는 그 계정에 묶인 채** 남는다.
+        deps.auth.onServerRemovedPushRegistration = { [weak push = deps.push] in await push?.invalidateRegistration() }
         deps.auth.onSignOutUnregisterPush = { [weak push = deps.push] token, expectedOwner, stillNeeded in
             guard let push else { return false }
             return await push.unregisterCurrentToken(
@@ -681,6 +703,9 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
                 if !presetWorkSettled(pending.profileID) { continue }
                 await deps.confirmIfReservationsSettled(pending, ownerID: ownerID)
             }
+        }
+        deps.push.onAccountDeletionRequested = { [weak auth = deps.auth] in
+            await auth?.refreshUser()
         }
         deps.push.onPlanChanged = {
             await deps.socialFeatures.refreshAll(session: deps.auth.session, force: true)

@@ -75,7 +75,9 @@ class UsageEventUploadWorker(
                     // ⚠ **여기가 ANDROID-M 이었다.** 401 에도 `Result.retry()` 를 돌려줘,
                     // 폐기된 토큰으로 같은 요청을 영원히 재시도하며 그 회차마다 이슈를 한 건씩
                     // 올렸다. 재시도가 풀어 줄 수 있는 실패가 아니다 — 세션을 끊는다.
-                    endSessionAfterWorkerUnauthorized(
+                    endWorkerSession(
+                        error = error,
+                        context = applicationContext,
                         sessionStore = sessionStore,
                         expectedGeneration = startGeneration,
                         usedToken = session.token,

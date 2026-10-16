@@ -36,8 +36,16 @@ import kotlin.coroutines.cancellation.CancellationException
  *   상태라 백오프 재시도는 403 만 반복한다 — 한 사용자가 17분에 12건을 남겼다. 성공으로
  *   끝내고, 동의 뒤 알람 탭 진입의 `syncNow` 와 주기 실행이 다시 끌어온다. 전경 경로
  *   (`MainViewModelAuthActions` 의 `syncNow`)와 같은 판단이다.
- *   ⚠ 정확히 `CONSENT_REQUIRED` 만이다 — `CONSENT_STATE_UNAVAILABLE`·`ACCOUNT_PENDING_DELETION`
- *   같은 실제 인증·동의 파손은 [RETRY] 로 가 모니터링에 남는다.
+ *   ⚠ 정확히 `CONSENT_REQUIRED` 만이다 — `CONSENT_STATE_UNAVAILABLE` 같은 실제 인증·동의 파손은
+ *   [RETRY] 로 가 모니터링에 남는다.
+ * - **탈퇴 유예 403(`ACCOUNT_PENDING_DELETION`)도 [SESSION_EXPIRED] 다 — 단 끝내는 방법이 다르다**(2026-10-15).
+ *   다른 기기에서 탈퇴를 신청하면 이 기기의 세션도 끝난 것이다(`docs/spec/session-and-auth.md` 「탈퇴 유예 — 다시
+ *   로그인하면 철회」). 워커는 [endWorkerSession] 으로 끝내고, 그 함수가 이 코드를 보면 **자동 만료가 아니라 알람까지 끄는
+ *   떠나기**([leaveAccountAfterPendingDeletion])로 정리한다 — 자동 만료는 알람 예약을 남겨 로그인 화면 뒤에서 숨은 알람이
+ *   운다(코덱스 #904). 서버가 신청과 함께 이 기기의 푸시 등록을 지우므로 깨워 줄 다른 길이 없어(무음 신호
+ *   `account_deletion_requested` 는 최선 노력이다), 이 403 을 본 워커가 그 자리에서 정리해야 한다.
+ *   ⚠ '성공으로 끝내기'·'재시도로 두기' 로 따로 다루지 말 것 — 2026-10-15 에 그렇게 했다가 입력을 든 워커(목소리 교체
+ *   신호)·요금제 대조를 잃는 땜질이, 그다음엔 숨은 알람이 따라 나왔다(#901~#904).
  * - [RETRY]: 그 밖의 실패. 보고하고 재시도한다(일시적 네트워크 실패는 `AlarmTalkLog` 가
  *   이슈 대신 브레드크럼으로 낮춘다).
  */
@@ -54,6 +62,7 @@ internal fun syncWorkerOutcome(error: Throwable): SyncWorkerOutcome =
     when {
         error is CancellationException -> SyncWorkerOutcome.RETHROW
         AlarmTalkLog.isHandledAuthFailure(error) -> SyncWorkerOutcome.SESSION_EXPIRED
+        AlarmTalkLog.isAccountPendingDeletion(error) -> SyncWorkerOutcome.SESSION_EXPIRED
         apiErrorCode(error) == "CONSENT_REQUIRED" -> SyncWorkerOutcome.CONSENT_PENDING
         else -> SyncWorkerOutcome.RETRY
     }
@@ -122,6 +131,81 @@ internal fun sessionExpiryPlan(
         add(SessionExpiryStep.INVALIDATE_MANIFEST_TICKETS)
         add(SessionExpiryStep.CLEAR_SESSION)
     }
+}
+
+/**
+ * 워커가 [SyncWorkerOutcome.SESSION_EXPIRED] 를 받았을 때 세션을 끝낸다 — 갈래는 원인으로 가른다.
+ *
+ * - 403 `ACCOUNT_PENDING_DELETION`: 다른 기기에서 탈퇴를 신청했다 → [leaveAccountAfterPendingDeletion](알람까지 끄는 떠나기).
+ * - 그 밖(401): [endSessionAfterWorkerUnauthorized](자동 만료 — 알람 예약을 남긴다).
+ *
+ * ⚠ **워커는 이 함수만 부른다.** 갈래를 워커마다 손으로 고르면 새 워커가 빠진다(이 파일 머리 주석과 같은 이유).
+ */
+internal suspend fun endWorkerSession(
+    error: Throwable,
+    context: android.content.Context,
+    sessionStore: AuthSessionStore,
+    expectedGeneration: Long,
+    usedToken: String,
+    userId: String,
+    workerName: String,
+): Boolean =
+    if (AlarmTalkLog.isAccountPendingDeletion(error)) {
+        leaveAccountAfterPendingDeletion(context, sessionStore, usedToken, userId, workerName)
+    } else {
+        endSessionAfterWorkerUnauthorized(sessionStore, expectedGeneration, usedToken, userId, workerName)
+    }
+
+/**
+ * **다른 기기에서 탈퇴를 신청한 계정을 이 기기에서 떠난다 — 백그라운드판**(`MainViewModel.clearSignedInSession` 과 같은
+ * 정리: 알람 예약을 내리고 소유자를 새기고, 자동 만료 표시를 남기지 않고, 그 계정의 취향·매니페스트 사본을 지운다).
+ * 전경판은 `leaveAccountForPendingDeletion`(뷰모델)이다.
+ *
+ * ⚠ **이 요청이 보낸 토큰이 아직 저장된 세션일 때만**([workerMayEndSession]) — 같은 계정으로 다시 로그인한 새 세션을
+ *   옛 토큰의 403 이 끊지 않게. 세션 비우기는 알람 떼어내기와 **같은 임계구역 안에서** 한다(복원 워커가 그 틈에 '로그인됨'
+ *   으로 읽어 방금 내린 예약을 되살리지 않게 — `detachAlarmsOnSignOut` 주석).
+ */
+internal suspend fun leaveAccountAfterPendingDeletion(
+    context: android.content.Context,
+    sessionStore: AuthSessionStore,
+    usedToken: String,
+    userId: String,
+    workerName: String,
+): Boolean {
+    if (!workerMayEndSession(usedToken, sessionStore.read()?.token)) return false
+    var left = false
+    sessionStore.beginSignOut()
+    try {
+        // 표시를 **먼저** 지운다 — 떼어내기가 중간에 실패해도 '명시적 로그아웃이었다' 는 사실이 남아야 다음 재예약이
+        // 이 계정 알람을 되살리지 않는다(`clearSignedInSession` 과 같은 순서).
+        runCatching { sessionStore.clearSessionExpiredOwner() }
+        runCatching {
+            com.alarmtalk.app.data.AlarmAppContainer.repository(context)
+                .detachAlarmsOnSignOut(
+                    signedOutUserId = userId.takeIf { it.isNotBlank() },
+                    // ⚠ **락 안에서, 알람을 건드리기 전에** 다시 본다(코덱스 #904) — 락을 기다리는 사이 같은 계정으로
+                    //   다시 로그인했으면 그 새 세션의 알람을 끄지 않는다.
+                    proceedInsideLock = { workerMayEndSession(usedToken, sessionStore.read()?.token) },
+                    clearSessionInsideLock = {
+                        sessionStore.clear()
+                        left = true
+                    },
+                )
+        }.onFailure { error -> AlarmTalkLog.reportError("Leaving account from $workerName failed", error) }
+        if (left && userId.isNotBlank()) {
+            runCatching { com.alarmtalk.app.data.DefaultVoicePreferenceStore(context).clear(userId) }
+            runCatching { com.alarmtalk.app.data.DynamicPromptPreferenceStore(context).clearLastSelections(userId) }
+            runCatching { StockClipManifestStore.clearAndInvalidate(context) }
+        }
+    } finally {
+        sessionStore.endSignOut()
+    }
+    Log.i(TAG, if (left) "$workerName left the account: pending deletion" else "$workerName did not leave: session changed")
+    // 화면이 떠 있으면 뷰모델도 떠나게 한다 — 뷰모델은 비워진 저장소를 흡수하지 않는다(코덱스 #904).
+    if (left && userId.isNotBlank()) {
+        com.alarmtalk.app.core.AppSignals.emitAccountLeftForPendingDeletion(userId, usedToken)
+    }
+    return left
 }
 
 /**

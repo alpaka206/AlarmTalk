@@ -3109,6 +3109,21 @@ export const migrations: Migration[] = [
       `ALTER TABLE voice_profiles ADD COLUMN pitch_model_id TEXT`,
     ],
   },
+  {
+    // **이미 탈퇴 유예인 계정에 '모든 기기 로그아웃' 을 소급한다**(2026-10-15, 코덱스 #904). 이 배포부터 탈퇴 신청은 한
+    // 트랜잭션에서 `token_epoch + 1`·그 계정의 `push_tokens` 삭제를 하고(`POST /user/me/deletion`), 다시 로그인하면 철회된다
+    // (`cancelPendingDeletionOnSignIn`). 그 전에 신청해 유예 중인 행은 세대가 그대로라, 한 기기가 로그인해 철회하는 순간
+    // 신청 전의 토큰을 든 다른 기기가 다시 통과하고 옛 푸시 등록도 남는다. 배포 때 한 번 같은 정리를 해 둔다.
+    // 데이터 변경만이라 다시 돌아도 같은 결과로 수렴한다(세대는 한 번 더 오를 뿐 — 유예 계정은 어차피 모든 요청이 403).
+    id: 129,
+    name: 'pending-deletion-revoke-sessions-backfill',
+    statements: [
+      `DELETE FROM push_tokens
+        WHERE user_id IN (SELECT id FROM users WHERE deletion_status = 'pending_deletion')`,
+      `UPDATE users SET token_epoch = token_epoch + 1, updated_at = datetime('now')
+        WHERE deletion_status = 'pending_deletion'`,
+    ],
+  },
 ];
 // Errors that mean the statement was already applied — safe to ignore so
 // we can recover databases whose `_migrations` ledger is out of sync with

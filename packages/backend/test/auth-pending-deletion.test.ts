@@ -11,9 +11,10 @@ vi.mock('../src/lib/jwt', () => ({
 }));
 
 let deletionStatus = 'active';
+let tokenEpoch = 0;
 vi.mock('../src/lib/db', () => ({
   getDB: () => ({
-    execute: async () => ({ rows: [{ id: 'pk-1', deletion_status: deletionStatus }] }),
+    execute: async () => ({ rows: [{ id: 'pk-1', deletion_status: deletionStatus, token_epoch: tokenEpoch }] }),
   }),
 }));
 
@@ -57,6 +58,7 @@ function call(app: Hono<AppEnv>, method: string, path: string) {
 }
 
 beforeEach(() => {
+  tokenEpoch = 0;
   mockVerifyAppJwt.mockReset();
   mockVerifyAppJwt.mockResolvedValue({
     sub: 'user-1',
@@ -89,4 +91,44 @@ describe('authMiddleware — pending_deletion 차단', () => {
     expect((await res.json()).ok).toBe('cancelled');
   });
 
+  // 탈퇴 신청은 token_epoch 를 올려 모든 기기의 세션을 끊는다(2026-10-15). 다른 기기가 401(자동 만료)로 읽으면
+  // 알람 예약을 남긴 채 로그아웃한다 — 유예 코드를 받아야 알람까지 정리하고 떠난다(코덱스 #904).
+  it('유예 계정의 폐기된 토큰은 401 이 아니라 403 ACCOUNT_PENDING_DELETION', async () => {
+    deletionStatus = 'pending_deletion';
+    tokenEpoch = 1;
+    mockVerifyAppJwt.mockResolvedValueOnce({ sub: 'user-1', iss: 'voice-alarm', epoch: 0 });
+    const res = await call(buildApp(), 'GET', '/api/alarm');
+    expect(res.status).toBe(403);
+    expect((await res.json()).error_code).toBe('ACCOUNT_PENDING_DELETION');
+  });
+
+  it('탈퇴 신청보다 먼저 끊긴 토큰으로는 철회할 수 없다 — 허용 경로도 폐기 검사를 지난다', async () => {
+    deletionStatus = 'pending_deletion';
+    tokenEpoch = 2;
+    mockVerifyAppJwt.mockResolvedValueOnce({ sub: 'user-1', iss: 'voice-alarm', epoch: 0 });
+    const res = await call(buildApp(), 'DELETE', '/api/user/me/deletion');
+    expect(res.status).toBe(401);
+    expect((await res.json()).error_code).toBe('TOKEN_REVOKED');
+  });
+
+  it('탈퇴 신청이 끊은 그 세대의 토큰은 철회만 통과한다 — 옛 앱 유예 화면의 철회 버튼(코덱스 #905)', async () => {
+    deletionStatus = 'pending_deletion';
+    tokenEpoch = 1;
+    mockVerifyAppJwt.mockResolvedValueOnce({ sub: 'user-1', iss: 'voice-alarm', epoch: 0 });
+    const res = await call(buildApp(), 'DELETE', '/api/user/me/deletion');
+    expect(res.status).toBe(200);
+    // 푸시 해제는 예외가 아니다 — 폐기 검사를 그대로 지난다.
+    mockVerifyAppJwt.mockResolvedValueOnce({ sub: 'user-1', iss: 'voice-alarm', epoch: 0 });
+    const unregister = await call(buildApp(), 'POST', '/api/push/unregister');
+    expect(unregister.status).toBe(401);
+  });
+
+  it('active 계정의 폐기된 토큰은 그대로 401 TOKEN_REVOKED', async () => {
+    deletionStatus = 'active';
+    tokenEpoch = 1;
+    mockVerifyAppJwt.mockResolvedValueOnce({ sub: 'user-1', iss: 'voice-alarm', epoch: 0 });
+    const res = await call(buildApp(), 'GET', '/api/alarm');
+    expect(res.status).toBe(401);
+    expect((await res.json()).error_code).toBe('TOKEN_REVOKED');
+  });
 });
