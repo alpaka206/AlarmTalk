@@ -12,7 +12,6 @@ protocol AuthAPIProviding: AnyObject, Sendable {
     func me(token: String) async throws -> (token: String?, user: AuthUser)
     func updateProfile(_ requestBody: UpdateProfileRequest, token: String) async throws -> UpdateProfileResponse
     func requestAccountDeletion(token: String) async throws -> AccountDeletionResponse
-    func cancelAccountDeletion(token: String) async throws -> CancelDeletionResponse
     func consentStatus(token: String) async throws -> ConsentStatusResponse
     func recordConsents(_ requestBody: RecordConsentsRequest, token: String) async throws -> RecordConsentsResponse
     func logout(token: String) async throws
@@ -1585,7 +1584,7 @@ final class AuthViewModel: ObservableObject {
     }
 
     /// 30일 유예 탈퇴 신청 — 유예 상태로 전환하고
-    /// 로그아웃 처리한다. 유예 기간 내 다시 로그인해 `cancelAccountDeletion` 으로 복구 가능.
+    /// 로그아웃 처리한다. 유예 기간 내 다시 로그인하면 서버가 철회한다.
     /// Android `MainViewModel.requestAccountDeletion()`.
     func requestAccountDeletion() async {
         guard let token else {
@@ -1688,7 +1687,7 @@ final class AuthViewModel: ObservableObject {
 
     /// 저장된 유예 세션이 `active` 로 돌아온 것을 확인했을 때의 복구 후처리(`refreshUser`).
     ///
-    /// 2026-10-15 부터 철회 버튼(`cancelAccountDeletion`)은 없다 — 다시 로그인하면 서버가 철회하고, 유예 세션은
+    /// 2026-10-15 부터 철회 버튼은 없다(서버 경로도 2026-10-16 에 지웠다) — 다시 로그인하면 서버가 철회하고, 유예 세션은
     /// `refreshUser` 가 끊는다. 이 함수가 남은 것은 1.2.13 이하에서 유예 화면에 머물던 세션이 올라왔는데 그 사이 다른
     /// 기기에서 다시 로그인해 철회된 경우다(저장된 pending → active).
     ///

@@ -9,7 +9,7 @@
  *  - /auth/*                      (로그인/교환/로그아웃)
  *  - /api/health, '/'             (헬스체크)
  *  - /user/consents*              (동의 기록/조회/상태 — 동의 자체를 하러 오는 경로)
- *  - DELETE /user/me, /user/me/deletion (탈퇴/철회)
+ *  - POST /user/me/deletion (탈퇴 신청)
  *  - GET /app/version             (버전 정책)
  *  - /holiday                     (공휴일, 비인증)
  *
@@ -34,7 +34,7 @@ function isExempt(path: string, method: string): boolean {
   if (p === '/holiday' || p.startsWith('/holiday/')) return true;
   // 동의 기록/조회/상태(동의 자체를 하러 오는 경로)
   if (p === '/user/consents' || p.startsWith('/user/consents/')) return true;
-  // 탈퇴/철회: DELETE /user/me, POST·DELETE /user/me/deletion
+  // 탈퇴 신청: POST /user/me/deletion
   if (p === '/user/me/deletion') return true;
   if (method === 'DELETE' && p === '/user/me') return true;
   // 푸시 토큰 등록(운영성) — 알림 수신 설정은 데이터 수집이 아니라 동의 미완 사용자도 통과해야 한다.

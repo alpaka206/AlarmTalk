@@ -507,7 +507,6 @@ private final class UnusedAuthAPI: AuthAPIProviding, @unchecked Sendable {
         throw APIError.invalidResponse
     }
     func requestAccountDeletion(token: String) async throws -> AccountDeletionResponse { throw APIError.invalidResponse }
-    func cancelAccountDeletion(token: String) async throws -> CancelDeletionResponse { throw APIError.invalidResponse }
     func consentStatus(token: String) async throws -> ConsentStatusResponse { throw APIError.invalidResponse }
     func recordConsents(_ requestBody: RecordConsentsRequest, token: String) async throws -> RecordConsentsResponse {
         throw APIError.invalidResponse

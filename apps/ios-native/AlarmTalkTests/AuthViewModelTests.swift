@@ -1786,7 +1786,6 @@ final class AuthViewModelTests: XCTestCase {
         defer {
             vm.prepareAccountRecovery = { _ in }
             vm.onAccountRecovered = { _ in }
-            api.beforeCancelAccountDeletionResponse = nil
             api.beforeMeResponse = nil
         }
         // 1.2.13 이하에서 유예 화면에 머물던 세션이 이 버전으로 올라온 상태를 심는다 — 2026-10-15 부터 앱은 유예
@@ -2114,15 +2113,12 @@ private final class MockAuthAPI: AuthAPIProviding, @unchecked Sendable {
         )
     )
     var requestAccountDeletionResult: Result<AccountDeletionResponse, Error> = .success(AccountDeletionResponse(success: true))
-    var cancelAccountDeletionResult: Result<CancelDeletionResponse, Error> = .success(CancelDeletionResponse(success: true))
-    var beforeCancelAccountDeletionResponse: (@MainActor @Sendable () -> Void)?
     var consentStatusResult: Result<ConsentStatusResponse, Error> = .success(ConsentStatusResponse(needsConsent: false))
     var recordConsentsResult: Result<RecordConsentsResponse, Error> = .success(RecordConsentsResponse(success: true, recorded: 4))
     private(set) var meCallCount = 0
     private(set) var updateProfileCallCount = 0
     private(set) var lastUpdateProfileRequest: UpdateProfileRequest?
     private(set) var requestAccountDeletionCallCount = 0
-    private(set) var cancelAccountDeletionCallCount = 0
     private(set) var consentStatusCallCount = 0
     private(set) var recordConsentsCallCount = 0
     private(set) var lastRecordConsentsRequest: RecordConsentsRequest?
@@ -2175,16 +2171,6 @@ private final class MockAuthAPI: AuthAPIProviding, @unchecked Sendable {
         }
     }
 
-    func cancelAccountDeletion(token: String) async throws -> CancelDeletionResponse {
-        cancelAccountDeletionCallCount += 1
-        await beforeCancelAccountDeletionResponse?()
-        switch cancelAccountDeletionResult {
-        case .success(let response):
-            return response
-        case .failure(let error):
-            throw error
-        }
-    }
 
     func consentStatus(token: String) async throws -> ConsentStatusResponse {
         consentStatusCallCount += 1

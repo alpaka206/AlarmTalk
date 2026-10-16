@@ -1030,7 +1030,6 @@ final class ServerSignOutCleanupTests: XCTestCase {
         func me(token: String) async throws -> (token: String?, user: AuthUser) { throw APIError.invalidResponse }
         func updateProfile(_ requestBody: UpdateProfileRequest, token: String) async throws -> UpdateProfileResponse { throw APIError.invalidResponse }
         func requestAccountDeletion(token: String) async throws -> AccountDeletionResponse { throw APIError.invalidResponse }
-        func cancelAccountDeletion(token: String) async throws -> CancelDeletionResponse { throw APIError.invalidResponse }
         func consentStatus(token: String) async throws -> ConsentStatusResponse { throw APIError.invalidResponse }
         func recordConsents(_ requestBody: RecordConsentsRequest, token: String) async throws -> RecordConsentsResponse { throw APIError.invalidResponse }
         func logout(token: String) async throws {

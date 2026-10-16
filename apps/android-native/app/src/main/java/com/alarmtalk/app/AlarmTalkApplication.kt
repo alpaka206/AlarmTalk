@@ -112,9 +112,16 @@ class AlarmTalkApplication : Application() {
             Settings.System.getString(contentResolver, FIREBASE_TEST_LAB_SETTING)
         }.getOrNull()
 
+        val display = runCatching { resources.displayMetrics }.getOrNull()
+
         SentryAndroid.init(this) { options ->
             options.dsn = sentryDsn
-            options.environment = sentryEnvironment(BuildConfig.VOICE_ALARM_SENTRY_ENVIRONMENT, firebaseTestLab)
+            options.environment = sentryEnvironment(
+                BuildConfig.VOICE_ALARM_SENTRY_ENVIRONMENT,
+                firebaseTestLab,
+                displayShortSidePx = display?.let { minOf(it.widthPixels, it.heightPixels) },
+                displayDensityDpi = display?.densityDpi,
+            )
             options.release =
                 "${BuildConfig.APPLICATION_ID}@${BuildConfig.VERSION_NAME}+${BuildConfig.VERSION_CODE}"
             options.isSendDefaultPii = false
@@ -192,12 +199,32 @@ internal const val SENTRY_ENVIRONMENT_PRELAUNCH = "prelaunch"
  * 무엇인가" 하나이고, 예외 이름·메시지로는 아무것도 거르지 않는다([shouldInitializeSentry] 와
  * 같은 원칙).
  *
- * ⚠ 이 설정은 Firebase 문서가 **Test Lab** 기기에 대해 적은 것이다. Play 사전 출시 보고서의 기기도
- * 세우는지는 확인하지 못했다(2026-10-11) — 안 세우면 이 함수는 [base] 를 돌려주고 달라지는 것이
- * 없다. 사전 출시 회차의 이벤트에 이 환경이 찍히는지 한 번 본다.
+ * ⚠ **설정 하나로는 빗나갔다**(2026-10-11 ANDROID-11 — 1.2.11 로봇이 `production` 으로 찍혀 알림 메일까지 갔다).
+ * Play 사전 출시 기기는 `firebase.test.lab` 을 세우지 않는다. 그래서 **화면**을 함께 본다 — 2026-09~10 의 로봇 이벤트는
+ * 기기 프로필(가상 OnePlus8Pro·실물 HRY-LX1T)과 상관없이 전부 **288×448 px · 약 106dpi** 로 찍혔다(Sentry 30일, 실기기
+ * 이벤트에는 한 건도 없다). 지금 팔리는 폰의 짧은 변은 720px 안팎이고 밀도도 320dpi 이상이라, 짧은 변 [ROBOT_DISPLAY_MAX_SHORT_SIDE_PX]
+ * 이하 **이면서** [ROBOT_DISPLAY_MAX_DENSITY_DPI] 미만이면 로봇으로 본다(둘 다여야 한다 — 하나만으로는 접는 폰의 바깥
+ * 화면·저사양 태블릿을 잘못 가를 수 있다).
  *
  * @param base `BuildConfig.VOICE_ALARM_SENTRY_ENVIRONMENT`.
  * @param firebaseTestLab `Settings.System` 의 [FIREBASE_TEST_LAB_SETTING] 값(없으면 null).
+ * @param displayShortSidePx 화면의 짧은 변(px). 모르면 null — 화면으로는 가르지 않는다.
+ * @param displayDensityDpi 화면 밀도(dpi). 모르면 null.
  */
-internal fun sentryEnvironment(base: String, firebaseTestLab: String?): String =
-    if (firebaseTestLab == "true") SENTRY_ENVIRONMENT_PRELAUNCH else base
+internal fun sentryEnvironment(
+    base: String,
+    firebaseTestLab: String?,
+    displayShortSidePx: Int? = null,
+    displayDensityDpi: Int? = null,
+): String {
+    if (firebaseTestLab == "true") return SENTRY_ENVIRONMENT_PRELAUNCH
+    val robotDisplay = displayShortSidePx != null && displayDensityDpi != null &&
+        displayShortSidePx in 1..ROBOT_DISPLAY_MAX_SHORT_SIDE_PX && displayDensityDpi in 1 until ROBOT_DISPLAY_MAX_DENSITY_DPI
+    return if (robotDisplay) SENTRY_ENVIRONMENT_PRELAUNCH else base
+}
+
+/** 사전 출시 로봇 화면의 짧은 변 상한(px) — 로봇은 288. 실기기는 그 두 배를 넘는다. */
+internal const val ROBOT_DISPLAY_MAX_SHORT_SIDE_PX = 320
+
+/** 사전 출시 로봇 화면의 밀도 상한(dpi, 미만) — 로봇은 약 106(ldpi). 실기기는 mdpi(160) 이상이다. */
+internal const val ROBOT_DISPLAY_MAX_DENSITY_DPI = 160

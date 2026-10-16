@@ -84,12 +84,6 @@ describe('authMiddleware — pending_deletion 차단', () => {
     expect((await res.json()).error_code).toBe('ACCOUNT_PENDING_DELETION');
   });
 
-  it('pending_deletion 이어도 탈퇴 철회(DELETE /user/me/deletion)는 허용', async () => {
-    deletionStatus = 'pending_deletion';
-    const res = await call(buildApp(), 'DELETE', '/api/user/me/deletion');
-    expect(res.status).toBe(200);
-    expect((await res.json()).ok).toBe('cancelled');
-  });
 
   // 탈퇴 신청은 token_epoch 를 올려 모든 기기의 세션을 끊는다(2026-10-15). 다른 기기가 401(자동 만료)로 읽으면
   // 알람 예약을 남긴 채 로그아웃한다 — 유예 코드를 받아야 알람까지 정리하고 떠난다(코덱스 #904).
@@ -102,25 +96,17 @@ describe('authMiddleware — pending_deletion 차단', () => {
     expect((await res.json()).error_code).toBe('ACCOUNT_PENDING_DELETION');
   });
 
-  it('탈퇴 신청보다 먼저 끊긴 토큰으로는 철회할 수 없다 — 허용 경로도 폐기 검사를 지난다', async () => {
-    deletionStatus = 'pending_deletion';
-    tokenEpoch = 2;
-    mockVerifyAppJwt.mockResolvedValueOnce({ sub: 'user-1', iss: 'voice-alarm', epoch: 0 });
-    const res = await call(buildApp(), 'DELETE', '/api/user/me/deletion');
-    expect(res.status).toBe(401);
-    expect((await res.json()).error_code).toBe('TOKEN_REVOKED');
-  });
 
-  it('탈퇴 신청이 끊은 그 세대의 토큰은 철회만 통과한다 — 옛 앱 유예 화면의 철회 버튼(코덱스 #905)', async () => {
-    deletionStatus = 'pending_deletion';
-    tokenEpoch = 1;
-    mockVerifyAppJwt.mockResolvedValueOnce({ sub: 'user-1', iss: 'voice-alarm', epoch: 0 });
-    const res = await call(buildApp(), 'DELETE', '/api/user/me/deletion');
-    expect(res.status).toBe(200);
-    // 푸시 해제는 예외가 아니다 — 폐기 검사를 그대로 지난다.
-    mockVerifyAppJwt.mockResolvedValueOnce({ sub: 'user-1', iss: 'voice-alarm', epoch: 0 });
-    const unregister = await call(buildApp(), 'POST', '/api/push/unregister');
-    expect(unregister.status).toBe(401);
+
+  it('유예 계정은 철회 버튼·푸시 해제도 예외 없이 403 — 옛 앱 예외는 2026-10-16 에 지웠다', async () => {
+    for (const [method, path] of [['DELETE', '/api/user/me/deletion'], ['POST', '/api/push/unregister']] as const) {
+      deletionStatus = 'pending_deletion';
+      tokenEpoch = 0;
+      mockVerifyAppJwt.mockResolvedValueOnce({ sub: 'user-1', iss: 'voice-alarm', epoch: 0 });
+      const res = await call(buildApp(), method, path);
+      expect(res.status, path).toBe(403);
+      expect((await res.json()).error_code).toBe('ACCOUNT_PENDING_DELETION');
+    }
   });
 
   it('active 계정의 폐기된 토큰은 그대로 401 TOKEN_REVOKED', async () => {

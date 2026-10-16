@@ -66,6 +66,20 @@ class SentryInitializationGateTest {
     // ── 사전 출시 로봇은 환경으로 가른다(버리지 않는다) ─────────────────────
 
     @Test
+    fun prelaunchRobotsWithoutTheSettingAreRecognizedByTheirScreen() {
+        // 2026-10 Play 사전 출시 로봇은 firebase.test.lab 을 세우지 않았다 — 화면은 언제나 288×448·약 106dpi 였다.
+        assertEquals("prelaunch", sentryEnvironment("production", null, displayShortSidePx = 288, displayDensityDpi = 106))
+        // 실기기(짧은 변 720~1440, 320dpi 이상)는 그대로 production.
+        assertEquals("production", sentryEnvironment("production", null, displayShortSidePx = 720, displayDensityDpi = 320))
+        assertEquals("production", sentryEnvironment("production", null, displayShortSidePx = 1080, displayDensityDpi = 440))
+        // 하나만 맞으면 가르지 않는다 — 좁지만 밀도가 높은 화면(접는 폰 바깥 화면 등), 밀도는 낮지만 넓은 화면.
+        assertEquals("production", sentryEnvironment("production", null, displayShortSidePx = 300, displayDensityDpi = 320))
+        assertEquals("production", sentryEnvironment("production", null, displayShortSidePx = 800, displayDensityDpi = 120))
+        // 화면을 모르면 가르지 않는다.
+        assertEquals("production", sentryEnvironment("production", null))
+    }
+
+    @Test
     fun prelaunchRobotsReportUnderTheirOwnEnvironment() {
         // 1.2.10 의 잡동사니 이슈(ANDROID-Q) 42건 중 26건이 Play 사전 출시 로봇이었다. 이벤트는
         // 그대로 올라오되 운영 사용자 수에 섞이지 않게 환경만 바꾼다.
