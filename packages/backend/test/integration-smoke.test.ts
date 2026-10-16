@@ -150,6 +150,16 @@ describe('Security Headers', () => {
     expect(res.headers.get('X-Content-Type-Options')).toBe('nosniff');
     expect(res.headers.get('X-Frame-Options')).toBe('DENY');
   });
+
+  it('API 는 검색에 나오지 않는다 — 모든 응답에 noindex, robots.txt 는 전부 막는다(2026-10-16)', async () => {
+    mockDB.execute.mockResolvedValueOnce({ rows: [{ 1: 1 }], rowsAffected: 0 });
+    const root = await fetchApp('GET', '/');
+    expect(root.headers.get('X-Robots-Tag')).toBe('noindex, nofollow');
+    const robots = await fetchApp('GET', '/robots.txt');
+    expect(robots.status).toBe(200);
+    expect(await robots.text()).toBe('User-agent: *\nDisallow: /\n');
+    expect(robots.headers.get('X-Robots-Tag')).toBe('noindex, nofollow');
+  });
 });
 
 describe('CORS', () => {

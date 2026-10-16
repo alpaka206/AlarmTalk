@@ -119,6 +119,10 @@ async function healthPayload(env: Env) {
   };
 }
 
+// **API 는 검색에 나오지 않는다**(2026-10-16 — Search Console 이 `https://api.alarm-talk.com/` 를 크롤링했다).
+// 모든 응답에 noindex 를 싣고(`securityHeadersMiddleware`), robots.txt 로 크롤링도 막는다. 공개 페이지는 랜딩(alarm-talk.com)이다.
+app.get('/robots.txt', (c) => c.text('User-agent: *\nDisallow: /\n'));
+
 // Health check with DB connectivity
 app.get('/', async (c) => c.json(await healthPayload(c.env)));
 app.get('/health', async (c) => c.json(await healthPayload(c.env)));
