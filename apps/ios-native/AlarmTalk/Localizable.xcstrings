@@ -2049,6 +2049,23 @@
         }
       }
     },
+    "기존에 설정한 알람 %lld개의 목소리가 기본 목소리로 바뀌었어요. 3일 안에 이용권을 다시 구독하면 내 목소리가 돌아오고, 지나면 영구 삭제돼요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld of your alarms now use the default voice. Subscribe again within 3 days to get your voices back; after that they are deleted permanently."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "設定済みのアラーム%lld件の声が基本の声に変わりました。3日以内に利用券を購読し直すと自分の声が戻り、過ぎると完全に削除されます。"
+          }
+        }
+      }
+    },
     "깨워줄 말을 입력하거나 문구 종류를 골라 주세요." : {
       "extractionState" : "manual",
       "localizations" : {

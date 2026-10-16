@@ -1315,7 +1315,10 @@ Vibration disabled for ringing alarm
   `downgrade_notice_title`·`downgrade_notice_message`, "기존에 설정한 알람 N개의 목소리가 기본 목소리로 바뀌었어요.",
   버튼은 '확인' 하나). 예전에는 무료 강등·공유 해제·제자리 교체로 문구를 갈랐는데, 원인을 맞히는 판정이 틀리면 엉뚱한
   안내가 떴다(2026-10-11 내가 지운 목소리를 '공유 이용권에서 나가게 됐어요' 로). 원인은 대기표가 계속 따로 적는다(유료
-  복원이 무료 강등분만 지운다). 무료 강등의 기한(3일)은 삭제 예고 푸시가 말한다. 그 일을 예고하는
+  복원이 무료 강등분만 지운다). ⚠ **무료 강등이면 삭제 기한 한 줄을 덧붙인다**(`downgrade_notice_free_deadline` —
+  "3일 안에 다시 구독하면 내 목소리가 돌아오고, 지나면 영구 삭제돼요", 코덱스 #914): 앱 안에서 그 기한을 말하는 곳이
+  이 안내뿐이고(예고 푸시는 알림 권한이 없으면 닿지 않는다), 무료 강등은 결제 쪽이 확정해 적는 원인이라 추측이 아니다.
+  그 일을 예고하는
   확인 문구(목소리 삭제 `voicesr_delete_dialog_warning`·`voices_delete_quota_message` · 교체
   `voices_replace_existing_desc` · 음성 동의 철회 `consent_withdraw_voice_body`)도 **"기본 목소리로"** 다
   (두 앱, ko·en·ja — iOS 는 소스 문자열과 `Localizable.xcstrings`).

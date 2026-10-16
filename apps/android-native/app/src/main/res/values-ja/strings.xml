@@ -803,6 +803,7 @@
     <string name="misc2_theme_mode_dark_short">ダーク</string>
     <string name="downgrade_notice_title">アラームの声が変わりました</string>
     <string name="downgrade_notice_message">設定済みのアラーム%1$d件の声が基本の声に変わりました。</string>
+    <string name="downgrade_notice_free_deadline">3日以内に利用券を購読し直すと自分の声が戻り、過ぎると完全に削除されます。</string>
     <string name="plan_gate_paid_message">この機能は有料利用券でご利用いただけます。</string>
     <string name="msg_voice_preset_only">基本の声は用意された文だけを話せます。自由入力の文で起こすには、自分の声を選んでください。</string>
     <string name="msg_voice_locked_free_plan">無料利用券に変わり、この声は使えません。利用券を購読し直すと戻ります。</string>

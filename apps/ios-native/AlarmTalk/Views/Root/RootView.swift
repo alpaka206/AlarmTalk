@@ -479,7 +479,13 @@ struct RootView: View {
         return "알람 목소리가 바뀌었어요"
     }
 
+    /// ⚠ **무료 강등이면 삭제 기한을 덧붙인다**(코덱스 #914 — 안드로이드 `downgrade_notice_free_deadline` 과 같다). 등록한
+    /// 목소리는 3일 뒤 영구 삭제되고, 그걸 앱 안에서 말하는 곳은 이 안내뿐이다(예고 푸시는 알림 권한이 없으면 닿지 않는다).
+    /// 무료 강등은 결제 쪽이 확정해 적는 원인이라 '누가 지웠나' 같은 추측이 아니다.
     private func downgradeNoticeMessage(_ notice: DowngradeNoticeStore.Notice) -> LocalizedStringKey {
+        if notice.cause == .freePlan {
+            return "기존에 설정한 알람 \(notice.count)개의 목소리가 기본 목소리로 바뀌었어요. 3일 안에 이용권을 다시 구독하면 내 목소리가 돌아오고, 지나면 영구 삭제돼요."
+        }
         return "기존에 설정한 알람 \(notice.count)개의 목소리가 기본 목소리로 바뀌었어요."
     }
 

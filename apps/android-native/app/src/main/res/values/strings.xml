@@ -347,6 +347,7 @@
          숫자 3은 백엔드 `PAID_VOICE_RETENTION_DAYS` 와 짝이다 — 거기를 바꾸면 여기도. -->
     <string name="downgrade_notice_title">알람 목소리가 바뀌었어요</string>
     <string name="downgrade_notice_message">기존에 설정한 알람 %1$d개의 목소리가 기본 목소리로 바뀌었어요.</string>
+    <string name="downgrade_notice_free_deadline">3일 안에 이용권을 다시 구독하면 내 목소리가 돌아오고, 지나면 영구 삭제돼요.</string>
     <!-- ⚠ 이쪽은 **복원되지 않는다** — 공유가 끊긴 목소리는 다시 공유받아야 한다.
          무료 강등처럼 "돌아와요" 라고 하면 기다리면 될 줄 안다.
          ⚠ 돌아가는 길로 **코드를 내밀지 말 것**(2026-10-14, App Store 지침 3.1.1). 예전 끝 문장은 "이용권을 등록하거나

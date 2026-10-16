@@ -2051,8 +2051,8 @@ cron 이 한 자리를 먼저 커밋하면 게시는 그 자리를 '이미 있�
 ⚠ **"다시 등록하면 복구돼요" 라고만 쓰지 말 것.** 유예가 지나면 거짓이 된다. 사용자에게
 말할 때는 **기한과 결과를 함께** 말한다("3일 안에 …, 지나면 영구 삭제돼요").
 구현: 삭제 예고 푸시(표시용 — 아래)가 기한과 결과를 말한다. 강등 순간의 1회성 모달(안드 `downgrade_notice_message`
-— `DowngradeNoticeStore` 대기표, iOS `RootView`)은 2026-10-16 부터 원인·기한 없이 '기본 목소리로 바뀌었다' 만 말한다
-(오너 결정 — `billing-lifecycle.md` 「안내 문구」).
+— `DowngradeNoticeStore` 대기표, iOS `RootView`)은 2026-10-16 부터 원인과 무관한 한 문장이고, **무료 강등이면 기한 한 줄을
+덧붙인다**(`downgrade_notice_free_deadline` — `billing-lifecycle.md` 「안내 문구」).
 
 ⚠ **예고는 눈에 보여야 한다.** 강등 신호(`family_alarm`·`voice_access_revoked`·
 `plan_changed`)는 전부 **무음 데이터 푸시**라 앱을 열어야만 안다. 삭제는 되돌릴 수 없고
