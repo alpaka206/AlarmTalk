@@ -41,10 +41,11 @@ object AlarmTalkLog {
 
     /**
      * Google 로그인이 **사용자 행동**으로 끝난 상태코드 — 결함이 아니다(2026-09-22, ANDROID-P).
-     * 12501 `SIGN_IN_CANCELLED`(뒤로가기·시트 닫기), 12502 `SIGN_IN_CURRENTLY_IN_PROGRESS`(버튼 연타).
+     * 12501 `SIGN_IN_CANCELLED`(뒤로가기·시트 닫기), 12502 `SIGN_IN_CURRENTLY_IN_PROGRESS`(버튼 연타),
+     * 16 `CommonStatusCodes.CANCELED`(계정 선택 창을 닫아 `resultCode=0` 으로 돌아온 경우 — 2026-10-16, ANDROID-1G).
      * 화면은 어차피 상태별 문구를 보여준다(`googleSignInErrorMessage`).
      */
-    private val GOOGLE_SIGN_IN_USER_ACTION_CODES = setOf(12501, 12502)
+    private val GOOGLE_SIGN_IN_USER_ACTION_CODES = setOf(16, 12501, 12502)
 
     /** Google 로그인의 `NETWORK_ERROR`(7) — 기기 네트워크 사정이라 일시적 실패와 같다. */
     private const val GOOGLE_SIGN_IN_NETWORK_ERROR = 7
