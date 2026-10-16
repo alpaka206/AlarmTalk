@@ -13,8 +13,11 @@ Play Console 에 올리는 값의 원본이다. 콘솔을 고칠 때는 이 파�
 
 ## 지금 상태 (2026-10-16)
 
-- **게재 중: 33 (1.2.13)** — 프로덕션 `RELEASE_LIFECYCLE_STATE_PUBLISHED`(2026-10-16 Play Developer API 로 확인).
-  게재 중인 등록정보(ko-KR·en-US·ja-JP)에 선물·쿠폰 낱말이 없음을 같은 날 API 로 읽어 확인했다.
+- **게재 중: 34 (1.2.14)** — 프로덕션 `RELEASE_LIFECYCLE_STATE_PUBLISHED`(2026-10-16 Play Developer API 로 확인).
+- **등록정보는 (B)** 다(2026-10-16 commit — 제목·짧은 설명 (A)·(B)·전체 설명 (B), 세 언어. 다시 읽어 글자 수 2984·3824·2836
+  이 이 파일과 같음을 확인). W 는 같은 날 prod 로 확인했다 — 한국 17·일본 47·미국 69 지역 모두 공식 예보가 들어와 있다.
+  (B) 의 날씨 지역 문장은 1.2.11 부터 앱이 나라별 지역 목록을 주므로 '국내 주요 9개 도시' 에서 '대한민국·일본·미국의 지역 목록'
+  으로 고쳐 올렸다.
 
 ## 판과 게시 조건
 
@@ -265,7 +268,7 @@ Support: https://alarm-talk.com/en/contact/
 
 ## 전체 설명 — (B) 다음 Android 버전, W 뒤
 
-### ko-KR (2980/4000)
+### ko-KR (2984/4000)
 
 ```text
 좋아하는 목소리로 깨는 아침.
@@ -280,7 +283,7 @@ Support: https://alarm-talk.com/en/contact/
 • 알람은 요일마다 반복하거나 한 번만 울리게 만들 수 있어요.
 • 기본 목소리 4종(시우·미나·도현·애니)이 앱 언어(한국어·영어·일본어)로 알람을 읽어 줘요. 목소리 대신 알람음으로 울리게 할 수도 있어요.
 • 문구는 날씨·운세·응원·약 중에서 골라요.
-  ◦ 날씨: 그날 날씨(맑음·비·눈·미세먼지·더위·추위 등)에 맞는 문구. 지역은 국내 주요 9개 도시 중에서 골라요.
+  ◦ 날씨: 그날 날씨(맑음·비·눈·미세먼지·더위·추위 등)에 맞는 문구. 지역은 대한민국·일본·미국의 지역 목록에서 골라요.
   ◦ 운세: 성별·생년월일·태어난 시간으로 고르는, 재미로 보는 오늘의 운세
   ◦ 응원·약: 울릴 때마다 미리 준비된 다음 문구로 바뀌어요.
 • 녹음 알람: 알람마다 최대 30초까지 녹음하면 울릴 때 녹음한 그대로 재생돼요. 그 알람에만 쓰는 소리라서 다른 문장을 읽게 할 수는 없어요.
@@ -337,7 +340,7 @@ Support: https://alarm-talk.com/en/contact/
 고객 지원: https://alarm-talk.com/contact/
 ```
 
-### en-US (3813/4000)
+### en-US (3824/4000)
 
 ```text
 Wake up to a voice you love.
@@ -351,7 +354,7 @@ No math, no shaking.
 ■ Free
 • Repeating or one-time alarms
 • Four default voices speak the app language (English, Korean or Japanese), or use an alarm sound
-• Messages: Weather (the day's weather, from rain to poor air; one of 9 major Korean cities), Fortune (for fun, from gender, birth date and time), Encouragement and Meds (each ring plays the next prepared one)
+• Messages: Weather (the day's weather, from rain to poor air; pick a region in Korea, Japan or the US), Fortune (for fun, from gender, birth date and time), Encouragement and Meds (each ring plays the next prepared one)
 • Recorded alarm: up to 30 seconds per alarm, played exactly as recorded; it can't read other text
 • Turn off on holidays (incl. substitute and temporary holidays; Korea, Japan or US), snooze, voice volume
 
@@ -397,7 +400,7 @@ Terms of Service: https://alarm-talk.com/en/terms/
 Support: https://alarm-talk.com/en/contact/
 ```
 
-### ja-JP (2829/4000)
+### ja-JP (2836/4000)
 
 ```text
 好きな声で目覚める朝を。
@@ -412,7 +415,7 @@ Support: https://alarm-talk.com/en/contact/
 • 曜日ごとの繰り返しも、1回だけのアラームも設定できます。
 • 基本の声4種類が、アプリの言語(日本語・韓国語・英語)でアラームを読み上げます。声の代わりにアラーム音で鳴らすこともできます。
 • メッセージは天気・運勢・応援・薬から選べます。
-  ◦ 天気：その日の天気(晴れ・雨・雪・PM2.5・暑さ・寒さなど)に合わせたメッセージ。都市は韓国の主要9都市から選びます。
+  ◦ 天気：その日の天気(晴れ・雨・雪・PM2.5・暑さ・寒さなど)に合わせたメッセージ。地域は韓国・日本・アメリカの地域一覧から選びます。
   ◦ 運勢：性別・生年月日・生まれた時間から選ぶ、お楽しみの今日の運勢
   ◦ 応援・薬：鳴るたびに、あらかじめ用意された次のメッセージに切り替わります。
 • 録音アラーム：アラームごとに最大30秒まで録音すると、鳴るときに録音したそのままの音が流れます。そのアラーム専用の音なので、別の文を読み上げさせることはできません。
@@ -486,14 +489,14 @@ Support: https://alarm-talk.com/en/contact/
 **en-US** (결과 3783/4000)
 
 ```diff
--• Messages: Weather (the day's weather, from rain to poor air; one of 9 major Korean cities), Fortune (for fun, from gender, birth date and time), Encouragement and Meds (each ring plays the next prepared one)
+-• Messages: Weather (the day's weather, from rain to poor air; pick a region in Korea, Japan or the US), Fortune (for fun, from gender, birth date and time), Encouragement and Meds (each ring plays the next prepared one)
 +• Messages: Weather (the day's weather, from rain to poor air), Fortune (for fun, from gender, birth date and time), Encouragement and Meds (each ring plays the next prepared one)
 ```
 
 **ja-JP** (결과 2785/4000)
 
 ```diff
--  ◦ 天気：その日の天気(晴れ・雨・雪・PM2.5・暑さ・寒さなど)に合わせたメッセージ。都市は韓国の主要9都市から選びます。
+-  ◦ 天気：その日の天気(晴れ・雨・雪・PM2.5・暑さ・寒さなど)に合わせたメッセージ。地域は韓国・日本・アメリカの地域一覧から選びます。
 +  ◦ 天気：その日の天気(晴れ・雨・雪・PM2.5・暑さ・寒さなど)に合わせたメッセージ。
 -• アプリは日本語・韓国語・英語に対応しています。
 ```

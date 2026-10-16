@@ -27,6 +27,8 @@ App Store Connect(앱 6799711245)에 올리는 값의 원본이다. 스토어를
   라 쓰지 않는다. `AFTER_APPROVAL`(승인되면 곧바로 출시), 새 기능은
   [`release-notes.md`](release-notes.md) 1.2.14 App Store 블록, 설명·검색어·이름·부제는 1.2.13 에서 따라온 그대로.
 - 저작권은 `© 2026 Vailen`(ASC 입력값 `2026 Vailen` — `©` 는 애플이 붙인다).
+- **설명은 아직 INTERIM 이다.** W 는 2026-10-16 prod 로 확인했지만(Play 는 그날 (B) 로 바꿨다) App Store 설명은 버전과 함께만
+  바뀐다 — 1.2.14 레코드는 이미 심사 중이라 **다음 버전 레코드에서 (B)** 로 바꾼다(지역 문장은 고친 판).
 - 프로모션 문구는 비어 있다(버전과 무관하게 언제든 넣는다). en-GB 로컬라이제이션은 만들지 않았다.
 
 ## 언제 무엇을 올리나
@@ -172,7 +174,7 @@ Start the day with a familiar voice. Default-voice and recorded alarms are free;
 
 ## 설명 — (B) 다음 버전, W 충족 뒤
 
-### ko (2751/4000)
+### ko (2755/4000)
 
 ```text
 좋아하는 목소리로 깨는 아침.
@@ -187,7 +189,7 @@ Start the day with a familiar voice. Default-voice and recorded alarms are free;
 • 알람은 요일마다 반복하거나 한 번만 울리게 만들 수 있어요.
 • 기본 목소리 4종(시우·미나·도현·애니)이 앱 언어(한국어·영어·일본어)로 알람을 읽어 줘요. 목소리 대신 알람음으로 울리게 할 수도 있어요.
 • 문구는 날씨·운세·응원·약 중에서 골라요.
-  ◦ 날씨: 그날 날씨(맑음·비·눈·미세먼지·더위·추위 등)에 맞는 문구. 지역은 국내 주요 9개 도시 중에서 골라요.
+  ◦ 날씨: 그날 날씨(맑음·비·눈·미세먼지·더위·추위 등)에 맞는 문구. 지역은 대한민국·일본·미국의 지역 목록에서 골라요.
   ◦ 운세: 성별·생년월일·태어난 시간으로 고르는, 재미로 보는 오늘의 운세
   ◦ 응원·약: 울릴 때마다 미리 준비된 다음 문구로 바뀌어요.
 • 녹음 알람: 알람마다 최대 30초까지 녹음하면 울릴 때 녹음한 그대로 재생돼요. 그 알람에만 쓰는 소리라서 다른 문장을 읽게 할 수는 없어요.
@@ -237,7 +239,7 @@ Start the day with a familiar voice. Default-voice and recorded alarms are free;
 Apple 표준 사용권 계약(EULA): https://www.apple.com/legal/internet-services/itunes/dev/stdeula/
 ```
 
-### en-US (3709/4000)
+### en-US (3720/4000)
 
 ```text
 Wake up to a voice you love.
@@ -251,7 +253,7 @@ No math, no shaking.
 ■ Free
 • Repeating or one-time alarms
 • Four default voices speak the app language (English, Korean or Japanese), or use an alarm sound
-• Messages: Weather (the day's weather, from rain to poor air; one of 9 major Korean cities), Fortune (for fun, from gender, birth date and time), Encouragement and Meds (each ring plays the next prepared one)
+• Messages: Weather (the day's weather, from rain to poor air; pick a region in Korea, Japan or the US), Fortune (for fun, from gender, birth date and time), Encouragement and Meds (each ring plays the next prepared one)
 • Recorded alarm: up to 30 seconds per alarm, played exactly as recorded; it can't read other text
 • Turn off on holidays (incl. substitute and temporary holidays; Korea, Japan or US), snooze, voice volume
 
@@ -290,7 +292,7 @@ Privacy Policy: https://alarm-talk.com/en/privacy/
 Apple Standard EULA: https://www.apple.com/legal/internet-services/itunes/dev/stdeula/
 ```
 
-### ja (2613/4000)
+### ja (2620/4000)
 
 ```text
 好きな声で目覚める朝を。
@@ -305,7 +307,7 @@ Apple Standard EULA: https://www.apple.com/legal/internet-services/itunes/dev/st
 • 曜日ごとの繰り返しも、1回だけのアラームも設定できます。
 • 基本の声4種類が、アプリの言語(日本語・韓国語・英語)でアラームを読み上げます。声の代わりにアラーム音で鳴らすこともできます。
 • メッセージは天気・運勢・応援・薬から選べます。
-  ◦ 天気：その日の天気(晴れ・雨・雪・PM2.5・暑さ・寒さなど)に合わせたメッセージ。都市は韓国の主要9都市から選びます。
+  ◦ 天気：その日の天気(晴れ・雨・雪・PM2.5・暑さ・寒さなど)に合わせたメッセージ。地域は韓国・日本・アメリカの地域一覧から選びます。
   ◦ 運勢：性別・生年月日・生まれた時間から選ぶ、お楽しみの今日の運勢
   ◦ 応援・薬：鳴るたびに、あらかじめ用意された次のメッセージに切り替わります。
 • 録音アラーム：アラームごとに最大30秒まで録音すると、鳴るときに録音したそのままの音が流れます。そのアラーム専用の音なので、別の文を読み上げさせることはできません。
@@ -368,7 +370,7 @@ Apple 標準使用許諾契約 (EULA): https://www.apple.com/legal/internet-serv
 +• 무료: 기본 목소리 4종이 운세·응원 같은 문구를 읽어 주고, 알람마다 30초까지 녹음해 두면 그 녹음 그대로 울려요.
 -• 문구는 날씨·운세·응원·약 중에서 골라요.
 +• 문구는 운세·응원·약 등에서 골라요.
--  ◦ 날씨: 그날 날씨(맑음·비·눈·미세먼지·더위·추위 등)에 맞는 문구. 지역은 국내 주요 9개 도시 중에서 골라요.
+-  ◦ 날씨: 그날 날씨(맑음·비·눈·미세먼지·더위·추위 등)에 맞는 문구. 지역은 대한민국·일본·미국의 지역 목록에서 골라요.
 -• 등록한 목소리는 AI 음성 합성으로 녹음에 없던 문장을 읽어요. 기상 인사·날씨·운세·응원·약 문구는 서버에서 미리 만들어 폰에 받아 두고, 나와의 관계(예: 딸)와 나를 부를 이름(예: 엄마)을 적으면(둘 다 선택) 거기에 맞춰 만들어요.
 +• 등록한 목소리는 AI 음성 합성으로 녹음에 없던 문장을 읽어요. 기상 인사·운세·응원·약 문구는 서버에서 미리 만들어 폰에 받아 두고, 나와의 관계(예: 딸)와 나를 부를 이름(예: 엄마)을 적으면(둘 다 선택) 거기에 맞춰 만들어요.
 -  ◦ 날씨·운세 문구는 받는 사람의 지역과 정보로 골라요.
@@ -380,7 +382,7 @@ Apple 標準使用許諾契約 (EULA): https://www.apple.com/legal/internet-serv
 ```diff
 -• Free: default voices read messages like weather and fortune, and a recording plays exactly as recorded.
 +• Free: default voices read messages like fortune and encouragement, and a recording plays exactly as recorded.
--• Messages: Weather (the day's weather, from rain to poor air; one of 9 major Korean cities), Fortune (for fun, from gender, birth date and time), Encouragement and Meds (each ring plays the next prepared one)
+-• Messages: Weather (the day's weather, from rain to poor air; pick a region in Korea, Japan or the US), Fortune (for fun, from gender, birth date and time), Encouragement and Meds (each ring plays the next prepared one)
 +• Messages include Fortune (for fun, from gender, birth date and time), Encouragement and Meds (each ring plays the next prepared one)
 -• Wake-up, weather, fortune, encouragement and meds messages in that voice are made in advance on our servers and downloaded to your phone, tailored to who the voice is to you and what it calls you (both optional)
 +• Wake-up, fortune, encouragement and meds messages in that voice are made in advance on our servers and downloaded to your phone, tailored to who the voice is to you and what it calls you (both optional)
@@ -395,7 +397,7 @@ Apple 標準使用許諾契約 (EULA): https://www.apple.com/legal/internet-serv
 +• 無料：基本の声4種類が運勢・応援などのメッセージを読み上げます。アラームごとに30秒まで録音すれば、録音したそのままの音で鳴ります。
 -• メッセージは天気・運勢・応援・薬から選べます。
 +• メッセージは運勢・応援・薬などから選べます。
--  ◦ 天気：その日の天気(晴れ・雨・雪・PM2.5・暑さ・寒さなど)に合わせたメッセージ。都市は韓国の主要9都市から選びます。
+-  ◦ 天気：その日の天気(晴れ・雨・雪・PM2.5・暑さ・寒さなど)に合わせたメッセージ。地域は韓国・日本・アメリカの地域一覧から選びます。
 -• 登録した声は、AI音声合成で録音にない文を読み上げます。起床のあいさつ・天気・運勢・応援・薬のメッセージはサーバーであらかじめ作ってスマホにダウンロードし、あなたとの関係(例：娘)と、あなたを呼ぶ名前(例：ママ)を入れると(どちらも任意)、それに合わせて作ります。
 +• 登録した声は、AI音声合成で録音にない文を読み上げます。起床のあいさつ・運勢・応援・薬のメッセージはサーバーであらかじめ作ってスマホにダウンロードし、あなたとの関係(例：娘)と、あなたを呼ぶ名前(例：ママ)を入れると(どちらも任意)、それに合わせて作ります。
 -  ◦ 天気・運勢のメッセージは、受け取る人の地域と情報で選ばれます。
