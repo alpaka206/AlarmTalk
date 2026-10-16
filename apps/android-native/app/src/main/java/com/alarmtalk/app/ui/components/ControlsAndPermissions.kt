@@ -488,7 +488,7 @@ private fun alarmRowNotice(alarm: AlarmEntity): AlarmRowNotice? = when {
     //
     // 그리고 **이미 1회성 안내가 있다**: 잠그는 순간 `applyFreePlanVoiceLock` 이
     // `DowngradeNoticeStore` 대기표에 적고, 앱이 그걸 1회성 모달
-    // (`downgrade_notice_free_message`)로 띄운다. 같은 말을 두 번, 그것도
+    // (`downgrade_notice_message` — 2026-10-16 부터 원인과 무관한 한 문장)로 띄운다. 같은 말을 두 번, 그것도
     // 한쪽은 영구로 하고 있었다. iOS 에는 이 행 배지가 아예 없다.
     //
     // 공유 목소리 해제도 **여기서 알리지 않는다**(2026-08-11). 이제 두 경우 모두
