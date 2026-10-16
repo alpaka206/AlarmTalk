@@ -4,7 +4,7 @@ import { LegalMarkdown } from "@/components/legal-markdown";
 import { SiteFooter } from "@/components/sections/site-footer";
 import { SiteHeader } from "@/components/site-header";
 import { readLegalDoc } from "@/lib/legal-docs";
-import { localePath, languageAlternates } from "@/lib/site";
+import { indexedLocales, localePath, languageAlternates } from "@/lib/site";
 
 export const dynamic = "force-static";
 
@@ -23,7 +23,7 @@ export async function generateMetadata({
       languages: languageAlternates("privacy"),
     },
     // 법무 문서 본문은 한국어로만 제공되므로 ko 로케일만 색인한다.
-    robots: { index: locale === "ko", follow: true },
+    robots: { index: indexedLocales("privacy").includes(locale), follow: true },
   };
 }
 
