@@ -79,7 +79,7 @@ export const FEATURE_CONSENT_TYPES = ['voice_biometric'] as const;
  *  재동의 요구를 영구히 무력화한다 — 그래서 목록 밖은 409 다).
  *  '6' (2026-10-16): 회원 탈퇴 철회 방법(모든 기기 로그아웃·30일 안에 다시 로그인하면 철회)을 명시하고, 결제 기록의
  *  '쿠폰 사용 기록' 을 폐지된 프로모션 코드 기록으로, '이용권을 다시 등록하면' 을 '다시 구독하면' 으로 정정했다.
- *  수집·이용·제공 범위는 그대로라 어느 유형의 최소 버전도 올리지 않는다. 1.2.14(Android 34·iOS 빌드 11)에 실렸다.
+ *  수집·이용·제공 범위는 그대로라 어느 유형의 최소 버전도 올리지 않는다. 1.2.14(Android 34·iOS 빌드 12)에 실렸다.
  *  재동의가 필요한지는 이 값이 아니라 CONSENT_MIN_POLICY_VERSION 이 결정한다.
  *  '5' (2026-08-05 최초 작성 → 2026-08-24 보완): iOS 앱 제공에 따라 Apple 로그인
  *  (Sign in with Apple) 수집 항목과 App Store 인앱결제를 다시 고지하고, 위탁·국외이전 표에
@@ -113,9 +113,10 @@ export const CURRENT_POLICY_VERSION = '6';
  * 문서 전문은 앱에 실려 있고 두 스토어의 게재 시점은 다르다. 한 버전만 받으면 그 사이 한쪽 앱의 가입·재동의가 409
  * (`POLICY_VERSION_MISMATCH`)로 막힌다 — 새 앱이 먼저 나오면 새 앱이, 서버가 먼저 오르면 옛 앱이. 그래서 개정 동안은
  * 앞 버전도 함께 받고, **보낸 버전 그대로** 기록한다(본 적 없는 문서에 동의한 기록이 남지 않는다).
- * ⚠ 앞 버전(5)은 그 문서를 실은 앱(Android ≤33·iOS 빌드 ≤10)을 `minSupported` 로 막은 뒤 지운다. 개정이 재동의를
- *   요구하는 경우(그 유형의 `CONSENT_MIN_POLICY_VERSION` 을 올릴 때)에는 앞 버전을 받지 않는다 — 옛 문서로는 그
- *   재동의를 충족할 수 없다.
+ * ⚠ 앞 버전(5)은 그 문서를 실은 앱(Android ≤33·iOS 빌드 ≤10)을 `minSupported` 로 막은 뒤 지운다.
+ * ⚠ 재동의를 요구하는 개정(그 유형의 `CONSENT_MIN_POLICY_VERSION` 을 올릴 때)도 나눠 낸다 — ① 새 버전도 받되 최소
+ *   버전은 그대로 ② 새 앱 게재·옛 앱 차단 ③ 최소 버전 상향·앞 버전 제거. 앞 버전 수락은 ③의 최소 버전을 채우지
+ *   못하므로 재동의가 새지 않는다(`docs/spec/consent.md`).
  */
 export const ACCEPTED_POLICY_VERSIONS: readonly string[] = ['5', CURRENT_POLICY_VERSION];
 

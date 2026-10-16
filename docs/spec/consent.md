@@ -147,7 +147,7 @@
 - **문서 개정 동안은 앞 버전도 받는다**(`ACCEPTED_POLICY_VERSIONS`, 2026-10-16 버전 6 부터). 문서 전문이 앱에 실리고
   두 스토어의 게재 시점이 달라, 한 버전만 받으면 그 사이 한쪽 앱의 가입이 409 로 막힌다. 기록은 **앱이 보낸 버전
   그대로** 남긴다(이용자가 실제로 본 문서). 앞 버전은 그 문서를 실은 앱을 `minSupported` 로 막은 뒤 목록에서 지운다.
-  ⚠ 재동의를 요구하는 개정(최소 버전을 올리는 경우)에는 앞 버전을 받지 않는다 — 옛 문서로는 그 재동의를 못 채운다.
+  ⚠ 재동의를 요구하는 개정(최소 버전을 올릴 때)도 같은 순서로 나눠 낸다 — ① 서버가 새 버전도 받게 하되 최소 버전은 그대로 둔다 ② 새 문서를 실은 앱을 게재하고 `minSupported` 로 옛 앱을 막는다 ③ 그 뒤에 최소 버전을 올리고 앞 버전을 목록에서 지운다. 앱을 먼저 내면 옛 서버가 새 버전을 409 로 막고, ②보다 먼저 최소 버전을 올리면 옛 앱이 재동의를 제출할 수 없다. ①의 앞 버전 수락은 ③에서 올린 최소 버전을 채우지 못하므로 재동의가 새어 나가지 않는다.
 
 ## 동의 화면이 보여 주는 문서는 **번들본**이다
 
@@ -199,7 +199,7 @@
 | 묻지 않은 것 기록 금지 | `INLINE_COVERED_CONSENTS` (`MainViewModelVoiceActions`) | `inlineCoveredConsents` (`VoiceCloneUploadFlow`) | `POST /user/consents` 는 받은 것만 기록 |
 | 모르는 유형 | 필수→`consentUnsupported`, 선택→버림 (`checkConsentStatus`) | 같음 (`AuthViewModel.checkConsentStatus`) | `optional` 필드 |
 | 재동의 레버 | — | — | `CONSENT_MIN_POLICY_VERSION` |
-| 문서 버전 대조 | `BuildConfig.LEGAL_POLICY_VERSION` | `LegalPolicyVersion` | `CURRENT_POLICY_VERSION` (409) |
+| 문서 버전 대조 | `BuildConfig.LEGAL_POLICY_VERSION` | `LegalPolicyVersion` | `POST /user/consents` 의 `ACCEPTED_POLICY_VERSIONS`(목록 밖은 409, 받으면 그 버전으로 기록) — 게시 중 최신은 `CURRENT_POLICY_VERSION` |
 | 동의 화면의 문서 | 번들 자산 (`ui/auth/LegalDocument.kt`) | 번들 리소스 (`BundledLegalDocument`) | — |
 | 번들을 못 읽을 때 — **동의 차단** | `legalDocumentsReadable` → `UpdateRequiredScreen` (`AlarmTalkApp.kt`) | `bundledLegalDocumentsReadable` → `UpdateRequiredView` (`RootView`) | — |
 | 번들을 못 읽을 때 — 뷰어 문구 | `readLegalDocument` 의 `getOrElse` | `BundledLegalDocumentView.unavailable` | — |

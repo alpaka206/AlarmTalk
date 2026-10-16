@@ -262,7 +262,7 @@
   (`DEVELOPER_REMOVED_FROM_SALE` 이던 것)은 `DELETE /v2/inAppPurchases` 204, Play 일회성 상품 `personal_gift_1m`
   (구매 옵션 `INACTIVE` 이던 것)은 `DELETE oneTimeProducts` 204. 다시 조회해 두 목록에 없음을 확인했다. 지우기 전 설정은
   `.claude/release-tools/gift-products-backup-20261014.json`. 같은 상품 id 는 다시 쓸 수 없다.
-- **1.2.14**(Android 34 · iOS 빌드 11): 법무 문서 버전 6 을 싣는다 — 서버가 개정 동안 5·6 을 모두 받게 한 변경(#906)이
+- **1.2.14**(Android 34 · iOS 빌드 12): 법무 문서 버전 6 을 싣는다 — 서버가 개정 동안 5·6 을 모두 받게 한 변경(#906)이
   prod 에 나간 뒤 앱이 게재돼야 한다(안 그러면 1.2.14 의 가입·동의가 409). #904 서버(로그인하면 탈퇴 철회)도 같은 조건이다.
   ⚠ 10/16 에 버전 5 로 만든 첫 빌드(Play edit validate 만, App Store 빌드 11 업로드)는 쓰지 않는다 — 문서 6 으로 다시
   빌드한다(App Store 는 빌드 12).
