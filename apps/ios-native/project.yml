@@ -37,8 +37,9 @@ settings:
     # — 받을 것이 없는 강제 업데이트로 앱이 벽돌이 된다. Android 하한은 Play 게재로 따로 간다.
     # 빌드 12(1.2.14). 빌드 11 은 법무 문서 버전 5 로 만들어 App Store 에 올렸다가 쓰지 않았다(문서 6 으로 다시 빌드).
     # 서버의 옛 앱(빌드 ≤10) 호환 갈래는 2026-10-16 에 지웠다 — 실사용자가 없다(오너).
-    MARKETING_VERSION: "1.2.14"
-    CURRENT_PROJECT_VERSION: "12"
+    # 빌드 13(1.2.15). 목소리 등록 동의·재동의 뒤 동기화·반복 사이 쉼·이용권 안내를 고친다.
+    MARKETING_VERSION: "1.2.15"
+    CURRENT_PROJECT_VERSION: "13"
     # DEVELOPMENT_TEAM must be set per-developer via xcconfig or Xcode UI.
     # Leaving empty here so xcodegen does not hard-bake a team ID into the project.
     DEVELOPMENT_TEAM: "$(DEVELOPMENT_TEAM)"
