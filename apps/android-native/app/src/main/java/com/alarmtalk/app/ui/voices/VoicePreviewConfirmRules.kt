@@ -142,15 +142,15 @@ internal fun registrationReplaceTarget(ownVoices: List<VoiceProfile>, draftId: S
         it.id != draftId && it.isDraft != true && it.status?.trim()?.lowercase() != "failed"
     }
 
-// ── 월 등록 한도 — '생성 가능 n/m회' 가 여는 두 곳 ──────────────────────────
+// ── 월 등록 한도 — 추가·등록 동의·삭제 경고가 함께 쓰는 판정 ───────────────────
 
 /**
- * 이번 달 등록을 **다 썼는가.** `생성 가능 n/m회` 한 값이 두 곳을 연다 — 목소리 탭의 `추가` 버튼(다 썼으면
- * 끈다)과 삭제 경고(다 썼으면 "이번 달에는 새 목소리를 만들 수 없어요" 를 붙인다). 둘이 같은 판정을 쓴다
+ * 이번 달 등록을 **다 썼는가.** 목소리 탭의 `추가`·등록 모달의 `동의하기` 버튼과 삭제 경고가 같은 판정을 쓴다
  * (스펙 voice-and-message §4-1 「월 등록 한도」 ②).
  *
  * - **아직 모르면(null) 다 쓴 것이 아니다.** 조회가 안 끝났거나 실패한 것이라 막을 근거가 없다 — 그때의
  *   안전판은 서버다(다 썼으면 초안을 만들기 전에 429 로 답한다, ①).
+ * - 한도가 0인 호환 응답도 소진 근거가 아니다. 호출부가 미리 걸러 주지 않아도 같은 규칙을 따른다.
  * - 남은 횟수는 **서버가 준 값**이다. 앱이 `n − 1` 로 깎아 두지 않는다 — 그래서 이 판정이 맞으려면 값이
  *   제때 다시 읽혀야 한다(`MainViewModel.loadVoiceDraftQuota` 의 다시 읽는 때). 2026-10-10 prod 의 사용자는
  *   등록을 마친 같은 프로세스에서 값이 `1/1` 로 남아 이 판정이 '남았다' 고 답했다.
@@ -159,7 +159,7 @@ internal fun registrationReplaceTarget(ownVoices: List<VoiceProfile>, draftId: S
  * 꺼진 버튼도 보이지 않는다(눌러서 이용권 안내를 듣는다).
  */
 internal fun monthlyRegistrationUsedUp(quota: VoiceDraftQuotaResponse?): Boolean =
-    quota != null && quota.registrationRemaining <= 0
+    quota != null && quota.registrationLimit > 0 && quota.registrationRemaining <= 0
 
 // ── 등록 흐름의 거절 — 어디에 말하는가 ─────────────────────────────────────
 //

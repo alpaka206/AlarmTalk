@@ -287,22 +287,62 @@ describe('POST /events — 사용 기록 배치 수집', () => {
     expect(update!.sql).toContain('in_use_updated_at <= ?');
   });
 
-  it('미래 시각은 도착 시각으로 자른다 — 보관 1년을 빠져나가지 못한다', async () => {
-    const future = new Date(Date.now() + 5 * 365 * 24 * 60 * 60 * 1000).toISOString();
-    await buildApp('user-1').request(
+  it.each([1, 5 * 365 * 24 * 60 * 60 * 1000])('도착보다 %s ms 미래인 기록은 시각을 바꿔 저장하지 않고 버린다', async (aheadMs) => {
+    const receivedAtMs = Date.parse('2026-09-07T00:00:00.000Z');
+    vi.spyOn(Date, 'now').mockReturnValue(receivedAtMs);
+    // 기록이 오기 전에 재동의를 마쳤지만, 기기 시계가 앞선 기록의 실제 발생 시각은 알 수 없다.
+    mockDB.pushResultFor('FROM user_consents', [
+      consent('privacy', '6', '2026-09-06 21:00:00.500'),
+      consent('privacy', '4', '2000-01-01 00:00:00.000'),
+      ...priorRequiredConsents,
+    ]);
+    const response = await buildApp('user-1').request(
       jsonReq('POST', '/events', {
         events: [
-          event({ type: 'manual_message_attached', message_id: MESSAGE_ID, occurred_at: future }),
+          event({
+            type: 'manual_message_attached', message_id: MESSAGE_ID,
+            occurred_at: new Date(receivedAtMs + aheadMs).toISOString(),
+          }),
         ],
       }),
     );
-    const insert = mockDB.calls.find((c) => c.sql.includes('INSERT OR IGNORE INTO usage_events'));
-    const stored = insert!.args[3] as string; // (id, user_id, type, occurred_at, ...)
-    expect(stored).not.toBe(future);
-    expect(Date.parse(stored)).toBeLessThanOrEqual(Date.now());
-    // 보관함 시각에도 **자른 값**이 박혀야 한다 — 미래 값이 남으면 이후 기록이 전부 무시된다.
-    const update = mockDB.calls.find((c) => c.sql.includes('SET in_use = 1'));
-    expect(update!.args[0]).toBe(stored);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ accepted: 0 });
+    expect(mockDB.calls.some((call) => /INSERT|UPDATE/i.test(call.sql))).toBe(false);
+    expect(mockDB.transactions.commits).toBe(0);
+  });
+
+  it('미래·동의 전·정상 기록이 섞이면 정상 기록만 원래 시각으로 저장한다', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-09-07T00:00:00.000Z'));
+    mockDB.pushResultFor('FROM user_consents', [
+      consent('privacy', '6', '2026-09-06 21:00:00.500'), ...priorRequiredConsents,
+    ]);
+    const future = event({
+      type: 'manual_message_attached', message_id: MESSAGE_ID,
+      occurred_at: '2026-09-07T09:00:00.001+09:00',
+    });
+    const beforeConsent = event({
+      type: 'manual_message_attached', message_id: MESSAGE_ID,
+      occurred_at: '2026-09-06T21:00:00.499Z',
+    });
+    const atConsent = event({ occurred_at: '2026-09-07T06:00:00.500+09:00' });
+    const atReceipt = event({ occurred_at: '2026-09-07T00:00:00.000Z' });
+
+    const response = await buildApp().request(jsonReq('POST', '/events', {
+      events: [future, beforeConsent, atConsent, atReceipt],
+    }));
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ accepted: 2 });
+    const inserted = mockDB.calls.filter((call) => call.sql.includes('INSERT OR IGNORE INTO usage_events'))
+      .flatMap((call) => call.args);
+    expect(inserted).not.toContain(future.id);
+    expect(inserted).not.toContain(beforeConsent.id);
+    expect(inserted).toContain(atConsent.id);
+    expect(inserted).toContain('2026-09-06T21:00:00.500Z');
+    expect(inserted).toContain(atReceipt.id);
+    expect(inserted).toContain(atReceipt.occurred_at);
+    expect(mockDB.calls.some((call) => call.sql.includes('UPDATE message_library'))).toBe(false);
   });
 
   it('이미 저장된 사건은 보관함을 다시 건드리지 않는다 — 재전송은 멱등이다', async () => {
@@ -317,7 +357,7 @@ describe('POST /events — 사용 기록 배치 수집', () => {
     expect(mockDB.calls.some((c) => c.sql.includes('INSERT OR IGNORE INTO usage_events'))).toBe(
       true,
     );
-    // 갱신은 없어야 한다 — 다시 자른 시각이 그 사이에 들어온 해제를 되돌린다.
+    // 갱신은 없어야 한다 — 재전송이 그 사이에 들어온 해제를 되돌리면 안 된다.
     expect(mockDB.calls.some((c) => c.sql.includes('SET in_use = 1'))).toBe(false);
   });
 

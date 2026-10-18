@@ -30,6 +30,7 @@ const INSERT_CHUNK = 25;
  * 재전송할 수 있다(그게 오프라인 큐의 정상 동작이다).
  */
 events.post('/', async (c) => {
+  const receivedAtMs = Date.now();
   const userPk = c.get('userIdPK') || c.get('userId');
   const db = getDB(c.env);
 
@@ -66,30 +67,20 @@ events.post('/', async (c) => {
     );
   }
 
-  // ⚠ **`occurred_at` 은 기기 시계다 — 미래로 가 있을 수 있다.** 그대로 두면 두 가지가
-  // 깨진다: 보관 1년 정리(`index.ts` 의 `occurred_at < cutoff`)를 영원히 빠져나가고,
-  // 아래 `in_use_updated_at` 비교가 미래 값에 고정돼 **이후의 정당한 기록이 전부 무시된다.**
-  // 거부하지 않고 **다듬는다** — 앱은 2xx 가 아니면 큐를 지우지 않고 계속 재전송하므로
-  // 400 은 그 기기의 큐를 영구히 막는다(CLAUDE.md 「거부와 다듬기를 구분한다」).
-  // 늦게 도착한 **과거** 값은 그대로 둔다 — 그게 실제로 일어난 시각이다.
-  const receivedAtMs = Date.now();
-  const boundOccurredAt = (value: string): string => {
-    const ms = Date.parse(value);
-    // 파싱 불가는 스키마가 이미 막지만, 뚫리면 도착 시각으로 굳힌다.
-    if (Number.isNaN(ms)) return new Date(receivedAtMs).toISOString();
-    // toISOString 이 오프셋 표기(+09:00)까지 UTC 로 굳혀, 문자열로 비교하는 정리 쿼리와 맞춘다.
-    return new Date(Math.min(ms, receivedAtMs)).toISOString();
-  };
-  // 재동의 뒤 처음 올라온 배치에도 동의 전 기록이 섞일 수 있다. 보관함 상태 갱신에서도 함께 뺀다.
+  // 원본 시각으로 동의 경계와 요청 도착 시각을 먼저 검사한다. 미래 시각을 도착 시각으로 바꾸면
+  // 동의 전에 쌓인 기록도 동의 후 사건으로 둔갑한다. 불확실한 기록은 저장·보관함 갱신에서 제외하고
+  // 200으로 답해 큐를 비운다. 정상 기록은 시각을 유지하며 UTC 표기만 맞춘다.
   const list: UsageEvent[] = parsed.data.events
-    .map((event: UsageEvent) => ({ ...event, occurred_at: boundOccurredAt(event.occurred_at) }))
-    .filter((event: UsageEvent) => Date.parse(event.occurred_at) >= consentSinceMs);
+    .filter((event: UsageEvent) => {
+      const occurredAtMs = Date.parse(event.occurred_at);
+      return Number.isFinite(occurredAtMs) && occurredAtMs >= consentSinceMs && occurredAtMs <= receivedAtMs;
+    })
+    .map((event: UsageEvent) => ({ ...event, occurred_at: new Date(event.occurred_at).toISOString() }));
   if (list.length === 0) return c.json({ accepted: 0 });
   await withWriteTransaction(db, async (tx) => {
     // ⚠ **이미 들어 있는 사건은 아래 보관함 갱신에서 건너뛴다 — 재전송은 멱등이어야 한다.**
     // `INSERT OR IGNORE` 는 중복 사건을 버리지만 그 뒤의 사실 갱신까지 막지는 않는다.
-    // 재전송은 위에서 `occurred_at` 을 **다시** 자르므로 처음보다 늦은 시각이 실릴 수 있고,
-    // 그러면 그 사이에 들어온 반대 사실(붙임↔해제)을 되돌린다. 넣기와 갱신은 한
+    // 같은 id를 다른 내용으로 다시 보내더라도 그 사이의 반대 사실(붙임↔해제)을 되돌리지 않는다. 넣기와 갱신은 한
     // 트랜잭션이라, 이미 저장돼 있다 = 그때 갱신도 끝났다는 뜻이다.
     // ⚠ **조회는 INSERT 앞에 둔다** — 뒤에 두면 방금 넣은 것까지 '이미 있음' 이 되어
     //   아무 갱신도 돌지 않는다.
