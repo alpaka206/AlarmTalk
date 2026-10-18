@@ -33,8 +33,8 @@ import androidx.compose.ui.window.Dialog
  * 목소리를 등록하지 않을 사용자에게까지 생체정보 처리 동의를 이용 조건으로 요구하게 된다.
  * 서버도 같은 지점(`voice-profile`·`tts` 라우트)에서만 강제한다.
  *
- * 문구·체크박스 구성은 `docs/legal/consent-and-permission-copy.ko.md` §2 를 따른다. 앞의 두
- * 체크는 이용자 확인(서버 동의 유형 없음), 뒤의 두 체크가 서버에 기록되는 동의다.
+ * 문구는 `docs/legal/consent-and-permission-copy.ko.md` §2 를 따른다. 권리 확인은 등록 입구
+ * 모달에서 받고, 여기서는 부족한 법정 동의만 받는다.
  */
 @Composable
 internal fun VoiceConsentSheet(
@@ -54,15 +54,10 @@ internal fun VoiceConsentSheet(
     // 안 된다 — 등록하지도 않는 사용자에게 등록 책임 확인을 받는 꼴이 된다.
     val registrationContext = asksBiometric || registeringVoice
 
-    var ownership by remember { mutableStateOf(false) }
-    var liability by remember { mutableStateOf(false) }
     var biometric by remember { mutableStateOf(false) }
     var overseas by remember { mutableStateOf(false) }
-    // 소유·책임 확인은 등록 문맥이면 받는다. 생체정보 동의 체크는 그 동의를 실제로 요구할
-    // 때만 — 이미 유효한 동의를 다시 묻지 않는다.
-    val allChecked = (!registrationContext || (ownership && liability)) &&
-        (!asksBiometric || biometric) &&
-        (!asksOverseas || overseas)
+    // 이미 유효한 법정 동의는 다시 묻지 않는다.
+    val allChecked = (!asksBiometric || biometric) && (!asksOverseas || overseas)
 
     // 자기 창을 여는 모달 — 진입 안내가 이 위에 겹치지 않게 적어 둔다(`OpenModalRegistry`).
     TrackOpenModal()
@@ -97,18 +92,6 @@ internal fun VoiceConsentSheet(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    if (registrationContext) {
-                        VoiceConsentCheck(
-                            checked = ownership,
-                            onCheckedChange = { ownership = it },
-                            label = stringResource(R.string.voice_consent_check_ownership),
-                        )
-                        VoiceConsentCheck(
-                            checked = liability,
-                            onCheckedChange = { liability = it },
-                            label = stringResource(R.string.voice_consent_check_liability),
-                        )
-                    }
                     if (asksBiometric) {
                         VoiceConsentCheck(
                             checked = biometric,

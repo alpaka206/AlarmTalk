@@ -873,34 +873,7 @@ internal fun MainViewModel.checkConsentStatus() {
             // ⚠ 계정만 보면 부족하다 — 같은 계정에서 조회가 겹치면 **앞선 응답이 나중에**
             // 도착해 최신 상태를 덮는다(consentStatusRevision 주석).
             if (authSession?.user?.id != userId || revision != consentStatusRevision) return@launch
-            needsConsent = status.needsConsent
-            // 화면이 무엇을 그리고 무엇을 제출할지는 서버가 정한다. 구버전 서버(collect 없음)와
-            // 섞여 돌 수 있으니 비어 있으면 missing 으로 폴백한다.
-            val collected = status.collect.ifEmpty { status.missing }
-            consentOptional = status.optional
-            consentPrechecked = status.prechecked
-            // 서버가 이 앱 버전이 모르는 **필수** 동의를 요구하면 화면을 띄우지 않고 업데이트로
-            // 보낸다. (보통은 min_supported_version 을 함께 올려 여기까지 오지 않는다. 안전망이다.)
-            consentUnsupported = collected.any {
-                it !in KNOWN_CONSENT_TYPES && it !in status.optional
-            }
-            // 모르는 **선택** 유형은 조용히 버린다. 그것 때문에 앱을 막을 이유는 없지만,
-            // 남겨 두면 더 나쁘다 — showConsentScreen 이 열리는데 화면은 그릴 항목이 하나도
-            // 없어 CTA 까지 비활성인 죽은 화면이 된다(Codex #660).
-            consentCollect = collected.filter { it in KNOWN_CONSENT_TYPES }
-            sensitiveConsentMissing = status.sensitiveMissing
-            consentIsReconsent = status.hasPriorConsent
-            // 서버는 '물어볼 게 있다' 고 하는데 그게 전부 못 그리는 선택 유형이면 띄우지 않는다.
-            consentNeedsCollection = status.needsCollection && consentCollect.isNotEmpty()
-            // 받을 게 남아 있으면(선택 동의 재수집 포함) '완료' 로 캐시하지 않는다.
-            // 캐시가 완료로 남으면 다음 실행에서 서버 응답 전에 consentChecked=true 가 되어
-            // 첫 권한 안내 같은 1회성 오버레이가 먼저 소진되고, 상태 조회가 실패하면 그 실행에서는
-            // 수집 화면이 아예 안 뜬다. 완료 표시는 제출 성공 시에만 한다.
-            // 판정은 **그릴 수 있는 것** 기준이다. 서버 원본으로 보면 못 그리는 선택 유형이
-            // 영원히 남아 '완료' 캐시가 영영 안 만들어진다.
-            val nothingLeftToCollect =
-                !status.needsConsent && !consentNeedsCollection && consentCollect.isEmpty()
-            rememberConsentDone(userId, nothingLeftToCollect, status.policyVersion)
+            applyConsentStatus(userId, status)
         }.onFailure { error ->
             if (authSession?.user?.id != userId || revision != consentStatusRevision) return@launch
             Log.w(TAG, "Failed to check consent status", error)
@@ -912,6 +885,77 @@ internal fun MainViewModel.checkConsentStatus() {
             // 응답이 실제로 왔다는 신호. 1회성 오버레이는 캐시가 아니라 이 값을 봐야 한다.
             consentStatusChecked = true
         }
+    }
+}
+
+/**
+ * `GET /user/consents/status` 의 답을 화면 상태에 옮긴다. 진입 조회([checkConsentStatus])와 데이터 라우트의
+ * 403 `CONSENT_REQUIRED` 뒤 조회([refreshConsentCollectAfterGate])가 같이 쓴다 — 둘이 다르게 옮기면 같은 서버 답에
+ * 화면이 둘로 갈린다. 호출부가 계정·세대를 먼저 확인한다.
+ */
+internal fun MainViewModel.applyConsentStatus(
+    userId: String,
+    status: com.alarmtalk.app.network.ConsentStatusResponse,
+) {
+    needsConsent = status.needsConsent
+    // 화면이 무엇을 그리고 무엇을 제출할지는 서버가 정한다. 구버전 서버(collect 없음)와
+    // 섞여 돌 수 있으니 비어 있으면 missing 으로 폴백한다.
+    val collected = status.collect.ifEmpty { status.missing }
+    consentOptional = status.optional
+    consentPrechecked = status.prechecked
+    // 서버가 이 앱 버전이 모르는 **필수** 동의를 요구하면 화면을 띄우지 않고 업데이트로
+    // 보낸다. (보통은 min_supported_version 을 함께 올려 여기까지 오지 않는다. 안전망이다.)
+    consentUnsupported = collected.any {
+        it !in KNOWN_CONSENT_TYPES && it !in status.optional
+    }
+    // 모르는 **선택** 유형은 조용히 버린다. 그것 때문에 앱을 막을 이유는 없지만,
+    // 남겨 두면 더 나쁘다 — showConsentScreen 이 열리는데 화면은 그릴 항목이 하나도
+    // 없어 CTA 까지 비활성인 죽은 화면이 된다(Codex #660).
+    consentCollect = collected.filter { it in KNOWN_CONSENT_TYPES }
+    sensitiveConsentMissing = status.sensitiveMissing
+    consentIsReconsent = status.hasPriorConsent
+    // 서버는 '물어볼 게 있다' 고 하는데 그게 전부 못 그리는 선택 유형이면 띄우지 않는다.
+    consentNeedsCollection = status.needsCollection && consentCollect.isNotEmpty()
+    // 받을 게 남아 있으면(선택 동의 재수집 포함) '완료' 로 캐시하지 않는다.
+    // 캐시가 완료로 남으면 다음 실행에서 서버 응답 전에 consentChecked=true 가 되어
+    // 첫 권한 안내 같은 1회성 오버레이가 먼저 소진되고, 상태 조회가 실패하면 그 실행에서는
+    // 수집 화면이 아예 안 뜬다. 완료 표시는 제출 성공 시에만 한다.
+    // 판정은 **그릴 수 있는 것** 기준이다. 서버 원본으로 보면 못 그리는 선택 유형이
+    // 영원히 남아 '완료' 캐시가 영영 안 만들어진다.
+    val nothingLeftToCollect =
+        !status.needsConsent && !consentNeedsCollection && consentCollect.isEmpty()
+    rememberConsentDone(userId, nothingLeftToCollect, status.policyVersion)
+}
+
+/**
+ * 데이터 라우트가 403 `CONSENT_REQUIRED` 를 냈는데 아직 받을 목록(`collect`)을 모를 때 — 서버에 **정확한 목록**을
+ * 물어 그것만 띄운다(2026-10-16, 코덱스). 앱을 켜 둔 채 서버가 재동의 기준을 올리면 진입 조회보다 이 403 이 먼저
+ * 오는데, 예전에는 그때 가입 필수 전부(약관·만 14세·국외 이전까지)로 폴백해 처리방침 하나만 받으면 될 사람에게
+ * 이미 받은 동의를 다시 물었다. 조회가 실패했을 때만 그 폴백을 쓴다 — 빈 목록으로 게이트를 열면 보지도 않은
+ * 동의가 기록된다(코덱스 #660).
+ */
+internal fun MainViewModel.refreshConsentCollectAfterGate(onFailure: () -> Unit) {
+    val session = authSession ?: return
+    val userId = session.user.id
+    if (consentGateRefreshInFlight?.first == userId) return
+    consentStatusRevision += 1
+    val revision = consentStatusRevision
+    val request = userId to revision
+    consentGateRefreshInFlight = request
+    val authorization = com.alarmtalk.app.network.AlarmTalkApiClient.bearer(session.token)
+    viewModelScope.launch {
+        val status = runCatching { api.consentStatus(authorization) }
+            .onFailure { error -> Log.w(TAG, "Failed to load consent status after 403", error) }
+            .getOrNull()
+        if (consentGateRefreshInFlight == request) consentGateRefreshInFlight = null
+        if (authSession?.user?.id != userId || revision != consentStatusRevision) return@launch
+        if (status != null) {
+            applyConsentStatus(userId, status)
+        } else {
+            onFailure()
+        }
+        consentChecked = true
+        consentStatusChecked = true
     }
 }
 
@@ -1018,6 +1062,10 @@ internal fun MainViewModel.submitConsents(agreedOptional: Set<String>) {
                     .write(ownerUserId, row.agreed)
             }
             consentChecked = true
+            // 동의를 기다리는 동안 막혔던 동기화를 지금 다시 돈다(2026-10-16, 코덱스). 게이트가 떠 있던 동안의
+            // pull·가족 알람 푸시는 403 `CONSENT_REQUIRED` 를 받고 '동의 대기' 로 조용히 접혔다(`SyncWorkerFailure`) —
+            // 다시 걸지 않으면 다음 주기(15분)까지 받은 가족 알람이 이 기기에 예약되지 않는다.
+            RemoteAlarmSyncScheduler.runOnce(getApplication())
         }.onFailure { error ->
             AlarmTalkLog.reportError("Failed to record consents", error)
             if (authSession?.user?.id != ownerUserId) return@onFailure

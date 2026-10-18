@@ -54,6 +54,13 @@ enum AlarmSoundStaging {
     /// `clearStagedSoundFiles`(메인 밖)가 이 접두사를 읽는다.
     nonisolated static let stagedNamePrefix = "voice-"
 
+    /// 목소리 반복 사이 쉼(밀리초) — 안드로이드 `RingingService.VOICE_REPEAT_GAP_MS` 와 같은 값이다.
+    ///
+    /// AlarmKit 은 넘긴 파일을 **그대로 되풀이**하고 사이에 쉼을 둘 방법이 없다(받는 것은 `sound:` 하나). 그래서 쉼을
+    /// 파일 **끝에 무음으로 구워 넣는다**(2026-10-16 오너 결정). 예전에는 파일 끝 무음(약 0.17초)만 남아 문장이 붙어
+    /// 들렸다. 안드로이드는 재생이 끝난 뒤 이만큼 기다렸다 다시 트므로, 같은 파일 끝 무음 위에 같은 쉼이 얹힌다.
+    nonisolated static let voiceRepeatGapMillis = 900
+
     /// 캐시된 오디오를 `Library/Sounds/<stagedNamePrefix><safeKey>.<ext>` 로 복사한다.
     /// 이미 존재하면 재사용. 트랜스코드가 필요한 포맷이면 `.caf` 로 변환을 시도한다.
     /// - Returns: AlarmKit `.named(_)` 에 넘길 base 이름 (확장자 제외).
@@ -65,36 +72,60 @@ enum AlarmSoundStaging {
     ///   목소리 크기 슬라이더가 **잠금화면 알람에 아무 영향이 없었다**(스테이징이 원본을
     ///   그대로 복사했다). in-app 폴백 플레이어에만 게인이 걸렸는데, 그 폴백은 스테이징이
     ///   **실패했을 때만** 도는 경로라 정상 상황에서는 한 번도 쓰이지 않는다.
+    /// - Parameter trailingSilenceMillis: 파일 끝에 붙일 무음. 목소리 알람은 [voiceRepeatGapMillis] 를 넘긴다 —
+    ///   AlarmKit 이 파일을 되풀이할 때 그만큼 쉰다. 알람음(벨소리 등)은 0 이다(안드로이드도 톤은 쉬지 않고 이어 튼다).
     @discardableResult
-    static func stage(url sourceURL: URL, key: String, volumePercent: Int = 100) throws -> String {
+    static func stage(
+        url sourceURL: URL,
+        key: String,
+        volumePercent: Int = 100,
+        trailingSilenceMillis: Int = 0
+    ) throws -> String {
         // ⚠ **굽는 동안 캐시가 갈아끼워지지 않게 한다**(Codex #703 P1). 이걸 열어 두면
         // 옛 바이트를 읽어 굽는 사이에 교체가 지나가고, 그 무효화가 **굽기 전에** 끝나
         // 옛 목소리가 구워진 채로 남는다. 잠금은 `AudioCacheStore` 의 교체 경로와 같은 것이다.
         try AudioCacheStore.withCacheKeyLock(key) {
-            try stageLocked(url: sourceURL, key: key, volumePercent: volumePercent)
+            try stageLocked(
+                url: sourceURL,
+                key: key,
+                volumePercent: volumePercent,
+                trailingSilenceMillis: trailingSilenceMillis
+            )
         }
     }
 
-    private static func stageLocked(url sourceURL: URL, key: String, volumePercent: Int) throws -> String {
+    private static func stageLocked(
+        url sourceURL: URL,
+        key: String,
+        volumePercent: Int,
+        trailingSilenceMillis: Int
+    ) throws -> String {
         let fm = FileManager.default
         let soundsDir = try ensureSoundsDirectory()
         let safeKey = AudioCacheStore.safeCacheKey(key)
         let gainPercent = max(0, min(100, volumePercent))
-        // ⚠ **음량을 이름에 넣는다.** 재사용 판정이 파일 존재 하나뿐이라, 이름이 같으면
-        // 슬라이더를 내려도 예전에 구워 둔 큰 소리 파일이 그대로 다시 쓰인다.
-        let baseName = gainPercent == 100
-            ? "\(stagedNamePrefix)\(safeKey)"
-            : "\(stagedNamePrefix)\(safeKey)-v\(gainPercent)"
+        let silenceMillis = max(0, min(trailingSilenceMillis, Int(AlarmAudioLimits.maxDurationMillis / 2)))
+        // ⚠ **음량·쉼을 이름에 넣는다.** 재사용 판정이 파일 존재 하나뿐이라, 이름이 같으면
+        // 슬라이더를 내려도 예전에 구워 둔 큰 소리 파일이 그대로 다시 쓰인다. 쉼도 같다 — 넣기 전에 구운
+        // 파일(쉼 없음)이 같은 이름이면 업데이트 뒤에도 문장이 붙어 들린다.
+        var baseName = "\(stagedNamePrefix)\(safeKey)"
+        if gainPercent != 100 { baseName += "-v\(gainPercent)" }
+        if silenceMillis > 0 { baseName += "-g\(silenceMillis)" }
         let sourceExt = sourceURL.pathExtension.lowercased()
 
-        // 음량이 100 이 아니면 **원본을 그대로 복사할 수 없다** — 샘플값을 줄여야 하므로
-        // 포맷과 무관하게 LPCM 으로 다시 쓴다.
-        if gainPercent != 100 {
+        // 음량이 100 이 아니거나 끝에 쉼을 붙이면 **원본을 그대로 복사할 수 없다** — 샘플을 고치거나 덧붙여야
+        // 하므로 포맷과 무관하게 LPCM 으로 다시 쓴다.
+        if gainPercent != 100 || silenceMillis > 0 {
             let stagedURL = soundsDir.appendingPathComponent("\(baseName).caf")
             if !isUsableStagedFile(stagedURL) {
                 try? fm.removeItem(at: stagedURL)
                 try writeAtomically(into: stagedURL) { tmp in
-                    try writeCAF(from: sourceURL, to: tmp, gain: Float(gainPercent) / 100)
+                    try writeCAF(
+                        from: sourceURL,
+                        to: tmp,
+                        gain: Float(gainPercent) / 100,
+                        trailingSilenceMillis: silenceMillis
+                    )
                 }
             }
             return baseName
@@ -409,7 +440,15 @@ enum AlarmSoundStaging {
     /// 알람이 사용자가 줄여 놓은 음량을 무시하고 원래 크기로 울리는데, 그 사실이 어디에도
     /// 드러나지 않는다. `AVAudioFile` 은 디코드된 float 버퍼를 주므로 곱하기 한 번이면 되고,
     /// 열지 못하면 throw 라 호출부가 in-app 폴백으로 내려간다.
-    private static func writeCAF(from src: URL, to dst: URL, gain: Float) throws {
+    ///
+    /// [trailingSilenceMillis] 만큼 끝에 무음을 붙인다(목소리 반복 사이 쉼 — [voiceRepeatGapMillis]). 30초 한도는
+    /// **쉼까지 포함한** 길이다 — 소리를 먼저 그만큼 짧게 자른다(한도를 넘긴 파일은 `.named` 조회가 실패한다).
+    private static func writeCAF(
+        from src: URL,
+        to dst: URL,
+        gain: Float,
+        trailingSilenceMillis: Int = 0
+    ) throws {
         let input: AVAudioFile
         do {
             input = try AVAudioFile(forReading: src)
@@ -418,17 +457,24 @@ enum AlarmSoundStaging {
         }
 
         let format = input.processingFormat
+        let silenceFrames = AVAudioFrameCount(
+            max(0, (format.sampleRate * Double(trailingSilenceMillis) / 1000).rounded())
+        )
         let limitFrames = AVAudioFramePosition(
             format.sampleRate * Double(AlarmAudioLimits.maxDurationMillis) / 1000
-        )
+        ) - AVAudioFramePosition(silenceFrames)
         let frames = AVAudioFrameCount(max(0, min(limitFrames, input.length)))
-        guard frames > 0, let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frames) else {
+        guard frames > 0,
+              let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frames + silenceFrames) else {
             throw AlarmSoundStagingError.writeFailed("source produced no audio samples")
         }
         do {
             try input.read(into: buffer, frameCount: frames)
         } catch {
             throw AlarmSoundStagingError.writeFailed("decode: \(error.localizedDescription)")
+        }
+        guard buffer.frameLength > 0 else {
+            throw AlarmSoundStagingError.writeFailed("source produced no audio samples")
         }
 
         // 게인은 여기 한 줄이다. 0 이면 무음 파일이 된다 — **파일을 안 만드는 것과 다르다.**
@@ -440,6 +486,19 @@ enum AlarmSoundStaging {
                     samples[frame] *= gain
                 }
             }
+        }
+
+        // 끝 쉼 — 읽은 소리 뒤를 0 으로 채우고 길이를 늘린다.
+        if silenceFrames > 0, let channels = buffer.floatChannelData {
+            let soundFrames = Int(buffer.frameLength)
+            let totalFrames = soundFrames + Int(silenceFrames)
+            for channel in 0..<Int(format.channelCount) {
+                let samples = channels[channel]
+                for frame in soundFrames..<totalFrames {
+                    samples[frame] = 0
+                }
+            }
+            buffer.frameLength = AVAudioFrameCount(totalFrames)
         }
 
         let settings: [String: Any] = [

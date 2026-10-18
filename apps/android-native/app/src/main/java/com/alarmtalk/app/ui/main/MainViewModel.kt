@@ -425,16 +425,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 return@launch
             }
-            needsConsent = true
-            // 무엇을 받아야 하는지 모르는 채로 게이트를 열면 안 된다. 상태 조회가 늦거나
-            // 실패한 상태에서 이 403(일반 게이트, consent 필드 없음)이 먼저 오면 collect 가
-            // 비어 화면에 항목이 하나도 안 그려지는데, 그 화면은 '필수 다 체크됨'으로 판정돼
-            // 버튼이 활성화된다 → 사용자가 보지도 않은 동의가 기록된다(Codex #660).
-            // 채울 목록은 **가입 게이트가 요구하는 전부**여야 한다. 이 403 을 낸 미들웨어는
-            // 일반 3종만 보지만, 3종만 받고 닫으면 국외 이전이 안 기록된 채 통과된다.
-            if (consentCollect.isEmpty()) consentCollect = SIGNUP_REQUIRED_CONSENT_TYPES
-            consentChecked = true
             message = getApplication<android.app.Application>().getString(R.string.r3misc_consent_required)
+            if (consentCollect.isNotEmpty()) {
+                needsConsent = true
+                consentChecked = true
+                return@launch
+            }
+            // 무엇을 받아야 하는지 모르면 **서버에 묻고 그 목록만** 띄운다(2026-10-16, 코덱스). 서버가 재동의
+            // 기준을 올린 직후 앱을 켜 둔 사람은 진입 조회보다 이 403 을 먼저 받는데, 가입 필수 전부로 폴백하면
+            // 처리방침 하나만 받으면 될 사람에게 약관·만 14세·국외 이전까지 다시 묻는다.
+            // 조회가 실패하면 그때만 가입 필수 전부로 연다. 빈 목록으로 게이트를 열면 화면에 항목이 하나도
+            // 안 그려지는데 '필수 다 체크됨' 으로 판정돼 보지도 않은 동의가 기록된다(Codex #660). 이 403 을 낸
+            // 미들웨어는 일반 3종만 보지만, 3종만 받고 닫으면 국외 이전이 안 기록된 채 통과된다.
+            refreshConsentCollectAfterGate(onFailure = {
+                needsConsent = true
+                if (consentCollect.isEmpty()) consentCollect = SIGNUP_REQUIRED_CONSENT_TYPES
+            })
         }
     }
 
@@ -1181,6 +1187,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var consentStatusRevision: Int = 0
         internal set
 
+    /** 403 뒤 정확한 동의 목록을 묻는 조회가 떠 있는가 — 403 이 여러 요청에서 한꺼번에 와도 한 번만 묻는다. */
+    var consentGateRefreshInFlight: Pair<String, Int>? = null
+        internal set
+
     // 계정 상태 조회가 끝났는지(성공·실패 무관). versionChecked 와 같은 이유로 필요하다 —
     // 응답 전에는 이 계정이 남을지 모른다(탈퇴 유예면 세션을 끊는다 — `checkAccountStatus`). 이 값을
     // 안 보면 그 사이 1회성 오버레이가 먼저 떠 플래그를 태운다(Codex #660).
@@ -1611,6 +1621,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         // 온보딩·홈·하단바가 먼저 뜰 수 있어 반드시 false 로 되돌린다.
         needsConsent = false
         consentChecked = false
+        consentGateRefreshInFlight = null
+        consentStatusRevision += 1
         consentCollect = emptyList()
         consentOptional = emptyList()
         consentPrechecked = emptyList()

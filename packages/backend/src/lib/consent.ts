@@ -55,10 +55,7 @@ export const OPTIONAL_CONSENT_TYPES = ['marketing'] as const;
  * 범위는 최소로 두고, 음성 라우트는 SENSITIVE_REQUIRED_CONSENTS 를 따로 확인한다 —
  * 설정에서 동의를 철회한 경우에도 그 기능만 막히고 앱 전체가 잠기지는 않는다.
  */
-export const REQUIRED_CONSENT_TYPES = [
-  ...GENERAL_REQUIRED_CONSENTS,
-  'overseas_transfer',
-] as const;
+export const REQUIRED_CONSENT_TYPES = [...GENERAL_REQUIRED_CONSENTS, 'overseas_transfer'] as const;
 
 /**
  * 그 기능을 쓸 때만 필요한 동의. **가입 화면에 '선택'으로 함께 노출하되, 거절해도 가입은
@@ -167,7 +164,9 @@ export const CONSENT_MIN_POLICY_VERSION: Record<ConsentType, number> = {
   //   `routes/user.ts` 의 마케팅 재유도). 그 전에는 재동의를 강제하는 대신 수집을 멈췄다(`USAGE_EVENT_MIN_PRIVACY_VERSION`).
   //   6 이 아니라 5 인 이유: 6(2026-10-16)은 수집 범위를 바꾸지 않은 정정이라 5 로 동의한 사람은 다시 묻지 않는다.
   //   ⚠ 순서: 재동의를 낼 수 있는 앱은 문서 6 을 실은 앱뿐이다(`ACCEPTED_POLICY_VERSIONS`). 안드로이드는 34 미만을
-  //   `minSupported` 로 막았고(#911), iOS 는 기록이 전부 5 이상이라(첫 게재 2026-09-22) 이 상향의 대상이 없다.
+  //   `minSupported` 로 막았고(#911). iOS 기기의 기록은 전부 5 이상이지만(첫 게재 2026-09-22) 기록 3·4 인 안드로이드
+  //   계정이 옛 iOS 앱(문서 5)으로 로그인할 수는 있다 — 그래서 이 값은 iOS `minSupported` 를 문서 6 빌드(12)로 올린 뒤에
+  //   prod 에 낸다(`docs/qa/dev-test-handoff.md` 「다음 할 일」).
   privacy: 5,
   age14: 3,
   marketing: 3,

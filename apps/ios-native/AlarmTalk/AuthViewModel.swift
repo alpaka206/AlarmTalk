@@ -477,7 +477,17 @@ final class AuthViewModel: ObservableObject {
     /// 직후에 부른다 — 그 전에 떠난 조회의 답은 이미 낡았다.
     private func invalidateInFlightConsentStatus() {
         consentStatusRevision &+= 1
+        consentGateRefreshInFlight = nil
     }
+
+    /// 403 뒤 정확한 동의 목록을 묻는 조회가 떠 있는가 — 403 이 여러 요청에서 한꺼번에 와도 한 번만 묻는다.
+    private var consentGateRefreshInFlight: (userID: String, id: UUID)?
+
+    /// 동의 화면 제출이 성공할 때마다 오른다. `AlarmTalkApp` 이 이 값을 보고 동의를 기다리며 막혔던 동기화를
+    /// 다시 돈다(2026-10-16, 코덱스) — 게이트가 떠 있던 동안의 pull·가족 알람 푸시는 403 `CONSENT_REQUIRED` 로
+    /// '다음 회차에 재시도' 로 접혔고, 다시 걸지 않으면 다음 전경 복귀까지 받은 가족 알람이 예약되지 않는다.
+    /// 안드로이드는 `submitConsents` 가 `RemoteAlarmSyncScheduler.runOnce` 를 직접 부른다.
+    @Published private(set) var consentSubmitGeneration = 0
 
     /// 목소리 등록처럼 **곧 시작할 동작**이 요구하는 민감 동의를 선제적으로 받는다.
     ///
@@ -1410,15 +1420,32 @@ final class AuthViewModel: ObservableObject {
             }
             return
         }
-        needsConsent = true
-        // ⚠ **무엇을 받아야 하는지 모르는 채로 게이트를 열지 않는다.** 상태 조회가 늦거나
-        // 실패한 상태에서 이 403(일반 게이트, consent 필드 없음)이 먼저 오면 collect 가 비어
-        // 화면에 항목이 하나도 안 그려지는데, 그 화면은 '필수 다 체크됨' 으로 판정돼 버튼이
-        // 켜진다 → 사용자가 보지도 않은 동의가 기록된다. 채울 목록은 **가입 게이트가 요구하는
-        // 전부**여야 한다(이 403 을 낸 미들웨어는 일반 3종만 보지만, 3종만 받고 닫으면
-        // 국외 이전이 안 기록된 채 통과된다).
-        if consentCollect.isEmpty {
-            consentCollect = Self.signupRequiredConsentTypes
+        guard consentCollect.isEmpty else {
+            needsConsent = true
+            return
+        }
+        // 무엇을 받아야 하는지 모르면 **서버에 묻고 그 목록만** 띄운다(2026-10-16, 코덱스 — 안드로이드
+        // `refreshConsentCollectAfterGate` 와 같다). 서버가 재동의 기준을 올린 직후 앱을 켜 둔 사람은 진입 조회보다
+        // 이 403 을 먼저 받는데, 가입 필수 전부로 폴백하면 처리방침 하나만 받으면 될 사람에게 약관·만 14세·국외
+        // 이전까지 다시 묻는다.
+        // ⚠ 조회가 실패했을 때만 가입 필수 전부로 연다. **무엇을 받아야 하는지 모르는 채로 게이트를 열지 않는다** —
+        // collect 가 비면 화면에 항목이 하나도 안 그려지는데 '필수 다 체크됨' 으로 판정돼 버튼이 켜진다 → 사용자가
+        // 보지도 않은 동의가 기록된다. 이 403 을 낸 미들웨어는 일반 3종만 보지만, 3종만 받고 닫으면 국외 이전이
+        // 안 기록된 채 통과된다.
+        guard let ownerUserID = session?.user.id,
+              consentGateRefreshInFlight?.userID != ownerUserID else { return }
+        let requestID = UUID()
+        consentGateRefreshInFlight = (ownerUserID, requestID)
+        Task { @MainActor in
+            defer {
+                if consentGateRefreshInFlight?.id == requestID { consentGateRefreshInFlight = nil }
+            }
+            let answered = await checkConsentStatus()
+            guard session?.user.id == ownerUserID, !answered else { return }
+            needsConsent = true
+            if consentCollect.isEmpty {
+                consentCollect = Self.signupRequiredConsentTypes
+            }
         }
     }
 
@@ -1736,17 +1763,19 @@ final class AuthViewModel: ObservableObject {
     /// 로그인 후 필수 약관 동의 여부를 서버에 확인한다. 미동의면 `needsConsent=true` 로
     /// 두어 RootView 가 동의 화면을 띄운다. 네트워크 실패 시 앱 진입을 막지 않는다.
     /// Android `MainViewModel.checkConsentStatus()`.
-    func checkConsentStatus() async {
-        guard let token else { return }
+    /// 서버 답을 받았으면(또는 더 새 조회가 맡았으면) true, 조회가 실패했으면 false.
+    @discardableResult
+    func checkConsentStatus() async -> Bool {
+        guard let token else { return false }
         // 응답이 오는 사이에 계정이 바뀔 수 있다 — 남의 동의 상태를 지금 사용자에게 씌우면
         // 받은 적 없는 동의를 받은 것으로 읽는다(안드로이드 `checkConsentStatus` 의
         // `if (authSession?.user?.id != userId) return@launch` 미러).
         let ownerUserID = session?.user.id
-        invalidateInFlightConsentStatus()
+        consentStatusRevision &+= 1
         let revision = consentStatusRevision
         do {
             let status = try await api.consentStatus(token: token)
-            guard session?.user.id == ownerUserID, revision == consentStatusRevision else { return }
+            guard session?.user.id == ownerUserID, revision == consentStatusRevision else { return true }
             // 이 앱 버전이 그릴 수 있는 유형만 남긴다. 서버가 새 유형을 먼저 추가한 구간에서
             // **보여주지 않은 동의를 기록하는 것**을 막는다(그 유형이 필수면 화면이 CTA 를 막는다).
             let known = status.collect.filter { Self.knownConsentTypes.contains($0) }
@@ -1784,8 +1813,9 @@ final class AuthViewModel: ObservableObject {
                     policyVersion: Self.currentPolicyVersion
                 )
             }
+            return true
         } catch {
-            guard session?.user.id == ownerUserID, revision == consentStatusRevision else { return }
+            guard session?.user.id == ownerUserID, revision == consentStatusRevision else { return true }
             // 동의 상태 확인 실패 시 앱 진입을 막지 않는다(보수적으로 false).
             // ⚠ **403 이 세워 둔 게이트까지 지우지는 않는다.** `handleConsentRequired` 가
             // 채워 둔 `consentCollect` 를 뒤늦은 실패 응답이 비우면, 서버가 요구한 동의를
@@ -1796,6 +1826,7 @@ final class AuthViewModel: ObservableObject {
             }
             // 실패해도 true — 못 물어본 것이 등록을 막을 이유는 아니다.
             consentStatusChecked = true
+            return false
         }
     }
 
@@ -1911,6 +1942,7 @@ final class AuthViewModel: ObservableObject {
                 marketingConsentAgreed = agreedOptional.contains("marketing")
             }
             statusMessage = String(localized: "동의가 완료됐어요")
+            consentSubmitGeneration &+= 1
         } catch {
             if handleConsentVersionMismatch(error) { return }
             failStatus(userFacingErrorMessage(error, fallback: String(localized: "동의 기록에 실패했어요. 다시 시도해 주세요")))
@@ -2338,6 +2370,7 @@ final class AuthViewModel: ObservableObject {
         session = nil
         // 세션이 끝났다 — 떠 있던 요청의 응답은 다음 세션에 적지 않는다(`sessionRevision`).
         sessionRevision &+= 1
+        invalidateInFlightConsentStatus()
         pendingDeletion = false
         needsConsent = false
         // 동의 수집 상태도 계정별이다 — 앞 계정의 '받을 게 없음' 이 새 계정에 새면

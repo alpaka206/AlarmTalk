@@ -1,7 +1,11 @@
 import type { Client } from '@libsql/client';
 import { LibsqlError } from '@libsql/client/web';
-import { describe, expect, it, vi } from 'vitest';
-import { withReadTransaction, withWriteTransaction } from '../src/lib/transactions';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import {
+  withReadTransaction,
+  withWriteTransaction,
+  withRetryableWriteTransaction,
+} from '../src/lib/transactions';
 import { createMockDB } from './helpers';
 
 describe('withReadTransaction', () => {
@@ -82,5 +86,72 @@ describe('withWriteTransaction', () => {
 
     expect(mockDB.transactions.commits).toBe(0);
     expect(mockDB.transactions.rollbacks).toBe(1);
+  });
+});
+
+describe('withRetryableWriteTransaction', () => {
+  afterEach(() => vi.useRealTimers());
+  const gatewayError = () => new LibsqlError('Server returned HTTP status 520', 'SERVER_ERROR');
+
+  it('COMMIT 전 520은 롤백 뒤 다시 실행하고 한 번만 커밋한다', async () => {
+    vi.useFakeTimers();
+    const db = createMockDB();
+    db.pushError(gatewayError());
+    db.pushResult([], 1);
+    let attempts = 0;
+    const result = withRetryableWriteTransaction(db.client as unknown as Client, async (tx) => {
+      attempts += 1;
+      return tx.execute('UPDATE users SET token_epoch = token_epoch + 1');
+    });
+    await vi.runAllTimersAsync();
+    expect((await result).rowsAffected).toBe(1);
+    expect(attempts).toBe(2);
+    expect(db.transactions.rollbacks).toBe(1);
+    expect(db.transactions.commits).toBe(1);
+  });
+
+  it.each(['commit', 'rollback'] as const)(
+    '%s 결과가 불확실하면 재시도하지 않는다',
+    async (stage) => {
+      const error = gatewayError();
+      const tx = {
+        closed: false,
+        execute: vi.fn().mockImplementation(async () => {
+          if (stage === 'rollback') throw error;
+          return { rowsAffected: 1 };
+        }),
+        commit: vi.fn().mockRejectedValue(error),
+        rollback: vi.fn().mockImplementation(async () => {
+          if (stage === 'rollback') throw error;
+        }),
+        close: vi.fn(),
+      };
+      const db = { transaction: vi.fn().mockResolvedValue(tx) };
+      await expect(
+        withRetryableWriteTransaction(db as unknown as Client, async (executor) =>
+          executor.execute('UPDATE users SET token_epoch = token_epoch + 1'),
+        ),
+      ).rejects.toBe(error);
+      expect(db.transaction).toHaveBeenCalledTimes(1);
+      expect(tx.close).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it('첫 batch 실패로 libSQL이 닫은 트랜잭션도 COMMIT 전이면 다시 시도한다', async () => {
+    vi.useFakeTimers();
+    const db = createMockDB();
+    const transaction = vi.spyOn(db.client, 'transaction');
+    transaction.mockResolvedValueOnce({
+      closed: true,
+      execute: vi.fn().mockRejectedValue(gatewayError()),
+      close: vi.fn(),
+    } as never);
+    const result = withRetryableWriteTransaction(db.client as unknown as Client, async (tx) =>
+      tx.execute('UPDATE users SET token_epoch = token_epoch + 1'),
+    );
+    await vi.runAllTimersAsync();
+    await result;
+    expect(transaction).toHaveBeenCalledTimes(2);
+    expect(db.transactions.commits).toBe(1);
   });
 });

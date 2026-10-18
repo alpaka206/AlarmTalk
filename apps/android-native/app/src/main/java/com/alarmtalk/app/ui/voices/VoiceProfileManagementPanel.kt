@@ -465,6 +465,7 @@ internal fun VoiceProfileManagementPanel(
     var createPreparing by remember { mutableStateOf(false) }
     var createSubmitAttempted by remember { mutableStateOf(false) }
     var showCreateForm by remember { mutableStateOf(false) }
+    var registrationConsentOpen by remember { mutableStateOf(false) }
     // 등록 결정 구간(만드는 중/미리듣기)에서 나가려 할 때 띄우는 '임시 목소리 삭제' 경고.
     var draftExitWarningOpen by remember { mutableStateOf(false) }
     // 서버가 "이번 달 등록을 다 썼다" 고 답해 등록 흐름을 끝냈다 — 이유를 말하는 알럿(스펙
@@ -2005,7 +2006,7 @@ internal fun VoiceProfileManagementPanel(
             val monthlyExhausted = monthlyRegistrationUsedUp(monthlyQuota)
             Button(
                 onClick = {
-                    if (canOpenCreateForm) showCreateForm = true else voicePlanGateOpen = true
+                    if (canOpenCreateForm) registrationConsentOpen = true else voicePlanGateOpen = true
                 },
                 enabled = !voiceProfileBusy && !monthlyExhausted,
                 colors = wakerButtonColors(),
@@ -2164,6 +2165,30 @@ internal fun VoiceProfileManagementPanel(
             }
         }
         // 기본 목소리 받기 진행은 위 헤더 옆으로 옮겼다(2026-09-17).
+    }
+
+    // 이번에 등록할 목소리의 권리는 입구에서 확인한다. 법정 민감 동의는 기존 업로드 경로가 따로 받는다.
+    if (registrationConsentOpen) {
+        IosAlertDialog(
+            title = stringResource(R.string.voice_registration_consent_title),
+            message = stringResource(R.string.voice_registration_consent_body),
+            onDismiss = { registrationConsentOpen = false },
+            actions = listOf(
+                IosAlertAction(
+                    label = stringResource(R.string.voice_consent_cancel),
+                    onClick = { registrationConsentOpen = false },
+                ),
+                IosAlertAction(
+                    label = stringResource(R.string.voice_registration_consent_agree),
+                    emphasized = true,
+                    enabled = !voiceProfileBusy && canOpenCreateForm && !monthlyRegistrationUsedUp(voiceDraftQuota),
+                    onClick = {
+                        registrationConsentOpen = false
+                        if (canOpenCreateForm) showCreateForm = true else voicePlanGateOpen = true
+                    },
+                ),
+            ),
+        )
     }
 
     if (voicePlanGateOpen) {

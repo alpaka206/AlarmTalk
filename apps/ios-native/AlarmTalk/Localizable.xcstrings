@@ -1,6 +1,98 @@
 {
   "sourceLanguage" : "ko",
   "strings" : {
+    "동의하기" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Agree"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "同意する"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "동의하기"
+          }
+        }
+      }
+    },
+    "등록하기" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Register"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "登録する"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "등록하기"
+          }
+        }
+      }
+    },
+    "본인 목소리이거나, 목소리 주인이 음성 복제와 알람 사용에 명시적으로 동의한 목소리만 등록해 주세요. 목소리 주인의 동의를 확인했으며, 무단 등록·권리 침해·사칭으로 생기는 책임은 등록한 사람에게 있음을 확인합니다." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Only register your own voice or a voice whose owner has explicitly consented to voice cloning and use in alarms. I confirm that I have the voice owner’s consent and accept responsibility for unauthorized registration, infringement of rights, or impersonation."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自分の声、または声の持ち主が音声の複製とアラームでの使用に明示的に同意した声のみ登録してください。声の持ち主の同意を確認しており、無断登録、権利侵害、なりすましによる責任は登録した本人にあることを確認します。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "본인 목소리이거나, 목소리 주인이 음성 복제와 알람 사용에 명시적으로 동의한 목소리만 등록해 주세요. 목소리 주인의 동의를 확인했으며, 무단 등록·권리 침해·사칭으로 생기는 책임은 등록한 사람에게 있음을 확인합니다."
+          }
+        }
+      }
+    },
+    "목소리를 등록하기 전에" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Before registering a voice"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "声を登録する前に"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "목소리를 등록하기 전에"
+          }
+        }
+      }
+    },
     "%@ 반음" : {
       "extractionState" : "manual",
       "localizations" : {

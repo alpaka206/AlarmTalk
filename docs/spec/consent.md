@@ -95,10 +95,13 @@
 - **마케팅 재유도**는 거절자에게 **다른 이유로 화면이 이미 뜰 때만** 함께 노출한다.
   마케팅만으로 화면이 뜨면 거절자는 그 화면을 영영 보게 된다. 앱 화면에서만 유도하고
   푸시·이메일로 권하지 않는다(그 메시지 자체가 광고성 정보로 평가된다).
-- ⚠ **목소리 등록의 권리 보증은 체크박스가 아니다**(2026-08-06 변경). 그 내용은 **약관
-  제7조**가 담고 있고 약관은 가입 필수 동의라 이미 받았다 — 등록마다 다시 받는 것은 계약상
-  중복이었다. 화면에는 **비차단 안내**로만 남긴다. 되돌리려면 약관 제7조를 먼저 확인할 것.
-  (생체정보 동의 체크박스는 그대로 — 서버 기록 기반 법정 동의라 성격이 다르다.)
+- **목소리 등록 입구에서 권리 확인 모달을 받는다**(2026-10-16 오너 결정). '추가'를 누르면 등록 화면으로
+  이동하기 전에 본인 목소리 또는 목소리 주인이 음성 복제·알람 사용에 명시적으로 동의한 목소리인지 확인한다.
+  [취소][동의하기] 중 동의하기를 눌러야 등록을 시작한다. 소유·책임 확인 체크박스 두 개는 없앤다.
+  이는 이번에 등록할 목소리에 대한 이용자 확인이다. 공급자의 목소리 주인 본인 인증을 수행했다는 뜻은 아니며,
+  서버의 법정 동의 유형·버전을 새로 만들거나 이미 받은 법정 동의를 다시 기록하지 않는다.
+  생체정보·국외 이전 동의가 부족하면 기존의 별도 동의를 받고, 성공한 뒤에만 음성을 업로드한다.
+  초안 미리듣기로 돌아오는 경우는 새로운 등록 진입이 아니므로 다시 묻지 않는다.
 ## 한 번 받은 동의는 다시 묻지 않는다
 
 > 규칙(2026-08-26 확정): **받아야 하는 동의는 전부 받는다. 한 번 받은 동의는 다시 묻지
@@ -123,6 +126,12 @@
     보낸다. 항목 0개짜리 화면에서 CTA 를 누르면 제출 폴백이 본 적 없는 동의를 기록한다.
   - 그릴 것이 하나도 없으면 화면을 띄우지 않는다(`needs_collection && collect 비지 않음`).
     서버 플래그를 날것으로 보면 **빈 동의 화면이 콜드 스타트마다** 뜬다.
+  - ⚠ **데이터 라우트의 403 `CONSENT_REQUIRED` 로 게이트를 열 때도 목록은 서버에 묻는다**(2026-10-16). 앱을 켜 둔 채
+    서버가 재동의 기준을 올리면 진입 조회보다 이 403 이 먼저 온다. 그때 받을 목록을 아직 모르면 `GET /user/consents/status`
+    를 다시 불러 **그 목록만** 띄운다. 가입 필수 전부(약관·만 14세·국외 이전)로 여는 것은 **그 조회가 실패했을 때뿐**이다 —
+    그러지 않으면 처리방침 하나만 받으면 될 사람에게 이미 받은 동의를 다시 묻는다.
+  - **동의를 마치면 막혔던 동기화를 곧바로 다시 돈다.** 게이트가 떠 있던 동안의 알람 pull·가족 알람 푸시는 403 을 받고
+    '동의 대기' 로 조용히 접힌다. 다시 걸지 않으면 다음 주기까지 받은 가족 알람이 예약되지 않는다.
 - **예외는 둘뿐이고 둘 다 서버가 만든다.**
   1. `CONSENT_MIN_POLICY_VERSION` 상향 — **그 유형의 동의 내용이 실제로 바뀐 경우만**.
      문서 버전이 올랐다는 이유로 올리지 않는다(바로 아래 불릿).
@@ -204,7 +213,10 @@
 | 다시 묻는 자리 | `sensitiveConsentMissing`·`showConsentScreen` (`MainViewModel`) | `consentSensitiveMissing`·`showConsentScreen` (`AuthViewModel`) | `collect` / `sensitive_missing` (`routes/user.ts`) |
 | 묻지 않은 것 기록 금지 | `INLINE_COVERED_CONSENTS` (`MainViewModelVoiceActions`) | `inlineCoveredConsents` (`VoiceCloneUploadFlow`) | `POST /user/consents` 는 받은 것만 기록 |
 | 모르는 유형 | 필수→`consentUnsupported`, 선택→버림 (`checkConsentStatus`) | 같음 (`AuthViewModel.checkConsentStatus`) | `optional` 필드 |
+| 등록 입구 권리 확인 | `VoiceProfileManagementPanel.registrationConsentOpen` → `showCreateForm` | 같은 패널의 `registrationConsentOpen` → `route = .clone` | 별도 동의 유형을 기록하지 않음 |
 | 재동의 레버 | — | — | `CONSENT_MIN_POLICY_VERSION` |
+| 403 뒤 목록 | `refreshConsentCollectAfterGate` (`MainViewModelAuthActions`) ← `handleConsentRequired` (`MainViewModel`) | `handleConsentRequired` → `checkConsentStatus` (`AuthViewModel`) | `GET /user/consents/status` |
+| 동의 뒤 동기화 | `submitConsents` → `RemoteAlarmSyncScheduler.runOnce` | `consentSubmitGeneration` → `remoteSync.runFullSync` (`AlarmTalkApp`) | — |
 | 문서 버전 대조 | `BuildConfig.LEGAL_POLICY_VERSION` | `LegalPolicyVersion` | `POST /user/consents` 의 `ACCEPTED_POLICY_VERSIONS`(목록 밖은 409, 받으면 그 버전으로 기록) — 게시 중 최신은 `CURRENT_POLICY_VERSION` |
 | 동의 화면의 문서 | 번들 자산 (`ui/auth/LegalDocument.kt`) | 번들 리소스 (`BundledLegalDocument`) | — |
 | 번들을 못 읽을 때 — **동의 차단** | `legalDocumentsReadable` → `UpdateRequiredScreen` (`AlarmTalkApp.kt`) | `bundledLegalDocumentsReadable` → `UpdateRequiredView` (`RootView`) | — |

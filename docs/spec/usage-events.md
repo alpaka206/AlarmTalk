@@ -136,6 +136,11 @@ iOS 의 `.unknown`(콜드 부팅)은 다시 울림 쪽이므로 **재무장이 �
   깨진다 — 미래에 앉은 행이 보관 1년(§6)을 영영 빠져나가고, §5 의 시각 비교가 미래 값에
   고정돼 **이후의 정당한 기록이 전부 무시된다.** 늦게 도착한 **과거** 값은 그대로 둔다.
 
+- ⚠ **동의가 모자라면 오류가 아니라 200 으로 받고 버린다**(`accepted: 0`, `skipped_reason: consent_below_disclosure`).
+  처리방침이 고지 버전(5) 미만이거나 필수 동의가 없으면 그렇다. 그래서 이 라우트는 **동의 미들웨어를 거치지 않는다**
+  (`POST /events` 면제, 2026-10-16) — 미들웨어가 403 을 주면 앱이 배치를 들고 있다가 재동의가 끝난 뒤 다시 보내,
+  **고지 전에 쌓인 기록**이 저장된다.
+
 ## 4. 계정이 바뀌면 보내지 않는다
 
 서버는 **토큰의 주인**으로 기록한다. 그래서 A 가 남긴 사건이 B 의 기록에 들어가면 되돌릴
@@ -224,6 +229,7 @@ iOS 의 `.unknown`(콜드 부팅)은 다시 울림 쪽이므로 **재무장이 �
 | 다시 울림 | `alarm/RingingService.kt` 의 `snooze` — `repository.snooze` 의 **결과를 보고** 적는다(null 이면 해제 + `SNOOZE_DENIED_DETAIL`, 던지면 결과를 몰라 미룸 + `SNOOZE_FAILED_DETAIL` 이고 알람은 끝내지 않는다) | `Shared/AlarmIntents.swift` 의 `SnoozeAlarmIntent` — `.deny` 면 해제 + `"snooze_denied"`, 아니면 `AlarmAppContext.rearmCountdown` 이 **돌아온 뒤에** 미룸으로 적고, 던지면 stop + 해제 + `"snooze_failed"` | — |
 | 계정이 바뀌면 멈춤 | `sync/UsageEventUploadWorker.kt` 의 `startGeneration` 비교 | `UsageEventUploader.swift` 의 `runIfCurrentSession`(세대 카운터가 없어 **토큰을 에폭으로** 쓴다) | — |
 | 남긴 계정 | `data/UsageEventRecorder.kt` 의 `currentUserId` | `UsageEventQueue.swift` 의 `currentUserID` | — |
+| 동의가 모자라면 받고 버림 | — (2xx 라 큐를 비운다) | 같음 | `routes/events.ts`(고지 버전·필수 동의) + `middleware/consent.ts` 의 `POST /events` 면제 |
 | 미래 시각 자르기 | — | — | `routes/events.ts` 의 `boundOccurredAt` |
 | 보관 기간 | — | — | `index.ts` 의 `USAGE_EVENT_RETENTION_DAYS` |
 | 계정 파기 시 삭제 | — | — | `lib/account-deletion.ts` 의 `purgeUserAccount` |

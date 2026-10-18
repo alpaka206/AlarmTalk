@@ -216,9 +216,10 @@ struct AlarmEditorSheet: View {
         let id = UUID()
         let title: String
         let message: String
-        /// 이용권이 없어서 막힌 경우에만 true — 그때만 결제 액션('이용권 보기')이 뜻을 갖는다.
+        /// 비로그인·무료는 이용권 화면으로, 유료의 목소리 제한은 목소리 화면으로 보낸다.
         /// (코드 입력 액션은 2026-10-14 에 없앴다 — `VoicePlanGateAlert` 주석.)
         let offersPlanActions: Bool
+        var offersVoiceRegistration: Bool = false
     }
 
     /// 같은 시각 알람 교체 확인 모달의 내용. merged/existing 은 동의 시 저장을 마무리하는 데 쓴다.
@@ -479,7 +480,8 @@ struct AlarmEditorSheet: View {
             // 상태(`voiceGateAlert`)는 하나라 두 번 뜨지 않는다.
             .voicePlanGateAlert(
                 content: $voiceGateAlert,
-                onOpenBilling: { onRequestBilling?() }
+                onOpenBilling: { onRequestBilling?() },
+                onOpenVoices: onJumpToVoices
             )
         }
         .navigationDestination(item: $settingsPane) { pane in
@@ -522,7 +524,8 @@ struct AlarmEditorSheet: View {
         }
         .voicePlanGateAlert(
             content: $voiceGateAlert,
-            onOpenBilling: { onRequestBilling?() }
+            onOpenBilling: { onRequestBilling?() },
+            onOpenVoices: onJumpToVoices
         )
         // ⚠ **게이트에 코드 입력 시트(`RedeemCodeSheet`)를 되살리지 말 것**(2026-10-14, App Store 지침
         // 3.1.1 두 번째 반려 — 선물 코드 폐지). 초대 코드는 더보기 → 초대 코드 등록에서만 넣고,
@@ -2259,9 +2262,8 @@ struct AlarmEditorSheet: View {
         voiceGateAlert = VoiceGateAlertContent(
             title: title,
             message: message,
-            // ⚠ 결제 액션('이용권 보기')은 **이용권이 없어서 막힌 경우에만**. 비로그인에게는
-            // 결제할 계정이 없고, 이미 유료인 사람에게는 눌러도 아무 일이 없다.
-            offersPlanActions: planAccess == .free
+            offersPlanActions: planAccess != .paid,
+            offersVoiceRegistration: planAccess == .paid
         )
     }
 

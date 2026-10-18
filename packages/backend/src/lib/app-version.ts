@@ -143,9 +143,11 @@ const IOS: AppVersionPolicy = {
   //     프로세스와 **확인에 실패한 실행**은 그 프로세스가 끝날 때까지 열린 채다. 이미 나간
   //     빌드라 서버에서 못 막는다.
   //
-  // 막히는 것은 1.2.8(빌드 5)·1.2.9(빌드 6) 게재본이다. 빌드 번호(CFBundleVersion)는
+  // 하한을 7로 올린 당시 막은 것은 1.2.8(빌드 5)·1.2.9(빌드 6) 게재본이다. 빌드 번호(CFBundleVersion)는
   // versionCode 와 다른 수열이라 Android 값을 물려주지 않는다(30 이면 1.2.10 까지 막힌다).
-  minSupported: 7,
+  // 12 = 1.2.14. 2026-10-18 ASC에서 READY_FOR_SALE·빌드 12를 확인했다.
+  // 문서 6만 받는 서버와 privacy 재동의 기준 5를 함께 내므로, 문서 5를 보내는 옛 앱은 먼저 업데이트한다.
+  minSupported: 12,
   // ⚠ **iOS 는 이 값을 읽는 클라가 없다**(1.2.10 도 그렇다). `AppVersionGate.checkAppVersion()`
   // 은 `min_supported_version` 만 보고 `updateRequired` 를 정한다 — 안드로이드의 FLEXIBLE
   // 인앱 업데이트(`InAppUpdateManager`)에 해당하는 것이 iOS 에 없어서다(`AppVersionResponse`
@@ -154,7 +156,7 @@ const IOS: AppVersionPolicy = {
   // **`minSupported` 와 같은 값**으로만 둔다 — 하한만 올리면 "필수 버전이 최신 버전보다
   // 높다" 는 모순이 된다. 게재본을 따라가는 권장 기준이 아니다. 권장 업데이트 배너를 만드는
   // 사람은 그때의 게재 빌드로 다시 맞춘다.
-  latest: 7,
+  latest: 12,
   // App Store Connect 앱 레코드의 Apple ID(2026-08-10 생성, 스토어 표기명 `Alarm-Talk`).
   // 2026-09-22 게재로 실제로 열린다.
   storeUrl: 'https://apps.apple.com/app/id6799711245',

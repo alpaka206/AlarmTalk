@@ -110,6 +110,9 @@ final class ScreenSweepUITests: XCTestCase {
         let add = app.buttons["추가"].firstMatch
         XCTAssertTrue(add.waitForExistence(timeout: 15))
         add.tap()
+        let consent = app.alerts["목소리를 등록하기 전에"]
+        XCTAssertTrue(consent.waitForExistence(timeout: 5))
+        consent.buttons["동의하기"].tap()
         let file = app.buttons["파일"].firstMatch
         XCTAssertTrue(file.waitForExistence(timeout: 15))
         shot("mockup-voice-recording")

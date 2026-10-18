@@ -15,8 +15,12 @@ import { getDB } from '../lib/db';
 import { jsonError } from '../lib/api-error';
 import { inPlaceholders } from '../lib/caller-ids';
 import { withWriteTransaction } from '../lib/transactions';
-import { USAGE_EVENT_MIN_PRIVACY_VERSION, loadLatestConsents } from '../lib/consent';
-
+import {
+  GENERAL_REQUIRED_CONSENTS,
+  USAGE_EVENT_MIN_PRIVACY_VERSION,
+  loadLatestConsents,
+  missingConsentTypesFrom,
+} from '../lib/consent';
 
 const events = new Hono<AppEnv>();
 
@@ -48,10 +52,16 @@ events.post('/', async (c) => {
   //   버린다 — 큐가 비고, 동의가 올라온 뒤부터 정상 수집된다.
   // ⚠ 쿼리를 여기서 다시 짜지 말 것 — 동의 판정은 `lib/consent` 가 단일 출처다
   //   (같은 초 토글의 rowid 보조 정렬, 이상한 버전 문자열 처리까지 거기 있다).
+  // ⚠ **이 라우트는 동의 미들웨어를 거치지 않는다**(`middleware/consent.ts` 의 면제 — 2026-10-16, 코덱스). 미들웨어가
+  //   403 으로 막으면 앱은 배치를 지우지 않고 들고 있다가 재동의가 끝난 뒤 다시 보내, **고지 전에 쌓인 기록**이
+  //   그대로 저장된다. 그래서 여기서 직접 본다: 필수 동의가 모자라거나 처리방침이 고지 버전 미만이면 200 으로 받고 버린다.
   const latestConsents = await loadLatestConsents(db, userPk);
   const privacy = latestConsents.get('privacy');
   const privacyVersion = privacy?.agreed ? privacy.version : 0;
-  if (privacyVersion < USAGE_EVENT_MIN_PRIVACY_VERSION) {
+  if (
+    privacyVersion < USAGE_EVENT_MIN_PRIVACY_VERSION ||
+    missingConsentTypesFrom(latestConsents, GENERAL_REQUIRED_CONSENTS).length > 0
+  ) {
     return c.json({ success: true, accepted: 0, skipped_reason: 'consent_below_disclosure' });
   }
 
@@ -158,13 +168,7 @@ events.post('/', async (c) => {
                    SET in_use = 1, in_use_updated_at = ?, last_used_at = ?
                  WHERE message_id = ? AND user_id = ?
                    AND (in_use_updated_at IS NULL OR in_use_updated_at <= ?)`,
-          args: [
-            event.occurred_at,
-            event.occurred_at,
-            event.message_id,
-            userPk,
-            event.occurred_at,
-          ],
+          args: [event.occurred_at, event.occurred_at, event.message_id, userPk, event.occurred_at],
         });
       } else if (event.type === 'manual_message_released') {
         writes.push({

@@ -7,9 +7,8 @@ import SwiftUI
 /// (2026-08-17 UI 테스트로 확인 — `FreeManualGateUITests`). 그래서 게이트를 띄울 수 있는
 /// 화면마다 이 모디파이어를 붙인다. 상태는 하나(`voiceGateAlert`)라 두 번 뜨지 않는다.
 ///
-/// ⚠ **액션은 상태에 맞는 것만 붙는다**(`docs/spec/plan-gates.md`). 결제('이용권 보기')는 이용권이
-/// 없어서 막힌 경우에만 뜻이 있다 — 비로그인에게는 결제할 계정이 없고, 유료에게는 눌러도
-/// 아무 일도 일어나지 않는다. 그 판단은 `AlarmEditorSheet.VoiceGateAlertContent.offersPlanActions` 가 갖는다.
+/// 비로그인·무료는 이용권 화면을 연다(구매 시 로그인). 유료의 목소리 제한은 목소리 화면을 연다.
+/// Android `PlanGateDialog`와 같은 세 갈래다(`docs/spec/plan-gates.md`).
 ///
 /// ⚠ **코드 입력 액션('선물·초대 코드가 있어요')을 되살리지 말 것**(2026-10-14, App Store 지침 3.1.1
 /// 두 번째 반려 — 선물 코드 폐지). 초대 코드는 더보기 → 초대 코드 등록에서만 넣고, 할인·무료 이용은
@@ -17,6 +16,7 @@ import SwiftUI
 struct VoicePlanGateAlert: ViewModifier {
     @Binding var content: AlarmEditorSheet.VoiceGateAlertContent?
     let onOpenBilling: () -> Void
+    let onOpenVoices: () -> Void
 
     func body(content view: Content) -> some View {
         view.alert(
@@ -37,6 +37,13 @@ struct VoicePlanGateAlert: ViewModifier {
                 // 안드로이드 `PlanGateDialog` 의 `emphasized = true` 와 같은 자리다.
                 .keyboardShortcut(.defaultAction)
             }
+            if item.offersVoiceRegistration {
+                Button(String(localized: "등록하기")) {
+                    content = nil
+                    onOpenVoices()
+                }
+                .keyboardShortcut(.defaultAction)
+            }
             Button("닫기", role: .cancel) { content = nil }
         } message: { item in
             Text(item.message)
@@ -47,8 +54,9 @@ struct VoicePlanGateAlert: ViewModifier {
 extension View {
     func voicePlanGateAlert(
         content: Binding<AlarmEditorSheet.VoiceGateAlertContent?>,
-        onOpenBilling: @escaping () -> Void
+        onOpenBilling: @escaping () -> Void,
+        onOpenVoices: @escaping () -> Void
     ) -> some View {
-        modifier(VoicePlanGateAlert(content: content, onOpenBilling: onOpenBilling))
+        modifier(VoicePlanGateAlert(content: content, onOpenBilling: onOpenBilling, onOpenVoices: onOpenVoices))
     }
 }

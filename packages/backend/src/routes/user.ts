@@ -3,8 +3,12 @@ import type { AppEnv } from '../types';
 import { getDB } from '../lib/db';
 import { logRouteError } from '../lib/logger';
 import { deleteSensitiveVoiceDataForUser, type DowngradedAlarm } from '../lib/paid-voice-cleanup';
-import { notifyDowngradedAlarms, sendAccountDeletionRequestedPush, type DeletedPushTarget } from '../lib/fcm';
-import { withWriteTransaction } from '../lib/transactions';
+import {
+  notifyDowngradedAlarms,
+  sendAccountDeletionRequestedPush,
+  type DeletedPushTarget,
+} from '../lib/fcm';
+import { withWriteTransaction, withRetryableWriteTransaction } from '../lib/transactions';
 import {
   normalizeQuietWindows,
   validateQuietDays,
@@ -516,7 +520,7 @@ user.post('/me/deletion', async (c) => {
     // 지우기 전에 읽어 둔 그 계정의 푸시 토큰 — 커밋 뒤 다른 기기에 '탈퇴 신청됨' 신호를 보낸다
     // (`sendAccountDeletionRequestedPush`). 트랜잭션이 다시 돌면 다시 채운다.
     let deletedTargets: DeletedPushTarget[] = [];
-    const res = await withWriteTransaction(db, async (tx) => {
+    const res = await withRetryableWriteTransaction(db, async (tx) => {
       deletedTargets = [];
       const updated = await tx.execute({
         sql: `UPDATE users
@@ -533,7 +537,10 @@ user.post('/me/deletion', async (c) => {
           sql: `SELECT token, platform FROM push_tokens WHERE user_id IN (SELECT id FROM users WHERE google_id = ? OR id = ?)`,
           args: [userId, userId],
         });
-        deletedTargets = tokens.rows.map((r) => ({ token: String(r.token), platform: String(r.platform) }));
+        deletedTargets = tokens.rows.map((r) => ({
+          token: String(r.token),
+          platform: String(r.platform),
+        }));
         await tx.execute({
           sql: `DELETE FROM push_tokens WHERE user_id IN (SELECT id FROM users WHERE google_id = ? OR id = ?)`,
           args: [userId, userId],

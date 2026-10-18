@@ -8,7 +8,7 @@ import SwiftUI
 /// 된다(개인정보보호법 제22조제5항). 서버도 같은 지점(`voice-profile`·`tts` 라우트)에서만
 /// 강제한다 — 그 403 이 이 시트를 연다.
 ///
-/// 앞의 두 체크는 **이용자 확인**(서버 동의 유형 없음), 뒤의 두 체크가 서버에 기록되는 동의다.
+/// 이번 목소리의 권리 확인은 등록 입구 모달에서 받는다. 여기서는 부족한 법정 동의만 받는다.
 /// 문구는 `docs/legal/consent-and-permission-copy.ko.md` §2 를 따른다.
 ///
 /// Android `VoiceConsentSheet.kt` 의 1:1 포팅.
@@ -20,8 +20,6 @@ struct VoiceConsentSheet: View {
     let onAgree: () -> Void
     let onDismiss: () -> Void
 
-    @State private var ownership = false
-    @State private var liability = false
     @State private var biometric = false
     @State private var overseas = false
 
@@ -36,12 +34,9 @@ struct VoiceConsentSheet: View {
     /// 등록 책임 확인을 받는 꼴이 된다.
     private var registrationContext: Bool { asksBiometric || registeringVoice }
 
-    /// 소유·책임 확인은 등록 문맥이면 받는다. 동의 체크는 **그 동의를 실제로 요구할 때만** —
-    /// 이미 유효한 동의를 다시 묻지 않는다.
+    /// 이미 유효한 법정 동의는 다시 묻지 않는다.
     private var allChecked: Bool {
-        (!registrationContext || (ownership && liability))
-            && (!asksBiometric || biometric)
-            && (!asksOverseas || overseas)
+        (!asksBiometric || biometric) && (!asksOverseas || overseas)
     }
 
     var body: some View {
@@ -57,10 +52,6 @@ struct VoiceConsentSheet: View {
                         .foregroundStyle(AlarmTalkTheme.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
 
-                    if registrationContext {
-                        check($ownership, String(localized: "본인 또는 권한과 동의를 받은 사람의 목소리만 등록합니다."))
-                        check($liability, String(localized: "무단 등록, 저작권·인격권 침해, 사칭으로 생기는 책임이 등록한 사람에게 있음을 확인합니다."))
-                    }
                     if asksBiometric {
                         check($biometric, String(localized: "내 목소리(생체정보)를 음성 프로필 생성·클론·TTS 생성에 사용하는 것에 동의합니다."))
                     }

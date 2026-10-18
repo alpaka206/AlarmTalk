@@ -1976,11 +1976,10 @@ final class AuthViewModelTests: XCTestCase {
         XCTAssertTrue(vm.consentSensitiveMissing.contains("voice_biometric"))
     }
 
-    /// 유형을 지목하지 않은 일반 게이트 403 은 가입 화면을 연다. 이때 `collect` 가 비어
-    /// 있으면 **항목 없는 화면이 '다 체크됨' 으로 판정돼** 보지도 않은 동의가 기록된다 —
-    /// 가입 필수 전체로 채운다.
+    /// 403 뒤 상태 조회도 실패하면 빈 화면 대신 가입 필수 목록으로 폴백한다.
     func test_consentRequiredWithoutType_fillsCollectFallback() async {
         let api = MockAuthAPI()
+        api.consentStatusResult = .failure(APIError.invalidResponse)
         let vm = AuthViewModel(
             api: api,
             appleCredentialProvider: MockAppleCredentialProvider(),
@@ -2044,22 +2043,41 @@ final class AuthViewModelTests: XCTestCase {
         XCTAssertFalse(vm.showConsentScreen)
     }
 
-    func test_consentRequiredNotification_keepsGateOpenWithoutStatusRecheck() async {
+    func test_consentRequiredNotification_fetchesOnlyTheChangedConsentAndRestartsSyncOnSubmit() async {
         let api = MockAuthAPI()
-        api.consentStatusResult = .success(ConsentStatusResponse(needsConsent: false))
-        let vm = AuthViewModel(
-            api: api,
-            appleCredentialProvider: MockAppleCredentialProvider(),
-            accessSnapshotStore: AccessSnapshotStore(defaults: UserDefaults(suiteName: "consent3-\(UUID().uuidString)")!)
-        )
+        api.consentStatusResult = .success(ConsentStatusResponse(
+            needsConsent: true, needsCollection: true, collect: ["privacy"],
+            optional: [], hasPriorConsent: true
+        ))
+        let vm = AuthViewModel(api: api, appleCredentialProvider: MockAppleCredentialProvider())
         vm._setSessionForTesting(makeEmailSession())
-
+        let answered = expectation(description: "403 뒤 정확한 목록을 표시한다")
+        let subscription = vm.$consentCollect.dropFirst().sink { values in
+            if values == ["privacy"] { answered.fulfill() }
+        }
         NotificationCenter.default.post(name: AlarmTalkAPI.consentRequiredNotification, object: nil)
-        await Task.yield()
-
+        await fulfillment(of: [answered], timeout: 3)
+        withExtendedLifetime(subscription) {}
         XCTAssertTrue(vm.needsConsent)
-        XCTAssertEqual(api.consentStatusCallCount, 0)
+        XCTAssertTrue(vm.consentIsReconsent)
+        XCTAssertEqual(api.consentStatusCallCount, 1)
+        let generation = vm.consentSubmitGeneration
+        await vm.submitConsents(agreedOptional: [])
+        XCTAssertEqual(api.lastRecordConsentsRequest?.consents.map(\.type), ["privacy"])
+        XCTAssertEqual(vm.consentSubmitGeneration, generation + 1)
+        XCTAssertFalse(vm.showConsentScreen)
     }
+
+    func test_failedConsentSubmissionDoesNotRestartSync() async {
+        let api = MockAuthAPI()
+        api.recordConsentsResult = .failure(APIError.invalidResponse)
+        let vm = AuthViewModel(api: api, appleCredentialProvider: MockAppleCredentialProvider())
+        vm._setSessionForTesting(makeEmailSession())
+        let generation = vm.consentSubmitGeneration
+        await vm.submitConsents(agreedOptional: [])
+        XCTAssertEqual(vm.consentSubmitGeneration, generation)
+    }
+
 }
 
 // MARK: - Mocks
