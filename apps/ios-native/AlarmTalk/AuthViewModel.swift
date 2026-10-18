@@ -475,13 +475,21 @@ final class AuthViewModel: ObservableObject {
 
     /// 지금 날아가고 있는 동의 상태 응답을 **전부 무효화**한다. 동의를 기록해 상태가 바뀐
     /// 직후에 부른다 — 그 전에 떠난 조회의 답은 이미 낡았다.
-    private func invalidateInFlightConsentStatus() {
+    private func invalidateInFlightConsentStatus(clearGateRequest: Bool = false) {
         consentStatusRevision &+= 1
         consentGateRefreshInFlight = nil
+        if clearGateRequest {
+            consentGatePendingUserID = nil
+        } else if consentGatePendingUserID != nil {
+            // 민감 동의 제출만으로 일반 동의 403이 해결되지는 않는다.
+            Task { @MainActor in await checkConsentStatus() }
+        }
     }
 
     /// 403 뒤 정확한 동의 목록을 묻는 조회가 떠 있는가 — 403 이 여러 요청에서 한꺼번에 와도 한 번만 묻는다.
     private var consentGateRefreshInFlight: (userID: String, id: UUID)?
+    /// 요청 세대가 바뀌어도 성공 응답·일반 동의 제출·계정 종료 전까지 403 안내 책임을 유지한다.
+    private var consentGatePendingUserID: String?
 
     /// 동의 화면 제출이 성공할 때마다 오른다. `AlarmTalkApp` 이 이 값을 보고 동의를 기다리며 막혔던 동기화를
     /// 다시 돈다(2026-10-16, 코덱스) — 게이트가 떠 있던 동안의 pull·가족 알람 푸시는 403 `CONSENT_REQUIRED` 로
@@ -1432,20 +1440,16 @@ final class AuthViewModel: ObservableObject {
         // collect 가 비면 화면에 항목이 하나도 안 그려지는데 '필수 다 체크됨' 으로 판정돼 버튼이 켜진다 → 사용자가
         // 보지도 않은 동의가 기록된다. 이 403 을 낸 미들웨어는 일반 3종만 보지만, 3종만 받고 닫으면 국외 이전이
         // 안 기록된 채 통과된다.
-        guard let ownerUserID = session?.user.id,
-              consentGateRefreshInFlight?.userID != ownerUserID else { return }
+        guard let ownerUserID = session?.user.id else { return }
+        consentGatePendingUserID = ownerUserID
+        guard consentGateRefreshInFlight?.userID != ownerUserID else { return }
         let requestID = UUID()
         consentGateRefreshInFlight = (ownerUserID, requestID)
         Task { @MainActor in
             defer {
                 if consentGateRefreshInFlight?.id == requestID { consentGateRefreshInFlight = nil }
             }
-            let answered = await checkConsentStatus()
-            guard session?.user.id == ownerUserID, !answered else { return }
-            needsConsent = true
-            if consentCollect.isEmpty {
-                consentCollect = Self.signupRequiredConsentTypes
-            }
+            await checkConsentStatus()
         }
     }
 
@@ -1761,12 +1765,10 @@ final class AuthViewModel: ObservableObject {
     var onAccountRecovered: (String) -> Void = { _ in }
 
     /// 로그인 후 필수 약관 동의 여부를 서버에 확인한다. 미동의면 `needsConsent=true` 로
-    /// 두어 RootView 가 동의 화면을 띄운다. 네트워크 실패 시 앱 진입을 막지 않는다.
+    /// 두어 RootView 가 동의 화면을 띄운다. 403으로 동의 누락이 확인되지 않은 조회 실패는 진입을 막지 않는다.
     /// Android `MainViewModel.checkConsentStatus()`.
-    /// 서버 답을 받았으면(또는 더 새 조회가 맡았으면) true, 조회가 실패했으면 false.
-    @discardableResult
-    func checkConsentStatus() async -> Bool {
-        guard let token else { return false }
+    func checkConsentStatus() async {
+        guard let token else { return }
         // 응답이 오는 사이에 계정이 바뀔 수 있다 — 남의 동의 상태를 지금 사용자에게 씌우면
         // 받은 적 없는 동의를 받은 것으로 읽는다(안드로이드 `checkConsentStatus` 의
         // `if (authSession?.user?.id != userId) return@launch` 미러).
@@ -1775,9 +1777,11 @@ final class AuthViewModel: ObservableObject {
         let revision = consentStatusRevision
         do {
             let status = try await api.consentStatus(token: token)
-            guard session?.user.id == ownerUserID, revision == consentStatusRevision else { return true }
+            guard session?.user.id == ownerUserID, revision == consentStatusRevision else { return }
             // 이 앱 버전이 그릴 수 있는 유형만 남긴다. 서버가 새 유형을 먼저 추가한 구간에서
             // **보여주지 않은 동의를 기록하는 것**을 막는다(그 유형이 필수면 화면이 CTA 를 막는다).
+            consentGatePendingUserID = nil
+            consentGateRefreshInFlight = nil
             let known = status.collect.filter { Self.knownConsentTypes.contains($0) }
             // ⚠ **모르는 유형은 필수/선택으로 갈라 다르게 다룬다**(안드로이드 미러).
             //  - 모르는 **필수** 유형: 이 앱으로는 받을 방법이 없다. 동의 화면 대신 업데이트
@@ -1813,20 +1817,18 @@ final class AuthViewModel: ObservableObject {
                     policyVersion: Self.currentPolicyVersion
                 )
             }
-            return true
         } catch {
-            guard session?.user.id == ownerUserID, revision == consentStatusRevision else { return true }
-            // 동의 상태 확인 실패 시 앱 진입을 막지 않는다(보수적으로 false).
-            // ⚠ **403 이 세워 둔 게이트까지 지우지는 않는다.** `handleConsentRequired` 가
-            // 채워 둔 `consentCollect` 를 뒤늦은 실패 응답이 비우면, 서버가 요구한 동의를
-            // 받지 못한 채 화면이 사라진다(안드로이드는 `needsConsent` 만 내린다).
-            if consentCollect.isEmpty {
+            guard session?.user.id == ownerUserID, revision == consentStatusRevision else { return }
+            // 403 뒤의 목록 조회 책임은 겹친 최신 조회에도 이어진다. 아직 서버 답을 적용하지 못했다면
+            // 필수 목록으로 폴백하고, 이미 받아 둔 목록도 실패로 지우지 않는다(안드로이드와 같다).
+            if consentGatePendingUserID == ownerUserID {
+                needsConsent = true
+                if consentCollect.isEmpty { consentCollect = Self.signupRequiredConsentTypes }
+            } else if consentCollect.isEmpty {
                 needsConsent = false
                 consentNeedsCollection = false
             }
-            // 실패해도 true — 못 물어본 것이 등록을 막을 이유는 아니다.
             consentStatusChecked = true
-            return false
         }
     }
 
@@ -1925,7 +1927,7 @@ final class AuthViewModel: ObservableObject {
             // 화면 상태는 **현재 세션이 그대로일 때만** 건드린다(위 ownerUserID 주석).
             guard session?.user.id == ownerUserID else { return }
             // 상태가 방금 바뀌었다 — 그 전에 떠난 조회의 답은 낡았으므로 버린다.
-            invalidateInFlightConsentStatus()
+            invalidateInFlightConsentStatus(clearGateRequest: true)
             needsConsent = false
             // 방금 받은 유형은 더 받을 게 없다. 비우지 않으면 showConsentScreen 이 계속 true 라
             // 화면이 닫히지 않는다.
@@ -2370,7 +2372,7 @@ final class AuthViewModel: ObservableObject {
         session = nil
         // 세션이 끝났다 — 떠 있던 요청의 응답은 다음 세션에 적지 않는다(`sessionRevision`).
         sessionRevision &+= 1
-        invalidateInFlightConsentStatus()
+        invalidateInFlightConsentStatus(clearGateRequest: true)
         pendingDeletion = false
         needsConsent = false
         // 동의 수집 상태도 계정별이다 — 앞 계정의 '받을 게 없음' 이 새 계정에 새면

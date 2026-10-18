@@ -16,6 +16,7 @@ import {
   CURRENT_POLICY_VERSION,
   ACCEPTED_POLICY_VERSIONS,
   loadLatestConsents,
+  usageEventConsentSince,
   consentAnswerIsCurrent,
   missingConsentTypesFrom,
 } from '../src/lib/consent';
@@ -796,6 +797,27 @@ describe('저장된 미래 버전 기록은 읽을 때 무효로 떨어뜨린다
     });
     const latest = await loadLatestConsents(db, 'u-ok');
     expect(consentAnswerIsCurrent(latest, 'terms')).toBe(true);
+  });
+});
+
+describe('사용 기록의 동의 시작 시각', () => {
+  it('같은 밀리초의 철회·재동의도 삽입 순서로 읽고 철회 전 기간을 합치지 않는다', async () => {
+    const db = createClient({ url: ':memory:' });
+    try {
+      await runMigrations(db);
+      await db.execute(`INSERT INTO users (id, google_id, email) VALUES ('u-time', 'g-time', 'time@example.com')`);
+      await db.execute(`INSERT INTO user_consents (id, user_id, consent_type, policy_version, agreed, created_at)
+        VALUES ('t', 'u-time', 'terms', '3', 1, '2000-01-01 00:00:00.000'),
+               ('a', 'u-time', 'age14', '3', 1, '2000-01-01 00:00:00.000'),
+               ('p1', 'u-time', 'privacy', '5', 1, '2026-09-01 00:00:00.000'),
+               ('p2', 'u-time', 'privacy', '6', 0, '2026-09-06 21:00:00.500'),
+               ('p3', 'u-time', 'privacy', '6', 1, '2026-09-06 21:00:00.500')`);
+      const latest = await loadLatestConsents(db, 'u-time');
+      expect(latest.get('privacy')?.agreed).toBe(true);
+      expect(usageEventConsentSince(latest)).toBe(Date.parse('2026-09-06T21:00:00.500Z'));
+    } finally {
+      db.close();
+    }
   });
 });
 

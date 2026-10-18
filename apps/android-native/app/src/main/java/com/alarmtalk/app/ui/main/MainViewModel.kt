@@ -437,10 +437,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             // 조회가 실패하면 그때만 가입 필수 전부로 연다. 빈 목록으로 게이트를 열면 화면에 항목이 하나도
             // 안 그려지는데 '필수 다 체크됨' 으로 판정돼 보지도 않은 동의가 기록된다(Codex #660). 이 403 을 낸
             // 미들웨어는 일반 3종만 보지만, 3종만 받고 닫으면 국외 이전이 안 기록된 채 통과된다.
-            refreshConsentCollectAfterGate(onFailure = {
-                needsConsent = true
-                if (consentCollect.isEmpty()) consentCollect = SIGNUP_REQUIRED_CONSENT_TYPES
-            })
+            refreshConsentCollectAfterGate()
         }
     }
 
@@ -1191,6 +1188,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var consentGateRefreshInFlight: Pair<String, Int>? = null
         internal set
 
+    /** 403 뒤 서버의 성공 응답을 아직 못 받았는가. 요청 세대가 바뀌어도 이 책임은 넘겨받는다. */
+    var consentGatePendingUserId: String? = null
+        internal set
+
     // 계정 상태 조회가 끝났는지(성공·실패 무관). versionChecked 와 같은 이유로 필요하다 —
     // 응답 전에는 이 계정이 남을지 모른다(탈퇴 유예면 세션을 끊는다 — `checkAccountStatus`). 이 값을
     // 안 보면 그 사이 1회성 오버레이가 먼저 떠 플래그를 태운다(Codex #660).
@@ -1622,6 +1623,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         needsConsent = false
         consentChecked = false
         consentGateRefreshInFlight = null
+        consentGatePendingUserId = null
         consentStatusRevision += 1
         consentCollect = emptyList()
         consentOptional = emptyList()

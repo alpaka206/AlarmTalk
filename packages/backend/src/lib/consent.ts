@@ -192,7 +192,7 @@ export const CONSENT_MIN_POLICY_VERSION: Record<ConsentType, number> = {
  */
 
 /** 유형별 최신 동의 1건의 상태. version 은 파싱된 정수(파싱 실패 시 0). */
-type LatestConsent = { agreed: boolean; version: number };
+type LatestConsent = { agreed: boolean; version: number; validSinceMs: number | null };
 export type LatestConsentMap = ReadonlyMap<string, LatestConsent>;
 
 /** 정책 버전 문자열('1'…'4') → 정수. 파싱 불가/빈 값은 0 으로 떨어뜨려 재동의를 요구한다. */
@@ -222,28 +222,66 @@ function minPolicyVersionOf(type: string): number {
   );
 }
 
-/** user_consents 에서 유형별 최신 1건을 읽어 온다 (created_at DESC, rowid DESC). */
+/** 서버의 SQLite UTC 시각. 초 단위 옛 기록은 동의 전 같은 초의 사건을 받지 않도록 다음 초부터다. */
+function consentTimeUpperBound(raw: unknown): number | null {
+  if (typeof raw !== 'string') return null;
+  const value = raw.trim();
+  const utc = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d+)?$/.test(value)
+    ? `${value.replace(' ', 'T')}Z`
+    : value;
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(utc)) return null;
+  const ms = Date.parse(utc);
+  if (!Number.isFinite(ms)) return null;
+  return ms + (/T\d{2}:\d{2}:\d{2}(?:Z|[+-]\d{2}:\d{2})$/.test(utc) ? 1000 : 0);
+}
+
+/** 유형별 최신 상태와 현재 기준을 연속 충족한 시작 시각. 거절·버전 미달 이전으로 거슬러 가지 않는다. */
 export async function loadLatestConsents(
   db: DbExecutor,
   userIdPK: string,
 ): Promise<LatestConsentMap> {
   const res = await db.execute({
-    // created_at 은 초 단위라 같은 초에 토글하면 동점이 된다. rowid(삽입 순서)를
-    // 보조 정렬로 두어 같은 초여도 항상 마지막 삽입을 최신으로 선택한다.
-    sql: `SELECT consent_type, policy_version, agreed
+    // 옛 created_at 은 초 단위이고 새 기록도 같은 밀리초에 겹칠 수 있다.
+    // rowid(삽입 순서)를 보조 정렬로 두어 동점이면 마지막 삽입을 최신으로 선택한다.
+    sql: `SELECT consent_type, policy_version, agreed, created_at
           FROM user_consents WHERE user_id = ? ORDER BY created_at DESC, rowid DESC`,
     args: [userIdPK],
   });
   const latest = new Map<string, LatestConsent>();
+  const ended = new Set<string>();
   for (const row of res.rows) {
     const type = String(row.consent_type);
-    if (latest.has(type)) continue; // 유형별 최신 1건만
-    latest.set(type, {
+    const record: LatestConsent = {
       agreed: Number(row.agreed) === 1,
       version: sanitizeStoredPolicyVersion(String(row.policy_version)),
-    });
+      validSinceMs: null,
+    };
+    const current = latest.get(type) ?? record;
+    latest.set(type, current);
+    if (ended.has(type)) continue;
+    if (!record.agreed || record.version < minPolicyVersionOf(type)) {
+      ended.add(type);
+      continue;
+    }
+    current.validSinceMs = consentTimeUpperBound(row.created_at);
+    if (current.validSinceMs === null) ended.add(type);
   }
   return latest;
+}
+
+/** 사용 기록은 현재 동의뿐 아니라 사건이 발생할 때의 고지·필수 동의도 충족해야 한다. */
+export function usageEventConsentSince(latest: LatestConsentMap): number | null {
+  if (
+    missingConsentTypesFrom(latest, GENERAL_REQUIRED_CONSENTS).length > 0 ||
+    (latest.get('privacy')?.version ?? 0) < USAGE_EVENT_MIN_PRIVACY_VERSION
+  ) return null;
+  let since = 0;
+  for (const type of GENERAL_REQUIRED_CONSENTS) {
+    const start = latest.get(type)?.validSinceMs;
+    if (start == null) return null;
+    since = Math.max(since, start);
+  }
+  return since;
 }
 
 /**

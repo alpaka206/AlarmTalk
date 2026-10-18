@@ -31,9 +31,107 @@ function event(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function consent(type: string, version: string, createdAt: string, agreed = 1) {
+  return { consent_type: type, policy_version: version, created_at: createdAt, agreed };
+}
+
+const priorRequiredConsents = [
+  consent('terms', '3', '2000-01-01 00:00:00.000'),
+  consent('age14', '3', '2000-01-01 00:00:00.000'),
+];
+
 describe('POST /events — 사용 기록 배치 수집', () => {
   beforeEach(() => mockDB.reset());
   afterEach(() => vi.restoreAllMocks());
+
+  it('재동의 뒤 처음 올라온 배치에서도 동의 전 기록과 그 보관함 갱신을 버린다', async () => {
+    mockDB.pushResultFor('FROM user_consents', [
+      consent('privacy', '6', '2026-09-06 21:00:00.500'),
+      consent('privacy', '4', '2000-01-01 00:00:00.000'),
+      ...priorRequiredConsents,
+    ]);
+    const before = event({
+      type: 'manual_message_attached', message_id: MESSAGE_ID,
+      occurred_at: '2026-09-06T21:00:00.499Z',
+    });
+    const atBoundary = event({ occurred_at: '2026-09-06T21:00:00.500Z' });
+    const after = event({ occurred_at: '2026-09-06T21:00:01.000Z' });
+
+    const response = await buildApp().request(jsonReq('POST', '/events', {
+      events: [before, atBoundary, after],
+    }));
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ accepted: 2 });
+    const inserted = mockDB.calls.filter((call) => call.sql.includes('INSERT OR IGNORE INTO usage_events'))
+      .flatMap((call) => call.args);
+    expect(inserted).not.toContain(before.id);
+    expect(inserted).toContain(atBoundary.id);
+    expect(inserted).toContain(after.id);
+    expect(mockDB.calls.some((call) => call.sql.includes('UPDATE message_library'))).toBe(false);
+  });
+
+  it('전부 동의 전 기록이면 쓰기 없이 200으로 큐를 비운다', async () => {
+    mockDB.pushResultFor('FROM user_consents', [
+      consent('privacy', '6', '2026-09-07 00:00:00.000'), ...priorRequiredConsents,
+    ]);
+    const response = await buildApp().request(jsonReq('POST', '/events', {
+      events: [event({ type: 'manual_message_attached', message_id: MESSAGE_ID })],
+    }));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ accepted: 0 });
+    expect(mockDB.calls.some((call) => /INSERT|UPDATE/i.test(call.sql))).toBe(false);
+    expect(mockDB.transactions.commits).toBe(0);
+  });
+
+  it('유효한 동의를 다시 제출해도 원래 동의 뒤의 오프라인 기록은 받는다', async () => {
+    mockDB.pushResultFor('FROM user_consents', [
+      consent('privacy', '6', '2026-09-07 00:00:00.000'),
+      consent('privacy', '5', '2026-09-01 00:00:00.000'),
+      consent('privacy', '4', '2000-01-01 00:00:00.000'),
+      ...priorRequiredConsents,
+    ]);
+    const response = await buildApp().request(jsonReq('POST', '/events', { events: [event()] }));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ accepted: 1 });
+  });
+
+  it.each(['privacy', 'terms', 'age14'])('%s 거절 뒤 다시 동의한 경우 이전 기간의 기록을 버린다', async (type) => {
+    mockDB.pushResultFor('FROM user_consents', [
+      consent(type, '6', '2026-09-07 00:00:00.000'),
+      consent(type, '6', '2026-09-06 20:00:00.000', 0),
+      consent(type, '6', '2026-09-01 00:00:00.000'),
+      ...['privacy', 'terms', 'age14'].filter((other) => other !== type)
+        .map((other) => consent(other, '6', '2000-01-01 00:00:00.000')),
+    ]);
+    const response = await buildApp().request(jsonReq('POST', '/events', {
+      events: [event(), event({ occurred_at: '2026-09-07T00:00:00.000Z' })],
+    }));
+    expect(await response.json()).toEqual({ accepted: 1 });
+  });
+
+  it('초 단위 옛 동의는 그 초의 기록을 버리고 다음 초부터 받는다', async () => {
+    mockDB.pushResultFor('FROM user_consents', [
+      consent('privacy', '5', '2026-09-06 21:00:00'), ...priorRequiredConsents,
+    ]);
+    const response = await buildApp().request(jsonReq('POST', '/events', {
+      events: [event({ occurred_at: '2026-09-06T21:00:00.999Z' }),
+        event({ occurred_at: '2026-09-07T06:00:01.000+09:00' })],
+    }));
+    expect(await response.json()).toEqual({ accepted: 1 });
+  });
+
+  it.each(['', 'unknown', '2026-09-06T21:00:00'])('동의 시각을 확정할 수 없으면 기록을 받지 않는다 (%s)', async (createdAt) => {
+    mockDB.pushResultFor('FROM user_consents', [
+      consent('privacy', '6', createdAt), ...priorRequiredConsents,
+    ]);
+    const response = await buildApp().request(jsonReq('POST', '/events', { events: [event()] }));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      success: true, accepted: 0, skipped_reason: 'consent_below_disclosure',
+    });
+    expect(mockDB.calls.some((call) => /INSERT|UPDATE/i.test(call.sql))).toBe(false);
+  });
 
   // ⚠ 이 라우트는 동의 미들웨어를 거치지 않는다(`middleware/consent.ts`) — 동의가 모자라면 **200 으로 받고 버려**
   //   앱이 큐를 비우게 한다. 403 을 주면 앱이 배치를 들고 있다가 재동의 뒤 고지 전 기록을 다시 보낸다(2026-10-16).

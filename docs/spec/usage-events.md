@@ -140,6 +140,10 @@ iOS 의 `.unknown`(콜드 부팅)은 다시 울림 쪽이므로 **재무장이 �
   처리방침이 고지 버전(5) 미만이거나 필수 동의가 없으면 그렇다. 그래서 이 라우트는 **동의 미들웨어를 거치지 않는다**
   (`POST /events` 면제, 2026-10-16) — 미들웨어가 403 을 주면 앱이 배치를 들고 있다가 재동의가 끝난 뒤 다시 보내,
   **고지 전에 쌓인 기록**이 저장된다.
+  재동의 뒤 처음 올라온 오프라인 배치도 발생 시각으로 거른다. 필수 동의가 현재 기준을 **연속해서 충족하기 시작한
+  시각**보다 이른 `occurred_at`은 저장·보관함 상태 갱신에서 제외하고 200으로 답한다. 같은 범위의 동의를 다시
+  기록한 것만으로 시작 시각을 늦추지는 않으며, 거절·버전 미달 기록이 있으면 그 뒤 동의부터다.
+  새 동의는 서버 밀리초 시각을 적고, 초 단위 옛 기록은 그 초의 끝을 경계로 삼는다. 시각이 불명확하면 수집하지 않는다.
 
 ## 4. 계정이 바뀌면 보내지 않는다
 
@@ -230,6 +234,7 @@ iOS 의 `.unknown`(콜드 부팅)은 다시 울림 쪽이므로 **재무장이 �
 | 계정이 바뀌면 멈춤 | `sync/UsageEventUploadWorker.kt` 의 `startGeneration` 비교 | `UsageEventUploader.swift` 의 `runIfCurrentSession`(세대 카운터가 없어 **토큰을 에폭으로** 쓴다) | — |
 | 남긴 계정 | `data/UsageEventRecorder.kt` 의 `currentUserId` | `UsageEventQueue.swift` 의 `currentUserID` | — |
 | 동의가 모자라면 받고 버림 | — (2xx 라 큐를 비운다) | 같음 | `routes/events.ts`(고지 버전·필수 동의) + `middleware/consent.ts` 의 `POST /events` 면제 |
+| 동의 전 발생한 지연 기록 제외 | — (2xx 라 큐를 비운다) | 같음 | `lib/consent.ts`의 `usageEventConsentSince` → `routes/events.ts`의 발생 시각 필터 — `usage-events.test.ts`·`consent.test.ts` |
 | 미래 시각 자르기 | — | — | `routes/events.ts` 의 `boundOccurredAt` |
 | 보관 기간 | — | — | `index.ts` 의 `USAGE_EVENT_RETENTION_DAYS` |
 | 계정 파기 시 삭제 | — | — | `lib/account-deletion.ts` 의 `purgeUserAccount` |

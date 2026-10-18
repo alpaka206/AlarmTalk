@@ -877,8 +877,7 @@ internal fun MainViewModel.checkConsentStatus() {
         }.onFailure { error ->
             if (authSession?.user?.id != userId || revision != consentStatusRevision) return@launch
             Log.w(TAG, "Failed to check consent status", error)
-            // 캐시로 이미 통과시킨 게 아니면 네트워크 실패가 앱 진입을 막지 않게 한다.
-            if (!isConsentCachedDone(userId)) needsConsent = false
+            applyConsentStatusFailure(userId)
         }
         if (authSession?.user?.id == userId) {
             consentChecked = true
@@ -897,6 +896,8 @@ internal fun MainViewModel.applyConsentStatus(
     userId: String,
     status: com.alarmtalk.app.network.ConsentStatusResponse,
 ) {
+    consentGatePendingUserId = null
+    consentGateRefreshInFlight = null
     needsConsent = status.needsConsent
     // 화면이 무엇을 그리고 무엇을 제출할지는 서버가 정한다. 구버전 서버(collect 없음)와
     // 섞여 돌 수 있으니 비어 있으면 missing 으로 폴백한다.
@@ -927,16 +928,24 @@ internal fun MainViewModel.applyConsentStatus(
     rememberConsentDone(userId, nothingLeftToCollect, status.policyVersion)
 }
 
+/** 403 뒤의 목록 조회 책임은 겹친 최신 조회에도 이어진다. 이미 받은 목록은 실패로 지우지 않는다. */
+internal fun MainViewModel.applyConsentStatusFailure(userId: String) {
+    if (consentGatePendingUserId == userId) {
+        needsConsent = true
+        if (consentCollect.isEmpty()) consentCollect = SIGNUP_REQUIRED_CONSENT_TYPES
+    } else if (consentCollect.isEmpty() && !isConsentCachedDone(userId)) {
+        needsConsent = false
+    }
+}
+
 /**
- * 데이터 라우트가 403 `CONSENT_REQUIRED` 를 냈는데 아직 받을 목록(`collect`)을 모를 때 — 서버에 **정확한 목록**을
- * 물어 그것만 띄운다(2026-10-16, 코덱스). 앱을 켜 둔 채 서버가 재동의 기준을 올리면 진입 조회보다 이 403 이 먼저
- * 오는데, 예전에는 그때 가입 필수 전부(약관·만 14세·국외 이전까지)로 폴백해 처리방침 하나만 받으면 될 사람에게
- * 이미 받은 동의를 다시 물었다. 조회가 실패했을 때만 그 폴백을 쓴다 — 빈 목록으로 게이트를 열면 보지도 않은
- * 동의가 기록된다(코덱스 #660).
+ * 데이터 라우트가 403 `CONSENT_REQUIRED` 를 냈는데 받을 목록을 모르면 서버에 정확한 목록을 묻는다.
+ * 실패했을 때만 가입 필수 목록으로 폴백한다. 빈 목록으로 게이트를 열면 보지도 않은 동의가 기록된다.
  */
-internal fun MainViewModel.refreshConsentCollectAfterGate(onFailure: () -> Unit) {
+internal fun MainViewModel.refreshConsentCollectAfterGate() {
     val session = authSession ?: return
     val userId = session.user.id
+    consentGatePendingUserId = userId
     if (consentGateRefreshInFlight?.first == userId) return
     consentStatusRevision += 1
     val revision = consentStatusRevision
@@ -952,7 +961,7 @@ internal fun MainViewModel.refreshConsentCollectAfterGate(onFailure: () -> Unit)
         if (status != null) {
             applyConsentStatus(userId, status)
         } else {
-            onFailure()
+            applyConsentStatusFailure(userId)
         }
         consentChecked = true
         consentStatusChecked = true
@@ -1043,6 +1052,8 @@ internal fun MainViewModel.submitConsents(agreedOptional: Set<String>) {
             if (authSession?.user?.id != ownerUserId) return@onSuccess
             // 상태가 방금 바뀌었다 — 그 전에 떠난 조회의 답은 낡았으므로 버린다.
             consentStatusRevision += 1
+            consentGatePendingUserId = null
+            consentGateRefreshInFlight = null
             needsConsent = false
             // 방금 받은 유형은 더 받을 게 없다. 비우지 않으면 showConsentScreen 이 계속 true 라
             // 화면이 닫히지 않는다.
@@ -1124,6 +1135,8 @@ internal fun MainViewModel.submitVoiceConsents() {
             consentStatusRevision += 1
             sensitiveConsentMissing = sensitiveConsentMissing - request.types.toSet()
             pendingSensitiveConsent = null
+            // 민감 동의 제출은 일반 동의 403을 해결하지 않는다. 무효화한 조회를 다시 이어 간다.
+            if (consentGatePendingUserId == ownerUserId) checkConsentStatus()
             // 목소리 등록에서 온 경우에만 이어서 만든다. 시스템 목소리 TTS 처럼 붙들어 둔
             // 요청이 없으면 동의만 기록하고 끝낸다(사용자가 다시 시도하면 이제 통과한다).
             request.resumeVoiceDrafts?.let { createVoiceProfiles(it) }

@@ -130,6 +130,9 @@
     서버가 재동의 기준을 올리면 진입 조회보다 이 403 이 먼저 온다. 그때 받을 목록을 아직 모르면 `GET /user/consents/status`
     를 다시 불러 **그 목록만** 띄운다. 가입 필수 전부(약관·만 14세·국외 이전)로 여는 것은 **그 조회가 실패했을 때뿐**이다 —
     그러지 않으면 처리방침 하나만 받으면 될 사람에게 이미 받은 동의를 다시 묻는다.
+    겹친 조회가 더 최신이라도 **성공 응답을 적용하기 전에는** 403 대기를 끝내지 않는다. 최신 조회가 실패하면
+    그 조회가 가입 필수 목록으로 게이트를 연다. 일반 동의 제출 성공·계정 종료는 대기를 무효화한다.
+    민감 동의만 제출했다면 일반 동의 조회를 다시 이어 간다.
   - **동의를 마치면 막혔던 동기화를 곧바로 다시 돈다.** 게이트가 떠 있던 동안의 알람 pull·가족 알람 푸시는 403 을 받고
     '동의 대기' 로 조용히 접힌다. 다시 걸지 않으면 다음 주기까지 받은 가족 알람이 예약되지 않는다.
 - **예외는 둘뿐이고 둘 다 서버가 만든다.**
@@ -215,7 +218,7 @@
 | 모르는 유형 | 필수→`consentUnsupported`, 선택→버림 (`checkConsentStatus`) | 같음 (`AuthViewModel.checkConsentStatus`) | `optional` 필드 |
 | 등록 입구 권리 확인 | `VoiceProfileManagementPanel.registrationConsentOpen` → `showCreateForm` | 같은 패널의 `registrationConsentOpen` → `route = .clone` | 별도 동의 유형을 기록하지 않음 |
 | 재동의 레버 | — | — | `CONSENT_MIN_POLICY_VERSION` |
-| 403 뒤 목록 | `refreshConsentCollectAfterGate` (`MainViewModelAuthActions`) ← `handleConsentRequired` (`MainViewModel`) | `handleConsentRequired` → `checkConsentStatus` (`AuthViewModel`) | `GET /user/consents/status` |
+| 403 뒤 목록·겹친 조회 실패 | `refreshConsentCollectAfterGate`·`applyConsentStatusFailure` (`MainViewModelAuthActions`), `consentGatePendingUserId` (`MainViewModel`) | `handleConsentRequired` → `checkConsentStatus`, `consentGatePendingUserID` (`AuthViewModel`) — `AuthViewModelTests` | `GET /user/consents/status` |
 | 동의 뒤 동기화 | `submitConsents` → `RemoteAlarmSyncScheduler.runOnce` | `consentSubmitGeneration` → `remoteSync.runFullSync` (`AlarmTalkApp`) | — |
 | 문서 버전 대조 | `BuildConfig.LEGAL_POLICY_VERSION` | `LegalPolicyVersion` | `POST /user/consents` 의 `ACCEPTED_POLICY_VERSIONS`(목록 밖은 409, 받으면 그 버전으로 기록) — 게시 중 최신은 `CURRENT_POLICY_VERSION` |
 | 동의 화면의 문서 | 번들 자산 (`ui/auth/LegalDocument.kt`) | 번들 리소스 (`BundledLegalDocument`) | — |

@@ -359,8 +359,8 @@ user.post('/consents', async (c) => {
     await withWriteTransaction(db, async (tx) => {
       for (const r of rows) {
         await tx.execute({
-          sql: `INSERT INTO user_consents (id, user_id, consent_type, policy_version, agreed)
-                VALUES (?, ?, ?, ?, ?)`,
+          sql: `INSERT INTO user_consents (id, user_id, consent_type, policy_version, agreed, created_at)
+                VALUES (?, ?, ?, ?, ?, strftime('%Y-%m-%d %H:%M:%f', 'now'))`,
           args: [crypto.randomUUID(), userPk, r.type, shownVersion, r.agreed ? 1 : 0],
         });
       }

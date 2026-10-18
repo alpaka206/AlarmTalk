@@ -38,7 +38,8 @@ enum AlarmSoundPlan: Equatable {
     var fingerprint: String {
         switch self {
         case .voiceClip(let key, _, _, let volume, let revision):
-            return "voice:\(key):r\(revision ?? "-"):v\(volume)"
+            // 파일 이름만 바꾸면 기존 AlarmKit 예약은 resolve를 건너뛴다. 쉼 변경도 재예약 대상이다.
+            return "voice:\(key):r\(revision ?? "-"):v\(volume):g\(AlarmSoundStaging.voiceRepeatGapMillis)"
         case .alarmSoundFile(let url, _, let volume): return "sound:\(url.path):v\(volume)"
         case .systemDefault: return "default"
         }

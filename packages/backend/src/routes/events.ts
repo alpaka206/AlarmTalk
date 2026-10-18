@@ -15,12 +15,7 @@ import { getDB } from '../lib/db';
 import { jsonError } from '../lib/api-error';
 import { inPlaceholders } from '../lib/caller-ids';
 import { withWriteTransaction } from '../lib/transactions';
-import {
-  GENERAL_REQUIRED_CONSENTS,
-  USAGE_EVENT_MIN_PRIVACY_VERSION,
-  loadLatestConsents,
-  missingConsentTypesFrom,
-} from '../lib/consent';
+import { loadLatestConsents, usageEventConsentSince } from '../lib/consent';
 
 const events = new Hono<AppEnv>();
 
@@ -56,12 +51,8 @@ events.post('/', async (c) => {
   //   403 으로 막으면 앱은 배치를 지우지 않고 들고 있다가 재동의가 끝난 뒤 다시 보내, **고지 전에 쌓인 기록**이
   //   그대로 저장된다. 그래서 여기서 직접 본다: 필수 동의가 모자라거나 처리방침이 고지 버전 미만이면 200 으로 받고 버린다.
   const latestConsents = await loadLatestConsents(db, userPk);
-  const privacy = latestConsents.get('privacy');
-  const privacyVersion = privacy?.agreed ? privacy.version : 0;
-  if (
-    privacyVersion < USAGE_EVENT_MIN_PRIVACY_VERSION ||
-    missingConsentTypesFrom(latestConsents, GENERAL_REQUIRED_CONSENTS).length > 0
-  ) {
+  const consentSinceMs = usageEventConsentSince(latestConsents);
+  if (consentSinceMs === null) {
     return c.json({ success: true, accepted: 0, skipped_reason: 'consent_below_disclosure' });
   }
 
@@ -89,10 +80,11 @@ events.post('/', async (c) => {
     // toISOString 이 오프셋 표기(+09:00)까지 UTC 로 굳혀, 문자열로 비교하는 정리 쿼리와 맞춘다.
     return new Date(Math.min(ms, receivedAtMs)).toISOString();
   };
-  const list: UsageEvent[] = parsed.data.events.map((event: UsageEvent) => ({
-    ...event,
-    occurred_at: boundOccurredAt(event.occurred_at),
-  }));
+  // 재동의 뒤 처음 올라온 배치에도 동의 전 기록이 섞일 수 있다. 보관함 상태 갱신에서도 함께 뺀다.
+  const list: UsageEvent[] = parsed.data.events
+    .map((event: UsageEvent) => ({ ...event, occurred_at: boundOccurredAt(event.occurred_at) }))
+    .filter((event: UsageEvent) => Date.parse(event.occurred_at) >= consentSinceMs);
+  if (list.length === 0) return c.json({ accepted: 0 });
   await withWriteTransaction(db, async (tx) => {
     // ⚠ **이미 들어 있는 사건은 아래 보관함 갱신에서 건너뛴다 — 재전송은 멱등이어야 한다.**
     // `INSERT OR IGNORE` 는 중복 사건을 버리지만 그 뒤의 사실 갱신까지 막지는 않는다.

@@ -2078,6 +2078,76 @@ final class AuthViewModelTests: XCTestCase {
         XCTAssertEqual(vm.consentSubmitGeneration, generation)
     }
 
+    func test_consent403_overlappingForegroundLookupFailureStillOpensFallback() async {
+        let api = MockAuthAPI()
+        let gateSent = expectation(description: "403 목록 조회 전송")
+        let held = HeldMeResponses(arrivals: [1: gateSent])
+        api.consentStatusResponder = { call in
+            if call == 1 { await held.hold(call) }
+            throw APIError.invalidResponse
+        }
+        let vm = AuthViewModel(api: api, appleCredentialProvider: MockAppleCredentialProvider())
+        vm._setSessionForTesting(makeEmailSession())
+        NotificationCenter.default.post(name: AlarmTalkAPI.consentRequiredNotification, object: nil)
+        await fulfillment(of: [gateSent], timeout: 3)
+        defer { held.release(1) }
+
+        // 일반 전경 조회가 revision을 앞질렀다. 403 조회의 답은 아직 오지 않았다.
+        await vm.checkConsentStatus()
+
+        XCTAssertEqual(api.consentStatusCallCount, 2)
+        XCTAssertTrue(vm.needsConsent, "최신 조회가 실패해도 확인된 403을 잊으면 안 된다")
+        XCTAssertEqual(vm.consentCollect, AuthViewModel.signupRequiredConsentTypes)
+        XCTAssertTrue(vm.showConsentScreen)
+    }
+
+    func test_consent403_appliedSuccessClearsPendingFallbackEvenWhileOlderLookupWaits() async {
+        let api = MockAuthAPI()
+        let gateSent = expectation(description: "403 목록 조회 전송")
+        let held = HeldMeResponses(arrivals: [1: gateSent])
+        api.consentStatusResponder = { call in
+            if call == 1 { await held.hold(call) }
+            if call == 2 { return ConsentStatusResponse(needsConsent: false) }
+            throw APIError.invalidResponse
+        }
+        let vm = AuthViewModel(api: api, appleCredentialProvider: MockAppleCredentialProvider())
+        vm._setSessionForTesting(makeEmailSession())
+        NotificationCenter.default.post(name: AlarmTalkAPI.consentRequiredNotification, object: nil)
+        await fulfillment(of: [gateSent], timeout: 3)
+        defer { held.release(1) }
+
+        await vm.checkConsentStatus() // 다른 기기에서 동의를 마친 최신 상태
+        await vm.checkConsentStatus() // 그 뒤의 일시적 실패
+
+        XCTAssertEqual(api.consentStatusCallCount, 3)
+        XCTAssertFalse(vm.needsConsent, "성공한 최신 조회가 해소한 403을 다시 열면 안 된다")
+        XCTAssertTrue(vm.consentCollect.isEmpty)
+    }
+
+    func test_consent403_successfulSubmissionClearsPendingFallback() async {
+        let api = MockAuthAPI()
+        let gateSent = expectation(description: "403 목록 조회 전송")
+        let held = HeldMeResponses(arrivals: [1: gateSent])
+        api.consentStatusResponder = { call in
+            if call == 1 { await held.hold(call) }
+            throw APIError.invalidResponse
+        }
+        let vm = AuthViewModel(api: api, appleCredentialProvider: MockAppleCredentialProvider())
+        vm._setSessionForTesting(makeEmailSession())
+        NotificationCenter.default.post(name: AlarmTalkAPI.consentRequiredNotification, object: nil)
+        await fulfillment(of: [gateSent], timeout: 3)
+        defer { held.release(1) }
+        await vm.checkConsentStatus() // 실패 폴백의 실제 항목을 사용자에게 표시
+        XCTAssertTrue(vm.showConsentScreen)
+
+        await vm.submitConsents(agreedOptional: [])
+        await vm.checkConsentStatus() // 제출 뒤 네트워크 실패
+
+        XCTAssertEqual(api.recordConsentsCallCount, 1)
+        XCTAssertFalse(vm.showConsentScreen, "제출한 동의를 옛 403 때문에 다시 받으면 안 된다")
+        XCTAssertFalse(vm.needsConsent)
+    }
+
 }
 
 // MARK: - Mocks
@@ -2132,6 +2202,7 @@ private final class MockAuthAPI: AuthAPIProviding, @unchecked Sendable {
     )
     var requestAccountDeletionResult: Result<AccountDeletionResponse, Error> = .success(AccountDeletionResponse(success: true))
     var consentStatusResult: Result<ConsentStatusResponse, Error> = .success(ConsentStatusResponse(needsConsent: false))
+    var consentStatusResponder: (@MainActor @Sendable (_ call: Int) async throws -> ConsentStatusResponse)?
     var recordConsentsResult: Result<RecordConsentsResponse, Error> = .success(RecordConsentsResponse(success: true, recorded: 4))
     private(set) var meCallCount = 0
     private(set) var updateProfileCallCount = 0
@@ -2192,6 +2263,9 @@ private final class MockAuthAPI: AuthAPIProviding, @unchecked Sendable {
 
     func consentStatus(token: String) async throws -> ConsentStatusResponse {
         consentStatusCallCount += 1
+        if let consentStatusResponder {
+            return try await consentStatusResponder(consentStatusCallCount)
+        }
         switch consentStatusResult {
         case .success(let response):
             return response
@@ -2224,7 +2298,7 @@ private final class MockAuthAPI: AuthAPIProviding, @unchecked Sendable {
     }
 }
 
-/// 겹쳐 떠 있는 `/auth/me` 의 답을 호출마다 붙잡아 두었다가 **테스트가 정한 순서로** 내보낸다(`MockAuthAPI.meResponder`).
+/// 겹쳐 떠 있는 계정·동의 조회의 답을 호출마다 붙잡았다가 테스트가 정한 순서로 내보낸다.
 /// 붙잡는 순간 그 호출의 기대(`arrivals`)를 채운다 — 테스트는 그걸 기다려 '그 요청이 떠 있다' 를 확인한 뒤 다음 단계로 간다.
 @MainActor
 private final class HeldMeResponses {
