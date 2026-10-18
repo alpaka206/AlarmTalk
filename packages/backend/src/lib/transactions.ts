@@ -32,7 +32,7 @@ export async function withWriteTransaction<T>(
 }
 
 /**
- * DB 작업만 하는 콜백의 좁은 재시도. COMMIT 전 실패 뒤 롤백이 확인된 경우만 다시 실행한다.
+ * DB 작업만 하는 콜백의 좁은 재시도. 트랜잭션 열기 실패 또는 COMMIT 전 실패 뒤 롤백이 확인된 경우만 다시 실행한다.
  * 콜백에서 외부 API·푸시를 부르거나 COMMIT SQL을 직접 실행하면 안 된다.
  * COMMIT 응답 유실은 성공 여부를 모르므로 재시도하지 않는다. 일반 쓰기 헬퍼에는 적용하지 않는다.
  */
@@ -75,9 +75,17 @@ async function withTransaction<T>(
   db: Client,
   mode: 'read' | 'write',
   fn: (tx: DbExecutor) => Promise<T>,
-  onRolledBackBeforeCommit?: () => void,
+  onSafeToRetry?: () => void,
 ): Promise<T> {
-  const tx = await db.transaction(mode);
+  let tx: Awaited<ReturnType<Client['transaction']>>;
+  try {
+    tx = await db.transaction(mode);
+  } catch (error) {
+    // 아직 콜백의 DB 작업도 COMMIT도 보내지 않았다. 열기 실패 역시 재시도 루프에 전달한다.
+    // 일반 쓰기에는 이 콜백이 없으므로 기존처럼 오류를 그대로 돌려준다.
+    onSafeToRetry?.();
+    throw error;
+  }
   let commitStarted = false;
   try {
     const result = await fn(tx as unknown as DbExecutor);
@@ -96,7 +104,7 @@ async function withTransaction<T>(
         rolledBack = false;
       }
     }
-    if (!commitStarted && rolledBack) onRolledBackBeforeCommit?.();
+    if (!commitStarted && rolledBack) onSafeToRetry?.();
     throw error;
   } finally {
     if (!tx.closed) tx.close();

@@ -7,7 +7,7 @@
 
 | 이슈 | 확인한 근거 | 처리 |
 | --- | --- | --- |
-| [ANDROID-1J](https://alarmtalk.sentry.io/issues/7795551877/) · [BACKEND-E](https://alarmtalk.sentry.io/issues/7759150754/) | 10/16 05:40:50 UTC, Android 1.2.14(34)의 탈퇴 요청 500과 같은 시각 서버 `/api/user/me/deletion`의 Turso 520. Infinix X6532C, 화면 720×1520·360dpi로 사전 출시 화면 조건에 해당하지 않음 | 탈퇴 쓰기 트랜잭션을 COMMIT 전 실패·롤백 성공/트랜잭션 닫힘일 때만 제한 재시도. COMMIT 응답 유실과 롤백 실패는 재시도하지 않음 |
+| [ANDROID-1J](https://alarmtalk.sentry.io/issues/7795551877/) · [BACKEND-E](https://alarmtalk.sentry.io/issues/7759150754/) | 10/16 05:40:50 UTC, Android 1.2.14(34)의 탈퇴 요청 500과 같은 시각 서버 `/api/user/me/deletion`의 Turso 520. Infinix X6532C, 화면 720×1520·360dpi로 사전 출시 화면 조건에 해당하지 않음 | 탈퇴 트랜잭션 열기 실패 또는 COMMIT 전 실패·롤백 성공/트랜잭션 닫힘일 때 제한 재시도. COMMIT 응답 유실과 롤백 실패는 재시도하지 않음 |
 | [ANDROID-1K](https://alarmtalk.sentry.io/issues/7798432041/) | 1.2.13(33), HRY-LX1T, 화면 짧은 변 288px·106dpi. 탈퇴 상태의 음원 다운로드 403 | 구버전 로봇 실행. 현 코드에는 탈퇴 상태 처리와 이 오류의 경보 제외가 있으며, #913 화면 기반 `prelaunch` 분류도 다음 앱에 포함됨 |
 | [ANDROID-D](https://alarmtalk.sentry.io/issues/7731194901/) | 최신 이벤트도 1.2.13(33), HRY-LX1T, 288px·106dpi. Google Billing `ProxyBillingActivity`의 null PendingIntent | 구버전 로봇의 SDK 화면 실행. 이 관측만으로 실제 구매 경로 결함이나 SDK 업데이트 필요성을 단정하지 않음. 실기기 결제 검증은 별도 |
 | [ANDROID-1G](https://alarmtalk.sentry.io/issues/7793786796/) | 최신 이벤트는 1.2.13(33), HRY-LX1T, 288px·106dpi, Google 로그인 상태 코드 8 | 로봇 환경으로 분류. 코드 8을 사용자 취소로 숨기지 않음(#912의 취소 코드 16과 다름) |
@@ -23,5 +23,7 @@
 
 - 탈퇴 재시도는 실제 libSQL 트랜잭션 테스트에서 첫 UPDATE 뒤 520을 주입해 확인한다. 롤백 후 성공하고 `token_epoch`는 한 번만 증가해야 한다.
 - 별도 단위 테스트는 COMMIT 응답 유실·롤백 실패 시 재시도하지 않는지, 첫 batch에서 닫힌 트랜잭션의 재시도를 확인한다.
+- 후속 리뷰 수정으로 트랜잭션 열기의 520/525, 재시도 상한, 401의 즉시 실패, 열기 재시도 뒤 COMMIT 실패를 다루는 회귀를 추가했다.
+  이 후속 테스트는 작성만 했으며 로컬 실행하지 않았다. 위 통과 결과는 후속 리뷰 수정 전이다.
 - 앱/서버 수정은 아직 운영 배포 전이다. Sentry 이슈를 배포 완료 또는 운영 재발 없음으로 처리하지 않았다.
 - 실기기는 연결되지 않았다(`adb devices` 빈 목록, `devicectl`에는 시뮬레이터만 표시). iOS 0.9초 끝 무음은 파일 길이·음량·무음 구간 자동 검사와 별도로 잠금 화면·앱 종료 상태에서 들어 봐야 한다.
