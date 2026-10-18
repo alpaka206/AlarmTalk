@@ -107,7 +107,8 @@ function stripStringLiterals(sql: string): string {
  * ⚠ **좁은 예외는 호출부가 스스로 고른다 — 여기(프록시)를 넓히지 말 것.** 원자적 쓰기 batch
  * 하나(`db.batch(문장들, 'write')` — 왕복 한 번, 전부 아니면 전무)는 ① 모든 문장이 멱등이고
  * ② 다시 도는 클로저 안에 DB 밖의 일이 없을 때에 한해 호출부가 `retryTransientTurso` 로 직접
- * 감쌀 수 있다. 지금은 `routes/push.ts` 뿐이다(`docs/spec/error-codes.md` 구현 지도).
+ * 감쌀 수 있다(`routes/push.ts`). 탈퇴 신청은 별도 `withRetryableWriteTransaction`으로 트랜잭션 열기 실패 또는
+ * COMMIT 전 실패·롤백 확인 뒤에만 다시 실행한다. 둘 다 `docs/spec/error-codes.md` 구현 지도를 따른다.
  *
  * 2026-09-22 전에는 이 감싸기가 **cron 진입점에만** 있었다. HTTP 요청 경로의 `getDB` 는 맨
  * 클라이언트라, 인증 미들웨어의 users 한 줄 조회가 게이트웨이 한 번의 딸꾹질에 그대로 503 이

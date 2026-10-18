@@ -23,7 +23,7 @@ describe('appVersionPolicy', () => {
     expect(p.storeUrl).toContain('play.google.com');
   });
 
-it('대소문자 무시', () => {
+  it('대소문자 무시', () => {
     expect(appVersionPolicy('Android')).toEqual(appVersionPolicy('android'));
   });
 
@@ -63,6 +63,11 @@ it('대소문자 무시', () => {
     expect(p.latest).toBeGreaterThanOrEqual(p.minSupported);
   });
 
+  // 33 이하는 탈퇴 유예 403 을 모르고 문서 버전 5 를 싣는다 — 서버가 그 호환 갈래를 지웠으므로 막는다(2026-10-16).
+  it('android minSupported 는 1.2.14(34) 이상이다 — 옛 앱 호환 갈래를 지운 회차', () => {
+    expect(appVersionPolicy('android').minSupported).toBeGreaterThanOrEqual(34);
+  });
+
   // --- iOS ---
 
   it('ios 정책은 android 와 분리돼 있다', () => {
@@ -72,11 +77,9 @@ it('대소문자 무시', () => {
     expect(ios.latest).toBeGreaterThanOrEqual(ios.minSupported);
   });
 
-  // 1.2.10 강제 업데이트(2026-09-29, App Store 게재 확인 뒤) — 빌드 5(1.2.8)·6(1.2.9)을 막는다.
-  // iOS 빌드 번호는 versionCode 와 다른 수열이라 Android 하한(30)을 물려주면 1.2.10 까지
-  // 막힌다 — 하한은 정확히 1.2.10 의 빌드 번호다. 이유는 app-version.ts 주석.
-  it('ios minSupported 는 1.2.10 의 빌드 번호(7)다 — 강제 업데이트', () => {
-    expect(appVersionPolicy('ios').minSupported).toBe(7);
+  // 문서 6을 실은 1.2.14 게재 확인 뒤 하한을 올린다. 옛 앱은 재동의를 제출할 수 없다.
+  it('ios minSupported 는 문서 6을 실은 1.2.14 빌드 12다', () => {
+    expect(appVersionPolicy('ios').minSupported).toBe(12);
   });
 
   // iOS 클라는 `latest` 를 읽지 않는다 — `AppVersionGate.checkAppVersion()` 이
@@ -140,7 +143,9 @@ describe('GET /api/app/version — weather_attribution', () => {
   // 빼거나 바꾸면 토큰도 새로 만든다(이미 나간 토큰의 뜻은 바꾸지 않는다).
   it("'kma_jma_nws' 를 말하는 동안에는 기상청·気象庁·NWS 를 부르는 코드가 있다", () => {
     if (WEATHER_ATTRIBUTION !== 'kma_jma_nws') return;
-    const sources = walk(SRC).map((file) => readFileSync(file, 'utf8')).join('\n');
+    const sources = walk(SRC)
+      .map((file) => readFileSync(file, 'utf8'))
+      .join('\n');
     const endpoints = [
       'https://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/', // 기상청 단기예보(KR)
       'https://www.jma.go.jp/bosai/forecast/', // 気象庁(JP)

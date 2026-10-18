@@ -22,7 +22,8 @@ internal fun googleSignInErrorMessage(context: android.content.Context, statusCo
     10 -> context.getString(R.string.r3ed_google_signin_error_config)
     7 -> context.getString(R.string.r3ed_google_signin_error_network)
     12500 -> context.getString(R.string.r3ed_google_signin_error_failed)
-    12501 -> context.getString(R.string.r3ed_google_signin_error_canceled)
+    // 16(CANCELED)은 계정 선택 창을 닫은 경우다 — 12501 과 같은 '취소' 로 말한다(ANDROID-1G).
+    16, 12501 -> context.getString(R.string.r3ed_google_signin_error_canceled)
     12502 -> context.getString(R.string.r3ed_google_signin_error_in_progress)
     else -> context.getString(R.string.r3ed_google_signin_error_failed_status, statusCode)
 }

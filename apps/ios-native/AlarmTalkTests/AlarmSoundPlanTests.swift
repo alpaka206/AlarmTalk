@@ -127,6 +127,31 @@ final class AlarmSoundPlanTests: XCTestCase {
 
     // MARK: - 리컨사일러 판정
 
+    func test_needsReschedule_adoptsRepeatGapForAnExistingVoiceAlarmOnce() throws {
+        let (store, keys) = try seedBucket(clipCount: 1)
+        var record = makeBucketRecord(bucketId: "medication", keys: keys)
+        record.alarmKitID = UUID().uuidString
+        let plan = AlarmSoundResolver.plan(for: record, audioCache: store)
+        guard case .voiceClip(let key, _, _, let volume, let revision) = plan else {
+            return XCTFail("목소리 예약이어야 한다")
+        }
+        // 업데이트 전 앱이 디스크에 남긴 지문 — 파일 내용과 음량은 그대로다.
+        record.scheduledSoundFingerprint = "voice:\(key):r\(revision ?? "-"):v\(volume)"
+        let alarmKit = AlarmKitViewModel()
+        XCTAssertTrue(AlarmScheduleReconciler.needsReschedule(record, alarmKit: alarmKit, audioCache: store))
+
+        // 새 파일로 예약하고 지문을 기록한 다음부터는 다시 예약하지 않는다.
+        record.scheduledSoundFingerprint = plan.fingerprint
+        XCTAssertFalse(AlarmScheduleReconciler.needsReschedule(record, alarmKit: alarmKit, audioCache: store))
+    }
+
+    func test_repeatGap_doesNotChangeToneFingerprints() {
+        let url = URL(fileURLWithPath: "/Library/Sounds/tone.caf")
+        let tone = AlarmSoundPlan.alarmSoundFile(url: url, stagingKey: "tone", volumePercent: 40)
+        XCTAssertEqual(tone.fingerprint, "sound:\(url.path):v40")
+        XCTAssertEqual(AlarmSoundPlan.systemDefault.fingerprint, "default")
+    }
+
     func test_needsReschedule_isFalseWhenTheScheduleMatches() throws {
         let (store, keys) = try seedBucket(clipCount: 1)
         var record = makeBucketRecord(bucketId: "medication", keys: keys)

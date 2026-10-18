@@ -38,6 +38,14 @@ final class VoiceAddButtonUITests: XCTestCase {
         let addButton = app.buttons["추가"].firstMatch
         XCTAssertTrue(addButton.waitForExistence(timeout: 30))
         addButton.tap()
+        let consent = app.alerts["목소리를 등록하기 전에"]
+        XCTAssertTrue(consent.waitForExistence(timeout: 5))
+        XCTAssertTrue(consent.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "목소리 주인")).firstMatch.exists)
+        consent.buttons["취소"].tap()
+        XCTAssertFalse(app.staticTexts["목소리 만들기"].exists, "취소하면 등록 화면에 들어가지 않는다")
+        addButton.tap()
+        XCTAssertTrue(consent.waitForExistence(timeout: 5), "새 등록 진입마다 확인한다")
+        consent.buttons["동의하기"].tap()
 
         XCTAssertTrue(app.staticTexts["목소리 만들기"].waitForExistence(timeout: 5))
         let record = app.buttons["녹음"]

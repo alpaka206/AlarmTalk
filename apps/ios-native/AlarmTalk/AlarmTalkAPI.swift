@@ -657,11 +657,6 @@ final class AlarmTalkAPI: @unchecked Sendable {
         try await request("user/me/deletion", method: "POST", token: token)
     }
 
-    /// 유예 기간 내 탈퇴 철회 → 계정 복구. Android `AuthApi.kt:201`.
-    func cancelAccountDeletion(token: String) async throws -> CancelDeletionResponse {
-        try await request("user/me/deletion", method: "DELETE", token: token)
-    }
-
     /// 필수 약관 동의 필요 여부 조회. Android `AuthApi.kt:205`.
     func consentStatus(token: String) async throws -> ConsentStatusResponse {
         try await request("user/consents/status", token: token)

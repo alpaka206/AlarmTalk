@@ -3,8 +3,12 @@ import type { AppEnv } from '../types';
 import { getDB } from '../lib/db';
 import { logRouteError } from '../lib/logger';
 import { deleteSensitiveVoiceDataForUser, type DowngradedAlarm } from '../lib/paid-voice-cleanup';
-import { notifyDowngradedAlarms, sendAccountDeletionRequestedPush, type DeletedPushTarget } from '../lib/fcm';
-import { withWriteTransaction } from '../lib/transactions';
+import {
+  notifyDowngradedAlarms,
+  sendAccountDeletionRequestedPush,
+  type DeletedPushTarget,
+} from '../lib/fcm';
+import { withWriteTransaction, withRetryableWriteTransaction } from '../lib/transactions';
 import {
   normalizeQuietWindows,
   validateQuietDays,
@@ -355,8 +359,8 @@ user.post('/consents', async (c) => {
     await withWriteTransaction(db, async (tx) => {
       for (const r of rows) {
         await tx.execute({
-          sql: `INSERT INTO user_consents (id, user_id, consent_type, policy_version, agreed)
-                VALUES (?, ?, ?, ?, ?)`,
+          sql: `INSERT INTO user_consents (id, user_id, consent_type, policy_version, agreed, created_at)
+                VALUES (?, ?, ?, ?, ?, strftime('%Y-%m-%d %H:%M:%f', 'now'))`,
           args: [crypto.randomUUID(), userPk, r.type, shownVersion, r.agreed ? 1 : 0],
         });
       }
@@ -444,8 +448,8 @@ user.get('/consents/status', async (c) => {
     // 빈도: 개정으로 다른 유형의 최소 버전이 오를 때만 = 개정 1회당 1번. 제출하면 거절이
     // 새 버전으로 다시 기록돼 그 회차는 닫힌다.
     //
-    // ⚠ **지금은 발동하지 않는다.** CONSENT_MIN_POLICY_VERSION 6종이 전부 3 이라 위 collect 가
-    // 늘 비어 있다. 실제로 켜는 레버는 그 상수를 올리는 것이고, 그건 별도 결재 사항이다.
+    // ⚠ **2026-10-16 부터 발동한다** — CONSENT_MIN_POLICY_VERSION.privacy 를 5 로 올려, 처리방침 기록이 3 인 사람의
+    // collect 에 privacy 가 담긴다. 그중 마케팅을 거절했던 사람에게만 이 갈래가 마케팅을 선택으로 붙인다(한 번).
     // ⚠ **앱 내 화면에서만 유도한다.** 푸시·이메일로 재동의를 권하면 그 메시지 자체가
     // 영리목적 광고성 정보로 평가돼 거절자에게는 정보통신망법 제50조 위반 소지가 있다.
     if (collect.length > 0 && latest.get('marketing')?.agreed === false) {
@@ -502,7 +506,7 @@ user.get('/consents/status', async (c) => {
 
 // 탈퇴 유예 (개인정보보호법 제21조). 신청 즉시 pending_deletion 으로 두고 30일 후
 // cron 이 영구파기한다. 유예 기간 안에 **다시 로그인하면 철회**된다(`cancelPendingDeletionOnSignIn`,
-// 2026-10-15) — 옛 앱의 철회 버튼(DELETE /me/deletion)도 그대로 받는다.
+// 2026-10-15). 옛 앱의 철회 버튼(`DELETE /me/deletion`)은 2026-10-16 에 지웠다 — 철회는 다시 로그인 하나다.
 //
 // ⚠ **신청은 모든 기기의 세션을 끊는다**(`token_epoch + 1`)고 그 계정의 푸시 등록을 지운다. '다시 로그인하면
 //   철회' 가 어느 기기에서나 같아야 해서다 — 세션이 남은 기기는 로그인 화면을 거치지 않으니 철회할 길도 없이
@@ -516,7 +520,7 @@ user.post('/me/deletion', async (c) => {
     // 지우기 전에 읽어 둔 그 계정의 푸시 토큰 — 커밋 뒤 다른 기기에 '탈퇴 신청됨' 신호를 보낸다
     // (`sendAccountDeletionRequestedPush`). 트랜잭션이 다시 돌면 다시 채운다.
     let deletedTargets: DeletedPushTarget[] = [];
-    const res = await withWriteTransaction(db, async (tx) => {
+    const res = await withRetryableWriteTransaction(db, async (tx) => {
       deletedTargets = [];
       const updated = await tx.execute({
         sql: `UPDATE users
@@ -533,7 +537,10 @@ user.post('/me/deletion', async (c) => {
           sql: `SELECT token, platform FROM push_tokens WHERE user_id IN (SELECT id FROM users WHERE google_id = ? OR id = ?)`,
           args: [userId, userId],
         });
-        deletedTargets = tokens.rows.map((r) => ({ token: String(r.token), platform: String(r.platform) }));
+        deletedTargets = tokens.rows.map((r) => ({
+          token: String(r.token),
+          platform: String(r.platform),
+        }));
         await tx.execute({
           sql: `DELETE FROM push_tokens WHERE user_id IN (SELECT id FROM users WHERE google_id = ? OR id = ?)`,
           args: [userId, userId],
@@ -564,54 +571,6 @@ user.post('/me/deletion', async (c) => {
     logRouteError(c, err);
     return c.json(
       { error: 'Failed to request deletion', error_code: 'DELETION_REQUEST_FAILED' },
-      500,
-    );
-  }
-});
-
-user.delete('/me/deletion', async (c) => {
-  const userId = c.get('userId');
-  const db = getDB(c.env);
-  try {
-    const recovered = await withWriteTransaction(db, async (tx) => {
-      // ⚠ **옛 앱의 철회 버튼도 다른 기기를 끊는다**(코덱스 #904) — 로그인 철회(`cancelPendingDeletionOnSignIn`)와 같은
-      //   정리(`token_epoch + 1`·그 계정의 `push_tokens` 삭제). 이 배포 전에 신청한 유예 행은 신청이 끊지 않았고, 배포가
-      //   마이그레이션 #129 보다 먼저 돌아 그 사이 여기서 철회되면 #129 가 건너뛴다. 부른 기기의 세션도 끊기므로 옛 앱은
-      //   다음 요청에서 다시 로그인한다(그 로그인은 이미 active 라 아무것도 철회하지 않는다).
-      await tx.execute({
-        sql: `DELETE FROM push_tokens
-              WHERE user_id IN (SELECT id FROM users
-                                WHERE (google_id = ? OR id = ?) AND deletion_status = 'pending_deletion')`,
-        args: [userId, userId],
-      });
-      const res = await tx.execute({
-        sql: `UPDATE users
-            SET deletion_status = 'active',
-                deletion_requested_at = NULL,
-                deletion_purge_at = NULL,
-                token_epoch = token_epoch + 1,
-                updated_at = datetime('now')
-            WHERE (google_id = ? OR id = ?) AND deletion_status = 'pending_deletion'`,
-        args: [userId, userId],
-      });
-      if (res.rowsAffected > 0) return true;
-      // 복구 성공 응답만 유실될 수 있다. 이미 active면 무변경 성공으로 수렴시킨다.
-      // 별도 요청의 탈퇴 신청/파기와 판정이 엇갈리지 않게 같은 쓰기 트랜잭션에서 읽는다.
-      const active = await tx.execute({
-        sql: `SELECT id FROM users
-              WHERE (google_id = ? OR id = ?) AND deletion_status = 'active' LIMIT 1`,
-        args: [userId, userId],
-      });
-      return active.rows.length > 0;
-    });
-    if (!recovered) {
-      return c.json({ error: 'No pending deletion', error_code: 'NO_PENDING_DELETION' }, 404);
-    }
-    return c.json({ success: true, status: 'active' });
-  } catch (err) {
-    logRouteError(c, err);
-    return c.json(
-      { error: 'Failed to cancel deletion', error_code: 'DELETION_CANCEL_FAILED' },
       500,
     );
   }

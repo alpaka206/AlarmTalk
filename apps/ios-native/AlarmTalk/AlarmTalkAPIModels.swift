@@ -982,12 +982,6 @@ struct AccountDeletionResponse: Decodable, Equatable {
     var status: String = "pending_deletion"
 }
 
-/// 유예 탈퇴 철회(복구) 응답. Android `AuthApi.kt:132` `CancelDeletionResponse`.
-struct CancelDeletionResponse: Decodable, Equatable {
-    var success: Bool = false
-    var status: String = "active"
-}
-
 /// 약관 동의 항목 1건. Android `AuthApi.kt:137` `ConsentItemRequest`.
 struct ConsentItemRequest: Encodable, Equatable {
     var type: String

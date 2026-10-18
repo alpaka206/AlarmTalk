@@ -465,6 +465,7 @@ internal fun VoiceProfileManagementPanel(
     var createPreparing by remember { mutableStateOf(false) }
     var createSubmitAttempted by remember { mutableStateOf(false) }
     var showCreateForm by remember { mutableStateOf(false) }
+    var registrationConsentOpen by remember { mutableStateOf(false) }
     // 등록 결정 구간(만드는 중/미리듣기)에서 나가려 할 때 띄우는 '임시 목소리 삭제' 경고.
     var draftExitWarningOpen by remember { mutableStateOf(false) }
     // 서버가 "이번 달 등록을 다 썼다" 고 답해 등록 흐름을 끝냈다 — 이유를 말하는 알럿(스펙
@@ -580,8 +581,8 @@ internal fun VoiceProfileManagementPanel(
     // 지금 3일 — 2026-08-31 정정, 예전 주석의 '30일' 은 TTS 캐시 TTL·Play 계정보류와 섞인
     // 값이었다) UI 에는 노출하지 않는다. 유료여야 쓸 수 있는데 보여 주면 미리듣기·이름 수정·
     // 공유·**삭제**까지 눌리기 때문이다. 유예가 남았다는 안내는 여기 두지 않는다 —
-    // 강등·잠금 순간의 1회성 안내가 이미 기한과 결과를 말한다(`downgrade_notice_free_message`
-    // — `DowngradeNoticeStore` 대기표로 띄우는 모달). 여기 붙이면 무료로 지내는 내내 같은 말이
+    // 강등·잠금 순간의 1회성 안내(`downgrade_notice_message` — `DowngradeNoticeStore` 대기표로 띄우는 모달)와 삭제
+    // 예고 푸시(표시용)가 맡는다. (그 모달은 2026-10-16 부터 원인·기한 없이 '기본 목소리로 바뀌었다' 만 말한다 — 기한은 예고 푸시.) 여기 붙이면 무료로 지내는 내내 같은 말이
     // 영구히 보인다(2026-08-11 에 알람 행에서 같은 이유로 걷어냈다 —
     // `ControlsAndPermissions.kt` 주석).
     // 복구는 재구독 즉시가 아니라 **다음 TTS 합성 때** 지연 재클론이다(`recloneEvictedVoiceProfile`).
@@ -2005,7 +2006,7 @@ internal fun VoiceProfileManagementPanel(
             val monthlyExhausted = monthlyRegistrationUsedUp(monthlyQuota)
             Button(
                 onClick = {
-                    if (canOpenCreateForm) showCreateForm = true else voicePlanGateOpen = true
+                    if (canOpenCreateForm) registrationConsentOpen = true else voicePlanGateOpen = true
                 },
                 enabled = !voiceProfileBusy && !monthlyExhausted,
                 colors = wakerButtonColors(),
@@ -2164,6 +2165,30 @@ internal fun VoiceProfileManagementPanel(
             }
         }
         // 기본 목소리 받기 진행은 위 헤더 옆으로 옮겼다(2026-09-17).
+    }
+
+    // 이번에 등록할 목소리의 권리는 입구에서 확인한다. 법정 민감 동의는 기존 업로드 경로가 따로 받는다.
+    if (registrationConsentOpen) {
+        IosAlertDialog(
+            title = stringResource(R.string.voice_registration_consent_title),
+            message = stringResource(R.string.voice_registration_consent_body),
+            onDismiss = { registrationConsentOpen = false },
+            actions = listOf(
+                IosAlertAction(
+                    label = stringResource(R.string.voice_consent_cancel),
+                    onClick = { registrationConsentOpen = false },
+                ),
+                IosAlertAction(
+                    label = stringResource(R.string.voice_registration_consent_agree),
+                    emphasized = true,
+                    enabled = !voiceProfileBusy && canOpenCreateForm && !monthlyRegistrationUsedUp(voiceDraftQuota),
+                    onClick = {
+                        registrationConsentOpen = false
+                        if (canOpenCreateForm) showCreateForm = true else voicePlanGateOpen = true
+                    },
+                ),
+            ),
+        )
     }
 
     if (voicePlanGateOpen) {

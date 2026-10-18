@@ -32,6 +32,31 @@ export async function withWriteTransaction<T>(
 }
 
 /**
+ * DB 작업만 하는 콜백의 좁은 재시도. 트랜잭션 열기 실패 또는 COMMIT 전 실패 뒤 롤백이 확인된 경우만 다시 실행한다.
+ * 콜백에서 외부 API·푸시를 부르거나 COMMIT SQL을 직접 실행하면 안 된다.
+ * COMMIT 응답 유실은 성공 여부를 모르므로 재시도하지 않는다. 일반 쓰기 헬퍼에는 적용하지 않는다.
+ */
+export async function withRetryableWriteTransaction<T>(
+  db: Client,
+  fn: (tx: DbExecutor) => Promise<T>,
+): Promise<T> {
+  const outcome = await retryTransientTurso(async () => {
+    let safeToRetry = false;
+    try {
+      const value = await withTransaction(db, 'write', fn, () => {
+        safeToRetry = true;
+      });
+      return { ok: true as const, value };
+    } catch (error) {
+      if (safeToRetry) throw error;
+      return { ok: false as const, error };
+    }
+  });
+  if (!outcome.ok) throw outcome.error;
+  return outcome.value;
+}
+
+/**
  * 여러 SELECT 가 같은 커밋을 보도록 응답 스냅샷을 고정한다.
  *
  * **통째로 다시 시도한다**(코덱스 #795 3차). `getDB` 의 읽기 재시도는 `execute` 에만 걸려 있어
@@ -50,16 +75,36 @@ async function withTransaction<T>(
   db: Client,
   mode: 'read' | 'write',
   fn: (tx: DbExecutor) => Promise<T>,
+  onSafeToRetry?: () => void,
 ): Promise<T> {
-  const tx = await db.transaction(mode);
+  let tx: Awaited<ReturnType<Client['transaction']>>;
+  try {
+    tx = await db.transaction(mode);
+  } catch (error) {
+    // 아직 콜백의 DB 작업도 COMMIT도 보내지 않았다. 열기 실패 역시 재시도 루프에 전달한다.
+    // 일반 쓰기에는 이 콜백이 없으므로 기존처럼 오류를 그대로 돌려준다.
+    onSafeToRetry?.();
+    throw error;
+  }
+  let commitStarted = false;
   try {
     const result = await fn(tx as unknown as DbExecutor);
+    commitStarted = true;
     await tx.commit();
     return result;
   } catch (error) {
+    // libSQL은 BEGIN/첫 batch가 실패하면 스스로 닫는다. COMMIT을 보내지 않은 닫힌 트랜잭션은
+    // 영속화되지 않는다. 열린 트랜잭션은 명시적 롤백 성공까지 확인해야 재실행할 수 있다.
+    let rolledBack = tx.closed;
     if (!tx.closed) {
-      await tx.rollback().catch(() => undefined);
+      try {
+        await tx.rollback();
+        rolledBack = true;
+      } catch {
+        rolledBack = false;
+      }
     }
+    if (!commitStarted && rolledBack) onSafeToRetry?.();
     throw error;
   } finally {
     if (!tx.closed) tx.close();

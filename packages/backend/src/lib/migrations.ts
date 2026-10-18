@@ -2556,7 +2556,7 @@ export const migrations: Migration[] = [
     //     → ④ `main` 머지(= 배포 + 이 마이그레이션)
     //     → ⑤ `npm run publish:stock -- --env dev|prod`
     //   ⑤ 는 **환경별로 두 번**이고 배포의 **마지막** 단계다 — ④와 ⑤ 사이가 곧 위의 공백
-    //   이라 짧을수록 좋다. 운영 체크리스트는 `docs/qa/dev-test-handoff.md` §0-A.
+    //   이라 짧을수록 좋다. 운영 절차는 `docs/ops/tts-model-rerender.md`.
     //
     //   클론 사전렌더는 이 회차가 **건드리지 않는다**(아래 ③). 큐를 되돌리는 문장도 여기
     //   없으니 "클론은 기존 드레인이 맡는다" 로 읽지 말 것 — 클론은 그 사람이 목소리를

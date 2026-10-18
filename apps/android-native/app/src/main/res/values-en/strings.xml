@@ -772,8 +772,6 @@
     <string name="voicesr_preview_stop">Stop</string>
     <string name="voice_consent_title">Registering a voice needs a separate consent</string>
     <string name="voice_consent_body">A registered voice is used to create a voice profile, read alarm lines aloud, play alarms, and cache audio on this device. Voice cloning and text-to-speech run through our voice AI provider ElevenLabs, and your voice and text are sent overseas as part of that. AlarmTalk does not use your voice for public search, advertising, or data sales, and does not train its own general-purpose AI models on it. You can delete a voice profile at any time.</string>
-    <string name="voice_consent_check_ownership">I will only register my own voice, or a voice I have permission and consent to use.</string>
-    <string name="voice_consent_check_liability">I understand that responsibility for unauthorised registration, copyright or personality-rights infringement, and impersonation lies with the person who registers the voice.</string>
     <string name="voice_consent_check_biometric">I consent to my voice (biometric information) being used to create a voice profile, clone the voice, and generate speech.</string>
     <string name="voice_consent_check_overseas">I consent to my voice and text being transferred and processed overseas (including the United States) for voice AI processing.</string>
     <string name="voice_consent_agree">Agree and create voice</string>
@@ -802,13 +800,9 @@
     <string name="misc2_theme_mode_system_short">System</string>
     <string name="misc2_theme_mode_light_short">Light</string>
     <string name="misc2_theme_mode_dark_short">Dark</string>
-    <string name="downgrade_notice_free_title">You\'re on the Free plan now</string>
-    <string name="downgrade_notice_free_message">%1$d voice alarm(s) now use a default voice. Subscribe again within 3 days to get your voices back; after that they are deleted permanently.</string>
-    <string name="downgrade_notice_shared_title">You\'ve left the shared plan</string>
-    <string name="downgrade_notice_replaced_title">Your voice was replaced</string>
-    <string name="downgrade_notice_replaced_message">Registering a new voice switched %1$d alarm(s) with custom text to a default voice. Create those messages again with the new voice.</string>
-    <string name="downgrade_notice_shared_message">The shared voice is no longer available, so %1$d alarm(s) now use a default voice. To use it again, it has to be shared with you again.</string>
-    <string name="downgrade_notice_open_billing">View plans</string>
+    <string name="downgrade_notice_title">Alarm voice changed</string>
+    <string name="downgrade_notice_message">%1$d of your alarms now use the default voice.</string>
+    <string name="downgrade_notice_free_deadline">Subscribe again within 3 days to get your voices back; after that they are deleted permanently.</string>
     <string name="plan_gate_paid_message">This feature is available with a paid plan.</string>
     <string name="msg_voice_preset_only">Basic voices can only say prepared phrases. Choose your own voice to wake up with text you type.</string>
     <string name="msg_voice_locked_free_plan">You\'re on the Free plan now, so this voice can\'t be used. Subscribe again to bring it back.</string>
@@ -877,4 +871,7 @@
     <string name="voices_tuning_listen_original">Play original</string>
     <string name="voices_tuning_listen_current">Play current tone</string>
     <string name="voices_tuning_pitch_value">%1$s semitones</string>
+    <string name="voice_registration_consent_title">Before registering a voice</string>
+    <string name="voice_registration_consent_body">Only register your own voice or a voice whose owner has explicitly consented to voice cloning and use in alarms. I confirm that I have the voice owner’s consent and accept responsibility for unauthorized registration, infringement of rights, or impersonation.</string>
+    <string name="voice_registration_consent_agree">Agree</string>
 </resources>

@@ -993,52 +993,31 @@ internal fun AlarmTalkApp(
     }
 
     downgradeNotice?.let { notice ->
-        val isFreePlan = notice.cause == DowngradeNoticeStore.Cause.FREE_PLAN
-        // 목소리 교체는 **이용권과 무관하다** — 이용권을 봐도 할 수 있는 게 없으므로
-        // '이용권 보기' 를 두지 않는다(같은 일을 하지 않는 액션은 무게만 나눈다).
-        val isVoiceReplaced = notice.cause == DowngradeNoticeStore.Cause.VOICE_REPLACED
-        val confirmAction = IosAlertAction(
-            label = stringResource(R.string.auth_confirm),
-            emphasized = true,
-            onClick = {
-                downgradeNoticeStore.clear(authSession?.user?.id)
-                downgradeNotice = null
-            },
-        )
+        // ⚠ **원인과 상관없이 한 문장이다**(2026-10-16 오너 결정). 예전에는 무료 강등·공유 해제·목소리 교체로 문구와 버튼을
+        //   갈랐는데, 원인을 맞히려는 판정(내가 지운 목소리인가 등)이 틀리면 엉뚱한 안내가 떴다(2026-10-11 '공유 이용권에서
+        //   나가게 됐어요' 오분류). 알람은 언제나 기본 목소리로 바꾸고, 안내는 바뀌었다는 사실만 말한다. 원인은 대기표가 계속
+        //   따로 적는다(`DowngradeNoticeStore.Cause` — 유료 복원이 무료 강등분만 지우는 데 쓴다).
+        // ⚠ **무료 강등이면 삭제 기한을 덧붙인다**(코덱스 #914). 등록한 목소리는 3일 뒤 영구 삭제되고, 그걸 앱 안에서 말하는
+        //   곳은 이 안내뿐이다(예고 푸시는 알림 권한·토큰이 없으면 닿지 않는다). 무료 강등은 결제 쪽이 확정해 적는 원인이라
+        //   이번에 틀렸던 '누가 지웠나' 추측과 다르다 — 원인 판정이 틀릴 수 없는 갈래만 한 줄을 더한다.
+        val baseMessage = stringResource(R.string.downgrade_notice_message, notice.count)
+        val freeDeadline = stringResource(R.string.downgrade_notice_free_deadline)
         IosAlertDialog(
-            title = stringResource(
-                when {
-                    isFreePlan -> R.string.downgrade_notice_free_title
-                    isVoiceReplaced -> R.string.downgrade_notice_replaced_title
-                    else -> R.string.downgrade_notice_shared_title
-                },
-            ),
-            message = stringResource(
-                when {
-                    isFreePlan -> R.string.downgrade_notice_free_message
-                    isVoiceReplaced -> R.string.downgrade_notice_replaced_message
-                    else -> R.string.downgrade_notice_shared_message
-                },
-                notice.count,
-            ),
+            title = stringResource(R.string.downgrade_notice_title),
+            message = if (notice.cause == DowngradeNoticeStore.Cause.FREE_PLAN) "$baseMessage $freeDeadline" else baseMessage,
             // ⚠ 바깥 탭·뒤로가기로 닫아도 **지우지 않는다** — 실수로 닫았을 뿐일 수 있다.
             // 지우는 건 '확인' 하나뿐이다.
             onDismiss = { downgradeNotice = null },
-            actions = if (isVoiceReplaced) {
-                listOf(confirmAction)
-            } else {
-                listOf(
-                    IosAlertAction(
-                        label = stringResource(R.string.downgrade_notice_open_billing),
-                        onClick = {
-                            downgradeNoticeStore.clear(authSession?.user?.id)
-                            downgradeNotice = null
-                            navigateToTab(NativeTab.Billing)
-                        },
-                    ),
-                    confirmAction,
-                )
-            },
+            actions = listOf(
+                IosAlertAction(
+                    label = stringResource(R.string.auth_confirm),
+                    emphasized = true,
+                    onClick = {
+                        downgradeNoticeStore.clear(authSession?.user?.id)
+                        downgradeNotice = null
+                    },
+                ),
+            ),
         )
     }
 

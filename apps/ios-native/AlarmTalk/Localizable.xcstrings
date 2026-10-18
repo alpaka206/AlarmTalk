@@ -1,6 +1,98 @@
 {
   "sourceLanguage" : "ko",
   "strings" : {
+    "동의하기" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Agree"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "同意する"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "동의하기"
+          }
+        }
+      }
+    },
+    "등록하기" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Register"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "登録する"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "등록하기"
+          }
+        }
+      }
+    },
+    "본인 목소리이거나, 목소리 주인이 음성 복제와 알람 사용에 명시적으로 동의한 목소리만 등록해 주세요. 목소리 주인의 동의를 확인했으며, 무단 등록·권리 침해·사칭으로 생기는 책임은 등록한 사람에게 있음을 확인합니다." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Only register your own voice or a voice whose owner has explicitly consented to voice cloning and use in alarms. I confirm that I have the voice owner’s consent and accept responsibility for unauthorized registration, infringement of rights, or impersonation."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自分の声、または声の持ち主が音声の複製とアラームでの使用に明示的に同意した声のみ登録してください。声の持ち主の同意を確認しており、無断登録、権利侵害、なりすましによる責任は登録した本人にあることを確認します。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "본인 목소리이거나, 목소리 주인이 음성 복제와 알람 사용에 명시적으로 동의한 목소리만 등록해 주세요. 목소리 주인의 동의를 확인했으며, 무단 등록·권리 침해·사칭으로 생기는 책임은 등록한 사람에게 있음을 확인합니다."
+          }
+        }
+      }
+    },
+    "목소리를 등록하기 전에" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Before registering a voice"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "声を登録する前に"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "목소리를 등록하기 전에"
+          }
+        }
+      }
+    },
     "%@ 반음" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1306,23 +1398,6 @@
         }
       }
     },
-    "공유 이용권에서 나가게 됐어요" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "You've left the shared plan"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "共有利用券から外れました"
-          }
-        }
-      }
-    },
     "공유 이용권에서 나가기" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1523,23 +1598,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "共有をオンにしました。"
-          }
-        }
-      }
-    },
-    "공유받던 목소리가 끊겨서 알람 %lld개가 기본 목소리로 바뀌었어요. 다시 쓰려면 그 목소리를 다시 공유받아야 해요." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "The shared voice is no longer available, so %lld alarm(s) now use a default voice. To use it again, it has to be shared with you again."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "共有されていた声が使えなくなり、アラーム%lld件が基本の声に変わりました。再び使うには、もう一度共有してもらう必要があります。"
           }
         }
       }
@@ -2062,6 +2120,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "基本アラーム音"
+          }
+        }
+      }
+    },
+    "기존에 설정한 알람 %lld개의 목소리가 기본 목소리로 바뀌었어요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld of your alarms now use the default voice."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "設定済みのアラーム%lld件の声が基本の声に変わりました。"
+          }
+        }
+      }
+    },
+    "기존에 설정한 알람 %lld개의 목소리가 기본 목소리로 바뀌었어요. 3일 안에 이용권을 다시 구독하면 내 목소리가 돌아오고, 지나면 영구 삭제돼요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld of your alarms now use the default voice. Subscribe again within 3 days to get your voices back; after that they are deleted permanently."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "設定済みのアラーム%lld件の声が基本の声に変わりました。3日以内に利用券を購読し直すと自分の声が戻り、過ぎると完全に削除されます。"
           }
         }
       }
@@ -3250,6 +3342,23 @@
         }
       }
     },
+    "알람 목소리가 바뀌었어요" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alarm voice changed"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "アラームの声が変わりました"
+          }
+        }
+      }
+    },
     "초대 코드를 등록하면 초대한 사람의 커플·가족 이용권에 함께해요." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3879,23 +3988,6 @@
         }
       }
     },
-    "목소리 알람 %lld개가 기본 목소리로 바뀌었어요. 3일 안에 이용권을 다시 구독하면 내 목소리가 돌아오고, 지나면 영구 삭제돼요." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld voice alarm(s) now use a default voice. Subscribe again within 3 days to get your voices back; after that they are deleted permanently."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "声のアラーム%lld件が基本の声に変わりました。3日以内に利用券を購読し直すと自分の声が戻り、過ぎると完全に削除されます。"
-          }
-        }
-      }
-    },
     "목소리 알람을 만들 계정을 준비해요." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4083,23 +4175,6 @@
         }
       }
     },
-    "목소리를 새로 등록하면서 직접 입력한 문구로 만든 알람 %lld개가 기본 목소리로 바뀌었어요. 새 목소리로 문구를 다시 만들어 주세요." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Registering a new voice switched %lld alarm(s) with custom text to a default voice. Create those messages again with the new voice."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "声を新しく登録したため、自由入力の文章で作ったアラーム%lld件が基本の声に変わりました。新しい声で文章を作り直してください。"
-          }
-        }
-      }
-    },
     "목소리를 새로 받고 있어요" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4198,23 +4273,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "無料"
-          }
-        }
-      }
-    },
-    "무료 이용권으로 바뀌었어요" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "You're on the Free plan now"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "無料利用券に変わりました"
           }
         }
       }
@@ -5065,23 +5123,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "相手のアラームを許可"
-          }
-        }
-      }
-    },
-    "새 목소리로 바뀌었어요" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Your voice was replaced"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "新しい声に変わりました"
           }
         }
       }

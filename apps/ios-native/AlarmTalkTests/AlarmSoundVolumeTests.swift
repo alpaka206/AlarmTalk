@@ -16,8 +16,8 @@ final class AlarmSoundVolumeTests: XCTestCase {
 
     // MARK: - 측정 도구
 
-    /// 1초짜리 사인파(진폭 `amplitude`)를 WAV 로 쓴다.
-    private func makeSineWAV(amplitude: Float, name: String) throws -> URL {
+    /// `seconds` 초짜리 사인파(진폭 `amplitude`)를 WAV 로 쓴다.
+    private func makeSineWAV(amplitude: Float, name: String, seconds: Double = 1) throws -> URL {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("\(name)-\(UUID().uuidString).wav")
         let format = AVAudioFormat(
@@ -33,7 +33,7 @@ final class AlarmSoundVolumeTests: XCTestCase {
                 AVLinearPCMIsFloatKey: false,
             ]
         )
-        let frames = AVAudioFrameCount(44_100)
+        let frames = AVAudioFrameCount(44_100 * seconds)
         let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frames)!
         buffer.frameLength = frames
         let samples = buffer.floatChannelData![0]
@@ -54,6 +54,22 @@ final class AlarmSoundVolumeTests: XCTestCase {
         var sum: Float = 0
         for i in 0..<Int(buffer.frameLength) { sum += channel[i] * channel[i] }
         return sqrt(sum / Float(buffer.frameLength))
+    }
+
+    /// 파일의 [startSeconds, endSeconds) 구간 RMS 와 전체 길이(초).
+    private func segment(of url: URL, from startSeconds: Double, to endSeconds: Double) throws -> (rms: Float, duration: Double) {
+        let file = try AVAudioFile(forReading: url)
+        let format = file.processingFormat
+        let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(file.length))!
+        try file.read(into: buffer)
+        let duration = Double(buffer.frameLength) / format.sampleRate
+        guard let channel = buffer.floatChannelData?[0] else { return (0, duration) }
+        let start = max(0, Int(startSeconds * format.sampleRate))
+        let end = min(Int(buffer.frameLength), Int(endSeconds * format.sampleRate))
+        guard end > start else { return (0, duration) }
+        var sum: Float = 0
+        for i in start..<end { sum += channel[i] * channel[i] }
+        return (sqrt(sum / Float(end - start)), duration)
     }
 
     private func stagedURL(named baseName: String) throws -> URL {
@@ -116,6 +132,60 @@ final class AlarmSoundVolumeTests: XCTestCase {
         let fullRMS = try rms(of: stagedURL(named: full))
         let quietRMS = try rms(of: stagedURL(named: quiet))
         XCTAssertLessThan(quietRMS, fullRMS * 0.6, "40% 파일이 100% 파일보다 작지 않다")
+    }
+
+    // MARK: - 목소리 반복 사이 쉼 (2026-10-16 — 안드로이드 0.9초와 같게)
+
+    /// AlarmKit 은 파일을 그대로 되풀이한다 — 쉼은 파일 끝 무음으로만 낼 수 있다. 쉼이 빠지면 문장이 붙어 들린다.
+    func test_목소리는_끝에_반복_사이_쉼이_붙는다() throws {
+        let source = try makeSineWAV(amplitude: 0.5, name: "gap")
+        let key = "gap-\(UUID().uuidString)"
+        defer {
+            AlarmSoundStaging.clearStagedSoundFiles(forKey: key)
+            try? FileManager.default.removeItem(at: source)
+        }
+        let gap = AlarmSoundStaging.voiceRepeatGapMillis
+        XCTAssertEqual(gap, 900, "안드로이드 RingingService.VOICE_REPEAT_GAP_MS 와 같아야 한다")
+
+        let staged = try AlarmSoundStaging.stage(url: source, key: key, trailingSilenceMillis: gap)
+        let url = try stagedURL(named: staged)
+        let whole = try segment(of: url, from: 0, to: 1)
+        XCTAssertEqual(whole.duration, 1.9, accuracy: 0.01, "소리 1초 + 쉼 0.9초여야 한다")
+        XCTAssertEqual(whole.rms, try rms(of: source), accuracy: 0.02, "앞 1초(소리)가 바뀌었다")
+        XCTAssertLessThan(try segment(of: url, from: 1.0, to: 1.9).rms, 0.0001, "끝 0.9초가 무음이 아니다")
+    }
+
+    /// 쉼을 넣기 전에 구운 파일(쉼 없음)이 같은 이름이면 업데이트 뒤에도 그대로 재사용된다.
+    func test_쉼이_있으면_다른_파일로_스테이징한다() throws {
+        let source = try makeSineWAV(amplitude: 0.5, name: "gap-name")
+        let key = "gap-name-\(UUID().uuidString)"
+        defer {
+            AlarmSoundStaging.clearStagedSoundFiles(forKey: key)
+            try? FileManager.default.removeItem(at: source)
+        }
+        let plain = try AlarmSoundStaging.stage(url: source, key: key)
+        let gapped = try AlarmSoundStaging.stage(url: source, key: key, trailingSilenceMillis: 900)
+        let gappedQuiet = try AlarmSoundStaging.stage(url: source, key: key, volumePercent: 30, trailingSilenceMillis: 900)
+        XCTAssertEqual(Set([plain, gapped, gappedQuiet]).count, 3, "쉼·음량이 달라도 같은 이름이라 옛 파일이 재사용된다")
+        // 쉼과 음량은 같이 실린다.
+        let quiet = try segment(of: stagedURL(named: gappedQuiet), from: 0, to: 1)
+        XCTAssertEqual(quiet.duration, 1.9, accuracy: 0.01)
+        XCTAssertEqual(quiet.rms, try rms(of: source) * 0.3, accuracy: 0.02)
+    }
+
+    /// 30초 한도는 **쉼까지 포함한** 길이다 — 넘기면 `.named` 조회가 실패해 기본 알람음으로 울린다.
+    func test_긴_목소리는_쉼까지_30초_안에_든다() throws {
+        let source = try makeSineWAV(amplitude: 0.5, name: "gap-long", seconds: 31)
+        let key = "gap-long-\(UUID().uuidString)"
+        defer {
+            AlarmSoundStaging.clearStagedSoundFiles(forKey: key)
+            try? FileManager.default.removeItem(at: source)
+        }
+        let staged = try AlarmSoundStaging.stage(url: source, key: key, trailingSilenceMillis: 900)
+        let url = try stagedURL(named: staged)
+        let tail = try segment(of: url, from: 29.1, to: 30)
+        XCTAssertEqual(tail.duration, 30, accuracy: 0.01, "쉼까지 30초여야 한다")
+        XCTAssertLessThan(tail.rms, 0.0001, "끝 0.9초가 무음이 아니다")
     }
 
     /// 0% 는 '무음' 이다 — 파일이 없어지는 게 아니라 **소리 없는 파일**이 되어야 한다.

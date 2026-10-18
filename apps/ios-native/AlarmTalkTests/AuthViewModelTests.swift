@@ -1786,7 +1786,6 @@ final class AuthViewModelTests: XCTestCase {
         defer {
             vm.prepareAccountRecovery = { _ in }
             vm.onAccountRecovered = { _ in }
-            api.beforeCancelAccountDeletionResponse = nil
             api.beforeMeResponse = nil
         }
         // 1.2.13 이하에서 유예 화면에 머물던 세션이 이 버전으로 올라온 상태를 심는다 — 2026-10-15 부터 앱은 유예
@@ -1977,11 +1976,10 @@ final class AuthViewModelTests: XCTestCase {
         XCTAssertTrue(vm.consentSensitiveMissing.contains("voice_biometric"))
     }
 
-    /// 유형을 지목하지 않은 일반 게이트 403 은 가입 화면을 연다. 이때 `collect` 가 비어
-    /// 있으면 **항목 없는 화면이 '다 체크됨' 으로 판정돼** 보지도 않은 동의가 기록된다 —
-    /// 가입 필수 전체로 채운다.
+    /// 403 뒤 상태 조회도 실패하면 빈 화면 대신 가입 필수 목록으로 폴백한다.
     func test_consentRequiredWithoutType_fillsCollectFallback() async {
         let api = MockAuthAPI()
+        api.consentStatusResult = .failure(APIError.invalidResponse)
         let vm = AuthViewModel(
             api: api,
             appleCredentialProvider: MockAppleCredentialProvider(),
@@ -2045,22 +2043,111 @@ final class AuthViewModelTests: XCTestCase {
         XCTAssertFalse(vm.showConsentScreen)
     }
 
-    func test_consentRequiredNotification_keepsGateOpenWithoutStatusRecheck() async {
+    func test_consentRequiredNotification_fetchesOnlyTheChangedConsentAndRestartsSyncOnSubmit() async {
         let api = MockAuthAPI()
-        api.consentStatusResult = .success(ConsentStatusResponse(needsConsent: false))
-        let vm = AuthViewModel(
-            api: api,
-            appleCredentialProvider: MockAppleCredentialProvider(),
-            accessSnapshotStore: AccessSnapshotStore(defaults: UserDefaults(suiteName: "consent3-\(UUID().uuidString)")!)
-        )
+        api.consentStatusResult = .success(ConsentStatusResponse(
+            needsConsent: true, needsCollection: true, collect: ["privacy"],
+            optional: [], hasPriorConsent: true
+        ))
+        let vm = AuthViewModel(api: api, appleCredentialProvider: MockAppleCredentialProvider())
         vm._setSessionForTesting(makeEmailSession())
-
+        let answered = expectation(description: "403 뒤 정확한 목록을 표시한다")
+        let subscription = vm.$consentCollect.dropFirst().sink { values in
+            if values == ["privacy"] { answered.fulfill() }
+        }
         NotificationCenter.default.post(name: AlarmTalkAPI.consentRequiredNotification, object: nil)
-        await Task.yield()
-
+        await fulfillment(of: [answered], timeout: 3)
+        withExtendedLifetime(subscription) {}
         XCTAssertTrue(vm.needsConsent)
-        XCTAssertEqual(api.consentStatusCallCount, 0)
+        XCTAssertTrue(vm.consentIsReconsent)
+        XCTAssertEqual(api.consentStatusCallCount, 1)
+        let generation = vm.consentSubmitGeneration
+        await vm.submitConsents(agreedOptional: [])
+        XCTAssertEqual(api.lastRecordConsentsRequest?.consents.map(\.type), ["privacy"])
+        XCTAssertEqual(vm.consentSubmitGeneration, generation + 1)
+        XCTAssertFalse(vm.showConsentScreen)
     }
+
+    func test_failedConsentSubmissionDoesNotRestartSync() async {
+        let api = MockAuthAPI()
+        api.recordConsentsResult = .failure(APIError.invalidResponse)
+        let vm = AuthViewModel(api: api, appleCredentialProvider: MockAppleCredentialProvider())
+        vm._setSessionForTesting(makeEmailSession())
+        let generation = vm.consentSubmitGeneration
+        await vm.submitConsents(agreedOptional: [])
+        XCTAssertEqual(vm.consentSubmitGeneration, generation)
+    }
+
+    func test_consent403_overlappingForegroundLookupFailureStillOpensFallback() async {
+        let api = MockAuthAPI()
+        let gateSent = expectation(description: "403 목록 조회 전송")
+        let held = HeldMeResponses(arrivals: [1: gateSent])
+        api.consentStatusResponder = { call in
+            if call == 1 { await held.hold(call) }
+            throw APIError.invalidResponse
+        }
+        let vm = AuthViewModel(api: api, appleCredentialProvider: MockAppleCredentialProvider())
+        vm._setSessionForTesting(makeEmailSession())
+        NotificationCenter.default.post(name: AlarmTalkAPI.consentRequiredNotification, object: nil)
+        await fulfillment(of: [gateSent], timeout: 3)
+        defer { held.release(1) }
+
+        // 일반 전경 조회가 revision을 앞질렀다. 403 조회의 답은 아직 오지 않았다.
+        await vm.checkConsentStatus()
+
+        XCTAssertEqual(api.consentStatusCallCount, 2)
+        XCTAssertTrue(vm.needsConsent, "최신 조회가 실패해도 확인된 403을 잊으면 안 된다")
+        XCTAssertEqual(vm.consentCollect, AuthViewModel.signupRequiredConsentTypes)
+        XCTAssertTrue(vm.showConsentScreen)
+    }
+
+    func test_consent403_appliedSuccessClearsPendingFallbackEvenWhileOlderLookupWaits() async {
+        let api = MockAuthAPI()
+        let gateSent = expectation(description: "403 목록 조회 전송")
+        let held = HeldMeResponses(arrivals: [1: gateSent])
+        api.consentStatusResponder = { call in
+            if call == 1 { await held.hold(call) }
+            if call == 2 { return ConsentStatusResponse(needsConsent: false) }
+            throw APIError.invalidResponse
+        }
+        let vm = AuthViewModel(api: api, appleCredentialProvider: MockAppleCredentialProvider())
+        vm._setSessionForTesting(makeEmailSession())
+        NotificationCenter.default.post(name: AlarmTalkAPI.consentRequiredNotification, object: nil)
+        await fulfillment(of: [gateSent], timeout: 3)
+        defer { held.release(1) }
+
+        await vm.checkConsentStatus() // 다른 기기에서 동의를 마친 최신 상태
+        await vm.checkConsentStatus() // 그 뒤의 일시적 실패
+
+        XCTAssertEqual(api.consentStatusCallCount, 3)
+        XCTAssertFalse(vm.needsConsent, "성공한 최신 조회가 해소한 403을 다시 열면 안 된다")
+        XCTAssertTrue(vm.consentCollect.isEmpty)
+    }
+
+    func test_consent403_successfulSubmissionClearsPendingFallback() async {
+        let api = MockAuthAPI()
+        let gateSent = expectation(description: "403 목록 조회 전송")
+        let held = HeldMeResponses(arrivals: [1: gateSent])
+        api.consentStatusResponder = { call in
+            if call == 1 { await held.hold(call) }
+            throw APIError.invalidResponse
+        }
+        let vm = AuthViewModel(api: api, appleCredentialProvider: MockAppleCredentialProvider())
+        vm._setSessionForTesting(makeEmailSession())
+        NotificationCenter.default.post(name: AlarmTalkAPI.consentRequiredNotification, object: nil)
+        await fulfillment(of: [gateSent], timeout: 3)
+        defer { held.release(1) }
+        await vm.checkConsentStatus() // 실패 폴백의 실제 항목을 사용자에게 표시
+        XCTAssertTrue(vm.showConsentScreen)
+
+        await vm.submitConsents(agreedOptional: [])
+        await vm.checkConsentStatus() // 제출 뒤 네트워크 실패
+
+        XCTAssertEqual(api.recordConsentsCallCount, 1)
+        XCTAssertFalse(vm.showConsentScreen, "제출한 동의를 옛 403 때문에 다시 받으면 안 된다")
+        XCTAssertFalse(vm.needsConsent)
+    }
+
 }
 
 // MARK: - Mocks
@@ -2114,15 +2201,13 @@ private final class MockAuthAPI: AuthAPIProviding, @unchecked Sendable {
         )
     )
     var requestAccountDeletionResult: Result<AccountDeletionResponse, Error> = .success(AccountDeletionResponse(success: true))
-    var cancelAccountDeletionResult: Result<CancelDeletionResponse, Error> = .success(CancelDeletionResponse(success: true))
-    var beforeCancelAccountDeletionResponse: (@MainActor @Sendable () -> Void)?
     var consentStatusResult: Result<ConsentStatusResponse, Error> = .success(ConsentStatusResponse(needsConsent: false))
+    var consentStatusResponder: (@MainActor @Sendable (_ call: Int) async throws -> ConsentStatusResponse)?
     var recordConsentsResult: Result<RecordConsentsResponse, Error> = .success(RecordConsentsResponse(success: true, recorded: 4))
     private(set) var meCallCount = 0
     private(set) var updateProfileCallCount = 0
     private(set) var lastUpdateProfileRequest: UpdateProfileRequest?
     private(set) var requestAccountDeletionCallCount = 0
-    private(set) var cancelAccountDeletionCallCount = 0
     private(set) var consentStatusCallCount = 0
     private(set) var recordConsentsCallCount = 0
     private(set) var lastRecordConsentsRequest: RecordConsentsRequest?
@@ -2175,19 +2260,12 @@ private final class MockAuthAPI: AuthAPIProviding, @unchecked Sendable {
         }
     }
 
-    func cancelAccountDeletion(token: String) async throws -> CancelDeletionResponse {
-        cancelAccountDeletionCallCount += 1
-        await beforeCancelAccountDeletionResponse?()
-        switch cancelAccountDeletionResult {
-        case .success(let response):
-            return response
-        case .failure(let error):
-            throw error
-        }
-    }
 
     func consentStatus(token: String) async throws -> ConsentStatusResponse {
         consentStatusCallCount += 1
+        if let consentStatusResponder {
+            return try await consentStatusResponder(consentStatusCallCount)
+        }
         switch consentStatusResult {
         case .success(let response):
             return response
@@ -2220,7 +2298,7 @@ private final class MockAuthAPI: AuthAPIProviding, @unchecked Sendable {
     }
 }
 
-/// 겹쳐 떠 있는 `/auth/me` 의 답을 호출마다 붙잡아 두었다가 **테스트가 정한 순서로** 내보낸다(`MockAuthAPI.meResponder`).
+/// 겹쳐 떠 있는 계정·동의 조회의 답을 호출마다 붙잡았다가 테스트가 정한 순서로 내보낸다.
 /// 붙잡는 순간 그 호출의 기대(`arrivals`)를 채운다 — 테스트는 그걸 기다려 '그 요청이 떠 있다' 를 확인한 뒤 다음 단계로 간다.
 @MainActor
 private final class HeldMeResponses {

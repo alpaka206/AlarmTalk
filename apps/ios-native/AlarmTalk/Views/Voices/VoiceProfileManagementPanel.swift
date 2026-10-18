@@ -42,6 +42,7 @@ struct VoiceProfileManagementPanel: View {
 
     /// 슬롯 가득 시 노출하는 플랜 안내 시트.
     @State private var planGateOpen: Bool = false
+    @State private var registrationConsentOpen = false
 
     /// 내 목소리 행의 ⋮ 가 여는 액션 시트 대상.
     @State private var actionSheetTarget: VoiceProfile?
@@ -287,6 +288,23 @@ struct VoiceProfileManagementPanel: View {
         // 넣었지만 코드를 쳐서 유료 기능을 여는 길 자체가 반려 사유였다 — 두 앱 모두에서 뺐다. 초대 코드는
         // 더보기 → 초대 코드 등록에서만 넣고, 할인·무료 이용은 스토어 오퍼 코드로 준다.
         // 제목은 안드로이드(`voices_create_paid_title`)에 맞춘다.
+        .alert(String(localized: "목소리를 등록하기 전에"), isPresented: $registrationConsentOpen) {
+            Button(String(localized: "취소"), role: .cancel) {}
+            Button(String(localized: "동의하기")) {
+                // 모달을 읽는 동안 권한·월 한도가 바뀌었으면 현재 상태로 다시 판정한다.
+                if !paidVoiceEntitledNow {
+                    planGateOpen = true
+                } else if monthlyExhausted {
+                    monthlyLimitNoticeOpen = true
+                } else {
+                    route = .clone
+                }
+            }
+            .disabled(voice.isBusy)
+            .keyboardShortcut(.defaultAction)
+        } message: {
+            Text(String(localized: "본인 목소리이거나, 목소리 주인이 음성 복제와 알람 사용에 명시적으로 동의한 목소리만 등록해 주세요. 목소리 주인의 동의를 확인했으며, 무단 등록·권리 침해·사칭으로 생기는 책임은 등록한 사람에게 있음을 확인합니다."))
+        }
         .alert(String(localized: "내 목소리 만들기는 유료 기능이에요"), isPresented: $planGateOpen) {
             Button(String(localized: "닫기"), role: .cancel) {}
             Button(PaidGateCopy.viewPlans) { onRequestBilling?() }
@@ -430,7 +448,7 @@ struct VoiceProfileManagementPanel: View {
                     //
                     // 막는 기준은 **월 등록 한도 하나**다 — 그건 교체해도 풀리지 않으므로
                     // 녹음을 다 시킨 뒤 거절하지 않도록 입구에서 알린다.
-                    route = .clone
+                    registrationConsentOpen = true
                 }
             } label: {
                 // ⚠ **여백은 라벨에 준다 — 바깥 `.frame` 은 캡슐을 못 키운다.**

@@ -4,6 +4,7 @@
 
 - 릴리스 전 실기기 회귀: `apps/android-native/README.md` 의 Physical Device Checklist
 - 지금 진행 중인 검증 항목: [`dev-test-handoff.md`](dev-test-handoff.md)
+- 2026-10-18 금요일 이후 Sentry 오류와 탈퇴 재시도: [`sentry-followup-2026-10-18.md`](sentry-followup-2026-10-18.md)
 - 2026-09-21 Sentry 후속·양 앱 정합성·요청 비용 검토와 수정/실행 결과: [`sentry-and-parity-audit-2026-09-21.md`](sentry-and-parity-audit-2026-09-21.md)
 - 2026-08-24 네이티브 출시 점검 결과: [`release-readiness-2026-08-24.md`](release-readiness-2026-08-24.md)
 - 자동 테스트: 백엔드 Vitest(+ in-memory libSQL), Android JUnit — CI 에서 돈다
@@ -155,5 +156,28 @@ adb shell dumpsys alarm | grep com.alarmtalk.app > alarms_dump.txt
 adb bugreport bugreport_$(date +%Y%m%d_%H%M%S).zip
 ```
 
-Room DB 를 직접 까야 할 땐 `.db`·`-wal`·`-shm` 세 파일을 **force-stop 후에** 같이 꺼낸다 —
-방법과 함정은 [`dev-test-handoff.md`](dev-test-handoff.md) 참고.
+Room DB 를 직접 까야 할 땐 `.db`·`-wal`·`-shm` 세 파일을 **force-stop 후에** 같이 꺼낸다.
+
+### 기기 Room DB 들여다보기 (실측 메모)
+
+로컬 알람 id·상태를 확인할 때 쓴다. 실패 방식이 전부 **조용해서** 순서를 지켜야 한다.
+
+- **세 파일을 같이, 따로 꺼낸다.** 아직 체크포인트 안 된 변경은 전부 `-wal` 에 있어서 `voice-alarm.db` 만 pull 하면 방금 만든 알람이 안 보인다(행 0개로 보인 적 있음). sqlite 는 세 파일이 **같은 폴더에 같은 이름으로 나란히** 있어야 `-wal` 을 반영한다.
+- **`cat ...db{,-wal,-shm} > 한파일` 로 묶지 말 것.** 에러 없이 조용히 틀린다 — 합친 파일은 헤더의 페이지 수만큼만 읽히고 뒤 바이트는 통째로 무시된다(실측: 481,688바이트 중 앞 32,768바이트만 DB 본체). 결국 `.db` 만 꺼낸 것과 같은 '마지막 체크포인트' 스냅샷이 된다.
+- **꺼내기 전에 앱을 멈춘다.** 복사 도중 Room 이 체크포인트·WAL 리셋을 하면 서로 다른 시점의 파일 셋이 만들어져 최근 알람이 빠지거나 `no such table` 이 난다. force-stop 이 WAL 을 접어 주므로 그 뒤로는 파일 셋이 얼어 있다.
+- ⚠ **force-stop 은 OS 알람 예약을 지운다.** Room 행은 남지만 AlarmManager 예약(PendingIntent)이 날아가 그대로 두면 **안 울린다**. Android 15 부터 문서화된 동작이고([stopped state](https://developer.android.com/about/versions/15/behavior-changes-all#stopped-state)), 실측하면 **Android 13 에서도 이미 그렇다**(A32: 07:00 알람 켬 → `Next alarm clock … 07:00` → force-stop → 해당 줄이 빔 → 앱 재실행 → `Boot restore complete pending=1 scheduled=1` 과 함께 복귀).
+
+순서: ① 관찰하려던 동작을 **끝내고**(결과가 Room 에 써진 뒤) → ② force-stop + 3파일 추출 → ③ **앱 재실행해 예약 복구**(로그 `Boot restore complete pending=N scheduled=N`, `adb shell dumpsys alarm` 의 `Next alarm clock information` 확인).
+
+```powershell
+$dst = '<받을 폴더>'
+adb -s <serial> shell am force-stop com.alarmtalk.app.dev   # ← 반드시 먼저
+foreach ($f in 'voice-alarm.db','voice-alarm.db-wal','voice-alarm.db-shm') {
+  adb -s <serial> shell "run-as com.alarmtalk.app.dev cat /data/data/com.alarmtalk.app.dev/databases/$f > /data/local/tmp/$f"
+  adb -s <serial> pull "/data/local/tmp/$f" "$dst\$f"
+}
+adb -s <serial> shell monkey -p com.alarmtalk.app.dev -c android.intent.category.LAUNCHER 1  # ← 예약 복구
+```
+
+`>` 는 반드시 **바깥 adb 셸**이 처리하게 둔다(위 형태). `run-as ... sh -c '... > /data/local/tmp/...'` 로 감싸면 앱 uid 로 쓰게 돼 `Permission denied` 다 — /data/local/tmp 는 shell uid 만 쓸 수 있다.
+그 뒤 `python -c "import sqlite3; ..."` 로 `$dst\voice-alarm.db` 를 열면 `-wal` 이 자동 반영된다.

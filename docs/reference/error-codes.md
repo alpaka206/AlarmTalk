@@ -119,8 +119,6 @@
 | `CONSENT_LOAD_FAILED` | 동의 조회 실패 | 500 | `routes/user.ts` |
 | `CONSENT_STATUS_FAILED` | 동의 상태 조회 실패 | 500 | `routes/user.ts` |
 | `DELETION_REQUEST_FAILED` | 탈퇴 요청 처리 실패 | 500 | `routes/user.ts` |
-| `NO_PENDING_DELETION` | 취소할 탈퇴 예약 없음 | 404 | `routes/user.ts` |
-| `DELETION_CANCEL_FAILED` | 탈퇴 취소 처리 실패 | 500 | `routes/user.ts` |
 
 ## 3. 결제 / 구독
 
