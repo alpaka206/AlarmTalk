@@ -38,7 +38,8 @@ enum AlarmSoundPlan: Equatable {
     var fingerprint: String {
         switch self {
         case .voiceClip(let key, _, _, let volume, let revision):
-            return "voice:\(key):r\(revision ?? "-"):v\(volume)"
+            // 파일 이름만 바꾸면 기존 AlarmKit 예약은 resolve를 건너뛴다. 쉼 변경도 재예약 대상이다.
+            return "voice:\(key):r\(revision ?? "-"):v\(volume):g\(AlarmSoundStaging.voiceRepeatGapMillis)"
         case .alarmSoundFile(let url, _, let volume): return "sound:\(url.path):v\(volume)"
         case .systemDefault: return "default"
         }
@@ -181,7 +182,13 @@ enum AlarmSoundResolver {
             // 길이 초과·측정 불가여도 staging 을 한 번 시도한다 — AlarmSoundStaging 이 첫
             // 30초로 캡하므로 성공하면 `.bundledNamed`(잠금화면에서도 울림)로 승격된다.
             // 트림/transcode 가 진짜로 실패할 때만 in-app 폴백으로 떨어진다.
-            if let bundled = try? AlarmSoundStaging.stage(url: url, key: key, volumePercent: volumePercent) {
+            // 목소리는 끝에 반복 사이 쉼을 붙인다(`AlarmSoundStaging.voiceRepeatGapMillis` — 안드로이드 0.9초와 같다).
+            if let bundled = try? AlarmSoundStaging.stage(
+                url: url,
+                key: key,
+                volumePercent: volumePercent,
+                trailingSilenceMillis: AlarmSoundStaging.voiceRepeatGapMillis
+            ) {
                 return .bundledNamed(stagedAlertName(bundled))
             }
             return .cachedAudio(url, duration)

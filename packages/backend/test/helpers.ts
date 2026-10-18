@@ -145,6 +145,7 @@ export function createMockDB() {
             consent_type: t,
             policy_version: CURRENT_POLICY_VERSION,
             agreed: 1,
+            created_at: '2000-01-01 00:00:00.000',
           })),
           rowsAffected: 0,
         };

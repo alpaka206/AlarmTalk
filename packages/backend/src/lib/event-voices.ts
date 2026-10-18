@@ -25,8 +25,8 @@ export function isEventLocale(v: unknown): v is EventLocale {
  * ⚠ 새 종류는 서버가 **먼저** prod 에 나가야 한다 — 그 종류를 보내는 랜딩 번들이 옛 서버에 닿으면 400
  * `INVALID_BODY` 다. `love` 는 그 순서를 지키지 못했다 — 이 변경(#818)과 랜딩 교체(#815)가 한 릴리스(1.2.11)로
  * 같이 나가고, 랜딩이 먼저 뜨는 창은 랜딩 화면이 그 400 을 약 93초(3·6·12·24·48초) 자동으로 다시 불러 넘긴다
- * (`apps/landing/components/event/event-api.ts` 의 `DEPLOY_WINDOW_RETRY_DELAYS_MS`,
- * `docs/qa/dev-test-handoff.md` 의 「prod 게재 순서」). 그건 `love` 한 번의 안전망이고, 다음 종류는 다시 서버 먼저다.
+ * (`apps/landing/components/event/event-api.ts` 의 `DEPLOY_WINDOW_RETRY_DELAYS_MS` — 걷어내기는
+ * `docs/qa/dev-test-handoff.md` 「정리할 것」). 그건 `love` 한 번의 안전망이고, 다음 종류는 다시 서버 먼저다.
  * 캐시된 옛 랜딩 번들은 그 뒤에도 `chuseok` 을 보내고, 아래 `LEGACY_EVENT_MESSAGE_KINDS` 가 옛 문안으로 받는다.
  */
 export const EVENT_MESSAGE_KINDS = ['birthday', 'love'] as const;
@@ -39,7 +39,7 @@ export type EventMessageKind = (typeof EVENT_MESSAGE_KINDS)[number];
  * '사랑 한마디' 로 갈아 끼웠다). 400 으로 거절하면 두 클립 중 하나가 실패하고 새로고침 전에는
  * 재시도로도 못 살리며, 다른 문구(지금의 사랑 한마디)로 바꿔 읽어 주면 사용자가 고른 것과 다른 것이
  * 나온다. 그래서 옛 종류는 **옛 문안 그대로** 읽어 준다(`EVENT_MESSAGES`). 새 번들이 다 퍼진 뒤(며칠)
- * 이 목록과 그 문안을 함께 지운다 — `docs/qa/dev-test-handoff.md` 의 follow-up.
+ * 이 목록과 그 문안을 함께 지운다 — `docs/qa/dev-test-handoff.md` 「정리할 것」.
  */
 export const LEGACY_EVENT_MESSAGE_KINDS = ['comfort', 'chuseok'] as const;
 export type LegacyEventMessageKind = (typeof LEGACY_EVENT_MESSAGE_KINDS)[number];

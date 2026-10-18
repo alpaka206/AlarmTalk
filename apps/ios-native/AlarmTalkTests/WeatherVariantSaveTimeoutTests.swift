@@ -33,15 +33,16 @@ final class WeatherVariantSaveTimeoutTests: XCTestCase {
 
     /// 응답을 주지 않는 서버 위의 진짜 `AlarmTalkAPI`.
     ///
-    /// 세션의 유휴 타임아웃을 **3초**로 둔다 — 상한이 사라져도 테스트가 60초를 매달리지
+    /// 세션의 유휴 타임아웃을 **6초**로 둔다 — 상한이 사라져도 테스트가 60초를 매달리지
     /// 않는다. 그때는 `.timedOut` 이므로 아래 취소 오류 단언이 실패한다. 앱에서는 그 값이
-    /// 60초다(`AlarmTalkAPI.makeDefaultSession`).
+    /// 60초다(`AlarmTalkAPI.makeDefaultSession`). 상한(`realRequestTimeout`)보다 넉넉히 길어야
+    /// 두 끝이 섞이지 않는다.
     private func hangingAPI() -> AlarmTalkAPI {
         HangingWeatherURLProtocol.reset()
         addTeardownBlock { HangingWeatherURLProtocol.reset() }
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [HangingWeatherURLProtocol.self]
-        configuration.timeoutIntervalForRequest = 3
+        configuration.timeoutIntervalForRequest = 6
         return AlarmTalkAPI(
             baseURL: URL(string: "https://weather-save.example.test/api/")!,
             session: URLSession(configuration: configuration)
@@ -50,6 +51,12 @@ final class WeatherVariantSaveTimeoutTests: XCTestCase {
 
     // ── 상한 ────────────────────────────────────────────────────────────────
 
+    /// 진짜 요청이 프로토콜에 닿는지까지 보는 테스트의 상한. 0.2초였을 때 느린 CI 러너에서
+    /// URLSession 이 요청을 `startLoading` 에 넘기기도 전에 상한이 끝나 "요청이 나갔다" 단언이
+    /// 가끔 졌다(2026-10-16 develop `3b81a91e`, `startCount` 0). 세션 유휴 타임아웃(6초)보다는
+    /// 충분히 짧아야 한다.
+    private static let realRequestTimeout: TimeInterval = 1.5
+
     /// 상한이 없으면 세션의 `.timedOut` 으로 끝나므로 실패한다. 상한이 있으면 요청이
     /// 취소 오류로 끝나고 `stopLoading` 까지 전달된다. CI 시뮬레이터가 일시 정지된 시간까지
     /// 포함하는 벽시계 대신, 상한이 실제 요청을 취소했는지 검증한다.
@@ -57,7 +64,7 @@ final class WeatherVariantSaveTimeoutTests: XCTestCase {
         let api = CancellationRecordingResolver(api: hangingAPI())
 
         let index = await WeatherVariantSaveLookup.freshIndex(
-            record: weatherRecord(), token: "t", api: api, timeoutSeconds: 0.2
+            record: weatherRecord(), token: "t", api: api, timeoutSeconds: Self.realRequestTimeout
         )
 
         XCTAssertNil(index, "상한을 넘긴 조회는 오프라인과 같은 nil 이다")

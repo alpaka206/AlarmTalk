@@ -3,8 +3,12 @@ import type { AppEnv } from '../types';
 import { getDB } from '../lib/db';
 import { logRouteError } from '../lib/logger';
 import { deleteSensitiveVoiceDataForUser, type DowngradedAlarm } from '../lib/paid-voice-cleanup';
-import { notifyDowngradedAlarms, sendAccountDeletionRequestedPush, type DeletedPushTarget } from '../lib/fcm';
-import { withWriteTransaction } from '../lib/transactions';
+import {
+  notifyDowngradedAlarms,
+  sendAccountDeletionRequestedPush,
+  type DeletedPushTarget,
+} from '../lib/fcm';
+import { withWriteTransaction, withRetryableWriteTransaction } from '../lib/transactions';
 import {
   normalizeQuietWindows,
   validateQuietDays,
@@ -355,8 +359,8 @@ user.post('/consents', async (c) => {
     await withWriteTransaction(db, async (tx) => {
       for (const r of rows) {
         await tx.execute({
-          sql: `INSERT INTO user_consents (id, user_id, consent_type, policy_version, agreed)
-                VALUES (?, ?, ?, ?, ?)`,
+          sql: `INSERT INTO user_consents (id, user_id, consent_type, policy_version, agreed, created_at)
+                VALUES (?, ?, ?, ?, ?, strftime('%Y-%m-%d %H:%M:%f', 'now'))`,
           args: [crypto.randomUUID(), userPk, r.type, shownVersion, r.agreed ? 1 : 0],
         });
       }
@@ -444,8 +448,8 @@ user.get('/consents/status', async (c) => {
     // 빈도: 개정으로 다른 유형의 최소 버전이 오를 때만 = 개정 1회당 1번. 제출하면 거절이
     // 새 버전으로 다시 기록돼 그 회차는 닫힌다.
     //
-    // ⚠ **지금은 발동하지 않는다.** CONSENT_MIN_POLICY_VERSION 6종이 전부 3 이라 위 collect 가
-    // 늘 비어 있다. 실제로 켜는 레버는 그 상수를 올리는 것이고, 그건 별도 결재 사항이다.
+    // ⚠ **2026-10-16 부터 발동한다** — CONSENT_MIN_POLICY_VERSION.privacy 를 5 로 올려, 처리방침 기록이 3 인 사람의
+    // collect 에 privacy 가 담긴다. 그중 마케팅을 거절했던 사람에게만 이 갈래가 마케팅을 선택으로 붙인다(한 번).
     // ⚠ **앱 내 화면에서만 유도한다.** 푸시·이메일로 재동의를 권하면 그 메시지 자체가
     // 영리목적 광고성 정보로 평가돼 거절자에게는 정보통신망법 제50조 위반 소지가 있다.
     if (collect.length > 0 && latest.get('marketing')?.agreed === false) {
@@ -516,7 +520,7 @@ user.post('/me/deletion', async (c) => {
     // 지우기 전에 읽어 둔 그 계정의 푸시 토큰 — 커밋 뒤 다른 기기에 '탈퇴 신청됨' 신호를 보낸다
     // (`sendAccountDeletionRequestedPush`). 트랜잭션이 다시 돌면 다시 채운다.
     let deletedTargets: DeletedPushTarget[] = [];
-    const res = await withWriteTransaction(db, async (tx) => {
+    const res = await withRetryableWriteTransaction(db, async (tx) => {
       deletedTargets = [];
       const updated = await tx.execute({
         sql: `UPDATE users
@@ -533,7 +537,10 @@ user.post('/me/deletion', async (c) => {
           sql: `SELECT token, platform FROM push_tokens WHERE user_id IN (SELECT id FROM users WHERE google_id = ? OR id = ?)`,
           args: [userId, userId],
         });
-        deletedTargets = tokens.rows.map((r) => ({ token: String(r.token), platform: String(r.platform) }));
+        deletedTargets = tokens.rows.map((r) => ({
+          token: String(r.token),
+          platform: String(r.platform),
+        }));
         await tx.execute({
           sql: `DELETE FROM push_tokens WHERE user_id IN (SELECT id FROM users WHERE google_id = ? OR id = ?)`,
           args: [userId, userId],

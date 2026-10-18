@@ -16,6 +16,7 @@ import {
   CURRENT_POLICY_VERSION,
   ACCEPTED_POLICY_VERSIONS,
   loadLatestConsents,
+  usageEventConsentSince,
   consentAnswerIsCurrent,
   missingConsentTypesFrom,
 } from '../src/lib/consent';
@@ -105,7 +106,11 @@ function requiredRows(
   version?: string,
 ) {
   return REQUIRED_CONSENT_TYPES.map((type) =>
-    consentRow(type, overrides[type]?.agreed ?? 1, overrides[type]?.version ?? version ?? minVersionOf(type)),
+    consentRow(
+      type,
+      overrides[type]?.agreed ?? 1,
+      overrides[type]?.version ?? version ?? minVersionOf(type),
+    ),
   );
 }
 
@@ -121,7 +126,11 @@ function answeredRows(
   return [
     ...requiredRows(overrides, version),
     ...FEATURE_CONSENT_TYPES.map((type) =>
-      consentRow(type, overrides[type]?.agreed ?? 1, overrides[type]?.version ?? version ?? minVersionOf(type)),
+      consentRow(
+        type,
+        overrides[type]?.agreed ?? 1,
+        overrides[type]?.version ?? version ?? minVersionOf(type),
+      ),
     ),
   ];
 }
@@ -138,7 +147,10 @@ describe('lib/consent — config', () => {
   it('가입 필수는 일반 3종 + 국외 이전 = 4종이고, 음성 생체정보는 빠져 있다', () => {
     // 국외 이전은 무료 플랜의 기본 목소리 알람도 타는 경로라 거부하면 서비스가 성립하지
     // 않는다 — 계약 이행에 필요한 동의라서 필수다.
-    expect([...REQUIRED_CONSENT_TYPES]).toEqual([...GENERAL_REQUIRED_CONSENTS, 'overseas_transfer']);
+    expect([...REQUIRED_CONSENT_TYPES]).toEqual([
+      ...GENERAL_REQUIRED_CONSENTS,
+      'overseas_transfer',
+    ]);
     // 음성 생체정보는 내 목소리를 등록할 때만 필요하다. 가입 조건으로 강제하면
     // 개인정보보호법 제22조제5항(선택 동의 거부를 이유로 한 서비스 제공 거부 금지)에 걸린다.
     expect(REQUIRED_CONSENT_TYPES).not.toContain('voice_biometric');
@@ -146,8 +158,8 @@ describe('lib/consent — config', () => {
   });
   // 이 단언은 정책버전이 **실수로** 올라가는 것을 막는 가드다. 값을 바꿀 때는 반드시
   // docs/legal/*.ko.md 의 '정책 버전' 머리말과 함께 바꾸고, 왜 올렸는지 남길 것.
-  // (안드로이드 빌드가 privacy-policy.ko.md / terms-of-service.ko.md 의 '정책 버전: N' 을
-  //  파싱해 BuildConfig.LEGAL_POLICY_VERSION 을 만든다 — 서버와 어긋나면 동의 기록이 409 된다.)
+  // (두 앱이 privacy-policy.ko.md / terms-of-service.ko.md 의 '정책 버전: N' 을 빌드 때 읽는다 — 서버와 어긋나면 동의
+  //  기록이 409 된다. 어긋남은 policy-version-matches-legal-docs.test.ts 가 잡는다.)
   // ⚠ **본문이 바뀌면 버전을 올린다 — 단, 그 버전이 이미 배포된 경우에만**(2026-08-26).
   // 번호를 태우는 이유는 앞 버전 **본문에 동의한 사람**을 보호하기 위해서다. 버전 5 는
   // 그때(8-24) prod(`main` = '4')에 없어 동의자가 0명이었으므로, 8-24 보완분은 5 본문을
@@ -157,19 +169,21 @@ describe('lib/consent — config', () => {
   // ⚠ **최소 버전은 「그 유형의 동의 내용이 실제로 바뀔 때만」 올린다** — 문서 버전이
   // 올랐다는 이유로 올리지 말 것(docs/spec/consent.md).
   //
-  // ⚠ **privacy 를 법무 판단 없이 5 로 올리지 말 것 — v5 앱이 스토어에 없던 동안은 올리면 기존
-  // 사용자가 갇혔다**(코덱스 #731). 그 조건은 2026-09-22 iOS 게재로 채워졌다 — 올리면 아래 단언도
-  // 함께 고친다(`docs/qa/dev-test-handoff.md` §1-D).
-  // 버전 5 본문에 사용 기록 수집이 새로 들어갔으니 기준상으로는 올릴 사유가 맞지만,
-  // `POST /user/consents` 가 문서 버전 불일치를 409 로 거절하므로 스토어에 v5 앱이 없는
-  // 동안 올리면 재동의 화면을 **제출할 수 없다.** 고지 없는 수집은 대신 수집 쪽에서
-  // 막는다(`USAGE_EVENT_MIN_PRIVACY_VERSION`, `routes/events.ts`).
-  it('최소 버전은 전부 3 이고, 사용 기록 수집만 5 를 요구한다', () => {
-    // 6(2026-10-16)은 탈퇴 철회 방법·결제 기록 문구 정정 — 수집 범위가 그대로라 최소 버전은 그대로다.
+  // ⚠ **privacy 만 5 다**(2026-10-16 오너 결정). 버전 5 본문에 사용 기록 수집이 새로 들어간 확대 개정이라
+  // 그 전(기록 3·4)에 동의한 사람은 앱에 들어오면 처리방침만 다시 동의한다. 나머지 유형은 내용이 바뀌지 않아 3 그대로다.
+  it('최소 버전은 privacy 만 5 이고 나머지는 3, 사용 기록 수집도 5 를 요구한다', () => {
+    // 6(2026-10-16)은 탈퇴 철회 방법·결제 기록 문구 정정 — 수집 범위가 그대로라 5 로 동의한 사람은 다시 묻지 않는다.
     expect(CURRENT_POLICY_VERSION).toBe('6');
     // 앞 버전 5(1.2.13 이하 앱의 문서)는 2026-10-16 에 지웠다(오너 — 옛 앱 정리).
     expect([...ACCEPTED_POLICY_VERSIONS]).toEqual(['6']);
-    expect(Object.values(CONSENT_MIN_POLICY_VERSION).every((v) => v === 3)).toBe(true);
+    expect(CONSENT_MIN_POLICY_VERSION).toEqual({
+      terms: 3,
+      privacy: 5,
+      age14: 3,
+      marketing: 3,
+      voice_biometric: 3,
+      overseas_transfer: 3,
+    });
     expect(USAGE_EVENT_MIN_PRIVACY_VERSION).toBe(5);
   });
 });
@@ -183,35 +197,31 @@ describe('lib/consent — needsConsent', () => {
   });
 
   it('필수 동의가 모두 기록·동의·최신버전이면 false', async () => {
-    mockDB.pushResult([
-      consentRow('terms'),
-      consentRow('privacy'),
-      consentRow('age14'),
-    ]);
-    expect(await needsConsent(mockDB.client as never, 'pk-1', GENERAL_REQUIRED_CONSENTS)).toBe(false);
+    mockDB.pushResult([consentRow('terms'), consentRow('privacy'), consentRow('age14')]);
+    expect(await needsConsent(mockDB.client as never, 'pk-1', GENERAL_REQUIRED_CONSENTS)).toBe(
+      false,
+    );
   });
 
   it('한 유형이라도 미기록이면 true', async () => {
     mockDB.pushResult([consentRow('terms'), consentRow('privacy')]);
-    expect(await needsConsent(mockDB.client as never, 'pk-1', GENERAL_REQUIRED_CONSENTS)).toBe(true);
+    expect(await needsConsent(mockDB.client as never, 'pk-1', GENERAL_REQUIRED_CONSENTS)).toBe(
+      true,
+    );
   });
 
   it('미동의(agreed=0)이면 true', async () => {
-    mockDB.pushResult([
-      consentRow('terms'),
-      consentRow('privacy'),
-      consentRow('age14', 0),
-    ]);
-    expect(await needsConsent(mockDB.client as never, 'pk-1', GENERAL_REQUIRED_CONSENTS)).toBe(true);
+    mockDB.pushResult([consentRow('terms'), consentRow('privacy'), consentRow('age14', 0)]);
+    expect(await needsConsent(mockDB.client as never, 'pk-1', GENERAL_REQUIRED_CONSENTS)).toBe(
+      true,
+    );
   });
 
   it('정책 버전이 그 유형의 최소 버전보다 낮으면 true', async () => {
-    mockDB.pushResult([
-      consentRow('terms'),
-      consentRow('privacy'),
-      consentRow('age14', 1, '0'),
-    ]);
-    expect(await needsConsent(mockDB.client as never, 'pk-1', GENERAL_REQUIRED_CONSENTS)).toBe(true);
+    mockDB.pushResult([consentRow('terms'), consentRow('privacy'), consentRow('age14', 1, '0')]);
+    expect(await needsConsent(mockDB.client as never, 'pk-1', GENERAL_REQUIRED_CONSENTS)).toBe(
+      true,
+    );
   });
 
   it('동일 유형 최신 1건만 본다 (가장 먼저 온 행이 최신)', async () => {
@@ -222,7 +232,9 @@ describe('lib/consent — needsConsent', () => {
       consentRow('privacy'),
       consentRow('age14'),
     ]);
-    expect(await needsConsent(mockDB.client as never, 'pk-1', GENERAL_REQUIRED_CONSENTS)).toBe(false);
+    expect(await needsConsent(mockDB.client as never, 'pk-1', GENERAL_REQUIRED_CONSENTS)).toBe(
+      false,
+    );
   });
 
   it('빈 requiredTypes 는 항상 false (쿼리 없이)', async () => {
@@ -267,10 +279,10 @@ describe('lib/consent — CONSENT_MIN_POLICY_VERSION', () => {
     Object.assign(CONSENT_MIN_POLICY_VERSION, originalMin);
   });
 
-  it('문서 버전이 4 여도 v3 기록은 그대로 유효하다 (v4 축소 개정 회귀 방지)', async () => {
+  it('문서 버전이 4 여도 v3 기록은 그대로 유효하다 (v4 축소 개정 회귀 방지 — privacy 는 5 부터)', async () => {
     mockDB.pushResult([
       consentRow('terms', 1, '3'),
-      consentRow('privacy', 1, '3'),
+      consentRow('privacy', 1, minVersionOf('privacy')),
       consentRow('age14', 1, '3'),
     ]);
     expect(await needsConsent(mockDB.client as never, 'pk-1', GENERAL_REQUIRED_CONSENTS)).toBe(
@@ -293,36 +305,42 @@ describe('lib/consent — CONSENT_MIN_POLICY_VERSION', () => {
   });
 
   it('한 유형의 최소 버전만 올리면 그 유형만 missing 이 된다', async () => {
-    CONSENT_MIN_POLICY_VERSION.privacy = 4;
+    CONSENT_MIN_POLICY_VERSION.privacy = Number(minVersionOf('privacy')) + 1;
     mockDB.pushResult([
       consentRow('terms', 1, '3'),
-      consentRow('privacy', 1, '3'),
+      consentRow('privacy', 1, minVersionOf('privacy')),
       consentRow('age14', 1, '3'),
     ]);
-    expect(await missingConsentTypes(mockDB.client as never, 'pk-1', GENERAL_REQUIRED_CONSENTS))
-      .toEqual(['privacy']);
+    expect(
+      await missingConsentTypes(mockDB.client as never, 'pk-1', GENERAL_REQUIRED_CONSENTS),
+    ).toEqual(['privacy']);
   });
 
-  it.each([['', '빈 값'], ['x', '숫자 아님'], ['v3', '접두사'], ['3.1', '소수점']])(
-    "정책 버전 '%s'(%s)은 파싱 불가 → 0 으로 보고 재동의를 요구한다",
-    async (version) => {
-      mockDB.pushResult([
-        consentRow('terms', 1, version),
-        consentRow('privacy', 1, '3'),
-        consentRow('age14', 1, '3'),
-      ]);
-      expect(await missingConsentTypes(mockDB.client as never, 'pk-1', GENERAL_REQUIRED_CONSENTS))
-        .toEqual(['terms']);
-    },
-  );
+  it.each([
+    ['', '빈 값'],
+    ['x', '숫자 아님'],
+    ['v3', '접두사'],
+    ['3.1', '소수점'],
+  ])("정책 버전 '%s'(%s)은 파싱 불가 → 0 으로 보고 재동의를 요구한다", async (version) => {
+    mockDB.pushResult([
+      consentRow('terms', 1, version),
+      consentRow('privacy', 1, minVersionOf('privacy')),
+      consentRow('age14', 1, '3'),
+    ]);
+    expect(
+      await missingConsentTypes(mockDB.client as never, 'pk-1', GENERAL_REQUIRED_CONSENTS),
+    ).toEqual(['terms']);
+  });
 
   it('복수형은 미충족 전부를, 단수형은 그 첫 원소를 돌려준다', async () => {
-    mockDB.pushResult([consentRow('privacy', 1, '3')]);
-    expect(await missingConsentTypes(mockDB.client as never, 'pk-1', GENERAL_REQUIRED_CONSENTS))
-      .toEqual(['terms', 'age14']);
-    mockDB.pushResult([consentRow('privacy', 1, '3')]);
-    expect(await missingConsentType(mockDB.client as never, 'pk-1', GENERAL_REQUIRED_CONSENTS))
-      .toBe('terms');
+    mockDB.pushResult([consentRow('privacy', 1, minVersionOf('privacy'))]);
+    expect(
+      await missingConsentTypes(mockDB.client as never, 'pk-1', GENERAL_REQUIRED_CONSENTS),
+    ).toEqual(['terms', 'age14']);
+    mockDB.pushResult([consentRow('privacy', 1, minVersionOf('privacy'))]);
+    expect(
+      await missingConsentType(mockDB.client as never, 'pk-1', GENERAL_REQUIRED_CONSENTS),
+    ).toBe('terms');
   });
 });
 
@@ -345,15 +363,13 @@ function buildApp() {
   app.delete('/api/user/me/deletion', (c) => c.json({ ok: 'cancel-deletion' }));
   app.get('/api/app/version', (c) => c.json({ ok: 'version' }));
   app.get('/api/holiday', (c) => c.json({ ok: 'holiday' }));
+  app.post('/api/events', (c) => c.json({ ok: 'events' }));
+  app.get('/api/events', (c) => c.json({ ok: 'events-get' }));
   return app;
 }
 
 function call(method: string, path: string) {
-  return buildApp().request(
-    new Request(`http://localhost${path}`, { method }),
-    undefined,
-    ENV,
-  );
+  return buildApp().request(new Request(`http://localhost${path}`, { method }), undefined, ENV);
 }
 
 describe('consentMiddleware — 데이터 라우트 게이트 (B4)', () => {
@@ -365,18 +381,27 @@ describe('consentMiddleware — 데이터 라우트 게이트 (B4)', () => {
     mockConsentRows = [];
     const res = await call('GET', '/api/alarm');
     expect(res.status).toBe(403);
-    expect((await res.json()).error_code).toBe('CONSENT_REQUIRED');
+    expect(((await res.json()) as { error_code: string }).error_code).toBe('CONSENT_REQUIRED');
   });
 
   it('일반 필수 3종만 기록해도 데이터 라우트 통과 (게이트는 민감 동의를 보지 않는다)', async () => {
-    mockConsentRows = [
-      consentRow('terms'),
-      consentRow('privacy'),
-      consentRow('age14'),
-    ];
+    mockConsentRows = [consentRow('terms'), consentRow('privacy'), consentRow('age14')];
     const res = await call('GET', '/api/alarm');
     expect(res.status).toBe(200);
-    expect((await res.json()).ok).toBe('data-route');
+    expect(((await res.json()) as { ok: string }).ok).toBe('data-route');
+  });
+
+  // 사용 기록 업로드는 게이트를 지나 라우트가 직접 동의를 본다(2026-10-16, 코덱스). 403 을 주면 앱이 배치를 들고
+  // 있다가 재동의 뒤 다시 보내 고지 전 기록이 저장된다. 면제는 POST 하나뿐이다.
+  it('동의가 모자라도 POST /events 는 게이트를 지난다 — 다른 메서드는 막힌다', async () => {
+    mockConsentRows = [
+      consentRow('terms', 1, '3'),
+      consentRow('privacy', 1, '3'),
+      consentRow('age14', 1, '3'),
+    ];
+    expect((await call('POST', '/api/events')).status).toBe(200);
+    expect((await call('GET', '/api/events')).status).toBe(403);
+    expect((await call('GET', '/api/alarm')).status).toBe(403);
   });
 
   // 가입 시 5종을 다 받더라도, 설정에서 음성 동의를 철회한 사용자는 그 기능만 막혀야 한다.
@@ -416,6 +441,9 @@ interface StatusBody {
   missing: string[];
   collect: string[];
   sensitive_missing: string[];
+  optional: string[];
+  prechecked: string[];
+  has_prior_consent: boolean;
   policy_version: string;
 }
 
@@ -488,7 +516,9 @@ describe('POST /user/consents — 저장되는 정책 버전', () => {
     for (const v of ['5', '4', '7', '999']) {
       const res = await postConsents([{ type: 'terms', agreed: true }], v);
       expect(res.status, v).toBe(409);
-      expect((await res.json()).error_code).toBe('POLICY_VERSION_MISMATCH');
+      expect(((await res.json()) as { error_code: string }).error_code).toBe(
+        'POLICY_VERSION_MISMATCH',
+      );
     }
     expect(mockConsentInserts.map((r) => r.version)).toEqual(['6']);
   });
@@ -556,9 +586,47 @@ describe('GET /user/consents/status — collect / sensitive_missing', () => {
   it('문서 버전이 올라가도 최소 버전을 안 올리면 다시 묻지 않는다', async () => {
     mockConsentRows = [...answeredRows(), consentRow('marketing', 1, '3')];
     expect((await consentStatus()).collect).toEqual([]);
-    // 최소 버전을 올린 유형만 다시 담긴다(기준선 5보다 위로 올려야 뜻이 산다).
-    CONSENT_MIN_POLICY_VERSION.privacy = 4;
+    // 최소 버전을 올린 유형만 다시 담긴다(기준선보다 위로 올려야 뜻이 산다).
+    CONSENT_MIN_POLICY_VERSION.privacy = Number(minVersionOf('privacy')) + 1;
     expect((await consentStatus()).collect).toEqual(['privacy']);
+  });
+
+  // ⚠ 2026-10-16 재동의: 처리방침을 5 미만(3·4)으로 동의한 사람(2026-09-14 전 가입)은 **처리방침 하나만** 다시 받는다.
+  //   다른 동의(생체정보·국외 이전·마케팅 동의)는 그대로 남고 화면에도 뜨지 않는다.
+  it('처리방침 기록이 3 이면 처리방침만 다시 받는다 — 나머지 동의는 그대로', async () => {
+    mockConsentRows = [
+      ...answeredRows({ privacy: { version: '3' } }, '3'),
+      consentRow('marketing', 1, '3'),
+    ];
+    const body = await consentStatus();
+    expect(body.needs_consent).toBe(true);
+    expect(body.missing).toEqual(['privacy']);
+    expect(body.collect).toEqual(['privacy']);
+    expect(body.prechecked).toEqual([]);
+    expect(body.sensitive_missing).toEqual([]);
+    expect(body.has_prior_consent).toBe(true);
+  });
+
+  it('처리방침 재동의 때 마케팅을 거절했던 사람에게만 마케팅이 선택으로 한 번 붙는다', async () => {
+    mockConsentRows = [
+      ...answeredRows({ privacy: { version: '3' } }, '3'),
+      consentRow('marketing', 0, '3'),
+    ];
+    const body = await consentStatus();
+    expect(body.missing).toEqual(['privacy']);
+    expect(body.collect).toEqual(['privacy', 'marketing']);
+  });
+
+  it('처리방침을 5 이상으로 동의한 사람은 다시 묻지 않는다', async () => {
+    for (const version of ['5', CURRENT_POLICY_VERSION]) {
+      mockConsentRows = [
+        ...answeredRows({ privacy: { version } }, '3'),
+        consentRow('marketing', 1, '3'),
+      ];
+      const body = await consentStatus();
+      expect(body.needs_consent).toBe(false);
+      expect(body.collect).toEqual([]);
+    }
   });
 
   it('마케팅 거절 기록도 유효한 응답이라 다시 묻지 않는다', async () => {
@@ -584,7 +652,7 @@ describe('GET /user/consents/status — collect / sensitive_missing', () => {
   });
 
   it('한 유형의 최소 버전만 올리면 그 유형만 missing/collect 에 뜬다', async () => {
-    CONSENT_MIN_POLICY_VERSION.privacy = 4;
+    CONSENT_MIN_POLICY_VERSION.privacy = Number(minVersionOf('privacy')) + 1;
     mockConsentRows = [...answeredRows(), consentRow('marketing', 1, '3')];
     const body = await consentStatus();
     expect(body.needs_consent).toBe(true);
@@ -732,6 +800,27 @@ describe('저장된 미래 버전 기록은 읽을 때 무효로 떨어뜨린다
   });
 });
 
+describe('사용 기록의 동의 시작 시각', () => {
+  it('같은 밀리초의 철회·재동의도 삽입 순서로 읽고 철회 전 기간을 합치지 않는다', async () => {
+    const db = createClient({ url: ':memory:' });
+    try {
+      await runMigrations(db);
+      await db.execute(`INSERT INTO users (id, google_id, email) VALUES ('u-time', 'g-time', 'time@example.com')`);
+      await db.execute(`INSERT INTO user_consents (id, user_id, consent_type, policy_version, agreed, created_at)
+        VALUES ('t', 'u-time', 'terms', '3', 1, '2000-01-01 00:00:00.000'),
+               ('a', 'u-time', 'age14', '3', 1, '2000-01-01 00:00:00.000'),
+               ('p1', 'u-time', 'privacy', '5', 1, '2026-09-01 00:00:00.000'),
+               ('p2', 'u-time', 'privacy', '6', 0, '2026-09-06 21:00:00.500'),
+               ('p3', 'u-time', 'privacy', '6', 1, '2026-09-06 21:00:00.500')`);
+      const latest = await loadLatestConsents(db, 'u-time');
+      expect(latest.get('privacy')?.agreed).toBe(true);
+      expect(usageEventConsentSince(latest)).toBe(Date.parse('2026-09-06T21:00:00.500Z'));
+    } finally {
+      db.close();
+    }
+  });
+});
+
 // 읽는 쪽 정규화는 '그때그때의' CURRENT_POLICY_VERSION 과 비교하므로, 정책이 나중에 그 버전까지
 // 올라가면 미리 찍혀 있던 행이 **다시 유효해진다.** 마이그레이션 #91 이 그 전에 값을 지운다.
 describe('#91 — 미래 버전으로 저장된 동의 기록은 영구 격리된다', () => {
@@ -758,7 +847,9 @@ describe('#91 — 미래 버전으로 저장된 동의 기록은 영구 격리�
       sql: `SELECT consent_type, policy_version FROM user_consents WHERE user_id = ? ORDER BY id`,
       args: ['u-q'],
     });
-    const byType = new Map(rows.rows.map((r) => [String(r.consent_type), String(r.policy_version)]));
+    const byType = new Map(
+      rows.rows.map((r) => [String(r.consent_type), String(r.policy_version)]),
+    );
     // 위조된 미래 버전만 지워진다.
     expect(byType.get('terms')).toBe('0');
     // 정상 버전과 숫자가 아닌 값(이미 0 으로 읽힌다)은 건드리지 않는다.

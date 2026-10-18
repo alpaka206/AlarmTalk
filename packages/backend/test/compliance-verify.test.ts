@@ -133,14 +133,16 @@ describe('동의 기록 — 마케팅(광고성 정보 수신) 포함', () => {
   it('terms/privacy/marketing/age14 4종을 한 번에 기록한다', async () => {
     const app = buildApp();
     const res = await app.request(
-      req('POST', '/user/consents', consentBody(
-        [
+      req(
+        'POST',
+        '/user/consents',
+        consentBody([
           { type: 'terms', agreed: true },
           { type: 'privacy', agreed: true },
           { type: 'marketing', agreed: false }, // 광고성 정보 수신: 선택 → 미동의로 기록
           { type: 'age14', agreed: true },
-        ],
-      )),
+        ]),
+      ),
     );
     expect(res.status).toBe(200);
     const body = await res.json();
@@ -156,23 +158,31 @@ describe('동의 기록 — 마케팅(광고성 정보 수신) 포함', () => {
     console.log('[GET /consents]', JSON.stringify(body));
     const types = body.consents.map((c: { consent_type: string }) => c.consent_type).sort();
     expect(types).toEqual(['age14', 'marketing', 'privacy', 'terms']);
-    const marketing = body.consents.find((c: { consent_type: string }) => c.consent_type === 'marketing');
+    const marketing = body.consents.find(
+      (c: { consent_type: string }) => c.consent_type === 'marketing',
+    );
     expect(marketing.agreed).toBe(false);
   });
 
   it('마케팅 동의를 true 로 재기록하면 최신값이 동의(true)로 바뀐다', async () => {
     const app = buildApp();
-    await app.request(req('POST', '/user/consents', consentBody([{ type: 'marketing', agreed: true }])));
+    await app.request(
+      req('POST', '/user/consents', consentBody([{ type: 'marketing', agreed: true }])),
+    );
     const res = await app.request(req('GET', '/user/consents'));
     const body = await res.json();
-    const marketing = body.consents.find((c: { consent_type: string }) => c.consent_type === 'marketing');
+    const marketing = body.consents.find(
+      (c: { consent_type: string }) => c.consent_type === 'marketing',
+    );
     console.log('[GET /consents after re-consent]', JSON.stringify(marketing));
     expect(marketing.agreed).toBe(true);
   });
 
   it('허용되지 않은 동의 유형은 400 INVALID_CONSENT_TYPE', async () => {
     const app = buildApp();
-    const res = await app.request(req('POST', '/user/consents', consentBody([{ type: 'sell_my_data', agreed: true }])));
+    const res = await app.request(
+      req('POST', '/user/consents', consentBody([{ type: 'sell_my_data', agreed: true }])),
+    );
     expect(res.status).toBe(400);
     expect((await res.json()).error_code).toBe('INVALID_CONSENT_TYPE');
   });
@@ -230,7 +240,11 @@ describe('동의 상태 — 기존/신규 가입자 재동의 판단', () => {
   it('가입 필수 4종 동의 기록 후 needs_consent=false (marketing 미동의여도 무관)', async () => {
     const app = buildApp(NEW_SUB, NEW_PK);
     await app.request(
-      req('POST', '/user/consents', consentBody([...consentPayload(), { type: 'marketing', agreed: false }])),
+      req(
+        'POST',
+        '/user/consents',
+        consentBody([...consentPayload(), { type: 'marketing', agreed: false }]),
+      ),
     );
     const res = await app.request(req('GET', '/user/consents/status'));
     const body = await res.json();
@@ -291,6 +305,49 @@ describe('동의 상태 — 기존/신규 가입자 재동의 판단', () => {
 });
 
 describe('탈퇴 30일 유예 / 철회', () => {
+  it('탈퇴 쓰기 뒤 520이 나도 롤백 후 재시도하여 세션 세대는 한 번만 오른다', async () => {
+    const pk = 'deletion-retry';
+    await db.execute({
+      sql: 'INSERT INTO users (id, google_id, email, name, token_epoch) VALUES (?, ?, ?, ?, ?)',
+      args: [pk, pk, 'deletion-retry@example.test', 'Retry', 10],
+    });
+    const original = db.transaction.bind(db);
+    let failed = false;
+    const spy = vi.spyOn(db, 'transaction').mockImplementation(async (mode) => {
+      const tx = await original(mode);
+      return new Proxy(tx, {
+        get(target, property) {
+          if (property === 'execute')
+            return async (...args: Parameters<typeof tx.execute>) => {
+              const result = await target.execute(...args);
+              if (!failed) {
+                failed = true;
+                throw new Error('SERVER_ERROR: Server returned HTTP status 520');
+              }
+              return result;
+            };
+          const value = Reflect.get(target, property, target);
+          return typeof value === 'function' ? value.bind(target) : value;
+        },
+      });
+    });
+    try {
+      const response = await buildApp(pk, pk).request(req('POST', '/user/me/deletion'));
+      expect(response.status).toBe(200);
+      expect(spy).toHaveBeenCalledTimes(2);
+      const result = await db.execute({
+        sql: 'SELECT token_epoch, deletion_status FROM users WHERE id = ?',
+        args: [pk],
+      });
+      expect(result.rows[0]).toMatchObject({
+        token_epoch: 11,
+        deletion_status: 'pending_deletion',
+      });
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it('POST /me/deletion → pending_deletion, purge_at ≈ now+30일', async () => {
     const app = buildApp();
     const res = await app.request(req('POST', '/user/me/deletion'));
@@ -300,7 +357,10 @@ describe('탈퇴 30일 유예 / 철회', () => {
     expect(body.status).toBe('pending_deletion');
     expect(body.grace_days).toBe(30);
 
-    const row = await db.execute({ sql: 'SELECT deletion_status, deletion_purge_at FROM users WHERE id = ?', args: [PK] });
+    const row = await db.execute({
+      sql: 'SELECT deletion_status, deletion_purge_at FROM users WHERE id = ?',
+      args: [PK],
+    });
     expect(row.rows[0]!.deletion_status).toBe('pending_deletion');
     const days = (new Date(body.purge_at).getTime() - Date.now()) / 86_400_000;
     expect(days).toBeGreaterThan(29.9);
@@ -311,7 +371,10 @@ describe('탈퇴 30일 유예 / 철회', () => {
     const app = buildApp();
     const res = await app.request(req('DELETE', '/user/me/deletion'));
     expect(res.status).toBe(404);
-    const row = await db.execute({ sql: 'SELECT deletion_status FROM users WHERE id = ?', args: [PK] });
+    const row = await db.execute({
+      sql: 'SELECT deletion_status FROM users WHERE id = ?',
+      args: [PK],
+    });
     expect(row.rows[0]!.deletion_status).toBe('pending_deletion');
   });
 });

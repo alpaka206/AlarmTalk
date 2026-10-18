@@ -9,20 +9,23 @@ Play Console 에 올리는 값의 원본이다. 콘솔을 고칠 때는 이 파�
   `■ 이름: 설명`(ja 는 전각 `：`), 하위 항목은 `◦` 로 쓴다. 규칙은 [`app-store-listing.md`](app-store-listing.md) 와 같다.
 - Play 등록정보는 앱 버전과 무관하게 바꿀 수 있다 — App Store 와 달리 새 버전을 기다리지 않는다.
 - 앱 화면 언어 지원 문장(ko·ja 「이용 안내」 마지막 줄)은 번역을 포함한 다음 Android 버전이 게재된 뒤에만 참이다.
-  그래서 그 버전 기준인 (B) 에만 둔다. 지금 올리는 INTERIM 과 Android 30 기준인 (A) 에는 넣지 않는다.
+  그래서 (B) 에만 둔다(2026-10-16 부터 Play 게시본). 이력인 INTERIM·(A) 에는 없다.
 
 ## 지금 상태 (2026-10-16)
 
-- **게재 중: 33 (1.2.13)** — 프로덕션 `RELEASE_LIFECYCLE_STATE_PUBLISHED`(2026-10-16 Play Developer API 로 확인).
-  게재 중인 등록정보(ko-KR·en-US·ja-JP)에 선물·쿠폰 낱말이 없음을 같은 날 API 로 읽어 확인했다.
+- **게재 중: 34 (1.2.14)** — 프로덕션 `RELEASE_LIFECYCLE_STATE_PUBLISHED`(2026-10-16 Play Developer API 로 확인).
+- **등록정보는 (B)** 다(2026-10-16 commit — 제목·짧은 설명 (A)·(B)·전체 설명 (B), 세 언어. 다시 읽어 글자 수 2984·3819·2836
+  이 이 파일과 같음을 확인). W 는 같은 날 prod 로 확인했다 — 한국 17·일본 47·미국 69 지역 모두 공식 예보가 들어와 있다.
+  (B) 의 날씨 지역 문장은 1.2.11 부터 앱이 나라별 지역 목록을 주므로 '국내 주요 9개 도시' 에서 '대한민국·일본·미국의 지역 목록'
+  으로 고쳐 올렸다. 영어는 R1·R2 를 붙여도 4000 자 안이 되게 'regions in Korea, Japan and the US' 로 줄였다(코덱스 #915).
 
 ## 판과 게시 조건
 
 | 판 | 무엇 | 언제 올리나 |
 |---|---|---|
-| INTERIM | 날씨 주장과 앱 화면 언어 문장이 없는 판 | 지금 |
-| (A) | Android 30(1.2.10, 지금 게재 버전) 기준, 날씨 문장 포함, 앱 화면 언어 문장 없음 | W 를 Android 30 기준으로 확인한 뒤, Android 30 이 게재본인 동안 |
-| (B) | 다음 Android 버전 기준, 날씨 문장과 앱 화면 언어 문장 포함 | 그 버전이 게재되고 W 도 확인된 뒤. W 전이면 INTERIM 을 그대로 둔다 |
+| **(B)** | 날씨 문장과 앱 화면 언어 문장 포함 | **지금 게시본**(2026-10-16 — W 확인 뒤 commit). 다음에 바꿀 때 여기서 고친다 |
+| INTERIM | 날씨 주장과 앱 화면 언어 문장이 없는 판 | 이력(10/11~10/16 게시본). 다시 올리지 않는다 |
+| (A) | Android 30(1.2.10) 기준, 날씨 문장 포함, 앱 화면 언어 문장 없음 | 이력(올린 적 없음). Android 30 은 게재본이 아니다 |
 | + R1 · R2 | 결제 문단 끝에 붙이는 앱 해지·환불 문장 | 각각 E1 · E2 를 관찰한 뒤, 그때 게재 중인 판에 붙인다 |
 
 제목은 모든 판이 같다. 짧은 설명은 INTERIM 과 (A)·(B) 두 가지다.
@@ -34,7 +37,9 @@ Play Console 에 올리는 값의 원본이다. 콘솔을 고칠 때는 이 파�
     없음), ja 는 일본 도시 프리셋 8개(`東京` 등 — 나라 값은 `大韓民国` 으로 보낸다). 2026-09-30 로컬 실행에서
     ja `東京` 프리셋은 해석에 실패했고, en 직접 입력은 입력 형식에 따라 다른 지점이 골라졌다(`New York` → 영국
     요크). 확인되지 않은 언어는 INTERIM 을 유지한다.
-  - (B) 는 세 언어 모두 국내 9개 프리셋(보내는 값이 같다)으로 확인한다.
+  - (B) 는 앱이 지금 주는 **나라 → 지역 목록 전부**(대한민국 17·일본 47·미국 69, `@alarmtalk/shared` 의 `WeatherRegions`)로
+    확인한다 — prod `weather_region_daily_official` 에 모든 지역의 다가오는 날짜 예보가 있는지 본다(2026-10-16 확인).
+    목록이 늘면 그 지역까지 본다. (옛 판은 국내 9개 프리셋으로 확인했다 — 1.2.11 전의 지역 고르기다.)
 - **R1 · R2 — 앱 해지·환불 문장.** 앱 안 해지는 코드로만 확인했고 운영에서 실행해 본 적이 없다. Google Play 로
   직접 결제한 구독은 Play `cancel` 이 성공한 뒤에만 '종료일에 해지' 를, `revoke`(비례 환불)가 성공한 뒤에만
   '지금 해지' 를 반영하고, 실패하면 502 로 Play 에서 해지하라고 안내한다. 코드로 받은 이용권(초대 코드, 폐지 전의 선물·프로모 코드)은 환불이 없고,
@@ -55,13 +60,13 @@ Play Console 에 올리는 값의 원본이다. 콘솔을 고칠 때는 이 파�
 
 ## 제목 · 짧은 설명
 
-| 언어 | 제목 | 짧은 설명 — INTERIM | 짧은 설명 — (A)·(B) |
+| 언어 | 제목 | 짧은 설명 — INTERIM(이력) | 짧은 설명 — (A)·(B)(지금) |
 |---|---|---|---|
 | ko-KR | `알람톡: 목소리 알람 시계` (14/30) | 좋아하는 목소리로 깨는 아침. 녹음 그대로 울리는 알람, 운세·응원 문구, 가족·커플 모닝콜까지. (54/80) | 좋아하는 목소리로 깨는 아침. 녹음 그대로 울리는 알람, 날씨·운세 문구, 가족·커플 모닝콜까지. (54/80) |
 | en-US | `AlarmTalk: Voice Alarm Clock` (28/30) | Wake to a loved voice: recorded alarms, fortune & cheer, family wake-up calls. (78/80) | Wake to a loved voice: recorded alarms, weather & fortune, family wake-up calls. (80/80) |
 | ja-JP | `アラームトーク：声の目覚まし時計` (16/30) | 好きな声で目覚める朝。録音そのままのアラーム、運勢・応援メッセージ、家族・カップルのモーニングコールまで。 (53/80) | 好きな声で目覚める朝。録音そのままのアラーム、天気・運勢メッセージ、家族・カップルのモーニングコールまで。 (53/80) |
 
-## 전체 설명 — INTERIM (지금)
+## 전체 설명 — INTERIM (이력 — 10/16 까지 게시본)
 
 ### ko-KR (2873/4000)
 
@@ -263,9 +268,9 @@ Support: https://alarm-talk.com/en/contact/
 サポート: https://alarm-talk.com/ja/contact/
 ```
 
-## 전체 설명 — (B) 다음 Android 버전, W 뒤
+## 전체 설명 — (B) (지금 게시본, 2026-10-16~)
 
-### ko-KR (2980/4000)
+### ko-KR (2984/4000)
 
 ```text
 좋아하는 목소리로 깨는 아침.
@@ -280,7 +285,7 @@ Support: https://alarm-talk.com/en/contact/
 • 알람은 요일마다 반복하거나 한 번만 울리게 만들 수 있어요.
 • 기본 목소리 4종(시우·미나·도현·애니)이 앱 언어(한국어·영어·일본어)로 알람을 읽어 줘요. 목소리 대신 알람음으로 울리게 할 수도 있어요.
 • 문구는 날씨·운세·응원·약 중에서 골라요.
-  ◦ 날씨: 그날 날씨(맑음·비·눈·미세먼지·더위·추위 등)에 맞는 문구. 지역은 국내 주요 9개 도시 중에서 골라요.
+  ◦ 날씨: 그날 날씨(맑음·비·눈·미세먼지·더위·추위 등)에 맞는 문구. 지역은 대한민국·일본·미국의 지역 목록에서 골라요.
   ◦ 운세: 성별·생년월일·태어난 시간으로 고르는, 재미로 보는 오늘의 운세
   ◦ 응원·약: 울릴 때마다 미리 준비된 다음 문구로 바뀌어요.
 • 녹음 알람: 알람마다 최대 30초까지 녹음하면 울릴 때 녹음한 그대로 재생돼요. 그 알람에만 쓰는 소리라서 다른 문장을 읽게 할 수는 없어요.
@@ -337,7 +342,7 @@ Support: https://alarm-talk.com/en/contact/
 고객 지원: https://alarm-talk.com/contact/
 ```
 
-### en-US (3813/4000)
+### en-US (3819/4000)
 
 ```text
 Wake up to a voice you love.
@@ -351,7 +356,7 @@ No math, no shaking.
 ■ Free
 • Repeating or one-time alarms
 • Four default voices speak the app language (English, Korean or Japanese), or use an alarm sound
-• Messages: Weather (the day's weather, from rain to poor air; one of 9 major Korean cities), Fortune (for fun, from gender, birth date and time), Encouragement and Meds (each ring plays the next prepared one)
+• Messages: Weather (the day's weather, from rain to poor air; regions in Korea, Japan and the US), Fortune (for fun, from gender, birth date and time), Encouragement and Meds (each ring plays the next prepared one)
 • Recorded alarm: up to 30 seconds per alarm, played exactly as recorded; it can't read other text
 • Turn off on holidays (incl. substitute and temporary holidays; Korea, Japan or US), snooze, voice volume
 
@@ -397,7 +402,7 @@ Terms of Service: https://alarm-talk.com/en/terms/
 Support: https://alarm-talk.com/en/contact/
 ```
 
-### ja-JP (2829/4000)
+### ja-JP (2836/4000)
 
 ```text
 好きな声で目覚める朝を。
@@ -412,7 +417,7 @@ Support: https://alarm-talk.com/en/contact/
 • 曜日ごとの繰り返しも、1回だけのアラームも設定できます。
 • 基本の声4種類が、アプリの言語(日本語・韓国語・英語)でアラームを読み上げます。声の代わりにアラーム音で鳴らすこともできます。
 • メッセージは天気・運勢・応援・薬から選べます。
-  ◦ 天気：その日の天気(晴れ・雨・雪・PM2.5・暑さ・寒さなど)に合わせたメッセージ。都市は韓国の主要9都市から選びます。
+  ◦ 天気：その日の天気(晴れ・雨・雪・PM2.5・暑さ・寒さなど)に合わせたメッセージ。地域は韓国・日本・アメリカの地域一覧から選びます。
   ◦ 運勢：性別・生年月日・生まれた時間から選ぶ、お楽しみの今日の運勢
   ◦ 応援・薬：鳴るたびに、あらかじめ用意された次のメッセージに切り替わります。
 • 録音アラーム：アラームごとに最大30秒まで録音すると、鳴るときに録音したそのままの音が流れます。そのアラーム専用の音なので、別の文を読み上げさせることはできません。
@@ -469,7 +474,7 @@ Support: https://alarm-talk.com/en/contact/
 サポート: https://alarm-talk.com/ja/contact/
 ```
 
-## 전체 설명 — (A) Android 30, W 뒤
+## 전체 설명 — (A) Android 30 (이력 — 올린 적 없음)
 
 (B) 에서 `-` 줄을 `+` 줄로 바꾸고, `+` 가 없는 `-` 줄은 지운다. 나머지는 (B) 와 한 글자도 다르지 않다.
 
@@ -486,14 +491,14 @@ Support: https://alarm-talk.com/en/contact/
 **en-US** (결과 3783/4000)
 
 ```diff
--• Messages: Weather (the day's weather, from rain to poor air; one of 9 major Korean cities), Fortune (for fun, from gender, birth date and time), Encouragement and Meds (each ring plays the next prepared one)
+-• Messages: Weather (the day's weather, from rain to poor air; regions in Korea, Japan and the US), Fortune (for fun, from gender, birth date and time), Encouragement and Meds (each ring plays the next prepared one)
 +• Messages: Weather (the day's weather, from rain to poor air), Fortune (for fun, from gender, birth date and time), Encouragement and Meds (each ring plays the next prepared one)
 ```
 
 **ja-JP** (결과 2785/4000)
 
 ```diff
--  ◦ 天気：その日の天気(晴れ・雨・雪・PM2.5・暑さ・寒さなど)に合わせたメッセージ。都市は韓国の主要9都市から選びます。
+-  ◦ 天気：その日の天気(晴れ・雨・雪・PM2.5・暑さ・寒さなど)に合わせたメッセージ。地域は韓国・日本・アメリカの地域一覧から選びます。
 +  ◦ 天気：その日の天気(晴れ・雨・雪・PM2.5・暑さ・寒さなど)に合わせたメッセージ。
 -• アプリは日本語・韓国語・英語に対応しています。
 ```
@@ -554,8 +559,8 @@ R2 (100자)
 | 전체 설명 — (A) | 4000 | 2954 | 3783 | 2785 |
 | 전체 설명 — (A) + R1 | 4000 | 3007 | 3843 | 2827 |
 | 전체 설명 — (A) + R1 + R2 | 4000 | 3109 | 3961 | 2927 |
-| 전체 설명 — (B) | 4000 | 2980 | 3813 | 2829 |
-| 전체 설명 — (B) + R1 | 4000 | 3033 | 3873 | 2871 |
-| 전체 설명 — (B) + R1 + R2 | 4000 | 3135 | 3991 | 2971 |
+| 전체 설명 — (B) | 4000 | 2984 | 3819 | 2836 |
+| 전체 설명 — (B) + R1 | 4000 | 3037 | 3879 | 2878 |
+| 전체 설명 — (B) + R1 + R2 | 4000 | 3139 | 3997 | 2978 |
 
 글자 수는 유니코드 코드 포인트 수다. 이 표는 위 문구에서 센 값이다 — 문구를 고치면 다시 센다.

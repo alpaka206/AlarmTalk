@@ -30,7 +30,7 @@ import org.junit.Test
  */
 class VoicePreviewConfirmRulesTest {
 
-    // ── 월 등록 한도 — '생성 가능 n/m회' 가 여는 두 곳 ───────────────────────
+    // ── 월 등록 한도 — 추가·등록 동의·삭제 경고의 공통 판정 ────────────────────
 
     @Test
     fun `이번 달 등록을 다 썼는지는 서버가 준 남은 횟수로 판정한다`() {
@@ -53,6 +53,22 @@ class VoicePreviewConfirmRulesTest {
                 VoiceDraftQuotaResponse(limit = 3, used = 3, remaining = 0, registrationLimit = 1, registrationRemaining = 1),
             ),
         )
+    }
+
+    @Test
+    fun `등록 한도가 없는 호환 응답은 추가와 동의하기를 막지 않는다`() {
+        val legacy = Gson().fromJson(
+            """{"limit":3,"used":3,"remaining":0}""",
+            VoiceDraftQuotaResponse::class.java,
+        )
+        assertEquals(0, legacy.registrationLimit)
+        assertEquals(0, legacy.registrationRemaining)
+        // 모달은 원본 응답을 넘긴다. 호출부의 사전 필터 없이도 한도 없음으로 판정해야 한다.
+        assertFalse(monthlyRegistrationUsedUp(legacy))
+        assertFalse(monthlyRegistrationUsedUp(VoiceDraftQuotaResponse(registrationLimit = 0, registrationRemaining = 0)))
+        assertFalse(monthlyRegistrationUsedUp(VoiceDraftQuotaResponse(registrationLimit = 0, registrationRemaining = -1)))
+        // 같은 남은 횟수라도 실제 한도가 있으면 등록을 막는다.
+        assertTrue(monthlyRegistrationUsedUp(VoiceDraftQuotaResponse(registrationLimit = 1, registrationRemaining = 0)))
     }
 
     // ── 등록 흐름의 거절 — 어디에 말하는가 ──────────────────────────────────

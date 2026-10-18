@@ -126,8 +126,11 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             build 2>&1 | tee xcodebuild-release.log
 
+      # 기록을 올리는 단계라 실패해도 실행 결과를 바꾸지 않는다 — 2026-10-16 #914 실행은 테스트·빌드가 다 통과했는데
+      # 이 단계만 GitHub 업로드 서버 주소를 못 찾아(ENOTFOUND) 빨간불이 됐다. 결과는 위 두 단계가 정한다.
       - name: Upload logs and test results
         if: always()
+        continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
           name: ios-build-artifacts

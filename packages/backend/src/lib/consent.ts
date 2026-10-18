@@ -55,10 +55,7 @@ export const OPTIONAL_CONSENT_TYPES = ['marketing'] as const;
  * 범위는 최소로 두고, 음성 라우트는 SENSITIVE_REQUIRED_CONSENTS 를 따로 확인한다 —
  * 설정에서 동의를 철회한 경우에도 그 기능만 막히고 앱 전체가 잠기지는 않는다.
  */
-export const REQUIRED_CONSENT_TYPES = [
-  ...GENERAL_REQUIRED_CONSENTS,
-  'overseas_transfer',
-] as const;
+export const REQUIRED_CONSENT_TYPES = [...GENERAL_REQUIRED_CONSENTS, 'overseas_transfer'] as const;
 
 /**
  * 그 기능을 쓸 때만 필요한 동의. **가입 화면에 '선택'으로 함께 노출하되, 거절해도 가입은
@@ -125,7 +122,7 @@ export const ACCEPTED_POLICY_VERSIONS: readonly string[] = [CURRENT_POLICY_VERSI
 /**
  * 유형별 **최소 정책 버전** — 기록된 동의가 이 버전 이상이어야 유효하다.
  *
- * 전부 3 인 이유: 버전 4(2026-07-30)는 수집 항목·수탁사·제공 범위를 **줄이기만 한 축소
+ * privacy 만 5 다(아래 상수의 주석 — 2026-10-16). 나머지가 3 인 이유: 버전 4(2026-07-30)는 수집 항목·수탁사·제공 범위를 **줄이기만 한 축소
  * 개정**이라 어느 유형의 동의 내용도 바뀌지 않았다. 축소된 범위는 이미 받아 둔 동의 안에
  * 들어오므로 재동의 사유가 아니다. 기록은 모두 3 이상이라(2026-09-14 뒤 동의는 5) 전원 그대로 유효하다.
  *
@@ -140,14 +137,9 @@ export const ACCEPTED_POLICY_VERSIONS: readonly string[] = [CURRENT_POLICY_VERSI
  *   그 마찰은 그들의 데이터 처리에 아무 변화가 없는데도 발생하는 것이다.
  *   → **이건 법무 판단이므로 사람이 확인할 것.** 되돌리려면 overseas_transfer 를 5 로 올린다.
  *
- * ⚠ **버전 5 본문이 그 뒤에 넓어졌다 — 릴리스 때 `privacy` 를 다시 판단할 것.**
- *   사용 기록(알람 울림·해제·다시 알림·문구 사용 이력)이 수집 항목·이용 목적·보유 기간
- *   (1년)에 추가됐다(`docs/spec/usage-events.md`). 이건 축소가 아니라 **확대**라 위의
- *   "올리는 기준" 에 그대로 해당한다. 2026-09-14 전에 동의한 사용자의 기록은 3 이다 —
- *   그 사용자의 이용 기록은 아래 `USAGE_EVENT_MIN_PRIVACY_VERSION` 이 받지 않는다. 올리는
- *   시점은 **버전 5 를 번들한 앱이 스토어에 게재된 뒤**여야 했다 — 먼저 올리면 구버전 앱이
- *   재동의 화면에서 409 로 갇힌다. 그 조건은 2026-09-22 iOS 게재로 채워졌다(Android 는
- *   `minSupported` 25 부터 v5 번들). 체크리스트는 `docs/qa/dev-test-handoff.md` §1-D.
+ * ⚠ **버전 5 본문이 그 뒤에 넓어졌다 — 그래서 `privacy` 는 5 로 올렸다**(2026-10-16). 사용 기록 수집이 수집 항목·
+ *   이용 목적·보유 기간(1년)에 추가된 확대 개정이다(`docs/spec/usage-events.md`). 올리는 시점은 그 문서를 실은 앱이
+ *   스토어에 있고 옛 앱이 막힌 뒤여야 했다 — 먼저 올리면 옛 앱이 재동의 화면에서 409 로 갇힌다.
  *
  * 올리는 기준: **그 유형의 동의 내용이 실제로 바뀔 때만** 해당 유형만 올린다 —
  * 수집 항목·이용 목적·보유 기간 확대, 새 제3자 제공/국외 이전, 처리 방식 변경 등.
@@ -165,19 +157,17 @@ export const USAGE_EVENT_MIN_PRIVACY_VERSION = 5;
 
 export const CONSENT_MIN_POLICY_VERSION: Record<ConsentType, number> = {
   terms: 3,
-  // ⚠ **3 그대로 둔다 — v5 앱이 스토어에 없던 동안은 5 로 올리면 기존 사용자가 갇혔다**(코덱스 #731 정정).
-  //   버전 5 본문에 '서비스 이용 기록' 수집이 새로 들어갔으니 기준상 올려야 맞지만,
-  //   `POST /user/consents` 는 `document_version != CURRENT_POLICY_VERSION` 을 409 로
-  //   거절한다(`routes/user.ts`). 스토어에 v5 앱이 없는 동안 여기를 올리면 기존 사용자는
-  //   재동의 화면이 뜨는데 **제출할 방법이 없다** — 앱이 벽돌이 된다.
-  //
-  //   그래서 고지 없는 수집은 **수집 쪽에서** 막는다: `POST /events` 가 privacy 동의
-  //   버전이 `USAGE_EVENT_MIN_PRIVACY_VERSION` 미만이면 받지 않는다. 재동의를 강제하지
-  //   않고도 동의 없는 수집이 일어나지 않는다.
-  //
-  //   ⚠ **여기를 5 로 올리는 것은 v5 앱이 양 스토어에 게재된 뒤의 별도 작업이다.** 그 조건은
-  //   2026-09-22 iOS 게재로 채워졌다 — 남은 것은 올릴지의 법무 판단이다(`docs/qa/dev-test-handoff.md` §1-D).
-  privacy: 3,
+  // ⚠ **5 다 — 2026-10-16 오너 결정으로 3 에서 올렸다.** 버전 5 본문에 '서비스 이용 기록'(알람 울림·해제·다시 알림·
+  //   문구 사용 이력, 보관 1년) 수집이 새로 들어간 **확대 개정**이라 아래 "올리는 기준" 에 그대로 해당한다. 2026-09-14
+  //   전에 동의한 사람(기록 3·4 — 2026-10-16 prod 60명, iOS 기기는 0)은 앱에 들어오면 처리방침 **하나만** 다시 동의하는 화면을 본다
+  //   (`collect` 에 privacy 만 담긴다. 마케팅을 거절했던 사람에게는 같은 화면에 마케팅이 선택으로 한 번 더 붙는다 —
+  //   `routes/user.ts` 의 마케팅 재유도). 그 전에는 재동의를 강제하는 대신 수집을 멈췄다(`USAGE_EVENT_MIN_PRIVACY_VERSION`).
+  //   6 이 아니라 5 인 이유: 6(2026-10-16)은 수집 범위를 바꾸지 않은 정정이라 5 로 동의한 사람은 다시 묻지 않는다.
+  //   ⚠ 순서: 재동의를 낼 수 있는 앱은 문서 6 을 실은 앱뿐이다(`ACCEPTED_POLICY_VERSIONS`). 안드로이드는 34 미만을
+  //   `minSupported` 로 막았고(#911). iOS 기기의 기록은 전부 5 이상이지만(첫 게재 2026-09-22) 기록 3·4 인 안드로이드
+  //   계정이 옛 iOS 앱(문서 5)으로 로그인할 수는 있다 — 그래서 이 값은 iOS `minSupported` 를 문서 6 빌드(12)로 올린 뒤에
+  //   prod 에 낸다(`docs/qa/dev-test-handoff.md` 「다음 할 일」).
+  privacy: 5,
   age14: 3,
   marketing: 3,
   voice_biometric: 3,
@@ -202,7 +192,7 @@ export const CONSENT_MIN_POLICY_VERSION: Record<ConsentType, number> = {
  */
 
 /** 유형별 최신 동의 1건의 상태. version 은 파싱된 정수(파싱 실패 시 0). */
-type LatestConsent = { agreed: boolean; version: number };
+type LatestConsent = { agreed: boolean; version: number; validSinceMs: number | null };
 export type LatestConsentMap = ReadonlyMap<string, LatestConsent>;
 
 /** 정책 버전 문자열('1'…'4') → 정수. 파싱 불가/빈 값은 0 으로 떨어뜨려 재동의를 요구한다. */
@@ -232,28 +222,66 @@ function minPolicyVersionOf(type: string): number {
   );
 }
 
-/** user_consents 에서 유형별 최신 1건을 읽어 온다 (created_at DESC, rowid DESC). */
+/** 서버의 SQLite UTC 시각. 초 단위 옛 기록은 동의 전 같은 초의 사건을 받지 않도록 다음 초부터다. */
+function consentTimeUpperBound(raw: unknown): number | null {
+  if (typeof raw !== 'string') return null;
+  const value = raw.trim();
+  const utc = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d+)?$/.test(value)
+    ? `${value.replace(' ', 'T')}Z`
+    : value;
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(utc)) return null;
+  const ms = Date.parse(utc);
+  if (!Number.isFinite(ms)) return null;
+  return ms + (/T\d{2}:\d{2}:\d{2}(?:Z|[+-]\d{2}:\d{2})$/.test(utc) ? 1000 : 0);
+}
+
+/** 유형별 최신 상태와 현재 기준을 연속 충족한 시작 시각. 거절·버전 미달 이전으로 거슬러 가지 않는다. */
 export async function loadLatestConsents(
   db: DbExecutor,
   userIdPK: string,
 ): Promise<LatestConsentMap> {
   const res = await db.execute({
-    // created_at 은 초 단위라 같은 초에 토글하면 동점이 된다. rowid(삽입 순서)를
-    // 보조 정렬로 두어 같은 초여도 항상 마지막 삽입을 최신으로 선택한다.
-    sql: `SELECT consent_type, policy_version, agreed
+    // 옛 created_at 은 초 단위이고 새 기록도 같은 밀리초에 겹칠 수 있다.
+    // rowid(삽입 순서)를 보조 정렬로 두어 동점이면 마지막 삽입을 최신으로 선택한다.
+    sql: `SELECT consent_type, policy_version, agreed, created_at
           FROM user_consents WHERE user_id = ? ORDER BY created_at DESC, rowid DESC`,
     args: [userIdPK],
   });
   const latest = new Map<string, LatestConsent>();
+  const ended = new Set<string>();
   for (const row of res.rows) {
     const type = String(row.consent_type);
-    if (latest.has(type)) continue; // 유형별 최신 1건만
-    latest.set(type, {
+    const record: LatestConsent = {
       agreed: Number(row.agreed) === 1,
       version: sanitizeStoredPolicyVersion(String(row.policy_version)),
-    });
+      validSinceMs: null,
+    };
+    const current = latest.get(type) ?? record;
+    latest.set(type, current);
+    if (ended.has(type)) continue;
+    if (!record.agreed || record.version < minPolicyVersionOf(type)) {
+      ended.add(type);
+      continue;
+    }
+    current.validSinceMs = consentTimeUpperBound(row.created_at);
+    if (current.validSinceMs === null) ended.add(type);
   }
   return latest;
+}
+
+/** 사용 기록은 현재 동의뿐 아니라 사건이 발생할 때의 고지·필수 동의도 충족해야 한다. */
+export function usageEventConsentSince(latest: LatestConsentMap): number | null {
+  if (
+    missingConsentTypesFrom(latest, GENERAL_REQUIRED_CONSENTS).length > 0 ||
+    (latest.get('privacy')?.version ?? 0) < USAGE_EVENT_MIN_PRIVACY_VERSION
+  ) return null;
+  let since = 0;
+  for (const type of GENERAL_REQUIRED_CONSENTS) {
+    const start = latest.get(type)?.validSinceMs;
+    if (start == null) return null;
+    since = Math.max(since, start);
+  }
+  return since;
 }
 
 /**

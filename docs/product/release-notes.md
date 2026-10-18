@@ -89,7 +89,7 @@ node -e "const m=require('fs').readFileSync('docs/product/release-notes.md','utf
 
 선물 코드 폐지. iOS 1.2.12(빌드 9)가 App Store 심사 지침 3.1.1 로 다시 반려돼(2026-10-12 — 이번 사유는 선물 코드) 고친
 판이다. 개인 이용권 선물(1회성 상품 결제 → GIFT- 코드)을 서버·두 앱에서 지웠고, 유료 게이트의 코드 입력도 없앴다
-(`docs/spec/plan-gates.md` 「선물 코드 — 폐지」). 버전 계획과 순서는 `docs/qa/dev-test-handoff.md` 2026-10-14 절.
+(`docs/spec/plan-gates.md` 「선물 코드 — 폐지」). 버전 계획과 순서는 핸드오프 정리 전 판 `git show e493e8c3:docs/qa/dev-test-handoff.md` 의 2026-10-14 절.
 
 - **Play**: 아래 한 줄만 낸다. 31(1.2.11)·32(1.2.12) 어느 쪽에서 올라와도 맞는 문장이다 — 1.2.12 의 Play 줄("선물 코드와
   초대 코드만 받습니다")은 이제 틀린 말이라 다시 쓰지 않는다.
@@ -169,7 +169,7 @@ App Store 칸의 상한은 4000자다(맨 위).
 
 프로모 코드 폐지. iOS 1.2.11(빌드 8)이 App Store 심사 지침 3.1.1 로 반려돼(2026-10-12) 고친 판이다. 코드 칸은
 선물·초대 코드만 받는다(`docs/spec/plan-gates.md` 「프로모 코드 — 폐지」). 버전을 두 앱 모두 1.2.12 로 올린 이유는
-`docs/qa/dev-test-handoff.md` 2026-10-12 절.
+핸드오프 정리 전 판 `git show e493e8c3:docs/qa/dev-test-handoff.md` 의 2026-10-12 절.
 
 - **App Store**: 1.2.11 은 게재된 적이 없다 — iOS 사용자는 1.2.10 에서 곧바로 1.2.12 로 온다. 그래서 아래 1.2.11 의
   App Store 문안(뒤 세 블록)을 **그대로** 쓴다. 코드 칸 문구 변화는 적지 않는다(영어 500자에 자리가 없다).

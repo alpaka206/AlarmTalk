@@ -251,6 +251,12 @@ HOME 을 가로챌 수 없다 — 유일한 수단인 화면 고정(`startLockTa
   삭제한 페이드인과 같은 커밋에서 근거 없이 들어왔다). 사용자가 맞춘 음량이 첫 회만
   지켜지고 그 뒤로 커지면 그건 그 음량이 아니다 — 공동 공간에 맞춰 작게 둔 알람이 두 번째
   문장부터 커진다. **처음부터 끝까지 같은 크기다.**
+- **목소리 반복 사이는 0.9초 쉰다 — 두 앱 같다**(2026-10-16 오너 결정). 안드로이드는 재생이 끝난 뒤 900ms 를
+  기다렸다 다시 튼다(`RingingService.VOICE_REPEAT_GAP_MS`). iOS 는 AlarmKit 이 파일을 그대로 되풀이해 사이에 쉴 방법이
+  없으므로, 스테이징할 때 **파일 끝에 0.9초 무음을 구워 넣는다**(`AlarmSoundStaging.voiceRepeatGapMillis`). 예전 iOS 는
+  파일 끝 무음(약 0.17초)만 남아 문장이 붙어 들렸다. 30초 한도는 쉼까지 포함한 길이다. 알람음(벨소리)에는 쉼을 넣지 않는다.
+  iOS 목소리 예약 지문에도 같은 쉼 값을 넣는다. 업데이트 전 지문으로 예약한 알람은 다음 정합화에서 새 파일로
+  재예약하고, 이미 새 지문으로 예약했거나 목소리를 쓰지 않는 알람은 이 변경만으로 다시 예약하지 않는다.
 - **음량 슬라이더는 곱하지 않는다.** 목소리 슬라이더 = 목소리 게인, 알람음 슬라이더 =
   톤 게인. 곱하면 알람 음량을 낮출 때 못 줄이는 톤은 그대로인 채 목소리만 묻힌다.
 - **미리듣기는 울림과 같은 스트림**이어야 한다(`USAGE_ALARM`). 기본값(`USAGE_MEDIA`)이면
@@ -385,6 +391,7 @@ iOS 에서 그 문구를 지우면 안 울릴 알람을 울릴 것처럼 보여 
 | 예약 | `alarm/AlarmScheduler.kt` | `AlarmManager.shared.schedule` (`AlarmKitViewModel.swift`) | — |
 | 소리 끄기(소유권 확인) | `RingingService.ringingTeardownBelongsToCurrentAlarm` → `stopRingingOutputs` | `AlarmAppContext.stopVoiceIfOwned(by:)` (끄기·다시울림·사라짐 셋 다 여기로) | — |
 | 기기 볼륨 원복 | `alarm/AlarmStreamVolume.kt` | 해당 없음 | — |
+| 목소리 반복 사이 0.9초 쉼 | `alarm/RingingService.kt` `scheduleVoiceRepeat`(`VOICE_REPEAT_GAP_MS`) | 스테이징 때 끝 무음 `AlarmSoundStaging.voiceRepeatGapMillis` ← `AlarmSoundResolver.resolve`(목소리만), 같은 값을 `AlarmSoundPlan.fingerprint`에 포함 — 테스트 `AlarmSoundVolumeTests`·`AlarmSoundPlanTests` | — |
 | 울릴 때는 파일 자리만 찾는다 — 길이를 재지 않는다 · 낡음 판정은 그대로(§4) | `data/AlarmAudioStore.kt` `getCachedAudioUnmeasured`(`getCachedAudio` 와 같은 메타 대조, `durationMillis` 는 null) ← `data/AlarmRepository.kt` `resolveBucketClipSelection`(← `resolveBucketClipLocalUri`) · `data/DefaultVoiceClipSource.kt` 의 보조 생성자(`ringUri` 의 `clipUriFor`·`lockBinding` 의 `defaultVoiceClipSet`) — 테스트 `data/AlarmAudioStoreProbeCountTest`(그 셋은 `durationReads` 0) | — (AlarmKit 소유) | — |
 | 조용한 알람은 사용자가 고른 것뿐 · 유료 목소리를 못 쓰면 기본 목소리(§4) | `alarm/RingSoundDecision.kt` `decideRingSound`·`ringSoundFactsFor`·`ringTimePaidVoiceUnusable`·`forcedTonePercent` → `RingingService.startRingingAudio`(`startAlarmToneLoop(forced)`) · 기본 목소리 소리 `data/DefaultVoiceClipSource.kt` `ringUri` · 받은 알람을 '알람' 모드로 바꿀 때(다운로드 실패) 알람음 켬 `data/RemoteAlarmPullSyncService.kt` `withToneForcedOn`(← `buildReceivedAlarmRow`) · 목소리를 걷어낸 받은 알람은 미나 `withVoiceRevoked` · 보낸 사람 목소리를 더는 받을 수 없는 전달은 미나 `senderVoiceNoLongerAvailable`(← `buildReceivedAlarmRow`) — 테스트 `RingSoundDecisionTest`·`RemoteAlarmPullSyncServiceTest` | 예약 때 `AlarmKitViewModel.effectiveRecordForScheduling` → `defaultVoiceSubstitute` · 오디오 없는 기본 목소리 알람은 `AlarmSoundResolver.plan`(1b) → `DefaultVoiceSubstitute.fallbackClip` · 목소리를 걷어낸 받은 알람은 미나 `RemoteAlarmPullSync.withVoiceRevoked` · 보낸 사람 목소리를 더는 받을 수 없는 전달은 미나 `RemoteAlarmPullSync.replacingUnavailableSenderVoice` — 테스트 `DefaultVoiceSubstituteTests`·`RemoteAlarmPullSyncTests` | — |
 | 재부팅/시간대 변경 재무장 | `alarm/BootCompletedReceiver.kt` | `observeTimeAndTimezoneChanges` (`AlarmTalkApp.swift`) | — |

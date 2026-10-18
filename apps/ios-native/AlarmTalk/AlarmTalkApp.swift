@@ -327,6 +327,11 @@ struct AlarmTalkApp: App {
                     //   내내 안 받아진다(다음 `start` 는 포그라운드 복귀·언어 변경뿐). `start` 는
                     //   대상이 넓어질 때만 도는 회차를 끊고 다시 시작한다(`shouldRestart`).
                     //   안드로이드는 워커가 `listVoiceProfiles` 로 대상을 스스로 정한다.
+                    // 동의를 마치면 그동안 403 으로 막혔던 동기화를 곧바로 다시 돈다(`AuthViewModel.consentSubmitGeneration`).
+                    .onChange(of: auth.consentSubmitGeneration) { _, _ in
+                        guard auth.session != nil else { return }
+                        Task { await remoteSync.runFullSync() }
+                    }
                     .onChange(of: voiceStudio.ownedVoiceProfileIDs) { _, owned in
                         guard auth.session != nil, !owned.isEmpty else { return }
                         stockClipPrefetcher.start(session: auth.session, ownedVoiceProfileIDs: owned)
