@@ -24,6 +24,71 @@ node -e "const m=require('fs').readFileSync('docs/product/release-notes.md','utf
 
 ---
 
+## 1.2.15 (versionCode 35 / iOS 빌드 13)
+
+#912·#913·#914·#917의 앱 변경을 싣는다. 정책 문서 버전은 6 그대로다. 서버의 최소 지원 빌드는
+Android 34·iOS 12로 유지한다. 아래 문안은 사용자가 볼 수 있는 앱 변화만 담는다.
+
+### Play (Android 35)
+
+### ko-KR
+
+```
+• 목소리를 만들기 전에 동의 안내를 확인하도록 바꿨습니다.
+• 약관 재동의를 마치면 가족 알람 동기화가 바로 다시 시작됩니다.
+• 알람이 기본 목소리로 바뀌었을 때의 안내를 다듬고, 무료 이용권으로 전환되면 목소리 보관 기한도 알려 드립니다.
+```
+
+### en-US
+
+```
+• Review and accept the consent notice before creating a voice.
+• Family alarm syncing resumes as soon as you finish renewed consent.
+• Clearer notices when alarms switch to a default voice, including the voice retention deadline when your plan changes to Free.
+```
+
+### ja-JP
+
+```
+• 声を作成する前に、同意の案内を確認するようにしました。
+• 規約への再同意が完了すると、家族アラームの同期がすぐに再開します。
+• アラームが基本の声に変わったときの案内を見直し、無料プランへの変更時には声の保管期限もお知らせします。
+```
+
+### App Store (iOS 빌드 13)
+
+#### ko
+
+```
+• 목소리를 만들기 전에 동의 안내를 확인하도록 바꿨습니다.
+• 약관 재동의를 마치면 가족 알람 동기화가 바로 다시 시작됩니다.
+• 목소리 알람이 반복될 때 문장 사이에 쉬는 시간을 더했습니다.
+• 이용권이 필요한 기능에서 이용권 화면으로 이동할 수 있도록 안내를 보완했습니다.
+• 알람이 기본 목소리로 바뀌었을 때의 안내를 다듬고, 무료 이용권으로 전환되면 목소리 보관 기한도 알려 드립니다.
+```
+
+#### en-US
+
+```
+• Review and accept the consent notice before creating a voice.
+• Family alarm syncing resumes as soon as you finish renewed consent.
+• Added a pause between repeated voice alarm phrases.
+• Improved navigation to plans from features that require a subscription.
+• Clearer notices when alarms switch to a default voice, including the voice retention deadline when your plan changes to Free.
+```
+
+#### ja
+
+```
+• 声を作成する前に、同意の案内を確認するようにしました。
+• 規約への再同意が完了すると、家族アラームの同期がすぐに再開します。
+• 声のアラームが繰り返されるとき、文と文の間に間隔を設けました。
+• 利用券が必要な機能から、利用券の画面へ移動できるよう案内を改善しました。
+• アラームが基本の声に変わったときの案内を見直し、無料プランへの変更時には声の保管期限もお知らせします。
+```
+
+---
+
 ## 1.2.14 (versionCode 34 / iOS 빌드 12)
 
 탈퇴 유예 화면 폐지(#904·#905). 탈퇴를 신청하면 모든 기기에서 로그아웃되고, 30일 안에 다시 로그인하면 서버가 탈퇴를

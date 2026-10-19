@@ -175,8 +175,9 @@ android {
         // 34 = 1.2.14. 탈퇴 유예 화면을 없앤다 — 탈퇴 신청은 모든 기기에서 로그아웃하고, 30일 안에 다시 로그인하면
         //   서버가 탈퇴를 철회한다(#904). ⚠ 이 빌드는 **강제 업데이트 하한**이다(`app-version.ts` 의 Android
         //   `minSupported` 34 — Play 게재 확인 뒤 2026-10-16). 그때 서버의 옛 앱 호환 갈래를 지웠다. iOS 와 같은 versionName 을 쓴다.
-        versionCode = 34
-        versionName = "1.2.14"
+        // 35 = 1.2.15. 목소리 등록 동의·재동의 뒤 동기화·목소리 대체 안내를 고친다.
+        versionCode = 35
+        versionName = "1.2.15"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
