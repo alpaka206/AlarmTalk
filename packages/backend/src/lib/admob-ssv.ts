@@ -19,21 +19,39 @@ export const VERIFIER_KEYS_URL = 'https://www.gstatic.com/admob/reward/verifier-
 const KEYS_TTL_MS = 6 * 60 * 60 * 1000;
 
 /**
- * 모르는 `key_id` 로 강제 갱신하는 최소 간격. 이 라우트는 인증이 없어, 아무 `key_id` 나 붙인 요청을 쏟으면 매번
- * Google 로 나가는 요청과 키 가져오기를 일으킬 수 있다(코덱스 #925). 진짜 키 교체는 드물어 이 간격이면 충분하다 —
- * 그 사이에 온 새 키의 콜백은 거절되고(403), AdMob 이 나중에 다시 부르면 그때 받힌다.
+ * 모르는 `key_id` 를 어떻게 다시 받아 보나. 이 라우트는 인증이 없어, 아무 `key_id` 나 붙인 요청을 쏟으면 요청마다 Google 로
+ * 나가는 요청과 키 가져오기를 일으킬 수 있다(코덱스 #925). 그런데 진짜 키 교체도 같은 모양으로 온다 — 그리고 AdMob 은
+ * 실패한 콜백을 **1초 간격으로 다섯 번만** 다시 부르므로, 긴 냉각 시간을 두면 교체 직후의 보상이 영영 사라진다(코덱스 #925).
+ * 그래서 둘로 나눈다:
+ * - **같은 `key_id`** 는 한 번 다시 받아 봐도 없었으면 10분 동안 곧바로 거절한다 — 같은 가짜 id 를 되풀이해도 바깥 요청이
+ *   없다.
+ * - **다른 `key_id`** 마다의 강제 갱신은 전체에서 2초에 한 번까지다. 그 사이에 온 것은 거절이 아니라 **다시 부르라는 답**
+ *   ([AdMobKeysBusyError] → 429)이라, 진짜 새 키의 콜백은 1초 뒤 재시도에서 받힌다(그 사이 다른 갱신이 이미 새 목록을
+ *   받아 왔으면 캐시에서 바로 찾는다). 가짜 id 를 쏟아도 바깥 요청은 isolate 하나에 분당 30번을 넘지 않는다.
  */
-const FORCED_REFRESH_MIN_INTERVAL_MS = 10 * 60 * 1000;
+const UNKNOWN_KEY_NEGATIVE_TTL_MS = 10 * 60 * 1000;
+const FORCED_REFRESH_MIN_GAP_MS = 2_000;
+const UNKNOWN_KEY_CACHE_MAX = 1_000;
+
+/** 강제 갱신을 막 했으니 잠시 뒤에 다시 부르라는 뜻 — 라우트가 다시 시도할 수 있는 4xx 로 답한다. */
+export class AdMobKeysBusyError extends Error {
+  constructor() {
+    super('AdMob verifier keys were refreshed moments ago; retry shortly.');
+    this.name = 'AdMobKeysBusyError';
+  }
+}
 
 type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
 
 let cachedKeys: { at: number; keys: Map<string, CryptoKey> } | null = null;
 let lastForcedRefreshAt = 0;
+const unknownKeyCheckedAt = new Map<string, number>();
 
 /** 테스트 전용 — 모듈 캐시를 비운다. */
 export function resetAdMobKeyCacheForTest(): void {
   cachedKeys = null;
   lastForcedRefreshAt = 0;
+  unknownKeyCheckedAt.clear();
 }
 
 function base64ToBytes(b64: string): Uint8Array {
@@ -132,13 +150,22 @@ export async function verifyAdMobCallback(
   if (!raw) return null;
 
   let key = (await loadKeys(fetchImpl, false)).get(keyId);
-  if (!key && Date.now() - lastForcedRefreshAt >= FORCED_REFRESH_MIN_INTERVAL_MS) {
-    // ⚠ 간격은 **받기에 성공한 뒤에** 잰다(코덱스 #924). 먼저 적으면 일시 장애로 던진(5xx) 첫 갱신 뒤의 재시도가 전부
-    //   갱신을 건너뛰고 403 이 된다 — AdMob 은 1초 간격으로 다섯 번만 다시 부르므로 그 보상은 영영 사라진다.
+  if (!key) {
+    const checkedAt = unknownKeyCheckedAt.get(keyId);
+    if (checkedAt !== undefined && Date.now() - checkedAt < UNKNOWN_KEY_NEGATIVE_TTL_MS)
+      return null;
+    if (Date.now() - lastForcedRefreshAt < FORCED_REFRESH_MIN_GAP_MS)
+      throw new AdMobKeysBusyError();
+    // ⚠ 시각은 **받기에 성공한 뒤에** 적는다(코덱스 #924). 먼저 적으면 일시 장애로 던진(5xx) 갱신 뒤의 재시도가 갱신을
+    //   건너뛴다.
     key = (await loadKeys(fetchImpl, true)).get(keyId);
     lastForcedRefreshAt = Date.now();
+    if (!key) {
+      if (unknownKeyCheckedAt.size >= UNKNOWN_KEY_CACHE_MAX) unknownKeyCheckedAt.clear();
+      unknownKeyCheckedAt.set(keyId, Date.now());
+      return null;
+    }
   }
-  if (!key) return null;
 
   const ok = await crypto.subtle.verify(
     { name: 'ECDSA', hash: 'SHA-256' },

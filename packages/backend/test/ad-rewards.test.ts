@@ -5,6 +5,7 @@ import { Hono } from 'hono';
 import type { AppEnv, Env } from '../src/types';
 import { runMigrations } from '../src/lib/migrations';
 import {
+  AdMobKeysBusyError,
   derEcdsaToRaw,
   resetAdMobKeyCacheForTest,
   verifyAdMobCallback,
@@ -90,6 +91,8 @@ beforeAll(async () => {
 });
 
 beforeEach(async () => {
+  vi.useRealTimers();
+  vi.useFakeTimers({ toFake: ['Date'] });
   resetAdMobKeyCacheForTest();
   fetchKeys.mockClear();
   db = createClient({ url: ':memory:' });
@@ -135,15 +138,39 @@ describe('verifyAdMobCallback', () => {
     expect(fetchKeys).toHaveBeenCalledTimes(1);
   });
 
-  it('모르는 key_id 를 쏟아도 강제 갱신은 간격 안에 한 번뿐이다 — 인증 없는 라우트로 바깥 요청을 부풀리지 못한다', async () => {
+  it('같은 가짜 key_id 를 되풀이해도 바깥 요청은 한 번뿐이다', async () => {
     await verifyAdMobCallback(await signedQuery(CALLBACK), fetchKeys);
     fetchKeys.mockClear();
-    for (const id of ['901', '902', '903']) {
-      expect(await verifyAdMobCallback(await signedQuery(CALLBACK, id), fetchKeys)).toBeNull();
-    }
+    vi.setSystemTime(Date.now() + 3_000);
+    expect(await verifyAdMobCallback(await signedQuery(CALLBACK, '901'), fetchKeys)).toBeNull();
+    vi.setSystemTime(Date.now() + 3_000);
+    expect(await verifyAdMobCallback(await signedQuery(CALLBACK, '901'), fetchKeys)).toBeNull();
     expect(fetchKeys).toHaveBeenCalledTimes(1);
-    // 알던 키는 그대로 받힌다.
+  });
+
+  it('다른 key_id 의 강제 갱신은 2초에 한 번 — 그 사이는 거절이 아니라 다시 부르라는 답이다', async () => {
+    await verifyAdMobCallback(await signedQuery(CALLBACK), fetchKeys);
+    fetchKeys.mockClear();
+    vi.setSystemTime(Date.now() + 3_000);
+    expect(await verifyAdMobCallback(await signedQuery(CALLBACK, '901'), fetchKeys)).toBeNull();
+    await expect(
+      verifyAdMobCallback(await signedQuery(CALLBACK, '902'), fetchKeys),
+    ).rejects.toBeInstanceOf(AdMobKeysBusyError);
+    expect(fetchKeys).toHaveBeenCalledTimes(1);
+    // 알던 키는 그 사이에도 그대로 받힌다.
     expect(await verifyAdMobCallback(await signedQuery(CALLBACK), fetchKeys)).not.toBeNull();
+  });
+
+  it('키가 교체되면 새 key_id 의 첫 콜백이 목록을 다시 받아 받힌다', async () => {
+    await verifyAdMobCallback(await signedQuery(CALLBACK), fetchKeys); // 옛 목록(KEY_ID 하나)을 캐시
+    const rotated = JSON.parse(keysJson) as { keys: Array<Record<string, unknown>> };
+    rotated.keys.push({ ...rotated.keys[0], keyId: 4444 });
+    const fetchRotated = vi.fn(async () => new Response(JSON.stringify(rotated), { status: 200 }));
+    vi.setSystemTime(Date.now() + 3_000);
+    expect(
+      await verifyAdMobCallback(await signedQuery(CALLBACK, '4444'), fetchRotated),
+    ).not.toBeNull();
+    expect(fetchRotated).toHaveBeenCalledTimes(1);
   });
 
   it('강제 갱신이 일시 장애로 실패하면 간격을 재지 않는다 — AdMob 의 재시도가 다시 갱신해 받힌다', async () => {
@@ -315,6 +342,22 @@ describe('GET /api/ads/admob-ssv', () => {
     );
     expect(await res.json()).toEqual({ granted: true });
     expect((await readAdRewardStatus(db, legacy)).credits).toBe(1);
+  });
+
+  it('유료 계정에는 적립하지 않는다 — 고친 앱이 유료일 때 쌓아 두었다가 해지 뒤에 쓰지 못한다', async () => {
+    await db.execute({ sql: `UPDATE users SET plan = 'plus' WHERE id = ?`, args: [USER] });
+    const res = await call(await signedQuery(CALLBACK));
+    expect(await res.json()).toEqual({ granted: false });
+    expect((await readAdRewardStatus(db, USER)).credits).toBe(0);
+  });
+
+  it('키 목록을 방금 다시 받았으면 429 로 다시 부르게 한다', async () => {
+    await call(await signedQuery({ ...CALLBACK, transaction_id: 'warm' })); // 캐시를 채운다
+    vi.setSystemTime(Date.now() + 3_000);
+    await call(await signedQuery(CALLBACK, '901')); // 강제 갱신 한 번
+    const res = await call(await signedQuery(CALLBACK, '902'));
+    expect(res.status).toBe(429);
+    expect((await res.json()).error_code).toBe('AD_REWARD_RETRY_LATER');
   });
 
   it('광고 단위가 설정되지 않았으면 아무것도 적립하지 않는다', async () => {
