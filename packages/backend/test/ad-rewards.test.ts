@@ -146,6 +146,13 @@ describe('verifyAdMobCallback', () => {
   });
 });
 
+describe('워커 설정 동기화', () => {
+  it('광고 단위 목록이 secrets:sync 로 올라간다 — 빠지면 동기화가 성공해도 기능이 꺼진 채다(코덱스 #924)', async () => {
+    const { WORKER_SECRET_KEYS } = await import('../scripts/worker-secret-keys');
+    expect(WORKER_SECRET_KEYS as readonly string[]).toContain('ADMOB_REWARDED_AD_UNITS');
+  });
+});
+
 describe('isConfiguredRewardedAdUnit', () => {
   it('전체 id 든 뒤 숫자든 받고, 설정이 비면 아무것도 받지 않는다', () => {
     expect(isConfiguredRewardedAdUnit('ca-app-pub-1/1234567890', '1234567890')).toBe(true);
