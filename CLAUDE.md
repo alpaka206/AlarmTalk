@@ -486,6 +486,7 @@ gainMb=600`)로 확인했고, 사용자가 맞춘 음량이 첫 회만 지켜지
 | [`docs/spec/plan-gates.md`](docs/spec/plan-gates.md) | 로그인·이용권 게이트 **3상태**와 상태별 액션 |
 | [`docs/spec/session-and-auth.md`](docs/spec/session-and-auth.md) | 로그인 유지 — TTL 365일 + **백그라운드 갱신**, 끊는 경우, 탈퇴 유예 — **다시 로그인하면 철회**(유예 화면 없음, 신청은 모든 기기 로그아웃), 이메일 인증 코드 — **가장 최근 코드만**, 거절되면 칸을 비운다 |
 | [`docs/spec/billing-lifecycle.md`](docs/spec/billing-lifecycle.md) | 구독 해지·만료 — **스토어가 권위**, 애플은 서버가 못 끊는다 |
+| [`docs/spec/ad-rewards.md`](docs/spec/ad-rewards.md) | 광고 보상 — 무료는 **보상형 광고 한 번 = 기본 목소리 직접 입력 한 번**(월 10번), 적립은 **AdMob 서버 확인(SSV)으로만**, **울림 화면에는 광고를 넣지 않는다** |
 | [`docs/spec/family-alarm.md`](docs/spec/family-alarm.md) | 가족 알람 — **보내면 끝**(보낸 알람 수정은 서버가 409 로 거절, 완화 금지), 받은 뒤엔 **전부 받은 사람 것**, 단 **다시 보내면 새 것이 이긴다**, 설정 불가능 시간은 **자동 생성 금지** |
 | [`docs/spec/consent.md`](docs/spec/consent.md) | 동의 화면 — **미체크 ≠ 철회**, 재동의 레버 |
 | [`docs/spec/gates-and-overlays.md`](docs/spec/gates-and-overlays.md) | 게이트·1회성 오버레이의 **준비 신호** |

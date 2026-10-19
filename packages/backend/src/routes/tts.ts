@@ -47,6 +47,11 @@ import {
   reserveManualTtsQuota,
   resolveManualTtsPool,
 } from '../lib/manual-tts-quota';
+import {
+  consumeAdRewardCredit,
+  readAdRewardStatus,
+  refundAdRewardCredit,
+} from '../lib/ad-reward-credits';
 import { hasPersonalVoiceAccess, isPaidVoicePlan } from './billing-helpers';
 import { computedUserPlan, resolvePersonalPromo } from '../lib/personal-promo';
 import { missingConsentType, SENSITIVE_REQUIRED_CONSENTS } from '../lib/consent';
@@ -620,9 +625,26 @@ tts.post('/generate', async (c) => {
   // 그 비용은 **직접 입력 월 한도**(`reserveManualTtsQuota`)가 이미 세고 있다.
   // 그래서 한도를 차감하는 조건으로 연다.
   //
-  // 여전히 막는 것: 무료 플랜 / 동적 문구(날씨·운세) / 번역. 그쪽은 한도로 세지 않는다.
+  // 여전히 막는 것: 동적 문구(날씨·운세) / 번역. 그쪽은 한도로 세지 않는다.
+  //
+  // ⚠ **무료는 광고 보상이 있을 때만 연다**(2026-10-19, `docs/spec/ad-rewards.md`). 월 한도 대신 보상
+  //   한 번을 쓴다. 기본 목소리 한정이다 — 공유받은 목소리는 남의 클론이라 위에서 이미 막혔다. 보상이 없으면
+  //   예전 그대로 `FREE_PLAN_PRESET_ONLY` 다(앱은 저장 전에 보상 횟수를 먼저 본다).
+  const adRewardEligible =
+    freePlanRestricted &&
+    isSystemVoice &&
+    !usingSharedVoice &&
+    !randomRequested &&
+    !draftPreviewRequested &&
+    body.translate !== true &&
+    Boolean(resolvedUserPk);
+  const useAdRewardCredit =
+    adRewardEligible && (await readAdRewardStatus(db, userPk)).credits > 0;
   const manualTextOnSystemVoice =
-    !freePlanRestricted && isSystemVoice && !randomRequested && body.translate !== true;
+    (!freePlanRestricted || useAdRewardCredit) &&
+    isSystemVoice &&
+    !randomRequested &&
+    body.translate !== true;
   const presetOnlyRestricted = (freePlanRestricted || isSystemVoice) && !manualTextOnSystemVoice;
   // 무료 플랜은 시스템 스톡 보이스만 쓸 수 있다(커스텀 클론 불가). 시스템 보이스면 통과.
   if (freePlanRestricted && !isSystemVoice) {
@@ -700,13 +722,53 @@ tts.post('/generate', async (c) => {
   const missingTtsConsent = await missingConsentType(db, userPk, requiredSensitiveConsents);
   if (missingTtsConsent) return consentRequired(c, missingTtsConsent);
 
-  // 직접 입력(random 아님) = 유료 사용자가 문구를 직접 타이핑한 유료 생성 경로.
-  // 무료는 위(693-729)에서 이미 차단되므로 여기 도달하는 수동 요청은 유료 전용.
-  // 예약은 캐시 미스 뒤(합성 직전)에 하고, 예약됐는데 합성이 실패하면 catch 에서 환불.
+  // 직접 입력(random 아님) = 사용자가 문구를 직접 타이핑한 생성 경로. 여기 닿는 것은 유료이거나, 광고 보상
+  // 보상이 남은 무료다(위 `useAdRewardCredit` — 없는 무료는 위에서 막혔다).
+  // 세는 것은 캐시 미스 뒤(합성 직전)·캐시 히트 두 자리이고, 셌는데 실패하면 catch 에서 돌려준다.
   const isManualGeneration = !randomRequested && !draftPreviewRequested && Boolean(resolvedUserPk);
   let manualQuotaPoolKey: string | null = null;
   let manualQuotaMonth: string | null = null;
   let manualQuotaResult: { used: number; limit: number; remaining: number } | null = null;
+  // 광고 보상을 썼으면 그 거래 id — 실패하면 아래 catch 가 돌려준다.
+  let adRewardTransactionId: string | null = null;
+  /**
+   * 직접 입력 한 번을 **센다** — 유료는 월 한도, 광고 보상은 보상 한 번. 셀 수 없으면 보낼 응답을 돌려준다.
+   * 캐시 히트와 합성 직전 두 자리가 같은 규칙이어야 해서 한 곳에 둔다(히트도 한 번이다 — 아래 주석).
+   */
+  const reserveManualGeneration = async (): Promise<Response | null> => {
+    if (useAdRewardCredit) {
+      const transactionId = await consumeAdRewardCredit(db, userPk);
+      if (!transactionId) {
+        // 읽은 뒤 다른 요청이 마지막 보상을 먼저 썼다.
+        return jsonError(c, 403, 'FREE_PLAN_PRESET_ONLY', 'This voice supports preset phrases only.');
+      }
+      adRewardTransactionId = transactionId;
+      return null;
+    }
+    const pool = await resolveManualTtsPool(db, ownerIds, userPk, callerUserPlan, {
+      promoOnly: callerPromoOnly,
+    });
+    const reservation = await reserveManualTtsQuota(db, pool.poolKey, pool.limit);
+    if (!reservation.ok) {
+      return jsonError(
+        c,
+        429,
+        'MANUAL_TTS_QUOTA_EXCEEDED',
+        '이번 달 직접 입력 문구 만들기 횟수를 모두 사용했어요.',
+        { manual_quota: { limit: reservation.limit, used: reservation.used, remaining: 0 } },
+      );
+    }
+    // 되돌릴 수 있어야 한다 — 아래 catch 의 환불이 이 두 값을 본다. 예약 뒤에도 던질 수 있는 DB 쓰기가
+    // 남아 있어, 안 적어 두면 **오디오는 못 받았는데 횟수만 깎인 채** 끝난다.
+    manualQuotaPoolKey = pool.poolKey;
+    manualQuotaMonth = reservation.month;
+    manualQuotaResult = {
+      used: reservation.used,
+      limit: reservation.limit,
+      remaining: reservation.remaining,
+    };
+    return null;
+  };
   let previewClaimed = false;
   let activePreviewClaimToken: string | null = null;
 
@@ -1153,30 +1215,11 @@ tts.post('/generate', async (c) => {
         //
         // 초과면 여기서도 429 다. 앱이 저장 전에 남은 횟수를 먼저 보지만(불필요한 왕복을
         // 줄이려는 것뿐) **강제는 여기 하나뿐**이다 — 다른 기기가 그 사이 다 써 버렸을 수 있다.
+        // 히트로 센 횟수도 되돌릴 수 있어야 한다 — 여기 뒤에도 던질 수 있는 DB 쓰기가 남아 있다
+        // (바로 아래 `last_used_at`). `reserveManualGeneration` 이 환불할 값을 적어 둔다.
         if (isManualGeneration) {
-          const pool = await resolveManualTtsPool(db, ownerIds, userPk, callerUserPlan, {
-            promoOnly: callerPromoOnly,
-          });
-          const reservation = await reserveManualTtsQuota(db, pool.poolKey, pool.limit);
-          if (!reservation.ok) {
-            return jsonError(
-              c,
-              429,
-              'MANUAL_TTS_QUOTA_EXCEEDED',
-              '이번 달 직접 입력 문구 만들기 횟수를 모두 사용했어요.',
-              { manual_quota: { limit: reservation.limit, used: reservation.used, remaining: 0 } },
-            );
-          }
-          // 히트로 예약한 횟수도 되돌릴 수 있어야 한다 — 아래 catch 의 환불이 이 두 값을
-          // 본다. 여기 뒤에도 던질 수 있는 DB 쓰기가 남아 있어(바로 아래 `last_used_at`),
-          // 안 적어 두면 **오디오는 못 받았는데 횟수만 깎인 채** 끝난다.
-          manualQuotaPoolKey = pool.poolKey;
-          manualQuotaMonth = reservation.month;
-          manualQuotaResult = {
-            used: reservation.used,
-            limit: reservation.limit,
-            remaining: reservation.remaining,
-          };
+          const refused = await reserveManualGeneration();
+          if (refused) return refused;
         }
         // F1: 캐시 히트도 '사용'으로 보고 LRU 신호를 갱신한다(사전렌더/캐시 재생 알람이 자주
         // 쓰는 커스텀 클론이 오래 안 쓴 것으로 오판돼 evict되지 않게). 시스템 보이스는 no-op.
@@ -1264,28 +1307,10 @@ tts.post('/generate', async (c) => {
       }
     }
 
-    // 캐시 미스 확정 후 합성 직전에 직접 입력 월 쿼터를 예약(원자적 +1). 초과면 429.
+    // 캐시 미스 확정 후 합성 직전에 직접 입력 한 번을 센다(월 한도 원자적 +1 또는 광고 보상 하나).
     if (isManualGeneration) {
-      const pool = await resolveManualTtsPool(db, ownerIds, userPk, callerUserPlan, {
-        promoOnly: callerPromoOnly,
-      });
-      const reservation = await reserveManualTtsQuota(db, pool.poolKey, pool.limit);
-      if (!reservation.ok) {
-        return jsonError(
-          c,
-          429,
-          'MANUAL_TTS_QUOTA_EXCEEDED',
-          '이번 달 직접 입력 문구 만들기 횟수를 모두 사용했어요.',
-          { manual_quota: { limit: reservation.limit, used: reservation.used, remaining: 0 } },
-        );
-      }
-      manualQuotaPoolKey = pool.poolKey;
-      manualQuotaMonth = reservation.month;
-      manualQuotaResult = {
-        used: reservation.used,
-        limit: reservation.limit,
-        remaining: reservation.remaining,
-      };
+      const refused = await reserveManualGeneration();
+      if (refused) return refused;
     }
 
     let lastError: unknown = noVoiceProviderError();
@@ -1472,6 +1497,13 @@ tts.post('/generate', async (c) => {
         console.error('[tts/generate] manual quota refund failed', refundErr);
       }
     }
+    if (adRewardTransactionId) {
+      try {
+        await refundAdRewardCredit(db, adRewardTransactionId);
+      } catch (refundErr) {
+        console.error('[tts/generate] ad reward refund failed', refundErr);
+      }
+    }
     if (previewClaimed) {
       try {
         await db.execute({
@@ -1554,11 +1586,24 @@ tts.get('/manual-quota', async (c) => {
     promoOnly: callerUserPlan !== rawCallerUserPlan,
   });
   const used = pool.limit > 0 ? await readManualTtsUsage(db, pool.poolKey) : 0;
+  // 무료면 광고 보상 현황도 싣는다(`docs/spec/ad-rewards.md`). `user_id` 는 앱이 AdMob 서버 확인
+  // 콜백에 실어 보낼 계정 PK 다 — 앱이 쥔 로그인 식별자는 구글 계정이면 PK 가 아니라서 여기서 준다.
+  // 유료에게는 싣지 않는다 — 앱이 광고 단추를 그릴지는 이 필드가 있는가로 가른다. 서버의 광고 단위 설정
+  // (`ADMOB_REWARDED_AD_UNITS` — 기능 스위치)이 비어도 싣지 않는다: 그때는 콜백이 하나도 적립하지 않으므로, 광고를
+  // 끝까지 보고도 아무것도 못 받는다(코덱스 #925).
+  const freeCaller =
+    Boolean(c.get('userIdPK')) &&
+    Boolean(c.env.ADMOB_REWARDED_AD_UNITS?.trim()) &&
+    !hasPersonalVoiceAccess(rawCallerUserPlan, resolvePersonalPromo(c.env));
+  const adReward = freeCaller
+    ? { ...(await readAdRewardStatus(db, userPk)), user_id: userPk }
+    : undefined;
   return c.json({
     plan_key: pool.planKey,
     limit: pool.limit,
     used,
     remaining: Math.max(0, pool.limit - used),
+    ...(adReward ? { ad_reward: adReward } : {}),
   });
 });
 

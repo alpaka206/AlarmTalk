@@ -502,6 +502,11 @@ export async function purgeUserAccount(
                OR pool_key IN (SELECT id FROM plan_groups WHERE owner_user_id = ?)`,
       args: [userPk, userLoginId, userPk],
     });
+    // 광고 보상 — 행마다 계정 id 가 실린다(`docs/spec/ad-rewards.md`).
+    writes.push({
+      sql: `DELETE FROM ad_reward_credits WHERE user_id = ?`,
+      args: [userPk],
+    });
     writes.push({
       sql: `DELETE FROM plan_group_members WHERE user_id = ?`,
       args: [userPk],

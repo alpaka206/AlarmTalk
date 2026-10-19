@@ -1,8 +1,8 @@
 import type { DbExecutor } from './transactions';
 
 // 직접 입력(사용자가 문구를 직접 타이핑) TTS 생성의 월 한도.
-// 무료(free)는 애초에 직접 입력 자체가 유료 게이트(FREE_PLAN_PRESET_ONLY)로 차단되므로
-// 여기 한도 맵에는 유료 플랜 key 만 둔다(누락 key = 0회).
+// 무료(free)는 이 월 한도를 쓰지 않으므로 여기 한도 맵에는 유료 플랜 key 만 둔다(누락 key = 0회).
+// 무료의 직접 입력은 광고 보상 한 번으로만 열린다(`ad-reward-credits.ts`, `docs/spec/ad-rewards.md`).
 //   - personal(개인) 30 / couple(커플) 50 / family(가족) 100.
 // couple 은 plan_type='family' 이지만 plans.key 로만 구분되므로(=users.plan 은 couple↔family
 // 를 못 가림) 활성 구독/그룹의 plans.key 로 정밀 판정한다.

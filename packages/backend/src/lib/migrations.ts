@@ -3131,6 +3131,25 @@ export const migrations: Migration[] = [
         WHERE deletion_status = 'pending_deletion'`,
     ],
   },
+  {
+    // **광고 보상**(2026-10-19, `docs/spec/ad-rewards.md`). 무료 사용자가 보상형 광고를 끝까지 보면 AdMob 의
+    // 서버 콜백이 한 행을 적립하고, 기본 목소리 직접 입력 생성이 한 행을 쓴다. PK 가 AdMob `transaction_id` 라 같은
+    // 콜백을 다시 받아도 한 번만 적립된다. `grant_month`(KST)는 월 적립 상한을 세는 키다.
+    id: 130,
+    name: 'ad-reward-credits',
+    statements: [
+      `CREATE TABLE IF NOT EXISTS ad_reward_credits (
+        transaction_id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL REFERENCES users(id),
+        ad_unit TEXT NOT NULL,
+        grant_month TEXT NOT NULL,
+        granted_at TEXT NOT NULL DEFAULT (datetime('now')),
+        consumed_at TEXT
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_ad_reward_credits_user_month
+        ON ad_reward_credits (user_id, grant_month)`,
+    ],
+  },
 ];
 // Errors that mean the statement was already applied — safe to ignore so
 // we can recover databases whose `_migrations` ledger is out of sync with

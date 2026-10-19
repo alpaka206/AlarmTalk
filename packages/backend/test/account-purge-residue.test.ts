@@ -49,6 +49,7 @@ const TABLES: Record<string, 'per-user' | 'no-personal-data' | 'retained-pseudon
   voice_draft_attempt_usage: 'per-user',
   voice_profile_change_ledger: 'per-user',
   manual_tts_usage: 'per-user',
+  ad_reward_credits: 'per-user',
   paid_voice_retention: 'per-user',
   usage_events: 'per-user',
   user_consents: 'per-user',
@@ -120,6 +121,7 @@ const A_OWNED_ROWS: Array<[table: string, column: string, id: string]> = [
   ['voice_prerender_queue', 'voice_profile_id', 'vp-a'],
   ['voice_profile_change_ledger', 'id', 'vcl-a'],
   ['usage_events', 'id', 'ue-a'],
+  ['ad_reward_credits', 'transaction_id', 'adr-a'],
   ['user_consents', 'id', 'uc-a'],
   ['email_verification_codes', 'id', 'evc-a'],
 ];
@@ -345,6 +347,8 @@ async function seed(): Promise<void> {
   await run(`INSERT INTO manual_tts_usage (pool_key, usage_month, used_count) VALUES ('g-a', '2026-09', 7)`);
   await run(`INSERT INTO manual_tts_usage (pool_key, usage_month, used_count) VALUES (?, '2026-09', 3)`, [B_PK]);
   await run(`INSERT INTO manual_tts_usage (pool_key, usage_month, used_count) VALUES ('g-c', '2026-09', 4)`);
+
+  await run(`INSERT INTO ad_reward_credits (transaction_id, user_id, ad_unit, grant_month) VALUES ('adr-a', ?, 'unit', '2026-09')`, [A_PK]);
 
   // ── 알람·전달 ────────────────────────────────────────────────────────────
   await run(`INSERT INTO alarms (id, user_id, message_id, voice_profile_id, time) VALUES ('al-a-own', ?, 'msg-a', 'vp-a', '07:00')`, [A_PK]);

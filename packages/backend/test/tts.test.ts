@@ -1759,3 +1759,146 @@ describe('GET /tts/messages — edge cases', () => {
 /* ------------------------------------------------------------------ */
 /*  Edge cases — DELETE /tts/messages/:id                              */
 /* ------------------------------------------------------------------ */
+// 광고 보상(`docs/spec/ad-rewards.md`) — 무료 + 기본 목소리 + 직접 입력은 보상이 있을 때만 열리고,
+// 월 한도 대신 보상 한 번를 쓴다. 실패하면 돌려준다.
+describe('POST /tts/generate — 광고 보상', () => {
+  const SYSTEM_VOICE = { id: V1, status: 'ready', elevenlabs_voice_id: 'el-system', is_system: 1 };
+  const objectKey = 'generated-tts/user-1/ad-cached.mp3';
+
+  function pushCacheHit() {
+    mockDB.pushResult([
+      {
+        message_id: M1,
+        provider: 'elevenlabs',
+        text: '일어나',
+        audio_url: `r2://${objectKey}`,
+        audio_object_key: objectKey,
+        audio_format: 'mp3',
+      },
+    ]);
+    mockDB.pushResult([SYSTEM_VOICE]); // 캐시 히트의 '지금 목소리인가' 재확인
+  }
+
+  it('보상이 있으면 무료도 기본 목소리로 직접 입력을 만들고, 월 한도 대신 보상을 쓴다', async () => {
+    const r2 = createMockR2Bucket({ [objectKey]: new Uint8Array([67, 72]) });
+    mockDB.pushResult([{ plan: 'free' }]);
+    mockDB.pushResult([SYSTEM_VOICE]);
+    mockDB.pushResultFor('FROM ad_reward_credits WHERE user_id', [{ credits: 1, granted: 1 }]);
+    pushCacheHit();
+    mockDB.pushResultFor('UPDATE ad_reward_credits SET consumed_at = datetime', [{ transaction_id: 'tx-1' }], 1);
+
+    const res = await buildApp().request(
+      jsonReq('POST', '/tts/generate', { voice_profile_id: V1, text: '일어나' }),
+      undefined,
+      { ...ENV, VOICE_BUCKET: r2.bucket },
+    );
+
+    expect(res.status).toBe(200);
+    expect(mockDB.calls.some((c) => c.sql.includes('UPDATE ad_reward_credits SET consumed_at = datetime'))).toBe(true);
+    expect(mockDB.calls.some((c) => c.sql.includes('manual_tts_usage'))).toBe(false);
+  });
+
+  it('보상이 없으면 예전처럼 FREE_PLAN_PRESET_ONLY 다', async () => {
+    mockDB.pushResult([{ plan: 'free' }]);
+    mockDB.pushResult([SYSTEM_VOICE]);
+    mockDB.pushResultFor('FROM ad_reward_credits WHERE user_id', [{ credits: 0, granted: 3 }]);
+
+    const res = await reqWithEnv(buildApp(), jsonReq('POST', '/tts/generate', { voice_profile_id: V1, text: '일어나' }));
+
+    expect(res.status).toBe(403);
+    expect((await res.json()).error_code).toBe('FREE_PLAN_PRESET_ONLY');
+    expect(mockDB.calls.some((c) => c.sql.includes('UPDATE ad_reward_credits'))).toBe(false);
+  });
+
+  it('보상은 기본 목소리에만 쓴다 — 무료의 클론 목소리는 그대로 막힌다', async () => {
+    mockDB.pushResult([{ plan: 'free' }]);
+    mockDB.pushResult([{ ...SYSTEM_VOICE, is_system: 0 }]);
+    mockDB.pushResultFor('FROM ad_reward_credits WHERE user_id', [{ credits: 5, granted: 5 }]);
+
+    const res = await reqWithEnv(buildApp(), jsonReq('POST', '/tts/generate', { voice_profile_id: V1, text: '일어나' }));
+
+    expect(res.status).toBe(403);
+    expect((await res.json()).error_code).toBe('VOICE_FEATURE_REQUIRES_PAID_PLAN');
+    expect(mockDB.calls.some((c) => c.sql.includes('ad_reward_credits'))).toBe(false);
+  });
+
+  it('번역 요청에는 보상을 쓰지 않는다', async () => {
+    mockDB.pushResult([{ plan: 'free' }]);
+    mockDB.pushResult([SYSTEM_VOICE]);
+    mockDB.pushResultFor('FROM ad_reward_credits WHERE user_id', [{ credits: 1, granted: 1 }]);
+
+    const res = await reqWithEnv(
+      buildApp(),
+      jsonReq('POST', '/tts/generate', { voice_profile_id: V1, text: '일어나', translate: true, language: 'en' }),
+    );
+
+    expect(res.status).toBe(403);
+    expect((await res.json()).error_code).toBe('FREE_PLAN_PRESET_ONLY');
+    expect(mockDB.calls.some((c) => c.sql.includes('ad_reward_credits'))).toBe(false);
+  });
+
+  it('쓴 뒤에 실패하면 보상을 돌려준다', async () => {
+    const r2 = createMockR2Bucket({ [objectKey]: new Uint8Array([67, 72]) });
+    mockDB.pushResult([{ plan: 'free' }]);
+    mockDB.pushResult([SYSTEM_VOICE]);
+    mockDB.pushResultFor('FROM ad_reward_credits WHERE user_id', [{ credits: 1, granted: 1 }]);
+    pushCacheHit();
+    mockDB.pushResultFor('UPDATE ad_reward_credits SET consumed_at = datetime', [{ transaction_id: 'tx-1' }], 1);
+    mockDB.pushErrorFor('voice_profiles SET last_used_at', new Error('db unavailable'));
+
+    const res = await buildApp().request(
+      jsonReq('POST', '/tts/generate', { voice_profile_id: V1, text: '일어나' }),
+      undefined,
+      { ...ENV, VOICE_BUCKET: r2.bucket },
+    );
+
+    expect(res.status).toBe(500);
+    const refund = mockDB.calls.find((c) => c.sql.includes('SET consumed_at = NULL'));
+    expect(refund?.args).toEqual(['tx-1']);
+  });
+});
+
+describe('GET /tts/manual-quota — 광고 보상 현황', () => {
+  it('무료면 보상 현황과 콜백에 실을 계정 PK 를 싣는다', async () => {
+    mockDB.pushResult([{ plan: 'free' }]);
+    mockDB.pushResult([]); // 그룹 풀 없음
+    mockDB.pushResult([]); // 개인 구독 없음
+    mockDB.pushResultFor('FROM ad_reward_credits WHERE user_id', [{ credits: 2, granted: 4 }]);
+
+    const res = await buildApp().request(new Request('http://x/tts/manual-quota'), undefined, {
+      ...ENV,
+      ADMOB_REWARDED_AD_UNITS: 'ca-app-pub-1/123',
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.limit).toBe(0);
+    expect(body.ad_reward).toEqual({ credits: 2, remaining_grants: 6, monthly_limit: 10, user_id: 'user-1' });
+  });
+
+  it('서버의 광고 단위 설정이 비면 싣지 않는다 — 광고를 봐도 적립되지 않으니 권하지 않는다', async () => {
+    mockDB.pushResult([{ plan: 'free' }]);
+    mockDB.pushResult([]);
+    mockDB.pushResult([]);
+
+    const res = await reqWithEnv(buildApp(), new Request('http://x/tts/manual-quota'));
+
+    expect(res.status).toBe(200);
+    expect((await res.json()).ad_reward).toBeUndefined();
+    expect(mockDB.calls.some((c) => c.sql.includes('ad_reward_credits'))).toBe(false);
+  });
+
+  it('유료에게는 싣지 않는다', async () => {
+    mockDB.pushResult([{ plan: 'plus' }]);
+    mockDB.pushResult([]);
+    mockDB.pushResult([]);
+    mockDB.pushResult([{ used_count: 3 }]);
+
+    const res = await reqWithEnv(buildApp(), new Request('http://x/tts/manual-quota'));
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.ad_reward).toBeUndefined();
+    expect(mockDB.calls.some((c) => c.sql.includes('ad_reward_credits'))).toBe(false);
+  });
+});
