@@ -216,6 +216,24 @@ android {
     val alarmTalkProdSentryDsn = providers.gradleProperty("alarmTalkProdSentryDsn")
         .orElse("")
         .get()
+    // AdMob 보상형 광고(`docs/spec/ad-rewards.md`). 광고 SDK 는 앱 id 가 매니페스트에 **없으면 시작하자마자 죽으므로**
+    // 앱 id 는 언제나 채운다 — 값이 없으면 Google 의 시험용 앱 id 다. 기능을 켜는 것은 광고 단위 id 하나이고, 비면
+    // 광고 버튼을 그리지 않는다. dev 는 Google 의 시험용 보상형 단위가 기본이라 광고가 뜨는 것까지 볼 수 있다 — 단
+    // 그 단위는 우리 서버로 확인 콜백을 보내지 않아 보상이 쌓이지 않는다. 보상까지 보려면 SSV 를 dev 서버로 둔 우리
+    // 단위를 `alarmTalkDevAdmobRewardedAdUnitId` 로 넣는다.
+    val admobTestAppId = "ca-app-pub-3940256099942544~3347511713"
+    val alarmTalkDevAdmobAppId = providers.gradleProperty("alarmTalkDevAdmobAppId")
+        .orElse(admobTestAppId)
+        .get()
+    val alarmTalkProdAdmobAppId = providers.gradleProperty("alarmTalkProdAdmobAppId")
+        .orElse(admobTestAppId)
+        .get()
+    val alarmTalkDevAdmobRewardedAdUnitId = providers.gradleProperty("alarmTalkDevAdmobRewardedAdUnitId")
+        .orElse("ca-app-pub-3940256099942544/5224354917")
+        .get()
+    val alarmTalkProdAdmobRewardedAdUnitId = providers.gradleProperty("alarmTalkProdAdmobRewardedAdUnitId")
+        .orElse("")
+        .get()
 
     signingConfigs {
         if (releaseKeystoreProps != null) {
@@ -257,6 +275,12 @@ android {
                 "VOICE_ALARM_SENTRY_ENVIRONMENT",
                 "development".asBuildConfigString(),
             )
+            buildConfigField(
+                "String",
+                "ADMOB_REWARDED_AD_UNIT_ID",
+                alarmTalkDevAdmobRewardedAdUnitId.asBuildConfigString(),
+            )
+            manifestPlaceholders["admobAppId"] = alarmTalkDevAdmobAppId
         }
         create("prod") {
             dimension = "environment"
@@ -276,6 +300,12 @@ android {
                 "VOICE_ALARM_SENTRY_ENVIRONMENT",
                 "production".asBuildConfigString(),
             )
+            buildConfigField(
+                "String",
+                "ADMOB_REWARDED_AD_UNIT_ID",
+                alarmTalkProdAdmobRewardedAdUnitId.asBuildConfigString(),
+            )
+            manifestPlaceholders["admobAppId"] = alarmTalkProdAdmobAppId
         }
     }
 
@@ -413,6 +443,10 @@ dependencies {
     // 끌어온다. 이 줄이 그 전이 의존을 21.3.0 으로 올려 두고 있어, 지우면 APK 에서 빠지는 게
     // 아니라 19.0.0 으로 내려간다(2026-09-29 `:app:dependencies` 전후 비교로 확인).
     implementation("com.google.android.gms:play-services-location:21.3.0")
+    // 보상형 광고 — 무료 사용자의 직접 입력 한 번(`docs/spec/ad-rewards.md`).
+    // ⚠ 24.9.0 부터는 Kotlin 2.3 메타데이터로 빌드돼 이 프로젝트의 Kotlin 2.0.21 컴파일러가 못 읽는다(2026-10-19 확인).
+    //   올리려면 Kotlin 플러그인부터 올린다.
+    implementation("com.google.android.gms:play-services-ads:24.8.0")
     implementation("io.sentry:sentry-android-core:8.43.0")
     implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
     implementation("com.squareup.retrofit2:converter-gson:2.11.0")

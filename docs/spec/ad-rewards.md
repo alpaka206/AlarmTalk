@@ -83,19 +83,28 @@
 
 1. **AdMob** — 앱 등록, 보상형 광고 단위를 dev·prod 따로 만들고 각 단위의 SSV 콜백 URL 을
    `https://api-dev.alarm-talk.com/api/ads/admob-ssv` / `https://api.alarm-talk.com/api/ads/admob-ssv` 로 둔다.
-2. **워커 설정** — `ADMOB_REWARDED_AD_UNITS` 를 각 환경의 광고 단위로 둔다.
+2. **워커 설정** — `ADMOB_REWARDED_AD_UNITS` 를 각 환경의 광고 단위로 둔다. **앱 빌드** — `~/.gradle/gradle.properties` 에
+   `alarmTalkProdAdmobAppId`·`alarmTalkProdAdmobRewardedAdUnitId`(dev 는 `alarmTalkDev…`). prod 광고 단위가 비면 광고 버튼이
+   없다. 앱 id 가 비면 Google 시험용 앱 id 가 들어간다(광고 SDK 는 앱 id 가 없으면 시작하자마자 죽는다). dev 의 광고 단위
+   기본값은 Google 시험용이라 광고는 뜨지만 **보상은 쌓이지 않는다**(그 단위는 우리 서버로 확인 콜백을 보내지 않는다).
 3. **개인정보 처리방침** — 광고 식별자와 Google(AdMob)로의 처리 위탁·국외 이전을 적는다. 문서 버전 순서는 서버 먼저
    (`CLAUDE.md` 「법무 문서 버전」).
-4. **Play Console** — 데이터 보안 양식(광고 ID·광고 목적), '광고 포함' 표시. 유럽 사용자에게는 UMP 동의 화면이 필요하다.
+4. **Play Console** — 데이터 보안 양식(광고 ID·광고 목적 — 광고 SDK 가 `AD_ID` 권한을 매니페스트에 더한다), '광고 포함'
+   표시. 유럽 사용자에게는 UMP 동의 화면이 필요하다(아직 없다).
 
 ## 구현 지도
 
 | 규칙 | 백엔드 | Android | iOS |
 | --- | --- | --- | --- |
 | 서명 확인·적립 | `lib/admob-ssv.ts`, `routes/ads.ts`, `lib/ad-reward-credits.ts` `grantAdRewardCredit` | — | — |
-| 한 달 상한 | `AD_REWARD_MONTHLY_LIMIT` | 서버 값(`remaining_grants`)을 그린다 | — |
-| 무료 + 기본 목소리 + 직접 입력을 보상으로 연다 | `routes/tts.ts` `useAdRewardCredit` | (Android PR) | 없음(§5) |
+| 한 달 상한 | `AD_REWARD_MONTHLY_LIMIT` | 서버 값(`remaining_grants`)으로 광고 버튼을 가른다(`AdRewardGate.canOfferAd`) | — |
+| 무료 + 기본 목소리 + 직접 입력을 보상으로 연다 | `routes/tts.ts` `useAdRewardCredit` | `AdRewardGate.manualLocked` → `RandomPromptSettingsPane` 의 `manualLocked`·`manualRewardCredits` | 없음(§5) |
+| 게이트의 '광고 보고 한 번 쓰기' | — | `AlarmEditorScreen` 의 `rewardedAdAction`(잠긴 행이 연 무료 게이트만) → `PlanGateDialog` | 없음(§5) |
+| 광고 띄우기·서버 확인용 계정 PK 싣기 | — | `ads/RewardedAds.kt` `loadAndShow` | — |
+| 보상 도착 확인 뒤 직접 입력 고르기 | — | `AlarmEditorScreen` 의 `watchRewardedAd`(8번·1초) → `selectManualRequest` | — |
+| 저장 전에 막기 | 강제: `FREE_PLAN_PRESET_ONLY` | `AdRewardGate.blocksManualSave`(저장 흐름의 월 한도 확인 옆) | — |
 | 쓰는 자리·되돌리기 | `routes/tts.ts` `reserveManualGeneration`, catch 의 `refundAdRewardCredit` | — | — |
-| 현황·계정 PK 내려주기 | `GET /tts/manual-quota` 의 `ad_reward`(무료만) | (Android PR) | — |
+| 현황·계정 PK 내려주기 | `GET /tts/manual-quota` 의 `ad_reward`(무료만) | `ManualQuotaResponse.adReward` | — |
+| 광고 단위·앱 id | `ADMOB_REWARDED_AD_UNITS` | `build.gradle.kts` 의 `alarmTalk{Dev,Prod}Admob*` → `BuildConfig.ADMOB_REWARDED_AD_UNIT_ID`·매니페스트 `admobAppId` | — |
 | 탈퇴 파기 | `lib/account-deletion.ts` | — | — |
-| 회귀 테스트 | `test/ad-rewards.test.ts`, `test/tts.test.ts` 「광고 보상」 | (Android PR) | — |
+| 회귀 테스트 | `test/ad-rewards.test.ts`, `test/tts.test.ts` 「광고 보상」 | `AdRewardGateTest`, `GiftCodeRemovalTest`(게이트 기본 두 버튼) | — |

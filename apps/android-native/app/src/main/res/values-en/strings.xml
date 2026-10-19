@@ -159,6 +159,14 @@
     <string name="editor_block_fortune_family_message">They haven\'t set their fortune details yet. Please pick a different message.</string>
     <string name="editor_block_manual_quota_title">You\'ve used this month\'s creations</string>
     <string name="editor_block_manual_quota_message">You can create %1$d new custom messages a month. Messages you already made still work.</string>
+    <string name="editorp_random_manual_ad_credits">%1$s (%2$d from ads)</string>
+    <string name="editor_ad_reward_watch">Watch an ad to use once</string>
+    <string name="editor_ad_reward_pending_title">Checking your reward</string>
+    <string name="editor_ad_reward_pending_message">Your ad reward hasn\'t arrived yet. Tap “Type it yourself” again in a moment.</string>
+    <string name="editor_ad_reward_unavailable_title">No ad available right now</string>
+    <string name="editor_ad_reward_unavailable_message">We couldn\'t load an ad. Please try again in a moment.</string>
+    <string name="editor_block_ad_reward_title">No ad reward left</string>
+    <string name="editor_block_ad_reward_message">To create this message, watch an ad from “Type it yourself” on the message screen. Messages you already made still work.</string>
     <string name="editor_block_offline_title">Connection needed</string>
     <string name="editor_block_offline_message">This message\'s audio isn\'t on this device yet. Save again once you\'re back online.</string>
     <string name="editor_block_preparing_title">Preparing the message</string>
