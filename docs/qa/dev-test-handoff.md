@@ -8,7 +8,7 @@
 
 | 스토어 | 게재 중 | 대기 | 등록정보 |
 | --- | --- | --- | --- |
-| Google Play | `34 (1.2.14)` — `PUBLISHED` | **35 (1.2.15) 심사 중**(`IN_REVIEW`, 2026-10-19) | **(B)**(2026-10-16 — 날씨·앱 화면 3개 언어 문장 포함) |
+| Google Play | **`35 (1.2.15)` — `PUBLISHED`**(2026-10-19 확인) | 없음 | **(B)**(2026-10-16 — 날씨·앱 화면 3개 언어 문장 포함) |
 | App Store | **1.2.14(빌드 12)** — `READY_FOR_SALE` | **1.2.15(빌드 13) 심사 대기**(`WAITING_FOR_REVIEW`, 2026-10-19) | 게재본 INTERIM, 1.2.15 레코드는 **(B)** |
 
 - 확인은 API 로 한다 — Play `releases.list` 의 `releaseLifecycleState`(`PUBLISHED` 여야 게재), ASC `appStoreVersions` 의
@@ -20,7 +20,8 @@
 ## 서버·브랜치
 
 - **#918은 main에 머지·운영 배포 완료**(2026-10-19, `98a5017f`). 재동의 기준 5·탈퇴 오류 재시도·옛 앱 정리가
-  운영에 반영됐다. `/api/app/version`은 Android 34/34·iOS 12/12로 확인했다.
+  운영에 반영됐다. `/api/app/version`은 Android 34/34·iOS 12/12로 확인했다. Play 35 게재 뒤 Android `latest` 를 35 로
+  올린다(#923 — 최소 지원은 34 그대로, main 배포 뒤 다시 확인한다).
 - **앱 빌드 출처는 main `bda43e1e`**(#919). Android 1.2.15(35)·iOS 1.2.15(13)이며 정책 문서 버전은 6이다.
   iOS 프로젝트는 이 커밋의 `project.yml`로 XcodeGen을 실행했다. 서버 최소 지원 버전은 이번 앱 제출로 올리지 않는다.
 - Android 서명 AAB 빌드와 Sentry 매핑 업로드·원격 UUID 대조, iOS Release archive·IPA export·Apple 검증·업로드가 통과했다. 빌드 13은 `VALID` 확인 후 심사에 연결했다.
@@ -30,8 +31,8 @@
 
 ## 다음 할 일 (순서대로)
 
-1. [ ] **1.2.15 두 스토어 심사·게재 확인** — 앱 변경은 #912·#913·#914·#917을 포함한다.
-       Play는 기존 자동 게시 설정을 유지했고, App Store는 `AFTER_APPROVAL`이다. 심사 제출과 실제 게재를 구분해 위 표를 갱신한다.
+1. [ ] **1.2.15 App Store 심사·게재 확인** — 앱 변경은 #912·#913·#914·#917을 포함한다. Play 35는 게재됐다(2026-10-19).
+       App Store는 `AFTER_APPROVAL`이다. 심사 제출과 실제 게재를 구분해 위 표를 갱신한다.
 2. [ ] **10/31 기간 한정 개인 플랜을 예정대로 끝낸다**(2026-10-16 오너 확정). 절차는
        [`docs/ops/personal-promo-end-runbook.md`](../ops/personal-promo-end-runbook.md) — 종료 1주 전(10/24) 대상 수 산정,
        끝 시각 모니터링, 끝 + 3일 확인, 11월 중순 정리 PR.
