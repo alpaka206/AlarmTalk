@@ -1588,9 +1588,13 @@ tts.get('/manual-quota', async (c) => {
   const used = pool.limit > 0 ? await readManualTtsUsage(db, pool.poolKey) : 0;
   // 무료면 광고 보상 현황도 싣는다(`docs/spec/ad-rewards.md`). `user_id` 는 앱이 AdMob 서버 확인
   // 콜백에 실어 보낼 계정 PK 다 — 앱이 쥔 로그인 식별자는 구글 계정이면 PK 가 아니라서 여기서 준다.
-  // 유료에게는 싣지 않는다 — 앱이 광고 단추를 그릴지는 이 필드가 있는가로 가른다.
+  // 유료에게는 싣지 않는다 — 앱이 광고 단추를 그릴지는 이 필드가 있는가로 가른다. 서버의 광고 단위 설정
+  // (`ADMOB_REWARDED_AD_UNITS` — 기능 스위치)이 비어도 싣지 않는다: 그때는 콜백이 하나도 적립하지 않으므로, 광고를
+  // 끝까지 보고도 아무것도 못 받는다(코덱스 #925).
   const freeCaller =
-    Boolean(c.get('userIdPK')) && !hasPersonalVoiceAccess(rawCallerUserPlan, resolvePersonalPromo(c.env));
+    Boolean(c.get('userIdPK')) &&
+    Boolean(c.env.ADMOB_REWARDED_AD_UNITS?.trim()) &&
+    !hasPersonalVoiceAccess(rawCallerUserPlan, resolvePersonalPromo(c.env));
   const adReward = freeCaller
     ? { ...(await readAdRewardStatus(db, userPk)), user_id: userPk }
     : undefined;

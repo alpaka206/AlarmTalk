@@ -134,6 +134,17 @@ describe('verifyAdMobCallback', () => {
     expect(fetchKeys).toHaveBeenCalledTimes(1);
   });
 
+  it('모르는 key_id 를 쏟아도 강제 갱신은 간격 안에 한 번뿐이다 — 인증 없는 라우트로 바깥 요청을 부풀리지 못한다', async () => {
+    await verifyAdMobCallback(await signedQuery(CALLBACK), fetchKeys);
+    fetchKeys.mockClear();
+    for (const id of ['901', '902', '903']) {
+      expect(await verifyAdMobCallback(await signedQuery(CALLBACK, id), fetchKeys)).toBeNull();
+    }
+    expect(fetchKeys).toHaveBeenCalledTimes(1);
+    // 알던 키는 그대로 받힌다.
+    expect(await verifyAdMobCallback(await signedQuery(CALLBACK), fetchKeys)).not.toBeNull();
+  });
+
   it('서명이 없으면 거절한다', async () => {
     expect(
       await verifyAdMobCallback(new URLSearchParams(CALLBACK).toString(), fetchKeys),
