@@ -14,6 +14,9 @@ import com.google.android.gms.ads.MobileAds
 import com.google.android.gms.ads.rewarded.RewardedAd
 import com.google.android.gms.ads.rewarded.RewardedAdLoadCallback
 import com.google.android.gms.ads.rewarded.ServerSideVerificationOptions
+import com.google.android.ump.ConsentInformation
+import com.google.android.ump.ConsentRequestParameters
+import com.google.android.ump.UserMessagingPlatform
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
 
@@ -48,9 +51,15 @@ internal object RewardedAds {
     @Volatile
     private var initialized = false
 
-    /** 불러와서 곧바로 띄운다. 메인 스레드에서 부른다. */
+    /**
+     * 불러와서 곧바로 띄운다. 메인 스레드에서 부른다.
+     *
+     * ⚠ **광고를 요청하기 전에 동의(UMP)부터 받는다**(코덱스 #925). 유럽 등 규정이 있는 지역은 Google 의 동의 양식을
+     * 거쳐야 하고, `canRequestAds()` 가 거짓이면 요청하지 않는다. 규정이 없는 지역에서는 양식이 뜨지 않고 그대로 지난다.
+     */
     suspend fun loadAndShow(activity: Activity, serverUserId: String): RewardedAdOutcome {
         if (!configured || serverUserId.isBlank()) return RewardedAdOutcome.LOAD_FAILED
+        if (!gatherConsent(activity)) return RewardedAdOutcome.LOAD_FAILED
         if (!initialized) {
             initialized = true
             MobileAds.initialize(activity.applicationContext)
@@ -60,6 +69,52 @@ internal object RewardedAds {
             ServerSideVerificationOptions.Builder().setUserId(serverUserId).build(),
         )
         return show(activity, ad)
+    }
+
+    /** 동의 정보를 갱신하고, 필요하면 양식을 띄운 뒤 광고를 요청해도 되는지 답한다. */
+    private suspend fun gatherConsent(activity: Activity): Boolean {
+        val info = refreshConsentInfo(activity)
+        suspendCancellableCoroutine { cont ->
+            UserMessagingPlatform.loadAndShowConsentFormIfRequired(activity) { error ->
+                if (error != null) Log.w(AlarmTalkLog.TAG, "RewardedAds consent form error=${error.errorCode}")
+                if (cont.isActive) cont.resume(Unit)
+            }
+        }
+        // 갱신에 실패해도 지난번에 받은 동의가 남아 있으면 요청할 수 있다 — 판정은 이 값 하나다.
+        return info.canRequestAds()
+    }
+
+    /** 이번 실행의 동의 정보를 받는다. 실패해도 저장된 정보를 그대로 돌려준다. */
+    suspend fun refreshConsentInfo(activity: Activity): ConsentInformation {
+        val info = UserMessagingPlatform.getConsentInformation(activity)
+        suspendCancellableCoroutine { cont ->
+            info.requestConsentInfoUpdate(
+                activity,
+                ConsentRequestParameters.Builder().build(),
+                { if (cont.isActive) cont.resume(Unit) },
+                { error ->
+                    Log.w(AlarmTalkLog.TAG, "RewardedAds consent update error=${error.errorCode}")
+                    if (cont.isActive) cont.resume(Unit)
+                },
+            )
+        }
+        return info
+    }
+
+    /**
+     * 광고 개인정보 선택을 다시 열 자리가 필요한가 — 규정이 있는 지역에서 Google 이 요구한다. 동의 내역 화면이 이 값이
+     * 참일 때만 '광고 개인정보 설정' 행을 그린다. 광고 단위가 없는 빌드는 광고를 요청하지 않으므로 거짓이다.
+     */
+    suspend fun privacyOptionsRequired(activity: Activity): Boolean =
+        configured &&
+            refreshConsentInfo(activity).privacyOptionsRequirementStatus ==
+            ConsentInformation.PrivacyOptionsRequirementStatus.REQUIRED
+
+    /** Google 의 광고 개인정보 선택 양식을 띄운다. */
+    fun showPrivacyOptions(activity: Activity) {
+        UserMessagingPlatform.showPrivacyOptionsForm(activity) { error ->
+            if (error != null) Log.w(AlarmTalkLog.TAG, "RewardedAds privacy options error=${error.errorCode}")
+        }
     }
 
     private suspend fun load(activity: Activity): RewardedAd? = suspendCancellableCoroutine { cont ->

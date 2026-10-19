@@ -72,7 +72,11 @@
 - 잠긴 행을 누르면 뜨는 게이트(`plan-gates.md` 「로그인 + 무료」)에 **'광고 보고 한 번 쓰기'** 를 더한다. 버튼이 셋이 되므로
   세로로 쌓는다(`IosAlertDialog` 규칙). 광고를 쓸 수 없으면(광고 단위가 없는 빌드·이번 달 상한) 예전 두 버튼 그대로다.
 - 광고를 끝까지 보면 보상이 들어온 것을 확인한 뒤 직접 입력을 고른 상태로 둔다. 확인이 늦으면 "잠시 뒤 다시" 를 말하고,
-  보상은 서버에 남으므로 다시 누르면 광고 없이 열린다.
+  보상은 서버에 남으므로 다시 누르면 광고 없이 열린다 — **잠긴 행을 누를 때마다 게이트를 열기 전에 현황을 다시 읽는다.**
+  화면 값만 보고 게이트를 열면 늦게 들어온 보상 대신 광고를 또 권한다.
+- **광고를 요청하기 전에 Google 동의(UMP)를 받는다.** 규정이 있는 지역(유럽 등)은 동의 양식이 뜨고, `canRequestAds()` 가
+  거짓이면 요청하지 않는다. 그 지역에서는 동의 내역 화면에 **'광고 개인정보 설정'** 행이 생겨 선택을 다시 바꿀 수 있다(Google 이
+  요구하는 진입점). 다른 지역에서는 양식도 행도 없다.
 - 저장할 때 서버를 불러야 하는데(폰에 그 음성이 없다) 남은 보상이 없으면 **요청 전에 막고 이유를 말한다** — 유료의 월 한도
   소진과 같은 자리다(`AlarmEditorScreen` 의 저장 흐름).
 
@@ -94,7 +98,8 @@
 3. **개인정보 처리방침** — 광고 식별자와 Google(AdMob)로의 처리 위탁·국외 이전을 적는다. 문서 버전 순서는 서버 먼저
    (`CLAUDE.md` 「법무 문서 버전」).
 4. **Play Console** — 데이터 보안 양식(광고 ID·광고 목적 — 광고 SDK 가 `AD_ID` 권한을 매니페스트에 더한다), '광고 포함'
-   표시. 유럽 사용자에게는 UMP 동의 화면이 필요하다(아직 없다).
+   표시. 유럽 등의 동의 양식(UMP)은 앱에 있다 — AdMob 콘솔의 '개인정보 보호 및 메시지' 에서 GDPR 메시지를 만들어 게시해야
+   실제로 뜬다.
 
 ## 구현 지도
 
@@ -105,10 +110,12 @@
 | 무료 + 기본 목소리 + 직접 입력을 보상으로 연다 | `routes/tts.ts` `useAdRewardCredit` | `AdRewardGate.manualLocked` → `RandomPromptSettingsPane` 의 `manualLocked`·`manualRewardCredits` | 없음(§5) |
 | 게이트의 '광고 보고 한 번 쓰기' | — | `AlarmEditorScreen` 의 `rewardedAdAction`(잠긴 행이 연 무료 게이트만) → `PlanGateDialog` | 없음(§5) |
 | 광고 띄우기·서버 확인용 계정 PK 싣기 | — | `ads/RewardedAds.kt` `loadAndShow` | — |
+| 동의(UMP) 먼저·광고 개인정보 설정 | — | `RewardedAds.gatherConsent`·`privacyOptionsRequired` → `ConsentHistoryScreen` 의 '광고' 카드 | — |
+| 다시 누르면 현황부터 다시 읽기 | — | `AlarmEditorScreen` 의 `onManualLocked` | — |
 | 보상 도착 확인 뒤 직접 입력 고르기 | — | `AlarmEditorScreen` 의 `watchRewardedAd`(8번·1초) → `selectManualRequest` | — |
 | 저장 전에 막기 | 강제: `FREE_PLAN_PRESET_ONLY` | `AdRewardGate.blocksManualSave`(저장 흐름의 월 한도 확인 옆) | — |
 | 쓰는 자리·되돌리기 | `routes/tts.ts` `reserveManualGeneration`, catch 의 `refundAdRewardCredit` | — | — |
 | 현황·계정 PK 내려주기 | `GET /tts/manual-quota` 의 `ad_reward`(무료만) | `ManualQuotaResponse.adReward` | — |
-| 광고 단위·앱 id | `ADMOB_REWARDED_AD_UNITS` | `build.gradle.kts` 의 `alarmTalk{Dev,Prod}Admob*` → `BuildConfig.ADMOB_REWARDED_AD_UNIT_ID`·매니페스트 `admobAppId` | — |
+| 광고 단위·앱 id(스위치가 비면 `ad_reward` 를 싣지 않는다) | `ADMOB_REWARDED_AD_UNITS` | `build.gradle.kts` 의 `alarmTalk{Dev,Prod}Admob*` → `BuildConfig.ADMOB_REWARDED_AD_UNIT_ID`·매니페스트 `admobAppId` | — |
 | 탈퇴 파기 | `lib/account-deletion.ts` | — | — |
 | 회귀 테스트 | `test/ad-rewards.test.ts`, `test/tts.test.ts` 「광고 보상」 | `AdRewardGateTest`, `GiftCodeRemovalTest`(게이트 기본 두 버튼) | — |

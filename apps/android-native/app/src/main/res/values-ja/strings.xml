@@ -712,6 +712,8 @@
     <string name="consent_type_voice_biometric">音声生体情報の処理同意</string>
     <string name="consent_type_overseas">音声AIの国外移転同意</string>
     <string name="consent_type_marketing">広告情報の受信同意</string>
+    <string name="consent_section_ads">広告</string>
+    <string name="consent_ad_privacy_options">広告のプライバシー設定</string>
     <string name="consent_not_agreed">未同意</string>
     <string name="consent_load_failed">同意内容を読み込めませんでした。タップして再試行してください。</string>
     <string name="r3app_bottom_create_alarm_desc">アラームを作成</string>

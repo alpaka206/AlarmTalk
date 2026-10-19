@@ -713,6 +713,8 @@
     <string name="consent_type_voice_biometric">Voice biometric data consent</string>
     <string name="consent_type_overseas">Overseas transfer for voice AI</string>
     <string name="consent_type_marketing">Marketing communications consent</string>
+    <string name="consent_section_ads">Ads</string>
+    <string name="consent_ad_privacy_options">Ad privacy settings</string>
     <string name="consent_not_agreed">Not agreed</string>
     <string name="consent_load_failed">Couldn\'t load your consents. Tap to retry.</string>
     <string name="r3app_bottom_create_alarm_desc">Create alarm</string>

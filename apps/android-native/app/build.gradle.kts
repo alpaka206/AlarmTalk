@@ -221,19 +221,16 @@ android {
     // 광고 버튼을 그리지 않는다. dev 는 Google 의 시험용 보상형 단위가 기본이라 광고가 뜨는 것까지 볼 수 있다 — 단
     // 그 단위는 우리 서버로 확인 콜백을 보내지 않아 보상이 쌓이지 않는다. 보상까지 보려면 SSV 를 dev 서버로 둔 우리
     // 단위를 `alarmTalkDevAdmobRewardedAdUnitId` 로 넣는다.
+    // ⚠ 빈 값도 '없음' 으로 읽는다(코덱스 #925) — `orElse` 는 속성이 **있으면** 빈 문자열이라도 그대로 두어, 빈 앱 id 가
+    //   매니페스트에 들어가 SDK 가 시작 때 죽는다.
+    fun admobProperty(name: String, fallback: String): String =
+        providers.gradleProperty(name).orNull?.trim()?.takeIf { it.isNotEmpty() } ?: fallback
     val admobTestAppId = "ca-app-pub-3940256099942544~3347511713"
-    val alarmTalkDevAdmobAppId = providers.gradleProperty("alarmTalkDevAdmobAppId")
-        .orElse(admobTestAppId)
-        .get()
-    val alarmTalkProdAdmobAppId = providers.gradleProperty("alarmTalkProdAdmobAppId")
-        .orElse(admobTestAppId)
-        .get()
-    val alarmTalkDevAdmobRewardedAdUnitId = providers.gradleProperty("alarmTalkDevAdmobRewardedAdUnitId")
-        .orElse("ca-app-pub-3940256099942544/5224354917")
-        .get()
-    val alarmTalkProdAdmobRewardedAdUnitId = providers.gradleProperty("alarmTalkProdAdmobRewardedAdUnitId")
-        .orElse("")
-        .get()
+    val alarmTalkDevAdmobAppId = admobProperty("alarmTalkDevAdmobAppId", admobTestAppId)
+    val alarmTalkProdAdmobAppId = admobProperty("alarmTalkProdAdmobAppId", admobTestAppId)
+    val alarmTalkDevAdmobRewardedAdUnitId =
+        admobProperty("alarmTalkDevAdmobRewardedAdUnitId", "ca-app-pub-3940256099942544/5224354917")
+    val alarmTalkProdAdmobRewardedAdUnitId = admobProperty("alarmTalkProdAdmobRewardedAdUnitId", "")
 
     signingConfigs {
         if (releaseKeystoreProps != null) {
@@ -447,6 +444,8 @@ dependencies {
     // ⚠ 24.9.0 부터는 Kotlin 2.3 메타데이터로 빌드돼 이 프로젝트의 Kotlin 2.0.21 컴파일러가 못 읽는다(2026-10-19 확인).
     //   올리려면 Kotlin 플러그인부터 올린다.
     implementation("com.google.android.gms:play-services-ads:24.8.0")
+    // 광고 동의(UMP) — 광고 SDK 가 이미 끌어오는 판(3.2.0)을 직접 쓰므로 명시한다(`ads/RewardedAds.kt`).
+    implementation("com.google.android.ump:user-messaging-platform:3.2.0")
     implementation("io.sentry:sentry-android-core:8.43.0")
     implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
     implementation("com.squareup.retrofit2:converter-gson:2.11.0")

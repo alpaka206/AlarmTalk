@@ -2111,8 +2111,23 @@ internal fun AlarmEditorScreen(
                 manualLocked = AdRewardGate.manualLocked(freeVoiceTier, manualQuota?.adReward),
                 onManualLocked = {
                     if (!adRewardBusy) {
-                        manualGateFromLockedRow = true
-                        voicePlanGateOpen = true
+                        // ⚠ **게이트를 열기 전에 현황을 다시 읽는다**(코덱스 #925). 확인 대기(8초)가 지난 뒤 들어온
+                        // 보상은 화면 값에 없다 — 그대로 게이트를 열면 이미 받은 보상 대신 광고를 또 권한다.
+                        // "잠시 뒤 다시 눌러 주세요" 가 약속하는 것이 이 다시 읽기다.
+                        adRewardBusy = true
+                        scope.launch {
+                            try {
+                                onLoadManualQuota?.invoke()?.let { manualQuota = it }
+                                if (AdRewardGate.credits(freeVoiceTier, manualQuota?.adReward) > 0) {
+                                    selectManualRequest += 1
+                                } else {
+                                    manualGateFromLockedRow = true
+                                    voicePlanGateOpen = true
+                                }
+                            } finally {
+                                adRewardBusy = false
+                            }
+                        }
                     }
                 },
                 manualRewardCredits = AdRewardGate.credits(freeVoiceTier, manualQuota?.adReward),

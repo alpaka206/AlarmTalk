@@ -760,6 +760,8 @@
     <string name="consent_type_voice_biometric">음성 생체정보 처리 동의</string>
     <string name="consent_type_overseas">음성 AI 국외 이전 동의</string>
     <string name="consent_type_marketing">광고성 정보 수신 동의</string>
+    <string name="consent_section_ads">광고</string>
+    <string name="consent_ad_privacy_options">광고 개인정보 설정</string>
     <string name="consent_not_agreed">미동의</string>
     <string name="consent_load_failed">동의 내역을 불러오지 못했어요. 눌러서 다시 시도해 주세요.</string>
     <string name="r3app_bottom_create_alarm_desc">알람 만들기</string>
