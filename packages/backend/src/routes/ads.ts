@@ -3,8 +3,10 @@ import type { AppEnv } from '../types';
 import { getDB } from '../lib/db';
 import { jsonError } from '../lib/api-error';
 import { logStructured } from '../lib/logger';
-import { verifyAdMobCallback } from '../lib/admob-ssv';
+import { AdMobKeysBusyError, verifyAdMobCallback } from '../lib/admob-ssv';
 import { grantAdRewardCredit, isConfiguredRewardedAdUnit } from '../lib/ad-reward-credits';
+import { hasPersonalVoiceAccess } from './billing-helpers';
+import { resolvePersonalPromo } from '../lib/personal-promo';
 
 // MARK: - GET /api/ads/admob-ssv  (공개 라우트, 사용자 인증 없음)
 //
@@ -20,7 +22,16 @@ const ads = new Hono<AppEnv>();
 
 ads.get('/admob-ssv', async (c) => {
   const rawQuery = new URL(c.req.url).search.replace(/^\?/, '');
-  const callback = await verifyAdMobCallback(rawQuery);
+  let callback: Awaited<ReturnType<typeof verifyAdMobCallback>>;
+  try {
+    callback = await verifyAdMobCallback(rawQuery);
+  } catch (err) {
+    // 다른 콜백이 방금 키 목록을 다시 받았다 — 1초 뒤 AdMob 의 재시도에서 받힌다. 5xx 가 아니라 경보도 없다.
+    if (err instanceof AdMobKeysBusyError) {
+      return jsonError(c, 429, 'AD_REWARD_RETRY_LATER', 'Retry the reward callback shortly.');
+    }
+    throw err;
+  }
   if (!callback) {
     return jsonError(c, 403, 'AD_REWARD_SIGNATURE_INVALID', 'Invalid reward callback signature.');
   }
@@ -40,10 +51,15 @@ ads.get('/admob-ssv', async (c) => {
 
   const db = getDB(c.env);
   const user = await db.execute({
-    sql: `SELECT 1 FROM users WHERE id = ? AND deletion_status = 'active' LIMIT 1`,
+    sql: `SELECT plan FROM users WHERE id = ? AND deletion_status = 'active' LIMIT 1`,
     args: [callback.userId],
   });
   if (user.rows.length === 0) return skip('user');
+  // ⚠ **무료만 적립한다 — 앱이 버튼을 숨기는 것으로는 막히지 않는다**(코덱스 #925). `user_id` 는 앱이 정해 서명에 실려 올
+  //   뿐이라, 고친 앱은 유료 계정으로 광고를 보고 매달 10번씩 쌓아 두었다가 해지 뒤에 쓸 수 있다. 판정은 `manual-quota` 가
+  //   `ad_reward` 를 싣는 것과 같은 계산값이다(기간 한정 개인 플랜이면 유료로 본다).
+  const rawPlan = user.rows[0]!.plan == null ? null : String(user.rows[0]!.plan);
+  if (hasPersonalVoiceAccess(rawPlan, resolvePersonalPromo(c.env))) return skip('plan');
 
   const granted = await grantAdRewardCredit(db, {
     transactionId: callback.transactionId,

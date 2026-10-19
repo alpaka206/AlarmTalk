@@ -85,6 +85,8 @@ export const ERROR_CODES = [
   'NO_FIELDS_TO_UPDATE',
   'POLICY_VERSION_MISMATCH',
   // 광고 보상 (ads.ts) — AdMob 서버가 부르는 콜백이라 앱에는 닿지 않는다.
+  /** 키 목록을 방금 다시 받았다 — AdMob 이 1초 뒤 재시도하면 받힌다(`lib/admob-ssv.ts`). */
+  'AD_REWARD_RETRY_LATER',
   'AD_REWARD_SIGNATURE_INVALID',
   // 음성 생성(TTS) (tts.ts)
   'BASIC_VOICE_PRESET_ONLY',
