@@ -84,6 +84,8 @@ export const ERROR_CODES = [
   'INVALID_QUIET_WINDOWS',
   'NO_FIELDS_TO_UPDATE',
   'POLICY_VERSION_MISMATCH',
+  // 광고 보상 (ads.ts) — AdMob 서버가 부르는 콜백이라 앱에는 닿지 않는다.
+  'AD_REWARD_SIGNATURE_INVALID',
   // 음성 생성(TTS) (tts.ts)
   'BASIC_VOICE_PRESET_ONLY',
   'FREE_PLAN_PRESET_ONLY',
