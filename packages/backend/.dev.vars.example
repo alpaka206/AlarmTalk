@@ -76,6 +76,10 @@ APNS_PRIVATE_KEY=
 # (일본 気象庁·미국 NWS 는 키가 없다. 예전 OPEN_METEO_API_KEY 는 없앴다.)
 KMA_SERVICE_KEY=
 
+# AdMob 보상형 광고 단위(쉼표 구분, 콘솔의 전체 id `ca-app-pub-…/123` 이나 뒤 숫자). 서버 확인(SSV) 콜백
+# (routes/ads.ts)이 여기 있는 단위만 적립한다. 비워 두면 광고 보상이 꺼진다 — docs/spec/ad-rewards.md §6.
+ADMOB_REWARDED_AD_UNITS=
+
 # Perso API 키 (랜딩 이벤트 메시지 클립, routes/event.ts). 없으면 그 라우트만 503.
 # 프로젝트·문장 슬롯은 src/lib/event-voices.ts 에 있다.
 PERSO_API_KEY=

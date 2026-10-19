@@ -134,6 +134,17 @@ describe('verifyAdMobCallback', () => {
     expect(fetchKeys).toHaveBeenCalledTimes(1);
   });
 
+  it('모르는 key_id 를 쏟아도 강제 갱신은 간격 안에 한 번뿐이다 — 인증 없는 라우트로 바깥 요청을 부풀리지 못한다', async () => {
+    await verifyAdMobCallback(await signedQuery(CALLBACK), fetchKeys);
+    fetchKeys.mockClear();
+    for (const id of ['901', '902', '903']) {
+      expect(await verifyAdMobCallback(await signedQuery(CALLBACK, id), fetchKeys)).toBeNull();
+    }
+    expect(fetchKeys).toHaveBeenCalledTimes(1);
+    // 알던 키는 그대로 받힌다.
+    expect(await verifyAdMobCallback(await signedQuery(CALLBACK), fetchKeys)).not.toBeNull();
+  });
+
   it('서명이 없으면 거절한다', async () => {
     expect(
       await verifyAdMobCallback(new URLSearchParams(CALLBACK).toString(), fetchKeys),
@@ -143,6 +154,13 @@ describe('verifyAdMobCallback', () => {
   it('키 목록을 못 받으면 던진다 — 우리 장애를 서명 실패(재시도 없음)로 삼키지 않는다', async () => {
     const down = vi.fn(async () => new Response('', { status: 503 }));
     await expect(verifyAdMobCallback(await signedQuery(CALLBACK), down)).rejects.toThrow();
+  });
+});
+
+describe('워커 설정 동기화', () => {
+  it('광고 단위 목록이 secrets:sync 로 올라간다 — 빠지면 동기화가 성공해도 기능이 꺼진 채다(코덱스 #924)', async () => {
+    const { WORKER_SECRET_KEYS } = await import('../scripts/worker-secret-keys');
+    expect(WORKER_SECRET_KEYS as readonly string[]).toContain('ADMOB_REWARDED_AD_UNITS');
   });
 });
 

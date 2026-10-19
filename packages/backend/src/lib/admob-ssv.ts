@@ -18,13 +18,22 @@ export const VERIFIER_KEYS_URL = 'https://www.gstatic.com/admob/reward/verifier-
 /** 키 목록을 다시 받기 전까지 들고 있는 시간. 모르는 `key_id` 가 오면 이 시간과 무관하게 한 번 다시 받는다. */
 const KEYS_TTL_MS = 6 * 60 * 60 * 1000;
 
+/**
+ * 모르는 `key_id` 로 강제 갱신하는 최소 간격. 이 라우트는 인증이 없어, 아무 `key_id` 나 붙인 요청을 쏟으면 매번
+ * Google 로 나가는 요청과 키 가져오기를 일으킬 수 있다(코덱스 #925). 진짜 키 교체는 드물어 이 간격이면 충분하다 —
+ * 그 사이에 온 새 키의 콜백은 거절되고(403), AdMob 이 나중에 다시 부르면 그때 받힌다.
+ */
+const FORCED_REFRESH_MIN_INTERVAL_MS = 10 * 60 * 1000;
+
 type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
 
 let cachedKeys: { at: number; keys: Map<string, CryptoKey> } | null = null;
+let lastForcedRefreshAt = 0;
 
 /** 테스트 전용 — 모듈 캐시를 비운다. */
 export function resetAdMobKeyCacheForTest(): void {
   cachedKeys = null;
+  lastForcedRefreshAt = 0;
 }
 
 function base64ToBytes(b64: string): Uint8Array {
@@ -121,7 +130,10 @@ export async function verifyAdMobCallback(
   if (!raw) return null;
 
   let key = (await loadKeys(fetchImpl, false)).get(keyId);
-  if (!key) key = (await loadKeys(fetchImpl, true)).get(keyId);
+  if (!key && Date.now() - lastForcedRefreshAt >= FORCED_REFRESH_MIN_INTERVAL_MS) {
+    lastForcedRefreshAt = Date.now();
+    key = (await loadKeys(fetchImpl, true)).get(keyId);
+  }
   if (!key) return null;
 
   const ok = await crypto.subtle.verify(

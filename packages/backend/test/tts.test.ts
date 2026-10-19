@@ -1865,12 +1865,27 @@ describe('GET /tts/manual-quota — 광고 보상 현황', () => {
     mockDB.pushResult([]); // 개인 구독 없음
     mockDB.pushResultFor('FROM ad_reward_credits WHERE user_id', [{ credits: 2, granted: 4 }]);
 
-    const res = await reqWithEnv(buildApp(), new Request('http://x/tts/manual-quota'));
+    const res = await buildApp().request(new Request('http://x/tts/manual-quota'), undefined, {
+      ...ENV,
+      ADMOB_REWARDED_AD_UNITS: 'ca-app-pub-1/123',
+    });
 
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.limit).toBe(0);
     expect(body.ad_reward).toEqual({ credits: 2, remaining_grants: 6, monthly_limit: 10, user_id: 'user-1' });
+  });
+
+  it('서버의 광고 단위 설정이 비면 싣지 않는다 — 광고를 봐도 적립되지 않으니 권하지 않는다', async () => {
+    mockDB.pushResult([{ plan: 'free' }]);
+    mockDB.pushResult([]);
+    mockDB.pushResult([]);
+
+    const res = await reqWithEnv(buildApp(), new Request('http://x/tts/manual-quota'));
+
+    expect(res.status).toBe(200);
+    expect((await res.json()).ad_reward).toBeUndefined();
+    expect(mockDB.calls.some((c) => c.sql.includes('ad_reward_credits'))).toBe(false);
   });
 
   it('유료에게는 싣지 않는다', async () => {

@@ -54,6 +54,9 @@ export const WORKER_SECRET_KEYS = [
   //  4) 푸시(APNs): APNS_KEY_ID + APNS_PRIVATE_KEY (+ APPLE_TEAM_ID 재사용)
   'APNS_KEY_ID',
   'APNS_PRIVATE_KEY',
+  // AdMob 보상형 광고 단위(쉼표 구분) — 서버 확인 콜백(`routes/ads.ts`)이 이 단위만 적립한다. 비어 있으면 광고 보상이
+  // 꺼진다(`docs/spec/ad-rewards.md`). 비밀은 아니지만 환경별로 달라 같은 길로 올린다(코덱스 #924).
+  'ADMOB_REWARDED_AD_UNITS',
   // Perso(랜딩 이벤트 메시지 클립). 비어 있으면 그 라우트만 503.
   'PERSO_API_KEY',
   // 기간 한정 개인 플랜의 **시작 스위치**(ISO 8601, 시간대 포함). 없으면 프로모는 꺼져 있다.
