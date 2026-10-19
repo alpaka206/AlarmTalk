@@ -1349,10 +1349,15 @@ internal fun AlarmEditorScreen(
     //   돌지 않아 편집기가 "문구를 준비하고 있어요" 에 갇힌다. 그래서 **비운 쪽이 직접**
     //   이 값을 올려 재바인딩을 부른다 — 키에 값 하나를 더 얹는 것보다 인과가 분명하다.
     var stockClipRebindTick by remember { mutableStateOf(0) }
+    // 무료인데 직접 입력 문구를 지켜야 하는가 — 광고 보상으로 만든 직접 입력은 무료에게도 정당하다(`docs/spec/ad-rewards.md`
+    // §4, 코덱스 #925). 서버가 이 사용자에게 광고 보상을 권하거나(`ad_reward` 있음) **아직 답이 없으면**(읽는 중·실패) 지킨다
+    // — 답이 오기 전에 지우면 되돌릴 수 없다. 보상이 없는데 새로 만들어야 하면 저장 흐름이 이유와 함께 막는다
+    // (`AdRewardGate.blocksManualSave`). 서버가 광고 보상을 끈 경우(답은 왔는데 `ad_reward` 없음)만 예전처럼 정리한다.
+    val freeManualTextKept = freeVoiceTier && (manualQuota == null || manualQuota?.adReward != null)
     // ⚠ **`editor.voiceRandomContext` 가 키에 있어야 한다**(2026-09-02). 문구 목록을 하나로
     //   합친 뒤로 스톡 클립 목소리도 다섯 종류를 고를 수 있는데, 고른 종류가 키에 없으면
     //   이 효과가 다시 돌지 않아 **방금 고른 운세가 붙지 않는다.**
-    LaunchedEffect(usesStockClips, editor.playMode, editor.voiceProfileId, editor.voiceSource, stockClips, appVoiceLanguage, isOnline, editor.voiceRandomContext, stockClipRebindTick) {
+    LaunchedEffect(usesStockClips, editor.playMode, editor.voiceProfileId, editor.voiceSource, stockClips, appVoiceLanguage, isOnline, editor.voiceRandomContext, stockClipRebindTick, freeManualTextKept) {
         if (usesStockClips && editor.playMode != AlarmPlayModes.ALARM_ONLY) {
             // 직접 녹음은 플랜·목소리 종류와 무관하게 허용된다(녹음본 로컬 재생일 뿐).
             // 아래 TTS 쪽 제한(버킷/문구 강제)은 소스가 TTS 일 때만 적용한다 — 녹음 알람에는
@@ -1363,8 +1368,9 @@ internal fun AlarmEditorScreen(
                 // 사용자가 방금 친 문구가 매니페스트 도착·온오프라인 전환만으로 **조용히
                 // 사라진다.** 직접 입력이 잠기지 않은 등급(= 유료)이 실제로 직접 입력을
                 // 고른 상태면 이 강제를 통째로 건너뛴다. 잠긴 등급(무료)에서는 그대로 돈다.
+                // 무료도 광고 보상으로 직접 입력을 쓸 수 있으면 같은 대접이다(위 `freeManualTextKept`).
                 val manualChosen = editor.hasTypedManualText()
-                if (!freeVoiceTier && manualChosen) return@LaunchedEffect
+                if (manualChosen && (!freeVoiceTier || freeManualTextKept)) return@LaunchedEffect
                 if (editor.voiceRandomPrompt) editor.voiceRandomPrompt = false
                 if (editor.voiceLanguage != appVoiceLanguage) editor.voiceLanguage = appVoiceLanguage
                 // 기존 알람은 selectVoiceProfile 이 안 불려 직접 입력 문구·신선한 TTS 오디오가 그대로

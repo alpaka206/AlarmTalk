@@ -123,6 +123,11 @@
         <meta-data
             android:name="com.google.android.gms.ads.flag.OPTIMIZE_INITIALIZATION"
             android:value="true" />
+        <!-- 앱 측정(App Measurement)을 앱 시작 때 켜지 않는다 — 광고 동의(UMP)를 받은 뒤 RewardedAds 가 SDK 를 초기화할
+             때 처음 시작된다. 안 막으면 동의를 묻기도 전에 시작하자마자 데이터를 보낸다(코덱스 #925). -->
+        <meta-data
+            android:name="com.google.android.gms.ads.DELAY_APP_MEASUREMENT_INIT"
+            android:value="true" />
         <meta-data
             android:name="com.google.android.gms.ads.flag.OPTIMIZE_AD_LOADING"
             android:value="true" />
