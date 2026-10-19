@@ -118,7 +118,9 @@ const ANDROID: AppVersionPolicy = {
   //
   // 31(2026-10-11): `minSupported` 를 31 로 올리므로 함께 올린다 — 이번에도 차단 화면이다.
   // 34(2026-10-16): `minSupported` 를 34 로 올리므로 함께 올린다 — 차단 화면이다.
-  latest: 34,
+  // 35(2026-10-19, 코덱스 #923): Play 프로덕션 35 (1.2.15) 가 `RELEASE_LIFECYCLE_STATE_PUBLISHED` 인 것을 Play
+  // Developer API 로 확인하고 올렸다. `minSupported` 는 34 그대로라 차단 화면이 아니라 배너다.
+  latest: 35,
   storeUrl: 'https://play.google.com/store/apps/details?id=com.alarmtalk.app',
 };
 
