@@ -161,6 +161,27 @@ describe('verifyAdMobCallback', () => {
     expect(await verifyAdMobCallback(await signedQuery(CALLBACK), fetchKeys)).not.toBeNull();
   });
 
+  it('동시에 몰린 모르는 key_id·차가운 캐시도 바깥 요청은 한 번이다', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const slow = vi.fn(async () => {
+      await gate;
+      return new Response(keysJson, { status: 200 });
+    });
+    const queries = await Promise.all(
+      ['901', '902', '903', KEY_ID].map((id) => signedQuery(CALLBACK, id)),
+    );
+    const pending = Promise.allSettled(queries.map((q) => verifyAdMobCallback(q, slow)));
+    release();
+    const results = await pending;
+    // 차가운 캐시를 채우는 받기 하나를 넷이 함께 기다렸다 — 그 뒤 모르는 id 의 강제 갱신은 2초 간격이 막는다.
+    expect(slow.mock.calls.length).toBeLessThanOrEqual(2);
+    expect(results.at(-1)).toMatchObject({
+      status: 'fulfilled',
+      value: expect.objectContaining({ userId: USER }),
+    });
+  });
+
   it('키가 교체되면 새 key_id 의 첫 콜백이 목록을 다시 받아 받힌다', async () => {
     await verifyAdMobCallback(await signedQuery(CALLBACK), fetchKeys); // 옛 목록(KEY_ID 하나)을 캐시
     const rotated = JSON.parse(keysJson) as { keys: Array<Record<string, unknown>> };
