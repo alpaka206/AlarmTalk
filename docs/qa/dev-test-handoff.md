@@ -42,6 +42,9 @@
 
 - iOS CI 의 두 흔들림은 #917에서 고쳤다: 날씨 상한 테스트의 시간 의존(상한 0.2초 → 그 테스트만 1.5초), 로그 업로드
   단계의 일시적 네트워크 실패(`ENOTFOUND`)가 실행을 빨갛게 만들던 것(`continue-on-error`). iOS 검사는 필수 체크가 아니다.
+- 10/19 develop 검사에서 설정 재전송 테스트(`AuthViewModelTests.testPromptSettingsEditedDuringABusyUploadIsUploadedAfterward`)가
+  요청 시작을 완료로 보고 미전송 표시를 일찍 검사했다. 테스트가 두 번째 응답을 붙잡아 전송 중 표시를 확인하고, 응답 처리
+  완료까지 기다리도록 수정했다. 수정 후 CI는 확인 전이다. 같은 소스의 main 검사는 통과했고 제출한 빌드 13은 심사 대기 중이다.
 
 ## 정리할 것 (아무 때나, 급하지 않다)
 

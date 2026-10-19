@@ -253,6 +253,17 @@ final class AuthViewModelTests: XCTestCase {
         var confirmed = session.user
         confirmed.dynamicPromptSettings = tokyo.toSettings()
         api.meResult = .success(confirmed)
+        let retrySent = expectation(description: "밀린 설정의 두 번째 요청")
+        let retryFinished = expectation(description: "두 번째 요청의 응답 처리 완료")
+        let held = HeldMeResponses(arrivals: [2: retrySent])
+        defer { held.release(2) }
+        api.beforeUpdateProfileResponse = {
+            guard api.updateProfileCallCount == 2 else { return }
+            await held.hold(2)
+            var latest = session.user
+            latest.dynamicPromptSettings = api.lastUpdateProfileRequest?.dynamicPromptSettings
+            api.meResult = .success(latest)
+        }
         api.beforeMeResponse = {
             api.beforeMeResponse = nil
             // 확인 조회가 떠 있는 사이 사주를 고쳤다 — 이 올리기는 `isBusy` 에 막힌다.
@@ -265,14 +276,22 @@ final class AuthViewModelTests: XCTestCase {
         }
 
         await vm.updateProfile(dynamicPromptSettings: tokyo.toSettings())
-        for _ in 0..<100 where api.updateProfileCallCount < 2 {
-            try await Task.sleep(nanoseconds: 10_000_000)
-        }
+        await fulfillment(of: [retrySent], timeout: 5)
 
         XCTAssertEqual(api.updateProfileCallCount, 2, "막힌 사주 변경을 다시 올리지 않았다")
         let resent = try XCTUnwrap(api.lastUpdateProfileRequest?.dynamicPromptSettings)
         XCTAssertEqual(resent.fortune.birthDate, "1990-01-01")
         XCTAssertEqual(resent.weather.region, "jp-tokyo")
+        XCTAssertTrue(DynamicPromptPreferences.hasUnsyncedChange(userID: userID), "응답 전에는 미전송 표시를 지우지 않는다")
+
+        // 요청 횟수는 시작할 때 오른다. 완료로 읽으면 느린 러너에서 markPushed 전에 검사하게 된다.
+        // 응답을 풀어 준 뒤 확인 조회까지 마치고 isBusy가 내려갈 때를 기다린다.
+        let completion = vm.$isBusy.dropFirst().filter { !$0 }.first().sink { _ in
+            retryFinished.fulfill()
+        }
+        defer { completion.cancel() }
+        held.release(2)
+        await fulfillment(of: [retryFinished], timeout: 5)
         XCTAssertFalse(DynamicPromptPreferences.hasUnsyncedChange(userID: userID))
     }
 
