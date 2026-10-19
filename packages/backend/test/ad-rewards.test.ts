@@ -14,6 +14,7 @@ import {
   AD_REWARD_MONTHLY_LIMIT,
   consumeAdRewardCredit,
   grantAdRewardCredit,
+  grantMonthFor,
   isConfiguredRewardedAdUnit,
   readAdRewardStatus,
   refundAdRewardCredit,
@@ -145,6 +146,20 @@ describe('verifyAdMobCallback', () => {
     expect(await verifyAdMobCallback(await signedQuery(CALLBACK), fetchKeys)).not.toBeNull();
   });
 
+  it('강제 갱신이 일시 장애로 실패하면 간격을 재지 않는다 — AdMob 의 재시도가 다시 갱신해 받힌다', async () => {
+    await verifyAdMobCallback(await signedQuery(CALLBACK), fetchKeys); // 캐시를 채운다
+    const flaky = vi.fn(async () => new Response('', { status: 503 }));
+    await expect(verifyAdMobCallback(await signedQuery(CALLBACK, '777'), flaky)).rejects.toThrow();
+    fetchKeys.mockClear();
+    await verifyAdMobCallback(await signedQuery(CALLBACK, '777'), fetchKeys);
+    expect(fetchKeys).toHaveBeenCalledTimes(1);
+  });
+
+  it('서명된 보상 시각을 함께 돌려준다', async () => {
+    const parsed = await verifyAdMobCallback(await signedQuery(CALLBACK), fetchKeys);
+    expect(parsed?.rewardedAtMs).toBe(1760860000000);
+  });
+
   it('서명이 없으면 거절한다', async () => {
     expect(
       await verifyAdMobCallback(new URLSearchParams(CALLBACK).toString(), fetchKeys),
@@ -154,6 +169,24 @@ describe('verifyAdMobCallback', () => {
   it('키 목록을 못 받으면 던진다 — 우리 장애를 서명 실패(재시도 없음)로 삼키지 않는다', async () => {
     const down = vi.fn(async () => new Response('', { status: 503 }));
     await expect(verifyAdMobCallback(await signedQuery(CALLBACK), down)).rejects.toThrow();
+  });
+});
+
+describe('전역 IP 한도', () => {
+  it('보상 콜백은 공용 IP 버킷(300)에서 빠지고 전용 버킷이 센다', async () => {
+    const { ipRateLimitMiddleware, adRewardCallbackRateLimitMiddleware } =
+      await import('../src/middleware/rateLimit');
+    const app = new Hono();
+    app.use('*', ipRateLimitMiddleware);
+    app.use('/api/ads/*', adRewardCallbackRateLimitMiddleware);
+    app.get('/api/ads/admob-ssv', (c) => c.text('ok'));
+    app.get('/api/other', (c) => c.text('ok'));
+    const headers = { 'cf-connecting-ip': '203.0.113.9' };
+    for (let i = 0; i < 301; i++) {
+      expect((await app.request('/api/ads/admob-ssv', { headers })).status).toBe(200);
+    }
+    // 같은 IP 의 다른 공개 요청은 여전히 공용 버킷에 묶인다(콜백이 그 버킷을 쓰지 않았다).
+    expect((await app.request('/api/other', { headers })).status).toBe(200);
   });
 });
 
@@ -171,6 +204,22 @@ describe('isConfiguredRewardedAdUnit', () => {
     expect(isConfiguredRewardedAdUnit('ca-app-pub-1/999', '1234567890')).toBe(false);
     expect(isConfiguredRewardedAdUnit(undefined, '1234567890')).toBe(false);
     expect(isConfiguredRewardedAdUnit('', '1234567890')).toBe(false);
+  });
+});
+
+describe('grantMonthFor', () => {
+  const now = Date.UTC(2026, 10, 1, 0, 30); // KST 11월 1일 09:30
+
+  it('보상을 받은 시각의 KST 달로 센다 — 늦게 온 콜백이 다음 달 몫을 먹지 않는다', () => {
+    const lastNightKst = Date.UTC(2026, 9, 31, 14, 59); // KST 10월 31일 23:59
+    expect(grantMonthFor(lastNightKst, now)).toBe('2026-10');
+    expect(grantMonthFor(Date.UTC(2026, 9, 31, 15, 0), now)).toBe('2026-11'); // KST 11월 1일 00:00
+  });
+
+  it('시각이 없거나 믿을 범위 밖이면 처리 시각으로 센다', () => {
+    expect(grantMonthFor(null, now)).toBe('2026-11');
+    expect(grantMonthFor(Date.UTC(2025, 0, 1), now)).toBe('2026-11');
+    expect(grantMonthFor(now + 3 * 24 * 60 * 60 * 1000, now)).toBe('2026-11');
   });
 });
 
@@ -253,6 +302,19 @@ describe('GET /api/ads/admob-ssv', () => {
     );
     expect(await ghost.json()).toEqual({ granted: false });
     expect((await readAdRewardStatus(db, USER)).credits).toBe(0);
+  });
+
+  it('UUID 전환 전의 계정 PK(구글 sub)도 적립한다', async () => {
+    const legacy = '108234567890123456789';
+    await db.execute({
+      sql: `INSERT INTO users (id, email, name, plan) VALUES (?, 'old@example.com', '옛계정', 'free')`,
+      args: [legacy],
+    });
+    const res = await call(
+      await signedQuery({ ...CALLBACK, user_id: legacy, transaction_id: 'tx-legacy' }),
+    );
+    expect(await res.json()).toEqual({ granted: true });
+    expect((await readAdRewardStatus(db, legacy)).credits).toBe(1);
   });
 
   it('광고 단위가 설정되지 않았으면 아무것도 적립하지 않는다', async () => {

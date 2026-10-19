@@ -20,6 +20,22 @@ export const AD_REWARD_MONTHLY_LIMIT = 10;
 
 // 월 경계는 KST(UTC+9) — 직접 입력 월 한도(`manual-tts-quota.ts`)와 같다.
 const KST_MONTH_SQL = "strftime('%Y-%m', 'now', '+9 hours')";
+const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
+/** 서명된 보상 시각을 믿는 범위. 그 밖이면(시계가 틀린 값) 처리 시각으로 센다. */
+const REWARD_TIME_PAST_LIMIT_MS = 40 * 24 * 60 * 60 * 1000;
+const REWARD_TIME_FUTURE_LIMIT_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * 적립을 어느 달(KST, `YYYY-MM`)로 셀까. **보상을 받은 시각**(서명된 `timestamp`)이 기준이다(코덱스 #924) — 콜백이 늦게
+ * 와서 처리 시각이 다음 달이 되면, 자정 직전에 본 광고가 다음 달 몫을 먹는다.
+ */
+export function grantMonthFor(rewardedAtMs: number | null, nowMs: number = Date.now()): string {
+  const usable =
+    rewardedAtMs !== null &&
+    rewardedAtMs >= nowMs - REWARD_TIME_PAST_LIMIT_MS &&
+    rewardedAtMs <= nowMs + REWARD_TIME_FUTURE_LIMIT_MS;
+  return new Date((usable ? rewardedAtMs : nowMs) + KST_OFFSET_MS).toISOString().slice(0, 7);
+}
 
 /**
  * 설정된 보상형 광고 단위(쉼표 구분)에 이 콜백의 `ad_unit` 이 있는가. 설정이 비면 **아무것도 받지 않는다** —
@@ -44,15 +60,24 @@ export function isConfiguredRewardedAdUnit(
  */
 export async function grantAdRewardCredit(
   db: DbExecutor,
-  input: { transactionId: string; userPk: string; adUnit: string },
+  input: { transactionId: string; userPk: string; adUnit: string; rewardedAtMs?: number | null },
   monthlyLimit: number = AD_REWARD_MONTHLY_LIMIT,
 ): Promise<boolean> {
+  const grantMonth = grantMonthFor(input.rewardedAtMs ?? null);
   const res = await db.execute({
     sql: `INSERT OR IGNORE INTO ad_reward_credits (transaction_id, user_id, ad_unit, grant_month)
-          SELECT ?, ?, ?, ${KST_MONTH_SQL}
+          SELECT ?, ?, ?, ?
           WHERE (SELECT COUNT(*) FROM ad_reward_credits
-                 WHERE user_id = ? AND grant_month = ${KST_MONTH_SQL}) < ?`,
-    args: [input.transactionId, input.userPk, input.adUnit, input.userPk, monthlyLimit],
+                 WHERE user_id = ? AND grant_month = ?) < ?`,
+    args: [
+      input.transactionId,
+      input.userPk,
+      input.adUnit,
+      grantMonth,
+      input.userPk,
+      grantMonth,
+      monthlyLimit,
+    ],
   });
   return (res.rowsAffected ?? 0) > 0;
 }

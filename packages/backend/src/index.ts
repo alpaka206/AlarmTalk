@@ -14,6 +14,7 @@ import {
   audioDownloadRateLimitMiddleware,
   eventLikeRateLimitMiddleware,
   eventClipRateLimitMiddleware,
+  adRewardCallbackRateLimitMiddleware,
 } from './middleware/rateLimit';
 import { bodyLimitMiddleware } from './middleware/bodyLimit';
 import { privateCache, noStore, publicCache } from './middleware/cache';
@@ -258,6 +259,7 @@ app.route('/api/billing/google', billingGoogleRtdn);
 
 // AdMob 보상형 광고 서버 확인(SSV) 콜백 (인증 미들웨어 미적용 — AdMob 서버가 부르고, 서명으로만 보호한다).
 app.use('/api/ads/*', noStore);
+app.use('/api/ads/*', adRewardCallbackRateLimitMiddleware);
 app.route('/api/ads', adsRoutes);
 
 // 인증이 필요한 라우트들

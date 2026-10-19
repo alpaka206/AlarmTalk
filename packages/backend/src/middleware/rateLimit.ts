@@ -112,6 +112,22 @@ function isAudioDownload(c: Context): boolean {
 export const ipRateLimitMiddleware = createRateLimitMiddleware({
   maxRequests: 300,
   prefix: 'pre:',
+  // AdMob 보상 콜백은 아래 전용 버킷이 맡는다 — Google 의 몇 안 되는 발신 IP 에서 몰려 오는데, 300 에 걸리면 1초 간격
+  // 다섯 번뿐인 재시도가 전부 같은 창에 들어가 보상이 사라진다(코덱스 #924).
+  skip: isAdMobRewardCallback,
+});
+
+function isAdMobRewardCallback(c: Context): boolean {
+  return c.req.method === 'GET' && new URL(c.req.url).pathname === '/api/ads/admob-ssv';
+}
+
+/**
+ * AdMob 보상 콜백(`routes/ads.ts`) 전용 IP 버킷. 서명이 있어야 적립되지만 인증 없는 라우트라 한도는 둔다 — 정상 콜백이
+ * 막히지 않을 만큼 넉넉히.
+ */
+export const adRewardCallbackRateLimitMiddleware = createRateLimitMiddleware({
+  maxRequests: 6000,
+  prefix: 'ssv:',
 });
 
 /**

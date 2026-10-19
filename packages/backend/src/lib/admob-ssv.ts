@@ -96,6 +96,8 @@ async function loadKeys(fetchImpl: FetchLike, force: boolean): Promise<Map<strin
 }
 
 export interface AdMobRewardCallback {
+  /** 사용자가 보상을 받은 시각(서명된 `timestamp`, epoch ms). 없거나 숫자가 아니면 null. */
+  rewardedAtMs: number | null;
   adUnit: string;
   transactionId: string;
   userId: string;
@@ -131,8 +133,10 @@ export async function verifyAdMobCallback(
 
   let key = (await loadKeys(fetchImpl, false)).get(keyId);
   if (!key && Date.now() - lastForcedRefreshAt >= FORCED_REFRESH_MIN_INTERVAL_MS) {
-    lastForcedRefreshAt = Date.now();
+    // ⚠ 간격은 **받기에 성공한 뒤에** 잰다(코덱스 #924). 먼저 적으면 일시 장애로 던진(5xx) 첫 갱신 뒤의 재시도가 전부
+    //   갱신을 건너뛰고 403 이 된다 — AdMob 은 1초 간격으로 다섯 번만 다시 부르므로 그 보상은 영영 사라진다.
     key = (await loadKeys(fetchImpl, true)).get(keyId);
+    lastForcedRefreshAt = Date.now();
   }
   if (!key) return null;
 
@@ -144,7 +148,9 @@ export async function verifyAdMobCallback(
   );
   if (!ok) return null;
 
+  const timestamp = Number(params.get('timestamp'));
   return {
+    rewardedAtMs: Number.isFinite(timestamp) && timestamp > 0 ? timestamp : null,
     adUnit: params.get('ad_unit') ?? '',
     transactionId: params.get('transaction_id') ?? '',
     userId: params.get('user_id') ?? '',

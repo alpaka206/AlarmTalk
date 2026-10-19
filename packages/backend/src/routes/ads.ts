@@ -3,7 +3,6 @@ import type { AppEnv } from '../types';
 import { getDB } from '../lib/db';
 import { jsonError } from '../lib/api-error';
 import { logStructured } from '../lib/logger';
-import { UUID_RE } from '../lib/validate';
 import { verifyAdMobCallback } from '../lib/admob-ssv';
 import { grantAdRewardCredit, isConfiguredRewardedAdUnit } from '../lib/ad-reward-credits';
 
@@ -35,7 +34,9 @@ ads.get('/admob-ssv', async (c) => {
     return skip('ad_unit');
   if (!callback.transactionId || callback.transactionId.length > 128) return skip('transaction');
   // 앱이 `ServerSideVerificationOptions.userId` 로 싣는 값은 `GET /tts/manual-quota` 가 준 계정 PK 다.
-  if (!UUID_RE.test(callback.userId)) return skip('user');
+  // ⚠ UUID 로 좁히지 말 것(코덱스 #924) — UUID 전환 전에 가입한 구글 계정은 PK 가 구글 sub 그대로다(`routes/auth.ts`).
+  //   형식은 길이·문자만 묶고, 실재는 아래 조회가 본다.
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(callback.userId)) return skip('user');
 
   const db = getDB(c.env);
   const user = await db.execute({
@@ -48,6 +49,7 @@ ads.get('/admob-ssv', async (c) => {
     transactionId: callback.transactionId,
     userPk: callback.userId,
     adUnit: callback.adUnit,
+    rewardedAtMs: callback.rewardedAtMs,
   });
   logStructured('info', {
     at: 'ad_reward',
