@@ -20,7 +20,8 @@
 ## 서버·브랜치
 
 - **#918은 main에 머지·운영 배포 완료**(2026-10-19, `98a5017f`). 재동의 기준 5·탈퇴 오류 재시도·옛 앱 정리가
-  운영에 반영됐다. `/api/app/version`은 Android 34/34·iOS 12/12로 확인했다.
+  운영에 반영됐다. `/api/app/version`은 Android 34/34·iOS 12/12로 확인했다. Play 35 게재 뒤 Android `latest` 를 35 로
+  올린다(#923 — 최소 지원은 34 그대로, main 배포 뒤 다시 확인한다).
 - **앱 빌드 출처는 main `bda43e1e`**(#919). Android 1.2.15(35)·iOS 1.2.15(13)이며 정책 문서 버전은 6이다.
   iOS 프로젝트는 이 커밋의 `project.yml`로 XcodeGen을 실행했다. 서버 최소 지원 버전은 이번 앱 제출로 올리지 않는다.
 - Android 서명 AAB 빌드와 Sentry 매핑 업로드·원격 UUID 대조, iOS Release archive·IPA export·Apple 검증·업로드가 통과했다. 빌드 13은 `VALID` 확인 후 심사에 연결했다.
