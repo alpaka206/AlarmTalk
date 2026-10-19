@@ -115,6 +115,22 @@
                 <action android:name="com.alarmtalk.app.action.DEBUG_RESTORE_ALARMS" />
             </intent-filter>
         </receiver>
+        <!-- AdMob(`docs/spec/ad-rewards.md`). 앱 id 가 없으면 광고 SDK 가 시작하자마자 죽는다 — 값은 build.gradle.kts
+             의 플레이버별 admobAppId. 초기화·광고 불러오기를 메인 스레드 밖으로 미룬다(앱 시작을 늦추지 않는다). -->
+        <meta-data
+            android:name="com.google.android.gms.ads.APPLICATION_ID"
+            android:value="${admobAppId}" />
+        <meta-data
+            android:name="com.google.android.gms.ads.flag.OPTIMIZE_INITIALIZATION"
+            android:value="true" />
+        <!-- 앱 측정(App Measurement)을 앱 시작 때 켜지 않는다 — 광고 동의(UMP)를 받은 뒤 RewardedAds 가 SDK 를 초기화할
+             때 처음 시작된다. 안 막으면 동의를 묻기도 전에 시작하자마자 데이터를 보낸다(코덱스 #925). -->
+        <meta-data
+            android:name="com.google.android.gms.ads.DELAY_APP_MEASUREMENT_INIT"
+            android:value="true" />
+        <meta-data
+            android:name="com.google.android.gms.ads.flag.OPTIMIZE_AD_LOADING"
+            android:value="true" />
     </application>
 
 </manifest>

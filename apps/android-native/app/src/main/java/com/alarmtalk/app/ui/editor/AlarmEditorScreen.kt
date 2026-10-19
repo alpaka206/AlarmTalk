@@ -66,6 +66,9 @@ import com.alarmtalk.app.data.VibrationPatterns
 import com.alarmtalk.app.data.VoiceSources
 import com.alarmtalk.app.network.apiErrorCode
 import com.alarmtalk.app.network.ManualQuotaResponse
+import com.alarmtalk.app.ads.RewardedAdOutcome
+import com.alarmtalk.app.ads.RewardedAds
+import com.alarmtalk.app.ads.findHostActivity
 import com.alarmtalk.app.network.AuthSession
 import com.alarmtalk.app.network.BillingSubscriptionResponse
 import com.alarmtalk.app.network.DynamicPromptSettings
@@ -90,6 +93,13 @@ import kotlinx.coroutines.withContext
  * 실제 알람과 달라진다.
  */
 private const val RingingStreamPercent = 100
+
+/**
+ * 광고를 끝까지 본 뒤 서버에 보상이 들어왔는지 다시 읽는 횟수·간격(`docs/spec/ad-rewards.md` §3). AdMob 의 확인 콜백은
+ * 보통 몇 초 안에 온다 — 그보다 늦으면 기다리게 두지 않고 "잠시 뒤 다시" 를 말한다(보상은 서버에 그대로 들어온다).
+ */
+private const val AD_REWARD_POLL_ATTEMPTS = 8
+private const val AD_REWARD_POLL_INTERVAL_MS = 1_000L
 
 private enum class AudioPreviewTarget {
     CachedAudio,
@@ -377,11 +387,20 @@ internal fun AlarmEditorScreen(
     // 연결 상태 — 저장 흐름의 오프라인 판정(`saveEditor`, 로컬 확인 뒤)과 아래 스톡 클립 효과의 키가
     // 함께 본다. `saveEditor` 보다 **먼저** 선언해야 그 함수가 읽을 수 있다(코틀린 지역 선언 순서).
     val isOnline by rememberIsOnline()
-    // 직접 입력 문구 선택기에 '(남은/총)' 을 보여주기 위한 이번 달 사용 현황(유료만 조회).
+    // 직접 입력 문구 선택기에 '(남은/총)' 을 보여주기 위한 이번 달 사용 현황. 무료도 읽는다 — 서버가 무료에게
+    // 광고 보상 현황(`ad_reward`)을 싣고, '직접 입력' 의 잠금이 그걸로 갈린다(`AdRewardGate`, 스펙 ad-rewards §4).
+    // 로그인 전이면 뷰모델이 부르지 않고 null 을 준다.
     var manualQuota by remember { mutableStateOf<ManualQuotaResponse?>(null) }
     LaunchedEffect(freeVoiceTier, onLoadManualQuota) {
-        manualQuota = if (!freeVoiceTier && onLoadManualQuota != null) onLoadManualQuota() else null
+        manualQuota = onLoadManualQuota?.invoke()
     }
+    // 잠긴 '직접 입력' 이 게이트를 열었는가 — 그때만 게이트에 '광고 보고 한 번 쓰기' 를 붙인다(목소리 잠금이 연
+    // 게이트에는 붙이지 않는다: 광고 보상은 기본 목소리 직접 입력에만 쓰인다). 게이트가 닫힐 때마다 내린다.
+    var manualGateFromLockedRow by remember { mutableStateOf(false) }
+    // 광고를 띄우고 보상을 확인하는 동안 — 그 사이 잠긴 행을 또 눌러 광고를 겹쳐 띄우지 않는다.
+    var adRewardBusy by remember { mutableStateOf(false) }
+    // 보상이 들어오면 올린다 — 문구 화면이 이걸 보고 '직접 입력' 을 고른다(`RandomPromptSettingsPane`).
+    var selectManualRequest by remember { mutableStateOf(0) }
     // 진행 중인 TTS 생성 Job 을 추적해, 사용자가 도중에 시각을 변경하면 취소한다.
     var generationJob by remember { mutableStateOf<Job?>(null) }
     var recordingElapsedMillis by remember { mutableStateOf(0L) }
@@ -788,6 +807,49 @@ internal fun AlarmEditorScreen(
         voicePlanGateOpen = true
     }
 
+    /**
+     * 보상형 광고를 띄우고, 끝까지 봤으면 **서버에 보상이 들어온 것을 확인한 뒤** '직접 입력' 을 고른다
+     * (`docs/spec/ad-rewards.md` §3·§4). 앱은 적립하지 않는다 — AdMob 서버의 확인 콜백이 몇 초 뒤에 온다.
+     */
+    fun watchRewardedAd() {
+        val reward = manualQuota?.adReward ?: return
+        val activity = context.findHostActivity() ?: return
+        val creditsBefore = reward.credits
+        adRewardBusy = true
+        scope.launch {
+            try {
+                when (RewardedAds.loadAndShow(activity, reward.userId)) {
+                    RewardedAdOutcome.EARNED -> {
+                        var credited = false
+                        for (attempt in 0 until AD_REWARD_POLL_ATTEMPTS) {
+                            delay(AD_REWARD_POLL_INTERVAL_MS)
+                            val quota = onLoadManualQuota?.invoke() ?: continue
+                            manualQuota = quota
+                            if ((quota.adReward?.credits ?: 0) > creditsBefore) {
+                                credited = true
+                                break
+                            }
+                        }
+                        if (credited) {
+                            selectManualRequest += 1
+                        } else {
+                            // 보상은 서버에 늦게라도 들어온다 — 다시 누르면 광고 없이 열린다.
+                            familyBlockAlert = context.getString(R.string.editor_ad_reward_pending_title) to
+                                context.getString(R.string.editor_ad_reward_pending_message)
+                        }
+                    }
+                    RewardedAdOutcome.DISMISSED -> Unit
+                    RewardedAdOutcome.LOAD_FAILED, RewardedAdOutcome.SHOW_FAILED -> {
+                        familyBlockAlert = context.getString(R.string.editor_ad_reward_unavailable_title) to
+                            context.getString(R.string.editor_ad_reward_unavailable_message)
+                    }
+                }
+            } finally {
+                adRewardBusy = false
+            }
+        }
+    }
+
     // 알람음/목소리 두 토글 → 내부 저장(playMode + alarmSoundEnabled) 매핑.
     //  둘 다 켬 = 알람+목소리 / 목소리만 = 목소리만 / 알람음만 = 알람만 / 둘 다 끔 = 알람만+무음(진동/화면만)
     // 목소리를 켤 때 voiceSource 를 초기화하던 기존 PlayModeCard onSelect 동작을 보존한다.
@@ -1070,6 +1132,15 @@ internal fun AlarmEditorScreen(
                             context.getString(R.string.editor_block_manual_quota_message, quota.limit)
                         return@launch
                     }
+                    // 무료는 월 한도 대신 광고 보상 한 번을 쓴다 — 남은 게 없으면 같은 자리에서 막는다
+                    // (`docs/spec/ad-rewards.md` §4). 광고는 문구 화면의 '직접 입력' 에서 본다.
+                    if (quota != null && AdRewardGate.blocksManualSave(freeVoiceTier, quota.adReward)) {
+                        generating = false
+                        manualQuota = quota
+                        familyBlockAlert = context.getString(R.string.editor_block_ad_reward_title) to
+                            context.getString(R.string.editor_block_ad_reward_message)
+                        return@launch
+                    }
                     if (quota != null) manualQuota = quota
                 }
                 // 진행 안내는 저장 버튼의 스피너(EditorActionButtons)가 맡는다 — 방금 누른
@@ -1278,10 +1349,15 @@ internal fun AlarmEditorScreen(
     //   돌지 않아 편집기가 "문구를 준비하고 있어요" 에 갇힌다. 그래서 **비운 쪽이 직접**
     //   이 값을 올려 재바인딩을 부른다 — 키에 값 하나를 더 얹는 것보다 인과가 분명하다.
     var stockClipRebindTick by remember { mutableStateOf(0) }
+    // 무료인데 직접 입력 문구를 지켜야 하는가 — 광고 보상으로 만든 직접 입력은 무료에게도 정당하다(`docs/spec/ad-rewards.md`
+    // §4, 코덱스 #925). 서버가 이 사용자에게 광고 보상을 권하거나(`ad_reward` 있음) **아직 답이 없으면**(읽는 중·실패) 지킨다
+    // — 답이 오기 전에 지우면 되돌릴 수 없다. 보상이 없는데 새로 만들어야 하면 저장 흐름이 이유와 함께 막는다
+    // (`AdRewardGate.blocksManualSave`). 서버가 광고 보상을 끈 경우(답은 왔는데 `ad_reward` 없음)만 예전처럼 정리한다.
+    val freeManualTextKept = freeVoiceTier && (manualQuota == null || manualQuota?.adReward != null)
     // ⚠ **`editor.voiceRandomContext` 가 키에 있어야 한다**(2026-09-02). 문구 목록을 하나로
     //   합친 뒤로 스톡 클립 목소리도 다섯 종류를 고를 수 있는데, 고른 종류가 키에 없으면
     //   이 효과가 다시 돌지 않아 **방금 고른 운세가 붙지 않는다.**
-    LaunchedEffect(usesStockClips, editor.playMode, editor.voiceProfileId, editor.voiceSource, stockClips, appVoiceLanguage, isOnline, editor.voiceRandomContext, stockClipRebindTick) {
+    LaunchedEffect(usesStockClips, editor.playMode, editor.voiceProfileId, editor.voiceSource, stockClips, appVoiceLanguage, isOnline, editor.voiceRandomContext, stockClipRebindTick, freeManualTextKept) {
         if (usesStockClips && editor.playMode != AlarmPlayModes.ALARM_ONLY) {
             // 직접 녹음은 플랜·목소리 종류와 무관하게 허용된다(녹음본 로컬 재생일 뿐).
             // 아래 TTS 쪽 제한(버킷/문구 강제)은 소스가 TTS 일 때만 적용한다 — 녹음 알람에는
@@ -1292,8 +1368,9 @@ internal fun AlarmEditorScreen(
                 // 사용자가 방금 친 문구가 매니페스트 도착·온오프라인 전환만으로 **조용히
                 // 사라진다.** 직접 입력이 잠기지 않은 등급(= 유료)이 실제로 직접 입력을
                 // 고른 상태면 이 강제를 통째로 건너뛴다. 잠긴 등급(무료)에서는 그대로 돈다.
+                // 무료도 광고 보상으로 직접 입력을 쓸 수 있으면 같은 대접이다(위 `freeManualTextKept`).
                 val manualChosen = editor.hasTypedManualText()
-                if (!freeVoiceTier && manualChosen) return@LaunchedEffect
+                if (manualChosen && (!freeVoiceTier || freeManualTextKept)) return@LaunchedEffect
                 if (editor.voiceRandomPrompt) editor.voiceRandomPrompt = false
                 if (editor.voiceLanguage != appVoiceLanguage) editor.voiceLanguage = appVoiceLanguage
                 // 기존 알람은 selectVoiceProfile 이 안 불려 직접 입력 문구·신선한 TTS 오디오가 그대로
@@ -2036,8 +2113,31 @@ internal fun AlarmEditorScreen(
                     EditorMessageContexts.map { it.first }
                 },
                 // ⚠ 잠그는 기준은 **무료 플랜뿐**이다 — 기본 목소리는 이유가 되지 않는다.
-                manualLocked = freeVoiceTier,
-                onManualLocked = { voicePlanGateOpen = true },
+                // 무료도 광고 보상이 남아 있으면 풀린다(`AdRewardGate`, 스펙 ad-rewards §4).
+                manualLocked = AdRewardGate.manualLocked(freeVoiceTier, manualQuota?.adReward),
+                onManualLocked = {
+                    if (!adRewardBusy) {
+                        // ⚠ **게이트를 열기 전에 현황을 다시 읽는다**(코덱스 #925). 확인 대기(8초)가 지난 뒤 들어온
+                        // 보상은 화면 값에 없다 — 그대로 게이트를 열면 이미 받은 보상 대신 광고를 또 권한다.
+                        // "잠시 뒤 다시 눌러 주세요" 가 약속하는 것이 이 다시 읽기다.
+                        adRewardBusy = true
+                        scope.launch {
+                            try {
+                                onLoadManualQuota?.invoke()?.let { manualQuota = it }
+                                if (AdRewardGate.credits(freeVoiceTier, manualQuota?.adReward) > 0) {
+                                    selectManualRequest += 1
+                                } else {
+                                    manualGateFromLockedRow = true
+                                    voicePlanGateOpen = true
+                                }
+                            } finally {
+                                adRewardBusy = false
+                            }
+                        }
+                    }
+                },
+                manualRewardCredits = AdRewardGate.credits(freeVoiceTier, manualQuota?.adReward),
+                selectManualRequest = selectManualRequest,
                 onSaveSettings = ::applyRandomPromptSettings,
             )
 
@@ -2122,6 +2222,7 @@ internal fun AlarmEditorScreen(
             ),
             onConfirm = {
                 voicePlanGateOpen = false
+                manualGateFromLockedRow = false
                 // 유료인데 막힌 사람에게 결제 화면을 열면 살 게 없다 — 목소리 등록으로 보낸다.
                 if (gateReason == VoiceGateReason.SYSTEM_VOICE_LIMIT) {
                     onCreateVoiceProfile()
@@ -2129,7 +2230,27 @@ internal fun AlarmEditorScreen(
                     onOpenBilling()
                 }
             },
-            onDismiss = { voicePlanGateOpen = false },
+            onDismiss = {
+                voicePlanGateOpen = false
+                manualGateFromLockedRow = false
+            },
+            // 잠긴 '직접 입력' 이 연 무료 게이트에만 — 광고를 볼 수 있을 때(`AdRewardGate.canOfferAd`).
+            rewardedAdAction = if (
+                gateReason == VoiceGateReason.PLAN_REQUIRED &&
+                manualGateFromLockedRow &&
+                AdRewardGate.canOfferAd(freeVoiceTier, manualQuota?.adReward, RewardedAds.configured)
+            ) {
+                IosAlertAction(
+                    label = stringResource(R.string.editor_ad_reward_watch),
+                    onClick = {
+                        voicePlanGateOpen = false
+                        manualGateFromLockedRow = false
+                        watchRewardedAd()
+                    },
+                )
+            } else {
+                null
+            },
             // ⚠ **코드 입력 액션을 다시 붙이지 말 것**(2026-10-14). 예전에는 '이용권 필요' 갈래에만
             // '선물·초대 코드가 있어요' 를 붙였는데, 선물 코드 폐지(App Store 3.1.1 두 번째 반려)와 함께
             // 게이트의 코드 입력을 지웠다 — `PlanGateDialog` 머리말. 초대 코드는 더보기에서만 받는다.

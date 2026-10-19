@@ -75,6 +75,16 @@ internal fun RandomPromptSettingsPane(
     manualLocked: Boolean = false,
     /** 잠긴 '직접 입력' 을 눌렀을 때 — 호출부가 이용권 안내를 띄운다. */
     onManualLocked: () -> Unit = {},
+    /**
+     * 무료 사용자에게 남은 광고 보상 수(`docs/spec/ad-rewards.md`). 0 보다 크면 '직접 입력' 이 풀려 있고 행에 남은
+     * 수를 붙인다. 유료는 0 이다(월 한도를 [manualRemaining]/[manualLimit] 로 따로 보여 준다).
+     */
+    manualRewardCredits: Int = 0,
+    /**
+     * 값이 오를 때마다 '직접 입력' 을 고른다 — 광고를 보고 보상이 들어온 직후 호출부가 올린다. 잠금이 풀린 뒤에만
+     * 고르고, 처음 그릴 때의 값으로는 고르지 않는다.
+     */
+    selectManualRequest: Int = 0,
     weatherCountry: String,
     weatherCity: String,
     savedWeatherCountry: String,
@@ -222,6 +232,14 @@ internal fun RandomPromptSettingsPane(
     // (`hasWeatherInfo`/`hasFortuneInfo` 의 `saved*Configured` 갈래) 그대로 반영한다.
     BackHandler(onBack = ::saveResolvedSettings)
 
+    var handledSelectManualRequest by remember { mutableStateOf(selectManualRequest) }
+    LaunchedEffect(selectManualRequest, manualLocked) {
+        if (selectManualRequest > handledSelectManualRequest && !manualLocked) {
+            handledSelectManualRequest = selectManualRequest
+            selectContext(ManualMessageContext)
+        }
+    }
+
     Surface(
         modifier = Modifier.fillMaxSize(),
         color = MaterialTheme.colorScheme.background,
@@ -263,6 +281,9 @@ internal fun RandomPromptSettingsPane(
                         ) {
                             // 예: "직접 입력 (29/30)" — 이번 달 남은/총 만들기 횟수.
                             "$baseLabel ($manualRemaining/$manualLimit)"
+                        } else if (context == ManualMessageContext && !locked && manualRewardCredits > 0) {
+                            // 무료 + 광고 보상: "직접 입력 (광고 보상 1번)".
+                            stringResource(R.string.editorp_random_manual_ad_credits, baseLabel, manualRewardCredits)
                         } else {
                             baseLabel
                         }

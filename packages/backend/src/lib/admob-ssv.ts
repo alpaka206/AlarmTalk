@@ -50,6 +50,7 @@ const unknownKeyCheckedAt = new Map<string, number>();
 /** 테스트 전용 — 모듈 캐시를 비운다. */
 export function resetAdMobKeyCacheForTest(): void {
   cachedKeys = null;
+  inFlight = null;
   lastForcedRefreshAt = 0;
   unknownKeyCheckedAt.clear();
 }
@@ -92,8 +93,24 @@ export function derEcdsaToRaw(der: Uint8Array): Uint8Array | null {
   return i === der.length ? out : null;
 }
 
-async function loadKeys(fetchImpl: FetchLike, force: boolean): Promise<Map<string, CryptoKey>> {
-  if (!force && cachedKeys && Date.now() - cachedKeys.at < KEYS_TTL_MS) return cachedKeys.keys;
+/**
+ * 지금 받고 있는 키 목록. **동시에 온 요청은 같은 받기를 기다린다**(코덱스 #925) — 아니면 모르는 `key_id` 여럿이나 차가운
+ * 캐시에 몰린 콜백이 2초 간격 검사를 동시에 지나 요청마다 바깥으로 나가, 하위 요청 한도를 태우고 진짜 콜백까지 실패시킨다.
+ */
+let inFlight: Promise<Map<string, CryptoKey>> | null = null;
+
+function loadKeys(fetchImpl: FetchLike, force: boolean): Promise<Map<string, CryptoKey>> {
+  if (!force && cachedKeys && Date.now() - cachedKeys.at < KEYS_TTL_MS) {
+    return Promise.resolve(cachedKeys.keys);
+  }
+  if (inFlight) return inFlight;
+  inFlight = fetchKeys(fetchImpl).finally(() => {
+    inFlight = null;
+  });
+  return inFlight;
+}
+
+async function fetchKeys(fetchImpl: FetchLike): Promise<Map<string, CryptoKey>> {
   const res = await fetchImpl(VERIFIER_KEYS_URL);
   if (!res.ok) throw new Error(`AdMob verifier keys fetch failed: ${res.status}`);
   const body = (await res.json()) as { keys?: Array<{ keyId?: number | string; base64?: string }> };

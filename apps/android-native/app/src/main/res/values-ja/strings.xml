@@ -159,6 +159,14 @@
     <string name="editor_block_fortune_family_message">相手はまだ占いの情報を設定していません。別の文章を選んでください。</string>
     <string name="editor_block_manual_quota_title">今月の作成回数を使い切りました</string>
     <string name="editor_block_manual_quota_message">直接入力の文言は1か月に%1$d回まで新しく作成できます。すでに作成した文言はそのまま使えます。</string>
+    <string name="editorp_random_manual_ad_credits">%1$s（広告特典 %2$d回）</string>
+    <string name="editor_ad_reward_watch">広告を見て1回使う</string>
+    <string name="editor_ad_reward_pending_title">特典を確認しています</string>
+    <string name="editor_ad_reward_pending_message">広告の特典がまだ届いていません。少ししてから「自分で入力」をもう一度押してください。</string>
+    <string name="editor_ad_reward_unavailable_title">今は広告を表示できません</string>
+    <string name="editor_ad_reward_unavailable_message">広告を読み込めませんでした。少ししてからもう一度お試しください。</string>
+    <string name="editor_block_ad_reward_title">広告特典がありません</string>
+    <string name="editor_block_ad_reward_message">この文言を新しく作成するには、文言画面の「自分で入力」で広告を1回見てください。すでに作成した文言はそのまま使えます。</string>
     <string name="editor_block_offline_title">接続が必要です</string>
     <string name="editor_block_offline_message">この文言の音声はまだこの端末にありません。接続できたら、もう一度保存してください。</string>
     <string name="editor_block_preparing_title">文章を準備しています</string>
@@ -704,6 +712,8 @@
     <string name="consent_type_voice_biometric">音声生体情報の処理同意</string>
     <string name="consent_type_overseas">音声AIの国外移転同意</string>
     <string name="consent_type_marketing">広告情報の受信同意</string>
+    <string name="consent_section_ads">広告</string>
+    <string name="consent_ad_privacy_options">広告のプライバシー設定</string>
     <string name="consent_not_agreed">未同意</string>
     <string name="consent_load_failed">同意内容を読み込めませんでした。タップして再試行してください。</string>
     <string name="r3app_bottom_create_alarm_desc">アラームを作成</string>
