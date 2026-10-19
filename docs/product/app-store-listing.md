@@ -19,13 +19,15 @@ App Store Connect(앱 6799711245)에 올리는 값의 원본이다. 스토어를
 | en-US | https://alarm-talk.com/en/contact/ | https://alarm-talk.com/en/ | https://alarm-talk.com/en/privacy/ |
 | ja | https://alarm-talk.com/ja/contact/ | https://alarm-talk.com/ja/ | https://alarm-talk.com/ja/privacy/ |
 
-## 지금 상태 (2026-10-18)
+## 지금 상태 (2026-10-19)
 
-- **게재 중: 1.2.14(빌드 12)** — `READY_FOR_SALE`(2026-10-18 ASC API로 확인). 법무 문서 버전 6을 싣는다.
+- **게재 중: 1.2.14(빌드 12)** — `READY_FOR_SALE`(2026-10-19 ASC API로 확인). 법무 문서 버전 6을 싣는다.
   새 기능은 [`release-notes.md`](release-notes.md) 1.2.14 App Store 블록이고, 설명·검색어·이름·부제는 1.2.13에서 이어졌다.
+- **1.2.15(빌드 13) 심사 대기** — `WAITING_FOR_REVIEW`(2026-10-19). `AFTER_APPROVAL`로 승인 즉시 출시한다.
+  새 기능은 `release-notes.md`의 1.2.15 App Store 블록이며, 심사 계정·연락처와 한국어 스크린샷 5장을 유지했다.
 - 저작권은 `© 2026 Vailen`(ASC 입력값 `2026 Vailen` — `©` 는 애플이 붙인다).
-- **설명은 아직 INTERIM 이다.** W 는 2026-10-16 prod 로 확인했지만(Play 는 그날 (B) 로 바꿨다) App Store 설명은 버전과 함께만
-  바뀐다 — 1.2.14는 이미 게재돼 **다음 버전 레코드에서 (B)** 로 바꾼다(지역 문장은 고친 판).
+- **게재본 설명은 INTERIM이며 1.2.15 레코드에는 (B)를 넣었다**(2026-10-19). 세 언어 설명을 저장한 뒤 다시 읽어 원문과
+  같음을 확인했다. 1.2.15가 출시되면 설명도 함께 바뀐다. W는 2026-10-16 prod에서 확인했다.
 - 프로모션 문구는 비워 둔다(2026-10-16 오너 결정). en-GB 로컬라이제이션은 만들지 않았다.
 
 ## 언제 무엇을 올리나
