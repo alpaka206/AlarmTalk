@@ -58,10 +58,11 @@ enum AlarmTalkLog {
     /// 2. **일시적 네트워크 실패**([transientURLErrorCodes]). `NSUnderlyingErrorKey` 사슬
     ///    어디에 있든 본다 — 도메인 오류로 한 번 감싼 것도 같은 실패다.
     ///
-    /// ⚠ HTTP 4xx(`APIError.server`)는 여기서 가르지 않는다. 낮추는 4xx 는 둘뿐이고 각자 **형제 판정**이
-    /// 맡는다 — 401 은 [isHandledAuthFailure], 사용자가 고칠 예상된 거절 목록은 [isExpectedRefusal]. 둘 다 기기
-    /// 사정으로 곧 나아질 실패가 아니라 뜻이 달라서, 한 판정에 합치면 브레드크럼 category 가 섞인다. 그 밖의 4xx 는
-    /// 호출부가 `error_code` 를 보고 결정한다(`RemoteAlarmSyncViewModel` 의 `CONSENT_REQUIRED`).
+    /// ⚠ HTTP 4xx(`APIError.server`)는 여기서 가르지 않는다. 낮추는 4xx 는 넷뿐이고 각자 **형제 판정**이
+    /// 맡는다 — 401 은 [isHandledAuthFailure], 사용자가 고칠 예상된 거절 목록은 [isExpectedRefusal], 탈퇴 유예 403 은
+    /// [isAccountPendingDeletion], 동의 필요 403 은 [isConsentRequired]. 넷 다 기기 사정으로 곧 나아질 실패가 아니라
+    /// 뜻이 달라서, 한 판정에 합치면 브레드크럼 category 가 섞인다. 그 밖의 4xx 는 호출부가 `error_code` 를 보고
+    /// 결정한다(`RemoteAlarmSyncViewModel` 의 `CONSENT_REQUIRED` — 워커는 실패가 아니라 동의 대기로 접는다).
     static func isExpectedTransientFailure(_ error: Error) -> Bool {
         if error is CancellationError { return true }
         return errorChainContains(error) { candidate in
@@ -170,6 +171,18 @@ enum AlarmTalkLog {
         return failure.status == 403 && failure.code == "ACCOUNT_PENDING_DELETION"
     }
 
+    /// **동의 필요 403**(`CONSENT_REQUIRED`)인가 — 원인 사슬의 첫 HTTP 응답이 403 이고 그 코드일 때만.
+    ///
+    /// 서버의 동의 미들웨어가 데이터 라우트를 막은 것이고(`middleware/consent.ts`), 응답 쪽 한 곳(`AlarmTalkAPI` 의
+    /// `consentRequiredNotification`)이 이미 동의 화면으로 보낸다 — 401 과 같은 모양이라 호출부의 보고는 그 처리의 메아리다.
+    /// 이슈로 올리면 재동의 기준을 올릴 때마다 대상자가 앱을 열 때 그 답보다 먼저 떠난 호출이 한 건씩 쌓인다(2026-10-20
+    /// 안드로이드 ANDROID-1D·1E·1F·1M·1N). ⚠ 같은 코드라도 5xx 면 사고고, 이웃한 `CONSENT_STATE_UNAVAILABLE` 은 그대로 이슈다.
+    /// 안드로이드 짝은 `core/AlarmTalkLog.kt` 의 `isConsentRequired`.
+    static func isConsentRequired(_ error: Error) -> Bool {
+        guard let failure = apiFailure(in: error) else { return false }
+        return failure.status == 403 && failure.code == "CONSENT_REQUIRED"
+    }
+
     /// 이슈로 올리지 않고 브레드크럼으로만 남길 실패인가 — 남긴다면 그 category.
     /// 올려야 할 실패면 nil. 안드로이드 짝은 `core/AlarmTalkLog.kt` 의 `breadcrumbCategoryFor` 다.
     ///
@@ -181,6 +194,7 @@ enum AlarmTalkLog {
         if isForeignGatewayTimeout(error) { return "transient" }
         if isExpectedRefusal(error) { return "refusal" }
         if isAccountPendingDeletion(error) { return "account" }
+        if isConsentRequired(error) { return "consent" }
         return nil
     }
 

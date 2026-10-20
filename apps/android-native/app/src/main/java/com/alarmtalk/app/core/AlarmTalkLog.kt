@@ -74,8 +74,9 @@ object AlarmTalkLog {
      *
      * ⚠ HTTP 4xx 를 여기서 낮추지 않는다. 그 4xx 가 무엇을 뜻하는지는 문맥을 아는 호출부가 코드를
      * 볼 자리에서 결정한다(예: `sync/SyncWorkerFailure.kt` 의 `CONSENT_REQUIRED`).
-     * 낮추는 4xx 는 셋뿐이고 각자 갈래가 따로다 — **401**([isHandledAuthFailure], 상태코드만 본다),
-     * **예상된 거절**([isExpectedRefusal], 목록에 있는 코드만 본다), **탈퇴 유예 403**([isAccountPendingDeletion]).
+     * 낮추는 4xx 는 넷뿐이고 각자 갈래가 따로다 — **401**([isHandledAuthFailure], 상태코드만 본다),
+     * **예상된 거절**([isExpectedRefusal], 목록에 있는 코드만 본다), **탈퇴 유예 403**([isAccountPendingDeletion]),
+     * **동의 필요 403**([isConsentRequired]).
      * 5xx 는 하나 — **코드 없는 504**([isForeignGatewayTimeout], 우리 서버가 낸 것이 아니다). ([reportError] 는 코드를 **읽는다** —
      * 그 둘 말고는 낮추려는 것이 아니라 묶으려는 것이다, [apiFailureFingerprint].)
      */
@@ -140,8 +141,9 @@ object AlarmTalkLog {
      * 소진돼 뒤에 읽는 호출부가 빈 본문을 받았다. 이제 읽어도 남지만 — `network/ApiErrors.kt` —
      * 그렇다고 여기서 본문을 열 이유가 생긴 것은 아니다.)
      *
-     * ⚠ **401 만이다.** 403 은 동의·권한 상태라 호출부가 코드로 가르고(`CONSENT_REQUIRED`),
-     * 그 밖의 4xx 는 그대로 올라간다(목록에 있는 예상된 거절만 [isExpectedRefusal] 이 따로 낮춘다).
+     * ⚠ **401 만이다.** 403 은 동의·권한 상태라 코드로 가르고(동의 필요·탈퇴 유예만 [isConsentRequired]·
+     * [isAccountPendingDeletion] 이 따로 낮춘다), 그 밖의 4xx 는 그대로 올라간다(목록에 있는 예상된 거절만
+     * [isExpectedRefusal] 이 따로 낮춘다).
      * 인증 헤더를 빼먹는 우리 쪽 결함이 401 로 나타나도
      * 조용해지지 않는다 — 그 경로는 세션을 끊고 "다시 로그인해 주세요" 를 띄운다.
      *
@@ -209,6 +211,23 @@ object AlarmTalkLog {
     const val ACCOUNT_PENDING_DELETION_CODE = "ACCOUNT_PENDING_DELETION"
 
     /**
+     * **동의 필요 403**(`CONSENT_REQUIRED`) — 서버의 동의 미들웨어가 데이터 라우트를 막은 것이다(`middleware/consent.ts`).
+     * 응답 쪽 한 곳(`AlarmTalkApiClient` 의 인터셉터)이 이미 동의 화면으로 보낸다 — 401 과 같은 모양이다. 호출부가 남기는
+     * 보고는 그 처리의 메아리다.
+     *
+     * 이슈로 올리면 재동의 기준(`CONSENT_MIN_POLICY_VERSION`)을 올릴 때마다 대상자가 앱을 열 때 그 답보다 먼저 떠난 호출
+     * (스톡 클립·목소리·알람 동기화·소셜·이용권)이 한 건씩 쌓인다 — 2026-10-20 처리방침 3→5 재동의 뒤 한 사람이 5개 이슈를
+     * 열었다(ANDROID-1D·1E·1F·1M·1N). 동의 화면이 안 뜨는 결함은 여기가 아니라 서버의 `api_error` 기록으로 본다.
+     * 상태와 코드를 **둘 다** 본다 — 같은 코드라도 5xx 면 사고고, 이웃한 `CONSENT_STATE_UNAVAILABLE` 은 파손이라 그대로 이슈다.
+     */
+    internal fun isConsentRequired(error: Throwable): Boolean {
+        val failure = apiFailureOf(error) ?: return false
+        return failure.status == 403 && failure.code == CONSENT_REQUIRED_CODE
+    }
+
+    const val CONSENT_REQUIRED_CODE = "CONSENT_REQUIRED"
+
+    /**
      * 원인 사슬에서 처음 만나는 HTTP 상태코드. 도메인 예외로 한 번 감싼 실패도 같은 실패다
      * (저장소·리포지토리가 흔히 감싼다). 사슬이 순환해도 멈추도록 본 것을 기억한다.
      */
@@ -243,6 +262,7 @@ object AlarmTalkLog {
         isGoogleSignInUserAction(error) -> "user"
         isExpectedRefusal(error) -> "refusal"
         isAccountPendingDeletion(error) -> "account"
+        isConsentRequired(error) -> "consent"
         else -> null
     }
 

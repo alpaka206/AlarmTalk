@@ -206,7 +206,7 @@ class TransientFailureClassificationTest {
      */
     @Test
     fun onlyUnauthorizedAndTransientBecomeBreadcrumbs() {
-        // 낮추는 것들(예상된 거절·탈퇴 유예는 아래 테스트가 따로 본다). 갈래 이름까지 본다 — 하나로 뭉치면 다음 진짜 이벤트를 읽을 때
+        // 낮추는 것들(예상된 거절·탈퇴 유예·동의 필요는 아래 테스트가 따로 본다). 갈래 이름까지 본다 — 하나로 뭉치면 다음 진짜 이벤트를 읽을 때
         // "네트워크가 나빴다" 와 "세션이 끊겼다" 를 구분할 수 없다.
         assertEquals("auth", AlarmTalkLog.breadcrumbCategoryFor(httpException(401, "")))
         assertEquals("transient", AlarmTalkLog.breadcrumbCategoryFor(SocketTimeoutException("timeout")))
@@ -217,7 +217,7 @@ class TransientFailureClassificationTest {
         // 나머지는 그대로 이슈다 — 권한 박탈·파기된 계정·상태 충돌·서버 사고는 전부
         // 우리가 고칠 것이 있는 갈래다.
         assertNull(
-            AlarmTalkLog.breadcrumbCategoryFor(httpException(403, """{"error_code":"CONSENT_REQUIRED"}""")),
+            AlarmTalkLog.breadcrumbCategoryFor(httpException(403, """{"error_code":"CONSENT_STATE_UNAVAILABLE"}""")),
         )
         assertNull(
             AlarmTalkLog.breadcrumbCategoryFor(httpException(404, """{"error_code":"AUTH_USER_NOT_FOUND"}""")),
@@ -235,8 +235,9 @@ class TransientFailureClassificationTest {
     fun breadcrumbClassificationDoesNotConsumeTheErrorBody() {
         // 같은 계약이 여기에도 걸린다 — 이 함수는 `reportError` 가 **모든** 실패에 대해
         // 부르므로, 본문을 소진하면 그 뒤 코드를 보려던 호출부가 전부 빈 본문을 받는다.
+        // 동의 필요 403 은 코드를 읽어야 낮출 수 있는 갈래라 읽기 경로를 실제로 탄다.
         val error = httpException(403, """{"error_code":"CONSENT_REQUIRED"}""")
-        assertNull(AlarmTalkLog.breadcrumbCategoryFor(error))
+        assertEquals("consent", AlarmTalkLog.breadcrumbCategoryFor(error))
         assertEquals("""{"error_code":"CONSENT_REQUIRED"}""", error.response()?.errorBody()?.string())
     }
 
@@ -362,7 +363,9 @@ class TransientFailureClassificationTest {
         // 목록 밖의 4xx 코드.
         assertNull(AlarmTalkLog.breadcrumbCategoryFor(httpException(400, """{"error_code":"INVALID_BODY"}""")))
         assertNull(AlarmTalkLog.breadcrumbCategoryFor(httpException(429, """{"error_code":"RATE_LIMITED"}""")))
-        assertNull(AlarmTalkLog.breadcrumbCategoryFor(httpException(403, """{"error_code":"CONSENT_REQUIRED"}""")))
+        assertNull(AlarmTalkLog.breadcrumbCategoryFor(httpException(403, """{"error_code":"CONSENT_STATE_UNAVAILABLE"}""")))
+        // 동의 필요 403 은 낮추되 '거절' 갈래가 아니다(`consent`).
+        assertFalse(AlarmTalkLog.isExpectedRefusal(httpException(403, """{"error_code":"CONSENT_REQUIRED"}""")))
         assertFalse(AlarmTalkLog.isExpectedRefusal(IllegalStateException("bug")))
     }
 
@@ -459,6 +462,29 @@ class TransientFailureClassificationTest {
         assertNull(
             AlarmTalkLog.breadcrumbCategoryFor(httpException(403, """{"error_code":"CONSENT_STATE_UNAVAILABLE"}""")),
         )
+    }
+
+    @Test
+    fun consentRequiredBecomesConsentBreadcrumbOnlyAs403() {
+        // 응답 쪽 한 곳이 이미 동의 화면으로 보낸다 — 재동의 대상자가 앱을 열 때마다 이슈 다섯 개가 열리던 자리(2026-10-20).
+        assertEquals(
+            "consent",
+            AlarmTalkLog.breadcrumbCategoryFor(httpException(403, """{"error_code":"CONSENT_REQUIRED"}""")),
+        )
+        assertEquals(
+            "consent",
+            AlarmTalkLog.breadcrumbCategoryFor(
+                IllegalStateException("load failed", httpException(403, """{"error_code":"CONSENT_REQUIRED"}""")),
+            ),
+        )
+        // 같은 코드라도 5xx 는 사고, 이웃한 동의 파손·코드 없는 403 은 그대로 이슈다.
+        assertNull(
+            AlarmTalkLog.breadcrumbCategoryFor(httpException(500, """{"error_code":"CONSENT_REQUIRED"}""")),
+        )
+        assertNull(
+            AlarmTalkLog.breadcrumbCategoryFor(httpException(403, """{"error_code":"CONSENT_STATE_UNAVAILABLE"}""")),
+        )
+        assertNull(AlarmTalkLog.breadcrumbCategoryFor(httpException(403, "")))
     }
 
     @Test
