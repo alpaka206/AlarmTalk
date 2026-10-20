@@ -900,7 +900,10 @@ class AlarmRepository(
     ): FormerReceivedPromotion = restoreMutex.withLock {
         if (currentUserIdProvider() != expectedOwnerUserId) return FormerReceivedPromotion.Retry
         val current = alarmDao.getById(alarmId)
-        if (current != null && current.ownerUserId != expectedOwnerUserId) return FormerReceivedPromotion.UserChanged
+        // 소유자가 안 적힌 옛 행은 지금 계정 것으로 본다(`FormerReceivedAlarmStore` 의 주인 없음 칸).
+        if (current != null && !current.ownerUserId.isNullOrBlank() && current.ownerUserId != expectedOwnerUserId) {
+            return FormerReceivedPromotion.UserChanged
+        }
         val decision = decide(current)
         if (decision is FormerReceivedPromotion.Promote && current != null) {
             alarmDao.upsertPreservingServerSyncFields(

@@ -371,14 +371,15 @@ abstract class AlarmDatabase : RoomDatabase() {
  */
 internal class ReceivedAlarmConversionMigration(
     private val defaultLabel: String,
-    private val recordConverted: (Map<String, Set<String>>) -> Unit,
+    private val recordConverted: (Map<String?, Set<String>>) -> Unit,
 ) : Migration(27, 28) {
     override fun migrate(db: SupportSQLiteDatabase) {
         // 변환 **전에** 대상을 읽는다 — 변환 뒤에는 내 알람과 구별되지 않는다.
-        val convertedByOwner = linkedMapOf<String, MutableSet<String>>()
+        // 소유자가 안 적힌 옛 행은 주인 없음 칸(null)으로 적는다 — 로그인한 계정이 2단계에서 본다.
+        val convertedByOwner = linkedMapOf<String?, MutableSet<String>>()
         db.query("SELECT id, ownerUserId FROM alarms WHERE origin = 'received_remote'").use { cursor ->
             while (cursor.moveToNext()) {
-                val owner = cursor.getString(1)?.takeIf { it.isNotBlank() } ?: continue
+                val owner = cursor.getString(1)?.takeIf { it.isNotBlank() }
                 convertedByOwner.getOrPut(owner) { linkedSetOf() }.add(cursor.getString(0))
             }
         }

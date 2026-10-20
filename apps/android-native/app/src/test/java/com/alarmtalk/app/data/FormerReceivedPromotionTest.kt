@@ -309,6 +309,17 @@ class FormerReceivedPromotionTest {
         )
     }
 
+    @Test
+    fun `소유자 없는 옛 행은 지금 계정 것으로 보고 올린다`() = withRepository(currentUser = "user-1") { repository, dao ->
+        val row = converted().copy(ownerUserId = null)
+        dao.upsert(row)
+
+        val decision = repository.settleFormerReceivedAlarm(row.id, "user-1") { FormerReceivedPromotion.Promote(greeting("clone-a")) }
+
+        assertTrue(decision is FormerReceivedPromotion.Promote)
+        assertEquals("clone-a", dao.getById(row.id)?.voiceProfileId)
+    }
+
     // ── 도우미 ────────────────────────────────────────────────────────────
 
     /** 메모리 Room 위의 실제 저장소. [currentUser] 가 지금 로그인한 계정이다. */

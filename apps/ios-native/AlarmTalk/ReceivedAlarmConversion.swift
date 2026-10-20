@@ -111,21 +111,47 @@ enum ReceivedAlarmConversion {
         return next
     }
 
-    /// 변환 뒤 정리 — 보낸 사람 오디오(캐시와 `Library/Sounds` 의 예약 사본)를 지우고, 2단계가 볼 행을 계정별로
-    /// 적는다. 행을 디스크에 앉힌 **뒤에** 부른다(`LocalAlarmStore`).
+    /// 변환 뒤 정리 — 보낸 사람 오디오의 **캐시 원본**을 지우고, 2단계가 볼 행을 계정별로 적는다. 행을 디스크에 앉힌
+    /// **뒤에** 부른다(`LocalAlarmStore`).
+    ///
+    /// `Library/Sounds` 의 **예약 사본**은 여기서 바로 지우지 않는다 — 바꾼 알람이 새 소리로 다시 걸리기 전에는 옛
+    /// AlarmKit 예약이 그 파일을 가리킨다(`releaseStagedSenderAudioIfRearmed`).
     static func finish(
         _ outcome: Outcome,
         promotions: ReceivedAlarmPromotionStore = ReceivedAlarmPromotionStore(),
-        audioCache: AudioCacheStore = .shared
+        stagedCleanup: StagedSenderAudioStore = StagedSenderAudioStore(),
+        audioCache: AudioCacheStore = .shared,
+        clearStaged: (String) -> Void = { AlarmSoundStaging.clearStagedSoundFiles(forKey: $0) }
     ) {
         for key in outcome.releasedSenderAudioKeys {
             try? audioCache.deleteCachedAudio(cacheKey: key)
-            AlarmSoundStaging.clearStagedSoundFiles(forKey: key)
         }
+        stagedCleanup.add(outcome.releasedSenderAudioKeys)
+        releaseStagedSenderAudioIfRearmed(alarms: outcome.alarms, pending: stagedCleanup, clearStaged: clearStaged)
         let byOwner = Dictionary(grouping: outcome.converted, by: { $0.ownerUserId?.nilIfBlank })
         for (owner, rows) in byOwner {
             promotions.add(Set(rows.map(\.id)), ownerUserID: owner)
         }
+    }
+
+    /// 보낸 사람 오디오의 **예약 사본**을 지운다 — 바꾼 알람이 **옛 예약을 더 쥐고 있지 않을 때만**
+    /// (`staleScheduleFingerprint` 를 든 예약이 하나도 없을 때).
+    ///
+    /// 바꾼 알람은 시작 과정의 리컨사일(동기화·날씨 뒤)에서야 새 소리로 다시 걸린다. 변환하자마자 사본을 지우면 그
+    /// 사이에 옛 예약이 울리거나 앱이 끝났을 때 그 예약이 없는 파일을 가리킨다(Codex #931). 리컨사일러는 새로 건 **뒤에**
+    /// 옛 핸들을 풀므로, 표식을 든 예약이 사라졌다는 것은 다시 걸렸거나(또는 끄거나 지워) 그 파일을 쓰는 예약이 없다는
+    /// 뜻이다. 리컨사일러가 회차를 마칠 때마다 부른다(`AlarmScheduleReconciler.reconcile`).
+    static func releaseStagedSenderAudioIfRearmed(
+        alarms: [LocalAlarmRecord],
+        pending: StagedSenderAudioStore = StagedSenderAudioStore(),
+        clearStaged: (String) -> Void = { AlarmSoundStaging.clearStagedSoundFiles(forKey: $0) }
+    ) {
+        let keys = pending.keys
+        guard !keys.isEmpty else { return }
+        guard !alarms.contains(where: { $0.alarmKitID != nil && $0.scheduledSoundFingerprint == staleScheduleFingerprint })
+        else { return }
+        for key in keys.sorted() { clearStaged(key) }
+        pending.clear()
     }
 
     /// 이 행이 붙든 오디오 키 — 대표 클립, 클립 세트, 무료 잠금 보관본.
@@ -133,6 +159,34 @@ enum ReceivedAlarmConversion {
         ([record.audioCacheKey?.nilIfBlank].compactMap { $0 })
             + (record.bucketClipKeys ?? []).compactMap(\.nilIfBlank)
             + (record.preLockVoice?.referencedCacheKeys ?? []).compactMap(\.nilIfBlank)
+    }
+}
+
+// MARK: - 예약 사본 정리 대기
+
+/// 1단계가 놓은 보낸 사람 오디오 키 — 그 **예약 사본**(`Library/Sounds`)을 지울 차례를 기다린다
+/// (`ReceivedAlarmConversion.releaseStagedSenderAudioIfRearmed`). 앱이 그 사이 끝나도 다음 실행의 리컨사일이 이어서
+/// 지우도록 `UserDefaults` 에 둔다.
+struct StagedSenderAudioStore {
+    private let defaults: UserDefaults
+
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+    }
+
+    private static let key = "received_alarm_staged_sender_audio\(TestIsolation.storageSuffix)"
+
+    var keys: Set<String> {
+        Set(defaults.stringArray(forKey: Self.key) ?? [])
+    }
+
+    func add(_ keys: Set<String>) {
+        guard !keys.isEmpty else { return }
+        defaults.set(self.keys.union(keys).sorted(), forKey: Self.key)
+    }
+
+    func clear() {
+        defaults.removeObject(forKey: Self.key)
     }
 }
 

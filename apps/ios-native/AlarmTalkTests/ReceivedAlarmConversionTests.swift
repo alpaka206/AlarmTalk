@@ -117,6 +117,7 @@ final class ReceivedAlarmConversionTests: XCTestCase {
         defer {
             try? FileManager.default.removeItem(at: url)
             ReceivedAlarmPromotionStore().clear(userID: owner)
+            StagedSenderAudioStore().clear()
         }
 
         let store = LocalAlarmStore(storageURL: url)
@@ -130,6 +131,99 @@ final class ReceivedAlarmConversionTests: XCTestCase {
         XCTAssertEqual(onDisk.first { $0.id == "recv-1" }?.voiceProfileId, substituteSystemVoiceID)
         // 2단계가 볼 행으로 계정별로 적었다.
         XCTAssertEqual(ReceivedAlarmPromotionStore().pendingIDs(for: owner), ["recv-1"])
+    }
+
+    // MARK: - 보낸 사람 오디오의 예약 사본
+
+    /// 시험 전용 기록 저장소 — 표준 `UserDefaults` 를 건드리지 않는다.
+    private func isolatedDefaults() throws -> UserDefaults {
+        let name = "received-conversion-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
+        addTeardownBlock { defaults.removePersistentDomain(forName: name) }
+        return defaults
+    }
+
+    func test_예약_사본은_바꾼_알람이_새_소리로_다시_걸린_뒤에_지운다() throws {
+        let defaults = try isolatedDefaults()
+        let staged = StagedSenderAudioStore(defaults: defaults)
+        var cleared: [String] = []
+        let outcome = ReceivedAlarmConversion.convert(try decodeLegacy(), nowMillis: now)
+        let index = try XCTUnwrap(outcome.alarms.firstIndex { $0.id == "recv-1" })
+        // 바꾼 알람은 아직 옛 예약(보낸 사람 소리)을 쥐고 있다 — 리컨사일러가 다시 걸 때까지.
+        XCTAssertEqual(outcome.alarms[index].scheduledSoundFingerprint, ReceivedAlarmConversion.staleScheduleFingerprint)
+
+        ReceivedAlarmConversion.finish(
+            outcome, promotions: ReceivedAlarmPromotionStore(defaults: defaults), stagedCleanup: staged,
+            clearStaged: { cleared.append($0) }
+        )
+        XCTAssertEqual(cleared, [], "옛 예약이 아직 가리키는 사본을 지웠다")
+        XCTAssertEqual(staged.keys, ["remote-message-m1"])
+
+        // 다시 걸기 전에는 몇 번을 불러도 남긴다.
+        ReceivedAlarmConversion.releaseStagedSenderAudioIfRearmed(
+            alarms: outcome.alarms, pending: staged, clearStaged: { cleared.append($0) }
+        )
+        XCTAssertEqual(cleared, [])
+
+        var rearmed = outcome.alarms
+        rearmed[index].scheduledSoundFingerprint = "default"
+        ReceivedAlarmConversion.releaseStagedSenderAudioIfRearmed(
+            alarms: rearmed, pending: staged, clearStaged: { cleared.append($0) }
+        )
+        XCTAssertEqual(cleared, ["remote-message-m1"])
+        XCTAssertTrue(staged.keys.isEmpty)
+    }
+
+    func test_예약이_없던_받은_알람의_사본은_곧바로_지운다() throws {
+        let defaults = try isolatedDefaults()
+        let staged = StagedSenderAudioStore(defaults: defaults)
+        var cleared: [String] = []
+        var loaded = try decodeLegacy()
+        let index = try XCTUnwrap(loaded.firstIndex { $0.id == "recv-1" })
+        loaded[index].alarmKitID = nil
+        loaded[index].scheduledSoundFingerprint = nil
+        let outcome = ReceivedAlarmConversion.convert(loaded, nowMillis: now)
+
+        ReceivedAlarmConversion.finish(
+            outcome, promotions: ReceivedAlarmPromotionStore(defaults: defaults), stagedCleanup: staged,
+            clearStaged: { cleared.append($0) }
+        )
+        XCTAssertEqual(cleared, ["remote-message-m1"])
+        XCTAssertTrue(staged.keys.isEmpty)
+    }
+
+    func test_리컨사일러는_바꾼_알람을_다시_건_뒤에야_예약_사본을_지운다() async throws {
+        let staged = StagedSenderAudioStore()
+        staged.clear()
+        defer { staged.clear() }
+        let store = LocalAlarmStore(
+            storageURL: FileManager.default.temporaryDirectory
+                .appendingPathComponent("received-staged-\(UUID().uuidString).json"),
+            loadFromDisk: false
+        )
+        let converted = try XCTUnwrap(
+            ReceivedAlarmConversion.convert(try decodeLegacy(), nowMillis: now).converted.first { $0.id == "recv-1" }
+        )
+        _ = store.upsert(converted)
+        staged.add(["remote-message-m1"])
+
+        // 다시 걸기에 실패하면 옛 예약이 남으므로 사본도 남는다.
+        await AlarmScheduleReconciler.reconcile(
+            store: store, alarmKit: AlarmKitViewModel(), ownerUserId: owner,
+            readIdleHandles: { [] }, scheduleAlarm: { _ in false }, cancelAlarm: { _ in }
+        )
+        XCTAssertEqual(staged.keys, ["remote-message-m1"])
+
+        await AlarmScheduleReconciler.reconcile(
+            store: store, alarmKit: AlarmKitViewModel(), ownerUserId: owner,
+            readIdleHandles: { [] },
+            scheduleAlarm: { record in
+                store.markScheduled(localID: record.id, alarmKitID: UUID().uuidString, soundFingerprint: "default")
+                return true
+            },
+            cancelAlarm: { _ in }
+        )
+        XCTAssertTrue(staged.keys.isEmpty)
     }
 
     // MARK: - 2단계 기록

@@ -21,39 +21,57 @@ import com.alarmtalk.app.network.VoiceProfile
 /**
  * 1단계에서 바꾼 알람 id — 계정별(SharedPreferences). 2단계가 끝내면(올렸거나 미나로 확정했거나 사용자가
  * 고쳤으면) 지운다. 명시적 로그아웃·탈퇴도 그 계정 것을 지운다.
+ *
+ * 소유자가 안 적힌 옛 행(`ownerUserId` 이전에 받은 알람)은 **주인 없음 칸**에 적고, 로그인한 계정이 자기 것과 함께
+ * 본다 — 저장소의 다른 경로가 소유자 없는 행을 지금 계정 것으로 보는 것과 같은 관용이다(Codex #931). 안 적으면 그
+ * 행은 2단계를 영영 못 거쳐 미나에 머문다. iOS 짝은 `ReceivedAlarmPromotionStore`.
  */
 class FormerReceivedAlarmStore(context: Context) {
     private val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
-    /** 1단계가 바꾼 알람을 계정별로 적는다. 마이그레이션 안에서 불리므로 곧바로 디스크에 쓴다. */
-    fun recordConverted(alarmIdsByOwner: Map<String, Set<String>>) {
+    /** 1단계가 바꾼 알람을 계정별로 적는다(소유자가 없으면 주인 없음 칸). 마이그레이션 안에서 불리므로 곧바로 디스크에 쓴다. */
+    fun recordConverted(alarmIdsByOwner: Map<String?, Set<String>>) {
         val editor = prefs.edit()
         alarmIdsByOwner.forEach { (owner, ids) ->
-            val key = keyFor(owner) ?: return@forEach
-            editor.putStringSet(key, pending(owner) + ids)
+            val key = keyFor(owner) ?: UNOWNED_KEY
+            editor.putStringSet(key, read(key) + ids)
         }
         editor.commit()
     }
 
+    /** 이 계정이 2단계로 볼 알람 — 자기 것과 주인 없음 칸. 계정이 없으면 아무것도 보지 않는다. */
     fun pending(userId: String?): Set<String> {
         val key = keyFor(userId) ?: return emptySet()
-        return prefs.getStringSet(key, null)?.toSet().orEmpty()
+        return read(key) + read(UNOWNED_KEY)
     }
 
-    /** 2단계가 끝낸 알람을 지운다. */
+    /** 2단계가 끝낸 알람을 지운다 — 그 계정 칸과 주인 없음 칸 모두에서. */
     fun settle(userId: String?, alarmIds: Collection<String>) {
         val key = keyFor(userId) ?: return
-        val left = pending(userId) - alarmIds.toSet()
-        prefs.edit().apply { if (left.isEmpty()) remove(key) else putStringSet(key, left) }.apply()
+        val done = alarmIds.toSet()
+        val editor = prefs.edit()
+        for (slot in listOf(key, UNOWNED_KEY)) {
+            val left = read(slot) - done
+            if (left.isEmpty()) editor.remove(slot) else editor.putStringSet(slot, left)
+        }
+        editor.apply()
     }
 
+    /** 계정을 떠날 때. 소유자 없는 행은 떠나는 계정 것으로 새겨지므로(`claimUnownedAlarmsFor`) 주인 없음 칸도 지운다. */
     fun clear(userId: String?) {
-        val key = keyFor(userId) ?: return
-        prefs.edit().remove(key).apply()
+        val editor = prefs.edit()
+        keyFor(userId)?.let { editor.remove(it) }
+        editor.remove(UNOWNED_KEY)
+        editor.apply()
     }
+
+    private fun read(key: String): Set<String> = prefs.getStringSet(key, null)?.toSet().orEmpty()
 
     private companion object {
         const val PREFS_NAME = "voice_alarm_former_received_alarms"
+
+        /** 계정 칸(`pending_<id>`)과 겹치지 않는 이름이다. */
+        const val UNOWNED_KEY = "unowned"
 
         fun keyFor(userId: String?): String? =
             userId?.trim()?.takeIf { it.isNotEmpty() }?.let { "pending_$it" }

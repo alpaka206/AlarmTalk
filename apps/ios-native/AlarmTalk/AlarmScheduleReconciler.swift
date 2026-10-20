@@ -155,6 +155,11 @@ enum AlarmScheduleReconciler {
         if repaired > 0 {
             Self.logger.info("Schedule reconcile repaired \(repaired, privacy: .public) alarm(s)")
         }
+        // 받은 알람에서 바꾼 행이 모두 새 소리로 다시 걸렸으면 보낸 사람 오디오의 예약 사본을 지운다 — 그 전에는 옛
+        // 예약이 그 파일을 가리킨다(`ReceivedAlarmConversion.releaseStagedSenderAudioIfRearmed`).
+        if !Task.isCancelled {
+            ReceivedAlarmConversion.releaseStagedSenderAudioIfRearmed(alarms: store.alarms)
+        }
         if !Task.isCancelled, let owner {
             AlarmPresentationLanguage.finishIfComplete(owner: owner, alarms: store.alarms(visibleTo: owner))
         }

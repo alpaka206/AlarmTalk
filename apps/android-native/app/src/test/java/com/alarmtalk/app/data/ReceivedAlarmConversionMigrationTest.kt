@@ -107,11 +107,12 @@ class ReceivedAlarmConversionMigrationTest {
         }
 
         val store = FormerReceivedAlarmStore(context)
+        // 소유자가 안 적힌 옛 행은 주인 없음 칸에 적혀 로그인한 어느 계정이든 2단계에서 본다(Codex #931).
         assertEquals(
-            setOf(receivedVoice.id, receivedLocked.id, receivedAlarmOnly.id),
+            setOf(receivedVoice.id, receivedLocked.id, receivedAlarmOnly.id, receivedOwnerless.id),
             store.pending(owner),
         )
-        assertEquals(setOf(receivedLegacyMode.id), store.pending(otherOwner))
+        assertEquals(setOf(receivedLegacyMode.id, receivedOwnerless.id), store.pending(otherOwner))
     }
 
     @Test
@@ -145,9 +146,29 @@ class ReceivedAlarmConversionMigrationTest {
 
         store.clear(otherOwner)
         assertTrue(store.pending(otherOwner).isEmpty())
-        // 계정이 없으면 아무것도 적지도 읽지도 않는다.
+        // 계정이 없으면 아무것도 읽지 않는다.
         assertTrue(store.pending(null).isEmpty())
         assertTrue(store.pending(" ").isEmpty())
+    }
+
+    @Test
+    fun `소유자 없는 옛 행은 주인 없음 칸에 적혀 로그인한 계정이 보고 끝내거나 떠나면 지워진다`() {
+        val store = FormerReceivedAlarmStore(context)
+        store.recordConverted(mapOf(null to setOf("u1", "u2"), owner to setOf("a")))
+        assertEquals(setOf("a", "u1", "u2"), store.pending(owner))
+        assertEquals(setOf("u1", "u2"), store.pending(otherOwner))
+        // 계정이 없으면 주인 없음 칸도 보지 않는다 — 2단계는 로그인한 계정의 재료로만 돈다.
+        assertTrue(store.pending(null).isEmpty())
+
+        // 끝낸 것은 어느 칸에 있든 지운다.
+        store.settle(owner, listOf("u1", "a"))
+        assertEquals(setOf("u2"), store.pending(owner))
+        assertEquals(setOf("u2"), store.pending(otherOwner))
+
+        // 계정을 떠나면 소유자 없는 행은 그 계정 것으로 새겨지므로(`claimUnownedAlarmsFor`) 주인 없음 칸도 떠난다.
+        store.clear(owner)
+        assertTrue(store.pending(owner).isEmpty())
+        assertTrue(store.pending(otherOwner).isEmpty())
     }
 
     // ── 도우미 ────────────────────────────────────────────────────────────
