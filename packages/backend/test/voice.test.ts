@@ -196,12 +196,9 @@ describe('PATCH /voice/:id — 음성 프로필 이름 변경', () => {
   });
 });
 
-describe('POST /voice/upload — 원본 오디오 업로드', () => {
-  it('정상 업로드는 201 과 upload 메타를 돌려준다', async () => {
-    // userIdPK 가 채워지며 hasPaidVoiceAccess 의 플랜 조회(SELECT plan FROM users)가 실제로
-    // 실행된다 — 유료 플랜 행을 큐 맨 앞에 넣어 준다(없으면 VOICE_FEATURE_REQUIRES_PAID_PLAN 403).
-    mockDB.pushResult([{ plan: 'plus' }]);
-    mockDB.pushResult([], 1); // INSERT INTO voice_uploads
+// 원본 오디오 업로드는 가족 알람 보내기(녹음해서 보내기)에만 쓰였다 — 가족 알람과 함께 2026-10-20 에 없앴다.
+describe('POST /voice/upload — 없다', () => {
+  it('404 — 아무것도 저장하지 않는다', async () => {
     const app = buildApp();
     const res = await app.request(
       uploadRequest('/voice/upload', {
@@ -209,76 +206,8 @@ describe('POST /voice/upload — 원본 오디오 업로드', () => {
         fields: { durationMs: '90000' },
       }),
     );
-    expect(res.status).toBe(201);
-    const body = await res.json();
-    expect(body.upload.sizeBytes).toBe(4);
-    expect(body.upload.mimeType).toBe('audio/mpeg');
-    expect(body.upload.durationMs).toBe(90000);
-    expect(body.upload.objectKey.startsWith('mem://user-1/')).toBe(true);
-    expect(typeof body.upload.id).toBe('string');
-
-    const insert = mockDB.calls.find((c) => c.sql.includes('INSERT INTO voice_uploads'));
-    expect(insert).toBeDefined();
-    expect(insert!.args).toContain('user-1');
-    expect(insert!.args).toContain('audio/mpeg');
-  });
-
-  it('audio 파일이 없으면 400', async () => {
-    const app = buildApp();
-    const res = await app.request(uploadRequest('/voice/upload', { audio: null }));
-    expect(res.status).toBe(400);
-    const body = await res.json();
-    expect(body.error_code).toBe('AUDIO_FILE_REQUIRED');
-  });
-
-  it('MIME 이 audio/* 가 아니면 415', async () => {
-    const app = buildApp();
-    const res = await app.request(
-      uploadRequest('/voice/upload', {
-        audio: { bytes: new Uint8Array([1, 2]), type: 'image/png', name: 'x.png' },
-      }),
-    );
-    expect(res.status).toBe(415);
-    const body = await res.json();
-    expect(body.error_code).toBe('INVALID_AUDIO_MIME_TYPE');
-  });
-
-  it('빈 파일이면 400', async () => {
-    const app = buildApp();
-    const res = await app.request(
-      uploadRequest('/voice/upload', {
-        audio: { bytes: new Uint8Array([]), type: 'audio/wav' },
-      }),
-    );
-    expect(res.status).toBe(400);
-    const body = await res.json();
-    expect(body.error_code).toBe('AUDIO_FILE_EMPTY');
-  });
-
-  it('25 MiB 초과면 413', async () => {
-    const tooBig = new Uint8Array(25 * 1024 * 1024 + 1);
-    const app = buildApp();
-    const res = await app.request(
-      uploadRequest('/voice/upload', {
-        audio: { bytes: tooBig, type: 'audio/mpeg' },
-      }),
-    );
-    expect(res.status).toBe(413);
-    const body = await res.json();
-    expect(body.error_code).toBe('AUDIO_FILE_TOO_LARGE');
-  });
-
-  it('durationMs 가 숫자가 아니면 400', async () => {
-    const app = buildApp();
-    const res = await app.request(
-      uploadRequest('/voice/upload', {
-        audio: { bytes: new Uint8Array([1]), type: 'audio/mpeg' },
-        fields: { durationMs: 'abc' },
-      }),
-    );
-    expect(res.status).toBe(400);
-    const body = await res.json();
-    expect(body.error_code).toBe('INVALID_DURATION');
+    expect(res.status).toBe(404);
+    expect(mockDB.calls).toHaveLength(0);
   });
 });
 
@@ -356,84 +285,15 @@ describe('DELETE /voice/:id — 음성 프로필 삭제', () => {
   });
 });
 
-describe('GET /voice/family — 가족 음성 프로필', () => {
-  it('가족 멤버가 없으면 빈 배열', async () => {
-    mockDB.pushResult([]);
+// 옛 앱 호환 — 공유받은 목소리 목록이었다(목소리 공유는 2026-10-20 에 없앴다). 옛 앱은 이 답을 받아야 내 목소리
+// 접근권 재확인을 끝낸다(안드로이드는 실패하면 워커가 끝없이 재시도하고, iOS 는 내 알람 재조정을 건너뛴다).
+describe('GET /voice/family — 옛 앱 호환', () => {
+  it('언제나 200 { profiles: [] } — DB 를 보지 않는다', async () => {
     const app = buildApp();
     const res = await app.request(jsonReq('GET', '/voice/family'));
     expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.profiles).toEqual([]);
-  });
-
-  it('가족 멤버 음성 프로필 반환', async () => {
-    mockDB.pushResult([{ user_id: 'user-2' }, { user_id: 'user-3' }]);
-    mockDB.pushResult([
-      { id: V1, name: '엄마 목소리', status: 'ready', user_id: 'user-2', owner_name: '엄마' },
-    ]);
-    const app = buildApp();
-    const res = await app.request(jsonReq('GET', '/voice/family'));
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.profiles).toHaveLength(1);
-    expect(body.profiles[0].owner_name).toBe('엄마');
-  });
-
-  it('viewer 라벨 미설정 시 needs_viewer_info=true', async () => {
-    mockDB.pushResult([{ user_id: 'user-2' }]);
-    mockDB.pushResult([
-      {
-        id: V1,
-        name: '엄마 목소리',
-        status: 'ready',
-        user_id: 'user-2',
-        owner_name: '엄마',
-        relationship_label: null,
-        listener_title: null,
-        viewer_relationship_raw: null,
-        viewer_listener_raw: null,
-      },
-    ]);
-    const app = buildApp();
-    const res = await app.request(jsonReq('GET', '/voice/family'));
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.profiles[0].needs_viewer_info).toBe(true);
-    expect(body.profiles[0].relationship_label).toBeNull();
-    expect(body.profiles[0].listener_title).toBeNull();
-    expect(body.profiles[0].viewer_relationship_raw).toBeUndefined();
-  });
-
-  it('viewer 라벨 설정 시 needs_viewer_info=false', async () => {
-    mockDB.pushResult([{ user_id: 'user-2' }]);
-    mockDB.pushResult([
-      {
-        id: V1,
-        name: '엄마 목소리',
-        status: 'ready',
-        user_id: 'user-2',
-        owner_name: '엄마',
-        relationship_label: '엄마',
-        listener_title: '아들',
-        viewer_relationship_raw: '엄마',
-        viewer_listener_raw: '아들',
-      },
-    ]);
-    const app = buildApp();
-    const res = await app.request(jsonReq('GET', '/voice/family'));
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.profiles[0].needs_viewer_info).toBe(false);
-  });
-
-  it('가족 멤버는 있지만 음성 없으면 빈 배열', async () => {
-    mockDB.pushResult([{ user_id: 'user-2' }]);
-    mockDB.pushResult([]);
-    const app = buildApp();
-    const res = await app.request(jsonReq('GET', '/voice/family'));
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.profiles).toEqual([]);
+    expect(await res.json()).toEqual({ profiles: [] });
+    expect(mockDB.calls).toHaveLength(0);
   });
 });
 

@@ -127,7 +127,7 @@ class StockClipManifestFlightsTest {
         runCurrent()
         assertEquals(1, issued)
 
-        // 첫 요청이 떠 있는 동안 신호가 셋 온다(공유 변경 푸시 · 목록 새로고침 · 드라이브 완료).
+        // 첫 요청이 떠 있는 동안 신호가 셋 온다(재렌더 완료 푸시 · 목록 새로고침 · 드라이브 완료).
         val l1 = async { flights.ensure("u1", ManifestNeed.LATEST, run) }
         val l2 = async { flights.ensure("u1", ManifestNeed.LATEST, run) }
         val l3 = async { flights.ensure("u1", ManifestNeed.LATEST, run) }

@@ -20,7 +20,7 @@ import org.junit.Test
  */
 class ClipPreparationGateTest {
     private val cloneVoiceId = "11111111-1111-4111-8111-111111111111"
-    private val sharedVoiceId = "22222222-2222-4222-8222-222222222222"
+    private val freshCloneVoiceId = "22222222-2222-4222-8222-222222222222"
     private val systemVoiceId = SYSTEM_VOICE_ID_PREFIX + "000000000101"
 
     private fun clip(voiceId: String, category: String, variant: Int) = StockClip(
@@ -96,11 +96,11 @@ class ClipPreparationGateTest {
     }
 
     @Test
-    fun `방금 공유받아 클립이 하나도 없는 목소리는 막는다`() {
-        // 소유자 쪽 렌더가 아직 안 끝난 경우. 여기서 통과시키면 라이브 생성이 사라진 뒤
+    fun `방금 등록해 클립이 하나도 없는 목소리는 막는다`() {
+        // 서버 렌더가 아직 하나도 안 끝난 경우. 여기서 통과시키면 라이브 생성이 사라진 뒤
         // 울릴 오디오가 없는 알람이 저장된다.
         assertTrue(
-            gate().needsClipPreparation(sharedVoiceId, randomPrompt = true, randomContext = "cheer"),
+            gate().needsClipPreparation(freshCloneVoiceId, randomPrompt = true, randomContext = "cheer"),
         )
     }
 

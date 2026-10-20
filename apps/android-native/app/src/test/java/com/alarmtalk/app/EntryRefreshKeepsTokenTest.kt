@@ -110,7 +110,7 @@ class EntryRefreshKeepsTokenTest {
     /**
      * **늦게 온 옛 계정 응답은 아무것도 쓰지 않는다**(순번 가드). 장부 테스트(`PersonalPromoLedgerTest`)는
      * 규칙만 본다 — 여기서는 그 규칙이 **쓰기보다 먼저** 걸려 있는지를 고정한다. 순서가 뒤집히면 옛 답이
-     * 세션 plan·프로모 도장을 되돌려, 방금 가족 구독자가 된 사람의 가족 기능이 닫힌다(D9).
+     * 세션 plan·프로모 도장을 되돌려, 방금 유료가 된 사람을 다음 조회까지 무료로 그린다.
      */
     @Test
     fun refreshAppSessionNowClaimsThePlanAnswerBeforeWritingAnything() {

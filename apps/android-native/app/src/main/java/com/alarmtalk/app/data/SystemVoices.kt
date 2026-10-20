@@ -22,7 +22,7 @@ const val SYSTEM_VOICE_ID_PREFIX = "70000000-0000-4000-9000-"
  *   (`애니메이션이 끝난 뒤`, `TimeWheelSettle` 등)과 검색에서 뒤섞인다.
  *   표시 이름은 제품이 정하고 식별자는 안정적으로 둔다.
  *
- * 개인·공유 목소리는 절대 넣지 않는다. 서버 `GET /voice` 성공 응답이 오면 이 목록은
+ * 개인 목소리는 절대 넣지 않는다. 서버 `GET /voice` 성공 응답이 오면 이 목록은
  * 전체 응답으로 교체된다. 백엔드 system-stock-voices 시드를 바꾸면 이 목록도 함께 맞춘다.
  */
 fun bundledSystemVoiceProfiles(): List<VoiceProfile> = listOf(
@@ -37,8 +37,9 @@ fun isSystemVoiceId(id: String?): Boolean = id?.startsWith(SYSTEM_VOICE_ID_PREFI
 
 /**
  * 유료 목소리를 못 쓰게 된 알람이 넘어갈 **대체 기본 목소리 — 미나**. 대체는 전부 이 하나다:
- * 무료 잠금 · 울릴 때 대체 · 목소리를 **잃은** 알람(삭제 · 공유 해제 · 발신자 철회 · 제자리 교체된
- * 직접 입력). 알람이 이미 기본 목소리면 그 목소리를 그대로 둔다([pickDefaultSystemVoiceId]).
+ * 무료 잠금 · 울릴 때 대체 · 목소리를 **잃은** 알람(삭제 · 제자리 교체된 직접 입력) · 업데이트로 내
+ * 알람이 된 받은 알람(`AlarmDatabase` 27→28). 알람이 이미 기본 목소리면 그 목소리를 그대로 둔다
+ * ([pickDefaultSystemVoiceId]).
  *
  * 2026-09-29 사용자 결정 — "삭제했거나 공유가 해제된 알람은 기본 목소리로, 미나로 해 그냥", 이어서
  * "미나로 통일도 해". 그전 무료 잠금은 **마지막에 쓴 기본 목소리**를 골라, 같은 계정의 알람이 경로마다

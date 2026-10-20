@@ -12,9 +12,6 @@ vi.mock('../src/lib/audio-retention', () => ({
 vi.mock('../src/lib/billing-cancel', () => ({
   processSubscriptionExpiry: vi.fn().mockResolvedValue(undefined),
 }));
-// 등급 통지는 파기 트랜잭션이 대기열에 적고(실제 DB 로 `account-purge-plan-push.test.ts` 가 본다),
-// **1분 전용 크론의 홀수 분**이 자기 예산으로 비운다 — 여기서는 그 **배선**만 본다.
-const runPlanNotificationDrainTurn = vi.hoisted(() => vi.fn().mockResolvedValue(false));
 // 경보가 실제로 Sentry 에 닿는지 본다(1분 크론 경보 자리 — 리뷰).
 const captureException = vi.hoisted(() => vi.fn());
 vi.mock('toucan-js', () => ({
@@ -25,18 +22,14 @@ vi.mock('toucan-js', () => ({
     setTag = () => undefined;
   },
 }));
-vi.mock('../src/lib/pending-plan-notifications', () => ({
-  runPlanNotificationDrainTurn,
-  isPlanNotificationDrainMinute: (now: Date) => now.getUTCMinutes() % 2 === 1,
-  prunePendingPlanNotifications: vi.fn().mockResolvedValue(undefined),
-}));
 const runPersonalPromoEnd = vi.hoisted(() => vi.fn().mockResolvedValue({ transitioned: [], sweep: null }));
+const isPromoEndAlertSlot = vi.hoisted(() => vi.fn(() => false));
 vi.mock('../src/lib/personal-promo-end', () => ({
   runPersonalPromoEnd,
-  isPromoEndAlertSlot: () => false,
+  isPromoEndAlertSlot,
 }));
 vi.mock('../src/lib/account-deletion', () => ({
-  purgeUserAccount: vi.fn().mockResolvedValue({ downgradedAlarms: [], voiceAccessRevokedUserIds: [], planChangedUserIds: [] }),
+  purgeUserAccount: vi.fn().mockResolvedValue({ downgradedAlarms: [], voiceAccessRevokedUserIds: [] }),
   pseudonymizeBillingForRetention: vi.fn().mockResolvedValue(undefined),
 }));
 const withWriteTransaction = vi.hoisted(() => vi.fn());
@@ -82,13 +75,14 @@ import worker from '../src/index';
 
 beforeEach(() => {
   vi.clearAllMocks();
+  isPromoEndAlertSlot.mockReturnValue(false);
 });
 
 describe('scheduled() — 계정 파기 격리', () => {
   it('앞 계정의 파기가 던져도 뒤 계정의 파기를 시도한다', async () => {
     withWriteTransaction
       .mockRejectedValueOnce(new Error('Too many subrequests by single Worker invocation.'))
-      .mockResolvedValue({ downgradedAlarms: [], voiceAccessRevokedUserIds: [], planChangedUserIds: [] });
+      .mockResolvedValue({ downgradedAlarms: [], voiceAccessRevokedUserIds: [] });
 
     await worker.scheduled(
       { scheduledTime: new Date('2026-09-20T00:00:00.000Z').getTime(), cron: '*/5 * * * *' } as never,
@@ -155,7 +149,7 @@ describe('scheduled() — 계정 파기 격리', () => {
   });
 
   it('파기 순서는 기한이 먼저 온 계정부터로 고정이다', async () => {
-    withWriteTransaction.mockResolvedValue({ downgradedAlarms: [], voiceAccessRevokedUserIds: [], planChangedUserIds: [] });
+    withWriteTransaction.mockResolvedValue({ downgradedAlarms: [], voiceAccessRevokedUserIds: [] });
     await worker.scheduled(
       { scheduledTime: new Date('2026-09-20T00:00:00.000Z').getTime(), cron: '*/5 * * * *' } as never,
       { TURSO_DATABASE_URL: 'mock', TURSO_AUTH_TOKEN: 'mock', PASSWORD_PEPPER: 'pep' } as never,
@@ -166,104 +160,60 @@ describe('scheduled() — 계정 파기 격리', () => {
     expect(purgeQuery).toMatch(/ORDER BY deletion_purge_at, id/);
   });
 
-  it('5분 틱은 등급 통지 대기열을 비우지 않는다 — 남은 예산을 나눠 쓰면 잘린다(코덱스 #841)', async () => {
-    withWriteTransaction.mockResolvedValue({ downgradedAlarms: [], voiceAccessRevokedUserIds: ['m1'], planChangedUserIds: ['m1'] });
+  it('5분 틱의 파기는 목소리 철회 통지를 그 틱에서 보낸다', async () => {
+    withWriteTransaction.mockResolvedValue({ downgradedAlarms: [], voiceAccessRevokedUserIds: ['m1'] });
 
     await worker.scheduled(
       { scheduledTime: new Date('2026-09-20T00:00:00.000Z').getTime(), cron: '*/5 * * * *' } as never,
       { TURSO_DATABASE_URL: 'mock', TURSO_AUTH_TOKEN: 'mock', PASSWORD_PEPPER: 'pep' } as never,
     );
 
-    expect(runPlanNotificationDrainTurn).not.toHaveBeenCalled();
-    // 목소리 철회 통지는 그대로 이 틱에서 나간다.
     const { notifyDowngradedAlarms } = await import('../src/lib/fcm');
     expect(vi.mocked(notifyDowngradedAlarms)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(notifyDowngradedAlarms).mock.calls[0]![3]).toContain('m1');
   });
 
-  it('1분 크론의 홀수 분 — 대기 행이 있으면 비우기가 이 실행을 쓰고, 개인 플랜 종료 작업은 건너뛴다', async () => {
-    runPlanNotificationDrainTurn.mockResolvedValueOnce(true);
+  // 1분 크론은 **기간 한정 개인 플랜 종료 전용**이다 — 분과 무관하게 그 일만 하고, 자기 예산(~50 subrequest)을 통째로 쓴다.
+  // (탈퇴 등급 통지 대기열이 홀수 분을 나눠 쓰던 시절이 있었다 — 커플·가족 이용권과 함께 2026-10-20 에 없앴다.)
+  it.each(['2026-10-01T00:01:00.000Z', '2026-10-01T00:02:00.000Z', '2026-10-01T00:03:00.000Z'])(
+    '1분 크론(%s) — 언제나 개인 플랜 종료 작업만 돈다',
+    async (at) => {
+      await worker.scheduled(
+        { scheduledTime: new Date(at).getTime(), cron: '* * * * *' } as never,
+        { TURSO_DATABASE_URL: 'mock', TURSO_AUTH_TOKEN: 'mock', PASSWORD_PEPPER: 'pep' } as never,
+      );
 
-    await worker.scheduled(
-      { scheduledTime: new Date('2026-10-01T00:01:00.000Z').getTime(), cron: '* * * * *' } as never,
-      { TURSO_DATABASE_URL: 'mock', TURSO_AUTH_TOKEN: 'mock', PASSWORD_PEPPER: 'pep' } as never,
-    );
+      expect(runPersonalPromoEnd).toHaveBeenCalledTimes(1);
+      expect(runPersonalPromoEnd.mock.calls[0]![3]).toMatchObject({ role: 'dedicated' });
+      // 5분 틱의 일(계정 파기 조회 등)은 하지 않는다.
+      expect(executeMock).not.toHaveBeenCalled();
+      expect(withWriteTransaction).not.toHaveBeenCalled();
+    },
+  );
 
-    expect(runPlanNotificationDrainTurn).toHaveBeenCalledTimes(1);
-    expect(runPersonalPromoEnd).not.toHaveBeenCalled();
-  });
-
-  it('1분 크론의 홀수 분 — 대기 행이 없으면 개인 플랜 종료 작업이 그대로 돈다', async () => {
-    runPlanNotificationDrainTurn.mockResolvedValueOnce(false);
-
-    await worker.scheduled(
-      { scheduledTime: new Date('2026-10-01T00:03:00.000Z').getTime(), cron: '* * * * *' } as never,
-      { TURSO_DATABASE_URL: 'mock', TURSO_AUTH_TOKEN: 'mock', PASSWORD_PEPPER: 'pep' } as never,
-    );
-
-    expect(runPlanNotificationDrainTurn).toHaveBeenCalledTimes(1);
-    expect(runPersonalPromoEnd).toHaveBeenCalledTimes(1);
-  });
-
-  it('1분 크론의 짝수 분 — 비우기는 차례가 없고 개인 플랜 종료 작업만 돈다', async () => {
-    await worker.scheduled(
-      { scheduledTime: new Date('2026-10-01T00:02:00.000Z').getTime(), cron: '* * * * *' } as never,
-      { TURSO_DATABASE_URL: 'mock', TURSO_AUTH_TOKEN: 'mock', PASSWORD_PEPPER: 'pep' } as never,
-    );
-
-    expect(runPlanNotificationDrainTurn).not.toHaveBeenCalled();
-    expect(runPersonalPromoEnd).toHaveBeenCalledTimes(1);
-  });
-
-  it('1분 크론 — 비우기가 던지면 그 실행의 예산을 모르므로 종료 작업은 건너뛰고(다음 분이 한다) 던지지 않는다', async () => {
-    runPlanNotificationDrainTurn.mockRejectedValueOnce(new Error('turso down'));
-
-    await worker.scheduled(
-      { scheduledTime: new Date('2026-10-01T00:05:00.000Z').getTime(), cron: '* * * * *' } as never,
-      { TURSO_DATABASE_URL: 'mock', TURSO_AUTH_TOKEN: 'mock', PASSWORD_PEPPER: 'pep' } as never,
-    );
-
-    expect(runPersonalPromoEnd).not.toHaveBeenCalled();
-  });
-  it('1분 크론 — 비우기 실패는 그 시각의 첫 비우기 분(UTC 1분)에 경보로 올라간다(종료 작업의 0분 자리에는 닿지 못한다)', async () => {
-    runPlanNotificationDrainTurn.mockRejectedValueOnce(new Error('turso down'));
-    await worker.scheduled(
-      { scheduledTime: new Date('2026-10-01T05:01:00.000Z').getTime(), cron: '* * * * *' } as never,
-      { TURSO_DATABASE_URL: 'mock', TURSO_AUTH_TOKEN: 'mock', PASSWORD_PEPPER: 'pep', SENTRY_DSN: 'https://k@o.ingest.sentry.io/1' } as never,
-    );
-
-    expect(captureException).toHaveBeenCalledTimes(1);
-
-    captureException.mockClear();
-    runPlanNotificationDrainTurn.mockRejectedValueOnce(new Error('turso down'));
-    await worker.scheduled(
-      { scheduledTime: new Date('2026-10-01T05:03:00.000Z').getTime(), cron: '* * * * *' } as never,
-      { TURSO_DATABASE_URL: 'mock', TURSO_AUTH_TOKEN: 'mock', PASSWORD_PEPPER: 'pep', SENTRY_DSN: 'https://k@o.ingest.sentry.io/1' } as never,
-    );
-
-    // 나머지 분은 로그만 — 1분마다 경보가 쌓이지 않는다.
+  it('1분 크론 — 종료 작업이 던져도 던지지 않고, 경보는 시간당 자리에서만 올린다', async () => {
+    const env = {
+      TURSO_DATABASE_URL: 'mock',
+      TURSO_AUTH_TOKEN: 'mock',
+      PASSWORD_PEPPER: 'pep',
+      SENTRY_DSN: 'https://k@o.ingest.sentry.io/1',
+    } as never;
+    runPersonalPromoEnd.mockRejectedValueOnce(new Error('turso down'));
+    await expect(
+      worker.scheduled(
+        { scheduledTime: new Date('2026-10-01T05:03:00.000Z').getTime(), cron: '* * * * *' } as never,
+        env,
+      ),
+    ).resolves.toBeUndefined();
+    // 경보 자리가 아니면 로그만 — 1분마다 경보가 쌓이지 않는다.
     expect(captureException).not.toHaveBeenCalled();
-  });
 
-  it('1분 크론 — 표가 없으면(배포가 마이그레이션보다 먼저 돈 창) 차례를 쓰지 않고 종료 작업이 그대로 돈다', async () => {
-    runPlanNotificationDrainTurn.mockRejectedValueOnce(new Error('SQLITE_ERROR: no such table: pending_plan_notifications'));
+    isPromoEndAlertSlot.mockReturnValue(true);
+    runPersonalPromoEnd.mockRejectedValueOnce(new Error('turso down'));
     await worker.scheduled(
-      { scheduledTime: new Date('2026-10-01T05:07:00.000Z').getTime(), cron: '* * * * *' } as never,
-      { TURSO_DATABASE_URL: 'mock', TURSO_AUTH_TOKEN: 'mock', PASSWORD_PEPPER: 'pep', SENTRY_DSN: 'https://k@o.ingest.sentry.io/1' } as never,
+      { scheduledTime: new Date('2026-10-01T06:00:00.000Z').getTime(), cron: '* * * * *' } as never,
+      env,
     );
-
-    expect(runPersonalPromoEnd).toHaveBeenCalledTimes(1);
-  });
-
-  it('1분 크론 — 상한에서 버린 사람(예고를 끝내 못 보냄)은 그때마다 경보로 올린다', async () => {
-    runPlanNotificationDrainTurn.mockImplementationOnce(async (_db: unknown, _env: unknown, hooks: { onGaveUp?: (n: number) => void }) => {
-      hooks.onGaveUp?.(1);
-      return true;
-    });
-    await worker.scheduled(
-      { scheduledTime: new Date('2026-10-01T05:09:00.000Z').getTime(), cron: '* * * * *' } as never,
-      { TURSO_DATABASE_URL: 'mock', TURSO_AUTH_TOKEN: 'mock', PASSWORD_PEPPER: 'pep', SENTRY_DSN: 'https://k@o.ingest.sentry.io/1' } as never,
-    );
-
     expect(captureException).toHaveBeenCalledTimes(1);
   });
 });

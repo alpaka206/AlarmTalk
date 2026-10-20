@@ -42,7 +42,6 @@ async function replacementDb(): Promise<{ db: Client; path: string }> {
     // 교체도 승격과 같은 게이트(유료 플랜·민감 동의·월 1회 원장)를 통과해야 하므로
     // 기본 시드는 '통과하는 계정' 이다. 게이트별 거절은 아래 테스트가 각각 무너뜨린다.
     "INSERT INTO users (id, google_id, email, name, plan) VALUES ('u1','g1','u1@test.com','나','plus')",
-    "INSERT INTO users (id, google_id, email, name) VALUES ('u2','g2','u2@test.com','가족')",
     `INSERT INTO voice_profiles
        (id, user_id, name, status, elevenlabs_voice_id, is_draft, previewed_at,
         preview_language, speech_style, speech_style_status)
@@ -63,22 +62,11 @@ async function replacementDb(): Promise<{ db: Client; path: string }> {
     `INSERT INTO messages
        (id, user_id, voice_profile_id, text, category, language, variant, is_preset, audio_url)
      VALUES ('m-preset','u1','vp1','인사','greeting','ko',0,1,'r2://preset')`,
-    `INSERT INTO alarms
-       (id, user_id, target_user_id, time, mode, voice_profile_id, message_id, delivery_version)
-     VALUES ('a-live','u1','u2','07:00','tts','vp1','m-custom','v-live')`,
-    `INSERT INTO alarm_recipient_state
-       (alarm_id, recipient_user_id, declined, revoked, sender_user_id,
-        voice_profile_id, sender_voice_upload, custom_voice)
-     VALUES ('a-delivered','u2',0,0,'u1','vp1',0,1)`,
-    `INSERT INTO alarm_recipient_state
-       (alarm_id, recipient_user_id, declined, revoked, sender_user_id,
-        voice_profile_id, sender_voice_upload, custom_voice)
-     VALUES ('a-preset','u2',0,0,'u1','vp1',0,0)`,
     // 옛 사전렌더 큐 행 — 소유자가 로그인 id 로 적혀 있다(이 테이블엔 FK 가 없다).
     // cron 은 이 값으로 동의를 확인하므로 교체가 정규 id 로 고쳐 두어야 한다.
     `INSERT INTO voice_prerender_queue (voice_profile_id, owner_user_id, language, status)
      VALUES ('vp1','g1','ko','done')`,
-    // 소유자 본인 알람(target_user_id NULL) — pull 대상이 아니라 서버 강등만으로는 그 기기에 닿지 않는다.
+    // 소유자 본인 알람 — 서버 행 강등만으로는 그 기기(와 다른 기기)의 로컬 알람에 닿지 않는다.
     `INSERT INTO alarms
        (id, user_id, time, mode, voice_profile_id, message_id)
      VALUES ('a-mine','u1','06:30','tts','vp1','m-custom')`,
@@ -105,10 +93,8 @@ async function expectUntouched(db: Client) {
   expect(Number(queue.rows[0]!.refresh_existing)).toBe(0);
   const deletions = await db.execute('SELECT COUNT(*) AS n FROM pending_external_deletions');
   expect(Number(deletions.rows[0]!.n)).toBe(0);
-  const delivered = await db.execute(
-    "SELECT revoked FROM alarm_recipient_state WHERE alarm_id = 'a-delivered'",
-  );
-  expect(Number(delivered.rows[0]!.revoked)).toBe(0);
+  const mine = await db.execute("SELECT mode, message_id FROM alarms WHERE id = 'a-mine'");
+  expect(mine.rows[0]).toMatchObject({ mode: 'tts', message_id: 'm-custom' });
   const audio = await db.execute("SELECT audio_url FROM messages WHERE id = 'm-custom'");
   expect(String(audio.rows[0]!.audio_url)).toBe('r2://custom');
 }
@@ -131,14 +117,19 @@ describe('목소리 교체 — 제자리 덮어쓰기', () => {
 
       expect(result.ok).toBe(true);
       if (!result.ok) throw new Error(result.error);
-      expect(result.revokedCustomAlarms).toEqual(expect.arrayContaining([
-        { alarmId: 'a-live', ownerUserId: 'u2', isReceived: true },
-        { alarmId: 'a-delivered', ownerUserId: 'u2', isReceived: true },
-        // ⚠ 본인 소유 알람을 빼면 등록 기기 말고 다른 기기가 **지운 목소리로 계속 운다** —
-        // 본인 알람은 pull 대상이 아니라 서버 행 강등이 그 기기에 닿지 않는다(Codex #703 P1).
-        { alarmId: 'a-mine', ownerUserId: 'u1', isReceived: false },
-      ]));
+      // ⚠ 본인 소유 알람을 빼면 등록 기기 말고 다른 기기가 **지운 목소리로 계속 운다** — 서버 행 강등이
+      // 그 기기의 로컬 알람에 닿지 않는다(Codex #703 P1).
+      expect(result.revokedCustomAlarms).toEqual([{ alarmId: 'a-mine', ownerUserId: 'u1' }]);
       expect(result.voiceAccessRevokedUserIds).toEqual(['u1']);
+      const mine = await db.execute(
+        "SELECT mode, wake_mode, message_id, voice_profile_id FROM alarms WHERE id = 'a-mine'",
+      );
+      expect(mine.rows[0]).toMatchObject({
+        mode: 'sound-only',
+        wake_mode: 'sound_then_voice',
+        message_id: null,
+        voice_profile_id: null,
+      });
       // 푸시는 세대를 함께 싣는다 — id 만 보내면 이미 반영한 기기가 **새 목소리로 만든**
       // 알람까지 지운다.
       expect(result.customAudioInvalidatedAt).not.toBeNull();
@@ -168,17 +159,6 @@ describe('목소리 교체 — 제자리 덮어쓰기', () => {
           ['elevenlabs_voice', 'eleven-old'],
           ['r2_object', 'uploads/old.wav'],
         ]));
-
-      const delivered = await db.execute(
-        "SELECT revoked, voice_profile_id FROM alarm_recipient_state WHERE alarm_id = 'a-delivered'",
-      );
-      expect(Number(delivered.rows[0]!.revoked)).toBe(1);
-      expect(delivered.rows[0]!.voice_profile_id).toBeNull();
-      const preset = await db.execute(
-        "SELECT revoked, voice_profile_id FROM alarm_recipient_state WHERE alarm_id = 'a-preset'",
-      );
-      expect(Number(preset.rows[0]!.revoked)).toBe(0);
-      expect(String(preset.rows[0]!.voice_profile_id)).toBe('vp1');
 
       const renderer = await db.execute(
         "SELECT refresh_existing, language, owner_user_id FROM voice_prerender_queue WHERE voice_profile_id = 'vp1'",
@@ -506,14 +486,6 @@ describe('목소리 교체 — 제자리 덮어쓰기', () => {
     } finally {
       db.close();
     }
-  });
-
-  it('마이그레이션 #105가 전달 완료 custom 음원을 구분한다', async () => {
-    const db = await migratedDb();
-    const cols = await db.execute("PRAGMA table_info('alarm_recipient_state')");
-    const col = cols.rows.find((row) => String(row.name) === 'custom_voice');
-    expect(col).toBeTruthy();
-    expect(String(col!.dflt_value)).toBe('0');
   });
 
   it('마이그레이션 #101 이 refresh_existing 을 기본 0 으로 추가한다', async () => {

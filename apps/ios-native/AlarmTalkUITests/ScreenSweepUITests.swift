@@ -121,29 +121,25 @@ final class ScreenSweepUITests: XCTestCase {
         shot("mockup-voice-upload")
     }
 
-    /// 더보기 **하위** 화면 — 탭 순회는 최상위만 훑어서 여기까지 오지 않는다.
-    ///
-    /// 코드 등록은 안드로이드와 갈라지기 쉬운 자리다(입력창을 종류별로 나눌지, 확인을
-    /// 시트로 낼지 알럿으로 낼지). 실제로 2026-08-10 까지 iOS 만 옛 2칸 입력 + 하프
-    /// 시트로 남아 있었는데, 최상위 탭만 찍고 있어서 **스크린샷에 한 번도 잡히지 않았다.**
+    /// 더보기 **하위** 화면 — 탭 순회는 최상위만 훑어서 여기까지 오지 않는다. 더보기에서 들어가는 하위
+    /// 화면은 이용권 하나다(코드를 넣는 화면은 없다 — `docs/spec/plan-gates.md`).
     func test_sweep_menuSubscreens() {
         launch(["-UIPreviewSeed", "-UIPreviewTab", "menu"])
-        // 공유 이용권이 없으면 '초대 코드 등록', 있으면 '초대 및 구성원 관리' 로 갈린다.
-        // ⚠ `app.buttons` 로만 찾지 말 것 — 이 행은 접근성 트리에 버튼으로 안 잡힌다.
+        // ⚠ `app.buttons` 로만 찾지 말 것 — 설정 행은 접근성 트리에 버튼으로 안 잡힐 수 있다.
         // staticTexts 까지 훑고, 그래도 없으면 좌표로 눌러 본다.
         // ⚠ 술어를 지역 변수로 빼지 말 것 — `NSPredicate` 는 Sendable 이 아니라
         // Swift 6 동시성 검사가 "sending 'rowMatch' risks causing data races" 로 막는다.
-        let rowMatch = "label CONTAINS[c] '코드 등록' OR label CONTAINS[c] '초대'"
+        let rowMatch = "label BEGINSWITH '이용권'"
         var target = app.buttons.matching(NSPredicate(format: rowMatch)).firstMatch
         if !target.waitForExistence(timeout: 5) {
             target = app.staticTexts.matching(NSPredicate(format: rowMatch)).firstMatch
         }
         guard target.waitForExistence(timeout: 5) else {
-            shot("menu-코드등록행-notFound")
+            shot("menu-이용권행-notFound")
             return
         }
         // 텍스트 자체는 hittable 이 아닐 수 있으니 좌표로 누른다.
         target.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
-        sweepScroll("menu-코드등록", maxPages: 3)
+        sweepScroll("menu-이용권", maxPages: 3)
     }
 }

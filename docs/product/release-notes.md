@@ -24,6 +24,72 @@ node -e "const m=require('fs').readFileSync('docs/product/release-notes.md','utf
 
 ---
 
+## 1.2.16 (versionCode 36 / iOS 빌드 14)
+
+커플·가족 이용권과 그것에만 딸린 기능(초대 코드 등록·목소리 공유·가족 알람)을 없앤다(`docs/spec/plan-gates.md`
+「커플·가족 이용권 — 폐지」). 정책 문서는 버전 7(그룹 내용을 걷어낸 축소 개정, 재동의 없음)이고, 서버가 7과 6을 함께
+받으므로 **서버(develop→main)를 먼저** 내고 이 앱을 게재한다. 두 스토어 게재를 확인한 뒤 서버의 최소 지원 빌드를
+Android 36·iOS 14로 올린다(강제 업데이트 — 옛 빌드는 없앤 이용권과 코드 입력을 계속 보인다). 운영 배포 전에 스토어의
+커플·가족 상품을 판매 중지한다(오너).
+
+Android 는 이 빌드부터 광고 SDK 가 실린다. 운영 광고 단위가 비어 있으면 광고 버튼은 보이지 않지만(`RewardedAds.configured`),
+SDK 가 매니페스트에 `AD_ID` 권한을 더하므로 업로드 전에 Play Console 의 광고 ID 신고와 데이터 보안 양식을 확인한다
+(`docs/spec/ad-rewards.md` §6).
+
+### Play (Android 36)
+
+### ko-KR
+
+```
+• 커플·가족 이용권 판매를 마쳤습니다. 이제 이용권은 개인 하나입니다.
+• 목소리 공유와 가족 알람을 정리했습니다. 이미 받아 둔 알람은 내 알람으로 바뀌어 같은 시각에 울립니다. 쓸 수 있는 내 목소리가 있으면 그 목소리로, 없으면 기본 목소리로 울립니다.
+• 개인정보 처리방침과 이용약관을 개정했습니다.
+```
+
+### en-US
+
+```
+• Couple and Family plans are no longer offered. Personal is now the only plan.
+• Voice sharing and family alarms have been retired. Alarms you already received become your own alarms and still ring at the same time, in your own voice if you can use one, otherwise in a default voice.
+• Updated the Privacy Policy and Terms of Service.
+```
+
+### ja-JP
+
+```
+• カップル・ファミリー向け利用券の販売を終了しました。利用券はパーソナルのみになりました。
+• 声の共有と家族アラームを整理しました。受け取ったアラームは自分のアラームになり、同じ時刻に鳴ります。使える自分の声があればその声で、なければ基本の声で鳴ります。
+• プライバシーポリシーと利用規約を改定しました。
+```
+
+### App Store (iOS 빌드 14)
+
+#### ko
+
+```
+• 커플·가족 이용권 판매를 마쳤습니다. 이제 이용권은 개인 하나입니다.
+• 목소리 공유와 가족 알람을 정리했습니다. 이미 받아 둔 알람은 내 알람으로 바뀌어 같은 시각에 울립니다. 쓸 수 있는 내 목소리가 있으면 그 목소리로, 없으면 기본 목소리로 울립니다.
+• 개인정보 처리방침과 이용약관을 개정했습니다.
+```
+
+#### en-US
+
+```
+• Couple and Family plans are no longer offered. Personal is now the only plan.
+• Voice sharing and family alarms have been retired. Alarms you already received become your own alarms and still ring at the same time, in your own voice if you can use one, otherwise in a default voice.
+• Updated the Privacy Policy and Terms of Service.
+```
+
+#### ja
+
+```
+• カップル・ファミリー向け利用券の販売を終了しました。利用券はパーソナルのみになりました。
+• 声の共有と家族アラームを整理しました。受け取ったアラームは自分のアラームになり、同じ時刻に鳴ります。使える自分の声があればその声で、なければ基本の声で鳴ります。
+• プライバシーポリシーと利用規約を改定しました。
+```
+
+---
+
 ## 1.2.15 (versionCode 35 / iOS 빌드 13)
 
 #912·#913·#914·#917의 앱 변경을 싣는다. 정책 문서 버전은 6 그대로다. 서버의 최소 지원 빌드는

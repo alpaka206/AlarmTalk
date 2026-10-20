@@ -11,8 +11,8 @@ import SwiftUI
 /// Android `PlanGateDialog`와 같은 세 갈래다(`docs/spec/plan-gates.md`).
 ///
 /// ⚠ **코드 입력 액션('선물·초대 코드가 있어요')을 되살리지 말 것**(2026-10-14, App Store 지침 3.1.1
-/// 두 번째 반려 — 선물 코드 폐지). 초대 코드는 더보기 → 초대 코드 등록에서만 넣고, 할인·무료 이용은
-/// 스토어 오퍼 코드로 준다. 목소리 탭 게이트(`VoiceProfileManagementPanel`)도 같다.
+/// 두 번째 반려 — 선물 코드 폐지). 할인·무료 이용은 스토어 오퍼 코드로 준다. 목소리 탭
+/// 게이트(`VoiceProfileManagementPanel`)도 같다.
 struct VoicePlanGateAlert: ViewModifier {
     @Binding var content: AlarmEditorSheet.VoiceGateAlertContent?
     let onOpenBilling: () -> Void

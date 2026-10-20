@@ -74,6 +74,10 @@ export const FEATURE_CONSENT_TYPES = ['voice_biometric'] as const;
 /** 처리방침/약관 문서의 **게시 중인 최신** 버전. 새로 기록하는 동의는 앱이 보여 준 문서의 버전으로 저장하되,
  *  그 값은 `ACCEPTED_POLICY_VERSIONS` 안의 것만 받는다(클라가 보낸 임의의 값을 그대로 쓰면 위조된 높은 값이 이후의
  *  재동의 요구를 영구히 무력화한다 — 그래서 목록 밖은 409 다).
+ *  '7' (2026-10-20): 커플·가족 이용권과 그것에만 딸린 기능(초대 코드·목소리 공유·가족 알람)을 없애며 그 내용을 걷어낸
+ *  **축소 개정**이다. 수집·이용·제공 범위가 줄기만 해 어느 유형의 최소 버전도 올리지 않는다(재동의 없음 — 버전 4 와
+ *  같은 판단). 조 번호는 다시 매기지 않았다 — 약관 제9조는 「제9조 (삭제)」로 남기고, 앱·서버·스펙이 가리키는 제10조
+ *  등의 번호를 그대로 둔다. 두 앱의 다음 릴리스에 실린다.
  *  '6' (2026-10-16): 회원 탈퇴 철회 방법(모든 기기 로그아웃·30일 안에 다시 로그인하면 철회)을 명시하고, 결제 기록의
  *  '쿠폰 사용 기록' 을 폐지된 프로모션 코드 기록으로, '이용권을 다시 등록하면' 을 '다시 구독하면' 으로 정정했다.
  *  수집·이용·제공 범위는 그대로라 어느 유형의 최소 버전도 올리지 않는다. 1.2.14(Android 34·iOS 빌드 12)에 실렸다.
@@ -102,7 +106,7 @@ export const FEATURE_CONSENT_TYPES = ['voice_biometric'] as const;
  *  음성=민감정보/생체정보 분류, voice_biometric·overseas_transfer 별도 동의 서버 강제,
  *  Firebase/FCM 수탁 고지를 포함한 처리방침/약관 개정과 동기화한다.
  *  (docs/legal/*.ko.md 의 "최종 개정일"·"정책 버전"과 일치) */
-export const CURRENT_POLICY_VERSION = '6';
+export const CURRENT_POLICY_VERSION = '7';
 
 /**
  * `POST /user/consents` 가 받는 문서 버전(`document_version`) — **앱이 실제로 보여 준 문서**의 버전이다.
@@ -110,14 +114,15 @@ export const CURRENT_POLICY_VERSION = '6';
  * 문서 전문은 앱에 실려 있고 두 스토어의 게재 시점은 다르다. 한 버전만 받으면 그 사이 한쪽 앱의 가입·재동의가 409
  * (`POLICY_VERSION_MISMATCH`)로 막힌다 — 새 앱이 먼저 나오면 새 앱이, 서버가 먼저 오르면 옛 앱이. 그래서 개정 동안은
  * 앞 버전도 함께 받고, **보낸 버전 그대로** 기록한다(본 적 없는 문서에 동의한 기록이 남지 않는다).
- * 지금은 6 하나다 — 5 는 2026-10-16 에 지웠다(오너: "확실하게 정리"). Android 33 이하는 `minSupported` 34 로 막았고, iOS
- * 1.2.13(빌드 10, 문서 5)은 실사용자가 없다 — 1.2.14 가 게재되기 전 그 앱으로 새로 가입하면 동의가 409 다(알고 택했다).
- * 다음 개정 때 앞 버전을 다시 넣는다.
+ * 지금은 7 과 6 이다(2026-10-20 개정 — 서버 먼저). 스토어의 두 앱은 6 을 싣고 있으므로 6 을 빼면 그 앱의 가입·재동의가
+ * 전부 409 다. '6' 은 7 을 실은 두 앱이 게재되고 `minSupported` 로 6 을 실은 옛 앱을 막은 **뒤에** 지운다.
+ * (5 는 2026-10-16 에 지웠다 — Android 33 이하는 `minSupported` 34 로 막았고, iOS 1.2.13(빌드 10, 문서 5)은 실사용자가
+ * 없었다.)
  * ⚠ 재동의를 요구하는 개정(그 유형의 `CONSENT_MIN_POLICY_VERSION` 을 올릴 때)도 나눠 낸다 — ① 새 버전도 받되 최소
  *   버전은 그대로 ② 새 앱 게재·옛 앱 차단 ③ 최소 버전 상향·앞 버전 제거. 앞 버전 수락은 ③의 최소 버전을 채우지
  *   못하므로 재동의가 새지 않는다(`docs/spec/consent.md`).
  */
-export const ACCEPTED_POLICY_VERSIONS: readonly string[] = [CURRENT_POLICY_VERSION];
+export const ACCEPTED_POLICY_VERSIONS: readonly string[] = [CURRENT_POLICY_VERSION, '6'];
 
 /**
  * 유형별 **최소 정책 버전** — 기록된 동의가 이 버전 이상이어야 유효하다.
@@ -163,7 +168,7 @@ export const CONSENT_MIN_POLICY_VERSION: Record<ConsentType, number> = {
   //   (`collect` 에 privacy 만 담긴다. 마케팅을 거절했던 사람에게는 같은 화면에 마케팅이 선택으로 한 번 더 붙는다 —
   //   `routes/user.ts` 의 마케팅 재유도). 그 전에는 재동의를 강제하는 대신 수집을 멈췄다(`USAGE_EVENT_MIN_PRIVACY_VERSION`).
   //   6 이 아니라 5 인 이유: 6(2026-10-16)은 수집 범위를 바꾸지 않은 정정이라 5 로 동의한 사람은 다시 묻지 않는다.
-  //   ⚠ 순서: 재동의를 낼 수 있는 앱은 문서 6 을 실은 앱뿐이다(`ACCEPTED_POLICY_VERSIONS`). 안드로이드는 34 미만을
+  //   ⚠ 순서: 재동의를 낼 수 있는 앱은 문서 6 이상을 실은 앱뿐이다(`ACCEPTED_POLICY_VERSIONS`). 안드로이드는 34 미만을
   //   `minSupported` 로 막았고(#911). iOS 기기의 기록은 전부 5 이상이지만(첫 게재 2026-09-22) 기록 3·4 인 안드로이드
   //   계정이 옛 iOS 앱(문서 5)으로 로그인할 수는 있다 — 그래서 이 값은 iOS `minSupported` 를 문서 6 빌드(12)로 올린 뒤에
   //   prod 에 낸다(`docs/qa/dev-test-handoff.md` 「다음 할 일」).

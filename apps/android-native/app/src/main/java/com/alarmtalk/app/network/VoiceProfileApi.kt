@@ -41,17 +41,8 @@ data class VoiceDraftQuotaResponse(
     @SerializedName("registration_remaining") val registrationRemaining: Int = 0,
 )
 
-data class VoiceUploadResponse(
-    val upload: VoiceUpload,
-)
-
-data class VoiceUpload(
-    val id: String,
-)
-
 data class VoiceProfileUpdateRequest(
     val name: String? = null,
-    @SerializedName("is_shared") val isShared: Boolean? = null,
     @SerializedName("is_draft") val isDraft: Boolean? = null,
     @SerializedName("relationship_label") val relationshipLabel: String? = null,
     @SerializedName("listener_title") val listenerTitle: String? = null,
@@ -133,9 +124,8 @@ data class VoiceProfile(
     val name: String = "",
     val status: String? = null,
     @SerializedName("created_at") val createdAt: String? = null,
-    @SerializedName("is_shared") val isShared: Boolean? = null,
     @SerializedName("is_draft") val isDraft: Boolean? = null,
-    // 시스템 제공(스톡) 보이스 — 무료 플랜도 사용 가능, 수정/삭제/공유 불가.
+    // 시스템 제공(스톡) 보이스 — 무료 플랜도 사용 가능, 수정·삭제할 수 없다.
     @SerializedName("is_system") val isSystem: Boolean? = null,
     @SerializedName("relationship_label") val relationshipLabel: String? = null,
     @SerializedName("listener_title") val listenerTitle: String? = null,
@@ -152,28 +142,6 @@ data class VoiceProfile(
     @SerializedName("custom_audio_invalidated_at") val customAudioInvalidatedAt: String? = null,
 )
 
-data class FamilyVoiceProfile(
-    val id: String,
-    val name: String,
-    val status: String? = null,
-    @SerializedName("created_at") val createdAt: String? = null,
-    @SerializedName("user_id") val userId: String? = null,
-    @SerializedName("owner_name") val ownerName: String? = null,
-    @SerializedName("is_shared") val isShared: Boolean? = null,
-    @SerializedName("relationship_label") val relationshipLabel: String? = null,
-    @SerializedName("listener_title") val listenerTitle: String? = null,
-    /**
-     * 공유받은 목소리의 **직접 입력 음원 무효 시각**. 내 목소리와 같은 규약이다
-     * ([VoiceProfile.customAudioInvalidatedAt]) — 공유받은 사람도 그 목소리로 자기 직접
-     * 입력 알람을 만들 수 있고, 그 행 역시 pull 대상이 아니라 서버 강등이 닿지 않는다.
-     */
-    @SerializedName("custom_audio_invalidated_at") val customAudioInvalidatedAt: String? = null,
-)
-
-data class FamilyVoiceProfileListResponse(
-    val profiles: List<FamilyVoiceProfile>,
-)
-
 interface VoiceProfileApi {
     @GET("voice")
     suspend fun listVoiceProfiles(@Header("Authorization") authorization: String): VoiceProfileListResponse
@@ -187,7 +155,6 @@ interface VoiceProfileApi {
         @Header("Authorization") authorization: String,
         @Part audio: MultipartBody.Part,
         @Part("name") name: RequestBody,
-        @Part("isShared") isShared: RequestBody,
         // 관계·호칭은 선택 입력 — 비우면 파트 자체를 보내지 않는다(백엔드 옵셔널).
         @Part("relationshipLabel") relationshipLabel: RequestBody?,
         @Part("listenerTitle") listenerTitle: RequestBody?,
@@ -198,15 +165,6 @@ interface VoiceProfileApi {
         // 사전렌더할 앱 언어(미전송 시 서버가 'ko' 폴백 → 비-ko 유저가 클론 버킷을 못 받음).
         @Part("language") language: RequestBody,
     ): VoiceProfileResponse
-
-    @Multipart
-    @POST("voice/upload")
-    suspend fun uploadVoiceAudio(
-        @Header("Authorization") authorization: String,
-        @Part audio: MultipartBody.Part,
-        @Part("durationMs") durationMs: RequestBody,
-        @Part("originalName") originalName: RequestBody,
-    ): VoiceUploadResponse
 
     @PATCH("voice/{id}")
     suspend fun updateVoiceProfile(
@@ -243,9 +201,6 @@ interface VoiceProfileApi {
     suspend fun getVoiceDraftQuota(
         @Header("Authorization") authorization: String,
     ): VoiceDraftQuotaResponse
-
-    @GET("voice/family")
-    suspend fun listFamilyVoiceProfiles(@Header("Authorization") authorization: String): FamilyVoiceProfileListResponse
 
     // 유료 클론 사전렌더(R2 21클립) 진행 상태 — 목소리 탭 준비 표시가 짧게 폴링한다.
     @GET("voice/{id}/prerender-status")

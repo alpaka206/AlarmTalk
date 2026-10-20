@@ -8,37 +8,39 @@ import { buildDowngradeSignals, notifyDowngradedAlarms } from '../src/lib/fcm';
 afterEach(() => vi.unstubAllGlobals());
 
 describe('buildDowngradeSignals 팬아웃', () => {
-  it('같은 수신자의 알람이 여러 개여도 한 번만 만든다', () => {
+  it('같은 주인의 알람이 여러 개여도 한 번만 만든다', () => {
     const signals = buildDowngradeSignals([
-      { alarmId: 'al-1', ownerUserId: 'recipient', isReceived: true },
-      { alarmId: 'al-2', ownerUserId: 'recipient', isReceived: true },
-      { alarmId: 'al-3', ownerUserId: 'recipient', isReceived: true },
+      { alarmId: 'al-1', ownerUserId: 'owner' },
+      { alarmId: 'al-2', ownerUserId: 'owner' },
+      { alarmId: 'al-3', ownerUserId: 'owner' },
     ]);
 
-    expect(signals).toEqual([
-      { userId: 'recipient', data: { type: 'family_alarm', alarmId: 'al-1' } },
-    ]);
+    expect(signals).toEqual([{ userId: 'owner', data: { type: 'voice_access_revoked' } }]);
   });
 
-  it('수신자가 여럿이면 각자 한 번씩', () => {
+  it('주인이 여럿이면 각자 한 번씩', () => {
     const signals = buildDowngradeSignals([
-      { alarmId: 'al-1', ownerUserId: 'a', isReceived: true },
-      { alarmId: 'al-2', ownerUserId: 'b', isReceived: true },
-      { alarmId: 'al-3', ownerUserId: 'a', isReceived: true },
+      { alarmId: 'al-1', ownerUserId: 'a' },
+      { alarmId: 'al-2', ownerUserId: 'b' },
+      { alarmId: 'al-3', ownerUserId: 'a' },
     ]);
 
     expect(signals.map((signal) => signal.userId).sort()).toEqual(['a', 'b']);
   });
 
-  it('받은 알람과 본인 소유 알람에 서로 다른 신호를 만든다', () => {
-    const signals = buildDowngradeSignals([
-      { alarmId: 'al-1', ownerUserId: 'recipient', isReceived: true },
-      { alarmId: 'al-2', ownerUserId: 'owner', isReceived: false },
-    ]);
+  it('신호는 언제나 계정 단위 voice_access_revoked 하나다 — 알람 id 를 싣지 않는다', () => {
+    const signals = buildDowngradeSignals(
+      [
+        { alarmId: 'al-1', ownerUserId: 'a' },
+        { alarmId: 'al-2', ownerUserId: 'b' },
+      ],
+      ['c'],
+    );
 
-    expect(signals.map((signal) => signal.data.type).sort()).toEqual([
-      'family_alarm',
-      'voice_access_revoked',
+    expect(signals.map((signal) => signal.data)).toEqual([
+      { type: 'voice_access_revoked' },
+      { type: 'voice_access_revoked' },
+      { type: 'voice_access_revoked' },
     ]);
   });
 
@@ -48,13 +50,29 @@ describe('buildDowngradeSignals 팬아웃', () => {
     ]);
   });
 
-  it('본인 소유 알람 주인과 접근권 상실 계정이 겹쳐도 한 번만', () => {
-    const signals = buildDowngradeSignals(
-      [{ alarmId: 'al-1', ownerUserId: 'me', isReceived: false }],
-      ['me'],
-    );
+  it('알람 주인과 접근권 상실 계정이 겹쳐도 한 번만', () => {
+    const signals = buildDowngradeSignals([{ alarmId: 'al-1', ownerUserId: 'me' }], ['me']);
 
     expect(signals).toEqual([{ userId: 'me', data: { type: 'voice_access_revoked' } }]);
+  });
+
+  it('제자리 교체면 그 프로필 id·범위·세대를 싣는다 — 클라가 그 목소리의 직접 입력 알람만 정리한다', () => {
+    const signals = buildDowngradeSignals([], ['owner'], {
+      replacedVoiceProfileId: 'vp-1',
+      replacedGeneration: '2026-10-20 00:00:00',
+    });
+
+    expect(signals).toEqual([
+      {
+        userId: 'owner',
+        data: {
+          type: 'voice_access_revoked',
+          voiceProfileId: 'vp-1',
+          scope: 'custom_messages',
+          invalidatedAt: '2026-10-20 00:00:00',
+        },
+      },
+    ]);
   });
 
   it('대상이 없으면 빈 목록', () => {
@@ -65,7 +83,7 @@ describe('buildDowngradeSignals 팬아웃', () => {
 describe('notifyDowngradedAlarms 플랫폼 라우팅', () => {
   it('iOS 토큰에는 FCM이 아니라 APNs background push를 보낸다', async () => {
     const mockDB = createMockDB();
-    mockDB.pushResult([{ uid: 'recipient', gid: null, token: 'ios-device-token', platform: 'ios' }]);
+    mockDB.pushResult([{ uid: 'owner', gid: null, token: 'ios-device-token', platform: 'ios' }]);
 
     const keys = (await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, [
       'sign',
@@ -86,7 +104,7 @@ describe('notifyDowngradedAlarms 플랫폼 라우팅', () => {
         APPLE_BUNDLE_ID: 'com.alarmtalk.app',
         ENVIRONMENT: 'development',
       },
-      [{ alarmId: 'al-1', ownerUserId: 'recipient', isReceived: true }],
+      [{ alarmId: 'al-1', ownerUserId: 'owner' }],
     );
 
     expect(fetchMock).toHaveBeenCalledOnce();
@@ -96,6 +114,6 @@ describe('notifyDowngradedAlarms 플랫폼 라우팅', () => {
     expect(headers['apns-push-type']).toBe('background');
     const body = JSON.parse(String((init as RequestInit).body));
     expect(body.aps).toEqual({ 'content-available': 1 });
-    expect(body).toMatchObject({ type: 'family_alarm', alarmId: 'al-1' });
+    expect(body).toMatchObject({ type: 'voice_access_revoked' });
   });
 });

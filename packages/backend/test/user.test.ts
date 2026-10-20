@@ -9,30 +9,7 @@ vi.mock('../src/lib/db', () => ({
   getDB: () => mockDB.client,
 }));
 
-// 탈퇴 커밋 뒤 등급 변경 통지(배선만 본다). 나머지는 실제 구현 그대로 둔다 — 아래 DELETE
-// 테스트들이 실제 파기 문장 순서를 확인한다.
-const notifyBillingStateChanged = vi.hoisted(() =>
-  vi.fn<(...args: unknown[]) => Promise<void>>(async () => undefined),
-);
-vi.mock('../src/lib/billing-cancel', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../src/lib/billing-cancel')>()),
-  notifyBillingStateChanged,
-}));
-// 목소리 철회 통지 — 등급 통지와의 **순서**만 본다(코덱스 #841).
-const notifyDowngradedAlarms = vi.hoisted(() =>
-  vi.fn<(...args: unknown[]) => Promise<void>>(async () => undefined),
-);
-vi.mock('../src/lib/fcm', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../src/lib/fcm')>()),
-  notifyDowngradedAlarms,
-}));
-vi.mock('../src/lib/account-deletion', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../src/lib/account-deletion')>();
-  return { ...actual, purgeUserAccount: vi.fn(actual.purgeUserAccount) };
-});
-
 import userRoutes from '../src/routes/user';
-import { purgeUserAccount } from '../src/lib/account-deletion';
 import { CURRENT_POLICY_VERSION } from '../src/lib/consent';
 
 function buildApp(userId = 'user-1') {
@@ -42,32 +19,8 @@ function buildApp(userId = 'user-1') {
   return app;
 }
 
-// 계정 삭제(가명보존)는 PASSWORD_PEPPER 가 필수(미설정 시 fail-closed 500) — 운영과 동일하게
-// pepper 를 세팅한 env 로 요청한다.
-const DELETE_ENV = { PASSWORD_PEPPER: 'test-pepper' } as unknown as AppEnv['Bindings'];
-
-/** 파기 트랜잭션이 대기열에 적은 행 — 커밋 뒤 비우기가 이 행을 읽어 보낸다(실제 DB 는 `pending-plan-notifications.test.ts`). */
-function queuedForDrain(userIds: string[]): void {
-  mockDB.pushResultFor(
-    'SELECT user_id, created_at, attempts FROM pending_plan_notifications',
-    userIds.map((id) => ({ user_id: id, created_at: '2026-10-01 00:00:00.000', attempts: 0 })),
-  );
-  // 잡기(`UPDATE … RETURNING`) — 이 실행이 잡은 행만 보낸다.
-  mockDB.pushResultFor(
-    'UPDATE pending_plan_notifications',
-    userIds.map((id) => ({ user_id: id, created_at: '2026-10-01 00:00:00.000', attempts: 1 })),
-  );
-}
-
-const originalExecute = mockDB.client.execute;
-
 beforeEach(() => {
   mockDB.reset();
-  mockDB.client.execute = originalExecute;
-  notifyBillingStateChanged.mockReset();
-  notifyBillingStateChanged.mockImplementation(async () => undefined);
-  notifyDowngradedAlarms.mockReset();
-  notifyDowngradedAlarms.mockImplementation(async () => undefined);
 });
 
 describe('PATCH /user/me', () => {
@@ -81,26 +34,44 @@ describe('PATCH /user/me', () => {
     expect((await res.json()).error_code).toBe('INVALID_REQUEST');
     expect(mockDB.calls).toHaveLength(0);
   });
-  it('allow_family_alarms=true 성공', async () => {
-    mockDB.pushResult([], 1);
-    const app = buildApp();
-    const res = await app.request(jsonReq('PATCH', '/user/me', { allow_family_alarms: true }));
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.success).toBe(true);
-    expect(body.allow_family_alarms).toBe(true);
-    expect(mockDB.calls[0].sql).toContain('UPDATE users SET allow_family_alarms');
-    expect(mockDB.calls[0].args[0]).toBe(1);
+  // 가족 알람 설정(`allow_family_alarms`·`family_alarm_quiet_*`)은 2026-10-20 에 칸째 없앴다. 옛 앱은 이름·문구 설정을
+  // 저장할 때 그 키를 싣지 않지만(iOS 는 nil 을 빼고 안드로이드 Gson 은 null 을 버린다), 실어 와도 받고 무시한다.
+  const FAMILY_KEYS = [
+    'allow_family_alarms',
+    'family_alarm_quiet_days',
+    'family_alarm_quiet_start',
+    'family_alarm_quiet_end',
+    'family_alarm_quiet_windows',
+  ];
+
+  it('가족 알람 키만 오면 바꿀 것이 없다 — 400 NO_FIELDS_TO_UPDATE, DB 를 보지 않는다', async () => {
+    const res = await buildApp().request(
+      jsonReq('PATCH', '/user/me', {
+        allow_family_alarms: true,
+        family_alarm_quiet_days: [1, 2],
+        family_alarm_quiet_start: '23:00',
+        family_alarm_quiet_end: '07:00',
+        family_alarm_quiet_windows: [],
+      }),
+    );
+    expect(res.status).toBe(400);
+    expect((await res.json()).error_code).toBe('NO_FIELDS_TO_UPDATE');
+    expect(mockDB.calls).toHaveLength(0);
   });
 
-  it('allow_family_alarms=false 성공', async () => {
+  it('이름과 가족 알람 키가 함께 오면 이름만 저장한다 — 이상한 값이어도 400 이 아니고 응답에도 없다', async () => {
     mockDB.pushResult([], 1);
-    const app = buildApp();
-    const res = await app.request(jsonReq('PATCH', '/user/me', { allow_family_alarms: false }));
+    const res = await buildApp().request(
+      jsonReq('PATCH', '/user/me', { name: '새 이름', allow_family_alarms: 'garbage' }),
+    );
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.allow_family_alarms).toBe(false);
-    expect(mockDB.calls[0].args[0]).toBe(0);
+    expect(body).toEqual({ success: true, name: '새 이름', dynamic_prompt_settings: null });
+    for (const key of FAMILY_KEYS) expect(body, key).not.toHaveProperty(key);
+    expect(mockDB.calls).toHaveLength(1);
+    expect(mockDB.calls[0]!.sql).toContain('UPDATE users SET name = ?');
+    expect(mockDB.calls[0]!.sql).not.toMatch(/allow_family|family_alarm/);
+    expect(mockDB.calls[0]!.args).toEqual(['새 이름', 'user-1']);
   });
 
   it('필드 누락 → 400 NO_FIELDS_TO_UPDATE', async () => {
@@ -111,70 +82,12 @@ describe('PATCH /user/me', () => {
     expect(body.error_code).toBe('NO_FIELDS_TO_UPDATE');
   });
 
-  it('잘못된 타입 → 400 INVALID_BOOLEAN', async () => {
-    const app = buildApp();
-    const res = await app.request(jsonReq('PATCH', '/user/me', { allow_family_alarms: 'yes' }));
-    expect(res.status).toBe(400);
-    const body = await res.json();
-    expect(body.error_code).toBe('INVALID_BOOLEAN');
-  });
-
   it('존재하지 않는 사용자 → 404 USER_NOT_FOUND', async () => {
     mockDB.pushResult([], 0);
     const app = buildApp();
-    const res = await app.request(jsonReq('PATCH', '/user/me', { allow_family_alarms: true }));
+    const res = await app.request(jsonReq('PATCH', '/user/me', { name: '새 이름' }));
     expect(res.status).toBe(404);
     expect((await res.json()).error_code).toBe('USER_NOT_FOUND');
-  });
-
-  it('toBoolFlag: 문자열 "1" → true', async () => {
-    mockDB.pushResult([], 1);
-    const app = buildApp();
-    const res = await app.request(jsonReq('PATCH', '/user/me', { allow_family_alarms: '1' }));
-    expect(res.status).toBe(200);
-    expect((await res.json()).allow_family_alarms).toBe(true);
-    expect(mockDB.calls[0].args[0]).toBe(1);
-  });
-
-  it('toBoolFlag: 문자열 "0" → false', async () => {
-    mockDB.pushResult([], 1);
-    const app = buildApp();
-    const res = await app.request(jsonReq('PATCH', '/user/me', { allow_family_alarms: '0' }));
-    expect(res.status).toBe(200);
-    expect((await res.json()).allow_family_alarms).toBe(false);
-    expect(mockDB.calls[0].args[0]).toBe(0);
-  });
-
-  it('toBoolFlag: 문자열 "true" → true', async () => {
-    mockDB.pushResult([], 1);
-    const app = buildApp();
-    const res = await app.request(jsonReq('PATCH', '/user/me', { allow_family_alarms: 'true' }));
-    expect(res.status).toBe(200);
-    expect((await res.json()).allow_family_alarms).toBe(true);
-  });
-
-  it('toBoolFlag: 문자열 "false" → false', async () => {
-    mockDB.pushResult([], 1);
-    const app = buildApp();
-    const res = await app.request(jsonReq('PATCH', '/user/me', { allow_family_alarms: 'false' }));
-    expect(res.status).toBe(200);
-    expect((await res.json()).allow_family_alarms).toBe(false);
-  });
-
-  it('toBoolFlag: 숫자 1 → true', async () => {
-    mockDB.pushResult([], 1);
-    const app = buildApp();
-    const res = await app.request(jsonReq('PATCH', '/user/me', { allow_family_alarms: 1 }));
-    expect(res.status).toBe(200);
-    expect((await res.json()).allow_family_alarms).toBe(true);
-  });
-
-  it('toBoolFlag: 숫자 0 → false', async () => {
-    mockDB.pushResult([], 1);
-    const app = buildApp();
-    const res = await app.request(jsonReq('PATCH', '/user/me', { allow_family_alarms: 0 }));
-    expect(res.status).toBe(200);
-    expect((await res.json()).allow_family_alarms).toBe(false);
   });
 
   it('잘못된 JSON 바디 → 400 NO_FIELDS_TO_UPDATE', async () => {

@@ -54,10 +54,7 @@ describe('sendPaymentFailedPush — 표시용 + 신호용 두 통', () => {
   it('iOS 는 알림 한 통과 **조용한 신호** 한 통을 받는다', async () => {
     pushTargets('owner', [{ token: 'ios-tok', platform: 'ios' }]);
 
-    await sendPaymentFailedPush(mockDB.client as never, ENV, {
-      ownerUserPk: 'owner',
-      memberUserPks: [],
-    });
+    await sendPaymentFailedPush(mockDB.client as never, ENV, { ownerUserPk: 'owner' });
 
     const messages = sendApnsNotifications.mock.calls[0]![0] as Array<Record<string, unknown>>;
     expect(messages).toHaveLength(2);
@@ -76,42 +73,18 @@ describe('sendPaymentFailedPush — 표시용 + 신호용 두 통', () => {
   it('안드로이드도 같은 두 통이다 — 표시용은 소셜 채널로', async () => {
     pushTargets('owner', [{ token: 'and-tok', platform: 'android' }]);
 
-    await sendPaymentFailedPush(mockDB.client as never, ENV, {
-      ownerUserPk: 'owner',
-      memberUserPks: [],
-    });
+    await sendPaymentFailedPush(mockDB.client as never, ENV, { ownerUserPk: 'owner' });
 
     // FCM 전송은 fetch 로 나가므로 payload 를 직접 못 보지만, APNs 로는 아무것도 안 간다.
     expect(sendApnsNotifications).not.toHaveBeenCalled();
   });
 
-  it('ownerUserPk 가 null 이면 소유자에게는 보내지 않는다', async () => {
-    // 크론이 같은 보류를 5분마다 다시 발견하므로, 소유자 플랜이 실제로 바뀐 회차에만
-    // 소유자를 넣는다(`processSubscriptionExpiry` 의 `paymentHolds`).
-    pushTargets('member-1', [{ token: 'member-ios', platform: 'ios' }]);
-
-    await sendPaymentFailedPush(mockDB.client as never, ENV, {
-      ownerUserPk: null,
-      memberUserPks: ['member-1'],
-    });
-
-    const messages = sendApnsNotifications.mock.calls[0]![0] as Array<Record<string, unknown>>;
-    const visible = messages.find((m) => m.silent !== true)!;
-    // 소유자 문구가 아니라 멤버 문구여야 한다.
-    expect(visible.title).toBe('함께 쓰는 이용권이 멈췄어요');
-    // 기기 목록 조회도 멤버 것 한 번뿐이다.
-    expect(mockDB.calls).toHaveLength(1);
-    expect(mockDB.calls[0]!.args).toContain('member-1');
-  });
-
-  it('소유자가 멤버 목록에 섞여 들어와도 두 번 보내지 않는다', async () => {
+  it('구독 주인 한 사람에게만 보낸다 — 기기 목록 조회도 주인 것 한 번이다', async () => {
     pushTargets('owner', [{ token: 'ios-tok', platform: 'ios' }]);
 
-    await sendPaymentFailedPush(mockDB.client as never, ENV, {
-      ownerUserPk: 'owner',
-      memberUserPks: ['owner'],
-    });
+    await sendPaymentFailedPush(mockDB.client as never, ENV, { ownerUserPk: 'owner' });
 
     expect(mockDB.calls).toHaveLength(1);
+    expect(mockDB.calls[0]!.args).toEqual(['owner', 'owner']);
   });
 });

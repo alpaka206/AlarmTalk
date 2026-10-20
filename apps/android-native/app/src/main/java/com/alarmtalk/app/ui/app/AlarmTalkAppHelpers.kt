@@ -14,7 +14,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.Info
-import androidx.compose.material.icons.outlined.People
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Snackbar
@@ -71,20 +70,13 @@ internal object AppRoute {
     const val ConsentHistory = "consents"
     const val LegalDocTypeArg = "legalDocType"
     const val LegalDoc = "legal/{$LegalDocTypeArg}"
-    const val MemberManagement = "members"
     const val OssLicenses = "oss-licenses"
 
     fun legalDoc(type: String): String = "legal/$type"
-    const val FamilyTargetModeArg = "familyTargetMode"
-    const val TargetUserIdArg = "targetUserId"
-    const val AlarmCreate = "alarm/create/{$FamilyTargetModeArg}?$TargetUserIdArg={$TargetUserIdArg}"
+    const val AlarmCreate = "alarm/create"
     const val AlarmIdArg = "alarmId"
     const val AlarmEdit = "alarm/edit/{$AlarmIdArg}"
 
-    fun alarmCreate(familyTargetMode: Boolean, targetUserId: String? = null): String {
-        val base = "alarm/create/$familyTargetMode"
-        return if (targetUserId.isNullOrBlank()) base else "$base?$TargetUserIdArg=${Uri.encode(targetUserId)}"
-    }
     fun alarmEdit(alarmId: String): String = "alarm/edit/${Uri.encode(alarmId)}"
 }
 
@@ -92,7 +84,6 @@ internal val NativeTab.route: String
     get() = when (this) {
         NativeTab.Voices -> "voices"
         NativeTab.Alarms -> "alarms"
-        NativeTab.People -> "people"
         NativeTab.Billing -> "billing"
         NativeTab.Menu -> "menu"
     }
@@ -101,15 +92,15 @@ internal fun String?.toNativeTab(): NativeTab? =
     NativeTab.values().firstOrNull { it.route == this }
 
 internal fun NavHostController.navigateTopLevelTab(tab: NativeTab) {
-    // ⚠ **이용권·코드 등록은 형제 탭이 아니라 하위 화면이다 — 홈까지 팝하지 말 것.**
-    // 하단바가 그리는 탭은 알람·목소리·더보기 셋뿐이고, 나머지 둘은 더보기에서 들어가는
-    // 화면이다(화면 안 뒤로가기가 더보기로 돌아간다). 그런데 이 둘까지 `popUpTo(알람)`
+    // ⚠ **이용권은 형제 탭이 아니라 하위 화면이다 — 홈까지 팝하지 말 것.**
+    // 하단바가 그리는 탭은 알람·목소리·더보기 셋뿐이고, 이용권은 더보기에서 들어가는
+    // 화면이다(화면 안 뒤로가기가 더보기로 돌아간다). 그런데 이용권까지 `popUpTo(알람)`
     // 으로 보내면 백스택이 **[알람, 이용권]** 이 되어 더보기가 통째로 빠진다.
     // 그 상태에서 하드웨어 뒤로가기를 누르면 `NavHost` 자신의 콜백이 스택을 팝해
     // **알람으로** 가버린다 — 화면 안 뒤로가기(더보기)와 **서로 다른 곳으로 간다**
     // (2026-08-11 실기기 확인). 앱 레벨 `BackHandler` 가 더보기로 보내도록 적혀 있지만,
     // `NavHost` 의 콜백이 더 나중에 등록돼 **가려진다** — 그래서 여기 스택 자체를 고친다.
-    if (tab == NativeTab.Billing || tab == NativeTab.People) {
+    if (tab == NativeTab.Billing) {
         navigate(tab.route) {
             launchSingleTop = true
             restoreState = true

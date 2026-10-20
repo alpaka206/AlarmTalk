@@ -705,8 +705,8 @@ final class AudioCacheStore {
     ///  - `text` — 공백을 하나로 접어 비교한다(줄바꿈만 다른 같은 문구를 갈라놓지 않게)
     ///  - `category` — 같은 문구라도 카테고리가 다르면 서버가 다르게 만든다
     ///  - `language` — 번역 여부가 이 값으로 갈린다
-    ///  - `listenerTitle` — 서버가 호칭을 문구 **안에** 병합하고, 공유 목소리는 보는
-    ///    사람마다 호칭이 다르다. 빼면 '엄마 목소리로 아빠 호칭' 이 나온다
+    ///  - `listenerTitle` — 서버가 호칭을 문구 **안에** 병합한다. 빼면 호칭만 다른 문구가
+    ///    같은 음성으로 읽힌다
     nonisolated static func ttsInputKey(
         userId: String,
         profileId: String,

@@ -10,8 +10,10 @@ import {
 
 describe('CLIENT_EXPECTED_REFUSAL_CODES', () => {
   // 열한 개였는데 프로모 코드 갈래 셋(CODE_EXHAUSTED·CODE_INACTIVE·CODE_NOT_IN_WINDOW)이 프로모 코드와 함께
-  // 2026-10-12 에 사라졌다(App Store 3.1.1) — 서버가 더는 내지 않는 코드라 목록에서도 뺐다.
-  it('오너가 정한 여덟 개 그대로다 — 늘리거나 줄이면 두 앱과 스펙도 같이 바꾼다', () => {
+  // 2026-10-12 에 사라졌고(App Store 3.1.1), 초대 코드 갈래 셋(CODE_EXPIRED·CODE_ALREADY_USED·
+  // CODE_ALREADY_REDEEMED_BY_YOU)이 커플·가족 이용권과 함께 2026-10-20 에 사라졌다 — 서버가 더는 내지 않는 코드라
+  // 목록에서도 뺐다. CODE_NOT_FOUND 는 옛 앱의 코드 등록 호환 응답이 계속 낸다.
+  it('오너가 정한 다섯 개 그대로다 — 늘리거나 줄이면 두 앱과 스펙도 같이 바꾼다', () => {
     expect([...CLIENT_EXPECTED_REFUSAL_CODES].sort()).toEqual(
       [
         'AUTH_EMAIL_CODE_INVALID',
@@ -19,9 +21,6 @@ describe('CLIENT_EXPECTED_REFUSAL_CODES', () => {
         'AUTH_EMAIL_TAKEN',
         'AUTH_EMAIL_SOCIAL',
         'CODE_NOT_FOUND',
-        'CODE_EXPIRED',
-        'CODE_ALREADY_USED',
-        'CODE_ALREADY_REDEEMED_BY_YOU',
       ].sort(),
     );
   });

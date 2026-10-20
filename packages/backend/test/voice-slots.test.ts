@@ -28,7 +28,6 @@ async function setupDb() {
       evicted_provider_voice_id TEXT,
       status TEXT DEFAULT 'processing',
       is_system INTEGER DEFAULT 0,
-      is_shared INTEGER DEFAULT 0,
       is_draft INTEGER DEFAULT 0,
       last_used_at TEXT,
       evicted_at TEXT,
@@ -55,7 +54,6 @@ async function insertClone(
   params: {
     id: string;
     voiceId?: string | null;
-    isShared?: boolean;
     isDraft?: boolean;
     isSystem?: boolean;
     lastUsedAt?: string | null;
@@ -64,15 +62,14 @@ async function insertClone(
 ) {
   await db.execute({
     sql: `INSERT INTO voice_profiles
-          (id, user_id, name, elevenlabs_voice_id, status, is_system, is_shared, is_draft, last_used_at, created_at)
-          VALUES (?, ?, ?, ?, 'ready', ?, ?, ?, ?, ?)`,
+          (id, user_id, name, elevenlabs_voice_id, status, is_system, is_draft, last_used_at, created_at)
+          VALUES (?, ?, ?, ?, 'ready', ?, ?, ?, ?)`,
     args: [
       params.id,
       `user-${params.id}`,
       params.id,
       params.voiceId === undefined ? `el-${params.id}` : params.voiceId,
       params.isSystem ? 1 : 0,
-      params.isShared ? 1 : 0,
       params.isDraft ? 1 : 0,
       params.lastUsedAt ?? null,
       params.createdAt ?? '2026-07-01 00:00:00',
@@ -82,12 +79,12 @@ async function insertClone(
 
 async function fillToCap(
   db: Awaited<ReturnType<typeof setupDb>>,
-  opts: { shared?: boolean } = {},
+  opts: { draft?: boolean } = {},
 ) {
   for (let i = 0; i < MAX_PROVIDER_CLONE_VOICES; i++) {
     await insertClone(db, {
       id: `v${String(i).padStart(3, '0')}`,
-      isShared: opts.shared ?? false,
+      isDraft: opts.draft ?? false,
       lastUsedAt: `2026-07-10 00:${String(i % 60).padStart(2, '0')}:00`,
     });
   }
@@ -106,15 +103,15 @@ describe('hasCloneSlotCapacity', () => {
     expect(await hasCloneSlotCapacity(db)).toBe(true);
   });
 
-  it('returns false at cap when every candidate is protected (all shared)', async () => {
+  it('returns false at cap when every candidate is protected (all drafts)', async () => {
     const db = await setupDb();
-    await fillToCap(db, { shared: true });
+    await fillToCap(db, { draft: true });
     expect(await hasCloneSlotCapacity(db)).toBe(false);
   });
 
   it('ignores system voices and evicted (voice_id NULL) rows in the count', async () => {
     const db = await setupDb();
-    await fillToCap(db, { shared: true });
+    await fillToCap(db, { draft: true });
     // 시스템 보이스와 이미 evict 된 행은 활성 카운트에 안 들어간다 → 여전히 꽉 참(false) 판정 유지.
     await insertClone(db, { id: 'sys', isSystem: true });
     await insertClone(db, { id: 'evicted', voiceId: null });
@@ -170,9 +167,9 @@ describe('evictLruClonesIfOverCap', () => {
     expect(victim.elevenlabs_voice_id).toBeNull();
   });
 
-  it('never evicts shared/draft/system rows even when over cap', async () => {
+  it('never evicts draft/system rows even when over cap', async () => {
     const db = await setupDb();
-    await fillToCap(db, { shared: true });
+    await fillToCap(db, { draft: true });
     await insertClone(db, { id: 'newbie' });
     const result = await evictLruClonesIfOverCap(db, 'newbie');
     // 후보가 전부 보호 대상 → evicted 0 + shortfall 보고. 호출자(등록 완료 tx/재클론 tx)는
@@ -205,7 +202,6 @@ describe('evictLruClonesIfOverCap', () => {
         elevenlabs_voice_id TEXT,
         status TEXT DEFAULT 'processing',
         is_system INTEGER DEFAULT 0,
-        is_shared INTEGER DEFAULT 0,
         is_draft INTEGER DEFAULT 0,
         last_used_at TEXT,
         evicted_at TEXT,

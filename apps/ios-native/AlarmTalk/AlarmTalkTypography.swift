@@ -29,7 +29,6 @@ struct AlarmTalkTypography {
 
     let labelLarge: Font
     let labelMedium: Font
-    let labelSmall: Font
 }
 
 enum PretendardWeight: String {
@@ -131,7 +130,6 @@ extension AlarmTalkTypography {
         bodySmall: .pretendard(.regular, size: 12, relativeTo: .caption),
 
         labelLarge: .pretendard(.medium, size: 14, relativeTo: .subheadline),
-        labelMedium: .pretendard(.medium, size: 12, relativeTo: .caption),
-        labelSmall: .pretendard(.medium, size: 11, relativeTo: .caption2)
+        labelMedium: .pretendard(.medium, size: 12, relativeTo: .caption)
     )
 }

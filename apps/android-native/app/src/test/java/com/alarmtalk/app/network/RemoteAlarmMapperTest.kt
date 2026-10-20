@@ -76,8 +76,8 @@ class RemoteAlarmMapperTest {
         assertTrue(body.has("message_id") && body.get("message_id").isJsonNull)
         assertTrue(body.has("bucket_id") && body.get("bucket_id").isJsonNull)
         assertEquals("system-voice", body.get("voice_profile_id").asString)
-        // 나머지 빈 값은 예전처럼 빠진다 — 지우는 것은 이 두 키뿐이다.
-        assertFalse(body.has("target_user_id"))
+        // 나머지 빈 값은 예전처럼 빠진다 — null 로 싣는 것은 이 두 키뿐이다.
+        assertEquals(setOf("message_id", "bucket_id"), body.entrySet().filter { it.value.isJsonNull }.map { it.key }.toSet())
         assertFalse("본문에 실리지 않는 표시", body.has("clearsMissingVoiceReferences"))
     }
 

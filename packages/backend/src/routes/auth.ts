@@ -23,7 +23,6 @@ import {
 import { verifyGoogleIdToken } from '../lib/oauth';
 import { verifyAppleIdToken } from '../lib/apple-oauth';
 import { appleSignInConfig, exchangeAppleAuthorizationCode } from '../lib/apple-revoke';
-import { familyAlarmSettingsFromRow } from '../lib/family-alarm-settings';
 import { cancelPendingDeletionOnSignIn } from '../lib/account-deletion';
 import {
   computedUserPlan,
@@ -543,12 +542,8 @@ auth.post('/register', async (c) => {
     // google_id = users.id 를 박아 넣어(외부 식별자 공간 오염) 나중에 같은 이메일로
     // 구글 로그인하면 그 값이 덮어써지며 식별자가 갈라졌다. 이제 NULL 로 둔다.
     await db.execute({
-      // ⚠ **`family_alarm_quiet_windows` 를 반드시 명시한다.** 생략하면 SQLite 가 컬럼
-      // DEFAULT(`평일 09:00-18:30`)를 박아, 가입만 한 사람에게 아무도 설정한 적 없는
-      // 방해금지 시간이 생긴다(2026-08-08 규칙). 컬럼 DEFAULT 는 SQLite 에서 바꿀 수 없어
-      // 여기서 덮는 것이 유일한 방법이다 — INSERT 를 새로 만들 때도 빠뜨리지 말 것.
-      sql: `INSERT INTO users (id, email, google_id, password_hash, name, family_alarm_quiet_windows)
-            VALUES (?, ?, NULL, ?, ?, '[]')`,
+      sql: `INSERT INTO users (id, email, google_id, password_hash, name)
+            VALUES (?, ?, NULL, ?, ?)`,
       args: [id, normalizedEmail, passwordHash, name],
     });
 
@@ -575,14 +570,6 @@ auth.post('/register', async (c) => {
           plan: computedUserPlan('free' as const, promo),
           // 방금 만든 계정이라 구독 행이 없다 — 끝나면 종료 전환 대상이다.
           personal_promo: personalPromoField('free', promo, { hasActiveSubscriptionRow: false }),
-          allow_family_alarms: false,
-          // ⚠ **가입 시 방해금지 시간을 만들어 주지 말 것**(2026-08-08 변경).
-          // 예전에는 평일 09:00-18:30 을 실어 보냈다. 그래서 가입만 하면 아무도 설정한
-          // 적 없는 시간대에 가족 알람이 막혔고, 받는 사람은 자기가 막아 둔 줄 몰랐다.
-          family_alarm_quiet_days: [],
-          family_alarm_quiet_start: '09:00',
-          family_alarm_quiet_end: '18:30',
-          family_alarm_quiet_windows: [],
           dynamic_prompt_settings: EMPTY_DYNAMIC_PROMPT_SETTINGS,
         },
       },
@@ -628,9 +615,7 @@ auth.post('/login', async (c) => {
   try {
     const result = await db.execute({
       sql: `SELECT id, google_id, email, password_hash, name, plan, token_epoch,
-                   deletion_status, deletion_requested_at,
-                   allow_family_alarms,
-                   family_alarm_quiet_windows, dynamic_prompt_settings_json
+                   deletion_status, deletion_requested_at, dynamic_prompt_settings_json
             FROM users WHERE email = ?`,
       args: [normalizedEmail],
     });
@@ -650,7 +635,7 @@ auth.post('/login', async (c) => {
       email: string;
       password_hash: string | null;
       name: string | null;
-      plan: 'free' | 'plus' | 'family' | null;
+      plan: 'free' | 'plus' | null;
       token_epoch: number | string | null;
       deletion_status: string | null;
       deletion_requested_at: string | null;
@@ -682,9 +667,6 @@ auth.post('/login', async (c) => {
       c.env.JWT_SECRET,
     );
 
-    const familyAlarmSettings = familyAlarmSettingsFromRow(
-      row as unknown as Record<string, unknown>,
-    );
     const dynamicPromptSettings = dynamicPromptSettingsFromRow(
       row as unknown as Record<string, unknown>,
     );
@@ -717,11 +699,6 @@ auth.post('/login', async (c) => {
         // 계산값(기간 한정 개인 플랜) — 원시 plan 은 DB 에 그대로다.
         plan: computedUserPlan(row.plan, promo) ?? 'free',
         personal_promo: personalPromo,
-        allow_family_alarms: familyAlarmSettings.allowFamilyAlarms,
-        family_alarm_quiet_days: familyAlarmSettings.quietDays,
-        family_alarm_quiet_start: familyAlarmSettings.quietStart,
-        family_alarm_quiet_end: familyAlarmSettings.quietEnd,
-        family_alarm_quiet_windows: familyAlarmSettings.quietWindows,
         dynamic_prompt_settings: dynamicPromptSettings,
       },
     });
@@ -761,9 +738,7 @@ auth.post('/google', async (c) => {
 
     const existing = await db.execute({
       sql: `SELECT id, google_id, email, name, plan, token_epoch,
-                   deletion_status, deletion_requested_at,
-                   allow_family_alarms,
-                   family_alarm_quiet_windows, dynamic_prompt_settings_json
+                   deletion_status, deletion_requested_at, dynamic_prompt_settings_json
             FROM users
             WHERE google_id = ? OR email = ?
             LIMIT 1`,
@@ -773,7 +748,7 @@ auth.post('/google', async (c) => {
     let userId: string;
     // 원시 `users.plan` — 응답에는 계산값을 싣는다(아래). `null` 은 계산에서도 `null` 이라
     // 개인으로 올리지 않고, 응답에서만 예전처럼 'free' 로 읽는다.
-    let rawPlan: 'free' | 'plus' | 'family' | null;
+    let rawPlan: 'free' | 'plus' | null;
     let tokenEpoch = 0;
     // 로그인 첫 조회가 본 탈퇴 신청(유예가 아니면 null) — 그 신청만 철회한다(`cancelPendingDeletionOnSignIn`).
     let observedDeletionRequestedAt: string | null = null;
@@ -788,7 +763,7 @@ auth.post('/google', async (c) => {
           google_id: string | null;
           email: string;
           name: string | null;
-          plan: 'free' | 'plus' | 'family' | null;
+          plan: 'free' | 'plus' | null;
           token_epoch: number | string | null;
         } & Record<string, unknown>
       >(existing.rows[0]!);
@@ -821,12 +796,8 @@ auth.post('/google', async (c) => {
       userId = crypto.randomUUID();
       rawPlan = 'free';
       await db.execute({
-        // ⚠ **`family_alarm_quiet_windows` 를 반드시 명시한다.** 생략하면 SQLite 가 컬럼
-        // DEFAULT(`평일 09:00-18:30`)를 박아, 가입만 한 사람에게 아무도 설정한 적 없는
-        // 방해금지 시간이 생긴다(2026-08-08 규칙). 컬럼 DEFAULT 는 SQLite 에서 바꿀 수 없어
-        // 여기서 덮는 것이 유일한 방법이다 — INSERT 를 새로 만들 때도 빠뜨리지 말 것.
-        sql: `INSERT INTO users (id, google_id, email, name, family_alarm_quiet_windows)
-              VALUES (?, ?, ?, ?, '[]')`,
+        sql: `INSERT INTO users (id, google_id, email, name)
+              VALUES (?, ?, ?, ?)`,
         args: [userId, googleId, email, name || null],
       });
     }
@@ -835,7 +806,7 @@ auth.post('/google', async (c) => {
     // 먼저 가입한 계정이 나중에 같은 이메일로 구글 로그인하면(위 email 매칭 분기) google_id
     // 만 덮어써지고 id 는 UUID 로 남아 sub != users.id 로 갈라졌다. 그 순간부터
     // `WHERE google_id = ?` 로 조회하는 라우트와 users.id 로 조회하는 라우트가 서로 다른
-    // 사용자를 보게 되어(구독·가족그룹·코드등록이 조용히 0행) 데이터가 반으로 쪼개졌다.
+    // 사용자를 보게 되어(구독 조회 등이 조용히 0행) 데이터가 반으로 쪼개졌다.
     const token = await signAppJwt(
       // 유예 계정이면 아래 철회가 세대를 올린다 — 올린 세대로 서명한다(`cancelPendingDeletionOnSignIn`).
       { sub: userId, email, name: effectiveName || undefined, epoch: tokenEpoch + (observedDeletionRequestedAt ? 1 : 0) },
@@ -843,21 +814,10 @@ auth.post('/google', async (c) => {
     );
 
     const fresh = await db.execute({
-      sql: `SELECT allow_family_alarms,
-                   family_alarm_quiet_windows, dynamic_prompt_settings_json
+      sql: `SELECT dynamic_prompt_settings_json
             FROM users WHERE id = ? OR google_id = ? LIMIT 1`,
       args: [userId, googleId],
     });
-    const familyAlarmSettings =
-      fresh.rows.length > 0
-        ? familyAlarmSettingsFromRow(fresh.rows[0] as Record<string, unknown>)
-        : {
-            allowFamilyAlarms: false,
-            quietDays: [1, 2, 3, 4, 5],
-            quietStart: '09:00',
-            quietEnd: '18:30',
-            quietWindows: [{ days: [1, 2, 3, 4, 5], start: '09:00', end: '18:30' }],
-          };
     const dynamicPromptSettings =
       fresh.rows.length > 0
         ? dynamicPromptSettingsFromRow(fresh.rows[0] as Record<string, unknown>)
@@ -892,11 +852,6 @@ auth.post('/google', async (c) => {
         // 계산값(기간 한정 개인 플랜) — 원시 plan 은 DB 에 그대로다.
         plan: computedUserPlan(rawPlan, promo) ?? 'free',
         personal_promo: personalPromo,
-        allow_family_alarms: familyAlarmSettings.allowFamilyAlarms,
-        family_alarm_quiet_days: familyAlarmSettings.quietDays,
-        family_alarm_quiet_start: familyAlarmSettings.quietStart,
-        family_alarm_quiet_end: familyAlarmSettings.quietEnd,
-        family_alarm_quiet_windows: familyAlarmSettings.quietWindows,
         dynamic_prompt_settings: dynamicPromptSettings,
       },
     });
@@ -971,9 +926,7 @@ auth.post('/apple', async (c) => {
 
     const existing = await db.execute({
       sql: `SELECT id, apple_id, email, name, plan, token_epoch,
-                   deletion_status, deletion_requested_at,
-                   allow_family_alarms,
-                   family_alarm_quiet_windows, dynamic_prompt_settings_json
+                   deletion_status, deletion_requested_at, dynamic_prompt_settings_json
             FROM users
             WHERE apple_id = ? OR email = ?
             LIMIT 1`,
@@ -983,7 +936,7 @@ auth.post('/apple', async (c) => {
     let userId: string;
     // 원시 `users.plan` — 응답에는 계산값을 싣는다(아래). `null` 은 계산에서도 `null` 이라
     // 개인으로 올리지 않고, 응답에서만 예전처럼 'free' 로 읽는다.
-    let rawPlan: 'free' | 'plus' | 'family' | null;
+    let rawPlan: 'free' | 'plus' | null;
     let tokenEpoch = 0;
     // 로그인 첫 조회가 본 탈퇴 신청(유예가 아니면 null) — 그 신청만 철회한다(`cancelPendingDeletionOnSignIn`).
     let observedDeletionRequestedAt: string | null = null;
@@ -1001,7 +954,7 @@ auth.post('/apple', async (c) => {
           apple_id: string | null;
           email: string;
           name: string | null;
-          plan: 'free' | 'plus' | 'family' | null;
+          plan: 'free' | 'plus' | null;
           token_epoch: number | string | null;
         } & Record<string, unknown>
       >(existing.rows[0]!);
@@ -1031,10 +984,8 @@ auth.post('/apple', async (c) => {
       userId = crypto.randomUUID();
       rawPlan = 'free';
       await db.execute({
-        // ⚠ 위 두 INSERT 와 같은 이유로 `family_alarm_quiet_windows` 를 명시한다 —
-        // 생략하면 컬럼 DEFAULT(평일 09:00-18:30)가 박힌다.
-        sql: `INSERT INTO users (id, apple_id, email, name, family_alarm_quiet_windows)
-              VALUES (?, ?, ?, ?, '[]')`,
+        sql: `INSERT INTO users (id, apple_id, email, name)
+              VALUES (?, ?, ?, ?)`,
         args: [userId, appleId, email, name || null],
       });
     }
@@ -1081,21 +1032,10 @@ auth.post('/apple', async (c) => {
     );
 
     const fresh = await db.execute({
-      sql: `SELECT allow_family_alarms,
-                   family_alarm_quiet_windows, dynamic_prompt_settings_json
+      sql: `SELECT dynamic_prompt_settings_json
             FROM users WHERE id = ? LIMIT 1`,
       args: [userId],
     });
-    const familyAlarmSettings =
-      fresh.rows.length > 0
-        ? familyAlarmSettingsFromRow(fresh.rows[0] as Record<string, unknown>)
-        : {
-            allowFamilyAlarms: false,
-            quietDays: [1, 2, 3, 4, 5],
-            quietStart: '09:00',
-            quietEnd: '18:30',
-            quietWindows: [{ days: [1, 2, 3, 4, 5], start: '09:00', end: '18:30' }],
-          };
     const dynamicPromptSettings =
       fresh.rows.length > 0
         ? dynamicPromptSettingsFromRow(fresh.rows[0] as Record<string, unknown>)
@@ -1130,11 +1070,6 @@ auth.post('/apple', async (c) => {
         // 계산값(기간 한정 개인 플랜) — 원시 plan 은 DB 에 그대로다.
         plan: computedUserPlan(rawPlan, promo) ?? 'free',
         personal_promo: personalPromo,
-        allow_family_alarms: familyAlarmSettings.allowFamilyAlarms,
-        family_alarm_quiet_days: familyAlarmSettings.quietDays,
-        family_alarm_quiet_start: familyAlarmSettings.quietStart,
-        family_alarm_quiet_end: familyAlarmSettings.quietEnd,
-        family_alarm_quiet_windows: familyAlarmSettings.quietWindows,
         dynamic_prompt_settings: dynamicPromptSettings,
       },
     });
@@ -1183,9 +1118,7 @@ auth.get('/me', async (c) => {
   try {
     const db = getDB(c.env);
     const result = await db.execute({
-      sql: `SELECT id, email, name, plan, token_epoch, deletion_status,
-                   allow_family_alarms,
-                   family_alarm_quiet_windows, dynamic_prompt_settings_json
+      sql: `SELECT id, email, name, plan, token_epoch, deletion_status, dynamic_prompt_settings_json
             FROM users WHERE id = ? OR google_id = ? LIMIT 1`,
       args: [payload.sub, payload.sub],
     });
@@ -1197,7 +1130,7 @@ auth.get('/me', async (c) => {
         id: string;
         email: string;
         name: string | null;
-        plan: 'free' | 'plus' | 'family' | null;
+        plan: 'free' | 'plus' | null;
         token_epoch: number | string | null;
         deletion_status: string | null;
       } & Record<string, unknown>
@@ -1216,7 +1149,6 @@ auth.get('/me', async (c) => {
       }
       return c.json(errorBody('TOKEN_REVOKED', 'Token has been revoked'), 401);
     }
-    const familyAlarmSettings = familyAlarmSettingsFromRow(row);
     const dynamicPromptSettings = dynamicPromptSettingsFromRow(row);
     // 세션을 굴린다(rolling refresh). 여기까지 온 토큰은 서명·만료·폐기 검사를 모두
     // 통과했으므로, 같은 수명의 새 토큰을 발급해 앱이 갈아 끼우게 한다. 앱을 열 때마다
@@ -1252,11 +1184,6 @@ auth.get('/me', async (c) => {
         personal_promo: personalPromo,
         // 탈퇴 유예 상태 — 클라가 복구 전용 화면 게이팅에 쓴다(누락 시 active 로 오인해 진입).
         deletion_status: (row.deletion_status as string | null) ?? 'active',
-        allow_family_alarms: familyAlarmSettings.allowFamilyAlarms,
-        family_alarm_quiet_days: familyAlarmSettings.quietDays,
-        family_alarm_quiet_start: familyAlarmSettings.quietStart,
-        family_alarm_quiet_end: familyAlarmSettings.quietEnd,
-        family_alarm_quiet_windows: familyAlarmSettings.quietWindows,
         dynamic_prompt_settings: dynamicPromptSettings,
       },
     });

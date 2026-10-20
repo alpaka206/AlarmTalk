@@ -67,13 +67,6 @@ struct VoiceRelationshipSelection: Equatable {
     }
 }
 
-func parseVoiceRelationshipLabel(_ raw: String?) -> VoiceRelationshipSelection {
-    let trimmed = raw?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-    guard !trimmed.isEmpty else { return VoiceRelationshipSelection() }
-    // 저장 계약에는 선택 출처가 없으므로 사용자 입력을 프리셋으로 재분류하지 않는다.
-    return VoiceRelationshipSelection(preset: .custom, customLabel: trimmed)
-}
-
 struct VoiceRelationshipInputField: View {
     @Binding var selection: VoiceRelationshipSelection
 
@@ -142,40 +135,6 @@ struct VoiceRelationshipInputField: View {
                     .font(.caption2.weight(.semibold))
                     .foregroundStyle(AlarmTalkTheme.error)
             }
-        }
-    }
-}
-
-struct VoiceListenerPreviewCard: View {
-    let listenerTitle: String
-    let relationshipSelection: VoiceRelationshipSelection
-
-    private var trimmedListener: String {
-        listenerTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    private var trimmedRelationship: String {
-        relationshipSelection.localizedDisplayLabel()
-    }
-
-    var body: some View {
-        if !trimmedListener.isEmpty {
-            VStack(alignment: .leading, spacing: 6) {
-                Text(String(localized: "이 목소리는 이렇게 불러줘요"))
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(AlarmTalkTheme.primary)
-                Text(String(localized: "\"\(trimmedListener), 일어날 시간이에요\""))
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(AlarmTalkTheme.text)
-                if !trimmedRelationship.isEmpty {
-                    Text(String(localized: "관계 · \(trimmedRelationship)"))
-                        .font(.caption)
-                        .foregroundStyle(AlarmTalkTheme.textSecondary)
-                }
-            }
-            .padding(12)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(AlarmTalkTheme.primary.opacity(0.10), in: RoundedRectangle(cornerRadius: AlarmTalkTheme.Shape.extraSmall))
         }
     }
 }

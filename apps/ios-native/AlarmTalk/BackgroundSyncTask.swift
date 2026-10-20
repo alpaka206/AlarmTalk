@@ -56,7 +56,7 @@ extension BGTask: BackgroundRefreshTaskHandle {}
 // 라이프사이클:
 //   - App init 시점에 `register(...)` 한 번 호출 (BGTaskScheduler 의 등록은 launch 단계).
 //   - background 진입 / 포그라운드 진입 / 로그인 직후에 `scheduleNext()` 로 재예약.
-//   - 시스템이 task 를 깨우면 `runAndSchedule(task:)` 가 push -> pull 순서로 실행.
+//   - 시스템이 task 를 깨우면 `runAndSchedule(task:)` 가 한 사이클을 실행한다.
 @MainActor
 final class BackgroundSyncTask {
 
@@ -75,7 +75,7 @@ final class BackgroundSyncTask {
     /// Android WorkManager 의 15 분 주기와 동일.
     static let refreshInterval: TimeInterval = 15 * 60
 
-    /// pull 이 should-retry 결과를 냈을 때 쓰는 더 짧은 재예약 간격.
+    /// push 가 should-retry 결과를 냈을 때 쓰는 더 짧은 재예약 간격.
     /// Android WorkManager 는 Result.retry() 시 지수 백오프(기본 10s 부터)를 쓰지만,
     /// BGAppRefreshTask 에는 동등 API 가 없다. 표준 주기(15분)보다 빠른 재시도를
     /// 유도하는 근사값으로, 시스템 최소 허용 간격을 고려해 보수적으로 잡는다.
@@ -85,7 +85,6 @@ final class BackgroundSyncTask {
     /// 그보다 짧게 잡아 강제 종료를 방지한다.
     private static let executionTimeout: TimeInterval = 25
 
-    private let pull: RemoteAlarmPullSync
     private let push: RemoteAlarmPushSync
     private let socialFeatures: SocialFeatureViewModel
     /// PR3: 백그라운드 사이클에서 `.fixed` 공휴일off one-shot 을 proactive 재무장하기 위한
@@ -96,14 +95,12 @@ final class BackgroundSyncTask {
     private weak var voiceStudio: VoiceStudioViewModel?
 
     init(
-        pull: RemoteAlarmPullSync,
         push: RemoteAlarmPushSync,
         socialFeatures: SocialFeatureViewModel,
         store: LocalAlarmStore? = nil,
         alarmKit: AlarmKitViewModel? = nil,
         voiceStudio: VoiceStudioViewModel? = nil
     ) {
-        self.pull = pull
         self.push = push
         self.socialFeatures = socialFeatures
         self.store = store
@@ -141,7 +138,7 @@ final class BackgroundSyncTask {
         // 은 헤더 문서 그대로 **기본 백그라운드 큐**다 — Swift 6 이 클로저 진입부에 심는
         // 동적 격리 검사가 거기서 즉시 실패한다(`dispatch_assert_queue(main)`).
         // 잃은 것은 크래시 한 줄이 아니라 **백그라운드 사이클 전체**였다: 토큰 롤링 갱신·못
-        // 끊은 예약 회수·목소리 접근권 재확인·push/pull·날씨 variant·리컨사일러가 한 번도
+        // 끊은 예약 회수·목소리 접근권 재확인·알람 push·날씨 variant·리컨사일러가 한 번도
         // 돈 적이 없다(`runAndSchedule`).
         // `@Sendable` 클로저는 격리를 물려받지 않으므로 그 검사가 아예 심기지 않는다.
         // 메인 액터로의 이동은 아래 `handleLaunch` 가 **명시적으로** 한다.
@@ -179,7 +176,6 @@ final class BackgroundSyncTask {
     /// 실제 작업 실행기를 꽂는다. 의존성이 준비된 뒤(앱 화면 진입) 한 번 부른다.
     /// 등록 자체는 `registerLaunchHandler` 가 launch 중에 이미 끝냈다.
     static func register(
-        pull: RemoteAlarmPullSync,
         push: RemoteAlarmPushSync,
         socialFeatures: SocialFeatureViewModel,
         store: LocalAlarmStore? = nil,
@@ -196,7 +192,6 @@ final class BackgroundSyncTask {
             // 창 자체를 안 만드는 편이 낫다.
             let work = Task { @MainActor in
                 let runner = BackgroundSyncTask(
-                    pull: pull,
                     push: push,
                     socialFeatures: socialFeatures,
                     store: store,
@@ -229,7 +224,7 @@ final class BackgroundSyncTask {
     /// 동작 순서:
     ///   1. scheduleNext: 어떤 결과든 다음 사이클을 먼저 예약 (Android `ExistingPeriodicWorkPolicy.KEEP` 와 동등)
     ///   2. expirationHandler 설치: 시스템이 cancel 하면 setTaskCompleted(false)
-    ///   3. push -> pull 순서로 실행 (로컬 변경을 먼저 서버에 올린 뒤 최신 상태를 내려받기)
+    ///   3. 토큰 갱신 → 못 끊은 예약 회수 → 목소리 접근권 → 알람 push → 날씨 → 예약 정합화 → 복구 → 사용 기록
     ///   4. setTaskCompleted: 성공/실패 모두 호출
     func runAndSchedule(task: any BackgroundRefreshTaskHandle) async {
         scheduleNext()
@@ -278,8 +273,8 @@ final class BackgroundSyncTask {
             await Self.renewSessionTokenIfNeeded()
 
             // ⚠ **목소리 접근권 재확인은 알람 동기화와 묶지 않는다.**
-            // 이 주기가 목소리 쪽의 **유일한** 그물인데, 아래 push/pull 뒤에 두면
-            // `/alarms` 만 일시적으로 실패해도(그건 throw 다) 여기까지 오지 못한다 —
+            // 이 주기가 목소리 쪽의 **유일한** 그물인데, 아래 push 뒤에 두면
+            // `/alarm` 만 일시적으로 실패해도(그건 throw 다) 여기까지 오지 못한다 —
             // 목소리 엔드포인트는 멀쩡한데 철회된 오디오가 계속 예약된 채 남는다
             // (2026-08-18 Codex #697 P1). 그래서 **먼저, 그리고 독립적으로** 돌린다.
             //
@@ -292,9 +287,9 @@ final class BackgroundSyncTask {
             // 회차에는 그 훅 안의 판정이 스스로 물러선다(오강등 > 미강등).
             // `refresh` 는 던지지 않는다(내부에서 삼킨다) — try 밖에 둬도 안전하다.
             // ⚠ **못 끊은 예약 회수도 동기화와 묶지 않는다**(Codex #703 P1).
-            // 위 목소리 갱신과 **같은 이유**다 — push/pull 뒤에 두면 `/alarms` 하나만
+            // 위 목소리 갱신과 **같은 이유**다 — push 뒤에 두면 `/alarm` 하나만
             // 일시적으로 실패해도(그건 throw 다) 여기까지 오지 못하고, 그 사이 회수된
-            // 목소리나 밀어낸 알람의 예약이 **그대로 울린다.** 게다가 이 일은 통째로
+            // 목소리의 예약이 **그대로 울린다.** 게다가 이 일은 통째로
             // 로컬이라 네트워크 성패와 아무 상관이 없다. 그래서 **먼저, 독립적으로** 돌린다.
             if let store, let alarmKit {
                 await alarmKit.retryPendingCancellations(store: store)
@@ -307,8 +302,12 @@ final class BackgroundSyncTask {
                 await voiceStudio?.refresh(session: voiceSession, force: true)
             }
 
-            _ = try await push.runOnce()
-            let pullResult = try await pull.runOnce()
+            // ⚠ **알람이 디스크에서 올라온 뒤에 올린다.** 로드 전이면 올릴 행이 없어 빈손으로 끝나는데,
+            // 그걸 성공으로 세면 이 회차의 일을 하지 않고 끝낸 셈이다 — 못 기다렸으면 실패로 세어 재시도한다.
+            if let store { await store.waitUntilLoadedFromDisk() }
+            let storeReady = store?.hasLoadedFromDisk ?? true
+            let pushResult = try await push.runOnce()
+            let pushCompleted = storeReady && pushResult.failed == 0
             if let session = KeychainStore.readSession() {
                 // ⚠ 여기서 랜덤 문구를 **다시 합성하던** 자리다(2026-08-18 제거).
                 // 알람 음성은 프리셋 + 직접 입력 둘뿐이라 매일 지어낼 문장이 없다.
@@ -337,20 +336,18 @@ final class BackgroundSyncTask {
                     ownerUserId: KeychainStore.readSession()?.user.id
                 )
             }
-            completion.recordEssentialResult(success: pullResult.failed == 0)
+            completion.recordEssentialResult(success: pushCompleted)
             try Task.checkCancellation()
             await UsageEventUploader.shared.flush(session: KeychainStore.readSession(), maxBatches: 1)
             try Task.checkCancellation()
             timeoutTask.cancel()
 
-            // Android `RemoteAlarmSyncWorker.doWork` 의 retry 조건과 동일:
-            // 하나라도 전달 미완료면 재시도한다. 로컬 행·음원까지 저장됐어도 OS 예약이
-            // 실패한 알람은 5분 리드타임 안에 다시 걸어야 해서 부분 성공도 미룰 수 없다.
-            // WorkManager 는 이때 Result.retry() 로
+            // 하나라도 못 올린 알람이 있으면(저장소를 못 읽었으면 그것도) 재시도한다 — 그 알람은
+            // 서버에 없거나 옛 내용이라, 다른 기기·재설치에서 그 변경을 잃는다. WorkManager 는 이때 Result.retry() 로
             // 지수 백오프 재실행하지만, BGAppRefreshTask 에는 동등한 exponential backoff
             // API 가 없다. setTaskCompleted(success:false) + 더 짧은 earliestBeginDate
             // 로 재예약하는 것이 가장 근접한 근사다(정확한 지수 백오프는 재현 불가).
-            if pullResult.failed > 0 {
+            if !pushCompleted {
                 scheduleNext(earliestBeginDate: Date(timeIntervalSinceNow: Self.retryInterval))
                 completion.finish(success: false)
             } else {
@@ -359,7 +356,7 @@ final class BackgroundSyncTask {
         } catch {
             timeoutTask.cancel()
             // Android `RemoteAlarmSyncWorker` 의 외부 getOrElse { Result.retry() } 와 동일:
-            // push/pull 이 예외를 던지면 표준 주기 대신 더 짧은 주기로 재시도를 유도한다.
+            // push 가 예외를 던지면 표준 주기 대신 더 짧은 주기로 재시도를 유도한다.
             scheduleNext(earliestBeginDate: Date(timeIntervalSinceNow: Self.retryInterval))
             completion.finish()
         }
@@ -368,7 +365,7 @@ final class BackgroundSyncTask {
     /// 만료가 가까울 때만 `GET /auth/me` 로 토큰을 굴려 Keychain 에 다시 넣는다.
     ///
     /// ⚠ **실패해도 던지지 않는다.** 갱신은 알람 동기화의 전제 조건이 아니다 — 여기서
-    /// 던지면 네트워크가 잠깐 나빴다는 이유로 push/pull 까지 통째로 재시도로 밀려난다.
+    /// 던지면 네트워크가 잠깐 나빴다는 이유로 알람 push 까지 통째로 재시도로 밀려난다.
     ///
     /// ⚠ **저장 직전에 Keychain 을 다시 읽는다.** 네트워크 왕복 중 로그아웃·계정 전환이
     /// 끼면 비운 저장소에 끝난 세션을 되쓰게 된다. 사용자 id 가 다르면 버린다
@@ -432,8 +429,8 @@ final class BackgroundSyncTask {
             // ⚠ **취소는 이미 끝났다 — 여기서 그냥 넘어가면 pending 이 0 이 된다**
             //   (코덱스 #730 3차). 위 cancel-then-submit 은 "submit 이 즉시 뒤따르므로
             //   창이 없다" 를 전제로 하는데, 그 submit 이 던지면 **멀쩡히 예약돼 있던
-            //   15분 요청까지 사라진다.** 가족 알람 푸시를 놓쳤을 때의 폴백이 주기 pull
-            //   하나뿐이라, 그게 없어지면 다음 전경 진입까지 받은 알람이 안 들어온다.
+            //   15분 요청까지 사라진다.** 토큰 갱신·목소리 접근권 재확인·못 올린 알람의 그물이
+            //   이 주기 하나뿐이라, 그게 없어지면 다음 전경 진입까지 아무것도 돌지 않는다.
             //
             //   그래서 표준 주기로 한 번 더 넣어 본다. 시뮬레이터·백그라운드 새로고침
             //   꺼짐처럼 **기기가 아예 안 받는** 경우에는 이것도 실패하는데, 그때는

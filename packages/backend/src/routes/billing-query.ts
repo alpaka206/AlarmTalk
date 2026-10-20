@@ -1,7 +1,6 @@
 import { Hono } from 'hono';
 import type { AppEnv } from '../types';
 import { getDB } from '../lib/db';
-import { resolveUserPk } from './billing-helpers';
 import {
   findActiveSubscriptionsByUserPk,
   findStoreTransactionsForSubscriptions,
@@ -22,51 +21,10 @@ import { computedUserPlan, loadPersonalPromoField, resolvePersonalPromo } from '
 
 const billingQuery = new Hono<AppEnv>();
 
-billingQuery.get('/vouchers', async (c) => {
-  const userPk = await resolveUserPk(c);
-  if (!userPk) {
-    return c.json({ vouchers: [] });
-  }
-  const db = getDB(c.env);
-
-  // ⚠ **초대 코드(INV-)만 돌려준다 — 이 조건을 빼지 말 것**(2026-10-14, App Store 심사 지침 3.1.1).
-  //   선물 코드(GIFT-)는 없앴지만 발급 행은 이력이라 `voucher_codes` 에 남아 있다(`routes/code.ts`
-  //   머리말). 등록만 막으면 선물을 샀던 사람의 앱(옛 버전 포함)이 그 코드를 목록·공유 화면에 계속
-  //   띄운다 — 코드로 여는 이용권을 화면이 내보이는 것 자체가 반려 사유다. 경계는 등록이 받는 형식
-  //   (`isValidVoucherCodeFormat`)과 같다. 조건은 고정 리터럴이다(사용자 입력을 넣지 말 것).
-  //   공유할 코드를 내주는 `POST /billing/vouchers/family-share` 도 같은 조건을 쓴다.
-  const result = await db.execute({
-    sql: `SELECT v.id, v.code, v.plan_id, v.issuer_subscription_id, v.redeemed_by_user_id,
-                 v.status, v.issued_at, v.used_at, v.expires_at, v.max_uses,
-                 (SELECT COUNT(*) FROM voucher_redemptions WHERE voucher_id = v.id) AS use_count,
-                 p.key AS plan_key, p.name AS plan_name, p.plan_type
-          FROM voucher_codes v
-          JOIN plans p ON p.id = v.plan_id
-          WHERE v.issuer_user_id = ?
-            AND v.code LIKE 'INV-%'
-          ORDER BY v.issued_at DESC`,
-    args: [userPk],
-  });
-
-  return c.json({
-    vouchers: result.rows.map((r) => ({
-      id: String(r.id),
-      code: String(r.code),
-      plan_id: String(r.plan_id),
-      plan_key: String(r.plan_key),
-      plan_name: String(r.plan_name),
-      plan_type: String(r.plan_type),
-      subscription_id: (r.issuer_subscription_id as string | null) ?? null,
-      redeemed_by_user_id: (r.redeemed_by_user_id as string | null) ?? null,
-      status: String(r.status),
-      issued_at: String(r.issued_at),
-      used_at: (r.used_at as string | null) ?? null,
-      expires_at: String(r.expires_at),
-      max_uses: Number(r.max_uses ?? 1),
-      use_count: Number(r.use_count ?? 0),
-    })),
-  });
-});
+// 옛 앱 호환 — minSupported 가 현재 빌드를 넘으면 지운다. 초대 코드는 없앴다(커플·가족 이용권 폐지).
+// 옛 앱 둘은 이 목록을 구독 조회와 **함께** 받아(한쪽이 실패하면 구독 답까지 버린다) 빈 배열로 답한다.
+// DB 를 읽지 않는다.
+billingQuery.get('/vouchers', (c) => c.json({ vouchers: [] }));
 
 billingQuery.get('/subscription', async (c) => {
   const userId = c.get('userId');
@@ -87,7 +45,7 @@ billingQuery.get('/subscription', async (c) => {
         'Subscription verification is temporarily unavailable',
       );
     }
-    // 스토어·공유 구독을 모두 처리한 뒤, 활성 근거 자체가 사라진 계정만 정리한다.
+    // 스토어 구독을 모두 처리한 뒤, 활성 근거 자체가 사라진 계정만 정리한다.
     // 복구 조건은 원시 plan 이다 — 프로모는 DB 에 쓰지 않으므로 여기 닿지 않는다. 보관 기한만
     // 프로모를 반영한다(기간 중 복구된 계정에 거짓 삭제 예고를 걸지 않게).
     const repaired = await withWriteTransaction(db, (tx) =>
@@ -98,11 +56,11 @@ billingQuery.get('/subscription', async (c) => {
 
   return withReadTransaction(db, async (tx) => {
     const result = await tx.execute({
-      sql: `SELECT s.id AS sub_id, s.user_id, s.plan_id, s.plan_group_id,
+      sql: `SELECT s.id AS sub_id, s.user_id, s.plan_id,
                    s.status, s.starts_at, s.expires_at, s.entitlement_state,
                    s.cancel_at_period_end, s.canceled_at, s.next_plan_id,
                    p.key AS plan_key, p.name AS plan_name, p.plan_type,
-                   p.period_days, p.max_members, p.price_krw,
+                   p.period_days, p.price_krw,
                    np.key AS next_plan_key, np.name AS next_plan_name, np.plan_type AS next_plan_type
             FROM subscriptions s
             JOIN users u ON u.id = s.user_id
@@ -187,12 +145,11 @@ billingQuery.get('/subscription', async (c) => {
       store_renewal_providers: storeRenewalProviders,
       subscription: {
         // 'apple' | 'google' | null. null 은 스토어 결제가 아니라는 뜻이다
-        // (dev 스텁·프로모·바우처) — 서버 로컬 해지가 된다.
+        // (dev 스텁·프로모) — 서버 로컬 해지가 된다.
         store_provider: storeCancelProviderOf(storeTxns),
         id: String(r.sub_id),
         user_id: String(r.user_id),
         plan_id: String(r.plan_id),
-        plan_group_id: (r.plan_group_id as string | null) ?? null,
         status: String(r.status),
         starts_at: String(r.starts_at),
         expires_at: String(r.expires_at),
@@ -206,7 +163,9 @@ billingQuery.get('/subscription', async (c) => {
         name: String(r.plan_name),
         plan_type: String(r.plan_type),
         period_days: Number(r.period_days),
-        max_members: Number(r.max_members),
+        // 옛 앱 호환 — minSupported 가 현재 빌드를 넘으면 지운다. 정원 칸은 DB 에서 없앴지만 옛 iOS 의
+        // `BillingPlan` 디코더가 이 키를 필수로 읽는다(빠지면 구독 답 전체가 실패한다).
+        max_members: 1,
         price_krw: Number(r.price_krw),
       },
       next_plan: nextPlanId

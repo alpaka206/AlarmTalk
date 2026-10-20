@@ -1,25 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import {
-  dynamicPromptSettingsState,
-  validateDynamicPromptSettings,
-} from '../src/lib/dynamic-prompt-settings';
+import { validateDynamicPromptSettings } from '../src/lib/dynamic-prompt-settings';
 import {
   FORTUNE_BIRTH_TIME_CHOICES,
   FORTUNE_BIRTH_TIME_UNKNOWN,
 } from '@alarmtalk/shared';
-
-describe('dynamicPromptSettingsState', () => {
-  it('marks weather ready when only city is stored', () => {
-    const settings = {
-      weather: { country: null, city: 'Paris' },
-      fortune: { gender: null, birth_date: null, birth_time: null },
-    };
-
-    const state = dynamicPromptSettingsState(settings);
-
-    expect(state.weather_ready).toBe(true);
-  });
-});
 
 // ---------------------------------------------------------------------------
 // 태어난 시간 형식 — 세 구현이 갈라져 있던 자리

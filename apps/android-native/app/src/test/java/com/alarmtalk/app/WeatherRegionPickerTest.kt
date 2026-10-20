@@ -150,7 +150,7 @@ class WeatherRegionPickerTest {
         assertEquals("일본", prefs.weatherCountry)
         assertEquals("도쿄", prefs.weatherCity)
         assertEquals("jp-tokyo", prefs.weatherRegion?.key)
-        // 키만 있어도(글자 없음) 그 지역의 글자로 채운다 — 받은 알람 채우기(`withRecipientConditions`)가 그 글자를 쓴다.
+        // 키만 있어도(글자 없음) 그 지역의 글자로 채운다 — 알람 조건 채우기(`withRecipientConditions`)가 그 글자를 쓴다.
         assertEquals(
             "미국",
             DynamicPromptSettings(weather = DynamicPromptWeatherSettings(region = "us-chicago"))

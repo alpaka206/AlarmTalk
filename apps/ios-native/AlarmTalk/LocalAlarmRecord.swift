@@ -11,6 +11,10 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
     /// 골라낼 수 있다. `UIPreviewSeed` 가 만드는 id 는 전부 이걸로 시작해야 한다.
     static let previewIDPrefix = "preview-"
 
+    /// 이름 칸이 비었을 때 iOS 가 저장하는 **기본 이름**(`AlarmDefaultLabel`). 울림·목록은 이 값을
+    /// 이름이 없는 것으로 본다.
+    static let storedDefaultLabel = "알람"
+
     var id: String                  // UUID().uuidString
     var label: String
     var hour: Int                   // 0..23
@@ -47,17 +51,11 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
     var ttsMessageId: String?
     var remoteAlarmId: String?
     var lastSyncedAtMillis: Int64?
-    var remoteDeliveryVersion: String?
-    /// **이 행을 만들거나 갱신할 때 서버가 준 전달 세대.** 반영·ACK 성패와 무관하게 그 자리에서 적는다.
-    ///
-    /// ⚠ `remoteDeliveryVersion`(=음원·예약까지 끝냈다)과 다른 값이다. 이 값이 있어야
-    /// **재전송**과 **반영 실패**가 갈린다 — 서버 세대가 이 값과 같으면 내가 이미 받은 그
-    /// 전달이라 수신자 편집을 보존하고, 다르면 발신자가 **다시 보낸 것**이라 덮어쓴다.
-    /// 안드로이드 짝은 `AlarmEntity.observedDeliveryVersion`, 규칙은
-    /// `docs/spec/family-alarm.md` 「적용한 전달 버전을 로컬에 남긴다」.
-    var observedDeliveryVersion: String?
     var syncState: String           // AlarmSyncState.rawValue
-    var origin: String              // AlarmOrigin.rawValue
+    /// `AlarmOrigin.rawValue`. ⚠ **관대한 문자열로 둔다** — 모르는 값도 던지지 않고 읽는다
+    /// (`originEnum`). 옛 받은 알람(`received_remote`)은 로드할 때 내 알람으로 바뀐다
+    /// (`ReceivedAlarmConversion`).
+    var origin: String
     var alarmVolumePercent: Int     // 0..100
     var alarmSoundUri: String?
     var alarmSoundLabel: String?
@@ -150,7 +148,7 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
     /// **한 번도 유료였던 적 없는 계정**의 알람이 잠기고 "무료 이용권으로 바뀌었어요" 가
     /// 떴다(구독 이력 0건인 `ronald@estsoft.com` 의 07:30 알람이 `mode=sound-only` 로
     /// 서버에 박혀 있었다). 말할 자원이 없는 알람은 유료 기능을 쓰는 게 아니다 —
-    /// 그런 알람은 `RemoteAlarmMapper` 가 이미 알람음으로 내려 둔다.
+    /// 그런 알람은 알람음으로 운다.
     ///
     /// 잠긴 뒤에도 참이어야 한다는 점은 그대로다: 잠금은 `playMode` 만 바꾸고
     /// `voiceProfileId` 는 남기므로 자원 기준으로 봐도 계속 대상으로 잡힌다.
@@ -328,8 +326,6 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
         ttsMessageId: String? = nil,
         remoteAlarmId: String? = nil,
         lastSyncedAtMillis: Int64? = nil,
-        remoteDeliveryVersion: String? = nil,
-        observedDeliveryVersion: String? = nil,
         syncState: String = AlarmSyncState.localOnly.rawValue,
         origin: String = AlarmOrigin.localOwned.rawValue,
         alarmVolumePercent: Int = 100,
@@ -377,8 +373,6 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
         self.ttsMessageId = ttsMessageId
         self.remoteAlarmId = remoteAlarmId
         self.lastSyncedAtMillis = lastSyncedAtMillis
-        self.remoteDeliveryVersion = remoteDeliveryVersion
-        self.observedDeliveryVersion = observedDeliveryVersion
         self.syncState = syncState
         self.origin = origin
         self.alarmVolumePercent = alarmVolumePercent
@@ -428,8 +422,6 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
         case ttsMessageId
         case remoteAlarmId
         case lastSyncedAtMillis
-        case remoteDeliveryVersion
-        case observedDeliveryVersion
         case syncState
         case origin
         case alarmVolumePercent
@@ -463,7 +455,7 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
         // id 는 String 직렬화가 기본. 없으면 새 UUID.
         self.id = (try? c.decode(String.self, forKey: .id)) ?? UUID().uuidString
 
-        self.label = try c.decodeIfPresent(String.self, forKey: .label) ?? "알람"
+        self.label = try c.decodeIfPresent(String.self, forKey: .label) ?? Self.storedDefaultLabel
         self.hour = try c.decodeIfPresent(Int.self, forKey: .hour) ?? 7
         self.minute = try c.decodeIfPresent(Int.self, forKey: .minute) ?? 0
 
@@ -517,9 +509,6 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
 
         self.remoteAlarmId = try c.decodeIfPresent(String.self, forKey: .remoteAlarmId)
         self.lastSyncedAtMillis = try c.decodeIfPresent(Int64.self, forKey: .lastSyncedAtMillis)
-        self.remoteDeliveryVersion = try c.decodeIfPresent(String.self, forKey: .remoteDeliveryVersion)
-        // 옛 저장본에는 없다 — nil 이면 '어느 전달을 받았는지 모른다' 가 사실이라 예전 규칙을 쓴다.
-        self.observedDeliveryVersion = try c.decodeIfPresent(String.self, forKey: .observedDeliveryVersion)
 
         // syncState 보정: remoteAlarmId 가 있으면 synced, 없으면 local_only.
         if let raw = try c.decodeIfPresent(String.self, forKey: .syncState),
@@ -608,8 +597,6 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
         try c.encodeIfPresent(ttsMessageId, forKey: .ttsMessageId)
         try c.encodeIfPresent(remoteAlarmId, forKey: .remoteAlarmId)
         try c.encodeIfPresent(lastSyncedAtMillis, forKey: .lastSyncedAtMillis)
-        try c.encodeIfPresent(remoteDeliveryVersion, forKey: .remoteDeliveryVersion)
-        try c.encodeIfPresent(observedDeliveryVersion, forKey: .observedDeliveryVersion)
         try c.encode(syncState, forKey: .syncState)
         try c.encode(origin, forKey: .origin)
         try c.encode(alarmVolumePercent, forKey: .alarmVolumePercent)

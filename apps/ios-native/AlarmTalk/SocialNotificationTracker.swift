@@ -2,13 +2,8 @@ import Foundation
 
 import UserNotifications
 
-struct SocialNotificationRequest: Equatable {
-    var noteID: String
-    var title: String
-    var body: String
-}
-
 enum SocialNotificationTracker {
+    /// 알림 권한을 한 번 묻는다. 결제 실패 안내(`billing_hold`)는 서버가 alert 로 보내므로 권한이 있어야 보인다.
     static func requestAuthorizationIfNeeded() async {
         // 화면 확인 모드에서는 권한 팝업이 화면을 가린다(시뮬레이터엔 탭할 방법이 없다).
         if UIPreviewSeed.isEnabled { return }
@@ -16,44 +11,5 @@ enum SocialNotificationTracker {
         let settings = await center.notificationSettings()
         guard settings.authorizationStatus == .notDetermined else { return }
         _ = try? await center.requestAuthorization(options: [.alert, .sound, .badge])
-    }
-
-    static func notifyReceivedAlarm(alarmID: String, title: String, time: String) async {
-        let request = receivedAlarmRequest(alarmID: alarmID, title: title, time: time)
-        let center = UNUserNotificationCenter.current()
-        let settings = await center.notificationSettings()
-        guard canPostNotifications(status: settings.authorizationStatus) else { return }
-
-        let content = UNMutableNotificationContent()
-        content.title = request.title
-        content.body = request.body
-        content.sound = .default
-        content.threadIdentifier = "voice_alarm_received_alarms"
-        let notification = UNNotificationRequest(
-            identifier: "voice-alarm-received-alarm-\(request.noteID)",
-            content: content,
-            trigger: nil
-        )
-        try? await center.add(notification)
-    }
-
-    static func receivedAlarmRequest(alarmID: String, title: String, time: String) -> SocialNotificationRequest {
-        SocialNotificationRequest(
-            noteID: alarmID,
-            title: title.nilIfBlank ?? String(localized: "상대가 보낸 알람"),
-            // Android `SocialNotificationFactory.kt:35` 과 동일 문구(마침표 없음).
-            body: time.nilIfBlank.map { String(localized: "\(String($0))에 울려요") } ?? String(localized: "상대가 내 알람을 설정했어요")
-        )
-    }
-
-    private static func canPostNotifications(status: UNAuthorizationStatus) -> Bool {
-        switch status {
-        case .authorized, .provisional, .ephemeral:
-            return true
-        case .denied, .notDetermined:
-            return false
-        @unknown default:
-            return false
-        }
     }
 }

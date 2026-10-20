@@ -66,22 +66,22 @@ final class LoginViewModelTests: XCTestCase {
         XCTAssertEqual(PlanTier.from(nil), .free)
         XCTAssertEqual(PlanTier.from("free"), .free)
         XCTAssertEqual(PlanTier.from("personal"), .personal)
-        XCTAssertEqual(PlanTier.from("couple"), .couple)
-        XCTAssertEqual(PlanTier.from("family"), .family)
+        XCTAssertEqual(PlanTier.from("plus"), .personal)
         // legacy iOS keys
         XCTAssertEqual(PlanTier.from("plus_monthly"), .personal)
         XCTAssertEqual(PlanTier.from("plus_yearly"), .personal)
-        XCTAssertEqual(PlanTier.from("family_monthly"), .family)
+        // 커플·가족 이용권은 없어졌다 — 남은 키는 유료가 아니다.
+        XCTAssertEqual(PlanTier.from("couple"), .free)
+        XCTAssertEqual(PlanTier.from("family"), .free)
+        XCTAssertEqual(PlanTier.from("family_monthly"), .free)
         // unknown -> free
         XCTAssertEqual(PlanTier.from("enterprise"), .free)
     }
 
     func testPlanTierOrdering() {
-        XCTAssertTrue(PlanTier.family.meetsOrExceeds(.couple))
-        XCTAssertTrue(PlanTier.couple.meetsOrExceeds(.personal))
         XCTAssertTrue(PlanTier.personal.meetsOrExceeds(.free))
+        XCTAssertTrue(PlanTier.personal.meetsOrExceeds(.personal))
         XCTAssertFalse(PlanTier.free.meetsOrExceeds(.personal))
-        XCTAssertFalse(PlanTier.personal.meetsOrExceeds(.family))
-        XCTAssertTrue(PlanTier.family.meetsOrExceeds(.family))
+        XCTAssertEqual(PlanTier.allCases, [.free, .personal])
     }
 }

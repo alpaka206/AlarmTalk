@@ -310,8 +310,6 @@ class StockClipPrefetchWorker(
             // **내가 등록한 목소리의 사전렌더 프리셋도 미리 받는다.** 등록은 서버 생성 +
             // 다운로드가 끝나야 끝난 것이고, 그래야 알람을 만들 때 라이브 생성이 필요 없다.
             // 목록을 못 받으면(네트워크 실패) 기본 목소리분만 받고 다음 회차가 보충한다.
-            // ⚠ **공유받은 목소리는 넣지 않는다** — 그룹원 수만큼 곱해지는데 실제로 쓰는 것은
-            // 보통 하나다. 그건 알람에서 고르는 순간 받는다.
             // ⚠ **무료면 내 클론 클립은 아예 요청하지 않는다**(2026-08-31 실기기 재현).
             // 무료 계정에도 예전에 만든 클론의 프리셋 클립이 매니페스트에 남아 있는데, 서버는
             // 그걸 403 으로 막는다(유료 전용). 요청해 봐야 못 받을 뿐 아니라, 그 실패가 같은
@@ -327,7 +325,7 @@ class StockClipPrefetchWorker(
             // 울림 게이트와 **같은 판정기**로 판단한다.
             // ⚠ **서버 프로필의 조건 설정을 들고 나온다**(2026-09-03 리뷰 16차).
             //   새로 깐 기기·두 번째 기기에서는 이 값이 서버에만 있고 로컬 저장소는 비어
-            //   있다. 바로 아래에서 `/auth/me` 를 받으면서 그걸 버리면, 받은 날씨 알람은
+            //   있다. 바로 아래에서 `/auth/me` 를 받으면서 그걸 버리면, 조건 없는 날씨 알람은
             //   여전히 서버 기본값(서울)으로, 운세는 빈 프로필 해시로 떨어진다.
             var serverPromptSettings: com.alarmtalk.app.network.DynamicPromptSettings? = null
             val paidVoiceAccess = withContext(Dispatchers.IO) {
@@ -335,7 +333,7 @@ class StockClipPrefetchWorker(
                     // ⚠ **`/auth/me` 를 구독 조회보다 **먼저** 부른다**(2026-09-03 리뷰 23차).
                     //   예전에는 `getSubscription` 뒤에 있어서, 그 선택적 조회가 실패하면
                     //   같은 `runCatching` 이 통째로 빠져나가며 **프로필 설정도 못 받았다** —
-                    //   /auth/me 는 멀쩡한데도 새로 깐 기기의 받은 날씨 알람이 서울로,
+                    //   /auth/me 는 멀쩡한데도 새로 깐 기기의 조건 없는 날씨 알람이 서울로,
                     //   운세가 빈 프로필로 떨어졌다. 조건 설정은 구독과 무관한 값이다.
                     val me = api.me(auth)
                     serverPromptSettings = me.user.dynamicPromptSettings
@@ -389,7 +387,6 @@ class StockClipPrefetchWorker(
                     val now = System.currentTimeMillis()
                     resolvePaidVoiceAccess(
                         subscriptionResponse = subscription,
-                        familyGroup = snapshot.familyGroup,
                         userPlan = plan,
                         storeEntitled = snapshot.storeSignalStillValid(now),
                         nowMillis = now,
@@ -440,8 +437,8 @@ class StockClipPrefetchWorker(
             //   문 알람의 파일을 지운다 — 그 알람은 무음이 된다.
             val legacyHints = manifest.legacyBucketHints
                 .associate { hint -> hint.messageId to hint.category }
-            // 받는 사람의 지역·사주. 조건형 버킷(날씨·운세)을 묶을 때 빈 자리에만 채운다 —
-            // 받은 알람은 그 값이 전부 비어 있어서, 안 채우면 날씨는 서버 기본값(서울),
+            // 이 기기 사용자의 지역·사주. 조건형 버킷(날씨·운세)을 묶을 때 빈 자리에만 채운다 —
+            // 조건 없이 저장된 행은 그 값이 비어 있어서, 안 채우면 날씨는 서버 기본값(서울),
             // 운세는 빈 프로필 해시로 떨어진다.
             //
             // ⚠ **서버가 먼저, 로컬은 폴백이다**(리뷰 16차). 새로 깐 기기·두 번째 기기는

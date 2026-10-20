@@ -6,8 +6,8 @@ import { VoicePitchSemitonesSchema } from '@alarmtalk/shared';
  * 합성한 소리를 **서버가 굽는다** — 목소리 높이(`docs/spec/voice-and-message.md` §4-3)와 음량(§10).
  *
  * 높이: 등록 미리듣기에서 사용자가 고른 높이(반음)를 등록 확정 때 `voice_profiles.pitch_semitones` 에 적고, 그 목소리로
- * 만드는 모든 알람 소리(프리셋 사전렌더·직접 입력)에 굽는다. 그래서 앱은 받은 파일을 그대로 틀고, 공유받은 가족·
- * 가족 알람 수신자·다른 기기도 같은 소리를 듣는다. 앱이 미리듣기를 기기에서 굽는 셈과 **같은 셈**이다
+ * 만드는 모든 알람 소리(프리셋 사전렌더·직접 입력)에 굽는다. 그래서 앱은 받은 파일을 그대로 틀고, 같은 계정의
+ * 다른 기기도 같은 소리를 듣는다. 앱이 미리듣기를 기기에서 굽는 셈과 **같은 셈**이다
  * (`@alarmtalk/voice` 의 `shiftVoicePitch` — 두 앱과 같은 기대값 테스트).
  *
  * 음량: eleven_v4_turbo 는 v3 보다 작게 낸다 — **모든 합성**을 `TTS_LOUDNESS_BOOST_DB` 만큼 올린다(`@alarmtalk/voice` 의

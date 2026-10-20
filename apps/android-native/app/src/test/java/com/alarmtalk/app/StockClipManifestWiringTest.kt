@@ -182,22 +182,29 @@ class StockClipManifestWiringTest {
         assertTrue(repair.contains(".groupBy { it.voiceProfileId }"))
     }
 
+    /**
+     * 내 목소리를 제자리 교체한 뒤 서버가 프리셋을 다 다시 구웠다는 푸시(`voice_share_changed`)는 **그 뒤에 출발한**
+     * 매니페스트로 받는다(LATEST — 신선도 창을 쓰지 않는다). 프로세스에 화면이 없어도 워커가 낡은 클립을 갈아 끼운다.
+     * 이 갈래가 빠지면 교체한 기기의 프리셋 알람이 다음 새로고침까지 옛 목소리로 운다.
+     */
     @Test
-    fun aSharedListChangeUsesTheServerProvenanceNotTheLatestRefreshFlag() {
-        val social = withoutLineComments(readSource("ui/main/MainViewModelSocialActions.kt"))
+    fun theVoiceRerenderedPushFetchesAManifestThatLeftAfterIt() {
+        val app = withoutLineComments(readSource("ui/app/AlarmTalkApp.kt"))
+        val collect = app.indexOf("AppSignals.voiceShareChanged.collect")
+        assertTrue("화면이 재렌더 완료 신호(`AppSignals.voiceShareChanged`)를 받지 않는다.", collect >= 0)
         assertTrue(
-            "공유 목록 변화의 '신호 뒤' 판정이 앞 목록의 출처(`familyVoicesFromServer`)를 보지 않는다 — " +
-                "중간 조회가 실패하면 신선도 창이 바뀌기 전의 매니페스트를 다시 쓴다(Codex #825).",
-            social.contains("if (comparedAgainstServerList) ManifestNeed.LATEST else ManifestNeed.RECENT"),
+            "재렌더 완료 신호가 신선도 창을 쓰는 매니페스트로 받는다 — 신호 **뒤에** 출발한 것이어야 한다.",
+            app.substring(collect, minOf(app.length, collect + 300))
+                .contains("viewModel.loadStockClips(com.alarmtalk.app.ManifestNeed.LATEST)"),
         )
-        assertTrue(social.contains("val comparedAgainstServerList = familyVoicesFromServer"))
-        assertFalse(social.contains("hadFreshSharedList"))
-        // 공유 목록을 서버 목록으로 바꾸는 **다른** 곳(목소리 공유 토글)도 출처를 세운다.
-        val toggle = voiceActions.substring(voiceActions.indexOf("familyVoices = api.listFamilyVoiceProfiles("))
-        assertTrue(
-            "목소리 공유 토글이 서버 공유 목록을 싣고도 출처를 세우지 않는다(Codex #825).",
-            toggle.substring(0, 400).contains("familyVoicesFromServer = true"),
-        )
+        val push = withoutLineComments(readSource("fcm/AlarmTalkMessagingService.kt"))
+        val condition = "message.data[\"type\"] == \"voice_share_changed\""
+        val at = push.indexOf(condition)
+        assertTrue("FCM 서비스가 `voice_share_changed` 를 받지 않는다.", at >= 0)
+        // 그 갈래 — 다음 타입 분기 앞까지.
+        val branch = push.substring(at + condition.length).substringBefore("message.data[\"type\"] ==")
+        assertTrue("푸시가 클립 워커를 걸지 않는다 — 화면이 없으면 낡은 클립이 남는다.", branch.contains("StockClipPrefetchWorker.enqueue("))
+        assertTrue("푸시가 화면에 신호를 보내지 않는다.", branch.contains("AppSignals.emitVoiceShareChanged()"))
     }
 
     @Test

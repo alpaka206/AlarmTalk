@@ -1,9 +1,9 @@
 // 동의 철회로 알람이 강등되면 그 기기에 알람 동기화 신호가 나가는지 고정한다.
 //
 // deleteSensitiveVoiceDataForUser 는 강등된 알람을 돌려주는데, 호출부가 그 반환값을 흘려보내면
-// 서버는 수신자의 가족알람을 sound-only 로 내리고 R2 오브젝트까지 지웠는데도 수신자는 캐시된
-// 녹음으로 계속 울린다(다음 폴백 pull 까지). 실제로 보관 만료 스윕에서 한 번, 이 동의 철회
-// 경로에서 또 한 번 같은 식으로 빠졌다(Codex #654).
+// 서버는 그 알람을 sound-only 로 내리고 R2 오브젝트까지 지웠는데도 그 기기는 캐시된 녹음으로
+// 계속 울린다(다음 접근권 재확인까지). 실제로 보관 만료 스윕에서 한 번, 이 동의 철회 경로에서
+// 또 한 번 같은 식으로 빠졌다(Codex #654).
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Hono } from 'hono';
 import type { AppEnv } from '../src/types';
@@ -30,38 +30,25 @@ function buildApp() {
   return app;
 }
 
-const originalExecute = mockDB.client.execute;
-
 beforeEach(() => {
   mockDB.reset();
-  mockDB.client.execute = originalExecute;
   notifyDowngradedAlarms.mockClear();
 });
 
-/** 강등 대상 조회에만 행을 돌려주는 스텁 — FIFO 순서에 기대지 않는다. */
-function stubDowngradeTarget(
-  row: { id: string; owner_user_id: string; is_received: number } | null,
-) {
-  const base = mockDB.client.execute;
-  mockDB.client.execute = (async (q: { sql: string; args: (string | number | null)[] }) => {
-    if (row && /COALESCE\(target_user_id, user_id\)/.test(q.sql) && /WHERE message_id IN/.test(q.sql)) {
-      return { rows: [row], rowsAffected: 0 };
-    }
-    return base(q);
-  }) as typeof mockDB.client.execute;
+/** 철회로 지울 내 클론 하나 — 클론이 없으면 파기할 생체정보가 없어 철회 갈래가 돌지 않는다. */
+function stubDeletedClone() {
+  mockDB.pushResultFor('SELECT id FROM voice_profiles', [{ id: 'clone-1' }]);
 }
 
-function stubDeletedClone(groupMembers: string[] = []) {
-  mockDB.pushResultFor('SELECT id FROM voice_profiles', [{ id: 'clone-1' }]);
-  mockDB.pushResultFor(
-    'FROM plan_group_members m1',
-    groupMembers.map((user_id) => ({ user_id })),
-  );
+/** 그 클론을 쓰던 알람 — 강등 대상 조회에만 돌려준다(FIFO 순서에 기대지 않는다). */
+function stubDowngradedAlarm(row: { id: string; owner_user_id: string }) {
+  mockDB.pushResultFor('SELECT id, user_id AS owner_user_id FROM alarms', [row]);
 }
 
 describe('POST /user/consents — 민감 동의 철회', () => {
   it('강등된 알람의 주인에게 알람 동기화 신호를 보낸다', async () => {
-    stubDowngradeTarget({ id: 'al-1', owner_user_id: 'recipient', is_received: 1 });
+    stubDeletedClone();
+    stubDowngradedAlarm({ id: 'al-1', owner_user_id: 'user-1' });
     const app = buildApp();
 
     const res = await app.request(
@@ -75,10 +62,11 @@ describe('POST /user/consents — 민감 동의 철회', () => {
 
     expect(res.status).toBe(200);
     expect(notifyDowngradedAlarms).toHaveBeenCalledTimes(1);
-    // 울리는 기기의 주인은 target_user_id(수신자)다.
+    // 울리는 기기의 주인은 그 알람의 주인이다.
     expect(notifyDowngradedAlarms.mock.calls[0]![2]).toEqual([
-      { alarmId: 'al-1', ownerUserId: 'recipient', isReceived: true },
+      { alarmId: 'al-1', ownerUserId: 'user-1' },
     ]);
+    expect(notifyDowngradedAlarms.mock.calls[0]![3]).toEqual(['user-1']);
   });
 
   /**
@@ -86,8 +74,8 @@ describe('POST /user/consents — 민감 동의 철회', () => {
    * 울림 시점 동의 게이트도 없으니, 알람 행을 못 찾아도 그 계정에는 접근권 상실을 알려야
    * 한다 — 아니면 그 기기는 지워진 녹음으로 계속 울린다(Codex #654).
    */
-  it('강등할 알람 행이 없어도 철회한 계정에는 접근권 상실을 알린다', async () => {
-    stubDeletedClone(['group-member-1']);
+  it('강등할 알람 행이 없어도 철회한 계정에는 접근권 상실을 알린다 — 그 계정 하나뿐이다', async () => {
+    stubDeletedClone();
     const app = buildApp();
 
     const res = await app.request(
@@ -101,9 +89,7 @@ describe('POST /user/consents — 민감 동의 철회', () => {
 
     expect(res.status).toBe(200);
     expect(notifyDowngradedAlarms.mock.calls[0]![2]).toEqual([]);
-    expect(new Set(notifyDowngradedAlarms.mock.calls[0]![3] as string[])).toEqual(
-      new Set(['user-1', 'group-member-1']),
-    );
+    expect(notifyDowngradedAlarms.mock.calls[0]![3]).toEqual(['user-1']);
   });
 
   /**

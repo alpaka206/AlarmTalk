@@ -161,7 +161,7 @@ class TransientFailureClassificationTest {
     @Test
     fun unauthorizedWrappedInDomainExceptionIsStillUnauthorized() {
         // 저장소·리포지토리가 한 번 감싸 던지는 모양.
-        val wrapped = IllegalStateException("pull failed", httpException(401, ""))
+        val wrapped = IllegalStateException("sync failed", httpException(401, ""))
         assertTrue(AlarmTalkLog.isHandledAuthFailure(wrapped))
     }
 
@@ -277,7 +277,7 @@ class TransientFailureClassificationTest {
         assertEquals(ApiFailure(429, "RATE_LIMITED"), apiFailureOf(after))
 
         // 저장소·리포지토리가 도메인 예외로 한 번 감싼 실패도 같은 실패다.
-        val wrapped = IllegalStateException("pull failed", httpException(403, """{"error_code":"CONSENT_REQUIRED"}"""))
+        val wrapped = IllegalStateException("sync failed", httpException(403, """{"error_code":"CONSENT_REQUIRED"}"""))
         assertEquals(ApiFailure(403, "CONSENT_REQUIRED"), apiFailureOf(wrapped))
         // `apiError` 는 감싼 예외를 풀지 않는다(부르는 자리가 Retrofit 호출 바로 그 자리다).
         assertNull(apiErrorCode(wrapped))
@@ -301,17 +301,18 @@ class TransientFailureClassificationTest {
     // ── 사용자가 친 값의 예상된 거절 — `docs/spec/error-codes.md` §3 「앱도 같다」 ──────────
 
     /**
-     * 목록은 정해진 여덟 개다(프로모 코드 갈래 셋은 2026-10-12 에 프로모 코드와 함께 빠졌다). 원본은 shared 의
+     * 목록은 정해진 다섯 개다(프로모 코드 갈래 셋은 2026-10-12 에, 초대 코드 갈래 셋은 2026-10-20 에 그 코드와 함께
+     * 빠졌다 — `CODE_NOT_FOUND` 는 옛 앱의 코드 등록이 언제나 받는 답이라 남는다). 원본은 shared 의
      * `CLIENT_EXPECTED_REFUSAL_CODES` 이고 셋(shared·안드로이드·iOS)이
      * 같은지는 CI lint(`scripts/check-expected-refusal-codes.py`)가 본다 — 여기서는 이 앱의 값이 넓어지거나
      * (진짜 사고가 묻힌다) 좁아지지(이슈 목록이 다시 시끄러워진다) 않게 그 자체를 고정한다.
      */
     @Test
-    fun expectedRefusalListIsExactlyTheEightCodes() {
+    fun expectedRefusalListIsExactlyTheFiveCodes() {
         assertEquals(
             setOf(
                 "AUTH_EMAIL_CODE_INVALID", "AUTH_EMAIL_CODE_EXPIRED", "AUTH_EMAIL_TAKEN", "AUTH_EMAIL_SOCIAL",
-                "CODE_NOT_FOUND", "CODE_EXPIRED", "CODE_ALREADY_USED", "CODE_ALREADY_REDEEMED_BY_YOU",
+                "CODE_NOT_FOUND",
             ),
             AlarmTalkLog.EXPECTED_REFUSAL_CODES,
         )
@@ -329,8 +330,8 @@ class TransientFailureClassificationTest {
         }
         // 저장소가 도메인 예외로 한 번 감싼 거절도 같은 거절이다.
         val wrapped = IllegalStateException(
-            "redeem failed",
-            httpException(404, """{"error_code":"CODE_NOT_FOUND"}"""),
+            "verify failed",
+            httpException(400, """{"error_code":"AUTH_EMAIL_CODE_INVALID"}"""),
         )
         assertEquals("refusal", AlarmTalkLog.breadcrumbCategoryFor(wrapped))
     }

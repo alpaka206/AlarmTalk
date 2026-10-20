@@ -18,8 +18,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * FCM 수신 서비스. 가족 알람 push(data-only)를 받으면 즉시 원격 알람을 pull 해 로컬 스케줄+알림을
- * 그린다(앱이 백그라운드/종료여도). 토큰 회전 시 서버에 재등록한다. push 를 놓쳐도 15분 주기 pull 폴백.
+ * FCM 수신 서비스. 플랜·목소리·계정 신호(data)를 받아 해당 워커를 큐잉하거나 화면에 알린다(앱이
+ * 백그라운드/종료여도). 토큰 회전 시 서버에 재등록한다. 신호를 놓쳐도 각 워커의 주기 폴백이 맞춘다.
  */
 class AlarmTalkMessagingService : FirebaseMessagingService() {
     override fun onNewToken(token: String) {
@@ -27,26 +27,16 @@ class AlarmTalkMessagingService : FirebaseMessagingService() {
     }
 
     override fun onMessageReceived(message: RemoteMessage) {
-        // data-only 가족 알람 신호 → 즉시 pull(RemoteAlarmPullSyncService 가 upsert + notifyReceivedAlarm).
-        if (message.data["type"] == "family_alarm") {
-            runCatching { RemoteAlarmSyncScheduler.runOnce(applicationContext) }
-                .onFailure { AlarmTalkLog.reportError("FCM-triggered alarm pull failed", it) }
-        }
-        // 상대가 목소리 공유를 켜거나/끄면 → 공유 목록·클립 매니페스트 즉시 새로고침 신호.
-        // UI 가 없으면 무시(다음 앱 시작의 초기 로드가 폴백).
+        // 내 목소리를 제자리 교체한 뒤 서버가 프리셋 클립을 다 다시 구웠다(이름은 옛 공유 신호에서 왔다) →
+        // 클립 매니페스트를 새로 받는다. 프로세스에 UI가 없어도 낡은 캐시를 새 audio_url 로 갈아 끼운다
+        // (워커는 매니페스트에서 기존 캐시가 stale 인 클립만 받는다). UI 가 떠 있으면 신호로 매니페스트도 새로 받는다.
         if (message.data["type"] == "voice_share_changed") {
-            // 프로세스에 UI가 없어도 제자리 교체된 공유 목소리 캐시를 새 audio_url로 갱신한다.
-            // 워커는 매니페스트에서 기존 캐시가 stale인 공유 클립만 추가로 포함한다.
             com.alarmtalk.app.sync.StockClipPrefetchWorker.enqueue(applicationContext)
             com.alarmtalk.app.core.AppSignals.emitVoiceShareChanged()
         }
-        // 구독 만료 → 무료 강등 신호. 프로세스가 죽어도 살아남게 WorkManager 로 큐잉 → 백그라운드에서
-        // 구독/플랜/가족 재조회 후 '진짜 무료'면 유료 목소리 알람을 기본 알람으로 변환(강등 시점 반영).
-        // 앱이 포그라운드로 살아 있으면 워커가 쓴 SharedPreferences 만으론 live UI(구독/플랜 state)가
-        // 안 바뀌므로, 신호도 함께 emit 해 MainViewModel 이 즉시 재조회하게 한다(구독자 없으면 버려짐).
-        // 서버에서 목소리 접근권이 사라짐(동의 철회·보관 만료 정리) → 내 소유 알람 강등 신호.
-        // family_alarm 은 '받은 알람'만 갱신하고, plan_changed 는 '진짜 무료'일 때만 변환하므로
-        // 둘 다 이 경우를 못 덮는다. 프로세스가 죽어도 살아남게 WorkManager 로 큐잉.
+        // 서버에서 목소리 접근권이 사라짐(동의 철회·보관 만료 정리·제자리 교체) → 내 소유 알람 강등 신호.
+        // plan_changed 는 '진짜 무료'일 때만 변환하므로 이 경우를 못 덮는다. 프로세스가 죽어도 살아남게
+        // WorkManager 로 큐잉.
         if (message.data["type"] == "voice_access_revoked") {
             // 제자리 교체 신호는 payload 에 무엇이 무효가 됐는지가 실려 온다. 교체는 프로필
             // id 를 재사용하므로 워커의 '접근 가능 목록 대조' 로는 아무것도 안 걸린다 —
@@ -64,7 +54,7 @@ class AlarmTalkMessagingService : FirebaseMessagingService() {
                 )
             }.onFailure { AlarmTalkLog.reportError("voice_access_revoked handling failed", it) }
         }
-        // 공유 이용권 결제 실패 — 표시 전용. 백그라운드에서는 시스템이 띄우지만
+        // 이용권 결제 실패 — 표시 전용. 백그라운드에서는 시스템이 띄우지만
         // 포그라운드에서는 여기로만 오므로 직접 그린다(안 그리면 아무것도 안 보인다).
         if (message.data["type"] == "billing_hold") {
             val title = message.notification?.title ?: message.data["title"]
@@ -78,13 +68,17 @@ class AlarmTalkMessagingService : FirebaseMessagingService() {
             }
         }
         // 다른 기기에서 탈퇴를 신청했다(2026-10-15) — 이 기기의 세션도 끊겼다. **신호만 믿고 떠나지 않는다**(그 사이
-        // 다른 기기에서 다시 로그인해 철회됐을 수 있다): 알람 pull 워커를 곧바로 돌려 서버에 묻게 하고, 서버가 403
+        // 다른 기기에서 다시 로그인해 철회됐을 수 있다): 계정 확인 워커를 곧바로 돌려 서버에 묻게 하고, 서버가 403
         // `ACCOUNT_PENDING_DELETION` 이면 그 워커가 알람까지 끄고 떠난다(`endWorkerSession` →
         // `leaveAccountAfterPendingDeletion`). 앱이 떠 있으면 같은 403 을 인터셉터가 받아 전경도 떠난다.
         if (message.data["type"] == "account_deletion_requested") {
             runCatching { RemoteAlarmSyncScheduler.runOnce(applicationContext) }
                 .onFailure { AlarmTalkLog.reportError("account_deletion_requested handling failed", it) }
         }
+        // 구독 만료 → 무료 강등 신호. 프로세스가 죽어도 살아남게 WorkManager 로 큐잉 → 백그라운드에서
+        // 구독·플랜 재조회 후 '진짜 무료'면 유료 목소리 알람을 기본 목소리 알람으로 변환(강등 시점 반영).
+        // 앱이 포그라운드로 살아 있으면 워커가 쓴 SharedPreferences 만으론 live UI(구독/플랜 state)가
+        // 안 바뀌므로, 신호도 함께 emit 해 MainViewModel 이 즉시 재조회하게 한다(구독자 없으면 버려짐).
         if (message.data["type"] == "plan_changed") {
             runCatching { com.alarmtalk.app.sync.PlanChangeSyncWorker.runOnce(applicationContext) }
                 .onFailure { AlarmTalkLog.reportError("plan_changed handling failed", it) }
@@ -119,7 +113,7 @@ class AlarmTalkMessagingService : FirebaseMessagingService() {
                     // **지금 유효한 토큰**으로 보낸다. 시작 시점에 잡아 둔 session.token 은 그
                     // 사이 rolling refresh 로 대체됐을 수 있고, 옛 토큰이 만료돼 있으면 등록이
                     // 401 로 실패한 뒤 다음 앱 시작·로그인·FCM 토큰 회전까지 재시도되지 않는다
-                    // — 그동안 가족/플랜/목소리 즉시 푸시를 못 받는다(Codex #665 P2).
+                    // — 그동안 플랜/목소리 즉시 푸시를 못 받는다(Codex #665 P2).
                     AlarmTalkApiClient.create().registerPushToken(
                         AlarmTalkApiClient.bearer(current.token),
                         PushTokenRegisterRequest(token = token),

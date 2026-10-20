@@ -1,6 +1,6 @@
 import Foundation
 
-/// 서버의 영구 삭제/그만받기에 성공한 충돌만 로컬에서 정리한다. 실패 이후 행은 건드리지 않는다.
+/// 서버의 영구 삭제에 성공한 충돌만 로컬에서 정리한다. 실패 이후 행은 건드리지 않는다.
 @MainActor
 func removeReplacementConflicts<Conflict>(
     _ conflicts: [Conflict],
@@ -22,7 +22,6 @@ private func sameStagedEdit(_ lhs: LocalAlarmRecord, _ rhs: LocalAlarmRecord) ->
         var copy = value
         copy.remoteAlarmId = nil
         copy.lastSyncedAtMillis = nil
-        copy.remoteDeliveryVersion = nil
         copy.syncState = AlarmSyncState.localOnly.rawValue
         copy.updatedAtMillis = 0 // markRemote/markSyncFailed도 이 시각을 바꾼다.
         return copy

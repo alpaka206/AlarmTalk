@@ -8,9 +8,9 @@ import java.io.File
 /**
  * **소스를 직접 읽어** Room 설정의 데이터 손실 위험을 막는다.
  *
- * 백엔드의 `test/no-auto-quiet-windows.test.ts` 와 같은 형태다 — 런타임으로는 재현하기
- * 어렵고(마이그레이션 누락은 **다음 스키마 변경 때**야 터진다) 실패 비용은 되돌릴 수 없는
- * 종류라, 소스에 규약이 지켜졌는지를 본다.
+ * 런타임으로는 재현하기 어렵고(마이그레이션 누락은 **다음 스키마 변경 때**야 터진다) 실패 비용은
+ * 되돌릴 수 없는 종류라, 소스에 규약이 지켜졌는지를 본다. 마이그레이션 하나하나가 맞는지는 그
+ * 마이그레이션의 테스트가 본다(27→28 은 `data/ReceivedAlarmConversionMigrationTest`).
  *
  * 지키는 것 둘:
  *  1. `fallbackToDestructiveMigration()` 이 없다 — 있으면 마이그레이션을 빠뜨린 채
@@ -52,10 +52,9 @@ class AlarmDatabaseMigrationSafetyTest {
             ?.groupValues?.get(1)?.toInt()
             ?: error("@Database 의 version 을 못 읽었다")
 
-        // `addMigrations(...)` 에 **실제로 넘긴** 이름만 센다(정의만 하고 안 넘기면 무효다).
-        val registered = Regex("""addMigrations\((.*?)\)""", RegexOption.DOT_MATCHES_ALL)
-            .find(source)?.groupValues?.get(1)
-            ?: error("addMigrations(...) 를 못 찾았다")
+        // `addMigrations(...)` 에 **실제로 넘긴** 이름만 센다(정의만 하고 안 넘기면 무효다). 괄호 짝으로 끝을 찾는다 —
+        // 등록에는 `MIGRATION_27_28(context)` 처럼 부르는 것도 있어 첫 `)` 에서 끊으면 그 뒤의 등록을 못 본다.
+        val registered = registeredMigrations(source)
 
         val missing = (1 until version).filterNot { from ->
             registered.contains("MIGRATION_${from}_${from + 1}")
@@ -67,5 +66,29 @@ class AlarmDatabaseMigrationSafetyTest {
             emptyList<Int>(),
             missing,
         )
+    }
+
+    @Test
+    fun `등록 목록은 부르는 등록 뒤에 온 것까지 읽는다`() {
+        val registered = registeredMigrations("addMigrations(\n MIGRATION_1_2,\n MIGRATION_2_3(context),\n MIGRATION_3_4,\n)")
+        assertTrue("부르는 등록 뒤의 이름을 놓쳤다: $registered", registered.contains("MIGRATION_3_4"))
+    }
+
+    /** 첫 `addMigrations(` 의 인자 전부 — 여는 괄호의 짝이 닫힐 때까지. */
+    private fun registeredMigrations(code: String): String {
+        val open = code.indexOf("addMigrations(")
+        if (open < 0) error("addMigrations(...) 를 못 찾았다")
+        val start = open + "addMigrations(".length
+        var depth = 1
+        for (i in start until code.length) {
+            when (code[i]) {
+                '(' -> depth += 1
+                ')' -> {
+                    depth -= 1
+                    if (depth == 0) return code.substring(start, i)
+                }
+            }
+        }
+        error("addMigrations( 의 닫는 괄호를 못 찾았다")
     }
 }

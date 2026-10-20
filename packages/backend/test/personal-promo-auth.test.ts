@@ -161,20 +161,12 @@ async function apple(env: Env, plan: string | null) {
       name: '애플',
       plan,
       token_epoch: 0,
-      allow_family_alarms: 0,
-      family_alarm_quiet_windows: '[]',
       dynamic_prompt_settings_json: null,
     },
   ]);
   mockDB.pushResult([], 1); // UPDATE users
   mockDB.pushResult([], 1); // UPDATE apple_refresh_token(있을 때만)
-  mockDB.pushResult([
-    {
-      allow_family_alarms: 0,
-      family_alarm_quiet_windows: '[]',
-      dynamic_prompt_settings_json: null,
-    },
-  ]);
+  mockDB.pushResult([{ dynamic_prompt_settings_json: null }]);
   const res = await app().request(
     jsonReq('POST', '/auth/apple', { identity_token: 'tok', nonce: 'n' }),
     undefined,
@@ -226,7 +218,7 @@ for (const moment of MOMENTS) {
     it('로그인 — 원시 free 는 시점을 따르고, 원시 유료는 그대로', async () => {
       expect(await login(ENV, 'free')).toMatchObject(freeExpect);
       mockDB.reset();
-      expect(await login(ENV, 'family')).toMatchObject({ plan: 'family', personal_promo: null });
+      expect(await login(ENV, 'plus')).toMatchObject({ plan: 'plus', personal_promo: null });
     });
 
     it('구글 — 신규·기존 무료 모두', async () => {

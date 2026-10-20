@@ -59,10 +59,10 @@ enum AlarmSyncState: String, Codable, CaseIterable {
 }
 
 // MARK: - Origin
-// Android: `AlarmEntity.kt:63-68` `AlarmOrigins`
+// Android: `data/AlarmConstants.kt` 의 `AlarmOrigins`. 받은 알람 갈래(`received_remote`)는 없앴다 —
+// 남은 행은 로드할 때 내 알람으로 바뀐다(`ReceivedAlarmConversion`).
 enum AlarmOrigin: String, Codable, CaseIterable {
     case localOwned = "local_owned"
-    case receivedRemote = "received_remote"
 }
 
 // MARK: - Runtime State

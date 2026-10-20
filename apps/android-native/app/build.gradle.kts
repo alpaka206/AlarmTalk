@@ -176,8 +176,12 @@ android {
         //   서버가 탈퇴를 철회한다(#904). ⚠ 이 빌드는 **강제 업데이트 하한**이다(`app-version.ts` 의 Android
         //   `minSupported` 34 — Play 게재 확인 뒤 2026-10-16). 그때 서버의 옛 앱 호환 갈래를 지웠다. iOS 와 같은 versionName 을 쓴다.
         // 35 = 1.2.15. 목소리 등록 동의·재동의 뒤 동기화·목소리 대체 안내를 고친다.
-        versionCode = 35
-        versionName = "1.2.15"
+        // 36 = 1.2.16. 커플·가족 이용권과 그것에만 딸린 기능(초대 코드·목소리 공유·가족 알람)을 없앤다(법무 문서 7).
+        //   받아 둔 알람은 업데이트하며 내 알람으로 바뀐다(Room 28). ⚠ 이 빌드는 **강제 업데이트 하한**이 된다 — 옛 빌드는
+        //   없앤 이용권과 코드 입력을 계속 보인다. 하한(`app-version.ts` 의 Android `minSupported` 36)은 **Play 게재를
+        //   확인한 뒤** 올린다. 서버(정책 7·6 수락)가 이 빌드보다 먼저 나가야 한다. 광고 SDK 가 처음 실리는 빌드다.
+        versionCode = 36
+        versionName = "1.2.16"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -410,9 +414,9 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
-    // 앱 프로세스 포그라운드 복귀 감지(ProcessLifecycleOwner) — 복귀 시 원격 알람 즉시 pull.
+    // 앱 프로세스 포그라운드 복귀 감지(ProcessLifecycleOwner) — 복귀 시 계정 확인 워커를 건다.
     implementation("androidx.lifecycle:lifecycle-process:2.8.7")
-    // FCM(가족 알람 즉시 배달) — 앱이 백그라운드/종료여도 data push 로 즉시 pull. BoM 으로 버전 통일.
+    // FCM(플랜·목소리·계정 신호) — 앱이 백그라운드/종료여도 data push 를 받는다. BoM 으로 버전 통일.
     implementation(platform("com.google.firebase:firebase-bom:33.7.0"))
     implementation("com.google.firebase:firebase-messaging")
     implementation("androidx.navigation:navigation-compose:2.8.5")

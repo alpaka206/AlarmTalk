@@ -18,8 +18,8 @@ import org.robolectric.annotation.Config
  * **제자리 목소리 교체 — 직접 입력 알람만 내린다** (Codex #703 P1 회귀 방지).
  *
  * 교체는 옛 프로필 **행을 재사용**한다(id 가 그대로다). 그래서 접근권 대조
- * (`degradeAlarmsWithInaccessibleVoice`)로는 영원히 안 걸리고, 본인 소유 알람은 pull 대상도
- * 아니라 서버가 행을 내려도 그 기기에 닿지 않는다 — 놔두면 **지운 사람의 목소리로 계속 운다.**
+ * (`degradeAlarmsWithInaccessibleVoice`)로는 영원히 안 걸리고, 서버가 행을 내려도 기기로 내려받는
+ * 길이 없다 — 놔두면 **지운 사람의 목소리로 계속 운다.**
  *
  * 반대로 넓히면 안 된다: 프리셋(버킷) 알람은 서버가 같은 message id 로 새 목소리를 다시 만들어
  * 게시하므로, 여기서 벗기면 되돌릴 수 없이 잃는다.

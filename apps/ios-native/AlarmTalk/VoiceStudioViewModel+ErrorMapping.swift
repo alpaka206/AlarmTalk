@@ -44,8 +44,6 @@ extension VoiceStudioViewModel {
     nonisolated static func localizedVoiceMessage(forCode code: String) -> String {
         // 목소리 등록·확정 화면에서만 다르게 말해야 하는 코드들. 나머지는 공용 표가 받는다.
         switch code {
-        case "AUDIO_DURATION_TOO_SHORT":
-            return String(localized: "음성이 너무 짧아요. 다시 녹음해 주세요.")
         case "VOICE_PROFILE_NOT_FOUND":
             return String(localized: "목소리를 찾지 못했어요. 새로고침 후 다시 시도해 주세요.")
         case "INVALID_VOICE_PROFILE_ID":
@@ -111,7 +109,6 @@ extension VoiceStudioViewModel {
     /// 폴백 경로에서 **영영 발견되지 않는다.**
     nonisolated static let knownErrorCodes: [String] = [
         // 목소리 화면 고유
-        "AUDIO_DURATION_TOO_SHORT",
         "VOICE_PROFILE_NOT_FOUND",
         "INVALID_VOICE_PROFILE_ID",
         "NAME_TOO_LONG",
@@ -120,7 +117,6 @@ extension VoiceStudioViewModel {
         "RATE_LIMITED",
         "REQUEST_BODY_TOO_LARGE",
         "INTERNAL_ERROR",
-        "ALARM_SCHEMA_UPGRADING",
         "AUTH_INVALID_CREDENTIALS",
         "AUTH_EMAIL_CODE_INVALID",
         "AUTH_EMAIL_CODE_EXPIRED",

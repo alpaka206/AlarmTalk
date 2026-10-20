@@ -70,8 +70,6 @@ function pushExistingUser(storedEmail: string) {
       name: '규원',
       plan: 'free',
       token_epoch: 0,
-      allow_family_alarms: 0,
-      family_alarm_quiet_windows: '[]',
       dynamic_prompt_settings_json: null,
     },
   ]);
@@ -81,7 +79,7 @@ function pushExistingUser(storedEmail: string) {
 function pushTail() {
   mockDB.pushResult([], 1); // UPDATE apple_refresh_token (있을 때만 쓰이고, 남아도 무해)
   mockDB.pushResult([
-    { allow_family_alarms: 0, family_alarm_quiet_windows: '[]', dynamic_prompt_settings_json: null },
+    { dynamic_prompt_settings_json: null },
   ]); // fresh SELECT
 }
 

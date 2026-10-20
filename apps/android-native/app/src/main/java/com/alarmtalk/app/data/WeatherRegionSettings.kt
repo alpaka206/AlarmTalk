@@ -41,9 +41,6 @@ object WeatherRegionHolidaySync {
 
     /**
      * 사용자가 **이 기기에서** 자기 계정의 지역을 저장했다(설정 '지역' 행, 편집기 문구 화면).
-     *
-     * ⚠ **가족 알람에서 고른 지역으로 부르지 말 것.** 그건 받는 사람의 지역이지 이 기기의
-     * 지역이 아니다 — 부르면 남의 나라 공휴일로 내 알람이 꺼진다.
      */
     suspend fun onRegionSaved(store: HolidayCountryPreferenceStore, region: WeatherRegion?): Boolean {
         region ?: return false
@@ -107,7 +104,7 @@ object WeatherRegionHolidaySync {
  * 받아 적기(`MainViewModel.onAccountPromptSettingsReceived`)를 다시 돌릴 축이다(`AlarmTalkApp`).
  * ⚠ **응답마다 다른 순번이 축에 있어야 한다**(Codex #837). 값만 축으로 두면, 이 기기의 변경을 올리다 실패한 뒤
  * 서버가 **같은 옛 값**을 다시 줄 때(다음 `/auth/me`) 다시 돌지 않는다 — 그 변경은 '안 올라간 변경' 으로
- * 남은 채 프로세스가 다시 뜰 때까지 올라가지 않고, 그 사이 다른 기기·받는 가족은 옛 지역을 본다.
+ * 남은 채 프로세스가 다시 뜰 때까지 올라가지 않고, 그 사이 다른 기기는 옛 지역을 본다.
  * ⚠ 받은 시각([AuthSession.userFetchedAtMillis])은 순번이 아니다 — 개인 프로모 계정은 서버 계산 시각(초 단위)
  * 으로 바뀌어 같은 초의 두 응답이 같은 값이 된다. 순번은 세션 저장소가 저장마다 올린다
  * ([AuthSession.accountAnswerSeq]). 받아 적기는 멱등이라 프로필만 고친 저장으로 한 번 더 돌아도 해가 없다.

@@ -11,7 +11,6 @@ import com.alarmtalk.app.network.AuthSession
 import com.alarmtalk.app.network.AuthSessionStore
 import com.alarmtalk.app.network.AuthUser
 import com.alarmtalk.app.network.DynamicPromptSettings
-import com.alarmtalk.app.network.FamilyAlarmQuietWindow
 import com.alarmtalk.app.network.EmailVerificationConfirmRequest
 import com.alarmtalk.app.network.EmailVerificationRequest
 import com.alarmtalk.app.network.GoogleLoginRequest
@@ -397,7 +396,6 @@ private suspend fun MainViewModel.onSignedIn() {
     // 기회도 없다(2026-08-31 리뷰).
     viewModelScope.launch { refreshStoreEntitlement() }
     RemoteAlarmSyncScheduler.ensurePeriodic(getApplication())
-    RemoteAlarmSyncScheduler.runOnce(getApplication())
     com.alarmtalk.app.fcm.AlarmTalkMessagingService.registerCurrentToken(getApplication())
     val currentUserId = authSession?.user?.id?.takeIf { it.isNotBlank() }
     // 앞 세션이 '다른 계정'이었다면 그 계정이 끝날 때 소유자를 못 새겼을 수 있다(쓰기 실패,
@@ -644,67 +642,6 @@ internal fun MainViewModel.updateNickname(name: String) {
     }
 }
 
-internal fun MainViewModel.updateFamilyAlarmSettings(
-    allowFamilyAlarms: Boolean,
-    quietWindows: List<FamilyAlarmQuietWindow>,
-) {
-    val session = sessionOrMessage(R.string.msg_login_required_to_use) ?: return
-    val normalizedWindows = quietWindows
-        .map { window -> window.copy(days = window.days.distinct().filter { it in 0..6 }.sorted()) }
-        .filter { it.days.isNotEmpty() }
-        .take(8)
-    if (normalizedWindows.any { !isValidTimeText(it.start) || !isValidTimeText(it.end) }) {
-        message = getApplication<android.app.Application>().getString(R.string.msg_time_format_required)
-        return
-    }
-    // ⚠ **창을 다 지웠으면 지운 대로 둔다**(2026-08-08 변경). 예전에는 여기서 평일
-    // 09:00-18:30 을 되살려, 사용자가 방해금지를 전부 없애도 서버에는 다시 생겼다 —
-    // "껐는데 계속 막힌다" 가 된다. 레거시 3필드는 창이 없으면 null 로 보낸다.
-    val firstWindow = normalizedWindows.firstOrNull()
-    // 요청 시작 시점의 세션 세대 — 응답을 저장하기 전에 대조한다.
-    val startGeneration = authSessionStore.sessionGeneration()
-    val authorization = com.alarmtalk.app.network.AlarmTalkApiClient.bearer(session.token)
-    viewModelScope.launch {
-        authBusy = true
-        runCatching {
-            api.updateProfile(
-                authorization,
-                com.alarmtalk.app.network.UpdateProfileRequest(
-                    allowFamilyAlarms = allowFamilyAlarms,
-                    familyAlarmQuietDays = firstWindow?.days ?: emptyList(),
-                    familyAlarmQuietStart = firstWindow?.start,
-                    familyAlarmQuietEnd = firstWindow?.end,
-                    familyAlarmQuietWindows = normalizedWindows,
-                ),
-            )
-        }.onSuccess {
-            // 바꾼 칸(가족 설정 다섯)만 **지금 세션** 위에 — 초대 코드 등록 직후라면 그 사이 `/auth/me` 가 적은
-            // 가족 plan 을 요청 전의 무료 사본이 되돌린다([saveProfileEdit]).
-            saveProfileEdit(session.user.id, startGeneration) { user ->
-                user.copy(
-                    allowFamilyAlarms = allowFamilyAlarms,
-                    familyAlarmQuietDays = firstWindow?.days ?: emptyList(),
-                    // 세션 캐시의 레거시 3필드는 non-null 이라 표시용 자리값을 둔다.
-                    // 실제 판정은 언제나 `familyAlarmQuietWindows`(빈 목록 = 방해금지 없음)다.
-                    familyAlarmQuietStart = firstWindow?.start ?: "09:00",
-                    familyAlarmQuietEnd = firstWindow?.end ?: "18:30",
-                    familyAlarmQuietWindows = normalizedWindows,
-                )
-            }?.let { saved ->
-                authSession = saved
-                // 확인 조회 — 저장 전에 떠나 옛 가족 설정을 읽은 `/auth/me` 가 늦게 와도 바로잡는다([saveProfileEdit]).
-                refreshAppSession(rollToken = false)
-            }
-            refreshSocial()
-            message = getApplication<android.app.Application>().getString(R.string.msg_family_alarm_settings_saved)
-        }.onFailure { error ->
-            AlarmTalkLog.reportError("Failed to update family alarm settings", error)
-            message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_family_alarm_settings_save_failed))
-        }
-        authBusy = false
-    }
-}
-
 /**
  * 계정 설정(지역·사주)을 올린다. 부르는 쪽은 먼저 이 기기에 적고 '안 올라간 변경' 표시를 남긴다
  * (`saveWeatherLocation`·`saveFortuneInfo`) — 올릴 값은 [settings] 가 아니라 **차례가 온 뒤의 이 기기 값**이다
@@ -761,7 +698,6 @@ private suspend fun MainViewModel.uploadDynamicPromptSettings(userId: String) {
         // `/auth/me` 가 적은 plan·프로모·받은 시각과 다른 칸을 되돌린다([saveProfileEdit]).
         val saved = saveProfileEdit(session.user.id, startGeneration) { it.copy(dynamicPromptSettings = updatedSettings) }
             ?.also { authSession = it }
-        refreshSocial()
         // **울타리 뒤의 조회로 확인한다**(Codex #837) — 울타리는 올리기 전에 떠난 조회를 모두 가리므로, 그중 올리기
         // **뒤**에 다른 기기가 고친 값을 읽은 응답도 버려진다. 새로 보낸 조회는 울타리 밖이라 서버의 지금 값을 받아
         // 적는다(iOS `updateProfile` 뒤의 `refreshUser` 와 같다). 토큰은 굴리지 않는다 — 토큰을 키로 쓰는 효과가
@@ -802,9 +738,6 @@ internal fun MainViewModel.onAccountPromptSettingsReceived(userId: String, setti
         }
     }
 }
-
-private fun isValidTimeText(value: String): Boolean =
-    Regex("""^([01]\d|2[0-3]):[0-5]\d$""").matches(value)
 
 // 앱 시작 시 백엔드 최소지원버전을 조회한다. 설치 버전이 그 미만이면 updateRequired=true 로
 // 두어 AlarmTalkApp 이 업데이트 차단 화면을 띄운다. (로그인 여부와 무관하게 동작)
@@ -1073,10 +1006,10 @@ internal fun MainViewModel.submitConsents(agreedOptional: Set<String>) {
                     .write(ownerUserId, row.agreed)
             }
             consentChecked = true
-            // 동의를 기다리는 동안 막혔던 동기화를 지금 다시 돈다(2026-10-16, 코덱스). 게이트가 떠 있던 동안의
-            // pull·가족 알람 푸시는 403 `CONSENT_REQUIRED` 를 받고 '동의 대기' 로 조용히 접혔다(`SyncWorkerFailure`) —
-            // 다시 걸지 않으면 다음 주기(15분)까지 받은 가족 알람이 이 기기에 예약되지 않는다.
-            RemoteAlarmSyncScheduler.runOnce(getApplication())
+            // 동의를 기다리는 동안 막혔던 알람 전송을 지금 다시 돈다(`docs/spec/consent.md`). 게이트가 떠 있던 동안의
+            // 전송은 403 `CONSENT_REQUIRED` 를 받고 '동의 대기' 로 조용히 접혔다 — 다시 걸지 않으면 그 사이 저장한
+            // 알람이 다음 회차까지 서버에 오르지 않는다. iOS 는 `consentSubmitGeneration` → `runFullSync` 가 같은 일을 한다.
+            syncNow()
         }.onFailure { error ->
             AlarmTalkLog.reportError("Failed to record consents", error)
             if (authSession?.user?.id != ownerUserId) return@onFailure
@@ -1277,7 +1210,7 @@ internal fun MainViewModel.updateMarketingConsent(agreed: Boolean) {
  *
  * 마케팅 토글과 달리 **파괴적**이다. 서버는 이 값을 false 로 받는 즉시 등록한 목소리 프로필·
  * 업로드 원본·생성된 음성·저장한 문구를 삭제하고, 그 목소리로 울리던 알람은 기본 목소리(미나)로
- * 바뀐다(가족에게 공유한 알람 포함). 되돌리는 경로는 없다.
+ * 바뀐다. 되돌리는 경로는 없다.
  *
  * 그래서 마케팅 선례와 두 가지가 다르다:
  *  - **낙관적 즉시 반영을 하지 않는다.** 서버가 200 을 준 뒤에만 화면을 바꾼다.
@@ -1304,7 +1237,7 @@ internal suspend fun MainViewModel.withdrawVoiceBiometricConsent(): Boolean {
     //
     // 화면 상태(voiceProfiles)만 믿으면 안 된다 — 프리로드가 아직 안 끝났거나 실패했으면 비어
     // 있고, 그대로 진행하면 강등 대상이 0개가 되어 철회한 목소리가 계속 울린다(Codex #660).
-    // Room 은 alarm.voiceProfileId 만 갖고 있어 '내 클론'과 '공유받은 클론'을 구분하지 못하므로
+    // Room 은 alarm.voiceProfileId 만 갖고 있어 그 목소리가 지금 서버에 남은 내 클론인지 모르므로
     // 로컬만으로는 대상을 정할 수 없다.
     //
     // 확정하지 못하면 **철회를 시작하지 않는다.** 아직 아무것도 지우지 않은 상태라 재시도가
@@ -1387,12 +1320,11 @@ internal fun MainViewModel.syncNow() {
     // ⚠ **두 회차를 겹쳐 돌리지 않는다.** syncNow 는 알람 탭 진입·시작·푸시 등 여러 곳에서
     // 불려 짧은 간격으로 두 번 들어온다. 두 회차가 같은 '아직 안 올린' 목록을 읽으면
     // (remoteAlarmId 는 응답이 와야 커밋된다) 둘 다 create 로 가서 **서버에 같은 알람이 두 개**
-    // 생긴다 — 가족 알람이면 수신자에게 두 번 간다. 2026-08-06 실기기 재현(운세 알람 1개가
-    // 서버에 2행).
+    // 생긴다. 2026-08-06 실기기 재현(운세 알람 1개가 서버에 2행).
     //
     // 다만 **버리지는 않고 미뤄 둔다.** 그냥 return 하면, 앞 회차가 목록을 이미 스냅샷한 뒤에
     // 저장된 알람이 다음 트리거(탭 재진입·앱 재실행)까지 서버에 안 올라간다 — repository.
-    // syncWithBackend 를 부르는 곳은 여기뿐이고 워커는 pull 만 한다(Codex #686). 그래서
+    // syncWithBackend 를 부르는 곳은 여기뿐이고 워커는 알람을 올리지 않는다(Codex #686). 그래서
     // 요청이 겹치면 표시만 남기고, 지금 회차가 끝난 뒤 한 번 더 돈다.
     //
     // 켜는 건 반드시 launch **밖**이어야 한다. 안에서 켜면 두 코루틴이 모두 예약된 뒤에
@@ -1414,34 +1346,14 @@ internal fun MainViewModel.syncNow() {
         // 가져오므로 재로그인 직후엔 새 계정의 로컬 행이 옛 계정 토큰으로 올라간다(Codex #686).
         // 로그아웃됐으면 이번 회차는 돌리지 않고 끝낸다.
         val session = authSession ?: break
+        // 올리기 실패는 **그 알람 행이 직접 말한다**(syncState=FAILED → `AlarmStates.FAILED` 배지) —
+        // 위에서 같은 말을 한 번 더 하지 않는다.
         runCatching {
-            val push = repository.syncWithBackend(api, session.token)
-            val pull = repository.pullReceivedAlarms(api, session.token)
-            push to pull
-        }.onSuccess { (push, pull) ->
-            val app = getApplication<android.app.Application>()
-            when {
-                // push 실패는 **그 알람 행이 직접 말한다**(syncState=FAILED →
-                // `AlarmStates.FAILED` 배지). 같은 말을 위에서 한 번 더 하면 사용자는
-                // 서로 다른 두 문제로 읽는다 — 어느 알람 이야기인지도 위쪽 문구로는 알 수 없다.
-                //
-                // pull 실패는 다르다. 못 받아온 알람은 화면에 행 자체가 없어서, 알릴 자리가
-                // 여기밖에 없다.
-                pull.failed > 0 ->
-                    message = app.getString(R.string.msg_sync_pull_partial_failed)
-                // 앱이 열려 있을 때 새로 받은 상대 알람을 인앱으로도 알린다(시스템 알림에만 의존하지 않음).
-                // syncNow 는 알람 탭 진입 시 자동 실행되므로, 사용자가 보던 메시지를 덮지 않게 비어 있을 때만.
-                pull.imported > 0 && message.isNullOrBlank() ->
-                    message = app.resources.getQuantityString(
-                        R.plurals.msg_received_alarm_arrived,
-                        pull.imported,
-                        pull.imported,
-                    )
-            }
+            repository.syncWithBackend(api, session.token)
         }.onFailure { error ->
             // syncNow 는 알람 탭 진입 시 자동 실행되고(사용자 조치가 아님) 다음 진입·주기 sync 가
             // 자동 재시도한다. 그래서 전체 실패는 겁주는 토스트 대신 로그만 남긴다 — 특히 첫
-            // 로그인 직후 동의 정착 전 GET /alarm 이 잠깐 CONSENT_REQUIRED 로 막히는 게
+            // 로그인 직후 동의 정착 전 알람 올리기가 잠깐 CONSENT_REQUIRED 로 막히는 게
             // 흔한데(면제 경로 아님), 이건 정상 재시도로 곧 풀린다. 사용자에게 뜨던
             // "알람 정보를 주고받지 못했어요" 토스트를 제거한다.
             if (error is kotlin.coroutines.cancellation.CancellationException) throw error
@@ -1478,20 +1390,20 @@ internal fun MainViewModel.clearMessage() {
 }
 
 /**
- * 프로필 저장(`PATCH /user/me` — 닉네임·가족 알람 설정·계정 설정)이 성공한 뒤 **바꾼 칸만** 세션에 적는다.
+ * 프로필 저장(`PATCH /user/me` — 닉네임·계정 설정)이 성공한 뒤 **바꾼 칸만** 세션에 적는다.
  * 저장소가 지금 세션을 같은 락 안에서 읽어 [change] 만 얹는다(`AuthSessionStore.updateUserIfAlive`).
  *
  * ⚠ **요청 전에 잡은 세션의 사본을 다시 저장하지 말 것**(2026-10-05). 예전에는 `session.copy(user = …)` 를 통째로
- * 저장해, 요청이 도는 사이 `/auth/me`(쿠폰·초대 등록 뒤의 갱신, `plan_changed`, 복귀 갱신)가 적은 plan·프로모·받은
- * 시각과 다른 칸(다른 기기에서 바꾼 이름·가족 설정)을 다음 `/auth/me` 까지 되돌렸다. 판정 스냅샷은 그대로였지만
- * 세션 plan 을 직접 읽는 편집기(`freeVoiceTier`)·목소리 관리(`paidVoiceAccess`)가 방금 가족이 된 사람을 무료로
+ * 저장해, 요청이 도는 사이 `/auth/me`(결제 뒤의 갱신, `plan_changed`, 복귀 갱신)가 적은 plan·프로모·받은
+ * 시각과 다른 칸(다른 기기에서 바꾼 이름)을 다음 `/auth/me` 까지 되돌렸다. 판정 스냅샷은 그대로였지만
+ * 세션 plan 을 직접 읽는 편집기(`freeVoiceTier`)·목소리 관리(`paidVoiceAccess`)가 방금 유료가 된 사람을 무료로
  * 그렸다. 계정 설정 한 칸만 지키던 것(Codex #837 검증)을 안 바꾼 칸 전부로 넓혔다.
  *
  * 토큰도 저장소의 것을 지킨다 — 요청이 도는 사이 rolling refresh 가 굴린 토큰을 옛 것으로 덮으면, 하필 옛 토큰의
  * 만료가 임박했을 때 다음 요청이 401 로 사용자를 로그아웃시킨다(Codex #665 P2). 세션이 그 사이 끝났거나 다른 계정이
  * 됐으면 아무것도 적지 않는다 — A 의 유저 정보에 B 의 토큰이 붙은 잡종 세션이 된다(Codex #665 P1).
  *
- * 저장이 끝나면 부르는 쪽이 **확인 조회**를 한다(토큰은 굴리지 않는다) — 저장 **전에** 떠나 옛 이름·가족 설정을 읽은
+ * 저장이 끝나면 부르는 쪽이 **확인 조회**를 한다(토큰은 굴리지 않는다) — 저장 **전에** 떠나 옛 이름을 읽은
  * `/auth/me` 가 늦게 와도, 확인 조회가 뒤에 덮거나 그 옛 답이 확인 조회의 순번에 밀려 버려진다
  * (`PersonalPromoLedger.claimPlanAnswer`). iOS `updateProfile` 뒤의 `refreshUser` 와 같다.
  */
@@ -1597,9 +1509,8 @@ internal suspend fun MainViewModel.refreshAppSessionNow(rollToken: Boolean = tru
             // **나중에 보낸 요청의 답이 이미 plan 에 쓰였으면 이 답은 쓰지 않는다**
             // (`PersonalPromoLedger.claimPlanAnswer` — iOS `AuthViewModel.applyFreshPlan` 의 순번 가드).
             // 진입 갱신이 떠 있는 동안 쿠폰·결제·`plan_changed` 뒤의 갱신이 먼저 돌아오면, 늦게 온
-            // 진입 갱신의 옛 plan·프로모가 세션과 스냅샷의 표지를 되살린다 — 보류 규칙(D9)이 방금
-            // 가족이 된 사람의 가족 기능을 닫고, 옛 plan 으로 `planAnsweredEntry` 까지 세워 잠금
-            // 대기를 풀어 버린다. 버리는 것은 세션·스냅샷 쓰기와 plan 반영 표시 전부다 — 더 새 답이
+            // 진입 갱신의 옛 plan·프로모가 세션과 스냅샷의 표지를 되살린다 — 옛 plan 으로
+            // `planAnsweredEntry` 까지 세워 잠금 대기를 풀어 버린다. 버리는 것은 세션·스냅샷 쓰기와 plan 반영 표시 전부다 — 더 새 답이
             // 모든 필드를 이미 새로 적었다. 이 답이 굴려 준 토큰도 버린다(무상태 JWT 라 지금 토큰이
             // 그대로 유효하다). 계정 응답(종료 안내)도 이미 더 새 답이 적었다.
             // ⚠ **쓰기 전에** 잡는다 — 이 블록은 멈추지 않고 메인 스레드에서 끝까지 돌아, 잡은 뒤
@@ -1677,6 +1588,8 @@ internal suspend fun MainViewModel.refreshAppSessionNow(rollToken: Boolean = tru
                     // 갈래가 이걸 기다린다(`freePlanLockMayApply`).
                     personalPromoLedger.recordPlanApplied(accountRequest)
                     applied = true
+                    // 받았던 알람의 2단계는 이 답도 기다린다(`promoteFormerReceivedAlarms`).
+                    promoteFormerReceivedAlarms(id)
                 }
             }
         }.onFailure { error ->

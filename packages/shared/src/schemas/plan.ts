@@ -10,21 +10,21 @@ import { z } from 'zod';
  * 「백엔드·클라 공용 계약」이라고 규정한 `@alarmtalk/shared` 에는 플랜 상수가 **하나도**
  * 없었다. 계약을 둘 자리가 비어 있어서 네 벌이 생긴 것이다.
  *
- * 실제로 갈라져 있었다: 안드로이드의 `planType` 목록에만 `individual`·`plus`·`couple` 이
- * 있었는데, DB CHECK 상 `plan_type` 은 `free|personal|family` 뿐이라 **도달할 수 없는
- * 가지**였다. 지금은 과허용 방향이라 사고가 안 났을 뿐, 반대로 한 칸만 어긋나면 돈을 낸
+ * 실제로 갈라져 있었다: 안드로이드의 `planType` 목록에만 DB CHECK 에 없는 값이 있어 **도달할
+ * 수 없는 가지**였다. 과허용 방향이라 사고가 안 났을 뿐, 반대로 한 칸만 어긋나면 돈을 낸
  * 사용자가 잠긴다.
  *
  * ## 축이 셋이고 뜻이 다르다
  *
  * | 컬럼 | 값 | 뜻 |
  * | --- | --- | --- |
- * | `plans.key` | free / personal / **couple** / family | 상품(가격·표시 이름) |
- * | `plans.plan_type` | free / personal / **family** | **행동 분류 — 그룹을 갖는가** |
- * | `users.plan` | free / personal / plus / couple / family | 사용자에게 부여된 등급 |
+ * | `plans.key` | free / personal | 상품(가격·표시 이름) |
+ * | `plans.plan_type` | free / personal | 행동 분류 |
+ * | `users.plan` | free / personal / plus | 사용자에게 부여된 등급 |
  *
- * ⚠ **커플은 `key='couple'` 인데 `plan_type='family'` 다** — 정원 2명짜리 그룹이라는 뜻이지
- * 가족 상품이라는 뜻이 아니다. 셋을 섞어 쓰면 그룹 생성·정원 계산이 통째로 어긋난다.
+ * 개인 플랜은 상품 키가 `personal` 이고 등급이 `plus` 다 — 셋을 섞어 쓰지 말 것.
+ * DB CHECK(`plans.plan_type`·`users.plan`)에는 `family` 가 아직 남아 있다. 커플·가족 이용권을
+ * 걷어낼 때 부모 테이블을 다시 만들 수 없어 둔 글자이고, 그 값을 쓰는 코드는 없다.
  *
  * ## 네이티브 앱은 이 파일을 못 가져다 쓴다
  *
@@ -34,23 +34,23 @@ import { z } from 'zod';
  */
 
 /** 유료로 치는 `users.plan` 값. 판정기의 마지막 단이 이 집합을 본다. */
-export const PAID_USER_PLANS = ['personal', 'plus', 'couple', 'family'] as const;
+export const PAID_USER_PLANS = ['personal', 'plus'] as const;
 export type PaidUserPlan = (typeof PAID_USER_PLANS)[number];
 
 /** `users.plan` 이 가질 수 있는 값 전부. */
 export const USER_PLANS = ['free', ...PAID_USER_PLANS] as const;
 export type UserPlan = (typeof USER_PLANS)[number];
 
-/** 유료로 치는 `plans.plan_type`. **DB CHECK 와 같아야 한다**(`migrations.ts`). */
-export const PAID_PLAN_TYPES = ['personal', 'family'] as const;
+/**
+ * 유료로 치는 `plans.plan_type`. **DB CHECK 가 허용하는 값만** 둔다(`migrations.ts` —
+ * `scripts/check-plan-constants.py` 가 대조한다).
+ */
+export const PAID_PLAN_TYPES = ['personal'] as const;
 export type PaidPlanType = (typeof PAID_PLAN_TYPES)[number];
 
-/** `plans.plan_type` 이 가질 수 있는 값 전부. DB CHECK 와 짝이다. */
+/** 우리가 쓰는 `plans.plan_type` 값 전부. */
 export const PLAN_TYPES = ['free', ...PAID_PLAN_TYPES] as const;
 export type PlanType = (typeof PLAN_TYPES)[number];
-
-/** 그룹(공유 이용권)을 갖는 플랜 타입. 커플이 여기 들어간다 — 위 표 참조. */
-export const GROUP_PLAN_TYPES = ['family'] as const;
 
 export const UserPlanSchema = z.enum(USER_PLANS);
 export const PlanTypeSchema = z.enum(PLAN_TYPES);
@@ -58,11 +58,6 @@ export const PlanTypeSchema = z.enum(PLAN_TYPES);
 /** 이 `users.plan` 이 유료인가. 서버·클라가 같은 답을 내야 하는 유일한 판정. */
 export function isPaidUserPlan(plan: string | null | undefined): boolean {
   return plan != null && (PAID_USER_PLANS as readonly string[]).includes(plan.trim().toLowerCase());
-}
-
-/** 이 `plans.plan_type` 이 그룹을 갖는가(초대 코드·정원·해체 대상인가). */
-export function isGroupPlanType(planType: string | null | undefined): boolean {
-  return planType != null && (GROUP_PLAN_TYPES as readonly string[]).includes(planType);
 }
 
 /**
@@ -113,8 +108,8 @@ export function isPersonalPromoActive(
  * `'plus'`, 그 밖에는 원시 그대로다 — `null`·빈 값·유료는 손대지 않는다(행이 없는 계정을
  * 개인으로 올리지 않는다).
  *
- * ⚠ 이 값은 **표시와 내 개인 기능 게이트**용이다. `users.plan` 에 쓰는 경로·커플/가족 기능은
- * 원시값을 본다(스펙의 계산값/원시값 표).
+ * ⚠ 이 값은 **표시와 내 개인 기능 게이트**용이다. `users.plan` 에 쓰는 경로는 원시값을 본다
+ * (스펙의 계산값/원시값 표).
  */
 export function userPlanWithPromo<P extends string | null | undefined>(
   rawPlan: P,
@@ -135,7 +130,7 @@ export function personalPromoNoticeFrom(endsAt: Date): Date {
  * 실린다. 원시 plan 이 free 이고 구간 안일 때만 값이 있고, 그 밖에는 `null`(구서버는 필드
  * 자체가 없다 — 그래서 optional·nullable 이다). 시각은 초 단위 UTC ISO 8601(`…T15:00:00Z`).
  *
- * - 값이 있다 = **원시 plan 이 free 다.** 앱은 이걸로 '구독 행이 커플·가족 등급을 올리지 못하는
+ * - 값이 있다 = **원시 plan 이 free 다.** 앱은 이걸로 '남은 구독 행이 등급을 올리지 못하는
  *   보류 상태' 를 안다 — 그래서 결제 보류 계정에도 `null` 로 두지 않는다.
  * - `deletes_voices_at_end` = 지금 끝나면 이 계정이 **종료 전환 대상**인가(원시 free **이고**
  *   `status = 'active'` 구독 행이 없다). 결제 보류(ON_HOLD·PAUSED)처럼 행이 남아 있으면 `false`

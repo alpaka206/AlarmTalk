@@ -3,14 +3,13 @@ import OSLog
 
 // MARK: - RemoteAlarmSyncViewModel
 //
-// 외부 호출 시그니처 (`refresh(session:)`, `push(record:store:session:)`,
-// `deleteRemote(record:session:)`) 는 유지하면서 내부 동기화 로직을
-// `RemoteAlarmPullSync` / `RemoteAlarmPushSync` 에 위임한다.
+// 내 알람을 서버에 올린다 — `push(record:store:session:)`(단건), `runFullSync()`(일괄),
+// `deleteRemote(record:session:)`. 일괄 동기화는 `RemoteAlarmPushSync` 에 위임한다.
+// 서버에서 받아 오는 알람은 없다(받은 알람은 커플·가족 이용권과 함께 없앴다).
 //
 // 의존성 주입:
-//   - 메인 앱(`AlarmTalkApp`) 이 `configure(store:alarmKit:auth:)` 를
-//     `task { ... }` 안에서 한 번 호출해 pull/push 인스턴스를 초기화한다.
-//   - configure 전 refresh 는 로컬에 반영할 대상이 없으므로 조용히 건너뛴다.
+//   - 메인 앱(`AlarmTalkApp`) 이 `configure(store:auth:)` 를 `task { ... }` 안에서 호출해
+//     push 인스턴스를 초기화한다. configure 전 일괄 동기화는 조용히 건너뛴다.
 @MainActor
 final class RemoteAlarmSyncViewModel: ObservableObject {
     @Published var statusMessage: String?
@@ -22,7 +21,7 @@ final class RemoteAlarmSyncViewModel: ObservableObject {
 
     private let api: AlarmTalkAPI
     private weak var auth: AuthViewModel?
-    private var pull: RemoteAlarmPullSync?
+    private var store: LocalAlarmStore?
     private var push: RemoteAlarmPushSync?
 
     init(api: AlarmTalkAPI = .shared) {
@@ -33,52 +32,12 @@ final class RemoteAlarmSyncViewModel: ObservableObject {
         statusMessage = nil
     }
 
-    /// 메인 앱 초기화 시 한 번 주입. 이후 refresh/push 는 새 동기화 컴포넌트를 사용.
-    func configure(
-        store: LocalAlarmStore, alarmKit: AlarmKitViewModel, auth: AuthViewModel,
-        waitForStore: @escaping @MainActor (LocalAlarmStore) async throws -> Void = {
-            try await RemoteAlarmPullSync.requireLoadedStore($0)
-        }
-    ) {
+    /// 메인 앱 초기화 시 주입한다. 멱등이다 — 이미 꽂혀 있으면 그대로 둔다.
+    func configure(store: LocalAlarmStore, auth: AuthViewModel) {
         self.auth = auth
-        if pull == nil {
-            pull = RemoteAlarmPullSync(
-                api: api,
-                store: store,
-                alarmKit: alarmKit,
-                audioCache: .shared,
-                auth: auth,
-                waitForStore: waitForStore
-            )
-        }
         if push == nil {
+            self.store = store
             self.push = RemoteAlarmPushSync(api: api, store: store, auth: auth)
-        }
-    }
-
-    /// 서버에서 알람/음성 프로필 목록을 동기화한다.
-    /// configure 가 호출되었다면 `RemoteAlarmPullSync.runOnce` 를 통해
-    /// 신규 receivedRemote 자동 스케줄링과 **그만받기 정리**까지 수행한다
-    /// (서버 목록에서 사라졌다고 지우지는 않는다 — `RemoteAlarmPullSync` 헤더 참조).
-    func refresh(session: AuthSession?, force: Bool = false) async {
-        guard session?.token != nil else { return }
-        guard force || !isBusy else { return }
-        busyOperations += 1
-        defer { busyOperations -= 1 }
-
-        do {
-            if let pull {
-                try await pull.runOnce()
-            }
-            // ⚠ **성공을 알리지 말 것.** 이 동기화는 사용자가 누른 게 아니라 화면 진입·
-            // 전경 복귀에서 자동으로 돈다. 성공은 알람 목록이 이미 보여 주므로, 여기에
-            // 문구를 세우면 사용자가 한 적 없는 일의 결과가 매번 떠 있는다.
-            // 안드로이드에는 이 문구가 아예 없다(strings.xml 에 대응 항목 없음).
-            statusMessage = nil
-        } catch {
-            // ⚠ 취소는 표시하지 않는다 — 우리가 스스로 접은 것이다(아래 주석 참조).
-            guard !isCancellation(error) else { return }
-            statusMessage = userFacingErrorMessage(error, fallback: String(localized: "알람 정보를 불러오지 못했어요"))
         }
     }
 
@@ -117,7 +76,8 @@ final class RemoteAlarmSyncViewModel: ObservableObject {
                 lastSyncedAtMillis: nowMillis
             ) else { throw RemoteAlarmPushSync.PushError.localCommitFailed }
             try Task.checkCancellation()
-            await refresh(session: currentSession, force: true)
+            // ⚠ **성공을 알리지 말 것.** 행이 이미 그 결과를 보여 준다(안드로이드에도 이 문구가 없다).
+            statusMessage = nil
         } catch {
             guard !isCancellation(error) else { return }
             store.markSyncFailed(id: record.id)
@@ -125,44 +85,43 @@ final class RemoteAlarmSyncViewModel: ObservableObject {
         }
     }
 
-    /// 풀 push 사이클 수동 실행. 백그라운드 task 외에 UI 의 "전체 동기화" 같은
-    /// 후속 액션에서 호출 가능.
+    /// 일괄 push 사이클. 앱 시작·전경 복귀·알람 탭 진입·동의 직후에 돈다.
     ///
-    /// Android `MainViewModel.syncNow` 와 동일하게 push → pull 순으로 돌리고,
-    /// 부분 실패(개별 행 push/pull 실패)는 push-failed / pull-failed / 둘 다로
-    /// 나눠 안내한다. 사이클 전체가 throw 된 경우(네트워크 단절 등)는 기존
-    /// generic fallback 으로 폴백한다.
+    /// Android `MainViewModel.syncNow` 와 같다. 부분 실패(개별 행 push 실패)만 안내한다.
+    /// 사이클 전체가 throw 된 경우(네트워크 단절 등)는 로그만 남긴다(아래 catch 주석).
     ///
-    /// - Returns: 회차가 **완결됐는가** — push·pull 이 던지지 않았고 행 단위 실패도 없었다.
-    ///   의존성 전(`configure` 전)·취소·사이클 실패·부분 실패는 false 다. 알람 탭의 60초
-    ///   스로틀(`AlarmTabSyncThrottle`)이 이걸 보고 완결되지 않은 회차의 칸을 지운다 —
-    ///   그래야 다음 진입이 곧바로 다시 돈다(코덱스 #823 7차).
+    /// - Returns: 회차가 **완결됐는가** — 알람 저장소가 디스크에서 올라왔고, push 가 던지지 않았고,
+    ///   행 단위 실패도 없었다. 의존성 전(`configure` 전)·저장소 로드 전·취소·사이클 실패·부분 실패는
+    ///   false 다. 알람 탭의 60초 스로틀(`AlarmTabSyncThrottle`)이 이걸 보고 완결되지 않은 회차의
+    ///   칸을 지운다 — 그래야 다음 진입이 곧바로 다시 돈다(코덱스 #823 7차).
+    /// - Parameter storeLoadTimeout: 저장소 로드를 기다리는 상한(`LocalAlarmStore.waitUntilLoadedFromDisk`).
     @discardableResult
-    func runFullSync() async -> Bool {
-        guard let push, let pull else { return false }
-        // 가족 푸시도 이 진입점을 쓴다. 표시용 busy 가드에서 버리면 하위 pull 큐에
-        // 도달하지 못하므로, 앞 회차의 실패/취소 뒤에도 호출별로 차례를 넘긴다.
+    func runFullSync(storeLoadTimeout: TimeInterval = 3) async -> Bool {
+        guard let push, let store else { return false }
+        // 표시용 busy 가드에서 버리지 않는다 — 앞 회차의 실패/취소 뒤에도 호출별로 차례를 넘긴다.
         await syncGate.acquire()
         defer { syncGate.release() }
         guard !Task.isCancelled else { return false }
         busyOperations += 1
         defer { busyOperations -= 1 }
+        // ⚠ **알람이 디스크에서 올라온 뒤에 올린다**(`BackgroundSyncTask` 와 같다). 로드 전이면 올릴 행이
+        //   없어 빈손으로 끝나는데, 그걸 완결로 세면 알람 탭 스로틀이 60초 동안 다시 돌지 않는다.
+        await store.waitUntilLoadedFromDisk(timeout: storeLoadTimeout)
+        guard !Task.isCancelled else { return false }
+        let storeReady = store.hasLoadedFromDisk
         do {
             let pushResult = try await push.runOnce()
-            let pullResult = try await pull.runOnce()
-            let failedMessage = alarmSyncPartialFailureMessage(
-                pushFailed: pushResult.failed,
-                pullFailed: pullResult.failed
-            )
-            // 부분 실패만 알린다 — 성공은 위와 같은 이유로 침묵한다.
+            let failedMessage = alarmSyncPartialFailureMessage(pushFailed: pushResult.failed)
+            // ⚠ **부분 실패만 알린다 — 성공은 침묵한다.** 이 동기화는 사용자가 누른 게 아니라
+            // 화면 진입·전경 복귀에서 자동으로 돈다. 성공은 알람 목록이 이미 보여 준다.
             statusMessage = failedMessage
-            return failedMessage == nil
+            return storeReady && failedMessage == nil
         } catch {
             // ⚠ **사이클 전체 실패는 사용자에게 띄우지 않는다 — 로그만 남긴다.**
             // `runFullSync` 는 사용자가 누른 것이 아니라 앱 시작·세션 변경·전경 복귀·
             // 알람 탭 진입에서 **자동으로** 돈다. 그래서 실패 문구를 띄우면 사용자가
             // 한 적 없는 일이 실패했다고 말하는 꼴이고, 다음 진입·주기 sync 가 알아서
-            // 재시도한다. 특히 첫 로그인 직후 동의가 정착하기 전 `GET /alarm` 이 잠깐
+            // 재시도한다. 특히 첫 로그인 직후 동의가 정착하기 전 알람 요청이 잠깐
             // `CONSENT_REQUIRED` 로 막히는 게 흔한데, 이건 정상 재시도로 곧 풀린다.
             //
             // 안드로이드가 같은 이유로 이미 이 토스트를 걷어냈다
@@ -187,33 +146,19 @@ final class RemoteAlarmSyncViewModel: ObservableObject {
 
     private static let syncLogger = Logger(subsystem: "com.alarmtalk.app", category: "AlarmSync")
 
-    /// push/pull 부분 실패 카운트를 사람이 읽는 안내로 변환. 실패가 없으면 nil.
-    /// Android `alarmSyncFailureMessage` (strings.xml msg_sync_*_partial_failed) parity.
-    private func alarmSyncPartialFailureMessage(pushFailed: Int, pullFailed: Int) -> String? {
-        switch (pushFailed > 0, pullFailed > 0) {
-        case (true, true):
-            return String(localized: "알람 변경사항 일부를 저장하지 못했고, 받은 알람 일부를 불러오지 못했어요.")
-        case (true, false):
-            return String(localized: "알람 변경사항 일부를 저장하지 못했어요. 이 기기의 알람은 그대로 울려요.")
-        case (false, true):
-            return String(localized: "받은 알람 일부를 불러오지 못했어요. 잠시 후 다시 동기화해 주세요.")
-        case (false, false):
-            return nil
-        }
+    /// push 부분 실패 카운트를 사람이 읽는 안내로 변환. 실패가 없으면 nil.
+    /// Android `alarmSyncFailureMessage` 와 같은 문구다.
+    private func alarmSyncPartialFailureMessage(pushFailed: Int) -> String? {
+        guard pushFailed > 0 else { return nil }
+        return String(localized: "알람 변경사항 일부를 저장하지 못했어요. 이 기기의 알람은 그대로 울려요.")
     }
 
     /// 단일 원격 알람 삭제 (서버 측). 로컬 cascade 는 AlarmKitViewModel.cancel 이 수행.
+    /// **성공 여부를 돌려준다** — 호출자가 실패를 알릴지 정한다.
     ///
-    /// ⚠ **받은 알람은 지우는 게 아니라 '그만받기' 다.** `DELETE /alarm/:id` 는 서버가
-    /// 소유자만 허용해서 받은 알람에는 404 가 나고, 그러면 그만받기가 기록되지 않아
-    /// **다음 pull 이 그 알람을 다시 임포트한다** — 지웠는데 되살아난다.
-    /// 서버 쪽 삭제. **성공 여부를 돌려준다** — 호출자가 갈래를 나눠야 하기 때문이다
-    /// (받은 알람은 서버 기록이 없으면 로컬에서 지우면 안 된다. `AlarmsListView.deleteAlarm`).
-    ///
-    /// ⚠ **성공 뒤에 `refresh()` 를 부르지 말 것**(2026-08-18 제거). 알람 하나 지우자고
+    /// ⚠ **성공 뒤에 목록을 다시 받지 말 것**(2026-08-18 제거). 알람 하나 지우자고
     /// **목록 전체와 TTS 음원**을 다시 받고 있었다 — 삭제를 눌러도 한참 뒤에야 행이
-    /// 사라지던 체감 지연의 본체다. 지운 행은 호출자가 이미 로컬에서 없앴고, 서버 상태는
-    /// 다음 정기 동기화가 맞춘다.
+    /// 사라지던 체감 지연의 본체다. 지운 행은 호출자가 이미 로컬에서 없앴다.
     /// - Parameter announceFailure: 실패를 배너로 알릴지. **뒤에서 도는 삭제는 false** —
     ///   행은 이미 사라졌는데 "삭제에 실패했어요" 만 뜨면 사용자는 무엇이 실패했는지 알 수 없다
     ///   (`statusMessage` 는 `AlarmsListView` 가 `actionMessage` 와 **별개로** 배너에 띄운다).
@@ -230,18 +175,13 @@ final class RemoteAlarmSyncViewModel: ObservableObject {
             return false
         }
         do {
-            if record.originEnum == .receivedRemote {
-                try await api.declineAlarm(id: remoteID, token: token)
-            } else {
-                try await api.deleteAlarm(id: remoteID, token: token)
-            }
+            try await api.deleteAlarm(id: remoteID, token: token)
             return true
         } catch {
             guard !isCancellation(error) else { return false }
-            // ⚠ **서버에 이미 없으면 성공이다(멱등).** 발신자가 먼저 지웠거나 앞선 시도가
+            // ⚠ **서버에 이미 없으면 성공이다(멱등).** 다른 기기가 먼저 지웠거나 앞선 시도가
             // 실제로는 통했는데 응답만 못 받은 경우다. 실패로 보면 지울 수 없는 알람이 되고,
             // 낙관적 삭제에서는 **행은 사라졌는데 실패 배너만 뜬다.**
-            // 안드로이드 `MainViewModelAlarmActions.deleteAlarm` 이 decline 404 를 같은 규칙으로 다룬다.
             if case let APIError.server(status, _, errorCode) = error,
                status == 404 || errorCode == "ALARM_NOT_FOUND" {
                 return true

@@ -56,7 +56,6 @@ describe('userPlanWithPromo — 값', () => {
   it('원시 free 만 plus 가 되고, 유료·null·빈 값은 그대로다', () => {
     expect(userPlanWithPromo('free', WINDOW, justBefore)).toBe('plus');
     expect(userPlanWithPromo('plus', WINDOW, justBefore)).toBe('plus');
-    expect(userPlanWithPromo('family', WINDOW, justBefore)).toBe('family');
     expect(userPlanWithPromo(null, WINDOW, justBefore)).toBeNull();
     expect(userPlanWithPromo(undefined, WINDOW, justBefore)).toBeUndefined();
     expect(userPlanWithPromo('', WINDOW, justBefore)).toBe('');

@@ -7,14 +7,14 @@ import SwiftUI
 /// 지역 통화·세금·프로모션이 반영된 값이라 그쪽이 정확하다.
 ///
 /// ⚠ **숫자의 출처는 백엔드 `plans.price_krw` 다**(`packages/backend/src/lib/migrations.ts`
-/// 의 personal 3900 / couple 6900 / family 14900). 거기를 바꾸면 여기도, 안드로이드의
+/// 의 personal 3900). 거기를 바꾸면 여기도, 안드로이드의
 /// `FallbackPlanPriceKrw` 도 함께 바꾼다 — 서버는 **현재 플랜 하나**만 내려주기 때문에
 /// 목록 화면에서는 이 표가 필요하다.
 ///
 /// ⚠ 한국 밖 사용자에게는 이 값이 틀릴 수 있다. 그래서 폴백이고, 실제 결제 금액은
 /// App Store 결제 시트가 다시 보여준다.
 enum FallbackPlanPrice {
-    private static let krw: [PlanTier: Int] = [.personal: 3900, .couple: 6900, .family: 14900]
+    private static let krw: [PlanTier: Int] = [.personal: 3900]
 
     /// "3,900원" 꼴. 무료 등급이나 모르는 등급이면 nil.
     static func label(for tier: PlanTier, bundle: Bundle = .main) -> String? {
@@ -31,7 +31,6 @@ extension SubscriptionManager {
     }
 }
 import StoreKit
-import UIKit
 
 // BillingPanel 에서 분리한 하위 카드/시트 컴포넌트. 동작/디자인 변경 없음.
 
@@ -80,15 +79,8 @@ struct PlanCard: View {
     /// 현재 카드의 상태 한 줄 — 지금은 기간 한정 개인 플랜의 "개인 플랜 무료 이용 중 · …까지" 뿐이다
     /// (안드로이드 `SubscriptionPlanCard` 의 `currentStatusText` 자리 — 가격 바로 아래).
     let statusText: String?
-    /// 지금 **유료 이용권을 쓰는 중인가**. 다른 플랜 카드의 버튼 라벨이 이걸 본다 —
-    /// 쓰는 중이면 '결제하기' 가 아니라 '이용권 변경' 이다(안드로이드 `BillingPanels.kt`
-    /// 의 `hasActiveSubscription` 과 같은 축). 초대로 들어온 공유 멤버도 포함이다.
-    let hasActivePlan: Bool
     let isBusy: Bool
-    /// 공유할 수 있는 초대 코드. 커플·가족 카드에만 온다(`BillingPanel`).
-    let vouchers: [VoucherItem]
     let onPurchase: () -> Void
-    let onShareVouchers: () -> Void
 
     /// 카드에 보여줄 가격. 스토어 값이 있으면 그걸, 없으면 폴백을 쓴다.
     /// 무료는 상품이 아니라 그냥 0원이다.
@@ -151,17 +143,6 @@ struct PlanCard: View {
 
             // ⚠ **개인 카드의 '선물하기' 를 되살리지 말 것**(2026-10-14, App Store 지침 3.1.1 두 번째 반려).
             // 사서 받은 코드를 쳐서 유료 기능을 여는 길이었다. 할인·무료 이용은 스토어 오퍼 코드로 준다.
-
-            if !vouchers.isEmpty {
-                Button(action: onShareVouchers) {
-                    Label(String(localized: "초대 코드 공유"), systemImage: "square.and.arrow.up")
-                        .font(.subheadline.weight(.semibold))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 6)
-                }
-                .buttonStyle(.bordered)
-                .disabled(isBusy || subscriptions.isPurchasing)
-            }
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -217,9 +198,8 @@ struct PlanCard: View {
                     } else {
                         // ⚠ **버튼에 가격을 넣지 말 것**(2026-08-11 요청). 가격은 카드 위쪽
                         // 제 자리에 있고, 버튼은 **무엇을 하는지**만 말한다 — 안드로이드도
-                        // '이용권 변경' 처럼 액션 라벨만 둔다.
-                        // 이미 유료를 쓰는 중이면 이건 **결제가 아니라 전환**이다.
-                        Text(hasActivePlan ? String(localized: "이용권 변경") : String(localized: "결제하기"))
+                        // 액션 라벨만 둔다.
+                        Text(String(localized: "결제하기"))
                             .font(.subheadline.weight(.semibold))
                     }
                 }
@@ -262,10 +242,8 @@ struct PlanCard: View {
     /// 플랜별 기능 불릿. 안드로이드 `ui/billing/BillingPanels.kt` 의
     /// `billing_plan_*_feature_*` 문자열과 **글자까지 같아야 한다.**
     ///
-    /// ⚠ 2026-08-08 전까지 여기 문구가 전부 달랐다("목소리"/"음성 메시지"/"최대 2명" …).
-    /// 주석은 "1:1" 이라고 적혀 있었지만 실제로는 아니었다 — 같은 상품을 두 스토어에서
-    /// **다르게 설명**하고 있었고, 커플 카드의 '개인 이용권 기능 전부 포함' 은 아예 빠져
-    /// 있어 왜 더 비싼지 알 수 없었다.
+    /// ⚠ 2026-08-08 전까지 여기 문구가 전부 달랐다 — 주석은 "1:1" 이라고 적혀 있었지만
+    /// 같은 상품을 두 스토어에서 **다르게 설명**하고 있었다.
     ///
     /// ⚠ **무료에도 있는 것을 유료 혜택처럼 적지 말 것.** 개인 카드는 2026-09-30 까지
     /// "날씨·운세 등 매일 다른 문구" 라고 적었는데, 날씨·운세·응원·약 문구는 기본 목소리로
@@ -282,16 +260,12 @@ struct PlanCard: View {
             return [String(localized: "일반 알람 무제한"), String(localized: "기본 목소리 알람")]
         case .personal:
             return [String(localized: "원하는 목소리 1개 등록"), String(localized: "등록한 목소리로 듣는 날씨·운세 문구")]
-        case .couple:
-            return [String(localized: "개인 이용권 기능 전부 포함"), String(localized: "서로의 목소리 공유"), String(localized: "상대 알람 맞춰주기"), String(localized: "2명이 함께 사용")]
-        case .family:
-            return [String(localized: "개인 이용권 기능 전부 포함"), String(localized: "가족 목소리 공유"), String(localized: "가족에게 알람 보내기"), String(localized: "최대 5명이 함께 사용")]
         }
     }
 }
 
 /// 플랜 카드 안의 기능 한 줄(점 + 텍스트). Android `PlanFeatureRow`
-/// (BillingPanels.kt:649-666): 6dp primary 점 + bodyMedium onSurfaceVariant 텍스트.
+/// (`ui/billing/BillingPanels.kt`): 6dp primary 점 + bodyMedium onSurfaceVariant 텍스트.
 struct PlanFeatureRow: View {
     @Environment(\.voiceAlarmTheme) private var theme
     let text: LocalizedStringKey
@@ -308,12 +282,12 @@ struct PlanFeatureRow: View {
     }
 }
 
-/// 제품 정보를 불러오는 동안 보여주는 스켈레톤 (3개 유료 플랜 분량).
+/// 제품 정보를 불러오는 동안 보여주는 스켈레톤 (유료 플랜 분량).
 /// 첫 로딩의 일시적 빈 상태가 "망가진 화면"처럼 보이지 않게 한다.
 struct BillingPlansSkeleton: View {
     var body: some View {
         VStack(spacing: 12) {
-            ForEach(0..<3, id: \.self) { _ in
+            ForEach(0..<SubscriptionProduct.allCases.count, id: \.self) { _ in
                 VStack(alignment: .leading, spacing: 10) {
                     HStack {
                         skeletonBar(width: 80, height: 16)
@@ -424,130 +398,6 @@ struct SubscriptionTermsFootnote: View {
 // ⚠ **개인 이용권 선물 안내 시트(`PersonalGiftPassSheet`)를 되살리지 말 것**(2026-10-14, App Store
 // 지침 3.1.1 두 번째 반려 — 선물하기 폐지). 할인·무료 이용은 스토어 오퍼 코드로 준다.
 
-/// **공유할 초대 코드를 고르는 시트** — 커플·가족 카드의 '초대 코드 공유'.
-///
-/// ⚠ **시스템 `.sheet` + `presentationDetents` 로 되돌리지 말 것**(2026-09-21 시뮬레이터
-/// 캡처로 확인). 그러면 반투명한 시스템 시트 위에 이 내용이 **자기 배경을 깔고 한 겹 더**
-/// 떠서, 상자가 둘로 보인다("모달 뒤에 불필요한 박스"). 앱의 다른 모달과 같이
-/// `BottomSheetHost`(좌우 꽉 참·위 모서리만 둥금·드래그 핸들·스크림) 위에 올린다 —
-/// 표면은 껍데기가 그리므로 **여기서 배경을 칠하지 않는다**.
-struct VoucherShareSelectionSheet: View {
-    let vouchers: [VoucherItem]
-    let onDismiss: () -> Void
-
-    @State private var shareText: String = ""
-    @State private var isSharePresented = false
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(String(localized: "공유할 초대 코드 선택"))
-                        .font(.headline.weight(.bold))
-                        .foregroundStyle(AlarmTalkTheme.text)
-                    Text(String(localized: "아직 쓰지 않은 초대 코드를 골라 바로 공유할 수 있어요."))
-                        .font(.footnote)
-                        .foregroundStyle(AlarmTalkTheme.textSecondary)
-                }
-                Spacer()
-                Button(action: onDismiss) {
-                    Image(systemName: "xmark")
-                        .font(.subheadline.weight(.semibold))
-                        .padding(8)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(String(localized: "닫기"))
-            }
-
-            // ⚠ **목록은 스크롤 갈래로 감싼다.** 바텀시트는 높이 상한을 걸지 않으므로
-            //   (`BottomSheetHost` 주석), 코드가 여러 장이면 시트가 화면 밖으로 넘친다.
-            SheetScrollingContent {
-                VStack(spacing: 10) {
-                    ForEach(vouchers) { voucher in
-                        VoucherShareRow(voucher: voucher) {
-                            // 클립보드는 **코드만**, 설치 안내는 공유 본문에만
-                            // (안드로이드 `ui/billing/BillingPanels.kt` 의 `shareVoucher` 와 같다).
-                            UIPasteboard.general.string = voucher.code
-                            shareText = CodeShareText.invite(code: voucher.code)
-                            isSharePresented = true
-                        }
-                    }
-                }
-            }
-        }
-        .padding(20)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .sheet(isPresented: $isSharePresented) {
-            BillingActivityShareSheet(text: shareText)
-                .ignoresSafeArea()
-        }
-    }
-}
-
-struct VoucherShareRow: View {
-    let voucher: VoucherItem
-    let onShare: () -> Void
-
-    var body: some View {
-        HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(voucher.code)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(AlarmTalkTheme.text)
-                    .textSelection(.enabled)
-                Text(voucherShareSubtitle(voucher))
-                    .font(.caption)
-                    .foregroundStyle(AlarmTalkTheme.textSecondary)
-            }
-            Spacer()
-            Button(action: onShare) {
-                Text(String(localized: "공유"))
-                    .font(.caption.weight(.semibold))
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-            }
-            .buttonStyle(.borderedProminent)
-            .tint(AlarmTalkTheme.primary)
-            .foregroundStyle(AlarmTalkTheme.onPrimary)
-        }
-        .padding(12)
-        .background(AlarmTalkTheme.surfaceVariant)
-        .clipShape(RoundedRectangle(cornerRadius: 8))
-    }
-}
-
-struct BillingActivityShareSheet: UIViewControllerRepresentable {
-    let text: String
-
-    func makeUIViewController(context: Context) -> UIActivityViewController {
-        UIActivityViewController(activityItems: [text], applicationActivities: nil)
-    }
-
-    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
-}
-
-/// 그 카드에서 공유할 수 있는 코드 — **초대 코드(INV-)만**이다(안드로이드 `shareableVouchersForPlan` 과 같은 판정).
-///
-/// ⚠ **접두 검사를 빼지 말 것**(2026-10-14). 선물 코드(GIFT-)는 App Store 지침 3.1.1 두 번째 반려로 없앴고, 서버는
-/// INV- 가 아니면 등록을 `CODE_NOT_FOUND` 로 거절한다 — 예전에 만든 선물 바우처가 목록에 남아 있어도 보내 봐야 받는
-/// 사람이 쓸 수 없다. 구성원 관리 화면의 공유도 같은 접두로 고른다(`MemberManagementView.shareVoucher`).
-/// 회귀 테스트는 `GiftRemovalTests`.
-func shareableVouchersForPlan(_ vouchers: [VoucherItem], planKey: String) -> [VoucherItem] {
-    vouchers.filter { voucher in
-        voucher.code.hasPrefix("INV-") &&
-            ["issued", "active", "pending"].contains(voucher.status) &&
-            (voucher.useCount ?? 0) < (voucher.maxUses ?? 1) &&
-            voucher.planKey == planKey
-    }
-}
-
-func voucherShareSubtitle(_ voucher: VoucherItem) -> String {
-    if let issuedAt = formatPassDate(voucher.issuedAt) {
-        return String(localized: "미등록 · 발급일 \(issuedAt)")
-    }
-    return String(localized: "미등록")
-}
-
 #if DEBUG
 #Preview("BillingPanel (light)") {
     ScrollView {
@@ -564,28 +414,3 @@ func voucherShareSubtitle(_ voucher: VoucherItem) -> String {
     .voiceAlarmPreviewEnvironment()
 }
 #endif
-
-// MARK: - 시트 표시
-
-extension View {
-    /// 발급된 초대 코드 중 하나를 골라 공유하는 시트를 붙인다.
-    ///
-    /// ⚠ **`.sheet` + `presentationDetents` 를 쓰지 말 것** — `VoucherShareSelectionSheet` 주석의
-    /// '상자 둘' 문제. 껍데기는 공용 `bottomSheet` 하나다 — 같은 모양을 두 벌로 만들지 않는다.
-    func voucherShareSelectionSheet(
-        vouchers: Binding<[VoucherItem]>
-    ) -> some View {
-        bottomSheet(
-            isPresented: Binding(
-                get: { !vouchers.wrappedValue.isEmpty },
-                set: { if !$0 { vouchers.wrappedValue = [] } }
-            ),
-            onDismiss: { vouchers.wrappedValue = [] }
-        ) {
-            VoucherShareSelectionSheet(
-                vouchers: vouchers.wrappedValue,
-                onDismiss: { vouchers.wrappedValue = [] }
-            )
-        }
-    }
-}

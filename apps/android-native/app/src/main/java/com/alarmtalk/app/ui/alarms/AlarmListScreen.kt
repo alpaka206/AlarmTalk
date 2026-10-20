@@ -37,15 +37,12 @@ import com.alarmtalk.app.data.wasVoiceAlarmConvertedBySystem
 import com.alarmtalk.app.data.VoiceProfileCreationDraft
 import com.alarmtalk.app.network.AuthSession
 import com.alarmtalk.app.network.BillingSubscriptionResponse
-import com.alarmtalk.app.network.FamilyGroupCurrentResponse
-import com.alarmtalk.app.network.FamilyVoiceProfile
 import com.alarmtalk.app.network.TtsGenerateRequest
 import com.alarmtalk.app.network.TtsGenerateResponse
 import com.alarmtalk.app.network.VoiceProfile
-import com.alarmtalk.app.network.VoucherItem
 
 // 홈 그라데이션(로그인 딥 네이비 감성)의 단일 출처는 WakerDesign.kt 의
-// HomeGradientDark/Light·homeGradientBrush() — 모든 탭과 설정/구성원 관리/약관 동의 등
+// HomeGradientDark/Light·homeGradientBrush() — 모든 탭과 설정/약관 동의 등
 // 하위 전체화면이 같은 브러시를 써서 화면 전환 시 배경 톤이 튀지 않는다.
 
 @Composable
@@ -54,7 +51,7 @@ internal fun AlarmListScreen(
     selectedTab: NativeTab,
     onSelectTab: (NativeTab) -> Unit,
     /**
-     * 하위 화면(이용권·코드 등록)의 뒤로가기.
+     * 하위 화면(이용권)의 뒤로가기.
      *
      * ⚠ **`onSelectTab(Menu)` 로 되돌리지 말 것 — 뒤로가기는 '이동' 이 아니라 '팝' 이다.**
      * 탭 이동은 `popUpTo(알람) { saveState }` + `restoreState` 를 쓰는데, 이 조합은 팝한
@@ -71,15 +68,10 @@ internal fun AlarmListScreen(
     voiceProfiles: List<VoiceProfile>,
     pendingVoiceDraft: VoiceProfile?,
     voiceProfileBusy: Boolean,
-    socialBusy: Boolean,
-    familyGroup: FamilyGroupCurrentResponse?,
-    familyVoices: List<FamilyVoiceProfile>,
     billingBusy: Boolean,
     subscriptionResponse: BillingSubscriptionResponse?,
     /** 스토어가 **지금** 유효하다고 확인해 준 상태인가(기한까지 반영된 값). */
     storeEntitledNow: Boolean,
-    /** 기간 한정 개인 플랜 중의 커플·가족 보류 규칙(`MainViewModel.personalPromoTierHold`). */
-    personalPromoTierHold: PersonalPromoTierHold?,
     /**
      * 이용권 화면에 보일 프로모(`MainViewModel.planScreenPersonalPromo`) — 계정 응답과 구독 응답 중
      * **나중에 받은 답**의 것. 여기서 세션·구독 응답을 OR 로 다시 고르지 말 것. 개인 카드에 앉을지
@@ -89,7 +81,6 @@ internal fun AlarmListScreen(
     voiceDraftQuotaExhausted: Boolean = false,
     // 이번 달 목소리 생성 쿼터(추가 버튼 옆 '남은/전체' 표시).
     voiceDraftQuota: com.alarmtalk.app.network.VoiceDraftQuotaResponse? = null,
-    vouchers: List<VoucherItem>,
     onCreateVoiceProfile: (VoiceProfileCreationDraft, Boolean) -> Boolean,
     // 목소리 등록 화면의 인라인 동의 항목에 그대로 넘긴다.
     sensitiveConsentMissing: List<String> = emptyList(),
@@ -115,11 +106,10 @@ internal fun AlarmListScreen(
     onStartPrerenderDrive: (String) -> Unit = {},
     onDownloadStockAudio: suspend (String) -> com.alarmtalk.app.network.TtsMessageAudioResponse,
     onRenameVoiceProfile: (String, String) -> Unit,
-    onShareVoiceProfile: (String, Boolean) -> Unit,
     onDeleteVoiceProfile: (String) -> Unit,
     onConfirmVoicePreviewPlayed: suspend (String, String) -> Unit,
     onUpdateVoicePreviewText: suspend (String, String) -> String,
-    onPromoteVoiceDraft: (String, Boolean, Boolean, Float) -> Unit,
+    onPromoteVoiceDraft: (String, Boolean, Float) -> Unit,
     onDeleteVoiceDraft: (String) -> Unit,
     // 월 한도로 등록 흐름을 끝내며 초안을 조용히 버린다(실패를 화면에 말하지 않는다) — 목소리 패널에 그대로 넘긴다.
     onDiscardVoiceDraftQuietly: (String) -> Unit,
@@ -128,17 +118,13 @@ internal fun AlarmListScreen(
     voiceRegistrationFailure: VoiceRegistrationFailure? = null,
     onVoiceRegistrationFailureShown: () -> Unit = {},
     onRegistrationWindowOpenChange: (Boolean) -> Unit = {},
-    onLeaveFamilyGroup: (String) -> Unit,
-    onRegisterCode: (String) -> Unit,
     planPrices: Map<String, String>,
     onPurchasePlay: (android.app.Activity, String) -> Unit,
     onCancelSubscription: (Boolean) -> Unit,
-    onRefreshShareCodeData: suspend () -> List<VoucherItem>,
     onRestorePurchases: () -> Unit,
     permissions: PermissionSnapshot,
     onCreateAlarm: () -> Unit,
     onOpenSettings: () -> Unit,
-    onOpenMemberManagement: () -> Unit,
     onDeleteAccount: () -> Unit,
     themeMode: ThemeMode,
     onChangeTheme: (ThemeMode) -> Unit,
@@ -164,23 +150,6 @@ internal fun AlarmListScreen(
 
     val context = LocalContext.current
     val listState = rememberLazyListState()
-    // ⚠ **이용권에서 나가면 맨 위로 올린다**(2026-08-15 지시).
-    // 나가기 버튼은 화면 **아래쪽**에 있어서, 나간 뒤 그 자리에 그대로 있으면 바뀐 이용권
-    // 카드(맨 위)가 안 보인다 — 무엇이 달라졌는지 알 수 없다. 예전에는 토스트가 그 일을
-    // 대신했지만, 화면이 이미 말하는 것을 한 번 더 말하는 것이라 없앴다(같은 지시).
-    // 판정은 그룹이 **사라진 순간**이다(있다 → 없다). 처음부터 없던 사람은 건드리지 않는다.
-    //
-    // ⚠ **이용권 탭으로 한정한다.** 나가기는 코드 등록 탭(`FamilyConnectionPanel` 의
-    // '나가고 등록하기')에서도 일어나는데, 거기서는 나간 **직후 입력창이 열린다** —
-    // 같이 맨 위로 올리면 방금 열린 그 입력창에서 사용자를 끌어내린다.
-    val sharedGroupId = familyGroup?.group?.id
-    var hadSharedGroup by remember { mutableStateOf(sharedGroupId != null) }
-    LaunchedEffect(sharedGroupId) {
-        if (hadSharedGroup && sharedGroupId == null && selectedTab == NativeTab.Billing) {
-            listState.animateScrollToItem(0)
-        }
-        hadSharedGroup = sharedGroupId != null
-    }
 
     val homeGradient = homeGradientBrush()
     // 다중 선택 삭제 — 롱프레스로 들어가고, 하나도 안 남으면 자동으로 빠져나온다.
@@ -243,17 +212,14 @@ internal fun AlarmListScreen(
                 }
             }
         }
-        // ⚠ **하위 화면(이용권·코드 등록)의 상단바는 목록 밖에 고정한다.**
+        // ⚠ **하위 화면(이용권)의 상단바는 목록 밖에 고정한다.**
         // 목록 안(`item`)에 두면 스크롤과 함께 위로 사라져, 내려간 상태에서 뒤로가기에
         // 닿으려면 다시 맨 위로 올라와야 한다. iOS 는 이 화면들을 네비게이션 스택에
         // push 해서 상단 바가 **항상 남는다**(`AuxiliarySheetHost` 의 `navigationTitle`).
         // 배경은 깔지 않는다 — 그라데이션이 그대로 비쳐야 한 화면으로 읽힌다.
-        if (selectedTab == NativeTab.Billing || selectedTab == NativeTab.People) {
+        if (selectedTab == NativeTab.Billing) {
             WakerTopBar(
-                title = stringResource(
-                    if (selectedTab == NativeTab.Billing) R.string.common_tab_billing
-                    else R.string.common_tab_code_register,
-                ),
+                title = stringResource(R.string.common_tab_billing),
                 onBack = onNavigateBack,
                 modifier = Modifier.padding(top = 24.dp),
             )
@@ -266,10 +232,10 @@ internal fun AlarmListScreen(
         contentPadding = PaddingValues(
             // 좌우 여백은 모든 탭 20dp 로 통일 — 탭 전환 시 콘텐츠 폭이 미세하게 널뛰지 않게.
             start = 20.dp,
-            // 알람 탭과 하위 화면(이용권·코드 등록)은 위 **고정 헤더/상단바**가 상단
+            // 알람 탭과 하위 화면(이용권)은 위 **고정 헤더/상단바**가 상단
             // 여백을 이미 냈다.
             top = when (selectedTab) {
-                NativeTab.Alarms, NativeTab.Billing, NativeTab.People -> 0.dp
+                NativeTab.Alarms, NativeTab.Billing -> 0.dp
                 else -> 24.dp
             },
             end = 20.dp,
@@ -287,11 +253,9 @@ internal fun AlarmListScreen(
                     VoiceProfileManagementPanel(
                         voiceProfiles = voiceProfiles,
                         pendingVoiceDraft = pendingVoiceDraft,
-                        familyVoices = familyVoices,
                         voiceProfileBusy = voiceProfileBusy,
                         subscriptionResponse = subscriptionResponse,
                         voiceDraftQuotaExhausted = voiceDraftQuotaExhausted,
-                        familyGroup = familyGroup,
                         authSession = authSession,
                         onCreateVoiceProfile = onCreateVoiceProfile,
                         sensitiveConsentMissing = sensitiveConsentMissing,
@@ -300,7 +264,6 @@ internal fun AlarmListScreen(
                         expectedVariants = expectedVariants,
                         onDownloadStockAudio = onDownloadStockAudio,
                         onRenameVoiceProfile = onRenameVoiceProfile,
-                        onShareVoiceProfile = onShareVoiceProfile,
                         onDeleteVoiceProfile = onDeleteVoiceProfile,
                         onConfirmVoicePreviewPlayed = onConfirmVoicePreviewPlayed,
                         onUpdateVoicePreviewText = onUpdateVoicePreviewText,
@@ -321,7 +284,6 @@ internal fun AlarmListScreen(
                         prerenderDrive = prerenderDrive,
                         onStartPrerenderDrive = onStartPrerenderDrive,
                         storeEntitledNow = storeEntitledNow,
-                        personalPromoTierHold = personalPromoTierHold,
                     )
                 }
             }
@@ -367,7 +329,6 @@ internal fun AlarmListScreen(
                         ?.takeIf { alarm.voiceSource != VoiceSources.LOCAL_AUDIO && !alarm.wasVoiceAlarmConvertedBySystem() }
                         ?.let { profileId ->
                             voiceProfiles.firstOrNull { it.id == profileId }?.let { systemVoiceDisplayName(context, it.id, it.name) }
-                                ?: familyVoices.firstOrNull { it.id == profileId }?.name
                         }
                     AlarmRow(
                         alarm = alarm,
@@ -389,31 +350,14 @@ internal fun AlarmListScreen(
                 }
             }
 
-            NativeTab.People -> {
-                // 상단바는 목록 **밖**에 고정돼 있다(위 Column 참조).
-                item {
-                    FamilyConnectionPanel(
-                        socialBusy = socialBusy,
-                        billingBusy = billingBusy,
-                        familyGroup = familyGroup,
-                        subscriptionResponse = subscriptionResponse,
-                        onLeaveFamilyGroup = onLeaveFamilyGroup,
-                        onRegisterCode = onRegisterCode,
-                    )
-                }
-            }
-
             NativeTab.Menu -> {
                 // '더보기' 대제목 생략 — 하단 탭 라벨과 중복. 프로필 카드가 바로 시작한다.
                 item {
                     MenuTabPanel(
                         authSession = authSession,
-                        hasSharedPass = familyGroup?.group != null,
                         themeMode = themeMode,
                         onChangeTheme = onChangeTheme,
-                        onOpenPeople = { onSelectTab(NativeTab.People) },
                         onOpenBilling = { onSelectTab(NativeTab.Billing) },
-                        onOpenMemberManagement = onOpenMemberManagement,
                         onOpenSettings = onOpenSettings,
                         onDeleteAccount = onDeleteAccount,
                     )
@@ -426,13 +370,9 @@ internal fun AlarmListScreen(
                     SubscriptionPanel(
                         billingBusy = billingBusy,
                         subscriptionResponse = subscriptionResponse,
-                        familyGroup = familyGroup,
-                        vouchers = vouchers,
                         planPrices = planPrices,
                         onPurchasePlay = onPurchasePlay,
                         onCancelSubscription = onCancelSubscription,
-                        onLeaveFamilyGroup = onLeaveFamilyGroup,
-                        onRefreshShareCodeData = onRefreshShareCodeData,
                         onRestorePurchases = onRestorePurchases,
                         personalPromo = planScreenPersonalPromo,
                     )

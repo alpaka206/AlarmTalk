@@ -129,7 +129,7 @@ describe('Protected Routes — 인증 없이 요청 시 401', () => {
     ['GET', '/api/alarm'],
     ['GET', '/api/library'],
     ['GET', '/api/billing/vouchers'],
-    ['GET', '/api/family/group'],
+    ['GET', '/api/family/groups/current'],
     ['POST', '/api/code/register'],
   ];
 

@@ -157,13 +157,8 @@ export function createMockDB() {
       if (/SELECT COUNT\(\*\) AS n FROM voice_profiles/i.test(query.sql)) {
         return { rows: [{ n: 0 }], rowsAffected: 0 };
       }
-      // 배포 직후 #104 전후 호환 판정. 실제 구 스키마는 별도 real-libSQL 테스트로 고정하고,
-      // 일반 route mock 은 최신 스키마를 기본으로 해 기존 FIFO 결과를 소비하지 않는다.
-      if (/PRAGMA table_info\('alarms'\)/i.test(query.sql)) {
-        calls.push({ sql: query.sql, args: query.args });
-        return { rows: [{ name: 'delivery_version' }], rowsAffected: 0 };
-      }
-      // #106(교체 표식) 전후 호환 판정도 같은 이유로 최신 스키마를 기본으로 한다.
+      // #106(교체 표식) 전후 호환 판정은 최신 스키마를 기본으로 한다. 실제 구 스키마는 별도
+      // real-libSQL 테스트로 고정하고, 일반 route mock 은 기존 FIFO 결과를 소비하지 않는다.
       // ⚠ calls 에 넣지 않는다 — 목록 라우트마다 도는 부수 쿼리라, 넣으면 기존 테스트의
       // calls 인덱스 단언이 통째로 밀린다(user_consents 격리와 같은 이유).
       if (/PRAGMA table_info\('voice_profiles'\)/i.test(query.sql)) {

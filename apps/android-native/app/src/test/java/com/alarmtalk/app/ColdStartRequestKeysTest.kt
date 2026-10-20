@@ -34,7 +34,7 @@ import org.robolectric.annotation.Config
  *     재로그인(**같은 계정 포함**)에서는 바뀐다 — 실제 `AuthSessionStore`(평문 prefs)로.
  *  2. **값**: 프리페치 워커는 만료가 가까울 때만 굴러온 토큰을 저장한다(`workerRolledTokenToSave`),
  *     자동 정합화 뒤 갱신은 토큰을 굴리지 않는다(`purchaseConfirmRollsToken`).
- *  3. **배선**: 위 값을 실제로 쓰는지, 그리고 뷰모델 init 의 즉시 pull 이 없는지(소스).
+ *  3. **배선**: 위 값을 실제로 쓰는지, 그리고 뷰모델 init 의 즉시 계정 확인이 없는지(소스).
  *
  * `MainViewModel`·Compose 루트는 암호화 저장소·Room·워커를 통째로 물고 있어 단위 테스트에서
  * 세울 수 없다(`EntryRefreshKeepsTokenTest` 와 같은 사정) — 배선은 소스로 본다.
@@ -161,7 +161,7 @@ class ColdStartRequestKeysTest {
             "탭 새로고침 스로틀 키가 `tab to sessionEffectKey` 가 아니다.",
             code.contains("val throttleKey = tab to sessionEffectKey"),
         )
-        // 세션 효과 넷(계정·동의·준비 확인 / 선로드 / 공유 변경 구독 / 플랜 변경 구독) + 탭 효과.
+        // 세션 효과 다섯(계정·동의·준비 확인 / 선로드 / 목소리 재렌더 신호 / 백그라운드 떠나기 / 플랜 변경 구독) + 탭 효과.
         val keyed = Regex("""LaunchedEffect\((?:currentTab, )?sessionEffectKey\b""").findAll(code).count()
         assertTrue("세션 키로 도는 효과가 $keyed 개뿐이다(5개여야 한다).", keyed >= 5)
     }
@@ -190,7 +190,7 @@ class ColdStartRequestKeysTest {
     }
 
     @Test
-    fun theViewModelInitDoesNotQueueAnImmediatePull() {
+    fun theViewModelInitDoesNotQueueAnImmediateAccountCheck() {
         val start = viewModel.indexOf("    init {")
         assertTrue("MainViewModel 의 init 블록을 못 찾았다.", start >= 0)
         val end = viewModel.indexOf("override fun onCleared()", start)

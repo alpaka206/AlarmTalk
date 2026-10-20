@@ -127,30 +127,6 @@ enum InputSanitizer {
 }
 
 extension InputSanitizer {
-    /// 초대 코드 정리. 안드로이드 `sanitizeRedeemCode`(`CodeRedeemField.kt`).
-    ///
-    /// 대문자·영숫자·하이픈만 남긴다 — 코드는 사람이 옮겨 적는 값이라 눈에 안 보이는
-    /// 공백·제로폭이 섞이면 "맞게 넣었는데 안 된다" 가 된다.
-    /// 커플·가족 이용권 초대 코드(`INV-`). **영문 대문자·숫자·`-`·`_` 만 남긴다.** (`_` 는 2026-10-12 에
-    /// 없앤 프로모 코드 시절의 것이다. 선물 코드도 2026-10-14 에 없앴다 — App Store 지침 3.1.1 두 번째 반려.)
-    ///
-    /// ⚠ **`isLetter` 로 거르지 말 것.** 한글도 letter 라서 그대로 통과한다 — 코드에는
-    /// 한글이 쓰이지 않는데 입력은 되니, 사용자는 다 치고 나서야 "잘못된 코드" 를 본다
-    /// (2026-08-13 지시). 아예 안 들어가게 막는다.
-    ///
-    /// ⚠ 밑줄(`_`)도 남긴다 — 안드로이드 `sanitizeRedeemCode` 가 허용하는데 여기서만
-    /// 지우면 밑줄이 든 프로모 코드가 **조용히 다른 코드가 되어** 등록에 실패한다.
-    static func sanitizeRedeemCode(_ raw: String) -> String {
-        String(
-            sanitizeUserText(raw).uppercased().filter { character in
-                character.isASCII && (character.isLetter || character.isNumber)
-                    || character == "-" || character == "_"
-            }
-        )
-        .prefix(64)
-        .description
-    }
-
     /// 이메일 인증 코드의 자릿수. 서버 `EmailVerificationCodeSchema`
     /// (`packages/shared/src/schemas/auth.ts`)의 6자리와 같아야 한다.
     static let verificationCodeLength = 6

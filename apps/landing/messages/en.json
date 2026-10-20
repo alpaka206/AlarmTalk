@@ -1,7 +1,7 @@
 {
   "meta": {
     "title": "AlarmTalk · Not an alarm. A voice.",
-    "description": "A voice you registered, one family or friends registered, or one of the built-in voices. Tomorrow morning it reads you the weather. Voices stay inside your couple or family group."
+    "description": "A voice you registered, or one of the built-in voices. Tomorrow morning it reads you the weather."
   },
   "nav": {
     "features": "Features",
@@ -12,7 +12,7 @@
   },
   "hero": {
     "headline": "Not an alarm.\n<who></who> voice wakes you.",
-    "description": "Set your own alarm to a voice you love,\nand set one for family and friends, too.",
+    "description": "Set your alarm to a voice you love,\nand that voice reads you today’s weather, too.",
     "phone": {
       "countdown": "Rings in 9 hours 21 minutes.",
       "meridiem": "AM",
@@ -40,12 +40,6 @@
     "bullet2": "Use the voice in any alarm",
     "bullet3": "Add your own voice once a month"
   },
-  "shared": {
-    "headline": "Far away,\nstill there in the morning.",
-    "description": "Do you call a parent every day to check they took their medicine?\nOn a couple or family plan you share voices and can set their alarm for them.",
-    "bullet1": "Couple: 2 people · Family: 5 including you",
-    "bullet2": "Use a shared voice in any of your alarms"
-  },
   "language": {
     "headline": "Pick a line,\nor write your own.",
     "description": "If writing one every day is a chore, just pick a line.\nIf there’s something you want to hear, type it in yourself.",
@@ -56,7 +50,7 @@
   "faq": {
     "meta": {
       "title": "FAQ",
-      "description": "Common questions about using AlarmTalk: voices, plans, sharing and your account."
+      "description": "Common questions about using AlarmTalk: voices, plans and your account."
     },
     "headline": "Frequently asked",
     "items": [
@@ -73,12 +67,12 @@
         "a": "Yes. Repeat days, snooze length and limit, vibration patterns, alarm sounds and skipping public holidays all work like any alarm app. The only difference is what you hear."
       },
       {
-        "q": "How far does my voice travel?",
-        "a": "No further than the people on your Couple or Family plan. Groups are joined by invite code, and whoever receives a voice can only use it for alarms inside the app. There is no way to export the audio as a file."
+        "q": "Can anyone else use the voice I register?",
+        "a": "No. A voice you register is used only for alarms on your account. There is no way to export the audio as a file, either."
       },
       {
         "q": "What happens to my voice if I delete my account?",
-        "a": "It is destroyed on our servers. If someone else has an alarm built from it, the voice is removed there too and the alarm falls back to an alarm sound. The alarm itself stays. The time is theirs."
+        "a": "It is destroyed on our servers, along with your original recordings and every clip made from that voice."
       },
       {
         "q": "Can I redo a voice I’m not happy with?",
@@ -198,7 +192,7 @@
   "pricing": {
     "meta": {
       "title": "Pricing",
-      "description": "Start free, and add a plan when you want your own voice or sharing. Compare Free, Personal, Couple and Family at a glance."
+      "description": "Start free, and add a plan when you want your own voice. Compare Free and Personal at a glance."
     },
     "headline": "Try it free first.",
     "lead": "Start free, add a plan when you need one.",
@@ -210,20 +204,11 @@
       "personal": {
         "name": "Personal",
         "price": "$3.90/mo"
-      },
-      "couple": {
-        "name": "Couple",
-        "price": "$6.90/mo"
-      },
-      "family": {
-        "name": "Family",
-        "price": "$14.90/mo"
       }
     },
     "groups": {
       "basics": "Basics",
-      "voice": "Voice",
-      "together": "Together"
+      "voice": "Voice"
     },
     "rows": {
       "alarms": "Alarms",
@@ -231,15 +216,11 @@
       "presets": "Weather · horoscope · medicine · encouragement lines",
       "languages": "Korean · English · Japanese",
       "customText": "Type your own lines",
-      "myVoice": "Add your own voice",
-      "sharing": "Voice sharing",
-      "setOthers": "Set someone else’s alarm"
+      "myVoice": "Add your own voice"
     },
     "values": {
       "unlimited": "Unlimited",
-      "monthly": "Once a month",
-      "people2": "2 people including you",
-      "people5": "5 people including you"
+      "monthly": "Once a month"
     },
     "a11y": {
       "planColumn": "Plan",
@@ -277,11 +258,7 @@
     "items": [
       {
         "title": "A voice you registered",
-        "body": "Register it once,\nthen set any alarm to that voice."
-      },
-      {
-        "title": "A voice family or friends registered",
-        "body": "People on the same plan\ncan use each other’s voices."
+        "body": "Register a family member’s or friend’s voice once,\nthen set any alarm to it."
       },
       {
         "title": "Built-in voices",
@@ -313,43 +290,13 @@
       "change": "Change",
       "alt": "The app’s Message screen: Default greeting, Weather, Fortune, Encouragement, Meds and Type it yourself, with Type it yourself selected and the typed message shown in a card below"
     },
-    "share": {
-      "myVoices": "My voices",
-      "quota": "1/1 creations available",
-      "add": "Add",
-      "ownName": "Mom",
-      "sharing": "Sharing",
-      "sharedVoices": "Shared with me",
-      "sharedName": "Dad",
-      "sharedFrom": "Voice shared by Dad",
-      "sheetTitle": "Who is this alarm for?",
-      "selfTitle": "Set my alarm",
-      "targetName": "Dad",
-      "quietHours": "Hours they don’t receive alarms: <schedule>Weekdays 09:00-18:30</schedule>",
-      "alt": {
-        "voices": "The app’s Voices tab. Under My voices, Mom’s voice marked Sharing and an Add button; under Shared with me, a voice shared by Dad",
-        "target": "The sheet asking who this alarm is for: Set my alarm, and Dad with the hours he doesn’t receive alarms, weekdays 09:00-18:30"
-      }
-    },
     "voices": {
       "myVoices": "My voices",
-      "sharedVoices": "Shared with me",
       "systemVoices": "Built-in voices",
       "add": "Add",
       "ownName": "Mom",
-      "shared": [
-        {
-          "name": "Dad",
-          "from": "Voice shared by Dad"
-        },
-        {
-          "name": "Grandma",
-          "from": "Voice shared by Grandma"
-        }
-      ],
       "alt": {
         "own": "The app’s Voices tab, My voices group: one voice you registered and an Add button",
-        "shared": "The app’s Voices tab, Shared with me group: two voices shared by Dad and Grandma",
         "system": "The app’s Voices tab, Default voices group: Siwoo, Mina, Dohyun and Aeni"
       }
     }

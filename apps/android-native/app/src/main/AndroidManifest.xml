@@ -89,7 +89,7 @@
             android:exported="false"
             android:foregroundServiceType="mediaPlayback" />
 
-        <!-- FCM 수신(가족 알람 즉시 배달) — data push 로 백그라운드에서도 즉시 pull. -->
+        <!-- FCM 수신(플랜·목소리·계정 신호) — data push 를 백그라운드에서도 받아 해당 워커를 건다. -->
         <service
             android:name=".fcm.AlarmTalkMessagingService"
             android:exported="false">

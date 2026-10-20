@@ -3,7 +3,7 @@ import SwiftUI
 /// AlarmTalk 의 목소리 프로필 관리 화면.
 ///
 /// Android `VoiceProfileManagementPanel.kt` (1158 줄) 의 SwiftUI 포팅. 슬롯 상태,
-/// 프로필 행, 편집/공유/삭제 다이얼로그, 슬롯 부족 시 PlanGate 트리거, errorCode
+/// 프로필 행, 편집/삭제 다이얼로그, 슬롯 부족 시 PlanGate 트리거, errorCode
 /// 매핑까지 한 화면이 책임진다. 녹음/업로드 워크플로우는 형제 컴포넌트
 /// `VoiceCloneUploadFlow` 가 맡고 본 화면은 라우팅만 한다.
 struct VoiceProfileManagementPanel: View {
@@ -53,18 +53,13 @@ struct VoiceProfileManagementPanel: View {
     @State private var downloadProgress: [String: (done: Int, total: Int)] = [:]
     @State private var retryingSpeechStyleIDs: Set<String> = []
 
-    /// 공유받은 음성에 viewer 가 자신의 관계/호칭을 등록할 때 사용하는 다이얼로그 타깃.
-    /// (⚠ 안드로이드에 `SharedVoiceViewerInfoDialog` 라는 이름은 없다 — 옛 주석이 틀렸다.
-    ///  같은 일을 하는 곳은 `ui/voices/VoiceProfileManagementPanel.kt` 의 호칭 등록 흐름이다.)
-    @State private var sharedViewerInfoTarget: FamilyVoiceProfile?
-
-    /// 시스템(스톡) 목소리 = 무료에서도 쓰는 기본 목소리. 내 목소리/공유 목소리와 분리해 노출.
+    /// 시스템(스톡) 목소리 = 무료에서도 쓰는 기본 목소리. 내 목소리와 분리해 노출.
     private var systemVoices: [VoiceProfile] {
         voice.profiles.filter { isSystemVoice($0) }
     }
     /// ⚠ **무료면 내 목소리를 목록에서 숨긴다**(2026-08-31, 안드로이드
     /// `VoiceProfileManagementPanel.ownVoices` 미러). 유료여야 쓸 수 있는데 그대로 보여
-    /// 주면 미리듣기·이름 수정·공유·**삭제**까지 눌린다 — 보관 유예 안에 다시 시작하면
+    /// 주면 미리듣기·이름 수정·**삭제**까지 눌린다 — 보관 유예 안에 다시 시작하면
     /// 돌아올 목소리를 사용자가 모르고 지운다. 대신 그 자리에 안내 한 줄을 둔다
     /// (`freeLockedNotice`) — 아무 말 없이 사라지면 이미 지워진 것으로 읽힌다.
     private var ownVoices: [VoiceProfile] {
@@ -75,7 +70,7 @@ struct VoiceProfileManagementPanel: View {
     /// ⚠ **만료까지 보는 판정**(2026-08-31 리뷰, 안드로이드 `isPaidVoiceEntitledNow` 미러).
     /// `PlanTier.bestKnown` 은 구매 직후 깜빡임을 줄이려고 만료 시각을 보지 않는데,
     /// 오프라인이거나 갱신이 느리면 **만료된 스냅샷으로도** 유료로 읽혀 숨겨야 할 목소리가
-    /// 미리듣기·이름 수정·공유·삭제까지 가능한 채로 드러난다.
+    /// 미리듣기·이름 수정·삭제까지 가능한 채로 드러난다.
     ///
     /// ⚠ **단 StoreKit 이 살아 있다고 하면 서버 만료로 뒤집지 않는다**(2026-08-31 리뷰 2차).
     /// 「구독 수명주기 — **스토어가 권위다**」(docs/spec/billing-lifecycle.md). 갱신 직후
@@ -86,7 +81,7 @@ struct VoiceProfileManagementPanel: View {
     /// 만료 시각을 못 읽으면 **막지 않는다** — 과차단이 더 나쁘다(안드로이드와 같은 규칙).
     private var paidVoiceEntitledNow: Bool {
         // **유일 판정기**를 통과시킨다(`PaidVoiceGate.resolve`) — 안드로이드
-        // `resolvePaidVoiceAccess` 와 같은 우선순위: 스토어 → 서버 구독(만료) → 그룹 → 모름.
+        // `resolvePaidVoiceAccess` 와 같은 우선순위: 스토어 → 서버 구독(만료) → 모름.
         // 여기는 표시·생성 게이트라 **모르면 잠그지 않는다.**
         // 살아 있는 StoreKit 신호의 기한·`userPlan` 을 싣는 이유는 `liveSnapshot` 주석에 있다.
         // ⚠ **등록 제출(`VoiceCloneUploadFlow.hasPaidVoiceAccess`)도 같은 스냅샷으로 본다** —
@@ -96,7 +91,6 @@ struct VoiceProfileManagementPanel: View {
         // 손으로 쓰면 또 갈라진다.
         PaidVoiceGate.isEntitled(snapshot: PaidVoiceGate.liveSnapshot(
             subscriptionResponse: socialFeatures.subscription,
-            familyGroup: socialFeatures.familyGroup,
             storeTier: subscriptions.currentTier,
             user: auth.session?.user
         ))
@@ -122,9 +116,8 @@ struct VoiceProfileManagementPanel: View {
             // 섹션이 **항상** 나오므로 이 화면이 비는 일이 없다 — 빈 화면을 그리면
             // 무료 사용자에게 쓸 수 있는 기본 목소리 4개를 도로 가리게 된다.
             ownProfilesSection
-            familyProfilesSection
             if !systemVoices.isEmpty {
-                // 기본 제공 목소리는 맨 아래 — 개인화된 목소리(내 것·공유받은 것)가 먼저다.
+                // 기본 제공 목소리는 맨 아래 — 내 목소리가 먼저다.
                 systemVoicesSection
             }
         }
@@ -146,11 +139,10 @@ struct VoiceProfileManagementPanel: View {
         //
         // ⚠ **탭 진입의 이용권 갱신은 빼지 말 것**(2026-08-24 실기기). 권한을 앱 시작의 캐시
         // 스냅샷(`restoreAccessSnapshot`)에만 기대면, 이 기기 밖에서 플랜이 바뀐(다른 기기
-        // 결제·초대 코드로 가족 그룹 합류) **가족 이용권 사용자가 '추가' 를 눌렀는데 이용권 안내
-        // 모달이 떴다.** 이용권 화면에 한 번 다녀와야 풀렸다 — 목소리를 만들려는 사람이 그 화면에
+        // 결제) **유료 사용자가 '추가' 를 눌렀는데 이용권 안내 모달이 떴다.** 이용권 화면에 한 번 다녀와야 풀렸다 — 목소리를 만들려는 사람이 그 화면에
         // 들를 이유가 없으니 영영 막힌 것처럼 보인다. 규칙은 `docs/spec/plan-gates.md` §4.
 
-        // 내 목소리 행의 ⋮ — 안드로이드는 관리 시트(이름 수정·공유·삭제)를 연다.
+        // 내 목소리 행의 ⋮ — 안드로이드는 관리 시트(이름 수정·삭제)를 연다.
         .confirmationDialog(
             actionSheetTarget?.name ?? "",
             isPresented: Binding(get: { actionSheetTarget != nil }, set: { if !$0 { actionSheetTarget = nil } }),
@@ -167,13 +159,6 @@ struct VoiceProfileManagementPanel: View {
                     // 다음 런루프에 알럿을 띄운다 — 액션시트가 닫히는 프레임에 겹치면
                     // 둘 다 안 뜨는 상태로 끝난다.
                     DispatchQueue.main.async { editTarget = profile }
-                }
-            }
-            if canShareVoice, let profile = actionSheetTarget {
-                Button(profile.isShared == true ? String(localized: "공유 끄기") : String(localized: "공유 허용")) {
-                    let next = !(profile.isShared ?? false)
-                    actionSheetTarget = nil
-                    Task { await voice.toggleShare(profile, isShared: next, session: auth.session) }
                 }
             }
             Button(String(localized: "삭제"), role: .destructive) {
@@ -285,8 +270,8 @@ struct VoiceProfileManagementPanel: View {
         // 문장이 필요하면 `message` 로 내린다 — 다른 alert 들도 전부 그렇게 돼 있다.
         // ⚠ **코드 갈래('선물·초대 코드가 있어요')와 그 입력 시트(`RedeemCodeSheet`)를 되살리지 말 것**
         // (2026-10-14, App Store 지침 3.1.1 두 번째 반려 — 선물 코드 폐지). 2026-08-11 에 두 앱을 맞추려고
-        // 넣었지만 코드를 쳐서 유료 기능을 여는 길 자체가 반려 사유였다 — 두 앱 모두에서 뺐다. 초대 코드는
-        // 더보기 → 초대 코드 등록에서만 넣고, 할인·무료 이용은 스토어 오퍼 코드로 준다.
+        // 넣었지만 코드를 쳐서 유료 기능을 여는 길 자체가 반려 사유였다 — 두 앱 모두에서 뺐다. 할인·무료
+        // 이용은 스토어 오퍼 코드로 준다.
         // 제목은 안드로이드(`voices_create_paid_title`)에 맞춘다.
         .alert(String(localized: "목소리를 등록하기 전에"), isPresented: $registrationConsentOpen) {
             Button(String(localized: "취소"), role: .cancel) {}
@@ -315,34 +300,6 @@ struct VoiceProfileManagementPanel: View {
                 .keyboardShortcut(.defaultAction)
         } message: {
             Text(PaidGateCopy.message)
-        }
-        .sheet(item: $sharedViewerInfoTarget) { profile in
-            SharedVoiceViewerInfoDialog(
-                profileName: profile.name,
-                sharedFromLabel: profile.sharedFromLabel,
-                initialRelationship: profile.relationshipLabel ?? "",
-                initialListenerTitle: profile.listenerTitle ?? "",
-                isWorking: voice.isBusy,
-                onCancel: { sharedViewerInfoTarget = nil },
-                onPreview: {
-                    Task {
-                        await voice.previewSharedVoice(profileId: profile.id, session: auth.session)
-                    }
-                },
-                onConfirm: { relation, listener in
-                    let target = profile
-                    sharedViewerInfoTarget = nil
-                    Task {
-                        await voice.updateSharedVoiceViewerInfo(
-                            profileId: target.id,
-                            relationshipLabel: relation,
-                            listenerTitle: listener,
-                            session: auth.session
-                        )
-                    }
-                }
-            )
-            .presentationDetents([.medium, .large])
         }
     }
 
@@ -490,51 +447,13 @@ struct VoiceProfileManagementPanel: View {
         }
     }
 
-    /// 행 둘째 줄 — 만드는 중·실패면 그 상태를, 아니면 공유 여부만 보여준다.
-    /// 관계(`relationshipLabel`)는 목록에 보이지 않는다(`ownVoiceRowSubtitle` 주석).
+    /// 행 둘째 줄 — 만드는 중·실패면 그 상태를, 아니면 없음.
+    /// 관계(`relationshipLabel`)는 목록에 보이지 않는다(`LocalizedDisplay.swift` 주석).
     private func ownSubtitle(_ profile: VoiceProfile) -> String? {
         switch normalizedStatus(profile.status) {
         case "processing": return String(localized: "만드는 중")
         case "failed": return String(localized: "만들지 못했어요")
-        default: break
-        }
-        return ownVoiceRowSubtitle(isShared: profile.isShared == true)
-    }
-
-    @ViewBuilder
-    private var familyProfilesSection: some View {
-        if canShareVoice && !voice.familyVoices.isEmpty {
-            VoiceSectionCard(title: String(localized: "voice.section.shared", defaultValue: "공유받은 목소리")) {
-                ForEach(Array(voice.familyVoices.enumerated()), id: \.element.id) { index, family in
-                    if index > 0 {
-                        Divider().overlay(theme.palette.outlineVariant).padding(.leading, 16)
-                    }
-                    VoiceCatalogRow(
-                        name: family.name,
-                        subtitle: family.sharedFromLabel,
-                        isPlaying: voice.previewingGreetingVoiceId == family.id,
-                        onPreview: {
-                            Task { await voice.previewGreeting(voiceId: family.id, session: auth.session) }
-                        },
-                        // 공유받은 목소리에서 내가 손댈 수 있는 건 '나를 부를 호칭' 뿐이라
-                        // ⋮ 대신 아래 CTA 로 낸다(관계·호칭이 비어 있을 때만).
-                        below: {
-                            if family.requiresViewerInfo {
-                                Button {
-                                    sharedViewerInfoTarget = family
-                                } label: {
-                                    Text(String(localized: "이 목소리가 나를 어떻게 부를지 설정"))
-                                        .font(theme.typography.bodySmall.weight(.semibold))
-                                        .frame(maxWidth: .infinity)
-                                        .padding(.vertical, 8)
-                                }
-                                .buttonStyle(.bordered)
-                                .tint(theme.palette.primary)
-                            }
-                        }
-                    )
-                }
-            }
+        default: return nil
         }
     }
 
@@ -663,14 +582,5 @@ struct VoiceProfileManagementPanel: View {
     /// `.alert` 는 `item:` 형태가 없어 Bool 바인딩으로 감싼다.
     private var renameAlertBinding: Binding<Bool> {
         Binding(get: { editTarget != nil }, set: { if !$0 { editTarget = nil } })
-    }
-
-    private var canShareVoice: Bool {
-        canShareVoiceWithOthers(
-            subscriptionResponse: socialFeatures.subscription,
-            familyGroup: socialFeatures.familyGroup,
-            authSession: auth.session,
-            storeTier: subscriptions.currentTier
-        )
     }
 }

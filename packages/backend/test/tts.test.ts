@@ -174,13 +174,12 @@ function consentRow(type: string) {
 
 // fakeAuthMiddleware 가 실제 authMiddleware 처럼 userIdPK 를 채우면서 '직접 입력(manual) 월 쿼터'
 // 경로가 실제로 실행된다(isManualGeneration = !random && !draft_preview && Boolean(userIdPK)).
-// 캐시 미스가 확정된 뒤 합성 직전에 공유풀 조회 2건(plan_groups / subscriptions) + 예약 1건이
-// 나가므로, 그 세 결과를 순서대로 큐에 넣어 준다. 넣지 않으면 예약 쿼리가 빈 결과를 받아
-// MANUAL_TTS_QUOTA_EXCEEDED(429)로 떨어진다.
+// 캐시 미스가 확정된 뒤 합성 직전에 풀 조회 1건(subscriptions) + 예약 1건이 나가므로, 그 두 결과를
+// 순서대로 큐에 넣어 준다. 넣지 않으면 예약 쿼리가 빈 결과를 받아 MANUAL_TTS_QUOTA_EXCEEDED(429)로
+// 떨어진다.
 function pushManualQuotaFlow() {
-  mockDB.pushResult([]); // 1) plan_group 공유 풀 조회 — 소속 그룹 없음
-  mockDB.pushResult([]); // 2) 개인 활성 구독 조회 — 없음 → users.plan 폴백(plus → personal, 30회)
-  mockDB.pushResult([{ used_count: 1, usage_month: '2026-07' }], 1); // 3) 원자적 +1 예약 성공
+  mockDB.pushResult([]); // 1) 개인 활성 구독 조회 — 없음 → users.plan 폴백(plus → personal, 30회)
+  mockDB.pushResult([{ used_count: 1, usage_month: '2026-07' }], 1); // 2) 원자적 +1 예약 성공
 }
 
 beforeEach(() => {
@@ -1861,7 +1860,6 @@ describe('POST /tts/generate — 광고 보상', () => {
 describe('GET /tts/manual-quota — 광고 보상 현황', () => {
   it('무료면 보상 현황과 콜백에 실을 계정 PK 를 싣는다', async () => {
     mockDB.pushResult([{ plan: 'free' }]);
-    mockDB.pushResult([]); // 그룹 풀 없음
     mockDB.pushResult([]); // 개인 구독 없음
     mockDB.pushResultFor('FROM ad_reward_credits WHERE user_id', [{ credits: 2, granted: 4 }]);
 
@@ -1878,8 +1876,7 @@ describe('GET /tts/manual-quota — 광고 보상 현황', () => {
 
   it('서버의 광고 단위 설정이 비면 싣지 않는다 — 광고를 봐도 적립되지 않으니 권하지 않는다', async () => {
     mockDB.pushResult([{ plan: 'free' }]);
-    mockDB.pushResult([]);
-    mockDB.pushResult([]);
+    mockDB.pushResult([]); // 개인 구독 없음
 
     const res = await reqWithEnv(buildApp(), new Request('http://x/tts/manual-quota'));
 
@@ -1890,14 +1887,14 @@ describe('GET /tts/manual-quota — 광고 보상 현황', () => {
 
   it('유료에게는 싣지 않는다', async () => {
     mockDB.pushResult([{ plan: 'plus' }]);
-    mockDB.pushResult([]);
-    mockDB.pushResult([]);
+    mockDB.pushResult([]); // 개인 구독 없음 → users.plan 폴백(plus → 개인 30회)
     mockDB.pushResult([{ used_count: 3 }]);
 
     const res = await reqWithEnv(buildApp(), new Request('http://x/tts/manual-quota'));
 
     expect(res.status).toBe(200);
     const body = await res.json();
+    expect(body).toMatchObject({ plan_key: 'personal', limit: 30, used: 3, remaining: 27 });
     expect(body.ad_reward).toBeUndefined();
     expect(mockDB.calls.some((c) => c.sql.includes('ad_reward_credits'))).toBe(false);
   });

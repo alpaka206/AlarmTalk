@@ -19,26 +19,6 @@ struct HolidayApiItem: Decodable {
     let source: String?
 }
 
-struct FamilyAlarmQuietWindow: Codable, Equatable {
-    var days: [Int]
-    var start: String
-    var end: String
-
-    /// 계정에 둘 수 있는 창의 최대 개수.
-    static let maxCount = 8
-
-    /// "HH:mm"(00:00~23:59)인가. 서버에서 읽을 때와 서버로 보낼 때가 같은 규칙을 쓴다.
-    static func isValidTime(_ value: String) -> Bool {
-        value.range(of: #"^([01]\d|2[0-3]):[0-5]\d$"#, options: .regularExpression) != nil
-    }
-
-    /// 요일을 0...6 으로 거르고 중복 없이 정렬한 창. 남는 요일이 없으면 nil.
-    var withNormalizedDays: FamilyAlarmQuietWindow? {
-        let normalized = Array(Set(days.filter { (0...6).contains($0) })).sorted()
-        return normalized.isEmpty ? nil : FamilyAlarmQuietWindow(days: normalized, start: start, end: end)
-    }
-}
-
 struct DynamicPromptWeatherSettings: Codable, Equatable {
     var country: String?
     var city: String?
@@ -96,11 +76,6 @@ struct DynamicPromptSettings: Codable, Equatable {
         )
     }
 
-}
-
-struct DynamicPromptSettingsState: Codable, Equatable {
-    var weatherReady: Bool?
-    var fortuneReady: Bool?
 }
 
 struct DynamicPromptPreferences: Codable, Equatable {
@@ -236,11 +211,6 @@ struct AuthUser: Codable, Equatable, Identifiable {
     var email: String
     var name: String
     var plan: String
-    var allowFamilyAlarms: Bool? = nil
-    var familyAlarmQuietDays: [Int]? = nil
-    var familyAlarmQuietStart: String? = nil
-    var familyAlarmQuietEnd: String? = nil
-    var familyAlarmQuietWindows: [FamilyAlarmQuietWindow]? = nil
     /// Apple `sub` (user identifier). Apple 로그인 사용자만 비-nil.
     /// `ASAuthorizationAppleIDProvider.credentialState(forUserID:)` 호출에 사용.
     /// 백엔드 `/auth/apple` 와 `/auth/me` 응답이 `apple_user_id` 키로 전달한다.
@@ -265,32 +235,15 @@ struct AuthUser: Codable, Equatable, Identifiable {
         email: String,
         name: String = "",
         plan: String = "free",
-        allowFamilyAlarms: Bool? = nil,
-        familyAlarmQuietDays: [Int]? = nil,
-        familyAlarmQuietStart: String? = nil,
-        familyAlarmQuietEnd: String? = nil,
-        familyAlarmQuietWindows: [FamilyAlarmQuietWindow]? = nil,
         appleUserId: String? = nil,
         dynamicPromptSettings: DynamicPromptSettings? = nil,
         deletionStatus: String = "active",
         personalPromo: PersonalPromo? = nil
     ) {
-        let legacyDays = Self.normalizedQuietDays(familyAlarmQuietDays)
-        let legacyStart = Self.normalizedQuietTime(familyAlarmQuietStart, fallback: "09:00")
-        let legacyEnd = Self.normalizedQuietTime(familyAlarmQuietEnd, fallback: "18:30")
-        let fallbackWindow = FamilyAlarmQuietWindow(days: legacyDays, start: legacyStart, end: legacyEnd)
-        let quietWindows = Self.normalizedQuietWindows(familyAlarmQuietWindows, fallback: fallbackWindow)
-        let firstWindow = quietWindows.first ?? fallbackWindow
-
         self.id = id
         self.email = email
         self.name = name.trimmingCharacters(in: .whitespacesAndNewlines)
         self.plan = Self.normalizedPlan(plan)
-        self.allowFamilyAlarms = allowFamilyAlarms ?? false
-        self.familyAlarmQuietDays = firstWindow.days
-        self.familyAlarmQuietStart = firstWindow.start
-        self.familyAlarmQuietEnd = firstWindow.end
-        self.familyAlarmQuietWindows = quietWindows
         self.appleUserId = (appleUserId).nilIfBlank
         self.dynamicPromptSettings = dynamicPromptSettings ?? .empty
         self.deletionStatus = deletionStatus.nilIfBlank ?? "active"
@@ -302,11 +255,6 @@ struct AuthUser: Codable, Equatable, Identifiable {
         case email
         case name
         case plan
-        case allowFamilyAlarms
-        case familyAlarmQuietDays
-        case familyAlarmQuietStart
-        case familyAlarmQuietEnd
-        case familyAlarmQuietWindows
         case appleUserId
         case dynamicPromptSettings
         case deletionStatus
@@ -320,11 +268,6 @@ struct AuthUser: Codable, Equatable, Identifiable {
             email: try container.decode(String.self, forKey: .email),
             name: try container.decodeIfPresent(String.self, forKey: .name) ?? "",
             plan: try container.decodeIfPresent(String.self, forKey: .plan) ?? "free",
-            allowFamilyAlarms: try container.decodeIfPresent(Bool.self, forKey: .allowFamilyAlarms),
-            familyAlarmQuietDays: try container.decodeIfPresent([Int].self, forKey: .familyAlarmQuietDays),
-            familyAlarmQuietStart: try container.decodeIfPresent(String.self, forKey: .familyAlarmQuietStart),
-            familyAlarmQuietEnd: try container.decodeIfPresent(String.self, forKey: .familyAlarmQuietEnd),
-            familyAlarmQuietWindows: try container.decodeIfPresent([FamilyAlarmQuietWindow].self, forKey: .familyAlarmQuietWindows),
             appleUserId: try container.decodeIfPresent(String.self, forKey: .appleUserId),
             dynamicPromptSettings: try container.decodeIfPresent(DynamicPromptSettings.self, forKey: .dynamicPromptSettings),
             deletionStatus: try container.decodeIfPresent(String.self, forKey: .deletionStatus) ?? "active",
@@ -338,38 +281,7 @@ struct AuthUser: Codable, Equatable, Identifiable {
         value.nilIfBlank ?? "free"
     }
 
-    private static func normalizedQuietDays(_ days: [Int]?) -> [Int] {
-        let normalized = Array(Set(days?.filter { (0...6).contains($0) } ?? [])).sorted()
-        return normalized.isEmpty ? [1, 2, 3, 4, 5] : normalized
-    }
 
-    private static func normalizedQuietTime(_ value: String?, fallback: String) -> String {
-        guard let value, FamilyAlarmQuietWindow.isValidTime(value) else { return fallback }
-        return value
-    }
-
-    /// 서버에서 읽은 창 — 요일이 없거나 시각 형식이 틀린 창은 버린다.
-    private static func normalizedQuietWindows(
-        _ windows: [FamilyAlarmQuietWindow]?,
-        fallback: FamilyAlarmQuietWindow
-    ) -> [FamilyAlarmQuietWindow] {
-        guard let windows else { return [fallback] }
-        let normalized = windows.compactMap(\.withNormalizedDays).filter {
-            FamilyAlarmQuietWindow.isValidTime($0.start) && FamilyAlarmQuietWindow.isValidTime($0.end)
-        }
-        return Array(normalized.prefix(FamilyAlarmQuietWindow.maxCount))
-    }
-
-}
-
-struct RemoteAlarmListResponse: Decodable {
-    var alarms: [RemoteAlarm]
-    /// 없으면 유효한 total/limit/offset 계약을 요구하며, 첫 페이지만 완료로 읽지 않는다.
-    var hasMore: Bool?
-    var nextCursor: String?
-    var total: Int?
-    var limit: Int?
-    var offset: Int?
 }
 
 struct RemoteAlarmResponse: Decodable {
@@ -389,27 +301,9 @@ struct RemoteAlarm: Codable, Identifiable, Equatable {
     var messageId: String?
     var messageText: String?
     var category: String?
-    var messageAudioUrl: String?
-    var targetUserId: String?
-    var senderUserId: String?
-    var senderName: String?
-    var senderEmail: String?
-    var isFamilyAlarm: Bool?
-    var isReceivedFamilyAlarm: Bool?
-    var isReceived: Bool? = nil
-    /// 서버는 UUID와 옛 로그인 식별자를 함께 판정한다. 명시적인 새 false도 우선한다.
-    var isReceivedForPull: Bool { isReceived ?? isReceivedFamilyAlarm ?? false }
-    /// 고른 테마. ⚠ **서버에 사본이 있다** — `alarms.bucket_id` 를 목록 응답이 그대로
-    /// 돌려준다(`SELECT a.*`). 2026-08-18 전에는 이 필드가 **읽기 모델에 아예 없어서**,
-    /// 받는 사람이 테마를 볼 방법이 없었다. 안드로이드 `RemoteAlarm.bucketId` 짝.
+    /// 고른 테마 — 서버 `alarms.bucket_id`. 안드로이드 `RemoteAlarm.bucketId` 짝.
     var bucketId: String?
-    /// 같은 알람 id가 재전송으로 교체돼도 구버전 ACK가 새 행을 지우지 못하게 하는 전달 세대.
-    var deliveryVersion: String? = nil
     var creationReplayed: Bool? = nil
-}
-
-struct AlarmReceiptRequest: Encodable {
-    var deliveryVersion: String
 }
 
 struct RemoteAlarmWriteRequest: Encodable {
@@ -422,7 +316,6 @@ struct RemoteAlarmWriteRequest: Encodable {
     var isActive: Bool?
     var messageId: String?
     var voiceProfileId: String?
-    var targetUserId: String?
     /// 고른 무료 테마. 서버 `alarms.bucket_id` — 안드로이드도 같은 키로 보낸다.
     /// 서버가 값을 검증하므로(`alarm-helpers.ts` 의 `INVALID_BUCKET_ID`) 아무 문자열이나
     /// 넣으면 400 이 난다.
@@ -443,7 +336,7 @@ struct RemoteAlarmWriteRequest: Encodable {
 
     private enum CodingKeys: String, CodingKey {
         case time, repeatDays, snoozeMinutes, mode, vibrationPattern, wakeMode, isActive, messageId
-        case voiceProfileId, targetUserId, bucketId, timezone, clientAlarmId
+        case voiceProfileId, bucketId, timezone, clientAlarmId
     }
 
     /// 합성 인코딩과 같다(nil 은 뺀다) — 단 `clearsMissingVoiceReferences` 면 `messageId`·`bucketId`
@@ -459,7 +352,6 @@ struct RemoteAlarmWriteRequest: Encodable {
         try container.encodeIfPresent(isActive, forKey: .isActive)
         try encodeClearable(messageId, forKey: .messageId, in: &container)
         try container.encodeIfPresent(voiceProfileId, forKey: .voiceProfileId)
-        try container.encodeIfPresent(targetUserId, forKey: .targetUserId)
         try encodeClearable(bucketId, forKey: .bucketId, in: &container)
         try container.encodeIfPresent(timezone, forKey: .timezone)
         try container.encodeIfPresent(clientAlarmId, forKey: .clientAlarmId)
@@ -491,7 +383,6 @@ struct VoiceProfile: Decodable, Identifiable, Equatable {
     var name: String
     var status: String?
     var createdAt: String?
-    var isShared: Bool?
     /// 시스템/스톡 보이스 여부. 서버가 `GET /voice` 의 모든 row 에 `is_system`
     /// 으로 실어 보낸다(voice-profile.ts:218). 무료 등급의 스톡 클립 노출 판정에
     /// 사용. legacy 응답(키 없음) 호환을 위해 옵셔널이며, prefix 기반
@@ -500,11 +391,9 @@ struct VoiceProfile: Decodable, Identifiable, Equatable {
     /// 작성 중 임시 프로필 여부. promote 하기 전엔 알람 선택에 노출하지 않는다.
     /// Android `VoiceProfileApi.kt:65`.
     var isDraft: Bool? = nil
-    /// 공유 음성을 받은 사람이 음성 주인과의 관계를 기록한 라벨.
-    /// (예: "엄마", "할머니"). Android `VoiceProfileApi.kt:66`.
+    /// 등록할 때 적은 이 목소리와 나의 관계(예: "엄마", "할머니"). 안드로이드 `VoiceProfile.relationshipLabel`.
     var relationshipLabel: String? = nil
-    /// 공유 음성이 viewer 를 부를 때 쓰는 호칭(예: "지호야").
-    /// Android `VoiceProfileApi.kt:67`.
+    /// 이 목소리가 나를 부를 호칭(예: "지호야"). 안드로이드 `VoiceProfile.listenerTitle`.
     var listenerTitle: String? = nil
     /// 말투 분석 상태(`ready` / `failed` / nil). 서버가 `GET /voice-profile` 에 실어 보낸다
     /// (`voice-profile.ts` 의 `speech_style_status`).
@@ -533,8 +422,6 @@ struct VoiceDraftPromoteRequest: Encodable {
     /// 저장이 곧 교체다(2026-10-08 사용자). 막는 대신 **그 목소리 자리에 이 목소리를 앉힌다**(서버가 프로필 행을
     /// 재사용한다). nil 이면 키가 아예 안 나가서 서버는 지금까지처럼 한도로 막는다.
     var replaceExisting: Bool?
-    /// 공유는 초안 입력이 아니라 실제 등록을 확정하는 화면에서 고른다.
-    var isShared: Bool
     /// 등록 미리듣기에서 **끝까지 들은 목소리 높이**(반음, −10…+6·0.5 눈금). 서버가 적어 두고 그 목소리로 만드는
     /// 모든 알람 소리에 굽는다(스펙 voice-and-message §4-3). nil 이면 키가 아예 안 나가서(원래 소리) 높이 이전과
     /// 같은 바디다. 등록 확정 때만 받는다 — 다른 요청에 실으면 409 `VOICE_PITCH_LOCKED`.
@@ -573,21 +460,8 @@ struct VoicePrerenderAdvance: Decodable, Equatable {
 
 struct VoiceProfileUpdateRequest: Encodable {
     var name: String?
-    var isShared: Bool?
     var relationshipLabel: String?
     var listenerTitle: String?
-}
-
-/// `PATCH /voice/:id/relationship` 의 body. 관계/호칭 두 값은 필수.
-///
-/// 지금 iOS 에서 이 라우트를 부르는 곳은 **공유받은 음성 viewer** 의 관계/호칭 등록뿐이다
-/// (내 초안의 관계·호칭은 클론 요청 `POST voice/clone` 에 실어 보낸다).
-///
-/// ⚠ 목소리의 결(`voice_energy`)은 **어느 요청에도 싣지 않는다**(2026-09-29 '목소리 느낌' 선택
-/// 제거). 결은 서버가 등록 녹음 전사로 추정한다(`docs/spec/voice-and-message.md` §4-2).
-struct VoiceProfileRelationshipUpdateRequest: Encodable {
-    var relationshipLabel: String
-    var listenerTitle: String
 }
 
 /// 이번 달(KST) 목소리 쿼터. Android `VoiceDraftQuotaResponse` 미러.
@@ -600,18 +474,6 @@ struct VoiceProfileRelationshipUpdateRequest: Encodable {
 struct VoiceDraftQuotaResponse: Decodable, Equatable {
     var registrationLimit: Int = 0
     var registrationRemaining: Int = 0
-}
-
-struct VoiceUploadResponse: Decodable {
-    var upload: VoiceUpload
-}
-
-struct VoiceUpload: Decodable, Identifiable, Equatable {
-    var id: String
-    var mimeType: String?
-    var durationMs: Int?
-    var originalName: String?
-    var createdAt: String?
 }
 
 struct TtsGenerateRequest: Encodable {
@@ -634,10 +496,8 @@ struct TtsGenerateRequest: Encodable {
     var fortuneGender: String?
     var fortuneBirthDate: String?
     var fortuneBirthTime: String?
-    /// 공유 음성 viewer 가 자신을 부를 호칭.
+    /// 목소리가 나를 부를 호칭.
     var listenerTitle: String?
-    /// Family/member alarm TTS target. Android `TtsApi.kt` sends `target_user_id`.
-    var targetUserId: String?
     /// 등록 확인 스텝의 미리듣기 합성인가. 서버가 이때만 `preview_playback_token` 을
     /// 함께 내려주고, 그 토큰을 `preview-played` 로 돌려줘야 초안 승격이 허용된다.
     var draftPreview: Bool?
@@ -780,88 +640,6 @@ struct StockClip: Codable, Identifiable, Equatable {
     var id: String { messageId }
 }
 
-struct FamilyGroupCurrentResponse: Codable, Equatable {
-    var group: FamilyGroup?
-    var role: String?
-    var members: [FamilyGroupMember]
-}
-
-struct FamilyGroup: Codable, Identifiable, Equatable {
-    var id: String
-    var ownerUserId: String
-    var planId: String
-    var maxMembers: Int
-    var createdAt: String
-}
-
-struct FamilyGroupMember: Codable, Identifiable, Equatable {
-    var id: String
-    var userId: String
-    var role: String
-    var joinedAt: String
-    var email: String?
-    var name: String?
-    var allowFamilyAlarms: Bool?
-    var familyAlarmQuietDays: [Int]?
-    var familyAlarmQuietStart: String?
-    var familyAlarmQuietEnd: String?
-    var familyAlarmQuietWindows: [FamilyAlarmQuietWindow]?
-    var dynamicPromptSettings: DynamicPromptSettings?
-    var dynamicPromptSettingsState: DynamicPromptSettingsState?
-}
-
-struct FamilyVoiceProfileListResponse: Decodable {
-    var profiles: [FamilyVoiceProfile]
-}
-
-struct FamilyVoiceProfile: Decodable, Identifiable, Equatable {
-    var id: String
-    var name: String
-    var status: String?
-    var createdAt: String?
-    var userId: String?
-    var ownerName: String?
-    var isShared: Bool?
-    /// 받은 사람이 음성 주인과의 관계로 등록한 라벨.
-    var relationshipLabel: String?
-    /// 받은 사람을 음성이 부를 호칭.
-    var listenerTitle: String?
-    /// Server-side flag for shared voices that still need viewer-specific labels.
-    var needsViewerInfo: Bool?
-    /// 공유받은 목소리의 **직접 입력 음원 무효 시각**. 내 목소리와 같은 규약이다
-    /// (`VoiceProfile.customAudioInvalidatedAt`) — 공유받은 사람도 그 목소리로 자기 직접
-    /// 입력 알람을 만들 수 있고, 그 행 역시 pull 대상이 아니라 서버 강등이 닿지 않는다.
-    var customAudioInvalidatedAt: String?
-}
-
-extension FamilyVoiceProfile {
-    var requiresViewerInfo: Bool {
-        needsViewerInfo == true ||
-            (relationshipLabel?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true) ||
-            (listenerTitle?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
-    }
-
-    var sharedFromLabel: String {
-        localizedSharedFromLabel()
-    }
-
-    func localizedSharedFromLabel(bundle: Bundle = .main) -> String {
-        let owner = ownerName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        guard !owner.isEmpty else { return String(localized: "공유받은 목소리", bundle: bundle) }
-        let name = personDisplayName(owner, bundle: bundle)
-        return String(localized: "\(name)에게 공유받은 목소리", bundle: bundle)
-    }
-}
-
-struct CodeRegisterRequest: Encodable {
-    var code: String
-}
-
-struct CodeRegisterResponse: Decodable, Equatable {
-    var success: Bool
-    var type: String?
-}
-
 struct BillingSubscriptionResponse: Codable, Equatable {
     var subscription: BillingSubscription?
     var plan: BillingPlan?
@@ -902,7 +680,7 @@ struct BillingSubscription: Codable, Identifiable, Equatable {
     /// 계속 갱신된다. 권위는 서버의 활성 구독이고, 그 값이 이 필드다
     /// (`storeCancelProviderOf`, `routes/billing-query.ts`).
     ///
-    /// `nil` 은 두 가지다: 스토어 결제가 아니거나(프로모·바우처), **서버가 아직 이
+    /// `nil` 은 두 가지다: 스토어 결제가 아니거나(프로모), **서버가 아직 이
     /// 필드를 안 주는 구버전**이거나. 어느 쪽이든 안전하다 — 해지를 서버에 물어보고
     /// `STORE_CANCEL_UNSUPPORTED` 를 받으면 관리 시트로 보내는 길이 그대로 있다
     /// (`SocialFeatureViewModel.cancelSubscription`). 안드로이드가 원래 그 하나만 쓴다.
@@ -914,36 +692,13 @@ struct BillingPlan: Codable, Identifiable, Equatable {
     var key: String
     var name: String
     var planType: String
-    var maxMembers: Int
-}
-
-struct VoucherListResponse: Decodable {
-    var vouchers: [VoucherItem]
-}
-
-struct VoucherItem: Decodable, Identifiable, Equatable {
-    var id: String
-    var code: String
-    var planKey: String?
-    var planName: String
-    var planType: String
-    var status: String
-    var issuedAt: String?
-    var expiresAt: String
-    var maxUses: Int?
-    var useCount: Int?
 }
 
 // ⚠ **`/checkout` 요청·응답 모델을 되살리지 말 것**(2026-08-07 삭제).
 // iOS 결제는 **StoreKit** 을 거친다 — 서버 `/billing/checkout` 은 안드로이드(구글 결제)
 // 전용이고, iOS 에는 그 라우트를 부르는 코드가 없어 모델만 남아 있었다.
 // (`CheckoutVoucher` 도 같은 묶음이다 — 그걸 물던 마지막 응답 필드가 8c15bd81 에서
-// 사라진 뒤 어떤 응답도 쓰지 않아 2026-09-06 에 지웠다. 바우처는 `VoucherItem` 이다.)
-
-struct EnsureFamilyShareCodeResponse: Decodable, Equatable {
-    var success: Bool
-    var voucher: VoucherItem
-}
+// 사라진 뒤 어떤 응답도 쓰지 않아 2026-09-06 에 지웠다.)
 
 /// Backend/Android billing mode contract: `immediate` or `at_period_end`.
 struct CancelSubscriptionRequest: Encodable {
@@ -957,22 +712,12 @@ struct CancelSubscriptionResponse: Decodable, Equatable {
 
 struct UpdateProfileRequest: Encodable {
     var name: String?
-    var allowFamilyAlarms: Bool?
-    var familyAlarmQuietDays: [Int]?
-    var familyAlarmQuietStart: String?
-    var familyAlarmQuietEnd: String?
-    var familyAlarmQuietWindows: [FamilyAlarmQuietWindow]?
     var dynamicPromptSettings: DynamicPromptSettings?
 }
 
 struct UpdateProfileResponse: Decodable, Equatable {
     var success: Bool
     var name: String?
-    var allowFamilyAlarms: Bool?
-    var familyAlarmQuietDays: [Int]?
-    var familyAlarmQuietStart: String?
-    var familyAlarmQuietEnd: String?
-    var familyAlarmQuietWindows: [FamilyAlarmQuietWindow]?
     var dynamicPromptSettings: DynamicPromptSettings?
 }
 
@@ -987,25 +732,6 @@ struct ConsentItemRequest: Encodable, Equatable {
     var type: String
     var agreed: Bool
     var version: String? = nil
-}
-
-/// `GET /alarm/declined` 응답.
-///
-/// 목록(`GET /alarm`)은 그만받기 한 알람을 아예 빼서 내려주므로, 클라는 "목록에서 사라짐" 의
-/// 이유를 구분할 수 없다 — **수신자가 그만받기** 했는지, **발신자가 지웠**는지.
-/// 그 둘은 결과가 **정반대**여야 하므로 서버가 따로 알려 준다:
-///
-///  - `alarmIds`(declined): 수신자가 그만받기 → **알람을 지운다**(이 계정의 다른 기기에서도).
-///  - `revokedAlarmIds`(revoked): 발신자 탈퇴/철회 → **목소리만 걷어내고 알람은 남긴다.**
-///    복제 목소리는 그 사람의 생체정보라 파기 대상이지만, 시각은 수신자가 기대고 자는
-///    자기 정보다 — 통째로 지우면 그날 못 일어난다.
-///
-/// ⚠ 페이지네이션은 두 배열을 **한 페이지에 섞어** 내려준다. 다음 offset 은 **둘의 합**만큼
-/// 전진시켜야 한다(한쪽 크기로 전진하면 같은 행을 다시 읽거나 건너뛴다).
-struct DeclinedAlarmsResponse: Decodable, Equatable {
-    var alarmIds: [String] = []
-    var revokedAlarmIds: [String] = []
-    var hasMore: Bool = false
 }
 
 /// 약관 동의 기록 요청. Android `AuthApi.kt:143` `RecordConsentsRequest`.
@@ -1072,7 +798,7 @@ struct AppVersionResponse: Decodable, Equatable {
     var weatherAttribution: String? = nil
 }
 
-// MARK: - 이메일/비밀번호 + 인증코드 + 멤버/Family 액션 + 바우처
+// MARK: - 이메일/비밀번호 + 인증코드
 
 struct RequestEmailVerificationRequest: Encodable {
     var email: String
@@ -1137,7 +863,7 @@ struct ConsentRecord: Decodable, Equatable {
     var policyVersion: String
     var agreed: Bool
     /// 동의한 시각(UTC, "2026-07-06 04:12:33"). 동의 내역 화면이 날짜로 보여준다.
-    /// 서버 `user.ts:453` 가 항상 실어 보내지만 옛 응답 호환으로 옵셔널.
+    /// 서버 `routes/user.ts` 의 `GET /consents` 가 항상 실어 보내지만 옛 응답 호환으로 옵셔널.
     var agreedAt: String?
 }
 
@@ -1145,20 +871,6 @@ struct ConsentRecord: Decodable, Equatable {
 struct ConsentListResponse: Decodable, Equatable {
     var consents: [ConsentRecord]
 }
-
-struct FamilyAlarmTalkRequest: Encodable {
-    var recipientUserId: String
-    var wakeAt: String
-    var voiceUploadId: String
-    var label: String?
-    var dubTargetLanguage: String?
-    var repeatDays: [Int]
-}
-
-struct FamilyAlarmTalkResponse: Decodable, Equatable {
-    var alarm: RemoteAlarm
-}
-
 
 // MARK: - Phase 4-D1: Apple StoreKit2 IAP confirmation
 
@@ -1180,7 +892,7 @@ struct ConfirmAppleSubscriptionRequest: Encodable {
 struct ConfirmAppleSubscriptionResponse: Decodable, Equatable {
     /// 서버 측 검증 + entitlement upsert 성공 여부.
     var success: Bool
-    /// 백엔드 plan key (`personal` / `couple` / `family`).
+    /// 백엔드 plan key (`personal`).
     var planKey: String?
     /// 백엔드가 upsert 한 subscriptions row. 부분 응답 환경에서는 nil.
     var subscription: BillingSubscription?

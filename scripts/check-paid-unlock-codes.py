@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""코드를 쳐서 유료 기능을 여는 길(선물·프로모·쿠폰 코드)이 **화면 문구·코드·스토어 문구로 돌아오지 않게** 막는다.
+"""코드를 쳐서 유료 기능을 여는 길(선물·프로모·쿠폰·초대 코드)이 **화면 문구·코드·스토어 문구로 돌아오지 않게** 막는다.
 
 ## 왜 있는가
 
@@ -8,10 +8,12 @@ App Store 가 심사 지침 3.1.1("인앱 결제가 아닌 수단으로 기능�
 사람은 스토어로 냈어도 받는 사람은 코드를 쳐서 연다)를 남긴 것이 두 번째 반려의 원인이다. 스토어 설명과 심사 노트도
 그 기능을 직접 내보였다. 지침 3.1.1 은 라이선스 키·QR 코드도 같은 것으로 든다.
 
-규칙의 유일 출처는 `docs/spec/plan-gates.md` 「선물 코드 — 폐지」 다. 코드로 유료 기능을 얻는 길은 주인이 이미 결제한
-커플·가족 그룹에 합류하는 **초대 코드(INV-) 하나**뿐이고, 할인·무료 이용은 스토어 오퍼 코드로 준다. 규칙을 문서에만
-두면 다음 사람이 '쿠폰'·'체험 코드' 같은 새 이름으로 같은 것을 다시 만든다 — 그래서 낱말과 형식을 CI 에서 막는다.
-서버가 받지 않는 것이 실질 차단이고(옛 앱이 남는다), 이 검사는 그 차단이 다시 풀리는 변경을 머지 전에 잡는 그물이다.
+규칙의 유일 출처는 `docs/spec/plan-gates.md` 「선물 코드 — 폐지」·「커플·가족 이용권 — 폐지」 다. 코드로 유료 기능을
+얻는 길은 **없다** — 마지막으로 남았던 초대 코드(INV-, 커플·가족 그룹 합류)도 2026-10-20 에 커플·가족 이용권과 함께
+없앴다. 할인·무료 이용은 스토어 오퍼 코드로 준다. 규칙을 문서에만 두면 다음 사람이 '쿠폰'·'체험 코드' 같은 새 이름으로
+같은 것을 다시 만든다 — 그래서 낱말과 형식을 CI 에서 막는다. 서버가 받지 않는 것이 실질 차단이고(옛 앱이 남는다 —
+옛 앱의 코드 등록은 서버가 언제나 `CODE_NOT_FOUND` 로 답한다), 이 검사는 그 차단이 다시 풀리는 변경을 머지 전에 잡는
+그물이다.
 
 ## 무엇을 보는가
 
@@ -23,8 +25,11 @@ App Store 가 심사 지침 3.1.1("인앱 결제가 아닌 수단으로 기능�
       `<string-array>/<item>` 의 글. `name` 속성(`code_redeem_placeholder` 같은 키)과 XML 주석은 화면에 나오지
       않으므로 보지 않는다.
 (b) **앱·서버 코드** — 은퇴한 선물 상품 id(`personal_gift`·`personalGift`), 선물 코드 형식(`GIFT-…` 와 `(INV|GIFT)`·
-    `'GIFT'` 같은 접두), 선물 종류 문자열(`'gift'`), 선물 에러 코드(`GIFT_PERSONAL_ONLY`·`INVALID_GIFT_PLAN`), 그리고
-    **이름 속의 gift**(「선물 식별자」 — `giftCode`·`sendGift`·`gift_code`·`IS_GIFT`).
+    `'GIFT'` 같은 접두), 선물 종류 문자열(`'gift'`), 선물 에러 코드(`GIFT_PERSONAL_ONLY`·`INVALID_GIFT_PLAN`),
+    **이름 속의 gift**(「선물 식별자」 — `giftCode`·`sendGift`·`gift_code`·`IS_GIFT`), 그리고 은퇴한 커플·가족 상품 id
+    (「그룹 상품 id」 — `couple_monthly`·`family_monthly`·`coupleMonthly`·`FAMILY_MONTHLY`, 연간 id 도)와 초대 코드를
+    만들던 경로(「초대 코드 발급 경로」 — `family-share`). 스토어에 그 상품이 다시 붙으면 3.1.1 과 별개로, 정원·합류를
+    다룰 코드가 이제 없어 결제만 받고 아무것도 열지 못한다.
     - 대상: iOS `AlarmTalk`·`AlarmTalkWidget`·`Shared` 의 `*.swift` 와 `apps/ios-native/**/*.storekit`, Android
       `app/src/<테스트가 아닌 소스 세트>/**/*.kt`, `packages/backend/src`·`packages/backend/scripts`·`packages/shared/src`
       의 `*.ts`.
@@ -41,18 +46,19 @@ App Store 가 심사 지침 3.1.1("인앱 결제가 아닌 수단으로 기능�
     - 뺀 것: `packages/backend/src/lib/migrations.ts`(지난 마이그레이션의 SQL 은 고칠 수 없는 이력이다)와 테스트 소스
       (`src/test`·`src/androidTest`·`AlarmTalkTests`·`AlarmTalkUITests`·`packages/*/test` — 회귀 테스트가 `GIFT-` 를 넣어
       거절을 확인한다). 테스트는 처음부터 대상 경로에 없다.
-    - 남겨 둔 것은 「선물 식별자」 에 **걸리고**, 허용 목록에 줄마다 이유와 함께 있다: 이력 표 이름
-      `apple_gift_deliveries`(탈퇴 정리 SQL)와, dev 스텁 `POST /billing/checkout` 이 옛 요청의 `gift: true` 를 읽어서
-      거절하는 자리(`body.gift` 와 그 거절 문구).
+    - 남겨 둔 것은 「선물 식별자」 에 **걸리고**, 허용 목록에 줄마다 이유와 함께 있다: dev 스텁 `POST /billing/checkout`
+      이 옛 요청의 `gift: true` 를 읽어서 거절하는 자리(`body.gift` 와 그 거절 문구). 이력 표 `apple_gift_deliveries` 는
+      마이그레이션 #131 이 지웠다.
 (c) **스토어 문구 원본** — 「어휘」 를 찾는다. `docs/product/app-store-listing.md`·`play-store-listing.md` 는 올리는 값을
     펜스 블록(```text·```diff)과, 이름·제목·부제·짧은 설명 절의 표에 둔다. 그 둘만 본다 — 같은 파일의 「지금 상태」
     같은 설명문은 지운 문장을 인용하는 이력이라 보지 않는다. 새 칸을 설명문에 적으면 이 검사가 못 본다 — 올리는 값은
     펜스 블록에 둔다.
-(d) **초대 코드 형식** — 낱말로는 새 접두(`TRY-`·`VIP-`)를 미리 알 수 없으니 형식 자체를 고정한다. `packages/backend/src`
-    에 `VOUCHER_CODE_RE` 정의가 **하나** 있고 값이 INV- 4-4-4(`EXPECTED_VOUCHER_RE`) 그대로여야 하며, 그것을 쓰는
-    `isValidVoucherCodeFormat` 의 본문이 `return VOUCHER_CODE_RE.test(<인자>);` 한 줄이어야 한다(함수 안에서 접두를 하나
-    더 받는 우회를 막는다). 정의는 이름으로 찾으므로 파일을 옮겨도 따라간다. 형식을 넓히는 변경은 이름이 무엇이든
-    여기서 실패한다 — 넓히지 않는 정리(정규화 등)라면 이 검사를 함께 고친다.
+(d) **초대 코드 형식이 남아 있지 않다** — 서버가 받는 코드 형식은 더 없다(2026-10-20 까지는 INV- 4-4-4 하나를 고정해
+    두던 검사였다). `packages/backend/src`·`packages/backend/scripts`·`packages/shared/src` 의 `*.ts`(주석은 지우고,
+    `migrations.ts` 는 이력이라 빼고)에 형식 상수 `VOUCHER_CODE_RE`, 형식 검사 `isValidVoucherCodeFormat`, 그리고 `INV-`
+    접두(정규식·`LIKE 'INV-%'`·`startsWith('INV-')` 어느 모양이든)가 나오면 실패한다. 파일을 가리지 않으므로 옮기거나 새로
+    만들어도 걸린다. 옛 앱 호환 응답(`POST /code/register` → 언제나 404 `CODE_NOT_FOUND`)은 본문을 읽지 않으므로 형식이
+    필요 없다. 새 접두(`TRY-`·`VIP-`)는 낱말로 미리 알 수 없다 — 그런 형식을 받는 라우트는 리뷰가 본다(`AGENTS.md`).
 (e) **유료 게이트의 모양** — 게이트에 코드 입력이 돌아오지 않게, 아래 자리에 `TextField`·`IosAlertField`·
     `CodeRegisterRow`·`CodeRedeemField`·`registerCode`·`redeem`(대소문자 무시)이 없어야 한다. 주석은 지우고 보고,
     문자열은 그대로 본다(`"code.redeem.submit"` 도 걸린다).
@@ -72,28 +78,33 @@ App Store 가 심사 지침 3.1.1("인앱 결제가 아닌 수단으로 기능�
   '이 버전의 새로운 기능' 은 제출 전에 사람이 읽는다(`docs/qa/dev-test-handoff.md` 체크리스트).
 - 심사 노트: 저장소 밖(App Store Connect)에서 쓴다. 제출 전에 사람이 읽는다(같은 체크리스트).
 - 서버 응답의 `error` 메시지: 앱은 `error_code` 로 문구를 고른다(`docs/spec/error-codes.md`). 코드 이름은 (b) 가 본다.
-- 법무 문서(`docs/legal`, 두 앱에 실린다): 처리방침은 보관하는 기록의 종류로 '이용권 또는 쿠폰 사용 기록' 을 적는다 —
-  지난 프로모 코드의 사용 기록이 이력으로 남아 있으니 사실이고, 코드로 무엇을 연다는 말이 아니다. 문구를 바꾸려면 문서
-  버전과 앱 릴리스를 함께 맞춰야 하므로(`CLAUDE.md` 「법무 문서 버전」) 이 검사로 묶지 않는다. 다음 문서 버전에서 고친다
-  (`docs/qa/dev-test-handoff.md`).
-- 웹 랜딩(`apps/landing`): 앱 화면도 스토어 문구도 아니다(2026-10-14 에 선물·쿠폰 낱말이 없음을 확인했다).
+- 법무 문서(`docs/legal`, 두 앱에 실린다): 개정 이력이 지난 프로모 코드·쿠폰과 없앤 기능을 이력으로 적는다(코드로
+  무엇을 연다는 말이 아니다). 문구를 바꾸려면 문서 버전과 앱 릴리스를 함께 맞춰야 하므로(`CLAUDE.md` 「법무 문서 버전」) 이
+  검사로 묶지 않는다.
+- 웹 랜딩(`apps/landing`): 앱 화면도 스토어 문구도 아니다(2026-10-14 에 선물·쿠폰 낱말이, 2026-10-20 에 초대 코드·
+  커플·가족 이용권 낱말이 없음을 확인했다).
 
-## 어휘 — 2026-10-14 의 화면 문구에 맞춰 골랐다
+## 어휘 — 2026-10-14·10-20 의 화면 문구에 맞춰 골랐다
 
 - 한국어: `선물`(선물 코드·선물하기·이용권 선물·'선물·초대 코드' 를 모두 덮는다 — 띄어 쓴 구절만 막으면 지운 문구
   '선물·초대 코드가 있어요' 가 빠져나간다), `기프트`, `쿠폰`, `바우처`, `프로모(션) 코드`, `체험 코드`·`라이선스 코드/키`,
-  `이용권 코드`.
+  `이용권 코드`, `초대 코드`, `커플·가족 이용권`(커플/가족 + 이용권·플랜·요금제, 그리고 `커플·가족`·`커플/가족`·
+  `가족·커플` 처럼 둘을 묶은 말).
 - 영어: `gift…`(gifted·gifting 포함), `promo code`·`promotional code`, `coupon`, `voucher`, `redeem…`·`redemption`,
-  `trial code`·`activation code`·`license code/key`, `plan code`.
+  `trial code`·`activation code`·`license code/key`, `plan code`, `invite code`·`invitation code`, `Couple plan`·
+  `Family plan`.
 - 일본어: `ギフト`, `贈`(贈る — 선물하다. 지운 선물 공유 문구 'プランを贈りました' 는 ギフト 없이 이 글자만 썼다),
   `プレゼント(コード)`, `プロモーションコード`, `クーポン`, `バウチャー`, `体験コード`·`ライセンスコード/キー`·
-  `アクティベーションコード`, `利用券コード`.
+  `アクティベーションコード`, `利用券コード`, `招待コード`, `カップルプラン`·`ファミリープラン`·`家族プラン`.
 - 체험·라이선스 쪽은 지운 문구가 아니라 규칙(「선물 코드 — 폐지」 의 '체험·라이선스 코드를 새로 만들지 말 것')을 따라
   미리 막는 것이다. '오픈소스 라이선스'·'라이선스 전문' 처럼 코드·키가 붙지 않은 말은 걸리지 않는다.
 - `이용권 코드`·`plan code`·`利用券コード` 는 2026-10-14 2차에 막았다. 커플·가족 카드의 '이용권 코드 공유' 가 초대 코드를
   가리켰지만, 이용권을 여는 코드(라이선스 키)로 읽혀 '초대 코드 공유' 로 바꿨다(용어집 `docs/spec/localization.md`).
+- `초대 코드`·`invite code`·`招待コード` 와 커플·가족 이용권 낱말은 2026-10-20 에 막았다. 초대 코드는 커플·가족 그룹에
+  합류하는 마지막 코드 입력이었고, 이용권이 사라지면서 둘 다 화면에 남을 이유가 없다.
 - 대소문자는 가리지 않는다. 막지 **않는** 것: '프로모션'·'promotional' 혼자(마케팅 동의의 "Promotional messages"
-  처럼 코드가 아닌 뜻이다), `초대 코드`·`invite code`·`招待コード`, 코드 없이 쓴 `이용권`·`plan`.
+  처럼 코드가 아닌 뜻이다), 코드 없이 쓴 `이용권`·`plan`·`초대`, 그리고 맨 `가족`·`family`·`家族`·`커플`(목소리
+  관계 라벨·"가족 목소리로 깨워요" 같은 소개 문구다).
 
 ## 예외(허용 목록)
 
@@ -130,6 +141,9 @@ TEXT_TERMS: Tuple[Tuple[str, "re.Pattern[str]"], ...] = (
     ("프로모 코드", re.compile(r"프로모(?:션)?\s*코드")),
     ("체험·라이선스 코드", re.compile(r"체험\s*코드|라이선스\s*(?:코드|키)")),
     ("이용권 코드", re.compile(r"이용권\s*코드")),
+    ("초대 코드", re.compile(r"초대\s*코드")),
+    # 맨 '가족'·'커플' 은 막지 않는다 — 이용권·플랜·요금제가 붙거나 둘을 묶어 부를 때만 상품 이름이다.
+    ("커플·가족 이용권", re.compile(r"(?:커플|가족)\s*(?:이용권|플랜|요금제)|커플\s*[·・/]\s*가족|가족\s*[·・/]\s*커플")),
     ("gift", re.compile(r"\bgift", re.IGNORECASE)),
     ("promo code", re.compile(r"\bpromo(?:tional)?[\s-]*codes?\b", re.IGNORECASE)),
     ("coupon", re.compile(r"\bcoupons?\b", re.IGNORECASE)),
@@ -137,6 +151,8 @@ TEXT_TERMS: Tuple[Tuple[str, "re.Pattern[str]"], ...] = (
     ("redeem", re.compile(r"\bredeem|\bredemption", re.IGNORECASE)),
     ("trial·license code", re.compile(r"\b(?:trial|activation)\s+codes?\b|\blicen[cs]e\s+(?:codes?|keys?)\b", re.IGNORECASE)),
     ("plan code", re.compile(r"\bplan\s+codes?\b", re.IGNORECASE)),
+    ("invite code", re.compile(r"\binvit(?:e|ation)\s+codes?\b", re.IGNORECASE)),
+    ("Couple·Family plan", re.compile(r"\b(?:couple|family)\s+plans?\b", re.IGNORECASE)),
     ("ギフト", re.compile(r"ギフト")),
     ("贈", re.compile(r"贈")),
     ("プレゼント", re.compile(r"プレゼント")),
@@ -145,6 +161,8 @@ TEXT_TERMS: Tuple[Tuple[str, "re.Pattern[str]"], ...] = (
     ("バウチャー", re.compile(r"バウチャー")),
     ("体験・ライセンスコード", re.compile(r"体験\s*コード|ライセンス\s*(?:コード|キー)|アクティベーション\s*コード")),
     ("利用券コード", re.compile(r"利用券\s*コード")),
+    ("招待コード", re.compile(r"招待\s*コード")),
+    ("カップル・ファミリープラン", re.compile(r"(?:カップル|ファミリー|家族)\s*プラン")),
 )
 
 # ── 형식 (b) — 주석을 지운 코드에서 찾는다 ────────────────────────────────────────────────────
@@ -158,6 +176,10 @@ CODE_TERMS: Tuple[Tuple[str, "re.Pattern[str]"], ...] = (
     ("선물 에러 코드", re.compile(r"\b(?:GIFT_PERSONAL_ONLY|INVALID_GIFT_PLAN)\b")),
     # 이름을 짓는 방식마다 한 낱말로 선 gift — 대소문자를 가린다(맨 위 (b)). 위 줄들과 같은 줄에 겹쳐 걸릴 수 있다.
     ("선물 식별자", re.compile(r"(?<![a-z])gift|Gift|(?<![A-Z])GIFT(?![A-Z])")),
+    # 은퇴한 커플·가족 상품 id(`couple_monthly`·`com.alarmtalk.app.family_monthly`)와 그 상수(`COUPLE_MONTHLY`·`familyMonthly`).
+    ("그룹 상품 id", re.compile(r"(?:couple|family)_?(?:monthly|yearly)", re.IGNORECASE)),
+    # 주인이 초대 코드를 받아 가던 경로(`POST /billing/vouchers/family-share`). 앱의 API 경로 문자열도 같이 본다.
+    ("초대 코드 발급 경로", re.compile(r"family-share")),
 )
 
 # 서버 라우트 경로 — 따옴표 문자열 안의 경로 조각에 gift 가 든 것. `ROUTE_ROOT` 아래 파일에만 쓴다.
@@ -187,11 +209,8 @@ TEST_SOURCE_SETS = ("test", "androidTest")
 IDENTIFIER_KEY = re.compile(r"^[A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)+$")
 
 # ── 초대 코드 형식 (d) ───────────────────────────────────────────────────────────────────────
-VOUCHER_FORMAT_ROOT = "packages/backend/src"
-# 받는 형식은 초대 코드 하나다. 접두를 더하거나 넓히려면 먼저 `docs/spec/plan-gates.md` 「선물 코드 — 폐지」 를 볼 것.
-EXPECTED_VOUCHER_RE = "/^INV-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/"
-VOUCHER_RE_DEFINITION = re.compile(r"\b(?:const|let|var)\s+VOUCHER_CODE_RE\b[^=\n]*=\s*")
-VOUCHER_FORMAT_FUNCTION = re.compile(r"\bfunction\s+isValidVoucherCodeFormat\s*\(")
+# 서버가 받는 코드 형식은 없다(2026-10-20). 되살리려면 먼저 `docs/spec/plan-gates.md` 「커플·가족 이용권 — 폐지」 를 볼 것.
+INVITE_FORMAT = re.compile(r"\bVOUCHER_CODE_RE\b|\bisValidVoucherCodeFormat\b|(?<![A-Za-z0-9_])INV-")
 
 # ── 유료 게이트의 모양 (e) ───────────────────────────────────────────────────────────────────
 GATE_FORBIDDEN = re.compile(r"TextField|IosAlertField|CodeRegisterRow|CodeRedeemField|registerCode|redeem", re.IGNORECASE)
@@ -241,18 +260,7 @@ _CHECKOUT_GIFT_REJECTION = (
     "이 줄들도 지운다."
 )
 
-ALLOWLIST: Tuple[Allow, ...] = (
-    Allow(
-        path="packages/backend/src/lib/account-deletion.ts",
-        where="DELETE FROM apple_gift_deliveries",
-        term="선물 식별자",
-        reason=(
-            "탈퇴 정리(`purgeUserAccount`)가 옛 선물 전달 이력 행을 치우는 SQL 이다. 표는 이력이라 지우지 않았고"
-            "(마이그레이션 없음) 그 전에 쓰인 행이 남을 수 있다(`docs/spec/plan-gates.md` 「선물 코드 — 폐지」 의 '이력은 "
-            "남긴다'). 표를 없애는 마이그레이션을 하면 이 줄도 지운다."
-        ),
-    ),
-) + tuple(
+ALLOWLIST: Tuple[Allow, ...] = tuple(
     Allow(path="packages/backend/src/routes/billing-mutation.ts", where=fragment, term="선물 식별자", reason=_CHECKOUT_GIFT_REJECTION)
     for fragment in (
         "gift?: unknown }>()",
@@ -542,7 +550,7 @@ def last_heading(text: str, position: int) -> str:
     return headings[-1] if headings else ""
 
 
-# ── 괄호 짝 (d)·(e) ──────────────────────────────────────────────────────────────────────────
+# ── 괄호 짝 (e) ─────────────────────────────────────────────────────────────────────────────
 def balanced_end(code: str, start: int, opening: str, closing: str, language: str) -> int:
     """`code[start] == opening` 의 짝이 되는 `closing` 다음 위치. 문자열 안의 괄호는 세지 않는다(주석은 이미 지웠다)."""
     quotes = '"' if language == "swift" else "\"'`"  # Swift 는 큰따옴표만 문자열이다(`'` 는 쓰지 않고 `` ` `` 는 이름이다)
@@ -567,53 +575,23 @@ def line_number(code: str, position: int) -> int:
 
 
 # ── (d) 초대 코드 형식 ───────────────────────────────────────────────────────────────────────
-def check_voucher_format(root: Path) -> Iterator[Hit]:
-    """`VOUCHER_CODE_RE` 가 하나뿐이고 INV- 4-4-4 그대로인지, `isValidVoucherCodeFormat` 가 그것만 보는지."""
-    term = "초대 코드 형식"
-    definitions: List[Tuple[str, int, str]] = []
-    functions: List[Tuple[str, int, str, str]] = []
-    for path in walk(root, VOUCHER_FORMAT_ROOT, ".ts"):
-        rel = relative(root, path)
-        try:
-            code = strip_comments(path.read_text(encoding="utf-8"), "ts")
-        except (OSError, UnicodeDecodeError) as error:
-            yield Hit(rel, "파일", "읽기 실패", str(error))
-            continue
-        for match in VOUCHER_RE_DEFINITION.finditer(code):
-            start = match.end()
-            if code.startswith("/", start):
-                end = regex_end(code, start)
-                while end < len(code) and code[end].isalpha():  # 플래그(`/…/i`)도 값의 일부다
-                    end += 1
-            else:
-                newline = code.find("\n", start)
-                end = len(code) if newline == -1 else newline
-            definitions.append((rel, line_number(code, match.start()), code[start:end].strip().rstrip(";")))
-        for match in VOUCHER_FORMAT_FUNCTION.finditer(code):
-            params_end = balanced_end(code, match.end() - 1, "(", ")", "ts")
-            parameter = re.match(r"\s*([A-Za-z_$][\w$]*)", code[match.end():params_end])
-            brace = code.find("{", params_end)
-            if brace == -1:
+def check_invite_format(root: Path) -> Iterator[Hit]:
+    """서버·공유 코드(주석 제외)에 초대 코드 형식(`VOUCHER_CODE_RE`·`isValidVoucherCodeFormat`·`INV-`)이 없는지."""
+    for base in TS_ROOTS:
+        for path in walk(root, base, ".ts"):
+            rel = relative(root, path)
+            if rel in CODE_EXCLUDED:
                 continue
-            body = code[brace + 1:balanced_end(code, brace, "{", "}", "ts") - 1]
-            functions.append((rel, line_number(code, match.start()), parameter.group(1) if parameter else "", body))
-    where = f"{VOUCHER_FORMAT_ROOT} 의 `VOUCHER_CODE_RE`"
-    if not definitions:
-        yield Hit(VOUCHER_FORMAT_ROOT, where, term, "정의를 찾지 못했다 — 옮기거나 이름을 바꿨으면 이 검사(EXPECTED_VOUCHER_RE)도 고칠 것")
-    if len(definitions) > 1:
-        for rel, number, value in definitions:
-            yield Hit(rel, f"{number}행 `VOUCHER_CODE_RE = {value}`", term, f"정의가 {len(definitions)}개다 — 하나만 둔다")
-    for rel, number, value in definitions:
-        if value != EXPECTED_VOUCHER_RE:
-            yield Hit(rel, f"{number}행 `VOUCHER_CODE_RE = {value}`", term, f"INV- 4-4-4 하나여야 한다(`{EXPECTED_VOUCHER_RE}`)")
-    if not functions:
-        yield Hit(VOUCHER_FORMAT_ROOT, f"{VOUCHER_FORMAT_ROOT} 의 `isValidVoucherCodeFormat`", term,
-                  "함수를 찾지 못했다 — 옮기거나 이름을 바꿨으면 이 검사도 고칠 것")
-    for rel, number, parameter, body in functions:
-        if re.sub(r"\s+", "", body) != f"returnVOUCHER_CODE_RE.test({parameter});":
-            yield Hit(rel, f"{number}행 `isValidVoucherCodeFormat`", term,
-                      "본문이 `return VOUCHER_CODE_RE.test(…);` 한 줄이 아니다 — 형식을 넓히지 말 것: "
-                      + " ".join(body.split())[:120])
+            try:
+                code = strip_comments(path.read_text(encoding="utf-8"), "ts")
+            except (OSError, UnicodeDecodeError) as error:
+                yield Hit(rel, "파일", "읽기 실패", str(error))
+                continue
+            for number, line in enumerate(code.splitlines(), 1):
+                match = INVITE_FORMAT.search(line)
+                if match:
+                    yield Hit(rel, f"{number}행 `{line.strip()[:120]}`", "초대 코드 형식",
+                              excerpt(line, match.start(), match.end()))
 
 
 # ── (e) 유료 게이트의 모양 ───────────────────────────────────────────────────────────────────
@@ -683,7 +661,7 @@ def audit(root: Path) -> List[Hit]:
         hits.extend(scan_code(root, path, language))
     for rel in STORE_LISTINGS:
         hits.extend(scan_store_listing(root, rel))
-    hits.extend(check_voucher_format(root))
+    hits.extend(check_invite_format(root))
     hits.extend(check_gate_sources(root))
     return hits
 
@@ -723,10 +701,11 @@ def main() -> int:
             for allow in stale:
                 print(f"  - {allow.path} — {allow.where} [{allow.term}]", file=sys.stderr)
         print(
-            "\n코드로 유료 기능을 얻는 길은 이미 결제한 커플·가족 그룹에 합류하는 초대 코드(INV-) 하나뿐이다. 선물·프로모·\n"
-            "쿠폰 코드와 코드를 발급하는 상품을 되살리지 말고, 할인·무료 이용은 스토어 오퍼 코드로 준다. 유료 게이트에는\n"
-            "코드 입력을 두지 않는다 — 초대 코드는 더보기 → 초대 코드 등록에서만 받는다.\n"
-            "규칙: docs/spec/plan-gates.md 「선물 코드 — 폐지」. 정당한 예외면 이 스크립트의 ALLOWLIST 에 이유와 함께 둔다.",
+            "\n코드로 유료 기능을 얻는 길은 없다 — 초대 코드(INV-)도 2026-10-20 에 커플·가족 이용권과 함께 없앴다. 선물·\n"
+            "프로모·쿠폰·초대 코드, 코드를 발급하는 상품, 커플·가족 이용권을 되살리지 말고, 할인·무료 이용은 스토어 오퍼\n"
+            "코드로 준다. 유료 게이트에도 화면 어디에도 코드 입력을 두지 않는다.\n"
+            "규칙: docs/spec/plan-gates.md 「선물 코드 — 폐지」·「커플·가족 이용권 — 폐지」. 정당한 예외면 이 스크립트의\n"
+            "ALLOWLIST 에 이유와 함께 둔다.",
             file=sys.stderr,
         )
         return 1
@@ -748,15 +727,16 @@ CLEAN_LISTING = """# 문구
 ## 지금 상태
 
 - 게재본에 "개인 1개월 이용권을 선물 코드로 보낼 수도 있어요" 가 남아 있다 — 이력 설명이다(보지 않는다).
+- 게재본에 "커플·가족 이용권은 초대 코드로 함께 써요" 가 남아 있다 — 이것도 이력 설명이다.
 
 ## 이름 · 부제
 
-| ko | `알람톡: 목소리 알람 시계` | 초대 코드로 모이는 가족 모닝콜 |
+| ko | `알람톡: 목소리 알람 시계` | 가족 목소리로 깨우는 모닝콜 |
 
 ## 설명
 
 ```text
-• 커플은 2명, 가족은 최대 5명이 초대 코드로 모여요.
+• 엄마·아빠 목소리로 아침을 깨워요. 우리 가족 목소리면 더 좋아요.
 ```
 
 ```diff
@@ -765,16 +745,11 @@ CLEAN_LISTING = """# 문구
 ```
 """
 
-VOUCHERS_PATH = "packages/backend/src/lib/vouchers.ts"
-CLEAN_VOUCHERS = (
-    "// 옛 `(INV|GIFT)-` 형식은 지웠다 — 주석의 다른 정의 const VOUCHER_CODE_RE = /^(INV|TRY)-/; 는 세지 않는다\n"
-    "export type VoucherKind = 'invite';\n"
-    "/** 받는 형식은 초대 코드 하나뿐이다. */\n"
-    "const VOUCHER_CODE_RE = /^INV-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/;\n"
-    "\n"
-    "export function isValidVoucherCodeFormat(raw: string): boolean {\n"
-    "  return VOUCHER_CODE_RE.test(raw);\n"
-    "}\n"
+CODE_STUB_PATH = "packages/backend/src/routes/code.ts"
+CLEAN_CODE_STUB = (
+    "// 옛 앱 호환 — 초대 코드(INV-)는 지웠다. 주석의 const VOUCHER_CODE_RE = /^INV-/; 와 isValidVoucherCodeFormat 은\n"
+    "// 세지 않는다. 그룹 상품 couple_monthly·family_monthly 와 /vouchers/family-share 경로도 주석이다.\n"
+    "codeRoutes.post('/register', (c) => jsonError(c, 404, 'CODE_NOT_FOUND', 'Code not found'));\n"
 )
 
 IOS_EDITOR_GATE_PATH = "apps/ios-native/AlarmTalk/Views/Editor/VoicePlanGateAlert.swift"
@@ -839,15 +814,15 @@ class SelfTests(unittest.TestCase):
         root = Path(directory.name)
         base = {
             "apps/ios-native/AlarmTalk/Localizable.xcstrings": _catalog({
-                "초대 코드": {"localizations": {"en": _unit("Invite code"), "ja": _unit("招待コード")}},
+                "개인 이용권": {"localizations": {"en": _unit("Personal plan"), "ja": _unit("パーソナルプラン")}},
                 "code.redeem.submit": {"localizations": {"ko": _unit("등록"), "en": _unit("Register")}},
-                "초대 코드 공유": {"comment": "gift 라는 낱말은 번역자 메모라 보지 않는다",
-                               "localizations": {"en": _unit("Share invite code")}},
+                "가족 목소리": {"comment": "gift·초대 코드라는 낱말은 번역자 메모라 보지 않는다",
+                           "localizations": {"en": _unit("Family voice"), "ja": _unit("家族の声")}},
             }),
             "apps/android-native/app/src/main/res/values/strings.xml": (
                 '<?xml version="1.0" encoding="utf-8"?>\n<resources>\n'
-                "    <!-- 선물 문구를 되살리지 말 것(주석은 보지 않는다) -->\n"
-                '    <string name="code_redeem_placeholder">초대 코드</string>\n'
+                "    <!-- 선물·초대 코드 문구를 되살리지 말 것(주석은 보지 않는다) -->\n"
+                '    <string name="code_redeem_placeholder">개인 이용권</string>\n'
                 '    <string name="billing_gift_history_label">이용권</string>\n'
                 "</resources>\n"
             ),
@@ -863,20 +838,26 @@ class SelfTests(unittest.TestCase):
                 "enum SubscriptionProduct: String { case personalMonthly = \"com.alarmtalk.app.personal_monthly\" }\n"
             ),
             "apps/android-native/app/src/main/java/A.kt": (
-                "/** 옛 `INVALID_GIFT_PLAN`·`GIFT_PERSONAL_ONLY` 갈래는 지웠다 */\n"
-                'val ok = code.startsWith("INV-")\n'
+                "/** 옛 `INVALID_GIFT_PLAN`·`GIFT_PERSONAL_ONLY` 갈래와 `COUPLE_MONTHLY` 상수는 지웠다 */\n"
+                'val ok = productId == "personal_monthly"\n'
                 "fun stopRingingIfThisAlarm(alarmId: String) {} // 대소문자를 무시하면 'gIfT' 가 걸린다\n"
             ),
             "packages/backend/src/routes/billing-mutation.ts": (
                 "billingMutation.post('/checkout', handler); // '/gift' 라우트는 지웠다\n"
-                "const re = /^INV-[A-Z0-9]{4}$/; // (INV|GIFT)- 는 옛 형식\n"
+                "const re = /^[a-z]{4}$/; // (INV|GIFT)- 는 옛 형식\n"
                 "const quoteInRegex = /'/g; const after = 'x'; // GIFT 는 주석\n"
             ),
-            "packages/backend/src/lib/migrations.ts": "const old = \"INSERT INTO voucher_codes VALUES ('GIFT-AAAA-BBBB-CCCC', 'gift')\";\n",
+            "packages/backend/src/routes/billing-query.ts": "billingQuery.get('/vouchers', (c) => c.json({ vouchers: [] }));\n",
+            "packages/backend/src/lib/migrations.ts": (
+                "const old = \"INSERT INTO voucher_codes VALUES ('GIFT-AAAA-BBBB-CCCC', 'gift')\";\n"
+                "const older = \"INSERT INTO voucher_codes VALUES ('INV-AAAA-BBBB-CCCC', 'invite')\";\n"
+                "const plans = \"INSERT INTO plans (key) VALUES ('couple_monthly')\";\n"
+            ),
             "apps/android-native/app/src/test/java/GiftTest.kt": 'val code = "GIFT-AAAA-BBBB-CCCC"\n',
+            "packages/backend/test/code.test.ts": "await post('/code/register', { code: 'INV-AAAA-BBBB-CCCC' });\n",
             "docs/product/app-store-listing.md": CLEAN_LISTING,
             "docs/product/play-store-listing.md": CLEAN_LISTING,
-            VOUCHERS_PATH: CLEAN_VOUCHERS,
+            CODE_STUB_PATH: CLEAN_CODE_STUB,
             IOS_EDITOR_GATE_PATH: CLEAN_IOS_EDITOR_GATE,
             IOS_VOICES_PANEL_PATH: CLEAN_IOS_VOICES_PANEL,
             ANDROID_GATE_PATH: CLEAN_ANDROID_GATE,
@@ -914,6 +895,33 @@ class SelfTests(unittest.TestCase):
         self.assertIn(("키 '이용권 코드 공유' · en", "plan code"), wheres)
         self.assertIn(("키 '이용권 코드 공유' · ja", "利用券コード"), wheres)
 
+    def test_invite_and_group_plan_copy_in_both_apps(self) -> None:
+        root = self.fixture({
+            "apps/ios-native/AlarmTalk/Localizable.xcstrings": _catalog({
+                "초대 코드 등록": {"localizations": {"en": _unit("Register invite code"), "ja": _unit("招待コード登録")}},
+                "가족·커플 이용권을 구독하면 여기에서 함께 쓰는 사람을 관리할 수 있어요.": {"localizations": {
+                    "en": _unit("Subscribe to a Family or Couple plan to manage members here."),
+                    "ja": _unit("ファミリー・カップルプランを購読すると、ここでメンバーを管理できます。"),
+                }},
+            }),
+            "apps/android-native/app/src/main/res/values/strings.xml": (
+                '<?xml version="1.0" encoding="utf-8"?>\n<resources>\n'
+                '    <string name="msg_voice_share_couple_family_required">음성 공유는 커플/가족 이용권에서 사용할 수 있어요</string>\n'
+                '    <string name="relationship_family">가족</string>\n'
+                "</resources>\n"
+            ),
+        })
+        found = {(hit.where, hit.term) for hit in audit(root)}
+        self.assertEqual(found, {
+            ("키 '초대 코드 등록'", "초대 코드"),
+            ("키 '초대 코드 등록' · en", "invite code"),
+            ("키 '초대 코드 등록' · ja", "招待コード"),
+            ("키 '가족·커플 이용권을 구독하면 여기에서 함께 쓰는 사람을 관리할 수 있어요.'", "커플·가족 이용권"),
+            ("키 '가족·커플 이용권을 구독하면 여기에서 함께 쓰는 사람을 관리할 수 있어요.' · en", "Couple·Family plan"),
+            ("키 '가족·커플 이용권을 구독하면 여기에서 함께 쓰는 사람을 관리할 수 있어요.' · ja", "カップル・ファミリープラン"),
+            ("msg_voice_share_couple_family_required (values)", "커플·가족 이용권"),
+        })
+
     def test_identifier_keys_and_comments_are_not_user_facing(self) -> None:
         root = self.fixture({"apps/ios-native/AlarmTalk/Localizable.xcstrings": _catalog({
             "code.redeem.submit": {"comment": "gift", "localizations": {"en": _unit("Register")}},
@@ -939,8 +947,21 @@ class SelfTests(unittest.TestCase):
         def hit(text: str) -> List[str]:
             return [term for term, _ in find_terms(text, TEXT_TERMS)]
         self.assertEqual(hit("Promotional messages are only sent between 8am and 9pm"), [])
-        self.assertEqual(hit("초대 코드 공유 · 초대 코드 등록 · Share invite code · Invite code · 招待コードを共有"), [])
-        self.assertEqual(hit("이용권 보기 · 지금 이용권을 쓰는 중이에요 · Your Couple plan is active · 利用券を使用中"), [])
+        self.assertEqual(hit("이용권 보기 · 지금 이용권을 쓰는 중이에요 · Your Personal plan is active · 利用券を使用中"), [])
+        # 맨 가족·커플·초대(관계 라벨·소개 문구)는 막지 않는다.
+        self.assertEqual(hit("가족 · 우리 가족 목소리 · 커플 · 친구를 초대해요 · Family · family voice · 家族の声 · 招待"), [])
+        self.assertEqual(hit("가족이 이용권을 함께 쓰던 때 · family planning"), [])
+        self.assertEqual(hit("초대 코드 등록"), ["초대 코드"])
+        self.assertEqual(hit("Enter an invitation code"), ["invite code"])
+        self.assertEqual(hit("招待コードを入力"), ["招待コード"])
+        self.assertEqual(hit("커플·가족 이용권 초대 코드를 등록할 수 있어요."), ["초대 코드", "커플·가족 이용권"])
+        self.assertEqual(hit("상대 알람은 커플/가족 이용권에서 사용할 수 있어요"), ["커플·가족 이용권"])
+        self.assertEqual(hit("가족·커플"), ["커플·가족 이용권"])
+        self.assertEqual(hit("가족 플랜 · 커플 요금제"), ["커플·가족 이용권"])
+        self.assertEqual(hit("Available on the Couple or Family plan"), ["Couple·Family plan"])
+        self.assertEqual(hit("Sharing is available on the Family and Couple plans."), ["Couple·Family plan"])
+        self.assertEqual(hit("カップル・ファミリープランでご利用いただけます"), ["カップル・ファミリープラン"])
+        self.assertEqual(hit("家族プラン"), ["カップル・ファミリープラン"])
         self.assertEqual(hit("초대·선물 코드"), ["선물"])
         self.assertEqual(hit("개인 이용권 선물하기"), ["선물"])
         self.assertEqual(hit("프로모션 코드"), ["프로모 코드"])
@@ -959,7 +980,7 @@ class SelfTests(unittest.TestCase):
         root = self.fixture({
             "apps/ios-native/AlarmTalk/Gift.swift": 'case personalGift = "com.alarmtalk.app.personal_gift_1m"\n',
             "apps/android-native/app/src/main/java/B.kt": 'if (code.startsWith("GIFT-")) RedeemCodeKind.GIFT\n',
-            "packages/backend/src/lib/vouchers.ts": CLEAN_VOUCHERS + (
+            "packages/backend/src/lib/vouchers.ts": (
                 "export type OldKind = 'invite' | 'gift';\n"
                 "const RE = /^(INV|GIFT)-[A-Z0-9]{4}$/;\n"
             ),
@@ -975,6 +996,33 @@ class SelfTests(unittest.TestCase):
         self.assertIn(("packages/shared/src/schemas/error-codes.ts", "선물 에러 코드"), found)
         self.assertIn(("apps/ios-native/AlarmTalk/Configuration/StoreKitConfiguration.storekit", "선물 상품 id"), found)
         self.assertIn(("packages/backend/scripts/issue-dev-code.ts", "'gift' 종류"), found)
+
+    def test_group_products_and_invite_issue_paths_in_code(self) -> None:
+        root = self.fixture({
+            "apps/android-native/app/src/main/java/P.kt": (
+                'const val COUPLE_MONTHLY = "couple_monthly"\n'
+                "@POST(\"billing/vouchers/family-share\")\n"
+            ),
+            "apps/ios-native/AlarmTalk/Q.swift": 'case familyMonthly = "com.alarmtalk.app.family_monthly"\n',
+            "apps/ios-native/AlarmTalk/Configuration/StoreKitConfiguration.storekit": (
+                '{"products":[{"productID":"com.alarmtalk.app.personal_monthly"},'
+                '{"productID":"com.alarmtalk.app.couple_monthly"}]}'
+            ),
+            "packages/backend/src/lib/play-subscriptions.ts": "const products = { personal_monthly: 'personal', family_yearly: 'family' };\n",
+            "packages/backend/src/routes/billing-mutation.ts": "billing.post('/vouchers/family-share/regenerate', handler);\n",
+        })
+        found = sorted((hit.path, hit.where.split("행")[0], hit.term) for hit in audit(root)
+                       if hit.term in ("그룹 상품 id", "초대 코드 발급 경로"))
+        self.assertEqual(found, [
+            ("apps/android-native/app/src/main/java/P.kt", "1", "그룹 상품 id"),
+            ("apps/android-native/app/src/main/java/P.kt", "2", "초대 코드 발급 경로"),
+            ("apps/ios-native/AlarmTalk/Configuration/StoreKitConfiguration.storekit", "1", "그룹 상품 id"),
+            ("apps/ios-native/AlarmTalk/Q.swift", "1", "그룹 상품 id"),
+            ("packages/backend/src/lib/play-subscriptions.ts", "1", "그룹 상품 id"),
+            ("packages/backend/src/routes/billing-mutation.ts", "1", "초대 코드 발급 경로"),
+        ])
+        # 개인 상품과 남는 호환 응답 경로(`GET /billing/vouchers`·`POST /code/register`)는 걸리지 않는다(기본 판).
+        self.assertEqual(audit(self.fixture({})), [])
 
     def test_gift_identifiers_by_naming_style(self) -> None:
         identifier = dict(CODE_TERMS)["선물 식별자"]
@@ -1019,17 +1067,19 @@ class SelfTests(unittest.TestCase):
 
     def test_kept_gift_references_are_caught_and_need_the_allowlist(self) -> None:
         root = self.fixture({
-            "packages/backend/src/routes/billing-mutation.ts": "if (body.gift === true) {\n  return refuse();\n}\n",
-            "packages/backend/src/lib/account-deletion.ts": "const sql = `DELETE FROM apple_gift_deliveries WHERE x = ?`;\n",
+            "packages/backend/src/routes/billing-mutation.ts": (
+                "const body = await c.req.json<{ plan_key?: unknown; gift?: unknown }>();\n"
+                "if (body.gift === true) {\n  return refuse();\n}\n"
+            ),
         })
         hits = audit(root)
-        self.assertEqual({(hit.path, hit.term) for hit in hits}, {
-            ("packages/backend/src/routes/billing-mutation.ts", "선물 식별자"),
-            ("packages/backend/src/lib/account-deletion.ts", "선물 식별자"),
-        })
+        self.assertEqual(sorted((hit.path, hit.where.split("행")[0], hit.term) for hit in hits), [
+            ("packages/backend/src/routes/billing-mutation.ts", "1", "선물 식별자"),
+            ("packages/backend/src/routes/billing-mutation.ts", "2", "선물 식별자"),
+        ])
         allow = [
+            Allow("packages/backend/src/routes/billing-mutation.ts", "gift?: unknown }>()", "선물 식별자", "시험"),
             Allow("packages/backend/src/routes/billing-mutation.ts", "if (body.gift === true) {", "선물 식별자", "시험"),
-            Allow("packages/backend/src/lib/account-deletion.ts", "DELETE FROM apple_gift_deliveries", "선물 식별자", "시험"),
         ]
         self.assertEqual(judge(hits, allow), ([], []))
 
@@ -1050,8 +1100,8 @@ class SelfTests(unittest.TestCase):
 
     def test_store_listing_blocks_and_tables_but_not_prose(self) -> None:
         listing = CLEAN_LISTING.replace(
-            "• 커플은 2명", "• 개인 1개월 이용권을 선물 코드로 보낼 수도 있어요.\n• 커플은 2명"
-        ).replace("| 초대 코드로 모이는 가족 모닝콜 |", "| Gift a plan |").replace("+• 운세 줄", "+• クーポン 줄")
+            "• 엄마·아빠", "• 개인 1개월 이용권을 선물 코드로 보낼 수도 있어요.\n• 엄마·아빠"
+        ).replace("| 가족 목소리로 깨우는 모닝콜 |", "| Gift a plan |").replace("+• 운세 줄", "+• クーポン 줄")
         root = self.fixture({"docs/product/play-store-listing.md": listing})
         found = sorted((hit.term, hit.where.split("」")[0]) for hit in audit(root))
         self.assertEqual(
@@ -1059,27 +1109,42 @@ class SelfTests(unittest.TestCase):
             [("gift", "이름 · 부제"), ("クーポン", "설명"), ("선물", "설명")],
         )
 
-    def test_voucher_format_is_exactly_inv(self) -> None:
-        def voucher_hits(files: dict) -> List[str]:
-            return [hit.excerpt for hit in audit(self.fixture(files)) if hit.term == "초대 코드 형식"]
-        self.assertEqual(voucher_hits({}), [])
-        wider = CLEAN_VOUCHERS.replace("/^INV-[A-Z0-9]{4}-", "/^(INV|TRY)-[A-Z0-9]{4}-")
-        self.assertEqual(len(voucher_hits({VOUCHERS_PATH: wider})), 1)
-        flagged = CLEAN_VOUCHERS.replace("{4}$/;", "{4}$/i;")
-        self.assertEqual(len(voucher_hits({VOUCHERS_PATH: flagged})), 1)
-        constructed = CLEAN_VOUCHERS.replace(
-            "/^INV-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/", "new RegExp('^(INV|TRY)-[A-Z0-9]{4}$')")
-        self.assertEqual(len(voucher_hits({VOUCHERS_PATH: constructed})), 1)
-        bypass = CLEAN_VOUCHERS.replace(
-            "return VOUCHER_CODE_RE.test(raw);", "return VOUCHER_CODE_RE.test(raw) || raw.startsWith('TRY-');")
-        self.assertEqual(len(voucher_hits({VOUCHERS_PATH: bypass})), 1)
-        self.assertTrue(voucher_hits({VOUCHERS_PATH: "export const unrelated = 1;\n"}))  # 정의도 함수도 없다
-        twice = {"packages/backend/src/lib/other.ts": "const VOUCHER_CODE_RE = /^INV-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/;\n"}
-        self.assertEqual(len(voucher_hits(twice)), 2)  # 두 정의를 모두 댄다
+    def test_store_listing_catches_invite_and_group_plan_copy(self) -> None:
+        listing = CLEAN_LISTING.replace("| 가족 목소리로 깨우는 모닝콜 |", "| 초대 코드로 모이는 가족 모닝콜 |").replace(
+            "+• 운세 줄", "+• 커플은 2명, 가족은 최대 5명이 커플·가족 이용권으로 모여요")
+        root = self.fixture({"docs/product/app-store-listing.md": listing})
+        found = sorted((hit.term, hit.where.split("「")[1].split("」")[0]) for hit in audit(root))
+        self.assertEqual(found, [("초대 코드", "이름 · 부제"), ("커플·가족 이용권", "설명")])
 
-    def test_voucher_format_follows_a_moved_file(self) -> None:
-        root = self.fixture({VOUCHERS_PATH: None, "packages/backend/src/lib/codes/format.ts": CLEAN_VOUCHERS})
-        self.assertEqual(audit(root), [])
+    def test_invite_code_format_is_gone_from_server_code(self) -> None:
+        def format_hits(files: dict) -> List[Tuple[str, str]]:
+            return sorted((hit.path, hit.where.split("행")[0]) for hit in audit(self.fixture(files))
+                          if hit.term == "초대 코드 형식")
+        # 깨끗한 판: 호환 응답 스텁의 주석, migrations.ts 의 옛 INSERT, 테스트의 INV- 는 세지 않는다.
+        self.assertEqual(format_hits({}), [])
+        revived = {
+            "packages/backend/src/lib/codes/format.ts": (
+                "const VOUCHER_CODE_RE = /^INV-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/;\n"
+                "export function isValidVoucherCodeFormat(raw: string): boolean {\n"
+                "  return VOUCHER_CODE_RE.test(raw);\n"
+                "}\n"
+            ),
+            "packages/backend/src/routes/billing-query.ts": "const sql = `SELECT code FROM voucher_codes WHERE code LIKE 'INV-%'`;\n",
+            "packages/backend/scripts/issue-dev-code.ts": "const code = `INV-${block()}-${block()}-${block()}`;\n",
+            "packages/shared/src/schemas/code.ts": "export const isInvite = (c: string) => c.startsWith('INV-');\n",
+        }
+        self.assertEqual(format_hits(revived), [
+            ("packages/backend/scripts/issue-dev-code.ts", "1"),
+            ("packages/backend/src/lib/codes/format.ts", "1"),
+            ("packages/backend/src/lib/codes/format.ts", "2"),
+            ("packages/backend/src/lib/codes/format.ts", "3"),
+            ("packages/backend/src/routes/billing-query.ts", "1"),
+            ("packages/shared/src/schemas/code.ts", "1"),
+        ])
+        # 형식은 서버·공유 코드에서만 본다 — 앱의 코드 입력은 화면 문구(a)·게이트(e) 검사가 맡는다.
+        self.assertEqual(format_hits({"apps/android-native/app/src/main/java/F.kt": 'val ok = code.startsWith("INV-")\n'}), [])
+        # 'INVALID' 같은 낱말 속의 INV 는 접두가 아니다.
+        self.assertEqual(format_hits({"packages/backend/src/lib/x.ts": "const code = 'INVALID-REQUEST';\n"}), [])
 
     def test_gate_sources_have_no_code_entry(self) -> None:
         def gate_hits(files: dict) -> List[Tuple[str, str]]:
@@ -1125,6 +1190,7 @@ class SelfTests(unittest.TestCase):
         paths = {hit.path for hit in audit(root)}
         self.assertNotIn("packages/backend/src/lib/migrations.ts", paths)
         self.assertNotIn("apps/android-native/app/src/test/java/GiftTest.kt", paths)
+        self.assertNotIn("packages/backend/test/code.test.ts", paths)
 
     def test_missing_listing_fails(self) -> None:
         root = self.fixture({"docs/product/app-store-listing.md": None})

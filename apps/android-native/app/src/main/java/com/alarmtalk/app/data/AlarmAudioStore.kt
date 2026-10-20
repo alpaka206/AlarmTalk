@@ -754,8 +754,11 @@ class AlarmAudioStore(
             // 안 들어간다. 그대로 두면 TTL 이 지나 전부 삭제되고 오프라인 재생이 깨진다.
             if (file.nameWithoutExtension.startsWith(STOCK_CACHE_KEY_PREFIX)) return@forEach
             if (file.nameWithoutExtension in inUseFileNames) return@forEach
+            // 받은 알람이 받아 두었던 보낸 사람 음성은 더 생기지 않는다 — 어떤 알람도 물지 않으면
+            // 나이와 무관하게 지운다(받은 알람은 업데이트하며 내 알람으로 바뀐다 — `AlarmDatabase` 27→28).
+            val retiredRemoteAudio = file.nameWithoutExtension.startsWith(RETIRED_REMOTE_MESSAGE_PREFIX)
             val lastModified = file.lastModified()
-            if (lastModified <= 0L || lastModified >= cutoffMillis) return@forEach
+            if (!retiredRemoteAudio && (lastModified <= 0L || lastModified >= cutoffMillis)) return@forEach
             if (file.delete()) {
                 deleted += 1
                 Log.i(TAG, "Swept stale alarm audio cache path=${file.absolutePath} lastModified=$lastModified")
@@ -1019,7 +1022,7 @@ class AlarmAudioStore(
             if (file.extension == PARTIAL_EXTENSION) return@forEach
             val key = file.nameWithoutExtension
             if (!key.startsWith(STOCK_CACHE_KEY_PREFIX)) return@forEach
-            // 안드로이드의 다른 네임스페이스(`remote-message-`·`greeting_`)는 접두가
+            // 안드로이드의 다른 네임스페이스(`greeting_`)는 접두가
             // 달라 여기 안 걸린다([messageCacheKeys]). iOS 의 `stock_preview_` 에 해당하는
             // 갈래는 안드로이드에 없다.
             if (key in keep) return@forEach
@@ -1144,9 +1147,11 @@ class AlarmAudioStore(
         /** 같은 서버 message ID를 담을 수 있는 캐시 네임스페이스. 존재하는 stale 키만 갱신한다. */
         fun messageCacheKeys(messageId: String): List<String> = listOf(
             "$STOCK_CACHE_KEY_PREFIX$messageId",
-            "remote-message-$messageId",
             "greeting_$messageId",
         )
+
+        /** 받은 알람이 받아 두었던 보낸 사람 음성의 캐시 키 접두사 — 이제 정리할 때만 본다([sweepStaleCache]). */
+        internal const val RETIRED_REMOTE_MESSAGE_PREFIX = "remote-message-"
 
         // 백엔드 /voice/clone 은 audio/* 접두 MIME 만 받는다(아니면 INVALID_AUDIO_MIME_TYPE).
         // 이 확장자들은 업로드 시 대응 audio/* 로 매핑되고(voiceUploadPart), 목록 밖 컨테이너는
@@ -1223,8 +1228,8 @@ class AlarmAudioStore(
          * 키에 반드시 들어가야 하는 것:
          *  - `userId` — 캐시는 기기에 남고 로그아웃해도 안 지워진다. 빼면 다른 계정이 앞 계정의
          *    message_id 를 물려받아 알람 동기화가 서버에서 거부된다.
-         *  - `listenerTitle`(호칭) — 서버가 호칭을 문구 **안에** 병합하고, 공유 목소리는 보는
-         *    사람마다 호칭이 다르다. 빼면 '엄마 목소리로 아빠 호칭' 이 나온다.
+         *  - `listenerTitle`(호칭) — 서버가 호칭을 문구 **안에** 병합하고, 같은 목소리라도 알람마다
+         *    호칭이 다를 수 있다. 빼면 '엄마 목소리로 아빠 호칭' 이 나온다.
          *  - `language` — 번역 여부가 이 값으로 결정된다.
          */
         fun ttsInputKey(
@@ -1289,22 +1294,6 @@ internal suspend fun AlarmAudioStore.deleteCachedAudioIfUnreferenced(
     if (cacheKey.isNullOrBlank()) return
     if (alarmDao.countByAudioCacheKey(cacheKey) > 0) return
     deleteCachedAudio(cacheKey)
-}
-
-/**
- * 캐시 키가 없어 [deleteCachedAudioIfUnreferenced] 로는 못 지우는 옛 행의 음성 파일을,
- * 다른 알람이 같은 URI 를 안 쓸 때만 지운다.
- *
- * 키가 있는 행에는 쓰지 말 것 — 같은 파일을 여러 URI 로 가리킬 수 있어 카운트가 어긋난다.
- * 여긴 '키가 없어서 참조를 셀 방법이 URI 뿐인' 경우의 최후 수단이다.
- */
-internal suspend fun AlarmAudioStore.deleteLocalAudioIfUnreferenced(
-    alarmDao: AlarmDao,
-    localAudioUri: String?,
-) {
-    if (localAudioUri.isNullOrBlank()) return
-    if (alarmDao.countByLocalAudioUri(localAudioUri) > 0) return
-    deleteCachedFileAt(localAudioUri)
 }
 
 private data class CachedAudioMetadata(

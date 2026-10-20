@@ -3,7 +3,7 @@ import SwiftUI
 /// 프로필 버튼에서 띄우는 설정 시트.
 ///
 /// Android 설정 화면과 동일하게 문구 정보(지역·운세)/계정/법적 정보만 다룬다.
-/// 코드/이용권/공유 이용권 진입은 MainTabsView 의 프로필 메뉴가 맡는다.
+/// 이용권 진입은 더보기 탭(`MenuView`)이 맡는다.
 struct SettingsView: View {
     @EnvironmentObject private var auth: AuthViewModel
     @EnvironmentObject private var holidayStore: HolidayStore

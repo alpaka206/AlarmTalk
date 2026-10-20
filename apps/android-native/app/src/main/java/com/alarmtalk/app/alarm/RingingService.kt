@@ -363,10 +363,8 @@ class RingingService : Service() {
      * 절대 예외를 던지지 않는다 — 암호화 저장소 읽기/복호화가 실패해도 true(강등 안 함)로 떨어뜨려
      * 알람이 무음화되지 않게 한다(fail-open). 캐시 응답 자체가 없으면(미조회·transient) 판단 불가로
      * 강등하지 않는다. 캐시 응답이 '있는데' subscription 이 null 이면 서버가 '본인 구독 없음'이라고
-     * 답한 것 — 가족/커플 그룹 멤버(본인 구독 없이 그룹 접근)면 권한 유지, 아니면 무료로 보고
-     * 강등한다(만료 push 유실·오프라인 폴백, PlanChangeSyncWorker 의 genuinelyFree 판정과 동일 기준).
-     * 본인 구독이 있으면 기존대로 만료시각까지 검사한다(그룹 체크로 만료 게이트를 우회하지 않게
-     * subscription==null 분기에만 적용 — stale 캐시의 만료된 family 소유자 오통과 방지).
+     * 답한 것 — 무료로 보고 강등한다(만료 push 유실·오프라인 폴백, PlanChangeSyncWorker 의
+     * genuinelyFree 판정과 동일 기준). 본인 구독이 있으면 기존대로 만료시각까지 검사한다.
      */
     private fun isPaidVoiceEntitledFromCache(): Boolean = runCatching {
         // ⚠ **세션은 한 번만 읽는다**(2026-09-01 리뷰). 두 번 읽으면 그 사이의 계정 전환에서
@@ -391,12 +389,11 @@ class RingingService : Service() {
         val (cachedPlan, cachedPlanPromo) = snapshot.userPlanWithPromo(session)
         resolvePaidVoiceAccess(
             subscriptionResponse = snapshot.subscriptionResponse,
-            familyGroup = snapshot.familyGroup,
             // ⚠ **null 로 두지 말 것.** 서버가 '구독 없음' 이라 답한 경우 이 값이 없으면
             // 판정이 `Unknown` 이 되고 낙관 규칙상 통과해, 강등된 사용자의 클론 목소리가
             // 계속 울린다 — 로컬 폴백의 존재 이유가 사라진다(2026-08-31 리뷰).
             // ⚠ **옛 버전이 쓴 스냅샷에는 이 필드가 없다**(2026-08-31 리뷰). null 로 두면
-            // '구독 없음 + 그룹 없음' 스냅샷이 `Unknown` 이 되어 낙관 통과한다 — 업데이트
+            // '구독 없음' 스냅샷이 `Unknown` 이 되어 낙관 통과한다 — 업데이트
             // 직후 UI 를 한 번도 안 열고 알람이 울리면, 예전 코드가 무료로 보던 것을
             // 유료로 보게 된다. 세션 저장소의 plan 으로 메운다.
             userPlan = cachedPlan,

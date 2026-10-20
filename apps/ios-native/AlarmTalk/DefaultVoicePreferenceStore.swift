@@ -30,9 +30,8 @@ struct DefaultVoicePreferenceStore {
     ///
     /// 규약(`CLAUDE.md` 「알람 편집기 기본값 = 직전 선택 유지」):
     ///  - 기록은 **알람 저장 성공 시에만**. 편집기에서 눌러만 보고 취소한 건 기억하지 않는다.
-    ///  - 프리셀렉트는 **마지막에 쓴 것이 그룹보다 우선**이다. 그룹(내 클론 → 공유받은 →
-    ///    기본) 순서를 먼저 보면, 클론을 가진 사람이 기본 목소리를 골라 저장해도 매번
-    ///    클론으로 되돌아간다.
+    ///  - 프리셀렉트는 **마지막에 쓴 것이 그룹보다 우선**이다. 그룹(내 클론 → 기본) 순서를
+    ///    먼저 보면, 클론을 가진 사람이 기본 목소리를 골라 저장해도 매번 클론으로 되돌아간다.
     func lastUsedVoiceId(userID: String?) -> String? {
         guard let key = lastUsedVoiceKey(userID) else { return nil }
         return defaults.string(forKey: key)?.nilIfBlank

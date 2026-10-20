@@ -34,8 +34,8 @@
 
 1. **모든 에러 응답에 `error_code` 부여.** 클라가 HTTP status 만으로 분기하지 않게 안정적인 문자열 코드를 준다.
 2. **표기법은 `SCREAMING_SNAKE_CASE`.**
-3. **도메인 접두 권장.** 계정/인증은 `AUTH_`, 결제 검증은 `GOOGLE_`/`PLAY_`, 코드 사용은 `CODE_`,
-   가족 알람은 `FAMILY_ALARM_`, 목소리는 `VOICE_`. 전역 공통 코드(`USER_NOT_FOUND`,
+3. **도메인 접두 권장.** 계정/인증은 `AUTH_`, 결제 검증은 `GOOGLE_`/`PLAY_`, 코드 등록은 `CODE_`,
+   목소리는 `VOICE_`. 전역 공통 코드(`USER_NOT_FOUND`,
    `INVALID_REQUEST`)는 접두 없이 둔다.
 4. **코드는 안정적 계약.** 클라가 매핑한 코드의 철자를 함부로 바꾸지 않는다(문구는 코드와 분리해 바꾼다).
 5. **메시지(`error`)는 로그·관리자용 참고 텍스트.** 사용자 노출 문구는 클라가 코드로 결정한다.
@@ -50,7 +50,7 @@
 
 | 코드 | 의미 | HTTP | 위치 |
 |---|---|---|---|
-| `USER_NOT_FOUND` | 인증 주체/대상 사용자를 DB 에서 찾을 수 없음 | 404 | `routes/user.ts`, `billing-*.ts`, `code.ts`, `family-*.ts` |
+| `USER_NOT_FOUND` | 인증 주체/대상 사용자를 DB 에서 찾을 수 없음 | 404 | `routes/user.ts`, `billing-*.ts` |
 | `INVALID_REQUEST` | 요청 바디 파싱/검증 실패(결제 계열). dev 스텁 `POST /billing/checkout` 의 `gift: true` 도 여기다(선물 폐지 — 2026-10-14) | 400 | `routes/billing-google.ts`, `routes/billing-mutation.ts` |
 | `INVALID_JSON` | JSON 본문 파싱 실패 | 400 | `routes/user.ts`, `push.ts`, `events.ts` |
 | `JSON_BODY_REQUIRED` | JSON 본문 필요 | 400 | `routes/voice-profile.ts` |
@@ -103,14 +103,10 @@
 
 | 코드 | 의미 | HTTP | 위치 |
 |---|---|---|---|
-| `CONSENT_REQUIRED` | 필수 동의 미이행 | 403 | `middleware/consent.ts`, `routes/tts.ts`, `voice-upload.ts`, `voice-profile.ts` |
+| `CONSENT_REQUIRED` | 필수 동의 미이행 | 403 | `middleware/consent.ts`, `routes/tts.ts`, `voice-profile.ts` |
 | `CONSENT_STATE_UNAVAILABLE` | 동의 상태 조회 불가 | 500 | `middleware/consent.ts` |
 | `INVALID_NAME` | name 이 문자열이 아님 | 400 | `routes/user.ts` |
 | `INVALID_NAME_LENGTH` | 닉네임 길이 규칙 위반(1~30자) | 400 | `routes/user.ts`, `voice-profile.ts` |
-| `INVALID_BOOLEAN` | boolean 필드 형식 오류(`allow_family_alarms`) | 400 | `routes/user.ts` |
-| `INVALID_QUIET_WINDOWS` | 방해금지 창 형식 오류 | 400 | `routes/user.ts` |
-| `INVALID_QUIET_DAYS` | 방해금지 요일 형식 오류 | 400 | `routes/user.ts` |
-| `INVALID_QUIET_TIME` | 방해금지 시각 형식 오류 | 400 | `routes/user.ts` |
 | `INVALID_DYNAMIC_PROMPT_SETTINGS` | 동적 프롬프트 설정 형식 오류 | 400 | `routes/user.ts` |
 | `NO_FIELDS_TO_UPDATE` | 변경할 필드 없음(프로필) | 400 | `routes/user.ts` |
 | `INVALID_CONSENT_TYPE` | 알 수 없는 동의 type | 400 | `routes/user.ts` |
@@ -129,7 +125,7 @@
 | `GOOGLE_BILLING_UNCONFIGURED` | Google 결제 서버 미구성 | 503 | `routes/billing-google.ts` |
 | `RTDN_UNCONFIGURED` | RTDN(실시간 알림) 미구성 | 503 | `routes/billing-google-rtdn.ts` |
 | `RTDN_BAD_TOKEN` | RTDN 검증 토큰 불일치 | 403 | `routes/billing-google-rtdn.ts` |
-| `UNKNOWN_PRODUCT` | SKU 화이트리스트 밖 상품 id — 은퇴한 선물 상품 `personal_gift_1m` 도 여기다(Play 호출 전, 확인 없음 → Play 자동 환불) | 400 | `routes/billing-google.ts` |
+| `UNKNOWN_PRODUCT` | SKU 화이트리스트 밖 상품 id — 받는 상품은 `personal_monthly` 하나다. 은퇴한 선물 상품 `personal_gift_1m` 과 커플·가족 상품 `couple_monthly`·`family_monthly`(2026-10-20)도 여기다(Play 호출 전, 확인 없음 → Play 자동 환불) | 400 | `routes/billing-google.ts` |
 | `PACKAGE_MISMATCH` | 패키지명 불일치 | 400 | `routes/billing-google.ts` |
 | `PRODUCT_MISMATCH` | 상품 id 불일치 | 400 | `routes/billing-google.ts` |
 | `GOOGLE_VERIFICATION_FAILED` | Google 구매 검증 실패(업스트림) | 502 | `routes/billing-google.ts`, `billing-google-rtdn.ts` |
@@ -141,9 +137,9 @@
 | `TRANSACTION_OWNED_BY_OTHER_USER` | 다른 계정에 이미 귀속된 트랜잭션 | 409 | `lib/store-billing.ts`(→ `billing-google.ts`) |
 | `CHECKOUT_DISABLED` | dev 스텁 체크아웃이 꺼져 있음(prod 는 늘 이것). 두 앱 모두 이 라우트를 부르지 않아 문구가 없다 — 안드로이드의 '초대 코드를 등록해 주세요' 안내는 2026-10-14 에 지웠다(코드로 결제를 대신하라는 말이라 3.1.1) | 409 | `routes/billing-mutation.ts` |
 | `PLAN_KEY_REQUIRED` | plan_key 필요 | 400 | `routes/billing-mutation.ts` |
-| `PLAN_NOT_FOUND` | 플랜 미존재 | 400 | `routes/billing-*.ts`, `lib/*-redemption.ts` |
+| `PLAN_NOT_FOUND` | 플랜 미존재 | 400 | `routes/billing-*.ts` |
 | `PLAN_INACTIVE` | 비활성 플랜 | 400 | `routes/billing-mutation.ts` |
-| `FREE_NOT_BILLABLE` | 무료 플랜은 결제/코드 대상 아님 | 400 | `routes/billing-mutation.ts` |
+| `FREE_NOT_BILLABLE` | 무료 플랜은 결제 대상 아님 | 400 | `routes/billing-mutation.ts` |
 | `INVALID_CANCEL_MODE` | 해지 mode 가 `at_period_end`/`immediate` 아님 | 400 | `routes/billing-mutation.ts` |
 | `NO_ACTIVE_SUBSCRIPTION` | 활성 구독 없음(취소 대상 없음) | 404 | `routes/billing-mutation.ts` |
 | `PLAY_CANCEL_FAILED` | Play 구독 해지 실패(+`manage_url`) | 502 | `routes/billing-mutation.ts` |
@@ -152,33 +148,25 @@
 | `APPLE_BILLING_UNCONFIGURED` | 애플 결제 시크릿 미설정 | 503 | `routes/billing-apple.ts` |
 | `TRANSACTION_NOT_FOUND` | App Store Server API 에 그 트랜잭션이 없음 | 404 | `routes/billing-apple.ts` |
 | `APPLE_VERIFICATION_FAILED` | 애플 서명 검증 실패 | 502 | `routes/billing-apple.ts` |
-| `UNKNOWN_PRODUCT` | 우리가 모르는 애플 product id — 은퇴한 선물 상품 `com.alarmtalk.app.personal_gift_1m` 도 여기다(환불 통보 포함, 코드·원장을 쓰지 않는다) | 400 | `routes/billing-apple.ts` |
+| `UNKNOWN_PRODUCT` | 우리가 모르는 애플 product id — 받는 상품은 `com.alarmtalk.app.personal_monthly` 하나다. 은퇴한 선물 상품 `com.alarmtalk.app.personal_gift_1m` 과 커플·가족 상품(`…couple_monthly`·`…family_monthly`, 2026-10-20)도 여기다(환불 통보 포함, 원장을 쓰지 않는다) | 400 | `routes/billing-apple.ts` |
 | `TRANSACTION_REVOKED` | 환불·취소된 트랜잭션 | 400 | `routes/billing-apple.ts` |
 | `TRANSACTION_NOT_SUBSCRIPTION` | 만료일이 없는 트랜잭션(구독 아님) | 400 | `routes/billing-apple.ts` |
-| `NO_ACTIVE_FAMILY_OWNER_SUBSCRIPTION` | 활성 가족 플랜 소유권 없음(공유코드 발급 불가) | 404 | `routes/billing-mutation.ts` |
-| `GROUP_FULL` | 그룹 정원 초과 | 409 | `routes/billing-mutation.ts`, `lib/voucher-redemption.ts` |
 
-## 4. 초대(바우처) 코드
+## 4. 코드 등록 (옛 앱 호환)
 
-`routes/code.ts`, `lib/voucher-redemption.ts`. 받는 코드는 커플·가족 이용권의 초대 코드(`INV-`) 하나다.
-선물 코드(`GIFT-`)는 2026-10-14 에 없앴다 — App Store 심사 지침 3.1.1 두 번째 반려(`docs/spec/plan-gates.md`
-「선물 코드 — 폐지」). 그 갈래의 코드 `INVALID_GIFT_PLAN` 과 선물 결제 쪽의 `GIFT_PERSONAL_ONLY`(dev 스텁 체크아웃)·
-`PURCHASE_NOT_COMPLETED`(구글 1회성 상품 확정)는 목록에서 지웠다 — 서버가 더는 내지 않는다. 프로모 코드(`routes/billing-promo.ts`·`lib/promo-redemption.ts`)는
-2026-10-12 에 없앴다 — App Store 심사 지침 3.1.1 반려(`docs/spec/plan-gates.md` 「프로모 코드 — 폐지」). 그 갈래의
-코드(`ACTIVE_SUBSCRIPTION_EXISTS`·`CODE_EXHAUSTED`·`CODE_GROUP_ALREADY_REDEEMED`·`CODE_INACTIVE`·`CODE_MISCONFIGURED`·
-`CODE_NOT_IN_WINDOW`·`PROMO_REDEEM_FAILED`)도 목록에서 함께 지웠다.
+`routes/code.ts`. 코드로 유료 기능을 여는 길은 **없다** — 마지막으로 남았던 초대 코드(`INV-`, 커플·가족 그룹 합류)도
+2026-10-20 에 커플·가족 이용권과 함께 없앴다(`docs/spec/plan-gates.md` 「커플·가족 이용권 — 폐지」). 옛 앱의 '초대 코드
+등록' 이 부르는 `POST /code/register` 는 본문을 읽지 않고 언제나 아래 404 를 돌려준다 — 두 앱이 이미 '잘못된 코드' 로
+읽는 예상된 거절이라 옛 앱에서도 이슈가 생기지 않는다. 그 갈래의 코드(`CODE_REQUIRED`·`CODE_TOO_LONG`·`INVALID_FORMAT`·
+`CODE_EXPIRED`·`CODE_ALREADY_USED`·`CODE_ALREADY_REDEEMED_BY_YOU`·`SELF_ISSUED`·`INVALID_INVITE_PLAN`·`OWNS_ACTIVE_GROUP`)는
+목록에서 지웠다. 선물 코드(`GIFT-`)는 2026-10-14 에(`INVALID_GIFT_PLAN`·`GIFT_PERSONAL_ONLY`·`PURCHASE_NOT_COMPLETED`),
+프로모 코드는 2026-10-12 에(`ACTIVE_SUBSCRIPTION_EXISTS`·`CODE_EXHAUSTED`·`CODE_GROUP_ALREADY_REDEEMED`·`CODE_INACTIVE`·
+`CODE_MISCONFIGURED`·`CODE_NOT_IN_WINDOW`·`PROMO_REDEEM_FAILED`) 같은 이유로 없앴다 — App Store 심사 지침 3.1.1
+(`plan-gates.md` 「선물 코드 — 폐지」·「프로모 코드 — 폐지」).
 
 | 코드 | 의미 | HTTP | 위치 |
 |---|---|---|---|
-| `CODE_REQUIRED` | code 값 필요 | 400 | `routes/code.ts`, `billing-mutation.ts`, `lib/voucher-redemption.ts` |
-| `INVALID_FORMAT` | 바우처 코드 형식 오류 | 400 | `lib/voucher-redemption.ts` |
-| `CODE_NOT_FOUND` | 코드 미존재 — INV- 형식이 아닌 입력은 조회 없이 여기다(옛 선물 코드 GIFT- 는 발급 행이 남아 있어도, 옛 프로모 코드도) | 404 | `routes/code.ts`, `lib/voucher-redemption.ts` |
-| `CODE_EXPIRED` | 코드 만료 | 409 | `lib/voucher-redemption.ts` |
-| `CODE_ALREADY_USED` | 이미 사용된 코드(상한 도달) | 409 | `lib/voucher-redemption.ts` |
-| `CODE_ALREADY_REDEEMED_BY_YOU` | 본인이 이미 사용한 코드(중복) | 409 | `lib/voucher-redemption.ts` |
-| `SELF_ISSUED` | 본인이 발급한 바우처는 사용 불가 | 400 | `lib/voucher-redemption.ts` |
-| `INVALID_INVITE_PLAN` | 초대 코드는 가족/커플 플랜만 | 400 | `lib/voucher-redemption.ts` |
-| `OWNS_ACTIVE_GROUP` | 다른 멤버가 있는 가족 그룹 소유자는 코드 사용 불가(양도/정리 후 재시도) | 409 | `lib/voucher-redemption.ts` |
+| `CODE_NOT_FOUND` | 옛 앱의 코드 등록 — 어떤 본문이든 이것이다(조회하지 않는다) | 404 | `routes/code.ts` |
 
 ## 5. 알람
 
@@ -190,12 +178,8 @@
 | `ALARM_NOT_FOUND` | 알람 미존재(또는 소유 아님) | 404 | `routes/alarm-mutation.ts` |
 | `REQUIRED_FIELDS_MISSING` | 필수 필드(time 등) 누락 | 400 | `routes/alarm-mutation.ts` |
 | `NO_UPDATE_FIELDS` | 수정할 필드 없음 | 400 | `routes/alarm-mutation.ts` |
-| `INVALID_TARGET_USER` | target_user_id 형식 오류 | 400 | `routes/alarm-mutation.ts`, `alarm-helpers.ts` |
-| `NOT_CONNECTED` | 대상과 같은 커플/가족 그룹 아님 | 403 | `routes/alarm-mutation.ts` |
-| `FAMILY_ALARM_DISABLED` | 수신자가 가족 알람 비허용 | 403 | `routes/alarm-mutation.ts`, `alarm-helpers.ts`, `family-alarm.ts` |
-| `FAMILY_ALARM_QUIET_TIME` | 수신자 방해금지 시간대 | 403 | `routes/alarm-helpers.ts`, `family-alarm.ts` |
-| `FAMILY_ALARM_LEAD_TIME` | 다음 발사까지 최소 리드타임 미달 | 400 | `routes/alarm-helpers.ts`, `family-alarm.ts` |
-| `VOICE_FEATURE_REQUIRES_PAID_PLAN` | 음성 기능은 유료 플랜 필요 | 403 | `routes/alarm-mutation.ts`, `tts.ts`, `voice-profile.ts`, `voice-upload.ts` |
+| `NOT_CONNECTED` | `POST /alarm` 의 `target_user_id` 가 호출자가 아닌 사용자(남에게 보내는 알람은 없앴다 — 옛 앱의 가족 알람 보내기가 받는 거절. 그 밖의 값은 무시한다) | 403 | `routes/alarm-mutation.ts` |
+| `VOICE_FEATURE_REQUIRES_PAID_PLAN` | 음성 기능은 유료 플랜 필요 | 403 | `routes/alarm-mutation.ts`, `tts.ts`, `voice-profile.ts` |
 | `VOICE_PROFILE_NOT_FOUND` | 음성 프로필 미존재 | 404 | `routes/alarm-mutation.ts`, `tts.ts`, `voice-profile.ts` |
 | `MESSAGE_NOT_FOUND` | 메시지 미존재 | 404 | `routes/alarm-mutation.ts`, `tts.ts` |
 | `INVALID_MESSAGE_ID` | message_id 형식 오류 | 400 | `routes/alarm-helpers.ts`, `tts.ts` |
@@ -212,8 +196,7 @@
 
 ## 6. 음성 / TTS
 
-`routes/tts.ts`(합성/미리듣기/메시지), `routes/voice-profile.ts`(프로필·초안·클로닝),
-`routes/voice-upload.ts`(업로드).
+`routes/tts.ts`(합성/미리듣기/메시지), `routes/voice-profile.ts`(프로필·초안·클로닝·원본 업로드).
 
 ### 6-1. 합성 (tts.ts)
 
@@ -271,46 +254,24 @@
 | `VOICE_CLONING_FAILED` | 음성 클로닝 실패 | 500 | `routes/voice-profile.ts` |
 | `VOICE_CLONE_AUDIO_TOO_SHORT` | 클로닝 오디오 너무 짧음 | 400 | `routes/voice-profile.ts` |
 | `VOICE_CLONE_AUDIO_TOO_LONG` | 클로닝 오디오 너무 긺 | 400 | `routes/voice-profile.ts` |
+| `AUDIO_FILE_EMPTY` | audio 파일이 비어있음 | 400 | `routes/voice-profile.ts` |
+| `INVALID_AUDIO_MIME_TYPE` | audio/* MIME 아님 | 400 | `routes/voice-profile.ts` |
+| `INVALID_DURATION` | durationMs 가 양의 정수 아님 | 400 | `routes/voice-profile.ts` |
+| `AUDIO_FILE_TOO_LARGE` | 업로드 파일 바이트 상한 초과 | 413 | `routes/voice-profile.ts` |
 
-### 6-3. 업로드 (voice-upload.ts)
+## 7. 가족 / 그룹 — 폐지 (2026-10-20)
 
-| 코드 | 의미 | HTTP | 위치 |
-|---|---|---|---|
-| `MULTIPART_BODY_REQUIRED` | multipart/form-data 본문 필요 | 400 | `routes/voice-upload.ts` |
-| `AUDIO_FILE_REQUIRED` | audio 파일 필요 | 400 | `routes/voice-upload.ts` |
-| `AUDIO_FILE_EMPTY` | audio 파일이 비어있음 | 400 | `routes/voice-upload.ts`, `voice-profile.ts` |
-| `INVALID_AUDIO_MIME_TYPE` | audio/* MIME 아님 | 400 | `routes/voice-upload.ts`, `voice-profile.ts` |
-| `INVALID_DURATION` | durationMs 가 양의 정수 아님 | 400 | `routes/voice-upload.ts`, `voice-profile.ts` |
-| `AUDIO_FILE_TOO_LARGE` | 업로드 파일 바이트 상한 초과 | 413 | `routes/voice-upload.ts`, `voice-profile.ts` |
-| `AUDIO_DURATION_TOO_SHORT` | 업로드 오디오 최소 길이 미만 | 400 | `routes/voice-upload.ts` |
-| `AUDIO_DURATION_TOO_LONG` | 업로드 오디오 최대 길이 초과 | 400 | `routes/voice-upload.ts` |
-
-## 7. 가족 / 그룹
-
-`routes/family-group.ts`(그룹 탈퇴/양도/제거), `routes/family-alarm.ts`(가족 알람 발송).
-가족 알람의 `FAMILY_ALARM_*` 코드는 §5 에 있다.
-
-| 코드 | 의미 | HTTP | 위치 |
-|---|---|---|---|
-| `NOT_MEMBER` | 해당 그룹 멤버 아님 | 403 | `routes/family-group.ts` |
-| `OWNER_ONLY` | 그룹 소유자만 가능(양도/제거) | 403 | `routes/family-group.ts` |
-| `OWNER_CANNOT_LEAVE` | 소유자는 탈퇴 불가(양도 필요) | 400 | `routes/family-group.ts` |
-| `TARGET_REQUIRED` | target_user_id 필요 | 400 | `routes/family-group.ts` |
-| `SELF_TRANSFER` | 자기 자신에게 양도 불가 | 400 | `routes/family-group.ts` |
-| `SELF_REMOVE` | 자기 자신 제거 불가(탈퇴/양도 사용) | 400 | `routes/family-group.ts` |
-| `CANNOT_REMOVE_OWNER` | owner 는 제거 불가 | 400 | `routes/family-group.ts` |
-| `TARGET_NOT_MEMBER` | 대상이 그룹 멤버 아님 | 400 | `routes/family-group.ts` |
-| `GROUP_NOT_FOUND` | 그룹 미존재 | 404 | `routes/family-group.ts` |
-| `RECIPIENT_REQUIRED` | recipient_user_id 필요 | 400 | `routes/family-alarm.ts` |
-| `INVALID_WAKE_AT` | wake_at 이 HH:mm 아님 | 400 | `routes/family-alarm.ts` |
-| `SELF_ALARM` | 자기 자신에게 가족 알람 불가 | 400 | `routes/family-alarm.ts` |
-| `NOT_SAME_GROUP` | 같은 가족 그룹 멤버 아님 | 403 | `routes/family-alarm.ts` |
-| `RECIPIENT_NOT_FOUND` | 수신자 미존재 | 404 | `routes/family-alarm.ts` |
-| `NO_VOICE_PROFILE` | 수신자 음성 프로필 없음 | 400 | `routes/family-alarm.ts` |
-| `VOICE_UPLOAD_REQUIRED` | voice_upload_id 필요 | 400 | `routes/family-alarm.ts` |
-| `LABEL_TOO_LONG` | label 길이 초과 | 400 | `routes/family-alarm.ts` |
-| `UPLOAD_NOT_FOUND` | 음성 업로드 미존재 | 400 | `routes/family-alarm.ts` |
-| `NOT_UPLOAD_OWNER` | 업로드 소유자 아님 | 400 | `routes/family-alarm.ts` |
+커플·가족 이용권과 거기에만 딸린 그룹 관리·초대 코드·목소리 공유·가족 알람(`routes/family-group.ts`·`family-alarm.ts`·
+`voice-upload.ts`)을 없앴다. 이미 나간 코드는 이름을 바꾸지 않고 목록에서 **지우기만** 했다(`docs/spec/error-codes.md`)
+— 옛 앱은 그 코드를 다시 받지 않는다. 지운 코드: 그룹 관리 `NOT_MEMBER`·`OWNER_ONLY`·`OWNER_CANNOT_LEAVE`·
+`TARGET_REQUIRED`·`SELF_TRANSFER`·`SELF_REMOVE`·`CANNOT_REMOVE_OWNER`·`TARGET_NOT_MEMBER`·`GROUP_NOT_FOUND`, 가족 알람
+보내기 `RECIPIENT_REQUIRED`·`INVALID_WAKE_AT`·`SELF_ALARM`·`NOT_SAME_GROUP`·`RECIPIENT_NOT_FOUND`·`NO_VOICE_PROFILE`·
+`VOICE_UPLOAD_REQUIRED`·`LABEL_TOO_LONG`·`UPLOAD_NOT_FOUND`·`NOT_UPLOAD_OWNER`, 받는 사람 규칙 `FAMILY_ALARM_DISABLED`·
+`FAMILY_ALARM_QUIET_TIME`·`FAMILY_ALARM_LEAD_TIME`, 보낸 알람 `INVALID_TARGET_USER`·`TARGETED_ALARM_IMMUTABLE`·
+`DELIVERY_VERSION_REQUIRED`·`INVALID_DELIVERY_VERSION`·`ALARM_SCHEMA_UPGRADING`, 받는 사람 설정 `INVALID_BOOLEAN`·
+`INVALID_QUIET_WINDOWS`·`INVALID_QUIET_DAYS`·`INVALID_QUIET_TIME`, 공유 코드 발급 `GROUP_FULL`·
+`NO_ACTIVE_FAMILY_OWNER_SUBSCRIPTION`, 녹음 업로드 `MULTIPART_BODY_REQUIRED`·`AUDIO_FILE_REQUIRED`·
+`AUDIO_DURATION_TOO_SHORT`·`AUDIO_DURATION_TOO_LONG`. 남긴 것은 `NOT_CONNECTED`(§5)와 `CODE_NOT_FOUND`(§4)다.
 
 ## 8. 푸시 토큰
 

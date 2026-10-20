@@ -19,13 +19,10 @@ import com.alarmtalk.app.network.AuthSessionStore
 import com.alarmtalk.app.network.observeSession
 import com.alarmtalk.app.network.shouldAbsorbStoredSession
 import com.alarmtalk.app.network.BillingSubscriptionResponse
-import com.alarmtalk.app.network.FamilyGroupCurrentResponse
-import com.alarmtalk.app.network.FamilyVoiceProfile
 import com.alarmtalk.app.network.PersonalPromo
 import com.alarmtalk.app.network.VoiceDraftQuotaResponse
 import com.alarmtalk.app.network.AlarmTalkApiClient
 import com.alarmtalk.app.network.VoiceProfile
-import com.alarmtalk.app.network.VoucherItem
 import com.alarmtalk.app.sync.RemoteAlarmSyncScheduler
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.SharingStarted
@@ -136,8 +133,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 userInitiated: Boolean,
                 ownerUserId: String?,
             ) {
-                // 사용자가 방금 산 게 아니다 — 이동은 어느 쪽이든 하지 않는다.
-                // 다만 **사용자가 누른 복원은 결과를 말해 줘야 한다**(2026-09-01 리뷰).
+                // 사용자가 방금 산 게 아니다 — 다만 **사용자가 누른 복원은 결과를 말해 줘야 한다**
+                // (2026-09-01 리뷰).
                 viewModelScope.launch {
                     confirmGooglePurchase(
                         purchaseToken,
@@ -616,15 +613,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         internal set
 
     /**
-     * 공유받은 목소리인데 **소유자 쪽 생성이 아직 안 끝난** 것.
-     *
-     * 받는 사람이 할 수 있는 일이 없으므로 진행률에 넣지 않는다(넣으면 영원히 안 차는
-     * 몫이 되고, '다시 시도' 도 소유자 큐라 누를 수 없다). 준비 화면이 다른 문구로 말한다.
-     */
-    var clipReadinessAwaitingOwner by mutableStateOf<Set<String>>(emptySet())
-        internal set
-
-    /**
      * 매니페스트 조회를 **한 번에 하나**로 묶는다(`ensureStockClipManifest`, 효율 감사 M1).
      *
      * '이번 세션에 서버에서 받았는가' 도 여기서 판정한다([ManifestNeed.SESSION]) — **디스크
@@ -671,29 +659,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
     }
-
-    var socialBusy by mutableStateOf(false)
-        internal set
-
-    var familyGroup by mutableStateOf<FamilyGroupCurrentResponse?>(initialAccessSnapshot.familyGroup)
-        internal set
-
-    var familyVoices by mutableStateOf<List<FamilyVoiceProfile>>(emptyList())
-
-    // 공유 목소리 목록이 API 로 '신선하게' 로드됐는지. 접근권 잃은 목소리 알람 강등 판단은
-    // 이 신선 로드 + voiceProfiles 로드가 모두 확보됐을 때만 수행한다(reconcileInaccessibleVoiceAlarms).
-    internal var familyVoicesLoadedFresh: Boolean = false
-        internal set
-
-    /**
-     * 지금 [familyVoices] 가 **이 세션에 서버에서 한 번이라도 받은 목록**인가. [familyVoicesLoadedFresh]
-     * 와 다르다 — 그쪽은 조회를 시작할 때마다 내려가고 실패하면 내려간 채지만, 목록 자체는 앞서
-     * 받은 서버 목록 그대로 남는다(`refreshSocialData`). 공유 목록이 바뀌었을 때 매니페스트를
-     * **신호 뒤** 로 받을지(서버에서 바뀌었다) **창** 으로 받을지(세션 첫 목록 — 이제 안 것)를 이걸로
-     * 가른다(Codex #825). 세션이 끝날 때만 내린다. ⚠ [familyVoices] 를 서버 목록으로 바꾸는 곳은
-     * **전부** 이걸 세운다(`refreshSocialData`, 목소리 공유 토글의 목록 갱신).
-     */
-    internal var familyVoicesFromServer: Boolean = false
 
     // 내 음성 목록이 API 로 '성공적으로' 로드됐는지(빈 목록도 유효한 신선 로드로 취급). voiceProfiles.isEmpty()
     // 를 '미로드'로 쓰면 마지막 목소리를 삭제·접근상실한 사용자의 알람 강등이 스킵되므로 별도 플래그로 추적(PR #536 P2).
@@ -761,7 +726,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     /**
      * **유료 목소리 판정 — 앱 전체가 이걸 쓴다**(2026-08-31). 우선순위는
-     * `resolvePaidVoiceAccess` 주석 참고: 스토어 → 서버 구독(만료) → users.plan → 그룹.
+     * `resolvePaidVoiceAccess` 주석 참고: 스토어 → 서버 구독(만료) → users.plan.
      */
     /**
      * ⚠ **plan 은 스냅샷을 먼저 본다**(2026-09-01 리뷰). `PlanChangeSyncWorker` 는 프로세스가
@@ -789,7 +754,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     internal fun paidVoiceAccess(nowMillis: Long = System.currentTimeMillis()): PaidVoiceAccess =
         resolvePaidVoiceAccess(
             subscriptionResponse = subscriptionResponse,
-            familyGroup = familyGroup,
             userPlan = effectiveUserPlan,
             storeEntitled = isStoreEntitledNow(nowMillis),
             nowMillis = nowMillis,
@@ -807,7 +771,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (!personalPromoLapsed(effectiveUserPlanPromo, nowMillis)) return false
         val withoutLapse = resolvePaidVoiceAccess(
             subscriptionResponse = subscriptionResponse,
-            familyGroup = familyGroup,
             userPlan = effectiveUserPlan,
             storeEntitled = isStoreEntitledNow(nowMillis),
             nowMillis = nowMillis,
@@ -815,21 +778,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         )
         return withoutLapse != PaidVoiceAccess.NotEntitled
     }
-
-    /**
-     * 커플·가족 기능의 **보류 규칙**(D9) — 기간 한정 개인 플랜이 살아 있는 동안 남은 구독 행·그룹이
-     * 커플·가족을 열지 못하게 한다([personalPromoTierHoldOf]). 프로모 밖이면 null(예전 그대로).
-     *
-     * plan 과 **같은 출처의** 프로모 표지를 쓴다([effectiveUserPlanPromo]) — 섞으면 짝이 어긋난다.
-     * 스토어 등급은 **지금 유효한** 것만 넘긴다(기한 지난 키를 믿지 않는다).
-     */
-    internal fun personalPromoTierHold(nowMillis: Long = System.currentTimeMillis()): PersonalPromoTierHold? =
-        personalPromoTierHoldOf(
-            userPlan = effectiveUserPlan,
-            userPlanPromo = effectiveUserPlanPromo,
-            storePlanKeyValidNow = storePlanKey?.takeIf { isStoreEntitledNow(nowMillis) },
-            nowMillis = nowMillis,
-        )
 
     /**
      * 스토어 신호가 **지금** 유효한가 — 화면에 넘길 때는 언제나 이 값을 쓴다.
@@ -854,7 +802,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // "Google Play에서 직접 관리" 안내 다이얼로그의 구독 관리 URL. null 이면 숨김.
     var billingPlayManageUrl by mutableStateOf<String?>(null)
 
-    // planKey("personal"/"couple"/"family") → Play 실제 표시가격(formattedPrice). preloadProducts
+    // planKey("personal") → Play 실제 표시가격(formattedPrice). preloadProducts
     // 성공 시 채워지며, 비면 UI 가 문자열 리소스로 폴백한다. 하드코딩 대신 청구 통화·금액을 정확히 표기.
     var billingPlanPrices by mutableStateOf<Map<String, String>>(emptyMap())
         internal set
@@ -868,16 +816,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var subscriptionResponse by mutableStateOf<BillingSubscriptionResponse?>(initialAccessSnapshot.subscriptionResponse)
         internal set
 
-    var vouchers by mutableStateOf<List<VoucherItem>>(emptyList())
-        internal set
+    /**
+     * [subscriptionResponse] 를 **이번 실행에서 서버로 받았는가**(처음 값은 디스크 스냅샷이다). 받았던 알람을 미나로
+     * 확정하는 2단계가 이걸 기다린다 — 저장해 둔 판정만으로는 되돌릴 수 없는 결정을 내리지 않는다(`promoteFormerReceivedAlarms`).
+     */
+    internal var subscriptionAnsweredThisRun: Boolean = false
 
     var message by mutableStateOf<String?>(null)
-        internal set
-
-    private val receivedAlarmBadgeStore = ReceivedAlarmBadgeStore(application)
-    var receivedAlarmSeenAtMillis by mutableStateOf(
-        authSession?.user?.id?.let(receivedAlarmBadgeStore::readSeenAtMillis) ?: 0L,
-    )
         internal set
 
     private val themePrefs = application.getSharedPreferences("voice_alarm_theme", android.content.Context.MODE_PRIVATE)
@@ -910,7 +855,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         internal set
 
     // 알람에 마지막으로 쓴 목소리 — 새 알람 편집기가 처음 고르는 값(목소리 탭엔 표시하지 않는다).
-    // 어느 그룹(내 클론·공유받은·기본)이든 이 값이 최우선이다: 그룹을 먼저 보면 클론을 가진
+    // 어느 쪽(내 클론·기본)이든 이 값이 최우선이다: 종류를 먼저 보면 클론을 가진
     // 사람이 기본 목소리를 골라 저장해도 매번 클론으로 되돌아가 '유지가 안 된다'가 된다.
     var lastUsedVoiceId by mutableStateOf<String?>(null)
         internal set
@@ -931,11 +876,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     internal var prerenderDriveJob: kotlinx.coroutines.Job? = null
 
-    // 목소리 공유 토글의 프로필별 워커 — PATCH 를 목소리별로 직렬화해 항상 마지막 값으로
-    // 수렴시킨다(전역 voiceProfileBusy 로 스위치를 잠그지 않는다). desired 는 워커가 다음에
-    // 보내야 할 목표값(연타 시 중간값은 건너뛰고 최신값만 전송).
-    internal val shareToggleJobs = mutableMapOf<String, kotlinx.coroutines.Job>()
-    internal val shareToggleDesired = mutableMapOf<String, Boolean>()
+    /** 받았던 알람을 내 목소리로 올리는 회차(`promoteFormerReceivedAlarms`) — 새로 부르면 앞 회차를 거두고 다시 돈다. */
+    internal var formerReceivedPromotionJob: kotlinx.coroutines.Job? = null
 
     // setDefaultVoice 시점에 매니페스트(stockClips)가 아직 안 왔으면 프리페치가 빈손으로 끝난다.
     // 대상 목소리를 여기 담아 두고 loadStockClips 성공 시 1회 재시도한다(재시도 후 클리어).
@@ -1265,12 +1207,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var duplicateAlarmPrompt by mutableStateOf<DuplicateAlarmPrompt?>(null)
         internal set
 
-    var navigateHomeTick by mutableStateOf(0)
-        internal set
-
-    var navigateSharedPassTick by mutableStateOf(0)
-        internal set
-
     fun requestPermissionGate(target: PermissionTarget) {
         permissionGateRequest = target
     }
@@ -1391,10 +1327,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      */
     internal fun rememberMessageChoiceUsed(draft: AlarmDraft) {
         val userId = authSession?.user?.id?.takeIf { it.isNotBlank() } ?: return
-        // 가족(수신자) 알람의 선택은 기억하지 않는다 — 수신자를 위해 고른 값이고, 문구는
-        // 수신자의 dynamic prompt 기준으로 만들어진다. 생성 경로는 이미 앞에서 갈라지지만,
-        // 어느 호출부로 들어와도 같은 규칙이 되도록 여기서도 막는다.
-        if (!draft.targetUserId.isNullOrBlank()) return
         if (draft.playMode == com.alarmtalk.app.data.AlarmPlayModes.ALARM_ONLY) return
         val rememberContext = {
             // 버킷 알람의 종류는 draft 가 실어 온다(AlarmEditorState.toDraft). 그래도 버킷에서
@@ -1486,14 +1418,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         editor.putStringSet("consented_users", set).apply()
     }
 
-    fun loadReceivedAlarmBadgeState() {
-        val userId = authSession?.user?.id ?: run {
-            receivedAlarmSeenAtMillis = 0L
-            return
-        }
-        receivedAlarmSeenAtMillis = receivedAlarmBadgeStore.readSeenAtMillis(userId)
-    }
-
     internal fun restoreAccessSnapshotForCurrentUser() {
         val snapshot = authSession
             ?.user
@@ -1502,7 +1426,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             ?.let(accessSnapshotStore::read)
             ?: AccessSnapshot()
         subscriptionResponse = snapshot.subscriptionResponse
-        familyGroup = snapshot.familyGroup
         // ⚠ **스토어 신호도 계정에 묶인다**(2026-08-31 리뷰). 여기서 복원하지 않으면 계정을
         // 바꿔도 앞 사람의 값이 메모리에 남아, 무료 계정이 유료로 취급된다.
         storePlanKey = snapshot.storePlanKey
@@ -1546,12 +1469,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         return result
     }
 
-    internal fun saveFamilyGroupSnapshot(
-        ticket: AccessTicket,
-        response: FamilyGroupCurrentResponse?,
-    ): EntitlementWrite =
-        entitlementWriter.write(ticket, "family group snapshot") { it.copy(familyGroup = response) }
-
     /** 권한 스냅샷을 쓰려면 **요청 전에** 이걸 뜬다(`EntitlementWriter` 참조). */
     internal fun accessTicket(): AccessTicket? = entitlementWriter.ticket()
 
@@ -1566,6 +1483,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         // 마지막에 고른 문구 종류·무료 테마도 같은 성격의 취향이라 함께 정리한다.
         // (이 함수는 명시적 로그아웃·탈퇴에서만 불린다 — 자동 401 경로는 부르지 않는다.)
         dynamicPromptStore.clearLastSelections(userId)
+        // 받았던 알람을 내 목소리로 올릴 차례 기록도 계정과 함께 떠난다(`FormerReceivedAlarmStore`).
+        com.alarmtalk.app.data.FormerReceivedAlarmStore(getApplication()).clear(userId)
         // ⚠ **목소리 교체 표식(`VoiceReplacementMarkerStore`)은 여기서 지우지 않는다.**
         // 취향은 계정과 함께 떠나도 되지만 그 표식은 **남아 있는 로컬 알람의 안전 기준**이다
         // — 로그아웃은 알람을 끄기만 하고 지우지 않으므로, 표식을 지우면 그 사이의 교체를
@@ -1587,9 +1506,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         stockClipSeedJob = null
         replacedClipRepairJob?.cancel()
         replacedClipRepairJob = null
-        shareToggleJobs.values.forEach { it.cancel() }
-        shareToggleJobs.clear()
-        shareToggleDesired.clear()
+        formerReceivedPromotionJob?.cancel()
+        formerReceivedPromotionJob = null
         prerenderDrive = null
         voiceProfiles = bundledSystemVoiceProfiles()
         pendingVoiceDraft = null
@@ -1600,21 +1518,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         voiceProfilesLoadedFresh = false
         showVoiceSetup = false
         lastUsedVoiceId = null
-        familyGroup = null
-        familyVoices = emptyList()
-        // 공유 목소리 신선-로드 플래그도 함께 초기화 — 안 그러면 다음 세션에서 fetchVoiceProfiles 가
-        // refreshSocial 전에 강등 판단해, 공유 목소리 쓰는 알람이 오강등될 수 있다(PR #536 P2).
-        familyVoicesLoadedFresh = false
-        familyVoicesFromServer = false
         subscriptionResponse = null
+        subscriptionAnsweredThisRun = false
         // ⚠ **스토어 신호는 계정 것이다.** 안 지우면 유료 A 가 로그아웃한 뒤 무료 B 가
         // 로그인했을 때(액티비티 재생성 없이) B 가 A 의 등급을 물려받아 모든 게이트를 통과한다.
         storePlanKey = null
         storeEntitlementUntilMillis = null
         storeEntitlementChecked = false
-        vouchers = emptyList()
         billingPlayManageUrl = null
-        receivedAlarmSeenAtMillis = 0L
         registerEmailVerificationSentTo = null
         registerEmailVerified = null
         // 세션이 비워지는 모든 경로(로그아웃/만료/탈퇴)에서 동의 게이트 상태도 함께 초기화한다.
@@ -1649,20 +1560,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         marketingConsentLoadGeneration++
         marketingConsentWriteInFlight = false
         marketingConsentLoadFailed = false
-    }
-
-    fun ensureReceivedAlarmBadgeBaseline(alarms: List<AlarmEntity>) {
-        val userId = authSession?.user?.id ?: return
-        if (receivedAlarmBadgeStore.hasBaseline(userId)) {
-            receivedAlarmSeenAtMillis = receivedAlarmBadgeStore.readSeenAtMillis(userId)
-            return
-        }
-        receivedAlarmSeenAtMillis = receivedAlarmBadgeStore.markSeen(userId, alarms)
-    }
-
-    fun markReceivedAlarmsSeen(alarms: List<AlarmEntity>) {
-        val userId = authSession?.user?.id ?: return
-        receivedAlarmSeenAtMillis = receivedAlarmBadgeStore.markSeen(userId, alarms)
     }
 
     fun setThemeMode(mode: ThemeMode) {
@@ -1701,12 +1598,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             authSessionStore.observeSession().collect(::absorbStoredSession)
         }
         RemoteAlarmSyncScheduler.ensurePeriodic(application)
-        // ⚠ **여기서 즉시 pull(`RemoteAlarmSyncScheduler.runOnce`)을 걸지 않는다**(효율 감사).
+        // ⚠ **여기서 즉시 계정 확인(`RemoteAlarmSyncScheduler.runOnce`)을 걸지 않는다**(효율 감사).
         //   뷰모델은 `MainActivity.onCreate` 에서 만들어지고, 곧이어 오는 프로세스 `ON_START`
         //   (`AlarmTalkApplication` 의 `runOnceThrottled`)가 같은 유니크 작업을 `REPLACE` 로 다시
-        //   건다 — 여기서 건 것은 돌기도 전에 취소되고 요청만 한 번 더 나갔다. 그 `ON_START` 가
-        //   스로틀(60초)에 걸리거나 오지 않는 경우(다른 액티비티가 이미 떠 있던 프로세스)도 알람
-        //   탭 진입의 `syncNow` 가 push·pull 을 한다.
+        //   건다 — 여기서 건 것은 돌기도 전에 취소되고 요청만 한 번 더 나갔다. 뷰모델 자신도 진입마다
+        //   `/auth/me` 를 받는다(아래 `appEntries`).
         viewModelScope.launch {
             runCatching {
                 repository.reschedulePendingAlarms()
@@ -1761,7 +1657,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             runCatching { playBilling.preloadProducts() }
                 .onSuccess {
-                    billingPlanPrices = listOf("personal", "couple", "family")
+                    billingPlanPrices = listOf("personal")
                         .mapNotNull { key -> playBilling.formattedPriceForPlan(key)?.let { key to it } }
                         .toMap()
                 }

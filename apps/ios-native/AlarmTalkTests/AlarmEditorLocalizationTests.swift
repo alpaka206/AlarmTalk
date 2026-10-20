@@ -11,7 +11,6 @@ final class AlarmEditorLocalizationTests: XCTestCase {
                 XCTAssertNotEqual(preset.localizedDisplayLabel(bundle: bundle), preset.label)
                 XCTAssertEqual(VoiceRelationshipSelection(preset: preset).resolved, preset.label)
             }
-            XCTAssertEqual(parseVoiceRelationshipLabel("직접 정한 관계").localizedDisplayLabel(bundle: bundle), "직접 정한 관계")
         }
     }
 
@@ -43,7 +42,6 @@ final class AlarmEditorLocalizationTests: XCTestCase {
             }
         }
         XCTAssertEqual(try localized("매일", language: "en"), "Every day")
-        XCTAssertEqual(String(format: try localized("%@ 외 %lld개", language: "en"), "Mon 7:00 ~ 8:00", Int64(3)), "Mon 7:00 ~ 8:00 and 3 more")
     }
 
     func testEditorMessagesKeepTheirNumericAndTextArguments() throws {

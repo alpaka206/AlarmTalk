@@ -1,15 +1,13 @@
 /**
- * dev 환경용: 특정 이메일 계정에 요금제를 직접 적용한다.
+ * dev 환경용: 특정 이메일 계정에 개인 플랜을 직접 적용한다.
  *
- * voucher-redemption.ts 의 적용 로직과 동일하게:
  *   1) 기존 active 구독을 cancelled 로 정리
- *   2) 새 active 구독 INSERT (plan_group 없음 — personal 기준)
- *   3) users.plan 미러 갱신 (personal→plus, couple/family→family)
+ *   2) 새 active 개인 구독 INSERT
+ *   3) users.plan 미러 갱신 (personal → plus)
  *
  * 사용 (packages/backend 에서):
  *   node --experimental-strip-types scripts/apply-dev-plan.ts --email devrel.365@gmail.com
- *   옵션: --plan <personal|couple|family> (기본 personal), --days <n> (기본 30),
- *         --env-file <파일> (기본 .dev.vars.dev)
+ *   옵션: --days <n> (기본 30), --env-file <파일> (기본 .dev.vars.dev)
  */
 
 import { createClient } from '@libsql/client';
@@ -50,25 +48,14 @@ function loadDevVars(): Record<string, string> {
   return out;
 }
 
-// migrations.ts 의 고정 plan UUID.
-const PLAN_IDS: Record<string, string> = {
-  personal: '70000000-0000-4000-8000-000000000002',
-  couple: '70000000-0000-4000-8000-000000000004',
-  family: '70000000-0000-4000-8000-000000000003',
-};
-// billing-helpers.planTypeToUserPlan 와 동일 (personal→plus, couple/family→family).
-const USER_PLAN: Record<string, 'plus' | 'family'> = {
-  personal: 'plus',
-  couple: 'family',
-  family: 'family',
-};
+// migrations.ts 의 고정 plan UUID(개인).
+const PERSONAL_PLAN_ID = '70000000-0000-4000-8000-000000000002';
+// billing-helpers.planTypeToUserPlan 과 동일 (personal → plus).
+const PERSONAL_USER_PLAN = 'plus';
 
 async function main(): Promise<void> {
   const email = argValue('--email');
   if (!email) throw new Error('--email 이 필요합니다.');
-  const planKey = argValue('--plan') ?? 'personal';
-  const planId = PLAN_IDS[planKey];
-  if (!planId) throw new Error(`--plan 은 personal|couple|family 중 하나여야 함: ${planKey}`);
   const days = Number(argValue('--days') ?? '30');
 
   const vars = loadDevVars();
@@ -90,41 +77,29 @@ async function main(): Promise<void> {
   const now = new Date();
   const expiresAt = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
 
-  // 1) 기존 active 구독 정리 — 그 구독이 발급한 미사용 초대 코드도 함께 만료한다
-  //    (선물 코드는 2026-10-14 에 없앴다 — App Store 심사 지침 3.1.1, 되살리지 말 것)
-  //    (실서비스 해지 경로 expireUnusedVouchersFor 와 동일. 안 하면 무료로 내려간 계정에
-  //    살아 있는 코드가 남아 공유 버튼 노출/코드 등록 구멍이 생긴다).
-  await db.execute({
-    sql: `UPDATE voucher_codes SET status = 'expired'
-          WHERE status = 'issued'
-            AND issuer_subscription_id IN (
-              SELECT id FROM subscriptions WHERE user_id = ? AND status = 'active'
-            )`,
-    args: [userId],
-  });
+  // 1) 기존 active 구독 정리
   await db.execute({
     sql: `UPDATE subscriptions SET status = 'cancelled', canceled_at = ?, updated_at = datetime('now')
           WHERE user_id = ? AND status = 'active'`,
     args: [now.toISOString(), userId],
   });
 
-  // 2) 새 active 구독
+  // 2) 새 active 개인 구독
   await db.execute({
-    sql: `INSERT INTO subscriptions (id, user_id, plan_id, plan_group_id, status, starts_at, expires_at)
-          VALUES (?, ?, ?, NULL, 'active', ?, ?)`,
-    args: [crypto.randomUUID(), userId, planId, now.toISOString(), expiresAt.toISOString()],
+    sql: `INSERT INTO subscriptions (id, user_id, plan_id, status, starts_at, expires_at)
+          VALUES (?, ?, ?, 'active', ?, ?)`,
+    args: [crypto.randomUUID(), userId, PERSONAL_PLAN_ID, now.toISOString(), expiresAt.toISOString()],
   });
 
   // 3) users.plan 미러
-  const userPlan = USER_PLAN[planKey]!;
   await db.execute({
     sql: `UPDATE users SET plan = ?, updated_at = datetime('now') WHERE id = ?`,
-    args: [userPlan, userId],
+    args: [PERSONAL_USER_PLAN, userId],
   });
 
   console.log(
     `적용 완료: ${email} (id=${userId})\n` +
-      `  plan: ${planKey} (users.plan ${beforePlan} → ${userPlan})\n` +
+      `  plan: personal (users.plan ${beforePlan} → ${PERSONAL_USER_PLAN})\n` +
       `  expires_at: ${expiresAt.toISOString()}`,
   );
 }

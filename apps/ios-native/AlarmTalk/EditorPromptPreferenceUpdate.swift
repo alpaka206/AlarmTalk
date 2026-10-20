@@ -27,17 +27,14 @@ extension DynamicPromptPreferences {
     ///
     /// - Parameters:
     ///   - result: 문구 화면이 돌려준 값(`MessageSettingsPane` 의 `onSave`).
-    ///   - familyAlarmMode: 가족 알람인가. ⚠ **가족 알람의 지역·사주는 받는 사람의 것이다** — 내 계정에
-    ///     적으면 내 날씨 문구가 남의 도시가 되고, 공휴일 국가를 맞추면 **남의 나라 공휴일로 내 알람이 꺼진다.**
     ///   - saved: 지금 내 기본값(`AlarmEditorSheet.savedPromptPreferences` — 계정 설정을 받아 적은 뒤의 기기 값).
     ///   - server: 서버가 가진 값(`DynamicPromptPreferences.from(settings:)`). 이것과 다를 때만 올린다.
     static func editorUpdate(
         result: MessageSettingsResult,
-        familyAlarmMode: Bool,
         saved: DynamicPromptPreferences,
         server: DynamicPromptPreferences
     ) -> EditorPromptPreferenceUpdate? {
-        guard !familyAlarmMode, !result.isManual else { return nil }
+        guard !result.isManual else { return nil }
         let context = RandomPromptContext.normalized(result.context)
         var next = saved
         var touched = false

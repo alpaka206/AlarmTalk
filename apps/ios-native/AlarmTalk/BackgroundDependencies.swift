@@ -125,7 +125,7 @@ final class BackgroundDependencies {
         guard settled, stillOwner else {
             // ⚠ **실패하면 그 목소리를 계속 '정리 중' 으로 둔다**(Codex #703 P1).
             // 예전에는 승격 화면만 이 처리를 했는데, 이 함수는 **푸시·새로고침 훅**도 부른다 —
-            // 다른 기기나 공유받은 목소리의 교체가 여기서 실패하면 그 목소리가 그대로 고를 수
+            // 다른 기기에서 한 목소리 교체가 여기서 실패하면 그 목소리가 그대로 고를 수
             // 있는 채 남고, 그때 만든 알람을 다음 재시도가 되돌릴 수 없이 벗긴다.
             // 판정을 호출부마다 두면 언젠가 빠뜨리므로 **실패하는 이 한 곳**에 둔다.
             //
@@ -182,7 +182,7 @@ final class BackgroundDependencies {
         socialFeatures.onRolledToken = { [weak auth] userID, from, to in
             auth?.applyRolledToken(userID: userID, from: from, to: to)
         }
-        // 코드 등록으로 서버 plan 이 올라가도 세션이 free 그대로면 게이트가 잠긴 채 남는다.
+        // 결제로 서버 plan 이 올라가도 세션이 free 그대로면 게이트가 잠긴 채 남는다.
         socialFeatures.onFreshPlan = { [weak auth] userID, from, plan, personalPromo, request in
             auth?.applyFreshPlan(userID: userID, from: from, plan: plan, personalPromo: personalPromo, request: request)
         }

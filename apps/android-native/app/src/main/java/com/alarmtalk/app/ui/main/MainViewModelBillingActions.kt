@@ -4,18 +4,14 @@ import com.alarmtalk.app.network.AlarmTalkApiClient
 import com.alarmtalk.app.data.DowngradeNoticeStore
 import android.app.Application
 import android.util.Log
-import androidx.annotation.StringRes
 import androidx.lifecycle.viewModelScope
 import com.alarmtalk.app.core.AlarmTalkLog
 import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import com.alarmtalk.app.network.apiError
 import com.alarmtalk.app.network.apiErrorCode
+import com.alarmtalk.app.network.BillingSubscriptionResponse
 import com.alarmtalk.app.network.CancelSubscriptionRequest
-import com.alarmtalk.app.network.CodeRegisterRequest
 import com.alarmtalk.app.network.GooglePlayConfirmRequest
-import com.alarmtalk.app.network.VoucherItem
-import kotlinx.coroutines.async
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.withLock
 
@@ -76,15 +72,7 @@ internal suspend fun MainViewModel.refreshStoreEntitlement() {
         val purchases = query.mine
         val nextKey = purchases
             .flatMap { it.products }
-            .mapNotNull { com.alarmtalk.app.billing.PlayBillingProducts.planKeyFor(it) }
-            .maxByOrNull { key ->
-                when (key) {
-                    "family" -> 3
-                    "couple" -> 2
-                    "personal" -> 1
-                    else -> 0
-                }
-            }
+            .firstNotNullOfOrNull { com.alarmtalk.app.billing.PlayBillingProducts.planKeyFor(it) }
         // ⚠ **해지 예약된 구독은 TTL 로 늘리지 않는다**(2026-09-01 리뷰). TTL 은 '언제
         // 물어봤는가' 에서 시작하므로, 기간 말 해지를 만료 하루 전에 확인하면 그 뒤 **39일**
         // 을 로컬에서 유료로 통과시킨다 — 이 신호는 서버 만료보다 위라, 확정된 만료도
@@ -151,52 +139,6 @@ internal fun MainViewModel.refreshBilling() {
     viewModelScope.launch { refreshStoreEntitlement() }
 }
 
-internal suspend fun MainViewModel.refreshShareCodeData(): List<VoucherItem> {
-    val authorization = bearerOrMessage(getApplication<android.app.Application>().getString(R.string.msg_gb_login_required_share_code_info)) ?: return vouchers
-    if (billingBusy || socialBusy) return vouchers
-    // ⚠ **표는 요청 전에 뜬다**(2026-09-02). 아래 세 요청을 기다리는 사이 계정이 바뀔 수 있는데,
-    // 예전에는 응답 뒤에 지금 계정으로 키를 잡아 **A 의 구독·그룹이 B 의 스냅샷에** 들어갔다.
-    val ticket = accessTicket() ?: return vouchers
-    billingBusy = true
-    socialBusy = true
-    return try {
-        coroutineScope {
-            val subscription = async { api.getSubscription(authorization) }
-            val freshVouchers = async { api.listVouchers(authorization).vouchers }
-            val group = async {
-                runCatching {
-                    api.getFamilyGroup(authorization)
-                }.onFailure { error ->
-                    Log.w(TAG, "Failed to refresh family group before voucher share", error)
-                }.getOrNull()
-            }
-            val updatedSubscription = subscription.await()
-            val updatedVouchers = freshVouchers.await()
-            val updatedGroup = group.await()
-            // 문이 거절하면(계정 전환·재로그인) **화면 상태도 건드리지 않는다** —
-            // 스냅샷만 막고 전역 state 를 발행하면 A 의 코드가 B 화면에 뜬다.
-            if (saveSubscriptionSnapshot(ticket, updatedSubscription) != EntitlementWrite.Applied) {
-                return@coroutineScope vouchers
-            }
-            subscriptionResponse = updatedSubscription
-            vouchers = updatedVouchers
-            updatedGroup?.let {
-                if (saveFamilyGroupSnapshot(ticket, it) == EntitlementWrite.Applied) {
-                    familyGroup = it
-                }
-            }
-            updatedVouchers
-        }
-    } catch (error: Throwable) {
-        AlarmTalkLog.reportError("Failed to refresh share code data", error)
-        message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_gb_share_code_info_load_failed))
-        vouchers
-    } finally {
-        billingBusy = false
-        socialBusy = false
-    }
-}
-
 /**
  * **이전 구매 복원.** 스토어에 남아 있는 활성 구독을 서버로 다시 보내 이용권을 되찾는다.
  *
@@ -211,7 +153,7 @@ internal suspend fun MainViewModel.refreshShareCodeData(): List<VoucherItem> {
  */
 internal fun MainViewModel.restorePurchases() {
     val app = getApplication<android.app.Application>()
-    bearerOrMessage(app.getString(R.string.msg_gb_login_required_share_code_info)) ?: return
+    bearerOrMessage(app.getString(R.string.msg_gb_login_required_billing_info)) ?: return
     if (billingBusy) return
     billingBusy = true
     message = app.getString(R.string.billing_restore_checking)
@@ -255,9 +197,9 @@ private fun MainViewModel.refreshBillingData(showMessage: Boolean) {
     viewModelScope.launch {
         try {
             runCatching {
-                loadBillingSnapshot(authorization)
-            }.onSuccess { snapshot ->
-                applyBillingSnapshot(ticket, snapshot)
+                api.getSubscription(authorization)
+            }.onSuccess { subscription ->
+                applySubscriptionResponse(ticket, subscription)
             }.onFailure { error ->
                 AlarmTalkLog.reportError("Failed to load billing", error)
                 if (showMessage) message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_gb_billing_info_load_failed))
@@ -268,36 +210,26 @@ private fun MainViewModel.refreshBillingData(showMessage: Boolean) {
     }
 }
 
-private suspend fun MainViewModel.loadBillingSnapshot(
-    authorization: String,
-): BillingSnapshot =
-    coroutineScope {
-        val subscription = async { api.getSubscription(authorization) }
-        val vouchers = async { api.listVouchers(authorization).vouchers }
-        BillingSnapshot(
-            subscription = subscription.await(),
-            vouchers = vouchers.await(),
-        )
-    }
-
 /**
- * ⚠ **표를 받는다**(2026-09-02). 예전에는 `await` 뒤에 지금 계정으로 키를 잡아,
+ * ⚠ **표를 받는다**(2026-09-02). 예전에는 응답 뒤에 지금 계정으로 키를 잡아,
  * 조회 중 A→B 전환이면 **A 의 구독이 B 의 스냅샷과 화면에** 실렸다.
  * 문이 거절하면 화면 상태도 건드리지 않는다.
  */
-private fun MainViewModel.applyBillingSnapshot(ticket: AccessTicket, snapshot: BillingSnapshot) {
-    if (saveSubscriptionSnapshot(ticket, snapshot.subscription) != EntitlementWrite.Applied) return
-    subscriptionResponse = snapshot.subscription
-    vouchers = snapshot.vouchers
+private fun MainViewModel.applySubscriptionResponse(ticket: AccessTicket, subscription: BillingSubscriptionResponse) {
+    if (saveSubscriptionSnapshot(ticket, subscription) != EntitlementWrite.Applied) return
+    subscriptionResponse = subscription
+    subscriptionAnsweredThisRun = true
+    // 받았던 알람의 2단계는 이용권 답을 기다린다 — 목록·매니페스트보다 늦게 오면 여기서 다시 본다.
+    promoteFormerReceivedAlarms(ticket.userId)
 }
 
 /**
  * 변경 뒤 결제 상태 재조회.
  *
- * ⚠ **`expectedOwnerUserId` 를 넘겨라**(2026-09-01 리뷰). 이 함수 안에 **또 하나의 중단점**
- * 이 있다 — 호출부에서 계정을 확인했더라도 여기서 두 요청을 기다리는 사이 A→B 전환이
- * 일어날 수 있고, 그러면 `applyBillingSnapshot` 이 A 의 바우처를 전역에 발행하고
- * `saveSubscriptionSnapshot` 이 A 의 구독을 **지금 계정 B** 키로 저장한다.
+ * ⚠ **시작할 때 뜬 표를 넘겨라**(2026-09-01 리뷰). 이 함수 안에 **또 하나의 중단점**
+ * 이 있다 — 호출부에서 계정을 확인했더라도 여기서 요청을 기다리는 사이 A→B 전환이
+ * 일어날 수 있고, 그러면 `saveSubscriptionSnapshot` 이 A 의 구독을 **지금 계정 B** 키로
+ * 저장한다.
  */
 private suspend fun MainViewModel.refreshBillingAfterMutation(
     authorization: String,
@@ -306,13 +238,13 @@ private suspend fun MainViewModel.refreshBillingAfterMutation(
     ticket: AccessTicket?,
 ) {
     runCatching {
-        loadBillingSnapshot(authorization)
-    }.onSuccess { snapshot ->
+        api.getSubscription(authorization)
+    }.onSuccess { subscription ->
         if (ticket == null) {
             Log.i(TAG, "Dropping billing snapshot after $reason: no session ticket")
             return@onSuccess
         }
-        applyBillingSnapshot(ticket, snapshot)
+        applySubscriptionResponse(ticket, subscription)
     }.onFailure { error ->
         Log.w(TAG, "Failed to refresh billing after $reason", error)
     }
@@ -334,91 +266,8 @@ private fun billingFailureMessage(context: android.content.Context, errorCode: S
         else -> fallback
     }
 
-private fun codeRegistrationFailureMessage(context: android.content.Context, errorCode: String?, fallback: String): String =
-    when (errorCode) {
-        "CODE_REQUIRED" -> context.getString(R.string.msg2_code_fail_code_required)
-        "INVALID_FORMAT" -> context.getString(R.string.msg2_code_fail_invalid_format)
-        "CODE_NOT_FOUND" -> context.getString(R.string.msg2_code_fail_code_not_found)
-        "CODE_EXPIRED" -> context.getString(R.string.msg2_code_fail_code_expired)
-        "CODE_ALREADY_USED" -> context.getString(R.string.msg2_code_fail_code_already_used)
-        "CODE_ALREADY_REDEEMED_BY_YOU" -> context.getString(R.string.msg2_code_fail_code_already_redeemed_by_you)
-        "SELF_ISSUED", "SELF_ACCEPT" -> context.getString(R.string.msg2_code_fail_self_issued)
-        "GROUP_FULL" -> context.getString(R.string.msg2_code_fail_group_full)
-        // 선물 코드 갈래(`INVALID_GIFT_PLAN`)는 선물과 함께 2026-10-14 에 지웠다 — 서버가 더는 내지 않는다
-        // (App Store 3.1.1 두 번째 반려). 남은 것은 초대 코드의 플랜 검사뿐이다.
-        "INVALID_INVITE_PLAN" -> context.getString(R.string.msg2_code_fail_invalid_plan_type)
-        "PLAN_NOT_FOUND" -> context.getString(R.string.msg2_code_fail_plan_not_found)
-        "USER_NOT_FOUND" -> context.getString(R.string.msg2_code_fail_user_not_found)
-        // 가족그룹 초대 갈래의 에러 코드도 매핑한다. 프로모 코드 갈래(CODE_INACTIVE 등)는 프로모 코드와
-        // 함께 2026-10-12 에 지웠다 — 서버가 더는 받지 않는다(App Store 3.1.1, `routes/code.ts` 머리말).
-        "CODE_REVOKED" -> context.getString(R.string.msg2_code_fail_code_revoked)
-        "ALREADY_MEMBER" -> context.getString(R.string.msg2_code_fail_already_member)
-        "OWNS_ACTIVE_GROUP" -> context.getString(R.string.msg2_code_fail_owns_active_group)
-        else -> fallback
-    }
-
-private fun com.alarmtalk.app.network.BillingPlanSummary?.isSharedPassPlan(): Boolean =
-    this != null && (key in setOf("couple", "family") || planType in setOf("couple", "family"))
-
-/**
- * 초대 코드(INV-) 등록 — 커플·가족 이용권 그룹에 합류한다. 입구는 더보기의 '초대 코드 등록' 화면
- * (`FamilyConnectionPanel`) 하나다. 프로모 코드는 2026-10-12 에 없앴다(`routes/code.ts` 머리말).
- *
- * ⚠ **선물 코드(GIFT-)는 2026-10-14 에 없앴다 — 되살리지 말 것.** iOS 1.2.12 가 App Store 지침 3.1.1 로
- * 두 번째 반려됐다("선물 코드로 디지털 기능을 연다"). 서버도 INV- 형식이 아니면 조회 없이
- * `CODE_NOT_FOUND` 다. 할인·무료 이용은 스토어 오퍼 코드로 준다.
- * 같은 날 유료 게이트의 코드 입력도 지웠다 — 그 입구만 쓰던 인자 둘(성공 뒤 화면을 옮기지 않는
- * `navigateOnSuccess`, 모달 안에 실패 사유를 돌려주는 `onResult`)도 함께 뺐다.
- */
-internal fun MainViewModel.registerCode(code: String) {
-    val authorization = bearerOrMessage(getApplication<android.app.Application>().getString(R.string.msg_gb_login_required_register_code))
-        ?: return
-    val trimmedCode = code.trim()
-    if (trimmedCode.isBlank()) {
-        message = getApplication<android.app.Application>().getString(R.string.msg_gb_code_input_required_period)
-        return
-    }
-    // 응답이 늦게 온 사이 계정이 바뀌면 그 계정 화면을 건드리지 않는다(이 PR 의 반복 지점).
-    val ownerUserId = authSession?.user?.id
-    val ownerTicket = accessTicket()
-    viewModelScope.launch {
-        billingBusy = true
-        runCatching {
-            api.registerCode(authorization, CodeRegisterRequest(trimmedCode))
-        }.onSuccess { response ->
-            if (authSession?.user?.id != ownerUserId) return@onSuccess
-            message = getApplication<android.app.Application>().getString(R.string.msg_gb_code_registered)
-            refreshBillingAfterMutation(authorization, "code registration", ownerTicket)
-            refreshSocial()
-            refreshAppSession()
-            // 서버가 판별한 type 기준: 초대(그룹 합류)거나 커플/가족 플랜이면 공유패스 갱신.
-            val joinedSharedPass = response.type == "invite" ||
-                response.type == "group_invite" ||
-                response.plan.isSharedPassPlan()
-            if (joinedSharedPass) {
-                navigateSharedPassTick++
-            } else {
-                navigateHomeTick++
-            }
-        }.onFailure { error ->
-            if (authSession?.user?.id != ownerUserId) return@onFailure
-            // error_code 는 한 번 뽑아 문구 판정에 쓴다. 보고보다 먼저 읽어도 되고 뒤에 읽어도 된다 —
-            // 코드를 읽어도 오류 본문은 소진되지 않는다(`network/ApiErrors.kt`).
-            val errorCode = apiErrorCode(error)
-            AlarmTalkLog.reportError("Failed to register code", error)
-            message = codeRegistrationFailureMessage(
-                getApplication<android.app.Application>(),
-                errorCode,
-                userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_gb_code_register_failed)),
-            )
-        }
-        billingBusy = false
-    }
-}
-
-// ⚠ **선물 이용권 구매(`startGiftPurchase` — 1회성 인앱 상품을 사서 GIFT- 코드를 받는 길)는
-// 2026-10-14 에 지웠다 — 되살리지 말 것.** iOS 1.2.12 가 App Store 지침 3.1.1 로 두 번째 반려됐다
-// ("선물 코드로 디지털 기능을 연다"). 앱이 파는 것은 구독뿐이다(`startPlayPurchase`).
+// ⚠ **코드를 쳐서 유료 기능을 여는 길(초대·선물·프로모 코드 등록)과 선물 이용권 구매를 되살리지
+// 말 것** — App Store 지침 3.1.1(`docs/spec/plan-gates.md`). 앱이 파는 것은 구독뿐이다(`startPlayPurchase`).
 // 할인·무료 이용은 스토어 오퍼 코드(App Store 오퍼 코드 · Play 프로모션 코드)로 준다.
 
 /**
@@ -454,7 +303,7 @@ private suspend fun MainViewModel.crossStoreRenewalBlocked(
     }
     // ⚠ **plan 은 순번을 잡은 답만 쓴다**(Codex #803). 먼저 보낸 `/auth/me` 가 늦게 도착해도 이 답을
     // 덮지 못하게 순번을 앞당기고, 반대로 더 새 계정 답이 이미 plan 을 차지했으면 이 답의 plan 은
-    // 버리고 구독만 쓴다(방금 산·공유받은 기능이 옛 plan 으로 닫히지 않게). plan·프로모 도장은
+    // 버리고 구독만 쓴다(방금 산 기능이 옛 plan 으로 닫히지 않게). plan·프로모 도장은
     // `user_plan` 이 있을 때만 쓰이므로(`AccessSnapshot.withBillingResponse`) 그것만 비운다.
     val planClaimed = personalPromoLedger.claimPlanAnswer(planRequest)
     val toSave = if (planClaimed) fresh else fresh.copy(userPlan = null)
@@ -538,15 +387,15 @@ internal fun MainViewModel.startPlayPurchase(activity: android.app.Activity, pro
 /**
  * 이 확인이 **어디서 왔는가**. 셋이 각각 다른 것을 낸다(2026-09-01 리뷰).
  *
- * | | 결과 메시지 | 공유패스 이동 | `billingBusy` |
- * | --- | --- | --- | --- |
- * | [UserPurchase] | O | O | 이 함수가 소유 |
- * | [UserRestore] | O | X | **호출부가 소유** |
- * | [AutoReconcile] | X | X | 건드리지 않음 |
+ * | | 결과 메시지 | `billingBusy` |
+ * | --- | --- | --- |
+ * | [UserPurchase] | O | 이 함수가 소유 |
+ * | [UserRestore] | O | **호출부가 소유** |
+ * | [AutoReconcile] | X | 건드리지 않음 |
  *
  * ⚠ **셋을 하나로 합치지 말 것.** 전부 UI 를 내면 앱 시작·탭 진입마다 도는 정합화가
- * "이용권이 적용됐어요" 를 띄우고 커플/가족 사용자를 구성원 관리로 튕긴다. 반대로 전부
- * 조용하게 만들면 **사용자가 누른 복원의 결과를 말해 줄 사람이 없어진다** — 스토어에 구매가
+ * "이용권이 적용됐어요" 를 띄운다. 반대로 전부 조용하게 만들면 **사용자가 누른 복원의
+ * 결과를 말해 줄 사람이 없어진다** — 스토어에 구매가
  * 있어도 다른 계정 것이라 서버가 거절하면, 사용자는 "확인하고 있어요…" 만 보고 아무 일도
  * 안 일어난 줄 알고 다시 결제하려 든다.
  */
@@ -587,7 +436,7 @@ internal fun MainViewModel.confirmGooglePurchase(
     // ⚠ **시작한 계정을 잡아 둔다**(2026-09-01 리뷰). 이 확인은 비동기라 그 사이 A→B 계정
     // 전환이 일어날 수 있는데, 아래 `refreshBillingAfterMutation` 은 **A 의 토큰으로 받아
     // 전역 state 에 발행**하고 `saveSubscriptionSnapshot` 은 **지금 계정 B** 로 키를 잡는다 —
-    // A 의 바우처·초대코드가 B 화면에 뜨고 A 의 구독이 B 의 접근 스냅샷에 박힌다.
+    // A 의 구독이 B 화면과 B 의 접근 스냅샷에 박힌다.
     val ownerUserId = startedByUserId ?: authSession?.user?.id
     // 확인이 끝난 뒤의 재조회도 같은 표로 문을 지난다.
     val ownerTicket = accessTicket()?.takeIf { it.userId == ownerUserId }
@@ -623,15 +472,6 @@ internal fun MainViewModel.confirmGooglePurchase(
                 }
                 refreshBillingAfterMutation(authorization, "google play confirm", ownerTicket)
                 refreshAppSession(rollToken = purchaseConfirmRollsToken(origin))
-                refreshSocial()
-                // 커플/가족을 구매하면 초대·구성원 관리로 보내 '내 알람 맞추기 허용'·방해금지 시간을
-                // 바로 확인·설정하게 한다. 코드 등록 경로는 이미 동일하게 이동한다. 개인/plus 구매는 기존대로 유지.
-                // **구매에서만 이동한다** — 복원·정합화는 산 적이 없는데 화면이 튄다.
-                if (origin == PurchaseConfirmOrigin.UserPurchase &&
-                    response.planKey in setOf("couple", "family")
-                ) {
-                    navigateSharedPassTick++
-                }
             } else if (showsResult) {
                 message = getApplication<android.app.Application>().getString(R.string.msg_gb_payment_confirm_failed_retry)
             }
@@ -646,65 +486,6 @@ internal fun MainViewModel.confirmGooglePurchase(
             }
         }
         if (ownsBusy) billingBusy = false
-    }
-}
-
-internal fun MainViewModel.ensureFamilyShareCode() = issueFamilyShareCode(
-    call = { api.ensureFamilyShareCode(it).voucher },
-    successRes = R.string.msg_gb_share_code_ready,
-    refreshLabel = "family share code",
-    failureLog = "Failed to ensure family share code",
-)
-
-internal fun MainViewModel.regenerateFamilyShareCode() = issueFamilyShareCode(
-    call = { api.regenerateFamilyShareCode(it).voucher },
-    successRes = R.string.msg_gb_share_code_regenerated,
-    refreshLabel = "regenerate family share code",
-    failureLog = "Failed to regenerate family share code",
-)
-
-/** 공유 코드 받기·다시 만들기의 공통 뼈대 — 다른 것은 API·성공 문구·로그뿐이다. */
-private fun MainViewModel.issueFamilyShareCode(
-    call: suspend (authorization: String) -> VoucherItem,
-    @StringRes successRes: Int,
-    refreshLabel: String,
-    failureLog: String,
-) {
-    val app = getApplication<android.app.Application>()
-    val authorization = bearerOrMessage(app.getString(R.string.msg_gb_login_required_create_share_code)) ?: return
-    val planLabel = when (subscriptionResponse?.plan?.key) {
-        "couple" -> app.getString(R.string.msg_gb_plan_label_couple)
-        "family" -> app.getString(R.string.msg_gb_plan_label_family)
-        else -> app.getString(R.string.msg_gb_plan_label_shared)
-    }
-    val ownerUserId = authSession?.user?.id
-    val ownerTicket = accessTicket()
-    viewModelScope.launch {
-        billingBusy = true
-        runCatching {
-            call(authorization)
-        }.onSuccess { voucher ->
-            // ⚠ **시작한 계정을 잡아 두고 발행 전에 본다**(2026-09-01 리뷰). 인자 자리에서
-            // `authSession?.user?.id` 를 읽으면 **응답이 온 뒤** 평가돼 B 가 잡히고, 가드가
-            // B==B 로 통과해 버린다 — A 의 코드가 B 화면에 뜨고 A 의 결제 데이터가 B 키로 저장된다.
-            if (authSession?.user?.id != ownerUserId) {
-                Log.i(TAG, "Dropping $refreshLabel result: account changed")
-                return@onSuccess
-            }
-            // 새 코드를 즉시 노출. 만료된 옛 코드는 아래 새로고침에서 서버 기준으로 정리된다.
-            vouchers = listOf(voucher) + vouchers.filterNot { it.id == voucher.id }
-            message = app.getString(successRes, planLabel)
-            refreshBillingAfterMutation(authorization, refreshLabel, ownerTicket)
-            refreshSocial()
-        }.onFailure { error ->
-            AlarmTalkLog.reportError(failureLog, error)
-            message = billingFailureMessage(
-                app,
-                apiErrorCode(error),
-                userFacingError(error, app.getString(R.string.msg_gb_share_code_load_failed, planLabel)),
-            )
-        }
-        billingBusy = false
     }
 }
 
@@ -728,7 +509,7 @@ internal fun MainViewModel.cancelSubscription(atPeriodEnd: Boolean) {
         }.onSuccess { _ ->
             // ⚠ **시작한 계정을 잡아 두고 발행 전에 본다**(2026-09-01 리뷰). 인자 자리에서
             // `authSession?.user?.id` 를 읽으면 **응답이 온 뒤** 평가돼 B 가 잡히고, 가드가
-            // B==B 로 통과해 버린다 — A 의 코드가 B 화면에 뜨고 A 의 결제 데이터가 B 키로 저장된다.
+            // B==B 로 통과해 버린다 — A 의 결제 데이터가 B 화면에 뜨고 B 키로 저장된다.
             if (authSession?.user?.id != ownerUserId) {
                 Log.i(TAG, "Dropping subscription cancellation result: account changed")
                 return@onSuccess
@@ -742,7 +523,6 @@ internal fun MainViewModel.cancelSubscription(atPeriodEnd: Boolean) {
             }
             refreshBillingAfterMutation(authorization, "subscription cancellation", ownerTicket)
             refreshAppSession()
-            refreshSocial()
         }.onFailure { error ->
             AlarmTalkLog.reportError("Failed to cancel subscription mode=$mode", error)
             // code 와 manage_url 은 같은 응답의 짝이라 apiError 로 함께 뽑는다.

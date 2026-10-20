@@ -5,18 +5,15 @@
 //      prod 설정 잠금(wrangler.toml·시크릿 동기화).
 //   2. **계산값 자리마다 끝 1초 전(열림) / 끝 시각(닫힘)** — 원시 free 가 통과했다가 거절된다.
 //      원시 유료는 양쪽 다 그대로다. 경계는 **운영 상수 그대로**(production 모드)로 잰다.
-//   3. 결제 보류 그룹 — 소유자 본인의 개인 기능은 열리고, **공유 목소리(생성·알람 저장·오디오)와
-//      보낸 알람은 원시값이라 닫힌다**(`messageBelongsToCaller` ↔ 오디오 라우트, `/tts/generate` ↔
-//      `voiceProfileBelongsToCaller` 가 같은 답). 살아 있는 그룹의 공유는 그대로 열린다.
+//   3. 결제 보류(개인 구독 ON_HOLD·PAUSED — 행은 남고 `users.plan` 만 free) — 원시 free 라 내 목소리 기능이
+//      시점을 따르고, `personal_promo` 에서 삭제 문장만 빠진다.
 //   4. 직접 입력 한도 30 → 0, `/billing/subscription` 의 계산값·`personal_promo`
 //      (`deletes_voices_at_end`·`computed_at` 포함).
-//   5. 기간 중 코드(초대 코드) 등록이 되고, 그 구독이 기간 중 끝나도 보관이 걸리지 않는다.
+//   5. 기간 중에도 코드 등록은 없다(어떤 코드든 404 `CODE_NOT_FOUND`), 기간 중 끝난 쿠폰 구독에는 보관이
+//      걸리지 않는다.
 //   6. 종료 전환 — 대상만·묶음·멱등·`delete_after` 는 끝 + 3일(더 이르지 않다), 기간 중 스윕은
 //      풀어만 준다.
 //      (대량·예산·굶김은 `test/personal-promo-end.test.ts`.)
-//   7. 보류 주인의 공유 목소리 — 알람 PATCH 는 `voice_profile_id`·`message_id` 가 **바뀔 때만**
-//      소유권을 본다(D8·D13): 안드로이드 실제 페이로드(목소리 + 주인의 공유 프리셋 클립)를 그대로
-//      보내는 토글은 통과, 그 목소리·클립으로 바꾸는 PATCH 는 POST 처럼 404. 클립 재생은 여전히 403.
 //
 // ⚠ 시계는 **JS `Date` 만** 가짜로 돌린다(`toFake: ['Date']`). SQL 의 `datetime('now')` 는 실제
 //   시각이라, 여기 픽스처의 구독 만료는 실제·가짜 시각 어느 쪽으로 봐도 같은 쪽에 오게 둔다.
@@ -29,13 +26,11 @@ import { join } from 'node:path';
 import { PERSONAL_PROMO } from '@alarmtalk/shared';
 import type { AppEnv, Env } from '../src/types';
 import { runMigrations } from '../src/lib/migrations';
-import { issueVoucherCode } from '../src/lib/voucher-issue';
 
 let db: Client;
 vi.mock('../src/lib/db', () => ({ getDB: () => db }));
 
 const { default: voiceProfile, replaceVoiceInPlace } = await import('../src/routes/voice-profile');
-const { default: voiceUpload } = await import('../src/routes/voice-upload');
 const { default: tts } = await import('../src/routes/tts');
 const { default: alarmMutation } = await import('../src/routes/alarm-mutation');
 const { default: billingQuery } = await import('../src/routes/billing-query');
@@ -43,7 +38,7 @@ const { default: billingAll } = await import('../src/routes/billing');
 const { default: codeRoutes } = await import('../src/routes/code');
 const { resolvePersonalPromo, resolvePersonalPromoWindow, personalPromoField, computedUserPlan } =
   await import('../src/lib/personal-promo');
-const { hasPersonalVoiceAccess, isPaidVoicePlan } = await import('../src/routes/billing-helpers');
+const { hasPersonalVoiceAccess } = await import('../src/routes/billing-helpers');
 const { processSubscriptionExpiry, sweepPaidVoiceRetention } =
   await import('../src/lib/billing-cancel');
 const { transitionPersonalPromoEnd, runPersonalPromoEnd, promoEndDeleteAfter } =
@@ -60,7 +55,6 @@ async function freshDb(name: string): Promise<Client> {
 
 const END = new Date(PERSONAL_PROMO.endsAt);
 const PERSONAL = '70000000-0000-4000-8000-000000000002';
-const FAMILY = '70000000-0000-4000-8000-000000000003';
 
 const BASE_ENV = {
   ELEVENLABS_API_KEY: 'x',
@@ -107,7 +101,6 @@ function appFor(user: Caller) {
     await next();
   });
   app.route('/voice', voiceProfile);
-  app.route('/voice', voiceUpload);
   app.route('/tts', tts);
   app.route('/alarms', alarmMutation);
   app.route('/billing', billingQuery);
@@ -135,15 +128,6 @@ async function call(
   );
   const json = (await res.json().catch(() => ({}))) as Record<string, unknown>;
   return { status: res.status, body: json };
-}
-
-function kstHHmm(at: Date): string {
-  return new Intl.DateTimeFormat('en-GB', {
-    timeZone: 'Asia/Seoul',
-    hour: '2-digit',
-    minute: '2-digit',
-    hourCycle: 'h23',
-  }).format(at);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -203,7 +187,7 @@ describe('스위치 해석 — 꺼짐은 fail-closed, production 은 리허설 �
     const off = resolvePersonalPromo(PROD_ENV, END);
     expect(computedUserPlan('free', on)).toBe('plus');
     expect(computedUserPlan('free', off)).toBe('free');
-    expect(computedUserPlan('family', on)).toBe('family');
+    expect(computedUserPlan('plus', on)).toBe('plus');
     expect(computedUserPlan(null, on)).toBeNull();
     const noRow = { hasActiveSubscriptionRow: false };
     // `computed_at` = 계산에 쓴 서버 시각(초 단위로 내림) — 앱의 낡은 캐시 판정(D1·D7)이 받은
@@ -229,8 +213,8 @@ describe('스위치 해석 — 꺼짐은 fail-closed, production 은 리허설 �
     expect(hasPersonalVoiceAccess('free', on)).toBe(true);
     expect(hasPersonalVoiceAccess('free', off)).toBe(false);
     expect(hasPersonalVoiceAccess(null, on)).toBe(false);
-    // 원시 판정은 프로모를 모른다(커플·가족 갈래).
-    expect(isPaidVoicePlan('free')).toBe(false);
+    // 옛 그룹 등급('family' — CHECK 글자만 남았고 #131 이 그 계정을 다시 매겼다)은 유료도 프로모 대상(원시 free)도 아니다.
+    expect(hasPersonalVoiceAccess('family', on)).toBe(false);
   });
 });
 
@@ -265,13 +249,8 @@ const FREE = { pk: 'pp-free' };
 /** 공식 목소리가 아직 없는 원시 free — 승격이 한도(1개)에 걸리지 않는다. */
 const FREE_NEW = { pk: 'pp-free-new' };
 const PAID = { pk: 'pp-paid' };
+/** 결제 보류 — 개인 구독 행이 `suspended` 로 남고 `users.plan` 만 free 로 회수된 상태. */
 const HOLD_OWNER = { pk: 'pp-hold-owner' };
-const HOLD_MEMBER = { pk: 'pp-hold-member' };
-/** 보류 그룹에 남아 있지만 **따로** 개인 결제를 하는 멤버 — 원시 유료. */
-const HOLD_PAID_MEMBER = { pk: 'pp-hold-paid-member' };
-/** 결제가 살아 있는 가족 그룹 — 공유 목소리가 그대로 열려야 한다(원시 게이트의 대조군). */
-const LIVE_MEMBER = { pk: 'pp-live-member' };
-const COUPON_USER = { pk: 'pp-coupon' };
 const VP_FREE = '11111111-1111-4111-8111-000000000001';
 const VP_FREE_DRAFT = '11111111-1111-4111-8111-000000000002';
 const VP_FREE_NEW_DRAFT = '11111111-1111-4111-8111-000000000005';
@@ -279,10 +258,7 @@ const VP_PAID = '11111111-1111-4111-8111-000000000003';
 const VP_HOLD = '11111111-1111-4111-8111-000000000004';
 const MSG_FREE = '22222222-2222-4222-8222-000000000001';
 const MSG_PAID = '22222222-2222-4222-8222-000000000002';
-const MSG_HOLD_PRESET = '22222222-2222-4222-8222-000000000003';
 const MSG_HOLD_OWN = '22222222-2222-4222-8222-000000000004';
-const VP_LIVE = '11111111-1111-4111-8111-000000000006';
-const MSG_LIVE_PRESET = '22222222-2222-4222-8222-000000000005';
 
 describe('계산값 자리 — 끝 1초 전 열림 / 끝 시각 닫힘', () => {
   beforeAll(async () => {
@@ -292,19 +268,11 @@ describe('계산값 자리 — 끝 1초 전 열림 / 끝 시각 닫힘', () => {
       `INSERT INTO users (id, google_id, email, name, plan) VALUES ('pp-free-new', NULL, 'new@t.test', '신규', 'free')`,
       `INSERT INTO users (id, google_id, email, name, plan) VALUES ('pp-paid', NULL, 'paid@t.test', '유료', 'plus')`,
       `INSERT INTO users (id, google_id, email, name, plan) VALUES ('pp-hold-owner', NULL, 'owner@t.test', '보류', 'free')`,
-      `INSERT INTO users (id, google_id, email, name, plan, allow_family_alarms, family_alarm_quiet_windows)
-       VALUES ('pp-hold-member', NULL, 'member@t.test', '멤버', 'free', 1, '[]')`,
-      `INSERT INTO users (id, google_id, email, name, plan) VALUES ('pp-coupon', NULL, 'coupon@t.test', '쿠폰', 'free')`,
       `INSERT INTO subscriptions (id, user_id, plan_id, status, starts_at, expires_at)
        VALUES ('sub-paid', 'pp-paid', '${PERSONAL}', 'active', '2026-01-01T00:00:00Z', '2099-01-01T00:00:00Z')`,
-      // 결제 보류 가족 그룹 — 구조(그룹·멤버·is_shared)는 남고 users.plan 만 free 로 회수된 상태.
-      `INSERT INTO plan_groups (id, owner_user_id, plan_id, max_members) VALUES ('pp-group', 'pp-hold-owner', '${FAMILY}', 5)`,
-      `INSERT INTO plan_group_members (id, plan_group_id, user_id, role) VALUES ('pgm-o', 'pp-group', 'pp-hold-owner', 'owner')`,
-      `INSERT INTO plan_group_members (id, plan_group_id, user_id, role) VALUES ('pgm-m', 'pp-group', 'pp-hold-member', 'member')`,
-      `INSERT INTO subscriptions (id, user_id, plan_id, plan_group_id, status, starts_at, expires_at, entitlement_state)
-       VALUES ('sub-hold-o', 'pp-hold-owner', '${FAMILY}', 'pp-group', 'active', '2026-08-01T00:00:00Z', '2026-09-01T00:00:00Z', 'suspended')`,
-      `INSERT INTO subscriptions (id, user_id, plan_id, plan_group_id, status, starts_at, expires_at, entitlement_state)
-       VALUES ('sub-hold-m', 'pp-hold-member', '${FAMILY}', 'pp-group', 'active', '2026-08-01T00:00:00Z', '2026-09-01T00:00:00Z', 'suspended')`,
+      // 결제 보류 — 행(active·suspended)은 남고 users.plan 만 free 로 회수된 상태.
+      `INSERT INTO subscriptions (id, user_id, plan_id, status, starts_at, expires_at, entitlement_state)
+       VALUES ('sub-hold-o', 'pp-hold-owner', '${PERSONAL}', 'active', '2026-08-01T00:00:00Z', '2026-09-01T00:00:00Z', 'suspended')`,
       `INSERT INTO voice_profiles (id, user_id, name, status, elevenlabs_voice_id, is_draft, previewed_at, preview_language)
        VALUES ('${VP_FREE}', 'pp-free', '내 목소리', 'ready', 'el-free', 0, datetime('now'), 'ko')`,
       `INSERT INTO voice_profiles (id, user_id, name, status, elevenlabs_voice_id, is_draft, previewed_at, preview_language)
@@ -313,34 +281,15 @@ describe('계산값 자리 — 끝 1초 전 열림 / 끝 시각 닫힘', () => {
        VALUES ('${VP_PAID}', 'pp-paid', '유료 목소리', 'ready', 'el-paid', 0, datetime('now'), 'ko')`,
       `INSERT INTO voice_profiles (id, user_id, name, status, elevenlabs_voice_id, is_draft, previewed_at, preview_language)
        VALUES ('${VP_FREE_NEW_DRAFT}', 'pp-free-new', '첫 목소리', 'ready', 'el-new', 1, datetime('now'), 'ko')`,
-      `INSERT INTO voice_profiles (id, user_id, name, status, elevenlabs_voice_id, is_draft, is_shared, previewed_at, preview_language)
-       VALUES ('${VP_HOLD}', 'pp-hold-owner', '공유 목소리', 'ready', 'el-hold', 0, 1, datetime('now'), 'ko')`,
+      `INSERT INTO voice_profiles (id, user_id, name, status, elevenlabs_voice_id, is_draft, previewed_at, preview_language)
+       VALUES ('${VP_HOLD}', 'pp-hold-owner', '보류 계정 목소리', 'ready', 'el-hold', 0, datetime('now'), 'ko')`,
       `INSERT INTO messages (id, user_id, voice_profile_id, text, category, is_preset, audio_url)
        VALUES ('${MSG_FREE}', 'pp-free', '${VP_FREE}', '일어나', 'custom', 0, NULL)`,
       `INSERT INTO messages (id, user_id, voice_profile_id, text, category, is_preset, audio_url)
        VALUES ('${MSG_PAID}', 'pp-paid', '${VP_PAID}', '일어나', 'custom', 0, NULL)`,
-      `INSERT INTO messages (id, user_id, voice_profile_id, text, category, language, variant, is_preset, audio_url)
-       VALUES ('${MSG_HOLD_PRESET}', 'pp-hold-owner', '${VP_HOLD}', '좋은 아침', 'weather', 'ko', 0, 1, NULL)`,
       `INSERT INTO messages (id, user_id, voice_profile_id, text, category, is_preset, audio_url)
        VALUES ('${MSG_HOLD_OWN}', 'pp-hold-owner', '${VP_HOLD}', '일어나', 'custom', 0, NULL)`,
       `INSERT INTO promo_codes (id, code, plan_id, duration_days, is_active) VALUES ('pp-plain', 'PP_PLAIN', '${PERSONAL}', 30, 1)`,
-      `INSERT INTO users (id, google_id, email, name, plan) VALUES ('pp-hold-paid-member', NULL, 'hpm@t.test', '따로 결제', 'plus')`,
-      `INSERT INTO plan_group_members (id, plan_group_id, user_id, role) VALUES ('pgm-hpm', 'pp-group', 'pp-hold-paid-member', 'member')`,
-      `INSERT INTO subscriptions (id, user_id, plan_id, status, starts_at, expires_at)
-       VALUES ('sub-hpm', 'pp-hold-paid-member', '${PERSONAL}', 'active', '2026-01-01T00:00:00Z', '2099-01-01T00:00:00Z')`,
-      `INSERT INTO users (id, google_id, email, name, plan) VALUES ('pp-live-owner', NULL, 'lo@t.test', '가족 주인', 'family')`,
-      `INSERT INTO users (id, google_id, email, name, plan) VALUES ('pp-live-member', NULL, 'lm@t.test', '가족 멤버', 'family')`,
-      `INSERT INTO plan_groups (id, owner_user_id, plan_id, max_members) VALUES ('pp-live', 'pp-live-owner', '${FAMILY}', 5)`,
-      `INSERT INTO plan_group_members (id, plan_group_id, user_id, role) VALUES ('pgm-lo', 'pp-live', 'pp-live-owner', 'owner')`,
-      `INSERT INTO plan_group_members (id, plan_group_id, user_id, role) VALUES ('pgm-lm', 'pp-live', 'pp-live-member', 'member')`,
-      `INSERT INTO subscriptions (id, user_id, plan_id, plan_group_id, status, starts_at, expires_at)
-       VALUES ('sub-lo', 'pp-live-owner', '${FAMILY}', 'pp-live', 'active', '2026-01-01T00:00:00Z', '2099-01-01T00:00:00Z')`,
-      `INSERT INTO subscriptions (id, user_id, plan_id, plan_group_id, status, starts_at, expires_at)
-       VALUES ('sub-lm', 'pp-live-member', '${FAMILY}', 'pp-live', 'active', '2026-01-01T00:00:00Z', '2099-01-01T00:00:00Z')`,
-      `INSERT INTO voice_profiles (id, user_id, name, status, elevenlabs_voice_id, is_draft, is_shared, previewed_at, preview_language)
-       VALUES ('${VP_LIVE}', 'pp-live-owner', '가족 공유 목소리', 'ready', 'el-live', 0, 1, datetime('now'), 'ko')`,
-      `INSERT INTO messages (id, user_id, voice_profile_id, text, category, language, variant, is_preset, audio_url)
-       VALUES ('${MSG_LIVE_PRESET}', 'pp-live-owner', '${VP_LIVE}', '좋은 아침', 'weather', 'ko', 0, 1, NULL)`,
     ]);
   });
 
@@ -401,14 +350,6 @@ describe('계산값 자리 — 끝 1초 전 열림 / 끝 시각 닫힘', () => {
         if (!result.ok) expect(result.errorCode).toBe(moment.open ? PASSED : PAID_REQUIRED);
       });
 
-      it('음성 업로드 — 원시 free 는 시점을 따른다', async () => {
-        atMoment(moment.at);
-        const f = new FormData();
-        f.set('audio', new File([new Uint8Array(16)], 'a.wav', { type: 'audio/wav' }));
-        f.set('durationMs', '60000');
-        expectGate(await call(FREE, 'POST', '/voice/upload', f), moment.open);
-      });
-
       it('/tts/generate 무료 제한 — 원시 free 의 내 목소리 직접 입력', async () => {
         atMoment(moment.at);
         const body = { voice_profile_id: VP_FREE, text: '일어나', category: 'custom' };
@@ -419,16 +360,14 @@ describe('계산값 자리 — 끝 1초 전 열림 / 끝 시각 닫힘', () => {
         );
       });
 
-      // ⚠ **보류된 커플·가족 그룹의 행이 살아 있어도 개인 플랜 풀이다**(Codex #803). 보류는 행(활성·미만료)을
-      // 남기고 `users.plan` 만 회수한다 — 풀 판정이 그 행부터 보면 개인 플랜 사용자가 보류 그룹의 한도·풀을
-      // 쓰고 소비한다. 끝 뒤에는 계산값이 free 라 0 이다(행이 남아 있어도 원시 free 다).
-      it('직접 입력 한도 — 보류 그룹의 살아 있는 행이 있어도 원시 free 는 개인 플랜 한도·개인 풀', async () => {
+      // ⚠ **보류된 구독의 행이 살아 있어도 기간 한정 개인 플랜 풀이다**(Codex #803). 보류는 행(활성·미만료)을
+      // 남기고 `users.plan` 만 회수한다 — 풀 판정이 그 행부터 보면 그 행의 한도를 쓴다. 끝 뒤에는 계산값이
+      // free 라 0 이다(행이 남아 있어도 원시 free 다).
+      it('직접 입력 한도 — 보류된 구독의 살아 있는 행이 있어도 원시 free 는 개인 플랜 한도·개인 풀', async () => {
         await db.batch([
-          `INSERT OR IGNORE INTO users (id, google_id, email, name, plan) VALUES ('pp-hold-live', NULL, 'hl@t.test', '보류 커플', 'free')`,
-          `INSERT OR IGNORE INTO plan_groups (id, owner_user_id, plan_id, max_members) VALUES ('pp-group-live', 'pp-hold-live', '${FAMILY}', 5)`,
-          `INSERT OR IGNORE INTO plan_group_members (id, plan_group_id, user_id, role) VALUES ('pgm-hl', 'pp-group-live', 'pp-hold-live', 'owner')`,
-          `INSERT OR IGNORE INTO subscriptions (id, user_id, plan_id, plan_group_id, status, starts_at, expires_at, entitlement_state)
-           VALUES ('sub-hold-live', 'pp-hold-live', '${FAMILY}', 'pp-group-live', 'active', '2026-08-01T00:00:00Z', '2099-01-01T00:00:00Z', 'suspended')`,
+          `INSERT OR IGNORE INTO users (id, google_id, email, name, plan) VALUES ('pp-hold-live', NULL, 'hl@t.test', '보류', 'free')`,
+          `INSERT OR IGNORE INTO subscriptions (id, user_id, plan_id, status, starts_at, expires_at, entitlement_state)
+           VALUES ('sub-hold-live', 'pp-hold-live', '${PERSONAL}', 'active', '2026-08-01T00:00:00Z', '2099-01-01T00:00:00Z', 'suspended')`,
         ]);
         atMoment(moment.at);
         const held = await call({ pk: 'pp-hold-live' }, 'GET', '/tts/manual-quota');
@@ -489,244 +428,30 @@ describe('계산값 자리 — 끝 1초 전 열림 / 끝 시각 닫힘', () => {
         else expectGate(patch, false);
       });
 
-      it('결제 보류 그룹 소유자 — 개인 기능은 시점을 따르고, 공유 갈래·보낸 알람은 원시값이라 닫힌다', async () => {
+      it('결제 보류 계정 — 원시 free 라 내 목소리 기능(등록·오디오·알람 저장)이 시점을 따른다', async () => {
         atMoment(moment.at);
         const form = new FormData();
         form.set('isDraft', 'true');
         expectGate(await call(HOLD_OWNER, 'POST', '/voice/clone', form), moment.open);
 
-        // 공유 프리셋: 오디오(읽기)와 알람 저장(쓰기)이 **같이** 닫혀 있다(한 쌍).
-        const audio = await call(HOLD_MEMBER, 'GET', `/tts/messages/${MSG_HOLD_PRESET}/audio`);
-        expect(audio.status).toBe(403);
-        expect(audio.body.error_code).toBe('VOICE_LOCKED_FREE_PLAN');
-        const save = await call(HOLD_MEMBER, 'POST', '/alarms', {
+        // 오디오(읽기)와 알람 저장(쓰기)이 같은 답이다 — 둘 다 내 목소리라 계산값으로 본다.
+        const audio = await call(HOLD_OWNER, 'GET', `/tts/messages/${MSG_HOLD_OWN}/audio`);
+        if (moment.open) {
+          expect(audio.status).toBe(404);
+          expect(audio.body.error_code).toBe('MESSAGE_AUDIO_MISSING');
+        } else {
+          expect(audio.status).toBe(403);
+          expect(audio.body.error_code).toBe('VOICE_LOCKED_FREE_PLAN');
+        }
+        const save = await call(HOLD_OWNER, 'POST', '/alarms', {
           time: '07:30',
           timezone: 'Asia/Seoul',
-          message_id: MSG_HOLD_PRESET,
-        });
-        // 원시 free 멤버가 남의 목소리(공유)를 쓰는 알람 — 계산값으로 열린 목소리 게이트를 공유
-        // 갈래는 원시값으로 다시 본다. 기간 전과 **같은 답**(403)이다.
-        expectGate(save, false);
-        const saveByVoice = await call(HOLD_MEMBER, 'POST', '/alarms', {
-          time: '07:40',
-          timezone: 'Asia/Seoul',
           mode: 'tts',
-          voice_profile_id: VP_HOLD,
-        });
-        expectGate(saveByVoice, false);
-
-        // 공유 목소리로 **생성**(`/tts/generate`) — 보류 그룹의 클론·is_shared 가 남아 있어도
-        // 원시 free 멤버는 기간 중에도 닫힌다(예전에는 계산값이라 기간 동안 되살아났다).
-        const gen = await call(HOLD_MEMBER, 'POST', '/tts/generate', {
-          voice_profile_id: VP_HOLD,
-          text: '일어나',
-          category: 'custom',
-        });
-        expectGate(gen, false);
-
-        // 따로 결제하는 멤버: 본인은 원시 유료지만 **주인이 원시 free**(보류)라 공유가 멈춰 있다 —
-        // 오디오 라우트·`messageBelongsToCaller` 와 같은 답.
-        const paidGen = await call(HOLD_PAID_MEMBER, 'POST', '/tts/generate', {
-          voice_profile_id: VP_HOLD,
-          text: '일어나',
-          category: 'custom',
-        });
-        expect(paidGen.status).toBe(403);
-        expect(paidGen.body.error_code).toBe('VOICE_LOCKED_FREE_PLAN');
-        const paidSave = await call(HOLD_PAID_MEMBER, 'POST', '/alarms', {
-          time: '07:50',
-          timezone: 'Asia/Seoul',
-          mode: 'tts',
-          voice_profile_id: VP_HOLD,
-        });
-        expect(paidSave.status).toBe(404);
-        expect(paidSave.body.error_code).toBe('VOICE_PROFILE_NOT_FOUND');
-
-        // 보낸 알람(가족): 발신자 게이트는 원시값 — 열림 시점에도 거절.
-        const sent = await call(HOLD_OWNER, 'POST', '/alarms', {
-          time: kstHHmm(new Date(moment.at.getTime() + 3 * 60 * 60 * 1000)),
-          timezone: 'Asia/Seoul',
-          target_user_id: HOLD_MEMBER.pk,
           message_id: MSG_HOLD_OWN,
-        });
-        expectGate(sent, false);
-      });
-
-      it('따로 결제하는 멤버의 PATCH — 공유 목소리를 그대로 보내면 통과, 그 목소리로 바꾸면 404(D8)', async () => {
-        atMoment(moment.at);
-        // 주인이 유료일 때 저장된 알람(공유 목소리)과 목소리 없는 알람 — 보류가 온 뒤의 모습.
-        const suffix = moment.open ? '1' : '2';
-        const kept = `33333333-3333-4333-8333-00000000000${suffix}`;
-        const plain = `33333333-3333-4333-8333-00000000001${suffix}`;
-        await db.batch([
-          {
-            sql: `INSERT INTO alarms (id, user_id, time, mode, voice_profile_id)
-                  VALUES (?, 'pp-hold-paid-member', '07:55', 'tts', ?)`,
-            args: [kept, VP_HOLD],
-          },
-          {
-            sql: `INSERT INTO alarms (id, user_id, time, mode)
-                  VALUES (?, 'pp-hold-paid-member', '08:05', 'sound-only')`,
-            args: [plain],
-          },
-        ]);
-        // 안드로이드 동기화처럼 켜기·끄기·시각만 고치면서 목소리를 **그대로** 보낸다 — 주인이
-        // 보류라 그 목소리를 새로 고를 수는 없지만, 이미 있던 값이라 토글은 막지 않는다.
-        const toggle = await call(HOLD_PAID_MEMBER, 'PATCH', `/alarms/${kept}`, {
-          time: '07:56',
-          is_active: false,
-          mode: 'tts',
           voice_profile_id: VP_HOLD,
         });
-        expect(toggle.status).toBe(200);
-        const row = await db.execute({
-          sql: 'SELECT time, is_active, voice_profile_id FROM alarms WHERE id = ?',
-          args: [kept],
-        });
-        expect(row.rows[0]).toMatchObject({
-          time: '07:56',
-          is_active: 0,
-          voice_profile_id: VP_HOLD,
-        });
-
-        // 그 목소리로 **바꾸는** PATCH 는 POST 와 같이 막힌다 — 멈춘 공유를 새로 심지 못한다.
-        const switchTo = await call(HOLD_PAID_MEMBER, 'PATCH', `/alarms/${plain}`, {
-          mode: 'tts',
-          voice_profile_id: VP_HOLD,
-        });
-        expect(switchTo.status).toBe(404);
-        expect(switchTo.body.error_code).toBe('VOICE_PROFILE_NOT_FOUND');
-        const untouched = await db.execute({
-          sql: 'SELECT mode, voice_profile_id FROM alarms WHERE id = ?',
-          args: [plain],
-        });
-        expect(untouched.rows[0]).toMatchObject({ mode: 'sound-only', voice_profile_id: null });
-      });
-
-      it('따로 결제하는 멤버의 PATCH — 안드로이드 실제 페이로드(목소리 + 주인의 공유 프리셋 클립): 토글 200, 그 클립으로 바꾸면 404(D13)', async () => {
-        atMoment(moment.at);
-        // 주인이 유료일 때 저장된 사전렌더 버킷 알람(공유 목소리 + 주인의 프리셋 클립) — 안드로이드
-        // 멤버 알람의 가장 흔한 모양. 그리고 같은 목소리지만 클립이 아직 없는 알람, 목소리 없는 알람.
-        const suffix = moment.open ? '1' : '2';
-        const clipAlarm = `44444444-4444-4444-8444-00000000000${suffix}`;
-        const voiceOnly = `44444444-4444-4444-8444-00000000001${suffix}`;
-        const plain = `44444444-4444-4444-8444-00000000002${suffix}`;
-        await db.batch([
-          {
-            sql: `INSERT INTO alarms (id, user_id, time, mode, voice_profile_id, message_id, bucket_id)
-                  VALUES (?, 'pp-hold-paid-member', '06:10', 'tts', ?, ?, 'weather')`,
-            args: [clipAlarm, VP_HOLD, MSG_HOLD_PRESET],
-          },
-          {
-            sql: `INSERT INTO alarms (id, user_id, time, mode, voice_profile_id)
-                  VALUES (?, 'pp-hold-paid-member', '06:20', 'tts', ?)`,
-            args: [voiceOnly, VP_HOLD],
-          },
-          {
-            sql: `INSERT INTO alarms (id, user_id, time, mode)
-                  VALUES (?, 'pp-hold-paid-member', '06:30', 'sound-only')`,
-            args: [plain],
-          },
-        ]);
-        // `RemoteAlarmMapper.toWriteRequest` 가 만드는 본문 그대로(Gson 은 null 을 빼고 보낸다) —
-        // 켜기·끄기·시각만 바뀌어도 `message_id` 와 `voice_profile_id` 를 **매번** 싣는다.
-        const androidPayload = (overrides: Record<string, unknown>) => ({
-          time: '06:10',
-          repeat_days: [1, 2, 3, 4, 5],
-          snooze_minutes: 5,
-          mode: 'tts',
-          vibration_pattern: 'default',
-          wake_mode: 'voice_only',
-          is_active: true,
-          message_id: MSG_HOLD_PRESET,
-          voice_profile_id: VP_HOLD,
-          timezone: 'Asia/Seoul',
-          bucket_id: 'weather',
-          ...overrides,
-        });
-
-        // 전제: 그 클립은 지금 막혀 있다 — 오디오(읽기)도, 새로 심는 POST(쓰기)도.
-        const audio = await call(HOLD_PAID_MEMBER, 'GET', `/tts/messages/${MSG_HOLD_PRESET}/audio`);
-        expect(audio.status).toBe(403);
-        expect(audio.body.error_code).toBe('VOICE_LOCKED_FREE_PLAN');
-        const create = await call(
-          HOLD_PAID_MEMBER,
-          'POST',
-          '/alarms',
-          androidPayload({ client_alarm_id: `44444444-4444-4444-8444-00000000003${suffix}` }),
-        );
-        expect(create.status).toBe(404);
-
-        // 토글·시각 수정 — 저장된 값 그대로라 소유권 게이트를 다시 보지 않는다(D8·D13).
-        const toggle = await call(
-          HOLD_PAID_MEMBER,
-          'PATCH',
-          `/alarms/${clipAlarm}`,
-          androidPayload({ time: '06:11', is_active: false, client_alarm_id: clipAlarm }),
-        );
-        expect(toggle.status).toBe(200);
-        const toggled = await db.execute({
-          sql: 'SELECT time, is_active, message_id, voice_profile_id, bucket_id FROM alarms WHERE id = ?',
-          args: [clipAlarm],
-        });
-        expect(toggled.rows[0]).toMatchObject({
-          time: '06:11',
-          is_active: 0,
-          message_id: MSG_HOLD_PRESET,
-          voice_profile_id: VP_HOLD,
-          bucket_id: 'weather',
-        });
-
-        // 그 클립으로 **바꾸는** PATCH 는 예전처럼 404 — 목소리는 같아도 클립이 새 참조다.
-        const addClip = await call(
-          HOLD_PAID_MEMBER,
-          'PATCH',
-          `/alarms/${voiceOnly}`,
-          androidPayload({ time: '06:20', client_alarm_id: voiceOnly }),
-        );
-        expect(addClip.status).toBe(404);
-        expect(addClip.body.error_code).toBe('MESSAGE_NOT_FOUND');
-        // 목소리 없는 알람을 그 목소리·클립으로 바꾸는 PATCH 도 404.
-        const switchTo = await call(
-          HOLD_PAID_MEMBER,
-          'PATCH',
-          `/alarms/${plain}`,
-          androidPayload({ time: '06:30', client_alarm_id: plain }),
-        );
-        expect(switchTo.status).toBe(404);
-        expect(switchTo.body.error_code).toBe('MESSAGE_NOT_FOUND');
-        const untouched = await db.execute({
-          sql: `SELECT id, mode, message_id, voice_profile_id FROM alarms WHERE id IN (?, ?) ORDER BY id`,
-          args: [voiceOnly, plain],
-        });
-        expect(untouched.rows.map((r) => ({ ...r }))).toEqual([
-          { id: voiceOnly, mode: 'tts', message_id: null, voice_profile_id: VP_HOLD },
-          { id: plain, mode: 'sound-only', message_id: null, voice_profile_id: null },
-        ]);
-      });
-
-      it('살아 있는 가족 그룹의 공유 목소리는 원시 게이트를 그대로 지난다(대조군)', async () => {
-        atMoment(moment.at);
-        const save = await call(LIVE_MEMBER, 'POST', '/alarms', {
-          time: '06:30',
-          timezone: 'Asia/Seoul',
-          message_id: MSG_LIVE_PRESET,
-        });
-        expect(save.status).toBe(201);
-        const byVoice = await call(LIVE_MEMBER, 'POST', '/alarms', {
-          time: '06:40',
-          timezone: 'Asia/Seoul',
-          mode: 'tts',
-          voice_profile_id: VP_LIVE,
-        });
-        expect(byVoice.status).toBe(201);
-        // 생성은 플랜 게이트를 지나 다음 게이트(생체정보 동의 — 픽스처에 없다)에서 멈춘다.
-        const gen = await call(LIVE_MEMBER, 'POST', '/tts/generate', {
-          voice_profile_id: VP_LIVE,
-          text: '일어나',
-          category: 'custom',
-        });
-        expect(gen.body.error_code).toBe('CONSENT_REQUIRED');
+        if (moment.open) expect(save.status).toBe(201);
+        else expectGate(save, false);
       });
 
       it('/billing/subscription — user_plan 계산값, personal_promo, 가짜 구독 없음', async () => {
@@ -769,30 +494,6 @@ describe('계산값 자리 — 끝 1초 전 열림 / 끝 시각 닫힘', () => {
       });
     });
   }
-
-  // 등록할 수 있는 코드는 이제 커플·가족 초대 코드(INV-)뿐이다 — 선물 코드는 2026-10-14 에 없앴다
-  // (App Store 3.1.1 두 번째 반려 — `routes/code.ts` 머리말, 되살리지 말 것). 그래서 살아 있는 가족
-  // 주인(pp-live-owner)의 초대 코드로 본다.
-  it('기간 중 초대 코드 등록이 된다 — 기간 한정 개인 플랜은 구독이 아니다', async () => {
-    atMoment(new Date(END.getTime() - 1000));
-    const invite = await issueVoucherCode(db, {
-      kind: 'invite',
-      planId: FAMILY,
-      issuerUserId: 'pp-live-owner',
-      issuerSubscriptionId: 'sub-lo',
-      issuedAt: '2026-10-01T00:00:00Z',
-      expiresAt: '2099-01-01T00:00:00Z',
-      maxUses: 4,
-    });
-    const res = await call(COUPON_USER, 'POST', '/code/register', { code: invite.code });
-    expect(res.status).toBe(200);
-    expect(res.body.type).toBe('voucher');
-    // 이제 원시 family(살아 있는 그룹의 멤버) — personal_promo 는 없고, 계산값도 그대로다.
-    const sub = await call(COUPON_USER, 'GET', '/billing/subscription?refresh_store=1');
-    expect(sub.body.user_plan).toBe('family');
-    expect(sub.body.personal_promo).toBeNull();
-    expect(sub.body.subscription).not.toBeNull();
-  });
 
   // 프로모 코드는 2026-10-12 에 없앴다(App Store 3.1.1 — `routes/code.ts` 머리말). 켜진 코드가
   // DB 에 남아 있어도 서버가 받지 않아야 옛 앱('프로모션 코드' 문구가 남은 버전)으로도 못 연다.
@@ -841,24 +542,15 @@ async function seedVoice(
   const row = {
     is_draft: 0,
     is_system: 0,
-    is_shared: 0,
     deleted_at: null as string | null,
     elevenlabs_voice_id: `el-${id}`,
     ...extra,
   };
   await client.execute({
     sql: `INSERT INTO voice_profiles
-            (id, user_id, name, status, elevenlabs_voice_id, is_draft, is_system, is_shared, deleted_at)
-          VALUES (?, ?, '목소리', 'ready', ?, ?, ?, ?, ?)`,
-    args: [
-      id,
-      userId,
-      row.elevenlabs_voice_id,
-      row.is_draft,
-      row.is_system,
-      row.is_shared,
-      row.deleted_at,
-    ],
+            (id, user_id, name, status, elevenlabs_voice_id, is_draft, is_system, deleted_at)
+          VALUES (?, ?, '목소리', 'ready', ?, ?, ?, ?)`,
+    args: [id, userId, row.elevenlabs_voice_id, row.is_draft, row.is_system, row.deleted_at],
   });
 }
 
@@ -929,7 +621,7 @@ describe('종료 전환(transitionPersonalPromoEnd) — 대상만, 묶음 상한
     // 대상 다섯.
     for (const id of ['t1', 't2', 't3', 't4', 't5']) {
       await seedUser(db, id, 'free');
-      await seedVoice(db, id, `vp-${id}`, { is_shared: 1 });
+      await seedVoice(db, id, `vp-${id}`);
     }
     // 대상 아님
     await seedUser(db, 'n-novoice', 'free');
@@ -995,13 +687,13 @@ describe('종료 전환(transitionPersonalPromoEnd) — 대상만, 묶음 상한
     expect(await retentionOf(db, 'n-retained')).toBe('2026-11-02T00:00:00.000Z');
   });
 
-  it('전환된 사람은 음성 보존 강등을 탄다 — 클론 반납·공유 해제, 행은 남는다', async () => {
+  it('전환된 사람은 음성 보존 강등을 탄다 — 클론 반납, 행은 남는다', async () => {
     const rows = await db.execute(
-      "SELECT id, elevenlabs_voice_id, is_shared, deleted_at FROM voice_profiles WHERE id IN ('vp-t1','vp-t5') ORDER BY id",
+      "SELECT id, elevenlabs_voice_id, deleted_at FROM voice_profiles WHERE id IN ('vp-t1','vp-t5') ORDER BY id",
     );
+    expect(rows.rows).toHaveLength(2);
     for (const r of rows.rows) {
       expect(r.elevenlabs_voice_id).toBeNull();
-      expect(Number(r.is_shared)).toBe(0);
       expect(r.deleted_at).toBeNull();
     }
     expect((await db.execute("SELECT plan FROM users WHERE id = 't1'")).rows[0]!.plan).toBe('free');

@@ -10,41 +10,10 @@ import XCTest
 /// 선물 상품·구매·코드 등록·공유 문구를 서버와 두 앱에서 전부 없앴다 — **되살리지 말 것.**
 /// 할인·무료 이용은 스토어의 오퍼 코드(App Store 오퍼 코드·Play 프로모션 코드)로 준다.
 ///
-/// 상품 목록은 `SubscriptionManagerTests` 가, 오류 문구 표는 `CodeRegistrationErrorTests`·
-/// `SocialFeatureViewModelBillingTests` 가 고정한다. 여기서는 **사용자에게 보이는 글자**를 본다 —
-/// 앱 번들에 실린 번역(ko·en·ja)의 원문 키와 값 어디에도 선물이라는 말이 없어야 한다. 그리고 **공유하는
-/// 코드**를 본다 — 예전에 만든 선물 바우처가 목록에 남아 있어도 공유 대상이 아니다.
+/// 상품 목록은 `SubscriptionManagerTests` 가, 오류 문구 표는 `SocialFeatureViewModelBillingTests` 가 고정한다.
+/// 여기서는 **사용자에게 보이는 글자**를 본다 — 앱 번들에 실린 번역(ko·en·ja)의 원문 키와 값 어디에도 선물이라는
+/// 말이 없어야 한다.
 final class GiftRemovalTests: XCTestCase {
-
-    /// 이용권 화면이 공유하는 코드는 **초대 코드(INV-)뿐**이다. 안드로이드 `GiftCodeRemovalTest` 의 같은 이름 검사와
-    /// 같은 입력·같은 기대값이다.
-    ///
-    /// 지금 서버는 `GET /billing/vouchers` 에서 INV- 만 준다(`routes/billing-query.ts`). 그래도 앱이 한 번 더 거른다 —
-    /// 옛 서버나 앞서 받아 둔 목록에는 옛 선물 바우처(GIFT-)가 남아 있을 수 있고, 서버는 그 코드를 받지 않는다
-    /// (`CODE_NOT_FOUND`). 같은 플랜 키여도 접두가 다르면 고르는 목록에서 빠져야 한다.
-    func test_이용권_화면이_공유하는_코드는_초대_코드뿐이다() {
-        func voucher(_ code: String, planKey: String) -> VoucherItem {
-            VoucherItem(
-                id: code,
-                code: code,
-                planKey: planKey,
-                planName: planKey,
-                planType: planKey,
-                status: "issued",
-                expiresAt: "2026-12-31T00:00:00.000Z"
-            )
-        }
-        let vouchers = [
-            voucher("INV-AAAA-BBBB-CCCC", planKey: "family"),
-            voucher("GIFT-AAAA-BBBB-CCCC", planKey: "personal"),
-            voucher("GIFT-DDDD-EEEE-FFFF", planKey: "family"),
-        ]
-        XCTAssertEqual(shareableVouchersForPlan(vouchers, planKey: "family").map(\.code), ["INV-AAAA-BBBB-CCCC"])
-        XCTAssertTrue(
-            shareableVouchersForPlan(vouchers, planKey: "personal").isEmpty,
-            "개인 카드에 선물 바우처 공유 버튼이 다시 뜬다."
-        )
-    }
 
     /// 선물을 뜻하는 말. 한국어 원문은 키이고, en·ja 는 값이다(키도 함께 본다).
     private static let giftWords = ["선물", "gift", "ギフト", "プレゼント", "贈"]

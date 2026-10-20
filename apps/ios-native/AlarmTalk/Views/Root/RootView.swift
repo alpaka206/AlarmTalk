@@ -29,8 +29,7 @@ struct RootView: View {
     // 쿠폰 입력을 권하던 시트였는데, 기간 한정 개인 플랜으로 무료 계정이 전부 개인이 되면서
     // 권할 이유가 사라졌고 운영 코드도 전부 꺼졌다. 프로모 코드 자체도 2026-10-12 에, 선물 코드와 유료
     // 게이트의 코드 입력은 2026-10-14 에 없앴다(App Store 지침 3.1.1 — 두 번째 반려, 되살리지 말 것).
-    // 남은 코드 입력은 커플·가족 초대 코드 하나이고 자리는 더보기의 초대 코드 등록(`CodeRegisterRow`)
-    // 하나다. 할인·무료 이용은 스토어 오퍼 코드로 준다.
+    // 마지막 코드 입력(초대 코드 등록)도 2026-10-20 에 없앴다. 할인·무료 이용은 스토어 오퍼 코드로 준다.
     @State private var downgradeNotice: DowngradeNoticeStore.Notice?
 
     /// 이 프로세스에서 앱에 들어온 횟수(콜드 스타트 = 1, 백그라운드 → 활성마다 +1). **읽기만
@@ -510,11 +509,7 @@ struct RootView: View {
         // 판정은 **알람이 하나도 없을 때**로 좁힌다. 강등은 알람을 지우지 않고 기본 목소리로
         // 바꿔 두므로(`DefaultVoiceSubstitute.replacedLostVoice` 등) 대상은 여전히 목록에 있다 — 하나라도 있으면
         // 그중 하나가 그 알람일 수 있어 함부로 지우면 안 된다.
-        // ⚠ **'내가 만든' 알람만 센다.** 강등 대상은 `localOwned` 뿐이라(받은 알람은
-        // 보낸 사람의 구독으로 성립한다) 받은 알람 하나가 남아 있으면 이 가드가 영영
-        // 통과하지 못했다 — 대기표가 안 지워져 **모달이 켤 때마다 다시 떴다**
-        // (2026-08-18 실기기: 로컬에 받은 알람 1건만 남은 채 안내가 계속 떴다).
-        if notice != nil, !alarmStore.alarms.contains(where: { $0.originEnum == .localOwned }) {
+        if notice != nil, alarmStore.alarms.isEmpty {
             DowngradeNoticeStore().clear(userID: auth.session?.user.id)
             downgradeNotice = nil
             return false

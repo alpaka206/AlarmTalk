@@ -41,7 +41,7 @@ struct AlarmTalkApp: App {
     @StateObject private var versionGate = AppVersionGate()
 
     /// iOS 푸시. **알림 권한과 별개** — background push 는 권한 없이도 오고, 그게
-    /// 받은 알람을 제때 예약하는 유일한 즉시 경로다(`PushNotificationCoordinator` 주석).
+    /// 플랜·목소리 변경을 곧바로 반영하는 즉시 경로다(`PushNotificationCoordinator` 주석).
     @StateObject private var push = BackgroundDependencies.shared.push
 
     /// 기본 목소리 테마 클립 선다운로드. **온보딩 화면의 것과 별개로 앱 전역에 하나 둔다** —
@@ -183,15 +183,14 @@ struct AlarmTalkApp: App {
                         await alarmKit.startObserving(store: alarmStore)
 
                         // RemoteAlarmSyncViewModel 의존성 주입.
-                        // 이후 viewModel.refresh() 는 RemoteAlarmPullSync 를 위임 호출한다.
-                        remoteSync.configure(store: alarmStore, alarmKit: alarmKit, auth: auth)
+                        remoteSync.configure(store: alarmStore, auth: auth)
 
                         // ⚠ **여기서 동기화 사이클을 돌리지 않는다**(2026-09-29). 로그인된 채 켜지면
                         //   아래 계정 키 `.task(id: auth.session?.user.id)` 가 `runFullSync()` 와
                         //   날씨 갱신을 이미 돈다 — 세션이 복원되는 순간 그 키가 바뀌거나(nil → id)
                         //   처음부터 id 로 시작한다. 예전에는 여기서도 한 번 더 돌아, 콜드 스타트에
-                        //   `/alarm` 쌍이 3~4번 나갔고 그동안 토글의 단건 push 가 `isBusy` 가드에 걸려
-                        //   건너뛰어졌다. 가족 푸시의 호출별 회차 보장은 `runFullSync` 안에 그대로다.
+                        //   `/alarm` 요청이 3~4번 나갔고 그동안 토글의 단건 push 가 `isBusy` 가드에 걸려
+                        //   건너뛰어졌다.
 
                         // 최초 BGAppRefreshTask 예약. 다음 사이클은 백그라운드 진입/
                         // task 종료 시 재예약.
@@ -217,7 +216,7 @@ struct AlarmTalkApp: App {
                         //   꽂지 않으면 앱 시작의 유일한 사이클이 빈손으로 끝날 수 있다. `configure` 는
                         //   멱등이다(이미 꽂혀 있으면 그대로). 알람 탭 진입의 동기화도 이 덕에 대개
                         //   꽂힌 뒤에 돈다.
-                        remoteSync.configure(store: alarmStore, alarmKit: alarmKit, auth: auth)
+                        remoteSync.configure(store: alarmStore, auth: auth)
                         // ⚠ **계정이 바뀌면 StoreKit 을 다시 읽는다**(2026-08-31 리뷰).
                         // 로그아웃 상태에서는 등급을 아예 세지 않으므로(계정 토큰을 모른다),
                         // 여기서 다시 읽지 않으면 새 계정이 다음 전경 진입 전까지 '모름' 으로
@@ -234,21 +233,19 @@ struct AlarmTalkApp: App {
                         //
                         // ⚠ **알람 동기화는 이 복구를 기다리지 않는다**(코덱스 #823 5차). 재전송은
                         //   미완료 트랜잭션마다 서버 확정을 **차례로** 부를 수 있어 느리거나 오프라인이면
-                        //   오래 걸린다 — 그 뒤에 동기화를 두면 앱 시작의 사이클이 가족 알람의 최소 여유
-                        //   (5분)를 넘겨 밀릴 수 있다. 예전에는 부트스트랩 `.task` 가 따로 한 번 돌아
-                        //   가려져 있었다. 둘은 서로 기다릴 이유가 없어 나란히 돌리고, 이 태스크가 끝나기
+                        //   오래 걸린다 — 그 뒤에 동기화를 두면 앱 시작의 사이클이 그만큼 밀린다. 예전에는
+                        //   부트스트랩 `.task` 가 따로 한 번 돌아 가려져 있었다. 둘은 서로 기다릴 이유가
+                        //   없어 나란히 돌리고, 이 태스크가 끝나기
                         //   전에 복구도 끝낸다(계정이 바뀌어 태스크가 접히면 함께 취소된다).
                         let subscriptionManager = subscriptions
                         async let storeRecovery: Void = Self.recoverStoreKitForAccount(subscriptionManager)
                         // ⚠ **알림 권한은 여기서 묻지 않는다**(2026-09-17 실기기). 로그인 직후라
                         // 약관 동의·목소리 받기보다 **먼저** 팝업이 떴다. 메인 화면이 처음 뜰 때
-                        // 묻는다(`MainTabsView`) — 그 전에는 동의 전이라 서버가 동기화를 막으므로
-                        // 받은 알람 알림이 버려질 일도 없다.
+                        // 묻는다(`MainTabsView`).
                         // ⚠ 권한 결과와 **무관하게** 원격 알림에 등록한다 — 거절해도
-                        // background push 는 오고, 그게 받은 알람을 예약한다.
+                        // background push 는 오고, 그게 플랜·목소리 변경을 반영한다.
                         PushAppDelegate.coordinator = push
                         PushAppDelegate.currentSession = { auth.session }
-                        push.onFamilyAlarm = { await remoteSync.runFullSync() }
                         // ⚠ 강등은 새로고침 자체(`onAuthoritativeRefresh`, launch 에서 꽂는다)가
                         // 맡는다 — 여기서 또 부르지 말 것. 푸시를 놓쳐도(오프라인·스로틀링)
                         // 다음 시작·탭 진입의 새로고침이 같은 일을 한다.
@@ -281,10 +278,9 @@ struct AlarmTalkApp: App {
                         push.start()
                         // ⚠ **알람 저장소가 다 읽힐 때까지 기다린 뒤 돈다**(코덱스 #823 6차). 이
                         //   태스크는 콜드 스타트 첫 화면에서 곧바로 돌아 디스크 로드보다 앞설 수 있다 —
-                        //   pull 의 준비 대기(3초, `RemoteAlarmPullSync.requireLoadedStore`)를 넘기면
-                        //   `storeNotReady` 로 빈손이 되고, 앱 시작의 사이클은 이것 하나라 놓친 가족
-                        //   알람 푸시를 다음 전경 복귀·탭 진입까지 못 받는다. 기다려도 막히는 것은 이
-                        //   태스크뿐이다(계정이 바뀌어 접히면 대기도 곧바로 물러선다).
+                        //   로드 전에 돌면 올릴 행이 없어 빈손으로 끝나고, 앱 시작의 사이클은 이것
+                        //   하나라 못 올린 변경이 다음 전경 복귀·탭 진입까지 남는다. 기다려도 막히는 것은
+                        //   이 태스크뿐이다(계정이 바뀌어 접히면 대기도 곧바로 물러선다).
                         await alarmStore.waitUntilLoadedFromDisk(timeout: 30)
                         await remoteSync.runFullSync()
                         await refreshWeatherVariantsAndReconcile()
@@ -433,9 +429,9 @@ struct AlarmTalkApp: App {
                         for pendingRaw in PendingSignOutStore.pendingUserIds {
                             let pending = pendingRaw.nilIfBlank
                             // ⚠ **그 사이 다른 계정이 로그인했을 수 있다.** 그때 알람을
-                            // 건드리면 **지금 쓰는 사람의 알람을 끈다** — 특히 받은 가족
-                            // 알람은 소유자가 미기록이라 `claimUnownedAlarms` 가 그걸 떠난
-                            // 계정 것으로 낙인찍고 `stopAll` 이 꺼 버린다.
+                            // 건드리면 **지금 쓰는 사람의 알람을 끈다** — 소유자가 미기록인
+                            // 행은 `claimUnownedAlarms` 가 떠난 계정 것으로 낙인찍고 `stopAll` 이
+                            // 꺼 버린다.
                             // 로컬 뒷정리는 **아무도 없거나 그 계정 본인일 때만** 한다.
                             let signedIn = auth.session?.user.id.nilIfBlank
                             let safeToTouchAlarms = signedIn == nil || (pending != nil && signedIn == pending)
@@ -510,8 +506,9 @@ struct AlarmTalkApp: App {
             switch newPhase {
             case .active:
                 // 이 실행에서 푸시 등록이 아직 확인되지 않았으면(첫 등록 실패·세션 없이 온 토큰·APNs 실패) 토큰을 다시
-                // 받아 올린다 — 확인됐으면 아무 일도 없다. iOS 앱은 멈춘 채 오래 살아 '다음 실행' 을 기다리면 그동안 가족
-                // 알람 푸시가 끊긴다(`PushNotificationCoordinator.resumeRegistrationIfNeeded`, 스펙 family-alarm §3).
+                // 받아 올린다 — 확인됐으면 아무 일도 없다. iOS 앱은 멈춘 채 오래 살아 '다음 실행' 을 기다리면 그동안 플랜·
+                // 목소리 변경 푸시가 끊긴다(`PushNotificationCoordinator.resumeRegistrationIfNeeded`, 스펙 session-and-auth
+                // 「푸시 등록은 스스로 낫는다」).
                 push.resumeRegistrationIfNeeded(session: auth.session)
                 Task {
                     guard alarmStore.hasLoadedFromDisk else { return }
@@ -560,7 +557,7 @@ struct AlarmTalkApp: App {
                 // Phase 4-D2: 포그라운드 진입 시 세션 정합성을 직렬로 점검.
                 //  1) Apple credentialState — revoke/notFound 이면 즉시 signOut
                 //  2) /auth/me 갱신 — 401 만 signOut, 5xx/네트워크 단절은 lastNetworkError 만 갱신
-                //  3) 정상 세션이 남아 있으면 RemoteAlarmPullSync 한 사이클
+                //  3) 정상 세션이 남아 있으면 알람 동기화(push) 한 사이클
                 Task {
                     await auth.verifyAppleCredentialStateIfNeeded()
                     guard auth.session != nil else { return }
@@ -684,9 +681,9 @@ struct AlarmTalkApp: App {
             // 버킷 없이 클립 하나만 물린 옛 알람이 어떤 테마였는지(서버가 안다).
             // 없으면 그 알람은 재바인더 두 갈래 어디에도 안 걸려 영영 옛 소리다.
             legacyHints: voiceStudio.legacyBucketHints,
-            // 받는 사람의 지역·사주. 조건형 버킷을 묶을 때 빈 자리에만 채운다 — 받은
-            // 알람은 그 값이 비어 있어서, 안 채우면 날씨는 서버 기본값(서울), 운세는
-            // 빈 프로필 해시로 떨어진다. 서버 설정이 먼저, 없으면 로컬 저장분이다
+            // 이 계정의 지역·사주. 조건형 버킷을 묶을 때 빈 자리에만 채운다 — 그 값이 빈
+            // 옛 행은 안 채우면 날씨는 서버 기본값(서울), 운세는 빈 프로필 해시로
+            // 떨어진다. 서버 설정이 먼저, 없으면 로컬 저장분이다
             // (편집기 `savedPromptPreferences` 와 같은 순서).
             conditionInputs: {
                 let server = DynamicPromptPreferences.from(
@@ -1061,7 +1058,6 @@ struct AlarmTalkApp: App {
         let storeSaysPaid = subscriptions.currentTier.meetsOrExceeds(.personal)
         let snapshot = AccessSnapshot(
             subscriptionResponse: socialFeatures.subscription,
-            familyGroup: socialFeatures.familyGroup,
             storePlanKey: nil,
             storeEntitlementUntilMillis: nil,
             userPlan: auth.session?.user.plan,
@@ -1099,7 +1095,7 @@ struct AlarmTalkApp: App {
         guard access == .notEntitled, subscriptions.hasLoadedEntitlements else { return }
         // ⚠ **무료의 근거가 낡은 프로모 하나뿐이면 이 진입의 답을 기다린다**(D1·D12 — 안드로이드
         //   잠금 이펙트의 `freePlanLockMayApply` 와 같은 규칙). 콜드 스타트·복귀 직후의 plan 은 지난
-        //   실행의 캐시라, 그 사이 다른 기기에서 쿠폰·결제·가족 합류로 원시 유료가 된 사람도 종료
+        //   실행의 캐시라, 그 사이 다른 기기에서 결제로 원시 유료가 된 사람도 종료
         //   시각만 지나면 여기서 잠기고 강등 안내가 적힌다 — 저장된 구독 스냅샷과 StoreKit 이
         //   `/auth/me` 보다 먼저 준비되면 그렇게 된다. 기다리는 동안은 아무것도 하지 않는다 —
         //   답이 세션 plan 에 반영되면 키(`promoLapseLockWaitKey`)가 바뀌어 다시 본다.

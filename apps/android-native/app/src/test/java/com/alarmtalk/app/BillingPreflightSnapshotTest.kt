@@ -11,14 +11,13 @@ class BillingPreflightSnapshotTest {
     private val now = java.time.Instant.parse("2026-09-13T00:00:00Z").toEpochMilli()
 
     private fun cachedPaidSnapshot() = AccessSnapshot(
-        userPlan = "family",
+        userPlan = "plus",
         storePlanKey = "personal",
         storeEntitlementUntilMillis = now + STORE_ENTITLEMENT_TTL_MILLIS,
     )
 
     private fun access(snapshot: AccessSnapshot): PaidVoiceAccess = resolvePaidVoiceAccess(
         snapshot.subscriptionResponse,
-        snapshot.familyGroup,
         snapshot.userPlan,
         snapshot.storeSignalStillValid(now),
         now,
@@ -54,10 +53,10 @@ class BillingPreflightSnapshotTest {
 
     @Test
     fun ordinaryResponseDoesNotInventAFreePlan() {
-        val fresh = AccessSnapshot(userPlan = "family").withBillingResponseNow(response(
+        val fresh = AccessSnapshot(userPlan = "plus").withBillingResponseNow(response(
             """{"subscription":null,"store_renewal_providers":[]}""",
         ))
-        assertEquals("family", fresh.userPlan)
+        assertEquals("plus", fresh.userPlan)
         assertNull(fresh.subscriptionResponse?.userPlan)
     }
 
@@ -100,10 +99,10 @@ class BillingPreflightSnapshotTest {
         val fresh = cachedPaidSnapshot().withBillingResponseNow(response(
             """{
                 "subscription": {
-                    "id":"retained", "plan_id":"family", "status":"active",
+                    "id":"retained", "plan_id":"personal", "status":"active",
                     "starts_at":"2026-09-01T00:00:00Z", "expires_at":"2026-10-01T00:00:00Z"
                 },
-                "plan": {"id":"family", "key":"family", "plan_type":"family"},
+                "plan": {"id":"personal", "key":"personal", "plan_type":"personal"},
                 "user_plan":"free", "store_renewal_providers":["google"]
             }""",
         ))
@@ -149,7 +148,6 @@ class BillingPreflightSnapshotTest {
 
     private fun accessAt(snapshot: AccessSnapshot, at: Long): PaidVoiceAccess = resolvePaidVoiceAccess(
         snapshot.subscriptionResponse,
-        snapshot.familyGroup,
         snapshot.userPlan,
         snapshot.storeSignalStillValid(at),
         at,
@@ -301,7 +299,6 @@ class BillingPreflightSnapshotTest {
             PaidVoiceAccess.Entitled,
             resolvePaidVoiceAccess(
                 response("""{"subscription":null,"store_renewal_providers":[]}"""),
-                null,
                 user.plan,
                 false,
                 deviceNow,
@@ -318,10 +315,10 @@ class BillingPreflightSnapshotTest {
             subscriptionResponse = response(
                 """{
                     "subscription": {
-                        "id":"retained", "plan_id":"family", "status":"active",
+                        "id":"retained", "plan_id":"personal", "status":"active",
                         "starts_at":"2026-10-01T00:00:00Z", "expires_at":"2026-12-01T00:00:00Z"
                     },
-                    "plan": {"id":"family", "key":"family", "plan_type":"family"},
+                    "plan": {"id":"personal", "key":"personal", "plan_type":"personal"},
                     "store_renewal_providers":["google"]
                 }""",
             ),
@@ -340,8 +337,8 @@ class BillingPreflightSnapshotTest {
         // 스냅샷에 plan 이 있으면 스냅샷의 짝(여기서는 원시 유료 = null)을 쓴다 —
         // 세션의 표지를 스냅샷 plan 에 붙이면 안 된다.
         assertEquals(
-            "family" to null,
-            AccessSnapshot(userPlan = "family").userPlanWithPromo(session),
+            "plus" to null,
+            AccessSnapshot(userPlan = "plus").userPlanWithPromo(session),
         )
         // 스냅샷에 plan 이 없으면(옛 버전 캐시) 세션의 짝을 통째로 쓴다 — 받은 시각까지.
         assertEquals(

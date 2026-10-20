@@ -135,16 +135,13 @@ internal fun remainingDurationLabel(remainingMillis: Long): String {
 }
 
 // 전체 탭 — 우측 상단 프로필 드롭다운 메뉴를 페이지로 승격한 것(토스 설정 패턴).
-// 프로필 행(→설정)과 드릴인 항목 리스트(이용권 · 공유 이용권/초대 코드)로 구성한다.
+// 프로필 행(→설정)과 드릴인 항목(이용권)으로 구성한다.
 @Composable
 internal fun MenuTabPanel(
     authSession: AuthSession?,
-    hasSharedPass: Boolean,
     themeMode: ThemeMode,
     onChangeTheme: (ThemeMode) -> Unit,
-    onOpenPeople: () -> Unit,
     onOpenBilling: () -> Unit,
-    onOpenMemberManagement: () -> Unit,
     onOpenSettings: () -> Unit,
     onDeleteAccount: () -> Unit,
 ) {
@@ -233,27 +230,6 @@ internal fun MenuTabPanel(
                 label = stringResource(R.string.hs_profile_menu_pass),
                 onClick = onOpenBilling,
             )
-            HorizontalDivider(
-                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                color = MaterialTheme.colorScheme.outlineVariant,
-            )
-            if (hasSharedPass) {
-                MenuTabRow(
-                    label = stringResource(R.string.hs_profile_menu_shared_pass),
-                    onClick = onOpenMemberManagement,
-                )
-            } else {
-                // ⚠ **진입 라벨은 도착 화면의 제목과 같은 문자열이다**(2026-09-06).
-                // 2026-09-06 에 '초대 코드 등록' 을 '코드 등록' 으로 바꾼 것은 그 화면이 선물·프로모션
-                // 코드도 받았기 때문이다. 프로모션(2026-10-12)과 선물(2026-10-14 — App Store 지침 3.1.1
-                // 두 번째 반려)을 없애 남은 것이 초대 코드뿐이라 다시 '초대 코드 등록' 이다.
-                // ⚠ 선물·프로모션 문구를 되살리지 말 것. 초대 공유 문구(`share_code_invite_body`)의
-                // '더보기 → 초대 코드 등록' 도 이 라벨을 그대로 댄다 — 라벨을 바꾸면 그 문구도 고친다.
-                MenuTabRow(
-                    label = stringResource(R.string.common_tab_code_register),
-                    onClick = onOpenPeople,
-                )
-            }
         }
         // 법적 정보(약관·오픈소스)는 설정 화면 하단으로 이동 — 더보기는 핵심 항목만 남긴다.
         // 탈퇴하기 — 토스처럼 독립 카드 행. 확인 다이얼로그는 앱 레벨에서 뜬다.
@@ -323,8 +299,8 @@ private fun MenuTabRow(
     // ⚠ **높이는 최소치이고, 접히는 쪽은 값이다.** 설정 화면의 같은 모양 행
     // (`ui/settings/SettingsScreenComponents.kt` 의 `SettingsRow`)이 이미 그 규칙을
     // 주석으로 못박아 뒀는데 여기만 반대였다 — 높이가 `height(52.dp)` 고정이라 큰
-    // 글꼴에서 글자가 잘리고, `weight` 가 **라벨**에 붙어 있어 '초대 및 구성원 관리'
-    // 같은 **항목 이름**이 줄어들었다. 이름이 줄면 무엇을 누르는지 알 수 없다.
+    // 글꼴에서 글자가 잘리고, `weight` 가 **라벨**에 붙어 있어 긴 **항목 이름**이
+    // 줄어들었다. 이름이 줄면 무엇을 누르는지 알 수 없다.
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -499,7 +475,7 @@ internal val WakerTopBarBottomGap = 16.dp
 /**
  * 하위 화면의 **상단바** — 좌측 뒤로가기 + **가운데 제목**.
  *
- * ⚠ **왼쪽 정렬 큰 제목으로 되돌리지 말 것.** 이용권·코드 등록처럼 **더보기에서 들어가는 화면**은 아이폰에서 네비게이션 바(뒤로가기 +
+ * ⚠ **왼쪽 정렬 큰 제목으로 되돌리지 말 것.** 이용권처럼 **더보기에서 들어가는 화면**은 아이폰에서 네비게이션 바(뒤로가기 +
  * 가운데 작은 제목)로 뜨는데, 안드로이드에는 그 바가 없어 **나가는 길이 시스템 뒤로가기뿐**
  * 이었다(2026-08-11 요청). 같은 모양으로 맞춘다.
  *

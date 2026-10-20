@@ -46,25 +46,11 @@ class UserFacingErrorTest {
     }
 
     @Test
-    fun `이름 없는 가족 알람 완료는 각 언어의 완성 문장을 쓴다`() {
-        val expected = mapOf("ko" to "상대에게 알람을 설정했어요", "en" to "Set an alarm for the other person.", "ja" to "相手にアラームを設定しました。")
-        for ((language, message) in expected) {
-            val context = context(language)
-            assertEquals(message, familyAlarmCompletionMessage(context, null))
-            assertEquals(message, familyAlarmCompletionMessage(context, "  "))
-            assertEquals(
-                context.getString(R.string.msg_family_alarm_set_for_target, com.alarmtalk.app.data.honoredPersonName(context, "Alex")),
-                familyAlarmCompletionMessage(context, "Alex"),
-            )
-        }
-    }
-
-    @Test
     fun `오류와 완료 스낵바는 세 언어에서 같은 색상 의미를 유지한다`() {
         for (language in listOf("ko", "en", "ja")) {
             val context = context(language)
             assertEquals(language, MessageSeverity.Error, snackbarSeverity(context, context.getString(R.string.msg_alarm_save_failed)))
-            assertEquals(language, MessageSeverity.Success, snackbarSeverity(context, familyAlarmCompletionMessage(context, null)))
+            assertEquals(language, MessageSeverity.Success, snackbarSeverity(context, context.getString(R.string.msg_gb_plan_applied)))
             assertEquals(language, MessageSeverity.Info, snackbarSeverity(context, "12345"))
         }
     }

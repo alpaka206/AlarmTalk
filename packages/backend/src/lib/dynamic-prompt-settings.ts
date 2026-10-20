@@ -18,11 +18,6 @@ export type DynamicPromptSettings = {
   };
 };
 
-export type DynamicPromptSettingsState = {
-  weather_ready: boolean;
-  fortune_ready: boolean;
-};
-
 export const EMPTY_DYNAMIC_PROMPT_SETTINGS: DynamicPromptSettings = {
   weather: {
     region: null,
@@ -86,21 +81,8 @@ export function validateDynamicPromptSettings(raw: unknown): DynamicPromptSettin
   return normalized;
 }
 
-export function dynamicPromptSettingsState(
-  settings: DynamicPromptSettings,
-): DynamicPromptSettingsState {
-  return {
-    weather_ready: Boolean(settings.weather.city),
-    fortune_ready: Boolean(
-      settings.fortune.gender &&
-        settings.fortune.birth_date &&
-        settings.fortune.birth_time,
-    ),
-  };
-}
-
 /**
- * 계정의 날씨 지역 한 벌 — **쓸 때(PATCH)와 읽을 때(GET·가족 목록·라이브 생성) 같은 함수**다.
+ * 계정의 날씨 지역 한 벌 — **쓸 때(PATCH)와 읽을 때(GET·라이브 생성) 같은 함수**다.
  * `docs/spec/voice-and-message.md` 5-1 「날씨 지역은 목록에서만 고른다」.
  *
  * - 알맞은 `region` → 그 지역. `country`/`city` 는 옛 앱용 한국어 글자로 **덮는다**(옛 앱이 계속 읽는다).

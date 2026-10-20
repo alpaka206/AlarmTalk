@@ -73,8 +73,7 @@ final class AlarmKitViewModel: ObservableObject {
     ///
     /// ⚠ 진행 중인 예약을 무효화하는 것만으로는 부족하다(Codex #699 P1). 무효화 **뒤에**
     /// 시작한 예약은 새 세대를 들고 시작하므로 그대로 성공하고, 종료가 끝난 뒤에 **켜진
-    /// 채 로그인 화면 뒤에 숨은 알람**이 된다. 원격 pull 이 종료 도중에 받은 알람을
-    /// 들여오는 경우가 실제로 그렇다.
+    /// 채 로그인 화면 뒤에 숨은 알람**이 된다.
     ///
     /// 경로마다 쫓는 대신 **만드는 것 자체를 막는다** — 종료 중에는 아무도 예약하지 못한다.
     ///
@@ -221,7 +220,7 @@ final class AlarmKitViewModel: ObservableObject {
     nonisolated static func alertTitle(for record: LocalAlarmRecord) -> String {
         let time = "\(record.meridiemLabel) \(record.clockLabel12h)"
         // 기본 이름("알람")은 이름이 없는 것으로 본다 — `AlarmDefaultLabel`.
-        guard let label = AlarmDefaultLabel.custom(record.localizedDisplayLabel) else { return time }
+        guard let label = AlarmDefaultLabel.custom(record.label) else { return time }
         return "\(time) · \(label)"
     }
 
@@ -473,7 +472,7 @@ final class AlarmKitViewModel: ObservableObject {
         readScheduledIDs: (() throws -> Set<UUID>)? = nil,
         cancelAlarm: ((UUID) throws -> Void)? = nil
     ) async -> Int {
-        // pull의 로드 시간 초과/취소 뒤에도 이 메서드로 들어온다. 아직 빈 목록이면
+        // 저장소 로드가 끝나기 전에도 이 메서드로 들어온다(백그라운드 회차 등). 아직 빈 목록이면
         // OS만 취소하고 pending을 지워 디스크 행에 죽은 핸들이 남으므로 전부 보류한다.
         guard store.hasLoadedFromDisk else { return 0 }
         let pending = PendingAlarmCancellationStore.all
@@ -534,7 +533,7 @@ final class AlarmKitViewModel: ObservableObject {
 
     /// 끝난 UUID 를 가리키던 행을 정리한다.
     ///
-    /// `retryPendingCancellations`(전경 sweep)와 `releaseOwedHandles`(전달 정리)가 **같은
+    /// `retryPendingCancellations`(전경 sweep)와 `releaseOwedHandles`(목소리 회수 확정)가 **같은
     /// 규칙**을 쓰도록 한 곳에 둔다 — 둘로 두면 갈라지고, 갈라진 쪽은 조용히 틀린다.
     private func applyResolvedCancellations(
         _ resolved: Set<String>,
@@ -609,8 +608,7 @@ final class AlarmKitViewModel: ObservableObject {
     /// **계정을 떠날 때 알람을 전부 끈다** — OS 예약을 취소하고 행도 `enabled = false` 로.
     ///
     /// 로그아웃·탈퇴에서 부른다. 두 가지를 지킨다:
-    ///  1. **떠난 계정으로 알람이 울리면 안 된다.** 받은 알람은 보낸 사람의 복제 목소리를
-    ///     담고 있어, 로그아웃한 기기가 남의 생체정보로 우는 셈이 된다.
+    ///  1. **떠난 계정으로 알람이 울리면 안 된다.**
     ///  2. **다시 로그인해도 저절로 울리기 시작하지 않는다.**
     ///
     /// ⚠ **`enabled` 도 끈다 — 예약만 끊고 끝내지 말 것**(2026-08-19 지시).
@@ -654,12 +652,12 @@ final class AlarmKitViewModel: ObservableObject {
         leavingAccountDepth += 1
         defer { leavingAccountDepth -= 1 }
         var stopped = 0
-        // ⚠ **한 번 훑고 끝내지 않는다.** 훑는 도중에 원격 pull 이 받은 알람을 들여오면
+        // ⚠ **한 번 훑고 끝내지 않는다.** 훑는 도중에 다른 경로가 행을 더하면
         // 그 행은 스냅샷에 없어 통째로 건너뛰어진다. 더 할 일이 없을 때까지 돈다
         // (상한을 두는 것은 무한 루프 방지 — 그 사이에도 `isLeavingAccount` 가 새 예약을 막는다).
         // ⚠ **"끈 게 없다" 는 "할 일이 없다" 가 아니다**(Codex #699 P1). 남의 계정 예약만
-        // 취소하고 끝난 회차는 0을 돌려주는데, 그 취소가 만든 `await` 사이에 원격 pull 이
-        // **새 행을 들여올 수 있다.** 그래서 저장소가 그대로였는지도 함께 본다 —
+        // 취소하고 끝난 회차는 0을 돌려주는데, 그 취소가 만든 `await` 사이에 다른 경로가
+        // **새 행을 더할 수 있다.** 그래서 저장소가 그대로였는지도 함께 본다 —
         // 아무것도 안 끄고 **아무것도 안 바뀐** 회차가 나와야 끝난다.
         for _ in 0..<5 {
             let before = Self.storeSignature(store)
@@ -742,8 +740,8 @@ final class AlarmKitViewModel: ObservableObject {
 
     /// **공휴일 달력만 바뀌었다** — 다음 발생이 아직 미래인 '공휴일에는 끄기' 반복 알람만 새 달력으로 다시 건다
     /// (`HolidayOffRescheduler`). 지난 행·스누즈 중·다른 알람은 건드리지 않는다 — 평소 복구가 지금 달력으로 맡는다.
-    /// 복구 갈래로 떨어뜨리면 지난 회차를 넘기며 스누즈를 지우고 수정 시각을 올려, 늦게 배달될 울림을 삼키거나 받은
-    /// 가족 알람을 '받은 사람이 고쳤다' 로 만든다(Codex #837). 안드로이드 `refreshHolidayOffAlarms` 와 같은 범위다.
+    /// 복구 갈래로 떨어뜨리면 지난 회차를 넘기며 스누즈를 지우고 수정 시각을 올려, 늦게 배달될 울림을 삼킨다
+    /// (Codex #837). 안드로이드 `refreshHolidayOffAlarms` 와 같은 범위다.
     ///
     /// - Returns: **끝까지 돌았는가.** 계정을 떠나는 중이라 도중에 멈췄으면 false — 호출부는 달력 표지를 적지 않아
     ///   다음에 다시 돈다(`HolidayOffRescheduler.runIfNeeded`).
@@ -1105,7 +1103,7 @@ final class AlarmKitViewModel: ObservableObject {
                 return false
             }
             if SchedulingSnapshot(afterAwait) != SchedulingSnapshot(record) {
-                // **예약에 실리는 값이 바뀌었다**(끄기·시각 변경·원격 pull 등).
+                // **예약에 실리는 값이 바뀌었다**(끄기·시각 변경 등).
                 // 방금 건 예약은 낡았으므로 되돌린다. `AlarmScheduleReconciler` 는
                 // **소리 지문만** 비교하므로 시각만 바뀐 경우는 아무도 고쳐 주지 않는다 —
                 // 여기서 처리하지 않으면 알람이 옛 시각에 운다.
@@ -1221,8 +1219,8 @@ final class AlarmKitViewModel: ObservableObject {
     ///
     /// ⚠ **행의 손잡이만 봐서는 고아를 못 찾는다**(Codex #703 P1). `alarmKitID` 한 칸은
     /// **지금 예약**을 가리키므로, 재예약이 한 번 더 돌면 못 끊은 옛 손잡이는 어느 행도
-    /// 가리키지 않는다. 그 상태에서 전달 정리는 "끊을 게 없다" 고 답하고 ACK 가 서버 행을
-    /// 지운다 — **행 없이 우는 예약**이 남아 목록에 보이지도, 끌 수도 없다.
+    /// 가리키지 않는다. 그 상태에서 "끊을 게 없다" 고 답하면 **행 없이 우는 예약**이 남아
+    /// 목록에 보이지도, 끌 수도 없다.
     /// 그래서 회수 목록에 **주인 행 id 를 함께** 적어 두고 여기서 그것으로 되짚는다.
     ///
     /// 전경 sweep(`retryPendingCancellations`)와 같은 판정을 쓴다 — OS 에 이미 없으면 끝난
@@ -1268,12 +1266,11 @@ final class AlarmKitViewModel: ObservableObject {
     /// **예약을 확실히 없앤다** — 이미 OS 에 없으면 성공으로 본다.
     ///
     /// `cancelScheduledAlarm` 과 다른 점이 둘이고, 둘 다 **성공을 기다리는 호출부**를 위한
-    /// 것이다(전달 정리처럼 "끝났는가" 로 다음 단계를 가르는 경로):
+    /// 것이다(목소리 회수 확정처럼 "끝났는가" 로 다음 단계를 가르는 경로 — `BackgroundDependencies`):
     ///
     /// 1. ⚠ **OS 에 없는 예약을 실패로 읽지 않는다**(Codex #703 P2). `AlarmManager.cancel(id:)`
     ///    은 AlarmKit 이 **모르는 id 에 throw** 한다 — 한 번 울고 사라진 1회성 예약, 사용자가
-    ///    지운 예약이 그렇다. 끊을 것이 없는데 실패로 세면 그 호출부는 **영영 끝나지 못한다**
-    ///    (받은 알람의 ACK 가 영구히 미뤄져 서버 행과 그 음원이 남는다).
+    ///    지운 예약이 그렇다. 끊을 것이 없는데 실패로 세면 그 호출부는 **영영 끝나지 못한다.**
     /// 2. ⚠ **성공하면 회수 목록에서 지운다.** 안 지우면 다음 회차가 같은 UUID 를 또 끊으려
     ///    들고, 그 재시도는 (1) 때문에 영원히 실패로 읽힌다.
     ///
@@ -1454,7 +1451,7 @@ final class AlarmKitViewModel: ObservableObject {
             secondaryButtonBehavior: .custom
         )
         let countdown = AlarmPresentation.Countdown(
-            title: Self.countdownTitle(label: record.localizedDisplayLabel)
+            title: Self.countdownTitle(label: record.label)
         )
         let paused = AlarmPresentation.Paused(
             title: LocalizedStringResource("일시정지됨"),
@@ -1468,8 +1465,7 @@ final class AlarmKitViewModel: ObservableObject {
         // 비어있지 않을 때만 실어 LA 가 ring-moment 인용 문구를 보여 줄 수 있게 한다.
         let quotedVoiceText: String? = {
             guard record.playModeEnum != .alarmOnly else { return nil }
-            // 받은 알람의 기본 녹음 라벨(계약값)은 이 기기 언어로 바꿔 싣는다.
-            let trimmed = record.localizedVoiceText?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let trimmed = record.voiceText?.trimmingCharacters(in: .whitespacesAndNewlines)
             guard let trimmed, !trimmed.isEmpty else { return nil }
             // ⚠ **delivery 태그를 벗겨서 싣는다.** 이 문구는 잠금화면 alert 과 Live Activity
             // 인용문으로 그대로 보인다 — 태그가 섞이면 대괄호가 화면에 뜬다.
@@ -1480,7 +1476,7 @@ final class AlarmKitViewModel: ObservableObject {
         }()
         let metadata = AlarmTalkMetadata(
             localAlarmID: record.id,
-            label: record.localizedDisplayLabel,
+            label: record.label,
             playMode: record.playMode,
             voiceCacheKey: record.audioCacheKey,
             alarmKitID: alarmKitID.uuidString,
@@ -1513,7 +1509,7 @@ final class AlarmKitViewModel: ObservableObject {
         record: LocalAlarmRecord,
         resolution: AlarmSoundResolution
     ) -> String {
-        let label = AlarmDefaultLabel.custom(record.localizedDisplayLabel)
+        let label = AlarmDefaultLabel.custom(record.label)
         switch resolution {
         case .systemDefault, .bundledNamed:
             guard let label else { return String(localized: "알람을 예약했어요.") }

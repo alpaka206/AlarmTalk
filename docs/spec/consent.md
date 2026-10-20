@@ -51,11 +51,9 @@
      잃는 것은 없다 — 그 `false` 는 철회가 아니다(위 `withdrewSensitiveConsent`).
 2. **철회는 곧 삭제다.** 목소리·녹음 원본·생성된 음성 파일·저장한 문구가 함께 사라진다
    (`deleteSensitiveVoiceDataForUser`). 오디오를 지우는 경로를 따로 두지 않는다 —
-   **'목소리 삭제' 한 곳으로 통일**한다. 받은 사람의 가족 녹음 문구가 들고 있는 내 원본 키도
-   업로드 행이 TTL 로 먼저 사라졌을 수 있어 **키 앞머리**로 찾고, 키를 비우기 전에 삭제 큐로
-   옮긴다(`enqueueUploadKeysReferencedByMessagesStatement` — 탈퇴 파기와 같은 문장).
-3. **철회 전에 반드시 확인 모달을 띄운다.** 무엇이 사라지는지(공유한 가족 알람이 기본
-   알람음으로 바뀌는 것까지) 적고, 되돌릴 수 없다고 말한다. 양 앱 모두 있다.
+   **'목소리 삭제' 한 곳으로 통일**한다.
+3. **철회 전에 반드시 확인 모달을 띄운다.** 무엇이 사라지는지(그 목소리를 쓰던 알람이 기본
+   목소리로 바뀌는 것까지) 적고, 되돌릴 수 없다고 말한다. 양 앱 모두 있다.
 
 이 셋이면 "동의는 안 했는데 유료 기능은 쓰는" 상태도, "동의를 철회했는데 목소리는 남은"
 상태도 만들어지지 않는다. **하나만 빼면 그 상태가 생긴다.**
@@ -133,8 +131,9 @@
     겹친 조회가 더 최신이라도 **성공 응답을 적용하기 전에는** 403 대기를 끝내지 않는다. 최신 조회가 실패하면
     그 조회가 가입 필수 목록으로 게이트를 연다. 일반 동의 제출 성공·계정 종료는 대기를 무효화한다.
     민감 동의만 제출했다면 일반 동의 조회를 다시 이어 간다.
-  - **동의를 마치면 막혔던 동기화를 곧바로 다시 돈다.** 게이트가 떠 있던 동안의 알람 pull·가족 알람 푸시는 403 을 받고
-    '동의 대기' 로 조용히 접힌다. 다시 걸지 않으면 다음 주기까지 받은 가족 알람이 예약되지 않는다.
+  - **동의를 마치면 막혔던 동기화를 곧바로 다시 돈다.** 게이트가 떠 있던 동안의 알람 전송은 403 을 받고 '동의 대기' 로
+    조용히 접힌다. 다시 걸지 않으면 그 사이 저장한 알람이 다음 회차까지 서버에 오르지 않는다. (2026-10-20 전에는 받은
+    가족 알람 pull 이 이 규칙의 주된 이유였다.)
 - **예외는 둘뿐이고 둘 다 서버가 만든다.**
   1. `CONSENT_MIN_POLICY_VERSION` 상향 — **그 유형의 동의 내용이 실제로 바뀐 경우만**.
      문서 버전이 올랐다는 이유로 올리지 않는다(바로 아래 불릿).
@@ -164,7 +163,9 @@
 - **문서 개정 동안은 앞 버전도 받는다**(`ACCEPTED_POLICY_VERSIONS`, 2026-10-16 버전 6 부터). 문서 전문이 앱에 실리고
   두 스토어의 게재 시점이 달라, 한 버전만 받으면 그 사이 한쪽 앱의 가입이 409 로 막힌다. 기록은 **앱이 보낸 버전
   그대로** 남긴다(이용자가 실제로 본 문서). 앞 버전은 그 문서를 실은 앱을 `minSupported` 로 막은 뒤 목록에서 지운다
-  (버전 5 는 2026-10-16 에 지웠다 — 오너 "확실하게 정리". 지금 목록은 6 하나).
+  (버전 5 는 2026-10-16 에 지웠다 — 오너 "확실하게 정리"). **지금 목록은 7·6** 이다(2026-10-20) — 버전 7 은 커플·가족
+  이용권 폐지에 따른 축소 개정이라 재동의가 없고(최소 버전 그대로), 6 은 7판 앱이 두 스토어에 게재되고 `minSupported` 로
+  6판 앱을 막은 뒤 지운다([plan-gates.md](plan-gates.md) 「커플·가족 이용권 — 폐지」의 강제 업데이트 순서).
   ⚠ 재동의를 요구하는 개정(최소 버전을 올릴 때)도 같은 순서로 나눠 낸다 — ① 서버가 새 버전도 받게 하되 최소 버전은 그대로 둔다 ② 새 문서를 실은 앱을 게재하고 `minSupported` 로 옛 앱을 막는다 ③ 그 뒤에 최소 버전을 올리고 앞 버전을 목록에서 지운다. 앱을 먼저 내면 옛 서버가 새 버전을 409 로 막고, ②보다 먼저 최소 버전을 올리면 옛 앱이 재동의를 제출할 수 없다. ①의 앞 버전 수락은 ③에서 올린 최소 버전을 채우지 못하므로 재동의가 새어 나가지 않는다.
 
 ## 동의 화면이 보여 주는 문서는 **번들본**이다
@@ -219,7 +220,7 @@
 | 등록 입구 권리 확인 | `VoiceProfileManagementPanel.registrationConsentOpen` → `showCreateForm` | 같은 패널의 `registrationConsentOpen` → `route = .clone` | 별도 동의 유형을 기록하지 않음 |
 | 재동의 레버 | — | — | `CONSENT_MIN_POLICY_VERSION` |
 | 403 뒤 목록·겹친 조회 실패 | `refreshConsentCollectAfterGate`·`applyConsentStatusFailure` (`MainViewModelAuthActions`), `consentGatePendingUserId` (`MainViewModel`) | `handleConsentRequired` → `checkConsentStatus`, `consentGatePendingUserID` (`AuthViewModel`) — `AuthViewModelTests` | `GET /user/consents/status` |
-| 동의 뒤 동기화 | `submitConsents` → `RemoteAlarmSyncScheduler.runOnce` | `consentSubmitGeneration` → `remoteSync.runFullSync` (`AlarmTalkApp`) | — |
+| 동의 뒤 막혔던 알람 전송 다시 돌기 | `submitConsents` → `syncNow`(내 알람 전송. 예전 자리 `RemoteAlarmSyncScheduler.runOnce` 는 받은 알람 pull 이었다 — 그 워커는 이제 계정 확인뿐) | `consentSubmitGeneration` → `remoteSync.runFullSync` (`AlarmTalkApp`) | — |
 | 문서 버전 대조 | `BuildConfig.LEGAL_POLICY_VERSION` | `LegalPolicyVersion` | `POST /user/consents` 의 `ACCEPTED_POLICY_VERSIONS`(목록 밖은 409, 받으면 그 버전으로 기록) — 게시 중 최신은 `CURRENT_POLICY_VERSION` |
 | 동의 화면의 문서 | 번들 자산 (`ui/auth/LegalDocument.kt`) | 번들 리소스 (`BundledLegalDocument`) | — |
 | 번들을 못 읽을 때 — **동의 차단** | `legalDocumentsReadable` → `UpdateRequiredScreen` (`AlarmTalkApp.kt`) | `bundledLegalDocumentsReadable` → `UpdateRequiredView` (`RootView`) | — |

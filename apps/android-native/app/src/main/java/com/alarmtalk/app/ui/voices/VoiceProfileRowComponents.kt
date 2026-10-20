@@ -47,11 +47,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.draw.rotate
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.alarmtalk.app.network.FamilyVoiceProfile
 import com.alarmtalk.app.network.VoiceProfile
 
 // VoiceProfileManagement 행/필드 하위 컴포넌트.
@@ -145,49 +143,6 @@ internal fun RelationshipDropdownField(
     }
 }
 
-@Composable
-internal fun ShareVoiceToggleCard(
-    enabled: Boolean,
-    checked: Boolean,
-    title: String,
-    description: String,
-    onCheckedChange: (Boolean) -> Unit,
-) {
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(enabled = enabled) { onCheckedChange(!checked) },
-        shape = WakerPanelShape,
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f),
-        border = wakerCardBorder(if (enabled) 0.72f else 0.36f),
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 12.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(3.dp),
-            ) {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                MutedText(description)
-            }
-            AlarmTalkSwitch(
-                checked = checked,
-                onCheckedChange = onCheckedChange,
-                enabled = enabled,
-            )
-        }
-    }
-}
-
 // label 은 백엔드에 저장되는 정규(canonical) 값이라 로케일과 무관하게 고정한다.
 // labelRes 는 드롭다운 표시용 번역 리소스.
 internal enum class RelationshipPreset(val label: String, @StringRes val labelRes: Int) {
@@ -237,7 +192,7 @@ internal sealed interface CloneVoiceReadiness {
 }
 
 /**
- * 목소리 목록의 섹션 머리 — [내 목소리][공유받은 목소리][기본 목소리]. 누르면 접었다 편다.
+ * 목소리 목록의 섹션 머리 — [내 목소리][기본 목소리]. 누르면 접었다 편다.
  *
  * 기본값은 '펼침'이다. 접힌 채로 시작하면 무료 사용자가 쓸 수 있는 기본 목소리 4개가
  * 다시 한 번 가려지는데, 이 화면을 고친 이유가 바로 그거였다. 접기는 목소리가 많아졌을 때
@@ -316,18 +271,17 @@ internal fun VoiceCatalogGroup(
 }
 
 /**
- * 목소리 목록의 한 행. 내 목소리·공유받은 목소리·기본 목소리를 같은 모양으로 세운다 —
- * 셋 다 "알람에 쓸 수 있는 목소리"라는 같은 종류인데 예전에는 섹션과 시트로 흩어져 있어서,
+ * 목소리 목록의 한 행. 내 목소리·기본 목소리를 같은 모양으로 세운다 —
+ * 둘 다 "알람에 쓸 수 있는 목소리"라는 같은 종류인데 예전에는 섹션과 시트로 흩어져 있어서,
  * 무료 사용자에겐 정작 쓸 수 있는 기본 목소리 4개가 시트를 열기 전까진 보이지 않았다.
  *
- * 행을 누르면: 내 목소리는 관리 시트(이름 수정·공유·삭제), 그 외에는 미리듣기.
+ * 행을 누르면: 내 목소리는 관리 시트(이름 수정·삭제), 그 외에는 미리듣기.
  * 내 목소리는 손댈 게 있는 유일한 행이라 행 전체를 그 입구로 준다 — 작은 ⋮ 만 과녁으로
  * 두면 매번 조준해야 한다. 듣기는 어느 행에서든 '듣기' 글자로 따로 누른다.
  */
 @Composable
 internal fun VoiceCatalogRow(
     name: String,
-    subtitle: String?,
     isPlaying: Boolean,
     onPreview: () -> Unit,
     enabled: Boolean = true,
@@ -366,22 +320,17 @@ internal fun VoiceCatalogRow(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                // 부가설명이 있든 없든 행 높이를 같게 — 목록이 들쭉날쭉해지지 않는다.
+                // ⋮ 가 있든 없든 행 높이를 같게 — 목록이 들쭉날쭉해지지 않는다.
                 .heightIn(min = VoiceCatalogRowContentHeight),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Column(
+            Text(
+                text = name,
                 modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(3.dp),
-            ) {
-                Text(
-                    text = name,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                if (!subtitle.isNullOrBlank()) MutedText(subtitle)
-            }
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
             if (onOpenActions != null) {
                 IconButton(onClick = onOpenActions, enabled = enabled) {
                     Icon(
@@ -417,11 +366,9 @@ private val VoiceCatalogRowContentHeight = 48.dp
 internal fun VoiceProfileRow(
     profile: VoiceProfile,
     enabled: Boolean,
-    canShareVoice: Boolean,
     isPlaying: Boolean,
     onPreview: () -> Unit,
     onRename: () -> Unit,
-    onShareChange: (Boolean) -> Unit,
     onDelete: () -> Unit,
     readiness: CloneVoiceReadiness? = null,
     onRetryPrerender: () -> Unit = {},
@@ -434,7 +381,6 @@ internal fun VoiceProfileRow(
     val isDeleting = profile.status == "deleting"
     val rowEnabled = enabled && !isProcessing && !isDeleting
     var menuExpanded by remember { mutableStateOf(false) }
-    val isShared = profile.isShared == true
 
     // 만드는 중/지우는 중에는 미리듣기도 기본 지정도 의미가 없어 진행 문구만 보여준다.
     if (isProcessing || isDeleting) {
@@ -463,8 +409,6 @@ internal fun VoiceProfileRow(
 
     VoiceCatalogRow(
         name = profile.name,
-        // 공유 상태는 '⋮ → 목소리 공유' 안으로 들어갔으므로, 켜져 있다는 사실은 여기서 알린다.
-        subtitle = if (isShared) stringResource(R.string.voicesr_sharing_badge) else null,
         isPlaying = isPlaying,
         onPreview = onPreview,
         enabled = rowEnabled,
@@ -498,10 +442,7 @@ internal fun VoiceProfileRow(
     if (menuExpanded) {
         VoiceProfileMenuSheet(
             profileName = profile.name,
-            isShared = isShared,
-            canShare = rowEnabled && canShareVoice,
             onRename = onRename,
-            onShareChange = onShareChange,
             onDelete = onDelete,
             onDismiss = { menuExpanded = false },
         )
@@ -528,7 +469,7 @@ private fun VoiceRetryRow(
 
 /**
  * 목소리 행의 '⋮' 메뉴. Material3 DropdownMenu(작은 흰 박스) 대신 앱 고유 바텀시트를 쓴다 —
- * 이 앱의 다른 선택 UI(테마·목소리·수신자)가 전부 이 시트라서 톤이 맞고, 손가락이 닿는
+ * 이 앱의 다른 선택 UI(테마·목소리)가 전부 이 시트라서 톤이 맞고, 손가락이 닿는
  * 화면 아래쪽에서 열려 한 손 조작이 쉽다.
  *
  * '정보 수정'이 아니라 '이름 수정'이다: 알람 클립은 등록 시점에 통째로 렌더되므로 나중에
@@ -540,10 +481,7 @@ private fun VoiceRetryRow(
 @Composable
 private fun VoiceProfileMenuSheet(
     profileName: String,
-    isShared: Boolean,
-    canShare: Boolean,
     onRename: () -> Unit,
-    onShareChange: (Boolean) -> Unit,
     onDelete: () -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -558,50 +496,15 @@ private fun VoiceProfileMenuSheet(
             divider = true,
         )
         WakerSheetOptionRow(
-            title = stringResource(R.string.voicesr_share_voice),
-            description = stringResource(
-                if (canShare) R.string.voicesr_share_voice_desc else R.string.voicesr_share_voice_locked,
-            ),
-            selected = false,
-            onClick = { if (canShare) onShareChange(!isShared) },
-            trailing = {
-                AlarmTalkSwitch(
-                    checked = isShared,
-                    onCheckedChange = onShareChange,
-                    enabled = canShare,
-                )
-            },
-            divider = true,
-        )
-        WakerSheetOptionRow(
             title = stringResource(R.string.voicesr_delete),
             selected = false,
             onClick = {
                 dismiss()
                 onDelete()
             },
-            // 파괴적 항목은 색으로만 구분한다 — 아이콘을 붙이면 나머지 두 행에도 장식용
+            // 파괴적 항목은 색으로만 구분한다 — 아이콘을 붙이면 나머지 행에도 장식용
             // 아이콘을 달아야 균형이 맞고, 그때부터 시트가 아이콘 목록처럼 보인다.
             destructive = true,
         )
     }
 }
-
-@Composable
-internal fun SharedVoiceProfileRow(
-    profile: FamilyVoiceProfile,
-    isPlaying: Boolean,
-    onPlay: () -> Unit,
-) {
-    val context = LocalContext.current
-    val ownerText = profile.ownerName?.trim()?.takeIf { it.isNotBlank() }
-        ?.let { stringResource(R.string.voicesr_shared_from_owner, com.alarmtalk.app.data.honoredPersonName(context, it)) }
-        ?: stringResource(R.string.voicesr_shared_voice)
-    VoiceCatalogRow(
-        name = profile.name,
-        subtitle = ownerText,
-        isPlaying = isPlaying,
-        onPreview = onPlay,
-    )
-}
-

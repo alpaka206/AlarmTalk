@@ -35,26 +35,29 @@ interface Snapshot {
   columns: Map<string, Set<string>>;
   indexes: Set<string>;
   views: Set<string>;
+  triggers: Set<string>;
 }
 
 async function snapshot(client: Client): Promise<Snapshot> {
   const master = await client.execute(
     `SELECT type, name FROM sqlite_master
-      WHERE name NOT LIKE 'sqlite_%' AND type IN ('table','index','view')`,
+      WHERE name NOT LIKE 'sqlite_%' AND type IN ('table','index','view','trigger')`,
   );
   const columns = new Map<string, Set<string>>();
   const indexes = new Set<string>();
   const views = new Set<string>();
+  const triggers = new Set<string>();
   for (const r of master.rows) {
     const name = String(r.name);
     if (r.type === 'index') indexes.add(name);
     else if (r.type === 'view') views.add(name);
+    else if (r.type === 'trigger') triggers.add(name);
     else {
       const info = await client.execute(`PRAGMA table_info("${name.replace(/"/g, '""')}")`);
       columns.set(name, new Set(info.rows.map((c) => String(c.name))));
     }
   }
-  return { columns, indexes, views };
+  return { columns, indexes, views, triggers };
 }
 
 /** .dev.vars.* 형식(KEY=VALUE, # 주석)을 읽는다. 원격 비교/리허설에서만 쓴다. */
@@ -166,6 +169,8 @@ describe.skipIf(!DIFF_ENV_FILE)('원격 DB 스키마 드리프트', () => {
     }
     cmp('인덱스', fresh.indexes, live.indexes);
     cmp('뷰', fresh.views, live.views);
+    // 트리거도 본다 — 원격에만 남은 트리거는 지운 표에 쓰려다 원래 표의 쓰기를 통째로 막는다(#131 이 지운 받은 알람 순번 트리거).
+    cmp('트리거', fresh.triggers, live.triggers);
 
     expect(drift).toEqual([]);
   });

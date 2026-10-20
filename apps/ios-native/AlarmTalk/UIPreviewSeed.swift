@@ -190,7 +190,6 @@ enum UIPreviewSeed {
     static func makeVoiceProfiles() -> [VoiceProfile] {
         var own = VoiceProfile(id: "preview-voice", name: "엄마 목소리", status: "ready")
         own.relationshipLabel = "엄마"
-        own.isShared = true
         return [own] + bundledSystemVoiceProfiles()
     }
 

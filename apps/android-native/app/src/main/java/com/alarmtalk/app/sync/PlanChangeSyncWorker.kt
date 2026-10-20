@@ -25,9 +25,9 @@ import kotlinx.coroutines.withContext
 
 /**
  * 서버 plan_changed 푸시(구독 만료 → 무료 강등) 처리 워커. FCM 서비스가 즉시 리턴한 뒤 프로세스가
- * 죽어도 살아남게 WorkManager 로 돌린다(가족 알람 pull 과 동일 패턴, 네트워크 제약). 구독·플랜·가족을
- * 재조회해 '진짜 무료'(유료구독 없음 + 가족/커플 아님 + user.plan=free)면 유료 목소리 알람을 기본
- * 알람으로 변환한다(강등 '시점'에 반영). 유료/가족/애매하면 변환하지 않아 오변환이 없다. 놓쳐도
+ * 죽어도 살아남게 WorkManager 로 돌린다(네트워크 제약). 구독·플랜을
+ * 재조회해 '진짜 무료'(유료구독 없음 + user.plan=free)면 유료 목소리 알람을 기본
+ * 알람으로 변환한다(강등 '시점'에 반영). 유료/애매하면 변환하지 않아 오변환이 없다. 놓쳐도
  * 다음 앱 시작·울림 시점 게이트가 폴백. 조회 실패는 retry(네트워크 연결 시 재시도).
  */
 class PlanChangeSyncWorker(
@@ -57,9 +57,9 @@ class PlanChangeSyncWorker(
             // 세션을 못 끊는다([tokenAfterRoll]).
             var auth = AlarmTalkApiClient.bearer(usedToken)
 
-            // 최신 구독·플랜·가족 재조회(강등 확정 확인). 서버측 plan=free 는 /auth/me 로만 관찰
+            // 최신 구독·플랜 재조회(강등 확정 확인). 서버측 plan=free 는 /auth/me 로만 관찰
             // 가능하므로 billing·me 는 필수 — 둘 중 하나라도 실패하면 확정할 수 없으니 throw 시켜
-            // outer runCatching 이 Result.retry() 로 처리한다(성공으로 조용히 끝내지 않는다). 가족은 보조.
+            // outer runCatching 이 Result.retry() 로 처리한다(성공으로 조용히 끝내지 않는다).
             val billing = withContext(Dispatchers.IO) { api.getSubscription(auth) }
             // 응답 전체를 들고 있는다 — /auth/me 는 새 토큰도 함께 준다(rolling refresh).
             // user 만 꺼내 버리면 이 워커가 만료 직전 유일한 호출자일 때 갱신된 토큰이 버려지고,
@@ -67,7 +67,6 @@ class PlanChangeSyncWorker(
             val me = withContext(Dispatchers.IO) { api.me(auth) }
             val freshUser = me.user
             val fetchedAt = System.currentTimeMillis()
-            val familyGroup = runCatching { withContext(Dispatchers.IO) { api.getFamilyGroup(auth) } }.getOrNull()
 
             // 네트워크 왕복 중 로그아웃/계정전환이 일어났을 수 있다 — 결과를 쓰기 전에 현재 세션이 아직
             // **같은 계정**인지 재확인한다. 바뀌었으면 옛 세션을 부활시키거나 새 세션을 덮어쓰지
@@ -113,17 +112,14 @@ class PlanChangeSyncWorker(
             // — 그 뒤 CAS 가 세대 변화를 알아채고 물러나도 이미 쓴 값은 남아, 새 세션의 갱신이
             // 실패했을 때 울림 게이트가 옛 스냅샷을 읽는다(회복된 구독자의 클론이 막힌다).
             // CAS 는 '검사와 저장을 한 덩어리로' 하므로, 그걸 통과한 뒤가 유일하게 안전한 지점이다.
-            // 세 필드를 **한 번에** 반영한다 — 문이 세대·계정·직렬화를 함께 본다.
+            // 두 값을 **한 번에** 반영한다 — 문이 세대·계정·직렬화를 함께 본다.
             // 방금 받은 plan 도 같이 적는다: 판정만 하고 적지 않으면 울림 게이트가 읽는 값이
             // 강등 **전** 등급 그대로다. 보류(ON_HOLD)에서 특히 치명적이다 — 서버는 구독 행을
             // 남긴 채 `users.plan` 만 회수하므로, 옛 유료가 남아 있으면 판정기가 남은 행을
             // 보고 유료라고 답한다(판정 2단이 그래서 plan 을 먼저 본다).
             val published = entitlement.write(ticket, "plan_changed worker") {
                 // plan 과 프로모 종료 시각·받은 시각은 한 벌이다(`AccessSnapshot.withServerUser`).
-                it.copy(
-                    subscriptionResponse = billing,
-                    familyGroup = familyGroup,
-                ).withServerUser(freshUser, fetchedAt)
+                it.copy(subscriptionResponse = billing).withServerUser(freshUser, fetchedAt)
             }
             if (published != EntitlementWrite.Applied) return@runCatching Result.success()
 
@@ -143,7 +139,6 @@ class PlanChangeSyncWorker(
             val planPromo = freshPlanPromoStamp(freshUser, now)
             val access = resolvePaidVoiceAccess(
                 subscriptionResponse = billing,
-                familyGroup = familyGroup,
                 userPlan = plan,
                 storeEntitled = entitlement.read(ticket).storeSignalStillValid(now),
                 nowMillis = now,
@@ -158,12 +153,11 @@ class PlanChangeSyncWorker(
             // 앞 회차에는 `access.isDefinitelyFree()` 로 걸었는데, 판정기는 유효한 스토어 신호를
             // **1단에서** 곧바로 Entitled 로 답하므로 **그 조건은 캐시가 살아 있는 한 참이 될 수
             // 없었다** — 지우려던 바로 그 상황에서만 안 지워지는 조건이었다.
-            // 서버가 방금 준 것(구독·plan·그룹)만으로 다시 판정해, 서버가 무료라고 하면 끊는다.
+            // 서버가 방금 준 것(구독·plan)만으로 다시 판정해, 서버가 무료라고 하면 끊는다.
             // `plan_changed` 는 서버가 이미 알고 보낸 **권위 있는 신호**라 「스토어가 권위다」와
             // 충돌하지 않는다 — 다음 전경 조회가 Play 에 물어 살아 있으면 곧바로 되살린다.
             val serverSaysFree = resolvePaidVoiceAccess(
                 subscriptionResponse = billing,
-                familyGroup = familyGroup,
                 userPlan = plan,
                 storeEntitled = false,
                 nowMillis = now,

@@ -11,6 +11,10 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import java.util.concurrent.TimeUnit
 
+/**
+ * 계정 확인 워커([RemoteAlarmSyncWorker])의 예약. 작업 이름은 받은 알람 pull 시절의 것을 그대로 쓴다 — 바꾸면 이미
+ * 깔린 주기 작업이 옛 이름으로 남아 같은 워커가 두 벌 돈다.
+ */
 object RemoteAlarmSyncScheduler {
     private const val PERIODIC_WORK_NAME = "remote_alarm_periodic_sync"
     private const val ONE_TIME_WORK_NAME = "remote_alarm_immediate_sync"
@@ -46,7 +50,7 @@ object RemoteAlarmSyncScheduler {
         )
     }
 
-    // 앱이 포그라운드로 복귀할 때마다 호출되는 즉시 pull. 짧은 시간 연속 복귀(탭 전환 등)로 인한 중복
+    // 앱이 포그라운드로 복귀할 때마다 호출되는 즉시 계정 확인. 짧은 시간 연속 복귀(탭 전환 등)로 인한 중복
     // 실행을 minIntervalMs throttle 로 막는다. 첫 호출은 항상 실행(=null). elapsedRealtime 은 부팅 후
     // 경과라 초기 0 비교 이슈를 피하려 nullable 로 둔다.
     @Volatile

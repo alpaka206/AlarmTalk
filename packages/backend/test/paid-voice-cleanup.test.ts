@@ -8,9 +8,9 @@ import {
 import { downgradeUserToFree } from '../src/lib/billing-cancel';
 import { purgeUserAccount } from '../src/lib/account-deletion';
 
-// 실제 libSQL(인메모리) + 실제 마이그레이션으로 검증한다. 공유 목소리 제공자가 취소/강등될 때
-// 그 목소리를 참조하는 '타인 소유' 알람이 하드 삭제되면 수신자의 기상 알람이 통째로 사라지는
-// 데이터 손실(감사 B-1/B-2)이 발생하므로, 삭제가 아니라 sound-only 강등이어야 함을 고정한다.
+// 실제 libSQL(인메모리) + 실제 마이그레이션으로 검증한다. 유료 음성 데이터 정리는 **호출 사용자 소유 데이터**로
+// 한정된다 — 남의 알람이 내 목소리·문구를 가리킬 길은 없다(알람 쓰기는 내 목소리·시스템 목소리만 받는다,
+// `voiceProfileBelongsToCaller`·`messageBelongsToCaller`). 목소리 공유는 2026-10-20 에 없앴다.
 
 async function setupDb(): Promise<Client> {
   const db = createClient({ url: ':memory:' });
@@ -25,9 +25,9 @@ async function insertUser(db: Client, id: string) {
   });
 }
 
-async function insertSharedVoiceProfile(db: Client, id: string, ownerId: string) {
+async function insertCloneVoiceProfile(db: Client, id: string, ownerId: string) {
   await db.execute({
-    sql: `INSERT INTO voice_profiles (id, user_id, name, is_shared) VALUES (?, ?, ?, 1)`,
+    sql: `INSERT INTO voice_profiles (id, user_id, name) VALUES (?, ?, ?)`,
     args: [id, ownerId, `voice-${id}`],
   });
 }
@@ -74,87 +74,91 @@ async function getAlarm(db: Client, id: string) {
   return res.rows[0] ?? null;
 }
 
-describe('paid voice cleanup — 공유 목소리 소멸 시 타인 알람 보존(강등)', () => {
+describe('paid voice cleanup — 내 목소리 데이터만 정리한다', () => {
   let db: Client;
   beforeEach(async () => {
     db = await setupDb();
-    // owner A(공유 목소리 제공자), member B(그 목소리로 자기 알람 생성)
+    // A(정리 대상)와 B(무관한 다른 계정) — 각자 자기 클론과 문구가 있다.
     await insertUser(db, 'A');
     await insertUser(db, 'B');
-    await insertSharedVoiceProfile(db, 'vp-A', 'A');
+    await insertCloneVoiceProfile(db, 'vp-A', 'A');
+    await insertCloneVoiceProfile(db, 'vp-B', 'B');
     await insertMessage(db, 'msg-A', 'A', 'vp-A');
-    await insertMessage(db, 'msg-B', 'B', 'vp-A'); // B의 메시지도 A의 공유 목소리로 합성됨
+    await insertMessage(db, 'msg-B', 'B', 'vp-B');
   });
 
-  it('deletePaidVoiceDataForUser(A): A 본인 알람은 삭제, B의 알람은 sound-only로 강등·보존', async () => {
-    await insertVoiceAlarm(db, 'al-A', 'A', 'msg-A', 'vp-A'); // A 본인 → 삭제 대상
-    await insertVoiceAlarm(db, 'al-B', 'B', 'msg-B', 'vp-A'); // 타인 소유 → 강등·보존
+  it('deletePaidVoiceDataForUser(A): A 의 알람·문구·목소리는 지우고 B 의 것은 그대로다', async () => {
+    await insertVoiceAlarm(db, 'al-A', 'A', 'msg-A', 'vp-A');
+    await insertVoiceAlarm(db, 'al-B', 'B', 'msg-B', 'vp-B');
 
     await deletePaidVoiceDataForUser(db, 'A');
 
-    // A 본인 알람은 계정 정리로 삭제
     expect(await getAlarm(db, 'al-A')).toBeNull();
+    expect(await countRows(db, `SELECT id FROM messages WHERE id = 'msg-A'`)).toBe(0);
+    expect(await countRows(db, `SELECT id FROM voice_profiles WHERE id = 'vp-A'`)).toBe(0);
 
-    // B의 기상 알람은 살아남고 sound-only로 강등(음성 참조 제거)
     const alB = await getAlarm(db, 'al-B');
-    expect(alB).not.toBeNull();
-    expect(alB!.mode).toBe('sound-only');
-    expect(alB!.voice_profile_id).toBeNull();
-    expect(alB!.message_id).toBeNull();
-    expect(alB!.wake_mode).toBe('sound_then_voice');
+    expect(alB).toMatchObject({ mode: 'tts', message_id: 'msg-B', voice_profile_id: 'vp-B' });
+    expect(await countRows(db, `SELECT id FROM messages WHERE id = 'msg-B'`)).toBe(1);
+    expect(await countRows(db, `SELECT id FROM voice_profiles WHERE id = 'vp-B'`)).toBe(1);
   });
 
-  it('deletePaidVoiceDataForUser(A): 메시지 경유로만 A 목소리를 참조하는 타인 알람도 강등·보존', async () => {
-    // voice_profile_id 는 비우고 message_id 만 A의 목소리를 가리키는 알람
-    await db.execute({
-      sql: `INSERT INTO alarms (id, user_id, message_id, time, mode) VALUES ('al-B2', 'B', 'msg-B', '09:00', 'tts')`,
-      args: [],
-    });
+  it('deletePaidVoiceDataForUser(A): A 의 목소리를 가리키는 문구는 주인이 누구든 지운다 — FK 로 멈추지 않는다', async () => {
+    // 목소리 공유가 있던 시절에 남을 수 있던 모양 — B 의 문구가 A 의 클론으로 합성됐다(알람은 없다).
+    // messages.voice_profile_id 는 NOT NULL FK 라, 남기면 `DELETE FROM voice_profiles` 가 실패한다.
+    await insertMessage(db, 'msg-B-on-A', 'B', 'vp-A');
 
-    await deletePaidVoiceDataForUser(db, 'A');
+    await expect(deletePaidVoiceDataForUser(db, 'A')).resolves.toBeUndefined();
 
-    const alB2 = await getAlarm(db, 'al-B2');
-    expect(alB2).not.toBeNull();
-    expect(alB2!.mode).toBe('sound-only');
-    expect(alB2!.message_id).toBeNull();
+    expect(await countRows(db, `SELECT id FROM messages WHERE id = 'msg-B-on-A'`)).toBe(0);
+    expect(await countRows(db, `SELECT id FROM voice_profiles WHERE id = 'vp-A'`)).toBe(0);
+    expect(await countRows(db, `SELECT id FROM messages WHERE id = 'msg-B'`)).toBe(1);
   });
 
-  it('downgradeUserToFree(A, {deleteVoiceData:false}): un-share 시 타인 알람을 강등하고 좀비로 남기지 않음', async () => {
-    await insertVoiceAlarm(db, 'al-B', 'B', 'msg-B', 'vp-A');
+  it('downgradeUserToFree(A, {deleteVoiceData:false}): 클론만 반납하고 알람·문구·목소리 행은 보관한다', async () => {
+    await insertVoiceAlarm(db, 'al-A', 'A', 'msg-A', 'vp-A');
+    await db.execute(`UPDATE users SET plan = 'plus' WHERE id = 'A'`);
+    await db.execute(`UPDATE voice_profiles SET elevenlabs_voice_id = 'provider-A' WHERE id = 'vp-A'`);
 
     await downgradeUserToFree(db, 'A', { deleteVoiceData: false });
 
-    // 공유 해제
-    const vp = await db.execute({
-      sql: `SELECT is_shared FROM voice_profiles WHERE id = 'vp-A'`,
-      args: [],
-    });
-    expect(Number(vp.rows[0]!.is_shared)).toBe(0);
-
-    // B의 알람은 유지되되 sound-only로 강등(취소된 목소리가 계속 울리지 않도록)
-    const alB = await getAlarm(db, 'al-B');
-    expect(alB).not.toBeNull();
-    expect(alB!.mode).toBe('sound-only');
-    expect(alB!.voice_profile_id).toBeNull();
+    expect((await db.execute(`SELECT plan FROM users WHERE id = 'A'`)).rows[0]!.plan).toBe('free');
+    const vp = (
+      await db.execute(
+        `SELECT elevenlabs_voice_id, evicted_provider_voice_id, evicted_at, deleted_at
+           FROM voice_profiles WHERE id = 'vp-A'`,
+      )
+    ).rows[0]!;
+    // 재구독하면 원본으로 다시 클론한다 — 표식(evicted_*)을 남기고 행은 지우지 않는다.
+    expect(vp.elevenlabs_voice_id).toBeNull();
+    expect(vp.evicted_provider_voice_id).toBe('provider-A');
+    expect(vp.evicted_at).not.toBeNull();
+    expect(vp.deleted_at).toBeNull();
+    expect(await getAlarm(db, 'al-A')).toMatchObject({ mode: 'tts', message_id: 'msg-A' });
+    expect(
+      await countRows(
+        db,
+        `SELECT id FROM pending_external_deletions WHERE kind = 'elevenlabs_voice' AND ref = 'provider-A'`,
+      ),
+    ).toBe(1);
   });
 
-  it('민감 음성 동의 철회는 본인과 타인의 알람을 보존하고 음성 데이터만 제거한다', async () => {
+  it('민감 음성 동의 철회는 알람을 보존하고 음성 데이터만 제거한다 — 접근권 상실은 주인 한 사람에게', async () => {
     await insertVoiceAlarm(db, 'al-A', 'A', 'msg-A', 'vp-A');
-    await insertVoiceAlarm(db, 'al-B', 'B', 'msg-B', 'vp-A');
     await db.execute({
       sql: `UPDATE voice_profiles SET elevenlabs_voice_id = 'provider-A' WHERE id = 'vp-A'`,
       args: [],
     });
 
-    await deleteSensitiveVoiceDataForUser(db, 'A');
+    const revocation = await deleteSensitiveVoiceDataForUser(db, 'A');
 
-    for (const alarmId of ['al-A', 'al-B']) {
-      const alarm = await getAlarm(db, alarmId);
-      expect(alarm).not.toBeNull();
-      expect(alarm!.mode).toBe('sound-only');
-      expect(alarm!.voice_profile_id).toBeNull();
-      expect(alarm!.message_id).toBeNull();
-    }
+    const alarm = await getAlarm(db, 'al-A');
+    expect(alarm).not.toBeNull();
+    expect(alarm!.mode).toBe('sound-only');
+    expect(alarm!.voice_profile_id).toBeNull();
+    expect(alarm!.message_id).toBeNull();
+    expect(revocation.downgradedAlarms).toEqual([{ alarmId: 'al-A', ownerUserId: 'A' }]);
+    expect(revocation.voiceAccessRevokedUserIds).toEqual(['A']);
     expect((await db.execute(`SELECT * FROM voice_profiles WHERE id = 'vp-A'`)).rows).toEqual([]);
     expect(
       (
@@ -163,23 +167,8 @@ describe('paid voice cleanup — 공유 목소리 소멸 시 타인 알람 보�
         )
       ).rows,
     ).toHaveLength(1);
-  });
-
-  it('민감 음성 삭제 결과에 같은 그룹의 공유 목소리 사용자도 포함한다', async () => {
-    await db.execute({
-      sql: `INSERT INTO plan_groups (id, owner_user_id, plan_id, max_members)
-            VALUES ('group-ab', 'A', '70000000-0000-4000-8000-000000000003', 6)`,
-      args: [],
-    });
-    await db.execute(
-      `INSERT INTO plan_group_members (id, plan_group_id, user_id, role)
-       VALUES ('member-a', 'group-ab', 'A', 'owner'),
-              ('member-b', 'group-ab', 'B', 'member')`,
-    );
-
-    const revocation = await deleteSensitiveVoiceDataForUser(db, 'A');
-
-    expect(new Set(revocation.voiceAccessRevokedUserIds)).toEqual(new Set(['A', 'B']));
+    // B 는 무관하다.
+    expect(await countRows(db, `SELECT id FROM voice_profiles WHERE id = 'vp-B'`)).toBe(1);
   });
 
   // 참고: 실데이터에서 voice_profiles.user_id 가 로그인 id(google_id)로 저장된 케이스는
@@ -187,71 +176,15 @@ describe('paid voice cleanup — 공유 목소리 소멸 시 타인 알람 보�
   // 이 인메모리 테스트는 FK(user_id REFERENCES users(id))를 강제해 login-id 저장 자체를 못 만드므로
   // 별도 재현 대신 코드 정합(두 id 매칭)으로 보장한다.
 
-  // ---- G(P1): 유료 음성 데이터 정리는 '호출 사용자 소유 데이터'로 한정 ----
-  // 계정은 살아 있는 채 목소리만 지우는 경로이므로 target 전달 행은 발신자의 것으로 보존한다.
+  it('purgeUserAccount(A, 계정 삭제): A 의 행만 사라지고 B 의 알람·문구는 남는다', async () => {
+    await insertVoiceAlarm(db, 'al-A', 'A', 'msg-A', 'vp-A');
+    await insertVoiceAlarm(db, 'al-B', 'B', 'msg-B', 'vp-B');
 
-  async function enqueuedRefs(db: Client): Promise<string[]> {
-    const res = await db.execute(`SELECT ref FROM pending_external_deletions`);
-    return res.rows.map((r) => String(r.ref));
-  }
+    await purgeUserAccount(db, 'A', 'google-A');
 
-  it('deletePaidVoiceDataForUser(B): 발신자(A)가 B에게 보낸 알람 행은 보존, B 본인 알람은 삭제', async () => {
-    // A → B 가족 알람(행 소유 A, target 만 B) — A 자신의 목소리/메시지 사용.
-    await db.execute({
-      sql: `INSERT INTO alarms (id, user_id, target_user_id, message_id, voice_profile_id, time, mode)
-            VALUES ('al-sent', 'A', 'B', 'msg-A', 'vp-A', '07:00', 'tts')`,
-      args: [],
-    });
-    // B 본인 소유 알람(B의 정리 대상).
-    await db.execute({
-      sql: `INSERT INTO alarms (id, user_id, message_id, voice_profile_id, time, mode)
-            VALUES ('al-B-own', 'B', 'msg-B', 'vp-A', '08:00', 'tts')`,
-      args: [],
-    });
-
-    await deletePaidVoiceDataForUser(db, 'B');
-
-    expect(await getAlarm(db, 'al-B-own')).toBeNull();
-
-    // 발신자 소유 알람 행은 무손상 생존(강등도 없음 — A의 목소리/메시지만 참조).
-    const sent = await getAlarm(db, 'al-sent');
-    expect(sent).not.toBeNull();
-    expect(sent!.mode).toBe('tts');
-    expect(sent!.voice_profile_id).toBe('vp-A');
-    expect(sent!.message_id).toBe('msg-A');
-  });
-
-  it('deletePaidVoiceDataForUser(B): 나를 target 으로 한 타인 알람이 B의 목소리를 참조하면 삭제 대신 강등', async () => {
-    await insertSharedVoiceProfile(db, 'vp-B', 'B');
-    await insertMessage(db, 'msg-AB', 'A', 'vp-B'); // A의 메시지가 B의 공유 목소리로 합성됨
-    await db.execute({
-      sql: `INSERT INTO alarms (id, user_id, target_user_id, message_id, voice_profile_id, time, mode)
-            VALUES ('al-sent2', 'A', 'B', 'msg-AB', 'vp-B', '07:30', 'tts')`,
-      args: [],
-    });
-
-    await deletePaidVoiceDataForUser(db, 'B');
-
-    // 행은 발신자 소유라 생존하되, B의 목소리 참조는 sound-only 강등으로 끊는다.
-    const sent2 = await getAlarm(db, 'al-sent2');
-    expect(sent2).not.toBeNull();
-    expect(sent2!.mode).toBe('sound-only');
-    expect(sent2!.voice_profile_id).toBeNull();
-    expect(sent2!.message_id).toBeNull();
-  });
-
-  it('purgeUserAccount(B, 계정 삭제): B에게 아직 전달되지 않은 알람 행도 삭제한다', async () => {
-    await db.execute({
-      sql: `INSERT INTO alarms (id, user_id, target_user_id, message_id, voice_profile_id, time, mode)
-            VALUES ('al-sent', 'A', 'B', 'msg-A', 'vp-A', '07:00', 'tts')`,
-      args: [],
-    });
-
-    await purgeUserAccount(db, 'B', 'google-B');
-
-    // 서버 행은 로컬 원본이 아니라 미전달 대기열이다. B가 사라지면 pull/ack 불가능하므로 제거한다.
-    expect(await getAlarm(db, 'al-sent')).toBeNull();
-    expect((await db.execute(`SELECT id FROM users WHERE id = 'B'`)).rows).toEqual([]);
+    expect(await getAlarm(db, 'al-A')).toBeNull();
+    expect((await db.execute(`SELECT id FROM users WHERE id = 'A'`)).rows).toEqual([]);
+    expect(await getAlarm(db, 'al-B')).toMatchObject({ mode: 'tts', message_id: 'msg-B' });
   });
 });
 
@@ -262,7 +195,7 @@ describe('deleteSensitiveVoiceDataForUser — 클론 파생만 지운다', () =>
     const db = await setupDb();
     await insertUser(db, 'user-A');
     await insertSystemVoiceProfile(db, 'vp-system');
-    await insertSharedVoiceProfile(db, 'vp-clone', 'user-A');
+    await insertCloneVoiceProfile(db, 'vp-clone', 'user-A');
 
     // 시스템 목소리로 만든 자산 — 생체정보가 아니다.
     await insertMessage(db, 'msg-system', 'user-A', 'vp-system');

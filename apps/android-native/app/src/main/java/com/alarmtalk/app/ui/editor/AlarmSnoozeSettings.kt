@@ -303,9 +303,8 @@ internal fun EditorActionButtons(
                 Spacer(Modifier.width(8.dp))
             }
             Text(
-                // ⚠ **수신자 이름을 붙이지 않는다**(2026-08-24 지시). 가족 알람이라는 건
-                // 이미 '누구를 깨울까요?' 시트를 거쳐 들어온 문맥으로 알 수 있고, 이름이
-                // 길면 버튼 라벨이 잘린다(`Ellipsis`). 버튼은 무엇을 하는지만 말한다.
+                // ⚠ **버튼은 무엇을 하는지만 말한다**(2026-08-24 지시) — 덧붙인 말이 길면
+                // 버튼 라벨이 잘린다(`Ellipsis`).
                 text = if (isSaving) {
                     stringResource(R.string.editor_saving)
                 } else {

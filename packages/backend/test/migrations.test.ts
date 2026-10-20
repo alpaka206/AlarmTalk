@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { createClient } from '@libsql/client';
+import { createClient, type Client, type InValue } from '@libsql/client';
 import {
   migrations,
+  runMigrations,
   runMigrationsRange,
   migrationMaxId,
   __isIdempotentDDLErrorForTest,
@@ -569,5 +570,304 @@ describe('migrationMaxId — 배포 전파 확인 신호', () => {
     const db = createClient({ url: ':memory:' });
     const ran = await runMigrationsRange(db, migrationMaxId() + 100, migrationMaxId() + 200);
     expect(ran).toEqual([]);
+  });
+});
+
+// 커플·가족 요금제와 가족 알람을 지운다(2026-10-20). dev 는 #130 위에 그룹 시절 데이터를 들고 있다 — 그 모양을
+// 심고 FK 를 켠 채(Turso 와 같다) 한 번에 끝나는지, 지울 것만 지우는지 본다.
+describe('마이그레이션 #131 — 커플·가족 요금제 삭제', () => {
+  const PLAN = {
+    personal: '70000000-0000-4000-8000-000000000002',
+    family: '70000000-0000-4000-8000-000000000003',
+    couple: '70000000-0000-4000-8000-000000000004',
+  };
+  const DROPPED_TABLES = [
+    'alarm_creation_order',
+    'alarm_recipient_state',
+    'targeted_alarm_slots',
+    'pending_plan_notifications',
+    'voice_profile_relationships',
+    'plan_group_members',
+    'plan_groups',
+    'apple_gift_deliveries',
+    'voucher_redemptions',
+    'voucher_codes',
+  ];
+  const DROPPED_TRIGGERS = [
+    'alarm_creation_order_insert',
+    'alarm_creation_order_delete',
+    'alarm_creation_order_delivery_update',
+  ];
+  const DROPPED_INDEXES = [
+    'idx_alarms_target_active',
+    'idx_alarms_target',
+    'idx_voice_profiles_family_shared',
+    'idx_subscriptions_plan_group',
+  ];
+  const DROPPED_COLUMNS: Array<[table: string, column: string]> = [
+    ['alarms', 'target_user_id'],
+    ['alarms', 'delivery_version'],
+    ['voice_profiles', 'is_shared'],
+    ['subscriptions', 'plan_group_id'],
+    ['users', 'allow_family_alarms'],
+    ['users', 'family_alarm_quiet_windows'],
+    ['plans', 'max_members'],
+  ];
+
+  async function list(db: Client, sql: string, args: InValue[] = []): Promise<string[]> {
+    const res = await db.execute({ sql, args });
+    return res.rows.map((row) => String(row[res.columns[0]!]));
+  }
+  const names = (db: Client, type: 'table' | 'index' | 'trigger') =>
+    list(db, `SELECT name FROM sqlite_master WHERE type = ? ORDER BY name`, [type]);
+  const columns = (db: Client, table: string) =>
+    list(db, `SELECT name FROM pragma_table_info(?) ORDER BY cid`, [table]);
+
+  async function seedGroupEra(db: Client): Promise<void> {
+    const run = (sql: string, args: InValue[] = []) => db.execute({ sql, args });
+    // 사람 — 그룹 주인(가족·개인 구독 없음), 멤버(가족·권한 있는 개인 구독), 보류 개인 구독만 남은 가족, 개인, 무료.
+    await run(`INSERT INTO users (id, email, name, plan) VALUES
+      ('u-owner','o@t.test','주인','family'),
+      ('u-member','m@t.test','멤버','family'),
+      ('u-held','h@t.test','보류','family'),
+      ('u-plus','p@t.test','개인','plus'),
+      ('u-free','f@t.test','무료','free')`);
+    await run(`UPDATE users SET allow_family_alarms = 1, family_alarm_quiet_windows = '[]' WHERE id = 'u-member'`);
+    // 구독 — 끝난 커플·가족 구독, 개인 구독(권한 있음·보류), 가족으로 바꾸기를 예약해 둔 개인 구독.
+    await run(
+      `INSERT INTO subscriptions (id, user_id, plan_id, plan_group_id, status, starts_at, expires_at) VALUES
+        ('s-owner-family','u-owner',?,'g-family','cancelled','2026-09-01','2026-10-01'),
+        ('s-member-family','u-member',?,'g-family','cancelled','2026-09-01','2026-10-01'),
+        ('s-couple','u-free',?,'g-couple','cancelled','2026-09-01','2026-10-01'),
+        ('s-member-personal','u-member',?,NULL,'active','2026-10-01','2026-11-01'),
+        ('s-held-personal','u-held',?,NULL,'active','2026-09-01','2026-10-01'),
+        ('s-plus','u-plus',?,NULL,'active','2026-10-01','2026-11-01')`,
+      [PLAN.family, PLAN.family, PLAN.couple, PLAN.personal, PLAN.personal, PLAN.personal],
+    );
+    await run(`UPDATE subscriptions SET entitlement_state = 'suspended' WHERE id = 's-held-personal'`);
+    await run(`UPDATE subscriptions SET cancel_at_period_end = 1, next_plan_id = ? WHERE id = 's-plus'`, [PLAN.family]);
+    await run(`INSERT INTO store_transactions (id, user_id, provider, provider_transaction_id, product_id, plan_key, subscription_id)
+      VALUES ('st-plus','u-plus','google','tok-plus','personal_monthly','personal','s-plus')`);
+    // 그룹·초대 코드·옛 선물 연결·등급 통지 대기열.
+    await run(
+      `INSERT INTO plan_groups (id, owner_user_id, plan_id, max_members) VALUES
+        ('g-family','u-owner',?,5), ('g-couple','u-free',?,2)`,
+      [PLAN.family, PLAN.couple],
+    );
+    await run(`INSERT INTO plan_group_members (id, plan_group_id, user_id, role) VALUES
+      ('pm-owner','g-family','u-owner','owner'),
+      ('pm-member','g-family','u-member','member'),
+      ('pm-couple','g-couple','u-free','owner')`);
+    await run(
+      `INSERT INTO voucher_codes (id, code, code_hash, plan_id, issuer_user_id, issuer_subscription_id,
+                                  redeemed_by_user_id, status, expires_at, max_uses)
+       VALUES ('v-invite','INV-AAAA-BBBB-CCCC','h-invite',?,'u-owner','s-owner-family','u-member','used','2026-10-01',4)`,
+      [PLAN.family],
+    );
+    await run(`INSERT INTO voucher_redemptions (id, voucher_id, user_id) VALUES ('vr-member','v-invite','u-member')`);
+    await run(`INSERT INTO apple_gift_deliveries (transaction_id, voucher_id) VALUES ('apple-gift-tx','v-invite')`);
+    await run(`INSERT INTO pending_plan_notifications (user_id) VALUES ('u-member')`);
+    // 프로모 코드 이력 — 운영에 가족·커플 코드가 남아 있다(상품을 가리키는 FK 는 없다).
+    await run(
+      `INSERT INTO promo_codes (id, code, plan_id, duration_days, is_active) VALUES ('promo-family','FAMILY',?,30,0)`,
+      [PLAN.family],
+    );
+    // 목소리 — 공유한 클론과 받은 사람이 붙인 관계 라벨.
+    await run(`INSERT INTO voice_profiles (id, user_id, name, status, elevenlabs_voice_id, is_shared) VALUES
+      ('vp-owner','u-owner','주인 목소리','ready','el-owner',1),
+      ('vp-plus','u-plus','내 목소리','ready','el-plus',0)`);
+    await run(`INSERT INTO voice_profile_relationships (id, user_id, voice_profile_id, relationship_label)
+      VALUES ('rel-member','u-member','vp-owner','엄마')`);
+    // 문구 — 가족 녹음(받은 사람 소유, 음원은 보낸 사람의 업로드 키), 가족 TTS 문구, 내 문구.
+    await run(`INSERT INTO messages (id, user_id, voice_profile_id, text, audio_url, category) VALUES
+      ('m-family-voice','u-member','vp-owner','녹음','voices/u-owner/rec.m4a','family-voice'),
+      ('m-family','u-member','vp-owner','가족 문구','r2://generated-tts/u-owner/family.mp3','family'),
+      ('m-own','u-plus','vp-plus','내 문구','r2://generated-tts/u-plus/own.mp3','custom')`);
+    await run(`INSERT INTO message_library (id, user_id, message_id) VALUES
+      ('ml-family-voice','u-member','m-family-voice'), ('ml-own','u-plus','m-own')`);
+    // 알람 — 보낸 가족 알람 둘, 내 알람, 가족 문구를 가리키는 내 알람(지우기 전 안전장치 갈래).
+    // 넣는 순간 #115·#116 트리거가 받은 알람 순번(alarm_creation_order)을 함께 적는다.
+    await run(`INSERT INTO alarms (id, user_id, target_user_id, message_id, voice_profile_id, time, mode, delivery_version) VALUES
+      ('a-sent-voice','u-owner','u-member','m-family-voice','vp-owner','07:00','tts','dv-1'),
+      ('a-sent-tts','u-owner','u-member','m-family','vp-owner','07:30','tts','dv-2'),
+      ('a-own','u-plus',NULL,'m-own','vp-plus','08:00','tts',NULL),
+      ('a-family-text','u-member',NULL,'m-family','vp-owner','09:00','tts',NULL)`);
+    await run(`INSERT INTO alarm_recipient_state (alarm_id, recipient_user_id, declined, sender_user_id, voice_profile_id)
+      VALUES ('a-sent-voice','u-member',0,'u-owner','vp-owner')`);
+    await run(`INSERT INTO targeted_alarm_slots (sender_user_id, recipient_user_id, time, alarm_id)
+      VALUES ('u-owner','u-member','07:00','a-sent-voice')`);
+    // 직접 입력 한도 장부 — 그룹 풀(키 = 그룹 id)과 개인 풀.
+    await run(`INSERT INTO manual_tts_usage (pool_key, usage_month, used_count) VALUES
+      ('g-family','2026-10',3), ('u-plus','2026-10',2)`);
+  }
+
+  async function groupEraDb(): Promise<Client> {
+    const db = createClient({ url: ':memory:' });
+    await runMigrationsRange(db, 1, 130);
+    await seedGroupEra(db);
+    await db.execute('PRAGMA foreign_keys = ON');
+    return db;
+  }
+
+  it('그룹 시절 데이터 위에서 FK 를 켠 채 한 번에 끝나고, 그룹 전용 표·트리거·인덱스·칸이 사라진다', async () => {
+    const db = await groupEraDb();
+    try {
+      expect(await list(db, 'PRAGMA foreign_keys')).toEqual(['1']);
+      // 심기가 헛돌지 않았다 — 지울 것이 실제로 있다.
+      expect(await list(db, 'SELECT COUNT(*) FROM alarm_creation_order')).toEqual(['4']);
+      expect(await names(db, 'trigger')).toEqual([...DROPPED_TRIGGERS].sort());
+
+      expect(await runMigrationsRange(db, 131, 131)).toEqual(['131_drop-couple-family-plans']);
+
+      const tables = await names(db, 'table');
+      expect(DROPPED_TABLES.filter((table) => tables.includes(table))).toEqual([]);
+      expect(await names(db, 'trigger')).toEqual([]);
+      const indexes = await names(db, 'index');
+      expect(DROPPED_INDEXES.filter((index) => indexes.includes(index))).toEqual([]);
+      const leftover: string[] = [];
+      for (const [table, column] of DROPPED_COLUMNS) {
+        if ((await columns(db, table)).includes(column)) leftover.push(`${table}.${column}`);
+      }
+      expect(leftover).toEqual([]);
+      expect(await list(db, 'SELECT key FROM plans ORDER BY key')).toEqual(['free', 'personal']);
+      expect(await list(db, 'SELECT id FROM _migrations WHERE id = 131')).toEqual(['131']);
+      expect((await db.execute('PRAGMA foreign_key_check')).rows).toEqual([]);
+      expect(await list(db, 'PRAGMA integrity_check')).toEqual(['ok']);
+    } finally {
+      db.close();
+    }
+  });
+
+  it('개인 데이터는 그대로이고, 가족 등급은 남은 개인 구독으로 다시 정해진다', async () => {
+    const db = await groupEraDb();
+    try {
+      await runMigrationsRange(db, 131, 131);
+      // 커플·가족 구독 행만 지운다. 가족으로 바꾸기를 예약해 둔 개인 구독은 예약만 풀린다.
+      expect(await list(db, 'SELECT id FROM subscriptions ORDER BY id')).toEqual([
+        's-held-personal',
+        's-member-personal',
+        's-plus',
+      ]);
+      expect(
+        (await db.execute(`SELECT status, cancel_at_period_end, next_plan_id FROM subscriptions WHERE id = 's-plus'`))
+          .rows,
+      ).toEqual([{ status: 'active', cancel_at_period_end: 1, next_plan_id: null }]);
+      // 코드의 등급 재계산과 같은 규칙 — 권한 있는 개인 구독이 남았으면 plus, 아니면(보류만 남아도) free.
+      expect(
+        (await db.execute(`SELECT id, plan FROM users WHERE id LIKE 'u-%' ORDER BY id`)).rows.map((row) => [
+          row.id,
+          row.plan,
+        ]),
+      ).toEqual([
+        ['u-free', 'free'],
+        ['u-held', 'free'],
+        ['u-member', 'plus'],
+        ['u-owner', 'free'],
+        ['u-plus', 'plus'],
+      ]);
+      // 내 알람·문구·보관함·목소리·결제 증빙·개인 풀은 그대로다.
+      expect(
+        (await db.execute(`SELECT message_id, voice_profile_id, mode FROM alarms WHERE id = 'a-own'`)).rows,
+      ).toEqual([{ message_id: 'm-own', voice_profile_id: 'vp-plus', mode: 'tts' }]);
+      expect(await list(db, 'SELECT id FROM message_library ORDER BY id')).toEqual(['ml-own']);
+      expect(
+        (await db.execute(`SELECT id, elevenlabs_voice_id FROM voice_profiles WHERE COALESCE(is_system, 0) = 0 ORDER BY id`))
+          .rows.map((row) => [row.id, row.elevenlabs_voice_id]),
+      ).toEqual([
+        ['vp-owner', 'el-owner'],
+        ['vp-plus', 'el-plus'],
+      ]);
+      expect(await list(db, 'SELECT id FROM store_transactions ORDER BY id')).toEqual(['st-plus']);
+      expect(await list(db, 'SELECT pool_key FROM manual_tts_usage ORDER BY pool_key')).toEqual(['u-plus']);
+      // 프로모 코드 발급 기록은 이력이라 남는다.
+      expect(await list(db, 'SELECT id FROM promo_codes ORDER BY id')).toEqual(['promo-family']);
+    } finally {
+      db.close();
+    }
+  });
+
+  it('가족 알람과 그 문구만 지운다 — 녹음 원본은 삭제 큐로, 가족 문구를 가리키던 내 알람은 소리 알람으로', async () => {
+    const db = await groupEraDb();
+    try {
+      await runMigrationsRange(db, 131, 131);
+      expect(
+        (await db.execute(`SELECT id, message_id, voice_profile_id, mode, wake_mode FROM alarms ORDER BY id`)).rows.map(
+          (row) => [row.id, row.message_id, row.voice_profile_id, row.mode, row.wake_mode],
+        ),
+      ).toEqual([
+        ['a-family-text', null, null, 'sound-only', 'sound_then_voice'],
+        ['a-own', 'm-own', 'vp-plus', 'tts', 'sound_then_voice'],
+      ]);
+      expect(await list(db, 'SELECT id FROM messages ORDER BY id')).toEqual(['m-own']);
+      // 가족 녹음 문구가 업로드 원본 키를 아는 마지막 자리일 수 있다 — 지우기 전에 삭제 큐로 옮긴다.
+      expect(
+        (await db.execute('SELECT kind, ref FROM pending_external_deletions ORDER BY ref')).rows.map((row) => [
+          row.kind,
+          row.ref,
+        ]),
+      ).toEqual([['r2_object', 'voices/u-owner/rec.m4a']]);
+      // 알람을 넣고 지우는 데 받은 알람 순번 트리거가 더는 끼지 않는다.
+      await db.execute(`INSERT INTO alarms (id, user_id, time) VALUES ('a-new', 'u-free', '06:00')`);
+      await db.execute(`DELETE FROM alarms WHERE id = 'a-new'`);
+      expect(await list(db, `SELECT id FROM alarms WHERE id = 'a-new'`)).toEqual([]);
+    } finally {
+      db.close();
+    }
+  });
+
+  it('중간에 실패하면 통째로 롤백되고, 고친 뒤 다시 돌리면 끝난다 — 끝난 뒤 재실행은 건너뛴다', async () => {
+    const db = await groupEraDb();
+    try {
+      const snapshot = async () =>
+        Promise.all([
+          db.execute('SELECT type, name, sql FROM sqlite_master ORDER BY type, name'),
+          db.execute('SELECT * FROM alarms ORDER BY id'),
+          db.execute('SELECT * FROM messages ORDER BY id'),
+          db.execute('SELECT * FROM users ORDER BY id'),
+          db.execute('SELECT * FROM subscriptions ORDER BY id'),
+          db.execute('SELECT * FROM manual_tts_usage ORDER BY pool_key'),
+          db.execute('SELECT kind, ref FROM pending_external_deletions ORDER BY ref'),
+        ]).then((results) => results.map((result) => result.rows));
+      // 문장 대부분이 이미 돈 뒤(상품 행을 지우는 자리)에서 실패시킨다.
+      await db.execute(`CREATE TRIGGER fail_131 BEFORE DELETE ON plans
+        BEGIN SELECT RAISE(ABORT, 'forced #131 failure'); END`);
+      const before = await snapshot();
+      await expect(runMigrationsRange(db, 131, 131)).rejects.toThrow('forced #131 failure');
+      expect(await snapshot()).toEqual(before);
+      expect(await list(db, 'SELECT id FROM _migrations WHERE id = 131')).toEqual([]);
+
+      await db.execute('DROP TRIGGER fail_131');
+      expect(await runMigrationsRange(db, 131, 131)).toEqual(['131_drop-couple-family-plans']);
+      expect(await list(db, 'SELECT id FROM messages ORDER BY id')).toEqual(['m-own']);
+      expect(await runMigrationsRange(db, 1, 131)).toEqual([]);
+    } finally {
+      db.close();
+    }
+  });
+
+  it('빈 DB 의 전체 실행에도 #131 이 들어 있고, 상품은 무료·개인 둘이다', async () => {
+    const db = createClient({ url: ':memory:' });
+    try {
+      expect(await runMigrations(db)).toContain('131_drop-couple-family-plans');
+      expect(await list(db, 'SELECT key FROM plans ORDER BY key')).toEqual(['free', 'personal']);
+      const tables = await names(db, 'table');
+      expect(DROPPED_TABLES.filter((table) => tables.includes(table))).toEqual([]);
+      const triggers = await names(db, 'trigger');
+      expect(DROPPED_TRIGGERS.filter((trigger) => triggers.includes(trigger))).toEqual([]);
+    } finally {
+      db.close();
+    }
+  });
+
+  it('FK 를 켠 빈 DB(1..130)에서도 실행되고 FK 위반을 남기지 않는다', async () => {
+    const db = createClient({ url: ':memory:' });
+    try {
+      await runMigrationsRange(db, 1, 130);
+      await db.execute('PRAGMA foreign_keys = ON');
+      expect(await runMigrationsRange(db, 131, 131)).toEqual(['131_drop-couple-family-plans']);
+      expect((await db.execute('PRAGMA foreign_key_check')).rows).toEqual([]);
+    } finally {
+      db.close();
+    }
   });
 });

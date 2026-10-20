@@ -152,7 +152,7 @@ object AlarmTalkLog {
     fun isHandledAuthFailure(error: Throwable): Boolean = httpStatusCode(error) == 401
 
     /**
-     * **예상된 거절** — 사용자가 친 값이 틀렸거나(인증 코드·이용권 코드) 이미 쓰인 것이라 서버가 정상적으로
+     * **예상된 거절** — 사용자가 친 값이 틀렸거나(인증 코드) 이미 쓰인 것이라 서버가 정상적으로
      * 거절한 코드. 화면이 그 자리에서 이유를 말하고(문구 표 `network/ApiErrorMessages.kt`), 우리가 고칠 결함이
      * 아니다. 이슈로 올리면 틀린 코드 하나마다 이벤트가 쌓여 진짜 사고가 그 사이에 묻힌다
      * (`docs/spec/error-codes.md` §3 「앱도 같다」).
@@ -164,7 +164,7 @@ object AlarmTalkLog {
      * ⚠ **넣지 않는 것**: `AUTH_EMAIL_CODE_ATTEMPTS_EXCEEDED`(같은 코드를 다섯 번 낸 묶음이 드러난 자리다 —
      *   1.2.10)·`VOICE_MONTHLY_CHANGE_LIMIT_REACHED`(낡은 등록 횟수가 드러난 자리다). 둘은 그대로 이슈다.
      */
-    val EXPECTED_REFUSAL_CODES = setOf("AUTH_EMAIL_CODE_INVALID","AUTH_EMAIL_CODE_EXPIRED","AUTH_EMAIL_TAKEN","AUTH_EMAIL_SOCIAL","CODE_NOT_FOUND","CODE_EXPIRED","CODE_ALREADY_USED","CODE_ALREADY_REDEEMED_BY_YOU")
+    val EXPECTED_REFUSAL_CODES = setOf("AUTH_EMAIL_CODE_INVALID","AUTH_EMAIL_CODE_EXPIRED","AUTH_EMAIL_TAKEN","AUTH_EMAIL_SOCIAL","CODE_NOT_FOUND")
 
     /**
      * 브레드크럼(`refusal`)으로 낮출 **예상된 거절**인가 — HTTP 4xx 이고, `error_code` 가 있고, 그 코드가

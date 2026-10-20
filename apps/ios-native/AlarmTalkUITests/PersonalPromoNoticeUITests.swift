@@ -170,7 +170,7 @@ final class PersonalPromoNoticeUITests: XCTestCase {
         return card
     }
 
-    /// 프로모만 쓰는 계정(산 이용권·공유 멤버·보류 행 없음)은 **개인 카드가 '현재 이용권'** 이고,
+    /// 프로모만 쓰는 계정(산 이용권·보류 행 없음)은 **개인 카드가 '현재 이용권'** 이고,
     /// 프로모 문구는 그 카드의 상태 한 줄이다 — 카드 위에 또 말하지 않는다. 개인 카드에는 결제
     /// 버튼이 **남는다**(프로모는 산 이용권이 아니다 — 끝난 뒤 이어 쓰려면 사야 한다).
     /// 가짜 구독 카드·해지 버튼은 없다.
@@ -195,7 +195,6 @@ final class PersonalPromoNoticeUITests: XCTestCase {
             personal.buttons["결제하기"].waitForExistence(timeout: 15),
             "프로모로 현재가 된 개인 카드에 결제 버튼이 없다 — `isCurrent` 로 버튼을 숨겼다"
         )
-        XCTAssertFalse(personal.buttons["이용권 변경"].exists, "프로모는 산 이용권이 아니다 — 전환이 아니라 결제다")
         shot("03-이용권")
     }
 

@@ -1,7 +1,6 @@
 package com.alarmtalk.app.alarm
 
 import com.alarmtalk.app.data.AlarmEntity
-import com.alarmtalk.app.data.AlarmOrigins
 import com.alarmtalk.app.data.AlarmPlayModes
 import com.alarmtalk.app.data.hasVoiceResources
 import com.alarmtalk.app.data.isLegacyPlanLock
@@ -121,17 +120,15 @@ internal fun ringSoundFactsFor(
 )
 
 /**
- * 울리는 지금 **유료 목소리를 못 쓰는가** — 본인 알람(`LOCAL_OWNED`)의 목소리 모드이고, 유료
- * 목소리 자원을 쓰며(무료 기본 목소리·직접 녹음 제외), 권한이 없다.
+ * 울리는 지금 **유료 목소리를 못 쓰는가** — 목소리 모드이고, 유료 목소리 자원을 쓰며(무료 기본
+ * 목소리·직접 녹음 제외), 권한이 없다.
  *
- * 받은 알람(`RECEIVED_REMOTE`)은 보낸 사람의 구독으로 성립하므로 받는 쪽 권한으로 판단하지
- * 않는다(공유가 끊기면 서버가 걷어내고 pull 로 내려온다). '알람' 모드는 목소리를 틀지 않으므로
- * 볼 필요가 없다. [entitled] 는 저장소를 읽으므로 앞 조건이 다 맞을 때만 부른다.
+ * '알람' 모드는 목소리를 틀지 않으므로 볼 필요가 없다. [entitled] 는 저장소를 읽으므로 앞 조건이
+ * 다 맞을 때만 부른다.
  */
 internal fun ringTimePaidVoiceUnusable(alarm: AlarmEntity?, entitled: () -> Boolean): Boolean =
     alarm != null &&
         AlarmPlayModes.normalize(alarm.playMode) == AlarmPlayModes.VOICE_ONLY &&
-        alarm.origin == AlarmOrigins.LOCAL_OWNED &&
         !alarm.usesFreeSystemVoiceAlarm() &&
         alarm.hasVoiceResources() &&
         !entitled()

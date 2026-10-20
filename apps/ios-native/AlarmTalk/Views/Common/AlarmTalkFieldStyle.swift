@@ -26,7 +26,7 @@ struct AlarmTalkFieldStyle: ViewModifier {
             .tint(theme.palette.primary)
             .padding(.vertical, 12)
             .padding(.horizontal, 14)
-            // 옆에 버튼이 서는 자리가 있어(코드 등록) 높이를 컨트롤 공통값으로 고정한다.
+            // 높이를 컨트롤 공통값으로 고정한다 — 같은 줄의 버튼과 높이가 맞는다.
             .frame(minHeight: AlarmTalkControl.height)
             .background(
                 RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous)

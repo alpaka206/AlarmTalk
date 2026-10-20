@@ -2,7 +2,7 @@
 
 > [English](README.md) · [한국어](README.ko.md) · [日本語](README.ja.md)
 
-**AlarmTalk** is an OS-native voice alarm app. At the scheduled time, it rings a real alarm using a voice the user picked — a recorded one, a voice shared by family or a partner, or a voice cloned by AI.
+**AlarmTalk** is an OS-native voice alarm app. At the scheduled time, it rings a real alarm using a voice the user picked — a recorded one, a built-in voice, or a voice cloned by AI.
 
 ## Why a "real" alarm
 
@@ -14,8 +14,7 @@ Most voice-alarm apps depend on push notifications or server cron, which can sil
 - **Android** — the shipping client; core alarm engine verified on physical devices:
   - Free tier: system voices with pre-rendered alarm preset clips, rotated locally on each dismiss (bucket rotation)
   - Paid tier: AI-cloned voice presets pre-rendered server-side after an explicit "keep", played fully offline at ring time — offline (flight-mode) ring pending device QA
-  - Family alarms delivered to members instantly via FCM data push (the ring itself stays local — see rule #1) — background delivery pending device QA
-  - Google Play Billing: live — monthly subscriptions only (Personal / Couple / Family)
+  - Google Play Billing: live — one monthly Personal subscription (the Couple and Family plans were removed on 2026-10-20; see [`docs/spec/plan-gates.md`](docs/spec/plan-gates.md))
 - **Backend**: Cloudflare Workers + Hono + Turso — CI auto-deploys with DB migrations (`develop` → dev, `main` → prod)
 
 The SwiftUI iOS client (`apps/ios-native`) was revived on 2026-08-06 and shipped to the App Store on 2026-09-22. Its CI workflow (`ios-build.yml` — unit tests + Release build) was restored on 2026-09-08. Build it with XcodeGen (`project.yml` → `AlarmTalkNative.xcodeproj`); see [`docs/ios/`](docs/ios/).
@@ -78,7 +77,7 @@ If the Android SDK is not auto-detected, create an ignored `apps/android-native/
 
 1. The alarm-ring path must use **OS-native scheduling and local audio only**. No push, no server cron, no fetch at ring time.
 2. Voice cloning and one-off TTS start only from explicit user actions. After the user previews a private draft and explicitly keeps it, that single action may authorize one fixed, bounded, durable background job to render the documented preset manifest. No autonomous scans or unbounded AI work are allowed, and automated tests always stub paid providers.
-3. Voice data is only shared inside a user's family/partner group. External download is disabled by design.
+3. Voice data is never shared with other accounts. External download is disabled by design.
 
 ## Documentation
 

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Hono } from 'hono';
 import type { AppEnv } from '../src/types';
 import { createMockDB, fakeAuthMiddleware, jsonReq, ID } from './helpers';
@@ -9,16 +9,11 @@ vi.mock('../src/lib/db', () => ({
   getDB: () => mockDB.client,
 }));
 
-const sendFamilyAlarmPush = vi.fn(async () => []);
-vi.mock('../src/lib/fcm', () => ({
-  sendFamilyAlarmPush: (...args: unknown[]) => sendFamilyAlarmPush(...args),
-}));
-
 import alarmMutation from '../src/routes/alarm-mutation';
 
-function buildApp(userId = 'user-1') {
+function buildApp(userId = 'user-1', loginId = userId) {
   const app = new Hono<AppEnv>();
-  app.use('*', fakeAuthMiddleware(userId));
+  app.use('*', fakeAuthMiddleware(userId, 'user@test.com', loginId));
   app.route('/alarms', alarmMutation);
   return app;
 }
@@ -29,15 +24,6 @@ function pushMessageBelongsToCaller() {
 
 beforeEach(() => {
   mockDB.reset();
-  sendFamilyAlarmPush.mockClear();
-  // 타깃 알람 생성의 30분 리드타임 판정이 실제 시계에 좌우되지 않도록 고정한다.
-  // 2026-07-15T00:00Z = KST 수요일 09:00 → 테스트 알람 시각들은 항상 30분 이상 남는다.
-  vi.useFakeTimers({ toFake: ['Date'] });
-  vi.setSystemTime(new Date('2026-07-15T00:00:00Z'));
-});
-
-afterEach(() => {
-  vi.useRealTimers();
 });
 
 // ---------------------------------------------------------------------------
@@ -70,29 +56,42 @@ describe('POST /alarms', () => {
     expect((await res.json()).error_code).toBe('INVALID_ALARM_MODE');
   });
 
-it('target_user_id 사용자가 없으면 403 NOT_CONNECTED', async () => {
-    // target user lookup → no rows
-    mockDB.pushResult([]);
-    const res = await buildApp().request(
-      jsonReq('POST', '/alarms', { ...validBody, target_user_id: 'other-user' }),
-    );
-    expect(res.status).toBe(403);
-    expect((await res.json()).error_code).toBe('NOT_CONNECTED');
-  });
+  // 남에게 보내는 알람은 없다(가족 알람은 2026-10-20 에 없앴다). 남을 가리키는 `target_user_id` 는 그룹 밖 발신자가
+  // 받던 답(403 `NOT_CONNECTED`)으로 끊는다 — 조용히 내 알람으로 저장하지 않는다. 그 계정이 있는지는 보지 않는다.
+  it.each(['other-user', '  other-user  ', 'no-such-account'])(
+    'target_user_id 가 남(%j)이면 403 NOT_CONNECTED — DB 를 보지 않는다',
+    async (target) => {
+      const res = await buildApp().request(
+        jsonReq('POST', '/alarms', { ...validBody, target_user_id: target }),
+      );
+      expect(res.status).toBe(403);
+      expect((await res.json()).error_code).toBe('NOT_CONNECTED');
+      expect(mockDB.calls).toHaveLength(0);
+    },
+  );
 
-  it('자기 자신에게는 그룹 관계 검증 건너뜀', async () => {
-    // user plan query → free user
+  // 비었거나 나를 가리키거나(PK·로그인 id 어느 쪽이든) 문자열이 아니면 무시한다 — 옛 검증(400 INVALID_TARGET_USER)은 없다.
+  it.each([
+    ['PK', 'pk-1'],
+    ['로그인 id', 'google-1'],
+    ['빈 문자열', ''],
+    ['공백', '   '],
+    ['숫자', 123],
+    ['null', null],
+  ])('target_user_id 가 %s 이면 무시하고 내 알람으로 201 — 저장·응답에 싣지 않는다', async (_label, target) => {
     mockDB.pushResult([{ plan: 'personal' }]);
-    // message existence check → found
     mockDB.pushResult([{ id: ID.message }]);
     pushMessageBelongsToCaller();
-    // INSERT → success
     mockDB.pushResult([], 1);
 
-    const res = await buildApp().request(
-      jsonReq('POST', '/alarms', { ...validBody, target_user_id: 'user-1' }),
+    const res = await buildApp('pk-1', 'google-1').request(
+      jsonReq('POST', '/alarms', { ...validBody, target_user_id: target }),
     );
     expect(res.status).toBe(201);
+    expect((await res.json()).alarm).not.toHaveProperty('target_user_id');
+    const insert = mockDB.calls.find((call) => call.sql.includes('INSERT INTO alarms'))!;
+    expect(insert.sql).not.toMatch(/target_user_id|delivery_version/);
+    expect(insert.args[1]).toBe('pk-1');
   });
 
   it('무료 플랜도 알람 개수 제한 없이 생성 허용', async () => {
@@ -183,139 +182,6 @@ it('target_user_id 사용자가 없으면 403 NOT_CONNECTED', async () => {
     const body = await res.json();
     expect(body.alarm.mode).toBe('sound-only');
     expect(body.alarm.vibration_pattern).toBe('strong');
-  });
-
-  it('target_user_id 가 같은 커플/가족 그룹이면 생성 성공', async () => {
-    // target user allows family alarms
-    mockDB.pushResult([
-      {
-        id: 'friend-pk-1',
-        google_id: 'friend-1',
-        allow_family_alarms: 1,
-        family_alarm_quiet_days: '[1,2,3,4,5]',
-        family_alarm_quiet_start: '09:00',
-        family_alarm_quiet_end: '18:30',
-      },
-    ]);
-    // 권한 확인이 타이밍 가드보다 먼저: resolveUserPk(sender) → assertSameGroup(양쪽 그룹)
-    mockDB.pushResult([{ id: 'sender-pk-1' }]);
-    mockDB.pushResult([{ plan_group_id: 'group-1' }]);
-    mockDB.pushResult([{ plan_group_id: 'group-1' }]);
-    // 그 다음 효과 시간대: 수신자 최근 알람 timezone 조회(없음 → Asia/Seoul)
-    mockDB.pushResult([]);
-    // user plan for target
-    mockDB.pushResult([{ plan: 'personal' }]);
-    // userIdPK 가 채워지며 `resolvedUserPk && alarmOwner !== userId` 분기가 살아나
-    // 발신자(생성자) 플랜 조회가 실제로 실행된다 — 유료 플랜 행을 큐에 넣어 준다.
-    mockDB.pushResult([{ plan: 'personal' }]);
-    // message check
-    mockDB.pushResult([{ id: ID.message }]);
-    pushMessageBelongsToCaller(); // 트랜잭션 내 재검증
-    mockDB.pushResult([]); // 멱등 슬롯 조회(기존 발신 알람 없음)
-    mockDB.pushResult([], 1); // 교체 UPDATE(같은 시각 기존 발신 알람 비활성화)
-    // INSERT
-    mockDB.pushResult([], 1);
-
-    const res = await buildApp().request(
-      jsonReq('POST', '/alarms', { ...validBody, target_user_id: 'friend-1' }),
-    );
-    expect(res.status).toBe(201);
-
-    // 교체 UPDATE 가 수신자 두 식별자(PK·로그인 id) + time 으로 바인딩됐는지 확인.
-    const deactivate = mockDB.calls.find((c) => c.sql.includes('SET is_active = 0'));
-    expect(deactivate).toBeDefined();
-    expect(deactivate!.args).toContain('friend-pk-1');
-    expect(deactivate!.args).toContain('friend-1');
-    expect(deactivate!.args).toContain('07:30');
-  });
-
-  it('#104 적용 전에는 NULL 전달 버전을 만들지 않고 타깃 알람 생성을 503으로 막는다', async () => {
-    mockDB.pushResultFor("PRAGMA table_info('alarms')", []);
-    mockDB.pushResult([{
-      id: 'friend-pk-1',
-      google_id: 'friend-1',
-      allow_family_alarms: 1,
-      family_alarm_quiet_windows: '[]',
-    }]);
-    mockDB.pushResult([{ id: 'sender-pk-1' }]);
-    mockDB.pushResult([{ plan_group_id: 'group-1' }]);
-    mockDB.pushResult([{ plan_group_id: 'group-1' }]);
-    mockDB.pushResult([]);
-    mockDB.pushResult([{ plan: 'personal' }]);
-    mockDB.pushResult([{ plan: 'personal' }]);
-    mockDB.pushResult([{ id: ID.message }]);
-    pushMessageBelongsToCaller();
-    mockDB.pushResult([]);
-    mockDB.pushResult([], 1);
-    mockDB.pushResult([], 1);
-
-    const res = await buildApp().request(
-      jsonReq('POST', '/alarms', { ...validBody, target_user_id: 'friend-1' }),
-    );
-
-    expect(res.status).toBe(503);
-    expect((await res.json()).error_code).toBe('ALARM_SCHEMA_UPGRADING');
-    const insert = mockDB.calls.find((call) => call.sql.includes('INSERT INTO alarms'));
-    expect(insert).toBeUndefined();
-  });
-
-  it('타깃 알람: 수신자 시간대 기준 리드타임 미만이면 400 FAMILY_ALARM_LEAD_TIME', async () => {
-    // now = 2026-07-15T00:00Z = KST 09:00 → KST 09:03 은 3분 뒤(리드타임 미만).
-    mockDB.pushResult([
-      {
-        id: 'friend-pk-1',
-        google_id: 'friend-1',
-        allow_family_alarms: 1,
-        // quiet 창을 비워 리드타임 판정만 검증한다.
-        family_alarm_quiet_windows: '[]',
-      },
-    ]);
-    // 권한(같은 그룹)이 타이밍 가드보다 먼저 통과해야 가드에 도달한다.
-    mockDB.pushResult([{ id: 'sender-pk-1' }]); // resolveUserPk(sender)
-    mockDB.pushResult([{ plan_group_id: 'group-1' }]); // assertSameGroup: 발신자 그룹
-    mockDB.pushResult([{ plan_group_id: 'group-1' }]); // assertSameGroup: 수신자 그룹(동일)
-
-    const res = await buildApp().request(
-      jsonReq('POST', '/alarms', {
-        ...validBody,
-        time: '09:03',
-        target_user_id: 'friend-1',
-        timezone: 'Asia/Seoul',
-      }),
-    );
-    expect(res.status).toBe(400);
-    expect((await res.json()).error_code).toBe('FAMILY_ALARM_LEAD_TIME');
-    expect(mockDB.calls.some((c) => c.sql.includes('INSERT INTO alarms'))).toBe(false);
-  });
-
-  it('타깃 알람: 일회성 quiet 요일은 수신자 시간대의 다음 발사 요일로 판정', async () => {
-    // now = 2026-07-17T14:00Z = UTC 금요일. KST 로는 금 23:00 → '00:30' 다음 발사는
-    // KST 토요일 00:30(= UTC 금 15:30). 주말 00:00-08:00 quiet 창에 걸려야 한다.
-    // (구버전은 서버 UTC 요일(금)로 판정해 토요일 창을 놓쳤다.)
-    vi.setSystemTime(new Date('2026-07-17T14:00:00Z'));
-    mockDB.pushResult([
-      {
-        id: 'friend-pk-1',
-        google_id: 'friend-1',
-        allow_family_alarms: 1,
-        family_alarm_quiet_windows: '[{"days":[0,6],"start":"00:00","end":"08:00"}]',
-      },
-    ]);
-    // 권한(같은 그룹)이 타이밍 가드보다 먼저 통과해야 가드에 도달한다.
-    mockDB.pushResult([{ id: 'sender-pk-1' }]); // resolveUserPk(sender)
-    mockDB.pushResult([{ plan_group_id: 'group-1' }]); // assertSameGroup: 발신자 그룹
-    mockDB.pushResult([{ plan_group_id: 'group-1' }]); // assertSameGroup: 수신자 그룹(동일)
-
-    const res = await buildApp().request(
-      jsonReq('POST', '/alarms', {
-        ...validBody,
-        time: '00:30',
-        target_user_id: 'friend-1',
-        timezone: 'Asia/Seoul',
-      }),
-    );
-    expect(res.status).toBe(403);
-    expect((await res.json()).error_code).toBe('FAMILY_ALARM_QUIET_TIME');
   });
 
   it('voice_profile_id null 기본값', async () => {
@@ -463,14 +329,12 @@ it('target_user_id 사용자가 없으면 403 NOT_CONNECTED', async () => {
     expect(res.status).toBe(201);
   });
 
-  it('family 플랜도 알람 개수 제한 없음', async () => {
+  it('옛 그룹 등급(family)은 유료가 아니다 — 클론 목소리 알람은 403', async () => {
     mockDB.pushResult([{ plan: 'family' }]);
-    mockDB.pushResult([{ id: ID.message }]);
-    pushMessageBelongsToCaller();
-    mockDB.pushResult([], 1);
-
+    mockDB.pushResult([]); // usesOnlySystemStockVoice → 시스템 스톡 문구가 아니다
     const res = await buildApp().request(jsonReq('POST', '/alarms', validBody));
-    expect(res.status).toBe(201);
+    expect(res.status).toBe(403);
+    expect((await res.json()).error_code).toBe('VOICE_FEATURE_REQUIRES_PAID_PLAN');
   });
 
   it('snooze_minutes 커스텀 값 INSERT 반영', async () => {
@@ -482,14 +346,6 @@ it('target_user_id 사용자가 없으면 403 NOT_CONNECTED', async () => {
     await buildApp().request(jsonReq('POST', '/alarms', { ...validBody, snooze_minutes: 15 }));
     const insertCall = mockDB.calls.find((c) => c.sql.includes('INSERT'));
     expect(insertCall!.args).toContain(15);
-  });
-
-  it('target_user_id 비문자열 타입 → 400 INVALID_TARGET_USER', async () => {
-    const res = await buildApp().request(
-      jsonReq('POST', '/alarms', { ...validBody, target_user_id: 123 }),
-    );
-    expect(res.status).toBe(400);
-    expect((await res.json()).error_code).toBe('INVALID_TARGET_USER');
   });
 
   it('voice_profile_id 잘못된 UUID 형식 → 400 INVALID_VOICE_PROFILE_ID', async () => {
@@ -700,7 +556,6 @@ describe('greeting 버킷 정책 (POST/PATCH)', () => {
       {
         id: ID.alarm,
         user_id: 'user-1',
-        target_user_id: null,
         message_id: null,
         time: '07:30',
         repeat_days: '[]',
@@ -784,7 +639,6 @@ describe('PATCH /alarms/:id', () => {
       {
         id: ID.alarm,
         user_id: 'user-1',
-        target_user_id: null,
         message_id: ID.message,
         time: '08:00',
         repeat_days: '[]',
@@ -808,33 +662,6 @@ describe('PATCH /alarms/:id', () => {
     expect(body.alarm.time).toBe('08:00');
   });
 
-  it('타깃 알람은 보낸 뒤 PATCH할 수 없다', async () => {
-    mockDB.pushResult([{
-      id: ID.alarm,
-      target_user_id: 'recipient-1',
-      is_active: 0,
-      message_id: null,
-      mode: 'sound-only',
-      wake_mode: 'sound_then_voice',
-      voice_profile_id: null,
-      bucket_id: null,
-      user_plan: 'personal',
-    }]);
-    const tasks: Promise<unknown>[] = [];
-
-    const res = await buildApp().fetch(
-      jsonReq('PATCH', `/alarms/${ID.alarm}`, { snooze_minutes: 12 }),
-      {} as AppEnv['Bindings'],
-      { waitUntil: (task: Promise<unknown>) => tasks.push(task), passThroughOnException: () => {} },
-    );
-    await Promise.all(tasks);
-
-    expect(res.status).toBe(409);
-    expect((await res.json()).error_code).toBe('TARGETED_ALARM_IMMUTABLE');
-    expect(mockDB.calls.some((call) => call.sql.startsWith('UPDATE alarms SET'))).toBe(false);
-    expect(sendFamilyAlarmPush).not.toHaveBeenCalled();
-  });
-
   it('여러 필드 동시 수정', async () => {
     mockDB.pushResult([{ id: ID.alarm }]);
     mockDB.pushResult([], 1);
@@ -842,7 +669,6 @@ describe('PATCH /alarms/:id', () => {
       {
         id: ID.alarm,
         user_id: 'user-1',
-        target_user_id: null,
         message_id: ID.message,
         time: '09:00',
         repeat_days: '[1,3,5]',
@@ -879,7 +705,6 @@ describe('PATCH /alarms/:id', () => {
       {
         id: ID.alarm,
         user_id: 'user-1',
-        target_user_id: null,
         message_id: ID.message,
         time: '07:30',
         repeat_days: '[]',
@@ -932,7 +757,6 @@ describe('PATCH /alarms/:id', () => {
       {
         id: ID.alarm,
         user_id: 'user-1',
-        target_user_id: null,
         message_id: ID.message,
         time: '07:30',
         repeat_days: '[0,6]',
@@ -993,7 +817,6 @@ it('is_active 비불리언 → 400 INVALID_IS_ACTIVE', async () => {
       {
         id: ID.alarm,
         user_id: 'user-1',
-        target_user_id: null,
         message_id: ID.message,
         time: '08:00',
         repeat_days: '[]',
@@ -1020,7 +843,6 @@ it('is_active 비불리언 → 400 INVALID_IS_ACTIVE', async () => {
       {
         id: ID.alarm,
         user_id: 'user-1',
-        target_user_id: null,
         message_id: ID.message,
         time: '07:30',
         repeat_days: '[]',
@@ -1090,7 +912,6 @@ it('is_active 비불리언 → 400 INVALID_IS_ACTIVE', async () => {
       {
         id: ID.alarm,
         user_id: 'user-1',
-        target_user_id: null,
         message_id: ID.message,
         time: '07:30',
         repeat_days: '[]',
@@ -1142,7 +963,6 @@ it('is_active 비불리언 → 400 INVALID_IS_ACTIVE', async () => {
       {
         id: ID.alarm,
         user_id: 'user-1',
-        target_user_id: null,
         message_id: ID.message,
         time: '07:30',
         repeat_days: '[]',
