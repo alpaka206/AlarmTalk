@@ -3150,6 +3150,77 @@ export const migrations: Migration[] = [
         ON ad_reward_credits (user_id, grant_month)`,
     ],
   },
+  {
+    // **커플·가족 이용권을 지운다**(2026-10-20 오너 결정 — 무료와 개인만 남긴다). 그룹·초대 코드·공유 목소리·가족 알람의
+    // 표와 칸, 판매를 내린 두 상품과 그 (전부 해지된) 구독 행을 지운다. 새 코드는 여기서 지우는 것을 읽지도 쓰지도 않는다.
+    // atomic 이다 — 데이터 삭제와 DROP 이 섞여 있어 반쯤 돈 상태는 되돌릴 수 없다. FK 자식·트리거·인덱스를 먼저 지운다.
+    // CHECK 의 'family' 글자(`plans.plan_type`·`users.plan`)는 둔다 — FK 를 강제한 채로는 부모 표를 다시 만들 수 없다(#88).
+    id: 131,
+    name: 'drop-couple-family-plans',
+    atomic: true,
+    statements: [
+      // 가족 녹음 문구가 가리키던 업로드 원본 → 삭제 큐(문구 행이 그 키를 아는 마지막 곳일 수 있다).
+      `INSERT INTO pending_external_deletions (id, kind, ref)
+        SELECT lower(hex(randomblob(16))), 'r2_object', audio_url FROM messages
+         WHERE category IN ('family', 'family-voice')
+           AND audio_url IS NOT NULL AND substr(audio_url, 1, 7) = 'voices/'
+        ON CONFLICT(kind, ref) DO UPDATE SET id = excluded.id`,
+      // 보낸 가족 알람(서버의 전달 행). 받은 사람 기기의 사본은 앱이 내 알람으로 바꾼다.
+      `DELETE FROM alarms WHERE target_user_id IS NOT NULL`,
+      // 가족 알람 문구 — 보관함(FK 자식) 먼저. 알람 강등은 안전장치다(가리키는 알람이 없어야 한다).
+      `DELETE FROM message_library
+        WHERE message_id IN (SELECT id FROM messages WHERE category IN ('family', 'family-voice'))`,
+      `UPDATE alarms
+          SET mode = 'sound-only', wake_mode = 'sound_then_voice', message_id = NULL, voice_profile_id = NULL
+        WHERE message_id IN (SELECT id FROM messages WHERE category IN ('family', 'family-voice'))`,
+      `DELETE FROM messages WHERE category IN ('family', 'family-voice')`,
+      // 그룹 공유 풀의 직접 입력 장부 — plan_groups 를 지우기 전에 읽는다.
+      `DELETE FROM manual_tts_usage WHERE pool_key IN (SELECT id FROM plan_groups)`,
+      // 받은 알람 순번(#115·#116) — 트리거 먼저.
+      `DROP TRIGGER IF EXISTS alarm_creation_order_delivery_update`,
+      `DROP TRIGGER IF EXISTS alarm_creation_order_insert`,
+      `DROP TRIGGER IF EXISTS alarm_creation_order_delete`,
+      `DROP TABLE IF EXISTS alarm_creation_order`,
+      // 그룹 전용 표 — FK 자식이 부모보다 먼저.
+      `DROP TABLE IF EXISTS alarm_recipient_state`,
+      `DROP TABLE IF EXISTS targeted_alarm_slots`,
+      `DROP TABLE IF EXISTS pending_plan_notifications`,
+      `DROP TABLE IF EXISTS voice_profile_relationships`,
+      `DROP TABLE IF EXISTS plan_group_members`,
+      `DROP TABLE IF EXISTS plan_groups`,
+      `DROP TABLE IF EXISTS apple_gift_deliveries`,
+      `DROP TABLE IF EXISTS voucher_redemptions`,
+      `DROP TABLE IF EXISTS voucher_codes`,
+      // 판매를 내린 상품과 그 구독 행. 예약 플랜 참조는 안전장치다.
+      `UPDATE subscriptions SET next_plan_id = NULL
+        WHERE next_plan_id IN (SELECT id FROM plans WHERE key IN ('couple', 'family'))`,
+      `DELETE FROM subscriptions WHERE plan_id IN (SELECT id FROM plans WHERE key IN ('couple', 'family'))`,
+      `DELETE FROM plans WHERE key IN ('couple', 'family')`,
+      // 그룹 등급 'family' → 코드의 재계산과 같은 규칙(`strongestPaidSubscription` → `planTypeToUserPlan`): 권한 있는
+      // 개인 구독이 남았으면 'plus', 아니면 'free'. 무료 강등의 클론 반납·보관 기한은 여기서 하지 않는다 — 원시 free·활성
+      // 구독 없음·클론 있음인 계정은 개인 플랜 종료 전환의 대상(`PROMO_END_TARGET`)에 그대로 든다. 운영 0명, dev 1명.
+      `UPDATE users
+          SET plan = CASE WHEN EXISTS (
+                SELECT 1 FROM subscriptions s JOIN plans p ON p.id = s.plan_id
+                 WHERE s.user_id = users.id AND s.status = 'active'
+                   AND s.entitlement_state = 'entitled' AND p.plan_type = 'personal'
+              ) THEN 'plus' ELSE 'free' END,
+              updated_at = datetime('now')
+        WHERE plan = 'family'`,
+      // 칸을 부르는 인덱스, 그다음 칸.
+      `DROP INDEX IF EXISTS idx_alarms_target_active`,
+      `DROP INDEX IF EXISTS idx_alarms_target`,
+      `DROP INDEX IF EXISTS idx_voice_profiles_family_shared`,
+      `DROP INDEX IF EXISTS idx_subscriptions_plan_group`,
+      `ALTER TABLE alarms DROP COLUMN target_user_id`,
+      `ALTER TABLE alarms DROP COLUMN delivery_version`,
+      `ALTER TABLE voice_profiles DROP COLUMN is_shared`,
+      `ALTER TABLE subscriptions DROP COLUMN plan_group_id`,
+      `ALTER TABLE users DROP COLUMN allow_family_alarms`,
+      `ALTER TABLE users DROP COLUMN family_alarm_quiet_windows`,
+      `ALTER TABLE plans DROP COLUMN max_members`,
+    ],
+  },
 ];
 // Errors that mean the statement was already applied — safe to ignore so
 // we can recover databases whose `_migrations` ledger is out of sync with

@@ -910,7 +910,7 @@ describe('POST /auth/google', () => {
         google_id: null,
         email: 'linked@gmail.com',
         name: 'Old Name',
-        plan: 'family',
+        plan: 'plus',
       },
     ]);
     mockDB.pushResult([], 1);
@@ -934,7 +934,7 @@ describe('POST /auth/google', () => {
       id: 'existing-user-id',
       email: 'linked@gmail.com',
       name: 'Old Name',
-      plan: 'family',
+      plan: 'plus',
     });
     expect(mockDB.calls[1]?.args).toEqual([
       'google-user-2',

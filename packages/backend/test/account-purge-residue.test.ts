@@ -8,17 +8,13 @@
 //  1. **직접 식별자**(계정 id·로그인 id·이메일·애플 id·푸시 토큰·이름)가 남은 행 어디에도 없다.
 //     예외는 외부 삭제 큐(`pending_external_deletions`) 하나다 — R2 키가 `voices/<id>/…` 처럼
 //     사람 id 로 시작하는데, 그 행은 **지울 파일의 주소**이고 크론이 지우는 순간 사라진다.
-//  2. 남은 행이 가리키는 옛 id(내 목소리·그룹·알람)는 **더는 풀리지 않는다** — 그 id 의
+//  2. 남은 행이 가리키는 옛 id(내 목소리·알람·결제)는 **더는 풀리지 않는다** — 그 id 의
 //     주인 행이 전부 없어졌다. 가명 보존 기록은 pepper 없이는 계정 id 로 되짚을 수 없다.
 //
-// ⚠ 원래 잡은 잔존물 둘(2026-09-30):
-//  - `manual_tts_usage` — 직접 입력 월 한도 장부. 개인 풀의 키가 **계정 id 그대로**라, 파기
-//    뒤에도 사람 id 가 남았다. 가명 보존 기록의 pseudonym 은 SHA-256(id:pepper) 라, 서버가
-//    가진 pepper 로 이 id 에서 곧장 보존 기록(스토어 거래 id)까지 이어진다 — 분리 보관이
-//    무너진다. 내가 소유한 그룹의 풀(키 = 그룹 id)도 그룹이 사라진 뒤 주인 없이 남았다.
-//  - 받은 사람 소유의 `family-voice` 문구 — `audio_url` 이 내 업로드 원본 키
-//    (`voices/<내 id>/…`)라 사람 id 가 남았고, 파기가 그 전달 알람을 지우므로 영영 ACK 로
-//    정리되지도 않는 고아 행이 됐다.
+// ⚠ 원래 잡은 잔존물(2026-09-30) — `manual_tts_usage`(직접 입력 월 한도 장부). 개인 풀의 키가
+// **계정 id 그대로**라, 파기 뒤에도 사람 id 가 남았다. 가명 보존 기록의 pseudonym 은
+// SHA-256(id:pepper) 라, 서버가 가진 pepper 로 이 id 에서 곧장 보존 기록(스토어 거래 id)까지
+// 이어진다 — 분리 보관이 무너진다.
 //
 // ⚠ **표가 새로 생기면 이 파일이 먼저 깨진다**(`TABLES`). 사용자 데이터가 들어가는 표라면
 // 여기 심고, 파기(`lib/account-deletion.ts`)가 지우게 만든 뒤 분류할 것.
@@ -36,15 +32,11 @@ import {
 const TABLES: Record<string, 'per-user' | 'no-personal-data' | 'retained-pseudonymized' | 'deletion-queue'> = {
   users: 'per-user',
   alarms: 'per-user',
-  alarm_creation_order: 'per-user', // alarms 삭제 트리거가 함께 지운다
-  alarm_recipient_state: 'per-user',
-  targeted_alarm_slots: 'per-user',
   messages: 'per-user',
   message_library: 'per-user',
   generated_audio_assets: 'per-user',
   voice_profiles: 'per-user',
   voice_uploads: 'per-user',
-  voice_profile_relationships: 'per-user',
   voice_prerender_queue: 'per-user',
   voice_draft_attempt_usage: 'per-user',
   voice_profile_change_ledger: 'per-user',
@@ -55,14 +47,8 @@ const TABLES: Record<string, 'per-user' | 'no-personal-data' | 'retained-pseudon
   user_consents: 'per-user',
   email_verification_codes: 'per-user',
   push_tokens: 'per-user',
-  pending_plan_notifications: 'per-user', // 다른 사람의 탈퇴로 들어간 통지 대기 — 내가 떠나면 같이 지운다
   subscriptions: 'per-user',
   store_transactions: 'per-user',
-  plan_groups: 'per-user',
-  plan_group_members: 'per-user',
-  voucher_codes: 'per-user',
-  voucher_redemptions: 'per-user',
-  apple_gift_deliveries: 'per-user',
   promo_code_redemptions: 'per-user',
   retained_billing_records: 'retained-pseudonymized',
   pending_external_deletions: 'deletion-queue',
@@ -79,7 +65,6 @@ const TABLES: Record<string, 'per-user' | 'no-personal-data' | 'retained-pseudon
 const PEPPER = 'test-pepper';
 const NOW = new Date('2026-09-30T00:00:00.000Z');
 const PERSONAL = '70000000-0000-4000-8000-000000000002';
-const FAMILY = '70000000-0000-4000-8000-000000000003';
 
 // 떠나는 사람. 계정 id 와 로그인 id 를 일부러 다르게 둔다(통일 이전 행이 로그인 id 를 담는다).
 const A_PK = 'a0000000-0000-4000-8000-00000000000a';
@@ -97,8 +82,6 @@ const B_PK = 'b0000000-0000-4000-8000-00000000000b';
 const C_PK = 'c0000000-0000-4000-8000-00000000000c';
 
 const A_UPLOAD_KEY = `voices/${A_PK}/1_0`;
-/** 업로드 행이 TTL 로 먼저 지워진 옛 녹음의 키 — 문구만 이 키를 들고 있다. */
-const A_OLD_UPLOAD_KEY = `voices/${A_PK}/0_0`;
 const A_GENERATED_KEY = `generated-tts/${A_PK}/hash-a.mp3`;
 const B_ON_A_GENERATED_KEY = `generated-tts/${B_PK}/hash-shared.mp3`;
 
@@ -110,14 +93,10 @@ const A_OWNED_ROWS: Array<[table: string, column: string, id: string]> = [
   ['generated_audio_assets', 'id', 'ga-a'],
   ['message_library', 'id', 'ml-a'],
   ['alarms', 'id', 'al-a-own'],
-  ['alarms', 'id', 'al-a-to-b'],
-  ['alarms', 'id', 'al-a-to-b-old'],
   ['subscriptions', 'id', 'sub-a'],
   ['store_transactions', 'id', 'st-a'],
   ['store_transactions', 'id', 'st-a-gift'],
   ['store_transactions', 'id', 'st-a-play'],
-  ['plan_groups', 'id', 'g-a'],
-  ['voucher_codes', 'id', 'v-a-gift'],
   ['voice_prerender_queue', 'voice_profile_id', 'vp-a'],
   ['voice_profile_change_ledger', 'id', 'vcl-a'],
   ['usage_events', 'id', 'ue-a'],
@@ -126,7 +105,7 @@ const A_OWNED_ROWS: Array<[table: string, column: string, id: string]> = [
   ['email_verification_codes', 'id', 'evc-a'],
 ];
 /** 심기 검사용 — 파기 전 사용자별 표마다 A 흔적이 하나는 있어야 한다(심기가 빠지면 검사가 헛돈다). */
-const A_MARKERS = [...DIRECT_IDENTIFIERS, ...A_OWNED_ROWS.map(([, , id]) => id), 'g-a', 'al-a-own'];
+const A_MARKERS = [...DIRECT_IDENTIFIERS, ...A_OWNED_ROWS.map(([, , id]) => id)];
 
 let db: Client;
 
@@ -173,41 +152,34 @@ async function seed(): Promise<void> {
   await run(
     `INSERT INTO users (id, google_id, email, name, plan, apple_id, apple_refresh_token,
                         dynamic_prompt_settings_json, deletion_status, deletion_requested_at, deletion_purge_at)
-     VALUES (?, ?, ?, ?, 'family', ?, ?, ?, 'pending_deletion', '2026-08-30T00:00:00.000Z', '2026-09-29T00:00:00.000Z')`,
+     VALUES (?, ?, ?, ?, 'plus', ?, ?, ?, 'pending_deletion', '2026-08-30T00:00:00.000Z', '2026-09-29T00:00:00.000Z')`,
     [A_PK, A_LOGIN, A_EMAIL, A_NAME, A_APPLE, A_APPLE_REFRESH, '{"weather":{"city":"Seoul"},"fortune":{"birth":"1990-01-01"}}'],
   );
-  await run(`INSERT INTO users (id, google_id, email, name, plan) VALUES (?, 'google-sub-b', 'b@example.com', '남는사람', 'family')`, [B_PK]);
-  await run(`INSERT INTO users (id, email, name, plan) VALUES (?, 'c@example.com', '다른그룹주인', 'family')`, [C_PK]);
+  await run(`INSERT INTO users (id, google_id, email, name, plan) VALUES (?, 'google-sub-b', 'b@example.com', '남는사람', 'plus')`, [B_PK]);
+  await run(`INSERT INTO users (id, email, name, plan) VALUES (?, 'c@example.com', '다른사람', 'free')`, [C_PK]);
 
-  // ── 그룹·구독·결제 ────────────────────────────────────────────────────────
-  // A 는 자기 그룹(g-a)의 주인이고 B 가 멤버다. A 는 C 의 그룹(g-c)에도 멤버로 있다.
-  await run(`INSERT INTO plan_groups (id, owner_user_id, plan_id, max_members) VALUES ('g-a', ?, ?, 6)`, [A_PK, FAMILY]);
-  await run(`INSERT INTO plan_groups (id, owner_user_id, plan_id, max_members) VALUES ('g-c', ?, ?, 6)`, [C_PK, FAMILY]);
-  await run(`INSERT INTO plan_group_members (id, plan_group_id, user_id, role) VALUES ('pm-a-owner', 'g-a', ?, 'owner')`, [A_PK]);
-  await run(`INSERT INTO plan_group_members (id, plan_group_id, user_id, role) VALUES ('pm-b-in-a', 'g-a', ?, 'member')`, [B_PK]);
-  await run(`INSERT INTO plan_group_members (id, plan_group_id, user_id, role) VALUES ('pm-c-owner', 'g-c', ?, 'owner')`, [C_PK]);
-  await run(`INSERT INTO plan_group_members (id, plan_group_id, user_id, role) VALUES ('pm-a-in-c', 'g-c', ?, 'member')`, [A_PK]);
+  // ── 구독·결제 ─────────────────────────────────────────────────────────────
   await run(
-    `INSERT INTO subscriptions (id, user_id, plan_id, plan_group_id, status, starts_at, expires_at,
+    `INSERT INTO subscriptions (id, user_id, plan_id, status, starts_at, expires_at,
                                 apple_transaction_id, apple_original_transaction_id, apple_product_id)
-     VALUES ('sub-a', ?, ?, 'g-a', 'active', '2026-09-01T00:00:00.000Z', '2026-10-01T00:00:00.000Z',
-             'apple-tx-a-sub', 'apple-tx-a-sub', 'com.alarmtalk.app.family_1m')`,
-    [A_PK, FAMILY],
+     VALUES ('sub-a', ?, ?, 'active', '2026-09-01T00:00:00.000Z', '2026-10-01T00:00:00.000Z',
+             'apple-tx-a-sub', 'apple-tx-a-sub', 'com.alarmtalk.app.personal_monthly')`,
+    [A_PK, PERSONAL],
   );
   await run(
-    `INSERT INTO subscriptions (id, user_id, plan_id, plan_group_id, status, starts_at, expires_at)
-     VALUES ('sub-c', ?, ?, 'g-c', 'active', '2026-09-01T00:00:00.000Z', '2026-10-01T00:00:00.000Z')`,
-    [C_PK, FAMILY],
+    `INSERT INTO subscriptions (id, user_id, plan_id, status, starts_at, expires_at)
+     VALUES ('sub-b', ?, ?, 'active', '2026-09-01T00:00:00.000Z', '2026-10-01T00:00:00.000Z')`,
+    [B_PK, PERSONAL],
   );
   await run(
     `INSERT INTO store_transactions (id, user_id, provider, provider_transaction_id, product_id, plan_key,
                                      subscription_id, raw_payload, last_paid_at)
-     VALUES ('st-a', ?, 'apple', 'apple-tx-a-sub', 'com.alarmtalk.app.family_1m', 'family', 'sub-a',
+     VALUES ('st-a', ?, 'apple', 'apple-tx-a-sub', 'com.alarmtalk.app.personal_monthly', 'personal', 'sub-a',
              '{"originalTransactionId":"apple-tx-a-sub"}', '2026-09-01T00:00:00.000Z')`,
     [A_PK],
   );
   // 선물 구매 — 구독 행 없이 거래만 남는 일회성 결제. 선물은 2026-10-14 에 없앴지만(App Store 3.1.1)
-  // 그 전에 쓰인 행·코드·`apple_gift_deliveries` 연결은 이력으로 남는다 — 파기와 가명 보존은 그대로 돌아야 한다.
+  // 그 전에 쓰인 거래 행은 이력으로 남는다 — 파기와 가명 보존은 그대로 돌아야 한다.
   await run(
     `INSERT INTO store_transactions (id, user_id, provider, provider_transaction_id, product_id, plan_key,
                                      subscription_id, raw_payload, last_paid_at)
@@ -215,25 +187,11 @@ async function seed(): Promise<void> {
              '{"kind":"gift"}', '2026-09-05T00:00:00.000Z')`,
     [A_PK],
   );
-  await run(
-    `INSERT INTO voucher_codes (id, code, code_hash, plan_id, issuer_user_id, redeemed_by_user_id, status, used_at, expires_at)
-     VALUES ('v-a-gift', 'GIFT-A', 'hash-gift-a', ?, ?, ?, 'used', '2026-09-06T00:00:00.000Z', '2027-09-05T00:00:00.000Z')`,
-    [PERSONAL, A_PK, B_PK],
-  );
-  await run(
-    `INSERT INTO voucher_codes (id, code, code_hash, plan_id, issuer_user_id, redeemed_by_user_id, status, used_at, expires_at)
-     VALUES ('v-c', 'GIFT-C', 'hash-gift-c', ?, ?, ?, 'used', '2026-09-07T00:00:00.000Z', '2027-09-05T00:00:00.000Z')`,
-    [PERSONAL, C_PK, A_PK],
-  );
-  await run(`INSERT INTO voucher_redemptions (id, voucher_id, user_id) VALUES ('vr-b', 'v-a-gift', ?)`, [B_PK]);
-  await run(`INSERT INTO voucher_redemptions (id, voucher_id, user_id) VALUES ('vr-a', 'v-c', ?)`, [A_PK]);
-  await run(`INSERT INTO apple_gift_deliveries (transaction_id, voucher_id) VALUES ('apple-tx-a-gift', 'v-a-gift')`);
   // ⚠ **거래 id 는 스토어마다 따로 매긴다** — `store_transactions` 의 유일성은 (provider, 거래 id) 다. 글자가
-  //   같아도 스토어가 다르면 남의 결제다. (선물을 없애며 지운 `billing-apple-gift-refund.test.ts` 가 지키던 것을
-  //   여기로 옮겼다.)
-  //   ① C 가 애플로 산 옛 선물(거래·선물 연결 → C 의 코드 v-c)의 거래 id 를 A 의 Play 구매 토큰이 그대로 쓴다.
-  //      선물 연결 정리가 `provider = 'apple'` 을 빠뜨리면 C 의 연결까지 지운다.
-  //   ② 반대로 남는 B 의 Play 구매 토큰이 A 의 애플 선물 거래 id 와 같다 — A 의 연결·거래는 지워도 B 의 거래는 남는다.
+  //   같아도 스토어가 다르면 남의 결제다.
+  //   ① C 가 애플로 산 옛 선물의 거래 id 를 A 의 Play 구매 토큰이 그대로 쓴다.
+  //   ② 반대로 남는 B 의 Play 구매 토큰이 A 의 애플 선물 거래 id 와 같다.
+  //   A 의 거래는 지워도 같은 글자를 쓰는 B·C 의 거래는 남아야 한다.
   //   A 의 Play 결제는 5년 보존 기한이 지난 것이라 가명 보존 기록에 들어가지 않는다(아래 보존 검사가 그대로다).
   await run(
     `INSERT INTO store_transactions (id, user_id, provider, provider_transaction_id, product_id, plan_key,
@@ -242,7 +200,6 @@ async function seed(): Promise<void> {
              '{"kind":"gift"}', '2026-09-04T00:00:00.000Z')`,
     [C_PK],
   );
-  await run(`INSERT INTO apple_gift_deliveries (transaction_id, voucher_id) VALUES ('apple-tx-c-gift', 'v-c')`);
   await run(
     `INSERT INTO store_transactions (id, user_id, provider, provider_transaction_id, product_id, plan_key,
                                      subscription_id, last_paid_at)
@@ -252,7 +209,7 @@ async function seed(): Promise<void> {
   await run(
     `INSERT INTO store_transactions (id, user_id, provider, provider_transaction_id, product_id, plan_key,
                                      subscription_id, last_paid_at)
-     VALUES ('st-b-play', ?, 'google', 'apple-tx-a-gift', 'personal_monthly', 'personal', NULL, '2026-09-03T00:00:00.000Z')`,
+     VALUES ('st-b-play', ?, 'google', 'apple-tx-a-gift', 'personal_monthly', 'personal', 'sub-b', '2026-09-03T00:00:00.000Z')`,
     [B_PK],
   );
   await run(`INSERT INTO promo_codes (id, code, plan_id, duration_days) VALUES ('promo-1', 'WELCOME', ?, 30)`, [PERSONAL]);
@@ -262,8 +219,8 @@ async function seed(): Promise<void> {
 
   // ── 목소리·문구·음원 ──────────────────────────────────────────────────────
   await run(
-    `INSERT INTO voice_profiles (id, user_id, name, elevenlabs_voice_id, status, is_shared)
-     VALUES ('vp-a', ?, '엄마 목소리', 'el-voice-a', 'ready', 1)`,
+    `INSERT INTO voice_profiles (id, user_id, name, elevenlabs_voice_id, status)
+     VALUES ('vp-a', ?, '엄마 목소리', 'el-voice-a', 'ready')`,
     [A_PK],
   );
   await run(
@@ -286,30 +243,13 @@ async function seed(): Promise<void> {
      VALUES ('msg-b', ?, 'vp-b', 'B 문구', ?, 'custom')`,
     [B_PK, `r2://generated-tts/${B_PK}/hash-b.mp3`],
   );
-  // B 가 공유받은 A 의 목소리로 만든 문구.
+  // 목소리를 나눠 쓰던 시절에 B 가 A 의 클론으로 만든 문구 — 그 기능은 없앴어도 행은 남아 있을 수 있다.
+  // messages.voice_profile_id 는 NOT NULL FK 라, 파기가 이 행을 놓치면 A 의 목소리 삭제가 FK 로 막혀
+  // 탈퇴가 통째로 롤백된다.
   await run(
     `INSERT INTO messages (id, user_id, voice_profile_id, text, audio_url, category)
      VALUES ('msg-b-on-a', ?, 'vp-a', '공유 목소리 문구', ?, 'custom')`,
     [B_PK, `r2://${B_ON_A_GENERATED_KEY}`],
-  );
-  // POST /family/alarms/voice 의 모양 — 문구는 받는 사람(B) 소유, 음원은 보낸 사람(A)의 업로드 원본.
-  await run(
-    `INSERT INTO messages (id, user_id, voice_profile_id, text, audio_url, category)
-     VALUES ('msg-b-fv', ?, 'vp-b', '녹음해서 보낸 알람', ?, 'family-voice')`,
-    [B_PK, A_UPLOAD_KEY],
-  );
-  // 같은 모양인데 업로드 행은 이미 없다 — 가족 녹음 원본은 프로필에 안 묶여 7일 TTL 이 먼저
-  // `voice_uploads` 행을 지운다(`cleanupExpiredAudio`). 문구는 여전히 그 키를 들고 있다.
-  await run(
-    `INSERT INTO messages (id, user_id, voice_profile_id, text, audio_url, category)
-     VALUES ('msg-b-fv-old', ?, 'vp-b', '일주일 전에 보낸 녹음', ?, 'family-voice')`,
-    [B_PK, A_OLD_UPLOAD_KEY],
-  );
-  // 보관함이 가리켜 지울 수 없는 녹음 문구 — 받은 사람 것이라 남기고 키만 비운다.
-  await run(
-    `INSERT INTO messages (id, user_id, voice_profile_id, text, audio_url, category)
-     VALUES ('msg-b-fv-kept', ?, 'vp-b', '보관함에 둔 녹음', ?, 'family-voice')`,
-    [B_PK, A_UPLOAD_KEY],
   );
   await run(
     `INSERT INTO generated_audio_assets (id, user_id, voice_profile_id, message_id, provider, provider_voice_id,
@@ -331,9 +271,8 @@ async function seed(): Promise<void> {
   );
   await run(`INSERT INTO message_library (id, user_id, message_id) VALUES ('ml-a', ?, 'msg-a')`, [A_PK]);
   await run(`INSERT INTO message_library (id, user_id, message_id) VALUES ('ml-b', ?, 'msg-b')`, [B_PK]);
-  await run(`INSERT INTO message_library (id, user_id, message_id) VALUES ('ml-b-fv', ?, 'msg-b-fv-kept')`, [B_PK]);
-  await run(`INSERT INTO voice_profile_relationships (id, user_id, voice_profile_id, relationship_label) VALUES ('rel-a-on-b', ?, 'vp-b', '친구')`, [A_PK]);
-  await run(`INSERT INTO voice_profile_relationships (id, user_id, voice_profile_id, relationship_label) VALUES ('rel-b-on-a', ?, 'vp-a', '엄마')`, [B_PK]);
+  // 위 문구의 보관함 행 — messages 의 FK 자식이라 문구보다 먼저 지워져야 한다.
+  await run(`INSERT INTO message_library (id, user_id, message_id) VALUES ('ml-b-on-a', ?, 'msg-b-on-a')`, [B_PK]);
   await run(`INSERT INTO voice_prerender_queue (voice_profile_id, owner_user_id, language) VALUES ('vp-a', ?, 'ko')`, [A_PK]);
   await run(`INSERT INTO voice_draft_attempt_usage (owner_user_id, attempt_month, used_count) VALUES (?, '2026-09', 1)`, [A_PK]);
   await run(
@@ -341,45 +280,18 @@ async function seed(): Promise<void> {
      VALUES ('vcl-a', ?, '2026-09', 'create', 'succeeded')`,
     [A_PK],
   );
-  // 직접 입력 월 한도 장부 — 개인 풀(키 = 계정 id, 통일 이전 행은 로그인 id)과 그룹 풀(키 = 그룹 id).
+  // 직접 입력 월 한도 장부 — 개인 풀(키 = 계정 id, 통일 이전 행은 로그인 id).
   await run(`INSERT INTO manual_tts_usage (pool_key, usage_month, used_count) VALUES (?, '2026-09', 5)`, [A_PK]);
   await run(`INSERT INTO manual_tts_usage (pool_key, usage_month, used_count) VALUES (?, '2026-08', 2)`, [A_LOGIN]);
-  await run(`INSERT INTO manual_tts_usage (pool_key, usage_month, used_count) VALUES ('g-a', '2026-09', 7)`);
   await run(`INSERT INTO manual_tts_usage (pool_key, usage_month, used_count) VALUES (?, '2026-09', 3)`, [B_PK]);
-  await run(`INSERT INTO manual_tts_usage (pool_key, usage_month, used_count) VALUES ('g-c', '2026-09', 4)`);
 
   await run(`INSERT INTO ad_reward_credits (transaction_id, user_id, ad_unit, grant_month) VALUES ('adr-a', ?, 'unit', '2026-09')`, [A_PK]);
 
-  // ── 알람·전달 ────────────────────────────────────────────────────────────
+  // ── 알람 ─────────────────────────────────────────────────────────────────
   await run(`INSERT INTO alarms (id, user_id, message_id, voice_profile_id, time) VALUES ('al-a-own', ?, 'msg-a', 'vp-a', '07:00')`, [A_PK]);
-  // A → B 로 녹음을 보낸 알람(아직 수신 확인 전).
-  await run(
-    `INSERT INTO alarms (id, user_id, target_user_id, message_id, time, mode, delivery_version)
-     VALUES ('al-a-to-b', ?, ?, 'msg-b-fv', '08:00', 'sound-only', 'dv-1')`,
-    [A_PK, B_PK],
-  );
-  await run(
-    `INSERT INTO alarms (id, user_id, target_user_id, message_id, time, mode, delivery_version)
-     VALUES ('al-a-to-b-old', ?, ?, 'msg-b-fv-old', '08:30', 'sound-only', 'dv-0')`,
-    [A_PK, B_PK],
-  );
-  await run(`INSERT INTO alarms (id, user_id, target_user_id, message_id, time) VALUES ('al-b-to-a', ?, ?, 'msg-b', '09:00')`, [B_PK, A_PK]);
-  // B 가 공유받은 A 의 목소리로 맞춘 자기 알람, 그리고 A 와 무관한 B 의 알람.
+  // B 가 A 의 클론 문구로 맞춰 둔 자기 알람, 그리고 A 와 무관한 B 의 알람.
   await run(`INSERT INTO alarms (id, user_id, message_id, voice_profile_id, time) VALUES ('al-b-own', ?, 'msg-b-on-a', 'vp-a', '06:30')`, [B_PK]);
   await run(`INSERT INTO alarms (id, user_id, message_id, voice_profile_id, time) VALUES ('al-b-own2', ?, 'msg-b', 'vp-b', '06:00')`, [B_PK]);
-  // 이미 수신 확인이 끝난 전달의 tombstone — 양방향.
-  await run(
-    `INSERT INTO alarm_recipient_state (alarm_id, recipient_user_id, declined, sender_user_id, voice_profile_id)
-     VALUES ('al-delivered-a-to-b', ?, 0, ?, 'vp-a')`,
-    [B_PK, A_PK],
-  );
-  await run(
-    `INSERT INTO alarm_recipient_state (alarm_id, recipient_user_id, declined, sender_user_id, voice_profile_id)
-     VALUES ('al-delivered-b-to-a', ?, 0, ?, 'vp-b')`,
-    [A_PK, B_PK],
-  );
-  await run(`INSERT INTO targeted_alarm_slots (sender_user_id, recipient_user_id, time, alarm_id) VALUES (?, ?, '08:00', 'al-a-to-b')`, [A_PK, B_PK]);
-  await run(`INSERT INTO targeted_alarm_slots (sender_user_id, recipient_user_id, time, alarm_id) VALUES (?, ?, '09:00', 'al-b-to-a')`, [B_PK, A_PK]);
 
   // ── 기록·동의·인증·푸시 ───────────────────────────────────────────────────
   await run(
@@ -387,7 +299,7 @@ async function seed(): Promise<void> {
      VALUES ('ue-a', ?, 'alarm_rang', '2026-09-20T22:00:00.000Z', 'al-a-own', 'vp-a', 'msg-a')`,
     [A_PK],
   );
-  // B 자신의 기록 — A 의 공유 목소리로 울렸다. B 의 데이터라 남는다(가리키는 id 는 풀리지 않게 된다).
+  // B 자신의 기록 — A 의 클론으로 울렸다. B 의 데이터라 남는다(가리키는 id 는 풀리지 않게 된다).
   await run(
     `INSERT INTO usage_events (id, user_id, type, occurred_at, alarm_id, voice_profile_id, message_id)
      VALUES ('ue-b', ?, 'alarm_rang', '2026-09-20T21:30:00.000Z', 'al-b-own', 'vp-a', 'msg-b-on-a')`,
@@ -407,8 +319,6 @@ async function seed(): Promise<void> {
   );
   await run(`INSERT INTO push_tokens (id, user_id, token, platform) VALUES ('pt-a', ?, ?, 'android')`, [A_PK, A_PUSH]);
   await run(`INSERT INTO push_tokens (id, user_id, token, platform) VALUES ('pt-b', ?, 'push-token-b', 'ios')`, [B_PK]);
-  // 앞서 다른 그룹 주인이 탈퇴해 A 가 등급 통지 대기열에 들어가 있다(아직 못 보냈다).
-  await run(`INSERT INTO pending_plan_notifications (user_id) VALUES (?)`, [A_PK]);
 }
 
 beforeAll(async () => {
@@ -438,7 +348,7 @@ describe('탈퇴 파기 뒤 잔존물 (실제 SQLite)', () => {
     beforeAll(async () => {
       purged = await withWriteTransaction(db, async (tx) => {
         await pseudonymizeBillingForRetention(tx, A_PK, PEPPER, NOW);
-        return purgeUserAccount(tx, A_PK, A_LOGIN, false);
+        return purgeUserAccount(tx, A_PK, A_LOGIN);
       });
     }, 60_000);
 
@@ -450,56 +360,30 @@ describe('탈퇴 파기 뒤 잔존물 (실제 SQLite)', () => {
       expect(outsideQueue).toEqual([]);
     });
 
-    it('외부 삭제 큐에는 지울 파일·클론만 들어 있다 — 크론이 지우는 순간 사라진다', async () => {
-      const queue = await db.execute(`SELECT kind, ref FROM pending_external_deletions ORDER BY ref`);
+    it('외부 삭제 큐에는 A 의 클론·원본 녹음·A 의 목소리로 만든 음원만 들어 있다', async () => {
+      const queue = await db.execute(`SELECT kind, ref FROM pending_external_deletions ORDER BY kind, ref`);
       const jobs = queue.rows.map((row) => [String(row.kind), String(row.ref)]);
-      // A 의 클론·원본 녹음·A 의 목소리로 만든 음원(B 가 만든 것까지)이 전부 들어 있다.
-      // 업로드 행이 TTL 로 먼저 지워진 옛 녹음도 — 그 키를 아는 곳이 B 의 문구뿐이었으므로
-      // 문구를 지우기 전에 옮겨 둬야 R2 에 남지 않는다.
-      const aJobs = [
-        ['elevenlabs_voice', 'el-voice-a'],
-        ['r2_object', A_GENERATED_KEY],
-        ['r2_object', B_ON_A_GENERATED_KEY],
-        ['r2_object', A_UPLOAD_KEY],
-        ['r2_object', A_OLD_UPLOAD_KEY],
-      ];
-      expect(jobs).toEqual(expect.arrayContaining(aJobs));
-      // 나머지는 A 와 무관하다 — 그룹이 해체돼 무료가 된 B 의 클론 슬롯 반납(원본은 남아
-      // 다시 복제할 수 있다)이다. A 를 가리키는 것은 위 다섯뿐이다.
-      const aRefs = aJobs.map(([, ref]) => ref);
-      const others = jobs.filter(([, ref]) => !aRefs.includes(ref));
-      expect(others).toEqual([['elevenlabs_voice', 'el-voice-b']]);
-      const bVoice = await db.execute(`SELECT elevenlabs_voice_id, evicted_at FROM voice_profiles WHERE id = 'vp-b'`);
-      expect(bVoice.rows[0]?.elevenlabs_voice_id).toBeNull();
-      expect(bVoice.rows[0]?.evicted_at).not.toBeNull();
-    });
-
-    it('A 의 목소리를 들고 있던 B 에게 알린다 — 구독 취소가 그룹을 먼저 해체해도 빠지지 않는다', () => {
-      // 받은 알람(수신 확인 전·후)과 B 자신의 알람 모두 목소리를 걷어낼 대상으로 잡힌다.
-      expect(purged.downgradedAlarms).toEqual(
-        expect.arrayContaining([
-          { alarmId: 'al-a-to-b', ownerUserId: B_PK, isReceived: true },
-          // 업로드 행이 먼저 사라진 옛 녹음도 — 다운로드는 끝났는데 수신 확인이 실패한 기기가
-          // 그 녹음으로 계속 울지 않도록.
-          { alarmId: 'al-a-to-b-old', ownerUserId: B_PK, isReceived: true },
-          { alarmId: 'al-delivered-a-to-b', ownerUserId: B_PK, isReceived: true },
-          { alarmId: 'al-b-own', ownerUserId: B_PK, isReceived: false },
-        ]),
+      // B 가 A 의 클론으로 만든 음원까지 들어 있다. 크론이 지우는 순간 사라진다.
+      expect(jobs).toEqual(
+        [
+          ['elevenlabs_voice', 'el-voice-a'],
+          ['r2_object', A_GENERATED_KEY],
+          ['r2_object', A_UPLOAD_KEY],
+          ['r2_object', B_ON_A_GENERATED_KEY],
+        ].sort(),
       );
-      // 같은 그룹이라 A 의 공유 목소리를 볼 수 있었다 — 서버 행과 무관하게 접근권을 다시 확인시킨다.
-      expect(purged.voiceAccessRevokedUserIds).toContain(B_PK);
-      // 떠나는 사람에게는 보내지 않는다(받을 기기가 곧 사라진다).
-      expect(purged.voiceAccessRevokedUserIds).not.toContain(A_PK);
-      expect(purged.downgradedAlarms.some((target) => target.ownerUserId === A_PK)).toBe(false);
+      // B 의 클론은 그대로다 — A 의 탈퇴가 남의 등급이나 클론 슬롯을 건드리지 않는다.
+      const bVoice = await db.execute(`SELECT elevenlabs_voice_id, evicted_at FROM voice_profiles WHERE id = 'vp-b'`);
+      expect(bVoice.rows.map((row) => [row.elevenlabs_voice_id, row.evicted_at])).toEqual([['el-voice-b', null]]);
     });
 
-    it('A 의 그룹이 해체돼 떨어져 나간 B 에게 등급 변경도 알린다 — 목소리 철회와 별개 목록', () => {
-      // A 가 멤버이던 C 의 그룹은 A 가 빠질 뿐이라 C 의 등급은 그대로다.
-      expect(purged.planChangedUserIds).toEqual([B_PK]);
-    });
-
-    it('B 는 파기와 같은 트랜잭션에서 통지 대기열에 적혔고, 대기 중이던 A 의 행은 사라졌다', async () => {
-      expect(await ids(`SELECT user_id FROM pending_plan_notifications`)).toEqual([B_PK]);
+    it('A 의 클론을 쓰던 B 의 알람만 알린다 — 떠나는 사람에게는 보내지 않는다', () => {
+      // 알람은 남기고 목소리만 내린다(아래 알람 검사). 철회 신호는 그 알람의 주인이 받고,
+      // 떠나는 사람의 기기는 곧 사라지므로 아무 신호도 받지 않는다.
+      expect(purged).toEqual({
+        downgradedAlarms: [{ alarmId: 'al-b-own', ownerUserId: B_PK }],
+        voiceAccessRevokedUserIds: [],
+      });
     });
 
     it('A 가 소유했던 행은 그 id 로 더는 풀리지 않는다', async () => {
@@ -511,22 +395,13 @@ describe('탈퇴 파기 뒤 잔존물 (실제 SQLite)', () => {
       expect(resolvable).toEqual([]);
     });
 
-    it('직접 입력 월 한도 장부 — A 의 개인 풀·A 가 소유한 그룹 풀만 지우고 남의 풀은 남긴다', async () => {
-      expect(await ids(`SELECT pool_key FROM manual_tts_usage`)).toEqual([B_PK, 'g-c'].sort());
+    it('직접 입력 월 한도 장부 — A 의 개인 풀(옛 로그인 id 키 포함)만 지우고 남의 풀은 남긴다', async () => {
+      expect(await ids(`SELECT pool_key FROM manual_tts_usage`)).toEqual([B_PK]);
     });
 
-    it('받은 사람 소유의 family-voice 문구 — 전달 알람이 사라진 고아는 지운다(업로드 행이 먼저 사라졌어도)', async () => {
-      // 남는 문구는 B 자신의 것과 보관함이 붙든 녹음 문구 둘이다. A 의 클론으로 만든 B 의
-      // 문구도 목소리와 함께 사라진다.
-      expect(await ids(`SELECT id FROM messages WHERE user_id IN (?, ?, ?)`, [A_PK, B_PK, C_PK])).toEqual(
-        ['msg-b', 'msg-b-fv-kept'].sort(),
-      );
-    });
-
-    it('지울 수 없는 녹음 문구는 받은 사람 것으로 남기고 A 의 업로드 키만 비운다', async () => {
-      const kept = await db.execute(`SELECT text, audio_url FROM messages WHERE id = 'msg-b-fv-kept'`);
-      expect(kept.rows.map((row) => [row.text, row.audio_url])).toEqual([['보관함에 둔 녹음', null]]);
-      expect(await ids(`SELECT id FROM message_library`)).toEqual(['ml-b', 'ml-b-fv'].sort());
+    it('A 의 클론으로 만든 남의 문구도 목소리와 함께 사라진다 — 탈퇴가 FK 로 막히지 않는다', async () => {
+      expect(await ids(`SELECT id FROM messages WHERE user_id IN (?, ?, ?)`, [A_PK, B_PK, C_PK])).toEqual(['msg-b']);
+      expect(await ids(`SELECT id FROM message_library`)).toEqual(['ml-b']);
     });
 
     it('남는 사람의 데이터는 남는다 — 과잉 삭제가 없다', async () => {
@@ -537,23 +412,16 @@ describe('탈퇴 파기 뒤 잔존물 (실제 SQLite)', () => {
       expect(await ids(`SELECT id FROM promo_code_redemptions`)).toEqual(['pr-b']);
       expect(await ids(`SELECT id FROM generated_audio_assets WHERE user_id IN (?, ?)`, [A_PK, B_PK])).toEqual(['ga-b']);
       expect(await ids(`SELECT id FROM voice_profiles WHERE user_id IN (?, ?)`, [A_PK, B_PK])).toEqual(['vp-b']);
-      expect(await ids(`SELECT id FROM plan_groups`)).toEqual(['g-c']);
-      expect(await ids(`SELECT id FROM plan_group_members`)).toEqual(['pm-c-owner']);
       expect(await ids(`SELECT id FROM usage_events`)).toEqual(['ue-b']);
-      // C 가 발급한 선물 코드는 C 의 것이라 남고, 사용자 칸만 비운다.
-      const voucher = await db.execute(`SELECT id, redeemed_by_user_id FROM voucher_codes`);
-      expect(voucher.rows.map((row) => [row.id, row.redeemed_by_user_id])).toEqual([['v-c', null]]);
+      // B 의 구독과 등급은 그대로다 — A 의 탈퇴가 남의 결제를 끊지 않는다.
+      const subscriptions = await db.execute(`SELECT id, status FROM subscriptions ORDER BY id`);
+      expect(subscriptions.rows.map((row) => [row.id, row.status])).toEqual([['sub-b', 'active']]);
+      const plans = await db.execute({ sql: `SELECT plan FROM users WHERE id = ?`, args: [B_PK] });
+      expect(plans.rows.map((row) => row.plan)).toEqual(['plus']);
     });
 
-    it('스토어가 다른 같은 거래 id 는 남의 것이다 — C 의 선물 연결·거래와 B 의 Play 거래가 남는다', async () => {
-      // ① A 의 Play 토큰과 글자가 같은 C 의 애플 선물 — 연결이 C 의 코드를 그대로 가리킨다.
-      const deliveries = await db.execute(
-        `SELECT transaction_id, voucher_id, revoked_at FROM apple_gift_deliveries ORDER BY transaction_id`,
-      );
-      expect(
-        deliveries.rows.map((row) => [row.transaction_id, row.voucher_id, row.revoked_at]),
-      ).toEqual([['apple-tx-c-gift', 'v-c', null]]);
-      // ② A 의 거래(구독·선물·Play)는 전부 사라지고, 같은 글자를 쓰는 남의 거래만 남는다.
+    it('스토어가 다른 같은 거래 id 는 남의 것이다 — B 의 Play 거래와 C 의 애플 거래가 남는다', async () => {
+      // A 의 거래(구독·선물·Play)는 전부 사라지고, 같은 글자를 쓰는 남의 거래만 남는다.
       const transactions = await db.execute(
         `SELECT id, user_id, provider, provider_transaction_id FROM store_transactions ORDER BY id`,
       );
@@ -572,36 +440,14 @@ describe('탈퇴 파기 뒤 잔존물 (실제 SQLite)', () => {
 
     it('B 의 알람은 남고, A 의 목소리를 쓰던 것만 목소리를 잃는다', async () => {
       const alarms = await db.execute(
-        `SELECT id, message_id, voice_profile_id, mode FROM alarms ORDER BY id`,
+        `SELECT id, message_id, voice_profile_id, mode, is_active FROM alarms ORDER BY id`,
       );
-      expect(alarms.rows.map((row) => [row.id, row.message_id, row.voice_profile_id, row.mode])).toEqual([
-        ['al-b-own', null, null, 'sound-only'],
-        ['al-b-own2', 'msg-b', 'vp-b', 'tts'],
+      expect(
+        alarms.rows.map((row) => [row.id, row.message_id, row.voice_profile_id, row.mode, Number(row.is_active)]),
+      ).toEqual([
+        ['al-b-own', null, null, 'sound-only', 1],
+        ['al-b-own2', 'msg-b', 'vp-b', 'tts', 1],
       ]);
-    });
-
-    it('수신 기록(tombstone)은 받은 사람 것으로만 남고 보낸 사람 칸은 비어 있다', async () => {
-      const states = await db.execute(
-        `SELECT alarm_id, recipient_user_id, sender_user_id, voice_profile_id, revoked
-           FROM alarm_recipient_state ORDER BY alarm_id`,
-      );
-      const rows = states.rows.map((row) => [
-        row.alarm_id,
-        row.recipient_user_id,
-        row.sender_user_id,
-        row.voice_profile_id,
-        row.revoked,
-      ]);
-      // A 가 받던 쪽(al-delivered-b-to-a)은 사라지고, 남는 것은 전부 B 가 받은 것이다.
-      expect(rows.every(([, recipient, sender]) => recipient === B_PK && sender === null)).toBe(true);
-      // A 의 목소리가 실린 전달은 수신 확인 전·후 모두 철회로 기록된다.
-      expect(rows).toEqual(
-        expect.arrayContaining([
-          ['al-a-to-b', B_PK, null, null, 1],
-          ['al-a-to-b-old', B_PK, null, null, 1],
-          ['al-delivered-a-to-b', B_PK, null, null, 1],
-        ]),
-      );
     });
 
     it('결제 기록은 가명으로만 남는다 — pepper 없이는 계정 id 로 되짚을 수 없다', async () => {

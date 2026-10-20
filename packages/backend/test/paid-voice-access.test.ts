@@ -13,7 +13,6 @@ vi.mock('../src/lib/db', () => ({
 import alarmMutation from '../src/routes/alarm-mutation';
 import ttsRoutes from '../src/routes/tts';
 import voiceProfileRoutes from '../src/routes/voice-profile';
-import voiceUploadRoutes from '../src/routes/voice-upload';
 
 function authWithResolvedPk(userId = 'user-1', userPk = 'user-pk-1') {
   return async (c: Context<AppEnv>, next: Next) => {
@@ -31,7 +30,6 @@ function buildApp() {
   app.route('/alarms', alarmMutation);
   app.route('/tts', ttsRoutes);
   app.route('/vp', voiceProfileRoutes);
-  app.route('/vu', voiceUploadRoutes);
   return app;
 }
 
@@ -42,13 +40,6 @@ function cloneRequest(): Request {
   form.append('durationMs', '90000');
   form.append('isDraft', 'true');
   return new Request('http://localhost/vp/clone', { method: 'POST', body: form });
-}
-
-function uploadRequest(): Request {
-  const form = new FormData();
-  form.append('audio', new Blob([new Uint8Array([1, 2, 3])], { type: 'audio/wav' }), 'sample.wav');
-  form.append('durationMs', '90000');
-  return new Request('http://localhost/vu/upload', { method: 'POST', body: form });
 }
 
 beforeEach(() => {
@@ -191,15 +182,6 @@ describe('paid voice access gates', () => {
     expect(mockDB.calls.some((call) => /FROM user_consents/i.test(call.sql))).toBe(false);
   });
 
-  it('blocks voice upload and diarization setup for a resolved free-plan user', async () => {
-    mockDB.pushResult([{ plan: 'free' }]);
-
-    const res = await buildApp().request(uploadRequest());
-
-    expect(res.status).toBe(403);
-    expect((await res.json()).error_code).toBe('VOICE_FEATURE_REQUIRES_PAID_PLAN');
-  });
-
   // **직접 녹음 알람은 유료 기능이 아니다**(2026-08-12 확정).
   //
   // 사용자가 자기 폰에 녹음한 소리는 서버에 올라오지 않는다 — 양 앱의 `RemoteAlarmMapper`
@@ -300,7 +282,8 @@ describe('paid voice access gates', () => {
 
   // GET /tts/messages/:id/audio 의 무료 잠금: 다운그레이드로 유료 데이터를 지우지 않고 보존만 하므로,
   // 오디오 서빙 경로가 보이스 소유자의 plan 을 강제하지 않으면 무료 사용자가 유료 합성 오디오를
-  // 직접 내려받는 우회가 생긴다(Codex #594 P1). 소유자 plan 기준으로 잠근다.
+  // 직접 내려받는 우회가 생긴다(Codex #594 P1). 클론 목소리는 그 주인이 **호출자 본인**이고 유료일 때만 연다
+  // (목소리 공유는 2026-10-20 에 없앴다 — 받는 갈래는 `messageBelongsToCaller` 와 같다).
   function audioRow(overrides: Record<string, unknown>) {
     return {
       id: ID.message,
@@ -312,6 +295,7 @@ describe('paid voice access gates', () => {
       audio_url: 'r2://generated/x.mp3',
       category: 'custom',
       is_system: 0,
+      owner_id: 'user-pk-1',
       owner_plan: 'plus',
       ...overrides,
     };
@@ -319,6 +303,20 @@ describe('paid voice access gates', () => {
 
   it('locks retained paid-voice audio when the voice owner is on the free plan', async () => {
     mockDB.pushResult([audioRow({ is_system: 0, owner_plan: 'free' })]);
+
+    const res = await buildApp().request(
+      new Request(`http://localhost/tts/messages/${ID.message}/audio`),
+    );
+
+    expect(res.status).toBe(403);
+    expect((await res.json()).error_code).toBe('VOICE_LOCKED_FREE_PLAN');
+    // 받는 갈래는 내 문구(내 목소리·시스템 목소리)와 시스템 스톡 프리셋뿐이다 — 받은 알람·공유 목소리 갈래가 없다.
+    const sql = mockDB.calls[0]!.sql;
+    expect(sql).not.toMatch(/target_user_id|alarm_recipient_state|plan_group|is_shared/);
+  });
+
+  it('locks another account\'s clone audio even when that owner is paid — 남의 목소리 갈래는 없다', async () => {
+    mockDB.pushResult([audioRow({ is_system: 0, owner_id: 'other-pk', owner_plan: 'plus' })]);
 
     const res = await buildApp().request(
       new Request(`http://localhost/tts/messages/${ID.message}/audio`),

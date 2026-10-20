@@ -60,10 +60,9 @@ beforeEach(async () => {
   const hash = await hashPassword('superSecret1', ENV.PASSWORD_PEPPER);
   await db.execute({
     sql: `INSERT INTO users
-            (id, google_id, email, password_hash, deletion_status, deletion_requested_at, deletion_purge_at,
-             family_alarm_quiet_windows)
-          VALUES ('owner', 'owner', 'owner@example.test', ?, 'pending_deletion', '2026-10-01', '2026-10-31', '[]'),
-                 ('other', 'other', 'other@example.test', ?, 'pending_deletion', '2026-10-01', '2026-10-31', '[]')`,
+            (id, google_id, email, password_hash, deletion_status, deletion_requested_at, deletion_purge_at)
+          VALUES ('owner', 'owner', 'owner@example.test', ?, 'pending_deletion', '2026-10-01', '2026-10-31'),
+                 ('other', 'other', 'other@example.test', ?, 'pending_deletion', '2026-10-01', '2026-10-31')`,
     args: [hash, hash],
   });
 });

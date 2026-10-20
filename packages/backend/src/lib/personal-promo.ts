@@ -86,7 +86,7 @@ export function resolvePersonalPromo(
 }
 
 /**
- * **보관 판정**(`hasActivePaidEntitlement`·`retentionSyncStatements` 등)에 넘기는 불리언 —
+ * **보관 판정**(`hasActivePaidEntitlement`·`syncPaidVoiceRetention` 등)에 넘기는 불리언 —
  * "지금 프로모가 원시 free 를 개인으로 덮는가". 결제 경로는 env 를 끝까지 들고 가지 않으므로
  * 호출부 가장자리에서 이걸로 풀어 넘긴다.
  */
@@ -130,7 +130,7 @@ export function activeSubscriptionRowExistsSql(userPkExpr: string): string {
  * 결제자·꺼짐·끝난 뒤에는 `null`.
  *
  * 결제 보류 계정(원시 free + `active` 구독 행)에도 값이 **있다** — 앱은 이 값의 존재로 "원시
- * plan 이 free 다" 를 알고, 남은 구독 행으로 커플·가족 등급을 올리지 않는다(보류 규칙). 대신
+ * plan 이 free 다" 를 알고, 남은 구독 행으로 등급을 올리지 않는다(보류 규칙). 대신
  * `deletes_voices_at_end` 가 `false` 라 종료 안내가 삭제를 말하지 않는다.
  *
  * `computed_at` 은 **이 계산에 쓴 시각**(`promo.now` — 요청마다 한 번 푼 서버 시계)이다. 계산값

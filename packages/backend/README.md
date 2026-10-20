@@ -58,12 +58,12 @@ npm run typecheck # tsc --noEmit
 | `POST /api/auth/register` | 이메일+비밀번호 가입 |
 | `POST /api/auth/login` | 이메일+비밀번호 로그인 |
 | `GET /api/auth/me` | 현재 사용자 정보 |
-| `/api/voice/*` | 음성 프로필 CRUD + 업로드 |
+| `/api/voice/*` | 음성 프로필 CRUD·초안·클론 |
 | `/api/tts/*` | TTS 생성 + 메시지 관리 |
-| `/api/alarm/*` | 알람 CRUD + 스케줄러 |
-| `/api/billing/*` | Google Play·App Store 결제 검증, 구독·이용권 |
-| `/api/code/*` | 초대 코드 등록(커플·가족 `INV-` 이용권만. 선물·프로모 코드는 App Store 지침 3.1.1 로 폐지 — `routes/code.ts` 머리말) |
-| `/api/family/*` | 가족 플랜 그룹 + 초대 + 알람 |
+| `/api/alarm/*` | 내 알람 CRUD·동기화(받은 알람 pull 은 옛 앱 호환 빈 응답) |
+| `/api/billing/*` | Google Play·App Store 결제 검증, 개인 구독 |
+| `/api/code/*` | 옛 앱 호환 — 코드 등록은 언제나 404 `CODE_NOT_FOUND`(코드로 여는 기능은 없다 — `routes/code.ts` 머리말) |
+| `/api/family/*` | 옛 앱 호환 — `GET /groups/current` 가 그룹 없음을 돌려준다(커플·가족 이용권은 2026-10-20 에 없앴다) |
 | `/api/user/*` | 사용자 프로필 + 설정 |
 | `/api/push/*` | FCM·APNs 토큰 등록/해제 |
 | `/api/events/*` | 사용 기록 수집(앱이 오프라인에 쌓아 둔 배치) |

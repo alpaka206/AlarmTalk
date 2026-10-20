@@ -63,10 +63,8 @@ async function userPlan() {
 beforeAll(async () => { await runMigrations(db); });
 beforeEach(async () => {
   vi.clearAllMocks();
-  // 자식부터 지운다 — 가족 플랜 확정은 그룹·멤버·초대 코드를 함께 만든다.
-  for (const table of [
-    'store_transactions', 'voucher_codes', 'plan_group_members', 'subscriptions', 'plan_groups',
-  ]) await db.execute(`DELETE FROM ${table}`);
+  // 자식부터 지운다.
+  for (const table of ['store_transactions', 'subscriptions']) await db.execute(`DELETE FROM ${table}`);
   await db.execute({ sql: `DELETE FROM users WHERE id = ?`, args: [USER] });
   await db.execute({ sql: `INSERT INTO users (id,email,name) VALUES (?,?,?)`, args: [USER, 'c@example.test', 'c'] });
 });
@@ -107,14 +105,18 @@ describe('애플 확정 — 체인의 현재 상태가 권위다', () => {
     expect(Date.parse(String(row.rows[0]!.expires_at))).toBe(graceEnds);
   });
 
-  it('상위 플랜으로 갈아탔으면 보낸 영수증의 상품이 아니라 **최신 상품**으로 붙인다', async () => {
+  // 판정 상품은 보낸 영수증이 아니라 **체인의 최신 상품**이다. 같은 구독 그룹 안에서 판매를 내린 커플·가족으로 갈아탄
+  // 체인이면(2026-10-20 폐지 — 판매 중지 전 옛 앱) 보낸 영수증이 개인이어도 개인으로 붙이지 않는다.
+  it('체인의 최신 상품이 없앤 커플·가족이면 보낸 개인 영수증으로 붙이지 않는다 — 400 UNKNOWN_PRODUCT, DB 무변경', async () => {
     const latest = transaction({ productId: 'com.alarmtalk.app.family_monthly' });
     sent = transaction({ transactionId: 'tx-personal' });
     chain = { status: 1, expiresDate: latest.expiresDate, productId: latest.productId, latest };
     const res = await confirm();
-    expect(res.status).toBe(200);
-    expect(await res.json()).toMatchObject({ plan_key: 'family' });
-    expect(await userPlan()).toBe('family');
+    expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({ error_code: 'UNKNOWN_PRODUCT' });
+    expect(await userPlan()).toBe('free');
+    expect((await db.execute(`SELECT 1 FROM subscriptions`)).rows).toHaveLength(0);
+    expect((await db.execute(`SELECT 1 FROM store_transactions`)).rows).toHaveLength(0);
   });
 
   it('애플에 못 물어봤으면 판정한 척하지 않는다 — 재시도 가능한 502, DB 무변경', async () => {

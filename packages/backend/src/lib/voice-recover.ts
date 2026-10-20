@@ -21,10 +21,9 @@ import { enqueueExternalDeletion } from './audio-retention';
  * - 재클론은 '복구'이므로 월간 목소리변경/‑draft attempt 쿼터를 소모하지 않는다(별도 경로).
  *
  * 동의(Codex #599 5차 P1): 이 함수는 원본을 외부 공급자(ElevenLabs)로 다시 보낸다. 호출부의
- * 합성 동의 게이트는 '요청자(뷰어)' 기준이라, 공유된 evicted 프로필을 가족 뷰어가 재생하는
- * 경우엔 소유자 동의를 보증하지 못한다. 또 게이트 통과 후 철회가 커밋되는 TOCTOU 도 있다.
- * 그래서 enroll 직전에 '프로필 소유자'의 민감 동의(voice_biometric·overseas_transfer)를
- * 여기서 직접 재검증하고, 철회 상태면 업로드 없이 null 을 반환한다.
+ * 합성 동의 게이트를 통과한 뒤 철회가 커밋되는 TOCTOU 가 있다. 그래서 enroll 직전에
+ * '프로필 소유자'의 민감 동의(voice_biometric·overseas_transfer)를 여기서 직접 재검증하고,
+ * 철회 상태면 업로드 없이 null 을 반환한다.
  */
 export async function recloneEvictedVoiceProfile(
   env: Env,
@@ -32,7 +31,7 @@ export async function recloneEvictedVoiceProfile(
   profileId: string,
   name: string,
 ): Promise<string | null> {
-  // 전사 소스와 동일: 이 프로필에 연결된 원본 업로드만 쓴다(가족알람용 무관 녹음 오사용 방지).
+  // 전사 소스와 동일: 이 프로필에 연결된 원본 업로드만 쓴다(무관한 녹음 오사용 방지).
   const uploadRes = await db.execute({
     sql: `SELECT object_key, mime_type, original_name FROM voice_uploads
           WHERE voice_profile_id = ? ORDER BY created_at DESC LIMIT 1`,

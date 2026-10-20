@@ -1,9 +1,8 @@
 // **크론이 한 건에 막혀 나머지를 굶기지 않는다**(2026-09-20 실측으로 찾은 것들).
 //
-// 1) 결제 보류 중인 가족 하나가 만료 배치(5자리)를 매 틱 통째로 차지했다 — 보류 소유자 행은
-//    `active` 인 채 만료가 지나 소유자 우선 정렬로 맨 앞에 오고, 멤버 행 넷이 나머지를
-//    채웠다(소유자가 살아 있어 매번 건너뛰는데도). 한도와 무관하게 **다른 사람의 만료가
-//    영영 안 돌았다.**
+// 1) 결제 보류 행이 만료 배치(5자리)를 매 틱 통째로 차지했다 — 보류 행은 `active` 인 채 만료가
+//    지나 매 틱 다시 뽑히는데, 스토어가 확인해 줄 때까지 매번 건너뛴다. 그 행들이 자리를 다 쓰면
+//    한도와 무관하게 **다른 사람의 만료가 영영 안 돌았다.**
 // 2) 보관 기한 스윕이 한 사람을 문장마다 따로 커밋해, 중간에 끊기면 삭제 큐에는 올렸는데
 //    행은 반쯤 남았다 — 다음 틱의 큐 비우기가 그 큐 행만 지워 **파일이 영영 남았다.**
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -17,7 +16,6 @@ import { processSubscriptionExpiry, sweepPaidVoiceRetention } from '../src/lib/b
 const directory = mkdtempSync(join(tmpdir(), 'alarmtalk-cron-fairness-'));
 const db = createClient({ url: `file:${join(directory, 'test.db')}` });
 const PERSONAL = '70000000-0000-4000-8000-000000000002';
-const FAMILY = '70000000-0000-4000-8000-000000000003';
 const NOW = new Date('2026-09-20T00:00:00.000Z');
 const ago = (hours: number) => new Date(NOW.getTime() - hours * 3_600_000).toISOString();
 
@@ -33,38 +31,32 @@ beforeEach(async () => {
   await run('PRAGMA foreign_keys = OFF');
   for (const table of [
     'pending_external_deletions', 'message_library', 'messages', 'generated_audio_assets', 'voice_uploads',
-    'voice_profiles', 'paid_voice_retention', 'store_transactions', 'plan_group_members', 'subscriptions',
-    'plan_groups', 'users',
+    'voice_profiles', 'paid_voice_retention', 'store_transactions', 'subscriptions', 'users',
   ]) await run(`DELETE FROM ${table}`);
   await run('PRAGMA foreign_keys = ON');
 });
 afterAll(() => { db.close(); rmSync(directory, { recursive: true, force: true }); });
 
-describe('만료 크론 — 보류 중인 가족이 배치를 차지하지 않는다', () => {
-  it('보류 가족(소유자 + 멤버 4) 이 있어도 다른 사람의 만료가 같은 틱에 돈다', async () => {
-    for (const id of ['o', 'm1', 'm2', 'm3', 'm4', 'plain']) {
+describe('만료 크론 — 결제 보류 행이 배치를 차지하지 않는다', () => {
+  it('먼저 만료된 보류 구독이 배치 자리만큼 있어도 다른 사람의 만료가 같은 틱에 돈다', async () => {
+    const held = ['h1', 'h2', 'h3', 'h4', 'h5'];
+    for (const id of [...held, 'plain']) {
       await run(`INSERT INTO users (id, email, name, plan) VALUES (?, ?, 'u', ?)`, [id, `${id}@t.test`, id === 'plain' ? 'plus' : 'free']);
     }
-    await run(`INSERT INTO plan_groups (id, owner_user_id, plan_id, max_members) VALUES ('g', 'o', ?, 5)`, [FAMILY]);
-    // 보류 소유자: 행은 살아 있고 만료는 지났다. 스토어 재확인은 매번 '아직 모름' 이라 건너뛴다.
-    await run(
-      `INSERT INTO subscriptions (id, user_id, plan_id, plan_group_id, status, starts_at, expires_at, entitlement_state)
-       VALUES ('sub-o', 'o', ?, 'g', 'active', ?, ?, 'suspended')`,
-      [FAMILY, ago(24 * 30), ago(24)],
-    );
-    await run(
-      `INSERT INTO store_transactions (id, user_id, provider, provider_transaction_id, product_id, plan_key, subscription_id)
-       VALUES ('st-o', 'o', 'apple', 'chain-o', 'com.alarmtalk.app.family_monthly', 'family', 'sub-o')`,
-    );
-    for (const m of ['m1', 'm2', 'm3', 'm4']) {
-      await run(`INSERT INTO plan_group_members (id, plan_group_id, user_id) VALUES (?, 'g', ?)`, [`pm-${m}`, m]);
+    // 보류 행: 살아 있고 만료는 지났다. 스토어 재확인은 매번 '아직 모름' 이라 건너뛴다.
+    for (const id of held) {
       await run(
-        `INSERT INTO subscriptions (id, user_id, plan_id, plan_group_id, status, starts_at, expires_at, entitlement_state)
-         VALUES (?, ?, ?, 'g', 'active', ?, ?, 'suspended')`,
-        [`sub-${m}`, m, FAMILY, ago(24 * 30), ago(24)],
+        `INSERT INTO subscriptions (id, user_id, plan_id, status, starts_at, expires_at, entitlement_state)
+         VALUES (?, ?, ?, 'active', ?, ?, 'suspended')`,
+        [`sub-${id}`, id, PERSONAL, ago(24 * 30), ago(24)],
+      );
+      await run(
+        `INSERT INTO store_transactions (id, user_id, provider, provider_transaction_id, product_id, plan_key, subscription_id)
+         VALUES (?, ?, 'apple', ?, 'com.alarmtalk.app.personal_monthly', 'personal', ?)`,
+        [`st-${id}`, id, `chain-${id}`, `sub-${id}`],
       );
     }
-    // 스토어 없는 개인 이용권(쿠폰 등) — 한 시간 전에 끝났다.
+    // 스토어 없는 개인 이용권(쿠폰 등) — 한 시간 전에 끝났다. id 순서로는 보류 행들 뒤다.
     await run(
       `INSERT INTO subscriptions (id, user_id, plan_id, status, starts_at, expires_at)
        VALUES ('sub-plain', 'plain', ?, 'active', ?, ?)`,
@@ -75,8 +67,8 @@ describe('만료 크론 — 보류 중인 가족이 배치를 차지하지 않�
 
     expect((await db.execute(`SELECT status FROM subscriptions WHERE id = 'sub-plain'`)).rows[0]!.status).not.toBe('active');
     expect((await db.execute(`SELECT plan FROM users WHERE id = 'plain'`)).rows[0]!.plan).toBe('free');
-    // 보류 가족은 그대로다 — 스토어가 확인해 줄 때까지 건드리지 않는다.
-    expect(await count(`SELECT COUNT(*) AS n FROM subscriptions WHERE plan_group_id = 'g' AND status = 'active'`)).toBe(5);
+    // 보류 행은 그대로다 — 스토어가 확인해 줄 때까지 건드리지 않는다.
+    expect(await count(`SELECT COUNT(*) AS n FROM subscriptions WHERE entitlement_state = 'suspended' AND status = 'active'`)).toBe(5);
   });
 });
 

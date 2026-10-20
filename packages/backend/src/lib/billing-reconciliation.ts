@@ -24,7 +24,6 @@ import {
   createNewSubscriptionForPlan,
   hasActivePaidEntitlement,
   notifyBillingStateChanged,
-  propagateGroupMemberPlans,
   resolvePlanAfterSuspend,
   schedulePaidVoiceRetention,
 } from './billing-cancel';
@@ -65,10 +64,8 @@ type StoreState = {
 async function readSubscription(db: DbExecutor, id: string): Promise<Row | undefined> {
   return (
     await db.execute({
-      sql: `SELECT s.*, p.key AS plan_key, p.plan_type, p.period_days,
-                 g.owner_user_id AS group_owner_id
+      sql: `SELECT s.*, p.key AS plan_key, p.plan_type, p.period_days
           FROM subscriptions s JOIN plans p ON p.id = s.plan_id
-          LEFT JOIN plan_groups g ON g.id = s.plan_group_id
           WHERE s.id = ?`,
       args: [id],
     })
@@ -203,7 +200,6 @@ function asActive(row: Row): ActiveSubscription {
     planId: String(row.plan_id),
     planKey: String(row.plan_key),
     planType: String(row.plan_type),
-    planGroupId: row.plan_group_id == null ? null : String(row.plan_group_id),
     cancelAtPeriodEnd: Number(row.cancel_at_period_end) === 1,
   };
 }
@@ -315,38 +311,30 @@ export async function reconcileStoreSubscription(
       ) {
         affected.add(active.userPk);
       }
-      return { changed: [...affected], hold: null };
+      return { changed: [...affected], holdUserPk: null };
     }
     if (states.some((s) => s.action === 'suspend')) {
       await resolvePlanAfterSuspend(tx, active.userPk, subscriptionId);
-      const members = active.planGroupId
-        ? await propagateGroupMemberPlans(tx, active.planGroupId, active.userPk, true)
-        : [];
       const ownerAfter = (
         await tx.execute({
           sql: 'SELECT plan FROM users WHERE id = ?',
           args: [active.userPk],
         })
       ).rows[0]?.plan;
-      return {
-        changed: [],
-        hold: {
-          ownerUserPk: ownerBefore !== ownerAfter ? active.userPk : null,
-          memberUserPks: members,
-        },
-      };
+      // 결제 실패 알림은 등급이 실제로 바뀐 회차에만 — 크론이 같은 보류를 5분마다 다시 발견한다.
+      return { changed: [], holdUserPk: ownerBefore !== ownerAfter ? active.userPk : null };
     }
     const changed = await terminateSubscription(tx, before, now, promoCoversFree);
-    return { changed, hold: null };
+    return { changed, holdUserPk: null };
   });
   await notifyBillingStateChanged(db, env, notifications.changed);
-  const hold = notifications.hold;
+  const holdUserPk = notifications.holdUserPk;
   const hasPush =
     (env.FIREBASE_PROJECT_ID && env.FIREBASE_SERVICE_ACCOUNT_JSON) ||
     (env.APNS_KEY_ID && env.APNS_PRIVATE_KEY && env.APPLE_TEAM_ID);
-  if (hasPush && hold && (hold.ownerUserPk || hold.memberUserPks.length)) {
+  if (hasPush && holdUserPk) {
     try {
-      await sendPaymentFailedPush(db, env, hold);
+      await sendPaymentFailedPush(db, env, { ownerUserPk: holdUserPk });
     } catch (error) {
       logStructured('warn', { at: 'billing.reconcile.hold_push', error: String(error) });
     }
@@ -354,7 +342,7 @@ export async function reconcileStoreSubscription(
   return 'applied';
 }
 
-/** 외부 조회 이후 로컬 만료를 적용할 때도 최신 행과 그룹 소유자의 수명을 다시 검사한다. */
+/** 외부 조회 이후 로컬 만료를 적용할 때도 최신 행을 다시 검사한다. */
 export async function expireSubscriptionIfDue(
   db: Client,
   id: string,
@@ -374,13 +362,6 @@ export async function expireSubscriptionIfDue(
       new Date(expectedExpiry) > now
     )
       return [];
-    if (current.group_owner_id && current.group_owner_id !== current.user_id) {
-      const owner = await tx.execute({
-        sql: `SELECT 1 FROM subscriptions WHERE user_id = ? AND plan_group_id = ? AND status = 'active'`,
-        args: [String(current.group_owner_id), String(current.plan_group_id)],
-      });
-      if (owner.rows.length) return [];
-    }
     if (!allowStore && (await readTransactions(tx, id)).length)
       throw new BillingStateChangedError();
     return terminateSubscription(tx, current, now, promoCoversFree);
@@ -398,15 +379,12 @@ async function terminateSubscription(
   const due =
     Number.isFinite(Date.parse(String(current.expires_at))) &&
     new Date(String(current.expires_at)) <= now;
-  const ids = await cancelSubscriptionImmediate(tx, active, now, {
-    deleteVoiceData: false,
-    promoCoversFree,
-  });
+  await cancelSubscriptionImmediate(tx, active, now, { deleteVoiceData: false });
   const nextPlan =
     due && Number(current.cancel_at_period_end) === 1 && current.next_plan_id
       ? (
           await tx.execute({
-            sql: `SELECT id, plan_type, period_days, max_members FROM plans WHERE id = ? AND is_active = 1`,
+            sql: `SELECT id, plan_type, period_days FROM plans WHERE id = ? AND is_active = 1`,
             args: [String(current.next_plan_id)],
           })
         ).rows[0]
@@ -417,7 +395,6 @@ async function terminateSubscription(
       planId: String(nextPlan.id),
       planType: String(nextPlan.plan_type),
       periodDays: Number(nextPlan.period_days),
-      maxMembers: Number(nextPlan.max_members),
       now,
     });
   } else if (!(await hasActivePaidEntitlement(tx, active.userPk, promoCoversFree))) {
@@ -425,10 +402,10 @@ async function terminateSubscription(
     // 잃지 않는다. 종료 뒤에는 `transitionPersonalPromoEnd`(`lib/personal-promo-end.ts`)가 건다.
     await schedulePaidVoiceRetention(tx, active.userPk, now);
   }
-  return ids;
+  return [active.userPk];
 }
 
-/** 결제 전에는 해당 계정과 그 계정에 이용권을 공유한 소유자의 상태까지 확인한다. */
+/** 결제 전에는 해당 계정의 활성 구독을 스토어에 다시 확인한다. */
 export async function reconcileBillingPreflight(
   db: Client,
   env: Partial<Env>,
@@ -438,12 +415,8 @@ export async function reconcileBillingPreflight(
   const promoCoversFree = personalPromoCoversFree(env, now);
   const candidates = await db.execute({
     sql: `SELECT s.id FROM subscriptions s
-          LEFT JOIN plan_groups g ON g.id = s.plan_group_id
-          WHERE s.status = 'active' AND (s.user_id = ? OR s.user_id IN (
-            SELECT g.owner_user_id FROM plan_groups g
-            JOIN plan_group_members m ON m.plan_group_id = g.id WHERE m.user_id = ?
-          )) ORDER BY CASE WHEN g.owner_user_id = s.user_id THEN 0 ELSE 1 END, s.id`,
-    args: [userPk, userPk],
+          WHERE s.status = 'active' AND s.user_id = ? ORDER BY s.id`,
+    args: [userPk],
   });
   for (const row of candidates.rows) {
     const id = String(row.id);

@@ -3,13 +3,12 @@ import type { ErrorCode } from '@alarmtalk/shared';
 import type { AppEnv, Env } from '../types';
 import { ElevenLabsClient } from '../lib/elevenlabs';
 import { getDB } from '../lib/db';
-import { typedRow, getFormFile } from '../lib/db-types';
+import { getFormFile } from '../lib/db-types';
 import { UUID_RE } from '../lib/validate';
 import { logRouteError, logStructured } from '../lib/logger';
 import { jsonError } from '../lib/api-error';
 import { R2VoiceStorage, MAX_VOICE_UPLOAD_BYTES } from '../lib/r2-storage';
 import { createEnrollmentAttempts, UnsupportedVoiceProviderError } from '../lib/voice-provider';
-import { assertSameGroup, resolveUserPk } from '../lib/family-helpers';
 import { hasPersonalVoiceAccess } from './billing-helpers';
 import { resolvePersonalPromo, type PersonalPromoState } from '../lib/personal-promo';
 import { missingConsentType, SENSITIVE_REQUIRED_CONSENTS } from '../lib/consent';
@@ -21,7 +20,7 @@ import {
   findMissingStockTargets,
   generateStockClip,
   markPrerenderDone,
-  notifySharedVoicePrerenderComplete,
+  notifyVoicePrerenderComplete,
   prerenderRefreshColumnReady,
   PrerenderSupersededError,
   releasePrerenderClaim,
@@ -58,45 +57,16 @@ import { TTS_MODEL_ID } from '../lib/tts-model';
 const voiceProfile = new Hono<AppEnv>();
 const MAX_VOICE_PROFILES = 1;
 
-/** 공유 상태를 커밋한 뒤 같은 그룹 기기들의 권위 목록 재조회를 깨운다. */
-function scheduleVoiceShareChangedPush(
-  c: Context<AppEnv>,
-  db: ReturnType<typeof getDB>,
-  userPk: string,
-): void {
-  try {
-    c.executionCtx.waitUntil(
-      (async () => {
-        const { sendVoiceShareChangedPush } = await import('../lib/fcm');
-        const memberRes = await db.execute({
-          sql: `SELECT DISTINCT m2.user_id
-                FROM plan_group_members m1
-                JOIN plan_group_members m2 ON m2.plan_group_id = m1.plan_group_id
-                WHERE m1.user_id = ? AND m2.user_id != ?`,
-          args: [userPk, userPk],
-        });
-        const recipients = memberRes.rows.map((row) => String(row.user_id));
-        if (recipients.length > 0) {
-          await sendVoiceShareChangedPush(db, c.env, recipients);
-        }
-      })().catch(() => {}),
-    );
-  } catch {
-    // executionCtx 없음(비-fetch/테스트) → push 생략, 15분 주기 pull/재조회 폴백.
-  }
-}
-
 /**
- * 커밋 직후의 **후속 fanout**(철회 신호·공유 갱신 신호)을 응답과 분리해 예약한다.
+ * 커밋 직후의 **후속 fanout**(철회 신호·클립 갱신 신호)을 응답과 분리해 예약한다.
  *
  * ⚠ **그냥 `await` 하지 말 것.** 교체·삭제 커밋은 **재시도할 수 없다** — 드래프트·프로필이
  * 이미 tombstone 이라 같은 요청을 다시 보내면 404다. 응답 전에 FCM/APNs 왕복을 기다리는
- * 동안 요청 컨텍스트가 끊기면 철회 신호가 영영 안 나가고, 수신 기기는 다음 폴백까지
+ * 동안 요청 컨텍스트가 끊기면 철회 신호가 영영 안 나가고, 다른 기기는 다음 재확인까지
  * **회수된 목소리로 계속 운다.** `waitUntil` 은 응답 뒤에도 완료를 보장한다.
  *
- * ⚠ **`scheduleVoiceShareChangedPush` 와 fallback 이 다르다.** executionCtx 가 없는
- * 컨텍스트(테스트·비-fetch)에서 저쪽은 push 를 **생략**하지만(목록 갱신이라 주기 재조회로
- * 충분), 이쪽은 **직접 기다린다** — 생략하면 철회가 조용히 사라진다. 둘을 하나로 합치지 말 것.
+ * executionCtx 가 없는 컨텍스트(테스트·비-fetch)에서는 **직접 기다린다** — 생략하면 철회가
+ * 조용히 사라진다.
  */
 function schedulePostCommitFanout(c: Context<AppEnv>, task: Promise<void>): Promise<void> {
   // 전송 실패는 이미 notifyDowngradedAlarms 안에서 삼킨다(즉시성만 잃는다).
@@ -150,7 +120,7 @@ function monthlyVoiceChangeLimitResponse(c: Context<AppEnv>) {
  * **#106 배포 창을 견디는 읽기.**
  *
  * 배포가 마이그레이션보다 먼저 도는 구조라(AGENTS.md) 새 컬럼을 그대로 SELECT 하면 그 사이
- * `GET /voice`·`GET /voice/family` 가 **전부 500** 이 된다 — 목소리 탭도 편집기 목소리 목록도
+ * `GET /voice` 가 **전부 500** 이 된다 — 목소리 탭도 편집기 목소리 목록도
  * 그 1분 동안 열리지 않는다.
  *
  * ⚠ **쓰기 경로에는 이 관용을 쓰지 말 것.** 쓰기가 새 컬럼만 빼고 진행하면 그 한 번의 요청이
@@ -382,28 +352,6 @@ function normalizeRelationshipLabel(value: unknown): string | undefined {
 
 function validateLabelLength(label: string | undefined, max: number): boolean {
   return label === undefined || label.length <= max;
-}
-
-async function canUseSharedVoiceProfile(
-  db: ReturnType<typeof getDB>,
-  userPk: string,
-  voiceProfileId: string,
-): Promise<boolean> {
-  const shared = await db.execute({
-    sql: `SELECT vp.user_id, u.id AS owner_pk
-          FROM voice_profiles vp
-          LEFT JOIN users u ON u.google_id = vp.user_id OR u.id = vp.user_id
-          WHERE vp.id = ? AND COALESCE(vp.is_shared, 0) = 1
-            AND COALESCE(vp.is_draft, 0) = 0
-            AND vp.deleted_at IS NULL
-          LIMIT 1`,
-    args: [voiceProfileId],
-  });
-  if (shared.rows.length === 0) return false;
-  const row = typedRow<{ owner_pk?: string | null; user_id?: string }>(shared.rows[0]!);
-  const ownerPk = row.owner_pk || row.user_id || null;
-  if (!ownerPk || ownerPk === userPk) return false;
-  return assertSameGroup(db, userPk, ownerPk);
 }
 
 /**
@@ -664,7 +612,7 @@ voiceProfile.get('/', async (c) => {
       // (`elevenlabs_voice_id`) 처럼 **클라가 쓰지도 않고 나가서도 안 되는** 컬럼이 있다.
       // 같은 파일이 users 조회에는 이미 컬럼을 나열하고 있었다 — 여기만 빠져 있었다.
       // 목록은 두 앱의 모델(`VoiceProfileApi.kt` / `AlarmTalkAPIModels.swift`)이 읽는 것.
-      sql: `SELECT id, user_id, name, status, created_at, updated_at, is_shared, is_draft, is_system, relationship_label, listener_title, speech_style_status, previewed_at, ${markerSelect} FROM voice_profiles WHERE (user_id IN (${ph}) OR COALESCE(is_system, 0) = 1) AND deleted_at IS NULL AND COALESCE(is_draft, 0) = 0${statusClause} ORDER BY COALESCE(is_system, 0) ASC, created_at DESC LIMIT ? OFFSET ?`,
+      sql: `SELECT id, user_id, name, status, created_at, updated_at, is_draft, is_system, relationship_label, listener_title, speech_style_status, previewed_at, ${markerSelect} FROM voice_profiles WHERE (user_id IN (${ph}) OR COALESCE(is_system, 0) = 1) AND deleted_at IS NULL AND COALESCE(is_draft, 0) = 0${statusClause} ORDER BY COALESCE(is_system, 0) ASC, created_at DESC LIMIT ? OFFSET ?`,
       args: [...baseArgs, limit, offset],
     }),
   ]);
@@ -673,7 +621,6 @@ voiceProfile.get('/', async (c) => {
   return c.json({
     profiles: result.rows.map((row) => ({
       ...row,
-      is_shared: Boolean(Number(row.is_shared ?? 0)),
       is_draft: Boolean(Number(row.is_draft ?? 0)),
       is_system: Boolean(Number(row.is_system ?? 0)),
       // 말투 분석 상태(NULL=대상 아님) — 클라가 실패 표시·재시도 버튼을 띄우는 근거.
@@ -691,7 +638,7 @@ voiceProfile.get('/draft', async (c) => {
   const ph = ids.map(() => '?').join(',');
   const result = await db.execute({
     // 위 목록과 같은 이유로 컬럼을 나열한다 — 아래에서 `...row` 로 그대로 나간다.
-    sql: `SELECT id, user_id, name, status, created_at, updated_at, is_shared, is_draft, is_system, relationship_label, listener_title, speech_style_status, previewed_at FROM voice_profiles
+    sql: `SELECT id, user_id, name, status, created_at, updated_at, is_draft, is_system, relationship_label, listener_title, speech_style_status, previewed_at FROM voice_profiles
           WHERE user_id IN (${ph}) AND deleted_at IS NULL AND COALESCE(is_draft, 0) = 1
             AND status != 'failed'
           ORDER BY created_at DESC LIMIT 1`,
@@ -702,9 +649,6 @@ voiceProfile.get('/draft', async (c) => {
     profile: row
       ? {
           ...row,
-          // 드래프트는 isShared=true 로도 생성될 수 있고(공유 예약), promote 시 서버가 그 값으로 공유한다.
-          // false 로 마스킹하면 앱이 '공유 안 함'으로 표시한 채 실제로는 공유돼 UI 가 어긋난다 → 실제 값 반환.
-          is_shared: Boolean(Number(row.is_shared ?? 0)),
           is_draft: true,
           is_system: false,
           speech_style_status: (row.speech_style_status as string | null) ?? null,
@@ -730,92 +674,11 @@ voiceProfile.get('/draft-quota', async (c) => {
   });
 });
 
-voiceProfile.get('/family', async (c) => {
-  const userId = c.get('userId');
-  const userPk = c.get('userIdPK') || userId;
-  const db = getDB(c.env);
-
-  const memberRes = await db.execute({
-    sql: `SELECT DISTINCT fm2.user_id AS member_user_id, u.google_id AS member_google_id
-          FROM users me
-          JOIN plan_group_members fm1 ON fm1.user_id = me.id
-          JOIN plan_group_members fm2 ON fm1.plan_group_id = fm2.plan_group_id
-          LEFT JOIN users u ON u.id = fm2.user_id
-          WHERE me.id = ? AND fm2.user_id != me.id AND fm2.user_id != ?`,
-    args: [userId, userId],
-  });
-
-  if (memberRes.rows.length === 0) {
-    return c.json({ profiles: [] });
-  }
-
-  const memberIds = Array.from(
-    new Set(
-      memberRes.rows.flatMap((r) => {
-        const row = typedRow<{
-          member_user_id?: string;
-          member_google_id?: string | null;
-          user_id?: string;
-        }>(r);
-        return [row.member_user_id ?? row.user_id, row.member_google_id].filter(
-          (value): value is string => Boolean(value),
-        );
-      }),
-    ),
-  );
-  if (memberIds.length === 0) {
-    return c.json({ profiles: [] });
-  }
-
-  const placeholders = memberIds.map(() => '?').join(',');
-  const familyMarkerSelect = await customAudioMarkerSelect(db);
-  const voicesRes = await db.execute({
-    // ⚠ `custom_audio_invalidated_at` 을 빼지 말 것. 공유받은 사람도 이 목소리로 **자기**
-    // 직접 입력 알람을 만들 수 있는데, 그 행은 pull 대상이 아니라 서버 강등이 닿지 않는다.
-    // 푸시를 놓친 기기가 스스로 알아채는 근거가 이 값 하나다(내 목소리 목록과 같은 규약).
-    sql: `SELECT vp.id, vp.name, vp.status, vp.created_at, vp.user_id, vp.is_shared,
-                 ${familyMarkerSelect === 'custom_audio_invalidated_at' ? 'vp.custom_audio_invalidated_at' : familyMarkerSelect},
-                 vpr.relationship_label AS relationship_label,
-                 vpr.listener_title AS listener_title,
-                 vpr.relationship_label AS viewer_relationship_raw,
-                 vpr.listener_title AS viewer_listener_raw,
-                 u.name as owner_name
-          FROM voice_profiles vp
-          LEFT JOIN users u ON vp.user_id = u.google_id OR vp.user_id = u.id
-          LEFT JOIN voice_profile_relationships vpr
-            ON vpr.voice_profile_id = vp.id AND vpr.user_id IN (?, ?)
-          WHERE vp.user_id IN (${placeholders})
-            AND vp.deleted_at IS NULL
-            AND vp.status = 'ready'
-            AND COALESCE(vp.is_shared, 0) = 1
-            AND COALESCE(vp.is_draft, 0) = 0
-          ORDER BY vp.created_at DESC`,
-    args: [userPk, userId, ...memberIds],
-  });
-
-  return c.json({
-    profiles: voicesRes.rows.map((row) => {
-      const viewerRelationshipRaw = row.viewer_relationship_raw;
-      const viewerListenerRaw = row.viewer_listener_raw;
-      const needsViewerInfo =
-        typeof viewerRelationshipRaw !== 'string' ||
-        viewerRelationshipRaw.trim() === '' ||
-        typeof viewerListenerRaw !== 'string' ||
-        viewerListenerRaw.trim() === '';
-      // viewer raw 필드는 응답에서 제외
-      const {
-        viewer_relationship_raw: _r,
-        viewer_listener_raw: _l,
-        ...rest
-      } = row as Record<string, unknown>;
-      return {
-        ...rest,
-        is_shared: Boolean(Number(row.is_shared ?? 0)),
-        needs_viewer_info: needsViewerInfo,
-      };
-    }),
-  });
-});
+// 옛 앱 호환 — minSupported 가 현재 빌드를 넘으면 지운다. 같은 그룹이 공유한 목소리 목록이었다(목소리 공유는
+// 2026-10-20 에 없앴다). 옛 앱 둘은 목소리 목록을 새로 받을 때마다 이것도 받아야 내 목소리의 접근권 재조정을
+// 끝낸다(안드로이드 `VoiceAccessSyncWorker` 는 실패하면 계속 재시도한다). 공유가 없던 계정이 받던 답 그대로이고,
+// DB 를 읽지 않는다. ⚠ 자리는 그대로 둔다 — Hono 는 등록 순서로 맞추므로, `/:id` 꼴 GET 뒤로 가면 가려진다.
+voiceProfile.get('/family', (c) => c.json({ profiles: [] }));
 
 voiceProfile.post('/:id/preview-played', async (c) => {
   const ids = ownerIds(c);
@@ -933,9 +796,8 @@ type ReplaceResult =
   | {
       ok: true;
       profile: Record<string, unknown>;
-      notifyShareRemoval: boolean;
-      /** 강등된 직접 입력(custom) 알람 — 받은 알람과 **소유자 본인 알람**을 함께 담는다. */
-      revokedCustomAlarms: Array<{ alarmId: string; ownerUserId: string; isReceived: boolean }>;
+      /** 강등된 직접 입력(custom) 알람 — 소유자 본인 알람이다. */
+      revokedCustomAlarms: Array<{ alarmId: string; ownerUserId: string }>;
       /** 알람 행과 무관하게 깨워야 할 계정. 아직 서버에 없는 로컬 알람 때문에 소유자는 항상 넣는다. */
       voiceAccessRevokedUserIds: string[];
       /** 이번 교체의 세대(`custom_audio_invalidated_at`). 푸시가 이 값을 함께 실어 보낸다. */
@@ -973,7 +835,6 @@ export async function replaceVoiceInPlace(
     targetUserIds: string[];
     draftProfileId: string;
     language: string;
-    isShared?: boolean;
     /**
      * `users.id` — 월 원장·동의·플랜 조회와 사전렌더 큐 소유자의 기준.
      * ⚠ `voice_profiles.user_id` 를 대신 쓰지 말 것. 구 토큰 계정은 거기에 google_id 가
@@ -995,7 +856,7 @@ export async function replaceVoiceInPlace(
     pitchSemitones?: number;
   },
 ): Promise<ReplaceResult> {
-  const { targetUserIds, draftProfileId, language, isShared, ownerPk, loginId, promo } = params;
+  const { targetUserIds, draftProfileId, language, ownerPk, loginId, promo } = params;
   const pitchSemitones = params.pitchSemitones ?? 0;
   const ph = targetUserIds.map(() => '?').join(',');
 
@@ -1006,7 +867,7 @@ export async function replaceVoiceInPlace(
     const draftRes = await tx.execute({
       sql: `SELECT id, user_id, name, elevenlabs_voice_id, relationship_label, listener_title,
                    voice_energy, preview_text, preview_language, speech_style, speech_style_status,
-                   is_shared, previewed_at
+                   previewed_at
             FROM voice_profiles
             WHERE id = ? AND user_id IN (${ph}) AND deleted_at IS NULL
               AND COALESCE(is_draft, 0) = 1
@@ -1024,7 +885,7 @@ export async function replaceVoiceInPlace(
     // 교체 대상 = 이 사용자의 **현역** 목소리. 한도가 1이라 하나뿐이지만, 늘어나도
     // 가장 오래된 것을 고르지 않도록 명시적으로 하나만 있을 때만 진행한다.
     const targetRes = await tx.execute({
-      sql: `SELECT id, elevenlabs_voice_id, is_shared
+      sql: `SELECT id, elevenlabs_voice_id
             FROM voice_profiles
             WHERE user_id IN (${ph}) AND deleted_at IS NULL AND status != 'failed'
               AND COALESCE(is_draft, 0) = 0 AND id != ?`,
@@ -1035,9 +896,6 @@ export async function replaceVoiceInPlace(
     const target = targetRes.rows[0]!;
     const targetId = String(target.id);
     const staleProviderVoiceId = target.elevenlabs_voice_id ? String(target.elevenlabs_voice_id) : null;
-    const finalIsShared =
-      isShared === undefined ? Number(draft.is_shared ?? 0) === 1 : isShared;
-    const notifyShareRemoval = Number(target.is_shared ?? 0) === 1 && !finalIsShared;
 
     // ── 승격과 **같은 게이트**를 여기서 다시 본다 ────────────────────────────────
     //
@@ -1080,7 +938,7 @@ export async function replaceVoiceInPlace(
       sql: `UPDATE voice_profiles
             SET name = ?, elevenlabs_voice_id = ?, relationship_label = ?, listener_title = ?,
                 preview_text = ?, preview_language = ?, speech_style = ?, speech_style_status = ?,
-                is_shared = ?, voice_energy = ?, status = 'ready',
+                voice_energy = ?, status = 'ready',
                 pitch_semitones = ?, pitch_model_id = ?,
                 custom_audio_invalidated_at = datetime('now'),
                 updated_at = datetime('now')
@@ -1094,7 +952,6 @@ export async function replaceVoiceInPlace(
         draft.preview_language ?? null,
         draft.speech_style ?? null,
         draft.speech_style_status ?? null,
-        finalIsShared ? 1 : 0,
         draft.voice_energy ?? null,
         pitchSemitones !== 0 ? pitchSemitones : null,
         pitchSemitones !== 0 ? TTS_MODEL_ID : null,
@@ -1156,79 +1013,26 @@ export async function replaceVoiceInPlace(
     // 대상을 `category = 'custom'` 으로 좁힌다는 것뿐이다 — 교체에서는 프리셋 알람이
     // 살아남아야 한다.
     //
-    // ⚠ **받은 알람만 세지 말 것**(Codex #703 P1). 소유자 본인 알람은 `target_user_id`
-    // 가 NULL 이라 예전 조회(`target_user_id IS NOT NULL`)에서 통째로 빠졌는데, 본인
-    // 알람은 **pull 대상이 아니다**(`RemoteAlarmPullSyncService` 는 받은 알람만 훑는다).
-    // 서버 행만 내려 봐야 그 기기의 로컬 행·캐시된 음원·OS 예약은 그대로라, 등록 기기와
-    // 다른 기기 양쪽에서 **지운 목소리가 계속 울린다.**
+    // ⚠ **서버 행만 내리고 끝내지 말 것**(Codex #703 P1). 알람은 기기가 원본이라 서버 행만 내려 봐야
+    // 그 기기의 로컬 행·캐시된 음원·OS 예약은 그대로다 — 등록 기기와 다른 기기 양쪽에서 **지운 목소리가
+    // 계속 울린다.** 그래서 대상 알람을 모아 커밋 뒤 주인 기기에 알린다(아래 `revokedCustomAlarms`).
     const liveCustom = await tx.execute({
-      // ⚠ **임자를 목소리 주인으로 뭉개지 말 것.** 공유 목소리는 같은 플랜 그룹의 다른
-      // 사람도 자기 알람에 직접 입력 문구를 만들어 쓸 수 있다(`findUsableVoiceProfile`).
-      // 그 행도 `target_user_id` 가 비어 있어 '본인 알람' 으로 잡히는데, 임자는 주인이
-      // 아니라 **그 멤버**다 — 주인에게만 알리면 멤버 기기는 아무 신호도 못 받는다.
       // `users` 조인은 레거시 google_id 를 users.id 로 정규화하기 위한 것이다(신호가 같은
       // 계정에 두 번 나가지 않게).
       sql: `SELECT a.id AS alarm_id,
-                   COALESCE(a.target_user_id, owner_u.id, a.user_id) AS row_owner_user_id,
-                   a.target_user_id IS NOT NULL AS is_received
+                   COALESCE(owner_u.id, a.user_id) AS row_owner_user_id
             FROM alarms a
             JOIN messages m ON m.id = a.message_id
             LEFT JOIN users owner_u ON owner_u.id = a.user_id OR owner_u.google_id = a.user_id
             WHERE m.voice_profile_id = ? AND m.category = 'custom'`,
       args: [targetId],
     });
-    const deliveredCustom = await tx.execute({
-      sql: `SELECT alarm_id, recipient_user_id FROM alarm_recipient_state
-            WHERE voice_profile_id = ? AND custom_voice = 1 AND revoked = 0`,
-      args: [targetId],
-    });
-    const revokedCustomAlarms = new Map<
-      string,
-      { alarmId: string; ownerUserId: string; isReceived: boolean }
-    >();
-    const addRevoked = (alarmId: string, owner: string, isReceived: boolean) => {
-      revokedCustomAlarms.set(`${alarmId}:${owner}`, { alarmId, ownerUserId: owner, isReceived });
-    };
+    const revokedCustomAlarms = new Map<string, { alarmId: string; ownerUserId: string }>();
     for (const row of liveCustom.rows) {
       const alarmId = String(row.alarm_id);
-      if (Number(row.is_received) === 1) {
-        addRevoked(alarmId, String(row.row_owner_user_id), true);
-        continue;
-      }
-      addRevoked(alarmId, String(row.row_owner_user_id), false);
+      const ownerUserId = String(row.row_owner_user_id);
+      revokedCustomAlarms.set(`${alarmId}:${ownerUserId}`, { alarmId, ownerUserId });
     }
-    for (const row of deliveredCustom.rows) {
-      addRevoked(String(row.alarm_id), String(row.recipient_user_id), true);
-    }
-
-    // 아직 ACK 전인 custom 알람도 이미 수신자 기기에 들어갔을 수 있다. 서버 행 강등만으로는
-    // 편집된 로컬 행에 닿지 않으므로 revoked tombstone을 먼저 선점한다.
-    await tx.execute({
-      sql: `INSERT INTO alarm_recipient_state
-              (alarm_id, recipient_user_id, declined, revoked, sender_user_id,
-               voice_profile_id, sender_voice_upload, custom_voice, created_at, updated_at)
-            SELECT a.id, a.target_user_id, 0, 1, a.user_id,
-                   NULL, 0, 0, datetime('now'), datetime('now')
-            FROM alarms a
-            JOIN messages m ON m.id = a.message_id
-            WHERE a.target_user_id IS NOT NULL
-              AND m.voice_profile_id = ? AND m.category = 'custom'
-            ON CONFLICT(alarm_id, recipient_user_id)
-            DO UPDATE SET revoked = 1, voice_profile_id = NULL,
-                          sender_voice_upload = 0, custom_voice = 0,
-                          updated_at = datetime('now')`,
-      args: [targetId],
-    });
-    // ACK가 이미 지운 행은 custom_voice 표식으로만 구분된다. preset tombstone은 건드리지
-    // 않아 재렌더된 같은 message id를 계속 쓸 수 있게 한다.
-    await tx.execute({
-      sql: `UPDATE alarm_recipient_state
-            SET revoked = 1, voice_profile_id = NULL,
-                sender_voice_upload = 0, custom_voice = 0,
-                updated_at = datetime('now')
-            WHERE voice_profile_id = ? AND custom_voice = 1`,
-      args: [targetId],
-    });
 
     await tx.execute({
       sql: `UPDATE alarms
@@ -1255,7 +1059,7 @@ export async function replaceVoiceInPlace(
       // ⚠ **소유자는 `users.id`(ownerPk)여야 한다.** cron 이 이 값으로 동의를 확인하는데
       // (`missingConsentType` 는 PK 키다) 옛 행에는 로그인 id(구글 계정은 google_id)가
       // 들어 있을 수 있다. 그러면 동의 행을 못 찾아 **재렌더가 실패로 내려앉고** 모든 프리셋
-      // 클립이 옛 목소리에 남는다. 공유 완료 통지의 그룹 조회도 같은 값을 쓴다.
+      // 클립이 옛 목소리에 남는다. 재렌더 완료 통지도 같은 값으로 주인을 찾는다.
       // 충돌 시 `owner_user_id` 도 갱신해 옛 행을 고쳐 둔다(승격 경로와 같은 기준).
       sql: `INSERT INTO voice_prerender_queue
               (voice_profile_id, owner_user_id, language, status, attempts, refresh_existing)
@@ -1271,30 +1075,11 @@ export async function replaceVoiceInPlace(
       args: [targetId, ownerPk, String(draft.preview_language ?? language)],
     });
 
-    // 공유 중이던 목소리는 **같은 그룹원의 기기도 깨워야 한다.** 그들이 이 목소리로 만든
-    // 직접 입력 알람도 방금 무효가 됐는데, 그 행은 `target_user_id` 가 없어 pull 로 돌아오지
-    // 않는다. `revokeDeletedVoices` 가 삭제 경로에서 하는 것과 같은 스코프다(같은 그룹 동석).
-    // 과다발송해도 각 기기가 자기 알람만 보고 판단하므로 안전하다 — 반대로 빠뜨리면 지운
-    // 목소리가 남의 기기에서 계속 운다.
-    const wakeUserIds = new Set<string>([ownerPk]);
-    if (Number(target.is_shared ?? 0) === 1) {
-      const members = await tx.execute({
-        sql: `SELECT DISTINCT m2.user_id
-                FROM plan_group_members m1
-                JOIN plan_group_members m2 ON m2.plan_group_id = m1.plan_group_id
-               WHERE m1.user_id = ? AND m2.user_id != ?`,
-        args: [ownerPk, ownerPk],
-      });
-      for (const row of members.rows) wakeUserIds.add(String(row.user_id));
-    }
-
     await markMonthlyOfficialVoiceChange(tx, ledgerId, 'succeeded');
     return {
       status: 'ok' as const,
       targetId,
-      notifyShareRemoval,
       revokedCustomAlarms: Array.from(revokedCustomAlarms.values()),
-      wakeUserIds: Array.from(wakeUserIds),
     };
   });
 
@@ -1347,7 +1132,7 @@ export async function replaceVoiceInPlace(
   }
 
   const refreshed = await db.execute({
-    sql: `SELECT id, name, status, is_shared, relationship_label, listener_title, created_at,
+    sql: `SELECT id, name, status, relationship_label, listener_title, created_at,
                  custom_audio_invalidated_at
           FROM voice_profiles WHERE id = ? LIMIT 1`,
     args: [replacementState.targetId],
@@ -1355,7 +1140,7 @@ export async function replaceVoiceInPlace(
   const refreshedRow = refreshed.rows[0];
   return {
     ok: true,
-    // 다른 프로필 응답과 같은 모양으로 싣는다 — 행을 그대로 실으면 SQLite 정수 `is_shared`(0/1)가 숫자로 나가,
+    // 다른 프로필 응답과 같은 모양으로 싣는다 — 행을 그대로 실으면 SQLite 정수 칸(0/1)이 숫자로 나가,
     // 안드로이드(Gson `Boolean`)가 등록 확정 응답을 못 읽고 '목소리를 만들지 못했어요' 를 띄운다. 서버는 이미
     // 교체를 끝냈는데 앱은 아직 초안으로 알고, 나가기 경고의 '나가고 삭제' 가 새 목소리를 지운다(2026-10-11 실기기).
     profile: refreshedRow
@@ -1363,19 +1148,17 @@ export async function replaceVoiceInPlace(
           id: String(refreshedRow.id),
           name: String(refreshedRow.name ?? ''),
           status: refreshedRow.status,
-          is_shared: Boolean(Number(refreshedRow.is_shared ?? 0)),
           relationship_label: refreshedRow.relationship_label ?? null,
           listener_title: refreshedRow.listener_title ?? null,
           created_at: refreshedRow.created_at,
           custom_audio_invalidated_at: refreshedRow.custom_audio_invalidated_at ?? null,
         }
       : {},
-    notifyShareRemoval: replacementState.notifyShareRemoval,
     revokedCustomAlarms: replacementState.revokedCustomAlarms,
-    // 행이 하나도 안 잡혀도 소유자(와 공유 중이었다면 그룹원)는 깨운다 — 아직 서버에
-    // 올라오지 않은 로컬 custom 알람이 다른 기기에 있을 수 있고, 그 기기의 캐시된 음원은
-    // 이미 못 쓰는 것이다(`revokeDeletedVoices` 가 소유자를 항상 넣는 것과 같은 이유).
-    voiceAccessRevokedUserIds: replacementState.wakeUserIds,
+    // 행이 하나도 안 잡혀도 소유자는 깨운다 — 아직 서버에 올라오지 않은 로컬 custom 알람이 다른
+    // 기기에 있을 수 있고, 그 기기의 캐시된 음원은 이미 못 쓰는 것이다(`revokeDeletedVoices` 가
+    // 소유자를 항상 넣는 것과 같은 이유).
+    voiceAccessRevokedUserIds: [ownerPk],
     customAudioInvalidatedAt:
       refreshedRow?.custom_audio_invalidated_at == null
         ? null
@@ -1397,10 +1180,9 @@ voiceProfile.patch('/:id', async (c) => {
     );
   }
 
+  // 옛 앱은 등록 확정에 공유 여부 칸도 싣는다 — 목소리 공유를 없앴으므로 읽지 않는다.
   let body: {
     name?: unknown;
-    is_shared?: unknown;
-    isShared?: unknown;
     is_draft?: unknown;
     isDraft?: unknown;
     relationship_label?: unknown;
@@ -1427,11 +1209,8 @@ voiceProfile.patch('/:id', async (c) => {
 
   const hasName = body.name !== undefined;
   // trim 만으로는 부족하다 — 제어문자·제로폭·양방향 문자는 공백이 아니라 살아남고,
-  // 목소리 이름은 가족에게 공유될 때 그대로 노출된다. 글자 규칙은 표시 이름과 같다.
+  // 목소리 이름은 목록·편집기에 그대로 보인다. 글자 규칙은 표시 이름과 같다.
   const name = typeof body.name === 'string' ? normalizeDisplayName(body.name) : '';
-  const sharedValue = body.is_shared ?? body.isShared;
-  const isSharedUpdate = typeof sharedValue === 'boolean' ? sharedValue : undefined;
-  const hasShared = isSharedUpdate !== undefined;
   const draftValue = body.is_draft ?? body.isDraft;
   const isDraftUpdate = typeof draftValue === 'boolean' ? draftValue : undefined;
   const hasDraft = isDraftUpdate !== undefined;
@@ -1475,7 +1254,7 @@ voiceProfile.patch('/:id', async (c) => {
     }
     pitchSemitones = parsedPitch.data;
   }
-  if (!hasName && !hasShared && !hasDraft && !hasRelationship && !hasListenerTitle && !hasPitch) {
+  if (!hasName && !hasDraft && !hasRelationship && !hasListenerTitle && !hasPitch) {
     return c.json(
       { error: `name must be 1-${VOICE_NAME_MAX_LENGTH} characters`, error_code: 'INVALID_NAME_LENGTH' },
       400,
@@ -1609,7 +1388,6 @@ voiceProfile.patch('/:id', async (c) => {
         targetUserIds: ids,
         draftProfileId: id,
         language: prerenderLanguage,
-        isShared: isSharedUpdate,
         ownerPk: userPk,
         loginId: userId,
         promo: resolvePersonalPromo(c.env),
@@ -1636,9 +1414,7 @@ voiceProfile.patch('/:id', async (c) => {
           },
         ),
       );
-      // 공유 중인 옛 목소리를 끄는 것은 접근권 철회라 즉시 알린다. 새 공유 목소리의 갱신은
-      // 모든 preset 게시가 끝난 뒤 notifySharedVoicePrerenderComplete 가 알린다.
-      if (replaced.notifyShareRemoval) scheduleVoiceShareChangedPush(c, db, userPk);
+      // 새 목소리 클립으로 갈아타라는 신호는 모든 preset 게시가 끝난 뒤 notifyVoicePrerenderComplete 가 보낸다.
       // `replaced: true` 는 등록 기기가 **자기 직접 입력 알람을 곧바로 내리는** 신호다
       // (푸시를 기다리지 않는다). 다른 기기는 아래 fanout 의 voice_access_revoked 로 안다.
       return c.json({ profile: replaced.profile, replaced: true, pitch_semitones: pitchSemitones });
@@ -1650,10 +1426,6 @@ voiceProfile.patch('/:id', async (c) => {
   if (hasName) {
     updates.push('name = ?');
     args.push(name);
-  }
-  if (hasShared) {
-    updates.push('is_shared = ?');
-    args.push(isSharedUpdate ? 1 : 0);
   }
   if (hasDraft) {
     updates.push('is_draft = ?');
@@ -1783,10 +1555,6 @@ voiceProfile.patch('/:id', async (c) => {
     return c.json({ error: 'Voice profile not found', error_code: 'VOICE_PROFILE_NOT_FOUND' }, 404);
   }
 
-  // 공유 on/off 변경은 같은 그룹 멤버들에게 data-only push 로 즉시 알린다. 일반 승격과
-  // 제자리 교체가 같은 경로를 써야 어느 한쪽의 조기 return에서 빠지지 않는다.
-  if (hasShared) scheduleVoiceShareChangedPush(c, db, userPk);
-
   // ⚠ **이름은 언제나 실어 보낸다**(2026-09-19 실기기). 예전에는 "이번 요청이 바꾼 필드" 만
   //   돌려줬는데, 저장하기(승격)는 `is_draft` 만 보내므로 응답에 `name` 이 없었다. 앱의
   //   `VoiceProfile.name` 은 필수라 **해석에 실패했고**, 서버는 200 인데 화면에는
@@ -1800,7 +1568,6 @@ voiceProfile.patch('/:id', async (c) => {
     profile: {
       id,
       name: hasName ? name : String(currentName.rows[0]?.name ?? ''),
-      ...(hasShared ? { is_shared: Boolean(isSharedUpdate) } : {}),
       ...(hasDraft ? { is_draft: Boolean(isDraftUpdate) } : {}),
       ...(hasRelationship ? { relationship_label: relationshipLabel ?? '' } : {}),
       ...(hasListenerTitle ? { listener_title: listenerTitle ?? '' } : {}),
@@ -1814,7 +1581,7 @@ voiceProfile.patch('/:id/relationship', async (c) => {
   const userId = c.get('userId');
   const db = getDB(c.env);
   const id = c.req.param('id');
-  const userPk = c.get('userIdPK') || (await resolveUserPk(db, userId)) || userId;
+  const userPk = c.get('userIdPK') || userId;
 
   if (!UUID_RE.test(id)) {
     return c.json(
@@ -1877,63 +1644,46 @@ voiceProfile.patch('/:id/relationship', async (c) => {
     );
   }
 
+  // 내 초안만 고친다. 남의 목소리(공유 보기)에 호칭을 붙이던 갈래는 목소리 공유와 함께 지웠다.
   const owned = await db.execute({
     sql: `SELECT id, COALESCE(is_draft, 0) AS is_draft
           FROM voice_profiles WHERE id = ? AND user_id IN (?, ?) AND deleted_at IS NULL`,
     args: [id, userPk, userId],
   });
-
-  if (owned.rows.length > 0) {
-    if (Number(owned.rows[0]!.is_draft ?? 0) !== 1) {
-      return c.json(
-        {
-          error: 'Relationship and title are fixed after registration.',
-          error_code: 'VOICE_PERSONA_LOCKED',
-        },
-        409,
-      );
-    }
-    // 결을 보냈을 때만 그 컬럼을 쓴다 — 안 보낸 구버전 앱 요청은 새 컬럼(#122)을 건드리지 않는다.
-    // 결이 바뀌면 관계·호칭처럼 미리듣기를 비워 새 결로 다시 만든다.
-    const updated = await db.execute({
-      sql: `UPDATE voice_profiles
-            SET relationship_label = ?, listener_title = ?,${hasVoiceEnergy ? ' voice_energy = ?,' : ''} previewed_at = NULL,
-                preview_claimed_at = NULL, preview_claim_token = NULL,
-                preview_text = NULL,
-                updated_at = datetime('now')
-            WHERE id = ? AND user_id IN (?, ?) AND deleted_at IS NULL
-              AND COALESCE(is_draft, 0) = 1`,
-      args: hasVoiceEnergy
-        ? [relationshipLabel, listenerTitle, voiceEnergy || null, id, userPk, userId]
-        : [relationshipLabel, listenerTitle, id, userPk, userId],
-    });
-    if ((updated.rowsAffected ?? 0) === 0) {
-      return c.json(
-        {
-          error: 'Voice state changed. Refresh and try again.',
-          error_code: 'VOICE_TRANSITION_CONFLICT',
-        },
-        409,
-      );
-    }
-  } else {
-    const canUse = await canUseSharedVoiceProfile(db, userPk, id);
-    if (!canUse) {
-      return c.json(
-        { error: 'Voice profile not found', error_code: 'VOICE_PROFILE_NOT_FOUND' },
-        404,
-      );
-    }
-    await db.execute({
-      sql: `INSERT INTO voice_profile_relationships
-              (id, user_id, voice_profile_id, relationship_label, listener_title)
-            VALUES (?, ?, ?, ?, ?)
-            ON CONFLICT(user_id, voice_profile_id) DO UPDATE SET
-              relationship_label = excluded.relationship_label,
-              listener_title = excluded.listener_title,
-              updated_at = datetime('now')`,
-      args: [crypto.randomUUID(), userPk, id, relationshipLabel, listenerTitle],
-    });
+  if (owned.rows.length === 0) {
+    return c.json({ error: 'Voice profile not found', error_code: 'VOICE_PROFILE_NOT_FOUND' }, 404);
+  }
+  if (Number(owned.rows[0]!.is_draft ?? 0) !== 1) {
+    return c.json(
+      {
+        error: 'Relationship and title are fixed after registration.',
+        error_code: 'VOICE_PERSONA_LOCKED',
+      },
+      409,
+    );
+  }
+  // 결을 보냈을 때만 그 컬럼을 쓴다 — 안 보낸 구버전 앱 요청은 새 컬럼(#122)을 건드리지 않는다.
+  // 결이 바뀌면 관계·호칭처럼 미리듣기를 비워 새 결로 다시 만든다.
+  const updated = await db.execute({
+    sql: `UPDATE voice_profiles
+          SET relationship_label = ?, listener_title = ?,${hasVoiceEnergy ? ' voice_energy = ?,' : ''} previewed_at = NULL,
+              preview_claimed_at = NULL, preview_claim_token = NULL,
+              preview_text = NULL,
+              updated_at = datetime('now')
+          WHERE id = ? AND user_id IN (?, ?) AND deleted_at IS NULL
+            AND COALESCE(is_draft, 0) = 1`,
+    args: hasVoiceEnergy
+      ? [relationshipLabel, listenerTitle, voiceEnergy || null, id, userPk, userId]
+      : [relationshipLabel, listenerTitle, id, userPk, userId],
+  });
+  if ((updated.rowsAffected ?? 0) === 0) {
+    return c.json(
+      {
+        error: 'Voice state changed. Refresh and try again.',
+        error_code: 'VOICE_TRANSITION_CONFLICT',
+      },
+      409,
+    );
   }
 
   return c.json({
@@ -1941,7 +1691,7 @@ voiceProfile.patch('/:id/relationship', async (c) => {
       id,
       relationship_label: relationshipLabel,
       listener_title: listenerTitle,
-      ...(hasVoiceEnergy && owned.rows.length > 0 ? { voice_energy: voiceEnergy ?? '' } : {}),
+      ...(hasVoiceEnergy ? { voice_energy: voiceEnergy ?? '' } : {}),
     },
   });
 });
@@ -2017,9 +1767,7 @@ voiceProfile.post('/clone', async (c) => {
     const rawName = formData.get('name');
     // 등록 경로도 같은 규칙을 태운다(PATCH 만 막으면 여기로 그냥 들어온다).
     const name = typeof rawName === 'string' ? normalizeDisplayName(rawName) : '';
-    const isShared = ['true', '1', 'yes'].includes(
-      String(formData.get('isShared') ?? formData.get('is_shared') ?? 'false'),
-    );
+    // 옛 앱은 공유 여부 칸도 싣는다 — 목소리 공유를 없앴으므로 읽지 않는다.
     const requestedPreviewLanguage = String(
       formData.get('language') ?? formData.get('app_language') ?? 'ko',
     ).toLowerCase();
@@ -2105,7 +1853,7 @@ voiceProfile.post('/clone', async (c) => {
     }
 
     // 크기 가드(J): arrayBuffer→R2→ElevenLabs 호출 전에 0바이트/과대 파일을 차단한다
-    // (voice-upload.ts /upload 와 동일 패턴·공용 상수).
+    // (상한은 `r2-storage.ts` 의 공용 상수).
     if (audioFile.size === 0) {
       return c.json({ error: 'audio file is empty', error_code: 'AUDIO_FILE_EMPTY' }, 400);
     }
@@ -2234,7 +1982,7 @@ voiceProfile.post('/clone', async (c) => {
         // (다 쓴 달의 요청은 위 자격 확인에서 이미 돌아갔다 — 여기까지 오지 않는다).
         await discardAbandonedDrafts(tx, ids);
       }
-      // F1(Codex #599 3차): 전역 슬롯이 꽉 찼는데 evict 후보가 전부 보호 대상(공유·draft)이면
+      // F1(Codex #599 3차): 전역 슬롯이 꽉 찼는데 evict 후보가 전부 보호 대상(draft)이면
       // 등록 후 eviction 이 후보 부족으로 짧게 끝나 상한 초과가 지속된다 → enroll·쿼터 소모 전에
       // 조기 거부. draft attempt 예약 앞에 두어 쿼터도 아끼고, 같은 tx 스냅샷이라 TOCTOU 최소화.
       if (!(await hasCloneSlotCapacity(tx))) {
@@ -2244,15 +1992,14 @@ voiceProfile.post('/clone', async (c) => {
       draftAttemptMonth = await reserveMonthlyDraftAttempt(tx, userPk);
       await tx.execute({
         sql: `INSERT INTO voice_profiles
-              (id, user_id, name, status, is_shared, is_draft, relationship_label, listener_title, preview_language${
+              (id, user_id, name, status, is_draft, relationship_label, listener_title, preview_language${
                 hasVoiceEnergy ? ', voice_energy' : ''
               })
-              VALUES (?, ?, ?, 'processing', ?, ?, ?, ?, ?${hasVoiceEnergy ? ', ?' : ''})`,
+              VALUES (?, ?, ?, 'processing', ?, ?, ?, ?${hasVoiceEnergy ? ', ?' : ''})`,
         args: [
           profileId,
           userId,
           name,
-          isShared ? 1 : 0,
           isDraft ? 1 : 0,
           relationshipLabel,
           listenerTitle,
@@ -2468,7 +2215,6 @@ voiceProfile.post('/clone', async (c) => {
           voice_id: voiceId,
           provider,
           status: 'ready',
-          is_shared: isShared,
           is_draft: isDraft,
           relationship_label: relationshipLabel,
           listener_title: listenerTitle,
@@ -2735,8 +2481,8 @@ voiceProfile.post('/:id/speech-style/retry', async (c) => {
   const language = ['en', 'ja'].includes(requestedLanguage) ? requestedLanguage : 'ko';
 
   // 전사 소스: clone 등록이 이 프로필에 연결해 남긴 원본 업로드만 쓴다.
-  // '사용자 최신 1건' 폴백은 두지 않는다 — 가족알람용 녹음 등 이 목소리와 무관한
-  // 업로드를 말투 분석에 쓰는 사고를 막는다(연결본이 없으면 아래 409).
+  // '사용자 최신 1건' 폴백은 두지 않는다 — 이 목소리와 무관한 업로드(다른 초안의 녹음 등)를
+  // 말투 분석에 쓰는 사고를 막는다(연결본이 없으면 아래 409).
   const uploadRes = await db.execute({
     sql: `SELECT object_key, mime_type, original_name FROM voice_uploads
           WHERE user_id IN (${ph}) AND voice_profile_id = ?
@@ -3135,7 +2881,7 @@ voiceProfile.post('/:id/prerender/advance', async (c) => {
       // 큐는 이미 done 이라 재시도해도 이 신호를 다시 만들 수 없다 — waitUntil 로 태운다.
       await schedulePostCommitFanout(
         c,
-        notifySharedVoicePrerenderComplete(db, c.env, id, userPk),
+        notifyVoicePrerenderComplete(db, c.env, userPk),
       );
     }
     return c.json({ done: true, generated: await countGenerated(), total: CLONE_PRERENDER_TOTAL });
@@ -3186,7 +2932,7 @@ voiceProfile.post('/:id/prerender/advance', async (c) => {
       if (refreshExisting) {
         await schedulePostCommitFanout(
           c,
-          notifySharedVoicePrerenderComplete(db, c.env, id, userPk),
+          notifyVoicePrerenderComplete(db, c.env, userPk),
         );
       }
     } else {
@@ -3259,7 +3005,7 @@ voiceProfile.delete('/:id', async (c) => {
     }
     const tombstoned = await tx.execute({
       sql: `UPDATE voice_profiles
-            SET deleted_at = datetime('now'), is_shared = 0, updated_at = datetime('now')
+            SET deleted_at = datetime('now'), updated_at = datetime('now')
             WHERE id = ? AND deleted_at IS NULL
               ${draftOnly ? 'AND COALESCE(is_draft, 0) = 1' : ''}`,
       args: [id],
@@ -3309,8 +3055,8 @@ voiceProfile.delete('/:id', async (c) => {
       args: [id],
     });
 
-    // 프로필 tombstone·원본 삭제와 철회는 **한 커밋**이다. 새 철회 컬럼 마이그레이션이
-    // 아직이면 전부 롤백돼 재시도할 수 있어야 한다. 프로필만 먼저 사라지면 재시도는 404다.
+    // 프로필 tombstone·원본 삭제와 철회는 **한 커밋**이다. 철회가 실패하면 전부 롤백돼 재시도할 수
+    // 있어야 한다. 프로필만 먼저 사라지면 재시도는 404다.
     const revocation = await revokeDeletedVoices(tx, {
       voiceProfileIds: [id],
       ownerUserIds: ids,
@@ -3338,7 +3084,7 @@ voiceProfile.delete('/:id', async (c) => {
   }
 
   // 철회 fanout은 커밋 직후, **provider 정리보다 먼저** 태운다. DELETE 커밋은 재시도할 수
-  // 없으므로(재요청은 deleted_at 가드에 걸려 404) 이 신호를 놓치면 수신 기기가 회수된
+  // 없으므로(재요청은 deleted_at 가드에 걸려 404) 이 신호를 놓치면 다른 기기가 회수된
   // 목소리로 계속 운다. provider 정리는 DB 큐에도 적재돼 있어 지연돼도 cron 이 거둔다.
   // ⚠ 맨 `await` 로 되돌리지 말 것 — 응답 뒤 완료를 보장하는 것은 waitUntil 뿐이다.
   await schedulePostCommitFanout(

@@ -3,7 +3,7 @@
 // ⚠ 애플에는 우리가 받는 서버 알림 라우트가 없다(App Store Server Notifications 미구현).
 // 기간 중 환불은 클라가 `Transaction.updates` 로 물어다 준 confirm 요청이 **유일한 통보**다.
 // 거기서 400 만 돌려주면 만료 크론이 재조회할 때까지 — 저장된 `expires_at` 까지 —
-// 환불받은 계정과 그 가족 멤버가 계속 유료로 남는다.
+// 환불받은 계정이 계속 유료로 남는다.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Hono } from 'hono';
 import type { AppEnv } from '../src/types';
@@ -46,7 +46,7 @@ vi.mock('../src/lib/apple-storekit', () => ({
   AppleTransactionNotFoundError: class extends Error {},
 }));
 
-const cancelSubscriptionImmediate = vi.fn(async () => ['owner-pk', 'member-1']);
+const cancelSubscriptionImmediate = vi.fn(async () => undefined);
 const schedulePaidVoiceRetention = vi.fn(async () => undefined);
 /** 환불 뒤에도 유료 권한이 남아 있는가(다른 스토어 구독·프로모). */
 let stillPaid = false;
@@ -98,9 +98,8 @@ function pushMappedSubscription(changed: Record<string, unknown> = {}) {
     user_id: 'owner-pk',
     subscription_id: 'sub-1',
     plan_id: 'plan-1',
-    plan_group_id: 'group-1',
-    plan_type: 'family',
-    plan_key: 'family',
+    plan_type: 'personal',
+    plan_key: 'personal',
   };
   mockDB.pushResult([row]); // 스토어 왕복 전 스냅샷
   mockDB.pushResult([{ ...row, ...changed }]); // 쓰기 트랜잭션의 재확인
@@ -132,7 +131,6 @@ describe('POST /billing/apple/confirm — 다른 스토어가 갱신 중', () =>
         sub_id: 'sub-play',
         user_id: 'caller-pk',
         plan_id: 'plan-1',
-        plan_group_id: null,
         plan_type: 'personal',
         plan_key: 'personal',
       },
@@ -159,7 +157,6 @@ describe('POST /billing/apple/confirm — 다른 스토어가 갱신 중', () =>
         sub_id: 'sub-a',
         user_id: 'caller-pk',
         plan_id: 'plan-1',
-        plan_group_id: null,
         plan_type: 'personal',
         plan_key: 'personal',
       },
@@ -238,11 +235,10 @@ describe('POST /billing/apple/confirm — 환불된 트랜잭션', () => {
     // ⚠ 회수 대상은 **그 트랜잭션에 묶인 구독**이지 요청을 보낸 계정이 아니다.
     expect(mapped.userPk).toBe('owner-pk');
     expect(mapped.subscriptionId).toBe('sub-1');
-    expect(mapped.planGroupId).toBe('group-1');
     expect(schedulePaidVoiceRetention).toHaveBeenCalledTimes(1);
   });
 
-  it('강등된 당사자와 해체된 멤버에게 알린다', async () => {
+  it('강등된 당사자(구독 주인)에게 알린다', async () => {
     pushMappedSubscription();
 
     await buildApp().request(
@@ -252,7 +248,7 @@ describe('POST /billing/apple/confirm — 환불된 트랜잭션', () => {
     );
 
     expect(notifyBillingStateChanged).toHaveBeenCalledTimes(1);
-    expect(notifyBillingStateChanged.mock.calls[0]![2]).toEqual(['owner-pk', 'member-1']);
+    expect(notifyBillingStateChanged.mock.calls[0]![2]).toEqual(['owner-pk']);
   });
 
   it('조회 키로 originalTransactionId 와 transactionId 를 둘 다 쓴다', async () => {
@@ -291,7 +287,7 @@ describe('POST /billing/apple/confirm — 환불된 트랜잭션', () => {
   //
   // ⚠ 자동갱신 구독은 갱신마다 트랜잭션이 새로 나지만 `originalTransactionId` 는 **체인
   //   전체가 공유**한다. 그래서 옛 갱신 한 건이 환불되면 조회가 그 id 로 **지금 살아 있는
-  //   구독 행**을 집는다 — 그대로 취소하면 이어받은 그룹까지 해체되고 되돌릴 수 없다.
+  //   구독 행**을 집는다 — 그대로 취소하면 살아 있는 구독을 끊고 되돌릴 수 없다.
   // -------------------------------------------------------------------------
   it('체인이 아직 활성이면 취소하지 않는다', async () => {
     chainStatus = 1; // ACTIVE — 더 최근 갱신이 살아 있다
@@ -406,24 +402,6 @@ describe('POST /billing/apple/confirm — 환불된 트랜잭션', () => {
     expect(cancelSubscriptionImmediate).toHaveBeenCalledTimes(1); // 회수 자체는 한다
     expect(schedulePaidVoiceRetention).not.toHaveBeenCalled();
     expect(notifyBillingStateChanged).toHaveBeenCalledTimes(1); // 스냅샷 갱신은 여전히 알린다
-  });
-
-  it('소유자가 유료로 남아도 떨어져 나간 멤버에게는 삭제 예고를 보낸다', async () => {
-    // ⚠ `stillPaid` 는 **소유자** 얘기다. 그룹이 해체되면서 떨어져 나간 멤버들은 유예가
-    //   걸려 있는데, 소유자에게 다른 유료 구독이 남았다는 이유로 예고를 통째로 건너뛰면
-    //   **그 멤버들은 아무 경고 없이 목소리를 잃는다**(코덱스 #733 7차).
-    //   `notifyBillingStateChanged` 는 유예 행이 있는 사람에게만 예고하므로 전원을 넘긴다.
-    stillPaid = true;
-    pushMappedSubscription();
-
-    await buildApp().request(
-      jsonReq('POST', '/billing/apple/confirm', { transaction_id: 'tx' }),
-      undefined,
-      ENV,
-    );
-
-    expect(notifyBillingStateChanged).toHaveBeenCalledTimes(1);
-    expect(notifyBillingStateChanged.mock.calls[0]![2]).toEqual(['owner-pk', 'member-1']);
   });
 
   it('유료가 남지 않으면 예전대로 유예를 걸고 예고한다', async () => {

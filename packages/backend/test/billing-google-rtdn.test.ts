@@ -206,7 +206,7 @@ describe('billing google RTDN', () => {
     }
 
     const TXN_ROW = { user_id: 'user-pk-1', subscription_id: 'sub-old' };
-    const ACTIVE_MAPPED_ROW = { plan_id: 'plan-1', plan_group_id: null, plan_type: 'personal' };
+    const ACTIVE_MAPPED_ROW = { plan_id: 'plan-1', plan_type: 'personal' };
 
     beforeEach(() => {
       mockDB.reset();
@@ -233,7 +233,7 @@ describe('billing google RTDN', () => {
       const payload: Record<string, unknown> = {
         subscriptionState: 'SUBSCRIPTION_STATE_ACTIVE',
         linkedPurchaseToken: 'play-token-previous',
-        lineItems: [{ productId: 'family_monthly', expiryTime: FUTURE }],
+        lineItems: [{ productId: 'personal_monthly', expiryTime: FUTURE }],
       };
       if (obfuscatedId) {
         payload.externalAccountIdentifiers = { obfuscatedExternalAccountId: obfuscatedId };
@@ -301,6 +301,28 @@ describe('billing google RTDN', () => {
 
       expect(res.status).toBe(200);
       expect((await res.json()).ignored).toBe('unmapped_token');
+      expect(mockDB.calls.some((c) => /INSERT|UPDATE|DELETE/i.test(c.sql))).toBe(false);
+    });
+
+    // 커플·가족 상품은 판매를 내렸다(2026-10-20) — 남은 구독의 갱신 알림이 와도 매핑이 없는 상품이라 등급을
+    // 주지 않고 ack 한다(재시도해도 같다).
+    it('권위 lineItem 이 없앤 커플·가족 상품이면 plan_not_found 로 ack — 아무것도 쓰지 않는다', async () => {
+      const fetchMock = vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            subscriptionState: 'SUBSCRIPTION_STATE_ACTIVE',
+            lineItems: [{ productId: 'family_monthly', expiryTime: FUTURE }],
+          }),
+          { status: 200 },
+        ),
+      );
+      vi.stubGlobal('fetch', fetchMock);
+      mockDB.pushResult([TXN_ROW]); // store_transactions 매핑
+
+      const res = await buildApp().request(rtdnRequest(2), undefined, RTDN_ENV);
+
+      expect(res.status).toBe(200);
+      expect((await res.json()).ignored).toBe('plan_not_found');
       expect(mockDB.calls.some((c) => /INSERT|UPDATE|DELETE/i.test(c.sql))).toBe(false);
     });
 
@@ -386,7 +408,6 @@ describe('billing google RTDN', () => {
           name: '개인',
           plan_type: 'personal',
           period_days: 30,
-          max_members: 1,
           price_krw: 4900,
         },
       ]); // loadPlanByKey
@@ -413,7 +434,6 @@ describe('billing google RTDN', () => {
       name: '개인',
       plan_type: 'personal',
       period_days: 30,
-      max_members: 1,
       price_krw: 4900,
     };
 
@@ -505,18 +525,6 @@ describe('billing google RTDN', () => {
     // E: suspend(ON_HOLD/PAUSED)도 잔여 활성 유료 구독을 존중 (deactivate E2 와 대칭).
     //    매핑(정지된) 구독을 제외한 다른 활성 유료 구독이 있으면 free 로 내리지 않는다.
     // -------------------------------------------------------------------------
-    // 이 상태의 파생 쓰기는 billing-reconciliation.test.ts 에서 실제 DB 로 검증한다.
-
-    // -------------------------------------------------------------------------
-    // 보류는 **그룹 전체**에 전파된다.
-    //
-    // ⚠ 예전에는 소유자만 free 가 되고 멤버는 유료 그대로였다 — 소유자는 돈을 안 내는데
-    //    가족·커플 전원이 최대 30일(Play 계정보류)간 유료 기능을 계속 썼다. 게다가 멤버
-    //    화면에는 공유 목소리가 멀쩡히 보이는데 그걸로 새 알람을 만들면 404 로 막혔다.
-    // ⚠ 그룹 구조는 **보존**해야 한다 — 결제가 복구되면 재초대 없이 살아나야 한다.
-    // -------------------------------------------------------------------------
-    // 이 상태의 파생 쓰기는 billing-reconciliation.test.ts 에서 실제 DB 로 검증한다.
-
     // 이 상태의 파생 쓰기는 billing-reconciliation.test.ts 에서 실제 DB 로 검증한다.
   });
 });

@@ -9,7 +9,6 @@ import {
   sendPushNotifications,
   sendAlarmPush,
   sendPlanChangedPush,
-  sendFamilyAlarmPush,
   pruneStaleTokens,
 } from '../src/lib/fcm';
 
@@ -65,7 +64,7 @@ describe('getTokensForUser', () => {
 
 describe('sendPlanChangedPush', () => {
   it('대상 전원의 토큰을 한 번에 조회해 plan_changed data 메시지를 만든다(중복 사용자 제거)', async () => {
-    // ⚠ 사람마다 조회하지 않는다 — 조회 하나가 워커 subrequest 하나다(가족 그룹 전원).
+    // ⚠ 사람마다 조회하지 않는다 — 조회 하나가 워커 subrequest 하나다(여러 사람을 한꺼번에 알리는 처리).
     mockDB.pushResult([
       { uid: 'user-1', gid: null, token: 'tok-a', platform: 'android' },
       { uid: 'user-2', gid: null, token: 'tok-b', platform: 'android' },
@@ -80,10 +79,14 @@ describe('sendPlanChangedPush', () => {
   it('PK 와 로그인 id 가 같은 계정도 기기 하나에 한 통이다', async () => {
     // 이메일 계정은 첫 로그인 뒤 users.id == users.google_id 가 된다 — 조회 행 하나가 두 키에
     // 모두 걸린다. 두 번 넣으면 같은 기기에 두 통이 나간다(2026-09-20 검토에서 재현).
-    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     mockDB.pushResult([{ uid: 'email-u1', gid: 'email-u1', token: 'tok-email', platform: 'android' }]);
-    const results = await sendFamilyAlarmPush(mockDB.client as never, unconfiguredEnv, 'email-u1', 'alarm-1');
-    expect(results.map((r) => r.token)).toEqual(['tok-email']);
+    await sendPlanChangedPush(mockDB.client as never, unconfiguredEnv, ['email-u1']);
+    // 자격 미설정 경로는 보낼 메시지마다 경고 한 줄을 남긴다 — 한 줄이어야 한 통이다.
+    const sends = warnSpy.mock.calls
+      .map(([line]) => JSON.parse(String(line)) as { action?: string; token?: string })
+      .filter((line) => line.action === 'MOCK_SEND_UNCONFIGURED');
+    expect(sends.map((line) => line.token)).toEqual(['tok-emai...']);
   });
 
   it('토큰이 하나도 없으면 전송하지 않는다(조기 반환)', async () => {

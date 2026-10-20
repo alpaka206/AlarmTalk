@@ -217,10 +217,10 @@
   상세는 `marketing-consent.ko.md` 「재노출 정책」.
 - **동의 게이트 범위**: 로그인 후 전역 동의 게이트(`middleware/consent.ts`)는 일반 필수 3종만
   검사한다. 민감 동의는 게이트에서 빼고, 실제 처리가 일어나는 경로에서만 요구한다.
-- **음성 생체정보 게이트**: 음성 클론(`POST /voice-profile/clone`), 원본 업로드, TTS 생성 등
+- **음성 생체정보 게이트**: 음성 클론(`POST /voice-profile/clone`), TTS 생성 등
   서버 음성 처리 경로는 민감 동의 미충족 시 403(CONSENT_REQUIRED)로 차단된다
-  (`routes/voice-profile.ts`, `routes/voice-upload.ts`, `routes/tts.ts`, `lib/stock-clips.ts`,
-  `lib/voice-recover.ts`). 따라서 민감 동의를 가입 게이트에서 빼도 처리 전 동의 확보는 유지된다.
+  (`routes/voice-profile.ts`, `routes/tts.ts`, `lib/stock-clips.ts`, `lib/voice-recover.ts` — 가족 알람용
+  원본 업로드 경로 `routes/voice-upload.ts` 는 2026-10-20 에 지웠다). 따라서 민감 동의를 가입 게이트에서 빼도 처리 전 동의 확보는 유지된다.
   처리방침/약관/동의문구도 음성=민감정보·생체정보(제23조) 기준이다.
 - **운세 입력·동적 문구 국외 이전**: 운세 문구는 성별·생년월일·출생 시각을 수집하며
   (`lib/dynamic-prompt-settings.ts`), 동적 문구/번역 시 알람 문구와 함께 Google Cloud Vertex AI(미국)로

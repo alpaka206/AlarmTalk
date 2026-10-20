@@ -14,7 +14,7 @@ const sub = {
   latestOrderId: 'declined-order',
   lineItems: [
     {
-      productId: 'family_monthly',
+      productId: 'personal_monthly',
       expiryTime: '2026-10-07T00:00:00Z',
       latestSuccessfulOrderId: 'paid-order',
     },
@@ -67,7 +67,7 @@ describe('Play 결제일은 실제 성공 주문에서 읽는다', () => {
   });
   it('예약 교체의 아직 소유하지 않은 상품은 알림이 지목해도 선택하지 않는다', () => {
     const current = sub.lineItems[0]!;
-    const pending = { productId: 'couple_monthly' };
+    const pending = { productId: 'other_monthly' };
     expect(selectAuthoritativeLineItem([pending, current], pending.productId)).toBe(current);
   });
 });

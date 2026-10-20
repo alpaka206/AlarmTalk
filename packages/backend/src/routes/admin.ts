@@ -245,6 +245,7 @@ admin.get('/promo', async (c) => {
     });
   }
 
+  // `promo_codes.plan_id` 는 NOT NULL 이라 상품 이름이 비는 것은 그 플랜 행이 지워졌을 때뿐이다(#131 이 커플·가족을 지웠다).
   const rows = codesRes.rows
     .map((r) => {
       const active = Number(r.is_active) === 1;
@@ -253,7 +254,7 @@ admin.get('/promo', async (c) => {
       const until = r.valid_until ? escapeHtml(r.valid_until) : '—';
       return `<tr class="${active ? '' : 'off'}">
         <td><code>${escapeHtml(r.code)}</code></td>
-        <td>${escapeHtml(r.plan_name ?? r.plan_key ?? '?')}</td>
+        <td>${escapeHtml(r.plan_name ?? r.plan_key ?? '판매 종료 상품')}</td>
         <td>${escapeHtml(r.duration_days)}일</td>
         <td>${escapeHtml(r.used)} / ${max}</td>
         <td>${from}<br>~ ${until}</td>

@@ -74,7 +74,7 @@ export function pushRegisterStatements(
   ];
 }
 
-// 클라가 FCM 등록 토큰을 서버에 저장한다(가족 알람 등 push 대상). 로그인·토큰 갱신(onNewToken) 시 호출.
+// 클라가 FCM 등록 토큰을 서버에 저장한다(플랜 변경·결제 보류 등 push 대상). 로그인·토큰 갱신(onNewToken) 시 호출.
 // push_tokens 에 INSERT 하는 유일한 경로 — 이게 없어서 테이블이 항상 비어 모든 push 가 no-op 이던 갭을 채운다.
 // user_id 는 users.id(PK) — push_tokens.user_id FK(REFERENCES users(id)) 와 정합하도록 userIdPK 를 쓴다.
 push.post('/register', async (c) => {
@@ -150,8 +150,8 @@ push.post('/register', async (c) => {
 // 그 근거였던 "delete-on-register 로 전역 단일 소유자" 는 **범위를 좁혀도 그대로 성립**한다 —
 // 지금 그 토큰의 주인이 곧 호출자이기 때문이다. 반대로 넓게 두면 실제 사고가 난다:
 // A 의 해제 요청이 네트워크에 떠 있는 동안 B 가 같은 기기 토큰으로 등록을 마치면, 뒤늦게
-// 도착한 A 의 요청이 **B 의 새 바인딩을 지운다** — B 는 다음 APNs/FCM 등록까지 가족 알람
-// 알림을 놓친다. 클라이언트도 등록/해제를 직렬화하지만, 그건 한 기기 안에서만 유효하다.
+// 도착한 A 의 요청이 **B 의 새 바인딩을 지운다** — B 는 다음 APNs/FCM 등록까지 결제 보류·
+// 목소리 삭제 예고 같은 알림을 놓친다. 클라이언트도 등록/해제를 직렬화하지만, 그건 한 기기 안에서만 유효하다.
 push.post('/unregister', async (c) => {
   const userPk = c.get('userIdPK') || c.get('userId');
   const db = getDB(c.env);

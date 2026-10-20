@@ -4,6 +4,8 @@
 
 > ⚠ iOS 앱은 2026-09-22 에 App Store 에 게재됐습니다. App Store 의 개인정보 표시는 이 문서가 아니라 App Store Connect 의 **App Privacy(영양성분표)** 에 게시돼 있고(2026-09-14 게시), 항목 구분이 Play Data safety 와 다릅니다(예: Apple 은 'Data Used to Track You' 를 따로 묻습니다). 아래 §2 는 Play 기준이므로 그대로 옮겨 쓰지 말 것. **수집·공유 항목을 바꾸면 Play Data safety 와 App Privacy 를 함께 고칩니다** — 한쪽만 고치면 두 스토어가 같은 앱을 다르게 신고하게 됩니다.
 
+> ⚠ 2026-10-20 커플·가족 이용권과 함께 가족/파트너 그룹·초대 코드·음성 공유·가족 알람을 없앴다(처리방침 7판). 저장소 밖의 실제 Play Data safety·App Privacy 양식에 그 기능의 항목(공유 기능 사용, 다른 이용자에게 보이는 음성 등)이 있으면 새 앱 게재와 함께 지운다 — 오너가 스토어 콘솔에서 한다.
+
 ## 1. 공개 URL
 
 - Privacy Policy URL: `https://alarm-talk.com/ko/privacy/`
@@ -19,7 +21,7 @@
 - Personal info: 이메일, 이름/닉네임, 사용자 ID
 - Personal info (기타): 성별, 생년월일·출생 시각 — 운세 문구 기능 사용 시에만 수집(동적 문구 생성용, Google Vertex 미국으로 전송)
 - Audio files / Voice (민감정보·생체정보): 녹음/업로드 음성, 음성 클론(생체) 데이터, 생성 음성. Play Data safety의 "Audio > Voice or sound recordings"로 신고하고, 음성 클론이 생체정보임을 앱 내 별도 동의로 고지
-- App activity: 알람 생성/수정/삭제, 음성 생성, 공유 기능 사용
+- App activity: 알람 생성/수정/삭제, 음성 생성
 - App info and performance: 오류 로그, 진단 정보, 앱 버전
 - Device or other IDs: 푸시(FCM) 사용 시 기기 푸시 토큰, 기기/설치 식별자
 - Purchase history: 구독/이용권 상태, 인앱결제 거래 식별자(Google Play=구매 토큰·주문 ID, App Store=transaction id·original transaction id)
@@ -77,7 +79,6 @@ Settings:
 - Manage voice profiles
 - Delete account
 - Marketing consent toggle (`더보기 > 설정 > 법적 정보 > 약관 및 개인정보 처리 동의 > 선택 동의`)
-- Family/partner sharing toggle and group exit
 
 Account deletion:
 
@@ -90,7 +91,6 @@ Account deletion:
 - Does the ElevenLabs contract/DPA and retention setting match the in-app voice consent, Data safety form, and privacy-policy processor table?
 - Are all provider DPAs and cross-border transfer notices in place?
 - Does account deletion delete R2 objects and provider-side cloned voice IDs?
-- Does the app provide a way to withdraw voice sharing consent?
 - Are app screenshots and store descriptions clear that AI voice cloning is user-initiated?
 - Are refund, subscription, and plan downgrade effects accurately disclosed?
 - Are the server-enforced consents (`voice_biometric`, `overseas_transfer`) surfaced in-app at the right moments (voice clone, dynamic/translation/fortune), matching the backend gates?

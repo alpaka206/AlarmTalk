@@ -9,12 +9,6 @@ import {
   type DeletedPushTarget,
 } from '../lib/fcm';
 import { withWriteTransaction, withRetryableWriteTransaction } from '../lib/transactions';
-import {
-  normalizeQuietWindows,
-  validateQuietDays,
-  validateQuietTime,
-  validateQuietWindows,
-} from '../lib/family-alarm-settings';
 import { validateDynamicPromptSettings } from '../lib/dynamic-prompt-settings';
 import { DISPLAY_NAME_MAX_LENGTH, normalizeDisplayName } from '@alarmtalk/shared';
 import {
@@ -32,15 +26,10 @@ import {
 
 const user = new Hono<AppEnv>();
 
-function toBoolFlag(raw: unknown): 0 | 1 | null {
-  if (raw === true || raw === 1 || raw === '1' || raw === 'true') return 1;
-  if (raw === false || raw === 0 || raw === '0' || raw === 'false') return 0;
-  return null;
-}
-
 /**
  * PATCH /user/me
- * 본인 프로필과 상대 알람 허용/불가 시간 설정을 업데이트한다.
+ * 본인 프로필(닉네임·문구 설정)을 업데이트한다. 옛 앱이 보내던 가족 알람 설정 키(허용·방해금지 시간)는
+ * 받아도 읽지 않는다 — 그 키만 오면 빈 본문과 같다(`NO_FIELDS_TO_UPDATE`).
  */
 user.patch('/me', async (c) => {
   const userId = c.get('userId');
@@ -48,11 +37,6 @@ user.patch('/me', async (c) => {
 
   const body = await c.req
     .json<{
-      allow_family_alarms?: unknown;
-      family_alarm_quiet_days?: unknown;
-      family_alarm_quiet_start?: unknown;
-      family_alarm_quiet_end?: unknown;
-      family_alarm_quiet_windows?: unknown;
       dynamic_prompt_settings?: unknown;
       name?: unknown;
     }>()
@@ -71,7 +55,7 @@ user.patch('/me', async (c) => {
       return c.json({ error: 'name 은 문자열이어야 합니다', error_code: 'INVALID_NAME' }, 400);
     }
     // trim 만으로는 부족하다 — 제로폭·양방향 문자는 공백이 아니라서 살아남고, 그대로
-    // 가족 멤버 목록·알람 보낸사람에 노출된다. 규칙은 shared 한 곳에서만 정의한다.
+    // 화면·알림에 노출된다. 규칙은 shared 한 곳에서만 정의한다.
     const trimmed = normalizeDisplayName(body.name);
     if (trimmed.length === 0 || trimmed.length > DISPLAY_NAME_MAX_LENGTH) {
       return c.json(
@@ -82,120 +66,6 @@ user.patch('/me', async (c) => {
     updates.push('name = ?');
     args.push(trimmed);
     resolvedName = trimmed;
-  }
-
-  let resolvedFlag: 0 | 1 | null = null;
-  if ('allow_family_alarms' in body && body.allow_family_alarms !== undefined) {
-    const flag = toBoolFlag(body.allow_family_alarms);
-    if (flag === null) {
-      return c.json(
-        { error: 'allow_family_alarms 는 boolean 이어야 합니다', error_code: 'INVALID_BOOLEAN' },
-        400,
-      );
-    }
-    updates.push('allow_family_alarms = ?');
-    args.push(flag);
-    resolvedFlag = flag;
-  }
-
-  // 저장은 family_alarm_quiet_windows(JSON) 하나로 일원화한다 — 과거의 단일 필드 3컬럼(#29)은
-  // windows[0] 을 그대로 베낀 미러였고 #83 에서 제거됐다. API 계약(입력·출력)은 그대로 유지해
-  // windows 없이 3필드만 보내는 클라이언트도 계속 동작하게 한다(그 경우 한 창으로 합성해 저장).
-  const hasQuietWindows =
-    'family_alarm_quiet_windows' in body && body.family_alarm_quiet_windows !== undefined;
-  let resolvedQuietWindows: { days: number[]; start: string; end: string }[] | null = null;
-  let resolvedQuietDays: number[] | null = null;
-  let resolvedQuietStart: string | null = null;
-  let resolvedQuietEnd: string | null = null;
-
-  if (hasQuietWindows) {
-    const windows = validateQuietWindows(body.family_alarm_quiet_windows);
-    if (windows === null) {
-      return c.json(
-        {
-          error: 'family_alarm_quiet_windows 는 days/start/end 배열이어야 합니다',
-          error_code: 'INVALID_QUIET_WINDOWS',
-        },
-        400,
-      );
-    }
-    const firstWindow = windows[0] ?? { days: [1, 2, 3, 4, 5], start: '09:00', end: '18:30' };
-    updates.push('family_alarm_quiet_windows = ?');
-    args.push(JSON.stringify(windows));
-    resolvedQuietWindows = windows;
-    resolvedQuietDays = firstWindow.days;
-    resolvedQuietStart = firstWindow.start;
-    resolvedQuietEnd = firstWindow.end;
-  } else {
-    // 레거시 입력 경로: 온 필드만 검증한 뒤 현재 windows[0] 위에 덮어써 단일 창으로 합성한다
-    // (부분 업데이트가 나머지 값을 잃지 않게 한다).
-    const hasLegacyDays =
-      'family_alarm_quiet_days' in body && body.family_alarm_quiet_days !== undefined;
-    const hasLegacyStart =
-      'family_alarm_quiet_start' in body && body.family_alarm_quiet_start !== undefined;
-    const hasLegacyEnd =
-      'family_alarm_quiet_end' in body && body.family_alarm_quiet_end !== undefined;
-
-    if (hasLegacyDays) {
-      const days = validateQuietDays(body.family_alarm_quiet_days);
-      if (days === null) {
-        return c.json(
-          {
-            error: 'family_alarm_quiet_days 는 0~6 숫자 배열이어야 합니다',
-            error_code: 'INVALID_QUIET_DAYS',
-          },
-          400,
-        );
-      }
-      resolvedQuietDays = days;
-    }
-    if (hasLegacyStart) {
-      const time = validateQuietTime(body.family_alarm_quiet_start);
-      if (time === null) {
-        return c.json(
-          {
-            error: 'family_alarm_quiet_start 는 HH:mm 형식이어야 합니다',
-            error_code: 'INVALID_QUIET_TIME',
-          },
-          400,
-        );
-      }
-      resolvedQuietStart = time;
-    }
-    if (hasLegacyEnd) {
-      const time = validateQuietTime(body.family_alarm_quiet_end);
-      if (time === null) {
-        return c.json(
-          {
-            error: 'family_alarm_quiet_end 는 HH:mm 형식이어야 합니다',
-            error_code: 'INVALID_QUIET_TIME',
-          },
-          400,
-        );
-      }
-      resolvedQuietEnd = time;
-    }
-
-    if (hasLegacyDays || hasLegacyStart || hasLegacyEnd) {
-      const currentRow = await db.execute({
-        sql: 'SELECT family_alarm_quiet_windows FROM users WHERE google_id = ? OR id = ? LIMIT 1',
-        args: [userId, userId],
-      });
-      const current = normalizeQuietWindows(currentRow.rows[0]?.family_alarm_quiet_windows);
-      const base = current[0] ?? { days: [1, 2, 3, 4, 5], start: '09:00', end: '18:30' };
-      const merged = {
-        days: resolvedQuietDays ?? base.days,
-        start: resolvedQuietStart ?? base.start,
-        end: resolvedQuietEnd ?? base.end,
-      };
-      const windows = [merged, ...current.slice(1)];
-      updates.push('family_alarm_quiet_windows = ?');
-      args.push(JSON.stringify(windows));
-      resolvedQuietWindows = windows;
-      resolvedQuietDays = merged.days;
-      resolvedQuietStart = merged.start;
-      resolvedQuietEnd = merged.end;
-    }
   }
 
   if ('dynamic_prompt_settings' in body && body.dynamic_prompt_settings !== undefined) {
@@ -231,11 +101,6 @@ user.patch('/me', async (c) => {
   return c.json({
     success: true,
     name: resolvedName,
-    allow_family_alarms: resolvedFlag === null ? null : resolvedFlag === 1,
-    family_alarm_quiet_days: resolvedQuietDays,
-    family_alarm_quiet_start: resolvedQuietStart,
-    family_alarm_quiet_end: resolvedQuietEnd,
-    family_alarm_quiet_windows: resolvedQuietWindows,
     dynamic_prompt_settings: resolvedDynamicPromptSettings,
   });
 });
@@ -316,9 +181,9 @@ user.post('/consents', async (c) => {
   }
   try {
     // 동의 철회로 강등된 알람들 — 커밋 후에 신호를 보내야 한다(롤백될 수 있는 변경을
-    // 미리 알리지 않는다). 보관 만료 스윕과 같은 이유로 알람 동기화 신호가 필요하다:
-    // 서버가 수신자의 가족알람을 sound-only 로 내리고 R2 오브젝트를 지워도, 신호가
-    // 없으면 수신자는 다음 폴백 pull 까지 캐시된 녹음으로 계속 울린다.
+    // 미리 알리지 않는다). 보관 만료 스윕과 같은 이유로 신호가 필요하다: 서버가 알람을
+    // sound-only 로 내리고 R2 오브젝트를 지워도, 신호가 없으면 그 기기는 다음 재확인까지
+    // 캐시된 녹음으로 계속 울린다.
     // 같은 유형이 여러 번 담겨 오면 **마지막 값이 유효 동의**다(GET /consents 가 삽입 순서
     // 역순으로 최신을 고른다). 그러니 철회 판정도 마지막 값으로 해야 한다 — 'false 가 하나라도
     // 있으면'으로 보면 [false, true] 처럼 결국 동의한 요청에도 민감 음성 데이터를 되돌릴 수 없게

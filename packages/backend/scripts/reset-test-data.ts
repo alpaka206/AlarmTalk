@@ -102,16 +102,15 @@ async function clearDatabase(url: string, authToken: string): Promise<void> {
 }
 
 async function reseedPlans(client: ReturnType<typeof createClient>): Promise<void> {
-  const seeds: Array<[string, string, string, string, number, number, number, number]> = [
-    ['70000000-0000-4000-8000-000000000001', 'free', '무료', 'free', 36500, 1, 0, 1],
-    ['70000000-0000-4000-8000-000000000002', 'personal', '개인', 'personal', 30, 1, 3900, 1],
-    ['70000000-0000-4000-8000-000000000003', 'family', '가족', 'family', 30, 5, 14900, 1],
-    ['70000000-0000-4000-8000-000000000004', 'couple', '커플', 'family', 30, 2, 6900, 1],
+  // 무료와 개인 둘뿐이다(커플·가족 행은 마이그레이션 #131 이 지웠다).
+  const seeds: Array<[string, string, string, string, number, number, number]> = [
+    ['70000000-0000-4000-8000-000000000001', 'free', '무료', 'free', 36500, 0, 1],
+    ['70000000-0000-4000-8000-000000000002', 'personal', '개인', 'personal', 30, 3900, 1],
   ];
   for (const args of seeds) {
     await client.execute({
-      sql: `INSERT OR IGNORE INTO plans (id, key, name, plan_type, period_days, max_members, price_krw, is_active)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      sql: `INSERT OR IGNORE INTO plans (id, key, name, plan_type, period_days, price_krw, is_active)
+            VALUES (?, ?, ?, ?, ?, ?, ?)`,
       args,
     });
   }

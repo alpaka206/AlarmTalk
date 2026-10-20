@@ -170,8 +170,8 @@ function seedPromoUser(
       args: [id, loginId, `${id}@t.test`, id],
     },
     {
-      sql: `INSERT INTO voice_profiles (id, user_id, name, status, elevenlabs_voice_id, is_draft, is_shared)
-            VALUES (?, ?, '목소리', 'ready', ?, 0, 0)`,
+      sql: `INSERT INTO voice_profiles (id, user_id, name, status, elevenlabs_voice_id, is_draft)
+            VALUES (?, ?, '목소리', 'ready', ?, 0)`,
       args: [vp, id, `el-${id}`],
     },
     {

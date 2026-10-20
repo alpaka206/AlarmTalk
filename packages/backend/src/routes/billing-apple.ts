@@ -100,8 +100,8 @@ billingApple.post('/apple/confirm', async (c) => {
   // ⚠ **선물 상품(소모성 `com.alarmtalk.app.personal_gift_1m`)은 2026-10-14 에 없앴다 — 되살리지
   //   말 것**(App Store 심사 지침 3.1.1, 두 번째 반려 — `routes/code.ts` 머리말). 상품 목록에서
   //   빠졌으므로 그 결제는 **여기서** 모르는 상품으로 끝난다 — 아래 환불 회수·체인 조회·계정 바인딩·
-  //   발급 어디에도 닿지 않는다. 예전 선물 갈래(바우처 발급·`apple_gift_deliveries` 연결·환불 회수)는
-  //   통째로 지웠다. 할인·무료 이용은 스토어 오퍼 코드로 준다.
+  //   발급 어디에도 닿지 않는다. 예전 선물 갈래(코드 발급·결제 연결·환불 회수)는 통째로 지웠다.
+  //   할인·무료 이용은 스토어 오퍼 코드로 준다.
   const planKey = applePlanKeyFromProductId(info.productId);
   if (!planKey) {
     return c.json(
@@ -118,7 +118,7 @@ billingApple.post('/apple/confirm', async (c) => {
   //   서버 알림 라우트가 없어서(App Store Server Notifications 미구현), 기간 중 환불은
   //   클라가 `Transaction.updates` 로 물어다 준 이 요청이 **유일한 통보**다. 여기서
   //   400 만 돌려주면 만료 크론이 재조회할 때까지 — 즉 저장된 `expires_at` 까지 —
-  //   환불받은 계정과 그 가족 멤버가 계속 유료로 남는다.
+  //   환불받은 계정이 계속 유료로 남는다.
   //
   //   회수 대상은 **그 트랜잭션에 묶인 구독**이지 요청을 보낸 계정이 아니다. 환불은
   //   애플이 확인해 준 사실이고(`fetchAppleTransaction` 이 검증한다), 그 구독은 누가
@@ -127,7 +127,7 @@ billingApple.post('/apple/confirm', async (c) => {
     // ⚠ **체인이 아직 살아 있으면 손대지 않는다**(코덱스 #733 2차). 자동갱신 구독은
     //   갱신마다 트랜잭션이 새로 나지만 `originalTransactionId` 는 **체인 전체가 공유**한다.
     //   그래서 옛 갱신 한 건이 뒤늦게 환불되면, 아래 조회가 그 id 로 **지금 살아 있는
-    //   구독 행**을 집어 취소해 버린다 — 이어받은 그룹까지 해체되고, 그건 되돌릴 수 없다.
+    //   구독 행**을 집어 취소해 버린다 — 돈을 내고 있는 사람의 권한이 끊긴다.
     //   판단은 애플에 **체인의 현재 상태**를 물어서 한다.
     const refundSnapshot = await readRefundedMapping(db0, info);
     const chain = await appleChainStatus(config, info.originalTransactionId);
@@ -434,8 +434,7 @@ billingApple.post('/apple/confirm', async (c) => {
     );
   }
 
-  // ⚠ **정원 축소로 나가게 된 멤버에게 반드시 알린다.** 전환은 소유자가 하지만 대가는
-  // 멤버가 치른다 — 아무 말 없이 유료 접근을 잃으면 앱이 고장 난 줄 안다.
+  // 체인을 넘겨준 앞 주인처럼 이 결제로 등급이 바뀐 사람에게 알린다.
   // (FCM 은 트랜잭션 안에서 쏘지 않는다 — 커밋 뒤 여기서.)
   await notifyBillingStateChanged(db, c.env, result.planChangedUserIds);
 
@@ -464,8 +463,7 @@ billingApple.post('/apple/confirm', async (c) => {
  * ⚠ **못 물어보면 `unknown` 이다 — '살아 있다' 로 접지 않는다**(코덱스 #733 8차).
  * 정리를 건너뛰는 것까지는 맞지만, 그때 라우트가 400(최종 판정)을 돌려주면 앱이 환불 큐에서
  * 지워 **다시 올릴 경로가 사라진다.** 호출부가 재시도 가능한 응답을 내야 한다.
- * (잘못 취소하는 쪽이 더 나쁘다는 판단은 그대로다 — 돈을 내고 있는 그룹이 해체되면
- * 되돌릴 수 없다.)
+ * (잘못 취소하는 쪽이 더 나쁘다는 판단은 그대로다 — 돈을 내고 있는 사람의 권한을 끊게 된다.)
  */
 const APPLE_TERMINATED_STATUSES: readonly number[] = [
   APPLE_SUBSCRIPTION_STATUS.EXPIRED,
@@ -496,7 +494,7 @@ async function readRefundedMapping(
   const result = await db.execute({
     sql: `SELECT st.user_id, st.subscription_id, st.last_paid_at, st.expires_at AS store_expires_at,
                  st.product_id, s.expires_at, s.updated_at,
-                 s.plan_id, s.plan_group_id, p.plan_type, p.key AS plan_key
+                 s.plan_id, p.plan_type, p.key AS plan_key
           FROM store_transactions st
           JOIN subscriptions s ON s.id = st.subscription_id
           JOIN plans p ON p.id = s.plan_id
@@ -513,7 +511,7 @@ async function readRefundedMapping(
  *
  * Play 의 RTDN `deactivate` 갈래와 같은 정리다(`billing-google-rtdn.ts`) — 매핑된 구독
  * 한 건만 취소하고, 목소리는 지우지 않고 보관 유예를 건다(재구독하면 entitle 경로가
- * 유예를 푼다). 강등되는 당사자와 해체된 그룹 멤버에게 알린다.
+ * 유예를 푼다). 강등되는 당사자에게 알린다.
  *
  * 구독만 처리한다. 예전에는 선물(소모성) 환불을 따로 회수했는데, 선물은 2026-10-14 에 없앴고
  * 그 상품은 라우트 앞의 `UNKNOWN_PRODUCT` 에서 끝나 여기 오지 않는다(되살리지 말 것 — App Store
@@ -527,49 +525,41 @@ async function revokeRefundedAppleSubscription(
 ): Promise<void> {
   const now = new Date();
   // ⚠ **조회를 쓰기 트랜잭션 안에서 한다**(코덱스 #733). 밖에서 읽으면 그 사이에 같은
-  //   사용자가 재구매·플랜 변경을 할 수 있고, 그러면 이 행은 이미 취소된 채 **그룹만
-  //   새 구독으로 넘어가 있다.** 그 낡은 행으로 정리를 돌리면 구독 UPDATE 는 가드에
-  //   걸려 무해하지만 `disbandOwnedPlanGroup` 은 그대로 돌아 **지금 돈을 내고 있는
-  //   구독이 뒷받침하는 그룹에서 멤버를 전원 내보낸다.**
-  const affected = await withWriteTransaction(db, async (tx) => {
+  //   사용자가 재구매·플랜 변경을 할 수 있고, 그러면 이 행은 이미 취소된 채 새 구독이
+  //   권한을 쥐고 있다. 낡은 행으로 정리를 돌리지 않는다.
+  const mapped = await withWriteTransaction(db, async (tx) => {
     const row = await readRefundedMapping(tx, info);
-    // Apple 왕복 중 새 갱신이 같은 체인에 반영됐으면, 옛 종료 응답으로 그룹을 해체하지 않는다.
+    // Apple 왕복 중 새 갱신이 같은 체인에 반영됐으면, 옛 종료 응답으로 회수하지 않는다.
     if (JSON.stringify(row) !== JSON.stringify(expected)) throw new BillingStateChangedError();
     if (!row) return null; // 매핑된 활성 구독이 없다 — 이미 정리됐거나 반영한 적이 없다.
 
-    const mapped: ActiveSubscription = {
+    const refunded: ActiveSubscription = {
       subscriptionId: String(row.subscription_id),
       userPk: String(row.user_id),
       planId: String(row.plan_id),
       planType: String(row.plan_type),
       planKey: String(row.plan_key),
-      planGroupId: (row.plan_group_id as string | null) ?? null,
       // 환불 회수는 이 값을 보지 않는다 — 어차피 지금 끊는다.
       cancelAtPeriodEnd: false,
     };
     const promoCoversFree = personalPromoCoversFree(env, now);
-    const ids = await cancelSubscriptionImmediate(tx, mapped, now, {
-      deleteVoiceData: false,
-      promoCoversFree,
-    });
+    await cancelSubscriptionImmediate(tx, refunded, now, { deleteVoiceData: false });
     // ⚠ **아직 유료면 보관 유예를 걸지 않는다**(코덱스 #733 6차). 환불된 애플 구독이 이
     //   계정의 **여러 활성 구독 중 하나**일 수 있다(구글 구독·프로모가 남아 있는 경우) —
     //   `cancelSubscriptionImmediate` 는 살아남은 유료 플랜을 일부러 보존한다. 그런데
     //   유예 행을 무조건 깔면, 돈을 내고 있는 사용자에게 **"목소리가 3일 뒤 삭제돼요"**
     //   가 나간다. 스윕이 나중에 취소해 주긴 하지만, 그때는 이미 놀란 뒤다.
     //   기간 한정 개인 플랜이 덮는 원시 free 도 '아직 유료' 다(`promoCoversFree`).
-    const stillPaid = await hasActivePaidEntitlement(tx, mapped.userPk, promoCoversFree);
-    if (!stillPaid) await schedulePaidVoiceRetention(tx, mapped.userPk, now);
-    return { mapped, ids, stillPaid };
+    const stillPaid = await hasActivePaidEntitlement(tx, refunded.userPk, promoCoversFree);
+    if (!stillPaid) await schedulePaidVoiceRetention(tx, refunded.userPk, now);
+    return refunded;
   });
-  if (!affected) return;
-  const { mapped, ids } = affected;
+  if (!mapped) return;
   logStructured('info', {
     at: 'billing.apple.confirm',
     step: 'revoked_cleanup',
     userPk: mapped.userPk,
     subscriptionId: mapped.subscriptionId,
-    affected: ids.length,
   });
   // 푸시는 커밋 뒤에(트랜잭션 안에서 네트워크를 쓰지 않는다).
   //
@@ -578,13 +568,9 @@ async function revokeRefundedAppleSubscription(
   //   푸시까지 못 받았으면 **회수가 끝났는데도 유료 상태를 그대로 들고 있다.**
   //   통지는 즉시성만 담당하고 정확성은 클라의 재조회가 보장한다 — 최선 노력으로 둔다.
   try {
-    // ⚠ **`stillPaid` 로 통째로 막지 말 것**(코덱스 #733 7차). 그 값은 **소유자** 얘기다.
-    //   그룹이 해체되면서 떨어져 나간 멤버들은 유예가 걸려 있는데, 소유자에게 다른 유료
-    //   구독이 남아 있다는 이유로 예고를 통째로 건너뛰면 **그 멤버들은 아무 경고 없이
-    //   목소리를 잃는다.**
-    //   `notifyBillingStateChanged` 는 **유예 행이 있는 사람만** 예고하므로, 전원을 넘겨도
-    //   아직 유료인 소유자는 알아서 빠진다(신호만 받는다).
-    await notifyBillingStateChanged(db, env, ids);
+    // `notifyBillingStateChanged` 는 **유예 행이 있는 사람만** 예고하므로, 아직 유료인
+    // 사람은 알아서 빠진다(신호만 받는다).
+    await notifyBillingStateChanged(db, env, [mapped.userPk]);
   } catch (err) {
     logStructured('error', {
       at: 'billing.apple.confirm',
