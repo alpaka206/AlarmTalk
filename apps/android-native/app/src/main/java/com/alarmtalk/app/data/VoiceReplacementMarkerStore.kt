@@ -26,8 +26,8 @@ internal fun parseVoiceMarkerMillis(marker: String?): Long? {
  * **제자리 목소리 교체를 스스로 알아채기 위한 표식.**
  *
  * 교체는 옛 프로필 **행을 재사용**한다(id 가 그대로다). 그래서 접근 가능 목록 대조
- * ([AlarmRepository.degradeAlarmsWithInaccessibleVoice])로는 영원히 안 걸리고, 본인 소유
- * 알람은 pull 대상도 아니라 서버가 행을 내려도 그 기기에 닿지 않는다.
+ * ([AlarmRepository.degradeAlarmsWithInaccessibleVoice])로는 영원히 안 걸리고, 내 알람은
+ * 서버에서 다시 받지 않으므로 서버가 행을 내려도 그 기기에 닿지 않는다.
  *
  * 푸시(`voice_access_revoked` + `voiceProfileId`)는 **즉시성만** 맡는다 — best-effort 라
  * 오프라인·강제종료·OEM 절전에서 조용히 버려진다. 정확성은 목록을 다시 받는 경로(하루 주기
@@ -44,10 +44,10 @@ internal fun parseVoiceMarkerMillis(marker: String?): Long? {
  * 뒤에서 기다리는 동안 더 새 세대가 강등·확정되고 사용자가 **새 목소리로** 알람을 만들면,
  * 뒤늦게 깨어난 옛 회차가 그 알람을 되돌릴 수 없이 지웠다.
  *
- * ⚠ **표식은 뒤로 가지 않는다.** 공유 목소리 목록은 내 목소리 목록과 갱신 경로가 달라
+ * ⚠ **표식은 뒤로 가지 않는다.** 목록을 받는 경로(앱의 새로고침·하루 주기 워커)가 여럿이라
  * 한쪽이 몇 분 낡은 채로 판정에 들어올 수 있다.
  *
- * ⚠ `updated_at` 으로 대신하지 말 것 — 이름 변경·공유 토글도 그 값을 올리므로, 이름만 바꿔도
+ * ⚠ `updated_at` 으로 대신하지 말 것 — 이름 변경도 그 값을 올리므로, 이름만 바꿔도
  * 알람이 사라진다.
  *
  * ⚠ **로그아웃에서 지우지 말 것.** 로그아웃은 로컬 알람을 지우지 않고 끄기만 한다 — 그 사이

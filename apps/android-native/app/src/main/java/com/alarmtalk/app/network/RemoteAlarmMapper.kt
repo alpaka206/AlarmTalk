@@ -25,7 +25,6 @@ object RemoteAlarmMapper {
             voiceProfileId = alarm.voiceProfileId
                 .takeIf { alarm.voiceSource != VoiceSources.LOCAL_AUDIO }
                 .trimmedOrNull(),
-            targetUserId = null,
             timezone = TimeZone.getDefault().id,
             bucketId = alarm.bucketId.trimmedOrNull(),
             clientAlarmId = alarm.id,

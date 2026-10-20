@@ -1,32 +1,13 @@
 package com.alarmtalk.app
 
 import android.app.Application
-import android.content.Context
 import androidx.lifecycle.viewModelScope
-import androidx.core.net.toUri
 import com.alarmtalk.app.core.AlarmTalkLog
-import com.alarmtalk.app.data.AlarmAudioStore
 import com.alarmtalk.app.data.AlarmDraft
-import com.alarmtalk.app.data.AlarmOrigins
 import com.alarmtalk.app.data.AlarmPlayModes
 import com.alarmtalk.app.data.DuplicateAlarmTimeException
-import com.alarmtalk.app.data.FAMILY_VOICE_DEFAULT_LABEL
-import com.alarmtalk.app.data.honoredPersonName
-import com.alarmtalk.app.data.CachedAlarmAudio
-import com.alarmtalk.app.data.VoiceSources
 import com.alarmtalk.app.data.usesFreeSystemVoiceAlarm
-import com.alarmtalk.app.network.apiErrorCode
-import com.alarmtalk.app.network.apiErrorMessage
-import com.alarmtalk.app.network.FamilyAlarmTalkRequest
-import com.alarmtalk.app.network.RemoteAlarmMapper
-import com.alarmtalk.app.network.RemoteAlarmWriteRequest
-import com.alarmtalk.app.network.AlarmTalkApiClient
-import com.alarmtalk.app.network.trimmedOrNull
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.RequestBody.Companion.toRequestBody
 
 private fun MainViewModel.requireAlarmPermissionsForMutation(): Boolean {
     val snapshot = PermissionSnapshot.read(getApplication<Application>())
@@ -65,8 +46,8 @@ private fun MainViewModel.voiceAlarmAllowed(draft: AlarmDraft): Boolean {
  * 오프라인이면 조용히 미해결로 저장하고(알람 생성을 막지 않는다) 22시 갱신과 알람 전까지의
  * 1시간 재시도가 채운다.
  *
- * **기다리는 시간에는 상한이 있다** — 내 알람의 저장 단계(`alarmSaving`)에서 타는 네트워크는
- * 이 호출 하나라(가족 알람은 이 함수를 거치지 않는다), 인터넷이 느리면 그만큼 저장이 멈춘다. 상한(`WEATHER_RESOLVE_TIMEOUT_MILLIS`, 8초)은
+ * **기다리는 시간에는 상한이 있다** — 저장 단계(`alarmSaving`)에서 타는 네트워크는
+ * 이 호출 하나라, 인터넷이 느리면 그만큼 저장이 멈춘다. 상한(`WEATHER_RESOLVE_TIMEOUT_MILLIS`, 8초)은
  * `AlarmRepository.resolveWeatherVariantForDraft` 안에 있고, 넘기면 실패와 같은 null 이라
  * 이 함수는 두 경우를 가르지 않는다 — 드래프트를 그대로 돌려줘 미해결로 저장되고, 저장
  * 경로가 거는 `runOnce` 워커가 뒤에서 채운다.
@@ -98,14 +79,6 @@ internal fun MainViewModel.createAlarm(
     alarmSaving = true
     viewModelScope.launch {
       try {
-        if (!draft.targetUserId.isNullOrBlank()) {
-            // 가족(수신자) 알람은 여기서 끝난다 — '직전 선택' 을 **일부러 기억하지 않는다.**
-            // 이 화면의 목소리·문구는 수신자를 위해 고른 것이고, 문구 설정도 수신자의
-            // dynamic prompt(날씨 도시·사주)를 기준으로 만들어진다. 그걸 내 다음 알람의
-            // 기본값으로 삼으면 남의 기준이 내 알람에 새는 셈이다.
-            createFamilyTargetAlarm(draft, onDone)
-            return@launch
-        }
         runCatching {
             repository.createAlarm(withResolvedWeatherVariant(draft), replaceExisting)
         }.onSuccess {
@@ -127,140 +100,6 @@ internal fun MainViewModel.createAlarm(
         alarmSaving = false
       }
     }
-}
-
-/**
- * 가족 알람을 **보낸다**. 이름 그대로 만들기 전용이다.
- *
- * ⚠ **보낸 알람을 고치는 함수를 여기 만들지 말 것.** 서버가 `PATCH /alarm/:id` 를
- * 409 `TARGETED_ALARM_IMMUTABLE` 로 거절한다(`docs/spec/family-alarm.md`). 받는 쪽은
- * 「받은 뒤엔 전부 받은 사람 것」이라 발신자의 변경을 무시하므로, 수정을 받아 주면
- * **발신자는 고쳤다고 믿고 수신자는 옛 시각에 일어난다.**
- *
- * 그래서 여기서는 **로컬 행도 만들지 않는다** — 목록에 없으니 편집기로 열 길이 없다.
- * 내용을 바꾸려면 같은 (수신자, 시각) 으로 **다시 보낸다**(서버가 옛 행을 교체한다).
- */
-private suspend fun MainViewModel.createFamilyTargetAlarm(draft: AlarmDraft, onDone: () -> Unit) {
-    val session = sessionOrMessage(R.string.msg_family_alarm_login_required) ?: return
-    if (!hasCoupleOrFamilyAccess(subscriptionResponse, familyGroup, personalPromoTierHold())) {
-        message = getApplication<Application>().getString(R.string.msg_family_alarm_couple_family_only)
-        return
-    }
-    runCatching {
-        withContext(Dispatchers.IO) {
-            if (draft.shouldUploadLocalVoiceForFamilyAlarm()) {
-                val audioStore = AlarmAudioStore(getApplication<Application>())
-                val localAudio = draft.toCachedLocalAudio(getApplication<Application>(), audioStore)
-                val resolvedDurationMillis = localAudio.durationMillis
-                    ?: throw UserFacingException(
-                        getApplication<Application>().getString(R.string.msg_voice_duration_unknown),
-                    )
-                val upload = api.uploadVoiceAudio(
-                    authorization = AlarmTalkApiClient.bearer(session.token),
-                    audio = voiceUploadPart(getApplication(), localAudio),
-                    durationMs = resolvedDurationMillis.toString().toRequestBody("text/plain".toMediaType()),
-                    originalName = localAudio.displayName.toRequestBody("text/plain".toMediaType()),
-                ).upload
-                api.createFamilyAlarmTalk(
-                    authorization = AlarmTalkApiClient.bearer(session.token),
-                    request = FamilyAlarmTalkRequest(
-                        recipientUserId = requireNotNull(draft.targetUserId.trimmedOrNull()),
-                        wakeAt = String.format(java.util.Locale.US, "%02d:%02d", draft.hour, draft.minute),
-                        voiceUploadId = upload.id,
-                        label = draft.familyVoiceAlarmLabel(),
-                        repeatDays = RemoteAlarmMapper.repeatMaskToDays(draft.repeatDaysMask),
-                    ),
-                ).alarm
-            } else {
-                api.createAlarm(
-                    authorization = AlarmTalkApiClient.bearer(session.token),
-                    request = draft.toRemoteAlarmWriteRequest(),
-                ).alarm
-            }
-        }
-    }.onSuccess {
-        message = familyAlarmCompletionMessage(getApplication(), draft.targetUserName)
-        onDone()
-    }.onFailure { error ->
-        AlarmTalkLog.reportError("Failed to create family target alarm target=${draft.targetUserId}", error)
-        message = familyAlarmFailureMessage(getApplication(), error)
-    }
-}
-
-/**
- * 가족 알람 보내기 실패 문구 — 공용 표(`ApiErrorMessages`)가 서버의 거절 이유(받지 않음·리드타임·
- * 설정 불가능 시간)를 말하고, 표에 없으면 화면 폴백이다. iOS `APIErrorMessages.message(for:fallback:)`.
- */
-internal fun familyAlarmFailureMessage(context: Context, error: Throwable): String =
-    apiErrorMessage(context, apiErrorCode(error))
-        ?: userFacingError(error, context.getString(R.string.msg_family_alarm_set_failed))
-
-/**
- * 가족 녹음 알람으로 보낼 라벨. 비었으면 **계약값(한국어) 그대로** 보낸다 — 받는 사람의 문구로
- * 저장되고 받는 기기가 자기 언어로 바꿔 보여 준다(`localizedReceivedVoiceText`). 앱 언어로 번역해
- * 보내면 받는 사람 화면에 보낸 사람의 언어가 그대로 남는다.
- */
-internal fun AlarmDraft.familyVoiceAlarmLabel(): String = label.trimmedOrNull() ?: FAMILY_VOICE_DEFAULT_LABEL
-
-private fun AlarmDraft.shouldUploadLocalVoiceForFamilyAlarm(): Boolean =
-    playMode != AlarmPlayModes.ALARM_ONLY &&
-        voiceSource == VoiceSources.LOCAL_AUDIO &&
-        !localAudioUri.isNullOrBlank() &&
-        rawAudioUri?.let(RemoteAlarmMapper::isRemoteAudioUrl) != true
-
-private fun AlarmDraft.toCachedLocalAudio(context: Context, audioStore: AlarmAudioStore): CachedAlarmAudio {
-    val resolvedLocalAudioUri = requireNotNull(localAudioUri)
-    // 가족 음성 알람 업로드는 백엔드가 INVALID_DURATION 으로 0L 을 거부하므로
-    // 캐시된 로컬 파일에서 실제 길이를 읽어와 채워야 한다.
-    val durationMillis = runCatching {
-        audioStore.readDurationMillis(resolvedLocalAudioUri.toUri())
-    }.getOrNull()
-    return CachedAlarmAudio(
-        localAudioUri = resolvedLocalAudioUri,
-        rawAudioUri = rawAudioUri,
-        displayName = audioFileLabel(context, resolvedLocalAudioUri),
-        durationMillis = durationMillis,
-        cacheKey = audioCacheKey,
-    )
-}
-
-/**
- * 가족(상대) 알람의 서버 쓰기 모양.
- *
- * ⚠ **`RemoteAlarmMapper.toWriteRequest`(자기 알람용)와 한 쌍이다 — 필드를 더하면 양쪽에.**
- * 같은 와이어 타입에 빌더가 둘인데, `RemoteAlarmWriteRequest` 의 필드가 전부 기본값을 가져
- * **한쪽에서 빠뜨려도 컴파일이 통과한다.** 실제로 `bucketId` 가 자기 알람 쪽에만 추가돼,
- * 테마를 고른 가족 알람이 **테마 없이** 수신자에게 도착했다(2026-08-18 확인).
- * 회귀 테스트 `FamilyAlarmWriteRequestParityTest` 가 두 빌더의 필드 커버리지를 비교한다.
- *
- * 의도적으로 다른 것은 둘뿐이다:
- *  - `isActive = true` — 보낼 때는 항상 켠 채로 보낸다(자기 알람은 저장된 `enabled`).
- *  - `targetUserId` — 여기만 채운다(자기 알람은 언제나 null. 스펙 1절: 보낸 사람은 가족
- *    알람을 PATCH 하지 않는다).
- */
-internal fun AlarmDraft.toRemoteAlarmWriteRequest(): RemoteAlarmWriteRequest {
-    val hasRemoteVoice = ttsMessageId != null
-    return RemoteAlarmWriteRequest(
-        time = String.format(java.util.Locale.US, "%02d:%02d", hour, minute),
-        repeatDays = RemoteAlarmMapper.repeatMaskToDays(repeatDaysMask),
-        snoozeMinutes = snoozeMinutes,
-        mode = if (hasRemoteVoice) "tts" else "sound-only",
-        vibrationPattern = vibrationPattern,
-        wakeMode = when (AlarmPlayModes.normalize(playMode)) {
-            AlarmPlayModes.VOICE_ONLY -> "voice_only"
-            else -> "sound_then_voice"
-        },
-        isActive = true,
-        messageId = ttsMessageId.trimmedOrNull(),
-        voiceProfileId = voiceProfileId.takeIf { voiceSource != VoiceSources.LOCAL_AUDIO }.trimmedOrNull(),
-        targetUserId = targetUserId.trimmedOrNull(),
-        timezone = java.util.TimeZone.getDefault().id,
-        // ⚠ **테마 정체성은 이것 하나로만 건너간다.** 클립 키 목록(`bucketClipKeysJson`)은
-        // 보내는 사람 기기의 캐시 파일을 가리켜 수신자에게 아무 뜻이 없다 — 받는 쪽이
-        // `bucketId` 로 자기 클립을 다시 묶는다. 안 실으면 테마를 고른 가족 알람이
-        // **테마 없이** 도착한다.
-        bucketId = bucketId.trimmedOrNull(),
-    )
 }
 
 internal fun MainViewModel.updateAlarm(
@@ -339,26 +178,6 @@ internal fun MainViewModel.setAlarmEnabled(alarmId: String, enabled: Boolean) {
 
 internal fun MainViewModel.deleteAlarm(alarmId: String) {
     viewModelScope.launch {
-        // 받은(가족) 알람은 로컬 삭제만으로는 다음 동기화에 되살아난다(감사 A-1). 서버에
-        // '그만받기'(decline)를 먼저 영구 기록해야 재조회·재설치에도 부활하지 않는다. decline 이
-        // 실패하면(오프라인 등) 로컬 삭제도 보류해 '지웠는데 되살아나는' 혼란을 막고 재시도하게 한다.
-        val alarm = repository.getAlarm(alarmId)
-        val remoteId = alarm?.remoteAlarmId
-        if (alarm?.origin == AlarmOrigins.RECEIVED_REMOTE && !remoteId.isNullOrBlank()) {
-            val authorization = bearerOrMessage(
-                getApplication<Application>().getString(R.string.msg_alarm_delete_failed),
-            ) ?: return@launch
-            val declineResult = runCatching { api.declineAlarm(authorization, remoteId) }
-            // 서버에서 이미 사라진 알람(발신자가 먼저 삭제 등)은 decline 이 404(ALARM_NOT_FOUND) —
-            // 멱등 성공으로 보고 로컬 삭제로 진행한다(stale 알람이 안 지워지는 것 방지). 진짜
-            // 네트워크/인증 실패만 보류해 재시도하게 한다.
-            val declineOk = declineResult.isSuccess ||
-                declineResult.exceptionOrNull()?.let { apiErrorCode(it) } == "ALARM_NOT_FOUND"
-            if (!declineOk) {
-                message = getApplication<Application>().getString(R.string.msg_alarm_delete_failed)
-                return@launch
-            }
-        }
         runCatching {
             repository.deleteAlarm(alarmId)
         }.onSuccess {
@@ -370,12 +189,3 @@ internal fun MainViewModel.deleteAlarm(alarmId: String) {
     }
 }
 
-
-/**
- * 가족 알람을 보낸 뒤의 완료 문구. 이름을 모르면 '상대' 로 말한다 — 화면용 대체 이름('멤버')에
- * 존칭을 붙이지 않는다. 존칭은 [honoredPersonName] 한 곳에서 붙인다.
- */
-internal fun familyAlarmCompletionMessage(context: android.content.Context, targetName: String?): String =
-    targetName?.trim()?.takeIf { it.isNotBlank() }?.let {
-        context.getString(R.string.msg_family_alarm_set_for_target, honoredPersonName(context, it))
-    } ?: context.getString(R.string.msg_family_alarm_set_for_target_other)

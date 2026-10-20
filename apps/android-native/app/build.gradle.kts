@@ -410,9 +410,9 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
-    // 앱 프로세스 포그라운드 복귀 감지(ProcessLifecycleOwner) — 복귀 시 원격 알람 즉시 pull.
+    // 앱 프로세스 포그라운드 복귀 감지(ProcessLifecycleOwner) — 복귀 시 계정 확인 워커를 건다.
     implementation("androidx.lifecycle:lifecycle-process:2.8.7")
-    // FCM(가족 알람 즉시 배달) — 앱이 백그라운드/종료여도 data push 로 즉시 pull. BoM 으로 버전 통일.
+    // FCM(플랜·목소리·계정 신호) — 앱이 백그라운드/종료여도 data push 를 받는다. BoM 으로 버전 통일.
     implementation(platform("com.google.firebase:firebase-bom:33.7.0"))
     implementation("com.google.firebase:firebase-messaging")
     implementation("androidx.navigation:navigation-compose:2.8.5")

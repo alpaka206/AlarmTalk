@@ -61,10 +61,9 @@ class AlarmTalkApplication : Application() {
         // 여기서** 보낸다(울림 경로는 로컬·오프라인이 원칙 — CLAUDE.md 「Real alarm」).
         runCatching { com.alarmtalk.app.sync.UsageEventUploadWorker.ensurePeriodic(this) }
             .onFailure { AlarmTalkLog.reportError("UsageEventUploadWorker.ensurePeriodic failed", it) }
-        // 앱이 포그라운드로 올라올 때마다(cold start 포함, 어느 화면/탭이든) 즉시 원격 알람을 pull 한다.
-        // 로그인 세션이 있을 때만, 60초 throttle 로 연속 복귀 중복을 막는다. 이전엔 cold start + '알람 탭
-        // 진입' 에서만 즉시 pull 이었던 것을 포그라운드 복귀 전체로 확장 — FCM 없이도 "앱을 열면 바로"
-        // 가족 알람 수신+로컬 알림이 촘촘해진다(백그라운드 초단위 즉시는 별도 push 필요).
+        // 앱이 포그라운드로 올라올 때마다(cold start 포함, 어느 화면이든) 계정 확인 워커를 한 번 돌린다 —
+        // 토큰 갱신과 다른 기기의 탈퇴 신청 확인(`RemoteAlarmSyncWorker`). 로그인 세션이 있을 때만,
+        // 60초 throttle 로 연속 복귀 중복을 막는다.
         runCatching {
             ProcessLifecycleOwner.get().lifecycle.addObserver(
                 object : DefaultLifecycleObserver {
@@ -88,7 +87,7 @@ class AlarmTalkApplication : Application() {
                 },
             )
         }.onFailure { AlarmTalkLog.reportError("ProcessLifecycle observer registration failed", it) }
-        // 로그인 세션이 있으면 현재 FCM 토큰을 서버에 등록(가족 알람 push 대상). 세션 없으면 내부에서 no-op.
+        // 로그인 세션이 있으면 현재 FCM 토큰을 서버에 등록(플랜·목소리·탈퇴 신호 push 대상). 세션 없으면 내부에서 no-op.
         runCatching { AlarmTalkMessagingService.registerCurrentToken(this) }
             .onFailure { AlarmTalkLog.reportError("FCM token registration failed", it) }
         // 30일 이상 미참조 음성 캐시를 백그라운드에서 정리. 실패해도 앱 진입에 영향 없음.

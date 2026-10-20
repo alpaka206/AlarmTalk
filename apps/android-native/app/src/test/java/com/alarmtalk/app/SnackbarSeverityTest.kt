@@ -34,17 +34,14 @@ class SnackbarSeverityTest {
     @Test
     @Config(qualifiers = "ja")
     fun `일본어 성공 문구의 부정형 어미를 오류로 읽지 않는다`() {
-        assertEquals(MessageSeverity.Success, severity(context.getString(R.string.msg_gb_share_code_regenerated, "カップル")))
         assertEquals(MessageSeverity.Success, severity(context.getString(R.string.msg_gb_subscription_cancel_at_period_end)))
     }
 
     @Test
     @Config(qualifiers = "en")
-    fun `영어 동의 요구와 등록 실패를 성공으로 읽지 않는다`() {
+    fun `영어 동의 요구를 성공으로 읽지 않는다`() {
         assertEquals(MessageSeverity.Info, severity(context.getString(R.string.r3misc_consent_required)))
         assertEquals(MessageSeverity.Info, severity(context.getString(R.string.msg_voice_consent_required)))
-        assertEquals(MessageSeverity.Error, severity(context.getString(R.string.msg2_code_fail_code_not_found)))
-        assertEquals(MessageSeverity.Error, severity(context.getString(R.string.msg2_code_fail_code_already_redeemed_by_you)))
     }
 
     @Test
@@ -80,8 +77,7 @@ class SnackbarSeverityTest {
             ).map { File(SOURCE_ROOT, it) }
         assertTrue(sources.all(File::exists))
         val classified = (SnackbarSeverities.success + SnackbarSeverities.error + SnackbarSeverities.info)
-            .map(::resourceName).toSet() +
-            SnackbarSeverities.successPlurals.map(::resourceName)
+            .map(::resourceName).toSet()
         val missing = sources.flatMap { file ->
             RESOURCE_REFERENCE.findAll(file.readText()).map { it.groupValues[1] }.toList()
         }.toSet() - classified - NOT_SNACKBAR
@@ -96,13 +92,6 @@ class SnackbarSeverityTest {
             val text = render(id)
             val actual = severity(text)
             if (actual == severity) null else "${resourceName(id)}: $severity 이어야 하는데 $actual — $text"
-        }.toMutableList()
-        for (id in SnackbarSeverities.successPlurals) {
-            for (count in listOf(1, 3)) {
-                val text = context.resources.getQuantityString(id, count, count)
-                val actual = severity(text)
-                if (actual != MessageSeverity.Success) wrong += "${resourceName(id)}($count): $actual — $text"
-            }
         }
         assertTrue("$language\n" + wrong.joinToString("\n"), wrong.isEmpty())
     }
@@ -128,12 +117,7 @@ class SnackbarSeverityTest {
         val RESOURCE_REFERENCE = Regex("""R\.(?:string|plurals)\.(\w+)""")
         val FORMAT_SPECIFIER = Regex("""%(?:(\d+)\$)?[-#+ 0,(]*\d*(?:\.\d+)?([a-zA-Z%])""")
 
-        /** 뷰모델 소스에 있지만 스낵바에 실리지 않는 문구 — 다른 문구의 인자이거나 화면 안 글이다. */
-        val NOT_SNACKBAR = setOf(
-            // 공유 코드 문구의 %1$s 인자.
-            "msg_gb_plan_label_couple",
-            "msg_gb_plan_label_family",
-            "msg_gb_plan_label_shared",
-        )
+        /** 뷰모델 소스에 있지만 스낵바에 실리지 않는 문구 — 다른 문구의 인자이거나 화면 안 글이다. 지금은 없다. */
+        val NOT_SNACKBAR = emptySet<String>()
     }
 }

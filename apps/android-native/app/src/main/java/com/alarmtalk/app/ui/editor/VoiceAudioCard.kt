@@ -36,25 +36,22 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.alarmtalk.app.data.AlarmAudioLimits
 import com.alarmtalk.app.data.VoiceSources
-import com.alarmtalk.app.network.FamilyVoiceProfile
 import com.alarmtalk.app.network.VoiceProfile
 import androidx.compose.ui.text.style.TextOverflow
 
-/** 마지막 사용값이 있으면 그룹보다 우선하고, 없을 때만 내 것 → 공유 → 기본 순으로 고른다. */
+/** 마지막 사용값이 있으면 종류보다 우선하고, 없을 때만 내 것 → 기본 순으로 고른다. */
 internal fun preferredInitialVoiceProfileId(
     lastUsedVoiceId: String?,
     ownVoiceIds: List<String>,
-    familyVoiceIds: List<String>,
     systemVoiceIds: List<String>,
     profileLoadFinished: Boolean,
 ): String? {
-    val available = ownVoiceIds + familyVoiceIds + systemVoiceIds
+    val available = ownVoiceIds + systemVoiceIds
     if (!profileLoadFinished && lastUsedVoiceId != null && lastUsedVoiceId !in systemVoiceIds) {
         return null
     }
     return lastUsedVoiceId?.takeIf(available::contains)
         ?: ownVoiceIds.firstOrNull()
-        ?: familyVoiceIds.firstOrNull()
         ?: systemVoiceIds.firstOrNull()
 }
 
@@ -66,7 +63,6 @@ internal fun VoiceAudioCard(
     /** 준비 화면으로 보낸다. */
     onOpenClipPreparation: (String) -> Unit = {},
     voiceProfiles: List<VoiceProfile>,
-    familyVoices: List<FamilyVoiceProfile>,
     /**
      * 교체 정리가 끝나지 않아 **아직 고를 수 없는** 목소리들.
      * 목록에는 그대로 두고 흐리게 그린다 — 감추면 사라진 것으로 보여 고장으로 읽힌다.
@@ -119,13 +115,13 @@ internal fun VoiceAudioCard(
     } else {
         editor.voiceSource
     }
-    // 알람별로 목소리를 자유롭게 바꾼다 — 내 목소리·공유받은 목소리·기본(시스템) 목소리 순.
+    // 알람별로 목소리를 자유롭게 바꾼다 — 내 목소리·기본(시스템) 목소리 순.
     // 기본 목소리로 바꾸면 직접 입력 문구를 잃는 경우, 확인받기 전까지 보류해 둔 선택.
     var pendingVoiceSwitch by remember { mutableStateOf<VoiceProfileOption?>(null) }
     val applyVoiceSelection: (VoiceProfileOption) -> Unit = { option ->
-        // ⚠ **아직 못 받은 목소리는 고를 수 없다.** 공유받은 목소리는 선다운로드 대상이
-        // 아니라 고르는 순간 클립이 없을 수 있고, 그대로 저장하면 라이브 생성으로 흘러가
-        // 오프라인에서 안 울린다. **그 목소리만** 막고 준비 화면으로 보낸다 —
+        // ⚠ **아직 못 받은 목소리는 고를 수 없다.** 클론의 사전렌더 클립이 아직 없으면
+        // 그대로 저장할 때 라이브 생성으로 흘러가 오프라인에서 안 울린다.
+        // **그 목소리만** 막고 준비 화면으로 보낸다 —
         // 알람 만들기 자체는 막지 않는다(다른 목소리로는 지금 만들 수 있어야 한다).
         // iOS `AlarmEditorSheet.needsPreparation` 과 같은 판정이다.
         if (option.id != VoiceSources.LOCAL_AUDIO && onNeedsClipPreparation(option.id)) {
@@ -160,9 +156,6 @@ internal fun VoiceAudioCard(
     // 이제 4개를 모두 미리 받아 두므로 알람마다 자유롭게 고를 수 있어야 한다.
     // 목록이 길어져도 선택 시트가 내부 스크롤을 갖고 있다(WakerSelectionSheet).
     val visibleSystemProfiles = readySystemProfiles
-    val readyFamilyVoices = familyVoices.filter {
-        (it.status == null || it.status == "ready") && it.isShared != false
-    }
     val settlingReason = stringResource(R.string.editor_voice_replacement_settling)
     val settlingMessage = stringResource(R.string.msg_voice_replacement_settling)
     val profileOptions = readyOwnProfiles.map {
@@ -173,13 +166,6 @@ internal fun VoiceAudioCard(
             unavailableReason = settlingReason.takeIf { _ -> it.id in settlingVoiceProfileIds },
         )
     } +
-        readyFamilyVoices.map { profile ->
-            VoiceProfileOption(
-                id = profile.id,
-                name = profile.name,
-                detail = sharedVoiceDetail(context, profile),
-            )
-        } +
         visibleSystemProfiles.map {
             VoiceProfileOption(
                 id = it.id,
@@ -198,7 +184,7 @@ internal fun VoiceAudioCard(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        // 목소리 선택 행 — 내 목소리·공유받은·기본 + '직접 녹음'(시트 마지막)을 한 목록에서 고른다.
+        // 목소리 선택 행 — 내 목소리·기본 + '직접 녹음'(시트 마지막)을 한 목록에서 고른다.
         // on/off 토글이 이 행 안에 있고(알람음 행과 대칭), 목소리를 고르면 자동으로 켜진다.
         val recordingOption = VoiceProfileOption(
             id = VoiceSources.LOCAL_AUDIO,
@@ -472,7 +458,7 @@ private fun NoUsableVoiceProfileCallout(
 
 }
 
-// 목소리 행 — 탭하면 바텀시트가 올라와 내 목소리·공유받은 목소리·기본 목소리 전체에서
+// 목소리 행 — 탭하면 바텀시트가 올라와 내 목소리·기본 목소리 전체에서
 // 고른다(문구·목소리 크기 행과 같은 [제목/값 + 셰브론] 문법).
 @Composable
 private fun VoiceProfileSelector(
@@ -733,17 +719,9 @@ private fun VoiceVolumeSelector(
 private fun voiceOptionLabelRes(options: List<Pair<String, Int>>, value: String): Int? =
     options.firstOrNull { it.first == value }?.second ?: options.firstOrNull()?.second
 
-internal fun sharedVoiceDetail(context: android.content.Context, profile: FamilyVoiceProfile): String {
-    val owner = profile.ownerName?.trim()?.takeIf { it.isNotBlank() }
-    return if (owner == null) {
-        context.getString(R.string.editor2_voice_detail_shared)
+private fun ownedVoiceDetail(context: android.content.Context, profile: VoiceProfile): String =
+    if (profile.isSystem == true) {
+        context.getString(R.string.editor2_voice_detail_default)
     } else {
-        context.getString(R.string.editor2_voice_detail_shared_from, com.alarmtalk.app.data.honoredPersonName(context, owner))
+        context.getString(R.string.editor2_voice_detail_mine)
     }
-}
-
-private fun ownedVoiceDetail(context: android.content.Context, profile: VoiceProfile): String = when {
-    profile.isSystem == true -> context.getString(R.string.editor2_voice_detail_default)
-    profile.isShared == true -> context.getString(R.string.editor2_voice_detail_mine_sharing)
-    else -> context.getString(R.string.editor2_voice_detail_mine)
-}

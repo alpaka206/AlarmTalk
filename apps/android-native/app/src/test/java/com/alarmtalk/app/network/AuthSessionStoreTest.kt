@@ -14,13 +14,6 @@ class AuthSessionStoreTest {
               "email": "user@example.com",
               "name": "User",
               "plan": "free",
-              "allow_family_alarms": false,
-              "family_alarm_quiet_days": [1, 2, 3, 4, 5],
-              "family_alarm_quiet_start": "09:00",
-              "family_alarm_quiet_end": "18:30",
-              "family_alarm_quiet_windows": [
-                { "days": [1, 2, 3, 4, 5], "start": "09:00", "end": "18:30" }
-              ],
               "dynamic_prompt_settings": null
             }
             """.trimIndent(),

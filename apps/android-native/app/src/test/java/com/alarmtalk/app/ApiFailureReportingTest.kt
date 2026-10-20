@@ -49,12 +49,12 @@ class ApiFailureReportingTest {
             AlarmTalkLog.logKeyOf("Failed to promote voice draft id=9264e503-8579-4fc1-827c-8bb0048c7ab4"),
         )
         assertEquals(
-            "Failed to update voice profile sharing",
-            AlarmTalkLog.logKeyOf("Failed to update voice profile sharing id=x shared=true"),
+            "Google sign-in failed",
+            AlarmTalkLog.logKeyOf("Google sign-in failed resultCode=0 statusCode=10"),
         )
         assertEquals(
-            "Failed to create family target alarm",
-            AlarmTalkLog.logKeyOf("Failed to create family target alarm target=user-42"),
+            "Failed to cancel subscription",
+            AlarmTalkLog.logKeyOf("Failed to cancel subscription mode=at_period_end"),
         )
         // 값 토큰이 없으면 그대로다 — 뜻이 있는 낱말은 건드리지 않는다.
         assertEquals("Email verification confirm failed", AlarmTalkLog.logKeyOf("Email verification confirm failed"))
@@ -112,7 +112,7 @@ class ApiFailureReportingTest {
         val messages = listOf(
             "Failed to load voice profiles",
             "Email login failed",
-            "Failed to register code",
+            "Failed to rename voice profile id=v1",
             "Failed to sync alarm id=3",
         )
         for (message in messages) {
@@ -126,11 +126,11 @@ class ApiFailureReportingTest {
     fun aCodelessClientErrorKeepsTheCallSite() {
         // 코드 없는 4xx 는 주소·라우팅이 틀린 자리를 가리킨다 — 호출 자리를 남긴다.
         assertEquals(
-            listOf("api_error", "HTTP_404", "Failed to register code"),
-            AlarmTalkLog.apiFailureFingerprint(http(404, "<html>Not Found</html>"), "Failed to register code"),
+            listOf("api_error", "HTTP_404", "Failed to load voice profiles"),
+            AlarmTalkLog.apiFailureFingerprint(http(404, "<html>Not Found</html>"), "Failed to load voice profiles"),
         )
         assertNotEquals(
-            AlarmTalkLog.apiFailureFingerprint(http(404, ""), "Failed to register code"),
+            AlarmTalkLog.apiFailureFingerprint(http(404, ""), "Failed to load voice profiles"),
             AlarmTalkLog.apiFailureFingerprint(http(404, ""), "Email login failed"),
         )
     }
@@ -192,10 +192,10 @@ class ApiFailureReportingTest {
     fun aWrappedApiFailureIsStillAnApiFailure() {
         // 도메인 예외로 한 번 감싼 실패도 같은 이슈에 붙는다 — 포장의 cause 는 **넘겨받은** 예외다.
         val http = http(500, """{"error_code":"INTERNAL_ERROR"}""")
-        val domain = IllegalStateException("pull failed", http)
-        val report = AlarmTalkLog.issueReportFor("Failed to pull received alarm remoteId=7", domain)
+        val domain = IllegalStateException("sync failed", http)
+        val report = AlarmTalkLog.issueReportFor("Failed to sync alarm id=7", domain)
         assertEquals(
-            listOf("api_error", "INTERNAL_ERROR", "Failed to pull received alarm"),
+            listOf("api_error", "INTERNAL_ERROR", "Failed to sync alarm"),
             report.fingerprint,
         )
         assertSame(domain, report.throwable.cause)

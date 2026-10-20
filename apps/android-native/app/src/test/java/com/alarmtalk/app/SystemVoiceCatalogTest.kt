@@ -22,7 +22,6 @@ class SystemVoiceCatalogTest {
             preferredInitialVoiceProfileId(
                 lastUsedVoiceId = "system",
                 ownVoiceIds = listOf("own"),
-                familyVoiceIds = listOf("family"),
                 systemVoiceIds = listOf("system"),
                 profileLoadFinished = false,
             ),
@@ -32,7 +31,16 @@ class SystemVoiceCatalogTest {
             preferredInitialVoiceProfileId(
                 lastUsedVoiceId = "missing",
                 ownVoiceIds = listOf("own"),
-                familyVoiceIds = listOf("family"),
+                systemVoiceIds = listOf("system"),
+                profileLoadFinished = true,
+            ),
+        )
+        // 내 클론도 없으면 기본 목소리다.
+        assertEquals(
+            "system",
+            preferredInitialVoiceProfileId(
+                lastUsedVoiceId = null,
+                ownVoiceIds = emptyList(),
                 systemVoiceIds = listOf("system"),
                 profileLoadFinished = true,
             ),
@@ -46,7 +54,6 @@ class SystemVoiceCatalogTest {
             preferredInitialVoiceProfileId(
                 lastUsedVoiceId = "saved-clone",
                 ownVoiceIds = emptyList(),
-                familyVoiceIds = emptyList(),
                 systemVoiceIds = listOf("system"),
                 profileLoadFinished = false,
             ),
@@ -56,7 +63,6 @@ class SystemVoiceCatalogTest {
             preferredInitialVoiceProfileId(
                 lastUsedVoiceId = "saved-clone",
                 ownVoiceIds = listOf("saved-clone"),
-                familyVoiceIds = emptyList(),
                 systemVoiceIds = listOf("system"),
                 profileLoadFinished = true,
             ),

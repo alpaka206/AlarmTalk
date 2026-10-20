@@ -115,9 +115,8 @@ internal fun MainViewModel.fetchVoiceProfiles(showMessage: Boolean) {
                 voiceProfiles = profiles
                 voiceProfilesLoadedFresh = true
                 // ⚠ **'정리 중' 표시를 여기서 되살린다**(재시작 대비). 디스크에 남겨 둔 값을
-                // 읽는 곳이 새로고침(`reconcileInaccessibleVoiceAlarms`) 한 곳뿐이었는데,
-                // 그건 **두 목록이 모두 신선할 때만** 돈다 — 콜드 스타트에서 목소리 목록만
-                // 먼저 오면 그 사이 표시가 비어 **재시도 전에 교체 목소리를 고를 수 있다.**
+                // 읽는 곳이 새로고침(`reconcileInaccessibleVoiceAlarms`) 한 곳뿐이었는데, 그건 아래 초안
+                // 조회가 끝난 **뒤에** 돈다 — 그 사이 표시가 비어 **재시도 전에 교체 목소리를 고를 수 있다.**
                 // 목록이 화면에 오르는 이 자리가 가장 이른 시점이다.
                 settlingVoiceProfileIds = com.alarmtalk.app.data.VoiceReplacementMarkerStore(
                     getApplication(),
@@ -142,10 +141,11 @@ internal fun MainViewModel.fetchVoiceProfiles(showMessage: Boolean) {
                 }
                 voiceProfileBusy = false
                 voiceProfileLoadFinished = true
-                // 내 음성 목록이 늦게 로드된 경우에도 접근권 잃은 목소리 알람 강등이 재실행되게 한다
-                // (공유 목소리 목록이 먼저 신선 로드돼 스킵됐을 수 있음). 빈 목록도 유효한 로드다.
+                // 접근권 잃은 목소리 알람 강등 — 빈 목록도 유효한 로드다.
                 // **목록을 가져온 계정을 그대로 넘긴다** — '지금 계정' 이 아니다.
                 reconcileInaccessibleVoiceAlarms(requestOwner)
+                // 받았던 알람을 그 계정의 클론으로 올린다(같은 조건 — 신선한 내 목록).
+                promoteFormerReceivedAlarms(requestOwner)
                 try {
                     val quota = quotaRequest.await()
                     applyVoiceDraftQuota(quota, quotaRequestSeq, requestOwner, startGeneration)
@@ -167,6 +167,175 @@ internal fun MainViewModel.fetchVoiceProfiles(showMessage: Boolean) {
             voiceProfileBusy = false
             voiceProfileLoadFinished = true
         }
+    }
+}
+
+/**
+ * 접근권을 잃은 목소리를 쓰는 '내 소유' 알람을 기본 목소리(미나)로 바꾼다(감사 B-3 LOCAL_OWNED 좀비).
+ * 내 음성 목록([MainViewModel.voiceProfiles])을 **신선하게** 받았을 때만 판단한다 — 로드에 실패하면 옛 목록이
+ * 남으므로 신선 로드만 믿어야 오강등이 없다. 부르는 곳은 목록을 받은 자리([fetchVoiceProfiles])다.
+ *
+ * @param listOwner 이 목록을 **가져온 계정**. 호출부가 조회를 시작한 시점의 값을 그대로
+ *   넘긴다 — 여기서 `authSession` 을 읽으면 '지금 계정' 이 되어, 늦게 도착한 A 의 목록이
+ *   B 의 이름표를 달게 된다. 그러면 저장소 가드(expectedOwnerUserId)가 통과해 **B 의 목소리
+ *   참조와 캐시 오디오를 영구히 벗긴다**(Codex #665 P1). 되돌릴 수 없는 변경이다.
+ */
+internal fun MainViewModel.reconcileInaccessibleVoiceAlarms(listOwner: String?) {
+    if (!voiceProfilesLoadedFresh) return
+    val accessibleVoiceIds = voiceProfiles.map { it.id }.toSet()
+    // 제자리 교체는 프로필 id 를 재사용해 위 대조로는 **절대** 안 걸린다. 서버가 준
+    // `custom_audio_invalidated_at` 이 지난번과 다르면 그 목소리의 직접 입력 알람만 내린다 —
+    // 푸시를 놓친 기기가 스스로 수렴하는 유일한 경로다(정확성은 폴백이 맡는다).
+    val markers = com.alarmtalk.app.data.VoiceReplacementMarkerStore(getApplication())
+    val markerCandidates = voiceProfiles.map { it.id to it.customAudioInvalidatedAt }
+    viewModelScope.launch {
+        runCatching {
+            val lostAccess = repository.degradeAlarmsWithInaccessibleVoice(accessibleVoiceIds, listOwner)
+            var replacedCount = 0
+            // ⚠ **판정을 코루틴 밖에서 미리 하지 말 것.** 예전에는 여기 오기 전에 걸러 뒀는데,
+            // 그 사이 더 새 세대가 강등·확정되고 사용자가 새 목소리로 알람을 만들면 뒤늦게
+            // 깨어난 이 회차가 그 알람을 지웠다. 저장소가 판정·강등·확정을 함께 잠근다.
+            // ⚠ **이 경로는 세대를 확정하지 않는다**(Codex #703 P1). 확정하려면 **그 교체
+            // 이후에 받은** 매니페스트가 있어야 하는데, 여기 있는 목록은 '이번 세션 언젠가'
+            // 받은 것이라 교체 **이전** 스냅샷일 수 있다(전부 rendered=true 로 보인다).
+            // 그걸 근거로 확정하면 cron 이 재렌더를 끝낸 뒤에도 다음 회차들이 그 세대를
+            // 건너뛰어, 완료 푸시를 놓친 기기는 프리셋 알람이 회수된 목소리로 계속 운다.
+            //
+            // 그래서 **강등만 하고**(사용자가 곧바로 보는 결과) 확정은 워커에 맡긴다 —
+            // 워커는 매니페스트를 새로 받아 준비 여부를 보고, 아직이면 retry 로 다시 온다.
+            // 강등이 null 을 돌려주면 저장소가 재시도 표식을 남기므로 워커가 그대로 이어받는다.
+            var replacementObserved = false
+            for ((profileId, invalidatedAt) in markerCandidates) {
+                var degradedNow = 0
+                val result = markers.applyIfChanged(listOwner, profileId, invalidatedAt) {
+                    degradedNow = repository.degradeCustomMessageAlarmsUsingVoiceProfile(
+                        voiceProfileId = profileId,
+                        expectedOwnerUserId = listOwner,
+                        // ⚠ **표식 경로는 기본 목소리도 대상이다.** 제자리 교체는 프로필
+                        //   id 를 그대로 두고 provider 보이스만 바꾸므로, 기본 목소리로 만든
+                        //   직접 입력 알람도 옛 소리를 물고 있다(마이그레이션 #111 이 딱
+                        //   그 경우다 — 시우·도현·애니). 회수 경로는 그대로 false 다.
+                        //   ⚠ 이 경로만 이 문을 안 열고 있었다(iOS·워커는 연다). 그런데
+                        //   #111 은 **푸시를 보내지 않으므로** 대개 이 자리가 표식을 처음
+                        //   보는 곳이다 — 0건으로 지나가면 기준선만 태우고, 그 뒤엔 워커가
+                        //   올 때까지 옛 목소리로 운다.
+                        allowSystemVoice = true,
+                        // ⚠ **표식 뒤에 만든 오디오는 이미 새 목소리다 — 깎지 않는다.**
+                        //   이 경로만 창을 안 넘기고 있었다(iOS `PushNotificationCoordinator`
+                        //   는 넘긴다). 강등은 되돌릴 수 없으므로 좁은 쪽이 맞다.
+                        invalidatedBeforeMillis =
+                            com.alarmtalk.app.data.parseVoiceMarkerMillis(invalidatedAt),
+                    )
+                    // **언제나 null 이다** — 이 경로는 확정하지 않는다(위 주석). 계정이 바뀐
+                    // 경우도 자연히 포함된다(옛 계정의 0을 '처리 완료' 로 적으면 그 계정은
+                    // 영영 재시도하지 않는다).
+                    null
+                }
+                if (result.changed) replacementObserved = true
+                // ⚠ **'정리 중' 표시를 여기서 올리고 내린다**(Codex #703 P1). 승격 경로만
+                // 표시를 올리면 두 가지가 어긋난다: 이 새로고침이 재시도에 **성공해도** 표시가
+                // 남아 그 목소리를 프로세스가 끝날 때까지 못 고르고, 반대로 재시작하면 표시가
+                // (메모리 전용이라) 비어 있어 **재시도 전에 잠깐 고를 수 있게** 된다 —
+                // 그때 만든 알람을 그 재시도가 벗긴다.
+                // 표시는 **디스크가 단일 출처**다 — 워커(백그라운드)도 같은 값을 쓰고,
+                // 재시작해도 남아야 재시도 전에 잠깐 고를 수 있게 되는 일이 없다.
+                if (!markers.setSettling(listOwner, profileId, !result.persisted)) {
+                    // 디스크에 못 남겼으면 메모리에서 들고 간다(다음 조회가 덮지 않게).
+                    settlingUnpersistedIds = settlingUnpersistedIds + profileId
+                } else if (result.persisted) {
+                    settlingUnpersistedIds = settlingUnpersistedIds - profileId
+                }
+                // 확정을 미뤘어도 이미 내린 것은 센다 — 안내는 여기서만 남길 수 있다.
+                replacedCount += degradedNow
+            }
+            // 교체를 봤으면 두 워커를 곧바로 큐잉한다 — 하루 주기를 기다리지 않는다.
+            //  - 프리페치: 새 매니페스트를 **디스크에 공개**하고 낡은 프리셋 바이트를 받는다.
+            //  - 접근권 동기화: 매니페스트를 새로 받아 **준비된 세대만 확정**하고, 아직이면
+            //    retry 로 다시 온다. 여기서 미룬 확정을 그쪽이 마무리한다.
+            if (replacementObserved) {
+                com.alarmtalk.app.sync.StockClipPrefetchWorker.enqueue(getApplication())
+                com.alarmtalk.app.sync.VoiceAccessSyncWorker.runOnce(getApplication())
+            }
+            settlingVoiceProfileIds = markers.settlingProfileIds(listOwner) + settlingUnpersistedIds
+            lostAccess to replacedCount
+        }
+            .onSuccess { (lostAccess, replacedCount) ->
+                // 목소리를 잃은 알람 — 이유를 알려 줄 곳이 여기뿐이다. **원인별로 따로 적는다** —
+                // 대기표가 우선순위로 합친다(`DowngradeNoticeStore.Cause`).
+                val notices = com.alarmtalk.app.data.DowngradeNoticeStore(getApplication())
+                notices.record(listOwner, com.alarmtalk.app.data.DowngradeNoticeStore.Cause.SHARED_RELEASED, lostAccess)
+                notices.record(listOwner, com.alarmtalk.app.data.DowngradeNoticeStore.Cause.VOICE_REPLACED, replacedCount)
+                val total = lostAccess + replacedCount
+                if (total > 0) Log.i(TAG, "Degraded $total alarm(s): access=$lostAccess replaced=$replacedCount")
+            }
+            .onFailure { error ->
+                Log.w(TAG, "Failed to reconcile inaccessible-voice alarms", error)
+            }
+    }
+}
+
+/**
+ * **받았던 알람을 그 계정의 클론 + 기본 인사말로 올린다**(커플·가족 이용권 폐지 — 업데이트하며 미나의 내
+ * 알람이 됐다). 판정은 `decideFormerReceivedPromotion`, 행 쓰기는 `AlarmRepository.settleFormerReceivedAlarm` 이다.
+ * 신선한 내 목소리 목록이 있을 때만 돈다([reconcileInaccessibleVoiceAlarms] 와 같은 조건). 이용권 판정 전이거나
+ * 클론이 정리 중이거나 클립이 덜 받아졌으면 기록을 남겨 다음 목록·매니페스트·이용권 답에 다시 본다. 조용히 울리는
+ * 알람은 만들지 않는다 — 묶을 클립이 다 기기에 있을 때만 바꾼다.
+ * 규칙: `docs/spec/billing-lifecycle.md` 「목소리를 못 쓰게 되면」, `docs/spec/plan-gates.md` 「커플·가족 이용권 — 폐지」.
+ *
+ * @param listOwner 목소리 목록을 가져온 계정.
+ */
+internal fun MainViewModel.promoteFormerReceivedAlarms(listOwner: String?) {
+    val owner = listOwner?.takeIf { it.isNotBlank() } ?: return
+    if (!voiceProfilesLoadedFresh || authSession?.user?.id != owner) return
+    val store = com.alarmtalk.app.data.FormerReceivedAlarmStore(getApplication())
+    val pending = store.pending(owner).takeIf { it.isNotEmpty() } ?: return
+    // 도는 회차가 있으면 거두고 지금 재료로 다시 돈다 — 그대로 두면 늦게 온 이용권 답·매니페스트를 놓친다. 중간에
+    // 멈춰도 안전하다: 올린 행은 1단계 모양이 아니라 다음 회차가 손대지 않고, 나머지는 같은 판정을 다시 받는다.
+    formerReceivedPromotionJob?.cancel()
+    // 이용권 판정이 섰는가 — **이번 실행에서 서버로 받은 답**(구독 + `/auth/me` 의 plan)으로만 정한다. 저장해 둔
+    // 판정만 있으면 미룬다: 그 사이 결제했을 수 있고, 미나 확정은 되돌릴 수 없다. 유료면 클론을 쓸 수 있고, 확실히
+    // 무료면 못 쓴다. 그 밖(판정 전)은 다음에 다시 본다.
+    val serverAnswered = subscriptionAnsweredThisRun && planAnsweredEntry > 0L
+    val cloneEntitled = when {
+        !serverAnswered -> null
+        paidVoiceAccess() == PaidVoiceAccess.Entitled -> true
+        isDefinitelyFreePlan() -> false
+        else -> null
+    }
+    // 마지막에 쓴 목소리는 그 계정의 저장값을 직접 읽는다 — 메모리 사본이 채워지는 순서에 기대지 않는다.
+    val lastUsed = com.alarmtalk.app.data.DefaultVoicePreferenceStore(getApplication()).read(owner)
+    val clone = com.alarmtalk.app.data.pickPromotionClone(voiceProfiles, lastUsed)
+    val cloneSettling = clone != null && clone.id in settlingVoiceProfileIds
+    val clips = stockClips
+    val expected = expectedVariants
+    val language = deviceAppVoiceLanguage()
+    formerReceivedPromotionJob = viewModelScope.launch {
+        // 클립이 기기에 있는지는 파일을 본다 — 메인 밖에서.
+        val greeting = if (cloneEntitled == true && clone != null && !cloneSettling) {
+            withContext(Dispatchers.IO) {
+                val audioStore = com.alarmtalk.app.data.AlarmAudioStore(getApplication<Application>())
+                com.alarmtalk.app.data.completeGreetingFor(clone.id, clips, expected, language) { key, url ->
+                    audioStore.getCachedAudioUnmeasured(key, url)
+                }
+            }
+        } else {
+            null
+        }
+        val settled = mutableListOf<String>()
+        for (alarmId in pending) {
+            val decision = try {
+                repository.settleFormerReceivedAlarm(alarmId, owner) { row ->
+                    com.alarmtalk.app.data.decideFormerReceivedPromotion(row, clone, cloneSettling, cloneEntitled, greeting)
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                AlarmTalkLog.reportError("Failed to promote a former received alarm", error)
+                continue
+            }
+            if (decision != com.alarmtalk.app.data.FormerReceivedPromotion.Retry) settled += alarmId
+        }
+        if (settled.isNotEmpty()) store.settle(owner, settled)
     }
 }
 
@@ -389,11 +558,9 @@ internal fun MainViewModel.createVoiceProfiles(
  */
 internal fun voiceDraftPromotionRequest(
     replaceExisting: Boolean,
-    isShared: Boolean,
     language: String,
     pitchSemitones: Float,
 ): VoiceProfileUpdateRequest = VoiceProfileUpdateRequest(
-    isShared = isShared,
     isDraft = false,
     language = language,
     replaceExisting = if (replaceExisting) true else null,
@@ -404,7 +571,6 @@ internal fun voiceDraftPromotionRequest(
 internal fun MainViewModel.promoteVoiceDraft(
     profileId: String,
     replaceExisting: Boolean = false,
-    isShared: Boolean = false,
     /**
      * 등록 미리듣기에서 **끝까지 들은** 목소리 높이(반음). 등록 확정 요청에 한 번 싣고(교체 등록도 같다), 서버가 그
      * 목소리로 만드는 알람 소리에 굽는다 — 기기에는 남기지 않는다(스펙 voice-and-message §4-3). 0 이면 보내지 않는다.
@@ -417,7 +583,6 @@ internal fun MainViewModel.promoteVoiceDraft(
         voiceProfileBusy = true
         val request = voiceDraftPromotionRequest(
             replaceExisting = replaceExisting,
-            isShared = isShared,
             language = deviceAppVoiceLanguage(),
             pitchSemitones = pitchSemitones,
         )
@@ -447,7 +612,6 @@ internal fun MainViewModel.promoteVoiceDraft(
             val resolvedName = if (serverName.isNullOrBlank()) draft?.name.orEmpty() else serverName
             val official = profile.copy(
                 name = resolvedName,
-                isShared = profile.isShared ?: draft?.isShared,
                 isDraft = false,
                 relationshipLabel = profile.relationshipLabel ?: draft?.relationshipLabel,
                 listenerTitle = profile.listenerTitle ?: draft?.listenerTitle,
@@ -630,7 +794,6 @@ internal fun MainViewModel.renameVoiceProfile(
                 if (it.id == profile.id) {
                     it.copy(
                         name = profile.name,
-                        isShared = profile.isShared ?: it.isShared,
                         relationshipLabel = profile.relationshipLabel ?: it.relationshipLabel,
                         listenerTitle = profile.listenerTitle ?: it.listenerTitle,
                     )
@@ -643,73 +806,6 @@ internal fun MainViewModel.renameVoiceProfile(
             message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_voice_info_update_failed))
         }
         voiceProfileBusy = false
-    }
-}
-
-internal fun MainViewModel.setVoiceProfileShared(profileId: String, shared: Boolean) {
-    val session = sessionOrMessage(R.string.msg_voice_share_login_required) ?: return
-    if (!hasCoupleOrFamilyAccess(subscriptionResponse, familyGroup, personalPromoTierHold())) {
-        message = getApplication<android.app.Application>().getString(R.string.msg_voice_share_couple_family_required)
-        return
-    }
-
-    // 낙관적 업데이트 + 전역 busy 미사용: 스위치는 즉시 뒤집히고, 서버 반영은 목소리별
-    // 단일 워커가 PATCH 를 직렬화한다 — 이미 서버로 나간 요청은 코루틴 cancel 로 회수할 수
-    // 없어 겹쳐 보내면 늦게 도착한 이전 요청이 최종 상태를 뒤집을 수 있다. 워커는 한 번에
-    // 하나만 보내고 desired 최신값으로 수렴하므로(중간 연타 값은 건너뜀) 그 경합이 없다.
-    // 성공 토스트는 띄우지 않고(스위치 상태가 곧 결과), 서버 실패 시에만 원상복구+안내한다.
-    val previousShared = voiceProfiles.firstOrNull { it.id == profileId }?.isShared
-    voiceProfiles = voiceProfiles.map {
-        if (it.id == profileId) it.copy(isShared = shared) else it
-    }
-    shareToggleDesired[profileId] = shared
-    if (shareToggleJobs[profileId]?.isActive == true) return
-    shareToggleJobs[profileId] = viewModelScope.launch {
-        // 이 워커 세션에서 서버가 확정해 준 마지막 값 — 실패 시 여기로 되돌린다.
-        var acked = previousShared
-        try {
-            while (true) {
-                val want = shareToggleDesired[profileId] ?: break
-                val profile = api.updateVoiceProfile(
-                    authorization = AlarmTalkApiClient.bearer(session.token),
-                    id = profileId,
-                    request = VoiceProfileUpdateRequest(isShared = want),
-                ).profile
-                acked = profile.isShared ?: want
-                // PATCH 중에 다시 토글됐으면 최신 desired 로 재전송(직렬이라 순서 역전 없음).
-                if (shareToggleDesired[profileId] != want) continue
-                shareToggleDesired.remove(profileId)
-                voiceProfiles = voiceProfiles.map {
-                    if (it.id == profile.id) it.copy(isShared = acked) else it
-                }
-                // 공유 목록 갱신도 suspend(네트워크 왕복)라 이 동안 새 토글이 오면 desired 가
-                // 다시 채워진다(새 토글은 isActive 워커를 믿고 return). 갱신 실패는 치명적이지
-                // 않아 무시하되(공유 상태는 이미 확정, 상대 반영은 push 가 따로 담당),
-                // CancellationException 은 삼키지 말고 그대로 던진다.
-                try {
-                    familyVoices = api.listFamilyVoiceProfiles(AlarmTalkApiClient.bearer(session.token)).profiles
-                    // 서버에서 받은 공유 목록이다 — 다음 공유 목록 변화는 '서버에서 바뀐 것' 으로 본다
-                    // (`familyVoicesFromServer`, Codex #825). 목록을 바꾸는 곳은 모두 이걸 함께 세운다.
-                    familyVoicesFromServer = true
-                } catch (e: kotlin.coroutines.cancellation.CancellationException) {
-                    throw e
-                } catch (_: Exception) {
-                }
-                // 갱신 중 새 토글이 왔으면 종료하지 말고 그 값을 마저 전송한다 — 여기서 그냥
-                // break 하면 마지막 의도가 전송되지 않은 채 고아로 남는다.
-                if (shareToggleDesired.containsKey(profileId)) continue
-                break
-            }
-        } catch (error: kotlin.coroutines.cancellation.CancellationException) {
-            throw error
-        } catch (error: Exception) {
-            shareToggleDesired.remove(profileId)
-            voiceProfiles = voiceProfiles.map {
-                if (it.id == profileId) it.copy(isShared = acked) else it
-            }
-            AlarmTalkLog.reportError("Failed to update voice profile sharing id=$profileId shared=$shared", error)
-            message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_voice_share_setting_failed))
-        }
     }
 }
 
@@ -733,9 +829,9 @@ internal fun MainViewModel.deleteVoiceProfile(profileId: String) {
             )
         }.onSuccess {
             voiceProfiles = voiceProfiles.filterNot { it.id == profileId }
-            // 삭제된 목소리를 쓰던 내 알람을 즉시 기본 알람으로 변환한다(공유해제·무료강등과 동일 결과).
-            // 서버는 sound-only 로 바꾸지만 본인 LOCAL_OWNED 알람은 pull 로 안 돌아오므로 로컬에서 강등.
-            // 삭제된 id 만 대상으로 하는 타깃 강등이라 소셜 목록 신선도(reconcile 가드)에 막히지 않는다.
+            // 삭제된 목소리를 쓰던 내 알람을 즉시 기본 목소리 알람으로 바꾼다(무료 강등과 같은 결과).
+            // 서버는 sound-only 로 바꾸지만 내 알람은 서버에서 다시 받지 않으므로 로컬에서 강등한다.
+            // 삭제된 id 만 대상으로 하는 타깃 강등이라 목록 신선도(reconcile 가드)에 막히지 않는다.
             viewModelScope.launch { runCatching { repository.degradeAlarmsUsingVoiceProfile(profileId) } }
         }.onFailure { error ->
             if (error is retrofit2.HttpException && error.code() == 404) {
@@ -1108,7 +1204,7 @@ internal suspend fun MainViewModel.retryVoiceSpeechStyleAnalysis(profileId: Stri
  * - [ManifestNeed.SESSION](앱 시작): 이번 세션에 받았으면 다시 받지 않는다.
  * - [ManifestNeed.RECENT](탭 새로고침): 유료 클론 클립은 확정 후 cron 이 세션 중에 만들 수 있어
  *   탭에 들어올 때 다시 본다. 다만 신선도 창 안에 받은 게 있으면 그걸 쓴다.
- * - [ManifestNeed.LATEST](공유 변경 푸시·생성 완료): 신호 **뒤에** 출발한 요청이어야 한다.
+ * - [ManifestNeed.LATEST](재렌더 완료 푸시·생성 완료): 신호 **뒤에** 출발한 요청이어야 한다.
  *
  * ⚠ **디스크에서 먼저 채운다.** 매니페스트가 메모리에만 있으면 '모른다' 상태가 생기고,
  * 관문(`onNeedsClipPreparation`: null → 막지 않음)과 저장(`hasCompleteCloneBucket`:
@@ -1167,12 +1263,13 @@ private fun MainViewModel.applyStockClipManifest(
  * 공개본을 메모리에 **실은 뒤에** 하는 일 — 누가 공개했든 같다(전경 응답·물러난 회차의 이긴 것·
  * 다른 쪽 공개 따라가기). 제자리 교체 수리와, 매니페스트를 기다리던 프리페치 재시도.
  *
- * ⚠ 이긴 것을 실을 때도 돌린다(Codex #825 P1). 워커는 공유받은 목소리를 받지 않고
- * (`StockClipPrefetchWorker`) 접근권 워커는 낡음을 **판정만** 한다 — 여기서 안 고치면 알람이 쓰는
- * 캐시 별칭이 교체된 사람의 목소리를 문 채 다음 전경 공개까지 남는다.
+ * ⚠ 이긴 것을 실을 때도 돌린다(Codex #825 P1). 접근권 워커는 낡음을 **판정만** 한다 — 여기서 안
+ * 고치면 알람이 쓰는 캐시 별칭이 교체 전 목소리를 문 채 다음 전경 공개까지 남는다.
+ * 받았던 알람의 승격도 여기서 다시 본다 — 목록보다 매니페스트가 늦게 오면 그때 클립을 셀 수 있다.
  */
 private fun MainViewModel.afterStockClipManifestApplied(manifest: com.alarmtalk.app.network.StockClipListResponse) {
     repairReplacedStockClips(manifest.clips)
+    authSession?.user?.id?.let { promoteFormerReceivedAlarms(it) }
     // 매니페스트 도착 전 setDefaultVoice 로 프리페치가 빈손이었으면 여기서 1회 재시도한다.
     // 재시도 여부와 무관하게 pending 은 비워 무한 재시도를 막는다(비움 결과도 정상 종료).
     pendingPrefetchVoiceId?.let { voiceId ->

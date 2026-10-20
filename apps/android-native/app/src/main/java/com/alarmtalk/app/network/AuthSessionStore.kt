@@ -12,7 +12,6 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.channels.awaitClose
-import org.json.JSONArray
 import org.json.JSONObject
 
 data class AuthSession(
@@ -234,8 +233,6 @@ class AuthSessionStore internal constructor(
             clear()
             return null
         }
-        val quietWindows = readQuietWindows()
-        val firstQuietWindow = quietWindows.firstOrNull()
         return AuthSession(
             token = token,
             provider = provider,
@@ -244,13 +241,6 @@ class AuthSessionStore internal constructor(
                 email = prefs.getString(KEY_EMAIL, "") ?: "",
                 name = prefs.getString(KEY_NAME, "") ?: "",
                 plan = prefs.getString(KEY_PLAN, "free") ?: "free",
-                allowFamilyAlarms = prefs.getBoolean(KEY_ALLOW_FAMILY_ALARMS, false),
-                familyAlarmQuietDays = firstQuietWindow?.days ?: readQuietDays(),
-                familyAlarmQuietStart = firstQuietWindow?.start
-                    ?: prefs.getString(KEY_FAMILY_ALARM_QUIET_START, "09:00") ?: "09:00",
-                familyAlarmQuietEnd = firstQuietWindow?.end
-                    ?: prefs.getString(KEY_FAMILY_ALARM_QUIET_END, "18:30") ?: "18:30",
-                familyAlarmQuietWindows = quietWindows,
                 dynamicPromptSettings = readDynamicPromptSettings(),
                 personalPromo = readPersonalPromo(),
             ),
@@ -558,13 +548,13 @@ class AuthSessionStore internal constructor(
     }
 
     /**
-     * 프로필 저장(`PATCH /user/me` — 닉네임·가족 알람 설정·계정 설정)의 결과를 적는다 — **지금 저장된 세션 위에
+     * 프로필 저장(`PATCH /user/me` — 닉네임·계정 설정)의 결과를 적는다 — **지금 저장된 세션 위에
      * 바꾼 칸만** 얹는다. 시작할 때의 세션이 살아 있지 않거나 다른 계정이 됐으면 아무것도 쓰지 않고 null.
      *
      * ⚠ **요청 전에 잡아 둔 세션의 사본을 저장하지 말 것**(2026-10-05). 그 사본에는 plan·프로모·받은 시각·다른 칸이
-     * 요청을 보낼 때의 값으로 들어 있어, 그 사이 `/auth/me`(쿠폰·초대 등록 뒤의 갱신, `plan_changed`, 복귀 갱신,
+     * 요청을 보낼 때의 값으로 들어 있어, 그 사이 `/auth/me`(결제 뒤의 갱신, `plan_changed`, 복귀 갱신,
      * 다른 기기 결제)가 적은 더 새 답을 다음 `/auth/me` 까지 되돌린다 — 판정 스냅샷은 그대로여도, 세션 plan 을
-     * 직접 읽는 편집기(`freeVoiceTier`)·목소리 관리(`paidVoiceAccess`)가 방금 가족이 된 사람을 무료로 그렸다.
+     * 직접 읽는 편집기(`freeVoiceTier`)·목소리 관리(`paidVoiceAccess`)가 방금 유료가 된 사람을 무료로 그렸다.
      * 예전에는 계정 설정 한 칸만 지켰다(Codex #837 검증의 `keepStoredPromptSettings`).
      *
      * - **plan·프로모·받은 시각은 저장소의 짝 그대로다** — 프로필 저장은 plan 답이 아니다. [change] 가 무엇을
@@ -625,8 +615,6 @@ class AuthSessionStore internal constructor(
             dynamicPromptSettingsOverride?.let { normalized.copy(dynamicPromptSettings = normalizeDynamicPromptSettings(it)) }
                 ?: normalized
         }
-        val firstQuietWindow = normalizedUser.familyAlarmQuietWindows.firstOrNull()
-            ?: FamilyAlarmQuietWindow(days = normalizedUser.familyAlarmQuietDays)
         // 저장마다 새 순번 — 내용이 똑같은 응답도 '새 응답' 으로 보이게([AuthSession.accountAnswerSeq]).
         // 읽고 올려 쓰기가 한 덩어리여야 해서 이 함수 전체가 세션 쓰기 락 안이다(재진입 가능).
         val answerSeq = prefs.getLong(KEY_ACCOUNT_ANSWER_SEQ, 0L) + 1L
@@ -638,11 +626,8 @@ class AuthSessionStore internal constructor(
             .putString(KEY_EMAIL, normalizedUser.email)
             .putString(KEY_NAME, normalizedUser.name)
             .putString(KEY_PLAN, normalizedUser.plan)
-            .putBoolean(KEY_ALLOW_FAMILY_ALARMS, normalizedUser.allowFamilyAlarms)
-            .putString(KEY_FAMILY_ALARM_QUIET_DAYS, firstQuietWindow.days.joinToString(","))
-            .putString(KEY_FAMILY_ALARM_QUIET_START, firstQuietWindow.start)
-            .putString(KEY_FAMILY_ALARM_QUIET_END, firstQuietWindow.end)
-            .putString(KEY_FAMILY_ALARM_QUIET_WINDOWS, encodeQuietWindows(normalizedUser.familyAlarmQuietWindows))
+            // 옛 버전이 적어 둔 가족 알람 설정(커플·가족 이용권 폐지로 읽지 않는다)을 저장할 때 걷어낸다.
+            .also { editor -> RETIRED_FAMILY_KEYS.forEach(editor::remove) }
             .putString(KEY_DYNAMIC_PROMPT_SETTINGS, encodeDynamicPromptSettings(normalizedUser.dynamicPromptSettings))
             // ⚠ **없으면 지운다.** 남겨 두면 기간이 끝났거나 결제한 뒤에도 옛 프로모가 되살아나
             //   plan 과 짝이 어긋난다(`resolvePaidVoiceAccess` 의 `userPlanPromo`).
@@ -702,56 +687,6 @@ class AuthSessionStore internal constructor(
         )
     }
 
-    private fun readQuietDays(): List<Int> =
-        prefs.getString(KEY_FAMILY_ALARM_QUIET_DAYS, null)
-            ?.split(',')
-            ?.mapNotNull { it.toIntOrNull()?.takeIf { day -> day in 0..6 } }
-            ?.distinct()
-            ?.sorted()
-            ?.takeIf { it.isNotEmpty() }
-            ?: listOf(1, 2, 3, 4, 5)
-
-    private fun readQuietWindows(): List<FamilyAlarmQuietWindow> {
-        val encoded = prefs.getString(KEY_FAMILY_ALARM_QUIET_WINDOWS, null)
-        if (!encoded.isNullOrBlank()) {
-            runCatching {
-                val array = JSONArray(encoded)
-                List(array.length()) { index ->
-                    val item = array.getJSONObject(index)
-                    FamilyAlarmQuietWindow(
-                        days = normalizeQuietDays(
-                            List(item.optJSONArray("days")?.length() ?: 0) { dayIndex ->
-                                item.optJSONArray("days")?.optInt(dayIndex) ?: -1
-                            },
-                        ),
-                        start = normalizeQuietTime(item.optString("start"), "09:00"),
-                        end = normalizeQuietTime(item.optString("end"), "18:30"),
-                    )
-                }.filter { it.days.isNotEmpty() }
-            }.getOrNull()?.let { return it }
-        }
-        return listOf(
-            FamilyAlarmQuietWindow(
-                days = readQuietDays(),
-                start = prefs.getString(KEY_FAMILY_ALARM_QUIET_START, "09:00") ?: "09:00",
-                end = prefs.getString(KEY_FAMILY_ALARM_QUIET_END, "18:30") ?: "18:30",
-            ),
-        )
-    }
-
-    private fun encodeQuietWindows(windows: List<FamilyAlarmQuietWindow>): String {
-        val array = JSONArray()
-        windows.forEach { window ->
-            array.put(
-                JSONObject()
-                    .put("days", JSONArray(window.days))
-                    .put("start", window.start)
-                    .put("end", window.end),
-            )
-        }
-        return array.toString()
-    }
-
     private fun readDynamicPromptSettings(): DynamicPromptSettings {
         val encoded = prefs.getString(KEY_DYNAMIC_PROMPT_SETTINGS, null) ?: return DynamicPromptSettings()
         return runCatching {
@@ -792,21 +727,6 @@ class AuthSessionStore internal constructor(
             .toString()
 
     private fun normalizeUser(user: AuthUser): AuthUser {
-        val legacyDays = normalizeQuietDays(runCatching { user.familyAlarmQuietDays }.getOrNull())
-        val legacyStart = normalizeQuietTime(
-            runCatching { user.familyAlarmQuietStart }.getOrNull(),
-            fallback = "09:00",
-        )
-        val legacyEnd = normalizeQuietTime(
-            runCatching { user.familyAlarmQuietEnd }.getOrNull(),
-            fallback = "18:30",
-        )
-        val quietWindows = normalizeQuietWindows(
-            runCatching { user.familyAlarmQuietWindows }.getOrNull(),
-            fallback = FamilyAlarmQuietWindow(legacyDays, legacyStart, legacyEnd),
-        )
-        val firstQuietWindow = quietWindows.firstOrNull()
-            ?: FamilyAlarmQuietWindow(days = legacyDays, start = legacyStart, end = legacyEnd)
         // Gson 은 Kotlin 기본값을 무시하고 JSON 에 없는 필드를 null 로 남긴다. 백엔드
         // 응답(특히 Google 로그인)이나 구버전이 저장한 세션에 일부 필드가 빠지면
         // non-null 프로퍼티가 null 이 되고, copy() 생성자의 null 체크에서 NPE 가 난다.
@@ -816,10 +736,6 @@ class AuthSessionStore internal constructor(
             email = runCatching { user.email }.getOrNull().orEmpty(),
             name = runCatching { user.name }.getOrNull().orEmpty(),
             plan = runCatching { user.plan }.getOrNull()?.takeIf { it.isNotBlank() } ?: "free",
-            familyAlarmQuietDays = firstQuietWindow.days,
-            familyAlarmQuietStart = firstQuietWindow.start,
-            familyAlarmQuietEnd = firstQuietWindow.end,
-            familyAlarmQuietWindows = quietWindows,
             dynamicPromptSettings = normalizeDynamicPromptSettings(
                 runCatching { user.dynamicPromptSettings }.getOrNull(),
             ),
@@ -827,36 +743,6 @@ class AuthSessionStore internal constructor(
                 ?.takeIf { it.isNotBlank() } ?: "active",
             personalPromo = normalizePersonalPromo(runCatching { user.personalPromo }.getOrNull()),
         )
-    }
-
-    private fun normalizeQuietDays(days: List<Int>?): List<Int> =
-        days
-            ?.filter { it in 0..6 }
-            ?.distinct()
-            ?.sorted()
-            ?.takeIf { it.isNotEmpty() }
-            ?: listOf(1, 2, 3, 4, 5)
-
-    private fun normalizeQuietTime(value: String?, fallback: String): String =
-        value?.takeIf { TIME_RE.matches(it) } ?: fallback
-
-    private fun normalizeQuietWindows(
-        windows: List<FamilyAlarmQuietWindow>?,
-        fallback: FamilyAlarmQuietWindow,
-    ): List<FamilyAlarmQuietWindow> {
-        if (windows == null) return listOf(fallback)
-        return windows
-            .mapNotNull { window ->
-                val days = normalizeQuietDays(runCatching { window.days }.getOrNull()).takeIf { it.isNotEmpty() }
-                val start = normalizeQuietTime(runCatching { window.start }.getOrNull(), "")
-                val end = normalizeQuietTime(runCatching { window.end }.getOrNull(), "")
-                if (days == null || start.isBlank() || end.isBlank()) {
-                    null
-                } else {
-                    FamilyAlarmQuietWindow(days = days, start = start, end = end)
-                }
-            }
-            .take(MAX_QUIET_WINDOWS)
     }
 
     private fun isAppIssuedJwt(token: String): Boolean =
@@ -954,7 +840,6 @@ class AuthSessionStore internal constructor(
         // 구버전 평문 prefs(마이그레이션 후 삭제) / 현재 사용하는 암호화 prefs 파일명.
         private const val LEGACY_PREFS_NAME = "voice_alarm_auth"
         private const val SECURE_PREFS_NAME = "voice_alarm_auth_secure"
-        private val TIME_RE = Regex("^([01]\\d|2[0-3]):[0-5]\\d$")
         private const val KEY_TOKEN = "token"
         private const val KEY_PROVIDER = "provider"
         private const val KEY_USER_ID = "user_id"
@@ -984,19 +869,19 @@ class AuthSessionStore internal constructor(
         private const val KEY_EMAIL = "email"
         private const val KEY_NAME = "name"
         private const val KEY_PLAN = "plan"
-        private const val KEY_ALLOW_FAMILY_ALARMS = "allow_family_alarms"
-        private const val KEY_FAMILY_ALARM_QUIET_DAYS = "family_alarm_quiet_days"
-        private const val KEY_FAMILY_ALARM_QUIET_START = "family_alarm_quiet_start"
-        private const val KEY_FAMILY_ALARM_QUIET_END = "family_alarm_quiet_end"
-        private const val KEY_FAMILY_ALARM_QUIET_WINDOWS = "family_alarm_quiet_windows"
+        private val RETIRED_FAMILY_KEYS = listOf(
+            "allow_family_alarms",
+            "family_alarm_quiet_days",
+            "family_alarm_quiet_start",
+            "family_alarm_quiet_end",
+            "family_alarm_quiet_windows",
+        )
         private const val KEY_DYNAMIC_PROMPT_SETTINGS = "dynamic_prompt_settings"
         private const val KEY_PERSONAL_PROMO_ENDS_AT = "personal_promo_ends_at"
         private const val KEY_PERSONAL_PROMO_NOTICE_FROM = "personal_promo_notice_from"
         private const val KEY_PERSONAL_PROMO_DELETES_VOICES = "personal_promo_deletes_voices_at_end"
         private const val KEY_USER_FETCHED_AT = "user_fetched_at_millis"
         private const val KEY_ACCOUNT_ANSWER_SEQ = "account_answer_seq"
-        // 방해금지 창은 최대 2개(평일 근무 + 주말 정도). 백엔드 family-alarm-settings.ts와 동일.
-        private const val MAX_QUIET_WINDOWS = 2
     }
 }
 

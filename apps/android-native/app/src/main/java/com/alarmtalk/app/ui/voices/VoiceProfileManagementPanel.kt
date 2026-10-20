@@ -92,8 +92,6 @@ import com.alarmtalk.app.data.VoiceTuningRenderer
 import com.alarmtalk.app.alarm.AlarmStreamVolume
 import com.alarmtalk.app.network.AuthSession
 import com.alarmtalk.app.network.BillingSubscriptionResponse
-import com.alarmtalk.app.network.FamilyGroupCurrentResponse
-import com.alarmtalk.app.network.FamilyVoiceProfile
 import com.alarmtalk.app.network.TtsGenerateRequest
 import com.alarmtalk.app.network.TtsGenerateResponse
 import com.alarmtalk.app.network.VoiceProfile
@@ -350,21 +348,13 @@ private fun RerecordReasonLine(text: String) {
 internal fun VoiceProfileManagementPanel(
     voiceProfiles: List<VoiceProfile>,
     pendingVoiceDraft: VoiceProfile?,
-    familyVoices: List<FamilyVoiceProfile>,
     voiceProfileBusy: Boolean,
     subscriptionResponse: BillingSubscriptionResponse?,
     // 이번 달 목소리 생성 횟수 소진 여부 — 삭제 시 '지금 지우면 이번 달엔 다시 못 만든다' 경고 게이트.
     voiceDraftQuotaExhausted: Boolean = false,
-    familyGroup: FamilyGroupCurrentResponse?,
     authSession: AuthSession?,
     /** 스토어가 **지금** 유효하다고 확인해 준 상태인가(기한까지 반영된 값). */
     storeEntitledNow: Boolean,
-    /**
-     * 기간 한정 개인 플랜 중의 보류 규칙(`MainViewModel.personalPromoTierHold`). 있으면 남은 구독
-     * 행·그룹 멤버로 공유 토글을 열지 않는다. 기본값을 두지 않는다 — 빠뜨리면 보류 계정에 서버가
-     * 막는 공유 토글이 보인다.
-     */
-    personalPromoTierHold: PersonalPromoTierHold?,
     // 반환값: 클론 생성 요청을 실제로 시작했는지 — false 면 '만드는 중' 스텝에 진입하지 않는다.
     // 두 번째 인자는 인라인 동의 체크 여부(아래 sensitiveConsentMissing 참고).
     onCreateVoiceProfile: (VoiceProfileCreationDraft, Boolean) -> Boolean,
@@ -374,12 +364,11 @@ internal fun VoiceProfileManagementPanel(
     expectedVariants: com.alarmtalk.app.network.ExpectedVariantCounts? = null,
     onDownloadStockAudio: suspend (String) -> com.alarmtalk.app.network.TtsMessageAudioResponse,
     onRenameVoiceProfile: (String, String) -> Unit,
-    onShareVoiceProfile: (String, Boolean) -> Unit,
     onDeleteVoiceProfile: (String) -> Unit,
     onConfirmVoicePreviewPlayed: suspend (String, String) -> Unit,
     onUpdateVoicePreviewText: suspend (String, String) -> String,
-    /** (초안 id, 교체, 공유, 목소리 높이 반음) — 높이는 끝까지 들은 값이고, 0 이면 서버에 보내지 않는다. */
-    onPromoteVoiceDraft: (String, Boolean, Boolean, Float) -> Unit,
+    /** (초안 id, 교체, 목소리 높이 반음) — 높이는 끝까지 들은 값이고, 0 이면 서버에 보내지 않는다. */
+    onPromoteVoiceDraft: (String, Boolean, Float) -> Unit,
     // 사용자가 누른 초안 삭제(확정 화면의 `다시 만들기`·나가기 경고) — 실패하면 사용자에게 말한다.
     onDeleteVoiceDraft: (String) -> Unit,
     // 월 한도로 흐름을 끝내며 초안을 **조용히** 버린다 — 실패해도 화면에 말하지 않고 기록만 남긴다(사용자가 고른
@@ -431,7 +420,6 @@ internal fun VoiceProfileManagementPanel(
     var profileName by remember { mutableStateOf("") }
     var relationshipSelection by remember { mutableStateOf(RelationshipSelection()) }
     var profileListenerTitle by remember { mutableStateOf("") }
-    var shareVoice by remember { mutableStateOf(false) }
     // 인라인 동의 체크. 등록 요청이 나가기 전 단계에서만 의미가 있으므로 다이얼로그를 닫을 때
     // 함께 초기화한다(closeCreateDialog).
     var voiceBiometricAgreed by remember { mutableStateOf(false) }
@@ -485,7 +473,6 @@ internal fun VoiceProfileManagementPanel(
     var voicePlanGateOpen by remember { mutableStateOf(false) }
     // 섹션 접힘 상태 — 기본은 모두 펼침(접힌 채 시작하면 쓸 수 있는 목소리가 가려진다).
     var ownSectionExpanded by remember { mutableStateOf(true) }
-    var sharedSectionExpanded by remember { mutableStateOf(true) }
     var systemSectionExpanded by remember { mutableStateOf(true) }
     var renameTarget by remember { mutableStateOf<VoiceProfile?>(null) }
     var renameName by remember { mutableStateOf("") }
@@ -565,7 +552,6 @@ internal fun VoiceProfileManagementPanel(
     // 프로필을 교체할 길도 없이 확정에서 거절당한다.
     val paidVoiceAccess = resolvePaidVoiceAccess(
         subscriptionResponse = subscriptionResponse,
-        familyGroup = familyGroup,
         userPlan = authSession?.user?.plan,
         storeEntitled = storeEntitledNow,
         nowMillis = System.currentTimeMillis(),
@@ -580,7 +566,7 @@ internal fun VoiceProfileManagementPanel(
     // 무료 강등 시 클론 데이터는 서버에 **보관 유예 동안** 살아 있지만(`PAID_VOICE_RETENTION_DAYS`,
     // 지금 3일 — 2026-08-31 정정, 예전 주석의 '30일' 은 TTS 캐시 TTL·Play 계정보류와 섞인
     // 값이었다) UI 에는 노출하지 않는다. 유료여야 쓸 수 있는데 보여 주면 미리듣기·이름 수정·
-    // 공유·**삭제**까지 눌리기 때문이다. 유예가 남았다는 안내는 여기 두지 않는다 —
+    // **삭제**까지 눌리기 때문이다. 유예가 남았다는 안내는 여기 두지 않는다 —
     // 강등·잠금 순간의 1회성 안내(`downgrade_notice_message` — `DowngradeNoticeStore` 대기표로 띄우는 모달)와 삭제
     // 예고 푸시(표시용)가 맡는다. (그 모달은 2026-10-16 부터 원인·기한 없이 '기본 목소리로 바뀌었다' 만 말한다 — 기한은 예고 푸시.) 여기 붙이면 무료로 지내는 내내 같은 말이
     // 영구히 보인다(2026-08-11 에 알람 행에서 같은 이유로 걷어냈다 —
@@ -639,7 +625,6 @@ internal fun VoiceProfileManagementPanel(
         profileBusy = voiceProfileBusy,
         editing = confirmPreviewEditing,
     )
-    val canShareVoice = canShareVoiceWithOthers(subscriptionResponse, familyGroup, authSession, personalPromoTierHold)
     val paidVoiceRequiredMessage = stringResource(R.string.plan_gate_paid_message)
 
     fun releasePreviewTuning() {
@@ -710,8 +695,8 @@ internal fun VoiceProfileManagementPanel(
         if (stockClips.isNotEmpty()) prefetchGreetingPreviews()
     }
 
-    // 인사말 스톡 클립을 받아(캐시 우선) 들려준다 — 내장 인사말이 없는 기본 목소리와 공유받은
-    // 목소리 행의 ▶ 가 함께 쓴다. [failureLog] 는 Sentry 에서 두 갈래를 가르려고 따로 받는다.
+    // 인사말 스톡 클립을 받아(캐시 우선) 들려준다 — 내장 인사말이 없는 기본 목소리와 내 목소리
+    // 행의 ▶ 가 함께 쓴다. [failureLog] 는 Sentry 에서 갈래를 가르려고 따로 받는다.
     fun playGreetingClip(voiceId: String, failureLog: String) {
         val clip = greetingClipFor(voiceId)
         if (clip == null) {
@@ -1359,7 +1344,6 @@ internal fun VoiceProfileManagementPanel(
         profileVoiceLanguage = defaultVoiceLanguage
         relationshipSelection = RelationshipSelection()
         profileListenerTitle = ""
-        shareVoice = false
         voiceBiometricAgreed = false
         currentStep = VoiceRegistrationStep.Source
         selectedAudio = null
@@ -1638,10 +1622,6 @@ internal fun VoiceProfileManagementPanel(
         }
     }
 
-    LaunchedEffect(canShareVoice) {
-        if (!canShareVoice) shareVoice = false
-    }
-
     // 열기로 했는데 그려지지 않는 창은 닫는다 — 닫는 조건은 **그리는 조건의 여집합**이다(`registrationWindowShown` —
     // `shouldDrawRegistrationWindow`). 음원 준비·세부 정보 단계에서 이용권이 끝나면 닫히고, 만드는 중·확정·준비 단계는
     // 이용권이 흔들려도 그리므로 닫히지 않는다(결정과 진행이 먼저다).
@@ -1832,16 +1812,6 @@ internal fun VoiceProfileManagementPanel(
         }
     }
 
-    // 공유받은 목소리 행의 ▶ — 소유자가 등록할 때 만들어진 인사말 사전렌더 클립을 들려준다
-    // (stock-clips 매니페스트가 같은 그룹에 공유 중인 클론 클립도 포함). 다시 누르면 정지.
-    fun playSharedGreeting(profile: FamilyVoiceProfile) {
-        if (playingGreetingVoiceId == profile.id) {
-            stopMediaPreview()
-            return
-        }
-        playGreetingClip(profile.id, failureLog = "Failed to play shared greeting preview")
-    }
-
     fun playFileCropPreview() {
         if (filePreviewPreparing) return
         if (filePreviewPlaying) {
@@ -1919,12 +1889,11 @@ internal fun VoiceProfileManagementPanel(
         val trimmedRelationship = relationshipSelection.resolved
         val trimmedListener = profileListenerTitle.trim()
         // 등록 한 건을 이름 붙인 필드로 만든다 — 자리 순서로 문자열을 넘기면 필드가 늘 때 두 값이
-        // 뒤바뀌어도 컴파일이 통과한다. 언어·공유는 부르는 순간의 선택을 읽는다(파일 경로는
+        // 뒤바뀌어도 컴파일이 통과한다. 언어는 부르는 순간의 선택을 읽는다(파일 경로는
         // 비동기 자르기를 거친 뒤 부른다).
         fun creationDraft(audio: CachedAlarmAudio) = VoiceProfileCreationDraft(
             name = trimmedName,
             audio = audio,
-            shared = shareVoice,
             relationshipLabel = trimmedRelationship,
             listenerTitle = trimmedListener,
             language = profileVoiceLanguage,
@@ -1977,7 +1946,7 @@ internal fun VoiceProfileManagementPanel(
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        // 세 묶음(내 목소리 · 공유받은 목소리 · 기본 목소리)을 접었다 펼 수 있는 섹션으로.
+        // 두 묶음(내 목소리 · 기본 목소리)을 접었다 펼 수 있는 섹션으로.
         // 기본값은 모두 펼침 — 접힌 채로 시작하면 무료 사용자가 쓸 수 있는 기본 목소리가
         // 다시 가려지는데, 이 화면을 고친 이유가 그거였다.
         VoiceCatalogSectionHeader(
@@ -2074,7 +2043,6 @@ internal fun VoiceProfileManagementPanel(
                         VoiceProfileRow(
                             profile = profile,
                             enabled = !voiceProfileBusy,
-                            canShareVoice = canShareVoice,
                             isPlaying = playingGreetingVoiceId == profile.id,
                             onPreview = { playGreeting(profile) },
                             onRename = {
@@ -2082,7 +2050,6 @@ internal fun VoiceProfileManagementPanel(
                                 renameName = profile.name
                                 renameSubmitAttempted = false
                             },
-                            onShareChange = { shared -> onShareVoiceProfile(profile.id, shared) },
                             onDelete = { deleteTarget = profile },
                             readiness = readiness,
                             onRetryPrerender = { retryPrerender(profile.id) },
@@ -2096,29 +2063,8 @@ internal fun VoiceProfileManagementPanel(
             )
         }
 
-        if (canShareVoice && familyVoices.isNotEmpty()) {
-            VoiceCatalogSectionHeader(
-                title = stringResource(R.string.voices_shared_voices_title),
-                expanded = sharedSectionExpanded,
-                onToggle = { sharedSectionExpanded = !sharedSectionExpanded },
-            )
-            if (sharedSectionExpanded) {
-                VoiceCatalogGroup(
-                    familyVoices.map { profile ->
-                        {
-                            SharedVoiceProfileRow(
-                                profile = profile,
-                                isPlaying = playingGreetingVoiceId == profile.id,
-                                onPlay = { playSharedGreeting(profile) },
-                            )
-                        }
-                    },
-                )
-            }
-        }
-
-        // 기본 제공 목소리는 맨 아래 — 개인화된 목소리(내 것·공유받은 것)가 먼저 온다.
-        // 내 목소리·공유받은 목소리가 하나도 없어도 이 섹션은 항상 나온다.
+        // 기본 제공 목소리는 맨 아래 — 내 목소리가 먼저 온다.
+        // 내 목소리가 하나도 없어도 이 섹션은 항상 나온다.
         if (systemVoices.isNotEmpty()) {
             // 기본 목소리 받기 진행은 **헤더 옆**에 둔다(2026-09-17 지시, iOS 와 같은 자리).
             // 받는 동안 알람 설정이 막히므로(`AlarmTalkApp.whenDefaultVoicesReady`) 그 이유가
@@ -2152,10 +2098,8 @@ internal fun VoiceProfileManagementPanel(
                 VoiceCatalogGroup(
                     systemVoices.map { profile ->
                         {
-                            // 부가설명은 두지 않는다 — 섹션 이름이 이미 '기본 목소리'라고 말한다.
                             VoiceCatalogRow(
                                 name = com.alarmtalk.app.data.systemVoiceDisplayName(context, profile.id, profile.name),
-                                subtitle = null,
                                 isPlaying = playingGreetingVoiceId == profile.id,
                                 onPreview = { playGreeting(profile) },
                             )
@@ -2236,8 +2180,6 @@ internal fun VoiceProfileManagementPanel(
         // 하한(12초) 미만이면 "다음" 으로 넘어가지 못하게 막는다. 녹음은 selectedAudio 길이,
         // 파일은 실제 업로드되는 crop 구간 길이로 판정한다. 짝이 되는 서버 게이트는 이 화면이
         // 부르는 POST /voice/clone 의 **MIN_CLONE_DURATION_MS**(voice-profile.ts, 12초)다.
-        // voice-upload.ts 의 MIN_UPLOAD_DURATION_MS(60초)와 헷갈리지 말 것 — 그쪽은 가족 알람
-        // 음성 메시지를 올리는 POST /voice/upload 전용이고 값도 다르다.
         val canSubmitRecord = inputMode == VoiceCaptureMode.Record &&
             (selectedAudio?.durationMillis ?: 0L) >= VoiceProfileAudioLimits.MIN_DURATION_MILLIS
         val canSubmitSingleFile = inputMode == VoiceCaptureMode.File &&
@@ -2329,7 +2271,7 @@ internal fun VoiceProfileManagementPanel(
                         LocalConfiguration.current.screenHeightDp >= 560
                     val contentScrollState = rememberScrollState()
                     // 방금 이 창 안에 쓴 거절 문구가 화면에 들어오게 본문을 끝까지 내린다. 문구 줄은 본문의
-                    // 아래쪽에 있다(세부 정보 단계는 맨 아래, 확정 화면은 공유 설정 바로 위) — 글자를 키운
+                    // 아래쪽에 있다(세부 정보 단계는 맨 아래, 확정 화면은 교체 줄 바로 아래) — 글자를 키운
                     // 기기에서는 접힌 부분 아래로 밀려, 쓰고도 안 보일 수 있다. 본문이 화면에 다 들어오면
                     // 아무 일도 하지 않는다.
                     LaunchedEffect(registrationFailureTick) {
@@ -2591,8 +2533,7 @@ internal fun VoiceProfileManagementPanel(
                                 val previewVoice = confirmNewVoice
                                 if (previewVoice != null) {
                                     // 확정 화면은 위에서부터 제목 · 안내 한 문장 · 문구 카드 · 톤 카드 · (교체면)
-                                    // 교체 한 줄이다(2026-10-08 사용자 — 스펙 voice-and-message §4-1). 공유 설정은
-                                    // 그 아래다.
+                                    // 교체 한 줄이다(2026-10-08 사용자 — 스펙 voice-and-message §4-1).
                                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                         Text(
                                             text = stringResource(R.string.voices_confirm_new_title),
@@ -2740,41 +2681,14 @@ internal fun VoiceProfileManagementPanel(
                                         )
                                     }
 
-                                    // 이 화면의 오류(재생·청취 확인·문구 저장 실패)는 여기 — 교체 줄 바로 아래, 공유 설정
-                                    // 위에 오류 색으로 둔다(iOS `VoicePreviewConfirmView` 와 같은 자리·색). 다른 단계처럼
-                                    // 본문 맨 아래에 흐린 글자로 두면 공유 설정 아래로 밀려 눈에 띄지 않는다.
+                                    // 이 화면의 오류(재생·청취 확인·문구 저장 실패)는 여기 — 교체 줄 바로 아래에 오류 색으로
+                                    // 둔다(iOS `VoicePreviewConfirmView` 와 같은 자리·색). 다른 단계처럼 본문 맨 아래에 흐린
+                                    // 글자로 두면 눈에 띄지 않는다.
                                     localMessage?.let { message ->
                                         Text(
                                             text = message,
                                             style = MaterialTheme.typography.bodySmall,
                                             color = MaterialTheme.colorScheme.error,
-                                        )
-                                    }
-
-                                    // ⚠ **공유 설정은 여기(확정 단계)에 둔다**(2026-08-13 지시).
-                                    // 앞 단계에서 물으면 아직 **초안**일 뿐인 것에 공유 여부를
-                                    // 정하게 된다 — '다시 만들기' 로 버리면 그 답도 함께 사라진다.
-                                    // 실제 등록은 이 화면의 '저장하기' 이므로, 남과 나눠 쓸지도
-                                    // 여기서 정하는 것이 맞다.
-                                    // ⚠ **공유할 수 없는 등급에는 이 칸을 아예 두지 않는다**
-                                    // (2026-09-17 지시). 개인 이용권은 혼자 쓰는 등급이라 공유가
-                                    // 성립하지 않는다 — 꺼진 스위치와 "커플/가족에서 쓸 수 있어요"
-                                    // 안내를 등록 화면에 깔아 두면, 만들기 흐름 한복판에서 못 쓰는
-                                    // 기능부터 읽게 된다. iOS `VoicePreviewConfirmView` 와 같다.
-                                    if (canShareVoice) {
-                                        Text(
-                                            text = stringResource(R.string.voices_step_sharing),
-                                            style = MaterialTheme.typography.titleSmall,
-                                            fontWeight = FontWeight.SemiBold,
-                                            modifier = Modifier.padding(top = 4.dp),
-                                        )
-                                        ShareVoiceToggleCard(
-                                            // 서버 일이 도는 동안은 잠근다(잠금표) — 등록 확정에는 이 값이 실려 나간다.
-                                            enabled = !confirmLocks.working,
-                                            checked = shareVoice,
-                                            title = stringResource(R.string.voices_sharing_shared_title),
-                                            description = stringResource(R.string.voices_sharing_shared_desc_enabled),
-                                            onCheckedChange = { shareVoice = it },
                                         )
                                     }
                                 }
@@ -2915,7 +2829,6 @@ internal fun VoiceProfileManagementPanel(
                                                 // 이미 등록된 목소리가 있으면 이 저장은 **언제나 교체**다 — 체크가 없다
                                                 // (2026-10-08 사용자, 화면에는 교체 한 줄이 보인다). 없으면 보내지 않는다.
                                                 replaceTargetVoice != null,
-                                                shareVoice && canShareVoice,
                                                 pitch,
                                             )
                                         }

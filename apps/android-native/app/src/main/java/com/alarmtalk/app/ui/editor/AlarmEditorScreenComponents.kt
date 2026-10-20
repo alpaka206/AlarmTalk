@@ -9,26 +9,14 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
-import com.alarmtalk.app.data.AlarmTimeCalculator
-import com.alarmtalk.app.network.FamilyAlarmQuietWindow
-import com.alarmtalk.app.network.FamilyGroupMember
-import com.alarmtalk.app.network.FamilyVoiceProfile
 import com.alarmtalk.app.network.VoiceProfile
-import java.time.Instant
-import java.time.LocalTime
-import java.time.ZoneId
 
 
 internal fun resolveListenerTitle(
     profileId: String,
     voiceProfiles: List<VoiceProfile>,
-    familyVoices: List<FamilyVoiceProfile>,
-): String? {
-    val own = voiceProfiles.firstOrNull { it.id == profileId }?.listenerTitle
-    if (!own.isNullOrBlank()) return own
-    val shared = familyVoices.firstOrNull { it.id == profileId }?.listenerTitle
-    return shared?.takeIf { it.isNotBlank() }
-}
+): String? =
+    voiceProfiles.firstOrNull { it.id == profileId }?.listenerTitle?.takeIf { it.isNotBlank() }
 
 // 편집기 섹션 헤더 단일 출처. 예전 titleMedium/Bold 는 카드 안 행 제목(titleMedium/SemiBold)과
 // 크기가 같아 섹션 경계가 안 읽혔다 — 그룹 리스트 헤더 관례대로 한 단계 조용하게
@@ -44,48 +32,6 @@ internal fun EditorSectionTitle(title: String, modifier: Modifier = Modifier) {
     )
 }
 
-/**
- * 상대 알람의 **최소 예약 여유**.
- *
- * ⚠ 예전 값은 30분이었는데, 그건 **푸시가 없고 15분 주기 폴링으로만** 받은 알람을
- * 가져오던 시절의 값이다(주기 워커 `RemoteAlarmSyncScheduler.ensurePeriodic` 15분의
- * 두 배 = 한 번 놓쳐도 받는다). 지금은 `family_alarm` 푸시가 즉시 pull 을 돌리므로
- * (`AlarmTalkMessagingService` → `RemoteAlarmSyncScheduler.runOnce`) 그 근거가 사라졌다.
- *
- * ⚠ **0 으로 두지는 않는다.** 푸시는 즉시지만 보장은 아니다 — 수신 기기가 오프라인이거나
- * Doze 면 pull 이 늦고, 그 사이 알람 시각이 지나면 **울리지 않은 채 지나간다**(보낸 사람은
- * 보냈다고 믿는다). 전달 + 음원 바인딩에 필요한 최소 여유만 남긴다.
- */
-internal const val FAMILY_ALARM_MIN_LEAD_MILLIS = 5 * 60 * 1_000L
-private const val FAMILY_ALARM_REQUEST_MARGIN_MILLIS = 60_000L
-private const val MILLIS_PER_MINUTE = 60_000L
-
-/** 분 단위 선택기에서 실제로 고를 수 있고, 서버 왕복 중에도 5분 하한을 지키는 첫 시각. */
-internal fun earliestSelectableFamilyAlarmMillis(nowMillis: Long = System.currentTimeMillis()): Long {
-    val threshold = nowMillis + FAMILY_ALARM_MIN_LEAD_MILLIS
-    val roundedUp = ((threshold + MILLIS_PER_MINUTE - 1) / MILLIS_PER_MINUTE) * MILLIS_PER_MINUTE
-    return roundedUp + FAMILY_ALARM_REQUEST_MARGIN_MILLIS
-}
-
-// 가족 알람은 수신자가 준비할 여유가 필요해 다음 울림까지 최소 리드타임을 요구한다
-// saveEditor()와 단위 테스트가 함께 쓰는 단일 판정 출처.
-internal fun isFamilyAlarmLeadTooSoon(
-    hour: Int,
-    minute: Int,
-    repeatDaysMask: Int,
-    holidayOff: Boolean,
-    nowMillis: Long = System.currentTimeMillis(),
-): Boolean {
-    val fireAtMillis = AlarmTimeCalculator.nextFireAtMillis(
-        hour = hour,
-        minute = minute,
-        repeatDaysMask = repeatDaysMask,
-        holidayOff = holidayOff,
-        nowMillis = nowMillis,
-    )
-    return fireAtMillis - nowMillis < FAMILY_ALARM_MIN_LEAD_MILLIS
-}
-
 internal fun ringtoneTitle(context: Context, uri: Uri): String =
     runCatching {
         RingtoneManager.getRingtone(context, uri)?.getTitle(context)
@@ -97,134 +43,4 @@ internal fun isDefaultAlarmSoundUri(uri: Uri): Boolean {
         RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM),
         Settings.System.DEFAULT_ALARM_ALERT_URI,
     ).any { defaultUri -> defaultUri != null && uriText == defaultUri.toString() }
-}
-
-/**
- * 존칭을 붙여 문장에 넣을 멤버의 **이름**. 없으면 null — 그 문장은 '상대' 로 말한다.
- *
- * ⚠ 이메일로 채우지 않는다. 보낸 사람은 방금 그 멤버를 골랐으니 이름이 없을 때 이메일까지
- * 문장에 넣을 이유가 없고, 「user@example.com님에게…」가 된다. 행·버튼처럼 누구인지 가려야
- * 하는 자리는 [familyMemberLabel] 이 이메일과 대체 이름까지 쓴다.
- */
-internal fun familyMemberNameOrNull(member: FamilyGroupMember): String? =
-    member.name?.trim()?.takeIf { it.isNotBlank() }
-
-internal fun familyMemberLabel(context: Context, member: FamilyGroupMember): String =
-    member.name?.takeIf { it.isNotBlank() }
-        ?: member.email?.takeIf { it.isNotBlank() }
-        ?: context.getString(R.string.editor2_family_member_fallback)
-
-internal fun familyAlarmQuietScheduleLabel(context: Context, member: FamilyGroupMember): String {
-    val windows = familyAlarmQuietWindows(member)
-    if (windows.isEmpty()) return ""
-    // '누구를 깨울까요' 시트·수신자 카드 행에 들어가므로 1개만 노출하고 나머지는 '외 N개'로 축약해
-    // 행 라벨이 길어지지 않게 한다(설정 화면 quietScheduleLabel과 동일 정책).
-    val first = windows.first().let { "${quietDaysLabelForFamily(context, it.days)} ${it.start}-${it.end}" }
-    val hidden = windows.size - 1
-    return if (hidden > 0) context.getString(R.string.misc2_quiet_more, first, hidden) else first
-}
-
-internal fun isFamilyAlarmTimeUnavailable(
-    member: FamilyGroupMember,
-    hour: Int,
-    minute: Int,
-    repeatDaysMask: Int,
-    nowMillis: Long = System.currentTimeMillis(),
-): Boolean {
-    val dayIndices = familyAlarmTargetDayIndices(hour, minute, repeatDaysMask, nowMillis)
-    return familyAlarmQuietWindows(member).any { window ->
-        dayIndices.any { dayIndex -> window.blocks(dayIndex, hour, minute) }
-    }
-}
-
-internal fun familyAlarmQuietWindows(member: FamilyGroupMember): List<FamilyAlarmQuietWindow> {
-    val fallback = FamilyAlarmQuietWindow(
-        days = safeQuietDays(member.familyAlarmQuietDays),
-        start = safeQuietTime(member.familyAlarmQuietStart, "09:00"),
-        end = safeQuietTime(member.familyAlarmQuietEnd, "18:30"),
-    )
-    return member.familyAlarmQuietWindows
-        ?.mapNotNull { window ->
-            val start = safeQuietTime(window.start, "")
-            val end = safeQuietTime(window.end, "")
-            if (start.isBlank() || end.isBlank()) {
-                null
-            } else {
-                FamilyAlarmQuietWindow(
-                    days = safeQuietDays(window.days),
-                    start = start,
-                    end = end,
-                )
-            }
-        }
-        ?.takeIf { it.isNotEmpty() }
-        ?: listOf(fallback)
-}
-
-internal fun familyAlarmTargetDayIndices(
-    hour: Int,
-    minute: Int,
-    repeatDaysMask: Int,
-    nowMillis: Long,
-): List<Int> {
-    if (repeatDaysMask != 0) {
-        return (0..6).filter { dayIndex -> repeatDaysMask and (1 shl dayIndex) != 0 }
-    }
-    val nextFireDate = Instant.ofEpochMilli(
-        AlarmTimeCalculator.nextFireAtMillis(
-            hour = hour,
-            minute = minute,
-            repeatDaysMask = 0,
-            nowMillis = nowMillis,
-        ),
-    ).atZone(ZoneId.systemDefault()).toLocalDate()
-    return listOf(nextFireDate.dayOfWeek.value % 7)
-}
-
-internal fun FamilyAlarmQuietWindow.blocks(dayIndex: Int, hour: Int, minute: Int): Boolean {
-    if (dayIndex !in safeQuietDays(days)) return false
-    val startTime = parseQuietTime(start) ?: return false
-    val endTime = parseQuietTime(end) ?: return false
-    val target = LocalTime.of(hour, minute)
-    return if (startTime <= endTime) {
-        !target.isBefore(startTime) && target.isBefore(endTime)
-    } else {
-        !target.isBefore(startTime) || target.isBefore(endTime)
-    }
-}
-
-internal fun parseQuietTime(value: String): LocalTime? =
-    runCatching { LocalTime.parse(value) }.getOrNull()
-
-internal fun safeQuietDays(days: List<Int>?): List<Int> =
-    days
-        ?.filter { it in 0..6 }
-        ?.distinct()
-        ?.sorted()
-        ?.takeIf { it.isNotEmpty() }
-        ?: listOf(1, 2, 3, 4, 5)
-
-internal fun safeQuietTime(value: String?, fallback: String): String =
-    value?.takeIf { it.isNotBlank() } ?: fallback
-
-internal fun quietDaysLabelForFamily(context: Context, days: List<Int>): String {
-    val sorted = days.distinct().sorted()
-    return when (sorted) {
-        emptyList<Int>() -> context.getString(R.string.editor2_quiet_days_none)
-        listOf(1, 2, 3, 4, 5) -> context.getString(R.string.editor2_quiet_days_weekdays)
-        listOf(0, 6) -> context.getString(R.string.editor2_quiet_days_weekend)
-        listOf(0, 1, 2, 3, 4, 5, 6) -> context.getString(R.string.editor2_quiet_days_everyday)
-        else -> {
-            val weekdayResIds = listOf(
-                R.string.editor2_weekday_sun,
-                R.string.editor2_weekday_mon,
-                R.string.editor2_weekday_tue,
-                R.string.editor2_weekday_wed,
-                R.string.editor2_weekday_thu,
-                R.string.editor2_weekday_fri,
-                R.string.editor2_weekday_sat,
-            )
-            sorted.joinToString(",") { context.getString(weekdayResIds[it]) }
-        }
-    }
 }

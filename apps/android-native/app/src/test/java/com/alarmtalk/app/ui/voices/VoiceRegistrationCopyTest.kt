@@ -25,7 +25,7 @@ import java.io.File
  * iOS 는 `VoicePreviewConfirmView` 와 `Localizable.xcstrings` 가 같은 문구를 쓴다 — 한쪽만 바꾸면
  * 두 앱이 다른 말을 한다.
  *
- * 리소스를 런타임으로 해석하지 않고 **소스 XML 을 읽는다**(`ShareCodeTextTest` 와 같은 형태) —
+ * 리소스를 런타임으로 해석하지 않고 **소스 XML 을 읽는다**(`ui/billing/PlanCardCopyTest` 와 같은 형태) —
  * 로케일마다 설정을 바꿔 가며 띄울 필요 없이 세 벌을 한 번에 본다.
  */
 class VoiceRegistrationCopyTest {

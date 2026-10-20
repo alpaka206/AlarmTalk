@@ -12,12 +12,12 @@ import org.json.JSONObject
  * 사용자가 흔하다. 만료된 채 열면 조용히 로그아웃돼 있고, 그게 알람 목록·재예약의 소유자
  * 게이트에 걸려 **알람이 사라지고 울리지도 않는** 상태가 된다.
  *
- * 그래서 이미 15분마다 도는 [com.alarmtalk.app.sync.RemoteAlarmSyncWorker] 가 만료가
+ * 그래서 15분마다 계정을 확인하는 [com.alarmtalk.app.sync.RemoteAlarmSyncWorker] 가 만료가
  * 가까울 때 갱신을 대신 해 준다. 기기가 **1년에 한 번이라도 네트워크에 붙으면** 세션은
  * 끊기지 않는다.
  *
- * ⚠ **매 회차 갱신하지 말 것.** 15분마다 `/auth/me` 를 때리면 기기당 하루 96회다.
- * 남은 수명이 [RENEW_WHEN_REMAINING_MILLIS] 아래일 때만 부른다 — 정상 사용에서는
+ * ⚠ **매 회차 갈아 끼우지 말 것.** 워커는 확인하느라 회차마다 `/auth/me` 를 부르지만, 받은 새 토큰으로
+ * 세션을 다시 쓰는 것은 남은 수명이 [RENEW_WHEN_REMAINING_MILLIS] 아래일 때뿐이다 — 정상 사용에서는
  * 대략 9개월에 한 번이고, 앱을 열어 온 사용자에게는 아예 안 걸린다.
  *
  * iOS 대응: `AlarmTalk/SessionTokenRenewal.swift` — **한쪽만 고치지 말 것.**

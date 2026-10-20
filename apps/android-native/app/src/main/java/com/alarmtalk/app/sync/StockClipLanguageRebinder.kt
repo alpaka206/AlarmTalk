@@ -58,7 +58,7 @@ object StockClipLanguageRebinder {
         expectedVariants: ExpectedVariantCounts? = null,
         /** `GET /tts/stock-clips` 의 `legacy_bucket_hints` — messageId → 테마. */
         legacyHints: Map<String, String> = emptyMap(),
-        /** 받는 사람의 지역·사주. 조건형 버킷을 묶을 때 **빈 자리에만** 채운다. */
+        /** 이 기기 사용자의 지역·사주. 조건형 버킷을 묶을 때 **빈 자리에만** 채운다. */
         conditionInputs: com.alarmtalk.app.data.DynamicPromptPreferences? = null,
         /** 지금 로그인한 계정. 남의 알람을 건드리지 않기 위해 반드시 넘긴다. */
         callerUserId: String? = null,
@@ -103,7 +103,7 @@ object StockClipLanguageRebinder {
             val wrote = alarmMutationLock.withLock {
             val applied = applyClipFields(alarmDao, alarm, bound) ?: return@withLock false
             // ⚠ **조건을 여기서 채운다.** 스케줄러를 부르는 것만으로는 안 된다 —
-            //   그 워커가 읽는 것이 이 필드들이고, 받은 알람은 전부 비어 있다.
+            //   그 워커가 읽는 것이 이 필드들이고, 조건 없이 저장된 행은 비어 있다.
             val next = withRecipientConditions(applied, bucket, conditionInputs)
                 .copy(bucketId = bucket)
             // ⚠ **서버에도 올려야 끝난다**(2026-09-03 리뷰 6차).
@@ -114,7 +114,7 @@ object StockClipLanguageRebinder {
             //   **은퇴한 프리셋을 계속 가리킨 채로** 남는다.
             //   고쳐야 하는 이유는 그대로다: 로컬만 갈아 끼우고 `SYNCED` 를 두면 업로드
             //   대상(`AlarmSyncService` 의 LOCAL_ONLY·DIRTY·FAILED)에 안 들어가 **영영 안
-            //   올라간다.** 방금 물린 새 버킷·클립 키도, 바로 위에서 채운 수신자 조건도
+            //   올라간다.** 방금 물린 새 버킷·클립 키도, 바로 위에서 채운 조건도
             //   서버에 없으니 다른 기기와 재설치는 옛 바인딩을 그대로 받아 **기기마다 이
             //   갈아 끼우기를 다시** 해야 하고, 그때까지 그 알람은 옛 목소리로 운다.
             //   iOS 는 upsert 헬퍼가 이미 이걸 한다.
@@ -388,19 +388,18 @@ object StockClipLanguageRebinder {
         if (alarm.voiceSource == VoiceSources.LOCAL_AUDIO) return false
         val bound = decodeBucketClipKeys(alarm.bucketClipKeysJson)
         // ⚠ **조건형 버킷(날씨·운세)을 비켜 가지 않는다**(2026-09-03 사용자 지시).
-        //   12·13차에는 여기서 그냥 건너뛰었다 — 받은 알람에는 `contextVariantIndex` 도
+        //   12·13차에는 여기서 그냥 건너뛰었다 — 조건 없이 저장된 행에는 `contextVariantIndex` 도
         //   사주도 없어서, 값 없이 전체 세트를 묶으면 날씨가 마지막 '못 알아봤어요' 클립으로
         //   떨어졌기 때문이다. 그런데 그러면 그 알람은 **영원히 옛 대사**로 남는다.
-        //   조건은 **받는 사람 자신의 설정으로 채울 수 있다** — 지역도 사주도 이 기기에
+        //   조건은 **이 기기 사용자의 설정으로 채울 수 있다** — 지역도 사주도 이 기기에
         //   있다. 그래서 갈아탄 뒤 `DynamicVoiceRefreshScheduler` 로 조건을 즉시 해석한다
         //   (편집기 저장 경로가 하는 것과 같다). 운세는 발사 때 사주+날짜로 로컬에서 고르므로
         //   따로 할 일이 없다.
         // ① 앱 언어가 바뀌었다 — 이 함수의 원래 목적.
         if ((alarm.voiceLanguage ?: "ko") != language) return true
-        // ③ **테마는 아는데 클립 목록이 없는 알람**(2026-09-03 리뷰 11차).
-        //    받은 가족 알람이 그렇다 — 동기가 `bucketId` 와 대표 클립 하나만 적고
-        //    `bucketClipKeysJson` 은 비운다(`RemoteAlarmPullSyncService`). 목록이 비어
-        //    있어 ②에도 안 걸리므로, 그 대표 클립이 매니페스트에서 사라졌는지로 판정한다.
+        // ③ **테마는 아는데 클립 목록이 없는 알람**(2026-09-03 리뷰 11차) — `bucketId` 와 대표
+        //    클립 하나만 적힌 행이다. 목록이 비어 있어 ②에도 안 걸리므로, 그 대표 클립이
+        //    매니페스트에서 사라졌는지로 판정한다.
         if (bound.isEmpty()) {
             val messageId = alarm.ttsMessageId?.trim()?.takeIf { it.isNotEmpty() } ?: return false
             return "stock_$messageId" !in liveKeys
@@ -426,10 +425,10 @@ object StockClipLanguageRebinder {
      */
 
     /**
-     * **조건형 버킷에 받는 사람의 조건을 채운다**(2026-09-03 리뷰 15차).
+     * **조건형 버킷에 이 기기 사용자의 조건을 채운다**(2026-09-03 리뷰 15차).
      *
-     * 받은 가족 알람은 `voiceWeatherCountry`·`voiceWeatherCity` 와 사주 필드가 **전부
-     * 비어 있다** — 보낸 사람의 지역·사주를 받지 않기 때문이다. 그 상태로 세트만 묶으면
+     * 조건 없이 저장된 행은 `voiceWeatherCountry`·`voiceWeatherCity` 와 사주 필드가 **전부
+     * 비어 있다**. 그 상태로 세트만 묶으면
      * 날씨 조회가 서버 기본값(서울)으로 떨어지고 운세는 **빈 프로필을 해시**한다.
      * 스케줄러를 부르는 것만으로는 안 된다 — 그 워커가 읽는 것이 바로 이 필드들이다.
      *

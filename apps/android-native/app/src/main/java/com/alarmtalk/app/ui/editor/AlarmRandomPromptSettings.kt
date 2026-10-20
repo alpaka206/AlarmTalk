@@ -94,7 +94,6 @@ internal fun RandomPromptSettingsPane(
     savedFortuneBirthDate: String,
     savedFortuneBirthTime: String,
     savedFortuneConfigured: Boolean,
-    usingTargetDynamicPromptSettings: Boolean,
     fortuneGender: String,
     fortuneBirthDate: String,
     fortuneBirthTime: String,
@@ -227,9 +226,6 @@ internal fun RandomPromptSettingsPane(
     // 셈이라 더 나쁘다. 대신 **미완성 종류는 애초에 선택되지 않는다**(위 `selectContext` 의
     // `contextBeforeDialog` 주석). 그래서 이 시점의 값은 언제나 완성돼 있고, 편집기가
     // 하단 바에서 "…채워 주세요" 로 뒤늦게 막을 일도 없다.
-    //
-    // 예외는 **가족 알람**이다: 수신자가 제 설정을 갖고 있으면 내 칸이 비어 있어도 완성이라
-    // (`hasWeatherInfo`/`hasFortuneInfo` 의 `saved*Configured` 갈래) 그대로 반영한다.
     BackHandler(onBack = ::saveResolvedSettings)
 
     var handledSelectManualRequest by remember { mutableStateOf(selectManualRequest) }
@@ -333,8 +329,6 @@ internal fun RandomPromptSettingsPane(
                                 // 값만 보여준다 — "…날씨를 사용해요." 로 감싸면 상세 카드가
                                 // 값이 아니라 문장이 된다(iOS 는 "서울" 하나만 보여준다).
                                 weatherDisplay.label
-                            usingTargetDynamicPromptSettings && savedWeatherConfigured ->
-                                stringResource(R.string.editorp_random_weather_region_saved)
                             else -> stringResource(R.string.editorp_random_weather_region_required)
                         },
                         // 목록에 없는 옛 글자(직접 입력 시절) — 글자는 그대로 두고 다시 고르라고만 한다.
@@ -358,8 +352,6 @@ internal fun RandomPromptSettingsPane(
                                 draftFortuneBirthDate.isNotBlank() &&
                                 draftFortuneBirthTime.isNotBlank() ->
                                 fortuneInfoSummary(fortuneValueLabel(context, draftFortuneGender), draftFortuneBirthDate, fortuneValueLabel(context, draftFortuneBirthTime))
-                            usingTargetDynamicPromptSettings && savedFortuneConfigured ->
-                                stringResource(R.string.editorp_random_fortune_saved)
                             else -> stringResource(R.string.editorp_random_fortune_required)
                         },
                     )

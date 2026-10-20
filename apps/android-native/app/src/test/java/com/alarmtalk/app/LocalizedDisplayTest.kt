@@ -4,7 +4,6 @@ import android.content.Context
 import android.content.res.Configuration
 import androidx.test.core.app.ApplicationProvider
 import com.alarmtalk.app.data.SYSTEM_VOICE_ID_PREFIX
-import com.alarmtalk.app.data.receivedRemoteAlarmLabel
 import com.alarmtalk.app.data.systemVoiceDisplayName
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -48,16 +47,5 @@ class LocalizedDisplayTest {
         }
         assertEquals("남성", FortuneGenderMale)
         assertEquals("시간 모름", FortuneBirthTimeUnknown)
-    }
-
-    @Test
-    fun `받은 알람 이름의 일본어 존칭은 한 번만 붙인다`() {
-        val japanese = context("ja")
-        assertEquals("田中さんから届いたアラーム", receivedRemoteAlarmLabel(japanese, "田中"))
-        assertEquals("田中さんから届いたアラーム", receivedRemoteAlarmLabel(japanese, "田中さん"))
-        assertEquals("민수님から届いたアラーム", receivedRemoteAlarmLabel(japanese, "민수님"))
-        assertEquals("相手から届いたアラーム", receivedRemoteAlarmLabel(japanese, null))
-        assertEquals("Alarm from Tanaka", receivedRemoteAlarmLabel(context("en"), "Tanaka"))
-        assertEquals("민수님이 보낸 알람", receivedRemoteAlarmLabel(context("ko"), "민수님"))
     }
 }

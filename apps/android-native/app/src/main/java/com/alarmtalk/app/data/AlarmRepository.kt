@@ -98,16 +98,13 @@ class AlarmRepository(
      * (내일)으로 재계산해 덮는다.** 5분 뒤 울려야 할 알람이 사라지고, 화면상으로는 내일로
      * 정상 예약돼 있어 사용자는 알 방법이 없다.
      *
-     * 이 락은 이 클래스 밖으로도 나간다 — [RemoteAlarmPullSyncService] 가 받아서 자기
-     * **로컬 변경 구간만** 잡는다. 서버 pull 은 알람을 끄고 지우고 시각을 옮기므로, 따로 놀면
-     * 복원이 방금 취소된 알람의 옛 예약을 되심는다(Codex #666 P1). 그쪽은 네트워크(목록 조회·
-     * 음성 다운로드)를 락 밖에 두므로 이 락이 오래 잡히지 않는다.
+     * 이 락은 이 클래스 밖으로도 나간다 — 백그라운드 재바인딩([alarmMutationLock])이 받아서 자기
+     * **로컬 변경 구간만** 잡는다.
      *
      * Kotlin [Mutex] 는 재진입이 안 된다 — 위 함수들끼리 서로를 부르지 않는지 확인하고
      * 추가할 것. (지금은 공개 강등 진입점이 전부 공통 private 인
      * [degradeMatchingLocalOwnedVoiceAlarms] 한 곳으로만 들어가므로
-     * 이중 획득이 없다. [pullReceivedAlarms] 도 이 락을 잡은 채로 불리지 않는다 — 잠금 순서는
-     * 항상 pullMutex → restoreMutex 한 방향이라 순환이 없다.)
+     * 이중 획득이 없다.)
      */
     private val restoreMutex = Mutex()
 
@@ -116,28 +113,16 @@ class AlarmRepository(
      *
      * 워커가 "읽고 → 고치고 → 통째로 되쓰기" 를 하는 동안 사용자가 저장하면, 워커의
      * 재조회는 그 창을 **좁힐 뿐 닫지 못한다**(같은 이유가 [setEnabled] 주석에 있다).
-     * `RemoteAlarmPullSyncService` 가 이미 이 락을 받아 쓴다 — 저장소 밖의 쓰기 경로는
+     * `StockClipLanguageRebinder` 가 이 락을 받아 쓴다 — 저장소 밖의 쓰기 경로는
      * 전부 이 락을 지나야 한다.
      */
     internal val alarmMutationLock: Mutex get() = restoreMutex
 
     private val alarmSyncService = AlarmSyncService(alarmDao)
-    private val remoteAlarmPullSyncService = RemoteAlarmPullSyncService(
-        alarmDao = alarmDao,
-        alarmScheduler = alarmScheduler,
-        alarmAudioStore = alarmAudioStore,
-        context = context,
-        // 받은 알람에 수신자(현재 로그인 계정)를 소유자로 기록해 무료 잠금/복원을 스코프한다.
-        currentUserIdProvider = currentUserIdProvider,
-        // pull 의 로컬 변경 구간도 같은 락으로 묶는다 — 서버가 취소한 알람을 정합성 복원이
-        // 되심는 것을 막는다([restoreMutex], Codex #666 P1).
-        alarmMutationLock = restoreMutex,
-    )
 
     /**
      * 이 계정에 보여줄 알람만 흘린다. 같은 기기에 다른 계정이 로그인하면 앞 계정 알람이
-     * 목록에 그대로 남던 문제를 막는다(RemoteAlarmPullSyncService 가 '받은 알람'에 쓰는
-     * 소유자 스코프와 같은 규칙). 소유자 미기록(레거시 null)은 현재 계정 것으로 본다 —
+     * 목록에 그대로 남던 문제를 막는다. 소유자 미기록(레거시 null)은 현재 계정 것으로 본다 —
      * 세션이 끝날 때 떠나는 계정을 새기므로(명시 로그아웃은 detachAlarmsOnSignOut, 자동
      * 401 은 claimUnownedAlarmsFor) 다른 계정이 물려받을 null 이 새로 생기지 않는다.
      *
@@ -198,7 +183,6 @@ class AlarmRepository(
             ttsMessageId = null,
             remoteAlarmId = null,
             lastSyncedAtMillis = null,
-            remoteDeliveryVersion = null,
             syncState = AlarmSyncStates.LOCAL_ONLY,
             origin = AlarmOrigins.LOCAL_OWNED,
             ownerUserId = currentUserIdProvider(),
@@ -219,9 +203,9 @@ class AlarmRepository(
     }
 
     /**
-     * 복원·정합성 워커, 그리고 **받은 알람 pull** 과 직렬화한다([restoreMutex]).
-     * pull 은 '행 다시 읽기 → 재구성 → upsert + OS 재예약' 을 한 덩어리로 도는데, 저장이 그
-     * 사이에 끼면 pull 이 방금 저장한 값을 옛 스냅샷으로 덮어쓴다(Codex #675 P1).
+     * 복원·정합성 워커와 직렬화한다([restoreMutex]). 그쪽은 '행 다시 읽기 → 재구성 → upsert +
+     * OS 재예약' 을 한 덩어리로 도는데, 저장이 그 사이에 끼면 방금 저장한 값을 옛 스냅샷으로
+     * 덮어쓴다(Codex #675 P1).
      */
     suspend fun createAlarm(draft: AlarmDraft, replaceExisting: Boolean = false): AlarmEntity = restoreMutex.withLock {
         validateDraft(draft)
@@ -286,7 +270,6 @@ class AlarmRepository(
             syncState = AlarmSyncStates.LOCAL_ONLY,
             origin = AlarmOrigins.LOCAL_OWNED,
             ownerUserId = currentUserIdProvider(),
-            remoteDeliveryVersion = null,
             alarmVolumePercent = draft.alarmVolumePercent,
             alarmSoundUri = draft.alarmSoundUri,
             alarmSoundLabel = draft.alarmSoundLabel,
@@ -309,7 +292,7 @@ class AlarmRepository(
         alarm
     }
 
-    /** 저장 경로를 pull·복원과 직렬화한다 — 이유는 [createAlarm] 주석과 같다(Codex #675 P1). */
+    /** 저장 경로를 복원과 직렬화한다 — 이유는 [createAlarm] 주석과 같다(Codex #675 P1). */
     suspend fun updateAlarm(
         alarmId: String,
         draft: AlarmDraft,
@@ -615,10 +598,8 @@ class AlarmRepository(
     /**
      * 로그아웃 시 이 기기의 알람을 '떠나는 계정의 것'으로 못 박고 예약을 전부 내린다.
      *
-     * 지우지는 않는다 — **알람의 원본은 기기(Room)다.** 서버는 백업이 아니라 남에게
-     * 보내는 알람의 **전달 수단**일 뿐이고(전달이 끝나면 그 행마저 지운다 —
-     * `docs/spec/family-alarm.md` 1-2), 내 알람을 서버에서 다시 받아오는 경로는 아예
-     * 없다. 그러니 여기서 지우면 같은 계정으로 다시 로그인해도 되살아나지 않는다.
+     * 지우지는 않는다 — **알람의 원본은 기기(Room)다.** 내 알람을 서버에서 다시 받아오는
+     * 경로는 아예 없다. 그러니 여기서 지우면 같은 계정으로 다시 로그인해도 되살아나지 않는다.
      *
      * 대신 (1) 소유자 미기록(레거시 null) 행에 떠나는 계정을 새겨 다음 로그인 계정이
      * 자기 것으로 오인하지 않게 하고, (2) OS 예약을 전부 취소해 남의 알람이 울리지
@@ -879,11 +860,11 @@ class AlarmRepository(
     }
 
     /**
-     * 접근권을 잃은 음성 프로필(공유 해제·제공자 취소·본인 삭제)을 참조하는 '내 소유(LOCAL_OWNED)'
+     * 접근권을 잃은 음성 프로필(제공자 취소·본인 삭제)을 참조하는 '내 소유(LOCAL_OWNED)'
      * 음성 알람을 **기본 목소리(미나)** 로 바꾼다(`lostVoiceReplacedByDefault` — 알람음으로 내리지 않는다).
-     * [accessibleVoiceIds] 는 방금 '신선하게' 로드한 내 프로필 +
-     * 가족 공유 프로필 id 집합이어야 한다 — 부분/실패 로드로 호출하면 정상 알람을 오강등할 수 있으므로
-     * 호출부(refreshSocial 신선 성공)에서 가드한다. 버킷 회전·녹음(LOCAL_AUDIO)·수신 알람은 대상이 아니다.
+     * [accessibleVoiceIds] 는 방금 '신선하게' 로드한 내 프로필 id 집합이어야 한다 — 부분/실패
+     * 로드로 호출하면 정상 알람을 오강등할 수 있으므로 호출부(목록 신선 로드 성공)에서 가드한다.
+     * 녹음(LOCAL_AUDIO)은 대상이 아니다.
      * 대상은 **지금 계정 소유** 알람으로 한정된다(같은 기기에 남아 있는 앞 계정 알람은 건드리지 않는다).
      * 반환값은 강등된 알람 수.
      *
@@ -899,12 +880,38 @@ class AlarmRepository(
         degradeMatchingLocalOwnedVoiceAlarms(expectedOwnerUserId) { alarm ->
             !alarm.voiceProfileId.isNullOrBlank() &&
                 // 시스템 스톡 버킷/보이스는 영구라 보존. 클론(비-system) 보이스는 단일클립·버킷 모두
-                // 접근권 상실(공유해제·제공자취소·삭제) 시 강등 대상.
+                // 접근권 상실(제공자취소·삭제) 시 강등 대상.
                 !isSystemVoiceId(alarm.voiceProfileId) &&
                 alarm.voiceProfileId !in accessibleVoiceIds
         }
 
-    // 방금 삭제한 특정 목소리를 쓰는 내 알람만 즉시 강등한다 — 소셜 목록 신선도(reconcile 가드)와
+    /**
+     * 받았던 알람(`FormerReceivedAlarmStore`) 한 건을 2단계 판정대로 내 목소리로 올리거나 그대로 둔다.
+     * 판정은 락 안에서 **행을 다시 읽어** 한다 — 그 사이 사용자가 고쳤으면 손대지 않는다
+     * ([keepsReceivedConversionShape]). 시각은 그대로라 OS 예약은 다시 걸지 않는다(울릴 때 행을 읽는다).
+     * 규칙: `docs/spec/billing-lifecycle.md` 「목소리를 못 쓰게 되면」.
+     *
+     * @param expectedOwnerUserId 판정 재료(목소리 목록·이용권)를 가져온 계정. 지금 계정이 아니면 [FormerReceivedPromotion.Retry].
+     */
+    internal suspend fun settleFormerReceivedAlarm(
+        alarmId: String,
+        expectedOwnerUserId: String,
+        decide: (AlarmEntity?) -> FormerReceivedPromotion,
+    ): FormerReceivedPromotion = restoreMutex.withLock {
+        if (currentUserIdProvider() != expectedOwnerUserId) return FormerReceivedPromotion.Retry
+        val current = alarmDao.getById(alarmId)
+        if (current != null && current.ownerUserId != expectedOwnerUserId) return FormerReceivedPromotion.UserChanged
+        val decision = decide(current)
+        if (decision is FormerReceivedPromotion.Promote && current != null) {
+            alarmDao.upsertPreservingServerSyncFields(
+                current.promotedToCloneGreeting(decision.greeting, System.currentTimeMillis()),
+            )
+            Log.i(TAG, "Promoted a former received alarm to the own voice id=$alarmId voice=${decision.greeting.voiceProfileId}")
+        }
+        decision
+    }
+
+    // 방금 삭제한 특정 목소리를 쓰는 내 알람만 즉시 강등한다 — 목록 신선도(reconcile 가드)와
     // 무관하게 삭제 확정 정보로 바로 기본 목소리(미나) 알람으로 바꾼다.
     suspend fun degradeAlarmsUsingVoiceProfile(voiceProfileId: String): Int =
         degradeMatchingLocalOwnedVoiceAlarms(expectedOwnerUserId = null) { alarm ->
@@ -998,7 +1005,7 @@ class AlarmRepository(
         //
         // 로컬 알람은 로그아웃해도 남으므로(원본이 기기다), 앞 계정 A 의 알람이 Room 에 그대로
         // 있는 채로 계정 B 가 로그인한다. B 의 접근 가능 목소리 목록에 A 의 프로필이 없는 건
-        // 당연한데, 소유자를 안 보면 B 가 도는 refreshSocial·주기 워커가 그걸 '접근권 상실'로
+        // 당연한데, 소유자를 안 보면 B 가 도는 목록 새로고침·주기 워커가 그걸 '접근권 상실'로
         // 읽어 A 의 알람에서 목소리를 영구히 벗긴다. VoiceAccessSyncWorker 의 토큰 재확인은
         // 요청 중의 계정 전환만 잡지, 이미 앞 계정 것인 행은 못 지킨다(Codex #646 P1).
         val ownershipSettled = settlePendingAlarmOwnership()
@@ -1015,7 +1022,7 @@ class AlarmRepository(
             return 0
         }
         // 무료 잠금으로 기본 목소리가 된 행은 지금 목소리가 기본 목소리라 아래 대조에 안 걸린다.
-        // 대신 **보관본의 원래 목소리**가 대상이면(보관 기간이 지나 지워짐·공유 해제 등) 잠금을
+        // 대신 **보관본의 원래 목소리**가 대상이면(보관 기간이 지나 지워짐 등) 잠금을
         // **확정**한다 — 보관본과 표시를 버리고 지금의 기본 목소리 알람으로 남긴다(미나로 바꾸지도
         // 않는다 — 이미 기본 목소리로 울고 있다). 소리가 바뀌지 않았으니 강등 개수에도 넣지 않는다.
         // 안 그러면 재결제 때 복원이 지워진 목소리를 되살려, 다음 강등이 그 알람을 또 바꾼다.
@@ -1209,32 +1216,7 @@ class AlarmRepository(
             if (!usesVoice || judged.usesFreeSystemVoiceAlarm()) {
                 // 옛 규칙(직접 녹음 = 유료)으로 이미 잠긴 행은 여기서 **되돌린다.**
                 // 그냥 건너뛰면 잠긴 채 남는데, 이제 잠글 축이 사라졌으니 풀어 줄 다른
-                // 경로가 없다. 아래 '옛 버그로 잠긴 받은 알람' 과 같은 모양이다.
-                if (alarm.preLockPlayMode != null) {
-                    val unlocked = alarm.copy(
-                        playMode = alarm.preLockPlayMode,
-                        preLockPlayMode = null,
-                        updatedAtMillis = now,
-                    )
-                    if (unlocked.enabled) alarmScheduler.schedule(unlocked)
-                    alarmDao.upsertPreservingServerSyncFields(unlocked)
-                }
-                return@forEach
-            }
-            // ⚠ **받은 알람은 '받는 사람 플랜' 으로 다스리지 않는다 — 축이 다르다.**
-            // 받은 알람의 목소리는 **접근권**(공유가 살아 있는가)이 정한다. 공유가 끊기면
-            // 서버가 직접 걷어내고(`paid-voice-cleanup.ts` 가 `is_received` 까지
-            // sound-only 로 UPDATE) 그 결과가 pull sync 로 내려온다.
-            //
-            // 여기서 플랜으로 한 번 더 잠그면 **결제 보류(유예) 중에 오발한다** —
-            // `resolvePlanAfterSuspend` 는 그룹·공유를 살려 둔 채 `users.plan` 만 회수하므로,
-            // 카드가 잠깐 실패한 사이 파트너가 보낸 알람의 목소리가 잠긴다. 게다가
-            // `unlockPaidAlarmTalks` 는 **받는 사람이 유료가 될 때만** 돌아서, 결제가
-            // 복구돼도 그룹에서 나간 뒤라면 `preLockPlayMode` 가 영구히 남는다.
-            // iOS 는 `LocalAlarmStore.paidAlarmTalks` 의 `.localOwned` 로 처음부터 제외한다.
-            if (alarm.origin != AlarmOrigins.LOCAL_OWNED) {
-                // 옛 버그로 이미 잠긴 받은 알람은 여기서 **되돌린다.** 그냥 건너뛰면
-                // 잠긴 채로 남는데, 플랜 축이 사라졌으니 풀어 줄 다른 경로가 없다.
+                // 경로가 없다.
                 if (alarm.preLockPlayMode != null) {
                     val unlocked = alarm.copy(
                         playMode = alarm.preLockPlayMode,
@@ -1421,8 +1403,7 @@ class AlarmRepository(
             if (current.snoozeMinutes == minutes) return
             // ⚠ **`syncState` 를 함께 올린다**(코덱스 #729). 컬럼만 고치고 `SYNCED` 를 두면
             //   `AlarmSyncService` 의 업로드 대상(LOCAL_ONLY·DIRTY·FAILED)에 안 들어가
-            //   울림 화면에서 고른 간격이 **서버에 영영 안 올라간다.** 받은 알람은
-            //   `nextLocalSyncState` 가 알아서 SYNCED 로 남긴다(서버 행은 전달 수단일 뿐).
+            //   울림 화면에서 고른 간격이 **서버에 영영 안 올라간다.**
             // ⚠ **전체 행 upsert 로 쓰지 말 것**(코덱스 #729 2차). 읽어 둔 스냅샷을 통째로
             //   되쓰면, 그 사이 동기화가 새로 받은 `remoteAlarmId` 를 **옛 값으로 덮는다** —
             //   다음 동기화가 서버에 알람을 하나 더 만든다. 건드릴 컬럼만 UPDATE 한다.
@@ -1727,7 +1708,7 @@ class AlarmRepository(
             // ⚠ **달력만 바뀐 경우([refreshHolidayOffAlarms])에는 미래의 '공휴일엔 끄기' 반복 알람만** 본다
             // (Codex #837). 나머지를 일반 복원처럼 돌리면 달력과 무관한 알람까지 손댄다 — 지난 일회성은
             // `FAILED` 로 꺼지고(API 31·32 비정확 폴백이면 아직 배달 대기 중일 수 있다), 지난 반복은
-            // `updatedAtMillis` 가 올라 받은 가족 알람이 '수신자가 고쳤다' 로 읽힌다. 지난 행·스누즈는
+            // 사용자의 편집이 아닌데 `updatedAtMillis` 가 오른다. 지난 행·스누즈는
             // 원래 그 일을 맡는 길목(앱 시작·부팅·정합성 워커의 [reschedulePendingAlarms])에 맡긴다 —
             // 그쪽도 지금 달력으로 계산한다.
             if (recomputeHolidayOff && !recomputeFireTime && !alarm.isFutureHolidayOffRecurrence(now)) {
@@ -1778,8 +1759,8 @@ class AlarmRepository(
                             isHoliday = holidayPredicate,
                         )
                         // 바뀐 게 없으면 쓰지 않는다(멱등). 바뀌었어도 `updatedAtMillis` 는 그대로
-                        // 둔다 — 사용자의 편집이 아니다. 올리면 받은 가족 알람이 '수신자가 고쳤다'
-                        // (`locallyEditedByRecipient`)로 읽혀, 다시 보낸 알람이 더는 덮지 못한다.
+                        // 둔다 — 사용자의 편집이 아니다. 올리면 동기화의 낙관적 동시성
+                        // (`expectedUpdatedAtMillis`)이 사용자 편집으로 오인한다.
                         // 쓰기는 서버 발급 필드를 지키는 쪽으로 한다 — 동기화(`syncWithBackend`)는
                         // 이 락을 잡지 않아 그 사이 `remoteAlarmId` 를 새겼을 수 있다.
                         if (nextFireAt == alarm.fireAtMillis && alarm.state == AlarmStates.SCHEDULED) {
@@ -1860,12 +1841,6 @@ class AlarmRepository(
             adoptOwnerlessAlarms = ownershipSettled,
         )
     }
-
-    suspend fun pullReceivedAlarms(
-        api: AlarmTalkApi,
-        token: String,
-    ): RemoteAlarmPullResult =
-        remoteAlarmPullSyncService.pullReceivedAlarms(api, token)
 
     /**
      * 사전렌더 '날씨' 버킷 알람의 조건 인덱스를 서버로 resolve 해 contextVariantIndex 를 갱신한다.

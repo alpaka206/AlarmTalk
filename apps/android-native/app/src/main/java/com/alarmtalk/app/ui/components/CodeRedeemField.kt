@@ -1,36 +1,8 @@
 package com.alarmtalk.app
 
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.size
-import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.unit.dp
+// 사용자 입력 정리 함수 모음(앱 1차 방어선 — CLAUDE.md 「입력 규칙은 한 곳에서만」). 파일 이름은 옛 코드
+// 입력칸에서 왔고, 문서·iOS 미러 주석이 이 경로를 대므로 그대로 둔다.
 
-/**
- * 초대 코드 입력 필드 — 커플·가족 이용권의 초대 코드(INV-)를 받는다. 형식 검사는 서버
- * (POST /code/register)가 하므로 클라는 형식을 가리지 않는다. 입력은 대문자로 자동 변환한다 —
- * 서버가 코드를 대문자로 맞춰 찾으므로 사용자 입력 편의만 올라간다.
- *
- * 프로모 코드(자유 문자열)는 2026-10-12 에(App Store 3.1.1), 이용권 선물 코드(GIFT-)는 2026-10-14 에
- * (같은 지침의 두 번째 반려 — "선물 코드로 디지털 기능을 연다") 없앴다. 서버가 INV- 가 아니면 조회 없이
- * `CODE_NOT_FOUND` 로 거절하니 화면에서도 말하지 않는다. `_` 허용은 프로모 시절의 것이다(걸러도 얻는
- * 것이 없어 그대로 둔다).
- * ⚠ **선물·프로모 문구를 되살리지 말 것.** 할인·무료 이용은 스토어 오퍼 코드로 준다.
- */
 /**
  * 어떤 입력에도 들어와선 안 되는 문자를 걷는다 — **모든 사용자 입력의 1차 방어선**.
  *
@@ -108,21 +80,6 @@ internal fun sanitizeDisplayName(raw: String, maxLength: Int = Int.MAX_VALUE): S
         .trimStart()
         .takeWithoutSplittingPairs(maxLength)
 
-/**
- * 초대 코드(`INV-XXXX-XXXX-XXXX`). **영문 대문자·숫자·`-`·`_` 만 남긴다.** 선물·프로모 코드는
- * 없앴지만(위 [CodeRedeemField] 머리말) 거르는 규칙은 그 시절 그대로다 — 좁히려면 iOS 와 함께 고친다.
- *
- * ⚠ **`isLetterOrDigit()` 하나로 거르지 말 것.** 한글도 letter 라서 그대로 통과한다 —
- * 코드에는 한글이 쓰이지 않는데 입력은 되니, 사용자는 다 치고 나서야 "잘못된 코드" 를
- * 본다(2026-08-13 지시). 아예 안 들어가게 막는다. iOS `sanitizeRedeemCode` 와 같은 규칙.
- */
-internal fun sanitizeRedeemCode(raw: String): String = raw
-    .uppercase()
-    .filter { (it.code < 128 && it.isLetterOrDigit()) || it == '-' || it == '_' }
-    // 64자는 프로모 코드(2026-10-12 폐지)의 상한이던 값이다 — 32자 잘림으로 긴 코드가 실패하던 문제.
-    // 초대 코드는 18자라 넉넉하다. iOS `sanitizeRedeemCode` 의 `prefix(64)` 와 같은 값으로 둔다.
-    .take(64)
-
 /** 이메일 인증 코드의 자릿수. 서버(`@alarmtalk/shared` 의 `EmailVerificationCodeSchema`)와 같은 값이다. */
 internal const val VerificationCodeLength = 6
 
@@ -147,58 +104,5 @@ internal fun sanitizeVerificationCode(raw: String): String = buildString(Verific
         index += Character.charCount(codePoint)
         val digit = Character.digit(codePoint, 10)
         if (digit >= 0) append('0' + digit)
-    }
-}
-
-@Composable
-internal fun CodeRedeemField(
-    busy: Boolean,
-    onSubmit: (String) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    var code by remember { mutableStateOf("") }
-    Row(
-        modifier = modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        // ⚠ **M3 `OutlinedTextField` 로 되돌리지 말 것.** 그건 최소 높이가 56이라 옆
-        // 버튼과 높이를 맞출 수 없다(2026-08-17: 버튼을 56으로 키우자 "버튼이 너무 크다,
-        // 입력칸을 줄여라"). 알럿에서 쓰던 컴팩트 필드를 모서리만 바꿔 재사용한다.
-        IosAlertField(
-            value = code,
-            onValueChange = { code = sanitizeRedeemCode(it) },
-            placeholder = stringResource(R.string.code_redeem_placeholder),
-            enabled = !busy,
-            minHeight = WakerControlHeight,
-            shape = WakerInputShape,
-            modifier = Modifier.weight(1f),
-        )
-        Button(
-            onClick = {
-                // 제출했다고 입력을 비우지 않는다 — 실패했을 때 길게 친 코드가 사라지면
-                // 처음부터 다시 타이핑해야 한다. 성공하면 화면 자체가 닫히거나 홈으로
-                // 이동해 이 필드가 컴포지션에서 빠지므로 남은 텍스트는 문제되지 않는다.
-                code.trim().takeIf { it.isNotBlank() }?.let(onSubmit)
-            },
-            enabled = code.isNotBlank() && !busy,
-            colors = wakerButtonColors(),
-            shape = WakerButtonShape,
-            // 입력칸과 **같은 높이·같은 최소 폭**이다(`WakerControlHeight`/`MinWidth`).
-            // iOS 도 같은 값을 쓴다 — 한쪽만 바꾸면 두 앱의 버튼 크기가 갈라진다.
-            modifier = Modifier
-                .height(WakerControlHeight)
-                .widthIn(min = WakerControlMinWidth),
-        ) {
-            if (busy) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(16.dp),
-                    strokeWidth = 2.dp,
-                    color = MaterialTheme.colorScheme.onPrimary,
-                )
-            } else {
-                Text(stringResource(R.string.code_redeem_submit))
-            }
-        }
     }
 }

@@ -11,37 +11,11 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import com.alarmtalk.app.MainActivity
 import com.alarmtalk.app.R
-import com.alarmtalk.app.data.honoredPersonName
 
+/** 알람 밖의 계정 알림(결제 실패 안내). 채널은 `NotificationChannels.SOCIAL_CHANNEL_ID` — 서버가 그 id 로 보낸다. */
 object SocialNotificationFactory {
-    private const val ALARM_GROUP_ID = "voice_alarm_received_alarms"
-    private const val BASE_ALARM_NOTIFICATION_ID = 3_000
-
-    fun notifyReceivedAlarm(context: Context, alarmId: String, senderName: String?, time: String) {
-        val body = time
-            .takeIf { it.isNotBlank() }
-            ?.let { context.getString(R.string.r3misc_notif_received_alarm_time, it) }
-            ?: context.getString(R.string.r3misc_notif_received_alarm_default)
-        notify(
-            context = context,
-            notificationId = BASE_ALARM_NOTIFICATION_ID + stableOffset(alarmId),
-            title = receivedAlarmNotificationTitle(context, senderName),
-            body = body,
-            groupId = ALARM_GROUP_ID,
-        )
-    }
-
     /**
-     * 받은 알람 알림의 제목. 명사형 라벨('~님이 보낸 알람') 대신 문장형 — 리스트 라벨과 용도가 다르다.
-     * 존칭은 [honoredPersonName] 한 곳에서 붙인다(이름이 さん 으로 끝나도 한 번).
-     */
-    internal fun receivedAlarmNotificationTitle(context: Context, senderName: String?): String =
-        senderName?.trim()?.takeIf { it.isNotBlank() }
-            ?.let { context.getString(R.string.r3misc_notif_received_alarm_sent, honoredPersonName(context, it)) }
-            ?: context.getString(R.string.r3misc_notif_received_alarm_sent_other)
-
-    /**
-     * 공유 이용권 결제 실패 안내.
+     * 이용권 결제 실패 안내(`billing_hold`).
      *
      * ⚠ **포그라운드에서도 보여야 한다.** 서버가 `notification` 블록을 실어 보내므로
      * 앱이 백그라운드일 때는 시스템이 알아서 띄우지만, **포그라운드에서는 `onMessageReceived`
@@ -111,7 +85,4 @@ object SocialNotificationFactory {
             },
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
-
-    private fun stableOffset(value: String): Int =
-        (value.hashCode() and Int.MAX_VALUE) % 900
 }

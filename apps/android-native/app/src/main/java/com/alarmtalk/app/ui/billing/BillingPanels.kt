@@ -33,71 +33,54 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.alarmtalk.app.billing.PlayBillingProducts
 import com.alarmtalk.app.network.BillingSubscriptionResponse
 import com.alarmtalk.app.network.BillingSubscription
-import com.alarmtalk.app.network.FamilyGroupCurrentResponse
 import com.alarmtalk.app.network.PersonalPromo
-import com.alarmtalk.app.network.VoucherItem
-import kotlinx.coroutines.launch
 
 @Composable
 internal fun SubscriptionPanel(
     billingBusy: Boolean,
     subscriptionResponse: BillingSubscriptionResponse?,
-    familyGroup: FamilyGroupCurrentResponse?,
-    vouchers: List<VoucherItem>,
     /// planKey → **Play 가 준 표시가격**(`formattedPrice`, 지역 통화·세금 포함).
     ///
     /// 스토어 값이 권위이며, 아직 못 받았을 때만 백엔드의 한국 가격표와 같은 폴백을 쓴다.
     planPrices: Map<String, String>,
     onPurchasePlay: (Activity, String) -> Unit,
     onCancelSubscription: (Boolean) -> Unit,
-    onLeaveFamilyGroup: (String) -> Unit,
-    onRefreshShareCodeData: suspend () -> List<VoucherItem>,
     onRestorePurchases: () -> Unit,
     /**
      * 지금 살아 있는 기간 한정 개인 플랜 — 계정 응답과 구독 응답 중 **나중에 받은 답**의 것
      * (`planScreenPersonalPromoOf`). 날짜는 서버 `ends_at − 1초` 의 기기 날짜다.
      *
      * 어디에 보이는지는 [planScreenCurrentOf] 가 정한다: 프로모만 쓰는 계정은 **개인 카드가
-     * '현재 이용권'** 이고 문구는 그 카드의 상태 한 줄이다. 산 이용권·공유 멤버·보류 행이 있는
-     * 계정은 예전처럼 카드 목록 위의 한 줄이다.
+     * '현재 이용권'** 이고 문구는 그 카드의 상태 한 줄이다. 산 이용권·보류 행이 있는 계정은
+     * 예전처럼 카드 목록 위의 한 줄이다.
      *
      * ⚠ **구독처럼 그리지 말 것.** 서버가 구독 객체를 만들지 않으므로(`subscription` 은 null)
-     * 해지 버튼·결제 알럿의 전환 문구·버튼 라벨은 산 이용권으로만 가른다 — 원시 plan 은 여전히
-     * 무료이고, 개인 결제도 그대로 열려 있다(개인 카드의 결제 버튼이 남는다).
+     * 해지 버튼은 산 이용권으로만 가른다 — 원시 plan 은 여전히 무료이고, 개인 결제도 그대로
+     * 열려 있다(개인 카드의 결제 버튼이 남는다).
      */
     personalPromo: PersonalPromo? = null,
 ) {
     var purchaseTarget by remember { mutableStateOf<SubscriptionPlanOption?>(null) }
     var showCancelDialog by remember { mutableStateOf(false) }
-    var showLeaveDialog by remember { mutableStateOf(false) }
-    var shareTarget by remember { mutableStateOf<List<VoucherItem>>(emptyList()) }
-    var shareBusy by remember { mutableStateOf(false) }
     val subscription = subscriptionResponse?.subscription
     val currentPlan = subscriptionResponse?.plan
     val nextPlan = subscriptionResponse?.nextPlan
     val hasActive = subscription != null && currentPlan != null
     val cancelScheduled = subscription?.cancelAtPeriodEnd == true
-    val isSharedMember = familyGroup?.role == "member" && familyGroup.group != null
-    val sharedGroupId = familyGroup?.group?.id
     val context = LocalContext.current
-    val clipboard = LocalClipboardManager.current
-    val scope = rememberCoroutineScope()
     val options = listOf(
-        // 감성 설명문 없이 핵심 혜택만 짧게 — 목소리 개수·인원처럼 판단에 필요한 사실 위주로 적는다.
+        // 감성 설명문 없이 핵심 혜택만 짧게 — 판단에 필요한 사실 위주로 적는다.
         // ⚠ 무료에도 있는 것을 유료 혜택처럼 적지 말 것. 날씨·운세 문구는 기본 목소리로 무료다
         // (docs/spec/voice-and-message.md §2) — 개인 카드가 파는 것은 그 문구를 **등록한 목소리로** 듣는 것이다.
         SubscriptionPlanOption(
@@ -118,55 +101,7 @@ internal fun SubscriptionPanel(
                 stringResource(R.string.billing_plan_personal_feature_messages_in_voice),
             ),
         ),
-        SubscriptionPlanOption(
-            key = "couple",
-            name = stringResource(R.string.billing_plan_couple_name),
-            price = planPriceLabel(context, planPrices, "couple"),
-            features = listOf(
-                stringResource(R.string.billing_plan_feature_includes_personal),
-                stringResource(R.string.billing_plan_couple_feature_voice_share),
-                stringResource(R.string.billing_plan_couple_feature_message),
-                stringResource(R.string.billing_plan_couple_feature_max_two),
-            ),
-        ),
-        SubscriptionPlanOption(
-            key = "family",
-            name = stringResource(R.string.billing_plan_family_name),
-            price = planPriceLabel(context, planPrices, "family"),
-            features = listOf(
-                stringResource(R.string.billing_plan_feature_includes_personal),
-                stringResource(R.string.billing_plan_family_feature_voice_share),
-                stringResource(R.string.billing_plan_family_feature_message),
-                stringResource(R.string.billing_plan_family_feature_max_five),
-            ),
-        ),
     )
-    fun shareVoucher(voucher: VoucherItem) {
-        clipboard.setText(AnnotatedString(voucher.code))
-        // 공유하는 코드는 초대 코드(INV-)뿐이다 — 고르는 목록이 이미 그것만 남긴다(`shareableVouchersForPlan`).
-        context.shareRedeemCode(voucher.code)
-    }
-    fun openVoucherShare(vouchersForPlan: List<VoucherItem>) {
-        if (vouchersForPlan.isNotEmpty()) {
-            shareTarget = vouchersForPlan
-        }
-    }
-    fun refreshAndOpenVoucherShare(planKey: String) {
-        if (shareBusy) return
-        scope.launch {
-            shareBusy = true
-            try {
-                val refreshedVouchers = runCatching {
-                    onRefreshShareCodeData()
-                }.getOrElse {
-                    vouchers
-                }
-                openVoucherShare(shareableVouchersForPlan(refreshedVouchers, planKey))
-            } finally {
-                shareBusy = false
-            }
-        }
-    }
 
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -180,15 +115,14 @@ internal fun SubscriptionPanel(
             stringResource(R.string.personal_promo_plan_line, formatPersonalPromoDay(lastDay, locale))
         }
         // '현재 이용권' 카드와 프로모 문구의 자리 — 규칙은 [planScreenCurrentOf] 한 곳이다(스펙 D4).
-        // ⚠ 산 이용권(`currentPlan`·`hasActive`)은 그대로 둔다 — 결제 알럿의 전환 문구·버튼 라벨·
-        //   해지 버튼은 그 값으로만 가른다. 프로모는 산 이용권이 아니다.
+        // ⚠ 산 이용권(`currentPlan`·`hasActive`)은 그대로 둔다 — 해지 버튼은 그 값으로만 가른다.
+        //   프로모는 산 이용권이 아니다.
         val planScreen = planScreenCurrentOf(
             purchasedPlanKey = currentPlan?.key,
-            isSharedMember = isSharedMember,
             promoActive = promoLineText != null,
             hasHeldSubscriptionRow = personalPromo?.deletesVoicesAtEnd == false,
         )
-        // 산 이용권·공유 멤버·보류 행이 있는 계정은 예전처럼 카드 위 한 줄이다. 프로모만 쓰는
+        // 산 이용권·보류 행이 있는 계정은 예전처럼 카드 위 한 줄이다. 프로모만 쓰는
         // 계정은 이 줄 대신 개인 카드의 상태 문구로 말한다 — 같은 말을 두 번 하지 않는다.
         // 글자 결은 현재 카드의 상태 문구(`currentStatusText`)와 같다 — 같은 종류의 정보다.
         if (planScreen.promoLineAboveList && promoLineText != null) {
@@ -203,14 +137,10 @@ internal fun SubscriptionPanel(
         // 별도 '현재 이용권' 요약 카드 대신, 플랜 리스트의 현재 플랜 카드에 만료일 상태를 인라인으로 보여준다.
         val statusContext = LocalContext.current
         val currentExpiresAt = formatPass(subscription?.expiresAt, PassDateFormatter)
-        val sharedMemberExpiresAt = formatPass(familyGroup?.group?.expiresAt, PassDateFormatter)
         val currentStatusText = when {
             // 프로모만 쓰는 계정 — 개인 카드가 현재이고, 그 카드의 상태 문구가 프로모 한 줄이다
-            // (카드 위 한 줄은 그리지 않는다). 공유 멤버·산 이용권이 있으면 이 갈래에 오지 않는다.
+            // (카드 위 한 줄은 그리지 않는다). 산 이용권이 있으면 이 갈래에 오지 않는다.
             planScreen.promoOnPersonalCard -> promoLineText
-            isSharedMember && sharedMemberExpiresAt != null ->
-                stringResource(R.string.billing_status_shared_member_until, sharedMemberExpiresAt)
-            isSharedMember -> stringResource(R.string.billing_status_shared_member)
             cancelScheduled && nextPlan != null -> {
                 val nextName = passPlanName(statusContext, nextPlan.key, nextPlan.name)
                 if (currentExpiresAt != null) {
@@ -234,29 +164,18 @@ internal fun SubscriptionPanel(
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             options.forEach { option ->
                 val isCurrent = planScreen.isCurrent(option.key)
-                val vouchersForPlan = shareableVouchersForPlan(vouchers, option.key)
                 SubscriptionPlanCard(
                     option = option,
                     isCurrent = isCurrent,
                     showsPurchase = planScreen.showsPurchase(option.key),
-                    sharesVouchers = planScreen.sharesVouchers(option.key),
                     currentStatusText = currentStatusText.takeIf { isCurrent },
-                    hasActiveSubscription = hasActive,
-                    busy = billingBusy || shareBusy,
-                    vouchers = vouchersForPlan,
+                    busy = billingBusy,
                     onPurchase = { purchaseTarget = option },
-                    onShareVouchers = { refreshAndOpenVoucherShare(option.key) },
                 )
             }
         }
 
-        // ⚠ **개인 카드의 '선물하기'(개인 이용권 1개월을 사서 GIFT- 코드로 주기)는 2026-10-14 에
-        // 지웠다 — 되살리지 말 것.** iOS 1.2.12 가 App Store 지침 3.1.1 로 두 번째 반려됐다("선물 코드로
-        // 디지털 기능을 연다"). 그 버튼을 받던 카드의 부가 액션 자리(`extraAction`)도 함께 뺐다.
-        // 할인·무료 이용은 스토어 오퍼 코드(App Store 오퍼 코드 · Play 프로모션 코드)로 준다.
-
-        // 초대 코드 등록은 더보기의 '초대 코드 등록' 화면(`FamilyConnectionPanel`)에서만 받는다 — 이용권
-        // 화면에 입력칸을 두지 않는다.
+        // ⚠ 코드를 쳐서 유료 기능을 여는 길(선물·코드 입력·코드 공유)을 되살리지 말 것 — 지침 3.1.1, `docs/spec/plan-gates.md`.
 
         // **이전 구매 복원 — 항상 보인다.** 이용권이 있든 없든 필요하다: 기기를 바꾸거나
         // 다른 경로로 로그인해 서버에 결제 기록이 없을 때, 여기가 없으면 사용자가 할 수 있는
@@ -265,8 +184,8 @@ internal fun SubscriptionPanel(
         // ⚠ 폭은 다른 액션과 같은 `fillMaxWidth` 다 — 글자 폭에 맞춘 작은 버튼으로 두면
         // 결제 버튼들 사이에서 눌러야 할 것으로 보이지 않는다(2026-08-17 지시).
         //
-        // ⚠ **해지·나가기보다 위다**(2026-08-24 지시). 되돌릴 수 있는 액션(복원)을 위에,
-        // 되돌릴 수 없는 액션(해지·나가기)을 맨 아래에 둔다 — 실수로 누를 확률이 낮아지고,
+        // ⚠ **해지보다 위다**(2026-08-24 지시). 되돌릴 수 있는 액션(복원)을 위에,
+        // 되돌릴 수 없는 액션(해지)을 맨 아래에 둔다 — 실수로 누를 확률이 낮아지고,
         // 목록의 마지막이 가장 무거운 액션이라는 순서가 다른 화면과도 맞는다.
         OutlinedButton(
             onClick = onRestorePurchases,
@@ -289,18 +208,14 @@ internal fun SubscriptionPanel(
         }
         if (hasActive) {
             OutlinedButton(
-                onClick = {
-                    if (isSharedMember) showLeaveDialog = true else showCancelDialog = true
-                },
+                onClick = { showCancelDialog = true },
                 enabled = !billingBusy,
                 modifier = Modifier.fillMaxWidth(),
                 shape = WakerButtonShape,
                 border = wakerCardBorder(),
                 colors = wakerOutlinedButtonColors(),
             ) {
-                // 해지와 나가기는 **같은 글리프**를 쓴다(2026-08-24 지시). 둘 다 '이 이용권에서
-                // 빠져나간다' 는 같은 뜻이고, 한 자리에서 갈리는 if/else 라 아이콘까지 다르면
-                // 같은 버튼이 상태에 따라 다른 것으로 보인다.
+                // '이 이용권에서 빠져나간다' 는 뜻의 글리프(2026-08-24 지시).
                 Icon(
                     imageVector = Icons.AutoMirrored.Outlined.Logout,
                     contentDescription = null,
@@ -309,11 +224,7 @@ internal fun SubscriptionPanel(
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = if (isSharedMember) {
-                        stringResource(R.string.billing_leave_shared_pass)
-                    } else {
-                        stringResource(R.string.billing_cancel_pass)
-                    },
+                    text = stringResource(R.string.billing_cancel_pass),
                     color = MaterialTheme.colorScheme.error,
                 )
             }
@@ -328,10 +239,6 @@ internal fun SubscriptionPanel(
     purchaseTarget?.let { option ->
         PlayPurchaseDialog(
             target = option,
-            // 이미 이용권이 있으면 이건 '시작' 이 아니라 '전환' 이다.
-            // ⚠ **산 이용권으로만** 가른다 — `planScreen.isCurrent` 가 아니다. 프로모로 현재가 된
-            //   개인 카드를 사는 것은 신규 구매라 '이용권 변경'·'남은 기간 환산' 을 말하면 안 된다.
-            currentPlanKey = currentPlan?.key.takeIf { hasActive },
             busy = billingBusy,
             onDismiss = { purchaseTarget = null },
             onPurchase = {
@@ -355,64 +262,6 @@ internal fun SubscriptionPanel(
             },
         )
     }
-
-    if (showLeaveDialog && sharedGroupId != null) {
-        IosAlertDialog(
-            title = stringResource(R.string.billing_leave_shared_pass),
-            message = stringResource(R.string.billing_leave_shared_pass_description),
-            onDismiss = { showLeaveDialog = false },
-            actions = listOf(
-                IosAlertAction(
-                    label = stringResource(R.string.social_cancel_button),
-                    onClick = { showLeaveDialog = false },
-                ),
-                IosAlertAction(
-                    label = stringResource(R.string.billing_leave_button),
-                    destructive = true,
-                    onClick = {
-                        showLeaveDialog = false
-                        onLeaveFamilyGroup(sharedGroupId)
-                    },
-                ),
-            ),
-        )
-    }
-
-
-    if (shareTarget.isNotEmpty()) {
-        // ⚠ **이건 알럿이 아니라 목록이다** — 바우처 중 하나를 고르는 화면이라
-        // 선택 시트가 맞다(CLAUDE.md 「모달 세 형태」). 예전에는 결제 전용 사설
-        // 껍데기를 써서 같은 '고르기' 인데 공휴일·목소리 고르기와 다르게 보였다.
-        WakerSelectionSheet(
-            title = stringResource(R.string.billing_share_voucher_select_title),
-            subtitle = stringResource(R.string.billing_share_voucher_select_description),
-            onDismiss = { shareTarget = emptyList() },
-        ) { _ ->
-            Column(
-                modifier = Modifier.padding(horizontal = 20.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                shareTarget.forEach { voucher ->
-                    val issuedAtLabel = formatVoucherIssuedAt(voucher.issuedAt)
-                    val subtitle = if (issuedAtLabel != null) {
-                        stringResource(R.string.billing_voucher_unregistered_with_date, issuedAtLabel)
-                    } else {
-                        stringResource(R.string.billing_voucher_unregistered)
-                    }
-                    CompactActionRow(
-                        title = voucher.code,
-                        subtitle = subtitle,
-                        actionLabel = stringResource(R.string.billing_share_button),
-                        enabled = true,
-                        onAction = {
-                            shareTarget = emptyList()
-                            shareVoucher(voucher)
-                        },
-                    )
-                }
-            }
-        }
-    }
 }
 
 /**
@@ -422,53 +271,20 @@ internal fun SubscriptionPanel(
 @Composable
 private fun PlayPurchaseDialog(
     target: SubscriptionPlanOption,
-    /** 지금 쓰고 있는 유료 플랜 key. null 이면 신규 구매다. */
-    currentPlanKey: String?,
     busy: Boolean,
     onDismiss: () -> Unit,
     onPurchase: () -> Unit,
 ) {
-    // ⚠ **전환을 '시작' 이라고 말하지 말 것.** 카드 버튼은 '이용권 변경' 인데 모달은
-    // "…이용권을 시작할까요?" 였다(2026-08-11 실기기 확인). 게다가 **언제 바뀌는지**를
-    // 한마디도 안 했다 — 다운그레이드는 지금 과금되지 않고 다음 갱신일에 바뀌는데,
-    // 그걸 모르면 누르고 나서 "아무 일도 안 일어난다" 로 읽는다.
-    // 시점은 Play 가 정하므로 우리가 **고르게 하지는 않되, 알려는 준다**.
-    val isChange = currentPlanKey != null && currentPlanKey != target.key
-    val upgrade = isChange && PlayBillingProducts.isUpgrade(
-        PlayBillingProducts.productIdFor(currentPlanKey!!) ?: "",
-        PlayBillingProducts.productIdFor(target.key) ?: "",
-    )
-    // 정원이 줄면 사람이 빠진다 — 누르기 전에 말해야 되돌릴 기회가 있다.
-    val losesSeats = isChange && !upgrade && planSeats(target.key) < planSeats(currentPlanKey!!)
-
     IosAlertDialog(
-        title = if (isChange) {
-            stringResource(R.string.billing_play_change_title, target.name)
-        } else {
-            stringResource(R.string.billing_play_purchase_title, target.name)
-        },
+        title = stringResource(R.string.billing_play_purchase_title, target.name),
         // ⚠ 가격은 스토어가 권위라 **없을 수도 있다**(Play 조회 실패·미출시 상품).
         // 그때 가격 자리에 빈 문자열을 끼우면 "개인 이용권은 이에요." 가 된다 —
         // 숫자를 모를 땐 가격을 말하지 않는 문장을 쓴다. 실제 금액은 Play 결제
         // 시트가 어차피 다시 보여준다.
-        message = when {
-            isChange -> buildString {
-                append(
-                    stringResource(
-                        if (upgrade) R.string.billing_play_change_upgrade
-                        else R.string.billing_play_change_downgrade,
-                        target.name,
-                    ),
-                )
-                if (losesSeats) {
-                    append(" ")
-                    append(stringResource(R.string.billing_play_change_seats_warning))
-                }
-            }
-            target.price.isBlank() ->
-                stringResource(R.string.billing_play_purchase_description_no_price, target.name)
-            else ->
-                stringResource(R.string.billing_play_purchase_description, target.name, target.price)
+        message = if (target.price.isBlank()) {
+            stringResource(R.string.billing_play_purchase_description_no_price, target.name)
+        } else {
+            stringResource(R.string.billing_play_purchase_description, target.name, target.price)
         },
         onDismiss = onDismiss,
         actions = listOf(
@@ -493,7 +309,7 @@ private fun PlayPurchaseDialog(
  * iOS `PlanScreenCurrent.resolve`(`Views/Common/PlanTier.swift`)가 같은 입력에 같은 답을 낸다.
  */
 internal data class PlanScreenCurrent(
-    /** '현재 이용권' 뱃지·강조를 다는 카드의 key(`free`·`personal`·`couple`·`family`). */
+    /** '현재 이용권' 뱃지·강조를 다는 카드의 key(`free`·`personal`). */
     val currentKey: String,
     /**
      * 프로모가 이 계정의 **유일한** 이용권이라 개인 카드가 현재가 됐다 — 그 카드의 상태 문구가
@@ -502,7 +318,7 @@ internal data class PlanScreenCurrent(
     val promoOnPersonalCard: Boolean,
     /**
      * 프로모 한 줄을 카드 목록 **위에** 그린다 — 프로모가 있는데 개인 카드에 앉지 않는 계정
-     * (산 이용권·공유 멤버·보류 행). 예전 그대로다. [promoOnPersonalCard] 와 동시에 참이 되지 않는다.
+     * (산 이용권·보류 행). 예전 그대로다. [promoOnPersonalCard] 와 동시에 참이 되지 않는다.
      */
     val promoLineAboveList: Boolean,
 ) {
@@ -515,9 +331,6 @@ internal data class PlanScreenCurrent(
     fun showsPurchase(planKey: String): Boolean =
         planKey != FREE_PLAN_KEY && (!isCurrent(planKey) || promoOnPersonalCard)
 
-    /** 코드 공유 — **산** 현재 이용권 카드에서만(예전 그대로). 프로모 카드는 산 것이 아니다. */
-    fun sharesVouchers(planKey: String): Boolean = isCurrent(planKey) && !promoOnPersonalCard
-
     companion object {
         const val FREE_PLAN_KEY = "free"
         const val PERSONAL_PLAN_KEY = "personal"
@@ -528,15 +341,14 @@ internal data class PlanScreenCurrent(
  * 이용권 화면에서 어느 카드가 **'현재 이용권'** 인가, 기간 한정 개인 플랜 문구는 **어디에** 앉나.
  *
  * 프로모가 이 계정의 **유일한 이용권**일 때만 개인 카드가 현재가 된다 — 산 이용권이 없고
- * ([purchasedPlanKey] 가 없거나 free), 공유 멤버가 아니고, 보류 행도 없다. 그 밖(산 이용권·공유 멤버·
- * 보류 행·프로모 없음/끝남)은 예전 그대로다 — 현재 카드는 산 이용권, 프로모는 카드 위 한 줄.
+ * ([purchasedPlanKey] 가 없거나 free), 보류 행도 없다. 그 밖(산 이용권·보류 행·프로모 없음/끝남)은
+ * 예전 그대로다 — 현재 카드는 산 이용권, 프로모는 카드 위 한 줄.
  *
- * ⚠ **여기 답으로 결제·전환을 가르지 말 것.** 버튼 라벨('결제하기'/'이용권 변경')·결제 알럿의 전환·
- *   환산 문구·해지 버튼은 산 이용권(구독 응답)으로만 가른다 — 프로모는 산 이용권이 아니다.
+ * ⚠ **여기 답으로 해지를 가르지 말 것.** 해지 버튼은 산 이용권(구독 응답)으로만 가른다 — 프로모는
+ *   산 이용권이 아니다.
  *
  * @param purchasedPlanKey 산 이용권의 key — 구독 응답의 `plan.key`(없으면 null = 무료). 예전에 현재
  *   카드를 고르던 값 그대로다.
- * @param isSharedMember 가족·커플 그룹의 멤버(`familyGroup.role = member`, 그룹 있음).
  * @param promoActive 이용권 화면에 보일 프로모가 **지금** 살아 있다(`planScreenPersonalPromoOf` 가
  *   끝난 것을 이미 걸렀고, 마지막 날을 읽을 수 있다).
  * @param hasHeldSubscriptionRow 그 프로모의 `deletes_voices_at_end == false` — 원시 free 인데 `active`
@@ -545,30 +357,18 @@ internal data class PlanScreenCurrent(
  */
 internal fun planScreenCurrentOf(
     purchasedPlanKey: String?,
-    isSharedMember: Boolean,
     promoActive: Boolean,
     hasHeldSubscriptionRow: Boolean,
 ): PlanScreenCurrent {
     val purchasedKey = purchasedPlanKey ?: PlanScreenCurrent.FREE_PLAN_KEY
     val promoIsOnlyPlan = promoActive &&
         purchasedKey == PlanScreenCurrent.FREE_PLAN_KEY &&
-        !isSharedMember &&
         !hasHeldSubscriptionRow
     return PlanScreenCurrent(
         currentKey = if (promoIsOnlyPlan) PlanScreenCurrent.PERSONAL_PLAN_KEY else purchasedKey,
         promoOnPersonalCard = promoIsOnlyPlan,
         promoLineAboveList = promoActive && !promoIsOnlyPlan,
     )
-}
-
-/**
- * 그 플랜이 **함께 쓸 수 있는 인원**. 백엔드 `plans.max_members` 와 같은 값이다.
- * 정원이 줄어드는 전환인지 판단하는 데만 쓴다.
- */
-private fun planSeats(planKey: String): Int = when (planKey) {
-    "family" -> 5
-    "couple" -> 2
-    else -> 1
 }
 
 /** Compose Context 에서 결제 시트 호출에 필요한 Activity 를 찾는다. */
@@ -607,13 +407,8 @@ internal fun SubscriptionPlanCard(
      * 프로모로 현재가 된 개인 카드엔 있다 — [isCurrent] 로 대신하지 말 것.
      */
     showsPurchase: Boolean,
-    /** 코드 공유 버튼을 그리는가([PlanScreenCurrent.sharesVouchers]) — 산 현재 카드에서만. */
-    sharesVouchers: Boolean,
-    hasActiveSubscription: Boolean,
     busy: Boolean,
-    vouchers: List<VoucherItem>,
     onPurchase: () -> Unit,
-    onShareVouchers: () -> Unit,
     // 현재 플랜 카드에만 붙는 만료/전환 상태 한 줄 (예: "7월 20일까지 이용할 수 있어요").
     currentStatusText: String? = null,
 ) {
@@ -698,13 +493,7 @@ internal fun SubscriptionPlanCard(
                 }
             }
             // ⚠ **`BuildConfig.FLAVOR == "dev"` 게이트를 되살리지 말 것**(2026-08-11 제거).
-            // 그 게이트는 서버 주도 `/billing/change-plan`(스텁 결제 전용, 운영에서 항상 409)
-            // 때문에 있었다. 이제 전환은 **Play 결제 시트**가 처리하므로 운영에서도 동작한다 —
-            // 활성 구독이 있든 없든 같은 `onPurchase` 로 보낸다.
-            //
-            // 시점은 Play 가 정한다: 업그레이드는 즉시+비례정산, 다운그레이드는 다음 갱신일
-            // (`PlayBillingManager` 가 방향을 보고 교체 모드를 고른다). 그래서 우리가
-            // '지금/종료일' 을 묻는 모달을 두지 않는다 — `docs/spec/billing-lifecycle.md`.
+            // 결제는 **Play 결제 시트**가 처리하므로 운영에서도 동작한다.
             //
             // ⚠ **`!isCurrent` 로 되돌리지 말 것**(2026-09-29). 프로모만 쓰는 계정은 개인 카드가
             //   '현재' 인데 산 이용권이 아니라 결제 버튼이 남아야 한다 — 끝난 뒤 이어 쓰려면 사야
@@ -717,52 +506,12 @@ internal fun SubscriptionPlanCard(
                     modifier = Modifier.fillMaxWidth(),
                     shape = WakerButtonShape,
                 ) {
-                    Text(
-                        if (hasActiveSubscription) {
-                            stringResource(R.string.billing_change_pass)
-                        } else {
-                            stringResource(R.string.billing_select_button)
-                        },
-                    )
-                }
-            }
-            // 코드 공유는 **산** '현재 이용권' 카드에서만 — 해지/강등 후 옛 코드가 남아 있어도
-            // (서버가 만료 처리하지만 우회 데이터 방어) 무료 사용자에게 공유 버튼이 뜨지 않게.
-            // 프로모로 현재가 된 개인 카드는 산 이용권이 아니라 여기 들지 않는다([sharesVouchers]).
-            if (sharesVouchers && vouchers.isNotEmpty()) {
-                OutlinedButton(
-                    onClick = onShareVouchers,
-                    enabled = !busy,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = WakerButtonShape,
-                    border = wakerCardBorder(),
-                    colors = wakerOutlinedButtonColors(),
-                ) {
-                    Text(stringResource(R.string.billing_share_voucher_code))
+                    Text(stringResource(R.string.billing_select_button))
                 }
             }
         }
     }
 }
-
-/**
- * 그 카드에서 공유할 수 있는 코드 — **초대 코드(INV-)만**이다.
- *
- * ⚠ **선물 코드(GIFT-)를 다시 넣지 말 것**(2026-10-14). 선물은 App Store 지침 3.1.1 두 번째 반려로
- * 없앴고, 서버는 INV- 가 아니면 등록을 `CODE_NOT_FOUND` 로 거절한다 — 예전에 만든 선물 바우처가 목록에
- * 남아 있어도 보내 봐야 받는 사람이 쓸 수 없다. 구성원 관리 화면의 공유도 같은 판정이다
- * (`MemberManagementScreen` 의 `startsWith("INV-")`). 회귀 테스트 `GiftCodeRemovalTest`.
- */
-internal fun shareableVouchersForPlan(
-    vouchers: List<VoucherItem>,
-    planKey: String,
-): List<VoucherItem> =
-    vouchers.filter { voucher ->
-        voucher.code.startsWith("INV-") &&
-            voucher.status in listOf("issued", "active", "pending") &&
-            voucher.useCount < voucher.maxUses &&
-            voucher.planKey == planKey
-    }
 
 /**
  * 해지 2단계 플로우: (1) 해지 시점 선택 → (2) 즉시 해지는 비례 환불·음성 30일 보관을
@@ -867,16 +616,14 @@ internal fun PlayStoreManageDialog(
  * 프로모션이 반영된 값이라 그쪽이 정확하다.
  *
  * ⚠ **숫자의 출처는 백엔드 `plans.price_krw` 다**(`packages/backend/src/lib/migrations.ts`
- * 의 personal 3900 / couple 6900 / family 14900). 거기를 바꾸면 여기도 바꾼다 —
- * 서버는 **현재 플랜 하나**만 내려주기 때문에 목록 화면에서는 이 표가 필요하다.
+ * 의 personal 3900). 거기를 바꾸면 여기도 바꾼다 — 서버는 **현재 플랜 하나**만 내려주기
+ * 때문에 목록 화면에서는 이 표가 필요하다.
  *
  * ⚠ 한국 밖 사용자에게는 이 값이 틀릴 수 있다. 그래서 폴백이고, 실제 결제 금액은
  * 스토어 결제 시트가 다시 보여준다.
  */
 private val FallbackPlanPriceKrw = mapOf(
     "personal" to 3900,
-    "couple" to 6900,
-    "family" to 14900,
 )
 
 /** 스토어 가격이 있으면 그걸, 없으면 현재 언어의 월 가격 문구로 준다. */

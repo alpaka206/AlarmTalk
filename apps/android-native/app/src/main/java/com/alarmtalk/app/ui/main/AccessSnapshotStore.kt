@@ -7,12 +7,10 @@ import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import com.alarmtalk.app.network.AuthSession
 import com.alarmtalk.app.network.AuthUser
 import com.alarmtalk.app.network.BillingSubscriptionResponse
-import com.alarmtalk.app.network.FamilyGroupCurrentResponse
 import com.alarmtalk.app.network.normalizePersonalPromo
 
 internal data class AccessSnapshot(
     val subscriptionResponse: BillingSubscriptionResponse? = null,
-    val familyGroup: FamilyGroupCurrentResponse? = null,
     /**
      * 스토어가 확인해 준 등급(plan key). null = 무료가 아니라 **확인 못 함**.
      *
@@ -36,11 +34,11 @@ internal data class AccessSnapshot(
      */
     val storeEntitlementUntilMillis: Long? = null,
     /**
-     * 서버가 말한 `users.plan`. **그룹 접근보다 먼저 본다.**
+     * 서버가 말한 `users.plan`.
      *
      * ⚠ 없으면 울림 경로가 `Unknown` 으로 떨어지고, 낙관 규칙상 **통과**한다 — 강등된
-     * 사용자의 클론 목소리가 계속 울린다(2026-08-31 리뷰). 결제 보류는 그룹을 남긴 채
-     * 이 값만 회수하므로, 그룹만 봐서도 안 된다.
+     * 사용자의 클론 목소리가 계속 울린다(2026-08-31 리뷰). 결제 보류는 구독 행을 남긴 채
+     * 이 값만 회수하므로, 구독 행만 봐서도 안 된다.
      */
     val userPlan: String? = null,
     /**

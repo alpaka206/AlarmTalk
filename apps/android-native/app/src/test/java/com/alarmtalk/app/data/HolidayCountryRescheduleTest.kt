@@ -112,7 +112,7 @@ class HolidayCountryRescheduleTest {
         val moved = requireNotNull(dao.getById("holiday-off"))
         assertEquals(nextDay, moved.fireAtMillis)
         assertEquals(AlarmStates.SCHEDULED, moved.state)
-        // 사용자의 편집이 아니다 — 받은 가족 알람이 '수신자가 고쳤다' 로 읽히면 안 된다.
+        // 사용자의 편집이 아니다 — 수정 시각이 오르면 동기화(`expectedUpdatedAtMillis`)가 사용자 편집으로 읽는다.
         assertEquals(SEEDED_UPDATED_AT, moved.updatedAtMillis)
         assertEquals(listOf("JP"), holidayRequests)
     }
@@ -161,8 +161,8 @@ class HolidayCountryRescheduleTest {
 
     /**
      * **달력만 바뀐 호출은 지난 알람을 건드리지 않는다**(Codex #837). 일반 복원처럼 돌리면 지난 일회성은
-     * `FAILED` 로 꺼지고(API 31·32 비정확 폴백이면 아직 배달 대기 중일 수 있다), 지난 반복은 수정 시각이
-     * 올라 받은 가족 알람이 '수신자가 고쳤다' 로 읽힌다. 그 행들은 원래 길목(앱 시작·정합성 워커)이 맡는다.
+     * `FAILED` 로 꺼지고(API 31·32 비정확 폴백이면 아직 배달 대기 중일 수 있다), 지난 반복은 사용자의 편집이
+     * 아닌데 수정 시각이 오른다. 그 행들은 원래 길목(앱 시작·정합성 워커)이 맡는다.
      */
     @Test
     fun 달력만_바뀐_호출은_지난_알람을_건드리지_않는다() = runBlocking {

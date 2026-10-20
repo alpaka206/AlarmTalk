@@ -3,7 +3,7 @@ plugins {
     id("org.jetbrains.kotlin.android") version "2.0.21" apply false
     id("org.jetbrains.kotlin.plugin.compose") version "2.0.21" apply false
     id("com.google.devtools.ksp") version "2.0.21-1.0.27" apply false
-    // FCM(가족 알람 즉시 배달)용 google-services 플러그인. app 모듈에서 apply.
+    // FCM(플랜·목소리·계정 신호)용 google-services 플러그인. app 모듈에서 apply.
     id("com.google.gms.google-services") version "4.4.2" apply false
     // Sentry: 릴리스(R8) 빌드의 mapping.txt 를 올려 스택을 되읽는다 — 설정과 이유는 app 모듈의 `sentry { }`.
     // ⚠ **6.x 로 올리지 말 것 — 이 Gradle(8.10.2)에서는 매핑을 못 올린다.** 6.x 는 `Exec.setIgnoreExitValue` 가

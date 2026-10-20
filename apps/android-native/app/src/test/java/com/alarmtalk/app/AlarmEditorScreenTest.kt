@@ -2,16 +2,10 @@ package com.alarmtalk.app
 
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
-import com.google.gson.Gson
 import com.alarmtalk.app.data.fortuneThemeIndex
-import com.alarmtalk.app.network.FamilyAlarmQuietWindow
-import com.alarmtalk.app.network.FamilyGroupMember
-import java.time.Instant
 import java.time.LocalDateTime
-import java.time.LocalTime
 import java.time.ZoneId
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -24,118 +18,6 @@ import org.robolectric.annotation.Config
 @Config(sdk = [34], qualifiers = "ko")
 class AlarmEditorScreenTest {
     private val context: Context = ApplicationProvider.getApplicationContext()
-
-    @Test
-    fun familyAlarmQuietScheduleFallsBackWhenQuietWindowsIsNull() {
-        val member = Gson().fromJson(
-            """
-            {
-              "id": "member-id",
-              "user_id": "recipient-id",
-              "role": "member",
-              "joined_at": "2026-05-11T00:00:00.000Z",
-              "email": "recipient@example.com",
-              "name": "Recipient",
-              "allow_family_alarms": true,
-              "family_alarm_quiet_days": [1, 2, 3, 4, 5],
-              "family_alarm_quiet_start": "09:00",
-              "family_alarm_quiet_end": "18:30",
-              "family_alarm_quiet_windows": null
-            }
-            """.trimIndent(),
-            FamilyGroupMember::class.java,
-        )
-
-        val label = familyAlarmQuietScheduleLabel(context, member)
-
-        assertTrue(label.contains("09:00-18:30"))
-    }
-
-    @Test
-    fun familyAlarmTimeUnavailableWhenSelectedTimeIsInsideRecipientQuietWindow() {
-        val member = member(
-            windows = listOf(FamilyAlarmQuietWindow(days = listOf(1, 2, 3, 4, 5), start = "09:00", end = "18:30")),
-        )
-
-        assertTrue(
-            isFamilyAlarmTimeUnavailable(
-                member = member,
-                hour = 10,
-                minute = 0,
-                repeatDaysMask = 1 shl 1,
-            ),
-        )
-    }
-
-    @Test
-    fun familyAlarmTimeAvailableWhenSelectedTimeIsOutsideRecipientQuietWindow() {
-        val member = member(
-            windows = listOf(FamilyAlarmQuietWindow(days = listOf(1, 2, 3, 4, 5), start = "09:00", end = "18:30")),
-        )
-
-        assertFalse(
-            isFamilyAlarmTimeUnavailable(
-                member = member,
-                hour = 6,
-                minute = 0,
-                repeatDaysMask = 1 shl 1,
-            ),
-        )
-    }
-
-    /**
-     * ⚠ **분 단위 숫자를 다시 박지 말 것.** 예전 이름은
-     * `familyAlarmLeadRequiresAtLeastThirtyMinutes` 였고 6:20/6:30 을 고정으로 넣어
-     * **30분을 지키고 있었다.** 리드타임을 5분으로 내렸을 때 세 상수(서버·안드·iOS)는
-     * 고쳤는데 이 테스트만 남아, 값이 맞는데도 CI 가 빨간불이 됐다.
-     *
-     * 그래서 경계는 [FAMILY_ALARM_MIN_LEAD_MILLIS] 에서 **계산해서** 쓴다 — 값이 바뀌면
-     * 테스트도 따라 움직이고, 지키는 것은 숫자가 아니라 **경계의 방향**이다.
-     */
-    @Test
-    fun familyAlarmLeadRejectsTimesInsideTheMinimumLead() {
-        val nowMillis = LocalDateTime.of(2026, 5, 11, 6, 0)
-            .atZone(ZoneId.systemDefault())
-            .toInstant()
-            .toEpochMilli()
-        val leadMinutes = (FAMILY_ALARM_MIN_LEAD_MILLIS / 60_000L).toInt()
-
-        // 상한 바로 안쪽(1분 모자람) → 막는다.
-        val tooSoon = LocalDateTime.of(2026, 5, 11, 6, 0).plusMinutes(leadMinutes - 1L)
-        assertTrue(
-            isFamilyAlarmLeadTooSoon(
-                hour = tooSoon.hour,
-                minute = tooSoon.minute,
-                repeatDaysMask = 0,
-                holidayOff = false,
-                nowMillis = nowMillis,
-            ),
-        )
-        // 정확히 상한 → 통과한다(판정은 `<` 이므로 경계값은 허용이다).
-        val exactly = LocalDateTime.of(2026, 5, 11, 6, 0).plusMinutes(leadMinutes.toLong())
-        assertFalse(
-            isFamilyAlarmLeadTooSoon(
-                hour = exactly.hour,
-                minute = exactly.minute,
-                repeatDaysMask = 0,
-                holidayOff = false,
-                nowMillis = nowMillis,
-            ),
-        )
-    }
-
-    @Test
-    fun familyAlarmLeadSuggestionRoundsUpAndLeavesRequestMargin() {
-        val nowMillis = LocalDateTime.of(2026, 5, 11, 10, 0, 30)
-            .atZone(ZoneId.systemDefault())
-            .toInstant()
-            .toEpochMilli()
-        val suggested = Instant.ofEpochMilli(earliestSelectableFamilyAlarmMillis(nowMillis))
-            .atZone(ZoneId.systemDefault())
-            .toLocalTime()
-
-        assertEquals(LocalTime.of(10, 7), suggested)
-    }
 
     @Test
     fun repeatSummaryShowsNextOneShotDateOrWeeklyDays() {
@@ -176,18 +58,4 @@ class AlarmEditorScreenTest {
         // 이 토글은 일시정지가 아니라 정지다(다시 누르면 처음부터 재생) — 아이콘·문구를 그에 맞췄다.
         assertEquals("미리듣기 정지", voicePreviewContentDescription(context, active = true, preparing = false))
     }
-
-    private fun member(
-        windows: List<FamilyAlarmQuietWindow>? = listOf(FamilyAlarmQuietWindow()),
-    ): FamilyGroupMember =
-        FamilyGroupMember(
-            id = "member-id",
-            userId = "recipient-id",
-            role = "member",
-            joinedAt = "2026-05-11T00:00:00.000Z",
-            email = "recipient@example.com",
-            name = "Recipient",
-            allowFamilyAlarms = true,
-            familyAlarmQuietWindows = windows,
-        )
 }

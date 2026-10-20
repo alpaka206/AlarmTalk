@@ -18,8 +18,7 @@ class ClipPreparationScreenLocalizationTest {
     @Test
     fun `영어 일본어에서 모든 준비 상태와 재시도 버튼을 번역한다`() {
         val base = ApplicationProvider.getApplicationContext<Context>()
-        val keys = listOf(R.string.voices_clip_prep_waiting, R.string.voices_clip_prep_ready,
-            R.string.voices_clip_prep_owner_wait, R.string.voices_clip_prep_ready_body,
+        val keys = listOf(R.string.voices_clip_prep_ready, R.string.voices_clip_prep_ready_body,
             R.string.voices_clip_prep_failed_body, R.string.voices_clip_prep_rendering_body,
             R.string.voices_clip_prep_downloading_body, R.string.voices_clip_prep_retry)
         for (language in listOf("en", "ja")) {
