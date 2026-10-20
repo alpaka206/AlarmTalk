@@ -52,8 +52,7 @@ CLEAR_TASK 다 — 이제 `singleTask` + `onNewIntent` 로 두 번째 열기가 
 바꿀 수 없다(`SYSTEM_ALERT_WINDOW` 는 쓰지 않는다). 배너에는 끄기·다시 울림이 있고, 탭하면
 전체 화면이 열린다.
 
-**iOS 에는 이 갈래가 없다** — 울릴 때 우리가 띄우는 알림이 아예 없고(유일한 `UNNotification`
-은 가족 알람 수신 안내다), 화면은 AlarmKit 이 소유한다. 잠기면 전체 알림, 쓰는 중이면 시스템
+**iOS 에는 이 갈래가 없다** — 울릴 때 우리가 띄우는 알림이 아예 없고, 화면은 AlarmKit 이 소유한다. 잠기면 전체 알림, 쓰는 중이면 시스템
 배너다 — 같은 결론을 OS 가 낸다.
 
 ## 2. 어떻게 꺼지는가
@@ -215,8 +214,8 @@ HOME 을 가로챌 수 없다 — 유일한 수단인 화면 고정(`startLockTa
   ⚠ 목소리 크기 0 은 **어떤 대체보다 먼저** 본다 — 오디오가 사라졌거나 권한이 없어도 기본 목소리·
   알람음 강제로 넘어가지 않는다(안드로이드 `decideRingSound`, Codex #820). 슬라이더로는 0 을 만들 수
   없어 옛 행에만 있는 값이다.
-  - 목소리를 틀 수 없는 경우: 울리는 지금 유료 목소리 권한이 없다(본인 알람만 — 받은 알람은
-    보낸 사람의 구독으로 성립한다) · 이 버전 전에 '알람' 모드로 잠긴 옛 모양 → **기본 목소리**.
+  - 목소리를 틀 수 없는 경우: 울리는 지금 유료 목소리 권한이 없다 · 이 버전 전에 '알람' 모드로 잠긴
+    옛 모양 → **기본 목소리**.
     오디오 없는 기본 목소리 알람 → 그 목소리의 클립·내장 인사말. 그 밖의 오디오 없음·플레이어
     실패 → 알람음 강제.
   - 시스템이 목소리 알람을 '알람' 모드로 바꿔 둔 행(잠금·강등 표시 `preLockPlayMode` 가 목소리
@@ -224,16 +223,8 @@ HOME 을 가로챌 수 없다 — 유일한 수단인 화면 고정(`startLockTa
     쓰이지 않던 값이라 사용자가 고른 무음이 아니다. 단 그 행의 **목소리 크기가 0** 이면 사용자가 고른
     무음이다(Codex #820 — 위 0 규칙과 같다). 지금은 목소리를 잃은 알람도 '알람' 모드로 내리지 않고
     **미나**로 바꾸므로(billing-lifecycle.md 「목소리를 잃은 알람」) 이 모양은 이 버전 전에 내려 둔 옛 행뿐이다.
-  - **받은 알람**(안드로이드)은 표시가 아니라 **행을 고친다** — 시스템이 받은 목소리 알람을 '알람'
-    모드로 바꾸는 자리(목소리 전달인데 음성 **다운로드가 실패**해 '알람' 모드로 다시 지을 때 —
-    `buildReceivedAlarmRow`, 다음 pull 이 다시 받는다)는 알람음 스위치를 **켜고** 크기를 강제 알람음과 같은
-    값(위 규칙)으로 둔다. 보낸 사람 목소리를 **더는 받을 수 없으면** '알람' 모드로 내리지 않고 **미나**로
-    바꾼다(2026-09-29): 보낸 사람 탈퇴로 목소리를 걷어낼 때(`withVoiceRevoked` — 재생 방식은 수신자가 둔 값
-    그대로), 수신 확인 전에 서버가 목소리를 걷어냈거나 문구의 음원이 없어져 다시 지을 때
-    (`buildReceivedAlarmRow` 의 `senderVoiceNoLongerAvailable`, iOS `RemoteAlarmPullSync.replacingUnavailableSenderVoice`
-    — billing-lifecycle.md 「목소리를 잃은 알람」). 받은 알람의
-    `preLockPlayMode` 는 옛 버그의 잠금 표시라 풀려 버리므로 강등 표시로 쓰지 않는다. 수신자가
-    직접 '알람' 모드로 바꿔 둔 행과 처음부터 '알람' 인 전달(재전송 포함)은 스위치를 그대로 둔다.
+  - 업데이트 전에 받아 둔 가족 알람은 업데이트 때 **오디오 없는 미나 알람**(내 알람)이 된다 — 울릴 때는 위
+    '오디오 없는 기본 목소리 알람' 그대로다(billing-lifecycle.md 「받은 알람은 내 알람으로 바뀐다」).
   - 리허설에서 이 규칙이 없어 클론 목소리 알람이 **아무 소리 없이** 울렸다. logcat 원문:
     `Free plan at ring time — downgrading paid voice to alarm tone` → `Alarm tone off
     (soundEnabled=false, volume=10)` → `Vibration disabled for ringing alarm`. 울릴 때 강등이
@@ -327,7 +318,7 @@ iOS 에서 그 문구를 지우면 안 울릴 알람을 울릴 것처럼 보여 
 | --- | --- | --- |
 | 전체화면/알림을 누가 고르나 | **시스템(AlarmKit)**. 앱은 판정하지 않는다 | 알람을 `AlarmManager.shared.schedule` 로 넘기면 ALERT UI 는 OS 가 그린다 |
 | 화면을 벗어나면 꺼지나 | **아니다** — 시스템 alert 이라 앱에 `onStop` 이 없다 | 안드로이드 §2 의 '벗어남 = 해제' 는 우리가 화면을 그리기 때문에 가능하다 |
-| 우리가 울림용 알림을 따로 띄우나 | **아니다** | `UNMutableNotificationContent` 는 `SocialNotificationTracker` 한 곳뿐이고, 그건 '가족 알람을 받았다' 안내 전용이다 |
+| 우리가 울림용 알림을 따로 띄우나 | **아니다** | 앱이 띄우는 로컬 알림(`UNMutableNotificationContent`)이 없다 — 하나 있던 '가족 알람을 받았다' 안내(`SocialNotificationTracker`)는 2026-10-20 가족 알람과 함께 지웠다 |
 | 알림을 스와이프하면 꺼지나 | **해당 없음** | 시스템 alert 은 스와이프로 지울 수 없다. 정지·스누즈 버튼으로만 끝난다 |
 | 정지·스누즈는 어떻게 도나 | `StopAlarmIntent` / `SnoozeAlarmIntent`(LiveActivityIntent) → `AlarmManager.shared.stop` / `countdown`. **그 `countdown` 한 번이 유일한 재무장**이라(보조 버튼이 `.custom`) 실패하면 미루지 않고 `stop` 으로 끝낸다. 미루는 시간은 예약 때 구워진 행의 `snoozeMinutes` 뿐이다 | `Shared/AlarmIntents.swift`, `AlarmAppContext.rearmCountdown` |
 | 포그라운드일 때 추가로 하는 것 | ring 시점 **경고 햅틱 1회**만 | 백그라운드·잠금화면에서는 시스템이 진동을 소유하므로 앱이 겹쳐 울리지 않게 `applicationState == .active` 로 가드 |
@@ -393,7 +384,7 @@ iOS 에서 그 문구를 지우면 안 울릴 알람을 울릴 것처럼 보여 
 | 기기 볼륨 원복 | `alarm/AlarmStreamVolume.kt` | 해당 없음 | — |
 | 목소리 반복 사이 0.9초 쉼 | `alarm/RingingService.kt` `scheduleVoiceRepeat`(`VOICE_REPEAT_GAP_MS`) | 스테이징 때 끝 무음 `AlarmSoundStaging.voiceRepeatGapMillis` ← `AlarmSoundResolver.resolve`(목소리만), 같은 값을 `AlarmSoundPlan.fingerprint`에 포함 — 테스트 `AlarmSoundVolumeTests`·`AlarmSoundPlanTests` | — |
 | 울릴 때는 파일 자리만 찾는다 — 길이를 재지 않는다 · 낡음 판정은 그대로(§4) | `data/AlarmAudioStore.kt` `getCachedAudioUnmeasured`(`getCachedAudio` 와 같은 메타 대조, `durationMillis` 는 null) ← `data/AlarmRepository.kt` `resolveBucketClipSelection`(← `resolveBucketClipLocalUri`) · `data/DefaultVoiceClipSource.kt` 의 보조 생성자(`ringUri` 의 `clipUriFor`·`lockBinding` 의 `defaultVoiceClipSet`) — 테스트 `data/AlarmAudioStoreProbeCountTest`(그 셋은 `durationReads` 0) | — (AlarmKit 소유) | — |
-| 조용한 알람은 사용자가 고른 것뿐 · 유료 목소리를 못 쓰면 기본 목소리(§4) | `alarm/RingSoundDecision.kt` `decideRingSound`·`ringSoundFactsFor`·`ringTimePaidVoiceUnusable`·`forcedTonePercent` → `RingingService.startRingingAudio`(`startAlarmToneLoop(forced)`) · 기본 목소리 소리 `data/DefaultVoiceClipSource.kt` `ringUri` · 받은 알람을 '알람' 모드로 바꿀 때(다운로드 실패) 알람음 켬 `data/RemoteAlarmPullSyncService.kt` `withToneForcedOn`(← `buildReceivedAlarmRow`) · 목소리를 걷어낸 받은 알람은 미나 `withVoiceRevoked` · 보낸 사람 목소리를 더는 받을 수 없는 전달은 미나 `senderVoiceNoLongerAvailable`(← `buildReceivedAlarmRow`) — 테스트 `RingSoundDecisionTest`·`RemoteAlarmPullSyncServiceTest` | 예약 때 `AlarmKitViewModel.effectiveRecordForScheduling` → `defaultVoiceSubstitute` · 오디오 없는 기본 목소리 알람은 `AlarmSoundResolver.plan`(1b) → `DefaultVoiceSubstitute.fallbackClip` · 목소리를 걷어낸 받은 알람은 미나 `RemoteAlarmPullSync.withVoiceRevoked` · 보낸 사람 목소리를 더는 받을 수 없는 전달은 미나 `RemoteAlarmPullSync.replacingUnavailableSenderVoice` — 테스트 `DefaultVoiceSubstituteTests`·`RemoteAlarmPullSyncTests` | — |
+| 조용한 알람은 사용자가 고른 것뿐 · 유료 목소리를 못 쓰면 기본 목소리(§4) | `alarm/RingSoundDecision.kt` `decideRingSound`·`ringSoundFactsFor`·`ringTimePaidVoiceUnusable`·`forcedTonePercent` → `RingingService.startRingingAudio`(`startAlarmToneLoop(forced)`) · 기본 목소리 소리 `data/DefaultVoiceClipSource.kt` `ringUri` — 테스트 `RingSoundDecisionTest` | 예약 때 `AlarmKitViewModel.effectiveRecordForScheduling` → `defaultVoiceSubstitute` · 오디오 없는 기본 목소리 알람은 `AlarmSoundResolver.plan`(1b) → `DefaultVoiceSubstitute.fallbackClip` — 테스트 `DefaultVoiceSubstituteTests` | — |
 | 재부팅/시간대 변경 재무장 | `alarm/BootCompletedReceiver.kt` | `observeTimeAndTimezoneChanges` (`AlarmTalkApp.swift`) | — |
 
 ## 검증 방법

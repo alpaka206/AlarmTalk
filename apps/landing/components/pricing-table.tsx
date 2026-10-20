@@ -4,51 +4,44 @@ import { Reveal } from "./motion/reveal";
 import { RevealGroup, RevealItem } from "./motion/reveal-group";
 
 /**
- * 요금 비교표 — 무료 · 개인 · 커플 · 가족을 **기능 행 × 요금제 열**로 놓는다(2026-09-15 지시,
- * 홈 안의 네 행짜리 카드에서 별도 페이지의 표로).
+ * 요금 비교표 — 무료 · 개인을 **기능 행 × 요금제 열**로 놓는다(2026-09-15 지시, 홈 안의
+ * 카드에서 별도 페이지의 표로. 커플·가족 열은 2026-10-20 에 이용권과 함께 뺐다).
  *
  * 표는 비교를 유도하고 비교에서 무료는 보통 진다. 그래서 무료 열을 **첫 열**에 두고, 기본
- * 묶음(알람·기본 목소리·고르는 문구·언어)은 네 열 전부 ✓ 라 "무료가 넓다" 가 표에서도
+ * 묶음(알람·기본 목소리·고르는 문구·언어)은 두 열 모두 ✓ 라 "무료가 넓다" 가 표에서도
  * 읽히게 한다. '인기' 배지나 강조 열은 두지 않는다 — 붙이는 순간 나머지가 모자란 것이 된다.
  *
- * 값은 셋뿐이다: 포함(✓) · 미포함(–) · 짧은 값(무제한, 한 달에 한 번, 본인 포함 N명).
+ * 값은 셋뿐이다: 포함(✓) · 미포함(–) · 짧은 값(무제한, 한 달에 한 번).
  * 사실은 요금 원장(packages/backend 의 plans 시드)과 FAQ 가 말하는 그대로다 — 여기서 새
  * 숫자를 짓지 않는다.
  *
- * 폭이 좁으면 표는 못 쓴다(다섯 열이 320px 에 안 들어간다). md 미만에서는 같은 데이터를
- * 요금제별 카드로 세로로 편다. 둘은 display 로 갈라 스크린리더에는 하나만 읽힌다.
+ * md 미만에서는 같은 데이터를 요금제별 카드로 세로로 편다. 둘은 display 로 갈라
+ * 스크린리더에는 하나만 읽힌다.
  */
 
-const PLANS = ["free", "personal", "couple", "family"] as const;
+const PLANS = ["free", "personal"] as const;
 type PlanKey = (typeof PLANS)[number];
 
-type Cell = boolean | "unlimited" | "monthly" | "people2" | "people5";
+type Cell = boolean | "unlimited" | "monthly";
 
 type Row = { key: string; cells: Record<PlanKey, Cell> };
-type Group = { key: "basics" | "voice" | "together"; rows: Row[] };
+type Group = { key: "basics" | "voice"; rows: Row[] };
 
 const GROUPS: readonly Group[] = [
   {
     key: "basics",
     rows: [
-      { key: "alarms", cells: { free: "unlimited", personal: "unlimited", couple: "unlimited", family: "unlimited" } },
-      { key: "builtin", cells: { free: true, personal: true, couple: true, family: true } },
-      { key: "presets", cells: { free: true, personal: true, couple: true, family: true } },
-      { key: "languages", cells: { free: true, personal: true, couple: true, family: true } },
+      { key: "alarms", cells: { free: "unlimited", personal: "unlimited" } },
+      { key: "builtin", cells: { free: true, personal: true } },
+      { key: "presets", cells: { free: true, personal: true } },
+      { key: "languages", cells: { free: true, personal: true } },
     ],
   },
   {
     key: "voice",
     rows: [
-      { key: "customText", cells: { free: false, personal: true, couple: true, family: true } },
-      { key: "myVoice", cells: { free: false, personal: "monthly", couple: "monthly", family: "monthly" } },
-    ],
-  },
-  {
-    key: "together",
-    rows: [
-      { key: "sharing", cells: { free: false, personal: false, couple: "people2", family: "people5" } },
-      { key: "setOthers", cells: { free: false, personal: false, couple: true, family: true } },
+      { key: "customText", cells: { free: false, personal: true } },
+      { key: "myVoice", cells: { free: false, personal: "monthly" } },
     ],
   },
 ];
@@ -79,14 +72,14 @@ export function PricingTable() {
 
   return (
     <>
-      {/* md 이상: 표. 열 폭은 첫 열(기능 이름)이 넓고 요금제 넷이 같게. */}
+      {/* md 이상: 표. 열 폭은 첫 열(기능 이름)이 넓고 요금제 둘이 같게. */}
       <Reveal className="card hidden overflow-hidden md:block">
         <table className="w-full border-collapse text-left">
           <caption className="sr-only">{t("a11y.caption")}</caption>
           <colgroup>
-            <col className="w-[34%]" />
+            <col className="w-[40%]" />
             {PLANS.map((p) => (
-              <col key={p} className="w-[16.5%]" />
+              <col key={p} className="w-[30%]" />
             ))}
           </colgroup>
           <thead>

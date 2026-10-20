@@ -16,7 +16,7 @@ export default function manifest(): MetadataRoute.Manifest {
     name: SITE_NAME,
     short_name: SITE_NAME,
     description:
-      "좋아하는 목소리로 시작하는 아침. 직접 녹음한 목소리, 가족이 나눠준 목소리, 기본 목소리로 알람이 울립니다.",
+      "좋아하는 목소리로 시작하는 아침. 직접 녹음한 목소리나 기본 목소리로 알람이 울립니다.",
     start_url: "/",
     scope: "/",
     display: "browser",
