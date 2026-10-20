@@ -1,17 +1,9 @@
 import Foundation
 
-enum CodeRegistrationDestination: Equatable {
-    case home
-    case sharedPass
-}
-
 @MainActor
 final class SocialFeatureViewModel: ObservableObject {
-    @Published var familyGroup: FamilyGroupCurrentResponse?
     @Published var subscription: BillingSubscriptionResponse?
-    @Published var vouchers: [VoucherItem] = []
-    @Published var inviteCode = ""
-    /// **사용자가 시작한 쓰기**(코드 등록·그룹 나가기·내보내기·해지…) 전용.
+    /// **사용자가 시작한 쓰기**(해지) 전용.
     /// 화면이 이 값으로 버튼을 잠근다.
     @Published var isBusy = false
 
@@ -29,12 +21,11 @@ final class SocialFeatureViewModel: ObservableObject {
     @Published var statusMessage: String?
 
     /// 마지막 `refreshAll` 이 **권한 판단에 필요한 것을 모두** 받아왔는가
-    /// (가족 그룹 + 구독). 하나라도 실패하면 false.
+    /// (구독 + `/auth/me` 의 plan). 하나라도 실패하면 false.
     ///
-    /// ⚠ 왜 필요한가 — `refreshAll` 은 갈래마다 따로 실패를 삼킨다. 그래서 "그룹에서
-    /// 빠졌다" 는 새 응답과 "구독 없음" 이라는 **옛 값**이 한 스냅샷에 섞일 수 있고,
-    /// 그 상태로 강등을 돌리면 **지금 유료인 사용자의 목소리 알람이 톤으로 바뀐다**
-    /// (2026-08-18 Codex #697 P1). 파괴적 판단은 이 값이 true 일 때만.
+    /// ⚠ 왜 필요한가 — `refreshAll` 은 갈래마다 따로 실패를 삼킨다. 그래서 새 응답과
+    /// **옛 값**이 한 스냅샷에 섞일 수 있고, 그 상태로 강등을 돌리면 **지금 유료인 사용자의
+    /// 목소리 알람이 톤으로 바뀐다**(2026-08-18 Codex #697 P1). 파괴적 판단은 이 값이 true 일 때만.
     private(set) var entitlementSnapshotComplete = false
 
     /// 해지를 App Store 에서 해야 하는가 — 서버가 `STORE_CANCEL_UNSUPPORTED` 로 거절했을 때.
@@ -65,8 +56,8 @@ final class SocialFeatureViewModel: ObservableObject {
      * `/auth/me` 가 준 **지금 plan** 을 세션 주인에게 건넨다(2026-09-01 리뷰).
      *
      * ⚠ 이 갱신은 plan 을 `AccessSnapshotStore` 에만 적었는데, 화면 게이트들은
-     * `auth.session.user.plan` 을 본다. 그래서 무료 사용자가 `INV-` 초대 코드를 등록해
-     * 서버가 구독을 만들고 `users.plan` 을 올려도, **세션은 free 그대로**라 판정기의
+     * `auth.session.user.plan` 을 본다. 그래서 다른 기기에서 결제해 서버가 구독을 만들고
+     * `users.plan` 을 올려도, **세션은 free 그대로**라 판정기의
      * '아는 free 우선' 규칙이 방금 받은 활성 구독을 덮어 목소리·편집기가 잠긴 채 남는다.
      * (그 규칙 자체는 보류를 잡기 위해 필요하다 — 고칠 것은 **plan 의 신선도**다.)
      *
@@ -137,7 +128,6 @@ final class SocialFeatureViewModel: ObservableObject {
         clearUserScopedRemoteState()
         activeUserID = userID
         subscription = snapshot.subscriptionResponse
-        familyGroup = snapshot.familyGroup
     }
 
     func clearUserScopedRemoteState() {
@@ -145,10 +135,7 @@ final class SocialFeatureViewModel: ObservableObject {
         entitlementSnapshotComplete = false
         entryFreshness.reset()
         activeUserID = nil
-        familyGroup = nil
         subscription = nil
-        vouchers = []
-        inviteCode = ""
         statusMessage = nil
     }
 
@@ -209,54 +196,31 @@ final class SocialFeatureViewModel: ObservableObject {
         guard var accessTicket = entitlementWriter.ticket(),
               accessTicket.userID == userID, accessTicket.token == token else { return }
 
-        var familyGroupOK = false
         var entitlementOK = false
-        // ⚠ **네 조회를 한꺼번에 보낸다**(2026-09-29 효율 감사 M7). 서로의 결과를 입력으로 쓰지
-        //   않는데 예전에는 그룹 → 구독·공유 코드 → `/auth/me` 로 **세 번 차례로** 기다렸다 — 목소리
-        //   탭·이용권·가족 알람·`plan_changed` 가 모두 이 갱신을 기다린다. 안드로이드도 `async` 로
-        //   나란히 보낸다(`MainViewModelBillingActions.refreshShareCodeData`).
-        //   **보내는 것만 한꺼번이고, 받은 것을 쓰는 순서와 가드는 그대로다**(그룹 → 구독·공유 코드 →
-        //   plan·토큰). 그래서:
+        // ⚠ **두 조회(구독·`/auth/me`)를 한꺼번에 보낸다**(2026-09-29 효율 감사 M7). 서로의 결과를
+        //   입력으로 쓰지 않는데 예전에는 **차례로** 기다렸다 — 목소리 탭·이용권·`plan_changed` 가 모두
+        //   이 갱신을 기다린다.
+        //   **보내는 것만 한꺼번이고, 받은 것을 쓰는 순서와 가드는 그대로다**(구독 → plan·토큰). 그래서:
         //   - 결제 전 조회 수위(`preflightRevision`)와 계정 요청 표(`accountRequest`)는 **보내기 전에**
         //     뜬다 — 구독 읽기와 `/auth/me` 가 지금 출발하므로, 그 뒤에 성공한 결제 전 조회·뒤에 보낸
         //     계정 요청의 답을 이 회차가 되돌리지 못한다.
         //   - 앞 단계의 가드에서 물러나면 떠 있던 나머지는 취소되고 답은 쓰지 않는다.
-        //   - 구독·공유 코드 조회가 실패하면 `/auth/me` 의 답은 **세션의 plan·프로모와 이 진입의
+        //   - 구독 조회가 실패하면 `/auth/me` 의 답은 **세션의 plan·프로모와 이 진입의
         //     결과로만** 쓴다(아래 `catch` — 나간 요청의 결과를 버리지 않는다, D11). 권한 스냅샷에는
         //     쓰지 않고(예전과 같다) 토큰도 굴리지 않는다 — 무상태 JWT 라 지금 토큰이 그대로 유효하다
         //     (`docs/spec/session-and-auth.md`).
         let preflightRevision = billingPreflightRevision
         let accountRequest = beginAccountRequest?()
-        async let familyGroupFetch = api.getFamilyGroup(token: token)
         async let subscriptionFetch = api.getSubscription(token: token)
-        async let vouchersFetch = api.listVouchers(token: token)
         async let meFetch = api.me(token: token)
         do {
-            let nextFamilyGroup = try await familyGroupFetch
-            guard activeUserID == userID, generation == refreshGeneration else { return }
-            let groupWrite = entitlementWriter.write(accessTicket, "family group") {
-                $0.familyGroup = nextFamilyGroup
-            }
-            guard groupWrite == .applied else { return }
-            familyGroup = nextFamilyGroup
-            familyGroupOK = true
-        } catch {
-            messages.append(Self.scopedRefreshErrorMessage(
-                label: String(localized: "가족 그룹"),
-                error: error,
-                fallback: String(localized: "공유 이용권 정보를 불러오지 못했어요")
-            ))
-        }
-
-        do {
             let resolvedSubscription = try await subscriptionFetch
-            let resolvedVouchers = try await vouchersFetch
             guard activeUserID == userID, generation == refreshGeneration else { return }
-            // 그룹보다 먼저 보는 값이라 구독과 **같이** 적어 둔다(보류 판정의 근거).
+            // 남은 구독 행보다 먼저 보는 값이라 구독과 **같이** 적어 둔다(보류 판정의 근거).
             //
             // ⚠ **요청 전에 잡아 둔 세션의 plan 을 쓰지 말 것**(2026-08-31 리뷰).
             // 배경 `onPlanChanged` 경로는 `refreshAll` 만 부르고 사용자를 다시 읽지 않는다 —
-            // 소유자가 결제 보류에 들어가면 그룹은 남는데, 여기에 **옛 유료 plan** 이 적히면
+            // 결제 보류에 들어가면 구독 행은 남는데, 여기에 **옛 유료 plan** 이 적히면
             // 판정기가 유료라고 답해 클론 오디오가 계속 예약된다. 서버에서 지금 값을 받아 적는다.
             //
             // ⚠ **그러니 실패도 `try?` 로 삼키면 안 된다**(2026-09-01 리뷰). 삼키고 옛
@@ -287,7 +251,7 @@ final class SocialFeatureViewModel: ObservableObject {
             }
             // ⚠ **await 뒤에는 다시 본다**(2026-08-31 리뷰 2차). 위 가드를 통과한 뒤 이
             // 요청에서 멈춰 있는 사이 로그아웃·계정 전환이 일어날 수 있다 — 그대로 쓰면
-            // A 의 태스크가 **지워진 A 의 스냅샷을 되살리고** A 의 공유 코드를 B 의 화면에
+            // A 의 태스크가 **지워진 A 의 스냅샷을 되살리고** A 의 구독을 B 의 화면에
             // 올린다(B 의 새로고침은 A 가 `isRefreshing` 을 쥐고 있어 일찍 반환했을 수도 있다).
             guard activeUserID == userID, generation == refreshGeneration,
                   preflightRevision == billingPreflightRevision else { return }
@@ -343,7 +307,7 @@ final class SocialFeatureViewModel: ObservableObject {
                 // 상황에서만 조건이 거짓이 된다) 서버가 준 값만으로 한다.
                 // ⚠ **여기서 스토어 캐시를 지우지 않는다**(2026-09-01 리뷰 3차 정정).
                 // 29차에는 무조건, 30차에는 `force` 일 때 지웠는데 **둘 다 틀렸다** —
-                // `force` 는 '서버가 강등을 확정했다' 가 아니다: 쿠폰 등록·나가기·해지,
+                // `force` 는 '서버가 강등을 확정했다' 가 아니다: 해지,
                 // 구매 성공·복원, 목소리 삭제가 전부 `force: true` 로 이 갱신을
                 // 부른다. 그때 StoreKit 은 갱신을 확인했는데 서버가 아직 옛 free 이면
                 // **살아 있는 신호를 지워 돈 내는 사용자를 강등한다.**
@@ -353,16 +317,15 @@ final class SocialFeatureViewModel: ObservableObject {
                 // 환불·회수된 트랜잭션은 `currentEntitlements` 에서 빠지므로 그 재계산이
                 // 캐시를 정확히 끊고, 살아 있으면 그대로 둔다(`PushNotificationCoordinator`).
             }
-            vouchers = resolvedVouchers
             entitlementOK = planOK
         } catch {
             messages.append(Self.scopedRefreshErrorMessage(
                 label: String(localized: "이용권"),
                 error: error,
-                fallback: String(localized: "공유 코드 정보를 불러오지 못했어요")
+                fallback: String(localized: "이용권 정보를 불러오지 못했어요")
             ))
-            // ⚠ **`/auth/me` 는 이미 나갔다 — 그 답을 이 진입의 결과로 적는다**(코덱스 #827). 네 조회를
-            //   한꺼번에 보내므로 구독·공유 코드가 실패해도 계정 요청은 표와 함께 실제로 나갔다. 여기서
+            // ⚠ **`/auth/me` 는 이미 나갔다 — 그 답을 이 진입의 결과로 적는다**(코덱스 #827). 두 조회를
+            //   한꺼번에 보내므로 구독이 실패해도 계정 요청은 표와 함께 실제로 나갔다. 여기서
             //   버리면 이 진입의 첫 결과가 비어, 뒤에 오는 다른 응답이 세션 한가운데서 종료 안내를
             //   판정한다(D11). 성공이면 세션의 plan·프로모(`onFreshPlan`), 실패면 `onAccountRequestFailed`.
             //   구독을 못 받았으니 **권한 스냅샷에는 쓰지 않는다**(예전과 같다 — 반쪽 스냅샷 금지). 토큰도
@@ -384,7 +347,7 @@ final class SocialFeatureViewModel: ObservableObject {
         }
 
         guard activeUserID == userID, generation == refreshGeneration else { return }
-        entitlementSnapshotComplete = familyGroupOK && entitlementOK
+        entitlementSnapshotComplete = entitlementOK
         if entitlementSnapshotComplete {
             entryFreshness.record(.init(userID: userID, entry: admitted.entry, at: admitted.now))
         }
@@ -424,7 +387,7 @@ final class SocialFeatureViewModel: ObservableObject {
         }
         activeUserID = userID
         // ⚠ **여기서는 세대를 올리지 않는다 — 잡아 두기만 한다.** 이 갱신은 구독 하나만
-        // 쓰는 좁은 경로라, 올리면 더 넓은 `refreshAll`(plan·그룹·확정 표시까지 쓴다)이
+        // 쓰는 좁은 경로라, 올리면 더 넓은 `refreshAll`(plan·확정 표시까지 쓴다)이
         // 진행 중일 때 그걸 무효로 만든다. 나중에 시작한 전체 갱신은 이 결과를 버리게 한다.
         // 성공한 preflight의 역방향 보호는 별도 billingPreflightRevision으로 처리한다.
         let generation = refreshGeneration
@@ -480,7 +443,7 @@ final class SocialFeatureViewModel: ObservableObject {
     ///
     /// 끝까지 가면 `refreshAll` 의 `/auth/me` 가 plan·프로모·토큰을 이미 세션에 넣었다
     /// (`onFreshPlan`·`onRolledToken`) — 옆에서 사용자 새로고침을 또 부르지 않는다. 못 갔으면
-    /// (구독·공유 코드 조회가 실패해 권한 스냅샷을 채우지 못했거나 — 그때 `/auth/me` 의 답은 세션의
+    /// (구독 조회가 실패해 권한 스냅샷을 채우지 못했거나 — 그때 `/auth/me` 의 답은 세션의
     /// plan·프로모에만 들어간다 — 그 사이 토큰이 굴러 plan 을 버렸다) 그때만 사용자 새로고침을 한 번 더
     /// 부른다. 그쪽은 토큰이 굴러도 plan 을 반영한다(`AuthViewModel.refreshUserApplyingToken`).
     ///
@@ -494,96 +457,9 @@ final class SocialFeatureViewModel: ObservableObject {
         }
     }
 
-    /// - Parameter successMessage: nil 이면 아무 말도 하지 않는다. 결과가 **화면에 이미
-    ///   드러나는** 변경(예: 이용권에서 나가면 카드가 '무료' 로 바뀐다)은 토스트로 한 번 더
-    ///   말할 이유가 없다 — 같은 말을 반복하면서 화면만 가린다.
-    private func refreshAllAfterMutation(session: AuthSession?, successMessage: String?) async {
+    private func refreshAllAfterMutation(session: AuthSession?, successMessage: String) async {
         await refreshAll(session: session, force: true)
-        if let successMessage { statusMessage = successMessage }
-    }
-
-    func registerCode(_ codeOverride: String? = nil, session: AuthSession?) async -> CodeRegistrationDestination? {
-        // 이번 등록을 시작하지 못해도 지난 성공·다른 작업의 안내를 오류로 재사용하지 않는다.
-        statusMessage = nil
-        guard let token = session?.token else {
-            statusMessage = String(localized: "로그인이 필요해요.")
-            return nil
-        }
-        let code = (codeOverride ?? inviteCode).trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !code.isEmpty else {
-            statusMessage = String(localized: "코드를 입력해 주세요.")
-            return nil
-        }
-        guard !isBusy else { return nil }
-        isBusy = true
-        defer { isBusy = false }
-
-        do {
-            let response = try await api.registerCode(code, token: token)
-            if codeOverride == nil || inviteCode.trimmingCharacters(in: .whitespacesAndNewlines) == code {
-                inviteCode = ""
-            }
-            await refreshAllAfterMutation(session: session, successMessage: String(localized: "코드를 등록했어요."))
-            return Self.codeRegistrationDestination(responseType: response.type, code: code)
-        } catch {
-            // 사유별 오류 코드를 현재 앱 언어로 옮긴다. 이걸 `userFacingErrorMessage`
-            // 로 되돌리면 만료·중복·정원초과가 전부 같은 폴백 한 줄이 된다.
-            statusMessage = CodeRegistrationError.message(for: error, fallback: String(localized: "코드 등록에 실패했어요."))
-            return nil
-        }
-    }
-
-    // ⚠ **`registerCodeReportingFailure`(유료 게이트의 코드 입력 시트용)를 되살리지 말 것**(2026-10-14,
-    // App Store 지침 3.1.1 두 번째 반려 — 선물 코드 폐지). 게이트에는 코드 입력이 없고, 초대 코드는
-    // 더보기 → 초대 코드 등록(`CodeRegisterRow` → `registerCode`)에서만 넣는다. 할인·무료 이용은
-    // 스토어 오퍼 코드로 준다.
-
-    func ensureFamilyShareCode(session: AuthSession?) async {
-        await runShareCodeAction(
-            session: session,
-            call: { try await api.ensureFamilyShareCode(token: $0) },
-            successMessage: { String(localized: "\(String($0)) 공유 코드를 준비했어요.") }
-        )
-    }
-
-    /// 유출/소진된 공유 코드를 무효화(expired)하고 새 코드를 발급. Android
-    /// `MainViewModelGrowthBillingActions.regenerateFamilyShareCode` 와 동등.
-    /// 소유자 전용 보안 액션으로 MemberManagementView 에서 확인 후 호출한다.
-    func regenerateFamilyShareCode(session: AuthSession?) async {
-        await runShareCodeAction(
-            session: session,
-            call: { try await api.regenerateFamilyShareCode(token: $0) },
-            successMessage: { String(localized: "\(String($0)) 공유 코드를 새로 발급했어요. 기존 코드는 더 이상 쓸 수 없어요.") }
-        )
-    }
-
-    /// 공유 코드 준비·재발급의 공통 흐름 — 다른 것은 부르는 API 와 성공 문구(이용권 이름을 받는다)뿐이다.
-    private func runShareCodeAction(
-        session: AuthSession?,
-        call: (String) async throws -> VoucherItem,
-        successMessage: (String) -> String
-    ) async {
-        guard let token = session?.token else {
-            statusMessage = String(localized: "로그인이 필요해요.")
-            return
-        }
-        guard !isBusy else { return }
-        isBusy = true
-        defer { isBusy = false }
-
-        do {
-            let planLabel = Self.shareCodePlanLabel(subscription)
-            let voucher = try await call(token)
-            vouchers = Self.upsertingVoucher(voucher, into: vouchers)
-            await refreshAllAfterMutation(session: session, successMessage: successMessage(planLabel))
-        } catch {
-            // 실패 문구는 **실패한 시점의** 이용권으로 다시 읽는다(요청 사이에 바뀌었을 수 있다).
-            let planLabel = Self.shareCodePlanLabel(subscription)
-            statusMessage = Self.billingErrorMessage(
-                error,
-                fallback: String(localized: "\(planLabel) 공유 코드를 불러오지 못했어요")
-            )
-        }
+        statusMessage = successMessage
     }
 
     func cancelSubscription(mode: String = "at_period_end", session: AuthSession?) async {
@@ -619,38 +495,6 @@ final class SocialFeatureViewModel: ObservableObject {
         let normalized = mode.trimmingCharacters(in: .whitespacesAndNewlines)
         if normalized == "at_period_end" { return "at_period_end" }
         return "immediate"
-    }
-
-    static func shareCodePlanLabel(_ response: BillingSubscriptionResponse?) -> String {
-        switch response?.plan?.key {
-        case "couple":
-            return PlanTier.couple.displayLabel
-        case "family":
-            return PlanTier.family.displayLabel
-        default:
-            switch response?.plan?.planType {
-            case "couple":
-                return PlanTier.couple.displayLabel
-            case "family":
-                return PlanTier.family.displayLabel
-            default:
-                return String(localized: "group.plan.shared")
-            }
-        }
-    }
-
-    static func upsertingVoucher(_ voucher: VoucherItem, into vouchers: [VoucherItem]) -> [VoucherItem] {
-        [voucher] + vouchers.filter { $0.id != voucher.id }
-    }
-
-
-    static func codeRegistrationDestination(responseType: String?, code: String) -> CodeRegistrationDestination {
-        let normalizedType = responseType?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        let normalizedCode = code.trimmingCharacters(in: .whitespacesAndNewlines)
-        if normalizedType == "invite" || normalizedCode.range(of: "INV-", options: [.anchored, .caseInsensitive]) != nil {
-            return .sharedPass
-        }
-        return .home
     }
 
     static func billingErrorMessage(_ error: Error, fallback: String) -> String {
@@ -717,47 +561,7 @@ final class SocialFeatureViewModel: ObservableObject {
         "USER_NOT_FOUND"
     ]
 
-    // MARK: - 멤버 액션, family alarm, plan downgrade cascade
-
-    /// 내가 가족/커플 그룹에서 나간다. Android `MainViewModelSocialActions.leaveFamilyGroup` 와 동등.
-    func leaveFamilyGroup(groupId: String, session: AuthSession?) async {
-        guard let token = session?.token else {
-            statusMessage = String(localized: "로그인이 필요해요.")
-            return
-        }
-        guard !isBusy else { return }
-        isBusy = true
-        defer { isBusy = false }
-
-        do {
-            _ = try await api.leaveFamilyGroup(groupId: groupId, token: token)
-            // ⚠ **성공 문구를 다시 넣지 말 것**(2026-08-15 지시).
-            // 나가면 이용권 카드가 곧바로 '무료' 로 바뀐다 — 화면이 이미 그 사실을 말한다.
-            // 실패만 알린다(아래 catch) — 그건 화면에 안 나타나는 사실이다.
-            await refreshAllAfterMutation(session: session, successMessage: nil)
-        } catch {
-            // 관리자가 나가려 하면 서버가 `OWNER_CANNOT_LEAVE` 로 거절한다 — 공용 표가 이유를 말한다.
-            statusMessage = APIErrorMessages.message(for: error, fallback: String(localized: "이용권에서 나가지 못했어요"))
-        }
-    }
-
-    /// 소유자가 다른 멤버를 내보낸다. MemberManagementView 에서 alert 확인 후 호출.
-    func removeMember(groupId: String, userId: String, session: AuthSession?) async {
-        guard let token = session?.token else {
-            statusMessage = String(localized: "로그인이 필요해요.")
-            return
-        }
-        guard !isBusy else { return }
-        isBusy = true
-        defer { isBusy = false }
-
-        do {
-            _ = try await api.removeFamilyMember(groupId: groupId, userId: userId, token: token)
-            await refreshAllAfterMutation(session: session, successMessage: String(localized: "멤버를 내보냈어요."))
-        } catch {
-            statusMessage = userFacingErrorMessage(error, fallback: String(localized: "멤버를 내보내지 못했어요"))
-        }
-    }
+    // MARK: - 무료 전환 잠금·복원
 
     /// 무료 전환 시 목소리 알람을 **기본 목소리 알람으로 잠근다**(안드로이드
     /// `AlarmRepository.lockPaidAlarmTalks` 미러).
@@ -913,8 +717,7 @@ final class SocialFeatureViewModel: ObservableObject {
     func clearPaidVoiceState(lockedAlarmCount: Int = 0) {
         if lockedAlarmCount > 0 {
             // '삭제했어요' 라고 하지 않는다 — 지우지 않았고, 알람은 **기본 목소리로** 계속 울린다.
-            // 강등 모달(`RootView.downgradeNoticeMessage` 의 `.freePlan`)과 같은 뜻이어야 한다 —
-            // 코드 등록 오류로는 재사용하지 않는다(등록 시작 시 지난 상태를 비운다).
+            // 강등 모달(`RootView.downgradeNoticeMessage` 의 `.freePlan`)과 같은 뜻이어야 한다.
             statusMessage = String(localized: "무료 이용권으로 전환되어 목소리 알람이 기본 목소리로 바뀌었어요. 3일 안에 다시 구독하면 내 목소리가 돌아오고, 지나면 영구 삭제돼요.")
         }
     }
@@ -949,7 +752,6 @@ struct FreePlanLockSelection {
                 // ⚠ 새 모양(기본 목소리 + 보관본)으로 잠긴 행은 이제 무료 기본 목소리 알람이라
                 // `isPaidVoiceForDowngrade` 가 거짓이다 — 여기 걸리면 보관본을 버린 채 풀려 버린다.
                 && !record.hasLockedPaidVoice
-                && record.originEnum == .localOwned
                 && !record.isPaidVoiceForDowngrade
                 && (expectedOwnerUserId == nil || record.ownerUserId == nil
                     || record.ownerUserId == expectedOwnerUserId)

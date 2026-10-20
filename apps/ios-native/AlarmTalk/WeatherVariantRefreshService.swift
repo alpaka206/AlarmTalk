@@ -145,7 +145,7 @@ final class WeatherVariantRefreshService {
               updated.enabled else { return }
         let previous = updated
         // 새 예약을 먼저 성공시킨 뒤 옛 핸들을 해제한다 — 순서를 뒤집으면 실패했을 때
-        // 알람이 **무예약 상태로** 남는다(`RemoteAlarmPullSync.rescheduleReceivedRemote` 와 같은 규칙).
+        // 알람이 **무예약 상태로** 남는다(`AlarmScheduleReconciler` 와 같은 규칙).
         let scheduled = await alarmKit.schedule(record: updated, store: store)
         if scheduled, previous.alarmKitID != nil {
             await alarmKit.cancelScheduledAlarm(record: previous)

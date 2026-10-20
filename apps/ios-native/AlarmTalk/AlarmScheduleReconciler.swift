@@ -102,8 +102,8 @@ enum AlarmScheduleReconciler {
             // (a) 그 사이 울리기 시작한 알람을 **취소해 조용해지고**
             // (b) 사용자가 끈 알람을 `markScheduled` 가 다시 켜고
             // (c) 방금 저장한 편집을 옛 시각으로 되돌려 예약한다.
-            // 같은 위험을 아는 다른 경로들(recoverScheduledAlarms·WeatherVariantRefreshService·
-            // RemoteAlarmPullSync)은 전부 이렇게 다시 읽는다.
+            // 같은 위험을 아는 다른 경로들(recoverScheduledAlarms·WeatherVariantRefreshService)은
+            // 전부 이렇게 다시 읽는다.
             guard let current = store.record(id: snapshot.id) else { continue }
             // ⚠ **언어 때문에 다시 거는 행은 AlarmKit 이 그 핸들을 대기(`.scheduled`) 상태로
             // 들고 있을 때만 넣는다.** 행의 켜짐·상태는 AlarmKit 보다 늦을 수 있다 — 앱이 꺼진

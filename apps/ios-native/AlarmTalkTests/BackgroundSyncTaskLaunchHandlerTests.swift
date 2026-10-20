@@ -11,7 +11,7 @@ import XCTest
 /// 넘기는 클로저에 `@Sendable` 이 없으면 감싸는 `@MainActor` 클래스의 격리를 물려받는데,
 /// `using: nil` 은 **기본 백그라운드 큐**라 Swift 6 이 심은 격리 검사가 배달되는 즉시
 /// 실패한다(`dispatch_assert_queue(main)`). 그래서 `runAndSchedule` 은 **한 번도 실행된 적이
-/// 없었다** — 토큰 롤링 갱신·못 끊은 예약 회수·목소리 접근권 재확인·push/pull·날씨
+/// 없었다** — 토큰 롤링 갱신·못 끊은 예약 회수·목소리 접근권 재확인·알람 동기화·날씨
 /// variant·리컨사일러가 전부 죽은 코드였다.
 ///
 /// ⚠ **이 클래스에 `@MainActor` 를 붙이지 말 것.** 기존 `BackgroundSyncTaskTests` 가

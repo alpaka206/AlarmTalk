@@ -43,13 +43,13 @@ final class PurchaseBlockReasonTests: XCTestCase {
     }
 
     func test_애플만_갱신을_쥐면_통과한다() {
-        // 같은 스토어 안의 등급 변경은 애플이 알아서 처리한다(구독 그룹).
+        // 같은 스토어 안의 일은 애플이 알아서 처리한다(구독 그룹).
         XCTAssertNil(reason(.personal, response(renewalProviders: ["apple"])))
     }
 
     func test_스토어_결제가_없으면_통과한다() {
-        // 프로모·바우처 — 갱신을 쥔 스토어가 없다.
-        XCTAssertNil(reason(.family, response(renewalProviders: [])))
+        // 기간 한정 개인 플랜 — 갱신을 쥔 스토어가 없다.
+        XCTAssertNil(reason(.personal, response(renewalProviders: [])))
     }
 
     func test_애플과_구글이_함께_살아_있으면_막는다() {
@@ -97,7 +97,6 @@ final class PurchaseBlockReasonTests: XCTestCase {
         // ⚠ **모르는 것은 '아니오' 로 친다.** 새 기기·새 로그인이거나 조회가 아직 돌고 있는
         //   동안에도 StoreKit 제품은 이미 로드돼 살 수 있다 — 그 틈이 이중 청구다.
         XCTAssertEqual(reason(.personal, nil), .renewalOwnerUnknown)
-        XCTAssertEqual(reason(.family, nil), .renewalOwnerUnknown)
         // 무료는 갱신을 쥔 스토어가 애초에 없다.
         XCTAssertNil(reason(.free, nil))
     }

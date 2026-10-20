@@ -17,7 +17,7 @@
         컨테이너로 폴백한다(`AudioCacheStore.audioDirectory()` 가 이미 처리).
         위젯/Live Activity 와의 캐시 공유만 안 된다.
       - keychain-access-groups → 앱 자체 키체인만 쓴다(세션 저장은 그대로 동작).
-    알람 예약·목소리 재생·가족 알람 등 검증 대상 기능은 영향받지 않는다.
+    알람 예약·목소리 재생 등 검증 대상 기능은 영향받지 않는다.
   -->
   <key>com.apple.developer.applesignin</key>
   <array>

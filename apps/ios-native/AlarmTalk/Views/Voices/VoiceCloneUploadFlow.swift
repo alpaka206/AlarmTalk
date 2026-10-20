@@ -52,7 +52,7 @@ struct VoiceCloneUploadFlow: View {
     @State private var sourceMode: VoiceCloneSourceMode = .record
     @State private var profileName: String = ""
     @State private var relationshipSelection = VoiceRelationshipSelection()
-    /// Android 생성 플로우처럼 랜덤 문구와 공유 음성에서 쓸 호칭을 함께 저장한다.
+    /// Android 생성 플로우처럼 이 목소리가 나를 부를 호칭을 함께 저장한다.
     @State private var listenerTitle: String = ""
     @State private var previewLanguage: String = VoiceStudioViewModel.appVoiceLanguage()
     @State private var submitted: Bool = false
@@ -784,7 +784,6 @@ struct VoiceCloneUploadFlow: View {
             voice.cloneName = trimmedName
             created = await voice.uploadRecordingForClone(
                 session: auth.session,
-                isShared: false,
                 relationshipLabel: trimmedRelationship,
                 listenerTitle: trimmedListener,
                 language: previewLanguage
@@ -797,7 +796,6 @@ struct VoiceCloneUploadFlow: View {
                     audioFileURL: prepared.url,
                     name: trimmedName,
                     durationMs: prepared.durationMs,
-                    isShared: false,
                     session: auth.session,
                     uploadFileName: prepared.uploadFileName,
                     relationshipLabel: trimmedRelationship,
@@ -985,7 +983,6 @@ struct VoiceCloneUploadFlow: View {
     private var hasPaidVoiceAccess: Bool {
         PaidVoiceGate.isEntitled(snapshot: PaidVoiceGate.liveSnapshot(
             subscriptionResponse: socialFeatures.subscription,
-            familyGroup: socialFeatures.familyGroup,
             storeTier: subscriptions.currentTier,
             user: auth.session?.user
         ))

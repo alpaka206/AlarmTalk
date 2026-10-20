@@ -4,8 +4,8 @@ import XCTest
 /// **접근권을 잃은 목소리를 쓰는 알람은 기본 목소리(미나)로 바꿔야 한다** — 그런데 그 판단이
 /// 실패한 조회로 돌면 멀쩡한 알람을 되돌릴 수 없게 부순다.
 ///
-/// 안드로이드는 처음부터 `familyVoicesLoadedFresh`·`voiceProfilesLoadedFresh` 를 보고
-/// 물러섰다. iOS 에는 이 경로 자체가 없었다(2026-08-18 Codex #697 P1).
+/// 안드로이드는 처음부터 `voiceProfilesLoadedFresh` 를 보고 물러섰다. iOS 에는 이 경로 자체가
+/// 없었다(2026-08-18 Codex #697 P1).
 @MainActor
 final class InaccessibleVoiceReconcileTests: XCTestCase {
 
@@ -20,7 +20,6 @@ final class InaccessibleVoiceReconcileTests: XCTestCase {
     private func alarm(
         id: String,
         voiceProfileId: String?,
-        origin: AlarmOrigin = .localOwned,
         owner: String? = "owner-1"
     ) -> LocalAlarmRecord {
         let now = Int64(Date().timeIntervalSince1970 * 1000)
@@ -30,7 +29,6 @@ final class InaccessibleVoiceReconcileTests: XCTestCase {
             hour: 7,
             minute: 0,
             fireAtMillis: now + 60_000,
-            origin: origin.rawValue,
             createdAtMillis: now,
             updatedAtMillis: now
         )
@@ -51,15 +49,6 @@ final class InaccessibleVoiceReconcileTests: XCTestCase {
 
         XCTAssertEqual(degraded, 0)
         XCTAssertEqual(store.record(id: "a")?.playMode, AlarmPlayMode.voiceOnly.rawValue)
-    }
-
-    /// 받은 알람은 **보낸 사람의** 접근권으로 성립한다 — 내 목록으로 판단하지 않는다.
-    func test_받은_알람은_대상이_아니다() {
-        let store = makeStore()
-        store.upsert(alarm(id: "recv", voiceProfileId: "clone-1", origin: .receivedRemote))
-        let voice = VoiceStudioViewModel()
-
-        XCTAssertEqual(voice.reconcileInaccessibleVoiceAlarms(alarmStore: store, audioCache: nil, ownerUserId: "owner-1"), 0)
     }
 
     /// 시스템(기본) 목소리는 목록에 없어도 언제나 쓸 수 있다.
@@ -146,24 +135,6 @@ final class InaccessibleVoiceReconcileTests: XCTestCase {
             0
         )
         XCTAssertEqual(store.record(id: "keep")?.playMode, AlarmPlayMode.voiceOnly.rawValue)
-    }
-
-    /// 받은 알람은 **보낸 사람의** 접근권으로 성립한다 — 같은 목소리를 내 알람도 쓰고
-    /// 있을 때 함께 벗겨지면 안 된다(그게 실제로 났던 사고다).
-    func test_같은_목소리를_쓰는_받은_알람은_남는다() {
-        let store = makeStore()
-        store.upsert(alarm(id: "mine", voiceProfileId: "shared-1"))
-        store.upsert(alarm(id: "recv", voiceProfileId: "shared-1", origin: .receivedRemote, owner: nil))
-        let voice = VoiceStudioViewModel()
-        voice.__setAccessibleVoicesForTests()
-
-        XCTAssertEqual(
-            voice.reconcileInaccessibleVoiceAlarms(alarmStore: store, audioCache: nil, ownerUserId: "owner-1"),
-            1
-        )
-        XCTAssertEqual(store.record(id: "mine")?.voiceProfileId, substituteSystemVoiceID)
-        XCTAssertEqual(store.record(id: "recv")?.playMode, AlarmPlayMode.voiceOnly.rawValue)
-        XCTAssertEqual(store.record(id: "recv")?.voiceProfileId, "shared-1")
     }
 
     /// 기본(시스템) 목소리는 목록에 없어도 언제나 쓸 수 있다.
@@ -703,13 +674,9 @@ final class PendingCancellationTests: XCTestCase {
         XCTAssertEqual(PendingAlarmCancellationStore.all, ["KIT-1"])
     }
 
-    /// ⚠ **밀어낸 알람도 행을 다시 꺼야 한다**(Codex #703 P1).
-    /// 받은 가족 알람이 같은 시각에서 밀어낸 알람은 취소가 실패한 채 울면 `markRinging` 이
-    /// 행을 도로 켠다. 그때 회수가 손잡이만 지우고 끝내면 그 행은
-    /// `enabled = true, alarmKitID = nil` — 정확히 복구 후보라 곧바로 다시 예약되어
-    /// **받은 알람과 나란히 운다.**
-    func test_밀어낸_예약은_행도_다시_끈다() {
-        XCTAssertTrue(PendingAlarmCancellationStore.Origin.conflictDisplacement.restoresDisabledRow)
+    /// 회수가 끝나면 **계정 종료에서 온 예약만** 행을 다시 끈다 — 고아가 울어 `markRinging` 이 행을 도로
+    /// 켰어도 떠난 계정의 알람이 되살아나지 않게.
+    func test_계정이탈만_행을_다시_끈다() {
         XCTAssertTrue(PendingAlarmCancellationStore.Origin.accountLeave.restoresDisabledRow)
         XCTAssertFalse(
             PendingAlarmCancellationStore.Origin.foreignCleanup.restoresDisabledRow,
@@ -717,10 +684,25 @@ final class PendingCancellationTests: XCTestCase {
         )
     }
 
+    /// 없앤 출처(받은 알람의 같은 시각 밀어내기 — `conflictDisplacement`)로 적힌 옛 기록은 **남의 것**으로
+    /// 읽는다 — 행을 다시 끄지 않는다. 예약 회수 대상에서는 빠지지 않는다.
+    func test_없앤_출처로_적힌_옛_기록은_남의_것으로_읽는다() {
+        PendingAlarmCancellationStore.add("KIT-OLD", origin: .accountLeave, alarmID: "alarm-1")
+        let originsKey = "pending_alarm_cancellation_origins\(TestIsolation.storageSuffix)"
+        var origins = UserDefaults.standard.dictionary(forKey: originsKey) as? [String: String] ?? [:]
+        XCTAssertEqual(origins["KIT-OLD"], "accountLeave", "저장 형식이 바뀌었다 — 이 테스트가 쓰는 키를 맞출 것")
+        origins["KIT-OLD"] = "conflictDisplacement"
+        UserDefaults.standard.set(origins, forKey: originsKey)
+
+        XCTAssertEqual(PendingAlarmCancellationStore.origin(of: "KIT-OLD"), .foreignCleanup)
+        XCTAssertEqual(PendingAlarmCancellationStore.owedHandles(forAlarmID: "alarm-1"), ["KIT-OLD"])
+        XCTAssertEqual(PendingAlarmCancellationStore.all, ["KIT-OLD"])
+    }
+
     /// ⚠ **못 끊은 예약은 '주인 행' 으로 되짚는다**(Codex #703 P1).
     /// 행의 `alarmKitID` 한 칸은 **지금 예약**을 가리키므로, 그 행이 한 번 더 재예약되면
     /// 못 끊은 옛 손잡이는 어느 행도 가리키지 않는다 — 손잡이로만 찾으면 그때부터 영영
-    /// 못 찾고, 전달 정리는 "끊을 게 없다" 고 답해 ACK 가 서버 행을 지운다.
+    /// 못 찾는다.
     func test_못_끊은_예약을_주인_행으로_되짚는다() {
         PendingAlarmCancellationStore.add("KIT-OLD", origin: .foreignCleanup, alarmID: "alarm-1")
         PendingAlarmCancellationStore.add("KIT-OTHER", origin: .foreignCleanup, alarmID: "alarm-2")
@@ -733,8 +715,8 @@ final class PendingCancellationTests: XCTestCase {
     /// 같은 행이 여러 번 실패하면 전부 들고 있는다 — 한 회차에 하나씩만 갚으면
     /// 나머지가 조용히 남는다.
     func test_한_행의_고아를_모두_들고_있는다() {
-        PendingAlarmCancellationStore.add("KIT-A", origin: .conflictDisplacement, alarmID: "alarm-1")
-        PendingAlarmCancellationStore.add("KIT-B", origin: .conflictDisplacement, alarmID: "alarm-1")
+        PendingAlarmCancellationStore.add("KIT-A", origin: .accountLeave, alarmID: "alarm-1")
+        PendingAlarmCancellationStore.add("KIT-B", origin: .accountLeave, alarmID: "alarm-1")
 
         XCTAssertEqual(
             PendingAlarmCancellationStore.owedHandles(forAlarmID: "alarm-1").sorted(),
@@ -750,16 +732,6 @@ final class PendingCancellationTests: XCTestCase {
 
         XCTAssertEqual(PendingAlarmCancellationStore.all, ["KIT-LEGACY"])
         XCTAssertTrue(PendingAlarmCancellationStore.owedHandles(forAlarmID: "alarm-1").isEmpty)
-    }
-
-    /// 승격 규칙은 '계정 이탈' 이라는 특정 값이 아니라 **행을 꺼야 하는가**로 판정한다.
-    /// 값 목록을 조건문에 베끼면 출처가 늘 때마다 같이 고쳐야 하고, 언젠가 빠뜨린다.
-    func test_출처는_밀어내기로도_승격된다() {
-        PendingAlarmCancellationStore.add("KIT-Z", origin: .foreignCleanup)
-        PendingAlarmCancellationStore.add("KIT-Z", origin: .conflictDisplacement)
-
-        XCTAssertEqual(PendingAlarmCancellationStore.origin(of: "KIT-Z"), .conflictDisplacement)
-        XCTAssertEqual(PendingAlarmCancellationStore.all, ["KIT-Z"], "목록이 불어났다")
     }
 }
 

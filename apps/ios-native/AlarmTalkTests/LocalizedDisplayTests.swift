@@ -53,50 +53,22 @@ final class LocalizedDisplayTests: XCTestCase {
         XCTAssertEqual(bundledSystemVoiceProfiles()[1].name, "미나")
     }
 
-    func testRelationshipPresetsAreTranslatedAndCustomValuesStayUntouched() throws {
+    func testRelationshipPresetsAreTranslated() throws {
         for language in ["en", "ja"] {
             let bundle = try bundle(language)
             for preset in VoiceRelationshipPreset.allCases {
                 XCTAssertNotEqual(preset.localizedDisplayLabel(bundle: bundle), preset.label)
             }
-            XCTAssertEqual(parseVoiceRelationshipLabel("나의 소중한 친구").localizedDisplayLabel(bundle: bundle), "나의 소중한 친구")
         }
         XCTAssertEqual(VoiceRelationshipPreset.custom.localizedDisplayLabel(bundle: try bundle("en")), "Custom")
     }
 
-    func testReceivedAlarmHonorificIsAddedOnce() throws {
-        let japanese = try bundle("ja")
-        XCTAssertEqual(receivedAlarmDisplayLabel(sender: "田中", bundle: japanese), "田中さんから届いたアラーム")
-        XCTAssertEqual(receivedAlarmDisplayLabel(sender: "田中さん", bundle: japanese), "田中さんから届いたアラーム")
-        XCTAssertEqual(receivedAlarmDisplayLabel(sender: "민수님", bundle: japanese), "민수님から届いたアラーム")
-        XCTAssertEqual(receivedAlarmDisplayLabel(sender: "Tanaka", bundle: try bundle("en")), "Alarm from Tanaka")
-        XCTAssertEqual(receivedAlarmDisplayLabel(sender: nil, bundle: try bundle("en")), "Alarm from someone")
-        XCTAssertEqual(receivedAlarmDisplayLabel(sender: "  ", bundle: japanese), "相手から届いたアラーム")
-    }
-
-    func testCustomRelationshipMatchingPresetKeepsUserInput() throws {
-        for language in ["ko", "en", "ja"] {
-            let bundle = try bundle(language)
-            let custom = VoiceRelationshipSelection(preset: .custom, customLabel: "엄마")
-            XCTAssertEqual(custom.localizedDisplayLabel(bundle: bundle), "엄마")
-            XCTAssertEqual(custom.resolved, "엄마")
-            let restored = parseVoiceRelationshipLabel(custom.resolved)
-            XCTAssertEqual(restored.preset, .custom)
-            XCTAssertEqual(restored.localizedDisplayLabel(bundle: bundle), "엄마")
-            XCTAssertEqual(VoiceRelationshipSelection(preset: .mom).localizedDisplayLabel(bundle: bundle),
-                           VoiceRelationshipPreset.mom.localizedDisplayLabel(bundle: bundle))
-        }
-    }
-
-    func testSharedVoiceOwnerUsesCurrentLanguageAndOneHonorific() throws {
-        for (language, owner, expected) in [
-            ("en", "Alex", "Voice shared by Alex"),
-            ("ja", "田中さん", "田中さんから共有された声"),
-            ("ko", "민수님", "민수님에게 공유받은 목소리")
-        ] {
-            let voice = FamilyVoiceProfile(id: "shared", name: "Voice", ownerName: owner)
-            XCTAssertEqual(voice.localizedSharedFromLabel(bundle: try bundle(language)), expected)
-        }
+    /// 관계는 저장 문자열로 보낸다 — 직접 입력은 친 그대로(앞뒤 공백만 걷는다), 고른 것은 그 한국어 라벨이다.
+    func testCustomRelationshipMatchingPresetKeepsUserInput() {
+        let custom = VoiceRelationshipSelection(preset: .custom, customLabel: " 엄마 ")
+        XCTAssertEqual(custom.resolved, "엄마")
+        XCTAssertEqual(VoiceRelationshipSelection(preset: .mom).resolved, VoiceRelationshipPreset.mom.label)
+        XCTAssertEqual(VoiceRelationshipSelection().resolved, "")
     }
 
     func testLegalLinksFollowAppLanguageWithKoreanFallback() {

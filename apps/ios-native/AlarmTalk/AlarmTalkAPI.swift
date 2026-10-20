@@ -129,76 +129,6 @@ final class AlarmTalkAPI: @unchecked Sendable {
         let _: EmptyResponse = try await request("auth/logout", method: "POST", token: token)
     }
 
-    func listAlarms(token: String) async throws -> [RemoteAlarm] {
-        let pageSize = 100
-        var alarms: [RemoteAlarm?] = []
-        var latestIndexByID: [String: Int] = [:]
-        var seenDeliveryVersions: [String: Set<String>] = [:]
-        var cursor: String?
-        var offset = 0
-        var cursorMode: Bool?
-        while true {
-            try Task.checkCancellation()
-            var query = URLComponents()
-            query.queryItems = [
-                URLQueryItem(name: "limit", value: String(pageSize)),
-            ]
-            if cursorMode == false {
-                query.queryItems?.append(URLQueryItem(name: "offset", value: String(offset)))
-            } else {
-                query.queryItems?.append(URLQueryItem(name: "pagination", value: "cursor"))
-                if let cursor { query.queryItems?.append(URLQueryItem(name: "after", value: cursor)) }
-            }
-            let page: RemoteAlarmListResponse = try await request(
-                "alarm?\(query.percentEncodedQuery!)", token: token
-            )
-            try Task.checkCancellation()
-            if cursorMode == nil { cursorMode = page.hasMore != nil }
-            if cursorMode == false {
-                guard page.hasMore == nil, page.nextCursor == nil, page.offset == offset,
-                      let total = page.total, total >= 0, let limit = page.limit,
-                      (1...pageSize).contains(limit), page.alarms.count <= limit else {
-                    throw APIError.invalidResponse
-                }
-                if page.alarms.isEmpty { return alarms.compactMap { $0 } }
-            } else if page.hasMore == nil {
-                throw APIError.invalidResponse
-            }
-            var pageIDs = Set<String>()
-            for alarm in page.alarms {
-                guard pageIDs.insert(alarm.id).inserted else { throw APIError.invalidResponse }
-                let version = alarm.deliveryVersion?.nilIfBlank
-                if let previous = latestIndexByID[alarm.id] {
-                    // 재전송은 같은 id로 뒤 페이지에 다시 온다. 새 세대만 교체하며
-                    // 이미 본 세대/버전 없는 중복은 잘못된 페이지로 거절한다.
-                    guard let version, seenDeliveryVersions[alarm.id]?.contains(version) != true else {
-                        throw APIError.invalidResponse
-                    }
-                    // 옛 위치에 덮어쓰지 않는다. 슬롯 교체도 최신 전달 순서대로 적용한다.
-                    alarms[previous] = nil
-                }
-                if let version { seenDeliveryVersions[alarm.id, default: []].insert(version) }
-                latestIndexByID[alarm.id] = alarms.count
-                alarms.append(alarm)
-            }
-            if cursorMode == false {
-                let (next, overflow) = offset.addingReportingOverflow(page.alarms.count)
-                guard !overflow else { throw APIError.invalidResponse }
-                offset = next
-                continue
-            }
-            if page.hasMore == false {
-                guard page.nextCursor == nil else { throw APIError.invalidResponse }
-                return alarms.compactMap { $0 }
-            }
-            guard !page.alarms.isEmpty, let next = page.nextCursor,
-                  let sequence = UInt64(next), String(sequence) == next,
-                  sequence > 0, sequence <= 9_007_199_254_740_991,
-                  sequence > (cursor.flatMap { UInt64($0) } ?? 0) else { throw APIError.invalidResponse }
-            cursor = next
-        }
-    }
-
     func createAlarm(_ requestBody: RemoteAlarmWriteRequest, token: String) async throws -> RemoteAlarm {
         let response: RemoteAlarmResponse = try await request(
             "alarm",
@@ -239,7 +169,6 @@ final class AlarmTalkAPI: @unchecked Sendable {
     /// (`VoiceProfileApi.createVoiceClone` 파라미터 참고). 되살리지 말 것.
     static func voiceCloneMultipartFields(
         name: String,
-        isShared: Bool,
         durationMs: Int,
         relationshipLabel: String? = nil,
         listenerTitle: String? = nil,
@@ -248,7 +177,6 @@ final class AlarmTalkAPI: @unchecked Sendable {
     ) -> [String: String] {
         let fields: [String: String] = [
             "name": name.trimmingCharacters(in: .whitespacesAndNewlines),
-            "isShared": isShared ? "true" : "false",
             "durationMs": String(durationMs),
             "relationshipLabel": relationshipLabel?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "",
             "listenerTitle": listenerTitle?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "",
@@ -269,7 +197,6 @@ final class AlarmTalkAPI: @unchecked Sendable {
     func cloneVoice(
         audioFileURL: URL,
         name: String,
-        isShared: Bool,
         durationMs: Int,
         token: String,
         uploadFileName: String? = nil,
@@ -280,7 +207,6 @@ final class AlarmTalkAPI: @unchecked Sendable {
     ) async throws -> VoiceProfile {
         let fields = Self.voiceCloneMultipartFields(
             name: name,
-            isShared: isShared,
             durationMs: durationMs,
             relationshipLabel: relationshipLabel,
             listenerTitle: listenerTitle,
@@ -302,28 +228,9 @@ final class AlarmTalkAPI: @unchecked Sendable {
         try await request("voice/draft-quota", token: token)
     }
 
-    func uploadVoiceAudio(
-        audioFileURL: URL,
-        durationMs: Int,
-        originalName: String? = nil,
-        token: String
-    ) async throws -> VoiceUpload {
-        let response: VoiceUploadResponse = try await multipartRequest(
-            "voice/upload",
-            token: token,
-            fields: [
-                "durationMs": String(durationMs),
-                "originalName": originalName.nilIfBlank ?? audioFileURL.lastPathComponent,
-            ],
-            files: [try multipartFile(fieldName: "audio", fileURL: audioFileURL)]
-        )
-        return response.upload
-    }
-
     func updateVoiceProfile(
         id: String,
         name: String? = nil,
-        isShared: Bool? = nil,
         relationshipLabel: String? = nil,
         listenerTitle: String? = nil,
         token: String
@@ -334,7 +241,6 @@ final class AlarmTalkAPI: @unchecked Sendable {
             token: token,
             body: VoiceProfileUpdateRequest(
                 name: name.nilIfBlank,
-                isShared: isShared,
                 relationshipLabel: relationshipLabel.nilIfBlank,
                 listenerTitle: listenerTitle.nilIfBlank
             )
@@ -351,7 +257,6 @@ final class AlarmTalkAPI: @unchecked Sendable {
         id: String,
         token: String,
         replaceExisting: Bool = false,
-        isShared: Bool = false,
         pitchSemitones: Double? = nil
     ) async throws -> VoiceProfile {
         let response: VoiceProfileResponse = try await request(
@@ -360,7 +265,6 @@ final class AlarmTalkAPI: @unchecked Sendable {
             token: token,
             body: Self.voiceDraftPromoteBody(
                 replaceExisting: replaceExisting,
-                isShared: isShared,
                 pitchSemitones: pitchSemitones
             )
         )
@@ -370,13 +274,11 @@ final class AlarmTalkAPI: @unchecked Sendable {
     /// 등록 확정 바디. 테스트가 실제로 나가는 모양을 같은 인코더로 볼 수 있게 따로 둔다.
     static func voiceDraftPromoteBody(
         replaceExisting: Bool,
-        isShared: Bool,
         pitchSemitones: Double?
     ) -> VoiceDraftPromoteRequest {
         VoiceDraftPromoteRequest(
             isDraft: false,
             replaceExisting: replaceExisting ? true : nil,
-            isShared: isShared,
             pitchSemitones: pitchSemitones.flatMap { $0 == 0 ? nil : $0 }
         )
     }
@@ -430,7 +332,7 @@ final class AlarmTalkAPI: @unchecked Sendable {
     /// 기기 푸시 토큰 등록. 같은 토큰이 다른 계정에 묶여 있으면 서버가 옮긴다.
     ///
     /// ⚠ 알림 **권한과 무관하게** 호출한다 — background push 는 권한 없이도 오고,
-    /// 그게 받은 알람을 제때 예약하는 유일한 즉시 경로다.
+    /// 그게 목소리·플랜 변경을 곧바로 반영하는 즉시 경로다.
     func registerPushToken(token: String, platform: String, authToken: String) async throws {
         struct Body: Encodable {
             let token: String
@@ -440,8 +342,8 @@ final class AlarmTalkAPI: @unchecked Sendable {
         // 백엔드가 마운트한 것은 `POST /api/push/register` 하나뿐이라(`routes/push.ts`),
         // 옛 경로는 **404** 였다. 그런데 `PushNotificationCoordinator.registerToken` 이
         // 실패를 조용히 삼켜(다음 실행이 재시도한다는 설계) 아무 데도 티가 안 났다 —
-        // 그래서 iOS 는 APNs 토큰이 **한 번도 저장된 적이 없고**, 가족 알람·목소리 공유·
-        // 플랜 변경 푸시가 전부 안 갔다. 안드로이드(`PushApi.kt`)는 처음부터 `push/register` 다.
+        // 그래서 iOS 는 APNs 토큰이 **한 번도 저장된 적이 없고**, 목소리·플랜 변경 푸시가
+        // 전부 안 갔다. 안드로이드(`PushApi.kt`)는 처음부터 `push/register` 다.
         let _: EmptyResponse = try await request(
             "push/register",
             method: "POST",
@@ -522,44 +424,6 @@ final class AlarmTalkAPI: @unchecked Sendable {
         let _: EmptyResponse = try await request(path, method: "DELETE", token: token)
     }
 
-    /// 관계/호칭 갱신 — `PATCH /voice/:id/relationship`. body 의 두 필드는 모두 필수.
-    /// 공유받은 음성이면 viewer 자신의 관계/호칭을, 내 **초안**이면 그 초안의 페르소나를 고친다.
-    /// 목소리의 결(`voice_energy`)은 싣지 않는다 — 서버가 그 값을 건드리지 않는다.
-    func updateVoiceProfileRelationship(
-        profileId: String,
-        relationshipLabel: String,
-        listenerTitle: String,
-        token: String
-    ) async throws -> VoiceProfile {
-        let response: VoiceProfileResponse = try await request(
-            "voice/\(profileId)/relationship",
-            method: "PATCH",
-            token: token,
-            body: Self.voiceRelationshipUpdateBody(
-                relationshipLabel: relationshipLabel,
-                listenerTitle: listenerTitle
-            )
-        )
-        return response.profile
-    }
-
-    /// `PATCH /voice/:id/relationship` 바디. 테스트가 실제로 나가는 모양을 고정할 수 있게
-    /// 순수 함수로 뺐다(`voiceCloneMultipartFields` 와 같은 이유).
-    static func voiceRelationshipUpdateBody(
-        relationshipLabel: String,
-        listenerTitle: String
-    ) -> VoiceProfileRelationshipUpdateRequest {
-        VoiceProfileRelationshipUpdateRequest(
-            relationshipLabel: relationshipLabel.trimmingCharacters(in: .whitespacesAndNewlines),
-            listenerTitle: listenerTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-        )
-    }
-
-    func listFamilyVoiceProfiles(token: String) async throws -> [FamilyVoiceProfile] {
-        let response: FamilyVoiceProfileListResponse = try await request("voice/family", token: token)
-        return response.profiles
-    }
-
     func generateTTS(_ requestBody: TtsGenerateRequest, token: String) async throws -> TtsGenerateResponse {
         try await request("tts/generate", method: "POST", token: token, body: requestBody)
     }
@@ -611,41 +475,6 @@ final class AlarmTalkAPI: @unchecked Sendable {
         let query = components.percentEncodedQuery ?? ""
         let response: PrerenderVariantResponse = try await request("tts/prerender-variant?\(query)", token: token)
         return response.variantIndex
-    }
-
-    // MARK: - Sync convenience
-    // RemoteAlarmPullSync / RemoteAlarmPushSync 가 사용하는 헬퍼.
-    // base64 payload 를 디코드해 `(bytes, mimeType, durationMs)` 로 노출한다.
-    //
-    // 서버 응답의 `audioFormat` ("mp3" / "m4a" / "wav" 등) 을 audio/<format>
-    // 또는 표준 MIME 으로 변환한 뒤 `AudioCacheStore.cacheBytes(_:cacheKey:...)`
-    // 가 그대로 받아 쓸 수 있는 형태로 정규화한다.
-
-    struct DecodedTtsAudio: Equatable {
-        var bytes: Data
-        var mimeType: String
-        var durationMs: Int64?
-        var rawAudioUri: String?
-        var messageId: String
-    }
-
-    /// `tts/messages/{id}/audio` 응답을 디코드해 raw bytes 로 노출.
-    /// `RemoteAlarmPullSync` 가 신규 수신 알람의 음원을 캐싱할 때 호출.
-    func getTtsAudio(messageId: String, token: String) async throws -> DecodedTtsAudio {
-        let response = try await getTTSMessageAudio(id: messageId, token: token)
-        // 0바이트 방어 — `AudioCacheStore.cache(tts:cacheKey:)` 주석 참조.
-        guard let data = Data(base64Encoded: response.audioBase64), !data.isEmpty else {
-            throw APIError.invalidResponse
-        }
-        let format = AudioCacheStore.normalizedFormat(response.audioFormat)
-        let mime = AudioCacheStore.mimeType(forFormat: format)
-        return DecodedTtsAudio(
-            bytes: data,
-            mimeType: mime,
-            durationMs: nil,
-            rawAudioUri: response.audioUrl,
-            messageId: messageId
-        )
     }
 
     func updateProfile(_ requestBody: UpdateProfileRequest, token: String) async throws -> UpdateProfileResponse {
@@ -719,14 +548,6 @@ final class AlarmTalkAPI: @unchecked Sendable {
         return KoreanLunarHolidayEngine.epochDay(year: y, month: m, day: d)
     }
 
-    func getFamilyGroup(token: String) async throws -> FamilyGroupCurrentResponse {
-        try await request("family/groups/current", token: token)
-    }
-
-    func registerCode(_ code: String, token: String) async throws -> CodeRegisterResponse {
-        try await request("code/register", method: "POST", token: token, body: CodeRegisterRequest(code: code))
-    }
-
     /// - Parameter refreshStoreState: `true` 면 서버가 **애플에 직접 물어** 갱신 상태를
     ///   최신화한 뒤 답한다. ⚠ **결제 직전에만 켠다** — 애플 서버 호출이 붙어서, 배경
     ///   갱신이 켜면 애플이 느릴 때 **DB 에 이미 있는 답까지 같이 늦어진다.**
@@ -745,16 +566,10 @@ final class AlarmTalkAPI: @unchecked Sendable {
         try await request("tts/manual-quota", token: token)
     }
 
-    func listVouchers(token: String) async throws -> [VoucherItem] {
-        let response: VoucherListResponse = try await request("billing/vouchers", token: token)
-        return response.vouchers
-    }
-
-
     /// Phase 4-D1: Apple StoreKit2 영수증을 백엔드로 보내 entitlement 동기화.
     ///
     /// 백엔드는 transactionId/originalTransactionId 를 Apple App Store Server API
-    /// 로 검증하고, 매칭되는 plan key (`personal` / `couple` / `family`) 와 만료
+    /// 로 검증하고, 매칭되는 plan key (`personal`) 와 만료
     /// 시각을 `subscriptions` 테이블에 upsert 한다.
     ///
     /// 본 호출이 실패해도 클라이언트는 StoreKit currentEntitlements 를 권위로 사용
@@ -770,26 +585,6 @@ final class AlarmTalkAPI: @unchecked Sendable {
             token: token,
             body: ConfirmAppleSubscriptionRequest(transactionId: transactionID)
         )
-    }
-
-    func ensureFamilyShareCode(token: String) async throws -> VoucherItem {
-        let response: EnsureFamilyShareCodeResponse = try await request(
-            "billing/vouchers/family-share",
-            method: "POST",
-            token: token
-        )
-        return response.voucher
-    }
-
-    /// 기존 공유 코드를 무효화(expired)하고 새 코드를 발급한다(유출 의심 시 재발급).
-    /// Android `BillingApi.regenerateFamilyShareCode`, 백엔드 `billing-mutation.ts`.
-    func regenerateFamilyShareCode(token: String) async throws -> VoucherItem {
-        let response: EnsureFamilyShareCodeResponse = try await request(
-            "billing/vouchers/family-share/regenerate",
-            method: "POST",
-            token: token
-        )
-        return response.voucher
     }
 
     func cancelSubscription(mode: String, token: String) async throws -> CancelSubscriptionResponse {
@@ -870,81 +665,6 @@ final class AlarmTalkAPI: @unchecked Sendable {
             body: PasswordResetConfirmRequest(email: email, code: code, password: password)
         )
     }
-
-    // MARK: - Phase 3-C3: Family/Couple 그룹 멤버 액션
-
-    /// 가족 그룹에서 다른 멤버를 내보낸다. 소유자 전용. Android `FamilyApi.removeMember`.
-    func removeFamilyMember(groupId: String, userId: String, token: String) async throws -> EmptyResponse {
-        return try await request(
-            "family/groups/\(groupId)/members/\(userId)",
-            method: "DELETE",
-            token: token
-        )
-    }
-
-    /// 내가 가족 그룹에서 나간다.
-    func leaveFamilyGroup(groupId: String, token: String) async throws -> EmptyResponse {
-        try await request(
-            "family/groups/\(groupId)/leave",
-            method: "POST",
-            token: token
-        )
-    }
-
-    // MARK: - Family voice alarm + 받은 알람 그만받기
-
-    /// 가족 멤버에게 보내는 voice alarm 생성. Android `FamilyApi.kt:87` 의
-    /// `createFamilyAlarmTalk`. targetUserId 가 수신자.
-    ///
-    /// ⚠ **짝이 되는 '수정' API 를 만들지 말 것.** 보낸 알람은 서버가
-    /// `PATCH /alarm/:id` 를 409 `TARGETED_ALARM_IMMUTABLE` 로 거절한다
-    /// (`docs/spec/family-alarm.md` 의 「보낸 알람은 절대 수정할 수 없다」).
-    /// 받는 쪽이 발신자의 변경을 의도적으로 무시하므로, 수정을 받아 주면
-    /// **발신자는 고쳤다고 믿고 수신자는 옛 시각에 일어난다.**
-    /// 내용을 바꾸려면 같은 (수신자, 시각) 으로 **다시 보낸다.**
-    func createFamilyAlarmTalk(_ requestBody: FamilyAlarmTalkRequest, token: String) async throws -> FamilyAlarmTalkResponse {
-        try await request(
-            "family/alarms/voice",
-            method: "POST",
-            token: token,
-            body: requestBody
-        )
-    }
-
-    /// `POST /alarm/:id/decline` — **받은 알람 그만받기.**
-    ///
-    /// 받은 알람을 지울 때 `DELETE /alarm/:id` 를 쓰면 안 된다 — 서버가 **소유자만**
-    /// 허용해서 404 가 나고(`alarm-mutation.ts` 의 `user_id IN (ownerIds)` 게이트),
-    /// 그러면 그만받기가 기록되지 않아 **다음 pull 이 그 알람을 다시 임포트한다.**
-    /// 사용자는 지웠는데 되살아나는 것으로 겪는다.
-    ///
-    /// 한 번 declined 되면 API 로 되돌릴 방법이 없다(un-decline 라우트는 삭제됐다).
-    func declineAlarm(id: String, token: String) async throws {
-        let _: EmptyResponse = try await request("alarm/\(id)/decline", method: "POST", token: token)
-    }
-
-    /// `POST /alarm/:id/received` — 음원 확보와 켜진 알람의 OS 예약까지 끝나
-    /// **서버 행을 지워도 된다**고 알린다.
-    ///
-    /// 받은 알람은 로컬이 원본이라(`docs/spec/family-alarm.md`) 전달이 끝나면 서버 행이
-    /// 할 일이 없다. 남겨 두면 오디오 보존 판정이 "아직 쓰는 알람이 있다" 고 보아
-    /// 클론 음원을 TTL 이 지나도 영구 보존한다.
-    ///
-    /// 실패는 호출부가 삼킨다 — 다음 pull 이 같은 알람을 다시 보고 재시도한다.
-    func markAlarmReceived(id: String, deliveryVersion: String, token: String) async throws {
-        let _: EmptyResponse = try await request(
-            "alarm/\(id)/received",
-            method: "POST",
-            token: token,
-            body: AlarmReceiptRequest(deliveryVersion: deliveryVersion)
-        )
-    }
-
-    /// `GET /alarm/declined` 한 페이지. 서버가 limit 을 100 으로 클램프한다.
-    func declinedAlarms(limit: Int = 100, offset: Int = 0, token: String) async throws -> DeclinedAlarmsResponse {
-        try await request("alarm/declined?limit=\(limit)&offset=\(offset)", token: token)
-    }
-
 
     private func request<Response: Decodable, Body: Encodable>(
         _ path: String,

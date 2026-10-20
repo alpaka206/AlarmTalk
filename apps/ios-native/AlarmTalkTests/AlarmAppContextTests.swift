@@ -106,7 +106,7 @@ final class AlarmAppContextTests: XCTestCase {
             subscription: BillingSubscription(
                 id: "sub-1", planId: "p", status: "active", expiresAt: "2099-01-01T00:00:00Z"
             ),
-            plan: BillingPlan(id: "p", key: "personal", name: "personal", planType: "personal", maxMembers: 1)
+            plan: BillingPlan(id: "p", key: "personal", name: "personal", planType: "personal")
         )
         let payerStop = await stop(payer)
         XCTAssertTrue(payerStop.isEmpty, "활성 구독 행이 있으면 프로모와 무관하다")

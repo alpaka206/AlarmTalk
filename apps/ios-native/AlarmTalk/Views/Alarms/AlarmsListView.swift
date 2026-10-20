@@ -11,18 +11,14 @@ struct AlarmsListView: View {
     @EnvironmentObject private var alarmKit: AlarmKitViewModel
     @EnvironmentObject private var remoteSync: RemoteAlarmSyncViewModel
     @EnvironmentObject private var voiceStudio: VoiceStudioViewModel
-    @EnvironmentObject private var socialFeatures: SocialFeatureViewModel
-    @EnvironmentObject private var subscriptions: SubscriptionManager
     @State private var actionMessage: String?
-    /// "누구를 깨울까요?" 시트 노출 여부. 구성원이 있을 때만 뜬다.
-    @State private var wakeTargetSheetOpen = false
 
     /// 다중 선택 삭제 — 길게 눌러 들어가고, 하나도 안 남으면 자동으로 빠져나온다.
     /// 안드로이드 `AlarmListScreen.kt:135-148`.
     @State private var selectedAlarmIDs: Set<String> = []
 
     /// ＋FAB 의 만들기 요청. 값이 바뀌면 `openCreateAlarm()` 을 탄다 —
-    /// FAB 가 권한 확인과 「누구를 깨울까요?」 를 건너뛰지 않게 하는 통로다.
+    /// FAB 가 권한 확인을 건너뛰지 않게 하는 통로다.
     var createRequest: UUID?
     let openEditor: (AlarmEditorTarget) -> Void
 
@@ -42,7 +38,7 @@ struct AlarmsListView: View {
                             alarmPermissionBanner
                         }
                         // 인라인 액션 메시지(alarmKit 유래)를 우선 보여주고, 없을 때만 동기화 상태
-                        // (로그인 필요 / push·pull 부분 실패)를 노출한다. 둘을 동시에 쌓지 않는다.
+                        // (로그인 필요 / push 부분 실패)를 노출한다. 둘을 동시에 쌓지 않는다.
                         // Android syncNow / msg_sync_*_partial_failed parity.
                         if let displayedMessage {
                             Text(displayedMessage)
@@ -68,55 +64,6 @@ struct AlarmsListView: View {
             Task { await openCreateAlarm() }
         }
         .preference(key: AlarmSelectionActiveKey.self, value: selectionMode)
-        // ⚠ **`.sheet` 가 아니라 `.bottomSheet` 다**(2026-08-24). `SelectionSheet` 은
-        // "배경·모서리·드래그 핸들은 `BottomSheetHost` 가 그린다" 를 전제로 만들어져 있어서,
-        // 시스템 `.sheet` 로 직접 띄우면 **배경이 안 칠해지고 좌우도 꽉 차지 않는다**
-        // (실기기 확인). 다른 선택 시트(공휴일 국가·화면 테마)는 전부 `.bottomSheet` 를 쓴다 —
-        // 이 시트만 빠져 있어서 같은 껍데기인데 혼자 다르게 보였다.
-        .bottomSheet(
-            isPresented: $wakeTargetSheetOpen,
-            onDismiss: { wakeTargetSheetOpen = false }
-        ) {
-            WakeTargetSheet(
-                recipients: familyRecipients,
-                onSelectSelf: {
-                    wakeTargetSheetOpen = false
-                    openEditor(.create())
-                },
-                onSelectRecipient: { recipient in
-                    wakeTargetSheetOpen = false
-                    // ⚠ 인자를 버리지 말 것 — 버리면 편집기가 첫 번째 구성원으로 폴백한다.
-                    openEditor(.createFamily(recipientUserID: recipient.userId))
-                }
-            )
-            // 높이는 `SelectionSheet` 가 내용에 맞춰 잡는다 — `presentationDetents` 는
-            // `BottomSheetHost` 경로에서 쓰지 않는다(고정 260 이면 구성원 수에 따라 남거나 잘린다).
-        }
-    }
-
-    /// 상대 알람을 보낼 수 있는 구성원(본인 제외 + 허용한 사람만).
-    private var familyRecipients: [FamilyGroupMember] {
-        let currentUserID = auth.session?.user.id
-        let currentEmail = auth.session?.user.email
-        return (socialFeatures.familyGroup?.members ?? []).filter { member in
-            member.userId != currentUserID &&
-                member.email != currentEmail &&
-                member.allowFamilyAlarms == true
-        }
-    }
-
-    /// 기간 한정 개인 플랜 중의 **보류 규칙**(스펙 D9)이 상대 알람을 막는가 — 규칙이 걸려 있고
-    /// 등급(`PlanTier.bestKnown(user:)` — 스토어·계산값)이 커플 미만이면, 결제 보류로 남은 그룹의
-    /// 구성원이 있어도 「누구를 깨울까요?」 를 묻지 않는다. 안드로이드 `AlarmTalkApp` 의
-    /// `canCreateFamilyAlarm`(`hasCoupleOrFamilyAccess` + `personalPromoTierHold`)과 같은 답이다.
-    private var familyAlarmHeldByPromo: Bool {
-        let user = auth.session?.user
-        guard PlanTier.personalPromoHoldActive(user: user) else { return false }
-        return !PlanTier.bestKnown(
-            serverSubscription: socialFeatures.subscription,
-            storeTier: subscriptions.currentTier,
-            user: user
-        ).meetsOrExceeds(.couple)
     }
 
     /// 인라인 액션 메시지(alarmKit 유래) 우선, 없으면 동기화 상태 메시지. 둘 중 하나만.
@@ -266,11 +213,7 @@ struct AlarmsListView: View {
         // 지금의 잠금은 행을 **기본 목소리 알람**으로 고쳐 쓰므로(`DefaultVoiceSubstitute.locked`)
         // 그 기본 목소리 이름이 보여야 한다 — 보관본(`preLockVoice`)이 있으면 막지 않는다.
         guard alarm.preLockPlayMode == nil || alarm.preLockVoice != nil else { return nil }
-
-        // ⚠ **공유받은 목소리 폴백.** `GET /voice-profile` 은 내 것과 시스템 것만 주므로,
-        // 가족이 공유한 목소리로 만든 알람은 내 목록에서 못 찾고 이름이 통째로 사라졌다.
-        // 그 목록은 `familyVoices` 에 따로 온다 — `alarmRowVoiceName` 이 둘 다 본다.
-        return alarmRowVoiceName(voiceProfileID: id, profiles: voiceStudio.profiles, familyVoices: voiceStudio.familyVoices)
+        return alarmRowVoiceName(voiceProfileID: id, profiles: voiceStudio.profiles)
     }
 
     /// 빈 상태 카드 — 안드로이드 `ui/home/HomeCards.kt:28-91`.
@@ -341,7 +284,7 @@ struct AlarmsListView: View {
     @MainActor
     private func openCreateAlarm() async {
         alarmKit.refreshAuthorizationState()
-        guard alarmKit.alarmAuthorized else {
+        if !alarmKit.alarmAuthorized {
             // 굳은 거부에서는 프롬프트가 뜨지 않는다 — 그냥 return 하면 버튼이 무반응이다.
             if alarmKit.permissionRecoveryNeeded {
                 actionMessage = AlarmKitViewModel.alarmRecoveryMessage
@@ -354,21 +297,8 @@ struct AlarmsListView: View {
                 actionMessage = String(localized: "알람 권한을 허용해야 알람을 만들 수 있어요. \(AlarmKitViewModel.alarmDeniedConsequence)")
                 return
             }
-            presentCreateEntry()
-            return
         }
-        presentCreateEntry()
-    }
-
-    /// 편집기로 바로 갈지, "누구를 깨울까요?" 를 먼저 물을지 정한다.
-    /// **선택지가 하나면 묻지 않는다** — 탭을 한 번 더 받을 뿐 아무것도 결정하지 않는다.
-    @MainActor
-    private func presentCreateEntry() {
-        if familyRecipients.isEmpty || familyAlarmHeldByPromo {
-            openEditor(.create())
-        } else {
-            wakeTargetSheetOpen = true
-        }
+        openEditor(.create())
     }
 
     @MainActor
@@ -419,20 +349,10 @@ struct AlarmsListView: View {
         }
     }
 
-    /// 이 행의 변경을 서버에 올려도 되는가.
-    ///
-    /// ⚠ **`remoteAlarmId != nil` 만 보면 안 된다.** 받은 알람도 그 값을 갖는다(보낸 사람이
-    /// 만든 서버 행의 id). 그걸 push 하면 `PATCH /alarm/:id` 가 소유권 게이트
-    /// (`alarm-mutation.ts` 의 `WHERE a.id = ? AND a.user_id IN (...)`)에 걸려 **404** 로
-    /// 떨어지고, 수신자에게는 "알람 변경사항을 저장하지 못했어요" 만 뜬다 — 로컬 저장은
-    /// 멀쩡히 됐는데 실패한 것처럼 보인다(2026-08-18 실기기에서 반복 확인).
-    ///
-    /// 받은 알람은 **받은 뒤로 수신자 것이고 서버에 올릴 사본이 없다**
-    /// (docs/spec/family-alarm.md). 껐다 켜는 것도 로컬·AlarmKit 에서 끝난다.
-    /// 일괄 push 는 이미 같은 기준으로 거른다(`RemoteAlarmPushSync` 의
-    /// `originEnum == .localOwned`) — 여기만 빠져 있었다.
+    /// 이 행의 변경을 곧바로 서버에 올려도 되는가 — 서버에 이미 있는 행만. 아직 없는 행은
+    /// 다음 일괄 push 가 만든다(`RemoteAlarmPushSync`).
     private func shouldPushToServer(_ record: LocalAlarmRecord) -> Bool {
-        record.originEnum == .localOwned && record.remoteAlarmId != nil
+        record.remoteAlarmId != nil
     }
 
     /// 알람 삭제 실행. 스와이프 삭제 버튼 또는 길게 누르기 메뉴에서 곧바로 호출된다
@@ -441,42 +361,27 @@ struct AlarmsListView: View {
     /// 의도적 누락: 서버에 소프트 삭제(휴지통)가 없어 양 플랫폼 모두 실행취소/스낵바를
     /// 제공하지 않는다. 서버 + AlarmKit + 음원 캐시가 즉시·비가역 삭제된다.
     ///
-    /// ⚠ **내 알람은 서버를 기다리지 않는다**(2026-08-18 낙관적 삭제). 로컬을 먼저 지우고
-    /// 서버 삭제는 뒤에서 돈다 — 예전에는 서버 왕복(+성공 시 전체 pull)을 다 기다린 뒤에야
-    /// 행이 사라져서, 스와이프가 제자리로 돌아오고 아무 일도 안 일어난 것처럼 보였다.
-    /// 실패해도 **되살아나지 않는다**: pull 은 `target_user_id` 가 있는 행만 가져오므로
-    /// 서버에 고아 행이 남을 뿐 사용자에게는 보이지 않는다.
-    ///
-    /// ⚠ **받은 알람은 반대다 — 서버 기록이 먼저다.** 로컬 스토어에 툼스톤이 없어서,
-    /// decline 이 기록되지 않은 채 지우면 **다음 pull 이 그대로 되살린다.**
-    /// "조금 늦게 사라짐" 보다 "지웠는데 다시 생김" 이 훨씬 나쁘다. 안드로이드
-    /// `MainViewModelAlarmActions.deleteAlarm` 이 같은 이유로 같은 순서를 쓴다.
-    /// 툼스톤이 생기면 이 갈래도 위와 합칠 수 있다.
+    /// ⚠ **서버를 기다리지 않는다**(2026-08-18 낙관적 삭제). 로컬을 먼저 지우고 서버 삭제는
+    /// 뒤에서 돈다 — 예전에는 서버 왕복을 다 기다린 뒤에야 행이 사라져서, 스와이프가 제자리로
+    /// 돌아오고 아무 일도 안 일어난 것처럼 보였다. 실패해도 **되살아나지 않는다**: 서버에서
+    /// 받아 오는 알람이 없어 서버에 고아 행이 남을 뿐 사용자에게는 보이지 않는다.
     @MainActor
     private func deleteAlarm(_ alarm: LocalAlarmRecord) async {
-        if alarm.originEnum == .receivedRemote {
-            guard await remoteSync.deleteRemote(record: alarm, session: auth.session) else {
-                actionMessage = remoteSync.statusMessage ?? String(localized: "알람 삭제에 실패했어요.")
-                return
-            }
-        }
         let deleted = await alarmKit.cancel(record: alarm, store: store)
         guard deleted else {
             actionMessage = alarmKit.statusMessage ?? String(localized: "알람 삭제에 실패했어요.")
             return
         }
-        if alarm.originEnum != .receivedRemote {
-            // 내 알람의 서버 삭제는 뒤에서. 화면은 이미 사라졌다.
-            // ⚠ **실패를 알리지 않는다**(`announceFailure: false`). 사용자가 원한 결과(목록에서
-            // 사라짐)는 이미 이뤄졌고, 서버에 고아 행이 남아도 pull 이 되살리지 못해 보이지
-            // 않는다. 여기서 배너를 띄우면 **지워진 알람 옆에 "삭제에 실패했어요"** 가 뜬다.
-            Task {
-                await remoteSync.deleteRemote(
-                    record: alarm,
-                    session: auth.session,
-                    announceFailure: false
-                )
-            }
+        // 서버 삭제는 뒤에서. 화면은 이미 사라졌다.
+        // ⚠ **실패를 알리지 않는다**(`announceFailure: false`). 사용자가 원한 결과(목록에서
+        // 사라짐)는 이미 이뤄졌고, 서버에 고아 행이 남아도 보이지 않는다. 여기서 배너를 띄우면
+        // **지워진 알람 옆에 "삭제에 실패했어요"** 가 뜬다.
+        Task {
+            await remoteSync.deleteRemote(
+                record: alarm,
+                session: auth.session,
+                announceFailure: false
+            )
         }
     }
 }

@@ -10,7 +10,7 @@ import XCTest
 ///     계산 시각은 서버의 `computed_at` 이 우선이고, 없으면 서버 응답을 받은 순간이다. 저장본을
 ///     거쳐도 유지되고, 저장본에 없으면 **모르는 것**(nil)이지 지금이 아니다(스펙 D7).
 ///  2. 구독 행 없이 `users.plan` 으로 유료인 계정은 **편집기·등록 제출·판정기가 같은 답**을 낸다.
-///     기간 중에는 **보류 규칙**이 그대로다 — 남은 행이 커플·가족으로 올리지 못한다.
+///     **보류 규칙**은 그대로다 — `users.plan = free` 면 남은 구독 행으로 등급을 올리지 않는다.
 ///  3. 오프라인 컷오프는 **낡은 캐시에만** 건다 — 끝 **전에** 계산된 `plus` 만 끝난 뒤 무료로
 ///     읽고, 끝 **뒤에** 계산된 답은 서버 값 그대로 믿는다. 계산 시각을 모르면 끝 전의 답이다
 ///     (fail-closed). **활성 구독 행은 언제나 이긴다.**
@@ -53,7 +53,7 @@ final class PersonalPromoTests: XCTestCase {
     }
 
     private func plan(key: String, type: String) -> BillingPlan {
-        BillingPlan(id: "p-\(key)", key: key, name: key, planType: type, maxMembers: 1)
+        BillingPlan(id: "p-\(key)", key: key, name: key, planType: type)
     }
 
     private func response(_ subscription: BillingSubscription?, key: String = "personal", type: String = "personal") -> BillingSubscriptionResponse {
@@ -240,114 +240,22 @@ final class PersonalPromoTests: XCTestCase {
     /// 예전에는 응답이 **도착하기 전에만** `users.plan` 을 봐서 여기서 무료가 됐다.
     func test_bestKnown_trustsPaidUserPlanWhenServerSaysNoSubscription() {
         XCTAssertEqual(PlanTier.bestKnown(serverSubscription: noSubscription, userPlan: "plus"), .personal)
-        XCTAssertEqual(PlanTier.bestKnown(serverSubscription: noSubscription, userPlan: "family"), .family)
+        // 가족 이용권은 없어졌다 — 남은 원시값(`users.plan = family`)은 유료가 아니다.
+        XCTAssertEqual(PlanTier.bestKnown(serverSubscription: noSubscription, userPlan: "family"), .free)
         XCTAssertEqual(PlanTier.bestKnown(serverSubscription: noSubscription, userPlan: "free"), .free)
         XCTAssertEqual(PlanTier.bestKnown(serverSubscription: nil, userPlan: "plus"), .personal, "응답 전")
     }
 
     /// 2단(보류)은 그대로다 — `users.plan = free` 면 남은 행으로 등급을 올리지 않는다.
     func test_bestKnown_keepsSuspendedRule() {
-        let retained = response(subscription(), key: "family", type: "family")
+        let retained = response(subscription())
         XCTAssertEqual(PlanTier.bestKnown(serverSubscription: retained, userPlan: "free"), .free)
-        XCTAssertEqual(PlanTier.bestKnown(serverSubscription: retained, userPlan: "family"), .family)
+        XCTAssertEqual(PlanTier.bestKnown(serverSubscription: retained, userPlan: "plus"), .personal)
         XCTAssertEqual(
             PlanTier.bestKnown(serverSubscription: retained, storeTier: .personal, userPlan: "free"),
             .personal,
             "스토어는 언제나 후보다"
         )
-    }
-
-    /// 회귀(2026-09-27 리뷰): **기간 중에도 보류 규칙을 지킨다.** 결제 보류 그룹의 소유자·멤버는
-    /// 원시 free 라 프로모가 붙고 plan 은 계산값 `plus` 다 — 그 `plus` 로 보류를 풀면 남은
-    /// 커플·가족 행이 등급을 올려, 서버가 원시값으로 막는 공유·가족 알람 UI 가 열린다.
-    func test_bestKnownUser_duringPromo_retainedGroupRowDoesNotLiftTier() {
-        let user = promoUser(promo: promo)
-        let beforeEnd = end.addingTimeInterval(-60)
-        for (key, type) in [("couple", "family"), ("family", "family")] {
-            let retained = response(subscription(), key: key, type: type)
-            XCTAssertEqual(
-                PlanTier.bestKnown(serverSubscription: retained, user: user, now: beforeEnd),
-                .personal,
-                "\(key) — 기간 중 원시 free 는 남은 행으로 올리지 않는다(개인만)"
-            )
-            XCTAssertEqual(
-                PlanTier.bestKnown(serverSubscription: retained, storeTier: .family, user: user, now: beforeEnd),
-                .family,
-                "스토어는 언제나 후보다"
-            )
-        }
-        XCTAssertFalse(
-            canShareVoiceWithOthers(
-                subscriptionResponse: response(subscription(), key: "couple", type: "family"),
-                familyGroup: nil,
-                authSession: AuthSession(token: "t", user: user),
-                now: beforeEnd
-            ),
-            "보류 커플 행으로 공유 토글이 열리지 않는다"
-        )
-    }
-
-    /// 회귀(스펙 D9 — 안드로이드 `personalPromoTierHoldOf` 미러): 기간 중에는 **남은 가족 그룹**
-    /// 으로도 커플·가족 기능을 열지 않는다. 결제 보류는 그룹을 남긴 채 plan 만 회수하므로, 그룹의
-    /// 멤버 수로 공유 토글을 열면 서버가 원시값으로 막는 공유를 켜게 된다. 프로모가 낡으면(끝 전에
-    /// 계산된 답이 끝을 넘김) 예전 규칙 그대로 그룹이 연다.
-    func test_promoHold_groupMembersDoNotUnlockSharingDuringPromo() {
-        let user = promoUser(promo: promo)
-        let session = AuthSession(token: "t", user: user)
-        let beforeEnd = end.addingTimeInterval(-60)
-        let retainedGroup = FamilyGroupCurrentResponse(
-            group: FamilyGroup(
-                id: "group-1", ownerUserId: "owner-1", planId: "plan-1",
-                maxMembers: 5, createdAt: "2026-01-01T00:00:00Z"
-            ),
-            role: "member",
-            members: [
-                FamilyGroupMember(
-                    id: "m-1", userId: "owner-1", role: "owner",
-                    joinedAt: "2026-01-01T00:00:00Z", email: "owner@example.com", name: "Owner"
-                ),
-                FamilyGroupMember(
-                    id: "m-2", userId: user.id, role: "member",
-                    joinedAt: "2026-01-01T00:00:00Z", email: user.email, name: "Me"
-                ),
-            ]
-        )
-
-        XCTAssertTrue(PlanTier.personalPromoHoldActive(user: user, now: beforeEnd))
-        XCTAssertFalse(
-            canShareVoiceWithOthers(
-                subscriptionResponse: noSubscription,
-                familyGroup: retainedGroup,
-                authSession: session,
-                now: beforeEnd
-            ),
-            "기간 중 보류 계정은 남은 그룹의 멤버로 공유 토글이 열리지 않는다"
-        )
-        XCTAssertTrue(
-            canShareVoiceWithOthers(
-                subscriptionResponse: noSubscription,
-                familyGroup: retainedGroup,
-                authSession: session,
-                storeTier: .family,
-                now: beforeEnd
-            ),
-            "스토어 등급은 보류 규칙 아래에서도 연다"
-        )
-
-        // 끝 전에 계산된 답이 끝을 넘기면 낡은 캐시다 — 보류 규칙이 풀리고 예전 규칙(그룹)이다.
-        XCTAssertFalse(PlanTier.personalPromoHoldActive(user: user, now: end))
-        XCTAssertTrue(
-            canShareVoiceWithOthers(
-                subscriptionResponse: noSubscription,
-                familyGroup: retainedGroup,
-                authSession: session,
-                now: end
-            ),
-            "낡은 프로모에서는 그룹 멤버가 예전처럼 연다"
-        )
-
-        // 프로모가 없는 계정은 규칙이 없다.
-        XCTAssertFalse(PlanTier.personalPromoHoldActive(user: promoUser(plan: "family", promo: nil), now: beforeEnd))
     }
 
     /// 편집기(`bestKnown(user:)`)와 판정기(`PaidVoiceGate`)가 **같은 계정에 같은 답**을 낸다.
@@ -358,7 +266,7 @@ final class PersonalPromoTests: XCTestCase {
         let tier = PlanTier.bestKnown(serverSubscription: noSubscription, user: user, now: beforeEnd)
         let access = PaidVoiceGate.resolve(
             snapshot: PaidVoiceGate.liveSnapshot(
-                subscriptionResponse: noSubscription, familyGroup: nil, storeTier: .free, user: user
+                subscriptionResponse: noSubscription, storeTier: .free, user: user
             ),
             now: beforeEnd
         )
@@ -368,7 +276,7 @@ final class PersonalPromoTests: XCTestCase {
         let tierAfter = PlanTier.bestKnown(serverSubscription: noSubscription, user: user, now: end)
         let accessAfter = PaidVoiceGate.resolve(
             snapshot: PaidVoiceGate.liveSnapshot(
-                subscriptionResponse: noSubscription, familyGroup: nil, storeTier: .free, user: user
+                subscriptionResponse: noSubscription, storeTier: .free, user: user
             ),
             now: end
         )
@@ -384,10 +292,6 @@ final class PersonalPromoTests: XCTestCase {
         XCTAssertEqual(
             PlanTier.bestKnown(serverSubscription: response(subscription()), user: user, now: later),
             .personal
-        )
-        XCTAssertEqual(
-            PlanTier.bestKnown(serverSubscription: response(subscription(), key: "family", type: "family"), user: user, now: later),
-            .family
         )
         XCTAssertEqual(PlanTier.bestKnown(serverSubscription: nil, user: user, now: later), .free, "행이 없으면 무료")
     }
@@ -609,7 +513,6 @@ final class PersonalPromoTests: XCTestCase {
     func test_purchasedPlan_excludesPromo() {
         XCTAssertEqual(promoUser(promo: promo).purchasedPlan, "free")
         XCTAssertEqual(promoUser(promo: nil).purchasedPlan, "plus")
-        XCTAssertEqual(promoUser(plan: "family", promo: nil).purchasedPlan, "family")
 
         // 이용권 화면이 넘기는 값으로 등급을 보면 프로모 계정의 **산 이용권**은 무료다 —
         // 버튼 라벨이 '결제하기' 이고, 전환·환산 문구가 뜨지 않는다. ('현재 이용권' 뱃지는
@@ -642,18 +545,16 @@ final class PersonalPromoTests: XCTestCase {
     // MARK: - 4-1. 이용권 화면의 '현재 이용권' 카드(`PlanScreenCurrent` — 스펙 D4)
     //
     // 안드로이드 `PlanScreenCurrentTest` 와 **같은 표**다: 프로모만 쓰는 계정은 개인 카드가 현재이고
-    // 문구는 그 카드에만 있다. 그 카드의 결제 버튼은 남는다. 산 이용권·공유 멤버·보류 행·프로모
-    // 없음/끝남은 예전 그대로다.
+    // 문구는 그 카드에만 있다. 그 카드의 결제 버튼은 남는다. 산 이용권·보류 행·프로모 없음/끝남은
+    // 예전 그대로다.
 
     private func planScreen(
         purchased: PlanTier = .free,
-        member: Bool = false,
         promoActive: Bool = true,
         held: Bool = false
     ) -> PlanScreenCurrent {
         PlanScreenCurrent.resolve(
             purchasedTier: purchased,
-            isSharedMember: member,
             promoActive: promoActive,
             hasHeldSubscriptionRow: held
         )
@@ -686,59 +587,43 @@ final class PersonalPromoTests: XCTestCase {
     func test_planScreen_promoPersonalCardKeepsPurchaseButton() {
         let screen = planScreen()
         XCTAssertTrue(screen.showsPurchase(.personal), "끝난 뒤 이어 쓰려면 사야 한다 — 개인 카드의 결제 버튼이 남는다")
-        XCTAssertTrue(screen.showsPurchase(.couple))
-        XCTAssertTrue(screen.showsPurchase(.family))
         XCTAssertFalse(screen.showsPurchase(.free))
-    }
-
-    func test_planScreen_sharesVouchersOnlyOnPurchasedCurrentCard() {
-        // 안드로이드 `PlanScreenCurrent.sharesVouchers` 와 같은 답 — 산 현재 카드에서만 초대 코드를 공유한다.
-        let purchased = planScreen(purchased: .couple)
-        XCTAssertTrue(purchased.sharesVouchers(.couple))
-        XCTAssertFalse(purchased.sharesVouchers(.family), "현재가 아닌 카드에는 공유 버튼이 없다")
-        XCTAssertFalse(purchased.sharesVouchers(.personal))
-        let promoOnly = planScreen()
-        XCTAssertFalse(promoOnly.sharesVouchers(.personal), "프로모로 현재가 된 카드는 산 것이 아니다")
-        XCTAssertFalse(promoOnly.sharesVouchers(.couple))
     }
 
     func test_planScreen_purchasedPlanStaysCurrentAndPromoLineStaysAbove() {
         // 산 이용권이 있는데 프로모가 보이는 경우(StoreKit 이 먼저 안 결제 직후 등) — 예전 그대로.
-        let screen = planScreen(purchased: .couple)
-        XCTAssertEqual(screen.currentTier, .couple)
+        let screen = planScreen(purchased: .personal)
+        XCTAssertEqual(screen.currentTier, .personal)
         XCTAssertFalse(screen.promoOnPersonalCard)
         XCTAssertTrue(screen.promoLineAboveList)
-        XCTAssertFalse(screen.showsPurchase(.couple), "산 현재 카드에는 결제 버튼이 없다")
-        XCTAssertEqual(layout(screen), legacyLayout(.couple))
+        XCTAssertFalse(screen.showsPurchase(.personal), "산 현재 카드에는 결제 버튼이 없다")
+        XCTAssertEqual(layout(screen), legacyLayout(.personal))
     }
 
-    func test_planScreen_sharedMemberAndHeldRowKeepTodaysLayout() {
-        // 결제 보류 그룹의 멤버 / `deletesVoicesAtEnd == false` 인 결제 보류 계정 — 원시 free 라
-        // 프로모가 있지만 개인 카드에 앉히지 않는다.
-        for screen in [planScreen(member: true), planScreen(held: true)] {
-            XCTAssertEqual(screen.currentTier, .free)
-            XCTAssertFalse(screen.promoOnPersonalCard)
-            XCTAssertTrue(screen.promoLineAboveList)
-            XCTAssertEqual(layout(screen), legacyLayout(.free))
-        }
+    func test_planScreen_heldRowKeepsTodaysLayout() {
+        // `deletesVoicesAtEnd == false` 인 결제 보류 계정 — 원시 free 라 프로모가 있지만 개인 카드에
+        // 앉히지 않는다.
+        let screen = planScreen(held: true)
+        XCTAssertEqual(screen.currentTier, .free)
+        XCTAssertFalse(screen.promoOnPersonalCard)
+        XCTAssertTrue(screen.promoLineAboveList)
+        XCTAssertEqual(layout(screen), legacyLayout(.free))
     }
 
     func test_planScreen_onlyThePromoOnlyAccountDiffersFromTodaysLayout() {
         // 모든 입력 조합에서: 개인 카드에 앉는 갈래만 예전과 다르고 나머지는 예전 규칙 그대로다.
         // 두 자리(개인 카드·카드 위 한 줄)는 동시에 참이 아니고, 프로모가 있으면 둘 중 하나에는 보인다.
         for purchased in PlanTier.allCases {
-            for member in [false, true] {
-                for promoActive in [false, true] {
-                    for held in [false, true] {
-                        let screen = planScreen(purchased: purchased, member: member, promoActive: promoActive, held: held)
-                        let label = "\(purchased)/\(member)/\(promoActive)/\(held)"
-                        let promoOnly = promoActive && purchased == .free && !member && !held
-                        XCTAssertEqual(screen.promoOnPersonalCard, promoOnly, label)
-                        XCTAssertFalse(screen.promoOnPersonalCard && screen.promoLineAboveList, label)
-                        XCTAssertEqual(screen.promoOnPersonalCard || screen.promoLineAboveList, promoActive, label)
-                        if !promoOnly {
-                            XCTAssertEqual(layout(screen), legacyLayout(purchased), label)
-                        }
+            for promoActive in [false, true] {
+                for held in [false, true] {
+                    let screen = planScreen(purchased: purchased, promoActive: promoActive, held: held)
+                    let label = "\(purchased)/\(promoActive)/\(held)"
+                    let promoOnly = promoActive && purchased == .free && !held
+                    XCTAssertEqual(screen.promoOnPersonalCard, promoOnly, label)
+                    XCTAssertFalse(screen.promoOnPersonalCard && screen.promoLineAboveList, label)
+                    XCTAssertEqual(screen.promoOnPersonalCard || screen.promoLineAboveList, promoActive, label)
+                    if !promoOnly {
+                        XCTAssertEqual(layout(screen), legacyLayout(purchased), label)
                     }
                 }
             }
@@ -756,19 +641,17 @@ final class PersonalPromoTests: XCTestCase {
         // 모든 입력 조합에서: 프로모가 있으면 **정확히 한 자리**(개인 카드 또는 카드 위)에 보이고,
         // 없으면 어디에도 없다. 카드가 보이면 예전 규칙(`promoLineAboveList`)과 같다.
         for purchased in PlanTier.allCases {
-            for member in [false, true] {
-                for promoActive in [false, true] {
-                    for held in [false, true] {
-                        for cardsVisible in [false, true] {
-                            let screen = planScreen(purchased: purchased, member: member, promoActive: promoActive, held: held)
-                            let label = "\(purchased)/\(member)/\(promoActive)/\(held)/cards=\(cardsVisible)"
-                            let onCard = screen.promoOnPersonalCard && cardsVisible
-                            let above = screen.drawsPromoLineAboveList(cardsVisible: cardsVisible)
-                            XCTAssertFalse(onCard && above, "두 자리에 동시에 말했다 — \(label)")
-                            XCTAssertEqual(onCard || above, promoActive, "보여야 할 문구가 없다(또는 반대) — \(label)")
-                            if cardsVisible {
-                                XCTAssertEqual(above, screen.promoLineAboveList, label)
-                            }
+            for promoActive in [false, true] {
+                for held in [false, true] {
+                    for cardsVisible in [false, true] {
+                        let screen = planScreen(purchased: purchased, promoActive: promoActive, held: held)
+                        let label = "\(purchased)/\(promoActive)/\(held)/cards=\(cardsVisible)"
+                        let onCard = screen.promoOnPersonalCard && cardsVisible
+                        let above = screen.drawsPromoLineAboveList(cardsVisible: cardsVisible)
+                        XCTAssertFalse(onCard && above, "두 자리에 동시에 말했다 — \(label)")
+                        XCTAssertEqual(onCard || above, promoActive, "보여야 할 문구가 없다(또는 반대) — \(label)")
+                        if cardsVisible {
+                            XCTAssertEqual(above, screen.promoLineAboveList, label)
                         }
                     }
                 }

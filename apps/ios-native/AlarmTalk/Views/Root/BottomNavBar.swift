@@ -2,13 +2,10 @@ import SwiftUI
 
 /// 커스텀 바텀 네비게이션 바.
 ///
-/// ContentView 의 `bottomBar` 를 그대로 옮긴 것. 3개 탭에 배지를 띄울 수 있도록
-/// `badgeProvider` 클로저를 받는다. (호출부: MainTabsView 가 store.alarms 기반
-/// 받은-알람 카운트 등을 넘긴다.)
+/// ContentView 의 `bottomBar` 를 그대로 옮긴 것.
 struct BottomNavBar: View {
     @Environment(\.voiceAlarmTheme) private var theme
     @Binding var selected: NativeTab
-    let badgeProvider: (NativeTab) -> Int
     var onSelect: ((NativeTab) -> Void)? = nil
 
     var body: some View {
@@ -22,25 +19,13 @@ struct BottomNavBar: View {
                     }
                 } label: {
                     VStack(spacing: 3) {
-                        ZStack(alignment: .topTrailing) {
-                            // ⚠ **세 탭 모두 SF 심볼이다**(2026-08-17 지시 "글리프는 각 OS 것").
-                            // 예전에는 알람만 **안드로이드 모양을 손으로 그린 도형**
-                            // (`MaterialAlarmShape`)이었다 — iOS 화면에 머티리얼 글리프가
-                            // 하나 섞여 있던 셈이다. 안드로이드도 반대 방향으로 같은 일을
-                            // 하고 있었다(목소리·더보기가 SF 모양의 자체 드로어블).
-                            Image(systemName: selected == tab ? tab.selectedSystemImage : tab.systemImage)
-                                .font(.system(size: 22, weight: .semibold))
-                            let badge = badgeProvider(tab)
-                            if badge > 0 {
-                                Text(badge > 99 ? "99+" : "\(badge)")
-                                    .font(.system(size: 9, weight: .bold))
-                                    .foregroundStyle(theme.palette.onError)
-                                    .padding(.horizontal, 4)
-                                    .padding(.vertical, 2)
-                                    .background(theme.palette.error, in: Capsule())
-                                    .offset(x: 12, y: -8)
-                            }
-                        }
+                        // ⚠ **세 탭 모두 SF 심볼이다**(2026-08-17 지시 "글리프는 각 OS 것").
+                        // 예전에는 알람만 **안드로이드 모양을 손으로 그린 도형**
+                        // (`MaterialAlarmShape`)이었다 — iOS 화면에 머티리얼 글리프가
+                        // 하나 섞여 있던 셈이다. 안드로이드도 반대 방향으로 같은 일을
+                        // 하고 있었다(목소리·더보기가 SF 모양의 자체 드로어블).
+                        Image(systemName: selected == tab ? tab.selectedSystemImage : tab.systemImage)
+                            .font(.system(size: 22, weight: .semibold))
                         Text(tab.title)
                             .font(.caption2.weight(selected == tab ? .semibold : .medium))
                     }
@@ -76,12 +61,7 @@ struct BottomNavBar: View {
 private struct BottomNavBarPreviewHost: View {
     @State private var tab: NativeTab = .alarms
     var body: some View {
-        BottomNavBar(selected: $tab) { tab in
-            switch tab {
-            case .alarms: return 2
-            default: return 0
-            }
-        }
+        BottomNavBar(selected: $tab)
     }
 }
 

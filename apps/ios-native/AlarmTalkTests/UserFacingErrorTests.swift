@@ -77,13 +77,13 @@ final class UserFacingErrorTests: XCTestCase {
     // MARK: - APIError 갈래
 
     func test_serverError_withKoreanMessage_usesFallback() {
-        let error = APIError.server(status: 400, message: "이미 등록한 코드예요", errorCode: nil)
+        let error = APIError.server(status: 400, message: "이미 처리된 요청이에요", errorCode: nil)
         XCTAssertEqual(userFacingErrorMessage(error, fallback: "폴백"), "폴백")
     }
 
     /// 백엔드는 영어 메시지를 던지는 갈래가 많다 — 그건 사용자에게 보여주지 않는다.
     func test_serverError_withEnglishMessage_usesFallback() {
-        let error = APIError.server(status: 409, message: "Code is expired", errorCode: "CODE_EXPIRED")
+        let error = APIError.server(status: 409, message: "Plan is not active", errorCode: "PLAN_INACTIVE")
         XCTAssertEqual(userFacingErrorMessage(error, fallback: "폴백"), "폴백")
     }
 

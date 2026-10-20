@@ -8,6 +8,7 @@ final class AuthUserDecodingTests: XCTestCase {
         return decoder
     }
 
+    /// 옛 서버 응답에는 가족 알람 칸이 남아 있을 수 있다(모양이 어긋난 값까지) — 읽지 않고 넘긴다.
     func test_authUserDecodingFallsBackLikeAndroidSessionStore() throws {
         let json = """
         {
@@ -21,7 +22,6 @@ final class AuthUserDecodingTests: XCTestCase {
           "family_alarm_quiet_end": null,
           "family_alarm_quiet_windows": [
             { "days": [6, 6, 0], "start": "22:00", "end": "08:30" },
-            { "days": [], "start": "09:00", "end": "18:30" },
             { "days": [2], "start": "bad", "end": "18:30" }
           ],
           "dynamic_prompt_settings": {}
@@ -30,17 +30,35 @@ final class AuthUserDecodingTests: XCTestCase {
 
         let user = try decoder().decode(AuthUser.self, from: json)
 
+        XCTAssertEqual(user.id, "user-1")
         XCTAssertEqual(user.name, "")
         XCTAssertEqual(user.plan, "free")
-        XCTAssertFalse(user.allowFamilyAlarms ?? true)
-        XCTAssertEqual(user.familyAlarmQuietDays, [0, 6])
-        XCTAssertEqual(user.familyAlarmQuietStart, "22:00")
-        XCTAssertEqual(user.familyAlarmQuietEnd, "08:30")
-        XCTAssertEqual(
-            user.familyAlarmQuietWindows ?? [],
-            [FamilyAlarmQuietWindow(days: [0, 6], start: "22:00", end: "08:30")]
-        )
         XCTAssertEqual(try XCTUnwrap(user.dynamicPromptSettings), .empty)
+    }
+
+    /// 업데이트 전 키체인에 저장된 세션 — 가족 알람 칸이 남아 있다. 못 읽으면 업데이트하자마자 로그아웃된다.
+    func test_legacyKeychainSessionWithFamilyFieldsStillDecodes() throws {
+        let json = """
+        {
+          "token": "stored-token",
+          "user": {
+            "id": "user-1", "email": "tester@example.com", "name": "Tester", "plan": "plus",
+            "allowFamilyAlarms": true, "familyAlarmQuietDays": [1, 3],
+            "familyAlarmQuietStart": "22:00", "familyAlarmQuietEnd": "07:00",
+            "familyAlarmQuietWindows": [{ "days": [1, 3], "start": "22:00", "end": "07:00" }],
+            "deletionStatus": "active"
+          }
+        }
+        """.data(using: .utf8)!
+
+        // 키체인은 기본 디코더로 읽는다(`KeychainStore.readSession`).
+        let session = try JSONDecoder().decode(AuthSession.self, from: json)
+
+        XCTAssertEqual(session.token, "stored-token")
+        XCTAssertEqual(session.user.id, "user-1")
+        XCTAssertEqual(session.user.name, "Tester")
+        XCTAssertEqual(session.user.plan, "plus")
+        XCTAssertEqual(session.user.deletionStatus, "active")
     }
 
     func test_dynamicPromptSettingsDecodingTrimsBlankValues() throws {

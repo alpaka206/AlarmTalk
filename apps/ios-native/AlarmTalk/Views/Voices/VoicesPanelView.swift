@@ -36,8 +36,7 @@ struct VoicesPanelView: View {
 
     var body: some View {
         // ⚠ 유료 게이트의 코드 입력 갈래(`onRedeemCode`)는 2026-10-14 에 없앴다(App Store 지침 3.1.1 두 번째
-        // 반려 — 선물 코드 폐지). 되살리지 말 것 — 초대 코드는 더보기 → 초대 코드 등록에서만 넣고,
-        // 할인·무료 이용은 스토어 오퍼 코드로 준다.
+        // 반려 — 선물 코드 폐지). 되살리지 말 것 — 할인·무료 이용은 스토어 오퍼 코드로 준다.
         VoiceProfileManagementPanel(
             route: $route,
             monthlyLimitNoticeOpen: $monthlyLimitNoticeOpen,

@@ -7,9 +7,9 @@ import Foundation
 /// 목록을 호출부에서 즉석으로 만들지 말 것 — 그렇게 네 벌로 갈라져 있었다.
 enum PaidPlans {
     /// 유료로 치는 `users.plan` 값.
-    static let userPlans: Set<String> = ["personal", "plus", "couple", "family"]
-    /// 유료로 치는 `plans.plan_type`. 커플은 `key='couple'` + `plan_type='family'` 다.
-    static let planTypes: Set<String> = ["personal", "family"]
+    static let userPlans: Set<String> = ["personal", "plus"]
+    /// 유료로 치는 `plans.plan_type`.
+    static let planTypes: Set<String> = ["personal"]
 }
 
 /// 유료 목소리 권한을 **예약 시점에** 재확인한다.
@@ -82,8 +82,8 @@ enum PaidVoiceGate {
     ///
     /// - 스냅샷에 구독 응답 자체가 없으면 **판단 불가 → true**(강등하지 않는다).
     /// - 응답은 있는데 `subscription` 이 nil 이면 서버가 '본인 구독 없음' 이라고 답한 것이다.
-    ///   그때는 커플/가족 그룹 접근이 있는지 본다(본인 구독 없이 그룹으로 쓰는 멤버).
-    /// - 본인 구독이 있으면 만료 시각까지 검사한다(그룹 체크로 만료 게이트를 우회하지 않게).
+    ///   그때는 남은 `users.plan` 으로 가른다.
+    /// - 본인 구독이 있으면 만료 시각까지 검사한다.
     /// **유료 목소리 판정 — 우선순위 다섯 단**(2026-08-31, 안드로이드 `resolvePaidVoiceAccess`
     /// 와 같은 규칙). 2단(`users.plan = free` 가 남은 구독 행보다 위다)이 이 목록에서
     /// 빠져 있었다 — 2026-09-02 정정. 전문은 `docs/spec/billing-lifecycle.md`.
@@ -94,7 +94,7 @@ enum PaidVoiceGate {
     ///    사용자가 잠긴다** — 스펙이 더 나쁘다고 못박은 방향이다.
     /// 2. 서버가 `users.plan = free` 라고 하면 무료다(남은 구독 행보다 위 — 보류).
     /// 3. 서버가 내 구독을 알면 그 상태·만료로 가른다.
-    /// 4. 서버가 '구독 없음' 이라 답했으면 남은 `users.plan` → 그룹 접근 순으로 본다.
+    /// 4. 서버가 '구독 없음' 이라 답했으면 남은 `users.plan` 으로 본다.
     ///    그 plan 이 **끝난 기간 한정 개인 플랜의 낡은 계산값**이면 무료다.
     /// 5. 스냅샷이 없으면 **모른다** — 무료가 아니다(끝난 프로모의 낡은 캐시만 예외).
     /// - Parameter promoAt: 기간 한정 개인 플랜이 **그 시각에도** 덮는지 볼 시각 — 기본은 `now`.
@@ -111,10 +111,9 @@ enum PaidVoiceGate {
         }
         let plan = snapshot.userPlan?.trimmingCharacters(in: .whitespaces).lowercased()
         // ⚠ **서버가 free 라고 말하면 남아 있는 구독 행보다도, '모름' 보다도 먼저다.**
-        // ① 보류(ON_HOLD·결제 재시도)는 **행을 남긴다** — 서버의 `propagateGroupMemberPlans`
-        //    는 멤버의 그룹 연동 구독을 취소하지 않고 재계산에서 제외만 하므로, 행은
-        //    `status: active` 인 채 남고 `users.plan` 만 free 로 내려간다. 행부터 보면
-        //    결제가 밀린 그룹 멤버가 계속 유료로 읽힌다.
+        // ① 보류(ON_HOLD·결제 재시도)는 **행을 남긴다** — 행은 `status: active` 인 채 남고
+        //    `users.plan` 만 free 로 내려간다(서버 `resolvePlanAfterSuspend`). 행부터 보면
+        //    결제가 밀린 사용자가 계속 유료로 읽힌다.
         // ② 콜드 스타트·첫 로그인에는 `subscriptionResponse` 가 아직 nil 인데, 그때
         //    `.unknown` 으로 떨어지면 낙관 규칙에 걸려 무료 사용자에게 보관 중인 클론
         //    목소리와 유료 전용 컨트롤이 열린다(2026-09-01 리뷰). `users.plan` 은 서버가
@@ -138,8 +137,6 @@ enum PaidVoiceGate {
             return promoLapsed ? .notEntitled : .unknown
         }
         guard let subscription = response.subscription else {
-            // ⚠ **`users.plan` 이 그룹보다 위다.** 결제 보류는 그룹을 남긴 채 이 값만
-            // 회수하므로, 그룹만 보면 소유자 결제가 밀린 멤버가 계속 유료로 읽힌다.
             switch plan {
             case .some(let plan) where !plan.isEmpty && promoLapsed:
                 // 구독 행이 없다 — 여기까지 온 `plus` 는 끝난 프로모의 계산값이다.
@@ -149,12 +146,11 @@ enum PaidVoiceGate {
             default:
                 // ⚠ **여기서 `.unknown` 을 돌려주지 말 것.** '모름' 은 서버에 **한 번도 못
                 // 물어본** 상태(스냅샷 자체가 없음)의 뜻이다. 여기는 서버가 "본인 구독 없음"
-                // 이라고 **답했고** 그룹 접근도 없는 상태라 근거가 다 모인 무료다 — 모름으로
-                // 접으면 낙관 규칙에 걸려 **무료 사용자의 유료 목소리가 영영 강등되지 않는다**
-                // (2026-09-01: 앞 회차에서 이 갈래를 `.unknown` 으로 바꿨다가
-                // `test_noSubscriptionAndNoGroup_downgrades` 등 2건이 깨져 있었다).
-                return hasGroupAccess(response: response, familyGroup: snapshot.familyGroup)
-                    ? .entitled : .notEntitled
+                // 이라고 **답했고** `users.plan` 도 유료가 아닌 상태라 근거가 다 모인 무료다 —
+                // 모름으로 접으면 낙관 규칙에 걸려 **무료 사용자의 유료 목소리가 영영 강등되지
+                // 않는다**(2026-09-01: 앞 회차에서 이 갈래를 `.unknown` 으로 바꿨다가 테스트
+                // 2건이 깨져 있었다).
+                return .notEntitled
             }
         }
         // 활성 구독 행은 끝난 프로모보다 위다 — 진짜 구독자는 프로모 날짜로 잠기지 않는다.
@@ -187,7 +183,7 @@ enum PaidVoiceGate {
     ///
     /// 무료 판정이 낡은 프로모 **때문만**이면(`isFreeOnlyByPromoLapse`) **이 진입의 계정 응답이
     /// 세션 plan 에 반영된 뒤에만**(`AuthViewModel.planAnsweredEntry == entry`) 건다. 그 전의 plan
-    /// 은 지난 실행의 캐시다 — 그 사이 다른 기기에서 쿠폰·결제·가족 합류로 원시 유료가 된 사람도
+    /// 은 지난 실행의 캐시다 — 그 사이 다른 기기에서 결제해 원시 유료가 된 사람도
     /// 종료 시각만 지나면 잠기고, 잠금은 새 답이 오면 풀리지만 이미 적힌 강등 안내
     /// (`DowngradeNoticeStore`)가 결제자에게 "무료 이용권으로 바뀌었어요" 를 말한다. 콜드 스타트에는
     /// 저장된 구독 스냅샷(`SocialFeatureViewModel.restoreAccessSnapshot`)과 StoreKit 이 `/auth/me`
@@ -210,19 +206,17 @@ enum PaidVoiceGate {
     /// 판정기가 기한을 함께 요구하므로 **살아 있는 신호가 한 번도 이기지 못한다** — 먼 미래를
     /// 준다('지금 유효' 라는 뜻이다).
     ///
-    /// ⚠ **`userPlan` 을 빼지 말 것.** 그룹보다 먼저 보는 값이라, 빼면 결제 보류(그룹은 남고
-    /// plan 만 free)에서 그룹 폴백이 유료로 답한다. 프로모도 같이 실어야(계산 시각까지) 끝난
+    /// ⚠ **`userPlan` 을 빼지 말 것.** 남은 구독 행보다 먼저 보는 값이라, 빼면 결제 보류(행은
+    /// 남고 plan 만 free)에서 행이 유료로 답한다. 프로모도 같이 실어야(계산 시각까지) 끝난
     /// 뒤의 낡은 캐시를 가른다.
     static func liveSnapshot(
         subscriptionResponse: BillingSubscriptionResponse?,
-        familyGroup: FamilyGroupCurrentResponse?,
         storeTier: PlanTier,
         user: AuthUser?
     ) -> AccessSnapshot {
         let storeEntitled = storeTier.meetsOrExceeds(.personal)
         return AccessSnapshot(
             subscriptionResponse: subscriptionResponse,
-            familyGroup: familyGroup,
             storePlanKey: storeEntitled ? storeTier.rawValue : nil,
             storeEntitlementUntilMillis: storeEntitled ? Int64.max : nil,
             userPlan: user?.plan,
@@ -233,8 +227,6 @@ enum PaidVoiceGate {
     /// 예약 시점에 이 알람의 유료 목소리를 **기본 목소리로** 바꿔야 하는가
     /// (`DefaultVoiceSubstitute` — 2026-09-29 전에는 기본 톤이었다. billing-lifecycle.md 「목소리를 못 쓰게 되면」).
     ///
-    /// **본인 소유(`localOwned`) 알람만 대상이다.** 공유받은 알람(`receivedRemote`)은
-    /// 보낸 사람의 구독으로 성립하는 것이라 받는 쪽 구독으로 판단하지 않는다.
     /// 무료 시스템 보이스는 애초에 강등 대상이 아니다.
     /// - Parameter fireAt: 알람이 울릴 시각. 기간 한정 개인 플랜만으로 열린 목소리는 **그 시각에도**
     ///   프로모가 덮어야 한다(`resolve` 의 `promoAt`). ⚠ iOS 는 울릴 때 앱 코드가 돌지 않는다
@@ -248,7 +240,6 @@ enum PaidVoiceGate {
         now: Date = Date(),
         fireAt: Date? = nil
     ) -> Bool {
-        guard record.originEnum == .localOwned else { return false }
         guard !usesFreeSystemVoice(record) else { return false }
         guard usesPaidVoice(record) else { return false }
         let promoAt = fireAt.map { max($0, now) }
@@ -268,8 +259,7 @@ enum PaidVoiceGate {
         snapshot: AccessSnapshot,
         now: Date = Date()
     ) -> Bool {
-        guard record.originEnum == .localOwned,
-              !usesFreeSystemVoice(record),
+        guard !usesFreeSystemVoice(record),
               usesPaidVoice(record),
               let ends = snapshot.personalPromo?.endsAt.flatMap(parseTimestamp) else { return false }
         // ⚠ **끝을 막 넘긴 정지도 포함한다**(Codex #803). 끝 직전에 울린 회차를 끝 **뒤에** 끄면 지금은 이미
@@ -281,24 +271,10 @@ enum PaidVoiceGate {
 
     // MARK: - 내부
 
-    private static func hasGroupAccess(
-        response: BillingSubscriptionResponse,
-        familyGroup: FamilyGroupCurrentResponse?
-    ) -> Bool {
-        // 그룹에 소속돼 있으면 본인 구독이 없어도 유료 목소리를 쓴다.
-        if let group = familyGroup?.group, group.id.nilIfBlank != nil { return true }
-        // 응답이 플랜을 직접 알려 주면 그걸로도 본다.
-        if let planType = response.plan?.planType.lowercased(),
-           planType == "couple" || planType == "family" {
-            return true
-        }
-        return false
-    }
-
     private static func isSubscriptionActive(_ subscription: BillingSubscription, now: Date) -> Bool {
         let status = subscription.status.lowercased()
-        // 회복형 상태(ON_HOLD/PAUSED)는 그룹·공유를 그대로 두므로 권한을 회수하지 않는다.
-        // 서버 `resolvePlanAfterSuspend` 와 같은 취급이다.
+        // 회복형 상태(ON_HOLD/PAUSED)는 행으로는 권한을 회수하지 않는다 — 회수는 위의 `users.plan` 이
+        // 가른다. 서버 `resolvePlanAfterSuspend` 와 같은 취급이다.
         if status == "on_hold" || status == "paused" { return true }
         if status == "canceled" || status == "expired" { return false }
 

@@ -4,8 +4,8 @@ import Foundation
 @MainActor
 final class AudioPreviewPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
     @Published private(set) var isPlaying = false
-    /// 네트워크 미리듣기(스톡/공유 음성)가 음원을 받아오는 동안 true. 다운로드/생성이
-    /// 진행되는 구간에 스피너를 띄우고, 실제 재생이 시작되거나 실패하면 false 로 내린다.
+    /// 호출자가 `setPreparing` 으로 켜는 준비 표시 — 네트워크 미리듣기의 다운로드/생성 구간에
+    /// 스피너를 띄우고, 실제 재생이 시작되거나 멈추면 false 로 내린다.
     /// Android `previewPreparing`(`AlarmEditorScreen.kt`) 미러.
     @Published private(set) var isPreparing = false
 

@@ -4,7 +4,7 @@ import XCTest
 
 /// **화면 진입 갱신의 신선도 창**(`docs/spec/plan-gates.md` §4, 2026-09-29).
 ///
-/// 편집기·구성원·이용권 화면과 목소리·더보기 탭이 뜰 때마다 같은 목록을 다시 받던 것을, 같은
+/// 편집기·이용권 화면과 목소리·더보기 탭이 뜰 때마다 같은 목록을 다시 받던 것을, 같은
 /// 계정의 **완결된** 갱신이 같은 앱 진입 안에서 60초 안에 있었으면 건너뛰게 했다. 창이 가리면
 /// 안 되는 것 — 쓰기 뒤·푸시의 `force` 갱신, 실패한 갱신 뒤의 진입, 다른 계정, 다음 앱 진입,
 /// 백그라운드를 건너 늦게 도착한 옛 답 — 을 고정한다.
@@ -78,7 +78,7 @@ final class EntryRefreshFreshnessTests: XCTestCase {
 
             clock.now = t0.addingTimeInterval(30)
             await vm.refreshOnEntry(session: current)
-            XCTAssertEqual(meCalls(), 1, "같은 진입의 1분 안 — 편집기·구성원·이용권 화면이 뜰 때마다 다시 받지 않는다")
+            XCTAssertEqual(meCalls(), 1, "같은 진입의 1분 안 — 편집기·이용권 화면이 뜰 때마다 다시 받지 않는다")
 
             await vm.refreshAll(session: current, force: true)
             XCTAssertEqual(meCalls(), 2, "쓰기 뒤·푸시(`force`)는 창을 보지 않는다")
@@ -157,11 +157,11 @@ final class EntryRefreshFreshnessTests: XCTestCase {
             // 이용권 쪽 `/auth/me` 는 구독 조회와 **나란히** 나가고(효율 감사 M7) 그 답은 이 진입의 결과로
             // 적는다(코덱스 #827) — 스냅샷이 미완이라 사용자 새로고침이 한 번 더 부른다.
             XCTAssertEqual(meCalls(), before + 2, "이용권 쪽 한 번 + 사용자 새로고침 한 번")
-            XCTAssertEqual(auth.session?.user.plan, "family", "서버의 지금 plan 이 세션에 들어간다")
+            XCTAssertEqual(auth.session?.user.plan, "plus", "서버의 지금 plan 이 세션에 들어간다")
         }
     }
 
-    /// 회귀(코덱스 #827): 네 조회를 한꺼번에 보내므로 구독·공유 코드가 실패해도 `/auth/me` 는 표와 함께
+    /// 회귀(코덱스 #827): 두 조회를 한꺼번에 보내므로 구독 조회가 실패해도 `/auth/me` 는 표와 함께
     /// 이미 나갔다 — 그 답을 **이 진입의 결과로** 적는다(성공 → `onFreshPlan`, 실패 → `onAccountRequestFailed`).
     /// 버리면 이 진입의 첫 결과가 비어, 뒤에 오는 다른 응답이 세션 한가운데서 종료 안내를 판정한다(D11).
     /// 권한 스냅샷은 여전히 미완이다(구독 없는 반쪽 스냅샷 금지).
@@ -186,29 +186,29 @@ final class EntryRefreshFreshnessTests: XCTestCase {
             await vm.refreshAll(session: current)
             XCTAssertFalse(vm.entitlementSnapshotComplete, "구독을 못 받았으니 스냅샷은 미완이다")
             XCTAssertEqual(meCalls(), 1)
-            XCTAssertEqual(answeredPlans, ["family"], "나간 `/auth/me` 의 답을 세션에 넘긴다")
+            XCTAssertEqual(answeredPlans, ["plus"], "나간 `/auth/me` 의 답을 세션에 넘긴다")
             XCTAssertEqual(answeredTickets, [ticket], "보내기 전에 뜬 그 표로 넘긴다")
             XCTAssertTrue(failedTickets.isEmpty)
 
             meFails.value = true
             await vm.refreshAll(session: current)
-            XCTAssertEqual(answeredPlans, ["family"])
+            XCTAssertEqual(answeredPlans, ["plus"])
             XCTAssertEqual(failedTickets, [ticket], "`/auth/me` 도 실패했으면 그 실패를 이 진입의 결과로 적는다")
         }
     }
 
-    /// 회귀(효율 감사 M7): 이용권 새로고침의 네 조회(그룹·구독·공유 코드·`/auth/me`)는 **한꺼번에** 나간다.
-    /// 예전에는 그룹 → 구독·공유 코드 → `/auth/me` 로 세 번 차례로 기다렸다. 그룹 답을 붙든 채로 나머지
-    /// 셋이 서버에 닿는지 본다 — 차례로 보내면 그룹 답이 오기 전에는 아무것도 나가지 않는다.
-    func test_이용권_새로고침의_네_조회는_한꺼번에_나간다() async throws {
+    /// 회귀(효율 감사 M7): 이용권 새로고침의 두 조회(구독·`/auth/me`)는 **한꺼번에** 나간다 — 서로의 결과를
+    /// 입력으로 쓰지 않는다. 구독 답을 붙든 채로 `/auth/me` 가 서버에 닿는지 본다 — 차례로 보내면 구독 답이
+    /// 오기 전에는 나가지 않는다.
+    func test_이용권_새로고침의_두_조회는_한꺼번에_나간다() async throws {
         let gate = ResponseGate()
-        try await withSocialViewModel(clock: TestClock(now: t0), holdFamilyGroup: gate) { vm, current, meCalls, _ in
+        try await withSocialViewModel(clock: TestClock(now: t0), holdSubscription: gate) { vm, current, meCalls, _ in
             let refresh = Task { await vm.refreshAll(session: current) }
             let deadline = Date().addingTimeInterval(5)
             while meCalls() == 0, Date() < deadline {
                 try await Task.sleep(nanoseconds: 20_000_000)
             }
-            XCTAssertEqual(meCalls(), 1, "그룹 답을 기다리는 사이 `/auth/me` 도 이미 나갔다")
+            XCTAssertEqual(meCalls(), 1, "구독 답을 기다리는 사이 `/auth/me` 도 이미 나갔다")
             gate.release()
             await refresh.value
             XCTAssertTrue(vm.entitlementSnapshotComplete, "받은 것을 쓰는 순서·가드는 그대로라 끝까지 간다")
@@ -345,7 +345,7 @@ final class EntryRefreshFreshnessTests: XCTestCase {
         meFails: LockedFlag = LockedFlag(),
         subscriptionFails: LockedFlag = LockedFlag(),
         onMe: @escaping @Sendable () -> Void = {},
-        holdFamilyGroup: ResponseGate? = nil,
+        holdSubscription: ResponseGate? = nil,
         _ body: (SocialFeatureViewModel, AuthSession, @escaping @Sendable () -> Int, AlarmTalkAPI) async throws -> Void
     ) async throws {
         let userID = UUID().uuidString
@@ -355,7 +355,7 @@ final class EntryRefreshFreshnessTests: XCTestCase {
         // 권한 스냅샷의 문(`EntitlementWriter`)은 키체인의 세션과 대조한다.
         try KeychainStore.saveSession(current)
         let me = try JSONSerialization.data(withJSONObject: [
-            "user": ["id": userID, "email": "entry@example.test", "name": "Test", "plan": "family", "deletion_status": "active"]
+            "user": ["id": userID, "email": "entry@example.test", "name": "Test", "plan": "plus", "deletion_status": "active"]
         ])
         EntryRefreshURLProtocol.configure(host: host) { path, _, reply in
             switch path {
@@ -364,13 +364,12 @@ final class EntryRefreshFreshnessTests: XCTestCase {
                 meFails.value ? reply(503, Data(#"{"error":"unavailable"}"#.utf8)) : reply(200, me)
             case "billing/subscription":
                 if subscriptionFails.value { reply(503, Data(#"{"error":"unavailable"}"#.utf8)); return }
-                reply(200, Data(#"{"subscription":null,"plan":null,"next_plan":null,"store_renewal_providers":[]}"#.utf8))
-            case "billing/vouchers":
-                reply(200, Data(#"{"vouchers":[]}"#.utf8))
+                // 문을 넘기면 그 문이 열릴 때까지 답을 붙든다.
+                let none = Data(#"{"subscription":null,"plan":null,"next_plan":null,"store_renewal_providers":[]}"#.utf8)
+                if let holdSubscription { holdSubscription.hold { reply(200, none) } } else { reply(200, none) }
             default:
-                // `family/groups/current` — 문을 넘기면 그 문이 열릴 때까지 답을 붙든다.
-                let group = Data(#"{"group":null,"role":null,"members":[]}"#.utf8)
-                if let holdFamilyGroup { holdFamilyGroup.hold { reply(200, group) } } else { reply(200, group) }
+                // 이용권 새로고침은 구독과 `/auth/me` 만 묻는다.
+                reply(404, Data(#"{"error":"unexpected path"}"#.utf8))
             }
         }
         let urlSession = Self.stubbedSession()
@@ -407,8 +406,8 @@ final class EntryRefreshFreshnessTests: XCTestCase {
                     onList()
                     return (200, Data(#"{"profiles":[]}"#.utf8))
                 default:
-                    // `voice/family` — 공유받은 목소리도 없다.
-                    return (200, Data(#"{"profiles":[]}"#.utf8))
+                    // 목소리 새로고침은 목록과 한도만 묻는다.
+                    return (404, Data(#"{"error":"unexpected path"}"#.utf8))
                 }
             }
         }

@@ -416,6 +416,32 @@ final class AuthViewModelTests: XCTestCase {
         XCTAssertFalse(DynamicPromptPreferences.hasUnsyncedChange(userID: userID))
     }
 
+    /// 명시적 로그아웃은 옛 받은 알람의 승격 기록(`ReceivedAlarmPromotionStore`)도 지운다 — 떠난 계정의 알람을
+    /// 나중에 다른 계정의 회차가 그 계정의 목소리로 올리지 않게(`docs/spec/plan-gates.md` 「커플·가족 이용권 — 폐지」).
+    func testExplicitSignOutClearsReceivedAlarmPromotionRecord() async throws {
+        let api = MockAuthAPI()
+        let vm = AuthViewModel(api: api, appleCredentialProvider: MockAppleCredentialProvider())
+        let session = makeEmailSession()
+        let userID = session.user.id
+        vm._setSessionForTesting(session)
+        let promotions = ReceivedAlarmPromotionStore()
+        addTeardownBlock {
+            KeychainStore.deleteSession()
+            promotions.clear(userID: userID)
+            PendingSignOutStore.clear(userID)
+        }
+        promotions.add(["converted"], ownerUserID: userID)
+        promotions.add(["unowned-converted"], ownerUserID: nil)
+
+        vm.signOutExplicitly()
+        for _ in 0..<200 where vm.session != nil || vm.isBusy {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+
+        XCTAssertNil(vm.session)
+        XCTAssertTrue(promotions.pendingIDs(for: userID).isEmpty, "떠난 계정의 승격 기록이 남았다")
+    }
+
     /// 회귀(2026-09-27 리뷰 2차): **앞 진입에 보낸** `/auth/me` 가 백그라운드를 건너 복귀 뒤에
     /// 도착하면 이번 진입의 답이 아니다(안드로이드 `accountAnswerEntryFor`). 그 답으로 판정하면
     /// 나가 있는 동안 다른 기기에서 결제한 사람에게 "무료 이용이 곧 끝나요" 가 뜬다.
@@ -548,7 +574,7 @@ final class AuthViewModelTests: XCTestCase {
         XCTAssertNil(vm.accountEntryAnswer)
 
         vm._setSessionForTesting(session)
-        vm.applyFreshPlan(userID: session.user.id, from: session.token, plan: "family", personalPromo: nil, request: inFlight)
+        vm.applyFreshPlan(userID: session.user.id, from: session.token, plan: "plus", personalPromo: nil, request: inFlight)
         XCTAssertEqual(vm.session?.user.plan, session.user.plan, "로그아웃 전에 떠난 요청의 답은 버린다")
         XCTAssertNil(vm.accountEntryAnswer, "끝난 로그인의 답은 이 진입의 응답도 아니다")
         XCTAssertEqual(vm.planAnsweredEntry, 0)
@@ -664,7 +690,7 @@ final class AuthViewModelTests: XCTestCase {
         vm._setSessionForTesting(base)
         addTeardownBlock { KeychainStore.deleteSession() }
         var answered = base.user
-        answered.plan = "family"
+        answered.plan = "plus"
         api.meResult = .success(answered)
         api.beforeMeResponse = {
             vm.signOut(revokeOnServer: false)
@@ -819,11 +845,6 @@ final class AuthViewModelTests: XCTestCase {
                 email: "tester@example.com",
                 name: "Tester",
                 plan: "free",
-                allowFamilyAlarms: false,
-                familyAlarmQuietDays: nil,
-                familyAlarmQuietStart: nil,
-                familyAlarmQuietEnd: nil,
-                familyAlarmQuietWindows: nil,
                 appleUserId: appleUserId
             )
         )
@@ -837,11 +858,6 @@ final class AuthViewModelTests: XCTestCase {
                 email: "tester@example.com",
                 name: "Tester",
                 plan: "free",
-                allowFamilyAlarms: false,
-                familyAlarmQuietDays: nil,
-                familyAlarmQuietStart: nil,
-                familyAlarmQuietEnd: nil,
-                familyAlarmQuietWindows: nil,
                 appleUserId: nil
             )
         )
@@ -859,8 +875,7 @@ final class AuthViewModelTests: XCTestCase {
                 id: "plan-\(planKey)",
                 key: planKey,
                 name: planKey,
-                planType: planKey,
-                maxMembers: planKey == "family" ? 4 : 2
+                planType: planKey
             )
         )
     }
@@ -1192,11 +1207,6 @@ final class AuthViewModelTests: XCTestCase {
             email: "tester@example.com",
             name: "Tester (renamed)",
             plan: "personal",
-            allowFamilyAlarms: nil,
-            familyAlarmQuietDays: nil,
-            familyAlarmQuietStart: nil,
-            familyAlarmQuietEnd: nil,
-            familyAlarmQuietWindows: nil,
             appleUserId: nil
         ))
         let vm = AuthViewModel(api: api, appleCredentialProvider: MockAppleCredentialProvider())
@@ -1309,71 +1319,6 @@ final class AuthViewModelTests: XCTestCase {
 
     // MARK: - profile update payloads
 
-    func test_updateProfile_withQuietWindows_sendsAndroidCompatiblePayload() async {
-        let api = MockAuthAPI()
-        api.meResult = .success(makeEmailSession().user)
-        let vm = AuthViewModel(api: api, appleCredentialProvider: MockAppleCredentialProvider())
-        vm._setSessionForTesting(makeEmailSession())
-
-        await vm.updateProfile(
-            allowFamilyAlarms: true,
-            quietWindows: [
-                FamilyAlarmQuietWindow(days: [3, 1, 9, 1], start: "22:00", end: "08:30"),
-                FamilyAlarmQuietWindow(days: [], start: "10:00", end: "11:00")
-            ]
-        )
-
-        let request = api.lastUpdateProfileRequest
-        XCTAssertEqual(api.updateProfileCallCount, 1)
-        XCTAssertEqual(request?.allowFamilyAlarms, true)
-        XCTAssertEqual(request?.familyAlarmQuietDays, [1, 3])
-        XCTAssertEqual(request?.familyAlarmQuietStart, "22:00")
-        XCTAssertEqual(request?.familyAlarmQuietEnd, "08:30")
-        XCTAssertEqual(
-            request?.familyAlarmQuietWindows ?? [],
-            [FamilyAlarmQuietWindow(days: [1, 3], start: "22:00", end: "08:30")]
-        )
-    }
-
-    /// ⚠ **창을 다 지우면 지운 대로 보낸다**(2026-08-08 규칙 변경).
-    ///
-    /// 이 테스트는 원래 반대를 지키고 있었다 — 창이 비면 `평일 09:00-18:30` 을 되살려
-    /// 보냈고, 그래서 사용자가 방해금지를 전부 없애도 서버에는 다시 생겼다("껐는데 계속
-    /// 막힌다"). 방해금지는 사용자가 명시적으로 켜는 기능이라 기본값을 만들지 않는다.
-    func test_updateProfile_withEmptyQuietWindows_sendsNothing() async {
-        let api = MockAuthAPI()
-        api.meResult = .success(makeEmailSession().user)
-        let vm = AuthViewModel(api: api, appleCredentialProvider: MockAppleCredentialProvider())
-        vm._setSessionForTesting(makeEmailSession())
-
-        await vm.updateProfile(allowFamilyAlarms: false, quietWindows: [])
-
-        let request = api.lastUpdateProfileRequest
-        XCTAssertEqual(api.updateProfileCallCount, 1)
-        XCTAssertEqual(request?.allowFamilyAlarms, false)
-        XCTAssertNil(request?.familyAlarmQuietDays)
-        XCTAssertNil(request?.familyAlarmQuietStart)
-        XCTAssertNil(request?.familyAlarmQuietEnd)
-        XCTAssertEqual(request?.familyAlarmQuietWindows ?? [], [])
-    }
-
-    func test_updateProfile_withInvalidQuietTime_doesNotCallApi() async {
-        let api = MockAuthAPI()
-        api.meResult = .success(makeEmailSession().user)
-        let vm = AuthViewModel(api: api, appleCredentialProvider: MockAppleCredentialProvider())
-        vm._setSessionForTesting(makeEmailSession())
-
-        await vm.updateProfile(
-            allowFamilyAlarms: true,
-            quietWindows: [
-                FamilyAlarmQuietWindow(days: [1], start: "9:00", end: "18:30")
-            ]
-        )
-
-        XCTAssertEqual(api.updateProfileCallCount, 0)
-        XCTAssertEqual(vm.statusMessage, "시간은 HH:mm 형식으로 입력해 주세요.")
-    }
-
     /// **프로필 저장은 plan 답이 아니다 — 바꾼 칸만 응답을 기다린 뒤의 세션 위에 얹는다**(2026-10-05,
     /// `docs/spec/session-and-auth.md` 「프로필 저장은 바꾼 칸만 세션에 적는다」). 저장이 떠 있는 사이 결제 전 조회·세션 밖
     /// `/auth/me`(`applyFreshPlan` — 토큰을 굴리지 않는다)가 plus + 개인 프로모를 반영했으면 저장 뒤에도 그 짝이 남고,
@@ -1404,37 +1349,6 @@ final class AuthViewModelTests: XCTestCase {
         XCTAssertEqual(KeychainStore.readSession()?.user.plan, "plus")
     }
 
-    /// 가족 알람 설정도 같다 — 초대 코드 등록 직후 가족 plan 이 반영된 사람이 '내 알람 맞추기 허용' 을 켜면, 그 plan 은
-    /// 남고 허용·방해금지 창은 확인 조회 없이도 세션에 적힌다(안드로이드 `updateFamilyAlarmSettings` 와 같다).
-    func testFamilyAlarmSettingsSaveKeepsThePlanAnsweredMeanwhile() async {
-        let api = MockAuthAPI()
-        let vm = AuthViewModel(api: api, appleCredentialProvider: MockAppleCredentialProvider())
-        let session = makeEmailSession()
-        vm._setSessionForTesting(session)
-        addTeardownBlock { KeychainStore.deleteSession() }
-        api.beforeUpdateProfileResponse = {
-            vm.applyFreshPlan(
-                userID: session.user.id, from: session.token, plan: "family", personalPromo: nil,
-                request: vm.beginAccountRequest()
-            )
-        }
-        api.meResult = .failureRaw(URLError(.notConnectedToInternet))
-        let window = FamilyAlarmQuietWindow(days: [1, 3], start: "22:00", end: "07:00")
-
-        await vm.updateProfile(allowFamilyAlarms: true, quietWindows: [window])
-
-        XCTAssertEqual(vm.session?.user.plan, "family", "요청 전의 무료 사본이 가족 plan 을 되돌렸다")
-        XCTAssertEqual(vm.session?.user.allowFamilyAlarms, true)
-        XCTAssertEqual(vm.session?.user.familyAlarmQuietWindows, [window])
-        XCTAssertEqual(vm.session?.user.familyAlarmQuietDays, [1, 3])
-        XCTAssertEqual(vm.session?.user.name, session.user.name, "바꾸지 않은 칸은 그대로다")
-
-        // 창을 다 지우면 지운 대로 둔다 — 레거시 3칸은 자리값이다.
-        await vm.updateProfile(allowFamilyAlarms: true, quietWindows: [])
-        XCTAssertEqual(vm.session?.user.familyAlarmQuietWindows, [])
-        XCTAssertEqual(vm.session?.user.plan, "family")
-    }
-
     /// 회귀(2026-10-05 리뷰): **저장 전에 떠난 조회가 먼저 와 토큰을 굴려도, 확인 조회가 저장한 이름을 남긴다.** 서버는
     /// `/auth/me` 마다 토큰을 굴린다(`routes/auth.ts`). 그래서 옛 답(옛 이름)이 먼저 오면 세션 토큰이 바뀌어 있고, 확인
     /// 조회의 답은 '토큰만 구른 같은 로그인' 갈래(`isTokenRolledWithinSignIn`)로 온다 — 예전에는 그 갈래가 plan·프로모만
@@ -1457,29 +1371,6 @@ final class AuthViewModelTests: XCTestCase {
                 "토큰은 먼저 반영된 답이 굴린 것을 지킨다(\(order))"
             )
             XCTAssertEqual(KeychainStore.readSession()?.token, vm.session?.token, order)
-        }
-    }
-
-    /// 가족 알람 설정(허용·방해금지 창)도 같다 — 저장 전에 떠난 조회가 먼저 와 옛 설정과 굴린 토큰을 적어도, 확인 조회가
-    /// 저장한 설정을 남긴다.
-    func testConfirmationRefreshKeepsTheSavedFamilyAlarmSettingsWhicheverOrderTheOlderRefreshArrives() async throws {
-        let window = FamilyAlarmQuietWindow(days: [1, 3], start: "22:00", end: "07:00")
-        for olderArrivesFirst in [true, false] {
-            let order = olderArrivesFirst ? "옛 답이 먼저" : "확인 조회가 먼저"
-            let vm = try await saveRacingAnOlderRefresh(olderArrivesFirst: olderArrivesFirst) { server in
-                server.allowFamilyAlarms = true
-                server.familyAlarmQuietWindows = [window]
-                server.familyAlarmQuietDays = window.days
-                server.familyAlarmQuietStart = window.start
-                server.familyAlarmQuietEnd = window.end
-            } save: { vm in
-                await vm.updateProfile(allowFamilyAlarms: true, quietWindows: [window])
-            }
-
-            XCTAssertEqual(vm.session?.user.allowFamilyAlarms, true, "확인 조회가 성공했는데 옛 허용 설정이 남았다(\(order))")
-            XCTAssertEqual(vm.session?.user.familyAlarmQuietWindows, [window], order)
-            XCTAssertEqual(KeychainStore.readSession()?.user.allowFamilyAlarms, true, order)
-            XCTAssertEqual(KeychainStore.readSession()?.user.familyAlarmQuietWindows, [window], order)
         }
     }
 
@@ -1582,7 +1473,7 @@ final class AuthViewModelTests: XCTestCase {
         defer { defaults.removePersistentDomain(forName: suiteName) }
 
         let snapshotStore = AccessSnapshotStore(defaults: defaults)
-        snapshotStore.patchWithoutOwnershipCheck("user-1") { $0.subscriptionResponse = subscription(planKey: "family") }
+        snapshotStore.patchWithoutOwnershipCheck("user-1") { $0.subscriptionResponse = subscription(planKey: "personal") }
 
         let api = MockAuthAPI()
         api.requestAccountDeletionResult = .success(AccountDeletionResponse(success: true))
@@ -2211,11 +2102,6 @@ private final class MockAuthAPI: AuthAPIProviding, @unchecked Sendable {
         UpdateProfileResponse(
             success: true,
             name: nil,
-            allowFamilyAlarms: nil,
-            familyAlarmQuietDays: nil,
-            familyAlarmQuietStart: nil,
-            familyAlarmQuietEnd: nil,
-            familyAlarmQuietWindows: nil,
             dynamicPromptSettings: nil
         )
     )
