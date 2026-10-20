@@ -176,8 +176,12 @@ android {
         //   서버가 탈퇴를 철회한다(#904). ⚠ 이 빌드는 **강제 업데이트 하한**이다(`app-version.ts` 의 Android
         //   `minSupported` 34 — Play 게재 확인 뒤 2026-10-16). 그때 서버의 옛 앱 호환 갈래를 지웠다. iOS 와 같은 versionName 을 쓴다.
         // 35 = 1.2.15. 목소리 등록 동의·재동의 뒤 동기화·목소리 대체 안내를 고친다.
-        versionCode = 35
-        versionName = "1.2.15"
+        // 36 = 1.2.16. 커플·가족 이용권과 그것에만 딸린 기능(초대 코드·목소리 공유·가족 알람)을 없앤다(법무 문서 7).
+        //   받아 둔 알람은 업데이트하며 내 알람으로 바뀐다(Room 28). ⚠ 이 빌드는 **강제 업데이트 하한**이 된다 — 옛 빌드는
+        //   없앤 이용권과 코드 입력을 계속 보인다. 하한(`app-version.ts` 의 Android `minSupported` 36)은 **Play 게재를
+        //   확인한 뒤** 올린다. 서버(정책 7·6 수락)가 이 빌드보다 먼저 나가야 한다. 광고 SDK 가 처음 실리는 빌드다.
+        versionCode = 36
+        versionName = "1.2.16"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
