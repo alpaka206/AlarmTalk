@@ -76,7 +76,7 @@ struct PlanCard: View {
     /// 결제 버튼을 그리는가(`PlanScreenCurrent.showsPurchase`). 산 이용권의 현재 카드엔 없고,
     /// 프로모로 현재가 된 개인 카드엔 있다 — `isCurrent` 로 대신하지 말 것.
     let showsPurchase: Bool
-    /// 현재 카드의 상태 한 줄 — 지금은 기간 한정 개인 플랜의 "개인 플랜 무료 이용 중 · …까지" 뿐이다
+    /// 현재 카드의 상태 한 줄 — 지금은 기간 한정 개인 플랜의 "플러스 무료 이용 중 · …까지" 뿐이다
     /// (안드로이드 `SubscriptionPlanCard` 의 `currentStatusText` 자리 — 가격 바로 아래).
     let statusText: String?
     let isBusy: Bool

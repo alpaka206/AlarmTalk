@@ -281,7 +281,7 @@ struct BillingPanel: View {
         }
     }
 
-    /// "개인 플랜 무료 이용 중 · {lastDay}까지" — 카드 위 한 줄과 개인 카드의 상태 문구가 **같은 글자**를
+    /// "플러스 무료 이용 중 · {lastDay}까지" — 카드 위 한 줄과 플러스 카드의 상태 문구가 **같은 글자**를
     /// 쓰도록 한 곳에서 만든다. 문구는 안드로이드 `personal_promo_plan_line` 이 원본이다(ko·en·ja).
     nonisolated static func personalPromoLineText(lastDay: String) -> String {
         String(localized: "플러스 무료 이용 중 · \(lastDay)까지")
