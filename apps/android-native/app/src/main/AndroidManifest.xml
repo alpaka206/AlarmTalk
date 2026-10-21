@@ -31,6 +31,13 @@
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- 광고 SDK(보상형 광고 — `docs/spec/ad-rewards.md`)가 병합해 넣는 광고 식별자 권한을 뺀다. 아직 광고를 켜지
+         않았다(운영 광고 단위가 비어 광고 버튼이 없다) — 쓰지 않는 광고 ID 를 매니페스트에 두면 Play 가 광고 ID 사용
+         신고를 요구한다. 광고를 켜는 회차에 이 네 줄을 지우고 Play 의 광고 ID 신고·데이터 보안을 함께 고친다. -->
+    <uses-permission android:name="com.google.android.gms.permission.AD_ID" tools:node="remove" />
+    <uses-permission android:name="android.permission.ACCESS_ADSERVICES_AD_ID" tools:node="remove" />
+    <uses-permission android:name="android.permission.ACCESS_ADSERVICES_ATTRIBUTION" tools:node="remove" />
+    <uses-permission android:name="android.permission.ACCESS_ADSERVICES_TOPICS" tools:node="remove" />
 
     <application
         android:name=".AlarmTalkApplication"
