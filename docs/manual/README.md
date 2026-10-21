@@ -83,8 +83,8 @@ The Couple and Family plans, together with invite codes, voice sharing and sendi
 
 ### Plans
 
-- **Free**: built-in voices with preset alarm lines. Personal voice profiles and typing your own line are locked.
-- **Personal**: your own voice profile plus custom alarm lines, within a monthly quota.
+- **Free**: built-in voices with preset alarm lines. Your own voice profiles and typing your own line are locked.
+- **Plus**: your own voice profile plus custom alarm lines, within a monthly quota.
 
 Current prices and quotas are shown in the app under More → "Plan".
 

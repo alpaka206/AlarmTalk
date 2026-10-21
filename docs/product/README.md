@@ -38,7 +38,7 @@ AlarmTalk replaces beep-style mechanical alarms with a voice the user picked —
 | Plan | Audience | Monthly price |
 |---|---|---:|
 | Free | Individual trial | ₩0 |
-| Personal | Individual | ₩3,900 |
+| Plus (`personal`) | Individual | ₩3,900 |
 
 Prices are confirmed. The Couple and Family plans were removed on 2026-10-20 (owner decision — the group features kept
 causing bugs); see [`docs/spec/plan-gates.md`](../spec/plan-gates.md). See [`PRICING.md`](../../PRICING.md) for the margin/cost breakdown.

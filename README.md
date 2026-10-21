@@ -14,7 +14,7 @@ Most voice-alarm apps depend on push notifications or server cron, which can sil
 - **Android** — the shipping client; core alarm engine verified on physical devices:
   - Free tier: system voices with pre-rendered alarm preset clips, rotated locally on each dismiss (bucket rotation)
   - Paid tier: AI-cloned voice presets pre-rendered server-side after an explicit "keep", played fully offline at ring time — offline (flight-mode) ring pending device QA
-  - Google Play Billing: live — one monthly Personal subscription (the Couple and Family plans were removed on 2026-10-20; see [`docs/spec/plan-gates.md`](docs/spec/plan-gates.md))
+  - Google Play Billing: live — one monthly Plus subscription (`personal_monthly`; the Couple and Family plans were removed on 2026-10-20; see [`docs/spec/plan-gates.md`](docs/spec/plan-gates.md))
 - **Backend**: Cloudflare Workers + Hono + Turso — CI auto-deploys with DB migrations (`develop` → dev, `main` → prod)
 
 The SwiftUI iOS client (`apps/ios-native`) was revived on 2026-08-06 and shipped to the App Store on 2026-09-22. Its CI workflow (`ios-build.yml` — unit tests + Release build) was restored on 2026-09-08. Build it with XcodeGen (`project.yml` → `AlarmTalkNative.xcodeproj`); see [`docs/ios/`](docs/ios/).

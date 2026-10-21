@@ -46,7 +46,7 @@
 3. **DB plans 시드** — `…/lib/migrations.ts` (planKey·price_krw)
 
 > 새 플랜을 추가하려면: ① 위 1~3에 planKey 추가 → ② Play Console에 `{planKey}_monthly` 상품 생성.
-> **개인 플랜은 추가 코드 변경이 전혀 필요 없다.** Play Console에서 상품만 만들면 끝.
+> **플러스(상품 `personal_monthly`)는 추가 코드 변경이 전혀 필요 없다.** Play Console에서 상품만 만들면 끝.
 
 ---
 
