@@ -490,7 +490,12 @@ final class ReceivedAlarmConversionTests: XCTestCase {
 
     /// 끝까지 간 회차 — 서버가 확정한 목록의 내 클론과, 기기에 다 받아 둔 그 클론의 기본 인사말로 올린다. 올린 행은
     /// 그 클립으로 울고, 예약을 다시 맞추게 하며(AlarmKit 은 예약할 때 소리를 고정한다), 기록을 지운다.
-    func test_승격_회차는_내_클론과_받아_둔_인사말로_올린다() async throws {
+    /// 승격 회차 한 번 — 이용권·매니페스트·받아 둔 클립·신선한 목록을 갖춘 뒤 `store` 로 돈다.
+    private func runPromotionRound(
+        store: LocalAlarmStore,
+        verify: (_ promoted: Int, _ row: LocalAlarmRecord, _ keys: [String], _ voice: VoiceStudioViewModel,
+                 _ promotions: ReceivedAlarmPromotionStore, _ account: String) throws -> Void
+    ) async throws {
         let account = "promotion-\(UUID().uuidString)"
         let session = AuthSession(token: "promotion-token", user: AuthUser(id: account, email: "promotion@example.test"))
         let (promotions, cleanup) = try isolatedPromotions()
@@ -528,7 +533,6 @@ final class ReceivedAlarmConversionTests: XCTestCase {
         await voice.refresh(session: session, force: true)
         XCTAssertTrue(voice.accessibleVoicesAreAuthoritative)
 
-        let store = makeStore()
         var row = try convertedRow()
         row.ownerUserId = account
         store.upsert(row)
@@ -538,23 +542,44 @@ final class ReceivedAlarmConversionTests: XCTestCase {
             alarmStore: store, ownerUserId: account, entitlementConfirmed: true, promotions: promotions
         )
 
-        XCTAssertEqual(promoted, 1)
-        let after = try XCTUnwrap(store.record(id: row.id))
-        XCTAssertEqual(after.voiceProfileId, "clone-a")
-        XCTAssertEqual(after.bucketId, "greeting")
-        XCTAssertEqual(after.bucketClipKeys, keys, "자리 번호 순으로 한 벌을 다 묶는다")
-        XCTAssertEqual(after.audioCacheKey, keys.first)
-        XCTAssertEqual(after.localAudioUri, AudioCacheStore.shared.cachedURL(for: keys[0])?.lastPathComponent)
-        XCTAssertEqual(after.voiceRandomContext, RandomPromptContext.preset.rawValue)
-        XCTAssertEqual(after.syncStateEnum, .localOnly, "아직 서버에 없는 내 알람이다")
-        XCTAssertEqual(after.hour, row.hour)
-        XCTAssertEqual(after.minute, row.minute)
-        XCTAssertTrue(voice.needsScheduleReconcile, "예약을 다시 걸어야 새 목소리로 운다")
-        XCTAssertTrue(promotions.pendingIDs(for: account).isEmpty)
-        guard case .voiceClip(let ringing, _, _, _, _) = AlarmSoundResolver.plan(for: after, audioCache: .shared) else {
-            return XCTFail("올린 알람이 그 클론의 클립으로 울지 않는다")
+        try verify(promoted, row, keys, voice, promotions, account)
+    }
+
+    func test_승격_회차는_내_클론과_받아_둔_인사말로_올린다() async throws {
+        let store = makeStore()
+        try await runPromotionRound(store: store) { promoted, row, keys, voice, promotions, account in
+            XCTAssertEqual(promoted, 1)
+            let after = try XCTUnwrap(store.record(id: row.id))
+            XCTAssertEqual(after.voiceProfileId, "clone-a")
+            XCTAssertEqual(after.bucketId, "greeting")
+            XCTAssertEqual(after.bucketClipKeys, keys, "자리 번호 순으로 한 벌을 다 묶는다")
+            XCTAssertEqual(after.audioCacheKey, keys.first)
+            XCTAssertEqual(after.localAudioUri, AudioCacheStore.shared.cachedURL(for: keys[0])?.lastPathComponent)
+            XCTAssertEqual(after.voiceRandomContext, RandomPromptContext.preset.rawValue)
+            XCTAssertEqual(after.syncStateEnum, .localOnly, "아직 서버에 없는 내 알람이다")
+            XCTAssertEqual(after.hour, row.hour)
+            XCTAssertEqual(after.minute, row.minute)
+            XCTAssertTrue(voice.needsScheduleReconcile, "예약을 다시 걸어야 새 목소리로 운다")
+            XCTAssertTrue(promotions.pendingIDs(for: account).isEmpty)
+            guard case .voiceClip(let ringing, _, _, _, _) = AlarmSoundResolver.plan(for: after, audioCache: .shared) else {
+                return XCTFail("올린 알람이 그 클론의 클립으로 울지 않는다")
+            }
+            XCTAssertTrue(keys.contains(ringing))
         }
-        XCTAssertTrue(keys.contains(ringing))
+    }
+
+    /// 올린 행을 디스크에 못 앉혔으면 기록을 남긴다 — 비동기 저장 전에 실행이 끝나면 다음 실행은 미나 행을 다시 읽는데,
+    /// 기록이 없으면 다시 올릴 길이 없다(Codex #932).
+    func test_올린_행을_디스크에_못_앉히면_승격_기록을_남긴다() async throws {
+        let unwritable = LocalAlarmStore(
+            storageURL: URL(fileURLWithPath: "/dev/null/received-promotion-\(UUID().uuidString).json"),
+            loadFromDisk: false
+        )
+        try await runPromotionRound(store: unwritable) { promoted, row, _, _, promotions, account in
+            XCTAssertEqual(promoted, 1)
+            XCTAssertEqual(unwritable.record(id: row.id)?.voiceProfileId, "clone-a")
+            XCTAssertEqual(promotions.pendingIDs(for: account), [row.id], "디스크에 없는 승격인데 기록을 지웠다")
+        }
     }
 }
 
