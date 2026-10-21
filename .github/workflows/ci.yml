@@ -97,7 +97,7 @@ jobs:
       - name: Check INSERT statements cover NOT NULL columns
         run: python3 scripts/check-insert-not-null.py
 
-      # 권한 스냅샷(구독·그룹·users.plan·스토어 신호)을 쓰는 문은 `EntitlementWriter` 하나다.
+      # 권한 스냅샷(구독·users.plan·스토어 신호)을 쓰는 문은 `EntitlementWriter` 하나다.
       # 그전에는 쓰는 곳이 안드로이드 9곳·iOS 8곳이었고 각자 계정·세대·에폭 가드를 손으로
       # 들고 있었다 — 그 국소 가드끼리 어긋나면서 PR #709 리뷰가 37회·119건까지 갔다.
       # 문을 만드는 것만으로는 다음 사람이 우회하는 걸 못 막아서, 우회를 여기서 막는다.
@@ -107,7 +107,8 @@ jobs:
       # 유료 플랜 목록이 백엔드·안드로이드(2벌)·iOS 에 **네 벌**로 흩어져 있었고 실제로
       # 갈라져 있었다(안드로이드에만 도달 불가능한 `individual`·`plus`·`couple`). 지금은
       # `@alarmtalk/shared` 의 `plan.ts` 가 원본이고, 네이티브 두 앱은 같은 값을 손으로
-      # 두므로 어긋나는 것을 여기서 막는다. 한 칸만 어긋나면 돈 낸 사용자가 잠긴다.
+      # 두므로 어긋나는 것을 여기서 막는다. 한 칸만 어긋나면 돈 낸 사용자가 잠긴다. 2026-10-20 에 없앤
+      # 커플·가족 값(`couple`·`family`)이 네 목록에 함께 돌아오는 것도 막는다(함께 돌아오면 서로 일치해 대조로는 못 잡는다).
       - name: Check plan constants match across shared/Android/iOS/DB
         run: python3 scripts/check-plan-constants.py
 
@@ -128,7 +129,7 @@ jobs:
       - name: Check voice enrollment script matches across shared/Android/iOS
         run: python3 scripts/check-voice-enrollment-script.py
 
-      # 사용자가 친 값의 예상된 거절(틀린 인증 코드·이미 가입된 이메일·잘못 친 이용권 코드)은 두 앱이 이슈 대신
+      # 사용자가 친 값의 예상된 거절(틀린 인증 코드·이미 가입된 이메일·옛 앱에서 친 코드)은 두 앱이 이슈 대신
       # 브레드크럼으로 남긴다. 목록의 원본은 `packages/shared` 의 `CLIENT_EXPECTED_REFUSAL_CODES` 이고 두 앱은 같은 값을
       # 손으로 둔다 — 한쪽만 고치면 같은 거절이 한 앱에서만 이슈가 되는데, 각 앱의 테스트는 자기 목록만 본다.
       - name: Check expected refusal codes match across shared/Android/iOS
@@ -147,8 +148,9 @@ jobs:
       # 코드를 쳐서 유료 기능을 여는 길은 App Store 지침 3.1.1 로 두 번 반려됐다 — 1.2.11 은 프로모 코드, 1.2.12 는 선물
       # 코드(2026-10-12). 첫 번째 때 사례(프로모)만 지우고 같은 종류(선물)를 남긴 것이 두 번째의 원인이라, 규칙을 종류로
       # 적고(`docs/spec/plan-gates.md` 「선물 코드 — 폐지」) 두 앱의 화면 문구·앱과 서버 코드·스토어 문구 원본에서 선물·
-      # 프로모·쿠폰 어휘와 은퇴한 상품 id·`GIFT-` 형식이 돌아오면 여기서 막는다. 남는 코드는 초대 코드(INV-) 하나다.
-      # 형식 검사(`VOUCHER_CODE_RE` 가 INV- 하나뿐인지)와 두 앱 유료 게이트에 코드 입력이 돌아오는지도 같이 본다.
+      # 프로모·쿠폰 어휘와 은퇴한 상품 id·`GIFT-` 형식이 돌아오면 여기서 막는다. 마지막 코드였던 초대 코드(INV-)도
+      # 2026-10-20 에 커플·가족 이용권과 함께 없앴다 — 초대 코드·커플·가족 이용권 어휘, 그룹 상품 id, 서버의 초대 코드
+      # 형식(`VOUCHER_CODE_RE`·`INV-`)이 돌아오는지와 두 앱 유료 게이트에 코드 입력이 돌아오는지도 같이 본다.
       - name: Check no code-based paid unlocks (gift, promo, coupon codes)
         run: |
           python3 scripts/check-paid-unlock-codes.py --self-test

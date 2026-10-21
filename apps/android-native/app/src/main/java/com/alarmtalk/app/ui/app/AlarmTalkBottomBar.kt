@@ -22,8 +22,6 @@ import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Alarm
 import androidx.compose.material.icons.outlined.Alarm
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.material3.Badge
-import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -43,7 +41,6 @@ import androidx.compose.ui.unit.sp
 @Composable
 internal fun AlarmTalkBottomBar(
     selectedTab: NativeTab,
-    unreadAlarmCount: Int,
     onSelectTab: (NativeTab) -> Unit,
 ) {
     // 배경색과 동일하게 깔아 시스템 내비게이션 바(배경색)와 이음새 없이 이어지게 한다.
@@ -71,7 +68,6 @@ internal fun AlarmTalkBottomBar(
                 icon = Icons.Outlined.Alarm,
                 selectedIcon = Icons.Filled.Alarm,
                 label = stringResource(R.string.r3app_bottom_tab_alarms),
-                badgeCount = unreadAlarmCount,
                 onSelectTab = onSelectTab,
                 modifier = Modifier.weight(1f),
             )
@@ -110,7 +106,6 @@ internal fun AlarmTalkTabItem(
     /// 세 탭이 모두 Material 이므로 이제 한 값이다(2026-08-17).
     iconSize: Dp = 26.dp,
     label: String,
-    badgeCount: Int = 0,
     onSelectTab: (NativeTab) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -144,26 +139,12 @@ internal fun AlarmTalkTabItem(
                 .height(30.dp),
             contentAlignment = Alignment.Center,
         ) {
-            BadgedBox(
-                badge = {
-                    if (badgeCount > 0) {
-                        Badge(
-                            containerColor = MaterialTheme.colorScheme.error,
-                            contentColor = MaterialTheme.colorScheme.onError,
-                        ) {
-                            Text(text = badgeLabel(badgeCount))
-                        }
-                    }
-                },
-            ) {
-                val iconModifier = Modifier.size(iconSize)
-                Icon(
-                    imageVector = if (selected) selectedIcon else icon,
-                    contentDescription = label,
-                    tint = selectedContentColor,
-                    modifier = iconModifier,
-                )
-            }
+            Icon(
+                imageVector = if (selected) selectedIcon else icon,
+                contentDescription = label,
+                tint = selectedContentColor,
+                modifier = Modifier.size(iconSize),
+            )
         }
         Text(
             text = label,
@@ -178,5 +159,3 @@ internal fun AlarmTalkTabItem(
     }
 }
 
-
-private fun badgeLabel(count: Int): String = if (count > 99) "99+" else count.toString()

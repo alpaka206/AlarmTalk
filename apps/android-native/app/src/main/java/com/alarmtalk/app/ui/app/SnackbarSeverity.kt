@@ -26,8 +26,6 @@ import java.util.Locale
  */
 internal object SnackbarSeverities {
     val success: Set<Int> = setOf(
-        R.string.msg_family_alarm_set_for_target,
-        R.string.msg_family_alarm_set_for_target_other,
         R.string.msg_verification_code_sent,
         R.string.msg_email_verification_completed,
         R.string.msg_register_success,
@@ -35,19 +33,10 @@ internal object SnackbarSeverities {
         R.string.msg_password_reset_done,
         R.string.msg_account_deletion_requested,
         R.string.msg_account_left_pending_deletion,
-        R.string.msg_family_alarm_settings_saved,
         R.string.msg_voice_consent_withdrawn,
-        R.string.msg_gb_code_registered,
         R.string.msg_gb_plan_applied,
-        R.string.msg_gb_share_code_ready,
-        R.string.msg_gb_share_code_regenerated,
         R.string.msg_gb_subscription_cancel_at_period_end,
         R.string.msg_gb_subscription_canceled_voice_locked,
-        R.string.msg_member_removed,
-    )
-
-    val successPlurals: Set<Int> = setOf(
-        R.plurals.msg_received_alarm_arrived,
     )
 
     val error: Set<Int> = setOf(
@@ -56,9 +45,6 @@ internal object SnackbarSeverities {
         R.string.msg_alarm_update_failed,
         R.string.msg_alarm_toggle_failed,
         R.string.msg_alarm_delete_failed,
-        R.string.msg_family_alarm_set_failed,
-        R.string.msg_voice_duration_unknown,
-        R.string.msg_sync_pull_partial_failed,
         // 로그인·계정
         R.string.auth_error_invalid_credentials,
         R.string.msg_login_failed,
@@ -72,7 +58,6 @@ internal object SnackbarSeverities {
         R.string.msg_google_login_failed,
         R.string.msg_account_deletion_request_failed,
         R.string.msg_nickname_change_failed,
-        R.string.msg_family_alarm_settings_save_failed,
         R.string.msg_consent_record_failed,
         R.string.msg_marketing_consent_update_failed,
         R.string.msg_voice_consent_withdraw_failed,
@@ -82,8 +67,7 @@ internal object SnackbarSeverities {
         R.string.r3ed_google_signin_error_network,
         R.string.r3ed_google_signin_error_failed,
         R.string.r3ed_google_signin_error_failed_status,
-        // 이용권·코드
-        R.string.msg_gb_share_code_info_load_failed,
+        // 이용권
         R.string.msg_gb_billing_info_load_failed,
         R.string.msg2_billing_fail_same_plan,
         R.string.msg2_billing_fail_no_active_subscription,
@@ -92,31 +76,13 @@ internal object SnackbarSeverities {
         R.string.msg2_billing_fail_free_not_billable,
         R.string.msg2_billing_fail_user_not_found,
         R.string.msg2_billing_fail_transaction_owned_by_other_user,
-        R.string.msg2_code_fail_code_required,
-        R.string.msg2_code_fail_invalid_format,
-        R.string.msg2_code_fail_code_not_found,
-        R.string.msg2_code_fail_code_expired,
-        R.string.msg2_code_fail_code_already_used,
-        R.string.msg2_code_fail_code_already_redeemed_by_you,
-        R.string.msg2_code_fail_self_issued,
-        R.string.msg2_code_fail_group_full,
-        R.string.msg2_code_fail_invalid_plan_type,
-        R.string.msg2_code_fail_plan_not_found,
-        R.string.msg2_code_fail_user_not_found,
-        R.string.msg2_code_fail_code_revoked,
-        R.string.msg2_code_fail_already_member,
-        R.string.msg2_code_fail_owns_active_group,
-        R.string.msg_gb_code_register_failed,
         R.string.msg_gb_google_play_start_failed,
         R.string.msg_cross_store_renewal_active,
         R.string.msg_gb_payment_confirm_failed_retry,
         R.string.msg_gb_payment_confirm_failed,
-        R.string.msg_gb_share_code_load_failed,
         R.string.msg_gb_subscription_cancel_failed,
         R.string.r3misc_billing_already_owned,
         R.string.r3misc_billing_purchase_failed,
-        R.string.msg_leave_group_failed,
-        R.string.msg_remove_member_failed,
         // 목소리·오디오
         R.string.msg_voice_fetch_failed,
         R.string.msg_voice_clone_audio_too_short,
@@ -130,7 +96,6 @@ internal object SnackbarSeverities {
         R.string.msg_voice_monthly_change_limit,
         R.string.msg_voice_delete_failed,
         R.string.msg_voice_info_update_failed,
-        R.string.msg_voice_share_setting_failed,
         R.string.msg_voice_prerender_retry_failed,
         R.string.msg_voice_speech_style_retry_failed,
         R.string.rd_audio_duration_unreadable,
@@ -146,7 +111,6 @@ internal object SnackbarSeverities {
         R.string.api_error_rate_limited,
         R.string.api_error_request_too_large,
         R.string.api_error_server,
-        R.string.api_error_schema_upgrading,
         R.string.auth_error_email_invalid,
         R.string.api_error_email_code_invalid,
         R.string.api_error_email_code_expired,
@@ -160,31 +124,20 @@ internal object SnackbarSeverities {
         R.string.api_error_voice_pitch_locked,
         R.string.api_error_alarm_not_found,
         R.string.api_error_tts_generation_failed,
-        R.string.api_error_family_alarm_disabled,
-        R.string.api_error_family_alarm_lead_time,
-        R.string.editor_error_family_alarm_time_unavailable,
-        R.string.api_error_owner_cannot_leave,
     )
 
     val info: Set<Int> = setOf(
         // 하기 전에 필요한 것 — 로그인
         R.string.r3misc_login_required_generic,
         R.string.msg_login_required_to_use,
-        R.string.msg_family_alarm_login_required,
         R.string.msg_sync_login_required,
-        R.string.msg_gb_login_required_share_code_info,
         R.string.msg_gb_login_required_billing_info,
-        R.string.msg_gb_login_required_register_code,
         R.string.msg_gb_login_required_purchase_plan,
         R.string.msg_gb_login_required_apply_plan,
-        R.string.msg_gb_login_required_create_share_code,
         R.string.msg_gb_login_required_generic,
-        R.string.msg_leave_group_login_required,
-        R.string.msg_remove_member_login_required,
         R.string.msg_voice_fetch_login_required,
         R.string.msg_voice_create_login_required,
         R.string.msg_voice_edit_login_required,
-        R.string.msg_voice_share_login_required,
         R.string.msg_voice_delete_login_required,
         R.string.msg_voice_tts_generate_login_required,
         R.string.msg_voice_tts_audio_load_login_required,
@@ -200,17 +153,13 @@ internal object SnackbarSeverities {
         R.string.msg_register_all_fields_required,
         R.string.msg_register_verify_email_first,
         R.string.msg_nickname_length_invalid,
-        R.string.msg_time_format_required,
         R.string.msg_voice_name_required,
-        R.string.msg_gb_code_input_required_period,
         // 하기 전에 필요한 것 — 권한·이용권·동의
         R.string.msg_permission_notifications_required,
         R.string.msg_permission_exact_alarms_required,
         R.string.msg_permission_full_screen_intent_required,
         R.string.msg_permission_record_audio_required,
         R.string.plan_gate_paid_message,
-        R.string.msg_family_alarm_couple_family_only,
-        R.string.msg_voice_share_couple_family_required,
         R.string.msg_voice_preset_only,
         R.string.msg_voice_locked_free_plan,
         R.string.msg_voice_consent_required,
@@ -256,7 +205,6 @@ internal class SnackbarSeverityIndex private constructor(
 
     companion object {
         private val LANGUAGES = listOf("ko", "en", "ja")
-        private val PLURAL_SAMPLES = listOf(0, 1, 2, 5, 21)
         private val FORMAT_SPECIFIER = Regex("""%(?:\d+\$)?[-#+ 0,(]*\d*(?:\.\d+)?([a-zA-Z%])""")
 
         fun build(base: Context): SnackbarSeverityIndex {
@@ -298,10 +246,6 @@ internal class SnackbarSeverityIndex private constructor(
                     SnackbarSeverities.info to MessageSeverity.Info,
                 )) {
                     ids.forEach { add(resources.getText(it).toString(), severity) }
-                }
-                for (id in SnackbarSeverities.successPlurals) {
-                    PLURAL_SAMPLES.map { resources.getQuantityText(id, it).toString() }.distinct()
-                        .forEach { add(it, MessageSeverity.Success) }
                 }
             }
             return SnackbarSeverityIndex(

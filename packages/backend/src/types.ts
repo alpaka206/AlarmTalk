@@ -93,6 +93,11 @@ export interface Env {
   JWT_SECRET: string;
   PASSWORD_PEPPER: string;
   ENVIRONMENT: string;
+  /**
+   * AdMob 보상형 광고 단위(쉼표 구분). SSV 콜백(`routes/ads.ts`)은 여기 있는 단위만 적립한다 — 비어 있으면 광고 보상이
+   * 꺼진 것이다(콜백은 200 으로 받되 적립하지 않는다). 스펙: `docs/spec/ad-rewards.md`.
+   */
+  ADMOB_REWARDED_AD_UNITS?: string;
   INIT_DB_SECRET?: string;
   BILLING_STUB_ENABLED?: string;
   SENTRY_DSN?: string;

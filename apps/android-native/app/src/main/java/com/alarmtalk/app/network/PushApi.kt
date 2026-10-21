@@ -23,7 +23,7 @@ data class PushTokenUnregisterResponse(
 )
 
 interface PushApi {
-    // FCM 등록 토큰을 서버에 저장(가족 알람 push 대상). 로그인·앱 시작·토큰 회전 시 호출.
+    // FCM 등록 토큰을 서버에 저장(플랜·목소리·계정 신호 push 대상). 로그인·앱 시작·토큰 회전 시 호출.
     @POST("push/register")
     suspend fun registerPushToken(
         @Header("Authorization") authorization: String,

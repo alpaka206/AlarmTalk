@@ -174,15 +174,15 @@ class PersonalPromoLedgerTest {
     @Test
     fun aLateEntryRefreshDoesNotOverwriteANewerPlanAnswer() {
         val h = Harness()
-        // 진입 갱신이 떠 있는 동안 쿠폰 뒤의 갱신이 나갔다.
+        // 진입 갱신이 떠 있는 동안 결제 뒤의 갱신이 나갔다.
         val entryRefresh = h.ledger.beginAccountRequest()
-        val afterCoupon = h.ledger.beginAccountRequest()
-        // 쿠폰 뒤의 갱신이 먼저 돌아와 plan 을 썼다(가족 · 프로모 없음).
-        assertTrue(h.ledger.claimPlanAnswer(afterCoupon))
-        h.ledger.recordPlanApplied(afterCoupon)
+        val afterPurchase = h.ledger.beginAccountRequest()
+        // 결제 뒤의 갱신이 먼저 돌아와 plan 을 썼다(원시 유료 · 프로모 없음).
+        assertTrue(h.ledger.claimPlanAnswer(afterPurchase))
+        h.ledger.recordPlanApplied(afterPurchase)
         assertEquals(1L, h.ledger.planAnsweredEntry)
         // 진입 갱신의 옛 `plus` · 프로모가 뒤에 왔다 — 세션·스냅샷에 쓰지 않는다. 쓰면 프로모 표지가
-        // 되살아나 보류 규칙(D9)이 방금 가족이 된 사람의 가족 기능을 닫는다.
+        // 되살아나, 원시 유료가 된 plan 을 종료 시각에 낡은 프로모로 읽는다.
         assertFalse(h.ledger.claimPlanAnswer(entryRefresh))
     }
 
@@ -424,7 +424,7 @@ class PersonalPromoLedgerTest {
         )
         // 이 진입의 답이 plan 에 들어왔는데 여전히 낡은 프로모 하나로 무료다 — 이제 건다.
         assertTrue(due())
-        // 답이 plan 을 유료로 되돌렸다(다른 기기에서 쿠폰·결제·가족 합류).
+        // 답이 plan 을 유료로 되돌렸다(다른 기기에서 결제).
         assertFalse(due(definitelyFree = false))
         // 무료의 근거가 서버의 `free` 로 바뀌었다 — 위 이펙트가 이미 곧바로 처리한다.
         assertFalse(due(freeOnlyByPromoLapse = false))

@@ -288,9 +288,9 @@ export async function fetchAppleSubscriptionStatus(
       throw new Error('Apple subscription bundle id mismatch');
     }
 
-    // `data` 는 구독 그룹별 배열이고 `lastTransactions` 는 그룹 안의 구독들이다.
+    // `data` 는 (App Store) 구독 그룹별 배열이고 `lastTransactions` 는 그 그룹 안의 구독들이다.
     // 우리가 물은 originalTransactionId 와 일치하는 항목만 본다 — 같은 그룹의 다른
-    // 구독(예: 개인 → 가족으로 갈아탄 흔적)을 집으면 엉뚱한 만료일을 쓰게 된다.
+    // 구독(예: 예전에 갈아탄 다른 상품의 흔적)을 집으면 엉뚱한 만료일을 쓰게 된다.
     const entry = (body.data ?? [])
       .flatMap((group) => group.lastTransactions ?? [])
       .find((t) => t.originalTransactionId === originalTransactionId);
@@ -328,22 +328,18 @@ export async function fetchAppleSubscriptionStatus(
  *
  * 애플 상품 ID 는 전역 유일해야 해서 구글(`personal_monthly`)과 달리 번들 ID 접두사가
  * 붙는다. 이 목록은 `apps/ios-native/AlarmTalk/Configuration/StoreKitConfiguration.storekit`
- * 의 SKU 3개와 **정확히 같아야 한다** — App Store Connect 에 상품을 만들 때도 같은 ID 를 쓴다.
+ * 의 구독 SKU 와 **정확히 같아야 한다** — App Store Connect 에 상품을 만들 때도 같은 ID 를 쓴다.
  */
-const APPLE_PRODUCT_TO_PLAN_KEY: Record<string, 'personal' | 'couple' | 'family'> = {
+const APPLE_PRODUCT_TO_PLAN_KEY: Record<string, 'personal'> = {
   'com.alarmtalk.app.personal_monthly': 'personal',
-  'com.alarmtalk.app.couple_monthly': 'couple',
-  'com.alarmtalk.app.family_monthly': 'family',
-  // ⚠ **선물 상품(소모성 `com.alarmtalk.app.personal_gift_1m`)은 2026-10-14 에 없앴다 — 되살리지
-  //   말 것**(App Store 심사 지침 3.1.1, 두 번째 반려 — `routes/code.ts` 머리말). 그 결제는 받는
-  //   사람이 **코드를 쳐서** 여는 선물 코드를 만들었고, 애플이 막는 것이 바로 그 '코드로 해제' 다.
-  //   이 목록에서 빠졌으므로 확정 라우트는 그 결제를 모르는 상품(400 `UNKNOWN_PRODUCT`)으로 돌려준다
-  //   — 코드 발급도 환불 회수 갈래도 없다. 할인·무료 이용은 스토어 오퍼 코드로 준다.
+  // ⚠ **커플·가족(`com.alarmtalk.app.couple_monthly`·`family_monthly`)은 2026-10-20 에 없앴다**(이용권
+  //   폐지 — 운영 배포 전에 App Store Connect 에서 판매를 내린다). 선물 상품(소모성
+  //   `com.alarmtalk.app.personal_gift_1m`)도 2026-10-14 에 없앴다 — 되살리지 말 것(App Store 심사 지침
+  //   3.1.1, `routes/code.ts` 머리말). 목록에 없는 결제는 확정 라우트가 모르는 상품(400
+  //   `UNKNOWN_PRODUCT`)으로 돌려준다. 할인·무료 이용은 스토어 오퍼 코드로 준다.
 };
 
-export function applePlanKeyFromProductId(
-  productId: string,
-): 'personal' | 'couple' | 'family' | null {
+export function applePlanKeyFromProductId(productId: string): 'personal' | null {
   return APPLE_PRODUCT_TO_PLAN_KEY[productId] ?? null;
 }
 

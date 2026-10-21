@@ -57,7 +57,7 @@ PR #660 에서 **같은 모양의 버그가 네 번** 나왔다(동의 → 버�
 
 **판정 시점 — 이번 진입의 계정 응답이 온 뒤에만**
 - 백그라운드에서 돌아오면 세션에는 **지난번** `personal_promo` 가 남아 있다. 그 값으로 판정하면
-  다른 기기에서 결제·초대 코드 등록을 마친 사람에게 "무료 이용이 곧 끝나요" 가 뜬다. 그래서 **이번
+  다른 기기에서 결제를 마친 사람에게 "무료 이용이 곧 끝나요" 가 뜬다. 그래서 **이번
   진입의 `/auth/me`(또는 같은 값을 주는 계정 응답)가 도착한 뒤에만** 판정한다 — 진입마다 새로
   세우는 '이번 진입의 계정 응답' 신호가 준비 신호다(계정 단위 `accountStatusChecked` 는 진입마다
   다시 세워지지 않아 이 역할을 못 한다).
@@ -66,7 +66,7 @@ PR #660 에서 **같은 모양의 버그가 네 번** 나왔다(동의 → 버�
   빠뜨려도 다음 진입이 있지만 틀린 안내는 되돌릴 수 없어서다.
   - **D11 — 이 진입의 첫 결과가 이 진입을 끝낸다(성공이든 실패든, 두 앱 같은 규칙).** 이번 진입에
     보낸 계정 요청의 결과 중 **먼저 도착한 것** 하나가 이 진입의 판정을 정한다. 실패가 먼저면 같은
-    진입에 뒤따라 오는 성공 응답(초대 코드 등록·결제 뒤의 재조회, `plan_changed` 신호, 결제 권한 재확인,
+    진입에 뒤따라 오는 성공 응답(결제 뒤의 재조회, `plan_changed` 신호, 결제 권한 재확인,
     iOS 의 `.inactive → .active` 새로고침)으로 다시 판정하지 않는다 — 그러면 세션 한가운데서 안내가
     뜬다(리뷰). 두 앱 모두 진입의 결과를 **첫 것만** 적는 같은 모양(`AccountEntryAnswer` — 안드로이드
     `Answered`·`Failed`, iOS `answered`·`failed`)을 쓰고, 실패로 끝난 진입은
@@ -154,7 +154,7 @@ PR #660 에서 **같은 모양의 버그가 네 번** 나왔다(동의 → 버�
     닫힌 뒤 같은 진입에서 다시 뜬다. 한 진입에서 **세 번**(`maxUnseenPromoNotices`) 보이지 않으면
     그 진입은 포기한다(감지가 빗나가도 1초마다 깜빡이지 않게 — `noteUnseenPromoNotice`).
 - 떠 있는 안내는 **새 계정 응답에 맞춘다** — 같은 종료 시각이면 새 값(삭제 문장 갈래가 바뀌었을 수
-  있다), 프로모가 사라졌거나(결제·초대 코드 등록) 끝났거나 종료 시각이 바뀌었으면 닫는다(안드로이드
+  있다), 프로모가 사라졌거나(결제) 끝났거나 종료 시각이 바뀌었으면 닫는다(안드로이드
   `reconcileShownPersonalPromoNotice`, iOS `PersonalPromoNotice.reconcileShown`).
 
 **모양**: 버튼 둘 — `다시 보지 않기` · `확인`. Android 는 `IosAlertDialog`(버튼 2개 = 가로),
@@ -168,9 +168,9 @@ iOS 는 시스템 `.alert`. 바깥 탭·뒤로가기는 `확인` 과 같다(이�
 
 | | 제목 | 본문(`deletes_voices_at_end = true`) | 본문(`false` — 삭제 문장을 뺀다) |
 | --- | --- | --- | --- |
-| ko | 개인 플랜 무료 이용이 곧 끝나요 | {lastDay}까지 개인 플랜을 무료로 쓸 수 있어요. {nextDay}부터는 무료 플랜으로 돌아가고, 등록한 목소리는 3일 보관 후 삭제돼요. | {lastDay}까지 개인 플랜을 무료로 쓸 수 있어요. {nextDay}부터는 무료 플랜으로 돌아가요. |
-| en | Your free Personal plan ends soon | You can use the Personal plan for free until {lastDay}. From {nextDay}, you'll return to the Free plan, and voices you registered will be kept for 3 days and then deleted. | You can use the Personal plan for free until {lastDay}. From {nextDay}, you'll return to the Free plan. |
-| ja | パーソナルプランの無料利用がまもなく終了します | {lastDay}までパーソナルプランを無料でご利用いただけます。{nextDay}からは無料プランに戻り、登録した声は3日間保管した後に削除されます。 | {lastDay}までパーソナルプランを無料でご利用いただけます。{nextDay}からは無料プランに戻ります。 |
+| ko | 플러스 무료 이용이 곧 끝나요 | {lastDay}까지 플러스를 무료로 쓸 수 있어요. {nextDay}부터는 무료 플랜으로 돌아가고, 등록한 목소리는 3일 보관 후 삭제돼요. | {lastDay}까지 플러스를 무료로 쓸 수 있어요. {nextDay}부터는 무료 플랜으로 돌아가요. |
+| en | Your free Plus ends soon | You can use Plus for free until {lastDay}. From {nextDay}, you'll return to the Free plan, and voices you registered will be kept for 3 days and then deleted. | You can use Plus for free until {lastDay}. From {nextDay}, you'll return to the Free plan. |
+| ja | プラスの無料利用がまもなく終了します | {lastDay}までプラスを無料でご利用いただけます。{nextDay}からは無料プランに戻り、登録した声は3日間保管した後に削除されます。 | {lastDay}までプラスを無料でご利用いただけます。{nextDay}からは無料プランに戻ります。 |
 
   - 버튼: ko `다시 보지 않기` · `확인` / en `Don't show again` · `Confirm` / ja `今後表示しない` ·
     `確認`(확인은 안드로이드 `auth_confirm` 과 같은 문구).

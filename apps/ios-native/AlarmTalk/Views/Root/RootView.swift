@@ -29,8 +29,7 @@ struct RootView: View {
     // 쿠폰 입력을 권하던 시트였는데, 기간 한정 개인 플랜으로 무료 계정이 전부 개인이 되면서
     // 권할 이유가 사라졌고 운영 코드도 전부 꺼졌다. 프로모 코드 자체도 2026-10-12 에, 선물 코드와 유료
     // 게이트의 코드 입력은 2026-10-14 에 없앴다(App Store 지침 3.1.1 — 두 번째 반려, 되살리지 말 것).
-    // 남은 코드 입력은 커플·가족 초대 코드 하나이고 자리는 더보기의 초대 코드 등록(`CodeRegisterRow`)
-    // 하나다. 할인·무료 이용은 스토어 오퍼 코드로 준다.
+    // 마지막 코드 입력(초대 코드 등록)도 2026-10-20 에 없앴다. 할인·무료 이용은 스토어 오퍼 코드로 준다.
     @State private var downgradeNotice: DowngradeNoticeStore.Notice?
 
     /// 이 프로세스에서 앱에 들어온 횟수(콜드 스타트 = 1, 백그라운드 → 활성마다 +1). **읽기만
@@ -235,9 +234,9 @@ struct RootView: View {
                 // ⚠ 삭제 문장은 **서버가 대상이라고 할 때만** 싣는다(`deletes_voices_at_end`).
                 // 보류 중인 구독 행이 남은 계정은 종료 전환 대상이 아니라 목소리가 지워지지 않는다.
                 if shown.promo.deletesVoicesAtEnd {
-                    Text("\(String(days.lastDay))까지 개인 플랜을 무료로 쓸 수 있어요. \(String(days.firstFreeDay))부터는 무료 플랜으로 돌아가고, 등록한 목소리는 3일 보관 후 삭제돼요.")
+                    Text("\(String(days.lastDay))까지 플러스를 무료로 쓸 수 있어요. \(String(days.firstFreeDay))부터는 무료 플랜으로 돌아가고, 등록한 목소리는 3일 보관 후 삭제돼요.")
                 } else {
-                    Text("\(String(days.lastDay))까지 개인 플랜을 무료로 쓸 수 있어요. \(String(days.firstFreeDay))부터는 무료 플랜으로 돌아가요.")
+                    Text("\(String(days.lastDay))까지 플러스를 무료로 쓸 수 있어요. \(String(days.firstFreeDay))부터는 무료 플랜으로 돌아가요.")
                 }
             }
         }
@@ -375,9 +374,9 @@ struct RootView: View {
 
     /// 종료 안내의 제목 — 알럿과 '보였는가' 확인(`verifyShownNoticeIsVisible`)이 같은 값을 쓴다.
     /// 알럿은 번역 카탈로그 키로, 확인은 그 키를 번역한 문자열로 본다(`.alert` 가 싣는 제목과 같다).
-    private static var personalPromoNoticeTitleKey: LocalizedStringKey { "개인 플랜 무료 이용이 곧 끝나요" }
+    private static var personalPromoNoticeTitleKey: LocalizedStringKey { "플러스 무료 이용이 곧 끝나요" }
     private static var personalPromoNoticeTitle: String {
-        String(localized: "개인 플랜 무료 이용이 곧 끝나요")
+        String(localized: "플러스 무료 이용이 곧 끝나요")
     }
 
     /// 떠 있다고 적힌 안내를 확인한다 — 남의 것이면 걷고, 화면에 없으면 걷는다.
@@ -510,11 +509,7 @@ struct RootView: View {
         // 판정은 **알람이 하나도 없을 때**로 좁힌다. 강등은 알람을 지우지 않고 기본 목소리로
         // 바꿔 두므로(`DefaultVoiceSubstitute.replacedLostVoice` 등) 대상은 여전히 목록에 있다 — 하나라도 있으면
         // 그중 하나가 그 알람일 수 있어 함부로 지우면 안 된다.
-        // ⚠ **'내가 만든' 알람만 센다.** 강등 대상은 `localOwned` 뿐이라(받은 알람은
-        // 보낸 사람의 구독으로 성립한다) 받은 알람 하나가 남아 있으면 이 가드가 영영
-        // 통과하지 못했다 — 대기표가 안 지워져 **모달이 켤 때마다 다시 떴다**
-        // (2026-08-18 실기기: 로컬에 받은 알람 1건만 남은 채 안내가 계속 떴다).
-        if notice != nil, !alarmStore.alarms.contains(where: { $0.originEnum == .localOwned }) {
+        if notice != nil, alarmStore.alarms.isEmpty {
             DowngradeNoticeStore().clear(userID: auth.session?.user.id)
             downgradeNotice = nil
             return false

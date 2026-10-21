@@ -26,8 +26,6 @@ struct VoicePreviewConfirmView: View {
     @Environment(\.voiceAlarmTheme) private var theme
     @EnvironmentObject private var auth: AuthViewModel
     @EnvironmentObject private var voice: VoiceStudioViewModel
-    @EnvironmentObject private var socialFeatures: SocialFeatureViewModel
-    @EnvironmentObject private var subscriptions: SubscriptionManager
     /// 교체 확정 직후 **이 기기의** 직접 입력 알람을 곧바로 내리기 위해 든다.
     @EnvironmentObject private var alarmStore: LocalAlarmStore
 
@@ -51,8 +49,6 @@ struct VoicePreviewConfirmView: View {
     /// 서버가 청취(끝까지 들음)를 기록했는가. 문구를 고치면 `false` 로 되돌린다.
     @State private var listened = false
     @State private var errorMessage: String?
-    /// 공유 여부는 초안 입력 단계가 아니라 실제로 저장하는 이 단계에서 고른다.
-    @State private var isShared = false
     /// 뒤로 나가려 할 때 뜨는 경고. 이 화면을 벗어나면 초안이 삭제된다
     /// (안드로이드 `VoiceProfileManagementPanel.kt` 의 `draftExitWarningOpen`).
     @State private var exitWarningOpen = false
@@ -93,7 +89,7 @@ struct VoicePreviewConfirmView: View {
         Self.locks(fetching: fetching, confirming: confirming, saving: saving, busy: busy, editing: editing)
     }
 
-    /// 서버 일이 도는 중 — 뒤로·다시 만들기·저장하기·공유 스위치·문구 고치기(연필·재생성)를 잠근다(`Locks.working`).
+    /// 서버 일이 도는 중 — 뒤로·다시 만들기·저장하기·문구 고치기(연필·재생성)를 잠근다(`Locks.working`).
     private var working: Bool { locks.working }
 
     /// 톤 카드(막대·두 듣기 버튼)를 잠근다(`Locks.toneEnabled` 의 반대).
@@ -148,21 +144,12 @@ struct VoicePreviewConfirmView: View {
                     tuningCard
                     replaceNotice
 
-                    // 이 화면의 오류(재생·청취 확인·문구 저장·등록 실패)는 교체 줄 바로 아래, 공유 설정 위에 오류 색으로
+                    // 이 화면의 오류(재생·청취 확인·문구 저장·등록 실패)는 교체 줄 바로 아래에 오류 색으로
                     // 둔다 — 안드로이드 Preview 스텝도 같은 자리·색이다.
                     if let errorMessage {
                         Text(errorMessage)
                             .font(theme.typography.bodySmall)
                             .foregroundStyle(theme.palette.error)
-                    }
-
-                    // ⚠ **공유할 수 없는 등급에는 이 칸을 아예 두지 않는다**(2026-09-17 지시).
-                    // 개인 이용권은 혼자 쓰는 등급이라 공유가 성립하지 않는다 — 꺼진 스위치와
-                    // "커플/가족에서 쓸 수 있어요" 안내를 등록 화면에 깔아 두면, 만들기 흐름
-                    // 한복판에서 못 쓰는 기능부터 읽게 된다(같은 이유로 목소리 탭도 등급이
-                    // 되는 사람에게만 공유 행을 보여 준다 — `VoiceProfileManagementPanel`).
-                    if canShareVoice {
-                        sharingSection
                     }
                     Spacer(minLength: 4)
                 }
@@ -174,7 +161,6 @@ struct VoicePreviewConfirmView: View {
         .task {
             // `.task` 가 `.onAppear` 보다 먼저 돌 수 있다 — 다시 나타난 화면이 '떠났다' 로 읽혀 아무것도 틀지 않게.
             viewGone = false
-            isShared = draft.isShared == true && canShareVoice
             startSourceMeasurement()
             // 문구는 합성 응답이 알려 준다(서버가 그때 확정한다) — 여기선 비워 두고 첫 클립이 채운다. 들어보라고 만든
             // 화면이니 들어오자마자 **현재 톤(추천값)** 으로 한 번 들려준다(스펙 §4-3). 다시 나타났으면 받아 둔 클립을
@@ -201,42 +187,6 @@ struct VoicePreviewConfirmView: View {
         } message: {
             Text(String(localized: "지금 나가면 만들고 있던 목소리(초안)가 삭제되고, 처음부터 다시 만들어야 해요."))
         }
-    }
-
-    private var sharingSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(String(localized: "공유 설정"))
-                .font(theme.typography.titleSmall)
-                .fontWeight(.semibold)
-            HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(String(localized: "가족·연인에게 공유 허용"))
-                        .font(theme.typography.bodyMedium)
-                        .fontWeight(.semibold)
-                    Text(String(localized: "등록한 목소리를 가족·연인도 함께 사용할 수 있어요."))
-                        .font(theme.typography.bodySmall)
-                        .foregroundStyle(theme.palette.onSurfaceVariant)
-                }
-                Spacer(minLength: 0)
-                Toggle("", isOn: $isShared)
-                    .labelsHidden()
-                    .alarmTalkSwitch()
-            }
-            .disabled(working)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 12)
-            .background(theme.palette.surfaceVariant.opacity(0.42))
-            .outlinedButtonShape()
-        }
-    }
-
-    private var canShareVoice: Bool {
-        canShareVoiceWithOthers(
-            subscriptionResponse: socialFeatures.subscription,
-            familyGroup: socialFeatures.familyGroup,
-            authSession: auth.session,
-            storeTier: subscriptions.currentTier
-        )
     }
 
     // MARK: - 문구 카드
@@ -831,7 +781,6 @@ struct VoicePreviewConfirmView: View {
                 id: draft.id,
                 token: token,
                 replaceExisting: replacing,
-                isShared: isShared && canShareVoice,
                 // **끝까지 들은** 높이를 한 번 싣는다(저장은 지금 값을 들었을 때만 열린다). 교체 등록도 같다 — 서버는
                 // 옛 목소리의 높이를 물려주지 않고 이 값으로 덮어쓴다(스펙 §4-3). 0 이면 키가 나가지 않는다.
                 pitchSemitones: pitch.pitchSt

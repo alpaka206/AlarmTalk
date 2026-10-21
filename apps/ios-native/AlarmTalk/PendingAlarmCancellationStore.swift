@@ -40,23 +40,15 @@ enum PendingAlarmCancellationStore {
         case accountLeave
         /// 로그인 시 남의 계정 예약 정리 — **행은 건드리지 않는다.**
         case foreignCleanup
-        /// 받은 가족 알람이 같은 시각에서 밀어낸 알람 — **행도 꺼져 있어야 한다.**
-        ///
-        /// ⚠ `.foreignCleanup` 으로 두면 밀어낸 알람이 되살아난다(Codex #703 P1).
-        /// 취소가 실패한 채 그 예약이 **울면** `markRinging` 이 행을 `enabled = true` 로
-        /// 되돌리는데, 회수가 손잡이만 지우고 끝내면 그 행은
-        /// `enabled = true, alarmKitID = nil` — 정확히 복구 후보라 곧바로 다시 예약된다.
-        /// 밀어냈다는 결정이 조용히 취소되고, 다음 회차부터 **받은 알람과 나란히 운다.**
-        case conflictDisplacement
 
         /// 회수가 끝났을 때 행을 **다시 꺼야 하는가.**
         ///
-        /// 우리가 끄기로 정한 것(계정 종료·같은 시각 밀어내기)만 true 다. 남의 계정 정리는
+        /// 우리가 끄기로 정한 것(계정 종료)만 true 다. 남의 계정 정리는
         /// 행을 일부러 켜 둔 것이라(자동 401 로 세션만 잃었다) 여기서 끄면 그 사람이
         /// 돌아왔을 때 알람이 사라진다.
         var restoresDisabledRow: Bool {
             switch self {
-            case .accountLeave, .conflictDisplacement: return true
+            case .accountLeave: return true
             case .foreignCleanup: return false
             }
         }
@@ -66,9 +58,8 @@ enum PendingAlarmCancellationStore {
     ///
     /// - Parameter alarmID: 이 예약을 만든 **행**. ⚠ **적어 두지 않으면 고아를 잃는다**
     ///   (Codex #703 P1). 행의 `alarmKitID` 한 칸은 **지금 예약**을 가리키므로, 그 행이
-    ///   다시 예약되는 순간 못 끊은 옛 손잡이는 **어디서도 참조되지 않는다** — 다음 회차의
-    ///   전달 정리는 그것을 보지 못한 채 "끝났다" 고 답하고 ACK 가 서버 행을 지운다.
-    ///   그러면 그 예약은 행 없이 울어 목록에 보이지도, 끌 수도 없다.
+    ///   다시 예약되는 순간 못 끊은 옛 손잡이는 **어디서도 참조되지 않는다** — 그러면 그
+    ///   예약은 행 없이 울어 목록에 보이지도, 끌 수도 없다.
     static func add(_ alarmKitID: String?, origin: Origin, alarmID: String? = nil) {
         guard let id = alarmKitID?.nilIfBlank else { return }
         // ⚠ **이미 있어도 출처는 더 강한 쪽으로 올린다**(Codex #699 P2).
@@ -102,7 +93,8 @@ enum PendingAlarmCancellationStore {
     }
 
     /// 그 UUID 의 출처. 기록이 없으면(이 빌드 이전) **행을 건드리지 않는 쪽**으로 본다 —
-    /// 못 가릴 때는 남의 알람을 끄는 것보다 켜 둔 채 두는 편이 되돌릴 수 있다.
+    /// 못 가릴 때는 남의 알람을 끄는 것보다 켜 둔 채 두는 편이 되돌릴 수 있다. 없앤 출처
+    /// (받은 알람의 같은 시각 밀어내기)로 적힌 값도 같은 쪽으로 읽힌다.
     static func origin(of alarmKitID: String) -> Origin {
         let origins = defaults.dictionary(forKey: originsKey) as? [String: String] ?? [:]
         return origins[alarmKitID].flatMap(Origin.init(rawValue:)) ?? .foreignCleanup

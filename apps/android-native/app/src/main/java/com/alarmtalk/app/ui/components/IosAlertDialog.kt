@@ -272,8 +272,7 @@ internal fun IosAlertField(
     enabled: Boolean = true,
     singleLine: Boolean = true,
     minHeight: Dp = 48.dp,
-    /// 모서리. 알럿 안에서는 캡슐이지만, **알럿 밖에서도 쓴다** — 코드 등록 행처럼
-    /// 옆에 버튼이 서는 자리는 M3 `OutlinedTextField`(최소 56)로는 높이를 맞출 수 없다.
+    /// 모서리. 한 줄 칸은 캡슐이다.
     ///
     /// ⚠ **캡슐은 한 줄일 때만이다**(2026-08-20). 캡슐 반경은 999 라 실제 반경이 높이의
     /// 절반으로 잘리는데, 직접 입력처럼 `minHeight = 108` 인 여러 줄 칸에서는 그게 **반경

@@ -22,7 +22,6 @@ data class TtsGenerateRequest(
     @SerializedName("fortune_birth_date") val fortuneBirthDate: String? = null,
     @SerializedName("fortune_birth_time") val fortuneBirthTime: String? = null,
     @SerializedName("listener_title") val listenerTitle: String? = null,
-    @SerializedName("target_user_id") val targetUserId: String? = null,
     @SerializedName("draft_preview") val draftPreview: Boolean = false,
 )
 
@@ -47,6 +46,18 @@ data class ManualQuotaResponse(
     val limit: Int = 0,
     val used: Int = 0,
     val remaining: Int = 0,
+    /** 무료일 때만 온다 — 광고 보상 현황(`docs/spec/ad-rewards.md`). 옛 서버·유료면 null. */
+    @SerializedName("ad_reward") val adReward: AdRewardStatus? = null,
+)
+
+data class AdRewardStatus(
+    /** 지금 쓸 수 있는 보상(직접 입력 생성 한 번씩). */
+    val credits: Int = 0,
+    /** 이번 달 광고로 더 받을 수 있는 횟수. */
+    @SerializedName("remaining_grants") val remainingGrants: Int = 0,
+    @SerializedName("monthly_limit") val monthlyLimit: Int = 0,
+    /** 광고의 서버 확인 콜백에 실을 계정 PK — 로그인 식별자(구글 sub)와 다를 수 있어 서버가 준다. */
+    @SerializedName("user_id") val userId: String = "",
 )
 
 data class TtsMessage(

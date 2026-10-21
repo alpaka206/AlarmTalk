@@ -4,8 +4,8 @@ import XCTest
 /// **제자리 목소리 교체 — 직접 입력 알람만 내린다** (Codex #703 P1 회귀 방지).
 ///
 /// 교체는 옛 프로필 **행을 재사용**한다(id 가 그대로다). 그래서 접근권 대조
-/// (`reconcileInaccessibleVoiceAlarms`)로는 영원히 안 걸리고, 본인 소유 알람은 pull 대상도
-/// 아니라 서버가 행을 내려도 이 기기에 닿지 않는다 — 놔두면 **지운 사람의 목소리로 계속 운다.**
+/// (`reconcileInaccessibleVoiceAlarms`)로는 영원히 안 걸리고, 알람 동기화는 올리기만 해서
+/// 서버가 행을 내려도 이 기기에 닿지 않는다 — 놔두면 **지운 사람의 목소리로 계속 운다.**
 ///
 /// 반대로 넓히면 안 된다: 프리셋(버킷) 알람은 서버가 같은 message id 로 새 목소리를 다시 만들어
 /// 게시하므로, 여기서 벗기면 되돌릴 수 없이 잃는다.
@@ -25,7 +25,6 @@ final class VoiceReplacementCascadeTests: XCTestCase {
     private func alarm(
         id: String,
         voiceProfileId: String?,
-        origin: AlarmOrigin = .localOwned,
         owner: String? = "owner-1",
         bucketId: String? = nil,
         randomPrompt: Bool = false,
@@ -38,7 +37,6 @@ final class VoiceReplacementCascadeTests: XCTestCase {
             hour: 7,
             minute: 0,
             fireAtMillis: now + 60_000,
-            origin: origin.rawValue,
             createdAtMillis: now,
             updatedAtMillis: now
         )
@@ -91,7 +89,6 @@ final class VoiceReplacementCascadeTests: XCTestCase {
         XCTAssertTrue(voice.needsScheduleReconcile, "예약을 다시 맞추지 않으면 구워 둔 사운드가 그대로 운다")
     }
 
-    /// 받은 알람은 **보낸 사람의** 목소리로 성립한다 — 내 교체로 판단하지 않는다.
     /// ⚠ **정리가 끝나지 않은 교체 목소리는 아직 고를 수 없다.** 고를 수 있게 두면 그 사이
     /// 만든 새 알람을 다음 회차가 함께 지운다(강등 대상은 프로필 id 로만 고른다).
     ///
@@ -118,19 +115,6 @@ final class VoiceReplacementCascadeTests: XCTestCase {
             voice.isReplacementSettling("clone-1"),
             "정리가 확정되면 곧바로 다시 고를 수 있어야 한다"
         )
-    }
-
-    func test_받은_알람은_대상이_아니다() {
-        let store = makeStore()
-        store.upsert(alarm(id: "recv", voiceProfileId: "clone-1", origin: .receivedRemote))
-        let voice = VoiceStudioViewModel()
-
-        XCTAssertTrue(
-            voice.degradeCustomMessageAlarms(
-                forProfileID: "clone-1", alarmStore: store, audioCache: nil, ownerUserId: "owner-1"
-            ).isEmpty
-        )
-        XCTAssertEqual(store.record(id: "recv")?.voiceProfileId, "clone-1")
     }
 
     /// 한 기기에서 계정을 바꾸면 앞 계정 알람이 그대로 남는다 — 되돌릴 수 없는 강등은 소유자를 본다.

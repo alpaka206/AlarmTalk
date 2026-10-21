@@ -197,22 +197,6 @@ class StockClipRebindDecisionTest {
     }
 
     /**
-     * **받은 알람은 올리지 않는다.** 서버 행은 전달 수단일 뿐이고, 수신자가 고친 것을
-     * 되올리면 보낸 사람의 행을 덮는다(`docs/spec/family-alarm.md`).
-     */
-    @Test
-    fun 받은_알람은_그대로_둔다() {
-        assertEquals(
-            AlarmSyncStates.SYNCED,
-            alarmWith(
-                origin = AlarmOrigins.RECEIVED_REMOTE,
-                remoteAlarmId = "remote-1",
-                syncState = AlarmSyncStates.SYNCED,
-            ).nextLocalSyncState(),
-        )
-    }
-
-    /**
      * ⚠ **다운로드가 도는 동안 사용자가 문구를 직접 쳐 넣으면 덮지 않는다**(2026-09-03 리뷰 9차).
      *
      * 이 워커는 알람을 스냅샷으로 읽고 **여러 번 중단되며** 돌아온다. 그 사이의 편집을
@@ -273,38 +257,38 @@ class StockClipRebindDecisionTest {
     /**
      * ⚠ **테마는 아는데 클립 목록이 없는 알람**(2026-09-03 리뷰 11차).
      *
-     * 받은 가족 알람이 그 모양이다 — 동기가 `bucketId` 와 대표 클립 하나만 적고
-     * `bucketClipKeysJson` 은 비운다. `voiceLanguage` 도 null 이라 한국어 기기에서는
+     * `bucketId` 와 대표 클립 하나만 적히고 `bucketClipKeysJson` 은 빈 행이다.
+     * `voiceLanguage` 도 null 이라 한국어 기기에서는
      * 언어 판정에도 안 걸리고, 목록이 비어 사망 판정에도 안 걸린다. 그래서 프리셋을
      * 갈아도 **어디에도 안 걸려 옛 대사를 영원히 재생**했다.
      */
     @Test
     fun 클립_목록이_없어도_대표_클립이_사라졌으면_다시_묶는다() {
-        val received = alarmWith(
+        val bare = alarmWith(
             bucketId = "medication",  // 회전형 — 조건 인덱스가 필요 없다.
             clipKeys = emptyList(),
             ttsMessageId = "old-0",
-            language = null,          // 받은 알람은 언어를 안 적는다 → ko 로 읽힌다.
+            language = null,          // 언어가 적히지 않은 행 → ko 로 읽힌다.
         )
-        assertTrue(StockClipLanguageRebinder.needsRebind(received, "ko", live))
+        assertTrue(StockClipLanguageRebinder.needsRebind(bare, "ko", live))
     }
 
     @Test
     fun 대표_클립이_살아_있으면_그대로_둔다() {
-        val received = alarmWith(
+        val bare = alarmWith(
             bucketId = "medication", clipKeys = emptyList(), ttsMessageId = "new-0", language = null,
         )
-        assertFalse(StockClipLanguageRebinder.needsRebind(received, "ko", live))
+        assertFalse(StockClipLanguageRebinder.needsRebind(bare, "ko", live))
     }
 
     /**
-     * ⚠ **조건형 버킷(날씨·운세)도 갈아탄다 — 조건은 받는 사람 것으로 채운다**
+     * ⚠ **조건형 버킷(날씨·운세)도 갈아탄다 — 조건은 이 기기 사용자의 것으로 채운다**
      * (2026-09-03 사용자 지시로 12·13차 결정을 뒤집었다).
      *
-     * 12차에는 여기서 비켜 갔다. 받은 알람에 `contextVariantIndex` 도 사주도 없어서, 값 없이
+     * 12차에는 여기서 비켜 갔다. 그런 행에는 `contextVariantIndex` 도 사주도 없어서, 값 없이
      * 전체 세트를 묶으면 날씨가 마지막 '못 알아봤어요' 클립으로 떨어졌기 때문이다.
      * 그런데 그러면 그 알람은 **영원히 옛 대사·옛 목소리**로 남는다(이름만 새 이름).
-     * 조건은 이 기기에 있는 **받는 사람 자신의 지역·사주**로 채울 수 있으므로, 갈아탄 뒤
+     * 조건은 이 기기에 있는 **사용자 자신의 지역·사주**로 채울 수 있으므로, 갈아탄 뒤
      * `DynamicVoiceRefreshScheduler` 로 즉시 해석한다(편집기 저장 경로와 같다).
      */
     @Test
@@ -320,7 +304,7 @@ class StockClipRebindDecisionTest {
                     "ko", live,
                 ),
             )
-            // 언어가 어긋난 기기에서도 같다 — 받은 알람은 `voiceLanguage` 가 null 이라
+            // 언어가 어긋난 기기에서도 같다 — 그런 행은 `voiceLanguage` 가 null 이라
             // 영어 기기에서는 언어 검사가 먼저 true 를 돌려준다.
             assertTrue(
                 "영어 기기에서 $bucket 을 갈아타지 않았다",
@@ -366,50 +350,50 @@ class StockClipRebindDecisionTest {
     }
 
     /**
-     * **받은 알람에 받는 사람의 조건을 채운다**(2026-09-03 리뷰 15차).
+     * **조건 없이 저장된 행에 이 기기 사용자의 조건을 채운다**(2026-09-03 리뷰 15차).
      *
      * 스케줄러를 부르는 것만으로는 안 된다 — 그 워커가 읽는 것이 바로 이 필드들이고,
-     * 받은 알람은 전부 비어 있다. 안 채우면 날씨는 서버 기본값(서울)으로, 운세는 빈
+     * 그런 행은 전부 비어 있다. 안 채우면 날씨는 서버 기본값(서울)으로, 운세는 빈
      * 프로필 해시로 떨어진다.
      */
     @Test
-    fun 조건형_버킷에_받는_사람의_조건을_채운다() {
+    fun 조건형_버킷에_이_기기_사용자의_조건을_채운다() {
         val prefs = com.alarmtalk.app.data.DynamicPromptPreferences(
             weatherCountry = "KR", weatherCity = "부산",
             fortuneGender = "female", fortuneBirthDate = "1994-03-02", fortuneBirthTime = "07:30",
         )
-        val received = alarmWith(bucketId = "weather", clipKeys = emptyList(), ttsMessageId = "old-0")
+        val bare = alarmWith(bucketId = "weather", clipKeys = emptyList(), ttsMessageId = "old-0")
 
-        val weather = StockClipLanguageRebinder.withRecipientConditions(received, "weather", prefs)
+        val weather = StockClipLanguageRebinder.withRecipientConditions(bare, "weather", prefs)
         assertEquals("KR", weather.voiceWeatherCountry)
         assertEquals("부산", weather.voiceWeatherCity)
         // ⚠ **그 버킷에 필요한 것만 채운다** — 날씨 알람에 사주를 적어 둘 이유가 없다.
         assertNull(weather.voiceFortuneBirthDate)
 
-        val fortune = StockClipLanguageRebinder.withRecipientConditions(received, "fortune", prefs)
+        val fortune = StockClipLanguageRebinder.withRecipientConditions(bare, "fortune", prefs)
         assertEquals("1994-03-02", fortune.voiceFortuneBirthDate)
         assertEquals("07:30", fortune.voiceFortuneBirthTime)
         assertNull(fortune.voiceWeatherCity)
 
         // 회전형은 조건이 없으므로 아무것도 안 건드린다.
-        val medication = StockClipLanguageRebinder.withRecipientConditions(received, "medication", prefs)
+        val medication = StockClipLanguageRebinder.withRecipientConditions(bare, "medication", prefs)
         assertNull(medication.voiceWeatherCity)
         assertNull(medication.voiceFortuneBirthDate)
     }
 
     /**
-     * **받는 사람의 지역 키가 받은 알람까지 간다**(2026-09-30). 서버는 계정 설정에 `region`
-     * 키와 옛 앱용 글자를 함께 둔다 — 받는 쪽은 그 글자를 알람 행에 적고, 요청의 `region` 은
-     * 그 글자에서 되짚는다. 규칙(받는 사람 기준)은 그대로다(docs/spec/family-alarm.md 4절).
+     * **계정 설정의 지역 키가 알람의 글자로 채워진다**(2026-09-30). 서버는 계정 설정에 `region`
+     * 키와 옛 앱용 글자를 함께 둔다 — 알람 행에는 그 글자를 적고, 요청의 `region` 은
+     * 그 글자에서 되짚는다.
      */
     @Test
-    fun 받는_사람의_지역_키가_받은_알람의_글자로_채워진다() {
+    fun 계정_설정의_지역_키가_알람의_글자로_채워진다() {
         val server = com.alarmtalk.app.network.DynamicPromptSettings(
             weather = com.alarmtalk.app.network.DynamicPromptWeatherSettings(region = "jp-aichi"),
         )
-        val received = alarmWith(bucketId = "weather", clipKeys = emptyList(), ttsMessageId = "old-0")
+        val bare = alarmWith(bucketId = "weather", clipKeys = emptyList(), ttsMessageId = "old-0")
         val filled = StockClipLanguageRebinder.withRecipientConditions(
-            received,
+            bare,
             "weather",
             server.toPromptPreferences(),
         )
@@ -437,14 +421,14 @@ class StockClipRebindDecisionTest {
     /** 저장된 취향이 없으면 아무것도 채우지 않는다(빈 문자열을 값으로 쓰지 않는다). */
     @Test
     fun 저장된_조건이_없으면_비워_둔다() {
-        val received = alarmWith(bucketId = "weather", clipKeys = emptyList(), ttsMessageId = "old-0")
+        val bare = alarmWith(bucketId = "weather", clipKeys = emptyList(), ttsMessageId = "old-0")
         assertNull(
             StockClipLanguageRebinder.withRecipientConditions(
-                received, "weather", com.alarmtalk.app.data.DynamicPromptPreferences(),
+                bare, "weather", com.alarmtalk.app.data.DynamicPromptPreferences(),
             ).voiceWeatherCity,
         )
         assertNull(
-            StockClipLanguageRebinder.withRecipientConditions(received, "weather", null).voiceWeatherCity,
+            StockClipLanguageRebinder.withRecipientConditions(bare, "weather", null).voiceWeatherCity,
         )
     }
 

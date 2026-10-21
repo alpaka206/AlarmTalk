@@ -6,7 +6,7 @@ vi.mock('../src/lib/fcm', () => ({
   sendVoiceShareChangedPush: (...args: unknown[]) => sendVoiceShareChangedPush(...args),
 }));
 
-import { notifySharedVoicePrerenderComplete } from '../src/lib/stock-clips';
+import { notifyVoicePrerenderComplete } from '../src/lib/stock-clips';
 
 const db = createMockDB();
 
@@ -16,35 +16,13 @@ beforeEach(() => {
 });
 
 describe('제자리 목소리 교체 완료 알림', () => {
-  it('공유 프로필의 새 클립 게시가 끝난 뒤 그룹원에게 갱신 신호를 보낸다', async () => {
-    db.pushResult([{ 1: 1 }]);
-    db.pushResult([{ user_id: 'member-1' }, { user_id: 'member-2' }]);
+  // 신호 이름(`voice_share_changed`)은 옛 목소리 공유 시절 것이지만 두 앱이 이 문자열로 매니페스트 재조회를
+  // 깨운다 — 받는 사람만 목소리 주인 한 사람으로 줄었다.
+  it('새 클립 게시가 끝나면 목소리 주인의 기기에만 갱신 신호를 보낸다 — 다른 사람을 찾는 조회가 없다', async () => {
+    await notifyVoicePrerenderComplete(db.client as never, {} as never, 'owner-1');
 
-    await notifySharedVoicePrerenderComplete(
-      db.client as never,
-      {} as never,
-      'voice-1',
-      'owner-1',
-    );
-
-    expect(sendVoiceShareChangedPush).toHaveBeenCalledWith(
-      db.client,
-      {},
-      ['owner-1', 'member-1', 'member-2'],
-    );
-  });
-
-  it('공유하지 않는 프로필도 소유자의 다른 기기에는 갱신 신호를 보낸다', async () => {
-    db.pushResult([]);
-
-    await notifySharedVoicePrerenderComplete(
-      db.client as never,
-      {} as never,
-      'voice-1',
-      'owner-1',
-    );
-
+    expect(sendVoiceShareChangedPush).toHaveBeenCalledTimes(1);
     expect(sendVoiceShareChangedPush).toHaveBeenCalledWith(db.client, {}, ['owner-1']);
-    expect(db.calls).toHaveLength(1);
+    expect(db.calls).toHaveLength(0);
   });
 });

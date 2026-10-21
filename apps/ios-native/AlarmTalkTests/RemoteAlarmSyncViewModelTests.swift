@@ -7,8 +7,8 @@ final class RemoteAlarmSyncViewModelTests: XCTestCase {
         let error = APIError.server(status: 500, message: "Internal Server Error", errorCode: nil)
 
         XCTAssertEqual(
-            userFacingErrorMessage(error, fallback: "알람 정보를 불러오지 못했어요"),
-            "알람 정보를 불러오지 못했어요"
+            userFacingErrorMessage(error, fallback: "알람 변경사항을 저장하지 못했어요"),
+            "알람 변경사항을 저장하지 못했어요"
         )
     }
 

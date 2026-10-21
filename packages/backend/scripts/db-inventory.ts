@@ -177,21 +177,6 @@ async function main() {
       db,
       "SELECT COUNT(*) FROM store_transactions WHERE provider = 'google'",
     ),
-    'plan_group_invites.total': await tryNum(db, 'SELECT COUNT(*) FROM plan_group_invites'),
-    'plan_group_invites 최근90일': await tryNum(
-      db,
-      "SELECT COUNT(*) FROM plan_group_invites WHERE created_at > datetime('now','-90 days')",
-    ),
-    'voucher_codes.total': await tryNum(db, 'SELECT COUNT(*) FROM voucher_codes'),
-    'voucher_codes max_uses>1': await tryNum(db, 'SELECT COUNT(*) FROM voucher_codes WHERE max_uses > 1'),
-    'voucher_redemptions.total': await tryNum(db, 'SELECT COUNT(*) FROM voucher_redemptions'),
-    // status/used_at 캐시가 redemptions 원장과 어긋난 행 = 중복 저장의 실증
-    'voucher status↔redemptions 불일치': await tryNum(
-      db,
-      `SELECT COUNT(*) FROM voucher_codes vc
-        WHERE (vc.status = 'used') !=
-              (EXISTS (SELECT 1 FROM voucher_redemptions vr WHERE vr.voucher_id = vc.id))`,
-    ),
     'message_library.total': await tryNum(db, 'SELECT COUNT(*) FROM message_library'),
     'message_library is_favorite=1': await tryNum(
       db,
@@ -233,28 +218,6 @@ async function main() {
     'voice_profiles.speech_style NOT NULL': await tryNum(
       db,
       'SELECT COUNT(*) FROM voice_profiles WHERE speech_style IS NOT NULL',
-    ),
-    // 가족알람: legacy 단일 필드(#29)와 windows JSON(#30)의 실제 발산 여부
-    'users quiet_windows 기본값 그대로': await tryNum(
-      db,
-      `SELECT COUNT(*) FROM users
-        WHERE family_alarm_quiet_windows = '[{"days":[1,2,3,4,5],"start":"09:00","end":"18:30"}]'`,
-    ),
-    'users quiet_windows 커스텀': await tryNum(
-      db,
-      `SELECT COUNT(*) FROM users
-        WHERE family_alarm_quiet_windows != '[{"days":[1,2,3,4,5],"start":"09:00","end":"18:30"}]'`,
-    ),
-    'users legacy quiet 컬럼 커스텀': await tryNum(
-      db,
-      `SELECT COUNT(*) FROM users
-        WHERE family_alarm_quiet_days != '[1,2,3,4,5]'
-           OR family_alarm_quiet_start != '09:00'
-           OR family_alarm_quiet_end != '18:30'`,
-    ),
-    'users.allow_family_alarms=1': await tryNum(
-      db,
-      'SELECT COUNT(*) FROM users WHERE allow_family_alarms = 1',
     ),
     'users.dynamic_prompt_settings_json 비어있지않음': await tryNum(
       db,

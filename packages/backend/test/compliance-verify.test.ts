@@ -40,7 +40,7 @@ import userRoutes from '../src/routes/user';
 async function purgeLikeCron(loginId: string, pk: string): Promise<{ status: number }> {
   await withWriteTransaction(db, async (tx) => {
     await pseudonymizeBillingForRetention(tx, pk, 'pep', new Date());
-    return purgeUserAccount(tx, pk, loginId, false);
+    return purgeUserAccount(tx, pk, loginId);
   });
   return { status: 200 };
 }
@@ -615,8 +615,8 @@ describe('계정 파기 — 결제기록 5년 가명보존', () => {
     const PK8 = 'hard-del-pk-6';
     const LONG_PLAN = 'plan-long-grant';
     await db.execute({
-      sql: `INSERT INTO plans (id, key, name, plan_type, period_days, max_members, price_krw, is_active)
-            VALUES (?, 'long_grant', '장기부여', 'personal', 1095, 1, 0, 0)`,
+      sql: `INSERT INTO plans (id, key, name, plan_type, period_days, price_krw, is_active)
+            VALUES (?, 'long_grant', '장기부여', 'personal', 1095, 0, 0)`,
       args: [LONG_PLAN],
     });
     await db.execute({

@@ -52,7 +52,7 @@ ANDROID = ROOT / "apps/android-native/app/src/main/java"
 IOS = ROOT / "apps/ios-native/AlarmTalk"
 
 # 새니타이저를 거쳤다고 인정하는 흔적
-ANDROID_OK = ("sanitizeUserText", "sanitizeDisplayName", "sanitizeRedeemCode",
+ANDROID_OK = ("sanitizeUserText", "sanitizeDisplayName",
               "sanitizeVerificationCode", "takeWithoutSplittingPairs")
 IOS_OK = ("InputSanitizer.",)
 

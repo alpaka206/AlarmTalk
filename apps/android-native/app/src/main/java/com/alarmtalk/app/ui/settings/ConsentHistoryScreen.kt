@@ -33,6 +33,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.launch
 import com.alarmtalk.app.network.ConsentRecord
+import com.alarmtalk.app.ads.RewardedAds
+import com.alarmtalk.app.ads.findHostActivity
+import androidx.compose.ui.platform.LocalContext
 
 // 약관 및 개인정보 처리 동의 — 토스 패턴: 항목별로 '동의한 날짜'를 보여주고 문서로 드릴인.
 @Composable
@@ -69,6 +72,14 @@ internal fun ConsentHistoryScreen(
 
     // 선택 동의(마케팅) 토글은 서버 최신값을 별도로 읽어 두 방향 반영한다(쓰기 시 낙관·롤백은 뷰모델이 관리).
     LaunchedEffect(Unit) { onLoadMarketingConsent() }
+
+    // 광고 개인정보 선택(UMP) — 규정이 있는 지역에서만 다시 열 자리를 둔다(`docs/spec/ad-rewards.md` §6).
+    val context = LocalContext.current
+    var adPrivacyOptionsRequired by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        val activity = context.findHostActivity() ?: return@LaunchedEffect
+        adPrivacyOptionsRequired = runCatching { RewardedAds.privacyOptionsRequired(activity) }.getOrDefault(false)
+    }
 
     Column(
         modifier = Modifier
@@ -168,6 +179,19 @@ internal fun ConsentHistoryScreen(
                 )
             }
         }
+
+        if (adPrivacyOptionsRequired) {
+            item {
+                SettingsCard(title = stringResource(R.string.consent_section_ads)) {
+                    ConsentRow(
+                        label = stringResource(R.string.consent_ad_privacy_options),
+                        record = null,
+                        showStatus = false,
+                        onOpen = { context.findHostActivity()?.let { RewardedAds.showPrivacyOptions(it) } },
+                    )
+                }
+            }
+        }
     }
     }
 
@@ -256,6 +280,8 @@ private fun ConsentRow(
     record: ConsentRecord?,
     onOpen: (() -> Unit)?,
     onWithdraw: (() -> Unit)? = null,
+    /** 날짜 칸을 그리는가 — 동의 기록이 아닌 행(광고 개인정보 설정)은 그리지 않는다. */
+    showStatus: Boolean = true,
 ) {
     val statusText = when {
         record == null -> "—"
@@ -280,11 +306,13 @@ private fun ConsentRow(
             fontWeight = FontWeight.SemiBold,
             color = MaterialTheme.colorScheme.onSurface,
         )
-        Text(
-            text = statusText,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        if (showStatus) {
+            Text(
+                text = statusText,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
         if (withdrawAction != null) {
             Text(
                 text = stringResource(R.string.consent_withdraw_action),

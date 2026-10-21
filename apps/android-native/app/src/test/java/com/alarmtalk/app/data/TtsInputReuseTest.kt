@@ -51,7 +51,7 @@ class TtsInputReuseTest {
 
     @Test
     fun `호칭이 다르면 키가 다르다`() {
-        // 서버가 호칭을 문구 안에 병합하고, 공유 목소리는 보는 사람마다 호칭이 다르다.
+        // 서버가 호칭을 문구 안에 병합하고, 같은 목소리라도 알람마다 호칭이 다를 수 있다.
         // 빼면 '엄마 목소리로 아빠 호칭'이 나간다.
         assertNotEquals(key(listenerTitle = "규원아"), key(listenerTitle = "아빠"))
         assertNotEquals(key(listenerTitle = null), key(listenerTitle = "규원아"))

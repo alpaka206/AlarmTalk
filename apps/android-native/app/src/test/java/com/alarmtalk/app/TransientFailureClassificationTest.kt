@@ -161,7 +161,7 @@ class TransientFailureClassificationTest {
     @Test
     fun unauthorizedWrappedInDomainExceptionIsStillUnauthorized() {
         // 저장소·리포지토리가 한 번 감싸 던지는 모양.
-        val wrapped = IllegalStateException("pull failed", httpException(401, ""))
+        val wrapped = IllegalStateException("sync failed", httpException(401, ""))
         assertTrue(AlarmTalkLog.isHandledAuthFailure(wrapped))
     }
 
@@ -206,7 +206,7 @@ class TransientFailureClassificationTest {
      */
     @Test
     fun onlyUnauthorizedAndTransientBecomeBreadcrumbs() {
-        // 낮추는 것들(예상된 거절·탈퇴 유예는 아래 테스트가 따로 본다). 갈래 이름까지 본다 — 하나로 뭉치면 다음 진짜 이벤트를 읽을 때
+        // 낮추는 것들(예상된 거절·탈퇴 유예·동의 필요는 아래 테스트가 따로 본다). 갈래 이름까지 본다 — 하나로 뭉치면 다음 진짜 이벤트를 읽을 때
         // "네트워크가 나빴다" 와 "세션이 끊겼다" 를 구분할 수 없다.
         assertEquals("auth", AlarmTalkLog.breadcrumbCategoryFor(httpException(401, "")))
         assertEquals("transient", AlarmTalkLog.breadcrumbCategoryFor(SocketTimeoutException("timeout")))
@@ -217,7 +217,7 @@ class TransientFailureClassificationTest {
         // 나머지는 그대로 이슈다 — 권한 박탈·파기된 계정·상태 충돌·서버 사고는 전부
         // 우리가 고칠 것이 있는 갈래다.
         assertNull(
-            AlarmTalkLog.breadcrumbCategoryFor(httpException(403, """{"error_code":"CONSENT_REQUIRED"}""")),
+            AlarmTalkLog.breadcrumbCategoryFor(httpException(403, """{"error_code":"CONSENT_STATE_UNAVAILABLE"}""")),
         )
         assertNull(
             AlarmTalkLog.breadcrumbCategoryFor(httpException(404, """{"error_code":"AUTH_USER_NOT_FOUND"}""")),
@@ -235,8 +235,9 @@ class TransientFailureClassificationTest {
     fun breadcrumbClassificationDoesNotConsumeTheErrorBody() {
         // 같은 계약이 여기에도 걸린다 — 이 함수는 `reportError` 가 **모든** 실패에 대해
         // 부르므로, 본문을 소진하면 그 뒤 코드를 보려던 호출부가 전부 빈 본문을 받는다.
+        // 동의 필요 403 은 코드를 읽어야 낮출 수 있는 갈래라 읽기 경로를 실제로 탄다.
         val error = httpException(403, """{"error_code":"CONSENT_REQUIRED"}""")
-        assertNull(AlarmTalkLog.breadcrumbCategoryFor(error))
+        assertEquals("consent", AlarmTalkLog.breadcrumbCategoryFor(error))
         assertEquals("""{"error_code":"CONSENT_REQUIRED"}""", error.response()?.errorBody()?.string())
     }
 
@@ -276,7 +277,7 @@ class TransientFailureClassificationTest {
         assertEquals(ApiFailure(429, "RATE_LIMITED"), apiFailureOf(after))
 
         // 저장소·리포지토리가 도메인 예외로 한 번 감싼 실패도 같은 실패다.
-        val wrapped = IllegalStateException("pull failed", httpException(403, """{"error_code":"CONSENT_REQUIRED"}"""))
+        val wrapped = IllegalStateException("sync failed", httpException(403, """{"error_code":"CONSENT_REQUIRED"}"""))
         assertEquals(ApiFailure(403, "CONSENT_REQUIRED"), apiFailureOf(wrapped))
         // `apiError` 는 감싼 예외를 풀지 않는다(부르는 자리가 Retrofit 호출 바로 그 자리다).
         assertNull(apiErrorCode(wrapped))
@@ -300,17 +301,18 @@ class TransientFailureClassificationTest {
     // ── 사용자가 친 값의 예상된 거절 — `docs/spec/error-codes.md` §3 「앱도 같다」 ──────────
 
     /**
-     * 목록은 정해진 여덟 개다(프로모 코드 갈래 셋은 2026-10-12 에 프로모 코드와 함께 빠졌다). 원본은 shared 의
+     * 목록은 정해진 다섯 개다(프로모 코드 갈래 셋은 2026-10-12 에, 초대 코드 갈래 셋은 2026-10-20 에 그 코드와 함께
+     * 빠졌다 — `CODE_NOT_FOUND` 는 옛 앱의 코드 등록이 언제나 받는 답이라 남는다). 원본은 shared 의
      * `CLIENT_EXPECTED_REFUSAL_CODES` 이고 셋(shared·안드로이드·iOS)이
      * 같은지는 CI lint(`scripts/check-expected-refusal-codes.py`)가 본다 — 여기서는 이 앱의 값이 넓어지거나
      * (진짜 사고가 묻힌다) 좁아지지(이슈 목록이 다시 시끄러워진다) 않게 그 자체를 고정한다.
      */
     @Test
-    fun expectedRefusalListIsExactlyTheEightCodes() {
+    fun expectedRefusalListIsExactlyTheFiveCodes() {
         assertEquals(
             setOf(
                 "AUTH_EMAIL_CODE_INVALID", "AUTH_EMAIL_CODE_EXPIRED", "AUTH_EMAIL_TAKEN", "AUTH_EMAIL_SOCIAL",
-                "CODE_NOT_FOUND", "CODE_EXPIRED", "CODE_ALREADY_USED", "CODE_ALREADY_REDEEMED_BY_YOU",
+                "CODE_NOT_FOUND",
             ),
             AlarmTalkLog.EXPECTED_REFUSAL_CODES,
         )
@@ -328,8 +330,8 @@ class TransientFailureClassificationTest {
         }
         // 저장소가 도메인 예외로 한 번 감싼 거절도 같은 거절이다.
         val wrapped = IllegalStateException(
-            "redeem failed",
-            httpException(404, """{"error_code":"CODE_NOT_FOUND"}"""),
+            "verify failed",
+            httpException(400, """{"error_code":"AUTH_EMAIL_CODE_INVALID"}"""),
         )
         assertEquals("refusal", AlarmTalkLog.breadcrumbCategoryFor(wrapped))
     }
@@ -362,7 +364,9 @@ class TransientFailureClassificationTest {
         // 목록 밖의 4xx 코드.
         assertNull(AlarmTalkLog.breadcrumbCategoryFor(httpException(400, """{"error_code":"INVALID_BODY"}""")))
         assertNull(AlarmTalkLog.breadcrumbCategoryFor(httpException(429, """{"error_code":"RATE_LIMITED"}""")))
-        assertNull(AlarmTalkLog.breadcrumbCategoryFor(httpException(403, """{"error_code":"CONSENT_REQUIRED"}""")))
+        assertNull(AlarmTalkLog.breadcrumbCategoryFor(httpException(403, """{"error_code":"CONSENT_STATE_UNAVAILABLE"}""")))
+        // 동의 필요 403 은 낮추되 '거절' 갈래가 아니다(`consent`).
+        assertFalse(AlarmTalkLog.isExpectedRefusal(httpException(403, """{"error_code":"CONSENT_REQUIRED"}""")))
         assertFalse(AlarmTalkLog.isExpectedRefusal(IllegalStateException("bug")))
     }
 
@@ -459,6 +463,29 @@ class TransientFailureClassificationTest {
         assertNull(
             AlarmTalkLog.breadcrumbCategoryFor(httpException(403, """{"error_code":"CONSENT_STATE_UNAVAILABLE"}""")),
         )
+    }
+
+    @Test
+    fun consentRequiredBecomesConsentBreadcrumbOnlyAs403() {
+        // 응답 쪽 한 곳이 이미 동의 화면으로 보낸다 — 재동의 대상자가 앱을 열 때마다 이슈 다섯 개가 열리던 자리(2026-10-20).
+        assertEquals(
+            "consent",
+            AlarmTalkLog.breadcrumbCategoryFor(httpException(403, """{"error_code":"CONSENT_REQUIRED"}""")),
+        )
+        assertEquals(
+            "consent",
+            AlarmTalkLog.breadcrumbCategoryFor(
+                IllegalStateException("load failed", httpException(403, """{"error_code":"CONSENT_REQUIRED"}""")),
+            ),
+        )
+        // 같은 코드라도 5xx 는 사고, 이웃한 동의 파손·코드 없는 403 은 그대로 이슈다.
+        assertNull(
+            AlarmTalkLog.breadcrumbCategoryFor(httpException(500, """{"error_code":"CONSENT_REQUIRED"}""")),
+        )
+        assertNull(
+            AlarmTalkLog.breadcrumbCategoryFor(httpException(403, """{"error_code":"CONSENT_STATE_UNAVAILABLE"}""")),
+        )
+        assertNull(AlarmTalkLog.breadcrumbCategoryFor(httpException(403, "")))
     }
 
     @Test

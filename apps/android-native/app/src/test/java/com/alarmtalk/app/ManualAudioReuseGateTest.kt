@@ -303,12 +303,12 @@ class ManualAudioReuseGateTest {
     /** 저장 버튼과 저장 흐름은 같은 표로 말한다 — 오프라인 알럿의 문구가 자리마다 갈리지 않는다. */
     @Test
     fun bothAlertSitesShareOneTable() {
-        val (title, message) = saveBlockAlertStrings(SaveBlockReason.OFFLINE_NEW_MESSAGE, familyAlarmMode = false)
+        val (title, message) = saveBlockAlertStrings(SaveBlockReason.OFFLINE_NEW_MESSAGE)
         assertEquals(R.string.editor_block_offline_title, title)
         assertEquals(R.string.editor_block_offline_message, message)
         assertEquals(
-            R.string.editor_block_weather_family_message,
-            saveBlockAlertStrings(SaveBlockReason.WEATHER_LOCATION_MISSING, familyAlarmMode = true).second,
+            R.string.editor_block_weather_message,
+            saveBlockAlertStrings(SaveBlockReason.WEATHER_LOCATION_MISSING).second,
         )
         // 표는 한 곳뿐이다.
         assertEquals(1, Regex("R\\.string\\.editor_block_offline_title").findAll(editorSource).count())

@@ -15,7 +15,6 @@ vi.mock('../src/lib/db', () => ({ getDB: () => mockDB.client }));
 import userRoutes from '../src/routes/user';
 import {
   dynamicPromptSettingsFromRow,
-  dynamicPromptSettingsState,
   EMPTY_DYNAMIC_PROMPT_SETTINGS,
   validateDynamicPromptSettings,
 } from '../src/lib/dynamic-prompt-settings';
@@ -120,9 +119,8 @@ describe('읽을 때도 같은 정리 — 저장된 옛 행에 region 을 붙여
     expect(EMPTY_DYNAMIC_PROMPT_SETTINGS.weather).toEqual({ region: null, country: null, city: null });
   });
 
-  it('region 만 있어도 weather_ready 다(도시 글자가 채워진다)', () => {
+  it('region 만 있어도 도시 글자가 채워진다', () => {
     const settings = validateDynamicPromptSettings({ weather: { region: 'kr-sejong' } })!;
     expect(settings.weather.city).toBe('세종');
-    expect(dynamicPromptSettingsState(settings).weather_ready).toBe(true);
   });
 });

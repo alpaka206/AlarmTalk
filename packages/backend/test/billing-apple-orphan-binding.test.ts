@@ -89,6 +89,6 @@ describe('주인이 사라진 애플 결제', () => {
     expect(res.status).toBe(400);
     expect(await res.json()).toMatchObject({ error_code: 'UNKNOWN_PRODUCT' });
     expect((await db.execute('SELECT * FROM store_transactions')).rows).toEqual([]);
-    expect((await db.execute('SELECT * FROM voucher_codes')).rows).toEqual([]);
+    expect((await db.execute('SELECT * FROM subscriptions')).rows).toEqual([]);
   });
 });

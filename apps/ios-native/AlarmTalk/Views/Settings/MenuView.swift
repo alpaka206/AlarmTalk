@@ -6,7 +6,7 @@ import SwiftUI
 /// 카드 구성(위→아래)은 스크린샷 그대로다:
 ///   1. 프로필 — 이름 + "내 정보 · 앱 설정"
 ///   2. 화면 테마 · 앱 언어
-///   3. 이용권 · 초대 및 구성원 관리
+///   3. 이용권
 ///   4. 회원 탈퇴
 ///   5. 앱 버전
 ///
@@ -21,12 +21,6 @@ struct MenuView: View {
     let onOpenSettings: () -> Void
     /// 이용권 화면 진입.
     let onOpenBilling: () -> Void
-    /// 초대 및 구성원 관리 진입.
-    let onOpenMembers: () -> Void
-    /// 초대 코드 등록 진입(공유 이용권이 없을 때).
-    let onOpenPeople: () -> Void
-    /// 공유 이용권 그룹에 속해 있는가.
-    let hasSharedPass: Bool
 
     @State private var themeDialogOpen = false
     @State private var deleteConfirming = false
@@ -52,20 +46,8 @@ struct MenuView: View {
             .settingsCard(title: nil)
 
             VStack(alignment: .leading, spacing: 0) {
+                // 코드를 넣는 행을 두지 않는다 — 유료 기능은 스토어 결제로만 연다(`docs/spec/plan-gates.md`).
                 SettingsValueButton(label: "이용권", action: onOpenBilling)
-                Divider()
-                // ⚠ **공유 이용권 유무로 갈린다**(안드로이드 `HomeComponents.kt:219-229`).
-                // 그룹이 없는 사람에게 '구성원 관리' 를 보여주면 관리할 게 없는 화면으로
-                // 보내고, 정작 필요한 **초대 코드 등록** 경로가 더보기에 없어진다.
-                if hasSharedPass {
-                    SettingsValueButton(label: "초대 및 구성원 관리", action: onOpenMembers)
-                } else {
-                    // ⚠ **이 이름은 세 곳이 같다** — 이 행, 도착 화면의 제목(`AuxiliaryScreen.people`),
-                    // 초대 공유 문구의 3단계(`CodeShareText.invite`). 하나만 바꾸면 초대받은 사람이
-                    // 없는 메뉴를 찾는다. 받는 코드는 초대 코드뿐이다(선물 코드는 2026-10-14 폐지 —
-                    // App Store 지침 3.1.1 두 번째 반려, 되살리지 말 것. 할인·무료 이용은 스토어 오퍼 코드).
-                    SettingsValueButton(label: "초대 코드 등록", action: onOpenPeople)
-                }
             }
             .settingsCard(title: nil)
 
@@ -165,7 +147,7 @@ struct MenuView: View {
 #if DEBUG
 #Preview("더보기") {
     ScrollView {
-        MenuView(onOpenSettings: {}, onOpenBilling: {}, onOpenMembers: {}, onOpenPeople: {}, hasSharedPass: true)
+        MenuView(onOpenSettings: {}, onOpenBilling: {})
             .padding()
     }
     .voiceAlarmPreviewEnvironment()
@@ -173,7 +155,7 @@ struct MenuView: View {
 
 #Preview("더보기 (dark)") {
     ScrollView {
-        MenuView(onOpenSettings: {}, onOpenBilling: {}, onOpenMembers: {}, onOpenPeople: {}, hasSharedPass: true)
+        MenuView(onOpenSettings: {}, onOpenBilling: {})
             .padding()
     }
     .preferredColorScheme(.dark)

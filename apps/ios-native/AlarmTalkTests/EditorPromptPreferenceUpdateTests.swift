@@ -25,7 +25,6 @@ final class EditorPromptPreferenceUpdateTests: XCTestCase {
     func test_편집기에서_다른_지역을_고르면_계정에_올리고_공휴일_국가를_맞춘다() throws {
         let update = try XCTUnwrap(DynamicPromptPreferences.editorUpdate(
             result: weatherResult(country: "일본", city: "도쿄"),
-            familyAlarmMode: false,
             saved: seoul,
             server: seoul
         ))
@@ -40,7 +39,6 @@ final class EditorPromptPreferenceUpdateTests: XCTestCase {
     func test_날씨_종류만_다시_고르면_아무것도_올리지_않고_달력도_건드리지_않는다() throws {
         let update = try XCTUnwrap(DynamicPromptPreferences.editorUpdate(
             result: weatherResult(country: "대한민국", city: "서울"),
-            familyAlarmMode: false,
             saved: seoul,
             server: seoul
         ))
@@ -52,7 +50,6 @@ final class EditorPromptPreferenceUpdateTests: XCTestCase {
         // 업데이트 전 편집기가 키체인에만 적어 둔 값 — 서버는 비어 있다.
         let update = try XCTUnwrap(DynamicPromptPreferences.editorUpdate(
             result: weatherResult(country: "대한민국", city: "서울"),
-            familyAlarmMode: false,
             saved: seoul,
             server: DynamicPromptPreferences()
         ))
@@ -60,33 +57,23 @@ final class EditorPromptPreferenceUpdateTests: XCTestCase {
         XCTAssertNil(update.changedRegionKey, "지역 자체는 그대로다")
     }
 
-    func test_가족_알람의_지역은_내_계정에_적지_않는다() {
-        XCTAssertNil(DynamicPromptPreferences.editorUpdate(
-            result: weatherResult(country: "일본", city: "도쿄"),
-            familyAlarmMode: true,
-            saved: seoul,
-            server: seoul
-        ), "받는 사람의 지역이다 — 적으면 남의 나라 공휴일로 내 알람이 꺼진다")
-    }
-
     func test_직접_입력은_반영할_것이_없다() {
         var result = weatherResult(country: "일본", city: "도쿄")
         result.context = MessageSettingsResult.manualContext
-        XCTAssertNil(DynamicPromptPreferences.editorUpdate(result: result, familyAlarmMode: false, saved: seoul, server: seoul))
+        XCTAssertNil(DynamicPromptPreferences.editorUpdate(result: result, saved: seoul, server: seoul))
     }
 
     func test_다른_종류는_날씨_칸을_건드리지_않는다() {
         // '약' 을 골랐는데 화면에 남아 있던 날씨 글자까지 계정에 적으면 안 된다.
         var result = weatherResult(country: "일본", city: "도쿄")
         result.context = "medication"
-        XCTAssertNil(DynamicPromptPreferences.editorUpdate(result: result, familyAlarmMode: false, saved: seoul, server: seoul))
+        XCTAssertNil(DynamicPromptPreferences.editorUpdate(result: result, saved: seoul, server: seoul))
     }
 
     func test_옛_앱_표준_글자로_적는다() throws {
         // 목록으로 되짚히는 다른 표기(영어·일본어)도 옛 앱이 읽는 한국어 글자로 적는다.
         let update = try XCTUnwrap(DynamicPromptPreferences.editorUpdate(
             result: weatherResult(country: "Japan", city: "東京都"),
-            familyAlarmMode: false,
             saved: seoul,
             server: seoul
         ))
@@ -97,7 +84,6 @@ final class EditorPromptPreferenceUpdateTests: XCTestCase {
     func test_되짚지_못한_옛_글자는_그대로_두고_달력도_건드리지_않는다() throws {
         let update = try XCTUnwrap(DynamicPromptPreferences.editorUpdate(
             result: weatherResult(country: "대한민국", city: "속초"),
-            familyAlarmMode: false,
             saved: seoul,
             server: seoul
         ))
@@ -117,7 +103,7 @@ final class EditorPromptPreferenceUpdateTests: XCTestCase {
             fortuneBirthTime: "07:30"
         )
         let update = try XCTUnwrap(DynamicPromptPreferences.editorUpdate(
-            result: result, familyAlarmMode: false, saved: seoul, server: seoul
+            result: result, saved: seoul, server: seoul
         ))
         XCTAssertEqual(update.preferences.weatherCity, "서울", "계정의 지역을 비우면 안 된다")
         XCTAssertEqual(update.preferences.fortuneBirthDate, "1990-01-02")
@@ -135,6 +121,6 @@ final class EditorPromptPreferenceUpdateTests: XCTestCase {
             fortuneBirthDate: "",
             fortuneBirthTime: "07:30"
         )
-        XCTAssertNil(DynamicPromptPreferences.editorUpdate(result: result, familyAlarmMode: false, saved: seoul, server: seoul))
+        XCTAssertNil(DynamicPromptPreferences.editorUpdate(result: result, saved: seoul, server: seoul))
     }
 }

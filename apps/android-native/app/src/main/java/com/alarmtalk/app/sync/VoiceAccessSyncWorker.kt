@@ -29,17 +29,16 @@ import kotlinx.coroutines.withContext
  * 강등한다.
  *
  * 왜 별도 경로가 필요한가:
- *  - family_alarm 푸시는 **받은 알람**만 갱신한다(RemoteAlarmPullSyncService 가 그것만 훑는다).
- *    내 소유 알람은 그 pull 대상이 아니라 서버가 목소리를 지워도 로컬은 그대로 남는다.
+ *  - 내 알람은 서버에서 다시 받아오지 않는다 — 서버가 목소리를 지워도 로컬은 그대로 남는다.
  *  - plan_changed 경로(PlanChangeSyncWorker)는 '진짜 무료'일 때만 변환한다. 동의 철회는
  *    users.plan 이 그대로라 그 게이트에 걸리지 않는다.
  *  - 울림 시점에 '이 목소리를 아직 쓸 수 있는가'를 보는 게이트는 없다(유료 권한 게이트는 있다 —
- *    RingingService.isPaidVoiceEntitledFromCache). 그래서 앱을 열 때까지(refreshSocial)
+ *    RingingService.isPaidVoiceEntitledFromCache). 그래서 앱을 열 때까지(목소리 목록 새로고침)
  *    지워진 녹음이 계속 울린다.
  *
- * 판단 기준은 화면 경로와 같다: 내 목소리 + 공유받은 목소리를 **신선하게** 다시 받아, 그 목록에
- * 없는 목소리를 쓰는 내 알람만 강등한다(degradeAlarmsWithInaccessibleVoice). 한쪽이라도 조회에
- * 실패하면 목록을 믿을 수 없으므로 강등하지 않고 retry 한다 — 오강등이 미강등보다 나쁘다.
+ * 판단 기준은 화면 경로와 같다: 내 목소리 목록을 **신선하게** 다시 받아, 그 목록에 없는 목소리를
+ * 쓰는 내 알람만 강등한다(degradeAlarmsWithInaccessibleVoice). 조회에 실패하면 목록을 믿을 수
+ * 없으므로 강등하지 않고 retry 한다 — 오강등이 미강등보다 나쁘다.
  *
  * ⚠ **제자리 목소리 교체는 그 대조로 절대 안 걸린다.** 교체는 프로필 행을 **재사용**하므로
  * id 가 목록에 그대로 있다. 그래서 서버가 [INPUT_REPLACED_VOICE_ID] 로 "이 목소리의 직접 입력
@@ -47,7 +46,7 @@ import kotlinx.coroutines.withContext
  * (프리셋 알람은 새 목소리로 다시 만들어지므로 살린다).
  *
  * 경로는 셋이고 서로 폴백이다: 푸시([runOnce], 즉시) → 하루 주기([ensurePeriodic], 푸시 유실·앱
- * 미실행 대비) → 앱 시작 refreshSocial. 정확성은 뒤 둘이 보장하고 푸시는 즉시성만 맡는다.
+ * 미실행 대비) → 앱 시작의 목소리 목록 새로고침. 정확성은 뒤 둘이 보장하고 푸시는 즉시성만 맡는다.
  */
 class VoiceAccessSyncWorker(
     appContext: Context,
@@ -64,10 +63,8 @@ class VoiceAccessSyncWorker(
         return runCatching {
             val api = AlarmTalkApiClient.create()
             val auth = AlarmTalkApiClient.bearer(session.token)
-            // 둘 다 성공해야 판단한다 — 하나라도 실패하면 throw 시켜 아래 retry 로 넘긴다.
+            // 성공해야 판단한다 — 실패하면 throw 시켜 아래 retry 로 넘긴다.
             val myVoices = withContext(Dispatchers.IO) { api.listVoiceProfiles(auth).profiles }
-            val sharedVoices =
-                withContext(Dispatchers.IO) { api.listFamilyVoiceProfiles(auth).profiles }
 
             // 네트워크 왕복 중 로그아웃/계정전환이 일어났을 수 있다. 쓰기 직전에 현재 세션이
             // 아직 이 세션(같은 토큰)인지 재확인한다 — 재확인이 없으면 방금 받은 '옛 계정의'
@@ -137,7 +134,7 @@ class VoiceAccessSyncWorker(
             fun prerenderReady(voiceProfileId: String): Boolean =
                 notReadyVoiceIds?.contains(voiceProfileId) == false
 
-            val accessibleVoiceIds = (myVoices.map { it.id } + sharedVoices.map { it.id }).toSet()
+            val accessibleVoiceIds = myVoices.map { it.id }.toSet()
             val repository = AlarmAppContainer.repository(applicationContext)
             val lostAccess = repository
                 .degradeAlarmsWithInaccessibleVoice(accessibleVoiceIds, session.user.id)
@@ -213,10 +210,7 @@ class VoiceAccessSyncWorker(
             }
             // ② 방금 받은 목록의 표식(정확성) — 푸시를 놓쳤어도 여기서 수렴한다.
             //    하루 주기 폴백이 이 경로를 그대로 탄다.
-            //    ⚠ **공유받은 목소리도 함께 본다** — 그 목소리로 만든 내 직접 입력 알람도
-            //    같이 무효가 되는데, 내 목록만 보면 그 기기는 영영 모른다.
-            val markerCandidates = myVoices.map { it.id to it.customAudioInvalidatedAt } +
-                sharedVoices.map { it.id to it.customAudioInvalidatedAt }
+            val markerCandidates = myVoices.map { it.id to it.customAudioInvalidatedAt }
             for ((profileId, invalidatedAt) in markerCandidates) {
                 // ⚠ `break` 다 — 아래 대기표 기록까지 건너뛰면 이미 강등된 알람의 이유를
                 // 사용자가 영영 못 듣는다(iOS 도 같은 자리에서 멈춘다).
@@ -296,10 +290,10 @@ class VoiceAccessSyncWorker(
             when (syncWorkerOutcome(error)) {
                 SyncWorkerOutcome.RETHROW -> throw error
                 SyncWorkerOutcome.SESSION_EXPIRED -> {
-                    // 목록 두 개를 못 받았으니 **강등도 확정도 하지 않았다**(위 주석 —
+                    // 목록을 못 받았으니 **강등도 확정도 하지 않았다**(위 주석 —
                     // 오강등이 미강등보다 나쁘다). 폐기된 토큰으로 재시도해 봐야 같은 401
-                    // 이므로 세션을 끊는다. 다시 로그인하면 하루 주기 폴백과 앱 시작
-                    // refreshSocial 이 같은 대조를 다시 한다.
+                    // 이므로 세션을 끊는다. 다시 로그인하면 하루 주기 폴백과 앱 시작의
+                    // 목소리 목록 새로고침이 같은 대조를 다시 한다.
                     endWorkerSession(
                         error = error,
                         context = applicationContext,
@@ -381,11 +375,11 @@ class VoiceAccessSyncWorker(
         }
 
         /**
-         * FCM 과 무관한 주기 폴백. 푸시가 유실되고 사용자가 앱을 안 열면 refreshSocial 도 안 돌아,
+         * FCM 과 무관한 주기 폴백. 푸시가 유실되고 사용자가 앱을 안 열면 목소리 목록 새로고침도 안 돌아,
          * 접근권을 잃은 목소리가 그대로 남는다(발사는 로컬이라 서버가 막을 수 없다). 하루 한 번
          * 조용히 맞춰 둔다 — 즉시성은 푸시가, 정확성은 이 폴백이 맡는 구조(AGENTS.md).
          *
-         * 하루 주기인 이유: 목소리 목록 두 번을 부르는 작업이라 짧은 주기는 쿼터·배터리만 쓴다.
+         * 하루 주기인 이유: 목소리 목록·매니페스트를 부르는 작업이라 짧은 주기는 쿼터·배터리만 쓴다.
          * 즉시 반영이 필요한 경우는 푸시가 이미 [runOnce] 로 처리한다.
          */
         fun ensurePeriodic(context: Context) {

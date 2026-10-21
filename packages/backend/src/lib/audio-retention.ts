@@ -22,7 +22,6 @@ import type { Env } from '../types';
 import type { DbExecutor } from './transactions';
 import { ElevenLabsClient } from './elevenlabs';
 import { logStructured } from './logger';
-import { audioUrlPointsAtUploadsOf } from './voice-revocation';
 
 const VOICE_UPLOAD_TTL_DAYS = 7;
 const GENERATED_TTS_TTL_DAYS = 30;
@@ -130,29 +129,6 @@ export function externalDeletionsFromSelectStatement(
           ${REFRESH_RESERVATION_ON_CONFLICT}`,
     args: [kind, ...select.args],
   };
-}
-
-/**
- * **이 사람들의 업로드 원본을 가리키는 문구의 키**를 삭제 큐에 옮기는 문장 하나.
- *
- * 받은 사람 소유의 `family-voice` 문구는 보낸 사람의 업로드 키를 그대로 담는다. 가족 녹음 원본은
- * 프로필에 안 묶여 7일 TTL 이 업로드 행을 먼저 지우므로(`cleanupExpiredAudio`), 업로드 행에서 읽는
- * `enqueueUserVoiceArtifacts` 만으로는 그 키를 못 찾는다. 그래서 문구를 지우거나 키를 비우는 경로는
- * (탈퇴 파기·음성 동의 철회·보관 만료) **그 전에** 이 문장을 돌린다.
- *
- * TTL 은 이제 행 삭제와 큐 적재를 한 트랜잭션으로 묶지만(2026-10-01), 그 전에는 **따로** 커밋해 그 사이가
- * 끊긴 녹음은 R2 파일의 키를 아는 곳이 이 문구뿐이다 — 그 잔재를 거두려고 이 문장은 그대로 둔다.
- * 이미 예약된 키를 다시 넣어도 한 행이고 id 만 바뀐다.
- */
-export function enqueueUploadKeysReferencedByMessagesStatement(
-  ownerUserIds: readonly string[],
-): InStatement {
-  const uploads = audioUrlPointsAtUploadsOf('audio_url', ownerUserIds);
-  return externalDeletionsFromSelectStatement('r2_object', {
-    sql: `SELECT audio_url AS ref FROM messages
-           WHERE audio_url IS NOT NULL AND ${uploads.sql}`,
-    args: uploads.args,
-  });
 }
 
 /**
@@ -489,13 +465,6 @@ export async function cleanupExpiredAudio(db: Client, now: Date): Promise<void> 
   // 2) TTS 캐시 — 알람이 message_id → messages.audio_url 로 참조 중인 오브젝트는
   //    보존한다. 이 가드가 없으면 활성 알람이 쓰는 TTS 오브젝트가 TTL 후 삭제되어
   //    알람이 무음이 된다.
-  //
-  //    ⚠ **받은(가족) 알람은 이 보존 대상이 아니다.** 수신 확인이 끝나면 서버 행이
-  //    지워지므로(`POST /alarm/:id/received`) 이 EXISTS 에 걸리지 않고, 그 음원은 TTL
-  //    대로 정리된다. 그래도 되는 이유는 **수신자 기기가 이미 음원을 로컬에 갖고 있기
-  //    때문**이다 — ack 는 다운로드가 끝난 뒤에만 나간다. 뒤집어 말하면 클라가 음원
-  //    확보 전에 ack 하면 이 정리가 그 알람의 음원을 지워도 아무도 막지 못한다.
-  //    (전달 전 알람은 행이 남아 있으므로 여기서 정상적으로 보존된다.)
   //
   //    시스템 스톡(프리셋) 클립은 무료 버킷 회전·미리듣기용으로 의도적으로 보관한다.
   //    다수 variant 가 alarm.message_id 로 직접 참조되지 않으므로 TTL 정리에서 제외한다

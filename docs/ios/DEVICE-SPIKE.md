@@ -44,7 +44,7 @@ xcodebuild -project AlarmTalkNative.xcodeproj -scheme AlarmTalk -configuration D
 
 ## 2. `Library/Sounds` 에 **런타임으로 쓴** `.caf` 가 재생되는가
 
-유료 티어(내 클론 목소리·공유받은 목소리)의 핵심이다. 옛 코드
+유료 티어(내 클론 목소리)의 핵심이다. 옛 코드
 (`AlarmSoundStaging.swift`)가 App Group 오디오를 `Library/Sounds/voice-<key>.caf` 로
 복사·트랜스코드한 뒤 `AlertSound.named(_)` 로 넘긴다.
 

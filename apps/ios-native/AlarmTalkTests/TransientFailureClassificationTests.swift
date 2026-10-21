@@ -86,7 +86,7 @@ final class TransientFailureClassificationTests: XCTestCase {
             domain: "AlarmTalk.Sync", code: 1,
             userInfo: [
                 NSUnderlyingErrorKey: APIError.server(
-                    status: 403, message: "forbidden", errorCode: "CONSENT_REQUIRED"
+                    status: 403, message: "forbidden", errorCode: "CONSENT_STATE_UNAVAILABLE"
                 )
             ]
         )
@@ -128,13 +128,13 @@ final class TransientFailureClassificationTests: XCTestCase {
 
     // ── 그대로 이슈로 올리는 것 — 여기가 무너지면 진짜 결함이 사라진다 ────────
 
-    /// ⚠ **401 과 예상된 거절 목록·탈퇴 유예 403 만 예외다**(목록은 아래 「사용자가 고칠 예상된 거절」). 그 밖의
+    /// ⚠ **401 과 예상된 거절 목록·탈퇴 유예 403·동의 필요 403 만 예외다**(목록은 아래 「사용자가 고칠 예상된 거절」). 그 밖의
     /// 403·404·409·5xx 는 그대로 이슈로 올라가야 한다 — 권한 박탈, 파기된 계정, 결제 확정 거절
     /// (`TRANSACTION_OWNED_BY_OTHER_USER` 는 서버의 `ALERTING_ERROR_CODES` 에 있다), 서버 사고는 전부
     /// 우리가 고칠 것이 있는 갈래다.
     func test_401_외의_상태코드는_그대로_이슈다() {
         let errors: [APIError] = [
-            .server(status: 403, message: "forbidden", errorCode: "CONSENT_REQUIRED"),
+            .server(status: 403, message: "forbidden", errorCode: "CONSENT_STATE_UNAVAILABLE"),
             .server(status: 404, message: "not found", errorCode: "AUTH_USER_NOT_FOUND"),
             .server(status: 409, message: "conflict", errorCode: "TRANSACTION_OWNED_BY_OTHER_USER"),
             .server(status: 500, message: "boom"),
@@ -274,18 +274,18 @@ final class TransientFailureClassificationTests: XCTestCase {
 
     // ── 사용자가 고칠 예상된 거절 — 목록으로만 낮춘다(`docs/spec/error-codes.md` §3) ──────────
 
-    /// 목록은 `AlarmTalkLog.expectedRefusalCodes` 한 곳이고 정확히 이 여덟 개다(프로모 코드 갈래 셋은 2026-10-12 에
-    /// 프로모 코드와 함께 빠졌다). 넓히면(4xx 전부·`AUTH_` 전부)
+    /// 목록은 `AlarmTalkLog.expectedRefusalCodes` 한 곳이고 정확히 이 다섯 개다(프로모 코드 갈래 셋은 2026-10-12 에
+    /// 프로모 코드와 함께, 초대 코드 갈래 셋은 2026-10-20 에 커플·가족 이용권과 함께 빠졌다). 넓히면(4xx 전부·`AUTH_` 전부)
     /// 권한·상태 충돌 같은 고칠 것이 이슈 목록에서 조용히 사라지고, 좁히면 사용자가 잘못 친 값이 다시 이슈를 채운다.
-    /// 바꿀 때는 스펙의 표와 이 줄을 함께 고친다.
-    func test_예상된_거절_목록은_정해진_여덟_개다() {
+    /// 바꿀 때는 스펙의 표와 이 줄을 함께 고친다(shared `CLIENT_EXPECTED_REFUSAL_CODES`·안드로이드와 같은 목록).
+    func test_예상된_거절_목록은_정해진_다섯_개다() {
         XCTAssertEqual(AlarmTalkLog.expectedRefusalCodes, [
             "AUTH_EMAIL_CODE_INVALID", "AUTH_EMAIL_CODE_EXPIRED", "AUTH_EMAIL_TAKEN", "AUTH_EMAIL_SOCIAL",
-            "CODE_NOT_FOUND", "CODE_EXPIRED", "CODE_ALREADY_USED", "CODE_ALREADY_REDEEMED_BY_YOU",
+            "CODE_NOT_FOUND",
         ])
     }
 
-    /// 틀린·만료된 인증 코드, 이미 쓰는 이메일, 이용권 코드의 거절은 사용자가 친 값의 문제이고 화면이 이유를 이미
+    /// 틀린·만료된 인증 코드, 이미 쓰는 이메일, 없는 코드의 거절은 사용자가 친 값의 문제이고 화면이 이유를 이미
     /// 말한다 — 이슈가 아니라 브레드크럼(`refusal`)이다. 서버가 실제로 내는 상태(400·404·409)로 보고, 감싸인 응답도
     /// 같다(묶음 키와 같은 방법으로 사슬을 탄다 — 감싸였는지로 경보가 갈리면 계약이 아니다).
     func test_사용자가_고칠_예상된_거절은_브레드크럼이다() {
@@ -295,9 +295,6 @@ final class TransientFailureClassificationTests: XCTestCase {
             .server(status: 409, message: "taken", errorCode: "AUTH_EMAIL_TAKEN"),
             .server(status: 409, message: "social", errorCode: "AUTH_EMAIL_SOCIAL"),
             .server(status: 404, message: "not found", errorCode: "CODE_NOT_FOUND"),
-            .server(status: 409, message: "expired", errorCode: "CODE_EXPIRED"),
-            .server(status: 409, message: "used", errorCode: "CODE_ALREADY_USED"),
-            .server(status: 409, message: "mine", errorCode: "CODE_ALREADY_REDEEMED_BY_YOU"),
         ]
         XCTAssertEqual(Set(refusals.compactMap(\.serverErrorCode)), AlarmTalkLog.expectedRefusalCodes)
         for refusal in refusals {
@@ -332,6 +329,24 @@ final class TransientFailureClassificationTests: XCTestCase {
         ))
         XCTAssertNil(AlarmTalkLog.handledFailureCategory(
             APIError.server(status: 403, message: "forbidden", errorCode: "CONSENT_STATE_UNAVAILABLE")
+        ))
+    }
+
+    /// **동의 필요 403 은 브레드크럼(`consent`)이다** — 통신 계층이 이미 동의 화면으로 보낸다. 403 일 때만이고(같은 코드라도
+    /// 5xx 면 사고), 감싸인 응답도 같다. 이웃한 403(동의 상태 확인 실패)·코드 없는 403 은 그대로 이슈다.
+    func test_동의_필요_403은_consent_브레드크럼이다() {
+        let required = APIError.server(status: 403, message: "forbidden", errorCode: "CONSENT_REQUIRED")
+        XCTAssertEqual(AlarmTalkLog.handledFailureCategory(required), "consent")
+        let wrapped = NSError(domain: "AlarmTalk.Sync", code: 1, userInfo: [NSUnderlyingErrorKey: required])
+        XCTAssertEqual(AlarmTalkLog.handledFailureCategory(wrapped), "consent")
+        XCTAssertNil(AlarmTalkLog.handledFailureCategory(
+            APIError.server(status: 500, message: "boom", errorCode: "CONSENT_REQUIRED")
+        ))
+        XCTAssertNil(AlarmTalkLog.handledFailureCategory(
+            APIError.server(status: 403, message: "forbidden", errorCode: "CONSENT_STATE_UNAVAILABLE")
+        ))
+        XCTAssertNil(AlarmTalkLog.handledFailureCategory(
+            APIError.server(status: 403, message: "forbidden", errorCode: nil)
         ))
     }
 

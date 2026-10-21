@@ -170,8 +170,8 @@ describe('apnsConfigFromEnv', () => {
 // ---------------------------------------------------------------------------
 // 조용한 푸시(background) — **알림 권한 없이도 앱을 깨우는** 경로.
 //
-// ⚠ 가족 알람이 여기 해당한다. iOS 에는 안드로이드 WorkManager 같은 보장된 주기 실행이
-// 없어서, 이 푸시가 받은 알람을 제때 예약하는 실질적으로 유일한 즉시 경로다.
+// ⚠ 플랜 변경·목소리 접근권 철회가 여기 해당한다. iOS 에는 안드로이드 WorkManager 같은 보장된 주기
+// 실행이 없어서, 이 푸시가 그 변경을 곧바로 반영하는 실질적으로 유일한 즉시 경로다.
 // ---------------------------------------------------------------------------
 describe('조용한 푸시(silent)', () => {
   it('애플 규격대로 content-available + background + priority 5 로 보낸다', async () => {
@@ -185,7 +185,7 @@ describe('조용한 푸시(silent)', () => {
     };
 
     await sendApnsNotifications(
-      [{ token: 't', title: '', body: '', data: { type: 'family_alarm', alarmId: 'a1' }, silent: true }],
+      [{ token: 't', title: '', body: '', data: { type: 'voice_access_revoked', voiceProfileId: 'v1' }, silent: true }],
       config,
       fetchMock as unknown as typeof fetch,
     );
@@ -197,8 +197,8 @@ describe('조용한 푸시(silent)', () => {
     // 배너를 띄우지 않는다 — alert 가 있으면 권한이 필요해진다.
     expect(JSON.stringify(body.aps)).not.toContain('alert');
     // 앱이 무엇을 할지 알아야 하므로 data 는 실린다.
-    expect(body.type).toBe('family_alarm');
-    expect(body.alarmId).toBe('a1');
+    expect(body.type).toBe('voice_access_revoked');
+    expect(body.voiceProfileId).toBe('v1');
   });
 
   it('표시용과 조용한 푸시가 같은 함수에서 갈린다', async () => {

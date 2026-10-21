@@ -40,9 +40,8 @@ final class LocalAlarmRecordCodableTests: XCTestCase {
             ttsMessageId: "msg-1",
             remoteAlarmId: "remote-1",
             lastSyncedAtMillis: 1_699_999_000_000,
-            remoteDeliveryVersion: "version-1",
             syncState: AlarmSyncState.synced.rawValue,
-            origin: AlarmOrigin.receivedRemote.rawValue,
+            origin: AlarmOrigin.localOwned.rawValue,
             alarmVolumePercent: 60,
             alarmSoundUri: "file:///tmp/sound.wav",
             alarmSoundLabel: "default",
@@ -173,6 +172,72 @@ final class LocalAlarmRecordCodableTests: XCTestCase {
         let decoded = try JSONDecoder().decode(LocalAlarmRecord.self, from: json)
         XCTAssertNil(decoded.remoteAlarmId)
         XCTAssertEqual(decoded.syncState, AlarmSyncState.localOnly.rawValue)
+    }
+
+    /// 업데이트 전 받은 알람이 남긴 JSON — 전달 세대 두 칸(`remoteDeliveryVersion`·`observedDeliveryVersion`)과
+    /// `origin: received_remote`. 한 행이라도 던지면 `LocalAlarmPersistence.load` 가 알람 **전부**를 버린다.
+    /// 읽힌 뒤에는 로드가 내 알람으로 바꾸고(`ReceivedAlarmConversion` — `docs/spec/plan-gates.md`
+    /// 「커플·가족 이용권 — 폐지」), 다시 쓴 JSON 에는 받은 알람의 흔적이 남지 않는다.
+    func test_legacyReceivedAlarmJSON_loadsAndBecomesOwnAlarm() throws {
+        let json = """
+        [
+          {
+            "id": "recv", "label": "민수님이 보낸 알람", "hour": 6, "minute": 30, "fireAtMillis": 1700000000000,
+            "repeatDaysMask": 62, "holidayOff": true, "snoozeMinutes": 7, "vibrationPattern": "heartbeat",
+            "playMode": "voice_only", "voiceSource": "server_tts", "voiceProfileId": "sender-clone",
+            "voiceText": "일어나", "voiceListenerTitle": "우리 딸", "localAudioUri": "remote-message-m1.mp3",
+            "audioCacheKey": "remote-message-m1", "ttsMessageId": "m1", "remoteAlarmId": "srv-1",
+            "lastSyncedAtMillis": 1699999000000, "remoteDeliveryVersion": "v3", "observedDeliveryVersion": "v3",
+            "syncState": "synced", "origin": "received_remote", "ownerUserId": "me", "enabled": true,
+            "voiceVolumePercent": 80, "alarmVolumePercent": 40
+          },
+          {
+            "id": "mine", "label": "출근", "hour": 7, "minute": 0, "fireAtMillis": 1700000000000,
+            "origin": "some_future_origin", "remoteAlarmId": "srv-2", "ownerUserId": "me"
+          }
+        ]
+        """.data(using: .utf8)!
+
+        let loaded = try JSONDecoder().decode([LocalAlarmRecord].self, from: json)
+        XCTAssertEqual(loaded.map(\.id), ["recv", "mine"], "모르는 칸·값 때문에 행을 버리지 않는다")
+        XCTAssertEqual(loaded[0].origin, ReceivedAlarmConversion.legacyReceivedOrigin, "저장값은 그대로 읽는다")
+        XCTAssertEqual(loaded[1].originEnum, .localOwned, "모르는 origin 은 내 알람으로 읽는다")
+
+        let outcome = ReceivedAlarmConversion.convert(loaded, nowMillis: 1_760_000_000_000)
+        XCTAssertEqual(outcome.converted.map(\.id), ["recv"])
+        let converted = try XCTUnwrap(outcome.alarms.first { $0.id == "recv" })
+        // 받은 사람이 기대는 값은 남는다.
+        XCTAssertEqual(converted.hour, 6)
+        XCTAssertEqual(converted.minute, 30)
+        XCTAssertEqual(converted.repeatDaysMask, 62)
+        XCTAssertTrue(converted.holidayOff)
+        XCTAssertTrue(converted.enabled)
+        XCTAssertEqual(converted.snoozeMinutes, 7)
+        XCTAssertEqual(converted.vibrationPattern, "heartbeat")
+        XCTAssertEqual(converted.voiceVolumePercent, 80)
+        XCTAssertEqual(converted.alarmVolumePercent, 40)
+        XCTAssertEqual(converted.ownerUserId, "me")
+        XCTAssertEqual(converted.playModeEnum, .voiceOnly)
+        // 보낸 사람의 목소리·문구·이름과 서버 연결은 걷어 내고, 미나의 아직 안 올린 내 알람이 된다.
+        XCTAssertEqual(converted.originEnum, .localOwned)
+        XCTAssertEqual(converted.origin, AlarmOrigin.localOwned.rawValue)
+        XCTAssertEqual(converted.syncStateEnum, .localOnly)
+        XCTAssertNil(converted.remoteAlarmId)
+        XCTAssertNil(converted.lastSyncedAtMillis)
+        XCTAssertEqual(converted.voiceSourceEnum, .ttsProfile)
+        XCTAssertEqual(converted.voiceProfileId, substituteSystemVoiceID)
+        XCTAssertEqual(converted.label, LocalAlarmRecord.storedDefaultLabel)
+        XCTAssertNil(converted.voiceText)
+        XCTAssertNil(converted.voiceListenerTitle)
+        XCTAssertNil(converted.localAudioUri)
+        XCTAssertNil(converted.audioCacheKey)
+        XCTAssertNil(converted.ttsMessageId)
+        XCTAssertEqual(outcome.alarms.first { $0.id == "mine" }, loaded[1], "내 알람은 그대로다")
+
+        let rewritten = String(decoding: try JSONEncoder().encode(outcome.alarms), as: UTF8.self)
+        XCTAssertFalse(rewritten.contains("DeliveryVersion"), "전달 세대 칸은 다시 쓰지 않는다")
+        XCTAssertFalse(rewritten.contains(ReceivedAlarmConversion.legacyReceivedOrigin))
+        XCTAssertFalse(rewritten.contains("remote-message-"))
     }
 
     func test_alarmKitID_decodesUUIDObjectFromLegacyJSON() throws {

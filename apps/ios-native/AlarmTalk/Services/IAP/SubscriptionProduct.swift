@@ -1,17 +1,15 @@
 import Foundation
 
-/// Apple App Store Connect 에 등록될 StoreKit2 인앱 구독 상품 ID.
+/// Apple App Store Connect 에 등록된 StoreKit2 인앱 구독 상품 ID.
 ///
-/// 백엔드 plan key (`personal` / `couple` / `family`) 와 1:1 매핑되며,
-/// 각 플랜은 월간 가격 하나로만 노출된다 (연간 SKU 는 제거됨).
-/// `free` 플랜은 IAP 가 없다.
+/// 백엔드 plan key `personal` 과 1:1 매핑되며, 월간 가격 하나로만 노출된다 (연간 SKU 는 제거됨).
+/// `free` 플랜은 IAP 가 없다. 커플·가족 상품은 2026-10-20 에 없앴다(판매 중지) — 되살리지 말 것.
 ///
 /// App Store Connect 등록 가이드:
-///   1. 구독 그룹 1개 ("AlarmTalk Subscriptions") 를 만들고 3개 SKU 를 동일 그룹에 둔다.
-///      → 같은 그룹 안에서 사용자가 자유롭게 업/다운그레이드 할 수 있다.
-///   2. 3개 productID 를 정확히 아래 rawValue 와 동일하게 등록.
+///   1. 구독 그룹 1개 ("AlarmTalk Subscriptions") 에 SKU 를 둔다.
+///   2. productID 를 정확히 아래 rawValue 와 동일하게 등록.
 ///   3. 가격은 App Store 의 region 별 tier 로 설정 — 본 enum 은 가격에 관여하지 않는다.
-///   4. Phase 3-C3 의 `PlanTier` 와의 매핑은 `planTier` 에 캡슐화.
+///   4. `PlanTier` 와의 매핑은 `planTier` 에 캡슐화.
 ///
 /// 본 enum 은 순수 데이터 매핑이며 StoreKit 의 `Product` 인스턴스를 직접 들지
 /// 않는다. 실제 `Product` 는 `SubscriptionManager.products` 에 lazy-cache 된다.
@@ -24,15 +22,11 @@ import Foundation
 /// 무관하게 끝낸다. 상품 목록은 `SubscriptionManagerTests` 가 고정한다.
 enum SubscriptionProduct: String, CaseIterable {
     case personalMonthly = "com.alarmtalk.app.personal_monthly"
-    case coupleMonthly   = "com.alarmtalk.app.couple_monthly"
-    case familyMonthly   = "com.alarmtalk.app.family_monthly"
 
     /// 백엔드 PlanTier 매핑.
     var planTier: PlanTier {
         switch self {
         case .personalMonthly: return .personal
-        case .coupleMonthly:   return .couple
-        case .familyMonthly:   return .family
         }
     }
 
@@ -40,28 +34,24 @@ enum SubscriptionProduct: String, CaseIterable {
     static func make(tier: PlanTier) -> SubscriptionProduct? {
         switch tier {
         case .personal: return .personalMonthly
-        case .couple:   return .coupleMonthly
-        case .family:   return .familyMonthly
-        case .free:     return nil
+        case .free: return nil
         }
     }
 }
 
 // MARK: - PlanTier tier ordering bridge
 //
-// PlanGateDialog.swift 의 `PlanTier` 는 `meetsOrExceeds(_:)` 비교용 private
+// `PlanTier`(PlanTier.swift)는 `meetsOrExceeds(_:)` 비교용 private
 // `tierOrder` 만 가지고 있다. SubscriptionManager 는 "구매된 productID 중 가장
 // 높은 티어" 를 계산해야 하므로 동일한 순서 매핑이 필요해 public 한 `tierOrder`
 // 를 extension 으로 노출한다. private 상수는 그대로 두어 캡슐화를 유지.
 
 extension PlanTier {
-    /// free=0, personal=1, couple=2, family=3. 큰 값이 더 높은 권한.
+    /// free=0, personal=1. 큰 값이 더 높은 권한.
     var tierOrder: Int {
         switch self {
         case .free:     return 0
         case .personal: return 1
-        case .couple:   return 2
-        case .family:   return 3
         }
     }
 }

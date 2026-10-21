@@ -113,8 +113,8 @@ export async function authMiddleware(c: Context<AppEnv>, next: Next) {
       if (googleId && googleId.trim() !== '') c.set('userLoginId', googleId);
       // sub 이 google_id 인 구 토큰(이 브랜치 배포 전 발급분)이면 여기서 users.id 로
       // 맞춘다. 정규화하지 않으면 users.id 로만 조회하는 하류 경로에서 자기 데이터를
-      // 못 찾는다 — 유료 구독이 null 로 보여 무료로 취급되고(그 결과 음성 알람이
-      // sound-only 로 강등된다), 가족 그룹이 없다고 나오며, /code/register 가 404 다.
+      // 못 찾는다 — 유료 구독이 null 로 보여 무료로 취급된다(그 결과 음성 알람이
+      // sound-only 로 강등된다).
       c.set('userId', pk);
 
       // 탈퇴 유예(pending_deletion) 계정은 **모든** 인증 API 사용을 차단한다(개인정보보호법 제21조, migrations #41 주석).

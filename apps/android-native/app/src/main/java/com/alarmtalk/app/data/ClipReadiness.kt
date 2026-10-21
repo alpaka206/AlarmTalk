@@ -64,8 +64,7 @@ object ClipReadiness {
     /**
      * 매니페스트 + 캐시 상태로 목소리별 준비도를 만든다.
      *
-     * @param voiceProfileIds 준비 대상 목소리(기본 목소리 전부 + 내가 등록한 것. 공유받은
-     *   목소리는 **고를 때** 대상이 되므로 호출자가 넣고 뺀다).
+     * @param voiceProfileIds 준비 대상 목소리(기본 목소리 전부 + 내가 등록한 것).
      * @param categoriesFor 그 목소리에서 준비해야 할 카테고리.
      * @param isCached 그 클립이 디스크에 있는가.
      */

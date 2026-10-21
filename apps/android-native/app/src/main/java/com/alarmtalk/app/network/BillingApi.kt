@@ -33,7 +33,7 @@ data class BillingSubscriptionResponse(
      * ⚠ **이 계정의 [subscription] 은 그대로 null 이다.** 서버는 가짜 구독 객체를 만들지
      * 않는다 — 만들면 해지 버튼이 뜨고 `/billing/cancel` 은 404 를 낸다. 이용권 화면은
      * 이 필드로 '무료 이용 중' 문구만 보여 준다 — 프로모만 쓰는 계정은 개인 카드('현재 이용권')의
-     * 상태 문구, 산 이용권·공유 멤버·보류 행이 있는 계정은 카드 목록 위 한 줄이다
+     * 상태 문구, 산 이용권·보류 행이 있는 계정은 카드 목록 위 한 줄이다
      * (`ui/billing/BillingPanels.kt` 의 `planScreenCurrentOf`, 스펙 billing-lifecycle D4).
      */
     @SerializedName("personal_promo") val personalPromo: PersonalPromo? = null,
@@ -54,7 +54,6 @@ data class BillingPlan(
     val name: String,
     @SerializedName("plan_type") val planType: String,
     @SerializedName("period_days") val periodDays: Int,
-    @SerializedName("max_members") val maxMembers: Int,
     @SerializedName("price_krw") val priceKrw: Int,
 )
 
@@ -63,28 +62,6 @@ data class BillingPlanSummary(
     val key: String,
     val name: String,
     @SerializedName("plan_type") val planType: String,
-)
-
-data class VoucherListResponse(
-    val vouchers: List<VoucherItem>,
-)
-
-data class VoucherItem(
-    val id: String,
-    val code: String,
-    @SerializedName("plan_key") val planKey: String? = null,
-    @SerializedName("plan_name") val planName: String,
-    @SerializedName("plan_type") val planType: String,
-    val status: String,
-    @SerializedName("issued_at") val issuedAt: String? = null,
-    @SerializedName("expires_at") val expiresAt: String,
-    @SerializedName("max_uses") val maxUses: Int = 1,
-    @SerializedName("use_count") val useCount: Int = 0,
-)
-
-data class EnsureFamilyShareCodeResponse(
-    val success: Boolean,
-    val voucher: VoucherItem,
 )
 
 /** Google Play 구매를 서버에 전달해 검증·acknowledge·구독 반영을 요청하는 페이로드. */
@@ -126,26 +103,12 @@ interface BillingApi {
         @Query("refresh_store") refreshStore: String? = null,
     ): BillingSubscriptionResponse
 
-    @GET("billing/vouchers")
-    suspend fun listVouchers(@Header("Authorization") authorization: String): VoucherListResponse
-
     /** Google Play 구매 토큰 서버 검증. 서버가 Play Developer API 로 검증·acknowledge 한다. */
     @POST("billing/google/confirm")
     suspend fun confirmGooglePurchase(
         @Header("Authorization") authorization: String,
         @Body request: GooglePlayConfirmRequest,
     ): GooglePlayConfirmResponse
-
-    @POST("billing/vouchers/family-share")
-    suspend fun ensureFamilyShareCode(
-        @Header("Authorization") authorization: String,
-    ): EnsureFamilyShareCodeResponse
-
-    /** 기존 공유 코드를 무효화하고 새 코드를 발급한다(유출 의심 시 재발급). */
-    @POST("billing/vouchers/family-share/regenerate")
-    suspend fun regenerateFamilyShareCode(
-        @Header("Authorization") authorization: String,
-    ): EnsureFamilyShareCodeResponse
 
     @POST("billing/cancel")
     suspend fun cancelSubscription(

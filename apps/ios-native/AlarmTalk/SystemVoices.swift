@@ -9,7 +9,7 @@ let systemVoiceIDPrefix = "70000000-0000-4000-9000-"
 
 /// 첫 서버 응답 전에도 즉시 그릴 수 있는 기본 목소리 카탈로그.
 ///
-/// 개인·공유 목소리는 넣지 않는다. `GET /voice` 성공 응답이 오면 전체 응답으로 교체된다.
+/// 내 목소리는 넣지 않는다. `GET /voice` 성공 응답이 오면 전체 응답으로 교체된다.
 /// 백엔드 system-stock-voices 시드를 바꾸면 이 목록도 함께 맞춘다.
 func bundledSystemVoiceProfiles() -> [VoiceProfile] {
     [
@@ -46,8 +46,8 @@ func isSystemVoice(_ profile: VoiceProfile) -> Bool {
 }
 
 /// 유료 목소리를 못 쓰게 된 알람이 넘어갈 **대체 기본 목소리 — 미나**. 대체는 전부 이 하나다:
-/// 무료 잠금 · 예약 때 대체 · 목소리를 **잃은** 알람(삭제 · 공유 해제 · 발신자 철회 · 제자리 교체된
-/// 직접 입력). 알람이 이미 기본 목소리면 그 목소리를 그대로 둔다(`DefaultVoiceSubstitute.pickVoiceID`).
+/// 무료 잠금 · 예약 때 대체 · 목소리를 **잃은** 알람(삭제 · 접근권 상실 · 제자리 교체된 직접 입력) · 옛 받은
+/// 알람(`ReceivedAlarmConversion`). 알람이 이미 기본 목소리면 그 목소리를 그대로 둔다(`DefaultVoiceSubstitute.pickVoiceID`).
 ///
 /// 2026-09-29 사용자 결정 — "삭제했거나 공유가 해제된 알람은 기본 목소리로, 미나로 해 그냥", 이어서
 /// "미나로 통일도 해". 그전 무료 잠금은 **마지막에 쓴 기본 목소리**를 골라, 같은 계정의 알람이 경로마다

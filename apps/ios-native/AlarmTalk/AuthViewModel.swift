@@ -492,8 +492,8 @@ final class AuthViewModel: ObservableObject {
     private var consentGatePendingUserID: String?
 
     /// 동의 화면 제출이 성공할 때마다 오른다. `AlarmTalkApp` 이 이 값을 보고 동의를 기다리며 막혔던 동기화를
-    /// 다시 돈다(2026-10-16, 코덱스) — 게이트가 떠 있던 동안의 pull·가족 알람 푸시는 403 `CONSENT_REQUIRED` 로
-    /// '다음 회차에 재시도' 로 접혔고, 다시 걸지 않으면 다음 전경 복귀까지 받은 가족 알람이 예약되지 않는다.
+    /// 다시 돈다(2026-10-16, 코덱스) — 게이트가 떠 있던 동안의 알람 동기화는 403 `CONSENT_REQUIRED` 로
+    /// '다음 회차에 재시도' 로 접혔고, 다시 걸지 않으면 다음 전경 복귀까지 못 올린 알람이 남는다.
     /// 안드로이드는 `submitConsents` 가 `RemoteAlarmSyncScheduler.runOnce` 를 직접 부른다.
     @Published private(set) var consentSubmitGeneration = 0
 
@@ -694,7 +694,7 @@ final class AuthViewModel: ObservableObject {
     /// 키체인에 저장된 세션을 **네트워크 없이 즉시** 채택한다.
     ///
     /// ⚠ 백그라운드로 깨어난 실행(푸시·BGTask)에는 화면이 없어 `restoreSession()` 이 돌지
-    /// 않는다. 그때 세션이 nil 이면 받은 알람을 당겨올 토큰이 없어 **푸시가 와도 아무 일도
+    /// 않는다. 그때 세션이 nil 이면 목록을 새로 받을 토큰이 없어 **푸시가 와도 아무 일도
     /// 안 일어난다**(2026-08-18 Codex #697 P1). 키체인 읽기는 동기라 launch 에서 부를 수 있다.
     func adoptStoredSessionIfNeeded() {
         guard session == nil, let saved = KeychainStore.readSession() else { return }
@@ -1141,9 +1141,9 @@ final class AuthViewModel: ObservableObject {
     ///
     /// - 더 나중에 보낸 요청의 답이 이미 반영됐으면 아무것도 쓰지 않는다 — 그래도 이 진입의 응답이 왔다는 사실은
     ///   같다(`applyAccountPlanAnswer` 와 같은 순번 가드).
-    /// - 아니면 plan·프로모와 함께 **프로필 칸(이름·가족 설정·계정 설정)도** 적는다(2026-10-05 리뷰). 서버는 `/auth/me`
+    /// - 아니면 plan·프로모와 함께 **프로필 칸(이름·계정 설정)도** 적는다(2026-10-05 리뷰). 서버는 `/auth/me`
     ///   마다 토큰을 굴리므로, 프로필 저장 뒤의 확인 조회(`updateProfile` → `refreshUser`)는 저장 **전에** 떠난 조회의
-    ///   답이 먼저 와 토큰을 굴리면 언제나 이 갈래로 온다. 그 옛 답이 방금 저장한 이름·가족 설정을 되돌렸으므로, 짝만
+    ///   답이 먼저 와 토큰을 굴리면 언제나 이 갈래로 온다. 그 옛 답이 방금 저장한 이름을 되돌렸으므로, 짝만
     ///   적으면 확인 조회가 성공하고도 옛 값이 다음 `/auth/me` 까지 남는다. 안드로이드는 토큰이 아니라 세션 세대로
     ///   가르므로(`saveSessionIfAlive`) 같은 경우에 응답 전체를 반영한다. 계정 설정은 울타리를 따른다(`reconcileAccountAnswer`).
     private func applyAccountAnswerOnRolledToken(_ answer: AuthUser, request: AccountRequest) {
@@ -1491,26 +1491,12 @@ final class AuthViewModel: ObservableObject {
 
     func updateProfile(
         name: String? = nil,
-        allowFamilyAlarms: Bool? = nil,
-        quietWindows: [FamilyAlarmQuietWindow]? = nil,
         dynamicPromptSettings: DynamicPromptSettings? = nil
     ) async {
         guard let token else {
             statusMessage = String(localized: "로그인이 필요해요.")
             return
         }
-        let normalizedQuietWindows = quietWindows.map(Self.normalizedQuietWindows)
-        if let normalizedQuietWindows,
-           normalizedQuietWindows.contains(where: {
-               !FamilyAlarmQuietWindow.isValidTime($0.start) || !FamilyAlarmQuietWindow.isValidTime($0.end)
-           }) {
-            statusMessage = String(localized: "시간은 HH:mm 형식으로 입력해 주세요.")
-            return
-        }
-        // ⚠ **창을 다 지웠으면 지운 대로 둔다**(2026-08-08 변경). 예전에는 여기서
-        // 평일 09:00-18:30 을 되살려, 사용자가 방해금지를 전부 없애도 서버에는 다시
-        // 생겼다 — "껐는데 계속 막힌다" 가 된다. 레거시 3필드는 창이 없으면 nil 이다.
-        let firstQuietWindow = normalizedQuietWindows?.first
         guard !isBusy else {
             // ⚠ 계정 설정(지역·사주)은 버리지 않는다 — 앞 올리기가 끝난 뒤 밀린 표시를 보고 다시 올린다.
             if dynamicPromptSettings != nil { promptSettingsRetryPending = true }
@@ -1532,11 +1518,6 @@ final class AuthViewModel: ObservableObject {
             let response = try await api.updateProfile(
                 UpdateProfileRequest(
                     name: name,
-                    allowFamilyAlarms: allowFamilyAlarms,
-                    familyAlarmQuietDays: firstQuietWindow?.days,
-                    familyAlarmQuietStart: firstQuietWindow?.start,
-                    familyAlarmQuietEnd: firstQuietWindow?.end,
-                    familyAlarmQuietWindows: normalizedQuietWindows,
                     dynamicPromptSettings: dynamicPromptSettings
                 ),
                 token: token
@@ -1551,19 +1532,11 @@ final class AuthViewModel: ObservableObject {
             guard sessionRevision == requestSessionRevision else { return }
             // ⚠ **바꾼 칸만, 응답을 기다린 뒤의 세션 위에 얹는다**(2026-10-05 — 안드로이드 `saveProfileEdit` 와 같은 규칙).
             //   요청 전에 잡은 사본을 저장하면 그 사이 반영된 plan·프로모(결제 전 조회·세션 밖 `/auth/me`)와 다른 칸을
-            //   되돌린다 — 프로필 저장은 plan 답이 아니다. 이름·가족 설정도 곧바로 적는다: 확인 조회(`refreshUser`)가
+            //   되돌린다 — 프로필 저장은 plan 답이 아니다. 이름도 곧바로 적는다: 확인 조회(`refreshUser`)가
             //   실패해도 방금 저장한 값이 보이게(예전에는 확인 조회만 기다려, 실패하면 저장된 이름이 옛 이름으로 보였다).
             if let current = session, current.user.id == requestUserID {
                 var updated = current
                 if let name { updated.user.name = name.trimmingCharacters(in: .whitespacesAndNewlines) }
-                if let allowFamilyAlarms { updated.user.allowFamilyAlarms = allowFamilyAlarms }
-                if let normalizedQuietWindows {
-                    updated.user.familyAlarmQuietWindows = normalizedQuietWindows
-                    // 레거시 3칸은 첫 창, 창이 없으면 자리값 — 판정은 언제나 창 목록이다(빈 목록 = 방해금지 없음).
-                    updated.user.familyAlarmQuietDays = firstQuietWindow?.days ?? [1, 2, 3, 4, 5]
-                    updated.user.familyAlarmQuietStart = firstQuietWindow?.start ?? "09:00"
-                    updated.user.familyAlarmQuietEnd = firstQuietWindow?.end ?? "18:30"
-                }
                 if let dynamicPromptSettings {
                     // ⚠ **표시를 내리기 전에 울타리를 세운다**(Codex #837). 지금 떠 있는 `/auth/me` 는 올리기 **전의**
                     // 설정을 읽었을 수 있다 — 그 응답이 아래 확인 조회보다 늦게 오면 옛 설정으로 세션을 되돌리고, 표시가
@@ -1575,7 +1548,7 @@ final class AuthViewModel: ObservableObject {
                 }
                 persistSession(updated)
             }
-            // 확인 조회 — 저장 **전에** 떠나 옛 이름·가족 설정을 읽은 `/auth/me` 가 늦게 와도 바로잡는다. 확인 조회가 먼저
+            // 확인 조회 — 저장 **전에** 떠나 옛 이름을 읽은 `/auth/me` 가 늦게 와도 바로잡는다. 확인 조회가 먼저
             // 오면 그 옛 답은 확인 조회가 굴린 토큰에 걸려 밀린 답이 되고(아무것도 쓰지 않는다), 옛 답이 먼저 와 토큰을
             // 굴렸으면 확인 조회의 답이 토큰만 구른 갈래에서 프로필 칸까지 다시 적는다(`applyAccountAnswerOnRolledToken`).
             await refreshUser()
@@ -1602,16 +1575,6 @@ final class AuthViewModel: ObservableObject {
             settings = DynamicPromptPreferences.load(userID: session.user.id).toSettings()
         }
         await updateProfile(dynamicPromptSettings: settings)
-    }
-
-    // ⚠ **기본 방해금지 창을 되살리지 말 것**(2026-08-08 삭제). 방해금지는 사용자가
-    // 명시적으로 켜는 기능이다 — 만들어 주면 아무도 설정한 적 없는 시간에 가족 알람이
-    // 막히고, 받는 사람은 자기가 막아 둔 줄 모른다.
-
-    /// 보낼 창 — 요일이 없는 창만 버린다. 시각 형식은 호출부가 따로 보고 **거절한다**
-    /// (읽을 때처럼 조용히 버리면 사용자가 고친 창이 말없이 사라진다).
-    private static func normalizedQuietWindows(_ windows: [FamilyAlarmQuietWindow]) -> [FamilyAlarmQuietWindow] {
-        Array(windows.compactMap(\.withNormalizedDays).prefix(FamilyAlarmQuietWindow.maxCount))
     }
 
     /// 30일 유예 탈퇴 신청 — 유예 상태로 전환하고
@@ -2106,7 +2069,7 @@ final class AuthViewModel: ObservableObject {
     /// `clearSessionKeepingAlarms`(자동)를 함수로 갈라 놓은 것과 같은 분리다.
     /// 로그아웃·탈퇴 신청 때 이 기기의 푸시 토큰을 서버에서 지우는 훅.
     /// `AlarmTalkApp` 이 `PushNotificationCoordinator` 를 꽂는다 — 여기서 코디네이터를
-    /// 직접 들면 순환 참조가 된다(코디네이터의 `onFamilyAlarm` 과 같은 방식).
+    /// 직접 들면 순환 참조가 된다(코디네이터의 `onVoiceChanged` 와 같은 방식).
     var onSignOutUnregisterPush: (String, String?, @escaping @Sendable () -> Bool) async -> Bool = { _, _, _ in true }
     /// 서버가 이 계정의 푸시 등록을 이미 지웠을 때(탈퇴 신청 — user.ts) 또는 지웠을 수 있을 때(자동 만료) 기기 쪽 등록
     /// 기록만 비운다 — 다음 등록이 서버에 다시 올리게. launch 에서 `PushNotificationCoordinator.clearRegistrationCache` 로 꽂는다.
@@ -2114,8 +2077,8 @@ final class AuthViewModel: ObservableObject {
 
     /// 로그아웃·탈퇴 때 **이 기기의 OS 알람 예약을 끊는** 훅.
     ///
-    /// ⚠ 계정을 떠났는데 알람이 울리면 안 된다 — 특히 받은 알람은 보낸 사람의 복제
-    /// 목소리를 담고 있어, 로그아웃한 기기가 남의 생체정보로 우는 셈이 된다.
+    /// ⚠ 계정을 떠났는데 알람이 울리면 안 된다 — 로그아웃 상태에서는 알람 화면에 들어갈 수 없어
+    /// 끌 방법도 없다(`stopAllScheduledAlarms` 주석).
     ///
     /// 예약을 끊고 **떠나는 계정의 행은 `enabled = false` 로 둔다**(2026-08-19 지시).
     /// 인자로 그 계정을 넘기는 이유가 여기 있다 — 남의 계정 행까지 끄면 자동 401 로
@@ -2250,7 +2213,7 @@ final class AuthViewModel: ObservableObject {
     }
 
     /// 계정을 떠날 때(명시적 로그아웃·탈퇴) 그 계정의 **취향**을 지운다 — 마지막에 쓴 목소리,
-    /// 문구 종류·테마·직접 입력 문구, 문구 설정.
+    /// 문구 종류·테마·직접 입력 문구, 문구 설정, 받았던 알람을 내 목소리로 올릴 차례(`ReceivedAlarmPromotionStore`).
     ///
     /// ⚠ **목소리 교체 표식(`VoiceReplacementMarkerStore`)은 지우지 않는다.**
     /// 취향은 계정과 함께 떠나도 되지만 그 표식은 **남아 있는 로컬 알람의 안전
@@ -2260,6 +2223,7 @@ final class AuthViewModel: ObservableObject {
         DefaultVoicePreferenceStore().clear(userID: userID)
         DynamicPromptPreferenceStore().clear(userID: userID)
         DynamicPromptPreferences.clear(userID: userID)
+        ReceivedAlarmPromotionStore().clear(userID: userID)
     }
 
     func signOutExplicitly() {
@@ -2347,7 +2311,7 @@ final class AuthViewModel: ObservableObject {
             // ⚠ **자동 만료면 이 기기의 푸시 등록 확인도 내린다**(코덱스 #904). 끊긴 이유가 탈퇴 신청이었으면 서버가 그
             //   계정의 푸시 행을 이미 지웠다 — 그 사이 다른 기기가 다시 로그인해 철회했으면 이 기기는 유예 코드 대신
             //   `TOKEN_REVOKED` 를 받는다. 확인을 남겨 두면 같은 실행에서 같은 계정으로 다시 로그인해도 등록을 건너뛰어
-            //   가족 알람 푸시를 놓친다. 내리면 다음 로그인이 한 번 더 올릴 뿐이다. 등록·해제와 같은 줄에 태운다
+            //   플랜·목소리 변경 푸시를 놓친다. 내리면 다음 로그인이 한 번 더 올릴 뿐이다. 등록·해제와 같은 줄에 태운다
             //   (`PushNotificationCoordinator.invalidateRegistration`) — 이 함수는 동기라 기다리지는 않는다.
             let invalidate = onServerRemovedPushRegistration
             Task { await invalidate() }

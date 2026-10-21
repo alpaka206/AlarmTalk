@@ -221,9 +221,8 @@ final class HolidayStore: ObservableObject {
     /// 받아 올 때 맞추지 않으면 두 번째 기기는 옛 나라에 남는다.
     ///
     /// 부르는 곳(고를 때): 설정 '지역' 행(`SettingsView` — 고를 때마다), 편집기 문구 화면
-    /// (`AlarmEditorSheet.applyMessageSettings` — 내 알람에서 **지역이 실제로 바뀔 때만**,
-    /// 판정은 `DynamicPromptPreferences.editorUpdate`). 가족 알람에서 고른 지역은 받는 사람의
-    /// 것이라 부르지 않는다.
+    /// (`AlarmEditorSheet.applyMessageSettings` — **지역이 실제로 바뀔 때만**,
+    /// 판정은 `DynamicPromptPreferences.editorUpdate`).
     ///
     /// 같은 값이면 쓰지 않는다 — 써도 공휴일off 알람을 다시 걸지는 않지만(`HolidayOffRescheduler`
     /// 는 달력 표지가 같으면 돌지 않는다), 괜히 동기화(`ensureSynced`)를 깨울 이유가 없다.

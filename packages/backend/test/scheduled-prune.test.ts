@@ -9,22 +9,13 @@ vi.mock('../src/lib/audio-retention', () => ({
 vi.mock('../src/lib/billing-cancel', () => ({
   processSubscriptionExpiry: vi.fn().mockResolvedValue(undefined),
 }));
-vi.mock('../src/lib/pending-plan-notifications', () => ({
-  runPlanNotificationDrainTurn: vi.fn().mockResolvedValue(false),
-  isPlanNotificationDrainMinute: () => false,
-  prunePendingPlanNotifications: vi.fn().mockResolvedValue(undefined),
-}));
 vi.mock('../src/lib/account-deletion', () => ({
   // 커밋 후 알릴 대상을 돌려준다. 비어 있어도 **형태는 지켜야** cron 이 그대로 펴 담는다.
-  purgeUserAccount: vi
-    .fn()
-    .mockResolvedValue({ downgradedAlarms: [], voiceAccessRevokedUserIds: [], planChangedUserIds: [] }),
+  purgeUserAccount: vi.fn().mockResolvedValue({ downgradedAlarms: [], voiceAccessRevokedUserIds: [] }),
   pseudonymizeBillingForRetention: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock('../src/lib/transactions', () => ({
-  withWriteTransaction: vi
-    .fn()
-    .mockResolvedValue({ downgradedAlarms: [], voiceAccessRevokedUserIds: [], planChangedUserIds: [] }),
+  withWriteTransaction: vi.fn().mockResolvedValue({ downgradedAlarms: [], voiceAccessRevokedUserIds: [] }),
 }));
 // 지역 날씨 미리 계산은 지역의 현지 슬롯(21시·06시)이 열린 틱에 원천(기상청·気象庁·NWS)을 부른다. 이 파일은
 // 그 일을 보지 않으므로 끈다 — 안 끄면 시각에 따라 테스트가 실제 네트워크로 나간다. 그 동작은
@@ -174,9 +165,8 @@ describe('scheduled() — 탈퇴 파기 알림', () => {
     });
     vi.mocked(withWriteTransaction)
       .mockResolvedValueOnce({
-        downgradedAlarms: [{ alarmId: 'al-1', ownerUserId: 'R1', isReceived: true }],
+        downgradedAlarms: [{ alarmId: 'al-1', ownerUserId: 'R1' }],
         voiceAccessRevokedUserIds: ['M1'],
-        planChangedUserIds: ['G1'],
       } as never)
       .mockRejectedValueOnce(new Error('turso down'));
 
@@ -188,12 +178,8 @@ describe('scheduled() — 탈퇴 파기 알림', () => {
     // A 의 파기는 롤백되지 않는다. 안 알리면 R1·M1 은 폴백 주기만큼 탈퇴자의 목소리를 더 든다.
     expect(notifyDowngradedAlarms).toHaveBeenCalledTimes(1);
     expect(vi.mocked(notifyDowngradedAlarms).mock.calls[0]![2]).toEqual([
-      { alarmId: 'al-1', ownerUserId: 'R1', isReceived: true },
+      { alarmId: 'al-1', ownerUserId: 'R1' },
     ]);
     expect(vi.mocked(notifyDowngradedAlarms).mock.calls[0]![3]).toEqual(['M1']);
-    // 그룹 해체로 등급이 바뀐 G1 은 A 의 파기 트랜잭션이 대기열에 적었다 — 이 틱은 비우지 않고
-    // 1분 전용 크론이 자기 예산으로 비운다(`pending-plan-notifications.test.ts`).
-    const { runPlanNotificationDrainTurn } = await import('../src/lib/pending-plan-notifications');
-    expect(runPlanNotificationDrainTurn).not.toHaveBeenCalled();
   });
 });

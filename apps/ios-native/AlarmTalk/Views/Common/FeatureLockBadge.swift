@@ -3,7 +3,7 @@ import SwiftUI
 /// 잠금 표식 뱃지. Android `FeatureLockBadge.kt:19-42` 와 1:1.
 ///
 /// primaryContainer 원 + 1px surface 보더 + onPrimaryContainer **아웃라인** 자물쇠
-/// 하나로만 구성한다. 티어 라벨 칩(개인/커플/가족)은 두지 않는다 — Android 도 라벨
+/// 하나로만 구성한다. 티어 라벨 칩(개인 등)은 두지 않는다 — Android 도 라벨
 /// 없이 자물쇠만 그린다.
 ///
 /// 사용처

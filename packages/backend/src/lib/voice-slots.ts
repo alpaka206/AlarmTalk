@@ -20,8 +20,8 @@ export const MAX_PROVIDER_CLONE_VOICES = 500;
 /**
  * F1(Codex #599 3차): 새 클론 1개를 받아들일 여지가 있는지 사전 판정한다.
  * 활성 커스텀 클론이 상한 미만이면 항상 true. 상한 이상이면 초과분(+새 보이스 1개)을 LRU 로
- * 비울 수 있는 비보호 후보(draft·공유 제외)가 충분할 때만 true. 활성 보이스가 전부 보호
- * 대상(예: 공유 official 50개)이면 false — 이때 신규 등록을 즉시 거부해, eviction 이 후보
+ * 비울 수 있는 비보호 후보(draft 제외)가 충분할 때만 true. 활성 보이스가 전부 보호
+ * 대상(draft)이면 false — 이때 신규 등록을 즉시 거부해, eviction 이 후보
  * 부족으로 짧게 끝나 상한 초과가 조용히 지속되는 상황을 막는다. 카운트 조건은
  * evictLruClonesIfOverCap 과 동일해야 한다.
  */
@@ -40,8 +40,7 @@ export async function hasCloneSlotCapacity(exec: DbExecutor): Promise<boolean> {
       sql: `SELECT COUNT(*) AS n FROM voice_profiles
             WHERE deleted_at IS NULL AND COALESCE(is_system, 0) = 0
               AND elevenlabs_voice_id IS NOT NULL
-              AND COALESCE(is_draft, 0) = 0
-              AND COALESCE(is_shared, 0) = 0`,
+              AND COALESCE(is_draft, 0) = 0`,
     })
   ).rows[0];
   const evictableCount = Number(evictableRow?.n ?? 0);
@@ -57,8 +56,8 @@ export async function hasCloneSlotCapacity(exec: DbExecutor): Promise<boolean> {
  * 때문이다(Codex #599). ElevenLabs 는 상한을 강제하지 않아 잠깐 상한+1 이 돼도 안전하다.
  *  - 카운트 대상: deleted_at IS NULL AND is_system=0 AND elevenlabs_voice_id IS NOT NULL
  *    (커스텀 클론만, draft 포함 — draft 도 실제 공급자 슬롯을 점유하므로).
- *  - 제거 후보: 위 조건 + is_draft=0(official) + is_shared=0(가족 공유 제외) + 방금 만든 행 제외.
- *    LRU = last_used_at 오래된 순(미사용 NULL 이 최우선). draft 와 공유 보이스는 보호한다.
+ *  - 제거 후보: 위 조건 + is_draft=0(official) + 방금 만든 행 제외.
+ *    LRU = last_used_at 오래된 순(미사용 NULL 이 최우선). draft 는 보호한다.
  *  - 제거 방식: elevenlabs_voice_id 를 NULL 로 비우고 evicted_at 을 찍되 deleted_at 은 NULL 유지 →
  *    TTL 스윕이 R2 원본을 계속 보존하고, 재요청 시 원본으로 자동 재클론(F3)한다.
  *  - 공급자 실삭제는 비동기 큐(pending_external_deletions)로 넘긴다. ElevenLabs 는 계정 보이스
@@ -89,7 +88,6 @@ export async function evictLruClonesIfOverCapTx(
           WHERE deleted_at IS NULL AND COALESCE(is_system, 0) = 0
             AND elevenlabs_voice_id IS NOT NULL
             AND COALESCE(is_draft, 0) = 0
-            AND COALESCE(is_shared, 0) = 0
             AND id != ?
           ORDER BY (last_used_at IS NULL) DESC, last_used_at ASC, created_at ASC
           LIMIT ?`,

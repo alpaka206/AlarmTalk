@@ -36,17 +36,11 @@ fun ClipPreparationScreen(
     voices: List<ClipReadiness.VoiceProgress>,
     onRetry: () -> Unit,
     onDismiss: (() -> Unit)? = null,
-    /**
-     * 공유받은 목소리인데 **소유자 쪽 생성이 아직**인가. 받는 사람이 할 수 있는 일이
-     * 없으므로 퍼센트도 재시도 버튼도 보여 주지 않는다 — 그 퍼센트는 내 목소리들의
-     * 진행률이라 100% 가 되고, 끝난 줄 알고 돌아갔다가 또 막힌다.
-     */
-    awaitingOwner: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     val percent = ClipReadiness.percent(voices)
     val ready = ClipReadiness.isReady(voices)
-    val hasFailure = voices.any { it.renderFailed } && !awaitingOwner
+    val hasFailure = voices.any { it.renderFailed }
     val rendering = voices.any { it.isRendering }
 
     Column(
@@ -55,29 +49,20 @@ fun ClipPreparationScreen(
         verticalArrangement = Arrangement.Center,
     ) {
         Text(
-            text = when {
-                awaitingOwner -> stringResource(R.string.voices_clip_prep_waiting)
-                ready -> stringResource(R.string.voices_clip_prep_ready)
-                else -> "$percent%"
-            },
+            text = if (ready) stringResource(R.string.voices_clip_prep_ready) else "$percent%",
             style = MaterialTheme.typography.displaySmall,
             color = MaterialTheme.colorScheme.onSurface,
         )
         Spacer(Modifier.padding(top = 16.dp))
-        // 소유자를 기다리는 중에는 진행률 자체가 내 목소리들의 것이라 뜻이 없다.
-        if (!awaitingOwner) {
-            LinearProgressIndicator(
-                progress = { percent / 100f },
-                modifier = Modifier.fillMaxWidth().widthIn(max = 280.dp),
-            )
-            Spacer(Modifier.padding(top = 16.dp))
-        }
+        LinearProgressIndicator(
+            progress = { percent / 100f },
+            modifier = Modifier.fillMaxWidth().widthIn(max = 280.dp),
+        )
+        Spacer(Modifier.padding(top = 16.dp))
         Text(
             // ⚠ **무엇을 기다리는지 말한다.** 퍼센트만 있으면 멈춘 것처럼 보인다 —
             // 특히 서버 렌더 구간은 다운로드와 달리 몇 분이 걸릴 수 있다.
             text = when {
-                // 받는 사람이 할 수 있는 일이 없다 — '다시 시도' 도 소유자 큐라 못 누른다.
-                awaitingOwner -> stringResource(R.string.voices_clip_prep_owner_wait)
                 ready -> stringResource(R.string.voices_clip_prep_ready_body)
                 hasFailure -> stringResource(R.string.voices_clip_prep_failed_body)
                 rendering -> stringResource(R.string.voices_clip_prep_rendering_body)

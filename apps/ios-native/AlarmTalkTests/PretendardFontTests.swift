@@ -35,7 +35,7 @@ final class PretendardFontTests: XCTestCase {
             ("headlineLarge", 32), ("headlineMedium", 28), ("headlineSmall", 24),
             ("titleLarge", 22), ("titleMedium", 16), ("titleSmall", 14),
             ("bodyLarge", 16), ("bodyMedium", 14), ("bodySmall", 12),
-            ("labelLarge", 14), ("labelMedium", 12), ("labelSmall", 11),
+            ("labelLarge", 14), ("labelMedium", 12),
         ]
         // Font 는 크기를 노출하지 않으므로, 같은 이름·크기로 만든 UIFont 로 대조한다.
         for (name, size) in expected {

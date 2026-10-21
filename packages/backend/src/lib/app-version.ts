@@ -9,6 +9,8 @@
 //    — 그건 `latest`(권장 배너)의 몫이다. 올린 사유는 아래 플랫폼 정책에 회차마다 적는다.
 //    ⚠ 그 빌드가 스토어에 **게재된 것을 확인한 뒤에만** 올린다 — 먼저 나가면 구버전이 차단
 //    화면을 보는데 받을 것이 없어 앱이 벽돌이 된다.
+//    ⚠ 커플·가족 이용권을 걷어낸 두 앱이 게재된 뒤 올리는 회차에, 서버에 남겨 둔 '옛 앱 호환' 응답
+//    (`grep -rn '옛 앱 호환' src`)도 함께 지운다.
 //  - latest: 권장 업데이트 기준(앱이 비차단 배너 표시).
 //  Android 는 versionCode, iOS 는 빌드 번호(CFBundleVersion) 정수 기준 — 플랫폼별 정책은 아래에 따로 둔다.
 
@@ -118,7 +120,9 @@ const ANDROID: AppVersionPolicy = {
   //
   // 31(2026-10-11): `minSupported` 를 31 로 올리므로 함께 올린다 — 이번에도 차단 화면이다.
   // 34(2026-10-16): `minSupported` 를 34 로 올리므로 함께 올린다 — 차단 화면이다.
-  latest: 34,
+  // 35(2026-10-19, 코덱스 #923): Play 프로덕션 35 (1.2.15) 가 `RELEASE_LIFECYCLE_STATE_PUBLISHED` 인 것을 Play
+  // Developer API 로 확인하고 올렸다. `minSupported` 는 34 그대로라 차단 화면이 아니라 배너다.
+  latest: 35,
   storeUrl: 'https://play.google.com/store/apps/details?id=com.alarmtalk.app',
 };
 

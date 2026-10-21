@@ -6,10 +6,10 @@ import StoreKit
 /// Apple App Store 심사 차단 항목 ("디지털 구독은 IAP 필수") 을 해소하기 위한
 /// 단일 진입점. 다음을 책임진다.
 ///
-///   - App Store 로부터 `Product` 3종 (personal/couple/family, 월간) fetch.
+///   - App Store 로부터 `Product`(개인 월간) fetch.
 ///   - 사용자 구매 트리거 + 결과 처리 (success/cancelled/pending/failure).
 ///   - 복원 (Restore Purchases) 흐름.
-///   - `Transaction.updates` 비동기 시퀀스 listener — 가족 공유, 환불, 자동 갱신
+///   - `Transaction.updates` 비동기 시퀀스 listener — 애플 가족 공유, 환불, 자동 갱신
 ///     등 외부 트랜잭션이 들어와도 currentTier 가 안전하게 재계산되도록.
 ///   - 백엔드 entitlement 동기화 (`POST /api/billing/apple/confirm`).
 ///
@@ -42,7 +42,7 @@ final class SubscriptionManager: ObservableObject {
     /// ⚠ 계정 가드만으로는 부족하다. 유료 A 가 로그아웃하고 무료 B 가 들어오면 B 의 갱신은
     /// 가드를 통과하지만, `currentEntitlements` 순회가 끝날 때까지 `currentTier` 는 **A 의
     /// 유료 등급 그대로**다 — 그 창에서 목소리 관리 화면이 B 를 유료로 보고 보관된 프로필의
-    /// 이름 수정·공유·**삭제**를 열어 준다(삭제는 되돌릴 수 없다).
+    /// 이름 수정·**삭제**를 열어 준다(삭제는 되돌릴 수 없다).
     private var entitlementOwner: UUID?
     @Published private(set) var hasLoadedEntitlements: Bool = false
     @Published private(set) var isLoadingProducts: Bool = false
@@ -204,7 +204,7 @@ final class SubscriptionManager: ObservableObject {
         }
     }
 
-    /// App Store 로부터 구독 3종의 제품 정보 fetch.
+    /// App Store 로부터 구독 상품의 제품 정보 fetch.
     /// 실패해도 fatal 이 아니다 — UI 는 "제품 정보가 없어요" 카드를 보여주고
     /// 다음 진입 시 재시도된다.
     func fetchProducts() async {
@@ -491,7 +491,7 @@ final class SubscriptionManager: ObservableObject {
     /// `Transaction.updates` listener task — 앱 lifetime 내내 떠 있다.
     ///
     /// 진입 케이스:
-    ///   - 가족 공유로 다른 가족이 구입한 구독이 이 기기에 propagate.
+    ///   - 애플 가족 공유로 다른 가족이 구입한 구독이 이 기기에 propagate.
     ///   - 자동 갱신 (월간/연간 만료 후 다음 사이클 진입).
     ///   - 환불/취소 (`revocationDate` 가 채워진 트랜잭션) — currentEntitlements
     ///     에서 자동 제외되므로 `refreshPurchasedProducts()` 가 알아서 처리.
@@ -688,7 +688,7 @@ final class SubscriptionManager: ObservableObject {
     @discardableResult
     func syncWithBackend(transactionID: String, surfacesError: Bool = true) async -> ConfirmOutcome {
         guard let session = authProvider() else {
-            // 로그아웃 상태에서 가족공유 등으로 들어온 트랜잭션. 재로그인 후
+            // 로그아웃 상태에서 애플 가족 공유 등으로 들어온 트랜잭션. 재로그인 후
             // resyncEntitlements 로 catch-up 한다.
             return .notConfirmed
         }

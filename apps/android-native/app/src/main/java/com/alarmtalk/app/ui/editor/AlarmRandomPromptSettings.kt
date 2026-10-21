@@ -75,6 +75,16 @@ internal fun RandomPromptSettingsPane(
     manualLocked: Boolean = false,
     /** 잠긴 '직접 입력' 을 눌렀을 때 — 호출부가 이용권 안내를 띄운다. */
     onManualLocked: () -> Unit = {},
+    /**
+     * 무료 사용자에게 남은 광고 보상 수(`docs/spec/ad-rewards.md`). 0 보다 크면 '직접 입력' 이 풀려 있고 행에 남은
+     * 수를 붙인다. 유료는 0 이다(월 한도를 [manualRemaining]/[manualLimit] 로 따로 보여 준다).
+     */
+    manualRewardCredits: Int = 0,
+    /**
+     * 값이 오를 때마다 '직접 입력' 을 고른다 — 광고를 보고 보상이 들어온 직후 호출부가 올린다. 잠금이 풀린 뒤에만
+     * 고르고, 처음 그릴 때의 값으로는 고르지 않는다.
+     */
+    selectManualRequest: Int = 0,
     weatherCountry: String,
     weatherCity: String,
     savedWeatherCountry: String,
@@ -84,7 +94,6 @@ internal fun RandomPromptSettingsPane(
     savedFortuneBirthDate: String,
     savedFortuneBirthTime: String,
     savedFortuneConfigured: Boolean,
-    usingTargetDynamicPromptSettings: Boolean,
     fortuneGender: String,
     fortuneBirthDate: String,
     fortuneBirthTime: String,
@@ -217,10 +226,15 @@ internal fun RandomPromptSettingsPane(
     // 셈이라 더 나쁘다. 대신 **미완성 종류는 애초에 선택되지 않는다**(위 `selectContext` 의
     // `contextBeforeDialog` 주석). 그래서 이 시점의 값은 언제나 완성돼 있고, 편집기가
     // 하단 바에서 "…채워 주세요" 로 뒤늦게 막을 일도 없다.
-    //
-    // 예외는 **가족 알람**이다: 수신자가 제 설정을 갖고 있으면 내 칸이 비어 있어도 완성이라
-    // (`hasWeatherInfo`/`hasFortuneInfo` 의 `saved*Configured` 갈래) 그대로 반영한다.
     BackHandler(onBack = ::saveResolvedSettings)
+
+    var handledSelectManualRequest by remember { mutableStateOf(selectManualRequest) }
+    LaunchedEffect(selectManualRequest, manualLocked) {
+        if (selectManualRequest > handledSelectManualRequest && !manualLocked) {
+            handledSelectManualRequest = selectManualRequest
+            selectContext(ManualMessageContext)
+        }
+    }
 
     Surface(
         modifier = Modifier.fillMaxSize(),
@@ -263,6 +277,9 @@ internal fun RandomPromptSettingsPane(
                         ) {
                             // 예: "직접 입력 (29/30)" — 이번 달 남은/총 만들기 횟수.
                             "$baseLabel ($manualRemaining/$manualLimit)"
+                        } else if (context == ManualMessageContext && !locked && manualRewardCredits > 0) {
+                            // 무료 + 광고 보상: "직접 입력 (광고 보상 1번)".
+                            stringResource(R.string.editorp_random_manual_ad_credits, baseLabel, manualRewardCredits)
                         } else {
                             baseLabel
                         }
@@ -312,8 +329,6 @@ internal fun RandomPromptSettingsPane(
                                 // 값만 보여준다 — "…날씨를 사용해요." 로 감싸면 상세 카드가
                                 // 값이 아니라 문장이 된다(iOS 는 "서울" 하나만 보여준다).
                                 weatherDisplay.label
-                            usingTargetDynamicPromptSettings && savedWeatherConfigured ->
-                                stringResource(R.string.editorp_random_weather_region_saved)
                             else -> stringResource(R.string.editorp_random_weather_region_required)
                         },
                         // 목록에 없는 옛 글자(직접 입력 시절) — 글자는 그대로 두고 다시 고르라고만 한다.
@@ -337,8 +352,6 @@ internal fun RandomPromptSettingsPane(
                                 draftFortuneBirthDate.isNotBlank() &&
                                 draftFortuneBirthTime.isNotBlank() ->
                                 fortuneInfoSummary(fortuneValueLabel(context, draftFortuneGender), draftFortuneBirthDate, fortuneValueLabel(context, draftFortuneBirthTime))
-                            usingTargetDynamicPromptSettings && savedFortuneConfigured ->
-                                stringResource(R.string.editorp_random_fortune_saved)
                             else -> stringResource(R.string.editorp_random_fortune_required)
                         },
                     )

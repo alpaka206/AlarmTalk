@@ -112,7 +112,7 @@ WorkManager.enqueueOneTimeWork(RemoteAlarmSyncWorker)
 | Cloudflare R2 | 오브젝트 스토어(voice / TTS) | Workers 바인딩 `VOICE_BUCKET` |
 | ElevenLabs | 보이스 클론 + TTS | HTTPS REST |
 | Google Vertex (Gemini) | 동적 문구 생성·번역 | HTTPS REST, 서비스 계정 |
-| Firebase FCM (HTTP v1) | data-only 동기화 트리거 푸시(가족 알람 생성 시) | HTTPS REST, 서비스 계정 OAuth |
+| Firebase FCM (HTTP v1) | 계정 상태 신호 푸시(플랜 변경·결제 보류·목소리 접근 회수·탈퇴 신청 등) | HTTPS REST, 서비스 계정 OAuth |
 | Resend | 이메일 인증 코드 발송 | HTTPS REST |
 | Google JWKS | ID 토큰 검증 | HTTPS |
 | Sentry | 에러 수집 | toucan-js(서버) + Android SDK(DSN 있을 때만) |
@@ -156,8 +156,7 @@ curl -X POST "https://<host>/api/init-db?fromId=1&toId=10" -H "x-init-db-secret:
 ### 코드를 훑어서는 안 보이는 제약
 
 - `voice_profiles`: 유저당 공식(official) 보이스 최대 1개(`MAX_VOICE_PROFILES`, `routes/voice-profile.ts`), 활성 초안(draft) 최대 1개. 라우트 레이어에서 COUNT 로 강제한다. 공식 보이스가 있으면 초안 생성 자체를 거부한다(승격 시 슬롯이 넘치므로). 보이스를 교체하려면 공식 보이스를 먼저 지워야 한다.
-- `plan_group_invites.code`: UNIQUE, TTL 10분. 만료는 배치가 아니라 읽을 때 lazy 로 `expired` 전이시킨다.
-- 롤백 위험 흐름(구독, 바우처 사용, 소유권 이전)은 `lib/transactions.ts` 의 BEGIN/COMMIT 을 쓴다.
+- 롤백 위험 흐름(구독, 소유권 이전)은 `lib/transactions.ts` 의 BEGIN/COMMIT 을 쓴다.
 - DEV / PROD 는 서로 다른 Turso DB 와 시크릿을 본다. prod 직접 수정은 PR·머지를 거치고 `wrangler scheduled` 실행 시각과 겹치지 않게 한다.
 
 ## 3. HTTP API
@@ -172,12 +171,12 @@ curl -X POST "https://<host>/api/init-db?fromId=1&toId=10" -H "x-init-db-secret:
 |---|---|
 | `/auth` | 가입 / 로그인 / me / 이메일 인증 코드 |
 | `/user` | 프로필, 플랜, 검색, 계정 삭제 |
-| `/voice` | 보이스 프로필, 업로드, 사전렌더 |
+| `/voice` | 보이스 프로필·초안·클론, 사전렌더 |
 | `/tts` | TTS 생성 |
-| `/alarm` | 알람 CRUD |
-| `/family` | 가족 그룹, 초대, 가족 알람 |
-| `/billing` | 구독·바우처. `/billing/google/rtdn` 은 유저 인증 없는 공개 RTDN 웹훅(쿼리 토큰으로 보호) |
-| `/code` | 초대 코드 등록(커플·가족 `INV-` 하나 — 선물·프로모 코드는 App Store 지침 3.1.1 로 폐지) |
+| `/alarm` | 내 알람 CRUD·동기화. 받은 알람을 읽던 `GET /alarm`·`/alarm/declined`·`POST /alarm/:id/decline` 은 옛 앱 호환 빈 응답이다 |
+| `/family` | 옛 앱 호환 응답만 남았다(`GET /family/groups/current` → 그룹 없음). 그룹·가족 알람 라우트는 2026-10-20 에 커플·가족 이용권과 함께 없앴다 |
+| `/billing` | 구독(개인 하나). `GET /billing/vouchers` 는 옛 앱 호환 빈 목록이다. `/billing/google/rtdn` 은 유저 인증 없는 공개 RTDN 웹훅(쿼리 토큰으로 보호) |
+| `/code` | 옛 앱 호환 — `POST /code/register` 는 언제나 404 `CODE_NOT_FOUND`(코드로 여는 기능은 없다) |
 | `/push` | FCM 토큰 등록·해제 |
 | `/events` | 사용 기록 배치 수신(기기 UUID 가 PK 라 재전송이 멱등) — `docs/spec/usage-events.md` |
 | `/holiday` | 공휴일 조회(인증 없음, 공개 캐시) |
@@ -193,7 +192,7 @@ curl -X POST "https://<host>/api/init-db?fromId=1&toId=10" -H "x-init-db-secret:
 
 **`POST /voice/clone` (multipart)** — 공식 보이스를 바로 만들 수 없다. 클라는 ① 비공개 초안 1개 생성 → ② 결정적 프리뷰 요청 → ③ 로컬 재생을 끝낸 뒤에만 서버가 발급한 재생 토큰을 `POST /voice/:id/preview-played` 로 보고 → ④ `PATCH /voice/:id` + `is_draft=false` 로 승격, 순서를 지켜야 한다. 초안의 프로바이더 등록은 KST 월 3회·활성 초안 1개로 제한되고, 승격은 KST 월 1회다. 공식 보이스를 지워도 그 달 승격 횟수는 환불되지 않는다. 초안은 공유·알람 연결·일반 TTS 에 쓸 수 없다.
 
-**`POST /code/register`** — 받는 것은 커플·가족 이용권의 초대 코드(`INV-XXXX-XXXX-XXXX`) 하나다. 바우처 사용(구독 insert + 플랜 갱신)으로 발급자의 플랜 그룹에 멤버로 합류시킨다. 발급 근거인 발급자 구독이 없거나 살아 있지 않으면 거절한다(409 `SUBSCRIPTION_NOT_ACTIVE`·`CODE_EXPIRED` — 2026-09-14 `6ea8a25c` 부터, 예전의 '단독 코드는 등록한 사람이 새 그룹의 소유자' 는 그 뒤로 없다). 그 외 문자열은 조회 없이 404 `CODE_NOT_FOUND` 다 — 프로모 코드는 2026-10-12, 선물 코드(`GIFT-`)는 2026-10-14 에 없앴다(App Store 지침 3.1.1 — `docs/spec/plan-gates.md` 「선물 코드 — 폐지」).
+**옛 앱 호환 응답** — 커플·가족 이용권과 거기에만 딸린 초대 코드·목소리 공유·가족 알람을 2026-10-20 에 없앴다(`docs/spec/plan-gates.md` 「커플·가족 이용권 — 폐지」). 옛 앱(강제 업데이트 전)이 부르는 자리는 DB 를 읽지 않는 고정 응답으로 남긴다 — 옛 앱은 그 응답이 실패하면 개인 구독 응답까지 버리거나 재시도를 멈추지 않기 때문이다: `GET /family/groups/current`(그룹 없음)·`GET /billing/vouchers`·`GET /voice/family`(빈 목록)·`GET /alarm`·`GET /alarm/declined`(빈 목록, `has_more:false`)·`POST /alarm/:id/decline`(성공)·`POST /code/register`(언제나 404 `CODE_NOT_FOUND`), `GET /billing/subscription` 의 `plan.max_members: 1`. `GET /alarm` 은 인증 라우터에 그대로 둔다 — 옛 안드로이드가 탈퇴 신청을 그 요청의 403 `ACCOUNT_PENDING_DELETION` 으로만 알아챈다. 새 앱(1.2.16)이 두 스토어에 게재되고 `minSupported` 를 올린 뒤 지운다(`docs/qa/dev-test-handoff.md` 「다음 할 일」 2-④). 코드로 유료 기능을 여는 길은 없다 — 프로모 코드는 2026-10-12, 선물 코드(`GIFT-`)는 2026-10-14, 초대 코드(`INV-`)는 2026-10-20 에 없앴다(App Store 지침 3.1.1).
 
 **`POST /billing/test-codes`** — **2026-10-14 에 지웠다**(라우트·`TEST_CODE_ISSUER_EMAILS`·그 라우트만 내던 에러 코드). 운영자가 커플·가족 초대 코드를 찍어 내던 dev 도구였는데, 발급자 구독 없이 만들어져 `POST /code/register` 가 `SUBSCRIPTION_NOT_ACTIVE` 로 늘 거절했다. 등록되게 고치면 운영자가 만든 코드로 이용권을 여는 것이라 App Store 지침 3.1.1 반려(1.2.11 프로모 코드)와 같은 종류다 — 되살리지 말 것. 테스트 계정의 이용권은 `packages/backend/scripts/apply-dev-plan.ts` 로 준다.
 
@@ -203,7 +202,7 @@ curl -X POST "https://<host>/api/init-db?fromId=1&toId=10" -H "x-init-db-secret:
 
 프리뷰를 마친 비공개 초안을 keep 하면 소유자 스코프의 사전렌더 잡이 1개 생긴다. 매니페스트는 앱 언어 1개에 대해 `greeting` 1 + `weather` 9 + `fortune` 5 + `cheer` 3 + `medication` 3 = **21클립**으로 고정이다(`CLONE_CLIP_SEEDS`, `lib/stock-clips.ts`) — `cheer` 의 옛 이름은 `love` 다(2026-09-02 개명, 읽는 쪽이 옛 값을 접는다). `weather` 9개 중 앞 8개는 `CLONE_WEATHER_CONDITIONS`(인덱스 0–7)이고, 마지막 1개는 **항상** "날씨 미해결" 폴백이다 — 준비창에서 날씨를 못 받아온 클라가 무음이나 엉뚱한 조건 대신 이걸 튼다(클라 규약: 마지막 클립 = `size - 1`). `resolvePrerenderWeatherIndex` 는 0–7 만 반환하므로 인덱스 8 은 폴백 전용이다. 워커는 정확한 claim 토큰으로만 이 유한 매니페스트를 이어받고, 합성 전과 게시 전에 보이스 소유권·상태·민감 동의를 다시 확인한다. 스스로 유저를 찾아 나서거나 매니페스트 밖 카테고리를 추가하지 않는다.
 
-> **원칙**: 알람 **울림은 온디바이스**(`AlarmManager`)이며 네트워크에 의존하지 않는다. **서버 푸시는 동기화 트리거 전용** — 가족 알람 *생성* 시 수신자에게 data-only FCM 신호(`sendFamilyAlarmPush`)를 1회 보내 앱이 즉시 pull → 로컬 스케줄하게 할 뿐, 발사 시각에는 어떤 푸시도 보내지 않는다(로컬 링과 중복 알림 방지 — `src/index.ts` scheduled 주석 참고).
+> **원칙**: 알람 **울림은 온디바이스**(`AlarmManager`)이며 네트워크에 의존하지 않는다. **서버 푸시는 계정 상태 신호 전용** — 플랜 변경·결제 보류·목소리 접근 회수·탈퇴 신청처럼 계정 상태가 바뀌었을 때만 보내고(결제 보류·목소리 삭제 예고는 보이는 알림, 나머지는 앱이 다시 읽게 하는 data-only 신호), 발사 시각에는 어떤 푸시도 보내지 않는다(로컬 링과 중복 알림 방지 — `src/index.ts` scheduled 주석 참고). 가족 알람 도착 푸시(`sendFamilyAlarmPush`)는 2026-10-20 에 가족 알람과 함께 없앴다.
 
 ### 엔드포인트를 고칠 때
 

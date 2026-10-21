@@ -38,8 +38,10 @@ settings:
     # 빌드 12(1.2.14). 빌드 11 은 법무 문서 버전 5 로 만들어 App Store 에 올렸다가 쓰지 않았다(문서 6 으로 다시 빌드).
     # 서버의 옛 앱(빌드 ≤10) 호환 갈래는 2026-10-16 에 지웠다 — 실사용자가 없다(오너).
     # 빌드 13(1.2.15). 목소리 등록 동의·재동의 뒤 동기화·반복 사이 쉼·이용권 안내를 고친다.
-    MARKETING_VERSION: "1.2.15"
-    CURRENT_PROJECT_VERSION: "13"
+    # 빌드 14(1.2.16). 커플·가족 이용권과 딸린 기능을 없앤다(법무 문서 7, 받아 둔 알람은 내 알람으로). ⚠ 강제 업데이트
+    # 하한이 된다(`IOS.minSupported` 14) — App Store 게재를 확인한 뒤에만 올린다. 서버가 이 빌드보다 먼저 나가야 한다.
+    MARKETING_VERSION: "1.2.16"
+    CURRENT_PROJECT_VERSION: "14"
     # DEVELOPMENT_TEAM must be set per-developer via xcconfig or Xcode UI.
     # Leaving empty here so xcodegen does not hard-bake a team ID into the project.
     DEVELOPMENT_TEAM: "$(DEVELOPMENT_TEAM)"

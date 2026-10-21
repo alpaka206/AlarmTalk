@@ -176,8 +176,12 @@ android {
         //   서버가 탈퇴를 철회한다(#904). ⚠ 이 빌드는 **강제 업데이트 하한**이다(`app-version.ts` 의 Android
         //   `minSupported` 34 — Play 게재 확인 뒤 2026-10-16). 그때 서버의 옛 앱 호환 갈래를 지웠다. iOS 와 같은 versionName 을 쓴다.
         // 35 = 1.2.15. 목소리 등록 동의·재동의 뒤 동기화·목소리 대체 안내를 고친다.
-        versionCode = 35
-        versionName = "1.2.15"
+        // 36 = 1.2.16. 커플·가족 이용권과 그것에만 딸린 기능(초대 코드·목소리 공유·가족 알람)을 없앤다(법무 문서 7).
+        //   받아 둔 알람은 업데이트하며 내 알람으로 바뀐다(Room 28). ⚠ 이 빌드는 **강제 업데이트 하한**이 된다 — 옛 빌드는
+        //   없앤 이용권과 코드 입력을 계속 보인다. 하한(`app-version.ts` 의 Android `minSupported` 36)은 **Play 게재를
+        //   확인한 뒤** 올린다. 서버(정책 7·6 수락)가 이 빌드보다 먼저 나가야 한다. 광고 SDK 가 처음 실리는 빌드다.
+        versionCode = 36
+        versionName = "1.2.16"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -216,6 +220,21 @@ android {
     val alarmTalkProdSentryDsn = providers.gradleProperty("alarmTalkProdSentryDsn")
         .orElse("")
         .get()
+    // AdMob 보상형 광고(`docs/spec/ad-rewards.md`). 광고 SDK 는 앱 id 가 매니페스트에 **없으면 시작하자마자 죽으므로**
+    // 앱 id 는 언제나 채운다 — 값이 없으면 Google 의 시험용 앱 id 다. 기능을 켜는 것은 광고 단위 id 하나이고, 비면
+    // 광고 버튼을 그리지 않는다. dev 는 Google 의 시험용 보상형 단위가 기본이라 광고가 뜨는 것까지 볼 수 있다 — 단
+    // 그 단위는 우리 서버로 확인 콜백을 보내지 않아 보상이 쌓이지 않는다. 보상까지 보려면 SSV 를 dev 서버로 둔 우리
+    // 단위를 `alarmTalkDevAdmobRewardedAdUnitId` 로 넣는다.
+    // ⚠ 빈 값도 '없음' 으로 읽는다(코덱스 #925) — `orElse` 는 속성이 **있으면** 빈 문자열이라도 그대로 두어, 빈 앱 id 가
+    //   매니페스트에 들어가 SDK 가 시작 때 죽는다.
+    fun admobProperty(name: String, fallback: String): String =
+        providers.gradleProperty(name).orNull?.trim()?.takeIf { it.isNotEmpty() } ?: fallback
+    val admobTestAppId = "ca-app-pub-3940256099942544~3347511713"
+    val alarmTalkDevAdmobAppId = admobProperty("alarmTalkDevAdmobAppId", admobTestAppId)
+    val alarmTalkProdAdmobAppId = admobProperty("alarmTalkProdAdmobAppId", admobTestAppId)
+    val alarmTalkDevAdmobRewardedAdUnitId =
+        admobProperty("alarmTalkDevAdmobRewardedAdUnitId", "ca-app-pub-3940256099942544/5224354917")
+    val alarmTalkProdAdmobRewardedAdUnitId = admobProperty("alarmTalkProdAdmobRewardedAdUnitId", "")
 
     signingConfigs {
         if (releaseKeystoreProps != null) {
@@ -257,6 +276,12 @@ android {
                 "VOICE_ALARM_SENTRY_ENVIRONMENT",
                 "development".asBuildConfigString(),
             )
+            buildConfigField(
+                "String",
+                "ADMOB_REWARDED_AD_UNIT_ID",
+                alarmTalkDevAdmobRewardedAdUnitId.asBuildConfigString(),
+            )
+            manifestPlaceholders["admobAppId"] = alarmTalkDevAdmobAppId
         }
         create("prod") {
             dimension = "environment"
@@ -276,6 +301,12 @@ android {
                 "VOICE_ALARM_SENTRY_ENVIRONMENT",
                 "production".asBuildConfigString(),
             )
+            buildConfigField(
+                "String",
+                "ADMOB_REWARDED_AD_UNIT_ID",
+                alarmTalkProdAdmobRewardedAdUnitId.asBuildConfigString(),
+            )
+            manifestPlaceholders["admobAppId"] = alarmTalkProdAdmobAppId
         }
     }
 
@@ -383,9 +414,9 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
-    // 앱 프로세스 포그라운드 복귀 감지(ProcessLifecycleOwner) — 복귀 시 원격 알람 즉시 pull.
+    // 앱 프로세스 포그라운드 복귀 감지(ProcessLifecycleOwner) — 복귀 시 계정 확인 워커를 건다.
     implementation("androidx.lifecycle:lifecycle-process:2.8.7")
-    // FCM(가족 알람 즉시 배달) — 앱이 백그라운드/종료여도 data push 로 즉시 pull. BoM 으로 버전 통일.
+    // FCM(플랜·목소리·계정 신호) — 앱이 백그라운드/종료여도 data push 를 받는다. BoM 으로 버전 통일.
     implementation(platform("com.google.firebase:firebase-bom:33.7.0"))
     implementation("com.google.firebase:firebase-messaging")
     implementation("androidx.navigation:navigation-compose:2.8.5")
@@ -413,6 +444,12 @@ dependencies {
     // 끌어온다. 이 줄이 그 전이 의존을 21.3.0 으로 올려 두고 있어, 지우면 APK 에서 빠지는 게
     // 아니라 19.0.0 으로 내려간다(2026-09-29 `:app:dependencies` 전후 비교로 확인).
     implementation("com.google.android.gms:play-services-location:21.3.0")
+    // 보상형 광고 — 무료 사용자의 직접 입력 한 번(`docs/spec/ad-rewards.md`).
+    // ⚠ 24.9.0 부터는 Kotlin 2.3 메타데이터로 빌드돼 이 프로젝트의 Kotlin 2.0.21 컴파일러가 못 읽는다(2026-10-19 확인).
+    //   올리려면 Kotlin 플러그인부터 올린다.
+    implementation("com.google.android.gms:play-services-ads:24.8.0")
+    // 광고 동의(UMP) — 광고 SDK 가 이미 끌어오는 판(3.2.0)을 직접 쓰므로 명시한다(`ads/RewardedAds.kt`).
+    implementation("com.google.android.ump:user-messaging-platform:3.2.0")
     implementation("io.sentry:sentry-android-core:8.43.0")
     implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
     implementation("com.squareup.retrofit2:converter-gson:2.11.0")

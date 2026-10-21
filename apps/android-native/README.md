@@ -5,7 +5,7 @@
 > 동작을 바꾸면 **스펙을 먼저** 고친다. 구현이 스펙과 다르면 구현이 틀린 것이다.
 
 
-The shipping Android app. It is intentionally scoped to local alarm reliability, local alarm app behavior, local alarm audio, backend sync outside the ring path, and social sharing:
+The shipping Android app. It is intentionally scoped to local alarm reliability, local alarm app behavior, local alarm audio, and backend sync outside the ring path:
 
 - Kotlin + Jetpack Compose + Material 3
 - Room-backed local alarms
@@ -20,8 +20,7 @@ The shipping Android app. It is intentionally scoped to local alarm reliability,
 - email/password auth against the deployed AlarmTalk API
 - Google ID-token auth support
 - alarm metadata sync to the deployed AlarmTalk API on Alarms-tab entry
-- family group, invite code creation/accept/revoke, and shared voice profile lookup
-- subscription, voucher, and unified code status surfaces
+- Plus subscription (`personal_monthly`) status and purchase (the Couple / Family plans, invite codes, voice sharing and family alarms were removed on 2026-10-20)
 - `AlarmManager.setAlarmClock`
 - full-screen ringing activity through a high-importance alarm foreground-service notification carrier
 - bundled local alarm tone generated into the APK at build time
@@ -229,7 +228,7 @@ If no repeat days are selected, the alarm is a one-shot alarm and is disabled af
 
 ### Local Voice Audio
 
-Local recording/file voice alarms do not require login. Login is only required for voice-profile TTS, shared/server voice features, and backend sync.
+Local recording/file voice alarms do not require login. Login is only required for voice-profile TTS, server voice features, and backend sync.
 
 1. Tap New alarm or edit an existing alarm.
 2. Choose `Voice only`.
@@ -313,26 +312,9 @@ Expected:
 
 To verify the ring path is still offline, let one sync complete, enable airplane mode, then let a local alarm fire. Ringing should still use Room state and local audio only.
 
-### Social / Sharing
-
-Social surfaces refresh when the tab that owns them is opened:
-
-1. Sign in.
-2. Open the 더보기 (Menu) tab; opening it refreshes billing and social state.
-3. Create a family invite as a family owner.
-4. Join a family invite by pasting an `INV-XXXX-XXXX-XXXX` code into the code field.
-5. Confirm shared family voices are listed.
-
-Expected:
-
-- Family errors from the backend are shown as app messages.
-- Family sharing uses `/api/billing/vouchers/family-share` (발급) and `/api/code/register` (합류).
-- Shared voices use `GET /api/voice/family`.
-- Shared-voice TTS generation is not called.
-
 ### Billing
 
-Subscription and code surfaces load when a tab that owns them is opened:
+Subscription surfaces load when a tab that owns them is opened:
 
 1. Sign in.
 2. Open the billing/subscription surface.
@@ -340,8 +322,7 @@ Subscription and code surfaces load when a tab that owns them is opened:
 Expected:
 
 - Subscription loads from `/api/billing/subscription`.
-- Issued vouchers load from `/api/billing/vouchers`.
-- Coupon or invite code entry uses `/api/code/register`.
+- There is no code entry anywhere in the app.
 - Checkout and paid provider APIs are not called.
 
 ### Dismiss / Snooze

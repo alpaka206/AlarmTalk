@@ -59,6 +59,7 @@ object NotificationChannels {
     // 정상 경로의 중복 소리를 유발하지 않는다.
     const val RINGING_FALLBACK_CHANNEL_ID = "voice_alarm_ringing_fallback_v1"
 
+    // 계정 알림(결제 실패·목소리 삭제 예정) 채널. 서버가 이 id 를 `channelId` 로 실어 보낸다(`lib/fcm.ts`) — 바꾸지 말 것.
     const val SOCIAL_CHANNEL_ID = "voice_alarm_social_updates_v1"
 
     /**

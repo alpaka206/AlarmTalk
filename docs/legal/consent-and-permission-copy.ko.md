@@ -7,7 +7,7 @@
 제목: 서비스 이용을 시작하기 전에 확인해 주세요
 
 본문:
-알람톡은 알람 설정, 계정 동기화, 음성 알람 생성, 가족/파트너 공유 기능을 제공하기 위해 필요한 정보를 처리합니다. 자세한 내용은 개인정보 처리방침과 이용약관에서 확인할 수 있습니다.
+알람톡은 알람 설정, 계정 동기화, 음성 알람 생성 기능을 제공하기 위해 필요한 정보를 처리합니다. 자세한 내용은 개인정보 처리방침과 이용약관에서 확인할 수 있습니다.
 
 체크박스:
 - [필수] 만 14세 이상입니다. (서버 동의 유형: `age14`)
@@ -164,37 +164,17 @@
 - 설정으로 이동
 - 나중에
 
-> ⚠ **아래 §9·§10·§12 는 아직 문안 초안이다(2026-09-08 확인).** 실제 화면은 체크박스를
-> 두지 않고 토글·단순 확인으로 되어 있다 — 공유는 `voices_sharing_shared_title`(토글),
-> 가족 알람 수신은 `MemberManagementScreen` 의 `allowFamilyAlarms` 스위치, 계정 삭제는
-> `hs_delete_account_*` 다이얼로그(확인 체크박스 없음). 문안대로 만들지, 문안을 화면에
-> 맞출지 정한 뒤 한쪽으로 통일할 것.
+> ⚠ **아래 §12 는 아직 문안 초안이다(2026-09-08 확인).** 실제 화면은 체크박스를 두지 않고
+> 단순 확인으로 되어 있다 — 계정 삭제는 `hs_delete_account_*` 다이얼로그(확인 체크박스 없음).
+> 문안대로 만들지, 문안을 화면에 맞출지 정한 뒤 한쪽으로 통일할 것.
 
-## 9. 가족/파트너 음성 공유 동의
+## 9. (삭제)
 
-제목: 이 목소리를 그룹에 공유할까요?
+> 가족/파트너 음성 공유 동의. 2026-10-20 커플·가족 이용권과 함께 음성 공유를 없앴다.
 
-본문:
-공유를 켜면 가족/파트너 그룹 구성원이 이 목소리를 알람에 사용할 수 있습니다. 그룹 밖 공개나 외부 다운로드는 제공하지 않습니다. 언제든지 공유를 끌 수 있습니다.
+## 10. (삭제)
 
-체크박스:
-- [필수] 본인이 공유할 권리가 있는 음성임을 확인합니다.
-- [필수] 이 음성을 그룹 구성원이 알람 설정에 사용하는 것에 동의합니다.
-
-버튼:
-- 공유 켜기
-- 취소
-
-## 10. 타인이 보낸 알람 수신 동의
-
-제목: 가족/파트너가 알람을 보내도록 허용할까요?
-
-본문:
-허용하면 연결된 가족/파트너가 내 기기에 울릴 알람을 보낼 수 있습니다. 수신 시간대와 조용한 시간을 설정할 수 있으며, 언제든지 끌 수 있습니다.
-
-버튼:
-- 허용하기
-- 나중에
+> 타인이 보낸 알람 수신 동의. 2026-10-20 커플·가족 이용권과 함께 가족 알람을 없앴다.
 
 ## 11. 음성 프로필 삭제 확인
 
@@ -212,7 +192,7 @@
 제목: 계정을 삭제할까요?
 
 본문:
-계정을 삭제하면 알람, 음성 프로필, 생성 음성, 가족/파트너 연결이 삭제되거나 비식별화됩니다. 법령상 보관이 필요한 결제 및 분쟁 처리 기록은 정해진 기간 동안 보관될 수 있습니다. 삭제 후 복구할 수 없습니다.
+계정을 삭제하면 알람, 음성 프로필, 생성 음성이 삭제되거나 비식별화됩니다. 법령상 보관이 필요한 결제 및 분쟁 처리 기록은 정해진 기간 동안 보관될 수 있습니다. 삭제 후 복구할 수 없습니다.
 
 체크박스:
 - [필수] 계정 삭제 범위와 복구 불가 안내를 확인했습니다.
@@ -233,4 +213,4 @@
 
 ## 14. 스토어 심사 노트용 설명
 
-AlarmTalk is a native alarm app. The alarm ring path uses Android AlarmManager and local audio files. Push notifications, server cron, or live network access are not required at ring time. Voice recording/upload and AI voice generation are initiated only by explicit user action. Voice data is used for alarm voice profiles, TTS generation, local caching, and family/partner sharing inside the user's group. External public sharing or download is not provided.
+AlarmTalk is a native alarm app. The alarm ring path uses Android AlarmManager and local audio files. Push notifications, server cron, or live network access are not required at ring time. Voice recording/upload and AI voice generation are initiated only by explicit user action. Voice data is used only for alarm voice profiles, TTS generation, and local caching. Voice data is not shared with other users, published, or offered for download.

@@ -12,13 +12,14 @@ extension AlarmTalkAPI: RemoteAlarmWriting {}
 // Android `AlarmSyncService.kt` 의 push 흐름과 동등.
 //
 // 책임:
-//   - origin == .localOwned 이고 syncState != .synced 인 모든 로컬 알람을 서버에 push.
+//   - syncState != .synced 인 모든 로컬 알람(지금 계정 것)을 서버에 push.
 //   - remoteAlarmId 가 nil 이면 POST /alarm (create), 있으면 PATCH /alarm/{id} (update).
 //   - 성공 시 markRemote 로 서버 ID를 저장하고, 전송 중 편집된 행은 dirty로 보존.
 //   - 실패 시 markSyncFailed 로 syncState = sync_failed 만 기록. 다음 사이클이 재시도.
 //
 // 호출 컨텍스트:
-//   - `BackgroundSyncTask` 가 pull 보다 먼저 호출 (서버가 최신 상태를 응답하도록).
+//   - `RemoteAlarmSyncViewModel.runFullSync`(앱 시작·전경 복귀·알람 탭)와 `BackgroundSyncTask`.
+//     알람 동기화는 **올리기만** 한다 — 서버에서 받아 오는 알람은 없다.
 //   - 외부 UI 의 "서버에 저장" 단일 액션은 여전히
 //     `RemoteAlarmSyncViewModel.push(record:)` 로 단건 push.
 //
@@ -68,8 +69,7 @@ final class RemoteAlarmPushSync: @unchecked Sendable {
     /// 왜 필요한가(안드로이드 `1b5e3a84` 와 같은 버그): 아래 루프는 후보를 스냅샷한 뒤
     /// `await api.createAlarm` 을 거쳐 **응답이 와야** `remoteAlarmId` 를 커밋한다. 두 회차가
     /// 그 창 안에서 겹치면 둘 다 `remoteAlarmId == nil` 을 보고 **둘 다 create 로 가서
-    /// 서버에 같은 알람이 두 행 생긴다.** 로컬 행은 하나라 앱에서는 정상으로 보이고,
-    /// 가족 알람이면 수신자 기기에서 두 번 울린다.
+    /// 서버에 같은 알람이 두 행 생긴다.** 로컬 행은 하나라 앱에서는 정상으로 보인다.
     private static let serialGate = AsyncSerialGate()
 
     @discardableResult

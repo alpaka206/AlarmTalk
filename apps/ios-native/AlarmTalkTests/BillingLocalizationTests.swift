@@ -4,9 +4,6 @@ import Testing
 
 @MainActor
 struct BillingLocalizationTests {
-    // ⚠ 바우처 행의 플랜 이름 번역(`VoucherItem.localizedPlanName`) 검사는 2026-10-14 에 그 행과 함께 지웠다 —
-    //   발급 코드 목록(`VoucherRow`)이 결제·코드 등록 화면에서 빠져 그 이름을 그리는 곳이 없다(`PeoplePanel` 주석).
-
     private func bundle(_ language: String) throws -> Bundle {
         let path = try #require(Bundle.main.path(forResource: language, ofType: "lproj"))
         return try #require(Bundle(path: path))
@@ -17,11 +14,12 @@ struct BillingLocalizationTests {
         let bundle = try bundle(language)
         for key in ["personal", "individual", "plus", "plus_monthly", "plus_yearly"] {
             #expect(PlanTier.displayName(forPlanKey: key, bundle: bundle)
-                    == (language == "en" ? "Personal" : "パーソナル"))
+                    == (language == "en" ? "Plus" : "プラス"))
         }
-        #expect(PlanTier.displayName(forPlanKey: "family", bundle: bundle)
-                == (language == "en" ? "Family" : "ファミリー"))
-        #expect(PlanTier.displayName(forPlanKey: "unknown", bundle: bundle) == nil)
+        // 커플·가족 이용권은 없어졌다 — 그 키도 모르는 키다.
+        for key in ["couple", "family", "unknown"] {
+            #expect(PlanTier.displayName(forPlanKey: key, bundle: bundle) == nil)
+        }
         #expect(PlanTier.displayName(forPlanKey: nil, bundle: bundle) == nil)
     }
 
@@ -46,7 +44,7 @@ struct BillingLocalizationTests {
         #expect(RestoreResult.restored(count: 3).localizedUserMessage(bundle: english) == "Restored 3 purchases.")
     }
 
-    @Test("복원 결과의 건수와 다운그레이드 안내의 이름은 서식 인자로 유지된다", arguments: ["en", "ja"])
+    @Test("복원 결과의 건수는 서식 인자로 유지된다", arguments: ["en", "ja"])
     func formatArguments(language: String) throws {
         let bundle = try bundle(language)
         let failedVerification = "결제를 확인하지 못했어요. '이전 구매 복원'을 눌러 다시 시도해 주세요."
@@ -54,9 +52,13 @@ struct BillingLocalizationTests {
         let restore = bundle.localizedString(forKey: "이전 구매 %lld건을 복원했어요.", value: nil, table: nil)
         #expect(String(format: restore, 3).contains("3"))
         #expect(!restore.contains("이전 구매"))
-        let key = "지금은 결제되지 않아요. 지금 이용권을 기간 끝까지 쓰고, 다음 갱신일에 %@ 이용권으로 바뀌어요. 함께 쓰는 인원이 줄어서, 정원을 넘는 멤버는 그룹에서 나가게 돼요."
-        let format = bundle.localizedString(forKey: key, value: nil, table: nil)
-        #expect(format != key)
-        #expect(String(format: format, "Personal").contains("Personal"))
+    }
+
+    /// 이용권 새로고침 오류는 '무엇: 왜' 한 줄이다(`SocialFeatureViewModel.scopedRefreshErrorMessage`).
+    @Test("이용권 새로고침 오류의 '라벨: 이유' 서식은 언어와 무관하다", arguments: ["en", "ja"])
+    func scopedRefreshErrorFormat(language: String) throws {
+        let bundle = try bundle(language)
+        let scoped = bundle.localizedString(forKey: "%1$@: %2$@", value: nil, table: nil)
+        #expect(String(format: scoped, "Plan", "Error") == "Plan: Error")
     }
 }

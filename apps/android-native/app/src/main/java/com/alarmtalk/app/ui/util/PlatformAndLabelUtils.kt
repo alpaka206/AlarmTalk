@@ -12,22 +12,11 @@ import android.provider.Settings
 import com.alarmtalk.app.core.AlarmTalkLog
 import com.alarmtalk.app.data.CachedAlarmAudio
 import com.alarmtalk.app.data.VibrationPatterns
-import com.alarmtalk.app.network.AuthSession
 import com.alarmtalk.app.network.BillingSubscriptionResponse
-import com.alarmtalk.app.network.FamilyGroupCurrentResponse
-import com.alarmtalk.app.network.FamilyGroupMember
 import java.io.File
-import java.time.Instant
-import java.time.ZoneId
-import java.time.format.DateTimeFormatter
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.MultipartBody
 import okhttp3.RequestBody.Companion.asRequestBody
-
-// DateTimeFormatter 는 스레드 안전하며 불변이므로 호출마다 새로 만들 필요가 없어
-// top-level val 로 1회만 할당한다.
-private val DotDateFormatter: DateTimeFormatter =
-    DateTimeFormatter.ofPattern("yyyy.MM.dd")
 
 internal fun Context.canScheduleExactAlarms(): Boolean {
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return true
@@ -78,15 +67,6 @@ internal fun Context.startSettingsActivity(intent: Intent) {
     }.onFailure { error ->
         AlarmTalkLog.reportError("Failed to open settings", error)
     }
-}
-
-internal fun formatVoucherIssuedAt(isoString: String?): String? {
-    if (isoString.isNullOrBlank()) return null
-    return runCatching {
-        Instant.parse(isoString)
-            .atZone(ZoneId.systemDefault())
-            .format(DotDateFormatter)
-    }.getOrNull()
 }
 
 internal fun audioFileLabel(context: Context, localAudioUri: String): String =
@@ -153,94 +133,6 @@ internal fun userFacingError(error: Throwable, fallback: String): String {
 }
 
 /**
- * 기간 한정 개인 플랜 중의 **보류 규칙**(D2·D9) — 커플·가족 기능을 무엇이 열 수 있는가.
- *
- * `personal_promo` 가 있다 = 그 답을 준 서버에서 **원시 plan 이 free** 다. 결제 보류(ON_HOLD·
- * PAUSED)는 회복을 위해 구독 행과 그룹을 **남긴 채** `users.plan` 만 회수하는데, 기간 중에는
- * 서버가 그 free 를 `plus` 로 계산해 주므로 plan 만 보면 보류인지 알 수 없다. 그래서 프로모가
- * 살아 있는(낡지 않은 — D1) 동안에는 **남은 구독 행·가족 그룹이 커플·가족을 열지 못하고**,
- * 스토어(Play 가 지금 확인해 준 등급)와 서버 계산값만 연다 — iOS `PlanTier.bestKnown(user:)` 의
- * `suspended` 와 같은 답. 서버도 커플·가족 기능은 원시값으로 막는다(`docs/spec/billing-lifecycle.md`
- * 「무엇이 계산값을 보고, 무엇이 원시값을 보나」).
- *
- * 이 값이 null 이면 규칙이 걸리지 않는다(프로모 밖·끝난 뒤의 낡은 캐시) — 예전 그대로다.
- */
-internal data class PersonalPromoTierHold(
-    /** Play 가 **지금** 유효하다고 확인해 준 등급(기한 지난 것은 null). */
-    val storePlanKey: String?,
-    /** 서버가 계산한 plan(기간 중 원시 free 는 `plus`). */
-    val computedPlan: String?,
-) {
-    /** 보류 규칙 아래에서 커플·가족을 여는 것은 이 둘뿐이다. */
-    fun allowsCoupleOrFamily(): Boolean = isCoupleOrFamilyKey(storePlanKey) || isCoupleOrFamilyKey(computedPlan)
-}
-
-private fun isCoupleOrFamilyKey(value: String?): Boolean =
-    value?.trim()?.lowercase().let { it == "couple" || it == "family" }
-
-/**
- * 지금 보류 규칙이 걸리는가 — 걸리면 그 규칙, 아니면 null.
- *
- * @param userPlan·userPlanPromo **같은 출처의** plan 과 그 프로모 표지(`resolvePaidVoiceAccess` 와
- *   같은 한 쌍). 표지가 있고 낡지 않았으면([personalPromoLapsed]) 원시 free 다.
- * @param storePlanKeyValidNow 기한까지 반영한 스토어 등급(없으면 null).
- */
-internal fun personalPromoTierHoldOf(
-    userPlan: String?,
-    userPlanPromo: PlanPromoStamp?,
-    storePlanKeyValidNow: String?,
-    nowMillis: Long,
-): PersonalPromoTierHold? {
-    if (userPlanPromo == null || personalPromoLapsed(userPlanPromo, nowMillis)) return null
-    return PersonalPromoTierHold(storePlanKey = storePlanKeyValidNow, computedPlan = userPlan)
-}
-
-/**
- * 커플·가족 기능을 쓸 수 있는가(가족 알람·목소리 공유·판정기의 plan 없는 갈래).
- *
- * @param promoHold 기간 한정 개인 플랜 중의 보류 규칙([personalPromoTierHoldOf]). **호출부가 반드시
- *   넘긴다** — 기본값을 두면 빠뜨린 자리에서 보류 계정의 남은 행·그룹이 다시 커플·가족을 연다.
- *   null 이면 예전 규칙(구독 plan·그룹) 그대로다.
- */
-internal fun hasCoupleOrFamilyAccess(
-    subscriptionResponse: BillingSubscriptionResponse?,
-    familyGroup: FamilyGroupCurrentResponse?,
-    promoHold: PersonalPromoTierHold?,
-): Boolean {
-    if (promoHold != null) return promoHold.allowsCoupleOrFamily()
-    val plan = subscriptionResponse?.plan
-    return familyGroup?.group != null ||
-        plan?.key == "family" ||
-        plan?.key == "couple" ||
-        plan?.planType == "family" ||
-        plan?.planType == "couple"
-}
-
-// 음성 공유 토글을 노출할지 판단한다. 개인 플랜이고 가족·커플 그룹에 본인 외 멤버가
-// 0명이면 공유 대상이 없으므로 토글을 숨긴다. family/couple 플랜이거나 그룹에
-// 다른 멤버가 1명이라도 있으면 노출한다.
-// ⚠ 기간 한정 개인 플랜 중에는 보류 규칙([PersonalPromoTierHold])이 먼저다 — 남은 구독 행·그룹
-//   멤버로는 열지 않는다(서버가 원시값으로 막는 공유를 켜는 토글이 된다).
-internal fun canShareVoiceWithOthers(
-    subscriptionResponse: BillingSubscriptionResponse?,
-    familyGroup: FamilyGroupCurrentResponse?,
-    authSession: AuthSession?,
-    promoHold: PersonalPromoTierHold?,
-): Boolean {
-    if (promoHold != null) return promoHold.allowsCoupleOrFamily()
-    val plan = subscriptionResponse?.plan
-    val isFamilyOrCouplePlan = plan?.key == "family" || plan?.key == "couple" ||
-        plan?.planType == "family" || plan?.planType == "couple"
-    if (isFamilyOrCouplePlan) return true
-    val currentUserId = authSession?.user?.id
-    val currentEmail = authSession?.user?.email
-    val membersExceptSelf = familyGroup?.members.orEmpty().count { member ->
-        member.userId != currentUserId && member.email != currentEmail
-    }
-    return membersExceptSelf > 0
-}
-
-/**
  * 유료 목소리 권한 판정 결과. **'모른다' 를 '무료' 와 구분하는 것이 이 타입의 존재 이유다.**
  *
  * 응답 전 기본값을 답으로 읽는 사고가 이 저장소에서 반복됐다
@@ -255,16 +147,15 @@ internal fun canShareVoiceWithOthers(
  * `scripts/check-plan-constants.py`(CI)가 잡는다. 목록을 여기서 즉석으로 만들지 말 것 —
  * 그렇게 네 벌로 갈라져 있었고, 그중 하나에는 **도달할 수 없는 값**이 섞여 있었다.
  */
-internal val PaidUserPlans = setOf("personal", "plus", "couple", "family")
+internal val PaidUserPlans = setOf("personal", "plus")
 
 /**
  * 유료로 치는 `plans.plan_type`.
  *
  * ⚠ 원본은 shared 의 `PAID_PLAN_TYPES`. 예전에는 여기에 `individual`·`plus`·`couple` 이
- * 섞여 있었는데, DB CHECK 상 `plan_type` 은 `free|personal|family` 뿐이라 **도달할 수 없는
- * 가지**였다(`migrations.ts`). 커플은 `key='couple'` + `plan_type='family'` 다.
+ * 섞여 있었는데, DB CHECK 상 `plan_type` 에 없는 값이라 **도달할 수 없는 가지**였다(`migrations.ts`).
  */
-internal val PaidPlanTypes = setOf("personal", "family")
+internal val PaidPlanTypes = setOf("personal")
 
 internal enum class PaidVoiceAccess { Entitled, NotEntitled, Unknown }
 
@@ -276,15 +167,14 @@ internal enum class PaidVoiceAccess { Entitled, NotEntitled, Unknown }
  *    스토어에서 먼저 일어나고 서버 반영(RTDN·복원)이 늦을 수 있는데, 그때 서버의 옛
  *    `expiresAt` 으로 막으면 **돈을 내고 있는 사용자가 잠긴다.** 스펙이 더 나쁘다고 못박은 방향이다.
  * 2. **서버가 `users.plan = free` 라고 말하면 거기서 끝이다 — 구독 행보다 위다.**
- *    보류(ON_HOLD·결제 재시도)는 **행을 남긴다**: `propagateGroupMemberPlans` 는 멤버의
- *    그룹 연동 구독을 취소하지 않고 재계산에서 제외만 하므로, 행은 `status='active'` 인 채
- *    남고 `users.plan` 만 free 로 내려간다. 행부터 보면 결제가 밀린 그룹 멤버가 계속
- *    유료로 읽혀 3단에 영영 닿지 못한다(2026-09-01 리뷰).
+ *    보류(ON_HOLD·결제 재시도)는 **행을 남긴다**: 회복을 위해 구독 행은 `status='active'` 인 채
+ *    남고 `users.plan` 만 free 로 내려간다. 행부터 보면 결제가 밀린 사용자가 계속 유료로
+ *    읽혀 3단에 영영 닿지 못한다(2026-09-01 리뷰).
  *    신규 결제를 잘못 막지 않는다 — `createNewSubscriptionForPlan` 이 행 삽입과 **같은
  *    트랜잭션에서** `users.plan` 을 올리고, 산 직후는 어차피 1단(스토어)이 잡는다.
- * 3. 서버가 내 구독을 알고 있으면 **만료 시각으로** 가른다. 스토어가 침묵할 때(그룹 멤버·
- *    미로그인 스토어 등) 이 값이 스스로 신선도를 말한다 — 별도의 '신선도' 필드가 필요 없다.
- * 4. 남은 `users.plan` 으로 가른다. **그룹보다 위다** — 위 2단과 같은 이유다.
+ * 3. 서버가 내 구독을 알고 있으면 **만료 시각으로** 가른다. 스토어가 침묵할 때(미로그인
+ *    스토어 등) 이 값이 스스로 신선도를 말한다 — 별도의 '신선도' 필드가 필요 없다.
+ * 4. 남은 `users.plan` 으로 가른다.
  *    단 그 plan 이 **기간 한정 개인 플랜으로 계산된 값**이고, 종료 **전에** 받은 그 답을
  *    종료 **뒤에** 읽고 있으면 무료다([userPlanPromo]).
  * 5. 스냅샷 자체가 없으면 **모른다.** 무료가 아니다.
@@ -302,7 +192,6 @@ internal enum class PaidVoiceAccess { Entitled, NotEntitled, Unknown }
  */
 internal fun resolvePaidVoiceAccess(
     subscriptionResponse: BillingSubscriptionResponse?,
-    familyGroup: FamilyGroupCurrentResponse?,
     userPlan: String?,
     storeEntitled: Boolean,
     nowMillis: Long,
@@ -335,21 +224,9 @@ internal fun resolvePaidVoiceAccess(
     return when {
         // ⚠ **여기서 Unknown 을 돌려주지 말 것.** '모름' 은 서버에 **한 번도 못 물어본**
         // 상태(위의 `subscriptionResponse == null`)의 뜻이다. 여기는 서버가 "본인 구독
-        // 없음" 이라고 **답했고** 그룹 접근도 없는 상태라 근거가 다 모인 무료다 — 모름으로
-        // 접으면 낙관 규칙에 걸려 **무료 사용자의 유료 목소리가 영영 강등되지 않는다.**
-        //   기간 한정 개인 플랜 중이면 남은 행·그룹으로 열지 않는다(보류 규칙 — 스토어는 1단이 이미 봤다).
-        plan == null || plan.isBlank() ->
-            if (
-                hasCoupleOrFamilyAccess(
-                    snapshot,
-                    familyGroup,
-                    promoHold = personalPromoTierHoldOf(plan, userPlanPromo, storePlanKeyValidNow = null, nowMillis),
-                )
-            ) {
-                PaidVoiceAccess.Entitled
-            } else {
-                PaidVoiceAccess.NotEntitled
-            }
+        // 없음" 이라고 **답한** 상태라 근거가 다 모인 무료다 — 모름으로 접으면 낙관 규칙에
+        // 걸려 **무료 사용자의 유료 목소리가 영영 강등되지 않는다.**
+        plan == null || plan.isBlank() -> PaidVoiceAccess.NotEntitled
         // ⚠ **구독 행이 있으면 위(3단)에서 이미 끝났다** — 진짜 구독자는 이 줄에 닿지 않는다.
         //   활성 구독 행은 끝난 프로모보다 **언제나** 위다(양 앱 공통 순서). 여기까지 온 `plus` 는
         //   구독 없이 plan 만 유료인 경우라, 종료 전에 받은 프로모 계산값이면 기간으로 자른다.
@@ -384,17 +261,4 @@ internal fun hasPaidVoiceAccess(subscriptionResponse: BillingSubscriptionRespons
     if (subscription.status != "active") return false
     val plan = subscriptionResponse.plan ?: return false
     return plan.key in PaidUserPlans || plan.planType in PaidPlanTypes
-}
-
-internal fun familyAlarmRecipients(
-    familyGroup: FamilyGroupCurrentResponse?,
-    authSession: AuthSession?,
-): List<FamilyGroupMember> {
-    val currentUserId = authSession?.user?.id
-    val currentEmail = authSession?.user?.email
-    return familyGroup?.members.orEmpty().filter { member ->
-        member.userId != currentUserId &&
-            member.email != currentEmail &&
-            member.allowFamilyAlarms
-    }
 }

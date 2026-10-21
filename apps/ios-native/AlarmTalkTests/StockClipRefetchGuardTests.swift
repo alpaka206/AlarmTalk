@@ -65,17 +65,13 @@ final class StockClipRefetchGuardTests: XCTestCase {
     // MARK: - 준비 화면 폴링 종료
 
     func test_준비_화면_폴링은_다_받고_관문_목록에도_실린_뒤에만_멈춘다() {
-        XCTAssertTrue(ClipPreparationView.pollingCanStop(isReady: true, awaitingOwner: false, targetClipsLoaded: true))
+        XCTAssertTrue(ClipPreparationView.pollingCanStop(isReady: true, targetClipsLoaded: true))
         XCTAssertFalse(
-            ClipPreparationView.pollingCanStop(isReady: false, awaitingOwner: false, targetClipsLoaded: true),
+            ClipPreparationView.pollingCanStop(isReady: false, targetClipsLoaded: true),
             "아직 받는 중·서버 생성 실패(준비 안 됨)는 계속 묻는다 — 실패로는 멈추지 않는다"
         )
         XCTAssertFalse(
-            ClipPreparationView.pollingCanStop(isReady: true, awaitingOwner: true, targetClipsLoaded: true),
-            "공유받은 목소리의 소유자 생성을 기다리는 중이면 다른 목소리가 다 됐어도 계속 묻는다"
-        )
-        XCTAssertFalse(
-            ClipPreparationView.pollingCanStop(isReady: true, awaitingOwner: false, targetClipsLoaded: false),
+            ClipPreparationView.pollingCanStop(isReady: true, targetClipsLoaded: false),
             "관문이 보는 매니페스트에 그 목소리가 아직 없으면 다음 회차가 다시 맞춘다"
         )
     }

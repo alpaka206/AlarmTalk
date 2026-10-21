@@ -69,7 +69,7 @@ struct StockClipLanguageRebinder {
         expectedVariants: ExpectedVariantCounts? = nil,
         /// `GET /tts/stock-clips` 의 `legacy_bucket_hints` — messageId → 테마.
         legacyHints: [String: String] = [:],
-        /// 받는 사람의 지역·사주. 조건형 버킷을 묶을 때 **빈 자리에만** 채운다.
+        /// 이 계정의 지역·사주. 조건형 버킷을 묶을 때 **빈 자리에만** 채운다.
         conditionInputs: DynamicPromptPreferences? = nil,
         /// 지금 로그인한 계정. 남의 알람을 건드리지 않기 위해 반드시 넘긴다.
         callerUserId: String? = nil
@@ -110,7 +110,7 @@ struct StockClipLanguageRebinder {
             // 계속 옛 이름을 읽는다 — 접기를 매번 다시 해야 하는 상태로 남는다.
             bound.bucketId = bucket
             // ⚠ **조건을 여기서 채운다.** 새로고침 서비스를 부르는 것만으로는 안 된다 —
-            //   그게 읽는 것이 이 필드들이고, 받은 알람은 전부 비어 있다.
+            //   그게 읽는 것이 이 필드들이고, 조건이 빈 행은 그대로 비어 있다.
             bound = Self.withRecipientConditions(bound, bucket: bucket, prefs: conditionInputs)
             _ = store.upsertPreservingServerSyncFields(bound)
             changedIds.insert(bound.id)
@@ -262,14 +262,14 @@ struct StockClipLanguageRebinder {
         guard record.voiceSourceEnum != .localAudio else { return false }
         let bound = record.bucketClipKeys ?? []
         // ⚠ **조건형 버킷(날씨·운세)을 비켜 가지 않는다**(2026-09-03 사용자 지시).
-        //   12·13차에는 여기서 그냥 건너뛰었다 — 받은 알람에 조건도 사주도 없어서 값 없이
-        //   묶으면 날씨가 마지막 '못 알아봤어요' 클립으로 떨어졌기 때문이다. 그런데 그러면
-        //   그 알람은 **영원히 옛 대사**로 남는다. 조건은 **받는 사람 자신의 설정**으로
-        //   채울 수 있으므로, 갈아탄 뒤 `WeatherVariantRefreshService` 로 즉시 해석한다.
+        //   12·13차에는 여기서 그냥 건너뛰었다 — 조건도 사주도 없는 행을 값 없이 묶으면 날씨가
+        //   마지막 '못 알아봤어요' 클립으로 떨어졌기 때문이다. 그런데 그러면 그 알람은
+        //   **영원히 옛 대사**로 남는다. 조건은 **이 계정의 설정**으로 채울 수 있으므로,
+        //   갈아탄 뒤 `WeatherVariantRefreshService` 로 즉시 해석한다.
         // ① 앱 언어가 바뀌었다 — 원래 목적.
         let current: String = record.voiceLanguage ?? "ko"
         if current != language { return true }
-        // ③ 테마는 아는데 클립 목록이 없는 알람(받은 가족 알람) — 대표 클립으로 판정한다.
+        // ③ 테마는 아는데 클립 목록이 없는 알람 — 대표 클립으로 판정한다.
         if bound.isEmpty {
             guard let messageId = (record.ttsMessageId).nilIfBlank else { return false }
             return !liveKeys.contains(AudioCacheStore.stockCacheKey(messageId: messageId))
@@ -315,11 +315,10 @@ struct StockClipLanguageRebinder {
     ///   앱 시작 직후에 도는 경로라, 그동안 화면이 굳어 탭이 먹지 않았다(UI 테스트가
     ///   `Failed to not hittable` 로 잡았다). 판정에 쓰는 값만 메인에서 모으고, 파일 작업은
     ///   떼어 낸다.
-    /// **조건형 버킷에 받는 사람의 조건을 채운다**(2026-09-03 리뷰 15차).
+    /// **조건형 버킷에 이 계정의 조건을 채운다**(2026-09-03 리뷰 15차).
     ///
-    /// 받은 가족 알람은 `voiceWeatherCountry`·`voiceWeatherCity` 와 사주 필드가 **전부
-    /// 비어 있다** — 보낸 사람의 지역·사주를 받지 않기 때문이다. 그 상태로 세트만 묶으면
-    /// 날씨 조회가 서버 기본값(서울)으로 떨어지고 운세는 **빈 프로필을 해시**한다.
+    /// `voiceWeatherCountry`·`voiceWeatherCity` 와 사주 필드가 **비어 있는** 행을 그 상태로
+    /// 세트만 묶으면 날씨 조회가 서버 기본값(서울)으로 떨어지고 운세는 **빈 프로필을 해시**한다.
     /// `WeatherVariantRefreshService` 를 부르는 것만으로는 안 된다 — 그게 읽는 것이
     /// 바로 이 필드들이다.
     ///

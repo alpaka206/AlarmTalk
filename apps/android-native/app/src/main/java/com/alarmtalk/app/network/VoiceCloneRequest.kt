@@ -31,7 +31,6 @@ internal suspend fun VoiceProfileApi.createVoiceCloneDraft(
         authorization = authorization,
         audio = audio,
         name = text(draft.name),
-        isShared = text(draft.shared.toString()),
         relationshipLabel = draft.relationshipLabel.takeIf { it.isNotBlank() }?.let { text(it) },
         listenerTitle = draft.listenerTitle.takeIf { it.isNotBlank() }?.let { text(it) },
         durationMs = text(draft.audio.durationMillis?.toString() ?: ""),

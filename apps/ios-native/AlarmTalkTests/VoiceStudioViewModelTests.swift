@@ -88,13 +88,6 @@ final class VoiceStudioViewModelTests: XCTestCase {
         XCTAssertNil(APIErrorMessages.message(for: nil))
     }
 
-    func test_localizedVoiceMessage_AUDIO_DURATION_TOO_SHORT() {
-        XCTAssertEqual(
-            VoiceStudioViewModel.localizedVoiceMessage(forCode: "AUDIO_DURATION_TOO_SHORT"),
-            "음성이 너무 짧아요. 다시 녹음해 주세요."
-        )
-    }
-
     func test_localizedVoiceMessage_VOICE_PROFILE_NOT_FOUND() {
         XCTAssertEqual(
             VoiceStudioViewModel.localizedVoiceMessage(forCode: "VOICE_PROFILE_NOT_FOUND"),
@@ -131,8 +124,8 @@ final class VoiceStudioViewModelTests: XCTestCase {
     func test_mapVoiceError_keywordFallback() {
         let vm = VoiceStudioViewModel()
         // JSON 디코드 실패하지만 message 안에 known code substring 이 있는 경우.
-        let err = APIError.server(status: 400, message: "raw: AUDIO_DURATION_TOO_SHORT detected", errorCode: nil)
-        XCTAssertEqual(vm.mapVoiceError(err), "음성이 너무 짧아요. 다시 녹음해 주세요.")
+        let err = APIError.server(status: 400, message: "raw: VOICE_PROFILE_NOT_FOUND detected", errorCode: nil)
+        XCTAssertEqual(vm.mapVoiceError(err), "목소리를 찾지 못했어요. 새로고침 후 다시 시도해 주세요.")
     }
 
     func test_mapVoiceError_genericServer500() {
@@ -228,14 +221,13 @@ final class VoiceStudioViewModelTests: XCTestCase {
     func test_voiceCloneMultipartFields_matchAndroidRequiredParts() {
         let fields = AlarmTalkAPI.voiceCloneMultipartFields(
             name: "  Gia  ",
-            isShared: true,
             durationMs: 60_000,
             relationshipLabel: " granddaughter ",
             listenerTitle: " grandpa "
         )
 
         XCTAssertEqual(fields["name"], "Gia")
-        XCTAssertEqual(fields["isShared"], "true")
+        XCTAssertNil(fields["isShared"], "목소리 공유는 없다 — 공유 선택을 싣지 않는다")
         XCTAssertEqual(fields["durationMs"], "60000")
         XCTAssertEqual(fields["relationshipLabel"], "granddaughter")
         XCTAssertEqual(fields["listenerTitle"], "grandpa")
@@ -244,7 +236,6 @@ final class VoiceStudioViewModelTests: XCTestCase {
     func test_voiceCloneMultipartFields_keepOptionalPersonaBlankAndSelectedLanguage() {
         let fields = AlarmTalkAPI.voiceCloneMultipartFields(
             name: "Draft",
-            isShared: false,
             durationMs: 60_000,
             relationshipLabel: nil,
             listenerTitle: "   ",
@@ -279,7 +270,6 @@ final class VoiceStudioViewModelTests: XCTestCase {
     func test_voiceCloneMultipartFields_omitVoiceEnergy() {
         let fields = AlarmTalkAPI.voiceCloneMultipartFields(
             name: "Draft",
-            isShared: false,
             durationMs: 60_000,
             relationshipLabel: "엄마",
             listenerTitle: "우리 딸",
@@ -293,37 +283,11 @@ final class VoiceStudioViewModelTests: XCTestCase {
         XCTAssertEqual(fields["isDraft"], "true")
     }
 
-    /// `PATCH voice/:id/relationship` 바디 — 실제 요청과 같은 인코더(snake_case)로 본다.
-    /// 관계·호칭 두 키만 나간다 — `voice_energy` 가 없어야 서버가 그 컬럼을 건드리지 않는다.
-    func test_voiceRelationshipUpdateBody_sendsOnlyPersonaKeys() throws {
-        let body = AlarmTalkAPI.voiceRelationshipUpdateBody(
-            relationshipLabel: " 엄마 ",
-            listenerTitle: " 우리 딸 "
-        )
-        let data = try AlarmTalkAPI.makeJSONEncoder().encode(body)
-        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
-
-        XCTAssertEqual(json.keys.sorted(), ["listener_title", "relationship_label"])
-        XCTAssertEqual(json["relationship_label"] as? String, "엄마")
-        XCTAssertEqual(json["listener_title"] as? String, "우리 딸")
-    }
-
-    func test_voiceDraftPromotionCarriesSharingChoice() throws {
-        let data = try JSONEncoder().encode(
-            VoiceDraftPromoteRequest(isDraft: false, replaceExisting: true, isShared: true)
-        )
-        let body = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
-
-        XCTAssertEqual(body["isDraft"] as? Bool, false)
-        XCTAssertEqual(body["replaceExisting"] as? Bool, true)
-        XCTAssertEqual(body["isShared"] as? Bool, true)
-    }
-
     /// 등록 확정 바디 — 들은 목소리 높이는 `pitch_semitones` 로 실리고(교체 등록도 같다), 원래 소리(0·nil)면 키가
     /// 아예 없다(높이 이전과 같은 바디, 스펙 voice-and-message §4-3). 실제 요청과 같은 인코더(snake_case)로 본다.
     func test_voiceDraftPromotionBody_carriesPitchOnlyWhenNotZero() throws {
         func json(_ pitch: Double?, replace: Bool = false) throws -> [String: Any] {
-            let body = AlarmTalkAPI.voiceDraftPromoteBody(replaceExisting: replace, isShared: false, pitchSemitones: pitch)
+            let body = AlarmTalkAPI.voiceDraftPromoteBody(replaceExisting: replace, pitchSemitones: pitch)
             let data = try AlarmTalkAPI.makeJSONEncoder().encode(body)
             return try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
         }
@@ -334,8 +298,8 @@ final class VoiceStudioViewModelTests: XCTestCase {
         XCTAssertEqual(tuned["replace_existing"] as? Bool, true)
         XCTAssertEqual(try json(3)["pitch_semitones"] as? Double, 3)
 
-        XCTAssertEqual(try json(0).keys.sorted(), ["is_draft", "is_shared"])
-        XCTAssertEqual(try json(nil).keys.sorted(), ["is_draft", "is_shared"])
+        XCTAssertEqual(try json(0).keys.sorted(), ["is_draft"])
+        XCTAssertEqual(try json(nil).keys.sorted(), ["is_draft"])
     }
 
     /// 교체는 체크하지 않는다(2026-10-08 사용자 — 스펙 voice-and-message §4-1). 이미 등록된 목소리가 있으면 등록 확정
@@ -344,7 +308,7 @@ final class VoiceStudioViewModelTests: XCTestCase {
     func test_promotionReplacesWheneverAnOfficialVoiceExists() throws {
         func body(_ profiles: [VoiceProfile]) throws -> [String: Any] {
             let replacing = VoicePreviewConfirmView.replacementTarget(among: profiles, draftID: "draft") != nil
-            let request = AlarmTalkAPI.voiceDraftPromoteBody(replaceExisting: replacing, isShared: false, pitchSemitones: -1.5)
+            let request = AlarmTalkAPI.voiceDraftPromoteBody(replaceExisting: replacing, pitchSemitones: -1.5)
             let data = try AlarmTalkAPI.makeJSONEncoder().encode(request)
             return try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
         }
@@ -411,7 +375,7 @@ final class VoiceStudioViewModelTests: XCTestCase {
             XCTAssertFalse(vm.monthlyLimitRejected)
 
             let created = await vm.cloneAudioForProfile(
-                audioFileURL: audio, name: "새 목소리", durationMs: 20_000, isShared: false, session: session
+                audioFileURL: audio, name: "새 목소리", durationMs: 20_000, session: session
             )
 
             XCTAssertNil(created)
@@ -433,7 +397,7 @@ final class VoiceStudioViewModelTests: XCTestCase {
             503, #"{"error":"Voice capacity exhausted","error_code":"VOICE_CAPACITY_EXHAUSTED"}"#
         )) { vm, session, audio, quotaCalls in
             let created = await vm.cloneAudioForProfile(
-                audioFileURL: audio, name: "새 목소리", durationMs: 20_000, isShared: false, session: session
+                audioFileURL: audio, name: "새 목소리", durationMs: 20_000, session: session
             )
 
             XCTAssertNil(created)
@@ -498,7 +462,7 @@ final class VoiceStudioViewModelTests: XCTestCase {
             XCTAssertFalse(vm.consumeMonthlyLimitNotice(), "알릴 것이 없는데 알럿을 연다")
 
             let created = await vm.cloneAudioForProfile(
-                audioFileURL: audio, name: "새 목소리", durationMs: 20_000, isShared: false, session: session
+                audioFileURL: audio, name: "새 목소리", durationMs: 20_000, session: session
             )
 
             XCTAssertFalse(vm.noSpeechRejected)
@@ -563,7 +527,7 @@ final class VoiceStudioViewModelTests: XCTestCase {
     func test_말소리가_없는_녹음은_음원_준비로_돌려보내고_월_한도는_건드리지_않는다() async throws {
         try await withVoiceViewModel(clone: (400, Self.noSpeechBody)) { vm, session, audio, quotaCalls in
             let created = await vm.cloneAudioForProfile(
-                audioFileURL: audio, name: "새 목소리", durationMs: 20_000, isShared: false, session: session
+                audioFileURL: audio, name: "새 목소리", durationMs: 20_000, session: session
             )
 
             XCTAssertNil(created)
@@ -592,7 +556,7 @@ final class VoiceStudioViewModelTests: XCTestCase {
         ) { vm, session, audio, _ in
             func clone(durationMs: Int = 20_000) async -> VoiceProfile? {
                 await vm.cloneAudioForProfile(
-                    audioFileURL: audio, name: "새 목소리", durationMs: durationMs, isShared: false, session: session
+                    audioFileURL: audio, name: "새 목소리", durationMs: durationMs, session: session
                 )
             }
 
@@ -907,7 +871,7 @@ final class VoiceStudioViewModelTests: XCTestCase {
             case "voice/draft-quota":
                 return Self.quotaAnswer(ordinal: ordinal)
             default:
-                // `voice`·`voice/family` — 등록된 목소리가 없다.
+                // `voice` — 등록된 목소리가 없다.
                 return (200, Data(#"{"profiles":[]}"#.utf8))
             }
         }
@@ -925,7 +889,7 @@ final class VoiceStudioViewModelTests: XCTestCase {
     }
 
     /// 겹친 새로고침을 흉내 낸다 — 한도 조회의 **첫 번째 답(1회 남음)은 붙잡아 두었다가** 넘겨준 `releaseFirstQuotaAnswer`
-    /// 를 부를 때 내고, 그 뒤의 답(0)은 곧바로 낸다. 목록·공유 목소리는 비어 있다.
+    /// 를 부를 때 내고, 그 뒤의 답(0)은 곧바로 낸다. 목소리 목록은 비어 있다.
     private func withHeldFirstQuotaAnswer(
         _ body: (
             VoiceStudioViewModel, AuthSession,

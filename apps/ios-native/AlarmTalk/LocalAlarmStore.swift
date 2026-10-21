@@ -47,10 +47,25 @@ final class LocalAlarmStore: ObservableObject {
             if let loadRecords { loaded = await loadRecords() }
             else { loaded = await persistence.load() }
             await MainActor.run {
-                self.alarms = loaded
+                self.adoptLoadedAlarms(loaded)
                 self.hasLoadedFromDisk = true
             }
         }
+    }
+
+    /// 디스크에서 읽은 목록을 들인다 — 옛 받은 알람은 **로드가 끝났다고 알리기 전에** 내 알람으로 바꾼다
+    /// (`ReceivedAlarmConversion`). 그래서 어느 경로도 받은 알람을 보지 않는다.
+    ///
+    /// ⚠ 행 하나를 못 읽었다고 던지게 만들지 말 것 — `LocalAlarmPersistence.load` 는 디코드가 던지면 알람
+    /// **전부**를 버린다. 변환은 디코드가 끝난 뒤 여기서 한다.
+    private func adoptLoadedAlarms(_ loaded: [LocalAlarmRecord]) {
+        let outcome = ReceivedAlarmConversion.convert(loaded, nowMillis: Int64(Date().timeIntervalSince1970 * 1000))
+        alarms = outcome.alarms
+        guard !outcome.converted.isEmpty else { return }
+        // 곧바로 디스크에 앉힌다 — 다음 실행이 받은 알람을 다시 읽지 않게. 못 앉혔으면 비동기로 한 번 더 건다
+        // (다음 실행이 다시 바꿔도 결과는 같다). 예약은 리컨사일러가 다시 건다(`staleScheduleFingerprint`).
+        if !saveNow() { persist() }
+        ReceivedAlarmConversion.finish(outcome)
     }
 
     /// 디스크 로드가 끝날 때까지 기다린다(최대 `timeout` 초).
@@ -91,7 +106,7 @@ final class LocalAlarmStore: ObservableObject {
     /// 화면에 보이는 레거시 행도 전송 전에는 소유자가 확정돼야 한다.
     static func isOutboundSyncCandidate(_ record: LocalAlarmRecord, ownerUserID: String) -> Bool {
         guard let owner = ownerUserID.nilIfBlank,
-              record.originEnum == .localOwned, record.syncStateEnum != .synced,
+              record.syncStateEnum != .synced,
               !PendingSignOutStore.isPending(owner) else { return false }
         if let recordedOwner = record.ownerUserId?.nilIfBlank { return recordedOwner == owner }
         // 앞 계정의 소유자 새기기가 밀려 있을 수 있다. 기존 세션 정리가 확정할 때까지 보류한다.
@@ -119,24 +134,14 @@ final class LocalAlarmStore: ObservableObject {
         alarms.first { $0.alarmKitID == alarmKitID }
     }
 
-    func recordsBy(origin: AlarmOrigin) -> [LocalAlarmRecord] {
-        alarms.filter { $0.originEnum == origin }
-    }
-
     /// 무료 전환 시 정리 대상이 되는 유료 목소리 알람.
-    ///
-    /// ⚠ **본인 소유(`localOwned`)만 대상이다.** 공유받은 알람의 유료 목소리는 **보낸 사람의
-    /// 구독으로 성립**하는 것이라, 받는 쪽이 무료가 됐다고 뺏으면 안 된다
-    /// (`PaidVoiceGate.shouldDowngrade` 와 같은 원칙 — 거기만 지키고 여기서 빠뜨리면
-    /// 강등이 아니라 **삭제**라 더 나쁘다. 게다가 이 삭제는 decline 을 보내지 않아
-    /// 다음 pull 이 새 UUID 로 되살린다).
     func paidAlarmTalks() -> [LocalAlarmRecord] {
         Self.paidAlarmTalks(in: alarms)
     }
 
     /// `paidAlarmTalks()` 의 순수판 — 무료 잠금 선별(`FreePlanLockSelection`)이 같은 술어를 쓴다.
     nonisolated static func paidAlarmTalks(in alarms: [LocalAlarmRecord]) -> [LocalAlarmRecord] {
-        alarms.filter { $0.originEnum == .localOwned && $0.isPaidVoiceForDowngrade }
+        alarms.filter(\.isPaidVoiceForDowngrade)
     }
 
     /// **이 계정에게 보여도 되는 알람.** 안드로이드 `AlarmDao` 의
@@ -276,7 +281,7 @@ final class LocalAlarmStore: ObservableObject {
     /// **stale 스냅샷의 nil 로 되돌린다.** 그러면 다음 push 가 같은 알람을 또 create 한다 —
     /// 서버에 두 행이 생기는 **두 번째 경로**다(첫 번째는 겹친 sync, `eb70f2f2` 에서 막았다).
     ///
-    /// 병합 대상은 `remoteAlarmId` / `lastSyncedAtMillis` / `remoteDeliveryVersion` / `syncState` **뿐이다.**
+    /// 병합 대상은 `remoteAlarmId` / `lastSyncedAtMillis` / `syncState` **뿐이다.**
     /// ⚠ `alarmKitID`·`fireAtMillis`·`enabled` 는 절대 병합하지 말 것 — `alarmKitID` 를
     /// 되살리면 방금 재예약한 핸들과 어긋나 취소·재예약이 깨진다(알람이 안 울리는 방향).
     ///
@@ -287,29 +292,18 @@ final class LocalAlarmStore: ObservableObject {
         if let fresh = alarms.first(where: { $0.id == updated.id }) {
             next.remoteAlarmId = fresh.remoteAlarmId
             next.lastSyncedAtMillis = fresh.lastSyncedAtMillis
-            next.remoteDeliveryVersion = fresh.remoteDeliveryVersion
-            // ⚠ **수신자 편집이 '어느 전달을 받았는지' 를 지우면 안 된다** — 지우면 그 행이
-            // 다시 '옛 행' 이 되어 재전송이 영영 덮이지 못한다(안드로이드 `AlarmDao` 와 같은 규약).
-            next.observedDeliveryVersion = fresh.observedDeliveryVersion
             next.syncState = nextLocalSyncState(for: next).rawValue
         }
+        // 사용자가 고친 옛 받은 알람은 승격하지 않는다 — 고른 목소리를 덮지 않는다(`ReceivedAlarmPromotion`).
+        ReceivedAlarmPromotionStore().remove([updated.id], ownerUserID: updated.ownerUserId)
         return upsert(next)
     }
 
     /// 동일 ID 가 있으면 갱신, 없으면 추가. updatedAtMillis 자동 갱신.
-    ///
-    /// `syncedNow: true` 는 **pull 이 서버본을 그대로 쓴 경우**다. `lastSyncedAtMillis` 를
-    /// 같은 값으로 맞춰 `updatedAtMillis == lastSyncedAtMillis` 불변식을 세운다 —
-    /// `RemoteAlarmPullSync.locallyEditedByRecipient` 가 이 등식으로 '수신자가 손댔는가' 를
-    /// 판정하므로, 두 값이 몇 ms 라도 어긋나면 갓 받은 알람이 편집된 것으로 읽힌다.
-    /// (Android `buildReceivedAlarmRow` 는 둘 다 같은 `now` 를 넣어 같은 불변식을 만든다.)
     @discardableResult
-    func upsert(_ record: LocalAlarmRecord, syncedNow: Bool = false) -> LocalAlarmRecord {
+    func upsert(_ record: LocalAlarmRecord) -> LocalAlarmRecord {
         var copy = record
         copy.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1000)
-        if syncedNow {
-            copy.lastSyncedAtMillis = copy.updatedAtMillis
-        }
         if let index = alarms.firstIndex(where: { $0.id == copy.id }) {
             alarms[index] = copy
         } else {
@@ -329,6 +323,7 @@ final class LocalAlarmStore: ObservableObject {
         persist()
         // 지운 알람의 표시 언어 기록도 지운다 — 남겨 두면 알람을 지울 때마다 키가 쌓인다.
         AlarmPresentationLanguage.forget(alarm.id)
+        ReceivedAlarmPromotionStore().remove([alarm.id], ownerUserID: alarm.ownerUserId)
         guard let releasedAudioCacheKey,
               countByAudioCacheKey(releasedAudioCacheKey) == 0 else {
             return nil
@@ -350,12 +345,7 @@ final class LocalAlarmStore: ObservableObject {
     /// OS 예약 핸들을 기록한다.
     ///
     /// ⚠ **`updatedAtMillis` 를 올리지 않는다.** 이건 사용자가 고친 게 아니라 우리가 OS 에
-    /// 건 예약을 적어 두는 것이다. 올리면 `RemoteAlarmPullSync.locallyEditedByRecipient`
-    /// 가 **갓 받은 알람을 곧바로 '수신자가 고친 행' 으로** 읽는다 — pull 이
-    /// `upsert(_:syncedNow:)` 로 세워 둔 `updatedAt == lastSynced` 등식을 바로 뒤따르는
-    /// 예약이 깨기 때문이다. 그러면 서버 내용(음성·문구)이 영영 안 들어오고, 특히 첫
-    /// 수신 때 음성 다운로드가 실패한 행의 **재시도 경로가 죽는다.**
-    /// 같은 이유로 `applyWeatherVariant` 도 올리지 않는다.
+    /// 건 예약을 적어 두는 것이다. 같은 이유로 `applyWeatherVariant` 도 올리지 않는다.
     /// - Parameter soundFingerprint: 이 예약에 실어 보낸 소리의 지문
     ///   (`AlarmSoundPlan.fingerprint`). 나중에 행이 바뀌었는지 비교하는 기준이 된다.
     ///   **예약과 지문은 여기서 한 번에 기록된다** — 따로 쓰면 어긋난다.
@@ -410,8 +400,7 @@ final class LocalAlarmStore: ObservableObject {
     /// 날씨 조건 스냅샷을 갱신한다(`WeatherVariantRefreshService` 전용).
     ///
     /// ⚠ **`updatedAtMillis` 를 올리지 않는다.** 사용자가 고친 게 아니라 우리가 예보를
-    /// 받아 적은 것이다. 여기서 올리면 받은 알람이 '수신자가 고친 행' 으로 읽혀
-    /// (`RemoteAlarmPullSync.locallyEditedByRecipient`) 서버 내용이 영영 안 들어온다.
+    /// 받아 적은 것이다.
     func applyWeatherVariant(id: String, index: Int, resolvedAtMillis: Int64) {
         guard let position = alarms.firstIndex(where: { $0.id == id }) else { return }
         alarms[position].contextVariantIndex = index
@@ -560,8 +549,7 @@ final class LocalAlarmStore: ObservableObject {
     ///  - **멱등이다.** 다음 발생이 그대로이고 이미 걸려 있으면 nil — 같은 달력으로 몇 번 불러도 예약을 흔들지 않는다.
     ///  - **스누즈 중·울리는 중이면 건드리지 않는다**(nil). 예전에는 `setEnabled` 로 다시 켜서 스누즈 횟수를
     ///    지우고 옛 예약을 취소했다 — 그 사이 울리던 알람·스누즈가 사라진다.
-    ///  - ⚠ **수정 시각(`updatedAtMillis`)·동기화 상태를 건드리지 않는다** — 사용자의 편집이 아니다. 올리면 받은
-    ///    가족 알람이 '받은 사람이 고쳤다'(`RemoteAlarmPullSync.locallyEditedByRecipient`)로 읽히고, 내 알람은
+    ///  - ⚠ **수정 시각(`updatedAtMillis`)·동기화 상태를 건드리지 않는다** — 사용자의 편집이 아니다. 올리면
     ///    바뀐 것도 없이 dirty 가 되어 서버로 다시 간다.
     func recomputeHolidayOffFireTime(
         id: String,
@@ -645,23 +633,6 @@ final class LocalAlarmStore: ObservableObject {
         return true
     }
 
-    /// 음원·AlarmKit 예약까지 확보한 전달 세대를 ACK보다 먼저 저장한다.
-    /// 사용자 편집 판정에 쓰는 updatedAtMillis는 일부러 건드리지 않는다.
-    ///
-    /// ⚠ **디스크까지 쓰고 성공 여부를 돌려준다.** 비동기 저장으로 두면 ACK 가 실패한 채
-    /// 실행이 끝났을 때 다음 실행이 `remoteDeliveryVersion == nil` 로 되살아나고, 수신자가
-    /// 그 사이 편집하면 병합도 정확한 세대 ACK 도 막혀 **서버 행과 생성 음원이 영원히 남는다**
-    /// (다른 기기가 그걸 또 임포트한다). 안드로이드는 같은 자리에서 `NonCancellable` Room
-    /// 쓰기를 기다린다 — 두 앱이 같은 보장을 해야 한다.
-    ///
-    /// - Returns: 디스크에 실제로 남았는지. 거짓이면 호출자는 ACK 를 미룬다.
-    @discardableResult
-    func markRemoteDeliveryVersion(remoteID: String, deliveryVersion: String) -> Bool {
-        guard let index = alarms.firstIndex(where: { $0.remoteAlarmId == remoteID }) else { return false }
-        alarms[index].remoteDeliveryVersion = deliveryVersion
-        return saveNow()
-    }
-
     /// 동기화 실패 시 호출.
     func markSyncFailed(id: String) {
         guard let index = alarms.firstIndex(where: { $0.id == id }) else { return }
@@ -671,11 +642,9 @@ final class LocalAlarmStore: ObservableObject {
     }
 
     /// Android `AlarmRepository.nextLocalSyncState` 동일.
-    /// - received_remote 는 항상 synced 로 회귀
     /// - remoteAlarmId 없으면 local_only
     /// - 그 외엔 dirty
     func nextLocalSyncState(for record: LocalAlarmRecord) -> AlarmSyncState {
-        if record.originEnum == .receivedRemote { return .synced }
         if record.remoteAlarmId == nil { return .localOnly }
         return .dirty
     }

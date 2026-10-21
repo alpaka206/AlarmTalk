@@ -74,16 +74,16 @@ export const ERROR_CODES = [
   'CONSENT_STATUS_FAILED',
   'DELETION_REQUEST_FAILED',
   'DOCUMENT_VERSION_REQUIRED',
-  'INVALID_BOOLEAN',
   'INVALID_CONSENT_TYPE',
   'INVALID_DYNAMIC_PROMPT_SETTINGS',
   'INVALID_NAME',
   'INVALID_NAME_LENGTH',
-  'INVALID_QUIET_DAYS',
-  'INVALID_QUIET_TIME',
-  'INVALID_QUIET_WINDOWS',
   'NO_FIELDS_TO_UPDATE',
   'POLICY_VERSION_MISMATCH',
+  // 광고 보상 (ads.ts) — AdMob 서버가 부르는 콜백이라 앱에는 닿지 않는다.
+  /** 키 목록을 방금 다시 받았다 — AdMob 이 1초 뒤 재시도하면 받힌다(`lib/admob-ssv.ts`). */
+  'AD_REWARD_RETRY_LATER',
+  'AD_REWARD_SIGNATURE_INVALID',
   // 음성 생성(TTS) (tts.ts)
   'BASIC_VOICE_PRESET_ONLY',
   'FREE_PLAN_PRESET_ONLY',
@@ -110,10 +110,8 @@ export const ERROR_CODES = [
   'CHECKOUT_DISABLED',
   'FREE_NOT_BILLABLE',
   // GIFT_PERSONAL_ONLY 는 2026-10-14 에 지웠다 — 선물 결제를 없앴다(아래 「코드 등록」 묶음의 ⚠).
-  'GROUP_FULL',
   'INVALID_CANCEL_MODE',
   'NOT_FOUND',
-  'NO_ACTIVE_FAMILY_OWNER_SUBSCRIPTION',
   'NO_ACTIVE_SUBSCRIPTION',
   'PLAN_INACTIVE',
   'PLAN_KEY_REQUIRED',
@@ -121,16 +119,12 @@ export const ERROR_CODES = [
   'PLAY_REVOKE_FAILED',
   'STORE_CANCEL_UNSUPPORTED',
   // 알람 공통 검증 (alarm-helpers.ts)
-  'FAMILY_ALARM_DISABLED',
-  'FAMILY_ALARM_LEAD_TIME',
-  'FAMILY_ALARM_QUIET_TIME',
   'INVALID_ALARM_MODE',
   'INVALID_BUCKET_ID',
   'INVALID_IS_ACTIVE',
   'INVALID_MESSAGE_ID',
   'INVALID_REPEAT_DAYS',
   'INVALID_SNOOZE_MINUTES',
-  'INVALID_TARGET_USER',
   'INVALID_TIME_FORMAT',
   'INVALID_TIME_VALUE',
   'INVALID_VIBRATION_PATTERN',
@@ -139,15 +133,12 @@ export const ERROR_CODES = [
   // 알람 쓰기 (alarm-mutation.ts)
   'ALARM_DELETE_FAILED',
   'ALARM_NOT_FOUND',
-  'ALARM_SCHEMA_UPGRADING',
-  'DELIVERY_VERSION_REQUIRED',
   'INVALID_ALARM_ID',
-  'INVALID_DELIVERY_VERSION',
   'MESSAGE_NOT_FOUND',
+  /** `POST /alarm` 의 `target_user_id` 가 남의 계정이다 — 남에게 보내는 알람은 없다(옛 앱의 가족 알람 보내기). */
   'NOT_CONNECTED',
   'NO_UPDATE_FIELDS',
   'REQUIRED_FIELDS_MISSING',
-  'TARGETED_ALARM_IMMUTABLE',
   'VOICE_FEATURE_REQUIRES_PAID_PLAN',
   'VOICE_PROFILE_NOT_FOUND',
   // 애플 결제 (billing-apple.ts)
@@ -174,27 +165,7 @@ export const ERROR_CODES = [
   'CROSS_STORE_RENEWAL_ACTIVE',
   'UNKNOWN_PRODUCT',
   'USER_NOT_FOUND',
-  // 가족 알람 (family-alarm.ts)
-  'INVALID_WAKE_AT',
-  'LABEL_TOO_LONG',
-  'NOT_SAME_GROUP',
-  'NOT_UPLOAD_OWNER',
-  'NO_VOICE_PROFILE',
-  'RECIPIENT_NOT_FOUND',
-  'RECIPIENT_REQUIRED',
-  'SELF_ALARM',
-  'UPLOAD_NOT_FOUND',
-  'VOICE_UPLOAD_REQUIRED',
-  // 가족 그룹 (family-group.ts)
-  'CANNOT_REMOVE_OWNER',
-  'GROUP_NOT_FOUND',
-  'NOT_MEMBER',
-  'OWNER_CANNOT_LEAVE',
-  'OWNER_ONLY',
-  'SELF_REMOVE',
-  'SELF_TRANSFER',
-  'TARGET_NOT_MEMBER',
-  'TARGET_REQUIRED',
+  // 가족 알람·가족 그룹·음성 업로드 묶음은 2026-10-20 커플·가족 이용권과 함께 지웠다 — 내던 라우트가 없다.
   // 인증 (auth.ts)
   // ⚠ 여기 코드는 오래 산다 — 앱의 로그인·가입 화면이 코드로 분기한다(이메일 중복, 소셜
   //    계정으로 가입된 이메일 등). 이름을 고치면 구버전 앱의 그 분기가 통째로 죽는다.
@@ -242,18 +213,11 @@ export const ERROR_CODES = [
   'INVALID_DATE',
   'INVALID_RANGE',
   'RANGE_TOO_LARGE',
-  // 음성 업로드 (voice-upload.ts)
-  'AUDIO_DURATION_TOO_LONG',
-  'AUDIO_DURATION_TOO_SHORT',
-  'AUDIO_FILE_REQUIRED',
-  'MULTIPART_BODY_REQUIRED',
   // 구글 실시간 알림 (billing-google-rtdn.ts)
   'GOOGLE_PURCHASE_NOT_FOUND',
   'GOOGLE_VERIFICATION_FAILED',
   'RTDN_BAD_TOKEN',
   'RTDN_UNCONFIGURED',
-  // 코드 등록 — 빈 입력 (code.ts)
-  'CODE_REQUIRED',
   // 동의 (consent.ts)
   'CONSENT_REQUIRED',
   'CONSENT_STATE_UNAVAILABLE',
@@ -265,25 +229,17 @@ export const ERROR_CODES = [
   'INVALID_PUSH_TOKEN',
   // 관리자 (admin.ts)
   'ADMIN_UNCONFIGURED',
-  // 코드 등록 (lib/voucher-redemption.ts)
-  // ⚠ 라우트가 아니라 **라이브러리**가 던진다(VoucherRedemptionError.errorCode) — 목록에서 빠지기
-  //    쉬운 자리다. 앱의 코드 등록 화면이 이 코드들로 안내 문구를 고른다.
+  // 코드 등록 (code.ts) — **받는 코드가 없다.** 옛 앱의 코드 등록 화면이 아직 부르므로 언제나 이 코드 하나로
+  // 답한다(옛 앱 호환 — minSupported 가 현재 빌드를 넘으면 지운다).
   // 프로모 코드 갈래(ACTIVE_SUBSCRIPTION_EXISTS·CODE_EXHAUSTED·CODE_GROUP_ALREADY_REDEEMED·
   // CODE_INACTIVE·CODE_MISCONFIGURED·CODE_NOT_IN_WINDOW·PROMO_REDEEM_FAILED)는 프로모 코드와 함께
   // 2026-10-12 에 지웠다(App Store 3.1.1 — routes/code.ts 머리말). 옛 앱은 그 코드를 받을 일이 없다.
   // ⚠ **선물 갈래(INVALID_GIFT_PLAN — 그리고 위의 GIFT_PERSONAL_ONLY·PURCHASE_NOT_COMPLETED)는 선물 코드와
   //   함께 2026-10-14 에 지웠다 — 되살리지 말 것**(App Store 3.1.1 두 번째 반려 — routes/code.ts 머리말).
   //   서버가 더는 내지 않으니 옛 앱도 받을 일이 없다. 할인·무료 이용은 스토어 오퍼 코드로 준다.
-  'CODE_ALREADY_REDEEMED_BY_YOU',
-  'CODE_ALREADY_USED',
-  'CODE_EXPIRED',
+  // 초대 코드 갈래(CODE_REQUIRED·CODE_TOO_LONG·CODE_EXPIRED·CODE_ALREADY_USED·CODE_ALREADY_REDEEMED_BY_YOU·
+  // INVALID_FORMAT·INVALID_INVITE_PLAN·OWNS_ACTIVE_GROUP·SELF_ISSUED)는 2026-10-20 커플·가족 이용권과 함께 지웠다.
   'CODE_NOT_FOUND',
-  'INVALID_FORMAT',
-  'INVALID_INVITE_PLAN',
-  'OWNS_ACTIVE_GROUP',
-  'SELF_ISSUED',
-  // 코드 등록 (code.ts)
-  'CODE_TOO_LONG',
   // 랜딩 이벤트 (event.ts) — 앱이 아니라 랜딩 페이지가 받는다(문구는 apps/landing 의 messages).
   'INVALID_BODY',
   'INVALID_ID',
@@ -331,8 +287,6 @@ export const ALERTING_ERROR_CODES: readonly ErrorCode[] = [
   'VOICE_CLONE_NO_SPEECH',
   'TTS_GENERATION_FAILED',
   'PERSO_FAILED',
-  // 스키마 마이그레이션 창에 걸린 요청 — 배포 직후 잠깐이어야 하고, 계속 나오면 사고다.
-  'ALARM_SCHEMA_UPGRADING',
   // 결제 확정이 거절된 갈래. 2026-09-19 사고에서 우리는 증상(VOICE_FEATURE_REQUIRES_PAID_PLAN)만
   // 보고 원인은 한 줄도 못 봤다 — 거절이 구조화 로그에만 남아 있었다. 사용자는 이미 돈을 냈는데
   // 서버가 무료로 보는 상태이고, 고칠 수 있는 것은 우리뿐이다. (`SUBSCRIPTION_EXPIRED` 는 정상
@@ -352,8 +306,8 @@ export const ALERTING_ERROR_CODES: readonly ErrorCode[] = [
 
 /**
  * **사용자가 친 값의 예상된 거절.** 두 앱은 이 코드의 4xx 를 Sentry 이벤트로 올리지 않고 브레드크럼(category
- * `refusal`)으로 남긴다. 틀렸거나 지난 인증 코드, 이미 가입된 이메일, 잘못 친 이용권 코드 — 이유가 **사용자가 친
- * 값**이고, 화면이 코드로 고른 문장으로 그 이유를 이미 말한다. 우리가 고칠 코드가 없다
+ * `refusal`)으로 남긴다. 틀렸거나 지난 인증 코드, 이미 가입된 이메일, 옛 앱의 코드 등록에 친 코드 — 이유가 **사용자가
+ * 친 값**이고, 화면이 코드로 고른 문장으로 그 이유를 이미 말한다. 우리가 고칠 코드가 없다
  * (`docs/spec/error-codes.md` §3 「앱도 같다」).
  *
  * 낮추는 조건은 셋이 다 맞을 때다 — 상태 400~499, 응답에 `error_code` 가 있다, 그 코드가 이 목록에 있다. 같은
@@ -375,9 +329,7 @@ export const CLIENT_EXPECTED_REFUSAL_CODES: readonly ErrorCode[] = [
   // 가입하려는 이메일이 이미 있다(이메일/비밀번호 계정 · 소셜 계정) — 화면이 로그인으로 안내한다.
   'AUTH_EMAIL_TAKEN',
   'AUTH_EMAIL_SOCIAL',
-  // 이용권 코드 — 친 코드가 없거나, 지났거나, 이미 쓰였다(남이 · 내가).
+  // 옛 앱의 코드 등록 — 받는 코드가 없어 언제나 이 답이다(routes/code.ts). 지났거나 이미 쓰인 코드의 갈래는
+  // 초대 코드와 함께 2026-10-20 에 지웠다.
   'CODE_NOT_FOUND',
-  'CODE_EXPIRED',
-  'CODE_ALREADY_USED',
-  'CODE_ALREADY_REDEEMED_BY_YOU',
 ];

@@ -160,7 +160,6 @@ final class DefaultVoiceSubstituteTests: XCTestCase {
         let record = rehearsalAlarm()
         let freeSnapshot = AccessSnapshot(
             subscriptionResponse: BillingSubscriptionResponse(subscription: nil, plan: nil),
-            familyGroup: nil,
             storePlanKey: nil,
             storeEntitlementUntilMillis: nil,
             userPlan: "free"
@@ -191,26 +190,11 @@ final class DefaultVoiceSubstituteTests: XCTestCase {
                 ),
                 plan: nil
             ),
-            familyGroup: nil,
             storePlanKey: nil,
             storeEntitlementUntilMillis: nil,
             userPlan: "plus"
         )
         XCTAssertFalse(PaidVoiceGate.shouldDowngrade(record: rehearsalAlarm(), snapshot: paidSnapshot))
-    }
-
-    func test_receivedAlarm_isNotJudgedByTheRecipientsPlan() {
-        var received = rehearsalAlarm()
-        received.origin = AlarmOrigin.receivedRemote.rawValue
-        XCTAssertFalse(PaidVoiceGate.shouldDowngrade(record: received, snapshot: .empty))
-        let freeSnapshot = AccessSnapshot(
-            subscriptionResponse: BillingSubscriptionResponse(subscription: nil, plan: nil),
-            familyGroup: nil,
-            storePlanKey: nil,
-            storeEntitlementUntilMillis: nil,
-            userPlan: "free"
-        )
-        XCTAssertFalse(PaidVoiceGate.shouldDowngrade(record: received, snapshot: freeSnapshot))
     }
 
     // MARK: - 소리 결정 — 오디오 없는 기본 목소리 알람은 내장 인사말

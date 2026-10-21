@@ -40,27 +40,32 @@ beforeEach(() => {
 });
 
 describe('PAID_PLAN_TYPES', () => {
-  it('contains personal and family', () => {
+  it('contains personal', () => {
     expect(PAID_PLAN_TYPES.has('personal')).toBe(true);
-    expect(PAID_PLAN_TYPES.has('family')).toBe(true);
   });
 
   it('does not contain free', () => {
     expect(PAID_PLAN_TYPES.has('free')).toBe(false);
   });
 
-  it('has exactly 2 entries', () => {
-    expect(PAID_PLAN_TYPES.size).toBe(2);
+  it('커플·가족은 유료가 아니다 — 2026-10-20 에 없앤 이용권이다', () => {
+    expect(PAID_PLAN_TYPES.has('family')).toBe(false);
+    expect(PAID_PLAN_TYPES.has('couple')).toBe(false);
+  });
+
+  it('has exactly 1 entry', () => {
+    expect(PAID_PLAN_TYPES.size).toBe(1);
   });
 });
 
 describe('planTypeToUserPlan', () => {
-  it('maps family to family', () => {
-    expect(planTypeToUserPlan('family')).toBe('family');
-  });
-
   it('maps personal to plus', () => {
     expect(planTypeToUserPlan('personal')).toBe('plus');
+  });
+
+  it('없앤 커플·가족은 무료로 읽는다 — 그룹 등급(family)을 다시 쓰지 않는다', () => {
+    expect(planTypeToUserPlan('family')).toBe('free');
+    expect(planTypeToUserPlan('couple')).toBe('free');
   });
 
   it('maps unknown types to free', () => {
@@ -70,13 +75,12 @@ describe('planTypeToUserPlan', () => {
   });
 
   it('maps capitalized variants to free (case-sensitive)', () => {
-    expect(planTypeToUserPlan('Family')).toBe('free');
     expect(planTypeToUserPlan('Personal')).toBe('free');
-    expect(planTypeToUserPlan('FAMILY')).toBe('free');
+    expect(planTypeToUserPlan('PERSONAL')).toBe('free');
   });
 
   it('maps whitespace-padded strings to free', () => {
-    expect(planTypeToUserPlan(' family')).toBe('free');
+    expect(planTypeToUserPlan(' personal')).toBe('free');
     expect(planTypeToUserPlan('personal ')).toBe('free');
   });
 });

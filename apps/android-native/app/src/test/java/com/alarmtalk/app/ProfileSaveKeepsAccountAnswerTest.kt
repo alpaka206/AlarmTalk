@@ -7,7 +7,6 @@ import com.alarmtalk.app.network.AuthSessionStore
 import com.alarmtalk.app.network.AuthUser
 import com.alarmtalk.app.network.DynamicPromptSettings
 import com.alarmtalk.app.network.DynamicPromptWeatherSettings
-import com.alarmtalk.app.network.FamilyAlarmQuietWindow
 import com.alarmtalk.app.network.PersonalPromo
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -24,10 +23,10 @@ import java.io.File
  * **프로필 저장은 plan 답이 아니다 — 바꾼 칸만 지금 세션 위에 얹는다**(2026-10-05,
  * `docs/spec/session-and-auth.md` 「프로필 저장은 바꾼 칸만 세션에 적는다」).
  *
- * 예전 프로필 저장(닉네임·가족 알람 설정·계정 설정 올리기)은 요청 **전에** 잡은 세션의 사본을 통째로 저장했다. 그 사이
- * `/auth/me`(쿠폰·초대 등록 뒤의 갱신, `plan_changed`, 복귀 갱신)가 plan·프로모·받은 시각을 새로 적으면 그 답을 다음
+ * 예전 프로필 저장(닉네임·계정 설정 올리기)은 요청 **전에** 잡은 세션의 사본을 통째로 저장했다. 그 사이
+ * `/auth/me`(결제 뒤의 갱신, `plan_changed`, 복귀 갱신)가 plan·프로모·받은 시각을 새로 적으면 그 답을 다음
  * `/auth/me` 까지 되돌렸다 — 판정 스냅샷은 그대로여도 세션 plan 을 직접 읽는 편집기(`freeVoiceTier`)·목소리 관리
- * (`paidVoiceAccess`)가 방금 가족이 된 사람을 무료로 그렸다. 다른 기기에서 바꾼 이름·가족 설정도 같은 길로 되돌아갔다.
+ * (`paidVoiceAccess`)가 방금 유료가 된 사람을 무료로 그렸다. 다른 기기에서 바꾼 이름도 같은 길로 되돌아갔다.
  *
  * `MainViewModel` 은 단위 테스트에서 세울 수 없어(`EntryRefreshKeepsTokenTest` 와 같은 사정) 저장소·장부·배선으로 나눠 본다.
  * 저장소 테스트의 저장 단계는 [profileSave] 하나로 모았다 — 뷰모델이 부르는 길(`saveProfileEdit` →
@@ -104,7 +103,7 @@ class ProfileSaveKeepsAccountAnswerTest {
         val store = store()
         val sent = signInFree(store)
         val generation = store.sessionGeneration()
-        // 닉네임 PATCH 가 떠 있는 사이 쿠폰 등록 뒤의 갱신이 plus + 개인 프로모를 적고 토큰을 굴렸다.
+        // 닉네임 PATCH 가 떠 있는 사이 진입 갱신이 plus + 개인 프로모를 적고 토큰을 굴렸다.
         meArrives(store, sent.user.copy(plan = "plus", personalPromo = promo))
 
         val saved = profileSave(store, sent, generation) { it.copy(name = "새 이름") }
@@ -117,33 +116,6 @@ class ProfileSaveKeepsAccountAnswerTest {
         assertEquals("그 사이 굴린 토큰을 옛 것으로 덮었다(Codex #665 P2)", "t2", stored.token)
         // 메모리에 올릴 값(`authSession = saved`)도 저장본과 같다 — 관찰 경로와 갈라지지 않는다.
         assertEquals(stored, saved)
-    }
-
-    @Test
-    fun 가족_설정_저장은_그_사이_받은_가족_plan과_다른_기기의_이름을_되돌리지_않는다() {
-        val store = store()
-        val sent = signInFree(store)
-        val generation = store.sessionGeneration()
-        // 초대 코드 등록 직후 — 그 갱신이 가족 plan 과 다른 기기에서 바꾼 이름을 적었다.
-        meArrives(store, sent.user.copy(plan = "family", name = "다른 기기 이름"))
-
-        val windows = listOf(FamilyAlarmQuietWindow(days = listOf(1, 2, 3), start = "22:00", end = "07:00"))
-        profileSave(store, sent, generation) { user ->
-            user.copy(
-                allowFamilyAlarms = true,
-                familyAlarmQuietDays = windows.first().days,
-                familyAlarmQuietStart = windows.first().start,
-                familyAlarmQuietEnd = windows.first().end,
-                familyAlarmQuietWindows = windows,
-            )
-        }
-
-        val stored = checkNotNull(store.read())
-        assertTrue(stored.user.allowFamilyAlarms)
-        assertEquals(windows, stored.user.familyAlarmQuietWindows)
-        assertEquals("방금 가족이 된 사람이 무료로 돌아갔다", "family", stored.user.plan)
-        assertEquals("다른 기기에서 바꾼 이름을 되돌렸다", "다른 기기 이름", stored.user.name)
-        assertEquals(2_000L, stored.userFetchedAtMillis)
     }
 
     @Test
@@ -239,16 +211,16 @@ class ProfileSaveKeepsAccountAnswerTest {
 
     /**
      * 사본 저장을 잡는 감시가 **옛 모양을 실제로 잡는지** 먼저 본다. 글자 그대로(`contains("session.copy(user")`) 찾으면
-     * 공백·줄바꿈이 다른 모양을 놓친다 — 예전 `updateFamilyAlarmSettings` 는 `session.copy(` 뒤에 줄을 바꿔
-     * `user = session.user.copy(` 를 쓰는 여러 줄 모양이라, 감시가 그 경로에서 아무것도 지키지 않았다(2026-10-05 리뷰).
+     * 공백·줄바꿈이 다른 모양을 놓친다 — `session.copy(` 뒤에 줄을 바꿔 `user = session.user.copy(` 를 쓰는 여러 줄
+     * 모양의 저장 경로에서 감시가 아무것도 지키지 않았다(2026-10-05 리뷰).
      */
     @Test
     fun 사본_저장_감시는_한_줄과_여러_줄_모양을_모두_잡는다() {
         val oldShapes = listOf(
             // 예전 updateNickname·uploadDynamicPromptSettings — 한 줄
             "val updated = session.copy(user = session.user.copy(name = trimmed))",
-            // 예전 updateFamilyAlarmSettings — 여러 줄
-            "val updated = session.copy(\n                user = session.user.copy(\n                    allowFamilyAlarms = allowFamilyAlarms,",
+            // 여러 줄
+            "val updated = session.copy(\n                user = session.user.copy(\n                    name = trimmed,",
             // 점 앞뒤로 줄을 바꾼 모양
             "val updated = session\n    .copy(\n        user = session.user,\n    )",
         )
@@ -260,7 +232,7 @@ class ProfileSaveKeepsAccountAnswerTest {
     }
 
     @Test
-    fun 프로필_저장_세_곳은_바꾼_칸만_지금_세션_위에_적는다() {
+    fun 프로필_저장_두_곳은_바꾼_칸만_지금_세션_위에_적는다() {
         for (header in PROFILE_SAVES) {
             val body = bodyOf(header)
             assertFalse(
@@ -317,7 +289,6 @@ class ProfileSaveKeepsAccountAnswerTest {
         val SESSION_COPY_SAVE = Regex("""\bsession\s*\.\s*copy\s*\(\s*user\b""")
         val PROFILE_SAVES = listOf(
             "internal fun MainViewModel.updateNickname(",
-            "internal fun MainViewModel.updateFamilyAlarmSettings(",
             "private suspend fun MainViewModel.uploadDynamicPromptSettings(",
         )
     }

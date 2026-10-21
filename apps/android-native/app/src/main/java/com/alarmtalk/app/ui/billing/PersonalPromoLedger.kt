@@ -147,9 +147,9 @@ internal class PersonalPromoLedger(private val currentEntry: () -> Long) {
      * plan·프로모 표지). 나중에 보낸 요청의 답이 이미 plan 에 쓰였으면 false — 늦게 도착한 옛 답이
      * 새 답을 되돌리면 안 된다(iOS `AuthViewModel.applyFreshPlan` 의 순번 가드와 같다).
      *
-     * 예: 진입 갱신이 떠 있는 동안 쿠폰·결제 뒤의 갱신이 먼저 돌아와 가족·프로모 없음을 적었는데,
-     * 진입 갱신의 옛 `plus`·프로모가 뒤에 도착해 표지를 되살리면 보류 규칙(D9)이 방금 가족이 된
-     * 사람의 가족 기능을 닫고, 옛 plan 으로 [planAnsweredEntry] 까지 세워 잠금 대기를 풀어 버린다.
+     * 예: 진입 갱신이 떠 있는 동안 쿠폰·결제 뒤의 갱신이 먼저 돌아와 프로모 없음을 적었는데,
+     * 진입 갱신의 옛 `plus`·프로모가 뒤에 도착해 표지를 되살리면 옛 plan 으로 [planAnsweredEntry]
+     * 까지 세워 잠금 대기를 풀어 버린다.
      *
      * ⚠ **쓰기 전에** 부른다. true 면 그 순번을 잡는다 — 쓰기가 뒤에 문에서 거절돼도 옛 답이 그
      * 자리를 차지하지 못한다.
@@ -310,7 +310,7 @@ internal fun planScreenPersonalPromoOf(
  *
  * 무료 판정이 기간 한정 개인 플랜의 오프라인 차단(D1) **때문만**이면([freeOnlyByPromoLapse]),
  * **이 진입의 `/auth/me` 가 plan 에 반영된 뒤에만** 건다([planAnsweredEntry] == [entry]). 그 전의
- * plan 은 지난 실행의 캐시다 — 그 사이 다른 기기에서 쿠폰·iOS 결제·가족 합류로 원시 유료가 된
+ * plan 은 지난 실행의 캐시다 — 그 사이 다른 기기에서 쿠폰·iOS 결제로 원시 유료가 된
  * 사람도 종료 시각만 지나면 잠기고, 잠금은 새 응답이 오면 풀리지만 이미 적힌 강등 안내가
  * 결제자에게 "목소리 알람이 바뀌었어요" 를 말한다.
  *
@@ -351,7 +351,7 @@ internal enum class ForegroundPlanLockAction {
  * @param subscriptionRowAlive 구독 응답에 유료 행이 살아 있다(보류 — 되돌릴 수 없는 잠금 금지).
  * @param freeOnlyByPromoLapse `MainViewModel.isFreeOnlyByPromoLapse`.
  * @param paidEntitled 판정기가 유료로 확정했다(`PaidVoiceAccess.Entitled`).
- * @param billingNotEntitled 구독 응답이 무권한이고 커플·가족 접근도 없다.
+ * @param billingNotEntitled 구독 응답이 무권한이다.
  */
 internal fun foregroundPlanLockAction(
     signedIn: Boolean,

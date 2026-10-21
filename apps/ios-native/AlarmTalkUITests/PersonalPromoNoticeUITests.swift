@@ -10,7 +10,7 @@ import XCTest
 /// ⚠ UI 테스트는 CI 에서 돌지 않는다(CLAUDE.md). 안내 문구·버튼 이름을 바꾸면 여기도 고친다.
 final class PersonalPromoNoticeUITests: XCTestCase {
 
-    private let title = "개인 플랜 무료 이용이 곧 끝나요"
+    private let title = "플러스 무료 이용이 곧 끝나요"
 
     private func shot(_ name: String) {
         let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
@@ -131,7 +131,7 @@ final class PersonalPromoNoticeUITests: XCTestCase {
     /// "sending 'self.promoText' risks causing data races" 로 UI 테스트 타깃 컴파일을 막는다(그러면
     /// 같은 스킴의 유닛 테스트까지 못 돈다). 문자열만 두고 술어는 쓰는 자리에서 새로 만든다
     /// (`ScreenSweepUITests.test_sweep_menuSubscreens` 와 같은 이유).
-    private let promoPrefix = "개인 플랜 무료 이용 중"
+    private let promoPrefix = "플러스 무료 이용 중"
 
     /// 더보기 → 이용권. 프로모 문구가 **어딘가에** 보일 때까지 기다린다 — 카드가 아직 없어도
     /// (스켈레톤·가져오기 실패) 문구는 카드 위 한 줄로 보여야 한다(`drawsPromoLineAboveList`).
@@ -170,7 +170,7 @@ final class PersonalPromoNoticeUITests: XCTestCase {
         return card
     }
 
-    /// 프로모만 쓰는 계정(산 이용권·공유 멤버·보류 행 없음)은 **개인 카드가 '현재 이용권'** 이고,
+    /// 프로모만 쓰는 계정(산 이용권·보류 행 없음)은 **개인 카드가 '현재 이용권'** 이고,
     /// 프로모 문구는 그 카드의 상태 한 줄이다 — 카드 위에 또 말하지 않는다. 개인 카드에는 결제
     /// 버튼이 **남는다**(프로모는 산 이용권이 아니다 — 끝난 뒤 이어 쓰려면 사야 한다).
     /// 가짜 구독 카드·해지 버튼은 없다.
@@ -195,7 +195,6 @@ final class PersonalPromoNoticeUITests: XCTestCase {
             personal.buttons["결제하기"].waitForExistence(timeout: 15),
             "프로모로 현재가 된 개인 카드에 결제 버튼이 없다 — `isCurrent` 로 버튼을 숨겼다"
         )
-        XCTAssertFalse(personal.buttons["이용권 변경"].exists, "프로모는 산 이용권이 아니다 — 전환이 아니라 결제다")
         shot("03-이용권")
     }
 

@@ -62,11 +62,6 @@ vi.mock('../src/lib/billing-cancel', () => ({
     h.state.order.push('subscription_expiry');
   }),
 }));
-vi.mock('../src/lib/pending-plan-notifications', () => ({
-  runPlanNotificationDrainTurn: vi.fn().mockResolvedValue(false),
-  isPlanNotificationDrainMinute: () => false,
-  prunePendingPlanNotifications: vi.fn().mockResolvedValue(undefined),
-}));
 vi.mock('../src/lib/personal-promo-end', () => ({
   runPersonalPromoEnd: vi.fn(async () => {
     h.state.order.push('personal_promo_end');

@@ -68,16 +68,6 @@ class RingSoundDecisionTest {
     }
 
     @Test
-    fun receivedAlarmsAreNotJudgedByTheRecipientsPlan() {
-        var entitlementRead = false
-        val received = rehearsalCloneAlarm(origin = AlarmOrigins.RECEIVED_REMOTE)
-
-        assertFalse(ringTimePaidVoiceUnusable(received) { entitlementRead = true; false })
-        assertFalse("받은 알람은 권한을 읽지도 않는다", entitlementRead)
-        assertEquals(RingSound.OwnVoice("file:///clone/weather_0.mp3"), decide(received, entitled = false))
-    }
-
-    @Test
     fun freeSystemVoiceAlarmsAreNotDowngraded() {
         val systemAlarm = rehearsalCloneAlarm(
             voiceProfileId = TEST_SYSTEM_VOICE_ID,

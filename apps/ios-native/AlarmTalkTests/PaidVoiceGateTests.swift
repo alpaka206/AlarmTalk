@@ -12,7 +12,7 @@ final class PaidVoiceGateTests: XCTestCase {
 
     // MARK: - 헬퍼
 
-    private func paidVoiceAlarm(origin: AlarmOrigin = .localOwned) -> LocalAlarmRecord {
+    private func paidVoiceAlarm() -> LocalAlarmRecord {
         let now = Int64(Date().timeIntervalSince1970 * 1000)
         var record = LocalAlarmRecord(
             id: UUID().uuidString,
@@ -20,7 +20,6 @@ final class PaidVoiceGateTests: XCTestCase {
             hour: 7,
             minute: 0,
             fireAtMillis: now + 60_000,
-            origin: origin.rawValue,
             createdAtMillis: now,
             updatedAtMillis: now
         )
@@ -56,7 +55,6 @@ final class PaidVoiceGateTests: XCTestCase {
     ) -> AccessSnapshot {
         AccessSnapshot(
             subscriptionResponse: BillingSubscriptionResponse(subscription: sub, plan: plan),
-            familyGroup: nil,
             storePlanKey: nil,
             storeEntitlementUntilMillis: nil,
             userPlan: userPlan
@@ -91,10 +89,15 @@ final class PaidVoiceGateTests: XCTestCase {
         XCTAssertTrue(PaidVoiceGate.shouldDowngrade(record: paidVoiceAlarm(), snapshot: snap))
     }
 
-    /// 서버가 '본인 구독 없음' 이라고 답했고 그룹 접근도 없으면 무료다.
-    func test_noSubscriptionAndNoGroup_downgrades() {
-        let snap = snapshot(nil)
-        XCTAssertTrue(PaidVoiceGate.shouldDowngrade(record: paidVoiceAlarm(), snapshot: snap))
+    /// 서버가 '본인 구독 없음' 이라고 답했고 `users.plan` 도 유료가 아니면 무료다. 가족 이용권은 없어졌다 —
+    /// 남은 원시값(`family`)은 유료가 아니다.
+    func test_noSubscription_downgradesUnlessUserPlanIsPaid() {
+        XCTAssertTrue(PaidVoiceGate.shouldDowngrade(record: paidVoiceAlarm(), snapshot: snapshot(nil)))
+        XCTAssertTrue(PaidVoiceGate.shouldDowngrade(record: paidVoiceAlarm(), snapshot: snapshot(nil, userPlan: "family")))
+        XCTAssertFalse(
+            PaidVoiceGate.shouldDowngrade(record: paidVoiceAlarm(), snapshot: snapshot(nil, userPlan: "plus")),
+            "구독 행 없이 users.plan 으로 유료인 계정(기간 한정 개인 플랜 등)은 쓴다"
+        )
     }
 
     // MARK: - 강등하면 안 되는 경우
@@ -104,7 +107,7 @@ final class PaidVoiceGateTests: XCTestCase {
         XCTAssertFalse(PaidVoiceGate.shouldDowngrade(record: paidVoiceAlarm(), snapshot: snap))
     }
 
-    /// 회복형 상태(ON_HOLD/PAUSED)는 서버가 그룹·공유를 그대로 두므로 권한을 회수하지 않는다
+    /// 회복형 상태(ON_HOLD/PAUSED)는 행으로는 권한을 회수하지 않는다 — 회수는 `users.plan` 이 가른다
     /// (`resolvePlanAfterSuspend` 와 같은 취급).
     func test_onHoldOrPaused_doesNotDowngrade() {
         for status in ["on_hold", "paused", "ON_HOLD", "PAUSED"] {
@@ -127,8 +130,8 @@ final class PaidVoiceGateTests: XCTestCase {
     }
 
     /// 결제 보류로 서버가 `users.plan` 을 회수하면 **남아 있는 구독 행보다 그게 위다.**
-    /// 서버는 회복을 위해 그룹 연동 구독 행을 취소하지 않고 남기므로(`propagateGroupMemberPlans`
-    /// 는 재계산에서 제외만 한다), 행부터 보면 결제가 밀린 멤버가 계속 유료로 읽힌다.
+    /// 서버는 회복을 위해 구독 행을 취소하지 않고 남기므로(`resolvePlanAfterSuspend`), 행부터 보면
+    /// 결제가 밀린 사용자가 계속 유료로 읽힌다.
     func test_suspendedUserPlan_beatsRetainedSubscriptionRow() {
         let retained = subscription(status: "active", expiresAt: "2099-01-01T00:00:00Z")
         XCTAssertTrue(
@@ -141,7 +144,7 @@ final class PaidVoiceGateTests: XCTestCase {
         XCTAssertFalse(
             PaidVoiceGate.shouldDowngrade(
                 record: paidVoiceAlarm(),
-                snapshot: snapshot(retained, userPlan: "family")
+                snapshot: snapshot(retained, userPlan: "plus")
             ),
             "정상 구독까지 막지는 않는다"
         )
@@ -151,9 +154,7 @@ final class PaidVoiceGateTests: XCTestCase {
     /// 행으로 등급을 올리면 결제가 밀린 사용자에게 유료 UI 를 보여 주고 서버가 거부할
     /// 액션을 유도한다. 단 스토어는 여전히 위다.
     func test_bestKnown_ignoresRetainedRowWhenPlanSuspended() {
-        let plan = BillingPlan(
-            id: "p", key: "family", name: "가족", planType: "family", maxMembers: 4
-        )
+        let plan = BillingPlan(id: "p", key: "personal", name: "개인", planType: "personal")
         let response = BillingSubscriptionResponse(
             subscription: subscription(status: "active", expiresAt: "2099-01-01T00:00:00Z"),
             plan: plan
@@ -163,32 +164,13 @@ final class PaidVoiceGateTests: XCTestCase {
             .free
         )
         XCTAssertEqual(
-            PlanTier.bestKnown(serverSubscription: response, storeTier: .free, userPlan: "family"),
-            .family
+            PlanTier.bestKnown(serverSubscription: response, storeTier: .free, userPlan: "plus"),
+            .personal
         )
         XCTAssertEqual(
             PlanTier.bestKnown(serverSubscription: response, storeTier: .personal, userPlan: "free"),
             .personal,
             "스토어가 유효하다고 하면 서버의 free 로 뒤집지 않는다"
-        )
-    }
-
-    /// 본인 구독이 없어도 커플/가족 그룹 멤버면 유료 목소리를 쓴다.
-    func test_groupMemberWithoutOwnSubscription_doesNotDowngrade() {
-        let plan = BillingPlan(
-            id: "p", key: "family", name: "가족", planType: "family", maxMembers: 4
-        )
-        let snap = snapshot(nil, plan: plan)
-        XCTAssertFalse(PaidVoiceGate.shouldDowngrade(record: paidVoiceAlarm(), snapshot: snap))
-    }
-
-    /// **공유받은 알람은 받는 쪽 구독으로 판단하지 않는다.** 보낸 사람의 구독으로
-    /// 성립하는 것이라, 받는 사람이 무료라고 목소리를 뺏으면 안 된다.
-    func test_receivedRemote_neverDowngrades() {
-        let snap = snapshot(nil)
-        XCTAssertTrue(PaidVoiceGate.shouldDowngrade(record: paidVoiceAlarm(), snapshot: snap))
-        XCTAssertFalse(
-            PaidVoiceGate.shouldDowngrade(record: paidVoiceAlarm(origin: .receivedRemote), snapshot: snap)
         )
     }
 

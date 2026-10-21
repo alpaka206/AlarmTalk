@@ -7,7 +7,7 @@ import XCTest
 /// 는 Xcode 시뮬레이터의 StoreKit Configuration 위에서만 동작하므로 본 테스트는
 /// 다루지 않는다. 본 파일은 다음만 검증한다.
 ///
-///   - SubscriptionProduct 는 월간 구독 3개뿐이다(선물 상품 없음). 번들의 StoreKit 설정도 같은 셋이다.
+///   - SubscriptionProduct 는 개인 월간 구독 하나뿐이다(커플·가족·선물 상품 없음). 번들의 StoreKit 설정도 같다.
 ///   - 각 productID 가 백엔드 plan key 와 1:1 매핑된다.
 ///   - PlanTier ↔ SubscriptionProduct round-trip 이 안전하다.
 ///   - `SubscriptionProduct.make(tier:)` 가 free 에 대해 nil 을 돌려준다.
@@ -16,25 +16,25 @@ final class SubscriptionManagerTests: XCTestCase {
 
     // MARK: - Product enum
 
-    /// **파는 것은 월간 자동 갱신 구독 셋뿐이다.**
+    /// **파는 것은 개인 월간 자동 갱신 구독 하나뿐이다.**
     ///
     /// ⚠ **선물(소모성) 상품을 되살리지 말 것**(2026-10-14, App Store 지침 3.1.1 두 번째 반려).
     /// 사서 받은 `GIFT-` 코드를 쳐서 유료 기능을 여는 길이 반려 사유였다. 할인·무료 이용은
-    /// 스토어 오퍼 코드로 준다. 상품이 하나라도 늘면 이 테스트가 먼저 깨져야 한다.
-    func testSellsOnlyTheThreeMonthlySubscriptions() {
-        XCTAssertEqual(SubscriptionProduct.allCases, [.personalMonthly, .coupleMonthly, .familyMonthly])
+    /// 스토어 오퍼 코드로 준다. 커플·가족 상품도 판매를 멈췄다(2026-10-20). 상품이 하나라도 늘면
+    /// 이 테스트가 먼저 깨져야 한다.
+    func testSellsOnlyThePersonalMonthlySubscription() {
+        XCTAssertEqual(SubscriptionProduct.allCases, [.personalMonthly])
         XCTAssertEqual(
             Set(SubscriptionProduct.allCases.map(\.rawValue)),
-            [
-                "com.alarmtalk.app.personal_monthly",
-                "com.alarmtalk.app.couple_monthly",
-                "com.alarmtalk.app.family_monthly",
-            ]
+            ["com.alarmtalk.app.personal_monthly"]
         )
         XCTAssertNil(
             SubscriptionProduct(rawValue: "com.alarmtalk.app.personal_gift_1m"),
             "선물 상품은 없앴다 — 남은 옛 트랜잭션은 모르는 상품으로 끝낸다"
         )
+        for retired in ["com.alarmtalk.app.couple_monthly", "com.alarmtalk.app.family_monthly"] {
+            XCTAssertNil(SubscriptionProduct(rawValue: retired), "커플·가족 상품은 모르는 상품이다: \(retired)")
+        }
     }
 
     /// 시뮬레이터용 StoreKit 설정(앱 번들에 실린다)도 **같은 셋**만 판다.
@@ -75,8 +75,6 @@ final class SubscriptionManagerTests: XCTestCase {
     func testPlanTierMappingIsCorrect() {
         let expectations: [(SubscriptionProduct, PlanTier)] = [
             (.personalMonthly, .personal),
-            (.coupleMonthly,   .couple),
-            (.familyMonthly,   .family),
         ]
         for (product, expectedTier) in expectations {
             XCTAssertEqual(product.planTier, expectedTier, "\(product) 의 PlanTier 매핑이 잘못됨")
@@ -111,8 +109,6 @@ final class SubscriptionManagerTests: XCTestCase {
 
     func testMakeReturnsCorrectProduct() {
         XCTAssertEqual(SubscriptionProduct.make(tier: .personal), .personalMonthly)
-        XCTAssertEqual(SubscriptionProduct.make(tier: .couple),   .coupleMonthly)
-        XCTAssertEqual(SubscriptionProduct.make(tier: .family),   .familyMonthly)
     }
 
     func testMakeReturnsNilForFreeTier() {
@@ -123,15 +119,11 @@ final class SubscriptionManagerTests: XCTestCase {
 
     func testPlanTierOrderingIsMonotonic() {
         XCTAssertLessThan(PlanTier.free.tierOrder, PlanTier.personal.tierOrder)
-        XCTAssertLessThan(PlanTier.personal.tierOrder, PlanTier.couple.tierOrder)
-        XCTAssertLessThan(PlanTier.couple.tierOrder, PlanTier.family.tierOrder)
     }
 
     func testPlanTierOrderingIsStable() {
         XCTAssertEqual(PlanTier.free.tierOrder,     0)
         XCTAssertEqual(PlanTier.personal.tierOrder, 1)
-        XCTAssertEqual(PlanTier.couple.tierOrder,   2)
-        XCTAssertEqual(PlanTier.family.tierOrder,   3)
     }
 
     // MARK: - PurchaseResult

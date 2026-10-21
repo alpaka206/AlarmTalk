@@ -5,8 +5,6 @@ interface AlarmTalkApi :
     RemoteAlarmApi,
     VoiceProfileApi,
     TtsApi,
-    FamilyApi,
-    CodeApi,
     BillingApi,
     HolidayApi,
     PushApi,

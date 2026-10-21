@@ -294,7 +294,7 @@ struct AlarmEditDraft: Equatable {
             && hasNoMessageChoice(randomPrompt: randomPrompt, selectedBucket: selectedBucket, ttsText: ttsText)
     }
 
-    /// **고른 목소리를 지금 쓸 수 없는가** — 목록에서 사라졌거나(삭제·공유 해제·미준비)
+    /// **고른 목소리를 지금 쓸 수 없는가** — 목록에서 사라졌거나(삭제·접근권 상실·미준비)
     /// 무료 플랜이라 잠긴 목소리로 저장하려는 경우. 안드로이드 `SaveBlockReason.VOICE_UNAVAILABLE` 짝.
     ///
     /// ⚠ **이걸로 저장 버튼을 죽이지 않는다**(2026-09-29). 편집기의 '삭제된 목소리' 배너를

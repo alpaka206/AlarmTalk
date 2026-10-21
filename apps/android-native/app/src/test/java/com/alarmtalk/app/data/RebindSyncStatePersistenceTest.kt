@@ -62,21 +62,6 @@ class RebindSyncStatePersistenceTest {
         assertEquals("new-0", stored.ttsMessageId)
     }
 
-    @Test
-    fun 받은_알람은_재바인딩해도_올리지_않는다() = runBlocking {
-        val received = alarm(
-            id = "b",
-            syncState = AlarmSyncStates.SYNCED,
-            remoteAlarmId = "remote-2",
-            origin = AlarmOrigins.RECEIVED_REMOTE,
-        )
-        dao.upsert(received)
-        dao.upsertPreservingServerSyncFields(
-            received.copy(syncState = received.nextLocalSyncState()),
-        )
-        assertEquals(AlarmSyncStates.SYNCED, dao.getById(received.id)!!.syncState)
-    }
-
     private fun alarm(
         id: String = "a",
         syncState: String,

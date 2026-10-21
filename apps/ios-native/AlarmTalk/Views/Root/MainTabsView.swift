@@ -19,7 +19,6 @@ struct MainTabsView: View {
     @State private var voicesNotReadyAlert = false
 
     @State private var selectedTab: NativeTab = UIPreviewSeed.initialTab ?? .alarms
-    @State private var receivedAlarmSeenAtMillis: Int64 = 0
 
     /// 알람 탭 동기화의 60초 스로틀 표 — 키는 탭 + 계정(`tabRefreshThrottleKey`, 토큰이 아니다).
     /// 완결되지 않은 회차는 칸을 지워 다음 진입이 곧바로 다시 돈다(`AlarmTabSyncThrottle`).
@@ -33,11 +32,11 @@ struct MainTabsView: View {
     /// 설정 시트 표시 여부.
     @State private var settingsPresented = false
 
-    /// 보조 시트 표시 — People/Billing.
+    /// 보조 화면 표시 — 이용권.
     @State private var auxiliaryScreen: AuxiliaryScreen?
 
     /// ＋FAB 가 알람 목록에 '만들기' 를 요청하는 신호. 값이 바뀌면 목록이
-    /// `openCreateAlarm()`(권한 확인 → 누구를 깨울까요?)을 탄다.
+    /// `openCreateAlarm()`(권한 확인)을 탄다.
     @State private var alarmCreateRequest: UUID?
 
     /// 알람 탭이 다중 선택 모드인가(＋FAB 를 숨긴다).
@@ -109,7 +108,6 @@ struct MainTabsView: View {
 
                 BottomNavBar(
                     selected: $selectedTab,
-                    badgeProvider: badgeCount(for:),
                     onSelect: selectTab
                 )
             }
@@ -123,12 +121,8 @@ struct MainTabsView: View {
                     Button {
                         // ⚠ **여기서 편집기를 직접 열지 말 것.** 예전에는 이 버튼이
                         // `editorTarget` 을 곧바로 세워, 알람 목록의 `openCreateAlarm()`
-                        // 이 하는 두 가지를 건너뛰었다:
-                        //   1. 알람 권한 확인·요청 (굳은 거부면 설정으로 안내)
-                        //   2. 「누구를 깨울까요?」 시트
-                        // FAB 는 **알람이 하나라도 있을 때만** 뜨고 빈 상태 카드는 그때
-                        // 사라지므로, 알람이 생긴 뒤로는 **가족 알람을 만들 길이 아예
-                        // 없어졌다**(2026-08-07 수정).
+                        // 이 하는 알람 권한 확인·요청(굳은 거부면 설정으로 안내)을
+                        // 건너뛰었다(2026-08-07 수정).
                         alarmCreateRequest = UUID()
                     } label: {
                         Image(systemName: "plus")
@@ -167,7 +161,7 @@ struct MainTabsView: View {
             .task {
                 // DEBUG 전용 — 편집기 화면 확인 진입점.
                 if UIPreviewSeed.opensEditor, editorTarget == nil {
-                    editorTarget = AlarmEditorTarget(id: UUID().uuidString, editingAlarmID: nil, familyAlarmMode: false, recipientUserID: nil)
+                    editorTarget = AlarmEditorTarget(id: UUID().uuidString, editingAlarmID: nil)
                 }
             }
             .background(theme.homeGradient)
@@ -175,13 +169,13 @@ struct MainTabsView: View {
             // 없다(`AlarmListScreen.kt:174-176`). large title 을 켜면 '알람' 대제목과
             // 네비바 머티리얼이 그라데이션 위에 얹혀 배경이 두 겹으로 갈린다.
             .toolbar(.hidden, for: .navigationBar)
-            // ⚠ **상단 프로필 드롭다운을 되살리지 말 것.** 여기 있던 항목(코드 등록·
-            // 이용권·공유 이용권·설정)은 전부 **더보기 탭**에 그대로 있다. 안드로이드는
+            // ⚠ **상단 프로필 드롭다운을 되살리지 말 것.** 여기 있던 항목(이용권·설정)은
+            // **더보기 탭**으로 옮겼다. 안드로이드는
             // 이 메뉴를 더보기 탭으로 승격하면서 없앴다 — 같은 곳으로 가는 길이 둘이면
             // 어느 쪽이 정본인지 매번 헷갈린다.
-            // ⚠ **화면급 이동은 `.sheet` 가 아니라 push 다.** 편집기·설정·이용권·코드
-            // 등록·공유 이용권 다섯 화면이 iOS 만 아래에서 올라오는 시트였고, 안드로이드는
-            // 다섯 다 NavHost 목적지(옆에서 밀려옴)다. 안드로이드는 그 push 전환을
+            // ⚠ **화면급 이동은 `.sheet` 가 아니라 push 다.** 편집기·설정·이용권 같은
+            // 화면이 iOS 만 아래에서 올라오는 시트였고, 안드로이드는
+            // 다 NavHost 목적지(옆에서 밀려옴)다. 안드로이드는 그 push 전환을
             // `ui/app/AlarmTalkApp.kt` 의 `PushEnterTransition` 네 짝으로 **일부러 지정**해
             // 하위 화면 전부에 붙여 뒀다 — 의도한 차이가 아니라 iOS 가 틀린 것이었다
             // (2026-08-10 사용자 지적).
@@ -189,9 +183,8 @@ struct MainTabsView: View {
             // 하단바·＋FAB 가 함께 사라지는 것도 안드로이드와 같다 — 그쪽은 `showAppChrome`
             // 이 `currentTab != null` 을 보므로 탭이 아닌 목적지에서는 크롬을 내린다.
             //
-            // ⚠ 바텀시트로 남겨 둔 것들과 헷갈리지 말 것. 「누구를 깨울까요?」·목소리
-            // 고르기·화면 테마·지역은 **안드로이드도 바텀시트**
-            // (`WakerSelectionSheet`)라 그대로 둔다.
+            // ⚠ 바텀시트로 남겨 둔 것들과 헷갈리지 말 것. 목소리 고르기·화면 테마·지역은
+            // **안드로이드도 바텀시트**(`WakerSelectionSheet`)라 그대로 둔다.
             .navigationDestination(item: $editorTarget) { target in
                 AlarmEditorSheet(
                     target: target,
@@ -220,11 +213,7 @@ struct MainTabsView: View {
                 )
             }
             .navigationDestination(item: $auxiliaryScreen) { screen in
-                AuxiliarySheetHost(
-                    screen: screen,
-                    onClose: { auxiliaryScreen = nil },
-                    onCodeRegistered: handleCodeRegistrationDestination
-                )
+                AuxiliarySheetHost(screen: screen)
             }
             // ⚠ **토큰을 id 로 쓰지 말 것 — 스스로를 취소한다.**
             // `GET /auth/me` 는 부를 때마다 **새 JWT** 를 발급하고
@@ -235,38 +224,12 @@ struct MainTabsView: View {
             // (2026-08-10 사용자 보고 → 원인 확인).
             // 다시 돌아야 하는 건 **계정이 바뀔 때**뿐이므로 user.id 로 건다.
             .task(id: auth.session?.user.id) {
-                loadReceivedAlarmBadgeState()
                 await refreshAll()
-                ensureReceivedAlarmBadgeBaseline()
             }
             .task(id: selectedTab) {
                 await refreshForSelectedTab(selectedTab)
             }
-            // ⚠ **알람 탭에 머무는 동안 새로 들어온 것도 '봤다' 로 기록한다**(2026-08-27).
-            // 예전에는 탭을 고르는 순간과 새로고침 뒤에만 기록해서, 그 탭을 보고 있는 사이
-            // 푸시로 들어온 알람은 수위선이 올라가지 않았다 — 화면에서는 목록에 보이고
-            // 배지도 (탭이 알람이라) 숨겨지는데, 다른 탭으로 옮기면 그것이 '안 본 것' 으로
-            // 되살아나고 다음 알람이 오면 1 이 아니라 **누적된 값**이 뜬다.
-            // 안드로이드는 `LaunchedEffect(currentTab, alarms, ...)` 로 이미 이렇게 한다.
-            //
-            // ⚠ **개수로는 부족하다**(2026-08-28 리뷰). 재전송은 같은 알람 id 를 덮어쓰므로
-            // 개수가 그대로다 — 그 알람 탭을 보고 있는 동안 온 재전송은 수위선을 못 올리고,
-            // 탭을 옮기면 다시 '안 본 것' 이 된다(바로 위 사고가 재전송 경로로 되살아난다).
-            // 그래서 **받은 알람의 최신 생성 시각**을 본다. 새로 오든 덮어쓰든 이 값이 움직인다.
-            .onChange(of: latestReceivedAlarmMillis) { _, _ in
-                guard selectedTab == .alarms else { return }
-                markReceivedAlarmsSeen()
-            }
         }
-    }
-
-    /// 받은 알람 중 가장 최근 생성 시각 — 배지 수위선을 올릴 때가 되었는지 보는 값이다.
-    /// 재전송(같은 id 를 덮어씀)도 이 값을 움직이므로 개수보다 넓게 잡는다.
-    private var latestReceivedAlarmMillis: Int64 {
-        store.alarms
-            .filter { $0.originEnum == .receivedRemote }
-            .map(\.createdAtMillis)
-            .max() ?? 0
     }
 
     /// 알람 탭을 **뺀** 나머지 탭 — 위 `body` 의 공용 `ScrollView` 안에 들어간다.
@@ -292,10 +255,7 @@ struct MainTabsView: View {
         case .menu:
             MenuView(
                 onOpenSettings: { settingsPresented = true },
-                onOpenBilling: { auxiliaryScreen = .billing },
-                onOpenMembers: { auxiliaryScreen = .members },
-                onOpenPeople: { auxiliaryScreen = .people },
-                hasSharedPass: socialFeatures.familyGroup?.group != nil
+                onOpenBilling: { auxiliaryScreen = .billing }
             )
         }
     }
@@ -305,38 +265,12 @@ struct MainTabsView: View {
         selectedTab = tab
     }
 
-    private func handleCodeRegistrationDestination(_ destination: CodeRegistrationDestination) {
-        switch destination {
-        case .home:
-            auxiliaryScreen = nil
-            selectedTab = .alarms
-        case .sharedPass:
-            auxiliaryScreen = .members
-        }
-    }
-
-    private func badgeCount(for tab: NativeTab) -> Int {
-        switch tab {
-        case .menu, .voices:
-            return 0
-        case .alarms:
-            return selectedTab == .alarms ? 0 : unreadReceivedAlarmCount
-        }
-    }
-
-    private var unreadReceivedAlarmCount: Int {
-        store.alarms.filter { alarm in
-            alarm.originEnum == .receivedRemote &&
-                alarm.createdAtMillis > receivedAlarmSeenAtMillis
-        }.count
-    }
-
     /// 계정이 정해졌을 때 한 번(콜드 스타트·로그인·계정 전환).
     ///
     /// ⚠ **알람 동기화는 여기서 부르지 않는다**(2026-09-29). 같은 순간 앱의 계정 키 `.task`
     ///   (`AlarmTalkApp` — `remoteSync.runFullSync()`)와 알람 탭 진입(`refreshForSelectedTab`)이
-    ///   이미 push → pull 을 돈다. 예전에는 여기서 pull 을 한 번 더 돌려 콜드 스타트에 `/alarm`
-    ///   쌍이 3~4번 나갔고, 그 사이 토글의 단건 push 가 `isBusy` 가드에 걸려 건너뛰어졌다.
+    ///   이미 돈다. 예전에는 여기서 한 번 더 돌려 콜드 스타트에 `/alarm` 요청이 3~4번 나갔고,
+    ///   그 사이 토글의 단건 push 가 `isBusy` 가드에 걸려 건너뛰어졌다.
     private func refreshAll() async {
         await voiceStudio.refreshOnEntry(session: auth.session)
         await socialFeatures.refreshOnEntry(session: auth.session)
@@ -373,56 +307,26 @@ struct MainTabsView: View {
             await socialFeatures.refreshOnEntry(session: auth.session)
         case .voices:
             // ⚠ **목소리 탭의 이용권 갱신은 빼지 말 것**(2026-08-24 실기기, 스펙 plan-gates §4).
-            //   목소리 탭이 앱 시작의 캐시 스냅샷에만 기대면, 다른 기기에서 플랜이 바뀐 가족
-            //   이용권 사용자가 '추가' 를 눌렀는데 이용권 안내 모달이 뜬다. 목소리 패널이 같은
+            //   목소리 탭이 앱 시작의 캐시 스냅샷에만 기대면, 다른 기기에서 플랜이 바뀐
+            //   사용자가 '추가' 를 눌렀는데 이용권 안내 모달이 뜬다. 목소리 패널이 같은
             //   갱신을 한 번 더 부르던 것은 걷어냈다 — 이 자리가 그 진입의 한 번이다.
             await voiceStudio.refreshOnEntry(session: auth.session)
             await socialFeatures.refreshOnEntry(session: auth.session)
         case .alarms:
-            // 받은-알람 seen 기준선은 네트워크 새로고침과 무관하게 항상 갱신해야 한다. 60초
-            // 스로틀에 막혀 아래에서 일찍 return 되면 markReceivedAlarmsSeen 가 지연돼 배지가
-            // 늦게 사라지므로, 스로틀 판정 전에 먼저 갱신한다. 권한 상태 새로고침도 로컬-only 라
-            // 저렴해 함께 둔다.
+            // 권한 상태 새로고침은 로컬-only 라 저렴하다 — 스로틀 판정 전에 둔다.
             alarmKit.refreshAuthorizationState()
-            markReceivedAlarmsSeen()
             // 탭+계정 키로 60초 스로틀(`tabRefreshThrottleKey` — 토큰이 아니다).
             // (Android lastTabRefreshAt parity)
             let throttleKey = Self.tabRefreshThrottleKey(tab: tab, userID: userID)
             let admittedAt = Date()
             guard alarmTabSyncThrottle.admit(key: throttleKey, now: admittedAt) else { return }
-            // Android: NativeTab.Alarms -> viewModel.syncNow() (push → pull).
-            // 기존 pull-only refresh 대신 전체 동기화로 로컬 변경을 먼저 밀어 올린다.
-            // seen 기준선은 풀로 새 받은-알람이 들어왔을 수 있으니 동기화 후 한 번 더 갱신한다.
+            // Android: NativeTab.Alarms -> viewModel.syncNow(). 로컬 변경을 서버에 올린다.
             let completed = await remoteSync.runFullSync()
             // ⚠ **완결되지 않은 회차(오프라인·저장소 로드 전·탭을 떠나 취소)는 칸을 지운다**
             //   (코덱스 #823 7차) — 남기면 60초 동안 알람 탭에 다시 들어와도 재시도하지 않아,
-            //   놓친 가족 알람 푸시를 따라잡는 자리가 늦어진다.
+            //   못 올린 알람 변경을 다시 올리는 자리가 늦어진다.
             alarmTabSyncThrottle.settle(key: throttleKey, admittedAt: admittedAt, completed: completed)
-            markReceivedAlarmsSeen()
         }
-    }
-
-    private func loadReceivedAlarmBadgeState() {
-        guard let userID = auth.session?.user.id else {
-            receivedAlarmSeenAtMillis = 0
-            return
-        }
-        receivedAlarmSeenAtMillis = ReceivedAlarmBadgeStore().readSeenAtMillis(userID: userID)
-    }
-
-    private func ensureReceivedAlarmBadgeBaseline() {
-        guard let userID = auth.session?.user.id else { return }
-        let badgeStore = ReceivedAlarmBadgeStore()
-        if badgeStore.hasBaseline(userID: userID) {
-            receivedAlarmSeenAtMillis = badgeStore.readSeenAtMillis(userID: userID)
-        } else {
-            receivedAlarmSeenAtMillis = badgeStore.markSeen(userID: userID, alarms: store.alarms)
-        }
-    }
-
-    private func markReceivedAlarmsSeen() {
-        guard let userID = auth.session?.user.id else { return }
-        receivedAlarmSeenAtMillis = ReceivedAlarmBadgeStore().markSeen(userID: userID, alarms: store.alarms)
     }
 }
 

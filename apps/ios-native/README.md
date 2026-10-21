@@ -177,28 +177,28 @@ Apple App Store 정책상 디지털 구독은 **반드시 StoreKit2 IAP** 로 �
 
 ### App Store Connect 제품 등록
 
-App Store Connect → My Apps → AlarmTalk → Features → In-App Purchases 에서 다음 3개 SKU 를 동일한 구독 그룹("AlarmTalk Subscriptions") 아래에 등록한다. (연간 SKU 는 판매하지 않는다.)
+App Store Connect → My Apps → AlarmTalk → Features → In-App Purchases 에서 다음 SKU 를 구독 그룹("AlarmTalk Subscriptions") 아래에 등록한다. (연간 SKU 는 판매하지 않는다.)
 
 | productID | PlanTier | Period | 비고 |
 | --- | --- | --- | --- |
 | `com.alarmtalk.app.personal_monthly` | personal | Monthly (P1M) | |
-| `com.alarmtalk.app.couple_monthly`   | couple   | Monthly (P1M) | |
-| `com.alarmtalk.app.family_monthly`   | family   | Monthly (P1M) | Family Sharing **enabled** |
 
-⚠ **선물(소모성) 상품 `com.alarmtalk.app.personal_gift_1m` 을 되살리지 말 것**(2026-10-14, App Store 지침 3.1.1 두 번째 반려). 사서 받은 `GIFT-` 코드를 쳐서 유료 기능을 여는 길이 반려 사유였다 — 상품·코드 발급·등록을 서버와 두 앱에서 전부 없앴다. 할인·무료 이용은 App Store **오퍼 코드**로 준다(결제가 스토어를 거친다). 앱이 파는 것은 위 구독 셋뿐이다(`SubscriptionManagerTests` 가 고정한다).
+커플·가족 SKU(`…couple_monthly`·`…family_monthly`)는 2026-10-20 에 커플·가족 이용권과 함께 없앴다 — App Store Connect 에서
+판매를 내린다(`docs/ios/APPLE-ACCOUNT-SETUP.md` 5-2c).
 
-- 모든 SKU 를 단일 구독 그룹에 두면 사용자가 그룹 내에서 자유롭게 업/다운그레이드 할 수 있고, 가족 플랜은 Family Sharing 을 켜서 Apple Family 그룹 멤버에게도 entitlement 가 propagate 된다.
+⚠ **선물(소모성) 상품 `com.alarmtalk.app.personal_gift_1m` 을 되살리지 말 것**(2026-10-14, App Store 지침 3.1.1 두 번째 반려). 사서 받은 `GIFT-` 코드를 쳐서 유료 기능을 여는 길이 반려 사유였다 — 상품·코드 발급·등록을 서버와 두 앱에서 전부 없앴다. 할인·무료 이용은 App Store **오퍼 코드**로 준다(결제가 스토어를 거친다). 앱이 파는 것은 위 개인 구독 하나뿐이다(`SubscriptionManagerTests` 가 고정한다).
+
 - 가격은 App Store 의 region 별 price tier 로 설정 — 코드는 `Product.displayPrice` 를 그대로 표시하므로 통화/세금이 자동 반영된다.
 
 ### 시뮬레이터 로컬 테스트
 
-`apps/ios-native/AlarmTalk/Configuration/StoreKitConfiguration.storekit` 파일이 시뮬레이터용 3개 SKU 정의를 담고 있다. `project.yml` 의 scheme 설정에서 자동 선택되며, 실기기/TestFlight 빌드에서는 무시되고 App Store Connect 가 권위로 사용된다.
+`apps/ios-native/AlarmTalk/Configuration/StoreKitConfiguration.storekit` 파일이 시뮬레이터용 SKU 정의(플러스 구독 하나 — `personal_monthly`)를 담고 있다. `project.yml` 의 scheme 설정에서 자동 선택되며, 실기기/TestFlight 빌드에서는 무시되고 App Store Connect 가 권위로 사용된다.
 
 xcodegen 후 Xcode 에서:
 
 1. Scheme → Edit Scheme → Run → Options → StoreKit Configuration 이 `StoreKitConfiguration.storekit` 인지 확인.
-2. 시뮬레이터에서 앱 실행 → 더보기 → 이용권 → 카드 4장(무료·개인·커플·가족,
-   `PlanTier.allCases`)이 뜨고 유료 3장에 `displayPrice` 가 붙는지 확인.
+2. 시뮬레이터에서 앱 실행 → 더보기 → 이용권 → 카드 2장(무료·플러스,
+   `PlanTier.allCases`)이 뜨고 플러스 카드에 `displayPrice` 가 붙는지 확인.
 3. 구매 버튼 탭 → 결제 시트가 뜨고 success/userCancelled/pending 분기가 모두 동작하는지 확인.
 4. "이전 구매 복원" 버튼 → `AppStore.sync()` 가 호출되고 다른 시뮬레이터 기기/Apple ID 의 구독이 propagate 되는지 확인.
 
@@ -235,7 +235,7 @@ xcodegen 후 Xcode 에서:
 
 ### Transaction listener race-safety
 
-`SubscriptionManager.startListeningForTransactions()` 는 `Task.detached` 위에서 `for await result in Transaction.updates` 를 돈다. 진입 케이스는 (1) 가족 공유 propagation, (2) 자동 갱신, (3) 환불(`revocationDate`), (4) Ask-to-Buy 보류 결제 승인 등이다.
+`SubscriptionManager.startListeningForTransactions()` 는 `Task.detached` 위에서 `for await result in Transaction.updates` 를 돈다. 진입 케이스는 (1) 자동 갱신, (2) 환불(`revocationDate`), (3) Ask-to-Buy 보류 결제 승인 등이다.
 
 - 같은 트랜잭션이 `purchase()` 와 listener 양쪽에서 처리되더라도 `transaction.finish()` 는 idempotent 하므로 안전.
 - `Transaction.currentEntitlements` 는 만료된 자동갱신 구독을 자동 제외하므로 만료 후 `currentTier` 가 자동으로 `.free` 로 떨어진다.
@@ -243,8 +243,8 @@ xcodegen 후 Xcode 에서:
 
 ### 비-IAP 흐름
 
-옛 `SocialFeatureViewModel.checkout(planKey:)`(웹 체크아웃)는 **삭제됐다** — 결제는 StoreKit 하나로 들어온다. 비-IAP 흐름 중 다음만 살아남는다.
+옛 `SocialFeatureViewModel.checkout(planKey:)`(웹 체크아웃)는 **삭제됐다** — 결제는 StoreKit 하나로 들어온다. 코드 등록
+(`/api/code/register`)과 가족 공유 코드 발급도 2026-10-20 에 커플·가족 이용권과 함께 없앴다 — 앱 어디에도 코드 입력이 없다
+(프로모 코드는 2026-10-12, 선물 코드는 2026-10-14 — App Store 지침 3.1.1). 비-IAP 흐름 중 다음만 살아남는다.
 
-- `/api/billing/vouchers/family-share` — 가족 공유 코드 발급.
-- `/api/code/register` — 커플·가족 이용권 **초대 코드(`INV-`)** 등록(옛 `/billing/redeem` 은 없다). 프로모 코드는 2026-10-12, 선물 코드는 2026-10-14 에 없앴다(App Store 지침 3.1.1) — 넣는 자리는 더보기 → 초대 코드 등록 하나다.
 - `/api/billing/cancel` — 구독 해지. ⚠ **애플 구독은 서버가 못 끊는다** — 409 `STORE_CANCEL_UNSUPPORTED` + `manage_url` 을 돌려주고 앱이 App Store 관리 화면을 연다(`docs/spec/billing-lifecycle.md`).

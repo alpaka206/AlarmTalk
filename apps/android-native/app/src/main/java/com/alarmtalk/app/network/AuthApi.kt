@@ -9,12 +9,6 @@ import retrofit2.http.PATCH
 import retrofit2.http.POST
 import retrofit2.http.Query
 
-data class FamilyAlarmQuietWindow(
-    val days: List<Int> = listOf(1, 2, 3, 4, 5),
-    val start: String = "09:00",
-    val end: String = "18:30",
-)
-
 data class DynamicPromptSettings(
     val weather: DynamicPromptWeatherSettings = DynamicPromptWeatherSettings(),
     val fortune: DynamicPromptFortuneSettings = DynamicPromptFortuneSettings(),
@@ -112,12 +106,6 @@ data class AuthUser(
      * 기간이 아니거나 결제자면 null.
      */
     @SerializedName("personal_promo") val personalPromo: PersonalPromo? = null,
-    @SerializedName("allow_family_alarms") val allowFamilyAlarms: Boolean = false,
-    @SerializedName("family_alarm_quiet_days") val familyAlarmQuietDays: List<Int> = listOf(1, 2, 3, 4, 5),
-    @SerializedName("family_alarm_quiet_start") val familyAlarmQuietStart: String = "09:00",
-    @SerializedName("family_alarm_quiet_end") val familyAlarmQuietEnd: String = "18:30",
-    @SerializedName("family_alarm_quiet_windows") val familyAlarmQuietWindows: List<FamilyAlarmQuietWindow> =
-        listOf(FamilyAlarmQuietWindow()),
     @SerializedName("dynamic_prompt_settings") val dynamicPromptSettings: DynamicPromptSettings =
         DynamicPromptSettings(),
     @SerializedName("deletion_status") val deletionStatus: String = "active",
@@ -186,22 +174,12 @@ data class GoogleLoginRequest(
 
 data class UpdateProfileRequest(
     val name: String? = null,
-    @SerializedName("allow_family_alarms") val allowFamilyAlarms: Boolean? = null,
-    @SerializedName("family_alarm_quiet_days") val familyAlarmQuietDays: List<Int>? = null,
-    @SerializedName("family_alarm_quiet_start") val familyAlarmQuietStart: String? = null,
-    @SerializedName("family_alarm_quiet_end") val familyAlarmQuietEnd: String? = null,
-    @SerializedName("family_alarm_quiet_windows") val familyAlarmQuietWindows: List<FamilyAlarmQuietWindow>? = null,
     @SerializedName("dynamic_prompt_settings") val dynamicPromptSettings: DynamicPromptSettings? = null,
 )
 
 data class UpdateProfileResponse(
     val success: Boolean,
     val name: String? = null,
-    @SerializedName("allow_family_alarms") val allowFamilyAlarms: Boolean? = null,
-    @SerializedName("family_alarm_quiet_days") val familyAlarmQuietDays: List<Int>? = null,
-    @SerializedName("family_alarm_quiet_start") val familyAlarmQuietStart: String? = null,
-    @SerializedName("family_alarm_quiet_end") val familyAlarmQuietEnd: String? = null,
-    @SerializedName("family_alarm_quiet_windows") val familyAlarmQuietWindows: List<FamilyAlarmQuietWindow>? = null,
     @SerializedName("dynamic_prompt_settings") val dynamicPromptSettings: DynamicPromptSettings? = null,
 )
 

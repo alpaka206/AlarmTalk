@@ -51,12 +51,8 @@ describe('#89·#90 — 사장 인덱스·컬럼이 실제로 사라진다', () =
     ).rows.map((row) => String(row.name));
     // LRU 인덱스: ORDER BY 선행항이 표현식이라 애초에 안 걸렸다.
     expect(indexes).not.toContain('idx_voice_profiles_lru');
-    // status 가 선행 술어인 쿼리가 0건이었다.
+    // status 가 선행 술어인 쿼리가 0건이었다. (그 표 자체를 #131 이 초대 코드와 함께 지웠다.)
     expect(indexes).not.toContain('idx_voucher_codes_status');
-    // 실제로 거르는 술어(issuer_user_id · issuer_subscription_id)의 인덱스는 남아야 한다.
-    expect(indexes).toEqual(
-      expect.arrayContaining(['idx_voucher_codes_issuer', 'idx_voucher_codes_issuer_subscription']),
-    );
   });
 
   it('중복·무용 인덱스가 사라지고 빠져 있던 인덱스가 생긴다', async () => {

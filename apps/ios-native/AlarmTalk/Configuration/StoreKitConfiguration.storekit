@@ -76,72 +76,20 @@
         {
           "adHocOffers": [],
           "codeOffers": [],
-          "displayPrice": "14900",
-          "familyShareable": false,
-          "groupNumber": 1,
-          "internalID": "21500105",
-          "introductoryOffer": null,
-          "localizations": [
-            {
-              "description": "가족이 함께 쓰는 요금제, 매월 자동 갱신",
-              "displayName": "AlarmTalk 가족플랜",
-              "locale": "ko_KR"
-            },
-            {
-              "description": "Family plan, monthly (up to 5 members)",
-              "displayName": "Family (Monthly)",
-              "locale": "en_US"
-            }
-          ],
-          "productID": "com.alarmtalk.app.family_monthly",
-          "recurringSubscriptionPeriod": "P1M",
-          "referenceName": "Family Monthly",
-          "subscriptionGroupID": "21500001",
-          "type": "RecurringSubscription"
-        },
-        {
-          "adHocOffers": [],
-          "codeOffers": [],
-          "displayPrice": "6900",
-          "familyShareable": false,
-          "groupNumber": 2,
-          "internalID": "21500103",
-          "introductoryOffer": null,
-          "localizations": [
-            {
-              "description": "두 사람이 함께 쓰는 요금제, 매월 자동 갱신",
-              "displayName": "AlarmTalk 커플플랜",
-              "locale": "ko_KR"
-            },
-            {
-              "description": "Couple plan, monthly",
-              "displayName": "Couple (Monthly)",
-              "locale": "en_US"
-            }
-          ],
-          "productID": "com.alarmtalk.app.couple_monthly",
-          "recurringSubscriptionPeriod": "P1M",
-          "referenceName": "Couple Monthly",
-          "subscriptionGroupID": "21500001",
-          "type": "RecurringSubscription"
-        },
-        {
-          "adHocOffers": [],
-          "codeOffers": [],
           "displayPrice": "3900",
           "familyShareable": false,
-          "groupNumber": 3,
+          "groupNumber": 1,
           "internalID": "21500101",
           "introductoryOffer": null,
           "localizations": [
             {
-              "description": "내 목소리 알람 1인 요금제, 매월 자동 갱신",
-              "displayName": "AlarmTalk 개인플랜",
+              "description": "내 목소리 알람 플러스, 매월 자동 갱신",
+              "displayName": "AlarmTalk 플러스",
               "locale": "ko_KR"
             },
             {
-              "description": "Personal plan, monthly",
-              "displayName": "Personal (Monthly)",
+              "description": "AlarmTalk Plus, monthly",
+              "displayName": "Plus (Monthly)",
               "locale": "en_US"
             }
           ],

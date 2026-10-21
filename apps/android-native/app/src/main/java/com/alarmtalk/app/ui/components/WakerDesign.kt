@@ -55,16 +55,14 @@ internal val WakerPillShape = RoundedCornerShape(999.dp)   // 완전 캡슐(pill
  * `OutlinedTextField` 는 최소 높이가 56이라 48로 내리면 글자가 잘린다.
  *
  * **iOS 도 같은 값을 쓴다**(`AlarmTalkControl`) — 두 앱의 버튼 크기를 맞춘 기준점이라
- * 한쪽만 바꾸지 말 것. 폭도 마찬가지다: 라벨이 짧아도 이 최소 폭은 지킨다(번역이 길어지면
- * 자연히 늘어난다).
+ * 한쪽만 바꾸지 말 것.
  */
 internal val WakerControlHeight = 48.dp
-internal val WakerControlMinWidth = 88.dp
 
 internal val WakerScrimColor = Color(0xBD05080E)
 
 // 탭·하위 전체화면이 공유하는 새벽 네이비 그라데이션 배경(로그인 딥네이비 감성)의 단일 출처.
-// 탭(AlarmListScreen)과 설정/구성원 관리/약관 동의 등 하위 화면이 같은 브러시를 써서
+// 탭(AlarmListScreen)과 설정/약관 동의 등 하위 화면이 같은 브러시를 써서
 // 화면 전환 시 배경 톤이 튀지 않는다. 라이트/다크 2종.
 internal val HomeGradientDark = androidx.compose.ui.graphics.Brush.verticalGradient(
     0f to Color(0xFF1A2A52),

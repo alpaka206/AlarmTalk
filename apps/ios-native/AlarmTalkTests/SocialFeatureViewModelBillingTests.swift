@@ -11,64 +11,6 @@ final class SocialFeatureViewModelBillingTests: XCTestCase {
         XCTAssertEqual(SocialFeatureViewModel.normalizedCancellationMode(""), "immediate")
     }
 
-    func test_shareCodePlanLabel_matchesAndroidCopy() {
-        XCTAssertEqual(SocialFeatureViewModel.shareCodePlanLabel(nil), "공유")
-        XCTAssertEqual(SocialFeatureViewModel.shareCodePlanLabel(response(planKey: "couple", planType: "couple")), "커플")
-        XCTAssertEqual(SocialFeatureViewModel.shareCodePlanLabel(response(planKey: "family", planType: "family")), "가족")
-        XCTAssertEqual(SocialFeatureViewModel.shareCodePlanLabel(response(planKey: "legacy", planType: "couple")), "커플")
-    }
-
-    func test_upsertingVoucher_replacesSameIdAndMovesToFrontLikeAndroid() {
-        let stale = voucher(id: "share", code: "INV-OLD", useCount: 0)
-        let other = voucher(id: "other", code: "INV-OTHER", useCount: 0)
-        let fresh = voucher(id: "share", code: "INV-NEW", useCount: 1)
-
-        let result = SocialFeatureViewModel.upsertingVoucher(fresh, into: [other, stale])
-
-        XCTAssertEqual(result.map(\.id), ["share", "other"])
-        XCTAssertEqual(result.first?.code, "INV-NEW")
-        XCTAssertEqual(result.first?.useCount, 1)
-    }
-
-    func test_codeRegistrationDestination_opensSharedPassForInviteResponseLikeAndroid() {
-        let result = SocialFeatureViewModel.codeRegistrationDestination(
-            responseType: "invite",
-            code: "ABCD-1234"
-        )
-
-        XCTAssertEqual(result, .sharedPass)
-    }
-
-    /// 서버는 `INV-` 등록에도 응답 type 을 `voucher` 로 준다(`routes/code.ts`). 접두사로 가른다.
-    func test_codeRegistrationDestination_opensSharedPassForInviteVoucherResponse() {
-        let result = SocialFeatureViewModel.codeRegistrationDestination(
-            responseType: "voucher",
-            code: "INV-ABCD-1234-EFGH"
-        )
-
-        XCTAssertEqual(result, .sharedPass)
-    }
-
-    func test_codeRegistrationDestination_opensSharedPassForInvitePrefixLikeAndroid() {
-        let result = SocialFeatureViewModel.codeRegistrationDestination(
-            responseType: nil,
-            code: "inv-abcd-1234"
-        )
-
-        XCTAssertEqual(result, .sharedPass)
-    }
-
-    /// 초대가 아닌 등록은 홈으로 간다 — 안드로이드 `navigateHomeTick` 과 같은 폴백이다. 지금 서버는
-    /// `INV-` 말고는 받지 않으므로(선물 코드는 2026-10-14 폐지) 실제로는 닿지 않는 방어 갈래다.
-    func test_codeRegistrationDestination_fallsBackToHomeForNonInviteLikeAndroid() {
-        let result = SocialFeatureViewModel.codeRegistrationDestination(
-            responseType: "voucher",
-            code: "ABCD-1234"
-        )
-
-        XCTAssertEqual(result, .home)
-    }
-
     func test_billingFailureMessage_matchesAndroidErrorCodeCopy() {
         XCTAssertEqual(
             SocialFeatureViewModel.billingFailureMessage(errorCode: "SAME_PLAN", fallback: "fallback"),
@@ -112,7 +54,7 @@ final class SocialFeatureViewModelBillingTests: XCTestCase {
     }
 
     func test_billingErrorMessage_usesFallbackWhenCodeIsUnknown() {
-        let error = APIError.server(status: 400, message: "이미 사용된 코드예요", errorCode: "UNKNOWN")
+        let error = APIError.server(status: 400, message: "이미 처리된 요청이에요", errorCode: "UNKNOWN")
         XCTAssertEqual(
             SocialFeatureViewModel.billingErrorMessage(error, fallback: "fallback"),
             "fallback"
@@ -122,8 +64,8 @@ final class SocialFeatureViewModelBillingTests: XCTestCase {
     func test_userFacingErrorMessage_usesFallbackForEnglishServerMessageLikeAndroid() {
         let error = APIError.server(status: 400, message: "User not found", errorCode: nil)
         XCTAssertEqual(
-            userFacingErrorMessage(error, fallback: "이용권에서 나가지 못했어요"),
-            "이용권에서 나가지 못했어요"
+            userFacingErrorMessage(error, fallback: "이용권 정보를 불러오지 못했어요"),
+            "이용권 정보를 불러오지 못했어요"
         )
     }
 
@@ -145,34 +87,6 @@ final class SocialFeatureViewModelBillingTests: XCTestCase {
                 fallback: "음성 메시지를 불러오지 못했어요"
             ),
             "메시지: 음성 메시지를 불러오지 못했어요"
-        )
-    }
-
-    private func response(planKey: String, planType: String) -> BillingSubscriptionResponse {
-        BillingSubscriptionResponse(
-            subscription: nil,
-            plan: BillingPlan(
-                id: "plan-\(planKey)",
-                key: planKey,
-                name: planKey,
-                planType: planType,
-                maxMembers: 2
-            )
-        )
-    }
-
-    private func voucher(id: String, code: String, useCount: Int) -> VoucherItem {
-        VoucherItem(
-            id: id,
-            code: code,
-            planKey: "family",
-            planName: "가족",
-            planType: "family",
-            status: "issued",
-            issuedAt: nil,
-            expiresAt: "2026-12-31T00:00:00Z",
-            maxUses: 6,
-            useCount: useCount
         )
     }
 }

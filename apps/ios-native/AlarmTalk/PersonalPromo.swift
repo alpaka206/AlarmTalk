@@ -11,7 +11,7 @@ import Foundation
 ///   이미 계산값 `plus` 다 — **앱이 등급을 올리지 않는다.** 구독 행은 만들지 않으므로
 ///   `subscription` 은 null 그대로다(가짜 구독이 없으니 해지 버튼도 없다).
 ///   거꾸로 **이 값이 있다 = 원시 plan 은 free** 다. 보류(ON_HOLD·PAUSED)로 남은 구독 행이
-///   커플·가족 등급을 올리지 못하게 하는 근거가 이것이다(`PlanTier.bestKnown(user:)`).
+///   등급을 올리지 못하게 하는 근거가 이것이다(`PlanTier.bestKnown(user:)`).
 /// - 날짜의 단일 출처는 `packages/shared` 다. **앱에 날짜를 박지 말 것** — 연장·조기 종료가
 ///   앱 릴리스 없이 돼야 하고, 스토어에 나간 구버전은 앱 코드를 못 받는다.
 ///
@@ -22,7 +22,7 @@ import Foundation
 ///    넘기면 그 `plus` 는 믿지 않는다. 끝 **뒤에** 계산된 답은 서버가 이미 그 시각에 판단한
 ///    것이라 그대로 믿는다. 계산 시각은 서버 시계(`computed_at`)가 우선이다(`fetchedAt`).
 /// 2. 이용권 화면의 프로모 문구(무료 이용 중 · 언제까지)와 '현재 이용권' 카드 — 프로모만 쓰는
-///    계정은 개인 카드가 현재이고 문구는 그 카드의 상태 한 줄, 산 이용권·공유 멤버·보류 행
+///    계정은 개인 카드가 현재이고 문구는 그 카드의 상태 한 줄, 산 이용권·보류 행
 ///    (`deletesVoicesAtEnd == false`)이 있는 계정은 카드 목록 위 한 줄이다
 ///    (`PlanScreenCurrent.resolve`, 스펙 billing-lifecycle D4).
 /// 3. 종료 전 안내(`noticeFrom` 부터, 앱에 들어올 때마다 — `PersonalPromoNotice`).

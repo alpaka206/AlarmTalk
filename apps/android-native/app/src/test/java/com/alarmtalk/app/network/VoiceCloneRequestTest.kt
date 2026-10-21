@@ -53,7 +53,7 @@ class VoiceCloneRequestTest {
         )
 
         assertEquals("엄마 목소리", parts["name"])
-        assertEquals("false", parts["isShared"])
+        assertFalse("isShared 파트가 나갔다: ${parts.keys}", "isShared" in parts)
         assertEquals("남자친구", parts["relationshipLabel"])
         assertEquals("자기", parts["listenerTitle"])
         assertEquals("15000", parts["durationMs"])
@@ -88,7 +88,6 @@ class VoiceCloneRequestTest {
     ) = VoiceProfileCreationDraft(
         name = "엄마 목소리",
         audio = audio(),
-        shared = false,
         relationshipLabel = relationshipLabel,
         listenerTitle = listenerTitle,
         language = language,

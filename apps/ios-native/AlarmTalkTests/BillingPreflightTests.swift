@@ -5,11 +5,12 @@ import XCTest
 /// 스토어를 여는 전제인 서버 응답·세션 소유권·영속 스냅샷을 함께 검증한다.
 @MainActor
 final class BillingPreflightTests: XCTestCase {
+    /// 이용권 새로고침은 구독과 `/auth/me` 만 묻는다 — 그 밖의 경로는 이 스텁이 모른다.
+    nonisolated fileprivate static let unexpectedPath = Data(#"{"error":"unexpected path"}"#.utf8)
+
     private func session(token: String, userID: String) -> AuthSession {
         AuthSession(token: token, user: AuthUser(
-            id: userID, email: "preflight@example.test", name: "Test", plan: "family",
-            allowFamilyAlarms: false, familyAlarmQuietDays: nil, familyAlarmQuietStart: nil,
-            familyAlarmQuietEnd: nil, familyAlarmQuietWindows: nil, appleUserId: nil
+            id: userID, email: "preflight@example.test", name: "Test", plan: "plus", appleUserId: nil
         ))
     }
 
@@ -24,7 +25,7 @@ final class BillingPreflightTests: XCTestCase {
         let previous = KeychainStore.readSession()
         try KeychainStore.saveSession(current)
         let writer = EntitlementWriter()
-        XCTAssertEqual(writer.write(try XCTUnwrap(writer.ticket()), "test seed") { $0.userPlan = "family" }, .applied)
+        XCTAssertEqual(writer.write(try XCTUnwrap(writer.ticket()), "test seed") { $0.userPlan = "plus" }, .applied)
         defer {
             AccessSnapshotStore().clear(userID: userID)
             if let previous { try? KeychainStore.saveSession(previous) }
@@ -52,7 +53,7 @@ final class BillingPreflightTests: XCTestCase {
         XCTAssertEqual(applied, expected)
         // 새로운 저장소 인스턴스로 읽어 재시작 뒤 남는 값까지 확인한다.
         let snapshot = AccessSnapshotStore().read(userID: userID)
-        XCTAssertEqual(snapshot.userPlan, expected ? "free" : "family")
+        XCTAssertEqual(snapshot.userPlan, expected ? "free" : "plus")
         if expected {
             XCTAssertEqual(response?.storeRenewalProviders, [])
             XCTAssertNotNil(snapshot.subscriptionResponse)
@@ -94,7 +95,7 @@ final class BillingPreflightTests: XCTestCase {
         let oldReadStarted = expectation(description: "이전 조회가 응답 반영 직전에 대기")
         let gate = PreflightResponseGate()
         let stale = Data(#"{"subscription":null,"plan":null,"next_plan":null,"store_renewal_providers":[]}"#.utf8)
-        let authoritative = Data(#"{"subscription":null,"plan":null,"next_plan":null,"user_plan":"family","store_renewal_providers":["google"]}"#.utf8)
+        let authoritative = Data(#"{"subscription":null,"plan":null,"next_plan":null,"user_plan":"plus","store_renewal_providers":["google"]}"#.utf8)
         let staleMe = try JSONSerialization.data(withJSONObject: [
             "user": ["id": userID, "email": "preflight@example.test", "name": "Test", "plan": "free", "deletion_status": "active"]
         ])
@@ -108,10 +109,8 @@ final class BillingPreflightTests: XCTestCase {
             } else if url.path.hasSuffix("auth/me") {
                 gate.hold { complete(200, staleMe) }
                 oldReadStarted.fulfill()
-            } else if url.path.hasSuffix("billing/vouchers") {
-                complete(200, Data(#"{"vouchers":[]}"#.utf8))
             } else {
-                complete(200, Data(#"{"group":null,"role":null,"members":[]}"#.utf8))
+                complete(404, Self.unexpectedPath)
             }
         }
         let config = URLSessionConfiguration.ephemeral
@@ -145,7 +144,7 @@ final class BillingPreflightTests: XCTestCase {
         } else {
             XCTAssertEqual(preflight?.storeRenewalProviders, ["google"])
             XCTAssertEqual(vm.subscription?.storeRenewalProviders, ["google"])
-            XCTAssertEqual(AccessSnapshotStore().read(userID: userID).userPlan, "family")
+            XCTAssertEqual(AccessSnapshotStore().read(userID: userID).userPlan, "plus")
             XCTAssertEqual(AccessSnapshotStore().read(userID: userID).subscriptionResponse?.storeRenewalProviders, ["google"])
             // 공용 화면 값이 이후 바뀌더라도 구매 판단은 반환된 응답만 사용한다.
             vm.subscription = nil
@@ -157,8 +156,7 @@ final class BillingPreflightTests: XCTestCase {
             PreflightURLProtocol.configure(host: host) { request in
                 if request.url!.path.hasSuffix("auth/me") { return (200, staleMe) }
                 if request.url!.path.hasSuffix("billing/subscription") { return (200, stale) }
-                if request.url!.path.hasSuffix("billing/vouchers") { return (200, Data(#"{"vouchers":[]}"#.utf8)) }
-                return (200, Data(#"{"group":null,"role":null,"members":[]}"#.utf8))
+                return (404, Self.unexpectedPath)
             }
             await vm.refreshAll(session: current)
             XCTAssertTrue(vm.entitlementSnapshotComplete)
@@ -194,8 +192,7 @@ final class BillingPreflightTests: XCTestCase {
             if url.path.hasSuffix("billing/subscription") {
                 return (200, Data(#"{"subscription":null,"plan":null,"next_plan":null,"store_renewal_providers":[]}"#.utf8))
             }
-            if url.path.hasSuffix("billing/vouchers") { return (200, Data(#"{"vouchers":[]}"#.utf8)) }
-            return (200, Data(#"{"group":null,"role":null,"members":[]}"#.utf8))
+            return (404, Self.unexpectedPath)
         }
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [PreflightURLProtocol.self]
@@ -246,7 +243,7 @@ extension BillingPreflightTests {
             if url.path.hasSuffix("billing/subscription") {
                 return (200, Data(#"{"subscription":null,"plan":null,"next_plan":null,"store_renewal_providers":[],"user_plan":"plus","personal_promo":{"ends_at":"2026-10-31T15:00:00Z","notice_from":"2026-10-24T15:00:00Z","deletes_voices_at_end":true}}"#.utf8))
             }
-            return (200, Data(#"{"vouchers":[]}"#.utf8))
+            return (404, Self.unexpectedPath)
         }
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [PreflightURLProtocol.self]

@@ -46,7 +46,6 @@ const SUB_ROW = {
   sub_id: 'sub-1',
   user_id: 'user-pk-1',
   plan_id: 'plan-1',
-  plan_group_id: null,
   plan_type: 'personal',
 };
 
@@ -432,7 +431,6 @@ describe('POST /billing/cancel — 스냅샷 단위 취소 (E1)', () => {
     mockDB.pushResult([SUB_ROW]); // 활성 구독 스냅샷 (Play revoke 대상)
     mockDB.pushResult([GOOGLE_TXN_ROW]); // store_transactions
     mockDB.pushResult([], 1); // UPDATE subscriptions — sub-1 취소
-    mockDB.pushResult([], 1); // 미사용 코드 만료
     mockDB.pushResult([NEW_SUB_ROW]); // plan 재정렬 조회 — 그 사이 confirm 된 새 활성 구독
 
     const res = await buildApp().request(
@@ -471,24 +469,23 @@ describe('cancelSubscriptionImmediate — plan 재정렬 (E2)', () => {
     userPk: 'user-pk-1',
     planId: 'plan-1',
     planType: 'personal',
-    planGroupId: null,
+    planKey: 'personal',
+    cancelAtPeriodEnd: false,
   };
 
   it('활성 2구독 중 1개만 취소하면 남은 구독의 plan 을 유지한다 (free 강등 없음)', async () => {
     mockDB.pushResult([], 1); // UPDATE subscriptions — sub-1 취소
-    mockDB.pushResult([], 1); // 미사용 코드 만료
     mockDB.pushResult([
       {
         sub_id: 'sub-2',
         user_id: 'user-pk-1',
         plan_id: 'plan-1',
-        plan_group_id: null,
         plan_type: 'personal',
       },
     ]); // 남은 활성 구독 조회
     mockDB.pushResult([], 1); // UPDATE users SET plan = ? (유지)
 
-    await cancelSubscriptionImmediate(mockDB.client as never, SUB_1, new Date(), { deleteVoiceData: false, promoCoversFree: false });
+    await cancelSubscriptionImmediate(mockDB.client as never, SUB_1, new Date(), { deleteVoiceData: false });
 
     // 무료 강등은 문장 안의 리터럴이든 바인딩 값이든 없어야 한다(강등은 `plan = ?` + 'free' 로도 나간다).
     expect(
@@ -497,23 +494,23 @@ describe('cancelSubscriptionImmediate — plan 재정렬 (E2)', () => {
       ),
     ).toBe(false);
     expect(findCall('UPDATE users SET plan = ?')?.args).toEqual(['plus', 'user-pk-1']);
-    // 여전히 유료이므로 is_shared 해제·타인 알람 강등을 하지 않는다.
+    // 여전히 유료이므로 클론을 반납하지 않는다.
     expect(findCall('UPDATE voice_profiles')).toBeUndefined();
     expect(findCall('UPDATE alarms')).toBeUndefined();
   });
 
-  it('마지막 활성 구독을 취소하면 free 강등 + 음성 접근 정리를 수행한다', async () => {
+  it('마지막 활성 구독을 취소하면 free 강등 + 클론 반납을 한다 — 알람은 건드리지 않는다', async () => {
     mockDB.pushResult([], 1); // UPDATE subscriptions — sub-1 취소
-    mockDB.pushResult([], 1); // 미사용 코드 만료
     mockDB.pushResult([]); // 남은 활성 구독 없음
 
-    await cancelSubscriptionImmediate(mockDB.client as never, SUB_1, new Date(), { deleteVoiceData: false, promoCoversFree: false });
+    await cancelSubscriptionImmediate(mockDB.client as never, SUB_1, new Date(), { deleteVoiceData: false });
 
     expect(
       mockDB.calls.some((c) => c.sql.includes('UPDATE users SET plan') && c.args[0] === 'free'),
     ).toBe(true);
     expect(findCall('UPDATE voice_profiles')).toBeDefined();
-    expect(findCall('UPDATE alarms')).toBeDefined();
+    // 음성 데이터는 보관 기한까지 남고 재생만 잠긴다 — 내 알람을 서버에서 내리지 않는다.
+    expect(findCall('UPDATE alarms')).toBeUndefined();
   });
 });
 
@@ -544,73 +541,6 @@ describe('clonedVoiceReleaseStatements (해지 시 클론 반납)', () => {
 
   it('주인 id 가 없으면 아무것도 쓰지 않는다', () => {
     expect(clonedVoiceReleaseStatements([null, undefined], ['el-voice-1'])).toEqual([]);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// cancelSubscriptionImmediate — 가족 소유자 즉시 해지 시 멤버 보관 예약 (B)
-// ---------------------------------------------------------------------------
-describe('cancelSubscriptionImmediate — 가족 소유자 해지 (B)', () => {
-  it('멤버 구독 취소 + 멤버에게도 유료 음성 30일 보관을 예약한다', async () => {
-    const OWNER_SUB = {
-      subscriptionId: 'sub-owner',
-      userPk: 'owner-pk',
-      planId: 'plan-f',
-      planType: 'family',
-      planGroupId: 'group-1',
-    };
-    mockDB.pushResult([], 1); // UPDATE subscriptions — 소유자 구독 취소
-    mockDB.pushResult([], 1); // 소유자 구독 미사용 코드 만료
-    mockDB.pushResult([]); // 소유자 남은 활성 구독 없음 → free 강등
-    mockDB.pushResult([], 1); // UPDATE users free (소유자)
-    mockDB.pushResult([]); // resolveUserLoginId (소유자)
-    // 무료 강등 시 제공자 클론을 반납한다(원본은 남겨 유예 안에 재클론 가능).
-    mockDB.pushResult([]); // 클론 반납: elevenlabs_voice_id 조회 — 없음
-    mockDB.pushResult([], 1); // 클론 반납: UPDATE voice_profiles SET elevenlabs_voice_id = NULL
-    mockDB.pushResult([], 1); // UPDATE voice_profiles (소유자)
-    mockDB.pushResult([], 1); // UPDATE alarms (소유자)
-    mockDB.pushResult([{ owner_user_id: 'owner-pk' }]); // plan_groups — 소유자 본인
-    // 해체는 **읽기 한 번(묶음)** 으로 멤버 전원의 상태를 모은다(멤버 수와 무관한 왕복).
-    mockDB.pushResult([{ user_id: 'member-pk' }]); // 묶음 ①: 소유자를 뺀 멤버
-    mockDB.pushResult([
-      {
-        sub_id: 'sub-member',
-        user_id: 'member-pk',
-        plan_group_id: 'group-1',
-        entitlement_state: 'entitled',
-        plan_type: 'family',
-      },
-    ]); // 묶음 ②: 멤버의 활성 구독 — 그룹 구독 하나뿐
-    mockDB.pushResult([{ id: 'member-pk', google_id: null }]); // 묶음 ③: 로그인 id
-    mockDB.pushResult([]); // 묶음 ④: 반납할 클론 — 없음
-    // 이후(멤버 취소·강등·보관 예약·그룹 삭제 — 쓰기 묶음)는 기본 빈 결과로 진행.
-
-    const affected = await cancelSubscriptionImmediate(
-      mockDB.client as never,
-      OWNER_SUB,
-      new Date(),
-      { deleteVoiceData: false, promoCoversFree: false },
-    );
-
-    // 반환값: 취소 당사자(소유자) + 해체로 강등되는 멤버 → 호출부의 plan_changed 통지 대상.
-    expect(affected).toContain('owner-pk');
-    expect(affected).toContain('member-pk');
-    // 멤버 구독도 취소된다.
-    const cancelCalls = mockDB.calls.filter((c) => c.sql.includes("status = 'cancelled'"));
-    expect(cancelCalls.some((c) => c.args.includes('sub-member'))).toBe(true);
-    // 멤버에게도 30일 보관 예약이 생성된다 (소유자와 동일 정책).
-    const retentionInserts = mockDB.calls.filter((c) =>
-      c.sql.includes('INSERT INTO paid_voice_retention'),
-    );
-    expect(retentionInserts.map((c) => c.args[0])).toContain('member-pk');
-    // 남은 유료 구독이 없으니 무료로 내리고 목소리 접근을 정리한다.
-    expect(
-      mockDB.calls.some(
-        (c) => c.sql.includes('UPDATE users SET plan') && c.args[0] === 'free' && c.args[1] === 'member-pk',
-      ),
-    ).toBe(true);
-    // 그룹 멤버십 정리는 유지된다.
-    expect(findCall('DELETE FROM plan_group_members')).toBeDefined();
   });
 });
 
@@ -651,7 +581,6 @@ describe('applyStoreEntitlement — paid_voice_retention 해제', () => {
     name: '개인',
     plan_type: 'personal',
     period_days: 30,
-    max_members: 1,
     price_krw: 4900,
   };
 
@@ -727,7 +656,6 @@ describe('POST /billing/google/confirm — 계정 바인딩 (C4)', () => {
     name: '개인',
     plan_type: 'personal',
     period_days: 30,
-    max_members: 1,
     price_krw: 4900,
   };
 
@@ -968,231 +896,20 @@ describe('POST /billing/cancel (apple 결제)', () => {
 });
 
 // ---------------------------------------------------------------------------
-// 그룹형 → 그룹형 전환(커플 ↔ 가족) — **그룹을 이어받는다**
-//
-// ⚠ 전환은 Play 가 **새 purchaseToken** 을 주므로 applyStoreEntitlement 의 신규 구독
-// 경로로 온다. 거기서 기존 활성 구독을 취소하는데, 소유자 갈래는 `disbandOwnedPlanGroup`
-// 으로 **멤버를 전부 내쫓고 초대 코드까지 만료**시킨다. 가족 → 개인이면 맞는 동작이지만
-// (그룹을 뒷받침할 결제가 사라진다) 커플 → 가족은 **더 비싼 걸 산 것**인데 파트너가
-// 쫓겨나고, 카톡으로 뿌린 코드가 죽고, 통지도 안 갔다(2026-08-11 적대적 검토에서 확인).
+// 같은 플랜 재전송 — 결제 시각 앵커를 옮기지 않는다
 // ---------------------------------------------------------------------------
-describe('applyStoreEntitlement — 그룹형 전환은 그룹을 이어받는다', () => {
-  const COUPLE_SUB = {
-    sub_id: 'sub-couple',
-    user_id: 'user-pk-1',
-    plan_id: 'plan-couple',
-    plan_group_id: 'group-1',
-    plan_type: 'family', // 커플도 plan_type 은 family 다(그룹형).
-    plan_key: 'couple',
-  };
-  const FAMILY_PLAN = {
-    id: 'plan-family',
-    key: 'family',
-    name: '가족',
-    plan_type: 'family',
+describe('applyStoreEntitlement — 같은 플랜 재전송', () => {
+  const PLAN = {
+    id: 'plan-1',
+    key: 'personal',
+    name: '개인',
+    plan_type: 'personal',
     period_days: 30,
-    max_members: 5,
-    price_krw: 14900,
+    price_krw: 4900,
   };
 
   beforeEach(() => {
     mockDB.reset();
-  });
-
-  // ⚠ 순서가 아니라 **쿼리로** 짝짓는다 — 전환 경로는 쿼리가 십여 개라 자리채움을
-  // 밀어 넣는 방식이면 구현이 조금만 바뀌어도 무너진다.
-  function seedCoupleOwner() {
-    mockDB.pushResultFor('FROM store_transactions', []); // 새 토큰이라 매핑 없음
-    mockDB.pushResultFor('JOIN plan_groups g ON g.id = s.plan_group_id', [
-      { subscription_id: 'sub-couple', plan_group_id: 'group-1' },
-    ]);
-    mockDB.pushResultFor('JOIN plans p ON p.id = s.plan_id', [COUPLE_SUB]); // 취소 대상
-    // 옮길 코드가 1장 있다 → 새로 발급하지 않는다.
-    // 남는 멤버 둘 — 이들의 구독 행이 새 플랜으로 옮겨 가고, 알림 대상이 된다.
-    mockDB.pushResultFor('SELECT user_id FROM subscriptions', [
-      { user_id: 'member-1' },
-      { user_id: 'member-2' },
-    ]);
-    mockDB.pushResultFor('SELECT COUNT(*) AS n FROM voucher_codes', [{ n: 1 }]);
-  }
-
-  it('커플 → 가족: 그룹을 해체하지 않고 정원만 올린다', async () => {
-    seedCoupleOwner();
-
-    const result = await applyStoreEntitlement(mockDB.client as never, {
-      userPk: 'user-pk-1',
-      provider: 'google',
-      providerTransactionId: 'play-token-family',
-      productId: 'family_monthly',
-      plan: FAMILY_PLAN,
-      startsAt: new Date(),
-      expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-    });
-
-    expect(result.ok).toBe(true);
-    // 기존 그룹을 그대로 쓰고 정원·plan 만 새 것으로 고친다.
-    expect(findCall('UPDATE plan_groups SET plan_id = ?, max_members = ?')).toBeDefined();
-    // 새 그룹을 만들지 않는다 — 만들면 파트너가 남겨진 옛 그룹과 함께 떨어져 나간다.
-    expect(findCall('INSERT INTO plan_groups')).toBeUndefined();
-    // ⚠ 핵심: 멤버 전원 삭제(= 해체)가 일어나면 안 된다.
-    expect(findCall('DELETE FROM plan_group_members WHERE plan_group_id = ?')).toBeUndefined();
-  });
-
-  it('커플 → 가족: 남은 멤버의 구독 행도 새 플랜으로 옮긴다', async () => {
-    // ⚠ 예전에는 `plan_groups` 만 고쳐서 멤버의 `subscriptions.plan_id` 가 **옛 플랜에
-    //   그대로** 남았다. `GET /billing/subscription` 은 멤버의 등급을 그 행에서 뽑으므로,
-    //   그룹의 정원·코드는 가족으로 옮겨 갔는데 멤버 화면과 권한 스냅샷만 커플로 남는다
-    //   (코덱스 #730 3차).
-    seedCoupleOwner();
-
-    await applyStoreEntitlement(mockDB.client as never, {
-      userPk: 'user-pk-1',
-      provider: 'google',
-      providerTransactionId: 'play-token-family',
-      productId: 'family_monthly',
-      plan: FAMILY_PLAN,
-      startsAt: new Date(),
-      expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-    });
-
-    const move = findCall('UPDATE subscriptions\n              SET plan_id = ?');
-    expect(move).toBeDefined();
-    expect(move!.sql).toContain('plan_group_id = ?');
-    expect(move!.sql).toContain("status = 'active'");
-    // 소유자는 제외한다 — 새 구독 행을 따로 만들고, 옛 행은 방금 취소됐다.
-    expect(move!.sql).toContain('user_id <> ?');
-    expect(move!.args).toEqual(['plan-family', 'group-1', 'user-pk-1']);
-  });
-
-  it('커플 → 가족: 남은 멤버도 통지 대상이다', async () => {
-    // ⚠ 나간 사람만 알리면 남은 사람은 다음 앱 시작·주기 pull 까지 **옛 플랜 키**를
-    //   들고 있다(코덱스 #733). 목록 이름이 `demotedUserIds` 였을 때 이걸 빠뜨렸다.
-    seedCoupleOwner();
-
-    const result = await applyStoreEntitlement(mockDB.client as never, {
-      userPk: 'user-pk-1',
-      provider: 'google',
-      providerTransactionId: 'play-token-family',
-      productId: 'family_monthly',
-      plan: FAMILY_PLAN,
-      startsAt: new Date(),
-      expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-    });
-
-    // 정원이 늘어나는 전환이라 나간 사람은 없고, 남은 둘만 들어온다.
-    expect(result.ok && result.planChangedUserIds).toEqual(['member-1', 'member-2']);
-  });
-
-  it('멤버 이전은 정원 정리 **뒤**에 돈다 — 쫓겨날 사람까지 옮기지 않는다', async () => {
-    seedCoupleOwner();
-
-    await applyStoreEntitlement(mockDB.client as never, {
-      userPk: 'user-pk-1',
-      provider: 'google',
-      providerTransactionId: 'play-token-family',
-      productId: 'family_monthly',
-      plan: FAMILY_PLAN,
-      startsAt: new Date(),
-      expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-    });
-
-    const capacityAt = mockDB.calls.findIndex(
-      (c) => c.sql.includes('FROM plan_group_members') && c.sql.includes('user_id <> ?'),
-    );
-    const moveAt = mockDB.calls.findIndex(
-      (c) => c.sql.includes('UPDATE subscriptions') && c.sql.includes('SET plan_id = ?'),
-    );
-    expect(capacityAt).toBeGreaterThanOrEqual(0);
-    expect(moveAt).toBeGreaterThan(capacityAt);
-  });
-
-  it('새 그룹을 만드는 경우에는 옮길 멤버가 없다', async () => {
-    mockDB.pushResultFor('FROM store_transactions', []);
-    mockDB.pushResultFor('JOIN plan_groups g ON g.id = s.plan_group_id', []); // 이어받을 그룹 없음
-    mockDB.pushResultFor('JOIN plans p ON p.id = s.plan_id', []);
-    // 이어받을 그룹이 없으니 코드가 새로 발급된다 — INSERT 가 한 번에 성공하게 둔다.
-    mockDB.pushResultFor('INSERT OR IGNORE INTO voucher_codes', [], 1);
-
-    await applyStoreEntitlement(mockDB.client as never, {
-      userPk: 'user-pk-1',
-      provider: 'google',
-      providerTransactionId: 'play-token-family',
-      productId: 'family_monthly',
-      plan: FAMILY_PLAN,
-      startsAt: new Date(),
-      expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-    });
-
-    expect(
-      mockDB.calls.find(
-        (c) => c.sql.includes('UPDATE subscriptions') && c.sql.includes('SET plan_id = ?'),
-      ),
-    ).toBeUndefined();
-  });
-
-  it('커플 → 가족: 이미 뿌린 초대 코드를 만료시키지 않고 새 구독으로 옮긴다', async () => {
-    seedCoupleOwner();
-
-    await applyStoreEntitlement(mockDB.client as never, {
-      userPk: 'user-pk-1',
-      provider: 'google',
-      providerTransactionId: 'play-token-family',
-      productId: 'family_monthly',
-      plan: FAMILY_PLAN,
-      startsAt: new Date(),
-      expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-    });
-
-    // 코드를 새 구독으로 다시 매단다(문자열은 그대로 — 뿌려 둔 초대장이 계속 통한다).
-    expect(
-      findCall('UPDATE voucher_codes\n              SET issuer_subscription_id = ?'),
-    ).toBeDefined();
-    // ⚠ 만료시키면 소유자는 새 코드를 다시 찾아 재초대해야 한다.
-    expect(findCall("UPDATE voucher_codes SET status = 'expired'")).toBeUndefined();
-  });
-
-  // 정원이 줄어드는 쪽(가족 5 → 커플 2)은 넘치는 인원을 내보내야 한다.
-  // ⚠ 그리고 **반드시 알려야 한다** — 전환은 소유자가 하지만 대가는 멤버가 치른다.
-  it('가족 → 커플: 정원을 넘는 멤버만 내보내고 통지 대상으로 돌려준다', async () => {
-    const COUPLE_PLAN = { ...FAMILY_PLAN, id: 'plan-couple', key: 'couple', max_members: 2 };
-    mockDB.pushResultFor('FROM store_transactions', []);
-    mockDB.pushResultFor('JOIN plan_groups g ON g.id = s.plan_group_id', [
-      { subscription_id: 'sub-family', plan_group_id: 'group-1' },
-    ]);
-    mockDB.pushResultFor('JOIN plans p ON p.id = s.plan_id', [
-      { ...COUPLE_SUB, sub_id: 'sub-family', plan_id: 'plan-family', plan_key: 'family' },
-    ]);
-    // 소유자 말고 멤버 셋 — 먼저 들어온 순서다.
-    mockDB.pushResultFor('SELECT id, user_id FROM plan_group_members', [
-      { id: 'm-1', user_id: 'member-first' },
-      { id: 'm-2', user_id: 'member-second' },
-      { id: 'm-3', user_id: 'member-third' },
-    ]);
-    // 정원 정리 뒤 남는 멤버 — 이 사람의 구독 행이 새 플랜으로 옮겨 가고, 알림 대상이 된다.
-    mockDB.pushResultFor('SELECT user_id FROM subscriptions', [{ user_id: 'member-first' }]);
-    mockDB.pushResultFor('SELECT COUNT(*) AS n FROM voucher_codes', [{ n: 1 }]);
-
-    const result = await applyStoreEntitlement(mockDB.client as never, {
-      userPk: 'user-pk-1',
-      provider: 'google',
-      providerTransactionId: 'play-token-couple',
-      productId: 'couple_monthly',
-      plan: COUPLE_PLAN,
-      startsAt: new Date(),
-      expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-    });
-
-    expect(result.ok).toBe(true);
-    // 커플 정원 2 = 소유자 1 + 멤버 1 → 먼저 들어온 한 명만 남고 둘이 나간다.
-    // ⚠ **남은 사람도 알림 대상이다**(코덱스 #733) — 등급이 가족에서 커플로 바뀌었다.
-    //   나간 둘 + 남은 하나. 목록 이름이 `demotedUserIds` 였을 때 남은 사람을 빠뜨렸다.
-    expect(result.ok && result.planChangedUserIds).toEqual([
-      'member-second',
-      'member-third',
-      'member-first',
-    ]);
-    // 그룹 자체는 살아 있다 — 남은 한 명은 그대로 쓴다.
-    expect(findCall('DELETE FROM plan_group_members WHERE plan_group_id = ?')).toBeUndefined();
   });
 
   it('재전송(만료 그대로)은 last_paid_at 을 밀지 않는다 — 전경 동기화가 앵커를 옮기면 안 된다', async () => {
@@ -1203,14 +920,14 @@ describe('applyStoreEntitlement — 그룹형 전환은 그룹을 이어받는�
     mockDB.pushResultFor('FROM store_transactions', [
       { user_id: 'user-pk-1', subscription_id: 'sub-same' },
     ]);
-    mockDB.pushResultFor('SELECT plan_id FROM subscriptions', [{ plan_id: FAMILY_PLAN.id }]);
+    mockDB.pushResultFor('SELECT plan_id FROM subscriptions', [{ plan_id: PLAN.id }]);
 
     await applyStoreEntitlement(mockDB.client as never, {
       userPk: 'user-pk-1',
       provider: 'google',
       providerTransactionId: 'play-token-same',
-      productId: 'family_monthly',
-      plan: FAMILY_PLAN,
+      productId: 'personal_monthly',
+      plan: PLAN,
       startsAt: new Date('2026-09-01T00:00:00.000Z'),
       expiresAt: new Date('2026-10-01T00:00:00.000Z'),
     });
@@ -1223,34 +940,7 @@ describe('applyStoreEntitlement — 그룹형 전환은 그룹을 이어받는�
     // 비교 대상과 갱신 대상이 같은 만료값이다.
     expect(update!.args[0]).toBe('2026-09-01T00:00:00.000Z');
     expect(update!.args[2]).toBe('2026-10-01T00:00:00.000Z');
-  });
-
-  it('개인 → 가족(이어받을 그룹 없음): 예전처럼 새 그룹을 만든다', async () => {
-    mockDB.pushResultFor('FROM store_transactions', []);
-    mockDB.pushResultFor('JOIN plan_groups g ON g.id = s.plan_group_id', []); // 소유 그룹 없음
-    mockDB.pushResultFor('JOIN plans p ON p.id = s.plan_id', [
-      {
-        ...COUPLE_SUB,
-        sub_id: 'sub-personal',
-        plan_group_id: null,
-        plan_type: 'personal',
-        plan_key: 'personal',
-      },
-    ]);
-    // 이어받을 그룹이 없으니 코드도 새로 발급된다 — INSERT 가 한 번에 성공하게 둔다.
-    mockDB.pushResultFor('INSERT OR IGNORE INTO voucher_codes', [], 1);
-
-    await applyStoreEntitlement(mockDB.client as never, {
-      userPk: 'user-pk-1',
-      provider: 'google',
-      providerTransactionId: 'play-token-family',
-      productId: 'family_monthly',
-      plan: FAMILY_PLAN,
-      startsAt: new Date(),
-      expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-    });
-
-    expect(findCall('INSERT INTO plan_groups')).toBeDefined();
-    expect(findCall('UPDATE plan_groups SET plan_id = ?, max_members = ?')).toBeUndefined();
+    // 같은 플랜 갱신은 개인 플랜의 행만 고친다 — 없앤 초대 코드 표를 건드리지 않는다.
+    expect(mockDB.calls.some((c) => /voucher_codes|plan_group/.test(c.sql))).toBe(false);
   });
 });

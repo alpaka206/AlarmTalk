@@ -22,18 +22,12 @@ import kotlinx.coroutines.withContext
  *
  * iOS `ClipReadinessModel.swift` 와 같은 역할이고 같은 규칙이다.
  *
- * ⚠ **이 값으로 알람 만들기를 막지 말 것**(클론·공유 목소리까지 센다). 알람 설정 관문은
+ * ⚠ **이 값으로 알람 만들기를 막지 말 것**(클론 목소리까지 센다). 알람 설정 관문은
  * **기본 목소리만** 보는 `StockClipPrefetchWorker.defaultVoicesReady` 하나다(2026-09-17).
  * 이 값으로 막는 것은 목소리 등록과, 아직 못 받은 **그 목소리를 고르는 것**뿐이다
  * (docs/spec/voice-and-message.md 「기본 목소리를 다 받아야 알람을 설정한다」).
  */
-/**
- * @param selectedVoiceProfileId **관문이 막은 바로 그 목소리.** 공유받은 목소리는 선다운로드
- *   대상이 아니라 고르는 순간 받으므로, 이걸 안 넣으면 준비 화면이 "준비됐어요 100%" 를
- *   보여 주고 돌아가면 관문이 또 막는다 — **빠져나갈 수 없는 고리**가 된다(2026-08-18 확인).
- *   iOS `ClipReadinessModel.refresh(session:ownedVoiceProfileIDs:selectedVoiceProfileID:)` 와 같다.
- */
-internal suspend fun MainViewModel.refreshClipReadiness(selectedVoiceProfileId: String? = null) {
+internal suspend fun MainViewModel.refreshClipReadiness() {
     val session = authSession ?: return
     val auth = AlarmTalkApiClient.bearer(session.token)
     val owned = voiceProfiles.map { it.id }.filterNot { isSystemVoiceId(it) }
@@ -61,7 +55,7 @@ internal suspend fun MainViewModel.refreshClipReadiness(selectedVoiceProfileId: 
         }
         // ⚠ **매니페스트를 여기서 직접 받지 않는다**(효율 감사 M1). 예전에는 표 없이 받아
         // `stockClips` 를 덮어 **Codex #703 가드를 우회**했다 — 교체 전에 출발한 응답이 공개된
-        // 새 목록을 되돌리고, 그 스냅샷으로 준비도를 셌다. 공유 조회를 쓰고, 신선도 창 안이면
+        // 새 목록을 되돌리고, 그 스냅샷으로 준비도를 셌다. 함께 쓰는 조회를 쓰고, 신선도 창 안이면
         // 받지 않는다(준비 화면을 여는 순간과 관문이 본 목록이 같다).
         // 막는 것은 FAILED 하나다 — UNCONFIRMED 는 이 요청의 응답이 공개돼 실린 것이라 센다
         // (`ManifestFlightOutcome.UNCONFIRMED` 주석, Codex #825).
@@ -85,29 +79,12 @@ internal suspend fun MainViewModel.refreshClipReadiness(selectedVoiceProfileId: 
     val categoriesByVoice = clips.groupBy { it.voiceProfileId }
         .mapValues { (_, list) -> list.mapNotNull { it.category }.distinct().sorted() }
 
-    // 관문이 막은 목소리를 대상에 넣는다(위 selectedVoiceProfileId 주석의 고리).
-    val extraTargets = mutableListOf<String>()
-    val awaitingOwner = mutableSetOf<String>()
-    if (selectedVoiceProfileId != null &&
-        !isSystemVoiceId(selectedVoiceProfileId) &&
-        selectedVoiceProfileId !in owned
-    ) {
-        // 공유받은 목소리다. 소유자가 아직 안 만들었으면 매니페스트에 클립이 하나도 없고
-        // **받는 사람이 할 수 있는 일이 없다.**
-        if (clips.any { it.voiceProfileId == selectedVoiceProfileId }) {
-            extraTargets += selectedVoiceProfileId
-        } else {
-            awaitingOwner += selectedVoiceProfileId
-        }
-    }
-    clipReadinessAwaitingOwner = awaitingOwner
-
     clipReadiness = withContext(Dispatchers.IO) {
         // 디렉터리는 한 번만 읽는다 — 클립마다 `getCachedAudio` 로 물으면 디렉터리를 다시 읽고
         // 길이까지 잰다(답은 같다, `AlarmAudioStore.snapshot`).
         val cache = audioStore.snapshot()
         ClipReadiness.evaluate(
-            voiceProfileIds = systemVoiceIds + owned.sorted() + extraTargets,
+            voiceProfileIds = systemVoiceIds + owned.sorted(),
             clips = clips,
             expectedVariants = expectedVariants,
             isSystemVoice = { isSystemVoiceId(it) },
@@ -156,6 +133,6 @@ internal fun MainViewModel.retryFailedClipRendersAsync() {
 }
 
 /** 화면에서 부르는 비-suspend 진입점. */
-internal fun MainViewModel.refreshClipReadinessAsync(selectedVoiceProfileId: String? = null) {
-    viewModelScope.launch { refreshClipReadiness(selectedVoiceProfileId) }
+internal fun MainViewModel.refreshClipReadinessAsync() {
+    viewModelScope.launch { refreshClipReadiness() }
 }

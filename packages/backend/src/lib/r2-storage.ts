@@ -3,18 +3,12 @@ import type { VoiceStorage, StoreInput, StoredObject } from '@alarmtalk/voice';
 type StoreAtKeyInput = Omit<StoreInput, 'bytes'> & { bytes: Uint8Array<ArrayBufferLike> };
 
 /**
- * 음성 업로드/클론 원본 최대 크기(25 MiB ≈ 2분 음성). voice-upload(/upload)·
- * voice-profile(/clone) 공용 — arrayBuffer→R2→ElevenLabs 전에 크기 가드로 쓴다.
+ * 클론 원본 최대 크기(25 MiB ≈ 2분 음성). voice-profile(/clone) 이 arrayBuffer→R2→ElevenLabs
+ * 전에 크기 가드로 쓴다.
  */
 export const MAX_VOICE_UPLOAD_BYTES = 25 * 1024 * 1024;
 
-/**
- * 목소리 업로드 원본의 키 앞머리(`voices/<userId>/`) — `store` 가 만드는 키의 **단일 출처**.
- *
- * 업로드 행(`voice_uploads`)이 TTL 로 먼저 지워져도 그 키를 들고 있는 문구
- * (받은 사람 소유의 `family-voice`)를 '누구의 녹음인가' 로 되짚을 때 쓴다
- * (`lib/voice-revocation.ts` 의 `audioUrlPointsAtUploadsOf`).
- */
+/** 목소리 업로드 원본의 키 앞머리(`voices/<userId>/`) — `store` 가 만드는 키의 **단일 출처**. */
 export function voiceUploadKeyPrefix(userId: string): string {
   return `voices/${userId}/`;
 }

@@ -224,11 +224,14 @@ describe('fetchAppleTransaction', () => {
 });
 
 describe('applePlanKeyFromProductId', () => {
-  // 이 ID 들은 StoreKitConfiguration.storekit 의 SKU 3개와 정확히 같아야 한다.
-  it('세 상품을 매핑한다', () => {
+  // 이 ID 는 StoreKitConfiguration.storekit 의 SKU 와 정확히 같아야 한다.
+  it('개인 상품 하나만 매핑한다', () => {
     expect(applePlanKeyFromProductId('com.alarmtalk.app.personal_monthly')).toBe('personal');
-    expect(applePlanKeyFromProductId('com.alarmtalk.app.couple_monthly')).toBe('couple');
-    expect(applePlanKeyFromProductId('com.alarmtalk.app.family_monthly')).toBe('family');
+  });
+
+  it('커플·가족 상품은 모르는 상품이다 — 판매를 내렸고 확정 라우트가 400 UNKNOWN_PRODUCT 로 끝낸다', () => {
+    expect(applePlanKeyFromProductId('com.alarmtalk.app.couple_monthly')).toBeNull();
+    expect(applePlanKeyFromProductId('com.alarmtalk.app.family_monthly')).toBeNull();
   });
 
   it('모르는 상품은 null', () => {

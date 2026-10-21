@@ -848,31 +848,13 @@ export async function markPrerenderDone(
   });
 }
 
-/** 제자리 교체 완료 뒤 소유자 기기와 공유 사용자들의 매니페스트 재조회를 깨운다. */
-export async function notifySharedVoicePrerenderComplete(
+/** 제자리 교체 완료 뒤 목소리 주인의 기기들이 매니페스트를 다시 받게 깨운다. */
+export async function notifyVoicePrerenderComplete(
   db: Client,
   env: Env,
-  voiceProfileId: string,
   ownerUserId: string,
 ): Promise<void> {
-  const recipientUserIds = new Set([ownerUserId]);
-  const shared = await db.execute({
-    sql: `SELECT 1 FROM voice_profiles
-          WHERE id = ? AND deleted_at IS NULL AND COALESCE(is_shared, 0) = 1
-          LIMIT 1`,
-    args: [voiceProfileId],
-  });
-  if (shared.rows.length > 0) {
-    const members = await db.execute({
-      sql: `SELECT DISTINCT m2.user_id
-            FROM plan_group_members m1
-            JOIN plan_group_members m2 ON m2.plan_group_id = m1.plan_group_id
-            WHERE m1.user_id = ? AND m2.user_id != ?`,
-      args: [ownerUserId, ownerUserId],
-    });
-    for (const row of members.rows) recipientUserIds.add(String(row.user_id));
-  }
-  await sendVoiceShareChangedPush(db, env, Array.from(recipientUserIds));
+  await sendVoiceShareChangedPush(db, env, [ownerUserId]);
 }
 
 /** 사전렌더 실패 1회 기록. attempts 상한(5) 초과 시 failed 로 내려 무한 재시도를 막는다. */
@@ -991,7 +973,7 @@ export async function runPrerenderBatch(
     if (targets.length === 0) {
       await markPrerenderDone(db, voice.id, claim.claimToken);
       if (claim.refreshExisting) {
-        await notifySharedVoicePrerenderComplete(db, env, voice.id, claim.ownerUserId);
+        await notifyVoicePrerenderComplete(db, env, claim.ownerUserId);
       }
       continue;
     }
@@ -1045,7 +1027,7 @@ export async function runPrerenderBatch(
     if (voiceRendered === targets.length && !voiceError) {
       await markPrerenderDone(db, voice.id, claim.claimToken);
       if (claim.refreshExisting) {
-        await notifySharedVoicePrerenderComplete(db, env, voice.id, claim.ownerUserId);
+        await notifyVoicePrerenderComplete(db, env, claim.ownerUserId);
       }
     } else if (voiceError && voiceRendered === 0) {
       await markPrerenderFailed(db, voice.id, claim.claimToken);

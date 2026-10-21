@@ -12,7 +12,6 @@ vi.mock('../src/lib/db', () => ({
 import billingQuery from '../src/routes/billing-query';
 
 const PLAN_PLUS_ID = '70000000-0000-4000-8000-000000000002';
-const PLAN_FAMILY_ID = '70000000-0000-4000-8000-000000000003';
 
 function buildApp(userId = 'google-1') {
   const app = new Hono<AppEnv>();
@@ -26,144 +25,17 @@ beforeEach(() => {
 });
 
 // ---------------------------------------------------------------------------
-// GET /billing/vouchers — split module direct import
+// GET /billing/vouchers — 옛 앱 호환(초대 코드는 커플·가족 이용권과 함께 없앴다)
+//
+// ⚠ 옛 앱 둘은 이 목록을 구독 조회와 **함께** 받는다 — 한쪽이 실패하면 구독 답까지 버려 권한이 낡는다.
+//   그래서 라우트를 지우지 않고 빈 배열로 답한다.
 // ---------------------------------------------------------------------------
-describe('GET /billing/vouchers (billingQuery)', () => {
-  it('resolveUserPk 로 google_id → user.id 조회 후 issuer 필터링', async () => {
-    mockDB.pushResult([{ id: 'user-pk-1' }]);
-    mockDB.pushResult([]);
-
-    await buildApp('google-1').request(jsonReq('GET', '/billing/vouchers'));
-
-    const userQuery = mockDB.calls[0]!;
-    expect(userQuery.sql).toContain('FROM users');
-    expect(userQuery.args[0]).toBe('google-1');
-    const voucherQuery = mockDB.calls[1]!;
-    expect(voucherQuery.args[0]).toBe('user-pk-1');
-  });
-
-  it('voucher JOIN plans — plan_key, plan_name, plan_type 포함', async () => {
-    mockDB.pushResult([{ id: 'user-pk-1' }]);
-    mockDB.pushResult([
-      {
-        id: 'v1',
-        code: 'INV-AAAA-BBBB-CCCC',
-        plan_id: PLAN_PLUS_ID,
-        issuer_subscription_id: 'sub-1',
-        redeemed_by_user_id: null,
-        status: 'issued',
-        issued_at: '2026-04-21T00:00:00.000Z',
-        used_at: null,
-        expires_at: '2026-05-21T00:00:00.000Z',
-        plan_key: 'personal',
-        plan_name: '개인',
-        plan_type: 'personal',
-      },
-    ]);
-
-    const res = await buildApp().request(jsonReq('GET', '/billing/vouchers'));
-    const body = await res.json();
-    expect(body.vouchers[0]).toMatchObject({
-      id: 'v1',
-      code: 'INV-AAAA-BBBB-CCCC',
-      plan_key: 'personal',
-      plan_name: '개인',
-      plan_type: 'personal',
-      subscription_id: 'sub-1',
-      redeemed_by_user_id: null,
-      used_at: null,
-    });
-  });
-
-  it('SQL 에 JOIN plans + issuer_user_id 필터 + 초대 코드(INV-) 조건 + ORDER BY issued_at DESC 포함', async () => {
-    mockDB.pushResult([{ id: 'user-pk-1' }]);
-    mockDB.pushResult([]);
-
-    await buildApp().request(jsonReq('GET', '/billing/vouchers'));
-
-    const sql = mockDB.calls[1]!.sql;
-    expect(sql).toContain('JOIN plans p ON p.id = v.plan_id');
-    expect(sql).toContain('v.issuer_user_id = ?');
-    // 옛 선물 행을 거르는 조건은 고정 리터럴이다 — 바인딩되는 값은 발급자 하나뿐이다.
-    // 실제로 걸러지는지는 `gift-codes-retired.test.ts` 가 실제 DB 로 본다.
-    expect(sql).toContain("v.code LIKE 'INV-%'");
-    expect(mockDB.calls[1]!.args).toEqual(['user-pk-1']);
-    expect(sql).toContain('ORDER BY v.issued_at DESC');
-  });
-
-  it('사용자 없으면 DB 조회 없이 빈 배열 반환', async () => {
-    mockDB.pushResult([]);
-
-    const res = await buildApp().request(jsonReq('GET', '/billing/vouchers'));
-    const body = await res.json();
-    expect(body.vouchers).toEqual([]);
-    expect(mockDB.calls).toHaveLength(1);
-  });
-
-  it('used 상태 voucher 의 redeemed_by_user_id, used_at 정상 매핑', async () => {
-    mockDB.pushResult([{ id: 'user-pk-1' }]);
-    mockDB.pushResult([
-      {
-        id: 'v1',
-        code: 'INV-AAAA-BBBB-CCCC',
-        plan_id: PLAN_PLUS_ID,
-        issuer_subscription_id: 'sub-1',
-        redeemed_by_user_id: 'user-pk-2',
-        status: 'used',
-        issued_at: '2026-04-21T00:00:00.000Z',
-        used_at: '2026-04-22T10:00:00.000Z',
-        expires_at: '2026-05-21T00:00:00.000Z',
-        plan_key: 'personal',
-        plan_name: '개인',
-        plan_type: 'personal',
-      },
-    ]);
-
-    const res = await buildApp().request(jsonReq('GET', '/billing/vouchers'));
-    const body = await res.json();
-    expect(body.vouchers[0].status).toBe('used');
-    expect(body.vouchers[0].redeemed_by_user_id).toBe('user-pk-2');
-    expect(body.vouchers[0].used_at).toBe('2026-04-22T10:00:00.000Z');
-  });
-
-  it('여러 voucher 반환 시 순서 유지 (DB 결과 순서대로)', async () => {
-    mockDB.pushResult([{ id: 'user-pk-1' }]);
-    mockDB.pushResult([
-      {
-        id: 'v1',
-        code: 'INV-AAAA-2222-2222',
-        plan_id: PLAN_PLUS_ID,
-        issuer_subscription_id: null,
-        redeemed_by_user_id: null,
-        status: 'issued',
-        issued_at: '2026-04-22T00:00:00.000Z',
-        used_at: null,
-        expires_at: '2026-05-22T00:00:00.000Z',
-        plan_key: 'personal',
-        plan_name: '플러스',
-        plan_type: 'personal',
-      },
-      {
-        id: 'v2',
-        code: 'INV-BBBB-2222-2222',
-        plan_id: PLAN_FAMILY_ID,
-        issuer_subscription_id: null,
-        redeemed_by_user_id: null,
-        status: 'issued',
-        issued_at: '2026-04-21T00:00:00.000Z',
-        used_at: null,
-        expires_at: '2026-05-21T00:00:00.000Z',
-        plan_key: 'family',
-        plan_name: '가족',
-        plan_type: 'family',
-      },
-    ]);
-
-    const res = await buildApp().request(jsonReq('GET', '/billing/vouchers'));
-    const body = await res.json();
-    expect(body.vouchers).toHaveLength(2);
-    expect(body.vouchers[0].id).toBe('v1');
-    expect(body.vouchers[1].id).toBe('v2');
+describe('GET /billing/vouchers — 옛 앱 호환', () => {
+  it('200 { vouchers: [] } — DB 를 보지 않는다', async () => {
+    const res = await buildApp('google-1').request(jsonReq('GET', '/billing/vouchers'));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ vouchers: [] });
+    expect(mockDB.calls).toHaveLength(0);
   });
 });
 
@@ -226,7 +98,6 @@ describe('GET /billing/subscription (billingQuery)', () => {
         entitlement_state: 'entitled',
         user_id: 'user-pk-1',
         plan_id: PLAN_PLUS_ID,
-        plan_group_id: null,
         status: 'active',
         starts_at: '2026-04-21T00:00:00.000Z',
         expires_at: '2026-05-21T00:00:00.000Z',
@@ -234,7 +105,6 @@ describe('GET /billing/subscription (billingQuery)', () => {
         plan_name: '개인',
         plan_type: 'personal',
         period_days: 30,
-        max_members: 1,
         price_krw: 4900,
       },
     ]);
@@ -297,7 +167,6 @@ describe('GET /billing/subscription (billingQuery)', () => {
         entitlement_state: 'entitled',
         user_id: 'user-pk-1',
         plan_id: PLAN_PLUS_ID,
-        plan_group_id: null,
         plan_type: 'personal',
         plan_key: 'personal',
       },
@@ -325,7 +194,6 @@ describe('GET /billing/subscription (billingQuery)', () => {
         entitlement_state: 'entitled',
         user_id: 'user-pk-1',
         plan_id: PLAN_PLUS_ID,
-        plan_group_id: null,
         plan_type: 'personal',
         plan_key: 'personal',
       },
@@ -334,7 +202,6 @@ describe('GET /billing/subscription (billingQuery)', () => {
         entitlement_state: 'entitled',
         user_id: 'user-pk-1',
         plan_id: PLAN_PLUS_ID,
-        plan_group_id: null,
         plan_type: 'personal',
         plan_key: 'personal',
       },
@@ -372,7 +239,6 @@ describe('GET /billing/subscription (billingQuery)', () => {
         entitlement_state: 'entitled',
         user_id: 'user-pk-1',
         plan_id: PLAN_PLUS_ID,
-        plan_group_id: null,
         plan_type: 'personal',
         plan_key: 'personal',
         cancel_at_period_end: 1,
@@ -401,7 +267,6 @@ describe('GET /billing/subscription (billingQuery)', () => {
         entitlement_state: 'entitled',
         user_id: 'user-pk-1',
         plan_id: PLAN_PLUS_ID,
-        plan_group_id: null,
         plan_type: 'personal',
         plan_key: 'personal',
       },
@@ -420,7 +285,6 @@ describe('GET /billing/subscription (billingQuery)', () => {
         entitlement_state: 'entitled',
         user_id: 'user-pk-1',
         plan_id: PLAN_PLUS_ID,
-        plan_group_id: null,
         plan_type: 'personal',
         plan_key: 'personal',
       },
@@ -446,7 +310,6 @@ describe('GET /billing/subscription (billingQuery)', () => {
         entitlement_state: 'entitled',
         user_id: 'user-pk-1',
         plan_id: PLAN_PLUS_ID,
-        plan_group_id: null,
         plan_type: 'personal',
         plan_key: 'personal',
       },
@@ -472,7 +335,6 @@ describe('GET /billing/subscription (billingQuery)', () => {
         entitlement_state: 'entitled',
         user_id: 'user-pk-1',
         plan_id: PLAN_PLUS_ID,
-        plan_group_id: null,
         plan_type: 'personal',
         plan_key: 'personal',
       },
@@ -481,7 +343,6 @@ describe('GET /billing/subscription (billingQuery)', () => {
         entitlement_state: 'entitled',
         user_id: 'user-pk-1',
         plan_id: PLAN_PLUS_ID,
-        plan_group_id: null,
         plan_type: 'personal',
         plan_key: 'personal',
       },
@@ -505,7 +366,7 @@ describe('GET /billing/subscription (billingQuery)', () => {
     expect((await res.json()).subscription.store_provider).toBe('apple');
   });
 
-  it('스토어 결제가 아니면(프로모·바우처) store_provider=null — 서버 로컬 해지가 된다', async () => {
+  it('스토어 결제가 아니면(프로모·dev 스텁) store_provider=null — 서버 로컬 해지가 된다', async () => {
     pushSubscriptionRow();
     mockDB.pushResult([
       {
@@ -513,7 +374,6 @@ describe('GET /billing/subscription (billingQuery)', () => {
         entitlement_state: 'entitled',
         user_id: 'user-pk-1',
         plan_id: PLAN_PLUS_ID,
-        plan_group_id: null,
         plan_type: 'personal',
         plan_key: 'personal',
       },
@@ -532,7 +392,6 @@ describe('GET /billing/subscription (billingQuery)', () => {
         entitlement_state: 'entitled',
         user_id: 'user-pk-1',
         plan_id: PLAN_PLUS_ID,
-        plan_group_id: null,
         plan_type: 'personal',
         plan_key: 'personal',
       },
@@ -548,14 +407,13 @@ describe('GET /billing/subscription (billingQuery)', () => {
     expect(mockDB.calls[2]!.sql).toContain('subscription_id IN');
   });
 
-  it('personal 구독 시 plan_group_id null 반환', async () => {
+  it('plan 필드 전체 정확성 — 정원 칸은 옛 iOS 디코더를 위해 언제나 1, 그룹 id 는 없다', async () => {
     mockDB.pushResult([
       {
         sub_id: 'sub-1',
         entitlement_state: 'entitled',
         user_id: 'user-pk-1',
         plan_id: PLAN_PLUS_ID,
-        plan_group_id: null,
         status: 'active',
         starts_at: '2026-04-21T00:00:00.000Z',
         expires_at: '2026-05-21T00:00:00.000Z',
@@ -563,54 +421,29 @@ describe('GET /billing/subscription (billingQuery)', () => {
         plan_name: '개인',
         plan_type: 'personal',
         period_days: 30,
-        max_members: 1,
         price_krw: 4900,
       },
     ]);
 
     const res = await buildApp().request(jsonReq('GET', '/billing/subscription'));
     const body = await res.json();
-    expect(body.subscription.plan_group_id).toBeNull();
-    expect(body.plan.plan_type).toBe('personal');
-  });
-
-  it('family 구독 시 plan_group_id 포함 + plan 필드 전체 정확성', async () => {
-    mockDB.pushResult([
-      {
-        sub_id: 'sub-fam',
-        entitlement_state: 'entitled',
-        user_id: 'user-pk-1',
-        plan_id: PLAN_FAMILY_ID,
-        plan_group_id: 'group-1',
-        status: 'active',
-        starts_at: '2026-04-21T00:00:00.000Z',
-        expires_at: '2026-05-21T00:00:00.000Z',
-        plan_key: 'family',
-        plan_name: '가족',
-        plan_type: 'family',
-        period_days: 30,
-        max_members: 6,
-        price_krw: 9900,
-      },
-    ]);
-
-    const res = await buildApp().request(jsonReq('GET', '/billing/subscription'));
-    const body = await res.json();
     expect(body.subscription).toMatchObject({
-      id: 'sub-fam',
+      id: 'sub-1',
       user_id: 'user-pk-1',
-      plan_id: PLAN_FAMILY_ID,
-      plan_group_id: 'group-1',
+      plan_id: PLAN_PLUS_ID,
       status: 'active',
     });
-    expect(body.plan).toMatchObject({
-      id: PLAN_FAMILY_ID,
-      key: 'family',
-      name: '가족',
-      plan_type: 'family',
+    expect(body.subscription).not.toHaveProperty('plan_group_id');
+    // 옛 앱 호환 — 옛 iOS `BillingPlan` 은 max_members 를 필수로 읽는다(빠지면 구독 답 전체가 디코딩에 실패한다).
+    // DB 칸은 #131 이 지웠으므로 리터럴이다.
+    expect(body.plan).toEqual({
+      id: PLAN_PLUS_ID,
+      key: 'personal',
+      name: '개인',
+      plan_type: 'personal',
       period_days: 30,
-      max_members: 6,
-      price_krw: 9900,
+      max_members: 1,
+      price_krw: 4900,
     });
   });
 

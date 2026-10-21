@@ -1,5 +1,4 @@
 import { Hono } from 'hono';
-import type { ErrorCode } from '@alarmtalk/shared';
 import type { AppEnv } from '../types';
 import { getDB } from '../lib/db';
 import { personalPromoCoversFree } from '../lib/personal-promo';
@@ -14,7 +13,6 @@ import {
   storeCancelProviderOf,
   notifyBillingStateChanged,
 } from '../lib/billing-cancel';
-import { issueVoucherCode, type IssuedVoucherCode } from '../lib/voucher-issue';
 import { APPLE_MANAGE_SUBSCRIPTIONS_URL } from '../lib/store-billing';
 import { logStructured } from '../lib/logger';
 import {
@@ -24,12 +22,7 @@ import {
 } from '../lib/play-subscriptions';
 import type { DbExecutor } from '../lib/transactions';
 import { withWriteTransaction } from '../lib/transactions';
-import {
-  PAID_PLAN_TYPES,
-  planTypeToUserPlan,
-  plannedMaxUses,
-  resolveUserPk,
-} from './billing-helpers';
+import { PAID_PLAN_TYPES, planTypeToUserPlan, resolveUserPk } from './billing-helpers';
 import { jsonError } from '../lib/api-error';
 
 const billingMutation = new Hono<AppEnv>();
@@ -40,54 +33,17 @@ interface BillablePlan {
   name: string;
   plan_type: string;
   period_days: number;
-  max_members: number;
   price_krw: number;
 }
 
-interface CreatedSubscriptionArtifacts {
-  subscription: {
-    id: string;
-    user_id: string;
-    plan_id: string;
-    plan_group_id: string | null;
-    status: 'active';
-    starts_at: string;
-    expires_at: string;
-  };
-  plan_group: {
-    id: string;
-    owner_user_id: string;
-    max_members: number;
-  } | null;
-  voucher: IssuedVoucherCode | null;
-}
-
-interface ShareableVoucherCode {
+interface CreatedSubscription {
   id: string;
-  code: string;
+  user_id: string;
   plan_id: string;
-  plan_key: string;
-  plan_name: string;
-  plan_type: string;
-  subscription_id: string;
-  status: 'issued';
-  issued_at: string;
+  status: 'active';
+  starts_at: string;
   expires_at: string;
-  max_uses: number;
-  use_count: number;
 }
-
-type FamilyShareCodeResult =
-  | { voucher: ShareableVoucherCode }
-  | {
-      error: {
-        status: 404 | 409;
-        body: {
-          error: string;
-          error_code: ErrorCode;
-        };
-      };
-    };
 
 function isBillingStubEnabled(env: Partial<AppEnv['Bindings']> | undefined): boolean {
   // production 에서는 BILLING_STUB_ENABLED 값과 무관하게 항상 비활성한다.
@@ -112,7 +68,6 @@ function normalizeBillablePlan(row: Record<string, unknown>): BillablePlan {
     name: String(row.name),
     plan_type: String(row.plan_type),
     period_days: Number(row.period_days) || 30,
-    max_members: Number(row.max_members) || 1,
     price_krw: Number(row.price_krw) || 0,
   };
 }
@@ -124,52 +79,29 @@ function planResponse(plan: BillablePlan) {
     name: plan.name,
     plan_type: plan.plan_type,
     period_days: plan.period_days,
-    max_members: plan.max_members,
     price_krw: plan.price_krw,
   };
 }
 
-async function createPaidSubscriptionArtifacts(
+async function createPaidSubscription(
   db: DbExecutor,
   params: {
     userPk: string;
     plan: BillablePlan;
     startsAt: Date;
   },
-): Promise<CreatedSubscriptionArtifacts> {
+): Promise<CreatedSubscription> {
   const startsAtIso = params.startsAt.toISOString();
   const expiresAt = new Date(
     params.startsAt.getTime() + params.plan.period_days * 24 * 60 * 60 * 1000,
   );
   const expiresAtIso = expiresAt.toISOString();
   const subscriptionId = crypto.randomUUID();
-  let planGroupId: string | null = null;
-
-  if (params.plan.plan_type === 'family') {
-    planGroupId = crypto.randomUUID();
-    await db.execute({
-      sql: `INSERT INTO plan_groups (id, owner_user_id, plan_id, max_members)
-            VALUES (?, ?, ?, ?)`,
-      args: [planGroupId, params.userPk, params.plan.id, params.plan.max_members],
-    });
-    await db.execute({
-      sql: `INSERT INTO plan_group_members (id, plan_group_id, user_id, role)
-            VALUES (?, ?, ?, 'owner')`,
-      args: [crypto.randomUUID(), planGroupId, params.userPk],
-    });
-  }
 
   await db.execute({
-    sql: `INSERT INTO subscriptions (id, user_id, plan_id, plan_group_id, status, starts_at, expires_at)
-          VALUES (?, ?, ?, ?, 'active', ?, ?)`,
-    args: [
-      subscriptionId,
-      params.userPk,
-      params.plan.id,
-      planGroupId,
-      startsAtIso,
-      expiresAtIso,
-    ],
+    sql: `INSERT INTO subscriptions (id, user_id, plan_id, status, starts_at, expires_at)
+          VALUES (?, ?, ?, 'active', ?, ?)`,
+    args: [subscriptionId, params.userPk, params.plan.id, startsAtIso, expiresAtIso],
   });
 
   await db.execute({
@@ -177,40 +109,16 @@ async function createPaidSubscriptionArtifacts(
     args: [planTypeToUserPlan(params.plan.plan_type), params.userPk],
   });
 
-  const voucher =
-    params.plan.plan_type === 'family'
-      ? await issueVoucherCode(db, {
-          kind: 'invite',
-          planId: params.plan.id,
-          issuerUserId: params.userPk,
-          issuerSubscriptionId: subscriptionId,
-          issuedAt: startsAtIso,
-          expiresAt: expiresAtIso,
-          maxUses: plannedMaxUses(params.plan.plan_type, params.plan.max_members),
-        })
-      : null;
-
   // 재구독(스텁 결제 성공) — 예약된 유료 음성 보관 삭제를 해제한다.
   await clearPaidVoiceRetention(db, params.userPk);
 
   return {
-    subscription: {
-      id: subscriptionId,
-      user_id: params.userPk,
-      plan_id: params.plan.id,
-      plan_group_id: planGroupId,
-      status: 'active',
-      starts_at: startsAtIso,
-      expires_at: expiresAtIso,
-    },
-    plan_group: planGroupId
-      ? {
-          id: planGroupId,
-          owner_user_id: params.userPk,
-          max_members: params.plan.max_members,
-        }
-      : null,
-    voucher,
+    id: subscriptionId,
+    user_id: params.userPk,
+    plan_id: params.plan.id,
+    status: 'active',
+    starts_at: startsAtIso,
+    expires_at: expiresAtIso,
   };
 }
 
@@ -242,7 +150,7 @@ billingMutation.post('/checkout', async (c) => {
   }
 
   const planRes = await db.execute({
-    sql: `SELECT id, key, name, plan_type, period_days, max_members, price_krw, is_active
+    sql: `SELECT id, key, name, plan_type, period_days, price_krw, is_active
           FROM plans WHERE key = ?`,
     args: [planKey],
   });
@@ -265,14 +173,11 @@ billingMutation.post('/checkout', async (c) => {
   }
 
   const billablePlan = normalizeBillablePlan(plan);
-  const checkoutResult = await withWriteTransaction(db, async (tx) => {
+  const subscription = await withWriteTransaction(db, async (tx) => {
     const startsAt = new Date();
-    await cancelActiveSubscriptionsForUser(tx, userPk, startsAt, {
-      deleteVoiceData: false,
-      promoCoversFree: personalPromoCoversFree(c.env, startsAt),
-    });
+    await cancelActiveSubscriptionsForUser(tx, userPk, startsAt, { deleteVoiceData: false });
 
-    return createPaidSubscriptionArtifacts(tx, {
+    return createPaidSubscription(tx, {
       userPk,
       plan: billablePlan,
       startsAt,
@@ -282,245 +187,15 @@ billingMutation.post('/checkout', async (c) => {
   return c.json({
     success: true,
     checkout_stub: true,
-    subscription: checkoutResult.subscription,
+    subscription,
     plan: planResponse(billablePlan),
-    plan_group: checkoutResult.plan_group,
-    voucher: checkoutResult.voucher,
   });
 });
 
 // ⚠ **운영자가 코드를 찍어 내던 dev 라우트 `POST /billing/test-codes` 는 2026-10-14 에 지웠다 — 되살리지 말 것.**
 //   App Store 심사 지침 3.1.1 이 '코드로 유료 기능을 연다' 를 두 번 반려했다(1.2.11 프로모 코드, 1.2.12 선물
-//   코드 — `routes/code.ts` 머리말). 이 라우트가 내준 초대 코드는 주인 구독이 없어 등록조차 되지 않았고
-//   (`voucher-redemption.ts` 의 `SUBSCRIPTION_NOT_ACTIVE`), 등록되게 고치면 운영자가 만든 코드로 이용권을 여는
-//   그 모양이 된다. 테스트 계정의 이용권은 `scripts/apply-dev-plan.ts` 로, 할인·무료 이용은 스토어 오퍼 코드로 준다.
-
-interface FamilyOwnerContext {
-  subscriptionId: string;
-  planId: string;
-  planKey: string;
-  planName: string;
-  planType: string;
-  maxMembers: number;
-  maxUses: number;
-  expiresAt: string;
-}
-
-type FamilyOwnerLookup =
-  | { ctx: FamilyOwnerContext; memberCount: number }
-  | {
-      error: {
-        status: 404;
-        body: { error: string; error_code: ErrorCode };
-      };
-    };
-
-/**
- * 활성 가족 플랜 소유자 구독을 찾는다(정원 가드는 호출 측 책임).
- *  - 발급(family-share)은 정원이 차면 새 코드가 무의미하므로 GROUP_FULL 로 막는다.
- *  - 재발급(regenerate)은 *정원이 찼을 때도* 유출된 코드를 끊을 수 있어야 하므로
- *    정원 가드를 적용하지 않는다. 그래서 가드를 여기서 빼고 memberCount 만 넘긴다.
- */
-async function loadActiveFamilyOwnerContext(
-  tx: DbExecutor,
-  userPk: string,
-): Promise<FamilyOwnerLookup> {
-  const subscriptionRes = await tx.execute({
-    sql: `SELECT s.id AS subscription_id, s.plan_id, s.expires_at,
-                 pg.id AS plan_group_id, pg.max_members AS group_max_members,
-                 (SELECT COUNT(*) FROM plan_group_members WHERE plan_group_id = pg.id) AS member_count,
-                 p.key AS plan_key, p.name AS plan_name, p.plan_type,
-                 p.period_days, p.max_members, p.price_krw
-          FROM subscriptions s
-          JOIN plans p ON p.id = s.plan_id
-          JOIN plan_groups pg ON pg.id = s.plan_group_id
-          WHERE s.user_id = ?
-            AND pg.owner_user_id = ?
-            AND s.status = 'active'
-            AND s.entitlement_state = 'entitled'
-            AND s.expires_at > datetime('now')
-            AND p.plan_type = 'family'
-          ORDER BY s.starts_at DESC
-          LIMIT 1`,
-    args: [userPk, userPk],
-  });
-
-  if (subscriptionRes.rows.length === 0) {
-    return {
-      error: {
-        status: 404,
-        body: {
-          error: 'Active family plan ownership is required',
-          error_code: 'NO_ACTIVE_FAMILY_OWNER_SUBSCRIPTION',
-        },
-      },
-    };
-  }
-
-  const subscription = subscriptionRes.rows[0]!;
-  const planType = String(subscription.plan_type);
-  const maxMembers = Number(subscription.group_max_members ?? subscription.max_members) || 6;
-  const memberCount = Number(subscription.member_count ?? 0);
-
-  return {
-    ctx: {
-      subscriptionId: String(subscription.subscription_id),
-      planId: String(subscription.plan_id),
-      planKey: String(subscription.plan_key),
-      planName: String(subscription.plan_name),
-      planType,
-      maxMembers,
-      maxUses: plannedMaxUses(planType, maxMembers),
-      expiresAt: String(subscription.expires_at),
-    },
-    memberCount,
-  };
-}
-
-/** 새 invite 코드를 발급해 공유용 응답 모양으로 만든다. */
-async function issueShareableVoucher(
-  tx: DbExecutor,
-  userPk: string,
-  ctx: FamilyOwnerContext,
-): Promise<ShareableVoucherCode> {
-  const issuedAt = new Date().toISOString();
-  const issued = await issueVoucherCode(tx, {
-    kind: 'invite',
-    planId: ctx.planId,
-    issuerUserId: userPk,
-    issuerSubscriptionId: ctx.subscriptionId,
-    issuedAt,
-    expiresAt: ctx.expiresAt,
-    maxUses: ctx.maxUses,
-  });
-  return {
-    id: issued.id,
-    code: issued.code,
-    plan_id: ctx.planId,
-    plan_key: ctx.planKey,
-    plan_name: ctx.planName,
-    plan_type: ctx.planType,
-    subscription_id: ctx.subscriptionId,
-    status: 'issued',
-    issued_at: issuedAt,
-    expires_at: issued.expires_at,
-    max_uses: issued.max_uses,
-    use_count: issued.use_count,
-  };
-}
-
-billingMutation.post('/vouchers/family-share', async (c) => {
-  const userPk = await resolveUserPk(c);
-  if (!userPk) {
-    return c.json({ error: 'User not found', error_code: 'USER_NOT_FOUND' }, 404);
-  }
-
-  const db = getDB(c.env);
-  const result: FamilyShareCodeResult = await withWriteTransaction(db, async (tx) => {
-    const lookup = await loadActiveFamilyOwnerContext(tx, userPk);
-    if ('error' in lookup) return lookup;
-    const ctx = lookup.ctx;
-
-    // 정원이 차면 더 초대할 수 없으므로 새 코드 발급/재사용을 막는다.
-    if (lookup.memberCount >= ctx.maxMembers) {
-      return {
-        error: {
-          status: 409,
-          body: {
-            error: `Group is full: max ${ctx.maxMembers}`,
-            error_code: 'GROUP_FULL',
-          },
-        },
-      };
-    }
-
-    // 앱이 공유할 코드로 띄우는 것은 초대 코드(INV-)뿐이다 — 목록(`GET /billing/vouchers`,
-    // `routes/billing-query.ts`)과 같은 고정 조건이다. 옛 선물 행은 구독에 묶이지 않고 발급됐지만
-    // (issuer_subscription_id NULL) 그 사실에 기대지 않고 여기서도 거른다.
-    const existingRes = await tx.execute({
-      sql: `SELECT v.id, v.code, v.status, v.issued_at, v.expires_at, v.max_uses,
-                   (SELECT COUNT(*) FROM voucher_redemptions WHERE voucher_id = v.id) AS use_count
-            FROM voucher_codes v
-            WHERE v.issuer_user_id = ?
-              AND v.issuer_subscription_id = ?
-              AND v.code LIKE 'INV-%'
-              AND v.status = 'issued'
-              AND v.expires_at > datetime('now')
-            ORDER BY v.issued_at DESC`,
-      args: [userPk, ctx.subscriptionId],
-    });
-
-    const existing = existingRes.rows.find((row) => {
-      const useCount = Number(row.use_count ?? 0);
-      const rowMaxUses = Number(row.max_uses ?? 1);
-      return useCount < rowMaxUses;
-    });
-
-    if (existing) {
-      const voucher: ShareableVoucherCode = {
-        id: String(existing.id),
-        code: String(existing.code),
-        plan_id: ctx.planId,
-        plan_key: ctx.planKey,
-        plan_name: ctx.planName,
-        plan_type: ctx.planType,
-        subscription_id: ctx.subscriptionId,
-        status: 'issued',
-        issued_at: String(existing.issued_at),
-        expires_at: String(existing.expires_at),
-        max_uses: Number(existing.max_uses ?? ctx.maxUses),
-        use_count: Number(existing.use_count ?? 0),
-      };
-      return { voucher };
-    }
-
-    return { voucher: await issueShareableVoucher(tx, userPk, ctx) };
-  });
-
-  if ('error' in result) {
-    return c.json(result.error.body, result.error.status);
-  }
-
-  return c.json({ success: true, voucher: result.voucher });
-});
-
-// 공유 코드 재발급: 기존 코드를 무효화(expired)하고 새 코드를 발급한다.
-// 유출이 의심될 때 사용자가 직접 코드를 끊고 새로 만들 수 있게 한다.
-// 정원이 꽉 차도(유출 의심 시점이 보통 이때다) 허용해야 하므로 GROUP_FULL 가드를 두지 않는다.
-billingMutation.post('/vouchers/family-share/regenerate', async (c) => {
-  const userPk = await resolveUserPk(c);
-  if (!userPk) {
-    return c.json({ error: 'User not found', error_code: 'USER_NOT_FOUND' }, 404);
-  }
-
-  const db = getDB(c.env);
-  const result: FamilyShareCodeResult = await withWriteTransaction(db, async (tx) => {
-    const lookup = await loadActiveFamilyOwnerContext(tx, userPk);
-    if ('error' in lookup) return lookup;
-    const ctx = lookup.ctx;
-
-    // 같은 구독에 묶인 기존 코드를 issued·used 모두 만료 처리한다.
-    // used 만 빼면, 멤버 이탈 시 releaseInviteUseForMember 가 used→issued 로 되돌려
-    // 유출된 코드가 다시 사용 가능해질 수 있다(expired 는 되돌리지 않음).
-    // 이미 합류한 멤버의 구독 자체는 별도 행이라 영향 없다.
-    await tx.execute({
-      sql: `UPDATE voucher_codes
-            SET status = 'expired'
-            WHERE issuer_user_id = ?
-              AND issuer_subscription_id = ?
-              AND status IN ('issued', 'used')`,
-      args: [userPk, ctx.subscriptionId],
-    });
-
-    return { voucher: await issueShareableVoucher(tx, userPk, ctx) };
-  });
-
-  if ('error' in result) {
-    return c.json(result.error.body, result.error.status);
-  }
-
-  return c.json({ success: true, voucher: result.voucher });
-});
+//   코드 — `routes/code.ts` 머리말). 테스트 계정의 이용권은 `scripts/apply-dev-plan.ts` 로, 할인·무료 이용은
+//   스토어 오퍼 코드로 준다.
 
 // MARK: - POST /billing/cancel
 //
@@ -562,7 +237,7 @@ billingMutation.post('/cancel', async (c) => {
     );
   }
 
-  // 활성 구독들이 어느 스토어 결제에 묶여 있는지 확인. 없으면 dev 스텁/프로모/바우처
+  // 활성 구독들이 어느 스토어 결제에 묶여 있는지 확인. 없으면 dev 스텁/프로모
   // 구독이므로 서버 로컬 해지만 수행한다. 다중 활성 구독이 각각 다른 Play 토큰에 묶인
   // 엣지 케이스까지 전부 조회한다 — 첫 구독 토큰만 취소하면 나머지 토큰이 계속 과금된다.
   // (IN 플레이스홀더는 개발자 고정 조각 — 값은 전부 ?-바인딩.)
@@ -648,7 +323,6 @@ billingMutation.post('/cancel', async (c) => {
     }
   }
 
-  const cancelAffected = new Set<string>();
   // 기간 한정 개인 플랜이 덮는 동안에는 무료가 돼도 보관을 걸지 않는다(응답 기한도 null).
   const promoCoversFree = personalPromoCoversFree(c.env, now);
   const voiceRetentionUntil = await withWriteTransaction(db, async (tx) => {
@@ -658,11 +332,7 @@ billingMutation.post('/cancel', async (c) => {
     // 스냅샷(activeSubscriptions)의 구독만 취소하고 새 구독은 건드리지 않는다.
     // (plan 재정렬은 cancelSubscriptionImmediate 내부에서 남은 활성 구독 기준으로 처리)
     for (const subscription of activeSubscriptions) {
-      const ids = await cancelSubscriptionImmediate(tx, subscription, now, {
-        deleteVoiceData: false,
-        promoCoversFree,
-      });
-      for (const id of ids) cancelAffected.add(id);
+      await cancelSubscriptionImmediate(tx, subscription, now, { deleteVoiceData: false });
     }
     // 즉시 해지여도 음성은 보관 유예(PAID_VOICE_RETENTION_DAYS) 동안 남는다 —
     // '지금 삭제'는 /voice-data/delete-now 로 분리.
@@ -670,9 +340,9 @@ billingMutation.post('/cancel', async (c) => {
     // 삭제 예고가 나가므로 plan 재계산과 같은 트랜잭션에서 보관 상태를 결정한다.
     return syncPaidVoiceRetention(tx, userPk, now, promoCoversFree);
   });
-  // 가족 소유자 즉시 해지 시 함께 강등되는 멤버에게 plan_changed 푸시(당사자 포함, 커밋 후).
-  // 해지 직후가 예고를 보낼 자리다 — 3일 뒤 지워진다는 걸 지금 말해야 되돌릴 시간이 있다.
-  await notifyBillingStateChanged(db, c.env, Array.from(cancelAffected));
+  // 해지한 당사자에게 plan_changed 푸시(커밋 후). 해지 직후가 예고를 보낼 자리다 — 3일 뒤
+  // 지워진다는 걸 지금 말해야 되돌릴 시간이 있다.
+  await notifyBillingStateChanged(db, c.env, [userPk]);
   return c.json({
     success: true,
     mode,

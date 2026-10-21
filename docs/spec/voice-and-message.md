@@ -11,8 +11,8 @@
 - iOS 는 AlarmKit 에 넘길 사운드가 1개라 '톤 먼저, 목소리 나중' 이 구조적으로 불가능했다.
 - 저장된 옛 값은 **목소리로 읽는다.** 그 모드를 고른 사람은 목소리를 만들어 둔
   사용자다 — 알람음으로 옮기면 애써 만든 목소리를 못 듣게 된다.
-- 유료 목소리를 못 쓰게 되거나(무료 전환 · 기간 한정 개인 플랜 종료) 목소리를 잃어도(삭제 · 공유
-  해제 · 보낸 사람 탈퇴 · 제자리 교체된 직접 입력) **재생 방식을 '알람' 으로 바꾸지 않는다** — 목소리만
+- 유료 목소리를 못 쓰게 되거나(무료 전환 · 기간 한정 개인 플랜 종료) 목소리를 잃어도(삭제 · 동의
+  철회 · 접근권 상실 · 제자리 교체된 직접 입력) **재생 방식을 '알람' 으로 바꾸지 않는다** — 목소리만
   **기본 목소리**로 바꾼다. 대체 목소리는 **미나 하나**다(알람이 이미 기본 목소리면 그대로). 2026-09-29 —
   그전에는 '알람' 으로 내려 목록·편집기에서 그냥 기본 알람이 됐고, 안드로이드에서는 무음으로 울렸다.
   규칙 전문은 [billing-lifecycle.md](billing-lifecycle.md) 「목소리를 못 쓰게 되면」.
@@ -50,6 +50,9 @@
 
 ⚠ **잠긴 '직접 입력' 행을 목록에서 빼지 말 것.** 빼면 유료에 무엇이 있는지 알 길이 없다.
 자물쇠를 그리고, 누르면 게이트가 이유를 말한다.
+
+무료도 **광고 보상이 남아 있으면** 기본 목소리로 직접 입력을 한 번 만들 수 있다 — 그 행은 잠금이 풀린다.
+보상을 받는 길·세는 규칙은 [`ad-rewards.md`](ad-rewards.md)(2026-10-19).
 
 ⚠ **이용권 카드도 이 규칙을 따른다 — 문구 종류를 유료 혜택처럼 적지 말 것**(2026-09-30).
 개인 카드가 "날씨·운세 등 매일 다른 문구" 라고 적고 있었다. 날씨·운세·응원·약은 기본
@@ -148,7 +151,7 @@
     잇기가 뒤인 것은 먼저 이으면 이은 직접 입력 문구를 그 비우기가 지우기 때문이다.
     목소리 선택 관문(클립 준비)도 **이을 값**으로 판정한다 — 잇기 전에 도는 관문이 지금 값
     (랜덤 꺼짐)으로 물으면 클립이 필요한 상태를 통과시킨다. 그리고 소스 전환·잇기는 관문과
-    확인(공유 목소리 호칭 입력·기본 목소리 확인)을 다 지나 선택이 **확정될 때만** 한다 — 먼저
+    확인(기본 목소리 확인)을 다 지나 선택이 **확정될 때만** 한다 — 먼저
     바꿔 두면, 준비 화면·시트·알럿을 닫았을 때 고르지 않은 선택이 녹음 카드를 걷어 내고 다른
     목소리·이은 문구로 남는다(2026-09-29 리뷰, iOS 가 그랬다).
   - ⚠ **이은 직접 입력 문구는 테마가 덮지 않는다**(2026-09-29 리뷰). 유료 사용자가 기본
@@ -171,7 +174,7 @@
     (`MANUAL_TEXT_MISSING`). '문구를 준비하고 있어요' 로 뭉개지 말 것 — 그건 스톡 클립이
     붙기 전 **과도기**의 말이라 기다리면 풀리지만, 빈 직접 입력은 기다려도 안 풀린다.
     (스톡 클립 목소리의 빈 문구는 여전히 과도기다 — 그쪽은 '준비 중' 그대로.)
-- **목소리 프리셀렉트는 마지막에 쓴 것이 그룹보다 우선.** 그룹을 먼저 보면 클론을 가진
+- **목소리 프리셀렉트는 마지막에 쓴 것이 그룹(내 클론 → 기본)보다 우선.** 그룹을 먼저 보면 클론을 가진
   사람이 기본 목소리를 골라 저장해도 매번 클론으로 되돌아간다.
 - 이어받는 것은 **선택 값 하나**뿐이다. 회전 인덱스·클립 키는 알람별 상태라 따라가지 않는다.
 - **한 번도 고른 적 없을 때의 폴백은 '추가 입력이 필요 없는 첫 종류' 다**(2026-09-08 실기기
@@ -218,7 +221,7 @@
 | 음원 준비 | 녹음/파일 2택, 녹음 카드 또는 파일 자르기·미리듣기, 접힌 예시 대본 | 12초 이상 2분 이하 음원. 말소리가 거의 없으면 서버가 등록을 거절해 이 단계로 돌아온다(아래 「말소리가 없으면 등록하지 않는다」) |
 | 세부 정보 | 목소리 이름, 관계, 나를 부를 호칭, 알람 문구 언어, 필요한 생체정보 동의 | **이름만 필수**. 이름 칸은 비워 시작하며 예시를 실제 이름으로 저장하지 않는다. 관계·호칭은 선택 |
 | 생성 중 | 진행 표시와 설명만 | 서버 초안 생성 완료 |
-| 미리듣기·확정 | 생성된 목소리 듣기·문구 수정, 공유 설정, 기존 목소리 교체 확인 | 끝까지 들어본 뒤 저장 또는 삭제 |
+| 미리듣기·확정 | 생성된 목소리 듣기·문구 수정, 기존 목소리 교체 확인 | 끝까지 들어본 뒤 저장 또는 삭제 |
 | 오프라인 준비 | 서버 생성과 기기 다운로드를 합친 진행률 | 나가도 백그라운드에서 계속 |
 
 - **목소리의 결(경쾌/차분)은 묻지 않는다**(2026-09-29 — 1.2.10 의 '목소리 느낌' 선택을 뺐다).
@@ -255,11 +258,10 @@
     2026-10-08 사용자 지시로 뺐다.)
   - **월 등록 한도 경고**("이번 달에 만들 수 있는 목소리를 다 쓰게 돼요…")는 사용자 승인으로 뺐다 — 남은 횟수는 목소리
     탭 머리의 `생성 가능 n/m회` 가 말한다.
-- **공유 설정은 확정 단계에서 고른다.** 아직 버릴 수 있는 초안의 입력 폼에서 묻지 않는다.
-  승격 요청은 그 선택을 함께 저장하며, 기존 목소리를 제자리 교체하는 갈래에서도 동일하다.
-  일반 공유 on/off는 커밋 직후 알린다. 단 제자리 교체로 공유 목소리의 실체가 바뀌면 모든
-  프리셋 재렌더가 게시된 **뒤에** 그룹원에게 갱신 신호를 보낸다. 먼저 알리면 같은 message ID의
-  옛 클립을 다시 확정해 버린다. 공유를 끄는 교체만 접근권 철회를 위해 즉시 알린다.
+- **제자리 교체의 갱신 신호는 모든 프리셋 재렌더가 게시된 뒤에 보낸다**(`voice_share_changed` — 이름은 옛 앱
+  때문에 그대로, 받는 곳은 목소리 주인의 기기뿐). 먼저 알리면 같은 message ID의 옛 클립을 다시 확정해 버린다.
+  (2026-10-20 전에는 확정 단계에 공유 설정이 있었다 — 옛 앱이 보내는 `isShared`/`is_shared` 는 서버가 받고
+  무시한다, plan-gates.md 「커플·가족 이용권 — 폐지」.)
 - **교체의 서버 쓰기는 한 트랜잭션이다.** 대상 조회·현역 프로필 덮어쓰기·새 등록 원본의 현역
   id 승계·옛 원본·provider voice 삭제 큐·드래프트 소비·프리셋 재렌더 큐가 함께 커밋된다. 재렌더
   큐 컬럼이 아직 없는 배포 창이나 어느 쓰기든 실패하면 전부 롤백해, 새 프로필인데 옛 클립만
@@ -288,13 +290,10 @@
   직전에 큐의 claim 토큰과 프로필의 현재 provider 보이스를 함께 확인해, 어긋나면 자기 오브젝트만
   치우고 물러난다 — **새 렌더의 음원을 지우지 않고, 큐를 done 으로 끝내지도 않는다**(끝내면
   그 목소리는 영영 다시 만들어지지 않는다). 실패가 아니므로 attempts 도 올리지 않는다.
-- **직접 입력 custom은 재렌더하지 않는다.** 아직 전달 중인 서버 알람뿐 아니라 ACK가 끝나
-  tombstone만 남은 수신 알람도 `custom_voice` 표식으로 찾아 목소리를 철회하고 즉시 알린다.
-  preset tombstone은 건드리지 않아 같은 message id의 새 렌더를 다시 받게 한다.
-- **소유자 본인의 직접 입력 알람도 함께 내린다.** 받은 알람만 세면 안 된다 — 본인 알람은
-  `target_user_id` 가 비어 있고 **pull 대상도 아니라**, 서버 행을 내려도 그 기기의 로컬 행·캐시된
-  음원·OS 예약에는 닿지 않는다. 교체는 프로필 **id 를 그대로 재사용**하므로 클라의 '접근 가능
-  목록 대조' 로도 영원히 안 걸린다. 그래서 두 경로로 알린다:
+- **직접 입력 custom은 재렌더하지 않는다.** 그 문구를 쓰던 알람은 아래처럼 내린다.
+- **직접 입력 알람은 기기에서 내린다.** 서버 행을 내려도 그 기기의 로컬 행·캐시된 음원·OS 예약에는
+  닿지 않는다(앱은 서버에서 알람을 다시 받아오지 않는다). 교체는 프로필 **id 를 그대로 재사용**하므로
+  클라의 '접근 가능 목록 대조' 로도 영원히 안 걸린다. 그래서 두 경로로 알린다:
   - **등록한 기기**는 교체 성공(`replaced: true`) 즉시 그 프로필의 직접 입력 알람을 내리고 예약을
     다시 맞춘다. 확정 화면이 `이전에 저장한 목소리는 삭제하고 이 목소리로 등록할게요.` 로 교체를 알리므로 별도 안내는
     띄우지 않는다(직접 입력 알람이 기본 목소리로 바뀐다는 설명은 2026-10-08 사용자 지시로 화면에서 뺐다). '내린다' 는 알람음이 아니라 **기본
@@ -303,8 +302,6 @@
   - **다른 기기**는 `voice_access_revoked` 에 `voiceProfileId` 와 `scope=custom_messages` 를 실어
     보낸다(타입 문자열은 그대로 — 옛 클라도 접근권 재확인을 깨우고 추가 키는 무시한다). 화면이
     없을 수 있으므로 강등 안내는 대기표에 적어 두고 다음에 앱을 열 때 말한다.
-  - **공유 중이던 목소리는 같은 플랜 그룹원도 깨운다.** 그들도 그 목소리로 직접 입력 문구를
-    만들어 자기 알람에 쓸 수 있고, 그 행 역시 pull 대상이 아니다.
   - 프리셋 알람은 **양쪽 모두 건드리지 않는다** — 같은 message id 로 새 목소리가 다시 게시된다.
 - **푸시는 즉시성만 맡는다 — 정확성은 표식이 맡는다.** 교체는 `voice_profiles.custom_audio_invalidated_at`
   을 함께 커밋하고 목록 응답에 실어 보낸다. 기기는 프로필별로 마지막에 본 값을 적어 두고,
@@ -316,9 +313,6 @@
   - **강등이 끝난 뒤에, 계정이 그대로일 때만 적는다.** 먼저 적으면 실패한 회차가 신호를 삼키고,
     그 사이 계정이 바뀌었으면 저장소가 소유자 불일치로 돌려준 0을 '처리 완료' 로 적어 **그
     계정은 영영 재시도하지 않는다.**
-  - **대조 대상에 공유받은 목소리도 넣는다.** 공유받은 사람도 그 목소리로 자기 직접 입력
-    알람을 만들 수 있고, 그 행 역시 pull 대상이 아니다. 내 목록만 보면 그 기기는 푸시를
-    놓쳤을 때 영영 모른다(`GET /voice/family` 도 같은 값을 싣는다).
   - **푸시도 세대를 함께 싣는다**(`invalidatedAt`). 이미 반영한 세대면 무시한다 — 늦게 도착한
     푸시가, 그 사이 사용자가 **새 목소리로** 다시 만든 직접 입력 알람까지 지운다(프로필 id 는
     그대로라 구분할 방법이 세대뿐이다). 세대가 없는 옛 신호는 예전처럼 id 만 보고 정리한다.
@@ -403,12 +397,12 @@
   - **재렌더 큐의 소유자는 `users.id` 다.** cron 이 그 값으로 동의를 확인하는데(PK 키), 로그인
     id(구글은 google_id)가 들어가면 동의 행을 못 찾아 **재렌더가 실패로 내려앉고** 모든 프리셋
     클립이 옛 목소리에 남는다. 충돌 시 옛 행의 소유자도 함께 고쳐 둔다.
-  - ⚠ `updated_at` 으로 대신하지 말 것 — 이름 변경·공유 토글도 그 값을 올리므로, **이름만
+  - ⚠ `updated_at` 으로 대신하지 말 것 — 이름 변경도 그 값을 올리므로, **이름만
     바꿔도** 직접 입력 알람이 사라진다.
 - **철회 fanout 은 응답과 분리해 예약한다**(`waitUntil`). 교체·삭제 커밋은 재시도할 수 없어
   (드래프트·프로필이 이미 tombstone 이라 재요청은 404) 응답을 기다리다 컨텍스트가 끊기면 그
-  신호는 영영 안 나간다. 공유 갱신 push 와 달리 **실행 컨텍스트가 없으면 생략하지 않고 직접
-  기다린다** — 생략하면 철회가 조용히 사라진다.
+  신호는 영영 안 나간다. **실행 컨텍스트가 없으면 생략하지 않고 직접 기다린다** — 생략하면 철회가
+  조용히 사라진다.
 - **노이즈 제거 선택지는 두지 않는다.** 현재 클론 API와 백엔드가 그 값을 사용하지 않는다.
   작동하지 않는 토글을 보여 주는 것은 기능이 아니다.
 - 문구 언어 기본값은 앱 언어이고, 사용자가 `한국어/English/日本語` 중 바꿀 수 있다.
@@ -937,10 +931,10 @@ v4 Turbo(§10)는 클론 목소리를 원래보다 **높게** 낸다 — 협력�
     소리를 내는 동안만 막대 값을 미뤄 두었다가 끝난 뒤 튼다.
   - **문구를 고치는 동안(연필)은 톤 카드가 잠긴다** — 연필을 누르면 트는 소리·굽기를 멈춘다(멈춘 재생은 들은 것이 아니다).
   - **잠금은 두 앱이 같은 표 하나다**(안드로이드 `confirmStepLocks`, iOS `VoicePreviewConfirmView.locks`). 서버 일(문구 받기·
-    청취 확인·문구 저장·등록·버리기)이 도는 동안 뒤로·다시 만들기·저장하기·공유 스위치·연필·재생성이 잠기고, 톤 카드(막대·
+    청취 확인·문구 저장·등록·버리기)이 도는 동안 뒤로·다시 만들기·저장하기·연필·재생성이 잠기고, 톤 카드(막대·
     두 버튼)는 편집·문구 저장·등록·버리기 동안만 잠긴다. 저장하기는 거기에 더해 편집이 닫혀 있고, 청취가 확인됐고, 굽는
     중이 아니고, 지금 막대 값을 끝까지 들었을 때만 열린다.
-  - 오류 줄은 교체 한 줄 바로 아래(공유 위)에 오류 색으로 둔다(두 앱). 받아 둔 클립을 다시 틀기 시작하면 앞선 재생
+  - 오류 줄은 교체 한 줄 바로 아래에 오류 색으로 둔다(두 앱). 받아 둔 클립을 다시 틀기 시작하면 앞선 재생
     실패 안내는 걷는다. 첫 문구를 못 받았을 때의 안내는 `문구를 아직 준비하지 못했어요. 듣기 버튼을 눌러 다시 시도해
     주세요.` 다(예전 '미리듣기를 눌러' — 그 버튼이 없어졌다).
   - 카드에는 설명 글을 두지 않는다(2026-10-08 사용자) — 제목 줄 `톤 조절` 과 지금 값(`−1.5 반음`), 막대, 두 버튼뿐이다.
@@ -956,11 +950,11 @@ v4 Turbo(§10)는 클론 목소리를 원래보다 **높게** 낸다 — 협력�
   를 싣고, 서버는 그 값과 **그때의 합성 모델**(`TTS_MODEL_ID`)을 `voice_profiles.pitch_semitones`·`pitch_model_id`
   (#128)에 적는다. 그 목소리로 서버가 합성하는 소리는 **전부** 굽는다 — 클론 프리셋 사전렌더(`generateStockClip`)와
   `POST /tts/generate`(직접 입력 등). 둘 다 합성 갈래 한 곳(`createSynthesisAttempts`)을 지나고, 거기가 굽는 곳이다.
-  - 그래서 앱은 받은 파일을 그대로 튼다 — 울리는 순간에 할 일이 없고, **공유받은 가족·가족 알람 수신자·다른 기기·
-    재설치**도 같은 소리를 듣는다(2026-10-07 사용자: "모두 바뀐 높이로").
+  - 그래서 앱은 받은 파일을 그대로 튼다 — 울리는 순간에 할 일이 없고, **다른 기기·재설치**도 같은 소리를
+    듣는다(2026-10-07 사용자: "모두 바뀐 높이로").
   - ⚠ **앱에서 알람 소리를 다시 굽지 말 것** — 서버가 구운 파일에 한 번 더 걸린다. 2026-10-07~08 의 앱 사본 설계(#870 —
     기기마다 사본을 굽고, 울릴 때 폴백하고, 원본을 지울 때마다 사본을 따라 지우던)로 되돌리지 말 것: 높이가 그 기기에만
-    있어 다른 기기·가족에게 닿지 않았고, 사본의 수명 관리만으로 리뷰가 스무 회차를 넘겼다.
+    있어 다른 기기에 닿지 않았고, 사본의 수명 관리만으로 리뷰가 스무 회차를 넘겼다.
 - **보내지 않거나 `null` 이면 0 이다**(원래 소리) — 높이를 모르는 앱(1.2.10)이 그렇다. 그 밖의 값 중 범위·눈금 밖이거나
   숫자가 아닌 것은 400 `INVALID_VOICE_PITCH` 로 거절한다 — 조용히 0 으로 바꾸면 고른 높이가 말없이 사라진다.
 - **등록 뒤에는 바꿀 수 없다** — 등록 확정이 아닌 요청에 실으면 409 `VOICE_PITCH_LOCKED`. 바꾸면 이미 구운 프리셋·
@@ -1206,8 +1200,6 @@ iOS `Generated/WeatherRegions.generated.swift`)을 쓴다. 생성 파일을 손�
   (`country`·`city` 도 계속 보낸다 — 새 서버가 배포되기 전 창과 옛 서버 호환).
 - **공휴일 국가 = 지역의 나라.** 설정 화면의 '공휴일 달력' 행은 없다 — 규칙은
   [alarm-lifecycle.md](alarm-lifecycle.md) 「공휴일 국가는 지역의 나라다」.
-- **가족 알람**은 그대로 **받는 사람의 지역**이다([family-alarm.md](family-alarm.md) 4절) — 받는 사람
-  계정 설정의 `region` 으로 풀린다.
 - **내 지역·사주는 계정 설정이다**(아래 「계정의 지역·사주는 기기에 받아 적는다」) — 설정 '지역' 행에서 고르든
   편집기 문구 화면에서 고르든 계정(`PATCH /user/me` 의 `dynamic_prompt_settings`)에 올라가고, 다른 기기는
   받아 적는다.
@@ -1299,19 +1291,19 @@ iOS `Generated/WeatherRegions.generated.swift`)을 쓴다. 생성 파일을 손�
      쪽이든 로그아웃 → 같은 계정 재로그인 사이에는 값이 바뀐다. 계정 id 만 보면 로그아웃 뒤
      **같은 계정**으로 다시 들어온 새 세션에 앞 세션의 응답이 적힌다 — 새 세션의 표시를 내리고, 새 세션의 조회를
      울타리로 가리고, 옛 설정을 세션에 적는다(확인 조회가 실패하면 그대로 남는다).
-   - ⚠ **프로필 저장은 바꾼 칸만, 쓰는 순간의 세션 위에 얹는다**(Codex #837 검증 → 2026-10-05 넓힘). 이름·가족
-     설정·계정 설정 저장(`PATCH /user/me`)이 세션에 적는 것은 **그 저장이 바꾼 칸뿐**이다 — 요청 **전에** 잡아 둔 세션의
+   - ⚠ **프로필 저장은 바꾼 칸만, 쓰는 순간의 세션 위에 얹는다**(Codex #837 검증 → 2026-10-05 넓힘). 이름·계정
+     설정 저장(`PATCH /user/me`)이 세션에 적는 것은 **그 저장이 바꾼 칸뿐**이다 — 요청 **전에** 잡아 둔 세션의
      사본을 다시 저장하지 않는다. 사본에는 그 사이 올리기·`/auth/me` 가 적은 값이 옛 값으로 들어 있다: 새 지역·사주(받아
-     적기가 옛 값을 기기·공휴일 국가에 적는다), plan·프로모·받은 시각(방금 가족이 된 사람이 다음 `/auth/me` 까지 편집기·
+     적기가 옛 값을 기기·공휴일 국가에 적는다), plan·프로모·받은 시각(방금 결제한 사람이 다음 `/auth/me` 까지 편집기·
      목소리 화면에서 무료로 보인다 — [billing-lifecycle.md](billing-lifecycle.md) 「plan·프로모 쓰기의 순번 가드」), 다른
-     기기에서 바꾼 이름·가족 설정. #837 검증은 계정 설정 한 칸만 지켰다(`keepStoredPromptSettings`) — 같은 뿌리의 나머지
+     기기에서 바꾼 이름. #837 검증은 계정 설정 한 칸만 지켰다(`keepStoredPromptSettings`) — 같은 뿌리의 나머지
      칸이 그대로 남아 있었다.
      - 안드로이드: 저장소가 지금 세션을 같은 락 안에서 읽어 바꾼 칸만 얹는다(`AuthSessionStore.updateUserIfAlive` ←
        `saveProfileEdit`). plan·프로모·받은 시각·토큰은 저장소의 것 그대로다 — 바꾼 칸이 무엇이든 plan·프로모는 덮지 않는다.
      - iOS: 응답을 기다린 **뒤의** 세션(`var updated = current`)에 바꾼 칸만 얹는다(`AuthViewModel.updateProfile`).
      - 저장이 끝나면 두 앱 모두 **확인 조회**를 한 번 한다(안드로이드 `refreshAppSession(rollToken = false)`·
-       `refreshAppSessionNow(rollToken = false)` — 토큰은 굴리지 않는다, iOS `refreshUser`). 저장 **전에** 떠나 옛 이름·가족
-       설정을 읽은 `/auth/me` 가 늦게 와 그 칸을 되돌려도, 확인 조회가 먼저 오면 옛 답이 순번에 밀려 버려지고(iOS 는 굴린
+       `refreshAppSessionNow(rollToken = false)` — 토큰은 굴리지 않는다, iOS `refreshUser`). 저장 **전에** 떠나 옛 이름을
+       읽은 `/auth/me` 가 늦게 와 그 칸을 되돌려도, 확인 조회가 먼저 오면 옛 답이 순번에 밀려 버려지고(iOS 는 굴린
        토큰의 에폭) 늦게 오면 확인 조회가 덮는다. ⚠ iOS 에서 늦게 온 확인 조회는 옛 답이 이미 토큰을 굴려 '토큰만 구른
        같은 로그인' 갈래로 온다 — 그 갈래도 밀리지 않은 답이면 프로필 칸까지 적는다(`applyAccountAnswerOnRolledToken`,
        2026-10-05 리뷰 — 예전에는 plan·프로모만 적어 확인 조회가 덮지 못했다). 확인 조회가 실패하거나, 확인 조회보다 뒤에
@@ -1328,7 +1320,7 @@ iOS `Generated/WeatherRegions.generated.swift`)을 쓴다. 생성 파일을 손�
    - **더 새 답이 이미 반영돼 버리는 응답도 '응답이 왔다' 다.** iOS 는 그 답도 `recordAccountAnswer` 로 세고, 안드로이드는
      저장 없이 버리는 갈래(`refreshAppSessionNow` 의 `claimPlanAnswer` 실패)에서 지금 세션의 값으로 받아 적기를 한 번
      다시 돌린다(Codex #837 검증). 올리기가 실패한 뒤 처음 온 응답이 그런 밀린 답이면, 안 돌릴 때 밀린 변경이 다음
-     저장되는 응답까지 안 올라간다. 거꾸로 안드로이드는 이름·가족 설정 같은 프로필 저장에도 순번이 오른다 — 받아
+     저장되는 응답까지 안 올라간다. 거꾸로 안드로이드는 이름 같은 프로필 저장에도 순번이 오른다 — 받아
      적기는 멱등이라 한 번 더 돌 뿐이다.
    - ⚠ **받은 시각을 축으로 쓰지 말 것**(Codex #837 11차). 개인 프로모 계정은 받은 시각이 서버 계산 시각
      (`personal_promo.computed_at`, 초 단위)으로 바뀌어 같은 초의 두 응답이 같은 값이 된다 — 두 번째 응답이 다시
@@ -1343,7 +1335,7 @@ iOS `Generated/WeatherRegions.generated.swift`)을 쓴다. 생성 파일을 손�
 - ⚠ **"서버 값이 있으면 서버, 없으면 기기" 로 되돌리지 말 것**(2026-09-30 전 iOS). 오프라인에서 고른 지역이
   다음 실행에 서버의 옛 지역으로 되돌아갔고, 서버에 사주만 있으면 기기에만 있던 지역까지 '미설정' 이 됐다.
 - **편집기 문구 화면에서 고른 내 지역·사주도 계정에 올린다** — 문구 화면을 **나올 때**(알람 저장을 기다리지
-  않는다). 가족 알람(받는 사람의 값)과 직접 입력은 올리지 않는다. 날씨는 지역이 있을 때, 운세는 세 칸이 다 찼을
+  않는다). 직접 입력은 올리지 않는다. 날씨는 지역이 있을 때, 운세는 세 칸이 다 찼을
   때만 적고, **서버 값과 다를 때만** 올린다(날씨 종류만 다시 골라도 이 자리를 지나므로). 목록으로 되짚히는 값은
   옛 앱이 읽는 표준 글자로 적는다. 공휴일 국가는 **지역이 실제로 바뀌었을 때만** 맞춘다.
   - ⚠ 예전 iOS 는 편집기에서 고른 지역을 **알람을 저장할 때 키체인에만** 적었다 — 계정에 지역이 있으면 다음
@@ -1629,7 +1621,7 @@ Open-Meteo 무료 엔드포인트는 비상업용이고 유료 키는 사지 않
 목소리 탭과 새 알람 편집기가 이 목록을 즉시 그리며, 서버 `GET /voice` 가 성공하면 응답
 전체로 교체한다. 서버 조회를 없애는 규칙이 아니라 **첫 응답 전의 빈 목록을 없애는 규칙**이다.
 
-- 개인·공유 목소리는 번들하거나 이전 응답으로 되살리지 않는다. 삭제·공유 해제된 생체정보가
+- 개인 목소리는 번들하거나 이전 응답으로 되살리지 않는다. 삭제된 생체정보가
   서버 확인 전에 다시 보이면 안 된다.
 - 서버가 기본 목소리를 추가·수정하면 성공 응답이 그 회차의 권위다. 다음 앱 릴리스에서
   번들 카탈로그도 함께 맞춘다.
@@ -1649,10 +1641,7 @@ Open-Meteo 무료 엔드포인트는 비상업용이고 유료 키는 사지 않
 | --- | --- | --- |
 | 기본(시스템) | 선다운로드(앱 시작·언어 변경·전경 복귀) | 채운다 |
 | **내가 등록한 클론** | **선다운로드.** 생성(서버 사전렌더) + 다운로드가 **끝나야 등록이 끝난 것**이다 | 채운다 |
-| **공유받은 목소리** | 선다운로드하지 **않는다** | 알람에서 **고르는 순간** 모달 → 준비 페이지 |
 
-- 공유받은 목소리를 미리 받지 않는 이유: 그룹원 수만큼 곱해져 용량이 커지는데 실제로
-  쓰는 것은 보통 하나다. 대신 **이미 만들어져 있어** 받기만 하면 되므로 그 자리에서 빠르다.
 ⚠ **개수를 박아 두지 말 것. 기준은 언제나 서버 매니페스트다.**
 
 받아야 할 목록은 서버가 정한다(`GET /tts/stock-clips` 의 목록, 클론은
@@ -1690,8 +1679,8 @@ Open-Meteo 무료 엔드포인트는 비상업용이고 유료 키는 사지 않
   | 필요 | 자리 | 규칙 |
   | --- | --- | --- |
   | 이번 세션 | 앱 시작 | 이번 세션에 공개한 적이 있으면 받지 않는다 |
-  | 최근(45초) | 탭 새로고침(알람·목소리), 준비도, 세션 첫 공유 목록 | 45초 안에 출발해 **공개된** 응답이 있으면 받지 않는다. 떠 있는 요청도 45초 안에 출발한 것만 나눠 쓰고, 더 오래 떠 있으면(약한 망) 그 뒤에 한 번만 줄을 세운다 |
-  | 신호 뒤 | 공유 변경 푸시, 공유 목록 변화(앞 목록도 서버에서 받은 것일 때), 목소리 탭의 '서버는 다 만들었는데 목록에 없다', 클론 구동의 다운로드 | **부른 뒤에 출발한** 요청만 쓴다. 떠 있는 요청 뒤에 한 번만 줄을 세우고, 그사이 온 신호는 그 줄을 나눠 쓴다 |
+  | 최근(45초) | 탭 새로고침(알람·목소리), 준비도 | 45초 안에 출발해 **공개된** 응답이 있으면 받지 않는다. 떠 있는 요청도 45초 안에 출발한 것만 나눠 쓰고, 더 오래 떠 있으면(약한 망) 그 뒤에 한 번만 줄을 세운다 |
+  | 신호 뒤 | 목소리 갱신 푸시(`voice_share_changed`), 목소리 탭의 '서버는 다 만들었는데 목록에 없다', 클론 구동의 다운로드 | **부른 뒤에 출발한** 요청만 쓴다. 떠 있는 요청 뒤에 한 번만 줄을 세우고, 그사이 온 신호는 그 줄을 나눠 쓴다 |
 
   45초는 탭 새로고침 스로틀(60초)보다 짧게 잡았다 — 알람·목소리 탭을 오가는 사이 같은 목록을
   두 번 받지 않을 만큼이면 된다. 서버가 바뀐 것을 **아는** 자리는 창을 쓰지 않는다.
@@ -1722,15 +1711,12 @@ Open-Meteo 무료 엔드포인트는 비상업용이고 유료 키는 사지 않
   흘린다) 디스크의 마지막 공개본을 읽어 싣고(위 '싣는 것과 세는 것'), 싣기는 **이미 실린 것보다 뒤의
   표만** 받는다 — 늦게 돌아온 앞선 응답이 메모리를 교체 이전 목록으로 되돌리지 못한다. 어느 갈래로
   실었든(전경 응답·이긴 것·따라가기) 실은 뒤에는 제자리 교체 수리와 대기 중 프리페치 재시도를
-  돌린다 — 워커는 공유받은 목소리를 받지 않고 접근권 워커는 낡음을 판정만 하므로, 여기서 안 고치면
-  교체된 사람의 목소리가 다음 전경 공개까지 남는다(Codex #825).
+  돌린다 — 접근권 워커는 낡음을 판정만 하므로, 여기서 안 고치면 교체된 목소리의 옛 클립이 다음 전경
+  공개까지 남는다(Codex #825).
 - 제자리 교체의 프리셋 수리(`repairReplacedStockClips`)도 **목소리마다 한 벌** 자리를 거친다 —
   교체 직후 수리와 클론 구동이 같은 `stock_` 클립을 낡은 것으로 보고 동시에 받지 않게, 한쪽이
   끝난 뒤 다른 쪽은 다시 세어 빠진 것만 받는다. 기본 목소리 선다운로드(`prefetchFreeBucketClips`)도
   같은 자리를 거친다 — 누가 먼저 시작했든 겹치지 않는다(Codex #825).
-- 공유 목록 변화가 '신호 뒤' 인지는 **비교한 앞 목록이 이 세션에 서버에서 받은 것인가**로 가른다.
-  중간 조회가 실패해도 앞 목록은 서버 목록 그대로 남으므로 '이번 조회가 신선한가' 로 가르지 않는다.
-  공유 목록을 서버 목록으로 바꾸는 곳(공유 새로고침·목소리 공유 토글)은 **전부** 그 출처를 세운다.
 - 디스크 공개(직렬화·파일 교체·prefs `commit()`)와 읽기(파싱)는 **메인 밖**에서 한다 — 워커와 같은
   잠금을 잡으므로 메인에서 부르면 워커가 쓰는 동안 화면이 멎는다. 순서는 그대로다: **공개가
   확인된 뒤에** 메모리에 싣는다. 디스크 시드는 그사이 서버 응답이 실렸으면 버린다.
@@ -1746,8 +1732,8 @@ Open-Meteo 무료 엔드포인트는 비상업용이고 유료 키는 사지 않
 낡은 것으로 보아 다시 받는다. 서버는 교체 렌더마다 새 R2 주소를 게시하고, 전체 게시 완료 뒤
 `voice_share_changed`를 보내 매니페스트 재조회와 재다운로드를 깨운다.
 
-이 신호는 목소리 소유자의 다른 기기에도 항상 보내고, 공유 중일 때만 같은 그룹원을 더한다.
-기기는 같은 message ID를 쓰는 **모든 기존 캐시 키**(스톡 선택·미리듣기·받은 알람)를 새 주소와
+이 신호는 목소리 소유자의 기기에 보낸다(2026-10-20 전에는 공유 중일 때 같은 그룹원도 받았다).
+기기는 같은 message ID를 쓰는 **모든 기존 캐시 키**(스톡 선택·미리듣기)를 새 주소와
 비교한다. 새 파일을 완전히 쓴 뒤 원자 교체하며, 실패하면 이미 예약된 알람이 쓸 옛 파일을
 남긴다. iOS 예약 지문에는 캐시 키뿐 아니라 원격 주소 세대도 들어가야 같은 키의 새 바이트로
 AlarmKit 예약을 다시 만들 수 있다.
@@ -1821,7 +1807,7 @@ AlarmKit 예약을 다시 만들 수 있다.
     파싱했다. 이제 한 번 읽어 두고 **매니페스트 파일이 바뀌었을 때만**(공개·지우기) 다시 읽는다 — 가드는
     그대로 '쓰는 순간의 매니페스트' 를 본다.
 - **오프라인이면 목소리 등록을 막는다.** 등록은 생성·다운로드가 있어야 끝나는 일이라
-  반쯤 된 상태로 두지 않는다. 부족한 **클론·공유 목소리**는 그 목소리만 고를 수 없게 하고
+  반쯤 된 상태로 두지 않는다. 부족한 **클론**은 그 목소리만 고를 수 없게 하고
   (준비 페이지로 보낸다), 알람 설정 자체는 아래 규칙을 따른다.
 
 #### 기본 목소리를 다 받아야 알람을 설정한다 (2026-09-17 지시)
@@ -1830,7 +1816,7 @@ AlarmKit 예약을 다시 만들 수 있다.
 문구 행이 「문구를 준비하고 있어요」 에 머물고(고를 테마 클립이 폰에 없다), 저장해도 테마
 회전이 비어 운다. 실기기에서 신규 가입 직후 그대로 드러났다.
 
-- **막는 곳: 알람 설정 화면 전부** — 새로 만들기(＋·빈 상태 카드·「누구를 깨울까요?」)와
+- **막는 곳: 알람 설정 화면 전부** — 새로 만들기(＋·빈 상태 카드)와
   기존 알람 열기. 누르면 알럿 「목소리를 아직 받는 중이에요」 가 **몇 퍼센트인지**와 함께
   이유를 말하고, 멈춰 있던 받기를 다시 건다(누를 버튼을 따로 두지 않는다).
   알람 켜기·끄기·삭제는 막지 않는다 — 설정 화면이 아니다.
@@ -1914,10 +1900,10 @@ AlarmKit 예약을 다시 만들 수 있다.
   또 받는다 — 코덱스 #827). 안드로이드는
   재바인딩이 선다운로드 워커 안에서 돌고 그 워커가 `enqueueUniqueWork(…, KEEP)` 라 결과가 같다.
   교체 차단 화면의 '다시 시도' 는 **모든** 회차가 끝나야 풀린다.
-- **준비 페이지의 3초 폴링은 준비가 끝나면 멈춘다** — 다 받았고, 소유자를 기다리는 중이 아니고,
-  관문이 보는 매니페스트에도 그 목소리가 실렸을 때다. **실패로는 멈추지 않는다** — 서버 생성 실패·
-  소유자 대기는 계속 묻는다(크론이 이어 만들거나 '다시 시도' 뒤에 풀리는 것을 화면이 알아야 한다,
-  2026-09-08).
+- **준비 페이지의 3초 폴링은 준비가 끝나면 멈춘다** — 다 받았고, 관문이 보는 매니페스트에도 그 목소리가
+  실렸을 때다. **실패로는 멈추지 않는다** — 서버 생성 실패는 계속 묻는다(크론이 이어 만들거나 '다시 시도'
+  뒤에 풀리는 것을 화면이 알아야 한다, 2026-09-08). (공유받은 목소리의 '주인 기다림' 갈래는 2026-10-20 에
+  지웠다.)
 
 #### 고를 때·저장할 때 — **네트워크를 타지 않는다**
 
@@ -1940,7 +1926,7 @@ iOS `selectedBucketDraft`).
 
 고른 목소리·문구로 음원을 미리 만들어 재생 버튼과 문구를 띄우던 UI 는 2026-08-12 에
 없앴다. 안드로이드에는 처음부터 없었고, iOS 만 갖고 있었다. 되살리지 말 것 —
-목소리 자체를 들어보는 미리듣기(목소리 시트·공유 목소리)와 녹음 재생은 **다른 것이고 남는다**.
+목소리 자체를 들어보는 미리듣기(목소리 시트)와 녹음 재생은 **다른 것이고 남는다**.
 
 ⚠ 이 화면은 **고르는 화면이 아니라 받는 화면**이다. "기본 목소리를 골라보세요" 같은
 피커로 되돌리지 말 것 — 목소리는 **알람 편집기에서** 고른다.
@@ -1985,9 +1971,8 @@ iOS `selectedBucketDraft`).
 
 ⚠ **은퇴 수단으로 `is_preset` 을 내리지 말 것.** 그 값은 '목록에 뜨는가' 가 아니라 **세 가지를
 동시에** 뜻한다:
-1. **쓰기 인가** — `messageBelongsToCaller` 의 시스템·공유 프리셋 갈래,
-2. **읽기 인가** — `GET /tts/messages/:id/audio` 의 같은 갈래. 그 라우트의 「알람이 참조하면
-   허용」 갈래는 `target_user_id` 만 보므로 **가족 알람만** 커버한다 — 본인 알람은 안 걸린다,
+1. **쓰기 인가** — `messageBelongsToCaller` 의 시스템 프리셋 갈래,
+2. **읽기 인가** — `GET /tts/messages/:id/audio` 의 같은 갈래(알람이 참조한다는 이유로 여는 갈래는 없다),
 3. **TTL 면제** — `audio-retention.ts` 가 프리셋을 보존 스윕에서 제외한다.
 
 내리면 그 알람은 **저장도 안 되고, 재다운로드도 안 되고, 30일 뒤 오디오까지 지워진다** —
@@ -2060,47 +2045,22 @@ cron 이 한 자리를 먼저 커밋하면 게시는 그 자리를 '이미 있�
 — `DowngradeNoticeStore` 대기표, iOS `RootView`)은 2026-10-16 부터 원인과 무관한 한 문장이고, **무료 강등이면 기한 한 줄을
 덧붙인다**(`downgrade_notice_free_deadline` — `billing-lifecycle.md` 「안내 문구」).
 
-⚠ **예고는 눈에 보여야 한다.** 강등 신호(`family_alarm`·`voice_access_revoked`·
-`plan_changed`)는 전부 **무음 데이터 푸시**라 앱을 열어야만 안다. 삭제는 되돌릴 수 없고
+⚠ **예고는 눈에 보여야 한다.** 강등 신호(`voice_access_revoked`·`plan_changed`)는 전부
+**무음 데이터 푸시**라 앱을 열어야만 안다. 삭제는 되돌릴 수 없고
 3일 안에 앱을 한 번도 안 여는 사람이 정확히 잃는 쪽이라, 예고만은 표시용 푸시를 보낸다
 (`sendVoiceDeletionWarningPush` ← `notifyVoiceDeletionScheduled`, 커밋 뒤 호출).
 
-### 받은(가족) 알람은 **다른 축**이다
-
-받은 알람의 목소리는 **접근권**(공유가 살아 있는가)이 정한다. **받는 사람의 플랜으로
-다스리지 않는다.**
-
-- 공유가 끊기면 서버가 받은 알람까지 `sound-only` 로 걷어낸다(`paid-voice-cleanup.ts`,
-  `is_received` 포함) → pull sync 로 양 앱에 내려온다.
-- 그래서 잠금(`lockPaidAlarmTalks` / `paidAlarmTalks`)은 **`origin == LOCAL_OWNED` 만** 본다.
-
-⚠ **발신자가 직접 녹음해 보낸 `family-voice`는 클론 프로필 음원이 아니다.** 메시지 행의
-`voice_profile_id`는 수신자 프로필을 임시로 채운 값이고 실제 파일은 발신자의
-`voice_uploads.object_key`다. 수신 확인 tombstone은 이를 `sender_voice_upload=1`로 따로
-기억해, 발신자의 탈퇴·음성 동의 철회 때만 걷어낸다. 수신자의 무관한 클론 삭제로는
-걷어내지 않는다. 수신 확인 **전** 알람은 문구의 `audio_url` 로 발신자를 가리는데, 업로드 행만
-보면 안 된다 — 가족 녹음 원본은 프로필에 안 묶여 7일 TTL 이 업로드 행을 먼저 지운다. 그래서
-판정은 업로드 행 + **키 앞머리**(`voices/<발신자 id>/`)다(`audioUrlPointsAtUploadsOf`).
-
 ⚠ **목소리 직접 삭제의 DB 작업은 한 트랜잭션이다.** 프로필 tombstone·원본 업로드 정리와
-그 목소리를 쓰는 알람/tombstone 철회를 따로 커밋하지 않는다. 배포 직후 새 철회 컬럼의
+그 목소리를 쓰는 서버 알람의 철회를 따로 커밋하지 않는다. 배포 직후 새 철회 컬럼의
 마이그레이션이 아직이면 전체를 롤백해 재시도 가능하게 해야 한다. 프로필만 먼저 사라지면
-재시도는 404가 되고, 받은 기기의 캐시 음성을 철회할 근거가 영구히 남지 않는다. 외부
+재시도는 404가 되고, 다른 기기의 캐시 음성을 철회할 근거가 영구히 남지 않는다. 외부
 ElevenLabs 삭제와 푸시 전송만 DB 커밋 뒤에 실행한다.
 
-목소리 삭제 푸시는 그룹원뿐 아니라 **삭제한 계정 자신의 다른 기기**에도 보낸다. 현재 기기가
-로컬 정리를 했어도 다른 기기의 아직 미동기화된 알람은 서버 알람 조회로 찾을 수 없다. 단
-계정 탈퇴는 그 계정의 기기가 곧 정리되므로 `excludeOwnerUserIds`로 본인 통지를 제외한다.
+목소리 삭제 푸시는 **삭제한 계정 자신의 다른 기기**에 보낸다. 현재 기기가 로컬 정리를 했어도 다른
+기기의 아직 미동기화된 알람은 서버 알람 조회로 찾을 수 없다. 단 계정 탈퇴는 그 계정의 기기가 곧
+정리되므로 `excludeOwnerUserIds`로 본인 통지를 제외한다.
 
-⚠ **플랜 축을 받은 알람에 걸면 결제 보류(유예)에서 오발한다.** `resolvePlanAfterSuspend` 는
-그룹·공유를 살려 둔 채 `users.plan` 만 회수하므로, 카드가 잠깐 실패한 사이 파트너가 보낸
-알람의 목소리가 잠긴다. 게다가 해제는 **받는 사람이 유료가 될 때만** 돌아 영구히 남을 수
-있다(2026-08-11 안드로이드에서 제거).
-
-애초에 "무료인데 받은 알람이 있다" 는 상태는 셋뿐이다 — 받으려면 그룹 멤버여야 하고
-(`assertSameGroup`) 멤버는 그룹 플랜을 물려받는다(`propagateGroupMemberPlans`):
-① 결제 보류(유예) ② 그룹 이탈 ③ 소유자 해지. **②③ 은 서버가 이미 강등**하므로,
-플랜 축을 떼면 ①(지켜야 할 유예)이 판정을 따로 만들지 않아도 지켜진다.
+업데이트 전에 받아 둔 가족 알람은 내 알람으로 바뀐다([billing-lifecycle.md](billing-lifecycle.md) 「받은 알람은 내 알람으로 바뀐다」).
 
 ⚠ **두 번 잠가도 원래 값을 잃지 않아야 한다.** `preLockPlayMode` 가 이미 있으면 덮어쓰지
 않는다 — 덮어쓰면 두 번째 잠금이 `alarm_only` 를 '원래 값' 으로 적어 복원이 불가능해진다.
@@ -2108,7 +2068,7 @@ ElevenLabs 삭제와 푸시 전송만 DB 커밋 뒤에 실행한다.
 ⚠ **소유자를 확인한다.** 같은 기기에서 계정을 바꾸면 앞 계정 알람까지 잠글 수 있다.
 소유자가 안 적힌 옛 행은 이 계정 것으로 본다.
 
-⚠ **문구를 '삭제했어요' 로 쓰지 말 것.** 지우지 않았고, 알람은 알람음으로 계속 울린다.
+⚠ **문구를 '삭제했어요' 로 쓰지 말 것.** 지우지 않았고, 알람은 기본 목소리로 계속 운다.
 
 ## 7. 의도된 플랫폼 차이
 
@@ -2137,7 +2097,7 @@ CAF 를 직접 쓰고 `AVChannelLayoutKey` 를 반드시 넣는다(없으면 파
   그 이득은 속도와 소리의 동일성으로 돌려주고, 횟수는 '새로 만든 것' 으로 센다.
 - **로컬 오디오는 참조 카운트로 지운다.** 그 알람을 지웠고 다른 알람도 안 쓰면 파일이
   사라지고, 그때부터 그 문구는 이 폰에 '없는' 것이다.
-- **새 기기·재설치는 빈 상태다** — 내 알람은 새 기기로 따라오지 않는다(받은 알람만 pull).
+- **새 기기·재설치는 빈 상태다** — 알람은 새 기기로 따라오지 않는다(앱은 서버에서 알람을 받아오지 않는다).
   그래서 새 기기에서 예전 문구를 다시 쓰면 차감된다.
 
 ### 저장할 때의 순서
@@ -2395,7 +2355,7 @@ R2 파일·ElevenLabs 클론은 DB 트랜잭션 안에서 지울 수 없으므�
 | --- | --- | --- | --- |
 | 매니페스트 조회 세대·소유자 | `StockClipManifestStore`의 저장소 전역 티켓·소유자 | `StockClipManifestStorage`·`StockClipManifestStore` 의 표(revision)·파일 임자 | `GET /tts/stock-clips` |
 | 공개 경합 — superseded 는 실패가 아니고 이긴 매니페스트를 싣는다 | `StockClipPrefetchWorker`(SUPERSEDED = 물러남) · `MainViewModelVoiceActions.fetchAndPublishStockClips` → `syncStockClipsToPublished`(이긴 매니페스트를 임자 대조로 적재 — `StockClipManifestStore.loadPublishedWinner`, 회귀 `StockClipManifestWiringTest`) | `StockClipPrefetcher.run`(디스크 권위로 이어 받음, `StockClipPrefetcherSupersededTests`) · `VoiceStudioViewModel.loadStockClips`(이긴 매니페스트 적재, `VoiceStudioLoadStockClipsSupersededTests`) | — |
-| 매니페스트 조회 한 번에 하나·신선도 창(45초)·신호 뒤 조회 | `StockClipManifestFlights`(`ManifestNeed`) ← `MainViewModelVoiceActions.ensureStockClipManifest`(앱 시작·탭·준비도 `refreshClipReadiness`·클론 `downloadAllPresetClips`·공유 변경); 회귀 `StockClipManifestFlightsTest`·`StockClipManifestWiringTest` | 선다운로드만 — 아래 '매니페스트 신선도 창' 행(떠 있는 요청 나눠 쓰기는 없다) | `GET /tts/stock-clips` |
+| 매니페스트 조회 한 번에 하나·신선도 창(45초)·신호 뒤 조회 | `StockClipManifestFlights`(`ManifestNeed`) ← `MainViewModelVoiceActions.ensureStockClipManifest`(앱 시작·탭·준비도 `refreshClipReadiness`·클론 `downloadAllPresetClips`·목소리 갱신 신호); 회귀 `StockClipManifestFlightsTest`·`StockClipManifestWiringTest` | 선다운로드만 — 아래 '매니페스트 신선도 창' 행(떠 있는 요청 나눠 쓰기는 없다) | `GET /tts/stock-clips` |
 | 메모리가 디스크 공개본을 표 순서로 따라감(워커 공개 포함) · 실은 뒤 교체 수리 | `StockClipManifestStore.publishedTickets` → `MainViewModel` init 의 구독 → `followPublishedStockClips`·`syncStockClipsToPublished`; `applyStockClipManifest`(표 순서)·`afterStockClipManifestApplied`; 회귀 `StockClipManifestWiringTest` | `VoiceStudioViewModel.loadStockClips`(이긴 매니페스트 적재) | — |
 | 매니페스트 디스크 읽기·쓰기 = 메인 밖 · Gson 하나 | `fetchAndPublishStockClips`·`seedStockClipsFromDisk`(`withContext(Dispatchers.IO)`), `StockClipManifestStore` 의 `gson` | — | — |
 | 클론 클립 받기 — 목소리마다 한 벌 · 병렬 4 · 클립마다 한 번 묻기 · 구동 중 탭 폴링 제외 | `VoiceClipDownloads` ← `MainViewModel.cacheVoiceClips`(구동 `downloadAllPresetClips`·목소리 탭 `downloadCloneBuckets`·기본 목소리 선다운로드 `prefetchFreeBucketClips`)·교체 수리 `repairReplacedStockClips`, 행 진행률 `PrerenderDriveState.overallFraction`; 회귀 `VoiceClipDownloadsTest` | — | `GET /tts/messages/:id/audio` |
@@ -2403,7 +2363,7 @@ R2 파일·ElevenLabs 클론은 DB 트랜잭션 안에서 지울 수 없으므�
 | 진행률 파일 확인의 실행 위치 | `StockClipPrefetchWorker`의 IO 작업 · 알람 관문 `DefaultVoiceGate`(IO) | `StockClipPrefetcher.progressOffMain`·`missingClipsOffMain` | — |
 | 한 번 세는 데 디렉터리 1회·길이 측정 없음 | `AlarmAudioStore.missingOrStaleCacheKeys`·`snapshot`(단건은 이름으로 찾는 `findCachedFile`, 있는지만은 `hasCachedAudio`); 회귀 `AlarmAudioStoreProbeCountTest` | `AudioCacheStore.missingOrStaleCacheKeys`; 회귀 `StockClipProgressScanTests` | — |
 | 등록 진행률(생성 0~50 + 다운로드 50~100) · 완료 안내 없음 | `ui/voices/VoiceProfileManagementPanel.kt` `VoiceRegistrationStep.Prerendering`·`CloneVoiceReadiness` | `ClonePrerenderDrive`·`ClipPreparationView.registrationPreparation`·`VoicePrerenderStatusRow`; `AlarmTalkTests/ClonePrerenderProgressTests` | `routes/voice-profile.ts` 의 `prerender/advance`·`prerender-status` |
-| 클론 문구의 결·사람이 쓴 본보기 | 결을 고르지도 보내지도 않는다 — `ui/voices/VoiceProfileManagementPanel.kt` `VoiceRegistrationStep.Details` 에 칸이 없고, `network/VoiceCloneRequest.kt` `createVoiceCloneDraft` 가 `voiceEnergy` 파트를 싣지 않는다(2026-09-29 '목소리 느낌' 제거). 초안 페르소나 PATCH 는 없다(관계·호칭을 초안 생성에만 싣는다). 회귀 `VoiceCloneRequestTest`(결 파트 없음) | 결을 고르지도 보내지도 않는다 — `Views/Voices/VoiceCloneUploadFlow.swift` `detailsSection` 에 칸이 없고, `AlarmTalkAPI.voiceCloneMultipartFields` 가 `voiceEnergy` 를 싣지 않는다. 초안 페르소나 PATCH 는 없다(공유 목소리 뷰어의 관계 PATCH `voiceRelationshipUpdateBody` 도 결을 싣지 않는다). 회귀 `VoiceStudioViewModelTests`(결 필드 없음) | 전사 추정 `analyzeSpeechStyleWithVertex`(`speech_style.energy`, `runSpeechStyleAnalysis`) · **1.2.10 호환**: `POST voice/clone` 의 `voiceEnergy`/`voice_energy`(초안 생성) · `PATCH voice/:id/relationship` 의 `voice_energy`(초안만) → `voice_profiles.voice_energy`(#122) · `withVoiceEnergy`(고른 값 > 추정값 — `minSupported` 가 선택지 없는 릴리스를 넘기면 받는 처리를 지운다) · `stockReferenceLine` → `generatePrerenderClipText(humanReference)` · 결은 문장 지시뿐 `prerenderClipPrompt` 의 `energyInstruction`(태그 없음, `lib/vertex-translate.ts`) · 교체 `replaceVoiceInPlace` · 분석 대기 `SPEECH_STYLE_ANALYSIS_WAIT_SQL`(`claimPendingPrerenderVoices`, `POST voice/:id/prerender/advance`, 첫 미리듣기 `waitForSpeechStyleAnalysis`) · 결과 기록 대상 `SPEECH_STYLE_RESULT_TARGET_SQL`(`runSpeechStyleAnalysis`). 회귀 `voice-prerender-style-wait.test.ts` |
+| 클론 문구의 결·사람이 쓴 본보기 | 결을 고르지도 보내지도 않는다 — `ui/voices/VoiceProfileManagementPanel.kt` `VoiceRegistrationStep.Details` 에 칸이 없고, `network/VoiceCloneRequest.kt` `createVoiceCloneDraft` 가 `voiceEnergy` 파트를 싣지 않는다(2026-09-29 '목소리 느낌' 제거). 초안 페르소나 PATCH 는 없다(관계·호칭을 초안 생성에만 싣는다). 회귀 `VoiceCloneRequestTest`(결 파트 없음) | 결을 고르지도 보내지도 않는다 — `Views/Voices/VoiceCloneUploadFlow.swift` `detailsSection` 에 칸이 없고, `AlarmTalkAPI.voiceCloneMultipartFields` 가 `voiceEnergy` 를 싣지 않는다. 초안 페르소나 PATCH 는 없다. 회귀 `VoiceStudioViewModelTests`(결 필드 없음) | 전사 추정 `analyzeSpeechStyleWithVertex`(`speech_style.energy`, `runSpeechStyleAnalysis`) · **1.2.10 호환**: `POST voice/clone` 의 `voiceEnergy`/`voice_energy`(초안 생성) · `PATCH voice/:id/relationship` 의 `voice_energy`(초안만) → `voice_profiles.voice_energy`(#122) · `withVoiceEnergy`(고른 값 > 추정값 — `minSupported` 가 선택지 없는 릴리스를 넘기면 받는 처리를 지운다) · `stockReferenceLine` → `generatePrerenderClipText(humanReference)` · 결은 문장 지시뿐 `prerenderClipPrompt` 의 `energyInstruction`(태그 없음, `lib/vertex-translate.ts`) · 교체 `replaceVoiceInPlace` · 분석 대기 `SPEECH_STYLE_ANALYSIS_WAIT_SQL`(`claimPendingPrerenderVoices`, `POST voice/:id/prerender/advance`, 첫 미리듣기 `waitForSpeechStyleAnalysis`) · 결과 기록 대상 `SPEECH_STYLE_RESULT_TARGET_SQL`(`runSpeechStyleAnalysis`). 회귀 `voice-prerender-style-wait.test.ts` |
 | 클론 문구의 말투·내용 규칙(사투리 강도·아이는 이유 없이·운세는 가능성·일본어 가족 です・ます 거절(어체는 확정 문구가 먼저, 분석은 그다음 · 확정 문구와 생성 문구는 같은 끊기·같은 판정 · 호칭은 부름말 자리에서만 지운다 · 꼬리 걷고 서술어로)·어체는 끝 장식을 걷고 읽는다(일·한 — 문자 종류로, 끝을 늘인 작은 히라가나·얼굴 문자의 팔까지, 늘임은 띄어 쓸 때만 끊는다)·영어 직역 거절·한국어 어긋난 낱말 짝 거절·확정 문구의 끝 어미를 본뜨지 않음) | — (서버가 만든다) | — (서버가 만든다) | `prerenderClipPrompt`(`speechStyleInstruction`·`humanReferenceInstruction`·`styleReferenceInstruction`(피할 끝말 `lastPhrase`)·`careKeepsVoice`·`childlikeInstruction`·끝의 `TIME OF DAY`·`DIALECT` 줄) · 검사 `prerenderRejectionReason` → `hasMixedKoreanRegister`(마디 끝 낱말 `koreanEndingEntries` — 끝 장식 `KO_TRAILING_DECORATION`, 확정 문구·생성 문구 공용)·`hasJapanesePoliteEnding`(문장 끊기 `japaneseSentenceEnds`(부름말 자리의 호칭만 지우기 — 앞뒤 경계 `japaneseVocativePattern`(`JA_EDGE`)·붙여 쓴 끝 호칭 `withoutGluedPoliteVocative`, 문장 끝 표시 `JA_SENTENCE_BREAK`(지운 웃음·괄호 덧말 자리 `JA_DECORATION_BREAK`), 끝 장식 `JA_SENTENCE_TRAILER`(가장자리 `JA_EDGE`·늘임 작은 글자 `JA_TRAILING_SMALL_KANA`), 낱말 안 늘임 `JA_INNER_ELONGATION` — 확정 문구·생성 문구·평가 도구 `scripts/eval-gemini-prompts.ts` 의 `jaPoliteEndings` 공용), 글자 웃음 `spokenForRegister`·괄호 덧말과 얼굴 문자의 팔 `withoutParentheticalAsides`(`PARENTHETICAL_ASIDE`, 일·한 공용), 문장 판정 `isJapanesePoliteSentence`(꼬리 `JA_PREDICATE_TAIL` 를 걷은 서술어 끝 `japanesePredicateEnd`, 정중형 아님 `JA_NOT_POLITE_PREDICATE`), 확정 문구의 어체 `japaneseReferenceRegister`(반말 판정 `isJapaneseCasualSentence` — 정중체에 가까운 끝 `JA_POLITE_LIKE_PREDICATE` 는 반말 아님), 허용 목록 `isConfirmedCloseRelationshipLabel`)·`hasAssumedMorning`·`hasEnglishLiteralCalque`·`hasKoreanCollocationError`(`lib/vertex-translate.ts`) · 운세 시드 `CLONE_CLIP_SEEDS`(`lib/stock-clips.ts`). 회귀 `vertex-translate.test.ts`「사전렌더 — 3.8 튜닝」·「사전렌더 — 마지막 튜닝 회차」·「hasJapanesePoliteEnding — 엄격한 허용 목록」(끝 장식은 '문장 끝에 붙인 마침표 변형·기호·이모지·글자 웃음은 걷고 읽는다…'·'낱말 안의 늘임은 지우고 읽는다…'·'늘임 작은 글자·얼굴 문자의 팔은 걷고…')·'확정 문구 끝의 이모지·기호·글자 웃음은 걷고 어체를 읽는다…'(한국어)·`prerender-clip-failure-reason.test.ts`(재시도 힌트) |
 | 확정 미리듣기 문구가 사투리 지시를 이긴다 | — (서버가 만든다) | — (서버가 만든다) | `prerenderClipPrompt` 의 `styleReference` 갈래(`dialectFollowsReference` → `speechStyleInstruction`·`humanReferenceInstruction`·끝의 `DIALECT` 줄) ← `stock-clips.ts` 가 `preview_text` 를 넘긴다. 회귀 `vertex-translate.test.ts`「확정 문구(STYLE REFERENCE)가 있으면 사투리 지시가 그것을 따른다」· 평가 `scripts/eval-gemini-prompts.ts`(프로필마다 `styleReference`, `*-stdref` 프로필) |
 | 제시 대본을 읽은 녹음은 어체를 버린다(사투리·말버릇·페르소나·아이·결은 그대로) | 대본 글만 둔다 — `voices2_record_script`(`res/values{,-en,-ja}/strings.xml`) | 대본 글만 둔다 — `Views/Voices/VoiceCloneUploadFlow.swift` `recordingScript` | `analyzeSpeechStyleWithVertex`(판정 `isEnrollmentScriptReading` — 포함률 `ENROLLMENT_SCRIPT_READ_THRESHOLD`·대본 분량 `ENROLLMENT_SCRIPT_MIN_MATCHED_UNITS`·숫자 줄의 다른 꼴 `ENROLLMENT_SCRIPT_NUMBER_LINES`, `lib/enrollment-script.ts` — 모델이 본 앞부분 `SPEECH_STYLE_TRANSCRIPT_LIMIT`) ← 원본 `VOICE_ENROLLMENT_SCRIPTS`(`packages/shared/src/voice-enrollment-script.json`) · 세 벌 대조 `scripts/check-voice-enrollment-script.py`(CI lint). 회귀 `enrollment-script.test.ts`·`vertex-translate.test.ts`「제시 대본을 읽은 녹음은 어체를 버린다」 |
@@ -2426,7 +2386,7 @@ R2 파일·ElevenLabs 클론은 DB 트랜잭션 안에서 지울 수 없으므�
 | 재렌더 준비 신호 | `StockClip.renderedForCurrentVoice` (`network/TtsApi.kt`) | `StockClip.isRenderedForCurrentVoice` (`AlarmTalkAPIModels.swift`) | `rendered_for_current_voice` (`routes/tts.ts` `/stock-clips`) |
 | 아직이면 확정 안 함 | `notReadyVoiceIds` → `Result.retry()` (`sync/VoiceAccessSyncWorker.kt`) | `StockCacheRefreshOutcome.settled` → `presetWorkSettled` (`PushNotificationCoordinator.swift`) | — |
 | 직전 선택 저장 | `DefaultVoicePreferenceStore` / `DynamicPromptPreferenceStore` | `DefaultVoicePreferenceStore` | — |
-| 문구 없던 알람 → 목소리 문구 = 직전 선택 잇기 | `AlarmEditorState.applyAlarmOutput` → `enterVoiceModeFromAlarmOnly`·`adoptLastMessageChoiceIfUnset`(`hasNoMessageChoice`) ← `AlarmEditorScreen.applyAlarmOutput`. 직접 녹음 → 목소리는 `AlarmEditorState.selectTtsVoice`(판정은 목소리 교체 **전**, 잇기는 **뒤**) ← `VoiceAudioCard`, 그 관문은 `needsClipPreparationForVoicePick`(이을 값으로 판정). 목소리 자동 선택은 `AlarmEditorState.preselectVoiceProfile`(이은 직접 입력 문구를 비우지 않는다). 기존 알람 라우트도 직전 선택을 받는다(`AlarmTalkApp`). 알람 전용 저장은 테마까지 비운다(`toDraft`). 회귀 `AlarmEditorStateTest` | `AlarmEditorSheet.adoptLastMessageChoiceIfUnset`(`AlarmEditDraft.hasNoMessageChoice`·`lastMessageChoice`) ← 재생 방식 `.onChange`(`AlarmEditorSheet+AlarmModeSection.swift`)·`commitVoiceSelection`(직접 녹음 → 목소리의 소스 전환·잇기는 선택을 **확정할 때만** — 바로 고름·기본 목소리 확인·공유 목소리 호칭 확인이 모두 여기로 오고, 닫으면 아무것도 안 바뀐다. 잇기가 목소리 적용 **전**이고 녹음 전환이 테마를 안 지워 순서 문제가 없다. 관문은 소스를 바꾸기 **전에** `recordingExitNeedsClipPreparation`(이을 값 `AlarmEditDraft.randomContextAdoptedByTtsPick`)으로 — `selectVoiceOption` 과 확정에서 — 보고, 잇기 뒤 `.onChange` 가 같은 식으로 한 번 더). 이은 직접 입력은 테마 이어받기가 덮지 않는다(`applyPendingFreeBucketIfNeeded` ← `AlarmEditDraft.keepsPaidTypedManualText`, 안드로이드는 `AlarmEditorScreen` 스톡 클립 `LaunchedEffect` 의 `manualChosen` 가드). 알람 전용 저장은 **테마를 남긴다**(`AlarmEditDraft.carryOverNonEditableFields` — 위 ⚠). 회귀 `MessageContextMemoryTests`·`AlarmEditDraftTests.test_toRecord_alarmOnlyKeepsThemeSoVoiceSwitchRestoresIt` | — |
+| 문구 없던 알람 → 목소리 문구 = 직전 선택 잇기 | `AlarmEditorState.applyAlarmOutput` → `enterVoiceModeFromAlarmOnly`·`adoptLastMessageChoiceIfUnset`(`hasNoMessageChoice`) ← `AlarmEditorScreen.applyAlarmOutput`. 직접 녹음 → 목소리는 `AlarmEditorState.selectTtsVoice`(판정은 목소리 교체 **전**, 잇기는 **뒤**) ← `VoiceAudioCard`, 그 관문은 `needsClipPreparationForVoicePick`(이을 값으로 판정). 목소리 자동 선택은 `AlarmEditorState.preselectVoiceProfile`(이은 직접 입력 문구를 비우지 않는다). 기존 알람 라우트도 직전 선택을 받는다(`AlarmTalkApp`). 알람 전용 저장은 테마까지 비운다(`toDraft`). 회귀 `AlarmEditorStateTest` | `AlarmEditorSheet.adoptLastMessageChoiceIfUnset`(`AlarmEditDraft.hasNoMessageChoice`·`lastMessageChoice`) ← 재생 방식 `.onChange`(`AlarmEditorSheet+AlarmModeSection.swift`)·`commitVoiceSelection`(직접 녹음 → 목소리의 소스 전환·잇기는 선택을 **확정할 때만** — 바로 고름·기본 목소리 확인이 모두 여기로 오고, 닫으면 아무것도 안 바뀐다. 잇기가 목소리 적용 **전**이고 녹음 전환이 테마를 안 지워 순서 문제가 없다. 관문은 소스를 바꾸기 **전에** `recordingExitNeedsClipPreparation`(이을 값 `AlarmEditDraft.randomContextAdoptedByTtsPick`)으로 — `selectVoiceOption` 과 확정에서 — 보고, 잇기 뒤 `.onChange` 가 같은 식으로 한 번 더). 이은 직접 입력은 테마 이어받기가 덮지 않는다(`applyPendingFreeBucketIfNeeded` ← `AlarmEditDraft.keepsPaidTypedManualText`, 안드로이드는 `AlarmEditorScreen` 스톡 클립 `LaunchedEffect` 의 `manualChosen` 가드). 알람 전용 저장은 **테마를 남긴다**(`AlarmEditDraft.carryOverNonEditableFields` — 위 ⚠). 회귀 `MessageContextMemoryTests`·`AlarmEditDraftTests.test_toRecord_alarmOnlyKeepsThemeSoVoiceSwitchRestoresIt` | — |
 | 빈 직접 입력은 요청 전에 막는다 | `SaveBlockReason.MANUAL_TEXT_MISSING` ← `emptyMessageBlockReason`(판정 `hasNoMessageChoice`, 저장 버튼이 `saveEditor()` **전에** 판정) | `AlarmEditDraft.manualTextMissing` ← `AlarmEditorSheet.manualTextMissing` — `saveFlow` 첫머리(권한·한도 조회·생성 앞), 버튼은 살려 둔다 | — |
 | 버킷 클립 선다운로드 | `sync/StockClipPrefetchWorker.kt` | `StockClipPrefetcher.swift` | `GET /tts/stock-clips`, `GET /tts/messages/:id/audio` |
 | 받기 진행 알림 — 서비스는 **받을 것이 있을 때만** · `dataSync` 포그라운드 서비스를 시스템이 끝내도(Android 15+) 받기는 이어지고 진행은 앱 안에 보인다 · **WorkManager ≥ 2.10** | `app/build.gradle.kts` 의 `androidx.work:work-runtime-ktx` **2.10.5**(2.9.1 은 `Service.onTimeout` 을 처리하지 않아 10초 뒤 앱이 죽는다 — ALARMTALK-ANDROID-Y) · `AndroidManifest.xml` 의 `SystemForegroundService` 에 `foregroundServiceType="dataSync"` 합치기(그대로 둔다 — 2.10.5 의 라이브러리 매니페스트에도 타입이 없다) · `sync/StockClipPrefetchWorker.kt` 의 `shouldPromoteToForeground`(빠진 클립 0 이면 `setProgress` 만 — `publishProgress` 를 부르지 않는다)·`publishProgress`(`setForeground` 가 실패해도 받기는 계속)·`foregroundInfo` · 회귀 `StockClipPrefetchWorkerForegroundTest`(판정·배선)·`sync/WorkManagerForegroundTimeoutContractTest`(`SystemForegroundService` 에 `onTimeout(int, int)` 이 있어야 한다 — 2.9.1 로 내리면 실패) | — (Live Activity — 포그라운드 서비스가 없다) | — |
@@ -2451,7 +2411,7 @@ R2 파일·ElevenLabs 클론은 DB 트랜잭션 안에서 지울 수 없으므�
 | 등록 언어·선택 페르소나 | `VoiceProfileManagementPanel` Details | `VoiceCloneUploadFlow.detailsSection` | `POST /voice/clone` |
 | 확정 화면 = 제목 아래 말투 안내 한 문장 · 문구 카드에 재생 버튼 없음 · 교체는 체크 없이 제목 크기 한 줄 · 월 한도 경고 없음 | `VoiceProfileManagementPanel` Preview(`replaceTargetVoice` → `voices_confirm_replace_body`, `voices_preview_edit_hint`); `VoiceRegistrationCopyTest` | `VoicePreviewConfirmView`(`registeredVoice`) · `Localizable.xcstrings` | — |
 | 오프라인 준비 배치 — 제목 없음 · 블록 가운데 · '백그라운드에서 계속' 맨 아래 | `VoiceProfileManagementPanel.kt` `VoiceClipPreparationStep` | `ClipPreparationView.registrationPreparation`; `AlarmTalkUITests/VoicePreparationScreenshotUITests` | — |
-| 확정 단계 공유 | `VoiceProfileManagementPanel` Preview | `VoicePreviewConfirmView` | 일반 승격은 `scheduleVoiceShareChangedPush`, 제자리 교체는 `notifySharedVoicePrerenderComplete`(공유 해제만 즉시) |
+| 제자리 교체의 갱신 신호는 재렌더가 다 게시된 뒤 · 주인의 기기에만(`voice_share_changed` — 이름은 그대로) | `fcm/AlarmTalkMessagingService.kt` → `StockClipPrefetchWorker.enqueue` · `AppSignals.voiceShareChanged` → `AlarmTalkApp` 의 `loadStockClips(ManifestNeed.LATEST)` | `PushNotificationCoordinator` 의 `.voiceShareChanged` → `onVoiceChanged` | `lib/stock-clips.ts` 의 재렌더 완료 알림 → `lib/fcm.ts` `sendVoiceShareChangedPush`(주인 한 명) |
 | 제자리 교체 원자성·원본 승계 | — | — | `replaceVoiceInPlace` + `voice_uploads` + `voice_prerender_queue` |
 | 교체도 같은 등록 게이트 | — | — | `replaceVoiceInPlace`(플랜·동의·`voice_profile_change_ledger`) |
 | 월 등록을 다 썼으면 초안을 만들지 않는다(§4-1 「월 등록 한도」 ① — 자격 확인 · provider 등록 전 · 아무것도 쓰지 않음 · 확정과 같은 429 몸통 · 다 쓴 달은 전사도 하지 않는다) | 등록 실패 갈래가 그 코드를 받는다(아래 ③ 행) | 같음 | `routes/voice-profile.ts` 의 `POST /clone` — 업로드를 읽은 뒤 **읽기 전용 선검사** `readMonthlyRegistrationUsage(db, …)`(말소리 확인의 전사보다 앞 — 비용을 아낄 뿐이다) · **권위 있는 확인**은 예약 트랜잭션 **맨 앞**의 `readMonthlyRegistrationUsage(tx, …)` → 남은 횟수 0이면 `monthlyVoiceChangeLimitResponse`(`discardAbandonedDrafts`·`hasCloneSlotCapacity`·`reserveMonthlyDraftAttempt`·`voice_profiles` INSERT 보다 먼저) · 회귀 `test/voice-profile.test.ts`(순서 큐 목 — 이번 달 등록을 썼으면 429·provider 호출 0·`voice_profiles`/`voice_draft_attempt_usage` 쓰기 0·옛 초안 그대로·트랜잭션 맨 앞, 집계 조건은 확정의 예약과 같다)·`test/voice-clone-monthly-gate.test.ts`(진짜 SQLite — 이번 달 `succeeded`·`reserved` 줄이면 429·한 줄도 쓰지 않음 / `failed` 줄뿐·지난달 줄·다른 계정의 줄이면 201 / 다 쓴 달은 전사 0회 / 선검사 뒤 전사하는 사이 다른 기기가 등록하면 트랜잭션 맨 앞이 429·한 줄도 쓰지 않음) · `test/voice-profile.test.ts` 의 같은 두 갈래(순서 큐 목) |
@@ -2461,11 +2421,10 @@ R2 파일·ElevenLabs 클론은 DB 트랜잭션 안에서 지울 수 없으므�
 | 보낸 음원은 다 쓰면 곧바로 지운다(§4-1 — 초안이 만들어졌다·월 한도·말소리 없음은 지운다 · 다시 시도할 수 있는 실패는 `등록` 이 다시 보낼 것을 남긴다 · 앱이 뜬 사본만 · 알람이 쓰는 파일은 지우지 않는다) | `MainViewModel.createVoiceProfiles` 의 성공 갈래·계정 전환 → `purgeVoiceCloneSourceRecordings` · 실패 갈래 `cloneRejectionSpendsRecording`(월 한도·말소리 없음 — busy 를 내린 뒤) → `AlarmRepository.deleteVoiceCloneSourceRecording` → `AlarmAudioStore.deleteCachedAudioIfUnreferenced`(알람이 같은 키를 쓰면 남긴다) · 회귀 `VoicePreviewConfirmRulesTest`·`VoiceRegistrationFailureWiringTest` | `VoiceCloneUploadFlow.submit` 이 갈 곳(`submitOutcome`)을 정한 뒤 **한 번** `discardSentSource(_:)` 로 순수 셈 `sentSourceCleanup(after:sentMode:selectedFileURL:uploadedURL:)`(`SentSourceCleanup` — 다 쓴 결말이면 녹음기를 비우거나(`VoiceRecorder.clearLatest`) 가져온 사본·잘라 낸 사본을 지우고 선택을 놓는다 · `.details` 면 잘라 낸 사본만 — 다음 `등록` 이 다시 자른다)을 따른다 · 지울 목록은 `isAppMadeSourceCopy`(가져온 사본 폴더 `importFolderName`·잘라 낸 사본 폴더 `AudioCropper.outputFolderName` 바로 안의 파일만 — 사본을 만드는 `copyImportedAudio`·`AudioCropper.crop` 과 같은 이름을 쓴다) · 회귀 `AlarmTalkTests/VoiceStudioViewModelTests`(`test_보낸_음원은_다_쓰면_지우고_다시_시도할_수_있는_실패에는_다시_보낼_것만_남긴다`·`test_앱이_뜬_사본_폴더_밖의_파일은_어떤_결말에도_지우지_않는다`·`test_말소리_거절_뒤에는_보낸_소리를_버리고_음원_준비로_돌아간다` · 배선 `test_말소리_거절의_이유는_녹음_카드_아래_오류_색_줄에_쓰고_새_소리를_준비하면_걷는다` — 정리는 갈 곳을 정한 뒤 한 자리 · 폴더 이름이 만드는 곳과 같다) | — |
 | 목소리 높이 — 등록 확정에서만 받는다(새 등록부터 · 0/null/미전송 = 원래 소리 · 범위 밖 400 · 등록 뒤 409, 같은 값의 재시도는 200 · 응답에 적은 값) | 끝까지 들은 높이를 싣는다 — `MainViewModel.promoteVoiceDraft`(`pitchSemitones`, 0 이면 키 없음) → `VoiceProfileUpdateRequest.pitchSemitones` ← `VoiceProfileManagementPanel`(`heardTunings`) · 바디 `voiceDraftPromotionRequest`(교체는 기존 목소리가 있으면 언제나 — `registrationReplaceTarget`); 문구 `network/ApiErrorMessages.kt`; 회귀 `VoiceProfileUpdateRequestTest` | 끝까지 들은 높이를 싣는다 — `AlarmTalkAPI.promoteVoiceDraft(pitchSemitones:)`·`voiceDraftPromoteBody`(0 이면 키 없음) ← `VoicePreviewConfirmView.promote`(`VoiceTonePreview.canSave` · 교체 `replacementTarget`); 회귀 `VoiceStudioViewModelTests.test_promotionReplacesWheneverAnOfficialVoiceExists`; 문구 `APIErrorMessages.swift`; 회귀 `VoiceStudioViewModelTests.test_voiceDraftPromotionBody_carriesPitchOnlyWhenNotZero` | `PATCH /voice/:id`(`pitch_semitones`·`pitchSemitones` → `VoicePitchSemitonesSchema`, `INVALID_VOICE_PITCH`·`VOICE_PITCH_LOCKED`·재시도 판정 `pitchRetryOfRegistration`, `routes/voice-profile.ts`) → `voice_profiles.pitch_semitones`·`pitch_model_id`(#128). 회귀 `voice-pitch-promote.test.ts`·배포 창 `voice-pitch-deploy-window.test.ts` |
 | 목소리 높이 — 교체 등록은 새로 고른 값으로 덮어쓴다(안 고르면 비운다) | — | — | `replaceVoiceInPlace`(`pitchSemitones`) ← `PATCH /voice/:id`. 회귀 `voice-replace-in-place.test.ts`「교체는 새로 고른 높이와 지금 모델을 적고…」·`voice-pitch-promote.test.ts`「교체 등록은 고른 높이를…」 |
-| 목소리 높이 — 서버가 굽는다(사전렌더·`/tts/generate` · PCM → TD-PSOLA → 크기 되맞춤 → 음량 → MP3 128 · 실패·형식 이상·60초 초과는 던진다 · 모델이 바뀌면 굽지 않는다 · 인코더는 isolate 당 하나) | 받은 파일을 그대로 튼다 | 받은 파일을 그대로 튼다 | 굽는 곳 `createSynthesisAttempts`(`lib/voice-provider.ts`) ← `voicePitchFromRow`·`appliedPitchSemitones`·`bakeVoiceMp3`·`bakeVoiceSamples`·`encodeMp3`(`lib/voice-pitch.ts`) ← 셈 `shiftVoicePitch`(`packages/voice/src/pitch-shift.ts`) · PCM 응답 형식 검사 `ElevenLabsClient.textToSpeech` · 행 읽기 `findUsableVoiceProfile`(`SELECT *`·`vp.*` — 공유 목소리는 주인의 값, `routes/tts.ts`) · 사전렌더 `listReadyCloneVoices` → `findMissingStockTargets` → `generateStockClip`(`lib/stock-clips.ts`) · 인코더 묶기 `src/index.ts`(`registerMp3EncoderModule`)·`wrangler.toml` 의 `[[rules]]`(테스트는 `test/support/register-mp3-encoder.ts` — `vitest.config.ts` 의 `setupFiles`). 회귀 `voice-pitch.test.ts`·`prerender-pitch.test.ts`·`tts.test.ts`「높이가 있는 목소리의 직접 입력은…」·`elevenlabs.test.ts`「PCM 을 달라고 하면…」·`worker-wasm-bundle.test.ts`·`packages/voice/test/pitch-shift.test.ts`(두 앱과 같은 기대값) |
+| 목소리 높이 — 서버가 굽는다(사전렌더·`/tts/generate` · PCM → TD-PSOLA → 크기 되맞춤 → 음량 → MP3 128 · 실패·형식 이상·60초 초과는 던진다 · 모델이 바뀌면 굽지 않는다 · 인코더는 isolate 당 하나) | 받은 파일을 그대로 튼다 | 받은 파일을 그대로 튼다 | 굽는 곳 `createSynthesisAttempts`(`lib/voice-provider.ts`) ← `voicePitchFromRow`·`appliedPitchSemitones`·`bakeVoiceMp3`·`bakeVoiceSamples`·`encodeMp3`(`lib/voice-pitch.ts`) ← 셈 `shiftVoicePitch`(`packages/voice/src/pitch-shift.ts`) · PCM 응답 형식 검사 `ElevenLabsClient.textToSpeech` · 행 읽기 `findUsableVoiceProfile`(`SELECT *`·`vp.*`, `routes/tts.ts`) · 사전렌더 `listReadyCloneVoices` → `findMissingStockTargets` → `generateStockClip`(`lib/stock-clips.ts`) · 인코더 묶기 `src/index.ts`(`registerMp3EncoderModule`)·`wrangler.toml` 의 `[[rules]]`(테스트는 `test/support/register-mp3-encoder.ts` — `vitest.config.ts` 의 `setupFiles`). 회귀 `voice-pitch.test.ts`·`prerender-pitch.test.ts`·`tts.test.ts`「높이가 있는 목소리의 직접 입력은…」·`elevenlabs.test.ts`「PCM 을 달라고 하면…」·`worker-wasm-bundle.test.ts`·`packages/voice/test/pitch-shift.test.ts`(두 앱과 같은 기대값) |
 | 목소리 높이 — 캐시 키는 0 이 아닐 때만 높이를 넣는다 | — | — | `computeTtsCacheKey`(`pitchSemitones`, `lib/audio-cache.ts`) ← `routes/tts.ts`·`generateStockClip`. 회귀 `voice-pitch.test.ts`「캐시 키」 |
 | 음량 +4 dB(§10) — 모든 서버 합성이 PCM 을 받아 높이 → 음량 차례로 굽는다 · 봉우리 −0.2 dBFS 상한(줄이지는 않는다) · 실패는 던진다(올리지 않은 소리로 대신하지 않는다) · 캐시 키는 0 이 아닐 때만 · 0 이면 옛 갈래(제공자 MP3 그대로) · 미리 구운 소리(게시본·번들)는 풀어 다시 묶어 서버보다 ≈0.45 dB 작고, 다시 묶어도 커지지 않으면 들어 본 소리 그대로(표지만) | 받은 파일을 그대로 튼다 · 번들 인사말·랜딩 미리듣기는 올린 사본(`res/raw` — `scripts/boost-bundled-greetings.ts`) | 받은 파일을 그대로 튼다 · 번들 인사말은 안드로이드 `res/raw` 를 그대로 싣는다 | 값 `TTS_LOUDNESS_BOOST_DB`(`lib/tts-model.ts`) · 셈 `boostLoudness`(`packages/voice/src/loudness-boost.ts`) ← `bakeVoiceSamples`·`bakeVoiceMp3`·`needsVoiceBake`(`lib/voice-pitch.ts`) ← `createSynthesisAttempts`(`loudnessBoostDb`, `lib/voice-provider.ts`) · 키 `computeTtsCacheKey`(`loudnessBoostDb`, `lib/audio-cache.ts`) ← `routes/tts.ts`·`generateStockClip` · 게시본 `scripts/publish-stock-clips.ts`·번들 `scripts/boost-bundled-greetings.ts`(올린 사본 — `scripts/mp3-loudness-boost.ts` 의 `boostMp3`: 커지지 않으면 그대로, 키에 같은 값). 회귀 `voice-loudness.test.ts`·`voice-loudness-off.test.ts`·`tts.test.ts`「직접 입력은 받은 PCM 의 음량을…」·`stock-clip-provider-text.test.ts`·`publish-stock-clips-contract.test.ts`「게시 스크립트는 서버 합성 갈래와 같은 음량 값을…」·`mp3-loudness-boost-script.test.ts`「다시 묶어도 커지지 않으면…」·`bundled-voice-clips-loudness.test.ts`·`packages/voice/test/loudness-boost.test.ts` |
 | 사전렌더 — 높이를 굽는 클립 하나는 몫 2(음량만 굽는 클립은 1) · 잡은 순서(새 등록 먼저)로 돈다 | — | — | `runPrerenderBatch`(`clipCost`·`claimed` 순서)·`claimPendingPrerenderVoices`(`requested_order` 로 다시 세움, `lib/stock-clips.ts`). 회귀 `prerender-pitch.test.ts`·`stock-clips-prerender.test.ts`「여럿을 한 번에 잡아도…」 |
-| 교체 시 전달 custom 철회 | `withVoiceRevoked` | `RemoteAlarmPullSync.withVoiceRevoked` | `alarm_recipient_state.custom_voice` + `replaceVoiceInPlace` |
 | 교체 시 **본인** custom 철회 | `AlarmRepository.degradeCustomMessageAlarmsUsingVoiceProfile` + `VoiceAccessSyncWorker` | `VoiceStudioViewModel.degradeCustomMessageAlarms` + `PushNotificationCoordinator.onVoiceReplaced` | `voice_access_revoked` payload(`voiceProfileId`·`scope`) |
 | 확정 못 한 회차는 풀지 않는다 | — | `PendingApply.confirm()` — `commit` 이 없으면 **항상 false**(세대를 못 올렸다) | — |
 | 정리 중 표시 올리기·내리기 | 새로고침이 `Result.persisted` 로 **넣고 뺀다**(승격만으로는 프로세스 수명과 어긋난다) | 같음 — 권위 새로고침이 `unsettledProfileIDs` 로 **다시 만들고**(합치지 않는다), 아직 못 적은 표시는 `unpersistedSuppressedProfileIDs` 로 함께 싣는다. 올리는 자리는 `confirmIfReservationsSettled` 의 **실패하는 한 곳** | — |
@@ -2477,8 +2436,6 @@ R2 파일·ElevenLabs 클론은 DB 트랜잭션 안에서 지울 수 없으므�
 | 미확인 목록은 세대별로 | — | `pendingApply` 가 세대별 칸에 담고 **확인은 전부·제거는 내 것만** | — |
 | 정리 중인 교체 목소리 | `settlingVoiceProfileIds` — 목록엔 두되 흐리게, **자동 선택·저장 게이트에서 제외** | `isReplacementSettling` — 같은 규칙(`selectDefaultVoiceProfileIfNeeded`·저장 판정·저장 알럿) | — |
 | 표식 확정은 예약까지 | `commitLocked` — 디스크 실패 시 **메모리도 되돌려** 재시도 가능 | `confirmIfReservationsSettled` — 옛 예약 해제 실패면 확정 보류 | — |
-| 같은 시각 충돌 알람 끄기 | `getEnabledAtTime` → `enabled=false`(pull 임포트) | `clearSameTimeConflicts` — 끄고 예약 취소, **실패하면 ACK 보류** | — |
-| 전달 세대 ACK 전 영속 | `NonCancellable` Room 쓰기 | `markRemoteDeliveryVersion` → 동기 저장 확인 후 ACK | `POST /alarm/:id/received` |
 | 푸시를 놓쳐도 수렴 | `VoiceReplacementMarkerStore` + `reconcileInaccessibleVoiceAlarms` | `VoiceReplacementMarkerStore` + `onAuthoritativeRefresh` | `voice_profiles.custom_audio_invalidated_at` (마이그레이션 #106) |
 | 직접 입력 판정(로컬) | `AlarmEntity.usesCustomMessageVoice()` | `LocalAlarmRecord.usesCustomMessageVoice` | `messages.category = 'custom'` |
 | 낡은 재렌더 폐기 | — | — | `generateStockClip`(claim·provider 보이스 가드) + `PrerenderSupersededError` |
@@ -2495,7 +2452,7 @@ R2 파일·ElevenLabs 클론은 DB 트랜잭션 안에서 지울 수 없으므�
 | 지역 고르기(나라 → 지역) · 행 이름 '날씨 지역' → '지역' · 되짚지 못한 옛 값은 글자 + 다시 고르라는 안내 | `WeatherLocationDialog`·`weatherRegionDisplay`·`initialWeatherPickerCountry`(`ui/editor/AlarmRandomPromptSettings.kt`), 설정 `SettingsRow` 의 `supportingText` — 회귀 `WeatherRegionPickerTest` | `WeatherRegionPickerSheet`(`legacyLabel` 부제)·`WeatherRegions.displayName`·`unresolvedLegacyLabel`·`initialPickerCountry`(`WeatherRegionSupport.swift`), `SettingsView`·`MessageSettingsPane`·`PromptDetailCard` 의 `note` — 회귀 `WeatherRegionCatalogTests` | — |
 | 계정 설정 `weather.region`(알맞으면 옛 글자로 덮고, 모르면 그 칸만 버리고, 없으면 옛 글자를 되짚는다 — 읽을 때도 같다) | 보낼 때 `toDynamicPromptSettings`(키를 글자에서 되짚어 싣는다), 받을 때 `toPromptPreferences`·`resolvedRegion`(키가 글자를 이긴다) | 보낼 때 `DynamicPromptPreferences.toSettings`, 받을 때 `DynamicPromptPreferences.from(settings:)` | `normalizeWeatherSetting`(`lib/dynamic-prompt-settings.ts`) → `WeatherRegions.normalizeSetting`, 회귀 `weather-region-settings.test.ts` |
 | 계정의 지역·사주 받아 적기(안 올라간 변경은 덮지 않고 다시 올린다 · 빈 묶음은 로컬 유지 · 멱등 · 로그아웃이 표시도 지운다) | `DynamicPromptPreferenceStore.adoptAccountSettings`·`markPushed`·`saveWeatherLocation`/`saveFortuneInfo`(표시) ← `MainViewModel.onAccountPromptSettingsReceived`(← `AlarmTalkApp` 의 `LaunchedEffect`, 축 `accountSettingsReceipt` = 응답 순번 `AuthSession.accountAnswerSeq`)·`SettingsScreen`(같은 축), 표시 내리기 `uploadDynamicPromptSettings`(보낸 세대가 그대로일 때만), 프로필 저장은 바꾼 칸만 지금 세션 위에(`AuthSessionStore.updateUserIfAlive` ← `saveProfileEdit`, 끝나면 확인 조회), 밀린 응답도 받아 적기 — 회귀 `AccountPromptSettingsAdoptionTest`·`PromptSettingsAnswerFenceTest`·`ProfileSaveKeepsAccountAnswerTest` | `DynamicPromptPreferences.adoptAccount`·`markPushed`·`saveLocalEdit`·`current`(`AccountPromptSettingsAdoption.swift`) ← `AlarmTalkApp` 의 계정 설정 관찰(`accountPromptSettingsKey` — 축에 `AuthViewModel.accountAnswerRevision`)·`SettingsView.loadPromptPreferences`(같은 축 `PromptObservation` ← `SettingsView.observation(of:)`, 고칠 때는 `editBase`)·`AlarmEditorSheet.savedPromptPreferences`, 표시 내리기 `AuthViewModel.updateProfile`(보낸 `sessionRevision` 이 그대로일 때만 — 바꾼 칸만 응답 뒤의 세션 위에, 끝나면 `refreshUser`), 떠날 때 `beginLeavingAccount` + 세션을 비운 뒤 다시 지우기 — 회귀 `AccountPromptSettingsAdoptionTests`(`editBase` 판정 — ⚠ 화면의 두 호출부 `onSelect`·`saveFortuneDraft` 는 SwiftUI 라 유닛 테스트가 닿지 않는다)·`AuthViewModelTests`(관찰 축·재로그인·로그아웃 창) | `PATCH /user/me` 의 `dynamic_prompt_settings`(`normalizeWeatherSetting`) |
-| 편집기 문구 화면 → 내 계정 설정(가족·직접 입력 제외 · 서버 값과 다를 때만 올린다 · 표준 글자로 적는다 · 지역이 바뀔 때만 공휴일 국가) | `AlarmEditorScreen` 의 문구 결과 처리(`saveWeatherLocation`·`saveFortuneInfo` → `onUpdateDynamicPromptSettings`, `WeatherRegionHolidaySync.onRegionSaved`) | `AlarmEditorSheet.syncOwnPromptPreferences` ← 판정 `DynamicPromptPreferences.editorUpdate`(`EditorPromptPreferenceUpdate.swift`) — 회귀 `EditorPromptPreferenceUpdateTests` | — |
+| 편집기 문구 화면 → 내 계정 설정(직접 입력 제외 · 서버 값과 다를 때만 올린다 · 표준 글자로 적는다 · 지역이 바뀔 때만 공휴일 국가) | `AlarmEditorScreen` 의 문구 결과 처리(`saveWeatherLocation`·`saveFortuneInfo` → `onUpdateDynamicPromptSettings`, `WeatherRegionHolidaySync.onRegionSaved`) | `AlarmEditorSheet.syncOwnPromptPreferences` ← 판정 `DynamicPromptPreferences.editorUpdate`(`EditorPromptPreferenceUpdate.swift`) — 회귀 `EditorPromptPreferenceUpdateTests` | — |
 | 지역 시트: 나라 세그먼트 고정 · 열 때 고른 지역으로 스크롤 · 나라를 바꾸면 맨 위 · 화면의 90% 까지 | `WeatherLocationDialog`(`scrollsContent = false`) ← `WakerSelectionSheet`(`ui/components/WakerModal.kt`) | `WeatherRegionPickerSheet`(`ScrollViewReader`) ← `SheetScrollingContent.reservedHeight`·`BottomSheetMetrics.maxFraction` | — |
 | 지역 시트 날씨 출처 줄(목록 아래 고정 · ko·en·ja 같은 문장) — **서버 토큰이 정확히 `"kma_jma_nws"` 일 때만**, 그 밖·확인 실패·응답 전은 숨김 | `WeatherLocationDialog` 의 `if (showsAttribution)` ← 판정 `showsWeatherAttribution` ← `LocalWeatherAttribution`(`ui/editor/AlarmRandomPromptSettings.kt`, `MainActivity` 가 내려 준다) · 문장 `region_picker_weather_attribution`(`res/values{,-en,-ja}/strings.xml`, 그리는 자리는 이 하나) — 회귀 `WeatherAttributionTest` | `WeatherRegionPickerSheet` 의 `showsAttribution`(그릴 때만 `attributionHeight` 를 `reservedListHeight` 에서 뺀다) ← 판정 `WeatherAttribution.showsLine` · `Localizable.xcstrings` — 회귀 `WeatherAttributionTests` | — |
 | 날씨 출처 토큰 계약 — `GET /api/app/version` 의 `weather_attribution`(불투명 토큰 · 지금 `"kma_jma_nws"` — 원천 교체(#846)가 올렸다, 되돌리면 `null`) · 저장하지 않고 새로 묻지 않는다 · 확인이 실패하면 지운다 | `AppVersionResponse.weatherAttribution`(`network/AuthApi.kt`) → `MainViewModel.weatherAttribution` ← `checkAppVersion`(실패면 null) — 회귀 `WeatherAttributionTest` | `AppVersionResponse.weatherAttribution`(`AlarmTalkAPIModels.swift`) → `AppVersionGate.weatherAttribution` ← `checkAppVersion`(실패면 nil) — 회귀 `AppVersionGateTests`·`WeatherAttributionTests` | `WEATHER_ATTRIBUTION`(`lib/weather-attribution.ts`) → `GET /api/app/version`(`index.ts`) — 회귀 `app-version.test.ts`(필드가 실리고 `"kma_jma_nws"` · Open-Meteo 를 부르는 코드가 남아 있으면 `null` · 이 토큰을 말하는 동안 세 원천을 부르는 코드가 있다) |
@@ -2515,7 +2472,6 @@ R2 파일·ElevenLabs 클론은 DB 트랜잭션 안에서 지울 수 없으므�
 | 목소리 데이터 3일 유예 | `AlarmRepository.lockPaidAlarmTalks`(행만) | `SocialFeatureViewModel.applyFreePlanVoiceLock`(행만) | `PAID_VOICE_RETENTION_DAYS` · `schedulePaidVoiceRetention` · `clearPaidVoiceRetention` |
 | 유예 만료 삭제 | — | — | `sweepPaidVoiceRetention` → `deleteSensitiveVoiceDataForUser`(삭제 직전 `hasActivePaidEntitlement` 재확인) |
 | 삭제 예고 푸시 | `fcm/AlarmTalkMessagingService.kt` | `PushNotificationCoordinator` | `notifyVoiceDeletionScheduled` → `sendVoiceDeletionWarningPush` |
-| 받은 알람은 접근권 축 | `lockPaidAlarmTalks` 의 `origin == LOCAL_OWNED` | `LocalAlarmStore.paidAlarmTalks` 의 `.localOwned` | `paid-voice-cleanup.ts`(`is_received` 까지 sound-only) |
 | 클립 선다운로드(앱 시작·언어 변경) | `sync/StockClipPrefetchWorker.kt`, `ui/app/AlarmTalkApp.kt` 의 `prefetchStockClips()` | `StockClipPrefetcher.swift`, `AlarmTalkApp.swift` 의 계정+언어 task | `GET /tts/stock-clips`, `GET /tts/messages/:id/audio` |
 | 고를 때는 **캐시 우선**(네트워크 폴백) | `ui/editor/AlarmEditorScreen.kt` 의 `bindStockBucketClips` | `VoiceStudioViewModel.prepareStockClip` | — |
 | 테마 선택은 **독립 상태**(음원 파생 금지) | `AlarmEditorState.selectedBucket` | `AlarmEditorSheet.selectedBucketDraft` | — |

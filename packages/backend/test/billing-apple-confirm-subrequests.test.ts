@@ -3,13 +3,13 @@
 // 워커 한 실행의 subrequest 는 ~50 개이고, DB 왕복 하나·애플 조회 하나가 각각 하나다.
 // 확정은 애플을 두 번 묻고(트랜잭션 + 체인 상태, 출시 전에는 각각 프로덕션 → 샌드박스로
 // 두 번씩) 쓰기 트랜잭션을 연다. 체인을 넘겨받을 때는 앞 주인의 구독 해지까지 같은
-// 트랜잭션에서 한다 — 앞 주인이 가족 그룹 소유자면 멤버 전원이 함께 내려간다.
+// 트랜잭션에서 한다.
 // 한도를 넘기면 트랜잭션이 통째로 롤백되고 **재시도해도 같은 자리에서 죽는다**(2026-09-18
 // `DELETE /api/user/me` 가 그렇게 막혔다). 이 테스트는 그 여유가 줄어드는 것을 잡는다.
 //
 // **운영과 같은 조건으로 잰다** — 푸시가 켜져 있고(FCM, 서명 코드가 실제로 돈다), 사람마다
-// 안드로이드 기기 하나·클론 목소리 하나, 가족 초대 코드는 네 번 쓰였고, OAuth 캐시는 매번
-// 비어 있다. 커밋 뒤 알림도 같은 실행의 subrequest 라 함께 센다.
+// 안드로이드 기기 하나·클론 목소리 하나, OAuth 캐시는 매번 비어 있다. 커밋 뒤 알림도 같은 실행의
+// subrequest 라 함께 센다.
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createClient, type Client } from '@libsql/client';
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -72,9 +72,7 @@ const BUDGET = 45;
 
 const A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const B = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
-const MEMBERS = [1, 2, 3, 4].map((n) => `dddddddd-dddd-4ddd-8ddd-00000000000${n}`);
 const PERSONAL = '70000000-0000-4000-8000-000000000002';
-const FAMILY = '70000000-0000-4000-8000-000000000003';
 const DAY = 86_400_000;
 
 let signingKeyPem = '';
@@ -113,11 +111,11 @@ async function giveDevices(users: string[]) {
   }
 }
 
-async function seedChain(owner: string, planId: string, groupId: string | null) {
+async function seedChain(owner: string, planId: string) {
   await raw.execute({
-    sql: `INSERT INTO subscriptions (id,user_id,plan_id,plan_group_id,status,starts_at,expires_at)
-          VALUES ('sub-owner', ?, ?, ?, 'active', datetime('now','-3 days'), ?)`,
-    args: [owner, planId, groupId, new Date(Date.now() + 27 * DAY).toISOString()],
+    sql: `INSERT INTO subscriptions (id,user_id,plan_id,status,starts_at,expires_at)
+          VALUES ('sub-owner', ?, ?, 'active', datetime('now','-3 days'), ?)`,
+    args: [owner, planId, new Date(Date.now() + 27 * DAY).toISOString()],
   });
   await raw.execute({
     sql: `INSERT INTO store_transactions
@@ -125,52 +123,6 @@ async function seedChain(owner: string, planId: string, groupId: string | null) 
           VALUES ('st-owner', ?, 'apple', 'chain-1', 'com.alarmtalk.app.personal_monthly', 'personal', 'sub-owner', ?, datetime('now','-3 days'))`,
     args: [owner, new Date(Date.now() + 27 * DAY).toISOString()],
   });
-}
-
-/** A 가 가족 그룹(멤버 4명)의 소유자이고, 체인 `chain-1` 이 그 가족 구독이다. */
-async function seedFamilyOwnedBy(owner: string) {
-  await raw.execute({
-    sql: `INSERT INTO plan_groups (id, owner_user_id, plan_id, max_members) VALUES ('g1', ?, ?, 5)`,
-    args: [owner, FAMILY],
-  });
-  await seedChain(owner, FAMILY, 'g1');
-  await raw.execute({ sql: `UPDATE store_transactions SET product_id = 'com.alarmtalk.app.family_monthly', plan_key = 'family' WHERE id = 'st-owner'` });
-  await raw.execute({ sql: `UPDATE users SET plan = 'family' WHERE id = ?`, args: [owner] });
-  await raw.execute({
-    sql: `INSERT INTO plan_group_members (id, plan_group_id, user_id, role) VALUES ('m0', 'g1', ?, 'owner')`,
-    args: [owner],
-  });
-  await raw.execute({
-    sql: `INSERT INTO voice_profiles (id, user_id, name, elevenlabs_voice_id) VALUES ('vp-owner', ?, 'v', 'el-owner')`,
-    args: [owner],
-  });
-  // 가족 초대 코드 — 멤버 넷이 썼다.
-  await raw.execute({
-    sql: `INSERT INTO voucher_codes (id, code, code_hash, plan_id, issuer_user_id, issuer_subscription_id, status, expires_at, max_uses)
-          VALUES ('inv', 'INV-1', 'h-inv', ?, ?, 'sub-owner', 'used', datetime('now','+27 days'), 4)`,
-    args: [FAMILY, owner],
-  });
-  for (const [i, m] of MEMBERS.entries()) {
-    await raw.execute({
-      sql: `INSERT INTO plan_group_members (id, plan_group_id, user_id) VALUES (?, 'g1', ?)`,
-      args: [`m${i + 1}`, m],
-    });
-    await raw.execute({
-      sql: `INSERT INTO voucher_redemptions (id, voucher_id, user_id) VALUES (?, 'inv', ?)`,
-      args: [`vr-${i + 1}`, m],
-    });
-    await raw.execute({
-      sql: `INSERT INTO subscriptions (id,user_id,plan_id,plan_group_id,status,starts_at,expires_at)
-            VALUES (?, ?, ?, 'g1', 'active', datetime('now','-3 days'), datetime('now','+27 days'))`,
-      args: [`sub-m${i + 1}`, m, FAMILY],
-    });
-    await raw.execute({ sql: `UPDATE users SET plan = 'family' WHERE id = ?`, args: [m] });
-    // 멤버마다 클론 목소리 하나 — 무료로 내려가면 반납 큐에 들어간다.
-    await raw.execute({
-      sql: `INSERT INTO voice_profiles (id, user_id, name, elevenlabs_voice_id) VALUES (?, ?, 'v', ?)`,
-      args: [`vp-m${i + 1}`, m, `el-m${i + 1}`],
-    });
-  }
 }
 
 beforeAll(async () => {
@@ -194,10 +146,10 @@ beforeAll(async () => {
 beforeEach(async () => {
   vi.clearAllMocks();
   for (const table of [
-    'store_transactions', 'voucher_redemptions', 'voucher_codes', 'paid_voice_retention', 'pending_external_deletions',
-    'push_tokens', 'voice_profiles', 'plan_group_members', 'subscriptions', 'plan_groups',
+    'store_transactions', 'paid_voice_retention', 'pending_external_deletions', 'push_tokens', 'voice_profiles',
+    'subscriptions',
   ]) await raw.execute(`DELETE FROM ${table}`);
-  const everyone = [A, B, ...MEMBERS];
+  const everyone = [A, B];
   await raw.execute({ sql: `DELETE FROM users WHERE id IN (${everyone.map(() => '?').join(',')})`, args: everyone });
   for (const id of everyone) {
     await raw.execute({ sql: `INSERT INTO users (id,email,name) VALUES (?,?,?)`, args: [id, `${id}@example.test`, 'u'] });
@@ -225,7 +177,7 @@ describe('애플 확정의 subrequest 수', () => {
   });
 
   it('개인 구독 중인 앞 주인에게서 넘겨받기', async () => {
-    await seedChain(A, PERSONAL, null);
+    await seedChain(A, PERSONAL);
     await raw.execute({ sql: `UPDATE users SET plan = 'plus' WHERE id = ?`, args: [A] });
     const { status, subrequests } = await confirmAs(B);
     expect(status).toBe(200);
@@ -233,48 +185,16 @@ describe('애플 확정의 subrequest 수', () => {
     expect(subrequests).toBeLessThanOrEqual(BUDGET);
   });
 
-  // 예전에는 81 이었다 — 그룹 해체(`disbandOwnedPlanGroup`)가 멤버마다 조회·강등·클론
-  //   반납·보관 기한을 따로 왕복했다. 지금은 멤버 수와 무관하게 읽기 한 번·쓰기 한 번이다.
-  it('가족 그룹(멤버 4명) 소유자에게서 넘겨받기 — 가장 무거운 경우', async () => {
-    await seedFamilyOwnedBy(A);
-    const { status, subrequests } = await confirmAs(B);
-    expect(status).toBe(200);
-    console.log(expect.getState().currentTestName, 'subrequests =', subrequests);
-    // 앞 주인과 멤버 전원이 내려가고, 무료가 된 사람마다 보관 기한이 걸린다.
-    const plans = await raw.execute(`SELECT plan FROM users WHERE plan = 'family'`);
-    expect(plans.rows).toHaveLength(0);
-    const retention = await raw.execute(`SELECT user_id FROM paid_voice_retention`);
-    expect(retention.rows.map((r) => String(r.user_id)).sort()).toEqual([A, ...MEMBERS].sort());
-    expect(subrequests).toBeLessThanOrEqual(BUDGET);
-  });
-  it('가족 소유자의 같은 플랜 갱신(멤버 4명) — 매달 도는 경로', async () => {
-    await seedFamilyOwnedBy(A);
-    latest = {
-      ...latest, appAccountToken: A, transactionId: 'tx-renew',
-      productId: 'com.alarmtalk.app.family_monthly', expiresDate: Date.now() + 57 * DAY,
-    };
+  it('개인 소유자의 같은 플랜 갱신 — 매달 도는 경로', async () => {
+    await seedChain(A, PERSONAL);
+    await raw.execute({ sql: `UPDATE users SET plan = 'plus' WHERE id = ?`, args: [A] });
+    const renewedUntil = Date.now() + 57 * DAY;
+    latest = { ...latest, appAccountToken: A, transactionId: 'tx-renew', expiresDate: renewedUntil };
     const { status, subrequests } = await confirmAs(A);
     expect(status).toBe(200);
-    console.log(expect.getState().currentTestName, 'subrequests =', subrequests);
-    expect(subrequests).toBeLessThanOrEqual(BUDGET);
-  });
-
-  it('가족 소유자 본인이 개인으로 전환(멤버 4명 해체)', async () => {
-    await seedFamilyOwnedBy(A);
-    latest = { ...latest, appAccountToken: A, transactionId: 'tx-down' };
-    const { status, subrequests } = await confirmAs(A);
-    expect(status).toBe(200);
-    // 멤버는 전원 무료로 내려가고 클론을 반납한다(음성 데이터는 보관 기한까지 남는다).
-    const members = await raw.execute({
-      sql: `SELECT plan FROM users WHERE id IN (${MEMBERS.map(() => '?').join(',')})`, args: MEMBERS,
-    });
-    expect(members.rows.map((r) => String(r.plan))).toEqual(['free', 'free', 'free', 'free']);
-    const queued = await raw.execute(`SELECT ref FROM pending_external_deletions ORDER BY ref`);
-    // 멤버 넷의 클론은 반납된다. (소유자 본인 것은 여기서 단언하지 않는다 — 전환 중 잠깐 무료로
-    // 판정돼 반납되는 문제가 따로 있다. 이 테스트가 그 동작을 굳히지 않게 한다.)
-    expect(queued.rows.map((r) => String(r.ref))).toEqual(
-      expect.arrayContaining(['el-m1', 'el-m2', 'el-m3', 'el-m4']),
-    );
+    const row = await raw.execute(`SELECT user_id, expires_at FROM subscriptions WHERE id = 'sub-owner'`);
+    expect(String(row.rows[0]!.user_id)).toBe(A);
+    expect(Date.parse(String(row.rows[0]!.expires_at))).toBe(renewedUntil);
     console.log(expect.getState().currentTestName, 'subrequests =', subrequests);
     expect(subrequests).toBeLessThanOrEqual(BUDGET);
   });

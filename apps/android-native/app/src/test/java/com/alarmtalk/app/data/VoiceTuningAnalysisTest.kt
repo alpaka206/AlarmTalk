@@ -197,7 +197,7 @@ class VoiceTuningAnalysisTest {
         assertEquals(6f, VoiceTuning.PITCH_RANGE.endInclusive, 0f)
         assertEquals(0.5f, VoiceTuning.STEP, 0f)
 
-        // 테스트는 app/ 에서 돈다 — 저장소 루트까지 세 단계(`FamilyAlarmFailureMessageTest` 와 같은 형태).
+        // 테스트는 app/ 에서 돈다 — 저장소 루트까지 세 단계.
         val schema = java.io.File("../../../packages/shared/src/schemas/voice.ts").readText()
         fun constant(name: String): Float =
             Regex("""export const $name = (-?[0-9.]+);""").find(schema)?.groupValues?.get(1)?.toFloat()

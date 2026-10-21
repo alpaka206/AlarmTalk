@@ -21,7 +21,15 @@ TypeScript 를 가져다 쓸 수 없어 **같은 값을 손으로** 두는데, �
 | `PAID_USER_PLANS` | `PaidUserPlans` | `PaidPlans.userPlans` |
 | `PAID_PLAN_TYPES` | `PaidPlanTypes` | `PaidPlans.planTypes` |
 
-DB CHECK(`plans.plan_type`)와도 대조한다 — 도달 불가능한 값이 다시 들어오는 것을 막는다.
+DB CHECK(`plans.plan_type`)와도 대조한다 — 도달 불가능한 값이 다시 들어오는 것을 막는다. 표를 다시 만든
+마이그레이션이 생기면 마지막 정의가 지금 스키마이므로 **마지막** CHECK 를 읽는다.
+
+## 커플·가족은 다시 들어오지 않는다
+
+2026-10-20 에 커플·가족 이용권을 없앴다(`docs/spec/plan-gates.md` 「커플·가족 이용권 — 폐지」). 네 목록이 함께
+`couple`·`family` 를 다시 얻으면 서로 일치하므로 위 대조로는 못 잡는다 — 그래서 두 값은 따로 막는다. DB CHECK 의
+`'family'` 리터럴(`plans.plan_type`·`users.plan`)은 남겨 두었다. 좁히려면 부모 표를 다시 만들어야 하는데 FK 강제 때문에
+마이그레이션 트랜잭션 안에서는 못 한다. 그 리터럴은 쓰는 곳 없는 허용일 뿐 유료 판정에는 들어가지 않는다.
 """
 from __future__ import annotations
 
@@ -45,11 +53,17 @@ def values(text: str) -> set[str]:
     return {a or b for a, b in quoted(text)}
 
 
-def extract(path: Path, pattern: str) -> set[str] | None:
+def extract(path: Path, pattern: str, last: bool = False) -> set[str] | None:
     if not path.exists():
         return None
-    m = re.search(pattern, path.read_text(encoding="utf-8"), re.S)
-    return values(m.group(1)) if m else None
+    matches = list(re.finditer(pattern, path.read_text(encoding="utf-8"), re.S))
+    if not matches:
+        return None
+    return values(matches[-1 if last else 0].group(1))
+
+
+# 2026-10-20 에 없앤 커플·가족 이용권의 값. 네 목록이 함께 되살리면 서로 일치해 대조로는 못 잡는다.
+RETIRED_PLAN_VALUES = {"couple", "family"}
 
 
 def main() -> int:
@@ -78,8 +92,16 @@ def main() -> int:
                 f"      실제  : {sorted(actual)}"
             )
 
-    # DB CHECK 와도 대조 — 도달 불가능한 plan_type 이 다시 들어오는 것을 막는다.
-    db_types = extract(MIGRATIONS, r"plan_type TEXT NOT NULL CHECK\(plan_type IN \(([^)]*)\)\)")
+    # 커플·가족 값은 shared 와 두 앱 어디에도 다시 들어오지 않는다.
+    named = [("shared PAID_USER_PLANS", shared_user), ("shared PAID_PLAN_TYPES", shared_type)]
+    named += [(label, actual) for label, actual, _ in checks if actual is not None]
+    for label, found in named:
+        retired = found & RETIRED_PLAN_VALUES
+        if retired:
+            problems.append(f"{label}: 없앤 커플·가족 값이 들어 있다: {sorted(retired)}")
+
+    # DB CHECK 와도 대조 — 도달 불가능한 plan_type 이 다시 들어오는 것을 막는다(마지막 정의가 지금 스키마다).
+    db_types = extract(MIGRATIONS, r"plan_type TEXT NOT NULL CHECK\(plan_type IN \(([^)]*)\)\)", last=True)
     if db_types:
         unreachable = shared_type - db_types
         if unreachable:

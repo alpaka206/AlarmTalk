@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Hono } from 'hono';
 import type { AppEnv } from '../src/types';
-import { createMockDB, fakeAuthMiddleware, ID } from './helpers';
+import { createMockDB, fakeAuthMiddleware } from './helpers';
 
 const mockDB = createMockDB();
 
@@ -22,141 +22,34 @@ beforeEach(() => {
   mockDB.reset();
 });
 
-const sampleAlarmRow = {
-  id: ID.alarm,
-  user_id: 'user-1',
-  target_user_id: null,
-  message_id: ID.message,
-  time: '07:30',
-  repeat_days: '[]',
-  is_active: 1,
-  snooze_minutes: 5,
-  mode: 'tts',
-  vibration_pattern: 'default',
-  wake_mode: 'sound_then_voice',
-  voice_profile_id: null,
-  created_at: '2026-01-01',
-  updated_at: '2026-01-02',
-  message_text: 'Good morning',
-  category: 'morning',
-  voice_name: 'Default',
-  creator_email: 'user@test.com',
-  creator_name: 'Test User',
-};
+// 옛 앱 호환 — 받은 가족 알람을 가져오던 원격 pull 이었다(가족 알람은 2026-10-20 에 없앴다). 옛 앱 둘은 주기·앱 시작·
+// 알람 저장마다 이 요청을 보내고, 실패하면 재시도·경고를 띄운다. 그 pull 은 받은 알람만 가져오므로 내 알람을 실을 이유가
+// 없다. 인증 미들웨어를 지나 탈퇴 신청 계정이 403 을 받는 것은 `old-app-compat.test.ts` 가 실제 워커로 확인한다.
+describe('GET /alarms — 옛 앱 호환(빈 커서 페이지)', () => {
+  const EMPTY_PAGE = { alarms: [], has_more: false, next_cursor: null };
 
-// ---------------------------------------------------------------------------
-// GET /alarms/tick — 다음 발화 알람 조회
-// ---------------------------------------------------------------------------
-// ---------------------------------------------------------------------------
-// GET /alarms — 알람 목록 조회
-// ---------------------------------------------------------------------------
-describe('GET /alarms', () => {
-  it('커서 페이지는 1행 더 조회해 다음 커서를 판단하고 응답은 limit까지만 반환한다', async () => {
-    mockDB.pushResult([{ ...sampleAlarmRow, pagination_cursor: '41' }, { ...sampleAlarmRow, id: 'next-alarm', pagination_cursor: '42' }]);
-    const response = await buildApp().request('/alarms?pagination=cursor&limit=1');
-    expect(await response.json()).toMatchObject({
-      alarms: [{ id: ID.alarm }], has_more: true, next_cursor: '41',
-    });
-    expect(mockDB.calls).toHaveLength(1);
-    expect(mockDB.calls[0]!.sql).toContain('ORDER BY aco.sequence ASC LIMIT ?');
-    expect(mockDB.calls[0]!.args.at(-1)).toBe(2);
-    expect(mockDB.calls[0]!.sql).not.toContain('OFFSET');
-  });
-
-  it('커서 값은 바인딩하며 외부 limit은 100으로 제한한다', async () => {
-    mockDB.pushResult([]);
-    const after = '12345';
-    const response = await buildApp().request(`/alarms?pagination=cursor&limit=999&after=${encodeURIComponent(after)}`);
-    expect(await response.json()).toEqual({ alarms: [], has_more: false, next_cursor: null });
-    expect(mockDB.calls[0]!.sql).toContain('AND aco.sequence > ?');
-    expect(mockDB.calls[0]!.sql).not.toContain(after);
-    expect(mockDB.calls[0]!.args.slice(-2)).toEqual([12345, 101]);
-  });
-
-  it.each(['pagination=unknown', 'pagination=cursor&after=', 'after=id', 'pagination=cursor&offset=0',
-    ...['0', '-1', '01', '1.5', '1e2', '9007199254740992', "id' OR 1=1 --"].map((after) => `pagination=cursor&after=${encodeURIComponent(after)}`)])(
-    '잘못된 페이지 조합은 DB 조회 없이 거절한다: %s', async (query) => {
-      const response = await buildApp().request(`/alarms?${query}`);
-      expect(response.status).toBe(400);
-      expect(await response.json()).toMatchObject({ error_code: 'INVALID_REQUEST' });
-      expect(mockDB.calls).toHaveLength(0);
-    },
-  );
-
-  it('빈 목록 반환', async () => {
-    // count
-    mockDB.pushResult([{ total: 0 }]);
-    // list
-    mockDB.pushResult([]);
-
-    const res = await buildApp().request(new Request('http://localhost/alarms'));
+  it.each([
+    '',
+    '?pagination=cursor&limit=50',
+    '?pagination=cursor&limit=50&after=12345',
+    '?limit=20&offset=40',
+    // 예전 라우트가 400 으로 거절하던 조합도 같은 답이다 — 옛 앱은 이런 값을 보내지 않고, 보내도 잃을 것이 없다.
+    '?pagination=unknown',
+    "?pagination=cursor&after=id'%20OR%201%3D1%20--",
+  ])('GET /alarms%s → 200 빈 페이지, DB 를 보지 않는다', async (query) => {
+    const res = await buildApp().request(`/alarms${query}`);
     expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.alarms).toEqual([]);
-    expect(body.total).toBe(0);
-    expect(body.limit).toBe(50);
-    expect(body.offset).toBe(0);
-  });
-
-  it('limit/offset 파라미터 반영', async () => {
-    mockDB.pushResult([{ total: 5 }]);
-    mockDB.pushResult([sampleAlarmRow]);
-
-    const res = await buildApp().request(
-      new Request('http://localhost/alarms?limit=10&offset=2'),
-    );
-    const body = await res.json();
-    expect(body.limit).toBe(10);
-    expect(body.offset).toBe(2);
-    // 같은 시각의 소유/가족 알람도 페이지 경계에서 순서가 바뀌지 않는다.
-    expect(mockDB.calls[1]!.sql).toContain('ORDER BY a.time ASC, a.id ASC');
-  });
-
-  it('limit 최대값 100 제한', async () => {
-    mockDB.pushResult([{ total: 0 }]);
-    mockDB.pushResult([]);
-
-    const res = await buildApp().request(
-      new Request('http://localhost/alarms?limit=999'),
-    );
-    const body = await res.json();
-    expect(body.limit).toBe(100);
-  });
-
-  it('is_active 필터', async () => {
-    mockDB.pushResult([{ total: 1 }]);
-    mockDB.pushResult([sampleAlarmRow]);
-
-    await buildApp().request(new Request('http://localhost/alarms?is_active=true'));
-    const listCall = mockDB.calls[1];
-    expect(listCall!.sql).toContain('is_active');
-    expect(listCall!.args).toContain(1);
-  });
-
-  it('voice_profile_id 필터', async () => {
-    mockDB.pushResult([{ total: 0 }]);
-    mockDB.pushResult([]);
-
-    await buildApp().request(
-      new Request('http://localhost/alarms?voice_profile_id=vp-1'),
-    );
-    const listCall = mockDB.calls[1];
-    expect(listCall!.sql).toContain('voice_profile_id');
-    expect(listCall!.args).toContain('vp-1');
-  });
-
-  it('알람 목록 정상 반환 + normalizeAlarmRow 적용', async () => {
-    mockDB.pushResult([{ total: 1 }]);
-    mockDB.pushResult([sampleAlarmRow]);
-
-    const res = await buildApp().request(new Request('http://localhost/alarms'));
-    const body = await res.json();
-    expect(body.alarms.length).toBe(1);
-    expect(body.alarms[0].is_active).toBe(true);
-    expect(body.alarms[0].repeat_days).toEqual([]);
+    // `has_more` 가 있어야 옛 앱이 옛 offset 계약으로 넘어가지 않고, `next_cursor` 는 끝이라 null 이다.
+    expect(await res.json()).toEqual(EMPTY_PAGE);
+    expect(mockDB.calls).toHaveLength(0);
   });
 });
 
-// ---------------------------------------------------------------------------
-// GET /alarms/:id — 단건 조회
-// ---------------------------------------------------------------------------
+describe('GET /alarms/declined — 옛 앱 호환', () => {
+  it('세 키를 모두 싣는다 — 옛 iOS 디코더가 셋 다 요구한다', async () => {
+    const res = await buildApp().request('/alarms/declined?since=2026-10-01T00:00:00Z');
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ alarm_ids: [], revoked_alarm_ids: [], has_more: false });
+    expect(mockDB.calls).toHaveLength(0);
+  });
+});

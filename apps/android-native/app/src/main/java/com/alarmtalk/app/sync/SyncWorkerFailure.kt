@@ -195,6 +195,7 @@ internal suspend fun leaveAccountAfterPendingDeletion(
         if (left && userId.isNotBlank()) {
             runCatching { com.alarmtalk.app.data.DefaultVoicePreferenceStore(context).clear(userId) }
             runCatching { com.alarmtalk.app.data.DynamicPromptPreferenceStore(context).clearLastSelections(userId) }
+            runCatching { com.alarmtalk.app.data.FormerReceivedAlarmStore(context).clear(userId) }
             runCatching { StockClipManifestStore.clearAndInvalidate(context) }
         }
     } finally {

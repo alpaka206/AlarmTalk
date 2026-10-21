@@ -20,7 +20,7 @@ import org.junit.Test
  *    서버에서 받는 동안에도 두 버튼이 살아 있다(진행 표시도 '트는 중').
  *  - 막대에서 손을 떼면 현재 톤을 다시 틀되, 첫 청취 확인 전 재생이 **소리 나는 중**이면 끊지 않는다. 굽는 중이면 새 값으로
  *    다시 굽고, 받은 클립이 없으면 아무것도 하지 않는다(받은 뒤 그때의 값으로 굽는다).
- *  - 잠금표: 서버 일이 돌면 뒤로가기·다시 만들기·저장·공유·고치기를 잠그고, 막대·두 버튼은 받기·청취 확인으로는 잠그지 않는다.
+ *  - 잠금표: 서버 일이 돌면 뒤로가기·다시 만들기·저장·고치기를 잠그고, 막대·두 버튼은 받기·청취 확인으로는 잠그지 않는다.
  *  - 저장 잠금은 **지금 막대 값을 끝까지 들었을 때만** 열리고(원본은 0), 원본과 번갈아 들어도 다시 잠기지 않는다.
  *  - 이미 등록된 목소리가 있으면 저장은 **언제나 교체**다 — `replace_existing: true` 가 나간다(체크 없음).
  *  - 등록 흐름의 거절을 어디에 말하는가(2026-10-11, §4-1 「월 등록 한도」 ③): 월 한도는 흐름을 끝내고, 말소리 없음은
@@ -328,7 +328,7 @@ class VoicePreviewConfirmRulesTest {
     ) = confirmStepLocks(fetching, confirming, savingText, profileBusy, editing)
 
     @Test
-    fun `서버 일이 하나라도 돌면 뒤로가기·다시 만들기·저장·공유·고치기를 잠근다`() {
+    fun `서버 일이 하나라도 돌면 뒤로가기·다시 만들기·저장·고치기를 잠근다`() {
         assertEquals(ConfirmStepLocks(working = false, toneEnabled = true), locks())
         assertTrue(locks(fetching = true).working)
         assertTrue(locks(confirming = true).working)
@@ -427,7 +427,6 @@ class VoicePreviewConfirmRulesTest {
         Gson().toJson(
             voiceDraftPromotionRequest(
                 replaceExisting = replaceExisting,
-                isShared = false,
                 language = "ko",
                 pitchSemitones = pitch,
             ),

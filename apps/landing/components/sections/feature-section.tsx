@@ -4,7 +4,7 @@ import { RevealGroup, RevealItem } from "../motion/reveal-group";
 import { ScrollDrift } from "../motion/scroll-drift";
 
 type Props = {
-  namespace: "voice" | "shared" | "language";
+  namespace: "voice" | "language";
   reverse?: boolean;
   visual: React.ReactNode;
   id?: string;

@@ -9,15 +9,26 @@ import com.alarmtalk.app.EntitlementWrite
 import com.alarmtalk.app.EntitlementWriter
 import com.alarmtalk.app.core.AlarmTalkLog
 import com.alarmtalk.app.core.AlarmTalkLog.TAG
-import com.alarmtalk.app.data.AlarmAppContainer
+import com.alarmtalk.app.isDestroyedAccountFailure
 import com.alarmtalk.app.network.AuthSessionStore
-import com.alarmtalk.app.network.AlarmTalkApi
 import com.alarmtalk.app.network.AlarmTalkApiClient
 import com.alarmtalk.app.network.SessionTokenRenewal
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import kotlin.coroutines.cancellation.CancellationException
 
+/**
+ * **계정 확인 워커** — 15분 주기(+ 앱 복귀·`account_deletion_requested` 푸시)로 인증된 `GET /auth/me` 를 한 번 보낸다.
+ *
+ * 하는 일은 셋이다:
+ *  - **백그라운드 토큰 갱신**: 만료가 가까우면 응답의 새 토큰으로 갈아 끼운다([SessionTokenRenewal]). 앱을 몇 달씩
+ *    안 여는 사용자도 세션이 끊기지 않는다.
+ *  - **plan 기록**: 받은 plan 을 권한 스냅샷에 적는다 — `plan_changed` 를 놓친 기기의 울림 게이트가 이 값을 본다.
+ *  - **세션이 끝났는지 확인**: 401(만료·폐기)·파기된 계정이면 세션을 끊고, 403 `ACCOUNT_PENDING_DELETION`(다른 기기의
+ *    탈퇴 신청)이면 알람까지 끄고 떠난다([syncWorkerOutcome] → [endWorkerSession]).
+ *
+ * 예전에는 받은 알람을 내려받는 pull 이었다(커플·가족 이용권 폐지로 2026-10-20 에 걷어냈다). 클래스·유니크 작업 이름
+ * (`RemoteAlarmSyncScheduler`)은 이미 깔린 주기 작업을 그대로 잇도록 두었다.
+ */
 class RemoteAlarmSyncWorker(
     appContext: Context,
     params: WorkerParameters,
@@ -29,35 +40,49 @@ class RemoteAlarmSyncWorker(
         // 세대 검사가 통과하는데 데이터는 A 것이다. 이 순서면 세대가 옛것이라 안전하게 실패한다.
         val startGeneration = sessionStore.sessionGeneration()
         val session = sessionStore.read() ?: return Result.success()
-        // 401 을 받았을 때 "내가 실제로 보낸 토큰" 이 무엇인지 알아야 한다 — 아래 갱신이
-        // 토큰을 굴리면 그 뒤의 pull 은 **새 토큰**으로 나가기 때문이다. 시작 토큰으로
-        // 굳혀 두면 굴러간 뒤의 401 을 '지나간 토큰' 으로 오판해 끊어야 할 세션을 못 끊는다.
-        var usedToken = session.token
+        // 401·403 을 받았을 때 끊을 세션은 **이 요청이 실제로 보낸 토큰**의 것이다(`endWorkerSession`).
+        val usedToken = session.token
         return runCatching {
             val api = AlarmTalkApiClient.create()
-
-            // 만료가 가까우면 여기서 세션을 되살린다. 이게 없으면 갱신이 '앱을 여는 것'
-            // 에만 걸려 있어, 몇 달씩 안 여는 사용자는 만료된 채로 열게 된다
-            // (`SessionTokenRenewal` 주석 참조). 알람 동기화보다 **먼저** 해서, 굴러간
-            // 토큰으로 이어지는 pull 이 돌게 한다.
-            renewSessionTokenIfNeeded(sessionStore, api, session.token, startGeneration, session.user.id)
-
-            // 갱신됐을 수 있으니 저장소에서 다시 읽는다. 세션이 끝났으면 조용히 종료한다.
-            val token = sessionStore.read()?.token ?: return@runCatching Result.success()
-            usedToken = token
-            val result = AlarmAppContainer.repository(applicationContext)
-                .pullReceivedAlarms(api, token)
-            Log.i(
-                TAG,
-                "Remote alarm worker complete total=${result.total} imported=${result.imported} updated=${result.updated} failed=${result.failed}",
-            )
-            if (result.failed > 0) {
-                Result.retry()
-            } else {
-                Result.success()
+            val me = withContext(Dispatchers.IO) { api.me(AlarmTalkApiClient.bearer(usedToken)) }
+            val fetchedAt = System.currentTimeMillis()
+            // ⚠ **plan 도 적는다**(2026-09-01 리뷰). `plan_changed` 를 놓친 기기에서는 이 응답이
+            // **유일하게 성공한 `/auth/me`** 일 수 있는데, 토큰만 저장하면 울림 게이트가 읽는 값은 옛 등급 그대로다 —
+            // 보류·환불 뒤에도 클론이 계속 울리거나, 회복됐는데 계속 막힌다. 스펙: "`/auth/me` 로 plan 을 받아 온
+            // 경로는 **전부** 적는다".
+            // ⚠ **인증에 쓴 세션의 계정으로 적는다.** 여기서 저장소를 다시 읽으면 그 사이 로그인한 B 의 id 가 잡혀
+            // **A 의 plan 이 B 의 스냅샷에 박힌다.** 문이 세대·계정을 함께 본다 — 그 사이 로그아웃→재로그인이 끼면
+            // 거절된다. 거절은 이 회차가 통째로 옛 세션의 것이었다는 뜻이라 기록만 남긴다.
+            session.user.id.takeIf { it.isNotBlank() }?.let { userId ->
+                val written = EntitlementWriter(applicationContext)
+                    .write(AccessTicket(userId, startGeneration), "background account check") {
+                        // plan 과 프로모 종료 시각·받은 시각은 한 벌이다(`AccessSnapshot.withServerUser`).
+                        it.withServerUser(me.user, fetchedAt)
+                    }
+                if (written != EntitlementWrite.Applied) {
+                    Log.i(TAG, "Background plan record skipped: session changed mid-run")
+                }
             }
+            // ⚠ **토큰은 만료가 가까울 때만 갈아 끼운다.** 응답은 매번 새 토큰을 주지만, 주기마다 세션을 다시 쓰면
+            // 관찰자(전경 뷰모델)가 그때마다 세션을 다시 흡수한다 — 얻는 것은 없다.
+            // 저장은 [AuthSessionStore.saveTokenIfGeneration] 으로 **판정과 쓰기를 한 덩어리**로 한다. 따로 하면
+            // 그 사이에 낀 로그아웃을 되돌려, 비운 저장소에 끝난 세션을 되쓴다(`PlanChangeSyncWorker` 와 같은 이유).
+            val rolled = me.token?.takeIf { it.isNotBlank() }
+            if (rolled != null && SessionTokenRenewal.shouldRenew(usedToken, fetchedAt) &&
+                sessionStore.saveTokenIfGeneration(startGeneration, rolled) != null
+            ) {
+                Log.i(TAG, "Session token renewed in background")
+            }
+            Result.success()
         }.getOrElse { error ->
-            when (syncWorkerOutcome(error)) {
+            // 파기된 계정 — 이 라우트만 401 이 아니라 404 `AUTH_USER_NOT_FOUND` 로 답한다([isDestroyedAccountFailure]).
+            // 다른 라우트(예전의 pull)는 인증 미들웨어가 401 로 돌려줘 아래 세션 종료로 갔다 — 같은 결말로 보낸다.
+            val outcome = if (isDestroyedAccountFailure(error)) {
+                SyncWorkerOutcome.SESSION_EXPIRED
+            } else {
+                syncWorkerOutcome(error)
+            }
+            when (outcome) {
                 SyncWorkerOutcome.RETHROW -> throw error
                 SyncWorkerOutcome.SESSION_EXPIRED -> {
                     // 재시도해 봐야 같은 토큰이 또 거절당한다 — 세션을 끊고 끝낸다.
@@ -68,77 +93,19 @@ class RemoteAlarmSyncWorker(
                         expectedGeneration = startGeneration,
                         usedToken = usedToken,
                         userId = session.user.id,
-                        workerName = "Remote alarm worker",
+                        workerName = "Account check worker",
                     )
                     Result.success()
                 }
                 SyncWorkerOutcome.CONSENT_PENDING -> {
-                    Log.i(TAG, "Remote alarm worker deferred: consent not settled yet")
+                    Log.i(TAG, "Account check worker deferred: consent not settled yet")
                     Result.success()
                 }
                 SyncWorkerOutcome.RETRY -> {
-                    AlarmTalkLog.reportError("Remote alarm worker failed", error)
+                    AlarmTalkLog.reportError("Account check worker failed", error)
                     Result.retry()
                 }
             }
-        }
-    }
-
-    /**
-     * 만료가 가까울 때만 `GET /auth/me` 로 토큰을 굴린다.
-     *
-     * ⚠ **실패해도 던지지 않는다.** 갱신은 알람 동기화의 전제 조건이 아니다 — 여기서
-     * 던지면 네트워크가 잠깐 나빴다는 이유로 이미 받아 둔 알람 pull 까지 통째로
-     * 재시도로 밀려난다. 유일한 예외는 **취소**다(실패가 아니라 워커가 멈추는 것).
-     *
-     * ⚠ 저장은 [AuthSessionStore.saveTokenIfGeneration] 으로 **판정과 쓰기를 한 덩어리**
-     * 로 한다. 따로 하면 그 사이에 낀 로그아웃을 되돌려, 비운 저장소에 끝난 세션을 되쓴다
-     * (`PlanChangeSyncWorker` 가 같은 이유로 같은 함수를 쓴다).
-     */
-    private suspend fun renewSessionTokenIfNeeded(
-        sessionStore: AuthSessionStore,
-        api: AlarmTalkApi,
-        token: String,
-        startGeneration: Long,
-        /** 이 토큰을 발급받은 계정. 받아 온 plan 은 **이 계정** 스냅샷에만 적는다. */
-        sessionUserId: String,
-    ) {
-        if (!SessionTokenRenewal.shouldRenew(token, System.currentTimeMillis())) return
-        runCatching {
-            val me = withContext(Dispatchers.IO) { api.me(AlarmTalkApiClient.bearer(token)) }
-            val fetchedAt = System.currentTimeMillis()
-            // ⚠ **plan 도 적는다**(2026-09-01 리뷰). `plan_changed` 를 놓친 기기에서는 이
-            // 갱신이 **유일하게 성공한 `/auth/me`** 일 수 있는데, 토큰만 저장하면 울림 게이트가
-            // 읽는 값은 옛 등급 그대로다 — 보류·환불 뒤에도 클론이 계속 울리거나, 회복됐는데
-            // 계속 막힌다. 스펙: "`/auth/me` 로 plan 을 받아 온 경로는 **전부** 적는다".
-            // 계정 대조는 세션 세대가 대신한다 — 세대가 바뀌었으면 아래 CAS 가 막는다.
-            // ⚠ **인증에 쓴 세션의 계정으로 적는다.** 여기서 저장소를 다시 읽으면 그 사이
-            // 로그인한 B 의 id 가 잡혀 **A 의 plan 이 B 의 스냅샷에 박힌다**(그 뒤 굴러온
-            // 토큰이 없으면 CAS 도 안 돌아 아무도 못 막는다). 세대가 그대로일 때만 쓴다.
-            sessionUserId.takeIf { it.isNotBlank() }?.let { userId ->
-                // 문이 세대·계정을 함께 본다 — 그 사이 로그아웃→재로그인이 끼면 거절된다.
-                // ⚠ **결과를 버리지 않는다**(2026-09-02 리뷰). 아래 토큰 회전이 세대를 다시
-                //   보므로 여기서 되돌릴 것은 없지만, 이 회차가 통째로 옛 세션의 것이었다는
-                //   사실은 남겨야 추적된다. 조용히 버리면 "배경 갱신이 왜 안 먹었나" 를
-                //   나중에 알 길이 없다.
-                val renewed = EntitlementWriter(applicationContext)
-                    .write(AccessTicket(userId, startGeneration), "background session renewal") {
-                        // plan 과 프로모 종료 시각·받은 시각은 한 벌이다(`AccessSnapshot.withServerUser`).
-                        it.withServerUser(me.user, fetchedAt)
-                    }
-                if (renewed != EntitlementWrite.Applied) {
-                    Log.i(TAG, "Background plan renewal skipped: session changed mid-run")
-                }
-            }
-            val rolled = me.token?.takeIf { it.isNotBlank() } ?: return@runCatching
-            if (sessionStore.saveTokenIfGeneration(startGeneration, rolled) != null) {
-                Log.i(TAG, "Session token renewed in background")
-            }
-        }.onFailure { error ->
-            // 취소는 바깥 `runCatching` 까지 그대로 올린다 — 여기서 삼키면 워커가 멈추는
-            // 중에도 아래 pull 을 이어 간다.
-            if (error is CancellationException) throw error
-            AlarmTalkLog.reportError("Background session renewal failed", error)
         }
     }
 }

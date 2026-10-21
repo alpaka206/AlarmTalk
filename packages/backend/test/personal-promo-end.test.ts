@@ -170,8 +170,8 @@ function seedPromoUser(
       args: [id, loginId, `${id}@t.test`, id],
     },
     {
-      sql: `INSERT INTO voice_profiles (id, user_id, name, status, elevenlabs_voice_id, is_draft, is_shared)
-            VALUES (?, ?, '목소리', 'ready', ?, 0, 0)`,
+      sql: `INSERT INTO voice_profiles (id, user_id, name, status, elevenlabs_voice_id, is_draft)
+            VALUES (?, ?, '목소리', 'ready', ?, 0)`,
       args: [vp, id, `el-${id}`],
     },
     {
@@ -280,7 +280,7 @@ describe('promoEndDeleteAfter — max(약속 시각, 전환 + 24시간) 을 정�
       new Date(DEADLINE.getTime() + 23 * HOUR).toISOString(),
     );
     expect(fcmBodies).toEqual([
-      '기간 한정 개인 플랜이 끝나 목소리를 11월 4일 오후 11시까지만 보관해요. ' +
+      '기간 한정 플러스 무료 이용이 끝나 목소리를 11월 4일 오후 11시까지만 보관해요. ' +
         '그 전에 이용권을 시작하면 그대로 쓸 수 있고, 지나면 영구 삭제돼요.',
     ]);
     // 약속 시각이 지나도 스윕은 그 사람을 지우지 않는다 — 자기 기한(전환 + 24시간)까지.
@@ -318,7 +318,7 @@ describe('삭제 예고 문구 — 개인 플랜 종료는 이용권 문구를 �
     const deleteAfter = new Date('2026-11-03T05:00:00Z');
     expect(formatKstHour(deleteAfter)).toBe('11월 3일 오후 2시');
     const body = personalPromoEndWarningBody(deleteAfter, new Date('2026-11-01T00:00:00Z'));
-    expect(body).toContain('기간 한정 개인 플랜이 끝나');
+    expect(body).toContain('기간 한정 플러스 무료 이용이 끝나');
     expect(body).toContain('11월 3일 오후 2시까지만 보관');
     expect(body).not.toContain('이용권이 끝나');
     expect(body).not.toContain('다시 등록');
@@ -370,7 +370,7 @@ describe('전용 크론 한 실행의 subrequest — 푸시를 켠 운영 조건
     expect(run.transitioned.length).toBeLessThanOrEqual(PROMO_END_TRANSITION_BATCH);
     expect(used).toBeLessThanOrEqual(PROMO_END_RUN_BUDGET);
     expect(fcmBodies.length).toBeGreaterThan(0);
-    for (const body of fcmBodies) expect(body).toContain('기간 한정 개인 플랜이 끝나');
+    for (const body of fcmBodies) expect(body).toContain('기간 한정 플러스 무료 이용이 끝나');
     // 전환된 사람: 원시 free · 클론 반납 · 보관 행(약속 시각 그대로).
     const first = run.transitioned[0]!;
     expect(first.deleteAfter.getTime()).toBe(DEADLINE.getTime());

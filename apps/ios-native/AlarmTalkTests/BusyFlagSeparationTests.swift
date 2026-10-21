@@ -56,7 +56,7 @@ final class BusyFlagSeparationTests: XCTestCase {
     }
 
     /// 로그인 없이 누른 목소리 쓰기 액션은 **조용히 끝나지 않고 이유를 남긴다**.
-    /// 안드로이드가 같은 자리에서 `msg_voice_{delete,edit,share}_login_required` 를 띄운다.
+    /// 안드로이드가 같은 자리에서 `msg_voice_{delete,edit}_login_required` 를 띄운다.
     func test_로그인없는_목소리_쓰기액션은_안내를_남긴다() async {
         let profile = VoiceProfile(id: "voice-1", name: "엄마 목소리", status: "ready")
 
@@ -67,9 +67,5 @@ final class BusyFlagSeparationTests: XCTestCase {
         let renameVM = VoiceStudioViewModel()
         await renameVM.renameProfile(profile, newName: "아빠 목소리", session: nil)
         XCTAssertNotNil(renameVM.statusMessage, "이름 변경이 조용히 실패하면 안 된다")
-
-        let shareVM = VoiceStudioViewModel()
-        await shareVM.toggleShare(profile, isShared: true, session: nil)
-        XCTAssertNotNil(shareVM.statusMessage, "공유 토글이 조용히 실패하면 안 된다")
     }
 }

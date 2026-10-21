@@ -97,7 +97,7 @@ function isAudioDownload(c: Context): boolean {
 
 /**
  * 전역(인증 전) 버킷 — authMiddleware 이전에 걸리므로 항상 IP 키로 카운트된다.
- * NAT/공유 와이파이 뒤에 여러 기기가 정상적으로 붙으므로(가족 플랜은 이게 기본 상황)
+ * NAT/공유 와이파이 뒤에 여러 기기가 정상적으로 붙으므로(한 집의 여러 기기가 흔한 상황)
  * 사용자 버킷보다 훨씬 느슨하게 두고, 실제 남용은 아래 사용자 버킷이 조인다.
  * prefix 로 버킷을 분리해 사용자 버킷과 이중 카운트되지 않게 한다 — 과거엔 같은 요청이
  * 전역(IP)·api(사용자) 두 리미터를 통과하며 각각 카운트돼, 같은 IP 의 두 기기가
@@ -112,6 +112,22 @@ function isAudioDownload(c: Context): boolean {
 export const ipRateLimitMiddleware = createRateLimitMiddleware({
   maxRequests: 300,
   prefix: 'pre:',
+  // AdMob 보상 콜백은 아래 전용 버킷이 맡는다 — Google 의 몇 안 되는 발신 IP 에서 몰려 오는데, 300 에 걸리면 1초 간격
+  // 다섯 번뿐인 재시도가 전부 같은 창에 들어가 보상이 사라진다(코덱스 #924).
+  skip: isAdMobRewardCallback,
+});
+
+function isAdMobRewardCallback(c: Context): boolean {
+  return c.req.method === 'GET' && new URL(c.req.url).pathname === '/api/ads/admob-ssv';
+}
+
+/**
+ * AdMob 보상 콜백(`routes/ads.ts`) 전용 IP 버킷. 서명이 있어야 적립되지만 인증 없는 라우트라 한도는 둔다 — 정상 콜백이
+ * 막히지 않을 만큼 넉넉히.
+ */
+export const adRewardCallbackRateLimitMiddleware = createRateLimitMiddleware({
+  maxRequests: 6000,
+  prefix: 'ssv:',
 });
 
 /**

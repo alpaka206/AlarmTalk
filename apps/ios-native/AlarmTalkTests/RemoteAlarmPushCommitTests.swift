@@ -187,6 +187,35 @@ final class RemoteAlarmPushCommitTests: XCTestCase {
         XCTAssertEqual(committed.syncStateEnum, .dirty)
     }
 
+    /// 편집기는 화면 진입 시점의 스냅샷으로 전체 행을 덮는다. 그 사이에 push 가
+    /// `remoteAlarmId` 를 새겼다면 편집 커밋이 그걸 **nil 로 되돌리면 안 된다** —
+    /// 되돌리면 다음 push 가 같은 알람을 또 create 해 서버에 두 행이 생긴다.
+    func test_upsertPreservingServerSyncFields_keepsRemoteIdSetDuringEdit() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("upsert-preserve-\(UUID()).json")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let store = LocalAlarmStore(storageURL: url, loadFromDisk: false)
+        let record = store.upsert(LocalAlarmRecord(id: "edited", label: "owned", hour: 7, minute: 30, fireAtMillis: 1))
+        XCTAssertEqual(record.syncStateEnum, .localOnly)
+
+        // 편집 중 push 가 끼어들어 remoteAlarmId 를 새긴다.
+        XCTAssertTrue(store.markRemote(
+            snapshot: try XCTUnwrap(store.record(id: record.id)),
+            remoteID: "remote-new",
+            lastSyncedAtMillis: 777
+        ))
+
+        // 편집기가 들고 있던 **옛 스냅샷**으로 커밋한다.
+        var stale = record
+        stale.label = "사용자가 고친 라벨"
+        let committed = store.upsertPreservingServerSyncFields(stale)
+
+        XCTAssertEqual(committed.label, "사용자가 고친 라벨", "사용자 편집은 반영된다")
+        XCTAssertEqual(committed.remoteAlarmId, "remote-new", "push 가 새긴 값이 살아남아야 한다")
+        XCTAssertEqual(committed.lastSyncedAtMillis, 777)
+        // remoteAlarmId 가 있으므로 편집분은 dirty 여야 다음 push 가 update 로 간다.
+        XCTAssertEqual(committed.syncStateEnum, .dirty)
+    }
+
     func test_diskFailureIsNotReportedAsSuccessfulSyncAndRetainsIDForRetry() async throws {
         let missingDirectory = FileManager.default.temporaryDirectory.appendingPathComponent("absent-\(UUID())")
         let store = LocalAlarmStore(storageURL: missingDirectory.appendingPathComponent("alarms.json"), loadFromDisk: false)

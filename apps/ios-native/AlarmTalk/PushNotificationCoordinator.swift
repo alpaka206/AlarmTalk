@@ -14,8 +14,8 @@ extension AlarmTalkAPI: PushTokenAPIProviding {}
 /// ⚠ **알림 권한과 별개다.** APNs 는 두 종류인데:
 ///   - **alert push**: 배너를 띄운다 → 알림 권한이 **필요**
 ///   - **background push**(`content-available`): 앱을 깨워 데이터를 가져오게 한다 → **권한 불필요**
-/// 가족 알람은 background 로 온다. 그래서 **알림을 거절한 사용자도 받은 알람이 제때 예약되고
-/// 제때 울린다.** 기기 토큰(`registerForRemoteNotifications`)도 권한과 무관하게 받는다.
+/// 플랜·목소리 변경은 background 로 온다. 그래서 **알림을 거절한 사용자도 예약이 제때 맞춰진다.**
+/// 기기 토큰(`registerForRemoteNotifications`)도 권한과 무관하게 받는다.
 ///
 /// ⚠ **`BackgroundSyncTask` 를 대체하지 않는다.** 푸시는 서버→앱 단방향이라 (a) 로컬 변경을
 /// 서버로 올리는 것, (b) 날씨·운세 음성 사전 생성, (c) 공휴일off 재무장, (d) 세션 갱신 —
@@ -43,15 +43,14 @@ final class PushNotificationCoordinator: NSObject, ObservableObject {
 
     /// 서버가 보내는 `type` 값. 안드로이드 핸들러와 **같은 문자열**이어야 한다.
     enum PushType: String {
-        /// 상대가 나에게 알람을 보냈다 → 즉시 pull 해서 기기에 예약한다.
-        case familyAlarm = "family_alarm"
-        /// 공유 목소리 목록이 바뀌었다.
+        /// 내 목소리의 프리셋 클립을 다시 구웠다(제자리 교체 뒤) → 목록·클립을 새로 받는다.
+        /// 이름은 서버 계약 그대로다 — 바꾸면 서버가 보내는 신호를 못 알아본다.
         case voiceShareChanged = "voice_share_changed"
         /// 목소리 접근권이 사라졌다(동의 철회·보관 만료).
         case voiceAccessRevoked = "voice_access_revoked"
         /// 플랜이 바뀌었다(강등·복구) → 재조회.
         case planChanged = "plan_changed"
-        /// 공유 이용권 결제 실패 — 표시 전용(서버가 alert 로 보낸다).
+        /// 이용권 결제 실패 — 표시 전용(서버가 alert 로 보낸다).
         case billingHold = "billing_hold"
         /// 다른 기기에서 탈퇴를 신청했다(2026-10-15) → 이 기기의 세션도 끊겼다. 신호만 믿지 않고 계정을 다시 묻는다.
         case accountDeletionRequested = "account_deletion_requested"
@@ -59,7 +58,6 @@ final class PushNotificationCoordinator: NSObject, ObservableObject {
 
     /// 푸시가 도착했을 때 할 일. `AlarmTalkApp` 이 꽂는다 —
     /// 이 클래스가 동기화 객체들을 직접 들면 순환 참조가 된다.
-    var onFamilyAlarm: () async -> Void = {}
     var onVoiceChanged: () async -> Void = {}
     /**
      * **제자리 교체로 그 목소리의 직접 입력 음원이 무효가 됐다.**
@@ -157,7 +155,7 @@ final class PushNotificationCoordinator: NSObject, ObservableObject {
     /// 실패했다, 탈퇴 복구가 다시 올리라고 표시했다(`prepareAccountRecovery`).
     ///
     /// ⚠ **'다음 실행' 을 기다리지 않는 이유.** iOS 앱은 멈춘 채 며칠씩 살아 있다 — 실행 첫 등록이 실패하면 그 실행이
-    /// 끝날 때까지 가족 알람 푸시가 끊긴다. 안드로이드는 프로세스가 자주 새로 떠서(주기 워커가 깨운 실행 포함) 그때마다
+    /// 끝날 때까지 플랜·목소리 변경 푸시가 끊긴다. 안드로이드는 프로세스가 자주 새로 떠서(주기 워커가 깨운 실행 포함) 그때마다
     /// 다시 등록하므로 그 틈이 짧다.
     /// ⚠ **탈퇴 대기 중에는 하지 않는다.** 서버가 등록을 403 으로 막는다 — 전경마다 거절만 받는다. 복구가 끝나면
     /// 복구 흐름이 스스로 다시 건다(`prepareAccountRecovery` → `start`).
@@ -241,7 +239,7 @@ final class PushNotificationCoordinator: NSObject, ObservableObject {
     /// - Parameter expectedOwnerUserID: 이 해제가 **어느 계정 몫**인가. 지금 캐시된 기기
     ///   토큰의 주인이 다르면 **아무것도 하지 않는다**(Codex #699 P2).
     ///   서버의 `/push/unregister` 는 **토큰만 보고 지우므로**(`routes/push.ts`), 떠난 계정 A 의
-    ///   뒷정리가 지금 B 에게 등록된 그 토큰을 지워 **B 가 가족 알람 푸시를 놓친다.**
+    ///   뒷정리가 지금 B 에게 등록된 그 토큰을 지워 **B 가 푸시를 놓친다.**
     ///   A 의 바인딩은 B 가 등록할 때 서버가 이미 지웠다(`token = ? AND user_id != ?`).
     @discardableResult
     /// - Parameter stillNeeded: **줄을 선 뒤에** 다시 묻는다. 앞선 등록 뒤에 대기하는 사이
@@ -316,12 +314,6 @@ final class PushNotificationCoordinator: NSObject, ObservableObject {
             return false
         }
         switch type {
-        case .familyAlarm:
-            // ⚠ 여기서 pull 하지 않으면 **받은 알람이 기기에 예약되지 않아 안 울린다.**
-            // iOS 에는 안드로이드 WorkManager 같은 보장된 주기 실행이 없어서, 이 푸시가
-            // 실질적으로 유일한 즉시 경로다.
-            await onFamilyAlarm()
-            return true
         case .voiceShareChanged, .voiceAccessRevoked:
             await onVoiceChanged()
             // 교체 신호에만 실려 오는 payload. 목록 갱신만으로는 이 알람들을 못 찾는다.
@@ -380,13 +372,13 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
         // 의존성은 화면과 같은 인스턴스다(`BackgroundDependencies`).
         let deps = BackgroundDependencies.shared
         // ⚠ **세션을 여기서 채택한다.** 백그라운드로 깨어난 실행에는 화면이 없어
-        // `restoreSession()` 이 돌지 않는다 — 세션이 없으면 받은 알람을 당겨올 토큰이 없어
+        // `restoreSession()` 이 돌지 않는다 — 세션이 없으면 목록을 새로 받을 토큰이 없어
         // 푸시가 와도 아무 일도 일어나지 않는다. 키체인 읽기는 동기라 여기서 해도 된다.
         deps.auth.adoptStoredSessionIfNeeded()
 
         // ⚠ **푸시 코디네이터도 launch 에서 꽂는다.** 백그라운드 푸시로 깨어난 콜드
         // 실행에는 scene 이 보장되지 않아, 화면의 `.task` 에서 꽂으면 그 payload 를 그대로
-        // 버린다(`.noData`) — 방금 도착한 가족 알람이 다음 폴백까지 예약되지 않는다.
+        // 버린다(`.noData`) — 방금 회수된 목소리가 다음 폴백까지 예약에 남는다.
         // 화면이 뜨면 같은 인스턴스에 더 풍부한 핸들러(목소리 스튜디오 등)를 덮어쓴다.
         Self.coordinator = deps.push
         Self.currentSession = { deps.auth.session }
@@ -406,16 +398,6 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
                 expectedOwnerUserID: expectedOwner,
                 stillNeeded: stillNeeded
             )
-        }
-        let launchPull = RemoteAlarmPullSync(
-            store: deps.alarmStore,
-            alarmKit: deps.alarmKit,
-            audioCache: .shared,
-            auth: deps.auth
-        )
-        deps.push.onFamilyAlarm = {
-            // 실패는 삼킨다 — 다음 주기 동기화가 그물이다(백그라운드에서 던지면 잃는 게 더 크다).
-            _ = try? await launchPull.runOnce()
         }
         // ⚠ **목소리 갈래도 여기서 꽂는다.** 안 꽂으면 `voice_share_changed`·
         // `voice_access_revoked` 가 기본 빈 핸들러로 떨어져 `.newData` 만 돌려주고
@@ -588,6 +570,13 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
                 audioCache: .shared,
                 ownerUserId: ownerID
             )
+            // 미나로 바꿔 둔 옛 받은 알람을 내 목소리로 올린다(`ReceivedAlarmPromotion` — 접근권 정리와 같은 조건).
+            // 되돌릴 수 없는 '미나 확정' 은 이번 실행에 이용권을 서버로 확인했을 때만 한다.
+            let promoted = deps.voiceStudio.promoteConvertedReceivedAlarms(
+                alarmStore: deps.alarmStore,
+                ownerUserId: ownerID,
+                entitlementConfirmed: deps.socialFeatures.entitlementSnapshotComplete
+            )
             // ⚠ **제자리 교체는 위 대조로 절대 안 걸린다** — 프로필 id 가 그대로 살아 있다.
             // 서버가 준 `custom_audio_invalidated_at` 이 지난번과 다르면 그 목소리의 직접
             // 입력 알람만 내린다. 푸시(`onVoiceReplaced`)는 즉시성만 맡고, **정확성은 이
@@ -596,14 +585,11 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
             var replacedCount = 0
             // 확정은 아래 예약 정리가 끝난 뒤에 한다(예약이 안 맞으면 하지 않는다).
             var pendingApplies: [VoiceReplacementMarkerStore.PendingApply] = []
-            // ⚠ **공유받은 목소리도 본다** — 그 목소리로 만든 내 직접 입력 알람도 함께
-            // 무효가 되는데, 내 목록만 보면 공유받은 기기는 푸시를 놓쳤을 때 영영 모른다.
             // ⚠ **가려진 목소리도 본다**(`authoritativeProfiles`) — 정리에 실패해 목록에서
             // 가린 그 프로필이야말로 다시 집어야 할 대상이다. 거른 목록으로 훑으면 사용자에게
             // "새로고침해 주세요" 라고 해 놓고 새로고침이 아무 일도 하지 않는다.
             let markerCandidates: [(id: String, invalidatedAt: String?)] =
-                deps.voiceStudio.authoritativeProfiles.map { ($0.id, $0.customAudioInvalidatedAt) } +
-                deps.voiceStudio.familyVoices.map { ($0.id, $0.customAudioInvalidatedAt) }
+                deps.voiceStudio.authoritativeProfiles.map { ($0.id, $0.customAudioInvalidatedAt) }
             for candidate in markerCandidates {
                 // 판정·강등·확정을 저장소가 함께 잠근다 — 판정만 먼저 해 두면 그 사이 더 새
                 // 세대가 반영되고 사용자가 새 목소리로 만든 알람을 뒤늦게 지우게 된다.
@@ -645,10 +631,9 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
             // 목소리로 바뀐 것만 발견한다. 대기표에 적어 두면 `RootView` 가 보여줄 수
             // 있을 때 모달로 말한다 — 안드로이드 `VoiceAccessSyncWorker` 도 같은 자리에서
             // `SHARED_RELEASED` 를 기록한다(2026-08-18 Codex #697 P2).
-            // 원인이 **공유 해제**인 이유: 이 판정은 목록에 없는 목소리를 걸러낸 것이라
-            // 플랜 강등(복구되면 돌아온다)과 결말이 다르다 — 다시 공유받아야 한다.
+            // 원인을 무료 강등과 가르는 이유: 이 판정은 목록에 없는 목소리를 걸러낸 것이라
+            // 플랜 강등(복구되면 돌아온다)과 결말이 다르다 — 그 목소리는 돌아오지 않는다.
             // 원인별로 따로 적는다 — 대기표가 우선순위로 합친다(안내할 액션이 있는 쪽이 이긴다).
-            // 뭉쳐서 적으면 공유 해제의 안내를 액션 없는 교체 안내로 덮어쓴다.
             let notices = DowngradeNoticeStore()
             notices.record(userID: ownerID, cause: .sharedReleased, count: degraded)
             notices.record(userID: ownerID, cause: .voiceReplaced, count: replacedCount)
@@ -668,6 +653,14 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
             let markerGenerationChanged = pendingApplies.contains { !$0.profileID.isEmpty }
             guard anyFailed || markerGenerationChanged || degraded + replacedCount + unverifiedCount > 0 else {
                 pendingApplies.forEach { _ = $0.confirm() }
+                // 승격한 알람은 예약을 다시 걸어야 새 목소리로 운다(AlarmKit 은 예약할 때 소리를 고정한다).
+                if promoted > 0 {
+                    _ = await AlarmScheduleReconciler.reconcile(
+                        store: deps.alarmStore,
+                        alarmKit: deps.alarmKit,
+                        ownerUserId: ownerID
+                    )
+                }
                 return
             }
             // ⚠ **프리셋 캐시도 여기서 갈아 끼운다**(Codex #703 P1). 예전에는
@@ -731,8 +724,8 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
             // 플랜 판정을 여기에 복제하지 않는 이유이기도 하다(복제하면 갈라진다).
             //
             // ⚠ **스냅샷이 반쪽이면 돌리지 않는다.** `refreshAll` 은 갈래마다 따로 실패를
-            // 삼켜서, "그룹에서 빠졌다"(새 값) + "구독 없음"(옛 값)이 섞일 수 있다 —
-            // 그 상태로 돌리면 지금 유료인 사용자의 목소리 알람이 톤이 된다.
+            // 삼켜서, 새 구독 응답과 옛 `users.plan` 이 섞일 수 있다 — 그 상태로 돌리면
+            // 지금 유료인 사용자의 목소리 알람이 기본 목소리가 된다.
             guard deps.socialFeatures.entitlementSnapshotComplete else { return }
             _ = await AlarmScheduleReconciler.reconcile(
                 store: deps.alarmStore,
@@ -771,9 +764,7 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
         }
 
         BackgroundSyncTask.register(
-            // 같은 인자로 만든 위 인스턴스를 그대로 쓴다 — 상태가 없고(`let` 뿐), 회차 직렬화는
-            // 타입 전역(`serialGate`)이다.
-            pull: launchPull,
+            // 회차 직렬화는 타입 전역(`serialGate`)이라 화면 쪽 인스턴스와 겹쳐도 차례를 지킨다.
             push: RemoteAlarmPushSync(store: deps.alarmStore, auth: deps.auth),
             socialFeatures: deps.socialFeatures,
             store: deps.alarmStore,

@@ -100,17 +100,13 @@ export function selectAuthoritativeLineItem<
   return candidates?.find((item) => item.productId === requestedProductId) ?? candidates?.[0];
 }
 
-export function googlePlanKeyFromProductId(
-  productId: string,
-): 'personal' | 'couple' | 'family' | null {
-  const products: Record<string, 'personal' | 'couple' | 'family'> = {
+export function googlePlanKeyFromProductId(productId: string): 'personal' | null {
+  const products: Record<string, 'personal'> = {
     personal_monthly: 'personal',
-    couple_monthly: 'couple',
-    family_monthly: 'family',
-    // ⚠ **선물 상품(1회성 `personal_gift_1m`)은 2026-10-14 에 없앴다 — 되살리지 말 것**(App Store
-    //   심사 지침 3.1.1, 두 번째 반려 — `routes/code.ts` 머리말). 목록에서 빠졌으므로 확정 라우트가
-    //   그 구매를 Play API 를 부르기 전에 400 `UNKNOWN_PRODUCT` 로 돌려준다. 할인·무료 이용은 스토어
-    //   오퍼 코드로 준다.
+    // ⚠ **커플·가족(`couple_monthly`·`family_monthly`)은 2026-10-20 에 없앴다**(이용권 폐지). 선물
+    //   상품(1회성 `personal_gift_1m`)도 2026-10-14 에 없앴다 — 되살리지 말 것(App Store 심사 지침
+    //   3.1.1, `routes/code.ts` 머리말). 목록에 없는 상품은 확정 라우트가 Play API 를 부르기 전에
+    //   400 `UNKNOWN_PRODUCT` 로 돌려준다 — 확인 처리되지 않은 구매는 Play 가 3일 뒤 환불한다.
   };
   return products[productId] ?? null;
 }
@@ -119,8 +115,8 @@ export function googlePlanKeyFromProductId(
 /**
  * **결제 실패로 보류된(회복형) 상태인가** — 종료가 아니라 카드만 다시 긁는 중이다.
  *
- * ⚠ RTDN 갈래와 만료 크론 재조회가 **같은 판정을 써야 한다.** 갈라지면 한쪽은 그룹을
- * 보존했는데 다른 쪽이 5분 뒤 해체하는 사고가 난다(실제로 그랬다).
+ * ⚠ RTDN 갈래와 만료 크론 재조회가 **같은 판정을 써야 한다.** 갈라지면 한쪽은 구독을
+ * 보존했는데 다른 쪽이 5분 뒤 끝내는 사고가 난다.
  */
 export function isRecoverablePlayState(state: string): boolean {
   return state === 'SUBSCRIPTION_STATE_ON_HOLD' || state === 'SUBSCRIPTION_STATE_PAUSED';

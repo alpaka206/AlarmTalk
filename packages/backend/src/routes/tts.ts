@@ -9,7 +9,6 @@ import { UUID_RE } from '../lib/validate';
 import { R2VoiceStorage } from '../lib/r2-storage';
 import { computeTtsCacheKey, generatedTtsObjectKey, manualTtsCacheScope } from '../lib/audio-cache';
 import { loadAudioBytes, uint8ToBase64 } from '../lib/audio-loader';
-import { assertSameGroup } from '../lib/family-helpers';
 import {
   createSynthesisAttempts,
   inferSynthesisLanguage,
@@ -47,14 +46,15 @@ import {
   reserveManualTtsQuota,
   resolveManualTtsPool,
 } from '../lib/manual-tts-quota';
-import { hasPersonalVoiceAccess, isPaidVoicePlan } from './billing-helpers';
+import {
+  consumeAdRewardCredit,
+  readAdRewardStatus,
+  refundAdRewardCredit,
+} from '../lib/ad-reward-credits';
+import { hasPersonalVoiceAccess } from './billing-helpers';
 import { computedUserPlan, resolvePersonalPromo } from '../lib/personal-promo';
 import { missingConsentType, SENSITIVE_REQUIRED_CONSENTS } from '../lib/consent';
-import {
-  type DynamicPromptSettings,
-  EMPTY_DYNAMIC_PROMPT_SETTINGS,
-  dynamicPromptSettingsFromRow,
-} from '../lib/dynamic-prompt-settings';
+import { EMPTY_DYNAMIC_PROMPT_SETTINGS } from '../lib/dynamic-prompt-settings';
 import { withWriteTransaction, type DbExecutor } from '../lib/transactions';
 import { enqueueExternalDeletion } from '../lib/audio-retention';
 import { weatherRegionFor } from '../lib/weather-signal';
@@ -200,32 +200,6 @@ function fortuneProfile(args: {
   return parts.length > 0 ? parts.join(', ') : null;
 }
 
-async function loadTargetDynamicPromptSettings(
-  db: ReturnType<typeof getDB>,
-  userPk: string,
-  targetUserId: unknown,
-): Promise<DynamicPromptSettings> {
-  if (typeof targetUserId !== 'string' || targetUserId.trim() === '') {
-    return EMPTY_DYNAMIC_PROMPT_SETTINGS;
-  }
-  const target = targetUserId.trim();
-  const result = await db.execute({
-    sql: `SELECT id, dynamic_prompt_settings_json
-          FROM users
-          WHERE id = ? OR google_id = ?
-          LIMIT 1`,
-    args: [target, target],
-  });
-  if (result.rows.length === 0) return EMPTY_DYNAMIC_PROMPT_SETTINGS;
-
-  const targetPk = String(result.rows[0]!.id);
-  if (targetPk !== userPk && !(await assertSameGroup(db, userPk, targetPk))) {
-    return EMPTY_DYNAMIC_PROMPT_SETTINGS;
-  }
-
-  return dynamicPromptSettingsFromRow(result.rows[0] as Record<string, unknown>);
-}
-
 function todayKoreaLabel(): string {
   return new Intl.DateTimeFormat('ko-KR', {
     timeZone: 'Asia/Seoul',
@@ -298,9 +272,9 @@ async function findUsableVoiceProfile(
   userPk: string,
   voiceProfileId: string,
 ): Promise<Record<string, unknown> | null> {
-  // ⚠ 세 갈래 모두 행 전체(`*`·`vp.*`)를 읽는다 — 목소리 높이(#128, `voicePitchFromRow`)·결(#122)처럼 합성에 쓰는
-  //   새 컬럼을 배포 창에도 안전하게 넘긴다. 열을 골라 적지 말 것: 공유 갈래에서 높이가 빠지면 가족이 주인이 고른
-  //   높이 대신 원래 소리를 듣는다(실패로 보이지도 않는다).
+  // ⚠ 두 갈래 모두 행 전체(`*`)를 읽는다 — 목소리 높이(#128, `voicePitchFromRow`)·결(#122)처럼 합성에 쓰는
+  //   새 컬럼을 배포 창에도 안전하게 넘긴다. 열을 골라 적지 말 것: 높이가 빠지면 주인이 고른 높이 대신 원래
+  //   소리가 나간다(실패로 보이지도 않는다).
   const owned = await db.execute({
     sql: 'SELECT * FROM voice_profiles WHERE id = ? AND user_id IN (?, ?) AND deleted_at IS NULL',
     args: [voiceProfileId, userPk, userLoginId],
@@ -315,47 +289,7 @@ async function findUsableVoiceProfile(
     args: [voiceProfileId],
   });
   if (system.rows.length > 0) return system.rows[0] as Record<string, unknown>;
-
-  // 공유 갈래는 **주인의 원시 plan**(`owner_plan`)도 함께 읽는다 — 호출부가 커플·가족 기능의
-  // 원시값 게이트에 쓴다(`isPaidVoicePlan`). 기간 한정 개인 플랜을 반영하지 않는다.
-  const shared = await db.execute({
-    sql: `SELECT vp.*, u.id AS owner_pk, u.plan AS owner_plan
-          FROM voice_profiles vp
-          LEFT JOIN users u ON u.google_id = vp.user_id OR u.id = vp.user_id
-          WHERE vp.id = ? AND COALESCE(vp.is_shared, 0) = 1
-            AND COALESCE(vp.is_draft, 0) = 0
-            AND vp.deleted_at IS NULL
-          LIMIT 1`,
-    args: [voiceProfileId],
-  });
-  if (shared.rows.length === 0) return null;
-
-  const row = shared.rows[0] as Record<string, unknown>;
-  const viewerPk = userPk;
-  const ownerPk = typeof row.owner_pk === 'string' ? row.owner_pk : null;
-  if (!viewerPk || !ownerPk || viewerPk === ownerPk) return null;
-
-  const inSameGroup = await assertSameGroup(db, viewerPk, ownerPk);
-  return inSameGroup ? row : null;
-}
-
-async function findViewerRelationshipField(
-  db: ReturnType<typeof getDB>,
-  userPk: string,
-  // 통일 이전에 저장된 로그인 식별자까지 매칭하기 위한 보조값.
-  userLoginId: string,
-  voiceProfileId: string,
-  column: 'relationship_label' | 'listener_title',
-): Promise<string | null> {
-  const result = await db.execute({
-    sql: `SELECT ${column}
-          FROM voice_profile_relationships
-          WHERE voice_profile_id = ? AND user_id IN (?, ?)
-          ORDER BY updated_at DESC
-          LIMIT 1`,
-    args: [voiceProfileId, userPk, userLoginId],
-  });
-  return normalizeRelationshipLabel(result.rows[0]?.[column]);
+  return null;
 }
 
 tts.post('/generate', async (c) => {
@@ -382,8 +316,6 @@ tts.post('/generate', async (c) => {
     relationshipLabel?: string;
     listener_title?: string;
     listenerTitle?: string;
-    target_user_id?: string;
-    targetUserId?: string;
     weather_location_label?: string;
     weatherLocationLabel?: string;
     weather_latitude?: number;
@@ -513,8 +445,7 @@ tts.post('/generate', async (c) => {
   }
 
   // ⚠ `SELECT *` 로 두지 말 것. 여기서 쓰는 건 `plan` 하나인데, users 행에는
-  // `apple_refresh_token` 같은 **비밀값**과 JSON 덩어리(`dynamic_prompt_settings_json`,
-  // `family_alarm_quiet_windows`)가 함께 있다. 알람 저장마다 도는 경로라 필요 없는 값을
+  // `apple_refresh_token` 같은 **비밀값**과 JSON 덩어리(`dynamic_prompt_settings_json`)가 함께 있다. 알람 저장마다 도는 경로라 필요 없는 값을
   // 메모리에 올릴 이유가 없고, 특히 토큰은 쓰지도 않으면서 끌어오면 안 된다.
   const user = await db.execute({
     sql: 'SELECT plan FROM users WHERE id = ? OR google_id = ? LIMIT 1',
@@ -532,13 +463,13 @@ tts.post('/generate', async (c) => {
     );
   }
 
-  // 직접 입력 미터링 폴백용(구독/그룹을 못 찾을 때 페이월과 같은 출처인 users.plan 사용).
+  // 직접 입력 미터링 폴백용(구독을 못 찾을 때 페이월과 같은 출처인 users.plan 사용).
   // ⚠ **페이월과 한도는 같은 값을 봐야 한다** — 기간 한정 개인 플랜(계산값)을 둘 다에
   //   반영한다. 한쪽만 반영하면 게이트는 열렸는데 한도가 0 이라 직접 입력이 전부 429 가 된다.
   const promo = resolvePersonalPromo(c.env);
   const rawCallerUserPlan = (user.rows[0]!.plan as string) ?? null;
   const callerUserPlan = computedUserPlan(rawCallerUserPlan, promo);
-  // 유료 접근이 기간 한정 개인 플랜에서만 오는가 — 직접 입력 한도 풀을 고를 때 보류 그룹을 건너뛴다
+  // 유료 접근이 기간 한정 개인 플랜에서만 오는가 — 직접 입력 한도 풀을 고를 때 보류된 구독 행을 건너뛴다
   // (`resolveManualTtsPool` 의 `promoOnly`).
   const callerPromoOnly = callerUserPlan !== rawCallerUserPlan;
 
@@ -546,20 +477,10 @@ tts.post('/generate', async (c) => {
   if (!vp) {
     return c.json({ error: 'Voice profile not found', error_code: 'VOICE_PROFILE_NOT_FOUND' }, 404);
   }
-  // **남의 목소리**(같은 그룹이 공유한 클론)를 쓰는가 — 공유 갈래만 `owner_pk` 를 싣는다.
-  const usingSharedVoice =
-    typeof vp.owner_pk === 'string' && vp.owner_pk.trim() !== '' && vp.owner_pk !== userPk;
   // 무료 플랜은 시스템 스톡 보이스 + 프리셋(고정) 문구 조합만 허용한다.
-  // 보이스 조회 후에 is_system 여부와 함께 최종 판정한다.
-  //
-  // ⚠ **공유 목소리는 원시값이다**(기간 한정 개인 플랜을 반영하지 않는다). 커플·가족 기능이라,
-  //   계산값으로 보면 결제 보류(ON_HOLD·PAUSED) 그룹의 원시 free 멤버가 기간 동안 주인의 공유
-  //   클론으로 생성할 수 있게 된다 — 그룹·`is_shared`·주인의 클론은 보류 중에도 남아 있다.
-  //   내 목소리·스톡 목소리는 **계산값**(내 개인 기능). 스펙: `docs/spec/billing-lifecycle.md`
-  //   「무엇이 계산값을 보고, 무엇이 원시값을 보나」.
-  const freePlanRestricted = usingSharedVoice
-    ? !isPaidVoicePlan(rawCallerUserPlan)
-    : !hasPersonalVoiceAccess(rawCallerUserPlan, promo);
+  // 보이스 조회 후에 is_system 여부와 함께 최종 판정한다. 내 목소리·스톡 목소리 모두 **계산값**이다
+  // (기간 한정 개인 플랜 반영 — 내 개인 기능). 스펙: `docs/spec/billing-lifecycle.md`.
+  const freePlanRestricted = !hasPersonalVoiceAccess(rawCallerUserPlan, promo);
 
   if (vp.status !== 'ready') {
     return c.json(
@@ -595,15 +516,10 @@ tts.post('/generate', async (c) => {
   const isSystemVoice = Boolean(Number(vp.is_system ?? 0));
   let draftPreviewListenerTitle: string | null = null;
   if ((randomRequested && randomContext === 'preset') || draftPreviewRequested) {
-    const isSharedVoiceProfileForPreset =
-      typeof vp.owner_pk === 'string' && vp.owner_pk.trim() !== '' && vp.owner_pk !== userPk;
     const listenerTitle =
       (draftPreviewRequested
         ? normalizeRelationshipLabel(vp.listener_title)
         : normalizeRelationshipLabel(body.listener_title ?? body.listenerTitle)) ??
-      (isSharedVoiceProfileForPreset
-        ? await findViewerRelationshipField(db, userPk, userLoginId, body.voice_profile_id, 'listener_title')
-        : null) ??
       normalizeRelationshipLabel(vp.listener_title);
     if (draftPreviewRequested) draftPreviewListenerTitle = listenerTitle ?? null;
     // 미리듣기는 아래에서 관계·호칭 톤 적응 생성을 시도한다 — 여기서 만든 '고정 예문+호칭 접두어'는
@@ -620,9 +536,25 @@ tts.post('/generate', async (c) => {
   // 그 비용은 **직접 입력 월 한도**(`reserveManualTtsQuota`)가 이미 세고 있다.
   // 그래서 한도를 차감하는 조건으로 연다.
   //
-  // 여전히 막는 것: 무료 플랜 / 동적 문구(날씨·운세) / 번역. 그쪽은 한도로 세지 않는다.
+  // 여전히 막는 것: 동적 문구(날씨·운세) / 번역. 그쪽은 한도로 세지 않는다.
+  //
+  // ⚠ **무료는 광고 보상이 있을 때만 연다**(2026-10-19, `docs/spec/ad-rewards.md`). 월 한도 대신 보상
+  //   한 번을 쓴다. 기본 목소리 한정이다. 보상이 없으면 예전 그대로 `FREE_PLAN_PRESET_ONLY` 다(앱은 저장
+  //   전에 보상 횟수를 먼저 본다).
+  const adRewardEligible =
+    freePlanRestricted &&
+    isSystemVoice &&
+    !randomRequested &&
+    !draftPreviewRequested &&
+    body.translate !== true &&
+    Boolean(resolvedUserPk);
+  const useAdRewardCredit =
+    adRewardEligible && (await readAdRewardStatus(db, userPk)).credits > 0;
   const manualTextOnSystemVoice =
-    !freePlanRestricted && isSystemVoice && !randomRequested && body.translate !== true;
+    (!freePlanRestricted || useAdRewardCredit) &&
+    isSystemVoice &&
+    !randomRequested &&
+    body.translate !== true;
   const presetOnlyRestricted = (freePlanRestricted || isSystemVoice) && !manualTextOnSystemVoice;
   // 무료 플랜은 시스템 스톡 보이스만 쓸 수 있다(커스텀 클론 불가). 시스템 보이스면 통과.
   if (freePlanRestricted && !isSystemVoice) {
@@ -630,18 +562,6 @@ tts.post('/generate', async (c) => {
       {
         error: 'Voice features require a paid plan.',
         error_code: 'VOICE_FEATURE_REQUIRES_PAID_PLAN',
-      },
-      403,
-    );
-  }
-  // 공유 목소리는 **주인이 원시 유료일 때만** 쓴다 — 오디오 라우트의 남의 목소리 갈래·
-  // `messageBelongsToCaller`·`voiceProfileBelongsToCaller` 와 같은 규칙이다. 보류 그룹의 주인은
-  // 원시 free 라 여기서 막힌다(호출자가 따로 유료여도 — 주인의 공유는 멈춘 상태다).
-  if (usingSharedVoice && !isPaidVoicePlan(vp.owner_plan)) {
-    return c.json(
-      {
-        error: 'This voice is locked on the free plan.',
-        error_code: 'VOICE_LOCKED_FREE_PLAN',
       },
       403,
     );
@@ -700,13 +620,53 @@ tts.post('/generate', async (c) => {
   const missingTtsConsent = await missingConsentType(db, userPk, requiredSensitiveConsents);
   if (missingTtsConsent) return consentRequired(c, missingTtsConsent);
 
-  // 직접 입력(random 아님) = 유료 사용자가 문구를 직접 타이핑한 유료 생성 경로.
-  // 무료는 위(693-729)에서 이미 차단되므로 여기 도달하는 수동 요청은 유료 전용.
-  // 예약은 캐시 미스 뒤(합성 직전)에 하고, 예약됐는데 합성이 실패하면 catch 에서 환불.
+  // 직접 입력(random 아님) = 사용자가 문구를 직접 타이핑한 생성 경로. 여기 닿는 것은 유료이거나, 광고 보상
+  // 보상이 남은 무료다(위 `useAdRewardCredit` — 없는 무료는 위에서 막혔다).
+  // 세는 것은 캐시 미스 뒤(합성 직전)·캐시 히트 두 자리이고, 셌는데 실패하면 catch 에서 돌려준다.
   const isManualGeneration = !randomRequested && !draftPreviewRequested && Boolean(resolvedUserPk);
   let manualQuotaPoolKey: string | null = null;
   let manualQuotaMonth: string | null = null;
   let manualQuotaResult: { used: number; limit: number; remaining: number } | null = null;
+  // 광고 보상을 썼으면 그 거래 id — 실패하면 아래 catch 가 돌려준다.
+  let adRewardTransactionId: string | null = null;
+  /**
+   * 직접 입력 한 번을 **센다** — 유료는 월 한도, 광고 보상은 보상 한 번. 셀 수 없으면 보낼 응답을 돌려준다.
+   * 캐시 히트와 합성 직전 두 자리가 같은 규칙이어야 해서 한 곳에 둔다(히트도 한 번이다 — 아래 주석).
+   */
+  const reserveManualGeneration = async (): Promise<Response | null> => {
+    if (useAdRewardCredit) {
+      const transactionId = await consumeAdRewardCredit(db, userPk);
+      if (!transactionId) {
+        // 읽은 뒤 다른 요청이 마지막 보상을 먼저 썼다.
+        return jsonError(c, 403, 'FREE_PLAN_PRESET_ONLY', 'This voice supports preset phrases only.');
+      }
+      adRewardTransactionId = transactionId;
+      return null;
+    }
+    const pool = await resolveManualTtsPool(db, ownerIds, userPk, callerUserPlan, {
+      promoOnly: callerPromoOnly,
+    });
+    const reservation = await reserveManualTtsQuota(db, pool.poolKey, pool.limit);
+    if (!reservation.ok) {
+      return jsonError(
+        c,
+        429,
+        'MANUAL_TTS_QUOTA_EXCEEDED',
+        '이번 달 직접 입력 문구 만들기 횟수를 모두 사용했어요.',
+        { manual_quota: { limit: reservation.limit, used: reservation.used, remaining: 0 } },
+      );
+    }
+    // 되돌릴 수 있어야 한다 — 아래 catch 의 환불이 이 두 값을 본다. 예약 뒤에도 던질 수 있는 DB 쓰기가
+    // 남아 있어, 안 적어 두면 **오디오는 못 받았는데 횟수만 깎인 채** 끝난다.
+    manualQuotaPoolKey = pool.poolKey;
+    manualQuotaMonth = reservation.month;
+    manualQuotaResult = {
+      used: reservation.used,
+      limit: reservation.limit,
+      remaining: reservation.remaining,
+    };
+    return null;
+  };
   let previewClaimed = false;
   let activePreviewClaimToken: string | null = null;
 
@@ -828,21 +788,13 @@ tts.post('/generate', async (c) => {
     if (randomRequested && randomContext !== 'preset') {
       const alarmHour = optionalInt(body.alarm_hour ?? body.alarmHour, 0, 23);
       const alarmMinute = optionalInt(body.alarm_minute ?? body.alarmMinute, 0, 59);
-      const targetDynamicPromptSettings = await loadTargetDynamicPromptSettings(
-        db,
-        userPk,
-        body.target_user_id ?? body.targetUserId,
-      );
-      const isSharedVoiceProfile =
-        typeof vp.owner_pk === 'string' && vp.owner_pk.trim() !== '' && vp.owner_pk !== userPk;
+      const promptSettings = EMPTY_DYNAMIC_PROMPT_SETTINGS;
       const relationshipLabel =
         normalizeRelationshipLabel(body.relationship_label ?? body.relationshipLabel) ??
-        (await findViewerRelationshipField(db, userPk, userLoginId, body.voice_profile_id, 'relationship_label')) ??
-        (isSharedVoiceProfile ? null : normalizeRelationshipLabel(vp.relationship_label));
+        normalizeRelationshipLabel(vp.relationship_label);
       const listenerTitle =
         normalizeRelationshipLabel(body.listener_title ?? body.listenerTitle) ??
-        (await findViewerRelationshipField(db, userPk, userLoginId, body.voice_profile_id, 'listener_title')) ??
-        (isSharedVoiceProfile ? null : normalizeRelationshipLabel(vp.listener_title));
+        normalizeRelationshipLabel(vp.listener_title);
       // ⚠ 이 갈래는 닿지 않는다 — 라이브 랜덤 생성은 위에서 `RANDOM_TTS_RETIRED`(400)로 거절된다. 날씨 원천을
       // 나라별 공식 예보로 바꾸면서(2026-10-01) 이 경로의 날씨 조회(서울 폴백·먼지 없음 폴백)를 지웠다 — 문장용
       // 날씨는 더 만들지 않는다. 남은 코드를 지우는 것은 후속 정리다.
@@ -862,19 +814,19 @@ tts.post('/generate', async (c) => {
                   body.fortune_gender,
                   body.fortuneGender,
                   body.gender,
-                  targetDynamicPromptSettings.fortune.gender,
+                  promptSettings.fortune.gender,
                 ),
                 birthDate: firstNonBlankText(
                   body.fortune_birth_date,
                   body.fortuneBirthDate,
                   body.birthDate,
-                  targetDynamicPromptSettings.fortune.birth_date,
+                  promptSettings.fortune.birth_date,
                 ),
                 birthTime: firstNonBlankText(
                   body.fortune_birth_time,
                   body.fortuneBirthTime,
                   body.birthTime,
-                  targetDynamicPromptSettings.fortune.birth_time,
+                  promptSettings.fortune.birth_time,
                 ),
               })
             : null,
@@ -983,7 +935,7 @@ tts.post('/generate', async (c) => {
       messageText === normalizeAlarmTextWithoutTags(synthesisText)
         ? synthesisText
         : `${synthesisText}\n[display] ${encodeURIComponent(messageText)}`;
-    // 그 목소리의 등록 높이 — 서버가 굽는다(스펙 §4-3). `vp` 는 `SELECT *`·`vp.*` 라 공유 목소리면 **주인의** 값이고,
+    // 그 목소리의 등록 높이 — 서버가 굽는다(스펙 §4-3). `vp` 는 `SELECT *` 라 그 목소리 행의 값이고,
     // 배포 창(#128 전)에는 컬럼이 없어 null 이다(그때는 아무 목소리도 높이를 가질 수 없다). 초안·시스템 목소리는
     // 값이 없어 원래 높이다 — 초안 미리듣기는 원래 높이여야 한다(앱이 그 위에서 높이를 고른다). 음량은 높이와 상관없이
     // 모든 합성에 같은 만큼 올린다(§10) — 초안 미리듣기도 올린 크기라, 앱이 그 위에서 구운 미리듣기가 알람과 같은 크기다.
@@ -1028,8 +980,8 @@ tts.post('/generate', async (c) => {
     // + evicted_at 세팅) 곧바로 재클론하지 않는다 — 캐시 키는 provider voice id 를 포함하므로,
     // evict 직전 id(evicted_provider_voice_id)로 캐시를 먼저 프로브해 보관 오디오가 있으면 재클론
     // 없이 그대로 서빙한다(불필요한 외부 등록·연쇄 eviction 방지, Codex #602). 캐시 미스가 확정된
-    // 뒤(아래, 합성 직전)에만 R2 원본으로 재클론한다. 위 게이트에서 소유자(비공유 클론=caller
-    // 본인)의 민감 동의를 이미 검증했고, 재클론 직전 소유자 동의 재검증도 lib 안에서 수행된다.
+    // 뒤(아래, 합성 직전)에만 R2 원본으로 재클론한다. 위 게이트에서 소유자(클론=caller 본인)의
+    // 민감 동의를 이미 검증했고, 재클론 직전 소유자 동의 재검증도 lib 안에서 수행된다.
     // 시스템 보이스는 evict 대상이 아니다.
     const recloneIfEvicted = async (): Promise<string | undefined> => {
       try {
@@ -1153,30 +1105,11 @@ tts.post('/generate', async (c) => {
         //
         // 초과면 여기서도 429 다. 앱이 저장 전에 남은 횟수를 먼저 보지만(불필요한 왕복을
         // 줄이려는 것뿐) **강제는 여기 하나뿐**이다 — 다른 기기가 그 사이 다 써 버렸을 수 있다.
+        // 히트로 센 횟수도 되돌릴 수 있어야 한다 — 여기 뒤에도 던질 수 있는 DB 쓰기가 남아 있다
+        // (바로 아래 `last_used_at`). `reserveManualGeneration` 이 환불할 값을 적어 둔다.
         if (isManualGeneration) {
-          const pool = await resolveManualTtsPool(db, ownerIds, userPk, callerUserPlan, {
-            promoOnly: callerPromoOnly,
-          });
-          const reservation = await reserveManualTtsQuota(db, pool.poolKey, pool.limit);
-          if (!reservation.ok) {
-            return jsonError(
-              c,
-              429,
-              'MANUAL_TTS_QUOTA_EXCEEDED',
-              '이번 달 직접 입력 문구 만들기 횟수를 모두 사용했어요.',
-              { manual_quota: { limit: reservation.limit, used: reservation.used, remaining: 0 } },
-            );
-          }
-          // 히트로 예약한 횟수도 되돌릴 수 있어야 한다 — 아래 catch 의 환불이 이 두 값을
-          // 본다. 여기 뒤에도 던질 수 있는 DB 쓰기가 남아 있어(바로 아래 `last_used_at`),
-          // 안 적어 두면 **오디오는 못 받았는데 횟수만 깎인 채** 끝난다.
-          manualQuotaPoolKey = pool.poolKey;
-          manualQuotaMonth = reservation.month;
-          manualQuotaResult = {
-            used: reservation.used,
-            limit: reservation.limit,
-            remaining: reservation.remaining,
-          };
+          const refused = await reserveManualGeneration();
+          if (refused) return refused;
         }
         // F1: 캐시 히트도 '사용'으로 보고 LRU 신호를 갱신한다(사전렌더/캐시 재생 알람이 자주
         // 쓰는 커스텀 클론이 오래 안 쓴 것으로 오판돼 evict되지 않게). 시스템 보이스는 no-op.
@@ -1264,28 +1197,10 @@ tts.post('/generate', async (c) => {
       }
     }
 
-    // 캐시 미스 확정 후 합성 직전에 직접 입력 월 쿼터를 예약(원자적 +1). 초과면 429.
+    // 캐시 미스 확정 후 합성 직전에 직접 입력 한 번을 센다(월 한도 원자적 +1 또는 광고 보상 하나).
     if (isManualGeneration) {
-      const pool = await resolveManualTtsPool(db, ownerIds, userPk, callerUserPlan, {
-        promoOnly: callerPromoOnly,
-      });
-      const reservation = await reserveManualTtsQuota(db, pool.poolKey, pool.limit);
-      if (!reservation.ok) {
-        return jsonError(
-          c,
-          429,
-          'MANUAL_TTS_QUOTA_EXCEEDED',
-          '이번 달 직접 입력 문구 만들기 횟수를 모두 사용했어요.',
-          { manual_quota: { limit: reservation.limit, used: reservation.used, remaining: 0 } },
-        );
-      }
-      manualQuotaPoolKey = pool.poolKey;
-      manualQuotaMonth = reservation.month;
-      manualQuotaResult = {
-        used: reservation.used,
-        limit: reservation.limit,
-        remaining: reservation.remaining,
-      };
+      const refused = await reserveManualGeneration();
+      if (refused) return refused;
     }
 
     let lastError: unknown = noVoiceProviderError();
@@ -1472,6 +1387,13 @@ tts.post('/generate', async (c) => {
         console.error('[tts/generate] manual quota refund failed', refundErr);
       }
     }
+    if (adRewardTransactionId) {
+      try {
+        await refundAdRewardCredit(db, adRewardTransactionId);
+      } catch (refundErr) {
+        console.error('[tts/generate] ad reward refund failed', refundErr);
+      }
+    }
     if (previewClaimed) {
       try {
         await db.execute({
@@ -1554,11 +1476,24 @@ tts.get('/manual-quota', async (c) => {
     promoOnly: callerUserPlan !== rawCallerUserPlan,
   });
   const used = pool.limit > 0 ? await readManualTtsUsage(db, pool.poolKey) : 0;
+  // 무료면 광고 보상 현황도 싣는다(`docs/spec/ad-rewards.md`). `user_id` 는 앱이 AdMob 서버 확인
+  // 콜백에 실어 보낼 계정 PK 다 — 앱이 쥔 로그인 식별자는 구글 계정이면 PK 가 아니라서 여기서 준다.
+  // 유료에게는 싣지 않는다 — 앱이 광고 단추를 그릴지는 이 필드가 있는가로 가른다. 서버의 광고 단위 설정
+  // (`ADMOB_REWARDED_AD_UNITS` — 기능 스위치)이 비어도 싣지 않는다: 그때는 콜백이 하나도 적립하지 않으므로, 광고를
+  // 끝까지 보고도 아무것도 못 받는다(코덱스 #925).
+  const freeCaller =
+    Boolean(c.get('userIdPK')) &&
+    Boolean(c.env.ADMOB_REWARDED_AD_UNITS?.trim()) &&
+    !hasPersonalVoiceAccess(rawCallerUserPlan, resolvePersonalPromo(c.env));
+  const adReward = freeCaller
+    ? { ...(await readAdRewardStatus(db, userPk)), user_id: userPk }
+    : undefined;
   return c.json({
     plan_key: pool.planKey,
     limit: pool.limit,
     used,
     remaining: Math.max(0, pool.limit - used),
+    ...(adReward ? { ad_reward: adReward } : {}),
   });
 });
 
@@ -1573,8 +1508,8 @@ tts.get('/messages', async (c) => {
   const offset = Math.max(parseInt(c.req.query('offset') || '0', 10) || 0, 0);
 
   // /tts/messages 는 사용자가 '저장한 문구' 라이브러리(message_library)만 반환한다. messages 테이블에는
-  // 내부 프리셋 버킷 클립(is_preset=1), 드래프트 미리듣기(승격 후 non-draft 로 노출), 알람 raw 플레이스홀더,
-  // 가족 수신 클립 등 저장 문구가 아닌 내부 행이 섞이는데 이들은 message_library 에 등록되지 않는다 →
+  // 내부 프리셋 버킷 클립(is_preset=1), 드래프트 미리듣기(승격 후 non-draft 로 노출), 알람 raw 플레이스홀더
+  // 등 저장 문구가 아닌 내부 행이 섞이는데 이들은 message_library 에 등록되지 않는다 →
   // 라이브러리 멤버십으로 거른다. (is_preset 은 라이브러리에 없어 이미 제외되지만, 명시적 가드로도 남긴다.)
   let whereClause = `WHERE m.user_id IN (?, ?)
     AND EXISTS (
@@ -1627,10 +1562,8 @@ tts.get('/messages', async (c) => {
 });
 
 tts.get('/messages/:id/audio', async (c) => {
-  // 소유권 기준은 users.id(userPk). userLoginId 는 통일 이전에 user_id 컬럼에 저장된
-  // 로그인 식별자(구글 로그인이면 google_id)까지 매칭하기 위한 보조값이다.
-  const userLoginId = c.get('userLoginId');
-  const userPk = c.get('userIdPK') || userLoginId;
+  // 소유권 기준은 users.id. 로그인 식별자(구글 로그인이면 google_id)는 통일 이전에 user_id 컬럼에
+  // 저장된 행까지 매칭하기 위한 보조값이다(`callerOwnerIds`).
   const ownerIds = callerOwnerIds(c);
   const db = getDB(c.env);
   const id = c.req.param('id');
@@ -1639,6 +1572,8 @@ tts.get('/messages/:id/audio', async (c) => {
     return c.json({ error: 'Invalid message ID format', error_code: 'INVALID_MESSAGE_ID' }, 400);
   }
 
+  // 받는 갈래는 `messageBelongsToCaller`(routes/alarm-mutation.ts)와 **같다** — 내 문구(그 목소리가 내 목소리이거나
+  // 시스템 목소리) / 시스템 스톡 프리셋. 초안 목소리의 문구는 어느 쪽으로도 못 지난다(아래 JOIN).
   const result = await db.execute({
     sql: `SELECT messages.id, messages.user_id, messages.voice_profile_id, messages.text,
                  messages.synthesis_text, messages.delivery_tags_json, messages.audio_url,
@@ -1655,30 +1590,16 @@ tts.get('/messages/:id/audio', async (c) => {
             ON owner.id = vp.user_id OR owner.google_id = vp.user_id
           WHERE messages.id = ?
             AND (
-              messages.user_id IN (?, ?)
-              OR EXISTS (
-                SELECT 1 FROM alarms a
-                WHERE a.message_id = messages.id
-                  AND a.target_user_id IN (?, ?)
+              (
+                messages.user_id IN (?, ?)
+                AND (vp.user_id IN (?, ?) OR COALESCE(vp.is_system, 0) = 1)
               )
               OR (
                 COALESCE(messages.is_preset, 0) = 1
                 AND COALESCE(vp.is_system, 0) = 1
               )
-              OR (
-                COALESCE(messages.is_preset, 0) = 1
-                AND COALESCE(vp.is_shared, 0) = 1
-                AND EXISTS (
-                  SELECT 1
-                  FROM plan_group_members pgm_me
-                  JOIN plan_group_members pgm_owner
-                    ON pgm_owner.plan_group_id = pgm_me.plan_group_id
-                  WHERE pgm_me.user_id = ?
-                    AND pgm_owner.user_id = owner.id
-                )
-              )
             )`,
-    args: [id, ...ownerIds, ...ownerIds, userPk],
+    args: [id, ...ownerIds, ...ownerIds],
   });
 
   if (result.rows.length === 0) {
@@ -1698,20 +1619,14 @@ tts.get('/messages/:id/audio', async (c) => {
     owner_plan: string | null;
   }>(result.rows[0]!);
 
-  // 무료 플랜 잠금 강제: 유료 클론(비시스템) 보이스의 오디오는 그 보이스 소유자가 유료일 때만
-  // 내려준다. 소유자가 무료로 내려가면(다운그레이드) 데이터는 보존하되 재생은 잠기며, 소유자
-  // 본인은 물론 공유받은 대상에게도 서버가 오디오를 주지 않는다(삭제된 것과 동일하게 사라짐).
-  // 재유료가 되면 users.plan 이 복구돼 그대로 다시 풀린다. 시스템 스톡 보이스는 항상 허용.
-  //
-  // ⚠ **기간 한정 개인 플랜은 목소리 주인이 호출자일 때만 반영한다**(계산값). 남의 목소리
-  //   (공유 프리셋·받은 알람)는 주인의 **원시** plan 을 본다 — `messageBelongsToCaller` 의 공유
-  //   갈래와 한 쌍이다(CLAUDE.md). 여기만 계산값으로 넓히면 결제 보류 그룹의 공유 목소리가
-  //   기간 동안 되살아나고, 쓰기(알람 저장)는 막혀 '들리는데 저장이 안 되는' 알람이 생긴다.
+  // 무료 플랜 잠금 강제: 클론(비시스템) 보이스의 오디오는 그 보이스 주인(= 호출자, 위 WHERE)이 유료일
+  // 때만 내려준다 — 계산값(`hasPersonalVoiceAccess`, 기간 한정 개인 플랜 반영)이다. 주인이 무료로
+  // 내려가면(다운그레이드) 데이터는 보존하되 재생은 잠기고, 재유료가 되면 users.plan 이 복구돼 그대로
+  // 다시 풀린다. 시스템 스톡 보이스는 항상 허용.
   const isSystemVoice = Number(message.is_system ?? 0) === 1;
   const ownerIsCaller = message.owner_id != null && ownerIds.includes(message.owner_id);
-  const ownerHasVoiceAccess = ownerIsCaller
-    ? hasPersonalVoiceAccess(message.owner_plan, resolvePersonalPromo(c.env))
-    : isPaidVoicePlan(message.owner_plan);
+  const ownerHasVoiceAccess =
+    ownerIsCaller && hasPersonalVoiceAccess(message.owner_plan, resolvePersonalPromo(c.env));
   if (!isSystemVoice && !ownerHasVoiceAccess) {
     return c.json(
       {
@@ -1806,27 +1721,11 @@ tts.get('/stock-clips', async (c) => {
             -- 있는 알람은 계속 저장되고 오디오도 그대로 받는다 — 목록에만 안 뜬다.
             -- 배포 창에는 컬럼이 없어 조건이 빠진다(그때는 은퇴한 행도 없다).
             ${retiredClause}
-            AND (
-              COALESCE(vp.is_system, 0) = 1
-              OR m.user_id IN (?, ?)
-              OR (
-                COALESCE(vp.is_shared, 0) = 1
-                AND COALESCE(vp.is_draft, 0) = 0
-                AND EXISTS (
-                  SELECT 1
-                  FROM plan_group_members pgm_me
-                  JOIN plan_group_members pgm_owner
-                    ON pgm_owner.plan_group_id = pgm_me.plan_group_id
-                  JOIN users owner_u ON owner_u.id = pgm_owner.user_id
-                  WHERE pgm_me.user_id = ?
-                    AND (owner_u.id = vp.user_id OR owner_u.google_id = vp.user_id)
-                )
-              )
-            )
+            AND (COALESCE(vp.is_system, 0) = 1 OR m.user_id IN (?, ?))
             AND vp.deleted_at IS NULL
             AND m.audio_url IS NOT NULL
           ORDER BY vp.id ASC, m.category ASC, m.language ASC, m.variant ASC`,
-    args: [userPk, userLoginId, userPk],
+    args: [userPk, userLoginId],
   });
   // 버킷 없이 클립 하나만 물린 옛 알람의 테마 힌트 — 규칙과 이유는 그 함수 주석에 있다.
   const legacyHints = await findLegacyBucketHints(db, userPk);

@@ -31,8 +31,9 @@ struct ClipPreparationView: View {
     /// 편집기에서 여는 일반 준비 관문은 기존 퍼센트 화면을 유지한다.
     var registrationStyle = false
 
-    /// ⚠ **관문이 막은 그 목소리.** 넘기지 않으면 공유받은 목소리가 대상에서 빠져
-    /// "준비됐어요 100%" 만 보이고, 돌아가면 관문이 또 막는다(빠져나갈 수 없는 고리).
+    /// ⚠ **관문이 막은 그 목소리.** 이 화면은 서버에서 새로 받은 매니페스트로 "준비됐어요" 라고 하는데,
+    /// 관문은 앱이 들고 있는 매니페스트를 본다 — 거기에도 이 목소리의 클립이 실릴 때까지 끝내지 않는다
+    /// (`pollingCanStop` 의 `targetClipsLoaded`). 안 넘기면 돌아가자마자 관문이 또 막는다.
     var targetVoiceID: String?
 
     var body: some View {
@@ -101,12 +102,9 @@ struct ClipPreparationView: View {
                     .contentTransition(.numericText())
                     .animation(.easeInOut(duration: 0.2), value: readiness.percent)
 
-                // 소유자를 기다리는 중에는 진행률 자체가 내 목소리들의 것이라 뜻이 없다.
-                if !awaitingOwner {
-                    ProgressView(value: Double(readiness.percent), total: 100)
-                        .tint(theme.palette.primary)
-                        .frame(maxWidth: 280)
-                }
+                ProgressView(value: Double(readiness.percent), total: 100)
+                    .tint(theme.palette.primary)
+                    .frame(maxWidth: 280)
 
                 Text(statusLine)
                     .font(theme.typography.bodyMedium)
@@ -119,7 +117,7 @@ struct ClipPreparationView: View {
             Spacer(minLength: 0)
 
             VStack(spacing: 12) {
-                if !readiness.failedVoiceIDs.isEmpty, !awaitingOwner {
+                if !readiness.failedVoiceIDs.isEmpty {
                     // 서버가 만들다 실패한 목소리 — 다시 큐에 올린다. 다운로드 실패는
                     // 선다운로드가 다음 회차에 부족분만 다시 받으므로 버튼이 필요 없다.
                     Button(String(localized: "다시 시도하기")) {
@@ -222,19 +220,12 @@ struct ClipPreparationView: View {
     }
 
     private var headline: String {
-        // ⚠ 소유자를 기다리는 중에 퍼센트를 보여 주지 말 것 — 그 값은 내 목소리들의
-        // 진행률이라 100% 가 되고, 사용자는 끝난 줄 알고 돌아갔다가 또 막힌다.
-        if awaitingOwner { return String(localized: "준비 중이에요") }
-        return readiness.isReady ? String(localized: "준비됐어요") : "\(readiness.percent)%"
+        readiness.isReady ? String(localized: "준비됐어요") : "\(readiness.percent)%"
     }
 
     /// ⚠ **무엇을 기다리는지 말한다.** 퍼센트만 있으면 멈춘 것처럼 보인다 —
     /// 특히 서버 렌더 구간은 다운로드와 달리 몇 분이 걸릴 수 있다.
     private var statusLine: String {
-        if awaitingOwner {
-            // 받는 사람이 할 수 있는 일이 없다 — '다시 시도' 도 소유자 큐라 못 누른다.
-            return String(localized: "보낸 사람 쪽에서 이 목소리를 만들고 있어요. 다 되면 알람에서 고를 수 있어요.")
-        }
         if readiness.isReady {
             return String(localized: "이제 오프라인에서도 목소리로 울려요.")
         }
@@ -247,17 +238,16 @@ struct ClipPreparationView: View {
         return String(localized: "목소리를 받고 있어요. 앱을 닫아도 계속 받아요.")
     }
 
-    /// 3초 폴링을 멈춰도 되는가 — 다 받았고(`isReady`), 소유자를 기다리는 중이 아니고, 관문이 보는
-    /// 매니페스트에도 막힌 그 목소리가 실렸다(아래 `refresh` 의 맞추기 — 그게 실패했으면 다음 회차가
-    /// 다시 맞춘다). 서버 생성 실패는 `isReady` 가 거짓이라 계속 묻는다(의도).
-    nonisolated static func pollingCanStop(isReady: Bool, awaitingOwner: Bool, targetClipsLoaded: Bool) -> Bool {
-        isReady && !awaitingOwner && targetClipsLoaded
+    /// 3초 폴링을 멈춰도 되는가 — 다 받았고(`isReady`), 관문이 보는 매니페스트에도 막힌 그 목소리가
+    /// 실렸다(아래 `refresh` 의 맞추기 — 그게 실패했으면 다음 회차가 다시 맞춘다). 서버 생성 실패는
+    /// `isReady` 가 거짓이라 계속 묻는다(의도).
+    nonisolated static func pollingCanStop(isReady: Bool, targetClipsLoaded: Bool) -> Bool {
+        isReady && targetClipsLoaded
     }
 
     private var preparationSettled: Bool {
         Self.pollingCanStop(
             isReady: readiness.isReady,
-            awaitingOwner: awaitingOwner,
             targetClipsLoaded: targetVoiceID.flatMap { $0.isEmpty ? nil : $0 }.map { id in
                 voiceStudio.stockClips.contains(where: { $0.voiceProfileId == id })
             } ?? true
@@ -270,8 +260,7 @@ struct ClipPreparationView: View {
         let askedAt = Date()
         await readiness.refresh(
             session: auth.session,
-            ownedVoiceProfileIDs: voiceStudio.ownedVoiceProfileIDs,
-            selectedVoiceProfileID: targetVoiceID
+            ownedVoiceProfileIDs: voiceStudio.ownedVoiceProfileIDs
         )
         // ⚠ **세는 것만으로는 받아지지 않는다**(Codex #703 P2). `readiness.refresh` 는 서버
         // 상태를 묻고 캐시 파일이 있는지 볼 뿐, **없는 클립을 받지 않는다.** 실제 다운로드는
@@ -280,13 +269,13 @@ struct ClipPreparationView: View {
         // 켤 때까지 100% 미만에 갇혔다.
         //
         // `start` 는 `guard task == nil` 이라 3초 폴링마다 불려도 겹쳐 돌지 않고, 이미 받은
-        // 것은 내부에서 건너뛴다. 대상은 **소유 목록 + 관문이 막은 그 목소리 하나**다 —
-        // 공유받은 목록 전체를 넣으면 「공유받은 목소리는 선다운로드하지 않는다」 규약을
-        // 정면으로 어긴다(`docs/spec/voice-and-message.md`).
+        // 것은 내부에서 건너뛴다.
         if !readiness.isReady {
-            var targets = voiceStudio.ownedVoiceProfileIDs
-            if let targetVoiceID, !targetVoiceID.isEmpty { targets.insert(targetVoiceID) }
-            prefetcher.start(session: auth.session, ownedVoiceProfileIDs: targets, manifestDepartedAfter: askedAt)
+            prefetcher.start(
+                session: auth.session,
+                ownedVoiceProfileIDs: voiceStudio.ownedVoiceProfileIDs,
+                manifestDepartedAfter: askedAt
+            )
         } else if let targetVoiceID,
                   !voiceStudio.stockClips.contains(where: { $0.voiceProfileId == targetVoiceID }) {
             // ⚠ **관문과 이 화면이 같은 목록을 보게 맞춘다**(2026-09-21). 이 화면은 서버에서
@@ -295,11 +284,5 @@ struct ClipPreparationView: View {
             //   고른 목소리를 되돌린다. 여기서 한 번 받아 두면 그 고리가 끊긴다.
             await voiceStudio.loadStockClips(session: auth.session, force: true)
         }
-    }
-
-    /// 공유받은 목소리인데 소유자 쪽 생성이 아직인가.
-    private var awaitingOwner: Bool {
-        guard let targetVoiceID else { return false }
-        return readiness.awaitingOwnerVoiceIDs.contains(targetVoiceID)
     }
 }
