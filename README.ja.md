@@ -14,7 +14,7 @@
 - **Android** — 公開中のクライアント。コアアラームエンジンは実機検証済み:
   - 無料: システムボイス + 事前レンダリングされたアラームプリセットクリップ、解除ごとにローカルでローテーション(バケットローテーション)
   - 有料: AI クローンボイスのプリセットを「キープ」確定後にサーバー側で事前レンダリング、鳴動時は完全オフライン再生 — オフライン(機内モード)鳴動は実機 QA 待ち
-  - Google Play Billing: 稼働中 — 月額の個人サブスクリプションひとつ(カップル・ファミリープランは 2026-10-20 に廃止 — [`docs/spec/plan-gates.md`](docs/spec/plan-gates.md))
+  - Google Play Billing: 稼働中 — 月額のプラスのサブスクリプションひとつ(`personal_monthly`、カップル・ファミリープランは 2026-10-20 に廃止 — [`docs/spec/plan-gates.md`](docs/spec/plan-gates.md))
 - **Backend**: Cloudflare Workers + Hono + Turso — CI で自動デプロイ + DB マイグレーション(`develop` → dev、`main` → prod)
 
 SwiftUI の iOS クライアント(`apps/ios-native`)は 2026-08-06 に復活し、2026-09-22 に App Store でリリースされました。CI ワークフロー(`ios-build.yml` — ユニットテスト + Release ビルド)は 2026-09-08 に復旧しました。ビルドは XcodeGen(`project.yml` → `AlarmTalkNative.xcodeproj`)で行います。詳細は [`docs/ios/`](docs/ios/) を参照。

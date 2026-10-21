@@ -121,7 +121,7 @@ APPLE_SIGNIN_PRIVATE_KEY=<그 키의 .p8 내용 전체(PEM)>
 ### 5-1. 앱 레코드 생성
 <https://appstoreconnect.apple.com> → 앱 → `+` → 새로운 앱. Bundle ID 는 `com.alarmtalk.app`.
 
-### 5-2. 구독 상품 등록 (개인 하나)
+### 5-2. 구독 상품 등록 (플러스 하나 — `personal_monthly`)
 
 **상품 ID 를 아래와 정확히 같게** 만들어야 한다. 이 값은
 `apps/ios-native/AlarmTalk/Configuration/StoreKitConfiguration.storekit` 및 백엔드
@@ -136,7 +136,7 @@ APPLE_SIGNIN_PRIVATE_KEY=<그 키의 .p8 내용 전체(PEM)>
 
 ⚠ 가격의 권위는 **App Store Connect** 이고 DB `price_krw` 는 표시용이다. 둘을 일치시켜
 둔다 — 위 값은 마이그레이션 `#52` 의 시드가이고 안드로이드 Play 상품과도 같다.
-`.storekit` 파일도 지금은 같은 값을 담고 있다(`displayPrice` 3900 — 개인 구독 하나뿐이다. 선물 상품은 2026-10-14 에, 커플·가족
+`.storekit` 파일도 지금은 같은 값을 담고 있다(`displayPrice` 3900 — 플러스 구독 하나뿐이다. 선물 상품은 2026-10-14 에, 커플·가족
 구독은 2026-10-20 에 뺐다).
 시뮬레이터 전용이라 실제 과금과는 무관하지만, 표시 금액이 어긋나면 사람이 헷갈리므로
 가격을 바꿀 때 **함께** 고친다.
@@ -152,7 +152,7 @@ Store 심사 지침 3.1.1 로 **두 번째** 반려됐다 — "the app uses gift
 산 사람이 인앱 결제로 냈어도 받는 사람은 코드로 유료 기능을 연다. 그 '코드로 해제' 가 반려 사유다
 ([`docs/spec/plan-gates.md`](../spec/plan-gates.md) 「선물 코드 — 폐지」).
 
-- 앱(1.2.13~)은 그 상품을 조회·판매하지 않는다(`SubscriptionProduct` 는 구독만 — 1.2.16 부터 개인 하나, `.storekit` 의
+- 앱(1.2.13~)은 그 상품을 조회·판매하지 않는다(`SubscriptionProduct` 는 구독만 — 1.2.16 부터 플러스 하나, `.storekit` 의
   `products` 는 비어 있다).
 - 서버는 그 상품의 확정 요청을 400 `UNKNOWN_PRODUCT` 로 돌려준다(`lib/apple-storekit.ts` 의 `APPLE_PRODUCT_TO_PLAN_KEY`
   에서 뺐다 — 예전의 `isAppleGiftProductId` 갈래·바우처 발급·환불 회수는 지웠다). 코드는 만들지 않는다.
@@ -170,10 +170,10 @@ Store 심사 지침 3.1.1 로 **두 번째** 반려됐다 — "the app uses gift
 
 - 커플·가족 이용권과 거기에만 딸린 초대 코드·목소리 공유·가족 알람을 없앴다(`docs/spec/plan-gates.md`
   「커플·가족 이용권 — 폐지」). 서버는 두 상품의 확정 요청을 400 `UNKNOWN_PRODUCT` 로 돌려주고(`lib/apple-storekit.ts` 의
-  `APPLE_PRODUCT_TO_PLAN_KEY` 는 개인 하나), 앱(1.2.16~)은 두 상품을 조회·판매하지 않는다.
+  `APPLE_PRODUCT_TO_PLAN_KEY` 는 플러스 하나), 앱(1.2.16~)은 두 상품을 조회·판매하지 않는다.
 - ⚠ **판매 중지는 prod 서버 배포보다 늦으면 안 된다.** 팔리는 채로 두면 옛 앱에서 산 사람은 결제만 하고 이용권을 못 받고,
-  애플은 그 구독을 스스로 환불하지 않고 계속 갱신한다. 개인 구독자가 같은 구독 그룹 안에서 그 상품으로 바꿀 수도 있다 —
-  그러면 서버가 그 구독을 알아보지 못한다. 그 상품을 개인 이용권으로 열어 주지도 않는다 — 6,900·14,900원을 받고
+  애플은 그 구독을 스스로 환불하지 않고 계속 갱신한다. 플러스 구독자가 같은 구독 그룹 안에서 그 상품으로 바꿀 수도 있다 —
+  그러면 서버가 그 구독을 알아보지 못한다. 그 상품을 플러스로 열어 주지도 않는다 — 6,900·14,900원을 받고
   3,900원짜리를 여는 셈이라서다.
 - 두 상품의 스토어 거래는 prod 에 0건이다(2026-10-20 읽기 전용 확인).
 
