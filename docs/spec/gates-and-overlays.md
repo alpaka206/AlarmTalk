@@ -168,9 +168,9 @@ iOS 는 시스템 `.alert`. 바깥 탭·뒤로가기는 `확인` 과 같다(이�
 
 | | 제목 | 본문(`deletes_voices_at_end = true`) | 본문(`false` — 삭제 문장을 뺀다) |
 | --- | --- | --- | --- |
-| ko | 개인 플랜 무료 이용이 곧 끝나요 | {lastDay}까지 개인 플랜을 무료로 쓸 수 있어요. {nextDay}부터는 무료 플랜으로 돌아가고, 등록한 목소리는 3일 보관 후 삭제돼요. | {lastDay}까지 개인 플랜을 무료로 쓸 수 있어요. {nextDay}부터는 무료 플랜으로 돌아가요. |
-| en | Your free Personal plan ends soon | You can use the Personal plan for free until {lastDay}. From {nextDay}, you'll return to the Free plan, and voices you registered will be kept for 3 days and then deleted. | You can use the Personal plan for free until {lastDay}. From {nextDay}, you'll return to the Free plan. |
-| ja | パーソナルプランの無料利用がまもなく終了します | {lastDay}までパーソナルプランを無料でご利用いただけます。{nextDay}からは無料プランに戻り、登録した声は3日間保管した後に削除されます。 | {lastDay}までパーソナルプランを無料でご利用いただけます。{nextDay}からは無料プランに戻ります。 |
+| ko | 플러스 무료 이용이 곧 끝나요 | {lastDay}까지 플러스를 무료로 쓸 수 있어요. {nextDay}부터는 무료 플랜으로 돌아가고, 등록한 목소리는 3일 보관 후 삭제돼요. | {lastDay}까지 플러스를 무료로 쓸 수 있어요. {nextDay}부터는 무료 플랜으로 돌아가요. |
+| en | Your free Plus ends soon | You can use Plus for free until {lastDay}. From {nextDay}, you'll return to the Free plan, and voices you registered will be kept for 3 days and then deleted. | You can use Plus for free until {lastDay}. From {nextDay}, you'll return to the Free plan. |
+| ja | プラスの無料利用がまもなく終了します | {lastDay}までプラスを無料でご利用いただけます。{nextDay}からは無料プランに戻り、登録した声は3日間保管した後に削除されます。 | {lastDay}までプラスを無料でご利用いただけます。{nextDay}からは無料プランに戻ります。 |
 
   - 버튼: ko `다시 보지 않기` · `확인` / en `Don't show again` · `Confirm` / ja `今後表示しない` ·
     `確認`(확인은 안드로이드 `auth_confirm` 과 같은 문구).

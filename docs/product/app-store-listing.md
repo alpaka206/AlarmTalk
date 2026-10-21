@@ -148,10 +148,10 @@ alarmtalk,アラーム,ボイス,音声,録音,声アラーム,音声アラー�
 10월 31일(한국 시간)까지 무료 계정도 플러스 기능을 써요. 내 목소리나 허락받은 목소리로, 직접 쓴 문장을 AI가 읽어 줘요. 끝나면 그 목소리는 3일 보관 후 삭제돼요. 단, 삭제 전에 이용권(결제 보류 중 포함)이 있으면 삭제되지 않아요.
 ```
 
-**en-US** (166/170)
+**en-US** (162/170)
 
 ```text
-Free accounts get Personal until Oct 31 KST: AI reads your text in a voice you may use. Then that voice is deleted after 3 days unless you have a plan (even on hold).
+Free accounts get Plus until Oct 31 KST: AI reads your text in a voice you may use. Then that voice is deleted after 3 days unless you have a plan (even on hold).
 ```
 
 **ja** (131/170)
