@@ -83,13 +83,13 @@
           "introductoryOffer": null,
           "localizations": [
             {
-              "description": "내 목소리 알람 1인 요금제, 매월 자동 갱신",
-              "displayName": "AlarmTalk 개인플랜",
+              "description": "내 목소리 알람 플러스, 매월 자동 갱신",
+              "displayName": "AlarmTalk 플러스",
               "locale": "ko_KR"
             },
             {
-              "description": "Personal plan, monthly",
-              "displayName": "Personal (Monthly)",
+              "description": "AlarmTalk Plus, monthly",
+              "displayName": "Plus (Monthly)",
               "locale": "en_US"
             }
           ],

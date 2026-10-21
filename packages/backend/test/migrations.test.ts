@@ -870,4 +870,20 @@ describe('마이그레이션 #131 — 커플·가족 요금제 삭제', () => {
       db.close();
     }
   });
+
+  it('마이그레이션 #132 는 유료 이용권 이름을 플러스로 바꾸고 키·상품은 그대로 둔다', async () => {
+    const db = createClient({ url: ':memory:' });
+    try {
+      await runMigrationsRange(db, 1, 131);
+      expect((await db.execute(`SELECT name FROM plans WHERE key = 'personal'`)).rows[0].name).toBe('개인');
+      expect(await runMigrationsRange(db, 132, 132)).toEqual(['132_rename-personal-plan-to-plus']);
+      const rows = (await db.execute('SELECT key, name, plan_type FROM plans ORDER BY key')).rows.map((r) => [r.key, r.name, r.plan_type]);
+      expect(rows).toEqual([
+        ['free', '무료', 'free'],
+        ['personal', '플러스', 'personal'],
+      ]);
+    } finally {
+      db.close();
+    }
+  });
 });

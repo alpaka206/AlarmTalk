@@ -82,11 +82,11 @@
     <string name="billing_plan_free_price">0원</string>
     <string name="billing_plan_monthly_price_fallback">월 %1$,d원</string>
     <!-- ⚠ 날씨·운세·응원·약 문구는 기본 목소리로 **무료**다(docs/spec/voice-and-message.md §2 — 목록은 등급으로 자르지 않는다).
-         개인 이용권이 더하는 것은 문구 종류가 아니라 **등록한 목소리로 듣는 것**이다 — 종류를 유료 기능처럼 적지 말 것.
+         플러스가 더하는 것은 문구 종류가 아니라 **등록한 목소리로 듣는 것**이다 — 종류를 유료 기능처럼 적지 말 것.
          클립은 준비된 것을 돌려 쓰므로 "매일 새 문구" 도 사실이 아니다. iOS PlanCard.features(for:) 와 글자까지 같다. -->
     <string name="billing_plan_personal_feature_messages_in_voice">등록한 목소리로 듣는 날씨·운세 문구</string>
     <string name="billing_plan_personal_feature_voice">원하는 목소리 1개 등록</string>
-    <string name="billing_plan_personal_name">개인</string>
+    <string name="billing_plan_personal_name">플러스</string>
     <string name="billing_play_manage_description">앱에서 해지를 완료하지 못했어요. Google Play 구독 관리에서 직접 해지할 수 있어요. 구독 상태는 바뀌지 않았어요.</string>
     <string name="billing_play_manage_open">Google Play 열기</string>
     <string name="billing_play_manage_title">Google Play에서 직접 관리가 필요해요</string>
@@ -544,7 +544,7 @@
     <string name="misc2_theme_mode_dark">어두운 모드</string>
     <string name="misc2_settings_not_set">미설정</string>
     <string name="misc2_pass_plan_free">무료</string>
-    <string name="misc2_pass_plan_personal">개인</string>
+    <string name="misc2_pass_plan_personal">플러스</string>
     <string name="misc2_pass_plan_default">이용권</string>
     <string name="misc2_voice_preview_preparing">미리듣기 준비 중</string>
     <string name="misc2_voice_preview_pause">미리듣기 정지</string>
@@ -688,13 +688,13 @@
     <string name="voices_not_ready_message_progress">알람에 쓸 기본 목소리를 다 받아야 알람을 설정할 수 있어요. (%1$d%%)\n목소리 탭에서 진행 상황을 볼 수 있어요.</string>
     <string name="voices_not_ready_message">알람에 쓸 기본 목소리를 다 받아야 알람을 설정할 수 있어요.\n인터넷에 연결된 상태에서 잠시 기다려 주세요.</string>
     <string name="voices_default_download_progress">받는 중 %1$d%%</string>
-    <!-- 기간 한정 개인 플랜(personal_promo). ⚠ 날짜를 문구에 박지 말 것 — 서버 ends_at 을 기기 로케일로 그려 넣는다.
+    <!-- 기간 한정 플러스 무료 이용(personal_promo). ⚠ 날짜를 문구에 박지 말 것 — 서버 ends_at 을 기기 로케일로 그려 넣는다.
          "…까지" 는 ends_at − 1초의 기기 날짜, "…부터" 는 그 다음 달력 날이다(한국 밖 기기에서도 하루 차이로 읽힌다). -->
-    <string name="personal_promo_plan_line">개인 플랜 무료 이용 중 · %1$s까지</string>
-    <string name="personal_promo_end_notice_title">개인 플랜 무료 이용이 곧 끝나요</string>
-    <string name="personal_promo_end_notice_message">%1$s까지 개인 플랜을 무료로 쓸 수 있어요. %2$s부터는 무료 플랜으로 돌아가고, 등록한 목소리는 3일 보관 후 삭제돼요.</string>
+    <string name="personal_promo_plan_line">플러스 무료 이용 중 · %1$s까지</string>
+    <string name="personal_promo_end_notice_title">플러스 무료 이용이 곧 끝나요</string>
+    <string name="personal_promo_end_notice_message">%1$s까지 플러스를 무료로 쓸 수 있어요. %2$s부터는 무료 플랜으로 돌아가고, 등록한 목소리는 3일 보관 후 삭제돼요.</string>
     <!-- 종료 전환 대상이 아닌 계정(deletes_voices_at_end = false, 예: 결제 보류로 활성 구독 행이 남음). 삭제 문장만 뺀다. -->
-    <string name="personal_promo_end_notice_message_keep_voices">%1$s까지 개인 플랜을 무료로 쓸 수 있어요. %2$s부터는 무료 플랜으로 돌아가요.</string>
+    <string name="personal_promo_end_notice_message_keep_voices">%1$s까지 플러스를 무료로 쓸 수 있어요. %2$s부터는 무료 플랜으로 돌아가요.</string>
     <string name="personal_promo_end_notice_dont_show_again">다시 보지 않기</string>
     <string name="system_voice_name_siwoo">시우</string>
     <string name="system_voice_name_mina">미나</string>

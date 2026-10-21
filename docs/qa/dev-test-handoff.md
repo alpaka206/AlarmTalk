@@ -15,7 +15,10 @@
   `appStoreState`. 도구는 `.claude/release-tools/`(저장소 밖): `play-probe.mjs`, `asc-1215.mjs state`.
 - 선물 상품은 두 스토어에서 지웠다(2026-10-16). 커플·가족 이용권과 초대 코드는 아래 「서버·브랜치」 의 브랜치에서
   걷어냈고 **아직 출시 전이다** — 게재 중인 두 앱(위 표)은 커플·가족 이용권과 초대 코드 등록을 그대로 보여 준다.
-  두 스토어의 커플·가족 상품 판매 중지는 오너가 운영 배포 전에 한다(아래 「다음 할 일」 2-①).
+  두 스토어의 커플·가족 상품은 2026-10-21 에 정리했다 — App Store 는 두 구독을 **삭제**(구독자 0), Play 는 두 기본
+  요금제를 **비활성화**(구매 이력이 있는 상품은 지울 수 없다). 원본 백업은 `.claude/release-tools/group-products-backup-20261021.json`.
+  유료 이용권 이름은 '개인' → **'플러스'**(상품 id `personal_monthly` 는 그대로). Play 구독 제목은 바꿨고, App Store 구독
+  표시 이름(ko 'AlarmTalk 플러스'·en·ja)은 '제출 준비 중' 판이라 **1.2.16 을 심사에 낼 때 이 구독을 함께 제출**해야 적용된다.
 - 스토어 문구 원본: [`app-store-listing.md`](../product/app-store-listing.md)·[`play-store-listing.md`](../product/play-store-listing.md),
   출시 노트: [`release-notes.md`](../product/release-notes.md).
 

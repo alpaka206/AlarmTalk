@@ -3221,6 +3221,14 @@ export const migrations: Migration[] = [
       `ALTER TABLE plans DROP COLUMN max_members`,
     ],
   },
+  {
+    // 유료 이용권이 하나만 남아 이름을 '개인' 에서 **'플러스'** 로 바꾼다(2026-10-21 오너 결정 — 커플·가족과 나누던 이름이라
+    // 하나뿐인 지금은 뜻이 없다). 앱 화면은 자기 문자열을 쓰고, 이 값은 구독 응답(`plan.name`)과 관리자 화면이 쓴다.
+    // 상품 id(`personal_monthly`)와 키(`personal`)는 그대로다.
+    id: 132,
+    name: 'rename-personal-plan-to-plus',
+    statements: [`UPDATE plans SET name = '플러스' WHERE key = 'personal'`],
+  },
 ];
 // Errors that mean the statement was already applied — safe to ignore so
 // we can recover databases whose `_migrations` ledger is out of sync with

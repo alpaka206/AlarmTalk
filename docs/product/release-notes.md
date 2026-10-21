@@ -41,7 +41,7 @@ SDK 가 매니페스트에 `AD_ID` 권한을 더하므로 업로드 전에 Play 
 ### ko-KR
 
 ```
-• 커플·가족 이용권 판매를 마쳤습니다. 이제 이용권은 개인 하나입니다.
+• 커플·가족 이용권 판매를 마쳤습니다. 개인 이용권은 이름을 플러스로 바꿨습니다.
 • 목소리 공유와 가족 알람을 정리했습니다. 이미 받아 둔 알람은 내 알람으로 바뀌어 같은 시각에 울립니다. 쓸 수 있는 내 목소리가 있으면 그 목소리로, 없으면 기본 목소리로 울립니다.
 • 개인정보 처리방침과 이용약관을 개정했습니다.
 ```
@@ -49,7 +49,7 @@ SDK 가 매니페스트에 `AD_ID` 권한을 더하므로 업로드 전에 Play 
 ### en-US
 
 ```
-• Couple and Family plans are no longer offered. Personal is now the only plan.
+• Couple and Family plans are no longer offered. The Personal plan is now called Plus.
 • Voice sharing and family alarms have been retired. Alarms you already received become your own alarms and still ring at the same time, in your own voice if you can use one, otherwise in a default voice.
 • Updated the Privacy Policy and Terms of Service.
 ```
@@ -57,7 +57,7 @@ SDK 가 매니페스트에 `AD_ID` 권한을 더하므로 업로드 전에 Play 
 ### ja-JP
 
 ```
-• カップル・ファミリー向け利用券の販売を終了しました。利用券はパーソナルのみになりました。
+• カップル・ファミリー向け利用券の販売を終了しました。パーソナルは名前が「プラス」に変わりました。
 • 声の共有と家族アラームを整理しました。受け取ったアラームは自分のアラームになり、同じ時刻に鳴ります。使える自分の声があればその声で、なければ基本の声で鳴ります。
 • プライバシーポリシーと利用規約を改定しました。
 ```
@@ -67,7 +67,7 @@ SDK 가 매니페스트에 `AD_ID` 권한을 더하므로 업로드 전에 Play 
 #### ko
 
 ```
-• 커플·가족 이용권 판매를 마쳤습니다. 이제 이용권은 개인 하나입니다.
+• 커플·가족 이용권 판매를 마쳤습니다. 개인 이용권은 이름을 플러스로 바꿨습니다.
 • 목소리 공유와 가족 알람을 정리했습니다. 이미 받아 둔 알람은 내 알람으로 바뀌어 같은 시각에 울립니다. 쓸 수 있는 내 목소리가 있으면 그 목소리로, 없으면 기본 목소리로 울립니다.
 • 개인정보 처리방침과 이용약관을 개정했습니다.
 ```
@@ -75,7 +75,7 @@ SDK 가 매니페스트에 `AD_ID` 권한을 더하므로 업로드 전에 Play 
 #### en-US
 
 ```
-• Couple and Family plans are no longer offered. Personal is now the only plan.
+• Couple and Family plans are no longer offered. The Personal plan is now called Plus.
 • Voice sharing and family alarms have been retired. Alarms you already received become your own alarms and still ring at the same time, in your own voice if you can use one, otherwise in a default voice.
 • Updated the Privacy Policy and Terms of Service.
 ```
@@ -83,7 +83,7 @@ SDK 가 매니페스트에 `AD_ID` 권한을 더하므로 업로드 전에 Play 
 #### ja
 
 ```
-• カップル・ファミリー向け利用券の販売を終了しました。利用券はパーソナルのみになりました。
+• カップル・ファミリー向け利用券の販売を終了しました。パーソナルは名前が「プラス」に変わりました。
 • 声の共有と家族アラームを整理しました。受け取ったアラームは自分のアラームになり、同じ時刻に鳴ります。使える自分の声があればその声で、なければ基本の声で鳴ります。
 • プライバシーポリシーと利用規約を改定しました。
 ```

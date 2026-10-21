@@ -81,7 +81,7 @@ Play Console 에 올리는 값의 원본이다. 콘솔을 고칠 때는 이 파�
 
 알람톡(AlarmTalk · アラームトーク)은 목소리로 깨워 주는 알람이에요.
 • 무료: 기본 목소리 4종이 날씨·운세 같은 문구를 읽어 주고, 알람마다 30초까지 녹음해 두면 그 녹음 그대로 울려요.
-• 개인 이용권: 내 목소리나 허락받은 목소리를 등록하면, AI 음성 합성으로 그 목소리가 녹음에 없던 새 문장도 읽어 줘요.
+• 플러스: 내 목소리나 허락받은 목소리를 등록하면, AI 음성 합성으로 그 목소리가 녹음에 없던 새 문장도 읽어 줘요.
 수학 문제나 흔들기 같은 해제 미션 없이, 듣고 싶은 목소리로 일어나요.
 
 ■ 무료: 기본 목소리와 녹음 알람
@@ -94,7 +94,7 @@ Play Console 에 올리는 값의 원본이다. 콘솔을 고칠 때는 이 파�
 • 녹음 알람: 알람마다 최대 30초까지 녹음하면 울릴 때 녹음한 그대로 재생돼요. 그 알람에만 쓰는 소리라서 다른 문장을 읽게 할 수는 없어요.
 • 공휴일에는 끄기(대체·임시 공휴일 포함, 한국·일본·미국 달력), 다시 울림, 목소리 크기 조절도 있어요.
 
-■ 개인 이용권: 등록한 목소리로 새 문장까지
+■ 플러스: 등록한 목소리로 새 문장까지
 • 앱에서 녹음하거나 음성 파일(12초~2분)을 올려 목소리 1개를 등록해요. 본인 목소리이거나, 권리를 가진 사람에게 허락받은 목소리만 등록할 수 있어요.
 • 등록한 목소리는 AI 음성 합성으로 녹음에 없던 문장을 읽어요. 기상 인사·날씨·운세·응원·약 문구는 서버에서 미리 만들어 폰에 받아 두고, 나와의 관계(예: 딸)와 나를 부를 이름(예: 엄마)을 적으면(둘 다 선택) 거기에 맞춰 만들어요.
 • 직접 입력: 내가 쓴 문장을 AI가 그 목소리로 읽어 줘요. 새로 만들기는 월 30회이고, 같은 목소리로 같은 문장을 쓰는 알람이 이 폰에 남아 있으면 다시 써도 횟수가 줄지 않아요.
@@ -124,7 +124,7 @@ Play Console 에 올리는 값의 원본이다. 콘솔을 고칠 때는 이 파�
 • 재부팅·시간대 변경·시각 변경 뒤에도 알람을 다시 예약해요.
 
 ■ 이용권과 결제
-개인 이용권은 매월 자동 갱신되는 Google Play 정기 결제예요. 가격과 갱신 조건은 앱의 구매 화면에서 확인할 수 있어요. Google Play 스토어의 [결제 및 정기 결제]에서 해지하면 이번 결제 기간이 끝날 때까지 쓸 수 있어요.
+플러스는 매월 자동 갱신되는 Google Play 정기 결제예요. 가격과 갱신 조건은 앱의 구매 화면에서 확인할 수 있어요. Google Play 스토어의 [결제 및 정기 결제]에서 해지하면 이번 결제 기간이 끝날 때까지 쓸 수 있어요.
 
 ■ 권한
 • 필수: 알림·정확한 알람·전체 화면 알림(제시간에, 잠금 화면에서 울리기), 포그라운드 서비스(울리는 동안 소리 유지, 목소리 문구 받기), 오디오 설정·절전 해제·진동, 재부팅 뒤 재예약, 네트워크(울리는 순간에는 쓰지 않음)
@@ -143,7 +143,7 @@ Wake up to a voice you love.
 
 AlarmTalk (알람톡 · アラームトーク) wakes you with a voice.
 • Free: default voices read messages like weather and fortune, and a recording plays exactly as recorded.
-• Personal plan: AI speech synthesis lets a voice you register read new messages it never recorded.
+• Plus: AI speech synthesis lets a voice you register read new messages it never recorded.
 No math, no shaking.
 
 ■ Free
@@ -153,7 +153,7 @@ No math, no shaking.
 • Recorded alarm: up to 30 seconds per alarm, played exactly as recorded; it can't read other text
 • Turn off on holidays (incl. substitute and temporary holidays; Korea, Japan or US), snooze, voice volume
 
-■ Personal plan
+■ Plus
 • Register one voice per account, once a month, by recording or uploading audio (12 sec to 2 min): yours, or one you have permission to use
 • Wake-up, weather, fortune, encouragement and meds messages in that voice are made in advance on our servers and downloaded to your phone, tailored to who the voice is to you and what it calls you (both optional)
 • Type it yourself: AI reads your text in that voice (30 new a month; free if an alarm on this phone has the same text and voice)
@@ -177,7 +177,7 @@ No math, no shaking.
 • Reschedules after reboot, time or time-zone changes
 
 ■ Plans and billing
-The Personal plan is a monthly auto-renewing Google Play subscription; the price and terms are in the app. If you cancel in Google Play, you keep access until the period ends.
+Plus is a monthly auto-renewing Google Play subscription; the price and terms are in the app. If you cancel in Google Play, you keep access until the period ends.
 
 ■ Permissions
 • Required: notifications, exact alarms, full-screen alerts, foreground service, audio settings, wake lock, vibrate, boot and network (not used to ring)
@@ -196,7 +196,7 @@ Support: https://alarm-talk.com/en/contact/
 
 アラームトーク(AlarmTalk・알람톡)は、声で起こしてくれるアラームです。
 • 無料：基本の声4種類が天気・運勢などのメッセージを読み上げます。アラームごとに30秒まで録音すれば、録音したそのままの音で鳴ります。
-• パーソナルプラン：自分の声や許可を得た声を登録すると、AI音声合成で、録音にない新しいメッセージもその声が読み上げます。
+• プラス：自分の声や許可を得た声を登録すると、AI音声合成で、録音にない新しいメッセージもその声が読み上げます。
 計算問題やシェイクのようなミッションはなく、聞きたい声で目を覚ませます。
 
 ■ 無料：基本の声と録音アラーム
@@ -209,7 +209,7 @@ Support: https://alarm-talk.com/en/contact/
 • 録音アラーム：アラームごとに最大30秒まで録音すると、鳴るときに録音したそのままの音が流れます。そのアラーム専用の音なので、別の文を読み上げさせることはできません。
 • 祝日はオフにする(振替休日・臨時祝日を含む。日本・韓国・米国のカレンダー)、スヌーズ、声の音量調整も使えます。
 
-■ パーソナルプラン：登録した声で新しいメッセージも
+■ プラス：登録した声で新しいメッセージも
 • アプリで録音するか、音声ファイル(12秒〜2分)をアップロードして、声を1つ登録します。登録できるのは、本人の声か、権利を持つ人から許可を得た声だけです。
 • 登録した声は、AI音声合成で録音にない文を読み上げます。起床のあいさつ・天気・運勢・応援・薬のメッセージはサーバーであらかじめ作ってスマホにダウンロードし、あなたとの関係(例：娘)と、あなたを呼ぶ名前(例：ママ)を入れると(どちらも任意)、それに合わせて作ります。
 • 自分で入力：書いた文をAIがその声で読み上げます。新しく作れるのは月30回まで。同じ声・同じ文を使うアラームがこのスマホに残っていれば、回数に数えません。
@@ -239,7 +239,7 @@ Support: https://alarm-talk.com/en/contact/
 • 再起動・タイムゾーン変更・時刻変更のあともアラームを再設定します。
 
 ■ プランとお支払い
-パーソナルプランは毎月自動更新されるGoogle Playの定期購入です。料金と更新条件はアプリの購入画面でご確認いただけます。Google Playストアの[お支払いと定期購入]で解約すると、現在の請求期間が終わるまで使えます。
+プラスは毎月自動更新されるGoogle Playの定期購入です。料金と更新条件はアプリの購入画面でご確認いただけます。Google Playストアの[お支払いと定期購入]で解約すると、現在の請求期間が終わるまで使えます。
 
 ■ 権限
 • 必須：通知・正確なアラーム・全画面通知(時間どおりに、ロック画面で鳴らす)、フォアグラウンドサービス(鳴動中の再生維持、声のメッセージの保存)、オーディオ設定・スリープ解除・バイブレーション、再起動後の再設定、ネットワーク(鳴る瞬間には使いません)

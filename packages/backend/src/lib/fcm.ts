@@ -567,12 +567,12 @@ export function personalPromoEndWarningBody(deleteAfter: Date, now: Date = new D
   // 그 경로에서는 오지 않는 갈래다. 방어로만 둔다.)
   if (deleteAfter.getTime() - now.getTime() < 60 * 60 * 1000) {
     return (
-      '기간 한정 개인 플랜이 끝나 목소리가 곧 영구 삭제돼요. ' +
+      '기간 한정 플러스 무료 이용이 끝나 목소리가 곧 영구 삭제돼요. ' +
       '삭제 전에 이용권을 시작하면 그대로 쓸 수 있어요.'
     );
   }
   return (
-    `기간 한정 개인 플랜이 끝나 목소리를 ${formatKstHour(deleteAfter)}까지만 보관해요. ` +
+    `기간 한정 플러스 무료 이용이 끝나 목소리를 ${formatKstHour(deleteAfter)}까지만 보관해요. ` +
     '그 전에 이용권을 시작하면 그대로 쓸 수 있고, 지나면 영구 삭제돼요.'
   );
 }

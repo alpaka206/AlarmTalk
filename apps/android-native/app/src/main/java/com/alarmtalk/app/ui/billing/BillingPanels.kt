@@ -107,7 +107,7 @@ internal fun SubscriptionPanel(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        // 기간 한정 개인 플랜 — "개인 플랜 무료 이용 중 · 10월 31일까지". 날짜는 서버 값.
+        // 기간 한정 플러스 무료 이용 — "플러스 무료 이용 중 · 10월 31일까지". 날짜는 서버 값.
         val promoLastDay = personalPromoLastDay(personalPromo, java.time.ZoneId.systemDefault())
         val promoLineText = promoLastDay?.let { lastDay ->
             val locale = LocalConfiguration.current.locales[0]
