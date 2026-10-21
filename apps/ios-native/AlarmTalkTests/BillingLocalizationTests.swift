@@ -14,7 +14,7 @@ struct BillingLocalizationTests {
         let bundle = try bundle(language)
         for key in ["personal", "individual", "plus", "plus_monthly", "plus_yearly"] {
             #expect(PlanTier.displayName(forPlanKey: key, bundle: bundle)
-                    == (language == "en" ? "Personal" : "パーソナル"))
+                    == (language == "en" ? "Plus" : "プラス"))
         }
         // 커플·가족 이용권은 없어졌다 — 그 키도 모르는 키다.
         for key in ["couple", "family", "unknown"] {

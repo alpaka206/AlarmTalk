@@ -18,7 +18,7 @@ enum PlanTier: String, CaseIterable, Codable, Equatable {
     func localizedDisplayLabel(bundle: Bundle = .main) -> String {
         switch self {
         case .free: return String(localized: "plan.name.free", defaultValue: "무료", bundle: bundle)
-        case .personal: return String(localized: "plan.name.personal", defaultValue: "개인", bundle: bundle)
+        case .personal: return String(localized: "plan.name.personal", defaultValue: "플러스", bundle: bundle)
         }
     }
 

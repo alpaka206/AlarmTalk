@@ -192,13 +192,13 @@ App Store Connect → My Apps → AlarmTalk → Features → In-App Purchases �
 
 ### 시뮬레이터 로컬 테스트
 
-`apps/ios-native/AlarmTalk/Configuration/StoreKitConfiguration.storekit` 파일이 시뮬레이터용 SKU 정의(개인 구독 하나)를 담고 있다. `project.yml` 의 scheme 설정에서 자동 선택되며, 실기기/TestFlight 빌드에서는 무시되고 App Store Connect 가 권위로 사용된다.
+`apps/ios-native/AlarmTalk/Configuration/StoreKitConfiguration.storekit` 파일이 시뮬레이터용 SKU 정의(플러스 구독 하나 — `personal_monthly`)를 담고 있다. `project.yml` 의 scheme 설정에서 자동 선택되며, 실기기/TestFlight 빌드에서는 무시되고 App Store Connect 가 권위로 사용된다.
 
 xcodegen 후 Xcode 에서:
 
 1. Scheme → Edit Scheme → Run → Options → StoreKit Configuration 이 `StoreKitConfiguration.storekit` 인지 확인.
-2. 시뮬레이터에서 앱 실행 → 더보기 → 이용권 → 카드 2장(무료·개인,
-   `PlanTier.allCases`)이 뜨고 개인 카드에 `displayPrice` 가 붙는지 확인.
+2. 시뮬레이터에서 앱 실행 → 더보기 → 이용권 → 카드 2장(무료·플러스,
+   `PlanTier.allCases`)이 뜨고 플러스 카드에 `displayPrice` 가 붙는지 확인.
 3. 구매 버튼 탭 → 결제 시트가 뜨고 success/userCancelled/pending 분기가 모두 동작하는지 확인.
 4. "이전 구매 복원" 버튼 → `AppStore.sync()` 가 호출되고 다른 시뮬레이터 기기/Apple ID 의 구독이 propagate 되는지 확인.
 

@@ -192,7 +192,7 @@
   "pricing": {
     "meta": {
       "title": "Pricing",
-      "description": "Start free, and add a plan when you want your own voice. Compare Free and Personal at a glance."
+      "description": "Start free, and add a plan when you want your own voice. Compare Free and Plus at a glance."
     },
     "headline": "Try it free first.",
     "lead": "Start free, add a plan when you need one.",
@@ -202,7 +202,7 @@
         "price": "Free"
       },
       "personal": {
-        "name": "Personal",
+        "name": "Plus",
         "price": "$3.90/mo"
       }
     },

@@ -20,7 +20,7 @@ The shipping Android app. It is intentionally scoped to local alarm reliability,
 - email/password auth against the deployed AlarmTalk API
 - Google ID-token auth support
 - alarm metadata sync to the deployed AlarmTalk API on Alarms-tab entry
-- Personal subscription status and purchase (the Couple / Family plans, invite codes, voice sharing and family alarms were removed on 2026-10-20)
+- Plus subscription (`personal_monthly`) status and purchase (the Couple / Family plans, invite codes, voice sharing and family alarms were removed on 2026-10-20)
 - `AlarmManager.setAlarmClock`
 - full-screen ringing activity through a high-importance alarm foreground-service notification carrier
 - bundled local alarm tone generated into the APK at build time

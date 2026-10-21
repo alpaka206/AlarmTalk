@@ -80,7 +80,7 @@
     <string name="billing_plan_monthly_price_fallback">月額%1$,dウォン</string>
     <string name="billing_plan_personal_feature_messages_in_voice">登録した声で聞く天気・運勢メッセージ</string>
     <string name="billing_plan_personal_feature_voice">好きな声を1つ登録</string>
-    <string name="billing_plan_personal_name">パーソナル</string>
+    <string name="billing_plan_personal_name">プラス</string>
     <string name="billing_play_manage_description">アプリで解約を完了できませんでした。Google Playの定期購入管理から直接解約できます。契約状態は変わっていません。</string>
     <string name="billing_play_manage_open">Google Playを開く</string>
     <string name="billing_play_manage_title">Google Playでの管理が必要です</string>
@@ -520,7 +520,7 @@
     <string name="misc2_theme_mode_dark">ダークモード</string>
     <string name="misc2_settings_not_set">未設定</string>
     <string name="misc2_pass_plan_free">無料</string>
-    <string name="misc2_pass_plan_personal">パーソナル</string>
+    <string name="misc2_pass_plan_personal">プラス</string>
     <string name="misc2_pass_plan_default">利用券</string>
     <string name="misc2_voice_preview_preparing">プレビュー準備中</string>
     <string name="misc2_voice_preview_pause">プレビューを停止</string>
@@ -662,10 +662,10 @@
     <string name="voices_not_ready_message_progress">アラームに使う基本の声のダウンロードが終わると、アラームを設定できます。(%1$d%%)\n進み具合は「声」タブで確認できます。</string>
     <string name="voices_not_ready_message">アラームに使う基本の声のダウンロードが終わると、アラームを設定できます。\nインターネットに接続したまま少しお待ちください。</string>
     <string name="voices_default_download_progress">ダウンロード中 %1$d%%</string>
-    <string name="personal_promo_plan_line">パーソナルプラン無料利用中 · %1$sまで</string>
-    <string name="personal_promo_end_notice_title">パーソナルプランの無料利用がまもなく終了します</string>
-    <string name="personal_promo_end_notice_message">%1$sまでパーソナルプランを無料でご利用いただけます。%2$sからは無料プランに戻り、登録した声は3日間保管した後に削除されます。</string>
-    <string name="personal_promo_end_notice_message_keep_voices">%1$sまでパーソナルプランを無料でご利用いただけます。%2$sからは無料プランに戻ります。</string>
+    <string name="personal_promo_plan_line">プラス無料利用中 · %1$sまで</string>
+    <string name="personal_promo_end_notice_title">プラスの無料利用がまもなく終了します</string>
+    <string name="personal_promo_end_notice_message">%1$sまでプラスを無料でご利用いただけます。%2$sからは無料プランに戻り、登録した声は3日間保管した後に削除されます。</string>
+    <string name="personal_promo_end_notice_message_keep_voices">%1$sまでプラスを無料でご利用いただけます。%2$sからは無料プランに戻ります。</string>
     <string name="personal_promo_end_notice_dont_show_again">今後表示しない</string>
     <string name="system_voice_name_siwoo">シウ</string>
     <string name="system_voice_name_mina">ミナ</string>

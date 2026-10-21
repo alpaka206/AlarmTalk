@@ -234,9 +234,9 @@ struct RootView: View {
                 // ⚠ 삭제 문장은 **서버가 대상이라고 할 때만** 싣는다(`deletes_voices_at_end`).
                 // 보류 중인 구독 행이 남은 계정은 종료 전환 대상이 아니라 목소리가 지워지지 않는다.
                 if shown.promo.deletesVoicesAtEnd {
-                    Text("\(String(days.lastDay))까지 개인 플랜을 무료로 쓸 수 있어요. \(String(days.firstFreeDay))부터는 무료 플랜으로 돌아가고, 등록한 목소리는 3일 보관 후 삭제돼요.")
+                    Text("\(String(days.lastDay))까지 플러스를 무료로 쓸 수 있어요. \(String(days.firstFreeDay))부터는 무료 플랜으로 돌아가고, 등록한 목소리는 3일 보관 후 삭제돼요.")
                 } else {
-                    Text("\(String(days.lastDay))까지 개인 플랜을 무료로 쓸 수 있어요. \(String(days.firstFreeDay))부터는 무료 플랜으로 돌아가요.")
+                    Text("\(String(days.lastDay))까지 플러스를 무료로 쓸 수 있어요. \(String(days.firstFreeDay))부터는 무료 플랜으로 돌아가요.")
                 }
             }
         }
@@ -374,9 +374,9 @@ struct RootView: View {
 
     /// 종료 안내의 제목 — 알럿과 '보였는가' 확인(`verifyShownNoticeIsVisible`)이 같은 값을 쓴다.
     /// 알럿은 번역 카탈로그 키로, 확인은 그 키를 번역한 문자열로 본다(`.alert` 가 싣는 제목과 같다).
-    private static var personalPromoNoticeTitleKey: LocalizedStringKey { "개인 플랜 무료 이용이 곧 끝나요" }
+    private static var personalPromoNoticeTitleKey: LocalizedStringKey { "플러스 무료 이용이 곧 끝나요" }
     private static var personalPromoNoticeTitle: String {
-        String(localized: "개인 플랜 무료 이용이 곧 끝나요")
+        String(localized: "플러스 무료 이용이 곧 끝나요")
     }
 
     /// 떠 있다고 적힌 안내를 확인한다 — 남의 것이면 걷고, 화면에 없으면 걷는다.

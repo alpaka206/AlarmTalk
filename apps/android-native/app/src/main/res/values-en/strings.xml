@@ -80,7 +80,7 @@
     <string name="billing_plan_monthly_price_fallback">KRW %1$,d/month</string>
     <string name="billing_plan_personal_feature_messages_in_voice">Weather and fortune messages in your registered voice</string>
     <string name="billing_plan_personal_feature_voice">Register 1 voice of your choice</string>
-    <string name="billing_plan_personal_name">Personal</string>
+    <string name="billing_plan_personal_name">Plus</string>
     <string name="billing_play_manage_description">We couldn\'t complete the cancellation in the app. You can cancel directly in Google Play subscriptions. Your subscription hasn\'t changed.</string>
     <string name="billing_play_manage_open">Open Google Play</string>
     <string name="billing_play_manage_title">Manage it directly in Google Play</string>
@@ -520,7 +520,7 @@
     <string name="misc2_theme_mode_dark">Dark mode</string>
     <string name="misc2_settings_not_set">Not set</string>
     <string name="misc2_pass_plan_free">Free</string>
-    <string name="misc2_pass_plan_personal">Personal</string>
+    <string name="misc2_pass_plan_personal">Plus</string>
     <string name="misc2_pass_plan_default">Plan</string>
     <string name="misc2_voice_preview_preparing">Preparing preview</string>
     <string name="misc2_voice_preview_pause">Stop preview</string>
@@ -662,10 +662,10 @@
     <string name="voices_not_ready_message_progress">You can set alarms once the default voices finish downloading. (%1$d%%)\nYou can check progress in the Voices tab.</string>
     <string name="voices_not_ready_message">You can set alarms once the default voices finish downloading.\nPlease stay connected to the internet for a moment.</string>
     <string name="voices_default_download_progress">Downloading %1$d%%</string>
-    <string name="personal_promo_plan_line">Personal plan free until %1$s</string>
-    <string name="personal_promo_end_notice_title">Your free Personal plan ends soon</string>
-    <string name="personal_promo_end_notice_message">You can use the Personal plan for free until %1$s. From %2$s, you\'ll return to the Free plan, and voices you registered will be kept for 3 days and then deleted.</string>
-    <string name="personal_promo_end_notice_message_keep_voices">You can use the Personal plan for free until %1$s. From %2$s, you\'ll return to the Free plan.</string>
+    <string name="personal_promo_plan_line">Plus free until %1$s</string>
+    <string name="personal_promo_end_notice_title">Your free Plus ends soon</string>
+    <string name="personal_promo_end_notice_message">You can use Plus for free until %1$s. From %2$s, you\'ll return to the Free plan, and voices you registered will be kept for 3 days and then deleted.</string>
+    <string name="personal_promo_end_notice_message_keep_voices">You can use Plus for free until %1$s. From %2$s, you\'ll return to the Free plan.</string>
     <string name="personal_promo_end_notice_dont_show_again">Don\'t show again</string>
     <string name="system_voice_name_siwoo">Siwoo</string>
     <string name="system_voice_name_mina">Mina</string>

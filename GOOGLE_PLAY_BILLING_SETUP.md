@@ -33,7 +33,7 @@
 
 | 플랜(planKey) | **Play Console 구독 상품 ID** | plan_type | 현재 시드가(price_krw) |
 |---------------|------------------------------|-----------|------------------------|
-| `personal` (개인) | `personal_monthly` | personal | **₩3,900** |
+| `personal` (플러스) | `personal_monthly` | personal | **₩3,900** |
 
 > ✅ **가격이 코드/DB 에 반영됨**(마이그레이션 `#52 plan-prices-and-family-5`, `migrations.ts`). 근거·수익률은 `PRICING.md`.
 > Play Console 상품 가격도 위 표에 맞춰 설정하면 된다.
@@ -46,7 +46,7 @@
 3. **DB plans 시드** — `…/lib/migrations.ts` (planKey·price_krw)
 
 > 새 플랜을 추가하려면: ① 위 1~3에 planKey 추가 → ② Play Console에 `{planKey}_monthly` 상품 생성.
-> **개인 플랜은 추가 코드 변경이 전혀 필요 없다.** Play Console에서 상품만 만들면 끝.
+> **플러스(상품 `personal_monthly`)는 추가 코드 변경이 전혀 필요 없다.** Play Console에서 상품만 만들면 끝.
 
 ---
 
@@ -65,7 +65,7 @@
      `oneTimeProducts.purchaseOptions:batchUpdateStates`). 예전에 만든 상품이라 지우지 않고 남긴다 — 다시 켜지 말 것.
    - 서버는 그 상품의 구매를 Play 를 부르기 전에 400 `UNKNOWN_PRODUCT` 로 돌려준다 — 코드를 만들지 않고 확인
      (acknowledge)도 하지 않으므로 Play 가 3일 뒤 자동 환불한다. 앱(1.2.13~)은 1회성 상품을 조회·판매하지 않는다
-     (`PlayBillingProducts.all` — 1.2.16 부터 개인 구독 하나).
+     (`PlayBillingProducts.all` — 1.2.16 부터 플러스 구독 하나).
    - 할인·무료 이용이 필요하면 **Play 프로모션 코드**(Play Console 에서 만든다 — 결제가 Play 를 거친다)를 쓴다.
      우리 서버에 코드 체계를 다시 만들지 않는다.
 4. ⚠ **커플·가족 구독(`couple_monthly`·`family_monthly`)은 2026-10-20 폐지 — 기본 요금제를 비활성화한다**(오너, 운영 서버
@@ -120,7 +120,7 @@ wrangler secret put GOOGLE_RTDN_VERIFICATION_TOKEN --env production
   id: <다음 번호>,
   name: 'plan-price-update-2026',
   statements: [
-    `UPDATE plans SET price_krw = <개인가>  WHERE key = 'personal'`,
+    `UPDATE plans SET price_krw = <플러스 가격>  WHERE key = 'personal'`,
   ],
 },
 ```

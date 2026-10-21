@@ -17,7 +17,7 @@ final class BillingScreenshotUITests: XCTestCase {
         billing.tap()
 
         // 화면이 그려질 때까지 기다린다(플랜 카드 중 하나라도 뜨면 된 것).
-        _ = app.staticTexts["개인"].waitForExistence(timeout: 10)
+        _ = app.staticTexts["플러스"].waitForExistence(timeout: 10)
 
         var report = ["", "===== 이용권 화면에 보이는 글자 ====="]
         for t in app.staticTexts.allElementsBoundByIndex.prefix(40) where !t.label.isEmpty {

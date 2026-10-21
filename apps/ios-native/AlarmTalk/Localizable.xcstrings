@@ -339,36 +339,36 @@
     "%@%%" : {
       "shouldTranslate" : false
     },
-    "%@까지 개인 플랜을 무료로 쓸 수 있어요. %@부터는 무료 플랜으로 돌아가고, 등록한 목소리는 3일 보관 후 삭제돼요." : {
+    "%@까지 플러스를 무료로 쓸 수 있어요. %@부터는 무료 플랜으로 돌아가고, 등록한 목소리는 3일 보관 후 삭제돼요." : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "You can use the Personal plan for free until %1$@. From %2$@, you'll return to the Free plan, and voices you registered will be kept for 3 days and then deleted."
+            "value" : "You can use Plus for free until %1$@. From %2$@, you'll return to the Free plan, and voices you registered will be kept for 3 days and then deleted."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%1$@までパーソナルプランを無料でご利用いただけます。%2$@からは無料プランに戻り、登録した声は3日間保管した後に削除されます。"
+            "value" : "%1$@までプラスを無料でご利用いただけます。%2$@からは無料プランに戻り、登録した声は3日間保管した後に削除されます。"
           }
         }
       }
     },
-    "%@까지 개인 플랜을 무료로 쓸 수 있어요. %@부터는 무료 플랜으로 돌아가요." : {
+    "%@까지 플러스를 무료로 쓸 수 있어요. %@부터는 무료 플랜으로 돌아가요." : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "You can use the Personal plan for free until %1$@. From %2$@, you'll return to the Free plan."
+            "value" : "You can use Plus for free until %1$@. From %2$@, you'll return to the Free plan."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%1$@までパーソナルプランを無料でご利用いただけます。%2$@からは無料プランに戻ります。"
+            "value" : "%1$@までプラスを無料でご利用いただけます。%2$@からは無料プランに戻ります。"
           }
         }
       }
@@ -892,53 +892,53 @@
         }
       }
     },
-    "개인" : {
+    "플러스" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Personal"
+            "value" : "Plus"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "パーソナル"
+            "value" : "プラス"
           }
         }
       }
     },
-    "개인 플랜 무료 이용 중 · %@까지" : {
+    "플러스 무료 이용 중 · %@까지" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Personal plan free until %@"
+            "value" : "Plus free until %@"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "パーソナルプラン無料利用中 · %@まで"
+            "value" : "プラス無料利用中 · %@まで"
           }
         }
       }
     },
-    "개인 플랜 무료 이용이 곧 끝나요" : {
+    "플러스 무료 이용이 곧 끝나요" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Your free Personal plan ends soon"
+            "value" : "Your free Plus ends soon"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "パーソナルプランの無料利用がまもなく終了します"
+            "value" : "プラスの無料利用がまもなく終了します"
           }
         }
       }
@@ -12024,19 +12024,19 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Personal"
+            "value" : "Plus"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "パーソナル"
+            "value" : "プラス"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "개인"
+            "value" : "플러스"
           }
         }
       }

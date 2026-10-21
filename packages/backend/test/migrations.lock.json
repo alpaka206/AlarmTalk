@@ -502,5 +502,9 @@
   "131": {
     "name": "drop-couple-family-plans",
     "sha": "b4bdc56ed01119ce"
+  },
+  "132": {
+    "name": "rename-personal-plan-to-plus",
+    "sha": "6be011ceb20cc0fa"
   }
 }
