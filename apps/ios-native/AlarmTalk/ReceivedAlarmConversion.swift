@@ -441,6 +441,7 @@ extension VoiceStudioViewModel {
         let deviceLanguage = Self.appVoiceLanguage()
         let now = Int64(Date().timeIntervalSince1970 * 1000)
         var settled: Set<String> = []
+        var promotedOriginals: [LocalAlarmRecord] = []
         var promoted = 0
         for id in pending.sorted() {
             let record = alarmStore.record(id: id)
@@ -465,12 +466,22 @@ extension VoiceStudioViewModel {
                 next.syncState = alarmStore.nextLocalSyncState(for: next).rawValue
                 _ = alarmStore.upsert(next)
                 promoted += 1
+                promotedOriginals.append(record)
                 settled.insert(id)
             case .keepMina, .untouched:
                 settled.insert(id)
             case .hold:
                 continue
             }
+        }
+        // ⚠ **올린 행이 디스크에 남은 뒤에야 기록을 지운다**(Codex #932·#934). `upsert` 의 저장은 비동기라, 백그라운드
+        // 실행이 그 전에 끝나면 다음 실행은 미나 행을 다시 읽는데 기록만 사라져 다시 올릴 길이 없다. 못 앉혔으면 메모리의
+        // 행도 **미나로 되돌리고** 기록을 남긴다 — 올린 채 두면 같은 실행의 다음 회차가 그 행을 '고친 행' 으로 읽어 기록을
+        // 지운다(저장이 계속 실패하면 디스크는 미나인데 기록이 없다).
+        if !promotedOriginals.isEmpty, !alarmStore.saveNow() {
+            for original in promotedOriginals { _ = alarmStore.upsert(original) }
+            settled.subtract(promotedOriginals.map(\.id))
+            promoted = 0
         }
         promotions.remove(settled, ownerUserID: owner)
         if promoted > 0 { needsScheduleReconcile = true }

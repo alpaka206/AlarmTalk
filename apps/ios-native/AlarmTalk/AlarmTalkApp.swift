@@ -332,6 +332,21 @@ struct AlarmTalkApp: App {
                         guard auth.session != nil, !owned.isEmpty else { return }
                         stockClipPrefetcher.start(session: auth.session, ownedVoiceProfileIDs: owned)
                     }
+                    // 받은 알람 2단계의 보류는 재료를 기다린다 — 내 클론의 인사말 클립(선다운로드)과 이번 실행의 이용권
+                    // 확인이 목록 새로고침보다 늦게 끝나는 것이 보통의 콜드 스타트 순서다(Codex #932). 둘이 끝날 때 다시 본다.
+                    .onChange(of: stockClipPrefetcher.state) { _, state in
+                        guard state == .finished else { return }
+                        Task { await promoteHeldReceivedAlarms() }
+                    }
+                    .onChange(of: socialFeatures.isRefreshing) { wasRefreshing, refreshing in
+                        guard wasRefreshing, !refreshing else { return }
+                        Task { await promoteHeldReceivedAlarms() }
+                    }
+                    // 알람 파일 로드가 위 둘의 대기 상한(3초)보다 늦게 끝나면 그 회차는 0건으로 지나간다 — 로드가 끝날 때 다시 본다.
+                    .onChange(of: alarmStore.hasLoadedFromDisk) { _, loaded in
+                        guard loaded else { return }
+                        Task { await promoteHeldReceivedAlarms() }
+                    }
                     // **계정 설정(지역·사주)을 이 기기에 받아 적는다**(2026-09-30, 스펙 voice-and-message.md
                     // 「계정의 지역·사주는 기기에 받아 적는다」). 로그인·`/auth/me`·설정 저장 응답이 모두 여기로
                     // 온다(콜드 스타트의 세션 복원은 `initial`). 규칙은 `DynamicPromptPreferences.adoptAccount`
@@ -601,6 +616,24 @@ struct AlarmTalkApp: App {
         await subscriptions.flushPendingRevocations()
         await subscriptions.replayUnfinishedTransactions()
         await subscriptions.refreshPurchasedProducts()
+    }
+
+    /// 보류된 **받은 알람 2단계**(`ReceivedAlarmPromotion`)를 다시 본다 — 기록이 남은 계정만. 올린 행이 있으면 예약을
+    /// 새 소리로 다시 건다(AlarmKit 은 예약할 때 소리가 정해진다). 판정 조건은 목록 새로고침 뒤의 회차와 같다
+    /// (`PushNotificationCoordinator` — 신선한 목록이 없으면 `promoteConvertedReceivedAlarms` 가 0 을 돌려준다).
+    private func promoteHeldReceivedAlarms() async {
+        guard let owner = auth.session?.user.id,
+              !ReceivedAlarmPromotionStore().pendingIDs(for: owner).isEmpty else { return }
+        await alarmStore.waitUntilLoadedFromDisk()
+        guard auth.session?.user.id == owner else { return }
+        let promoted = voiceStudio.promoteConvertedReceivedAlarms(
+            alarmStore: alarmStore,
+            ownerUserId: owner,
+            entitlementConfirmed: socialFeatures.entitlementSnapshotComplete
+        )
+        if promoted > 0 {
+            await AlarmScheduleReconciler.reconcile(store: alarmStore, alarmKit: alarmKit, ownerUserId: owner)
+        }
     }
 
     /// **새 스톡 클립으로 갈아타고, 다 끝났으면 옛 파일을 지운다.**
