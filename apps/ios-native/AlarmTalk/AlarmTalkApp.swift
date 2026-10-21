@@ -342,6 +342,11 @@ struct AlarmTalkApp: App {
                         guard wasRefreshing, !refreshing else { return }
                         Task { await promoteHeldReceivedAlarms() }
                     }
+                    // 알람 파일 로드가 위 둘의 대기 상한(3초)보다 늦게 끝나면 그 회차는 0건으로 지나간다 — 로드가 끝날 때 다시 본다.
+                    .onChange(of: alarmStore.hasLoadedFromDisk) { _, loaded in
+                        guard loaded else { return }
+                        Task { await promoteHeldReceivedAlarms() }
+                    }
                     // **계정 설정(지역·사주)을 이 기기에 받아 적는다**(2026-09-30, 스펙 voice-and-message.md
                     // 「계정의 지역·사주는 기기에 받아 적는다」). 로그인·`/auth/me`·설정 저장 응답이 모두 여기로
                     // 온다(콜드 스타트의 세션 복원은 `initial`). 규칙은 `DynamicPromptPreferences.adoptAccount`

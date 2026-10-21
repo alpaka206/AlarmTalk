@@ -575,10 +575,16 @@ final class ReceivedAlarmConversionTests: XCTestCase {
             storageURL: URL(fileURLWithPath: "/dev/null/received-promotion-\(UUID().uuidString).json"),
             loadFromDisk: false
         )
-        try await runPromotionRound(store: unwritable) { promoted, row, _, _, promotions, account in
-            XCTAssertEqual(promoted, 1)
-            XCTAssertEqual(unwritable.record(id: row.id)?.voiceProfileId, "clone-a")
+        try await runPromotionRound(store: unwritable) { promoted, row, _, voice, promotions, account in
+            XCTAssertEqual(promoted, 0, "못 앉힌 승격을 올렸다고 세었다")
+            // 메모리도 미나로 되돌렸다 — 같은 실행의 다음 회차가 '고친 행' 으로 읽어 기록을 지우지 않는다.
+            XCTAssertEqual(unwritable.record(id: row.id)?.voiceProfileId, substituteSystemVoiceID)
             XCTAssertEqual(promotions.pendingIDs(for: account), [row.id], "디스크에 없는 승격인데 기록을 지웠다")
+            // 저장이 계속 실패해도 기록은 남는다.
+            XCTAssertEqual(voice.promoteConvertedReceivedAlarms(
+                alarmStore: unwritable, ownerUserId: account, entitlementConfirmed: true, promotions: promotions
+            ), 0)
+            XCTAssertEqual(promotions.pendingIDs(for: account), [row.id])
         }
     }
 }
