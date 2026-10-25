@@ -408,6 +408,8 @@ iOS 1.2.11(빌드 8)이 App Store 심사 지침 **3.1.1**("인앱 결제가 아�
    ([consent.md](consent.md) — 앞 버전은 그 문서를 실은 앱을 막은 뒤 목록에서 지운다).
 
 3·4 는 이 변경과 **따로** 낸다. 그 사이 옛 앱은 위 응답으로 개인 기능을 그대로 쓴다.
+**3 은 2026-10-26 에 냈다**(Play `36 (1.2.16)` PUBLISHED · App Store 1.2.16 READY_FOR_SALE 확인 뒤 Android 36·iOS 14).
+4 는 이 값이 prod 에 나간 뒤의 서버 릴리스다.
 
 ### 앱 — 업데이트할 때 기기에서 일어나는 일
 
@@ -441,4 +443,4 @@ iOS 1.2.11(빌드 8)이 App Store 심사 지침 **3.1.1**("인앱 결제가 아�
 | 목소리·문구 접근 = 내 문구(내 목소리·시스템 목소리) 또는 시스템 스톡 프리셋(쌍 규칙) | `routes/alarm-mutation.ts` 의 `messageBelongsToCaller`·`voiceProfileBelongsToCaller` ↔ `routes/tts.ts` 의 `GET /messages/:id/audio`·`findUsableVoiceProfile` | — | — |
 | Room 27→28 재생성 + 받은 알람 변환(같은 트랜잭션) | — | `data/AlarmDatabase.kt` 의 `MIGRATION_27_28` — 회귀 `AlarmDatabaseMigrationSafetyTest` 와 27→28 마이그레이션 테스트 | — |
 | 저장소 변환(로드 뒤 · 던지지 않는 디코드) | — | — | `LocalAlarmStore` · `LocalAlarmRecord` — 회귀 `LocalAlarmRecordCodableTests` |
-| 강제 업데이트(두 스토어 게재 확인 뒤 — 이 변경에서는 올리지 않는다) | `lib/app-version.ts` 의 `minSupported` | — | — |
+| 강제 업데이트(두 스토어 게재 확인 뒤 — 2026-10-26 Android 36·iOS 14 로 올렸다) | `lib/app-version.ts` 의 `minSupported` — 회귀 `test/app-version.test.ts` | — | — |
