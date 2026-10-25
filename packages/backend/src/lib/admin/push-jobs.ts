@@ -355,8 +355,11 @@ export async function runJobStep(db: Client, env: PushEnv, jobId: string, nowMs:
     finished = Number(row.claim_finishes ?? 0) === 1;
     const page = await nextAudiencePage(db, audience, claimFrom, STEP_SCAN_LIMIT, claimTo);
     batch = page.targets.slice(0, STEP_SEND_LIMIT);
-    // 그 사이 동의가 바뀌어 같은 구간에 대상이 늘었을 수 있다 — 나머지는 버리지 않고 구간으로 남긴다.
+    // 그 사이 조건·동의가 바뀌어 같은 구간이 커졌을 수 있다 — 나머지는 버리지 않고 구간으로 남긴다.
+    // 보낼 대상이 30대를 넘었거나(이번 묶음의 끝부터), 후보를 끝까지 훑지 못했으면(훑은 끝부터) 이어 간다.
+    // 동의 조건에 걸러져 이번 대상이 0대여도 훑지 못한 뒤쪽에 원래 받을 기기가 남아 있을 수 있다.
     if (page.targets.length > STEP_SEND_LIMIT) remainderFrom = batch[batch.length - 1]!.pid;
+    else if (!page.exhausted) remainderFrom = page.nextCursor;
   } else {
     claimFrom = String(row.cursor ?? '');
     const page = await nextAudiencePage(db, audience, claimFrom, STEP_SCAN_LIMIT);

@@ -385,6 +385,41 @@ describe('발송', () => {
     }
   });
 
+  it('다시 맡은 구간을 한 번에 다 훑지 못하면 훑은 끝부터 이어 간다 — 앞쪽 후보가 늘어도 뒤쪽 대상을 잃지 않는다', async () => {
+    // 동의 조건(재동의 필요)으로 걸러지는 후보 120대 이상을 구간 앞쪽에 둔다 — 전부 동의를 마친 사람이다.
+    const ahead = 130;
+    for (let i = 0; i < ahead; i++) {
+      const id = `u-ahead-${String(i).padStart(3, '0')}`;
+      await run(`INSERT INTO users (id, email, name, plan) VALUES (?, ?, ?, 'free')`, [id, `${id}@example.com`, id]);
+      await fullConsent(id);
+      await run(`INSERT INTO push_tokens (id, user_id, token, platform) VALUES (?, ?, ?, 'android')`, [
+        `pt-0ahead-${String(i).padStart(3, '0')}`,
+        id,
+        `tok-ahead-${i}`,
+      ]);
+    }
+    try {
+      await passTest();
+      const audience = parseAudience({ reconsentOnly: true });
+      const expected = (await countAudience(db, audience));
+      const devices = expected.android + expected.ios;
+      expect(devices).toBeGreaterThan(0);
+      const id = await createPushJob(db, copy, audience, devices, NOON_KST);
+      await run(
+        `UPDATE admin_push_jobs SET cursor = 'pt-zzz', claim_from = '', claim_to = 'pt-zzz',
+                claim_at = ?, claim_finishes = 1 WHERE id = ?`,
+        [new Date(NOON_KST - CLAIM_STALE_MS).toISOString(), id],
+      );
+      let state = await runJobStep(db, NO_PUSH_ENV, id, NOON_KST);
+      for (let i = 0; i < 5 && state.status !== 'done'; i++) state = await runJobStep(db, NO_PUSH_ENV, id, NOON_KST + 1000 * (i + 1));
+      expect(state).toMatchObject({ status: 'done', failed: devices });
+    } finally {
+      await run(`DELETE FROM push_tokens WHERE id LIKE 'pt-0ahead-%'`);
+      await run(`DELETE FROM user_consents WHERE user_id LIKE 'u-ahead-%'`);
+      await run(`DELETE FROM users WHERE id LIKE 'u-ahead-%'`);
+    }
+  });
+
   it('광고 시험 발송도 광고 동의자에게만', async () => {
     const ad = parseCopy({ kind: 'ad', title: '할인 안내', body: '이번 주만' });
     await expect(sendTestPush(db, NO_PUSH_ENV, 'tester@example.com', ad, NOON_KST)).rejects.toMatchObject({
