@@ -700,7 +700,9 @@ FOREGROUND_SERVICE … (BAL_BLOCK) result code=102`. 그래서 2026-09-09 의 "�
 99%(안드로이드 두 이슈만 10,256건)가 이 맥의 유닛 테스트였다. 진짜 사고가 그 사이에 묻힌다.
 
 - 안드로이드: `app/src/test/resources/robolectric.properties` 의 `application=android.app.Application`
-  (1차) + `AlarmTalkApplication.shouldInitializeSentry`(2차).
+  (1차) + `AlarmTalkApplication.shouldInitializeSentry`(2차). **기기 계측 테스트**는 `AlarmTalkTestRunner`
+  (`app/src/androidTest`)가 같은 1차를 맡는다 — 운영 Application 을 띄우지 않는다(2026-10-26 녹음 계측 테스트가
+  dev 앱 안에서 돌아 Sentry ANDROID-1Q 를 열었다).
 - iOS: `AlarmTalkLog.shouldStartCrashReporting(dsn:isRunningTests:)`.
 - ⚠ **예외 이름·메시지로 거르지 말 것.** 실기기에서 올라오는 것은 무엇이든 그대로 올라가야 한다
   (`WorkManager is not initialized` 는 실기기에서 나면 진짜 사고이고, 그 유일한 신호다).
