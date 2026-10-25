@@ -34,6 +34,7 @@ import {
   resetAppPresenceMemo,
 } from '../src/middleware/appPresence';
 import adminRoutes from '../src/routes/admin';
+import { securityHeadersMiddleware } from '../src/middleware/securityHeaders';
 
 const NO_PUSH_ENV = {} as AppEnv['Bindings'];
 /** 한국 시각 정오 — 광고 가능 시간. */
@@ -228,6 +229,7 @@ describe('발송', () => {
       code: 'ADMIN_PUSH_TEST_RECIPIENT_NOT_FOUND',
     });
     await run(`INSERT OR IGNORE INTO users (id, email, name, plan) VALUES ('u-none', 'none@example.com', 'n', 'free')`);
+    await fullConsent('u-none'); // 기기만 없는 사람 — 개요의 재동의 숫자를 흔들지 않게
     await expect(sendTestPush(db, NO_PUSH_ENV, 'none@example.com', copy)).rejects.toMatchObject({
       code: 'ADMIN_PUSH_TEST_RECIPIENT_NO_DEVICE',
     });
@@ -383,6 +385,33 @@ describe('화면', () => {
     expect(o.consent.reconsentNeeded).toBe(2); // u-b, u-f (탈퇴 대기 u-e 는 세지 않는다)
     expect(o.signupsByDay).toHaveLength(30);
     expect(o.versions.find((v) => v.platform === 'android' && v.version === 30)?.users).toBe(1);
+  });
+
+  it('동의 행이 하나도 없는 사람도 재동의 필요로 센다 — 서버는 그 사람도 막는다', async () => {
+    await run(`INSERT INTO users (id, email, name, plan) VALUES ('u-zero', 'zero@example.com', 'zero', 'free')`);
+    try {
+      expect((await loadOverview(db, 30)).consent.reconsentNeeded).toBe(3);
+    } finally {
+      await run(`DELETE FROM users WHERE id = 'u-zero'`);
+    }
+  });
+
+  it('바깥 보안 미들웨어가 콘솔 정책을 덮지 않는다 — 화면 안 fetch 가 막히지 않게', async () => {
+    const a = new Hono<AppEnv>();
+    a.use('*', securityHeadersMiddleware);
+    a.route('/admin', adminRoutes);
+    const env = { ADMIN_SECRET: SECRET } as unknown as AppEnv['Bindings'];
+    const res = await a.request('http://localhost/admin/push', { headers: { Authorization: AUTH } }, env);
+    expect(res.status).toBe(200);
+    const csp = res.headers.get('Content-Security-Policy') ?? '';
+    expect(csp).toContain("connect-src 'self'");
+    expect(csp).toMatch(/script-src 'nonce-[^']+'/);
+    expect(csp).not.toMatch(/script-src[^;]*unsafe-inline/);
+    expect(res.headers.get('Referrer-Policy')).toBe('same-origin');
+    expect(res.headers.get('X-Robots-Tag')).toBe('noindex, nofollow');
+    // 스크립트 없는 응답은 바깥 기본 정책을 받는다.
+    const redirect = await a.request('http://localhost/admin/push', {}, env);
+    expect(redirect.headers.get('Content-Security-Policy')).toBe("default-src 'none'; frame-ancestors 'none'");
   });
 
   it('개요 화면이 그려진다 — nonce 스크립트·캐시 금지', async () => {

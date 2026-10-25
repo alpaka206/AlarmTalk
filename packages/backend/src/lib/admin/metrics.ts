@@ -73,6 +73,12 @@ export function kstMonth(nowMs: number): string {
   return new Date(nowMs + 9 * 3600_000).toISOString().slice(0, 7);
 }
 
+/**
+ * 사람 계정만 — 마이그레이션이 심은 시스템 계정(기본 목소리 보관용, `google_id` 가 `system:` 으로 시작)은
+ * 가입자도, 재동의 대상도 아니다. 고정 조각이라 SQL 에 그대로 붙인다.
+ */
+const HUMAN = (alias = '') => `COALESCE(${alias}google_id, '') NOT LIKE 'system:%'`;
+
 export async function loadOverview(db: Client, range: RangeDays, nowMs: number = Date.now()): Promise<Overview> {
   const month = kstMonth(nowMs);
   const stmts = [
@@ -82,13 +88,13 @@ export async function loadOverview(db: Client, range: RangeDays, nowMs: number =
                    SUM(date(created_at, '+9 hours') = date('now', '+9 hours')) AS today,
                    SUM(julianday(created_at) >= julianday('now') - ?) AS in_range,
                    SUM(deletion_status = 'pending_deletion') AS pending
-            FROM users`,
+            FROM users WHERE ${HUMAN()}`,
       args: [range],
     },
     // 1 날짜별 가입
     {
       sql: `SELECT date(created_at, '+9 hours') AS day, COUNT(*) AS n FROM users
-            WHERE julianday(created_at) >= julianday('now') - ? GROUP BY day`,
+            WHERE ${HUMAN()} AND julianday(created_at) >= julianday('now') - ? GROUP BY day`,
       args: [range + 1],
     },
     // 2 앱 접속(기록이 시작된 뒤만)
@@ -154,12 +160,12 @@ export async function loadOverview(db: Client, range: RangeDays, nowMs: number =
             WHERE COALESCE(is_system, 0) = 0 AND COALESCE(is_draft, 0) = 0 AND deleted_at IS NULL`,
       args: [],
     },
-    // 11 동의 — 판정은 lib/consent.ts 로(아래)
+    // 11 동의 — 판정은 lib/consent.ts 로(아래). 동의 행이 하나도 없는 사람도 막히므로 사람 쪽에서 붙인다.
     {
-      sql: `SELECT c.user_id, c.consent_type, c.policy_version, c.agreed, c.created_at
-            FROM user_consents c JOIN users u ON u.id = c.user_id
-            WHERE COALESCE(u.deletion_status, 'active') = 'active'
-            ORDER BY c.user_id, c.created_at DESC, c.rowid DESC`,
+      sql: `SELECT u.id AS user_id, c.consent_type, c.policy_version, c.agreed, c.created_at
+            FROM users u LEFT JOIN user_consents c ON c.user_id = u.id
+            WHERE COALESCE(u.deletion_status, 'active') = 'active' AND ${HUMAN('u.')}
+            ORDER BY u.id, c.created_at DESC, c.rowid DESC`,
       args: [],
     },
     // 12 광고 보상(이번 달)
@@ -194,7 +200,7 @@ export async function loadOverview(db: Client, range: RangeDays, nowMs: number =
   for (const consent of rows(11)) {
     const uid = String(consent.user_id);
     const list = byUser.get(uid) ?? [];
-    list.push(consent);
+    if (consent.consent_type != null) list.push(consent);
     byUser.set(uid, list);
   }
   let reconsentNeeded = 0;
@@ -275,7 +281,7 @@ export interface UserRow {
 /** 사용자 찾기 — 이메일·이름 일부 또는 계정 id. 비어 있으면 최근 가입 순. 최대 50명. */
 export async function searchUsers(db: Client, query: string): Promise<UserRow[]> {
   const q = query.trim().slice(0, 100);
-  const where: string[] = [];
+  const where: string[] = [HUMAN('u.')];
   const args: (string | number)[] = [];
   if (q) {
     // LIKE 패턴은 값으로만 만들고 와일드카드는 이스케이프한다(CLAUDE.md 규약).
