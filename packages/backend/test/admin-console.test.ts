@@ -19,6 +19,7 @@ vi.mock('../src/lib/db', () => ({
 import { countAudience, parseAudience, DEFAULT_AUDIENCE } from '../src/lib/admin/audience';
 import {
   AdminPushError,
+  CLAIM_STALE_MS,
   STEP_SEND_LIMIT,
   createPushJob,
   isWithinAdHours,
@@ -300,6 +301,35 @@ describe('발송', () => {
     const counted = await db.execute({ sql: `SELECT sent + failed AS n FROM admin_push_jobs WHERE id = ?`, args: [id] });
     expect(Number(counted.rows[0]!.n)).toBe(6);
     expect([a.paused, b.paused].filter((p) => p === 'busy').length).toBeLessThanOrEqual(1);
+  });
+
+  it('맡기의 응답이 끊겨도 그 묶음을 빠뜨리지 않는다 — 2분 뒤 같은 구간을 다시 보낸다', async () => {
+    await passTest();
+    const id = await createPushJob(db, copy, parseAudience({}), 6, NOON_KST);
+    // 맡기 쓰기는 커밋됐는데 응답을 잃은 경우를 흉내 낸다.
+    const lossy = {
+      execute: async (stmt: Parameters<Client['execute']>[0]) => {
+        const out = await db.execute(stmt);
+        if (typeof stmt !== 'string' && /SET cursor = \?, claim_from/.test(stmt.sql)) throw new Error('response lost');
+        return out;
+      },
+      batch: db.batch.bind(db),
+    } as unknown as Client;
+    await expect(runJobStep(lossy, NO_PUSH_ENV, id, NOON_KST)).rejects.toThrow('response lost');
+    // 아직 도는 중일 수 있는 걸음은 가로채지 않는다.
+    expect(await runJobStep(db, NO_PUSH_ENV, id, NOON_KST + 1000)).toMatchObject({ paused: 'busy', sent: 0, failed: 0 });
+    const resumed = await runJobStep(db, NO_PUSH_ENV, id, NOON_KST + CLAIM_STALE_MS);
+    expect(resumed).toMatchObject({ status: 'done', sent: 0, failed: 6 });
+    const row = await db.execute({ sql: `SELECT claim_from FROM admin_push_jobs WHERE id = ?`, args: [id] });
+    expect(row.rows[0]!.claim_from).toBeNull();
+  });
+
+  it('광고 시험 발송도 광고 동의자에게만', async () => {
+    const ad = parseCopy({ kind: 'ad', title: '할인 안내', body: '이번 주만' });
+    await expect(sendTestPush(db, NO_PUSH_ENV, 'tester@example.com', ad)).rejects.toMatchObject({
+      code: 'ADMIN_PUSH_TEST_RECIPIENT_NO_MARKETING_CONSENT',
+    });
+    await expect(sendTestPush(db, NO_PUSH_ENV, 'u-a@example.com', ad)).resolves.toMatchObject({ devices: 1 });
   });
 
   it('없는 기록은 404 갈래로', async () => {

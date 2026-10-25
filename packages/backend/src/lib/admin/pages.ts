@@ -485,7 +485,10 @@ export function renderPush(
     ad: '광고성 정보 수신에 동의한 사람에게만, 오전 ' + AD_HOURS[0] + '시부터 오후 ' + (AD_HOURS[1] - 12) + '시 전까지 보내요. 제목에 (광고), 본문 끝에 수신 거부 방법이 붙어요.',
   };
   let passedTest = null;
-  let counted = 0;
+  // 대상 수는 **그 수를 센 조건**과 한 짝이다. 조건이 바뀌면 곧바로 버리고, 다시 센 답이 지금 조건과 같을 때만
+  // 전체 발송을 연다. 앞 숫자로 확인 창을 띄우고 새 조건으로 보내는 일이 없게.
+  let preview = null;
+  let sendSnapshot = null;
 
   const values = () => {
     const fd = new FormData(form);
@@ -493,6 +496,8 @@ export function renderPush(
     ['includeUnknownVersion', 'reconsentOnly', 'activeAlarmOnly', 'marketingOnly'].forEach((k) => { o[k] = fd.has(k); });
     return o;
   };
+  const AUDIENCE_KEYS = ['kind', 'platform', 'androidBelow', 'iosBelow', 'includeUnknownVersion', 'reconsentOnly', 'activeAlarmOnly', 'marketingOnly'];
+  const audienceKey = (v) => JSON.stringify(AUDIENCE_KEYS.map((k) => v[k] ?? null));
   const copyKey = (v) => [v.kind, String(v.title || '').trim(), String(v.body || '').trim()].join('\\u0000');
 
   const post = async (url, data) => {
@@ -527,11 +532,14 @@ export function renderPush(
     ctrl = new AbortController();
     const box = $('#count');
     box.dataset.loading = 'true';
+    preview = null;
+    const asked = values();
     try {
-      const res = await fetch('/admin/push/preview', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(values()), signal: ctrl.signal });
+      const res = await fetch('/admin/push/preview', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(asked), signal: ctrl.signal });
       const j = await res.json();
       if (!res.ok) throw new Error(j.error || '');
-      counted = j.android + j.ios;
+      const counted = j.android + j.ios;
+      if (audienceKey(asked) === audienceKey(values())) preview = { key: audienceKey(asked), total: counted };
       $('#count-main').textContent = j.users.toLocaleString('ko-KR') + '명';
       $('#count-sub').textContent = '기기 ' + counted.toLocaleString('ko-KR') + '대 · 안드로이드 ' + j.android.toLocaleString('ko-KR') + ' · iOS ' + j.ios.toLocaleString('ko-KR');
       box.dataset.loading = 'false';
@@ -623,7 +631,10 @@ export function renderPush(
     const v = values();
     if (!String(v.title).trim() || !String(v.body).trim()) { err('제목과 본문을 모두 적어 주세요.'); return; }
     if (passedTest !== copyKey(v)) { err('이 문구로 시험 발송을 먼저 해 주세요. 받은 알림을 눈으로 확인한 뒤에 보낼 수 있어요.'); return; }
-    if (counted === 0) { err('조건에 맞는 기기가 없어요. 받는 사람 조건을 바꿔 보세요.'); return; }
+    if (!preview || preview.key !== audienceKey(v)) { err('받는 사람 수를 아직 세지 못했어요. 숫자가 나온 뒤에 보내 주세요.'); return; }
+    if (preview.total === 0) { err('조건에 맞는 기기가 없어요. 받는 사람 조건을 바꿔 보세요.'); return; }
+    // 확인 창에 보인 숫자와 그 숫자를 센 조건을 그대로 묶어 보낸다.
+    sendSnapshot = { ...v, estimatedTotal: preview.total };
     $('#confirm-title').textContent = '보낼까요?';
     $('#confirm-text').textContent = $('#count-main').textContent + '(' + $('#count-sub').textContent + ')에게 보내요. 보낸 알림은 되돌릴 수 없어요.';
     bar.hidden = true; ptxt.hidden = true;
@@ -635,9 +646,12 @@ export function renderPush(
   $('#btn-go').addEventListener('click', async (e) => {
     const btn = e.currentTarget;
     if (btn.getAttribute('aria-busy') === 'true') return;
+    if (!sendSnapshot) return;
     busy(btn, true);
     try {
-      const r = await post('/admin/push/jobs', { ...values(), estimatedTotal: counted });
+      const snapshot = sendSnapshot;
+      sendSnapshot = null;
+      const r = await post('/admin/push/jobs', snapshot);
       await walk(r.id);
     } catch (x) {
       finish('보내지 못했어요', x.message);

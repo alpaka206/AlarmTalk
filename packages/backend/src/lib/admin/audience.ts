@@ -79,7 +79,7 @@ export interface AudienceCandidate {
 /** 조건에 맞는 토큰 후보(동의 조건은 아직 안 본 것) — `pid` 순서, 커서 다음부터. */
 export function candidateQuery(
   audience: Audience,
-  options: { afterPid: string; limit: number },
+  options: { afterPid: string; limit: number; upToPid?: string },
 ): { sql: string; args: (string | number)[] } {
   const where: string[] = [
     `COALESCE(u.deletion_status, 'active') = 'active'`,
@@ -87,6 +87,10 @@ export function candidateQuery(
     `pt.id > ?`,
   ];
   const args: (string | number)[] = [options.afterPid];
+  if (options.upToPid !== undefined) {
+    where.push(`pt.id <= ?`);
+    args.push(options.upToPid);
+  }
   if (audience.platform !== 'all') {
     where.push(`pt.platform = ?`);
     args.push(audience.platform);
@@ -179,8 +183,10 @@ export async function nextAudiencePage(
   audience: Audience,
   afterPid: string,
   scanLimit: number,
+  /** 끊긴 걸음을 다시 보낼 때 — 그 걸음이 맡았던 구간 `(afterPid, upToPid]` 만. */
+  upToPid?: string,
 ): Promise<{ targets: AudienceCandidate[]; nextCursor: string; exhausted: boolean }> {
-  const res = await db.execute(candidateQuery(audience, { afterPid, limit: scanLimit }));
+  const res = await db.execute(candidateQuery(audience, { afterPid, limit: scanLimit, upToPid }));
   const scanned = toCandidates(res.rows as Array<Record<string, unknown>>);
   const targets = await applyConsentFilters(db, audience, scanned);
   return {

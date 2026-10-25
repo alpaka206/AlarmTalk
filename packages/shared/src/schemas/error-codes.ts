@@ -234,6 +234,8 @@ export const ERROR_CODES = [
   /** 광고 알림을 한국 시각 08:00~21:00 밖에 보내려 했다. */
   'ADMIN_PUSH_OUTSIDE_AD_HOURS',
   'ADMIN_PUSH_TEST_RECIPIENT_NO_DEVICE',
+  /** 광고 시험 발송을 광고성 정보 수신에 동의하지 않은 계정으로 보내려 했다. */
+  'ADMIN_PUSH_TEST_RECIPIENT_NO_MARKETING_CONSENT',
   'ADMIN_PUSH_TEST_RECIPIENT_NOT_FOUND',
   /** 같은 문구의 시험 발송(60분 안, 한 대 이상 성공) 없이 전체 발송을 만들려 했다. */
   'ADMIN_PUSH_TEST_REQUIRED',

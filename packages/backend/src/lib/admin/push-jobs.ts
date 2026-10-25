@@ -23,7 +23,14 @@ import {
   type FcmMessage,
 } from '../fcm';
 import { apnsConfigFromEnv, sendApnsNotifications, type ApnsMessage } from '../apns';
-import { nextAudiencePage, parseAudience, type Audience, type AudienceCandidate } from './audience';
+import {
+  DEFAULT_AUDIENCE,
+  applyConsentFilters,
+  nextAudiencePage,
+  parseAudience,
+  type Audience,
+  type AudienceCandidate,
+} from './audience';
 
 export type PushKind = 'notice' | 'ad';
 
@@ -66,6 +73,7 @@ export class AdminPushError extends Error {
       | 'ADMIN_PUSH_JOB_NOT_FOUND'
       | 'ADMIN_PUSH_TEST_RECIPIENT_NOT_FOUND'
       | 'ADMIN_PUSH_TEST_RECIPIENT_NO_DEVICE'
+      | 'ADMIN_PUSH_TEST_RECIPIENT_NO_MARKETING_CONSENT'
     >,
     message: string,
   ) {
@@ -198,6 +206,18 @@ export async function sendTestPush(
     token: String(r.token),
     platform: r.platform === 'ios' ? ('ios' as const) : ('android' as const),
   }));
+  if (copy.kind === 'ad') {
+    // 시험이어도 광고는 광고다 — 받는 사람은 누구든 될 수 있으니 전체 발송과 같은 동의 조건을 건다.
+    const consented = await applyConsentFilters(db, effectiveAudience('ad', DEFAULT_AUDIENCE), [
+      { pid: '', token: '', platform: 'android', userId: String(userId) },
+    ]);
+    if (consented.length === 0) {
+      throw new AdminPushError(
+        'ADMIN_PUSH_TEST_RECIPIENT_NO_MARKETING_CONSENT',
+        '그 계정은 광고성 정보 수신에 동의하지 않았어요. 광고 시험 발송은 동의한 계정으로만 보낼 수 있어요.',
+      );
+    }
+  }
   const { sent, failed } = await deliver(db, env, targets, copy);
   const jobId = crypto.randomUUID();
   await db.execute({
@@ -268,10 +288,24 @@ function jobStateFrom(row: Record<string, unknown>): JobState {
   };
 }
 
-/** 한 걸음 — 다음 기기 묶음을 골라 보내고 상태를 돌려준다. */
+/**
+ * 맡은 걸음이 이만큼 지나도 끝나지 않았으면 끊긴 것으로 보고 다른 창이 그 구간을 다시 보낸다.
+ * 한 걸음은 30대라 몇 초면 끝난다 — 2분은 느린 걸음을 가로채지 않을 만큼 넉넉하다.
+ */
+export const CLAIM_STALE_MS = 2 * 60 * 1000;
+
+/**
+ * 한 걸음 — 다음 기기 묶음을 맡아 보내고 상태를 돌려준다.
+ *
+ * 맡기와 끝내기를 나눈다. 맡을 때 완료 커서를 넘기면서 그 구간(`claim_from`~`claim_to`)을 함께 적고,
+ * 보낸 뒤 구간을 지운다. 맡기의 응답이 끊기면(쓰기는 됐는데 워커가 모름) 구간이 남으므로, 2분 뒤 다음
+ * 걸음이 **그 구간을 다시 보낸다** — 커서만 넘기던 때는 그 30대가 말없이 빠졌다. 대가는 끊긴 걸음에서
+ * 이미 닿은 기기가 한 번 더 받을 수 있다는 것이다(빠뜨리는 것보다 낫다).
+ */
 export async function runJobStep(db: Client, env: PushEnv, jobId: string, nowMs: number): Promise<JobState> {
   const res = await db.execute({
-    sql: `SELECT id, kind, title, body, audience_json, estimated_total, cursor, sent, failed, status
+    sql: `SELECT id, kind, title, body, audience_json, estimated_total, cursor, sent, failed, status,
+                 claim_from, claim_to, claim_at, claim_finishes
           FROM admin_push_jobs WHERE id = ? AND is_test = 0`,
     args: [jobId],
   });
@@ -292,29 +326,57 @@ export async function runJobStep(db: Client, env: PushEnv, jobId: string, nowMs:
   } catch {
     audience = effectiveAudience(copy.kind, parseAudience({}));
   }
-  const cursor = String(row.cursor ?? '');
-  const page = await nextAudiencePage(db, audience, cursor, STEP_SCAN_LIMIT);
-  const batch = page.targets.slice(0, STEP_SEND_LIMIT);
-  const overflow = page.targets.length > STEP_SEND_LIMIT;
-  const nextCursor = overflow ? batch[batch.length - 1]!.pid : page.nextCursor;
-  const finished = page.exhausted && !overflow;
 
-  // 커서를 먼저 넘긴다 — 같은 걸음을 두 창이 동시에 밟으면 한쪽만 이긴다.
-  const claim = await db.execute({
-    sql: `UPDATE admin_push_jobs SET cursor = ? WHERE id = ? AND cursor = ? AND status = 'sending'`,
-    args: [nextCursor, jobId, cursor],
-  });
-  if (claim.rowsAffected !== 1) return { ...state, paused: 'busy' };
+  const claimAt = new Date(nowMs).toISOString();
+  let claimFrom: string;
+  let claimTo: string;
+  let finished: boolean;
+  let batch: AudienceCandidate[];
+  if (row.claim_from !== null && row.claim_from !== undefined) {
+    // 앞 걸음이 맡은 채 끝나지 않았다 — 아직 도는 중이면 기다리고, 끊겼으면 그 구간을 다시 맡는다.
+    const previousAt = String(row.claim_at ?? '');
+    const previousMs = Date.parse(previousAt);
+    if (Number.isFinite(previousMs) && nowMs - previousMs < CLAIM_STALE_MS) return { ...state, paused: 'busy' };
+    const reclaim = await db.execute({
+      sql: `UPDATE admin_push_jobs SET claim_at = ?
+            WHERE id = ? AND claim_from = ? AND COALESCE(claim_at, '') = ? AND status = 'sending'`,
+      args: [claimAt, jobId, String(row.claim_from), previousAt],
+    });
+    if (reclaim.rowsAffected !== 1) return { ...state, paused: 'busy' };
+    claimFrom = String(row.claim_from);
+    claimTo = String(row.claim_to ?? row.claim_from);
+    finished = Number(row.claim_finishes ?? 0) === 1;
+    const page = await nextAudiencePage(db, audience, claimFrom, STEP_SCAN_LIMIT, claimTo);
+    batch = page.targets.slice(0, STEP_SEND_LIMIT);
+  } else {
+    claimFrom = String(row.cursor ?? '');
+    const page = await nextAudiencePage(db, audience, claimFrom, STEP_SCAN_LIMIT);
+    batch = page.targets.slice(0, STEP_SEND_LIMIT);
+    const overflow = page.targets.length > STEP_SEND_LIMIT;
+    claimTo = overflow ? batch[batch.length - 1]!.pid : page.nextCursor;
+    finished = page.exhausted && !overflow;
+    // 같은 걸음을 두 창이 동시에 밟으면 커서 비교로 한쪽만 이긴다.
+    const claim = await db.execute({
+      sql: `UPDATE admin_push_jobs
+            SET cursor = ?, claim_from = ?, claim_to = ?, claim_at = ?, claim_finishes = ?
+            WHERE id = ? AND cursor = ? AND claim_from IS NULL AND status = 'sending'`,
+      args: [claimTo, claimFrom, claimTo, claimAt, finished ? 1 : 0, jobId, claimFrom],
+    });
+    if (claim.rowsAffected !== 1) return { ...state, paused: 'busy' };
+  }
 
   const { sent, failed } = batch.length > 0 ? await deliver(db, env, batch, copy) : { sent: 0, failed: 0 };
-  await db.execute({
+  // 이 걸음을 아직 내가 맡고 있을 때만 끝낸다 — 늦어서 다른 창이 다시 맡았으면 그쪽이 센다.
+  const done = await db.execute({
     sql: `UPDATE admin_push_jobs
           SET sent = sent + ?, failed = failed + ?,
+              claim_from = NULL, claim_to = NULL, claim_at = NULL, claim_finishes = 0,
               status = CASE WHEN ? = 1 AND status = 'sending' THEN 'done' ELSE status END,
               finished_at = CASE WHEN ? = 1 AND status = 'sending' THEN datetime('now') ELSE finished_at END
-          WHERE id = ?`,
-    args: [sent, failed, finished ? 1 : 0, finished ? 1 : 0, jobId],
+          WHERE id = ? AND claim_from = ? AND claim_at = ?`,
+    args: [sent, failed, finished ? 1 : 0, finished ? 1 : 0, jobId, claimFrom, claimAt],
   });
+  if (done.rowsAffected !== 1) return { ...state, paused: 'busy' };
   return {
     ...state,
     sent: state.sent + sent,

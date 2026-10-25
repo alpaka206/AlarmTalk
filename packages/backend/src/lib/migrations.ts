@@ -3237,6 +3237,7 @@ export const migrations: Migration[] = [
     //    않는 시각은 3개월을 넘겨 남는다.
     //  - `admin_push_jobs`: 콘솔에서 보낸 알림의 기록. **대상 토큰을 적지 않는다** — 대상 조건과 커서만 두고
     //    보낼 때마다 다시 고른다. 그래서 이 표에는 사람을 가리키는 값이 없다(시험 발송도 받는 사람을 적지 않는다).
+    //    `claim_*` 는 지금 보내는 걸음이 맡은 구간이다 — 응답이 끊겨도 그 구간을 다시 보낼 수 있게(`runJobStep`).
     id: 133,
     name: 'admin-console',
     statements: [
@@ -3258,6 +3259,10 @@ export const migrations: Migration[] = [
         audience_json TEXT NOT NULL,
         estimated_total INTEGER NOT NULL DEFAULT 0,
         cursor TEXT NOT NULL DEFAULT '',
+        claim_from TEXT,
+        claim_to TEXT,
+        claim_at TEXT,
+        claim_finishes INTEGER NOT NULL DEFAULT 0,
         sent INTEGER NOT NULL DEFAULT 0,
         failed INTEGER NOT NULL DEFAULT 0,
         status TEXT NOT NULL DEFAULT 'sending' CHECK (status IN ('sending', 'done', 'canceled')),
