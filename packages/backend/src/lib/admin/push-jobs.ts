@@ -183,7 +183,12 @@ export async function sendTestPush(
   env: PushEnv,
   email: string,
   copy: PushCopy,
+  nowMs: number = Date.now(),
 ): Promise<{ jobId: string; sent: number; failed: number; devices: number }> {
+  // 시험이어도 광고는 광고다 — 시간 제한도 전체 발송과 같다.
+  if (copy.kind === 'ad' && !isWithinAdHours(nowMs)) {
+    throw new AdminPushError('ADMIN_PUSH_OUTSIDE_AD_HOURS', '광고 알림은 오전 8시부터 오후 9시 전까지만 보낼 수 있어요.');
+  }
   const normalized = email.trim().toLowerCase();
   if (!normalized) throw new AdminPushError('ADMIN_PUSH_TEST_RECIPIENT_NOT_FOUND', '받을 계정의 이메일을 적어 주세요.');
   const user = await db.execute({
@@ -207,7 +212,7 @@ export async function sendTestPush(
     platform: r.platform === 'ios' ? ('ios' as const) : ('android' as const),
   }));
   if (copy.kind === 'ad') {
-    // 시험이어도 광고는 광고다 — 받는 사람은 누구든 될 수 있으니 전체 발송과 같은 동의 조건을 건다.
+    // 받는 사람은 누구든 될 수 있으니 전체 발송과 같은 동의 조건을 건다.
     const consented = await applyConsentFilters(db, effectiveAudience('ad', DEFAULT_AUDIENCE), [
       { pid: '', token: '', platform: 'android', userId: String(userId) },
     ]);

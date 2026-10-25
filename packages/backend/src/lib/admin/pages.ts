@@ -539,6 +539,13 @@ export function renderPush(
       const j = await res.json();
       if (!res.ok) throw new Error(j.error || '');
       const counted = j.android + j.ios;
+      if (j.capped) {
+        // 상한까지만 센 숫자는 확인에 쓸 수 없다. 실제 발송은 상한 없이 끝까지 간다.
+        $('#count-main').textContent = '너무 많아요';
+        $('#count-sub').textContent = '기기가 ' + counted.toLocaleString('ko-KR') + '대를 넘어 다 세지 못했어요. 조건을 좁혀 주세요.';
+        box.dataset.loading = 'false';
+        return;
+      }
       if (audienceKey(asked) === audienceKey(values())) preview = { key: audienceKey(asked), total: counted };
       $('#count-main').textContent = j.users.toLocaleString('ko-KR') + '명';
       $('#count-sub').textContent = '기기 ' + counted.toLocaleString('ko-KR') + '대 · 안드로이드 ' + j.android.toLocaleString('ko-KR') + ' · iOS ' + j.ios.toLocaleString('ko-KR');

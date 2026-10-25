@@ -21,6 +21,7 @@ import {
   AdminPushError,
   CLAIM_STALE_MS,
   STEP_SEND_LIMIT,
+  cancelPushJob,
   createPushJob,
   isWithinAdHours,
   parseCopy,
@@ -28,7 +29,7 @@ import {
   runJobStep,
   sendTestPush,
 } from '../src/lib/admin/push-jobs';
-import { loadOverview } from '../src/lib/admin/metrics';
+import { listPushJobs, loadOverview } from '../src/lib/admin/metrics';
 import {
   appPresenceMiddleware,
   parseAppVersionHeader,
@@ -326,10 +327,24 @@ describe('발송', () => {
 
   it('광고 시험 발송도 광고 동의자에게만', async () => {
     const ad = parseCopy({ kind: 'ad', title: '할인 안내', body: '이번 주만' });
-    await expect(sendTestPush(db, NO_PUSH_ENV, 'tester@example.com', ad)).rejects.toMatchObject({
+    await expect(sendTestPush(db, NO_PUSH_ENV, 'tester@example.com', ad, NOON_KST)).rejects.toMatchObject({
       code: 'ADMIN_PUSH_TEST_RECIPIENT_NO_MARKETING_CONSENT',
     });
-    await expect(sendTestPush(db, NO_PUSH_ENV, 'u-a@example.com', ad)).resolves.toMatchObject({ devices: 1 });
+    await expect(sendTestPush(db, NO_PUSH_ENV, 'u-a@example.com', ad, NOON_KST)).resolves.toMatchObject({ devices: 1 });
+    // 광고 시험도 시간 밖이면 보내지 않는다.
+    await expect(sendTestPush(db, NO_PUSH_ENV, 'u-a@example.com', ad, NIGHT_KST)).rejects.toMatchObject({
+      code: 'ADMIN_PUSH_OUTSIDE_AD_HOURS',
+    });
+  });
+
+  it('보내는 중인 발송은 새 기록이 많아도 목록에 남는다 — 이어 보내기를 잃지 않게', async () => {
+    await passTest();
+    const id = await createPushJob(db, copy, parseAudience({}), 6, NOON_KST);
+    for (let i = 0; i < 5; i++) await passTest();
+    const jobs = await listPushJobs(db, 3);
+    expect(jobs[0]!.id).toBe(id);
+    expect(jobs.filter((j) => j.status !== 'sending')).toHaveLength(3);
+    await cancelPushJob(db, id);
   });
 
   it('없는 기록은 404 갈래로', async () => {

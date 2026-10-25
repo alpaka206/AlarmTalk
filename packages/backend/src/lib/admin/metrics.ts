@@ -353,10 +353,18 @@ export interface PushJobRow {
   finishedAt: string | null;
 }
 
+/**
+ * 발송 기록 — **보내는 중인 기록은 개수와 무관하게 전부**, 그 뒤에 최근 기록 `limit` 개. 멈춘 발송(광고 시간 밖·창을
+ * 닫음)이 새 기록에 밀려 '이어 보내기' 를 잃지 않게.
+ */
 export async function listPushJobs(db: Client, limit = 30): Promise<PushJobRow[]> {
+  const cols = `id, kind, is_test, title, body, estimated_total, sent, failed, status, created_at, finished_at`;
   const res = await db.execute({
-    sql: `SELECT id, kind, is_test, title, body, estimated_total, sent, failed, status, created_at, finished_at
-          FROM admin_push_jobs ORDER BY created_at DESC LIMIT ?`,
+    sql: `SELECT * FROM (SELECT ${cols}, 0 AS part FROM admin_push_jobs WHERE status = 'sending')
+          UNION ALL
+          SELECT * FROM (SELECT ${cols}, 1 AS part FROM admin_push_jobs WHERE status <> 'sending'
+                         ORDER BY created_at DESC LIMIT ?)
+          ORDER BY part, created_at DESC`,
     args: [Math.min(Math.max(limit, 1), 100)],
   });
   return res.rows.map((x) => ({

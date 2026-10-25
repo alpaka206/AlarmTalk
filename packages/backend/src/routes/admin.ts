@@ -288,7 +288,7 @@ admin.post('/push/test', async (c) => {
   const body = await jsonBody(c);
   try {
     const copy = parseCopy(body);
-    const result = await sendTestPush(getDB(c.env), c.env, String(body.testEmail ?? ''), copy);
+    const result = await sendTestPush(getDB(c.env), c.env, String(body.testEmail ?? ''), copy, Date.now());
     return c.json(result);
   } catch (err) {
     return pushError(c, err);
