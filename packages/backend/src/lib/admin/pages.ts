@@ -601,6 +601,7 @@ export function renderPush(
     ptxt.textContent = (s.sent + s.failed).toLocaleString('ko-KR') + ' / 약 ' + total.toLocaleString('ko-KR') + '대 · 성공 ' + s.sent.toLocaleString('ko-KR') + ' · 실패 ' + s.failed.toLocaleString('ko-KR');
   };
   const finish = (title, text) => {
+    running = null;
     dlg.dataset.busy = 'false';
     $('#confirm-title').textContent = title;
     $('#confirm-text').textContent = text;
@@ -655,19 +656,26 @@ export function renderPush(
     if (btn.getAttribute('aria-busy') === 'true') return;
     if (!sendSnapshot) return;
     busy(btn, true);
+    // 기록을 만드는 동안에는 창을 닫지 못한다. 닫힌 뒤에 응답이 오면 진행도 중단 버튼도 안 보이는 채로 보내진다.
+    dlg.dataset.busy = 'true';
+    const cancelBtn = $('#btn-cancel');
+    cancelBtn.disabled = true;
     try {
       const snapshot = sendSnapshot;
       sendSnapshot = null;
       const r = await post('/admin/push/jobs', snapshot);
+      cancelBtn.disabled = false;
       await walk(r.id);
     } catch (x) {
       finish('보내지 못했어요', x.message);
     } finally {
+      cancelBtn.disabled = false;
       busy(btn, false);
     }
   });
 
   $('#btn-cancel').addEventListener('click', async () => {
+    if (dlg.dataset.busy === 'true' && !running) return;
     if (dlg.dataset.busy === 'true' && running) {
       const id = running;
       running = null;

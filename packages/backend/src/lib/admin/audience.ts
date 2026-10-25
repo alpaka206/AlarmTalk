@@ -8,7 +8,7 @@
  * 동의 조건(재동의 필요·마케팅 수신)은 판정 규칙이 `lib/consent.ts` 에 있어서 SQL 로 베끼지 않고 행을 읽어
  * 같은 함수로 거른다 — 규칙이 두 벌이 되면 콘솔이 말하는 '재동의 필요' 와 서버가 실제로 막는 사람이 갈라진다.
  */
-import type { Client } from '@libsql/client/web';
+import type { Client, InStatement } from '@libsql/client/web';
 import {
   GENERAL_REQUIRED_CONSENTS,
   latestConsentsFromRows,
@@ -134,7 +134,7 @@ function placeholders(n: number): string {
  * 같은 사람의 행은 `created_at DESC, rowid DESC` 순서로 모아 `latestConsentsFromRows` 에 그대로 넘긴다.
  */
 export async function applyConsentFilters(
-  db: Pick<Client, 'execute'>,
+  db: Pick<Client, 'execute' | 'batch'>,
   audience: Audience,
   candidates: AudienceCandidate[],
 ): Promise<AudienceCandidate[]> {
@@ -142,15 +142,20 @@ export async function applyConsentFilters(
   const userIds = Array.from(new Set(candidates.map((c) => c.userId)));
   if (userIds.length === 0) return [];
   const rowsByUser = new Map<string, Array<Record<string, unknown>>>();
-  // IN 목록은 나눠 묻는다 — SQLite 의 바인딩 수 상한에 닿지 않게.
+  // IN 목록은 나눠 묻는다 — SQLite 의 바인딩 수 상한에 닿지 않게. 나눈 조각은 **한 번의 batch** 로 보낸다:
+  // 조각마다 왕복하면 2만 명이 50번이라 워커의 요청당 하위 요청 상한(~50)을 넘는다.
+  const statements: InStatement[] = [];
   for (let i = 0; i < userIds.length; i += CONSENT_CHUNK) {
     const chunk = userIds.slice(i, i + CONSENT_CHUNK);
-    const res = await db.execute({
+    statements.push({
       sql: `SELECT user_id, consent_type, policy_version, agreed, created_at
             FROM user_consents WHERE user_id IN (${placeholders(chunk.length)})
             ORDER BY user_id, created_at DESC, rowid DESC`,
       args: chunk,
     });
+  }
+  const results = await db.batch(statements, 'read');
+  for (const res of results) {
     for (const row of res.rows) {
       const uid = String(row.user_id);
       const list = rowsByUser.get(uid) ?? [];
@@ -179,7 +184,7 @@ function toCandidates(rows: ReadonlyArray<Record<string, unknown>>): AudienceCan
 
 /** 커서 다음의 한 장 — 후보 `scanLimit` 개를 훑어 조건을 통과한 것만 돌려주고, 훑은 마지막 자리를 커서로 준다. */
 export async function nextAudiencePage(
-  db: Pick<Client, 'execute'>,
+  db: Pick<Client, 'execute' | 'batch'>,
   audience: Audience,
   afterPid: string,
   scanLimit: number,
@@ -198,7 +203,7 @@ export async function nextAudiencePage(
 
 /** 미리보기 — 전체를 세어 플랫폼별 기기 수와 사람 수를 낸다(한 번에 최대 `cap` 기기까지). */
 export async function countAudience(
-  db: Pick<Client, 'execute'>,
+  db: Pick<Client, 'execute' | 'batch'>,
   audience: Audience,
   cap = 20_000,
 ): Promise<{ android: number; ios: number; users: number; capped: boolean }> {

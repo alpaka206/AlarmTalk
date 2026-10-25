@@ -16,7 +16,7 @@ vi.mock('../src/lib/db', () => ({
   getDB: () => holder.db,
 }));
 
-import { countAudience, parseAudience, DEFAULT_AUDIENCE } from '../src/lib/admin/audience';
+import { applyConsentFilters, countAudience, parseAudience, DEFAULT_AUDIENCE } from '../src/lib/admin/audience';
 import {
   AdminPushError,
   CLAIM_STALE_MS,
@@ -166,6 +166,33 @@ describe('대상 고르기', () => {
 
   it('모르는 값은 기본값으로 떨어진다(주입 차단)', () => {
     expect(parseAudience({ platform: "android' OR 1=1 --", androidBelow: '1; DROP TABLE users' })).toEqual(DEFAULT_AUDIENCE);
+  });
+});
+
+describe('요청 예산', () => {
+  it('동의 조건은 사람 수와 무관하게 한 번의 batch 로 묻는다 — 워커 하위 요청 상한(~50) 안', async () => {
+    let executes = 0;
+    let batches = 0;
+    const counting = {
+      execute: async (stmt: Parameters<Client['execute']>[0]) => {
+        executes += 1;
+        return db.execute(stmt);
+      },
+      batch: async (stmts: Parameters<Client['batch']>[0], mode?: Parameters<Client['batch']>[1]) => {
+        batches += 1;
+        return db.batch(stmts, mode);
+      },
+    } as unknown as Client;
+    const many = Array.from({ length: 20_000 }, (_, i) => ({
+      pid: `p-${i}`,
+      token: `t-${i}`,
+      platform: 'android' as const,
+      userId: `nobody-${i}`,
+    }));
+    const kept = await applyConsentFilters(counting, parseAudience({ reconsentOnly: true }), many);
+    expect(kept).toHaveLength(20_000); // 동의 행이 없는 사람은 재동의 대상이다
+    expect(executes).toBe(0);
+    expect(batches).toBe(1);
   });
 });
 
