@@ -506,5 +506,9 @@
   "132": {
     "name": "rename-personal-plan-to-plus",
     "sha": "6be011ceb20cc0fa"
+  },
+  "133": {
+    "name": "admin-console",
+    "sha": "0e3e7148ad468c5c"
   }
 }

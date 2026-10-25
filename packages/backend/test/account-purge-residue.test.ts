@@ -47,6 +47,8 @@ const TABLES: Record<string, 'per-user' | 'no-personal-data' | 'retained-pseudon
   user_consents: 'per-user',
   email_verification_codes: 'per-user',
   push_tokens: 'per-user',
+  user_app_presence: 'per-user', // 앱 빌드·접속 기록(#133)
+  admin_push_jobs: 'no-personal-data', // 관리자 알림 기록 — 대상 토큰·받는 사람을 적지 않는다(#133)
   subscriptions: 'per-user',
   store_transactions: 'per-user',
   promo_code_redemptions: 'per-user',
@@ -319,6 +321,8 @@ async function seed(): Promise<void> {
   );
   await run(`INSERT INTO push_tokens (id, user_id, token, platform) VALUES ('pt-a', ?, ?, 'android')`, [A_PK, A_PUSH]);
   await run(`INSERT INTO push_tokens (id, user_id, token, platform) VALUES ('pt-b', ?, 'push-token-b', 'ios')`, [B_PK]);
+  await run(`INSERT INTO user_app_presence (user_id, platform, app_version) VALUES (?, 'android', 35)`, [A_PK]);
+  await run(`INSERT INTO user_app_presence (user_id, platform, app_version) VALUES (?, 'ios', 13)`, [B_PK]);
 }
 
 beforeAll(async () => {
@@ -407,6 +411,7 @@ describe('탈퇴 파기 뒤 잔존물 (실제 SQLite)', () => {
     it('남는 사람의 데이터는 남는다 — 과잉 삭제가 없다', async () => {
       expect(await ids(`SELECT id FROM users WHERE id IN (?, ?, ?)`, [A_PK, B_PK, C_PK])).toEqual([B_PK, C_PK].sort());
       expect(await ids(`SELECT id FROM push_tokens`)).toEqual(['pt-b']);
+      expect(await ids(`SELECT user_id FROM user_app_presence`)).toEqual([B_PK]);
       expect(await ids(`SELECT id FROM user_consents`)).toEqual(['uc-b']);
       expect(await ids(`SELECT id FROM email_verification_codes`)).toEqual(['evc-b']);
       expect(await ids(`SELECT id FROM promo_code_redemptions`)).toEqual(['pr-b']);

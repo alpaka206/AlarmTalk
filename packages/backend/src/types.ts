@@ -76,6 +76,11 @@ export interface Env {
   /** 관리자 콘솔(/admin) 보호용 시크릿(HTTP Basic 비밀번호). 미설정 시 /admin 은 503. */
   ADMIN_SECRET?: string;
   /**
+   * 관리자 콘솔 '시험 발송' 칸의 기본 받는 사람(계정 이메일). 저장소가 공개라 코드에 적지 않고 워커 비밀값으로 둔다.
+   * 비어 있으면 칸이 빈 채로 열린다(직접 적으면 된다).
+   */
+  ADMIN_TEST_PUSH_EMAIL?: string;
+  /**
    * data.go.kr KASI 특일정보 OpenAPI 서비스키 (getRestDeInfo). KR 공휴일의 대체/임시공휴일
    * 보정용 오버레이에 쓴다. 미설정 시 KR 오버레이를 생략하고 date-holidays 결과만 제공한다.
    * 주의: data.go.kr 는 Encoding/Decoding 두 키를 발급한다 — **Decoding(디코딩) 키**를 넣어라.

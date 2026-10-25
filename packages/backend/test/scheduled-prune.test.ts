@@ -117,6 +117,32 @@ describe('scheduled() — usage_events 보관 기간 정리', () => {
   });
 });
 
+describe('scheduled() — user_app_presence 보관 기간 정리', () => {
+  it('처리방침의 접속 로그 3개월(90일) 동안 접속이 없는 기록을 지운다', async () => {
+    const now = new Date('2026-10-25T00:00:00.000Z');
+    const env = {
+      TURSO_DATABASE_URL: 'mock',
+      TURSO_AUTH_TOKEN: 'mock',
+      PASSWORD_PEPPER: 'pep',
+    } as never;
+
+    await worker.scheduled({ scheduledTime: now.getTime(), cron: '*/5 * * * *' } as never, env);
+
+    const pruneCall = executeMock.mock.calls.find(
+      (call) =>
+        typeof call[0] === 'object' &&
+        call[0] !== null &&
+        typeof (call[0] as { sql?: string }).sql === 'string' &&
+        (call[0] as { sql: string }).sql.includes('DELETE FROM user_app_presence'),
+    );
+    expect(pruneCall).toBeDefined();
+    const stmt = pruneCall![0] as { sql: string; args: unknown[] };
+    expect(stmt.sql).toContain('last_seen_at < datetime(?)');
+    // ⚠ `docs/legal/privacy-policy.ko.md` 3장 표의 '접속 로그 및 보안 로그 3개월' 과 같은 값.
+    expect(stmt.args[0]).toBe(new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000).toISOString());
+  });
+});
+
 describe('scheduled() — retained_billing_records prune', () => {
   it('법정 보존기간이 끝난 가명 결제 기록을 현재 시각 기준으로 삭제한다', async () => {
     const now = new Date('2026-06-22T00:00:00.000Z');
