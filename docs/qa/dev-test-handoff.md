@@ -8,13 +8,16 @@
 
 | 스토어 | 게재 중 | 대기 | 등록정보 |
 | --- | --- | --- | --- |
-| Google Play | **`35 (1.2.15)` — `PUBLISHED`**(2026-10-19 확인) | 없음 | **(B)**(2026-10-16 — 날씨·앱 화면 3개 언어 문장 포함) |
-| App Store | **1.2.14(빌드 12)** — `READY_FOR_SALE` | **1.2.15(빌드 13) 심사 대기**(`WAITING_FOR_REVIEW`, 2026-10-19) | 게재본 INTERIM, 1.2.15 레코드는 **(B)** |
+| Google Play | **`36 (1.2.16)` — `PUBLISHED`**(2026-10-25 확인) | 없음 | **(C)**(2026-10-21) |
+| App Store | **1.2.16(빌드 14)** — `READY_FOR_SALE`(2026-10-25 확인) · 플러스 구독 `APPROVED` | 없음 | 1.2.16 레코드 |
+
+- 2026-10-26: 두 스토어 1.2.16 게재 확인 뒤 강제 업데이트(`app-version.ts` Android 36·iOS 14)를 올렸다. 옛 앱 호환
+  응답 정리는 그다음 서버 릴리스다(`docs/spec/plan-gates.md` 「강제 업데이트」 4).
 
 - 확인은 API 로 한다 — Play `releases.list` 의 `releaseLifecycleState`(`PUBLISHED` 여야 게재), ASC `appStoreVersions` 의
   `appStoreState`. 도구는 `.claude/release-tools/`(저장소 밖): `play-probe.mjs`, `asc-1215.mjs state`.
-- 선물 상품은 두 스토어에서 지웠다(2026-10-16). 커플·가족 이용권과 초대 코드는 아래 「서버·브랜치」 의 브랜치에서
-  걷어냈고 **아직 출시 전이다** — 게재 중인 두 앱(위 표)은 커플·가족 이용권과 초대 코드 등록을 그대로 보여 준다.
+- 선물 상품은 두 스토어에서 지웠다(2026-10-16). 커플·가족 이용권과 초대 코드는 1.2.16 에서
+  걷어냈다(두 스토어 게재 2026-10-25 확인). 옛 앱은 강제 업데이트로 막는다.
   두 스토어의 커플·가족 상품은 2026-10-21 에 정리했다 — App Store 는 두 구독을 **삭제**(구독자 0), Play 는 두 기본
   요금제를 **비활성화**(구매 이력이 있는 상품은 지울 수 없다). 원본 백업은 `.claude/release-tools/group-products-backup-20261021.json`.
   유료 이용권 이름은 '개인' → **'플러스'**(상품 id `personal_monthly` 는 그대로). Play 구독 제목은 바꿨고, App Store 구독
