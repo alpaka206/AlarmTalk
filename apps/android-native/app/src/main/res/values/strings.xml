@@ -153,6 +153,7 @@
     <string name="editor_error_mic_permission_required">마이크 권한이 필요해요.</string>
     <string name="editor_error_record_or_select_file">녹음하거나 파일을 선택해 주세요.</string>
     <string name="editor_error_recording_failed">녹음에 실패했어요.</string>
+    <string name="recording_stopped_too_soon">녹음이 너무 짧아요. 버튼을 누르고 말한 뒤에 멈춰 주세요.</string>
     <string name="editor_error_recording_start_failed">녹음을 시작할 수 없어요.</string>
     <string name="editor_error_select_voice">사용할 목소리를 선택해 주세요.</string>
     <string name="editor_error_stock_clip_select_failed">기본 제공 음성을 선택하지 못했어요.</string>
