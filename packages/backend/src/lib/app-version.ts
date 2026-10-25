@@ -88,7 +88,11 @@ const ANDROID: AppVersionPolicy = {
   // 403 을 모르고(다른 기기 탈퇴 신청 뒤 멈춘다) 문서 버전 5 를 싣는다. 서버가 그 앱들을 위해 두던 호환 갈래(옛 유예 화면
   // 응답·철회 버튼 예외·문서 5 수락)를 이 회차에 지웠다. 순서: Play `34 (1.2.14)` 가 `PUBLISHED` 인 것을 확인하고
   // 올렸다(2026-10-16 `releases.list`).
-  minSupported: 34,
+  //
+  // 36 으로 올리는 이유(2026-10-26) — **커플·가족 이용권 폐지(1.2.16, #931)**. 35 이하는 팔지 않는 커플·가족 카드와
+  // 초대 코드 칸을 그대로 그린다(오너: 요금제가 앱에 남아 있으면 안 된다 — `docs/spec/plan-gates.md` 「강제 업데이트」).
+  // 순서: Play `36 (1.2.16)` 이 `RELEASE_LIFECYCLE_STATE_PUBLISHED` 인 것을 Play Developer API 로 확인하고 올렸다.
+  minSupported: 36,
   // 권장 업데이트 기준(비차단). 미만이면 클라가 FLEXIBLE 인앱 업데이트를 띄운다
   // (`InAppUpdateManager` — 백그라운드 다운로드 후 재시작 안내). minSupported 보다
   // 낮으면 "필수 버전이 최신 버전보다 높다" 는 모순이라 함께 올린다.
@@ -122,7 +126,8 @@ const ANDROID: AppVersionPolicy = {
   // 34(2026-10-16): `minSupported` 를 34 로 올리므로 함께 올린다 — 차단 화면이다.
   // 35(2026-10-19, 코덱스 #923): Play 프로덕션 35 (1.2.15) 가 `RELEASE_LIFECYCLE_STATE_PUBLISHED` 인 것을 Play
   // Developer API 로 확인하고 올렸다. `minSupported` 는 34 그대로라 차단 화면이 아니라 배너다.
-  latest: 35,
+  // 36(2026-10-26): `minSupported` 를 36 으로 올리므로 함께 올린다 — 차단 화면이다.
+  latest: 36,
   storeUrl: 'https://play.google.com/store/apps/details?id=com.alarmtalk.app',
 };
 
@@ -151,7 +156,9 @@ const IOS: AppVersionPolicy = {
   // versionCode 와 다른 수열이라 Android 값을 물려주지 않는다(30 이면 1.2.10 까지 막힌다).
   // 12 = 1.2.14. 2026-10-18 ASC에서 READY_FOR_SALE·빌드 12를 확인했다.
   // 문서 6만 받는 서버와 privacy 재동의 기준 5를 함께 내므로, 문서 5를 보내는 옛 앱은 먼저 업데이트한다.
-  minSupported: 12,
+  // 14 = 1.2.16. 2026-10-26 ASC 에서 1.2.16 `READY_FOR_SALE` 을 확인했다 — 빌드 13 이하는 커플·가족 카드와 초대 코드
+  // 칸을 그린다(위 Android 36 과 같은 회차).
+  minSupported: 14,
   // ⚠ **iOS 는 이 값을 읽는 클라가 없다**(1.2.10 도 그렇다). `AppVersionGate.checkAppVersion()`
   // 은 `min_supported_version` 만 보고 `updateRequired` 를 정한다 — 안드로이드의 FLEXIBLE
   // 인앱 업데이트(`InAppUpdateManager`)에 해당하는 것이 iOS 에 없어서다(`AppVersionResponse`
@@ -160,7 +167,7 @@ const IOS: AppVersionPolicy = {
   // **`minSupported` 와 같은 값**으로만 둔다 — 하한만 올리면 "필수 버전이 최신 버전보다
   // 높다" 는 모순이 된다. 게재본을 따라가는 권장 기준이 아니다. 권장 업데이트 배너를 만드는
   // 사람은 그때의 게재 빌드로 다시 맞춘다.
-  latest: 12,
+  latest: 14,
   // App Store Connect 앱 레코드의 Apple ID(2026-08-10 생성, 스토어 표기명 `Alarm-Talk`).
   // 2026-09-22 게재로 실제로 열린다.
   storeUrl: 'https://apps.apple.com/app/id6799711245',
