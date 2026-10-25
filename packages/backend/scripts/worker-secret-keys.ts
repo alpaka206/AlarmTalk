@@ -33,6 +33,8 @@ export const WORKER_SECRET_KEYS = [
   'ANDROID_PACKAGE_NAME',
   'GOOGLE_RTDN_VERIFICATION_TOKEN',
   'ADMIN_SECRET',
+  // 관리자 콘솔 시험 발송의 기본 받는 사람(이메일) — 저장소가 공개라 코드에 두지 않는다. 빈 값은 skip.
+  'ADMIN_TEST_PUSH_EMAIL',
   'KASI_SERVICE_KEY',
   // 기상청 단기예보 서비스 키(일반 인증키 Decoding) — 한국 지역 날씨(`lib/weather-kma.ts`). 필수는 아니다
   // (dev 에는 없을 수 있다 — 없으면 KR 날씨만 미해결, 운영은 슬롯마다 경보).

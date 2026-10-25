@@ -5,6 +5,7 @@ import type { Env, AppEnv } from './types';
 import type { DowngradedAlarm } from './lib/paid-voice-cleanup';
 import { authMiddleware } from './middleware/auth';
 import { consentMiddleware } from './middleware/consent';
+import { appPresenceMiddleware } from './middleware/appPresence';
 import { loggerMiddleware } from './middleware/logger';
 import {
   rateLimitMiddleware,
@@ -56,6 +57,11 @@ import adminRoutes from './routes/admin';
 const USAGE_EVENT_RETENTION_DAYS = 365;
 /** cron 한 회차가 길어지지 않게 묶어 지운다. 남으면 다음 회차가 이어서 지운다. */
 const USAGE_EVENT_PRUNE_BATCH = 500;
+/**
+ * 앱 빌드·접속 기록(`user_app_presence`, 관리자 콘솔) 보관 기간 — 마지막 접속 뒤 이만큼 지나면 지운다.
+ * **처리방침 3장의 '접속 로그 및 보안 로그 3개월' 과 같아야 한다.**
+ */
+const APP_PRESENCE_RETENTION_DAYS = 90;
 
 registerMp3EncoderModule(mp3EncoderWasm);
 
@@ -268,6 +274,9 @@ api.use('*', authMiddleware);
 // 인증 성공한 요청은 전역 IP 버킷 카운트를 환불 — 이후는 사용자 버킷(아래)만 소모한다.
 // 비인증/인증실패/공개 라우트는 환불이 없어 IP 버킷에 그대로 누적된다(rateLimit.ts 참고).
 api.use('*', ipRateLimitRefundMiddleware);
+// 앱 빌드·접속 기록(관리자 콘솔) — **동의 검사 앞**이다. 재동의를 안 해 403 을 받는 사람이야말로 알림으로 찾아야
+// 할 대상이라, 뒤에 두면 바로 그 사람들의 빌드만 빈다(`middleware/appPresence.ts`).
+api.use('*', appPresenceMiddleware);
 // 서버측 동의 강제(B4) — authMiddleware 직후에 둬 userIdPK 를 사용한다. 데이터 수집
 // 라우트는 일반 필수 동의가 없으면 403. 면제 경로는 consentMiddleware 내부에서 통과.
 api.use('*', consentMiddleware);
@@ -290,8 +299,8 @@ api.route('/push', pushRoutes);
 // 사용 기록 — 앱이 오프라인에 쌓아 둔 이벤트를 모아 보낸다(routes/events.ts).
 api.route('/events', eventsRoutes);
 
-// 관리자 콘솔(/admin) — 사용자 JWT 가 아니라 ADMIN_SECRET(HTTP Basic)로 보호한다
-// (admin.ts 내부 미들웨어). 지금은 없앤 프로모 코드의 이력만 읽기 전용으로 보여 준다.
+// 관리자 콘솔(/admin) — 사용자 JWT 가 아니라 ADMIN_SECRET(비밀번호 로그인·세션 쿠키)로 보호한다
+// (admin.ts 내부 미들웨어). 개요·사용자·알림 보내기 — `docs/spec/admin-console.md`.
 app.route('/admin', adminRoutes);
 
 app.route('/api', api);
@@ -482,6 +491,18 @@ async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext)
     });
   } catch (err) {
     captureCron('scheduled.usage_event_prune', err);
+  }
+
+  // 앱 빌드·접속 기록 — 90일 동안 접속이 없는 행. `last_seen_at` 은 DDL 기본값 꼴(`YYYY-MM-DD HH:MM:SS`)이라
+  // `datetime(?)` 으로 맞춰 비교한다.
+  try {
+    const cutoff = new Date(now.getTime() - APP_PRESENCE_RETENTION_DAYS * 24 * 60 * 60 * 1000).toISOString();
+    await db.execute({
+      sql: `DELETE FROM user_app_presence WHERE last_seen_at < datetime(?)`,
+      args: [cutoff],
+    });
+  } catch (err) {
+    captureCron('scheduled.app_presence_prune', err);
   }
 
   // 만료된 이메일 인증코드(PII) 정리 — 무한 보존 방지. expires_at 은 ISO 문자열로 기록되므로

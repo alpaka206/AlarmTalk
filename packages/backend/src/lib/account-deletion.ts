@@ -372,6 +372,11 @@ export async function purgeUserAccount(
       sql: `DELETE FROM push_tokens WHERE user_id = ?`,
       args: [userPk],
     });
+    // 앱 빌드·접속 기록(관리자 콘솔, #133).
+    writes.push({
+      sql: `DELETE FROM user_app_presence WHERE user_id = ?`,
+      args: [userPk],
+    });
 
     writes.push({
       sql: `DELETE FROM generated_audio_assets

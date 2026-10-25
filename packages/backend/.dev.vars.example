@@ -36,6 +36,9 @@ SENTRY_DSN=
 FIREBASE_PROJECT_ID=
 # Required only when running POST /api/init-db.
 INIT_DB_SECRET=
+# 관리자 콘솔(/admin) 비밀번호와, 시험 발송의 기본 받는 사람(계정 이메일 — 저장소가 공개라 여기에만 둔다)
+ADMIN_SECRET=
+ADMIN_TEST_PUSH_EMAIL=
 
 # === Local scripts only (not pushed as Worker secrets) ===
 # Used by sync-worker-secrets.ts and reset-test-data.ts.

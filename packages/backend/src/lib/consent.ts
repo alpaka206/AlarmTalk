@@ -252,9 +252,19 @@ export async function loadLatestConsents(
           FROM user_consents WHERE user_id = ? ORDER BY created_at DESC, rowid DESC`,
     args: [userIdPK],
   });
+  return latestConsentsFromRows(res.rows);
+}
+
+/**
+ * 한 사람의 동의 행(**최신이 먼저** — `created_at DESC, rowid DESC`)에서 유형별 최신 상태를 만든다.
+ * 여러 사람을 한 번에 읽는 자리(관리자 콘솔의 발송 대상·집계)가 사람마다 조회하지 않도록 판정만 떼어 냈다.
+ */
+export function latestConsentsFromRows(
+  rows: ReadonlyArray<Record<string, unknown>>,
+): LatestConsentMap {
   const latest = new Map<string, LatestConsent>();
   const ended = new Set<string>();
-  for (const row of res.rows) {
+  for (const row of rows) {
     const type = String(row.consent_type);
     const record: LatestConsent = {
       agreed: Number(row.agreed) === 1,

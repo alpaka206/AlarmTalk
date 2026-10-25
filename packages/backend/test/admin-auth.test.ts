@@ -57,8 +57,8 @@ describe('admin 비밀번호 전용 로그인', () => {
     expect(html).not.toContain('name="email"');
   });
 
-  it('미인증 /admin/promo 접근은 401(Basic 챌린지)이 아니라 로그인으로 302', async () => {
-    const res = await request('http://localhost/admin/promo', {});
+  it('미인증 /admin/users 접근은 401(Basic 챌린지)이 아니라 로그인으로 302', async () => {
+    const res = await request('http://localhost/admin/users', {});
     expect(res.status).toBe(302);
     expect(res.headers.get('Location')).toBe('/admin/login');
     expect(res.headers.get('WWW-Authenticate')).toBeNull();
@@ -71,7 +71,7 @@ describe('admin 비밀번호 전용 로그인', () => {
       body: 'password=wrong-pass',
     });
     expect(res.status).toBe(303);
-    expect(res.headers.get('Location')).toContain('/admin/login?err=');
+    expect(res.headers.get('Location')).toBe('/admin/login?err=1');
     expect(res.headers.get('Set-Cookie')).toBeNull();
   });
 
@@ -82,7 +82,7 @@ describe('admin 비밀번호 전용 로그인', () => {
       body: 'password=' + encodeURIComponent(SECRET),
     });
     expect(res.status).toBe(303);
-    expect(res.headers.get('Location')).toBe('/admin/promo');
+    expect(res.headers.get('Location')).toBe('/admin');
     const setCookie = res.headers.get('Set-Cookie') || '';
     expect(setCookie).toContain('admin_session=');
     expect(setCookie).toContain('HttpOnly');
@@ -91,20 +91,23 @@ describe('admin 비밀번호 전용 로그인', () => {
     expect(setCookie).toContain('Path=/admin');
   });
 
-  it('발급된 세션 쿠키로 콘솔(/admin/promo)에 접근된다', async () => {
+  it('발급된 세션 쿠키로 콘솔(/admin/users)에 접근된다', async () => {
     const token = await login();
-    mockDB.pushResult([]); // plans SELECT
-    mockDB.pushResult([]); // codes SELECT
-    const res = await request('http://localhost/admin/promo', {
+    mockDB.pushResult([]); // users SELECT
+    const res = await request('http://localhost/admin/users', {
       headers: { Cookie: `admin_session=${token}` },
     });
     expect(res.status).toBe(200);
     const html = await res.text();
-    expect(html).toContain('프로모 코드 이력');
+    expect(html).toContain('<h1>사용자</h1>');
+    expect(html).not.toContain('프로모');
+    // 콘솔 화면은 nonce 스크립트만 허용하고 캐시하지 않는다.
+    expect(res.headers.get('Content-Security-Policy')).toMatch(/script-src 'nonce-[^']+'/);
+    expect(res.headers.get('Cache-Control')).toBe('no-store');
   });
 
   it('위조/변조 쿠키는 거부하고 로그인으로 보낸다', async () => {
-    const res = await request('http://localhost/admin/promo', {
+    const res = await request('http://localhost/admin/users', {
       headers: { Cookie: 'admin_session=v1.99999999999999.forgedsignature' },
     });
     expect(res.status).toBe(302);
@@ -114,7 +117,7 @@ describe('admin 비밀번호 전용 로그인', () => {
   it('만료된 세션 토큰(과거 exp)은 거부한다', async () => {
     // 과거 만료시각으로 만든 토큰은 서명이 맞아도 시간 검사에서 탈락해야 한다.
     // (서명 없이 임의로 만든 토큰이므로 어차피 거부되지만, exp 형식 자체도 확인)
-    const res = await request('http://localhost/admin/promo', {
+    const res = await request('http://localhost/admin/users', {
       headers: { Cookie: 'admin_session=v1.1000000000000.anything' },
     });
     expect(res.status).toBe(302);
@@ -122,8 +125,7 @@ describe('admin 비밀번호 전용 로그인', () => {
 
   it('Basic 인증(스크립트/curl용)은 계속 통과한다', async () => {
     mockDB.pushResult([]);
-    mockDB.pushResult([]);
-    const res = await request('http://localhost/admin/promo', {
+    const res = await request('http://localhost/admin/users', {
       headers: { Authorization: 'Basic ' + Buffer.from('x:' + SECRET).toString('base64') },
     });
     expect(res.status).toBe(200);

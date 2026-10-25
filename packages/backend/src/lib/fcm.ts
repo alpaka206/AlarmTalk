@@ -7,7 +7,7 @@ import { logStructured } from './logger';
  * 존재하지 않는 채널 id 를 주면 Android 8+ 에서 알림이 **아예 표시되지 않는다**(로그에는
  * 성공으로 남아 발견이 극히 어렵다). 결제 안내를 울림 채널로 보내면 알람 소리가 난다.
  */
-const SOCIAL_CHANNEL_ID = 'voice_alarm_social_updates_v1';
+export const SOCIAL_CHANNEL_ID = 'voice_alarm_social_updates_v1';
 import {
   apnsConfigFromEnv,
   isDeadApnsToken,
@@ -839,7 +839,7 @@ export async function sendBillingStateSignals(
  *
  * ⚠ 네트워크 오류로 지우면 그 기기는 재로그인 전까지 푸시를 영영 못 받는다.
  */
-async function pruneDeadApnsTokens(db: Client, results: ApnsSendResult[]): Promise<void> {
+export async function pruneDeadApnsTokens(db: Client, results: ApnsSendResult[]): Promise<void> {
   const dead = results.filter((r) => !r.success && isDeadApnsToken(r.reason)).map((r) => r.token);
   if (dead.length === 0) return;
   const placeholders = dead.map(() => '?').join(', ');

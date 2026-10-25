@@ -227,7 +227,19 @@ export const ERROR_CODES = [
   // 푸시 (push.ts)
   'INVALID_PLATFORM',
   'INVALID_PUSH_TOKEN',
-  // 관리자 (admin.ts)
+  // 관리자 (admin.ts) — 콘솔 화면만 받는다. 앱은 이 코드를 보지 않는다(`docs/spec/admin-console.md`).
+  'ADMIN_PUSH_COPY_INVALID',
+  'ADMIN_PUSH_FAILED',
+  'ADMIN_PUSH_JOB_NOT_FOUND',
+  /** 광고 알림을 한국 시각 08:00~21:00 밖에 보내려 했다. */
+  'ADMIN_PUSH_OUTSIDE_AD_HOURS',
+  'ADMIN_PUSH_TEST_RECIPIENT_NO_DEVICE',
+  /** 광고 시험 발송을 광고성 정보 수신에 동의하지 않은 계정으로 보내려 했다. */
+  'ADMIN_PUSH_TEST_RECIPIENT_NO_MARKETING_CONSENT',
+  'ADMIN_PUSH_TEST_RECIPIENT_NOT_FOUND',
+  /** 같은 문구의 시험 발송(60분 안, 한 대 이상 성공) 없이 전체 발송을 만들려 했다. */
+  'ADMIN_PUSH_TEST_REQUIRED',
+  'ADMIN_UNAUTHORIZED',
   'ADMIN_UNCONFIGURED',
   // 코드 등록 (code.ts) — **받는 코드가 없다.** 옛 앱의 코드 등록 화면이 아직 부르므로 언제나 이 코드 하나로
   // 답한다(옛 앱 호환 — minSupported 가 현재 빌드를 넘으면 지운다).

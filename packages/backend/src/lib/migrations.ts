@@ -3229,6 +3229,49 @@ export const migrations: Migration[] = [
     name: 'rename-personal-plan-to-plus',
     statements: [`UPDATE plans SET name = '플러스' WHERE key = 'personal'`],
   },
+  {
+    // **관리자 콘솔**(2026-10-23, `docs/spec/admin-console.md`).
+    //  - `user_app_presence`: 사람 × 플랫폼의 마지막 앱 빌드와 접속 시각. 두 앱이 요청마다 보내던 `X-App-Version`
+    //    을 서버가 처음으로 적는다 — 버전으로 알림 대상을 고르고 사용 현황을 보려고. 탈퇴 파기가 지우고, 90일 동안
+    //    접속이 없으면 cron 이 지운다(처리방침 3장 '접속 로그 3개월'). 처음 본 시각은 일부러 적지 않는다 — 덮어쓰지
+    //    않는 시각은 3개월을 넘겨 남는다.
+    //  - `admin_push_jobs`: 콘솔에서 보낸 알림의 기록. **대상 토큰을 적지 않는다** — 대상 조건과 커서만 두고
+    //    보낼 때마다 다시 고른다. 그래서 이 표에는 사람을 가리키는 값이 없다(시험 발송도 받는 사람을 적지 않는다).
+    //    `claim_*` 는 지금 보내는 걸음이 맡은 구간이다 — 응답이 끊겨도 그 구간을 다시 보낼 수 있게(`runJobStep`).
+    id: 133,
+    name: 'admin-console',
+    statements: [
+      `CREATE TABLE IF NOT EXISTS user_app_presence (
+        user_id TEXT NOT NULL,
+        platform TEXT NOT NULL CHECK (platform IN ('android', 'ios')),
+        app_version INTEGER NOT NULL,
+        last_seen_at TEXT NOT NULL DEFAULT (datetime('now')),
+        PRIMARY KEY (user_id, platform)
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_user_app_presence_version
+        ON user_app_presence (platform, app_version)`,
+      `CREATE TABLE IF NOT EXISTS admin_push_jobs (
+        id TEXT PRIMARY KEY,
+        kind TEXT NOT NULL CHECK (kind IN ('notice', 'ad')),
+        is_test INTEGER NOT NULL DEFAULT 0,
+        title TEXT NOT NULL,
+        body TEXT NOT NULL,
+        audience_json TEXT NOT NULL,
+        estimated_total INTEGER NOT NULL DEFAULT 0,
+        cursor TEXT NOT NULL DEFAULT '',
+        claim_from TEXT,
+        claim_to TEXT,
+        claim_at TEXT,
+        claim_finishes INTEGER NOT NULL DEFAULT 0,
+        sent INTEGER NOT NULL DEFAULT 0,
+        failed INTEGER NOT NULL DEFAULT 0,
+        status TEXT NOT NULL DEFAULT 'sending' CHECK (status IN ('sending', 'done', 'canceled')),
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        finished_at TEXT
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_admin_push_jobs_created ON admin_push_jobs (created_at)`,
+    ],
+  },
 ];
 // Errors that mean the statement was already applied — safe to ignore so
 // we can recover databases whose `_migrations` ledger is out of sync with
