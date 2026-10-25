@@ -337,6 +337,8 @@ export async function runJobStep(db: Client, env: PushEnv, jobId: string, nowMs:
   let claimTo: string;
   let finished: boolean;
   let batch: AudienceCandidate[];
+  /** 다시 맡은 구간이 한 걸음보다 클 때, 이번에 보내지 못한 나머지의 시작점(이번 묶음의 마지막 기기). */
+  let remainderFrom: string | null = null;
   if (row.claim_from !== null && row.claim_from !== undefined) {
     // 앞 걸음이 맡은 채 끝나지 않았다 — 아직 도는 중이면 기다리고, 끊겼으면 그 구간을 다시 맡는다.
     const previousAt = String(row.claim_at ?? '');
@@ -353,6 +355,8 @@ export async function runJobStep(db: Client, env: PushEnv, jobId: string, nowMs:
     finished = Number(row.claim_finishes ?? 0) === 1;
     const page = await nextAudiencePage(db, audience, claimFrom, STEP_SCAN_LIMIT, claimTo);
     batch = page.targets.slice(0, STEP_SEND_LIMIT);
+    // 그 사이 동의가 바뀌어 같은 구간에 대상이 늘었을 수 있다 — 나머지는 버리지 않고 구간으로 남긴다.
+    if (page.targets.length > STEP_SEND_LIMIT) remainderFrom = batch[batch.length - 1]!.pid;
   } else {
     claimFrom = String(row.cursor ?? '');
     const page = await nextAudiencePage(db, audience, claimFrom, STEP_SCAN_LIMIT);
@@ -371,6 +375,16 @@ export async function runJobStep(db: Client, env: PushEnv, jobId: string, nowMs:
   }
 
   const { sent, failed } = batch.length > 0 ? await deliver(db, env, batch, copy) : { sent: 0, failed: 0 };
+  if (remainderFrom !== null) {
+    // 구간을 앞에서부터 줄인다. 맡은 시각을 비워 두면 다음 걸음이 기다리지 않고 나머지를 곧바로 맡는다.
+    const narrowed = await db.execute({
+      sql: `UPDATE admin_push_jobs SET sent = sent + ?, failed = failed + ?, claim_from = ?, claim_at = NULL
+            WHERE id = ? AND claim_from = ? AND claim_at = ?`,
+      args: [sent, failed, remainderFrom, jobId, claimFrom, claimAt],
+    });
+    if (narrowed.rowsAffected !== 1) return { ...state, paused: 'busy' };
+    return { ...state, sent: state.sent + sent, failed: state.failed + failed, status: 'sending' };
+  }
   // 이 걸음을 아직 내가 맡고 있을 때만 끝낸다 — 늦어서 다른 창이 다시 맡았으면 그쪽이 센다.
   const done = await db.execute({
     sql: `UPDATE admin_push_jobs

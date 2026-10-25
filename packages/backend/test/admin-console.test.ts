@@ -352,6 +352,39 @@ describe('발송', () => {
     expect(row.rows[0]!.claim_from).toBeNull();
   });
 
+  it('다시 맡은 구간에 대상이 늘었으면 나머지를 구간으로 남겨 이어 보낸다', async () => {
+    const extra = STEP_SEND_LIMIT + 5;
+    for (let i = 0; i < extra; i++) {
+      const id = `u-grow-${String(i).padStart(3, '0')}`;
+      await run(`INSERT INTO users (id, email, name, plan) VALUES (?, ?, ?, 'free')`, [id, `${id}@example.com`, id]);
+      await run(`INSERT INTO push_tokens (id, user_id, token, platform) VALUES (?, ?, ?, 'android')`, [
+        `pt-grow-${String(i).padStart(3, '0')}`,
+        id,
+        `tok-grow-${i}`,
+      ]);
+    }
+    try {
+      await passTest();
+      const audience = parseAudience({ platform: 'android' });
+      const id = await createPushJob(db, copy, audience, 0, NOON_KST);
+      // 구간 전체(처음부터 마지막 기기까지)를 맡은 채 끊긴 상태를 직접 만든다 — 맡을 때보다 대상이 많아진 경우.
+      await run(
+        `UPDATE admin_push_jobs SET cursor = 'pt-grow-999', claim_from = '', claim_to = 'pt-grow-999',
+                claim_at = ?, claim_finishes = 1 WHERE id = ?`,
+        [new Date(NOON_KST - CLAIM_STALE_MS).toISOString(), id],
+      );
+      const total = (await countAudience(db, audience)).android;
+      expect(total).toBeGreaterThan(STEP_SEND_LIMIT);
+      const first = await runJobStep(db, NO_PUSH_ENV, id, NOON_KST);
+      expect(first).toMatchObject({ status: 'sending', failed: STEP_SEND_LIMIT });
+      const second = await runJobStep(db, NO_PUSH_ENV, id, NOON_KST + 1000);
+      expect(second).toMatchObject({ status: 'done', failed: total });
+    } finally {
+      await run(`DELETE FROM push_tokens WHERE id LIKE 'pt-grow-%'`);
+      await run(`DELETE FROM users WHERE id LIKE 'u-grow-%'`);
+    }
+  });
+
   it('광고 시험 발송도 광고 동의자에게만', async () => {
     const ad = parseCopy({ kind: 'ad', title: '할인 안내', body: '이번 주만' });
     await expect(sendTestPush(db, NO_PUSH_ENV, 'tester@example.com', ad, NOON_KST)).rejects.toMatchObject({
