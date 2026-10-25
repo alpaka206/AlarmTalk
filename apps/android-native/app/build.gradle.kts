@@ -183,7 +183,7 @@ android {
         versionCode = 36
         versionName = "1.2.16"
 
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        testInstrumentationRunner = "com.alarmtalk.app.AlarmTalkTestRunner"
 
         // 지원 로케일을 한국어(기본)·영어·일본어로 선언한다. 기기 언어가 en/ja 면
         // values-en/values-ja 가, 그 외에는 기본 values(한국어)가 적용된다.

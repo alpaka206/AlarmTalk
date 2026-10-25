@@ -147,6 +147,7 @@
     <string name="editor_error_mic_permission_required">Microphone permission is required.</string>
     <string name="editor_error_record_or_select_file">Please record or select a file.</string>
     <string name="editor_error_recording_failed">Recording failed.</string>
+    <string name="recording_stopped_too_soon">The recording was too short. Tap, speak, then stop.</string>
     <string name="editor_error_recording_start_failed">Couldn\'t start recording.</string>
     <string name="editor_error_select_voice">Please choose a voice to use.</string>
     <string name="editor_error_stock_clip_select_failed">Couldn\'t select the built-in voice.</string>

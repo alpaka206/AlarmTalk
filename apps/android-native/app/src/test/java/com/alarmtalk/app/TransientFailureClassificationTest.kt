@@ -232,6 +232,21 @@ class TransientFailureClassificationTest {
     }
 
     @Test
+    fun recordingStoppedRightAfterStartIsAUserBreadcrumbButALaterFailureStaysAnIssue() {
+        // 녹음을 시작하자마자 멈춘 것은 사용자의 동작이다(2026-10-26 ANDROID-1P) — 화면이 '너무 짧아요' 로 이미 말한다.
+        val platform = RuntimeException("stop failed.")
+        val tooSoon = com.alarmtalk.app.UserFacingException(
+            "too short",
+            com.alarmtalk.app.data.RecordingStoppedTooSoonException(150, platform),
+        )
+        assertEquals("user", AlarmTalkLog.breadcrumbCategoryFor(tooSoon))
+        // 호출부가 한 번 더 감싸 보고해도 같다.
+        assertEquals("user", AlarmTalkLog.breadcrumbCategoryFor(IllegalStateException("wrap", tooSoon)))
+        // 오래 녹음한 뒤의 같은 플랫폼 실패는 표시가 없어 그대로 이슈다.
+        assertNull(AlarmTalkLog.breadcrumbCategoryFor(IllegalStateException("Recording failed.", platform)))
+    }
+
+    @Test
     fun breadcrumbClassificationDoesNotConsumeTheErrorBody() {
         // 같은 계약이 여기에도 걸린다 — 이 함수는 `reportError` 가 **모든** 실패에 대해
         // 부르므로, 본문을 소진하면 그 뒤 코드를 보려던 호출부가 전부 빈 본문을 받는다.

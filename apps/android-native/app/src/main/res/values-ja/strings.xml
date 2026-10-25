@@ -147,6 +147,7 @@
     <string name="editor_error_mic_permission_required">マイクの権限が必要です。</string>
     <string name="editor_error_record_or_select_file">録音するか、ファイルを選択してください。</string>
     <string name="editor_error_recording_failed">録音に失敗しました。</string>
+    <string name="recording_stopped_too_soon">録音が短すぎます。ボタンを押して話してから止めてください。</string>
     <string name="editor_error_recording_start_failed">録音を開始できませんでした。</string>
     <string name="editor_error_select_voice">使用する声を選択してください。</string>
     <string name="editor_error_stock_clip_select_failed">標準提供の音声を選択できませんでした。</string>
