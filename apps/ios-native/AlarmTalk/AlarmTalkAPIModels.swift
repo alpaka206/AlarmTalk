@@ -945,4 +945,83 @@ struct ManualQuotaResponse: Decodable, Equatable {
     var limit: Int
     var used: Int
     var remaining: Int
+    /// 무료일 때만 온다 — 광고 보상 현황(`docs/spec/ad-rewards.md` §3). 옛 서버·유료면 nil.
+    var adReward: AdRewardStatus? = nil
+}
+
+/// `ad_reward` — 안드로이드 `AdRewardStatus` 미러. 옛 서버가 모르는 칸은 기본값으로 읽는다(광고를 권하지 않는 쪽).
+struct AdRewardStatus: Decodable, Equatable {
+    /// 지금 쓸 수 있는 보상. 계정 하나에 한 잔액이다(어느 앱에서 받았든).
+    var credits: Int = 0
+    /// 이번 달 광고로 더 받을 수 있는 횟수(열린 예약을 뺀 값).
+    var remainingGrants: Int = 0
+    var monthlyLimit: Int = 0
+    /// 끝까지 봤는데 아직 서버 확인(SSV)이 오지 않은 광고 수 — '보상을 확인하고 있어요'.
+    var pending: Int = 0
+    /// 지금 새 광고를 볼 수 있는가(운영 스위치·이번 달 자리·열린 세션). 옛 서버면 false.
+    var canWatch: Bool = false
+    /// 못 보면 왜인지 — `disabled`·`monthly_limit`·`session_open`.
+    var unavailableReason: String? = nil
+    /// 이번 달 상한이면 다음 자리가 생기는 시각(ISO-8601, 다음 달 1일 0시 KST).
+    var nextGrantAt: String? = nil
+
+    init(
+        credits: Int = 0,
+        remainingGrants: Int = 0,
+        monthlyLimit: Int = 0,
+        pending: Int = 0,
+        canWatch: Bool = false,
+        unavailableReason: String? = nil,
+        nextGrantAt: String? = nil
+    ) {
+        self.credits = credits
+        self.remainingGrants = remainingGrants
+        self.monthlyLimit = monthlyLimit
+        self.pending = pending
+        self.canWatch = canWatch
+        self.unavailableReason = unavailableReason
+        self.nextGrantAt = nextGrantAt
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case credits, remainingGrants, monthlyLimit, pending, canWatch, unavailableReason, nextGrantAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        credits = (try? c.decodeIfPresent(Int.self, forKey: .credits)) ?? 0
+        remainingGrants = (try? c.decodeIfPresent(Int.self, forKey: .remainingGrants)) ?? 0
+        monthlyLimit = (try? c.decodeIfPresent(Int.self, forKey: .monthlyLimit)) ?? 0
+        pending = (try? c.decodeIfPresent(Int.self, forKey: .pending)) ?? 0
+        canWatch = (try? c.decodeIfPresent(Bool.self, forKey: .canWatch)) ?? false
+        unavailableReason = try? c.decodeIfPresent(String.self, forKey: .unavailableReason)
+        nextGrantAt = try? c.decodeIfPresent(String.self, forKey: .nextGrantAt)
+    }
+}
+
+/// 광고 시청 승인 세션(`docs/spec/ad-rewards.md` §3) — 안드로이드 `network/AdRewardApi.kt` 미러.
+struct AdRewardSessionCreateRequest: Encodable {
+    var platform: String = "ios"
+    var adUnit: String
+}
+
+struct AdRewardSessionCloseRequest: Encodable {
+    var outcome: String
+}
+
+struct AdRewardSessionResponse: Decodable, Equatable {
+    struct Session: Decodable, Equatable {
+        var id: String
+        var status: String
+        var granted: Bool?
+    }
+    /// 광고의 `ServerSideVerificationOptions` 에 그대로 싣는 두 값.
+    struct SSV: Decodable, Equatable {
+        /// 계정 PK.
+        var userId: String
+        /// 승인 id — 서버는 콜백의 이 값으로 세션을 찾아 승인 하나에 보상 한 번만 적립한다.
+        var customData: String
+    }
+    var session: Session
+    var ssv: SSV?
 }

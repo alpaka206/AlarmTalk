@@ -21,6 +21,7 @@ import { renderGrantConfirm, renderUserDetail } from '../lib/admin/grant-pages';
 import { loadUserDetail } from '../lib/admin/user-detail';
 import { loadRenderBacklog, loadTtsUsage } from '../lib/admin/tts-ops';
 import { isRerenderKind } from '../lib/render-backlog';
+import { loadAdRewardReconciliation, loadUserAdRewards } from '../lib/admin/ad-rewards';
 import {
   createPlanGrant,
   grantEndFor,
@@ -337,6 +338,28 @@ admin.get('/users/:id', async (c) => {
   } catch (err) {
     console.error('[admin] user detail failed', err);
     return html(c, (nonce) => unavailable(nonce, err, 'users'), 500);
+  }
+});
+
+// --- 광고 보상 대조 (읽기 전용 JSON — `docs/spec/ad-rewards.md` §7) ---
+// 장기 미확정 승인 세션·정산 못 한 콜백을 모으고, 한 사람의 승인·콜백·거래·잔액을 나란히 둔다. ⚠ 쓰기(고객 보상 지급·
+// 재정산)는 없다 — 후속이다. 붙일 때는 같은 승인 id 에 묶어 이중 적립을 막고 사유·감사 이력을 남긴다.
+admin.get('/ad-rewards.json', async (c) => {
+  try {
+    return c.json(await loadAdRewardReconciliation(getDB(c.env), new Date()));
+  } catch (err) {
+    console.error('[admin] ad rewards failed', err);
+    return jsonError(c, 500, 'INTERNAL_ERROR', '광고 보상 기록을 읽지 못했어요.');
+  }
+});
+
+admin.get('/users/:id/ad-rewards.json', async (c) => {
+  const userId = c.req.param('id').slice(0, 128);
+  try {
+    return c.json(await loadUserAdRewards(getDB(c.env), userId, new Date()));
+  } catch (err) {
+    console.error('[admin] user ad rewards failed', err);
+    return jsonError(c, 500, 'INTERNAL_ERROR', '광고 보상 기록을 읽지 못했어요.');
   }
 });
 

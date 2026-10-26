@@ -76,6 +76,8 @@ struct AlarmEditorSheet: View {
     /// 목소리 탭에서 넘겨받은 목소리(`target.preferredVoiceID`)를 이미 적용했거나 사용자가 직접 골랐는가.
     @State var didApplyPreferredVoice = false
     @State var voiceGateAlert: VoiceGateAlertContent?
+    /// 광고를 띄우고 보상을 확인하는 동안 — 그 사이 광고를 겹쳐 띄우지 않는다.
+    @State var adRewardBusy = false
     /// 기본(시스템) 목소리로 바꾸면 직접 입력 문구를 쓸 수 없어 편집기가 문구를 비운다.
     /// 조용히 지우면 '문구가 사라졌다' 가 되므로 한 번 확인받는다
     /// (안드로이드 `VoiceAudioCard.kt:166-173` 의 `pendingVoiceSwitch`).
@@ -183,6 +185,8 @@ struct AlarmEditorSheet: View {
         /// (코드 입력 액션은 2026-10-14 에 없앴다 — `VoicePlanGateAlert` 주석.)
         let offersPlanActions: Bool
         var offersVoiceRegistration: Bool = false
+        /// '광고 보고 한 번 쓰기' 를 붙이는가 — 새로 만들 자리가 없는 무료 저장(429)이 연 게이트만(`AdRewardGate.route`).
+        var offersRewardedAd: Bool = false
     }
 
     /// 같은 시각 알람 교체 확인 모달의 내용. merged/existing 은 동의 시 저장을 마무리하는 데 쓴다.
@@ -476,7 +480,8 @@ struct AlarmEditorSheet: View {
         .voicePlanGateAlert(
             content: $voiceGateAlert,
             onOpenBilling: { onRequestBilling?() },
-            onOpenVoices: onJumpToVoices
+            onOpenVoices: onJumpToVoices,
+            onWatchRewardedAd: { Task { await watchRewardedAd() } }
         )
         // ⚠ **게이트에 코드 입력 시트(`RedeemCodeSheet`)를 되살리지 말 것**(2026-10-14, App Store 지침
         // 3.1.1 두 번째 반려 — 선물 코드 폐지). 할인·무료 이용은 스토어 오퍼 코드로 준다.
@@ -707,6 +712,111 @@ struct AlarmEditorSheet: View {
         } else {
             VoiceOutputSettingsPane(volumePercent: $draft.voiceVolumePercent)
         }
+    }
+
+    /// 서버가 새로 만들 자리가 없다고 했을 때(429 `MANUAL_TTS_QUOTA_EXCEEDED`)의 갈래 — `docs/spec/ad-rewards.md` §1-1 표.
+    /// 안드로이드 `AlarmEditorScreen` 의 같은 자리와 같은 판정(`AdRewardGate.route`)이다. 무언가를 띄웠으면 true.
+    /// ⚠ 본인 결과 재사용은 이미 지났다(폰 캐시 → 서버 `cache_hit`) — 여기서는 새 제작 자원만 본다.
+    func handleManualQuotaRefusal() async -> Bool {
+        guard voiceStudio.lastGenerateErrorCode == "MANUAL_TTS_QUOTA_EXCEEDED", planAccess == .free else { return false }
+        await refreshManualQuotaBeforeGenerate()
+        let adsAvailable = RewardedAds.shared.configured && auth.session != nil
+        switch AdRewardGate.route(
+            freeTier: true,
+            baseRemaining: manualQuota?.remaining,
+            adReward: manualQuota?.adReward,
+            adsConfigured: adsAvailable
+        ) {
+        case .offerAd:
+            // 보상과 쓰는 범위를 먼저 말한다(§3 「흐름」 1).
+            voiceGateAlert = VoiceGateAlertContent(
+                title: String(localized: "이번 달 무료 만들기를 다 썼어요"),
+                message: String(localized: "광고를 끝까지 한 번 보면 기본 목소리로 직접 입력 문구를 한 번 더 만들 수 있어요. 받은 보상은 이 계정에서만 쓰여요. 플러스는 한 달에 30번 만들 수 있어요."),
+                offersPlanActions: true,
+                offersRewardedAd: true
+            )
+            return true
+        case .rewardPending:
+            validationAlert = ValidationAlertContent(
+                title: String(localized: "보상을 확인하고 있어요"),
+                message: String(localized: "광고 보상을 확인하는 데 시간이 걸리고 있어요. 확인되면 다시 저장할 때 광고 없이 만들 수 있어요. 이 창은 닫아도 돼요.")
+            )
+            return true
+        case .nextDate:
+            guard let date = AdRewardGate.formattedNextGrantDate(manualQuota?.adReward?.nextGrantAt) else { return false }
+            validationAlert = ValidationAlertContent(
+                title: String(localized: "이번 달 광고 보상을 다 받았어요"),
+                message: String(localized: "\(String(date))에 다시 받을 수 있어요. 만들어 둔 음성과 기본 문구는 그대로 쓸 수 있고, 플러스는 한 달에 30번 만들 수 있어요.")
+            )
+            return true
+        case .useBase, .useReward, .planRules:
+            // 그 사이 다른 기기가 바꿨다 — 기본 실패 알럿(한도 문구)으로 말한다. 다시 저장하면 된다.
+            return false
+        }
+    }
+
+    /// 보상형 광고 한 번(`docs/spec/ad-rewards.md` §3 「흐름」) — 안드로이드 `watchRewardedAd` 와 같다.
+    ///
+    /// ⚠ **몇 초 기다렸다고 실패·재시청을 요구하지 않는다.** 확인이 늦으면 '보상을 확인하고 있어요' 를 말하고 닫게 둔다 —
+    /// 서버는 그 세션을 정산 대기로 두고 늦은 콜백도 받는다. 다시 들어오면 현황(`ad_reward.pending`)이 같은 말을 한다.
+    /// ⚠ 광고를 봤다고 문장을 자동으로 만들지 않는다 — 보상은 사용자가 다시 저장할 때 한 번 쓴다.
+    func watchRewardedAd() async {
+        guard !adRewardBusy, RewardedAds.shared.configured, auth.session != nil else { return }
+        adRewardBusy = true
+        defer { adRewardBusy = false }
+        let creditsBefore = manualQuota?.adReward?.credits ?? 0
+        let authModel = auth
+        let flow = RewardedAdFlow<RewardedAdHandle>(
+            client: LiveAdRewardSessionClient(token: { @MainActor in authModel.session?.token }),
+            adUnit: RewardedAds.shared.adUnitID,
+            load: { userID, customData in
+                await RewardedAds.shared.load(ssvUserID: userID, ssvCustomData: customData)
+            },
+            show: { handle in await RewardedAds.shared.show(handle) },
+            errorCode: { ($0 as? APIError)?.serverErrorCode }
+        )
+        let result = await flow.watch()
+        switch result {
+        case .earned:
+            var credited = false
+            for _ in 0..<8 {
+                try? await Task.sleep(for: .seconds(1))
+                await refreshManualQuotaBeforeGenerate()
+                if (manualQuota?.adReward?.credits ?? 0) > creditsBefore {
+                    credited = true
+                    break
+                }
+            }
+            validationAlert = credited
+                ? ValidationAlertContent(
+                    title: String(localized: "광고 보상을 받았어요"),
+                    message: String(localized: "다시 저장하면 이 보상으로 한 번 만들어요.")
+                )
+                : ValidationAlertContent(
+                    title: String(localized: "보상을 확인하고 있어요"),
+                    message: String(localized: "광고 보상을 확인하는 데 시간이 걸리고 있어요. 확인되면 다시 저장할 때 광고 없이 만들 수 있어요. 이 창은 닫아도 돼요.")
+                )
+        case .dismissed:
+            break
+        case .noFill:
+            validationAlert = ValidationAlertContent(
+                title: String(localized: "지금은 광고를 볼 수 없어요"),
+                message: String(localized: "지금은 볼 수 있는 광고가 없어요. 만들어 둔 음성과 기본 문구는 그대로 쓸 수 있어요.")
+            )
+        case .refused(let code):
+            validationAlert = ValidationAlertContent(
+                title: String(localized: "지금은 광고를 볼 수 없어요"),
+                message: code.flatMap { APIErrorMessages.message(for: $0) }
+                    ?? String(localized: "광고를 불러오지 못했어요. 잠시 뒤 다시 시도해 주세요.")
+            )
+        case .unavailable:
+            validationAlert = ValidationAlertContent(
+                title: String(localized: "지금은 광고를 볼 수 없어요"),
+                message: String(localized: "광고를 불러오지 못했어요. 잠시 뒤 다시 시도해 주세요.")
+            )
+        }
+        // 무엇으로 끝났든 현황을 다시 읽는다 — 예약이 풀렸거나 대기가 생겼다.
+        await refreshManualQuotaBeforeGenerate()
     }
 
     /// 생성 요청 직전에 이번 달 직접 입력 현황을 **새로 받아 둔다**(화면 숫자용). ⚠ **막지 않는다**(2026-10-26 개정,
@@ -2400,6 +2510,8 @@ struct AlarmEditorSheet: View {
             // ⚠ 사유를 **알럿으로 낸다** — 조용히 return 하면 저장을 눌렀는데 아무 일도
             // 없는 것처럼 보인다(`showSaveFailureAlert` 주석).
             guard let prepared else {
+                // 새로 만들 자리가 없다(429) — 광고 제안·보상 확인 중·다음 제공일 중 하나로 말한다(`ad-rewards.md` §1-1).
+                if await handleManualQuotaRefusal() { return }
                 showSaveFailureAlert()
                 return
             }
