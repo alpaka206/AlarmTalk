@@ -593,9 +593,34 @@ final class AlarmTalkAPI: @unchecked Sendable {
         )
     }
 
-    /// 이번 달 직접 입력 문구 생성 여유. **유료일 때만** 의미가 있다(limit == 0 이면 표시 안 함).
+    /// 이번 달 직접 입력 문구 생성 여유. 무료도 월 3회가 있고, 무료면 광고 보상 현황(`ad_reward`)이 함께 온다.
     func manualQuota(token: String) async throws -> ManualQuotaResponse {
         try await request("tts/manual-quota", token: token)
+    }
+
+    // MARK: 광고 시청 승인 세션(`docs/spec/ad-rewards.md` §3) — 안드로이드 `AdRewardApi` 와 같은 세 요청.
+    // ⚠ 이 요청들은 보상을 주지 않는다. 적립은 AdMob 서버의 서명된 확인(SSV)으로만 한다.
+
+    func createAdRewardSession(adUnit: String, token: String) async throws -> AdRewardSessionResponse {
+        try await request(
+            "ad-rewards/sessions",
+            method: "POST",
+            token: token,
+            body: AdRewardSessionCreateRequest(adUnit: adUnit)
+        )
+    }
+
+    func startAdRewardSession(id: String, token: String) async throws -> AdRewardSessionResponse {
+        try await request("ad-rewards/sessions/\(id)/start", method: "POST", token: token)
+    }
+
+    func closeAdRewardSession(id: String, outcome: String, token: String) async throws {
+        let _: AdRewardSessionResponse = try await request(
+            "ad-rewards/sessions/\(id)/close",
+            method: "POST",
+            token: token,
+            body: AdRewardSessionCloseRequest(outcome: outcome)
+        )
     }
 
     /// Phase 4-D1: Apple StoreKit2 영수증을 백엔드로 보내 entitlement 동기화.
