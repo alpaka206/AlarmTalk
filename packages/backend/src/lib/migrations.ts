@@ -3318,6 +3318,34 @@ export const migrations: Migration[] = [
       `CREATE INDEX IF NOT EXISTS idx_manual_tts_requests_claimed ON manual_tts_requests (claimed_at)`,
     ],
   },
+  {
+    // **애플 서버 알림 V2 수신 기록**(2026-10-26, `docs/spec/billing-lifecycle.md` 「애플 서버 알림 V2」).
+    // `notificationUUID` 로 중복을 거른다 — 응답 전에 `received` 로 적고, 처리가 끝나면 `processed`·`ignored`,
+    // 실패하면 `failed`(애플이 재전송하면 다시 처리한다). 알림 본문은 적지 않는다 — 처리는 언제나 스토어 재조회라
+    // 본문이 필요 없다. `user_id` 는 거래의 주인을 찾았을 때만 적고 탈퇴 파기가 지운다. 90일 뒤 cron 이 지운다
+    // (`APPLE_NOTIFICATION_RETENTION_DAYS`).
+    id: 136,
+    name: 'apple-server-notifications',
+    statements: [
+      `CREATE TABLE IF NOT EXISTS apple_server_notifications (
+        notification_uuid TEXT PRIMARY KEY,
+        notification_type TEXT NOT NULL,
+        subtype TEXT,
+        environment TEXT NOT NULL CHECK (environment IN ('Production', 'Sandbox')),
+        original_transaction_id TEXT,
+        user_id TEXT,
+        signed_at TEXT,
+        status TEXT NOT NULL DEFAULT 'received' CHECK (status IN ('received', 'processed', 'ignored', 'failed')),
+        outcome TEXT,
+        last_error TEXT,
+        attempts INTEGER NOT NULL DEFAULT 1,
+        received_at TEXT NOT NULL DEFAULT (datetime('now')),
+        processed_at TEXT
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_apple_server_notifications_user ON apple_server_notifications (user_id)`,
+      `CREATE INDEX IF NOT EXISTS idx_apple_server_notifications_received ON apple_server_notifications (received_at)`,
+    ],
+  },
 ];
 // Errors that mean the statement was already applied — safe to ignore so
 // we can recover databases whose `_migrations` ledger is out of sync with

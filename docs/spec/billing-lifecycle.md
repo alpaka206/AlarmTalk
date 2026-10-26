@@ -145,9 +145,10 @@
 
 왜: 갱신 알림을 놓칠 수 있기 때문이다.
 - Google: RTDN 유실
-- Apple: **App Store Server Notifications 라우트가 아예 없다.** 연장 신호는 iOS 앱이
-  전경으로 올라올 때 보내는 `resyncEntitlements` 뿐인데, 알람 앱은 안 열어도 울리므로
-  한 달 넘게 안 여는 사용자가 흔하다 — 그 사이 크론이 무료로 강등시킨다.
+- Apple: 서버 알림 V2(아래 「애플 서버 알림 V2」, 2026-10-26)가 주 경로지만 App Store Connect 의 URL 설정·
+  전달 실패로 빠질 수 있다. 그 전에는 연장 신호가 iOS 앱이 전경으로 올라올 때 보내는 `resyncEntitlements`
+  뿐이었는데, 알람 앱은 안 열어도 울리므로 한 달 넘게 안 여는 사용자가 흔하다 — 알림이 빠지면 지금도
+  그 사이 크론이 재조회로 맞춘다. **크론 재조회를 지우지 말 것.**
 
 | 판정 | 뜻 |
 | --- | --- |
@@ -602,10 +603,10 @@ PR #709 에서 그 가드를 82줄 붙였는데 국소 가드끼리 어긋나면
 
 ## 환불은 **크론을 기다리지 않고** 권한을 회수한다
 
-⚠ 애플에는 우리가 받는 서버 알림 라우트가 없다(App Store Server Notifications 미구현).
-기간 중 환불은 클라가 `Transaction.updates` 로 물어다 준 `POST /billing/apple/confirm`
-요청이 **유일한 통보**다. 거기서 `TRANSACTION_REVOKED` 로 거절만 하면, 만료 크론이
-재조회할 때까지 — 즉 저장된 `expires_at` 까지 — 환불받은 계정이 계속 유료로 남는다.
+기간 중 환불의 통보는 **둘**이다 — 애플 서버 알림 `REFUND`·`REVOKE`(아래 「애플 서버 알림 V2」)와, 클라가
+`Transaction.updates` 로 물어다 준 `POST /billing/apple/confirm` 요청. **둘 다 같은 함수**(`revokeAppleRefund`)로
+판정·회수한다. 알림이 빠졌을 때 확정이 `TRANSACTION_REVOKED` 로 거절만 하면, 만료 크론이 재조회할 때까지 —
+즉 저장된 `expires_at` 까지 — 환불받은 계정이 계속 유료로 남는다.
 
 - 정리는 Play RTDN 의 `deactivate` 갈래와 **같은 벌**이다: 매핑된 구독 한 건만 취소하고,
   목소리는 지우지 않고 보관 유예를 걸고, 강등되는 당사자에게 알린다.
@@ -1539,6 +1540,116 @@ CLAUDE.md 「유료 기능은 스토어 결제로만」의 두 번째 예외로 
 | 행사 종료 제외 | `lib/personal-promo-end.ts` 의 `PROMO_END_TARGET` | `plan-grants.test.ts` |
 | 콘솔 | `routes/admin.ts`·`lib/admin/user-detail.ts`·`lib/admin/grant-pages.ts` | `plan-grants.test.ts` 「콘솔」 |
 
+## 애플 서버 알림 V2 — 알림은 **어느 구독을 볼지**만 알려 준다 (2026-10-26)
+
+App Store Server Notifications **V2** 를 받는다(`POST /api/billing/apple/notifications`, 인증 없음). 갱신·해지
+예약·결제 실패·유예 만료·만료·환불·회수가 크론(`processSubscriptionExpiry`)이나 앱의 재전송을 기다리지 않고
+서버에 닿는다. **크론 재조회와 앱의 확정은 그대로 둔다** — 알림이 빠져도(URL 설정·전달 실패) 그 둘이 맞춘다.
+
+### 믿는 근거는 애플 서명 하나다
+
+공개 URL 이라 본문을 믿을 근거는 서명뿐이다(`lib/apple-jws.ts`). 애플 공식 라이브러리(`SignedDataVerifier`)와
+같은 판정을 WebCrypto 로 한다.
+
+1. 헤더 `alg` = ES256, `x5c` 는 정확히 세 장(잎 → 중간 → 루트).
+2. 루트는 **Apple Root CA - G3 의 SHA-256 지문**(`APPLE_ROOT_CA_G3_SHA256`)과 같아야 한다. 다르면 서명 계산 전에
+   끝낸다.
+3. 중간은 루트가, 잎은 중간이 서명했다. 잎에는 `1.2.840.113635.100.6.11.1`, 중간에는 `1.2.840.113635.100.6.2.1`
+   표식이 있어야 한다 — 같은 루트 아래의 다른 애플 인증서로 서명한 것을 막는다.
+4. JWS 서명을 잎의 키로 확인한다.
+5. 세 장의 유효기간은 **payload 의 `signedDate`** 로 본다(애플 라이브러리의 오프라인 판정과 같다). 재전송이
+   며칠 뒤에 와도 서명 당시 유효했던 인증서면 통과한다.
+
+그 뒤 `version` = `2.0`, `notificationUUID` 형식, `data.bundleId`(요약 알림은 `summary.bundleId`) = `APPLE_BUNDLE_ID`,
+`data.environment` = 이 워커의 환경을 본다. 안에 실린 `data.signedTransactionInfo` 도 **같은 검증을 따로** 거친다.
+`signedRenewalInfo` 는 읽지 않는다 — 상태는 재조회로 정한다.
+
+| 실패 | 응답 | 기록 |
+| --- | --- | --- |
+| 형식·서명·체인·표식·유효기간 | 400 `APPLE_NOTIFICATION_INVALID` | 적지 않는다 |
+| 애플이 서명했지만 다른 앱 | 400 `APPLE_NOTIFICATION_BUNDLE_MISMATCH`(경보) | 적지 않는다 |
+| 애플이 서명했지만 다른 환경 | 400 `APPLE_NOTIFICATION_ENVIRONMENT_MISMATCH`(경보) | 적지 않는다 |
+| 자격(`APPLE_ISSUER_ID`·`APPLE_KEY_ID`·`APPLE_PRIVATE_KEY`·`APPLE_BUNDLE_ID`) 없음 | 503 `APPLE_BILLING_UNCONFIGURED` | 적지 않는다 |
+
+뒤의 둘이 경보인 이유: 애플 서명을 통과한 뒤에만 나오므로 위조로는 만들 수 없고, App Store Connect 의 URL 이
+잘못된 워커를 가리킨다는 뜻이다 — 그동안 그 환경의 알림이 통째로 버려진다.
+
+### 환경 — 운영 워커는 `Production`, dev 워커는 `Sandbox`
+
+App Store Connect 에는 URL 이 환경마다 하나다. 그래서 **운영 URL → 운영 워커, 샌드박스 URL → dev 워커**로 나누고,
+각 워커는 자기 환경만 받는다(`expectedAppleEnvironment` — `ENVIRONMENT = production` 이면 `Production`, 그 밖은
+`Sandbox`). `Xcode`·`LocalTesting` 은 어느 쪽도 받지 않는다.
+
+- 잃는 것을 알고 택했다: 운영 앱의 TestFlight·심사 구매도 **샌드박스**라, 그 구독(운영 DB)의 알림은 dev 로 가서
+  거기서 주인 없는 거래(`unknown_transaction`)로 끝난다. 그 구독은 예전처럼 확정·크론 재조회가 맞춘다.
+  샌드박스를 운영으로 보내면 반대로 dev 빌드의 결제 시험이 알림을 못 받는다 — 결제 시험은 dev 에서 한다.
+
+### 중복과 실패 — 응답 전에 적는다
+
+표 `apple_server_notifications`(마이그레이션 #136). 키는 `notificationUUID`(소문자).
+
+1. 검증을 통과하면 처리 **전에** `received` 로 적는다(upsert 한 문장 — `claimAppleNotification`).
+2. 이미 끝난(`processed`·`ignored`) uuid 면 다시 처리하지 않고 200 `{ duplicate: true }`.
+3. 처리가 끝나면 `processed`(상태를 반영했다) 또는 `ignored`(할 일이 없다)와 결과(`outcome`)를 적고 200.
+4. 처리가 실패하면 `failed` 와 이유를 적고 **5xx** 로 답한다 — 애플 재조회 불가·스냅샷 경합(`BillingStateUnavailableError`)
+   은 502, 그 밖은 500(코드는 둘 다 `APPLE_NOTIFICATION_PROCESSING_FAILED`). 애플이 재전송하면(최대 사흘) 같은
+   uuid 의 `failed`·`received` 행은 `attempts` 를 올리고 **다시 처리한다.** 내부 재시도 큐는 두지 않는다 —
+   애플의 재전송과 크론 재조회가 이미 두 겹이다.
+5. 도중에 워커가 죽어 `received` 로 남은 행도 재전송 때 다시 처리한다. 처리가 스토어 재조회라 두 번 해도 같다.
+
+본문은 적지 않는다(처리에 필요 없다). `user_id` 는 주인을 찾았을 때만 적고 **탈퇴 파기가 지운다**
+(`lib/account-deletion.ts`). 행은 **90일** 뒤 5분 크론이 지운다(`APPLE_NOTIFICATION_RETENTION_DAYS`).
+
+### 처리 — 알림의 상태를 쓰지 않는다
+
+알림이 늦게 오거나 순서가 뒤바뀌어도 답이 같도록, 알림은 **어느 구독을 다시 볼지**만 정한다.
+
+1. 상태를 바꾸지 않는 종류(`TEST`·`CONSUMPTION_REQUEST`·`REFUND_DECLINED`·`EXTERNAL_PURCHASE_TOKEN`)는 `ignored`.
+   **목록에 없는 종류(애플이 나중에 늘리는 것 포함)는 다시 묻는다** — 재조회는 해가 없다.
+2. 트랜잭션이 없으면(요약 알림 등) `ignored`(`no_transaction`). 파는 구독 상품이 아니면 `ignored`(`unknown_product`).
+3. 주인은 **이미 묶어 둔 거래**로만 찾는다 — `store_transactions`(provider `apple`, `provider_transaction_id` =
+   `originalTransactionId`). 없으면 `ignored`(`unknown_transaction`) + 구조화 로그. 첫 구매(`SUBSCRIBED`)는 보통
+   앱의 확정보다 먼저 와서 여기로 온다 — 계정 바인딩(`appAccountToken`)은 **확정 라우트 한 곳**에서 판정하고,
+   알림이 새 주인을 정하지 않는다.
+4. `REFUND`·`REVOKE` → **확정 라우트와 같은** `revokeAppleRefund`(「환불은 크론을 기다리지 않고」). 체인이 끝났으면
+   매핑된 구독을 끊고(`refund_revoked`), 옛 갱신의 환불이라 체인이 살아 있으면 손대지 않는다(`refund_chain_live`).
+   못 물어봤거나 그 사이 갱신이 반영됐으면 실패(5xx — 재전송).
+5. 그 밖 → 매핑된 구독을 **크론과 같은** `reconcileStoreSubscription` 으로 맞춘다(애플에 체인의 현재 상태를 묻는다).
+   유효하면 연장·복구, 재시도면 보류, 만료·회수면 종료 — 전부 그 함수의 규칙이다. 구독이 이미 끝났으면
+   `ignored`(`no_active_subscription`) — 끝난 구독을 되살리는 것(재구독·`REFUND_REVERSED`)은 새 결제의 계정 바인딩을
+   거쳐야 해서 **앱의 확정**이 한다.
+
+남은 권한(다른 스토어 구독·관리자 기간 지급·기간 한정 개인 플랜)은 그 두 함수 안의 `hasActivePaidEntitlement`·
+`cancelSubscriptionImmediate` 가 지킨다 — 이 라우트가 따로 판정하지 않는다.
+
+### 운영 — 오너가 App Store Connect 에서 할 일
+
+⚠ 서버를 배포한 **뒤에** 설정한다(배포 전에 켜면 404 를 받은 알림이 재전송만 쌓인다). 마이그레이션 #136 은 배포 워크
+플로가 돌린다 — 그 전 창(~1분)에 온 알림은 기록 표가 없어 500 으로 실패하고 재전송된다(fail-closed).
+
+- App Store Connect → 앱(AlarmTalk) → **앱 정보** → **App Store 서버 알림**
+  - **운영 서버 URL**: `https://api.alarm-talk.com/api/billing/apple/notifications`, 버전 **Version 2**
+  - **샌드박스 서버 URL**: `https://api-dev.alarm-talk.com/api/billing/apple/notifications`, 버전 **Version 2**
+- 두 워커에 `APPLE_ISSUER_ID`·`APPLE_KEY_ID`·`APPLE_PRIVATE_KEY`·`APPLE_BUNDLE_ID` 가 있어야 한다(확정 라우트와 같은 값).
+  없으면 503 이다.
+- 확인: App Store Server API 의 **Request a Test Notification** 으로 `TEST` 를 보내면 그 워커 로그에
+  `billing.apple.notification` · `outcome: test` 가 남고, `apple_server_notifications` 에 행이 하나 생긴다.
+  `APPLE_NOTIFICATION_ENVIRONMENT_MISMATCH`·`BUNDLE_MISMATCH` 경보가 오면 URL 이 서로 바뀌었거나 다른 앱 것이다.
+
+### 구현 지도 — 애플 서버 알림 V2
+
+| 규칙 | 백엔드 | 안드로이드 | iOS |
+| --- | --- | --- | --- |
+| 라우트(인증 없음, `/api` 인증 묶음보다 먼저 연결) | `routes/billing-apple-notifications.ts` ← `index.ts` `app.route('/api/billing/apple', …)` | — | — |
+| 서명 검증 — x5c 체인 → Apple Root CA - G3 지문 · 표식 OID · ES256 · `signedDate` 유효기간 | `lib/apple-jws.ts` `verifyAppleSignedJws`·`APPLE_ROOT_CA_G3_SHA256` | — | — |
+| 번들·환경·형식 대조, 안의 트랜잭션도 검증 | `lib/apple-server-notifications.ts` `decodeAppleServerNotification`·`expectedAppleEnvironment` | — | — |
+| 응답 전 기록·중복 거르기·실패 재처리 | `claimAppleNotification`·`finishAppleNotification` → 표 `apple_server_notifications`(`migrations.ts` #136) | — | — |
+| 환불·회수 — 확정과 같은 갈래 | `routes/billing-apple.ts` `revokeAppleRefund` | — | — |
+| 그 밖 — 크론과 같은 정합화 | `lib/billing-reconciliation.ts` `reconcileStoreSubscription` | — | — |
+| 탈퇴 파기·90일 정리 | `lib/account-deletion.ts` `purgeUserAccount` · `index.ts` 5분 크론(`APPLE_NOTIFICATION_RETENTION_DAYS`) | — | — |
+| 에러 코드 | `packages/shared/src/schemas/error-codes.ts`(`APPLE_NOTIFICATION_*`, 범위 불일치 둘은 경보) | 앱은 보지 않는다 | 앱은 보지 않는다 |
+| 회귀 테스트 | `test/apple-jws.test.ts`(실제 G3 → G6 체인·거절 갈래) · `test/billing-apple-notifications.test.ts`(실제 DB — 거절·중복·주인 없음·갱신 재조회·늦은 만료·환불·지급 보존·실패 재처리) · `test/account-purge-residue.test.ts` | — | — |
+
 ## 구현 지도
 
 | 규칙 | 백엔드 | 안드로이드 | iOS |
@@ -1548,7 +1659,7 @@ CLAUDE.md 「유료 기능은 스토어 결제로만」의 두 번째 예외로 
 | 해지 — 애플은 거절 | 같은 파일, `STORE_CANCEL_UNSUPPORTED` | `STORE_MANAGE_REQUIRED_CODES` | `SocialFeatureViewModel.cancelSubscription` → `BillingPanel.openAppStoreSubscriptionManagement` |
 | 해지 — **어느 스토어를 거치나** | `storeCancelProviderOf`(`lib/billing-cancel.ts`) → `GET /billing/subscription` 의 `store_provider` | 에러 코드로 판단(`STORE_MANAGE_REQUIRED_CODES`) | `BillingSubscription.storeProvider`(로컬 StoreKit 금지) |
 | 다른 스토어가 갱신 중일 때 구매 차단 | `applyStoreEntitlement` 의 `findCrossStoreRenewalProvider`(권위·트랜잭션 안) | 에러 문구 (`ApiErrorMessages`) | `BillingPanel.purchaseBlockReason` + 서버 409 |
-| 환불 — 즉시 권한 회수 | `revokeRefundedAppleSubscription` (`routes/billing-apple.ts`) | — | — |
+| 환불 — 즉시 권한 회수 | `revokeAppleRefund` → `revokeRefundedAppleSubscription` (`routes/billing-apple.ts`) — 확정과 서버 알림(`REFUND`·`REVOKE`)이 같이 쓴다 | — | — |
 | 선물 폐지(2026-10-14) — 선물 상품 결제·환불 통보는 400 `UNKNOWN_PRODUCT`, 코드·원장·연결을 쓰지 않는다(옛 `revokeRefundedAppleGift`·발급 갈래는 지웠다) | `lib/apple-storekit.ts` `APPLE_PRODUCT_TO_PLAN_KEY`·`lib/play-subscriptions.ts` `googlePlanKeyFromProductId` 에서 빠짐 → `billing-apple.ts`·`billing-google.ts` 의 모르는 상품 검사; 표 `apple_gift_deliveries`(마이그레이션 117)는 #131 이 지웠다(2026-10-20) | 선물 상품을 조회·판매하지 않는다(`PlayBillingProducts.all` — 구독 셋) | 선물 상품을 조회·판매하지 않는다(`SubscriptionProduct` — 구독 셋). 남은 옛 트랜잭션은 확정 시도 뒤 끝낸다(`SubscriptionManager.replayUnfinishedTransactions`) |
 | 즉시 해지 중 새 유료 권한의 보관 정책 | `billing-mutation.ts` → `syncPaidVoiceRetention`(남은 유료 권한이면 기존 유예 삭제·응답 기한 null) | 기존 응답 소비 | 기존 응답 소비 |
 | 구매 차단 판정 — 앱 | `store_renewal_providers`(최상위·만료 무시·접지 않음) | `crossStoreRenewalBlocked` (`MainViewModelBillingActions`) | `BillingPanel.purchaseBlockReason`(순수 함수) |
@@ -1573,7 +1684,7 @@ CLAUDE.md 「유료 기능은 스토어 결제로만」의 두 번째 예외로 
 | 결제 실패 알림 — 중복 방지 | 같은 쓰기 트랜잭션의 plan 전후 비교 | — | — |
 | 미완료 결제 재전송 — 진입점 **둘** | — | — | `SubscriptionManager.replayUnfinishedTransactions`(`bootstrap` · 계정 변경 `.task`) |
 | 애플 구독 상태 조회 | `lib/apple-storekit.ts` `fetchAppleSubscriptionStatus` | — | — |
-| 갱신 신호 | `routes/billing-google-rtdn.ts` (RTDN) | `MainViewModelBillingActions.refreshStoreEntitlement` (시작·전경 진입) | `SubscriptionManager.resyncEntitlements` (전경 진입) |
+| 갱신 신호 | `routes/billing-google-rtdn.ts` (RTDN) · `routes/billing-apple-notifications.ts` (애플 서버 알림 V2) | `MainViewModelBillingActions.refreshStoreEntitlement` (시작·전경 진입) | `SubscriptionManager.resyncEntitlements` (전경 진입) |
 | **유료 판정 — 유일 출처** | `isPaidVoicePlan`(원시 users.plan) · `hasPersonalVoiceAccess`(기간 한정 개인 플랜 반영 — 위 절) · `hasActivePaidEntitlement`(삭제 직전) | `resolvePaidVoiceAccess` (`ui/util/PlatformAndLabelUtils.kt`) | `PaidVoiceGate.resolve` |
 | 판정 소비 — 잠금(파괴적) | — | `AlarmTalkApp` 잠금 이펙트(갈래 `foregroundPlanLockAction` — `isDefinitelyFreePlan` · 기간 한정 개인 플랜의 낡은 프로모 갈래는 `freePlanLockMayApply` → `WaitForEntryPlan`, 재확인 `deferredPromoLapseLockDue`) · `sync/PlanChangeSyncWorker` | `AlarmTalkApp.applyFreePlanVoiceLockIfNeeded`(낡은 프로모 갈래는 `PaidVoiceGate.freePlanLockMayApply` 로 기다린다 — D12) |
 | 판정 소비 — 울림·프리페치 | — | `alarm/RingingService`(→ `alarm/RingSoundDecision.kt` — 못 쓰면 기본 목소리, 절대 조용하지 않다) · `sync/StockClipPrefetchWorker` | `PaidVoiceGate.shouldDowngrade`(예약 시점) → `AlarmKitViewModel.defaultVoiceSubstitute` |
@@ -1597,4 +1708,4 @@ CLAUDE.md 「유료 기능은 스토어 결제로만」의 두 번째 예외로 
 | 차이 | 이유 |
 | --- | --- |
 | iOS 해지는 시스템 시트로 나간다 | App Store Server API 에 해지가 없다 |
-| 애플에는 서버 알림(ASSN) 라우트가 없다 | 아직 미구현 — 그래서 만료 재조회가 **유일한** 서버측 갱신 감지 경로다. ASSN 을 붙이면 재조회는 그때도 안전망으로 남긴다 |
+| 애플 서버 알림(V2)은 주인 없는 거래를 묶지 않는다 — 구글 RTDN 은 `linkedPurchaseToken` 으로 잇는다 | 애플 알림에는 주인을 가릴 근거가 `appAccountToken` 뿐이고, 그 판정은 확정 라우트 한 곳이다(「애플 서버 알림 V2」). 만료 재조회는 두 스토어 모두 안전망으로 남는다 |

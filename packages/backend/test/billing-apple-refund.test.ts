@@ -1,9 +1,8 @@
 // **환불된 애플 결제의 권한 회수**(코덱스 #730 3차).
 //
-// ⚠ 애플에는 우리가 받는 서버 알림 라우트가 없다(App Store Server Notifications 미구현).
-// 기간 중 환불은 클라가 `Transaction.updates` 로 물어다 준 confirm 요청이 **유일한 통보**다.
-// 거기서 400 만 돌려주면 만료 크론이 재조회할 때까지 — 저장된 `expires_at` 까지 —
-// 환불받은 계정이 계속 유료로 남는다.
+// 기간 중 환불의 통보는 둘이다 — 애플 서버 알림(`REFUND`·`REVOKE`, `billing-apple-notifications.test.ts`)과
+// 클라가 `Transaction.updates` 로 물어다 준 confirm 요청(이 파일). 알림이 빠졌을 때 confirm 이 400 만
+// 돌려주면 만료 크론이 재조회할 때까지 — 저장된 `expires_at` 까지 — 환불받은 계정이 계속 유료로 남는다.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Hono } from 'hono';
 import type { AppEnv } from '../src/types';

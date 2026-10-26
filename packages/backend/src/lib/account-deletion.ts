@@ -387,6 +387,11 @@ export async function purgeUserAccount(
       sql: `DELETE FROM manual_tts_requests WHERE user_id = ?`,
       args: [userPk],
     });
+    // 애플 서버 알림 수신 기록(#136) — 주인을 찾은 알림에만 계정 id 가 적힌다.
+    writes.push({
+      sql: `DELETE FROM apple_server_notifications WHERE user_id = ?`,
+      args: [userPk],
+    });
 
     writes.push({
       sql: `DELETE FROM generated_audio_assets

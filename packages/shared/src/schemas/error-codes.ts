@@ -217,6 +217,16 @@ export const ERROR_CODES = [
   'INVALID_DATE',
   'INVALID_RANGE',
   'RANGE_TOO_LARGE',
+  // 애플 서버 알림 V2 (billing-apple-notifications.ts) — 애플 서버만 받는다. 앱은 이 코드를 보지 않는다
+  // (`docs/spec/billing-lifecycle.md` 「애플 서버 알림 V2」).
+  /** 애플이 서명했지만 우리 앱(번들 ID)의 알림이 아니다 — App Store Connect 의 URL 설정을 봐야 한다. */
+  'APPLE_NOTIFICATION_BUNDLE_MISMATCH',
+  /** 애플이 서명했지만 이 워커가 받는 환경이 아니다(운영 = Production, dev = Sandbox) — URL 설정이 바뀌었다. */
+  'APPLE_NOTIFICATION_ENVIRONMENT_MISMATCH',
+  /** 본문 형식·서명·인증서 체인이 틀렸다. 위조 요청이면 정상 거절이다. */
+  'APPLE_NOTIFICATION_INVALID',
+  /** 기록은 남겼지만 처리(스토어 재조회·회수)가 실패했다 — 애플이 재전송하면 다시 처리한다. */
+  'APPLE_NOTIFICATION_PROCESSING_FAILED',
   // 구글 실시간 알림 (billing-google-rtdn.ts)
   'GOOGLE_PURCHASE_NOT_FOUND',
   'GOOGLE_VERIFICATION_FAILED',
@@ -312,6 +322,10 @@ export const ALERTING_ERROR_CODES: readonly ErrorCode[] = [
   'TRANSACTION_ACCOUNT_MISMATCH',
   'CROSS_STORE_RENEWAL_ACTIVE',
   'APPLE_VERIFICATION_FAILED',
+  // 애플 서버 알림의 범위 불일치. 이 둘은 **애플 서명을 통과한 뒤에만** 나온다 — 위조로는 만들 수 없고, App Store
+  // Connect 의 알림 URL 이 잘못된 워커를 가리킨다는 뜻이다. 그동안 그 환경의 알림이 통째로 버려진다.
+  'APPLE_NOTIFICATION_BUNDLE_MISMATCH',
+  'APPLE_NOTIFICATION_ENVIRONMENT_MISMATCH',
   // ⚠ **이 400 은 그 기기의 사용 기록 큐를 영구히 막는다.** 두 앱 모두 2xx 가 아닌 배치를
   // 큐에서 지우지 않으므로(`UsageEventUploadWorker`·`UsageEventUploader`), 배치에 한 건이라도
   // 서버가 모르는 값이 섞이면 그 기기는 그 뒤로 **아무 기록도 올리지 못한다.** 오타가 아니라

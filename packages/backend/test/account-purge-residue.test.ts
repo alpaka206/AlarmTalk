@@ -50,6 +50,7 @@ const TABLES: Record<string, 'per-user' | 'no-personal-data' | 'retained-pseudon
   user_app_presence: 'per-user', // 앱 빌드·접속 기록(#133)
   plan_grants: 'per-user', // 관리자 기간 지급(#134)
   manual_tts_requests: 'per-user', // 직접 입력 같은 요청 표식(#135)
+  apple_server_notifications: 'per-user', // 애플 서버 알림 수신 기록 — 주인을 찾은 행만 계정 id 를 담는다(#136)
   admin_push_jobs: 'no-personal-data', // 관리자 알림 기록 — 대상 토큰·받는 사람을 적지 않는다(#133)
   subscriptions: 'per-user',
   store_transactions: 'per-user',
@@ -340,6 +341,16 @@ async function seed(): Promise<void> {
      VALUES (?, 'req-a', 'h', 'done', '2026-10-01T00:00:00.000Z'), (?, 'req-b', 'h', 'done', '2026-10-01T00:00:00.000Z')`,
     [A_PK, B_PK],
   );
+  await run(
+    `INSERT INTO apple_server_notifications (notification_uuid, notification_type, environment, original_transaction_id, user_id, status)
+     VALUES ('aaaaaaaa-0000-4000-8000-000000000001', 'DID_RENEW', 'Production', 'apple-tx-a-sub', ?, 'processed')`,
+    [A_PK],
+  );
+  await run(
+    `INSERT INTO apple_server_notifications (notification_uuid, notification_type, environment, original_transaction_id, user_id, status)
+     VALUES ('bbbbbbbb-0000-4000-8000-000000000002', 'DID_RENEW', 'Production', 'apple-tx-b-sub', ?, 'processed')`,
+    [B_PK],
+  );
 }
 
 beforeAll(async () => {
@@ -431,6 +442,7 @@ describe('탈퇴 파기 뒤 잔존물 (실제 SQLite)', () => {
       expect(await ids(`SELECT user_id FROM user_app_presence`)).toEqual([B_PK]);
       expect(await ids(`SELECT id FROM plan_grants`)).toEqual(['pg-b']);
       expect(await ids(`SELECT request_id AS id FROM manual_tts_requests`)).toEqual(['req-b']);
+      expect(await ids(`SELECT user_id FROM apple_server_notifications`)).toEqual([B_PK]);
       expect(await ids(`SELECT id FROM user_consents`)).toEqual(['uc-b']);
       expect(await ids(`SELECT id FROM email_verification_codes`)).toEqual(['evc-b']);
       expect(await ids(`SELECT id FROM promo_code_redemptions`)).toEqual(['pr-b']);
