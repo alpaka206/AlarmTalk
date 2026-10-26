@@ -252,14 +252,14 @@ class StockClipPrefetchWorker(
         val ticket = AccessTicket(session.user.id, startGeneration)
         // 음성 준비 기록(`voice_preparation_*`, `docs/spec/usage-events.md` §7.3) — **이 워커가 기본 목소리 준비의 소유자**다.
         // 받기 화면·헤더 퍼센트는 이 워커의 진행을 읽기만 하므로 적지 않는다. 받을 것이 있을 때만 시작을 적는다.
-        var preparation: com.alarmtalk.app.data.PreparationAttempt? = null
+        // 기본 목소리와 내 목소리는 **따로** 적는다(코덱스 #958) — 한 묶음으로 적으면 한국어 기기에서 일본어 클론만 받은 회차가
+        // '한국어 기본 목소리 준비' 로 잡혀 관리자 화면의 범위별 수·실패율·시간이 섞인다. 받을 것이 있는 쪽만 시작한다.
+        var preparationParts: Map<Boolean, PreparationPart> = emptyMap()
         // 준비 기록은 **이 회차를 시작한 계정**일 때만 적는다 — 기록기는 지금 로그인한 계정으로 적으므로, 회차 도중 B 가 로그인하면
         // A 의 결과가 B 의 기록으로 올라간다(코덱스 #958). 시작한 세션·세대가 그대로인지 본다.
         fun stillStartingAccount(): Boolean =
             AuthSessionStore(applicationContext).read()?.user?.id == session.user.id &&
                 sessionStore.sessionGeneration() == startGeneration
-        val preparedBytes = java.util.concurrent.atomic.AtomicLong(0)
-        val preparedClips = java.util.concurrent.atomic.AtomicInteger(0)
         return runCatching {
             // 요청 하나에 호출 전체 상한을 둔다 — 연결·읽기·쓰기 상한은 바이트 사이 간격이라 아주 느린 망에서
             // 클립 하나가 끝없이 길어질 수 있다([AlarmTalkApiClient.CLIP_DOWNLOAD_CALL_TIMEOUT_SECONDS]).
@@ -587,17 +587,23 @@ class StockClipPrefetchWorker(
                 return@runCatching Result.success()
             }
             publishProgress(done = alreadyCached, total = clips.size)
-            preparedClips.set(alreadyCached)
-            preparation = if (stillStartingAccount()) {
-                com.alarmtalk.app.data.PreparationAttempt(
-                    context = applicationContext,
-                    scope = com.alarmtalk.app.data.UsageEventProps.SCOPE_ALL_VOICES,
-                    language = language,
-                    // 매니페스트 조회부터가 이 준비다 — 사용자는 그동안도 기다린다.
-                    startedAt = runStartedAt,
-                ).also { it.start(targetCount = clips.size, alreadyCached = alreadyCached) }
+            preparationParts = if (stillStartingAccount()) {
+                PreparationSplit.plan(clips, missing.map { it.first }, language).associate { spec ->
+                    spec.system to PreparationPart(
+                        attempt = com.alarmtalk.app.data.PreparationAttempt(
+                            context = applicationContext,
+                            scope = spec.scope,
+                            language = spec.language,
+                            voiceProfileId = spec.voiceProfileId,
+                            // 매니페스트 조회부터가 이 준비다 — 사용자는 그동안도 기다린다.
+                            startedAt = runStartedAt,
+                        ).also { it.start(targetCount = spec.target, alreadyCached = spec.alreadyCached) },
+                        target = spec.target,
+                        alreadyCached = spec.alreadyCached,
+                    )
+                }
             } else {
-                null
+                emptyMap()
             }
 
             // 받을 순서 — 저장된 켜진 알람이 쓰는 목소리·테마가 먼저, 다음에 울릴 알람부터([StockClipPrefetchPriority]).
@@ -675,9 +681,12 @@ class StockClipPrefetchWorker(
                                         messageId = clip.messageId,
                                     )
                                 }
-                                preparedBytes.addAndGet(bytes.size.toLong())
-                                preparedClips.incrementAndGet()
+                                preparationParts[isSystemVoiceId(clip.voiceProfileId)]?.let { part ->
+                                    part.bytes.addAndGet(bytes.size.toLong())
+                                    part.completed.incrementAndGet()
+                                }
                             }.onFailure { error ->
+                                val part = preparationParts[isSystemVoiceId(clip.voiceProfileId)]
                                 when (classifyClipFailure(error)) {
                                     ClipFailure.SESSION_EXPIRED -> {
                                         sessionExpired.compareAndSet(null, error)
@@ -689,10 +698,15 @@ class StockClipPrefetchWorker(
                                     // '받는 중' 으로 남고 '다시 시도' 는 끝내 안 뜬다.
                                     // (바깥 catch 는 이미 `isPermanent()` 로 가르고 있었는데,
                                     // 클립별로 삼키면서 그 분류에 닿지 못했다.)
-                                    ClipFailure.PERMANENT -> failures.incrementAndGet()
+                                    ClipFailure.PERMANENT -> {
+                                        failures.incrementAndGet()
+                                        part?.failures?.incrementAndGet()
+                                    }
                                     ClipFailure.TRANSIENT -> {
                                         failures.incrementAndGet()
                                         transientFailures.incrementAndGet()
+                                        part?.failures?.incrementAndGet()
+                                        part?.transientFailures?.incrementAndGet()
                                     }
                                 }
                                 AlarmTalkLog.reportError(
@@ -708,18 +722,10 @@ class StockClipPrefetchWorker(
             }
             rebind()
             // 준비 결과 — 실패 코드는 정해진 몇 개뿐이다(서버 원문을 싣지 않는다).
-            preparation?.takeIf { !accountChangedDuringRun && stillStartingAccount() }?.let { prep ->
-                val failureCode = when {
-                    sessionExpired.get() != null -> "session_expired"
-                    budgetExhausted -> "run_budget_exhausted"
-                    failures.get() == 0 -> null
-                    transientFailures.get() == 0 -> "clip_download_permanent"
-                    else -> "clip_download_transient"
-                }
-                if (failureCode == null) {
-                    prep.ready(completed = preparedClips.get(), bytes = preparedBytes.get())
-                } else {
-                    prep.failed(completed = preparedClips.get(), bytes = preparedBytes.get(), errorCode = failureCode)
+            // 쪽마다 따로 끝낸다 — 그쪽을 다 받았으면 다른 쪽이 멈췄어도 준비가 끝났다.
+            if (!accountChangedDuringRun && stillStartingAccount()) {
+                preparationParts.values.forEach { part ->
+                    part.finish(sessionExpired = sessionExpired.get() != null, budgetExhausted = budgetExhausted)
                 }
             }
             // 받은 것은 묶어 둔 채(부분 성공은 남는다) 401 을 바깥 한 곳으로 올린다.
@@ -752,12 +758,9 @@ class StockClipPrefetchWorker(
             // 시작을 적은 뒤 던졌으면 실패로 마무리한다(이미 결과를 적었으면 `PreparationAttempt` 가 한 번만 적는다).
             // 취소는 실패가 아니다 — 앱을 다시 켜면 새 시도이고, 끝나지 않은 시작은 실패로 세지 않는다(§7.3).
             if (error !is kotlin.coroutines.cancellation.CancellationException && stillStartingAccount()) {
-                preparation?.failed(
-                    completed = preparedClips.get(),
-                    bytes = preparedBytes.get(),
-                    errorCode = com.alarmtalk.app.network.apiError(error).code
-                        ?.let(com.alarmtalk.app.data.UsageEventProps::code) ?: "unexpected",
-                )
+                val errorCode = com.alarmtalk.app.network.apiError(error).code
+                    ?.let(com.alarmtalk.app.data.UsageEventProps::code) ?: "unexpected"
+                preparationParts.values.forEach { it.fail(errorCode) }
             }
             // 부분 성공은 그대로 남는다(이미 받은 파일은 캐시에 있다) — 재시도가 나머지만 받는다.
             when (syncWorkerOutcome(error)) {
@@ -983,5 +986,85 @@ class StockClipPrefetchWorker(
         internal fun <T> pickCurrent(items: List<T>, state: (T) -> WorkInfo.State): T? =
             items.firstOrNull { !state(it).isFinished }
                 ?: items.lastOrNull()
+    }
+}
+
+/** 준비 기록 한 쪽(기본 목소리 또는 내 목소리)의 시도와 그 쪽의 받은 수·바이트·실패 수. */
+internal class PreparationPart(
+    private val attempt: com.alarmtalk.app.data.PreparationAttempt,
+    private val target: Int,
+    alreadyCached: Int,
+) {
+    val completed = java.util.concurrent.atomic.AtomicInteger(alreadyCached)
+    val bytes = java.util.concurrent.atomic.AtomicLong(0)
+    val failures = java.util.concurrent.atomic.AtomicInteger(0)
+    val transientFailures = java.util.concurrent.atomic.AtomicInteger(0)
+
+    fun finish(sessionExpired: Boolean, budgetExhausted: Boolean) {
+        val code = PreparationSplit.failureCode(
+            complete = completed.get() >= target,
+            sessionExpired = sessionExpired,
+            budgetExhausted = budgetExhausted,
+            failures = failures.get(),
+            transientFailures = transientFailures.get(),
+        )
+        if (code == null) {
+            attempt.ready(completed = completed.get(), bytes = bytes.get())
+        } else {
+            attempt.failed(completed = completed.get(), bytes = bytes.get(), errorCode = code)
+        }
+    }
+
+    fun fail(errorCode: String) = attempt.failed(completed = completed.get(), bytes = bytes.get(), errorCode = errorCode)
+}
+
+/**
+ * 한 회차의 받을 목록을 준비 기록 두 쪽으로 가른다(`docs/spec/usage-events.md` §7.3, iOS `StockClipPrefetcher.PreparationReports`
+ * 짝). 기본 목소리는 `all_voices`·기기 언어, 내 목소리는 `selected_voice`·**그 클립들의 언어**(하나일 때만 — 클론은 등록 때
+ * 고른 언어 한 세트다)·목소리 id(하나일 때만). 받을 것이 없는 쪽은 시작하지 않는다.
+ */
+internal object PreparationSplit {
+    data class Spec(
+        val system: Boolean,
+        val scope: String,
+        val language: String?,
+        val voiceProfileId: String?,
+        val target: Int,
+        val alreadyCached: Int,
+    )
+
+    fun plan(clips: List<StockClip>, missing: List<StockClip>, deviceLanguage: String): List<Spec> {
+        val missingIds = missing.map { it.messageId }.toSet()
+        return clips.groupBy { isSystemVoiceId(it.voiceProfileId) }.mapNotNull { (system, part) ->
+            val partMissing = part.count { it.messageId in missingIds }
+            if (partMissing == 0) return@mapNotNull null
+            Spec(
+                system = system,
+                scope = if (system) {
+                    com.alarmtalk.app.data.UsageEventProps.SCOPE_ALL_VOICES
+                } else {
+                    com.alarmtalk.app.data.UsageEventProps.SCOPE_SELECTED_VOICE
+                },
+                language = if (system) deviceLanguage else part.map { it.language ?: "ko" }.distinct().singleOrNull(),
+                voiceProfileId = if (system) null else part.map { it.voiceProfileId }.distinct().singleOrNull(),
+                target = part.size,
+                alreadyCached = part.size - partMissing,
+            )
+        }.sortedByDescending { it.system }
+    }
+
+    /** 그 쪽의 끝 — 다 받았으면 null(준비 끝). 실패 코드는 정해진 몇 개뿐이다(서버 원문을 싣지 않는다). */
+    fun failureCode(
+        complete: Boolean,
+        sessionExpired: Boolean,
+        budgetExhausted: Boolean,
+        failures: Int,
+        transientFailures: Int,
+    ): String? = when {
+        complete -> null
+        sessionExpired -> "session_expired"
+        budgetExhausted || failures == 0 -> "run_budget_exhausted"
+        transientFailures == 0 -> "clip_download_permanent"
+        else -> "clip_download_transient"
     }
 }
