@@ -29,6 +29,25 @@ class ContentAndBriefingSignalWiringTest {
     }
 
     @Test
+    fun `팩 사용은 저장 성공 갈래에서만 응원 선택 옆에서 시작한 계정으로 적는다`() {
+        val source = withoutLineComments(readSource("ui/main/MainViewModelAlarmActions.kt"))
+        listOf("internal fun MainViewModel.createAlarm(", "internal fun MainViewModel.updateAlarm(").forEach { signature ->
+            val body = functionBody(source, signature)
+            assertEquals("$signature 에서 한 번만 적는다", 1, Regex("recordPackSelected\\(").findAll(body).count())
+            val success = braceBlock(body, ".onSuccess { saved ->")
+            assertTrue(
+                "$signature 의 성공 갈래가 응원 선택 바로 옆에서 적어야 한다",
+                success.contains(
+                    "recordContentSelected(getApplication(), saved, ownerUserId)\n" +
+                        "            com.alarmtalk.app.data.recordPackSelected(getApplication(), saved, ownerUserId)",
+                ),
+            )
+            assertFalse("$signature 의 실패 갈래는 적지 않는다", braceBlock(body, ".onFailure { error ->").contains("recordPackSelected"))
+        }
+        assertFalse("편집기는 적지 않는다", readSource("ui/editor/AlarmEditorScreen.kt").contains("PACK_SELECTED"))
+    }
+
+    @Test
     fun `소식 기록은 링크·제목·문장을 넘기지 않는다`() {
         val source = withoutLineComments(readSource("ui/briefing/BriefingScreen.kt"))
         val opened = Regex("BriefingSignals\\.sourceOpened\\(([^)]*)\\)").findAll(source).map { it.groupValues[1] }.toList()

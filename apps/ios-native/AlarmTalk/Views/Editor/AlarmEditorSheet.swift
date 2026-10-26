@@ -2955,6 +2955,11 @@ struct AlarmEditorSheet: View {
                 userID: ownerID
             )
         }
+        // 팩 목소리 사용(`pack_selected`) — 같은 자리·같은 계정. 팩 목록은 그 계정의 것일 때만 본다.
+        if voicePacks.activeUserID == ownerID,
+           let props = VoicePacks.packSelectionProps(for: merged, held: voicePacks.held) {
+            UsageEventQueue.shared.record(.packSelected, alarmID: merged.id, props: props, userID: ownerID)
+        }
         recordAlarmReadyIfComplete(store.record(id: merged.id) ?? merged)
         UINotificationFeedbackGenerator().notificationOccurred(.success)
         onSchedulingDidFinish()

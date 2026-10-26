@@ -204,6 +204,17 @@ struct HeldVoicePack: Codable, Equatable, Identifiable {
 }
 
 extension VoicePacks {
+    /// 팩 목소리로 운 알람을 저장했다(`pack_selected`, `docs/spec/usage-events.md` §7.1) — 칸은 `pack_id`(팩 id) 하나다. 원문·문구·
+    /// 클립 id 는 싣지 않는다. 저장 성공 한 곳(`AlarmEditorSheet.finishScheduling`)이 부른다. 팩 목소리가 아니거나, 그 목소리로 울지
+    /// 않거나(알람 모드·직접 녹음), 받은 팩 목록에서 그 목소리의 팩을 못 찾으면 nil. 안드로이드 `packSelectionProps` 짝.
+    static func packSelectionProps(for record: LocalAlarmRecord, held: [HeldVoicePack]) -> UsageEventProps? {
+        guard isVoicePackVoiceID(record.voiceProfileId),
+              record.voiceSourceEnum == .ttsProfile,
+              record.playModeEnum != .alarmOnly,
+              let pack = held.first(where: { $0.voiceId == record.voiceProfileId }) else { return nil }
+        return UsageEventProps(packID: pack.packId)
+    }
+
     /// **편집기 목소리 목록**에 넣을 팩 — 다 받았고 게시 중인 팩, 그리고 **지금 여는 알람이 이미 쓰는 팩**(게시가 끝나도
     /// 대체 전까지는 그 알람에서 그대로 보이고 저장된다 — 스펙 §5-1).
     ///
