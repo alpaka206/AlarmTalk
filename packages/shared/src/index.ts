@@ -7,5 +7,6 @@ export * from './schemas/plan.js';
 export * from './schemas/usage-event.js';
 export * from './schemas/error-codes.js';
 export * from './schemas/event-voices.js';
+export * from './schemas/briefing.js';
 export * from './weather-regions.js';
 export * from './voice-enrollment-script.js';

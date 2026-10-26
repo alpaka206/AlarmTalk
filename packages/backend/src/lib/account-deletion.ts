@@ -392,6 +392,11 @@ export async function purgeUserAccount(
       sql: `DELETE FROM apple_server_notifications WHERE user_id = ?`,
       args: [userPk],
     });
+    // 아침 소식의 관심 기업(#137). 공시·정책뉴스 캐시는 공용이라 사람과 묶이지 않는다 — 지울 것은 이 표뿐이다.
+    writes.push({
+      sql: `DELETE FROM briefing_interests WHERE user_id IN (?, ?)`,
+      args: [userPk, userLoginId],
+    });
 
     writes.push({
       sql: `DELETE FROM generated_audio_assets

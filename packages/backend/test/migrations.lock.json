@@ -522,5 +522,9 @@
   "136": {
     "name": "apple-server-notifications",
     "sha": "384a4192b4d77201"
+  },
+  "137": {
+    "name": "morning-briefing",
+    "sha": "5a88be1e9e449bd8"
   }
 }

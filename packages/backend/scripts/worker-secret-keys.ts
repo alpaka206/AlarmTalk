@@ -41,6 +41,10 @@ export const WORKER_SECRET_KEYS = [
   // `OPEN_METEO_API_KEY` 는 없앴다(2026-10-01 — 날씨 원천을 나라별 공식 예보로 바꿨다). 워커에 남은 값은 코드가
   // 읽지 않으니 `wrangler secret delete OPEN_METEO_API_KEY --env <dev|production>` 로 치운다.
   'KMA_SERVICE_KEY',
+  // 아침 소식(`docs/spec/morning-briefing.md`) — OpenDART 인증키, 정책브리핑 정책뉴스 서비스 키(일반 인증키 Decoding).
+  // 필수는 아니다(없으면 그 원천만 '설정 안 됨'). 빈 값은 skip.
+  'OPENDART_API_KEY',
+  'KOREA_POLICY_NEWS_API_KEY',
   // Apple — **세 갈래이고 키가 서로 다르다.** 빈 값은 자동 skip.
   //  1) 로그인 검증: APPLE_BUNDLE_ID 하나(애플 공개키 JWKS 검증이라 비밀키 불필요)
   //  2) 탈퇴 시 연결 해제: APPLE_TEAM_ID + APPLE_SIGNIN_* (Sign in with Apple 키)

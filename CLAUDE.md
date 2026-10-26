@@ -500,6 +500,7 @@ gainMb=600`)로 확인했고, 사용자가 맞춘 음량이 첫 회만 지켜지
 | [`docs/spec/error-codes.md`](docs/spec/error-codes.md) | 에러 코드 — **목록은 하나**(shared), 나간 코드는 **바꾸지 않는다**, 기록은 전부·경보는 골라서, 앱 Sentry 묶음 키(코드 + 호출 자리) |
 | [`docs/spec/localization.md`](docs/spec/localization.md) | 앱 화면 번역 — 용어·저장값과 표시·오류·언어 변경 |
 | [`docs/spec/admin-console.md`](docs/spec/admin-console.md) | 관리자 콘솔(`/admin`) — 사용 현황, 앱 빌드 기록은 **동의 검사 앞**·90일, 알림은 **시험 발송 먼저**·걸음으로 나눠 보내고 기록에 받는 사람을 적지 않는다, 광고는 동의자·08~21시 |
+| [`docs/spec/morning-briefing.md`](docs/spec/morning-briefing.md) | 아침 소식 — 관심 기업 **최대 3** 의 OpenDART 공시 + 정책브리핑 정책뉴스(**RSS 아님**), 원문 링크·확인 시각, 원천별 **15분 캐시**, 실패는 **'없음' 이 아니다**(`stale`·`unavailable`·`complete`), 고유번호 캐시는 **상장사만**, 주가·투자 판단·이미지 재게시 없음 |
 
 각 스펙 문서 끝에 **「구현 지도」** 표가 있다 — 규칙 한 줄이 세 구현의 어디에 사는지
 적어 둔 것이라, **한 곳만 고치는 사고**를 막는다. 동작을 바꾸면 스펙을 먼저 고친다.

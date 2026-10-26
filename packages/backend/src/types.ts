@@ -95,6 +95,17 @@ export interface Env {
    * 인코딩되어 `SERVICE_KEY_IS_NOT_REGISTERED_ERROR`(30)가 난다. ⚠ 요청 URL 에 키가 실리므로 URL 을 로그에 남기지 않는다.
    */
   KMA_SERVICE_KEY?: string;
+  /**
+   * OpenDART 인증키(40자, `crtfc_key`) — 아침 소식의 관심 기업 공시(`lib/briefing/opendart.ts`). 없으면 공시는
+   * '설정 안 됨'(`BRIEFING_SOURCE_NOT_CONFIGURED`)으로 끝나고 기업 검색도 막힌다 — 지어낸 소식을 보여 주지 않는다.
+   * ⚠ 요청 URL 에 키가 실리므로 URL 을 로그에 남기지 않는다. 규칙: `docs/spec/morning-briefing.md`.
+   */
+  OPENDART_API_KEY?: string;
+  /**
+   * 공공데이터포털 「정책브리핑 정책뉴스」 서비스 키 — **일반 인증키(Decoding)**(`lib/briefing/policy-news.ts`). 없으면
+   * 정책뉴스는 '설정 안 됨'. Encoding 키를 넣으면 이중 인코딩되어 30(SERVICE_KEY_IS_NOT_REGISTERED_ERROR)이 난다.
+   */
+  KOREA_POLICY_NEWS_API_KEY?: string;
   JWT_SECRET: string;
   PASSWORD_PEPPER: string;
   ENVIRONMENT: string;
