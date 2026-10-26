@@ -40,6 +40,7 @@ import userRoutes from './routes/user';
 import authRoutes from './routes/auth';
 import billingRoutes from './routes/billing';
 import billingGoogleRtdn from './routes/billing-google-rtdn';
+import billingAppleNotifications from './routes/billing-apple-notifications';
 import adsRoutes from './routes/ads';
 import billingApple from './routes/billing-apple';
 import pushRoutes from './routes/push';
@@ -260,6 +261,11 @@ app.route('/api/auth', authRoutes);
 // Google Play RTDN 웹훅 (인증 미들웨어 미적용 — Pub/Sub push 가 사용자 인증 없이 호출하므로
 // ?token=GOOGLE_RTDN_VERIFICATION_TOKEN 쿼리로만 보호한다).
 app.route('/api/billing/google', billingGoogleRtdn);
+
+// App Store Server Notifications V2 웹훅 (인증 미들웨어 미적용 — 애플 서버가 부르고, 본문의 애플 서명(x5c → Apple Root
+// CA - G3)으로만 보호한다). ⚠ 아래 `app.route('/api', api)` 보다 **먼저** 둔다 — 뒤에 두면 인증 미들웨어가 먼저 받는다.
+app.use('/api/billing/apple/notifications', noStore);
+app.route('/api/billing/apple', billingAppleNotifications);
 
 // AdMob 보상형 광고 서버 확인(SSV) 콜백 (인증 미들웨어 미적용 — AdMob 서버가 부르고, 서명으로만 보호한다).
 app.use('/api/ads/*', noStore);
@@ -504,6 +510,19 @@ async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext)
     });
   } catch (err) {
     captureCron('scheduled.app_presence_prune', err);
+  }
+
+  // 애플 서버 알림 수신 기록(#136) — 90일. 중복 거르기는 재전송 창(최대 사흘)이면 충분하고, 나머지는 운영 조사용이다.
+  // `received_at` 은 DDL 기본값 꼴이라 `datetime(?)` 으로 맞춰 비교한다.
+  try {
+    const { APPLE_NOTIFICATION_RETENTION_DAYS } = await import('./lib/apple-server-notifications');
+    const cutoff = new Date(now.getTime() - APPLE_NOTIFICATION_RETENTION_DAYS * 24 * 60 * 60 * 1000).toISOString();
+    await db.execute({
+      sql: `DELETE FROM apple_server_notifications WHERE received_at < datetime(?)`,
+      args: [cutoff],
+    });
+  } catch (err) {
+    captureCron('scheduled.apple_notification_prune', err);
   }
 
   // 만료된 이메일 인증코드(PII) 정리 — 무한 보존 방지. expires_at 은 ISO 문자열로 기록되므로
