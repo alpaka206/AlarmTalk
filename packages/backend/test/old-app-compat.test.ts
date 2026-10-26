@@ -184,57 +184,30 @@ afterAll(() => {
   rmSync(directory, { recursive: true, force: true });
 });
 
-describe('없앤 기능 자리의 호환 응답 — 실제 체인에서도 같은 모양이고 DB 는 인증·동의만 읽는다', () => {
+// 강제 업데이트(안드로이드 36·iOS 14 — `lib/app-version.ts`)로 그 화면이 있는 옛 앱을 막은 뒤 지운 호환 응답(2026-10-26).
+// 이제 다른 없는 경로와 똑같이 코드가 있는 404 다 — 지금 두 앱은 이 경로를 부르지 않는다.
+describe('강제 업데이트 뒤 지운 호환 응답 — 이제 코드가 있는 404', () => {
   const ALARM_ID = '11111111-1111-4111-8111-111111111111';
   it.each([
-    ['GET', '/api/family/groups/current', undefined, 200, { group: null, role: null, members: [] }],
-    ['GET', '/api/billing/vouchers', undefined, 200, { vouchers: [] }],
-    ['GET', '/api/voice/family', undefined, 200, { profiles: [] }],
-    [
-      'GET',
-      '/api/alarm?pagination=cursor&limit=50',
-      undefined,
-      200,
-      { alarms: [], has_more: false, next_cursor: null },
-    ],
-    [
-      'GET',
-      '/api/alarm/declined?since=2026-10-01T00:00:00Z',
-      undefined,
-      200,
-      { alarm_ids: [], revoked_alarm_ids: [], has_more: false },
-    ],
-    ['POST', `/api/alarm/${ALARM_ID}/decline`, undefined, 200, { success: true, declined: true }],
-    [
-      'POST',
-      '/api/code/register',
-      { code: 'INV-AAAA-BBBB-CCCC' },
-      404,
-      { error: 'Code not found', error_code: 'CODE_NOT_FOUND' },
-    ],
-  ] as const)('%s %s', async (method, path, body, status, expected) => {
+    ['GET', '/api/family/groups/current', undefined],
+    ['GET', '/api/billing/vouchers', undefined],
+    ['GET', '/api/voice/family', undefined],
+    ['GET', '/api/alarm?pagination=cursor&limit=50', undefined],
+    ['GET', '/api/alarm/declined?since=2026-10-01T00:00:00Z', undefined],
+    ['POST', `/api/alarm/${ALARM_ID}/decline`, undefined],
+    ['POST', '/api/code/register', { code: 'INV-AAAA-BBBB-CCCC' }],
+  ] as const)('%s %s', async (method, path, body) => {
     const res = await call(method, path, 'me', body);
-    expect(res).toEqual({ status, json: expected });
-    // 인증(users)과 동의(user_consents) 확인 말고는 DB 에 아무것도 묻지 않는다.
-    expect(statements.map((sql) => /\bFROM\s+(\w+)/i.exec(sql)?.[1])).toEqual([
-      'users',
-      'user_consents',
-    ]);
+    expect(res.status).toBe(404);
+    expect(typeof (res.json as { error_code?: unknown }).error_code).toBe('string');
   });
 
-  it('탈퇴 신청 계정은 빈 알람 목록이 아니라 인증 단계의 403 ACCOUNT_PENDING_DELETION 을 받는다', async () => {
-    const res = await call('GET', '/api/alarm?pagination=cursor&limit=50', 'leaving');
-    expect(res).toEqual({
-      status: 403,
-      json: { error: 'Account is scheduled for deletion', error_code: 'ACCOUNT_PENDING_DELETION' },
-    });
-  });
-
-  it('GET /billing/subscription 은 plan.max_members 를 1 로 싣는다 — 옛 iOS 디코더가 요구하는 키', async () => {
+  it('GET /billing/subscription 은 plan.max_members 를 싣지 않는다 — 정원 칸은 DB 에서도 없다', async () => {
     const res = await call('GET', '/api/billing/subscription', 'me');
     expect(res.status).toBe(200);
     expect(res.json.subscription).toMatchObject({ id: 'sub-me', status: 'active' });
-    expect(res.json.plan).toMatchObject({ key: 'personal', plan_type: 'personal', max_members: 1 });
+    expect(res.json.plan).toMatchObject({ key: 'personal', plan_type: 'personal' });
+    expect(res.json.plan).not.toHaveProperty('max_members');
   });
 });
 

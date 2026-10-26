@@ -26,17 +26,6 @@ beforeEach(() => {
   mockDB.reset();
 });
 
-// 옛 앱 호환 — 받은 가족 알람을 가져오던 pull 이다. 내 알람 행이 있어도 싣지 않는다(상세는 alarm-query.test.ts).
-describe('GET /alarm — 옛 앱 호환', () => {
-  it('언제나 빈 커서 페이지 — 알람 행을 읽지 않는다', async () => {
-    const app = buildApp();
-    const res = await app.request(jsonReq('GET', '/alarm'));
-    expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ alarms: [], has_more: false, next_cursor: null });
-    expect(mockDB.calls).toHaveLength(0);
-  });
-});
-
 describe('GET /alarm/:id — 단일 조회 정규화', () => {
   it('존재하지 않으면 404', async () => {
     mockDB.pushResult([]);

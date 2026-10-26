@@ -176,7 +176,7 @@ describe('lib/consent — config', () => {
     // 둘 다 수집 범위가 그대로이거나 줄기만 해 5 로 동의한 사람은 다시 묻지 않는다.
     expect(CURRENT_POLICY_VERSION).toBe('7');
     // 서버 먼저 — 스토어의 두 앱은 6 을 싣고 있어 6 도 받는다. 앞 버전 5(1.2.13 이하 앱의 문서)는 2026-10-16 에 지웠다.
-    expect([...ACCEPTED_POLICY_VERSIONS]).toEqual(['7', '6']);
+    expect([...ACCEPTED_POLICY_VERSIONS]).toEqual(['7']);
     expect(CONSENT_MIN_POLICY_VERSION).toEqual({
       terms: 3,
       privacy: 5,
@@ -512,19 +512,17 @@ describe('POST /user/consents — 저장되는 정책 버전', () => {
     ]);
   });
 
-  it('받는 문서 버전은 7·6 이다 — 5·4·8·999 는 409, 받은 값은 보낸 그대로 기록한다', async () => {
-    // 6 을 빼면 스토어의 옛 앱(문서 6)의 가입·재동의가 전부 409 로 막힌다 — 7 을 실은 두 앱이 게재되고 minSupported
-    // 로 옛 앱을 막은 뒤에 지운다.
+  it('받는 문서 버전은 7 하나다 — 6·5·4·8·999 는 409, 받은 값은 보낸 그대로 기록한다', async () => {
+    // 6 은 2026-10-26 에 지웠다 — 7 을 실은 두 앱(안드로이드 36·iOS 14)을 minSupported 로 강제한 뒤다.
     expect((await postConsents([{ type: 'terms', agreed: true }], '7')).status).toBe(200);
-    expect((await postConsents([{ type: 'terms', agreed: true }], '6')).status).toBe(200);
-    for (const v of ['5', '4', '8', '999']) {
+    for (const v of ['6', '5', '4', '8', '999']) {
       const res = await postConsents([{ type: 'terms', agreed: true }], v);
       expect(res.status, v).toBe(409);
       expect(((await res.json()) as { error_code: string }).error_code).toBe(
         'POLICY_VERSION_MISMATCH',
       );
     }
-    expect(mockConsentInserts.map((r) => r.version)).toEqual(['7', '6']);
+    expect(mockConsentInserts.map((r) => r.version)).toEqual(['7']);
   });
 
   it('version 필드는 호환을 위해 받기만 하고 무시한다 — 400 으로 깨지 않는다', async () => {

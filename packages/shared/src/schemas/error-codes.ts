@@ -255,7 +255,8 @@ export const ERROR_CODES = [
   //   서버가 더는 내지 않으니 옛 앱도 받을 일이 없다. 할인·무료 이용은 스토어 오퍼 코드로 준다.
   // 초대 코드 갈래(CODE_REQUIRED·CODE_TOO_LONG·CODE_EXPIRED·CODE_ALREADY_USED·CODE_ALREADY_REDEEMED_BY_YOU·
   // INVALID_FORMAT·INVALID_INVITE_PLAN·OWNS_ACTIVE_GROUP·SELF_ISSUED)는 2026-10-20 커플·가족 이용권과 함께 지웠다.
-  'CODE_NOT_FOUND',
+  // 마지막 CODE_NOT_FOUND(옛 앱의 코드 등록 호환)는 2026-10-26 그 라우트와 함께 지웠다 — 강제 업데이트(안드로이드 36·iOS 14)가
+  // 그 화면이 있는 앱을 막았다.
   // 랜딩 이벤트 (event.ts) — 앱이 아니라 랜딩 페이지가 받는다(문구는 apps/landing 의 messages).
   'INVALID_BODY',
   'INVALID_ID',
@@ -345,7 +346,4 @@ export const CLIENT_EXPECTED_REFUSAL_CODES: readonly ErrorCode[] = [
   // 가입하려는 이메일이 이미 있다(이메일/비밀번호 계정 · 소셜 계정) — 화면이 로그인으로 안내한다.
   'AUTH_EMAIL_TAKEN',
   'AUTH_EMAIL_SOCIAL',
-  // 옛 앱의 코드 등록 — 받는 코드가 없어 언제나 이 답이다(routes/code.ts). 지났거나 이미 쓰인 코드의 갈래는
-  // 초대 코드와 함께 2026-10-20 에 지웠다.
-  'CODE_NOT_FOUND',
 ];

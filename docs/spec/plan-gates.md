@@ -105,8 +105,8 @@ freeVoiceTier = 로그인함 && !유료
 
 **코드 등록은 없다**(2026-10-20 — 마지막으로 남았던 초대 코드를 커플·가족 이용권과 함께 지웠다. 그 전
 2026-10-14 에 선물 코드, 2026-10-12 에 프로모 코드). 유료 판정의 근거는 스토어 구독과 기간 한정 개인 플랜
-(서버가 읽을 때 계산한다)뿐이다. 옛 앱의 코드 칸이 보내는 `POST /code/register` 는 어떤 본문이든 404
-`CODE_NOT_FOUND` 다(아래 「커플·가족 이용권 — 폐지」).
+(서버가 읽을 때 계산한다)·관리자 기간 지급뿐이다. 옛 앱의 코드 칸이 보내던 `POST /code/register` 는 2026-10-26 강제
+업데이트 뒤 라우트째 지웠다(없는 경로 — 404 `NOT_FOUND`, 아래 「커플·가족 이용권 — 폐지」).
 
 ## 4. 이용권·목소리 정보는 **언제 다시 받는가** (2026-09-29)
 
@@ -169,7 +169,7 @@ freeVoiceTier = 로그인함 && !유료
 | 기간 한정 개인 플랜 — 낡은 캐시만 무료로(D1·D7: 받은 시각 = `computed_at`, 없으면 끝 전의 답) | `personalPromoLapsed`·`planAnswerStampMillis`(`ui/billing/PersonalPromo.kt`) | `PersonalPromo.isStale`·`PersonalPromo.fetchedAt` | `personalPromoField` 의 `computed_at` |
 | 게이트에 코드 입력 없음(§2 — 결제 쪽 액션은 '이용권 보기' 하나) | `PlanGateDialog` 의 액션 두 개(입력 슬롯 없음) — 회귀 `GiftCodeRemovalTest`. CI 검사 (e) 가 `PlanGateDialog.kt` 전체에서 입력 칸·코드 등록 이름을 막는다 | `VoicePlanGateAlert`(편집기) · `VoiceProfileManagementPanel` 의 `planGateOpen` 알럿(목소리 탭) · 문구 `PaidGateCopy`. CI 검사 (e) 가 앞의 파일 전체와 뒤의 알럿 블록을 막는다 | — |
 | 게이트 버튼 순서 [닫기][이용권 보기] — §2 | `PlanGateDialog` 의 `actions` 순서 — 회귀 `GiftCodeRemovalTest` | '닫기' 의 `.cancel` 역할(시스템이 앞에 둔다) — 회귀 테스트 없음, 실기기로 본다 | — |
-| 코드 칸 없음 — 앱 어디에도(더보기의 '초대 코드 등록' 도 지웠다, 2026-10-20) · 옛 앱의 등록은 어떤 코드든 404 `CODE_NOT_FOUND` | 더보기에 코드 등록 행이 없다(`ui/home/HomeComponents.kt`) | 더보기에 코드 등록 행이 없다(`MenuView`) | `routes/code.ts`(옛 앱 호환 — 본문을 읽지 않고 조회 없이 404) — 회귀 `test/code.test.ts` |
+| 코드 칸 없음 — 앱 어디에도(더보기의 '초대 코드 등록' 도 지웠다, 2026-10-20) · 옛 앱의 등록 라우트도 지웠다(2026-10-26) | 더보기에 코드 등록 행이 없다(`ui/home/HomeComponents.kt`) | 더보기에 코드 등록 행이 없다(`MenuView`) | 라우트 없음 — 없는 경로는 404 `NOT_FOUND`(`index.ts` 의 `app.notFound`) — 회귀 `test/old-app-compat.test.ts` |
 | 파는 상품은 개인 월간 구독 하나(코드를 발급하는 1회성·소모성 상품 없음 · 커플·가족 상품 없음) | `PlayBillingProducts.all`(`billing/PlayBillingManager.kt`) | `SubscriptionProduct`(`Services/IAP/SubscriptionProduct.swift`) · `Configuration/StoreKitConfiguration.storekit` | `APPLE_PRODUCT_TO_PLAN_KEY`(`lib/apple-storekit.ts`) · `googlePlanKeyFromProductId`(`lib/play-subscriptions.ts`) — `personal_monthly` 하나, 목록 밖 상품은 400 `UNKNOWN_PRODUCT` |
 | 강제 — 무엇이 막는가(CI lint 는 필수 체크, 두 앱의 단위 테스트는 각 빌드 워크플로 — 필수 체크가 아니다) | CI lint `scripts/check-paid-unlock-codes.py` 의 (a) 화면 문구·(b) 코드·(e) 게이트 모양 + 단위 테스트 `GiftCodeRemovalTest`(`android-build.yml`) | 같은 검사의 (a)·(b)·(e) + 단위 테스트 `GiftRemovalTests`(`ios-build.yml`) | 같은 검사의 (b) 코드·라우트 경로·(d) 초대 코드 형식이 남지 않았는지 + `gift-codes-retired.test.ts`·`code.test.ts`(필수 `test` 잡). 스토어 문구 원본은 같은 검사의 (c) |
 | 구독 조회 | `subscriptionResponse` | `socialFeatures.subscription` | `routes/billing-query.ts` |
@@ -211,7 +211,8 @@ iOS 1.2.11(빌드 8)이 App Store 심사 지침 **3.1.1**("인앱 결제가 아�
 
 - **서버가 받지 않는 것이 실질 차단이다.** 앱 문구만 지우면 이미 깔린 옛 앱('프로모션 코드' 문구가
   남은 버전)으로 계속 열린다. `POST /code/register` 는 (그때는) INV-/GIFT- 형식이 아니면 조회 없이
-  `CODE_NOT_FOUND` 였고 — 2026-10-14 부터는 INV- 하나, 2026-10-20 부터는 어떤 코드든 `CODE_NOT_FOUND` 다 —
+  `CODE_NOT_FOUND` 였고 — 2026-10-14 부터는 INV- 하나, 2026-10-20 부터는 어떤 코드든 `CODE_NOT_FOUND`, 2026-10-26
+  강제 업데이트 뒤에는 라우트째 없다 —
   옛 경로 `POST /billing/promo/redeem` 은 라우트째 지웠다(404).
 - **문구에 '프로모션'·'쿠폰' 을 되살리지 말 것.** 코드 칸의 이름은 그때 '초대·선물 코드' 였고, 2026-10-14
   부터 '초대 코드' 였다가 2026-10-20 에 칸 자체가 없어졌다(양 앱 ko·en·ja).
@@ -367,37 +368,20 @@ iOS 1.2.11(빌드 8)이 App Store 심사 지침 **3.1.1**("인앱 결제가 아�
   구독 그룹 안에서 '업그레이드' 하면 재조회가 모르는 상품을 만난다. 개인으로 매핑하지 말 것 — 개인 이용권에
   커플·가족 값을 받게 된다.
 
-### 옛 앱에 남기는 응답 — 강제 업데이트가 끝날 때까지
+### 옛 앱에 남겼던 응답 — **2026-10-26 에 지웠다**
 
-옛 앱(그룹 기능이 남은 빌드 — 안드로이드 versionCode 35·iOS 빌드 13 까지)은 그룹·공유·받은 알람 조회를 **이용권
-갱신과 한 묶음으로** 부른다. 하나라도 200 의 모양으로 답하지 않으면 개인 이용권 갱신까지 버려진다(안드로이드는
-구독 응답을 함께 버리고, iOS 는 권한 스냅샷을 '미완' 으로 두어 `plan_changed` 의 예약 재조정을 건너뛴다). 그래서
-아래는 **상태 없는 빈 응답**으로 남긴다 — DB 를 보지 않고, 지금 prod 의 모든 계정이 받던 값과 같아 옛 앱은 다른
-점을 모른다.
+옛 앱(그룹 기능이 남은 빌드 — 안드로이드 versionCode 35·iOS 빌드 13 까지)은 그룹·공유·받은 알람 조회를 이용권 갱신과 한
+묶음으로 불렀다. 그래서 강제 업데이트가 끝날 때까지 **상태 없는 빈 응답**으로 남겨 두었다 — `GET /family/groups/current`,
+`GET /billing/vouchers`, `GET /voice/family`, `GET /alarm`(커서), `GET /alarm/declined`, `POST /alarm/:id/decline`,
+`POST /code/register`(404 `CODE_NOT_FOUND`), 그리고 `GET /billing/subscription` 의 `plan.max_members: 1` 리터럴.
 
-| 요청 | 답 | 왜 남기나 |
-| --- | --- | --- |
-| `GET /family/groups/current` | 200 `{"group":null,"role":null,"members":[]}` | 실패하면 옛 안드로이드는 이용권 정보 오류를 띄우고 목소리 접근권 대조를 건너뛴다. 옛 iOS 는 권한 스냅샷이 미완으로 남는다 |
-| `GET /billing/vouchers` | 200 `{"vouchers":[]}` | 두 앱이 구독 조회와 한 묶음으로 기다린다 — 실패하면 구독 답까지 버린다 |
-| `GET /voice/family` | 200 `{"profiles":[]}` | 옛 안드로이드 접근권 워커가 실패마다 재시도하고, 옛 iOS 는 내 알람 대조를 건너뛴다 |
-| `GET /alarm`(커서) | 200 `{"alarms":[],"has_more":false,"next_cursor":null}` — **인증 라우터 뒤에** 둔다 | 옛 안드로이드 주기 워커가 이 요청의 403 `ACCOUNT_PENDING_DELETION` 으로 탈퇴 신청을 알아듣는다([session-and-auth.md](session-and-auth.md) 「탈퇴 유예」). 실패하면 워커 재시도, 옛 iOS 는 저장마다 '알람 정보를 불러오지 못했어요' |
-| `GET /alarm/declined` | 200 `{"alarm_ids":[],"revoked_alarm_ids":[],"has_more":false}` | 두 앱이 회차마다 부른다(옛 iOS 디코더는 세 키가 다 있어야 한다) |
-| `POST /alarm/:id/decline` | 200 `{"success":true,"declined":true}` | 옛 앱에 남은 받은 알람을 지울 때 부른다 — 코드 없는 404 면 옛 안드로이드가 그 알람을 지우지 못한다 |
-| `POST /code/register` | 404 `CODE_NOT_FOUND` — 어떤 본문이든 | 옛 앱의 '초대 코드 등록'. 두 앱이 예상된 거절로 읽는다(코드 없는 404 면 시도마다 Sentry 이슈) |
-| `GET /billing/subscription` | `plan.max_members: 1` 을 리터럴로 계속 싣는다(컬럼은 지웠다) · `plan.plan_type` 은 그대로 · `subscription.plan_group_id` 는 뺀다 | 옛 iOS 디코더가 `max_members` 를 필수로 읽는다 — 없으면 결제 전 조회를 포함한 응답 전체를 못 읽는다 |
-| `PATCH /user/me` | 가족 알람 설정 키를 무시하고 응답에서 뺀다 | 옛 앱은 그 키를 보내지 않는다(그 키만 오면 예전처럼 400 `NO_FIELDS_TO_UPDATE`) |
-| `POST /voice/clone`·`PATCH /voice/:id` | `isShared`/`is_shared` 를 받고 무시한다 · 응답에 싣지 않는다 | 옛 앱의 목소리 등록이 언제나 보낸다 — 엄격히 거절하면 옛 앱 사용자 전원의 목소리 등록이 깨진다 |
-| `POST /alarm` 의 `target_user_id` | 호출자가 아닌 계정(비어 있지 않은 문자열)이면 403 `NOT_CONNECTED`, 그 밖은 무시 | 그룹이 없을 때의 예전 답과 같다. 말없이 내 알람으로 만들지 않는다([alarm-lifecycle.md](alarm-lifecycle.md)) |
-| `POST /tts/generate` 의 `target_user_id` | 무시 | 이미 은퇴한 동적 갈래만 읽던 값 |
-| 로그인·가입·구글·애플·`/auth/me` 의 `user` | 가족 알람 설정 키를 뺀다 | 두 앱 모두 빠진 키를 견딘다 |
-
-- 각 라우트에 "옛 앱 호환 — minSupported 가 현재 빌드를 넘으면 지운다" 를 적어 둔다. 라우트 등록 순서도 그대로다
-  (Hono 는 등록 순서로 맞춘다 — `GET /voice/family` 를 `/:id` 라우트 뒤로 옮기면 다른 라우트가 받는다).
-- 그룹 전용 경로는 **지웠다**(404): 그룹 나가기·구성원 내보내기·주인 넘기기, 가족 알람 보내기
-  (`POST /family/alarms/voice`·`POST /voice/upload`), 초대 코드 공유(`POST /billing/vouchers/family-share`), 수신 확인
-  (`POST /alarm/:id/received`). 옛 앱이 이 경로에 닿으려면 그룹이 있어야 하는데 위 빈 응답이 그룹을 주지 않는다.
-- 그룹 갈래만 내던 에러 코드는 목록에서 지웠다(이름을 바꾼 것이 아니다 — [error-codes.md](error-codes.md) §2). 남은
-  것은 `CODE_NOT_FOUND`(코드 등록 호환)·`NOT_CONNECTED`(위 `target_user_id`) 둘이다.
+강제 업데이트(`minSupported` 안드로이드 36·iOS 14 — `lib/app-version.ts`)로 그 앱을 막은 뒤 **전부 지웠다.** 지금 두 앱은 이
+경로를 부르지 않는다. 없는 경로는 다른 없는 경로와 같이 코드가 있는 404 `NOT_FOUND` 다(`index.ts` 의 `app.notFound`).
+`CODE_NOT_FOUND` 는 목록과 두 앱의 예상된 거절 목록에서 빠졌다. 옛 앱이 싣는 칸을 **읽지 않고 무시하는** 자리
+(`PATCH /user/me` 의 가족 알람 설정 키, `POST /voice/clone`·`PATCH /voice/:id` 의 `isShared`, `POST /alarm` 의
+`target_user_id` → `NOT_CONNECTED`, `POST /tts/generate` 의 `target_user_id`)는 해가 없어 그대로 둔다.
+- 그룹 전용 경로는 그 전에 지웠다(404): 그룹 나가기·구성원 내보내기·주인 넘기기, 가족 알람 보내기, 초대 코드 공유,
+  수신 확인.
 
 ### 강제 업데이트 — 두 스토어 게재를 확인한 **뒤에**
 

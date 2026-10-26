@@ -278,10 +278,10 @@ final class TransientFailureClassificationTests: XCTestCase {
     /// 프로모 코드와 함께, 초대 코드 갈래 셋은 2026-10-20 에 커플·가족 이용권과 함께 빠졌다). 넓히면(4xx 전부·`AUTH_` 전부)
     /// 권한·상태 충돌 같은 고칠 것이 이슈 목록에서 조용히 사라지고, 좁히면 사용자가 잘못 친 값이 다시 이슈를 채운다.
     /// 바꿀 때는 스펙의 표와 이 줄을 함께 고친다(shared `CLIENT_EXPECTED_REFUSAL_CODES`·안드로이드와 같은 목록).
-    func test_예상된_거절_목록은_정해진_다섯_개다() {
+    func test_예상된_거절_목록은_정해진_네_개다() {
+        // 옛 앱의 코드 등록 답 `CODE_NOT_FOUND` 는 2026-10-26 강제 업데이트 뒤 그 라우트와 함께 빠졌다.
         XCTAssertEqual(AlarmTalkLog.expectedRefusalCodes, [
             "AUTH_EMAIL_CODE_INVALID", "AUTH_EMAIL_CODE_EXPIRED", "AUTH_EMAIL_TAKEN", "AUTH_EMAIL_SOCIAL",
-            "CODE_NOT_FOUND",
         ])
     }
 
@@ -294,7 +294,6 @@ final class TransientFailureClassificationTests: XCTestCase {
             .server(status: 400, message: "expired", errorCode: "AUTH_EMAIL_CODE_EXPIRED"),
             .server(status: 409, message: "taken", errorCode: "AUTH_EMAIL_TAKEN"),
             .server(status: 409, message: "social", errorCode: "AUTH_EMAIL_SOCIAL"),
-            .server(status: 404, message: "not found", errorCode: "CODE_NOT_FOUND"),
         ]
         XCTAssertEqual(Set(refusals.compactMap(\.serverErrorCode)), AlarmTalkLog.expectedRefusalCodes)
         for refusal in refusals {
@@ -358,7 +357,7 @@ final class TransientFailureClassificationTests: XCTestCase {
             APIError.server(status: 429, message: "attempts", errorCode: "AUTH_EMAIL_CODE_ATTEMPTS_EXCEEDED"),
             APIError.server(status: 429, message: "limit", errorCode: "VOICE_MONTHLY_CHANGE_LIMIT_REACHED"),
             APIError.server(status: 500, message: "boom", errorCode: "AUTH_EMAIL_CODE_INVALID"),
-            APIError.server(status: 503, message: "gateway", errorCode: "CODE_NOT_FOUND"),
+            APIError.server(status: 503, message: "gateway", errorCode: "AUTH_EMAIL_TAKEN"),
             APIError.server(status: 400, message: "Bad Request", errorCode: nil),
             APIError.server(status: 400, message: "Bad Request", errorCode: ""),
             APIError.server(status: 400, message: "AUTH_EMAIL_CODE_INVALID: wrong digits", errorCode: nil),

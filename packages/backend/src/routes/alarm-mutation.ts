@@ -655,11 +655,6 @@ alarmMutation.patch('/:id', async (c) => {
   });
 });
 
-// 옛 앱 호환 — minSupported 가 현재 빌드를 넘으면 지운다. 받은 가족 알람의 '그만받기' 였다(가족 알람은
-// 2026-10-20 에 없앴다). 옛 앱은 기기에 남은 받은 알람을 지울 때 이 요청이 2xx 여야 로컬 행을 지운다 —
-// 404 면 그 알람을 영영 못 지운다. 기록할 곳이 없으므로 DB 를 보지 않고 늘 같은 답을 낸다.
-alarmMutation.post('/:id/decline', (c) => c.json({ success: true, declined: true }));
-
 alarmMutation.delete('/:id', async (c) => {
   // 조회·삭제·에셋 정리가 모두 같은 식별자 집합을 본다. 통일 이전에 만들어진 알람은
   // user_id 에 로그인 식별자가 들어 있어, users.id 하나로만 걸면 소유권 조회는 통과해도

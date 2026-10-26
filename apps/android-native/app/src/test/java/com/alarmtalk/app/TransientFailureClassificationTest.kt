@@ -316,18 +316,17 @@ class TransientFailureClassificationTest {
     // ── 사용자가 친 값의 예상된 거절 — `docs/spec/error-codes.md` §3 「앱도 같다」 ──────────
 
     /**
-     * 목록은 정해진 다섯 개다(프로모 코드 갈래 셋은 2026-10-12 에, 초대 코드 갈래 셋은 2026-10-20 에 그 코드와 함께
-     * 빠졌다 — `CODE_NOT_FOUND` 는 옛 앱의 코드 등록이 언제나 받는 답이라 남는다). 원본은 shared 의
+     * 목록은 정해진 네 개다(프로모 코드 갈래 셋은 2026-10-12 에, 초대 코드 갈래 셋은 2026-10-20 에 그 코드와 함께, 옛 앱의
+     * 코드 등록 답 `CODE_NOT_FOUND` 는 2026-10-26 강제 업데이트 뒤 그 라우트와 함께 빠졌다). 원본은 shared 의
      * `CLIENT_EXPECTED_REFUSAL_CODES` 이고 셋(shared·안드로이드·iOS)이
      * 같은지는 CI lint(`scripts/check-expected-refusal-codes.py`)가 본다 — 여기서는 이 앱의 값이 넓어지거나
      * (진짜 사고가 묻힌다) 좁아지지(이슈 목록이 다시 시끄러워진다) 않게 그 자체를 고정한다.
      */
     @Test
-    fun expectedRefusalListIsExactlyTheFiveCodes() {
+    fun expectedRefusalListIsExactlyTheFourCodes() {
         assertEquals(
             setOf(
                 "AUTH_EMAIL_CODE_INVALID", "AUTH_EMAIL_CODE_EXPIRED", "AUTH_EMAIL_TAKEN", "AUTH_EMAIL_SOCIAL",
-                "CODE_NOT_FOUND",
             ),
             AlarmTalkLog.EXPECTED_REFUSAL_CODES,
         )
@@ -371,7 +370,7 @@ class TransientFailureClassificationTest {
     @Test
     fun aRefusalNeedsA4xxAndAListedCode() {
         // 같은 코드라도 5xx 면 서버 사고다.
-        assertNull(AlarmTalkLog.breadcrumbCategoryFor(httpException(500, """{"error_code":"CODE_NOT_FOUND"}""")))
+        assertNull(AlarmTalkLog.breadcrumbCategoryFor(httpException(500, """{"error_code":"AUTH_EMAIL_TAKEN"}""")))
         assertNull(AlarmTalkLog.breadcrumbCategoryFor(httpException(503, """{"error_code":"AUTH_EMAIL_CODE_INVALID"}""")))
         // 코드 없는 4xx 는 무엇이 거절됐는지 모른다.
         assertNull(AlarmTalkLog.breadcrumbCategoryFor(httpException(400, "")))

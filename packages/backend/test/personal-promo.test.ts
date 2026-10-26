@@ -35,7 +35,6 @@ const { default: tts } = await import('../src/routes/tts');
 const { default: alarmMutation } = await import('../src/routes/alarm-mutation');
 const { default: billingQuery } = await import('../src/routes/billing-query');
 const { default: billingAll } = await import('../src/routes/billing');
-const { default: codeRoutes } = await import('../src/routes/code');
 const { resolvePersonalPromo, resolvePersonalPromoWindow, personalPromoField, computedUserPlan } =
   await import('../src/lib/personal-promo');
 const { hasPersonalVoiceAccess } = await import('../src/routes/billing-helpers');
@@ -104,7 +103,6 @@ function appFor(user: Caller) {
   app.route('/tts', tts);
   app.route('/alarms', alarmMutation);
   app.route('/billing', billingQuery);
-  app.route('/code', codeRoutes);
   return app;
 }
 
@@ -497,14 +495,14 @@ describe('계산값 자리 — 끝 1초 전 열림 / 끝 시각 닫힘', () => {
 
   // 프로모 코드는 2026-10-12 에 없앴다(App Store 3.1.1 — `routes/code.ts` 머리말). 켜진 코드가
   // DB 에 남아 있어도 서버가 받지 않아야 옛 앱('프로모션 코드' 문구가 남은 버전)으로도 못 연다.
-  it('프로모 코드는 받지 않는다 — 켜진 코드가 있어도 CODE_NOT_FOUND, 구독·사용 기록이 안 생긴다', async () => {
+  it('프로모 코드는 받지 않는다 — 켜진 코드가 있어도 404, 구독·사용 기록이 안 생긴다', async () => {
     atMoment(new Date(END.getTime() - 1000));
     const user = { pk: 'pp-free-new' };
     const before = await db.execute(`SELECT COUNT(*) AS n FROM subscriptions WHERE user_id = 'pp-free-new'`);
+    // 코드 등록 라우트 자체가 없다(2026-10-26 강제 업데이트 뒤 옛 앱 호환과 함께 지웠다).
     for (const code of ['PP_PLAIN', 'pp_plain']) {
       const res = await call(user, 'POST', '/code/register', { code });
       expect(res.status).toBe(404);
-      expect(res.body.error_code).toBe('CODE_NOT_FOUND');
     }
     // 옛 경로(`POST /billing/promo/redeem`)도 없다 — 결제 라우터 전체를 올려 확인한다.
     const billingApp = new Hono<AppEnv>();
