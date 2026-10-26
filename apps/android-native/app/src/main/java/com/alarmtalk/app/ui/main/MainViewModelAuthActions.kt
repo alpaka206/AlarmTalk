@@ -45,6 +45,7 @@ internal fun MainViewModel.login(email: String, password: String) {
             // 세션을 올리는 순간 로그인 뒤 계정 조회(`checkAccountStatus`)가 뜬다 — 멈추는 로그인 뒤 정리
             // (`onSignedIn`)보다 **먼저** 적어야 이 응답이 이번 진입의 첫 결과다(Codex #803).
             recordSignInAnswer(response.user, accountRequest)
+            recordAuthSuccess(method = "email")
             onSignedIn()
         }.onFailure { error ->
             AlarmTalkLog.reportError("Email login failed", error)
@@ -231,6 +232,7 @@ internal fun MainViewModel.register(
             registerEmailVerificationSentTo = null
             registerEmailVerified = null
             recordSignInAnswer(response.user, accountRequest)
+            recordAuthSuccess(method = "email_register")
             onSignedIn()
             message = getApplication<android.app.Application>().getString(R.string.msg_register_success, response.user.email)
         }.onFailure { error ->
@@ -334,6 +336,7 @@ internal fun MainViewModel.finishGoogleLogin(idToken: String) {
         }.onSuccess { response ->
             authSession = authSessionStore.saveGoogleSession(response)
             recordSignInAnswer(response.user, accountRequest)
+            recordAuthSuccess(method = "google")
             onSignedIn()
             message = null
         }.onFailure { error ->
@@ -375,6 +378,22 @@ private fun MainViewModel.recordSignInAnswer(
     // 도착한 진입을 대조한다 — `accountAnswerEntryFor`). 세션 정리(`resetForAccountSwitch`)는 로그아웃
     // 쪽에만 있어 로그인 전에 뜬 표가 앞질러지지 않는다.
     recordAccountAnswer(request, user.personalPromo)
+}
+
+/**
+ * 로그인 결과(`auth_result`, `docs/spec/usage-events.md` §7.1). 세션을 저장한 **뒤**라 기록기가 이 계정으로 적는다.
+ * ⚠ 실패는 적지 않는다 — 계정이 없어 기록기가 버리고, 가입 전 사건을 모아 두었다 붙여 보내는 길은 만들지 않는다(§7.4).
+ *   막 가입한 계정은 동의 전이라 서버가 받고 버린다(§3).
+ */
+private fun MainViewModel.recordAuthSuccess(method: String) {
+    com.alarmtalk.app.data.UsageSignals.record(
+        getApplication(),
+        com.alarmtalk.app.data.UsageEvents.AUTH_RESULT,
+        props = com.alarmtalk.app.data.UsageEventProps(
+            outcome = com.alarmtalk.app.data.UsageEventProps.OUTCOME_SUCCESS,
+            method = method,
+        ),
+    )
 }
 
 private suspend fun MainViewModel.onSignedIn() {
@@ -1557,7 +1576,20 @@ internal suspend fun MainViewModel.refreshAppSessionNow(rollToken: Boolean = tru
                 Log.i(TAG, "Dropping stale /auth/me result: session ended or switched")
                 return@onSuccess
             }
+            // 앱이 본 플랜이 **실제로 바뀌었을 때만**(`entitlement_changed`, `docs/spec/usage-events.md` §7.1) — 같은 계정의 앞 값과
+            // 비교한다. 로그인 직후 첫 답·계정 전환은 변경이 아니다. 출처(결제·관리자 지급·기간 한정)는 서버가 기록에 찍는다.
+            val previousPlan = authSession?.takeIf { it.user.id == saved.user.id }?.user?.plan
             authSession = saved
+            if (previousPlan != null && previousPlan != saved.user.plan) {
+                com.alarmtalk.app.data.UsageSignals.record(
+                    getApplication(),
+                    com.alarmtalk.app.data.UsageEvents.ENTITLEMENT_CHANGED,
+                    props = com.alarmtalk.app.data.UsageEventProps(
+                        fromPlan = com.alarmtalk.app.data.UsageEventProps.code(previousPlan),
+                        toPlan = com.alarmtalk.app.data.UsageEventProps.code(saved.user.plan),
+                    ),
+                )
+            }
             // 종료 안내가 판정에 쓰는 '이 계정의 가장 최근 응답'. 쿠폰·결제 뒤의 갱신도 여기로
             // 와서, 떠 있는 옛 안내를 걷는다(리뷰 지적 — 예전에는 `checkAccountStatus` 만 적었다).
             // plan 쓰기(위의 순번)와 순번이 따로다: 나중에 보낸 `checkAccountStatus` 의 답이 먼저

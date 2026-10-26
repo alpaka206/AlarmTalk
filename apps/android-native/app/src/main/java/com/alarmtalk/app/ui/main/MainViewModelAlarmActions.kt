@@ -64,6 +64,12 @@ private suspend fun MainViewModel.withResolvedWeatherVariant(draft: AlarmDraft):
     return draft.copy(contextVariantIndex = resolved, contextResolvedNow = true)
 }
 
+/** 저장 시도의 끝(`alarm_ready`) — OS 예약과 오디오 파일이 둘 다 갖춰졌을 때만. 기록 실패는 저장을 막지 않는다. */
+private fun MainViewModel.recordAlarmReadyIfReady(saved: com.alarmtalk.app.data.AlarmEntity) {
+    val ready = runCatching { repository.isReadyToRing(saved) }.getOrDefault(false)
+    if (ready) com.alarmtalk.app.data.AlarmSaveAttempts.ready(getApplication(), saved.id)
+}
+
 internal fun MainViewModel.createAlarm(
     draft: AlarmDraft,
     replaceExisting: Boolean = false,
@@ -81,7 +87,8 @@ internal fun MainViewModel.createAlarm(
       try {
         runCatching {
             repository.createAlarm(withResolvedWeatherVariant(draft), replaceExisting)
-        }.onSuccess {
+        }.onSuccess { saved ->
+            recordAlarmReadyIfReady(saved)
             rememberVoiceUsed(draft.voiceProfileId)
             rememberMessageChoiceUsed(draft)
             // 성공 토스트는 띄우지 않는다 — 저장 즉시 리스트에 행이 생기고 홈 헤더가
@@ -119,7 +126,8 @@ internal fun MainViewModel.updateAlarm(
       try {
         runCatching {
             repository.updateAlarm(alarmId, withResolvedWeatherVariant(draft), replaceExisting)
-        }.onSuccess {
+        }.onSuccess { saved ->
+            recordAlarmReadyIfReady(saved)
             rememberVoiceUsed(draft.voiceProfileId)
             rememberMessageChoiceUsed(draft)
             // 생성과 동일 — 성공 토스트 생략(리스트/헤더가 결과를 보여준다).

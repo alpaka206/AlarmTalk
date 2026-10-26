@@ -207,6 +207,18 @@ class AlarmRepository(
      * OS 재예약' 을 한 덩어리로 도는데, 저장이 그 사이에 끼면 방금 저장한 값을 옛 스냅샷으로
      * 덮어쓴다(Codex #675 P1).
      */
+    /**
+     * 방금 저장한 알람이 **울릴 준비가 됐는가**(`alarm_ready`, `docs/spec/usage-events.md` §7.1) — OS 예약이 걸려 있고,
+     * 목소리 알람이면 그 오디오 파일이 기기에 있다. 알람음만 쓰는 알람은 파일이 필요 없다. 오디오가 없어 울릴 때 내장
+     * 인사말로 대신하는 알람은 준비된 것으로 세지 않는다(폴백이지 준비가 아니다).
+     */
+    fun isReadyToRing(alarm: AlarmEntity): Boolean {
+        if (!alarm.enabled || !alarmScheduler.isScheduled(alarm.id)) return false
+        if (AlarmPlayModes.normalize(alarm.playMode) == AlarmPlayModes.ALARM_ONLY) return true
+        val path = alarm.localAudioUri?.takeIf { it.isNotBlank() }?.let { android.net.Uri.parse(it).path } ?: return false
+        return runCatching { java.io.File(path).let { it.isFile && it.length() > 0 } }.getOrDefault(false)
+    }
+
     suspend fun createAlarm(draft: AlarmDraft, replaceExisting: Boolean = false): AlarmEntity = restoreMutex.withLock {
         validateDraft(draft)
         val conflict = findReplaceableConflict(draft.hour, draft.minute, excludeAlarmId = null, replaceExisting = replaceExisting)
