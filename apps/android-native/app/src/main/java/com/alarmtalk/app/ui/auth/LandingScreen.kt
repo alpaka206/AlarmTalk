@@ -469,6 +469,8 @@ private fun VoicePreviewCard(accent: Color) {
     val previewPlayer = remember(context, sourceRes) { MediaPlayer.create(context, sourceRes) }
     var isPlaying by remember { mutableStateOf(false) }
     var progress by remember { mutableStateOf(0f) }
+    // 칩을 누를 때마다 하나씩 올린다 — 이미 고른 칩을 다시 눌러도 다시 들려야 하는데, 고른 id 만 키로 두면 같은 값이라 안 돈다.
+    var playRequest by remember { mutableStateOf(0) }
 
     DisposableEffect(previewPlayer) {
         previewPlayer?.setOnCompletionListener { p ->
@@ -496,8 +498,9 @@ private fun VoicePreviewCard(accent: Color) {
         p.start(); isPlaying = true
     }
     // 칩을 고르면 그 목소리를 곧바로 튼다 — 고른 것과 들리는 것이 같아야 한다.
-    LaunchedEffect(previewPlayer, selectedVoiceId) {
-        if (selectedVoiceId != null && previewPlayer != null) {
+    LaunchedEffect(previewPlayer, playRequest) {
+        if (playRequest > 0 && previewPlayer != null) {
+            previewPlayer.seekTo(0)
             progress = 0f
             previewPlayer.start()
             isPlaying = true
@@ -568,6 +571,7 @@ private fun VoicePreviewCard(accent: Color) {
                         isPlaying = false
                         selectedVoiceId = voice.id
                         com.alarmtalk.app.data.LandingVoicePick(context).set(voice.id)
+                        playRequest += 1
                     },
                     modifier = Modifier.weight(1f),
                     shape = WakerPillShape,
