@@ -45,6 +45,7 @@ import adsRoutes from './routes/ads';
 import billingApple from './routes/billing-apple';
 import pushRoutes from './routes/push';
 import eventsRoutes from './routes/events';
+import voicePacksRoutes from './routes/voice-packs';
 import holidayRoutes from './routes/holiday';
 import eventRoutes from './routes/event';
 import adminRoutes from './routes/admin';
@@ -287,6 +288,8 @@ api.use('*', appPresenceMiddleware);
 api.use('*', consentMiddleware);
 // 오디오 내려받기는 전용 버킷이 맡는다(일반 버킷은 이 경로를 세지 않는다 — rateLimit.ts).
 api.use('/tts/messages/:id/audio', audioDownloadRateLimitMiddleware);
+// 추가 음성팩 클립도 같은 내려받기 버킷이다(`docs/spec/voice-packs.md` §3).
+api.use('/voice-packs/:packId/clips/:clipId/audio', audioDownloadRateLimitMiddleware);
 api.use('*', rateLimitMiddleware);
 api.use('*', async (c, next) => {
   const mw = c.req.method === 'GET' ? privateCache : noStore;
@@ -303,6 +306,8 @@ api.route('/push', pushRoutes);
 api.route('/events', eventsRoutes);
 // 아침 소식 — 관심 기업 공시(OpenDART) + 정책브리핑 정책뉴스(`docs/spec/morning-briefing.md`).
 api.route('/briefing', briefingRoutes);
+// 추가 음성팩 — 권리를 확인한 무료 고정 목소리(`docs/spec/voice-packs.md`).
+api.route('/voice-packs', voicePacksRoutes);
 
 // 관리자 콘솔(/admin) — 사용자 JWT 가 아니라 ADMIN_SECRET(비밀번호 로그인·세션 쿠키)로 보호한다
 // (admin.ts 내부 미들웨어). 개요·사용자·알림 보내기 — `docs/spec/admin-console.md`.

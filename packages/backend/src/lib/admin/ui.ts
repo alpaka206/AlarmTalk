@@ -206,12 +206,13 @@ export function emptyState(title: string, body: string, action?: string): string
 
 // ── 레이아웃 ───────────────────────────────────────────────────────────────────
 
-export type NavKey = 'overview' | 'users' | 'push';
+export type NavKey = 'overview' | 'users' | 'push' | 'packs';
 
 const NAV: Array<{ key: NavKey; href: string; label: string }> = [
   { key: 'overview', href: '/admin', label: '개요' },
   { key: 'users', href: '/admin/users', label: '사용자' },
   { key: 'push', href: '/admin/push', label: '알림 보내기' },
+  { key: 'packs', href: '/admin/voice-packs', label: '음성팩' },
 ];
 
 export function newNonce(): string {
@@ -231,6 +232,8 @@ export function securityHeaders(nonce: string): Record<string, string> {
       "style-src 'unsafe-inline'",
       "img-src 'self' data:",
       "connect-src 'self'",
+      // 음성팩 검수 화면의 클립 듣기(`/admin/voice-packs/:id/clips/:clipId/audio`).
+      "media-src 'self'",
       "form-action 'self'",
       "frame-ancestors 'none'",
       "base-uri 'none'",

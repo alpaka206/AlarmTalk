@@ -58,6 +58,9 @@ const TABLES: Record<string, 'per-user' | 'no-personal-data' | 'retained-pseudon
   admin_push_jobs: 'no-personal-data', // 관리자 알림 기록 — 대상 토큰·받는 사람을 적지 않는다(#133)
   tts_synthesis_usage: 'no-personal-data', // 합성 사용량 장부 — 종류·날짜·숫자뿐, 사람을 가리키지 않는다(#139)
   tts_dev_budget_holds: 'no-personal-data', // dev 예산에서 합성 직전에 잡는 몫 — 월·글자 수뿐(#139)
+  voice_packs: 'no-personal-data', // 추가 음성팩 카탈로그 — 누구에게나 같은 콘텐츠다(#144)
+  voice_pack_clips: 'no-personal-data', // 팩 클립 — 사람과 묶이지 않는다(#144)
+  voice_pack_events: 'no-personal-data', // 팩 감사 기록 — 행위자는 'admin-console' 같은 고정 값이다(#144)
   subscriptions: 'per-user',
   store_transactions: 'per-user',
   promo_code_redemptions: 'per-user',

@@ -27,6 +27,7 @@
 | 사용자 상세(`/admin/users/:id`) | 지금 권한의 근거(스토어 구독·관리자 지급), 저장된 등급, 이번 달 직접 입력, 목소리 삭제 예정, **플러스 기간 지급**(7일·1개월·끝나는 날 지정 → 확인 화면 → 지급), 지급 기록과 회수 |
 | 알림 보내기(`/admin/push`) | 문구·받는 사람·미리보기·대상 수·시험 발송·전체 발송·발송 기록(이어 보내기) |
 | 합성 운영(JSON — `/admin/tts/render-backlog`·`/admin/tts/usage`) | 다시 구울 목록·예상 글자·한 회차 계획(합성하지 않는다), 요청 종류별 합성 사용량·예산 설정·클론 슬롯 — 규칙은 [tts-render-and-budget.md](tts-render-and-budget.md) §4·§5 |
+| 음성팩(`/admin/voice-packs`) | 추가 음성팩 목록·상세(클립 듣기·해시·크기, 내부 권리 정보, 남은 게시 조건, 검수·게시·중단 전이, 감사 기록) — 규칙은 [`voice-packs.md`](voice-packs.md) §4·§6 |
 
 - 스토어 다운로드 수는 크론이 두 스토어의 보고서에서 받아 온다 — 아래 「스토어 다운로드」.
 - 사람 계정만 센다 — 마이그레이션이 심은 시스템 계정(기본 목소리 보관용, `google_id` 가 `system:` 으로 시작)은 가입자·
@@ -167,7 +168,7 @@
 
 `ADMIN_UNCONFIGURED`(503) · `ADMIN_UNAUTHORIZED`(401) · `ADMIN_PUSH_COPY_INVALID`(400) ·
 `ADMIN_PUSH_TEST_RECIPIENT_NOT_FOUND`·`ADMIN_PUSH_JOB_NOT_FOUND`(404) · `ADMIN_PUSH_TEST_REQUIRED`·
-`ADMIN_PUSH_OUTSIDE_AD_HOURS`·`ADMIN_PUSH_TEST_RECIPIENT_NO_DEVICE`·`ADMIN_PUSH_TEST_RECIPIENT_NO_MARKETING_CONSENT`(409) · `ADMIN_PUSH_FAILED`(500).
+`ADMIN_PUSH_OUTSIDE_AD_HOURS`·`ADMIN_PUSH_TEST_RECIPIENT_NO_DEVICE`·`ADMIN_PUSH_TEST_RECIPIENT_NO_MARKETING_CONSENT`(409) · `ADMIN_PUSH_FAILED`(500) · 음성팩 가져오기의 `ADMIN_VOICE_PACK_INVALID`(400)·`ADMIN_VOICE_PACK_NOT_FOUND`(404)·`ADMIN_VOICE_PACK_LOCKED`(409).
 앱은 이 코드를 받지 않는다.
 
 ## 구현 지도
@@ -189,3 +190,4 @@
 | 스토어 표 | 마이그레이션 #138(`store_download_daily`·`store_download_sync`·`store_report_instances`) | `migrations.lock.json`·`account-purge-residue.test.ts`(개인정보 없음) |
 | 사용자 상세·기간 지급 | `routes/admin.ts`·`lib/admin/user-detail.ts`·`lib/admin/grant-pages.ts`·`lib/plan-grants.ts`(#134) | `plan-grants.test.ts` 「콘솔」 |
 | 합성 운영 보기(JSON) | `routes/admin.ts`·`lib/admin/tts-ops.ts`·`lib/render-backlog.ts`(#139) | `tts-render-budget.test.ts` 「관리자 JSON」 |
+| 음성팩 검수·게시 | `routes/admin.ts`·`lib/admin/voice-pack-pages.ts`·`lib/voice-packs.ts`(#144) | `voice-packs.test.ts` 「관리자」 |
