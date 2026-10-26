@@ -232,6 +232,11 @@
     <string name="editorp_fortune_save_button">Save</string>
     <string name="editorp_random_fortune_required">Not entered yet</string>
     <string name="editorp_random_detail_change">Change</string>
+    <string name="editorp_cheer_variety_title">Encouragement lines</string>
+    <string name="editorp_cheer_vary">Mix it up</string>
+    <string name="editorp_cheer_pinned">Keep this line</string>
+    <string name="editorp_cheer_vary_hint">Recently prepared lines take a short break, so a different one is set up next.</string>
+    <string name="editorp_cheer_pinned_hint">Only the line you pick will play.</string>
     <string name="editorp_random_manual_title">Your message</string>
     <string name="editor_manual_charge_notice">A new message makes a voice when you save, using 1 of this month\'s creations. Reusing a message you already made doesn\'t count.</string>
     <string name="editorp_random_more_contexts">More (fortune, medication)</string>
@@ -488,6 +493,7 @@
     <string name="editor2_ctx_wake_weather">Weather</string>
     <string name="editor2_ctx_wake_fortune">Fortune</string>
     <string name="editor2_ctx_love">Encouragement</string>
+    <string name="editor2_ctx_wake">Wake-up greeting</string>
     <string name="editor2_ctx_medication">Meds</string>
     <string name="editor2_repeat_every_day">Every day</string>
     <string name="editor2_repeat_weekly">Every %1$s</string>

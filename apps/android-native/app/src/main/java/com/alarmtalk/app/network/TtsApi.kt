@@ -148,6 +148,15 @@ data class StockClip(
      * true 로 읽는다. iOS 짝은 `StockClip.renderedForCurrentVoice`(같은 이유로 옵셔널).
      */
     @SerializedName("rendered_for_current_voice") val renderedForCurrentVoice: Boolean? = null,
+    /**
+     * 이 클립이 속한 **테마(버킷)** — 스펙 voice-and-message §5-4 「매니페스트 표지」. `cheer_v2` 카테고리는 테마 `cheer`
+     * 다. 옛 서버는 주지 않는다 — 그때는 카테고리가 테마다(`data.bucketTheme`). 셋 다 nullable 인 이유는 위와 같다(Gson).
+     */
+    val theme: String? = null,
+    /** 묶음 항목 ID(`cheer_v2_05`). 날씨·약·운세처럼 묶음이 없으면 null. */
+    @SerializedName("content_id") val contentId: String? = null,
+    /** 새로 고를 수 있는가 — 옛 응원(`cheer_v1`)만 false. 없으면(옛 서버) 고를 수 있다로 읽는다. */
+    val selectable: Boolean? = null,
 ) {
     /** 옛 서버(필드 없음)는 '준비됨' 으로 본다 — 없는 신호로 앱을 멈추지 않는다. */
     val isRendered: Boolean get() = renderedForCurrentVoice ?: true

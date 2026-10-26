@@ -99,9 +99,18 @@ internal fun RandomPromptSettingsPane(
     fortuneGender: String,
     fortuneBirthDate: String,
     fortuneBirthTime: String,
+    /**
+     * 응원 테마의 **다양하게 / 이 문구로 고정**(스펙 voice-and-message §5-4). [cheerPhrases] 는 이 목소리·언어로
+     * 매니페스트에 있는 새 응원이다 — **비어 있으면 카드를 그리지 않는다**(준비되지 않은 문구를 보이지 않는다).
+     */
+    cheerMode: String = com.alarmtalk.app.data.CheerModes.VARY,
+    cheerPinnedContentId: String? = null,
+    cheerPhrases: List<com.alarmtalk.app.data.CheerCandidate> = emptyList(),
     onSaveSettings: (RandomPromptSettingsResult) -> Unit,
 ) {
     val context = LocalContext.current
+    var draftCheerMode by remember(cheerMode) { mutableStateOf(com.alarmtalk.app.data.CheerModes.normalize(cheerMode)) }
+    var draftCheerPinned by remember(cheerPinnedContentId) { mutableStateOf(cheerPinnedContentId) }
     var draftContext by remember(randomContext) {
         mutableStateOf(
             // 지금 값을 그대로 고른 상태로 연다. 예전에는 목록에 없는 값(preset)이면 '약'을
@@ -182,6 +191,8 @@ internal fun RandomPromptSettingsPane(
                 randomContext = resolvedContext(),
                 weatherCountry = draftWeatherCountry.trim(),
                 weatherCity = draftWeatherCity.trim(),
+                cheerMode = draftCheerMode,
+                cheerPinnedContentId = draftCheerPinned,
                 fortuneGender = draftFortuneGender.trim(),
                 fortuneBirthDate = draftFortuneBirthDate.trim(),
                 fortuneBirthTime = draftFortuneBirthTime.trim(),
@@ -382,6 +393,53 @@ internal fun RandomPromptSettingsPane(
                             else -> stringResource(R.string.editorp_random_fortune_required)
                         },
                     )
+                }
+
+                // 응원 — 다양하게 / 이 문구로 고정(스펙 voice-and-message §5-4). 고를 새 응원이 없으면(공개 전·보충 전)
+                // 그리지 않는다. 그때 응원은 묶어 둔 옛 응원을 순서대로 돌린다.
+                if (normalizedContext == "cheer" && cheerPhrases.isNotEmpty()) {
+                    val phraseIds = cheerPhrases.map { it.contentId }
+                    SnoozeOptionSection(title = stringResource(R.string.editorp_cheer_variety_title)) {
+                        SnoozeRadioRow(
+                            label = stringResource(R.string.editorp_cheer_vary),
+                            selected = draftCheerMode == com.alarmtalk.app.data.CheerModes.VARY,
+                            onClick = { draftCheerMode = com.alarmtalk.app.data.CheerModes.VARY },
+                        )
+                        SnoozeOptionDivider()
+                        SnoozeRadioRow(
+                            label = stringResource(R.string.editorp_cheer_pinned),
+                            selected = draftCheerMode == com.alarmtalk.app.data.CheerModes.PINNED,
+                            onClick = {
+                                draftCheerMode = com.alarmtalk.app.data.CheerModes.PINNED
+                                // 고정할 문구가 아직 없으면 첫 문구를 고른 채로 연다 — 빈 고정은 없다.
+                                if (draftCheerPinned !in phraseIds) draftCheerPinned = phraseIds.first()
+                            },
+                        )
+                    }
+                    Text(
+                        text = stringResource(
+                            if (draftCheerMode == com.alarmtalk.app.data.CheerModes.PINNED) {
+                                R.string.editorp_cheer_pinned_hint
+                            } else {
+                                R.string.editorp_cheer_vary_hint
+                            },
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 4.dp),
+                    )
+                    if (draftCheerMode == com.alarmtalk.app.data.CheerModes.PINNED) {
+                        SnoozeOptionSection {
+                            cheerPhrases.forEachIndexed { index, phrase ->
+                                SnoozeRadioRow(
+                                    label = phrase.text,
+                                    selected = draftCheerPinned == phrase.contentId,
+                                    onClick = { draftCheerPinned = phrase.contentId },
+                                )
+                                if (index != cheerPhrases.lastIndex) SnoozeOptionDivider()
+                            }
+                        }
+                    }
                 }
             }
 

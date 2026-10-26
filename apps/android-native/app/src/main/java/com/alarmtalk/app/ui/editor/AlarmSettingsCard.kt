@@ -399,5 +399,8 @@ internal data class RandomPromptSettingsResult(
     val fortuneBirthTime: String,
     // '직접 입력' 선택 시 다이얼로그에서 받은 문구.
     val manualText: String = "",
+    // 응원 테마의 다양하게 / 이 문구로 고정(스펙 voice-and-message §5-4). 응원이 아니면 그대로 되돌려 준다.
+    val cheerMode: String = com.alarmtalk.app.data.CheerModes.VARY,
+    val cheerPinnedContentId: String? = null,
 )
 
