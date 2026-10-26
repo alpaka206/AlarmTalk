@@ -601,6 +601,26 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var stockClips by mutableStateOf<List<com.alarmtalk.app.network.StockClip>>(emptyList())
 
     /**
+     * 이 계정이 **받은 추가 팩**(`docs/spec/voice-packs.md` §7) — 목소리 탭·편집기가 본다. 원본은 `VoicePackStore` 이고
+     * 화면은 그 변화 신호를 보고 [refreshHeldVoicePacks] 로 다시 읽는다. ⚠ [stockClips] 에 섞지 않는다 — 기본 목소리
+     * 관문·선다운로드가 그 목록을 센다. 편집기에 넘길 때만 합친다(`AlarmTalkApp` 의 편집기 라우트).
+     */
+    var heldVoicePacks by mutableStateOf<List<com.alarmtalk.app.data.HeldVoicePack>>(emptyList())
+        internal set
+
+    /** 지금 받을 수 있는 추가 팩(`GET /voice-packs` 의 `packs`). */
+    var voicePackCatalog by mutableStateOf<List<com.alarmtalk.app.network.VoicePackSummary>>(emptyList())
+        internal set
+
+    /** 카탈로그 조회가 한 번이라도 끝났는가 / 마지막 조회가 실패했는가 — 빈 상태와 '못 불러옴' 을 가른다. */
+    var voicePackCatalogLoaded by mutableStateOf(false)
+        internal set
+    var voicePackCatalogFailed by mutableStateOf(false)
+        internal set
+
+    internal val voicePackStore by lazy { com.alarmtalk.app.data.VoicePackStore(getApplication()) }
+
+    /**
      * 카테고리별 **완전한 세트의 클립 수**(서버가 내려준다).
      *
      * ⚠ **앱에 개수를 박지 않는다.** 운영이 시드를 늘리면 앱 업데이트 없이 따라와야 한다.
@@ -1375,7 +1395,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             //   (`AlarmEditorScreen` 의 `chosen`) **직전에 고른 테마가 밀려난다** —
             //   CLAUDE.md 가 회귀라고 못 박은 「직전 선택 유지」 증상 그대로다.
             //   두 저장소가 어긋날 수 있는 상태 자체를 없앤다.
-            bucket != null && com.alarmtalk.app.data.isSystemVoiceId(draft.voiceProfileId) -> {
+            // 추가 팩도 같다 — 기본 목소리처럼 테마를 고른다(`docs/spec/voice-packs.md` §7).
+            bucket != null && com.alarmtalk.app.data.isFreeFixedVoiceId(draft.voiceProfileId) -> {
                 dynamicPromptStore.saveLastFreeBucket(userId, bucket)
                 randomPromptContextForBucket(bucket)
                     ?.let { dynamicPromptStore.saveLastMessageContext(userId, it) }
@@ -1709,6 +1730,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 if (entry <= 0L) return@collect
                 refreshAppSession(rollToken = firstEntryRefresh)
                 firstEntryRefresh = false
+            }
+        }
+        // 받은 추가 팩의 재생 기한은 백그라운드에 있는 동안에도 지난다 — **진입마다** 저장된 기한으로 대체한다(네트워크 없이,
+        // `docs/spec/voice-packs.md` §5). 세션·동의를 키로 거는 화면 효과는 일반 복귀에서 다시 돌지 않는다(코덱스 #960).
+        // 위 `/auth/me` 갱신을 기다리지 않도록 따로 구독한다.
+        viewModelScope.launch {
+            AppSignals.appEntries.collect { entry ->
+                if (entry > 0L) retireDueVoicePacksOnEntry()
             }
         }
     }

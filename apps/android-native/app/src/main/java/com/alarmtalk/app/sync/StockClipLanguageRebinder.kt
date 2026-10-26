@@ -384,6 +384,9 @@ object StockClipLanguageRebinder {
         legacyHints: Map<String, String> = emptyMap(),
     ): Boolean {
         if (resolvedBucketId(alarm, legacyHints) == null) return false
+        // ⚠ **추가 팩 알람은 다시 묶지 않는다**(`docs/spec/voice-packs.md` §2). 팩은 언어 하나이고 기본 목소리 매니페스트에
+        //   없다 — 여기서 보면 언어가 달라서·키가 매니페스트에 없어서 언제나 '낡음' 으로 읽힌다.
+        if (com.alarmtalk.app.data.isVoicePackVoiceId(alarm.voiceProfileId)) return false
         if (alarm.playMode == AlarmPlayModes.ALARM_ONLY) return false
         if (alarm.voiceSource == VoiceSources.LOCAL_AUDIO) return false
         val bound = decodeBucketClipKeys(alarm.bucketClipKeysJson)

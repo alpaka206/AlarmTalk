@@ -333,9 +333,15 @@ internal fun VoiceAudioCard(
         }
         }
     pendingVoiceSwitch?.let { pending ->
+        // 추가 팩은 기본 목소리가 아니다 — 같은 이유(준비된 문구로만 말한다)를 팩의 이름으로 말한다(`docs/spec/voice-packs.md` §7).
+        val toPack = com.alarmtalk.app.data.isVoicePackVoiceId(pending.id)
         IosAlertDialog(
-            title = stringResource(R.string.editor_voice_switch_drops_text_title),
-            message = stringResource(R.string.editor_voice_switch_drops_text_message),
+            title = stringResource(
+                if (toPack) R.string.voice_pack_switch_drops_text_title else R.string.editor_voice_switch_drops_text_title,
+            ),
+            message = stringResource(
+                if (toPack) R.string.voice_pack_switch_drops_text_message else R.string.editor_voice_switch_drops_text_message,
+            ),
             onDismiss = { pendingVoiceSwitch = null },
             actions = listOf(
                 IosAlertAction(
@@ -726,7 +732,10 @@ private fun voiceOptionLabelRes(options: List<Pair<String, Int>>, value: String)
     options.firstOrNull { it.first == value }?.second ?: options.firstOrNull()?.second
 
 private fun ownedVoiceDetail(context: android.content.Context, profile: VoiceProfile): String =
-    if (profile.isSystem == true) {
+    if (com.alarmtalk.app.data.isVoicePackVoiceId(profile.id)) {
+        // 추가 팩은 기본 목소리처럼(`isSystem`) 테마로 울지만 기본 4종이 아니다(`docs/spec/voice-packs.md` §7).
+        context.getString(R.string.voice_pack_editor_detail)
+    } else if (profile.isSystem == true) {
         context.getString(R.string.editor2_voice_detail_default)
     } else {
         context.getString(R.string.editor2_voice_detail_mine)

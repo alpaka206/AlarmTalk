@@ -880,6 +880,9 @@ internal fun TtsGenerateRequest.isFreeSystemManualRequest(): Boolean =
 
 internal suspend fun MainViewModel.downloadTtsMessageAudio(messageId: String): TtsMessageAudioResponse {
     val session = authSession ?: throw UserFacingException(getApplication<android.app.Application>().getString(R.string.msg_voice_tts_audio_load_login_required))
+    // 받은 추가 팩의 클립은 문구(`messages`)가 아니다 — 팩 API 로 받는다(`docs/spec/voice-packs.md` §3). 편집기가 캐시를
+    // 못 찾았을 때 기본 목소리 클립과 같은 이 길로 부르므로 여기서 가른다.
+    downloadVoicePackClipIfHeld(messageId)?.let { return it }
     return api.getTtsMessageAudio(AlarmTalkApiClient.bearer(session.token), messageId)
 }
 

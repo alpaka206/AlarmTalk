@@ -1373,7 +1373,9 @@ final class AlarmKitViewModel: ObservableObject {
 
     private func deleteLocalAlarm(_ record: LocalAlarmRecord, store: LocalAlarmStore) {
         let releasedAudioCacheKey = store.delete(record)
-        if let releasedAudioCacheKey {
+        // 받은 추가 팩의 클립은 알람이 없어도 팩이 쥔다 — 팩 지우기·개정 정리·기한 대체가 놓는다(코덱스 #960).
+        if let releasedAudioCacheKey,
+           !VoicePackStore.heldClipCacheKeysOnDevice().contains(releasedAudioCacheKey) {
             try? audioCache.deleteCachedAudio(cacheKey: releasedAudioCacheKey)
         }
         UsageEventQueue.shared.record(

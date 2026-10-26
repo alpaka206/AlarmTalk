@@ -89,10 +89,14 @@ function createRateLimitMiddleware(options?: {
   };
 }
 
-/** `GET /api/tts/messages/:id/audio` 인가 — 두 버킷이 **같은 판정**을 보게 한 곳에 둔다. */
+/**
+ * 미리 만들어 둔 오디오를 내려받는 요청인가 — `GET /api/tts/messages/:id/audio` 와 추가 음성팩 클립
+ * (`GET /api/voice-packs/:packId/clips/:clipId/audio`, `docs/spec/voice-packs.md`). 두 버킷이 **같은 판정**을 보게 한 곳에 둔다.
+ */
 function isAudioDownload(c: Context): boolean {
   if (c.req.method !== 'GET') return false;
-  return /^\/api\/tts\/messages\/[^/]+\/audio$/.test(new URL(c.req.url).pathname);
+  const path = new URL(c.req.url).pathname;
+  return /^\/api\/tts\/messages\/[^/]+\/audio$/.test(path) || /^\/api\/voice-packs\/[^/]+\/clips\/[^/]+\/audio$/.test(path);
 }
 
 /**

@@ -71,7 +71,8 @@ enum PaidVoiceGate {
         // `usesFreeSystemVoiceAlarm` 과 같다). 무료도 기본 목소리 직접 입력을 월 3회 만들고, 이미 만든 기본 목소리 결과는 등급이
         // 바뀌어도 계속 쓴다. 예전에는 스톡 클립·프리셋만 무료로 보고 직접 입력 결과는 유료로 읽어, 무료가 만든 직접 입력
         // 알람이 예약 시점에 강등됐다. 유료 판정은 **등록(클론) 목소리**에만 남는다.
-        return isSystemVoiceId(record.voiceProfileId)
+        // 추가 음성팩도 무료 고정 콘텐츠다(`docs/spec/voice-packs.md` §1).
+        return isFreeFixedVoiceID(record.voiceProfileId)
     }
 
     /// 로컬에 저장된 구독 스냅샷으로 유료 목소리 권한이 살아 있는지 본다.

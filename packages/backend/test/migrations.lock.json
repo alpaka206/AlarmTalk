@@ -550,5 +550,9 @@
   "143": {
     "name": "cheer-variants-and-stock-content-releases",
     "sha": "914219fe4317a5cd"
+  },
+  "144": {
+    "name": "voice-packs",
+    "sha": "933f3ca06805f59f"
   }
 }

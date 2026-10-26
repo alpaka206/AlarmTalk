@@ -73,6 +73,52 @@ final class ContentAndBriefingSignalsTests: XCTestCase {
         XCTAssertTrue(body[record.lowerBound...].contains("userID: ownerID"))
     }
 
+    // MARK: - 팩 목소리 사용(`pack_selected`)
+
+    private let packVoiceID = voicePackVoiceIDPrefix + "0000000000aa"
+
+    private var heldPacks: [HeldVoicePack] {
+        [HeldVoicePack(
+            packId: "first-pack", voiceId: packVoiceID, speakerName: "화자", language: "ko", description: "", usageNote: "",
+            contentRevision: 1, latestRevision: 1, clips: [], state: .ready, previewClipId: nil, withdrawnPlaybackUntil: nil
+        )]
+    }
+
+    func test_packSelectionCarriesOnlyThePackID() throws {
+        var record = cheerAlarm(mode: nil, bucket: "weather")
+        record.voiceProfileId = packVoiceID
+        let props = try XCTUnwrap(VoicePacks.packSelectionProps(for: record, held: heldPacks))
+        XCTAssertEqual(try keys(props), ["pack_id"], "문구·클립 id 같은 원문이 끼어들 칸이 없다")
+        XCTAssertEqual(props.packID, "first-pack")
+    }
+
+    func test_packSelectionIsNotRecordedWhenThePackVoiceDoesNotSpeak() {
+        var record = cheerAlarm(mode: nil, bucket: "weather")
+        XCTAssertNil(VoicePacks.packSelectionProps(for: record, held: heldPacks), "팩 목소리가 아니다")
+        record.voiceProfileId = packVoiceID
+        XCTAssertNil(VoicePacks.packSelectionProps(for: record, held: []), "그 계정이 받은 팩이 아니다")
+        var alarmOnly = record
+        alarmOnly.playMode = AlarmPlayMode.alarmOnly.rawValue
+        XCTAssertNil(VoicePacks.packSelectionProps(for: alarmOnly, held: heldPacks), "알람 모드는 팩 목소리로 울지 않는다")
+        var recorded = record
+        recorded.voiceSource = VoiceSource.localAudio.rawValue
+        XCTAssertNil(VoicePacks.packSelectionProps(for: recorded, held: heldPacks), "직접 녹음은 팩 목소리가 아니다")
+    }
+
+    /// 응원 선택과 같은 자리 — 저장이 **성공한 뒤에만**, 저장을 시작한 계정으로.
+    func test_packSelectedIsRecordedOnlyAfterSaveSucceeds() throws {
+        let source = try AppSourceText.read("Views/Editor/AlarmEditorSheet.swift")
+        XCTAssertEqual(source.components(separatedBy: ".packSelected").count - 1, 1, "기록 자리는 한 곳이다")
+        let body = String(try AppSourceText.region(of: source, from: "func finishScheduling(", to: "private func recordSaveUsageEvent("))
+        let record = try XCTUnwrap(body.range(of: ".packSelected"))
+        let content = try XCTUnwrap(body.range(of: ".contentSelected"))
+        let lastFailure = try XCTUnwrap(body.range(of: "return false", options: .backwards))
+        XCTAssertLessThan(lastFailure.upperBound, record.lowerBound)
+        XCTAssertLessThan(content.upperBound, record.lowerBound, "응원 선택 옆이다")
+        XCTAssertTrue(body[record.lowerBound...].contains("userID: ownerID"))
+        XCTAssertTrue(body.contains("voicePacks.activeUserID == ownerID"), "팩 목록은 저장을 시작한 계정의 것만 본다")
+    }
+
     func test_briefingRecordsNeverTakeTheLinkOrText() throws {
         let source = try AppSourceText.read("Views/Settings/BriefingView.swift")
         let opened = source.components(separatedBy: "BriefingUsageSignals.sourceOpened(").dropFirst()

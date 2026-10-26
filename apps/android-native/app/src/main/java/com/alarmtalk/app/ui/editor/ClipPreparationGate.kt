@@ -1,5 +1,6 @@
 package com.alarmtalk.app
 
+import com.alarmtalk.app.data.isFreeFixedVoiceId
 import com.alarmtalk.app.data.isSystemVoiceId
 import com.alarmtalk.app.network.ExpectedVariantCounts
 import com.alarmtalk.app.network.StockClip
@@ -57,7 +58,8 @@ internal data class ClipGate(
         // 서버가 안 알려주면(옛 서버) 완전성을 단정할 수 없으므로 '불완전' 으로 둔다.
         val fullCount = expectedVariants?.countFor(
             category = category,
-            isSystemVoice = isSystemVoiceId(profileId),
+            // 추가 팩은 기본 목소리와 같은 클립 구조다(`docs/spec/voice-packs.md` §2).
+            isSystemVoice = isFreeFixedVoiceId(profileId),
         ) ?: return false
         if (fullCount <= 0) return false
         return variants == (0 until fullCount).toSet()
@@ -95,7 +97,8 @@ internal data class ClipGate(
         randomPrompt: Boolean,
         randomContext: String?,
     ): Boolean = when {
-        isSystemVoiceId(profileId) -> false
+        // 기본 목소리·받은 추가 팩 — 선다운로드 대상이라 여기서 막을 일이 아니다(팩은 다 받은 것만 편집기에 나온다).
+        isFreeFixedVoiceId(profileId) -> false
         !randomPrompt -> false
         expectedVariants == null -> false
         else -> {

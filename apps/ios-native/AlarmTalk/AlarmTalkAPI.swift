@@ -454,6 +454,30 @@ final class AlarmTalkAPI: @unchecked Sendable {
         try await request("tts/messages/\(id)/audio", token: token)
     }
 
+    // MARK: 추가 음성팩(`docs/spec/voice-packs.md` §3)
+    //
+    // 받을 수 없는 팩(비게시·권리 끝·지역·빌드)은 404 `VOICE_PACK_NOT_FOUND` 다. 빌드는 공통 헤더(`X-App-Version`)로 간다.
+
+    /// 지금 받을 수 있는 팩 목록 + 게시가 끝난 팩의 기존 재생 기한.
+    func getVoicePacks(token: String) async throws -> VoicePackListResponse {
+        try await request("voice-packs", token: token)
+    }
+
+    /// 팩 상세(다운로드 상태를 셀 클립 목록).
+    func getVoicePack(packID: String, token: String) async throws -> VoicePackDetailResponse {
+        try await request("voice-packs/\(Self.pathSegment(packID))", token: token)
+    }
+
+    /// 팩 클립 하나의 오디오(base64 + 해시·크기).
+    func getVoicePackClipAudio(packID: String, clipID: String, token: String) async throws -> VoicePackAudioResponse {
+        try await request("voice-packs/\(Self.pathSegment(packID))/clips/\(Self.pathSegment(clipID))/audio", token: token)
+    }
+
+    /// 경로 한 칸 — 서버가 준 id 라도 슬래시·물음표가 경로를 바꾸지 못하게 인코딩한다.
+    private static func pathSegment(_ value: String) -> String {
+        value.addingPercentEncoding(withAllowedCharacters: .alphanumerics.union(CharacterSet(charactersIn: "-_"))) ?? value
+    }
+
     /// 사전렌더 테마(날씨)의 **어느 클립을 틀지**를 서버에 물어본다.
     ///
     /// 서버가 그 지역·그 날짜의 실제 예보(서버가 지역마다 미리 계산 — 원천은 서버가 정한다)로

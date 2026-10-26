@@ -13806,6 +13806,352 @@
         }
       }
     },
+    "voicePack.editor.detail" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Extra pack"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "追加パック"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "추가 팩"
+          }
+        }
+      }
+    },
+    "추가 팩" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Extra packs"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "追加パック"
+          }
+        }
+      }
+    },
+    "준비 중인 추가 팩이 아직 없어요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No extra packs are available yet."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "追加パックはまだありません。"
+          }
+        }
+      }
+    },
+    "받지 못했어요. 다시 시도해 주세요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn't download. Please try again."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ダウンロードできませんでした。もう一度お試しください。"
+          }
+        }
+      }
+    },
+    "게시가 끝났어요. %@까지 기존 알람에서 울려요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This pack is no longer offered. Existing alarms keep using it until %@."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "公開が終了しました。%@まで既存のアラームで鳴ります。"
+          }
+        }
+      }
+    },
+    "받음" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Downloaded"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ダウンロード済み"
+          }
+        }
+      }
+    },
+    "들어 보기" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Listen"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "試聴"
+          }
+        }
+      }
+    },
+    "사용 범위" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Usage"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "利用範囲"
+          }
+        }
+      }
+    },
+    "받으면 알람 목소리 목록에 이 목소리가 생겨요. 날씨·운세·응원·약 테마에 쓸 수 있고, 직접 입력에는 쓸 수 없어요. 이미 있는 알람은 바뀌지 않아요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Once downloaded, this voice appears in your alarm voice list. You can use it for the weather, fortune, cheer and medication themes, but not for custom text. Existing alarms stay as they are."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ダウンロードすると、アラームの声の一覧にこの声が追加されます。天気・運勢・応援・薬のテーマに使えますが、直接入力には使えません。既存のアラームは変わりません。"
+          }
+        }
+      }
+    },
+    "이 팩을 지울까요?" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delete this pack?"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このパックを削除しますか?"
+          }
+        }
+      }
+    },
+    "지우기" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delete"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "削除"
+          }
+        }
+      }
+    },
+    "이 목소리를 쓰는 알람 %lld개가 미나 목소리로 바뀌어요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld alarms using this voice will switch to Mina's voice."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この声を使うアラーム%lld件がミナの声に変わります。"
+          }
+        }
+      }
+    },
+    "받기" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Download"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ダウンロード"
+          }
+        }
+      }
+    },
+    "다시 받기" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Download again"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "もう一度ダウンロード"
+          }
+        }
+      }
+    },
+    "이 팩은 지금 받을 수 없어요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This pack isn't available right now."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このパックは現在ダウンロードできません。"
+          }
+        }
+      }
+    },
+    "받은 오디오가 맞지 않아요. 다시 받아 주세요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The downloaded audio didn't match. Please download it again."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ダウンロードした音声が一致しません。もう一度ダウンロードしてください。"
+          }
+        }
+      }
+    },
+    "추가 팩 목소리로 바꿀까요?" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Switch to the extra pack voice?"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "追加パックの声に変えますか?"
+          }
+        }
+      }
+    },
+    "추가 팩 목소리는 준비된 문구로만 말할 수 있어서, 직접 입력한 문구는 사라져요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Extra pack voices only say prepared lines, so the text you typed will be removed."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "追加パックの声は用意された文だけを話すため、入力した文は消えます。"
+          }
+        }
+      }
+    },
+    "직접 입력을 쓸 수 없어요" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Custom text isn't available"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "直接入力は使えません"
+          }
+        }
+      }
+    },
+    "추가 팩 목소리는 직접 입력에 쓸 수 없어요. 문구 화면에서 테마를 골라 주세요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Extra pack voices can't read custom text. Choose a theme on the message screen."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "追加パックの声は直接入力には使えません。文の画面でテーマを選んでください。"
+          }
+        }
+      }
+    },
     "관심 기업의 공시와 정책브리핑 정책뉴스를 원문 링크와 함께 보여 드려요. 화면을 열 때만 확인해요." : {
       "extractionState" : "manual",
       "localizations" : {

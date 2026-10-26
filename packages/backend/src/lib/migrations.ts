@@ -3613,6 +3613,70 @@ export const migrations: Migration[] = [
       `ALTER TABLE voice_prerender_queue ADD COLUMN supplement INTEGER NOT NULL DEFAULT 0`,
     ],
   },
+  {
+    // **추가 음성팩**(2026-10-26, v1.3 W13 — `docs/spec/voice-packs.md`). 권리를 확인한 고정 클립 묶음이다.
+    //  - 팩 목소리는 `voice_profiles` 행이 **아니다** — `voice_id`(…-9100- 대역)를 따로 둔다. 그래야 직접 입력 합성·
+    //    목소리 등록·접근권 대조가 그 목소리를 모른다(스펙 §1).
+    //  - `rights_*`·`existing_*` 는 **내부 값**이다. 앱 API 는 `toPublicPack` 화이트리스트로만 내려간다. 계약서 원문은
+    //    올리지 않고 위치(`rights_evidence_ref`)만 적는다.
+    //  - 클립은 draft 에서만 바뀐다. 같은 자리를 바꾸면 새 id 가 나고 `content_revision` 이 오른다.
+    //  - `voice_pack_events` 는 감사 기록이다 — 사람을 가리키는 값이 없다(콘솔은 비밀번호 하나라 행위자를 가르지 못한다).
+    //  - 사람과 묶이는 표가 아니라 탈퇴 파기 대상이 아니다(받은 팩 목록은 기기에만 있다).
+    //  - **행을 심지 않는다** — 첫 팩은 외부 권리/음원 대기다(스펙 §0).
+    id: 144,
+    name: 'voice-packs',
+    statements: [
+      `CREATE TABLE IF NOT EXISTS voice_packs (
+        id TEXT PRIMARY KEY,
+        voice_id TEXT NOT NULL UNIQUE,
+        content_revision INTEGER NOT NULL DEFAULT 1,
+        speaker_name TEXT NOT NULL,
+        description TEXT NOT NULL DEFAULT '',
+        usage_note TEXT NOT NULL DEFAULT '',
+        language TEXT NOT NULL CHECK (language IN ('ko', 'en', 'ja')),
+        min_android_build INTEGER NOT NULL DEFAULT 0,
+        min_ios_build INTEGER NOT NULL DEFAULT 0,
+        status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'review', 'published', 'suspended')),
+        rights_status TEXT NOT NULL DEFAULT 'pending' CHECK (rights_status IN ('pending', 'verified', 'expired', 'revoked')),
+        rights_evidence_ref TEXT NOT NULL DEFAULT '',
+        rights_valid_from TEXT,
+        rights_valid_until TEXT,
+        rights_allowed_text TEXT NOT NULL DEFAULT '',
+        rights_allowed_regions TEXT NOT NULL DEFAULT '[]',
+        existing_file_terms TEXT NOT NULL DEFAULT 'stop_on_suspend'
+          CHECK (existing_file_terms IN ('stop_on_suspend', 'until_rights_end', 'until_date')),
+        existing_playback_until TEXT,
+        published_at TEXT,
+        suspended_at TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )`,
+      `CREATE TABLE IF NOT EXISTS voice_pack_clips (
+        id TEXT PRIMARY KEY,
+        pack_id TEXT NOT NULL,
+        category TEXT NOT NULL,
+        variant INTEGER NOT NULL,
+        text TEXT NOT NULL,
+        audio_key TEXT NOT NULL,
+        audio_format TEXT NOT NULL,
+        sha256 TEXT NOT NULL,
+        size_bytes INTEGER NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        UNIQUE (pack_id, category, variant)
+      )`,
+      `CREATE TABLE IF NOT EXISTS voice_pack_events (
+        id TEXT PRIMARY KEY,
+        pack_id TEXT NOT NULL,
+        action TEXT NOT NULL,
+        from_status TEXT,
+        to_status TEXT,
+        actor TEXT NOT NULL,
+        note TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_voice_pack_events_pack ON voice_pack_events (pack_id, created_at)`,
+    ],
+  },
 ];
 // Errors that mean the statement was already applied — safe to ignore so
 // we can recover databases whose `_migrations` ledger is out of sync with
