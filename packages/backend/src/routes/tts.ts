@@ -59,11 +59,8 @@ import {
   reserveManualTtsQuota,
   resolveManualTtsPool,
 } from '../lib/manual-tts-quota';
-import {
-  consumeAdRewardCredit,
-  readAdRewardStatus,
-  refundAdRewardCredit,
-} from '../lib/ad-reward-credits';
+import { consumeAdRewardCredit, refundAdRewardCredit } from '../lib/ad-reward-credits';
+import { adRewardView, readAdRewardStatus } from '../lib/ad-reward-sessions';
 import { hasPersonalVoiceAccess } from './billing-helpers';
 import { computedUserPlan, resolvePersonalPromo } from '../lib/personal-promo';
 import { missingConsentType, SENSITIVE_REQUIRED_CONSENTS } from '../lib/consent';
@@ -683,7 +680,9 @@ tts.post('/generate', async (c) => {
         '이번 달 직접 입력 문구 만들기 횟수를 모두 사용했어요.',
         {
           manual_quota: { limit: reservation.limit, used: reservation.used, remaining: 0 },
-          ...(freeManualEligible ? { ad_reward: await readAdRewardStatus(db, userPk) } : {}),
+          ...(freeManualEligible
+            ? { ad_reward: adRewardView(c.env, await readAdRewardStatus(db, userPk)) }
+            : {}),
         },
       );
     }
@@ -1644,18 +1643,13 @@ tts.get('/manual-quota', async (c) => {
     promoOnly: callerUserPlan !== rawCallerUserPlan,
   });
   const used = pool.limit > 0 ? await readManualTtsUsage(db, pool.poolKey) : 0;
-  // 무료면 광고 보상 현황도 싣는다(`docs/spec/ad-rewards.md`). `user_id` 는 앱이 AdMob 서버 확인
-  // 콜백에 실어 보낼 계정 PK 다 — 앱이 쥔 로그인 식별자는 구글 계정이면 PK 가 아니라서 여기서 준다.
-  // 유료에게는 싣지 않는다 — 앱이 광고 단추를 그릴지는 이 필드가 있는가로 가른다. 서버의 광고 단위 설정
-  // (`ADMOB_REWARDED_AD_UNITS` — 기능 스위치)이 비어도 싣지 않는다: 그때는 콜백이 하나도 적립하지 않으므로, 광고를
-  // 끝까지 보고도 아무것도 못 받는다(코덱스 #925).
+  // 무료면 광고 보상 현황도 싣는다(`docs/spec/ad-rewards.md` §4). 잔액(`credits`)은 광고 스위치와 무관하게 늘 싣는다 —
+  // 광고를 꺼도 받아 둔 보상은 쓸 수 있다. 새 광고를 볼 수 있는지는 `can_watch`·`unavailable_reason` 이 말한다.
+  // ⚠ 계정 PK(`user_id`)는 더는 싣지 않는다 — 승인 세션 응답에만 있다(옛 앱이 승인 없이 광고를 띄우지 않게, 스펙 §3).
+  // 유료에게는 싣지 않는다 — 플러스 동안은 월 30회를 쓰고 보상은 그대로 남는다.
   const freeCaller =
-    Boolean(c.get('userIdPK')) &&
-    Boolean(c.env.ADMOB_REWARDED_AD_UNITS?.trim()) &&
-    !hasPersonalVoiceAccess(rawCallerUserPlan, resolvePersonalPromo(c.env));
-  const adReward = freeCaller
-    ? { ...(await readAdRewardStatus(db, userPk)), user_id: userPk }
-    : undefined;
+    Boolean(c.get('userIdPK')) && !hasPersonalVoiceAccess(rawCallerUserPlan, resolvePersonalPromo(c.env));
+  const adReward = freeCaller ? adRewardView(c.env, await readAdRewardStatus(db, userPk)) : undefined;
   return c.json({
     plan_key: pool.planKey,
     limit: pool.limit,
