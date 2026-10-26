@@ -103,4 +103,20 @@ class StockClipPrefetchPriorityTest {
         assertEquals(system.id, initial(free = true))
         assertEquals("clone-1", initial(free = false))
     }
+
+    @Test
+    fun 준비_화면은_기본_목소리를_지금_언어의_받은_수로_그린다() {
+        val voice = "70000000-0000-4000-9000-00000000000a"
+        // 모든 언어를 센 준비도는 '다 받음' 이지만, 지금 언어는 3/19 다(언어를 바꾼 직후).
+        val allLanguages = listOf(
+            com.alarmtalk.app.data.ClipReadiness.VoiceProgress(voice, isRendering = false, renderFailed = false, expected = 19, cached = 19),
+        )
+        val shown = shownPreparationReadiness(voice, allLanguages, mapOf(voice to (3 to 19)))
+        assertEquals(1, shown.size)
+        assertFalse(shown.single().isReady)
+        assertEquals(3, shown.single().cached)
+        // 내 목소리는 받은 준비도 그대로(그 목소리 하나만).
+        val clone = com.alarmtalk.app.data.ClipReadiness.VoiceProgress("clone-1", isRendering = true, renderFailed = false, expected = 5, cached = 2)
+        assertEquals(listOf(clone), shownPreparationReadiness("clone-1", allLanguages + clone, mapOf(voice to (3 to 19))))
+    }
 }

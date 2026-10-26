@@ -118,3 +118,27 @@ internal fun systemVoiceStillDownloading(profileId: String, progress: Map<String
     val (done, total) = progress?.get(profileId) ?: return false
     return done < total
 }
+
+/**
+ * 편집기 준비 화면이 그릴 목록 — 고르려던 목소리 하나만. 기본 목소리는 **지금 언어의** 받은 수([progress])로 바꿔 그린다
+ * (`clipReadiness` 는 모든 언어를 세어 언어를 바꾼 뒤 옛 언어 클립만으로 '다 받음' 이 된다). 그 목소리가 목록에 없으면 전부.
+ */
+internal fun shownPreparationReadiness(
+    voiceId: String,
+    readiness: List<com.alarmtalk.app.data.ClipReadiness.VoiceProgress>,
+    progress: Map<String, Pair<Int, Int>>?,
+): List<com.alarmtalk.app.data.ClipReadiness.VoiceProgress> {
+    val counted = progress?.get(voiceId)
+    if (isSystemVoiceId(voiceId) && counted != null) {
+        return listOf(
+            com.alarmtalk.app.data.ClipReadiness.VoiceProgress(
+                voiceProfileId = voiceId,
+                isRendering = false,
+                renderFailed = false,
+                expected = counted.second,
+                cached = counted.first,
+            ),
+        )
+    }
+    return readiness.filter { it.voiceProfileId == voiceId }.ifEmpty { readiness }
+}

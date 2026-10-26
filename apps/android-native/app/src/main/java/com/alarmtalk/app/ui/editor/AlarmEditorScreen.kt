@@ -2061,12 +2061,15 @@ internal fun AlarmEditorScreen(
     // ⚠ 알람 만들기를 막지 않는다. 닫으면 그대로 편집을 이어갈 수 있고, 고른 목소리는
     // 적용되지 않은 채였으므로 예전 목소리가 유지된다.
     preparationVoiceId?.let { voiceId ->
-        // 준비 화면이 떠 있는 동안 3초마다 다시 센다 — 그 목소리가 다 준비되면 멈춘다(실패로는 멈추지 않는다 — 스펙
-        // voice-and-message 「준비 페이지의 3초 폴링」). 예전에는 열 때 한 번만 세어, 기본 목소리를 다 받은 뒤에도 연 순간의
-        // 퍼센트에 멈춰 있었다(코덱스 #952).
-        val preparedNow = clipReadiness.firstOrNull { it.voiceProfileId == voiceId }?.isReady == true
+        // 보여 줄 준비도 — 기본 목소리는 **지금 언어의** 받은 수(`systemVoiceDownload`)로 센다. `clipReadiness` 는 매니페스트의
+        // 모든 언어를 세어, 앱 언어를 바꾼 뒤에는 옛 언어 클립만으로 '다 받음' 이 됐다(코덱스 #952 — 고르면 다시 막히는데 화면은
+        // 끝났다고 했다). 그 값은 편집기가 2초마다 다시 센다. 내 목소리는 `clipReadiness` 그대로(서버 생성까지 본다).
+        val shownReadiness = shownPreparationReadiness(voiceId, clipReadiness, systemVoiceDownload)
+        val preparedNow = shownReadiness.firstOrNull { it.voiceProfileId == voiceId }?.isReady == true
+        // 내 목소리는 떠 있는 동안 3초마다 다시 센다 — 그 목소리가 다 준비되면 멈춘다(실패로는 멈추지 않는다 — 스펙
+        // voice-and-message 「준비 페이지의 3초 폴링」). 예전에는 열 때 한 번만 세어, 연 순간의 퍼센트에 멈춰 있었다.
         LaunchedEffect(voiceId, preparedNow) {
-            while (!preparedNow) {
+            while (!preparedNow && !isSystemVoiceId(voiceId)) {
                 kotlinx.coroutines.delay(3000)
                 onPrepareClipsFor()
             }
@@ -2081,7 +2084,7 @@ internal fun AlarmEditorScreen(
                 com.alarmtalk.app.ui.voices.ClipPreparationScreen(
                     // 고르려던 목소리 하나만 보여 준다 — 위 폴링이 그 목소리가 준비되면 멈추므로, 전부를 보여 주면 다른 목소리
                     // 때문에 100% 에 닿지 못한 채 멈춘다(코덱스 #952). 그 목소리가 목록에 아직 없으면 전부를 보여 준다.
-                    voices = clipReadiness.filter { it.voiceProfileId == voiceId }.ifEmpty { clipReadiness },
+                    voices = shownReadiness,
                     onRetry = onRetryClipRenders,
                     onDismiss = { preparationVoiceId = null },
                     modifier = Modifier.padding(vertical = 32.dp),
