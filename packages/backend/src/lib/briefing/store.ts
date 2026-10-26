@@ -22,6 +22,7 @@ import type {
   BriefingSourceError as BriefingSourceErrorEntry,
   BriefingTodayResponse,
 } from '@alarmtalk/shared';
+import { BRIEFING_MAX_INTERESTS } from '@alarmtalk/shared';
 import type { Env } from '../../types';
 import { inPlaceholders } from '../caller-ids';
 import { logStructured } from '../logger';
@@ -47,6 +48,8 @@ export const DART_WINDOW_DAYS = 7;
 export const POLICY_NEWS_WINDOW_DAYS = 2;
 /** 응답에 싣는 상한. */
 const DISCLOSURE_RESPONSE_MAX = 60;
+/** 기업 하나가 응답에 싣는 공시 상한 — 관심 기업이 꽉 차도 합이 [DISCLOSURE_RESPONSE_MAX] 다. */
+const DISCLOSURES_PER_COMPANY_MAX = Math.floor(DISCLOSURE_RESPONSE_MAX / BRIEFING_MAX_INTERESTS);
 const POLICY_NEWS_RESPONSE_MAX = 20;
 /** 받아 둔 항목을 지우는 나이(발표 날짜 기준). */
 export const BRIEFING_ITEM_RETENTION_DAYS = 30;
@@ -403,7 +406,21 @@ type ItemRow = {
   source_url: string;
 };
 
-async function itemStatements(rows: ItemRow[], fetchedAt: string): Promise<InStatement[]> {
+/**
+ * 더 늦게 시작한 새로고침이 이미 이 범위를 적었는가 — 그렇다면 이 회차는 **지나간 것**이라 아무것도 쓰지 않는다.
+ *
+ * 같은 범위(기업 하나·정책뉴스)를 두 요청이 동시에 새로 받으면, 먼저 시작해 옛 답을 든 쪽이 나중에 끝나며 뒤 요청이 넣은 공시를
+ * 지우고 고친 내용을 덮었다(코덱스 #951). 그 뒤 15분 동안 그 캐시를 다시 쓴다. 판정은 '이 범위의 마지막 성공이 내 시작보다
+ * 늦다' 하나다 — 같은 batch 안의 성공 표시는 맨 뒤에 있어 자기 자신에게 걸리지 않는다.
+ */
+function supersededGuard(scope: string, startedAt: string): { sql: string; args: InValue[] } {
+  return {
+    sql: `NOT EXISTS (SELECT 1 FROM briefing_fetch_state WHERE scope_key = ? AND last_success_at > ?)`,
+    args: [scope, startedAt],
+  };
+}
+
+async function itemStatements(rows: ItemRow[], fetchedAt: string, scope: string): Promise<InStatement[]> {
   const withHash = await Promise.all(
     rows.map(async (row) => ({
       row,
@@ -423,10 +440,14 @@ async function itemStatements(rows: ItemRow[], fetchedAt: string): Promise<InSta
     })),
   );
   // 한 문장 20행 × 13값 = 260 바인딩. 내용이 같으면(해시) 쓰지 않는다 — 15분마다 같은 행을 다시 쓰지 않게.
+  const guard = supersededGuard(scope, fetchedAt);
+  // ⚠ `INSERT … SELECT … WHERE` 꼴이다 — 지나간 회차면 새 행도 넣지 않는다. SELECT 에 WHERE 가 있어야 뒤의 ON CONFLICT 가
+  //   조인 조건으로 읽히지 않는다(SQLite upsert 문법).
   return chunk(withHash, 20).map((part) => ({
     sql: `INSERT INTO briefing_items (source_kind, source_id, corp_code, title, org_name, summary, remarks, flags_json,
             published_date, published_at, source_url, content_hash, fetched_at)
-          VALUES ${part.map(() => '(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').join(', ')}
+          SELECT * FROM (VALUES ${part.map(() => '(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').join(', ')})
+          WHERE ${guard.sql}
           ON CONFLICT(source_kind, source_id) DO UPDATE SET
             corp_code = excluded.corp_code,
             title = excluded.title,
@@ -454,7 +475,7 @@ async function itemStatements(rows: ItemRow[], fetchedAt: string): Promise<InSta
       row.source_url,
       hash,
       fetchedAt,
-    ]),
+    ]).concat(guard.args),
   }));
 }
 
@@ -499,7 +520,9 @@ function successStateStatement(scope: string, nowIso: string, todayCompact: stri
             last_attempt_at = excluded.last_attempt_at,
             last_error_code = NULL,
             window_end = excluded.window_end,
-            complete = excluded.complete`,
+            complete = excluded.complete
+          WHERE briefing_fetch_state.last_success_at IS NULL
+             OR briefing_fetch_state.last_success_at <= excluded.last_success_at`,
     args: [scope, nowIso, nowIso, todayCompact, complete ? 1 : 0],
   };
 }
@@ -510,7 +533,9 @@ function failureStateStatement(scope: string, nowIso: string, kind: BriefingSour
     sql: `INSERT INTO briefing_fetch_state (scope_key, last_attempt_at, last_error_code) VALUES (?, ?, ?)
           ON CONFLICT(scope_key) DO UPDATE SET
             last_attempt_at = excluded.last_attempt_at,
-            last_error_code = excluded.last_error_code`,
+            last_error_code = excluded.last_error_code
+          WHERE briefing_fetch_state.last_success_at IS NULL
+             OR briefing_fetch_state.last_success_at <= excluded.last_attempt_at`,
     args: [scope, nowIso, briefingSourceErrorCode(kind)],
   };
 }
@@ -610,15 +635,18 @@ export async function buildBriefingToday(
         endDe: today.compact,
         fetchImpl: options.fetchImpl,
       });
-      writes.push(...(await itemStatements(result.items.map(dartItemRow), nowIso)));
+      writes.push(...(await itemStatements(result.items.map(dartItemRow), nowIso, scope)));
       if (result.complete) {
-        // 창 안에서 이번에 안 보인 공시는 지운다 — 원천에서 사라진 것을 계속 보여 주지 않는다.
+        // 창 안에서 이번에 안 보인 공시는 지운다 — 원천에서 사라진 것을 계속 보여 주지 않는다. 더 늦게 시작한 새로고침이 이미
+        // 적었으면 지우지 않는다(`supersededGuard`).
         const ids = result.items.map((item) => item.rceptNo);
+        const guard = supersededGuard(scope, nowIso);
         writes.push({
           sql: `DELETE FROM briefing_items
                 WHERE source_kind = 'opendart' AND corp_code = ? AND published_date >= ? AND published_date <= ?
-                ${ids.length > 0 ? `AND source_id NOT IN (${inPlaceholders(ids)})` : ''}`,
-          args: [corpCode, dartFrom.iso, today.iso, ...ids],
+                ${ids.length > 0 ? `AND source_id NOT IN (${inPlaceholders(ids)})` : ''}
+                AND ${guard.sql}`,
+          args: [corpCode, dartFrom.iso, today.iso, ...ids, ...guard.args],
         });
       }
       writes.push(successStateStatement(scope, nowIso, today.compact, result.complete));
@@ -651,11 +679,13 @@ export async function buildBriefingToday(
         endDate: today.compact,
         fetchImpl: options.fetchImpl,
       });
-      writes.push(...(await itemStatements(result.items.map(policyItemRow), nowIso)));
+      writes.push(...(await itemStatements(result.items.map(policyItemRow), nowIso, POLICY_NEWS_SCOPE)));
       if (result.deletedIds.length > 0) {
+        const guard = supersededGuard(POLICY_NEWS_SCOPE, nowIso);
         writes.push({
-          sql: `DELETE FROM briefing_items WHERE source_kind = 'policy_news' AND source_id IN (${inPlaceholders(result.deletedIds)})`,
-          args: result.deletedIds,
+          sql: `DELETE FROM briefing_items WHERE source_kind = 'policy_news' AND source_id IN (${inPlaceholders(result.deletedIds)})
+                AND ${guard.sql}`,
+          args: [...result.deletedIds, ...guard.args],
         });
       }
       writes.push(successStateStatement(POLICY_NEWS_SCOPE, nowIso, today.compact, true));
@@ -681,20 +711,42 @@ export async function buildBriefingToday(
   // ⚠ 쓰기를 읽기보다 먼저 — 방금 받은 것을 아래 조회가 읽는다. 한 batch(한 왕복)다.
   if (writes.length > 0) await db.batch(writes, 'write');
 
-  const disclosures: BriefingDisclosure[] =
+  // ⚠ **기업마다 따로 자른다**(코덱스 #951). 한데 모아 60개로 자르면 공시가 많은 한 곳이 다른 관심 기업의 공시를 통째로 밀어냈다.
+  //   하나 더 읽어 잘렸는지 안다 — 잘렸으면 `complete: false`(받을 길이 없는 것을 '다 보여 줬다' 고 하지 않는다).
+  const disclosureRows =
     corpCodes.length === 0
       ? []
       : (
           await db.execute({
             sql: `SELECT source_id, corp_code, title, org_name, remarks, flags_json, published_date, source_url, fetched_at
-                  FROM briefing_items
-                  WHERE source_kind = 'opendart' AND corp_code IN (${inPlaceholders(corpCodes)})
-                    AND published_date >= ? AND published_date <= ?
-                  ORDER BY published_date DESC, source_id DESC
-                  LIMIT ?`,
-            args: [...corpCodes, dartFrom.iso, today.iso, DISCLOSURE_RESPONSE_MAX],
+                  FROM (
+                    SELECT *, ROW_NUMBER() OVER (
+                      PARTITION BY corp_code ORDER BY published_date DESC, source_id DESC
+                    ) AS rn
+                    FROM briefing_items
+                    WHERE source_kind = 'opendart' AND corp_code IN (${inPlaceholders(corpCodes)})
+                      AND published_date >= ? AND published_date <= ?
+                  )
+                  WHERE rn <= ?
+                  ORDER BY published_date DESC, source_id DESC`,
+            args: [...corpCodes, dartFrom.iso, today.iso, DISCLOSURES_PER_COMPANY_MAX + 1],
           })
-        ).rows.map((row) => ({
+        ).rows;
+  const disclosureCounts = new Map<string, number>();
+  for (const row of disclosureRows) {
+    const corp = String(row.corp_code);
+    disclosureCounts.set(corp, (disclosureCounts.get(corp) ?? 0) + 1);
+  }
+  const truncatedCorps = new Set([...disclosureCounts].filter(([, n]) => n > DISCLOSURES_PER_COMPANY_MAX).map(([corp]) => corp));
+  const keptPerCorp = new Map<string, number>();
+  const disclosures: BriefingDisclosure[] = disclosureRows
+    .filter((row) => {
+      const corp = String(row.corp_code);
+      const kept = (keptPerCorp.get(corp) ?? 0) + 1;
+      keptPerCorp.set(corp, kept);
+      return kept <= DISCLOSURES_PER_COMPANY_MAX;
+    })
+    .map((row) => ({
           source: 'opendart' as const,
           id: String(row.source_id),
           corp_code: String(row.corp_code),
@@ -714,7 +766,7 @@ export async function buildBriefingToday(
             WHERE source_kind = 'policy_news' AND published_date >= ? AND published_date <= ?
             ORDER BY published_date DESC, COALESCE(published_at, '') DESC, source_id DESC
             LIMIT ?`,
-      args: [policyFrom.iso, today.iso, POLICY_NEWS_RESPONSE_MAX],
+      args: [policyFrom.iso, today.iso, POLICY_NEWS_RESPONSE_MAX + 1],
     })
   ).rows.map((row) => ({
     source: 'policy_news' as const,
@@ -727,12 +779,16 @@ export async function buildBriefingToday(
     url: String(row.source_url),
     fetched_at: String(row.fetched_at),
   }));
+  // 하나 더 읽었다 — 넘치면 잘린 것이다(위 공시와 같은 규칙).
+  const policyNewsTruncated = policyNews.length > POLICY_NEWS_RESPONSE_MAX;
+  if (policyNewsTruncated) policyNews.length = POLICY_NEWS_RESPONSE_MAX;
 
   // ── 조립 ──
   const errors: BriefingSourceErrorEntry[] = [];
   const fetchedTimes: string[] = [];
   let stale = false;
-  let complete = true;
+  // 응답에서 잘린 것이 있으면 다 보여 준 것이 아니다 — 원천을 다 확인했어도 `complete: false`.
+  let complete = truncatedCorps.size === 0 && !policyNewsTruncated;
   let retryAfterSeconds: number | null = null;
   const account = (outcome: PartOutcome, source: BriefingSource, corpCode?: string): 'ok' | 'stale' | 'unavailable' => {
     if (outcome.kind === 'fresh') {

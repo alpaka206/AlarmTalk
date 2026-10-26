@@ -370,6 +370,63 @@ describe('GET /briefing/today', () => {
     expect(after).toBe(firstFetched);
   });
 
+  it('기업마다 따로 자른다 — 공시가 많은 한 곳이 다른 기업을 밀어내지 않고, 잘렸으면 complete 가 아니다', async () => {
+    await put([SAMSUNG, HYNIX]);
+    await today();
+    // 삼성전자에 공시를 잔뜩 더 둔다(최근 날짜), SK하이닉스에는 오래된 두 건.
+    const insert = (id: string, corp: string, date: string) =>
+      db.execute({
+        sql: `INSERT INTO briefing_items (source_kind, source_id, corp_code, title, org_name, summary, remarks, flags_json,
+                published_date, published_at, source_url, content_hash, fetched_at)
+              VALUES ('opendart', ?, ?, '보고서', '회사', '', '', '{}', ?, NULL, 'https://dart.fss.or.kr/x', 'h', ?)`,
+        args: [id, corp, date, T0.toISOString()],
+      });
+    for (let i = 0; i < 30; i++) await insert(`9026102600${String(i).padStart(4, '0')}`, SAMSUNG, '2026-10-26');
+    await insert('80261020000001', HYNIX, '2026-10-20');
+    await insert('80261020000002', HYNIX, '2026-10-20');
+    const { body } = await today(); // 15분 안 — 원천을 다시 부르지 않고 캐시를 읽는다
+    const byCorp = (corp: string) => body.disclosures.filter((d) => d.corp_code === corp).length;
+    expect(byCorp(HYNIX)).toBe(2);
+    expect(byCorp(SAMSUNG)).toBe(20);
+    expect(body.complete).toBe(false);
+  });
+
+  it('먼저 시작해 늦게 끝난 새로고침은 뒤 새로고침이 적은 것을 지우거나 덮지 못한다', async () => {
+    await put([SAMSUNG]);
+    await today();
+    const T1 = new Date(T0.getTime() + 16 * 60_000);
+    vi.setSystemTime(T1);
+    // A: 첫 쪽만 든 옛 답(한 쪽짜리 = complete → 창 안의 나머지를 지우려 한다). 문이 열릴 때까지 붙잡는다.
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    let first = true;
+    dartHandler = async (url) => {
+      if (first) {
+        first = false;
+        await gate;
+        return jsonRes(fixture('dart-list-page1.json').replace('"total_page": 2', '"total_page": 1'));
+      }
+      return defaultDart(url);
+    };
+    const before = dartCalls().length;
+    const a = today();
+    await vi.waitFor(() => expect(dartCalls()).toHaveLength(before + 1));
+    // B: 1초 뒤에 시작해 두 쪽을 다 받고 먼저 끝난다.
+    vi.setSystemTime(new Date(T1.getTime() + 1000));
+    const b = await today();
+    const all = b.body.disclosures.map((d) => d.id).sort();
+    expect(all.length).toBeGreaterThan(2);
+    release();
+    await a;
+    const kept = (
+      await db.execute(`SELECT source_id FROM briefing_items WHERE source_kind = 'opendart' ORDER BY source_id`)
+    ).rows.map((row) => String(row.source_id));
+    expect(kept).toEqual(all);
+    const state = (await db.execute(`SELECT last_success_at FROM briefing_fetch_state WHERE scope_key LIKE '%${SAMSUNG}%'`))
+      .rows[0]!;
+    expect(state.last_success_at).toBe(new Date(T1.getTime() + 1000).toISOString());
+  });
+
   it('잘린 응답(쪽 상한)이면 complete 가 아니고 지우지도 않는다', async () => {
     await put([SAMSUNG]);
     dartHandler = (url) =>
