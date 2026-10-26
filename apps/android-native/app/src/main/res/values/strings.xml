@@ -225,6 +225,7 @@
     <string name="editorp_random_fortune_required">아직 입력하지 않았어요</string>
     <string name="editorp_random_detail_change">변경하기</string>
     <string name="editorp_random_manual_title">직접 입력 문구</string>
+    <string name="editor_manual_charge_notice">새 문구는 저장할 때 음성을 만들며 이번 달 1회를 써요. 이미 만든 문구는 다시 써도 횟수를 쓰지 않아요.</string>
     <string name="editorp_random_fortune_title">운세 정보</string>
     <string name="editorp_random_save_button">저장</string>
     <string name="editorp_random_title">문구</string>

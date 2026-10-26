@@ -216,6 +216,7 @@
     <string name="editorp_random_fortune_required">まだ入力していません</string>
     <string name="editorp_random_detail_change">変更</string>
     <string name="editorp_random_manual_title">入力した文面</string>
+    <string name="editor_manual_charge_notice">新しい文は保存するときに音声を作成し、今月の作成回数を1回使います。作成済みの文はもう一度使っても回数を使いません。</string>
     <string name="editorp_random_fortune_title">占い情報</string>
     <string name="editorp_random_save_button">保存</string>
     <string name="editorp_random_title">文</string>

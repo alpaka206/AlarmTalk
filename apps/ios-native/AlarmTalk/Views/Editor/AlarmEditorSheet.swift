@@ -561,7 +561,8 @@ struct AlarmEditorSheet: View {
             selectDefaultVoiceProfileIfNeeded()
         }
         .task(id: planAccess) {
-            guard planAccess == .paid, let token = auth.session?.token else {
+            // 무료도 직접 입력 월 3회가 있다(2026-10-26) — 등급과 무관하게 받아 '직접 입력 (2/3)' 을 보여 준다.
+            guard let token = auth.session?.token else {
                 manualQuota = nil
                 return
             }

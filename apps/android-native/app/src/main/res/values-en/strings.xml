@@ -216,6 +216,7 @@
     <string name="editorp_random_fortune_required">Not entered yet</string>
     <string name="editorp_random_detail_change">Change</string>
     <string name="editorp_random_manual_title">Your message</string>
+    <string name="editor_manual_charge_notice">A new message makes a voice when you save, using 1 of this month\'s creations. Reusing a message you already made doesn\'t count.</string>
     <string name="editorp_random_fortune_title">Fortune info</string>
     <string name="editorp_random_save_button">Save</string>
     <string name="editorp_random_title">Message</string>

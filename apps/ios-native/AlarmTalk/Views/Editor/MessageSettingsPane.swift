@@ -21,7 +21,7 @@ struct MessageSettingsPane: View {
     /// 현재 값(직접 입력이면 `manual`).
     let initialContext: String
     let initialManualText: String
-    /// 이번 달 직접 입력 여유 — 유료이고 limit > 0 일 때만 보여준다.
+    /// 이번 달 직접 입력 여유 — limit > 0 이면 보여 준다(무료 3·플러스 30, 2026-10-26 부터 무료도).
     var manualRemaining: Int?
     var manualLimit: Int?
     /// 저장된 날씨·운세 값(없으면 고르는 순간 입력창을 띄운다).
@@ -269,7 +269,9 @@ struct MessageSettingsPane: View {
                     .isEmpty
             )
         } message: {
-            Text(String(localized: "이 문구를 그대로 읽어 드려요."))
+            // 새 음성을 만드는 순간 횟수를 쓴다는 것을 **치기 전에** 말한다(`voice-and-message.md` §8 — 무료 3·플러스 30,
+            // 이미 만든 문구는 세지 않는다). 안드로이드 `editor_manual_charge_notice` 와 같은 문장.
+            Text(String(localized: "새 문구는 저장할 때 음성을 만들며 이번 달 1회를 써요. 이미 만든 문구는 다시 써도 횟수를 쓰지 않아요."))
         }
         .onChange(of: manualDialogOpen) { _, open in
             // 열 때만 현재 값으로 시드한다. 닫힐 때는 건드리지 않는다 —
