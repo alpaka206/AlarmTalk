@@ -8,6 +8,8 @@ final class CheerVarietyTests: XCTestCase {
     private let occurrence: Int64 = 1_800_000_000_000
     private let day: Int64 = 86_400_000
     private let voice = "70000000-0000-4000-9000-000000000102"
+    private let otherVoice = "70000000-0000-4000-9000-000000000103"
+    private let defaultVoice = "70000000-0000-4000-9000-000000000001"
 
     private func candidates(_ list: [String]? = nil) -> [CheerCandidate] {
         (list ?? ids).map { CheerCandidate(contentId: $0, cacheKey: "stock_\($0)", text: "문구 \($0)") }
@@ -118,6 +120,41 @@ final class CheerVarietyTests: XCTestCase {
         XCTAssertNotNil(CheerVariety.activeSelection(prepared))
         prepared.voiceLanguage = "en"
         XCTAssertNil(CheerVariety.activeSelection(prepared))
+    }
+
+    func test_downgradedAlarmDoesNotPlayTheOldVoiceSelection() {
+        // 클론으로 고른 회차 — 구독 만료로 기본 목소리로 강등된다. 강등은 선택 칸을 그대로 두고 목소리만 바꾼다.
+        let prepared = CheerVariety.prepared(cheerAlarm(), occurrence: occurrence, candidates: candidates(), explicitChange: true)
+        let locked = DefaultVoiceSubstitute.locked(prepared, voiceID: defaultVoice, binding: nil, nowMillis: 5_000)
+        XCTAssertEqual(locked.cheerSelection, prepared.cheerSelection)
+        // 예약할 때 옛 클론 클립을 쓰지 않는다 — 묶어 둔 회전(기본 목소리)이 운다. 앱 복귀 준비가 다시 고른다.
+        XCTAssertNil(CheerVariety.activeSelection(locked))
+        XCTAssertTrue(CheerVariety.needsPreparation(locked))
+
+        let defaultCandidates = ids.map { CheerCandidate(contentId: $0, cacheKey: "stock_default_\($0)", text: "문구 \($0)") }
+        let rebound = CheerVariety.prepared(locked, occurrence: occurrence, candidates: defaultCandidates, explicitChange: false)
+        let selection = CheerVariety.activeSelection(rebound)
+        XCTAssertEqual(selection?.voiceProfileId, defaultVoice)
+        XCTAssertTrue(selection?.cacheKey.hasPrefix("stock_default_") == true)
+        XCTAssertFalse(CheerVariety.needsPreparation(rebound))
+    }
+
+    func test_editingTheVoiceForTheSameOccurrencePicksTheNewVoiceClip() {
+        var edited = CheerVariety.prepared(cheerAlarm(), occurrence: occurrence, candidates: candidates(), explicitChange: true)
+        // 문구 ID 는 목소리끼리 같다(cheer_v2_05) — ID 만 보면 옛 목소리 클립이 남는다.
+        edited.voiceProfileId = otherVoice
+        let otherCandidates = ids.map { CheerCandidate(contentId: $0, cacheKey: "stock_other_\($0)", text: "문구 \($0)") }
+        let next = CheerVariety.prepared(edited, occurrence: occurrence, candidates: otherCandidates, explicitChange: false)
+        let selection = CheerVariety.activeSelection(next)
+        XCTAssertEqual(selection?.voiceProfileId, otherVoice)
+        XCTAssertTrue(selection?.cacheKey.hasPrefix("stock_other_") == true)
+    }
+
+    func test_aSelectionWithoutVoiceIsNotUsed() throws {
+        let json = #"{"o":1800000000000,"id":"cheer_v2_05","key":"stock_x","text":"t","lang":"ko"}"#
+        var record = cheerAlarm()
+        record.cheerSelection = try JSONDecoder().decode(CheerSelection.self, from: Data(json.utf8))
+        XCTAssertNil(CheerVariety.activeSelection(record))
     }
 
     func test_candidatesComeFromTheManifestThemeAndOnlySelectableCachedLines() {

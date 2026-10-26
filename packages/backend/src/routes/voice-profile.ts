@@ -552,9 +552,13 @@ async function runSpeechStyleAnalysis(
         // 대상은 **방금 이 말투를 받은 행**이다(같은 대상 조건 + 방금 쓴 값) — 위 UPDATE 가 묶음 조건에
         // 걸려 0행이면 여기서도 아무것도 다시 굽지 않는다. `requested_at` 은 밀리초까지 남긴다 — 같은 초에
         // 게시된 옛 클립을 새 것으로 세지 않도록(`findMissingStockTargets` 가 엄격한 `>` 로 비교한다).
+        // ⚠ **보충 표시(`supplement`)는 내린다**(스펙 voice-and-message §5-4). 보충 회차가 대기 중일 때 이 재렌더가
+        // 들어오면 회차의 성격이 바뀐다 — 남겨 두면 진행 조회가 전체 재렌더를 done 으로 답하고, 5번 실패해도 failed 가
+        // 아니라 done 으로 접힌다. 요청된 묶음(`content_sets`)은 그대로 두어 보충분도 같이 다시 굽는다.
+        // `supplement` 는 #143 의 새 컬럼이다 — 배포 창에는 말투 저장과 함께 실패한다(fail-closed, 재시도 가능).
         {
           sql: `UPDATE voice_prerender_queue
-                SET status = 'pending', attempts = 0, refresh_existing = 1,
+                SET status = 'pending', attempts = 0, refresh_existing = 1, supplement = 0,
                     requested_at = strftime('%Y-%m-%d %H:%M:%f', 'now'),
                     claimed_at = NULL, claim_token = NULL, updated_at = datetime('now')
                 WHERE voice_profile_id IN (
@@ -1064,6 +1068,9 @@ export async function replaceVoiceInPlace(
             VALUES (?, ?, ?, 'pending', 0, 1)
             ON CONFLICT(voice_profile_id) DO UPDATE SET
               status = 'pending', attempts = 0, refresh_existing = 1,
+              -- 보충 회차가 대기 중이었어도 이제는 전체 재렌더다(스펙 voice-and-message §5-4). content_sets 는 남겨
+              -- 보충분도 새 목소리로 같이 굽는다. #143 의 새 컬럼이라 배포 창에는 교체 전체가 롤백된다(fail-closed).
+              supplement = 0,
               claimed_at = NULL, claim_token = NULL,
               owner_user_id = excluded.owner_user_id,
               language = excluded.language, updated_at = datetime('now')`,

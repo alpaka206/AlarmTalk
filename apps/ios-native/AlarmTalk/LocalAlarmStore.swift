@@ -436,7 +436,8 @@ final class LocalAlarmStore: ObservableObject {
     }
 
     /// **앱 복귀 때 응원을 준비한다**(스펙 voice-and-message §5-4). 켜진 응원 알람 중 이번 회차(`fireAtMillis`)의 선택이
-    /// 아직 없는 것 — 그 사이 새 응원이 받아졌거나(공개·보충) 앞 회차가 해제 관측 없이 지나간 경우 — 을 골라 둔다.
+    /// 아직 없는 것 — 그 사이 새 응원이 받아졌거나(공개·보충) 앞 회차가 해제 관측 없이 지나간 경우, 또는 목소리가 바뀌어
+    /// (무료 강등) 고른 것이 옛 목소리의 것인 경우 — 을 골라 둔다.
     /// 울리는 중·스누즈 중이면 건너뛴다(같은 회차다). 바뀐 알람 id 를 돌려준다 — 호출자가 재조정으로 다시 예약한다.
     @discardableResult
     func prepareCheerSelections(nowMillis: Int64 = Int64(Date().timeIntervalSince1970 * 1000)) -> [String] {
@@ -445,7 +446,7 @@ final class LocalAlarmStore: ObservableObject {
             let record = alarms[index]
             guard record.enabled, record.bucketId == CheerVariety.bucketID, record.fireAtMillis > nowMillis,
                   record.runtimeStateEnum != .ringing, record.runtimeStateEnum != .snoozed,
-                  record.cheerSelection?.occurrence != record.fireAtMillis else { continue }
+                  CheerVariety.needsPreparation(record) else { continue }
             let next = CheerVariety.prepared(
                 record,
                 occurrence: record.fireAtMillis,

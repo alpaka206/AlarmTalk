@@ -17,13 +17,15 @@ struct CheerCandidate: Equatable, Identifiable {
     var id: String { contentId }
 }
 
-/// 지금 회차의 선택. `occurrence` = 그 회차의 예정 발사 시각(회차 키). 안드로이드 `CheerSelection` 미러.
+/// 지금 회차의 선택. `occurrence` = 그 회차의 예정 발사 시각(회차 키). `voiceProfileId` = 고를 때 알람에 묶여 있던
+/// 목소리 — 지금 목소리와 다르면 그 선택은 죽은 값이다(`CheerVariety.isSelection(_:for:)`). 안드로이드 `CheerSelection` 미러.
 struct CheerSelection: Codable, Hashable {
     var occurrence: Int64
     var contentId: String
     var cacheKey: String
     var text: String
     var language: String
+    var voiceProfileId: String?
 
     // 안드로이드 저장 모양과 같은 짧은 이름이다 — 바꾸면 옛 행을 못 읽는다.
     private enum CodingKeys: String, CodingKey {
@@ -32,6 +34,7 @@ struct CheerSelection: Codable, Hashable {
         case cacheKey = "key"
         case text
         case language = "lang"
+        case voiceProfileId = "voice"
     }
 }
 
@@ -141,7 +144,7 @@ enum CheerVariety {
         }
         let ids = candidates.map(\.contentId)
         if !explicitChange, let current = record.cheerSelection,
-           current.occurrence == occurrence, ids.contains(current.contentId) {
+           current.occurrence == occurrence, ids.contains(current.contentId), isSelection(current, for: record) {
             return record
         }
         let history = record.cheerHistory ?? []
@@ -155,16 +158,32 @@ enum CheerVariety {
             contentId: chosen.contentId,
             cacheKey: chosen.cacheKey,
             text: chosen.text,
-            language: record.voiceLanguage ?? "ko"
+            language: record.voiceLanguage ?? "ko",
+            voiceProfileId: record.voiceProfileId.nilIfBlank
         )
         next.cheerHistory = appendHistory(history, chosen.contentId)
         return next
     }
 
-    /// 예약할 때 쓸 선택 — 응원 알람이고 **지금 묶인 언어의 것**일 때만. 언어를 바꿔 다시 묶였으면 nil(묶어 둔 회전).
+    /// 이 선택이 **지금 이 알람의 목소리·언어로 고른 것**인가. 목소리 칸이 없는 선택(옛 모양)은 어느 목소리로 골랐는지
+    /// 모르니 아니다로 읽는다 — 묶어 둔 회전이 대신 운다. 안드로이드 `isCheerSelectionFor` 미러.
+    static func isSelection(_ selection: CheerSelection, for record: LocalAlarmRecord) -> Bool {
+        guard let voice = record.voiceProfileId.nilIfBlank else { return false }
+        return selection.voiceProfileId == voice && selection.language == (record.voiceLanguage ?? "ko")
+    }
+
+    /// 예약할 때 쓸 선택 — 응원 알람이고 **지금 묶인 목소리·언어로 고른 것**일 때만. 목소리나 언어가 바뀌어 다시
+    /// 묶였으면 nil(묶어 둔 회전). 무료 강등(`DefaultVoiceSubstitute.locked`)은 선택 칸을 그대로 두고 목소리만 바꾸므로,
+    /// 여기서 거르지 않으면 강등된 알람이 옛 클론 클립으로 운다.
     static func activeSelection(_ record: LocalAlarmRecord) -> CheerSelection? {
         guard record.bucketId == bucketID, let selection = record.cheerSelection else { return nil }
-        return selection.language == (record.voiceLanguage ?? "ko") ? selection : nil
+        return isSelection(selection, for: record) ? selection : nil
+    }
+
+    /// 앱 복귀 준비가 이 알람을 다시 골라야 하는가 — 이번 회차의 선택이 없거나, 있어도 지금 목소리·언어의 것이 아니다.
+    static func needsPreparation(_ record: LocalAlarmRecord) -> Bool {
+        guard let selection = record.cheerSelection else { return true }
+        return selection.occurrence != record.fireAtMillis || !isSelection(selection, for: record)
     }
 
     /// 응원 설정을 바꿨는가 — 바꿨으면 같은 회차라도 새로 고른다. 안드로이드 `cheerSettingsChanged` 미러.

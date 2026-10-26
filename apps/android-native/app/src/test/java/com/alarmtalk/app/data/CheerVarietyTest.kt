@@ -123,6 +123,43 @@ class CheerVarietyTest {
     }
 
     @Test
+    fun downgradedAlarmDoesNotPlayTheOldVoiceSelection() {
+        // 클론으로 고른 회차 — 구독 만료로 기본 목소리로 강등된다. 강등은 선택 칸을 그대로 두고 목소리만 바꾼다.
+        val prepared = cheerAlarm().preparedCheer(OCCURRENCE, candidates(), explicitChange = true)
+        val locked = prepared.lockedToDefaultVoice(TEST_SYSTEM_VOICE_ID, null, null, null, nowMillis = 5_000L)
+        assertEquals(prepared.cheerSelectionJson, locked.cheerSelectionJson)
+        // 울릴 때 옛 클론 클립을 쓰지 않는다 — 묶어 둔 회전(기본 목소리)이 운다.
+        assertNull(locked.activeCheerSelection())
+
+        // 같은 회차를 다시 준비하면 기본 목소리의 클립으로 고른다.
+        val defaultCandidates = ids.map { CheerCandidate(it, "stock_default_$it", "문구 $it") }
+        val rebound = locked.preparedCheer(OCCURRENCE, defaultCandidates, explicitChange = false)
+        val selection = rebound.activeCheerSelection()!!
+        assertEquals(TEST_SYSTEM_VOICE_ID, selection.voiceProfileId)
+        assertTrue(selection.cacheKey.startsWith("stock_default_"))
+    }
+
+    @Test
+    fun editingTheVoiceForTheSameOccurrencePicksTheNewVoiceClip() {
+        val prepared = cheerAlarm().preparedCheer(OCCURRENCE, candidates(), explicitChange = true)
+        // 문구 ID 는 목소리끼리 같다(cheer_v2_05) — ID 만 보면 옛 목소리 클립이 남는다.
+        val otherCandidates = ids.map { CheerCandidate(it, "stock_other_$it", "문구 $it") }
+        val edited = prepared.copy(voiceProfileId = OTHER_VOICE)
+            .preparedCheer(OCCURRENCE, otherCandidates, explicitChange = false)
+        val selection = edited.activeCheerSelection()!!
+        assertEquals(OTHER_VOICE, selection.voiceProfileId)
+        assertTrue(selection.cacheKey.startsWith("stock_other_"))
+    }
+
+    @Test
+    fun aSelectionWithoutVoiceIsNotUsed() {
+        val legacy = cheerAlarm().copy(
+            cheerSelectionJson = "{\"o\":$OCCURRENCE,\"id\":\"cheer_v2_05\",\"key\":\"stock_x\",\"text\":\"t\",\"lang\":\"ko\"}",
+        )
+        assertNull(legacy.activeCheerSelection())
+    }
+
+    @Test
     fun candidatesComeFromTheManifestThemeAndOnlySelectableCachedLines() {
         val clips = listOf(
             clip("m-legacy", "cheer", 0, contentId = "cheer_v1_01", selectable = false),
@@ -217,6 +254,7 @@ class CheerVarietyTest {
 
     private companion object {
         const val VOICE = "70000000-0000-4000-9000-000000000102"
+        const val OTHER_VOICE = "70000000-0000-4000-9000-000000000103"
         const val OCCURRENCE = 1_800_000_000_000L
         const val DAY = 86_400_000L
     }

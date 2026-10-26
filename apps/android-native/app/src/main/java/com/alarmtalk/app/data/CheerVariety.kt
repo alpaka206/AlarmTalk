@@ -18,6 +18,8 @@ import com.google.gson.annotations.SerializedName
  *  - 고정 = 고른 문구가 후보에 있으면 그것, 없으면 이번 회차는 다양하게(고정값은 지우지 않는다).
  *  - 선택은 **회차(예정 발사 시각)** 에 묶는다. 같은 회차로 다시 준비하면 그대로 쓰고 이력을 더하지 않는다.
  *  - 이력은 **준비·예약한** 문구다(들었다는 기록이 아니다). 기기 로컬이고 서버로 가지 않는다.
+ *  - 선택은 **고른 목소리**에도 묶는다. 목소리가 바뀌면(무료 강등·편집) 옛 선택은 쓰지 않는다 — 옛 클론 클립이
+ *    강등된 알람에서 울면 울림 시점 유료 게이트를 어긴다.
  *
  * iOS 짝은 `CheerVariety.swift` — **셈(특히 [cheerSeedIndex])이 글자 그대로 같아야 한다.**
  */
@@ -45,13 +47,17 @@ data class CheerCandidate(
     val text: String,
 )
 
-/** 지금 회차의 선택. [occurrence] = 그 회차의 예정 발사 시각(회차 키). */
+/**
+ * 지금 회차의 선택. [occurrence] = 그 회차의 예정 발사 시각(회차 키). [voiceProfileId] = 고를 때 알람에 묶여 있던
+ * 목소리 — 지금 목소리와 다르면 그 선택은 죽은 값이다([isCheerSelectionFor]).
+ */
 data class CheerSelection(
     val occurrence: Long,
     val contentId: String,
     val cacheKey: String,
     val text: String,
     val language: String,
+    val voiceProfileId: String?,
 )
 
 /** 매니페스트 클립이 속한 테마. 옛 서버(필드 없음)는 카테고리 그대로다. */
@@ -135,6 +141,7 @@ private data class StoredCheerSelection(
     @SerializedName("key") val cacheKey: String? = null,
     @SerializedName("text") val text: String? = null,
     @SerializedName("lang") val language: String? = null,
+    @SerializedName("voice") val voiceProfileId: String? = null,
 )
 
 fun encodeCheerHistory(history: List<String>): String? =
@@ -147,7 +154,7 @@ fun decodeCheerHistory(json: String?): List<String> {
 }
 
 fun encodeCheerSelection(selection: CheerSelection?): String? = selection?.let {
-    cheerGson.toJson(StoredCheerSelection(it.occurrence, it.contentId, it.cacheKey, it.text, it.language))
+    cheerGson.toJson(StoredCheerSelection(it.occurrence, it.contentId, it.cacheKey, it.text, it.language, it.voiceProfileId))
 }
 
 fun decodeCheerSelection(json: String?): CheerSelection? {
@@ -159,10 +166,20 @@ fun decodeCheerSelection(json: String?): CheerSelection? {
         cacheKey = stored.cacheKey?.takeIf { it.isNotBlank() } ?: return null,
         text = stored.text.orEmpty(),
         language = stored.language ?: "ko",
+        voiceProfileId = stored.voiceProfileId?.takeIf { it.isNotBlank() },
     )
 }
 
 fun AlarmEntity.cheerSelection(): CheerSelection? = decodeCheerSelection(cheerSelectionJson)
+
+/**
+ * 이 선택이 **지금 이 알람의 목소리·언어로 고른 것**인가. 목소리 칸이 없는 선택(옛 모양)은 어느 목소리로 골랐는지
+ * 모르니 아니다로 읽는다 — 묶어 둔 회전이 대신 운다.
+ */
+fun AlarmEntity.isCheerSelectionFor(selection: CheerSelection): Boolean {
+    val voice = voiceProfileId?.takeIf { it.isNotBlank() } ?: return false
+    return selection.voiceProfileId == voice && selection.language == (voiceLanguage ?: "ko")
+}
 
 /**
  * **다음 회차의 응원을 준비한다** — 저장·알람을 끝낼 때 부른다(스펙 §5-4). 울릴 때는 부르지 않는다.
@@ -183,7 +200,9 @@ fun AlarmEntity.preparedCheer(
     if (candidates.isEmpty()) return if (cheerSelectionJson == null) this else copy(cheerSelectionJson = null)
     val ids = candidates.map { it.contentId }
     val current = cheerSelection()
-    if (!explicitChange && current != null && current.occurrence == occurrence && current.contentId in ids) {
+    if (!explicitChange && current != null && current.occurrence == occurrence && current.contentId in ids &&
+        isCheerSelectionFor(current)
+    ) {
         return this
     }
     val history = decodeCheerHistory(cheerHistoryJson)
@@ -198,6 +217,7 @@ fun AlarmEntity.preparedCheer(
                 cacheKey = chosen.cacheKey,
                 text = chosen.text,
                 language = voiceLanguage ?: "ko",
+                voiceProfileId = voiceProfileId?.takeIf { it.isNotBlank() },
             ),
         ),
         cheerHistoryJson = encodeCheerHistory(appendCheerHistory(history, chosen.contentId)),
@@ -205,13 +225,14 @@ fun AlarmEntity.preparedCheer(
 }
 
 /**
- * 울릴 때 쓸 선택 — 응원 알람이고 **지금 묶인 언어의 것**일 때만. 언어를 바꿔 다시 묶였으면 null(묶어 둔 회전으로
- * 운다 — 다음 준비가 새 언어로 고른다).
+ * 울릴 때 쓸 선택 — 응원 알람이고 **지금 묶인 목소리·언어로 고른 것**일 때만. 목소리나 언어가 바뀌어 다시 묶였으면
+ * null(묶어 둔 회전으로 운다 — 다음 준비가 새 목소리·언어로 고른다). 무료 강등(`lockedToDefaultVoice`)은 선택 칸을
+ * 그대로 두고 목소리만 바꾸므로, 여기서 거르지 않으면 강등된 알람이 옛 클론 클립으로 운다.
  */
 fun AlarmEntity.activeCheerSelection(): CheerSelection? {
     if (bucketId != CHEER_BUCKET_ID) return null
     val selection = cheerSelection() ?: return null
-    return selection.takeIf { it.language == (voiceLanguage ?: "ko") }
+    return selection.takeIf { isCheerSelectionFor(it) }
 }
 
 /** 응원 설정을 바꿨는가 — 바꿨으면 같은 회차라도 새로 고른다. */
