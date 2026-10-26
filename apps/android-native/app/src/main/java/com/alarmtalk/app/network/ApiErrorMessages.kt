@@ -82,6 +82,9 @@ private val API_ERROR_MESSAGES: Map<String, Int> = mapOf(
     "VOICE_CAPACITY_EXHAUSTED" to R.string.msg_voice_slot_exhausted,
     "VOICE_LIMIT_REACHED" to R.string.api_error_voice_limit_reached,
     "VOICE_NOT_READY" to R.string.api_error_voice_not_ready,
+    // 추가 음성팩 — 받을 수 없는 팩(게시 끝·지역·빌드)은 있다는 것도 드러내지 않는다(`docs/spec/voice-packs.md` §3).
+    "VOICE_PACK_NOT_FOUND" to R.string.voice_pack_not_available,
+    "VOICE_PACK_CLIP_NOT_FOUND" to R.string.voice_pack_not_available,
     "VOICE_CLONING_FAILED" to R.string.api_error_voice_cloning_failed,
     "VOICE_MONTHLY_CHANGE_LIMIT_REACHED" to R.string.msg_voice_monthly_change_limit,
     "VOICE_PREVIEW_REQUIRED" to R.string.msg_voice_preview_required,

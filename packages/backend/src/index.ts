@@ -46,6 +46,7 @@ import adRewardSessionRoutes from './routes/ad-reward-sessions';
 import billingApple from './routes/billing-apple';
 import pushRoutes from './routes/push';
 import eventsRoutes from './routes/events';
+import voicePacksRoutes from './routes/voice-packs';
 import holidayRoutes from './routes/holiday';
 import eventRoutes from './routes/event';
 import adminRoutes from './routes/admin';
@@ -288,6 +289,8 @@ api.use('*', appPresenceMiddleware);
 api.use('*', consentMiddleware);
 // 오디오 내려받기는 전용 버킷이 맡는다(일반 버킷은 이 경로를 세지 않는다 — rateLimit.ts).
 api.use('/tts/messages/:id/audio', audioDownloadRateLimitMiddleware);
+// 추가 음성팩 클립도 같은 내려받기 버킷이다(`docs/spec/voice-packs.md` §3).
+api.use('/voice-packs/:packId/clips/:clipId/audio', audioDownloadRateLimitMiddleware);
 api.use('*', rateLimitMiddleware);
 // 한도·광고 보상 현황은 저장·광고 직후 다시 묻는 값이다 — 30초 캐시를 붙이면 앱이 정산 전 응답을 계속 읽어
 // 보상이 들어왔는데도 '확인하고 있어요' 로 끝난다(코덱스 #959). **아래 전역 캐시보다 먼저** 걸어야 이긴다:
@@ -311,6 +314,8 @@ api.route('/events', eventsRoutes);
 api.route('/briefing', briefingRoutes);
 // 광고 시청 승인 세션 — 광고를 띄우기 전 승인·시작·끝 알림(`docs/spec/ad-rewards.md` §3). 콜백(`/api/ads`)과 다른 경로다.
 api.route('/ad-rewards', adRewardSessionRoutes);
+// 추가 음성팩 — 권리를 확인한 무료 고정 목소리(`docs/spec/voice-packs.md`).
+api.route('/voice-packs', voicePacksRoutes);
 
 // 관리자 콘솔(/admin) — 사용자 JWT 가 아니라 ADMIN_SECRET(비밀번호 로그인·세션 쿠키)로 보호한다
 // (admin.ts 내부 미들웨어). 개요·사용자·알림 보내기 — `docs/spec/admin-console.md`.

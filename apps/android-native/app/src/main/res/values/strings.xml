@@ -851,4 +851,30 @@
     <string name="api_error_briefing_invalid_query">기업 이름이나 종목코드를 30자 안으로 입력해 주세요.</string>
     <string name="api_error_briefing_invalid_interests">관심 기업은 3곳까지 고를 수 있어요.</string>
     <string name="api_error_briefing_corp_not_found">찾을 수 없는 기업이 있어요. 다시 검색해 주세요.</string>
+    <!-- 추가 음성팩(docs/spec/voice-packs.md) -->
+    <string name="voice_pack_section_title">추가 팩</string>
+    <string name="voice_pack_empty">준비 중인 추가 팩이 아직 없어요.</string>
+    <string name="voice_pack_load_failed">추가 팩 목록을 불러오지 못했어요.</string>
+    <string name="voice_pack_download">받기</string>
+    <string name="voice_pack_downloading">받는 중 %1$d%%</string>
+    <string name="voice_pack_not_downloaded">받기 전</string>
+    <string name="voice_pack_ready">받음</string>
+    <string name="voice_pack_delete">지우기</string>
+    <string name="voice_pack_cancel">취소</string>
+    <string name="voice_pack_preview">들어 보기</string>
+    <string name="voice_pack_usage_title">사용 범위</string>
+    <string name="voice_pack_size">크기 %1$s</string>
+    <string name="voice_pack_apply_note">받으면 알람 목소리 목록에 이 목소리가 생겨요. 날씨·운세·응원·약 테마에 쓸 수 있고, 직접 입력에는 쓸 수 없어요. 이미 있는 알람은 바뀌지 않아요.</string>
+    <string name="voice_pack_withdrawn">게시가 끝났어요. %1$s까지 기존 알람에서 울려요.</string>
+    <string name="voice_pack_withdrawn_after">그 뒤에는 미나 목소리로 바뀌어요.</string>
+    <string name="voice_pack_delete_title">이 팩을 지울까요?</string>
+    <string name="voice_pack_delete_message">이 목소리를 쓰는 알람 %1$d개가 미나 목소리로 바뀌어요.</string>
+    <string name="voice_pack_delete_message_none">받은 파일을 지워요. 다시 받을 수 있어요.</string>
+    <string name="voice_pack_editor_detail">추가 팩</string>
+    <string name="voice_pack_download_failed">받지 못했어요. 다시 시도해 주세요.</string>
+    <string name="voice_pack_retry_download">다시 받기</string>
+    <string name="voice_pack_manual_unavailable">추가 팩 목소리는 직접 입력에 쓸 수 없어요. 테마를 골라 주세요.</string>
+    <string name="voice_pack_not_available">이 팩은 지금 받을 수 없어요.</string>
+    <string name="voice_pack_switch_drops_text_title">추가 팩 목소리로 바꿀까요?</string>
+    <string name="voice_pack_switch_drops_text_message">추가 팩 목소리는 준비된 문구로만 말할 수 있어서, 직접 입력한 문구는 사라져요.</string>
 </resources>

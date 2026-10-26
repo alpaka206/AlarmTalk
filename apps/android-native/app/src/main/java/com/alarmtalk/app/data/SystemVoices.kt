@@ -65,6 +65,8 @@ fun AlarmEntity.usesCustomMessageVoice(): Boolean =
         // 세 값이 직접 입력과 똑같아 보인다. 그 행은 캐시 키가 `stock_<messageId>` 라서
         // 갈라진다 — 직접 입력의 캐시 키는 문구 해시라 이 접두가 붙지 않는다.
         audioCacheKey?.startsWith(AlarmAudioStore.STOCK_CACHE_KEY_PREFIX) != true &&
+        // 추가 팩 클립(`pack_`)도 테마 클립이다 — 직접 입력이 아니다(`docs/spec/voice-packs.md` §2).
+        audioCacheKey?.startsWith(VOICE_PACK_CACHE_KEY_PREFIX) != true &&
         (voiceCategory == null || voiceCategory == "custom")
 
 fun AlarmDraft.usesFreeSystemVoiceAlarm(): Boolean =
@@ -107,7 +109,8 @@ private fun usesFreeSystemVoiceAlarm(
     // 목소리를 무료로 받고(`alarm-mutation.ts` 의 `usesOnlySystemStockVoice`), 오디오 라우트는 시스템 목소리 문구를 누구에게나
     // 준다. 예전에는 스톡 클립·프리셋만 무료로 보고 직접 입력 결과는 유료로 읽어, 무료가 만든 직접 입력 알람이 저장에서 막히고
     // 울릴 때 강등됐다. 유료 판정은 **등록(클론) 목소리**에만 남는다.
-    return isSystemVoiceId(voiceProfileId)
+    // **추가 팩도 무료 고정 콘텐츠다**(`docs/spec/voice-packs.md` §1) — 무료·플러스가 같은 팩을 같은 조건으로 쓴다.
+    return isFreeFixedVoiceId(voiceProfileId)
 }
 
 /**

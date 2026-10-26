@@ -182,7 +182,7 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
         // 갈라진다 — 직접 입력의 캐시 키는 문구 해시라 이 접두가 붙지 않는다.
         !voiceRandomPrompt &&
             bucketId?.nilIfBlank == nil &&
-            !(audioCacheKey?.hasPrefix(AudioCacheStore.stockCacheKeyPrefix) ?? false) &&
+            !AudioCacheStore.isFixedClipCacheKey(audioCacheKey) &&
             (voiceCategory == nil || voiceCategory == "custom")
     }
 
@@ -193,8 +193,9 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
     /// `setStockClipAudio` 와 동일 술어)를 1차 신호로 쓴다. 미래의 비-시스템 server_tts
     /// 알람이 우연히 stock 모양 key 를 가져도 새지 않도록 `isSystemVoiceId(voiceProfileId)`
     /// 를 함께 요구한다. `ttsMessageId` 는 생성 TTS 도 채우므로 단독 신호로 쓰지 않는다.
+    /// 추가 음성팩 클립(`pack_<clipId>` + 팩 목소리)도 같다 — 무료 고정 콘텐츠다(`docs/spec/voice-packs.md` §1).
     var isStockVoiceClip: Bool {
-        (audioCacheKey?.hasPrefix("stock_") ?? false) && isSystemVoiceId(voiceProfileId)
+        AudioCacheStore.isFixedClipCacheKey(audioCacheKey) && isFreeFixedVoiceID(voiceProfileId)
     }
 
     var isGeneratedFreeSystemPresetVoice: Bool {
@@ -218,6 +219,8 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
         // ⚠ 이 술어와 `PaidVoiceGate.usesFreeSystemVoice` 는 **한 쌍이다 — 항상 같이 고친다.**
         // 한쪽만 고치면 '예약은 목소리로 되는데 앱을 껐다 켜면 잠긴다'(또는 그 반대)가 된다.
         if voiceSourceEnum == .localAudio, localAudioUri?.nilIfBlank != nil { return false }
+        // 추가 음성팩 목소리 알람은 무료 고정 콘텐츠다 — `PaidVoiceGate.usesFreeSystemVoice` 의 `isFreeFixedVoiceID` 짝.
+        if voiceSourceEnum != .localAudio, isVoicePackVoiceID(voiceProfileId) { return false }
         let stockVoiceOnly =
             localAudioUri.nilIfBlank == nil &&
             rawAudioUri.nilIfBlank == nil &&

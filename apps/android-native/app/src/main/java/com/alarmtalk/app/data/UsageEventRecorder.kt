@@ -61,8 +61,8 @@ object UsageEvents {
     const val REWARD_PENDING = "reward_pending"
     const val REWARD_GRANTED = "reward_granted"
     const val REWARD_SPENT = "reward_spent"
-    // 콘텐츠·소식 — `content_selected` 는 저장 성공(`recordContentSelected`), 소식 셋은 `BriefingSignals` 가 적는다.
-    // `dated_alarm_saved`·`pack_selected` 는 스키마만 — 그 기능 PR 이 심는다.
+    // 콘텐츠·소식 — `content_selected`·`pack_selected` 는 저장 성공(`recordContentSelected`·`recordPackSelected`), 소식 셋은
+    // `BriefingSignals` 가 적는다. `dated_alarm_saved` 는 스키마만 — 그 기능 PR 이 심는다.
     const val CONTENT_SELECTED = "content_selected"
     const val DATED_ALARM_SAVED = "dated_alarm_saved"
     const val PACK_SELECTED = "pack_selected"

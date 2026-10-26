@@ -822,4 +822,30 @@
     <string name="api_error_briefing_invalid_query">企業名または銘柄コードを30文字以内で入力してください。</string>
     <string name="api_error_briefing_invalid_interests">関心企業は3社まで選べます。</string>
     <string name="api_error_briefing_corp_not_found">見つからない企業があります。もう一度検索してください。</string>
+    <!-- 추가 음성팩(docs/spec/voice-packs.md) -->
+    <string name="voice_pack_section_title">追加パック</string>
+    <string name="voice_pack_empty">利用できる追加パックはまだありません。</string>
+    <string name="voice_pack_load_failed">追加パックの一覧を読み込めませんでした。</string>
+    <string name="voice_pack_download">ダウンロード</string>
+    <string name="voice_pack_downloading">ダウンロード中 %1$d%%</string>
+    <string name="voice_pack_not_downloaded">未ダウンロード</string>
+    <string name="voice_pack_ready">ダウンロード済み</string>
+    <string name="voice_pack_delete">削除</string>
+    <string name="voice_pack_cancel">キャンセル</string>
+    <string name="voice_pack_preview">試聴</string>
+    <string name="voice_pack_usage_title">利用範囲</string>
+    <string name="voice_pack_size">サイズ %1$s</string>
+    <string name="voice_pack_apply_note">ダウンロードすると、アラームの声の一覧にこの声が加わります。天気・運勢・応援・薬のテーマで使えますが、自分で入力した文には使えません。今あるアラームは変わりません。</string>
+    <string name="voice_pack_withdrawn">公開が終了しました。%1$sまでは今あるアラームで鳴ります。</string>
+    <string name="voice_pack_withdrawn_after">その後はミナの声に変わります。</string>
+    <string name="voice_pack_delete_title">このパックを削除しますか？</string>
+    <string name="voice_pack_delete_message">この声を使っているアラーム%1$d件がミナの声に変わります。</string>
+    <string name="voice_pack_delete_message_none">ダウンロードしたファイルを削除します。もう一度ダウンロードできます。</string>
+    <string name="voice_pack_editor_detail">追加パック</string>
+    <string name="voice_pack_download_failed">ダウンロードできませんでした。もう一度お試しください。</string>
+    <string name="voice_pack_retry_download">もう一度ダウンロード</string>
+    <string name="voice_pack_manual_unavailable">追加パックの声は自分で入力した文には使えません。テーマを選んでください。</string>
+    <string name="voice_pack_not_available">このパックは現在ダウンロードできません。</string>
+    <string name="voice_pack_switch_drops_text_title">追加パックの声に変えますか？</string>
+    <string name="voice_pack_switch_drops_text_message">追加パックの声は用意された文だけを話すため、自分で入力した文は消えます。</string>
 </resources>
