@@ -67,6 +67,9 @@ const TABLES: Record<string, 'per-user' | 'no-personal-data' | 'retained-pseudon
   event_slot_cursor: 'no-personal-data',
   weather_region_daily_official: 'no-personal-data', // 공식 원천 캐시(#127)
   weather_region_daily: 'no-personal-data', // 지역 × 날짜의 날씨 캐시 — 사용자와 묶지 않는다(#123)
+  store_download_daily: 'no-personal-data', // 스토어가 모아 준 하루 다운로드 수(#138)
+  store_download_sync: 'no-personal-data', // 스토어 받아 오기 상태(#138)
+  store_report_instances: 'no-personal-data', // 받은 App Store 보고서 인스턴스 id(#138)
   _migrations: 'no-personal-data',
   sqlite_sequence: 'no-personal-data',
 };

@@ -31,6 +31,8 @@ export const WORKER_SECRET_KEYS = [
   'FIREBASE_SERVICE_ACCOUNT_JSON',
   'GOOGLE_PLAY_SERVICE_ACCOUNT_JSON',
   'ANDROID_PACKAGE_NAME',
+  // 관리자 콘솔 스토어 다운로드 — Play 통계 보고서 버킷(`gs://pubsite_prod_rev_…`). 비밀은 아니지만 같은 길로 올린다. 빈 값은 skip.
+  'PLAY_REPORTS_BUCKET',
   'GOOGLE_RTDN_VERIFICATION_TOKEN',
   'ADMIN_SECRET',
   // 관리자 콘솔 시험 발송의 기본 받는 사람(이메일) — 저장소가 공개라 코드에 두지 않는다. 빈 값은 skip.
@@ -57,6 +59,10 @@ export const WORKER_SECRET_KEYS = [
   'APPLE_ISSUER_ID',
   'APPLE_KEY_ID',
   'APPLE_PRIVATE_KEY',
+  //  5) 스토어 다운로드(App Store Connect API — 분석 보고서): ASC_API_* (+ APPLE_BUNDLE_ID 재사용). 위 셋과 다른 키다.
+  'ASC_API_ISSUER_ID',
+  'ASC_API_KEY_ID',
+  'ASC_API_PRIVATE_KEY',
   //  4) 푸시(APNs): APNS_KEY_ID + APNS_PRIVATE_KEY (+ APPLE_TEAM_ID 재사용)
   'APNS_KEY_ID',
   'APNS_PRIVATE_KEY',

@@ -39,6 +39,15 @@ INIT_DB_SECRET=
 # 관리자 콘솔(/admin) 비밀번호와, 시험 발송의 기본 받는 사람(계정 이메일 — 저장소가 공개라 여기에만 둔다)
 ADMIN_SECRET=
 ADMIN_TEST_PUSH_EMAIL=
+# 관리자 콘솔 스토어 다운로드(docs/spec/admin-console.md 「스토어 다운로드」). 비워 두면 그 플랫폼은 '연결 대기'.
+#  - Play: GOOGLE_PLAY_SERVICE_ACCOUNT_JSON(결제와 같은 서비스 계정) + ANDROID_PACKAGE_NAME + 아래 버킷
+#    (Play 콘솔 → 앱 다운로드·보고서 → '클라우드 저장소 URI 복사' 의 gs://pubsite_prod_rev_<숫자>/)
+#  - App Store: 아래 ASC_API_* 셋(App Store Connect API 팀 키, 역할 Admin) + APPLE_BUNDLE_ID.
+#    결제(APPLE_*)·로그인·푸시 키와 다른 키다. .p8 내용은 한 줄에 \n 로 이스케이프한다.
+PLAY_REPORTS_BUCKET=
+ASC_API_ISSUER_ID=
+ASC_API_KEY_ID=
+ASC_API_PRIVATE_KEY=
 
 # === Local scripts only (not pushed as Worker secrets) ===
 # Used by sync-worker-secrets.ts and reset-test-data.ts.

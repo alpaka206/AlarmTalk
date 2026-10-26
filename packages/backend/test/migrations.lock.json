@@ -526,5 +526,9 @@
   "137": {
     "name": "morning-briefing",
     "sha": "5a88be1e9e449bd8"
+  },
+  "138": {
+    "name": "store-downloads",
+    "sha": "fa94ca12d6532a58"
   }
 }

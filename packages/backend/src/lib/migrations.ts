@@ -3403,6 +3403,41 @@ export const migrations: Migration[] = [
       )`,
     ],
   },
+  {
+    // **스토어 다운로드 수**(2026-10-26, 관리자 콘솔 2단계 — `docs/spec/admin-console.md` 「스토어 다운로드」).
+    // 크론이 Play 콘솔 통계 보고서와 App Store Connect 분석 보고서를 하루 여러 번 받아 적는다(`lib/admin/store-downloads.ts`).
+    //  - `store_download_daily`: 플랫폼 × 보고서 날짜 × 지표. 다시 받으면 덮는다(멱등). 날짜는 스토어가 하루로 묶어 준
+    //    날짜라 한국 시각으로 다시 자르지 않는다.
+    //  - `store_download_sync`: 플랫폼마다 마지막 시도·성공·오류·안내 — 화면이 '연결은 됐는데 왜 비었는지' 를 말한다.
+    //  - `store_report_instances`: 이미 받은 App Store 하루치 보고서 — 같은 것을 다시 받지 않게.
+    // 세 표 모두 사람을 가리키는 값이 없다(스토어가 모아 준 숫자뿐) — 탈퇴 파기 대상이 아니다.
+    id: 138,
+    name: 'store-downloads',
+    statements: [
+      `CREATE TABLE IF NOT EXISTS store_download_daily (
+        platform TEXT NOT NULL CHECK (platform IN ('android', 'ios')),
+        day TEXT NOT NULL,
+        metric TEXT NOT NULL,
+        value INTEGER NOT NULL,
+        fetched_at TEXT NOT NULL DEFAULT (datetime('now')),
+        PRIMARY KEY (platform, day, metric)
+      )`,
+      `CREATE TABLE IF NOT EXISTS store_download_sync (
+        platform TEXT PRIMARY KEY CHECK (platform IN ('android', 'ios')),
+        last_attempt_at TEXT,
+        last_success_at TEXT,
+        last_error TEXT,
+        note TEXT
+      )`,
+      `CREATE TABLE IF NOT EXISTS store_report_instances (
+        instance_id TEXT PRIMARY KEY,
+        report TEXT NOT NULL,
+        processing_date TEXT NOT NULL,
+        ingested_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_store_report_instances_date ON store_report_instances (processing_date)`,
+    ],
+  },
 ];
 // Errors that mean the statement was already applied — safe to ignore so
 // we can recover databases whose `_migrations` ledger is out of sync with

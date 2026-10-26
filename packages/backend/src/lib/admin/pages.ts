@@ -5,6 +5,8 @@
 import { appVersionPolicy } from '../app-version';
 import { USAGE_EVENT_MIN_PRIVACY_VERSION } from '../consent';
 import type { Overview, PushJobRow, RangeDays, UserRow } from './metrics';
+import type { StoreDownloads, StorePlatformView } from './store-downloads';
+import { STORE_SYNC_KST_HOURS } from './store-downloads';
 import { AD_HOURS_KST, AD_OPT_OUT_FOOTER, AD_TITLE_PREFIX, PUSH_BODY_MAX, PUSH_TITLE_MAX } from './push-jobs';
 import {
   badge,
@@ -113,7 +115,106 @@ function cumulative(o: Overview): number[] {
   return o.signupsByDay.map((p) => (running += p.value));
 }
 
-export function renderOverview(nonce: string, o: Overview, nowMs: number): string {
+// ── 스토어 다운로드 ──────────────────────────────────────────────────────────────
+
+const STORE_NAMES = { android: 'Google Play', ios: 'App Store' } as const;
+
+/** 막대로 그리는 지표의 이름과 단위. */
+const STORE_PRIMARY: Record<string, { label: string; unit: string }> = {
+  daily_user_installs: { label: '사용자 설치', unit: '명' },
+  daily_device_installs: { label: '기기 설치', unit: '대' },
+  first_time_downloads: { label: '최초 다운로드', unit: '건' },
+};
+
+/** 막대 아래 표의 칸 — 30일 합(sum)이거나 마지막 날 값(latest). */
+const STORE_EXTRAS: Record<'android' | 'ios', Array<{ metric: string; label: string; unit: string; kind: 'sum' | 'latest' }>> = {
+  android: [
+    { metric: 'total_user_installs', label: '누적 사용자 설치', unit: '명', kind: 'latest' },
+    { metric: 'active_device_installs', label: '설치된 기기', unit: '대', kind: 'latest' },
+    { metric: 'daily_user_uninstalls', label: '사용자 삭제 (30일)', unit: '명', kind: 'sum' },
+  ],
+  ios: [
+    { metric: 'redownloads', label: '재다운로드 (30일)', unit: '건', kind: 'sum' },
+    { metric: 'installs', label: '설치 (30일)', unit: '건', kind: 'sum' },
+    { metric: 'deletions', label: '삭제 (30일)', unit: '건', kind: 'sum' },
+  ],
+};
+
+const STORE_NOTES = {
+  android: 'Play 콘솔 통계 보고서에서 가져와요. 보고서는 하루쯤 늦게 채워지고, 날짜는 보고서의 날짜예요. 사용자 설치는 처음 설치한 사람 수예요.',
+  ios: 'App Store Connect 분석 보고서에서 가져와요. 하루치는 다음 날쯤 나오고, 날짜는 보고서의 날짜예요. 막대는 최초 다운로드만 세요(재다운로드·업데이트 제외).',
+} as const;
+
+const STORE_SCHEDULE = `하루 여섯 번(한국 시각 ${STORE_SYNC_KST_HOURS.join('·')}시) 가져와요.`;
+
+/** 스토어 한 곳의 패널. 숫자가 없으면 왜 없는지(설정이 빠짐·보고서 대기·오류)를 말한다. 없는 숫자를 0 으로 그리지 않는다. */
+export function storePanel(platform: 'android' | 'ios', store: StoreDownloads | null, nowMs: number): string {
+  const id = `s-store-${platform}`;
+  const title = `스토어 다운로드 · ${STORE_NAMES[platform]}`;
+  const shell = (tag: string, body: string) => `<section class="panel" aria-labelledby="${id}">
+  <div class="panel-head"><h2 id="${id}">${escapeHtml(title)}</h2>${tag}</div>
+  ${body}
+  <p class="note">${escapeHtml(STORE_NOTES[platform])}</p>
+</section>`;
+  if (!store) {
+    return shell(
+      badge('불러오지 못함', 'bad'),
+      emptyState('숫자를 불러오지 못했어요', '배포 직후라면 표를 만드는 중이에요. 잠시 뒤 새로고침해 주세요.'),
+    );
+  }
+  const v: StorePlatformView = store[platform];
+  const hasData = v.primaryMetric !== null && v.points.length > 0;
+  if (!hasData) {
+    if (v.missing.length > 0) {
+      return shell(badge('연결 대기', 'neutral'), emptyState('연결 대기', `필요한 설정: ${v.missing.join(', ')}`));
+    }
+    if (v.lastError) {
+      return shell(
+        badge('받지 못함', 'bad'),
+        emptyState('아직 받은 숫자가 없어요', `마지막 시도(${fmtAgo(v.lastAttemptAt, nowMs)}): ${v.lastError}`),
+      );
+    }
+    const waiting = v.note
+      ? v.note
+      : v.lastAttemptAt
+        ? `${fmtAgo(v.lastAttemptAt, nowMs)} 확인했는데 아직 보고서가 없어요. ${STORE_SCHEDULE}`
+        : `연결은 됐어요. ${STORE_SCHEDULE} 첫 회차를 기다리는 중이에요.`;
+    return shell(badge('연결됨', 'good'), emptyState('아직 받은 숫자가 없어요', waiting));
+  }
+  const primary = STORE_PRIMARY[v.primaryMetric!] ?? { label: v.primaryMetric!, unit: '' };
+  const tag =
+    v.missing.length > 0
+      ? badge('설정이 빠져 더 받지 않아요', 'warn')
+      : v.lastError
+        ? badge('최근 시도 실패', 'bad')
+        : badge('연결됨', 'good');
+  const rows = [
+    `<div><dt>데이터 기준일</dt><dd>${escapeHtml(fmtDate(v.latestDay))}</dd></div>`,
+    `<div><dt>마지막으로 받음</dt><dd>${escapeHtml(fmtAgo(v.lastFetchedAt, nowMs))}</dd></div>`,
+    ...STORE_EXTRAS[platform]
+      .filter((e) => (e.kind === 'sum' ? e.metric in v.totals : e.metric in v.latestValues))
+      .map((e) => {
+        const value = e.kind === 'sum' ? v.totals[e.metric]! : v.latestValues[e.metric]!;
+        return `<div><dt>${escapeHtml(e.label)}</dt><dd>${fmtNum(value)}${escapeHtml(e.unit)}</dd></div>`;
+      }),
+  ];
+  if (v.lastError) rows.push(`<div><dt>최근 오류</dt><dd>${escapeHtml(v.lastError)}</dd></div>`);
+  if (v.missing.length > 0) rows.push(`<div><dt>빠진 설정</dt><dd>${escapeHtml(v.missing.join(', '))}</dd></div>`);
+  const footer = `<dl class="kv" style="margin-top:14px">${rows.join('')}</dl>${
+    v.note ? `<p class="note">${escapeHtml(v.note)}</p>` : ''
+  }`;
+  return columnChart({
+    id: `store-${platform}`,
+    title: `${title} (${primary.label})`,
+    points: v.points,
+    unit: primary.unit,
+    headExtra: tag,
+    footer,
+    note: STORE_NOTES[platform],
+  });
+}
+
+export function renderOverview(nonce: string, o: Overview, nowMs: number, store: StoreDownloads | null): string {
   const trackedNote = o.active.tracked > 0 ? '콘솔 배포 뒤 서버에 접속한 기기 기준' : '아직 기록 전이에요';
   const reconsentTone = o.consent.reconsentNeeded > 0 ? 'warn' : 'good';
   const weatherRows = o.weather.length
@@ -243,20 +344,16 @@ export function renderOverview(nonce: string, o: Overview, nowMs: number): strin
 </div>
 
 <div class="grid grid-2 section-gap">
-  <section class="panel reveal" style="--d:12" aria-labelledby="s-weather">
-    <div class="panel-head"><h2 id="s-weather">날씨 데이터</h2><span class="muted" style="font-size:12.5px">오늘 이후 미리 계산한 칸</span></div>
-    ${weatherRows}
-  </section>
-  <section class="panel reveal" style="--d:13" aria-labelledby="s-store">
-    <div class="panel-head"><h2 id="s-store">스토어 다운로드</h2></div>
-    ${emptyState(
-      '스토어 연동 전이에요',
-      '다운로드 수는 Play 콘솔 통계 보고서와 App Store Connect 분석 보고서에만 있어요. 두 곳의 읽기 권한을 연결하면 여기에 하루 한 번 채워요.',
-    )}
-  </section>
+  <div class="reveal" style="--d:12">${storePanel('android', store, nowMs)}</div>
+  <div class="reveal" style="--d:13">${storePanel('ios', store, nowMs)}</div>
 </div>
 
-<section class="panel section-gap reveal" style="--d:14" aria-labelledby="s-push">
+<section class="panel section-gap reveal" style="--d:14" aria-labelledby="s-weather">
+  <div class="panel-head"><h2 id="s-weather">날씨 데이터</h2><span class="muted" style="font-size:12.5px">오늘 이후 미리 계산한 칸</span></div>
+  ${weatherRows}
+</section>
+
+<section class="panel section-gap reveal" style="--d:15" aria-labelledby="s-push">
   <div class="panel-head"><h2 id="s-push">최근 알림</h2><a class="btn btn-ghost btn-sm" href="/admin/push">전체 기록</a></div>
   ${pushes}
 </section>`;
