@@ -1014,6 +1014,9 @@ internal object VoicePackDownloader {
             if (pending.isEmpty()) break
             for (pack in pending) {
                 processed += pack.packId
+                // 카탈로그를 받았는데 거기 없는 팩(최소 빌드·허용 지역)은 서버가 클립도 404 로 답한다 — 받으려 하지 않는다.
+                // 받아 둔 파일·알람은 그대로 둔다(스펙 §5-5).
+                if (catalog != null && pack.packId !in listed) continue
                 downloadPack(context, api, auth, userId, refreshDetailIfNeeded(context, api, auth, userId, pack, listed))
             }
         }

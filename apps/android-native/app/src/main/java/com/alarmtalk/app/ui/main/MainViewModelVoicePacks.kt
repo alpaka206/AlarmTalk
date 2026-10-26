@@ -152,6 +152,23 @@ internal suspend fun MainViewModel.downloadVoicePackClipIfHeld(clipId: String): 
         ?: voicePackStore.held(owner).firstOrNull { held -> held.clipList.any { it.clipId == clipId } }
         ?: return null
     val clip = pack.clipList.first { it.clipId == clipId }
+    val identity = voicePackRemoteIdentity(pack.packId, clipId, clip.sha256)
+    // 받아 둔 파일이 있으면 그것을 준다 — 편집기 목소리 미리듣기처럼 매번 부르는 자리가 네트워크를 타지 않게(오프라인 포함).
+    withContext(Dispatchers.IO) {
+        AlarmAudioStore(getApplication()).getCachedAudioUnmeasured(voicePackCacheKey(clipId), identity)
+            ?.localAudioUri
+            ?.let { uri -> runCatching { java.io.File(android.net.Uri.parse(uri).path!!).readBytes() }.getOrNull() }
+    }?.let { bytes ->
+        return TtsMessageAudioResponse(
+            messageId = clipId,
+            audioBase64 = Base64.encodeToString(bytes, Base64.NO_WRAP),
+            audioFormat = clip.audioFormat ?: "mp3",
+            audioUrl = identity,
+            text = clip.text.orEmpty(),
+            category = clip.category,
+            voiceProfileId = pack.voiceId,
+        )
+    }
     val session = authSession ?: return null
     val response = withContext(Dispatchers.IO) {
         api.getVoicePackClipAudio(AlarmTalkApiClient.bearer(session.token), pack.packId, clipId)
