@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<result>
+    <list>
+        <corp_code>00126380</corp_code>
+        <corp_name>삼성전자</corp_name>
+        <corp_eng_name>SAMSUNG ELECTRONICS CO,.LTD</corp_eng_name>
+        <stock_code>005930</stock_code>
+        <modify_date>20250102</modify_date>
+    </list>
+    <list>
+        <corp_code>00164779</corp_code>
+        <corp_name>SK하이닉스</corp_name>
+        <corp_eng_name>SK hynix Inc.</corp_eng_name>
+        <stock_code>000660</stock_code>
+        <modify_date>20241231</modify_date>
+    </list>
+    <list>
+        <corp_code>00434003</corp_code>
+        <corp_name>다코</corp_name>
+        <corp_eng_name>Daco corporation</corp_eng_name>
+        <stock_code> </stock_code>
+        <modify_date>20170630</modify_date>
+    </list>
+    <list>
+        <corp_code>01980000</corp_code>
+        <corp_name>에이&amp;비 100%_테크</corp_name>
+        <corp_eng_name>A&amp;B</corp_eng_name>
+        <stock_code>0010V0</stock_code>
+        <modify_date>20260115</modify_date>
+    </list>
+    <list>
+        <corp_code>BAD</corp_code>
+        <corp_name>형식이 틀린 행</corp_name>
+        <stock_code>123456</stock_code>
+        <modify_date>20260101</modify_date>
+    </list>
+</result>

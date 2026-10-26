@@ -1,4 +1,5 @@
 import Foundation
+import StoreKit
 import Testing
 @testable import AlarmTalk
 
@@ -175,6 +176,119 @@ struct UsageEventQueueTests {
         queue.record(.alarmSnoozed, alarmID: "a", detail: String(repeating: "x", count: 300), userID: "u1")
         try waitUntil { queue.count == 1 }
         #expect(queue.oldest(userID: "u1", limit: 1).first?.detail?.count == 120)
+    }
+
+    // MARK: - 2판(`docs/spec/usage-events.md` §7)
+
+    @Test("새 기록은 2판이다 — 스키마 판·적는 순간의 빌드·시도·칸이 함께 남는다(1판 종류도)")
+    func recordsSchemaV2Fields() throws {
+        let (queue, url) = makeQueue()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let attempt = UUID().uuidString
+        queue.record(
+            .voicePreparationReady,
+            attemptID: attempt,
+            featureVersion: "prep-1",
+            props: UsageEventProps(scope: .allVoices, cacheState: .partial, targetCount: 4, bytes: 1234, durationMs: 50)
+        )
+        queue.record(.alarmCreated, alarmID: "a")
+        try waitUntil { queue.count == 2 }
+
+        let events = queue.oldest(userID: "u1", limit: 10)
+        let prep = try #require(events.first { $0.type == .voicePreparationReady })
+        #expect(prep.schemaVersion == 2)
+        #expect(prep.appVersion != nil)
+        #expect(prep.appVersion == UsageEventContract.appVersion)
+        #expect(prep.attemptID == attempt)
+        #expect(prep.featureVersion == "prep-1")
+        #expect(prep.props?.scope == .allVoices)
+        #expect(prep.props?.cacheState == .partial)
+        #expect(prep.props?.bytes == 1234)
+        let created = try #require(events.first { $0.type == .alarmCreated })
+        #expect(created.schemaVersion == 2)
+        #expect(created.props == nil)
+    }
+
+    @Test("옛 큐 파일(새 키 없음)도 그대로 읽힌다 — 1판으로 올라간다")
+    func decodesLegacyQueueFile() throws {
+        let (queue, url) = makeQueue()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let legacy = """
+        [{"id":"11111111-1111-4111-8111-111111111111","type":"alarm_rang","occurredAt":"2026-09-07T06:00:00Z",\
+        "alarmID":"a","userID":"u1"}]
+        """
+        try Data(legacy.utf8).write(to: url)
+
+        let batch = queue.oldest(userID: "u1", limit: 10)
+        #expect(batch.count == 1)
+        #expect(batch.first?.type == .alarmRang)
+        #expect(batch.first?.schemaVersion == nil)
+        #expect(batch.first?.appVersion == nil)
+        #expect(batch.first?.props == nil)
+    }
+
+    @Test("칸은 서버 모양으로 다듬는다 — 한 칸이 틀려 배치째 400 이 나면 큐가 영영 막힌다")
+    func sanitizesPropsToServerShape() throws {
+        let (queue, url) = makeQueue()
+        defer { try? FileManager.default.removeItem(at: url) }
+        queue.record(
+            .alarmSaveBlocked,
+            attemptID: "not-a-uuid",
+            featureVersion: "bad version",
+            props: UsageEventProps(
+                language: "korean",
+                durationMs: -5,
+                reason: "Voice Settling!",
+                step: "문구 원문",
+                usageMonth: "2026-13",
+                requestID: "x",
+                charCount: 99_999
+            )
+        )
+        try waitUntil { queue.count == 1 }
+        let event = try #require(queue.oldest(userID: "u1", limit: 1).first)
+        #expect(event.attemptID == nil)
+        #expect(event.featureVersion == nil)
+        #expect(event.props?.language == nil)
+        #expect(event.props?.durationMs == 0)
+        #expect(event.props?.reason == "voice_settling_")
+        #expect(event.props?.step == nil)
+        #expect(event.props?.usageMonth == nil)
+        #expect(event.props?.requestID == nil)
+        #expect(event.props?.charCount == 10_000)
+    }
+
+    @Test("2판 종류도 계정이 없으면 적지 않는다 — 가입 전 기록을 모아 두지 않는다")
+    func skipsV2EventsWithoutAccount() throws {
+        let (queue, url) = makeQueue(currentUserID: nil)
+        defer { try? FileManager.default.removeItem(at: url) }
+        queue.record(.sampleStarted, voiceProfileID: "70000000-0000-4000-9000-000000000101")
+        queue.record(.authResult, props: UsageEventProps(outcome: .failure, method: "email"))
+        usleep(200_000)
+        #expect(queue.count == 0)
+    }
+
+    @Test("실패는 제한된 코드로만 — 오류 문장을 싣지 않는다")
+    func mapsErrorsToLimitedCodes() {
+        #expect(UsageEventContract.errorCode(for: APIError.server(status: 429, message: "많아요", errorCode: "MANUAL_TTS_QUOTA_EXCEEDED")) == "manual_tts_quota_exceeded")
+        #expect(UsageEventContract.errorCode(for: APIError.server(status: 500, message: "x")) == "http_500")
+        #expect(UsageEventContract.errorCode(for: URLError(.notConnectedToInternet)) == "network")
+        #expect(UsageEventContract.errorCode(for: NSError(domain: "x", code: 1)) == "unknown")
+    }
+
+    @Test("단조 시계 경과는 음수가 되지 않는다")
+    func elapsedIsNonNegative() {
+        let start = ContinuousClock.now
+        #expect(UsageEventContract.elapsedMs(since: start, now: start.advanced(by: .milliseconds(1500))) == 1500)
+        #expect(UsageEventContract.elapsedMs(since: start.advanced(by: .seconds(5)), now: start) == 0)
+    }
+
+    @Test("스토어 조건 — 무료 체험 / 그 밖의 오퍼 / 오퍼 없음")
+    func mapsStoreOffer() {
+        #expect(SubscriptionManager.storeOffer(paymentMode: .freeTrial, hasOffer: true) == .freeTrial)
+        #expect(SubscriptionManager.storeOffer(paymentMode: .payAsYouGo, hasOffer: true) == .intro)
+        #expect(SubscriptionManager.storeOffer(paymentMode: nil, hasOffer: true) == .unknown)
+        #expect(SubscriptionManager.storeOffer(paymentMode: nil, hasOffer: false) == UsageEventProps.StoreOffer.none)
     }
 
     /// 파일 쓰기가 비동기라 값이 보일 때까지 짧게 기다린다.

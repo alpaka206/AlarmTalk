@@ -1,0 +1,60 @@
+# 응원·기상 인사 문구 검수표
+
+> **생성 파일이다 — 손으로 고치지 말 것.** 원본은 `packages/shared/src/stock-content.json`, 다시 만들기는
+> `python3 scripts/gen-stock-content.py`. 규칙은 [`docs/spec/voice-and-message.md`](../spec/voice-and-message.md) §5-4.
+
+검수 순서: 세 언어 문장 검수 → `npm run cost:stock`(비용 dry-run) → `npm run preview:stock -- --category <카테고리>`
+→ 청취 검수 → `npm run publish:stock -- --env dev --category <카테고리>` → `--release <묶음>` → prod.
+
+| 묶음 | 테마 | 카테고리 | 상태 | 항목 수 |
+| --- | --- | --- | --- | --- |
+| `cheer_v1` | `cheer` | `cheer` | 게시됨(옛 알람 참조용) | 3 |
+| `cheer_v2` | `cheer` | `cheer_v2` | 공개 표식 필요 | 14 |
+| `wake_v1` | `wake` | `wake` | 공개 표식 필요 | 3 |
+
+## `cheer_v1`
+
+옛 응원 3개. 2026-09-02 부터 게시돼 있다. 옛 알람 참조와 안전 응원용으로 남기고 새로 고르는 목록에서는 뺀다.
+
+| ID | 자리 | 한국어 (글자) | English (글자) | 日本語 (글자) | 클론 시드 |
+| --- | --- | --- | --- | --- | --- |
+| `cheer_v1_01` | 0 | 해야 할 일이 많으면 시작하기도 전에 마음부터 바빠지잖아요. 그렇다고 처음부터 전부 잘할 필요는 없어요. 지금 할 수 있는 것부터 하나씩 해봐요. 하다 보면 생각보다 잘 풀릴지도 모르니까요. (106) | When you have a lot to do, your mind can start racing before you even begin. But you don't have to do everything perfectly from the start. Just take one thing at a time, starting with what you can do now. It may go better than you think. (237) | やることが多いと、始める前から気持ちばかり焦ってしまいますよね。 でも、最初から全部うまくやろうとしなくても大丈夫です。 今できることから、一つずつやってみましょう。始めてみたら、思ったよりうまく進むかもしれませんよ。 (109) | 할 일이 많으면 시작 전부터 마음이 바빠진다고 공감한 뒤, 처음부터 다 잘할 필요는 없다고 하고, 지금 할 수 있는 것부터 하나씩 해보자고 응원한다. |
+| `cheer_v1_02` | 1 | 이것저것 신경 쓰다 보면 정작 스스로를 챙기는 건 자꾸 뒤로 미루게 되죠. 바쁘더라도 밥은 꼭 챙겨 먹고, 지치면 잠깐이라도 쉬어요. 그래야 하고 싶은 일도 오래 할 수 있잖아요. (100) | When you're busy taking care of everything else, it's easy to keep putting yourself last. Even on busy days, make sure you eat, and take a short break when you're tired. Taking care of yourself is what lets you keep doing the things you enjoy. (243) | あれこれ気にかけていると、自分のことはつい後回しになりますよね。 忙しくても食事はきちんととって、疲れたら少しでも休んでください。 そうすれば、やりたいことも無理なく長く続けられますから。 (94) | 이것저것 신경 쓰다 정작 자기를 챙기는 건 뒤로 미루게 된다고 공감한 뒤, 바빠도 끼니는 챙기고 지치면 잠깐이라도 쉬라고 하며, 그래야 하고 싶은 일도 오래 할 수 있다고 다독인다. |
+| `cheer_v1_03` | 2 | 힘든 일이 생겨도 혼자 괜찮은 척할 필요는 없어요. 믿을 만한 사람에게 슬쩍 털어놓으면 생각보다 마음이 가벼워질 때도 있거든요. 너무 혼자 버티려고만 하지는 말아요. (92) | When things get hard, you don't have to pretend you're okay. Talking it through with someone you trust can make things feel lighter than you expect. So please don't try to carry everything on your own. (201) | つらいことがあっても、一人で平気なふりをしなくていいんですよ。 信頼できる人に少し話してみるだけで、思ったより気持ちが軽くなることもあります。 何でも一人で抱え込もうとしないでくださいね。 (94) | 힘든 일이 있어도 혼자 괜찮은 척하지 않아도 된다고 하고, 믿을 만한 사람에게 털어놓으면 마음이 가벼워질 때가 있다고 하며, 혼자 버티려 하지 말라고 따뜻하게 응원한다. |
+
+글자 합계: 한국어 298 · English 681 · 日本語 297
+
+## `cheer_v2`
+
+새 응원 14개(지시서 v1.3 12.2). 공개 전.
+
+| ID | 자리 | 한국어 (글자) | English (글자) | 日本語 (글자) | 클론 시드 |
+| --- | --- | --- | --- | --- | --- |
+| `cheer_v2_01` | 0 | 좋은 아침이에요. 오늘도 한 가지씩 시작해봐요. (26) | Good morning. Let's take today one thing at a time. (51) | おはようございます。今日もひとつずつ始めてみましょう。 (27) | 다정하게 아침 인사를 건넨 뒤, 오늘도 한 가지씩 차근차근 시작해 보자고 권한다. |
+| `cheer_v2_02` | 1 | 지금은 첫걸음만 생각해도 괜찮아요. (19) | For now, it's okay to think about just the first step. (54) | 今は、最初の一歩のことだけ考えれば大丈夫ですよ。 (24) | 지금은 첫걸음만 생각해도 괜찮다고 부드럽게 말해 준다. |
+| `cheer_v2_03` | 2 | 서두르지 말고, 편한 속도로 시작해요. (21) | No need to rush. Start at a pace that feels comfortable. (56) | 急がなくていいですよ。自分のペースで始めましょう。 (25) | 서두르지 않아도 된다고 하며, 편한 속도로 시작하자고 다독인다. |
+| `cheer_v2_04` | 3 | 오늘 해야 할 일 중 하나부터 골라봐요. (22) | Pick just one thing from today's list to start with. (52) | 今日やることの中から、まずひとつ選んでみましょう。 (25) | 오늘 해야 할 일 가운데 하나부터 골라 보자고 가볍게 권한다. |
+| `cheer_v2_05` | 4 | 어제와 똑같지 않아도 괜찮아요. (17) | Today doesn't have to look like yesterday. That's okay. (55) | 昨日と同じじゃなくても、大丈夫ですよ。 (19) | 어제와 똑같지 않아도 괜찮다고 따뜻하게 말해 준다. |
+| `cheer_v2_06` | 5 | 완벽하게 시작하지 않아도 괜찮아요. (19) | You don't have to start perfectly. That's okay. (47) | 完璧なスタートじゃなくても、大丈夫ですよ。 (21) | 완벽하게 시작하지 않아도 괜찮다고 안심시켜 준다. |
+| `cheer_v2_07` | 6 | 작은 일 하나를 끝내는 아침이면 충분해요. (23) | Finishing one small thing this morning is enough. (49) | 小さなことをひとつ終えられたら、それで十分な朝ですよ。 (27) | 작은 일 하나를 끝내는 아침이면 충분하다고 다정하게 말한다. |
+| `cheer_v2_08` | 7 | 눈을 뜬 지금부터 오늘을 천천히 준비해요. (23) | You're awake now. Let's get ready for today, nice and slow. (59) | 目が覚めた今から、ゆっくり今日の準備をしましょう。 (25) | 눈을 뜬 지금부터 오늘을 천천히 준비하자고 부드럽게 이끈다. |
+| `cheer_v2_09` | 8 | 오늘은 나에게 다정하게 말해봐요. (18) | Today, try speaking kindly to yourself. (39) | 今日は、自分にやさしく声をかけてみましょう。 (22) | 오늘은 스스로에게 다정하게 말해 보자고 권한다. |
+| `cheer_v2_10` | 9 | 준비되면 몸을 일으켜볼까요? (15) | Whenever you're ready, shall we sit up? (39) | 準備ができたら、体を起こしてみましょうか。 (21) | 준비가 되면 몸을 일으켜 보자고 부드럽게 묻는다. |
+| `cheer_v2_11` | 10 | 어깨에 힘을 조금 풀고 시작해요. (18) | Let your shoulders relax a little, and let's begin. (51) | 肩の力を少し抜いて、始めましょう。 (17) | 어깨에 힘을 조금 풀고 시작하자고 다독인다. |
+| `cheer_v2_12` | 11 | 오늘의 속도는 내가 정해도 괜찮아요. (20) | It's okay to set your own pace today. (37) | 今日のペースは、自分で決めていいんですよ。 (21) | 오늘의 속도는 스스로 정해도 괜찮다고 응원한다. |
+| `cheer_v2_13` | 12 | 마음에 두었던 작은 일부터 시작해봐요. (21) | Start with that small thing you've had on your mind. (52) | 気になっていた小さなことから、始めてみましょう。 (24) | 마음에 두었던 작은 일부터 시작해 보자고 권한다. |
+| `cheer_v2_14` | 13 | 새로운 아침이에요. 오늘의 첫 장을 열어봐요. (25) | It's a brand new morning. Let's open the first page of today. (61) | 新しい朝ですよ。今日の最初のページを開いてみましょう。 (27) | 새로운 아침이라고 알리며, 오늘의 첫 장을 열어 보자고 다정하게 권한다. |
+
+글자 합계: 한국어 287 · English 702 · 日本語 325
+
+## `wake_v1`
+
+기본 목소리의 짧은 기상 인사 3개(지시서 v1.3 12.2). 클론에는 굽지 않는다. 클론의 같은 자리는 생성된 '기본 인사말' 이다. 공개 전.
+
+| ID | 자리 | 한국어 (글자) | English (글자) | 日本語 (글자) |
+| --- | --- | --- | --- | --- |
+| `wake_v1_01` | 0 | 좋은 아침이에요. 일어날 시간이 됐어요. (22) | Good morning. It's time to get up. (34) | おはようございます。起きる時間になりましたよ。 (23) |
+| `wake_v1_02` | 1 | 알람 시간이 됐어요. 천천히 눈을 떠볼까요? (24) | It's time for your alarm. How about slowly opening your eyes? (61) | アラームの時間になりましたよ。ゆっくり目を開けてみましょうか。 (31) |
+| `wake_v1_03` | 2 | 아침이에요. 오늘 하루를 시작할 준비를 해봐요. (26) | It's morning. Let's get ready to start the day. (47) | 朝ですよ。今日一日を始める準備をしてみましょう。 (24) |
+
+글자 합계: 한국어 72 · English 142 · 日本語 78

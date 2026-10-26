@@ -26,10 +26,13 @@ enum AuxiliaryScreen: String, Identifiable, Hashable {
 struct AlarmEditorTarget: Identifiable, Equatable, Hashable {
     let id: String
     let editingAlarmID: String?
+    /// **새 알람에서 처음 고를 목소리** — 목소리 탭의 '이 목소리로 새 알람 만들기' 가 싣는다(2026-10-26). 새 알람에만 쓰고,
+    /// 전역 기본값(직전 선택 — `lastUsedVoiceId`)이나 기존 알람은 바꾸지 않는다. 저장에 성공해야 직전 선택이 된다.
+    var preferredVoiceID: String? = nil
 
     /// 새 알람용 target. id 는 매번 새 값이라 sheet 가 항상 새로 뜬다.
-    static func create() -> AlarmEditorTarget {
-        AlarmEditorTarget(id: "create-\(UUID().uuidString)", editingAlarmID: nil)
+    static func create(preferredVoiceID: String? = nil) -> AlarmEditorTarget {
+        AlarmEditorTarget(id: "create-\(UUID().uuidString)", editingAlarmID: nil, preferredVoiceID: preferredVoiceID)
     }
 
     /// 기존 알람 수정용 target. id 는 알람 id 를 그대로 써서 같은 알람 재오픈 시

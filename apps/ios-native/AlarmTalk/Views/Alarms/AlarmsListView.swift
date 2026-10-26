@@ -11,6 +11,7 @@ struct AlarmsListView: View {
     @EnvironmentObject private var alarmKit: AlarmKitViewModel
     @EnvironmentObject private var remoteSync: RemoteAlarmSyncViewModel
     @EnvironmentObject private var voiceStudio: VoiceStudioViewModel
+    @EnvironmentObject private var stockClipPrefetcher: StockClipPrefetcher
     @State private var actionMessage: String?
     /// 날짜가 지난 날짜 알람을 켜려 했다 — 켜지 않고 알럿으로 말한다(스펙 alarm-lifecycle.md §4-4).
     @State private var datedPastAlertShown = false
@@ -24,6 +25,10 @@ struct AlarmsListView: View {
     var createRequest: UUID?
     let openEditor: (AlarmEditorTarget) -> Void
 
+    /// 상태 카드의 '기본 목소리 받는 중' — **기본 목소리만** 센다. 프리페처는 내 목소리 사전렌더도 같은 회차에 받아, 회차가
+    /// 돈다(`isRunning`)는 것만으로는 기본 목소리가 남았는지 모른다. 프리페처 상태가 바뀔 때마다 메인 밖에서 다시 센다.
+    @State private var defaultVoicesDownloading = false
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             // 로컬 JSON 첫 로드 전의 빈 배열은 실제 빈 목록이 아니다. 안드로이드의
@@ -36,7 +41,21 @@ struct AlarmsListView: View {
                         // 권한 안내는 **이미 알람이 있을 때만** 한 줄 배너로. 알람이 하나도 없는
                         // 새 사용자에게는 빈 상태 카드가 할 말이 따로 있고, 그 위에 경고를 겹치면
                         // 첫 화면이 경고문부터 시작한다(안드로이드 `AlarmListScreen`).
-                        if !alarmKit.alarmAuthorized && !visibleAlarms.isEmpty {
+                        // **다음 알람 상태 카드**(2026-10-26 v1.3 W06) — 켜진 알람이 있으면 지금 할 일 하나를 말한다(권한 부족 포함).
+                        // 켜진 알람이 없는데 권한이 모자라면 예전처럼 배너만 둔다.
+                        if let next = nextAlarmForHeadline {
+                            NextAlarmStatusCard(
+                                status: NextAlarmStatus.resolve(
+                                    alarm: next,
+                                    nextFire: next.nextFireDate,
+                                    alarmAuthorized: alarmKit.alarmAuthorized,
+                                    defaultVoiceDownloadInProgress: defaultVoicesDownloading,
+                                    limitedPlanEndsAt: auth.session?.user.personalPromo?.endsAtDate
+                                ),
+                                voiceName: voiceName(for: next),
+                                onRequestPermission: { Task { await alarmKit.requestAuthorization() } }
+                            )
+                        } else if !alarmKit.alarmAuthorized && !visibleAlarms.isEmpty {
                             alarmPermissionBanner
                         }
                         // 인라인 액션 메시지(alarmKit 유래)를 우선 보여주고, 없을 때만 동기화 상태
@@ -69,6 +88,17 @@ struct AlarmsListView: View {
             Text(String(localized: "편집에서 날짜를 다시 골라 주세요."))
         }
         .onChange(of: store.alarms.count) { _, _ in pruneSelection() }
+        .task(id: stockClipPrefetcher.state) {
+            // ⚠ **받기가 실제로 돌고 있을 때만**이다 — 세 번 다 실패해 멈췄는데(`.failed`) 파일이 빠져 있다는 이유로 '받는 중' 을
+            //   띄우면 끝없이 받는 중이라 하고 날씨 경고까지 가린다.
+            guard stockClipPrefetcher.isRunning else {
+                defaultVoicesDownloading = false
+                return
+            }
+            let progress = await StockClipPrefetcher.progressOffMain()
+            guard !Task.isCancelled else { return }
+            defaultVoicesDownloading = progress.map { $0.total > 0 && $0.done < $0.total } ?? false
+        }
         .onChange(of: createRequest) { _, new in
             guard new != nil else { return }
             Task { await openCreateAlarm() }

@@ -7,6 +7,7 @@ import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import com.alarmtalk.app.data.AlarmAudioStore
 import com.alarmtalk.app.data.ClipReadiness
 import com.alarmtalk.app.data.isSystemVoiceId
+import com.alarmtalk.app.data.bucketTheme
 import com.alarmtalk.app.network.AlarmTalkApiClient
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -25,7 +26,7 @@ import kotlinx.coroutines.withContext
  * ⚠ **이 값으로 알람 만들기를 막지 말 것**(클론 목소리까지 센다). 알람 설정 관문은
  * **기본 목소리만** 보는 `StockClipPrefetchWorker.defaultVoicesReady` 하나다(2026-09-17).
  * 이 값으로 막는 것은 목소리 등록과, 아직 못 받은 **그 목소리를 고르는 것**뿐이다
- * (docs/spec/voice-and-message.md 「기본 목소리를 다 받아야 알람을 설정한다」).
+ * (docs/spec/voice-and-message.md 「알람마다 필요한 목소리만 본다」).
  */
 internal suspend fun MainViewModel.refreshClipReadiness() {
     val session = authSession ?: return
@@ -70,7 +71,11 @@ internal suspend fun MainViewModel.refreshClipReadiness() {
     } ?: return
     // 기다리는 사이 계정이 바뀌었으면 이 계산은 앞 계정의 것이다.
     if (authSession?.user?.id != session.user.id) return
-    val clips = stockClips
+    // 기본 목소리는 **지금 언어의** 클립만 센다 — 받는 대상이 그것뿐이다(`StockClipPrefetchWorker.isDefaultVoiceTarget`).
+    // 모든 언어를 세면 앱 언어를 바꾼 뒤 옛 언어 클립만으로 '다 받음' 이 되어, 준비 화면은 끝났다는데 고르면 다시 막혔다
+    // (코덱스 #952). 내 목소리는 등록 때 고른 언어 한 벌이라 거르지 않는다.
+    val language = deviceAppVoiceLanguage()
+    val clips = stockClips.filter { !isSystemVoiceId(it.voiceProfileId) || (it.language ?: "ko") == language }
 
     val audioStore = AlarmAudioStore(getApplication<Application>())
     val systemVoiceIds = clips.map { it.voiceProfileId }.filter { isSystemVoiceId(it) }.distinct().sorted()
@@ -78,6 +83,8 @@ internal suspend fun MainViewModel.refreshClipReadiness() {
     // 그 몫이 진행률에서 통째로 빠진다.
     val categoriesByVoice = clips.groupBy { it.voiceProfileId }
         .mapValues { (_, list) -> list.mapNotNull { it.category }.distinct().sorted() }
+    // 카테고리 → 테마(`cheer_v2` → `cheer`, 스펙 voice-and-message §5-4). 기본 목소리가 무료 테마를 고를 때 쓴다.
+    val themeByCategory = clips.mapNotNull { clip -> clip.category?.let { it to (clip.bucketTheme ?: it) } }.toMap()
 
     clipReadiness = withContext(Dispatchers.IO) {
         // 디렉터리는 한 번만 읽는다 — 클립마다 `getCachedAudio` 로 물으면 디렉터리를 다시 읽고
@@ -91,7 +98,7 @@ internal suspend fun MainViewModel.refreshClipReadiness() {
             categoriesFor = { voiceId ->
                 val all = categoriesByVoice[voiceId].orEmpty()
                 // 기본 목소리는 무료 테마만 쓴다(greeting 은 미리듣기 전용이라 알람에 안 쓴다).
-                if (isSystemVoiceId(voiceId)) all.filter { it in FREE_BUCKET_CATEGORIES } else all
+                if (isSystemVoiceId(voiceId)) all.filter { (themeByCategory[it] ?: it) in FREE_BUCKET_CATEGORIES } else all
             },
             renderState = { renderStates[it] ?: (false to false) },
             isCached = { clip ->

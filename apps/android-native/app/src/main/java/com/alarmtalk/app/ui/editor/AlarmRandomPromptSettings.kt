@@ -1,5 +1,7 @@
 package com.alarmtalk.app
 
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.heightIn
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -97,9 +99,18 @@ internal fun RandomPromptSettingsPane(
     fortuneGender: String,
     fortuneBirthDate: String,
     fortuneBirthTime: String,
+    /**
+     * 응원 테마의 **다양하게 / 이 문구로 고정**(스펙 voice-and-message §5-4). [cheerPhrases] 는 이 목소리·언어로
+     * 매니페스트에 있는 새 응원이다 — **비어 있으면 카드를 그리지 않는다**(준비되지 않은 문구를 보이지 않는다).
+     */
+    cheerMode: String = com.alarmtalk.app.data.CheerModes.VARY,
+    cheerPinnedContentId: String? = null,
+    cheerPhrases: List<com.alarmtalk.app.data.CheerCandidate> = emptyList(),
     onSaveSettings: (RandomPromptSettingsResult) -> Unit,
 ) {
     val context = LocalContext.current
+    var draftCheerMode by remember(cheerMode) { mutableStateOf(com.alarmtalk.app.data.CheerModes.normalize(cheerMode)) }
+    var draftCheerPinned by remember(cheerPinnedContentId) { mutableStateOf(cheerPinnedContentId) }
     var draftContext by remember(randomContext) {
         mutableStateOf(
             // 지금 값을 그대로 고른 상태로 연다. 예전에는 목록에 없는 값(preset)이면 '약'을
@@ -180,6 +191,8 @@ internal fun RandomPromptSettingsPane(
                 randomContext = resolvedContext(),
                 weatherCountry = draftWeatherCountry.trim(),
                 weatherCity = draftWeatherCity.trim(),
+                cheerMode = draftCheerMode,
+                cheerPinnedContentId = draftCheerPinned,
                 fortuneGender = draftFortuneGender.trim(),
                 fortuneBirthDate = draftFortuneBirthDate.trim(),
                 fortuneBirthTime = draftFortuneBirthTime.trim(),
@@ -265,9 +278,15 @@ internal fun RandomPromptSettingsPane(
                     // ⚠ **'직접 입력' 은 목록에서 빼지 않는다.** 무료에게도 이런 기능이
                     // 있다는 걸 보여 준다 — 아예 감추면 있는지조차 모르고, 유료 전환 동기
                     // 중 가장 강한 것을 잃는다. 잠긴 행으로 그린다.
-                    val rows = EditorMessageContexts.filter { (context, _) ->
+                    val allRows = EditorMessageContexts.filter { (context, _) ->
                         context == ManualMessageContext || context in availableContexts
                     }
+                    // **운세·약은 처음에는 접어 둔다**(2026-10-26 v1.3 W04) — 첫 화면은 날씨·응원·직접 입력이면 충분하고, 운세·약은
+                    // 추가 정보를 묻거나 쓰임이 좁다. 지우지 않는다: 지금 고른 것이 그 둘이면(직전 선택을 이은 새 알람·기존 알람)
+                    // 처음부터 펼쳐 둔다. iOS 짝은 `MessageSettingsPane.foldedContextIDs`.
+                    var moreContextsShown by remember { mutableStateOf(normalizedContext in FoldedMessageContexts) }
+                    val foldedPresent = allRows.any { it.first in FoldedMessageContexts }
+                    val rows = if (moreContextsShown) allRows else allRows.filter { it.first !in FoldedMessageContexts }
                     rows.forEachIndexed { index, (context, labelRes) ->
                         val baseLabel = stringResource(labelRes)
                         val locked = context == ManualMessageContext && manualLocked
@@ -295,6 +314,23 @@ internal fun RandomPromptSettingsPane(
                             )
                         }
                         if (index != rows.lastIndex) SnoozeOptionDivider()
+                    }
+                    if (!moreContextsShown && foldedPresent) {
+                        SnoozeOptionDivider()
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { moreContextsShown = true }
+                                .heightIn(min = 56.dp)
+                                .padding(horizontal = 14.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                text = stringResource(R.string.editorp_random_more_contexts),
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                        }
                     }
                 }
 
@@ -357,6 +393,53 @@ internal fun RandomPromptSettingsPane(
                             else -> stringResource(R.string.editorp_random_fortune_required)
                         },
                     )
+                }
+
+                // 응원 — 다양하게 / 이 문구로 고정(스펙 voice-and-message §5-4). 고를 새 응원이 없으면(공개 전·보충 전)
+                // 그리지 않는다. 그때 응원은 묶어 둔 옛 응원을 순서대로 돌린다.
+                if (normalizedContext == "cheer" && cheerPhrases.isNotEmpty()) {
+                    val phraseIds = cheerPhrases.map { it.contentId }
+                    SnoozeOptionSection(title = stringResource(R.string.editorp_cheer_variety_title)) {
+                        SnoozeRadioRow(
+                            label = stringResource(R.string.editorp_cheer_vary),
+                            selected = draftCheerMode == com.alarmtalk.app.data.CheerModes.VARY,
+                            onClick = { draftCheerMode = com.alarmtalk.app.data.CheerModes.VARY },
+                        )
+                        SnoozeOptionDivider()
+                        SnoozeRadioRow(
+                            label = stringResource(R.string.editorp_cheer_pinned),
+                            selected = draftCheerMode == com.alarmtalk.app.data.CheerModes.PINNED,
+                            onClick = {
+                                draftCheerMode = com.alarmtalk.app.data.CheerModes.PINNED
+                                // 고정할 문구가 아직 없으면 첫 문구를 고른 채로 연다 — 빈 고정은 없다.
+                                if (draftCheerPinned !in phraseIds) draftCheerPinned = phraseIds.first()
+                            },
+                        )
+                    }
+                    Text(
+                        text = stringResource(
+                            if (draftCheerMode == com.alarmtalk.app.data.CheerModes.PINNED) {
+                                R.string.editorp_cheer_pinned_hint
+                            } else {
+                                R.string.editorp_cheer_vary_hint
+                            },
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 4.dp),
+                    )
+                    if (draftCheerMode == com.alarmtalk.app.data.CheerModes.PINNED) {
+                        SnoozeOptionSection {
+                            cheerPhrases.forEachIndexed { index, phrase ->
+                                SnoozeRadioRow(
+                                    label = phrase.text,
+                                    selected = draftCheerPinned == phrase.contentId,
+                                    onClick = { draftCheerPinned = phrase.contentId },
+                                )
+                                if (index != cheerPhrases.lastIndex) SnoozeOptionDivider()
+                            }
+                        }
+                    }
                 }
             }
 
@@ -424,6 +507,9 @@ internal fun RandomPromptSettingsPane(
 }
 
 /** 직접 입력 문구 상한. iOS `MessageSettingsPane.manualTextMaxLength` 와 같은 값이어야 한다. */
+/** 문구 목록에서 처음에 접어 두는 종류 — 운세·약(2026-10-26 v1.3 W04). 고른 상태면 펼쳐 둔다. */
+internal val FoldedMessageContexts = setOf("wake_fortune", "medication")
+
 internal const val ManualMessageMaxLength = 200
 
 // '직접 입력' 선택 시 뜨는 문구 입력 다이얼로그(날씨·운세 다이얼로그와 같은 층위).

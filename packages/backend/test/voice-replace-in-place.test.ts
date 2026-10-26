@@ -24,6 +24,7 @@ import {
 } from '../src/routes/voice-profile';
 import { resolvePersonalPromo } from '../src/lib/personal-promo';
 import { TTS_MODEL_ID } from '../src/lib/tts-model';
+import { markPrerenderFailed } from '../src/lib/stock-clips';
 
 // 기간 한정 개인 플랜 꺼짐 — 이 파일은 평상 규칙(원시 plan)을 본다.
 const PROMO_OFF = resolvePersonalPromo({});
@@ -185,6 +186,45 @@ describe('목소리 교체 — 제자리 덮어쓰기', () => {
       // 푸시를 놓친 기기가 스스로 알아챌 표식. 이게 없으면 폴백 경로가 없다.
       expect(replacedRow.rows[0]!.custom_audio_invalidated_at).not.toBeNull();
       expect(replacedRow.rows[0]!.updated_at).not.toBeNull();
+    } finally {
+      db.close();
+      for (const suffix of ['', '-shm', '-wal']) rmSync(`${path}${suffix}`, { force: true });
+    }
+  });
+
+  // 응원 보충 회차(스펙 voice-and-message §5-4)가 대기 중일 때 교체가 들어오면 회차의 성격이 전체 재렌더로 바뀐다.
+  // 보충 표시가 남으면 진행 조회가 done 으로 답하고(앱이 교체 클립을 기다리지 않는다), 5번 실패해도 failed 가 아니라
+  // done 으로 접힌다. 요청된 보충 묶음은 남겨 새 목소리로 같이 굽는다.
+  it('보충 회차가 대기 중이어도 교체는 보충 표시를 내리고 요청된 묶음은 남긴다', async () => {
+    const { db, path } = await replacementDb();
+    try {
+      await db.execute(
+        `UPDATE voice_prerender_queue
+            SET status = 'pending', supplement = 1, refresh_existing = 0, content_sets = '["cheer_v2"]'
+          WHERE voice_profile_id = 'vp1'`,
+      );
+      const result = await replaceVoiceInPlace(db as never, {
+        targetUserIds: ['u1'],
+        draftProfileId: 'vp2',
+        language: 'ko',
+        ownerPk: 'u1',
+        loginId: 'g1',
+        promo: PROMO_OFF,
+      });
+      expect(result.ok).toBe(true);
+      const queue = await db.execute(
+        "SELECT status, supplement, refresh_existing, content_sets FROM voice_prerender_queue WHERE voice_profile_id = 'vp1'",
+      );
+      expect(queue.rows[0]).toMatchObject({ status: 'pending', supplement: 0, refresh_existing: 1 });
+      expect(JSON.parse(String(queue.rows[0]!.content_sets))).toEqual(['cheer_v2']);
+
+      // 이제 전체 재렌더라 다섯 번 실패하면 failed 로 내려 다시 시도를 띄운다(보충처럼 done 으로 접지 않는다).
+      for (let i = 0; i < 5; i += 1) {
+        await db.execute("UPDATE voice_prerender_queue SET claim_token = 'tok' WHERE voice_profile_id = 'vp1'");
+        await markPrerenderFailed(db, 'vp1', 'tok');
+      }
+      const failed = await db.execute("SELECT status FROM voice_prerender_queue WHERE voice_profile_id = 'vp1'");
+      expect(String(failed.rows[0]!.status)).toBe('failed');
     } finally {
       db.close();
       for (const suffix of ['', '-shm', '-wal']) rmSync(`${path}${suffix}`, { force: true });

@@ -41,6 +41,9 @@ export interface StockClipReplacement {
   displayText: string;
   synthesisText: string;
   deliveryTagsJson: string;
+  /** 이 렌더의 지문·전역 세대(`lib/render-fingerprint.ts` 의 `stockPublishRenderSettings`) — 원장에 함께 적는다(#139). */
+  renderFingerprint: string;
+  renderRevision: string;
 }
 
 export async function replaceStockClipInPlace(
@@ -74,11 +77,12 @@ export async function replaceStockClipInPlace(
         sql: `INSERT INTO generated_audio_assets
                 (id, user_id, voice_profile_id, message_id, provider, provider_voice_id,
                  model_id, language, request_hash, text,
-                 audio_url, audio_object_key, audio_format, created_at)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%d %H:%M:%f', 'now'))`,
+                 audio_url, audio_object_key, audio_format, render_fingerprint, render_revision, created_at)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%d %H:%M:%f', 'now'))`,
         args: [
           crypto.randomUUID(), r.ownerUserId, r.voiceProfileId, r.messageId, r.provider, r.providerVoiceId,
           r.modelId, r.language, r.cacheKey, r.synthesisText, audioUrl, r.objectKey, r.outputFormat,
+          r.renderFingerprint, r.renderRevision,
         ],
       });
     }

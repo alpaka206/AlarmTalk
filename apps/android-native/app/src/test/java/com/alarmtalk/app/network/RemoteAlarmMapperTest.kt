@@ -54,6 +54,43 @@ class RemoteAlarmMapperTest {
         assertEquals("profile-id", request.voiceProfileId)
     }
 
+    /** 응원 테마의 다양하게/고정은 서버 사본과 왕복한다 — 이력·선택은 기기 로컬이라 싣지 않는다(스펙 voice-and-message §5-4). */
+    @Test
+    fun cheerAlarmCarriesItsModeAndPinnedLine() {
+        val pinned = alarm(voiceSource = VoiceSources.TTS_PROFILE, voiceProfileId = "profile-id").copy(
+            bucketId = "cheer",
+            cheerMode = "pinned",
+            cheerPinnedContentId = "cheer_v2_05",
+            cheerHistoryJson = "[\"cheer_v2_01\"]",
+            cheerSelectionJson = "{\"o\":1,\"id\":\"cheer_v2_05\",\"key\":\"stock_x\",\"text\":\"t\",\"lang\":\"ko\"}",
+        )
+        val body = sentBody(pinned)
+        assertEquals("pinned", body["cheer_mode"].asString)
+        assertEquals("cheer_v2_05", body["cheer_pinned_content_id"].asString)
+        assertFalse(body.has("cheer_history_json"))
+        assertFalse(body.keySet().any { it.contains("history") || it.contains("selection") })
+
+        // 다양하게면 고정 문구를 보내지 않고, 옛 행(값 없음)은 다양하게로 읽는다.
+        val legacy = sentBody(pinned.copy(cheerMode = null))
+        assertEquals("vary", legacy["cheer_mode"].asString)
+        assertFalse(legacy.has("cheer_pinned_content_id"))
+
+        // 응원이 아닌 알람은 둘 다 싣지 않는다.
+        val weather = sentBody(pinned.copy(bucketId = "weather"))
+        assertFalse(weather.has("cheer_mode"))
+        assertFalse(weather.has("cheer_pinned_content_id"))
+    }
+
+    @Test
+    fun responseReadsCheerFields() {
+        val response = Gson().fromJson(
+            "{\"alarm\":{\"id\":\"a\",\"bucket_id\":\"cheer\",\"cheer_mode\":\"pinned\",\"cheer_pinned_content_id\":\"cheer_v2_02\"}}",
+            RemoteAlarmResponse::class.java,
+        )
+        assertEquals("pinned", response.alarm.cheerMode)
+        assertEquals("cheer_v2_02", response.alarm.cheerPinnedContentId)
+    }
+
     /** Retrofit 의 `GsonConverterFactory.create()` 와 같은 기본 Gson(serializeNulls 꺼짐)으로 보낸 본문. */
     private fun sentBody(alarm: AlarmEntity): JsonObject =
         JsonParser.parseString(Gson().toJson(RemoteAlarmMapper.toWriteRequest(alarm))).asJsonObject

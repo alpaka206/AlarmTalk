@@ -42,6 +42,8 @@ const TABLES: Record<string, 'per-user' | 'no-personal-data' | 'retained-pseudon
   voice_profile_change_ledger: 'per-user',
   manual_tts_usage: 'per-user',
   ad_reward_credits: 'per-user',
+  ad_reward_sessions: 'per-user', // 광고 시청 승인 세션(#141)
+  ad_reward_callbacks: 'per-user', // 광고 SSV 콜백 기록(#141)
   paid_voice_retention: 'per-user',
   usage_events: 'per-user',
   user_consents: 'per-user',
@@ -51,7 +53,14 @@ const TABLES: Record<string, 'per-user' | 'no-personal-data' | 'retained-pseudon
   plan_grants: 'per-user', // 관리자 기간 지급(#134)
   manual_tts_requests: 'per-user', // 직접 입력 같은 요청 표식(#135)
   apple_server_notifications: 'per-user', // 애플 서버 알림 수신 기록 — 주인을 찾은 행만 계정 id 를 담는다(#136)
+  briefing_interests: 'per-user', // 아침 소식 관심 기업(#137)
+  briefing_corp_codes: 'no-personal-data', // OpenDART 고유번호 공용 캐시(#137)
+  briefing_items: 'no-personal-data', // 받아 둔 공시·정책뉴스 공용 캐시(#137)
+  briefing_fetch_state: 'no-personal-data', // 원천·기업별 확인 상태(#137) — 사람 id 를 적지 않는다
   admin_push_jobs: 'no-personal-data', // 관리자 알림 기록 — 대상 토큰·받는 사람을 적지 않는다(#133)
+  tts_synthesis_usage: 'no-personal-data', // 합성 사용량 장부 — 종류·날짜·숫자뿐, 사람을 가리키지 않는다(#139)
+  tts_dev_budget_holds: 'no-personal-data', // dev 예산에서 합성 직전에 잡는 몫 — 월·글자 수뿐(#139)
+  stock_content_releases: 'no-personal-data', // 환경마다 공개한 문구 묶음(#143) — 사람과 묶이지 않는 운영 표
   subscriptions: 'per-user',
   store_transactions: 'per-user',
   promo_code_redemptions: 'per-user',
@@ -63,6 +72,9 @@ const TABLES: Record<string, 'per-user' | 'no-personal-data' | 'retained-pseudon
   event_slot_cursor: 'no-personal-data',
   weather_region_daily_official: 'no-personal-data', // 공식 원천 캐시(#127)
   weather_region_daily: 'no-personal-data', // 지역 × 날짜의 날씨 캐시 — 사용자와 묶지 않는다(#123)
+  store_download_daily: 'no-personal-data', // 스토어가 모아 준 하루 다운로드 수(#138)
+  store_download_sync: 'no-personal-data', // 스토어 받아 오기 상태(#138)
+  store_report_instances: 'no-personal-data', // 받은 App Store 보고서 인스턴스 id(#138)
   _migrations: 'no-personal-data',
   sqlite_sequence: 'no-personal-data',
 };
@@ -106,6 +118,8 @@ const A_OWNED_ROWS: Array<[table: string, column: string, id: string]> = [
   ['voice_profile_change_ledger', 'id', 'vcl-a'],
   ['usage_events', 'id', 'ue-a'],
   ['ad_reward_credits', 'transaction_id', 'adr-a'],
+  ['ad_reward_sessions', 'id', 'ads-a'],
+  ['ad_reward_callbacks', 'transaction_id', 'adcb-a'],
   ['user_consents', 'id', 'uc-a'],
   ['email_verification_codes', 'id', 'evc-a'],
 ];
@@ -291,6 +305,18 @@ async function seed(): Promise<void> {
   await run(`INSERT INTO manual_tts_usage (pool_key, usage_month, used_count) VALUES (?, '2026-09', 3)`, [B_PK]);
 
   await run(`INSERT INTO ad_reward_credits (transaction_id, user_id, ad_unit, grant_month) VALUES ('adr-a', ?, 'unit', '2026-09')`, [A_PK]);
+  await run(
+    `INSERT INTO ad_reward_sessions (id, user_id, platform, ad_unit, status, reserved_month, created_at, expires_at)
+     VALUES ('ads-a', ?, 'android', 'unit', 'pending', '2026-09', '2026-09-01T00:00:00.000Z', '2026-09-01T00:10:00.000Z'),
+            ('ads-b', ?, 'ios', 'unit', 'granted', '2026-09', '2026-09-01T00:00:00.000Z', '2026-09-01T00:10:00.000Z')`,
+    [A_PK, B_PK],
+  );
+  await run(
+    `INSERT INTO ad_reward_callbacks (transaction_id, user_id, ad_unit, session_id, reward_month, received_at)
+     VALUES ('adcb-a', ?, 'unit', 'ads-a', '2026-09', '2026-09-01T00:01:00.000Z'),
+            ('adcb-b', ?, 'unit', 'ads-b', '2026-09', '2026-09-01T00:01:00.000Z')`,
+    [A_PK, B_PK],
+  );
 
   // ── 알람 ─────────────────────────────────────────────────────────────────
   await run(`INSERT INTO alarms (id, user_id, message_id, voice_profile_id, time) VALUES ('al-a-own', ?, 'msg-a', 'vp-a', '07:00')`, [A_PK]);
@@ -331,6 +357,10 @@ async function seed(): Promise<void> {
      VALUES ('pg-a', ?, '2026-10-01T00:00:00.000Z', '2026-11-01T00:00:00.000Z', 'support', 'admin', 'key-a-000001')`,
     [A_PK],
   );
+  // 아침 소식 관심 기업 — 옛 로그인 id 로 적힌 행까지 함께 지운다.
+  await run(`INSERT INTO briefing_interests (user_id, corp_code) VALUES (?, '00126380')`, [A_PK]);
+  await run(`INSERT INTO briefing_interests (user_id, corp_code) VALUES (?, '00164779')`, [A_LOGIN]);
+  await run(`INSERT INTO briefing_interests (user_id, corp_code) VALUES (?, '00126380')`, [B_PK]);
   await run(
     `INSERT INTO plan_grants (id, user_id, starts_at, ends_at, reason, granted_by, request_key)
      VALUES ('pg-b', ?, '2026-10-01T00:00:00.000Z', '2026-11-01T00:00:00.000Z', 'support', 'admin', 'key-b-000001')`,
@@ -443,6 +473,9 @@ describe('탈퇴 파기 뒤 잔존물 (실제 SQLite)', () => {
       expect(await ids(`SELECT id FROM plan_grants`)).toEqual(['pg-b']);
       expect(await ids(`SELECT request_id AS id FROM manual_tts_requests`)).toEqual(['req-b']);
       expect(await ids(`SELECT user_id FROM apple_server_notifications`)).toEqual([B_PK]);
+      expect(await ids(`SELECT user_id FROM briefing_interests`)).toEqual([B_PK]);
+      expect(await ids(`SELECT id FROM ad_reward_sessions`)).toEqual(['ads-b']);
+      expect(await ids(`SELECT transaction_id AS id FROM ad_reward_callbacks`)).toEqual(['adcb-b']);
       expect(await ids(`SELECT id FROM user_consents`)).toEqual(['uc-b']);
       expect(await ids(`SELECT id FROM email_verification_codes`)).toEqual(['evc-b']);
       expect(await ids(`SELECT id FROM promo_code_redemptions`)).toEqual(['pr-b']);

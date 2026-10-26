@@ -356,6 +356,15 @@ export async function purgeUserAccount(
       sql: `DELETE FROM ad_reward_credits WHERE user_id = ?`,
       args: [userPk],
     });
+    // 광고 시청 승인 세션·SSV 콜백 기록(#141) — 계정 id 를 담는다. 세션은 `users` 를 FK 로 물므로 사람 행보다 먼저 지운다.
+    writes.push({
+      sql: `DELETE FROM ad_reward_sessions WHERE user_id = ?`,
+      args: [userPk],
+    });
+    writes.push({
+      sql: `DELETE FROM ad_reward_callbacks WHERE user_id IN (?, ?)`,
+      args: [userPk, userLoginId],
+    });
     writes.push({
       sql: `DELETE FROM subscriptions WHERE user_id = ?`,
       args: [userPk],
@@ -391,6 +400,11 @@ export async function purgeUserAccount(
     writes.push({
       sql: `DELETE FROM apple_server_notifications WHERE user_id = ?`,
       args: [userPk],
+    });
+    // 아침 소식의 관심 기업(#137). 공시·정책뉴스 캐시는 공용이라 사람과 묶이지 않는다 — 지울 것은 이 표뿐이다.
+    writes.push({
+      sql: `DELETE FROM briefing_interests WHERE user_id IN (?, ?)`,
+      args: [userPk, userLoginId],
     });
 
     writes.push({

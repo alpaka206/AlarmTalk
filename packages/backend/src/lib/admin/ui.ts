@@ -98,22 +98,29 @@ function niceMax(max: number): number {
 /**
  * 날짜별 막대(단일 계열). 계열이 하나라 범례 상자를 두지 않는다 — 제목이 무엇인지 말한다.
  * 막대는 24px 이하·윗끝만 4px 둥글게·칸 사이 2px. 막대마다 호버·키보드(←/→) 툴팁이 있고, 같은 값을 표로도 연다.
+ * 값이 `null` 인 날은 **받지 못한 날**이다 — 막대를 그리지 않고 툴팁·표에 '기록 없음' 이라 쓴다(0 으로 그리지 않는다).
+ * `headExtra`·`footer` 는 부르는 쪽이 이미 이스케이프한 HTML 이다.
  */
 export function columnChart(opts: {
   id: string;
   title: string;
-  points: Array<{ day: string; value: number }>;
+  points: Array<{ day: string; value: number | null }>;
   unit: string;
   note?: string;
+  headExtra?: string;
+  footer?: string;
 }): string {
-  const max = niceMax(Math.max(0, ...opts.points.map((p) => p.value)));
-  const total = opts.points.reduce((s, p) => s + p.value, 0);
-  const peak = opts.points.reduce((best, p) => (p.value > best.value ? p : best), { day: '', value: -1 });
+  const known = opts.points.filter((p): p is { day: string; value: number } => p.value != null);
+  const max = niceMax(Math.max(0, ...known.map((p) => p.value)));
+  const total = known.reduce((s, p) => s + p.value, 0);
+  const peak = known.reduce((best, p) => (p.value > best.value ? p : best), { day: '', value: -1 });
+  const missing = opts.points.length - known.length;
+  const valueText = (v: number | null) => (v == null ? '기록 없음' : `${fmtNum(v)}${opts.unit}`);
   const cols = opts.points
     .map((p, i) => {
-      const pct = max > 0 ? (p.value / max) * 100 : 0;
+      const pct = max > 0 && p.value != null ? (p.value / max) * 100 : 0;
       return `<div class="col" data-i="${i}" data-label="${escapeHtml(fmtDay(p.day))}" data-value="${escapeHtml(
-        `${fmtNum(p.value)}${opts.unit}`,
+        valueText(p.value),
       )}"><span class="col-bar" style="--h:${pct.toFixed(2)}%;--i:${Math.min(i, 40)}"></span></div>`;
     })
     .join('');
@@ -122,17 +129,17 @@ export function columnChart(opts: {
   const rows = opts.points
     .slice()
     .reverse()
-    .map((p) => `<tr><td>${escapeHtml(fmtDay(p.day))}</td><td class="num">${fmtNum(p.value)}${escapeHtml(opts.unit)}</td></tr>`)
+    .map((p) => `<tr><td>${escapeHtml(fmtDay(p.day))}</td><td class="num">${escapeHtml(valueText(p.value))}</td></tr>`)
     .join('');
   return `<section class="panel chart-panel" aria-labelledby="${opts.id}-title">
   <div class="panel-head">
-    <h2 id="${opts.id}-title">${escapeHtml(opts.title)}</h2>
+    <h2 id="${opts.id}-title">${escapeHtml(opts.title)}</h2>${opts.headExtra ?? ''}
     <p class="panel-figure"><span class="figure-sm">${fmtNum(total)}</span><span class="muted">${escapeHtml(opts.unit)} · ${opts.points.length}일</span></p>
   </div>
   <div class="chart" tabindex="0" role="group" aria-label="${escapeHtml(
     `${opts.title}. ${opts.points.length}일 합계 ${fmtNum(total)}${opts.unit}${
       peak.value > 0 ? `, 가장 많은 날 ${fmtDay(peak.day)} ${fmtNum(peak.value)}${opts.unit}` : ''
-    }. 좌우 화살표로 날짜별 값을 들을 수 있어요.`,
+    }${missing > 0 ? `, 기록 없는 날 ${missing}일` : ''}. 좌우 화살표로 날짜별 값을 들을 수 있어요.`,
   )}">
     <div class="chart-grid" aria-hidden="true">
       <span class="tick" style="--y:100%"><i>${fmtNum(max)}</i></span>
@@ -142,6 +149,7 @@ export function columnChart(opts: {
     <div class="cols" style="--n:${opts.points.length}">${cols}</div>
   </div>
   <div class="chart-axis" aria-hidden="true"><span>${escapeHtml(fmtDay(first))}</span><span>${escapeHtml(fmtDay(last))}</span></div>
+  ${opts.footer ?? ''}
   ${opts.note ? `<p class="note">${escapeHtml(opts.note)}</p>` : ''}
   <details class="table-view"><summary>표로 보기</summary>
     <table><thead><tr><th scope="col">날짜</th><th scope="col" class="num">값</th></tr></thead><tbody>${rows}</tbody></table>
@@ -198,10 +206,11 @@ export function emptyState(title: string, body: string, action?: string): string
 
 // ── 레이아웃 ───────────────────────────────────────────────────────────────────
 
-export type NavKey = 'overview' | 'users' | 'push';
+export type NavKey = 'overview' | 'usage' | 'users' | 'push';
 
 const NAV: Array<{ key: NavKey; href: string; label: string }> = [
   { key: 'overview', href: '/admin', label: '개요' },
+  { key: 'usage', href: '/admin/usage', label: '사용 지표' },
   { key: 'users', href: '/admin/users', label: '사용자' },
   { key: 'push', href: '/admin/push', label: '알림 보내기' },
 ];

@@ -7,8 +7,9 @@ import SwiftUI
 ///   1. 프로필 — 이름 + "내 정보 · 앱 설정"
 ///   2. 화면 테마 · 앱 언어
 ///   3. 이용권
-///   4. 회원 탈퇴
-///   5. 앱 버전
+///   4. 아침 소식(로그인했을 때만)
+///   5. 회원 탈퇴
+///   6. 앱 버전
 ///
 /// ⚠ 이 화면은 **라우팅만** 한다. 실제 설정 항목(공휴일 달력·문구 정보·알림 등)은
 /// 프로필 카드가 여는 `SettingsView` 안에 있다 — 여기에 옮겨 오지 말 것.
@@ -21,6 +22,8 @@ struct MenuView: View {
     let onOpenSettings: () -> Void
     /// 이용권 화면 진입.
     let onOpenBilling: () -> Void
+    /// 아침 소식 진입 — 선택 기능이다. 알람 만들기·울림은 이 화면을 거치지 않는다(`docs/spec/morning-briefing.md` §8).
+    var onOpenBriefing: () -> Void = {}
 
     @State private var themeDialogOpen = false
     @State private var deleteConfirming = false
@@ -50,6 +53,14 @@ struct MenuView: View {
                 SettingsValueButton(label: "이용권", action: onOpenBilling)
             }
             .settingsCard(title: nil)
+
+            // 서버가 사람별 관심 기업을 읽으므로 로그인했을 때만 둔다(안드로이드 `MenuTabPanel` 과 같다).
+            if auth.session != nil {
+                VStack(alignment: .leading, spacing: 0) {
+                    SettingsValueButton(label: "아침 소식", action: onOpenBriefing)
+                }
+                .settingsCard(title: nil)
+            }
 
             VStack(alignment: .leading, spacing: 0) {
                 Button {

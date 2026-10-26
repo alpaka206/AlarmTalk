@@ -3347,12 +3347,271 @@ export const migrations: Migration[] = [
     ],
   },
   {
+    // **아침 소식**(관심 기업 공시 + 정책브리핑 정책뉴스, `docs/spec/morning-briefing.md`). 새 표만 만든다 — 읽는 코드는
+    // 같은 배포의 `routes/briefing.ts` 뿐이고, 표가 없는 창(배포 → 마이그레이션)에서는 그 라우트가 500 으로 끝난다
+    // (fail-closed — 쓰다 만 행이 없다).
+    //  - `briefing_corp_codes`: OpenDART 고유번호 **공용** 캐시(상장사만). 사람과 묶지 않는다. 하루 한 번 이하로 바꾼다.
+    //  - `briefing_interests`: 사람 × 관심 기업(최대 3 — 라우트가 통째 교체로 지킨다). **탈퇴 파기가 지운다.**
+    //  - `briefing_items`: 받아 둔 공시·정책뉴스(공용). `content_hash` 가 같으면 다시 쓰지 않는다. 30일 지나면 크론이 지운다.
+    //  - `briefing_fetch_state`: 원천·기업마다 마지막 성공·시도·오류, 요청 한도 대기(`retry_after`), 고유번호 받기 잠금.
+    id: 137,
+    name: 'morning-briefing',
+    statements: [
+      `CREATE TABLE IF NOT EXISTS briefing_corp_codes (
+        corp_code TEXT PRIMARY KEY,
+        corp_name TEXT NOT NULL,
+        stock_code TEXT,
+        modify_date TEXT NOT NULL,
+        refreshed_at TEXT NOT NULL
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_briefing_corp_codes_stock ON briefing_corp_codes (stock_code)`,
+      `CREATE TABLE IF NOT EXISTS briefing_interests (
+        user_id TEXT NOT NULL,
+        corp_code TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        PRIMARY KEY (user_id, corp_code)
+      )`,
+      `CREATE TABLE IF NOT EXISTS briefing_items (
+        source_kind TEXT NOT NULL CHECK (source_kind IN ('opendart', 'policy_news')),
+        source_id TEXT NOT NULL,
+        corp_code TEXT,
+        title TEXT NOT NULL,
+        org_name TEXT,
+        summary TEXT NOT NULL DEFAULT '',
+        remarks TEXT NOT NULL DEFAULT '',
+        flags_json TEXT NOT NULL DEFAULT '{}',
+        published_date TEXT NOT NULL,
+        published_at TEXT,
+        source_url TEXT NOT NULL,
+        content_hash TEXT NOT NULL,
+        fetched_at TEXT NOT NULL,
+        PRIMARY KEY (source_kind, source_id)
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_briefing_items_corp
+        ON briefing_items (source_kind, corp_code, published_date)`,
+      `CREATE INDEX IF NOT EXISTS idx_briefing_items_published
+        ON briefing_items (source_kind, published_date)`,
+      `CREATE TABLE IF NOT EXISTS briefing_fetch_state (
+        scope_key TEXT PRIMARY KEY,
+        last_success_at TEXT,
+        last_attempt_at TEXT,
+        last_error_code TEXT,
+        window_end TEXT,
+        complete INTEGER NOT NULL DEFAULT 0,
+        retry_after TEXT,
+        lock_until TEXT
+      )`,
+    ],
+  },
+  {
+    // **스토어 다운로드 수**(2026-10-26, 관리자 콘솔 2단계 — `docs/spec/admin-console.md` 「스토어 다운로드」).
+    // 크론이 Play 콘솔 통계 보고서와 App Store Connect 분석 보고서를 하루 여러 번 받아 적는다(`lib/admin/store-downloads.ts`).
+    //  - `store_download_daily`: 플랫폼 × 보고서 날짜 × 지표. 다시 받으면 덮는다(멱등). 날짜는 스토어가 하루로 묶어 준
+    //    날짜라 한국 시각으로 다시 자르지 않는다.
+    //  - `store_download_sync`: 플랫폼마다 마지막 시도·성공·오류·안내 — 화면이 '연결은 됐는데 왜 비었는지' 를 말한다.
+    //  - `store_report_instances`: 이미 받은 App Store 하루치 보고서 — 같은 것을 다시 받지 않게.
+    // 세 표 모두 사람을 가리키는 값이 없다(스토어가 모아 준 숫자뿐) — 탈퇴 파기 대상이 아니다.
+    id: 138,
+    name: 'store-downloads',
+    statements: [
+      `CREATE TABLE IF NOT EXISTS store_download_daily (
+        platform TEXT NOT NULL CHECK (platform IN ('android', 'ios')),
+        day TEXT NOT NULL,
+        metric TEXT NOT NULL,
+        value INTEGER NOT NULL,
+        fetched_at TEXT NOT NULL DEFAULT (datetime('now')),
+        source_date TEXT,
+        PRIMARY KEY (platform, day, metric)
+      )`,
+      `CREATE TABLE IF NOT EXISTS store_download_sync (
+        platform TEXT PRIMARY KEY CHECK (platform IN ('android', 'ios')),
+        last_attempt_at TEXT,
+        last_success_at TEXT,
+        last_error TEXT,
+        note TEXT
+      )`,
+      `CREATE TABLE IF NOT EXISTS store_report_instances (
+        instance_id TEXT PRIMARY KEY,
+        report TEXT NOT NULL,
+        processing_date TEXT NOT NULL,
+        ingested_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_store_report_instances_date ON store_report_instances (processing_date)`,
+    ],
+  },
+  {
+    // **렌더 지문과 합성 사용량 장부**(2026-10-26, `docs/spec/tts-render-and-budget.md`).
+    //  - `generated_audio_assets.render_fingerprint`·`render_revision`: 그 소리를 만든 설정 전부의 지문과 전역 세대
+    //    (`lib/render-fingerprint.ts`). 이 마이그레이션 전에 만든 행은 NULL(설정 미상)이다 — 채워 넣지 않는다(무엇으로
+    //    만들었는지 행만 보고는 알 수 없다). 다시 구울 목록은 NULL 을 '지문 이전' 으로 따로 센다.
+    //  - `generated_audio_assets.logical_key`: 직접 입력의 **논리 결과**(누구의·어느 목소리 세대·언어·문구). 같은 논리
+    //    결과를 서비스가 새 설정으로 다시 구우면 세지 않는다. 옛 행은 NULL 이고, 그 행이 캐시로 다시 쓰일 때 채운다.
+    //  - `tts_synthesis_usage`: 요청 종류 × 결과 × KST 날짜의 합성 횟수·글자·지연. 사람을 가리키는 값이 없다.
+    // 새 칸을 쓰는 쓰기(원장 INSERT)는 칸이 없으면 트랜잭션째 롤백된다(배포 창 fail-closed — CLAUDE.md).
+    id: 139,
+    name: 'render-fingerprint-and-tts-usage',
+    statements: [
+      `ALTER TABLE generated_audio_assets ADD COLUMN render_fingerprint TEXT`,
+      `ALTER TABLE generated_audio_assets ADD COLUMN render_revision TEXT`,
+      `ALTER TABLE generated_audio_assets ADD COLUMN logical_key TEXT`,
+      `CREATE INDEX IF NOT EXISTS idx_generated_audio_assets_logical
+        ON generated_audio_assets (user_id, logical_key)`,
+      `CREATE INDEX IF NOT EXISTS idx_generated_audio_assets_revision
+        ON generated_audio_assets (render_revision)`,
+      `CREATE TABLE IF NOT EXISTS tts_synthesis_usage (
+        usage_day TEXT NOT NULL,
+        request_kind TEXT NOT NULL,
+        outcome TEXT NOT NULL CHECK (outcome IN ('success', 'failure')),
+        request_count INTEGER NOT NULL DEFAULT 0,
+        retry_count INTEGER NOT NULL DEFAULT 0,
+        character_count INTEGER NOT NULL DEFAULT 0,
+        latency_ms_total INTEGER NOT NULL DEFAULT 0,
+        latency_ms_max INTEGER NOT NULL DEFAULT 0,
+        updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+        PRIMARY KEY (usage_day, request_kind, outcome)
+      )`,
+      // dev 월 예산에서 합성 직전에 잡아 두는 몫(`lib/tts-budget.ts` 의 `holdDevBudget`). 사람과 묶지 않는다.
+      `CREATE TABLE IF NOT EXISTS tts_dev_budget_holds (
+        id TEXT PRIMARY KEY,
+        usage_month TEXT NOT NULL,
+        characters INTEGER NOT NULL,
+        created_at TEXT NOT NULL
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_tts_dev_budget_holds_month ON tts_dev_budget_holds (usage_month, created_at)`,
+    ],
+  },
+  {
     // **날짜 지정 알람(한 번)**(2026-10-26, `docs/spec/alarm-lifecycle.md` §4). 기기가 올린 알람 사본에 그 날짜
     // (`YYYY-MM-DD`)를 적는다. 시간대는 이미 있는 `timezone` 칸에 사용자가 확인한 값이 실린다. NULL = 날짜 없는 알람
     // (지금까지의 모든 행). 136~139 는 다른 작업이 쓰고 있어 건너뛴다 — 러너는 id 순서가 아니라 기록으로 판정한다.
     id: 140,
     name: 'alarm-target-date',
     statements: [`ALTER TABLE alarms ADD COLUMN target_date TEXT`],
+  },
+  {
+    // **광고 시청 승인 세션**(2026-10-26, `docs/spec/ad-rewards.md` §3). 광고를 띄우기 전에 서버가 승인 id 를 만들고 그 달의
+    // 획득 자리 하나를 잡아 둔다 — 한 계정에 열린 세션(준비·시작)은 하나뿐이라 두 기기가 마지막 자리를 함께 쓰지 못한다
+    // (부분 고유 인덱스). 앱은 그 id 를 SSV 의 `custom_data` 로 싣고, 콜백은 계정·광고 단위·승인 id 를 대조해 승인 하나에
+    // 보상 한 번만 적립한다(`ad_reward_credits.session_id` 고유). 콜백은 정산 전에 `ad_reward_callbacks` 에 먼저 적는다
+    // — 적은 뒤에만 200 을 돌려주고, 정산이 실패하면 cron 이 다시 한다. 문구·광고 내용은 적지 않는다(식별자만).
+    // 사람과 묶이는 표라 탈퇴 파기가 지운다(`lib/account-deletion.ts`).
+    id: 141,
+    name: 'ad-reward-sessions',
+    statements: [
+      `CREATE TABLE IF NOT EXISTS ad_reward_sessions (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL REFERENCES users(id),
+        platform TEXT NOT NULL CHECK (platform IN ('android', 'ios')),
+        ad_unit TEXT NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('prepared', 'started', 'pending', 'unknown', 'closed', 'released', 'granted')),
+        reserved_month TEXT NOT NULL,
+        release_reason TEXT,
+        client_outcome TEXT,
+        transaction_id TEXT UNIQUE,
+        granted_month TEXT,
+        created_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        started_at TEXT,
+        closed_at TEXT,
+        settled_at TEXT
+      )`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_ad_reward_sessions_one_open
+        ON ad_reward_sessions (user_id) WHERE status IN ('prepared', 'started')`,
+      `CREATE INDEX IF NOT EXISTS idx_ad_reward_sessions_user_month
+        ON ad_reward_sessions (user_id, reserved_month, status)`,
+      `CREATE INDEX IF NOT EXISTS idx_ad_reward_sessions_status_created
+        ON ad_reward_sessions (status, created_at)`,
+      `CREATE TABLE IF NOT EXISTS ad_reward_callbacks (
+        transaction_id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        ad_unit TEXT NOT NULL,
+        session_id TEXT,
+        rewarded_at TEXT,
+        reward_month TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'received' CHECK (status IN ('received', 'settled')),
+        outcome TEXT,
+        attempts INTEGER NOT NULL DEFAULT 1,
+        received_at TEXT NOT NULL,
+        settled_at TEXT
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_ad_reward_callbacks_user ON ad_reward_callbacks (user_id)`,
+      `CREATE INDEX IF NOT EXISTS idx_ad_reward_callbacks_status ON ad_reward_callbacks (status, received_at)`,
+      `ALTER TABLE ad_reward_credits ADD COLUMN session_id TEXT`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_ad_reward_credits_session
+        ON ad_reward_credits (session_id) WHERE session_id IS NOT NULL`,
+    ],
+  },
+  {
+    // **사용 기록 2판의 정해진 칸**(2026-10-26, `docs/spec/usage-events.md` §7). 지시서 10장 — 준비시간·첫 경험·
+    // 저장·직접 입력·광고·결제 계측. 큰 JSON 을 `detail` 에 끼우지 않고 칸마다 열을 하나씩 둔다(`UsageEventPropsSchema`
+    // 와 한 쌍 — 칸을 늘리면 둘 다). 옛 행(1판)은 전부 NULL 이고 `schema_version` NULL 은 1판이다.
+    // `entitlement_source` 는 앱이 아니라 서버가 **받는 순간** 계정 상태로 찍는다(paid/trial/admin/promo/free).
+    // 문구 원문·관심기업·기사 원문을 담을 칸은 없다. 보관은 기존 행과 같이 1년(`USAGE_EVENT_RETENTION_DAYS`).
+    //
+    // ⚠ 배포 직후 창: 새 쓰기 경로(`routes/events.ts`)는 이 열을 **언제나** 넣으므로 열이 없으면 INSERT 가 던져
+    //   500 이다 — 앱은 큐를 지우지 않고 다시 보낸다(fail-closed, 잃는 것 없음). 옛 열만 넣는 갈래를 두지 않는다.
+    id: 142,
+    name: 'usage-events-v2-fields',
+    statements: [
+      `ALTER TABLE usage_events ADD COLUMN schema_version INTEGER`,
+      `ALTER TABLE usage_events ADD COLUMN platform TEXT`,
+      `ALTER TABLE usage_events ADD COLUMN app_version TEXT`,
+      `ALTER TABLE usage_events ADD COLUMN feature_version TEXT`,
+      `ALTER TABLE usage_events ADD COLUMN attempt_id TEXT`,
+      `ALTER TABLE usage_events ADD COLUMN entitlement_source TEXT`,
+      `ALTER TABLE usage_events ADD COLUMN scope TEXT`,
+      `ALTER TABLE usage_events ADD COLUMN language TEXT`,
+      `ALTER TABLE usage_events ADD COLUMN revision TEXT`,
+      `ALTER TABLE usage_events ADD COLUMN cache_state TEXT`,
+      `ALTER TABLE usage_events ADD COLUMN target_count INTEGER`,
+      `ALTER TABLE usage_events ADD COLUMN completed_count INTEGER`,
+      `ALTER TABLE usage_events ADD COLUMN bytes INTEGER`,
+      `ALTER TABLE usage_events ADD COLUMN duration_ms INTEGER`,
+      `ALTER TABLE usage_events ADD COLUMN error_code TEXT`,
+      `ALTER TABLE usage_events ADD COLUMN outcome TEXT`,
+      `ALTER TABLE usage_events ADD COLUMN reason TEXT`,
+      `ALTER TABLE usage_events ADD COLUMN method TEXT`,
+      `ALTER TABLE usage_events ADD COLUMN step TEXT`,
+      `ALTER TABLE usage_events ADD COLUMN pack_id TEXT`,
+      `ALTER TABLE usage_events ADD COLUMN is_first INTEGER`,
+      `ALTER TABLE usage_events ADD COLUMN prepared INTEGER`,
+      `ALTER TABLE usage_events ADD COLUMN reuse_location TEXT`,
+      `ALTER TABLE usage_events ADD COLUMN charged_source TEXT`,
+      `ALTER TABLE usage_events ADD COLUMN usage_month TEXT`,
+      `ALTER TABLE usage_events ADD COLUMN result_id TEXT`,
+      `ALTER TABLE usage_events ADD COLUMN request_id TEXT`,
+      `ALTER TABLE usage_events ADD COLUMN char_count INTEGER`,
+      `ALTER TABLE usage_events ADD COLUMN content_mode TEXT`,
+      `ALTER TABLE usage_events ADD COLUMN surface TEXT`,
+      `ALTER TABLE usage_events ADD COLUMN product_id TEXT`,
+      `ALTER TABLE usage_events ADD COLUMN store_offer TEXT`,
+      `ALTER TABLE usage_events ADD COLUMN from_plan TEXT`,
+      `ALTER TABLE usage_events ADD COLUMN to_plan TEXT`,
+      `CREATE INDEX IF NOT EXISTS idx_usage_events_attempt ON usage_events (attempt_id) WHERE attempt_id IS NOT NULL`,
+      `CREATE INDEX IF NOT EXISTS idx_usage_events_user_type_time ON usage_events (user_id, type, occurred_at)`,
+    ],
+  },
+  {
+    // **응원 변주·짧은 기상 인사**(2026-10-26, v1.3 W09 — `docs/spec/voice-and-message.md` §5-4).
+    //  - `stock_content_releases`: 환경마다 공개한 문구 묶음(`cheer_v2`·`wake_v1`). 게시 스크립트가 4목소리 × 3언어가 다
+    //    올라간 것을 확인한 뒤 적고(`publish:stock -- --release`), 매니페스트·`expected_variants`·클론 보충이 한 요청에서
+    //    같이 읽는다. 사람과 묶이지 않는 운영 표라 탈퇴 파기 대상이 아니다. 되돌리지 않는다.
+    //  - `alarms.cheer_mode`·`cheer_pinned_content_id`: 응원 테마의 '다양하게 / 이 문구로 고정' 저장값(서버 사본).
+    //    값이 왔을 때만 쓴다 — 없는 요청은 지금과 같은 행을 남긴다.
+    //  - `voice_prerender_queue.content_sets`: 그 클론에 요청된 보충 묶음(JSON 배열, 남긴다 — 교체 회차가 같이 굽는다).
+    //    `supplement`: 이번 pending 회차가 보충인가 — 우선순위 맨 뒤, `prerender-status` 는 done 으로 답한다.
+    id: 143,
+    name: 'cheer-variants-and-stock-content-releases',
+    statements: [
+      `CREATE TABLE IF NOT EXISTS stock_content_releases (
+        content_set TEXT PRIMARY KEY,
+        released_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )`,
+      `ALTER TABLE alarms ADD COLUMN cheer_mode TEXT`,
+      `ALTER TABLE alarms ADD COLUMN cheer_pinned_content_id TEXT`,
+      `ALTER TABLE voice_prerender_queue ADD COLUMN content_sets TEXT`,
+      `ALTER TABLE voice_prerender_queue ADD COLUMN supplement INTEGER NOT NULL DEFAULT 0`,
+    ],
   },
 ];
 // Errors that mean the statement was already applied — safe to ignore so

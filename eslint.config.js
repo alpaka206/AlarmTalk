@@ -46,7 +46,7 @@ export default tseslint.config(
   {
     // CLI 운영 스크립트·빌드 스크립트는 stdout 출력이 본업이라 console 사용을 허용한다.
     // (메인 rules 블록 뒤에 와야 no-console 비활성이 적용된다.)
-    files: ['packages/backend/scripts/**/*.ts', 'apps/landing/scripts/**/*.mjs'],
+    files: ['packages/backend/scripts/**/*.ts', 'packages/voice/text-quality/cli.ts', 'apps/landing/scripts/**/*.mjs'],
     rules: { 'no-console': 'off' },
   },
 

@@ -50,6 +50,10 @@ struct AlarmEditDraft: Equatable {
     var voiceFortuneBirthTime: String
     var voiceRepeat: Bool
     var voiceVolumePercent: Int
+    /// 응원 테마의 다양하게 / 이 문구로 고정(스펙 voice-and-message §5-4). 응원이 아니면 저장 때 버린다(`AlarmEditorSheet.saveFlow`).
+    /// 새 알람은 다양하게로 연다 — 직전 선택으로 잇지 않는다. 안드로이드 `AlarmEditorState.cheerMode` 미러.
+    var cheerMode: CheerMode = .vary
+    var cheerPinnedContentId: String?
 
     // MARK: - 신규 생성 default
 
@@ -112,6 +116,8 @@ struct AlarmEditDraft: Equatable {
         // 화면에 컨트롤이 없어 사용자가 되돌릴 방법이 없기 때문이다.
         self.voiceRepeat = true
         self.voiceVolumePercent = Self.normalizedVoiceVolume(record.voiceVolumePercent)
+        self.cheerMode = CheerMode.normalize(record.cheerMode)
+        self.cheerPinnedContentId = record.cheerPinnedContentId
     }
 
     init(
@@ -519,6 +525,9 @@ struct AlarmEditDraft: Equatable {
         carryOverNonEditableFields(from: existing, to: &record)
         record.targetDate = targetDate
         record.targetTimezone = isDated ? (targetTimezone ?? TimeZone.current.identifier) : nil
+        // 응원 저장값 — 테마가 응원이 아니게 되면 저장 경로(`AlarmEditorSheet.saveFlow`)가 비운다.
+        record.cheerMode = cheerMode.rawValue
+        record.cheerPinnedContentId = cheerMode == .pinned ? cheerPinnedContentId : nil
         return record
     }
 
@@ -559,6 +568,9 @@ struct AlarmEditDraft: Equatable {
         record.bucketId = existing.bucketId
         record.bucketClipKeys = existing.bucketClipKeys
         record.bucketRotationIndex = existing.bucketRotationIndex
+        // 응원 — 기기 로컬 이력·선택은 행이 들고 간다(스펙 voice-and-message §5-4). 같은 회차면 저장이 그대로 쓴다.
+        record.cheerHistory = existing.cheerHistory
+        record.cheerSelection = existing.cheerSelection
     }
 
     private static func normalizedVoiceVolume(_ value: Int) -> Int {

@@ -1,5 +1,5 @@
 import { UUID_RE } from '../lib/validate';
-import { isAlarmTargetDate, type ErrorCode } from '@alarmtalk/shared';
+import { CHEER_CONTENT_IDS, CHEER_MODES, isAlarmTargetDate, type CheerMode, type ErrorCode } from '@alarmtalk/shared';
 import {
   FREE_BUCKET_CATEGORIES,
   CLONE_PRERENDER_CATEGORIES,
@@ -104,7 +104,26 @@ export function validateAlarmFields(body: {
   bucket_id?: string | null;
   target_date?: string | null;
   timezone?: string | null;
+  cheer_mode?: unknown;
+  cheer_pinned_content_id?: unknown;
 }): FieldError | null {
+  // 응원 테마의 '다양하게 / 이 문구로 고정'(스펙 voice-and-message §5-4). 둘 다 선택 필드이고 null 은 '없음'(= 다양하게).
+  // 고정 문구는 카탈로그의 응원 ID 여야 한다(옛 응원 포함 — 옛 알람이 고정해 둔 값). 길이·형식은 ID 집합이 막는다.
+  if (
+    body.cheer_mode !== undefined &&
+    body.cheer_mode !== null &&
+    !CHEER_MODES.includes(body.cheer_mode as CheerMode)
+  ) {
+    return { error: `cheer_mode must be one of: ${CHEER_MODES.join(', ')}`, error_code: 'INVALID_CHEER_SETTING' };
+  }
+  if (
+    body.cheer_pinned_content_id !== undefined &&
+    body.cheer_pinned_content_id !== null &&
+    (typeof body.cheer_pinned_content_id !== 'string' || !CHEER_CONTENT_IDS.has(body.cheer_pinned_content_id))
+  ) {
+    return { error: 'Unknown cheer_pinned_content_id', error_code: 'INVALID_CHEER_SETTING' };
+  }
+
   if (body.message_id != null && !UUID_RE.test(body.message_id)) {
     return { error: 'Invalid message_id format', error_code: 'INVALID_MESSAGE_ID' };
   }
@@ -202,6 +221,24 @@ export function isValidIanaTimezone(value: string): boolean {
   } catch {
     return false;
   }
+}
+
+/**
+ * 응원 저장값 — 본문에 온 것만 고른다(`undefined` = 건드리지 않음). 검증은 `validateAlarmFields` 가 먼저 한다.
+ *
+ * 쓰기는 값이 왔을 때만 칼럼(#143)을 쓰고(없으면 지금과 같은 행), 값이 왔는데 칼럼이 없으면 통째로 실패한다(fail-closed —
+ * CLAUDE.md 「배포가 마이그레이션보다 먼저 돈다」).
+ */
+export function cheerFieldsOf(body: {
+  cheer_mode?: unknown;
+  cheer_pinned_content_id?: unknown;
+}): { column: 'cheer_mode' | 'cheer_pinned_content_id'; value: string | null }[] {
+  const out: { column: 'cheer_mode' | 'cheer_pinned_content_id'; value: string | null }[] = [];
+  if (body.cheer_mode !== undefined) out.push({ column: 'cheer_mode', value: (body.cheer_mode as string | null) ?? null });
+  if (body.cheer_pinned_content_id !== undefined) {
+    out.push({ column: 'cheer_pinned_content_id', value: (body.cheer_pinned_content_id as string | null) ?? null });
+  }
+  return out;
 }
 
 /**

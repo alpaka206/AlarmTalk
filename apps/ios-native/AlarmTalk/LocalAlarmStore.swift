@@ -431,6 +431,46 @@ final class LocalAlarmStore: ObservableObject {
     /// 준비창 갱신(`WeatherVariantRefreshService.refreshDue`)이 새 날짜로 다시 받아 재예약한다.
     /// ⚠ 여기서 **다시 예약하지는 않는다** — 소리 지문이 바뀌므로 정지 뒤 리컨사일러
     /// (`AlarmAppContext.reconcileAfterStop`)·복구 경로가 새 소리로 건다.
+    /// **응원 — 다음 회차의 문구를 준비한다**(스펙 voice-and-message §5-4). 관측된 해제(`markStopped`)와 지나간 회차를 넘기는
+    /// 복구(`prepareForScheduleRecovery`)가 부른다. 디스크(매니페스트·캐시)만 읽는다. 다시 예약하지는 않는다 — 소리 지문이
+    /// 바뀌므로 그 뒤의 재조정이 새 소리로 건다. 안드로이드는 `AlarmRepository.dismiss` 가 같은 일을 한다.
+    static func prepareCheerForNextOccurrence(_ record: inout LocalAlarmRecord, nextFireAtMillis: Int64) {
+        guard record.bucketId == CheerVariety.bucketID else { return }
+        record = CheerVariety.prepared(
+            record,
+            occurrence: nextFireAtMillis,
+            candidates: CheerVariety.candidates(for: record, audioCache: .shared),
+            explicitChange: false
+        )
+    }
+
+    /// **앱 복귀 때 응원을 준비한다**(스펙 voice-and-message §5-4). 켜진 응원 알람 중 이번 회차(`fireAtMillis`)의 선택이
+    /// 아직 없는 것 — 그 사이 새 응원이 받아졌거나(공개·보충) 앞 회차가 해제 관측 없이 지나간 경우, 또는 목소리가 바뀌어
+    /// (무료 강등) 고른 것이 옛 목소리의 것인 경우 — 을 골라 둔다.
+    /// 울리는 중·스누즈 중이면 건너뛴다(같은 회차다). 바뀐 알람 id 를 돌려준다 — 호출자가 재조정으로 다시 예약한다.
+    @discardableResult
+    func prepareCheerSelections(nowMillis: Int64 = Int64(Date().timeIntervalSince1970 * 1000)) -> [String] {
+        var changed: [String] = []
+        for index in alarms.indices {
+            let record = alarms[index]
+            guard record.enabled, record.bucketId == CheerVariety.bucketID, record.fireAtMillis > nowMillis,
+                  record.runtimeStateEnum != .ringing, record.runtimeStateEnum != .snoozed,
+                  CheerVariety.needsPreparation(record) else { continue }
+            let next = CheerVariety.prepared(
+                record,
+                occurrence: record.fireAtMillis,
+                candidates: CheerVariety.candidates(for: record, audioCache: .shared),
+                explicitChange: false
+            )
+            if next.cheerSelection != record.cheerSelection {
+                alarms[index] = next
+                changed.append(record.id)
+            }
+        }
+        if !changed.isEmpty { persist() }
+        return changed
+    }
+
     static func invalidateWeatherVariantIfFireDateChanges(
         _ record: inout LocalAlarmRecord,
         nextFireAtMillis: Int64,
@@ -467,6 +507,7 @@ final class LocalAlarmStore: ObservableObject {
             // **덮기 전에** 부른다(`invalidateWeatherVariantIfFireDateChanges` 주석).
             Self.invalidateWeatherVariantIfFireDateChanges(&alarms[index], nextFireAtMillis: nextFireAt)
             alarms[index].fireAtMillis = nextFireAt
+            Self.prepareCheerForNextOccurrence(&alarms[index], nextFireAtMillis: nextFireAt)
             alarms[index].state = AlarmRuntimeState.armed.rawValue
             alarms[index].enabled = true
             alarms[index].snoozeCount = 0
@@ -536,6 +577,8 @@ final class LocalAlarmStore: ObservableObject {
                 // 정지 기록 없이 지나간 회차를 넘길 때도 같다 — 날짜가 바뀌면 조건을 버린다.
                 Self.invalidateWeatherVariantIfFireDateChanges(&alarms[index], nextFireAtMillis: nextFireAt)
                 alarms[index].fireAtMillis = nextFireAt
+                // iOS 는 AlarmKit 이 우리 코드 없이 울리므로 지나간 회차는 울렸을 수 있다 — 응원은 다음 회차를 준비한다(스펙 §5-4).
+                Self.prepareCheerForNextOccurrence(&alarms[index], nextFireAtMillis: nextFireAt)
                 alarms[index].state = AlarmRuntimeState.armed.rawValue
                 alarms[index].enabled = true
                 alarms[index].snoozeCount = 0
