@@ -116,7 +116,7 @@ const CountSchema = z.number().int().min(0).max(100_000);
 export const ENTITLEMENT_SOURCES = ['paid', 'trial', 'admin', 'promo', 'free'] as const;
 export type EntitlementSource = (typeof ENTITLEMENT_SOURCES)[number];
 
-/** 직접 입력 제작이 무엇으로 정산됐나 — 기본 제공분 / 광고 보상 / 차감 없음(유료 월 한도 안·재사용·실패). */
+/** 직접 입력 제작이 무엇으로 정산됐나 — 월 기본분(무료 3·유료 30) / 광고 보상 / 세지 않음(재사용·실패 환불). 서버 응답 값 그대로. */
 export const CHARGED_SOURCES = ['base', 'ad', 'none'] as const;
 
 /** 준비 범위 — 고른 목소리 하나 / 기본 목소리 전체 / 테마 클립 묶음 / 문구 클립 하나. */

@@ -257,9 +257,10 @@ v1.3 지시서 10장. 1판(위 §1~§6)은 그대로 두고 **종류와 칸을 �
   ⚠ 서버의 구독 행에는 아직 스토어 무료 체험 구간 표식이 없어 **`trial` 은 찍히지 않고 체험 구독은 `paid` 로 섞인다.**
   체험과 결제는 `store_purchase_verified` 의 `store_offer`(앱이 스토어에서 읽은 조건)로 가른다. 표식이 생기면
   `lib/usage-entitlement.ts` 에 갈래 하나를 더한다. 며칠 밀린 배치는 '받은 시각의 권한' 이다.
-- 제작은 `charged_source` = `base`(기본 제공분)/`ad`(광고 보상)/`none`(유료 월 한도 안·재사용·실패)과 **실제 원래 사용월**
-  (`usage_month` — 서버가 차감한 달. 월 경계를 넘긴 재시도도 처음 달), `result_id`·`request_id` 를 함께 적어 결과와 요청을
-  내부에서 잇는다. 문구 원문은 싣지 않고 `char_count` 만 남긴다.
+- 제작은 `charged_source` = `base`(월 기본분 — 무료 3·유료 30)/`ad`(광고 보상)/`none`(세지 않음 — 재사용·실패 환불)과 **실제 원래
+  사용월**(`usage_month` — 서버가 기본분을 차감한 KST 달, `POST /tts/generate` 응답의 `usage_month`. 월 경계를 넘긴 재시도도 처음 달.
+  광고 보상은 비운다), `result_id`·`request_id` 를 함께 적어 결과와 요청을 내부에서 잇는다. 두 값 다 서버 응답을 그대로 옮기고 앱이 지어내지
+  않는다 — 연결이 끊겨 셌는지 모르면 비운다. 문구 원문은 싣지 않고 `char_count` 만 남긴다.
 
 ### 7.3 한 번만, 정확한 시간으로
 
@@ -268,7 +269,9 @@ v1.3 지시서 10장. 1판(위 §1~§6)은 그대로 두고 **종류와 칸을 �
   시계를 돌린 구간에서 음수·거대값이 나온다.
 - 시작·완료·실패는 같은 `attempt_id` 를 쓴다. **앱을 다시 켜면 새 시도다** — 이전의 미완료 시작은 실패로 세지 않는다
   (관리자 화면은 '끝나지 않은 시작' 으로 따로 센다). 완료·실패도 시작의 `cache_state` 를 그대로 싣는다 — 이미 다 있던
-  시도(`warm`)는 대기시간에서 뺀다.
+  시도(`warm`)는 대기시간에서 뺀다. 지금 두 앱은 **받을 것이 없는 회차를 아예 적지 않아**(복귀마다 도는 보충이 기록을 쌓지 않게)
+  `warm` 은 사실상 나오지 않는다. 매니페스트를 받기 전에 실패하면 대상을 몰라 적지 않고, 매니페스트에 판 값이 없어 `revision` 은
+  아직 비어 있다.
 - **준비 시작 → 알람 저장의 차이는 다운로드 대기시간이 아니다** — 사이에 사용자가 고르는 시간이 섞인다. 대기시간은 작업이 잰
   `duration_ms` 만 쓴다.
 - 울림 경로는 1판 그대로 **로컬 큐에 적기만** 한다(§2). 2판 종류 중 울림 경로에서 적는 것은 없다.
@@ -333,7 +336,18 @@ v1.3 지시서 10장. 1판(위 §1~§6)은 그대로 두고 **종류와 칸을 �
 | 미래 시각의 기록 제외 | — (2xx 라 큐를 비운다) | 같음 | `routes/events.ts`의 원본 발생 시각 필터(`receivedAtMs` 이하), 통과 뒤 UTC 정규화 — `usage-events.test.ts` |
 | 보관 기간 | — | — | `index.ts` 의 `USAGE_EVENT_RETENTION_DAYS` |
 | 계정 파기 시 삭제 | — | — | `lib/account-deletion.ts` 의 `purgeUserAccount` |
-| 2판 종류·칸 | (7.1 표 — 안드로이드 행은 아래) | (같음) | `packages/shared/src/schemas/usage-event.ts` 의 `USAGE_EVENT_V2_TYPES`·`UsageEventPropsSchema` |
+| 2판 종류·칸 | `data/UsageEventRecorder.kt` 의 `UsageEvents`, `data/UsageEventProps.kt`(`sanitized` — 서버 모양에 안 맞는 칸만 비운다) | `UsageEventQueue.swift` 의 `UsageEventType`·`UsageEventProps`(`sanitized`) | `packages/shared/src/schemas/usage-event.ts` 의 `USAGE_EVENT_V2_TYPES`·`UsageEventPropsSchema` |
+| 2판 로컬 큐·공통 필드 | `data/UsageEventEntity.kt`(Room 29 — `MIGRATION_28_29`, 옛 행은 1판), `UsageEventRecorder.record`(schemaVersion 2·versionCode) | `UsageEventQueue.record`(옛 큐 파일은 그대로 디코드, CFBundleVersion), `UsageEventContract` | — |
+| 2판 전송 | `network/UsageEventApi.kt` 의 `UsageEventPayload`, `sync/UsageEventUploadWorker.kt` | `AlarmTalkAPI.swift` 의 사용 기록 Payload(1판 기록은 2판 키 없음) | `routes/events.ts` |
+| 샘플 재생 시작·끝까지 | `data/UsageSignals.kt` 의 `SamplePlayback` ← `ui/onboarding/VoiceOnboardingPreviewState.kt` 의 `previewVoice`, `ui/voices/VoiceProfileManagementPanel.kt` 의 `playGreeting`·`playGreetingClip` | `VoiceStudioViewModel.previewGreeting` → `trackSamplePlayback`(끝은 `AudioPreviewPlayer.onPlayedToEnd`) | — |
+| 로그인 결과 | `ui/main/MainViewModelAuthActions.kt` 의 `recordAuthSuccess`(세션 저장 뒤) | `AuthViewModel.adoptSignedInSession` | — |
+| 첫 경험 단계 | `ui/main/MainViewModel.kt` 의 `skipVoiceSetup`·`completeVoiceSetupIfDownloaded` | `RootView.completeVoiceSetup`·`skipVoiceSetup` → `recordOnboardingStep` | — |
+| 목소리 선택 | `ui/editor/VoiceAudioCard.kt` 의 `applyVoiceSelection` → `UsageSignals.voiceSelected` | `AlarmEditorSheet.commitVoiceSelection` → `recordVoiceSelected` | — |
+| 음성 준비(작업 소유자 한 곳) | 기본 목소리 전체 `sync/StockClipPrefetchWorker.kt` 의 `runWork`, 목소리 하나 `ui/main/MainViewModelVoiceActions.kt` 의 `cacheVoiceClips` | `StockClipPrefetcher.start` 의 `PreparationReport`(`recordStartIfNeeded`·`recordEnd`) | — |
+| 저장 시도·막힘·준비 완료 | `data/UsageSignals.kt` 의 `AlarmSaveAttempts` ← `ui/editor/AlarmEditorScreen.kt`(`onSave`·`showSaveBlockAlert`·`saveEditor`), 준비 완료는 `MainViewModelAlarmActions.recordAlarmReadyIfReady` → `AlarmRepository.isReadyToRing`(`AlarmScheduler.isScheduled` + 파일) | `AlarmEditorSheet.saveFlow` 의 `beginSaveAttempt`·`recordSaveBlocked`, `finishScheduling` 의 `recordAlarmReadyIfComplete` | — |
+| 직접 입력 재사용·생성 결과 | 기기 `AlarmEditorScreen.kt` 의 `manualAudioReuse` `onFound`, 서버·결과 `UsageSignals.recordManualGenerationResult`(실패는 `startGeneration` 의 `onFailure`) | 기기 `VoiceStudioViewModel.recordManualLocalReuse`, 서버·결과 `recordManualGenerationAnswer`·`recordManualGenerationFailure` | `routes/tts.ts` 응답의 `cache_hit`·`charged_source`·`usage_month` |
+| 광고 보상 | `data/UsageSignals.kt` 의 `AdRewardAttempts` ← 편집기 플랜 게이트·`AlarmEditorScreen.watchRewardedAd`(지급은 서버 적립을 확인했을 때만) | — (광고 보상 흐름 없음, 종류만) | — |
+| 결제 화면·구매 확인·플랜 변경 | `ui/alarms/AlarmListScreen.kt`(이용권 탭)·편집기 플랜 게이트, `MainViewModelBillingActions.recordStorePurchaseVerified`(`store_offer` 는 `PlayBillingManager.launchPurchase` 가 고른 오퍼), `MainViewModelAuthActions.refreshAppSessionNow` | `BillingPanel` 의 `.onAppear`, `SubscriptionManager.purchase` → `recordPurchaseVerified`(`transaction.offer`), `AuthViewModel.persistSession` → `recordPlanChangeIfNeeded` | — |
 | 2판 열 | — | — | 마이그레이션 #142(`usage-events-v2-fields`), `routes/events.ts` 의 `PROP_COLUMNS` — `usage-events.test.ts` 「2판」 |
 | 권한 출처(서버가 찍음) | — | — | `lib/usage-entitlement.ts` 의 `loadEntitlementSource` — `admin-usage-metrics.test.ts` 「권한 출처」 |
 | 고지 전이면 1판으로 줄이거나 버림 | — (2xx 라 큐를 비운다) | 같음 | `lib/consent.ts` 의 `USAGE_EVENT_DETAIL_MIN_PRIVACY_VERSION`·`usageEventDetailConsentSince` → `routes/events.ts` 의 `toV1` — `consent.test.ts`·`usage-events.test.ts` |

@@ -1302,6 +1302,7 @@ final class VoiceStudioViewModel: ObservableObject {
                 durationMs: UsageEventContract.elapsedMs(since: track.startedAt),
                 outcome: .success,
                 chargedSource: response.chargedSource.flatMap(UsageEventProps.ChargedSource.init(rawValue:)),
+                usageMonth: response.usageMonth,
                 resultID: response.messageId,
                 requestID: track.requestID,
                 charCount: track.charCount
