@@ -76,11 +76,13 @@
     <string name="billing_monthly_subscription">Subscribe</string>
     <string name="billing_plan_free_feature_basic_alarm">Unlimited standard alarms</string>
     <string name="billing_plan_free_feature_stock_voice">Alarms with default voices</string>
+    <string name="billing_plan_free_feature_manual">Type it yourself: 3 a month (default voices)</string>
     <string name="billing_plan_free_name">Free</string>
     <string name="billing_plan_free_price">Free</string>
     <string name="billing_plan_monthly_price_fallback">KRW %1$,d/month</string>
     <string name="billing_plan_personal_feature_messages_in_voice">Weather and fortune messages in your registered voice</string>
     <string name="billing_plan_personal_feature_voice">Register 1 voice of your choice</string>
+    <string name="billing_plan_personal_feature_manual">Type it yourself: 30 a month (incl. your registered voice)</string>
     <string name="billing_plan_personal_name">Plus</string>
     <string name="billing_play_manage_description">We couldn\'t complete the cancellation in the app. You can cancel directly in Google Play subscriptions. Your subscription hasn\'t changed.</string>
     <string name="billing_play_manage_open">Open Google Play</string>
@@ -280,6 +282,7 @@
     <string name="hs_settings_weather_region">Region</string>
     <string name="region_picker_legacy_hint">Please choose again from the list</string>
     <string name="region_picker_legacy_value_hint">“%1$s” isn\'t on the list. Please choose again.</string>
+    <string name="region_picker_hint">Pick a region from the list. We don\'t use location permission.</string>
     <string name="region_picker_seat_description">Weather in %1$s</string>
     <string name="region_picker_weather_attribution">Weather data: forecasts from KMA (Korea), JMA (Japan) and the U.S. National Weather Service, processed by AlarmTalk</string>
     <string name="settings_logout_confirm_title">Log out?</string>
@@ -441,7 +444,7 @@
     <string name="voices_record_done">Recording saved</string>
     <string name="common_voice_record_preview">Play recording</string>
     <string name="common_voice_record_again">Record again</string>
-    <string name="voices_record_video_tip">No file of the voice you want? Play a video and record that.</string>
+    <string name="voices_record_video_tip">Have permission but no audio file? Play a video of them and record that.</string>
     <string name="voices_record_script_title">Example script</string>
     <string name="voices_record_too_short">Record at least 12 seconds</string>
     <string name="voices_record_status_hint">Too short and the voice may not match.</string>
@@ -622,7 +625,7 @@
     <string name="r3misc_billing_already_owned">You\'re already subscribed to this item. Please refresh your subscription status in a moment.</string>
     <string name="r3misc_billing_purchase_failed">Google Play payment failed. Please try again in a moment.</string>
     <string name="editor_voice_switch_drops_text_title">Switch to a basic voice?</string>
-    <string name="editor_voice_switch_drops_text_message">Basic voices only speak ready-made lines, so the message you typed will be removed.</string>
+    <string name="editor_voice_switch_drops_text_message">Switching to a default voice clears the message you typed.</string>
     <string name="editor_voice_switch_drops_text_confirm">Switch</string>
     <string name="onb_voice_download_progress">%1$d%%</string>
     <string name="onb_voice_download_failed">Please try again in a moment.</string>
@@ -672,7 +675,7 @@
     <string name="downgrade_notice_message">%1$d of your alarms now use the default voice.</string>
     <string name="downgrade_notice_free_deadline">Subscribe again within 3 days to get your voices back; after that they are deleted permanently.</string>
     <string name="plan_gate_paid_message">This feature is available with a paid plan.</string>
-    <string name="msg_voice_preset_only">Basic voices can only say prepared phrases. Choose your own voice to wake up with text you type.</string>
+    <string name="msg_voice_preset_only">This message can\'t be made with a default voice. Pick a prepared message or type your own.</string>
     <string name="msg_voice_locked_free_plan">You\'re on the Free plan now, so this voice can\'t be used. Subscribe again to bring it back.</string>
     <string name="clip_prefetch_notification_title">Downloading voices</string>
     <string name="voices_clip_prep_done">Done</string>

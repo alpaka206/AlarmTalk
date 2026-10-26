@@ -26,11 +26,11 @@
     "who": [
       "Mom’s",
       "Dad’s",
-      "Your favorite",
+      "Your own",
       "Your granddaughter’s",
       "Your boyfriend’s",
       "Your girlfriend’s",
-      "Your idol’s"
+      "Grandma’s"
     ]
   },
   "voice": {
@@ -44,7 +44,7 @@
     "headline": "Pick a line,\nor write your own.",
     "description": "If writing one every day is a chore, just pick a line.\nIf there’s something you want to hear, type it in yourself.",
     "bullet1": "Weather · horoscope · medicine · encouragement lines, all free",
-    "bullet2": "Typing your own lines starts with a plan",
+    "bullet2": "Type your own: 3 a month free (built-in voices), 30 a month on Plus",
     "bullet3": "Korean, English and Japanese"
   },
   "faq": {
@@ -56,7 +56,7 @@
     "items": [
       {
         "q": "How do I make a voice?",
-        "a": "Record something or upload an audio file. Recordings run from 12 seconds up to 2 minutes. If you don’t have a file, playing a video of that person and recording it works too. Once the voice exists, every line you write is read back in it, on as many alarms as you like. Adding a voice of your own needs a plan, and you can create one per month."
+        "a": "Record something or upload an audio file. Recordings run from 12 seconds up to 2 minutes. You can register only your own voice, or the voice of someone close, like family or a partner, who has given you permission. Once the voice exists, you can set as many alarms to it as you like. Registering a voice needs the Plus plan, and you can create one per month."
       },
       {
         "q": "Does it ring in airplane mode or without internet?",
@@ -65,6 +65,14 @@
       {
         "q": "Do I still get snooze and weekday repeats?",
         "a": "Yes. Repeat days, snooze length and limit, vibration patterns, alarm sounds and skipping public holidays all work like any alarm app. The only difference is what you hear."
+      },
+      {
+        "q": "How many times can I type my own line?",
+        "a": "This counts new audio made from text you write. Free gets 3 a month with the built-in voices, and Plus gets 30 a month, including your registered voice. Each account has one count, and it refills on the 1st of every month, Korea time (KST). Reusing audio you already made doesn’t use a count. If you make the audio and then cancel saving the alarm, that one still counts, and if making it fails, we give it back."
+      },
+      {
+        "q": "Is there a free trial?",
+        "a": "Yes. When you subscribe to Plus for the first time, you get a 1-month free trial. The App Store and Google Play decide who qualifies. When the trial ends, $3.90 a month is charged automatically. If you don’t want that, cancel before the trial ends (on the App Store, at least 24 hours before) in your App Store account settings or Google Play subscriptions. You keep access until the trial period ends even after cancelling."
       },
       {
         "q": "Can anyone else use the voice I register?",
@@ -80,15 +88,15 @@
       },
       {
         "q": "If I cancel, do I lose access right away?",
-        "a": "No. Cancel in the store and you keep everything until the time you already paid for runs out. After that you move to the free plan, and alarms built from your own voice fall back to an alarm sound."
+        "a": "No. Cancel in the store and you keep everything until the time you already paid for runs out. After that you move to the free plan, and alarms that used your registered voice ring in a built-in voice (Mina). Your registered voice is kept for 3 days and then deleted; subscribe again within that time and the original voice comes back."
       },
       {
         "q": "Are there forced missions, like math or photo challenges?",
         "a": "No. AlarmTalk would rather you opened your eyes because you wanted to hear the voice, not because something forced you."
       },
       {
-        "q": "Who actually uses this?",
-        "a": "Two groups. Fans who want to wake up to their favorite idol, voice actor, or character, and seniors and long-distance families who want their child, grandchild, or partner’s voice every morning. Both share one thing: a specific voice they want to hear daily."
+        "q": "Who is it for?",
+        "a": "People who already know whose voice they want to hear every day: parents and children living apart who want to start the morning with each other’s voice, people who miss a partner’s voice, and people who want to wake themselves up in their own voice. With no voice to register, you can start right away with the built-in voices."
       },
       {
         "q": "Which devices are supported?",
@@ -220,7 +228,9 @@
     },
     "values": {
       "unlimited": "Unlimited",
-      "monthly": "Once a month"
+      "monthly": "Once a month",
+      "manualFree": "3/mo with built-in voices",
+      "manualPlus": "30/mo"
     },
     "a11y": {
       "planColumn": "Plan",
@@ -231,6 +241,10 @@
     "cta": {
       "headline": "Start right in the app",
       "body": "Plans are bought inside the app.\nTry it free first and decide later."
+    },
+    "notes": {
+      "trial": "First-time Plus subscribers get a 1-month free trial (the store decides who qualifies). After the trial, $3.90 a month is charged automatically. You can cancel anytime before then in App Store account settings or Google Play subscriptions.",
+      "reuse": "Typing your own line uses a count only when new audio is made. Reusing the same audio you already made doesn’t. Counts refill on the 1st of every month, Korea time (KST)."
     }
   },
   "finalCta": {
@@ -258,7 +272,7 @@
     "items": [
       {
         "title": "A voice you registered",
-        "body": "Register a family member’s or friend’s voice once,\nthen set any alarm to it."
+        "body": "With their permission, register a family member’s\nor friend’s voice once, then set any alarm to it."
       },
       {
         "title": "Built-in voices",
@@ -272,7 +286,7 @@
       "modeFile": "File",
       "status": "Record",
       "hint": "Too short and the voice may not match.",
-      "videoTip": "No file of the voice you want? Play a video and record that.",
+      "videoTip": "Have permission but no audio file? Play a video of them and record that.",
       "scriptTitle": "Example script",
       "alt": "The app’s Create a voice screen at the Record step: Record is selected over File, a record card shows 0:00 / 2:00 and a microphone button, with two hints and a collapsed example script below"
     },

@@ -97,6 +97,9 @@ internal fun SubscriptionPanel(
             features = listOf(
                 stringResource(R.string.billing_plan_free_feature_basic_alarm),
                 stringResource(R.string.billing_plan_free_feature_stock_voice),
+                // 직접 입력 횟수(무료 3 · 플러스 30)는 shared `MANUAL_TTS_MONTHLY_LIMIT` 의 값이다(voice-and-message.md §8).
+                // 카드는 등급 비교라 서버 현황(`/tts/manual-quota`)이 아니라 정해진 기본분을 적는다 — 값이 바뀌면 같이 고친다.
+                stringResource(R.string.billing_plan_free_feature_manual),
             ),
         ),
         SubscriptionPlanOption(
@@ -107,6 +110,7 @@ internal fun SubscriptionPanel(
             features = listOf(
                 stringResource(R.string.billing_plan_personal_feature_voice),
                 stringResource(R.string.billing_plan_personal_feature_messages_in_voice),
+                stringResource(R.string.billing_plan_personal_feature_manual),
             ),
         ),
     )

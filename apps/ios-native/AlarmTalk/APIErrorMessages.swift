@@ -75,7 +75,7 @@ enum APIErrorMessages {
         case "VOICE_LOCKED_FREE_PLAN":
             return String(localized: "무료 이용권으로 바뀌어 이 목소리를 쓸 수 없어요. 이용권을 다시 구독하면 돌아와요.")
         case "FREE_PLAN_PRESET_ONLY", "BASIC_VOICE_PRESET_ONLY":
-            return String(localized: "기본 목소리는 준비된 문구로만 말할 수 있어요. 직접 입력한 문구로 깨우려면 내 목소리를 골라 주세요.")
+            return String(localized: "기본 목소리로는 이 문구를 만들 수 없어요. 준비된 문구를 고르거나 직접 입력해 주세요.")
         case "MANUAL_TTS_QUOTA_EXCEEDED":
             return String(localized: "이번 달 직접 입력 문구 만들기 횟수를 다 썼어요. 다음 달에 다시 채워져요.")
         // 광고 시청 승인 세션(`docs/spec/ad-rewards.md` §3). 안드로이드 `ApiErrorMessages.kt` 와 같은 네 문장이다.
