@@ -1250,13 +1250,17 @@ internal fun AlarmEditorScreen(
                     //   `FreeBucketOrder` 첫 값은 날씨인데 지역이 없으면 저장이 막힌다 —
                     //   계정을 막 만든 사람의 **첫 알람이 저장되지 않는다.**
                     //   추가 입력이 필요 없는 첫 테마를 고른다.
-                    val firstUsable = buckets.firstOrNull { bucket ->
-                        when (bucket) {
-                            "weather" -> weatherLocationReady()
-                            "fortune" -> fortuneInfoReady()
-                            else -> true
+                    // ⚠ **한 번도 고른 적 없으면 응원을 추천한다**(2026-10-26 v1.3 지시) — 지역을 이미 고른 사람도 첫 알람은
+                    //   응원이다. 응원 클립이 아직 없으면 예전처럼 추가 입력이 필요 없는 첫 테마다. 고른 적이 있으면 위의
+                    //   `remembered` 가 먼저라 이 줄에 닿지 않는다. iOS 짝은 `FreeBucket.firstRecommended`.
+                    val firstUsable = FirstRecommendedBucket.takeIf { it in buckets }
+                        ?: buckets.firstOrNull { bucket ->
+                            when (bucket) {
+                                "weather" -> weatherLocationReady()
+                                "fortune" -> fortuneInfoReady()
+                                else -> true
+                            }
                         }
-                    }
                     val target = chosen
                         ?: editor.selectedBucket?.takeIf { it in buckets }
                         ?: remembered

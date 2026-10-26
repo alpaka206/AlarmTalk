@@ -185,6 +185,18 @@
   구현: `AlarmEditorScreen.kt` 의 `firstUsable` / `AlarmEditorSheet.swift` 의
   `bucketNeedsMissingInput`. 판정은 저장 게이트와 **같은 함수 하나**를 본다 — 두 벌이 되면
   고를 수는 있는데 저장은 막히는 상태가 생긴다.
+- **기본 목소리의 첫 추천은 응원이다**(2026-10-26 v1.3 W04). 고른 적이 없으면 지역을 이미 고른 사람도 첫 알람은 응원이다
+  (`FirstRecommendedBucket` / `FreeBucket.firstRecommended`). 응원 클립이 아직 없을 때만 위의 '추가 입력이 필요 없는 첫
+  테마' 다. 기존 알람·직전 선택·지역은 바꾸지 않는다.
+- **문구 목록은 운세·약을 처음에 접어 둔다**(같은 날). '더 보기 (운세·약)' 를 누르면 펼친다. 지금 고른 것이 그 둘이면
+  처음부터 펼쳐 둔다 — 지우는 것이 아니다(`FoldedMessageContexts` / `MessageSettingsPane.foldedContextIDs`).
+- **목소리 탭의 '이 목소리로 새 알람 만들기'**(같은 날 — iOS 의 모호한 '이 목소리 사용' 을 대신한다). 내 목소리 행 메뉴에서
+  그 목소리를 처음 고른 **새 알람** 편집기를 연다. 직전 선택(전역)·기존 알람은 바꾸지 않고, 저장에 성공해야 직전 선택이
+  된다. 편집기에서 다시 고르면 그것이 이긴다(안드로이드 `AppRoute.alarmCreate(preferredVoiceId)`, iOS
+  `AlarmEditorTarget.preferredVoiceID`).
+- **로그인 전 랜딩의 기본 목소리 4종 칩**(같은 날). 번들된 인사 샘플을 서버 없이 들려주고, 고른 목소리는 로그인한 계정이
+  **아직 목소리를 고른 적이 없을 때만** 직전 선택으로 한 번 옮긴다(`LandingVoicePick` / `DefaultVoicePreferenceStore.
+  adoptLandingVoicePick`). 하나를 꼭 고르게 하지는 않는다.
 
 ### 무엇을 기억하고, 무엇을 건드리지 않는가
 

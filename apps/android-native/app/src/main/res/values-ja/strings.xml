@@ -49,6 +49,7 @@
     <string name="auth_landing_preview_pause">プレビューを一時停止</string>
     <string name="auth_landing_preview_play">声をプレビュー</string>
     <string name="auth_landing_sample_message">おじいちゃん、おはようございます\n今日は雨が降るそうです\n出かけるときは傘を忘れずに</string>
+    <string name="auth_landing_voice_greeting">%1$sの声のあいさつです</string>
     <string name="auth_password_hide">パスワードを隠す</string>
     <string name="auth_password_mismatch">パスワードが一致しません。</string>
     <string name="auth_error_email_invalid">メールアドレスの形式が正しくありません。ご確認ください。</string>
@@ -233,6 +234,7 @@
     <string name="editorp_random_detail_change">変更</string>
     <string name="editorp_random_manual_title">入力した文面</string>
     <string name="editor_manual_charge_notice">新しい文は保存するときに音声を作成し、今月の作成回数を1回使います。作成済みの文はもう一度使っても回数を使いません。</string>
+    <string name="editorp_random_more_contexts">もっと見る（運勢・お薬）</string>
     <string name="editorp_random_fortune_title">占い情報</string>
     <string name="editorp_random_save_button">保存</string>
     <string name="editorp_random_title">文</string>
@@ -446,6 +448,7 @@
     <string name="voicesr_delete_dialog_title">声を削除</string>
     <string name="voicesr_delete_dialog_warning">この声を使うアラームは基本の声に変わります。保存された音源ファイルも一緒に削除されます。</string>
     <string name="voicesr_edit_name">名前を編集</string>
+    <string name="voicesr_create_alarm_with_voice">この声で新しいアラームを作成</string>
     <string name="voicesr_more">もっと見る</string>
     <string name="voicesr_pause">一時停止</string>
     <string name="voicesr_prerender_progress">アラーム音声を準備中 %1$d%%</string>

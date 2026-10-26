@@ -40,6 +40,9 @@ struct MainTabsView: View {
     /// `openCreateAlarm()`(권한 확인)을 탄다.
     @State private var alarmCreateRequest: UUID?
 
+    /// 목소리 탭의 '이 목소리로 새 알람 만들기' 가 고른 목소리 — 다음 새 알람 편집기에 한 번 싣는다.
+    @State private var pendingPreferredVoiceID: String?
+
     /// 알람 탭이 다중 선택 모드인가(＋FAB 를 숨긴다).
     @State private var alarmSelectionActive = false
 
@@ -52,7 +55,12 @@ struct MainTabsView: View {
     ///
     /// ⚠ **탭 하나에 한 번 센다**(`StockClipPrefetcher.voiceGate`). 세는 일은 메인 액터에서 캐시 디렉터리를
     /// 읽는다 — 예전에는 판정과 알럿 퍼센트를 따로 세어 막힐 때마다 두 번 읽었다. 막히면 센 값 그대로 알럿에 쓴다.
-    private func openEditorIfVoiceReady(_ target: AlarmEditorTarget) {
+    private func openEditorIfVoiceReady(_ requested: AlarmEditorTarget) {
+        var target = requested
+        if target.editingAlarmID == nil, let preferred = pendingPreferredVoiceID {
+            target.preferredVoiceID = preferred
+        }
+        pendingPreferredVoiceID = nil
         #if DEBUG
         if UIPreviewSeed.isEnabled { editorTarget = target; return }
         #endif
@@ -74,6 +82,8 @@ struct MainTabsView: View {
     /// (`AlarmEditorSheet.resolveInitialVoiceID` — 고를 수 있는 목소리·정리 중 제외·무료면 기본 목소리만). 저장된 직전 선택을
     /// 그대로 믿으면, 못 쓰게 된 클론을 보고 통과시킨 뒤 편집기는 아직 받는 중인 기본 목소리로 연다(코덱스 #952).
     private func gateVoiceID(for target: AlarmEditorTarget) -> String? {
+        // 목소리 탭의 '이 목소리로 새 알람 만들기' 가 넘긴 목소리가 있으면 그 새 알람은 그것으로 연다.
+        if target.editingAlarmID == nil, let preferred = target.preferredVoiceID { return preferred }
         if let alarmID = target.editingAlarmID {
             return store.alarms.first(where: { $0.id == alarmID })?.voiceProfileId.nilIfBlank
         }
@@ -274,12 +284,24 @@ struct MainTabsView: View {
             //
             // Settings sheet dismiss animation 과 BillingPanel present 가 겹치지
             // 않도록 직접 라우팅은 짧게 지연한다.
-            VoicesPanelView(onRequestBilling: {
-                Task { @MainActor in
-                    try? await Task.sleep(nanoseconds: 300_000_000)
-                    auxiliaryScreen = .billing
+            VoicesPanelView(
+                onRequestBilling: {
+                    Task { @MainActor in
+                        try? await Task.sleep(nanoseconds: 300_000_000)
+                        auxiliaryScreen = .billing
+                    }
+                },
+                onCreateAlarmWithVoice: { voiceID in
+                    // 알람 탭으로 옮긴 **뒤에** 만들기를 요청한다 — 목록은 요청 값이 바뀔 때만 반응하고(`onChange`), 같은
+                    // 프레임에 바꾸면 새로 그려지는 목록이 그 변화를 못 본다. 만들기는 목록의 권한 확인을 그대로 탄다.
+                    pendingPreferredVoiceID = voiceID
+                    selectedTab = .alarms
+                    Task { @MainActor in
+                        try? await Task.sleep(nanoseconds: 150_000_000)
+                        alarmCreateRequest = UUID()
+                    }
                 }
-            })
+            )
         case .menu:
             MenuView(
                 onOpenSettings: { settingsPresented = true },

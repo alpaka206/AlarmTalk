@@ -73,6 +73,8 @@ struct AlarmEditorSheet: View {
     /// 이번 달 직접 입력 여유. **유료일 때만** 조회한다(무료에게 숫자를 보이면
     /// 이용권만 있으면 이미 다 쓴 것처럼 읽혀 거짓말이 된다).
     @State var manualQuota: ManualQuotaResponse?
+    /// 목소리 탭에서 넘겨받은 목소리(`target.preferredVoiceID`)를 이미 적용했거나 사용자가 직접 골랐는가.
+    @State var didApplyPreferredVoice = false
     @State var voiceGateAlert: VoiceGateAlertContent?
     /// 기본(시스템) 목소리로 바꾸면 직접 입력 문구를 쓸 수 없어 편집기가 문구를 비운다.
     /// 조용히 지우면 '문구가 사라졌다' 가 되므로 한 번 확인받는다
@@ -1128,6 +1130,8 @@ struct AlarmEditorSheet: View {
     }
 
     func applyVoiceSelection(_ option: VoiceSelectionSheet.Option) {
+        // 사용자가 직접 골랐다 — 목소리 탭에서 넘겨받은 목소리를 다시 덮어쓰지 않는다.
+        didApplyPreferredVoice = true
         commitVoiceSelection(option.id)
     }
 
@@ -1279,7 +1283,10 @@ struct AlarmEditorSheet: View {
         //   계정을 막 만든 사람의 **첫 알람이 저장되지 않는다.**
         //   '기본 인사말' 은 기본 목소리에 줄 수 없으므로(`docs/spec/voice-and-message.md` §2)
         //   추가 입력이 필요 없는 첫 테마를 집는다. 안드로이드 `firstUsable` 과 같은 규칙.
-        let firstUsable = buckets.first { !bucketNeedsMissingInput($0) }
+        // ⚠ **고른 적이 없으면 응원을 추천한다**(2026-10-26 v1.3 지시) — 지역을 이미 고른 사람도 첫 알람은 응원이다. 응원 클립이
+        //   아직 없으면 예전처럼 추가 입력이 필요 없는 첫 테마다. 안드로이드 `FirstRecommendedBucket` 짝.
+        let firstUsable = buckets.first(where: { $0 == FreeBucket.firstRecommended })
+            ?? buckets.first { !bucketNeedsMissingInput($0) }
         guard let target = remembered ?? firstUsable ?? buckets.first else { return }
 
         selectFreeBucket(target)
@@ -2129,6 +2136,16 @@ struct AlarmEditorSheet: View {
 
     func selectDefaultVoiceProfileIfNeeded() {
         guard draft.playMode != .alarmOnly else { return }
+        // 목소리 탭의 '이 목소리로 새 알람 만들기' 가 고른 목소리 — 새 알람에서 **한 번만** 적용한다(사용자가 편집기에서 다시
+        // 고르면 그것이 이긴다). 목록에 아직 없으면(교체 정리 중·받기 전) 아래 직전 선택으로 간다. 무료는 기본 목소리만이다.
+        if !didApplyPreferredVoice, target.editingAlarmID == nil, let preferred = target.preferredVoiceID,
+           voiceSourceMode != .localAudio,
+           readySelectableOwnVoices.contains(where: { $0.id == preferred }),
+           !freeVoiceTier || isSystemVoiceId(preferred) {
+            didApplyPreferredVoice = true
+            if voiceStudio.selectedProfileID != preferred { voiceStudio.selectedProfileID = preferred }
+            return
+        }
         // ⚠ **직접 녹음 갈래에는 손대지 않는다**(안드로이드 `AlarmEditorScreen.kt` 의
         // `editor.voiceSource != VoiceSources.LOCAL_AUDIO` 가드 미러). 이 함수는 이제
         // 목록이 바뀔 때마다 다시 도므로, 가드가 없으면 사용자가 녹음으로 옮긴 뒤에도
