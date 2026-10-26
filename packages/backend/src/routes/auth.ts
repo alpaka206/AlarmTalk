@@ -4,7 +4,7 @@ import type { Env, AppEnv } from '../types';
 import { authMiddleware } from '../middleware/auth';
 import { getDB } from '../lib/db';
 import { planWithGrantSql } from '../lib/plan-grant-sql';
-import { loadPlanGrantAnswer } from '../lib/plan-grants';
+import { composeLimitedPlanFields, loadPlanGrantAnswer } from '../lib/plan-grants';
 import { logRouteError, logStructured } from '../lib/logger';
 import { errorBody } from '../lib/api-error';
 import type { ErrorCode } from '@alarmtalk/shared';
@@ -676,8 +676,11 @@ auth.post('/login', async (c) => {
     const promo = resolvePersonalPromo(c.env);
     // 등급과 지급 끝은 한 순간·한 문장으로 계산한다(`loadPlanGrantAnswer`) — 프로모도 같은 `promo.now` 다.
     const grantAnswer = await loadPlanGrantAnswer(db, String(row.id), row.plan, promo.now);
-    const personalPromo = await loadPersonalPromoField(db, String(row.id), grantAnswer.plan, promo);
-    const planGrant = grantAnswer.planGrant;
+    // 행사 조각은 **원시** plan 으로 계산하고, 둘 다 덮으면 더 늦게 끝나는 기한 하나만 싣는다(`composeLimitedPlanFields`).
+    const { personalPromo, planGrant } = composeLimitedPlanFields(
+      await loadPersonalPromoField(db, String(row.id), grantAnswer.rawPlan, promo),
+      grantAnswer.planGrant,
+    );
     // ⚠ **다시 로그인하면 탈퇴를 철회한다 — 응답이 다 준비된 뒤 마지막에**(`cancelPendingDeletionOnSignIn`, 코덱스 #904).
     //   토큰 서명·계정 조회·프로모 조회가 실패해 로그인이 실패로 끝났는데 철회만 남으면, 실패를 본 사람은 아직
     //   탈퇴가 진행 중인 줄 안다. 이 쓰기가 실패하면 500 — 다시 로그인하면 된다.
@@ -833,8 +836,11 @@ auth.post('/google', async (c) => {
     const promo = resolvePersonalPromo(c.env);
     // 등급과 지급 끝은 한 순간·한 문장으로 계산한다(`loadPlanGrantAnswer`) — 프로모도 같은 `promo.now` 다.
     const grantAnswer = await loadPlanGrantAnswer(db, userId, rawPlan, promo.now);
-    const personalPromo = await loadPersonalPromoField(db, userId, grantAnswer.plan, promo);
-    const planGrant = grantAnswer.planGrant;
+    // 행사 조각은 **원시** plan 으로 계산하고, 둘 다 덮으면 더 늦게 끝나는 기한 하나만 싣는다(`composeLimitedPlanFields`).
+    const { personalPromo, planGrant } = composeLimitedPlanFields(
+      await loadPersonalPromoField(db, userId, grantAnswer.rawPlan, promo),
+      grantAnswer.planGrant,
+    );
     // ⚠ **다시 로그인하면 탈퇴를 철회한다 — 응답이 다 준비된 뒤 마지막에**(`cancelPendingDeletionOnSignIn`, 코덱스 #904).
     //   토큰 서명·계정 조회·프로모 조회가 실패해 로그인이 실패로 끝났는데 철회만 남으면, 실패를 본 사람은 아직
     //   탈퇴가 진행 중인 줄 안다. 이 쓰기가 실패하면 500 — 다시 로그인하면 된다.
@@ -1055,8 +1061,11 @@ auth.post('/apple', async (c) => {
     const promo = resolvePersonalPromo(c.env);
     // 등급과 지급 끝은 한 순간·한 문장으로 계산한다(`loadPlanGrantAnswer`) — 프로모도 같은 `promo.now` 다.
     const grantAnswer = await loadPlanGrantAnswer(db, userId, rawPlan, promo.now);
-    const personalPromo = await loadPersonalPromoField(db, userId, grantAnswer.plan, promo);
-    const planGrant = grantAnswer.planGrant;
+    // 행사 조각은 **원시** plan 으로 계산하고, 둘 다 덮으면 더 늦게 끝나는 기한 하나만 싣는다(`composeLimitedPlanFields`).
+    const { personalPromo, planGrant } = composeLimitedPlanFields(
+      await loadPersonalPromoField(db, userId, grantAnswer.rawPlan, promo),
+      grantAnswer.planGrant,
+    );
     // ⚠ **다시 로그인하면 탈퇴를 철회한다 — 응답이 다 준비된 뒤 마지막에**(`cancelPendingDeletionOnSignIn`, 코덱스 #904).
     //   토큰 서명·계정 조회·프로모 조회가 실패해 로그인이 실패로 끝났는데 철회만 남으면, 실패를 본 사람은 아직
     //   탈퇴가 진행 중인 줄 안다. 이 쓰기가 실패하면 500 — 다시 로그인하면 된다.
@@ -1188,8 +1197,11 @@ auth.get('/me', async (c) => {
     const promo = resolvePersonalPromo(c.env);
     // 등급과 지급 끝은 한 순간·한 문장으로 계산한다(`loadPlanGrantAnswer`) — 프로모도 같은 `promo.now` 다.
     const grantAnswer = await loadPlanGrantAnswer(db, String(row.id), row.plan, promo.now);
-    const personalPromo = await loadPersonalPromoField(db, String(row.id), grantAnswer.plan, promo);
-    const planGrant = grantAnswer.planGrant;
+    // 행사 조각은 **원시** plan 으로 계산하고, 둘 다 덮으면 더 늦게 끝나는 기한 하나만 싣는다(`composeLimitedPlanFields`).
+    const { personalPromo, planGrant } = composeLimitedPlanFields(
+      await loadPersonalPromoField(db, String(row.id), grantAnswer.rawPlan, promo),
+      grantAnswer.planGrant,
+    );
     return c.json({
       ...(rolledToken ? { token: rolledToken } : {}),
       user: {

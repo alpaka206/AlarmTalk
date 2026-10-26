@@ -187,7 +187,12 @@ export async function loadPlanGrantAnswer<P extends string | null>(
   userPk: string,
   fallbackPlan: P,
   now: Date = new Date(),
-): Promise<{ plan: P | string; planGrant: { ends_at: string; computed_at: string } | null }> {
+): Promise<{
+  plan: P | string;
+  /** 지급을 반영하기 전의 원시 plan — 기간 한정 개인 플랜 조각(`loadPersonalPromoField`)은 이것으로 계산한다. */
+  rawPlan: P | string | null;
+  planGrant: { ends_at: string; computed_at: string } | null;
+}> {
   const res = await db.execute({
     sql: `SELECT u.plan AS raw_plan, g.starts_at, g.ends_at
           FROM users u
@@ -197,18 +202,36 @@ export async function loadPlanGrantAnswer<P extends string | null>(
     args: [now.toISOString(), userPk],
   });
   // 계정 행을 못 읽으면(방금 만든 계정·열이 없는 응답) 부른 쪽이 이미 읽은 원시 plan 을 그대로 쓴다.
-  if (res.rows.length === 0 || !('raw_plan' in res.rows[0]!)) return { plan: fallbackPlan, planGrant: null };
+  if (res.rows.length === 0 || !('raw_plan' in res.rows[0]!)) {
+    return { plan: fallbackPlan, rawPlan: fallbackPlan, planGrant: null };
+  }
   const raw = res.rows[0]!.raw_plan == null ? null : String(res.rows[0]!.raw_plan);
-  if (raw !== 'free') return { plan: raw as P | string, planGrant: null };
+  if (raw !== 'free') return { plan: raw as P | string, rawPlan: raw, planGrant: null };
   const end = mergedGrantEnd(
     res.rows
       .filter((r) => r.ends_at != null)
       .map((r) => ({ startsAt: String(r.starts_at), endsAt: String(r.ends_at), revokedAt: null })),
     now,
   );
-  if (!end) return { plan: 'free', planGrant: null };
+  if (!end) return { plan: 'free', rawPlan: raw, planGrant: null };
   const seconds = (d: Date) => d.toISOString().replace(/\.\d{3}Z$/, 'Z');
-  return { plan: 'plus', planGrant: { ends_at: seconds(end), computed_at: seconds(now) } };
+  return { plan: 'plus', rawPlan: raw, planGrant: { ends_at: seconds(end), computed_at: seconds(now) } };
+}
+
+/**
+ * 응답에 싣는 **기한 하나** — 기간 한정 개인 플랜과 관리자 지급이 둘 다 원시 free 를 덮으면 **더 늦게 끝나는 쪽만** 싣는다
+ * (Codex #941). 두 앱은 둘 중 하나를 오프라인 기한으로 읽으므로, 짧은 쪽이 실리면 아직 플러스인 사람을 오프라인에서 일찍
+ * 자르고, 행사 조각이 실리면 그보다 긴 지급을 가진 사람에게 '행사 종료 뒤 목소리 삭제' 를 말한다. 같으면 행사 조각이다
+ * (종료 안내를 그대로 낸다).
+ */
+export function composeLimitedPlanFields<Promo extends { ends_at: string }>(
+  personalPromo: Promo | null,
+  planGrant: { ends_at: string; computed_at: string } | null,
+): { personalPromo: Promo | null; planGrant: { ends_at: string; computed_at: string } | null } {
+  if (!personalPromo || !planGrant) return { personalPromo, planGrant };
+  return Date.parse(planGrant.ends_at) > Date.parse(personalPromo.ends_at)
+    ? { personalPromo: null, planGrant }
+    : { personalPromo, planGrant: null };
 }
 
 export interface CreatePlanGrantInput {

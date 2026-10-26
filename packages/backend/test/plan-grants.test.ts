@@ -19,6 +19,7 @@ vi.mock('../src/lib/db', () => ({
 
 import {
   addKstCalendarMonths,
+  composeLimitedPlanFields,
   createPlanGrant,
   endOfKstDate,
   grantEndFor,
@@ -123,7 +124,7 @@ describe('지급과 읽기', () => {
   it('원시 유료(구독자)에게는 plan_grant 를 싣지 않는다 — 앱이 산 이용권을 무료로 읽지 않게', async () => {
     await addUser('u1p', 'plus');
     await grant('u1p', new Date(Date.now() + 7 * DAY), 'key-u1p-001');
-    expect(await loadPlanGrantAnswer(db, 'u1p', null)).toEqual({ plan: 'plus', planGrant: null });
+    expect(await loadPlanGrantAnswer(db, 'u1p', null)).toEqual({ plan: 'plus', rawPlan: 'plus', planGrant: null });
   });
 
   it('같은 확인 화면을 두 번 보내도 한 번만 준다', async () => {
@@ -153,6 +154,22 @@ describe('지급과 읽기', () => {
   });
 });
 
+describe('행사와 지급이 둘 다 덮으면 더 늦게 끝나는 기한 하나만 싣는다', () => {
+  const promo = { ends_at: '2026-10-31T15:00:00Z', notice_from: '2026-10-24T15:00:00Z', deletes_voices_at_end: true };
+  const grantField = (ends_at: string) => ({ ends_at, computed_at: '2026-10-26T00:00:00Z' });
+  it('지급이 행사보다 먼저 끝나면 행사 조각 — 짧은 지급이 행사를 가리지 않는다', () => {
+    expect(composeLimitedPlanFields(promo, grantField('2026-10-27T15:00:00Z'))).toEqual({ personalPromo: promo, planGrant: null });
+  });
+  it('지급이 더 길면 지급 조각 — 행사 종료 뒤 삭제 안내를 내지 않는다', () => {
+    const g = grantField('2026-12-01T00:00:00Z');
+    expect(composeLimitedPlanFields(promo, g)).toEqual({ personalPromo: null, planGrant: g });
+  });
+  it('한쪽만 있으면 그대로', () => {
+    expect(composeLimitedPlanFields(promo, null)).toEqual({ personalPromo: promo, planGrant: null });
+    expect(composeLimitedPlanFields(null, grantField('2026-12-01T00:00:00Z')).planGrant).not.toBeNull();
+  });
+});
+
 describe('응답의 등급과 지급 끝은 한 순간이다', () => {
   it('지급이 끝난 순간에 계산하면 plan 도 free 다 — 기한 없는 plus 가 나가지 않는다', async () => {
     await addUser('u11');
@@ -160,7 +177,7 @@ describe('응답의 등급과 지급 끝은 한 순간이다', () => {
     const end = new Date(now.getTime() + 60_000);
     await grant('u11', end, 'key-u11-001', now);
     expect((await loadPlanGrantAnswer(db, 'u11', null, new Date(end.getTime() - 1))).plan).toBe('plus');
-    expect(await loadPlanGrantAnswer(db, 'u11', null, end)).toEqual({ plan: 'free', planGrant: null });
+    expect(await loadPlanGrantAnswer(db, 'u11', null, end)).toEqual({ plan: 'free', rawPlan: 'free', planGrant: null });
   });
 });
 
