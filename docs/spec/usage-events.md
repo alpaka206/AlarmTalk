@@ -337,7 +337,7 @@ v1.3 지시서 10장. 1판(위 §1~§6)은 그대로 두고 **종류와 칸을 �
 | 보관 기간 | — | — | `index.ts` 의 `USAGE_EVENT_RETENTION_DAYS` |
 | 계정 파기 시 삭제 | — | — | `lib/account-deletion.ts` 의 `purgeUserAccount` |
 | 2판 종류·칸 | `data/UsageEventRecorder.kt` 의 `UsageEvents`, `data/UsageEventProps.kt`(`sanitized` — 서버 모양에 안 맞는 칸만 비운다) | `UsageEventQueue.swift` 의 `UsageEventType`·`UsageEventProps`(`sanitized`) | `packages/shared/src/schemas/usage-event.ts` 의 `USAGE_EVENT_V2_TYPES`·`UsageEventPropsSchema` |
-| 2판 로컬 큐·공통 필드 | `data/UsageEventEntity.kt`(Room 29 — `MIGRATION_28_29`, 옛 행은 1판), `UsageEventRecorder.record`(schemaVersion 2·versionCode) | `UsageEventQueue.record`(옛 큐 파일은 그대로 디코드, CFBundleVersion), `UsageEventContract` | — |
+| 2판 로컬 큐·공통 필드 | `data/UsageEventEntity.kt`(Room 30 — `MIGRATION_29_30`, 옛 행은 1판), `UsageEventRecorder.record`(schemaVersion 2·versionCode) | `UsageEventQueue.record`(옛 큐 파일은 그대로 디코드, CFBundleVersion), `UsageEventContract` | — |
 | 2판 전송 | `network/UsageEventApi.kt` 의 `UsageEventPayload`, `sync/UsageEventUploadWorker.kt` | `AlarmTalkAPI.swift` 의 사용 기록 Payload(1판 기록은 2판 키 없음) | `routes/events.ts` |
 | 샘플 재생 시작·끝까지 | `data/UsageSignals.kt` 의 `SamplePlayback` ← `ui/onboarding/VoiceOnboardingPreviewState.kt` 의 `previewVoice`, `ui/voices/VoiceProfileManagementPanel.kt` 의 `playGreeting`·`playGreetingClip` | `VoiceStudioViewModel.previewGreeting` → `trackSamplePlayback`(끝은 `AudioPreviewPlayer.onPlayedToEnd`) | — |
 | 로그인 결과 | `ui/main/MainViewModelAuthActions.kt` 의 `recordAuthSuccess`(세션 저장 뒤) | `AuthViewModel.adoptSignedInSession` | — |

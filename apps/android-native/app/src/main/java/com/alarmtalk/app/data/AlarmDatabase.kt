@@ -10,7 +10,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [AlarmEntity::class, HolidayEntity::class, UsageEventEntity::class],
-    version = 29,
+    version = 30,
     exportSchema = false,
 )
 abstract class AlarmDatabase : RoomDatabase() {
@@ -64,6 +64,7 @@ abstract class AlarmDatabase : RoomDatabase() {
                 MIGRATION_26_27,
                 MIGRATION_27_28(context),
                 MIGRATION_28_29,
+                MIGRATION_29_30,
             )
                 // ⚠ **`fallbackToDestructiveMigration()` 을 다시 넣지 말 것**(2026-08-18 제거).
                 //
@@ -346,9 +347,9 @@ abstract class AlarmDatabase : RoomDatabase() {
          *
          * ⚠ Room 엔티티와 **컬럼 이름·타입·기본값이 정확히 같아야 한다**(`UsageEventEntity`). 옛 행은
          * `schemaVersion = 1` 이고 나머지는 NULL 이라 1판 그대로 올라간다. 칸(`propsJson`)은 로컬 저장 형식일 뿐이고
-         * 전송은 `props` 객체다(`UsageEventUploadWorker.toPayload`). 회귀 테스트: `UsageEventMigration28To29Test`.
+         * 전송은 `props` 객체다(`UsageEventUploadWorker.toPayload`). 회귀 테스트: `UsageEventMigration28To29Test`(v28 에서 열어 28→29·29→30 을 함께 지난다).
          */
-        internal val MIGRATION_28_29 = object : Migration(28, 29) {
+        internal val MIGRATION_29_30 = object : Migration(29, 30) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE usage_events ADD COLUMN schemaVersion INTEGER NOT NULL DEFAULT 1")
                 db.execSQL("ALTER TABLE usage_events ADD COLUMN appVersion TEXT")
@@ -367,6 +368,20 @@ abstract class AlarmDatabase : RoomDatabase() {
             defaultLabel = context.getString(R.string.rd_default_alarm_label),
             recordConverted = { converted -> FormerReceivedAlarmStore(context).recordConverted(converted) },
         )
+
+        /**
+         * 응원 테마의 다양하게 / 이 문구로 고정(2026-10-26, `docs/spec/voice-and-message.md` §5-4) — 저장값 둘
+         * (`cheerMode`·`cheerPinnedContentId`, 서버와 왕복)과 기기 로컬 상태 둘(`cheerHistoryJson`·`cheerSelectionJson`).
+         * 옛 행은 NULL = 다양하게 · 이력 없음 · 선택 없음(묶어 둔 회전으로 운다).
+         */
+        internal val MIGRATION_28_29 = object : Migration(28, 29) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE alarms ADD COLUMN cheerMode TEXT")
+                db.execSQL("ALTER TABLE alarms ADD COLUMN cheerPinnedContentId TEXT")
+                db.execSQL("ALTER TABLE alarms ADD COLUMN cheerHistoryJson TEXT")
+                db.execSQL("ALTER TABLE alarms ADD COLUMN cheerSelectionJson TEXT")
+            }
+        }
     }
 }
 

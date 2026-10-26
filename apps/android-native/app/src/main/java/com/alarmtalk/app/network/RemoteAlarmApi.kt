@@ -35,6 +35,9 @@ data class RemoteAlarm(
     val category: String? = null,
     @SerializedName("bucket_id") val bucketId: String? = null,
     @SerializedName("creation_replayed") val creationReplayed: Boolean? = null,
+    // 응원 테마의 다양하게/고정(스펙 voice-and-message §5-4) — 응원 알람을 저장한 응답에만 실린다.
+    @SerializedName("cheer_mode") val cheerMode: String? = null,
+    @SerializedName("cheer_pinned_content_id") val cheerPinnedContentId: String? = null,
 )
 
 @JsonAdapter(RemoteAlarmWriteRequestAdapterFactory::class)
@@ -54,6 +57,9 @@ data class RemoteAlarmWriteRequest(
     // 무료 버킷 회전 알람이 가리키는 버킷(예: "morning"). 회전 클립은 기기 로컬에서 해석한다.
     @SerializedName("bucket_id") val bucketId: String? = null,
     @SerializedName("client_alarm_id") val clientAlarmId: String? = null,
+    // 응원 테마의 다양하게/고정(스펙 voice-and-message §5-4). 응원 알람만 싣는다 — 다른 알람은 null 이라 빠진다.
+    @SerializedName("cheer_mode") val cheerMode: String? = null,
+    @SerializedName("cheer_pinned_content_id") val cheerPinnedContentId: String? = null,
     /**
      * [messageId]·[bucketId] 가 비어 있으면 **빼지 않고 `null` 로 실어** 서버 값을 지운다.
      * 본문에는 실리지 않는다(`@Transient`) — [RemoteAlarmWriteRequestAdapterFactory] 가 읽는다.

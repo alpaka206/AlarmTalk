@@ -67,6 +67,9 @@ class AlarmRepository(
     // 무료 잠금이 행을 기본 목소리 알람으로 고쳐 쓸 때 기기 안의 클립을 찾는다(네트워크 없음).
     // 테스트는 매니페스트·캐시를 갈아 끼우려고 넘긴다.
     private val defaultVoiceClipSource: DefaultVoiceClipSource = DefaultVoiceClipSource(context, alarmAudioStore),
+    // 응원 다양하게/고정의 후보(매니페스트 + 캐시, 네트워크 없음 — 스펙 voice-and-message §5-4). 테스트는 갈아 끼운다.
+    private val cheerCandidates: suspend (AlarmEntity) -> List<CheerCandidate> =
+        CheerVarietySource(context, alarmAudioStore, currentUserIdProvider)::candidates,
 ) {
     /**
      * 예약 복원과 예약 해제를 **서로 겹치지 않게** 한다.
@@ -236,7 +239,7 @@ class AlarmRepository(
             nowMillis = now,
             isHoliday = holidayPredicate,
         )
-        val alarm = AlarmEntity(
+        val built = AlarmEntity(
             id = UUID.randomUUID().toString(),
             label = draft.label.trim().ifBlank { context.getString(R.string.rd_default_alarm_label) },
             hour = draft.hour,
@@ -290,7 +293,11 @@ class AlarmRepository(
             state = AlarmStates.SCHEDULED,
             createdAtMillis = now,
             updatedAtMillis = now,
+            cheerMode = draft.cheerMode.takeIf { draft.bucketId == CHEER_BUCKET_ID },
+            cheerPinnedContentId = draft.cheerPinnedContentId.takeIf { draft.bucketId == CHEER_BUCKET_ID },
         )
+        // 새 알람은 첫 회차의 응원을 지금 고른다(스펙 voice-and-message §5-4 — 저장이 새 회차를 확정한다).
+        val alarm = built.preparedCheer(built.fireAtMillis, cheerCandidates(built), explicitChange = true)
 
         alarmScheduler.schedule(alarm)
         alarmDao.upsert(alarm)
@@ -407,15 +414,24 @@ class AlarmRepository(
             enabled = true,
             state = AlarmStates.SCHEDULED,
             updatedAtMillis = now,
+            cheerMode = draft.cheerMode.takeIf { draft.bucketId == CHEER_BUCKET_ID },
+            cheerPinnedContentId = draft.cheerPinnedContentId.takeIf { draft.bucketId == CHEER_BUCKET_ID },
+        )
+        // 응원 — 발사 시각이 바뀌었거나(새 회차) 모드·고정 문구를 바꿨으면 새로 고르고, 아니면 고른 것을 그대로 쓴다
+        // (스펙 voice-and-message §5-4 「회차에 묶는다」 — 같은 회차의 다시 저장은 이력을 더하지 않는다).
+        val cheerPrepared = edited.preparedCheer(
+            occurrence = nextFireAt,
+            candidates = cheerCandidates(edited),
+            explicitChange = cheerSettingsChanged(current, edited.cheerMode, edited.cheerPinnedContentId),
         )
         // ⚠ **시각·이름만 고친 잠긴 알람은 잠금을 잇는다**(2026-09-29). 예전에는 어떤 편집이든 비워,
         // 시각만 옮긴 알람이 재결제해도 원래 목소리로 돌아오지 않았다. 목소리·재생 방식·오디오를 바꾼
         // 저장만 편집으로 친다 — 판정은 iOS 와 같은 `lockSurvivesSave` 하나(billing-lifecycle.md 「목소리를
         // 못 쓰게 되면」).
         val updated = if (lockSurvivesSave(saved = edited, editing = current)) {
-            edited.copy(preLockPlayMode = current.preLockPlayMode, preLockVoiceJson = current.preLockVoiceJson)
+            cheerPrepared.copy(preLockPlayMode = current.preLockPlayMode, preLockVoiceJson = current.preLockVoiceJson)
         } else {
-            edited
+            cheerPrepared
         }
 
         alarmScheduler.cancel(alarmId)
@@ -1375,7 +1391,11 @@ class AlarmRepository(
                     if (resetWeatherVariant) null else current.contextResolvedAtMillis,
                 state = AlarmStates.SCHEDULED,
                 updatedAtMillis = now,
-            )
+            ).let { rolled ->
+                // 다음 회차가 확정됐다 — 응원은 그 회차의 문구를 지금 고른다(스펙 voice-and-message §5-4). 스누즈는
+                // 이 길을 타지 않으므로 같은 회차의 다시 울림은 같은 문구다. 디스크만 읽는다(네트워크 없음).
+                rolled.preparedCheer(nextFireAt, cheerCandidates(rolled), explicitChange = false)
+            }
             alarmDao.upsert(next)
             alarmScheduler.schedule(next)
         } else {
@@ -1491,6 +1511,17 @@ class AlarmRepository(
      * (`AlarmAudioStore.getCachedAudioUnmeasured`, 스펙 alarm-ringing §4 「울릴 때는 파일 자리만 찾는다」).
      */
     fun resolveBucketClipSelection(alarm: AlarmEntity): BucketClipSelection? {
+        // 응원 — 준비해 둔 이 회차의 문구가 있고 그 파일이 있으면 그것(스펙 voice-and-message §5-4). 없으면 아래
+        // 묶어 둔 회전(옛 응원 = 안전 응원)으로 떨어진다. 울릴 때는 고르지 않는다 — 읽기만 한다.
+        alarm.activeCheerSelection()?.let { selection ->
+            alarmAudioStore.getCachedAudioUnmeasured(selection.cacheKey)?.let { audio ->
+                return BucketClipSelection(
+                    variantIndex = alarm.bucketClipKeys().indexOf(selection.cacheKey),
+                    localAudioUri = audio.localAudioUri,
+                    text = selection.text,
+                )
+            }
+        }
         val keys = alarm.bucketClipKeys()
         if (alarm.bucketId == null || keys.isEmpty()) return null
         val preferredIndex = alarm.bucketVariantIndex() ?: return null
@@ -2196,8 +2227,11 @@ class AlarmRepository(
 val MatchingBucketIds = setOf("weather", "fortune")
 
 data class BucketClipSelection(
+    /** 묶어 둔 클립 목록에서의 자리. 응원 선택이 그 목록 밖의 클립이면 -1 — 그때 잠금화면 문구는 [text] 다. */
     val variantIndex: Int,
     val localAudioUri: String,
+    /** 이 클립의 문구를 따로 아는 경우(응원 선택). null 이면 `bucketClipTexts()[variantIndex]`. */
+    val text: String? = null,
 )
 
 internal fun shouldResetWeatherVariant(

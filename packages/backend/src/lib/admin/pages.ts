@@ -29,6 +29,7 @@ const THEME_LABELS: Record<string, string> = {
   love: '응원',
   medication: '약',
   greeting: '기본 인사말',
+  wake: '기상 인사',
   '': '테마 없음',
 };
 

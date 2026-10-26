@@ -16,7 +16,8 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 /**
- * **Room 28→29 — 사용 기록 2판의 칸**(`AlarmDatabase.MIGRATION_28_29`, `docs/spec/usage-events.md` §7).
+ * **사용 기록 2판의 칸 — Room 29→30**(`AlarmDatabase.MIGRATION_29_30`, `docs/spec/usage-events.md` §7). v28 에서 열어 응원 칸(28→29)과
+ * 이 칸(29→30)을 함께 지난다 — 스토어의 앱은 v28 이다.
  *
  * v28 파일 DB 를 Room 이 만들던 CREATE 문 그대로 세우고 실제 등록(`AlarmDatabase.build`)으로 연다 — 열 이름·타입·기본값이
  * 엔티티와 어긋나면 Room 의 스키마 검증이 여기서 던진다(앱이라면 켜자마자 죽는다). 큐에 남아 있던 옛 행은 1판으로

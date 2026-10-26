@@ -13400,6 +13400,108 @@
         }
       }
     },
+    "기상 인사" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wake-up greeting"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "目覚めのあいさつ"
+          }
+        }
+      }
+    },
+    "응원 문구" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Encouragement lines"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "応援の言葉"
+          }
+        }
+      }
+    },
+    "다양하게" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mix it up"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "いろいろな言葉で"
+          }
+        }
+      }
+    },
+    "이 문구로 고정" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keep this line"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この言葉に固定"
+          }
+        }
+      }
+    },
+    "고른 문구로만 울려요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Only the line you pick will play."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "選んだ言葉だけが流れます。"
+          }
+        }
+      }
+    },
+    "최근에 준비한 문구는 잠시 쉬고, 다른 응원으로 준비해요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recently prepared lines take a short break, so a different one is set up next."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最近用意した言葉は少しお休みして、別の応援を用意します。"
+          }
+        }
+      }
+    },
     "관심 기업의 공시와 정책브리핑 정책뉴스를 원문 링크와 함께 보여 드려요. 화면을 열 때만 확인해요." : {
       "extractionState" : "manual",
       "localizations" : {

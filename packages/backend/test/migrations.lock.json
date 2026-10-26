@@ -542,5 +542,9 @@
   "142": {
     "name": "usage-events-v2-fields",
     "sha": "2bbba95abd1631e6"
+  },
+  "143": {
+    "name": "cheer-variants-and-stock-content-releases",
+    "sha": "914219fe4317a5cd"
   }
 }

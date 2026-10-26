@@ -94,7 +94,8 @@ async function prerenderDb(): Promise<{ db: Client; path: string }> {
       status TEXT NOT NULL DEFAULT 'pending', attempts INTEGER NOT NULL DEFAULT 0,
       claimed_at TEXT, claim_token TEXT,
       requested_at TEXT NOT NULL DEFAULT (datetime('now')),
-      updated_at TEXT, refresh_existing INTEGER NOT NULL DEFAULT 0
+      updated_at TEXT, refresh_existing INTEGER NOT NULL DEFAULT 0,
+      content_sets TEXT, supplement INTEGER NOT NULL DEFAULT 0
     );
     CREATE TABLE generated_audio_assets (
       id TEXT PRIMARY KEY, user_id TEXT, voice_profile_id TEXT, message_id TEXT,

@@ -46,6 +46,7 @@
 		1D6C1A1246292D4EF5E57BF6 /* BriefingPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FA53D33482E7D7F5E902068 /* BriefingPresentation.swift */; };
 		1DF582024EBC322A9E3996A5 /* PromptDetailCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74945BF64F5846A12BDA23B6 /* PromptDetailCard.swift */; };
 		1E3E37C95AB7597881C4CF7A /* StockClipPrefetcherSupersededTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5BB9169C934BD78A21ABA66B /* StockClipPrefetcherSupersededTests.swift */; };
+		1E9A263F624211B29A75FEEA /* CheerVariety.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2055981ADD308D940D2D5DA9 /* CheerVariety.swift */; };
 		1EC30FA50D0D15D62EF99A11 /* RemoteAlarmSyncViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D91CA086C7D4B708EBFB7D9 /* RemoteAlarmSyncViewModel.swift */; };
 		1F91FD72D98E3051B4FD6BD7 /* AlarmTimeCalculatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 59FFCC8AFC12D1CB8AD6A44F /* AlarmTimeCalculatorTests.swift */; };
 		211DD3BCAC0CE23AD3436301 /* AlarmTalkBrand.swift in Sources */ = {isa = PBXBuildFile; fileRef = 521C02BC3EAB475219595232 /* AlarmTalkBrand.swift */; };
@@ -88,6 +89,7 @@
 		3AA7E7808270BF5559FDC4F6 /* BackgroundSyncTask.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84AC75AB7D2226A17D90E228 /* BackgroundSyncTask.swift */; };
 		3AFA4D274320C0606804500B /* RemoteAlarmMapperTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 783543645669523E589D0B1A /* RemoteAlarmMapperTests.swift */; };
 		3B09A2886CF572A69CEE3802 /* StockReplacementStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3F93719211D9FCCBFA01386 /* StockReplacementStatus.swift */; };
+		3B40BFE9B0C2FA371DB52E49 /* CheerVarietyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A60F66D025FFCDA680FB210F /* CheerVarietyTests.swift */; };
 		3B4EC22D6EA7C6AE2866D9DC /* EditorKeyboardUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7C7DB895FE539AF37107B3E /* EditorKeyboardUITests.swift */; };
 		3B94337333F9284737E28EAB /* RecordingQuality.swift in Sources */ = {isa = PBXBuildFile; fileRef = 573950AE6D15B90E7899A5C2 /* RecordingQuality.swift */; };
 		3C086785B449BC520382D723 /* AlarmTalkWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = DA991BC0E37E0A9D0C4A1487 /* AlarmTalkWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
@@ -478,6 +480,7 @@
 		1F3CB496801850A36588DBD5 /* AlarmIntentsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlarmIntentsTests.swift; sourceTree = "<group>"; };
 		1F42D74888D3AA5B05964052 /* AppSourceText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSourceText.swift; sourceTree = "<group>"; };
 		1FD492185CE063ADF17C6CF4 /* PersonalPromoTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersonalPromoTests.swift; sourceTree = "<group>"; };
+		2055981ADD308D940D2D5DA9 /* CheerVariety.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CheerVariety.swift; sourceTree = "<group>"; };
 		205D0CC3E1C28F766AD8FB8F /* AlarmTalkFieldStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlarmTalkFieldStyle.swift; sourceTree = "<group>"; };
 		2066E213CEFC39ADF9763B43 /* AlarmRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlarmRow.swift; sourceTree = "<group>"; };
 		21CBB976863F3883B2FCE2A2 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
@@ -694,6 +697,7 @@
 		A4843EEDBACE08AE27F5F8DD /* EntryRefreshFreshnessTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EntryRefreshFreshnessTests.swift; sourceTree = "<group>"; };
 		A537812556462EBCB324CD35 /* AlarmTalkTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlarmTalkTheme.swift; sourceTree = "<group>"; };
 		A6060CBDBC2E6E31887ADA06 /* AlarmTalkSwitch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlarmTalkSwitch.swift; sourceTree = "<group>"; };
+		A60F66D025FFCDA680FB210F /* CheerVarietyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CheerVarietyTests.swift; sourceTree = "<group>"; };
 		A68B4D31B9E6DD9E3A6CE329 /* PlanCardCopyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlanCardCopyTests.swift; sourceTree = "<group>"; };
 		A68D60EBA1A3360EB56578AA /* WeatherVariantSaveTimeoutTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeatherVariantSaveTimeoutTests.swift; sourceTree = "<group>"; };
 		A6B90509F7FCF12FE3C058C7 /* VoiceTuning.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceTuning.swift; sourceTree = "<group>"; };
@@ -1175,6 +1179,7 @@
 				2814AA70411EC7A3564475A1 /* BucketVariantResolverTests.swift */,
 				864A6773DEB81D4235F0A635 /* BundledLegalDocumentTests.swift */,
 				FAA56E681611EE77E99D4BE4 /* BusyFlagSeparationTests.swift */,
+				A60F66D025FFCDA680FB210F /* CheerVarietyTests.swift */,
 				6591AF9B9A7B055141D618C9 /* ClipReadinessTests.swift */,
 				7D6AC768DAFC88F4FBDCF7F4 /* ClonePrerenderProgressTests.swift */,
 				3A4BDB8DF58BF17A4873E7AD /* DefaultVoiceSubstituteTests.swift */,
@@ -1353,6 +1358,7 @@
 				FB77F13C300528B45629B783 /* BriefingSpeech.swift */,
 				B2CCF512C575A060A0E72E6C /* BucketVariantResolver.swift */,
 				9F0257F633E24964349ADD8C /* BundledLegalDocument.swift */,
+				2055981ADD308D940D2D5DA9 /* CheerVariety.swift */,
 				7A617D3C8750DA731625DF6E /* ClipReadiness.swift */,
 				58B813BE478720599A27F9E4 /* ClipReadinessModel.swift */,
 				9975523465DEA02414F2A1CA /* ClonePrerenderDrive.swift */,
@@ -1751,6 +1757,7 @@
 				786ACCD0B7CE5906A798C1FD /* BucketVariantResolver.swift in Sources */,
 				228A10E322923716D69F87B0 /* BundledLegalDocument.swift in Sources */,
 				D24BBA54EBB8905ED136B876 /* BundledLegalDocumentView.swift in Sources */,
+				1E9A263F624211B29A75FEEA /* CheerVariety.swift in Sources */,
 				38FAD9501D95B722F1DBD8FE /* ChipStyle.swift in Sources */,
 				5A0B69B7819B1C4D38D88D1E /* ClipPrefetchActivityAttributes.swift in Sources */,
 				128CEE164F55257FC096811D /* ClipPreparationView.swift in Sources */,
@@ -1931,6 +1938,7 @@
 				D2D1F86586550DD78EA7ABFF /* BucketVariantResolverTests.swift in Sources */,
 				A0BEF45E84857481FEC02E82 /* BundledLegalDocumentTests.swift in Sources */,
 				6D9AC3EA23FDF9D9158057C4 /* BusyFlagSeparationTests.swift in Sources */,
+				3B40BFE9B0C2FA371DB52E49 /* CheerVarietyTests.swift in Sources */,
 				263DD7997155CB06A55FB379 /* ClipReadinessTests.swift in Sources */,
 				8C7A5A5CB74A0D0CD7DFC2C2 /* ClonePrerenderProgressTests.swift in Sources */,
 				B338DD5CB47A0804212972C9 /* DefaultVoiceSubstituteTests.swift in Sources */,
