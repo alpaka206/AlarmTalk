@@ -75,6 +75,11 @@ final class ClipReadinessModel: ObservableObject {
         // 추가했을 때 그 몫이 진행률에서 통째로 빠진다.
         let categoriesByVoice = Dictionary(grouping: clips, by: { $0.voiceProfileId })
             .mapValues { clips in Set(clips.compactMap { $0.category }).sorted() }
+        // 카테고리 → 테마(`cheer_v2` → `cheer`, 스펙 voice-and-message §5-4). 기본 목소리가 무료 테마를 고를 때 쓴다.
+        let themeByCategory = Dictionary(
+            manifest.clips.compactMap { clip in clip.category.map { ($0, clip.bucketTheme ?? $0) } },
+            uniquingKeysWith: { first, _ in first }
+        )
 
         voices = ClipReadiness.evaluate(
             voiceProfileIDs: targets,
@@ -85,7 +90,7 @@ final class ClipReadinessModel: ObservableObject {
                 guard let all = categoriesByVoice[voiceID] else { return [] }
                 // 기본 목소리는 스톡 클립 카테고리만 쓴다(= 편집기 문구 목록과 같은 다섯).
                 return isSystemVoiceId(voiceID)
-                    ? all.filter { StockClipPrefetcher.freeBucketCategories.contains($0) }
+                    ? all.filter { StockClipPrefetcher.freeBucketCategories.contains(themeByCategory[$0] ?? $0) }
                     : all
             },
             renderState: { renderStates[$0] ?? (false, false) },

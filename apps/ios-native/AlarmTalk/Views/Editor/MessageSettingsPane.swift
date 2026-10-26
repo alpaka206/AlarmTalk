@@ -55,10 +55,22 @@ struct MessageSettingsPane: View {
 
     let onSave: (MessageSettingsResult) -> Void
 
+    /// 응원 테마의 **다양하게 / 이 문구로 고정**(스펙 voice-and-message §5-4). `cheerPhrases` 는 이 목소리·언어로
+    /// 매니페스트에 있는 새 응원이다 — **비어 있으면 카드를 그리지 않는다**(준비되지 않은 문구를 보이지 않는다).
+    /// 안드로이드 `RandomPromptSettingsPane` 의 같은 이름 인자 미러.
+    var cheerMode: CheerMode = .vary
+    var cheerPinnedContentId: String?
+    var cheerPhrases: [CheerCandidate] = []
+    /// 응원 설정**만** 바꾸고 나왔을 때. `onSave` 는 테마·준비된 음원을 비우므로(`applyMessageSettings`) 그 길로 보내지
+    /// 않는다 — 모드만 바꿨는데 고른 응원 테마가 풀리면 안 된다.
+    var onCheerSettingsChange: (CheerMode, String?) -> Void = { _, _ in }
+
     /// 화면에 들어온 순간의 값 — 나갈 때 바뀐 게 있는지 판단하는 기준.
     @State private var openedWith: MessageSettingsResult?
 
     @State private var draftContext: String = "preset"
+    @State private var draftCheerMode: CheerMode = .vary
+    @State private var draftCheerPinned: String?
     @State private var draftManualText: String = ""
     /// 「직접 입력」 알럿 안에서만 쓰는 임시 값. '저장' 을 눌러야 `draftManualText` 로 간다.
     @State private var manualAlertDraft: String = ""
@@ -89,6 +101,8 @@ struct MessageSettingsPane: View {
     /// 요약 행(`MessageModeSummaryRow`)도 이 표에서 이름을 읽는다 — 표는 하나다.
     fileprivate static let options: [(id: String, label: String)] = [
         ("preset", String(localized: "기본 인사말")),
+        // 기상 인사 — 기본 목소리 전용 스톡 클립(스펙 voice-and-message §5-4). 클론 목록에서는 뺀다(편집기의 `availableContexts`).
+        ("wake", String(localized: "기상 인사")),
         ("wake_weather", String(localized: "날씨")),
         ("wake_fortune", String(localized: "운세")),
         ("cheer", String(localized: "응원")),
@@ -172,6 +186,8 @@ struct MessageSettingsPane: View {
                     }
 
                     detailCard
+
+                    cheerVarietyCard
                 }
                 .padding(.horizontal, 20)
                 .padding(.vertical, 16)
@@ -201,7 +217,11 @@ struct MessageSettingsPane: View {
         // 테마 알람이 조용히 생성형으로 바뀐다.
         .onDisappear {
             guard let openedWith, result != openedWith else { return }
-            onSave(result)
+            if result.withoutCheerSettings == openedWith.withoutCheerSettings {
+                onCheerSettingsChange(result.cheerMode, result.cheerPinnedContentId)
+            } else {
+                onSave(result)
+            }
         }
         // ⚠ 확인해도 **이 목록은 닫지 않는다** — 도시 하나 바꾸려다 화면 밖으로 튕기면
         // 안 된다. 최종 반영은 이 화면의 저장 버튼 한 곳이다.
@@ -354,10 +374,54 @@ struct MessageSettingsPane: View {
         }
     }
 
+    // MARK: - 응원 다양하게 / 고정
+
+    /// 응원을 골랐고 고를 새 응원이 있을 때만 — 안드로이드 `RandomPromptSettingsPane` 의 응원 카드와 같은 모양이다.
+    /// 없으면(공개 전·보충 전) 그리지 않는다. 그때 응원은 묶어 둔 옛 응원을 순서대로 돌린다.
+    @ViewBuilder
+    private var cheerVarietyCard: some View {
+        if draftContext == RandomPromptContext.cheer.rawValue, !cheerPhrases.isEmpty {
+            VStack(alignment: .leading, spacing: 16) {
+                EditorSectionTitle(text: "응원 문구")
+                EditorCard(verticalPadding: 0) {
+                    RadioRow(label: String(localized: "다양하게"), selected: draftCheerMode == .vary) {
+                        draftCheerMode = .vary
+                    }
+                    AlarmSettingDivider()
+                    RadioRow(label: String(localized: "이 문구로 고정"), selected: draftCheerMode == .pinned) {
+                        draftCheerMode = .pinned
+                        // 고정할 문구가 아직 없으면 첫 문구를 고른 채로 연다 — 빈 고정은 없다.
+                        if !cheerPhrases.contains(where: { $0.contentId == draftCheerPinned }) {
+                            draftCheerPinned = cheerPhrases.first?.contentId
+                        }
+                    }
+                }
+                Text(draftCheerMode == .pinned
+                     ? String(localized: "고른 문구로만 울려요.")
+                     : String(localized: "최근에 준비한 문구는 잠시 쉬고, 다른 응원으로 준비해요."))
+                    .font(theme.typography.bodySmall)
+                    .foregroundStyle(theme.palette.onSurfaceVariant)
+                    .padding(.horizontal, 4)
+                if draftCheerMode == .pinned {
+                    EditorCard(verticalPadding: 0) {
+                        ForEach(Array(cheerPhrases.enumerated()), id: \.element.id) { index, phrase in
+                            if index > 0 { AlarmSettingDivider() }
+                            RadioRow(label: phrase.text, selected: draftCheerPinned == phrase.contentId) {
+                                draftCheerPinned = phrase.contentId
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     // MARK: - 상태
 
     private func loadDraft() {
         draftContext = initialContext
+        draftCheerMode = cheerMode
+        draftCheerPinned = cheerPinnedContentId
         draftManualText = initialManualText
         draftWeatherCountry = savedWeatherCountry
         draftWeatherCity = savedWeatherCity
@@ -478,7 +542,9 @@ struct MessageSettingsPane: View {
             weatherCity: draftWeatherCity,
             fortuneGender: draftFortuneGender,
             fortuneBirthDate: draftFortuneBirthDate,
-            fortuneBirthTime: draftFortuneBirthTime
+            fortuneBirthTime: draftFortuneBirthTime,
+            cheerMode: draftCheerMode,
+            cheerPinnedContentId: draftCheerPinned
         )
     }
 }
@@ -495,8 +561,19 @@ struct MessageSettingsResult: Equatable {
     var fortuneGender: String
     var fortuneBirthDate: String
     var fortuneBirthTime: String
+    /// 응원 테마의 다양하게 / 이 문구로 고정(스펙 voice-and-message §5-4). 응원이 아니면 그대로 되돌려 준다.
+    var cheerMode: CheerMode = .vary
+    var cheerPinnedContentId: String? = nil
 
     var isManual: Bool { context == Self.manualContext }
+
+    /// 응원 설정을 뺀 나머지 — 그것만 바뀌었는지 가르는 데 쓴다(`MessageSettingsPane.onDisappear`).
+    var withoutCheerSettings: MessageSettingsResult {
+        var copy = self
+        copy.cheerMode = .vary
+        copy.cheerPinnedContentId = nil
+        return copy
+    }
 }
 
 /// 문구 요약 행 — 편집기 목소리 카드 안에 놓인다.

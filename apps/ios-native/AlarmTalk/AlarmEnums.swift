@@ -197,6 +197,9 @@ enum AlarmAudioLimits {
 /// 없었다.** 새 값을 늘릴 때는 반드시 `tts.ts` 의 화이트리스트부터 확인할 것.
 enum RandomPromptContext: String, CaseIterable, Identifiable {
     case preset
+    /// 기상 인사 — 기본 목소리 전용 스톡 클립 `wake`(스펙 voice-and-message §5-4). 클론의 같은 자리는 `preset`(생성된
+    /// 기상 인사)이라 클론 목록에서는 뺀다(`availableContexts`). 안드로이드 `WakeMessageContext` 미러.
+    case wake
     case wakeWeather = "wake_weather"
     case wakeFortune = "wake_fortune"
     /// 응원. ⚠ **옛 이름은 `love` 였다**(2026-09-02, 연애가 아니라 응원·자기돌봄으로
@@ -212,6 +215,7 @@ enum RandomPromptContext: String, CaseIterable, Identifiable {
     static let defaultContext: RandomPromptContext = .preset
     static let alarmEditorCases: [RandomPromptContext] = [
         .preset,
+        .wake,
         .wakeWeather,
         .wakeFortune,
         .cheer,
@@ -251,6 +255,7 @@ enum RandomPromptContext: String, CaseIterable, Identifiable {
     static func forBucket(_ bucket: String?) -> RandomPromptContext? {
         switch bucket?.trimmingCharacters(in: .whitespacesAndNewlines) {
         case "greeting": return .preset
+        case "wake": return .wake
         case "cheer", "love": return .cheer
         case "medication": return .medication
         case "fortune": return .wakeFortune
@@ -263,6 +268,7 @@ enum RandomPromptContext: String, CaseIterable, Identifiable {
     var bucketCategory: String {
         switch self {
         case .preset: return "greeting"
+        case .wake: return "wake"
         case .cheer: return "cheer"
         case .medication: return "medication"
         case .wakeFortune: return "fortune"
@@ -277,7 +283,7 @@ enum RandomPromptContext: String, CaseIterable, Identifiable {
         case .cheer: return "cheer"
         case .medication: return "medication"
         // preset·날씨·운세는 공통 라벨 morning 을 쓴다(문구는 preset/동적 경로가 따로 정한다).
-        case .preset, .wakeWeather, .wakeFortune: return "morning"
+        case .preset, .wake, .wakeWeather, .wakeFortune: return "morning"
         }
     }
 

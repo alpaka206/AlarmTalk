@@ -320,6 +320,9 @@ struct RemoteAlarm: Codable, Identifiable, Equatable {
     /// 고른 테마 — 서버 `alarms.bucket_id`. 안드로이드 `RemoteAlarm.bucketId` 짝.
     var bucketId: String?
     var creationReplayed: Bool? = nil
+    /// 응원 테마의 다양하게/고정(스펙 voice-and-message §5-4) — 응원 알람을 저장한 응답에만 실린다.
+    var cheerMode: String? = nil
+    var cheerPinnedContentId: String? = nil
 }
 
 struct RemoteAlarmWriteRequest: Encodable {
@@ -340,6 +343,10 @@ struct RemoteAlarmWriteRequest: Encodable {
     /// 알람을 해석할 수 있도록 생성/수정 페이로드에 항상 동봉한다.
     var timezone: String? = TimeZone.current.identifier
     var clientAlarmId: String? = nil
+    /// 응원 테마의 다양하게/고정(스펙 voice-and-message §5-4). 응원 알람만 싣는다 — 다른 알람은 nil 이라 빠진다.
+    /// 안드로이드 `RemoteAlarmWriteRequest.cheerMode` 미러.
+    var cheerMode: String? = nil
+    var cheerPinnedContentId: String? = nil
     /// `messageId`·`bucketId` 가 비어 있으면 **빼지 않고 `null` 로 실어** 서버 값을 지운다.
     /// 본문에는 실리지 않는다(`encode(to:)` 가 읽기만 한다). 안드로이드
     /// `RemoteAlarmWriteRequest.clearsMissingVoiceReferences` 미러.
@@ -353,6 +360,7 @@ struct RemoteAlarmWriteRequest: Encodable {
     private enum CodingKeys: String, CodingKey {
         case time, repeatDays, snoozeMinutes, mode, vibrationPattern, wakeMode, isActive, messageId
         case voiceProfileId, bucketId, timezone, clientAlarmId
+        case cheerMode, cheerPinnedContentId
     }
 
     /// 합성 인코딩과 같다(nil 은 뺀다) — 단 `clearsMissingVoiceReferences` 면 `messageId`·`bucketId`
@@ -371,6 +379,8 @@ struct RemoteAlarmWriteRequest: Encodable {
         try encodeClearable(bucketId, forKey: .bucketId, in: &container)
         try container.encodeIfPresent(timezone, forKey: .timezone)
         try container.encodeIfPresent(clientAlarmId, forKey: .clientAlarmId)
+        try container.encodeIfPresent(cheerMode, forKey: .cheerMode)
+        try container.encodeIfPresent(cheerPinnedContentId, forKey: .cheerPinnedContentId)
     }
 
     private func encodeClearable(
@@ -655,6 +665,17 @@ struct StockClip: Codable, Identifiable, Equatable {
 
     /// 옛 서버(필드 없음)는 '준비됨' 으로 본다 — 없는 신호로 앱을 멈추지 않는다.
     var isRenderedForCurrentVoice: Bool { renderedForCurrentVoice ?? true }
+
+    /// 이 클립이 속한 **테마(버킷)** — 스펙 voice-and-message §5-4 「매니페스트 표지」. `cheer_v2` 카테고리는 테마
+    /// `cheer` 다. 옛 서버는 주지 않는다 — 그때는 카테고리가 테마다(`bucketTheme`). 안드로이드 `StockClip.theme` 미러.
+    var theme: String?
+    /// 묶음 항목 ID(`cheer_v2_05`). 날씨·약·운세처럼 묶음이 없으면 nil.
+    var contentId: String?
+    /// 새로 고를 수 있는가 — 옛 응원(`cheer_v1`)만 false. 없으면(옛 서버) 고를 수 있다로 읽는다.
+    var selectable: Bool?
+
+    /// 테마별로 모을 때 쓰는 값. 안드로이드 `data.bucketTheme` 와 같은 규칙.
+    var bucketTheme: String? { theme ?? category }
 
     var id: String { messageId }
 }
