@@ -68,6 +68,76 @@ internal object UsageSignals {
 }
 
 /**
+ * 응원의 '다양하게 / 이 문구로 고정'(`content_selected`, `docs/spec/voice-and-message.md` §5-4) — **저장에 성공한** 알람의
+ * 선택이다. 부르는 자리는 저장 성공 한 곳뿐이다(`MainViewModelAlarmActions` 의 create/update `onSuccess` — 「직전 선택 유지」와
+ * 같은 시점). 편집기에서 눌러만 보고 취소한 것은 적지 않는다.
+ *
+ * 응원 알람이 아니면(테마가 다르거나 저장값이 없다) 적지 않는다 — 응원 테마가 아닌 알람은 모드를 저장하지 않는다.
+ * ⚠ 고정한 문구 ID(`cheer_v2_05`)는 싣지 않는다. 그 ID 를 담을 정해진 칸이 없고(`pack_id` 는 팩·테마·목소리 키다), 칸을 새로
+ *   만들려면 서버를 먼저 올려야 한다(§7.2). 모드만 남긴다.
+ */
+internal fun contentSelectionProps(bucketId: String?, cheerMode: String?): UsageEventProps? {
+    if (bucketId != CHEER_BUCKET_ID || cheerMode == null) return null
+    val mode = if (CheerModes.normalize(cheerMode) == CheerModes.PINNED) {
+        UsageEventProps.CONTENT_FIXED
+    } else {
+        UsageEventProps.CONTENT_VARIED
+    }
+    return UsageEventProps(contentMode = mode)
+}
+
+/** [contentSelectionProps] 를 적는다. [ownerUserId] 는 저장을 **시작한** 계정이다(저장은 날씨 조회까지 타는 비동기다). */
+internal fun recordContentSelected(context: Context, saved: AlarmEntity, ownerUserId: String?) {
+    val props = contentSelectionProps(saved.bucketId, saved.cheerMode) ?: return
+    UsageSignals.record(
+        context,
+        UsageEvents.CONTENT_SELECTED,
+        alarmId = saved.id,
+        voiceProfileId = saved.voiceProfileId,
+        props = props,
+        ownerUserId = ownerUserId,
+    )
+}
+
+/** 아침 소식의 원천 — 공시(OpenDART) / 정책뉴스(정책브리핑). 기록의 `surface` 칸 값이다(그 링크·음성이 어느 줄에서 열렸나). */
+internal enum class BriefingSource(val code: String) {
+    DISCLOSURE("disclosure"),
+    POLICY_NEWS("policy_news"),
+}
+
+/**
+ * 아침 소식 사용(`briefing_opened` / `source_opened` / `briefing_audio_requested`, `docs/spec/morning-briefing.md` §8).
+ *
+ * ⚠ **관심 기업·기사 제목·원문·URL 을 싣지 않는다**(§7.1). 원천 구분은 [BriefingSource] 코드 하나(`surface`)뿐이다 — 기업
+ *   고유번호·접수번호도 넣지 않는다(무엇을 봤는지가 곧 관심 기업이다).
+ */
+internal object BriefingSignals {
+    /** 화면이 열렸다. 들어오는 곳은 더보기 하나다. */
+    const val SURFACE_MENU = "menu"
+
+    fun opened(context: Context) {
+        UsageSignals.record(context, UsageEvents.BRIEFING_OPENED, props = UsageEventProps(surface = SURFACE_MENU))
+    }
+
+    /** 원문 링크를 열었다. 링크는 받지 않는다 — 원천 종류만. */
+    fun sourceOpened(context: Context, source: BriefingSource) {
+        UsageSignals.record(context, UsageEvents.SOURCE_OPENED, props = sourceProps(source))
+    }
+
+    /** '음성 만들기' 를 눌러 요청을 보낸다. 문장은 받지 않는다 — 원천 종류와 고른 목소리 id 만. */
+    fun audioRequested(context: Context, source: BriefingSource, voiceProfileId: String) {
+        UsageSignals.record(
+            context,
+            UsageEvents.BRIEFING_AUDIO_REQUESTED,
+            voiceProfileId = voiceProfileId,
+            props = sourceProps(source),
+        )
+    }
+
+    fun sourceProps(source: BriefingSource): UsageEventProps = UsageEventProps(surface = source.code)
+}
+
+/**
  * 샘플(목소리 미리듣기) 한 번. **실제로 재생을 시작한 직후** [start] 로 만들고, 끝까지 갔을 때만 [completed].
  * 중간에 멈추거나 오류가 나면 아무것도 하지 않는다(시작만 남는다).
  */

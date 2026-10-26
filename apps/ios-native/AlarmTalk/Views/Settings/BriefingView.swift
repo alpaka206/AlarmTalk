@@ -7,6 +7,46 @@ enum BriefingLinks {
     static let koglType1 = URL(string: "https://www.kogl.or.kr/info/licenseType1.do")!
 }
 
+/// 아침 소식의 원천 — 공시(OpenDART) / 정책뉴스(정책브리핑). 사용 기록의 `surface` 칸 값이다(그 링크·음성이 어느 줄에서
+/// 열렸나). 안드로이드 `BriefingSource`(`data/UsageSignals.kt`) 짝.
+enum BriefingSource: String, CaseIterable {
+    case disclosure
+    case policyNews = "policy_news"
+}
+
+/// 아침 소식 사용 기록(`briefing_opened` / `source_opened` / `briefing_audio_requested`, `docs/spec/usage-events.md` §7.1).
+/// 안드로이드 `BriefingSignals` 짝.
+///
+/// ⚠ **관심 기업·기사 제목·원문·URL 을 싣지 않는다.** 원천 구분은 [BriefingSource] 코드 하나(`surface`)뿐이다 — 기업
+///   고유번호·접수번호도 넣지 않는다(무엇을 봤는지가 곧 관심 기업이다).
+enum BriefingUsageSignals {
+    /// 화면이 열렸다. 들어오는 곳은 더보기 하나다.
+    static let menuSurface = "menu"
+
+    static func opened(userID: String?) {
+        UsageEventQueue.shared.record(.briefingOpened, props: UsageEventProps(surface: menuSurface), userID: userID)
+    }
+
+    /// 원문 링크를 열었다. 링크는 받지 않는다 — 원천 종류만.
+    static func sourceOpened(_ source: BriefingSource, userID: String?) {
+        UsageEventQueue.shared.record(.sourceOpened, props: sourceProps(source), userID: userID)
+    }
+
+    /// '음성 만들기' 를 눌러 요청을 보낸다. 문장은 받지 않는다 — 원천 종류와 고른 목소리 id 만.
+    static func audioRequested(_ source: BriefingSource, voiceID: String, userID: String?) {
+        UsageEventQueue.shared.record(
+            .briefingAudioRequested,
+            voiceProfileID: voiceID,
+            props: sourceProps(source),
+            userID: userID
+        )
+    }
+
+    static func sourceProps(_ source: BriefingSource) -> UsageEventProps {
+        UsageEventProps(surface: source.rawValue)
+    }
+}
+
 /// **아침 소식** — 더보기에서 들어가는 하위 화면(`docs/spec/morning-briefing.md` §8). 안드로이드 `BriefingScreen` 짝.
 /// 열 때와 '다시 확인' 을 누를 때만 묻는다. 소식은 기기에 저장하지 않는다.
 struct BriefingView: View {
@@ -38,6 +78,8 @@ struct BriefingView: View {
     @State private var searchOpen = false
     @State private var limitAlertOpen = false
     @State private var speechTarget: BriefingSpeechTarget?
+    /// 화면이 열린 것을 한 번 적었다(`briefing_opened`) — 위에 덮은 시트가 닫혀 `.task` 가 다시 돌아도 다시 세지 않는다.
+    @State private var openRecorded = false
 
     var body: some View {
         ScrollView {
@@ -53,11 +95,19 @@ struct BriefingView: View {
                     if let model {
                         ForEach(model.companies) { section in
                             BriefingCompanyCard(section: section, onSpeech: { item in
-                                speechTarget = BriefingSpeechTarget(id: "d:\(item.id)", text: BriefingSpeech.disclosure(item))
+                                speechTarget = BriefingSpeechTarget(
+                                    id: "d:\(item.id)",
+                                    text: BriefingSpeech.disclosure(item),
+                                    source: .disclosure
+                                )
                             })
                         }
                         BriefingNewsCard(section: model.news, onSpeech: { item in
-                            speechTarget = BriefingSpeechTarget(id: "n:\(item.id)", text: BriefingSpeech.policyNews(item))
+                            speechTarget = BriefingSpeechTarget(
+                                id: "n:\(item.id)",
+                                text: BriefingSpeech.policyNews(item),
+                                source: .policyNews
+                            )
                         })
                     }
                 }
@@ -69,6 +119,10 @@ struct BriefingView: View {
         .navigationTitle(String(localized: "아침 소식"))
         .navigationBarTitleDisplayMode(.inline)
         .task {
+            if !openRecorded {
+                openRecorded = true
+                BriefingUsageSignals.opened(userID: auth.session?.user.id)
+            }
             await loadInterests()
             await loadToday()
         }
@@ -348,6 +402,8 @@ struct BriefingView: View {
 struct BriefingSpeechTarget: Identifiable, Equatable {
     var id: String
     var text: String
+    /// 사용 기록의 원천 종류(`briefing_audio_requested`) — 문장·제목은 기록에 싣지 않는다.
+    var source: BriefingSource
 }
 
 struct BriefingVoiceChoice: Identifiable, Equatable {
@@ -415,7 +471,7 @@ private struct BriefingCompanyCard: View {
                         if item.flags.correctedLater { BriefingFlagBadge(text: String(localized: "정정 신고 있음")) }
                         if item.flags.withdrawn { BriefingFlagBadge(text: String(localized: "철회됨")) }
                     }
-                    BriefingItemActions(url: item.url, onSpeech: { onSpeech(item) })
+                    BriefingItemActions(url: item.url, source: .disclosure, onSpeech: { onSpeech(item) })
                 }
             }
         }
@@ -471,7 +527,7 @@ private struct BriefingNewsCard: View {
                             .foregroundStyle(theme.palette.onSurfaceVariant)
                             .lineLimit(3)
                     }
-                    BriefingItemActions(url: item.url, onSpeech: { onSpeech(item) })
+                    BriefingItemActions(url: item.url, source: .policyNews, onSpeech: { onSpeech(item) })
                 }
             }
         }
@@ -510,13 +566,19 @@ private struct BriefingFlagBadge: View {
 
 private struct BriefingItemActions: View {
     @Environment(\.openURL) private var openURL
+    @EnvironmentObject private var auth: AuthViewModel
     let url: String
+    /// 사용 기록(`source_opened`)에 싣는 원천 종류. 링크는 기록에 싣지 않는다.
+    let source: BriefingSource
     let onSpeech: () -> Void
 
     var body: some View {
         HStack(spacing: 16) {
             Button(String(localized: "원문 보기")) {
-                if let link = URL(string: url) { openURL(link) }
+                if let link = URL(string: url) {
+                    BriefingUsageSignals.sourceOpened(source, userID: auth.session?.user.id)
+                    openURL(link)
+                }
             }
             Button(String(localized: "음성 문장"), action: onSpeech)
         }
@@ -742,6 +804,8 @@ private struct BriefingSpeechSheet: View {
         generating = true
         message = nil
         defer { generating = false }
+        // 요청을 보내기 전에 적는다 — 실패해도 '요청했다' 는 남는다. 문장은 싣지 않는다.
+        BriefingUsageSignals.audioRequested(target.source, voiceID: voiceID, userID: auth.session?.user.id)
         do {
             let response = try await AlarmTalkAPI.shared.generateTTS(
                 TtsGenerateRequest(

@@ -105,6 +105,9 @@ data class UsageEventProps(
         const val CHARGED_BASE = "base"
         const val CHARGED_AD = "ad"
         const val CHARGED_NONE = "none"
+        /** `content_mode` — 응원 '이 문구로 고정' / '다양하게'(`docs/spec/voice-and-message.md` §5-4). */
+        const val CONTENT_FIXED = "fixed"
+        const val CONTENT_VARIED = "varied"
         const val OFFER_FREE_TRIAL = "free_trial"
         const val OFFER_INTRO = "intro"
         const val OFFER_NONE = "none"
@@ -115,7 +118,7 @@ data class UsageEventProps(
         private val OUTCOMES = setOf(OUTCOME_SUCCESS, OUTCOME_FAILURE, OUTCOME_CANCELLED)
         private val REUSE_LOCATIONS = setOf(REUSE_LOCAL, REUSE_SERVER)
         private val CHARGED_SOURCES = setOf(CHARGED_BASE, CHARGED_AD, CHARGED_NONE)
-        private val CONTENT_MODES = setOf("fixed", "varied")
+        private val CONTENT_MODES = setOf(CONTENT_FIXED, CONTENT_VARIED)
         private val STORE_OFFERS = setOf(OFFER_FREE_TRIAL, OFFER_INTRO, OFFER_NONE, OFFER_UNKNOWN)
 
         private val CODE = Regex("^[a-z0-9][a-z0-9_.-]{0,63}$")
