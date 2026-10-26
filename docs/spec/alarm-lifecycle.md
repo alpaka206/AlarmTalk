@@ -367,7 +367,7 @@ PATCH로 이어지게 한다. 성공 응답을 받은 뒤에는 작업 취소를
 | 사유 | 판정 | 알럿 |
 | --- | --- | --- |
 | 지난 시각 | 발사 시각 ≤ 지금. **누르는 순간** 다시 잰다 — 편집하는 사이에 지났을 수 있다 | "이미 지난 시각이에요" / "날짜나 시각을 다시 골라 주세요." |
-| 같은 시각 알람 | 이 계정에 보이는 다른 알람이 같은 시:분이다(기존 '한 시각에 알람 하나' 판정과 같은 대상) | "같은 시각에 다른 알람이 있어요" / "날짜 알람은 다른 알람을 바꾸지 않아요. 다른 시각을 골라 주세요." |
+| 같은 시각 알람 | 이 계정에 보이는 다른 알람이 같은 시:분이다 — **꺼진 알람도 센다**(기존 '한 시각에 알람 하나' 판정과 같은 대상: 안드로이드 `findAtTime`, iOS `conflictingAlarms`). 지시의 '활성 알람과 충돌' 보다 넓다 — 판정을 둘로 가르지 않으려고 기존 대상을 그대로 쓴다 | "같은 시각에 다른 알람이 있어요" / "날짜 알람은 다른 알람을 바꾸지 않아요. 다른 시각을 골라 주세요." |
 
 - ⚠ **날짜 알람은 다른 알람을 덮어쓰지 않는다.** 반복 알람끼리의 충돌은 '교체할까요?' 를 묻지만, 날짜 알람은 그
   질문을 하지 않는다 — 내일 한 번을 위해 매일 울리는 알람을 지우는 선택지를 두지 않는다. 시각을 몰래 옮기거나
@@ -390,6 +390,10 @@ PATCH로 이어지게 한다. 성공 응답을 받은 뒤에는 작업 취소를
 - iOS: weekly 예약의 한 회차만 날짜 문구로 바꾸는 방식을 쓰지 않는다 — 날짜 알람은 그 자체로 `.fixed` 예약 하나다.
   `repeatDaysMask = 0` 만으로 저장하면 기존 `.relative(.never)` 갈래(벽시계 시:분, 다음 그 시각)로 들어가므로
   `makeSchedule` 에 날짜형 갈래를 따로 둔다.
+- iOS: 앱이 꺼진 채 잠금 화면에서 정지한 날짜 알람은 일회성과 같은 길을 탄다 — 다음 실행의 `processAlarmUpdate` 가 '행에는
+  손잡이가 있는데 AlarmKit 에 없다' 를 보고 `markStopped` 를 불러 꺼진 채 남긴다. 복구 sweep 의 후보는 손잡이가 없거나
+  `.failed` 인 행뿐이라 그 행은 낙인도 재예약도 받지 않는다. 정지가 행에 닿기 전 다른 경로(소리 지문 재조정 등)가 다시
+  거는 창은 `AlarmKitViewModel.schedule` 이 '지난 날짜 알람' 을 거절해 닫는다.
 
 ### 4-5. 저장 순서 — 새 예약이 서야 옛것을 놓는다
 
@@ -548,11 +552,12 @@ OR로 합치면 평일 알람을 건너뛸 수 있으므로 계산 폴백 자체
 | 1-4 예약 중 계정 변경 | — | (해당 없음 — 발화 시 Room 을 다시 읽는다) | `AlarmKitViewModel.accountEpoch` |
 | iOS 소리 지문 | — | (해당 없음) | `AlarmScheduleReconciler.scheduledFingerprint` |
 | iOS 언어 재예약은 AlarmKit 대기 상태만(행 상태가 늦는 창) | — | (해당 없음 — 울릴 때 표시를 만든다) | `AlarmScheduleReconciler.reconcile` 의 `readIdleHandles` ← `AlarmKitViewModel.idleScheduledHandles` — 회귀 `AlarmKitLocalizationTests` |
-| 4 날짜 알람 저장값·왕복 | `alarms.target_date`(#140), `alarm-helpers.ts` 의 `validateAlarmFields`(`INVALID_TARGET_DATE`) · `alarm-mutation.ts`(반복 요일만 오면 날짜 지움) · shared `isAlarmTargetDate` | `AlarmEntity.targetDate`·`targetTimezone`(Room 28→29) → `RemoteAlarmMapper.toWriteRequest`(`target_date`·`timezone`) | `LocalAlarmRecord.targetDate`·`targetTimezone`(옛 JSON 은 nil) → `RemoteAlarmMapper` |
-| 4-2 고정 시각(시간대 변경에도) | — | `AlarmTimeCalculator.datedFireAtMillis` ← `AlarmRepository.fireAtFor`(저장·켜기·복구 sweep) | `AlarmKitViewModel.makeSchedule` 의 날짜 갈래(`.fixed`) |
-| 4-2 다른 시간대 표시 | — | `ui/editor/AlarmEditorControls.kt` 의 `datedTimezoneNote` | 알람 행·편집기 날짜 줄 |
-| 4-3 지난 시각·같은 시각 막기(교체 없음) | — | `SaveBlockReason.DATED_TIME_PASSED`·`DATED_TIME_CONFLICT`(`editorSaveBlockReason`) · 그물 `AlarmRepository` 의 `DatedAlarmPastException`·`findReplaceableConflict` | 편집기 저장 사유 |
-| 4-4 지난 날짜는 켜지 않는다 · 해제하면 꺼진 채 남는다 | — | `AlarmRepository.setEnabled`(`DatedAlarmPastException`) · `dismiss` 의 일회성 갈래 | 일회성 정지 경로 |
-| 4-5 새 예약 먼저 · 실패면 옛 예약 | — | `AlarmRepository.updateAlarm` 의 `scheduleKeepingPrevious` | 기존 교체 흐름 |
+| 4 날짜 알람 저장값·왕복 | `alarms.target_date`(#140), `alarm-helpers.ts` 의 `validateAlarmFields`(`INVALID_TARGET_DATE`) · `alarm-mutation.ts`(반복 요일만 오면 날짜 지움) · shared `isAlarmTargetDate` | `AlarmEntity.targetDate`·`targetTimezone`(Room 28→29) → `RemoteAlarmMapper.toWriteRequest`(`target_date`·`timezone`) | `LocalAlarmRecord.targetDate`·`targetTimezone`(옛 JSON 은 `decodeIfPresent` 로 nil) → `RemoteAlarmMapper.toRemoteRequest`(`timezone` = 확인한 시간대) → `RemoteAlarmWriteRequest.targetDate`(nil 도 `null`) · 형식 검증 `LocalAlarmStore.validateDraft`(`invalidTargetDate`) |
+| 4-2 고정 시각(시간대 변경에도) | — | `AlarmTimeCalculator.datedFireAtMillis` ← `AlarmRepository.fireAtFor`(저장·켜기·복구 sweep) | `DatedAlarmTime.fireAtMillis` ← `LocalAlarmRecord.datedFireAtMillis` · 예약 `AlarmKitViewModel.scheduleKind(for:)` == `.fixed` → `makeSchedule` · 반복 갈래와 분리 `LocalAlarmRecord.isRecurring`(`markStopped`·`prepareForScheduleRecovery`·`AlarmAppContext.handleAlarmStopped`) |
+| 4-2 다른 시간대 표시 | — | `ui/editor/AlarmEditorControls.kt` 의 `datedTimezoneNote` | `DatedAlarmTime.timezoneNote` ← `LocalAlarmRecord.datedTimezoneNote`(`AlarmRow`) · `AlarmEditorSheet.datedTimezoneNote` |
+| 4-3 지난 시각·같은 시각 막기(교체 없음) | — | `SaveBlockReason.DATED_TIME_PASSED`·`DATED_TIME_CONFLICT`(`editorSaveBlockReason`) · 그물 `AlarmRepository` 의 `DatedAlarmPastException`·`findReplaceableConflict` | `AlarmEditorSheet.datedSaveBlockAlert`(`saveFlow` 가 음성 생성 전에 부른다) · 경합 그물: `conflictingAlarms` 갈래가 날짜 알람이면 교체를 묻지 않고 같은 알럿 |
+| 4-4 지난 날짜는 켜지 않는다 · 해제하면 꺼진 채 남는다 | — | `AlarmRepository.setEnabled`(`DatedAlarmPastException`) · `dismiss` 의 일회성 갈래 | `AlarmsListView.setAlarm`(알럿) → 그물 `LocalAlarmStore.setEnabled`(false) · 정지 `LocalAlarmStore.markStopped` 의 `isRecurring` · 지난 날짜는 `AlarmKitViewModel.schedule` 첫머리가 낙인 없이 거절 |
+| 4-5 새 예약 먼저 · 실패면 옛 예약 | — | `AlarmRepository.updateAlarm` 의 `scheduleKeepingPrevious` | 기존 교체 흐름 그대로(`AlarmEditorSheet.finishScheduling` — 실패면 기존 행 복원, 옛 손잡이는 성공 뒤 취소) |
+| 4 회귀 테스트 | `test/alarm-target-date.test.ts` · shared `test/alarm.test.ts` | `data/DatedAlarmRepositoryTest`(고정 시각·지난 시각·교체 없음·시간대 변경·해제·켜기) · `RemoteAlarmMapperTest`(`target_date` null·값) · `DatedAlarmEditorTest` | `DatedAlarmTests` |
 | 4-6 입력 200자 상한 | shared `MANUAL_TTS_TEXT_MAX_LENGTH` ← `routes/tts.ts` | — | — |
 | 회귀 테스트 | — | — | `AlarmTalkTests/InaccessibleVoiceReconcileTests.swift`(`LeaveAccountAlarmTests`) |
