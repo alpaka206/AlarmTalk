@@ -2282,22 +2282,25 @@ cron 이 한 자리를 먼저 커밋하면 게시는 그 자리를 '이미 있�
   설정을 안 바꾼 저장) **같은 선택을 쓰고 이력을 더하지 않는다.** 새 선택을 기록하는 것은 둘뿐이다:
   1. **새 회차가 확정될 때** — 알람을 끝내 다음 회차로 넘어갈 때, 저장으로 발사 시각이 바뀔 때.
   2. **사용자가 문구를 바꿀 때** — 모드나 고정 문구를 바꿔 저장할 때.
-  스누즈는 같은 회차다(스누즈로 바뀐 발사 시각에는 고르지 않는다). 재예약·시간대 변경·복구도 고르지 않는다(§5 「예약할
-  때 돌리지 말 것」과 같은 이유).
+  스누즈는 같은 회차다(스누즈로 바뀐 발사 시각에는 고르지 않는다). 아직 오지 않은 회차를 다시 거는 재예약·시간대 변경도
+  고르지 않는다(§5 「예약할 때 돌리지 말 것」과 같은 이유). 단 iOS 의 복구가 **지나간 회차를 다음 회차로 넘길 때**는 새
+  회차가 확정된 것이라 고른다 — AlarmKit 은 해제 관측 없이도 울리기 때문이다(아래 「플랫폼 차이」).
 - **콘텐츠 버전**은 ID 자체다(`cheer_v2_05`). 고른 ID 가 후보에서 빠지면(언어를 바꿨다·클립이 지워졌다) 다음 준비 때
   새로 고른다. 울릴 때 선택한 클립 파일이 없으면 묶어 둔 회전으로 떨어진다 — 소리가 없는 것보다 낫다.
 - 직접 입력 횟수와 무관하다 — 응원은 만들어 둔 클립을 고르는 일이다.
 
-**화면**(문구 화면, 응원을 골랐을 때만): 아래에 「다양하게」·「이 문구로 고정」 두 줄, 고정이면 그 아래 **후보 문구** 목록.
-**후보가 하나도 없으면 이 카드를 그리지 않는다** — 준비되지 않은 문구를 '쓸 수 있음' 으로 보이지 않는다. 요약 행에는
-문장을 싣지 않는다(§4 「요약 행에는 문장을 싣지 않는다」) — 「응원」 그대로다.
+**화면**(문구 화면, 응원을 골랐을 때만): 아래에 「다양하게」·「이 문구로 고정」 두 줄, 고정이면 그 아래 문구 목록.
+목록은 그 목소리·언어로 **매니페스트에 있는** 새 응원이다(서버가 다 만들어 공개한 것 — 받기는 선다운로드가 한다).
+**하나도 없으면 이 카드를 그리지 않는다** — 공개 전·보충 전의 문구를 '쓸 수 있음' 으로 보이지 않는다. 실제로 고르는 것은
+위 후보(받아 둔 것)뿐이라, 아직 안 받은 문구를 고정하면 받을 때까지 다양하게로 돈다. 요약 행에는 문장을 싣지 않는다
+(§4 「요약 행에는 문장을 싣지 않는다」) — 「응원」 그대로다. 새 알람은 다양하게로 연다(직전 선택으로 잇지 않는다).
 
 **플랫폼 차이 — 숨기지 않는다.**
 
 | | 안드로이드 | iOS |
 | --- | --- | --- |
 | 무엇이 우는가 | **울릴 때** 행의 선택 클립을 그대로 튼다 | AlarmKit 이 **예약할 때** 받은 소리 하나 |
-| 다음 문구를 준비하는 때 | 저장 · 알람을 끝냈을 때(`AlarmRepository.dismiss`) | 저장 · **관측된** 해제(`markStopped`) · **앱 복귀**(다가오는 회차 — 반복 알람은 지금 기준 다음 발사 시각 — 를 회차 키로 본다. 울리는 중·스누즈 중이면 건너뛴다) — 고른 뒤 소리 지문이 바뀌면 재조정이 다시 예약한다 |
+| 다음 문구를 준비하는 때 | 저장 · 알람을 끝냈을 때(`AlarmRepository.dismiss`) | 저장 · **관측된** 해제(`markStopped`) · 지나간 회차를 넘기는 복구(`prepareForScheduleRecovery` — 해제를 놓쳐도 AlarmKit 은 울렸을 수 있다) · **앱 복귀**(로그인한 동안 — 아직 고르지 않은 다가오는 회차를 고른다. 울리는 중·스누즈 중이면 건너뛴다). 고른 뒤 소리 지문이 바뀌면 재조정이 다시 예약한다 |
 | 앱을 한동안 안 열면 | 해제를 언제나 우리가 받으므로 회차마다 바뀐다 | 해제를 놓친 회차(앱이 안 깨어난 반복 알람)는 **같은 문구로 다시 울 수 있다** — 앱 복귀가 다음 회차를 준비한다 |
 
 ⚠ **"앱을 열지 않아도 매일 다른 문구" 라고 약속하지 않는다**(화면·스토어 설명·출시 노트). iOS 는 그 약속을 지킬 수 없다.
@@ -2838,6 +2841,14 @@ R2 파일·ElevenLabs 클론은 DB 트랜잭션 안에서 지울 수 없으므�
 | 녹음 품질 판정 — 임계값·판정 셋·정규화(16 kHz)·VAD 꽂는 자리(§4-1 「녹음 품질 판정」) | `data/RecordingQuality.kt`(`RecordingQualityThresholds`·`MonoPcmNormalizer`·`RecordingQualityAnalyzer`·`VoiceActivityDetector`·`diagnostics`) ← 디코더 `data/VoiceAudioDecoder.kt`; 회귀 `data/RecordingQualityAnalyzerTest` | `RecordingQuality.swift`(`RecordingQualityThresholds`·`MonoPcmNormalizer`·`RecordingQualityAnalyzer`·`VoiceActivityDetecting`·`diagnostics`) ← 디코더 `VoiceTuningAnalyzer.decodeMono`; 회귀 `AlarmTalkTests/RecordingQualityAnalyzerTests` | — |
 | 녹음을 멈춘 뒤 — 거절 줄 / 알럿(`다시 녹음`·`그래도 쓰기`) / 말 없음 · 판정 중 `다음` 잠금 · 진단은 수치만 | `ui/voices/RecordingReview.kt`(`reviewRecording`·`recordingReviewMessage`) ← `VoiceProfileManagementPanel` 의 `reviewRecordedAudio`·`discardRecordedAudio`·`recordingReview` 알럿, `AlarmTalkLog.breadcrumb`; 회귀 `RecordingReviewTest` | `RecordingReview.decide`·`alertMessage`(`RecordingQuality.swift`) ← `Views/Voices/VoiceCloneUploadFlow.swift` 의 `reviewFinishedRecording`·`discardRecording`·`.alert`, `AlarmTalkLog.breadcrumb`; 회귀 `RecordingReviewTests` | — |
 | 멈춘 사정 — 안드로이드 `stop()` 실패 갈래·포커스 상실·복구 / iOS 중단·블루투스·백그라운드·녹음기 실패 | `data/AlarmVoiceRecorder.kt`(`classifyRecordingStopFailure`·`RecordingResult`·`interruption`·`requestAudioFocus`) · 브레드크럼 판정 `AlarmTalkLog.isRecordingEndedByUserOrDevice`; 녹음 루프 `VoiceProfileManagementPanel`·`AlarmEditorScreen` 의 `LaunchedEffect(isRecording)`; 회귀 `RecordingReviewTest`·`TransientFailureClassificationTest`, 기기 `AlarmVoiceRecorderInstrumentedTest` | `VoiceRecorder.swift`(`lastStopReason`·`observeSession`·`routeChangeEndsRecording`·`markRecorderFailure`), `RecordingStopReason`; 회귀 `RecordingReviewTests` | — |
+| 응원·기상 인사 문구 원본 하나 · 검수표 · 비용 dry-run(§5-4) | — (매니페스트로 받는다) | — (매니페스트로 받는다) | 원본 `packages/shared/src/stock-content.json` ← `stock-content.ts`(`STOCK_CONTENT_SETS`·`stockContentInfo`·`CHEER_CONTENT_IDS`) → `lib/stock-clips.ts` 의 `presetFromContentSet`(`STOCK_CLIP_PRESETS`)·`cloneSeedsOf`·`CLONE_CONTENT_SUPPLEMENTS` · 검수표 `scripts/gen-stock-content.py`(→ `docs/product/stock-content-review.md`, CI `--check`) · `npm run cost:stock`(`scripts/stock-content-cost.ts`, 합성 없음). 회귀 `packages/shared/test/stock-content.test.ts`(지시서 원문·줄표·금지어·옛 응원 고정)·`cheer-variants.test.ts` |
+| 공개 표식 — 매니페스트 목록·`expected_variants`·표지(`theme`·`content_id`·`selectable`)를 한 요청에서(§5-4) | `network/TtsApi.kt` 의 `StockClip.theme`·`contentId`·`selectable`, `data/CheerVariety.kt` 의 `bucketTheme` | `StockClip.theme`·`contentId`·`selectable`·`bucketTheme`(`AlarmTalkAPIModels.swift`) | `stock_content_releases`(#143) ← `releasedStockContentSets`·`stockCategoryReleased`(`lib/stock-clips.ts`) ← `GET /tts/stock-clips`·`expectedVariantCounts(released)`(`routes/tts.ts`) · 대상 계산 `findMissingStockTargets` · 게시 `scripts/publish-stock-clips.ts` 의 `categoryIncluded`·`releaseContentSet`(`--category`·`--all`·`--release`). 회귀 `cheer-variants.test.ts`·`stock-clips.test.ts`·`spec-doc-counts.test.ts` |
+| 새 응원은 따로 카테고리(`cheer_v2`) · 버킷은 테마 · 선다운로드·준비도는 테마로 센다(§5-4) | `sync/StockClipPrefetchWorker.kt` 의 `isDefaultVoiceTarget`·`ui/main/MainViewModelClipReadiness.kt` 의 `themeByCategory`·`MainViewModelVoiceActions.kt` 의 무료 테마 받기 | `StockClipPrefetcher.isDefaultVoiceTarget`·`ClipReadinessModel` 의 `themeByCategory` | `FREE_BUCKET_CATEGORIES`(테마만, `lib/stock-clips.ts`) ← `validateAlarmFields`(`routes/alarm-helpers.ts`) |
+| 응원 다양하게 / 이 문구로 고정 — 저장값·서버 사본 왕복(§5-4) | `AlarmEntity.cheerMode`·`cheerPinnedContentId`(Room 28→29 `MIGRATION_28_29`) · `AlarmEditorState.cheerMode`·`toDraft` · `network/RemoteAlarmMapper.kt`·`RemoteAlarmApi.kt`. 회귀 `RemoteAlarmMapperTest`·`AlarmEditorStateTest` | `LocalAlarmRecord.cheerMode`·`cheerPinnedContentId` · `AlarmEditDraft.cheerMode`·`toRecord` · `RemoteAlarmMapper.toRemoteRequest`·`RemoteAlarmWriteRequest`. 회귀 `CheerVarietyTests.test_cheerFieldsRoundTripThroughDiskAndUploadOnlyModeAndPin` | `alarms.cheer_mode`·`cheer_pinned_content_id`(#143) ← `cheerFieldsOf`·`validateAlarmFields`(`INVALID_CHEER_SETTING`) ← `POST`·`PATCH /alarm`(`routes/alarm-mutation.ts`). 회귀 `cheer-variants.test.ts` |
+| 응원 선택 — 후보·최근 7개 제외·가장 오래된 것·회차에 묶기·이력은 준비한 것(§5-4) | `data/CheerVariety.kt`(`cheerCandidatesFrom`·`pickCheerContent`·`cheerSeedIndex`·`preparedCheer`·`activeCheerSelection`) ← 저장 `AlarmRepository.createAlarm`·`updateAlarm`, 해제 `AlarmRepository.dismiss`, 울림 `AlarmRepository.resolveBucketClipSelection`(`BucketClipSelection.text` → `ringing/RingingActivity.kt`). 회귀 `CheerVarietyTest` | `CheerVariety.swift`(같은 셈) ← 저장 `AlarmEditorSheet.saveFlow`, 관측된 해제 `LocalAlarmStore.markStopped`·지나간 회차 `prepareForScheduleRecovery`(`prepareCheerForNextOccurrence`), 앱 복귀 `LocalAlarmStore.prepareCheerSelections` ← `AlarmTalkApp.refreshWeatherVariantsAndReconcile`, 예약 `AlarmSoundResolver.rotatedBucketClipKey`. 회귀 `CheerVarietyTests` | — |
+| 응원 카드 — 매니페스트에 새 응원이 없으면 그리지 않는다(§5-4) | `ui/editor/AlarmRandomPromptSettings.kt`(`cheerPhrases`) ← `AlarmEditorScreen.kt`(`cheerPhrasesFrom`)·`applyRandomPromptSettings` | `MessageSettingsPane.cheerVarietyCard`·`onCheerSettingsChange` ← `AlarmEditorSheet.cheerPhrases`·`applyMessageSettings` | — |
+| 기상 인사(`wake`) — 기본 목소리 전용 · 클론 목록에서 뺀다 · greeting 은 여전히 알람이 아니다(§5-4) | `EditorMessageContexts`·`RandomPromptContexts`(`WakeMessageContext`)·`clonePrerenderBucketCategoryFor`·`randomPromptContextForBucket` · `AlarmEditorScreen.kt` 의 클론 `availableContexts`. 회귀 `AlarmEditorStateTest.wakeIsAStockOnlyThemeThatMapsBothWays`·`freeBucketOrderIsDerivedFromTheOneMessageList` | `RandomPromptContext.wake`·`FreeBucket.wake` · `AlarmEditorSheet` 의 클론 `availableContexts`. 회귀 `CheerVarietyTests.test_wakeIsAStockOnlyThemeThatMapsBothWays` | `FREE_BUCKET_CATEGORIES`(`wake` 포함) · 시스템 보이스 + `greeting` 은 그대로 `INVALID_BUCKET_ID`(`routes/alarm-mutation.ts`) |
+| 클론 보충 — 응원을 고른 클론만 · 줄 맨 뒤 · 진행 조회는 done · 실패해도 failed 아님 · 교체 회차가 같이 굽는다 · 직접 입력 장부 무관(§5-4) | — (서버가 한다) | — (서버가 한다) | `requestCloneContentSupplement` ← `requestCheerSupplementAfterSave`(`routes/alarm-mutation.ts`) · `voice_prerender_queue.content_sets`·`supplement`(#143) ← `claimPendingPrerenderVoices`(순서)·`markPrerenderDone`·`markPrerenderFailed`·`listReadyCloneVoices`(`parseContentSets`)·`findMissingStockTargets`·`runPrerenderBatch`(알림) · `GET /voice/:id/prerender-status`(`prerenderSupplementColumnReady`·`excludeSupplementCategoriesSql`)·`prerender/advance`. 회귀 `cheer-variants.test.ts` |
 | 제공자 장애를 녹음 탓으로 말하지 않는다(`VOICE_CLONING_FAILED`) | `api_error_voice_cloning_failed`(`res/values{,-en,-ja}/strings.xml`); 회귀 `RecordingReviewTest.cloningFailureDoesNotBlameTheRecording` | `APIErrorMessages.message(for:)`; 회귀 `RecordingReviewTests.test_cloningFailureDoesNotBlameTheRecording` | `POST /voice/clone` 의 마지막 catch(`routes/voice-profile.ts`) |
 
 ## 검증 방법
