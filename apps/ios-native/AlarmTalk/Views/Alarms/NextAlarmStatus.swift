@@ -32,7 +32,8 @@ enum NextAlarmStatus: Equatable {
         let untilFire = nextFire.timeIntervalSince(now)
         if alarm.bucketId == "weather", untilFire >= 0, untilFire <= weatherWindow {
             let resolved = alarm.contextResolvedAtMillis.map { Date(timeIntervalSince1970: Double($0) / 1000) }
-            if resolved.map({ nextFire.timeIntervalSince($0) > weatherStaleAfter }) ?? true { return .weatherStale }
+            // 지금 기준으로 잰다 — 울릴 시각 기준이면 8시간 전에 받은 답도 23시간 뒤 알람에서 31시간으로 읽힌다.
+            if resolved.map({ now.timeIntervalSince($0) > weatherStaleAfter }) ?? true { return .weatherStale }
         }
         if !systemVoice, alarm.voiceProfileId?.nilIfBlank != nil, let ends = limitedPlanEndsAt, ends <= nextFire {
             return .voiceEnding(ends)

@@ -226,6 +226,17 @@ internal fun AlarmListScreen(
                 modifier = Modifier.padding(top = 24.dp),
             )
         }
+    // 상태 카드의 '기본 목소리 받는 중' — **기본 목소리만** 센다. 워커 진행(`voicePrefetchProgress`)에는 내 목소리 사전렌더도
+    // 섞여 있어, 그것만 받는 중인데 기본 목소리 알람에 '받는 중' 이 뜨고 진짜 날씨 경고까지 가렸다. 워커 진행이 바뀔 때마다
+    // 캐시를 다시 센다(디스크를 읽으니 IO 에서).
+    val statusContext = androidx.compose.ui.platform.LocalContext.current
+    val defaultVoicesDownloading by androidx.compose.runtime.produceState(false, voicePrefetchProgress, authSession?.user?.id) {
+        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            runCatching {
+                com.alarmtalk.app.sync.StockClipPrefetchWorker.defaultVoiceProgress(statusContext, authSession?.user?.id)
+            }.getOrNull()
+        }?.let { (done, total) -> total > 0 && done < total } == true
+    }
     LazyColumn(
         state = listState,
         modifier = Modifier
@@ -306,8 +317,10 @@ internal fun AlarmListScreen(
                 // 권한 부족도 이 카드가 말한다(예전 권한 배너와 같은 문구·같은 동작). 켜진 알람이 없는데 권한이 모자라면
                 // 예전처럼 배너만 둔다.
                 val nowMillis = System.currentTimeMillis()
+                // 저장된 예약 시각(`fireAtMillis`)으로 고른다 — 헤드라인과 같다. 시·분·반복으로 다시 계산하면 다시 울림(스누즈)으로
+                // 5분 뒤에 울 알람을 내일 알람으로 읽는다(`AlarmRepository.snooze` 는 `fireAtMillis` 만 옮긴다).
                 val nextAlarm = alarms.filter { it.enabled }
-                    .map { it to com.alarmtalk.app.data.AlarmTimeCalculator.nextFireAtMillis(it.hour, it.minute, it.repeatDaysMask, it.holidayOff, nowMillis) }
+                    .map { it to it.fireAtMillis }
                     .minByOrNull { it.second }
                 val missingPermission = permissions.firstMissingAlarmTarget()
                 if (nextAlarm != null) {
@@ -317,7 +330,7 @@ internal fun AlarmListScreen(
                         alarm = alarm,
                         nextFireAtMillis = fireAt,
                         missingPermission = missingPermission,
-                        defaultVoiceDownloadInProgress = voicePrefetchProgress?.let { (done, total) -> total > 0 && done < total } == true,
+                        defaultVoiceDownloadInProgress = defaultVoicesDownloading,
                         limitedPlanEndsAtMillis = limitedEndsAt,
                         nowMillis = nowMillis,
                     )

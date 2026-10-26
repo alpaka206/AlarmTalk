@@ -23,6 +23,10 @@ struct AlarmsListView: View {
     var createRequest: UUID?
     let openEditor: (AlarmEditorTarget) -> Void
 
+    /// 상태 카드의 '기본 목소리 받는 중' — **기본 목소리만** 센다. 프리페처는 내 목소리 사전렌더도 같은 회차에 받아, 회차가
+    /// 돈다(`isRunning`)는 것만으로는 기본 목소리가 남았는지 모른다. 프리페처 상태가 바뀔 때마다 메인 밖에서 다시 센다.
+    @State private var defaultVoicesDownloading = false
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             // 로컬 JSON 첫 로드 전의 빈 배열은 실제 빈 목록이 아니다. 안드로이드의
@@ -43,7 +47,7 @@ struct AlarmsListView: View {
                                     alarm: next,
                                     nextFire: next.nextFireDate,
                                     alarmAuthorized: alarmKit.alarmAuthorized,
-                                    defaultVoiceDownloadInProgress: stockClipPrefetcher.isRunning,
+                                    defaultVoiceDownloadInProgress: defaultVoicesDownloading,
                                     limitedPlanEndsAt: auth.session?.user.personalPromo?.endsAtDate
                                 ),
                                 voiceName: voiceName(for: next),
@@ -74,6 +78,11 @@ struct AlarmsListView: View {
             }
         }
         .onChange(of: store.alarms.count) { _, _ in pruneSelection() }
+        .task(id: stockClipPrefetcher.state) {
+            let progress = await StockClipPrefetcher.progressOffMain()
+            guard !Task.isCancelled else { return }
+            defaultVoicesDownloading = progress.map { $0.total > 0 && $0.done < $0.total } ?? false
+        }
         .onChange(of: createRequest) { _, new in
             guard new != nil else { return }
             Task { await openCreateAlarm() }

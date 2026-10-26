@@ -60,7 +60,8 @@ internal fun nextAlarmStatus(
     if (systemVoice && defaultVoiceDownloadInProgress) return NextAlarmStatus.VoicePreparing
     if (alarm.bucketId == "weather" && nextFireAtMillis - nowMillis in 0..WEATHER_WINDOW_MS) {
         val resolved = alarm.contextResolvedAtMillis
-        if (resolved == null || nextFireAtMillis - resolved > WEATHER_STALE_MS) return NextAlarmStatus.WeatherStale
+        // 지금 기준으로 잰다 — 울릴 시각 기준으로 재면 8시간 전에 받은 답도 23시간 뒤 알람에서는 31시간이 되어 실패로 읽힌다.
+        if (resolved == null || nowMillis - resolved > WEATHER_STALE_MS) return NextAlarmStatus.WeatherStale
     }
     if (!systemVoice && !alarm.voiceProfileId.isNullOrBlank() &&
         limitedPlanEndsAtMillis != null && limitedPlanEndsAtMillis <= nextFireAtMillis

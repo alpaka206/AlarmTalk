@@ -37,6 +37,8 @@ final class NextAlarmStatusTests: XCTestCase {
         XCTAssertEqual(resolve(stale), .weatherStale)
         XCTAssertEqual(resolve(stale, fireIn: 48 * hour), .ready)
         XCTAssertEqual(resolve(alarm(bucket: "weather", resolvedAt: now.addingTimeInterval(-hour))), .ready)
+        // 지금 기준으로 잰다 — 8시간 전에 받은 답은 23시간 뒤 알람이라도 새 답이다.
+        XCTAssertEqual(resolve(alarm(bucket: "weather", resolvedAt: now.addingTimeInterval(-8 * hour)), fireIn: 23 * hour), .ready)
     }
 
     func test_registeredVoiceEndingBeforeTheAlarm() {

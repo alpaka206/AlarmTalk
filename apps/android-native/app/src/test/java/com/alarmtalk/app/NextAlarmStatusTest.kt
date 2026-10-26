@@ -69,6 +69,9 @@ class NextAlarmStatusTest {
         assertEquals(NextAlarmStatus.WeatherStale, status(weather))
         assertEquals(NextAlarmStatus.Ready, status(weather, fireAt = now + 48 * hour))
         assertEquals(NextAlarmStatus.Ready, status(alarm(bucketId = "weather", contextResolvedAtMillis = now - hour)))
+        // 지금 기준으로 잰다 — 8시간 전에 받은 답은 23시간 뒤 알람이라도 새 답이다(울릴 시각 기준이면 31시간으로 읽힌다).
+        val fetched8hAgo = alarm(bucketId = "weather", contextResolvedAtMillis = now - 8 * hour)
+        assertEquals(NextAlarmStatus.Ready, status(fetched8hAgo, fireAt = now + 23 * hour))
     }
 
     @Test
