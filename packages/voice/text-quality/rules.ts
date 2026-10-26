@@ -35,7 +35,16 @@ export function maxLengthFor(kind: EvalItemKind): number | null {
 const TAG_BODY_PATTERN = '[a-z][a-z ,-]{1,48}';
 
 /** 낭독되는 말 — 태그를 벗기고 공백을 접는다(백엔드 `normalizeAlarmTextWithoutTags` 와 같은 셈). */
-export function spokenText(text: string): string {
+export function spokenText(text: string, options: { keepLines?: boolean } = {}): string {
+  if (options.keepLines) {
+    // 줄바꿈은 문장 경계다 — 문장부호 없이 줄로만 나눈 출력도 문장마다 본다(코덱스 #947). 줄 안의 공백만 하나로 줄인다.
+    return text
+      .replace(new RegExp(`[^\\S\\n]*\\[${TAG_BODY_PATTERN}\\][^\\S\\n]*`, 'gi'), ' ')
+      .split('\n')
+      .map((line) => line.replace(/\s+/g, ' ').trim())
+      .filter(Boolean)
+      .join('\n');
+  }
   return text
     .replace(new RegExp(`\\s*\\[${TAG_BODY_PATTERN}\\]\\s*`, 'gi'), ' ')
     .replace(/\s+/g, ' ')
@@ -155,6 +164,8 @@ export function checkNumbersPreserved(
 
 const collapse = (s: string) => s.replace(/\s+/g, ' ').trim();
 
+const LATIN_WORD_RE = /[A-Za-z]{2,}/;
+
 export function checkRequiredPhrases(
   output: string | null,
   phrases: string[] | undefined,
@@ -187,6 +198,9 @@ export function checkLanguage(
     return fail('language', `${inferred} 로 판정(허용 ${allowed.join(',')})`);
   if (!allowed.includes('ja') && KANA_RE.test(text)) return fail('language', '가나가 섞였다');
   if (!allowed.includes('ko') && HANGUL_RE.test(text)) return fail('language', '한글이 섞였다');
+  // 번역하다 만 영어 문장도 실패다(코덱스 #947 — 한글·가나가 하나라도 있으면 그 언어로 판정돼 빠져나갔다). 허용한 외래어
+  // (`allowedForeignTerms`)는 위에서 지웠다. 두 글자 이상 이어진 로마자만 본다 — 한 글자(A형 등)는 낱말이 아니다.
+  if (!allowed.includes('en') && LATIN_WORD_RE.test(text)) return fail('language', '영문이 섞였다');
   return pass('language', inferred);
 }
 
@@ -254,7 +268,7 @@ export type KoreanEnding = { word: string; kind: 'polite' | 'banmal' };
  *   어긋나는 판정을 찾으면 여기를 넓히기 전에 운영 쪽 판정과 견주어 본다.
  */
 export function koreanEndings(text: string): KoreanEnding[] {
-  return spokenText(text)
+  return spokenText(text, { keepLines: true })
     .split(/(?<=[.!?！？…~\n])/u)
     .map((s) => s.replace(/[^가-힣\s]+/gu, ' ').trim())
     .filter(Boolean)

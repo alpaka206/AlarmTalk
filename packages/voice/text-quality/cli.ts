@@ -44,9 +44,13 @@ async function main(): Promise<void> {
     throw new Error(`--set 은 ${SETS.join('|')} 중 하나`);
 
   const evalSet = readJson<EvalSetFile>(resolve(here, 'data/cases.json'));
-  const fixturePath = resolve(
-    flags.get('--fixture') ?? resolve(here, 'data/current-outputs.sample.json'),
-  );
+  // 직접 준 경로는 **부른 자리** 기준이다 — 루트에서 `npm run eval` 로 부르면 npm 이 워크스페이스 폴더에서 돌려 cwd 가
+  // `packages/voice` 가 된다(코덱스 #947). 기본값은 이 파일 기준 그대로.
+  const callerDir = process.env.INIT_CWD ?? process.cwd();
+  const explicitFixture = flags.get('--fixture');
+  const fixturePath = explicitFixture
+    ? resolve(callerDir, explicitFixture)
+    : resolve(here, 'data/current-outputs.sample.json');
   const fixture = readJson<CurrentOutputsFixture>(fixturePath);
   const provider = createProvider(providerId, { env: process.env, fixture });
 
@@ -55,8 +59,9 @@ async function main(): Promise<void> {
 
   const stamp = now.toISOString().replace(/[:.]/g, '-');
   const label = flags.get('--label');
+  const explicitOut = flags.get('--out');
   const outDir = resolve(
-    flags.get('--out') ??
+    explicitOut ? resolve(callerDir, explicitOut) :
       resolve(
         here,
         '../.text-quality-reports',

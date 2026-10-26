@@ -160,6 +160,12 @@ describe('checkLanguage', () => {
   it('한국어 줄에 가나가 섞이면 실패', () => {
     expect(checkLanguage('일어나 おはよう', ['ko']).status).toBe('fail');
   });
+  it('번역하다 만 영어 문장이 섞이면 실패 — 허용한 외래어는 빼고 본다', () => {
+    expect(checkLanguage('할머니, 마스크 쓰세요. The air quality is bad today.', ['ko']).status).toBe('fail');
+    expect(checkLanguage('雨だよ。Bring an umbrella.', ['ja']).status).toBe('fail');
+    expect(checkLanguage('오늘 KTX 타요', ['ko'], ['KTX']).status).toBe('pass');
+    expect(checkLanguage('A형 독감 조심해요', ['ko']).status).toBe('pass');
+  });
   it('영어 줄의 호칭은 빼고 판정할 수 있다', () => {
     expect(checkLanguage('Wake up, 민지!', ['en']).status).toBe('fail');
     expect(checkLanguage('Wake up, 민지!', ['en'], ['민지']).status).toBe('pass');
@@ -281,5 +287,12 @@ describe('runRules', () => {
       'korean_register',
       'banned_promise',
     ]);
+  });
+});
+
+describe('줄바꿈은 문장 경계다', () => {
+  it('문장부호 없이 줄로만 나눈 출력도 문장마다 어체를 본다', () => {
+    expect(checkKoreanRegister('약 먹어\n좋은 아침이에요', 'ko', 'polite').status).toBe('fail');
+    expect(checkKoreanRegister('약 드세요\n좋은 아침이에요', 'ko', 'polite').status).toBe('pass');
   });
 });
