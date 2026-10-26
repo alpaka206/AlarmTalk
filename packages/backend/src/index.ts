@@ -289,6 +289,11 @@ api.use('*', consentMiddleware);
 // 오디오 내려받기는 전용 버킷이 맡는다(일반 버킷은 이 경로를 세지 않는다 — rateLimit.ts).
 api.use('/tts/messages/:id/audio', audioDownloadRateLimitMiddleware);
 api.use('*', rateLimitMiddleware);
+// 한도·광고 보상 현황은 저장·광고 직후 다시 묻는 값이다 — 30초 캐시를 붙이면 앱이 정산 전 응답을 계속 읽어
+// 보상이 들어왔는데도 '확인하고 있어요' 로 끝난다(코덱스 #959). **아래 전역 캐시보다 먼저** 걸어야 이긴다:
+// 먼저 건 미들웨어가 바깥이라 응답 헤더를 마지막에 쓴다.
+api.use('/tts/manual-quota', noStore);
+api.use('/ad-rewards/*', noStore);
 api.use('*', async (c, next) => {
   const mw = c.req.method === 'GET' ? privateCache : noStore;
   return mw(c, next);

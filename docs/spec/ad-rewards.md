@@ -78,10 +78,13 @@ v1.3 W07).
    `ssv.user_id`(계정 PK)·`ssv.custom_data`(승인 id)를 광고의 `ServerSideVerificationOptions` 에 싣는다.
 3. 앱이 광고를 불러온다. 못 불러오면(재고 없음·로딩 실패·동의 불가) `close` 로 알리고 끝 — 예약이 풀린다.
 4. **표시 직전** `POST /api/ad-rewards/sessions/:id/start`(시작 승인). 이 기록은 운영 상태 관리용이다 — 보상의 증명은 SSV 다.
+   시작 요청이 실패하면 광고를 띄우지 않고 `close` `show_failed` 로 닫는다 — 연결이 끊겼거나 5xx 면 시작이 들어갔는지 몰라서다
+   (남겨 두면 10~15분 잠기고, 들어갔다면 결과 불명으로 월 자리를 잡는다).
 5. 광고 화면이 닫히면 `POST …/:id/close` `{outcome}` — `earned`(SDK 의 보상 신호)·`dismissed`·`show_failed` 등.
 6. 사용자가 끝까지 보면 AdMob 서버가 `GET /api/ads/admob-ssv?…&signature=…&key_id=…` 를 부른다(`routes/ads.ts`). 서명을
    확인하고(`lib/admob-ssv.ts` — Google 공개키 목록, ECDSA P-256) **먼저 기록한 뒤**(`ad_reward_callbacks`) 정산한다.
-7. 앱은 지급을 확인할 때까지 "보상을 확인하고 있어요" 로 말하고 `manual-quota` 를 다시 읽는다. 이 상태는 닫을 수 있고, 다시
+7. 앱은 지급을 확인할 때까지 "보상을 확인하고 있어요" 로 말하고 `manual-quota` 를 다시 읽는다. 이 응답과 `/api/ad-rewards/*` 는 **캐시하지 않는다**(`no-store`) — 30초
+   캐시면 정산 전 응답을 계속 읽는다. 이 상태는 닫을 수 있고, 다시
    들어오면 다시 읽는다(`ad_reward.pending`). **몇 초 기다렸다고 실패·재시청을 요구하지 않는다.**
 
 ### 세션 상태

@@ -173,6 +173,8 @@ final class RewardedAdFlowTests: XCTestCase {
         let result = await flow(client).watch()
         XCTAssertEqual(result, .refused(code: "AD_REWARD_SESSION_INVALID"))
         XCTAssertFalse(client.calls.contains { $0.hasPrefix("show") })
+        // 시작이 들어갔는지 모르는 실패(연결 끊김·5xx)도 있다 — 닫아서 잠금과 월 자리를 푼다(코덱스 #959).
+        XCTAssertEqual(client.calls.last, "close:show_failed")
     }
 
     func test_closeFailureKeepsResult() async {

@@ -85,7 +85,9 @@ struct RewardedAdFlow<Ad> {
         do {
             _ = try await client.start(sessionID: sessionID)
         } catch {
-            // 서버가 이미 예약을 풀었다(만료·자격 변경) — 띄우지 않는다.
+            // 띄우지 않는다. 거절(만료·자격 변경)이면 서버가 이미 풀었지만, 연결이 끊겼거나 5xx 면 시작이 들어갔는지
+            // 모른다 — 남겨 두면 10~15분 잠기고, 시작이 들어갔다면 결과 불명으로 월 자리까지 잡는다. 닫아서 푼다(코덱스 #959).
+            await closeQuietly(sessionID, "show_failed")
             return .refused(code: errorCode(error))
         }
         let outcome = await show(ad)

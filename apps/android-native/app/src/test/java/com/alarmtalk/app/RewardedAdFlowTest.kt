@@ -110,6 +110,8 @@ class RewardedAdFlowTest {
         val client = FakeClient(startError = Refusal("AD_REWARD_SESSION_INVALID"))
         assertEquals(RewardedWatchResult.Refused("AD_REWARD_SESSION_INVALID"), flow(client).watch())
         assertEquals(false, client.calls.any { it.startsWith("show") })
+        // 시작이 들어갔는지 모르는 실패(연결 끊김·5xx)도 있다 — 닫아서 잠금과 월 자리를 푼다(코덱스 #959).
+        assertEquals("close:show_failed", client.calls.last())
     }
 
     @Test
