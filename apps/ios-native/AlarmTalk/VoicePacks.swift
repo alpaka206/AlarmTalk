@@ -206,12 +206,15 @@ struct HeldVoicePack: Codable, Equatable, Identifiable {
 extension VoicePacks {
     /// **편집기 목소리 목록**에 넣을 팩 — 다 받았고 게시 중인 팩, 그리고 **지금 여는 알람이 이미 쓰는 팩**(게시가 끝나도
     /// 대체 전까지는 그 알람에서 그대로 보이고 저장된다 — 스펙 §5-1).
+    ///
+    /// ⚠ 지금 알람의 팩은 **새 개정을 받는 중이어도** 남긴다. 빼면 편집기가 그 목소리를 고를 수 없는 것으로 읽고 다른 목소리로
+    /// 갈아 끼워, 시각만 고쳐 저장해도 팩 목소리가 바뀐다(코덱스 #960). 새로 고르는 목록에는 다 받은 팩만 나온다.
     static func editorEntries(
         held: [HeldVoicePack],
         keepingVoiceID: String?
     ) -> (profiles: [VoiceProfile], clips: [StockClip]) {
         let chosen = held.filter { pack in
-            pack.state == .ready && (pack.withdrawnPlaybackUntil == nil || pack.voiceId == keepingVoiceID)
+            pack.voiceId == keepingVoiceID || (pack.state == .ready && pack.withdrawnPlaybackUntil == nil)
         }
         return (chosen.map(\.voiceProfile), chosen.flatMap(\.stockClips))
     }
@@ -231,7 +234,9 @@ extension VoicePacks {
         }
     }
 
-    /// 상세로 받은 팩을 받은 팩 모양으로(새로 받거나 개정이 바뀌었을 때). 상태는 받기 회차가 정한다.
+    /// 상세로 받은 팩을 받은 팩 모양으로(새로 받거나 개정이 바뀌었을 때). 상태는 언제나 **받는 중**이다 — 클립 목록이 새로 왔으니
+    /// 그 클립을 다 받아 대조할 때까지 '받음' 이 아니다(받기 회차가 `finishDownload` 로 정한다). 앞 상태를 이어받으면 새 클립
+    /// 받기가 실패해도 '받음' 으로 남아 편집기가 덜 받은 개정을 내보인다(코덱스 #960). 안드로이드 `HeldVoicePack.fromDetail` 짝.
     static func held(from detail: VoicePackSummary, previous: HeldVoicePack?) -> HeldVoicePack {
         HeldVoicePack(
             packId: detail.packId,
@@ -243,7 +248,7 @@ extension VoicePacks {
             contentRevision: detail.contentRevision,
             latestRevision: detail.contentRevision,
             clips: detail.clips ?? [],
-            state: previous?.state ?? .downloading,
+            state: .downloading,
             previewClipId: detail.preview?.clipId,
             withdrawnPlaybackUntil: previous?.withdrawnPlaybackUntil
         )

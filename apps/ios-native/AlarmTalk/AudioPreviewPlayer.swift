@@ -9,7 +9,12 @@ final class AudioPreviewPlayer: NSObject, ObservableObject, AVAudioPlayerDelegat
     /// Android `previewPreparing`(`AlarmEditorScreen.kt`) 미러.
     @Published private(set) var isPreparing = false
 
+    /// 끝까지 들었을 때, 그리고 **다른 미리듣기가 시작돼 끊겼을 때** 부른다(`stop()` 으로 직접 멈출 때는 부르지 않는다).
     var onFinish: (() -> Void)?
+
+    /// 지금 소리를 낼 수 있는 미리듣기 — **한 번에 하나만** 운다. 플레이어가 여럿이라(목소리 탭·추가 팩·편집기·랜딩) 서로를
+    /// 모르면 샘플이 겹친다(코덱스 #960 — 팩 샘플과 기본·클론 샘플). 안드로이드는 미리듣기 플레이어가 하나다.
+    private static weak var current: AudioPreviewPlayer?
 
     private var player: AVAudioPlayer?
     /// stopAfterMs 윈도우를 위한 예약 정지 작업. AVAudioPlayer 는 종료 시각 지정을
@@ -49,6 +54,7 @@ final class AudioPreviewPlayer: NSObject, ObservableObject, AVAudioPlayerDelegat
     ///   ⚠ **뒤에 걸지 말 것**(2026-09-07 리뷰 34차). 「소리는 첫 샘플부터 제 크기다」는
     ///   이 앱의 규약이고(CLAUDE.md), 크기를 재려고 만든 화면이 100%로 시작하면 안 된다.
     func play(url: URL, startMs: Int = 0, stopAfterMs: Int? = nil, volumePercent: Int? = nil) throws {
+        if let other = Self.current, other !== self { other.interrupt() }
         stop()
         let session = AVAudioSession.sharedInstance()
         try session.setCategory(.playback, mode: .spokenAudio)
@@ -64,9 +70,17 @@ final class AudioPreviewPlayer: NSObject, ObservableObject, AVAudioPlayerDelegat
         }
         player.play()
         self.player = player
+        Self.current = self
         isPreparing = false
         isPlaying = true
         scheduleAutoStop(after: stopAfterMs)
+    }
+
+    /// 다른 미리듣기가 시작돼 끊긴다 — 멈추고, 끝난 것처럼 알린다(호출자의 '듣는 중' 표시가 남지 않게).
+    private func interrupt() {
+        let finish = onFinish
+        stop()
+        finish?()
     }
 
     /// 재생 진행률(0…1). 재생할 것이 없으면 0. 랜딩 미리듣기 파형이 읽는다.
@@ -89,13 +103,16 @@ final class AudioPreviewPlayer: NSObject, ObservableObject, AVAudioPlayerDelegat
         guard let player else { return false }
         // 끝까지 들은 뒤 다시 누르면 처음부터.
         if player.currentTime >= player.duration - 0.05 { player.currentTime = 0 }
+        if let other = Self.current, other !== self { other.interrupt() }
         player.play()
+        Self.current = self
         isPlaying = true
         return true
     }
 
     func stop() {
         cancelAutoStop()
+        if Self.current === self { Self.current = nil }
         player?.stop()
         player = nil
         isPlaying = false
@@ -122,6 +139,7 @@ final class AudioPreviewPlayer: NSObject, ObservableObject, AVAudioPlayerDelegat
         Task { @MainActor [weak self] in
             guard let self else { return }
             self.cancelAutoStop()
+            if Self.current === self { Self.current = nil }
             self.isPlaying = false
             self.isPreparing = false
             self.player = nil

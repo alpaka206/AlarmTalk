@@ -538,6 +538,19 @@ final class VoiceStudioViewModel: ObservableObject {
         await refresh(session: session)
     }
 
+    /// 목록을 새로 받은 뒤에도 지금 선택을 둘 것인가 — 서버 목록에 있거나, **이 계정이 받은 추가 팩 목소리**다.
+    ///
+    /// ⚠ 팩 목소리는 `GET /voice` 에 없다(스펙 voice-packs §1). 그걸 '삭제됨' 으로 읽으면 팩 알람을 여는 것만으로 편집기의
+    /// 목소리가 다른 것으로 바뀌고, 시각만 고쳐 저장해도 팩 목소리를 잃는다(코덱스 #960). 고를 수 있는지(다 받았는지·게시
+    /// 중인지)는 편집기가 자기 목록으로 다시 본다(`AlarmEditorSheet.selectDefaultVoiceProfileIfNeeded`).
+    nonisolated static func selectionSurvivesRefresh(
+        _ selectedID: String,
+        serverProfileIDs: [String],
+        heldPackVoiceIDs: Set<String>
+    ) -> Bool {
+        serverProfileIDs.contains(selectedID) || (isVoicePackVoiceID(selectedID) && heldPackVoiceIDs.contains(selectedID))
+    }
+
     /// ⚠ **성공을 알리지 않는다.** 이 새로고침은 사용자가 누른 것이 아니라 화면 진입에서
     /// 자동으로 돈다. 성공은 목록이 이미 보여 주므로, 문구를 세우면 목소리 탭에 들어갈 때마다
     /// "불러왔어요" 가 떠 있게 된다.
@@ -624,8 +637,13 @@ final class VoiceStudioViewModel: ObservableObject {
             // 목록·한도를 **다** 받았을 때만 창을 연다(반쪽이면 다음 진입이 다시 받는다).
             // 여는 것은 아래 강등 정합화가 끝난 **뒤**다.
             let freshnessRecordable = quotaResult != nil
+            // 받은 추가 팩 목소리는 서버 목록에 없다(편집기가 합친다) — '지워졌다' 로 읽지 않는다(코덱스 #960).
             if let selectedProfileID,
-               !profiles.contains(where: { $0.id == selectedProfileID }) {
+               !Self.selectionSurvivesRefresh(
+                   selectedProfileID,
+                   serverProfileIDs: profiles.map(\.id),
+                   heldPackVoiceIDs: Set(VoicePackStore.shared.held.map(\.voiceId))
+               ) {
                 self.selectedProfileID = nil
             }
             if selectedProfileID == nil {

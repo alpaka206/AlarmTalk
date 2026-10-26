@@ -169,6 +169,11 @@ class VoicePackTest {
             listOf("first-pack", "p3"),
             editorVoicePacks(listOf(ready, downloading, withdrawn), editingVoiceId = withdrawn.voiceId).map { it.packId },
         )
+        // 그 알람의 팩이 새 개정을 받는 중이어도 빼지 않는다 — 빼면 편집기가 다른 목소리로 갈아 끼운다(코덱스 #960).
+        assertEquals(
+            listOf("first-pack", "p2"),
+            editorVoicePacks(listOf(ready, downloading, withdrawn), editingVoiceId = downloading.voiceId).map { it.packId },
+        )
         assertEquals(true, ready.toVoiceProfile().isSystem)
     }
 

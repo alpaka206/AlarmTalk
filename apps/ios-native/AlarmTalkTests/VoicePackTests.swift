@@ -1,3 +1,4 @@
+import AVFoundation
 import XCTest
 @testable import AlarmTalk
 
@@ -260,5 +261,139 @@ final class VoicePackTests: XCTestCase {
 
         let editingGone = VoicePacks.editorEntries(held: [live, gone], keepingVoiceID: gone.voiceId)
         XCTAssertEqual(Set(editingGone.profiles.map(\.id)), [live.voiceId, gone.voiceId])
+    }
+
+    // MARK: - 개정 · 받기 경합 (코덱스 #960)
+
+    private func detail(packID: String = "first-pack", revision: Int, clips: [VoicePackClip]) -> VoicePackSummary {
+        VoicePackSummary(
+            packId: packID, voiceId: packVoiceID, contentRevision: revision, speakerName: "화자", description: "",
+            usageNote: "", language: "ko", categories: [], clipCount: clips.count, totalBytes: 1, preview: nil, clips: clips
+        )
+    }
+
+    private func storeHolding(_ packs: [HeldVoicePack]) throws -> VoicePackStore {
+        let defaults = isolatedDefaults()
+        defaults.set(try JSONEncoder().encode(packs), forKey: VoicePackStore.storageKey(userID: "owner-1"))
+        let store = VoicePackStore(defaults: defaults)
+        store.activate(userID: "owner-1")
+        return store
+    }
+
+    func test_새_개정이_오면_다_받을_때까지_받는_중이고_실패해도_받음으로_남지_않는다() throws {
+        let store = try storeHolding([held()])
+        let start = try XCTUnwrap(store.heldPack(packID: "first-pack"))
+        XCTAssertEqual(start.state, .ready)
+
+        let revised = try XCTUnwrap(store.adoptRevisedDetail(detail(revision: 4, clips: [clip("new-clip")]), fetchedFor: start))
+        XCTAssertEqual(revised.state, .downloading, "클립 목록이 새로 왔으면 다시 받는 중이다")
+        XCTAssertEqual(store.heldPack(packID: "first-pack")?.contentRevision, 4)
+        XCTAssertTrue(VoicePacks.editorEntries(held: store.held, keepingVoiceID: nil).profiles.isEmpty,
+                      "덜 받은 개정을 새로 고르는 목록에 내보이지 않는다")
+
+        store.finishDownload(revised, complete: false)
+        XCTAssertEqual(store.heldPack(packID: "first-pack")?.state, .downloading, "새 클립 받기가 실패하면 '받음' 이 아니다")
+        XCTAssertTrue(store.failedPackIDs.contains("first-pack"))
+
+        store.finishDownload(revised, complete: true)
+        XCTAssertEqual(store.heldPack(packID: "first-pack")?.state, .ready)
+        XCTAssertFalse(store.failedPackIDs.contains("first-pack"))
+    }
+
+    func test_받는_중인_팩도_그_팩을_쓰는_알람의_편집기에는_남는다() {
+        let downloading = held(state: .downloading)
+        XCTAssertTrue(VoicePacks.editorEntries(held: [downloading], keepingVoiceID: nil).profiles.isEmpty)
+        XCTAssertEqual(
+            VoicePacks.editorEntries(held: [downloading], keepingVoiceID: packVoiceID).profiles.map(\.id), [packVoiceID],
+            "빼면 편집기가 다른 목소리로 갈아 끼워 시각만 고쳐 저장해도 팩 목소리가 바뀐다"
+        )
+    }
+
+    func test_개정_확인_중에_지운_팩은_되살리지_않는다() throws {
+        let store = try storeHolding([held()])
+        let start = try XCTUnwrap(store.heldPack(packID: "first-pack"))
+        // 상세 요청이 도는 사이 사용자가 지운다.
+        store.remove(packID: "first-pack", alarmStore: makeStore(), voiceStudio: VoiceStudioViewModel())
+
+        XCTAssertNil(store.adoptRevisedDetail(detail(revision: 4, clips: [clip("new-clip")]), fetchedFor: start))
+        store.finishDownload(start, complete: true)
+        XCTAssertTrue(store.held.isEmpty, "지운 팩이 다시 생기면 또 받는다")
+    }
+
+    func test_개정_확인_중에_다른_받기가_개정을_바꿨으면_그쪽을_둔다() throws {
+        let store = try storeHolding([held()])
+        let start = try XCTUnwrap(store.heldPack(packID: "first-pack"))
+        XCTAssertNotNil(store.adoptRevisedDetail(detail(revision: 5, clips: [clip("newest")]), fetchedFor: start))
+
+        XCTAssertNil(store.adoptRevisedDetail(detail(revision: 4, clips: [clip("older")]), fetchedFor: start))
+        XCTAssertEqual(store.heldPack(packID: "first-pack")?.contentRevision, 5)
+        store.finishDownload(start, complete: true)
+        XCTAssertEqual(store.heldPack(packID: "first-pack")?.state, .downloading, "앞 개정의 끝이 새 개정을 '받음' 으로 적지 않는다")
+    }
+
+    // MARK: - 목록 새로고침이 팩 선택을 지우지 않는다 (코덱스 #960)
+
+    func test_받은_팩_목소리_선택은_서버_목록에_없어도_남는다() {
+        let server = [systemVoiceIDPrefix + "000000000101"]
+        XCTAssertTrue(VoiceStudioViewModel.selectionSurvivesRefresh(
+            packVoiceID, serverProfileIDs: server, heldPackVoiceIDs: [packVoiceID]
+        ))
+        XCTAssertFalse(VoiceStudioViewModel.selectionSurvivesRefresh(
+            packVoiceID, serverProfileIDs: server, heldPackVoiceIDs: []
+        ), "받지 않은(지운) 팩 목소리는 남기지 않는다")
+        XCTAssertFalse(VoiceStudioViewModel.selectionSurvivesRefresh(
+            "deleted-clone", serverProfileIDs: server, heldPackVoiceIDs: ["deleted-clone"]
+        ), "팩 대역이 아닌 id 는 서버 목록으로만 본다")
+        XCTAssertTrue(VoiceStudioViewModel.selectionSurvivesRefresh(
+            server[0], serverProfileIDs: server, heldPackVoiceIDs: []
+        ))
+    }
+
+    // MARK: - 미리듣기는 한 번에 하나 (코덱스 #960)
+
+    private func makeToneWAV() throws -> URL {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("pack-preview-\(UUID().uuidString).wav")
+        let format = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 44_100, channels: 1, interleaved: false)!
+        let file = try AVAudioFile(
+            forWriting: url,
+            settings: [
+                AVFormatIDKey: kAudioFormatLinearPCM,
+                AVSampleRateKey: 44_100,
+                AVNumberOfChannelsKey: 1,
+                AVLinearPCMBitDepthKey: 16,
+                AVLinearPCMIsFloatKey: false,
+            ]
+        )
+        let frames = AVAudioFrameCount(44_100 * 3)
+        let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frames)!
+        buffer.frameLength = frames
+        let samples = buffer.floatChannelData![0]
+        for i in 0..<Int(frames) { samples[i] = 0.1 * sinf(2 * .pi * 440 * Float(i) / 44_100) }
+        try file.write(from: buffer)
+        return url
+    }
+
+    func test_팩_샘플과_목소리_미리듣기는_서로를_멈춘다() throws {
+        let url = try makeToneWAV()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let packs = VoicePackStore(defaults: isolatedDefaults())
+        let voice = VoiceStudioViewModel()
+        var voiceFinished = 0
+        voice.previewPlayer.onFinish = { voiceFinished += 1 }
+        defer {
+            packs.previewPlayer.stop()
+            voice.previewPlayer.stop()
+        }
+
+        try voice.previewPlayer.play(url: url)
+        XCTAssertTrue(voice.previewPlayer.isPlaying)
+        try packs.previewPlayer.play(url: url)
+        XCTAssertTrue(packs.previewPlayer.isPlaying)
+        XCTAssertFalse(voice.previewPlayer.isPlaying, "팩 샘플을 틀면 기본·클론 미리듣기가 멈춘다")
+        XCTAssertEqual(voiceFinished, 1, "끊긴 쪽의 '듣는 중' 표시가 내려가게 알린다")
+
+        try voice.previewPlayer.play(url: url)
+        XCTAssertFalse(packs.previewPlayer.isPlaying, "반대 방향도 멈춘다")
+        XCTAssertTrue(voice.previewPlayer.isPlaying)
     }
 }

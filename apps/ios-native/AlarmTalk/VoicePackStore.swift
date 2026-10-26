@@ -37,6 +37,8 @@ final class VoicePackStore: ObservableObject {
     static let catalogFreshnessWindow: TimeInterval = 30
     private static let parallelism = 4
 
+    /// 팩 샘플 플레이어. 기본·클론 미리듣기(`VoiceStudioViewModel.previewPlayer`)와 겹치지 않는 것은 `AudioPreviewPlayer` 가 맡는다
+    /// — 한쪽이 틀면 다른 쪽이 멈춘다(코덱스 #960).
     let previewPlayer = AudioPreviewPlayer()
 
     /// 받기 회차를 깨운다 — `AlarmTalkApp` 이 프리페처 `start` 로 꽂는다.
@@ -45,6 +47,10 @@ final class VoicePackStore: ObservableObject {
     init(defaults: UserDefaults = .standard, api: AlarmTalkAPI = .shared) {
         self.defaults = defaults
         self.api = api
+        // 끝까지 들었거나 다른 미리듣기가 끊었으면 '듣는 중' 을 내린다 — 남겨 두면 다음 탭이 '멈춤' 으로 읽힌다.
+        previewPlayer.onFinish = { [weak self] in
+            self?.previewingPackID = nil
+        }
     }
 
     static func storageKey(userID: String) -> String { "voice_packs_held_v1_\(userID)" }
@@ -165,9 +171,9 @@ final class VoicePackStore: ObservableObject {
         guard pack.withdrawnPlaybackUntil == nil else { return }
         if pack.latestRevision != pack.contentRevision {
             guard let detail = try? await api.getVoicePack(packID: pack.packId, token: session.token),
-                  session.user.id == activeUserID else { return }
-            pack = VoicePacks.held(from: detail.pack, previous: pack)
-            replace(pack)
+                  session.user.id == activeUserID,
+                  let revised = adoptRevisedDetail(detail.pack, fetchedFor: pack) else { return }
+            pack = revised
         }
         let snapshot = pack
         var missing = await Task.detached(priority: .utility) { VoicePacks.missingClips(of: snapshot) }.value
@@ -178,7 +184,8 @@ final class VoicePackStore: ObservableObject {
         let packID = pack.packId
         for _ in 0..<2 where !missing.isEmpty {
             for batchStart in stride(from: 0, to: missing.count, by: Self.parallelism) {
-                guard isCurrent(), session.user.id == activeUserID else { return }
+                // 지웠거나 다른 받기가 개정을 바꿨으면 그만둔다 — 지운 팩의 파일을 다시 채우지 않는다(안드로이드 `downloadPack` 짝).
+                guard isCurrent(), session.user.id == activeUserID, isStillHeld(pack) else { return }
                 let batch = Array(missing[batchStart..<min(batchStart + Self.parallelism, missing.count)])
                 await withTaskGroup(of: Void.self) { group in
                     for clip in batch {
@@ -200,12 +207,35 @@ final class VoicePackStore: ObservableObject {
             let current = pack
             missing = await Task.detached(priority: .utility) { VoicePacks.missingClips(of: current) }.value
         }
-        guard session.user.id == activeUserID, var latest = heldPack(packID: packID) else { return }
-        if missing.isEmpty {
-            latest.state = .ready
-            failedPackIDs.remove(packID)
+        guard session.user.id == activeUserID else { return }
+        finishDownload(pack, complete: missing.isEmpty)
+    }
+
+    /// 받던 그 팩(같은 개정)이 아직 목록에 있는가. 지웠거나, 지운 뒤 다시 받기로 새 개정이 들어왔으면 false.
+    private func isStillHeld(_ pack: HeldVoicePack) -> Bool {
+        heldPack(packID: pack.packId)?.contentRevision == pack.contentRevision
+    }
+
+    /// 자동 개정 확인이 받아 온 상세를 적는다 — **기다리는 사이 그 팩이 그대로일 때만**(코덱스 #960). 그 사이 지웠으면 되살리지
+    /// 않고(안 그러면 지운 팩이 다시 생겨 또 받는다), 다른 받기가 이미 개정을 바꿨으면 그쪽을 둔다. 적지 않았으면 nil.
+    @discardableResult
+    func adoptRevisedDetail(_ detail: VoicePackSummary, fetchedFor start: HeldVoicePack) -> HeldVoicePack? {
+        guard let current = heldPack(packID: start.packId),
+              current.contentRevision == start.contentRevision else { return nil }
+        let next = VoicePacks.held(from: detail, previous: current)
+        replace(next)
+        return next
+    }
+
+    /// 받기 회차의 끝 — 다 받았으면 '받음', 아니면 '받는 중'(실패 표시)으로 둔다. 앞서 '받음' 이었어도 빠진 클립이 남았으면
+    /// 내린다(안드로이드 `downloadPack` 의 `ready = missing.isEmpty()`). 그 사이 지웠거나 개정이 바뀌었으면 손대지 않는다.
+    func finishDownload(_ pack: HeldVoicePack, complete: Bool) {
+        guard var latest = heldPack(packID: pack.packId), latest.contentRevision == pack.contentRevision else { return }
+        latest.state = complete ? .ready : .downloading
+        if complete {
+            failedPackIDs.remove(pack.packId)
         } else {
-            failedPackIDs.insert(packID)
+            failedPackIDs.insert(pack.packId)
         }
         replace(latest)
     }
@@ -277,7 +307,7 @@ final class VoicePackStore: ObservableObject {
 
     /// 샘플(인사말 0번) 하나만 받아 캐시하고 튼다 — 팩 전체를 받지 않는다. 다시 누르면 멈춘다.
     func togglePreview(_ summary: VoicePackSummary, session: AuthSession?) async {
-        if previewingPackID == summary.packId {
+        if previewingPackID == summary.packId, previewPlayer.isPlaying {
             stopPreview()
             return
         }

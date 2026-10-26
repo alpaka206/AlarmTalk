@@ -126,9 +126,12 @@ data class HeldVoicePack(
 /**
  * 편집기 목소리 목록에 넣을 팩 — **다 받았고 게시 중인** 팩, 그리고 지금 여는 알람이 이미 쓰는 팩(게시가 끝났어도 기한까지는
  * 그 알람을 목소리를 바꾸지 않고 저장할 수 있어야 한다 — 스펙 §5-1).
+ *
+ * ⚠ 지금 알람의 팩은 **새 개정을 받는 중이어도**(`ready = false`) 남긴다. 빼면 편집기가 그 목소리를 고를 수 없는 것으로 읽고
+ * 다른 목소리로 갈아 끼워, 시각만 고쳐 저장해도 팩 목소리가 바뀐다(코덱스 #960 — iOS `VoicePacks.editorEntries` 짝).
  */
 fun editorVoicePacks(held: List<HeldVoicePack>, editingVoiceId: String?): List<HeldVoicePack> =
-    held.filter { it.ready && (!it.withdrawn || it.voiceId == editingVoiceId) }
+    held.filter { it.voiceId == editingVoiceId || (it.ready && !it.withdrawn) }
 
 /**
  * 추가 팩 목소리의 클립 언어(팩 하나는 언어 하나 — 스펙 §2). 팩이 아니거나 클립이 없으면 null — 호출부가 앱 언어를 쓴다.

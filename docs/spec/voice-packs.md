@@ -161,6 +161,8 @@ draft ──검수 요청──▶ review ──게시──▶ published ──
   ("받으면 알람 목소리 목록에 이 목소리가 생겨요. 날씨·운세·응원·약 테마에 쓸 수 있고, 직접 입력에는 쓸 수 없어요.
   이미 있는 알람은 바뀌지 않아요.") · 받기 / 지우기.
 - 미리듣기 샘플은 받기 전에도 들을 수 있다 — 샘플 클립 하나만 받아 캐시한다(팩 전체를 받지 않는다).
+- 미리듣기는 **한 번에 하나만** 운다 — 팩 샘플을 틀면 기본·클론 미리듣기가 멈추고, 반대도 같다(안드로이드는 미리듣기
+  플레이어가 하나다).
 - **지우기**: 그 팩 목소리를 쓰는 알람이 있으면 먼저 묻는다("알람 N개가 미나 목소리로 바뀌어요"). 확인하면 §5-3 과 같은
   대체를 곧바로 하고 파일을 지운다.
 
@@ -177,6 +179,10 @@ draft ──검수 요청──▶ review ──게시──▶ published ──
   `stock_` 네임스페이스와 따로 둔다(기본 목소리 매니페스트 기준 정리가 팩 파일을 지우지 않게, 오래된 캐시 정리도 `pack_`
   을 건너뛴다).
 - 다 받았을 때만 '받음' 이고, 그때부터 편집기에 나온다. 일부 실패는 같은 회차·다음 회차가 이어 받는다.
+  - 개정이 바뀌어 상세(클립 목록)를 새로 적으면 다시 **받는 중**이다 — 새 클립을 다 받아 대조할 때까지 '받음' 이 아니고,
+    받다가 실패해도 '받음' 으로 남지 않는다. 빠진 클립이 남은 회차의 끝도 같다.
+  - 상세를 기다리는 사이 사용자가 팩을 지웠으면 **되살리지 않는다**(다시 받지도 않는다). 그 사이 다른 받기가 개정을
+    바꿨으면 그쪽을 둔다.
 - 개정이 바뀌어 클립 id 가 바뀌면 **이미 저장한 알람은 묶은 클립 그대로 운다**(다시 저장하면 새 클립을 묶는다). 놓은 옛 클립
   파일은 어떤 알람도 안 쓸 때만 지운다.
 - 카탈로그에 없는 팩(최소 빌드·허용 지역)은 받으려 하지 않는다 — 서버가 404 로 답한다. 받아 둔 파일·알람은 그대로 둔다.
@@ -186,6 +192,8 @@ draft ──검수 요청──▶ review ──게시──▶ published ──
 ### 편집기
 
 - 다 받은 팩 목소리는 목소리 고르기 시트에 기본 목소리 **다음**에 나온다(설명 줄 '추가 팩').
+- 지금 여는 알람이 이미 쓰는 팩은 게시가 끝났어도·새 개정을 받는 중이어도 그 알람의 목록에 남는다. 편집기를 열기만 해서
+  목소리가 바뀌면 안 된다 — 목소리 목록 새로고침(서버 목록에는 팩이 없다)도 받은 팩 선택을 '지워진 목소리' 로 읽지 않는다.
 - 고르면 기본 목소리처럼 테마 클립을 묶는다(§2). 직접 입력·기본 인사말 항목은 감춘다. 직접 입력 문구가 있는 알람에서
   팩 목소리로 바꾸면 그 문구를 버리고 직전 테마 선택(없으면 응원)으로 잇는다 — 바꾸기 전에 기본 목소리와 같은 확인
   알럿을 띄운다.
@@ -230,6 +238,9 @@ draft ──검수 요청──▶ review ──게시──▶ published ──
 | 무료로 쓴다 | — | `data/SystemVoices.kt` 의 `usesFreeSystemVoiceAlarm` | `VoicePacks.swift` 의 `isFreeFixedVoiceID`(`PaidVoiceGate.usesFreeSystemVoice`·`LocalAlarmRecord.isPaidVoiceForDowngrade`·`isStockVoiceClip`) |
 | 서버 사본에 팩 id 를 싣지 않는다 | — | `network/RemoteAlarmMapper.kt` | `RemoteAlarmMapper.swift` |
 | 목소리 탭 '추가 팩'·팩 상세 | — | `ui/voices/VoicePackSection.kt` | `Views/Voices/VoicePackSection.swift` |
+| 받는 중으로 되돌리기·지운 팩 되살리지 않기 | — | `data/VoicePacks.kt` 의 `HeldVoicePack.fromDetail`, `sync/StockClipPrefetchWorker.kt` 의 `refreshDetailIfNeeded`·`downloadPack` | `VoicePacks.held(from:previous:)`, `VoicePackStore.adoptRevisedDetail`·`finishDownload` |
+| 미리듣기는 한 번에 하나 | — | `ui/voices/VoiceProfileManagementPanel.kt` 의 `playVoicePackSample`(같은 미리듣기 플레이어) | `AudioPreviewPlayer.play`(다른 플레이어를 끊는다) |
+| 새로고침이 팩 선택을 지우지 않는다 | — | `data/VoicePacks.kt` 의 `editorVoicePacks` | `VoiceStudioViewModel.selectionSurvivesRefresh`, `VoicePacks.editorEntries` |
 | 편집기 목록·직접 입력 감추기 | — | `ui/app/AlarmTalkApp.kt` 의 편집기 라우트(`editorVoicePacks` 로 합치기)·`ui/editor/AlarmRandomPromptSettings.kt` 의 `manualAvailable`·`ui/editor/AlarmEditorScreen.kt` 의 `fixedVoiceClipLanguage`·저장 막기 | `Views/Editor/AlarmEditorSheet.swift` 의 `editorProfiles`·`editorStockClips`·`applyVoiceSelection`, `MessageSettingsPane.manualAvailable` |
 | 언어 재바인딩에서 팩 제외 | — | `sync/StockClipLanguageRebinder.kt` 의 `needsRebind` | `StockClipLanguageRebinder.needsRebind` |
 | 카탈로그 조회·받기 시작·지우기·샘플 | — | `ui/main/MainViewModelVoicePacks.kt` | `VoicePackStore.swift` |
