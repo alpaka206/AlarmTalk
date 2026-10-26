@@ -101,7 +101,9 @@ describe('paid voice access gates', () => {
     expect((await res.json()).error_code).toBe('VOICE_FEATURE_REQUIRES_PAID_PLAN');
   });
 
-  it('blocks custom-text TTS with a system stock voice for a free-plan user', async () => {
+  // ⚠ **2026-10-26 뒤집음** — 무료도 기본 목소리 직접 입력을 월 3회 만든다(`docs/spec/voice-and-message.md` §8). 이 테스트는
+  //   예전에 그 반대("무료는 막힌다")를 지키고 있었다. 프리셋 게이트를 통과했음만 본다(그 뒤 한도·합성 단계가 있다).
+  it('lets a free-plan user type custom text with a system stock voice (월 3회 기본분)', async () => {
     mockDB.pushResult([{ plan: 'free' }]);
     mockDB.pushResult([]); // findUsableVoiceProfile: owned 보이스 없음
     // findUsableVoiceProfile: 시스템 스톡 보이스
@@ -111,8 +113,7 @@ describe('paid voice access gates', () => {
       jsonReq('POST', '/tts/generate', { voice_profile_id: ID.alarm, text: 'hello' }),
     );
 
-    expect(res.status).toBe(403);
-    expect((await res.json()).error_code).toBe('FREE_PLAN_PRESET_ONLY');
+    expect((await res.json()).error_code).not.toBe('FREE_PLAN_PRESET_ONLY');
   });
 
   // F2: 유료 사용자가 '기본(시스템) 목소리'를 고르면 무료처럼 프리셋(날씨/약)만 허용한다 —

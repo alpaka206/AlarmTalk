@@ -1,11 +1,14 @@
+import { MANUAL_TTS_MONTHLY_LIMIT } from '@alarmtalk/shared';
 import type { DbExecutor } from './transactions';
 
-// 직접 입력(사용자가 문구를 직접 타이핑) TTS 생성의 월 한도.
-// 무료(free)는 이 월 한도를 쓰지 않으므로 여기 한도 맵에는 유료 플랜 key 만 둔다(누락 key = 0회).
-// 무료의 직접 입력은 광고 보상 한 번으로만 열린다(`ad-reward-credits.ts`, `docs/spec/ad-rewards.md`).
-//   - personal(개인) 30.
+// 직접 입력(사용자가 문구를 직접 타이핑) TTS 생성의 월 한도. 값의 원본은 shared `MANUAL_TTS_MONTHLY_LIMIT`.
+//   - personal(플러스) 30 — 기본·등록 목소리 합산.
+//   - free 3 — **기본 목소리만**(2026-10-26, `docs/spec/voice-and-message.md` §8). 다 쓰면 광고 보상 한 번씩
+//     (`ad-reward-credits.ts`). 등록 목소리는 라우트가 먼저 막는다.
+// 누락 key = 0회.
 export const MANUAL_TTS_MONTHLY_LIMITS: Record<string, number> = {
-  personal: 30,
+  personal: MANUAL_TTS_MONTHLY_LIMIT.plus,
+  free: MANUAL_TTS_MONTHLY_LIMIT.free,
 };
 
 export function manualTtsMonthlyLimit(planKey: string | null | undefined): number {
@@ -18,6 +21,7 @@ export function manualTtsMonthlyLimit(planKey: string | null | undefined): numbe
 // 결제 사용자가 허위로 차단되지 않는다.
 const USER_PLAN_TO_KEY: Record<string, string> = {
   plus: 'personal',
+  free: 'free',
 };
 
 export function manualTtsLimitForUserPlan(userPlan: string | null | undefined): number {
@@ -37,8 +41,8 @@ export interface ManualTtsPool {
 }
 
 /**
- * 호출자의 직접 입력 월 풀(풀 키 + 플랜 한도)을 해석한다. (미터링은 이미 페이월을 통과한
- * 유료 요청에서만 호출된다.)
+ * 호출자의 직접 입력 월 풀(풀 키 + 플랜 한도)을 해석한다. 풀은 **계정 하나**다 — 무료로 쓰다 같은 달에 플러스가 되면
+ * 같은 행을 이어 센다(무료 2회 → 플러스 남은 28회).
  *  1) 본인 활성 구독의 plan.key + 본인 PK.
  *  2) 못 찾으면(구독 상태 지연 등) 페이월과 같은 출처인 users.plan 으로 폴백해
  *     결제 사용자가 허위 429 를 받지 않게 한다.
@@ -170,4 +174,11 @@ export async function refundManualTtsQuota(
           WHERE pool_key = ? AND usage_month = ? AND used_count > 0`,
     args: [poolKey, usageMonth],
   });
+}
+
+/** 다음 월 기본분이 생기는 순간 = 다음 달 1일 0시 KST(배타). 화면의 '다음 제공일' 용 — 초 단위 UTC ISO. */
+export function nextManualQuotaResetAt(now: Date = new Date()): string {
+  const kst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+  const next = Date.UTC(kst.getUTCFullYear(), kst.getUTCMonth() + 1, 1) - 9 * 60 * 60 * 1000;
+  return new Date(next).toISOString().replace(/\.\d{3}Z$/, 'Z');
 }

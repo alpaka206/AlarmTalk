@@ -8,6 +8,14 @@ import { callerOwnerIds } from '../lib/caller-ids';
 import { typedRow } from '../lib/db-types';
 import { UUID_RE } from '../lib/validate';
 import { R2VoiceStorage } from '../lib/r2-storage';
+import {
+  claimManualRequest,
+  completeManualRequest,
+  manualRequestFingerprint,
+  parseManualRequestId,
+  releaseManualRequest,
+  type ManualRequestClaim,
+} from '../lib/manual-tts-requests';
 import { computeTtsCacheKey, generatedTtsObjectKey, manualTtsCacheScope } from '../lib/audio-cache';
 import { loadAudioBytes, uint8ToBase64 } from '../lib/audio-loader';
 import {
@@ -42,6 +50,7 @@ import {
   waitForSpeechStyleAnalysis,
 } from '../lib/stock-clips';
 import {
+  nextManualQuotaResetAt,
   readManualTtsUsage,
   refundManualTtsQuota,
   reserveManualTtsQuota,
@@ -314,6 +323,8 @@ tts.post('/generate', async (c) => {
     random_mode?: string;
     randomMode?: string;
     relationship_label?: string;
+    /** 직접 입력 '음성 만들기' 한 번의 id(UUID) — 재시도에도 같은 값. 옛 앱은 보내지 않는다. */
+    request_id?: string;
     relationshipLabel?: string;
     listener_title?: string;
     listenerTitle?: string;
@@ -539,20 +550,19 @@ tts.post('/generate', async (c) => {
   //
   // 여전히 막는 것: 동적 문구(날씨·운세) / 번역. 그쪽은 한도로 세지 않는다.
   //
-  // ⚠ **무료는 광고 보상이 있을 때만 연다**(2026-10-19, `docs/spec/ad-rewards.md`). 월 한도 대신 보상
-  //   한 번을 쓴다. 기본 목소리 한정이다. 보상이 없으면 예전 그대로 `FREE_PLAN_PRESET_ONLY` 다(앱은 저장
-  //   전에 보상 횟수를 먼저 본다).
-  const adRewardEligible =
+  // ⚠ **무료도 기본 목소리 직접 입력을 연다 — 월 3회, 다 쓰면 광고 보상**(2026-10-26, `docs/spec/voice-and-message.md`
+  //   §8). 예전(2026-10-19)에는 광고 보상이 있을 때만 열었다. 기본 목소리 한정이다 — 등록 목소리는 위에서 그대로 막는다.
+  //   세는 순서는 월 기본분 → 광고 보상이고(`reserveManualGeneration`), 둘 다 없으면 429 `MANUAL_TTS_QUOTA_EXCEEDED` 다.
+  //   이미 만든 내 음성(캐시 히트)은 세지 않으므로 둘 다 0 이어도 받는다.
+  const freeManualEligible =
     freePlanRestricted &&
     isSystemVoice &&
     !randomRequested &&
     !draftPreviewRequested &&
     body.translate !== true &&
     Boolean(resolvedUserPk);
-  const useAdRewardCredit =
-    adRewardEligible && (await readAdRewardStatus(db, userPk)).credits > 0;
   const manualTextOnSystemVoice =
-    (!freePlanRestricted || useAdRewardCredit) &&
+    (!freePlanRestricted || freeManualEligible) &&
     isSystemVoice &&
     !randomRequested &&
     body.translate !== true;
@@ -621,42 +631,50 @@ tts.post('/generate', async (c) => {
   const missingTtsConsent = await missingConsentType(db, userPk, requiredSensitiveConsents);
   if (missingTtsConsent) return consentRequired(c, missingTtsConsent);
 
-  // 직접 입력(random 아님) = 사용자가 문구를 직접 타이핑한 생성 경로. 여기 닿는 것은 유료이거나, 광고 보상
-  // 보상이 남은 무료다(위 `useAdRewardCredit` — 없는 무료는 위에서 막혔다).
-  // 세는 것은 캐시 미스 뒤(합성 직전)·캐시 히트 두 자리이고, 셌는데 실패하면 catch 에서 돌려준다.
+  // 직접 입력(random 아님) = 사용자가 문구를 직접 타이핑한 생성 경로. 여기 닿는 것은 유료이거나 기본 목소리의 무료다.
+  // 세는 것은 **캐시 미스 뒤(합성 직전) 한 자리**다 — 이미 만든 내 음성은 다시 받아도 세지 않는다(2026-10-26 변경).
+  // 셌는데 실패하면 catch 에서 돌려준다.
   const isManualGeneration = !randomRequested && !draftPreviewRequested && Boolean(resolvedUserPk);
   let manualQuotaPoolKey: string | null = null;
   let manualQuotaMonth: string | null = null;
   let manualQuotaResult: { used: number; limit: number; remaining: number } | null = null;
+  // 무엇으로 셌나 — 응답의 `charged_source`. 'none' 은 세지 않음(캐시 히트·직접 입력 아님).
+  let chargedSource: 'none' | 'base' | 'ad' = 'none';
   // 광고 보상을 썼으면 그 거래 id — 실패하면 아래 catch 가 돌려준다.
   let adRewardTransactionId: string | null = null;
+  // 같은 요청의 재시도·중복 탭 표식(`request_id`) — 잡았으면 끝날 때 풀거나 끝냄으로 적는다.
+  let requestClaim: ManualRequestClaim | null = null;
   /**
-   * 직접 입력 한 번을 **센다** — 유료는 월 한도, 광고 보상은 보상 한 번. 셀 수 없으면 보낼 응답을 돌려준다.
-   * 캐시 히트와 합성 직전 두 자리가 같은 규칙이어야 해서 한 곳에 둔다(히트도 한 번이다 — 아래 주석).
+   * 직접 입력 한 번을 **센다** — 월 기본분(유료 30·무료 3) 먼저, 무료가 다 썼으면 광고 보상 한 번. 셀 수 없으면 보낼
+   * 응답을 돌려준다.
    */
   const reserveManualGeneration = async (): Promise<Response | null> => {
-    if (useAdRewardCredit) {
-      const transactionId = await consumeAdRewardCredit(db, userPk);
-      if (!transactionId) {
-        // 읽은 뒤 다른 요청이 마지막 보상을 먼저 썼다.
-        return jsonError(c, 403, 'FREE_PLAN_PRESET_ONLY', 'This voice supports preset phrases only.');
-      }
-      adRewardTransactionId = transactionId;
-      return null;
-    }
     const pool = await resolveManualTtsPool(db, ownerIds, userPk, callerUserPlan, {
       promoOnly: callerPromoOnly,
     });
     const reservation = await reserveManualTtsQuota(db, pool.poolKey, pool.limit);
     if (!reservation.ok) {
+      if (freeManualEligible) {
+        const transactionId = await consumeAdRewardCredit(db, userPk);
+        if (transactionId) {
+          adRewardTransactionId = transactionId;
+          chargedSource = 'ad';
+          manualQuotaResult = { used: reservation.used, limit: reservation.limit, remaining: 0 };
+          return null;
+        }
+      }
       return jsonError(
         c,
         429,
         'MANUAL_TTS_QUOTA_EXCEEDED',
         '이번 달 직접 입력 문구 만들기 횟수를 모두 사용했어요.',
-        { manual_quota: { limit: reservation.limit, used: reservation.used, remaining: 0 } },
+        {
+          manual_quota: { limit: reservation.limit, used: reservation.used, remaining: 0 },
+          ...(freeManualEligible ? { ad_reward: await readAdRewardStatus(db, userPk) } : {}),
+        },
       );
     }
+    chargedSource = 'base';
     // 되돌릴 수 있어야 한다 — 아래 catch 의 환불이 이 두 값을 본다. 예약 뒤에도 던질 수 있는 DB 쓰기가
     // 남아 있어, 안 적어 두면 **오디오는 못 받았는데 횟수만 깎인 채** 끝난다.
     manualQuotaPoolKey = pool.poolKey;
@@ -1095,22 +1113,17 @@ tts.post('/generate', async (c) => {
         ) {
           throw new VoiceAuthorizationChangedDuringTtsError();
         }
-        // ⚠ **직접 입력은 캐시 히트도 한 번으로 센다**(2026-09-07 결정).
-        //
-        // 한도의 뜻이 "우리가 합성했는가" 가 아니라 **"이 폰에 없어서 서버에 달라고 했는가"**
-        // 로 바뀌었다. 앱은 그 음성이 폰에 있으면 서버를 아예 부르지 않으므로
-        // (`AlarmEditorScreen` 의 `resolveTtsInput` → `getCachedAudio`), **여기까지 왔다는
-        // 것은 폰에 없다는 뜻**이다. 우리 서버에 남아 있었는지는 사용자에게 보이지 않는
-        // 사정이라 계산에 넣지 않는다 — 합성을 건너뛰어 비용은 그대로 0이고, 사용자는
-        // 같은 소리를 즉시 받는다.
-        //
-        // 초과면 여기서도 429 다. 앱이 저장 전에 남은 횟수를 먼저 보지만(불필요한 왕복을
-        // 줄이려는 것뿐) **강제는 여기 하나뿐**이다 — 다른 기기가 그 사이 다 써 버렸을 수 있다.
-        // 히트로 센 횟수도 되돌릴 수 있어야 한다 — 여기 뒤에도 던질 수 있는 DB 쓰기가 남아 있다
-        // (바로 아래 `last_used_at`). `reserveManualGeneration` 이 환불할 값을 적어 둔다.
+        // ⚠ **이미 만든 내 음성은 다시 받아도 세지 않는다**(2026-10-26 정책 변경 — 그전 2026-09-07 결정은 "이 폰에
+        //   없어서 서버를 불렀으면 히트도 한 번" 이었다). 이 캐시는 **그 사람 범위**다(`manualTtsCacheScope` ·
+        //   `anyUser` false) — 남의 결과를 나눠 주지 않는다. 등록 목소리는 위 게이트가 지금 권한을 이미 봤다.
+        //   세는 것은 새로 합성할 때(아래 캐시 미스 뒤) 한 자리뿐이다. 과거 사용량은 돌려주지 않는다.
+        //   응답의 남은 횟수는 지금 값을 읽어 싣는다(소비 없음).
         if (isManualGeneration) {
-          const refused = await reserveManualGeneration();
-          if (refused) return refused;
+          const pool = await resolveManualTtsPool(db, ownerIds, userPk, callerUserPlan, {
+            promoOnly: callerPromoOnly,
+          });
+          const used = pool.limit > 0 ? await readManualTtsUsage(db, pool.poolKey) : 0;
+          manualQuotaResult = { used, limit: pool.limit, remaining: Math.max(0, pool.limit - used) };
         }
         // F1: 캐시 히트도 '사용'으로 보고 LRU 신호를 갱신한다(사전렌더/캐시 재생 알람이 자주
         // 쓰는 커스텀 클론이 오래 안 쓴 것으로 오판돼 evict되지 않게). 시스템 보이스는 no-op.
@@ -1155,8 +1168,9 @@ tts.post('/generate', async (c) => {
             provider: cached.provider,
             cache_key: cacheKey,
             cache_hit: true,
-            // 히트도 한 번으로 세므로 남은 횟수가 줄어든다 — 앱이 화면 숫자를 갱신한다.
+            // 다시 받기는 세지 않는다 — 지금 남은 횟수를 그대로 싣는다.
             manual_quota: manualQuotaResult,
+            charged_source: 'none',
             random_context: randomRequested ? randomContext : null,
             preview_playback_token: activePreviewClaimToken,
             preview_playback_confirmed: Boolean(vp.previewed_at),
@@ -1199,9 +1213,32 @@ tts.post('/generate', async (c) => {
     }
 
     // 캐시 미스 확정 후 합성 직전에 직접 입력 한 번을 센다(월 한도 원자적 +1 또는 광고 보상 하나).
+    // 그 전에 같은 요청 표식을 잡는다 — 재시도·중복 탭이 동시에 와도 한 번만 합성·차감한다(`lib/manual-tts-requests.ts`).
     if (isManualGeneration) {
+      const requestId = parseManualRequestId(body.request_id);
+      if (requestId) {
+        const outcome = await claimManualRequest(db, {
+          userPk,
+          requestId,
+          fingerprint: await manualRequestFingerprint({
+            voiceProfileId: body.voice_profile_id,
+            language: normalizeSynthesisLanguage(body.language),
+            text: userTypedText,
+          }),
+        });
+        if (outcome.kind === 'conflict') {
+          return jsonError(c, 409, 'TTS_REQUEST_ID_CONFLICT', 'The request id was used for different input.');
+        }
+        if (outcome.kind === 'in_progress') {
+          return jsonError(c, 409, 'TTS_REQUEST_IN_PROGRESS', 'The same request is still being generated.');
+        }
+        requestClaim = outcome.claim;
+      }
       const refused = await reserveManualGeneration();
-      if (refused) return refused;
+      if (refused) {
+        if (requestClaim) await releaseManualRequest(db, requestClaim);
+        return refused;
+      }
     }
 
     let lastError: unknown = noVoiceProviderError();
@@ -1346,6 +1383,14 @@ tts.post('/generate', async (c) => {
           throw publicationError;
         }
 
+        if (requestClaim) {
+          try {
+            await completeManualRequest(db, requestClaim);
+          } catch (claimErr) {
+            // 결과는 이미 게시됐다 — 표식을 못 닫아도 2분 뒤 버려진 것으로 풀린다. 응답을 막지 않는다.
+            console.error('[tts/generate] request claim complete failed', claimErr);
+          }
+        }
         return c.json(
           {
             message_id: messageId,
@@ -1365,6 +1410,7 @@ tts.post('/generate', async (c) => {
             cache_hit: false,
             random_context: randomRequested ? randomContext : null,
             manual_quota: manualQuotaResult,
+            charged_source: chargedSource,
             preview_playback_token: activePreviewClaimToken,
             preview_playback_confirmed: false,
           },
@@ -1379,6 +1425,13 @@ tts.post('/generate', async (c) => {
 
     throw lastError;
   } catch (err) {
+    if (requestClaim) {
+      try {
+        await releaseManualRequest(db, requestClaim);
+      } catch (claimErr) {
+        console.error('[tts/generate] request claim release failed', claimErr);
+      }
+    }
     // 쿼터를 예약했는데 합성이 끝내 실패했으면 카운터를 되돌린다(실패는 소비 안 함).
     // 예약이 증가시킨 바로 그 월로 환불(월 경계를 넘겨 실패해도 정확히 복구).
     if (manualQuotaPoolKey && manualQuotaMonth) {
@@ -1494,6 +1547,8 @@ tts.get('/manual-quota', async (c) => {
     limit: pool.limit,
     used,
     remaining: Math.max(0, pool.limit - used),
+    // 다음 기본분이 생기는 순간(다음 달 1일 0시 KST). 화면은 이 값으로 '다음 제공일' 을 말한다.
+    resets_at: nextManualQuotaResetAt(),
     ...(adReward ? { ad_reward: adReward } : {}),
   });
 });
