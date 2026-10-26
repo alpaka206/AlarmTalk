@@ -682,10 +682,12 @@ internal fun WeatherLocationDialog(
     // iOS 도 세그먼트는 고정이고 목록만 스크롤한다.
     WakerSelectionSheet(
         title = stringResource(R.string.editorp_random_weather_region_title),
+        // 옛 값이 목록에 없으면 그것을, 아니면 고르는 법과 위치 권한을 쓰지 않는다는 사실을 말한다(지시서 v1.3 8.1).
+        // iOS `WeatherRegionPickerSheet` 의 안내 줄과 같은 문장이다.
         subtitle = if (display.needsRepick) {
             stringResource(R.string.region_picker_legacy_value_hint, display.label)
         } else {
-            null
+            stringResource(R.string.region_picker_hint)
         },
         onDismiss = onDismissWithoutSave,
         scrollsContent = false,
