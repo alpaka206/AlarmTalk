@@ -2945,6 +2945,16 @@ struct AlarmEditorSheet: View {
         }
         rememberChoicesUsed(merged)
         recordSaveUsageEvent(record: merged, previous: existing)
+        // 응원 선택(`content_selected`) — 저장에 성공했을 때만, 저장을 **시작한** 계정으로(예약을 기다리는 사이 바뀌어도).
+        if let props = CheerVariety.contentSelectionProps(for: merged) {
+            UsageEventQueue.shared.record(
+                .contentSelected,
+                alarmID: merged.id,
+                voiceProfileID: merged.voiceProfileId,
+                props: props,
+                userID: ownerID
+            )
+        }
         recordAlarmReadyIfComplete(store.record(id: merged.id) ?? merged)
         UINotificationFeedbackGenerator().notificationOccurred(.success)
         onSchedulingDidFinish()
