@@ -89,6 +89,12 @@ struct PlanCard: View {
         return subscriptions.priceLabel(for: tier).map { String(localized: "월 \(String($0))") }
     }
 
+    /// 지금 받을 수 있는 무료 체험 기간 표기 — 결제 버튼이 있는 카드에서만.
+    private var trialLabel: String? {
+        guard showsPurchase, tier != .free, let period = subscriptions.freeTrialPeriod(for: tier) else { return nil }
+        return SubscriptionManager.trialPeriodLabel(period)
+    }
+
     var body: some View {
         // Android `SubscriptionPlanCard`(`ui/billing/BillingPanels.kt`): WakerCardShape(22),
         // 현재 플랜이면 primaryContainer@0.44 / primary@0.48 보더, 아니면 surface /
@@ -115,7 +121,9 @@ struct PlanCard: View {
             // 가격은 **플랜 이름 바로 아래**다(안드로이드와 같은 자리). 버튼에 넣으면
             // 액션 라벨과 가격이 한 덩어리가 되어 무엇을 누르는지 흐려진다.
             if let priceLabel = priceLabel {
-                Text(priceLabel)
+                // 체험을 받을 수 있으면 "1개월 무료 체험, 이후 월 3,900원" — 결제 시트가 처음 청구할 금액이 0 이라는 것을
+                // 카드가 먼저 말한다(안드로이드 `billing_plan_trial_price`). 결제 버튼이 없는 카드에는 붙이지 않는다.
+                Text(trialLabel.map { String(localized: "\(String($0)) 무료 체험, 이후 \(String(priceLabel))") } ?? priceLabel)
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(theme.palette.primary)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -135,6 +143,14 @@ struct PlanCard: View {
                 ForEach(Self.features(for: tier), id: \.self) { feature in
                     PlanFeatureRow(text: LocalizedStringKey(feature))
                 }
+            }
+
+            if trialLabel != nil {
+                // 자동 결제와 해지를 결제 버튼 **앞에서** 말한다(App Store 지침 3.1.2 — 체험 뒤 청구를 숨기지 않는다).
+                Text(String(localized: "체험이 끝나면 자동으로 결제돼요. 끝나기 전에 App Store 에서 언제든 해지할 수 있고, 해지하면 결제되지 않아요."))
+                    .font(.footnote)
+                    .foregroundStyle(theme.palette.onSurfaceVariant)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
 
             if tier != .free {

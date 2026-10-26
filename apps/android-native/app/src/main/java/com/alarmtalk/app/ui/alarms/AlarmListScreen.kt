@@ -119,6 +119,8 @@ internal fun AlarmListScreen(
     onVoiceRegistrationFailureShown: () -> Unit = {},
     onRegistrationWindowOpenChange: (Boolean) -> Unit = {},
     planPrices: Map<String, String>,
+    /** 플랜 key → 지금 받을 수 있는 무료 체험 기간(ISO 8601). 없으면 빈 표. */
+    planTrials: Map<String, String> = emptyMap(),
     onPurchasePlay: (android.app.Activity, String) -> Unit,
     onCancelSubscription: (Boolean) -> Unit,
     onRestorePurchases: () -> Unit,
@@ -371,6 +373,7 @@ internal fun AlarmListScreen(
                         billingBusy = billingBusy,
                         subscriptionResponse = subscriptionResponse,
                         planPrices = planPrices,
+                        planTrials = planTrials,
                         onPurchasePlay = onPurchasePlay,
                         onCancelSubscription = onCancelSubscription,
                         onRestorePurchases = onRestorePurchases,

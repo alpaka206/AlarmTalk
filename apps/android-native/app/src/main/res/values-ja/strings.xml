@@ -666,6 +666,20 @@
     <string name="voices_not_ready_message">アラームに使う基本の声のダウンロードが終わると、アラームを設定できます。\nインターネットに接続したまま少しお待ちください。</string>
     <string name="voices_default_download_progress">ダウンロード中 %1$d%%</string>
     <string name="personal_promo_plan_line">プラス無料利用中 · %1$sまで</string>
+    <string name="billing_plan_trial_price">%1$s無料トライアル、その後%2$s</string>
+    <string name="billing_plan_trial_terms">トライアル終了後は自動で課金されます。終了前にGoogle Playでいつでも解約でき、解約すれば課金されません。</string>
+    <plurals name="billing_trial_days">
+        <item quantity="other">%d日間</item>
+    </plurals>
+    <plurals name="billing_trial_weeks">
+        <item quantity="other">%d週間</item>
+    </plurals>
+    <plurals name="billing_trial_months">
+        <item quantity="other">%dか月</item>
+    </plurals>
+    <plurals name="billing_trial_years">
+        <item quantity="other">%d年</item>
+    </plurals>
     <string name="personal_promo_end_notice_title">プラスの無料利用がまもなく終了します</string>
     <string name="personal_promo_end_notice_message">%1$sまでプラスを無料でご利用いただけます。%2$sからは無料プランに戻り、登録した声は3日間保管した後に削除されます。</string>
     <string name="personal_promo_end_notice_message_keep_voices">%1$sまでプラスを無料でご利用いただけます。%2$sからは無料プランに戻ります。</string>

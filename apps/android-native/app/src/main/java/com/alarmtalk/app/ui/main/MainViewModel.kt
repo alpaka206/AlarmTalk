@@ -805,6 +805,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // planKey("personal") → Play 실제 표시가격(formattedPrice). preloadProducts
     // 성공 시 채워지며, 비면 UI 가 문자열 리소스로 폴백한다. 하드코딩 대신 청구 통화·금액을 정확히 표기.
     var billingPlanPrices by mutableStateOf<Map<String, String>>(emptyMap())
+    /** 지금 받을 수 있는 무료 체험 기간(플랜 key → ISO 8601 `P1M`) — Play 가 자격 있는 오퍼만 준다. 없으면 빈 표. */
+    var billingPlanTrials by mutableStateOf<Map<String, String>>(emptyMap())
         internal set
 
     // 이용권 패널 진입 시의 read-only 새로고침 플래그. billingBusy(구매·해지 등
@@ -1659,6 +1661,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 .onSuccess {
                     billingPlanPrices = listOf("personal")
                         .mapNotNull { key -> playBilling.formattedPriceForPlan(key)?.let { key to it } }
+                        .toMap()
+                    billingPlanTrials = listOf("personal")
+                        .mapNotNull { key -> playBilling.freeTrialPeriodForPlan(key)?.let { key to it } }
                         .toMap()
                 }
                 .onFailure { error -> Log.w(TAG, "Failed to preload Play products", error) }
