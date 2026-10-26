@@ -2118,7 +2118,10 @@ struct AlarmEditorSheet: View {
 
     /// 자동으로 골라도 되는 목소리 — 준비됐고 교체 정리 중이 아닌 것.
     /// 프리셀렉트와 그 재실행 키가 같은 목록을 본다.
-    private var readySelectableOwnVoices: [VoiceProfile] {
+    private var readySelectableOwnVoices: [VoiceProfile] { Self.readySelectableVoices(in: voiceStudio) }
+
+    /// 지금 자동으로 고를 수 있는 목소리 — 준비됐고 교체 정리 중이 아니다. 알람 설정 관문도 같은 목록을 본다.
+    static func readySelectableVoices(in voiceStudio: VoiceStudioViewModel) -> [VoiceProfile] {
         voiceStudio.profiles.filter {
             $0.isReadyForAlarmSelection && !voiceStudio.isReplacementSettling($0.id)
         }
@@ -2150,35 +2153,39 @@ struct AlarmEditorSheet: View {
         // 마지막에 쓴 것이 그룹보다 우선」). `refresh` 안에도 같은 판단이 있지만 그건 성공
         // 경로 안이라, 조기 반환(다른 refresh 진행 중)이나 네트워크 실패로 여기까지 오면
         // 선택이 비어 있고 아래 폴백이 온보딩 기본 목소리를 집는다.
-        let lastUsedID = voiceStudio.lastUsedVoiceId
+        let resolved = Self.resolveInitialVoiceID(
+            selected: selected,
+            readyOwn: readyOwn,
+            lastUsedID: voiceStudio.lastUsedVoiceId,
+            freeTier: freeVoiceTier
+        )
+        if let resolved, resolved != selected {
+            voiceStudio.selectedProfileID = resolved
+        }
+    }
+
+    /// 편집기가 **처음 고를 목소리** — 판정식은 이것 한 벌이다. 알람 설정 관문(`MainTabsView.gateVoiceID`)도 이걸 불러, 관문이 본
+    /// 목소리와 편집기가 연 목소리가 같다(코덱스 #952 — 관문이 저장된 직전 선택을 그대로 믿으면, 못 쓰게 된 클론을 보고 통과시킨 뒤
+    /// 편집기는 아직 받는 중인 기본 목소리로 연다).
+    ///
+    /// 순서: 지금 선택이 아직 고를 수 있으면 그대로 → 마지막에 쓴 것 → (유료) 첫 목소리 / (무료) 첫 기본 목소리. 무료는 서버가
+    /// 기본 목소리만 허용하므로 마지막에 쓴 것도 기본 목소리일 때만 쓴다. 고를 것이 없으면 지금 선택 그대로(nil 일 수 있다).
+    static func resolveInitialVoiceID(
+        selected: String?,
+        readyOwn: [VoiceProfile],
+        lastUsedID: String?,
+        freeTier: Bool
+    ) -> String? {
         let lastUsedOwn = readyOwn.first { $0.id == lastUsedID }
-
-        if freeVoiceTier {
-            // 무료 등급은 서버가 시스템 보이스만 허용하므로, 마지막에 쓴 것도 시스템일 때만 쓴다.
+        if freeTier {
+            if let selected, readyOwn.first(where: { $0.id == selected }).map(isSystemVoice) == true {
+                return selected
+            }
             let lastUsedSystem = lastUsedOwn.flatMap { isSystemVoice($0) ? $0 : nil }
-            let systemVoice = lastUsedSystem ?? readyOwn.first { isSystemVoice($0) }
-            let selectedIsSystem = voiceStudio.isSystemVoiceProfile(id: selected)
-            if selectedIsSystem,
-               readyOwn.contains(where: { $0.id == selected }) {
-                return
-            }
-            if let systemVoice {
-                voiceStudio.selectedProfileID = systemVoice.id
-            }
-            return
+            return (lastUsedSystem ?? readyOwn.first { isSystemVoice($0) })?.id ?? selected
         }
-
-        let selectedStillAvailable = selected.map { selectedID in
-            readyOwn.contains(where: { $0.id == selectedID })
-        } ?? false
-        if selectedStillAvailable {
-            return
-        }
-        if let lastUsedOwn {
-            voiceStudio.selectedProfileID = lastUsedOwn.id
-        } else if let first = readyOwn.first {
-            voiceStudio.selectedProfileID = first.id
-        }
+        if let selected, readyOwn.contains(where: { $0.id == selected }) { return selected }
+        return (lastUsedOwn ?? readyOwn.first)?.id ?? selected
     }
 
     // MARK: - Save flow

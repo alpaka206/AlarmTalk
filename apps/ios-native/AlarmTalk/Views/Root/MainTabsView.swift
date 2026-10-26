@@ -13,6 +13,7 @@ struct MainTabsView: View {
     @EnvironmentObject private var socialFeatures: SocialFeatureViewModel
     @EnvironmentObject private var store: LocalAlarmStore
     @EnvironmentObject private var stockClipPrefetcher: StockClipPrefetcher
+    @EnvironmentObject private var subscriptions: SubscriptionManager
 
     /// 기본 목소리를 다 받기 전에 알람 설정을 열려고 했다 — 그 이유를 말하는 알럿.
     @State private var voicesNotReadyProgress: (done: Int, total: Int)?
@@ -69,14 +70,25 @@ struct MainTabsView: View {
         editorTarget = target
     }
 
-    /// 관문이 볼 목소리 — 기존 알람은 그 알람의 목소리, 새 알람은 편집기가 처음 고를 목소리(직전 선택 → 첫 기본 목소리).
-    /// 직전 선택이 내 목소리면 그 목소리를 넘긴다(관문이 통과시키고 편집기가 본다).
+    /// 관문이 볼 목소리 — 기존 알람은 그 알람의 목소리, 새 알람은 **편집기가 처음 고를 목소리**다. 판정은 편집기와 같은 한 벌
+    /// (`AlarmEditorSheet.resolveInitialVoiceID` — 고를 수 있는 목소리·정리 중 제외·무료면 기본 목소리만). 저장된 직전 선택을
+    /// 그대로 믿으면, 못 쓰게 된 클론을 보고 통과시킨 뒤 편집기는 아직 받는 중인 기본 목소리로 연다(코덱스 #952).
     private func gateVoiceID(for target: AlarmEditorTarget) -> String? {
         if let alarmID = target.editingAlarmID {
             return store.alarms.first(where: { $0.id == alarmID })?.voiceProfileId.nilIfBlank
         }
-        if let lastUsed = voiceStudio.lastUsedVoiceId.nilIfBlank { return lastUsed }
-        return voiceStudio.profiles.first(where: { isSystemVoiceId($0.id) })?.id
+        let readyOwn = AlarmEditorSheet.readySelectableVoices(in: voiceStudio)
+        let plan = PlanTier.bestKnown(
+            serverSubscription: socialFeatures.subscription,
+            storeTier: subscriptions.currentTier,
+            user: auth.session?.user
+        )
+        return AlarmEditorSheet.resolveInitialVoiceID(
+            selected: voiceStudio.selectedProfileID,
+            readyOwn: readyOwn,
+            lastUsedID: voiceStudio.lastUsedVoiceId,
+            freeTier: auth.session != nil && !plan.meetsOrExceeds(.personal)
+        )
     }
 
     private func restartDefaultVoiceDownload() {

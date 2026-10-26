@@ -324,6 +324,39 @@ final class StockClipProgressScanTests: XCTestCase {
         XCTAssertEqual(targets.map(\.category), ["cheer", nil, "weather"])
     }
 
+    /// 관문과 편집기는 **같은 첫 목소리**를 본다(`AlarmEditorSheet.resolveInitialVoiceID`, 코덱스 #952). 무료면 못 쓰게 된 클론을
+    /// 직전 선택으로 들고 있어도 기본 목소리가 첫 목소리다 — 관문이 그 클론을 보고 통과시키면 받는 중인 기본 목소리로 열린다.
+    func test_관문과_편집기는_같은_첫_목소리를_본다() {
+        let system = VoiceProfile(id: systemVoiceIDPrefix + "000000000101", name: "미나", status: "ready", isSystem: true)
+        let system2 = VoiceProfile(id: systemVoiceIDPrefix + "000000000102", name: "시우", status: "ready", isSystem: true)
+        let clone = VoiceProfile(id: "clone-1", name: "엄마", status: "ready")
+        let ready = [clone, system, system2]
+        // 무료 — 직전 선택이 클론이어도 기본 목소리.
+        XCTAssertEqual(
+            AlarmEditorSheet.resolveInitialVoiceID(selected: nil, readyOwn: ready, lastUsedID: "clone-1", freeTier: true),
+            system.id
+        )
+        XCTAssertEqual(
+            AlarmEditorSheet.resolveInitialVoiceID(selected: nil, readyOwn: ready, lastUsedID: system2.id, freeTier: true),
+            system2.id
+        )
+        // 유료 — 직전 선택이 그대로.
+        XCTAssertEqual(
+            AlarmEditorSheet.resolveInitialVoiceID(selected: nil, readyOwn: ready, lastUsedID: "clone-1", freeTier: false),
+            "clone-1"
+        )
+        // 직전 선택이 이제 고를 수 없으면(목록에 없다) 첫 목소리.
+        XCTAssertEqual(
+            AlarmEditorSheet.resolveInitialVoiceID(selected: nil, readyOwn: [system, system2], lastUsedID: "gone", freeTier: false),
+            system.id
+        )
+        // 지금 선택이 아직 고를 수 있으면 그대로.
+        XCTAssertEqual(
+            AlarmEditorSheet.resolveInitialVoiceID(selected: system2.id, readyOwn: ready, lastUsedID: "clone-1", freeTier: false),
+            system2.id
+        )
+    }
+
     /// 화면이 그 한 번을 쓰는가 — 뷰의 `private` 함수라 유닛 테스트가 부를 수 없어 소스를 읽는다(`AppSourceText`).
     /// 관문을 한 번 부르고, 막히면 그 값을 알럿 퍼센트에 쓰고, 따로 다시 세지 않는다.
     func test_알람_설정_관문은_탭_하나에_한_번_센다() throws {
