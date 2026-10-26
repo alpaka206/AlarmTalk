@@ -171,7 +171,7 @@
     <string name="editor_block_dated_conflict_message">日付アラームは他のアラームを置き換えません。別の時刻を選んでください。</string>
     <string name="dated_alarm_past_enable_title">日付が過ぎたアラームです</string>
     <string name="dated_alarm_past_enable_message">編集で日付を選び直してください。</string>
-    <string name="dated_alarm_notice_ok">OK</string>
+    <string name="dated_alarm_notice_ok">確認</string>
     <string name="editor_holiday_off_title">祝日はオフにする</string>
     <string name="editor_manual_input_placeholder">アラームで流す文を入力してください</string>
     <string name="editor_no_voice_profile">まだ使用できる声がありません。</string>
