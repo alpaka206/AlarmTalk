@@ -132,8 +132,11 @@ export async function runEvaluation(args: {
 
 // ---------------------------------------------------------------- 마크다운
 
+// 표 칸 — 역슬래시를 먼저 겹친 뒤 `|` 를 막는다. 순서가 반대면 `\|` 가 `\\|` 로 바뀌어 칸이 갈린다(CodeQL js/incomplete-sanitization).
 const cell = (value: string | number | null | undefined): string =>
-  value == null || value === '' ? '—' : String(value).replace(/\|/g, '\\|').replace(/\n/g, ' ');
+  value == null || value === ''
+    ? '—'
+    : String(value).replace(/\\/g, '\\\\').replace(/\|/g, '\\|').replace(/\n/g, ' ');
 
 export function renderMarkdown(report: EvalReport): string {
   const { meta, summary } = report;

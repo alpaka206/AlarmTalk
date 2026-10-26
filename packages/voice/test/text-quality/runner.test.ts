@@ -156,6 +156,10 @@ describe('runEvaluation (fixture 모드)', () => {
     expect(md).toContain('| t-translate | numbers_preserved | 빠진 숫자 30 |');
     expect(md).toContain('| t-select | recent_excluded |');
     expect(md).toContain('비용(USD) | 시간(ms) | 오류');
+
+    // 표 칸은 역슬래시를 먼저 겹친 뒤 `|` 를 막는다 — `\|` 가 그대로 남으면 칸이 갈린다.
+    const tricky = { ...report, items: [{ ...translate, id: 'a\\|b' }] };
+    expect(renderMarkdown(tricky)).toContain('a\\\\\\|b');
   });
 
   it('세트로 거른다', async () => {
