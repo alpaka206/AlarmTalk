@@ -28,6 +28,8 @@ struct BriefingView: View {
 
     @State private var model: BriefingScreenModel?
     @State private var loading = false
+    /// 도는 조회가 있는 동안 관심 기업이 바뀌었다 — 그 조회는 옛 목록으로 답하므로 끝나면 한 번 더 묻는다(코덱스 #957).
+    @State private var reloadQueued = false
     @State private var loadMessage: String?
     @State private var notConfigured = false
     @State private var retryAt: Date?
@@ -270,8 +272,11 @@ struct BriefingView: View {
         }
     }
 
-    private func loadToday() async {
-        guard !loading else { return }
+    private func loadToday(afterInterestsChange: Bool = false) async {
+        guard !loading else {
+            if afterInterestsChange { reloadQueued = true }
+            return
+        }
         if let retryAt, Date() < retryAt {
             // `Retry-After` 를 지킨다 — 보내지 않고 이유를 말한다(버튼은 죽이지 않는다).
             retryNoteVisible = true
@@ -280,7 +285,13 @@ struct BriefingView: View {
         retryNoteVisible = false
         guard let token = auth.session?.token else { return }
         loading = true
-        defer { loading = false }
+        defer {
+            loading = false
+            if reloadQueued {
+                reloadQueued = false
+                Task { await loadToday() }
+            }
+        }
         do {
             let next = BriefingPresentation.model(try await api.briefingToday(token: token))
             model = next
@@ -322,7 +333,7 @@ struct BriefingView: View {
                 interestsMessage = nil
                 // 관심 기업이 바뀌면 소식도 다시 묻는다(새 기업은 서버가 그때 처음 확인한다).
                 retryAt = nil
-                await loadToday()
+                await loadToday(afterInterestsChange: true)
             } catch {
                 interestsMessage = APIErrorMessages.message(
                     for: error,

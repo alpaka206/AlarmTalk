@@ -119,8 +119,14 @@ internal fun BriefingScreen(
     var limitAlertOpen by remember { mutableStateOf(false) }
     var speechTarget by remember { mutableStateOf<BriefingSpeechTarget?>(null) }
 
-    fun loadToday() {
-        if (loading) return
+    // 도는 조회가 있는 동안 관심 기업이 바뀌었다 — 그 조회는 옛 목록으로 답하므로 끝나면 한 번 더 묻는다(코덱스 #957).
+    var reloadQueued by remember { mutableStateOf(false) }
+
+    fun loadToday(afterInterestsChange: Boolean = false) {
+        if (loading) {
+            if (afterInterestsChange) reloadQueued = true
+            return
+        }
         if (System.currentTimeMillis() < retryAtMillis) {
             // `Retry-After` 를 지킨다 — 보내지 않고 이유를 말한다(버튼은 죽이지 않는다).
             retryNoteVisible = true
@@ -149,6 +155,10 @@ internal fun BriefingScreen(
                 }
             } finally {
                 loading = false
+                if (reloadQueued) {
+                    reloadQueued = false
+                    loadToday()
+                }
             }
         }
     }
@@ -180,7 +190,7 @@ internal fun BriefingScreen(
                 interestsMessage = null
                 // 관심 기업이 바뀌면 소식도 다시 묻는다(새 기업은 서버가 그때 처음 확인한다).
                 retryAtMillis = 0L
-                loadToday()
+                loadToday(afterInterestsChange = true)
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {
