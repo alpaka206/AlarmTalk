@@ -253,6 +253,11 @@ class StockClipPrefetchWorker(
         // 음성 준비 기록(`voice_preparation_*`, `docs/spec/usage-events.md` §7.3) — **이 워커가 기본 목소리 준비의 소유자**다.
         // 받기 화면·헤더 퍼센트는 이 워커의 진행을 읽기만 하므로 적지 않는다. 받을 것이 있을 때만 시작을 적는다.
         var preparation: com.alarmtalk.app.data.PreparationAttempt? = null
+        // 준비 기록은 **이 회차를 시작한 계정**일 때만 적는다 — 기록기는 지금 로그인한 계정으로 적으므로, 회차 도중 B 가 로그인하면
+        // A 의 결과가 B 의 기록으로 올라간다(코덱스 #958). 시작한 세션·세대가 그대로인지 본다.
+        fun stillStartingAccount(): Boolean =
+            AuthSessionStore(applicationContext).read()?.user?.id == session.user.id &&
+                sessionStore.sessionGeneration() == startGeneration
         val preparedBytes = java.util.concurrent.atomic.AtomicLong(0)
         val preparedClips = java.util.concurrent.atomic.AtomicInteger(0)
         return runCatching {
@@ -583,13 +588,17 @@ class StockClipPrefetchWorker(
             }
             publishProgress(done = alreadyCached, total = clips.size)
             preparedClips.set(alreadyCached)
-            preparation = com.alarmtalk.app.data.PreparationAttempt(
-                context = applicationContext,
-                scope = com.alarmtalk.app.data.UsageEventProps.SCOPE_ALL_VOICES,
-                language = language,
-                // 매니페스트 조회부터가 이 준비다 — 사용자는 그동안도 기다린다.
-                startedAt = runStartedAt,
-            ).also { it.start(targetCount = clips.size, alreadyCached = alreadyCached) }
+            preparation = if (stillStartingAccount()) {
+                com.alarmtalk.app.data.PreparationAttempt(
+                    context = applicationContext,
+                    scope = com.alarmtalk.app.data.UsageEventProps.SCOPE_ALL_VOICES,
+                    language = language,
+                    // 매니페스트 조회부터가 이 준비다 — 사용자는 그동안도 기다린다.
+                    startedAt = runStartedAt,
+                ).also { it.start(targetCount = clips.size, alreadyCached = alreadyCached) }
+            } else {
+                null
+            }
 
             // 받을 순서 — 저장된 켜진 알람이 쓰는 목소리·테마가 먼저, 다음에 울릴 알람부터([StockClipPrefetchPriority]).
             // 이 계정의 알람만 본다(로그아웃해도 로컬 알람은 남는다 — `StockClipLanguageRebinder.ownedBy`). 못 읽으면 순서만
@@ -699,7 +708,7 @@ class StockClipPrefetchWorker(
             }
             rebind()
             // 준비 결과 — 실패 코드는 정해진 몇 개뿐이다(서버 원문을 싣지 않는다).
-            preparation?.let { prep ->
+            preparation?.takeIf { !accountChangedDuringRun && stillStartingAccount() }?.let { prep ->
                 val failureCode = when {
                     sessionExpired.get() != null -> "session_expired"
                     budgetExhausted -> "run_budget_exhausted"
@@ -742,7 +751,7 @@ class StockClipPrefetchWorker(
         }.getOrElse { error ->
             // 시작을 적은 뒤 던졌으면 실패로 마무리한다(이미 결과를 적었으면 `PreparationAttempt` 가 한 번만 적는다).
             // 취소는 실패가 아니다 — 앱을 다시 켜면 새 시도이고, 끝나지 않은 시작은 실패로 세지 않는다(§7.3).
-            if (error !is kotlin.coroutines.cancellation.CancellationException) {
+            if (error !is kotlin.coroutines.cancellation.CancellationException && stillStartingAccount()) {
                 preparation?.failed(
                     completed = preparedClips.get(),
                     bytes = preparedBytes.get(),

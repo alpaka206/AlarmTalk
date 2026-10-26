@@ -137,7 +137,6 @@ const FUNNEL: Array<{ key: string; label: string; col: string }> = [
 ];
 
 const PREP_TYPES = `('voice_preparation_started', 'voice_preparation_ready', 'voice_preparation_failed')`;
-const PERCENTILE_ROW_LIMIT = 5000;
 
 function num(value: unknown): number {
   const n = Number(value ?? 0);
@@ -180,14 +179,19 @@ export async function loadUsageMetrics(db: Client, f: UsageFilter, nowMs: number
     // 3 준비 — 범위 × 종류
     at(`SELECT COALESCE(e.scope, '') AS scope, e.type, COUNT(*) AS n, AVG(e.bytes) AS avg_bytes
         FROM usage_events e WHERE ${w.sql} AND e.type IN ${PREP_TYPES} GROUP BY scope, e.type`),
-    // 4 준비 완료 시간(백분위는 JS 에서). 이미 다 있던 시도(warm)는 받을 것이 없어 0 에 가깝다 — 대기시간에서 뺀다.
-    at(
-      `SELECT COALESCE(e.scope, '') AS scope, e.duration_ms FROM usage_events e
-        WHERE ${w.sql} AND e.type = 'voice_preparation_ready' AND e.duration_ms IS NOT NULL
-          AND COALESCE(e.cache_state, '') <> 'warm'
-        ORDER BY scope, e.duration_ms LIMIT ?`,
-      [PERCENTILE_ROW_LIMIT],
-    ),
+    // 4 준비 완료 시간 — 백분위를 **SQL 에서 전체로** 센다(최근접 순위, `percentiles` 와 같은 셈). 예전에는 빠른 순으로 5000행만
+    //   가져와 셌다 — 행이 많으면 느린 값이 잘려 p50·p90 이 낮게 나오고 뒤 범위는 통째로 빠졌다(코덱스 #958).
+    //   이미 다 있던 시도(warm)는 받을 것이 없어 0 에 가깝다 — 대기시간에서 뺀다.
+    at(`SELECT scope, MAX(cnt) AS n,
+               MAX(CASE WHEN rn = (cnt + 1) / 2 THEN duration_ms END) AS p50,
+               MAX(CASE WHEN rn = (9 * cnt + 9) / 10 THEN duration_ms END) AS p90
+        FROM (SELECT COALESCE(e.scope, '') AS scope, e.duration_ms,
+                     ROW_NUMBER() OVER (PARTITION BY COALESCE(e.scope, '') ORDER BY e.duration_ms) AS rn,
+                     COUNT(*) OVER (PARTITION BY COALESCE(e.scope, '')) AS cnt
+              FROM usage_events e
+              WHERE ${w.sql} AND e.type = 'voice_preparation_ready' AND e.duration_ms IS NOT NULL
+                AND COALESCE(e.cache_state, '') <> 'warm')
+        GROUP BY scope`),
     // 5 준비 실패 코드
     at(`SELECT COALESCE(e.error_code, 'unknown') AS code, COUNT(*) AS n FROM usage_events e
         WHERE ${w.sql} AND e.type = 'voice_preparation_failed' GROUP BY code ORDER BY n DESC LIMIT 12`),
@@ -216,11 +220,12 @@ export async function loadUsageMetrics(db: Client, f: UsageFilter, nowMs: number
         WHERE ${w.sql} AND e.type IN ('reward_offer', 'reward_view_started', 'reward_pending', 'reward_granted', 'reward_spent')
         GROUP BY e.type`),
     // 11 지급 지연 — 지급 기록에 단조 시계로 잰 대기(duration_ms)
-    at(
-      `SELECT e.duration_ms FROM usage_events e WHERE ${w.sql} AND e.type = 'reward_granted' AND e.duration_ms IS NOT NULL
-        ORDER BY e.duration_ms LIMIT ?`,
-      [PERCENTILE_ROW_LIMIT],
-    ),
+    //    백분위는 4 와 같이 SQL 에서 전체로 센다.
+    at(`SELECT MAX(cnt) AS n,
+               MAX(CASE WHEN rn = (cnt + 1) / 2 THEN duration_ms END) AS p50,
+               MAX(CASE WHEN rn = (9 * cnt + 9) / 10 THEN duration_ms END) AS p90
+        FROM (SELECT e.duration_ms, ROW_NUMBER() OVER (ORDER BY e.duration_ms) AS rn, COUNT(*) OVER () AS cnt
+              FROM usage_events e WHERE ${w.sql} AND e.type = 'reward_granted' AND e.duration_ms IS NOT NULL)`),
     // 12 지급 누락 — 대기 30분이 지났는데 같은 시도의 지급이 없다
     {
       sql: `SELECT COUNT(*) AS n FROM usage_events p
@@ -263,12 +268,13 @@ export async function loadUsageMetrics(db: Client, f: UsageFilter, nowMs: number
     };
   });
 
-  const durations = new Map<string, number[]>();
-  for (const x of rows(4)) {
-    const list = durations.get(str(x.scope)) ?? [];
-    list.push(num(x.duration_ms));
-    durations.set(str(x.scope), list);
-  }
+  const sqlPercentiles = (x: Record<string, unknown> | undefined): Percentiles => {
+    const count = x ? num(x.n) : 0;
+    if (!x || count === 0) return { count: 0, p50: null, p90: null };
+    return { count, p50: x.p50 == null ? null : num(x.p50), p90: x.p90 == null ? null : num(x.p90) };
+  };
+  const durations = new Map<string, Percentiles>();
+  for (const x of rows(4)) durations.set(str(x.scope), sqlPercentiles(x));
   const prep = new Map<string, PreparationRow>();
   for (const x of rows(3)) {
     const scope = str(x.scope);
@@ -278,7 +284,7 @@ export async function loadUsageMetrics(db: Client, f: UsageFilter, nowMs: number
       ready: 0,
       failed: 0,
       avgBytes: null,
-      duration: percentiles((durations.get(scope) ?? []).sort((m, n) => m - n)),
+      duration: durations.get(scope) ?? { count: 0, p50: null, p90: null },
     };
     const n = num(x.n);
     if (x.type === 'voice_preparation_started') cur.started = n;
@@ -363,7 +369,7 @@ export async function loadUsageMetrics(db: Client, f: UsageFilter, nowMs: number
       pending: adCounts.get('reward_pending') ?? 0,
       granted: adCounts.get('reward_granted') ?? 0,
       spent: adCounts.get('reward_spent') ?? 0,
-      grantDelay: percentiles(rows(11).map((x) => num(x.duration_ms))),
+      grantDelay: sqlPercentiles(rows(11)[0]),
       missing: num(row(12).n),
     },
     billing,

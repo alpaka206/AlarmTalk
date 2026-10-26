@@ -1173,6 +1173,8 @@ final class VoiceStudioViewModel: ObservableObject {
         isBusy = true
         defer { isBusy = false }
 
+        // 서버 답을 이미 적었는가 — 그 뒤(받은 소리를 폰에 두다가) 실패하면 생성 실패로 다시 적지 않는다(코덱스 #958).
+        var answerRecorded = false
         do {
             // ⚠ **번역은 없앴다**(2026-08-12). 직접 입력한 문구는 **그대로** 읽는다 —
             // 예전에는 앱 언어가 ko 가 아니면 서버가 옮겨 읽어서, 친 글자와 들리는 말이
@@ -1225,6 +1227,7 @@ final class VoiceStudioViewModel: ObservableObject {
                 manualRequestID = nil
             }
             recordManualGenerationAnswer(response)
+            answerRecorded = true
             let cacheKey = AudioCacheStore.ttsCacheKey(
                 profileId: profileID,
                 text: response.text,
@@ -1251,7 +1254,7 @@ final class VoiceStudioViewModel: ObservableObject {
             await refresh(session: session, force: true)
             return prepared
         } catch {
-            recordManualGenerationFailure(error)
+            if !answerRecorded { recordManualGenerationFailure(error) }
             statusMessage = mapVoiceError(error)
             UINotificationFeedbackGenerator().notificationOccurred(.error)
             return nil

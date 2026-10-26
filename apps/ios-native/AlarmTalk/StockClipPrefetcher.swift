@@ -100,6 +100,11 @@ final class StockClipPrefetcher: ObservableObject {
         var completedCount = 0
         var bytes = 0
         var errorCode: String?
+        /// 이 회차를 시작한 계정. 기록기는 **지금 로그인한 계정**으로 적으므로, 회차 도중 다른 계정이 로그인했으면 적지 않는다 —
+        /// 앞 계정의 준비가 뒤 계정의 기록으로 올라가면 안 된다(코덱스 #958, 안드로이드 `stillStartingAccount` 짝).
+        let ownerUserID = KeychainStore.readSession()?.user.id
+
+        private var stillOwner: Bool { ownerUserID != nil && KeychainStore.readSession()?.user.id == ownerUserID }
 
         init(ownedVoiceProfileIDs: Set<String>, language: String) {
             // 내 목소리(클론)를 실은 회차는 등록·사전렌더를 기다리는 그 목소리의 준비다. 아니면 기본 목소리 전체다.
@@ -122,7 +127,7 @@ final class StockClipPrefetcher: ObservableObject {
         }
 
         func recordStartIfNeeded(target: Int, missing: Int) {
-            guard startedAt == nil, missing > 0 else { return }
+            guard startedAt == nil, missing > 0, stillOwner else { return }
             startedAt = .now
             targetCount = target
             completedCount = target - missing
@@ -136,7 +141,7 @@ final class StockClipPrefetcher: ObservableObject {
         }
 
         func recordEnd(succeeded: Bool) {
-            guard let startedAt else { return }
+            guard let startedAt, stillOwner else { return }
             let elapsed = UsageEventContract.elapsedMs(since: startedAt)
             if succeeded {
                 completedCount = targetCount

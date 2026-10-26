@@ -998,6 +998,8 @@ internal fun AlarmEditorScreen(
                 // 이 자리에 안내를 넣으면 실패했을 때 그 자리에 들어올 에러 문구를 밀어낸다.
                 val manualRequestId = manualRequestIds.idFor(profileId, editor.activeVoiceLanguage(), text)
                 val generationAttemptId = com.alarmtalk.app.data.UsageEventProps.newAttemptId()
+                // 서버가 결과를 냈다고 적었는가 — 그 뒤(받은 소리를 폰에 두다가) 실패하면 생성 실패로 다시 적지 않는다(코덱스 #958).
+                var generationRecorded = false
                 runCatching {
                     val response = onGenerateTts(
                         TtsGenerateRequest(
@@ -1029,6 +1031,7 @@ internal fun AlarmEditorScreen(
                         attemptId = generationAttemptId,
                         charCount = text.length,
                     )
+                    generationRecorded = true
                     val rawAudioUri = response.audioUrl ?: response.audioObjectKey?.let { "r2://$it" }
                     val cacheKey = AlarmAudioStore.ttsCacheKey(
                         profileId = profileId,
@@ -1083,7 +1086,7 @@ internal fun AlarmEditorScreen(
                 }.onFailure { error ->
                     AlarmTalkLog.reportError("Failed to generate TTS alarm audio", error)
                     val ttsErrorCode = apiErrorCode(error)
-                    if (error !is kotlin.coroutines.cancellation.CancellationException) {
+                    if (error !is kotlin.coroutines.cancellation.CancellationException && !generationRecorded) {
                         // 새 제작 실패(`generation_outcome` failure) — 서버는 실패를 세지 않는다(환불). 코드는 서버 코드의 소문자.
                         com.alarmtalk.app.data.UsageSignals.record(
                             context,

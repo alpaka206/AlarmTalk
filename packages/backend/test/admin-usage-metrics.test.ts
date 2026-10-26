@@ -226,3 +226,27 @@ describe('사용 지표', () => {
     expect(html).not.toContain('—');
   });
 });
+
+describe('백분위는 전체로 센다(코덱스 #958)', () => {
+  it('행이 많아도 빠른 값만 남겨 자르지 않고, 뒤 범위도 빠지지 않는다', async () => {
+    const at = ago(10);
+    const values: string[] = [];
+    const args: Array<string | number> = [];
+    const push = (scope: string, ms: number) => {
+      values.push(`(?, 'u-free', 'voice_preparation_ready', ?, ?, ?, 'cold')`);
+      args.push(crypto.randomUUID(), at, scope, ms);
+    };
+    for (let ms = 1; ms <= 6000; ms++) push('bulk_all', ms);
+    for (let ms = 1; ms <= 10; ms++) push('bulk_selected', ms * 100);
+    for (let i = 0; i < values.length; i += 400) {
+      await run(
+        `INSERT INTO usage_events (id, user_id, type, occurred_at, scope, duration_ms, cache_state) VALUES ${values.slice(i, i + 400).join(', ')}`,
+        args.slice(i * 4, (i + 400) * 4),
+      );
+    }
+    const m = await loadUsageMetrics(db, parseUsageFilter(() => undefined));
+    expect(m.preparation.find((p) => p.scope === 'bulk_all')?.duration).toEqual({ count: 6000, p50: 3000, p90: 5400 });
+    expect(m.preparation.find((p) => p.scope === 'bulk_selected')?.duration).toEqual({ count: 10, p50: 500, p90: 900 });
+  });
+});
+
