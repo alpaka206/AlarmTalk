@@ -1,5 +1,5 @@
 import { UUID_RE } from '../lib/validate';
-import type { ErrorCode } from '@alarmtalk/shared';
+import { isAlarmTargetDate, type ErrorCode } from '@alarmtalk/shared';
 import {
   FREE_BUCKET_CATEGORIES,
   CLONE_PRERENDER_CATEGORIES,
@@ -46,6 +46,7 @@ export type AlarmRow = Record<string, unknown> & {
   vibration_pattern?: unknown;
   wake_mode?: unknown;
   voice_profile_id?: unknown;
+  target_date?: unknown;
 };
 
 export function normalizeAlarmRow(row: AlarmRow) {
@@ -82,6 +83,8 @@ export function normalizeAlarmRow(row: AlarmRow) {
     vibration_pattern: vibrationPattern,
     wake_mode: wakeMode,
     voice_profile_id: (row.voice_profile_id ?? null) as string | null,
+    // 날짜 지정 알람의 날짜(`docs/spec/alarm-lifecycle.md` §4). 형식이 어긋난 값은 날짜 없음으로 읽는다.
+    target_date: isAlarmTargetDate(row.target_date) ? row.target_date : null,
   };
 }
 
@@ -99,6 +102,8 @@ export function validateAlarmFields(body: {
   message_id?: string | null;
   is_active?: boolean;
   bucket_id?: string | null;
+  target_date?: string | null;
+  timezone?: string | null;
 }): FieldError | null {
   if (body.message_id != null && !UUID_RE.test(body.message_id)) {
     return { error: 'Invalid message_id format', error_code: 'INVALID_MESSAGE_ID' };
@@ -171,7 +176,32 @@ export function validateAlarmFields(body: {
     return { error: 'is_active must be a boolean', error_code: 'INVALID_IS_ACTIVE' };
   }
 
+  // 날짜 지정 알람(`docs/spec/alarm-lifecycle.md` §4-7): 실제 날짜 + 같은 요청의 유효한 IANA 시간대 + 빈 반복 요일.
+  // **지난 날짜는 거절하지 않는다** — 끝난 날짜 알람의 끄기·켜기도 사본으로 올라온다.
+  if (body.target_date !== undefined && body.target_date !== null) {
+    if (!isAlarmTargetDate(body.target_date)) {
+      return { error: 'target_date must be a real YYYY-MM-DD date', error_code: 'INVALID_TARGET_DATE' };
+    }
+    if (Array.isArray(body.repeat_days) && body.repeat_days.length > 0) {
+      return { error: 'target_date cannot be combined with repeat_days', error_code: 'INVALID_TARGET_DATE' };
+    }
+    const timezone = normalizeTimezone(body.timezone);
+    if (!timezone || !isValidIanaTimezone(timezone)) {
+      return { error: 'target_date requires a valid IANA timezone', error_code: 'INVALID_TARGET_DATE' };
+    }
+  }
+
   return null;
+}
+
+/** 런타임이 아는 IANA 시간대 이름인가(`Intl` 이 거절하면 아니다). 날짜 지정 알람의 시간대 검증용. */
+export function isValidIanaTimezone(value: string): boolean {
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: value });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**

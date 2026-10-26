@@ -3346,6 +3346,14 @@ export const migrations: Migration[] = [
       `CREATE INDEX IF NOT EXISTS idx_apple_server_notifications_received ON apple_server_notifications (received_at)`,
     ],
   },
+  {
+    // **날짜 지정 알람(한 번)**(2026-10-26, `docs/spec/alarm-lifecycle.md` §4). 기기가 올린 알람 사본에 그 날짜
+    // (`YYYY-MM-DD`)를 적는다. 시간대는 이미 있는 `timezone` 칸에 사용자가 확인한 값이 실린다. NULL = 날짜 없는 알람
+    // (지금까지의 모든 행). 136~139 는 다른 작업이 쓰고 있어 건너뛴다 — 러너는 id 순서가 아니라 기록으로 판정한다.
+    id: 140,
+    name: 'alarm-target-date',
+    statements: [`ALTER TABLE alarms ADD COLUMN target_date TEXT`],
+  },
 ];
 // Errors that mean the statement was already applied — safe to ignore so
 // we can recover databases whose `_migrations` ledger is out of sync with

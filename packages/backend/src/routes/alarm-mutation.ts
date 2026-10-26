@@ -226,6 +226,8 @@ alarmMutation.post('/', async (c) => {
     // 무료 버킷 회전 알람이 가리키는 버킷(예: 'weather'·'medication'). message_id 는
     // 대표(변형0) 스톡 클립을 그대로 유지하므로 회전 미지원 경로에선 폴백 단일 재생.
     bucket_id?: string | null;
+    /** 날짜 지정 알람의 날짜(`docs/spec/alarm-lifecycle.md` §4). 옛 앱은 싣지 않는다. */
+    target_date?: string | null;
   }>();
 
   if (!body.time) {
@@ -330,8 +332,8 @@ alarmMutation.post('/', async (c) => {
       sql: `INSERT INTO alarms
             (id, user_id, message_id, time, repeat_days, snooze_minutes,
              mode, vibration_pattern, wake_mode, voice_profile_id,
-             timezone, bucket_id, is_active)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+             timezone, bucket_id, is_active, target_date)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       args: [
         alarmId,
         userId,
@@ -346,6 +348,9 @@ alarmMutation.post('/', async (c) => {
         timezone,
         body.bucket_id ?? null,
         isActive ? 1 : 0,
+        // ⚠ **언제나 이 칸을 쓴다**(fail-closed). 배포와 마이그레이션 #140 사이의 창에서는 칸이 없어 500 이고
+        //   앱의 동기화가 다음 회차에 다시 보낸다 — 날짜를 빼고 저장하면 날짜 알람이 사본에서 '매일' 처럼 남는다.
+        body.target_date ?? null,
       ],
     });
   const inserted =
@@ -395,6 +400,7 @@ alarmMutation.post('/', async (c) => {
         mode,
         vibration_pattern: vibPattern,
         voice_profile_id: body.voice_profile_id ?? null,
+        target_date: body.target_date ?? null,
       },
     },
     201,
@@ -421,6 +427,7 @@ alarmMutation.patch('/:id', async (c) => {
     voice_profile_id?: string | null;
     timezone?: string | null;
     bucket_id?: string | null;
+    target_date?: string | null;
   }>();
 
   const fieldError = validateAlarmFields(body);
@@ -432,7 +439,7 @@ alarmMutation.patch('/:id', async (c) => {
   const existing = await db.execute({
     sql: `SELECT a.id, a.time, a.repeat_days, a.is_active,
                  a.message_id, a.mode, a.wake_mode, a.voice_profile_id,
-                 a.bucket_id, ${planWithGrantSql('u')} AS user_plan
+                 a.bucket_id, a.target_date, ${planWithGrantSql('u')} AS user_plan
           FROM alarms a
           LEFT JOIN users u ON u.google_id = a.user_id OR u.id = a.user_id
           WHERE a.id = ? AND a.user_id IN (${inPlaceholders(patchOwnerIds)})`,
@@ -451,8 +458,19 @@ alarmMutation.patch('/:id', async (c) => {
     wake_mode: string | null;
     voice_profile_id: string | null;
     bucket_id?: string | null;
+    target_date?: string | null;
     user_plan?: string | null;
   }>(existing.rows[0]!);
+  // 날짜만 보낸 PATCH 가 저장된 반복 요일과 겹치면 거절한다(같은 요청 안의 겹침은 `validateAlarmFields` 가 본다).
+  if (typeof body.target_date === 'string' && body.repeat_days === undefined) {
+    const storedRepeat = normalizeAlarmRow({ repeat_days: current.repeat_days ?? null }).repeat_days;
+    if (storedRepeat.length > 0) {
+      return c.json(
+        { error: 'target_date cannot be combined with repeat_days', error_code: 'INVALID_TARGET_DATE' },
+        400,
+      );
+    }
+  }
   const resolvedUserPk = c.get('userIdPK');
   // 언제나 **내 알람**이라 계산값(기간 한정 개인 플랜 반영)으로 본다.
   const creatorHasPaidVoice =
@@ -602,6 +620,14 @@ alarmMutation.patch('/:id', async (c) => {
     updates.push('bucket_id = ?');
     args.push(body.bucket_id);
   }
+  if (body.target_date !== undefined) {
+    updates.push('target_date = ?');
+    args.push(body.target_date);
+  } else if (Array.isArray(body.repeat_days) && body.repeat_days.length > 0 && current.target_date != null) {
+    // 반복 요일을 실어 보내면서 날짜를 싣지 않았다 — 보낸 기기에서는 반복 알람이다(§4-7). 날짜를 지워 사본이 기기와
+    // 같은 모양이 되게 한다.
+    updates.push('target_date = NULL');
+  }
 
   if (updates.length === 0) {
     return c.json({ error: 'No fields to update', error_code: 'NO_UPDATE_FIELDS' }, 400);
@@ -644,7 +670,7 @@ alarmMutation.patch('/:id', async (c) => {
   const updated = await db.execute({
     sql: `SELECT id, user_id, message_id, time, repeat_days,
                  is_active, snooze_minutes, mode, vibration_pattern, wake_mode,
-                 voice_profile_id, bucket_id, created_at, updated_at
+                 voice_profile_id, bucket_id, timezone, target_date, created_at, updated_at
           FROM alarms WHERE id = ?`,
     args: [id],
   });

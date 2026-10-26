@@ -522,5 +522,9 @@
   "136": {
     "name": "apple-server-notifications",
     "sha": "384a4192b4d77201"
+  },
+  "140": {
+    "name": "alarm-target-date",
+    "sha": "28d488f1a74d7c4d"
   }
 }
