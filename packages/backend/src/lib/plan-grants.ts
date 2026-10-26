@@ -196,7 +196,8 @@ export async function loadPlanGrantAnswer<P extends string | null>(
           WHERE u.id = ?`,
     args: [now.toISOString(), userPk],
   });
-  if (res.rows.length === 0) return { plan: fallbackPlan, planGrant: null };
+  // 계정 행을 못 읽으면(방금 만든 계정·열이 없는 응답) 부른 쪽이 이미 읽은 원시 plan 을 그대로 쓴다.
+  if (res.rows.length === 0 || !('raw_plan' in res.rows[0]!)) return { plan: fallbackPlan, planGrant: null };
   const raw = res.rows[0]!.raw_plan == null ? null : String(res.rows[0]!.raw_plan);
   if (raw !== 'free') return { plan: raw as P | string, planGrant: null };
   const end = mergedGrantEnd(
