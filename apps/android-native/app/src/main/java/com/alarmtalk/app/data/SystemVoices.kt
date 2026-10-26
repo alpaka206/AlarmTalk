@@ -72,12 +72,7 @@ fun AlarmDraft.usesFreeSystemVoiceAlarm(): Boolean =
         playMode = playMode,
         voiceSource = voiceSource,
         voiceProfileId = voiceProfileId,
-        voiceRandomPrompt = voiceRandomPrompt,
-        voiceRandomContext = voiceRandomContext,
-        voiceLanguage = voiceLanguage,
         localAudioUri = localAudioUri,
-        rawAudioUri = rawAudioUri,
-        audioCacheKey = audioCacheKey,
     )
 
 fun AlarmEntity.usesFreeSystemVoiceAlarm(): Boolean =
@@ -85,24 +80,14 @@ fun AlarmEntity.usesFreeSystemVoiceAlarm(): Boolean =
         playMode = playMode,
         voiceSource = voiceSource,
         voiceProfileId = voiceProfileId,
-        voiceRandomPrompt = voiceRandomPrompt,
-        voiceRandomContext = voiceRandomContext,
-        voiceLanguage = voiceLanguage,
         localAudioUri = localAudioUri,
-        rawAudioUri = rawAudioUri,
-        audioCacheKey = audioCacheKey,
     )
 
 private fun usesFreeSystemVoiceAlarm(
     playMode: String,
     voiceSource: String,
     voiceProfileId: String?,
-    voiceRandomPrompt: Boolean,
-    voiceRandomContext: String?,
-    voiceLanguage: String?,
     localAudioUri: String?,
-    rawAudioUri: String?,
-    audioCacheKey: String?,
 ): Boolean {
     if (playMode == AlarmPlayModes.ALARM_ONLY) return false
     // **직접 녹음은 유료 기능이 아니다**(2026-08-12 확정). 내 폰에 있는 파일을 그대로
@@ -117,14 +102,12 @@ private fun usesFreeSystemVoiceAlarm(
     // 표식으로 `voiceSource=LOCAL_AUDIO + localAudioUri=null` 을 남기므로, 그 빈 껍데기를
     // '녹음' 으로 오인하면 안 된다.
     if (voiceSource == VoiceSources.LOCAL_AUDIO) return !localAudioUri.isNullOrBlank()
-    if (!isSystemVoiceId(voiceProfileId)) return false
-
-    val noCachedAudio = localAudioUri.isNullOrBlank() && rawAudioUri.isNullOrBlank()
-    val stockClipAudio = audioCacheKey?.startsWith("stock_") == true
-    val presetGeneratedAudio = voiceRandomPrompt &&
-        voiceRandomContext?.trim() == "preset" &&
-        (voiceLanguage.isNullOrBlank() || voiceLanguage.trim() == "ko")
-    return noCachedAudio || stockClipAudio || presetGeneratedAudio
+    // **기본(시스템) 목소리 알람은 무엇을 말하든 무료다**(2026-10-26, `docs/spec/voice-and-message.md` §8). 무료도 기본 목소리
+    // 직접 입력을 월 3회 만들고, 이미 만든 기본 목소리 결과는 등급이 바뀌어도 계속 쓴다. 서버도 같다 — 알람 저장은 시스템
+    // 목소리를 무료로 받고(`alarm-mutation.ts` 의 `usesOnlySystemStockVoice`), 오디오 라우트는 시스템 목소리 문구를 누구에게나
+    // 준다. 예전에는 스톡 클립·프리셋만 무료로 보고 직접 입력 결과는 유료로 읽어, 무료가 만든 직접 입력 알람이 저장에서 막히고
+    // 울릴 때 강등됐다. 유료 판정은 **등록(클론) 목소리**에만 남는다.
+    return isSystemVoiceId(voiceProfileId)
 }
 
 /**

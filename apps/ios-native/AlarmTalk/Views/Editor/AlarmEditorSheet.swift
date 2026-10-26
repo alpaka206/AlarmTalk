@@ -413,9 +413,9 @@ struct AlarmEditorSheet: View {
                 availableContexts: usesStockClips
                     ? availableFreeBuckets.compactMap { RandomPromptContext.forBucket($0.rawValue)?.rawValue }
                     : MessageSettingsPane.allContextIDs,
-                // ⚠ 잠금은 **무료 플랜 단독**이다. 기본 목소리를 골랐다는 것은 이유가
-                // 되지 않는다 — 유료면 기본 목소리로도 직접 입력을 쓸 수 있다.
-                manualLocked: freeVoiceTier,
+                // ⚠ **직접 입력을 잠그지 않는다**(2026-10-26). 무료도 기본 목소리로 월 3회 만든다 — 입력·편집은 막지 않고,
+                // 새로 만들어야 할 때 서버가 429 로 막으면 저장 흐름이 그때 말한다(`voice-and-message.md` §8).
+                manualLocked: false,
                 // ⚠ **문구 화면을 닫지 말 것**(2026-08-15 지시). 잠긴 행을 눌렀을 뿐인데
                 // 고르던 화면 밖으로 튕기면 안 된다 — 알럿은 편집기(스택 루트)에 붙어
                 // 있어 밀어 올린 이 화면 위에 그대로 뜬다.
@@ -706,19 +706,12 @@ struct AlarmEditorSheet: View {
         }
     }
 
-    /// 이번 달 직접 입력 횟수를 다 썼으면 그 사실을 알리는 알럿을 만든다(아니면 nil).
-    ///
-    /// 화면에 띄워 둔 값이 아니라 **그 자리에서 다시 조회한다** — 다른 기기가 그 사이 다
-    /// 썼을 수 있고, 편집기를 연 뒤 시간이 흘렀을 수도 있다. 조회가 실패하면 막지 않는다.
-    func manualQuotaBlockIfExhausted() async -> ValidationAlertContent? {
-        guard let token = auth.session?.token else { return nil }
-        guard let quota = try? await AlarmTalkAPI.shared.manualQuota(token: token) else { return nil }
-        manualQuota = quota
-        guard quota.limit > 0, quota.remaining <= 0 else { return nil }
-        return ValidationAlertContent(
-            title: String(localized: "이번 달 만들기 횟수를 다 썼어요"),
-            message: String(localized: "직접 입력 문구는 한 달에 \(quota.limit)번까지 새로 만들 수 있어요. 이미 만들어 둔 문구는 그대로 쓸 수 있어요.")
-        )
+    /// 생성 요청 직전에 이번 달 직접 입력 현황을 **새로 받아 둔다**(화면 숫자용). ⚠ **막지 않는다**(2026-10-26 개정,
+    /// `docs/spec/voice-and-message.md` §8) — 서버에 내 결과가 남아 있으면 세지 않고 다시 받고, 그 판정은 서버만 한다.
+    /// 예전에는 `remaining <= 0` 이면 여기서 알럿으로 막아 다시 받기를 못 했다(Codex #942). 막는 것은 서버의 429 다.
+    func refreshManualQuotaBeforeGenerate() async {
+        guard let token = auth.session?.token else { return }
+        if let quota = try? await AlarmTalkAPI.shared.manualQuota(token: token) { manualQuota = quota }
     }
 
     /// 목소리 크기 화면을 떠날 때 — 미리듣기를 끈다(뒤로가기·스와이프·앱 백그라운드).
@@ -1240,14 +1233,13 @@ struct AlarmEditorSheet: View {
         guard usesStockClips else { return }
         // 이미 고른 게 있으면 덮지 않는다 — 사용자가 화면에서 고른 값이 우선이다.
         guard selectedBucketDraft == nil else { pendingFreeBucket = nil; return }
-        // ⚠ **직접 입력 문구를 쳐 둔(또는 이어받은) 유료 사용자는 건드리지 않는다**(2026-09-29
-        // 리뷰). 기본 목소리가 골라진 채 직전 선택으로 직접 입력을 이으면, 여기서 옛 테마가
+        // ⚠ **직접 입력 문구를 쳐 둔(또는 이어받은) 사람은 건드리지 않는다 — 무료도**(2026-09-29 리뷰,
+        // 2026-10-26 등급 조건 제거). 기본 목소리가 골라진 채 직전 선택으로 직접 입력을 이으면, 여기서 옛 테마가
         // 붙어 이은 문구를 말없이 대신했다. 판정은 4-값 고정과 같은 함수 하나 — 안드로이드
-        // `AlarmEditorScreen` 의 `if (!freeVoiceTier && manualChosen) return@LaunchedEffect` 짝.
+        // `AlarmEditorScreen` 의 `if (manualChosen) return@LaunchedEffect` 짝.
         // 이 갈래는 **아무것도 바꾸지 않는다**(`pendingFreeBucket` 도 그대로) — 안드로이드도
         // 이 갈래에서 곧바로 빠져나온다.
-        guard !AlarmEditDraft.keepsPaidTypedManualText(
-            freeVoiceTier: freeVoiceTier,
+        guard !AlarmEditDraft.keepsTypedManualText(
             randomPrompt: voiceStudio.randomPrompt,
             selectedBucket: selectedBucketDraft,
             ttsText: voiceStudio.ttsText
@@ -1983,16 +1975,14 @@ struct AlarmEditorSheet: View {
         // 이다 — 그대로 두면 테마를 골라도 `randomPrompt = true`, `randomContext = "preset"`
         // 로 되돌아가 고른 테마가 저장되지 않는다.
         if selectedBucketDraft != nil { return false }
-        // ⚠ **직접 입력을 고른 유료 사용자를 건드리지 않는다**(2026-09-02, 안드로이드
-        // `AlarmEditorScreen` 의 `if (!freeVoiceTier && manualChosen) return@LaunchedEffect`
-        // 미러). `usesStockClips` 는 `freeVoiceTier || 시스템보이스` 라 **유료가 기본
+        // ⚠ **직접 입력을 고른 사람을 건드리지 않는다 — 무료도**(2026-09-02, 2026-10-26 등급 조건 제거 — 안드로이드
+        // `AlarmEditorScreen` 의 `if (manualChosen) return@LaunchedEffect` 미러). `usesStockClips` 는 `freeVoiceTier || 시스템보이스` 라 **유료가 기본
         // 목소리를 고른 경우도 포함**하는데, 직접 입력은 테마가 아니라 위 가드에 걸리지
         // 않는다. 그대로 두면 저장 직전 이 강제가 `randomPrompt = true`·`preset` 으로
         // 되돌려, 방금 친 문구 대신 **목소리 자기소개 클립**이 알람으로 저장된다 —
-        // 경고도 알럿도 없이. 잠긴 등급(무료)에서는 예전 그대로 돈다.
+        // 경고도 알럿도 없이.
         // 판정은 테마 이어받기(`applyPendingFreeBucketIfNeeded`)와 같은 함수 하나다.
-        if AlarmEditDraft.keepsPaidTypedManualText(
-            freeVoiceTier: freeVoiceTier,
+        if AlarmEditDraft.keepsTypedManualText(
             randomPrompt: voiceStudio.randomPrompt,
             selectedBucket: selectedBucketDraft,
             ttsText: voiceStudio.ttsText
@@ -2348,7 +2338,7 @@ struct AlarmEditorSheet: View {
                 // 보여 주는 대신 그 자리에서 이유를 말한다(안드로이드
                 // `SaveBlockReason.OFFLINE_NEW_MESSAGE` 와 같은 판정·같은 문구).
                 //
-                // ⚠ **한도 조회보다 위여야 한다.** 아래 `manualQuotaBlockIfExhausted` 는
+                // ⚠ **현황 조회·생성 요청보다 위여야 한다.** 아래 `refreshManualQuotaBeforeGenerate` 는
                 // 네트워크를 부른다 — 순서가 뒤집히면 스펙이 "요청도 보내지 않는다" 라고
                 // 적은 상태에서 요청이 나가고, 소켓이 매달리면 저장 버튼이 멈춘 것처럼 보인다.
                 validationAlert = ValidationAlertContent(
@@ -2356,17 +2346,9 @@ struct AlarmEditorSheet: View {
                     message: String(localized: "이 문구의 음성이 아직 이 기기에 없어요. 연결되면 다시 저장해 주세요.")
                 )
                 return
-            } else if let quotaBlock = await manualQuotaBlockIfExhausted() {
-                // ⚠ **보내기 전에 남은 횟수를 한 번 더 본다**(2026-09-07 지시).
-                //    순서는 **① 로컬 확인 → (오프라인이면 위에서 막는다 — 요청 없음) →
-                //    ② 남은 횟수 확인 → ③ 생성 요청** 이다.
-                //    바로 위 재사용이 실패했다 = 이 폰에 없다 = 서버를 불러야 한다 =
-                //    차감 대상이다. 한도가 0인데 요청부터 보내 429 를 받을 이유가 없다.
-                //    강제는 서버 예약이 하고(안드로이드와 같다), 이건 왕복을 줄이는 것뿐이라
-                //    조회에 실패하면 그냥 진행한다.
-                validationAlert = quotaBlock
-                return
             } else {
+            // ① 로컬 확인 → (오프라인이면 위에서 막는다 — 요청 없음) → ② 생성 요청. 남은 횟수로 막지 않는다(§8).
+            await refreshManualQuotaBeforeGenerate()
             let prepared = await voiceStudio.generateTTS(
                 session: auth.session,
                 alarmHour: draft.hour,

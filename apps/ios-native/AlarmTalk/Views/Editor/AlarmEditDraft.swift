@@ -378,23 +378,19 @@ struct AlarmEditDraft: Equatable {
         }
     }
 
-    /// **유료 사용자가 직접 입력 문구를 쳐 둔 상태인가** — 스톡 클립 목소리(기본 목소리)의
-    /// 강제가 이 상태를 건드리지 않는다: 테마 이어받기(`applyPendingFreeBucketIfNeeded`)와
-    /// 4-값 고정(`coerceFreeVoiceTierConstraints`) 둘 다.
+    /// **직접 입력 문구를 쳐 둔 상태인가** — 스톡 클립 목소리(기본 목소리)의 강제가 이 상태를 건드리지 않는다: 테마
+    /// 이어받기(`applyPendingFreeBucketIfNeeded`)와 4-값 고정(`coerceFreeVoiceTierConstraints`) 둘 다.
     ///
-    /// ⚠ 테마 이어받기에 이 가드가 없으면, 직전 선택으로 **직접 입력 문구를 이은** 알람
-    /// (새 알람·알람 전용 → 목소리·직접 녹음 → 목소리)에 기본 목소리가 골라져 있을 때 옛
-    /// 테마가 붙어 이은 문구를 **말없이 대신한다**(2026-09-29 리뷰). 안드로이드
-    /// `AlarmEditorScreen` 의 `if (!freeVoiceTier && manualChosen) return@LaunchedEffect` 짝 —
-    /// 잠긴 등급(무료)에서는 예전 그대로 강제가 돈다.
-    static func keepsPaidTypedManualText(
-        freeVoiceTier: Bool,
+    /// ⚠ 테마 이어받기에 이 가드가 없으면, 직전 선택으로 **직접 입력 문구를 이은** 알람(새 알람·알람 전용 → 목소리·직접
+    /// 녹음 → 목소리)에 기본 목소리가 골라져 있을 때 옛 테마가 붙어 이은 문구를 **말없이 대신한다**(2026-09-29 리뷰).
+    /// ⚠ **등급과 무관하다**(2026-10-26) — 무료도 기본 목소리 직접 입력을 월 3회 만든다(`voice-and-message.md` §8). 예전에는
+    /// 무료면 강제가 돌아 친 문구를 지웠다. 안드로이드 `AlarmEditorScreen` 의 `if (manualChosen) return@LaunchedEffect` 짝.
+    static func keepsTypedManualText(
         randomPrompt: Bool,
         selectedBucket: FreeBucket?,
         ttsText: String
     ) -> Bool {
-        !freeVoiceTier
-            && !randomPrompt
+        !randomPrompt
             && selectedBucket == nil
             && ttsText.nilIfBlank != nil
     }

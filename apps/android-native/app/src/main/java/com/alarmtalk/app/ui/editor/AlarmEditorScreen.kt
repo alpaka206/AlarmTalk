@@ -968,33 +968,13 @@ internal fun AlarmEditorScreen(
                 // 2) 여기까지 왔다 = **직접 입력**이다(랜덤이 아니거나 버킷으로 안 매핑되는 종류).
                 //    그 문구를 서버에 합성시킨다 — 이 갈래는 월 한도를 차감하는 유료 경로다.
                 //
-                // ⚠ **보내기 전에 남은 횟수를 한 번 더 본다**(2026-09-07 지시). 순서는
-                //    **① 로컬 확인 → ② 남은 횟수 확인 → ③ 생성 요청** 이다. 위에서 로컬 재사용이
-                //    실패했다 = 이 폰에 없다 = 서버를 불러야 한다 = **차감 대상**이다. 그러니
-                //    한도가 0인데 요청부터 보내 429 를 받을 이유가 없다.
-                //    화면에 띄워 둔 값이 아니라 **그 자리에서 다시 조회한다** — 다른 기기가 그
-                //    사이 다 썼을 수 있고, 편집기를 연 뒤 시간이 흘렀을 수도 있다.
-                //    ⚠ **강제는 여기가 아니다.** 서버가 예약에서 다시 막는다(429) — 이건 불필요한
-                //    왕복을 줄이는 것뿐이라, 조회에 실패하면 그냥 진행한다.
+                // ⚠ **남은 횟수가 0 이라고 요청 전에 막지 않는다**(2026-10-26 개정, `docs/spec/voice-and-message.md` §8).
+                //    서버에 내 결과가 남아 있으면 세지 않고 다시 받고, 무료는 기본분(3)을 다 쓰면 광고 보상으로 넘어간다 —
+                //    그 판정은 서버만 할 수 있다. 예전에는 여기서 `remaining <= 0` 이면 막아서, 무료가 3회를 쓴 뒤 남은
+                //    광고 보상도 다시 받기도 못 썼다(Codex #942). 막는 것은 서버의 429 `MANUAL_TTS_QUOTA_EXCEEDED` 이고,
+                //    그 응답은 아래 생성 실패 갈래가 같은 알럿으로 말한다. 여기서는 화면 숫자만 새로 받아 둔다.
                 if (onLoadManualQuota != null) {
-                    val quota = runCatching { onLoadManualQuota() }.getOrNull()
-                    if (quota != null && quota.limit > 0 && quota.remaining <= 0) {
-                        generating = false
-                        manualQuota = quota
-                        blockAlert = context.getString(R.string.editor_block_manual_quota_title) to
-                            context.getString(R.string.editor_block_manual_quota_message, quota.limit)
-                        return@launch
-                    }
-                    // 무료는 월 한도 대신 광고 보상 한 번을 쓴다 — 남은 게 없으면 같은 자리에서 막는다
-                    // (`docs/spec/ad-rewards.md` §4). 광고는 문구 화면의 '직접 입력' 에서 본다.
-                    if (quota != null && AdRewardGate.blocksManualSave(freeVoiceTier, quota.adReward)) {
-                        generating = false
-                        manualQuota = quota
-                        blockAlert = context.getString(R.string.editor_block_ad_reward_title) to
-                            context.getString(R.string.editor_block_ad_reward_message)
-                        return@launch
-                    }
-                    if (quota != null) manualQuota = quota
+                    runCatching { onLoadManualQuota() }.getOrNull()?.let { manualQuota = it }
                 }
                 // 진행 안내는 저장 버튼의 스피너(EditorActionButtons)가 맡는다 — 방금 누른
                 // 자리에서 도는 게 화면 위쪽 카드에 뜬 '준비하는 중이에요' 한 줄보다 직관적이고,
@@ -1075,6 +1055,16 @@ internal fun AlarmEditorScreen(
                 }.onFailure { error ->
                     AlarmTalkLog.reportError("Failed to generate TTS alarm audio", error)
                     val ttsErrorCode = apiErrorCode(error)
+                    // 무료가 기본분(3)도 보상도 다 쓴 자리 — 광고를 볼 수 있으면 광고 게이트를 연다(`docs/spec/ad-rewards.md` §1·§4).
+                    // 예전에는 잠긴 '직접 입력' 행이 이 게이트를 열었다. 입력을 잠그지 않게 되면서 새로 만들어야 하는 이 순간으로
+                    // 옮겼다. 광고를 못 보면(광고 단위가 없는 빌드·이번 달 상한) 아래 문구로 말한다.
+                    if (ttsErrorCode == "MANUAL_TTS_QUOTA_EXCEEDED" && freeVoiceTier) {
+                        onLoadManualQuota?.let { load -> runCatching { load() }.getOrNull()?.let { manualQuota = it } }
+                        if (AdRewardGate.canOfferAd(freeVoiceTier, manualQuota?.adReward, RewardedAds.configured)) {
+                            manualGateFromLockedRow = true
+                            voicePlanGateOpen = true
+                        }
+                    }
                     audioMessage = when (ttsErrorCode) {
                         "MANUAL_TTS_QUOTA_EXCEEDED" ->
                             context.getString(R.string.editor_error_manual_tts_quota)
@@ -1201,28 +1191,20 @@ internal fun AlarmEditorScreen(
     //   돌지 않아 편집기가 "문구를 준비하고 있어요" 에 갇힌다. 그래서 **비운 쪽이 직접**
     //   이 값을 올려 재바인딩을 부른다 — 키에 값 하나를 더 얹는 것보다 인과가 분명하다.
     var stockClipRebindTick by remember { mutableStateOf(0) }
-    // 무료인데 직접 입력 문구를 지켜야 하는가 — 광고 보상으로 만든 직접 입력은 무료에게도 정당하다(`docs/spec/ad-rewards.md`
-    // §4, 코덱스 #925). 서버가 이 사용자에게 광고 보상을 권하거나(`ad_reward` 있음) **아직 답이 없으면**(읽는 중·실패) 지킨다
-    // — 답이 오기 전에 지우면 되돌릴 수 없다. 보상이 없는데 새로 만들어야 하면 저장 흐름이 이유와 함께 막는다
-    // (`AdRewardGate.blocksManualSave`). 서버가 광고 보상을 끈 경우(답은 왔는데 `ad_reward` 없음)만 예전처럼 정리한다.
-    val freeManualTextKept = freeVoiceTier && (manualQuota == null || manualQuota?.adReward != null)
     // ⚠ **`editor.voiceRandomContext` 가 키에 있어야 한다**(2026-09-02). 문구 목록을 하나로
     //   합친 뒤로 스톡 클립 목소리도 다섯 종류를 고를 수 있는데, 고른 종류가 키에 없으면
     //   이 효과가 다시 돌지 않아 **방금 고른 운세가 붙지 않는다.**
-    LaunchedEffect(usesStockClips, editor.playMode, editor.voiceProfileId, editor.voiceSource, stockClips, appVoiceLanguage, isOnline, editor.voiceRandomContext, stockClipRebindTick, freeManualTextKept) {
+    LaunchedEffect(usesStockClips, editor.playMode, editor.voiceProfileId, editor.voiceSource, stockClips, appVoiceLanguage, isOnline, editor.voiceRandomContext, stockClipRebindTick) {
         if (usesStockClips && editor.playMode != AlarmPlayModes.ALARM_ONLY) {
             // 직접 녹음은 플랜·목소리 종류와 무관하게 허용된다(녹음본 로컬 재생일 뿐).
             // 아래 TTS 쪽 제한(버킷/문구 강제)은 소스가 TTS 일 때만 적용한다 — 녹음 알람에는
             // 문구 개념이 없다.
             if (editor.voiceSource != VoiceSources.LOCAL_AUDIO) {
-                // ⚠ **직접 입력을 고른 유료 사용자는 건드리지 않는다.**
-                // 아래 잔재 정리는 직접 입력 문구를 잔재로 보고 지우므로, 그냥 두면 유료
-                // 사용자가 방금 친 문구가 매니페스트 도착·온오프라인 전환만으로 **조용히
-                // 사라진다.** 직접 입력이 잠기지 않은 등급(= 유료)이 실제로 직접 입력을
-                // 고른 상태면 이 강제를 통째로 건너뛴다. 잠긴 등급(무료)에서는 그대로 돈다.
-                // 무료도 광고 보상으로 직접 입력을 쓸 수 있으면 같은 대접이다(위 `freeManualTextKept`).
+                // ⚠ **직접 입력을 고른 사람은 건드리지 않는다 — 무료도**(2026-10-26, 무료 기본 목소리 직접 입력 월 3회).
+                // 아래 잔재 정리는 직접 입력 문구를 잔재로 보고 지우므로, 그냥 두면 방금 친 문구가 매니페스트 도착·
+                // 온오프라인 전환만으로 **조용히 사라진다.** 직접 입력을 고른 상태면 이 강제를 통째로 건너뛴다.
                 val manualChosen = editor.hasTypedManualText()
-                if (manualChosen && (!freeVoiceTier || freeManualTextKept)) return@LaunchedEffect
+                if (manualChosen) return@LaunchedEffect
                 if (editor.voiceRandomPrompt) editor.voiceRandomPrompt = false
                 if (editor.voiceLanguage != appVoiceLanguage) editor.voiceLanguage = appVoiceLanguage
                 // 기존 알람은 selectVoiceProfile 이 안 불려 직접 입력 문구·신선한 TTS 오디오가 그대로
@@ -1939,30 +1921,10 @@ internal fun AlarmEditorScreen(
                 } else {
                     EditorMessageContexts.map { it.first }
                 },
-                // ⚠ 잠그는 기준은 **무료 플랜뿐**이다 — 기본 목소리는 이유가 되지 않는다.
-                // 무료도 광고 보상이 남아 있으면 풀린다(`AdRewardGate`, 스펙 ad-rewards §4).
-                manualLocked = AdRewardGate.manualLocked(freeVoiceTier, manualQuota?.adReward),
-                onManualLocked = {
-                    if (!adRewardBusy) {
-                        // ⚠ **게이트를 열기 전에 현황을 다시 읽는다**(코덱스 #925). 확인 대기(8초)가 지난 뒤 들어온
-                        // 보상은 화면 값에 없다 — 그대로 게이트를 열면 이미 받은 보상 대신 광고를 또 권한다.
-                        // "잠시 뒤 다시 눌러 주세요" 가 약속하는 것이 이 다시 읽기다.
-                        adRewardBusy = true
-                        scope.launch {
-                            try {
-                                onLoadManualQuota?.invoke()?.let { manualQuota = it }
-                                if (AdRewardGate.credits(freeVoiceTier, manualQuota?.adReward) > 0) {
-                                    selectManualRequest += 1
-                                } else {
-                                    manualGateFromLockedRow = true
-                                    voicePlanGateOpen = true
-                                }
-                            } finally {
-                                adRewardBusy = false
-                            }
-                        }
-                    }
-                },
+                // ⚠ **직접 입력을 잠그지 않는다**(2026-10-26). 무료도 기본 목소리로 월 3회 만들고, 다 쓰면 광고 보상이다 —
+                // 입력·편집은 막지 않고, 새로 만들어야 할 때 서버가 429 로 막으면 저장 흐름이 그때 말한다(스펙 voice-and-message
+                // §8, ad-rewards §1). 잠긴 행이 열던 광고 게이트는 그 429 자리로 옮겼다.
+                manualLocked = false,
                 manualRewardCredits = AdRewardGate.credits(freeVoiceTier, manualQuota?.adReward),
                 selectManualRequest = selectManualRequest,
                 onSaveSettings = ::applyRandomPromptSettings,

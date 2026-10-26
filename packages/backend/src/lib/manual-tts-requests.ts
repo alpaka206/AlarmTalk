@@ -39,7 +39,12 @@ export async function manualRequestFingerprint(parts: {
 }
 
 export type ClaimOutcome =
-  | { kind: 'claimed'; claim: ManualRequestClaim }
+  /**
+   * 잡았다. `reclaimedDone` = **끝난 표식을 다시 잡았다** — 부른 쪽은 세기 전에 캐시를 한 번 더 본다. 두 회차가 함께 캐시
+   * 미스를 보고 첫 회차가 먼저 끝냈으면, 둘째는 여기서 그 결과를 받는다(Codex #942). 결과가 정말 지워졌으면(30일 정리)
+   * 그때만 새로 만든다.
+   */
+  | { kind: 'claimed'; claim: ManualRequestClaim; reclaimedDone: boolean }
   | { kind: 'in_progress' }
   | { kind: 'conflict' };
 
@@ -49,6 +54,11 @@ export async function claimManualRequest(
   now: Date = new Date(),
 ): Promise<ClaimOutcome> {
   const claimedAt = now.toISOString();
+  const before = await db.execute({
+    sql: `SELECT status FROM manual_tts_requests WHERE user_id = ? AND request_id = ?`,
+    args: [input.userPk, input.requestId],
+  });
+  const wasDone = before.rows.length > 0 && String(before.rows[0]!.status) === 'done';
   const staleBefore = new Date(now.getTime() - MANUAL_REQUEST_STALE_MS).toISOString();
   // 없으면 넣고, 같은 입력의 버려진(2분) 표식·끝난 표식(결과가 지워져 다시 만드는 경우)이면 가져간다 — 한 문장이라
   // 동시에 온 두 요청 중 하나만 잡는다.
@@ -63,7 +73,11 @@ export async function claimManualRequest(
     args: [input.userPk, input.requestId, input.fingerprint, claimedAt, staleBefore],
   });
   if (res.rows.length > 0) {
-    return { kind: 'claimed', claim: { userPk: input.userPk, requestId: input.requestId, claimedAt } };
+    return {
+      kind: 'claimed',
+      claim: { userPk: input.userPk, requestId: input.requestId, claimedAt },
+      reclaimedDone: wasDone,
+    };
   }
   const existing = await db.execute({
     sql: `SELECT input_hash FROM manual_tts_requests WHERE user_id = ? AND request_id = ?`,

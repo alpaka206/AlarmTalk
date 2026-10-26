@@ -327,12 +327,12 @@ class DefaultVoiceLockRepositoryTest {
     }
 
     /**
-     * 기본 목소리로 친 직접 입력(유료 — 생성 오디오)을 잠근 뒤 그 기본 목소리가 제자리 교체되면
-     * 보관본의 오디오가 낡았다 — 잠금을 **확정**한다. 같은 회차에 방금 풀린 그 행을 다시 강등
-     * 후보로 읽으면 알람음으로 내려가 버린다(확정은 "기본 목소리로 남긴다" 가 규칙이다).
+     * **기본 목소리로 친 직접 입력은 잠그지 않는다**(2026-10-26 — 무료도 기본 목소리 직접 입력을 월 3회 만들고, 만든 결과는
+     * 등급과 무관하게 계속 쓴다, `docs/spec/voice-and-message.md` §8). 예전에는 이 행을 유료로 읽어 잠갔고, 이 테스트가 그
+     * 잠금의 확정을 지켰다. 이제 잠금 자체가 없다 — 원래 오디오로 그대로 운다.
      */
     @Test
-    fun aLockedManualAlarmOfTheReplacedVoiceIsFinalizedNotToned() = runBlocking {
+    fun aDefaultVoiceManualAlarmIsNotLocked() = runBlocking {
         manifest = null
         dao.upsert(
             rehearsalCloneAlarm(
@@ -344,20 +344,13 @@ class DefaultVoiceLockRepositoryTest {
                 ttsMessageId = "manual-1",
             ),
         )
-        assertEquals(1, repository.lockPaidAlarmTalks())
+        assertEquals(0, repository.lockPaidAlarmTalks())
 
-        val degraded = repository.degradeCustomMessageAlarmsUsingVoiceProfile(
-            voiceProfileId = TEST_SYSTEM_VOICE_ID,
-            expectedOwnerUserId = "user-a",
-            allowSystemVoice = true,
-            invalidatedBeforeMillis = System.currentTimeMillis() + 60_000L,
-        )
-
-        assertEquals(0, degraded)
         val after = dao.getById("rehearsal-1")!!
         assertEquals(AlarmPlayModes.VOICE_ONLY, after.playMode)
         assertEquals(TEST_SYSTEM_VOICE_ID, after.voiceProfileId)
-        assertFalse("낡은 원래 오디오는 되살리지 않는다", after.hasLockedPaidVoice())
+        assertEquals("file:///tts/manual-1.mp3", after.localAudioUri)
+        assertFalse(after.hasLockedPaidVoice())
         assertNull(after.preLockPlayMode)
     }
 

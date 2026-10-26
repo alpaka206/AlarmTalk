@@ -1895,6 +1895,42 @@ describe('POST /tts/generate — 같은 요청(request_id)', () => {
     expect(mockTextToSpeech).not.toHaveBeenCalled();
   });
 
+  it('끝난 표식을 다시 잡으면 세기 전에 캐시를 다시 본다 — 첫 회차의 결과를 세지 않고 준다', async () => {
+    const objectKey = 'generated-tts/user-1/raced.mp3';
+    const r2 = createMockR2Bucket({ [objectKey]: new Uint8Array([67, 72]) });
+    mockDB.pushResult([{ plan: 'plus' }]);
+    mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]);
+    mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]); // 히트의 '지금 목소리인가' 재확인
+    // 첫 캐시 확인은 미스(첫 회차가 아직 게시 전), 표식을 잡은 뒤의 두 번째 확인은 히트(첫 회차가 끝났다).
+    mockDB.pushResultFor('FROM generated_audio_assets ga', []);
+    mockDB.pushResultFor('SELECT status FROM manual_tts_requests', [{ status: 'done' }]);
+    mockDB.pushResultFor('INSERT INTO manual_tts_requests', [{ claimed_at: 'now' }], 1);
+    mockDB.pushResultFor('FROM generated_audio_assets ga', [
+      {
+        message_id: M1,
+        provider: 'elevenlabs',
+        text: 'hello',
+        audio_url: `r2://${objectKey}`,
+        audio_object_key: objectKey,
+        audio_format: 'mp3',
+      },
+    ]);
+
+    const res = await buildApp().request(
+      jsonReq('POST', '/tts/generate', { voice_profile_id: V1, text: 'hello', request_id: REQ }),
+      undefined,
+      { ...ENV, VOICE_BUCKET: r2.bucket },
+    );
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.cache_hit).toBe(true);
+    expect(body.message_id).toBe(M1);
+    expect(mockDB.calls.some((c) => c.sql.includes('INSERT INTO manual_tts_usage'))).toBe(false);
+    expect(mockDB.calls.some((c) => c.sql.includes("SET status = 'done'"))).toBe(true);
+    expect(mockTextToSpeech).not.toHaveBeenCalled();
+  });
+
   it('잡은 요청이 실패하면 표식을 풀고 횟수를 돌려준다', async () => {
     mockDB.pushResult([{ plan: 'plus' }]);
     mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]);
