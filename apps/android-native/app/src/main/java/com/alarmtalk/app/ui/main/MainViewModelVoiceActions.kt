@@ -8,6 +8,7 @@ import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import kotlinx.coroutines.delay
 import java.util.Locale
 import com.alarmtalk.app.data.VoiceProfileCreationDraft
+import com.alarmtalk.app.data.bucketTheme
 import com.alarmtalk.app.data.isSystemVoiceId
 import com.alarmtalk.app.network.apiErrorCode
 import com.alarmtalk.app.network.TtsGenerateRequest
@@ -852,7 +853,10 @@ internal fun MainViewModel.deleteVoiceProfile(profileId: String) {
 }
 
 internal suspend fun MainViewModel.generateTtsAudio(request: TtsGenerateRequest): TtsGenerateResponse {
-    if (!isPaidVoiceEntitledOptimistic() && !request.isFreeSystemPresetRequest()) {
+    // 무료가 앱에서 먼저 막는 것은 **등록(클론) 목소리**뿐이다. 기본 목소리 직접 입력은 무료도 월 3회 만든다
+    // (`docs/spec/voice-and-message.md` §8, 2026-10-26) — 예전에는 프리셋만 통과시켜 무료의 기본 목소리 직접 입력이 서버에 닿기도
+    // 전에 "유료 이용권" 문구로 막혔다. 횟수·광고 보상은 서버의 429 하나가 정한다.
+    if (!isPaidVoiceEntitledOptimistic() && !request.isFreeSystemPresetRequest() && !request.isFreeSystemManualRequest()) {
         throw UserFacingException(getApplication<android.app.Application>().getString(R.string.plan_gate_paid_message))
     }
     val session = authSession ?: throw UserFacingException(getApplication<android.app.Application>().getString(R.string.msg_voice_tts_generate_login_required))
@@ -866,6 +870,13 @@ internal fun TtsGenerateRequest.isFreeSystemPresetRequest(): Boolean =
         !translate &&
         language == "ko" &&
         text.isBlank()
+
+/** 무료도 보낼 수 있는 직접 입력 — 기본(시스템) 목소리로 친 문구 그대로(번역·생성 없음). iOS 는 앱에서 막지 않는다. */
+internal fun TtsGenerateRequest.isFreeSystemManualRequest(): Boolean =
+    isSystemVoiceId(voiceProfileId) &&
+        !random &&
+        !translate &&
+        text.isNotBlank()
 
 internal suspend fun MainViewModel.downloadTtsMessageAudio(messageId: String): TtsMessageAudioResponse {
     val session = authSession ?: throw UserFacingException(getApplication<android.app.Application>().getString(R.string.msg_voice_tts_audio_load_login_required))
@@ -940,7 +951,7 @@ internal suspend fun MainViewModel.loadManualQuota(): ManualQuotaResponse? {
 // LocalConfiguration.locales[0] 로 클립을 필터하는데, 그 값은 앱 resources.configuration 에서 온다.
 // 여기서도 같은 소스(앱 리소스 설정의 첫 로케일)를 써 두 언어 소스가 어긋나지 않게 한다. 어긋나면
 // 서버가 렌더한 언어와 편집기 필터 언어가 달라 오프라인 버킷이 영영 안 붙는다.
-private fun MainViewModel.deviceAppVoiceLanguage(): String {
+internal fun MainViewModel.deviceAppVoiceLanguage(): String {
     val locales = getApplication<Application>().resources.configuration.locales
     val language = (if (!locales.isEmpty) locales[0] else null)?.language
         ?: Locale.getDefault().language
@@ -983,7 +994,8 @@ internal fun MainViewModel.prefetchFreeBucketClips(voiceProfileId: String? = nul
             val clips = stockClips.filter {
                 (if (voiceProfileId != null) it.voiceProfileId == voiceProfileId else isSystemVoiceId(it.voiceProfileId)) &&
                     (it.language ?: "ko") == language &&
-                    it.category in FreeBucketOrder
+                    // 테마로 본다 — `cheer_v2` 카테고리는 테마 `cheer` 다(스펙 voice-and-message §5-4).
+                    it.bucketTheme in FreeBucketOrder
             }
             if (clips.isEmpty()) return@launch
             // 이미 캐시된 클립도 진행 수에 포함해 n/전체가 실제 준비율을 보여주게 한다.
@@ -1121,7 +1133,14 @@ internal suspend fun MainViewModel.cacheVoiceClips(
     onProgress: (Int, Int) -> Unit,
 ): Boolean = withContext(Dispatchers.IO) {
     val audioStore = com.alarmtalk.app.data.AlarmAudioStore(getApplication<Application>())
-    voiceClipDownloads.cache(
+    // 음성 준비 기록(`voice_preparation_*`, `docs/spec/usage-events.md` §7.3) — 목소리 하나를 받는 **이 자리**가 소유자다.
+    // 목소리 탭 폴링·클론 구동·선다운로드가 모두 여기를 지나지만 목소리마다 한 벌이라(`voiceClipDownloads`) 같은 다운로드를
+    // 두 번 적지 않는다. 받을 것이 없으면(빠진 것 0) 적지 않는다.
+    var preparation: com.alarmtalk.app.data.PreparationAttempt? = null
+    val preparedBytes = java.util.concurrent.atomic.AtomicLong(0)
+    val preparedClips = java.util.concurrent.atomic.AtomicInteger(0)
+    val ok = try {
+        voiceClipDownloads.cache(
         voiceId = voiceProfileId,
         clips = clips,
         missing = { list ->
@@ -1132,20 +1151,34 @@ internal suspend fun MainViewModel.cacheVoiceClips(
                     "${com.alarmtalk.app.data.AlarmAudioStore.STOCK_CACHE_KEY_PREFIX}${clip.messageId}",
                     clip.audioUrl,
                 )
+            }.also { toFetch ->
+                if (toFetch.isNotEmpty()) {
+                    preparedClips.set(list.size - toFetch.size)
+                    preparation = com.alarmtalk.app.data.PreparationAttempt(
+                        context = getApplication(),
+                        scope = com.alarmtalk.app.data.UsageEventProps.SCOPE_SELECTED_VOICE,
+                        // 받는 클립의 언어다 — 클론은 등록 때 고른 언어 한 벌이라 기기 언어와 다를 수 있다(코덱스 #958). 섞였으면 비운다.
+                        language = list.mapNotNull { it.language }.distinct().singleOrNull(),
+                        voiceProfileId = voiceProfileId,
+                    ).also { it.start(targetCount = list.size, alreadyCached = list.size - toFetch.size) }
+                }
             }
         },
         download = { clip ->
             val cacheKey = "${com.alarmtalk.app.data.AlarmAudioStore.STOCK_CACHE_KEY_PREFIX}${clip.messageId}"
             try {
                 val response = downloadTtsMessageAudio(clip.messageId)
+                val bytes = android.util.Base64.decode(response.audioBase64, android.util.Base64.DEFAULT)
                 audioStore.cacheGeneratedAudio(
-                    bytes = android.util.Base64.decode(response.audioBase64, android.util.Base64.DEFAULT),
+                    bytes = bytes,
                     format = response.audioFormat,
                     rawAudioUri = response.audioUrl,
                     displayName = cacheKey,
                     cacheKey = cacheKey,
                     messageId = clip.messageId,
                 )
+                preparedBytes.addAndGet(bytes.size.toLong())
+                preparedClips.incrementAndGet()
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {
@@ -1155,7 +1188,22 @@ internal suspend fun MainViewModel.cacheVoiceClips(
             }
         },
         onProgress = onProgress,
-    )
+        )
+    } catch (error: CancellationException) {
+        // 취소는 실패가 아니다 — 끝나지 않은 시작으로 남는다(§7.3).
+        throw error
+    } catch (error: Exception) {
+        preparation?.failed(preparedClips.get(), preparedBytes.get(), errorCode = "unexpected")
+        throw error
+    }
+    preparation?.let { prep ->
+        if (ok) {
+            prep.ready(preparedClips.get(), preparedBytes.get())
+        } else {
+            prep.failed(preparedClips.get(), preparedBytes.get(), errorCode = "clip_download_failed")
+        }
+    }
+    ok
 }
 
 /** 사전렌더 실패 시 재생성 요청. true 면 재시작 수락 — 호출측이 폴링을 재개한다. */

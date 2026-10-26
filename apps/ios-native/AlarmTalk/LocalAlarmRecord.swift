@@ -133,6 +133,16 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
     /// `nil` = 아직 예약한 적 없거나 옛 버전이 만든 행(그때는 예약 경로가 채운다).
     var scheduledSoundFingerprint: String?
 
+    /// 응원 테마의 **다양하게 / 이 문구로 고정**(`CheerMode`, 스펙 voice-and-message §5-4). `nil` = 다양하게.
+    /// 서버 사본(`alarms.cheer_mode`)과 왕복한다. 안드로이드 `AlarmEntity.cheerMode` 미러.
+    var cheerMode: String?
+    /// 고정한 문구 ID(`cheer_v2_05`). 서버 `alarms.cheer_pinned_content_id`.
+    var cheerPinnedContentId: String?
+    /// 준비·예약한 응원 문구 ID 이력(오래된 것 → 최근). **기기 로컬** — 서버로 가지 않는다.
+    var cheerHistory: [String]?
+    /// 지금 회차의 응원 선택. **기기 로컬.** 예약할 때 이 클립을 넘긴다(`AlarmSoundResolver.rotatedBucketClipKey`).
+    var cheerSelection: CheerSelection?
+
     // MARK: Convenience accessors (Phase 2-B2/B3 가 사용)
 
     var playModeEnum: AlarmPlayMode { AlarmPlayMode.decode(playMode) }
@@ -446,6 +456,10 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
         case bucketRotationIndex
         case contextVariantIndex
         case contextResolvedAtMillis
+        case cheerMode
+        case cheerPinnedContentId
+        case cheerHistory
+        case cheerSelection
     }
 
     /// Codable 디코딩. 신규 필드 누락 시 default 폴백.
@@ -544,6 +558,11 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
         self.bucketRotationIndex = try c.decodeIfPresent(Int.self, forKey: .bucketRotationIndex)
         self.contextVariantIndex = try c.decodeIfPresent(Int.self, forKey: .contextVariantIndex)
         self.contextResolvedAtMillis = try c.decodeIfPresent(Int64.self, forKey: .contextResolvedAtMillis)
+        self.cheerMode = try c.decodeIfPresent(String.self, forKey: .cheerMode)
+        self.cheerPinnedContentId = try c.decodeIfPresent(String.self, forKey: .cheerPinnedContentId)
+        self.cheerHistory = (try? c.decodeIfPresent([String].self, forKey: .cheerHistory)) ?? nil
+        // 깨진 선택 하나 때문에 알람 목록 전체를 못 읽으면 안 된다 — 못 읽으면 없는 것으로 본다(묶어 둔 회전으로 운다).
+        self.cheerSelection = (try? c.decodeIfPresent(CheerSelection.self, forKey: .cheerSelection)) ?? nil
 
         // fireAtMillis: 신규는 Int64. 없으면 hour/minute 으로 today/tomorrow 기본값.
         if let raw = try c.decodeIfPresent(Int64.self, forKey: .fireAtMillis) {
@@ -616,6 +635,10 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
         try c.encodeIfPresent(bucketRotationIndex, forKey: .bucketRotationIndex)
         try c.encodeIfPresent(contextVariantIndex, forKey: .contextVariantIndex)
         try c.encodeIfPresent(contextResolvedAtMillis, forKey: .contextResolvedAtMillis)
+        try c.encodeIfPresent(cheerMode, forKey: .cheerMode)
+        try c.encodeIfPresent(cheerPinnedContentId, forKey: .cheerPinnedContentId)
+        try c.encodeIfPresent(cheerHistory, forKey: .cheerHistory)
+        try c.encodeIfPresent(cheerSelection, forKey: .cheerSelection)
     }
 
     /// hour/minute 만 알 때 다음 발화 시각 계산 (legacy import 폴백용).

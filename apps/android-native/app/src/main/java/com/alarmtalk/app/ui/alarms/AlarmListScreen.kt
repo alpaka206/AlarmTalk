@@ -126,7 +126,11 @@ internal fun AlarmListScreen(
     onRestorePurchases: () -> Unit,
     permissions: PermissionSnapshot,
     onCreateAlarm: () -> Unit,
+    /** 목소리 탭의 '이 목소리로 새 알람 만들기' — 그 목소리를 처음 고른 새 알람 편집기를 연다. */
+    onCreateAlarmWithVoice: (String) -> Unit = {},
     onOpenSettings: () -> Unit,
+    /** 더보기의 '아침 소식'(`docs/spec/morning-briefing.md` §8). */
+    onOpenBriefing: () -> Unit,
     onDeleteAccount: () -> Unit,
     themeMode: ThemeMode,
     onChangeTheme: (ThemeMode) -> Unit,
@@ -152,6 +156,16 @@ internal fun AlarmListScreen(
 
     val context = LocalContext.current
     val listState = rememberLazyListState()
+    // 결제 화면을 열었다(`paywall_viewed`, `docs/spec/usage-events.md` §7.1) — 이 탭에 들어온 순간 한 번.
+    LaunchedEffect(selectedTab) {
+        if (selectedTab == NativeTab.Billing) {
+            com.alarmtalk.app.data.UsageSignals.record(
+                context,
+                com.alarmtalk.app.data.UsageEvents.PAYWALL_VIEWED,
+                props = com.alarmtalk.app.data.UsageEventProps(surface = "billing"),
+            )
+        }
+    }
 
     val homeGradient = homeGradientBrush()
     // 다중 선택 삭제 — 롱프레스로 들어가고, 하나도 안 남으면 자동으로 빠져나온다.
@@ -268,6 +282,7 @@ internal fun AlarmListScreen(
                 // 첫 섹션 제목('내 목소리')이 곧바로 내용을 연다(알람 탭의 무제목과 일관).
                 item {
                     VoiceProfileManagementPanel(
+                        onCreateAlarmWithVoice = onCreateAlarmWithVoice,
                         voiceProfiles = voiceProfiles,
                         pendingVoiceDraft = pendingVoiceDraft,
                         voiceProfileBusy = voiceProfileBusy,
@@ -419,6 +434,7 @@ internal fun AlarmListScreen(
                         onChangeTheme = onChangeTheme,
                         onOpenBilling = { onSelectTab(NativeTab.Billing) },
                         onOpenSettings = onOpenSettings,
+                        onOpenBriefing = onOpenBriefing,
                         onDeleteAccount = onDeleteAccount,
                     )
                 }

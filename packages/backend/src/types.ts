@@ -41,6 +41,15 @@ export interface Env {
   /** App Store Server API 개인키(.p8 PEM 전체). 결제 검증 **전용** — 로그인과 무관하다. */
   APPLE_PRIVATE_KEY?: string;
   /**
+   * **App Store Connect API**(분석 보고서 — 관리자 콘솔의 스토어 다운로드) 키의 Issuer ID. 결제·로그인·푸시 키와 **다른 넷째 키**다
+   * (App Store Connect → 사용자 및 액세스 → 통합 → App Store Connect API → 팀 키). 셋 다 있어야 돈다. 앱은 `APPLE_BUNDLE_ID` 로 찾는다.
+   */
+  ASC_API_ISSUER_ID?: string;
+  /** App Store Connect API 키의 Key ID. 키 역할은 **Admin** — 분석 보고서 요청을 처음 만들 때 필요하다. */
+  ASC_API_KEY_ID?: string;
+  /** App Store Connect API 키의 `.p8` **내용**(PEM 전문, 한 줄이면 `\n` 이스케이프). 파일 경로가 아니다. */
+  ASC_API_PRIVATE_KEY?: string;
+  /**
    * **APNs**(iOS 푸시) 키의 Key ID.
    *
    * ⚠ 애플 키가 이제 셋이고 **전부 다르다.** 한쪽에 다른 쪽 값을 넣으면 그 기능만
@@ -67,6 +76,12 @@ export interface Env {
   GOOGLE_PLAY_SERVICE_ACCOUNT_JSON?: string;
   /** Android 앱 패키지명 (Play 구독 검증 대상). */
   ANDROID_PACKAGE_NAME?: string;
+  /**
+   * Play 콘솔 **통계 보고서 버킷**(관리자 콘솔의 스토어 다운로드). Play 콘솔 → 앱 다운로드·보고서 → '클라우드 저장소 URI 복사' 의
+   * `gs://pubsite_prod_rev_<숫자>/` 값(앞뒤 `gs://`·`/` 는 있어도 된다). 읽기는 `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` 서비스 계정이
+   * 한다 — 그 계정에 Play 콘솔의 '대량 보고서 다운로드' 권한이 있어야 한다. 없으면 화면이 '연결 대기' 다.
+   */
+  PLAY_REPORTS_BUCKET?: string;
   /**
    * RTDN(실시간 개발자 알림) Pub/Sub push 엔드포인트 검증용 비밀 토큰.
    * Play Console→Pub/Sub→`POST /api/billing/google/rtdn?token=<이 값>` 으로 들어오며,
@@ -114,6 +129,24 @@ export interface Env {
    * 꺼진 것이다(콜백은 200 으로 받되 적립하지 않는다). 스펙: `docs/spec/ad-rewards.md`.
    */
   ADMOB_REWARDED_AD_UNITS?: string;
+  /**
+   * **합성 예산**(`lib/tts-budget.ts`, `docs/spec/tts-render-and-budget.md` §3) — 운영자가 정하는 양의 정수(글자·개수).
+   * 비밀값은 아니지만 값이 운영 판단이라 코드·저장소에 적지 않는다. 비어 있으면 그 예산은 **없다**: 대량 작업은 dry-run,
+   * 공급자 잔여 경보는 조회하지 않는다.
+   *  - `TTS_DEV_MONTHLY_CHAR_BUDGET` — dev 의 KST 월 합성 글자 상한. **운영(production)에서는 읽지 않는다.**
+   *  - `TTS_RERENDER_BATCH_MAX_CHARS` — 대량 다시 굽기 한 회차의 글자 상한.
+   *  - `TTS_RERENDER_CONCURRENCY` — 대량 다시 굽기의 동시 합성 수.
+   *  - `TTS_PROVIDER_REMAINING_ALERT_CHARS` — 공급자 계정의 남은 글자가 이 밑이면 cron 이 경보한다(시간당 한 번 조회).
+   */
+  TTS_DEV_MONTHLY_CHAR_BUDGET?: string;
+  TTS_RERENDER_BATCH_MAX_CHARS?: string;
+  TTS_RERENDER_CONCURRENCY?: string;
+  TTS_PROVIDER_REMAINING_ALERT_CHARS?: string;
+  /**
+   * **광고 신규 시청 스위치**(`true`/`1` 이면 켜짐, 그 밖은 꺼짐 — fail-closed). 꺼지면 새 승인 세션만 막는다 — 이미 승인한
+   * 세션의 SSV 정산과 위 광고 단위 허용 목록은 그대로다(`lib/ad-reward-sessions.ts` `adRewardViewingEnabled`).
+   */
+  ADMOB_REWARDED_ADS_ENABLED?: string;
   INIT_DB_SECRET?: string;
   BILLING_STUB_ENABLED?: string;
   SENTRY_DSN?: string;

@@ -838,6 +838,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         internal set
 
     private val defaultVoiceStore = com.alarmtalk.app.data.DefaultVoicePreferenceStore(application)
+    private val landingVoicePick = com.alarmtalk.app.data.LandingVoicePick(application)
     internal val dynamicPromptStore = com.alarmtalk.app.data.DynamicPromptPreferenceStore(application)
 
     /** 계정 설정(지역·사주) 올리기를 한 번에 하나씩 — `updateDynamicPromptSettings`. */
@@ -1246,6 +1247,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      */
     suspend fun checkVoiceSetupFor(userId: String) {
         if (userId.isBlank()) return
+        // 로그인 전 랜딩에서 고른 기본 목소리 — 이 계정이 아직 고른 적이 없을 때만 한 번 잇는다(`LandingVoicePick`).
+        val landingPick = landingVoicePick.take()
+        if (defaultVoiceStore.read(userId) == null && landingPick != null) defaultVoiceStore.set(userId, landingPick)
         lastUsedVoiceId = defaultVoiceStore.read(userId)
         val needsSetup = voiceSetupProbe.needsSetup(skipped = defaultVoiceStore.hasSkipped(userId))
         if (authSession?.user?.id != userId) return
@@ -1278,7 +1282,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      */
     fun skipVoiceSetup() {
         defaultVoiceStore.markSkipped(authSession?.user?.id?.takeIf { it.isNotBlank() })
+        if (showVoiceSetup) recordOnboardingStep("voice_setup_skipped")
         showVoiceSetup = false
+    }
+
+    /** 로그인 뒤 첫 경험 단계(`onboarding_step`, `docs/spec/usage-events.md` §7.1) — 지금 실재하는 단계는 기본 목소리 준비 화면뿐이다. */
+    private fun recordOnboardingStep(step: String) {
+        com.alarmtalk.app.data.UsageSignals.record(
+            getApplication(),
+            com.alarmtalk.app.data.UsageEvents.ONBOARDING_STEP,
+            props = com.alarmtalk.app.data.UsageEventProps(step = step),
+        )
     }
 
     /**
@@ -1290,7 +1304,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      * 파일은 메인 밖에서 센다([voiceSetupProbe]) — 부르는 효과가 화면과 함께 사라지면 답도 버려진다.
      */
     suspend fun completeVoiceSetupIfDownloaded() {
-        if (voiceSetupProbe.anyDownloaded()) showVoiceSetup = false
+        if (voiceSetupProbe.anyDownloaded() && showVoiceSetup) {
+            recordOnboardingStep("voice_setup_completed")
+            showVoiceSetup = false
+        }
     }
 
     /**

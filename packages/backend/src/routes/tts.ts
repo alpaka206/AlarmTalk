@@ -1,5 +1,5 @@
 import { Hono, type Context } from 'hono';
-import type { ErrorCode } from '@alarmtalk/shared';
+import { stockContentInfo, stockThemeForCategory, type ErrorCode } from '@alarmtalk/shared';
 import { jsonError } from '../lib/api-error';
 import type { AppEnv } from '../types';
 import { getDB } from '../lib/db';
@@ -17,6 +17,9 @@ import {
   type ManualRequestClaim,
 } from '../lib/manual-tts-requests';
 import { computeTtsCacheKey, generatedTtsObjectKey, manualTtsCacheScope } from '../lib/audio-cache';
+import { logicalResultRenders, manualResultLogicalKey, renderStamp, serverRenderSettings } from '../lib/render-fingerprint';
+import { measureSynthesis, speechCharacters, type TtsUsageKind } from '../lib/tts-usage';
+import { holdDevBudget, releaseDevBudget } from '../lib/tts-budget';
 import { loadAudioBytes, uint8ToBase64 } from '../lib/audio-loader';
 import {
   createSynthesisAttempts,
@@ -42,6 +45,8 @@ import {
   CLONE_CLIP_SEEDS,
   FREE_BUCKET_CATEGORIES,
   findLegacyBucketHints,
+  releasedStockContentSets,
+  stockCategoryReleased,
   normalizeStockCategory,
   prerenderRefreshColumnReady,
   retiredIsNullClause,
@@ -56,11 +61,8 @@ import {
   reserveManualTtsQuota,
   resolveManualTtsPool,
 } from '../lib/manual-tts-quota';
-import {
-  consumeAdRewardCredit,
-  readAdRewardStatus,
-  refundAdRewardCredit,
-} from '../lib/ad-reward-credits';
+import { consumeAdRewardCredit, refundAdRewardCredit } from '../lib/ad-reward-credits';
+import { adRewardView, readAdRewardStatus } from '../lib/ad-reward-sessions';
 import { hasPersonalVoiceAccess } from './billing-helpers';
 import { computedUserPlan, resolvePersonalPromo } from '../lib/personal-promo';
 import { missingConsentType, SENSITIVE_REQUIRED_CONSENTS } from '../lib/consent';
@@ -102,6 +104,14 @@ class ConsentWithdrawnDuringTtsError extends Error {
   constructor(readonly consent: string) {
     super(`Required consent was withdrawn during TTS generation: ${consent}`);
     this.name = 'ConsentWithdrawnDuringTtsError';
+  }
+}
+
+/** dev 월 합성 예산(`TTS_DEV_MONTHLY_CHAR_BUDGET`)을 넘는다 — 운영에서는 나지 않는다(`lib/tts-budget.ts`). */
+class TtsBudgetExhaustedError extends Error {
+  constructor() {
+    super('The development synthesis budget for this month is used up.');
+    this.name = 'TtsBudgetExhaustedError';
   }
 }
 
@@ -644,6 +654,8 @@ tts.post('/generate', async (c) => {
   let adRewardTransactionId: string | null = null;
   // 같은 요청의 재시도·중복 탭 표식(`request_id`) — 잡았으면 끝날 때 풀거나 끝냄으로 적는다.
   let requestClaim: ManualRequestClaim | null = null;
+  /** dev 월 예산에서 잡아 둔 몫 — 끝나면(성공·실패 모두) 놓는다(`holdDevBudget`). */
+  let devBudgetHoldId: string | null = null;
   /**
    * 직접 입력 한 번을 **센다** — 월 기본분(유료 30·무료 3) 먼저, 무료가 다 썼으면 광고 보상 한 번. 셀 수 없으면 보낼
    * 응답을 돌려준다.
@@ -670,7 +682,9 @@ tts.post('/generate', async (c) => {
         '이번 달 직접 입력 문구 만들기 횟수를 모두 사용했어요.',
         {
           manual_quota: { limit: reservation.limit, used: reservation.used, remaining: 0 },
-          ...(freeManualEligible ? { ad_reward: await readAdRewardStatus(db, userPk) } : {}),
+          ...(freeManualEligible
+            ? { ad_reward: adRewardView(c.env, await readAdRewardStatus(db, userPk)) }
+            : {}),
         },
       );
     }
@@ -1026,6 +1040,23 @@ tts.post('/generate', async (c) => {
     // 그 창에는 제자리 교체 자체가 이 컬럼을 참조해 롤백되므로 지킬 대상이 없다.
     // 전용 쿼리로 읽으면 그 창 동안 **모든 직접 입력 생성이 500** 이 된다.
     const requestVoiceGeneration = String(vp.custom_audio_invalidated_at ?? '');
+    // **직접 입력의 논리 결과** — 사용자가 고른 것(목소리와 그 세대·언어·번역 여부·친 글자)만 담는다. 렌더 설정(모델·음량·
+    // provider voice·합성 옵션)은 넣지 않는다 — 그게 바뀌어 다시 굽는 것은 서비스 사정이라 세지 않는다
+    // (`docs/spec/tts-render-and-budget.md` §2). 직접 입력이 아니면 null.
+    const logicalKey = isManualGeneration
+      ? await manualResultLogicalKey({
+          userPk,
+          voiceProfileId: body.voice_profile_id,
+          voiceGeneration: requestVoiceGeneration,
+          language: normalizeSynthesisLanguage(body.language),
+          translate: body.translate === true,
+          text: userTypedText,
+        })
+      : null;
+    // 이 요청이 '이미 낸 결과를 새 설정으로 다시 굽는' 것인가(아래 캐시 미스 뒤에 정한다). 참이면 세지 않는다.
+    let serviceRerender = false;
+    // 같은 `request_id` 를 다시 잡았는가(재시도) — 사용량 장부의 `retry_count`.
+    let retriedRequest = false;
     const isEvictedWithoutVoice = !providerVoiceId && Boolean(vp.evicted_at);
     const evictedProbeVoiceId = isEvictedWithoutVoice
       ? ((vp.evicted_provider_voice_id as string | null | undefined) ?? null)
@@ -1127,6 +1158,20 @@ tts.post('/generate', async (c) => {
             });
             const used = pool.limit > 0 ? await readManualTtsUsage(db, pool.poolKey) : 0;
             manualQuotaResult = { used, limit: pool.limit, remaining: Math.max(0, pool.limit - used) };
+            // 지문 이전(#139 전)에 만든 행은 논리 결과 키가 비어 있다 — 다시 쓰이는 이 순간 채워, 나중에 설정이 바뀌어
+            // 이 키가 빗나가도 '이미 낸 결과' 로 알아보게 한다. 못 채워도 그 행은 예전 그대로라(틀린 값이 남지 않는다)
+            // 응답을 막지 않는다.
+            if (logicalKey) {
+              try {
+                await db.execute({
+                  sql: `UPDATE generated_audio_assets SET logical_key = ?
+                        WHERE request_hash = ? AND user_id = ? AND logical_key IS NULL`,
+                  args: [logicalKey, cacheKey, userPk],
+                });
+              } catch (backfillErr) {
+                console.error('[tts/generate] logical key backfill failed', String(backfillErr));
+              }
+            }
           }
           // F1: 캐시 히트도 '사용'으로 보고 LRU 신호를 갱신한다(사전렌더/캐시 재생 알람이 자주
           // 쓰는 커스텀 클론이 오래 안 쓴 것으로 오판돼 evict되지 않게). 시스템 보이스는 no-op.
@@ -1219,6 +1264,29 @@ tts.post('/generate', async (c) => {
       }
     }
 
+    // ⚠ **이미 낸 결과인가**(스펙 tts-render-and-budget §2). 캐시 키는 렌더 설정(모델·음량·높이·provider voice·합성 옵션)
+    //   을 담으므로 서비스가 설정을 바꾸거나 LRU 반납 뒤 재등록으로 provider voice 가 바뀌면 같은 요청도 빗나간다. 그 사람의
+    //   같은 논리 결과가 원장에 남아 있으면 새 설정으로 **다시 굽되 세지 않는다.** 문구·목소리(세대)·언어를 바꾼 요청은
+    //   논리 키가 달라 예전 규칙대로 센다. 30일 정리로 결과가 사라졌으면 행이 없어 센다(§8 표).
+    //   칸(#139)이 없는 배포 창에서는 던져 500 이다 — 세기 전이라 잃는 것이 없다(fail-closed).
+    //   ⚠ **지금 설정으로 만든 행이 이미 있으면 서비스 재렌더가 아니다.** 그런데도 빗나갔다면 원인은 설정이 아니라 합성
+    //   글자다(번역처럼 같은 입력에서 다른 글자가 나오는 갈래) — 그건 예전처럼 센다. 안 그러면 같은 요청을 되풀이해
+    //   세지 않는 합성을 끝없이 받을 수 있다.
+    if (logicalKey) {
+      const firstAttempt = preparedAttempts[0]?.attempt;
+      const currentFingerprint = firstAttempt
+        ? (await renderStamp(serverRenderSettings({ ...firstAttempt, language: synthesisLanguage }))).fingerprint
+        : null;
+      const owned = await logicalResultRenders(db, userPk, logicalKey, currentFingerprint);
+      serviceRerender = owned.any && !owned.current;
+    }
+
+    // dev 월 합성 예산 — 운영이거나 정하지 않았으면 DB 를 부르지 않는다. 세기·표식보다 앞이라 막혀도 잃는 것이 없다.
+    //   몫은 **먼저 잡는다**(코덱스 #954) — 읽기만 하면 겹치는 요청이 같은 남은 몫을 함께 써 상한을 넘겼다.
+    const devBudget = await holdDevBudget(db, c.env, speechCharacters(synthesisText));
+    if (!devBudget.ok) throw new TtsBudgetExhaustedError();
+    devBudgetHoldId = devBudget.holdId;
+
     // 캐시 미스 확정 후 합성 직전에 직접 입력 한 번을 센다(월 한도 원자적 +1 또는 광고 보상 하나).
     // 그 전에 같은 요청 표식을 잡는다 — 재시도·중복 탭이 동시에 와도 한 번만 합성·차감한다(`lib/manual-tts-requests.ts`).
     if (isManualGeneration) {
@@ -1240,6 +1308,7 @@ tts.post('/generate', async (c) => {
           return jsonError(c, 409, 'TTS_REQUEST_IN_PROGRESS', 'The same request is still being generated.');
         }
         requestClaim = outcome.claim;
+        retriedRequest = outcome.retried;
         if (outcome.reclaimedDone) {
           const again = await serveCachedResult();
           if (again) {
@@ -1249,18 +1318,40 @@ tts.post('/generate', async (c) => {
           }
         }
       }
-      const refused = await reserveManualGeneration();
+      // 서비스가 다시 굽는 것은 세지 않는다 — `charged_source` 는 'none' 그대로다.
+      const refused = serviceRerender ? null : await reserveManualGeneration();
       if (refused) {
         if (requestClaim) await releaseManualRequest(db, requestClaim);
         return refused;
       }
+      if (serviceRerender) {
+        // 응답의 남은 횟수는 지금 값 그대로다(캐시 히트와 같다 — 소비 없음).
+        const pool = await resolveManualTtsPool(db, ownerIds, userPk, callerUserPlan, {
+          promoOnly: callerPromoOnly,
+        });
+        const used = pool.limit > 0 ? await readManualTtsUsage(db, pool.poolKey) : 0;
+        manualQuotaResult = { used, limit: pool.limit, remaining: Math.max(0, pool.limit - used) };
+      }
     }
+
+    const usageKind: TtsUsageKind = draftPreviewRequested
+      ? 'draft_preview'
+      : isManualGeneration
+        ? serviceRerender
+          ? 'manual_rerender'
+          : 'manual'
+        : 'dynamic';
 
     let lastError: unknown = noVoiceProviderError();
     for (const { attempt, cacheKey } of preparedAttempts) {
       try {
-        const generated = await attempt.synthesize();
+        const generated = await measureSynthesis(
+          db,
+          { kind: usageKind, text: synthesisText, retry: retriedRequest },
+          () => attempt.synthesize(),
+        );
         const bytes = generated.bytes;
+        const stamp = await renderStamp(serverRenderSettings({ ...attempt, language: synthesisLanguage }));
 
         let audioObjectKey: string | null = null;
         let audioUrl: string | null = null;
@@ -1343,11 +1434,12 @@ tts.post('/generate', async (c) => {
 
             if (audioUrl) {
               await tx.execute({
+                // 렌더 지문·세대·논리 결과 키(#139)도 함께 — 칸이 없으면 트랜잭션째 롤백된다(배포 창 fail-closed).
                 sql: `INSERT OR IGNORE INTO generated_audio_assets
                   (id, user_id, voice_profile_id, message_id, provider, provider_voice_id,
                    model_id, language, request_hash, text, audio_url,
-                   audio_object_key, audio_format)
-                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                   audio_object_key, audio_format, render_fingerprint, render_revision, logical_key)
+                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
                 args: [
                   crypto.randomUUID(),
                   userPk,
@@ -1362,6 +1454,9 @@ tts.post('/generate', async (c) => {
                   audioUrl,
                   audioObjectKey,
                   generated.outputFormat,
+                  stamp.fingerprint,
+                  stamp.revision,
+                  logicalKey,
                 ],
               });
             }
@@ -1426,6 +1521,9 @@ tts.post('/generate', async (c) => {
             random_context: randomRequested ? randomContext : null,
             manual_quota: manualQuotaResult,
             charged_source: chargedSource,
+            // 기본 제공분에서 실제로 차감한 **원래 사용월**(KST) — 사용 기록 `generation_outcome` 의 `usage_month`
+            // (`docs/spec/usage-events.md` §7.2). 광고 보상·차감 없음은 null(기본분 달에서 빼지 않았다 — 그 갈래는 이 값을 채우지 않는다).
+            usage_month: manualQuotaMonth,
             preview_playback_token: activePreviewClaimToken,
             preview_playback_confirmed: false,
           },
@@ -1492,6 +1590,9 @@ tts.post('/generate', async (c) => {
     if (err instanceof ConsentWithdrawnDuringTtsError) {
       return consentRequired(c, err.consent);
     }
+    if (err instanceof TtsBudgetExhaustedError) {
+      return jsonError(c, 503, 'TTS_BUDGET_EXHAUSTED', 'The development synthesis budget for this month is used up.');
+    }
     if (err instanceof VoiceAuthorizationChangedDuringTtsError) {
       return c.json(
         {
@@ -1520,6 +1621,8 @@ tts.post('/generate', async (c) => {
       },
       500,
     );
+  } finally {
+    await releaseDevBudget(db, devBudgetHoldId);
   }
 });
 
@@ -1545,18 +1648,13 @@ tts.get('/manual-quota', async (c) => {
     promoOnly: callerUserPlan !== rawCallerUserPlan,
   });
   const used = pool.limit > 0 ? await readManualTtsUsage(db, pool.poolKey) : 0;
-  // 무료면 광고 보상 현황도 싣는다(`docs/spec/ad-rewards.md`). `user_id` 는 앱이 AdMob 서버 확인
-  // 콜백에 실어 보낼 계정 PK 다 — 앱이 쥔 로그인 식별자는 구글 계정이면 PK 가 아니라서 여기서 준다.
-  // 유료에게는 싣지 않는다 — 앱이 광고 단추를 그릴지는 이 필드가 있는가로 가른다. 서버의 광고 단위 설정
-  // (`ADMOB_REWARDED_AD_UNITS` — 기능 스위치)이 비어도 싣지 않는다: 그때는 콜백이 하나도 적립하지 않으므로, 광고를
-  // 끝까지 보고도 아무것도 못 받는다(코덱스 #925).
+  // 무료면 광고 보상 현황도 싣는다(`docs/spec/ad-rewards.md` §4). 잔액(`credits`)은 광고 스위치와 무관하게 늘 싣는다 —
+  // 광고를 꺼도 받아 둔 보상은 쓸 수 있다. 새 광고를 볼 수 있는지는 `can_watch`·`unavailable_reason` 이 말한다.
+  // ⚠ 계정 PK(`user_id`)는 더는 싣지 않는다 — 승인 세션 응답에만 있다(옛 앱이 승인 없이 광고를 띄우지 않게, 스펙 §3).
+  // 유료에게는 싣지 않는다 — 플러스 동안은 월 30회를 쓰고 보상은 그대로 남는다.
   const freeCaller =
-    Boolean(c.get('userIdPK')) &&
-    Boolean(c.env.ADMOB_REWARDED_AD_UNITS?.trim()) &&
-    !hasPersonalVoiceAccess(rawCallerUserPlan, resolvePersonalPromo(c.env));
-  const adReward = freeCaller
-    ? { ...(await readAdRewardStatus(db, userPk)), user_id: userPk }
-    : undefined;
+    Boolean(c.get('userIdPK')) && !hasPersonalVoiceAccess(rawCallerUserPlan, resolvePersonalPromo(c.env));
+  const adReward = freeCaller ? adRewardView(c.env, await readAdRewardStatus(db, userPk)) : undefined;
   return c.json({
     plan_key: pool.planKey,
     limit: pool.limit,
@@ -1800,22 +1898,38 @@ tts.get('/stock-clips', async (c) => {
   });
   // 버킷 없이 클립 하나만 물린 옛 알람의 테마 힌트 — 규칙과 이유는 그 함수 주석에 있다.
   const legacyHints = await findLegacyBucketHints(db, userPk);
+  // ⚠ **공개 표식은 이 요청에서 한 번만 읽는다**(스펙 §5-4 「공개 순서」). 클립 목록·`expected_variants`·표지가
+  //   같은 값을 봐야 '목록에는 있는데 개수표에는 없는' 회차가 생기지 않는다.
+  const released = await releasedStockContentSets(db);
 
   return c.json({
-    clips: result.rows.map((row) => ({
-      message_id: row.message_id,
-      voice_profile_id: row.voice_profile_id,
-      voice_name: row.voice_name,
-      category: row.category,
-      language: row.language,
-      variant: Number(row.variant ?? 0),
-      text: row.text,
-      audio_url: row.audio_url,
-      tags: parseDeliveryTags(row.delivery_tags_json),
-      // false 면 **서버가 아직 이 클립을 새 목소리로 굽지 않았다.** 앱은 이때 교체 세대를
-      // 확정하지 않고 다음 회차에 다시 본다(위 SELECT 주석).
-      rendered_for_current_voice: Number(row.rendered_for_current_voice ?? 1) === 1,
-    })),
+    clips: result.rows
+      // 공개 전 묶음(`cheer_v2`·`wake`)의 행은 기본·클론 모두 뺀다 — 게시 중간 상태를 앱이 '쓸 수 있음' 으로 보지 않는다.
+      .filter((row) => stockCategoryReleased(String(row.category ?? ''), released))
+      .map((row) => {
+        const category = String(row.category ?? '');
+        const variant = Number(row.variant ?? 0);
+        const content = stockContentInfo(category, variant);
+        return {
+          message_id: row.message_id,
+          voice_profile_id: row.voice_profile_id,
+          voice_name: row.voice_name,
+          category: row.category,
+          language: row.language,
+          variant,
+          text: row.text,
+          audio_url: row.audio_url,
+          tags: parseDeliveryTags(row.delivery_tags_json),
+          // false 면 **서버가 아직 이 클립을 새 목소리로 굽지 않았다.** 앱은 이때 교체 세대를
+          // 확정하지 않고 다음 회차에 다시 본다(위 SELECT 주석).
+          rendered_for_current_voice: Number(row.rendered_for_current_voice ?? 1) === 1,
+          // 스펙 §5-4 「매니페스트 표지」 — 앱은 테마별로 모을 때 카테고리가 아니라 `theme` 을 본다
+          // (`cheer_v2` 클립은 테마 `cheer`). 옛 앱은 모르는 필드라 지나친다.
+          theme: stockThemeForCategory(category),
+          content_id: content?.contentId ?? null,
+          selectable: content?.selectable ?? true,
+        };
+      }),
     // 카테고리별로 **몇 개가 있어야 완전한가**. 앱은 이 값과 자기 캐시를 비교해 부족분만 받고,
     // 클론 버킷이 '완전한지'(variant 0..N-1 이 다 있는지) 판정한다.
     //
@@ -1824,7 +1938,7 @@ tts.get('/stock-clips', async (c) => {
     // 영영 안 받고, 그 클립을 고른 알람이 무음이 된다.
     // 날씨처럼 **절대 인덱스로 조건을 고르는** 버킷은 부분 세트면 엉뚱한 문구가 나가므로
     // 이 판정이 특히 중요하다.
-    expected_variants: expectedVariantCounts(),
+    expected_variants: expectedVariantCounts(released),
     // 버킷 없는 옛 알람이 어떤 테마였는지. 앱은 이 값을 `bucketId` 에 적고 나서
     // 평소의 재바인딩을 태운다 — 없으면 그 알람은 갈아탈 방법이 없다.
     legacy_bucket_hints: legacyHints.map((hint) => ({
@@ -1845,10 +1959,16 @@ tts.get('/stock-clips', async (c) => {
  *
  * 출처: 시스템은 `STOCK_CLIP_PRESETS`, 클론은 `CLONE_CLIP_SEEDS`. 앱은 고른 목소리가
  * 시스템인지에 따라 둘 중 하나를 본다.
+ *
+ * ⚠ **공개된 묶음만 센다**(스펙 §5-4). 공개 전 카테고리를 세면 매니페스트에 없는 몫 때문에 앱이 그 테마를 '불완전'
+ *   으로 본다. **클론은 기본 세트만**이다 — 보충(`cheer_v2`)은 클론마다 다르므로 완전성에 넣지 않는다.
  */
-function expectedVariantCounts(): { system: Record<string, number>; clone: Record<string, number> } {
+export function expectedVariantCounts(
+  released: ReadonlySet<string>,
+): { system: Record<string, number>; clone: Record<string, number> } {
   const system: Record<string, number> = {};
   for (const preset of STOCK_CLIP_PRESETS) {
+    if (!stockCategoryReleased(preset.category, released)) continue;
     // 언어별 문구 수는 같아야 하지만, 어긋나도 ko 를 기준으로 삼는다(시드 원본이 ko 다).
     system[preset.category] = preset.texts.ko?.length ?? 0;
   }

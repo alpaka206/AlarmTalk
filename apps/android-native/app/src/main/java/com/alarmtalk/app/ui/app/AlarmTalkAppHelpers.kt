@@ -71,9 +71,19 @@ internal object AppRoute {
     const val LegalDocTypeArg = "legalDocType"
     const val LegalDoc = "legal/{$LegalDocTypeArg}"
     const val OssLicenses = "oss-licenses"
+    const val Briefing = "briefing"
 
     fun legalDoc(type: String): String = "legal/$type"
     const val AlarmCreate = "alarm/create"
+    /**
+     * 새 알람에서 처음 고를 목소리(목소리 탭의 '이 목소리로 새 알람 만들기', 2026-10-26). 새 알람에만 쓰고 전역 기본값(직전
+     * 선택)은 바꾸지 않는다 — 저장에 성공해야 직전 선택이 된다.
+     */
+    const val AlarmCreateVoiceArg = "voice"
+    const val AlarmCreatePattern = "$AlarmCreate?$AlarmCreateVoiceArg={$AlarmCreateVoiceArg}"
+
+    fun alarmCreate(preferredVoiceId: String? = null): String =
+        preferredVoiceId?.takeIf { it.isNotBlank() }?.let { "$AlarmCreate?$AlarmCreateVoiceArg=${Uri.encode(it)}" } ?: AlarmCreate
     const val AlarmIdArg = "alarmId"
     const val AlarmEdit = "alarm/edit/{$AlarmIdArg}"
 

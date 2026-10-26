@@ -23,6 +23,9 @@ import {
   markPrerenderDone,
   notifyVoicePrerenderComplete,
   prerenderRefreshColumnReady,
+  PrerenderBudgetDeferredError,
+  prerenderSupplementColumnReady,
+  excludeSupplementCategoriesSql,
   PrerenderSupersededError,
   releasePrerenderClaim,
   retiredIsNullClause,
@@ -549,9 +552,13 @@ async function runSpeechStyleAnalysis(
         // 대상은 **방금 이 말투를 받은 행**이다(같은 대상 조건 + 방금 쓴 값) — 위 UPDATE 가 묶음 조건에
         // 걸려 0행이면 여기서도 아무것도 다시 굽지 않는다. `requested_at` 은 밀리초까지 남긴다 — 같은 초에
         // 게시된 옛 클립을 새 것으로 세지 않도록(`findMissingStockTargets` 가 엄격한 `>` 로 비교한다).
+        // ⚠ **보충 표시(`supplement`)는 내린다**(스펙 voice-and-message §5-4). 보충 회차가 대기 중일 때 이 재렌더가
+        // 들어오면 회차의 성격이 바뀐다 — 남겨 두면 진행 조회가 전체 재렌더를 done 으로 답하고, 5번 실패해도 failed 가
+        // 아니라 done 으로 접힌다. 요청된 묶음(`content_sets`)은 그대로 두어 보충분도 같이 다시 굽는다.
+        // `supplement` 는 #143 의 새 컬럼이다 — 배포 창에는 말투 저장과 함께 실패한다(fail-closed, 재시도 가능).
         {
           sql: `UPDATE voice_prerender_queue
-                SET status = 'pending', attempts = 0, refresh_existing = 1,
+                SET status = 'pending', attempts = 0, refresh_existing = 1, supplement = 0,
                     requested_at = strftime('%Y-%m-%d %H:%M:%f', 'now'),
                     claimed_at = NULL, claim_token = NULL, updated_at = datetime('now')
                 WHERE voice_profile_id IN (
@@ -1061,6 +1068,9 @@ export async function replaceVoiceInPlace(
             VALUES (?, ?, ?, 'pending', 0, 1)
             ON CONFLICT(voice_profile_id) DO UPDATE SET
               status = 'pending', attempts = 0, refresh_existing = 1,
+              -- 보충 회차가 대기 중이었어도 이제는 전체 재렌더다(스펙 voice-and-message §5-4). content_sets 는 남겨
+              -- 보충분도 새 목소리로 같이 굽는다. #143 의 새 컬럼이라 배포 창에는 교체 전체가 롤백된다(fail-closed).
+              supplement = 0,
               claimed_at = NULL, claim_token = NULL,
               owner_user_id = excluded.owner_user_id,
               language = excluded.language, updated_at = datetime('now')`,
@@ -2605,6 +2615,7 @@ voiceProfile.get('/:id/prerender-status', async (c) => {
   //   보고 "견딘다" 고 적었던 게 이 주석의 앞 판본이다.
   const retiredClause = await retiredIsNullClause(db);
   const refreshReady = await prerenderRefreshColumnReady(db);
+  const supplementReady = await prerenderSupplementColumnReady(db);
   // 컬럼이 없으면 '교체 회차 좁히기' 자체가 성립하지 않는다 — 조건을 통째로 뺀다.
   const refreshNarrowing = refreshReady
     ? `AND (
@@ -2637,24 +2648,35 @@ voiceProfile.get('/:id/prerender-status', async (c) => {
              WHERE m.voice_profile_id = ? AND COALESCE(m.is_preset, 0) = 1
                ${retiredClause}
                AND m.audio_url IS NOT NULL
+               -- 기본 세트만 센다 — 보충(스펙 §5-4)은 total 에 없다.
+               ${excludeSupplementCategoriesSql('m')}
                ${refreshNarrowing}`,
       args: [id],
     }),
     db.execute({
-      sql: 'SELECT status, attempts FROM voice_prerender_queue WHERE voice_profile_id = ?',
+      // 보충 표시(#143)는 배포 창에 없을 수 있다 — 그때는 보충 회차도 있을 수 없어 0 으로 읽는다.
+      sql: `SELECT status, attempts, ${supplementReady ? 'supplement' : '0 AS supplement'}
+              FROM voice_prerender_queue WHERE voice_profile_id = ?`,
       args: [id],
     }),
   ]);
   const generated = Number(generatedRes.rows[0]?.count ?? 0);
   const queue = queueRes.rows[0];
   const queueStatus = queue ? String(queue.status ?? '') : '';
+  // ⚠ **보충 회차는 done 으로 답한다**(스펙 §5-4). 기본 세트는 이미 다 있다 — pending 이라고 답하면 두 앱이 그 목소리를
+  //   '준비 중' 으로 보고 고를 수 없게 한다(응원 알람 하나 저장했다고 목소리가 잠긴다).
+  const supplementRound = queueStatus === 'pending' && Number(queue?.supplement ?? 0) === 1;
   // 큐 행이 없으면(적재 전/삭제됨) 'none' — 클라는 prerender-retry 로 재적재할 수 있다.
-  const status = ['pending', 'done', 'failed'].includes(queueStatus) ? queueStatus : 'none';
+  const status = supplementRound
+    ? 'done'
+    : ['pending', 'done', 'failed'].includes(queueStatus)
+      ? queueStatus
+      : 'none';
   return c.json({
     status,
     total: CLONE_PRERENDER_TOTAL,
     generated,
-    attempts: queue ? Number(queue.attempts ?? 0) : 0,
+    attempts: queue && !supplementRound ? Number(queue.attempts ?? 0) : 0,
   });
 });
 
@@ -2778,6 +2800,7 @@ voiceProfile.post('/:id/prerender/advance', async (c) => {
                    AND m.retired_at IS NULL
                    AND m.audio_url IS NOT NULL
                    AND ga.provider_voice_id = vp.elevenlabs_voice_id
+                   ${excludeSupplementCategoriesSql('m')}
                    AND (COALESCE(q.refresh_existing, 0) = 0
                      OR julianday(ga.created_at) > julianday(q.requested_at))`,
           args: [id],
@@ -2827,7 +2850,7 @@ voiceProfile.post('/:id/prerender/advance', async (c) => {
               OR claim_token NOT LIKE 'adv-%'
               OR claimed_at <= datetime('now', ?)
             )
-          RETURNING language, refresh_existing`,
+          RETURNING language, refresh_existing, supplement`,
     args: [claimToken, id, PRERENDER_CLAIM_LEASE_SQL],
   });
   if (claimed.rows.length === 0) {
@@ -2848,6 +2871,8 @@ voiceProfile.post('/:id/prerender/advance', async (c) => {
   }
   const language = String(claimed.rows[0]!.language ?? 'ko');
   const refreshExisting = Number(claimed.rows[0]!.refresh_existing ?? 0) === 1;
+  // 보충 회차(스펙 §5-4)도 끝나면 기기를 깨워 새 클립을 받게 한다.
+  const notifyOnDone = refreshExisting || Number(claimed.rows[0]!.supplement ?? 0) === 1;
 
   let voices: Awaited<ReturnType<typeof listReadyCloneVoices>>;
   try {
@@ -2872,7 +2897,7 @@ voiceProfile.post('/:id/prerender/advance', async (c) => {
   const targets = await findMissingStockTargets(db, [voice], refreshExisting);
   if (targets.length === 0) {
     await markPrerenderDone(db, id, claimToken);
-    if (refreshExisting) {
+    if (notifyOnDone) {
       // 큐는 이미 done 이라 재시도해도 이 신호를 다시 만들 수 없다 — waitUntil 로 태운다.
       await schedulePostCommitFanout(
         c,
@@ -2906,6 +2931,9 @@ voiceProfile.post('/:id/prerender/advance', async (c) => {
         superseded = true;
         break;
       }
+      // dev 월 예산이 이 클립을 못 받는다 — 실패가 아니라 미룬 것이다. 남은 대상은 큐에 그대로 두고 이 호출을 끝낸다
+      // (`generateStockClip` 이 실제 보낼 글자로 본다 — 요청 경로도 예산을 거친다, 코덱스 #954).
+      if (genErr instanceof PrerenderBudgetDeferredError) break;
       logRouteError(c, genErr);
       // 서브리퀘스트 소진이면 이 호출에서 더 만들 수 없다 — 즉시 반환하고 클라가 재호출.
       if (String(genErr).includes('Too many subrequests')) break;
@@ -2914,7 +2942,7 @@ voiceProfile.post('/:id/prerender/advance', async (c) => {
 
   const done = !superseded && made >= targets.length;
   // 이 호출이 시작할 때 이미 만들어져 있던 개수 — 꼬리에서 DB 를 못 쓸 때의 답이다.
-  const generatedBeforeBatch = CLONE_PRERENDER_TOTAL - targets.length;
+  const generatedBeforeBatch = Math.max(0, CLONE_PRERENDER_TOTAL - targets.length);
   // ⚠ **클레임을 실제로 놓았는지 따로 센다**(2026-08-28 리뷰). 아래 catch 는 꼬리 전체를
   // 받는데, 그 안에는 '해제까지는 됐고 개수 세기만 실패한' 경우도 섞인다. 그때까지
   // `claim_stuck` 으로 답하면 앱이 **이미 비어 있는 클레임을 2분 동안 기다린다** — 눈에는
@@ -2924,7 +2952,7 @@ voiceProfile.post('/:id/prerender/advance', async (c) => {
     if (done) {
       await markPrerenderDone(db, id, claimToken);
       claimReleased = true;
-      if (refreshExisting) {
+      if (notifyOnDone) {
         await schedulePostCommitFanout(
           c,
           notifyVoicePrerenderComplete(db, c.env, userPk),

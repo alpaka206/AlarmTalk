@@ -12,6 +12,7 @@ import { rmSync } from 'node:fs';
 import { migrations, runMigrationsRange } from '../src/lib/migrations';
 import { createHash } from 'node:crypto';
 import { STOCK_CLIP_PRESETS } from '../src/lib/stock-clips';
+import { stockContentSetForCategory } from '@alarmtalk/shared';
 import { STOCK_FINGERPRINT_IN_NAME, STOCK_INVALIDATION_NAME } from '../src/lib/migrations';
 
 const DB_PATH = join(tmpdir(), 'alarmtalk-migration-stock-refresh.db');
@@ -100,7 +101,13 @@ describe('migration #70 — 스톡 클립 문구 수렴형 무효화', () => {
         '이름을 `...-script-<지문16자>` 로 끝내라.',
     ).toBeDefined();
 
-    const canonical = STOCK_CLIP_PRESETS.flatMap((preset) =>
+    // ⚠ **새 묶음(`baseline` 이 아닌 `cheer_v2`·`wake`)은 지문에 넣지 않는다**(스펙 §5-4). 이 지문은 **이미 게시된 자리의
+    //   문구가 바뀌었는가** 를 지키는 장치인데, 새 묶음은 덧붙인 카테고리라 무효화할 옛 행이 없다. 새 묶음의 문장은
+    //   `packages/shared/test/stock-content.test.ts` 가 지킨다(공개한 뒤에는 고치지 않고 새 묶음을 만든다).
+    const published = STOCK_CLIP_PRESETS.filter(
+      (preset) => stockContentSetForCategory(preset.category)?.baseline ?? true,
+    );
+    const canonical = published.flatMap((preset) =>
       Object.entries(preset.texts as Record<string, readonly string[]>)
         .sort(([a], [b]) => a.localeCompare(b))
         .flatMap(([language, list]) => list.map((text) => `${preset.category}|${language}|${text}`)),

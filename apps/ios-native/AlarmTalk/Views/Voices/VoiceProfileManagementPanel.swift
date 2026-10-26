@@ -32,6 +32,8 @@ struct VoiceProfileManagementPanel: View {
     /// 시트 충돌을 피하기 위해 본 화면의 시트를 먼저 닫고, 다음 runloop 에서
     /// 부모가 BillingPanel 시트를 띄우는 패턴을 사용한다.
     var onRequestBilling: (() -> Void)? = nil
+    /// '이 목소리로 새 알람 만들기' — 알람 탭으로 가 그 목소리를 고른 새 알람 편집기를 연다(전역 기본값은 바꾸지 않는다).
+    var onCreateAlarmWithVoice: ((String) -> Void)? = nil
 
     /// 프로필 편집 다이얼로그 입력값.
     @State private var editTarget: VoiceProfile?
@@ -148,9 +150,13 @@ struct VoiceProfileManagementPanel: View {
             isPresented: Binding(get: { actionSheetTarget != nil }, set: { if !$0 { actionSheetTarget = nil } }),
             titleVisibility: .visible
         ) {
-            Button(String(localized: "이 목소리 사용")) {
-                if let profile = actionSheetTarget { voice.selectedProfileID = profile.id }
-                actionSheetTarget = nil
+            // ⚠ 예전의 '이 목소리 사용' 은 무엇을 바꾸는지 알 수 없었다(선택만 바꾸고 화면은 그대로 — 2026-10-26 v1.3 지시로
+            //   지웠다). 이제 그 목소리를 고른 **새 알람**을 만든다. 기존 알람·전역 기본값은 건드리지 않는다.
+            if onCreateAlarmWithVoice != nil {
+                Button(String(localized: "이 목소리로 새 알람 만들기")) {
+                    if let profile = actionSheetTarget { onCreateAlarmWithVoice?(profile.id) }
+                    actionSheetTarget = nil
+                }
             }
             Button(String(localized: "이름 수정")) {
                 if let profile = actionSheetTarget {
@@ -462,7 +468,7 @@ struct VoiceProfileManagementPanel: View {
     /// 기본 목소리를 **받는 중일 때만** 헤더 옆에 붙는 진행 표시(2026-09-17 지시).
     ///
     /// 받기 화면을 '백그라운드에서 계속' 으로 닫으면 진행을 볼 곳이 없는데, 그동안 알람 설정은
-    /// 막혀 있다(`MainTabsView.openEditorIfVoicesReady`). 막힌 이유가 여기서 보여야 한다.
+    /// 막혀 있다(`MainTabsView.openEditorIfVoiceReady`). 막힌 이유가 여기서 보여야 한다.
     /// 안드로이드 `VoiceProfileManagementPanel` 의 기본 목소리 헤더와 같은 자리다.
     private var defaultVoiceDownloadBadge: AnyView? {
         guard case let .running(done, total) = stockClipPrefetcher.state, total > 0, done < total else {

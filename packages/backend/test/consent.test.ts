@@ -17,6 +17,8 @@ import {
   ACCEPTED_POLICY_VERSIONS,
   loadLatestConsents,
   usageEventConsentSince,
+  usageEventDetailConsentSince,
+  USAGE_EVENT_DETAIL_MIN_PRIVACY_VERSION,
   consentAnswerIsCurrent,
   missingConsentTypesFrom,
 } from '../src/lib/consent';
@@ -817,6 +819,27 @@ describe('사용 기록의 동의 시작 시각', () => {
       const latest = await loadLatestConsents(db, 'u-time');
       expect(latest.get('privacy')?.agreed).toBe(true);
       expect(usageEventConsentSince(latest)).toBe(Date.parse('2026-09-06T21:00:00.500Z'));
+    } finally {
+      db.close();
+    }
+  });
+});
+
+describe('사용 기록 2판 세부 칸의 고지 경계(usage-events §7.5)', () => {
+  it('지금 처리방침(7판)은 2판 범위를 고지하지 않는다 — 동의를 다 했어도 세부 칸을 받지 않는다', async () => {
+    // 이 단언이 깨지면 처리방침이 8판으로 올라간 것이다 — 그 판에 §7.5 고지 문안이 실렸는지 먼저 확인하고 고친다.
+    expect(USAGE_EVENT_DETAIL_MIN_PRIVACY_VERSION).toBeGreaterThan(Number(CURRENT_POLICY_VERSION));
+    const db = createClient({ url: ':memory:' });
+    try {
+      await runMigrations(db);
+      await db.execute(`INSERT INTO users (id, google_id, email) VALUES ('u-d', 'g-d', 'd@example.com')`);
+      await db.execute(`INSERT INTO user_consents (id, user_id, consent_type, policy_version, agreed, created_at)
+        VALUES ('t', 'u-d', 'terms', '7', 1, '2026-10-20 00:00:00.000'),
+               ('a', 'u-d', 'age14', '7', 1, '2026-10-20 00:00:00.000'),
+               ('p', 'u-d', 'privacy', '7', 1, '2026-10-20 00:00:00.000')`);
+      const latest = await loadLatestConsents(db, 'u-d');
+      expect(usageEventConsentSince(latest)).not.toBeNull();
+      expect(usageEventDetailConsentSince(latest)).toBeNull();
     } finally {
       db.close();
     }

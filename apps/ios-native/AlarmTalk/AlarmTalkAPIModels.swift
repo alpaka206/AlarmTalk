@@ -320,6 +320,9 @@ struct RemoteAlarm: Codable, Identifiable, Equatable {
     /// 고른 테마 — 서버 `alarms.bucket_id`. 안드로이드 `RemoteAlarm.bucketId` 짝.
     var bucketId: String?
     var creationReplayed: Bool? = nil
+    /// 응원 테마의 다양하게/고정(스펙 voice-and-message §5-4) — 응원 알람을 저장한 응답에만 실린다.
+    var cheerMode: String? = nil
+    var cheerPinnedContentId: String? = nil
 }
 
 struct RemoteAlarmWriteRequest: Encodable {
@@ -340,6 +343,10 @@ struct RemoteAlarmWriteRequest: Encodable {
     /// 알람을 해석할 수 있도록 생성/수정 페이로드에 항상 동봉한다.
     var timezone: String? = TimeZone.current.identifier
     var clientAlarmId: String? = nil
+    /// 응원 테마의 다양하게/고정(스펙 voice-and-message §5-4). 응원 알람만 싣는다 — 다른 알람은 nil 이라 빠진다.
+    /// 안드로이드 `RemoteAlarmWriteRequest.cheerMode` 미러.
+    var cheerMode: String? = nil
+    var cheerPinnedContentId: String? = nil
     /// `messageId`·`bucketId` 가 비어 있으면 **빼지 않고 `null` 로 실어** 서버 값을 지운다.
     /// 본문에는 실리지 않는다(`encode(to:)` 가 읽기만 한다). 안드로이드
     /// `RemoteAlarmWriteRequest.clearsMissingVoiceReferences` 미러.
@@ -353,6 +360,7 @@ struct RemoteAlarmWriteRequest: Encodable {
     private enum CodingKeys: String, CodingKey {
         case time, repeatDays, snoozeMinutes, mode, vibrationPattern, wakeMode, isActive, messageId
         case voiceProfileId, bucketId, timezone, clientAlarmId
+        case cheerMode, cheerPinnedContentId
     }
 
     /// 합성 인코딩과 같다(nil 은 뺀다) — 단 `clearsMissingVoiceReferences` 면 `messageId`·`bucketId`
@@ -371,6 +379,8 @@ struct RemoteAlarmWriteRequest: Encodable {
         try encodeClearable(bucketId, forKey: .bucketId, in: &container)
         try container.encodeIfPresent(timezone, forKey: .timezone)
         try container.encodeIfPresent(clientAlarmId, forKey: .clientAlarmId)
+        try container.encodeIfPresent(cheerMode, forKey: .cheerMode)
+        try container.encodeIfPresent(cheerPinnedContentId, forKey: .cheerPinnedContentId)
     }
 
     private func encodeClearable(
@@ -534,6 +544,11 @@ struct TtsGenerateResponse: Decodable, Equatable {
     var cacheKey: String?
     var cacheHit: Bool?
     var provider: String?
+    /// 직접 입력 한 번을 **무엇으로 셌나**(`base` 기본 제공분 / `ad` 광고 보상 / `none` 세지 않음). 옛 서버면 nil.
+    /// 사용 기록 `generation_outcome` 의 `charged_source` 로만 쓴다(`docs/spec/usage-events.md` §7.2).
+    var chargedSource: String?
+    /// 기본 제공분에서 차감한 원래 사용월(KST `YYYY-MM`). 기본분이 아니거나 옛 서버면 nil. 사용 기록 전용.
+    var usageMonth: String?
     /// 랜덤 프롬프트가 사용된 경우, 백엔드가 선택한 실제 컨텍스트(다양화/감사 용).
     /// Android `TtsApi.kt:37`.
     var randomContext: String?
@@ -655,6 +670,17 @@ struct StockClip: Codable, Identifiable, Equatable {
 
     /// 옛 서버(필드 없음)는 '준비됨' 으로 본다 — 없는 신호로 앱을 멈추지 않는다.
     var isRenderedForCurrentVoice: Bool { renderedForCurrentVoice ?? true }
+
+    /// 이 클립이 속한 **테마(버킷)** — 스펙 voice-and-message §5-4 「매니페스트 표지」. `cheer_v2` 카테고리는 테마
+    /// `cheer` 다. 옛 서버는 주지 않는다 — 그때는 카테고리가 테마다(`bucketTheme`). 안드로이드 `StockClip.theme` 미러.
+    var theme: String?
+    /// 묶음 항목 ID(`cheer_v2_05`). 날씨·약·운세처럼 묶음이 없으면 nil.
+    var contentId: String?
+    /// 새로 고를 수 있는가 — 옛 응원(`cheer_v1`)만 false. 없으면(옛 서버) 고를 수 있다로 읽는다.
+    var selectable: Bool?
+
+    /// 테마별로 모을 때 쓰는 값. 안드로이드 `data.bucketTheme` 와 같은 규칙.
+    var bucketTheme: String? { theme ?? category }
 
     var id: String { messageId }
 }
@@ -945,4 +971,83 @@ struct ManualQuotaResponse: Decodable, Equatable {
     var limit: Int
     var used: Int
     var remaining: Int
+    /// 무료일 때만 온다 — 광고 보상 현황(`docs/spec/ad-rewards.md` §3). 옛 서버·유료면 nil.
+    var adReward: AdRewardStatus? = nil
+}
+
+/// `ad_reward` — 안드로이드 `AdRewardStatus` 미러. 옛 서버가 모르는 칸은 기본값으로 읽는다(광고를 권하지 않는 쪽).
+struct AdRewardStatus: Decodable, Equatable {
+    /// 지금 쓸 수 있는 보상. 계정 하나에 한 잔액이다(어느 앱에서 받았든).
+    var credits: Int = 0
+    /// 이번 달 광고로 더 받을 수 있는 횟수(열린 예약을 뺀 값).
+    var remainingGrants: Int = 0
+    var monthlyLimit: Int = 0
+    /// 끝까지 봤는데 아직 서버 확인(SSV)이 오지 않은 광고 수 — '보상을 확인하고 있어요'.
+    var pending: Int = 0
+    /// 지금 새 광고를 볼 수 있는가(운영 스위치·이번 달 자리·열린 세션). 옛 서버면 false.
+    var canWatch: Bool = false
+    /// 못 보면 왜인지 — `disabled`·`monthly_limit`·`session_open`.
+    var unavailableReason: String? = nil
+    /// 이번 달 상한이면 다음 자리가 생기는 시각(ISO-8601, 다음 달 1일 0시 KST).
+    var nextGrantAt: String? = nil
+
+    init(
+        credits: Int = 0,
+        remainingGrants: Int = 0,
+        monthlyLimit: Int = 0,
+        pending: Int = 0,
+        canWatch: Bool = false,
+        unavailableReason: String? = nil,
+        nextGrantAt: String? = nil
+    ) {
+        self.credits = credits
+        self.remainingGrants = remainingGrants
+        self.monthlyLimit = monthlyLimit
+        self.pending = pending
+        self.canWatch = canWatch
+        self.unavailableReason = unavailableReason
+        self.nextGrantAt = nextGrantAt
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case credits, remainingGrants, monthlyLimit, pending, canWatch, unavailableReason, nextGrantAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        credits = (try? c.decodeIfPresent(Int.self, forKey: .credits)) ?? 0
+        remainingGrants = (try? c.decodeIfPresent(Int.self, forKey: .remainingGrants)) ?? 0
+        monthlyLimit = (try? c.decodeIfPresent(Int.self, forKey: .monthlyLimit)) ?? 0
+        pending = (try? c.decodeIfPresent(Int.self, forKey: .pending)) ?? 0
+        canWatch = (try? c.decodeIfPresent(Bool.self, forKey: .canWatch)) ?? false
+        unavailableReason = try? c.decodeIfPresent(String.self, forKey: .unavailableReason)
+        nextGrantAt = try? c.decodeIfPresent(String.self, forKey: .nextGrantAt)
+    }
+}
+
+/// 광고 시청 승인 세션(`docs/spec/ad-rewards.md` §3) — 안드로이드 `network/AdRewardApi.kt` 미러.
+struct AdRewardSessionCreateRequest: Encodable {
+    var platform: String = "ios"
+    var adUnit: String
+}
+
+struct AdRewardSessionCloseRequest: Encodable {
+    var outcome: String
+}
+
+struct AdRewardSessionResponse: Decodable, Equatable {
+    struct Session: Decodable, Equatable {
+        var id: String
+        var status: String
+        var granted: Bool?
+    }
+    /// 광고의 `ServerSideVerificationOptions` 에 그대로 싣는 두 값.
+    struct SSV: Decodable, Equatable {
+        /// 계정 PK.
+        var userId: String
+        /// 승인 id — 서버는 콜백의 이 값으로 세션을 찾아 승인 하나에 보상 한 번만 적립한다.
+        var customData: String
+    }
+    var session: Session
+    var ssv: SSV?
 }

@@ -379,6 +379,8 @@ internal fun VoiceProfileManagementPanel(
     // 삭제가 아니다. 남은 초안은 서버가 거둔다). 기본값을 두지 않는다 — 빠뜨리면 초안이 버려지지 않는다.
     onDiscardVoiceDraftQuietly: (String) -> Unit,
     onOpenBilling: () -> Unit,
+    /** 행 메뉴의 '이 목소리로 새 알람 만들기'(2026-10-26). 기존 알람·전역 기본값은 건드리지 않는다. */
+    onCreateAlarmWithVoice: ((String) -> Unit)? = null,
     // 이번 달 목소리 생성 쿼터 — 추가 버튼 옆에 '남은/전체'로 보여준다.
     voiceDraftQuota: com.alarmtalk.app.network.VoiceDraftQuotaResponse? = null,
     // ⚠ 유료 안내 모달의 코드 입력(`onRegisterCode`)은 2026-10-14 에 지웠다 — 되살리지 말 것
@@ -725,14 +727,18 @@ internal fun VoiceProfileManagementPanel(
                     player.release()
                     return@runCatching
                 }
+                var sample: com.alarmtalk.app.data.SamplePlayback? = null
                 mediaPlayer = player.apply {
                     setOnCompletionListener {
+                        // 끝까지 들었다(`sample_completed`). 멈추면 이 콜백이 오지 않는다.
+                        sample?.completed()
                         it.release()
                         if (mediaPlayer === it) mediaPlayer = null
                         if (playingGreetingVoiceId == voiceId) playingGreetingVoiceId = null
                     }
                     start()
                 }
+                sample = com.alarmtalk.app.data.SamplePlayback.start(context, voiceId, surface = "voices")
             }.onFailure { error ->
                 AlarmTalkLog.reportError(failureLog, error)
                 if (greetingPreviewRequestId == requestId) {
@@ -760,14 +766,17 @@ internal fun VoiceProfileManagementPanel(
                 return
             }
             playingGreetingVoiceId = profile.id
+            var sample: com.alarmtalk.app.data.SamplePlayback? = null
             mediaPlayer = player.apply {
                 setOnCompletionListener {
+                    sample?.completed()
                     it.release()
                     if (mediaPlayer === it) mediaPlayer = null
                     if (playingGreetingVoiceId == profile.id) playingGreetingVoiceId = null
                 }
                 start()
             }
+            sample = com.alarmtalk.app.data.SamplePlayback.start(context, profile.id, surface = "voices")
             return
         }
         playGreetingClip(profile.id, failureLog = "Failed to play greeting preview")
@@ -2125,6 +2134,7 @@ internal fun VoiceProfileManagementPanel(
                                 renameSubmitAttempted = false
                             },
                             onDelete = { deleteTarget = profile },
+                            onCreateAlarm = onCreateAlarmWithVoice?.let { create -> { create(profile.id) } },
                             readiness = readiness,
                             onRetryPrerender = { retryPrerender(profile.id) },
                             retryPrerenderBusy = profile.id in prerenderRetryBusyIds,
@@ -2141,7 +2151,7 @@ internal fun VoiceProfileManagementPanel(
         // 내 목소리가 하나도 없어도 이 섹션은 항상 나온다.
         if (systemVoices.isNotEmpty()) {
             // 기본 목소리 받기 진행은 **헤더 옆**에 둔다(2026-09-17 지시, iOS 와 같은 자리).
-            // 받는 동안 알람 설정이 막히므로(`AlarmTalkApp.whenDefaultVoicesReady`) 그 이유가
+            // 받는 동안 알람 설정이 막히므로(`AlarmTalkApp.whenAlarmVoiceReady`) 그 이유가
             // 섹션을 접어 둬도 보여야 한다 — 목록 아래에 두면 접었을 때 사라진다.
             val downloadProgress = voicePrefetchProgress
                 ?.takeIf { (done, total) -> total > 0 && done < total }

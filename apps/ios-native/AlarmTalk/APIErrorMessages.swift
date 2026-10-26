@@ -78,6 +78,15 @@ enum APIErrorMessages {
             return String(localized: "기본 목소리로는 이 문구를 만들 수 없어요. 준비된 문구를 고르거나 직접 입력해 주세요.")
         case "MANUAL_TTS_QUOTA_EXCEEDED":
             return String(localized: "이번 달 직접 입력 문구 만들기 횟수를 다 썼어요. 다음 달에 다시 채워져요.")
+        // 광고 시청 승인 세션(`docs/spec/ad-rewards.md` §3). 안드로이드 `ApiErrorMessages.kt` 와 같은 네 문장이다.
+        case "AD_REWARD_MONTHLY_LIMIT":
+            return String(localized: "이번 달 광고 보상을 다 받았어요. 다음 달 1일에 다시 받을 수 있어요.")
+        case "AD_REWARD_SESSION_OPEN":
+            return String(localized: "다른 기기에서 광고를 보고 있어요. 잠시 뒤 다시 시도해 주세요.")
+        case "AD_REWARD_SESSION_INVALID":
+            return String(localized: "광고 준비 시간이 지났어요. 다시 시도해 주세요.")
+        case "AD_REWARD_UNAVAILABLE":
+            return String(localized: "지금은 광고를 볼 수 없어요. 만들어 둔 음성과 기본 문구는 그대로 쓸 수 있어요.")
         // 같은 '음성 만들기' 가 아직 합성 중이다(같은 입력은 같은 `request_id`) — 잠시 뒤 다시 누르면 그 결과를 받는다.
         case "TTS_REQUEST_IN_PROGRESS":
             return String(localized: "아직 음성을 만들고 있어요. 잠시 뒤 다시 저장해 주세요.")
@@ -132,6 +141,20 @@ enum APIErrorMessages {
             return String(localized: "이미 사라진 알람이에요.")
         case "TTS_GENERATION_FAILED":
             return String(localized: "음성을 만들지 못했어요. 잠시 후 다시 시도해 주세요.")
+
+        // ── 아침 소식 ─────────────────────────────────────────────────────
+        // HTTP 로 오는 다섯이다(`docs/spec/morning-briefing.md` §8 「문구 표」). 응답 본문의 `errors[].code`
+        // (`BRIEFING_SOURCE_*`)는 화면의 표(`BriefingPresentation.sourceErrorMessage`)가 받는다. 안드로이드 짝과 같은 문장이다.
+        case "BRIEFING_NOT_CONFIGURED":
+            return String(localized: "아침 소식은 아직 준비 중이에요.")
+        case "BRIEFING_CORP_CODES_NOT_READY":
+            return String(localized: "기업 목록을 준비하고 있어요. 잠시 뒤에 다시 찾아 주세요.")
+        case "BRIEFING_INVALID_QUERY":
+            return String(localized: "기업 이름이나 종목코드를 30자 안으로 입력해 주세요.")
+        case "BRIEFING_INVALID_INTERESTS":
+            return String(localized: "관심 기업은 3곳까지 고를 수 있어요.")
+        case "BRIEFING_CORP_NOT_FOUND":
+            return String(localized: "찾을 수 없는 기업이 있어요. 다시 검색해 주세요.")
 
         default:
             return nil

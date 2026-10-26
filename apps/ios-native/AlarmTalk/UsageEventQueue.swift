@@ -15,6 +15,205 @@ enum UsageEventType: String, Codable {
     case manualMessageReleased = "manual_message_released"
     case voiceCreated = "voice_created"
     case voiceDeleted = "voice_deleted"
+
+    // ── 2판(`docs/spec/usage-events.md` §7). 서버는 처리방침 8판 동의 뒤의 사건만 2판으로 저장한다(§7.5). ──
+    /// 샘플(목소리 미리듣기)이 **실제로 재생을 시작**했다. 화면 노출이 아니다.
+    case sampleStarted = "sample_started"
+    /// 샘플이 **끝까지** 재생됐다. 중간에 멈추면 적지 않는다.
+    case sampleCompleted = "sample_completed"
+    case onboardingStep = "onboarding_step"
+    /// 로그인 결과. 계정이 생긴 **뒤**에만 적힌다 — 가입 전 수집은 하지 않는다(§7.4).
+    case authResult = "auth_result"
+    /// 편집기에서 목소리를 **골랐다**(미리 골라 둔 값은 아니다).
+    case voiceSelected = "voice_selected"
+    /// 음성 준비 — **작업 소유자(`StockClipPrefetcher`) 한 곳에서만** 적는다(§7.3).
+    case voicePreparationStarted = "voice_preparation_started"
+    case voicePreparationReady = "voice_preparation_ready"
+    case voicePreparationFailed = "voice_preparation_failed"
+    /// 저장을 눌렀다 / 요청 전에 막혔다 / AlarmKit 예약과 오디오 파일이 **둘 다** 갖춰졌다.
+    /// ⚠ `alarmCreated` 는 '행이 생겼다' 이고 저장 시도가 아니다.
+    case alarmSaveAttempt = "alarm_save_attempt"
+    case alarmSaveBlocked = "alarm_save_blocked"
+    case alarmReady = "alarm_ready"
+    case manualResultReused = "manual_result_reused"
+    case generationOutcome = "generation_outcome"
+    /// 광고 보상 — iOS 에는 아직 광고 보상 흐름이 없다(안드로이드만). 계약을 맞춰 둘 뿐 심은 곳이 없다.
+    case rewardOffer = "reward_offer"
+    case rewardViewStarted = "reward_view_started"
+    case rewardPending = "reward_pending"
+    case rewardGranted = "reward_granted"
+    case rewardSpent = "reward_spent"
+    /// 콘텐츠·소식 — 스키마만. 그 기능 PR 이 심는다. 관심기업·기사 원문을 싣지 않는다.
+    case contentSelected = "content_selected"
+    case datedAlarmSaved = "dated_alarm_saved"
+    case packSelected = "pack_selected"
+    case briefingOpened = "briefing_opened"
+    case sourceOpened = "source_opened"
+    case briefingAudioRequested = "briefing_audio_requested"
+    case paywallViewed = "paywall_viewed"
+    case storePurchaseVerified = "store_purchase_verified"
+    case entitlementChanged = "entitlement_changed"
+}
+
+/// 2판 기록의 **정해진 칸**(`UsageEventPropsSchema` 와 한 쌍 — 칸 이름이 곧 키다). 전부 비어 있을 수 있다.
+///
+/// ⚠ **문구 원문·이름·이메일·기사 원문을 넣을 칸은 없다.** 코드 칸은 영문 소문자 코드만 받는다 — [sanitized] 가
+/// 모양을 맞추고, 맞출 수 없으면 비운다. 서버는 모양이 틀린 칸 하나로 **배치째 400** 을 주고, 그러면 큐의 맨 앞
+/// 배치가 영영 못 올라간다(성공한 배치만 지우므로). 그래서 적는 순간에 다듬는다.
+struct UsageEventProps: Codable, Equatable, Sendable {
+    enum Scope: String, Codable, Sendable {
+        case selectedVoice = "selected_voice"
+        case allVoices = "all_voices"
+        case bucket
+        case clip
+    }
+
+    enum CacheState: String, Codable, Sendable { case cold, partial, warm }
+    enum Outcome: String, Codable, Sendable { case success, failure, cancelled }
+    enum ReuseLocation: String, Codable, Sendable { case local, server }
+    enum ChargedSource: String, Codable, Sendable { case base, ad, none }
+    enum ContentMode: String, Codable, Sendable { case fixed, varied }
+    enum StoreOffer: String, Codable, Sendable {
+        case freeTrial = "free_trial"
+        case intro, none, unknown
+    }
+
+    var scope: Scope?
+    var language: String?
+    var revision: String?
+    var cacheState: CacheState?
+    var targetCount: Int?
+    var completedCount: Int?
+    var bytes: Int?
+    /// **단조 시계**(`ContinuousClock`)로 잰 밀리초. 벽시계 차이가 아니다.
+    var durationMs: Int?
+    var errorCode: String?
+    var outcome: Outcome?
+    var reason: String?
+    var method: String?
+    var step: String?
+    var packID: String?
+    var isFirst: Bool?
+    var prepared: Bool?
+    var reuseLocation: ReuseLocation?
+    var chargedSource: ChargedSource?
+    var usageMonth: String?
+    var resultID: String?
+    var requestID: String?
+    var charCount: Int?
+    var contentMode: ContentMode?
+    var surface: String?
+    var productID: String?
+    var storeOffer: StoreOffer?
+    var fromPlan: String?
+    var toPlan: String?
+
+    enum CodingKeys: String, CodingKey {
+        case scope, language, revision, bytes, outcome, reason, method, step, prepared, surface
+        case cacheState = "cache_state"
+        case targetCount = "target_count"
+        case completedCount = "completed_count"
+        case durationMs = "duration_ms"
+        case errorCode = "error_code"
+        case packID = "pack_id"
+        case isFirst = "is_first"
+        case reuseLocation = "reuse_location"
+        case chargedSource = "charged_source"
+        case usageMonth = "usage_month"
+        case resultID = "result_id"
+        case requestID = "request_id"
+        case charCount = "char_count"
+        case contentMode = "content_mode"
+        case productID = "product_id"
+        case storeOffer = "store_offer"
+        case fromPlan = "from_plan"
+        case toPlan = "to_plan"
+    }
+
+    /// 서버 스키마의 모양·범위에 맞춘 사본. 코드는 소문자로 바꾸고 허용 밖 글자를 `_` 로 바꾸며, 맞출 수 없는 값은 비운다.
+    func sanitized() -> UsageEventProps {
+        var copy = self
+        copy.language = language.flatMap { Self.matches($0, #"^[a-z]{2}(-[A-Z]{2})?$"#) ? $0 : nil }
+        copy.revision = revision.flatMap(Self.code)
+        copy.errorCode = errorCode.flatMap(Self.code)
+        copy.reason = reason.flatMap(Self.code)
+        copy.method = method.flatMap(Self.code)
+        copy.step = step.flatMap(Self.code)
+        copy.packID = packID.flatMap(Self.code)
+        copy.surface = surface.flatMap(Self.code)
+        copy.fromPlan = fromPlan.flatMap(Self.code)
+        copy.toPlan = toPlan.flatMap(Self.code)
+        copy.productID = productID.flatMap { Self.matches($0, #"^[A-Za-z0-9][A-Za-z0-9_.-]{0,99}$"#) ? $0 : nil }
+        copy.usageMonth = usageMonth.flatMap { Self.matches($0, #"^\d{4}-(0[1-9]|1[0-2])$"#) ? $0 : nil }
+        copy.resultID = resultID.flatMap(Self.uuid)
+        copy.requestID = requestID.flatMap(Self.uuid)
+        copy.targetCount = targetCount.map { Self.clamp($0, 100_000) }
+        copy.completedCount = completedCount.map { Self.clamp($0, 100_000) }
+        copy.bytes = bytes.map { Self.clamp($0, 10_000_000_000) }
+        copy.durationMs = durationMs.map { Self.clamp($0, 7 * 24 * 3_600_000) }
+        copy.charCount = charCount.map { Self.clamp($0, 10_000) }
+        return copy
+    }
+
+    /// 영문 소문자 코드(`^[a-z0-9][a-z0-9_.-]{0,63}$`)로 다듬는다. 앞 글자가 맞지 않거나 비면 nil.
+    static func code(_ raw: String) -> String? {
+        let allowed = Set("abcdefghijklmnopqrstuvwxyz0123456789_.-")
+        let mapped = String(raw.lowercased().map { allowed.contains($0) ? $0 : "_" }.prefix(64))
+        guard let first = mapped.first, first.isASCII, first.isLetter || first.isNumber else { return nil }
+        return mapped
+    }
+
+    /// 서버 `z.string().uuid()` 가 받는 꼴만(버전 1~8, 변형 8·9·a·b).
+    static func uuid(_ raw: String) -> String? {
+        matches(raw, #"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"#) ? raw : nil
+    }
+
+    private static func clamp(_ value: Int, _ upper: Int) -> Int { min(max(value, 0), upper) }
+
+    private static func matches(_ value: String, _ pattern: String) -> Bool {
+        value.range(of: pattern, options: .regularExpression) != nil
+    }
+}
+
+/// 2판 공통 값.
+enum UsageEventContract {
+    static let schemaVersion = 2
+
+    /// **적는 순간의** 앱 빌드 번호(`CFBundleVersion`). 서버 모양에 안 맞으면 비운다.
+    static let appVersion: String? = {
+        guard let raw = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String else { return nil }
+        return version(raw)
+    }()
+
+    /// 서버의 버전 칸 모양(`^[0-9A-Za-z][0-9A-Za-z._-]{0,31}$`).
+    static func version(_ raw: String) -> String? {
+        raw.range(of: #"^[0-9A-Za-z][0-9A-Za-z._-]{0,31}$"#, options: .regularExpression) != nil ? raw : nil
+    }
+
+    /// 실패를 **제한된 코드**로 — 서버 `error_code` 는 소문자로, 그 밖은 몇 가지 고정 코드로만. 오류 문장은 싣지 않는다.
+    static func errorCode(for error: Error) -> String {
+        if let apiError = error as? APIError {
+            switch apiError {
+            case .server(let status, _, let code):
+                return code.flatMap(UsageEventProps.code) ?? "http_\(String(status))"
+            case .invalidResponse:
+                return "invalid_response"
+            }
+        }
+        if error is URLError { return "network" }
+        if error is CancellationError { return "cancelled" }
+        return "unknown"
+    }
+
+    /// 한 시도를 묶는 UUID(시작·완료·실패가 같은 값을 쓴다).
+    static func newAttemptID() -> String { UUID().uuidString }
+
+    /// 단조 시계로 잰 경과(밀리초) — 잠든 사이에도 흐르는 `ContinuousClock`.
+    static func elapsedMs(since start: ContinuousClock.Instant, now: ContinuousClock.Instant = .now) -> Int {
+        let elapsed = now - start
+        let ms = Double(elapsed.components.seconds) * 1000 + Double(elapsed.components.attoseconds) / 1e15
+        return max(0, Int(ms))
+    }
 }
 
 /// 아직 못 보낸 사용 기록 한 건.
@@ -33,6 +232,13 @@ struct QueuedUsageEvent: Codable, Identifiable, Equatable {
     var detail: String?
     /// 어느 계정에서 남겼는가. 계정이 바뀌면 남은 큐를 새 주인 이름으로 보내지 않는다.
     var userID: String?
+    // ── 2판 공통 필드. 옛 큐 파일에는 이 키가 없다 — 비어 디코드되어 1판으로 올라간다. ──
+    var schemaVersion: Int?
+    /// **적는 순간의** 빌드 번호. 큐는 업데이트를 건너 남으므로 보내는 앱의 버전과 다를 수 있다.
+    var appVersion: String?
+    var featureVersion: String?
+    var attemptID: String?
+    var props: UsageEventProps?
 }
 
 /// 사용 기록을 **파일에 쌓아 두는** 큐. 보내는 일은 `UsageEventUploader` 가 한다.
@@ -81,6 +287,9 @@ final class UsageEventQueue: @unchecked Sendable {
         voiceProfileID: String? = nil,
         messageID: String? = nil,
         detail: String? = nil,
+        attemptID: String? = nil,
+        featureVersion: String? = nil,
+        props: UsageEventProps? = nil,
         userID: String? = nil,
         occurredAt: Date = Date(),
         /// **파일에 적힌 뒤**에 부른다(실패하면 부르지 않는다). 큐 스레드에서 온다.
@@ -90,6 +299,9 @@ final class UsageEventQueue: @unchecked Sendable {
         onPersisted: (@Sendable () -> Void)? = nil
     ) {
         let trimmedDetail = detail.map { String($0.prefix(120)) }
+        let cleanProps = props?.sanitized()
+        let cleanAttemptID = attemptID.flatMap(UsageEventProps.uuid)
+        let cleanFeatureVersion = featureVersion.flatMap(UsageEventContract.version)
         // 계정은 **적는 순간**에 정한다 — 파일 쓰기가 실제로 도는 시점이 아니라.
         // 큐 안에서 읽으면 그 틈에 로그아웃·로그인이 끼어들 때 A 의 사건이 B 의 이름으로
         // 저장된다(서버는 토큰의 주인으로 적으므로 되돌릴 수 없다).
@@ -112,7 +324,12 @@ final class UsageEventQueue: @unchecked Sendable {
                 voiceProfileID: voiceProfileID,
                 messageID: messageID,
                 detail: trimmedDetail,
-                userID: resolvedUserID
+                userID: resolvedUserID,
+                schemaVersion: UsageEventContract.schemaVersion,
+                appVersion: UsageEventContract.appVersion,
+                featureVersion: cleanFeatureVersion,
+                attemptID: cleanAttemptID,
+                props: cleanProps
             )
             var events = self.loadLocked()
             events.append(event)

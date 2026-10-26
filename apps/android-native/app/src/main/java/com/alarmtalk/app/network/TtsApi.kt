@@ -40,6 +40,12 @@ data class TtsGenerateResponse(
     @SerializedName("random_context") val randomContext: String? = null,
     @SerializedName("preview_playback_token") val previewPlaybackToken: String? = null,
     @SerializedName("preview_playback_confirmed") val previewPlaybackConfirmed: Boolean = false,
+    /** 서버가 내 기존 결과를 다시 준 것인가(세지 않는다). 옛 서버는 없다 — 그때는 null(모름). 사용 기록 전용. */
+    @SerializedName("cache_hit") val cacheHit: Boolean? = null,
+    /** 이번 요청을 무엇으로 셌나(`base`·`ad`·`none`). 옛 서버는 없다 — null 이면 기록에 비운다. */
+    @SerializedName("charged_source") val chargedSource: String? = null,
+    /** 기본 제공분에서 차감한 원래 사용월(KST `YYYY-MM`). 기본분이 아니거나 옛 서버면 null. 사용 기록 전용. */
+    @SerializedName("usage_month") val usageMonth: String? = null,
 )
 
 /** 직접 입력 문구 만들기 월 한도 사용 현황(선택기 '직접 입력 (남은/총)' 표시용). */
@@ -53,13 +59,19 @@ data class ManualQuotaResponse(
 )
 
 data class AdRewardStatus(
-    /** 지금 쓸 수 있는 보상(직접 입력 생성 한 번씩). */
+    /** 지금 쓸 수 있는 보상(직접 입력 생성 한 번씩). 계정 하나에 한 잔액이다(어느 앱에서 받았든). */
     val credits: Int = 0,
-    /** 이번 달 광고로 더 받을 수 있는 횟수. */
+    /** 이번 달 광고로 더 받을 수 있는 횟수(열린 예약을 뺀 값). */
     @SerializedName("remaining_grants") val remainingGrants: Int = 0,
     @SerializedName("monthly_limit") val monthlyLimit: Int = 0,
-    /** 광고의 서버 확인 콜백에 실을 계정 PK — 로그인 식별자(구글 sub)와 다를 수 있어 서버가 준다. */
-    @SerializedName("user_id") val userId: String = "",
+    /** 끝까지 봤는데 아직 서버 확인(SSV)이 오지 않은 광고 수 — '보상을 확인하고 있어요' 를 말한다. */
+    val pending: Int = 0,
+    /** 지금 새 광고를 볼 수 있는가(서버의 운영 스위치·이번 달 자리·열린 세션). 옛 서버면 false. */
+    @SerializedName("can_watch") val canWatch: Boolean = false,
+    /** 못 보면 왜인지 — `disabled`·`monthly_limit`·`session_open`. */
+    @SerializedName("unavailable_reason") val unavailableReason: String? = null,
+    /** 이번 달 상한이면 다음 자리가 생기는 시각(ISO-8601, 다음 달 1일 0시 KST). */
+    @SerializedName("next_grant_at") val nextGrantAt: String? = null,
 )
 
 data class TtsMessage(
@@ -148,6 +160,15 @@ data class StockClip(
      * true 로 읽는다. iOS 짝은 `StockClip.renderedForCurrentVoice`(같은 이유로 옵셔널).
      */
     @SerializedName("rendered_for_current_voice") val renderedForCurrentVoice: Boolean? = null,
+    /**
+     * 이 클립이 속한 **테마(버킷)** — 스펙 voice-and-message §5-4 「매니페스트 표지」. `cheer_v2` 카테고리는 테마 `cheer`
+     * 다. 옛 서버는 주지 않는다 — 그때는 카테고리가 테마다(`data.bucketTheme`). 셋 다 nullable 인 이유는 위와 같다(Gson).
+     */
+    val theme: String? = null,
+    /** 묶음 항목 ID(`cheer_v2_05`). 날씨·약·운세처럼 묶음이 없으면 null. */
+    @SerializedName("content_id") val contentId: String? = null,
+    /** 새로 고를 수 있는가 — 옛 응원(`cheer_v1`)만 false. 없으면(옛 서버) 고를 수 있다로 읽는다. */
+    val selectable: Boolean? = null,
 ) {
     /** 옛 서버(필드 없음)는 '준비됨' 으로 본다 — 없는 신호로 앱을 멈추지 않는다. */
     val isRendered: Boolean get() = renderedForCurrentVoice ?: true

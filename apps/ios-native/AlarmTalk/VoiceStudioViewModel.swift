@@ -162,6 +162,9 @@ final class VoiceStudioViewModel: ObservableObject {
     @Published private(set) var isRefreshing = false
 
     @Published var statusMessage: String?
+    /// 마지막 `generateTTS` 가 서버에서 받은 `error_code`(성공·코드 없음이면 nil). 편집기가 429 `MANUAL_TTS_QUOTA_EXCEEDED`
+    /// 뒤의 갈래(광고 제안·보상 확인 중·다음 제공일 — `docs/spec/ad-rewards.md` §1-1)를 고를 때 쓴다.
+    var lastGenerateErrorCode: String?
     @Published var preparedAlarm: PreparedAlarmTalk?
     /// 이번 달 목소리 쿼터. 조회 실패면 nil — 화면은 숫자를 감추고 평소대로 그린다
     /// (못 물어본 것이 버튼을 끄는 이유가 되면 안 된다). 서버 답을 싣는 곳은 [applyDraftQuota] 하나다.
@@ -384,6 +387,7 @@ final class VoiceStudioViewModel: ObservableObject {
                 return
             }
             previewingGreetingVoiceId = voiceId
+            trackSamplePlayback(voiceId: voiceId)
             return
         }
         guard let clip = greetingClip(voiceId: voiceId) else {
@@ -399,10 +403,28 @@ final class VoiceStudioViewModel: ObservableObject {
         if await prepareStockClip(clip, session: session) != nil {
             guard requestId == greetingPreviewRequestId, previewingGreetingVoiceId == voiceId else { return }
             playPreparedAudio(volumePercent: volumePercent)
+            if previewPlayer.isPlaying { trackSamplePlayback(voiceId: voiceId) }
         } else {
             if requestId == greetingPreviewRequestId {
                 previewingGreetingVoiceId = nil
             }
+        }
+    }
+
+    /// 샘플(목소리 미리듣기) 기록 — 재생이 **실제로 시작된 뒤**에 부른다(`docs/spec/usage-events.md` §7.1).
+    /// 시작을 적고, 끝까지 들었을 때만 같은 시도로 완료를 적는다(경과는 단조 시계). 멈추거나 다른 목소리로 넘어가면
+    /// 완료는 적히지 않는다. 계정이 없으면 큐가 적지 않는다 — 로그인 전 미리듣기(랜딩)는 여기를 지나지 않는다.
+    private func trackSamplePlayback(voiceId: String) {
+        let attemptID = UsageEventContract.newAttemptID()
+        let started = ContinuousClock.now
+        UsageEventQueue.shared.record(.sampleStarted, voiceProfileID: voiceId, attemptID: attemptID)
+        previewPlayer.onPlayedToEnd = {
+            UsageEventQueue.shared.record(
+                .sampleCompleted,
+                voiceProfileID: voiceId,
+                attemptID: attemptID,
+                props: UsageEventProps(durationMs: UsageEventContract.elapsedMs(since: started))
+            )
         }
     }
 
@@ -545,6 +567,8 @@ final class VoiceStudioViewModel: ObservableObject {
             return
         }
         activeUserID = userID
+        // 로그인 전 랜딩에서 고른 기본 목소리 — 이 계정이 아직 고른 적이 없을 때만 한 번 잇는다.
+        defaultVoiceStore.adoptLandingVoicePick(userID: userID)
         // 기본 목소리 호칭은 기기 클라 설정(유저별). 프로필 로드와 무관하게 바로 채운다.
         defaultListenerTitle = defaultVoiceStore.listenerTitle(userID: userID)
         // 읽기 전용이라 `isRefreshing` 만 본다 — 사용자의 쓰기 액션을 막지 않는다.
@@ -1151,7 +1175,10 @@ final class VoiceStudioViewModel: ObservableObject {
         guard !isBusy else { return nil }
         isBusy = true
         defer { isBusy = false }
+        lastGenerateErrorCode = nil
 
+        // 서버 답을 이미 적었는가 — 그 뒤(받은 소리를 폰에 두다가) 실패하면 생성 실패로 다시 적지 않는다(코덱스 #958).
+        var answerRecorded = false
         do {
             // ⚠ **번역은 없앴다**(2026-08-12). 직접 입력한 문구는 **그대로** 읽는다 —
             // 예전에는 앱 언어가 ko 가 아니면 서버가 옮겨 읽어서, 친 글자와 들리는 말이
@@ -1168,6 +1195,15 @@ final class VoiceStudioViewModel: ObservableObject {
             let requestListenerTitle = useListenerTitleOverride
                 ? (listenerTitleOverride).nilIfBlank
                 : selectedListenerTitle
+            // 직접 입력 제작 기록(`docs/spec/usage-events.md` §7.1) — 요청 id 와 글자 수만. 원문은 싣지 않는다.
+            if !randomPrompt {
+                manualGenerationTrack = ManualGenerationTrack(
+                    requestID: manualRequestIDFor(profileID: profileID, language: activeLanguage, text: trimmedText),
+                    voiceProfileID: profileID,
+                    charCount: trimmedText.count,
+                    ownerUserID: session?.user.id ?? KeychainStore.readSession()?.user.id
+                )
+            }
             let response = try await api.generateTTS(
                 TtsGenerateRequest(
                     voiceProfileId: profileID,
@@ -1195,6 +1231,8 @@ final class VoiceStudioViewModel: ObservableObject {
                 manualRequestKey = nil
                 manualRequestID = nil
             }
+            recordManualGenerationAnswer(response)
+            answerRecorded = true
             let cacheKey = AudioCacheStore.ttsCacheKey(
                 profileId: profileID,
                 text: response.text,
@@ -1221,10 +1259,107 @@ final class VoiceStudioViewModel: ObservableObject {
             await refresh(session: session, force: true)
             return prepared
         } catch {
+            if !answerRecorded { recordManualGenerationFailure(error) }
+            lastGenerateErrorCode = serverErrorCode(of: error)
             statusMessage = mapVoiceError(error)
             UINotificationFeedbackGenerator().notificationOccurred(.error)
             return nil
         }
+    }
+
+    /// 직접 입력 '음성 만들기' 한 번의 기록 재료. 서버가 답하면(또는 실패하면) 한 번 적고 비운다.
+    private struct ManualGenerationTrack {
+        let attemptID = UsageEventContract.newAttemptID()
+        let startedAt = ContinuousClock.now
+        let requestID: String
+        let voiceProfileID: String
+        let charCount: Int
+        /// 이 생성을 시작한 계정 — 응답을 기다리는 사이 계정이 바뀌어도 그 계정의 기록으로 남긴다(전송은 계정별이다, 코덱스 #958).
+        let ownerUserID: String?
+    }
+
+    private var manualGenerationTrack: ManualGenerationTrack?
+
+    /// 서버가 답했다 — 서버 재사용(`cache_hit`)이면 `manual_result_reused`(server, 차감 없음), 아니면 새 제작의
+    /// `generation_outcome`. 정산 수단은 **서버가 말한 값만** 싣는다(옛 서버면 비운다). 실제 원래 사용월은 응답에 없어
+    /// 비운다 — 기기에서 지어내지 않는다.
+    private func recordManualGenerationAnswer(_ response: TtsGenerateResponse) {
+        guard let track = manualGenerationTrack else { return }
+        manualGenerationTrack = nil
+        if response.cacheHit == true {
+            UsageEventQueue.shared.record(
+                .manualResultReused,
+                voiceProfileID: track.voiceProfileID,
+                messageID: response.messageId,
+                attemptID: track.attemptID,
+                featureVersion: "manual-1",
+                props: UsageEventProps(
+                    reuseLocation: .server,
+                    chargedSource: UsageEventProps.ChargedSource.none,
+                    resultID: response.messageId,
+                    requestID: track.requestID,
+                    charCount: track.charCount
+                ),
+                userID: track.ownerUserID
+            )
+            return
+        }
+        UsageEventQueue.shared.record(
+            .generationOutcome,
+            voiceProfileID: track.voiceProfileID,
+            messageID: response.messageId,
+            attemptID: track.attemptID,
+            featureVersion: "manual-1",
+            props: UsageEventProps(
+                durationMs: UsageEventContract.elapsedMs(since: track.startedAt),
+                outcome: .success,
+                chargedSource: response.chargedSource.flatMap(UsageEventProps.ChargedSource.init(rawValue:)),
+                usageMonth: response.usageMonth,
+                resultID: response.messageId,
+                requestID: track.requestID,
+                charCount: track.charCount
+            ),
+            userID: track.ownerUserID
+        )
+    }
+
+    /// 서버가 답하기 전에 실패했다(거절·연결 실패). 서버가 거절했으면 세지 않았다(`none` — 실패는 환불된다),
+    /// 연결이 끊겼으면 셌는지 모른다(비운다 — 같은 `request_id` 로 다시 보내면 서버가 두 번 세지 않는다).
+    private func recordManualGenerationFailure(_ error: Error) {
+        guard let track = manualGenerationTrack else { return }
+        manualGenerationTrack = nil
+        if Task.isCancelled || error is CancellationError { return }
+        UsageEventQueue.shared.record(
+            .generationOutcome,
+            voiceProfileID: track.voiceProfileID,
+            attemptID: track.attemptID,
+            featureVersion: "manual-1",
+            props: UsageEventProps(
+                durationMs: UsageEventContract.elapsedMs(since: track.startedAt),
+                errorCode: UsageEventContract.errorCode(for: error),
+                outcome: .failure,
+                chargedSource: error is APIError ? UsageEventProps.ChargedSource.none : nil,
+                requestID: track.requestID,
+                charCount: track.charCount
+            ),
+            userID: track.ownerUserID
+        )
+    }
+
+    /// 기기 캐시로 다시 썼다(`manual_result_reused` local) — 서버 호출도 차감도 없다. 편집기 저장 흐름이 부른다.
+    func recordManualLocalReuse(messageID: String?, textCount: Int) {
+        UsageEventQueue.shared.record(
+            .manualResultReused,
+            voiceProfileID: selectedProfileID,
+            messageID: messageID.flatMap(UsageEventProps.uuid),
+            featureVersion: "manual-1",
+            props: UsageEventProps(
+                reuseLocation: .local,
+                chargedSource: UsageEventProps.ChargedSource.none,
+                resultID: messageID,
+                charCount: textCount
+            )
+        )
     }
 
     /// 준비된(캐시된) 음원을 재생한다. 네트워크/생성 없이 로컬 캐시 파일만 재생한다.

@@ -65,8 +65,11 @@ class StockClipPrefetchRunBudgetTest {
 
     @Test
     fun theWorkerChecksTheBudgetBetweenBatches() {
-        val loop = runWork.indexOf("missing.chunked(PARALLELISM).withIndex()")
-        assertTrue("배치마다 몇 번째인지 센다", loop >= 0)
+        // 배치는 받을 순서를 배치마다 다시 세우며 하나씩 꺼낸다(`StockClipPrefetchPriority` — 알람마다 필요한 목소리부터).
+        val loop = runWork.indexOf("while (remaining.isNotEmpty())")
+        assertTrue("배치마다 몇 번째인지 센다", loop >= 0 && runWork.indexOf("batchIndex++", loop) > loop)
+        val reorder = runWork.indexOf("StockClipPrefetchPriority.order(", loop)
+        assertTrue("배치마다 순서를 다시 세운다", reorder > loop)
         val check = runWork.indexOf("mayStartNextClipBatch(batchIndex, runStartedAt, SystemClock.elapsedRealtime())")
         val firstRequest = runWork.indexOf("api.getTtsMessageAudio(")
         assertTrue("예산은 배치를 시작하기 **전에** 본다", check in loop until firstRequest)

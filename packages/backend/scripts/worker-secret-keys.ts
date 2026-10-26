@@ -31,6 +31,8 @@ export const WORKER_SECRET_KEYS = [
   'FIREBASE_SERVICE_ACCOUNT_JSON',
   'GOOGLE_PLAY_SERVICE_ACCOUNT_JSON',
   'ANDROID_PACKAGE_NAME',
+  // 관리자 콘솔 스토어 다운로드 — Play 통계 보고서 버킷(`gs://pubsite_prod_rev_…`). 비밀은 아니지만 같은 길로 올린다. 빈 값은 skip.
+  'PLAY_REPORTS_BUCKET',
   'GOOGLE_RTDN_VERIFICATION_TOKEN',
   'ADMIN_SECRET',
   // 관리자 콘솔 시험 발송의 기본 받는 사람(이메일) — 저장소가 공개라 코드에 두지 않는다. 빈 값은 skip.
@@ -57,17 +59,28 @@ export const WORKER_SECRET_KEYS = [
   'APPLE_ISSUER_ID',
   'APPLE_KEY_ID',
   'APPLE_PRIVATE_KEY',
+  //  5) 스토어 다운로드(App Store Connect API — 분석 보고서): ASC_API_* (+ APPLE_BUNDLE_ID 재사용). 위 셋과 다른 키다.
+  'ASC_API_ISSUER_ID',
+  'ASC_API_KEY_ID',
+  'ASC_API_PRIVATE_KEY',
   //  4) 푸시(APNs): APNS_KEY_ID + APNS_PRIVATE_KEY (+ APPLE_TEAM_ID 재사용)
   'APNS_KEY_ID',
   'APNS_PRIVATE_KEY',
   // AdMob 보상형 광고 단위(쉼표 구분) — 서버 확인 콜백(`routes/ads.ts`)이 이 단위만 적립한다. 비어 있으면 광고 보상이
   // 꺼진다(`docs/spec/ad-rewards.md`). 비밀은 아니지만 환경별로 달라 같은 길로 올린다(코덱스 #924).
   'ADMOB_REWARDED_AD_UNITS',
+  // 광고 **신규 시청** 스위치(`true` 면 켜짐). 비거나 다른 값이면 새 승인 세션을 만들지 않는다 — 이미 승인한 시청의 정산은
+  // 그대로다(`lib/ad-reward-sessions.ts` `adRewardViewingEnabled`). 운영 연결 전까지 비워 둔다.
+  'ADMOB_REWARDED_ADS_ENABLED',
   // Perso(랜딩 이벤트 메시지 클립). 비어 있으면 그 라우트만 503.
   'PERSO_API_KEY',
   // 기간 한정 개인 플랜의 **시작 스위치**(ISO 8601, 시간대 포함). 없으면 프로모는 꺼져 있다.
   // `docs/spec/billing-lifecycle.md` 「기간 한정 개인 플랜」.
   'PERSONAL_PROMO_STARTS_AT',
+  // 합성 예산(`lib/tts-budget.ts`) — 운영자가 정하는 숫자. 비어 있으면 대량 작업은 dry-run, 공급자 잔여는 조회하지 않는다.
+  'TTS_RERENDER_BATCH_MAX_CHARS',
+  'TTS_RERENDER_CONCURRENCY',
+  'TTS_PROVIDER_REMAINING_ALERT_CHARS',
 ] as const;
 
 /**
@@ -77,8 +90,10 @@ export const WORKER_SECRET_KEYS = [
  *   `@alarmtalk/shared` 의 `PERSONAL_PROMO.endsAt` 하나다. 운영에 리허설 값이 올라가면
  *   프로모가 조용히 조기 종료·연장된다(워커도 production 에서는 이 값을 읽지 않는다 —
  *   `lib/personal-promo.ts` — 이중 잠금이다).
+ * - `TTS_DEV_MONTHLY_CHAR_BUDGET` — dev 의 월 합성 글자 상한. 운영 요청을 이 숫자로 막지 않는다(워커도 production 에서는
+ *   읽지 않는다 — `lib/tts-budget.ts`).
  */
-export const DEV_ONLY_SECRET_KEYS = ['PERSONAL_PROMO_ENDS_AT'] as const;
+export const DEV_ONLY_SECRET_KEYS = ['PERSONAL_PROMO_ENDS_AT', 'TTS_DEV_MONTHLY_CHAR_BUDGET'] as const;
 
 export const REQUIRED_SECRET_KEYS = [
   'TURSO_DATABASE_URL',

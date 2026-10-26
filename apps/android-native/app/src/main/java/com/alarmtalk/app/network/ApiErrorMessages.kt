@@ -55,6 +55,11 @@ private val API_ERROR_MESSAGES: Map<String, Int> = mapOf(
     "FREE_PLAN_PRESET_ONLY" to R.string.msg_voice_preset_only,
     "BASIC_VOICE_PRESET_ONLY" to R.string.msg_voice_preset_only,
     "MANUAL_TTS_QUOTA_EXCEEDED" to R.string.editor_error_manual_tts_quota,
+    // 광고 시청 승인 세션(`docs/spec/ad-rewards.md` §3). iOS `APIErrorMessages.swift` 와 같은 네 문장이다.
+    "AD_REWARD_MONTHLY_LIMIT" to R.string.api_error_ad_reward_monthly_limit,
+    "AD_REWARD_SESSION_OPEN" to R.string.api_error_ad_reward_session_open,
+    "AD_REWARD_SESSION_INVALID" to R.string.api_error_ad_reward_session_invalid,
+    "AD_REWARD_UNAVAILABLE" to R.string.api_error_ad_reward_unavailable,
     // 같은 '음성 만들기' 가 아직 합성 중이다(`ManualRequestIds` — 같은 입력은 같은 id) — 잠시 뒤 다시 누르면 그 결과를 받는다.
     "TTS_REQUEST_IN_PROGRESS" to R.string.editor_error_tts_request_in_progress,
     // ⚠ **막는 쪽은 언제나 '다른 스토어' 다**(코덱스 #733 8차). 서버의 배타성 판정은
@@ -91,6 +96,15 @@ private val API_ERROR_MESSAGES: Map<String, Int> = mapOf(
     // ── 알람·문구 ─────────────────────────────────────────────────────────
     "ALARM_NOT_FOUND" to R.string.api_error_alarm_not_found,
     "TTS_GENERATION_FAILED" to R.string.api_error_tts_generation_failed,
+
+    // ── 아침 소식 ─────────────────────────────────────────────────────────
+    // HTTP 로 오는 다섯이다(`docs/spec/morning-briefing.md` §8 「문구 표」). 응답 본문의 `errors[].code`
+    // (`BRIEFING_SOURCE_*`)는 화면의 표(`BriefingPresentation.sourceErrorMessageRes`)가 받는다. iOS 짝과 같은 문장이다.
+    "BRIEFING_NOT_CONFIGURED" to R.string.briefing_not_configured,
+    "BRIEFING_CORP_CODES_NOT_READY" to R.string.api_error_briefing_corp_codes_not_ready,
+    "BRIEFING_INVALID_QUERY" to R.string.api_error_briefing_invalid_query,
+    "BRIEFING_INVALID_INTERESTS" to R.string.api_error_briefing_invalid_interests,
+    "BRIEFING_CORP_NOT_FOUND" to R.string.api_error_briefing_corp_not_found,
 )
 
 /** 이 코드에 정해 둔 문구가 있으면 돌려준다. 없으면 null — 부르는 쪽이 폴백을 쓴다. */

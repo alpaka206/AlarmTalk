@@ -5,6 +5,7 @@ import { authRateLimitMiddleware } from '../middleware/rateLimit';
 import { jsonError } from '../lib/api-error';
 import { countAudience, parseAudience } from '../lib/admin/audience';
 import { listPushJobs, loadOverview, parseRange, searchUsers } from '../lib/admin/metrics';
+import { loadStoreDownloads } from '../lib/admin/store-downloads';
 import { renderLogin, renderOverview, renderPush, renderUsers } from '../lib/admin/pages';
 import {
   AdminPushError,
@@ -18,6 +19,11 @@ import {
 import { emptyState, newNonce, page, securityHeaders } from '../lib/admin/ui';
 import { renderGrantConfirm, renderUserDetail } from '../lib/admin/grant-pages';
 import { loadUserDetail } from '../lib/admin/user-detail';
+import { loadRenderBacklog, loadTtsUsage } from '../lib/admin/tts-ops';
+import { isRerenderKind } from '../lib/render-backlog';
+import { loadAdRewardReconciliation, loadUserAdRewards } from '../lib/admin/ad-rewards';
+import { loadUsageMetrics, parseUsageFilter } from '../lib/admin/usage-metrics';
+import { renderUsage } from '../lib/admin/usage-pages';
 import {
   createPlanGrant,
   grantEndFor,
@@ -211,7 +217,7 @@ function html(c: Context<AppEnv>, render: (nonce: string) => string, status: 200
 }
 
 /** 표가 아직 없는 창(배포 → 마이그레이션, 1분 남짓)과 DB 오류를 같은 화면으로 말한다. */
-function unavailable(nonce: string, err: unknown, active: 'overview' | 'users' | 'push'): string {
+function unavailable(nonce: string, err: unknown, active: 'overview' | 'usage' | 'users' | 'push'): string {
   const missing = /no such table|no such column/i.test(String(err));
   return page({
     title: '잠시 뒤 다시',
@@ -228,11 +234,65 @@ function unavailable(nonce: string, err: unknown, active: 'overview' | 'users' |
 admin.get('/', async (c) => {
   const nowMs = Date.now();
   try {
-    const overview = await loadOverview(getDB(c.env), parseRange(c.req.query('range')), nowMs);
-    return html(c, (nonce) => renderOverview(nonce, overview, nowMs));
+    const db = getDB(c.env);
+    // 스토어 숫자는 따로 읽는다 — 그 표가 아직 없는 창(마이그레이션 #138 전)이어도 개요의 나머지는 그린다.
+    const [overview, store] = await Promise.all([
+      loadOverview(db, parseRange(c.req.query('range')), nowMs),
+      loadStoreDownloads(db, c.env).catch((err: unknown) => {
+        console.error('[admin] store downloads failed', err);
+        return null;
+      }),
+    ]);
+    return html(c, (nonce) => renderOverview(nonce, overview, nowMs, store));
   } catch (err) {
     console.error('[admin] overview failed', err);
     return html(c, (nonce) => unavailable(nonce, err, 'overview'), 500);
+  }
+});
+
+// --- 합성 운영(JSON — `docs/spec/tts-render-and-budget.md` §4·§5). 읽기만 한다. ---
+
+/** 다시 구울 목록과 예상 글자. `?kind=` 를 주면 그 종류의 대상 한 쪽(`limit` ≤100·`offset`), `?legacy=1` 은 지문 이전 행도. */
+admin.get('/tts/render-backlog', async (c) => {
+  const kind = c.req.query('kind');
+  if (kind !== undefined && !isRerenderKind(kind)) {
+    return jsonError(c, 400, 'INVALID_REQUEST', 'kind must be one of system_stock, clone_prerender, manual, other.');
+  }
+  try {
+    const body = await loadRenderBacklog(getDB(c.env), c.env, {
+      kind: kind ?? null,
+      includeLegacy: c.req.query('legacy') === '1',
+      limit: Number(c.req.query('limit') ?? 50),
+      offset: Number(c.req.query('offset') ?? 0),
+    });
+    return c.json(body);
+  } catch (err) {
+    console.error('[admin] render backlog failed', err);
+    return jsonError(c, 500, 'INTERNAL_ERROR', 'Could not read the render backlog.');
+  }
+});
+
+/** 요청 종류별 합성 사용량·예산 설정·클론 슬롯. `?days=`(1~100, 기본 31), `?provider=1` 이면 공급자 잔여도 조회한다. */
+admin.get('/tts/usage', async (c) => {
+  try {
+    const body = await loadTtsUsage(getDB(c.env), c.env, {
+      days: Number(c.req.query('days') ?? 31),
+      provider: c.req.query('provider') === '1',
+    });
+    return c.json(body);
+  } catch (err) {
+    console.error('[admin] tts usage failed', err);
+    return jsonError(c, 500, 'INTERNAL_ERROR', 'Could not read the synthesis usage.');
+  }
+});
+
+admin.get('/usage', async (c) => {
+  try {
+    const metrics = await loadUsageMetrics(getDB(c.env), parseUsageFilter((key) => c.req.query(key)));
+    return html(c, (nonce) => renderUsage(nonce, metrics));
+  } catch (err) {
+    console.error('[admin] usage failed', err);
+    return html(c, (nonce) => unavailable(nonce, err, 'usage'), 500);
   }
 });
 
@@ -290,6 +350,28 @@ admin.get('/users/:id', async (c) => {
   } catch (err) {
     console.error('[admin] user detail failed', err);
     return html(c, (nonce) => unavailable(nonce, err, 'users'), 500);
+  }
+});
+
+// --- 광고 보상 대조 (읽기 전용 JSON — `docs/spec/ad-rewards.md` §7) ---
+// 장기 미확정 승인 세션·정산 못 한 콜백을 모으고, 한 사람의 승인·콜백·거래·잔액을 나란히 둔다. ⚠ 쓰기(고객 보상 지급·
+// 재정산)는 없다 — 후속이다. 붙일 때는 같은 승인 id 에 묶어 이중 적립을 막고 사유·감사 이력을 남긴다.
+admin.get('/ad-rewards.json', async (c) => {
+  try {
+    return c.json(await loadAdRewardReconciliation(getDB(c.env), new Date()));
+  } catch (err) {
+    console.error('[admin] ad rewards failed', err);
+    return jsonError(c, 500, 'INTERNAL_ERROR', '광고 보상 기록을 읽지 못했어요.');
+  }
+});
+
+admin.get('/users/:id/ad-rewards.json', async (c) => {
+  const userId = c.req.param('id').slice(0, 128);
+  try {
+    return c.json(await loadUserAdRewards(getDB(c.env), userId, new Date()));
+  } catch (err) {
+    console.error('[admin] user ad rewards failed', err);
+    return jsonError(c, 500, 'INTERNAL_ERROR', '광고 보상 기록을 읽지 못했어요.');
   }
 });
 

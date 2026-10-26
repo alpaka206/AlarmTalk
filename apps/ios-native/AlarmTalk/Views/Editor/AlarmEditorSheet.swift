@@ -70,10 +70,17 @@ struct AlarmEditorSheet: View {
     @State var validationAlert: ValidationAlertContent?
     @State var duplicateAlarmConfirm: DuplicateAlarmConfirmContent?
     @State var isWorking = false
+    /// 지금 저장 시도의 id — `alarm_save_attempt`·`alarm_save_blocked`·`alarm_ready` 가 같은 값을 쓴다
+    /// (`docs/spec/usage-events.md` §7.1). 같은 시각 교체 확인을 거쳐 `finishScheduling` 으로 다시 들어와도 잇는다.
+    @State var saveAttemptID: String?
     /// 이번 달 직접 입력 여유. **유료일 때만** 조회한다(무료에게 숫자를 보이면
     /// 이용권만 있으면 이미 다 쓴 것처럼 읽혀 거짓말이 된다).
     @State var manualQuota: ManualQuotaResponse?
+    /// 목소리 탭에서 넘겨받은 목소리(`target.preferredVoiceID`)를 이미 적용했거나 사용자가 직접 골랐는가.
+    @State var didApplyPreferredVoice = false
     @State var voiceGateAlert: VoiceGateAlertContent?
+    /// 광고를 띄우고 보상을 확인하는 동안 — 그 사이 광고를 겹쳐 띄우지 않는다.
+    @State var adRewardBusy = false
     /// 기본(시스템) 목소리로 바꾸면 직접 입력 문구를 쓸 수 없어 편집기가 문구를 비운다.
     /// 조용히 지우면 '문구가 사라졌다' 가 되므로 한 번 확인받는다
     /// (안드로이드 `VoiceAudioCard.kt:166-173` 의 `pendingVoiceSwitch`).
@@ -181,6 +188,8 @@ struct AlarmEditorSheet: View {
         /// (코드 입력 액션은 2026-10-14 에 없앴다 — `VoicePlanGateAlert` 주석.)
         let offersPlanActions: Bool
         var offersVoiceRegistration: Bool = false
+        /// '광고 보고 한 번 쓰기' 를 붙이는가 — 새로 만들 자리가 없는 무료 저장(429)이 연 게이트만(`AdRewardGate.route`).
+        var offersRewardedAd: Bool = false
     }
 
     /// 같은 시각 알람 교체 확인 모달의 내용. merged/existing 은 동의 시 저장을 마무리하는 데 쓴다.
@@ -412,7 +421,9 @@ struct AlarmEditorSheet: View {
                 //   고치지 않아도 나타난다(`availableFreeBuckets` 가 매니페스트와 교차한다).
                 availableContexts: usesStockClips
                     ? availableFreeBuckets.compactMap { RandomPromptContext.forBucket($0.rawValue)?.rawValue }
-                    : MessageSettingsPane.allContextIDs,
+                    // 기상 인사(`wake`)는 기본 목소리 전용 클립이다 — 클론의 같은 자리는 '기본 인사말'(preset)이다
+                    // (스펙 voice-and-message §5-4, 안드로이드 `AlarmEditorScreen` 의 `WakeMessageContext` 제외와 같다).
+                    : MessageSettingsPane.allContextIDs.filter { $0 != RandomPromptContext.wake.rawValue },
                 // ⚠ **직접 입력을 잠그지 않는다**(2026-10-26). 무료도 기본 목소리로 월 3회 만든다 — 입력·편집은 막지 않고,
                 // 새로 만들어야 할 때 서버가 429 로 막으면 저장 흐름이 그때 말한다(`voice-and-message.md` §8).
                 manualLocked: false,
@@ -420,7 +431,16 @@ struct AlarmEditorSheet: View {
                 // 고르던 화면 밖으로 튕기면 안 된다 — 알럿은 편집기(스택 루트)에 붙어
                 // 있어 밀어 올린 이 화면 위에 그대로 뜬다.
                 onManualLocked: { showVoicePlanLockedAlert() },
-                onSave: applyMessageSettings
+                onSave: applyMessageSettings,
+                // 응원의 다양하게 / 이 문구로 고정(스펙 voice-and-message §5-4). 고정 목록은 이 목소리·언어로 매니페스트에
+                // 있는 새 응원뿐이다 — 하나도 없으면(공개 전·보충 전) 카드를 그리지 않는다.
+                cheerMode: draft.cheerMode,
+                cheerPinnedContentId: draft.cheerPinnedContentId,
+                cheerPhrases: cheerPhrases,
+                onCheerSettingsChange: { mode, pinned in
+                    draft.cheerMode = mode
+                    draft.cheerPinnedContentId = pinned
+                }
             )
             // ⚠ **밀어 올린 화면에도 게이트를 붙인다**(2026-08-17 실측). SwiftUI 의
             // `.alert` 는 **지금 보이는 뷰**에 붙어 있어야 뜬다 — 편집기(스택 루트)에만
@@ -474,7 +494,8 @@ struct AlarmEditorSheet: View {
         .voicePlanGateAlert(
             content: $voiceGateAlert,
             onOpenBilling: { onRequestBilling?() },
-            onOpenVoices: onJumpToVoices
+            onOpenVoices: onJumpToVoices,
+            onWatchRewardedAd: { Task { await watchRewardedAd() } }
         )
         // ⚠ **게이트에 코드 입력 시트(`RedeemCodeSheet`)를 되살리지 말 것**(2026-10-14, App Store 지침
         // 3.1.1 두 번째 반려 — 선물 코드 폐지). 할인·무료 이용은 스토어 오퍼 코드로 준다.
@@ -705,6 +726,111 @@ struct AlarmEditorSheet: View {
         } else {
             VoiceOutputSettingsPane(volumePercent: $draft.voiceVolumePercent)
         }
+    }
+
+    /// 서버가 새로 만들 자리가 없다고 했을 때(429 `MANUAL_TTS_QUOTA_EXCEEDED`)의 갈래 — `docs/spec/ad-rewards.md` §1-1 표.
+    /// 안드로이드 `AlarmEditorScreen` 의 같은 자리와 같은 판정(`AdRewardGate.route`)이다. 무언가를 띄웠으면 true.
+    /// ⚠ 본인 결과 재사용은 이미 지났다(폰 캐시 → 서버 `cache_hit`) — 여기서는 새 제작 자원만 본다.
+    func handleManualQuotaRefusal() async -> Bool {
+        guard voiceStudio.lastGenerateErrorCode == "MANUAL_TTS_QUOTA_EXCEEDED", planAccess == .free else { return false }
+        await refreshManualQuotaBeforeGenerate()
+        let adsAvailable = RewardedAds.shared.configured && auth.session != nil
+        switch AdRewardGate.route(
+            freeTier: true,
+            baseRemaining: manualQuota?.remaining,
+            adReward: manualQuota?.adReward,
+            adsConfigured: adsAvailable
+        ) {
+        case .offerAd:
+            // 보상과 쓰는 범위를 먼저 말한다(§3 「흐름」 1).
+            voiceGateAlert = VoiceGateAlertContent(
+                title: String(localized: "이번 달 무료 만들기를 다 썼어요"),
+                message: String(localized: "광고를 끝까지 한 번 보면 기본 목소리로 직접 입력 문구를 한 번 더 만들 수 있어요. 받은 보상은 이 계정에서만 쓰여요. 플러스는 한 달에 30번 만들 수 있어요."),
+                offersPlanActions: true,
+                offersRewardedAd: true
+            )
+            return true
+        case .rewardPending:
+            validationAlert = ValidationAlertContent(
+                title: String(localized: "보상을 확인하고 있어요"),
+                message: String(localized: "광고 보상을 확인하는 데 시간이 걸리고 있어요. 확인되면 다시 저장할 때 광고 없이 만들 수 있어요. 이 창은 닫아도 돼요.")
+            )
+            return true
+        case .nextDate:
+            guard let date = AdRewardGate.formattedNextGrantDate(manualQuota?.adReward?.nextGrantAt) else { return false }
+            validationAlert = ValidationAlertContent(
+                title: String(localized: "이번 달 광고 보상을 다 받았어요"),
+                message: String(localized: "\(String(date))에 다시 받을 수 있어요. 만들어 둔 음성과 기본 문구는 그대로 쓸 수 있고, 플러스는 한 달에 30번 만들 수 있어요.")
+            )
+            return true
+        case .useBase, .useReward, .planRules:
+            // 그 사이 다른 기기가 바꿨다 — 기본 실패 알럿(한도 문구)으로 말한다. 다시 저장하면 된다.
+            return false
+        }
+    }
+
+    /// 보상형 광고 한 번(`docs/spec/ad-rewards.md` §3 「흐름」) — 안드로이드 `watchRewardedAd` 와 같다.
+    ///
+    /// ⚠ **몇 초 기다렸다고 실패·재시청을 요구하지 않는다.** 확인이 늦으면 '보상을 확인하고 있어요' 를 말하고 닫게 둔다 —
+    /// 서버는 그 세션을 정산 대기로 두고 늦은 콜백도 받는다. 다시 들어오면 현황(`ad_reward.pending`)이 같은 말을 한다.
+    /// ⚠ 광고를 봤다고 문장을 자동으로 만들지 않는다 — 보상은 사용자가 다시 저장할 때 한 번 쓴다.
+    func watchRewardedAd() async {
+        guard !adRewardBusy, RewardedAds.shared.configured, auth.session != nil else { return }
+        adRewardBusy = true
+        defer { adRewardBusy = false }
+        let creditsBefore = manualQuota?.adReward?.credits ?? 0
+        let authModel = auth
+        let flow = RewardedAdFlow<RewardedAdHandle>(
+            client: LiveAdRewardSessionClient(token: { @MainActor in authModel.session?.token }),
+            adUnit: RewardedAds.shared.adUnitID,
+            load: { userID, customData in
+                await RewardedAds.shared.load(ssvUserID: userID, ssvCustomData: customData)
+            },
+            show: { handle in await RewardedAds.shared.show(handle) },
+            errorCode: { ($0 as? APIError)?.serverErrorCode }
+        )
+        let result = await flow.watch()
+        switch result {
+        case .earned:
+            var credited = false
+            for _ in 0..<8 {
+                try? await Task.sleep(for: .seconds(1))
+                await refreshManualQuotaBeforeGenerate()
+                if (manualQuota?.adReward?.credits ?? 0) > creditsBefore {
+                    credited = true
+                    break
+                }
+            }
+            validationAlert = credited
+                ? ValidationAlertContent(
+                    title: String(localized: "광고 보상을 받았어요"),
+                    message: String(localized: "다시 저장하면 이 보상으로 한 번 만들어요.")
+                )
+                : ValidationAlertContent(
+                    title: String(localized: "보상을 확인하고 있어요"),
+                    message: String(localized: "광고 보상을 확인하는 데 시간이 걸리고 있어요. 확인되면 다시 저장할 때 광고 없이 만들 수 있어요. 이 창은 닫아도 돼요.")
+                )
+        case .dismissed:
+            break
+        case .noFill:
+            validationAlert = ValidationAlertContent(
+                title: String(localized: "지금은 광고를 볼 수 없어요"),
+                message: String(localized: "지금은 볼 수 있는 광고가 없어요. 만들어 둔 음성과 기본 문구는 그대로 쓸 수 있어요.")
+            )
+        case .refused(let code):
+            validationAlert = ValidationAlertContent(
+                title: String(localized: "지금은 광고를 볼 수 없어요"),
+                message: code.flatMap { APIErrorMessages.message(for: $0) }
+                    ?? String(localized: "광고를 불러오지 못했어요. 잠시 뒤 다시 시도해 주세요.")
+            )
+        case .unavailable:
+            validationAlert = ValidationAlertContent(
+                title: String(localized: "지금은 광고를 볼 수 없어요"),
+                message: String(localized: "광고를 불러오지 못했어요. 잠시 뒤 다시 시도해 주세요.")
+            )
+        }
+        // 무엇으로 끝났든 현황을 다시 읽는다 — 예약이 풀렸거나 대기가 생겼다.
+        await refreshManualQuotaBeforeGenerate()
     }
 
     /// 생성 요청 직전에 이번 달 직접 입력 현황을 **새로 받아 둔다**(화면 숫자용). ⚠ **막지 않는다**(2026-10-26 개정,
@@ -1108,6 +1234,17 @@ struct AlarmEditorSheet: View {
             preparationVoiceID = option.id
             return
         }
+        // 폰에 다 받지 못한 기본 목소리는 고르지 않고 준비 화면으로 간다 — 그 목소리를 **먼저** 받게 적는다. 고른 것은 다 받기
+        // 전까지 적용하지 않는다(지금 목소리가 그대로 남는다). `needsClipPreparation` 은 기본 목소리를 통과시킨다(서버 판정).
+        // 안드로이드 `systemVoiceStillDownloading` 짝(`docs/spec/voice-and-message.md` 「알람마다 필요한 목소리만 본다」).
+        if StockClipPrefetcher.isStillDownloading(voiceID: option.id) {
+            prefetcher.request(voiceID: option.id)
+            if !prefetcher.isRunning {
+                prefetcher.start(session: auth.session, ownedVoiceProfileIDs: voiceStudio.ownedVoiceProfileIDs)
+            }
+            preparationVoiceID = option.id
+            return
+        }
         // 기본 목소리로 바꾸면 편집기가 직접 입력 문구를 비운다(안드로이드 `selectVoiceProfile`) — 문구가 있으면 묻는다.
         if losesText {
             pendingVoiceSwitch = option
@@ -1117,6 +1254,8 @@ struct AlarmEditorSheet: View {
     }
 
     func applyVoiceSelection(_ option: VoiceSelectionSheet.Option) {
+        // 사용자가 직접 골랐다 — 목소리 탭에서 넘겨받은 목소리를 다시 덮어쓰지 않는다.
+        didApplyPreferredVoice = true
         commitVoiceSelection(option.id)
     }
 
@@ -1139,8 +1278,73 @@ struct AlarmEditorSheet: View {
             switchVoiceSource(to: .ttsProfile)
             adoptLastMessageChoiceIfUnset()
         }
+        let isFirstPick = DefaultVoicePreferenceStore().lastUsedVoiceId(userID: auth.session?.user.id) == nil
         voiceStudio.selectedProfileID = profileID
         voiceStudio.preparedAlarm = nil
+        recordVoiceSelected(profileID: profileID, isFirst: isFirstPick)
+    }
+
+    /// 목소리를 **고른** 순간(`voice_selected` — `docs/spec/usage-events.md` §7.1). 미리 골라 둔 값(편집기를 열 때의
+    /// 직전 선택)은 여기를 지나지 않는다. `is_first` = 이 계정이 알람에 목소리를 저장한 적이 없다. `prepared` = 그 목소리를
+    /// 지금 바로 쓸 수 있게 기기에 받아 두었나 — 기본 목소리는 선다운로드 전량, 내 목소리는 이 문구 종류의 클립 묶음.
+    func recordVoiceSelected(profileID: String, isFirst: Bool) {
+        let prepared: Bool = voiceStudio.isSystemVoiceProfile(id: profileID)
+            ? StockClipPrefetcher.defaultVoiceGate().ready
+            : !needsClipPreparation(
+                profileID: profileID,
+                randomPrompt: voiceStudio.randomPrompt,
+                randomContext: voiceStudio.randomContext
+            )
+        UsageEventQueue.shared.record(
+            .voiceSelected,
+            alarmID: editingAlarm?.id,
+            voiceProfileID: profileID,
+            props: UsageEventProps(isFirst: isFirst, prepared: prepared, surface: "editor"),
+            userID: auth.session?.user.id
+        )
+    }
+
+    /// 저장을 눌렀다 — 새 시도를 연다(`alarm_save_attempt`).
+    func beginSaveAttempt() {
+        let attemptID = UsageEventContract.newAttemptID()
+        saveAttemptID = attemptID
+        UsageEventQueue.shared.record(
+            .alarmSaveAttempt,
+            alarmID: editingAlarm?.id,
+            attemptID: attemptID,
+            userID: auth.session?.user.id
+        )
+    }
+
+    /// 저장이 **요청 전에** 막혔다(`alarm_save_blocked`). 사유는 안드로이드 `SaveBlockReason` 이름을 소문자로 —
+    /// 그 짝이 없는 iOS 갈래만 iOS 이름이다(`alarm_permission_missing`·`voice_plan_locked`·`invalid_draft`·
+    /// `bucket_clip_unavailable`).
+    func recordSaveBlocked(_ reason: String) {
+        UsageEventQueue.shared.record(
+            .alarmSaveBlocked,
+            alarmID: editingAlarm?.id,
+            attemptID: saveAttemptID,
+            props: UsageEventProps(reason: reason),
+            userID: auth.session?.user.id
+        )
+    }
+
+    /// AlarmKit 예약과 오디오 파일이 **둘 다** 갖춰졌다(`alarm_ready`). 음성 알람인데 파일이 없으면 적지 않는다 —
+    /// 알람음만 울리는 알람은 준비 완료가 아니다.
+    func recordAlarmReadyIfComplete(_ record: LocalAlarmRecord) {
+        if record.playModeEnum != .alarmOnly {
+            guard let fileName = record.localAudioUri?.nilIfBlank,
+                  let url = try? AudioCacheStore.url(for: fileName),
+                  FileManager.default.fileExists(atPath: url.path) else { return }
+        }
+        UsageEventQueue.shared.record(
+            .alarmReady,
+            alarmID: record.id,
+            voiceProfileID: record.voiceProfileId,
+            attemptID: saveAttemptID,
+            userID: auth.session?.user.id
+        )
+        saveAttemptID = nil
     }
 
     /// 음성 갈래 전환 — 목소리(TTS) ↔ 직접 녹음.
@@ -1268,7 +1472,10 @@ struct AlarmEditorSheet: View {
         //   계정을 막 만든 사람의 **첫 알람이 저장되지 않는다.**
         //   '기본 인사말' 은 기본 목소리에 줄 수 없으므로(`docs/spec/voice-and-message.md` §2)
         //   추가 입력이 필요 없는 첫 테마를 집는다. 안드로이드 `firstUsable` 과 같은 규칙.
-        let firstUsable = buckets.first { !bucketNeedsMissingInput($0) }
+        // ⚠ **고른 적이 없으면 응원을 추천한다**(2026-10-26 v1.3 지시) — 지역을 이미 고른 사람도 첫 알람은 응원이다. 응원 클립이
+        //   아직 없으면 예전처럼 추가 입력이 필요 없는 첫 테마다. 안드로이드 `FirstRecommendedBucket` 짝.
+        let firstUsable = buckets.first(where: { $0 == FreeBucket.firstRecommended })
+            ?? buckets.first { !bucketNeedsMissingInput($0) }
         guard let target = remembered ?? firstUsable ?? buckets.first else { return }
 
         selectFreeBucket(target)
@@ -1572,7 +1779,20 @@ struct AlarmEditorSheet: View {
     }
 
     /// 문구 화면의 저장 — 최종 반영은 여기 한 곳이다.
+    /// 문구 화면의 응원 고정 목록 — 이 목소리·언어로 매니페스트에 있는 새 응원(스펙 voice-and-message §5-4).
+    var cheerPhrases: [CheerCandidate] {
+        guard let profileID = voiceStudio.selectedProfileID.nilIfBlank else { return [] }
+        return CheerVariety.phrases(
+            clips: voiceStudio.stockClips,
+            voiceID: profileID,
+            language: bucketClipLanguage(forCategory: CheerVariety.bucketID, profileID: profileID)
+        ).map(\.candidate)
+    }
+
     func applyMessageSettings(_ result: MessageSettingsResult) {
+        // 응원 설정은 오디오와 무관한 값이라 아래 관문보다 먼저 받는다(안드로이드 `applyRandomPromptSettings` 와 같다).
+        draft.cheerMode = result.cheerMode
+        draft.cheerPinnedContentId = result.cheerPinnedContentId
         // ⚠ **관문 2/3 — 문구 종류 선택.** 판정은 `needsClipPreparation` 한 곳에만 있다.
         //
         // 같은 목소리라도 **종류마다 버킷 category 가 다르다**(`RandomPromptContext.bucketCategory`).
@@ -2107,7 +2327,10 @@ struct AlarmEditorSheet: View {
 
     /// 자동으로 골라도 되는 목소리 — 준비됐고 교체 정리 중이 아닌 것.
     /// 프리셀렉트와 그 재실행 키가 같은 목록을 본다.
-    private var readySelectableOwnVoices: [VoiceProfile] {
+    private var readySelectableOwnVoices: [VoiceProfile] { Self.readySelectableVoices(in: voiceStudio) }
+
+    /// 지금 자동으로 고를 수 있는 목소리 — 준비됐고 교체 정리 중이 아니다. 알람 설정 관문도 같은 목록을 본다.
+    static func readySelectableVoices(in voiceStudio: VoiceStudioViewModel) -> [VoiceProfile] {
         voiceStudio.profiles.filter {
             $0.isReadyForAlarmSelection && !voiceStudio.isReplacementSettling($0.id)
         }
@@ -2115,6 +2338,16 @@ struct AlarmEditorSheet: View {
 
     func selectDefaultVoiceProfileIfNeeded() {
         guard draft.playMode != .alarmOnly else { return }
+        // 목소리 탭의 '이 목소리로 새 알람 만들기' 가 고른 목소리 — 새 알람에서 **한 번만** 적용한다(사용자가 편집기에서 다시
+        // 고르면 그것이 이긴다). 목록에 아직 없으면(교체 정리 중·받기 전) 아래 직전 선택으로 간다. 무료는 기본 목소리만이다.
+        if !didApplyPreferredVoice, target.editingAlarmID == nil, let preferred = target.preferredVoiceID,
+           voiceSourceMode != .localAudio,
+           readySelectableOwnVoices.contains(where: { $0.id == preferred }),
+           !freeVoiceTier || isSystemVoiceId(preferred) {
+            didApplyPreferredVoice = true
+            if voiceStudio.selectedProfileID != preferred { voiceStudio.selectedProfileID = preferred }
+            return
+        }
         // ⚠ **직접 녹음 갈래에는 손대지 않는다**(안드로이드 `AlarmEditorScreen.kt` 의
         // `editor.voiceSource != VoiceSources.LOCAL_AUDIO` 가드 미러). 이 함수는 이제
         // 목록이 바뀔 때마다 다시 도므로, 가드가 없으면 사용자가 녹음으로 옮긴 뒤에도
@@ -2139,35 +2372,39 @@ struct AlarmEditorSheet: View {
         // 마지막에 쓴 것이 그룹보다 우선」). `refresh` 안에도 같은 판단이 있지만 그건 성공
         // 경로 안이라, 조기 반환(다른 refresh 진행 중)이나 네트워크 실패로 여기까지 오면
         // 선택이 비어 있고 아래 폴백이 온보딩 기본 목소리를 집는다.
-        let lastUsedID = voiceStudio.lastUsedVoiceId
+        let resolved = Self.resolveInitialVoiceID(
+            selected: selected,
+            readyOwn: readyOwn,
+            lastUsedID: voiceStudio.lastUsedVoiceId,
+            freeTier: freeVoiceTier
+        )
+        if let resolved, resolved != selected {
+            voiceStudio.selectedProfileID = resolved
+        }
+    }
+
+    /// 편집기가 **처음 고를 목소리** — 판정식은 이것 한 벌이다. 알람 설정 관문(`MainTabsView.gateVoiceID`)도 이걸 불러, 관문이 본
+    /// 목소리와 편집기가 연 목소리가 같다(코덱스 #952 — 관문이 저장된 직전 선택을 그대로 믿으면, 못 쓰게 된 클론을 보고 통과시킨 뒤
+    /// 편집기는 아직 받는 중인 기본 목소리로 연다).
+    ///
+    /// 순서: 지금 선택이 아직 고를 수 있으면 그대로 → 마지막에 쓴 것 → (유료) 첫 목소리 / (무료) 첫 기본 목소리. 무료는 서버가
+    /// 기본 목소리만 허용하므로 마지막에 쓴 것도 기본 목소리일 때만 쓴다. 고를 것이 없으면 지금 선택 그대로(nil 일 수 있다).
+    static func resolveInitialVoiceID(
+        selected: String?,
+        readyOwn: [VoiceProfile],
+        lastUsedID: String?,
+        freeTier: Bool
+    ) -> String? {
         let lastUsedOwn = readyOwn.first { $0.id == lastUsedID }
-
-        if freeVoiceTier {
-            // 무료 등급은 서버가 시스템 보이스만 허용하므로, 마지막에 쓴 것도 시스템일 때만 쓴다.
+        if freeTier {
+            if let selected, readyOwn.first(where: { $0.id == selected }).map(isSystemVoice) == true {
+                return selected
+            }
             let lastUsedSystem = lastUsedOwn.flatMap { isSystemVoice($0) ? $0 : nil }
-            let systemVoice = lastUsedSystem ?? readyOwn.first { isSystemVoice($0) }
-            let selectedIsSystem = voiceStudio.isSystemVoiceProfile(id: selected)
-            if selectedIsSystem,
-               readyOwn.contains(where: { $0.id == selected }) {
-                return
-            }
-            if let systemVoice {
-                voiceStudio.selectedProfileID = systemVoice.id
-            }
-            return
+            return (lastUsedSystem ?? readyOwn.first { isSystemVoice($0) })?.id ?? selected
         }
-
-        let selectedStillAvailable = selected.map { selectedID in
-            readyOwn.contains(where: { $0.id == selectedID })
-        } ?? false
-        if selectedStillAvailable {
-            return
-        }
-        if let lastUsedOwn {
-            voiceStudio.selectedProfileID = lastUsedOwn.id
-        } else if let first = readyOwn.first {
-            voiceStudio.selectedProfileID = first.id
-        }
+        if let selected, readyOwn.contains(where: { $0.id == selected }) { return selected }
+        return (lastUsedOwn ?? readyOwn.first)?.id ?? selected
     }
 
     // MARK: - Save flow
@@ -2176,6 +2413,7 @@ struct AlarmEditorSheet: View {
         guard !isWorking else { return }
         isWorking = true
         defer { isWorking = false }
+        beginSaveAttempt()
 
         // ⚠ **정리 중인 목소리는 여기서 막는다**(버튼은 살려 둔다 — 위 `editorSaveBlocked`
         // 주석). 지금 저장하면 뒤이은 정리가 그 알람을 되돌릴 수 없이 벗긴다.
@@ -2188,6 +2426,7 @@ struct AlarmEditorSheet: View {
                 message: String(localized: "바꾼 목소리를 정리하고 있어요. 잠시 후 다시 저장해 주세요."),
                 offersPlanActions: false
             )
+            recordSaveBlocked("voice_settling")
             return
         }
         // ⚠ **쓸 수 없는 목소리는 여기서 막는다**(버튼은 살려 둔다 — `editorSaveBlocked` 주석).
@@ -2198,6 +2437,7 @@ struct AlarmEditorSheet: View {
                 title: String(localized: "목소리를 골라주세요"),
                 message: String(localized: "고른 목소리를 지금은 쓸 수 없어요. 다른 목소리를 골라 주세요.")
             )
+            recordSaveBlocked("voice_unavailable")
             return
         }
         // ⚠ **빈 직접 입력은 여기서 막는다 — 권한 확인·한도 조회·생성 요청보다 먼저다.**
@@ -2208,6 +2448,7 @@ struct AlarmEditorSheet: View {
                 title: String(localized: "직접 입력 문구가 비어 있어요"),
                 message: String(localized: "알람이 읽어 줄 문구를 입력하거나, 문구 화면에서 다른 종류를 골라 주세요.")
             )
+            recordSaveBlocked("manual_text_missing")
             return
         }
         let errors = draft.validate()
@@ -2216,6 +2457,7 @@ struct AlarmEditorSheet: View {
                 title: String(localized: "저장할 수 없어요"),
                 message: errorMessage(first)
             )
+            recordSaveBlocked("invalid_draft")
             return
         }
 
@@ -2234,6 +2476,7 @@ struct AlarmEditorSheet: View {
                         ? AlarmKitViewModel.alarmRecoveryMessage
                         : String(localized: "알람 권한을 허용해야 알람을 저장할 수 있어요. \(AlarmKitViewModel.alarmDeniedConsequence)")
                 )
+                recordSaveBlocked("alarm_permission_missing")
                 return
             }
         }
@@ -2241,6 +2484,7 @@ struct AlarmEditorSheet: View {
         if voiceModeBlocked && draft.playMode != .alarmOnly {
             draft.playMode = .alarmOnly
             showVoicePlanLockedAlert()
+            recordSaveBlocked("voice_plan_locked")
             return
         }
 
@@ -2266,6 +2510,7 @@ struct AlarmEditorSheet: View {
         if draft.playMode != .alarmOnly, voiceSourceMode == .ttsProfile {
             guard await prepareSelectedBucketClipIfNeeded() else {
                 showSaveFailureAlert()
+                recordSaveBlocked("bucket_clip_unavailable")
                 return
             }
         }
@@ -2305,6 +2550,7 @@ struct AlarmEditorSheet: View {
                    randomContext: voiceStudio.randomContext
                ) {
                 preparationVoiceID = profileID
+                recordSaveBlocked("message_preparing")
                 return
             }
             // ⚠ **라이브 랜덤 생성은 없앴다**(2026-08-18). 알람 음성은 **프리셋 + 직접 입력**
@@ -2322,6 +2568,7 @@ struct AlarmEditorSheet: View {
                 } else {
                     showSaveFailureAlert()
                 }
+                recordSaveBlocked("message_preparing")
                 return
             }
             // 문구가 글자까지 똑같으면 **서버를 부르지 않고** 전에 만든 오디오를 그대로 쓴다
@@ -2331,7 +2578,11 @@ struct AlarmEditorSheet: View {
             // 오프라인이면 저장 자체가 실패한다.
             if let alias = reusableTtsInputAlias(listenerTitle: currentListenerTitle),
                applyReusedTtsAudio(alias) {
-                // 재사용 성공 — 서버 호출을 건너뛴다.
+                // 재사용 성공 — 서버 호출을 건너뛴다. 기기 캐시 재사용으로 적는다(원문 대신 글자 수만).
+                voiceStudio.recordManualLocalReuse(
+                    messageID: voiceStudio.preparedAlarm?.messageID.nilIfBlank,
+                    textCount: voiceStudio.ttsText.trimmingCharacters(in: .whitespacesAndNewlines).count
+                )
             } else if !NetworkMonitor.shared.isOnline {
                 // ⚠ **오프라인이면 요청을 보내 보지 않는다**(2026-09-06 지시).
                 // 바로 위 재사용이 실패했다 = 이 문구의 오디오가 **이 기기에 없다**.
@@ -2346,6 +2597,7 @@ struct AlarmEditorSheet: View {
                     title: String(localized: "연결이 필요해요"),
                     message: String(localized: "이 문구의 음성이 아직 이 기기에 없어요. 연결되면 다시 저장해 주세요.")
                 )
+                recordSaveBlocked("offline_new_message")
                 return
             } else {
             // ① 로컬 확인 → (오프라인이면 위에서 막는다 — 요청 없음) → ② 생성 요청. 남은 횟수로 막지 않는다(§8).
@@ -2365,6 +2617,8 @@ struct AlarmEditorSheet: View {
             // ⚠ 사유를 **알럿으로 낸다** — 조용히 return 하면 저장을 눌렀는데 아무 일도
             // 없는 것처럼 보인다(`showSaveFailureAlert` 주석).
             guard let prepared else {
+                // 새로 만들 자리가 없다(429) — 광고 제안·보상 확인 중·다음 제공일 중 하나로 말한다(`ad-rewards.md` §1-1).
+                if await handleManualQuotaRefusal() { return }
                 showSaveFailureAlert()
                 return
             }
@@ -2497,6 +2751,25 @@ struct AlarmEditorSheet: View {
         // 안드로이드 `withResolvedWeatherVariant` 와 같은 자리다.
         await applyWeatherVariant(to: &merged, previous: editingAlarm)
 
+        // ── 응원은 **이 회차의 문구를 지금 고른다**(스펙 voice-and-message §5-4). AlarmKit 은 예약할 때 받은 소리만
+        // 울리므로 저장이 곧 준비 기회다. 발사 시각이 바뀌었거나(새 회차) 모드·고정 문구를 바꿨으면 새로 고르고, 아니면
+        // 고른 것을 그대로 쓴다(같은 회차의 다시 저장은 이력을 더하지 않는다). 응원이 아니면 저장값을 비운다 —
+        // 서버 사본에 뜻 없는 값이 남지 않게(안드로이드 `AlarmEditorState.toDraft` 와 같다).
+        if merged.bucketId != CheerVariety.bucketID {
+            merged.cheerMode = nil
+            merged.cheerPinnedContentId = nil
+        }
+        merged = CheerVariety.prepared(
+            merged,
+            occurrence: merged.fireAtMillis,
+            candidates: CheerVariety.candidates(for: merged, audioCache: .shared),
+            explicitChange: CheerVariety.settingsChanged(
+                before: editingAlarm,
+                afterMode: merged.cheerMode,
+                afterPinned: merged.cheerPinnedContentId
+            )
+        )
+
         // 무료 잠금 보관본(원래 유료 목소리)은 **목소리를 그대로 둔 저장**에서만 남긴다. 목소리·문구·
         // 재생 방식을 바꿨으면 그 편집이 이긴다 — 남기면 재결제 때 복원이 사용자의 편집을 옛 유료
         // 목소리로 덮는다(`AlarmEditDraft.carryOverNonEditableFields` 는 오디오를 준비하기 **전** 값으로
@@ -2612,6 +2885,7 @@ struct AlarmEditorSheet: View {
         }
         rememberChoicesUsed(merged)
         recordSaveUsageEvent(record: merged, previous: existing)
+        recordAlarmReadyIfComplete(store.record(id: merged.id) ?? merged)
         UINotificationFeedbackGenerator().notificationOccurred(.success)
         onSchedulingDidFinish()
         return true

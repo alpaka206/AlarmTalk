@@ -526,5 +526,25 @@
   "137": {
     "name": "morning-briefing",
     "sha": "5a88be1e9e449bd8"
+  },
+  "138": {
+    "name": "store-downloads",
+    "sha": "dad6f5173cdd0a1f"
+  },
+  "139": {
+    "name": "render-fingerprint-and-tts-usage",
+    "sha": "b1fb25f29e986655"
+  },
+  "141": {
+    "name": "ad-reward-sessions",
+    "sha": "7d89a5cb50351416"
+  },
+  "142": {
+    "name": "usage-events-v2-fields",
+    "sha": "2bbba95abd1631e6"
+  },
+  "143": {
+    "name": "cheer-variants-and-stock-content-releases",
+    "sha": "914219fe4317a5cd"
   }
 }

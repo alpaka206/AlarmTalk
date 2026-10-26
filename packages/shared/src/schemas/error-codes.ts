@@ -84,6 +84,15 @@ export const ERROR_CODES = [
   /** 키 목록을 방금 다시 받았다 — AdMob 이 1초 뒤 재시도하면 받힌다(`lib/admob-ssv.ts`). */
   'AD_REWARD_RETRY_LATER',
   'AD_REWARD_SIGNATURE_INVALID',
+  // 광고 시청 승인 세션 (ad-reward-sessions.ts) — 앱에 닿는다(`docs/spec/ad-rewards.md` §3).
+  /** 이번 달 광고로 받을 수 있는 횟수를 다 채웠다(예약 포함) — 다음 달 1일에 다시 생긴다. */
+  'AD_REWARD_MONTHLY_LIMIT',
+  /** 같은 계정의 다른 광고가 준비·시청 중이다 — 한 계정에 열린 세션은 하나다. */
+  'AD_REWARD_SESSION_OPEN',
+  /** 없는 세션·남의 세션·만료됐거나 이미 끝난 세션이다. 새 세션부터 다시 시작한다. */
+  'AD_REWARD_SESSION_INVALID',
+  /** 지금은 새 광고를 볼 수 없다 — 운영 스위치 꺼짐·이 광고 단위 미설정·유료 계정. 적립된 보상은 그대로다. */
+  'AD_REWARD_UNAVAILABLE',
   // 음성 생성(TTS) (tts.ts)
   'BASIC_VOICE_PRESET_ONLY',
   'FREE_PLAN_PRESET_ONLY',
@@ -97,6 +106,11 @@ export const ERROR_CODES = [
   'TEXT_PREPARATION_FAILED',
   'TEXT_TOO_LONG',
   'TRANSLATION_NOT_CONFIGURED',
+  /**
+   * dev 의 월 합성 예산(`TTS_DEV_MONTHLY_CHAR_BUDGET`)을 다 썼다 — **운영에서는 나지 않는다**(`lib/tts-budget.ts`).
+   * dev 앱에는 503 폴백 문구로 보인다.
+   */
+  'TTS_BUDGET_EXHAUSTED',
   'TTS_GENERATION_FAILED',
   /** 같은 `request_id` 에 다른 입력이 왔다 — 앱의 버그다(문구를 바꾸면 새 id). */
   'TTS_REQUEST_ID_CONFLICT',
@@ -125,6 +139,8 @@ export const ERROR_CODES = [
   // 알람 공통 검증 (alarm-helpers.ts)
   'INVALID_ALARM_MODE',
   'INVALID_BUCKET_ID',
+  // 응원 테마의 다양하게/고정 값(`cheer_mode`·`cheer_pinned_content_id`)이 어긋났다 — 스펙 voice-and-message §5-4.
+  'INVALID_CHEER_SETTING',
   'INVALID_IS_ACTIVE',
   'INVALID_MESSAGE_ID',
   'INVALID_REPEAT_DAYS',
@@ -332,6 +348,8 @@ export const ALERTING_ERROR_CODES: readonly ErrorCode[] = [
   // 않는다). 그 고장은 사용자가 고칠 수 없어 경보로 올린다(`docs/spec/error-codes.md` §3).
   'VOICE_CLONE_NO_SPEECH',
   'TTS_GENERATION_FAILED',
+  // dev 합성 예산 소진 — dev 테스트가 막혔고, 예산을 올릴지 정하는 것은 운영자다(운영에서는 나지 않는다).
+  'TTS_BUDGET_EXHAUSTED',
   'PERSO_FAILED',
   // 결제 확정이 거절된 갈래. 2026-09-19 사고에서 우리는 증상(VOICE_FEATURE_REQUIRES_PAID_PLAN)만
   // 보고 원인은 한 줄도 못 봤다 — 거절이 구조화 로그에만 남아 있었다. 사용자는 이미 돈을 냈는데
