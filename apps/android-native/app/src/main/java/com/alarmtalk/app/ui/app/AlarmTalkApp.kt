@@ -1459,6 +1459,7 @@ internal fun AlarmTalkApp(
                               viewModel.cacheVoiceClips(voiceId, clips, onProgress)
                           },
                           planPrices = viewModel.billingPlanPrices,
+                          planTrials = viewModel.billingPlanTrials,
                           onPurchasePlay = viewModel::startPlayPurchase,
                           onCancelSubscription = viewModel::cancelSubscription,
                           onRestorePurchases = viewModel::restorePurchases,

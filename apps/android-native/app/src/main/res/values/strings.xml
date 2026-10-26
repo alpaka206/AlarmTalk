@@ -694,6 +694,20 @@
     <!-- 기간 한정 플러스 무료 이용(personal_promo). ⚠ 날짜를 문구에 박지 말 것 — 서버 ends_at 을 기기 로케일로 그려 넣는다.
          "…까지" 는 ends_at − 1초의 기기 날짜, "…부터" 는 그 다음 달력 날이다(한국 밖 기기에서도 하루 차이로 읽힌다). -->
     <string name="personal_promo_plan_line">플러스 무료 이용 중 · %1$s까지</string>
+    <string name="billing_plan_trial_price">%1$s 무료 체험, 이후 %2$s</string>
+    <string name="billing_plan_trial_terms">체험이 끝나면 자동으로 결제돼요. 끝나기 전에 Google Play 에서 언제든 해지할 수 있고, 해지하면 결제되지 않아요.</string>
+    <plurals name="billing_trial_days">
+        <item quantity="other">%d일</item>
+    </plurals>
+    <plurals name="billing_trial_weeks">
+        <item quantity="other">%d주</item>
+    </plurals>
+    <plurals name="billing_trial_months">
+        <item quantity="other">%d개월</item>
+    </plurals>
+    <plurals name="billing_trial_years">
+        <item quantity="other">%d년</item>
+    </plurals>
     <string name="personal_promo_end_notice_title">플러스 무료 이용이 곧 끝나요</string>
     <string name="personal_promo_end_notice_message">%1$s까지 플러스를 무료로 쓸 수 있어요. %2$s부터는 무료 플랜으로 돌아가고, 등록한 목소리는 3일 보관 후 삭제돼요.</string>
     <!-- 종료 전환 대상이 아닌 계정(deletes_voices_at_end = false, 예: 결제 보류로 활성 구독 행이 남음). 삭제 문장만 뺀다. -->

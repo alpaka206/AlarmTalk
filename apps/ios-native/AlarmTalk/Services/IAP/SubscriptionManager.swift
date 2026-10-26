@@ -27,6 +27,11 @@ import StoreKit
 @MainActor
 final class SubscriptionManager: ObservableObject {
     @Published private(set) var products: [Product] = []
+    /// 지금 이 Apple ID 가 받을 수 있는 **무료 체험 기간** — 상품 id → 기간. 첫 구독 오퍼가 무료 체험이고
+    /// `isEligibleForIntroOffer` 가 참일 때만 들어간다(애플은 그 구독 그룹을 처음 사는 사람에게만 준다). 결제 시트는
+    /// 자격이 있으면 체험을 스스로 적용하므로, 이 값은 카드가 체험 조건(기간·이후 가격·자동 결제·해지)을 미리 말하는
+    /// 데만 쓴다(`docs/spec/plan-gates.md` 「신규 1개월 무료 — 스토어 무료 체험」, 안드로이드 `freeTrialPeriodForPlan`).
+    @Published private(set) var freeTrialPeriods: [String: Product.SubscriptionPeriod] = [:]
     @Published private(set) var currentTier: PlanTier = .free
 
     /// StoreKit 조회 세대. **나중에 시작한 조회가 이긴다**(2026-09-01 리뷰).
@@ -219,6 +224,15 @@ final class SubscriptionManager: ObservableObject {
             self.products = fetched
             self.lastError = nil
             self.productFetchFailed = false
+            var trials: [String: Product.SubscriptionPeriod] = [:]
+            for product in fetched {
+                guard let subscription = product.subscription,
+                      let intro = subscription.introductoryOffer,
+                      intro.paymentMode == .freeTrial,
+                      await subscription.isEligibleForIntroOffer else { continue }
+                trials[product.id] = intro.period
+            }
+            self.freeTrialPeriods = trials
         } catch {
             self.lastError = String(localized: "제품 정보를 불러오지 못했어요. 잠시 후 다시 시도해 주세요.")
             self.productFetchFailed = true
@@ -228,6 +242,22 @@ final class SubscriptionManager: ObservableObject {
     /// productID 로 제품 lookup.
     func product(for plan: SubscriptionProduct) -> Product? {
         products.first { $0.id == plan.rawValue }
+    }
+
+    /// 이 등급을 지금 사면 받는 무료 체험 기간 — 없으면 nil.
+    func freeTrialPeriod(for tier: PlanTier) -> Product.SubscriptionPeriod? {
+        SubscriptionProduct.make(tier: tier).flatMap { freeTrialPeriods[$0.rawValue] }
+    }
+
+    /// 체험 기간 표기("1개월"·"7일"·"1주"·"1년") — 기기 언어로.
+    static func trialPeriodLabel(_ period: Product.SubscriptionPeriod) -> String {
+        switch period.unit {
+        case .day: return String(localized: "\(Int(period.value))일")
+        case .week: return String(localized: "\(Int(period.value))주")
+        case .month: return String(localized: "\(Int(period.value))개월")
+        case .year: return String(localized: "\(Int(period.value))년")
+        @unknown default: return String(localized: "\(Int(period.value))개월")
+        }
     }
 
     /// 사용자가 결제 트리거. UIKit/SwiftUI 어디서든 호출 가능.

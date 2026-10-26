@@ -208,6 +208,24 @@ class PlayBillingManager(
         return basePhase?.formattedPrice
     }
 
+    /**
+     * 이 사용자가 지금 받을 수 있는 **무료 체험 기간**(ISO 8601 `P1M` 등) — 첫 페이즈가 0원인 오퍼가 있을 때만. 없으면 null.
+     *
+     * Play 는 자격 있는 오퍼만 돌려준다(체험 오퍼 `free-trial-1m` 의 대상은 '이 구독을 산 적 없는 사용자'). 그래서 이 값이
+     * 있다 = 결제하면 체험으로 시작한다([launchPurchase] 가 첫 페이즈가 가장 싼 오퍼를 고른다). 화면은 이 값으로 체험
+     * 조건(기간·이후 가격·자동 결제·해지)을 보여 준다(`docs/spec/plan-gates.md` 「신규 1개월 무료 — 스토어 무료 체험」).
+     */
+    fun freeTrialPeriodForPlan(planKey: String): String? {
+        val productId = PlayBillingProducts.productIdFor(planKey) ?: return null
+        return productDetailsCache[productId]
+            ?.subscriptionOfferDetails
+            ?.firstNotNullOfOrNull { offer ->
+                offer.pricingPhases.pricingPhaseList.firstOrNull()
+                    ?.takeIf { it.priceAmountMicros == 0L && it.billingPeriod.isNotBlank() }
+                    ?.billingPeriod
+            }
+    }
+
     // ⚠ **1회성(INAPP) 결제 시트(`launchOneTimePurchase`)는 선물과 함께 2026-10-14 에 지웠다 —
     // 되살리지 말 것.** 그 시트가 팔던 것은 선물 상품 하나였고, 선물은 App Store 지침 3.1.1 두 번째
     // 반려로 없앴다(위 `PlayBillingProducts`). 할인·무료 이용은 스토어 오퍼 코드로 준다.
