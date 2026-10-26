@@ -58,6 +58,7 @@ import androidx.navigation.navArgument
 import com.alarmtalk.app.core.AlarmTalkLog
 import com.alarmtalk.app.data.isSystemVoiceId
 import com.alarmtalk.app.data.DowngradeNoticeStore
+import com.alarmtalk.app.data.systemVoiceDisplayName
 import com.alarmtalk.app.data.AlarmDraft
 import com.alarmtalk.app.data.AlarmEntity
 import com.google.android.gms.auth.api.signin.GoogleSignIn
@@ -1528,6 +1529,7 @@ internal fun AlarmTalkApp(
                           permissions = permissions,
                           onCreateAlarm = { requestCreateAlarm() },
                           onOpenSettings = { navController.navigate(AppRoute.Settings) },
+                          onOpenBriefing = { navController.navigate(AppRoute.Briefing) },
                           onDeleteAccount = viewModel::requestDeleteAccount,
                           themeMode = themeMode,
                           onChangeTheme = viewModel::setThemeMode,
@@ -1594,6 +1596,30 @@ internal fun AlarmTalkApp(
                       onOpenConsentHistory = { navController.navigate(AppRoute.ConsentHistory) },
                       onOpenOssLicenses = { navController.navigate(AppRoute.OssLicenses) },
                       onLogout = ::logout,
+                  )
+              }
+              composable(AppRoute.Briefing) {
+                  // 목소리 권한은 직접 입력과 같다 — 무료는 기본 목소리만(`BriefingVoiceRules`).
+                  val allowedVoices = BriefingVoiceRules.allowedVoices(
+                      voiceProfiles,
+                      viewModel.isPaidVoiceEntitledOptimistic(),
+                  )
+                  BriefingScreen(
+                      contentPadding = padding,
+                      onBack = ::goBackInApp,
+                      voiceChoices = allowedVoices.map { it.id to systemVoiceDisplayName(context, it.id, it.name) },
+                      initialVoiceId = BriefingVoiceRules.initialVoiceId(
+                          allowedVoices.map { it.id },
+                          viewModel.lastUsedVoiceId,
+                      ),
+                      onLoadInterests = { viewModel.loadBriefingInterests() },
+                      onSaveInterests = { codes -> viewModel.saveBriefingInterests(codes) },
+                      onSearch = { query -> viewModel.searchBriefingCompanies(query) },
+                      onLoadToday = { viewModel.loadBriefingToday() },
+                      onLoadManualQuota = { viewModel.loadManualQuota() },
+                      onGenerateSpeech = { voiceId, text, requestId ->
+                          viewModel.generateBriefingSpeech(voiceId, text, requestId)
+                      },
                   )
               }
               composable(AppRoute.OssLicenses) {

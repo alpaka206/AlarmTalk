@@ -33,6 +33,9 @@ struct MainTabsView: View {
     /// 설정 시트 표시 여부.
     @State private var settingsPresented = false
 
+    /// 아침 소식 화면(`docs/spec/morning-briefing.md` §8) 표시 여부.
+    @State private var briefingPresented = false
+
     /// 보조 화면 표시 — 이용권.
     @State private var auxiliaryScreen: AuxiliaryScreen?
 
@@ -240,6 +243,9 @@ struct MainTabsView: View {
                     onClose: { settingsPresented = false }
                 )
             }
+            .navigationDestination(isPresented: $briefingPresented) {
+                BriefingView()
+            }
             .navigationDestination(item: $auxiliaryScreen) { screen in
                 AuxiliarySheetHost(screen: screen)
             }
@@ -283,7 +289,8 @@ struct MainTabsView: View {
         case .menu:
             MenuView(
                 onOpenSettings: { settingsPresented = true },
-                onOpenBilling: { auxiliaryScreen = .billing }
+                onOpenBilling: { auxiliaryScreen = .billing },
+                onOpenBriefing: { briefingPresented = true }
             )
         }
     }

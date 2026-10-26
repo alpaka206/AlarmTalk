@@ -127,6 +127,8 @@ internal fun AlarmListScreen(
     permissions: PermissionSnapshot,
     onCreateAlarm: () -> Unit,
     onOpenSettings: () -> Unit,
+    /** 더보기의 '아침 소식'(`docs/spec/morning-briefing.md` §8). */
+    onOpenBriefing: () -> Unit,
     onDeleteAccount: () -> Unit,
     themeMode: ThemeMode,
     onChangeTheme: (ThemeMode) -> Unit,
@@ -419,6 +421,7 @@ internal fun AlarmListScreen(
                         onChangeTheme = onChangeTheme,
                         onOpenBilling = { onSelectTab(NativeTab.Billing) },
                         onOpenSettings = onOpenSettings,
+                        onOpenBriefing = onOpenBriefing,
                         onDeleteAccount = onDeleteAccount,
                     )
                 }
