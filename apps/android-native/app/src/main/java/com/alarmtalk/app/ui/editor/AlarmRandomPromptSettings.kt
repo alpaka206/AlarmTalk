@@ -75,6 +75,11 @@ internal fun RandomPromptSettingsPane(
      * 있고, 비용은 직접 입력 월 한도가 센다(서버 `tts.ts` 의 manual-tts-quota).
      */
     manualLocked: Boolean = false,
+    /**
+     * '직접 입력' 을 **보일지**. 잠금([manualLocked])과 다르다 — 추가 팩 목소리는 그 화자로 아무 문장이나 합성할 권한이
+     * 없어 아예 감춘다(`docs/spec/voice-packs.md` §1). 이용권으로 풀리는 것이 아니라서 잠긴 행으로 그리지 않는다.
+     */
+    manualAvailable: Boolean = true,
     /** 잠긴 '직접 입력' 을 눌렀을 때 — 호출부가 이용권 안내를 띄운다. */
     onManualLocked: () -> Unit = {},
     /**
@@ -268,7 +273,7 @@ internal fun RandomPromptSettingsPane(
                     // 있다는 걸 보여 준다 — 아예 감추면 있는지조차 모르고, 유료 전환 동기
                     // 중 가장 강한 것을 잃는다. 잠긴 행으로 그린다.
                     val allRows = EditorMessageContexts.filter { (context, _) ->
-                        context == ManualMessageContext || context in availableContexts
+                        (context == ManualMessageContext && manualAvailable) || context in availableContexts
                     }
                     // **운세·약은 처음에는 접어 둔다**(2026-10-26 v1.3 W04) — 첫 화면은 날씨·응원·직접 입력이면 충분하고, 운세·약은
                     // 추가 정보를 묻거나 쓰임이 좁다. 지우지 않는다: 지금 고른 것이 그 둘이면(직전 선택을 이은 새 알람·기존 알람)

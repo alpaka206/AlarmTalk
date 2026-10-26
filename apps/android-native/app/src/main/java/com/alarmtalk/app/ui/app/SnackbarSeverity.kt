@@ -120,6 +120,9 @@ internal object SnackbarSeverities {
         R.string.editor_error_tts_request_in_progress,
         R.string.api_error_voice_limit_reached,
         R.string.api_error_voice_not_ready,
+        // 추가 음성팩 — 받지 못했다·지금 받을 수 없다(`docs/spec/voice-packs.md`).
+        R.string.voice_pack_download_failed,
+        R.string.voice_pack_not_available,
         R.string.api_error_voice_cloning_failed,
         R.string.api_error_invalid_voice_pitch,
         R.string.api_error_voice_pitch_locked,

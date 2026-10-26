@@ -5,11 +5,16 @@ import com.alarmtalk.app.data.AlarmPlayModes
 import com.alarmtalk.app.data.VoiceSources
 import com.alarmtalk.app.data.hasLockedPaidVoice
 import com.alarmtalk.app.data.isSystemVoiceId
+import com.alarmtalk.app.data.isVoicePackVoiceId
 import java.util.TimeZone
 
 object RemoteAlarmMapper {
     fun toWriteRequest(alarm: AlarmEntity): RemoteAlarmWriteRequest {
-        val hasRemoteVoice = alarm.ttsMessageId != null
+        // ⚠ **추가 팩 알람은 팩 목소리·클립 id 를 싣지 않는다**(`docs/spec/voice-packs.md` §1). 팩 목소리는 목소리 프로필이
+        //   아니라 서버가 404 로 막는다(`voiceProfileBelongsToCaller`) — 실으면 그 알람의 동기화가 영영 실패한다. 서버 행은
+        //   사본이라(`alarm-lifecycle.md`) 테마만 남기고 `sound-only` 로 보낸다.
+        val packAlarm = alarm.voiceSource != VoiceSources.LOCAL_AUDIO && isVoicePackVoiceId(alarm.voiceProfileId)
+        val hasRemoteVoice = alarm.ttsMessageId != null && !packAlarm
         return RemoteAlarmWriteRequest(
             time = String.format(java.util.Locale.US, "%02d:%02d", alarm.hour, alarm.minute),
             repeatDays = repeatMaskToDays(alarm.repeatDaysMask),
@@ -21,9 +26,9 @@ object RemoteAlarmMapper {
                 else -> "sound_then_voice"
             },
             isActive = alarm.enabled,
-            messageId = alarm.ttsMessageId.trimmedOrNull(),
+            messageId = alarm.ttsMessageId.takeUnless { packAlarm }.trimmedOrNull(),
             voiceProfileId = alarm.voiceProfileId
-                .takeIf { alarm.voiceSource != VoiceSources.LOCAL_AUDIO }
+                .takeIf { alarm.voiceSource != VoiceSources.LOCAL_AUDIO && !packAlarm }
                 .trimmedOrNull(),
             timezone = TimeZone.getDefault().id,
             bucketId = alarm.bucketId.trimmedOrNull(),
@@ -33,7 +38,7 @@ object RemoteAlarmMapper {
             // 옆에 남는다(Codex #820) — 기본 목소리 + 클론 `greeting` 테마는 토글마다 400 `INVALID_BUCKET_ID`
             // 다. 기본 목소리 알람에서 비어 있는 문구·테마는 로컬의 사실 그대로라 서버도 비워 두는 것이 맞다.
             // 잠금 확정·미나 전환 뒤에는 보관본이 없어 `hasLockedPaidVoice` 만으로는 못 가린다.
-            clearsMissingVoiceReferences = alarm.hasLockedPaidVoice() || alarm.usesSystemVoiceProfile(),
+            clearsMissingVoiceReferences = alarm.hasLockedPaidVoice() || alarm.usesSystemVoiceProfile() || packAlarm,
         )
     }
 

@@ -806,4 +806,29 @@
     <string name="api_error_briefing_invalid_query">Enter a company name or ticker code of up to 30 characters.</string>
     <string name="api_error_briefing_invalid_interests">You can follow up to 3 companies.</string>
     <string name="api_error_briefing_corp_not_found">A company couldn\'t be found. Please search again.</string>
+    <!-- 추가 음성팩(docs/spec/voice-packs.md) -->
+    <string name="voice_pack_section_title">Extra packs</string>
+    <string name="voice_pack_empty">No extra packs are available yet.</string>
+    <string name="voice_pack_load_failed">Couldn\'t load the extra packs.</string>
+    <string name="voice_pack_download">Download</string>
+    <string name="voice_pack_downloading">Downloading %1$d%%</string>
+    <string name="voice_pack_not_downloaded">Not downloaded</string>
+    <string name="voice_pack_ready">Downloaded</string>
+    <string name="voice_pack_delete">Delete</string>
+    <string name="voice_pack_cancel">Cancel</string>
+    <string name="voice_pack_preview">Listen</string>
+    <string name="voice_pack_usage_title">Usage</string>
+    <string name="voice_pack_size">Size %1$s</string>
+    <string name="voice_pack_apply_note">After downloading, this voice appears in the alarm voice list. You can use it for the Weather, Fortune, Encouragement and Meds themes, but not for messages you type yourself. Existing alarms don\'t change.</string>
+    <string name="voice_pack_withdrawn">This pack is no longer offered. Existing alarms keep using it until %1$s.</string>
+    <string name="voice_pack_withdrawn_after">After that, they switch to Mina\'s voice.</string>
+    <string name="voice_pack_delete_title">Delete this pack?</string>
+    <string name="voice_pack_delete_message">%1$d alarms using this voice will switch to Mina\'s voice.</string>
+    <string name="voice_pack_delete_message_none">The downloaded files will be removed. You can download it again.</string>
+    <string name="voice_pack_editor_detail">Extra pack</string>
+    <string name="voice_pack_download_failed">Couldn\'t download. Please try again.</string>
+    <string name="voice_pack_manual_unavailable">Extra pack voices can\'t read messages you type yourself. Please choose a theme.</string>
+    <string name="voice_pack_not_available">This pack isn\'t available right now.</string>
+    <string name="voice_pack_switch_drops_text_title">Switch to the extra pack voice?</string>
+    <string name="voice_pack_switch_drops_text_message">Extra pack voices only say prepared messages, so the message you typed will be removed.</string>
 </resources>

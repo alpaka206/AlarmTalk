@@ -118,6 +118,8 @@ internal fun AlarmListScreen(
     voiceRegistrationFailure: VoiceRegistrationFailure? = null,
     onVoiceRegistrationFailureShown: () -> Unit = {},
     onRegistrationWindowOpenChange: (Boolean) -> Unit = {},
+    // 목소리 탭 '추가 팩' 섹션 — 목소리 패널에 그대로 넘긴다(`docs/spec/voice-packs.md` §7).
+    voicePacks: VoicePackPanelState = VoicePackPanelState(),
     planPrices: Map<String, String>,
     /** 플랜 key → 지금 받을 수 있는 무료 체험 기간(ISO 8601). 없으면 빈 표. */
     planTrials: Map<String, String> = emptyMap(),
@@ -295,6 +297,7 @@ internal fun AlarmListScreen(
                         voiceRegistrationFailure = voiceRegistrationFailure,
                         onVoiceRegistrationFailureShown = onVoiceRegistrationFailureShown,
                         onRegistrationWindowOpenChange = onRegistrationWindowOpenChange,
+                        voicePacks = voicePacks,
                         onOpenBilling = { onSelectTab(NativeTab.Billing) },
                         voiceDraftQuota = voiceDraftQuota,
                         voicePrefetchProgress = voicePrefetchProgress,
