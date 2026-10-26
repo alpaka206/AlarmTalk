@@ -355,7 +355,7 @@ describe('크론', () => {
       { platform: 'ios', status: 'ok', stored: 4 },
     ]);
     // 처음 연결한 날은 지난달도 찾는다(없으면 404 로 건너뛴다).
-    expect(stores.calls.filter((c) => c.url.includes('storage.googleapis.com')).length).toBe(2);
+    expect(stores.calls.filter((c) => new URL(c.url).host === 'storage.googleapis.com').length).toBe(2);
     const snapshot = await rows(`SELECT platform, day, metric, value FROM store_download_daily ORDER BY platform, day, metric`);
 
     const segmentsBefore = stores.calls.filter((c) => c.url.startsWith('https://segments.example/')).length;
@@ -368,7 +368,7 @@ describe('크론', () => {
     // 두 번째는 조각을 하나도 받지 않는다 — 이미 적은 인스턴스다.
     expect(stores.calls.filter((c) => c.url.startsWith('https://segments.example/')).length).toBe(segmentsBefore);
     // 두 번째 회차에는 지난달 파일을 찾지 않는다.
-    expect(stores.calls.filter((c) => c.url.includes('storage.googleapis.com')).length).toBe(3);
+    expect(stores.calls.filter((c) => new URL(c.url).host === 'storage.googleapis.com').length).toBe(3);
 
     const ios = Object.fromEntries(
       (await rows(`SELECT day || ':' || metric AS k, value FROM store_download_daily WHERE platform = 'ios'`)).map((r) => [r.k, r.value]),
@@ -412,8 +412,8 @@ describe('크론', () => {
     vi.stubGlobal('fetch', vi.fn(stores.impl));
     await runStoreDownloadSync(db, env, NOW);
     for (const c of stores.calls) {
-      if (c.url.startsWith('https://api.appstoreconnect.apple.com')) expect(c.auth).toMatch(/^Bearer [\w-]+\.[\w-]+\.[\w-]+$/);
-      if (c.url.startsWith('https://storage.googleapis.com')) expect(c.auth).toBe('Bearer google-token');
+      if (new URL(c.url).host === 'api.appstoreconnect.apple.com') expect(c.auth).toMatch(/^Bearer [\w-]+\.[\w-]+\.[\w-]+$/);
+      if (new URL(c.url).host === 'storage.googleapis.com') expect(c.auth).toBe('Bearer google-token');
       if (c.url.startsWith('https://segments.example/')) expect(c.auth).toBeNull();
     }
     const state = JSON.stringify(await rows(`SELECT * FROM store_download_sync`));

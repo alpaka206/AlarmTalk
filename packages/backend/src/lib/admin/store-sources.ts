@@ -68,7 +68,9 @@ export function ascMissingSettings(env: Partial<Env>): string[] {
  * 버킷 이름 규칙을 벗어나면 없는 것으로 본다(경로에 그대로 붙이므로).
  */
 export function playReportsBucket(env: Partial<Env>): string | null {
-  const raw = (env.PLAY_REPORTS_BUCKET ?? '').trim().replace(/^gs:\/\//, '').replace(/\/.*$/, '');
+  // 첫 '/' 앞만 쓴다 — 정규식(`/\/.*$/`)으로 자르면 '/' 가 길게 이어진 값에서 느려진다(CodeQL js/polynomial-redos).
+  const trimmed = (env.PLAY_REPORTS_BUCKET ?? '').trim();
+  const raw = (trimmed.startsWith('gs://') ? trimmed.slice(5) : trimmed).split('/')[0] ?? '';
   return /^[a-z0-9][a-z0-9._-]{1,220}[a-z0-9]$/.test(raw) ? raw : null;
 }
 
