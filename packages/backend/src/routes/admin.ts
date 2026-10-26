@@ -16,6 +16,17 @@ import {
   sendTestPush,
 } from '../lib/admin/push-jobs';
 import { emptyState, newNonce, page, securityHeaders } from '../lib/admin/ui';
+import { renderGrantConfirm, renderUserDetail } from '../lib/admin/grant-pages';
+import { loadUserDetail } from '../lib/admin/user-detail';
+import {
+  createPlanGrant,
+  grantEndFor,
+  isPlanGrantReason,
+  PLAN_GRANT_MAX_DAYS,
+  PlanGrantError,
+  revokePlanGrant,
+  type PlanGrantLength,
+} from '../lib/plan-grants';
 
 // MARK: - 관리자 전용 페이지 (/admin/*)
 //
@@ -24,6 +35,8 @@ import { emptyState, newNonce, page, securityHeaders } from '../lib/admin/ui';
 // 세션 쿠키(HttpOnly·Secure·SameSite=Strict)를 발급하고 이후 요청은 그 쿠키로 인증한다.
 // curl/스크립트용으로 HTTP Basic(비밀번호=ADMIN_SECRET, 아이디 무시)도 그대로 허용한다.
 // ADMIN_SECRET 미설정 시 503. 접속: https://<host>/admin/login
+//
+// 사용자 상세에서 **플러스 기간 지급·회수**를 한다(2026-10-26 오너 승인 — 스토어 밖 유일한 운영 예외, 코드 입력 없음).
 //
 // 화면은 개요 · 사용자 · 알림 보내기 셋이다(`docs/spec/admin-console.md`). 2026-10-23 에 다시 만들면서 프로모 코드
 // 이력 화면은 지웠다 — 프로모 코드는 2026-10-12 에 없앴고(App Store 3.1.1), 코드를 쳐서 유료 기능을 여는 길을
@@ -232,6 +245,122 @@ admin.get('/users', async (c) => {
   } catch (err) {
     console.error('[admin] users failed', err);
     return html(c, (nonce) => unavailable(nonce, err, 'users'), 500);
+  }
+});
+
+// --- 사용자 상세 · 플러스 기간 지급 ---
+
+/** 콘솔은 비밀번호 하나로 들어온다 — 사람을 가를 수 없어 지급자는 '콘솔' 로 적는다. */
+const ADMIN_ACTOR = 'admin-console';
+
+const FLASH: Record<string, { tone: 'good' | 'bad'; text: string }> = {
+  granted: { tone: 'good', text: '플러스를 지급했어요. 앱은 다음 갱신 때 반영해요.' },
+  again: { tone: 'good', text: '이미 처리한 지급이에요. 다시 주지 않았어요.' },
+  revoked: { tone: 'good', text: '지급을 회수했어요. 다른 권한이 없으면 지금부터 3일 뒤 목소리를 지워요.' },
+};
+
+function grantFlash(code: string | undefined, err: string | undefined): { tone: 'good' | 'bad'; text: string } | null {
+  if (err) return { tone: 'bad', text: err.slice(0, 120) };
+  return code ? (FLASH[code] ?? null) : null;
+}
+
+function grantErrorRedirect(c: Context<AppEnv>, userId: string, err: unknown) {
+  const text =
+    err instanceof PlanGrantError ? err.message : '처리하지 못했어요. 잠시 뒤 다시 시도해 주세요.';
+  if (!(err instanceof PlanGrantError)) console.error('[admin] grant failed', err);
+  return c.redirect(`/admin/users/${encodeURIComponent(userId)}?err=${encodeURIComponent(text)}`, 303);
+}
+
+admin.get('/users/:id', async (c) => {
+  const now = new Date();
+  try {
+    const detail = await loadUserDetail(getDB(c.env), c.req.param('id'), now);
+    if (!detail) {
+      return html(c, (nonce) =>
+        page({
+          title: '사용자 없음',
+          active: 'users',
+          nonce,
+          body: `<section class="panel">${emptyState('계정을 찾지 못했어요', '탈퇴했거나 id 가 틀렸어요.', '<a class="btn btn-secondary btn-sm" href="/admin/users">사용자 목록</a>')}</section>`,
+        }),
+      );
+    }
+    const flash = grantFlash(c.req.query('done'), c.req.query('err'));
+    return html(c, (nonce) => renderUserDetail(nonce, detail, now, flash));
+  } catch (err) {
+    console.error('[admin] user detail failed', err);
+    return html(c, (nonce) => unavailable(nonce, err, 'users'), 500);
+  }
+});
+
+admin.post('/users/:id/grants/preview', async (c) => {
+  const userId = c.req.param('id');
+  const now = new Date();
+  const form = await c.req.parseBody();
+  const lengthKey = String(form.length ?? '');
+  const reason = String(form.reason ?? '');
+  const note = String(form.note ?? '').trim().slice(0, 200);
+  try {
+    if (!isPlanGrantReason(reason)) throw new PlanGrantError('ADMIN_GRANT_INVALID', '지급 사유를 골라 주세요.');
+    const length: PlanGrantLength =
+      lengthKey === '1m'
+        ? { kind: 'months', months: 1 }
+        : lengthKey === 'until'
+          ? { kind: 'until', date: String(form.until ?? '') }
+          : { kind: 'days', days: 7 };
+    const endsAt = grantEndFor(length, now);
+    const detail = await loadUserDetail(getDB(c.env), userId, now);
+    if (!detail || detail.deletionStatus !== 'active' || detail.isSystem) {
+      throw new PlanGrantError('ADMIN_GRANT_USER_NOT_FOUND', '지급할 계정을 찾지 못했어요. 탈퇴 대기 계정에는 줄 수 없어요.');
+    }
+    const lengthLabel =
+      length.kind === 'months' ? '1개월 (한국 달력 기준)' : length.kind === 'days' ? '7일' : `${length.date} 끝까지`;
+    const requestKey = crypto.randomUUID().replace(/-/g, '');
+    return html(c, (nonce) => renderGrantConfirm(nonce, detail, { endsAt, lengthLabel, reason, note, requestKey }, now));
+  } catch (err) {
+    return grantErrorRedirect(c, userId, err);
+  }
+});
+
+admin.post('/users/:id/grants', async (c) => {
+  const userId = c.req.param('id');
+  const now = new Date();
+  const form = await c.req.parseBody();
+  try {
+    const endsAt = new Date(String(form.ends_at ?? ''));
+    if (Number.isNaN(endsAt.getTime()) || endsAt.getTime() - now.getTime() > PLAN_GRANT_MAX_DAYS * 24 * 60 * 60 * 1000) {
+      throw new PlanGrantError('ADMIN_GRANT_INVALID', '확인 화면을 다시 열어 주세요.');
+    }
+    const reason = String(form.reason ?? '');
+    if (!isPlanGrantReason(reason)) throw new PlanGrantError('ADMIN_GRANT_INVALID', '지급 사유를 골라 주세요.');
+    const { created } = await createPlanGrant(
+      getDB(c.env),
+      c.env,
+      {
+        userPk: userId,
+        endsAt,
+        reason,
+        note: String(form.note ?? ''),
+        actor: ADMIN_ACTOR,
+        requestKey: String(form.request_key ?? ''),
+      },
+      now,
+    );
+    return c.redirect(`/admin/users/${encodeURIComponent(userId)}?done=${created ? 'granted' : 'again'}`, 303);
+  } catch (err) {
+    return grantErrorRedirect(c, userId, err);
+  }
+});
+
+admin.post('/grants/:id/revoke', async (c) => {
+  const form = await c.req.parseBody();
+  const userId = String(form.user ?? '');
+  try {
+    if (form.confirm !== '1') throw new PlanGrantError('ADMIN_GRANT_INVALID', '회수 확인을 체크해 주세요.');
+    const grant = await revokePlanGrant(getDB(c.env), c.env, c.req.param('id'), ADMIN_ACTOR, new Date());
+    return c.redirect(`/admin/users/${encodeURIComponent(grant.userId)}?done=revoked`, 303);
+  } catch (err) {
+    return grantErrorRedirect(c, userId, err);
   }
 });
 

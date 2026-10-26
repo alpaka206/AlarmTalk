@@ -27,7 +27,7 @@ const MONTHLY_REGISTRATION_READ = 'SELECT COUNT(*) AS used FROM voice_profile_ch
 
 /**
  * POST /clone 은 `c.get('userIdPK')` 가 있으면 유료 플랜 여부를 실제로 조회한다
- * (SELECT plan FROM users ...). fakeAuthMiddleware 가 실제 authMiddleware 처럼
+ * (`… AS plan FROM users …` — 관리자 기간 지급을 반영한 등급 읽기). fakeAuthMiddleware 가 실제 authMiddleware 처럼
  * userIdPK 를 채우게 되면서 이 쿼리가 결과 큐의 맨 앞을 소비하므로, 클론 테스트는
  * 유료 플랜 행을 가장 먼저 넣어 줘야 이후 결과(한도 카운트·INSERT ...)가 한 칸씩
  * 밀리지 않는다. 무료 플랜이면 403 VOICE_FEATURE_REQUIRES_PAID_PLAN 으로 떨어진다.
@@ -102,7 +102,7 @@ function fakeExecutionCtx() {
  * 매처라 FIFO 큐 순서를 건드리지 않는다(기존 pushResult 단언 보존).
  */
 function pushReplacementGatesPass(db: ReturnType<typeof createMockDB>) {
-  db.pushResultFor('SELECT plan FROM users', [{ plan: 'plus' }]);
+  db.pushResultFor('AS plan FROM users', [{ plan: 'plus' }]);
   db.pushResultFor('INSERT OR IGNORE INTO voice_profile_change_ledger', [], 1);
 }
 
@@ -1508,7 +1508,7 @@ describe('PATCH /:id — 교체(replace_existing) 시 알람 처리 (voice-profi
 
   it('이번 달 등록을 이미 썼으면 교체도 429 — 한 줄도 쓰지 않는다', async () => {
     pushReplaceLookups();
-    mockDB.pushResultFor('SELECT plan FROM users', [{ plan: 'plus' }]);
+    mockDB.pushResultFor('AS plan FROM users', [{ plan: 'plus' }]);
     // 원장이 이미 이번 달 행을 들고 있다 → INSERT OR IGNORE 가 0행.
     mockDB.pushResultFor('INSERT OR IGNORE INTO voice_profile_change_ledger', [], 0);
 
@@ -1528,7 +1528,7 @@ describe('PATCH /:id — 교체(replace_existing) 시 알람 처리 (voice-profi
 
   it('초안이 남아 있는 사이 무료로 내려갔으면 교체도 403', async () => {
     pushReplaceLookups();
-    mockDB.pushResultFor('SELECT plan FROM users', [{ plan: 'free' }]);
+    mockDB.pushResultFor('AS plan FROM users', [{ plan: 'free' }]);
 
     const response = await req(
       buildApp(),

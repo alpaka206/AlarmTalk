@@ -7,6 +7,7 @@ import {
   type DowngradedAlarm,
 } from './paid-voice-cleanup';
 import { logStructured } from './logger';
+import { activePlanGrantExistsSql } from './plan-grant-sql';
 import type { PlayEnv } from './play-subscriptions';
 import {
   BillingStateUnavailableError,
@@ -292,8 +293,9 @@ export function paidEntitlementStatement(userPk: string): InStatement {
             (SELECT COUNT(*) FROM subscriptions
               WHERE user_id = ? AND status = 'active'
                 AND datetime(expires_at) > datetime('now')) AS active_subs,
-            (SELECT plan FROM users WHERE id = ?) AS plan`,
-    args: [userPk, userPk],
+            (SELECT plan FROM users WHERE id = ?) AS plan,
+            ${activePlanGrantExistsSql('?')} AS active_grant`,
+    args: [userPk, userPk, userPk],
   };
 }
 
@@ -306,8 +308,19 @@ export function isPaidEntitlementRow(
   const activeSubs = Number(row.active_subs ?? 0);
   const rawPlan = row.plan as string | null;
   if (promoCoversFree === true && rawPlan === 'free') return true;
+  // 관리자 기간 지급(`lib/plan-grants.ts`)도 유료 권한이다 — 지급 중에는 보관이 걸리지 않고 스윕이 지우지 않는다.
+  if (Number(row.active_grant ?? 0) === 1) return true;
   const plan = rawPlan ?? 'free';
   return activeSubs > 0 || (plan !== 'free' && plan.trim() !== '');
+}
+
+/** 지금 유효한 관리자 기간 지급이 있는가(`lib/plan-grants.ts`). */
+export async function hasActivePlanGrant(db: DbExecutor, userPk: string): Promise<boolean> {
+  const res = await db.execute({
+    sql: `SELECT ${activePlanGrantExistsSql('?')} AS active_grant`,
+    args: [userPk],
+  });
+  return Number(res.rows[0]?.active_grant ?? 0) === 1;
 }
 
 export async function clearPaidVoiceRetention(db: DbExecutor, userPk: string): Promise<void> {
@@ -554,6 +567,10 @@ async function syncUserPlanAfterCancel(
   if (remaining.some((s) => PAID_PLAN_TYPES.has(s.planType))) {
     // 보류·미확인 구독은 회복 가능하다. 다른 구독의 종료로 클론을 반납하지 않는다.
     await resolvePlanAfterSuspend(db, userPk, []);
+  } else if (options.deleteVoiceData !== true && (await hasActivePlanGrant(db, userPk))) {
+    // 관리자 기간 지급이 남아 있다 — 원시 plan 만 free 로 두고 클론은 반납하지 않는다(읽을 때 플러스다). 지급이 끝나면
+    // 지급 뒷정리(`settleEndedPlanGrants`)가 반납과 보관을 맡는다.
+    await db.execute(setUserPlanStatement(userPk, 'free'));
   } else {
     await downgradeUserToFree(db, userPk, options);
   }

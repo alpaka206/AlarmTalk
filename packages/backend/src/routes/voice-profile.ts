@@ -3,6 +3,7 @@ import type { ErrorCode } from '@alarmtalk/shared';
 import type { AppEnv, Env } from '../types';
 import { ElevenLabsClient } from '../lib/elevenlabs';
 import { getDB } from '../lib/db';
+import { planWithGrantSql } from '../lib/plan-grant-sql';
 import { getFormFile } from '../lib/db-types';
 import { UUID_RE } from '../lib/validate';
 import { logRouteError, logStructured } from '../lib/logger';
@@ -904,7 +905,7 @@ export async function replaceVoiceInPlace(
     // **월 1회 등록 한도는 교체로 풀리지 않는다** — 앱이 보여 주는 `등록 n/1` 이 그 숫자다.
     // 예전에는 이 갈래가 승격 트랜잭션(아래)에 닿기 전에 return 해서 셋 다 건너뛰었다.
     const plan = await tx.execute({
-      sql: 'SELECT plan FROM users WHERE id = ? OR google_id = ? LIMIT 1',
+      sql: `SELECT ${planWithGrantSql('users')} AS plan FROM users WHERE id = ? OR google_id = ? LIMIT 1`,
       args: [ownerPk, loginId ?? ownerPk],
     });
     if (plan.rows.length === 0 || !hasPersonalVoiceAccess(plan.rows[0]!.plan, promo)) {
@@ -1476,7 +1477,7 @@ voiceProfile.patch('/:id', async (c) => {
   const updateRes = promotesDraftToOfficial
     ? await withWriteTransaction(db, async (tx) => {
         const plan = await tx.execute({
-          sql: 'SELECT plan FROM users WHERE id = ? OR google_id = ? LIMIT 1',
+          sql: `SELECT ${planWithGrantSql('users')} AS plan FROM users WHERE id = ? OR google_id = ? LIMIT 1`,
           args: [userPk, userId],
         });
         // 기간 한정 개인 플랜 반영(계산값) — 승격은 내 개인 기능이다.
@@ -1727,7 +1728,7 @@ voiceProfile.post('/clone', async (c) => {
     // 있어서, 식별자를 해석하지 못하면 플랜 확인 없이 클론이 진행됐다(fail-open).
     // 같은 파일의 promote 경로는 무조건 확인하고 있어 두 경로의 강도도 어긋나 있었다.
     const userPlan = await db.execute({
-      sql: 'SELECT plan FROM users WHERE id = ? OR google_id = ? LIMIT 1',
+      sql: `SELECT ${planWithGrantSql('users')} AS plan FROM users WHERE id = ? OR google_id = ? LIMIT 1`,
       args: [userPk, userId],
     });
     // 기간 한정 개인 플랜 반영(계산값) — 클론 등록은 내 개인 기능이다.

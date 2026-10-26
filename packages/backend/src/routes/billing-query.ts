@@ -1,6 +1,8 @@
 import { Hono } from 'hono';
 import type { AppEnv } from '../types';
 import { getDB } from '../lib/db';
+import { planWithGrantSql } from '../lib/plan-grant-sql';
+import { loadPlanGrantField } from '../lib/plan-grants';
 import {
   findActiveSubscriptionsByUserPk,
   findStoreTransactionsForSubscriptions,
@@ -85,7 +87,7 @@ billingQuery.get('/subscription', async (c) => {
     //   프로모가 켜져 있을 때만 읽는다 — 평상시 조회에 DB 왕복을 더하지 않는다.
     const rawPlanRow =
       refreshStoreState || promo.active
-        ? (await tx.execute({ sql: 'SELECT plan FROM users WHERE id = ?', args: [userId] }))
+        ? (await tx.execute({ sql: `SELECT ${planWithGrantSql('users')} AS plan FROM users WHERE id = ?`, args: [userId] }))
             .rows[0]
         : undefined;
     const rawPlan =
@@ -93,6 +95,7 @@ billingQuery.get('/subscription', async (c) => {
     const userPlan = refreshStoreState ? (computedUserPlan(rawPlan, promo) ?? 'free') : undefined;
     // 결제 보류 계정(원시 free + `active` 행)도 값이 있다 — `deletes_voices_at_end` 만 false 다.
     const personalPromo = await loadPersonalPromoField(tx, userId, rawPlan, promo);
+    const planGrant = await loadPlanGrantField(tx, userId);
     // ⚠ **해지 예약된 구독은 갱신 주인이 아니다**(코덱스 #733 6차). `cancel_at_period_end = 1`
     //   은 "아직 유료지만 다음 갱신은 없다" 는 뜻이라, 그걸 세면 **안내대로 Play 에서 해지한
     //   사용자가 남은 기간 내내 애플로 못 산다** — 우리가 하라고 한 일을 했는데 막힌다.
@@ -118,6 +121,7 @@ billingQuery.get('/subscription', async (c) => {
       return c.json({
         user_plan: userPlan,
         personal_promo: personalPromo,
+        plan_grant: planGrant,
         subscription: null,
         plan: null,
         next_plan: null,
@@ -142,6 +146,7 @@ billingQuery.get('/subscription', async (c) => {
     return c.json({
       user_plan: userPlan,
       personal_promo: personalPromo,
+      plan_grant: planGrant,
       store_renewal_providers: storeRenewalProviders,
       subscription: {
         // 'apple' | 'google' | null. null 은 스토어 결제가 아니라는 뜻이다

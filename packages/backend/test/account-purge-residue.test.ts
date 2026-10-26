@@ -48,6 +48,7 @@ const TABLES: Record<string, 'per-user' | 'no-personal-data' | 'retained-pseudon
   email_verification_codes: 'per-user',
   push_tokens: 'per-user',
   user_app_presence: 'per-user', // 앱 빌드·접속 기록(#133)
+  plan_grants: 'per-user', // 관리자 기간 지급(#134)
   admin_push_jobs: 'no-personal-data', // 관리자 알림 기록 — 대상 토큰·받는 사람을 적지 않는다(#133)
   subscriptions: 'per-user',
   store_transactions: 'per-user',
@@ -323,6 +324,16 @@ async function seed(): Promise<void> {
   await run(`INSERT INTO push_tokens (id, user_id, token, platform) VALUES ('pt-b', ?, 'push-token-b', 'ios')`, [B_PK]);
   await run(`INSERT INTO user_app_presence (user_id, platform, app_version) VALUES (?, 'android', 35)`, [A_PK]);
   await run(`INSERT INTO user_app_presence (user_id, platform, app_version) VALUES (?, 'ios', 13)`, [B_PK]);
+  await run(
+    `INSERT INTO plan_grants (id, user_id, starts_at, ends_at, reason, granted_by, request_key)
+     VALUES ('pg-a', ?, '2026-10-01T00:00:00.000Z', '2026-11-01T00:00:00.000Z', 'support', 'admin', 'key-a-000001')`,
+    [A_PK],
+  );
+  await run(
+    `INSERT INTO plan_grants (id, user_id, starts_at, ends_at, reason, granted_by, request_key)
+     VALUES ('pg-b', ?, '2026-10-01T00:00:00.000Z', '2026-11-01T00:00:00.000Z', 'support', 'admin', 'key-b-000001')`,
+    [B_PK],
+  );
 }
 
 beforeAll(async () => {
@@ -412,6 +423,7 @@ describe('탈퇴 파기 뒤 잔존물 (실제 SQLite)', () => {
       expect(await ids(`SELECT id FROM users WHERE id IN (?, ?, ?)`, [A_PK, B_PK, C_PK])).toEqual([B_PK, C_PK].sort());
       expect(await ids(`SELECT id FROM push_tokens`)).toEqual(['pt-b']);
       expect(await ids(`SELECT user_id FROM user_app_presence`)).toEqual([B_PK]);
+      expect(await ids(`SELECT id FROM plan_grants`)).toEqual(['pg-b']);
       expect(await ids(`SELECT id FROM user_consents`)).toEqual(['uc-b']);
       expect(await ids(`SELECT id FROM email_verification_codes`)).toEqual(['evc-b']);
       expect(await ids(`SELECT id FROM promo_code_redemptions`)).toEqual(['pr-b']);

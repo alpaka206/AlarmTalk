@@ -280,7 +280,7 @@ export function renderUsers(nonce: string, query: string, users: UserRow[], nowM
         .join(' ');
       return `<tr>
   <td class="tnum">${escapeHtml(fmtDate(u.createdAt))}</td>
-  <td><div class="cell-main" translate="no">${escapeHtml(u.email || '이메일 없음')}</div><div class="cell-sub">${escapeHtml(
+  <td><div class="cell-main" translate="no"><a href="/admin/users/${encodeURIComponent(u.id)}">${escapeHtml(u.email || '이메일 없음')}</a></div><div class="cell-sub">${escapeHtml(
     u.name || '이름 없음',
   )}</div></td>
   <td class="tnum">${builds.length ? builds.map((b) => escapeHtml(b)).join('<br>') : '<span class="muted">기록 없음</span>'}</td>

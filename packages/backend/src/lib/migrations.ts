@@ -3272,6 +3272,34 @@ export const migrations: Migration[] = [
       `CREATE INDEX IF NOT EXISTS idx_admin_push_jobs_created ON admin_push_jobs (created_at)`,
     ],
   },
+  {
+    // **관리자 기간 지급**(2026-10-26 오너 승인 — CLAUDE.md 「유료 기능은 스토어 결제로만」의 유일한 운영 예외,
+    // `docs/spec/billing-lifecycle.md` 「관리자 기간 지급」). 원시 `users.plan` 은 건드리지 않고, 읽을 때 유효한 지급이
+    // 있으면 플러스로 계산한다(`lib/plan-grants.ts`). 결제 행·영수증과 섞지 않으려고 따로 둔다.
+    //  - `request_key`: 같은 확인 화면을 두 번 보내도 한 번만 지급한다(멱등).
+    //  - `settled_at`: 끝났거나 회수된 지급의 뒷정리(클론 반납·3일 보관 예약)를 마친 시각 — 크론이 한 번만 한다.
+    //  - 회수는 행을 지우지 않는다(`revoked_at`) — 누가 언제 무엇을 줬는지 남긴다. 탈퇴 파기는 행을 지운다.
+    id: 134,
+    name: 'plan-grants',
+    statements: [
+      `CREATE TABLE IF NOT EXISTS plan_grants (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        starts_at TEXT NOT NULL,
+        ends_at TEXT NOT NULL,
+        reason TEXT NOT NULL CHECK (reason IN ('support', 'compensation', 'test', 'transition')),
+        note TEXT NOT NULL DEFAULT '',
+        granted_by TEXT NOT NULL,
+        request_key TEXT NOT NULL UNIQUE,
+        revoked_at TEXT,
+        revoked_by TEXT,
+        settled_at TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_plan_grants_user ON plan_grants (user_id, ends_at)`,
+      `CREATE INDEX IF NOT EXISTS idx_plan_grants_unsettled ON plan_grants (settled_at, ends_at)`,
+    ],
+  },
 ];
 // Errors that mean the statement was already applied — safe to ignore so
 // we can recover databases whose `_migrations` ledger is out of sync with

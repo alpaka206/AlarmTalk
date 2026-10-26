@@ -3,6 +3,7 @@ import type { ErrorCode } from '@alarmtalk/shared';
 import { jsonError } from '../lib/api-error';
 import type { AppEnv } from '../types';
 import { getDB } from '../lib/db';
+import { planWithGrantSql } from '../lib/plan-grant-sql';
 import { callerOwnerIds } from '../lib/caller-ids';
 import { typedRow } from '../lib/db-types';
 import { UUID_RE } from '../lib/validate';
@@ -448,7 +449,7 @@ tts.post('/generate', async (c) => {
   // `apple_refresh_token` 같은 **비밀값**과 JSON 덩어리(`dynamic_prompt_settings_json`)가 함께 있다. 알람 저장마다 도는 경로라 필요 없는 값을
   // 메모리에 올릴 이유가 없고, 특히 토큰은 쓰지도 않으면서 끌어오면 안 된다.
   const user = await db.execute({
-    sql: 'SELECT plan FROM users WHERE id = ? OR google_id = ? LIMIT 1',
+    sql: `SELECT ${planWithGrantSql('users')} AS plan FROM users WHERE id = ? OR google_id = ? LIMIT 1`,
     args: ownerIds,
   });
   if (user.rows.length === 0) {
@@ -1464,7 +1465,7 @@ tts.get('/manual-quota', async (c) => {
   const db = getDB(c.env);
 
   const userRow = await db.execute({
-    sql: 'SELECT plan FROM users WHERE id = ? OR google_id = ? LIMIT 1',
+    sql: `SELECT ${planWithGrantSql('users')} AS plan FROM users WHERE id = ? OR google_id = ? LIMIT 1`,
     args: ownerIds,
   });
   const rawCallerUserPlan =
@@ -1580,7 +1581,7 @@ tts.get('/messages/:id/audio', async (c) => {
                  messages.category,
                  COALESCE(vp.is_system, 0) AS is_system,
                  owner.id AS owner_id,
-                 owner.plan AS owner_plan
+                 ${planWithGrantSql('owner')} AS owner_plan
           FROM messages
           JOIN voice_profiles vp
             ON vp.id = messages.voice_profile_id
