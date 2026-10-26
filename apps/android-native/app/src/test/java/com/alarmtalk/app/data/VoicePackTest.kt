@@ -285,11 +285,10 @@ class VoicePackTest {
     @Test
     fun everyAppEntryRetiresDuePacksWithoutTheNetwork() {
         val viewModel = java.io.File("src/main/java/com/alarmtalk/app/ui/main/MainViewModel.kt").readText()
-        val collector = viewModel.indexOf("AppSignals.appEntries.collect { entry ->")
-        assertTrue("진입 구독을 못 찾았다 — 이름이 바뀌었으면 이 테스트도 고칠 것.", collector >= 0)
-        val retire = viewModel.indexOf("retireDueVoicePacksOnEntry()", collector)
-        val refresh = viewModel.indexOf("refreshAppSession(rollToken = firstEntryRefresh)", collector)
-        assertTrue("진입 구독이 기한 지난 팩 대체를 부르지 않는다", retire in (collector + 1) until refresh)
+        assertTrue(
+            "진입 구독(`AppSignals.appEntries`)이 기한 지난 팩 대체를 부르지 않는다",
+            Regex("""AppSignals\.appEntries\.collect \{ entry ->\s*if \(entry > 0L\) retireDueVoicePacksOnEntry\(\)""").containsMatchIn(viewModel),
+        )
         val actions = java.io.File("src/main/java/com/alarmtalk/app/ui/main/MainViewModelVoicePacks.kt").readText()
         val body = actions.substringAfter("internal fun MainViewModel.retireDueVoicePacksOnEntry()").substringBefore("\n}\n")
         assertTrue("진입 대체는 저장된 기한으로만 한다(`retireDuePacks`)", body.contains("VoicePackDownloader.retireDuePacks("))

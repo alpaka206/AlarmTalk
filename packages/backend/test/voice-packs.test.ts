@@ -187,6 +187,8 @@ describe('앱 API — 노출', () => {
     expect(summary.pack_id).toBe('first-pack');
     expect(String(summary.voice_id).startsWith(VOICE_PACK_VOICE_ID_PREFIX)).toBe(true);
     expect(summary.categories).toEqual(['cheer', 'fortune', 'medication', 'weather']);
+    // 공개 표식이 있어야 나오는 묶음(새 응원·기상 인사)은 팩의 게시 조건이 아니다 — 테마 넷만 갖춘다(스펙 §2).
+    expect(Object.keys(voicePackExpectedVariants()).sort()).toEqual(['cheer', 'fortune', 'medication', 'weather']);
     expect((summary.preview as { clip_id: string }).clip_id).toMatch(/^[0-9a-f-]{36}$/);
 
     const detailText = await (await appRequest('/api/voice-packs/first-pack')).text();

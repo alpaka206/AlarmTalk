@@ -44,6 +44,8 @@ v1.3 지시서 12.4(2026-10-26). 기본 목소리 4종 밖의 목소리를 **권
 - **알람 테마 넷이 다 있다** — `weather`·`fortune`·`cheer`·`medication`, 각 테마의 variant 는 기본 목소리 매니페스트의
   개수(`GET /tts/stock-clips` 의 `expected_variants.system`)와 같은 0..N-1. 날씨·운세는 **절대 인덱스**로 조건을 고르므로
   variant i 는 기본 목소리 variant i 와 **같은 조건**을 말해야 한다(검수 항목).
+- 공개 표식이 있어야 나오는 묶음(새 응원 `cheer_v2`·기본 목소리의 기상 인사 `wake_v1` — `voice-and-message.md` §5-4)은
+  팩의 게시 조건이 아니다. 환경마다 공개 여부가 달라 게시 조건이 흔들리면 안 된다(`voicePackExpectedVariants`).
 - **미리듣기 샘플** = `greeting` variant 0 하나. 알람 테마가 아니다.
 - 직접 입력·기본 인사말(`preset`)은 팩 목소리로 고를 수 없다(편집기가 그 두 항목을 감춘다).
 

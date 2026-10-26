@@ -1707,11 +1707,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             var firstEntryRefresh = true
             AppSignals.appEntries.collect { entry ->
                 if (entry <= 0L) return@collect
-                // 받은 추가 팩의 재생 기한은 백그라운드에 있는 동안에도 지난다 — 진입마다 저장된 기한으로 대체한다(네트워크 없이,
-                // `docs/spec/voice-packs.md` §5). 세션·동의를 키로 거는 화면 효과는 일반 복귀에서 다시 돌지 않는다(코덱스 #960).
-                retireDueVoicePacksOnEntry()
                 refreshAppSession(rollToken = firstEntryRefresh)
                 firstEntryRefresh = false
+            }
+        }
+        // 받은 추가 팩의 재생 기한은 백그라운드에 있는 동안에도 지난다 — **진입마다** 저장된 기한으로 대체한다(네트워크 없이,
+        // `docs/spec/voice-packs.md` §5). 세션·동의를 키로 거는 화면 효과는 일반 복귀에서 다시 돌지 않는다(코덱스 #960).
+        // 위 `/auth/me` 갱신을 기다리지 않도록 따로 구독한다.
+        viewModelScope.launch {
+            AppSignals.appEntries.collect { entry ->
+                if (entry > 0L) retireDueVoicePacksOnEntry()
             }
         }
     }

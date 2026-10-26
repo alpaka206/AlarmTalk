@@ -2,6 +2,7 @@ import type { Client } from '@libsql/client';
 import { typedRow } from './db-types';
 import { withWriteTransaction, type DbExecutor } from './transactions';
 import { endOfKstDate } from './plan-grants';
+import { stockContentSetForCategory } from '@alarmtalk/shared';
 import { FREE_BUCKET_CATEGORIES, STOCK_CLIP_PRESETS, STOCK_GREETING_CATEGORY } from './stock-clips';
 
 // MARK: - 추가 음성팩(`docs/spec/voice-packs.md`)
@@ -50,6 +51,10 @@ export function voicePackExpectedVariants(): Record<string, number> {
   const out: Record<string, number> = {};
   for (const preset of STOCK_CLIP_PRESETS) {
     if (!FREE_BUCKET_CATEGORIES.includes(preset.category)) continue;
+    // 공개 표식이 있어야 나오는 묶음(새 응원 `cheer_v2`·기본 목소리의 기상 인사 `wake_v1` — voice-and-message §5-4)은 팩의
+    // 게시 조건이 아니다. 팩은 늘 있는 테마 넷만 갖춘다(스펙 voice-packs §2) — 환경마다 공개 여부가 달라 게시 조건이 흔들리면 안 된다.
+    const contentSet = stockContentSetForCategory(preset.category);
+    if (contentSet && !contentSet.baseline) continue;
     out[preset.category] = preset.texts.ko?.length ?? 0;
   }
   return out;
