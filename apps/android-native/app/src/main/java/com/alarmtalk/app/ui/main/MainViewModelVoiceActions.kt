@@ -1145,7 +1145,8 @@ internal suspend fun MainViewModel.cacheVoiceClips(
                     preparation = com.alarmtalk.app.data.PreparationAttempt(
                         context = getApplication(),
                         scope = com.alarmtalk.app.data.UsageEventProps.SCOPE_SELECTED_VOICE,
-                        language = deviceAppVoiceLanguage(),
+                        // 받는 클립의 언어다 — 클론은 등록 때 고른 언어 한 벌이라 기기 언어와 다를 수 있다(코덱스 #958). 섞였으면 비운다.
+                        language = list.mapNotNull { it.language }.distinct().singleOrNull(),
                         voiceProfileId = voiceProfileId,
                     ).also { it.start(targetCount = list.size, alreadyCached = list.size - toFetch.size) }
                 }

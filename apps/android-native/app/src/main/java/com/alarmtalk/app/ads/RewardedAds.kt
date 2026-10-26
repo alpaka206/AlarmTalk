@@ -57,7 +57,8 @@ internal object RewardedAds {
      * ⚠ **광고를 요청하기 전에 동의(UMP)부터 받는다**(코덱스 #925). 유럽 등 규정이 있는 지역은 Google 의 동의 양식을
      * 거쳐야 하고, `canRequestAds()` 가 거짓이면 요청하지 않는다. 규정이 없는 지역에서는 양식이 뜨지 않고 그대로 지난다.
      */
-    suspend fun loadAndShow(activity: Activity, serverUserId: String): RewardedAdOutcome {
+    /** [onShown] 은 광고가 **실제로 화면에 뜬 순간** 한 번 부른다 — 동의·재고·표시 실패는 부르지 않는다. */
+    suspend fun loadAndShow(activity: Activity, serverUserId: String, onShown: () -> Unit = {}): RewardedAdOutcome {
         if (!configured || serverUserId.isBlank()) return RewardedAdOutcome.LOAD_FAILED
         if (!gatherConsent(activity)) return RewardedAdOutcome.LOAD_FAILED
         if (!initialized) {
@@ -68,7 +69,7 @@ internal object RewardedAds {
         ad.setServerSideVerificationOptions(
             ServerSideVerificationOptions.Builder().setUserId(serverUserId).build(),
         )
-        return show(activity, ad)
+        return show(activity, ad, onShown)
     }
 
     /** 동의 정보를 갱신하고, 필요하면 양식을 띄운 뒤 광고를 요청해도 되는지 답한다. */
@@ -136,10 +137,12 @@ internal object RewardedAds {
         )
     }
 
-    private suspend fun show(activity: Activity, ad: RewardedAd): RewardedAdOutcome =
+    private suspend fun show(activity: Activity, ad: RewardedAd, onShown: () -> Unit): RewardedAdOutcome =
         suspendCancellableCoroutine { cont ->
             var earned = false
             ad.fullScreenContentCallback = object : FullScreenContentCallback() {
+                override fun onAdShowedFullScreenContent() = onShown()
+
                 override fun onAdDismissedFullScreenContent() {
                     if (cont.isActive) cont.resume(if (earned) RewardedAdOutcome.EARNED else RewardedAdOutcome.DISMISSED)
                 }

@@ -711,11 +711,13 @@ internal fun AlarmEditorScreen(
         val activity = context.findHostActivity() ?: return
         val creditsBefore = reward.credits
         adRewardBusy = true
-        // 시청 시작(`reward_view_started`) — 제안·대기·지급·사용이 같은 시도로 묶인다(`AdRewardAttempts`).
-        com.alarmtalk.app.data.AdRewardAttempts.viewStarted(context)
         scope.launch {
             try {
-                when (RewardedAds.loadAndShow(activity, reward.userId)) {
+                // 시청 시작(`reward_view_started`)은 광고가 **실제로 뜬 순간**에 적는다 — 동의·재고·표시 실패로 아무것도 못 본
+                // 시도를 시청으로 세지 않는다(코덱스 #958). 제안·대기·지급·사용이 같은 시도로 묶인다(`AdRewardAttempts`).
+                when (RewardedAds.loadAndShow(activity, reward.userId) {
+                    com.alarmtalk.app.data.AdRewardAttempts.viewStarted(context)
+                }) {
                     RewardedAdOutcome.EARNED -> {
                         // 끝까지 봤다 — 서버 확인(SSV)을 기다린다. 적립은 서버만 한다.
                         com.alarmtalk.app.data.AdRewardAttempts.pending(context)
@@ -1095,7 +1097,9 @@ internal fun AlarmEditorScreen(
                             attemptId = generationAttemptId,
                             props = com.alarmtalk.app.data.UsageEventProps(
                                 outcome = com.alarmtalk.app.data.UsageEventProps.OUTCOME_FAILURE,
-                                chargedSource = com.alarmtalk.app.data.UsageEventProps.CHARGED_NONE,
+                                // 서버가 거절했을 때만 '세지 않음' 이다 — 연결이 끊겼으면 셌는지 모른다(비운다, 스펙 §7.2).
+                                chargedSource = com.alarmtalk.app.data.UsageEventProps.CHARGED_NONE
+                                    .takeIf { ttsErrorCode != null },
                                 requestId = manualRequestId,
                                 charCount = text.length,
                                 errorCode = com.alarmtalk.app.data.UsageEventProps.code(ttsErrorCode) ?: "unexpected",

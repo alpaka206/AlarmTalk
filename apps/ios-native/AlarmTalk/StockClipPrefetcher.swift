@@ -92,7 +92,7 @@ final class StockClipPrefetcher: ObservableObject {
     private final class PreparationReport {
         let attemptID = UsageEventContract.newAttemptID()
         let scope: UsageEventProps.Scope
-        let language: String
+        var language: String?
         let voiceProfileID: String?
         var startedAt: ContinuousClock.Instant?
         var cacheState: UsageEventProps.CacheState?
@@ -126,8 +126,13 @@ final class StockClipPrefetcher: ObservableObject {
             )
         }
 
-        func recordStartIfNeeded(target: Int, missing: Int) {
+        /// [contentLanguages] 는 받는 클립들의 언어 — 클론은 등록 때 고른 언어 한 벌이라 기기 언어와 다를 수 있다. 하나면 그것,
+        /// 섞였으면 비운다(코덱스 #958, 안드로이드 `downloadAllPresetClips` 짝).
+        func recordStartIfNeeded(target: Int, missing: Int, contentLanguages: Set<String>? = nil) {
             guard startedAt == nil, missing > 0, stillOwner else { return }
+            if scope == .selectedVoice, let contentLanguages {
+                language = contentLanguages.count == 1 ? contentLanguages.first : nil
+            }
             startedAt = .now
             targetCount = target
             completedCount = target - missing
@@ -532,7 +537,11 @@ final class StockClipPrefetcher: ObservableObject {
             var missing = await Self.missingClipsOffMain(clips)
             setState(.running(done: clips.count - missing.count, total: clips.count), gen: gen)
             if gen == generation, !Task.isCancelled {
-                report.recordStartIfNeeded(target: clips.count, missing: missing.count)
+                report.recordStartIfNeeded(
+                    target: clips.count,
+                    missing: missing.count,
+                    contentLanguages: Set(clips.map { $0.language ?? "ko" })
+                )
             }
 
             // ⚠ **'하나라도 받았으면 끝' 으로 판정하지 말 것**(2026-09-17 실기기). 예전에는
