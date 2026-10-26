@@ -520,7 +520,8 @@ private fun VoicePreviewCard(accent: Color) {
                 horizontalArrangement = Arrangement.spacedBy(14.dp),
             ) {
                 Surface(
-                    onClick = ::toggle,
+                    // 람다로 넘긴다 — 함수 참조는 캡처한 플레이어가 바뀌어도 같은 값으로 보여 해제된 옛 플레이어를 붙잡는다(CLAUDE.md 「Compose 콜백에 지역 함수 참조」).
+                    onClick = { toggle() },
                     modifier = Modifier.size(48.dp),
                     shape = WakerPillShape,
                     color = accent.copy(alpha = 0.18f),
