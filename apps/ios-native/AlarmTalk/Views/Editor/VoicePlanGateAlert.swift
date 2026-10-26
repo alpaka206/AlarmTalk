@@ -17,6 +17,9 @@ struct VoicePlanGateAlert: ViewModifier {
     @Binding var content: AlarmEditorSheet.VoiceGateAlertContent?
     let onOpenBilling: () -> Void
     let onOpenVoices: () -> Void
+    /// '광고 보고 한 번 쓰기'(`docs/spec/ad-rewards.md` §1-1). 내용이 `offersRewardedAd` 일 때만 그린다 — 버튼이 셋이 되면
+    /// 시스템 알럿이 세로로 쌓는다(안드로이드 `PlanGateDialog` 의 `rewardedAdAction` 과 같은 순서: 광고 · 이용권 · 닫기).
+    var onWatchRewardedAd: (() -> Void)? = nil
 
     func body(content view: Content) -> some View {
         view.alert(
@@ -27,6 +30,12 @@ struct VoicePlanGateAlert: ViewModifier {
             ),
             presenting: content
         ) { item in
+            if item.offersRewardedAd, let onWatchRewardedAd {
+                Button(String(localized: "광고 보고 한 번 쓰기")) {
+                    content = nil
+                    onWatchRewardedAd()
+                }
+            }
             if item.offersPlanActions {
                 Button(PaidGateCopy.viewPlans) {
                     content = nil
@@ -55,8 +64,14 @@ extension View {
     func voicePlanGateAlert(
         content: Binding<AlarmEditorSheet.VoiceGateAlertContent?>,
         onOpenBilling: @escaping () -> Void,
-        onOpenVoices: @escaping () -> Void
+        onOpenVoices: @escaping () -> Void,
+        onWatchRewardedAd: (() -> Void)? = nil
     ) -> some View {
-        modifier(VoicePlanGateAlert(content: content, onOpenBilling: onOpenBilling, onOpenVoices: onOpenVoices))
+        modifier(VoicePlanGateAlert(
+            content: content,
+            onOpenBilling: onOpenBilling,
+            onOpenVoices: onOpenVoices,
+            onWatchRewardedAd: onWatchRewardedAd
+        ))
     }
 }

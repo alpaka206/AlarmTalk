@@ -170,6 +170,12 @@
 - 회수는 행마다 '회수 확인' 체크를 해야 보낸다. 그 지급만 끝내고, 다른 권한이 없으면 지금부터 3일 뒤 목소리를 지운다.
 - 탈퇴 대기·시스템 계정에는 주지 않는다. 규칙 전문은 [`billing-lifecycle.md`](billing-lifecycle.md) 「관리자 기간 지급」.
 
+## 광고 보상 대조 (읽기 전용 JSON)
+
+`GET /admin/ad-rewards.json`(24시간 넘은 미확정 승인 세션·정산 못 한 SSV 콜백·상태별 수)과
+`GET /admin/users/:id/ad-rewards.json`(한 사람의 세션·콜백·적립·잔액과 어긋남). 화면이 아니라 JSON 이고 **쓰기는 없다** —
+재정산·고객 보상 지급은 후속이다. 규칙 전문은 [`ad-rewards.md`](ad-rewards.md) §7.
+
 ## 오류 코드
 
 `ADMIN_UNCONFIGURED`(503) · `ADMIN_UNAUTHORIZED`(401) · `ADMIN_PUSH_COPY_INVALID`(400) ·
@@ -197,3 +203,4 @@
 | 사용자 상세·기간 지급 | `routes/admin.ts`·`lib/admin/user-detail.ts`·`lib/admin/grant-pages.ts`·`lib/plan-grants.ts`(#134) | `plan-grants.test.ts` 「콘솔」 |
 | 합성 운영 보기(JSON) | `routes/admin.ts`·`lib/admin/tts-ops.ts`·`lib/render-backlog.ts`(#139) | `tts-render-budget.test.ts` 「관리자 JSON」 |
 | 사용 지표 | `lib/admin/usage-metrics.ts`(거르기·집계)·`lib/admin/usage-pages.ts`(화면)·`routes/admin.ts` 의 `/usage` | `admin-usage-metrics.test.ts` |
+| 광고 보상 대조(읽기 전용) | `routes/admin.ts`·`lib/admin/ad-rewards.ts`(#141) | `ad-reward-sessions.test.ts` 「관리자 대조」 |

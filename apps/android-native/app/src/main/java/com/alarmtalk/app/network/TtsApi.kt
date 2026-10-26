@@ -59,13 +59,19 @@ data class ManualQuotaResponse(
 )
 
 data class AdRewardStatus(
-    /** 지금 쓸 수 있는 보상(직접 입력 생성 한 번씩). */
+    /** 지금 쓸 수 있는 보상(직접 입력 생성 한 번씩). 계정 하나에 한 잔액이다(어느 앱에서 받았든). */
     val credits: Int = 0,
-    /** 이번 달 광고로 더 받을 수 있는 횟수. */
+    /** 이번 달 광고로 더 받을 수 있는 횟수(열린 예약을 뺀 값). */
     @SerializedName("remaining_grants") val remainingGrants: Int = 0,
     @SerializedName("monthly_limit") val monthlyLimit: Int = 0,
-    /** 광고의 서버 확인 콜백에 실을 계정 PK — 로그인 식별자(구글 sub)와 다를 수 있어 서버가 준다. */
-    @SerializedName("user_id") val userId: String = "",
+    /** 끝까지 봤는데 아직 서버 확인(SSV)이 오지 않은 광고 수 — '보상을 확인하고 있어요' 를 말한다. */
+    val pending: Int = 0,
+    /** 지금 새 광고를 볼 수 있는가(서버의 운영 스위치·이번 달 자리·열린 세션). 옛 서버면 false. */
+    @SerializedName("can_watch") val canWatch: Boolean = false,
+    /** 못 보면 왜인지 — `disabled`·`monthly_limit`·`session_open`. */
+    @SerializedName("unavailable_reason") val unavailableReason: String? = null,
+    /** 이번 달 상한이면 다음 자리가 생기는 시각(ISO-8601, 다음 달 1일 0시 KST). */
+    @SerializedName("next_grant_at") val nextGrantAt: String? = null,
 )
 
 data class TtsMessage(

@@ -491,6 +491,38 @@ final class AlarmTalkAPI: @unchecked Sendable {
         return response.variantIndex
     }
 
+    // MARK: - 아침 소식 (`docs/spec/morning-briefing.md` §8 — 화면을 열 때·누를 때만 부른다)
+
+    func searchBriefingCompanies(query: String, token: String) async throws -> [BriefingCompany] {
+        var components = URLComponents()
+        components.queryItems = [URLQueryItem(name: "q", value: query), URLQueryItem(name: "limit", value: "20")]
+        let response: BriefingCompanySearchResponse = try await request(
+            "briefing/companies/search?\(components.percentEncodedQuery ?? "")",
+            token: token
+        )
+        return response.companies
+    }
+
+    func briefingInterests(token: String) async throws -> [BriefingInterest] {
+        let response: BriefingInterestsResponse = try await request("briefing/interests", token: token)
+        return response.interests
+    }
+
+    /// 관심 기업을 **통째 교체**한다. 응답의 목록이 곧 화면의 목록이다.
+    func saveBriefingInterests(corpCodes: [String], token: String) async throws -> [BriefingInterest] {
+        let response: BriefingInterestsResponse = try await request(
+            "briefing/interests",
+            method: "PUT",
+            token: token,
+            body: BriefingInterestsPutRequest(corpCodes: corpCodes)
+        )
+        return response.interests
+    }
+
+    func briefingToday(token: String) async throws -> BriefingTodayResponse {
+        try await request("briefing/today", token: token)
+    }
+
     func updateProfile(_ requestBody: UpdateProfileRequest, token: String) async throws -> UpdateProfileResponse {
         try await request("user/me", method: "PATCH", token: token, body: requestBody)
     }
@@ -575,9 +607,34 @@ final class AlarmTalkAPI: @unchecked Sendable {
         )
     }
 
-    /// 이번 달 직접 입력 문구 생성 여유. **유료일 때만** 의미가 있다(limit == 0 이면 표시 안 함).
+    /// 이번 달 직접 입력 문구 생성 여유. 무료도 월 3회가 있고, 무료면 광고 보상 현황(`ad_reward`)이 함께 온다.
     func manualQuota(token: String) async throws -> ManualQuotaResponse {
         try await request("tts/manual-quota", token: token)
+    }
+
+    // MARK: 광고 시청 승인 세션(`docs/spec/ad-rewards.md` §3) — 안드로이드 `AdRewardApi` 와 같은 세 요청.
+    // ⚠ 이 요청들은 보상을 주지 않는다. 적립은 AdMob 서버의 서명된 확인(SSV)으로만 한다.
+
+    func createAdRewardSession(adUnit: String, token: String) async throws -> AdRewardSessionResponse {
+        try await request(
+            "ad-rewards/sessions",
+            method: "POST",
+            token: token,
+            body: AdRewardSessionCreateRequest(adUnit: adUnit)
+        )
+    }
+
+    func startAdRewardSession(id: String, token: String) async throws -> AdRewardSessionResponse {
+        try await request("ad-rewards/sessions/\(id)/start", method: "POST", token: token)
+    }
+
+    func closeAdRewardSession(id: String, outcome: String, token: String) async throws {
+        let _: AdRewardSessionResponse = try await request(
+            "ad-rewards/sessions/\(id)/close",
+            method: "POST",
+            token: token,
+            body: AdRewardSessionCloseRequest(outcome: outcome)
+        )
     }
 
     /// Phase 4-D1: Apple StoreKit2 영수증을 백엔드로 보내 entitlement 동기화.

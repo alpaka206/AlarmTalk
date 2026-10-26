@@ -38,6 +38,22 @@ class TtsGenerateGateTest {
         assertFalse(request.isFreeSystemPresetRequest())
     }
 
+    // 무료도 기본 목소리 직접 입력을 보낸다(voice-and-message §8) — 등록 목소리·번역·생성형은 아니다.
+    @Test
+    fun freeManualGateAllowsSystemVoiceTypedTextOnly() {
+        val manual = TtsGenerateRequest(
+            voiceProfileId = "70000000-0000-4000-9000-000000000102",
+            text = "10월 26일 확인한 정책브리핑 정책뉴스입니다.",
+            category = "custom",
+            language = "ko",
+        )
+        assertTrue(manual.isFreeSystemManualRequest())
+        assertFalse(manual.copy(voiceProfileId = "user-voice-id").isFreeSystemManualRequest())
+        assertFalse(manual.copy(translate = true).isFreeSystemManualRequest())
+        assertFalse(manual.copy(random = true, randomContext = "weather").isFreeSystemManualRequest())
+        assertFalse(manual.copy(text = "  ").isFreeSystemManualRequest())
+    }
+
     @Test
     fun freeGateRejectsNonSystemVoicePresetRequest() {
         val request = TtsGenerateRequest(

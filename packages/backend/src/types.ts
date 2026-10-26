@@ -142,6 +142,11 @@ export interface Env {
   TTS_RERENDER_BATCH_MAX_CHARS?: string;
   TTS_RERENDER_CONCURRENCY?: string;
   TTS_PROVIDER_REMAINING_ALERT_CHARS?: string;
+  /**
+   * **광고 신규 시청 스위치**(`true`/`1` 이면 켜짐, 그 밖은 꺼짐 — fail-closed). 꺼지면 새 승인 세션만 막는다 — 이미 승인한
+   * 세션의 SSV 정산과 위 광고 단위 허용 목록은 그대로다(`lib/ad-reward-sessions.ts` `adRewardViewingEnabled`).
+   */
+  ADMOB_REWARDED_ADS_ENABLED?: string;
   INIT_DB_SECRET?: string;
   BILLING_STUB_ENABLED?: string;
   SENTRY_DSN?: string;

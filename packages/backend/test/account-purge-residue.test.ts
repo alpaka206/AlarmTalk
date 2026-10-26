@@ -42,6 +42,8 @@ const TABLES: Record<string, 'per-user' | 'no-personal-data' | 'retained-pseudon
   voice_profile_change_ledger: 'per-user',
   manual_tts_usage: 'per-user',
   ad_reward_credits: 'per-user',
+  ad_reward_sessions: 'per-user', // 광고 시청 승인 세션(#141)
+  ad_reward_callbacks: 'per-user', // 광고 SSV 콜백 기록(#141)
   paid_voice_retention: 'per-user',
   usage_events: 'per-user',
   user_consents: 'per-user',
@@ -115,6 +117,8 @@ const A_OWNED_ROWS: Array<[table: string, column: string, id: string]> = [
   ['voice_profile_change_ledger', 'id', 'vcl-a'],
   ['usage_events', 'id', 'ue-a'],
   ['ad_reward_credits', 'transaction_id', 'adr-a'],
+  ['ad_reward_sessions', 'id', 'ads-a'],
+  ['ad_reward_callbacks', 'transaction_id', 'adcb-a'],
   ['user_consents', 'id', 'uc-a'],
   ['email_verification_codes', 'id', 'evc-a'],
 ];
@@ -300,6 +304,18 @@ async function seed(): Promise<void> {
   await run(`INSERT INTO manual_tts_usage (pool_key, usage_month, used_count) VALUES (?, '2026-09', 3)`, [B_PK]);
 
   await run(`INSERT INTO ad_reward_credits (transaction_id, user_id, ad_unit, grant_month) VALUES ('adr-a', ?, 'unit', '2026-09')`, [A_PK]);
+  await run(
+    `INSERT INTO ad_reward_sessions (id, user_id, platform, ad_unit, status, reserved_month, created_at, expires_at)
+     VALUES ('ads-a', ?, 'android', 'unit', 'pending', '2026-09', '2026-09-01T00:00:00.000Z', '2026-09-01T00:10:00.000Z'),
+            ('ads-b', ?, 'ios', 'unit', 'granted', '2026-09', '2026-09-01T00:00:00.000Z', '2026-09-01T00:10:00.000Z')`,
+    [A_PK, B_PK],
+  );
+  await run(
+    `INSERT INTO ad_reward_callbacks (transaction_id, user_id, ad_unit, session_id, reward_month, received_at)
+     VALUES ('adcb-a', ?, 'unit', 'ads-a', '2026-09', '2026-09-01T00:01:00.000Z'),
+            ('adcb-b', ?, 'unit', 'ads-b', '2026-09', '2026-09-01T00:01:00.000Z')`,
+    [A_PK, B_PK],
+  );
 
   // ── 알람 ─────────────────────────────────────────────────────────────────
   await run(`INSERT INTO alarms (id, user_id, message_id, voice_profile_id, time) VALUES ('al-a-own', ?, 'msg-a', 'vp-a', '07:00')`, [A_PK]);
@@ -457,6 +473,8 @@ describe('탈퇴 파기 뒤 잔존물 (실제 SQLite)', () => {
       expect(await ids(`SELECT request_id AS id FROM manual_tts_requests`)).toEqual(['req-b']);
       expect(await ids(`SELECT user_id FROM apple_server_notifications`)).toEqual([B_PK]);
       expect(await ids(`SELECT user_id FROM briefing_interests`)).toEqual([B_PK]);
+      expect(await ids(`SELECT id FROM ad_reward_sessions`)).toEqual(['ads-b']);
+      expect(await ids(`SELECT transaction_id AS id FROM ad_reward_callbacks`)).toEqual(['adcb-b']);
       expect(await ids(`SELECT id FROM user_consents`)).toEqual(['uc-b']);
       expect(await ids(`SELECT id FROM email_verification_codes`)).toEqual(['evc-b']);
       expect(await ids(`SELECT id FROM promo_code_redemptions`)).toEqual(['pr-b']);
