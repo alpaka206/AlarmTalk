@@ -70,7 +70,11 @@ internal suspend fun MainViewModel.refreshClipReadiness() {
     } ?: return
     // 기다리는 사이 계정이 바뀌었으면 이 계산은 앞 계정의 것이다.
     if (authSession?.user?.id != session.user.id) return
-    val clips = stockClips
+    // 기본 목소리는 **지금 언어의** 클립만 센다 — 받는 대상이 그것뿐이다(`StockClipPrefetchWorker.isDefaultVoiceTarget`).
+    // 모든 언어를 세면 앱 언어를 바꾼 뒤 옛 언어 클립만으로 '다 받음' 이 되어, 준비 화면은 끝났다는데 고르면 다시 막혔다
+    // (코덱스 #952). 내 목소리는 등록 때 고른 언어 한 벌이라 거르지 않는다.
+    val language = deviceAppVoiceLanguage()
+    val clips = stockClips.filter { !isSystemVoiceId(it.voiceProfileId) || (it.language ?: "ko") == language }
 
     val audioStore = AlarmAudioStore(getApplication<Application>())
     val systemVoiceIds = clips.map { it.voiceProfileId }.filter { isSystemVoiceId(it) }.distinct().sorted()
