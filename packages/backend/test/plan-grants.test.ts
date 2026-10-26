@@ -22,7 +22,7 @@ import {
   createPlanGrant,
   endOfKstDate,
   grantEndFor,
-  loadPlanGrantField,
+  loadPlanGrantAnswer,
   mergedGrantEnd,
   revokePlanGrant,
   settleEndedPlanGrants,
@@ -115,13 +115,15 @@ describe('지급과 읽기', () => {
     const raw = await db.execute(`SELECT plan FROM users WHERE id = 'u1'`);
     expect(raw.rows[0]!.plan).toBe('free');
     expect(await hasActivePaidEntitlement(db, 'u1', false)).toBe(true);
-    expect(await loadPlanGrantField(db, 'u1')).toMatchObject({ ends_at: expect.any(String), computed_at: expect.any(String) });
+    const answer = await loadPlanGrantAnswer(db, 'u1', null);
+    expect(answer.plan).toBe('plus');
+    expect(answer.planGrant).toMatchObject({ ends_at: expect.any(String), computed_at: expect.any(String) });
   });
 
   it('원시 유료(구독자)에게는 plan_grant 를 싣지 않는다 — 앱이 산 이용권을 무료로 읽지 않게', async () => {
     await addUser('u1p', 'plus');
     await grant('u1p', new Date(Date.now() + 7 * DAY), 'key-u1p-001');
-    expect(await loadPlanGrantField(db, 'u1p')).toBeNull();
+    expect(await loadPlanGrantAnswer(db, 'u1p', null)).toEqual({ plan: 'plus', planGrant: null });
   });
 
   it('같은 확인 화면을 두 번 보내도 한 번만 준다', async () => {
@@ -151,6 +153,17 @@ describe('지급과 읽기', () => {
   });
 });
 
+describe('응답의 등급과 지급 끝은 한 순간이다', () => {
+  it('지급이 끝난 순간에 계산하면 plan 도 free 다 — 기한 없는 plus 가 나가지 않는다', async () => {
+    await addUser('u11');
+    const now = new Date();
+    const end = new Date(now.getTime() + 60_000);
+    await grant('u11', end, 'key-u11-001', now);
+    expect((await loadPlanGrantAnswer(db, 'u11', null, new Date(end.getTime() - 1))).plan).toBe('plus');
+    expect(await loadPlanGrantAnswer(db, 'u11', null, end)).toEqual({ plan: 'free', planGrant: null });
+  });
+});
+
 describe('끝난 지급의 뒷정리', () => {
   it('회수하면 그 지급만 끝나고, 다른 권한이 없으면 클론 반납 + 지금부터 3일 보관', async () => {
     await addUser('u5');
@@ -177,6 +190,18 @@ describe('끝난 지급의 뒷정리', () => {
     expect(ret.rows).toHaveLength(0);
     const vp = await db.execute(`SELECT elevenlabs_voice_id FROM voice_profiles WHERE id = 'vp-u6'`);
     expect(vp.rows[0]!.elevenlabs_voice_id).toBe('el-u6');
+  });
+
+  it('탈퇴 대기 계정도 정리한다 — 유예 중 철회해도 클론 반납·보관이 빠지지 않는다', async () => {
+    await addUser('u12');
+    const now = new Date();
+    const { grant: g } = await grant('u12', new Date(now.getTime() + DAY), 'key-u12-001', now);
+    await run(`UPDATE users SET deletion_status = 'pending_deletion' WHERE id = 'u12'`);
+    await revokePlanGrant(db, ENV, g.id, 'test', now);
+    const ret = await db.execute(`SELECT 1 FROM paid_voice_retention WHERE user_id = 'u12'`);
+    expect(ret.rows).toHaveLength(1);
+    const vp = await db.execute(`SELECT elevenlabs_voice_id FROM voice_profiles WHERE id = 'vp-u12'`);
+    expect(vp.rows[0]!.elevenlabs_voice_id).toBeNull();
   });
 
   it('이미 안내한 더 늦은 보관 기한을 앞당기지 않는다', async () => {

@@ -176,33 +176,38 @@ export async function listPlanGrants(db: Pick<DbExecutor, 'execute'>, userPk: st
 }
 
 /**
- * 응답의 `plan_grant` 조각 — **지급 때문에 플러스일 때**(원시 plan 이 free)만 이어진 구간의 끝과 계산 시각. 아니면 `null`.
+ * 응답의 **등급과 `plan_grant` 를 한 순간에** 계산한다(Codex #941 — 따로 계산하면 그 사이 지급이 끝났을 때 `plan: plus` 가
+ * 기한 없이 나가, 오프라인 앱이 끝난 지급을 영영 자르지 못한다). 원시 plan 과 지급 행을 **한 문장**으로 읽고 같은 `now` 로
+ * 가른다. 기간 한정 개인 플랜(`computedUserPlan`)은 이 `plan` 위에 같은 `promo.now` 로 얹는다.
  *
- * 원시 유료(구독자)에게는 싣지 않는다. 두 앱은 이 값을 기간 한정 개인 플랜과 같은 계약("이 값이 있다 = 원시 free, 끝 전에
- * 받은 `plus` 는 끝 뒤에 무료로 읽는다")으로 읽는다 — 구독자에게 실으면 산 이용권이 무료로 보이고 결제 버튼이 다시 뜬다.
- * `computed_at` 은 이 답을 계산한 서버 시각이다(앱의 오프라인 차단이 '끝 전에 받은 답인가' 를 서버 시계로 가른다).
+ * @param fallbackPlan 계정 행을 못 읽었을 때(방금 만든 계정의 다른 트랜잭션 등) 쓸 원시 plan.
  */
-export async function loadPlanGrantField(
+export async function loadPlanGrantAnswer<P extends string | null>(
   db: Pick<DbExecutor, 'execute'>,
   userPk: string,
+  fallbackPlan: P,
   now: Date = new Date(),
-): Promise<{ ends_at: string; computed_at: string } | null> {
+): Promise<{ plan: P | string; planGrant: { ends_at: string; computed_at: string } | null }> {
   const res = await db.execute({
-    sql: `SELECT g.starts_at, g.ends_at, g.revoked_at FROM plan_grants g
-          WHERE g.user_id = ? AND g.revoked_at IS NULL AND julianday(g.ends_at) > julianday(?)
-            AND EXISTS (SELECT 1 FROM users u WHERE u.id = g.user_id AND u.plan = 'free')`,
-    args: [userPk, now.toISOString()],
+    sql: `SELECT u.plan AS raw_plan, g.starts_at, g.ends_at
+          FROM users u
+          LEFT JOIN plan_grants g ON g.user_id = u.id AND g.revoked_at IS NULL
+            AND julianday(g.ends_at) > julianday(?)
+          WHERE u.id = ?`,
+    args: [now.toISOString(), userPk],
   });
+  if (res.rows.length === 0) return { plan: fallbackPlan, planGrant: null };
+  const raw = res.rows[0]!.raw_plan == null ? null : String(res.rows[0]!.raw_plan);
+  if (raw !== 'free') return { plan: raw as P | string, planGrant: null };
   const end = mergedGrantEnd(
-    res.rows.map((r) => ({
-      startsAt: String(r.starts_at),
-      endsAt: String(r.ends_at),
-      revokedAt: r.revoked_at == null ? null : String(r.revoked_at),
-    })),
+    res.rows
+      .filter((r) => r.ends_at != null)
+      .map((r) => ({ startsAt: String(r.starts_at), endsAt: String(r.ends_at), revokedAt: null })),
     now,
   );
+  if (!end) return { plan: 'free', planGrant: null };
   const seconds = (d: Date) => d.toISOString().replace(/\.\d{3}Z$/, 'Z');
-  return end ? { ends_at: seconds(end), computed_at: seconds(now) } : null;
+  return { plan: 'plus', planGrant: { ends_at: seconds(end), computed_at: seconds(now) } };
 }
 
 export interface CreatePlanGrantInput {
@@ -304,7 +309,10 @@ export async function revokePlanGrant(
   }
   const grant = rowToGrant(res.rows[0] as Record<string, unknown>);
   logStructured('info', { at: 'admin.plan_grant', action: 'REVOKED', grant_id: grant.id });
-  await settleEndedPlanGrants(db, env, now, { grantIds: [grant.id] });
+  const downgraded = await settleEndedPlanGrants(db, env, now, { grantIds: [grant.id] });
+  // 다른 지급이 남아 등급이 그대로여도 **끝이 당겨졌을 수 있다**(30일·7일이 겹친 채 30일을 회수) — 앱이 새 끝을 받아
+  // 오프라인 기한을 고치게 알린다(Codex #941). 등급이 내려간 경우는 뒷정리가 이미 알렸다.
+  if (!downgraded.includes(grant.userId)) await notifyBillingStateChanged(db, env, [grant.userId]);
   return grant;
 }
 
@@ -349,10 +357,9 @@ export async function settleEndedPlanGrants(
         });
         if (claimed.rows.length === 0) return false;
         if (await hasActivePaidEntitlement(tx, userPk, promoCoversFree)) return false;
-        const user = await tx.execute({
-          sql: `SELECT plan FROM users WHERE id = ? AND deletion_status = 'active' LIMIT 1`,
-          args: [userPk],
-        });
+        // 탈퇴 대기 계정도 똑같이 정리한다 — 건너뛰고 끝냄으로 적으면, 유예 중 다시 로그인해 철회했을 때 클론 반납·보관
+        // 예약 없이 남는다(Codex #941). 계정 행이 없으면(이미 파기됐다) 할 일이 없다.
+        const user = await tx.execute({ sql: `SELECT 1 FROM users WHERE id = ? LIMIT 1`, args: [userPk] });
         if (user.rows.length === 0) return false;
         await downgradeUserToFree(tx, userPk, { deleteVoiceData: false });
         const deleteAfter = new Date(now.getTime() + PAID_VOICE_RETENTION_DAYS * DAY_MS).toISOString();

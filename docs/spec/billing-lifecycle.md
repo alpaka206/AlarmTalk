@@ -1514,6 +1514,10 @@ CLAUDE.md 「유료 기능은 스토어 결제로만」의 두 번째 예외로 
   보관을 건다 — 행사의 약속 시각을 다시 쓰지 않는다.
 - API: 계정 응답의 `user.plan_grant` 와 `GET /billing/subscription` 최상위 `plan_grant` = `{ ends_at, computed_at }` 또는
   `null`(shared `PlanGrantSchema`). **지급 때문에 플러스일 때(원시 plan 이 free)만** 싣는다 — 구독자에게는 싣지 않는다.
+  ⚠ 응답의 `plan` 과 `plan_grant` 는 **한 순간·한 문장**으로 계산한다(`loadPlanGrantAnswer`, 프로모와 같은 `promo.now`) — 따로
+  계산하면 그 사이 지급이 끝났을 때 `plan: plus` 가 기한 없이 나간다(Codex #941).
+- 회수하면 등급이 그대로여도(다른 지급이 남음) 앱에 알린다 — 겹친 지급의 끝이 당겨졌을 수 있다. 뒷정리는 탈퇴 대기
+  계정도 똑같이 한다(유예 중 다시 로그인해 철회해도 클론 반납·보관이 빠지지 않게).
 - **앱은 이 값을 기간 한정 개인 플랜과 같은 오프라인 기한으로 읽는다**(Codex #941 P2). 끝 전에 계산된 `plus` 캐시는 끝 뒤에
   무료로 읽는다 — 서버의 뒷정리·푸시는 오프라인 기기를 고치지 못하므로, 그 기기(특히 울림 경로)가 지급이 끝난 뒤에도 등록
   목소리를 쓰지 않게 하는 자리가 이것이다. 안드로이드는 `limitedPlanEndsAt`(`ui/billing/PersonalPromo.kt`)이 프로모 끝 또는
