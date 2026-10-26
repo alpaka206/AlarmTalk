@@ -24,6 +24,8 @@ struct ConsentHistoryView: View {
     @State private var withdrawConfirmOpen = false
     @State private var withdrawBusy = false
     @State private var marketingBusy = false
+    /// 광고 개인정보 선택(UMP)을 다시 열 자리가 필요한가 — 규정 지역에서만(안드로이드 `ConsentHistoryScreen` 의 '광고' 카드).
+    @State private var adPrivacyOptionsRequired = false
 
     var body: some View {
         ScrollView {
@@ -45,6 +47,9 @@ struct ConsentHistoryView: View {
                 requiredSection
                 overseasNotice
                 optionalSection
+                if adPrivacyOptionsRequired {
+                    adsSection
+                }
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 12)
@@ -53,6 +58,8 @@ struct ConsentHistoryView: View {
         .navigationTitle(String(localized: "약관 및 개인정보 처리 동의"))
         .navigationBarTitleDisplayMode(.inline)
         .task(id: reloadTick) { await load() }
+        // 광고 개인정보 선택(UMP) — 규정이 있는 지역에서만 다시 열 자리를 둔다(`docs/spec/ad-rewards.md` §4).
+        .task { adPrivacyOptionsRequired = await RewardedAds.shared.privacyOptionsRequired() }
         // iOS 에서는 시스템 알럿이 곧 표준이다 — 안드로이드의 `IosAlertDialog` 은
         // 그 시스템 알럿을 Compose 로 흉내 낸 것이므로, 여기서 커스텀 껍데기를 만들면
         // 오히려 원본에서 멀어진다.
@@ -122,6 +129,17 @@ struct ConsentHistoryView: View {
         }
     }
 
+    private var adsSection: some View {
+        ConsentSectionCard(title: String(localized: "광고")) {
+            ConsentRow(
+                label: "광고 개인정보 설정",
+                record: nil,
+                onOpen: { Task { await RewardedAds.shared.presentPrivacyOptions() } },
+                showStatus: false
+            )
+        }
+    }
+
     // MARK: - 데이터
 
     private func load() async {
@@ -187,6 +205,8 @@ private struct ConsentRow: View {
     let record: ConsentRecord?
     let onOpen: (() -> Void)?
     var onWithdraw: (() -> Void)?
+    /// 날짜 칸을 그리는가 — 동의 기록이 아닌 행(광고 개인정보 설정)은 그리지 않는다.
+    var showStatus: Bool = true
 
     private var statusText: String {
         guard let record else { return "—" }
@@ -202,9 +222,11 @@ private struct ConsentRow: View {
                 .foregroundStyle(theme.palette.onSurface)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
-            Text(statusText)
-                .font(theme.typography.bodyMedium)
-                .foregroundStyle(theme.palette.onSurfaceVariant)
+            if showStatus {
+                Text(statusText)
+                    .font(theme.typography.bodyMedium)
+                    .foregroundStyle(theme.palette.onSurfaceVariant)
+            }
 
             // 철회는 동의한 상태에서만 뜻이 있다.
             if let onWithdraw, record?.agreed == true {

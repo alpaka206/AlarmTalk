@@ -1451,6 +1451,7 @@ internal fun AlarmTalkApp(
               onCreateVoiceProfile = { navController.navigateTopLevelTab(NativeTab.Voices) },
               onGenerateTts = viewModel::generateTtsAudio,
               onLoadManualQuota = viewModel::loadManualQuota,
+              adRewardSessions = remember(viewModel) { viewModel.adRewardSessionClient() },
               onDownloadStockAudio = { messageId -> viewModel.downloadTtsMessageAudio(messageId) },
               onPrefetchRestrictedVoiceClips = viewModel::prefetchFreeBucketClips,
               onUpdateDynamicPromptSettings = viewModel::updateDynamicPromptSettings,

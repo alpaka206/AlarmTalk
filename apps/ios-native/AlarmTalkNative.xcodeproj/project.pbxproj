@@ -155,6 +155,7 @@
 		5E63D8C729064180BB3F2ABD /* AlarmSoundStagingCapabilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF8FEE20605F1122A2E8963A /* AlarmSoundStagingCapabilityTests.swift */; };
 		5E6B21DDF250B3C5F29EB7FD /* AlarmAppContextTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D03ECCB0C7064914B464A555 /* AlarmAppContextTests.swift */; };
 		5E83FA5CFC6F5759D2844033 /* ReceivedAlarmConversionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B5634E643FF9BE91B7DC7FE /* ReceivedAlarmConversionTests.swift */; };
+		5FFBDEEDEEE60E169DCEE577 /* AdRewardGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = BDEB4870AAB02927DB41C3B8 /* AdRewardGate.swift */; };
 		613DAAC531F90DC43FB7819A /* AlarmIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4DC77A311E60BF357633E18D /* AlarmIntents.swift */; };
 		617C9082C9278C6D6BAF85BC /* Connectivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB4550D201D10C8EEFA653F6 /* Connectivity.swift */; };
 		61E8347B834B53EF5A4088EA /* BriefingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EAA6FC106E9E514033A79CFD /* BriefingView.swift */; };
@@ -179,6 +180,7 @@
 		6D8D1F885562624A94A748BA /* VoiceSheetScreenshotUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A1C8164C5467E1065C0FFF7 /* VoiceSheetScreenshotUITests.swift */; };
 		6D9AC3EA23FDF9D9158057C4 /* BusyFlagSeparationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FAA56E681611EE77E99D4BE4 /* BusyFlagSeparationTests.swift */; };
 		6EF93F7CE259E9439818EDD7 /* VoicePitchShifter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1954C21A80695C2288699B21 /* VoicePitchShifter.swift */; };
+		6F0A448943D96E700A94AD46 /* GoogleMobileAds in Frameworks */ = {isa = PBXBuildFile; productRef = 890600B3064A007734C4436B /* GoogleMobileAds */; };
 		6F43E5944AB00E7EFBA6DEEA /* SessionTokenRenewalTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F64DE0D8C2700FE29E59B63 /* SessionTokenRenewalTests.swift */; };
 		708D3503AD539D289233A772 /* VoicePlayModePicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = E077F439D01E160ED901D7FE /* VoicePlayModePicker.swift */; };
 		709B957CE1750DFA66018C4E /* pretendard_regular.otf in Resources */ = {isa = PBXBuildFile; fileRef = 566AA8670AC11EF2C70548C8 /* pretendard_regular.otf */; };
@@ -273,6 +275,7 @@
 		A2C7111FB7DD26F428366C60 /* EditorCards.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35B8072175C30FB26D1D7397 /* EditorCards.swift */; };
 		A2CA2AEBEAE902FB976735CA /* PlanTier.swift in Sources */ = {isa = PBXBuildFile; fileRef = 28A5CC978F50C5EA5D29A99D /* PlanTier.swift */; };
 		A32D9C97DB38741FFAE2C060 /* FortuneDialogScreenshotUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 463A1453ADEB2220E67E7F12 /* FortuneDialogScreenshotUITests.swift */; };
+		A42CC553988F7E34A7B84D12 /* RewardedAds.swift in Sources */ = {isa = PBXBuildFile; fileRef = DCDB2F60A5D85B9D0B5FC0F5 /* RewardedAds.swift */; };
 		A4F77CBFD932FC212CA3F876 /* SelectionSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D97B19A1D9E8E81B2EBCFA6 /* SelectionSheet.swift */; };
 		A524D29E8CD5E3AB0277A61C /* SystemRingtoneLibraryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 481AE34FF594622D016836C7 /* SystemRingtoneLibraryTests.swift */; };
 		A55D8F70A073C255A3378E1F /* WeatherRegionSheetScreenshotUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD590805784AFD99199C2360 /* WeatherRegionSheetScreenshotUITests.swift */; };
@@ -303,6 +306,7 @@
 		BB470280C0AFF88637CA39EC /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8398E207DA979219DF2C1311 /* SettingsView.swift */; };
 		BBF0654D24C76A9D352ADD7F /* HolidayStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3FF06DF1E0FD50702B91F25 /* HolidayStore.swift */; };
 		BD5422633682177ACF3BD5D2 /* StockReplacementView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C66942965BBCE696F03167A /* StockReplacementView.swift */; };
+		BF02AE968440D3C3FB02F569 /* AdRewardGateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0E656E524EB2F75BEFB7D9B /* AdRewardGateTests.swift */; };
 		BF8DACEBEA118AA299940BE0 /* AlarmEditorSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 65E21A05EC23A5BC2A3198BF /* AlarmEditorSheet.swift */; };
 		C0B29A74768E8C83C680E74E /* RecipientConditionHydrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAAB337BB0E5A35DE416C328 /* RecipientConditionHydrationTests.swift */; };
 		C1CDA686E18BCAC6D1AE147F /* LeaveAccountDeviceUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76D2AD743E97CECC91C501F2 /* LeaveAccountDeviceUITests.swift */; };
@@ -315,11 +319,13 @@
 		C5445DBA27C99308EA813D75 /* BackgroundSyncTaskLaunchHandlerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B6E896183E3629C90F1B730 /* BackgroundSyncTaskLaunchHandlerTests.swift */; };
 		C6597340E9B6E8CA773345A5 /* SessionExpiryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A837BD3F8D319A53856D516 /* SessionExpiryStore.swift */; };
 		C6D9D903A1464A0F1120DD84 /* pretendard_medium.otf in Resources */ = {isa = PBXBuildFile; fileRef = A1460F6B80519002D6B9F945 /* pretendard_medium.otf */; };
+		C8C0133CDF55BF16FF04051A /* GoogleUserMessagingPlatform in Frameworks */ = {isa = PBXBuildFile; productRef = BF27BE623092D96C4641ADD6 /* GoogleUserMessagingPlatform */; };
 		C9AC298F3AC6D9B84D3F93D5 /* SubscriptionManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 291DBF70F5BA99D4BC3C3F25 /* SubscriptionManagerTests.swift */; };
 		CA02D54C99DB8E021BAF2D19 /* LandingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC8E6B3DC78145608078758B /* LandingView.swift */; };
 		CA4601708EFFE51237F1A44E /* AlarmScheduleReconciler.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9E50137D938486E4DC448DB /* AlarmScheduleReconciler.swift */; };
 		CC81F3AF013FA6DDED7D47C8 /* StockClipManifestStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3712A9DC7E2B0D7C482B215 /* StockClipManifestStoreTests.swift */; };
 		CCE8DA0811BC4D0B790B63BA /* AccountPromptSettingsAdoptionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CF8E5697CEEB27BA786D3B1 /* AccountPromptSettingsAdoptionTests.swift */; };
+		CDA1C960369539C254316D06 /* RewardedAdFlow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 803BF03BCABF3D67AF06AE59 /* RewardedAdFlow.swift */; };
 		CE25E7301DA532996A74BA95 /* PersonalPromoNoticeUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D83966262B6E7FF274E0584 /* PersonalPromoNoticeUITests.swift */; };
 		CF47E876E2B1D1AF14960521 /* SessionTokenRenewal.swift in Sources */ = {isa = PBXBuildFile; fileRef = 82C467C2565ADFF3EE449881 /* SessionTokenRenewal.swift */; };
 		D12B4A02203BA1C6F7FEBE3B /* WeatherVariantRolloverTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0C75DB9B643CF3B45BF58E0 /* WeatherVariantRolloverTests.swift */; };
@@ -628,6 +634,7 @@
 		7D6AC768DAFC88F4FBDCF7F4 /* ClonePrerenderProgressTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClonePrerenderProgressTests.swift; sourceTree = "<group>"; };
 		7E178989F24B77D671E086FF /* RemoteAlarmPushCommitTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteAlarmPushCommitTests.swift; sourceTree = "<group>"; };
 		7FE78632AE30E18FFA63B74D /* AccessSnapshotStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessSnapshotStore.swift; sourceTree = "<group>"; };
+		803BF03BCABF3D67AF06AE59 /* RewardedAdFlow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RewardedAdFlow.swift; sourceTree = "<group>"; };
 		815C67F5CF2B0B4499090916 /* VoiceRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceRecorder.swift; sourceTree = "<group>"; };
 		8196F91EF515F9CE279AF0F9 /* MessageSettingsPane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageSettingsPane.swift; sourceTree = "<group>"; };
 		81F4AE8A61FD93623981C2F2 /* VoiceReplacementMarkerStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceReplacementMarkerStore.swift; sourceTree = "<group>"; };
@@ -725,6 +732,7 @@
 		BB4550D201D10C8EEFA653F6 /* Connectivity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Connectivity.swift; sourceTree = "<group>"; };
 		BC6803137321D0177FF40243 /* BackgroundSyncTaskTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundSyncTaskTests.swift; sourceTree = "<group>"; };
 		BD5149AC925F9E7568727C4B /* BottomNavBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BottomNavBar.swift; sourceTree = "<group>"; };
+		BDEB4870AAB02927DB41C3B8 /* AdRewardGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdRewardGate.swift; sourceTree = "<group>"; };
 		BE244676814E7183470594C3 /* AlarmVoiceStopOwnershipTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlarmVoiceStopOwnershipTests.swift; sourceTree = "<group>"; };
 		BF9A7E6AC906D0AC985A3C99 /* AsyncSerialGateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AsyncSerialGateTests.swift; sourceTree = "<group>"; };
 		C0F1B0A3B4CA06019853F34D /* BottomSheetHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BottomSheetHost.swift; sourceTree = "<group>"; };
@@ -767,6 +775,7 @@
 		DB37514CB12D62CC34E1E0F3 /* PreviewSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreviewSupport.swift; sourceTree = "<group>"; };
 		DC283DE15D2853C6F4669754 /* AlarmTalkMetadata.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlarmTalkMetadata.swift; sourceTree = "<group>"; };
 		DCB68718409EED0E6D7B5440 /* AlarmTalk.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = AlarmTalk.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		DCDB2F60A5D85B9D0B5FC0F5 /* RewardedAds.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RewardedAds.swift; sourceTree = "<group>"; };
 		DD2F7B282950F1084E32DAC8 /* voice_greeting_siwoo_ja.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = voice_greeting_siwoo_ja.mp3; sourceTree = "<group>"; };
 		DD590805784AFD99199C2360 /* WeatherRegionSheetScreenshotUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeatherRegionSheetScreenshotUITests.swift; sourceTree = "<group>"; };
 		DD780D23F3A7112A5CEF50E1 /* AlarmRowHitAreaUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlarmRowHitAreaUITests.swift; sourceTree = "<group>"; };
@@ -799,6 +808,7 @@
 		EF9171882548B78326D9E372 /* SignUpFlowUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignUpFlowUITests.swift; sourceTree = "<group>"; };
 		EFC34434C86CC3C2BB8B2F5A /* SystemVoices.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemVoices.swift; sourceTree = "<group>"; };
 		F07C41F9BCE4652A92370E7F /* InputSanitizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InputSanitizer.swift; sourceTree = "<group>"; };
+		F0E656E524EB2F75BEFB7D9B /* AdRewardGateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdRewardGateTests.swift; sourceTree = "<group>"; };
 		F184596631F66837EF36205A /* WeatherVariantOwnerScopeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeatherVariantOwnerScopeTests.swift; sourceTree = "<group>"; };
 		F22A748B61AC101C73FABFB6 /* LoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginView.swift; sourceTree = "<group>"; };
 		F2BD54D0D21050EB9BBA9364 /* AlarmTimeCalculator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlarmTimeCalculator.swift; sourceTree = "<group>"; };
@@ -829,6 +839,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				AE3A84A0F4DE15D657B8FEDB /* Sentry in Frameworks */,
+				6F0A448943D96E700A94AD46 /* GoogleMobileAds in Frameworks */,
+				C8C0133CDF55BF16FF04051A /* GoogleUserMessagingPlatform in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1024,6 +1036,16 @@
 			path = Components;
 			sourceTree = "<group>";
 		};
+		76E928A81BD6EFD368F04AD8 /* Ads */ = {
+			isa = PBXGroup;
+			children = (
+				BDEB4870AAB02927DB41C3B8 /* AdRewardGate.swift */,
+				803BF03BCABF3D67AF06AE59 /* RewardedAdFlow.swift */,
+				DCDB2F60A5D85B9D0B5FC0F5 /* RewardedAds.swift */,
+			);
+			path = Ads;
+			sourceTree = "<group>";
+		};
 		891C648D672DBE1032DC26B5 /* Common */ = {
 			isa = PBXGroup;
 			children = (
@@ -1116,6 +1138,7 @@
 			children = (
 				10CE147023F745A31BD0720B /* AccessSnapshotStoreTests.swift */,
 				4CF8E5697CEEB27BA786D3B1 /* AccountPromptSettingsAdoptionTests.swift */,
+				F0E656E524EB2F75BEFB7D9B /* AdRewardGateTests.swift */,
 				D03ECCB0C7064914B464A555 /* AlarmAppContextTests.swift */,
 				473E04E3AE046A9066B33515 /* AlarmCancelDeletionTests.swift */,
 				71B76904A71177DB5B69BBF0 /* AlarmCreationReplayTests.swift */,
@@ -1411,6 +1434,7 @@
 				759D08549C161734E77C64F3 /* WeatherRegionSupport.swift */,
 				2294522549805A842471167A /* WeatherVariantRefreshService.swift */,
 				1CA7CB3397F08CCF85C5B846 /* WeatherVariantSaveLookup.swift */,
+				76E928A81BD6EFD368F04AD8 /* Ads */,
 				F2A71A66F1FAC416B56FAA2A /* Configuration */,
 				E0E0F3F178A8E20C54336C7C /* Fonts */,
 				FF8F65773E6CB9583D25E272 /* Generated */,
@@ -1469,6 +1493,8 @@
 			name = AlarmTalk;
 			packageProductDependencies = (
 				113301E9251EE3A26158F72C /* Sentry */,
+				890600B3064A007734C4436B /* GoogleMobileAds */,
+				BF27BE623092D96C4641ADD6 /* GoogleUserMessagingPlatform */,
 			);
 			productName = AlarmTalk;
 			productReference = DCB68718409EED0E6D7B5440 /* AlarmTalk.app */;
@@ -1546,6 +1572,8 @@
 			mainGroup = 044280B0A2CEF9109FFBBDDD;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
+				9C00832844D797D6A55C38E9 /* XCRemoteSwiftPackageReference "swift-package-manager-google-mobile-ads" */,
+				D8290EFA5C6FA5A842178215 /* XCRemoteSwiftPackageReference "swift-package-manager-google-user-messaging-platform" */,
 				C926258EE80C50446452EE5A /* XCRemoteSwiftPackageReference "sentry-cocoa" */,
 			);
 			preferredProjectObjectVersion = 77;
@@ -1674,6 +1702,7 @@
 				FDE7F606F313F39BE459D19D /* AccessSnapshotStore.swift in Sources */,
 				8841D7970A97CC0AF150153C /* AccountPanel.swift in Sources */,
 				9E5D69D488A0DC3840D052C7 /* AccountPromptSettingsAdoption.swift in Sources */,
+				5FFBDEEDEEE60E169DCEE577 /* AdRewardGate.swift in Sources */,
 				46C1C613B52586A9E527A86D /* AlarmAppContext.swift in Sources */,
 				F0C2A0E2DF53A9C510B3A7AD /* AlarmDefaultLabel.swift in Sources */,
 				38AB6CA4286602C17848B9A0 /* AlarmEditDraft.swift in Sources */,
@@ -1803,6 +1832,8 @@
 				9B207F7901C5B7F4124ABDCC /* RemoteAlarmPushSync.swift in Sources */,
 				1EC30FA50D0D15D62EF99A11 /* RemoteAlarmSyncViewModel.swift in Sources */,
 				EF1570E28C4DC76A5B06923B /* RepeatWeekdayChips.swift in Sources */,
+				CDA1C960369539C254316D06 /* RewardedAdFlow.swift in Sources */,
+				A42CC553988F7E34A7B84D12 /* RewardedAds.swift in Sources */,
 				F07FB40F608D6690144075E7 /* RootView.swift in Sources */,
 				AB049D79EABC198B5DE731CD /* SectionCard.swift in Sources */,
 				A4F77CBFD932FC212CA3F876 /* SelectionSheet.swift in Sources */,
@@ -1870,6 +1901,7 @@
 			files = (
 				992A9D8F236801102199EBA7 /* AccessSnapshotStoreTests.swift in Sources */,
 				CCE8DA0811BC4D0B790B63BA /* AccountPromptSettingsAdoptionTests.swift in Sources */,
+				BF02AE968440D3C3FB02F569 /* AdRewardGateTests.swift in Sources */,
 				5E6B21DDF250B3C5F29EB7FD /* AlarmAppContextTests.swift in Sources */,
 				93FCF08E81662269356B34C6 /* AlarmCancelDeletionTests.swift in Sources */,
 				73FC1FE950FD060DB5336E16 /* AlarmCreationReplayTests.swift in Sources */,
@@ -2074,6 +2106,8 @@
 		60EBD031D3914D79EAC2B8B5 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ADMOB_APP_ID = "ca-app-pub-3940256099942544~1458002511";
+				ADMOB_REWARDED_AD_UNIT_ID = "$(ADMOB_REWARDED_AD_UNIT_ID)";
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ANALYZER_NONNULL = YES;
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
@@ -2225,6 +2259,8 @@
 		C4B40AE9E64496165E33F226 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ADMOB_APP_ID = "ca-app-pub-3940256099942544~1458002511";
+				ADMOB_REWARDED_AD_UNIT_ID = "ca-app-pub-3940256099942544/1712485313";
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ANALYZER_NONNULL = YES;
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
@@ -2362,12 +2398,28 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
+		9C00832844D797D6A55C38E9 /* XCRemoteSwiftPackageReference "swift-package-manager-google-mobile-ads" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/googleads/swift-package-manager-google-mobile-ads";
+			requirement = {
+				kind = exactVersion;
+				version = 13.11.0;
+			};
+		};
 		C926258EE80C50446452EE5A /* XCRemoteSwiftPackageReference "sentry-cocoa" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/getsentry/sentry-cocoa";
 			requirement = {
 				kind = upToNextMajorVersion;
 				minimumVersion = 8.0.0;
+			};
+		};
+		D8290EFA5C6FA5A842178215 /* XCRemoteSwiftPackageReference "swift-package-manager-google-user-messaging-platform" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/googleads/swift-package-manager-google-user-messaging-platform";
+			requirement = {
+				kind = exactVersion;
+				version = 3.1.0;
 			};
 		};
 /* End XCRemoteSwiftPackageReference section */
@@ -2377,6 +2429,16 @@
 			isa = XCSwiftPackageProductDependency;
 			package = C926258EE80C50446452EE5A /* XCRemoteSwiftPackageReference "sentry-cocoa" */;
 			productName = Sentry;
+		};
+		890600B3064A007734C4436B /* GoogleMobileAds */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 9C00832844D797D6A55C38E9 /* XCRemoteSwiftPackageReference "swift-package-manager-google-mobile-ads" */;
+			productName = GoogleMobileAds;
+		};
+		BF27BE623092D96C4641ADD6 /* GoogleUserMessagingPlatform */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D8290EFA5C6FA5A842178215 /* XCRemoteSwiftPackageReference "swift-package-manager-google-user-messaging-platform" */;
+			productName = GoogleUserMessagingPlatform;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

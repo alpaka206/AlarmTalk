@@ -42,6 +42,7 @@ import billingRoutes from './routes/billing';
 import billingGoogleRtdn from './routes/billing-google-rtdn';
 import billingAppleNotifications from './routes/billing-apple-notifications';
 import adsRoutes from './routes/ads';
+import adRewardSessionRoutes from './routes/ad-reward-sessions';
 import billingApple from './routes/billing-apple';
 import pushRoutes from './routes/push';
 import eventsRoutes from './routes/events';
@@ -291,6 +292,11 @@ api.use('/tts/messages/:id/audio', audioDownloadRateLimitMiddleware);
 // 추가 음성팩 클립도 같은 내려받기 버킷이다(`docs/spec/voice-packs.md` §3).
 api.use('/voice-packs/:packId/clips/:clipId/audio', audioDownloadRateLimitMiddleware);
 api.use('*', rateLimitMiddleware);
+// 한도·광고 보상 현황은 저장·광고 직후 다시 묻는 값이다 — 30초 캐시를 붙이면 앱이 정산 전 응답을 계속 읽어
+// 보상이 들어왔는데도 '확인하고 있어요' 로 끝난다(코덱스 #959). **아래 전역 캐시보다 먼저** 걸어야 이긴다:
+// 먼저 건 미들웨어가 바깥이라 응답 헤더를 마지막에 쓴다.
+api.use('/tts/manual-quota', noStore);
+api.use('/ad-rewards/*', noStore);
 api.use('*', async (c, next) => {
   const mw = c.req.method === 'GET' ? privateCache : noStore;
   return mw(c, next);
@@ -306,6 +312,8 @@ api.route('/push', pushRoutes);
 api.route('/events', eventsRoutes);
 // 아침 소식 — 관심 기업 공시(OpenDART) + 정책브리핑 정책뉴스(`docs/spec/morning-briefing.md`).
 api.route('/briefing', briefingRoutes);
+// 광고 시청 승인 세션 — 광고를 띄우기 전 승인·시작·끝 알림(`docs/spec/ad-rewards.md` §3). 콜백(`/api/ads`)과 다른 경로다.
+api.route('/ad-rewards', adRewardSessionRoutes);
 // 추가 음성팩 — 권리를 확인한 무료 고정 목소리(`docs/spec/voice-packs.md`).
 api.route('/voice-packs', voicePacksRoutes);
 
@@ -572,6 +580,17 @@ async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext)
     await settleEndedPlanGrants(db, env, now);
   } catch (err) {
     captureCron('scheduled.plan_grant_settle', err);
+  }
+
+  // 광고 보상 — 적어 두었지만 정산이 실패한 SSV 콜백을 다시 정산하고(내부 재시도), 다시 볼 일 없는 기록을 지운다
+  // (`lib/ad-reward-sessions.ts`, `docs/spec/ad-rewards.md` §3).
+  try {
+    const { pruneAdRewardHistory, retryUnsettledAdRewardCallbacks } = await import('./lib/ad-reward-sessions');
+    const retried = await retryUnsettledAdRewardCallbacks(db, env, now.getTime());
+    if (retried.failed > 0) captureCron('scheduled.ad_reward_settle', new Error(`${retried.failed} callbacks failed to settle`));
+    await pruneAdRewardHistory(db, now.getTime());
+  } catch (err) {
+    captureCron('scheduled.ad_reward_settle', err);
   }
 
   // 직접 입력의 같은 요청 표식 — 이틀 지난 것을 지운다(`lib/manual-tts-requests.ts`).

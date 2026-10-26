@@ -10,4 +10,5 @@ interface AlarmTalkApi :
     PushApi,
     UsageEventApi,
     BriefingApi,
-    VoicePackApi
+    VoicePackApi,
+    AdRewardApi

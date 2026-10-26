@@ -162,6 +162,9 @@ final class VoiceStudioViewModel: ObservableObject {
     @Published private(set) var isRefreshing = false
 
     @Published var statusMessage: String?
+    /// 마지막 `generateTTS` 가 서버에서 받은 `error_code`(성공·코드 없음이면 nil). 편집기가 429 `MANUAL_TTS_QUOTA_EXCEEDED`
+    /// 뒤의 갈래(광고 제안·보상 확인 중·다음 제공일 — `docs/spec/ad-rewards.md` §1-1)를 고를 때 쓴다.
+    var lastGenerateErrorCode: String?
     @Published var preparedAlarm: PreparedAlarmTalk?
     /// 이번 달 목소리 쿼터. 조회 실패면 nil — 화면은 숫자를 감추고 평소대로 그린다
     /// (못 물어본 것이 버튼을 끄는 이유가 되면 안 된다). 서버 답을 싣는 곳은 [applyDraftQuota] 하나다.
@@ -1191,6 +1194,7 @@ final class VoiceStudioViewModel: ObservableObject {
         guard !isBusy else { return nil }
         isBusy = true
         defer { isBusy = false }
+        lastGenerateErrorCode = nil
 
         do {
             // ⚠ **번역은 없앴다**(2026-08-12). 직접 입력한 문구는 **그대로** 읽는다 —
@@ -1261,6 +1265,7 @@ final class VoiceStudioViewModel: ObservableObject {
             await refresh(session: session, force: true)
             return prepared
         } catch {
+            lastGenerateErrorCode = serverErrorCode(of: error)
             statusMessage = mapVoiceError(error)
             UINotificationFeedbackGenerator().notificationOccurred(.error)
             return nil

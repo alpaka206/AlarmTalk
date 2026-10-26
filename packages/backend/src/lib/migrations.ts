@@ -3481,6 +3481,59 @@ export const migrations: Migration[] = [
     ],
   },
   {
+    // **광고 시청 승인 세션**(2026-10-26, `docs/spec/ad-rewards.md` §3). 광고를 띄우기 전에 서버가 승인 id 를 만들고 그 달의
+    // 획득 자리 하나를 잡아 둔다 — 한 계정에 열린 세션(준비·시작)은 하나뿐이라 두 기기가 마지막 자리를 함께 쓰지 못한다
+    // (부분 고유 인덱스). 앱은 그 id 를 SSV 의 `custom_data` 로 싣고, 콜백은 계정·광고 단위·승인 id 를 대조해 승인 하나에
+    // 보상 한 번만 적립한다(`ad_reward_credits.session_id` 고유). 콜백은 정산 전에 `ad_reward_callbacks` 에 먼저 적는다
+    // — 적은 뒤에만 200 을 돌려주고, 정산이 실패하면 cron 이 다시 한다. 문구·광고 내용은 적지 않는다(식별자만).
+    // 사람과 묶이는 표라 탈퇴 파기가 지운다(`lib/account-deletion.ts`).
+    id: 141,
+    name: 'ad-reward-sessions',
+    statements: [
+      `CREATE TABLE IF NOT EXISTS ad_reward_sessions (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL REFERENCES users(id),
+        platform TEXT NOT NULL CHECK (platform IN ('android', 'ios')),
+        ad_unit TEXT NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('prepared', 'started', 'pending', 'unknown', 'closed', 'released', 'granted')),
+        reserved_month TEXT NOT NULL,
+        release_reason TEXT,
+        client_outcome TEXT,
+        transaction_id TEXT UNIQUE,
+        granted_month TEXT,
+        created_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        started_at TEXT,
+        closed_at TEXT,
+        settled_at TEXT
+      )`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_ad_reward_sessions_one_open
+        ON ad_reward_sessions (user_id) WHERE status IN ('prepared', 'started')`,
+      `CREATE INDEX IF NOT EXISTS idx_ad_reward_sessions_user_month
+        ON ad_reward_sessions (user_id, reserved_month, status)`,
+      `CREATE INDEX IF NOT EXISTS idx_ad_reward_sessions_status_created
+        ON ad_reward_sessions (status, created_at)`,
+      `CREATE TABLE IF NOT EXISTS ad_reward_callbacks (
+        transaction_id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        ad_unit TEXT NOT NULL,
+        session_id TEXT,
+        rewarded_at TEXT,
+        reward_month TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'received' CHECK (status IN ('received', 'settled')),
+        outcome TEXT,
+        attempts INTEGER NOT NULL DEFAULT 1,
+        received_at TEXT NOT NULL,
+        settled_at TEXT
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_ad_reward_callbacks_user ON ad_reward_callbacks (user_id)`,
+      `CREATE INDEX IF NOT EXISTS idx_ad_reward_callbacks_status ON ad_reward_callbacks (status, received_at)`,
+      `ALTER TABLE ad_reward_credits ADD COLUMN session_id TEXT`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_ad_reward_credits_session
+        ON ad_reward_credits (session_id) WHERE session_id IS NOT NULL`,
+    ],
+  },
+  {
     // **추가 음성팩**(2026-10-26, v1.3 W13 — `docs/spec/voice-packs.md`). 권리를 확인한 고정 클립 묶음이다.
     //  - 팩 목소리는 `voice_profiles` 행이 **아니다** — `voice_id`(…-9100- 대역)를 따로 둔다. 그래야 직접 입력 합성·
     //    목소리 등록·접근권 대조가 그 목소리를 모른다(스펙 §1).

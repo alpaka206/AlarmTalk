@@ -78,6 +78,15 @@ enum APIErrorMessages {
             return String(localized: "기본 목소리는 준비된 문구로만 말할 수 있어요. 직접 입력한 문구로 깨우려면 내 목소리를 골라 주세요.")
         case "MANUAL_TTS_QUOTA_EXCEEDED":
             return String(localized: "이번 달 직접 입력 문구 만들기 횟수를 다 썼어요. 다음 달에 다시 채워져요.")
+        // 광고 시청 승인 세션(`docs/spec/ad-rewards.md` §3). 안드로이드 `ApiErrorMessages.kt` 와 같은 네 문장이다.
+        case "AD_REWARD_MONTHLY_LIMIT":
+            return String(localized: "이번 달 광고 보상을 다 받았어요. 다음 달 1일에 다시 받을 수 있어요.")
+        case "AD_REWARD_SESSION_OPEN":
+            return String(localized: "다른 기기에서 광고를 보고 있어요. 잠시 뒤 다시 시도해 주세요.")
+        case "AD_REWARD_SESSION_INVALID":
+            return String(localized: "광고 준비 시간이 지났어요. 다시 시도해 주세요.")
+        case "AD_REWARD_UNAVAILABLE":
+            return String(localized: "지금은 광고를 볼 수 없어요. 만들어 둔 음성과 기본 문구는 그대로 쓸 수 있어요.")
         // 같은 '음성 만들기' 가 아직 합성 중이다(같은 입력은 같은 `request_id`) — 잠시 뒤 다시 누르면 그 결과를 받는다.
         case "TTS_REQUEST_IN_PROGRESS":
             return String(localized: "아직 음성을 만들고 있어요. 잠시 뒤 다시 저장해 주세요.")

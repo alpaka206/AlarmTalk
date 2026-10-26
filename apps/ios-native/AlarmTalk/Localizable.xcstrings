@@ -13094,6 +13094,312 @@
         }
       }
     },
+    "이번 달 광고 보상을 다 받았어요. 다음 달 1일에 다시 받을 수 있어요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You've used this month's ad rewards. More become available on the 1st."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "今月の広告特典はすべて受け取りました。来月1日からまた受け取れます。"
+          }
+        }
+      }
+    },
+    "다른 기기에서 광고를 보고 있어요. 잠시 뒤 다시 시도해 주세요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "An ad is already open on another device. Please try again shortly."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "別の端末で広告を表示中です。少ししてからもう一度お試しください。"
+          }
+        }
+      }
+    },
+    "광고 준비 시간이 지났어요. 다시 시도해 주세요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The ad took too long to start. Please try again."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "広告の準備時間が過ぎました。もう一度お試しください。"
+          }
+        }
+      }
+    },
+    "지금은 광고를 볼 수 없어요. 만들어 둔 음성과 기본 문구는 그대로 쓸 수 있어요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ads aren't available right now. Voices you made and the basic messages still work."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "今は広告を表示できません。作成済みの音声と基本の文言はそのまま使えます。"
+          }
+        }
+      }
+    },
+    "광고 보고 한 번 쓰기" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watch an ad to use once"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "広告を見て1回使う"
+          }
+        }
+      }
+    },
+    "이번 달 무료 만들기를 다 썼어요" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You've used this month's free creations"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "今月の無料作成をすべて使いました"
+          }
+        }
+      }
+    },
+    "광고를 끝까지 한 번 보면 기본 목소리로 직접 입력 문구를 한 번 더 만들 수 있어요. 받은 보상은 이 계정에서만 쓰여요. 플러스는 한 달에 30번 만들 수 있어요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watch one ad to the end to create one more typed message in a basic voice. The reward stays with this account. Plus lets you create 30 a month."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "広告を最後まで1回見ると、基本の声で自分で入力した文言をもう1回作成できます。特典はこのアカウントでのみ使えます。プラスなら月30回作成できます。"
+          }
+        }
+      }
+    },
+    "보상을 확인하고 있어요" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Checking your reward"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "特典を確認しています"
+          }
+        }
+      }
+    },
+    "광고 보상을 확인하는 데 시간이 걸리고 있어요. 확인되면 다시 저장할 때 광고 없이 만들 수 있어요. 이 창은 닫아도 돼요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Confirming your ad reward is taking a while. Once it's confirmed, save again to create it without another ad. You can close this."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "広告特典の確認に時間がかかっています。確認できたら、もう一度保存すると広告なしで作成できます。この画面は閉じても大丈夫です。"
+          }
+        }
+      }
+    },
+    "이번 달 광고 보상을 다 받았어요" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You've used this month's ad rewards"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "今月の広告特典はすべて受け取りました"
+          }
+        }
+      }
+    },
+    "%@에 다시 받을 수 있어요. 만들어 둔 음성과 기본 문구는 그대로 쓸 수 있고, 플러스는 한 달에 30번 만들 수 있어요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You can earn more on %@. Voices you made and the basic messages still work, and Plus lets you create 30 a month."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@からまた受け取れます。作成済みの音声と基本の文言はそのまま使えます。プラスなら月30回作成できます。"
+          }
+        }
+      }
+    },
+    "광고 보상을 받았어요" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ad reward received"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "広告特典を受け取りました"
+          }
+        }
+      }
+    },
+    "다시 저장하면 이 보상으로 한 번 만들어요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Save again to create it once with this reward."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "もう一度保存すると、この特典で1回作成します。"
+          }
+        }
+      }
+    },
+    "지금은 광고를 볼 수 없어요" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No ad available right now"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "今は広告を表示できません"
+          }
+        }
+      }
+    },
+    "지금은 볼 수 있는 광고가 없어요. 만들어 둔 음성과 기본 문구는 그대로 쓸 수 있어요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "There's no ad to watch right now. Voices you made and the basic messages still work."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "今は表示できる広告がありません。作成済みの音声と基本の文言はそのまま使えます。"
+          }
+        }
+      }
+    },
+    "광고를 불러오지 못했어요. 잠시 뒤 다시 시도해 주세요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "We couldn't load an ad. Please try again in a moment."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "広告を読み込めませんでした。少ししてからもう一度お試しください。"
+          }
+        }
+      }
+    },
+    "광고" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ads"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "広告"
+          }
+        }
+      }
+    },
+    "광고 개인정보 설정" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ad privacy settings"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "広告のプライバシー設定"
+          }
+        }
+      }
+    },
     "voicePack.editor.detail" : {
       "extractionState" : "manual",
       "localizations" : {
