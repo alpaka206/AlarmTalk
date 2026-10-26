@@ -241,6 +241,13 @@ internal fun AlarmEditorScreen(
     onRetryClipRenders: () -> Unit = {},
     /** 준비 화면을 열 때 준비도를 다시 세라고 알린다. */
     onPrepareClipsFor: () -> Unit = {},
+    /**
+     * 기본 목소리마다 (받은 수 to 전체) — 폰에 다 받았는가. 모르면 null(막지 않는다). 다 받지 못한 기본 목소리는 고르지 못하고
+     * 준비 화면으로 간다([systemVoiceStillDownloading]).
+     */
+    systemVoiceDownload: Map<String, Pair<Int, Int>>? = null,
+    /** 그 목소리를 먼저 받으라고 알린다(받기 순서 — `StockClipPrefetchPriority`). */
+    onPrioritizeVoice: (String) -> Unit = {},
     // 새 알람이 이어받을 '직전 선택' 세 축. 셋 다 계정별로 저장되고, 저장에 성공한 알람에서만
     // 기록된다(MainViewModel.rememberVoiceUsed / rememberMessageChoiceUsed).
     // 기존 알람을 **열 때는** 어느 것도 쓰지 않는다 — 열기만 해도 설정이 바뀌면 안 된다.
@@ -577,6 +584,8 @@ internal fun AlarmEditorScreen(
      */
     fun openClipPreparation(profileId: String) {
         preparationVoiceId = profileId
+        // 고르려던 목소리를 먼저 받는다 — 고른 것은 다 받기 전까지 적용하지 않는다(지금 목소리가 그대로 남는다).
+        onPrioritizeVoice(profileId)
         onPrepareClipsFor()
     }
 
@@ -1726,6 +1735,8 @@ internal fun AlarmEditorScreen(
                             // 여기는 "**고른 목소리**를 지금 기준으로 본다" 는 자리다.
                             // 직접 녹음에서 오면 곧 직전 문구 종류를 이으므로 **바뀔 값**으로 판정한다.
                             onNeedsClipPreparation = { profileId ->
+                                // 기본 목소리는 **폰에 다 받았는가**를 먼저 본다 — 서버 판정(아래)은 기본 목소리를 통과시킨다.
+                                systemVoiceStillDownloading(profileId, systemVoiceDownload) ||
                                 needsClipPreparationForVoicePick(
                                     gate = clipGate,
                                     editor = editor,

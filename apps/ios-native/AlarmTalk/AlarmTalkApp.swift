@@ -294,6 +294,10 @@ struct AlarmTalkApp: App {
                     // 안드로이드는 앱 시작마다 `prefetchStockClips()` 를 부른다.
                     .task(id: stockClipLanguageKey) {
                         guard auth.session != nil else { return }
+                        // 받는 순서의 단서 — 저장된 켜진 알람(다음에 울릴 것부터). 회차가 시작할 때 읽는다.
+                        stockClipPrefetcher.savedTargets = { [alarmStore, auth] in
+                            StockClipPrefetcher.savedTargets(from: alarmStore.alarms, userID: auth.session?.user.id)
+                        }
                         stockClipPrefetcher.start(
                             session: auth.session,
                             ownedVoiceProfileIDs: voiceStudio.ownedVoiceProfileIDs

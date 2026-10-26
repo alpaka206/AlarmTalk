@@ -7,7 +7,7 @@ import os
 /// ⚠ **이 값으로 알람 만들기를 막지 말 것**(클론까지 센다). 알람 설정 관문은
 /// **기본 목소리만** 보는 `StockClipPrefetcher.defaultVoicesReady` 하나다(2026-09-17).
 /// 이 값으로 막는 것은 **목소리 등록**과, 아직 못 받은 **그 목소리를 고르는 것**뿐이다
-/// (docs/spec/voice-and-message.md 「기본 목소리를 다 받아야 알람을 설정한다」).
+/// (docs/spec/voice-and-message.md 「알람마다 필요한 목소리만 본다」).
 @MainActor
 final class ClipReadinessModel: ObservableObject {
     private static let logger = Logger(subsystem: "com.alarmtalk.app", category: "ClipReadiness")

@@ -56,6 +56,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.alarmtalk.app.core.AlarmTalkLog
+import com.alarmtalk.app.data.isSystemVoiceId
 import com.alarmtalk.app.data.DowngradeNoticeStore
 import com.alarmtalk.app.data.AlarmDraft
 import com.alarmtalk.app.data.AlarmEntity
@@ -823,24 +824,36 @@ internal fun AlarmTalkApp(
     val defaultVoiceGate = remember(defaultVoiceGateScope) { DefaultVoiceGate(defaultVoiceGateScope) }
 
     /**
-     * 알람 설정 화면(새로 만들기·고치기)을 연다 — **기본 목소리를 다 받았을 때만.**
+     * 알람 설정 화면(새로 만들기·고치기)을 연다 — **그 알람이 쓸 기본 목소리를 다 받았을 때만.**
      *
-     * 2026-09-17 지시: 다 받기 전에는 설정 화면 자체를 막는다. 받다 만 상태로 들어가면 문구
-     * 행이 「문구를 준비하고 있어요」 에 머물고, 저장해도 테마 회전이 비어 운다. 막았으면
-     * 받기부터 다시 건다(유니크 작업이라 돌고 있으면 그대로 둔다).
-     * 규칙은 `docs/spec/voice-and-message.md` 「기본 목소리를 다 받아야 알람을 설정한다」.
+     * 2026-09-17 에는 기본 목소리 **넷 전부**를 다 받아야 열었다. 2026-10-26(v1.3 W05)부터는 그 알람의 목소리 하나만 본다
+     * — 새 알람은 편집기가 처음 고를 목소리(직전 선택 → 내 목소리 → 첫 기본 목소리), 기존 알람은 그 알람의 목소리다. 나머지
+     * 기본 목소리는 뒤에서 계속 받는다. 받다 만 목소리로 들어가면 문구 행이 「문구를 준비하고 있어요」 에 머무는 사고는 그
+     * 목소리 하나를 다 받았는지로 막힌다. 막혔으면 그 목소리를 **먼저** 받게 순서를 적고 받기를 다시 건다(유니크 작업이라
+     * 돌고 있으면 그대로 두고, 돌던 워커가 다음 배치부터 순서를 다시 읽는다 — `StockClipPrefetchPriority`).
+     * 내 목소리(클론)는 여기서 보지 않는다 — 편집기의 `ClipGate` 가 본다.
+     * 규칙은 `docs/spec/voice-and-message.md` 「알람마다 필요한 목소리만 본다」.
      *
      * ⚠ **탭 하나에 한 번, 메인 밖에서 센다**([DefaultVoiceGate] — 2026-09-29 A32 에서 메인에서
      * 두 번 세다 3.5초, 연타로 15.8초 멎었다). [onReady] 는 판정이 끝난 뒤 메인에서 불린다.
      * 판정이 도는 동안 들어온 탭은 버린다. 세는 사이 다른 화면(백스택 항목)이나 다른 계정으로
      * 옮겼으면 결과를 버린다 — 새 화면 위에 편집기·알럿이 뜨면 안 된다.
      */
-    fun whenDefaultVoicesReady(onReady: () -> Unit) {
+    fun whenAlarmVoiceReady(voiceId: String?, onReady: () -> Unit) {
         val userId = authSession?.user?.id
+        // 모르면(목소리 목록이 비었다 등) 예전처럼 기본 목소리 전체를 본다 — 모르는 것으로 열지 않는다.
+        if (voiceId != null && !isSystemVoiceId(voiceId)) {
+            onReady()
+            return
+        }
         val requestedEntryId = navController.currentBackStackEntry?.id
         defaultVoiceGate.request(
             progress = {
-                com.alarmtalk.app.sync.StockClipPrefetchWorker.defaultVoiceProgress(context, userId)
+                if (voiceId == null) {
+                    com.alarmtalk.app.sync.StockClipPrefetchWorker.defaultVoiceProgress(context, userId)
+                } else {
+                    com.alarmtalk.app.sync.StockClipPrefetchWorker.defaultVoiceProgress(context, userId, voiceId)
+                }
             },
             // 캡처한 `authSession` 은 탭한 순간 값이라, 지금 값은 뷰모델 상태에서 다시 읽는다.
             isStillCurrent = {
@@ -850,9 +863,27 @@ internal fun AlarmTalkApp(
             onReady = onReady,
             onBlocked = { progress ->
                 voicesNotReadyProgress = progress
+                if (voiceId != null) {
+                    com.alarmtalk.app.sync.StockClipPrefetchPriority.request(
+                        context,
+                        userId,
+                        com.alarmtalk.app.sync.PrefetchTarget(voiceId, null),
+                    )
+                }
                 com.alarmtalk.app.sync.StockClipPrefetchWorker.enqueue(context)
                 voicesNotReadyOpen = true
             },
+        )
+    }
+
+    /** 새 알람의 편집기가 처음 고를 목소리 — 편집기의 자동 선택과 같은 규칙(`preferredInitialVoiceProfileId`). */
+    fun initialVoiceForNewAlarm(): String? {
+        val selectable = voiceProfiles.filter { (it.status == null || it.status == "ready") && it.id !in viewModel.settlingVoiceProfileIds }
+        return preferredInitialVoiceProfileId(
+            lastUsedVoiceId = viewModel.lastUsedVoiceId,
+            ownVoiceIds = selectable.filter { it.isSystem != true }.map { it.id },
+            systemVoiceIds = selectable.filter { it.isSystem == true }.map { it.id },
+            profileLoadFinished = viewModel.voiceProfileLoadFinished,
         )
     }
 
@@ -869,7 +900,7 @@ internal fun AlarmTalkApp(
 
     // 알람 생성 진입 일원화 — 하단바 ➕와 히어로 카드가 모두 이 경로를 탄다.
     fun requestCreateAlarm() {
-        whenDefaultVoicesReady { openCreateAlarm() }
+        whenAlarmVoiceReady(initialVoiceForNewAlarm()) { openCreateAlarm() }
     }
 
     if (authSession == null) {
@@ -1335,6 +1366,21 @@ internal fun AlarmTalkApp(
           val lastMessageContext = remember(authSession?.user?.id) { viewModel.lastMessageContext() }
           val lastFreeBucket = remember(authSession?.user?.id) { viewModel.lastFreeBucket() }
           val lastManualText = remember(authSession?.user?.id) { viewModel.lastManualText() }
+          // 기본 목소리마다 폰에 다 받았는가 — 편집기가 떠 있는 동안만, 다 받을 때까지 2초마다 센다(디스크를 읽으니 IO 에서).
+          var systemVoiceDownload by remember { mutableStateOf<Map<String, Pair<Int, Int>>?>(null) }
+          LaunchedEffect(authSession?.user?.id) {
+              while (true) {
+                  val counted = withContext(Dispatchers.IO) {
+                      runCatching {
+                          com.alarmtalk.app.sync.StockClipPrefetchWorker
+                              .defaultVoiceProgressByVoice(context, authSession?.user?.id)
+                      }.getOrNull()
+                  }
+                  systemVoiceDownload = counted
+                  if (counted != null && counted.values.all { (done, total) -> done >= total }) break
+                  kotlinx.coroutines.delay(2000)
+              }
+          }
           AlarmEditorScreen(
               contentPadding = padding,
               // ⚠ 편집기 유료 게이트의 코드 입력(`onRegisterCode`)은 2026-10-14 에 지웠다 — 되살리지 말 것
@@ -1353,6 +1399,17 @@ internal fun AlarmTalkApp(
               clipReadiness = viewModel.clipReadiness,
               onRetryClipRenders = viewModel::retryFailedClipRendersAsync,
               onPrepareClipsFor = { viewModel.refreshClipReadinessAsync() },
+              systemVoiceDownload = systemVoiceDownload,
+              onPrioritizeVoice = { voiceId ->
+                  if (isSystemVoiceId(voiceId)) {
+                      com.alarmtalk.app.sync.StockClipPrefetchPriority.request(
+                          context,
+                          authSession?.user?.id,
+                          com.alarmtalk.app.sync.PrefetchTarget(voiceId, null),
+                      )
+                      com.alarmtalk.app.sync.StockClipPrefetchWorker.enqueue(context)
+                  }
+              },
               lastUsedVoiceId = viewModel.lastUsedVoiceId,
               lastMessageContext = lastMessageContext,
               lastFreeBucket = lastFreeBucket,
@@ -1478,8 +1535,9 @@ internal fun AlarmTalkApp(
                           },
                           // 권한이 하나라도 빠지면 편집기에 들어가지 않는다 — 들어가 봐야 저장이 막힌다.
                           onEditAlarm = { alarm ->
-                              // 막히면 이유는 알럿이 말한다(`whenDefaultVoicesReady`).
-                              whenDefaultVoicesReady {
+                              // 막히면 이유는 알럿이 말한다(`whenAlarmVoiceReady`). 목소리를 쓰지 않는 알람(알람 전용·직접
+                              // 녹음)도 그 알람의 목소리 값으로 본다 — 편집기에서 목소리로 옮길 수 있다.
+                              whenAlarmVoiceReady(alarm.voiceProfileId) {
                                   if (permissions.alarmReady) {
                                       navController.navigate(AppRoute.alarmEdit(alarm.id))
                                   } else {

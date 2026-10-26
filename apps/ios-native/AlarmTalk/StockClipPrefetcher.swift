@@ -67,6 +67,19 @@ final class StockClipPrefetcher: ObservableObject {
     /// 쓰면 새 회차가 받는 중인데도 받기 화면이 닫혔다.
     private var generation = 0
 
+    /// 받을 순서의 단서 하나 — 목소리 × 테마(테마를 모르면 nil). 안드로이드 `PrefetchTarget` 짝.
+    struct PrefetchTarget: Equatable {
+        let voiceID: String
+        let category: String?
+    }
+
+    /// 지금 고르려는 목소리(관문·편집기가 적는다 — `request(voiceID:category:)`). 마지막 하나만 남는다.
+    private(set) var requestedTarget: PrefetchTarget?
+
+    /// 저장된 켜진 알람이 쓰는 목소리 × 테마, 다음에 울릴 알람부터. 앱이 알람 저장소로 채워 넣는다(`AlarmTalkApp`) —
+    /// 테스트·다른 화면에서 만든 인스턴스는 비어 있다(순서만 잃고 받는 대상은 같다).
+    var savedTargets: () -> [PrefetchTarget] = { [] }
+
     init(api: AlarmTalkAPI = .shared) {
         self.api = api
     }
@@ -192,7 +205,7 @@ final class StockClipPrefetcher: ObservableObject {
     /// 알럿이 말할 퍼센트(`progress`)를 함께 낸다. 막혀도 다시 세지 않는다.
     ///
     /// ⚠ **관문에서 `defaultVoicesReady()` 와 `defaultVoiceProgress()` 를 따로 부르지 말 것** — 메인 액터에서 디렉터리를
-    /// 두 번 읽는다(스펙 voice-and-message 「기본 목소리를 다 받아야 알람을 설정한다」 — 세는 값은 싸야 한다).
+    /// 두 번 읽는다(스펙 voice-and-message 「알람마다 필요한 목소리만 본다」 — 세는 값은 싸야 한다).
     /// 안드로이드도 탭 하나에 한 번 센다(`ui/app/DefaultVoiceGate.kt`).
     static func defaultVoiceGate(
         language: String = VoiceStudioViewModel.appVoiceLanguage(),
@@ -200,6 +213,96 @@ final class StockClipPrefetcher: ObservableObject {
     ) -> (ready: Bool, progress: (done: Int, total: Int)?) {
         let progress = defaultVoiceProgress(language: language, manifest: manifest)
         return (defaultVoicesReady(progress), progress)
+    }
+
+    // MARK: - 알람마다 필요한 목소리만 본다 (v1.3 W05 — `docs/spec/voice-and-message.md`)
+
+    /// 기본 목소리 **하나**를 몇 개 중 몇 개 받았는가. 매니페스트에 그 목소리가 없으면 (0, 0) — 받을 것이 없다(막지 않는다).
+    /// 매니페스트를 한 번도 못 받았으면 nil. 캐시 디렉터리를 한 번 읽는다. 안드로이드
+    /// `StockClipPrefetchWorker.defaultVoiceProgress(context, userId, voiceId)` 짝.
+    static func voiceProgress(
+        voiceID: String,
+        language: String = VoiceStudioViewModel.appVoiceLanguage(),
+        manifest: StockClipListResponse? = StockClipManifestStore.load()
+    ) -> (done: Int, total: Int)? {
+        guard let manifest else { return nil }
+        let targets = manifest.clips.filter {
+            $0.voiceProfileId == voiceID && isDefaultVoiceTarget($0, language: language)
+        }
+        let missing = missingClips(targets).count
+        return (targets.count - missing, targets.count)
+    }
+
+    /// 알람 설정 관문 **한 번**의 답 — 그 알람이 쓸 목소리만 센다. 기본 목소리가 아니면(내 목소리) 이 관문은 볼 것이 없다
+    /// (편집기의 `needsClipPreparation` 이 본다). 목소리를 모르면(nil) 예전처럼 기본 목소리 전부를 본다.
+    static func voiceGate(
+        voiceID: String?,
+        language: String = VoiceStudioViewModel.appVoiceLanguage(),
+        manifest: StockClipListResponse? = StockClipManifestStore.load()
+    ) -> (ready: Bool, progress: (done: Int, total: Int)?) {
+        guard let voiceID else { return defaultVoiceGate(language: language, manifest: manifest) }
+        guard isSystemVoiceId(voiceID) else { return (true, nil) }
+        let progress = voiceProgress(voiceID: voiceID, language: language, manifest: manifest)
+        return (defaultVoicesReady(progress), progress)
+    }
+
+    /// 편집기에서 고르려는 기본 목소리를 **폰에 아직 다 받지 못했는가**. 모르면(매니페스트 없음) false — 모르는 것으로
+    /// 막지 않는다. 안드로이드 `systemVoiceStillDownloading` 짝.
+    static func isStillDownloading(
+        voiceID: String,
+        language: String = VoiceStudioViewModel.appVoiceLanguage(),
+        manifest: StockClipListResponse? = StockClipManifestStore.load()
+    ) -> Bool {
+        guard isSystemVoiceId(voiceID),
+              let progress = voiceProgress(voiceID: voiceID, language: language, manifest: manifest) else { return false }
+        return progress.done < progress.total
+    }
+
+    /// 그 목소리를 **먼저** 받게 적는다. 도는 회차는 배치마다 순서를 다시 읽으므로 곧바로 따른다. 돌고 있지 않으면 부른 쪽이
+    /// `start` 한다.
+    func request(voiceID: String, category: String? = nil) {
+        requestedTarget = PrefetchTarget(voiceID: voiceID, category: category)
+    }
+
+    /// 몇 번째 칸인가(작을수록 먼저). 안드로이드 `StockClipPrefetchPriority.rank` 와 같은 칸이다:
+    /// 저장된 알람의 목소리 × 테마(다음 알람부터) → 고른 목소리 × 테마 → 고른 목소리의 나머지 → 저장된 알람 목소리의 나머지 → 그 밖.
+    static func rank(_ clip: StockClip, saved: [PrefetchTarget], requested: PrefetchTarget?) -> Int {
+        if let exact = saved.firstIndex(where: { $0.voiceID == clip.voiceProfileId && $0.category == clip.category }) {
+            return exact
+        }
+        let base = saved.count
+        if let requested, requested.voiceID == clip.voiceProfileId {
+            return (requested.category != nil && requested.category == clip.category) ? base : base + 1
+        }
+        if let savedVoice = saved.firstIndex(where: { $0.voiceID == clip.voiceProfileId }) {
+            return base + 2 + savedVoice
+        }
+        return base + 2 + saved.count
+    }
+
+    /// 받을 순서로 다시 세운다 — 같은 칸 안에서는 들어온 순서(매니페스트 순서)를 지킨다.
+    static func prioritized(_ clips: [StockClip], saved: [PrefetchTarget], requested: PrefetchTarget?) -> [StockClip] {
+        clips.enumerated()
+            .sorted { lhs, rhs in
+                let l = rank(lhs.element, saved: saved, requested: requested)
+                let r = rank(rhs.element, saved: saved, requested: requested)
+                return l == r ? lhs.offset < rhs.offset : l < r
+            }
+            .map(\.element)
+    }
+
+    /// 저장된 알람에서 받을 순서의 단서를 뽑는다 — 이 계정의 켜진 알람, 다음에 울릴 것부터. 주인이 없는 옛 행은 통과시킨다
+    /// (안드로이드 `StockClipLanguageRebinder.ownedBy` 와 같은 규약).
+    static func savedTargets(from alarms: [LocalAlarmRecord], userID: String?) -> [PrefetchTarget] {
+        var seen: [PrefetchTarget] = []
+        for alarm in alarms
+            .filter({ $0.enabled && ($0.ownerUserId.nilIfBlank == nil || $0.ownerUserId == userID) })
+            .sorted(by: { $0.fireAtMillis < $1.fireAtMillis }) {
+            guard let voiceID = alarm.voiceProfileId.nilIfBlank else { continue }
+            let target = PrefetchTarget(voiceID: voiceID, category: alarm.bucketId.nilIfBlank)
+            if !seen.contains(target) { seen.append(target) }
+        }
+        return seen
     }
 
     var isRunning: Bool {
@@ -348,10 +451,15 @@ final class StockClipPrefetcher: ObservableObject {
             // `done == 0 ? .failed : .finished` 라, 일부가 실패해도 받기 화면이 닫히고 메인으로
             // 넘어갔다 — 다 받지 못한 테마는 오프라인에서 소리가 비고 회전 순서도 어긋난다.
             // 끝났다고 말하는 기준은 **캐시를 다시 셌을 때 빠진 것이 0개** 하나다.
+            let saved = savedTargets()
             for _ in 0..<Self.passesPerRun where !missing.isEmpty {
-                for batch in stride(from: 0, to: missing.count, by: Self.parallelism).map({
-                    Array(missing[$0..<min($0 + Self.parallelism, missing.count)])
-                }) {
+                var remaining = missing
+                while !remaining.isEmpty {
+                    // ⚠ **배치마다 다시 줄 세운다** — 받는 도중 편집기가 다른 목소리를 고르면(`request`) 다음 배치부터 그
+                    //   목소리가 먼저다. 앞서 고른 것의 남은 몫이 새 선택을 앞지르지 않는다.
+                    remaining = Self.prioritized(remaining, saved: saved, requested: requestedTarget)
+                    let batch = Array(remaining.prefix(Self.parallelism))
+                    remaining.removeFirst(batch.count)
                     if Task.isCancelled || gen != generation { return }
                     await withTaskGroup(of: Void.self) { group in
                         for clip in batch {

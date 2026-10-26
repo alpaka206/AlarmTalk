@@ -104,3 +104,17 @@ internal data class ClipGate(
         }
     }
 }
+
+/**
+ * **아직 다 받지 못한 기본 목소리인가** — 편집기에서 그 목소리를 고르려 할 때 본다(「알람마다 필요한 목소리만 본다」).
+ * [ClipGate.needsClipPreparation] 은 기본 목소리를 통과시킨다(서버가 만들었는가를 본다). 이건 **폰이 받았는가**다.
+ *
+ * [progress] 는 기본 목소리마다 (받은 수 to 전체)이고(`StockClipPrefetchWorker.defaultVoiceProgressByVoice`), 모르면
+ * null — 모르는 것으로 막지 않는다(저장이 캐시에 없으면 그 자리에서 받는다 — `bindStockBucketClips`).
+ * iOS 짝은 `StockClipPrefetcher.isStillDownloading`.
+ */
+internal fun systemVoiceStillDownloading(profileId: String, progress: Map<String, Pair<Int, Int>>?): Boolean {
+    if (!isSystemVoiceId(profileId)) return false
+    val (done, total) = progress?.get(profileId) ?: return false
+    return done < total
+}

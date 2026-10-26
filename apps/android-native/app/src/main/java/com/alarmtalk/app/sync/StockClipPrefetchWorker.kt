@@ -578,6 +578,20 @@ class StockClipPrefetchWorker(
             }
             publishProgress(done = alreadyCached, total = clips.size)
 
+            // 받을 순서 — 저장된 켜진 알람이 쓰는 목소리·테마가 먼저, 다음에 울릴 알람부터([StockClipPrefetchPriority]).
+            // 이 계정의 알람만 본다(로그아웃해도 로컬 알람은 남는다 — `StockClipLanguageRebinder.ownedBy`). 못 읽으면 순서만
+            // 잃는다 — 받는 대상은 그대로다.
+            val savedTargets = withContext(Dispatchers.IO) {
+                runCatching {
+                    com.alarmtalk.app.data.AlarmDatabase.getInstance(applicationContext).alarmDao().getEnabledAlarms()
+                        .filter { StockClipLanguageRebinder.ownedBy(it, session.user.id) }
+                        .sortedBy { it.fireAtMillis }
+                        .mapNotNull { alarm -> alarm.voiceProfileId?.let { PrefetchTarget(it, alarm.bucketId) } }
+                        .distinct()
+                }.getOrDefault(emptyList())
+            }
+            var remaining = missing
+
             var done = alreadyCached
             // ⚠ **격리는 하되 실패를 삼키지는 않는다**(2026-08-31 리뷰). 클립별로 예외를 잡아
             // 형제 요청을 살리는 것과, 그 회차를 '성공' 으로 보고하는 것은 다른 문제다.
@@ -600,7 +614,19 @@ class StockClipPrefetchWorker(
             var budgetExhausted = false
             // 클립당 HTTP 왕복 1회다. 44개를 순차로 받으면 약전파에서 1분을 넘기므로 소량 병렬로
             // 겹친다(서버·기기 부담을 감안해 4로 제한).
-            for ((batchIndex, batch) in missing.chunked(PARALLELISM).withIndex()) {
+            var batchIndex = -1
+            while (remaining.isNotEmpty()) {
+                batchIndex++
+                // ⚠ **배치마다 다시 줄 세운다.** 받는 도중 편집기가 다른 목소리를 고르면([StockClipPrefetchPriority.request])
+                //   그 목소리가 다음 배치부터 먼저다 — 앞서 고른 것의 남은 몫이 새 선택을 앞지르지 않는다. 유니크 작업이라
+                //   돌고 있는 동안의 enqueue 는 버려지므로, 순서를 바꾸는 길은 이것뿐이다.
+                remaining = StockClipPrefetchPriority.order(
+                    remaining,
+                    savedTargets,
+                    StockClipPrefetchPriority.requested(applicationContext, session.user.id),
+                ) { it.first }
+                val batch = remaining.take(PARALLELISM)
+                remaining = remaining.drop(PARALLELISM)
                 if (sessionExpired.get() != null) break
                 if (!mayStartNextClipBatch(batchIndex, runStartedAt, SystemClock.elapsedRealtime())) {
                     budgetExhausted = true
@@ -808,6 +834,24 @@ class StockClipPrefetchWorker(
          * 회귀 테스트 `AlarmAudioStoreProbeCountTest`.
          */
         fun defaultVoiceProgress(context: Context, userId: String?): Pair<Int, Int>? {
+            val byVoice = defaultVoiceProgressByVoice(context, userId) ?: return null
+            return byVoice.values.sumOf { it.first } to byVoice.values.sumOf { it.second }
+        }
+
+        /**
+         * 한 기본 목소리만 센다 — 알람 설정 관문이 **그 알람이 쓸 목소리**만 본다(「알람마다 필요한 목소리만 본다」).
+         * 매니페스트에 그 목소리가 없으면 0 to 0(받을 것이 없다 = 막지 않는다). 모르면 null.
+         */
+        fun defaultVoiceProgress(context: Context, userId: String?, voiceId: String): Pair<Int, Int>? {
+            val byVoice = defaultVoiceProgressByVoice(context, userId) ?: return null
+            return byVoice[voiceId] ?: (0 to 0)
+        }
+
+        /**
+         * 기본 목소리마다 (받은 수 to 전체). 캐시 디렉터리는 **한 번만** 읽는다 — 편집기가 목소리 목록 전체의 준비를
+         * 한 번에 알아야 한다. 매니페스트를 한 번도 못 받았으면 null. ⚠ 디스크를 읽는다 — 메인에서 부르지 말 것.
+         */
+        fun defaultVoiceProgressByVoice(context: Context, userId: String?): Map<String, Pair<Int, Int>>? {
             val manifest = StockClipManifestStore.load(context, userId) ?: return null
             val locales = context.resources.configuration.locales
             val language = appVoiceLanguageOf((if (!locales.isEmpty) locales[0] else null)?.language)
@@ -815,14 +859,15 @@ class StockClipPrefetchWorker(
             val missing = AlarmAudioStore(context).missingOrStaleCacheKeys(
                 targets.map { cacheKeyFor(it) to it.audioUrl },
             )
-            val done = targets.count { cacheKeyFor(it) !in missing }
-            return done to targets.size
+            return targets.groupBy { it.voiceProfileId }.mapValues { (_, clips) ->
+                clips.count { cacheKeyFor(it) !in missing } to clips.size
+            }
         }
 
         /**
          * 기본 목소리를 다 받아 **알람을 설정해도 되는가**(2026-09-17 지시: 다 받기 전에는 알람
          * 설정 화면 자체를 막는다). 규칙은 `docs/spec/voice-and-message.md`
-         * 「기본 목소리를 다 받아야 알람을 설정한다」.
+         * 「알람마다 필요한 목소리만 본다」.
          */
         fun defaultVoicesReady(context: Context, userId: String?): Boolean =
             defaultVoicesReady(defaultVoiceProgress(context, userId))

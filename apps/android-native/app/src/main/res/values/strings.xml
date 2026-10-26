@@ -704,8 +704,8 @@
     <string name="api_error_alarm_not_found">이미 사라진 알람이에요.</string>
     <string name="api_error_tts_generation_failed">음성을 만들지 못했어요. 잠시 후 다시 시도해 주세요.</string>
     <string name="voices_not_ready_title">목소리를 아직 받는 중이에요</string>
-    <string name="voices_not_ready_message_progress">알람에 쓸 기본 목소리를 다 받아야 알람을 설정할 수 있어요. (%1$d%%)\n목소리 탭에서 진행 상황을 볼 수 있어요.</string>
-    <string name="voices_not_ready_message">알람에 쓸 기본 목소리를 다 받아야 알람을 설정할 수 있어요.\n인터넷에 연결된 상태에서 잠시 기다려 주세요.</string>
+    <string name="voices_not_ready_message_progress">이 알람에 쓸 목소리를 받고 있어요. 이 목소리부터 먼저 받아요. (%1$d%%)\n다른 기본 목소리도 이어서 받아요.</string>
+    <string name="voices_not_ready_message">이 알람에 쓸 목소리를 받고 있어요.\n인터넷에 연결된 상태에서 잠시 기다려 주세요.</string>
     <string name="voices_default_download_progress">받는 중 %1$d%%</string>
     <!-- 기간 한정 플러스 무료 이용(personal_promo). ⚠ 날짜를 문구에 박지 말 것 — 서버 ends_at 을 기기 로케일로 그려 넣는다.
          "…까지" 는 ends_at − 1초의 기기 날짜, "…부터" 는 그 다음 달력 날이다(한국 밖 기기에서도 하루 차이로 읽힌다). -->

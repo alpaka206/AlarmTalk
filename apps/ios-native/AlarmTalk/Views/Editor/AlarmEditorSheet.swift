@@ -1108,6 +1108,17 @@ struct AlarmEditorSheet: View {
             preparationVoiceID = option.id
             return
         }
+        // 폰에 다 받지 못한 기본 목소리는 고르지 않고 준비 화면으로 간다 — 그 목소리를 **먼저** 받게 적는다. 고른 것은 다 받기
+        // 전까지 적용하지 않는다(지금 목소리가 그대로 남는다). `needsClipPreparation` 은 기본 목소리를 통과시킨다(서버 판정).
+        // 안드로이드 `systemVoiceStillDownloading` 짝(`docs/spec/voice-and-message.md` 「알람마다 필요한 목소리만 본다」).
+        if StockClipPrefetcher.isStillDownloading(voiceID: option.id) {
+            prefetcher.request(voiceID: option.id)
+            if !prefetcher.isRunning {
+                prefetcher.start(session: auth.session, ownedVoiceProfileIDs: voiceStudio.ownedVoiceProfileIDs)
+            }
+            preparationVoiceID = option.id
+            return
+        }
         // 기본 목소리는 준비된 문구로만 말할 수 있다 — 직접 입력한 문구가 있으면 묻는다.
         if losesText {
             pendingVoiceSwitch = option
