@@ -80,6 +80,8 @@ internal fun MainViewModel.createAlarm(
         return
     }
     if (!requireAlarmPermissionsForMutation()) return
+    // 저장을 시작한 계정 — 아래 성공 기록(`content_selected`)은 그 계정의 것이다(날씨 조회를 기다리는 사이 계정이 바뀌어도).
+    val ownerUserId = authSession?.user?.id
     // 여기부터가 '저장 중' 이다 — 아래는 전부 비동기고, 날씨 버킷이면 네트워크까지 탄다.
     // 내리는 건 finally 한 곳뿐: 실패로 편집기가 남았는데 켜진 채면 다시 저장할 길이 없다.
     alarmSaving = true
@@ -91,6 +93,7 @@ internal fun MainViewModel.createAlarm(
             recordAlarmReadyIfReady(saved)
             rememberVoiceUsed(draft.voiceProfileId)
             rememberMessageChoiceUsed(draft)
+            com.alarmtalk.app.data.recordContentSelected(getApplication(), saved, ownerUserId)
             // 성공 토스트는 띄우지 않는다 — 저장 즉시 리스트에 행이 생기고 홈 헤더가
             // '몇 시간 후에 울려요'를 이미 말해준다(안내 중복 소음).
             onDone()
@@ -120,6 +123,7 @@ internal fun MainViewModel.updateAlarm(
         return
     }
     if (!requireAlarmPermissionsForMutation()) return
+    val ownerUserId = authSession?.user?.id
     // 생성과 같은 규약 — 아래 [MainViewModel.alarmSaving] 주석 참고.
     alarmSaving = true
     viewModelScope.launch {
@@ -130,6 +134,7 @@ internal fun MainViewModel.updateAlarm(
             recordAlarmReadyIfReady(saved)
             rememberVoiceUsed(draft.voiceProfileId)
             rememberMessageChoiceUsed(draft)
+            com.alarmtalk.app.data.recordContentSelected(getApplication(), saved, ownerUserId)
             // 생성과 동일 — 성공 토스트 생략(리스트/헤더가 결과를 보여준다).
             onDone()
         }.onFailure { error ->
