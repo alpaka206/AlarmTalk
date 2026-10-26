@@ -232,16 +232,14 @@ internal fun AlarmListScreen(
     val statusContext = androidx.compose.ui.platform.LocalContext.current
     // ⚠ **받기가 실제로 돌고 있을 때만**이다 — 재시도를 다 써서 멈췄는데 파일이 빠져 있다는 이유로 '받는 중' 을 띄우면 끝없이
     //   받는 중이라 하고 날씨 경고까지 가린다. `voicePrefetchProgress` 는 워커가 RUNNING 이고 덜 받았을 때만 값이 있다.
-    val defaultVoicesDownloading by androidx.compose.runtime.produceState(false, voicePrefetchProgress, authSession?.user?.id) {
-        if (voicePrefetchProgress == null) {
-            value = false
-            return@produceState
-        }
-        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-            runCatching {
-                com.alarmtalk.app.sync.StockClipPrefetchWorker.defaultVoiceProgress(statusContext, authSession?.user?.id)
-            }.getOrNull()
-        }?.let { (done, total) -> total > 0 && done < total } == true
+    var defaultVoicesDownloading by remember { mutableStateOf(false) }
+    LaunchedEffect(voicePrefetchProgress, authSession?.user?.id) {
+        defaultVoicesDownloading = voicePrefetchProgress != null &&
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                runCatching {
+                    com.alarmtalk.app.sync.StockClipPrefetchWorker.defaultVoiceProgress(statusContext, authSession?.user?.id)
+                }.getOrNull()
+            }?.let { (done, total) -> total > 0 && done < total } == true
     }
     LazyColumn(
         state = listState,
