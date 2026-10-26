@@ -8413,19 +8413,19 @@
         }
       }
     },
-    "목소리를 만들지 못했어요. 조용한 곳에서 다시 녹음해 주세요." : {
+    "목소리를 만들지 못했어요. 잠시 후 다시 시도해 주세요." : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "We could not create that voice. Please record again somewhere quiet."
+            "value" : "We couldn't create the voice. Please try again in a moment."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "声を作成できませんでした。静かな場所でもう一度録音してください。"
+            "value" : "声を作成できませんでした。しばらくしてからもう一度お試しください。"
           }
         }
       }
@@ -12545,6 +12545,227 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "새 문구는 저장할 때 음성을 만들며 이번 달 1회를 써요. 이미 만든 문구는 다시 써도 횟수를 쓰지 않아요."
+          }
+        }
+      }
+    },
+    "녹음 파일을 읽지 못했어요. 다시 녹음해 주세요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "We couldn't read the recording. Please record again."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "録音ファイルを読み込めませんでした。もう一度録音してください。"
+          }
+        }
+      }
+    },
+    "마이크에서 소리가 들어오지 않았어요. 다른 앱이 마이크를 쓰고 있지 않은지 확인한 뒤 다시 녹음해 주세요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No sound came in from the microphone. Make sure no other app is using it, then record again."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "マイクから音が入ってきませんでした。ほかのアプリがマイクを使っていないか確認してから、もう一度録音してください。"
+          }
+        }
+      }
+    },
+    "말소리가 거의 들리지 않아요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "We can barely hear any speech."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "話し声がほとんど聞こえません。"
+          }
+        }
+      }
+    },
+    "말하지 않은 시간이 길어요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "There are long stretches without speech."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "話していない時間が長いです。"
+          }
+        }
+      }
+    },
+    "목소리가 작게 녹음됐어요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your voice was recorded quietly."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "声が小さく録音されました。"
+          }
+        }
+      }
+    },
+    "소리가 너무 커서 일부가 찌그러졌어요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Parts of it were too loud and got distorted."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "音が大きすぎて、一部がひずみました。"
+          }
+        }
+      }
+    },
+    "녹음이 제대로 끝나지 않았어요. 들어 보고 쓸지 정해 주세요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The recording didn't finish properly. Listen to it and decide whether to use it."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "録音が正しく終わりませんでした。聞いてみて、使うかどうか決めてください。"
+          }
+        }
+      }
+    },
+    "전화나 다른 앱 때문에 녹음이 멈췄어요. 멈춘 곳까지 남겨 두었어요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A call or another app stopped the recording. We kept everything up to that point."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "電話やほかのアプリのせいで録音が止まりました。止まったところまでは残してあります。"
+          }
+        }
+      }
+    },
+    "전화나 다른 앱 때문에 녹음이 멈췄어요. 12초 이상 다시 녹음해 주세요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A call or another app stopped the recording. Please record again for at least 12 seconds."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "電話やほかのアプリのせいで録音が止まりました。12秒以上もう一度録音してください。"
+          }
+        }
+      }
+    },
+    "말소리로 들린 시간 약 %lld초 · 전체 %lld초" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Speech heard: about %lld s · Total: %lld s"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "話し声が聞こえた時間 約%lld秒 · 全体 %lld秒"
+          }
+        }
+      }
+    },
+    "그대로 써도 돼요. 다시 녹음하면 목소리가 더 또렷하게 만들어질 수 있어요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You can use it as is. Recording again may give you a clearer voice."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このまま使っても大丈夫です。録音し直すと、声がよりはっきり作られることがあります。"
+          }
+        }
+      }
+    },
+    "녹음을 확인해 주세요" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Check your recording"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "録音を確認してください"
+          }
+        }
+      }
+    },
+    "그래도 쓰기" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Use anyway"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このまま使う"
           }
         }
       }

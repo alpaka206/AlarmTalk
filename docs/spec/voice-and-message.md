@@ -218,7 +218,7 @@
 
 | 단계 | 화면에 두는 것 | 다음 조건 |
 | --- | --- | --- |
-| 음원 준비 | 녹음/파일 2택, 녹음 카드 또는 파일 자르기·미리듣기, 접힌 예시 대본 | 12초 이상 2분 이하 음원. 말소리가 거의 없으면 서버가 등록을 거절해 이 단계로 돌아온다(아래 「말소리가 없으면 등록하지 않는다」) |
+| 음원 준비 | 녹음/파일 2택, 녹음 카드 또는 파일 자르기·미리듣기, 접힌 예시 대본 | 12초 이상 2분 이하 음원. 녹음은 멈추면 기기가 판정해 손상·입력 없음은 버리고, 작음·무음·클리핑은 묻는다(아래 「녹음 품질 판정」). 말소리가 거의 없으면 서버가 등록을 거절해 이 단계로 돌아온다(아래 「말소리가 없으면 등록하지 않는다」) |
 | 세부 정보 | 목소리 이름, 관계, 나를 부를 호칭, 알람 문구 언어, 필요한 생체정보 동의 | **이름만 필수**. 이름 칸은 비워 시작하며 예시를 실제 이름으로 저장하지 않는다. 관계·호칭은 선택 |
 | 생성 중 | 진행 표시와 설명만 | 서버 초안 생성 완료 |
 | 미리듣기·확정 | 생성된 목소리 듣기·문구 수정, 기존 목소리 교체 확인 | 끝까지 들어본 뒤 저장 또는 삭제 |
@@ -647,6 +647,104 @@
 일곱 번의 429). 첫 건은 전사가 20자를 넘었다(그때는 소리 표시까지 셌다). 그 글자가 말소리였다면 이 확인으로는
 막히지 않고, 그 분석은 이제 실패가 아니라 표준 말투로 끝난다(§4-2). 소리 표시였는지는 알 수 없다 — 원문을 남기지
 않는다.
+
+### 녹음 품질 판정 — 기기에서 재고, **작은 목소리는 거절하지 않는다** (2026-10-26, v1.3 W11)
+
+등록 창의 **녹음** 방식에서 녹음을 멈추면(사용자가 멈췄든, 상한·전화·블루투스·백그라운드로 끝났든) 기기가 그 파일을
+판정한다. 파일 고르기와 알람 편집기의 직접 녹음은 판정하지 않는다 — 편집기 녹음은 멈춘 사정(끼어듦·복구)만 말한다.
+서버의 말소리 확인(위 「말소리가 없으면 등록하지 않는다」)은 그대로이고, 기기 판정이 그것을 대신하지 않는다.
+
+**길** — 디코딩 → 정규화 → 기본 신호 검사. 파일은 기기 밖으로 나가지 않는다.
+
+1. 디코딩: 앱의 기존 디코더가 채널을 평균으로 섞어 모노로 준다(안드로이드 `VoiceAudioDecoder.decodeMono`, iOS
+   `VoiceTuningAnalyzer.decodeMono` — 목소리 높이 추천과 같은 디코더다). 못 읽으면 확정 거절(읽을 수 없음).
+2. 정규화: `MonoPcmNormalizer.toAnalysisRate` 가 **16 kHz** 로 선형 보간한다. 샘플레이트를 맞추는 곳은 여기 하나다 —
+   판정 수치가 기기의 녹음 샘플레이트(44.1·48 kHz)에 따라 달라지지 않게.
+3. 판정: `RecordingQualityAnalyzer.analyze`(순수 함수 — 두 앱 같은 식·같은 순서). 20 ms 프레임의 에너지를 재고, 잡음
+   바닥(하위 10 % 프레임) + 10 dB 와 절대 하한 −60 dBFS 중 큰 쪽을 넘는 프레임을 말소리로 센다. 조용한 방의 작은
+   목소리도 말소리로 세기 위해 문턱이 녹음의 잡음 바닥을 따라간다.
+
+**임계값** — 각 앱의 상수(`RecordingQualityThresholds`)와 이 표가 유일 출처다. 한쪽만 고치지 말 것.
+
+| 값 | 크기 | 쓰임 |
+| --- | --- | --- |
+| 판정 샘플레이트 | 16 000 Hz 모노 | 정규화 목표 |
+| 프레임 | 20 ms | 에너지·말소리 셈 |
+| 디코딩 길이 여유 | 500 ms | AAC 앞뒤 여백 — 이만큼 짧아도 '너무 짧음' 이 아니다 |
+| 입력 없음 | 피크 < −80 dBFS | **확정 거절** — 마이크가 아무것도 주지 않았다(디지털 무음) |
+| 말소리 프레임 | ≥ max(잡음 바닥 + 10 dB, −60 dBFS) | 잡음 바닥 = 프레임 에너지의 하위 10 % |
+| 말소리 거의 없음 | 말한 시간 < 3 초 | 권장 안내 |
+| 말하지 않은 시간이 김 | 무음 비율 ≥ 60 % | 권장 안내(말소리 거의 없음이 아닐 때만) |
+| 작은 목소리 | 말소리 프레임 평균 < −40 dBFS | 권장 안내 — **거절하지 않는다** |
+| 클리핑 | \|샘플\| ≥ 0.98 인 샘플 ≥ 0.2 % | 권장 안내 |
+| 너무 짧음 | 등록 하한 12 초(`VoiceProfileAudioLimits.MIN_DURATION_MILLIS`·`VoiceProfileLimits.minDurationMs`) | **확정 거절** — 기존 '12초 이상 녹음해 주세요' 가 먼저 막는다 |
+
+**판정은 셋이다.**
+
+| 판정 | 언제 | 화면 |
+| --- | --- | --- |
+| 확정 거절 | 너무 짧음·읽을 수 없음(손상)·입력 없음 | 녹음을 **버리고** 녹음 카드 아래 거절 줄(`rerecordReason`)에 이유를 쓴다. 다시 녹음하는 길만 있다 |
+| 권장 안내 | 말소리 거의 없음·말하지 않은 시간이 김·작은 목소리·클리핑 | 알럿 「녹음을 확인해 주세요」 — 안내 줄, 잰 수치(`말소리로 들린 시간 약 n초 · 전체 m초`), 맺음말. 버튼 `다시 녹음` / `그래도 쓰기`. 바깥 탭·뒤로가기는 `그래도 쓰기` 와 같다(지우는 쪽은 버튼으로만) |
+| 통과 | 그 밖 | **아무 말도 하지 않는다** — '품질 검사 통과' 같은 안내를 띄우지 않는다 |
+
+판정이 도는 동안(디코딩, 길어도 1초 남짓) `다음` 을 잠근다. 그사이 녹음을 버리거나 새로 녹음했으면 지난 판정을 덮지 않는다.
+
+**멈춘 사정** — 끼어들어 멈춘 녹음은 **남긴다**(녹음 복구). 제대로 끝나지 않은 녹음은 품질이 괜찮아도 정상 완료본처럼
+조용히 넘기지 않고 같은 알럿으로 묻는다(그 알럿의 첫 줄이 사정을 말한다).
+
+| 플랫폼 | 사정 | 처리 |
+| --- | --- | --- |
+| 안드로이드 | `MediaRecorder.stop()` 실패 — 시작 뒤 1초 안 | '녹음이 너무 짧아요'. 파일을 지운다(브레드크럼 `user`, 기존 ANDROID-1P) |
+| 안드로이드 | `stop()` 실패 — 마이크 권한 없음 | '마이크 권한이 없어 녹음하지 못했어요…'. 파일을 읽을 수 있으면 남기고 묻는다, 못 읽으면 지운다(브레드크럼 `user`) |
+| 안드로이드 | `stop()` 실패 — 오디오 포커스 상실·녹음기 오류 뒤 | '전화나 다른 앱 때문에 녹음이 끊겼어요…'. 위와 같이 읽히면 남긴다(브레드크럼 `user`) |
+| 안드로이드 | `stop()` 실패 — 이유 모름(1초 뒤) | 읽히면 남기고 '녹음이 제대로 끝나지 않았어요' 로 묻는다. 못 읽으면 지우고 '녹음에 실패했어요'(**이슈**로 올린다) |
+| 안드로이드 | 녹음 중 오디오 포커스 상실(`AUDIOFOCUS_LOSS`·`LOSS_TRANSIENT` — 전화·다른 앱) | 녹음 루프가 보고 멈춘다 — 그때까지를 남기고 판정으로 보낸다. 알림음처럼 잠깐 줄이기(`CAN_DUCK`)는 끼어듦이 아니다 |
+| 안드로이드 | 시작 실패 | 권한 없음 / '마이크를 열지 못했어요…' 로 가른다. 시작 못 한 녹음기는 곧바로 놓는다(예전에는 놓지 않았다) |
+| iOS | `AVAudioSession` 중단 시작(전화·Siri·다른 앱의 세션) | 녹음을 끝내고 남긴다(`.interrupted`) |
+| iOS | 입력 장치 변경 — 블루투스·유선 이어폰을 끼거나 뺌(`newDeviceAvailable`·`oldDeviceUnavailable`) | 끝내고 남긴다(`.routeChanged`). 한 녹음 안에서 마이크가 바뀌면 음색이 갈린다(블루투스 HFP 는 8~16 kHz). 녹음을 시작하며 오는 `categoryChange`·`override` 는 끝내지 않는다 |
+| iOS | 백그라운드 진입 | 끝내고 남긴다(`.backgrounded`). 이 앱은 백그라운드 오디오 모드가 있어 그대로 두면 마이크가 계속 열려 있었다 |
+| iOS | 녹음기 실패(`successfully == false`·인코딩 오류·미디어 서비스 재시작) | `.failed` — 남기되 '녹음이 제대로 끝나지 않았어요' 로 묻는다. 못 읽으면 판정이 확정 거절한다 |
+
+실패한 파일은 정상 업로드하지 않는다 — 못 읽는 파일은 지우거나(안드로이드 녹음기) 판정이 거절하고, 읽히는 복구본은 사용자가
+들어 보고 `그래도 쓰기` 를 눌러야 등록으로 간다.
+
+**진단** — 판정마다 브레드크럼 한 줄(`recording_quality` — `AlarmTalkLog.breadcrumb`). 싣는 것은 **숫자와 판정 코드뿐**이다:
+`verdict`(rejected·advisory·passed), `reason` 또는 `advisories`, `method`, `duration_ms`, `speech_ms`, `silence_pct`, `peak_dbfs`,
+`speech_rms_dbfs`, `clipping_permille`, 그리고 멈춘 사정(안드로이드 `interrupted`·`recovered`, iOS `stop_reason`). 오디오·
+받아쓰기 원문·파일 경로는 싣지 않는다. 분석 이벤트(`usage-events.md`)에는 아무것도 적지 않는다.
+
+**말소리 검출기(VAD)** — **꽂지 않았다**(2026-10-26 결정: 이번에는 모델을 번들하지 않는다). 꽂는 자리만 있다 — 판정기가
+검출기를 선택적으로 받는다(안드로이드 `VoiceActivityDetector`, iOS `VoiceActivityDetecting`). 검출기가 말한 시간을 주면
+그 값으로 세고 `method = vad` 다. 꽂히지 않았거나 그 기기에서 돌지 못하면(null) `method = basic_signal` 이다.
+- ⚠ 화면·진단 어디에도 'VAD 통과'·'품질 검사 통과' 라고 말하지 않는다. 지금 모든 판정은 `basic_signal` 이다.
+- ⚠ 무음 탐지는 **화자 동의·본인 확인·음성 복제 적합성의 증명이 아니다.** 권리 확인은 등록 입구의 권리 확인 모달과
+  약관 제7조가 맡는다([`consent.md`](consent.md)).
+- 꽂기 전에 고정할 것(2026-10-26 웹에서 확인한 것과 못 한 것):
+
+| 대상 | 출처 | 라이선스 | 상태 |
+| --- | --- | --- | --- |
+| Silero VAD 소스 | `github.com/snakers4/silero-vad`(PyPI `silero-vad` 최신 6.2.3, 2026-09-23) | 저장소 `LICENSE` 파일은 **MIT**(`Copyright (c) 2020-present Silero Team`) | ⚠ **확인 필요** — 같은 저장소 README·PyPI 의 라이선스 배지는 **CC BY-NC 4.0** 이라고 적어 파일과 어긋난다. 상업 앱이라 NC 면 쓸 수 없다. 번들 전에 저자에게 확인하거나 MIT 로 배포된 태그를 고른다 |
+| Silero VAD 가중치 | 같은 저장소 `src/silero_vad/data/`(`silero_vad.onnx`·`silero_vad_16k_op15.onnx`·`silero_vad_half.onnx` 등) | 가중치에 따로 적힌 라이선스가 없다 — 저장소 라이선스를 따르는 것으로 보인다 | ⚠ **확인 필요**. 번들할 때 커밋 해시·파일 SHA-256 을 이 표에 적는다 |
+| 런타임 ONNX Runtime | `github.com/microsoft/onnxruntime` | **MIT**(`Copyright (c) Microsoft Corporation`) | 안드로이드(`onnxruntime-android`)·iOS(`onnxruntime-objc`) 배포물의 버전과 제3자 고지(ThirdPartyNotices)는 **확인 필요** — 앱 라이선스 화면(`Resources/Licenses`)에 함께 싣는다 |
+
+**서버 말소리 확인과 함께 볼 것** — 서버의 전사 확인은 전사가 실패하면 **통과시킨다**(fail-open, 위 절). 기기 판정은 권장
+안내라 사용자가 `그래도 쓰기` 를 고를 수 있으므로, 전사가 죽은 동안에는 말소리 없는 녹음이 여전히 등록될 수 있다.
+받아들인 위험이다 — 예전에는 아무 경고 없이 등록됐고, 이제는 기기가 먼저 '말소리가 거의 들리지 않아요' 로 묻는다. 기기
+판정을 확정 거절로 올려 전사 장애를 메우지 않는다(작은 목소리·조용한 녹음을 거절하게 된다).
+
+**공급자 장애를 녹음 탓으로 말하지 않는다** — `500 VOICE_CLONING_FAILED` 는 ElevenLabs 장애·네트워크·서버 오류를 다 받는
+갈래다(`POST /voice/clone` 의 마지막 catch). 두 앱의 문구가 "조용한 곳에서 다시 녹음해 주세요" 였다 — 이제 `목소리를 만들지
+못했어요. 잠시 후 다시 시도해 주세요.` 다(코드 이름은 그대로 — [error-codes.md](error-codes.md)). 녹음은 그대로 두므로 같은
+녹음으로 다시 누르면 된다. 말소리가 없는 녹음은 `VOICE_CLONE_NO_SPEECH` 가 따로 말한다. (서버는 제공자의 4xx — 오디오를
+거절한 경우 — 와 5xx 를 아직 가르지 않는다. 가르려면 제공자 응답 본문의 모양을 확인한 뒤 새 코드를 **추가**한다.)
+
+**실기기 미검증**(2026-10-26 — 유닛 테스트는 판정·갈래·문구만 지킨다):
+- 안드로이드: 녹음 중 전화 수신·다른 앱 음악 재생(포커스 상실 → 남기고 알럿), 녹음 중 설정에서 마이크 권한 끄기(프로세스가
+  죽는지 포함), 다른 앱이 마이크를 쥔 채 시작(`마이크를 열지 못했어요`), 실제 기기 마이크의 조용한 방 잡음 바닥이
+  −80 dBFS 보다 큰지(입력 없음 오판이 없는지), 2분 녹음의 판정 시간.
+- iOS: 녹음 중 전화·Siri, 에어팟 끼고 빼기, 홈으로 나가기, 다른 앱 오디오, `audioRecorderDidFinishRecording(successfully: false)`
+  가 실제로 오는 조건, 2분 녹음의 판정 시간.
+- 두 앱: 실제 녹음으로 본 임계값의 오판률(작은 목소리·말 빠른 사람·시끄러운 방). 이 표의 숫자는 합성 신호로만 고정했다.
 
 ## 4-2. 클론 문구는 **목소리의 결**과 **사람이 쓴 대사**를 따른다
 
@@ -2516,6 +2614,10 @@ R2 파일·ElevenLabs 클론은 DB 트랜잭션 안에서 지울 수 없으므�
 | 합성 모델 = `eleven_v4_turbo`(코드 상수) · 설정은 stability·similarity 둘 · 말끝 가공 없음 | — | — | `lib/tts-model.ts` 의 `TTS_MODEL_ID`·`TTS_VOICE_SETTINGS` ← `lib/elevenlabs.ts` `textToSpeech`·`lib/voice-provider.ts`·`scripts/prerender-stock-preview.ts`·`scripts/publish-stock-clips.ts`(회귀 `voice-provider-model.test.ts`·`elevenlabs.test.ts`·`publish-stock-clips-contract.test.ts`·`stock-clip-provider-text.test.ts`) · 시청본 지문 세대 `PIPELINE_VERSION`(`scripts/stock-preview-fingerprint.ts`) |
 | 캐시 키 범위(스톡 / 직접 입력은 그 사람) · 삭제 예약은 다시 넣으면 id 가 바뀐다 | — | — | `lib/audio-cache.ts` 의 `STOCK_TTS_CACHE_SCOPE`·`manualTtsCacheScope` ← `lib/stock-clips.ts` `generateStockClip`·`scripts/publish-stock-clips.ts`·`routes/tts.ts`(`isManualGeneration`) · `lib/audio-retention.ts` 의 `REFRESH_RESERVATION_ON_CONFLICT`(회귀 `publish-stock-clips-contract.test.ts`·`tts.test.ts`·`audio-retention.test.ts`) |
 | 보관 만료 — 행 삭제와 삭제 예약은 한 batch · 쓰기 문장이 고를 때의 조건을 다시 본다(§11) | — | — | `lib/audio-retention.ts` 의 `cleanupExpiredAudio`·`cleanupStaleDraftVoices` ← 예약 문장 `externalDeletionsFromSelectStatement`(`enqueueUploadKeysReferencedByMessagesStatement` 도 같은 문장) · 회귀 `audio-retention-atomic.test.ts`(트리거로 중간 실패 → 롤백)·`audio-retention-source-keep.test.ts` |
+| 녹음 품질 판정 — 임계값·판정 셋·정규화(16 kHz)·VAD 꽂는 자리(§4-1 「녹음 품질 판정」) | `data/RecordingQuality.kt`(`RecordingQualityThresholds`·`MonoPcmNormalizer`·`RecordingQualityAnalyzer`·`VoiceActivityDetector`·`diagnostics`) ← 디코더 `data/VoiceAudioDecoder.kt`; 회귀 `data/RecordingQualityAnalyzerTest` | `RecordingQuality.swift`(`RecordingQualityThresholds`·`MonoPcmNormalizer`·`RecordingQualityAnalyzer`·`VoiceActivityDetecting`·`diagnostics`) ← 디코더 `VoiceTuningAnalyzer.decodeMono`; 회귀 `AlarmTalkTests/RecordingQualityAnalyzerTests` | — |
+| 녹음을 멈춘 뒤 — 거절 줄 / 알럿(`다시 녹음`·`그래도 쓰기`) / 말 없음 · 판정 중 `다음` 잠금 · 진단은 수치만 | `ui/voices/RecordingReview.kt`(`reviewRecording`·`recordingReviewMessage`) ← `VoiceProfileManagementPanel` 의 `reviewRecordedAudio`·`discardRecordedAudio`·`recordingReview` 알럿, `AlarmTalkLog.breadcrumb`; 회귀 `RecordingReviewTest` | `RecordingReview.decide`·`alertMessage`(`RecordingQuality.swift`) ← `Views/Voices/VoiceCloneUploadFlow.swift` 의 `reviewFinishedRecording`·`discardRecording`·`.alert`, `AlarmTalkLog.breadcrumb`; 회귀 `RecordingReviewTests` | — |
+| 멈춘 사정 — 안드로이드 `stop()` 실패 갈래·포커스 상실·복구 / iOS 중단·블루투스·백그라운드·녹음기 실패 | `data/AlarmVoiceRecorder.kt`(`classifyRecordingStopFailure`·`RecordingResult`·`interruption`·`requestAudioFocus`) · 브레드크럼 판정 `AlarmTalkLog.isRecordingEndedByUserOrDevice`; 녹음 루프 `VoiceProfileManagementPanel`·`AlarmEditorScreen` 의 `LaunchedEffect(isRecording)`; 회귀 `RecordingReviewTest`·`TransientFailureClassificationTest`, 기기 `AlarmVoiceRecorderInstrumentedTest` | `VoiceRecorder.swift`(`lastStopReason`·`observeSession`·`routeChangeEndsRecording`·`markRecorderFailure`), `RecordingStopReason`; 회귀 `RecordingReviewTests` | — |
+| 제공자 장애를 녹음 탓으로 말하지 않는다(`VOICE_CLONING_FAILED`) | `api_error_voice_cloning_failed`(`res/values{,-en,-ja}/strings.xml`); 회귀 `RecordingReviewTest.cloningFailureDoesNotBlameTheRecording` | `APIErrorMessages.message(for:)`; 회귀 `RecordingReviewTests.test_cloningFailureDoesNotBlameTheRecording` | `POST /voice/clone` 의 마지막 catch(`routes/voice-profile.ts`) |
 
 ## 검증 방법
 

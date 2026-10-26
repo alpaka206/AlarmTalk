@@ -131,6 +131,21 @@ object AlarmTalkLog {
         return false
     }
 
+    /**
+     * 녹음이 사용자의 동작이나 기기 사정으로 끝났는가([com.alarmtalk.app.data.RecordingEndedByUserOrDeviceException] —
+     * 시작하자마자 멈춤·마이크 권한 없음·다른 앱이나 전화의 끼어듦). 화면이 이유를 말하고 다시 녹음하게 하므로 이슈가
+     * 아니라 브레드크럼이다. 이유를 모르는 멈춤 실패는 이 표시가 없어 그대로 이슈다.
+     */
+    internal fun isRecordingEndedByUserOrDevice(error: Throwable): Boolean {
+        var current: Throwable? = error
+        val seen = HashSet<Throwable>()
+        while (current != null && seen.add(current)) {
+            if (current is com.alarmtalk.app.data.RecordingEndedByUserOrDeviceException) return true
+            current = current.cause
+        }
+        return false
+    }
+
     internal fun isGoogleSignInUserAction(error: Throwable): Boolean {
         var current: Throwable? = error
         val seen = HashSet<Throwable>()
@@ -275,7 +290,7 @@ object AlarmTalkLog {
         isForeignGatewayTimeout(error) -> "transient"
         isHandledAuthFailure(error) -> "auth"
         isGoogleSignInUserAction(error) -> "user"
-        isRecordingStoppedTooSoon(error) -> "user"
+        isRecordingEndedByUserOrDevice(error) -> "user"
         isExpectedRefusal(error) -> "refusal"
         isAccountPendingDeletion(error) -> "account"
         isConsentRequired(error) -> "consent"
@@ -379,6 +394,23 @@ object AlarmTalkLog {
             fingerprint = failure?.let { fingerprintOf(it, logKey) },
             tags = reportTags(failure, logKey),
         )
+    }
+
+    /**
+     * 수치만 싣는 진단 브레드크럼(녹음 품질 판정 등). ⚠ [data] 에 오디오·받아쓰기 원문·경로를 넣지 말 것 — 숫자와
+     * 판정 코드만이다(스펙 voice-and-message §4-1 「녹음 품질 판정」). Sentry 가 초기화되지 않았으면 아무것도 하지 않는다.
+     */
+    fun breadcrumb(category: String, event: String, data: Map<String, Any>) {
+        Log.i(TAG, "$event $data")
+        runCatching {
+            val crumb = Breadcrumb().apply {
+                this.category = category
+                level = SentryLevel.INFO
+                message = event
+                data.forEach { (key, value) -> setData(key, value) }
+            }
+            Sentry.addBreadcrumb(crumb)
+        }
     }
 
     // 잡아서 처리한(비크래시) 오류의 개발자 채널: Logcat + Sentry.

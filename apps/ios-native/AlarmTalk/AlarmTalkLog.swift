@@ -259,6 +259,16 @@ enum AlarmTalkLog {
         return failure.status >= 500 ? ["api_error", status] : ["api_error", status, logKey(of: message)]
     }
 
+    /// 수치만 싣는 진단 브레드크럼(녹음 품질 판정 등). ⚠ `data` 에 오디오·받아쓰기 원문·경로를 넣지 말 것 — 숫자와
+    /// 판정 코드만이다(스펙 voice-and-message §4-1 「녹음 품질 판정」). 안드로이드 `AlarmTalkLog.breadcrumb` 짝.
+    static func breadcrumb(category: String, event: String, data: [String: Any]) {
+        logger.info("\(event, privacy: .public)")
+        let crumb = Breadcrumb(level: .info, category: category)
+        crumb.message = event
+        crumb.data = data
+        SentrySDK.addBreadcrumb(crumb)
+    }
+
     /// 잡아서 처리한 오류를 알린다. 크래시는 SDK 가 알아서 잡는다.
     static func reportError(_ message: String, error: Error? = nil) {
         if let error, let category = handledFailureCategory(error) {

@@ -107,8 +107,10 @@ enum APIErrorMessages {
             return String(localized: "등록할 수 있는 목소리를 다 채웠어요. 쓰지 않는 목소리를 지워 주세요.")
         case "VOICE_NOT_READY":
             return String(localized: "목소리를 아직 만들고 있어요. 잠시 후 다시 시도해 주세요.")
+        // 500 — 제공자(ElevenLabs) 장애·네트워크·서버 오류를 다 받는 갈래다. 녹음 탓으로 말하지 않는다(말소리가 없는
+        // 녹음은 `VOICE_CLONE_NO_SPEECH` 가 따로 말한다). 같은 녹음으로 다시 시도하면 되는 실패다.
         case "VOICE_CLONING_FAILED":
-            return String(localized: "목소리를 만들지 못했어요. 조용한 곳에서 다시 녹음해 주세요.")
+            return String(localized: "목소리를 만들지 못했어요. 잠시 후 다시 시도해 주세요.")
         case "VOICE_MONTHLY_CHANGE_LIMIT_REACHED":
             return String(localized: "목소리는 한 달에 1번만 바꿀 수 있어요. 다음 달에 다시 시도해 주세요.")
         case "VOICE_PREVIEW_REQUIRED":
